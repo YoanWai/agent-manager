@@ -17,7 +17,7 @@ import (
 )
 
 func TestPreviewSettleDropsStaleGen(t *testing.T) {
-	m := &Model{mode: modeList, width: 120, height: 40, previewGen: 3}
+	m := &Model{mode: modeList, width: 120, height: 40, focusPane: focusPaneState{previewGen: 3}}
 	updated, cmd := m.Update(previewSettleMsg{gen: 2})
 	m = updated.(*Model)
 	if cmd != nil {
@@ -47,7 +47,7 @@ func TestSyncMouseCaptureDefaultsOn(t *testing.T) {
 // The mouse-mode setting releases the mouse everywhere except focus mode,
 // whose own forwarding predates the setting and stays on regardless.
 func TestSyncMouseCaptureRespectsMouseDisabled(t *testing.T) {
-	m := &Model{mode: modeList, mouseDisabled: true}
+	m := &Model{mode: modeList, prefs: preferences{mouseDisabled: true}}
 	if cmd := m.syncMouseCapture(); cmd == nil {
 		t.Fatal("turning the setting off should release the mouse")
 	}
@@ -75,7 +75,7 @@ func TestPreviewCadenceIsIndependentFromStartupAnimation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := &Model{rows: tt.rows}
+			m := &Model{rail: railState{rows: tt.rows}}
 			if got := m.previewInterval(); got != tt.want {
 				t.Fatalf("preview interval = %v, want %v", got, tt.want)
 			}
@@ -84,22 +84,22 @@ func TestPreviewCadenceIsIndependentFromStartupAnimation(t *testing.T) {
 }
 
 func TestStartupTickRunsWhileBooting(t *testing.T) {
-	m := &Model{booting: true}
-	if cmd := m.startStartupTick(); cmd == nil || !m.startupAnimating {
+	m := &Model{startup: startupState{booting: true}}
+	if cmd := m.startStartupTick(); cmd == nil || !m.startup.startupAnimating {
 		t.Fatal("boot should start the loader tick")
 	}
-	m.booting = false
+	m.startup.booting = false
 	_, cmd := m.Update(startupTickMsg{})
-	if cmd != nil || m.startupAnimating {
+	if cmd != nil || m.startup.startupAnimating {
 		t.Fatal("loader tick kept running after boot settled")
 	}
 }
 
 func TestFirstRefreshClearsBootLoader(t *testing.T) {
-	m := &Model{booting: true, collapsed: map[string]bool{}}
+	m := &Model{rail: railState{collapsed: map[string]bool{}}, startup: startupState{booting: true}}
 	updated, _ := m.Update(refreshMsg{listedAt: time.Now()})
 	got := updated.(*Model)
-	if got.booting {
+	if got.startup.booting {
 		t.Fatal("the first poller pass should end boot")
 	}
 }
@@ -109,58 +109,57 @@ func TestStartupTickRunsOnlyWhileAStartingRowIsVisible(t *testing.T) {
 	if cmd := m.startStartupTick(); cmd != nil {
 		t.Fatal("startup tick began without a starting row")
 	}
-	m.rows = []treeRow{{sess: store.Session{Status: status.Starting}}}
-	if cmd := m.startStartupTick(); cmd == nil || !m.startupAnimating {
+	m.rail.rows = []treeRow{{sess: store.Session{Status: status.Starting}}}
+	if cmd := m.startStartupTick(); cmd == nil || !m.startup.startupAnimating {
 		t.Fatal("starting row did not begin the startup tick")
 	}
 	if cmd := m.startStartupTick(); cmd != nil {
 		t.Fatal("an active startup tick was scheduled twice")
 	}
-	m.rows[0].sess.Status = status.Idle
+	m.rail.rows[0].sess.Status = status.Idle
 	_, cmd := m.Update(startupTickMsg{})
-	if cmd != nil || m.startupAnimating {
+	if cmd != nil || m.startup.startupAnimating {
 		t.Fatal("startup tick kept running after the starting row settled")
 	}
 }
 
 func TestStartupTickRunsWhileReviewLoads(t *testing.T) {
 	m := &Model{mode: modeDiff, diff: diffState{active: true, loading: true}}
-	if cmd := m.startStartupTick(); cmd == nil || !m.startupAnimating {
+	if cmd := m.startStartupTick(); cmd == nil || !m.startup.startupAnimating {
 		t.Fatal("a loading review should start the loader tick")
 	}
 	m.diff.loading = false
 	_, cmd := m.Update(startupTickMsg{})
-	if cmd != nil || m.startupAnimating {
+	if cmd != nil || m.startup.startupAnimating {
 		t.Fatal("loader tick kept running after the review load settled")
 	}
 	m.diff.set.Files = []diff.FileDiff{{File: git.ChangedFile{Path: "main.go"}}}
-	if cmd := m.startStartupTick(); cmd == nil || !m.startupAnimating {
+	if cmd := m.startStartupTick(); cmd == nil || !m.startup.startupAnimating {
 		t.Fatal("an unloaded selected file should start the loader tick")
 	}
 	m.diff.set.Files[0] = diff.BuildFile(nil, nil, git.ChangedFile{Path: "main.go"}, git.FileStat{})
 	_, cmd = m.Update(startupTickMsg{})
-	if cmd != nil || m.startupAnimating {
+	if cmd != nil || m.startup.startupAnimating {
 		t.Fatal("loader tick kept running after the selected file loaded")
 	}
 }
 
 func TestMoveCursorDebouncesPreview(t *testing.T) {
 	m := &Model{
-		mode:   modeList,
-		width:  120,
-		height: 40,
-		rows: []treeRow{
-			{sess: store.Session{ID: "a", Name: "a"}},
-			{sess: store.Session{ID: "b", Name: "b"}},
-		},
-		cursor: 0,
-	}
+	mode:   modeList,
+	width:  120,
+	height: 40, rail: railState{rows: []treeRow{
+		{sess: store.Session{ID: "a", Name: "a"}},
+		{sess: store.Session{ID: "b", Name: "b"}},
+	},
+		cursor: 0},
+}
 	cmd := m.moveCursor(1)
-	if m.cursor != 1 {
-		t.Fatalf("cursor = %d want 1", m.cursor)
+	if m.rail.cursor != 1 {
+		t.Fatalf("cursor = %d want 1", m.rail.cursor)
 	}
-	if m.previewGen != 1 {
-		t.Fatalf("previewGen = %d want 1", m.previewGen)
+	if m.focusPane.previewGen != 1 {
+		t.Fatalf("previewGen = %d want 1", m.focusPane.previewGen)
 	}
 	if cmd == nil {
 		t.Fatal("move should schedule a settle tick")
@@ -169,8 +168,8 @@ func TestMoveCursorDebouncesPreview(t *testing.T) {
 	msg := previewSettleMsg{gen: 1}
 	// A second move bumps gen; the first settle is now stale.
 	m.moveCursor(-1)
-	if m.previewGen != 2 {
-		t.Fatalf("previewGen = %d want 2", m.previewGen)
+	if m.focusPane.previewGen != 2 {
+		t.Fatalf("previewGen = %d want 2", m.focusPane.previewGen)
 	}
 	updated, next := m.Update(msg)
 	m = updated.(*Model)
@@ -178,7 +177,7 @@ func TestMoveCursorDebouncesPreview(t *testing.T) {
 		t.Fatal("stale settle after second move must not capture")
 	}
 	// Fresh settle for the current gen with a session should schedule previewCmd.
-	_, next = m.Update(previewSettleMsg{gen: m.previewGen})
+	_, next = m.Update(previewSettleMsg{gen: m.focusPane.previewGen})
 	if next == nil {
 		t.Fatal("current settle should schedule a capture")
 	}
@@ -199,22 +198,22 @@ func TestPreviewFollowsPaneWithoutCursorMoves(t *testing.T) {
 		for {
 			// Only the poll cycle runs here; nothing selects or moves.
 			m.applyCmd(t, m.refreshCmd())
-			if strings.Contains(ansi.Strip(m.preview), marker) {
+			if strings.Contains(ansi.Strip(m.workspace.preview), marker) {
 				return
 			}
 			if time.Now().After(deadline) {
-				t.Fatalf("preview never picked up %q, has:\n%s", marker, ansi.Strip(m.preview))
+				t.Fatalf("preview never picked up %q, has:\n%s", marker, ansi.Strip(m.workspace.preview))
 			}
 			time.Sleep(50 * time.Millisecond)
 		}
 	}
 
-	if err := m.tmux.SendText(sess.ID, "first-line"); err != nil {
+	if err := m.services.tmux.SendText(sess.ID, "first-line"); err != nil {
 		t.Fatalf("send text: %v", err)
 	}
 	waitForPane("first-line")
 
-	if err := m.tmux.SendText(sess.ID, "second-line"); err != nil {
+	if err := m.services.tmux.SendText(sess.ID, "second-line"); err != nil {
 		t.Fatalf("send text: %v", err)
 	}
 	waitForPane("second-line")
@@ -255,8 +254,8 @@ func TestFirstRefreshResizesExistingSessions(t *testing.T) {
 		t.Fatalf("resize-window: %v", err)
 	}
 
-	m.sessionsSized = false
-	m.pane.geom = nil
+	m.startup.sessionsSized = false
+	m.focusPane.pane.geom = nil
 	m.applyCmd(t, m.refreshCmd())
 	if w, _ := windowSize(t, id); w != m.previewPaneWidth() {
 		t.Fatalf("after first refresh, window width = %d, want %d", w, m.previewPaneWidth())
@@ -321,10 +320,10 @@ func TestRelaunchedSessionIsRepinnedToThePreviewPanel(t *testing.T) {
 	// manager run recorded.
 	wantW, wantH := m.previewPaneWidth(), m.previewPaneHeight()
 	for _, born := range [][2]int{{0, 0}, {wantW + 40, wantH + 20}} {
-		if err := m.tmux.Kill(id); err != nil {
+		if err := m.services.tmux.Kill(id); err != nil {
 			t.Fatalf("kill: %v", err)
 		}
-		if err := m.tmux.Create(id, dir, "", nil, born[0], born[1]); err != nil {
+		if err := m.services.tmux.Create(id, dir, "", nil, born[0], born[1]); err != nil {
 			t.Fatalf("create: %v", err)
 		}
 		if w, h := windowSize(t, id); w == wantW && h == wantH {
@@ -343,7 +342,7 @@ func TestRefreshPublishesThePaneSize(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "sized", t.TempDir(), "")
 	m.applyCmd(t, m.refreshCmd())
-	width, height, err := m.store.PaneSize()
+	width, height, err := m.services.store.PaneSize()
 	if err != nil {
 		t.Fatalf("pane size: %v", err)
 	}
@@ -353,7 +352,7 @@ func TestRefreshPublishesThePaneSize(t *testing.T) {
 
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 150, Height: 45})
 	*m = *updated.(*Model)
-	width, height, err = m.store.PaneSize()
+	width, height, err = m.services.store.PaneSize()
 	if err != nil {
 		t.Fatalf("pane size after resize: %v", err)
 	}
@@ -365,7 +364,7 @@ func TestRefreshPublishesThePaneSize(t *testing.T) {
 func TestRebuildRowsNestsChildrenUnderParent(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
-	if err := m.store.CreateGroup("backend", dir); err != nil {
+	if err := m.services.store.CreateGroup("backend", dir); err != nil {
 		t.Fatalf("group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -375,14 +374,14 @@ func TestRebuildRowsNestsChildrenUnderParent(t *testing.T) {
 		ID: "sh1", Name: "term-one", Tool: "terminal", Cwd: dir,
 		Group: "backend", ParentID: agent.ID, Status: status.Idle,
 	}
-	if err := m.store.CreateSession(child); err != nil {
+	if err := m.services.store.CreateSession(child); err != nil {
 		t.Fatalf("child: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
 
 	var names []string
 	var depths []int
-	for _, row := range m.rows {
+	for _, row := range m.rail.rows {
 		if row.isGroup {
 			continue
 		}
@@ -400,23 +399,23 @@ func TestRebuildRowsNestsChildrenUnderParent(t *testing.T) {
 func TestSearchMatchingChildKeepsParent(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
-	if err := m.store.CreateGroup("backend", dir); err != nil {
+	if err := m.services.store.CreateGroup("backend", dir); err != nil {
 		t.Fatalf("group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
 	createSession(t, m, "coder", dir, "backend")
 	agent := m.sessionRows()[0]
-	if err := m.store.CreateSession(store.Session{
+	if err := m.services.store.CreateSession(store.Session{
 		ID: "sh1", Name: "ssh-prod", Tool: "terminal", Cwd: dir,
 		Group: "backend", ParentID: agent.ID, Status: status.Idle,
 	}); err != nil {
 		t.Fatalf("child: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
-	m.search = "ssh-prod"
+	m.rail.search = "ssh-prod"
 	m.rebuildRows()
 	names := []string{}
-	for _, row := range m.rows {
+	for _, row := range m.rail.rows {
 		if !row.isGroup {
 			names = append(names, row.sess.Name)
 		}
@@ -429,13 +428,13 @@ func TestSearchMatchingChildKeepsParent(t *testing.T) {
 func TestSearchCarriedParentKeepsStoreOrder(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
-	if err := m.store.CreateGroup("backend", dir); err != nil {
+	if err := m.services.store.CreateGroup("backend", dir); err != nil {
 		t.Fatalf("group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
 	createSession(t, m, "carrier", dir, "backend")
 	carrier := m.sessionRows()[0]
-	if err := m.store.CreateSession(store.Session{
+	if err := m.services.store.CreateSession(store.Session{
 		ID: "sh1", Name: "ssh-prod", Tool: "terminal", Cwd: dir,
 		Group: "backend", ParentID: carrier.ID, Status: status.Idle,
 	}); err != nil {
@@ -443,10 +442,10 @@ func TestSearchCarriedParentKeepsStoreOrder(t *testing.T) {
 	}
 	createSession(t, m, "ssh-runner", dir, "backend")
 	m.applyCmd(t, m.refreshCmd())
-	m.search = "ssh"
+	m.rail.search = "ssh"
 	m.rebuildRows()
 	names := []string{}
-	for _, row := range m.rows {
+	for _, row := range m.rail.rows {
 		if !row.isGroup {
 			names = append(names, row.sess.Name)
 		}
@@ -460,55 +459,55 @@ func TestSearchCarriedParentKeepsStoreOrder(t *testing.T) {
 func TestOrphanParentIDPaintsUnnested(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
-	if err := m.store.CreateGroup("backend", dir); err != nil {
+	if err := m.services.store.CreateGroup("backend", dir); err != nil {
 		t.Fatalf("group: %v", err)
 	}
-	if err := m.store.CreateSession(store.Session{
+	if err := m.services.store.CreateSession(store.Session{
 		ID: "gone", Name: "parent", Tool: "claude", Cwd: dir,
 		Group: "backend", Status: status.Idle,
 	}); err != nil {
 		t.Fatalf("parent: %v", err)
 	}
-	if err := m.store.CreateSession(store.Session{
+	if err := m.services.store.CreateSession(store.Session{
 		ID: "sh1", Name: "loose", Tool: "terminal", Cwd: dir,
 		Group: "backend", ParentID: "gone", Status: status.Idle,
 	}); err != nil {
 		t.Fatalf("orphan: %v", err)
 	}
-	if err := m.store.Delete("gone"); err != nil {
+	if err := m.services.store.Delete("gone"); err != nil {
 		t.Fatalf("delete parent: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
-	for _, row := range m.rows {
+	for _, row := range m.rail.rows {
 		if !row.isGroup && row.sess.Name == "loose" && row.depth == 1 {
 			return
 		}
 	}
-	t.Fatalf("orphan should sit un-nested in backend: %+v", m.rows)
+	t.Fatalf("orphan should sit un-nested in backend: %+v", m.rail.rows)
 }
 
 func TestArchiveViewShowsNestedShellWhenParentLive(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
-	if err := m.store.CreateGroup("backend", dir); err != nil {
+	if err := m.services.store.CreateGroup("backend", dir); err != nil {
 		t.Fatalf("group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
 	createSession(t, m, "coder", dir, "backend")
 	agent := m.sessionRows()[0]
-	if err := m.store.CreateSession(store.Session{
+	if err := m.services.store.CreateSession(store.Session{
 		ID: "sh1", Name: "old-term", Tool: "terminal", Cwd: dir,
 		Group: "backend", ParentID: agent.ID, Status: status.Idle,
 	}); err != nil {
 		t.Fatalf("child: %v", err)
 	}
-	if err := m.store.SetArchived("sh1", true); err != nil {
+	if err := m.services.store.SetArchived("sh1", true); err != nil {
 		t.Fatalf("archive: %v", err)
 	}
-	m.showArchived = true
+	m.rail.showArchived = true
 	m.applyCmd(t, m.refreshCmd())
 	var names []string
-	for _, row := range m.rows {
+	for _, row := range m.rail.rows {
 		if !row.isGroup {
 			names = append(names, row.sess.Name)
 		}
@@ -525,13 +524,13 @@ func TestArchiveViewShowsNestedShellWhenParentLive(t *testing.T) {
 func TestStatusFilterHoldsNestedIdleShell(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
-	if err := m.store.CreateGroup("backend", dir); err != nil {
+	if err := m.services.store.CreateGroup("backend", dir); err != nil {
 		t.Fatalf("group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
 	createSession(t, m, "coder", dir, "backend")
 	agent := m.sessionRows()[0]
-	if err := m.store.CreateSession(store.Session{
+	if err := m.services.store.CreateSession(store.Session{
 		ID: "sh1", Name: "term-hold", Tool: "terminal", Cwd: dir,
 		Group: "backend", ParentID: agent.ID, Status: status.Idle,
 	}); err != nil {
@@ -556,7 +555,7 @@ func TestStatusFilterHoldsNestedIdleShell(t *testing.T) {
 func TestUnlistedParentsLeaveChildrenInStoreOrder(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
-	if err := m.store.CreateGroup("backend", dir); err != nil {
+	if err := m.services.store.CreateGroup("backend", dir); err != nil {
 		t.Fatalf("group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -568,18 +567,18 @@ func TestUnlistedParentsLeaveChildrenInStoreOrder(t *testing.T) {
 			ID: "sh" + strconv.Itoa(i), Name: "term-" + strconv.Itoa(i), Tool: "terminal",
 			Cwd: dir, Group: "backend", ParentID: parent.ID, Status: status.Idle,
 		}
-		if err := m.store.CreateSession(child); err != nil {
+		if err := m.services.store.CreateSession(child); err != nil {
 			t.Fatalf("child %d: %v", i, err)
 		}
 	}
 	for _, parent := range rows {
-		if err := m.store.SetArchived(parent.ID, true); err != nil {
+		if err := m.services.store.SetArchived(parent.ID, true); err != nil {
 			t.Fatalf("archive %s: %v", parent.ID, err)
 		}
 	}
 	m.applyCmd(t, m.refreshCmd())
 	var names []string
-	for _, row := range m.rows {
+	for _, row := range m.rail.rows {
 		if !row.isGroup {
 			names = append(names, row.sess.Name)
 			if row.depth != 1 {
@@ -596,27 +595,27 @@ func TestUnlistedParentsLeaveChildrenInStoreOrder(t *testing.T) {
 func TestSearchMatchingArchivedChildDoesNotHoistLiveParent(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
-	if err := m.store.CreateGroup("backend", dir); err != nil {
+	if err := m.services.store.CreateGroup("backend", dir); err != nil {
 		t.Fatalf("group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
 	createSession(t, m, "coder", dir, "backend")
 	agent := m.sessionRows()[0]
-	if err := m.store.CreateSession(store.Session{
+	if err := m.services.store.CreateSession(store.Session{
 		ID: "sh1", Name: "ssh-old", Tool: "terminal", Cwd: dir,
 		Group: "backend", ParentID: agent.ID, Status: status.Idle,
 	}); err != nil {
 		t.Fatalf("child: %v", err)
 	}
-	if err := m.store.SetArchived("sh1", true); err != nil {
+	if err := m.services.store.SetArchived("sh1", true); err != nil {
 		t.Fatalf("archive: %v", err)
 	}
-	m.showArchived = true
+	m.rail.showArchived = true
 	m.applyCmd(t, m.refreshCmd())
-	m.search = "ssh-old"
+	m.rail.search = "ssh-old"
 	m.rebuildRows()
 	var names []string
-	for _, row := range m.rows {
+	for _, row := range m.rail.rows {
 		if !row.isGroup {
 			names = append(names, row.sess.Name)
 		}
@@ -685,12 +684,12 @@ func agentPaneSize(t *testing.T, id string) (int, int) {
 // refresh has to hand that socket to the model it renders from.
 func TestRefreshCarriesTheSocketItReadPanesFrom(t *testing.T) {
 	for _, socket := range []string{"/tmp/first/agentmgr", "/tmp/second/agentmgr", ""} {
-		m := &Model{collapsed: map[string]bool{}, tmuxSocket: "/tmp/stale/agentmgr"}
+		m := &Model{workspace: workspace{tmuxSocket: "/tmp/stale/agentmgr"}, rail: railState{collapsed: map[string]bool{}}}
 		m.Update(refreshMsg{tmuxSocket: socket, leadingManager: true, listedAt: time.Now()})
-		if m.tmuxSocket != socket {
-			t.Fatalf("model socket = %q, want the poll's %q", m.tmuxSocket, socket)
+		if m.workspace.tmuxSocket != socket {
+			t.Fatalf("model socket = %q, want the poll's %q", m.workspace.tmuxSocket, socket)
 		}
-		if !m.leadingManager {
+		if !m.workspace.leadingManager {
 			t.Fatal("the poll's hold on the store should reach the model")
 		}
 	}
@@ -700,18 +699,18 @@ func TestRefreshCarriesTheSocketItReadPanesFrom(t *testing.T) {
 // manager creates is bound and labelled the same way focus reads its keys.
 func TestNewHandsTheKeyTableToTmux(t *testing.T) {
 	m := buildModel(t)
-	cfg := m.cfg
+	cfg := m.services.cfg
 	cfg.SessionKeys = keybind.DefaultSession().With(keybind.Detach, bindingOf(t, "f9")).With(keybind.Review, bindingOf(t, "ctrl+g"))
-	loaded := New(cfg, m.store, m.tmux, m.poller.engine, m.hooks, "dev")
+	loaded := New(cfg, m.services.store, m.services.tmux, m.services.engine, m.services.hooks, "dev")
 	loaded.width, loaded.height = 120, 40
-	t.Cleanup(func() { m.tmux.SetSessionKeys(keybind.DefaultSession()) })
-	if got := loaded.keys.Binding(keybind.Editor).Label(); got != "f3" {
+	t.Cleanup(func() { m.services.tmux.SetSessionKeys(keybind.DefaultSession()) })
+	if got := loaded.services.keys.Binding(keybind.Editor).Label(); got != "f3" {
 		t.Fatalf("editor left out should take the default, got %q", got)
 	}
 	createSession(t, loaded, "tablebound", t.TempDir(), "")
 	loaded.selectSessionRow(t, "tablebound")
-	sess := loaded.rows[loaded.cursor].sess
-	t.Cleanup(func() { m.tmux.Kill(sess.ID) })
+	sess := loaded.rail.rows[loaded.rail.cursor].sess
+	t.Cleanup(func() { m.services.tmux.Kill(sess.ID) })
 	right, err := tmuxCmd("display-message", "-p", "-t", "am_"+sess.ID, "#{T:status-right}").CombinedOutput()
 	if err != nil {
 		t.Fatalf("status-right: %v", err)
@@ -728,7 +727,7 @@ func TestStartupPreservesExistingPaneHeight(t *testing.T) {
 	if _, err := tmuxCmd("resize-window", "-t", "am_"+id, "-x", "120", "-y", "80").CombinedOutput(); err != nil {
 		t.Fatal(err)
 	}
-	loaded := New(m.cfg, m.store, m.tmux, m.poller.engine, m.hooks, "dev")
+	loaded := New(m.services.cfg, m.services.store, m.services.tmux, m.services.engine, m.services.hooks, "dev")
 	loaded.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	loaded.applyCmd(t, loaded.refreshCmd())
 	if _, h := windowSize(t, id); h < 80 {
@@ -738,16 +737,16 @@ func TestStartupPreservesExistingPaneHeight(t *testing.T) {
 
 func TestStartupErrorStaysVisibleUntilFirstRefresh(t *testing.T) {
 	m := buildModel(t)
-	m.booting = true
+	m.startup.booting = true
 	m.Update(errMsg{errors.New("startup poll failed")})
-	if !m.booting {
+	if !m.startup.booting {
 		t.Fatal("an error before the first refresh must not finish boot")
 	}
 	if !strings.Contains(ansi.Strip(m.View()), "startup poll failed") {
 		t.Fatal("startup error is hidden behind the boot loader")
 	}
 	m.Update(refreshMsg{listedAt: time.Now()})
-	if m.booting {
+	if m.startup.booting {
 		t.Fatal("the first successful refresh must finish boot")
 	}
 }

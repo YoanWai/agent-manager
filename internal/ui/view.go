@@ -18,9 +18,9 @@ func (m *Model) View() string {
 	if m.width == 0 {
 		return m.syncCursorAnchor("loading...")
 	}
-	if m.booting {
+	if m.startup.booting {
 		var lines []string
-		for _, line := range ringLoader(m.width, m.height, "loading", m.startupPhase) {
+		for _, line := range ringLoader(m.width, m.height, "loading", m.startup.startupPhase) {
 			lines = append(lines, paint(line, m.width, backdropHex()))
 		}
 		frame := m.overlayTopRight(strings.Join(lines, "\n"), m.statusToast(), 0)
@@ -109,7 +109,7 @@ func (m *Model) previewPaneWidth() int {
 // preview panel's box in the split, the whole terminal body in the full
 // screen layout, which paints captures across the full width.
 func (m *Model) paneTargetSize() (int, int) {
-	if m.fullLayout {
+	if m.prefs.fullLayout {
 		width, height := m.width, m.listBodyHeight()
 		if width < 1 {
 			width = 1
@@ -153,7 +153,7 @@ func (m *Model) previewPaneHeight() int {
 // fullFocus reports whether the focused session owns the whole terminal
 // body, which is how the full screen layout opens a session.
 func (m *Model) fullFocus() bool {
-	return m.fullLayout && m.mode == modeFocus
+	return m.prefs.fullLayout && m.mode == modeFocus
 }
 
 // focusPaneRows is the rows of pane content the focused view paints: the
@@ -177,10 +177,10 @@ func (m *Model) statusLine() string {
 		return m.statusMessage("✕", "●", "▲")
 	case m.scrolledBack():
 		return keyStyle.Render("scrolled ") +
-			subtleStyle.Render(fmt.Sprintf("%d lines back · wheel down or type to catch up", m.focusScroll))
-	case m.mode == modeFocus && m.copied > 0:
+			subtleStyle.Render(fmt.Sprintf("%d lines back · wheel down or type to catch up", m.focusPane.focusScroll))
+	case m.mode == modeFocus && m.focusPane.copied > 0:
 		return keyStyle.Render("copied ") +
-			subtleStyle.Render(fmt.Sprintf("%d chars to clipboard", m.copied))
+			subtleStyle.Render(fmt.Sprintf("%d chars to clipboard", m.focusPane.copied))
 	case m.split.resizeMode || m.split.dragging:
 		hint := "←→ resize · drag divider · enter set · esc cancel"
 		if m.split.dragging {
@@ -489,7 +489,7 @@ func padToHeight(s string, height int) string {
 // on, then a quieter tier for the keys that always apply. A transient mode
 // (quick prompt, rename, resize) owns the legend alone while it is up.
 func (m *Model) viewFooter() string {
-	if m.reorder.active {
+	if m.rail.reorder.active {
 		return m.reorderFooter()
 	}
 	if m.quick.active {
@@ -526,8 +526,8 @@ func (m *Model) viewFooter() string {
 		// Clicking the session's own row only leaves focus where the list
 		// is painted, so the full screen layout names the button and the
 		// key alone.
-		back := m.keys.Binding(keybind.Detach).Label()
-		if !m.fullLayout {
+		back := m.services.keys.Binding(keybind.Detach).Label()
+		if !m.prefs.fullLayout {
 			back += " / click its row"
 		}
 		back += " / mouse back"
@@ -535,19 +535,19 @@ func (m *Model) viewFooter() string {
 			{"typing", "to agent"},
 			{back, "back"},
 		}
-		if m.arrowStep {
+		if m.prefs.arrowStep {
 			pairs = append(pairs, [2]string{"←", "prompt start: back"})
 		}
-		if label := m.keys.Binding(keybind.Review).Label(); label != "" {
+		if label := m.services.keys.Binding(keybind.Review).Label(); label != "" {
 			pairs = append(pairs, [2]string{label, "review"})
 		}
-		if label := m.keys.Binding(keybind.Editor).Label(); label != "" {
+		if label := m.services.keys.Binding(keybind.Editor).Label(); label != "" {
 			pairs = append(pairs, [2]string{label, "editor"})
 		}
 		// The word and line gestures stay in the key map, where there is
 		// room to name all three.
 		pairs = append(pairs, [2]string{"drag / click", "copy"})
-		if m.pane.mouse {
+		if m.focusPane.pane.mouse {
 			pairs = append(pairs, [2]string{"click / alt+drag", "agent UI"})
 		}
 		return m.transientFooter(legendSection{title: "Focused", pairs: pairs})
@@ -566,7 +566,7 @@ func (m *Model) listFooter() string {
 // takes the one row it needs and hands the rest to the body.
 func (m *Model) transientFooter(section legendSection) string {
 	bar := legendBar([]legendSection{section}, m.width)
-	if m.fullLayout {
+	if m.prefs.fullLayout {
 		return bar
 	}
 	return padToHeight(bar, lipgloss.Height(m.listFooter()))
@@ -586,14 +586,14 @@ func (m *Model) rowLegend() legendSection {
 	}
 	if row.isGroup {
 		foldAction := "fold"
-		if m.collapsed[row.group] {
+		if m.rail.collapsed[row.group] {
 			foldAction = "unfold"
 		}
 		pairs := [][2]string{{k(keybind.Open), foldAction}}
-		if !m.mouseDisabled {
+		if !m.prefs.mouseDisabled {
 			pairs = append(pairs, [2]string{"double click", foldAction})
 		}
-		if m.arrowStep {
+		if m.prefs.arrowStep {
 			pairs = append(pairs, m.legendPair(keybind.StepOut, "close", keybind.StepIn, "open"))
 		}
 		pairs = append(pairs, [][2]string{
@@ -611,14 +611,14 @@ func (m *Model) rowLegend() legendSection {
 		title, conversation = "Shell", nil
 	}
 	pairs := [][2]string{{k(keybind.Open), enterHint}, {k(keybind.Attach), attachHint}}
-	if !m.mouseDisabled {
+	if !m.prefs.mouseDisabled {
 		gesture := "double click"
-		if !m.fullLayout {
+		if !m.prefs.fullLayout {
 			gesture = "click"
 		}
 		pairs = append(pairs, [2]string{gesture, "focus"})
 	}
-	if m.arrowStep {
+	if m.prefs.arrowStep {
 		pairs = append(pairs, [2]string{k(keybind.StepIn), "focus"})
 	}
 	if row.sess.Status == status.Finished && !row.sess.Archived {
@@ -637,7 +637,7 @@ func (m *Model) rowLegend() legendSection {
 
 // archiveRestoreLegend leaves out the key of the pair that no-ops in this view.
 func (m *Model) archiveRestoreLegend() [2]string {
-	if m.showArchived {
+	if m.rail.showArchived {
 		return [2]string{m.listGlyph(keybind.Restore), "restore"}
 	}
 	return [2]string{m.listGlyph(keybind.Archive), "archive"}
@@ -666,7 +666,7 @@ func legendPairsBound(pairs [][2]string) [][2]string {
 func (m *Model) listGlyph(actions ...string) string {
 	joined := ""
 	for _, action := range actions {
-		glyph := m.listKeys.Binding(action).Glyph("/")
+		glyph := m.services.listKeys.Binding(action).Glyph("/")
 		if glyph == "" {
 			continue
 		}
@@ -682,15 +682,15 @@ func (m *Model) listGlyph(actions ...string) string {
 // the list, filtering it, and leaving.
 func (m *Model) viewLegend() legendSection {
 	emptyGroupsAction := "hide empty"
-	if m.hideEmptyGroups {
+	if m.rail.hideEmptyGroups {
 		emptyGroupsAction = "show empty"
 	}
 	statusFilterAction := "attention"
-	if m.statusFilter.active() {
+	if m.rail.statusFilter.active() {
 		statusFilterAction = "show all"
 	}
 	archivedAction := "archived"
-	if m.showArchived {
+	if m.rail.showArchived {
 		archivedAction = "back to active"
 	}
 	foldAllAction := "fold all"
@@ -701,7 +701,7 @@ func (m *Model) viewLegend() legendSection {
 	// something, the filters, then the keys a user already knows to look for.
 	k := m.listGlyph
 	emptyGroupsKey := k(keybind.EmptyGroups)
-	if m.showArchived {
+	if m.rail.showArchived {
 		emptyGroupsKey = ""
 	}
 	pairs := [][2]string{{strings.TrimSpace(k(keybind.Up) + " " + k(keybind.Down)), "navigate"}}

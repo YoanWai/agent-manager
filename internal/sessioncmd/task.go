@@ -31,7 +31,7 @@ func (s *Sessions) Tasks(sessionID string) ([]Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer runtime.store.Close()
+	defer runtime.Close()
 	if _, err := runtime.caller(sessionID); err != nil {
 		return nil, err
 	}
@@ -104,7 +104,7 @@ func (s *Sessions) CreateTask(sessionID, title, body string, dependsOn []string)
 	if err != nil {
 		return Task{}, err
 	}
-	defer runtime.store.Close()
+	defer runtime.Close()
 	if _, err := runtime.caller(sessionID); err != nil {
 		return Task{}, err
 	}
@@ -140,7 +140,7 @@ func (s *Sessions) ClaimTask(sessionID, taskID string) (Task, error) {
 	if err != nil {
 		return Task{}, err
 	}
-	defer runtime.store.Close()
+	defer runtime.Close()
 	caller, err := runtime.caller(sessionID)
 	if err != nil {
 		return Task{}, err
@@ -210,7 +210,7 @@ func (s *Sessions) settleTask(sessionID, taskID string, done bool) (Task, error)
 	if err != nil {
 		return Task{}, err
 	}
-	defer runtime.store.Close()
+	defer runtime.Close()
 	caller, err := runtime.caller(sessionID)
 	if err != nil {
 		return Task{}, err
@@ -246,7 +246,7 @@ func (s *Sessions) DeleteTask(sessionID, taskID string) error {
 	if err != nil {
 		return err
 	}
-	defer runtime.store.Close()
+	defer runtime.Close()
 	if _, err := runtime.caller(sessionID); err != nil {
 		return err
 	}

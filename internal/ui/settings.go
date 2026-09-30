@@ -19,7 +19,7 @@ func (m *Model) defaultTool() string {
 	if len(names) == 0 {
 		return ""
 	}
-	chosen, err := m.store.Setting("default_tool")
+	chosen, err := m.services.store.Setting("default_tool")
 	if err != nil {
 		m.errBar.text = "reading default tool setting: " + err.Error()
 		return names[0]
@@ -36,7 +36,7 @@ func (m *Model) defaultTool() string {
 
 // hiddenTools returns the set of CLI names the user turned off for new sessions.
 func (m *Model) hiddenTools() map[string]bool {
-	raw, err := m.store.Setting(hiddenToolsSetting)
+	raw, err := m.services.store.Setting(hiddenToolsSetting)
 	if err != nil {
 		m.errBar.text = "reading hidden tools setting: " + err.Error()
 		return nil
@@ -76,7 +76,7 @@ func formatHiddenTools(hidden map[string]bool) string {
 }
 
 func (m *Model) defaultWorktree() bool {
-	chosen, err := m.store.Setting(worktreeSetting)
+	chosen, err := m.services.store.Setting(worktreeSetting)
 	if err != nil {
 		m.errBar.text = "reading worktree setting: " + err.Error()
 		return false
@@ -86,7 +86,7 @@ func (m *Model) defaultWorktree() bool {
 
 func (m *Model) spawnWorktreeDefault(group string) bool {
 	for g := group; g != ""; g = parentGroup(g) {
-		switch m.groupWorktrees[g] {
+		switch m.workspace.groupWorktrees[g] {
 		case "on":
 			return true
 		case "off":
@@ -94,8 +94,8 @@ func (m *Model) spawnWorktreeDefault(group string) bool {
 		}
 	}
 	for _, name := range m.enabledToolNames() {
-		if name == m.lastSpawnTool {
-			return m.lastSpawnWorktree
+		if name == m.ledger.lastSpawnTool {
+			return m.ledger.lastSpawnWorktree
 		}
 	}
 	return m.defaultWorktree()
@@ -116,31 +116,31 @@ const worktreeLookupTTL = 2 * time.Second
 // that merely contains repos cannot, so the toggle is gated up front
 // instead of failing once the prompt is already typed.
 func (m *Model) worktreeCapable(dir string) bool {
-	if m.gitDrv == nil || dir == "" {
+	if m.services.gitDrv == nil || dir == "" {
 		return false
 	}
-	if answer, seen := m.worktreeRepos[dir]; seen && time.Since(answer.at) < worktreeLookupTTL {
+	if answer, seen := m.ledger.worktreeRepos[dir]; seen && time.Since(answer.at) < worktreeLookupTTL {
 		return answer.capable
 	}
-	_, err := m.gitDrv.RepoRoot(dir)
-	if m.worktreeRepos == nil {
-		m.worktreeRepos = make(map[string]repoAnswer)
+	_, err := m.services.gitDrv.RepoRoot(dir)
+	if m.ledger.worktreeRepos == nil {
+		m.ledger.worktreeRepos = make(map[string]repoAnswer)
 	}
-	m.worktreeRepos[dir] = repoAnswer{capable: err == nil, at: time.Now()}
+	m.ledger.worktreeRepos[dir] = repoAnswer{capable: err == nil, at: time.Now()}
 	return err == nil
 }
 
 // forgetWorktreeCapability drops the memo so the next look is a fresh one.
 // Opening the form or the quick bar calls it.
 func (m *Model) forgetWorktreeCapability() {
-	m.worktreeRepos = nil
+	m.ledger.worktreeRepos = nil
 }
 
 // defaultSplitLayout reports whether review mode should open in split
 // (side-by-side) layout. Split is the default; a stored "unified" choice
 // opts out. A store error is surfaced but still yields the split default.
 func (m *Model) defaultSplitLayout() bool {
-	chosen, err := m.store.Setting(diffLayoutSetting)
+	chosen, err := m.services.store.Setting(diffLayoutSetting)
 	if err != nil {
 		m.errBar.text = "reading diff layout setting: " + err.Error()
 		return true
@@ -206,7 +206,7 @@ func storedMouseDisabled(st *store.Store) bool {
 // swaps the pair. Cached on the model because the footer reads it every
 // frame.
 func (m *Model) enterFocuses() bool {
-	return m.focusOnEnter
+	return m.prefs.focusOnEnter
 }
 
 // storedFocusOnEnter reads the persisted key choice. A read failure yields
@@ -246,7 +246,7 @@ func storedNotifyFinished(st *store.Store) bool {
 }
 
 func (m *Model) openSettings() {
-	if len(m.cfg.Tools) == 0 {
+	if len(m.services.cfg.Tools) == 0 {
 		m.errBar.text = "no tools configured"
 		return
 	}
@@ -259,18 +259,18 @@ func (m *Model) openSettings() {
 		layoutSplit:    m.defaultSplitLayout(),
 		quickCloseSend: m.quickCloseAfterSend(),
 		enterFocuses:   m.enterFocuses(),
-		arrowStep:      m.arrowStep,
+		arrowStep:      m.prefs.arrowStep,
 
-		comfortableRows: m.comfortableRows,
-		fullLayout:      m.fullLayout,
-		hideHeader:      m.hideHeader,
-		hideStats:       m.hideStats,
-		mouseDisabled:   m.mouseDisabled,
+		comfortableRows: m.prefs.comfortableRows,
+		fullLayout:      m.prefs.fullLayout,
+		hideHeader:      m.prefs.hideHeader,
+		hideStats:       m.prefs.hideStats,
+		mouseDisabled:   m.prefs.mouseDisabled,
 		worktreeDefault: m.defaultWorktree(),
-		notifications:   storedNotifications(m.store),
-		notifyFinished:  storedNotifyFinished(m.store),
-		themeAuto:       themeAutoEnabled(m.store),
-		manualTheme:     themes[themeIndex(storedTheme(m.store))].Name,
+		notifications:   storedNotifications(m.services.store),
+		notifyFinished:  storedNotifyFinished(m.services.store),
+		themeAuto:       themeAutoEnabled(m.services.store),
+		manualTheme:     themes[themeIndex(storedTheme(m.services.store))].Name,
 	}
 	m.mode = modeSettings
 }
@@ -332,7 +332,7 @@ func (m *Model) saveAndCloseSettings() (tea.Model, tea.Cmd) {
 
 func (m *Model) persistSettings() {
 	if len(m.settings.toolNames) > 0 {
-		if err := m.store.SetSetting("default_tool", m.settings.toolNames[m.settings.toolIndex]); err != nil {
+		if err := m.services.store.SetSetting("default_tool", m.settings.toolNames[m.settings.toolIndex]); err != nil {
 			m.errBar.text = err.Error()
 		}
 	}
@@ -342,111 +342,111 @@ func (m *Model) persistSettings() {
 	if m.settings.themeAuto {
 		manualTheme = m.settings.manualTheme
 	}
-	if err := m.store.SetSetting(themeSetting, manualTheme); err != nil {
+	if err := m.services.store.SetSetting(themeSetting, manualTheme); err != nil {
 		m.errBar.text = err.Error()
 	}
 	themeAuto := "off"
 	if m.settings.themeAuto {
 		themeAuto = "on"
 	}
-	if err := m.store.SetSetting(themeAutoSetting, themeAuto); err != nil {
+	if err := m.services.store.SetSetting(themeAutoSetting, themeAuto); err != nil {
 		m.errBar.text = err.Error()
 	}
 	layout := "split"
 	if !m.settings.layoutSplit {
 		layout = "unified"
 	}
-	if err := m.store.SetSetting(diffLayoutSetting, layout); err != nil {
+	if err := m.services.store.SetSetting(diffLayoutSetting, layout); err != nil {
 		m.errBar.text = err.Error()
 	}
 	quickClose := "stay"
 	if m.settings.quickCloseSend {
 		quickClose = "close"
 	}
-	if err := m.store.SetSetting(quickCloseSetting, quickClose); err != nil {
+	if err := m.services.store.SetSetting(quickCloseSetting, quickClose); err != nil {
 		m.errBar.text = err.Error()
 	}
 	focusKey := "focus"
 	if !m.settings.enterFocuses {
 		focusKey = "attach"
 	}
-	if err := m.store.SetSetting(focusKeySetting, focusKey); err != nil {
+	if err := m.services.store.SetSetting(focusKeySetting, focusKey); err != nil {
 		m.errBar.text = err.Error()
 	}
 	arrowStep := "on"
 	if !m.settings.arrowStep {
 		arrowStep = "off"
 	}
-	if err := m.store.SetSetting(arrowStepSetting, arrowStep); err != nil {
+	if err := m.services.store.SetSetting(arrowStepSetting, arrowStep); err != nil {
 		m.errBar.text = err.Error()
 	}
 	density := "compact"
 	if m.settings.comfortableRows {
 		density = "comfortable"
 	}
-	if err := m.store.SetSetting(listDensitySetting, density); err != nil {
+	if err := m.services.store.SetSetting(listDensitySetting, density); err != nil {
 		m.errBar.text = err.Error()
 	}
-	if err := m.store.SetSetting(sessionLayoutSetting, sessionLayoutValue(m.settings.fullLayout)); err != nil {
+	if err := m.services.store.SetSetting(sessionLayoutSetting, sessionLayoutValue(m.settings.fullLayout)); err != nil {
 		m.errBar.text = err.Error()
 	}
 	hideHeader := "off"
 	if m.settings.hideHeader {
 		hideHeader = "on"
 	}
-	if err := m.store.SetSetting(hideHeaderSetting, hideHeader); err != nil {
+	if err := m.services.store.SetSetting(hideHeaderSetting, hideHeader); err != nil {
 		m.errBar.text = err.Error()
 	}
 	hideStats := "off"
 	if m.settings.hideStats {
 		hideStats = "on"
 	}
-	if err := m.store.SetSetting(hideStatsSetting, hideStats); err != nil {
+	if err := m.services.store.SetSetting(hideStatsSetting, hideStats); err != nil {
 		m.errBar.text = err.Error()
 	}
 	mouseMode := "on"
 	if m.settings.mouseDisabled {
 		mouseMode = "off"
 	}
-	if err := m.store.SetSetting(mouseSetting, mouseMode); err != nil {
+	if err := m.services.store.SetSetting(mouseSetting, mouseMode); err != nil {
 		m.errBar.text = err.Error()
 	}
 	worktreeChoice := "off"
 	if m.settings.worktreeDefault {
 		worktreeChoice = "on"
 	}
-	if err := m.store.SetSetting(worktreeSetting, worktreeChoice); err != nil {
+	if err := m.services.store.SetSetting(worktreeSetting, worktreeChoice); err != nil {
 		m.errBar.text = err.Error()
 	}
 	notifications := "off"
 	if m.settings.notifications {
 		notifications = "on"
 	}
-	if err := m.store.SetSetting(notificationsSetting, notifications); err != nil {
+	if err := m.services.store.SetSetting(notificationsSetting, notifications); err != nil {
 		m.errBar.text = err.Error()
 	}
 	notifyFinished := "off"
 	if m.settings.notifyFinished {
 		notifyFinished = "on"
 	}
-	if err := m.store.SetSetting(notifyFinishedSetting, notifyFinished); err != nil {
+	if err := m.services.store.SetSetting(notifyFinishedSetting, notifyFinished); err != nil {
 		m.errBar.text = err.Error()
 	}
-	m.focusOnEnter = m.settings.enterFocuses
-	m.arrowStep = m.settings.arrowStep
-	m.comfortableRows = m.settings.comfortableRows
-	m.fullLayout = m.settings.fullLayout
-	m.hideHeader = m.settings.hideHeader
-	m.hideStats = m.settings.hideStats
-	m.mouseDisabled = m.settings.mouseDisabled
+	m.prefs.focusOnEnter = m.settings.enterFocuses
+	m.prefs.arrowStep = m.settings.arrowStep
+	m.prefs.comfortableRows = m.settings.comfortableRows
+	m.prefs.fullLayout = m.settings.fullLayout
+	m.prefs.hideHeader = m.settings.hideHeader
+	m.prefs.hideStats = m.settings.hideStats
+	m.prefs.mouseDisabled = m.settings.mouseDisabled
 }
 
 func (m *Model) openCLIPicker() {
-	names := sortedToolNames(m.cfg)
+	names := sortedToolNames(m.services.cfg)
 	hidden := make(map[string]bool)
 	for name, on := range m.hiddenTools() {
 		if on {
-			if _, ok := m.cfg.Tools[name]; ok {
+			if _, ok := m.services.cfg.Tools[name]; ok {
 				hidden[name] = true
 			}
 		}
@@ -478,7 +478,7 @@ func (m *Model) handleCLIPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.toggleCLIHidden(m.settings.cliNames[m.settings.cliCursor])
 	case "esc":
-		if err := m.store.SetSetting(hiddenToolsSetting, formatHiddenTools(m.settings.cliHidden)); err != nil {
+		if err := m.services.store.SetSetting(hiddenToolsSetting, formatHiddenTools(m.settings.cliHidden)); err != nil {
 			m.errBar.text = err.Error()
 		}
 		m.settings.cliPicker = false

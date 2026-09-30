@@ -11,7 +11,6 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/git"
-	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -65,11 +64,22 @@ type CreateSessionOptions struct {
 
 type Sessions struct {
 	commands
-	newGit func() (*git.Driver, error)
+	newGit       func() (*git.Driver, error)
+	archiveOwner ArchiveOwner
 }
 
 func NewSessions(configDir string, words Vocabulary) *Sessions {
 	return newSessions(configDir, words, tmux.New, git.New)
+}
+
+func NewSessionsWithBackend(backend *Backend, words Vocabulary) *Sessions {
+	if backend == nil {
+		panic("session command backend is required")
+	}
+	return &Sessions{
+		commands: commands{words: words, backend: backend},
+		newGit:   backend.gitDriver,
+	}
 }
 
 func newSessions(configDir string, words Vocabulary, newDriver func() (*tmux.Driver, error), newGit func() (*git.Driver, error)) *Sessions {
@@ -151,7 +161,7 @@ func (s *Sessions) List(sessionID string) ([]Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer runtime.store.Close()
+	defer runtime.Close()
 	if _, err := runtime.caller(sessionID); err != nil {
 		return nil, err
 	}
@@ -179,7 +189,7 @@ func (s *Sessions) Groups(sessionID string) ([]Group, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer runtime.store.Close()
+	defer runtime.Close()
 	if _, err := runtime.caller(sessionID); err != nil {
 		return nil, err
 	}
@@ -223,7 +233,7 @@ func (s *Sessions) CreateGroup(sessionID, path, directory string) (Group, error)
 	if err != nil {
 		return Group{}, err
 	}
-	defer runtime.store.Close()
+	defer runtime.Close()
 	if _, err := runtime.caller(sessionID); err != nil {
 		return Group{}, err
 	}
@@ -281,7 +291,7 @@ func (s *Sessions) DeleteGroup(sessionID, path string) (GroupRemoval, error) {
 	if err != nil {
 		return GroupRemoval{}, err
 	}
-	defer runtime.store.Close()
+	defer runtime.Close()
 	if _, err := runtime.caller(sessionID); err != nil {
 		return GroupRemoval{}, err
 	}
@@ -300,7 +310,7 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 	if err != nil {
 		return Session{}, err
 	}
-	defer runtime.store.Close()
+	defer runtime.Close()
 	caller, err := runtime.caller(sessionID)
 	if err != nil {
 		return Session{}, err
@@ -358,8 +368,15 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 	}
 
 	plan := launch.Assemble(toolName, tool, prompt, autoNamed)
-	manager := hooks.NewManager(s.configDir)
-	command, env, err := launch.Environment(manager, toolName, tool, plan.Command, id)
+	var lifecycleGit *git.Driver
+	if worktree.repo != "" {
+		lifecycleGit, err = s.newGit()
+		if err != nil {
+			discard()
+			return Session{}, err
+		}
+	}
+	lifecycle, err := s.lifecycle(runtime, lifecycleGit)
 	if err != nil {
 		discard()
 		return Session{}, err
@@ -377,18 +394,16 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 		PendingInputs:  plan.PendingInputs,
 		LaunchPrompt:   plan.LaunchPrompt,
 	}
-	if err := runtime.createPane(sess.ID, sess.Cwd, command, env); err != nil {
-		discard()
+	launched, err := lifecycle.Launch(LaunchRequest{
+		Session:          sess,
+		Tool:             tool,
+		BaseCommand:      plan.Command,
+		RollbackWorktree: worktree.repo != "",
+	})
+	if err != nil {
 		return Session{}, err
 	}
-	sess.TmuxSocket = runtime.driver.SocketPath()
-	if err := runtime.store.CreateSession(sess); err != nil {
-		_ = runtime.driver.Kill(sess.ID)
-		discard()
-		return Session{}, err
-	}
-	_ = runtime.driver.SetLabel(sess.ID, sessionLabel(sess.Group, sess.Name))
-	return runtime.sessionInfo(sess, true, false), nil
+	return runtime.sessionInfo(launched.Session, true, false), nil
 }
 
 type worktreeTarget struct {
@@ -492,7 +507,7 @@ func (s *Sessions) Send(sessionID, targetID, message string) (SendResult, error)
 	if err != nil {
 		return SendResult{}, err
 	}
-	defer runtime.store.Close()
+	defer runtime.Close()
 	caller, err := runtime.caller(sessionID)
 	if err != nil {
 		return SendResult{}, err
@@ -541,7 +556,7 @@ func (s *Sessions) MessageStatus(sessionID string, messageID int64) (MessageStat
 	if err != nil {
 		return MessageState{}, err
 	}
-	defer runtime.store.Close()
+	defer runtime.Close()
 	caller, err := runtime.caller(sessionID)
 	if err != nil {
 		return MessageState{}, err
@@ -650,7 +665,7 @@ func (s *Sessions) Read(sessionID, targetID string) (SessionScreen, error) {
 	if err != nil {
 		return SessionScreen{}, err
 	}
-	defer runtime.store.Close()
+	defer runtime.Close()
 	if _, err := runtime.caller(sessionID); err != nil {
 		return SessionScreen{}, err
 	}
@@ -689,7 +704,7 @@ func (s *Sessions) Kill(sessionID, targetID string) (Session, error) {
 	if err != nil {
 		return Session{}, err
 	}
-	defer runtime.store.Close()
+	defer runtime.Close()
 	if _, err := runtime.caller(sessionID); err != nil {
 		return Session{}, err
 	}
@@ -700,26 +715,15 @@ func (s *Sessions) Kill(sessionID, targetID string) (Session, error) {
 	if target.ID == sessionID {
 		return Session{}, errors.New("a session cannot kill itself")
 	}
-	if runtime.driver.Exists(target.ID) {
-		if pane, err := runtime.driver.CapturePane(target.ID); err == nil && pane != "" {
-			if err := runtime.store.SetSnapshot(target.ID, pane); err != nil {
-				return Session{}, err
-			}
-		}
-		if err := runtime.driver.Kill(target.ID); err != nil {
-			return Session{}, err
-		}
-	}
-	// The agent dies without running its session-end hook, so a leftover
-	// status file would otherwise decide what a revived session reads as.
-	if err := hooks.NewManager(s.configDir).Remove(target.ID); err != nil {
+	lifecycle, err := s.lifecycle(runtime, nil)
+	if err != nil {
 		return Session{}, err
 	}
-	if err := runtime.store.UpdateStatus(target.ID, status.Dead); err != nil {
+	killed, err := lifecycle.Kill(target)
+	if err != nil {
 		return Session{}, err
 	}
-	target.Status = status.Dead
-	return runtime.sessionInfo(target, false, false), nil
+	return runtime.sessionInfo(killed, false, false), nil
 }
 
 // Revive relaunches a dead session under its old id, keeping its name,
@@ -730,7 +734,7 @@ func (s *Sessions) Revive(sessionID, targetID string) (Session, error) {
 	if err != nil {
 		return Session{}, err
 	}
-	defer runtime.store.Close()
+	defer runtime.Close()
 	if _, err := runtime.caller(sessionID); err != nil {
 		return Session{}, err
 	}
@@ -738,93 +742,33 @@ func (s *Sessions) Revive(sessionID, targetID string) (Session, error) {
 	if err != nil {
 		return Session{}, err
 	}
-	tool, known := runtime.cfg.Tools[target.Tool]
-	if !known {
-		return Session{}, fmt.Errorf("tool %s is no longer configured", target.Tool)
-	}
-	if _, err := resolveTerminalDirectory(target.Cwd); err != nil {
-		return Session{}, fmt.Errorf("working directory no longer exists: %s", target.Cwd)
-	}
-	// Reviving inside the surviving pane keeps the scrollback its last life
-	// left there.
-	if runtime.driver.Exists(target.ID) {
-		if _, err := RelaunchInPane(runtime.driver, runtime.store, hooks.NewManager(s.configDir), target, tool); err != nil {
-			return Session{}, err
-		}
-		if target.AgentSessionID == "" && tool.ResumePickerKeys != "" {
-			InjectPickerKeys(runtime.driver, target.ID, tool.InputPrefix, tool.ResumePickerKeys)
-		}
-		target.Status = status.Starting
-		return runtime.sessionInfo(target, true, false), nil
-	}
-	if err := SnapshotRelaunch(runtime.store, target, tool, target.AgentSessionID); err != nil {
-		return Session{}, err
-	}
-	base := launch.ReviveCommand(tool, target.AgentSessionID)
-	command, env, err := launch.Environment(hooks.NewManager(s.configDir), target.Tool, tool, base, target.ID)
+	lifecycle, err := s.lifecycle(runtime, nil)
 	if err != nil {
 		return Session{}, err
 	}
-	if err := runtime.createPane(target.ID, target.Cwd, command, env); err != nil {
+	revived, err := lifecycle.Revive(target, PaneSize{})
+	if err != nil {
 		return Session{}, err
 	}
-	launchedAt := time.Now()
-	if err := runtime.store.SetAgentLaunchedAt(target.ID, launchedAt); err != nil {
-		_ = runtime.driver.Kill(target.ID)
-		return Session{}, err
-	}
-	// The row now lives on this manager's server, wherever it ran before.
-	// A row that cannot take the stamp is gone, and its fresh pane goes with
-	// it rather than outliving the session it was opened for.
-	if err := runtime.store.SetTmuxSocket(target.ID, runtime.driver.SocketPath()); err != nil {
-		_ = runtime.driver.Kill(target.ID)
-		return Session{}, err
-	}
-	_ = runtime.driver.SetLabel(target.ID, sessionLabel(target.Group, target.Name))
-	if err := runtime.store.UpdateStatus(target.ID, status.Starting); err != nil {
-		return Session{}, err
-	}
-	if err := runtime.store.SetAcked(target.ID, false); err != nil {
-		return Session{}, err
-	}
-	if target.AgentSessionID == "" && tool.ResumePickerKeys != "" {
-		InjectPickerKeys(runtime.driver, target.ID, tool.InputPrefix, tool.ResumePickerKeys)
-	}
-	target.Status = status.Starting
-	target.AgentLaunchedAt = launchedAt
-	return runtime.sessionInfo(target, true, false), nil
+	return runtime.sessionInfo(revived.Session, true, false), nil
 }
 
 // Archive parks a session out of the active list, or restores it. A live
 // pane keeps running; archiving only changes where the row is filed, and
 // the last screen is captured first so an archived row still shows one.
 func (s *Sessions) Archive(sessionID, targetID string, archived bool) (Session, error) {
+	request := ArchiveRequest{CallerID: sessionID, TargetID: targetID, Archived: archived, Words: s.words}
+	if s.archiveOwner != nil {
+		return s.archiveOwner.Archive(request)
+	}
 	runtime, err := s.open()
 	if err != nil {
 		return Session{}, err
 	}
-	defer runtime.store.Close()
-	if _, err := runtime.caller(sessionID); err != nil {
-		return Session{}, err
-	}
-	target, err := runtime.agent(targetID)
+	defer runtime.Close()
+	lifecycle, err := s.lifecycle(runtime, nil)
 	if err != nil {
 		return Session{}, err
 	}
-	if target.ID == sessionID && archived {
-		return Session{}, errors.New("a session cannot archive itself")
-	}
-	running := runtime.driver.Exists(target.ID)
-	if archived && running {
-		if pane, err := runtime.driver.CapturePane(target.ID); err == nil && pane != "" {
-			if err := runtime.store.SetSnapshot(target.ID, pane); err != nil {
-				return Session{}, err
-			}
-		}
-	}
-	if err := runtime.store.SetArchived(target.ID, archived); err != nil {
-		return Session{}, err
-	}
-	target.Archived = archived
-	return runtime.sessionInfo(target, running, false), nil
+	return lifecycle.SetArchivedForSession(request.CallerID, request.TargetID, request.Archived, request.Words)
 }

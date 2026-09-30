@@ -29,24 +29,24 @@ func (m *Model) launchNewSession(sess store.Session, tool config.Tool, baseComma
 		return err
 	}
 	paneWidth, paneHeight := m.paneTargetSize()
-	if err := m.tmux.Create(sess.ID, sess.Cwd, command, env, paneWidth, paneHeight); err != nil {
+	if err := m.services.tmux.Create(sess.ID, sess.Cwd, command, env, paneWidth, paneHeight); err != nil {
 		discardWorktree()
 		return err
 	}
 	m.markFreshPane(sess.ID)
-	sess.TmuxSocket = m.tmux.SocketPath()
-	if err := m.store.CreateSession(sess); err != nil {
-		_ = m.tmux.Kill(sess.ID)
-		_ = m.hooks.Remove(sess.ID)
+	sess.TmuxSocket = m.services.tmux.SocketPath()
+	if err := m.services.store.CreateSession(sess); err != nil {
+		_ = m.services.tmux.Kill(sess.ID)
+		_ = m.services.hooks.Remove(sess.ID)
 		discardWorktree()
 		return err
 	}
-	labelErr := m.tmux.SetLabel(sess.ID, sessionLabel(sess.Group, sess.Name))
-	if m.launched == nil {
-		m.launched = map[string]time.Time{}
+	labelErr := m.services.tmux.SetLabel(sess.ID, sessionLabel(sess.Group, sess.Name))
+	if m.ledger.launched == nil {
+		m.ledger.launched = map[string]time.Time{}
 	}
-	m.launched[sess.ID] = time.Now()
-	m.sessions = append(m.sessions, sess)
+	m.ledger.launched[sess.ID] = time.Now()
+	m.workspace.sessions = append(m.workspace.sessions, sess)
 	m.rebuildRows()
 	return labelErr
 }
@@ -55,7 +55,7 @@ func (m *Model) launchNewSession(sess store.Session, tool config.Tool, baseComma
 // since sent away is not carried back onto the tree by a poll that listed
 // the store before it was launched.
 func (m *Model) forgetLaunch(id string) {
-	delete(m.launched, id)
+	delete(m.ledger.launched, id)
 }
 
 // keepPendingLaunches carries over the rows this run spawned that the poll
@@ -65,15 +65,15 @@ func (m *Model) forgetLaunch(id string) {
 // to list the store after a launch is the authority on it, whether it
 // reports the row or its absence.
 func (m *Model) keepPendingLaunches(polled []store.Session, listedAt time.Time) []store.Session {
-	for id, at := range m.launched {
+	for id, at := range m.ledger.launched {
 		if listedAt.After(at) {
-			delete(m.launched, id)
+			delete(m.ledger.launched, id)
 			continue
 		}
 		if !sessionGone(polled, id) {
 			continue
 		}
-		for _, sess := range m.sessions {
+		for _, sess := range m.workspace.sessions {
 			if sess.ID == id {
 				polled = append(polled, sess)
 				break
@@ -96,11 +96,11 @@ type goneMark struct {
 // so stale polls predating the change are reconciled on arrival instead
 // of undoing it for a frame.
 func (m *Model) markSession(id string, mark goneMark) {
-	if m.gone == nil {
-		m.gone = map[string]goneMark{}
+	if m.ledger.gone == nil {
+		m.ledger.gone = map[string]goneMark{}
 	}
 	mark.at = time.Now()
-	m.gone[id] = mark
+	m.ledger.gone[id] = mark
 }
 
 // dropRecentlyRemoved reconciles the rows a poll lists against what this
@@ -111,16 +111,16 @@ func (m *Model) markSession(id string, mark goneMark) {
 // corrected to what the store was just written to say. A listing that
 // postdates every recorded change retires those records instead.
 func (m *Model) dropRecentlyRemoved(polled []store.Session, listedAt time.Time) []store.Session {
-	if len(m.gone) == 0 {
+	if len(m.ledger.gone) == 0 {
 		return polled
 	}
 	kept := make([]store.Session, 0, len(polled))
 	for _, sess := range polled {
-		mark, known := m.gone[sess.ID]
+		mark, known := m.ledger.gone[sess.ID]
 		switch {
 		case !known || listedAt.After(mark.at):
 			if known {
-				delete(m.gone, sess.ID)
+				delete(m.ledger.gone, sess.ID)
 			}
 			kept = append(kept, sess)
 		case mark.deleted:
@@ -129,9 +129,9 @@ func (m *Model) dropRecentlyRemoved(polled []store.Session, listedAt time.Time) 
 			kept = append(kept, sess)
 		}
 	}
-	for id, mark := range m.gone {
+	for id, mark := range m.ledger.gone {
 		if listedAt.After(mark.at) {
-			delete(m.gone, id)
+			delete(m.ledger.gone, id)
 		}
 	}
 	return kept

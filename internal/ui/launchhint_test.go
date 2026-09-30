@@ -104,7 +104,7 @@ func TestReportLaunchErrorOpensHintForUnknownMissingCLI(t *testing.T) {
 
 func TestSpawnMissingCLIPromptsInstall(t *testing.T) {
 	m := buildModel(t)
-	m.cfg.Tools["claude"] = config.Tool{Command: "am-missing-cli-xyz", DefaultStatus: status.Idle}
+	m.services.cfg.Tools["claude"] = config.Tool{Command: "am-missing-cli-xyz", DefaultStatus: status.Idle}
 
 	m.openForm()
 	m.form.name.SetValue("agent")
@@ -136,11 +136,11 @@ func TestSpawnMissingCLIPromptsInstall(t *testing.T) {
 func TestReviveMissingCLIPromptsInstall(t *testing.T) {
 	m := buildModel(t)
 	sess := store.Session{ID: newID(), Name: "agent", Tool: "claude", Cwd: t.TempDir()}
-	if err := m.store.CreateSession(sess); err != nil {
+	if err := m.services.store.CreateSession(sess); err != nil {
 		t.Fatal(err)
 	}
-	m.sessions = []store.Session{sess}
-	m.cfg.Tools["claude"] = config.Tool{
+	m.workspace.sessions = []store.Session{sess}
+	m.services.cfg.Tools["claude"] = config.Tool{
 		Command:       "cat",
 		ReviveCommand: "am-missing-cli-xyz",
 		DefaultStatus: status.Idle,
@@ -198,7 +198,7 @@ func TestRestartHermesWithoutMCPSupportPromptsInstall(t *testing.T) {
 		t.Skip("fake Hermes executable is a shell script")
 	}
 	m := buildModel(t)
-	m.cfg.Tools["hermes"] = config.Tool{Command: "cat", DefaultStatus: status.Idle}
+	m.services.cfg.Tools["hermes"] = config.Tool{Command: "cat", DefaultStatus: status.Idle}
 	installSDKlessHermes(t)
 	sess := store.Session{ID: newID(), Name: "agent", Tool: "hermes", Cwd: t.TempDir()}
 	m.confirm = confirmTarget{action: actionRestart, sessions: []store.Session{sess}}
@@ -219,9 +219,9 @@ func TestQuickSpawnHermesWithoutMCPSupportClosesTheBar(t *testing.T) {
 		t.Skip("fake Hermes executable is a shell script")
 	}
 	m := buildModel(t)
-	m.cfg.Tools["hermes"] = config.Tool{Command: "cat", DefaultStatus: status.Idle}
+	m.services.cfg.Tools["hermes"] = config.Tool{Command: "cat", DefaultStatus: status.Idle}
 	installSDKlessHermes(t)
-	if err := m.store.CreateGroup("backend", t.TempDir()); err != nil {
+	if err := m.services.store.CreateGroup("backend", t.TempDir()); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -247,7 +247,7 @@ func TestFormSpawnRefusedByTheHintReleasesItsImages(t *testing.T) {
 		t.Skip("fake Hermes executable is a shell script")
 	}
 	m := buildModel(t)
-	m.cfg.Tools["hermes"] = config.Tool{Command: "cat", DefaultStatus: status.Idle}
+	m.services.cfg.Tools["hermes"] = config.Tool{Command: "cat", DefaultStatus: status.Idle}
 	installSDKlessHermes(t)
 
 	m.openForm()
@@ -338,7 +338,7 @@ func TestSpawnHermesWithoutMCPSupportPromptsInstall(t *testing.T) {
 		t.Skip("fake Hermes executable is a shell script")
 	}
 	m := buildModel(t)
-	m.cfg.Tools["hermes"] = config.Tool{Command: "cat", DefaultStatus: status.Idle}
+	m.services.cfg.Tools["hermes"] = config.Tool{Command: "cat", DefaultStatus: status.Idle}
 	installSDKlessHermes(t)
 
 	m.openForm()
@@ -552,7 +552,7 @@ func TestLaunchHintInstallRunsTheCommandAndRetriesTheLaunch(t *testing.T) {
 	if shell.Name != "install-am-fake-cli" {
 		t.Fatalf("install shell named %q", shell.Name)
 	}
-	if !m.tmux.Exists(shell.ID) {
+	if !m.services.tmux.Exists(shell.ID) {
 		t.Fatal("install shell has no tmux session")
 	}
 	if row, ok := m.selected(); !ok || row.ID != shell.ID {
@@ -567,7 +567,7 @@ func TestLaunchHintInstallRunsTheCommandAndRetriesTheLaunch(t *testing.T) {
 	if !strings.Contains(m.errBar.text, "installed") || !m.errBar.worked() {
 		t.Fatalf("status = %q, want the install reported done", m.errBar.text)
 	}
-	if !m.tmux.Exists(shell.ID) {
+	if !m.services.tmux.Exists(shell.ID) {
 		t.Fatal("the install shell should stay open with its output")
 	}
 	if !imageExists(t, image) {
@@ -589,7 +589,7 @@ func TestLaunchHintInstallFailureKeepsTheShellAndReportsTheStatus(t *testing.T) 
 	if !strings.Contains(m.errBar.text, "status 3") || !strings.Contains(m.errBar.text, shell.Name) || m.errBar.worked() {
 		t.Fatalf("status = %q, want the exit status and the shell to read it in", m.errBar.text)
 	}
-	if !m.tmux.Exists(shell.ID) {
+	if !m.services.tmux.Exists(shell.ID) {
 		t.Fatal("a failed install must leave its shell open")
 	}
 	if imageExists(t, image) {
@@ -620,7 +620,7 @@ func TestLaunchHintInstallShellKilledDropsThePendingLaunch(t *testing.T) {
 
 	m.applyCmd(t, pressInLaunchHint(t, m, 'i'))
 	shell := terminalSession(t, m)
-	if err := m.tmux.Kill(shell.ID); err != nil {
+	if err := m.services.tmux.Kill(shell.ID); err != nil {
 		t.Fatal(err)
 	}
 	waitForInstallToSettle(t, m)
@@ -812,13 +812,13 @@ func TestLaunchHintInstallRunsFromAScriptAndCleansUp(t *testing.T) {
 func TestInstallFinishesARefusedRestore(t *testing.T) {
 	m := buildModel(t)
 	sess := store.Session{ID: newID(), Name: "agent", Tool: "claude", Cwd: t.TempDir(), Archived: true}
-	if err := m.store.CreateSession(sess); err != nil {
+	if err := m.services.store.CreateSession(sess); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.store.SetArchived(sess.ID, true); err != nil {
+	if err := m.services.store.SetArchived(sess.ID, true); err != nil {
 		t.Fatal(err)
 	}
-	m.cfg.Tools["claude"] = config.Tool{Command: "am-missing-cli-xyz", DefaultStatus: status.Idle}
+	m.services.cfg.Tools["claude"] = config.Tool{Command: "am-missing-cli-xyz", DefaultStatus: status.Idle}
 	m.confirm = confirmTarget{action: actionRestore, sessions: []store.Session{sess}}
 	m.mode = modeConfirmDelete
 
@@ -830,19 +830,19 @@ func TestInstallFinishesARefusedRestore(t *testing.T) {
 
 	// What the install unblocks has to be the whole restore, not the
 	// revive alone, so the retry is run here with a working CLI.
-	m.cfg.Tools["claude"] = config.Tool{Command: "cat", DefaultStatus: status.Idle}
+	m.services.cfg.Tools["claude"] = config.Tool{Command: "cat", DefaultStatus: status.Idle}
 	if err := m.launchFix.retry(); err != nil {
 		t.Fatal(err)
 	}
 
-	restored, err := m.store.Get(sess.ID)
+	restored, err := m.services.store.Get(sess.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if restored.Archived {
 		t.Fatal("the revived session is still filed as archived")
 	}
-	if !m.tmux.Exists(sess.ID) {
+	if !m.services.tmux.Exists(sess.ID) {
 		t.Fatal("the session should be running again")
 	}
 }

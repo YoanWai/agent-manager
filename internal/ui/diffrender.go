@@ -9,6 +9,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/diff"
 	"github.com/YoanWai/agent-manager/internal/git"
+
 	"github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/formatters"
 	"github.com/alecthomas/chroma/v2/lexers"
@@ -415,11 +416,11 @@ func (m *Model) annotationRows(fd *diff.FileDiff, lineIdx, width int) []string {
 }
 
 func (m *Model) reviewRing(label string, width, height int) string {
-	return strings.Join(ringLoader(width, height, label, m.startupPhase), "\n")
+	return strings.Join(ringLoader(width, height, label, m.startup.startupPhase), "\n")
 }
 
 func (m *Model) reviewSpinnerLine(label string) string {
-	frame := startupFrames[m.startupPhase%len(startupFrames)]
+	frame := startupFrames[m.startup.startupPhase%len(startupFrames)]
 	return mutedStyle.Render(frame + " " + label)
 }
 

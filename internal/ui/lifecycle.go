@@ -32,12 +32,12 @@ func (m *Model) attachSelected() (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
-	if !m.tmux.Exists(sess.ID) {
+	if !m.services.tmux.Exists(sess.ID) {
 		m.errBar.text = deadSessionHint
 		return m, nil
 	}
 	m.errBar.text = ""
-	if err := m.store.AcknowledgeFinished(sess.ID); err != nil {
+	if err := m.services.store.AcknowledgeFinished(sess.ID); err != nil {
 		m.errBar.text = err.Error()
 		return m, nil
 	}
@@ -53,7 +53,7 @@ func (m *Model) acknowledgeSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.errBar.text = ""
-	if err := m.store.AcknowledgeFinished(sess.ID); err != nil {
+	if err := m.services.store.AcknowledgeFinished(sess.ID); err != nil {
 		m.errBar.text = err.Error()
 		return m, nil
 	}
@@ -70,19 +70,19 @@ func (m *Model) attachCmd(id string) tea.Cmd {
 	// size, which beats locking the session out (issue #114).
 	var prepErr error
 	m.poller.reflowSessions([]string{id}, func() {
-		prepErr = m.tmux.PrepareAttach(id)
+		prepErr = m.services.tmux.PrepareAttach(id)
 	})
 	if prepErr != nil {
 		m.errBar.text = prepErr.Error()
 	}
-	return execTerminalProcess(m.tmux.AttachCommand(id), func(err error) tea.Msg {
+	return execTerminalProcess(m.services.tmux.AttachCommand(id), func(err error) tea.Msg {
 		return attachDoneMsg{sessID: id, err: err}
 	})
 }
 
 func (m *Model) reattach(id string, diffGen int) tea.Cmd {
-	driver := m.tmux
-	stor := m.store
+	driver := m.services.tmux
+	stor := m.services.store
 	poller := m.poller
 	return func() tea.Msg {
 		if !driver.Exists(id) {
@@ -113,7 +113,7 @@ func (m *Model) reattach(id string, diffGen int) tea.Cmd {
 // clipboard without entering it.
 func (m *Model) copyReplySelected() (tea.Model, tea.Cmd) {
 	entry, ok := m.selectedRow()
-	if !ok || entry.isGroup || m.engine == nil || m.tmux == nil {
+	if !ok || entry.isGroup || m.services.engine == nil || m.services.tmux == nil {
 		return m, nil
 	}
 	sess := entry.sess
@@ -124,7 +124,7 @@ func (m *Model) copyReplySelected() (tea.Model, tea.Cmd) {
 		m.errBar.text = shellPromptHint(sess.Name)
 		return m, nil
 	}
-	engine, driver := m.engine, m.tmux
+	engine, driver := m.services.engine, m.services.tmux
 	return m, func() tea.Msg {
 		if !driver.Exists(sess.ID) {
 			return errMsg{errors.New(deadSessionHint)}
@@ -192,7 +192,7 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 	}
 	dead := false
 	for _, sess := range set {
-		if !m.tmux.Exists(sess.ID) {
+		if !m.services.tmux.Exists(sess.ID) {
 			dead = true
 			break
 		}
@@ -210,7 +210,7 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 	}
 	// A pane the user quit the agent in is still a live window sitting at a
 	// shell; the agent alone is gone, and it comes back inside that shell.
-	if m.tmux.Exists(entry.sess.ID) {
+	if m.services.tmux.Exists(entry.sess.ID) {
 		cmd, err := m.relaunchInPane(entry.sess)
 		if err != nil {
 			m.reportLaunchError(err, nil)
@@ -304,7 +304,7 @@ func (m *Model) sessionsInGroup(path string) []store.Session {
 // id was never captured, which resumes the wrong conversation whenever
 // sessions share a directory.
 func (m *Model) degradedResumeNotice(sess store.Session) string {
-	tool, ok := m.cfg.Tools[sess.Tool]
+	tool, ok := m.services.cfg.Tools[sess.Tool]
 	if !ok || sess.AgentSessionID != "" || tool.ResumeByIDCommand == "" || tool.ResumePickerCommand != "" {
 		return ""
 	}
@@ -317,10 +317,10 @@ func (m *Model) degradedResumeNotice(sess store.Session) string {
 // resume_by_id_command instead of the working directory's most recent one,
 // which would be the wrong conversation whenever sessions share a cwd.
 func (m *Model) reviveSession(sess store.Session) error {
-	if m.tmux.Exists(sess.ID) {
+	if m.services.tmux.Exists(sess.ID) {
 		return fmt.Errorf("session %s is still running; revive only applies to dead sessions", sess.Name)
 	}
-	tool, ok := m.cfg.Tools[sess.Tool]
+	tool, ok := m.services.cfg.Tools[sess.Tool]
 	if !ok {
 		return fmt.Errorf("tool %s is no longer configured", sess.Tool)
 	}
@@ -329,20 +329,20 @@ func (m *Model) reviveSession(sess store.Session) error {
 	}
 	bind := func() error {
 		launchedAt := time.Now()
-		if err := m.store.SetAgentLaunchedAt(sess.ID, launchedAt); err != nil {
+		if err := m.services.store.SetAgentLaunchedAt(sess.ID, launchedAt); err != nil {
 			return err
 		}
 		m.bindReviveLocally(sess.ID, launchedAt)
 		return nil
 	}
-	if err := sessioncmd.SnapshotRelaunch(m.store, sess, tool, sess.AgentSessionID); err != nil {
+	if err := sessioncmd.SnapshotRelaunch(m.services.store, sess, tool, sess.AgentSessionID); err != nil {
 		return err
 	}
 	if err := m.relaunchSession(sess, tool, launch.ReviveCommand(tool, sess.AgentSessionID), status.Starting, bind); err != nil {
 		return err
 	}
 	if sess.AgentSessionID == "" && tool.ResumePickerKeys != "" {
-		sessioncmd.InjectPickerKeys(m.tmux, sess.ID, tool.InputPrefix, tool.ResumePickerKeys)
+		sessioncmd.InjectPickerKeys(m.services.tmux, sess.ID, tool.InputPrefix, tool.ResumePickerKeys)
 	}
 	m.rebuildRows()
 	return nil
@@ -360,13 +360,13 @@ func (m *Model) relaunchSession(sess store.Session, tool config.Tool, baseComman
 		return err
 	}
 	paneWidth, paneHeight := m.paneTargetSize()
-	if err := m.tmux.Create(sess.ID, sess.Cwd, command, env, paneWidth, paneHeight); err != nil {
+	if err := m.services.tmux.Create(sess.ID, sess.Cwd, command, env, paneWidth, paneHeight); err != nil {
 		return err
 	}
 	m.markFreshPane(sess.ID)
 	if bindConversation != nil {
 		if err := bindConversation(); err != nil {
-			_ = m.tmux.Kill(sess.ID)
+			_ = m.services.tmux.Kill(sess.ID)
 			return err
 		}
 	}
@@ -374,24 +374,24 @@ func (m *Model) relaunchSession(sess store.Session, tool config.Tool, baseComman
 	// Stamped after the launch has taken, so a row that never came back is
 	// not left pointing at a server that holds no pane for it, and a row
 	// that cannot take the stamp is gone and its fresh pane goes with it.
-	if err := m.store.SetTmuxSocket(sess.ID, m.tmux.SocketPath()); err != nil {
-		_ = m.tmux.Kill(sess.ID)
+	if err := m.services.store.SetTmuxSocket(sess.ID, m.services.tmux.SocketPath()); err != nil {
+		_ = m.services.tmux.Kill(sess.ID)
 		return err
 	}
-	if err := m.tmux.SetLabel(sess.ID, sessionLabel(sess.Group, sess.Name)); err != nil {
+	if err := m.services.tmux.SetLabel(sess.ID, sessionLabel(sess.Group, sess.Name)); err != nil {
 		return err
 	}
-	if err := m.store.UpdateStatus(sess.ID, newStatus); err != nil {
+	if err := m.services.store.UpdateStatus(sess.ID, newStatus); err != nil {
 		return err
 	}
 	// The session is alive again; any watcher backoff from its dead spell
 	// no longer applies.
-	if m.focus != nil {
-		m.focus.retryNow()
+	if m.focusPane.focus != nil {
+		m.focusPane.focus.retryNow()
 	}
 	// A leftover ack from the previous life must not swallow the relaunched
 	// agent's first finished alert.
-	return m.store.SetAcked(sess.ID, false)
+	return m.services.store.SetAcked(sess.ID, false)
 }
 
 // relaunchedMsg carries the result of starting an agent in a pane that was
@@ -412,7 +412,7 @@ type relaunchedMsg struct {
 // never given it. The probe and the send run off the update path, where a
 // pane that answers slowly would hold up the whole UI.
 func (m *Model) relaunchInPane(sess store.Session) (tea.Cmd, error) {
-	tool, ok := m.cfg.Tools[sess.Tool]
+	tool, ok := m.services.cfg.Tools[sess.Tool]
 	if !ok {
 		return nil, fmt.Errorf("tool %s is no longer configured", sess.Tool)
 	}
@@ -422,7 +422,7 @@ func (m *Model) relaunchInPane(sess store.Session) (tea.Cmd, error) {
 	if !isDir(sess.Cwd) {
 		return nil, fmt.Errorf("working directory no longer exists: %s", sess.Cwd)
 	}
-	driver, stor, hookManager := m.tmux, m.store, m.hooks
+	driver, stor, hookManager := m.services.tmux, m.services.store, m.services.hooks
 	return func() tea.Msg {
 		launchedAt, err := sessioncmd.RelaunchInPane(driver, stor, hookManager, sess, tool)
 		if err != nil {
@@ -448,7 +448,7 @@ func (m *Model) restartSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	label := fmt.Sprintf("restart %s with an empty context? its current conversation is left behind.", entry.sess.Name)
-	if m.tmux.Exists(entry.sess.ID) {
+	if m.services.tmux.Exists(entry.sess.ID) {
 		label = fmt.Sprintf("restart %s with an empty context? ends the running agent and leaves its conversation behind.", entry.sess.Name)
 	}
 	m.confirm = confirmTarget{
@@ -464,7 +464,7 @@ func (m *Model) restartSelected() (tea.Model, tea.Cmd) {
 // it was resuming is retired rather than resumed, so the agent comes back
 // with the same name, directory and group but no context to carry.
 func (m *Model) restartSession(sess store.Session) error {
-	tool, ok := m.cfg.Tools[sess.Tool]
+	tool, ok := m.services.cfg.Tools[sess.Tool]
 	if !ok {
 		return fmt.Errorf("tool %s is no longer configured", sess.Tool)
 	}
@@ -475,12 +475,12 @@ func (m *Model) restartSession(sess store.Session) error {
 		return err
 	}
 	baseCommand, agentSessionID := restartLaunch(tool)
-	if err := sessioncmd.SnapshotRelaunch(m.store, sess, tool, agentSessionID); err != nil {
+	if err := sessioncmd.SnapshotRelaunch(m.services.store, sess, tool, agentSessionID); err != nil {
 		return err
 	}
 	bind := func() error {
 		launchedAt := time.Now()
-		if err := m.store.RestartAgent(sess.ID, agentSessionID, launchedAt); err != nil {
+		if err := m.services.store.RestartAgent(sess.ID, agentSessionID, launchedAt); err != nil {
 			return err
 		}
 		m.bindRestartLocally(sess.ID, agentSessionID, launchedAt)
@@ -506,35 +506,35 @@ func restartLaunch(tool config.Tool) (baseCommand, agentSessionID string) {
 // bindRestartLocally mirrors the store write in the loaded rows, so the list
 // redraws on the new conversation before the next poll re-reads it.
 func (m *Model) bindRestartLocally(id, agentSessionID string, launchedAt time.Time) {
-	for i := range m.sessions {
-		if m.sessions[i].ID != id {
+	for i := range m.workspace.sessions {
+		if m.workspace.sessions[i].ID != id {
 			continue
 		}
-		if m.sessions[i].AgentSessionID != "" {
-			m.sessions[i].RetiredAgentSessionID = m.sessions[i].AgentSessionID
+		if m.workspace.sessions[i].AgentSessionID != "" {
+			m.workspace.sessions[i].RetiredAgentSessionID = m.workspace.sessions[i].AgentSessionID
 		}
-		m.sessions[i].AgentSessionID = agentSessionID
-		m.sessions[i].AgentLaunchedAt = launchedAt
-		m.sessions[i].Status = status.Starting
-		m.sessions[i].Acked = false
+		m.workspace.sessions[i].AgentSessionID = agentSessionID
+		m.workspace.sessions[i].AgentLaunchedAt = launchedAt
+		m.workspace.sessions[i].Status = status.Starting
+		m.workspace.sessions[i].Acked = false
 	}
 }
 
 // bindReviveLocally mirrors the store write in the loaded rows, so the
 // startup loader can paint before the next poll re-reads them.
 func (m *Model) bindReviveLocally(id string, launchedAt time.Time) {
-	for i := range m.sessions {
-		if m.sessions[i].ID != id {
+	for i := range m.workspace.sessions {
+		if m.workspace.sessions[i].ID != id {
 			continue
 		}
-		m.sessions[i].AgentLaunchedAt = launchedAt
-		m.sessions[i].Status = status.Starting
-		m.sessions[i].Acked = false
+		m.workspace.sessions[i].AgentLaunchedAt = launchedAt
+		m.workspace.sessions[i].Status = status.Starting
+		m.workspace.sessions[i].Acked = false
 	}
 	if sel, ok := m.selected(); ok && sel.ID == id {
 		// A killed or archived row still holds its last pane; that would
 		// count as painted and hide the loader.
-		m.preview = ""
+		m.workspace.preview = ""
 	}
 }
 
@@ -572,7 +572,7 @@ func (m *Model) killSelected() (tea.Model, tea.Cmd) {
 		}
 		live := false
 		for _, sess := range sessions {
-			if m.tmux.Exists(sess.ID) {
+			if m.services.tmux.Exists(sess.ID) {
 				live = true
 				break
 			}
@@ -618,7 +618,7 @@ func (m *Model) killAllLive() (tea.Model, tea.Cmd) {
 // window. One pane listing answers for all of them, so a wide selection
 // costs one tmux call rather than one per session.
 func (m *Model) liveSessions(sessions []store.Session) ([]store.Session, error) {
-	panes, err := m.tmux.Panes()
+	panes, err := m.services.tmux.Panes()
 	if err != nil {
 		return nil, err
 	}
@@ -634,8 +634,8 @@ func (m *Model) liveSessions(sessions []store.Session) ([]store.Session, error) 
 // unwatch stops the focus watcher before a session is killed on purpose:
 // the client going away then is the plan, not a loss to report.
 func (m *Model) unwatch(id string) {
-	if m.focus != nil {
-		m.focus.unwatch(id)
+	if m.focusPane.focus != nil {
+		m.focusPane.focus.unwatch(id)
 	}
 }
 
@@ -644,11 +644,11 @@ func (m *Model) unwatch(id string) {
 // id that revive needs. The pane is captured first so the preview still
 // shows the agent's last output once the window is gone.
 func (m *Model) killSession(sess store.Session) error {
-	if !m.tmux.Exists(sess.ID) {
+	if !m.services.tmux.Exists(sess.ID) {
 		return nil
 	}
-	if pane, err := m.tmux.CapturePane(sess.ID); err == nil && pane != "" {
-		if err := m.setSnapshot(sess.ID, pane); err != nil {
+	if pane, err := m.services.tmux.CapturePane(sess.ID); err == nil && pane != "" {
+		if err := m.services.setSnapshot(sess.ID, pane); err != nil {
 			return err
 		}
 	}
@@ -658,29 +658,29 @@ func (m *Model) killSession(sess store.Session) error {
 	// pane, and drops the pane hash the revived session would be compared
 	// against.
 	m.poller.reflowSessions([]string{sess.ID}, func() {
-		killErr = m.tmux.Kill(sess.ID)
+		killErr = m.services.tmux.Kill(sess.ID)
 	})
 	if killErr != nil {
 		return killErr
 	}
 	// The agent dies without running its session-end hook, so a leftover
 	// status file would otherwise decide what the revived session reads as.
-	if err := m.hooks.Remove(sess.ID); err != nil {
+	if err := m.services.hooks.Remove(sess.ID); err != nil {
 		return err
 	}
-	if err := m.store.UpdateStatus(sess.ID, status.Dead); err != nil {
+	if err := m.services.store.UpdateStatus(sess.ID, status.Dead); err != nil {
 		return err
 	}
-	for i := range m.sessions {
-		if m.sessions[i].ID == sess.ID {
-			m.sessions[i].Status = status.Dead
+	for i := range m.workspace.sessions {
+		if m.workspace.sessions[i].ID == sess.ID {
+			m.workspace.sessions[i].Status = status.Dead
 		}
 	}
 	return nil
 }
 
 func (m *Model) archiveSelected() (tea.Model, tea.Cmd) {
-	if m.showArchived {
+	if m.rail.showArchived {
 		return m, nil
 	}
 	entry, ok := m.selectedRow()
@@ -692,7 +692,7 @@ func (m *Model) archiveSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if entry.isGroup {
-		subtree, err := m.store.SessionsInSubtree(entry.group)
+		subtree, err := m.services.store.SessionsInSubtree(entry.group)
 		if err != nil {
 			m.errBar.text = err.Error()
 			return m, nil
@@ -724,7 +724,7 @@ func (m *Model) archiveSelected() (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
-	if !m.showArchived {
+	if !m.rail.showArchived {
 		return m, nil
 	}
 	entry, ok := m.selectedRow()
@@ -736,7 +736,7 @@ func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if entry.isGroup {
-		subtree, err := m.store.SessionsInSubtree(entry.group)
+		subtree, err := m.services.store.SessionsInSubtree(entry.group)
 		if err != nil {
 			m.errBar.text = err.Error()
 			return m, nil
@@ -773,17 +773,17 @@ func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
 // calls it before any kill so a capture failure cannot drop a frame.
 func (m *Model) snapshotLive(sessions []store.Session) error {
 	for _, sess := range sessions {
-		if !m.tmux.Exists(sess.ID) {
+		if !m.services.tmux.Exists(sess.ID) {
 			continue
 		}
-		pane, err := m.tmux.CapturePane(sess.ID)
+		pane, err := m.services.tmux.CapturePane(sess.ID)
 		if err != nil {
 			return err
 		}
 		if pane == "" {
 			continue
 		}
-		if err := m.setSnapshot(sess.ID, pane); err != nil {
+		if err := m.services.setSnapshot(sess.ID, pane); err != nil {
 			return err
 		}
 	}
@@ -792,10 +792,10 @@ func (m *Model) snapshotLive(sessions []store.Session) error {
 
 func (m *Model) applyConfirmedArchived(archived bool) error {
 	if m.confirm.isGroup {
-		return m.store.SetGroupArchived(m.confirm.path, archived)
+		return m.services.store.SetGroupArchived(m.confirm.path, archived)
 	}
 	for _, sess := range m.confirm.sessions {
-		if err := m.store.SetArchived(sess.ID, archived); err != nil {
+		if err := m.services.store.SetArchived(sess.ID, archived); err != nil {
 			return err
 		}
 		m.forgetLaunch(sess.ID)
@@ -807,9 +807,9 @@ func (m *Model) applyConfirmedArchived(archived bool) error {
 // so it leaves the screen on this frame instead of waiting for the next
 // poll to confirm what the store already knows.
 func (m *Model) removeSessionLocally(id string) {
-	for i := range m.sessions {
-		if m.sessions[i].ID == id {
-			m.sessions = append(m.sessions[:i], m.sessions[i+1:]...)
+	for i := range m.workspace.sessions {
+		if m.workspace.sessions[i].ID == id {
+			m.workspace.sessions = append(m.workspace.sessions[:i], m.workspace.sessions[i+1:]...)
 			break
 		}
 	}
@@ -824,15 +824,15 @@ func (m *Model) removeSessionLocally(id string) {
 // subtree from the active view.
 func (m *Model) markArchivedLocally(sessions []store.Session, groupPath string) {
 	changed := false
-	for i := range m.sessions {
-		if m.sessions[i].Archived {
+	for i := range m.workspace.sessions {
+		if m.workspace.sessions[i].Archived {
 			continue
 		}
 		for _, sess := range sessions {
-			if m.sessions[i].ID != sess.ID {
+			if m.workspace.sessions[i].ID != sess.ID {
 				continue
 			}
-			m.sessions[i].Archived = true
+			m.workspace.sessions[i].Archived = true
 			m.markSession(sess.ID, goneMark{archived: true})
 			changed = true
 			break
@@ -840,10 +840,10 @@ func (m *Model) markArchivedLocally(sessions []store.Session, groupPath string) 
 	}
 	if groupPath != "" {
 		for _, path := range append([]string{groupPath}, m.subgroupPaths(groupPath)...) {
-			if m.archivedGroups == nil {
-				m.archivedGroups = map[string]bool{}
+			if m.workspace.archivedGroups == nil {
+				m.workspace.archivedGroups = map[string]bool{}
 			}
-			m.archivedGroups[path] = true
+			m.workspace.archivedGroups[path] = true
 			m.markGroup(path, goneMark{archived: true})
 		}
 		changed = true
@@ -856,7 +856,7 @@ func (m *Model) markArchivedLocally(sessions []store.Session, groupPath string) 
 func (m *Model) subgroupPaths(path string) []string {
 	var out []string
 	prefix := path + "/"
-	for _, group := range m.groups {
+	for _, group := range m.workspace.groups {
 		if strings.HasPrefix(group, prefix) {
 			out = append(out, group)
 		}
@@ -874,24 +874,24 @@ func (m *Model) markRestoredLocally(restored []store.Session, groupPath string) 
 	for _, sess := range restored {
 		byID[sess.ID] = true
 	}
-	for i := range m.sessions {
-		if !m.sessions[i].Archived {
+	for i := range m.workspace.sessions {
+		if !m.workspace.sessions[i].Archived {
 			continue
 		}
-		if byID[m.sessions[i].ID] || (groupPath != "" && inGroupSubtree(m.sessions[i].Group, groupPath)) {
-			m.sessions[i].Archived = false
-			m.markSession(m.sessions[i].ID, goneMark{archived: false})
+		if byID[m.workspace.sessions[i].ID] || (groupPath != "" && inGroupSubtree(m.workspace.sessions[i].Group, groupPath)) {
+			m.workspace.sessions[i].Archived = false
+			m.markSession(m.workspace.sessions[i].ID, goneMark{archived: false})
 		}
 	}
 	if groupPath != "" {
 		for _, path := range append([]string{groupPath}, m.subgroupPaths(groupPath)...) {
-			delete(m.archivedGroups, path)
+			delete(m.workspace.archivedGroups, path)
 			m.markGroup(path, goneMark{archived: false})
 		}
 	} else {
 		for _, sess := range restored {
 			for path := sess.Group; path != ""; path = parentGroup(path) {
-				delete(m.archivedGroups, path)
+				delete(m.workspace.archivedGroups, path)
 				m.markGroup(path, goneMark{archived: false})
 			}
 		}
@@ -903,11 +903,11 @@ func (m *Model) markRestoredLocally(restored []store.Session, groupPath string) 
 // so stale polls predating the change are reconciled on arrival instead
 // of undoing it for a frame.
 func (m *Model) markGroup(path string, mark goneMark) {
-	if m.goneGroups == nil {
-		m.goneGroups = map[string]goneMark{}
+	if m.ledger.goneGroups == nil {
+		m.ledger.goneGroups = map[string]goneMark{}
 	}
 	mark.at = time.Now()
-	m.goneGroups[path] = mark
+	m.ledger.goneGroups[path] = mark
 }
 
 // pruneGroupsLocally drops the removed group paths from the loaded tree,
@@ -920,23 +920,23 @@ func (m *Model) pruneGroupsLocally(removed []string) {
 		gone[path] = true
 		m.markGroup(path, goneMark{deleted: true})
 	}
-	groups := make([]string, 0, len(m.groups))
-	for _, group := range m.groups {
+	groups := make([]string, 0, len(m.workspace.groups))
+	for _, group := range m.workspace.groups {
 		if !gone[group] {
 			groups = append(groups, group)
 		}
 	}
-	m.groups = groups
+	m.workspace.groups = groups
 	for _, path := range removed {
-		delete(m.groupPaths, path)
-		delete(m.groupWorktrees, path)
-		delete(m.archivedGroups, path)
+		delete(m.workspace.groupPaths, path)
+		delete(m.workspace.groupWorktrees, path)
+		delete(m.workspace.archivedGroups, path)
 	}
 	m.rebuildRows()
 }
 
 func (m *Model) sessionAndChildren(sess store.Session) ([]store.Session, error) {
-	kids, err := m.store.Children(sess.ID)
+	kids, err := m.services.store.Children(sess.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -1005,12 +1005,12 @@ func (m *Model) prepareDelete() {
 		m.mode = modeConfirmDelete
 		return
 	}
-	subtree, err := m.store.SessionsInSubtree(entry.group)
+	subtree, err := m.services.store.SessionsInSubtree(entry.group)
 	if err != nil {
 		m.errBar.text = err.Error()
 		return
 	}
-	if m.showArchived {
+	if m.rail.showArchived {
 		m.confirm = archivedGroupDelete(entry.group, subtree)
 	} else {
 		m.confirm = m.wholeGroupDelete(entry.group, subtree)
@@ -1023,7 +1023,7 @@ func (m *Model) prepareDelete() {
 // included, leaving nothing stranded under a group that is gone.
 func (m *Model) wholeGroupDelete(path string, subtree []store.Session) confirmTarget {
 	subgroups := 0
-	for _, g := range m.groups {
+	for _, g := range m.workspace.groups {
 		if strings.HasPrefix(g, path+"/") {
 			subgroups++
 		}
@@ -1069,7 +1069,7 @@ func archivedSessions(sessions []store.Session) []store.Session {
 // instead of leaving a running session filed as archived. A group's rows
 // leave the archive together once the whole set is back.
 func (m *Model) restoreFromArchive(sess store.Session, isGroup bool) error {
-	if !m.tmux.Exists(sess.ID) {
+	if !m.services.tmux.Exists(sess.ID) {
 		if err := m.reviveSession(sess); err != nil {
 			return err
 		}
@@ -1077,7 +1077,7 @@ func (m *Model) restoreFromArchive(sess store.Session, isGroup bool) error {
 	if isGroup {
 		return nil
 	}
-	if err := m.store.SetArchived(sess.ID, false); err != nil {
+	if err := m.services.store.SetArchived(sess.ID, false); err != nil {
 		return err
 	}
 	m.markSession(sess.ID, goneMark{archived: false})
@@ -1157,7 +1157,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.rebuildRows()
 		case actionRevive:
 			if m.confirm.batch {
-				panes, err := m.tmux.Panes()
+				panes, err := m.services.tmux.Panes()
 				if err != nil {
 					m.errBar.text = err.Error()
 					return m, nil
@@ -1172,7 +1172,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m.reviveMany(stillDead, "")
 			}
 			for _, sess := range m.confirm.sessions {
-				if m.tmux.Exists(sess.ID) {
+				if m.services.tmux.Exists(sess.ID) {
 					continue
 				}
 				if err := m.reviveSession(sess); err != nil {
@@ -1184,45 +1184,45 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case actionDelete:
 			for _, sess := range childrenFirst(m.confirm.sessions) {
 				m.unwatch(sess.ID)
-				if err := m.tmux.Kill(sess.ID); err != nil {
+				if err := m.services.tmux.Kill(sess.ID); err != nil {
 					m.errBar.text = err.Error()
 					return m, nil
 				}
-				if err := m.hooks.Remove(sess.ID); err != nil {
+				if err := m.services.hooks.Remove(sess.ID); err != nil {
 					m.errBar.text = err.Error()
 					return m, nil
 				}
-				if err := m.hooks.RemoveName(sess.ID); err != nil {
+				if err := m.services.hooks.RemoveName(sess.ID); err != nil {
 					m.errBar.text = err.Error()
 					return m, nil
 				}
-				if err := m.hooks.RemoveReviewRepo(sess.ID); err != nil {
+				if err := m.services.hooks.RemoveReviewRepo(sess.ID); err != nil {
 					m.errBar.text = err.Error()
 					return m, nil
 				}
-				if err := m.hooks.RemoveReviewBase(sess.ID); err != nil {
+				if err := m.services.hooks.RemoveReviewBase(sess.ID); err != nil {
 					m.errBar.text = err.Error()
 					return m, nil
 				}
-				if err := m.hooks.RemoveReviewScope(sess.ID); err != nil {
+				if err := m.services.hooks.RemoveReviewScope(sess.ID); err != nil {
 					m.errBar.text = err.Error()
 					return m, nil
 				}
-				delete(m.pickedRepos, sess.ID)
-				delete(m.awaitedRenames, sess.ID)
+				delete(m.ledger.pickedRepos, sess.ID)
+				delete(m.ledger.awaitedRenames, sess.ID)
 				m.forgetLaunch(sess.ID)
-				if err := m.store.Delete(sess.ID); err != nil {
+				if err := m.services.store.Delete(sess.ID); err != nil {
 					m.errBar.text = err.Error()
 					return m, nil
 				}
 				m.removeSessionLocally(sess.ID)
-				if sess.WorktreeRepo != "" && m.gitDrv != nil {
+				if sess.WorktreeRepo != "" && m.services.gitDrv != nil {
 					used, err := m.sessionUsesDir(sess.Cwd)
 					if err != nil {
 						m.errBar.text = "worktree cleanup: " + err.Error()
 					} else if used {
 						m.errBar.text = "worktree kept (used by another session): " + sess.Cwd
-					} else if removed, err := m.gitDrv.RemoveWorktreeIfClean(sess.WorktreeRepo, sess.Cwd, sess.WorktreeBranch); err != nil {
+					} else if removed, err := m.services.gitDrv.RemoveWorktreeIfClean(sess.WorktreeRepo, sess.Cwd, sess.WorktreeBranch); err != nil {
 						m.errBar.text = "worktree cleanup: " + err.Error()
 					} else if !removed {
 						m.errBar.text = "worktree kept (has work): " + sess.Cwd
@@ -1236,7 +1236,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				for _, path := range removed {
-					delete(m.collapsed, path)
+					delete(m.rail.collapsed, path)
 				}
 				m.persistCollapsed()
 				m.pruneGroupsLocally(removed)
@@ -1254,7 +1254,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) sessionUsesDir(dir string) (bool, error) {
-	sessions, err := m.store.ListSessions(true)
+	sessions, err := m.services.store.ListSessions(true)
 	if err != nil {
 		return false, err
 	}
@@ -1270,7 +1270,7 @@ func (m *Model) sessionUsesDir(dir string) (bool, error) {
 // covers, reporting the paths that went so their fold state can go too.
 func (m *Model) deleteConfirmedGroups() ([]string, error) {
 	if m.confirm.archivedOnly {
-		return m.store.PruneArchivedGroups(m.confirm.path)
+		return m.services.store.PruneArchivedGroups(m.confirm.path)
 	}
-	return m.store.DeleteGroup(m.confirm.path)
+	return m.services.store.DeleteGroup(m.confirm.path)
 }

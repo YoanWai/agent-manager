@@ -480,9 +480,9 @@ func SyncTerminalBackground() {
 // still opens on it; the push to a running server shells out to tmux, so it
 // runs as a command off the update path and surfaces a failure through errMsg.
 func (m *Model) syncPaneTheme() tea.Cmd {
-	m.tmux.PublishPaneTheme(agentPaneTheme())
+	m.services.tmux.PublishPaneTheme(agentPaneTheme())
 	return func() tea.Msg {
-		if err := m.tmux.PushPaneTheme(); err != nil {
+		if err := m.services.tmux.PushPaneTheme(); err != nil {
 			return errMsg{err}
 		}
 		return nil

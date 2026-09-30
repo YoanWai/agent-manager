@@ -2,12 +2,13 @@ package ui
 
 import (
 	"fmt"
+	"github.com/YoanWai/agent-manager/internal/launch"
 	"strings"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/keybind"
-	"github.com/YoanWai/agent-manager/internal/launch"
+
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
@@ -58,7 +59,7 @@ func (m *Model) viewListFrame() string {
 	// background and the fill's corners land exactly on the cell grid.
 	bleedWidth := contentWidth - 1
 	railWidth := leftWidth - 1
-	m.pane.columnX = leftWidth + 2
+	m.focusPane.pane.columnX = leftWidth + 2
 	railRows := m.railLines(railWidth, bodyHeight)
 	m.recordRailHits(railRows)
 	contentRows := m.contentLines(bleedWidth, bodyHeight)
@@ -81,7 +82,7 @@ func (m *Model) viewListFrame() string {
 		paintContent(contentRows, bleedWidth, bodyHeight, backdropHex()),
 	)...)
 	bottom := m.boundedRuleRow(leftWidth+1, m.width, "▄")
-	if m.mode == modeFocus && m.pane.box.ok {
+	if m.mode == modeFocus && m.focusPane.pane.box.ok {
 		bottom = m.focusBottomRule(leftWidth+1, m.width)
 	}
 	frame = append(frame, bottom)
@@ -95,7 +96,7 @@ func (m *Model) viewListFrame() string {
 // rows and frame both differ from the split's. Focused, the list is not
 // on screen at all: the session owns the body through viewFullFocusFrame.
 func (m *Model) fullRows() bool {
-	return m.fullLayout && m.mode != modeFocus
+	return m.prefs.fullLayout && m.mode != modeFocus
 }
 
 // viewFullListFrame is the full screen layout: the rail owns the whole
@@ -143,11 +144,11 @@ func (m *Model) viewFullListFrame() string {
 func (m *Model) viewFullFocusFrame() string {
 	footer := m.viewFooter()
 	bodyHeight := m.listBodyHeight()
-	m.pane.columnX = 0
+	m.focusPane.pane.columnX = 0
 	// This frame paints no rail, so a click lands on no row: the list
 	// frame's hits would otherwise select a row nobody pointed at.
 	m.recordRailHits(nil)
-	m.noticeHit = noticeHit{}
+	m.notices.noticeHit = noticeHit{}
 	frame := []string{}
 	for _, line := range m.viewHeaderRows() {
 		frame = append(frame, paint(line, m.width, backdropHex()))
@@ -155,7 +156,7 @@ func (m *Model) viewFullFocusFrame() string {
 	frame = append(frame, paint(hrule(m.width), m.width, backdropHex()))
 	frame = append(frame, paint(m.focusFactsLine(m.width), m.width, backdropHex()))
 	frame = append(frame, paint(m.focusEdge(m.width), m.width, backdropHex()))
-	m.previewBodyOffset = 0
+	m.focusPane.previewBodyOffset = 0
 	paneRows := m.previewLines(m.width, bodyHeight, strings.Repeat(" ", contentGutter))
 	frame = append(frame, paintContent(paneRows, m.width, bodyHeight, backdropHex())...)
 	frame = append(frame, paint(m.focusEdge(m.width), m.width, backdropHex()))
@@ -197,7 +198,7 @@ func (m *Model) fullQuickLines(width, height int) []contentLine {
 }
 
 func (m *Model) highlightQuery(name string, base lipgloss.Style) string {
-	query := []rune(strings.TrimSpace(m.search))
+	query := []rune(strings.TrimSpace(m.rail.search))
 	runes := []rune(name)
 	if len(query) == 0 {
 		return base.Render(name)
@@ -224,12 +225,12 @@ func (m *Model) searchFieldLine(width int) string {
 	glyph := keyStyle.Render("⌕ ")
 	caret := cursorAnchorMarker + lipgloss.NewStyle().Foreground(colorAccent).Render("▏")
 	hint := keyCapQuiet("esc", "close")
-	if !m.searching {
+	if !m.rail.searching {
 		caret, hint = "", keyCapQuiet("esc", "clear")
 	}
 	chrome := railInset + ansi.StringWidth(glyph) + ansi.StringWidth(caret)
 
-	if m.search == "" {
+	if m.rail.search == "" {
 		field := glyph + subtleStyle.Render("type to filter") + caret
 		if gap := width - railInset - ansi.StringWidth(field) - ansi.StringWidth(hint) - 1; gap >= 2 {
 			return indent + field + strings.Repeat(" ", gap) + hint
@@ -242,7 +243,7 @@ func (m *Model) searchFieldLine(width int) string {
 	if room < 8 {
 		hint, room = "", width-chrome
 	}
-	query := m.search
+	query := m.rail.search
 	if ansi.StringWidth(query) > room {
 		query = "…" + string([]rune(query)[len([]rune(query))-max(room-1, 1):])
 	}
@@ -279,9 +280,9 @@ func (m *Model) railLines(width, height int) []contentLine {
 	// Search heads the list it filters, so the query sits over the entries it
 	// is narrowing. It is also the field being typed into, so a rail too tight
 	// for the padded block keeps the bare field rather than dropping it.
-	if m.searching || m.search != "" {
+	if m.rail.searching || m.rail.search != "" {
 		field := contentLine{text: m.searchFieldLine(width)}
-		if m.searching {
+		if m.rail.searching {
 			field.tone = searchFieldHex()
 			field.text = paint(field.text, width, field.tone)
 		}
@@ -311,7 +312,7 @@ func (m *Model) railLines(width, height int) []contentLine {
 			chrome(lines...)
 		}
 	}
-	rows = append(rows, m.entryLines(m.rows, 0, width, max(listHeight-len(rows), 0))...)
+	rows = append(rows, m.entryLines(m.rail.rows, 0, width, max(listHeight-len(rows), 0))...)
 	for len(rows) < listHeight {
 		chrome(contentLine{})
 	}
@@ -330,15 +331,15 @@ func (m *Model) railLines(width, height int) []contentLine {
 // foot took this frame: one edge cell sits left of the rail's content, and
 // the foot starts under the rule that closes the list.
 func (m *Model) placeNoticeHit(footLines, footIndex int) {
-	if footLines == 0 || !m.noticeHit.ok {
-		m.noticeHit = noticeHit{}
+	if footLines == 0 || !m.notices.noticeHit.ok {
+		m.notices.noticeHit = noticeHit{}
 		return
 	}
 	y0, _ := m.bodyYRange()
-	m.noticeHit.x0++
-	m.noticeHit.x1++
-	m.noticeHit.y0 = y0 + footIndex
-	m.noticeHit.y1 = m.noticeHit.y0 + footLines
+	m.notices.noticeHit.x0++
+	m.notices.noticeHit.x1++
+	m.notices.noticeHit.y0 = y0 + footIndex
+	m.notices.noticeHit.y1 = m.notices.noticeHit.y0 + footLines
 }
 
 // recordRailHits reads the row each rail line carries into m.railHits, so
@@ -348,9 +349,9 @@ func (m *Model) placeNoticeHit(footLines, footIndex int) {
 // line slice, so whatever the frame prepended, truncated or padded is
 // already accounted for.
 func (m *Model) recordRailHits(lines []contentLine) {
-	m.railHits = m.railHits[:0]
+	m.rail.railHits = m.rail.railHits[:0]
 	for _, line := range lines {
-		m.railHits = append(m.railHits, line.row-1)
+		m.rail.railHits = append(m.rail.railHits, line.row-1)
 	}
 }
 
@@ -364,13 +365,13 @@ func (m *Model) filterBadgeLines() []string {
 		lines = append(lines, strings.Repeat(" ", railInset)+scopeBadgeStyle.Render(label)+
 			subtleStyle.Render("  ")+keyCap(key, action))
 	}
-	if m.showArchived {
+	if m.rail.showArchived {
 		badge("ARCHIVED", "t", "back to active")
 	}
-	if m.statusFilter.active() {
-		badge(strings.ToUpper(m.statusFilter.label()), "w", "show all")
+	if m.rail.statusFilter.active() {
+		badge(strings.ToUpper(m.rail.statusFilter.label()), "w", "show all")
 	}
-	if m.hideEmptyGroups && !m.showArchived {
+	if m.rail.hideEmptyGroups && !m.rail.showArchived {
 		badge("HIDE EMPTY", "e", "show empty")
 	}
 	return lines
@@ -382,12 +383,12 @@ func (m *Model) filterBadgeLines() []string {
 // rather than rows. Each line carries the tone its entry painted, which the
 // edge column matches.
 func (m *Model) entryLines(rows []treeRow, offset, width, height int) []contentLine {
-	m.railWidth = width
-	m.handleX = map[string]int{}
+	m.rail.railWidth = width
+	m.rail.handleX = map[string]int{}
 	// Root alone is still an empty list: it says what the rail holds, not
 	// what to do about it being empty.
 	if rest := rowsBelowRoot(rows); len(rest) == 0 {
-		m.railTop, m.railEnd = 0, len(rows)
+		m.rail.railTop, m.rail.railEnd = 0, len(rows)
 		var lines []contentLine
 		for i, entry := range rows {
 			lines = append(lines, m.entryRowLines(entry, offset+i, width, panelHex())...)
@@ -401,12 +402,12 @@ func (m *Model) entryLines(rows []treeRow, offset, width, height int) []contentL
 	for i := range heights {
 		heights[i] = m.entryHeight(rows[i])
 	}
-	start, end := railWindow(heights, m.railAnchor()-offset, height, m.railTop)
-	m.railTop, m.railEnd = start, end
+	start, end := railWindow(heights, m.railAnchor()-offset, height, m.rail.railTop)
+	m.rail.railTop, m.rail.railEnd = start, end
 
 	var lines []contentLine
 	for i := start; i < end; i++ {
-		selected := offset+i == m.cursor
+		selected := offset+i == m.rail.cursor
 		entry := rows[i]
 		tone := panelHex()
 		switch {
@@ -453,7 +454,7 @@ func (m *Model) entryHeight(entry treeRow) int {
 	if entry.isGroup {
 		return 1
 	}
-	if m.comfortableRows {
+	if m.prefs.comfortableRows {
 		if m.isShell(entry.sess.Tool) {
 			return 2
 		}
@@ -517,15 +518,15 @@ func windowEnd(heights []int, top, budget int) int {
 func (m *Model) emptyRailLines(width, height int) []string {
 	title := "no sessions yet"
 	hint := m.listHint(keybind.NewSession, "starts one")
-	if m.showArchived {
+	if m.rail.showArchived {
 		title = "nothing archived"
 		hint = m.listHint(keybind.Archived, "back to active")
 	}
-	if m.statusFilter.active() {
-		title = "nothing needs " + m.statusFilter.label()
+	if m.rail.statusFilter.active() {
+		title = "nothing needs " + m.rail.statusFilter.label()
 		hint = m.listHint(keybind.Filter, "show all")
 	}
-	if search := strings.TrimSpace(m.search); search != "" {
+	if search := strings.TrimSpace(m.rail.search); search != "" {
 		title = "no matches"
 		hint = subtleStyle.Render("for \"" + search + "\"")
 	}
@@ -567,10 +568,10 @@ func centerLine(s string, width int) string {
 // tree drew them. A slot goes quiet once its level has no further
 // siblings below, which is what closes a branch off.
 func (m *Model) treeGuidesAt(index int) string {
-	if index < 0 || index >= len(m.rows) {
+	if index < 0 || index >= len(m.rail.rows) {
 		return ""
 	}
-	depth := m.rows[index].depth
+	depth := m.rail.rows[index].depth
 	if depth <= 0 {
 		return ""
 	}
@@ -595,10 +596,10 @@ func (m *Model) treeGuidesAt(index int) string {
 // the entry's own row connected to carries straight down past its second
 // line, so a two-line entry cannot leave a gap in the tree.
 func (m *Model) treeGuideTrail(index int) string {
-	if index < 0 || index >= len(m.rows) {
+	if index < 0 || index >= len(m.rail.rows) {
 		return ""
 	}
-	depth := m.rows[index].depth
+	depth := m.rail.rows[index].depth
 	if depth <= 0 {
 		return ""
 	}
@@ -617,11 +618,11 @@ func (m *Model) treeGuideTrail(index int) string {
 // below index. A slot goes quiet once its level has no further siblings,
 // which is what closes a branch off.
 func (m *Model) slotContinues(index, slot int) bool {
-	for j := index + 1; j < len(m.rows); j++ {
-		if m.rows[j].depth < slot {
+	for j := index + 1; j < len(m.rail.rows); j++ {
+		if m.rail.rows[j].depth < slot {
 			return false
 		}
-		if m.rows[j].depth == slot {
+		if m.rail.rows[j].depth == slot {
 			return true
 		}
 	}
@@ -634,8 +635,8 @@ func (m *Model) slotContinues(index, slot int) bool {
 // The handle's column is read off the painted head, where the row's tree
 // depth put it. The rail starts one column in, past its edge cell.
 func (m *Model) entryRowLines(entry treeRow, index, width int, tone string) []contentLine {
-	selected := index == m.cursor
-	button := !m.renamingRow(entry) && !m.mouseDisabled
+	selected := index == m.rail.cursor
+	button := !m.renamingRow(entry) && !m.prefs.mouseDisabled
 	rowWidth := width
 	if button {
 		rowWidth -= menuButtonWidth
@@ -644,7 +645,7 @@ func (m *Model) entryRowLines(entry treeRow, index, width int, tone string) []co
 	for n, line := range splitLines(m.renderTreeRow(entry, selected, rowWidth, index, tone)) {
 		if n == 0 {
 			if plain := ansi.Strip(line); strings.Contains(plain, reorderGrip) {
-				m.handleX[rowKey(entry)] = 1 + ansi.StringWidth(plain[:strings.Index(plain, reorderGrip)])
+				m.rail.handleX[rowKey(entry)] = 1 + ansi.StringWidth(plain[:strings.Index(plain, reorderGrip)])
 			}
 		}
 		switch {
@@ -686,7 +687,7 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width, index int, bg
 func (m *Model) sessionGlyph(sess store.Session) string {
 	if sess.Status == status.Starting {
 		return lipgloss.NewStyle().Foreground(statusColor(status.Starting)).
-			Render(startupFrames[m.startupPhase%len(startupFrames)])
+			Render(startupFrames[m.startup.startupPhase%len(startupFrames)])
 	}
 	resting := sess.Status != status.Dead && sess.Status != status.Errored
 	if resting && m.isShell(sess.Tool) {
@@ -722,7 +723,7 @@ type awaitedRename struct {
 // awaitingRename drops the record it reads as soon as the wait is over, so
 // a session settling on its name needs nothing to sweep the map after it.
 func (m *Model) awaitingRename(sess store.Session) bool {
-	awaited, ok := m.awaitedRenames[sess.ID]
+	awaited, ok := m.ledger.awaitedRenames[sess.ID]
 	if !ok {
 		return false
 	}
@@ -730,7 +731,7 @@ func (m *Model) awaitingRename(sess store.Session) bool {
 		time.Since(sess.CreatedAt) < renameGrace {
 		return true
 	}
-	delete(m.awaitedRenames, sess.ID)
+	delete(m.ledger.awaitedRenames, sess.ID)
 	return false
 }
 
@@ -742,7 +743,7 @@ func (m *Model) displayName(sess store.Session) string {
 	}
 	// The stored LaunchPrompt is the decorated one, carrying the rename
 	// directive the agent was sent; what the row wants is what was typed.
-	if preview := promptPreview(m.awaitedRenames[sess.ID].prompt); preview != "" {
+	if preview := promptPreview(m.ledger.awaitedRenames[sess.ID].prompt); preview != "" {
 		return preview
 	}
 	return namePlaceholder
@@ -783,7 +784,7 @@ func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad,
 	if selected && m.mode == modeFocus {
 		focus = " " + focusBadgeStyle.Render(" FOCUS ")
 	}
-	if queued := m.queuedMessages[sess.ID]; queued > 0 {
+	if queued := m.workspace.queuedMessages[sess.ID]; queued > 0 {
 		inbox = " " + inboxBadge(queued)
 	}
 	// A rail too narrow for the whole head shortens the name before it
@@ -810,12 +811,12 @@ func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad,
 	meta := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusLabel(sess.Status)) +
 		metaStyle.Render(" · "+sess.Tool)
 	// The id only fits the roomy layout; the compact meta is already crowded.
-	if sess.AgentSessionID != "" && m.comfortableRows {
+	if sess.AgentSessionID != "" && m.prefs.comfortableRows {
 		meta += metaStyle.Render(" · " + sess.AgentSessionID)
 	}
 	meta += metaStyle.Render(" · " + relSince(lastActivity(sess)) + m.elsewhereNote(sess))
 
-	if m.comfortableRows {
+	if m.prefs.comfortableRows {
 		indent := metaIndent(pad, trail) + strings.Repeat(" ", ansi.StringWidth(handle))
 		return m.tallRow(sess, head, meta, indent, selected, width, bg)
 	}
@@ -850,7 +851,7 @@ func (m *Model) compactRow(sess store.Session, head, meta string, selected bool,
 // not. A session with neither says nothing rather than holding a dash
 // mid-row.
 func (m *Model) compactCell(sess store.Session, quiet lipgloss.Style, room int) string {
-	if m.paneLines[sess.ID] != "" || sess.Status == status.Working {
+	if m.workspace.paneLines[sess.ID] != "" || sess.Status == status.Working {
 		return m.replyCell(sess, quiet, room)
 	}
 	if prompt := oneLine(m.rowPrompt(sess)); prompt != "" {
@@ -908,27 +909,18 @@ func rowPromptStyle() lipgloss.Style {
 // wherever; else the last one delivered through the manager, else the one
 // the session launched with, stripped of the notes launch prepends.
 func (m *Model) rowPrompt(sess store.Session) string {
-	if prompt := m.panePrompts[sess.ID]; prompt != "" {
+	if prompt := m.workspace.panePrompts[sess.ID]; prompt != "" {
 		return prompt
 	}
 	if sess.LastPrompt != "" {
 		return sess.LastPrompt
 	}
-	return typedPrompt(sess.LaunchPrompt)
+	return launch.DeliveredPrompt(sess.LaunchPrompt)
 }
 
 // typedPrompt is a delivered prompt with the launch notes peeled off: the
 // rename directives and the coordination note are the manager's words, not
 // a task, and a note delivered on its own leaves nothing typed at all.
-func typedPrompt(text string) string {
-	if text == launch.DeferredRenameDirective || text == launch.CoordinationNote {
-		return ""
-	}
-	text = strings.TrimPrefix(text, launch.CoordinationNote+"\n\n")
-	text = strings.TrimPrefix(text, launch.RenameDirective+"\n\n")
-	text = strings.TrimPrefix(text, launch.RenameAvailableNote+"\n\n")
-	return text
-}
 
 // replyCell quotes the start of the agent's last message behind a static
 // ↳, with the text washed in the state's hue so states read apart at a
@@ -937,9 +929,9 @@ func typedPrompt(text string) string {
 // A working session with nothing quotable yet animates a loader, and a
 // silent one holds the cell with a dim dash.
 func (m *Model) replyCell(sess store.Session, quiet lipgloss.Style, room int) string {
-	line := m.paneLines[sess.ID]
+	line := m.workspace.paneLines[sess.ID]
 	if sess.Status == status.Working && line == "" {
-		frame := startupFrames[m.startupPhase%len(startupFrames)]
+		frame := startupFrames[m.startup.startupPhase%len(startupFrames)]
 		return lipgloss.NewStyle().Foreground(statusColor(status.Working)).Render(frame + " working")
 	}
 	if line == "" {
@@ -957,7 +949,7 @@ func metaIndent(pad, trail string) string {
 
 func (m *Model) renderGroupEntry(entry treeRow, selected bool, width int, pad, guides, trail, bg string) string {
 	marker := "▾"
-	if m.collapsed[entry.group] {
+	if m.rail.collapsed[entry.group] {
 		marker = "▸"
 	}
 	nameStyle := lipgloss.NewStyle().Foreground(colorAccent2).Bold(true)
@@ -989,7 +981,7 @@ func (m *Model) renderGroupEntry(entry treeRow, selected bool, width int, pad, g
 // computerLines is the machine block docked at the rail's foot: a label
 // and one thin meter per resource.
 func (m *Model) computerLines(width int) []string {
-	snap := m.snap
+	snap := m.workspace.snap
 	pad := strings.Repeat(" ", railInset)
 	barWidth := width - 22
 	if barWidth < 4 {
@@ -1042,10 +1034,10 @@ func (m *Model) computerLines(width int) []string {
 	if temps := tempReadings(snap); temps != "" {
 		lines = append(lines, pad+labelStyle.Width(5).Render("temp")+temps)
 	}
-	if m.net.rates {
+	if m.workspace.net.rates {
 		lines = append(lines, pad+labelStyle.Width(5).Render("net")+
-			valueStyle.Render("↓ "+humanBytes(m.net.down)+"/s")+
-			subtleStyle.Render("  ↑ "+humanBytes(m.net.up)+"/s"))
+			valueStyle.Render("↓ "+humanBytes(m.workspace.net.down)+"/s")+
+			subtleStyle.Render("  ↑ "+humanBytes(m.workspace.net.up)+"/s"))
 	}
 	return append(lines, "")
 }
@@ -1092,10 +1084,10 @@ func (m *Model) contentLines(width, height int) []contentLine {
 		} else {
 			separator := contentLine{rule: true}
 			if m.mode == modeFocus {
-				separator = contentLine{text: focusTopRule(width, m.keys), raw: true}
+				separator = contentLine{text: focusTopRule(width, m.services.keys), raw: true}
 			}
 			body = append(body, separator)
-			m.previewBodyOffset = len(body)
+			m.focusPane.previewBodyOffset = len(body)
 			body = append(body, m.previewLines(width, rest, gutter)...)
 		}
 	}
@@ -1127,13 +1119,13 @@ func (m *Model) focusFactsLine(width int) string {
 	if sess.WorktreeBranch != "" {
 		facts = append(facts, focusFact{text: subtleStyle.Render("⑂ ") + valueStyle.Render(sess.WorktreeBranch), spare: 2})
 	}
-	if m.procFor == sess.ID && m.proc.OK {
+	if m.workspace.procFor == sess.ID && m.workspace.proc.OK {
 		facts = append(facts,
-			focusFact{text: labelStyle.Render("cpu ") + valueStyle.Render(fmt.Sprintf("%.1f%%", m.proc.CPUPercent)), spare: 1},
-			focusFact{text: labelStyle.Render("ram ") + valueStyle.Render(humanBytes(m.proc.RSS)), spare: 1})
+			focusFact{text: labelStyle.Render("cpu ") + valueStyle.Render(fmt.Sprintf("%.1f%%", m.workspace.proc.CPUPercent)), spare: 1},
+			focusFact{text: labelStyle.Render("ram ") + valueStyle.Render(humanBytes(m.workspace.proc.RSS)), spare: 1})
 	}
 	facts = append(facts, focusFact{text: labelStyle.Render("started ") + valueStyle.Render(relSince(sess.CreatedAt)), spare: 4})
-	if queued := m.queuedMessages[sess.ID]; queued > 0 {
+	if queued := m.workspace.queuedMessages[sess.ID]; queued > 0 {
 		facts = append(facts, focusFact{text: valueStyle.Render(fmt.Sprintf("%d queued", queued)), spare: 0})
 	}
 
@@ -1179,7 +1171,7 @@ func dropSparest(facts []focusFact) []focusFact {
 // focusEdge is the hairline holding the full screen pane off what sits
 // above and below it, in the pane's own tone once it has a box to trace.
 func (m *Model) focusEdge(width int) string {
-	if m.pane.box.ok {
+	if m.focusPane.pane.box.ok {
 		return focusEdgeStyle.Render(strings.Repeat("─", max(width, 0)))
 	}
 	return hrule(width)
@@ -1226,10 +1218,10 @@ const startupRingPoints = 12
 
 func (m *Model) startupLoader(width, height int) []string {
 	sess, ok := m.selected()
-	if !ok || m.mode == modeFocus || sess.Status != status.Starting || paneBooted(m.preview) {
+	if !ok || m.mode == modeFocus || sess.Status != status.Starting || paneBooted(m.workspace.preview) {
 		return nil
 	}
-	return ringLoader(width, height, "starting up", m.startupPhase)
+	return ringLoader(width, height, "starting up", m.startup.startupPhase)
 }
 
 func ringLoader(width, height int, label string, phase int) []string {
@@ -1273,11 +1265,11 @@ func ringLoader(width, height int, label string, phase int) []string {
 func (m *Model) previewLines(width, height int, gutter string) []contentLine {
 	var lines []contentLine
 	loader := m.startupLoader(width, height)
-	pane := paneExact(m.preview, height, width, m.paneCaretRow())
+	pane := paneExact(m.workspace.preview, height, width, m.paneCaretRow())
 	if len(pane) == 0 {
 		// No rows painted means nothing to hit-test: a box left over from
 		// the previous session would catch clicks on empty space.
-		m.pane.box = paneBox{}
+		m.focusPane.pane.box = paneBox{}
 		if loader != nil {
 			for _, line := range loader {
 				lines = append(lines, contentLine{text: previewLine(line, width), raw: true})
@@ -1292,9 +1284,9 @@ func (m *Model) previewLines(width, height int, gutter string) []contentLine {
 	}
 	// Record where these rows land so mouse hit-testing reads the same
 	// geometry the paint used.
-	m.pane.box = paneBox{
+	m.focusPane.pane.box = paneBox{
 		x:      m.paneOriginX(),
-		y:      m.listChromeRows() + m.previewBodyOffset + topPadding,
+		y:      m.listChromeRows() + m.focusPane.previewBodyOffset + topPadding,
 		width:  width,
 		height: len(pane),
 		ok:     true,
@@ -1392,7 +1384,7 @@ func (m *Model) viewDetail(width int) string {
 	// Ahead of the name because fitColumns trims the head from its tail: the
 	// rail still shows the name, while a trimmed badge leaves no trace that
 	// anything is waiting.
-	if queued := m.queuedMessages[sess.ID]; queued > 0 {
+	if queued := m.workspace.queuedMessages[sess.ID]; queued > 0 {
 		name = inboxBadge(queued) + " " + name
 	}
 	withTool := name + "  " + chipStyle.Render(tool)
@@ -1402,11 +1394,11 @@ func (m *Model) viewDetail(width int) string {
 	}
 
 	usage := ""
-	if m.procFor == sess.ID && m.proc.OK {
-		usage = labelStyle.Render("cpu ") + valueStyle.Render(fmt.Sprintf("%.1f%%", m.proc.CPUPercent)) +
+	if m.workspace.procFor == sess.ID && m.workspace.proc.OK {
+		usage = labelStyle.Render("cpu ") + valueStyle.Render(fmt.Sprintf("%.1f%%", m.workspace.proc.CPUPercent)) +
 			subtleStyle.Render(" · ") + labelStyle.Render("ram ") +
-			valueStyle.Render(fmt.Sprintf("%.1f%%", m.proc.RamPercent)) +
-			subtleStyle.Render(" · ") + valueStyle.Render(humanBytes(m.proc.RSS))
+			valueStyle.Render(fmt.Sprintf("%.1f%%", m.workspace.proc.RamPercent)) +
+			subtleStyle.Render(" · ") + valueStyle.Render(humanBytes(m.workspace.proc.RSS))
 	}
 	started := subtleStyle.Render("started " + relSince(sess.CreatedAt))
 	group := lipgloss.NewStyle().Foreground(colorAccent2).Render(displayGroup(sess.Group))
@@ -1448,7 +1440,7 @@ func (m *Model) viewGroupDetail(group string, width int) string {
 		return out
 	}
 
-	path := m.groupPaths[group]
+	path := m.workspace.groupPaths[group]
 	source := ""
 	if path == "" {
 		path = m.groupDefaultDir(group)
@@ -1672,7 +1664,7 @@ func (m *Model) headerScope() string {
 		label = " agent"
 	}
 	scope := subtleStyle.Render(" · active")
-	if m.showArchived {
+	if m.rail.showArchived {
 		scope = subtleStyle.Render(" · archived")
 	}
 	return valueStyle.Render(fmt.Sprintf("%d", count)) + subtleStyle.Render(label) + scope
@@ -1681,15 +1673,15 @@ func (m *Model) headerScope() string {
 // headerAgents is the fleet's process cost as shares of this machine,
 // empty when nothing is running. RAM shows both percent and absolute size.
 func (m *Model) headerAgents() string {
-	if m.agents.count == 0 {
+	if m.workspace.agents.count == 0 {
 		return ""
 	}
 	title := lipgloss.NewStyle().Foreground(colorBright).Bold(true).Render("agents total usage:")
 	return title + " " +
-		labelStyle.Render("cpu ") + valueStyle.Render(fmt.Sprintf("%.0f%%", m.agents.cpu)) +
+		labelStyle.Render("cpu ") + valueStyle.Render(fmt.Sprintf("%.0f%%", m.workspace.agents.cpu)) +
 		subtleStyle.Render(" · ") + labelStyle.Render("ram ") +
-		valueStyle.Render(fmt.Sprintf("%.0f%%", m.agents.ram)) +
-		subtleStyle.Render(" · ") + valueStyle.Render(humanBytes(m.agents.rss))
+		valueStyle.Render(fmt.Sprintf("%.0f%%", m.workspace.agents.ram)) +
+		subtleStyle.Render(" · ") + valueStyle.Render(humanBytes(m.workspace.agents.rss))
 }
 
 // elsewhereNote marks a session this manager does not speak for: its pane
@@ -1697,13 +1689,13 @@ func (m *Model) headerAgents() string {
 // it and the store belongs to another manager. Its status is the last one
 // that manager wrote, and nothing here refreshes or drives it.
 func (m *Model) elsewhereNote(sess store.Session) string {
-	if m.tmuxSocket == "" {
+	if m.workspace.tmuxSocket == "" {
 		return ""
 	}
-	if sess.TmuxSocket == "" && !m.leadingManager {
+	if sess.TmuxSocket == "" && !m.workspace.leadingManager {
 		return " · elsewhere"
 	}
-	if sess.TmuxSocket == "" || sess.TmuxSocket == m.tmuxSocket {
+	if sess.TmuxSocket == "" || sess.TmuxSocket == m.workspace.tmuxSocket {
 		return ""
 	}
 	return " · elsewhere"

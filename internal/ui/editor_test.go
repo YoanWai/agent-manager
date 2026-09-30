@@ -71,9 +71,9 @@ func TestOpenEditorLaunchesGUIEditorOnSessionDirectory(t *testing.T) {
 func TestOpenEditorPrefersConfiguredCommand(t *testing.T) {
 	m := buildModel(t)
 	launched := captureEditor(t, "code")
-	m.cfg.Editor = `open -a 'Visual Studio Code'`
+	m.services.cfg.Editor = `open -a 'Visual Studio Code'`
 	dir := t.TempDir()
-	if err := m.store.CreateGroup("backend", dir); err != nil {
+	if err := m.services.store.CreateGroup("backend", dir); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -131,7 +131,7 @@ func TestOpenEditorFallsBackToRecordedCwd(t *testing.T) {
 	if !ok {
 		t.Fatal("no selected row")
 	}
-	if err := m.tmux.Kill(entry.sess.ID); err != nil {
+	if err := m.services.tmux.Kill(entry.sess.ID); err != nil {
 		t.Fatalf("kill session: %v", err)
 	}
 
@@ -240,7 +240,11 @@ func TestResolveEditorPrecedence(t *testing.T) {
 		{"$VISUAL over $EDITOR", "", map[string]string{"VISUAL": "vim", "EDITOR": "nano"}, nil, "vim"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			m := &Model{cfg: config.Config{Editor: tc.configured}}
+			m := &Model{
+				services: services{
+					cfg: config.Config{Editor: tc.configured},
+				},
+			}
 			captureEditor(t, tc.installed...)
 			for key, value := range tc.env {
 				t.Setenv(key, value)
@@ -273,7 +277,7 @@ func TestResolveEditorFallsBackToEnvironment(t *testing.T) {
 func TestUnknownEditorTakesTheScreen(t *testing.T) {
 	m := buildModel(t)
 	launched := captureEditor(t)
-	m.cfg.Editor = "my-own-edit-wrapper"
+	m.services.cfg.Editor = "my-own-edit-wrapper"
 	dir := t.TempDir()
 	createSession(t, m, "agent", dir, "")
 	m.selectSessionRow(t, "agent")
@@ -351,7 +355,7 @@ func TestAttachDoneOpensEditorAndReturnsToTheSession(t *testing.T) {
 	if m.editorReturnID != sess.ID {
 		t.Fatalf("return armed for %q, want %q", m.editorReturnID, sess.ID)
 	}
-	request, err := m.tmux.PendingRequest()
+	request, err := m.services.tmux.PendingRequest()
 	if err != nil {
 		t.Fatalf("PendingRequest: %v", err)
 	}
@@ -412,7 +416,7 @@ func TestAttachDoneRefusedEditorArmsNoReturn(t *testing.T) {
 func TestAttachDoneTerminalEditorArmsTheReturn(t *testing.T) {
 	m := buildModel(t)
 	launched := captureEditor(t)
-	m.cfg.Editor = "my-own-edit-wrapper"
+	m.services.cfg.Editor = "my-own-edit-wrapper"
 	createSession(t, m, "editme", t.TempDir(), "")
 	m.selectSessionRow(t, "editme")
 	sess, ok := m.selected()

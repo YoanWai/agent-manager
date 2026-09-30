@@ -53,11 +53,11 @@ func (m *Model) openRepoPick() {
 // synchronously; a failure stays in review with the error shown.
 func (m *Model) openBranchPick() tea.Cmd {
 	root := m.diff.set.Repo.Root
-	if m.gitDrv == nil || root == "" {
+	if m.services.gitDrv == nil || root == "" {
 		m.errBar.text = "no repo under review"
 		return nil
 	}
-	worktrees, err := m.gitDrv.Worktrees(root)
+	worktrees, err := m.services.gitDrv.Worktrees(root)
 	if err != nil {
 		m.errBar.text = err.Error()
 		return nil
@@ -78,11 +78,11 @@ func (m *Model) openBasePick() tea.Cmd {
 	// empty after a bad base errors the load, which would make the one control
 	// that clears the bad base unreachable exactly when it is needed.
 	root := m.diff.repoSel
-	if m.gitDrv == nil || root == "" {
+	if m.services.gitDrv == nil || root == "" {
 		m.errBar.text = "no repo under review"
 		return nil
 	}
-	refs, err := m.gitDrv.BranchRefs(root)
+	refs, err := m.services.gitDrv.BranchRefs(root)
 	if err != nil {
 		m.errBar.text = err.Error()
 		return nil
@@ -93,7 +93,7 @@ func (m *Model) openBasePick() tea.Cmd {
 		return nil
 	}
 	// Resolve symlinks so the key matches the CLI's symlink-expanded toplevel.
-	current, err := m.store.ReviewBase(sess.ID, resolveSymlinksOrSelf(root))
+	current, err := m.services.store.ReviewBase(sess.ID, resolveSymlinksOrSelf(root))
 	if err != nil {
 		m.errBar.text = err.Error()
 		return nil
@@ -196,10 +196,10 @@ func (m *Model) selectRepo(root string) tea.Cmd {
 		return nil
 	}
 	m.diff.repoSel = root
-	if m.pickedRepos == nil {
-		m.pickedRepos = map[string]string{}
+	if m.ledger.pickedRepos == nil {
+		m.ledger.pickedRepos = map[string]string{}
 	}
-	m.pickedRepos[sess.ID] = root
+	m.ledger.pickedRepos[sess.ID] = root
 	m.diff.gen++
 	m.diff.loading = true
 	m.diff.errText = ""
@@ -222,7 +222,7 @@ func (m *Model) selectBase(ref string) tea.Cmd {
 		return nil
 	}
 	// Resolve symlinks so the key matches the CLI's symlink-expanded toplevel.
-	if err := m.store.SetReviewBase(sess.ID, resolveSymlinksOrSelf(m.diff.repoSel), ref); err != nil {
+	if err := m.services.store.SetReviewBase(sess.ID, resolveSymlinksOrSelf(m.diff.repoSel), ref); err != nil {
 		m.errBar.text = err.Error()
 		return nil
 	}

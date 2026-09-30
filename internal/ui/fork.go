@@ -35,7 +35,7 @@ func (m *Model) openFork() {
 		m.errBar.text = "select a session to fork"
 		return
 	}
-	tool, ok := m.cfg.Tools[entry.sess.Tool]
+	tool, ok := m.services.cfg.Tools[entry.sess.Tool]
 	if !ok {
 		m.errBar.text = fmt.Sprintf("tool %s is no longer configured", entry.sess.Tool)
 		return
@@ -73,12 +73,12 @@ func (m *Model) submitFork() (tea.Model, tea.Cmd) {
 		m.errBar.text = "name cannot be empty"
 		return m, nil
 	}
-	source, err := m.store.Get(m.fork.source.ID)
+	source, err := m.services.store.Get(m.fork.source.ID)
 	if err != nil {
 		m.errBar.text = err.Error()
 		return m, nil
 	}
-	tool, ok := m.cfg.Tools[source.Tool]
+	tool, ok := m.services.cfg.Tools[source.Tool]
 	if !ok {
 		m.errBar.text = fmt.Sprintf("tool %s is no longer configured", source.Tool)
 		return m, nil
@@ -134,7 +134,7 @@ func (m *Model) launchFork(source store.Session, tool config.Tool, name, agentID
 	}
 	// Forks start as starting, which attention excludes; clear so the row
 	// the fork just created is on screen.
-	m.statusFilter = statusFilterAll
+	m.rail.statusFilter = statusFilterAll
 	m.rebuildRows()
 	m.mode = modeList
 	m.errBar.text = ""
@@ -202,7 +202,7 @@ func (m *Model) handleForkedInSource(msg forkedInSourceMsg) (tea.Model, tea.Cmd)
 		m.errBar.text = msg.err.Error()
 		return m, nil
 	}
-	tool, ok := m.cfg.Tools[msg.source.Tool]
+	tool, ok := m.services.cfg.Tools[msg.source.Tool]
 	if !ok {
 		m.errBar.text = fmt.Sprintf("tool %s is no longer configured", msg.source.Tool)
 		return m, nil

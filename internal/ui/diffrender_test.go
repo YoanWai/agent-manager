@@ -152,8 +152,10 @@ func TestHighlightFileHunkModel(t *testing.T) {
 func TestReviewRendersHunksForBigFile(t *testing.T) {
 	fd := bigEditedFile(t)
 	m := &Model{
-		width: 100, height: 30, mode: modeDiff,
-		diff: diffState{active: true, sessID: "s", hl: newHLCache(), set: diff.Set{Files: []diff.FileDiff{fd}}},
+		width:  100,
+		height: 30,
+		mode:   modeDiff,
+		diff:   diffState{active: true, sessID: "s", hl: newHLCache(), set: diff.Set{Files: []diff.FileDiff{fd}}},
 	}
 	for _, split := range []bool{false, true} {
 		m.diff.sideBySide = split
@@ -211,7 +213,7 @@ func TestHLCacheEvicts(t *testing.T) {
 // shows the base and the branch it diffs into.
 func TestReviewHeaderShowsRepoBranchAndBase(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	dir := gitRepoWithTwoChangedFiles(t)
@@ -241,7 +243,7 @@ func TestReviewHeaderShowsRepoBranchAndBase(t *testing.T) {
 // explicitly set one does not.
 func TestReviewHeaderTargetLabelCleanAndKeyed(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	dir := gitRepoWithSecondBranch(t)
@@ -265,7 +267,7 @@ func TestReviewHeaderTargetLabelCleanAndKeyed(t *testing.T) {
 		t.Fatalf("auto-detected target should be marked, got %q", header)
 	}
 
-	if err := m.store.SetReviewBase(sess.ID, m.diff.repoSel, "feature"); err != nil {
+	if err := m.services.store.SetReviewBase(sess.ID, m.diff.repoSel, "feature"); err != nil {
 		t.Fatal(err)
 	}
 	m.diff.set.BaseOverride = "feature"
@@ -286,7 +288,7 @@ func TestReviewHeaderTargetLabelCleanAndKeyed(t *testing.T) {
 // for it, so a header that kept counting it would disagree with its own list.
 func TestReviewHeaderShowsCodeOnlyFilter(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	openReviewOn(t, m, "hdr", gitRepoWithLockFileBetweenTextFiles(t))

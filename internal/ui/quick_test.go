@@ -63,7 +63,7 @@ func TestQuickPromptDeadSessionSetsError(t *testing.T) {
 	createSession(t, m, "gone", t.TempDir(), "")
 
 	sess := m.sessionRows()[0]
-	if err := m.tmux.Kill(sess.ID); err != nil {
+	if err := m.services.tmux.Kill(sess.ID); err != nil {
 		t.Fatalf("kill: %v", err)
 	}
 	m.selectSessionRow(t, "gone")
@@ -76,7 +76,7 @@ func TestQuickPromptDeadSessionSetsError(t *testing.T) {
 	if !m.quick.active {
 		t.Fatal("quick mode should stay open after a failed send")
 	}
-	if _, err := m.store.Get(sess.ID); err != nil {
+	if _, err := m.services.store.Get(sess.ID); err != nil {
 		t.Fatalf("session record should survive: %v", err)
 	}
 }
@@ -86,7 +86,7 @@ func TestQuickPromptSendClearsAcked(t *testing.T) {
 	createSession(t, m, "answer-me", t.TempDir(), "")
 
 	sess := m.sessionRows()[0]
-	if err := m.store.SetAcked(sess.ID, true); err != nil {
+	if err := m.services.store.SetAcked(sess.ID, true); err != nil {
 		t.Fatalf("set acked: %v", err)
 	}
 	m.selectSessionRow(t, "answer-me")
@@ -105,7 +105,7 @@ func TestQuickPromptSendClearsAcked(t *testing.T) {
 	if m.quick.input.Value() != "" {
 		t.Fatal("input should clear after a send")
 	}
-	got, err := m.store.Get(sess.ID)
+	got, err := m.services.store.Get(sess.ID)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -466,16 +466,16 @@ func TestQuickAttachImageRealErrorSurfaces(t *testing.T) {
 func TestQuickSpawnOnGroupCreatesSession(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
-	if err := m.store.CreateGroup("backend", dir); err != nil {
+	if err := m.services.store.CreateGroup("backend", dir); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
-	if err := m.store.SetSetting("default_tool", "claude"); err != nil {
+	if err := m.services.store.SetSetting("default_tool", "claude"); err != nil {
 		t.Fatalf("set setting: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
-	for i, row := range m.rows {
+	for i, row := range m.rail.rows {
 		if row.isGroup && row.group == "backend" {
-			m.cursor = i
+			m.rail.cursor = i
 		}
 	}
 
@@ -495,7 +495,7 @@ func TestQuickSpawnOnGroupCreatesSession(t *testing.T) {
 	if spawned.Group != "backend" || spawned.Tool != "claude" || spawned.Cwd != dir {
 		t.Fatalf("spawned session fields wrong: %+v", spawned)
 	}
-	if !m.tmux.Exists(spawned.ID) {
+	if !m.services.tmux.Exists(spawned.ID) {
 		t.Fatal("tmux session should exist after quick spawn")
 	}
 	if m.quick.input.Value() != "" {
@@ -506,13 +506,13 @@ func TestQuickSpawnOnGroupCreatesSession(t *testing.T) {
 func TestQuickSpawnUsesTabCycledTool(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
-	if err := m.store.CreateGroup("backend", dir); err != nil {
+	if err := m.services.store.CreateGroup("backend", dir); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
-	for i, row := range m.rows {
+	for i, row := range m.rail.rows {
 		if row.isGroup && row.group == "backend" {
-			m.cursor = i
+			m.rail.cursor = i
 		}
 	}
 
@@ -549,7 +549,7 @@ func closeQuick(m *Model) {
 func TestQuickRemembersLastSpawnTool(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
-	if err := m.store.CreateGroup("backend", dir); err != nil {
+	if err := m.services.store.CreateGroup("backend", dir); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -620,7 +620,7 @@ func TestQuickHiddenLastToolFallsBackToSettings(t *testing.T) {
 	m.applyCmd(t, cmd)
 	closeQuick(m)
 
-	if err := m.store.SetSetting(hiddenToolsSetting, m.lastSpawnTool); err != nil {
+	if err := m.services.store.SetSetting(hiddenToolsSetting, m.ledger.lastSpawnTool); err != nil {
 		t.Fatal(err)
 	}
 
@@ -639,9 +639,9 @@ func TestQuickRemembersPickOnlyAfterInstallRetrySucceeds(t *testing.T) {
 	submitFormSession(t, m, "first")
 
 	installCommand := fakeInstallCommand(t)
-	tool := m.cfg.Tools["claude"]
+	tool := m.services.cfg.Tools["claude"]
 	tool.Command = "am-fake-cli"
-	m.cfg.Tools["claude"] = tool
+	m.services.cfg.Tools["claude"] = tool
 	m.selectGroupRow(t, "grp")
 	m.openQuickMode()
 	for i, name := range m.quick.toolNames {
@@ -656,15 +656,15 @@ func TestQuickRemembersPickOnlyAfterInstallRetrySucceeds(t *testing.T) {
 	if m.mode != modeLaunchHint || m.launchFix.retry == nil {
 		t.Fatalf("expected a refused launch with retry, mode=%v err=%q", m.mode, m.errBar.text)
 	}
-	if m.lastSpawnTool != "ready-tool" || m.lastSpawnWorktree {
-		t.Fatalf("failed launch changed the last pick: %q, %v", m.lastSpawnTool, m.lastSpawnWorktree)
+	if m.ledger.lastSpawnTool != "ready-tool" || m.ledger.lastSpawnWorktree {
+		t.Fatalf("failed launch changed the last pick: %q, %v", m.ledger.lastSpawnTool, m.ledger.lastSpawnWorktree)
 	}
 	m.launchFix.command = installCommand
 	m.applyCmd(t, pressInLaunchHint(t, m, 'i'))
 	waitForInstallToSettle(t, m)
 
-	if m.lastSpawnTool != "claude" || !m.lastSpawnWorktree {
-		t.Fatalf("successful retry did not remember the pick: %q, %v; err=%q", m.lastSpawnTool, m.lastSpawnWorktree, m.errBar.text)
+	if m.ledger.lastSpawnTool != "claude" || !m.ledger.lastSpawnWorktree {
+		t.Fatalf("successful retry did not remember the pick: %q, %v; err=%q", m.ledger.lastSpawnTool, m.ledger.lastSpawnWorktree, m.errBar.text)
 	}
 	m.selectGroupRow(t, "grp")
 	m.openQuickMode()
@@ -688,7 +688,7 @@ func TestQuickCancelDoesNotRememberLastPick(t *testing.T) {
 func TestQuickSeedsFromLastFormSpawn(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
-	if err := m.store.CreateGroup("backend", dir); err != nil {
+	if err := m.services.store.CreateGroup("backend", dir); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -709,7 +709,7 @@ func TestQuickCloseAfterSendDefaultsToStayingOpen(t *testing.T) {
 	if m.quickCloseAfterSend() {
 		t.Fatal("quick bar should stay open by default")
 	}
-	if err := m.store.SetSetting(quickCloseSetting, "close"); err != nil {
+	if err := m.services.store.SetSetting(quickCloseSetting, "close"); err != nil {
 		t.Fatal(err)
 	}
 	if !m.quickCloseAfterSend() {
@@ -721,7 +721,7 @@ func TestQuickPromptClosesAfterSendWhenEnabled(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "answer-me", t.TempDir(), "")
 	m.selectSessionRow(t, "answer-me")
-	if err := m.store.SetSetting(quickCloseSetting, "close"); err != nil {
+	if err := m.services.store.SetSetting(quickCloseSetting, "close"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -753,7 +753,7 @@ func TestQuickWorktreeToggle(t *testing.T) {
 
 func TestQuickWorktreeSeedsFromSetting(t *testing.T) {
 	m := buildModel(t)
-	if err := m.store.SetSetting(worktreeSetting, "on"); err != nil {
+	if err := m.services.store.SetSetting(worktreeSetting, "on"); err != nil {
 		t.Fatalf("set setting: %v", err)
 	}
 	m.openQuickMode()
@@ -766,7 +766,7 @@ func TestQuickWorktreeSeedsFromSetting(t *testing.T) {
 func quickGroupModel(t *testing.T, dir string) *Model {
 	t.Helper()
 	m := buildModel(t)
-	if err := m.store.CreateGroup("grp", dir); err != nil {
+	if err := m.services.store.CreateGroup("grp", dir); err != nil {
 		t.Fatalf("group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -777,7 +777,7 @@ func quickGroupModel(t *testing.T, dir string) *Model {
 func TestQuickWorktreeGatedInNonRepoGroup(t *testing.T) {
 	dir := t.TempDir()
 	m := quickGroupModel(t, dir)
-	if err := m.store.SetGroupWorktree("grp", "on"); err != nil {
+	if err := m.services.store.SetGroupWorktree("grp", "on"); err != nil {
 		t.Fatalf("set worktree: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -801,7 +801,7 @@ func TestQuickWorktreeGatedInNonRepoGroup(t *testing.T) {
 	}
 	m.quick.input.SetValue("do a thing")
 	m.submitQuick()
-	sessions, err := m.store.ListSessions(true)
+	sessions, err := m.services.store.ListSessions(true)
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -823,7 +823,7 @@ func TestQuickSpawnUsesGroupWorktreeDefault(t *testing.T) {
 	}
 	initGitRepo(t, repo)
 	m := quickGroupModel(t, repo)
-	if err := m.store.SetGroupWorktree("grp", "on"); err != nil {
+	if err := m.services.store.SetGroupWorktree("grp", "on"); err != nil {
 		t.Fatalf("set worktree: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -837,7 +837,7 @@ func TestQuickSpawnUsesGroupWorktreeDefault(t *testing.T) {
 	if m.errBar.text != "" {
 		t.Fatalf("worktree spawn should succeed: %q", m.errBar.text)
 	}
-	sessions, err := m.store.ListSessions(true)
+	sessions, err := m.services.store.ListSessions(true)
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -853,7 +853,7 @@ func TestQuickWorktreeToggleOverridesGroupDefault(t *testing.T) {
 	}
 	initGitRepo(t, repo)
 	m := quickGroupModel(t, repo)
-	if err := m.store.SetGroupWorktree("grp", "on"); err != nil {
+	if err := m.services.store.SetGroupWorktree("grp", "on"); err != nil {
 		t.Fatalf("set worktree: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -921,7 +921,7 @@ func TestQuickSendRecordsLastPrompt(t *testing.T) {
 	if _, _ = m.submitQuick(); m.errBar.text != "" {
 		t.Fatalf("send: %q", m.errBar.text)
 	}
-	got, err := m.store.Get(m.sessionRows()[0].ID)
+	got, err := m.services.store.Get(m.sessionRows()[0].ID)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -934,53 +934,53 @@ func TestQuickSendRecordsLastPrompt(t *testing.T) {
 func seedTwoGroups(t *testing.T, m *Model) {
 	t.Helper()
 	for _, name := range []string{"alpha", "beta"} {
-		if err := m.store.CreateGroup(name, t.TempDir()); err != nil {
+		if err := m.services.store.CreateGroup(name, t.TempDir()); err != nil {
 			t.Fatalf("create group: %v", err)
 		}
 	}
 	m.applyCmd(t, m.refreshCmd())
-	if len(m.rows) < 2 {
-		t.Fatalf("rows = %d, want at least 2", len(m.rows))
+	if len(m.rail.rows) < 2 {
+		t.Fatalf("rows = %d, want at least 2", len(m.rail.rows))
 	}
 }
 
 func TestQuickUpDownMoveTheCaretBetweenPromptRows(t *testing.T) {
 	m := buildModel(t)
 	seedTwoGroups(t, m)
-	m.cursor = 1
+	m.rail.cursor = 1
 	m.openQuickMode()
 	m.quick.input.SetWidth(40)
 	m.quick.input.SetHeight(quickBarMaxRows)
 	m.quick.input.SetValue("first\nsecond\nthird")
 
 	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyUp})
-	if m.quick.input.Line() != 1 || m.cursor != 1 {
-		t.Fatalf("up from the last row: caret line %d, selection %d; want caret 1, selection 1", m.quick.input.Line(), m.cursor)
+	if m.quick.input.Line() != 1 || m.rail.cursor != 1 {
+		t.Fatalf("up from the last row: caret line %d, selection %d; want caret 1, selection 1", m.quick.input.Line(), m.rail.cursor)
 	}
 	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyUp})
-	if m.quick.input.Line() != 0 || m.cursor != 1 {
-		t.Fatalf("up from the middle row: caret line %d, selection %d; want caret 0, selection 1", m.quick.input.Line(), m.cursor)
+	if m.quick.input.Line() != 0 || m.rail.cursor != 1 {
+		t.Fatalf("up from the middle row: caret line %d, selection %d; want caret 0, selection 1", m.quick.input.Line(), m.rail.cursor)
 	}
 	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyUp})
-	if m.quick.input.Line() != 0 || m.cursor != 0 {
-		t.Fatalf("up from the first row: caret line %d, selection %d; want caret 0, selection 0", m.quick.input.Line(), m.cursor)
+	if m.quick.input.Line() != 0 || m.rail.cursor != 0 {
+		t.Fatalf("up from the first row: caret line %d, selection %d; want caret 0, selection 0", m.quick.input.Line(), m.rail.cursor)
 	}
 
 	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyDown})
-	if m.quick.input.Line() != 1 || m.cursor != 0 {
-		t.Fatalf("down from the first row: caret line %d, selection %d; want caret 1, selection 0", m.quick.input.Line(), m.cursor)
+	if m.quick.input.Line() != 1 || m.rail.cursor != 0 {
+		t.Fatalf("down from the first row: caret line %d, selection %d; want caret 1, selection 0", m.quick.input.Line(), m.rail.cursor)
 	}
 	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyDown})
 	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyDown})
-	if m.quick.input.Line() != 2 || m.cursor != 1 {
-		t.Fatalf("down from the last row: caret line %d, selection %d; want caret 2, selection 1", m.quick.input.Line(), m.cursor)
+	if m.quick.input.Line() != 2 || m.rail.cursor != 1 {
+		t.Fatalf("down from the last row: caret line %d, selection %d; want caret 2, selection 1", m.quick.input.Line(), m.rail.cursor)
 	}
 }
 
 func TestQuickUpDownWalkSoftWrappedRows(t *testing.T) {
 	m := buildModel(t)
 	seedTwoGroups(t, m)
-	m.cursor = 1
+	m.rail.cursor = 1
 	m.openQuickMode()
 	m.quick.input.SetWidth(12)
 	m.quick.input.SetHeight(quickBarMaxRows)
@@ -994,15 +994,15 @@ func TestQuickUpDownWalkSoftWrappedRows(t *testing.T) {
 	}
 
 	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyUp})
-	if got := m.quick.input.LineInfo().RowOffset; got != last-1 || m.cursor != 1 {
-		t.Fatalf("up inside a wrapped line: row %d, selection %d; want row %d, selection 1", got, m.cursor, last-1)
+	if got := m.quick.input.LineInfo().RowOffset; got != last-1 || m.rail.cursor != 1 {
+		t.Fatalf("up inside a wrapped line: row %d, selection %d; want row %d, selection 1", got, m.rail.cursor, last-1)
 	}
 	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyDown})
-	if got := m.quick.input.LineInfo().RowOffset; got != last || m.cursor != 1 {
-		t.Fatalf("down inside a wrapped line: row %d, selection %d; want row %d, selection 1", got, m.cursor, last)
+	if got := m.quick.input.LineInfo().RowOffset; got != last || m.rail.cursor != 1 {
+		t.Fatalf("down inside a wrapped line: row %d, selection %d; want row %d, selection 1", got, m.rail.cursor, last)
 	}
 	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyDown})
-	if m.cursor == 1 {
+	if m.rail.cursor == 1 {
 		t.Fatal("down from the last wrapped row should move the selection")
 	}
 }
@@ -1010,18 +1010,18 @@ func TestQuickUpDownWalkSoftWrappedRows(t *testing.T) {
 func TestQuickOneRowPromptKeepsArrowsOnTheList(t *testing.T) {
 	m := buildModel(t)
 	seedTwoGroups(t, m)
-	m.cursor = 1
+	m.rail.cursor = 1
 	m.openQuickMode()
 	m.quick.input.SetWidth(40)
 	m.quick.input.SetValue("short answer")
 
 	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyUp})
-	if m.cursor != 0 {
-		t.Fatalf("up on a one-row prompt should move the selection, got %d", m.cursor)
+	if m.rail.cursor != 0 {
+		t.Fatalf("up on a one-row prompt should move the selection, got %d", m.rail.cursor)
 	}
 	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyDown})
-	if m.cursor != 1 {
-		t.Fatalf("down on a one-row prompt should move the selection, got %d", m.cursor)
+	if m.rail.cursor != 1 {
+		t.Fatalf("down on a one-row prompt should move the selection, got %d", m.rail.cursor)
 	}
 }
 
@@ -1030,7 +1030,7 @@ func TestQuickOneRowPromptKeepsArrowsOnTheList(t *testing.T) {
 func TestQuickUpStepsOffTheRowWhenAChipIsInTheWay(t *testing.T) {
 	m := buildModel(t)
 	seedTwoGroups(t, m)
-	m.cursor = 1
+	m.rail.cursor = 1
 	m.openQuickMode()
 	m.quick.attachments = []imageAttachment{{id: 1, path: "/tmp/a.png"}}
 	m.quick.input.SetWidth(21)
@@ -1044,7 +1044,7 @@ func TestQuickUpStepsOffTheRowWhenAChipIsInTheWay(t *testing.T) {
 		if got := m.quick.input.LineInfo().RowOffset; got >= before {
 			t.Fatalf("up left the caret on row %d, want a row above %d", got, before)
 		}
-		if m.cursor != 1 {
+		if m.rail.cursor != 1 {
 			t.Fatal("up inside the prompt should not move the selection")
 		}
 	}

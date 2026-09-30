@@ -11,8 +11,8 @@ import (
 func linkModel(rows []string, width int) *Model {
 	m := shotModel()
 	m.mode = modeFocus
-	m.preview = strings.Join(rows, "\n") + "\n"
-	m.pane.box = paneBox{x: 0, y: 0, width: width, height: len(rows), ok: true}
+	m.workspace.preview = strings.Join(rows, "\n") + "\n"
+	m.focusPane.pane.box = paneBox{x: 0, y: 0, width: width, height: len(rows), ok: true}
 	return m
 }
 
@@ -99,7 +99,7 @@ func TestFocusClickOpensTheLink(t *testing.T) {
 	for _, tracking := range []bool{true, false} {
 		opened = ""
 		m := linkModel([]string{"read https://example.com/docs now"}, 80)
-		m.pane.mouse = tracking
+		m.focusPane.pane.mouse = tracking
 		m.handleFocusMouse(press)
 		_, cmd := m.handleFocusMouse(release)
 		if cmd == nil {
@@ -111,7 +111,7 @@ func TestFocusClickOpensTheLink(t *testing.T) {
 		if opened != "https://example.com/docs" {
 			t.Fatalf("tracking=%v: opened %q", tracking, opened)
 		}
-		if m.sel.active {
+		if m.focusPane.sel.active {
 			t.Fatalf("tracking=%v: a link click left a selection standing", tracking)
 		}
 	}
@@ -119,7 +119,7 @@ func TestFocusClickOpensTheLink(t *testing.T) {
 	// A click away from any link keeps its old meaning.
 	opened = ""
 	m := linkModel([]string{"read https://example.com/docs now"}, 80)
-	m.pane.mouse = false
+	m.focusPane.pane.mouse = false
 	m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 1, Y: 0})
 	m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 1, Y: 0})
 	if opened != "" {

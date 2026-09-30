@@ -34,15 +34,15 @@ type dropTarget struct {
 // the lifted row's own level resolves to nothing: that is a reorder, which
 // happens live. Filtered views hide rows, so they take no cross-level moves.
 func (m *Model) resolveDrop(row int) (dropTarget, bool) {
-	if m.showArchived || m.statusFilter.active() || m.search != "" {
+	if m.rail.showArchived || m.rail.statusFilter.active() || m.rail.search != "" {
 		return dropTarget{}, false
 	}
-	liftedIndex := m.rowIndexByKey(m.reorder.key)
-	target := m.rows[row]
-	if liftedIndex < 0 || rowKey(target) == m.reorder.key {
+	liftedIndex := m.rowIndexByKey(m.rail.reorder.key)
+	target := m.rail.rows[row]
+	if liftedIndex < 0 || rowKey(target) == m.rail.reorder.key {
 		return dropTarget{}, false
 	}
-	lifted := m.rows[liftedIndex]
+	lifted := m.rail.rows[liftedIndex]
 	if lifted.isGroup {
 		return resolveGroupDrop(lifted.group, target)
 	}
@@ -106,7 +106,7 @@ func groupLabel(path string) string {
 }
 
 func (m *Model) sessionByID(id string) (store.Session, bool) {
-	for _, sess := range m.sessions {
+	for _, sess := range m.workspace.sessions {
 		if sess.ID == id {
 			return sess, true
 		}
@@ -118,31 +118,31 @@ func (m *Model) sessionByID(id string) (store.Session, bool) {
 // live, any other row stands for a move that waits for the release.
 func (m *Model) dragTo(row int) {
 	if drop, ok := m.resolveDrop(row); ok {
-		m.reorder.drop = &drop
+		m.rail.reorder.drop = &drop
 		return
 	}
-	m.reorder.drop = nil
+	m.rail.reorder.drop = nil
 	m.dragReorderTo(row)
 }
 
 // commitDrop stores the move the release landed on and opens the group it
 // went into, so the row is on screen where it was put.
 func (m *Model) commitDrop(drop dropTarget) {
-	liftedIndex := m.rowIndexByKey(m.reorder.key)
+	liftedIndex := m.rowIndexByKey(m.rail.reorder.key)
 	if liftedIndex < 0 {
 		return
 	}
-	lifted := m.rows[liftedIndex]
+	lifted := m.rail.rows[liftedIndex]
 	var err error
 	switch {
 	case lifted.isGroup:
 		err = m.moveGroupUnder(lifted.group, drop.group)
 	case drop.kind == dropInto:
-		err = m.store.PlaceSession(lifted.sess.ID, drop.group, "")
+		err = m.services.store.PlaceSession(lifted.sess.ID, drop.group, "")
 	case drop.kind == dropUnder:
-		err = m.store.PlaceSession(lifted.sess.ID, drop.group, drop.id)
+		err = m.services.store.PlaceSession(lifted.sess.ID, drop.group, drop.id)
 	case drop.kind == dropBefore:
-		err = m.store.PlaceSessionBefore(lifted.sess.ID, drop.id)
+		err = m.services.store.PlaceSessionBefore(lifted.sess.ID, drop.id)
 	}
 	if err != nil {
 		m.errBar.text = err.Error()
@@ -151,8 +151,8 @@ func (m *Model) commitDrop(drop dropTarget) {
 	if !lifted.isGroup {
 		m.relabelMoved(lifted.sess)
 	}
-	if m.collapsed[drop.group] {
-		m.collapsed[drop.group] = false
+	if m.rail.collapsed[drop.group] {
+		m.rail.collapsed[drop.group] = false
 		m.persistCollapsed()
 	}
 	m.requestRefresh()
@@ -172,7 +172,7 @@ func (m *Model) relabelMoved(sess store.Session) {
 }
 
 func (m *Model) dropRow(entry treeRow) bool {
-	return m.reorder.active && m.reorder.drop != nil && rowKey(entry) == m.reorder.drop.key
+	return m.rail.reorder.active && m.rail.reorder.drop != nil && rowKey(entry) == m.rail.reorder.drop.key
 }
 
 // autoscrollEvery is how often the rail steps while a drag rests on its edge.
@@ -199,7 +199,7 @@ func (m *Model) dragEdge(y int) int {
 	y0, _ := m.bodyYRange()
 	line := y - y0
 	first, last := -1, -1
-	for i, row := range m.railHits {
+	for i, row := range m.rail.railHits {
 		if row >= 0 {
 			if first < 0 {
 				first = i
@@ -208,9 +208,9 @@ func (m *Model) dragEdge(y int) int {
 		}
 	}
 	switch {
-	case first >= 0 && line <= first && m.railTop > 0:
+	case first >= 0 && line <= first && m.rail.railTop > 0:
 		return -1
-	case last >= 0 && line >= last && m.railEnd < len(m.rows):
+	case last >= 0 && line >= last && m.rail.railEnd < len(m.rail.rows):
 		return 1
 	}
 	return 0
@@ -219,14 +219,14 @@ func (m *Model) dragEdge(y int) int {
 // trackDragEdge starts the autoscroll tick when the pointer reaches an
 // edge and lets it lapse once the pointer leaves.
 func (m *Model) trackDragEdge(msg tea.MouseMsg) tea.Cmd {
-	scroll := &m.reorder.autoscroll
+	scroll := &m.rail.reorder.autoscroll
 	scroll.x, scroll.y = msg.X, msg.Y
 	scroll.edge = m.dragEdge(msg.Y)
 	if scroll.edge == 0 || scroll.running {
 		return nil
 	}
 	scroll.running = true
-	return autoscrollTick(m.reorder.lift)
+	return autoscrollTick(m.rail.reorder.lift)
 }
 
 func autoscrollTick(lift int) tea.Cmd {
@@ -236,22 +236,22 @@ func autoscrollTick(lift int) tea.Cmd {
 // handleAutoscroll steps the rail one row toward the edge the drag rests
 // on, then re-reads the row now under the still pointer.
 func (m *Model) handleAutoscroll(msg autoscrollMsg) (tea.Model, tea.Cmd) {
-	if msg.lift != m.reorder.lift {
+	if msg.lift != m.rail.reorder.lift {
 		return m, nil
 	}
-	scroll := &m.reorder.autoscroll
-	if !m.reorder.dragging || scroll.edge == 0 {
+	scroll := &m.rail.reorder.autoscroll
+	if !m.rail.reorder.dragging || scroll.edge == 0 {
 		scroll.running = false
 		return m, nil
 	}
 	if row, ok := m.clickRow(scroll.x, scroll.y); ok {
 		m.dragTo(row)
 	}
-	next := m.railTop - 1
+	next := m.rail.railTop - 1
 	if scroll.edge > 0 {
-		next = m.railEnd
+		next = m.rail.railEnd
 	}
-	if next < 0 || next >= len(m.rows) {
+	if next < 0 || next >= len(m.rail.rows) {
 		scroll.running = false
 		return m, nil
 	}
@@ -263,8 +263,8 @@ func (m *Model) handleAutoscroll(msg autoscrollMsg) (tea.Model, tea.Cmd) {
 // railAnchor is the row the rail window keeps on screen: the cursor, or
 // while a drag scrolls the rail, the row the scroll reached.
 func (m *Model) railAnchor() int {
-	if m.reorder.active && m.reorder.autoscroll.anchored {
-		return m.reorder.autoscroll.anchor
+	if m.rail.reorder.active && m.rail.reorder.autoscroll.anchored {
+		return m.rail.reorder.autoscroll.anchor
 	}
-	return m.cursor
+	return m.rail.cursor
 }

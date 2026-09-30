@@ -37,7 +37,7 @@ func menuButton(selected bool, bg string) string {
 // last cells of the row's first painted line. The rail starts one column
 // in, past its edge cell.
 func (m *Model) onMenuButton(x, y, row int) bool {
-	return x >= m.railWidth-menuButtonWidth && x <= m.railWidth && m.onRowHead(y, row)
+	return x >= m.rail.railWidth-menuButtonWidth && x <= m.rail.railWidth && m.onRowHead(y, row)
 }
 
 // menuItem is one row of the context menu. An empty label is a separator.
@@ -66,13 +66,13 @@ type rowMenu struct {
 
 func (m *Model) openRowMenu(row, x, y int) tea.Cmd {
 	cmd := m.selectRow(row)
-	entry := m.rows[row]
+	entry := m.rail.rows[row]
 	title := groupLabel(entry.group)
 	if !entry.isGroup {
 		title = m.displayName(entry.sess)
 	}
-	m.menu = rowMenu{active: true, key: rowKey(entry), title: title, items: m.rowMenuItems(entry), anchorX: x, anchorY: y}
-	m.menu.index = m.menu.nextItem(-1, 1)
+	m.rail.menu = rowMenu{active: true, key: rowKey(entry), title: title, items: m.rowMenuItems(entry), anchorX: x, anchorY: y}
+	m.rail.menu.index = m.rail.menu.nextItem(-1, 1)
 	return cmd
 }
 
@@ -155,7 +155,7 @@ func (m *Model) groupLiveAndDead(group string) (live, dead bool) {
 }
 
 func (m *Model) archiveMenuItem() menuItem {
-	if m.showArchived {
+	if m.rail.showArchived {
 		return menuItem{label: "Restore", action: keybind.Restore}
 	}
 	return menuItem{label: "Archive", action: keybind.Archive}
@@ -189,9 +189,9 @@ func (menu rowMenu) nextItem(index, step int) int {
 // runMenuItem runs an entry on the row the menu belongs to, which a
 // rebuild may have dropped from the list meanwhile.
 func (m *Model) runMenuItem(index int) (tea.Model, tea.Cmd) {
-	item := m.menu.items[index]
-	key := m.menu.key
-	m.menu = rowMenu{}
+	item := m.rail.menu.items[index]
+	key := m.rail.menu.key
+	m.rail.menu = rowMenu{}
 	if !m.selectRowByKey(key) {
 		return m, nil
 	}
@@ -203,20 +203,20 @@ func (m *Model) runMenuItem(index int) (tea.Model, tea.Cmd) {
 
 func (m *Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := keybind.Normalize(msg.String())
-	action, _ := m.listKeys.ActionFor(key)
+	action, _ := m.services.listKeys.ActionFor(key)
 	switch {
 	case key == "ctrl+c":
 		return m, tea.Quit
 	case key == "esc":
-		m.menu = rowMenu{}
+		m.rail.menu = rowMenu{}
 	case key == "enter" || key == "space":
-		return m.runMenuItem(m.menu.index)
+		return m.runMenuItem(m.rail.menu.index)
 	case key == "up" || action == keybind.Up:
-		m.menu.index = m.menu.nextItem(m.menu.index, -1)
+		m.rail.menu.index = m.rail.menu.nextItem(m.rail.menu.index, -1)
 	case key == "down" || action == keybind.Down:
-		m.menu.index = m.menu.nextItem(m.menu.index, 1)
+		m.rail.menu.index = m.rail.menu.nextItem(m.rail.menu.index, 1)
 	default:
-		for i, item := range m.menu.items {
+		for i, item := range m.rail.menu.items {
 			if item.label != "" && item.action == action {
 				return m.runMenuItem(i)
 			}
@@ -233,19 +233,19 @@ func (m *Model) handleMenuMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		if msg.Button == tea.MouseButtonWheelUp {
 			step = -1
 		}
-		m.menu.index = m.menu.nextItem(m.menu.index, step)
+		m.rail.menu.index = m.rail.menu.nextItem(m.rail.menu.index, step)
 		return m, nil
 	}
 	index, onItem := m.menuItemAt(msg.X, msg.Y)
 	switch msg.Action {
 	case tea.MouseActionMotion:
 		if onItem {
-			m.menu.index = index
+			m.rail.menu.index = index
 		}
 		return m, nil
 	case tea.MouseActionRelease:
-		held := m.menu.held
-		m.menu.held = false
+		held := m.rail.menu.held
+		m.rail.menu.held = false
 		if held && onItem {
 			return m.runMenuItem(index)
 		}
@@ -257,7 +257,7 @@ func (m *Model) handleMenuMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	m.menu = rowMenu{}
+	m.rail.menu = rowMenu{}
 	if msg.Button == tea.MouseButtonRight {
 		if row, ok := m.clickRow(msg.X, msg.Y); ok {
 			return m, m.openRowMenu(row, msg.X, msg.Y)
@@ -267,7 +267,7 @@ func (m *Model) handleMenuMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) menuItemAt(x, y int) (int, bool) {
-	menu := m.menu
+	menu := m.rail.menu
 	if x <= menu.left || x >= menu.left+menu.width-1 {
 		return 0, false
 	}
@@ -281,20 +281,20 @@ func (m *Model) menuItemAt(x, y int) (int, bool) {
 // overlayRowMenu paints the menu beside the pointer that opened it,
 // flipped up or left where the frame runs out, and records where it went.
 func (m *Model) overlayRowMenu(frame string) string {
-	if !m.menu.active {
+	if !m.rail.menu.active {
 		return frame
 	}
 	box := m.renderRowMenu()
-	m.menu.width, m.menu.height = maxLineWidth(box), len(box)
-	left := m.menu.anchorX + 1
-	if left+m.menu.width > m.width {
-		left = max(m.menu.anchorX-m.menu.width, 0)
+	m.rail.menu.width, m.rail.menu.height = maxLineWidth(box), len(box)
+	left := m.rail.menu.anchorX + 1
+	if left+m.rail.menu.width > m.width {
+		left = max(m.rail.menu.anchorX-m.rail.menu.width, 0)
 	}
-	top := m.menu.anchorY
-	if top+m.menu.height > m.height {
-		top = max(m.height-m.menu.height, 0)
+	top := m.rail.menu.anchorY
+	if top+m.rail.menu.height > m.height {
+		top = max(m.height-m.rail.menu.height, 0)
 	}
-	m.menu.left, m.menu.top = left, top
+	m.rail.menu.left, m.rail.menu.top = left, top
 	lines := strings.Split(frame, "\n")
 	for i, patch := range box {
 		if row := top + i; row < len(lines) {
@@ -305,9 +305,9 @@ func (m *Model) overlayRowMenu(frame string) string {
 }
 
 func (m *Model) renderRowMenu() []string {
-	glyphs := make([]string, len(m.menu.items))
+	glyphs := make([]string, len(m.rail.menu.items))
 	need := menuMinWidth
-	for i, item := range m.menu.items {
+	for i, item := range m.rail.menu.items {
 		if item.label == "" {
 			continue
 		}
@@ -318,9 +318,9 @@ func (m *Model) renderRowMenu() []string {
 	inner := width - menuChrome
 	border := cardBorderStyle()
 	edge := border.Render("│")
-	title := ansi.Truncate(m.menu.title, max(width-8, 1), "…")
+	title := ansi.Truncate(m.rail.menu.title, max(width-8, 1), "…")
 	rows := []string{cardTitleRow(width, title, border)}
-	for i, item := range m.menu.items {
+	for i, item := range m.rail.menu.items {
 		if item.label == "" {
 			rows = append(rows, paint(border.Render("├"+strings.Repeat("─", width-2)+"┤"), width, blockHex()))
 			continue
@@ -328,7 +328,7 @@ func (m *Model) renderRowMenu() []string {
 		glyph := glyphs[i]
 		gap := strings.Repeat(" ", max(inner-ansi.StringWidth(item.label)-ansi.StringWidth(glyph), 1))
 		var line string
-		if i == m.menu.index {
+		if i == m.rail.menu.index {
 			ink := lipgloss.NewStyle().Foreground(colorBg).Background(colorAccent).Bold(true)
 			if item.danger {
 				ink = ink.Background(colorErrored)

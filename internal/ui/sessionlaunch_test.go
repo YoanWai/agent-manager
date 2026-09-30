@@ -29,7 +29,7 @@ func TestAStaleRefreshKeepsASessionLaunchedAfterItWasListed(t *testing.T) {
 	updated, _ := m.Update(inFlight)
 	*m = *updated.(*Model)
 
-	if sessionGone(m.sessions, launched[0].ID) {
+	if sessionGone(m.workspace.sessions, launched[0].ID) {
 		t.Fatalf("the stale poll took the launched session off screen, leaving %v", m.sessionRows())
 	}
 }
@@ -48,7 +48,7 @@ func TestAStaleRefreshKeepsALaunchListedWhileTmuxWasStartingIt(t *testing.T) {
 	updated, _ := m.Update(refreshMsg{listedAt: launched.CreatedAt.Add(time.Millisecond)})
 	*m = *updated.(*Model)
 
-	if sessionGone(m.sessions, launched.ID) {
+	if sessionGone(m.workspace.sessions, launched.ID) {
 		t.Fatalf("the stale poll took the launched session off screen, leaving %v", m.sessionRows())
 	}
 }
@@ -70,7 +70,7 @@ func (m *Model) pressRune(t *testing.T, r rune) {
 // would deliver: it carries no sessions and a listing time from before them.
 func staleRefreshAfter(m *Model) refreshMsg {
 	earliest := time.Now()
-	for _, at := range m.launched {
+	for _, at := range m.ledger.launched {
 		if at.Before(earliest) {
 			earliest = at
 		}
@@ -89,14 +89,14 @@ func TestAStaleRefreshDoesNotBringBackASessionJustDeleted(t *testing.T) {
 	m.selectSessionRow(t, sess.Name)
 	m.pressRune(t, 'd')
 	m.pressRune(t, 'y')
-	if _, err := m.store.Get(sess.ID); err == nil {
+	if _, err := m.services.store.Get(sess.ID); err == nil {
 		t.Fatal("the delete did not reach the store")
 	}
 
 	updated, _ := m.Update(staleRefreshAfter(m))
 	*m = *updated.(*Model)
 
-	if !sessionGone(m.sessions, sess.ID) {
+	if !sessionGone(m.workspace.sessions, sess.ID) {
 		t.Fatalf("a deleted session came back on a stale poll: %v", m.sessionRows())
 	}
 }
@@ -178,15 +178,15 @@ func TestAFreshListingRetiresDeletionMarkers(t *testing.T) {
 	updated, _ := m.Update(fresh)
 	*m = *updated.(*Model)
 
-	if len(m.gone) != 0 {
-		t.Fatalf("deletion markers outlived a listing that postdates them: %v", m.gone)
+	if len(m.ledger.gone) != 0 {
+		t.Fatalf("deletion markers outlived a listing that postdates them: %v", m.ledger.gone)
 	}
 }
 
 func TestAStalePollCannotRestoreADeletedGroupHeader(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
-	if err := m.store.CreateGroup("zone", dir); err != nil {
+	if err := m.services.store.CreateGroup("zone", dir); err != nil {
 		t.Fatalf("group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -209,22 +209,22 @@ func TestAStalePollCannotRestoreADeletedGroupHeader(t *testing.T) {
 	updated, _ := m.Update(stale)
 	*m = *updated.(*Model)
 
-	for _, r := range m.rows {
+	for _, r := range m.rail.rows {
 		if r.isGroup && r.group == "zone" {
 			t.Fatalf("a stale poll brought the deleted group header back")
 		}
 	}
-	for _, g := range m.groups {
+	for _, g := range m.workspace.groups {
 		if g == "zone" {
 			t.Fatal("a stale poll restored the deleted group path")
 		}
 	}
-	for _, meta := range []map[string]string{m.groupPaths, m.groupWorktrees} {
+	for _, meta := range []map[string]string{m.workspace.groupPaths, m.workspace.groupWorktrees} {
 		if _, ok := meta["zone"]; ok {
 			t.Fatal("a stale poll restored deleted group metadata")
 		}
 	}
-	if _, ok := m.archivedGroups["zone"]; ok {
+	if _, ok := m.workspace.archivedGroups["zone"]; ok {
 		t.Fatal("a stale poll restored the deleted group's archive flag")
 	}
 }
@@ -241,7 +241,7 @@ func TestAStalePollCannotUndoARestore(t *testing.T) {
 	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	listedAt := time.Now()
 
-	m.showArchived = true
+	m.rail.showArchived = true
 	m.applyCmd(t, m.refreshCmd())
 	m.selectSessionRow(t, "returning")
 	m.restoreSelected()
@@ -257,7 +257,7 @@ func TestAStalePollCannotUndoARestore(t *testing.T) {
 			t.Fatalf("a stale poll put the restored session back in the archived view")
 		}
 	}
-	m.showArchived = false
+	m.rail.showArchived = false
 	if got := m.visibleSessions(); len(got) != 1 || got[0].Archived {
 		t.Fatalf("restored session should read live after a stale listing, got %+v", got)
 	}
@@ -266,7 +266,7 @@ func TestAStalePollCannotUndoARestore(t *testing.T) {
 func TestAStalePollCannotBringAnArchivedGroupBackLive(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
-	if err := m.store.CreateGroup("zone", dir); err != nil {
+	if err := m.services.store.CreateGroup("zone", dir); err != nil {
 		t.Fatalf("group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())

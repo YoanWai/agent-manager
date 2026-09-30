@@ -473,8 +473,8 @@ func captureImageCmd(target composerID, gen, id int) tea.Cmd {
 // nextComposerGen numbers a freshly opened prompt box, so a clipboard read
 // still in flight can tell the box it was started in from its successor.
 func (m *Model) nextComposerGen() int {
-	m.composerSeq++
-	return m.composerSeq
+	m.ledger.composerSeq++
+	return m.ledger.composerSeq
 }
 
 // composerFor is the prompt box a target names, whatever screen is up.

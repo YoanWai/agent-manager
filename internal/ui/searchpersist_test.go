@@ -11,8 +11,14 @@ import (
 )
 
 func searchModel() *Model {
-	m := &Model{width: 120, height: 30, collapsed: map[string]bool{}}
-	m.sessions = []store.Session{
+	m := &Model{
+		width:  120,
+		height: 30,
+		rail: railState{
+			collapsed: map[string]bool{},
+		},
+	}
+	m.workspace.sessions = []store.Session{
 		{ID: "1", Name: "api-server", Status: status.Idle},
 		{ID: "2", Name: "web-ui", Status: status.Idle},
 		{ID: "3", Name: "docs", Status: status.Idle},
@@ -33,12 +39,12 @@ func railHead(m *Model) string {
 // filtered-away sessions read as sessions that are gone.
 func TestSearchFieldOutlivesTheOpenField(t *testing.T) {
 	m := searchModel()
-	m.searching, m.search = true, "api"
+	m.rail.searching, m.rail.search = true, "api"
 	m.rebuildRows()
 	if !strings.Contains(railHead(m), "⌕") {
 		t.Fatal("an open field should be in the rail")
 	}
-	m.searching = false
+	m.rail.searching = false
 	rail := railHead(m)
 	if !strings.Contains(rail, "⌕") {
 		t.Fatalf("a query still filtering should stay in the rail:\n%s", rail)
@@ -56,34 +62,34 @@ func TestSearchRailIsCleanWithNoQuery(t *testing.T) {
 
 func TestEnterKeepsTheQueryAndEscClearsIt(t *testing.T) {
 	m := searchModel()
-	m.searching, m.search = true, "api"
+	m.rail.searching, m.rail.search = true, "api"
 	m.rebuildRows()
-	filtered := len(m.rows)
+	filtered := len(m.rail.rows)
 
 	m.handleSearchKey(tea.KeyMsg{Type: tea.KeyEnter})
-	if m.searching || m.search != "api" || len(m.rows) != filtered {
+	if m.rail.searching || m.rail.search != "api" || len(m.rail.rows) != filtered {
 		t.Fatalf("enter should close the field and keep the filter, got searching=%v query=%q rows=%d",
-			m.searching, m.search, len(m.rows))
+			m.rail.searching, m.rail.search, len(m.rail.rows))
 	}
 
 	// Through handleKey rather than clearSearch: the binding is half of what
 	// this covers, so a test that skips it would pass with esc unbound.
 	m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
-	if m.search != "" {
-		t.Fatalf("esc should clear the query, got %q", m.search)
+	if m.rail.search != "" {
+		t.Fatalf("esc should clear the query, got %q", m.rail.search)
 	}
-	if len(m.rows) <= filtered {
-		t.Fatalf("clearing should bring the sessions back, still %d rows", len(m.rows))
+	if len(m.rail.rows) <= filtered {
+		t.Fatalf("clearing should bring the sessions back, still %d rows", len(m.rail.rows))
 	}
 }
 
 func TestEscInTheFieldClearsIt(t *testing.T) {
 	m := searchModel()
-	m.searching, m.search = true, "api"
+	m.rail.searching, m.rail.search = true, "api"
 	m.rebuildRows()
 	m.handleSearchKey(tea.KeyMsg{Type: tea.KeyEsc})
-	if m.searching || m.search != "" {
-		t.Fatalf("esc should close and clear, got searching=%v query=%q", m.searching, m.search)
+	if m.rail.searching || m.rail.search != "" {
+		t.Fatalf("esc should close and clear, got searching=%v query=%q", m.rail.searching, m.rail.search)
 	}
 	if strings.Contains(railHead(m), "⌕") {
 		t.Fatal("a cleared search should leave no field behind")

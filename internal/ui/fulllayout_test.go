@@ -14,13 +14,13 @@ import (
 
 func TestSessionLayoutDefaultsToSplit(t *testing.T) {
 	m := buildModel(t)
-	if m.fullLayout {
+	if m.prefs.fullLayout {
 		t.Fatal("split should be the default sessions layout")
 	}
-	if err := m.store.SetSetting(sessionLayoutSetting, "full"); err != nil {
+	if err := m.services.store.SetSetting(sessionLayoutSetting, "full"); err != nil {
 		t.Fatal(err)
 	}
-	if !storedFullLayout(m.store) {
+	if !storedFullLayout(m.services.store) {
 		t.Fatal("stored full choice should turn the full layout on")
 	}
 }
@@ -36,10 +36,10 @@ func TestSettingsTogglesSessionLayout(t *testing.T) {
 	}
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
-	if chosen, err := m.store.Setting(sessionLayoutSetting); err != nil || chosen != "full" {
+	if chosen, err := m.services.store.Setting(sessionLayoutSetting); err != nil || chosen != "full" {
 		t.Fatalf("want stored full, got %q err %v", chosen, err)
 	}
-	if !m.fullLayout {
+	if !m.prefs.fullLayout {
 		t.Fatal("the model should mirror the saved full choice")
 	}
 }
@@ -102,13 +102,13 @@ func TestSettingsToggleChromeIndependently(t *testing.T) {
 			}
 			m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
 
-			if m.hideHeader != tc.hideHeader || m.hideStats != tc.hideStats {
+			if m.prefs.hideHeader != tc.hideHeader || m.prefs.hideStats != tc.hideStats {
 				t.Fatalf("model visibility = header %t stats %t, want header %t stats %t",
-					m.hideHeader, m.hideStats, tc.hideHeader, tc.hideStats)
+					m.prefs.hideHeader, m.prefs.hideStats, tc.hideHeader, tc.hideStats)
 			}
-			if storedHideHeader(m.store) != tc.hideHeader || storedHideStats(m.store) != tc.hideStats {
+			if storedHideHeader(m.services.store) != tc.hideHeader || storedHideStats(m.services.store) != tc.hideStats {
 				t.Fatalf("reloaded visibility = header %t stats %t, want header %t stats %t",
-					storedHideHeader(m.store), storedHideStats(m.store), tc.hideHeader, tc.hideStats)
+					storedHideHeader(m.services.store), storedHideStats(m.services.store), tc.hideHeader, tc.hideStats)
 			}
 		})
 	}
@@ -124,13 +124,13 @@ func TestLayoutsCanHideHeader(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := shotModel()
-			m.fullLayout = tc.full
+			m.prefs.fullLayout = tc.full
 			shownBody := m.listBodyHeight()
 			if got := m.headerRows(); got != 1 {
 				t.Fatalf("shown header = %d rows, want 1", got)
 			}
 
-			m.hideHeader = true
+			m.prefs.hideHeader = true
 			if got := m.headerRows(); got != 0 {
 				t.Fatalf("hidden header = %d rows, want 0", got)
 			}
@@ -155,7 +155,7 @@ func TestFullLayoutFrameHasNoPreviewColumn(t *testing.T) {
 	if !strings.Contains(split, "token bucket limiter") {
 		t.Fatalf("split frame lost its preview:\n%s", split)
 	}
-	m.fullLayout = true
+	m.prefs.fullLayout = true
 	full := ansi.Strip(m.View())
 	if strings.Contains(full, "token bucket limiter") {
 		t.Fatalf("full screen frame still paints the preview:\n%s", full)
@@ -177,7 +177,7 @@ func TestFullLayoutFrameHasNoPreviewColumn(t *testing.T) {
 // The layout is a settings choice, so neither footer offers a key for it.
 func TestFullLayoutFooterOffersNoLayoutKey(t *testing.T) {
 	m := shotModel()
-	m.fullLayout = true
+	m.prefs.fullLayout = true
 	full := ansi.Strip(m.viewFooter())
 	if strings.Contains(full, "split view") {
 		t.Fatalf("full screen footer should leave the layout to settings:\n%s", full)
@@ -191,19 +191,19 @@ func TestFullLayoutRightOpensFullWidthFocus(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "wide-open", t.TempDir(), "")
 	m.selectSessionRow(t, "wide-open")
-	m.fullLayout = true
+	m.prefs.fullLayout = true
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("right did not focus, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
-	sess := m.rows[m.cursor].sess
+	sess := m.rail.rows[m.rail.cursor].sess
 	want := [2]int{m.width, m.listBodyHeight()}
-	if got := m.pane.geom[sess.ID]; got != want {
+	if got := m.focusPane.pane.geom[sess.ID]; got != want {
 		t.Fatalf("focused pane pinned to %v, want %v", got, want)
 	}
-	panes, err := m.tmux.Panes()
+	panes, err := m.services.tmux.Panes()
 	if err != nil {
 		t.Fatalf("panes: %v", err)
 	}
@@ -211,7 +211,7 @@ func TestFullLayoutRightOpensFullWidthFocus(t *testing.T) {
 		t.Fatalf("tmux pane is %v, want %v", got, want)
 	}
 
-	m.preview = "❯ hello from the pane\n"
+	m.workspace.preview = "❯ hello from the pane\n"
 	frame := ansi.Strip(m.View())
 	if rule := ansi.Strip(m.focusFactsLine(m.width)); !strings.Contains(frame, rule) {
 		t.Fatalf("full width focus frame misses the focus rule %q:\n%s", rule, frame)
@@ -219,12 +219,12 @@ func TestFullLayoutRightOpensFullWidthFocus(t *testing.T) {
 	if !strings.Contains(frame, sess.Name) {
 		t.Fatalf("the focus rule should name the session %q:\n%s", sess.Name, frame)
 	}
-	if !m.pane.box.ok || m.pane.box.x != 0 || m.pane.box.width != m.width {
-		t.Fatalf("pane box = %+v, want the whole width at column 0", m.pane.box)
+	if !m.focusPane.pane.box.ok || m.focusPane.pane.box.x != 0 || m.focusPane.pane.box.width != m.width {
+		t.Fatalf("pane box = %+v, want the whole width at column 0", m.focusPane.pane.box)
 	}
 	wantPaneY := m.listChromeRows() + m.listBodyHeight() - 1
-	if m.pane.box.y != wantPaneY {
-		t.Fatalf("pane box starts at row %d, want compact content at the bottom row %d", m.pane.box.y, wantPaneY)
+	if m.focusPane.pane.box.y != wantPaneY {
+		t.Fatalf("pane box starts at row %d, want compact content at the bottom row %d", m.focusPane.pane.box.y, wantPaneY)
 	}
 
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlQ})
@@ -242,19 +242,19 @@ func TestFullFocusLeftReturnsAtPromptHead(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "wide-left", t.TempDir(), "")
 	m.selectSessionRow(t, "wide-left")
-	m.fullLayout = true
+	m.prefs.fullLayout = true
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("right did not focus, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
-	sess := m.rows[m.cursor].sess
-	pinned := m.pane.geom[sess.ID]
-	m.rows[m.cursor].sess.Tool = "claude-hooked"
-	m.pane.forID = sess.ID
-	m.pane.cursor = paneCursor{x: 4, y: 0, ok: true}
-	m.preview = "❯ hi\n"
+	sess := m.rail.rows[m.rail.cursor].sess
+	pinned := m.focusPane.pane.geom[sess.ID]
+	m.rail.rows[m.rail.cursor].sess.Tool = "claude-hooked"
+	m.focusPane.pane.forID = sess.ID
+	m.focusPane.pane.cursor = paneCursor{x: 4, y: 0, ok: true}
+	m.workspace.preview = "❯ hi\n"
 
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
 	*m = *updated.(*Model)
@@ -262,7 +262,7 @@ func TestFullFocusLeftReturnsAtPromptHead(t *testing.T) {
 		t.Fatalf("left inside a typed prompt left focus, mode = %v", m.mode)
 	}
 
-	m.pane.cursor = paneCursor{x: 2, y: 0, ok: true}
+	m.focusPane.pane.cursor = paneCursor{x: 2, y: 0, ok: true}
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
 	*m = *updated.(*Model)
 	if m.mode != modeList {
@@ -271,7 +271,7 @@ func TestFullFocusLeftReturnsAtPromptHead(t *testing.T) {
 	if !m.fullRows() {
 		t.Fatal("returning should land on the full screen list")
 	}
-	if got := m.pane.geom[sess.ID]; got != pinned {
+	if got := m.focusPane.pane.geom[sess.ID]; got != pinned {
 		t.Fatalf("returning resized the pane to %v, want %v kept", got, pinned)
 	}
 }
@@ -281,7 +281,7 @@ func TestFullLayoutAStillAttaches(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "handover", t.TempDir(), "")
 	m.selectSessionRow(t, "handover")
-	m.fullLayout = true
+	m.prefs.fullLayout = true
 
 	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("A")})
 	*m = *updated.(*Model)
@@ -298,15 +298,15 @@ func TestFullLayoutAStillAttaches(t *testing.T) {
 // startup tick alive so the frames actually advance.
 func TestFullRowWorkingWithoutPaneLineAnimatesLoader(t *testing.T) {
 	m := shotModel()
-	m.fullLayout = true
-	m.comfortableRows = true
-	m.paneLines = nil
-	row := m.rows[4]
+	m.prefs.fullLayout = true
+	m.prefs.comfortableRows = true
+	m.workspace.paneLines = nil
+	row := m.rail.rows[4]
 	lines := splitLines(m.renderTreeRow(row, false, m.width-1, 4, panelHex()))
 	if len(lines) != 3 {
 		t.Fatalf("comfortable row painted %d lines, want 3", len(lines))
 	}
-	frame := startupFrames[m.startupPhase%len(startupFrames)]
+	frame := startupFrames[m.startup.startupPhase%len(startupFrames)]
 	state := ansi.Strip(lines[2])
 	if !strings.Contains(state, frame+" working") {
 		t.Fatalf("working row without a pane line should animate a loader, got %q", state)
@@ -314,7 +314,7 @@ func TestFullRowWorkingWithoutPaneLineAnimatesLoader(t *testing.T) {
 	if !m.needsLoaderTick() {
 		t.Fatal("a loader row should keep the startup tick alive")
 	}
-	m.paneLines = map[string]string{"add-rate-limiting": "Running tests…", "ui-polish": "Compiling…"}
+	m.workspace.paneLines = map[string]string{"add-rate-limiting": "Running tests…", "ui-polish": "Compiling…"}
 	if m.hasWorkingLoaderRow() {
 		t.Fatal("a quotable pane line should retire the loader")
 	}
@@ -328,7 +328,7 @@ func TestPaneTargetSizeFollowsLayout(t *testing.T) {
 	if wantW, wantH := m.previewPaneWidth(), m.previewPaneHeight(); splitW != wantW || splitH != wantH {
 		t.Fatalf("split target = %dx%d, want the preview box %dx%d", splitW, splitH, wantW, wantH)
 	}
-	m.fullLayout = true
+	m.prefs.fullLayout = true
 	fullW, fullH := m.paneTargetSize()
 	if fullW != m.width {
 		t.Fatalf("full layout target width = %d, want the terminal's %d", fullW, m.width)
@@ -349,16 +349,16 @@ func TestSplitRepinKeepsTallerPaneHeight(t *testing.T) {
 	createSession(t, m, "tall", t.TempDir(), "")
 	id := m.sessionRows()[0].ID
 
-	m.fullLayout = true
-	m.sessionsSized = false
-	m.pane.geom = nil
+	m.prefs.fullLayout = true
+	m.startup.sessionsSized = false
+	m.focusPane.pane.geom = nil
 	m.applyCmd(t, m.refreshCmd())
 	fullW, fullH := m.paneTargetSize()
 	if w, h := windowSize(t, id); w != fullW || h < fullH {
 		t.Fatalf("full layout pinned session to %dx%d, want %dx%d", w, h, fullW, fullH)
 	}
 
-	m.fullLayout = false
+	m.prefs.fullLayout = false
 	m.resizeSessions()
 	splitW, _ := m.paneTargetSize()
 	if w, h := windowSize(t, id); w != splitW || h < fullH {
@@ -371,12 +371,12 @@ func TestSplitRepinKeepsTallerPaneHeight(t *testing.T) {
 // body instead of holding blank space under the legend.
 func TestFullFocusFooterIsOneRow(t *testing.T) {
 	m := shotModel()
-	m.fullLayout = true
+	m.prefs.fullLayout = true
 	m.mode = modeFocus
 	if got := lipgloss.Height(m.viewFooter()); got != 1 {
 		t.Fatalf("full focus footer = %d rows, want 1", got)
 	}
-	m.fullLayout = false
+	m.prefs.fullLayout = false
 	listed := lipgloss.Height(m.listFooter())
 	if got := lipgloss.Height(m.viewFooter()); got != listed {
 		t.Fatalf("split focus footer = %d rows, want the padded %d", got, listed)
@@ -385,15 +385,15 @@ func TestFullFocusFooterIsOneRow(t *testing.T) {
 
 func TestFullLayoutTransientFootersAreOneRow(t *testing.T) {
 	m := shotModel()
-	m.cfg = config.Config{Tools: map[string]config.Tool{"claude": {}}}
-	m.fullLayout = true
+	m.services.cfg = config.Config{Tools: map[string]config.Tool{"claude": {}}}
+	m.prefs.fullLayout = true
 	m.quick.active = true
 	if got := lipgloss.Height(m.viewFooter()); got != 1 {
 		t.Fatalf("full screen quick prompt footer = %d rows, want 1", got)
 	}
 	body := m.listBodyHeight()
 
-	m.fullLayout = false
+	m.prefs.fullLayout = false
 	listed := lipgloss.Height(m.listFooter())
 	if listed < 2 {
 		t.Fatalf("this test needs a list footer taller than a tier, got %d rows", listed)
@@ -404,7 +404,7 @@ func TestFullLayoutTransientFootersAreOneRow(t *testing.T) {
 
 	// The rows the tier gives up go to the list body, which is what the
 	// full screen pane is pinned to.
-	m.fullLayout = true
+	m.prefs.fullLayout = true
 	m.quick.active = false
 	if resting := m.listBodyHeight(); body <= resting {
 		t.Fatalf("quick prompt body = %d rows, want more than the resting %d", body, resting)
@@ -413,9 +413,9 @@ func TestFullLayoutTransientFootersAreOneRow(t *testing.T) {
 
 func TestFullFocusRuleNamesTheSession(t *testing.T) {
 	m := shotModel()
-	m.fullLayout = true
+	m.prefs.fullLayout = true
 	m.mode = modeFocus
-	m.queuedMessages = map[string]int{"add-rate-limiting": 2}
+	m.workspace.queuedMessages = map[string]int{"add-rate-limiting": 2}
 	// A wide terminal holds every reading.
 	if wide := ansi.Strip(m.focusFactsLine(200)); !strings.Contains(wide, "started ") {
 		t.Errorf("a wide focus line should carry every reading:\n%s", wide)
@@ -469,7 +469,7 @@ func TestFullFocusRuleNamesTheSession(t *testing.T) {
 
 	// The split's own rule still names the keys: its detail head above the
 	// pane already says which session this is.
-	if split := ansi.Strip(focusTopRule(m.width, m.keys)); !strings.Contains(split, `ctrl+q / ctrl+\ back`) {
+	if split := ansi.Strip(focusTopRule(m.width, m.services.keys)); !strings.Contains(split, `ctrl+q / ctrl+\ back`) {
 		t.Fatalf("split focus rule lost its keys:\n%s", split)
 	}
 }
@@ -480,12 +480,12 @@ func TestFocusFactsWriteHomeAsTilde(t *testing.T) {
 		t.Skip("no home directory to shorten")
 	}
 	m := shotModel()
-	m.fullLayout = true
+	m.prefs.fullLayout = true
 	m.mode = modeFocus
-	m.rows[m.cursor].sess.Cwd = filepath.Join(home, "dev", "api")
-	for i := range m.sessions {
-		if m.sessions[i].ID == m.rows[m.cursor].sess.ID {
-			m.sessions[i].Cwd = m.rows[m.cursor].sess.Cwd
+	m.rail.rows[m.rail.cursor].sess.Cwd = filepath.Join(home, "dev", "api")
+	for i := range m.workspace.sessions {
+		if m.workspace.sessions[i].ID == m.rail.rows[m.rail.cursor].sess.ID {
+			m.workspace.sessions[i].Cwd = m.rail.rows[m.rail.cursor].sess.Cwd
 		}
 	}
 	facts := ansi.Strip(m.focusFactsLine(200))
@@ -499,18 +499,18 @@ func TestFocusFactsWriteHomeAsTilde(t *testing.T) {
 
 func TestFullFootShowsBattery(t *testing.T) {
 	m := shotModel()
-	m.fullLayout = true
-	m.snap.BatteryOK, m.snap.BatteryPercent = true, 33
+	m.prefs.fullLayout = true
+	m.workspace.snap.BatteryOK, m.workspace.snap.BatteryPercent = true, 33
 	foot := ansi.Strip(strings.Join(m.fullFootLine(m.width), "\n"))
 	if !strings.Contains(foot, "batt 33%") || strings.Contains(foot, "charging") {
 		t.Fatalf("foot lacks the battery reading:\n%s", foot)
 	}
-	m.snap.BatteryCharging = true
+	m.workspace.snap.BatteryCharging = true
 	foot = ansi.Strip(strings.Join(m.fullFootLine(m.width), "\n"))
 	if !strings.Contains(foot, "batt 33% charging") {
 		t.Fatalf("foot lacks the charging suffix:\n%s", foot)
 	}
-	m.snap.BatteryOK = false
+	m.workspace.snap.BatteryOK = false
 	if foot = ansi.Strip(strings.Join(m.fullFootLine(m.width), "\n")); strings.Contains(foot, "batt") {
 		t.Fatalf("foot shows a battery the machine lacks:\n%s", foot)
 	}

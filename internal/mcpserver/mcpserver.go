@@ -213,6 +213,19 @@ func NewServer(configDir, sessionID, version string) *mcp.Server {
 	return newServer(configDir, sessionID, version, sessioncmd.NewTerminals(configDir, words), sessioncmd.NewSessions(configDir, words), report.New(configDir, version))
 }
 
+func NewServerWithBackend(configDir, sessionID, version string, backend *sessioncmd.Backend) *mcp.Server {
+	if backend == nil {
+		panic("command backend is required")
+	}
+	words := sessioncmd.MCPVocabulary()
+	return newServer(configDir, sessionID, version, sessioncmd.NewTerminalsWithBackend(backend, words), sessioncmd.NewSessionsWithBackend(backend, words), report.New(configDir, version))
+}
+
+func NewServerWithArchiveOwner(configDir, sessionID, version string, owner sessioncmd.ArchiveOwner) *mcp.Server {
+	words := sessioncmd.MCPVocabulary()
+	return newServer(configDir, sessionID, version, sessioncmd.NewTerminals(configDir, words), sessioncmd.NewSessionsWithArchiveOwner(configDir, words, owner), report.New(configDir, version))
+}
+
 func newServer(configDir, sessionID, version string, terminals terminalCommands, sessions sessionCommands, reporter issueReporter) *mcp.Server {
 	server := mcp.NewServer(
 		&mcp.Implementation{Name: "agent-manager", Version: version},
@@ -705,7 +718,19 @@ func textResult(message string, err error) (*mcp.CallToolResult, any, error) {
 // client that drops the pipe without the shutdown handshake surfaces as
 // EOF, which is a normal exit, not a failure.
 func Run(configDir, sessionID, version string) error {
-	err := NewServer(configDir, sessionID, version).Run(context.Background(), &mcp.StdioTransport{})
+	return runServer(NewServer(configDir, sessionID, version))
+}
+
+func RunWithBackend(configDir, sessionID, version string, backend *sessioncmd.Backend) error {
+	return runServer(NewServerWithBackend(configDir, sessionID, version, backend))
+}
+
+func RunWithArchiveOwner(configDir, sessionID, version string, owner sessioncmd.ArchiveOwner) error {
+	return runServer(NewServerWithArchiveOwner(configDir, sessionID, version, owner))
+}
+
+func runServer(server *mcp.Server) error {
+	err := server.Run(context.Background(), &mcp.StdioTransport{})
 	// The SDK reports an abrupt pipe close as an internal "server is
 	// closing" wire error that wraps EOF without errors.Is support.
 	if err != nil && (errors.Is(err, io.EOF) || strings.Contains(err.Error(), "server is closing")) {

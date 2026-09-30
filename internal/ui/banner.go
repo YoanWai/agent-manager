@@ -38,7 +38,7 @@ type (
 // bannerTick drives a sweep frame by frame; a settled wordmark waits out
 // the shimmer interval before the next one.
 func (m *Model) bannerTick() tea.Cmd {
-	if m.bannerPhase >= bannerFrames {
+	if m.startup.bannerPhase >= bannerFrames {
 		return tea.Tick(bannerShimmerEvery, func(time.Time) tea.Msg { return bannerShimmerMsg{} })
 	}
 	return tea.Tick(bannerInterval, func(time.Time) tea.Msg { return bannerTickMsg{} })
@@ -58,7 +58,7 @@ func (m *Model) showBanner() bool {
 // headerRows is how many rows the header occupies, which the body height
 // and every mouse hit-test are measured against.
 func (m *Model) headerRows() int {
-	if m.hideHeader {
+	if m.prefs.hideHeader {
 		return 0
 	}
 	return bannerRows
@@ -67,7 +67,7 @@ func (m *Model) headerRows() int {
 // viewBanner draws the wordmark, lit by a highlight that sweeps left to
 // right during the intro and then rests just past the end of the word.
 func (m *Model) viewBanner() []string {
-	sweep := float64(m.bannerPhase) / float64(bannerFrames)
+	sweep := float64(m.startup.bannerPhase) / float64(bannerFrames)
 	// The resting position keeps the tail of the word brightest, so a
 	// settled header still has a direction to it.
 	head := sweep * float64(bannerWidth()) * 1.25

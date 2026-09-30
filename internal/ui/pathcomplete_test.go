@@ -68,7 +68,9 @@ func TestCompleteDirsNoSlashNoSuggestions(t *testing.T) {
 
 func TestApplyPathSuggestionFillsDirField(t *testing.T) {
 	root := setupCompletionDir(t)
-	m := &Model{mode: modeForm}
+	m := &Model{
+		mode: modeForm,
+	}
 	m.form.dir = textField("", 400)
 	m.pathSugg.recompute(filepath.Join(root, "al"))
 	if !m.pathSugg.active() {
@@ -188,7 +190,7 @@ func TestRenamePathSuggestionsExitToName(t *testing.T) {
 func TestGroupFormInheritsParentPath(t *testing.T) {
 	m := buildModel(t)
 	parentPath := t.TempDir()
-	if err := m.store.CreateGroup("projects", parentPath); err != nil {
+	if err := m.services.store.CreateGroup("projects", parentPath); err != nil {
 		t.Fatalf("seed group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -216,7 +218,11 @@ func TestGroupFormInheritsParentPath(t *testing.T) {
 
 func TestAncestorGroupPathWalksUp(t *testing.T) {
 	root := t.TempDir()
-	m := &Model{groupPaths: map[string]string{"projects": root}}
+	m := &Model{
+		workspace: workspace{
+			groupPaths: map[string]string{"projects": root},
+		},
+	}
 	if got := m.ancestorGroupDir("projects/api/auth"); got != root {
 		t.Fatalf("got %q want %q", got, root)
 	}
@@ -239,7 +245,7 @@ func TestRelativePathsStoredAbsolute(t *testing.T) {
 	if _, cmd := m.submitGroupForm(); cmd == nil {
 		t.Fatalf("group form should submit, err=%q", m.errBar.text)
 	}
-	groups, _ := m.store.Groups()
+	groups, _ := m.services.store.Groups()
 	for _, g := range groups {
 		if g.Name == "relgrp" && !filepath.IsAbs(g.Path) {
 			t.Fatalf("group path stored relative: %q", g.Path)

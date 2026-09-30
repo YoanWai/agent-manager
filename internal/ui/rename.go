@@ -1,56 +1,13 @@
 package ui
 
 import (
-	"fmt"
+	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"sort"
 	"strings"
 
-	"github.com/YoanWai/agent-manager/internal/git"
-	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
-
-type worktreeRenameStore interface {
-	ListSessions(bool) ([]store.Session, error)
-	RenameSessionWorktreeBranch(string, string) error
-}
-
-// renameSessionWorktreeBranch keeps a managed branch aligned with its
-// session's display name without moving the directory of a live process.
-func renameSessionWorktreeBranch(gitDrv *git.Driver, st worktreeRenameStore, sess *store.Session, name string) error {
-	if gitDrv == nil || sess.WorktreeRepo == "" || sess.WorktreeBranch == "" {
-		return nil
-	}
-	sessions, err := st.ListSessions(true)
-	if err != nil {
-		return err
-	}
-	for _, other := range sessions {
-		if other.ID != sess.ID && other.Cwd == sess.Cwd {
-			return fmt.Errorf("worktree is shared with session %q", other.Name)
-		}
-	}
-	branch, err := gitDrv.RenameWorktreeBranch(sess.WorktreeRepo, sess.Cwd, sess.WorktreeBranch, name)
-	if err != nil {
-		return err
-	}
-	if branch == sess.WorktreeBranch {
-		return nil
-	}
-	if err := st.RenameSessionWorktreeBranch(sess.ID, branch); err != nil {
-		rollbackBranch, rollbackErr := gitDrv.RenameWorktreeBranch(sess.WorktreeRepo, sess.Cwd, branch, sess.Name)
-		if rollbackErr != nil {
-			return fmt.Errorf("%w; could not restore git branch %s: %w", err, sess.WorktreeBranch, rollbackErr)
-		}
-		if rollbackBranch != sess.WorktreeBranch {
-			return fmt.Errorf("%w; git branch rollback returned %s instead of %s", err, rollbackBranch, sess.WorktreeBranch)
-		}
-		return err
-	}
-	sess.WorktreeBranch = branch
-	return nil
-}
 
 func (m *Model) openRename() {
 	entry, ok := m.selectedRow()
@@ -69,7 +26,7 @@ func (m *Model) openRename() {
 		input.SetValue(baseName(entry.group))
 		dir := textField("default working directory", 400)
 		dir.Prompt = ""
-		dirValue := m.groupPaths[entry.group]
+		dirValue := m.workspace.groupPaths[entry.group]
 		if dirValue == "" {
 			dirValue = m.groupDefaultDir(entry.group)
 		}
@@ -80,14 +37,14 @@ func (m *Model) openRename() {
 			path:          entry.group,
 			input:         input,
 			dir:           dir,
-			worktreeIndex: groupWorktreeIndex(m.groupWorktrees[entry.group]),
+			worktreeIndex: groupWorktreeIndex(m.workspace.groupWorktrees[entry.group]),
 		}
 	} else {
 		input.SetValue(entry.sess.Name)
-		tools := sortedToolNames(m.cfg)
+		tools := sortedToolNames(m.services.cfg)
 		shells := []string{}
-		for _, name := range m.cfg.ToolNames() {
-			if m.cfg.Tools[name].Shell {
+		for _, name := range m.services.cfg.ToolNames() {
+			if m.services.cfg.Tools[name].Shell {
 				shells = append(shells, name)
 			}
 		}
@@ -248,17 +205,17 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 		if parent != "" {
 			newPath = parent + "/" + name
 		}
-		if err := m.store.RenameGroup(m.rename.path, newPath); err != nil {
+		if err := m.services.store.RenameGroup(m.rename.path, newPath); err != nil {
 			m.errBar.text = err.Error()
 			return m, nil
 		}
 		// CreateGroup upserts, so it doubles as the default-path setter.
-		if err := m.store.CreateGroup(newPath, dir); err != nil {
+		if err := m.services.store.CreateGroup(newPath, dir); err != nil {
 			m.errBar.text = err.Error()
 			return m, nil
 		}
 		worktree := groupWorktreeValue(m.rename.worktreeIndex)
-		if err := m.store.SetGroupWorktree(newPath, worktree); err != nil {
+		if err := m.services.store.SetGroupWorktree(newPath, worktree); err != nil {
 			m.errBar.text = err.Error()
 			return m, nil
 		}
@@ -266,8 +223,8 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 		m.relabelSubtree(newPath)
 	} else {
 		index := -1
-		for i := range m.sessions {
-			if m.sessions[i].ID == m.rename.sessID {
+		for i := range m.workspace.sessions {
+			if m.workspace.sessions[i].ID == m.rename.sessID {
 				index = i
 				break
 			}
@@ -275,11 +232,11 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 		tool := m.renameTool()
 		prevTool := ""
 		if index >= 0 {
-			prevTool = m.sessions[index].Tool
+			prevTool = m.workspace.sessions[index].Tool
 		}
 		toolChanged := tool != "" && tool != prevTool
 		if toolChanged && m.isShell(tool) {
-			kids, err := m.store.Children(m.rename.sessID)
+			kids, err := m.services.store.Children(m.rename.sessID)
 			if err != nil {
 				m.errBar.text = err.Error()
 				return m, nil
@@ -292,26 +249,26 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 		// The branch changes before the name is stored, so a name git cannot
 		// give it leaves the rename card open instead of splitting them apart.
 		if index >= 0 {
-			if err := renameSessionWorktreeBranch(m.gitDrv, m.store, &m.sessions[index], name); err != nil {
+			if err := sessioncmd.RenameWorktreeBranch(m.services.gitDrv, m.services.store, &m.workspace.sessions[index], name); err != nil {
 				m.errBar.text = "worktree rename: " + err.Error()
 				return m, nil
 			}
 		}
-		if err := m.store.RenameSession(m.rename.sessID, name); err != nil {
+		if err := m.services.store.RenameSession(m.rename.sessID, name); err != nil {
 			m.errBar.text = err.Error()
 			return m, nil
 		}
 		if toolChanged {
-			if err := m.store.UpdateTool(m.rename.sessID, tool); err != nil {
+			if err := m.services.store.UpdateTool(m.rename.sessID, tool); err != nil {
 				m.errBar.text = err.Error()
 				return m, nil
 			}
 		}
 		if index >= 0 {
-			m.sessions[index].Name = name
+			m.workspace.sessions[index].Name = name
 			if toolChanged {
-				m.sessions[index].Tool = tool
-				m.sessions[index].AgentSessionID = ""
+				m.workspace.sessions[index].Tool = tool
+				m.workspace.sessions[index].AgentSessionID = ""
 			}
 		}
 		m.relabelSession(m.rename.sessID)
@@ -332,21 +289,21 @@ func (m *Model) renameGroupLocally(old, newPath, dir, worktree string) {
 		}
 		return group, false
 	}
-	for i := range m.groups {
-		m.groups[i], _ = moved(m.groups[i])
+	for i := range m.workspace.groups {
+		m.workspace.groups[i], _ = moved(m.workspace.groups[i])
 	}
-	for i := range m.sessions {
-		m.sessions[i].Group, _ = moved(m.sessions[i].Group)
+	for i := range m.workspace.sessions {
+		m.workspace.sessions[i].Group, _ = moved(m.workspace.sessions[i].Group)
 	}
-	groupPaths := make(map[string]string, len(m.groupPaths))
-	for group, path := range m.groupPaths {
+	groupPaths := make(map[string]string, len(m.workspace.groupPaths))
+	for group, path := range m.workspace.groupPaths {
 		group, _ = moved(group)
 		groupPaths[group] = path
 	}
 	groupPaths[newPath] = dir
-	m.groupPaths = groupPaths
-	groupWorktrees := make(map[string]string, len(m.groupWorktrees))
-	for group, choice := range m.groupWorktrees {
+	m.workspace.groupPaths = groupPaths
+	groupWorktrees := make(map[string]string, len(m.workspace.groupWorktrees))
+	for group, choice := range m.workspace.groupWorktrees {
 		group, _ = moved(group)
 		groupWorktrees[group] = choice
 	}
@@ -355,11 +312,11 @@ func (m *Model) renameGroupLocally(old, newPath, dir, worktree string) {
 	} else {
 		groupWorktrees[newPath] = worktree
 	}
-	m.groupWorktrees = groupWorktrees
-	for group, folded := range m.collapsed {
+	m.workspace.groupWorktrees = groupWorktrees
+	for group, folded := range m.rail.collapsed {
 		if renamed, ok := moved(group); ok {
-			delete(m.collapsed, group)
-			m.collapsed[renamed] = folded
+			delete(m.rail.collapsed, group)
+			m.rail.collapsed[renamed] = folded
 		}
 	}
 	m.persistCollapsed()
@@ -367,22 +324,22 @@ func (m *Model) renameGroupLocally(old, newPath, dir, worktree string) {
 
 // relabelSession refreshes one session's tmux status-bar label from the db.
 func (m *Model) relabelSession(id string) {
-	sess, err := m.store.Get(id)
+	sess, err := m.services.store.Get(id)
 	if err != nil {
 		m.errBar.text = err.Error()
 		return
 	}
-	if !m.tmux.Exists(id) {
+	if !m.services.tmux.Exists(id) {
 		return
 	}
-	if err := m.tmux.SetLabel(id, sessionLabel(sess.Group, sess.Name)); err != nil {
+	if err := m.services.tmux.SetLabel(id, sessionLabel(sess.Group, sess.Name)); err != nil {
 		m.errBar.text = err.Error()
 	}
 }
 
 // relabelSubtree refreshes labels for every session under a group path.
 func (m *Model) relabelSubtree(path string) {
-	sessions, err := m.store.SessionsInSubtree(path)
+	sessions, err := m.services.store.SessionsInSubtree(path)
 	if err != nil {
 		m.errBar.text = err.Error()
 		return

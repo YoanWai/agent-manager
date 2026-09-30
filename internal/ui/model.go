@@ -13,11 +13,13 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/execution"
 	"github.com/YoanWai/agent-manager/internal/feed"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/keybind"
-	"github.com/YoanWai/agent-manager/internal/mcpreg"
+	"github.com/YoanWai/agent-manager/internal/notify"
+	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
@@ -60,167 +62,16 @@ type treeRow struct {
 }
 
 type Model struct {
-	cfg      config.Config
-	store    *store.Store
-	tmux     *tmux.Driver
-	hooks    *hooks.Manager
-	gitDrv   *git.Driver
-	engine   *status.Engine
-	keys     keybind.Table
-	listKeys keybind.Table
-	// configDir is resolved once, at New, so the settings screen writes
-	// keys back to the config.toml the manager loaded.
-	configDir string
-
-	// setSnapshot writes a session's pane capture before archive or kill
-	// takes the window; a seam so snapshot failures can be exercised
-	// without a broken store.
-	setSnapshot func(id, snapshot string) error
-
-	sessions []store.Session
-	rows     []treeRow
-	// tmuxSocket is the server the last poll read panes from; rows stamped
-	// with another server belong to a manager running against it, and rows
-	// stamped by none belong to whichever manager holds the store.
-	tmuxSocket     string
-	leadingManager bool
-
-	groups         []string
-	groupPaths     map[string]string
-	groupWorktrees map[string]string
-	// worktreeRepos memoizes which spawn directories sit inside a git
-	// repo, so gating the worktree toggle does not shell out to git on
-	// every frame. Entries expire, so a directory git-initialised while
-	// the bar is open stops reading as unavailable.
-	worktreeRepos  map[string]repoAnswer
-	archivedGroups map[string]bool
-	snap           sysstat.Snapshot
-	proc           sysstat.ProcStat
-	procFor        string
-	preview        string
-	agents         agentStats
-	// queuedMessages is replaced whole on every refresh rather than merged,
-	// so a delivered message's badge clears itself.
-	queuedMessages map[string]int
-	// paneLines holds each session's last meaningful pane line, which the
-	// full screen row's second line quotes. Merged rather than replaced, so
-	// a session that lost its window keeps its last words.
-	paneLines map[string]string
-	// panePrompts holds the last prompt each session's transcript echoes,
-	// which the full screen row shows as the task it is on.
-	panePrompts map[string]string
-	// panes is the last pass's agent pane geometry, which the poller reads
-	// off the UI loop alongside its liveness listing.
-	panes map[string]tmux.Pane
-
-	net netStats
-
-	poller *poller
-	focus  *focusWatch
-	// sel is the focused-pane selection, written during paint so clicks
-	// resolve against the current frame. copied is the size of the last
-	// clipboard write, shown once in the status line and cleared on the
-	// next selection. copyGen rises whenever the selection behind a write
-	// stops being the one on screen, so a write that lands late is dropped
-	// instead of re-arming the count under nothing.
-	copied  int
-	copyGen int
-	sel     focusSelection
-	// forwardingMouse holds an Alt-initiated in-pane click lifecycle until
-	// its release. The button and last in-pane cell keep an X10 release
-	// paired with its press when it reports MouseButtonNone outside the pane.
-	forwardingMouse  bool
-	forwardingButton int
-	forwardingRow    int
-	forwardingCol    int
-	// pending is a press in a mouse-tracking pane awaiting its verdict:
-	// selection drag or forwarded click.
-	pending pendingClick
-	// listClickAt and listClickKey remember the last rail press so two
-	// presses on the same row inside multiClickWindow count as a double click.
-	listClickAt  time.Time
-	listClickKey string
-	// clickFocusKey is the split rail session row a press landed on; its
-	// release on that same row focuses it, so a drag can still claim it.
-	clickFocusKey string
-	reorder       reorderState
-	// lifts numbers each row lift, so a tick one drag scheduled is not
-	// taken for the next drag's.
-	lifts int
-	// railWidth is the rail content width the last frame painted, which
-	// places every row's menu button.
-	railWidth int
-	// railEnd is one past the last row the rail window painted.
-	railEnd int
-	// handleX is the screen column of each row's drag handle as the last
-	// frame painted it; the handle's place follows the row's tree depth.
-	handleX map[string]int
-	menu    rowMenu
-	pane    paneMirror
-	// cursorOn is the caret's blink phase while focused.
-	cursorOn bool
-	// imeCursor is shared with the terminal output writer so the host input
-	// method can follow whichever software caret the UI rendered.
-	imeCursor *cursorAnchor
-	// focusScroll is how many lines the focused pane is scrolled back into
-	// its history; zero is live at the bottom.
-	focusScroll int
-	// focusFetchInFlight guards the scroll-region pipeline: one capture
-	// rides the control pipe at a time, and a wheel that moved the target
-	// meanwhile is served by the reply's own follow-up fetch. Without it a
-	// fast wheel queues a full history capture per notch plus a catch-up
-	// per stale reply, and the pipe answers them for half a minute.
-	focusFetchInFlight bool
-	// focusOnEnter mirrors the persisted focus-key setting; the footer
-	// reads it every frame, so it lives here instead of the store.
-	focusOnEnter bool
-	// arrowStep mirrors the persisted ←→ step-in/step-out setting, read
-	// on every keypress.
-	arrowStep bool
-	// comfortableRows mirrors the persisted list density: entries paint
-	// their meta on a second line instead of alongside the name. Every
-	// rail frame reads it, so it lives here instead of the store.
-	comfortableRows bool
-	// fullLayout mirrors the persisted sessions layout: the rail owns the
-	// whole width, with no preview column beside it. Every list frame
-	// reads it, so it lives here instead of the store.
-	fullLayout bool
-	// Header and stats visibility stay cached because rendering and sizing
-	// read them every frame.
-	hideHeader bool
-	hideStats  bool
-	// mouseDisabled mirrors the persisted mouse-reporting setting: true gives
-	// the rail and content column back to the terminal's own click-drag text
-	// selection. Read on every Update via syncMouseCapture. Named for its off
-	// polarity, like hideHeader/hideStats, so a bare Model{} in a test still
-	// defaults to mouse reporting on.
-	mouseDisabled bool
-	// watchedGen is previewGen as of the last poll pass, so a selection
-	// that has not moved since can be recognised as at rest.
-	watchedGen        uint64
-	previewBodyOffset int
-	cursor            int
-	// railTop is the entry the rail paints first, carried between frames.
-	// Deriving it from the cursor alone cannot hold still: rows are of
-	// uneven height, so every step would re-solve the window and slide the
-	// list under a highlight that should have simply moved down.
-	railTop int
-	// railHits maps each line the rail painted this frame to the m.rows
-	// index a click there selects, -1 for chrome (search field, badges,
-	// padding, meters) a click cannot select. Recorded by recordRailHits
-	// at paint time, the way m.pane.box is for the focused pane, so a
-	// click handler never has to re-derive the rail's layout and drift
-	// from it.
-	railHits        []int
-	noticeHit       noticeHit
-	mode            mode
-	showArchived    bool
-	hideEmptyGroups bool
-	statusFilter    statusFilter
-	collapsed       map[string]bool
-	search          string
-	searching       bool
-
+	services  services
+	workspace workspace
+	rail      railState
+	focusPane focusPaneState
+	prefs     preferences
+	ledger    launchLedger
+	startup   startupState
+	notices   noticesState
+	poller    *poller
+	mode      mode
 	diff      diffState
 	form      form
 	groupForm groupForm
@@ -232,88 +83,24 @@ type Model struct {
 	install *pendingInstall
 	// mouseReleased is true while the setup dialog has handed the mouse
 	// back to the terminal, so a drag selects its text.
-	mouseReleased     bool
-	mouseHover        bool
-	rename            renameTarget
-	fork              forkState
-	quick             quickState
-	lastSpawnTool     string
-	lastSpawnWorktree bool
-	// composerSeq numbers the prompt boxes this run has opened.
-	composerSeq int
-	settings    settingsState
-	help        helpState
-	moveID      string
-	movePath    string
-	repoPick    repoPickState
+	mouseReleased bool
+	mouseHover    bool
+	rename        renameTarget
+	fork          forkState
+	quick         quickState
+	settings      settingsState
+	help          helpState
+	moveID        string
+	movePath      string
+	repoPick      repoPickState
 	// editorReturnID is the session an editor request detached from, so the
 	// attach it cost can be resumed once the editor is up.
 	editorReturnID string
-
-	// Repo a human picked by hand per session, outranking the agent's
-	// declaration for as long as this manager runs.
-	pickedRepos map[string]string
-
-	// awaitedRenames holds what a spawned session launched with, for as long
-	// as the agent it carries the rename directive to is still expected to
-	// answer. A rename that has not landed by the time this manager run ends
-	// is one that is never arriving, so the set is deliberately not persisted.
-	awaitedRenames map[string]awaitedRename
-
-	width  int
-	height int
-	// sessionsSized flips after the first refresh shrinks sessions left
-	// over from a previous manager run to the preview panel's width.
-	sessionsSized bool
-	errBar        errBar
-	split         splitState
-	// previewGen increments on every cursor move. In-flight captures and
-	// settle timers with an older gen are dropped so key-repeat cannot
-	// queue a second of tmux work after the user stops.
-	previewGen uint64
-	// launched is when this run recorded each session it spawned. A poll
-	// that listed the store before that has nothing to say about the row.
-	launched map[string]time.Time
-	// gone is when this run took each session off the loaded list itself,
-	// by deleting or archiving it, so a poll that listed the store before
-	// that moment cannot put the row back on screen for a frame.
-	gone map[string]goneMark
-	// goneGroups is the group-path counterpart of gone: when this run
-	// archived, restored, or deleted a group, a poll that listed the store
-	// before that moment must not put the old state back on the tree.
-	goneGroups map[string]goneMark
-	// terminalKeyAt is when the last T finished being handled. Held down it
-	// autorepeats into a burst of keystrokes, and T is the only key that
-	// spawns on the keystroke itself rather than opening a form that would
-	// swallow them.
-	terminalKeyAt time.Time
-
-	// bannerPhase advances the wordmark's current sweep and then rests, so
-	// the frame is not repainted forever.
-	bannerPhase int
-
-	startupPhase     int
-	startupAnimating bool
-	booting          bool
-	pendingTyped     *typedPromptCandidate
-
-	update updateInfo
-
-	// dismissed holds the notice ids the user closed for good; the set
-	// persists in settings so a dismissed message never comes back.
-	dismissed    map[string]bool
-	noticeCursor int
-	noticeScroll int
-	// whatsNewVersion mirrors the persisted whats_new_version setting so
-	// the notices list, rebuilt every frame, never reads the database.
-	whatsNewVersion     string
-	whatsNewFromVersion string
-	// feedMessages is the remote message feed, refreshed on the update
-	// tick and folded into the notices next to the built-in ones.
-	feedMessages []feed.Message
-	// pendingNotice is a new notice that arrived while the list was not
-	// showing; flushPendingNotice opens it once the list is back.
-	pendingNotice string
+	width          int
+	height         int
+	errBar         errBar
+	split          splitState
+	update         updateInfo
 }
 
 type netStats struct {
@@ -633,7 +420,7 @@ type previewTickMsg struct{}
 type startupTickMsg struct{}
 
 func (m *Model) hasStartingRow() bool {
-	for _, row := range m.rows {
+	for _, row := range m.rail.rows {
 		if !row.isGroup && row.sess.Status == status.Starting {
 			return true
 		}
@@ -656,7 +443,7 @@ func (m *Model) previewTick() tea.Cmd {
 }
 
 func (m *Model) needsLoaderTick() bool {
-	return m.booting || m.hasStartingRow() || m.reviewNeedsLoader() || m.hasWorkingLoaderRow()
+	return m.startup.booting || m.hasStartingRow() || m.reviewNeedsLoader() || m.hasWorkingLoaderRow()
 }
 
 // typedPromptCandidate is a composer draft snapshotted as enter went into
@@ -674,15 +461,15 @@ const typedPromptGrace = 5 * time.Second
 // stashTypedPrompt snapshots the composer draft as enter goes into the
 // focused pane, from a fresh capture so the newest keystrokes are in it.
 func (m *Model) stashTypedPrompt(sess store.Session) {
-	if m.engine == nil || m.tmux == nil {
+	if m.services.engine == nil || m.services.tmux == nil {
 		return
 	}
-	pane, err := m.tmux.CapturePane(sess.ID)
+	pane, err := m.services.tmux.CapturePane(sess.ID)
 	if err != nil {
 		return
 	}
-	if draft, ok := m.engine.InputDraft(sess.Tool, ansi.Strip(pane)); ok {
-		m.pendingTyped = &typedPromptCandidate{id: sess.ID, text: draft, at: time.Now()}
+	if draft, ok := m.services.engine.InputDraft(sess.Tool, ansi.Strip(pane)); ok {
+		m.startup.pendingTyped = &typedPromptCandidate{id: sess.ID, text: draft, at: time.Now()}
 	}
 }
 
@@ -691,36 +478,36 @@ func (m *Model) stashTypedPrompt(sess store.Session) {
 // a dialog never turns the session working while its draft is fresh, so
 // that candidate just expires.
 func (m *Model) commitTypedPrompt() {
-	cand := m.pendingTyped
+	cand := m.startup.pendingTyped
 	if cand == nil {
 		return
 	}
 	if time.Since(cand.at) > typedPromptGrace {
-		m.pendingTyped = nil
+		m.startup.pendingTyped = nil
 		return
 	}
-	for i := range m.sessions {
-		if m.sessions[i].ID != cand.id {
+	for i := range m.workspace.sessions {
+		if m.workspace.sessions[i].ID != cand.id {
 			continue
 		}
-		if m.sessions[i].Status != status.Working {
+		if m.workspace.sessions[i].Status != status.Working {
 			return
 		}
-		if err := ignoreDeletedSession(m.store.SetLastPrompt(cand.id, cand.text)); err != nil {
+		if err := ignoreDeletedSession(m.services.store.SetLastPrompt(cand.id, cand.text)); err != nil {
 			m.errBar.text = err.Error()
 		}
-		m.sessions[i].LastPrompt = cand.text
-		m.pendingTyped = nil
+		m.workspace.sessions[i].LastPrompt = cand.text
+		m.startup.pendingTyped = nil
 		return
 	}
-	m.pendingTyped = nil
+	m.startup.pendingTyped = nil
 }
 
 // hasWorkingLoaderRow reports whether a row is animating the working
 // loader: a working session with no quotable pane line yet.
 func (m *Model) hasWorkingLoaderRow() bool {
-	for _, row := range m.rows {
-		if !row.isGroup && row.sess.Status == status.Working && m.paneLines[row.sess.ID] == "" {
+	for _, row := range m.rail.rows {
+		if !row.isGroup && row.sess.Status == status.Working && m.workspace.paneLines[row.sess.ID] == "" {
 			return true
 		}
 	}
@@ -739,10 +526,10 @@ func (m *Model) reviewNeedsLoader() bool {
 }
 
 func (m *Model) startStartupTick() tea.Cmd {
-	if m.startupAnimating || !m.needsLoaderTick() {
+	if m.startup.startupAnimating || !m.needsLoaderTick() {
 		return nil
 	}
-	m.startupAnimating = true
+	m.startup.startupAnimating = true
 	return func() tea.Msg { return startupTickMsg{} }
 }
 
@@ -757,53 +544,102 @@ type attachDoneMsg struct {
 	err    error
 }
 
-func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, version string) *Model {
-	statusSources := make(map[string]string, len(cfg.Tools))
-	sessionStores := make(map[string]string, len(cfg.Tools))
-	mcpStyles := make(map[string]string, len(cfg.Tools))
-	shellTools := make(map[string]bool, len(cfg.Tools))
-	for name, tool := range cfg.Tools {
-		shellTools[name] = tool.Shell
-		statusSources[name] = tool.StatusSource
-		sessionStores[name] = tool.SessionStore
-		mcpStyles[name] = mcpreg.Style(name, tool.MCP)
+func NewWithInboxOwner(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, version string, owner sessioncmd.InboxMaintenance) *Model {
+	if owner == nil {
+		panic("inbox owner is required for explicit composition")
 	}
-	// A missing git binary only disables the diff view; everything else
-	// works without it, so the error surfaces on first use instead.
+	model := New(cfg, st, driver, engine, hookManager, version)
+	model.poller.dependencies.Inbox = owner
+	model.poller.runner = execution.New(model.poller.dependencies, model.poller.options)
+	return model
+}
+
+type Dependencies struct {
+	Config     config.Config
+	Store      *store.Store
+	TMux       *tmux.Driver
+	Engine     *status.Engine
+	Hooks      *hooks.Manager
+	Git        *git.Driver
+	Lifecycle  *sessioncmd.Lifecycle
+	Execution  *execution.Runner
+	ProfileDir string
+}
+
+func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, version string) *Model {
 	gitDriver, _ := git.New()
+	dir, _ := config.Dir()
+	deps := execution.Dependencies{Store: st, TMux: driver, Engine: engine, Hooks: hookManager, Git: gitDriver, Notify: postNotification,
+		TakeFocus: func() (string, bool) { return notify.TakeFocus(dir) }}
+	opts := execution.OptionsFromConfig(cfg)
+	var model *Model
+	lifecycle, err := sessioncmd.NewLifecycle(sessioncmd.Runtime{
+		Config: cfg, Store: st, Driver: driver, Hooks: hookManager, Git: gitDriver,
+		Snapshot: func(id, pane string) error { return model.services.setSnapshot(id, pane) },
+	})
+	if err != nil {
+		panic(err)
+	}
+	model = newView(Dependencies{Config: cfg, Store: st, TMux: driver, Engine: engine, Hooks: hookManager, Git: gitDriver, Lifecycle: lifecycle, Execution: execution.New(deps, opts), ProfileDir: dir}, version)
+	model.poller.dependencies, model.poller.options = deps, opts
+	return model
+}
+
+func NewWithServices(deps Dependencies, version string) *Model {
+	if deps.Execution == nil || deps.Lifecycle == nil {
+		panic("execution and lifecycle services are required")
+	}
+	return newView(deps, version)
+}
+
+func newView(deps Dependencies, version string) *Model {
+	cfg, st, driver, engine, hookManager, gitDriver := deps.Config, deps.Store, deps.TMux, deps.Engine, deps.Hooks, deps.Git
 	applyTheme(themes[themeIndex(resolveStartupTheme(st))])
 	driver.SetSessionKeys(cfg.SessionKeys)
 	model := &Model{
-		cfg:                 cfg,
-		store:               st,
-		tmux:                driver,
-		keys:                cfg.SessionKeys,
-		listKeys:            cfg.ListKeys,
-		hooks:               hookManager,
-		gitDrv:              gitDriver,
-		engine:              engine,
-		setSnapshot:         st.SetSnapshot,
-		poller:              newPoller(st, driver, engine, hookManager, gitDriver, statusSources, sessionStores, mcpStyles, shellTools, newToolBinaries(cfg), cfg.PollInterval.Duration),
-		collapsed:           loadCollapsed(st),
-		split:               splitState{ratio: loadSplitRatio(st)},
-		focusOnEnter:        storedFocusOnEnter(st),
-		arrowStep:           storedArrowStep(st),
-		comfortableRows:     storedComfortableRows(st),
-		fullLayout:          storedFullLayout(st),
-		hideHeader:          storedHideHeader(st),
-		hideStats:           storedHideStats(st),
-		mouseDisabled:       storedMouseDisabled(st),
-		imeCursor:           &cursorAnchor{},
-		mode:                modeList,
-		booting:             true,
-		update:              updateInfo{version: version},
-		dismissed:           loadDismissed(st),
-		whatsNewVersion:     loadWhatsNewVersion(st),
-		whatsNewFromVersion: loadWhatsNewFromVersion(st),
+		poller: &poller{runner: deps.Execution},
+		split:  splitState{ratio: loadSplitRatio(st)},
+		mode:   modeList,
+		update: updateInfo{version: version},
+		services: services{
+			cfg:         cfg,
+			lifecycle:   deps.Lifecycle,
+			configDir:   deps.ProfileDir,
+			store:       st,
+			tmux:        driver,
+			keys:        cfg.SessionKeys,
+			listKeys:    cfg.ListKeys,
+			hooks:       hookManager,
+			gitDrv:      gitDriver,
+			engine:      engine,
+			setSnapshot: st.SetSnapshot,
+		},
+		rail: railState{
+			collapsed: loadCollapsed(st),
+		},
+		focusPane: focusPaneState{
+			imeCursor: &cursorAnchor{},
+		},
+		prefs: preferences{
+			focusOnEnter:    storedFocusOnEnter(st),
+			arrowStep:       storedArrowStep(st),
+			comfortableRows: storedComfortableRows(st),
+			fullLayout:      storedFullLayout(st),
+			hideHeader:      storedHideHeader(st),
+			hideStats:       storedHideStats(st),
+			mouseDisabled:   storedMouseDisabled(st),
+		},
+		startup: startupState{
+			booting: true,
+		},
+		notices: noticesState{
+			dismissed:           loadDismissed(st),
+			whatsNewVersion:     loadWhatsNewVersion(st),
+			whatsNewFromVersion: loadWhatsNewFromVersion(st),
+		},
 	}
-	if dir, err := config.Dir(); err == nil {
-		model.configDir = dir
-		cached := update.Cached(dir, version)
+	if deps.ProfileDir != "" {
+		cached := update.Cached(deps.ProfileDir, version)
 		model.update.latest = cached.Latest
 		model.update.url = cached.URL
 		model.update.releases = cached.Releases
@@ -885,8 +721,8 @@ func loadCollapsed(st *store.Store) map[string]bool {
 // persistCollapsed saves the currently folded group paths so the state
 // survives across launches.
 func (m *Model) persistCollapsed() {
-	paths := make([]string, 0, len(m.collapsed))
-	for path, folded := range m.collapsed {
+	paths := make([]string, 0, len(m.rail.collapsed))
+	for path, folded := range m.rail.collapsed {
 		if folded {
 			paths = append(paths, path)
 		}
@@ -897,7 +733,7 @@ func (m *Model) persistCollapsed() {
 		m.errBar.text = err.Error()
 		return
 	}
-	if err := m.store.SetSetting(collapsedSetting, string(raw)); err != nil {
+	if err := m.services.store.SetSetting(collapsedSetting, string(raw)); err != nil {
 		m.errBar.text = err.Error()
 	}
 }
@@ -905,10 +741,19 @@ func (m *Model) persistCollapsed() {
 // StartPoller launches the background polling loop. It runs outside the
 // bubbletea event loop so statuses keep updating while the TUI is
 // suspended inside a tmux attach.
-func (m *Model) StartPoller(send func(tea.Msg)) {
-	m.focus = newFocusWatch(m.tmux, send)
+func (m *Model) StartPoller(ctx context.Context, send func(tea.Msg)) <-chan struct{} {
+	m.focusPane.focus = newFocusWatch(m.services.tmux, send)
 	m.syncPollInput()
-	go m.poller.run(send)
+	results := m.poller.results(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer m.focusPane.focus.Close()
+		for result := range results {
+			send(pollMessage(result))
+		}
+	}()
+	return done
 }
 
 func (m *Model) syncPollInput() {
@@ -920,29 +765,29 @@ func (m *Model) syncPollInput() {
 			focusID = sess.ID
 		}
 	}
-	m.poller.setInput(m.showArchived, selectedID)
+	m.poller.setInput(m.rail.showArchived, selectedID)
 	// Only ever stop the watcher here. Opening a control client costs a
 	// process and a tmux attach, so holding j through twenty rows would
 	// pay that twenty times; the client is opened once the cursor settles
 	// instead. The watcher only exists once StartPoller has a send
 	// function; tests drive Update without one.
-	if m.focus != nil && m.focus.watching() != focusID {
-		m.focus.setFocus("")
+	if m.focusPane.focus != nil && m.focusPane.focus.watching() != focusID {
+		m.focusPane.focus.setFocus("")
 	}
 }
 
 // watchSelection points the control client at the current selection. Call
 // it where the selection has come to rest, never on every cursor move.
 func (m *Model) watchSelection() {
-	if m.focus == nil {
+	if m.focusPane.focus == nil {
 		return
 	}
 	sess, ok := m.selected()
 	if !ok || sess.Archived {
-		m.focus.setFocus("")
+		m.focusPane.focus.setFocus("")
 		return
 	}
-	m.focus.setFocus(sess.ID)
+	m.focusPane.focus.setFocus(sess.ID)
 }
 
 // requestRefresh publishes the current UI state to the poller and asks
@@ -1073,22 +918,22 @@ func (m *Model) fetchFeed(force bool) tea.Msg {
 // created before an update still gets the current key bindings (the
 // server-global Ctrl+R review key) and footer.
 func (m *Model) refreshExistingSessionUX() tea.Msg {
-	if err := m.tmux.EnsureBindings(); err != nil {
+	if err := m.services.tmux.EnsureBindings(); err != nil {
 		return errMsg{err}
 	}
-	sessions, err := m.store.ListSessions(true)
+	sessions, err := m.services.store.ListSessions(true)
 	if err != nil {
 		return errMsg{err}
 	}
 	for _, sess := range sessions {
-		if !m.tmux.Exists(sess.ID) {
+		if !m.services.tmux.Exists(sess.ID) {
 			continue
 		}
 		// Best-effort per session: one that dies between the check and here
 		// errors harmlessly and must not abort the rest, and the bindings that
 		// matter are already installed above.
-		_ = m.tmux.RefreshChrome(sess.ID)
-		_ = m.tmux.SetLabel(sess.ID, sessionLabel(sess.Group, sess.Name))
+		_ = m.services.tmux.RefreshChrome(sess.ID)
+		_ = m.services.tmux.SetLabel(sess.ID, sessionLabel(sess.Group, sess.Name))
 	}
 	return nil
 }
@@ -1099,9 +944,9 @@ func (m *Model) refreshExistingSessionUX() tea.Msg {
 // m.sessions still carries the other scope's list. Status filters apply
 // later via listedSessions.
 func (m *Model) visibleSessions() []store.Session {
-	visible := make([]store.Session, 0, len(m.sessions))
-	for _, sess := range m.sessions {
-		if sess.Archived == m.showArchived {
+	visible := make([]store.Session, 0, len(m.workspace.sessions))
+	for _, sess := range m.workspace.sessions {
+		if sess.Archived == m.rail.showArchived {
 			visible = append(visible, sess)
 		}
 	}
@@ -1116,7 +961,7 @@ func (m *Model) visibleSessions() []store.Session {
 // (finished → idle on enter/ack) so rebuild cannot eject the cursor mid-work.
 func (m *Model) listedSessions() []store.Session {
 	visible := m.visibleSessions()
-	if !m.statusFilter.active() {
+	if !m.rail.statusFilter.active() {
 		return visible
 	}
 	heldID := ""
@@ -1125,7 +970,7 @@ func (m *Model) listedSessions() []store.Session {
 	}
 	listed := make([]store.Session, 0, len(visible))
 	for _, sess := range visible {
-		if m.statusFilter.matches(sess.Status) || sess.ID == heldID {
+		if m.rail.statusFilter.matches(sess.Status) || sess.ID == heldID {
 			listed = append(listed, sess)
 		}
 	}
@@ -1146,17 +991,17 @@ func (m *Model) listedAgents() []store.Session {
 }
 
 func (m *Model) selected() (store.Session, bool) {
-	if m.cursor < 0 || m.cursor >= len(m.rows) || m.rows[m.cursor].isGroup {
+	if m.rail.cursor < 0 || m.rail.cursor >= len(m.rail.rows) || m.rail.rows[m.rail.cursor].isGroup {
 		return store.Session{}, false
 	}
-	return m.rows[m.cursor].sess, true
+	return m.rail.rows[m.rail.cursor].sess, true
 }
 
 func (m *Model) selectedRow() (treeRow, bool) {
-	if m.cursor < 0 || m.cursor >= len(m.rows) {
+	if m.rail.cursor < 0 || m.rail.cursor >= len(m.rail.rows) {
 		return treeRow{}, false
 	}
-	return m.rows[m.cursor], true
+	return m.rail.rows[m.rail.cursor], true
 }
 
 // focusSession puts the cursor on a session's row, for the keys that make
@@ -1164,9 +1009,9 @@ func (m *Model) selectedRow() (treeRow, bool) {
 // session filtered out of the current view has none, and the cursor stays
 // where it was.
 func (m *Model) focusSession(id string) bool {
-	for i, row := range m.rows {
+	for i, row := range m.rail.rows {
 		if !row.isGroup && row.sess.ID == id {
-			m.cursor = i
+			m.rail.cursor = i
 			return true
 		}
 	}
@@ -1176,7 +1021,7 @@ func (m *Model) focusSession(id string) bool {
 // schedulePreview arms a single capture after previewSettle. Call after
 // bumping previewGen so earlier timers and in-flight captures go stale.
 func (m *Model) schedulePreview() tea.Cmd {
-	gen := m.previewGen
+	gen := m.focusPane.previewGen
 	return tea.Tick(previewSettle, func(time.Time) tea.Msg {
 		return previewSettleMsg{gen: gen}
 	})
@@ -1189,18 +1034,18 @@ func (m *Model) schedulePreview() tea.Cmd {
 func (m *Model) previewCmd(sess store.Session, gen uint64) tea.Cmd {
 	return func() tea.Msg {
 		msg := previewMsg{sessID: sess.ID, gen: gen}
-		if sess.Archived || !m.tmux.Exists(sess.ID) {
-			snapshot, err := storedPreview(m.store, m.tmux, sess.ID)
+		if sess.Archived || !m.services.tmux.Exists(sess.ID) {
+			snapshot, err := storedPreview(m.services.store, m.services.tmux, sess.ID)
 			if err != nil {
 				return errMsg{err}
 			}
 			msg.preview = snapshot
 			return msg
 		}
-		if pane, err := m.tmux.CapturePane(sess.ID); err == nil {
+		if pane, err := m.services.tmux.CapturePane(sess.ID); err == nil {
 			msg.preview = pane
 		}
-		if pid, err := m.tmux.PanePID(sess.ID); err == nil {
+		if pid, err := m.services.tmux.PanePID(sess.ID); err == nil {
 			memTotal, _ := sysstat.MemTotalBytes()
 			msg.proc = sysstat.Trees([]int{pid})[pid].ScaleToHost(sysstat.LogicalCPUs(), memTotal)
 		}
@@ -1232,8 +1077,8 @@ func (m *Model) resizeSessions() {
 	if width <= 0 || height <= 0 {
 		return
 	}
-	if m.pane.geom == nil {
-		m.pane.geom = map[string][2]int{}
+	if m.focusPane.pane.geom == nil {
+		m.focusPane.pane.geom = map[string][2]int{}
 	}
 	m.markReplacedPanesFresh()
 	m.seedPaneGeom()
@@ -1252,13 +1097,13 @@ func (m *Model) resizeSessions() {
 	}
 	var todo []target
 	var ids []string
-	for _, sess := range m.sessions {
+	for _, sess := range m.workspace.sessions {
 		if sess.Archived || sess.ID == fullFocusID {
 			continue
 		}
 		wanted := height
-		if last, ok := m.pane.geom[sess.ID]; ok {
-			fitsHeight := m.panes[sess.ID].AltScreen || m.cfg.Tools[sess.Tool].FitsHeight
+		if last, ok := m.focusPane.pane.geom[sess.ID]; ok {
+			fitsHeight := m.workspace.panes[sess.ID].AltScreen || m.services.cfg.Tools[sess.Tool].FitsHeight
 			keepsHeight := last[1] > height && !fitsHeight
 			if last[0] == width && (last[1] == height || keepsHeight) {
 				continue
@@ -1287,13 +1132,13 @@ func (m *Model) resizeSessions() {
 		results := make(chan result, len(todo))
 		for _, t := range todo {
 			go func(t target) {
-				results <- result{id: t.id, height: t.height, err: m.tmux.Resize(t.id, width, t.height)}
+				results <- result{id: t.id, height: t.height, err: m.services.tmux.Resize(t.id, width, t.height)}
 			}(t)
 		}
 		for range todo {
 			r := <-results
 			if r.err == nil {
-				m.pane.geom[r.id] = [2]int{width, r.height}
+				m.focusPane.pane.geom[r.id] = [2]int{width, r.height}
 			}
 		}
 	})
@@ -1309,18 +1154,18 @@ func (m *Model) pinFullFocusPane(id string) {
 	if width <= 0 || height <= 0 {
 		return
 	}
-	if m.pane.geom == nil {
-		m.pane.geom = map[string][2]int{}
+	if m.focusPane.pane.geom == nil {
+		m.focusPane.pane.geom = map[string][2]int{}
 	}
-	if last, ok := m.pane.geom[id]; ok && last[0] == width && last[1] >= height {
+	if last, ok := m.focusPane.pane.geom[id]; ok && last[0] == width && last[1] >= height {
 		return
 	}
 	var resizeErr error
 	m.poller.reflowSessions([]string{id}, func() {
-		resizeErr = m.tmux.Resize(id, width, height)
+		resizeErr = m.services.tmux.Resize(id, width, height)
 	})
 	if resizeErr == nil {
-		m.pane.geom[id] = [2]int{width, height}
+		m.focusPane.pane.geom[id] = [2]int{width, height}
 	}
 }
 
@@ -1329,10 +1174,10 @@ func (m *Model) pinFullFocusPane(id string) {
 // with nothing in its scrollback yet the one re-pin is free, unlike the
 // panes adopted from a previous run, which seedPaneGeom protects.
 func (m *Model) markFreshPane(id string) {
-	if m.pane.geom == nil {
-		m.pane.geom = map[string][2]int{}
+	if m.focusPane.pane.geom == nil {
+		m.focusPane.pane.geom = map[string][2]int{}
 	}
-	m.pane.geom[id] = [2]int{0, 0}
+	m.focusPane.pane.geom[id] = [2]int{0, 0}
 }
 
 // publishPaneSize records the box for the launch paths that run without a
@@ -1343,14 +1188,14 @@ func (m *Model) publishPaneSize() {
 		return
 	}
 	width, height := m.paneTargetSize()
-	if width <= 0 || height <= 0 || m.pane.published == [2]int{width, height} {
+	if width <= 0 || height <= 0 || m.focusPane.pane.published == [2]int{width, height} {
 		return
 	}
-	if err := m.store.SetPaneSize(width, height); err != nil {
+	if err := m.services.store.SetPaneSize(width, height); err != nil {
 		m.errBar.text = err.Error()
 		return
 	}
-	m.pane.published = [2]int{width, height}
+	m.focusPane.pane.published = [2]int{width, height}
 }
 
 // markReplacedPanesFresh spots a session whose pane process changed since
@@ -1362,12 +1207,12 @@ func (m *Model) publishPaneSize() {
 // exact pin rather than the adopted-pane treatment that keeps a taller
 // height.
 func (m *Model) markReplacedPanesFresh() {
-	if m.pane.pids == nil {
-		m.pane.pids = map[string]int{}
+	if m.focusPane.pane.pids == nil {
+		m.focusPane.pane.pids = map[string]int{}
 	}
-	for id, pane := range m.panes {
-		last := m.pane.pids[id]
-		m.pane.pids[id] = pane.PID
+	for id, pane := range m.workspace.panes {
+		last := m.focusPane.pane.pids[id]
+		m.focusPane.pane.pids[id] = pane.PID
 		if last != 0 && last != pane.PID {
 			m.markFreshPane(id)
 		}
@@ -1383,8 +1228,8 @@ func (m *Model) markReplacedPanesFresh() {
 // follow. Drift the manager did not cause otherwise stays, so a window
 // someone resized from another client is left where they put it.
 func (m *Model) seedPaneGeom() {
-	for id, geom := range m.panes {
-		last, sized := m.pane.geom[id]
+	for id, geom := range m.workspace.panes {
+		last, sized := m.focusPane.pane.geom[id]
 		// markFreshPane's pin is still owed: a session created this run
 		// carries its pre-selection launch size, not the box.
 		if sized && last == [2]int{0, 0} {
@@ -1393,7 +1238,7 @@ func (m *Model) seedPaneGeom() {
 		if sized && geom.Panes < 2 {
 			continue
 		}
-		m.pane.geom[id] = [2]int{geom.Width, geom.Height}
+		m.focusPane.pane.geom[id] = [2]int{geom.Width, geom.Height}
 	}
 }
 
@@ -1416,8 +1261,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // An open row menu asks for every motion, pressed or not, so hovering an
 // entry can light it up.
 func (m *Model) syncMouseCapture() tea.Cmd {
-	release := m.mode == modeLaunchHint || (m.mouseDisabled && m.mode != modeFocus)
-	hover := !release && m.mode == modeList && m.menu.active
+	release := m.mode == modeLaunchHint || (m.prefs.mouseDisabled && m.mode != modeFocus)
+	hover := !release && m.mode == modeList && m.rail.menu.active
 	if release == m.mouseReleased && hover == m.mouseHover {
 		return nil
 	}
@@ -1466,11 +1311,11 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case bannerTickMsg:
-		m.bannerPhase++
+		m.startup.bannerPhase++
 		return m, m.bannerTick()
 
 	case bannerShimmerMsg:
-		m.bannerPhase = 0
+		m.startup.bannerPhase = 0
 		return m, m.bannerTick()
 
 	case browserOpenMsg:
@@ -1479,10 +1324,10 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case startupTickMsg:
 		if !m.needsLoaderTick() {
-			m.startupAnimating = false
+			m.startup.startupAnimating = false
 			return m, nil
 		}
-		m.startupPhase++
+		m.startup.startupPhase++
 		return m, m.startupTick()
 
 	case previewTickMsg:
@@ -1495,58 +1340,58 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// A session with a control client already pushes every frame; a
 		// tick capture on top of that is work whose result is discarded.
-		if m.focus != nil && m.focus.serving(sess.ID) {
+		if m.focusPane.focus != nil && m.focusPane.focus.serving(sess.ID) {
 			return m, m.previewTick()
 		}
-		return m, tea.Batch(m.previewCmd(sess, m.previewGen), m.previewTick())
+		return m, tea.Batch(m.previewCmd(sess, m.focusPane.previewGen), m.previewTick())
 
 	case refreshMsg:
-		m.booting = false
+		m.startup.booting = false
 		m.ageError()
 		// The focused session can die or vanish under us; fall back to the
 		// list rather than typing into nothing.
 		sessions := m.dropRecentlyRemoved(m.keepPendingLaunches(msg.sessions, msg.listedAt), msg.listedAt)
-		stripDeletedGroups(&msg, m.goneGroups)
+		stripDeletedGroups(&msg, m.ledger.goneGroups)
 		var focusExit tea.Cmd
 		if m.mode == modeFocus {
 			if sess, ok := m.selected(); !ok || sessionGone(sessions, sess.ID) {
 				focusExit = m.leaveFocus()
 			}
 		}
-		m.sessions = sessions
-		m.tmuxSocket = msg.tmuxSocket
-		m.leadingManager = msg.leadingManager
-		m.panes = msg.panes
-		m.groups = msg.groups
-		m.groupPaths = msg.groupPaths
-		m.groupWorktrees = msg.groupWorktrees
-		m.archivedGroups = msg.archivedGroups
-		m.agents = msg.agents
-		m.queuedMessages = msg.queuedMessages
-		if m.paneLines == nil {
-			m.paneLines = map[string]string{}
+		m.workspace.sessions = sessions
+		m.workspace.tmuxSocket = msg.tmuxSocket
+		m.workspace.leadingManager = msg.leadingManager
+		m.workspace.panes = msg.panes
+		m.workspace.groups = msg.groups
+		m.workspace.groupPaths = msg.groupPaths
+		m.workspace.groupWorktrees = msg.groupWorktrees
+		m.workspace.archivedGroups = msg.archivedGroups
+		m.workspace.agents = msg.agents
+		m.workspace.queuedMessages = msg.queuedMessages
+		if m.workspace.paneLines == nil {
+			m.workspace.paneLines = map[string]string{}
 		}
 		for id, line := range msg.paneLines {
-			m.paneLines[id] = line
+			m.workspace.paneLines[id] = line
 		}
-		if m.panePrompts == nil {
-			m.panePrompts = map[string]string{}
+		if m.workspace.panePrompts == nil {
+			m.workspace.panePrompts = map[string]string{}
 		}
 		for id, prompt := range msg.panePrompts {
 			if prompt != "" {
-				m.panePrompts[id] = prompt
+				m.workspace.panePrompts[id] = prompt
 			}
 		}
 		m.commitTypedPrompt()
 		if msg.snapOK {
-			m.snap = msg.snap
+			m.workspace.snap = msg.snap
 			m.updateNetRates(msg.snap)
 		}
 		// Sessions left from a previous run carry that run's window size,
 		// which the cache knows nothing about; seedPaneGeom adopts their
 		// real geometry on the first pass, so nothing resets the cache here.
-		if !m.sessionsSized && m.width > 0 && len(m.sessions) > 0 {
-			m.sessionsSized = true
+		if !m.startup.sessionsSized && m.width > 0 && len(m.workspace.sessions) > 0 {
+			m.startup.sessionsSized = true
 		}
 		m.publishPaneSize()
 		// The preview box changes height for more reasons than a terminal
@@ -1554,7 +1399,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// badge in the header. A pane shorter than the box paints a dead
 		// band under its output, so every pass grows what falls short.
 		// The call is free when nothing moved: it diffs against paneGeom.
-		if m.sessionsSized && m.width > 0 {
+		if m.startup.sessionsSized && m.width > 0 {
 			m.resizeSessions()
 		}
 		m.settleInstall()
@@ -1575,18 +1420,18 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// preview; resync and fetch it directly.
 		if sess, ok := m.selected(); ok && sess.ID != msg.procFor {
 			m.syncPollInput()
-			m.previewGen++
-			return m, tea.Batch(focusExit, m.previewCmd(sess, m.previewGen), m.diffRefreshCmd(), reviewStatuses, m.startStartupTick())
+			m.focusPane.previewGen++
+			return m, tea.Batch(focusExit, m.previewCmd(sess, m.focusPane.previewGen), m.diffRefreshCmd(), reviewStatuses, m.startStartupTick())
 		}
-		m.proc = msg.proc
-		m.procFor = msg.procFor
+		m.workspace.proc = msg.proc
+		m.workspace.procFor = msg.procFor
 		m.setPreview(msg.procFor, msg.preview)
 		// A selection that has not moved since the last pass is at rest,
 		// so this covers the startup case where no settle ever fired.
-		if m.previewGen == m.watchedGen {
+		if m.focusPane.previewGen == m.focusPane.watchedGen {
 			m.watchSelection()
 		}
-		m.watchedGen = m.previewGen
+		m.focusPane.watchedGen = m.focusPane.previewGen
 		return m, tea.Batch(focusExit, m.diffRefreshCmd(), reviewStatuses, m.startStartupTick())
 
 	case updateMsg:
@@ -1650,7 +1495,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.finishNoticeRefresh()
 		}
 		if !msg.failed || len(msg.messages) > 0 {
-			m.applyNotices(func() { m.feedMessages = msg.messages })
+			m.applyNotices(func() { m.notices.feedMessages = msg.messages })
 		}
 		if msg.manual && msg.err != nil {
 			m.errBar.text = "refresh failed: " + msg.err.Error()
@@ -1684,7 +1529,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case previewSettleMsg:
-		if msg.gen != m.previewGen {
+		if msg.gen != m.focusPane.previewGen {
 			return m, nil
 		}
 		sess, ok := m.selected()
@@ -1700,7 +1545,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.mode != modeFocus {
 			return m, nil
 		}
-		m.cursorOn = !m.cursorOn
+		m.focusPane.cursorOn = !m.focusPane.cursorOn
 		return m, m.cursorBlink()
 
 	case linkOpenErrMsg:
@@ -1718,28 +1563,28 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// The clipboard writer runs off the update loop and can take
 		// hundreds of milliseconds, long enough for a click elsewhere to
 		// drop the highlight this count belongs to.
-		if msg.gen != m.copyGen {
+		if msg.gen != m.focusPane.copyGen {
 			return m, nil
 		}
 		m.errBar.text = ""
-		m.copied = msg.chars
+		m.focusPane.copied = msg.chars
 		return m, nil
 
 	case focusScrollMsg:
 		sess, ok := m.selected()
 		if !ok || sess.ID != msg.sessID {
-			m.focusFetchInFlight = false
+			m.focusPane.focusFetchInFlight = false
 			return m, nil
 		}
-		if msg.offset != m.focusScroll || msg.rows != m.focusPaneRows() {
+		if msg.offset != m.focusPane.focusScroll || msg.rows != m.focusPaneRows() {
 			// The wheel or a resize moved the target while this capture was
 			// in flight. Fetch just that final viewport; the in-flight guard
 			// stays up so the notches that keep arriving ride this fetch.
-			return m, m.focusRegionCmd(sess.ID, m.focusScroll)
+			return m, m.focusRegionCmd(sess.ID, m.focusPane.focusScroll)
 		}
-		m.focusFetchInFlight = false
+		m.focusPane.focusFetchInFlight = false
 		if msg.ok {
-			m.preview = msg.preview
+			m.workspace.preview = msg.preview
 		}
 		return m, nil
 
@@ -1748,39 +1593,39 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !ok || sess.ID != msg.sessID {
 			return m, nil
 		}
-		m.pane.forID = msg.sessID
-		m.pane.mouse = msg.paneMouse
-		m.pane.motion = msg.paneMotion
-		m.pane.sgr = msg.paneSGR
-		m.pane.history = msg.historySize
+		m.focusPane.pane.forID = msg.sessID
+		m.focusPane.pane.mouse = msg.paneMouse
+		m.focusPane.pane.motion = msg.paneMotion
+		m.focusPane.pane.sgr = msg.paneSGR
+		m.focusPane.pane.history = msg.historySize
 		// Once the app owns the wheel, nothing can walk a leftover offset
 		// back down, and holding it would freeze the view for good. A
 		// mouse-tracking agent keeps no tmux history, though, so history
 		// beside a wheel claim is the cached flag trailing an app that
 		// just left mouse mode, and the offset stays reachable.
-		if m.pane.mouse && m.focusScroll != 0 && m.pane.history == 0 {
-			m.focusScroll = 0
+		if m.focusPane.pane.mouse && m.focusPane.focusScroll != 0 && m.focusPane.pane.history == 0 {
+			m.focusPane.focusScroll = 0
 		}
 		// A scrolled-back pane holds still: live frames would yank the
 		// view back to the bottom mid-read.
 		if m.scrolledBack() {
 			return m, nil
 		}
-		m.preview = msg.preview
-		m.pane.cursor = paneCursor{
+		m.workspace.preview = msg.preview
+		m.focusPane.pane.cursor = paneCursor{
 			x: msg.cursorX, y: msg.cursorY,
 			ok: msg.cursorOK, positionOK: msg.paneStateOK,
 		}
 		return m, nil
 
 	case previewMsg:
-		if msg.gen != 0 && msg.gen != m.previewGen {
+		if msg.gen != 0 && msg.gen != m.focusPane.previewGen {
 			return m, nil
 		}
 		if sess, ok := m.selected(); ok && sess.ID == msg.sessID {
 			m.setPreview(msg.sessID, msg.preview)
-			m.proc = msg.proc
-			m.procFor = msg.sessID
+			m.workspace.proc = msg.proc
+			m.workspace.procFor = msg.sessID
 		}
 		return m, nil
 
@@ -1843,17 +1688,17 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// The attach client sized the window to the full terminal and tmux
 		// keeps that size on detach; pin it back to the current layout's
 		// box so the capture is not clipped on the right.
-		if m.pane.geom != nil {
-			delete(m.pane.geom, msg.sessID)
+		if m.focusPane.pane.geom != nil {
+			delete(m.focusPane.pane.geom, msg.sessID)
 		}
 		width, height := m.paneTargetSize()
 		m.poller.reflowSessions([]string{msg.sessID}, func() {
-			_ = m.tmux.Resize(msg.sessID, width, height)
+			_ = m.services.tmux.Resize(msg.sessID, width, height)
 		})
-		if m.pane.geom == nil {
-			m.pane.geom = map[string][2]int{}
+		if m.focusPane.pane.geom == nil {
+			m.focusPane.pane.geom = map[string][2]int{}
 		}
-		m.pane.geom[msg.sessID] = [2]int{width, height}
+		m.focusPane.pane.geom[msg.sessID] = [2]int{width, height}
 		if msg.err != nil {
 			m.errBar.text = msg.err.Error()
 			m.requestRefresh()
@@ -1862,7 +1707,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Ctrl+R and F3 inside the session leave a marker before
 		// detaching; consume it here and carry it out for the session just
 		// attached.
-		request, err := m.tmux.PendingRequest()
+		request, err := m.services.tmux.PendingRequest()
 		if err != nil {
 			m.errBar.text = err.Error()
 		} else if request != "" {
@@ -1870,7 +1715,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// request on every later detach, so surface it and stay in the
 			// list rather than letting the request reset m.errBar.text and
 			// hide it.
-			if clearErr := m.tmux.ClearRequest(); clearErr != nil {
+			if clearErr := m.services.tmux.ClearRequest(); clearErr != nil {
 				m.errBar.text = clearErr.Error()
 				m.requestRefresh()
 				return m, nil
@@ -1957,7 +1802,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.errBar.text = msg.warn
-		return m, execTerminalProcess(m.tmux.AttachCommand(msg.sessID), func(err error) tea.Msg {
+		return m, execTerminalProcess(m.services.tmux.AttachCommand(msg.sessID), func(err error) tea.Msg {
 			return attachDoneMsg{sessID: msg.sessID, err: err}
 		})
 
@@ -1980,7 +1825,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 // different times, and a capture taken a second ago repainting over a
 // pushed one is what makes typed characters blink in and out.
 func (m *Model) setPreview(sessID, preview string) {
-	if sessID != "" && m.focus != nil && m.focus.serving(sessID) {
+	if sessID != "" && m.focusPane.focus != nil && m.focusPane.focus.serving(sessID) {
 		return
 	}
 	// A scrolled-back pane holds still on this path too: without a control
@@ -1990,7 +1835,7 @@ func (m *Model) setPreview(sessID, preview string) {
 	if m.scrolledBack() {
 		return
 	}
-	m.preview = preview
+	m.workspace.preview = preview
 }
 
 // sessionGone reports whether id is absent from a refresh's session list.
@@ -2008,18 +1853,18 @@ func sessionGone(sessions []store.Session, id string) bool {
 // so a backwards jump just reseeds the baseline.
 func (m *Model) updateNetRates(snap sysstat.Snapshot) {
 	now := time.Now()
-	if m.net.prevOK && snap.NetOK &&
-		snap.NetSent >= m.net.prevSent && snap.NetRecv >= m.net.prevRecv {
-		if dt := now.Sub(m.net.prevAt).Seconds(); dt > 0 {
-			m.net.up = uint64(float64(snap.NetSent-m.net.prevSent) / dt)
-			m.net.down = uint64(float64(snap.NetRecv-m.net.prevRecv) / dt)
-			m.net.rates = true
+	if m.workspace.net.prevOK && snap.NetOK &&
+		snap.NetSent >= m.workspace.net.prevSent && snap.NetRecv >= m.workspace.net.prevRecv {
+		if dt := now.Sub(m.workspace.net.prevAt).Seconds(); dt > 0 {
+			m.workspace.net.up = uint64(float64(snap.NetSent-m.workspace.net.prevSent) / dt)
+			m.workspace.net.down = uint64(float64(snap.NetRecv-m.workspace.net.prevRecv) / dt)
+			m.workspace.net.rates = true
 		}
 	}
-	m.net.prevSent = snap.NetSent
-	m.net.prevRecv = snap.NetRecv
-	m.net.prevAt = now
-	m.net.prevOK = snap.NetOK
+	m.workspace.net.prevSent = snap.NetSent
+	m.workspace.net.prevRecv = snap.NetRecv
+	m.workspace.net.prevAt = now
+	m.workspace.net.prevOK = snap.NetOK
 }
 
 // ageError clears a status message after it has survived a couple of poll
@@ -2076,16 +1921,16 @@ func (m *Model) rebuildRows() {
 	if entry, ok := m.selectedRow(); ok {
 		previousKey = rowKey(entry)
 	}
-	query := strings.ToLower(strings.TrimSpace(m.search))
-	prunedView := query != "" || m.statusFilter.active()
+	query := strings.ToLower(strings.TrimSpace(m.rail.search))
+	prunedView := query != "" || m.rail.statusFilter.active()
 
 	listed := m.listedSessions()
 	listedIDs := make(map[string]bool, len(listed))
 	for _, sess := range listed {
 		listedIDs[sess.ID] = true
 	}
-	byID := make(map[string]store.Session, len(m.sessions))
-	for _, sess := range m.sessions {
+	byID := make(map[string]store.Session, len(m.workspace.sessions))
+	for _, sess := range m.workspace.sessions {
 		byID[sess.ID] = sess
 	}
 	// m.sessions arrives ordered by the store (group, sort_order), so
@@ -2144,8 +1989,8 @@ func (m *Model) rebuildRows() {
 		delete(childrenByParent, parentID)
 	}
 
-	paths := groupClosure(m.groups, m.sessions)
-	if m.showArchived {
+	paths := groupClosure(m.workspace.groups, m.workspace.sessions)
+	if m.rail.showArchived {
 		// The archived view keeps groups that hold archived sessions plus any
 		// group whose subtree was archived as a whole (even with no sessions),
 		// instead of the full tree skeleton.
@@ -2167,21 +2012,21 @@ func (m *Model) rebuildRows() {
 			paths = pathsWithSessions(paths, sessionsByGroup)
 		}
 	}
-	if m.hideEmptyGroups && !m.showArchived {
+	if m.rail.hideEmptyGroups && !m.rail.showArchived {
 		// This is a presentation filter only: stored groups remain available
 		// to forms and return to the tree as soon as the toggle is switched
 		// off. Ancestors of groups with visible sessions stay in the tree.
 		paths = pathsWithSessions(paths, sessionsByGroup)
 	}
-	children := childIndex(paths, m.groups)
+	children := childIndex(paths, m.workspace.groups)
 
 	// Folds are a browsing convenience for the active tree; the archived,
 	// search, and status-filter views already prune to matching groups, so
 	// honoring folds there would hide the very sessions the user came for.
-	honorFolds := !prunedView && !m.showArchived
+	honorFolds := !prunedView && !m.rail.showArchived
 
 	// Root is a standing move and spawn target; its sessions stay flat.
-	rows := make([]treeRow, 0, len(m.sessions)+len(paths)+1)
+	rows := make([]treeRow, 0, len(m.workspace.sessions)+len(paths)+1)
 	appendSession := func(sess store.Session, depth int) {
 		rows = append(rows, treeRow{sess: sess, depth: depth})
 		for _, child := range childrenByParent[sess.ID] {
@@ -2195,7 +2040,7 @@ func (m *Model) rebuildRows() {
 	var walk func(path string, depth int)
 	walk = func(path string, depth int) {
 		rows = append(rows, treeRow{isGroup: true, group: path, depth: depth})
-		if honorFolds && m.collapsed[path] {
+		if honorFolds && m.rail.collapsed[path] {
 			return
 		}
 		for _, sess := range sessionsByGroup[path] {
@@ -2209,23 +2054,23 @@ func (m *Model) rebuildRows() {
 		walk(root, 0)
 	}
 
-	m.rows = rows
+	m.rail.rows = rows
 	if previousKey != "" {
 		for i, entry := range rows {
 			if rowKey(entry) == previousKey {
-				m.cursor = i
+				m.rail.cursor = i
 				break
 			}
 		}
-	} else if m.cursor == 0 && len(rows) > 1 && rows[0].isRoot() {
+	} else if m.rail.cursor == 0 && len(rows) > 1 && rows[0].isRoot() {
 		// A launch opens on a session, not on root's rollup.
-		m.cursor = 1
+		m.rail.cursor = 1
 	}
-	if m.cursor >= len(rows) {
-		m.cursor = len(rows) - 1
+	if m.rail.cursor >= len(rows) {
+		m.rail.cursor = len(rows) - 1
 	}
-	if m.cursor < 0 {
-		m.cursor = 0
+	if m.rail.cursor < 0 {
+		m.rail.cursor = 0
 	}
 }
 
@@ -2253,7 +2098,7 @@ func groupClosure(groups []string, sessions []store.Session) map[string]bool {
 }
 
 func (m *Model) groupEffectivelyArchived(path string) bool {
-	return store.EffectivelyArchived(m.archivedGroups, path)
+	return store.EffectivelyArchived(m.workspace.archivedGroups, path)
 }
 
 func addWithAncestors(set map[string]bool, path string) {

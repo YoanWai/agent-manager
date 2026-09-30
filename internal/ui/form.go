@@ -193,7 +193,7 @@ func (m *Model) contextGroup() string {
 // from the group to the root; empty when no ancestor has one.
 func (m *Model) ancestorGroupDir(group string) string {
 	for g := group; g != ""; g = parentGroup(g) {
-		if p := m.groupPaths[g]; p != "" && isDir(p) {
+		if p := m.workspace.groupPaths[g]; p != "" && isDir(p) {
 			return p
 		}
 	}
@@ -250,7 +250,7 @@ func sortedToolNames(cfg config.Config) []string {
 // enabledToolNames is the create-session picker: configured tools minus any
 // the user hid in settings. Existing sessions keep their tool even when hidden.
 func (m *Model) enabledToolNames() []string {
-	all := sortedToolNames(m.cfg)
+	all := sortedToolNames(m.services.cfg)
 	hidden := m.hiddenTools()
 	if len(hidden) == 0 {
 		return all
@@ -308,13 +308,13 @@ func (m *Model) selectedGroupPath() string {
 // rebuildGroupOptions flattens the group tree into picker rows.
 // Index 0 is always the root; selectPath moves the highlight when given.
 func (m *Model) rebuildGroupOptions(selectPath string) {
-	paths := groupClosure(m.groups, m.sessions)
+	paths := groupClosure(m.workspace.groups, m.workspace.sessions)
 	for path := range paths {
 		if m.groupEffectivelyArchived(path) {
 			delete(paths, path)
 		}
 	}
-	children := childIndex(paths, m.groups)
+	children := childIndex(paths, m.workspace.groups)
 
 	options := []groupOption{{path: "", depth: 0}}
 	var walk func(path string, depth int)
@@ -564,14 +564,14 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 	}
 	// New sessions start as starting, which attention excludes; clear so
 	// the row the form just created is on screen.
-	m.statusFilter = statusFilterAll
+	m.rail.statusFilter = statusFilterAll
 	m.mode = modeList
 	return m, m.refreshCmd()
 }
 
 func (m *Model) rememberSpawnPick(tool string, worktree bool) {
-	m.lastSpawnTool = tool
-	m.lastSpawnWorktree = worktree
+	m.ledger.lastSpawnTool = tool
+	m.ledger.lastSpawnWorktree = worktree
 }
 
 // spawnSession creates the tmux session and its store record for both
@@ -584,22 +584,22 @@ func (m *Model) discardWorktree(repo, path, branch string) {
 	if repo == "" {
 		return
 	}
-	_, _ = m.gitDrv.RemoveWorktreeIfClean(repo, path, branch)
+	_, _ = m.services.gitDrv.RemoveWorktreeIfClean(repo, path, branch)
 }
 
 func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoNamed, worktree bool) error {
-	tool := m.cfg.Tools[toolName]
+	tool := m.services.cfg.Tools[toolName]
 	id := newID()
 	worktreeRepo, worktreeBranch := "", ""
 	if worktree {
-		if m.gitDrv == nil {
+		if m.services.gitDrv == nil {
 			return errors.New("worktree sessions need git installed")
 		}
-		root, err := m.gitDrv.RepoRoot(dir)
+		root, err := m.services.gitDrv.RepoRoot(dir)
 		if err != nil {
 			return err
 		}
-		path, branch, err := m.gitDrv.AddWorktree(root, name)
+		path, branch, err := m.services.gitDrv.AddWorktree(root, name)
 		if err != nil {
 			return err
 		}
@@ -629,16 +629,16 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 	// The directive went out with the launch, so the row waits for the name
 	// the agent picks instead of showing the one generated for it.
 	if autoNamed {
-		if m.awaitedRenames == nil {
-			m.awaitedRenames = map[string]awaitedRename{}
+		if m.ledger.awaitedRenames == nil {
+			m.ledger.awaitedRenames = map[string]awaitedRename{}
 		}
-		m.awaitedRenames[id] = awaitedRename{generated: name, prompt: prompt}
+		m.ledger.awaitedRenames[id] = awaitedRename{generated: name, prompt: prompt}
 	}
 	return nil
 }
 
 func (m *Model) buildLaunch(toolName string, tool config.Tool, baseCommand, id string) (string, map[string]string, error) {
-	return launch.Environment(m.hooks, toolName, tool, baseCommand, id)
+	return launch.Environment(m.services.hooks, toolName, tool, baseCommand, id)
 }
 
 func (m *Model) openGroupForm() {
@@ -766,38 +766,38 @@ func (m *Model) submitGroupForm() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	worktree := groupWorktreeValue(m.groupForm.worktreeIndex)
-	if err := m.store.AddGroup(full, path, worktree); err != nil {
+	if err := m.services.store.AddGroup(full, path, worktree); err != nil {
 		m.errBar.text = err.Error()
 		return m, nil
 	}
 	m.materializeGroupsLocal([]string{full})
-	if m.groupPaths == nil {
-		m.groupPaths = map[string]string{}
+	if m.workspace.groupPaths == nil {
+		m.workspace.groupPaths = map[string]string{}
 	}
-	m.groupPaths[full] = path
-	if m.groupWorktrees == nil {
-		m.groupWorktrees = map[string]string{}
+	m.workspace.groupPaths[full] = path
+	if m.workspace.groupWorktrees == nil {
+		m.workspace.groupWorktrees = map[string]string{}
 	}
 	if worktree == "" {
-		delete(m.groupWorktrees, full)
+		delete(m.workspace.groupWorktrees, full)
 	} else {
-		m.groupWorktrees[full] = worktree
+		m.workspace.groupWorktrees[full] = worktree
 	}
 	for group := parent; group != ""; group = parentGroup(group) {
-		delete(m.collapsed, group)
+		delete(m.rail.collapsed, group)
 	}
 	m.persistCollapsed()
-	m.search = ""
-	m.searching = false
-	m.showArchived = false
-	m.hideEmptyGroups = false
-	m.statusFilter = statusFilterAll
+	m.rail.search = ""
+	m.rail.searching = false
+	m.rail.showArchived = false
+	m.rail.hideEmptyGroups = false
+	m.rail.statusFilter = statusFilterAll
 	m.errBar.text = ""
 	m.mode = modeList
 	m.rebuildRows()
-	for i, row := range m.rows {
+	for i, row := range m.rail.rows {
 		if row.isGroup && row.group == full {
-			m.cursor = i
+			m.rail.cursor = i
 			break
 		}
 	}

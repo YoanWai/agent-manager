@@ -17,15 +17,15 @@ import (
 func keyPickerModel(t *testing.T) *Model {
 	t.Helper()
 	m := buildModel(t)
-	m.configDir = t.TempDir()
-	if err := os.WriteFile(filepath.Join(m.configDir, "config.toml"), []byte("poll_interval = \"2s\"\n"), 0o644); err != nil {
+	m.services.configDir = t.TempDir()
+	if err := os.WriteFile(filepath.Join(m.services.configDir, "config.toml"), []byte("poll_interval = \"2s\"\n"), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	m.keys = keybind.DefaultSession()
-	m.tmux.SetSessionKeys(m.keys)
+	m.services.keys = keybind.DefaultSession()
+	m.services.tmux.SetSessionKeys(m.services.keys)
 	t.Cleanup(func() {
-		m.tmux.SetSessionKeys(keybind.DefaultSession())
-		if err := m.tmux.EnsureBindings(); err != nil {
+		m.services.tmux.SetSessionKeys(keybind.DefaultSession())
+		if err := m.services.tmux.EnsureBindings(); err != nil {
 			t.Errorf("restore default bindings: %v", err)
 		}
 	})
@@ -48,7 +48,7 @@ func (m *Model) pressInPicker(t *testing.T, msg tea.KeyMsg) tea.Cmd {
 
 func savedConfig(t *testing.T, m *Model) string {
 	t.Helper()
-	text, err := os.ReadFile(filepath.Join(m.configDir, "config.toml"))
+	text, err := os.ReadFile(filepath.Join(m.services.configDir, "config.toml"))
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestKeyPickerBindsCapturedKeyAndSavesIt(t *testing.T) {
 	if m.errBar.text != "" {
 		t.Fatalf("saving reported %q", m.errBar.text)
 	}
-	if got := m.keys.Binding(keybind.Detach).Label(); got != "f9" {
+	if got := m.services.keys.Binding(keybind.Detach).Label(); got != "f9" {
 		t.Fatalf("model detach = %q, want f9", got)
 	}
 	if saved := savedConfig(t, m); !strings.Contains(saved, `detach = "f9"`) {
@@ -178,8 +178,8 @@ func TestKeyPickerResetsEveryActionToItsDefaultAfterAsking(t *testing.T) {
 	m := keyPickerModel(t)
 	custom := sessionOf(t, []string{"ctrl+q", "f9"}, nil, []string{"f5"})
 	customList := keybind.DefaultList().With(keybind.NewSession, bindingOf(t, "N"))
-	m.keys, m.listKeys = custom, customList
-	m.tmux.SetSessionKeys(custom)
+	m.services.keys, m.services.listKeys = custom, customList
+	m.services.tmux.SetSessionKeys(custom)
 	m.settings.tables[0], m.settings.tables[1] = custom, customList
 
 	m.pressInPicker(t, runeKey("r"))
@@ -204,8 +204,8 @@ func TestKeyPickerResetsEveryActionToItsDefaultAfterAsking(t *testing.T) {
 	}
 
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
-	if !m.keys.Equal(keybind.DefaultSession()) || !m.listKeys.Equal(keybind.DefaultList()) {
-		t.Fatalf("model keys after save = %s, new_session %s", m.keys.Binding(keybind.Detach).Label(), m.listKeys.Binding(keybind.NewSession).Label())
+	if !m.services.keys.Equal(keybind.DefaultSession()) || !m.services.listKeys.Equal(keybind.DefaultList()) {
+		t.Fatalf("model keys after save = %s, new_session %s", m.services.keys.Binding(keybind.Detach).Label(), m.services.listKeys.Binding(keybind.NewSession).Label())
 	}
 	saved := savedConfig(t, m)
 	for _, want := range []string{"[keybindings.session]", `review = "ctrl+r"`, `editor = "f3"`, "[keybindings.list]", `new_session = "n"`} {
@@ -278,22 +278,22 @@ func TestKeyPickerViewNamesTheKeysAndTheCapture(t *testing.T) {
 // question without opening the picker.
 func TestSettingsRowCountsTheMovedKeys(t *testing.T) {
 	m := buildModel(t)
-	m.keys = keybind.DefaultSession()
+	m.services.keys = keybind.DefaultSession()
 	m.openSettings()
 	m.settings.field = settingsFieldKeybindings
 	view := ansi.Strip(m.viewSettings())
 	if !strings.Contains(view, "keybindings") || !strings.Contains(view, "defaults") {
 		t.Fatalf("settings should carry the row on its defaults:\n%s", view)
 	}
-	m.keys = m.keys.With(keybind.Editor, bindingOf(t))
+	m.services.keys = m.services.keys.With(keybind.Editor, bindingOf(t))
 	if view := ansi.Strip(m.viewSettings()); !strings.Contains(view, "editor off") {
 		t.Fatalf("one moved key should be named:\n%s", view)
 	}
-	m.listKeys = m.listKeys.With(keybind.NewSession, bindingOf(t, "N"))
+	m.services.listKeys = m.services.listKeys.With(keybind.NewSession, bindingOf(t, "N"))
 	if view := ansi.Strip(m.viewSettings()); !strings.Contains(view, "editor off · new_session N") {
 		t.Fatalf("two moved keys should both be named:\n%s", view)
 	}
-	m.listKeys = m.listKeys.With(keybind.Quit, bindingOf(t, "Q"))
+	m.services.listKeys = m.services.listKeys.With(keybind.Quit, bindingOf(t, "Q"))
 	if view := ansi.Strip(m.viewSettings()); !strings.Contains(view, "3 moved") {
 		t.Fatalf("past two the row counts:\n%s", view)
 	}

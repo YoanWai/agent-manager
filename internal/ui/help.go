@@ -270,9 +270,9 @@ func reviewHelpSection(list keybind.Table) helpSection {
 
 func (m *Model) visibleHelpSections() []helpSection {
 	if m.help.returnMode == modeDiff {
-		return []helpSection{reviewHelpSection(m.listKeys)}
+		return []helpSection{reviewHelpSection(m.services.listKeys)}
 	}
-	return helpSections(m.keys, m.listKeys, m.arrowStep)
+	return helpSections(m.services.keys, m.services.listKeys, m.prefs.arrowStep)
 }
 
 // matchHelp narrows the catalog to the rows whose key or description
@@ -397,7 +397,7 @@ func (m *Model) helpSearchActive() bool {
 
 func (m *Model) helpScrollLimit() int {
 	sections := matchHelp(m.visibleHelpSections(), m.help.query)
-	body := helpBodyLines(sections, m.keys, m.listKeys, m.arrowStep, cardInnerWidth(helpCardWidth(m.width)), m.help.query)
+	body := helpBodyLines(sections, m.services.keys, m.services.listKeys, m.prefs.arrowStep, cardInnerWidth(helpCardWidth(m.width)), m.help.query)
 	return max(0, len(body)-m.helpBodyRoom())
 }
 
@@ -411,7 +411,7 @@ func (m *Model) viewHelp() string {
 		head = append(head, m.helpSearchLine(sections), "")
 	}
 
-	body := helpBodyLines(sections, m.keys, m.listKeys, m.arrowStep, inner, m.help.query)
+	body := helpBodyLines(sections, m.services.keys, m.services.listKeys, m.prefs.arrowStep, inner, m.help.query)
 	if len(body) == 0 {
 		body = []string{subtleStyle.Render("no key matches that")}
 	}

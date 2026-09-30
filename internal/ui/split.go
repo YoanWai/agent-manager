@@ -40,10 +40,10 @@ func loadSplitRatio(st settingReader) float64 {
 // persistSplitRatio writes the current ratio so the next launch reopens
 // at the same split.
 func (m *Model) persistSplitRatio() {
-	if m.store == nil {
+	if m.services.store == nil {
 		return
 	}
-	if err := m.store.SetSetting(splitRatioSetting, strconv.FormatFloat(m.split.ratio, 'f', 4, 64)); err != nil {
+	if err := m.services.store.SetSetting(splitRatioSetting, strconv.FormatFloat(m.split.ratio, 'f', 4, 64)); err != nil {
 		m.errBar.text = err.Error()
 	}
 }
@@ -89,7 +89,7 @@ func (m *Model) setSplitFromX(x int) {
 // enterResizeMode arms divider dragging, which the arrow keys drive. The
 // app holds mouse reporting, so a drag here reaches handleMouse too.
 func (m *Model) enterResizeMode() (tea.Model, tea.Cmd) {
-	if m.mode != modeList || m.searching || m.quick.active {
+	if m.mode != modeList || m.rail.searching || m.quick.active {
 		return m, nil
 	}
 	m.split.resizeMode = true
@@ -199,23 +199,23 @@ func (m *Model) handleMouseEvent(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			// act on that row. Only a rail row: the pane's own blank tail,
 			// the chrome, and a full screen session all keep the keyboard.
 			if row, onRail := m.clickRow(msg.X, msg.Y); onRail {
-				focused := m.cursor
+				focused := m.rail.cursor
 				left := m.leaveFocus()
 				model, cmd := m.handleMousePress(msg)
 				// The focused session's own row is the way back: its
 				// release must not focus it again.
 				if row == focused {
-					m.clickFocusKey = ""
+					m.rail.clickFocusKey = ""
 				}
 				return model, tea.Batch(left, cmd)
 			}
 		}
 		return m.handleFocusMouse(msg)
 	}
-	if m.mode == modeList && m.reorder.active {
+	if m.mode == modeList && m.rail.reorder.active {
 		return m.handleReorderMouse(msg)
 	}
-	if m.mode == modeList && m.menu.active {
+	if m.mode == modeList && m.rail.menu.active {
 		return m.handleMenuMouse(msg)
 	}
 
@@ -230,8 +230,8 @@ func (m *Model) handleMouseEvent(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m.handleMousePress(msg)
 
 	case tea.MouseActionMotion:
-		if m.clickFocusKey != "" && m.rowKeyAt(msg.X, msg.Y) != m.clickFocusKey {
-			m.clickFocusKey = ""
+		if m.rail.clickFocusKey != "" && m.rowKeyAt(msg.X, msg.Y) != m.rail.clickFocusKey {
+			m.rail.clickFocusKey = ""
 		}
 		if !m.split.dragging {
 			return m, nil
@@ -243,7 +243,7 @@ func (m *Model) handleMouseEvent(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.MouseActionRelease:
-		if m.clickFocusKey != "" {
+		if m.rail.clickFocusKey != "" {
 			return m.releaseClickFocus(msg)
 		}
 		if !m.split.dragging {
@@ -275,7 +275,7 @@ func (m *Model) handleMousePress(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if msg.Button != tea.MouseButtonLeft {
 		return m, nil
 	}
-	m.clickFocusKey = ""
+	m.rail.clickFocusKey = ""
 	// A drag whose release never landed is still holding dragging, and the
 	// release of this press would be read as its own: the divider would
 	// jump to wherever this click is and persist there. End the stale one
@@ -288,7 +288,7 @@ func (m *Model) handleMousePress(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	// column, so without this check a click there would arm a drag instead
 	// of landing on the rail row it's actually over. The search field
 	// holds the divider too, as it does for the keyboard in enterResizeMode.
-	onDivider := m.mode == modeList && !m.fullLayout && !m.searching &&
+	onDivider := m.mode == modeList && !m.prefs.fullLayout && !m.rail.searching &&
 		msg.Y >= y0 && msg.Y < y1 && m.onDivider(msg.X)
 	if onDivider {
 		// A mouse drag arms dragging alone. resizeMode is the keyboard's
@@ -304,7 +304,7 @@ func (m *Model) handleMousePress(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.split.resizeMode || m.mode != modeList {
 		return m, nil
 	}
-	if m.noticeHit.contains(msg.X, msg.Y) && !m.searching {
+	if m.notices.noticeHit.contains(msg.X, msg.Y) && !m.rail.searching {
 		m.openNotices("")
 		return m, nil
 	}
@@ -312,42 +312,42 @@ func (m *Model) handleMousePress(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		// Search owns Enter, and a "more" counter only steps the window onto
 		// the row it hides, so neither opens a click run: one left standing
 		// would pair with the next press.
-		if m.searching || !m.inRailWindow(row) {
-			m.listClickAt = time.Time{}
+		if m.rail.searching || !m.inRailWindow(row) {
+			m.rail.listClickAt = time.Time{}
 			return m, m.selectRow(row)
 		}
 		// Matched on the row's identity: the poll rebuilds m.rows between
 		// the presses, so one index can name two different rows.
-		key := rowKey(m.rows[row])
-		double := !m.listClickAt.IsZero() && m.listClickKey == key && time.Since(m.listClickAt) < multiClickWindow
-		m.listClickAt, m.listClickKey = time.Now(), key
+		key := rowKey(m.rail.rows[row])
+		double := !m.rail.listClickAt.IsZero() && m.rail.listClickKey == key && time.Since(m.rail.listClickAt) < multiClickWindow
+		m.rail.listClickAt, m.rail.listClickKey = time.Now(), key
 		if m.onHandle(msg.X, msg.Y, row) {
 			cmd := m.selectRow(row)
-			m.listClickAt = time.Time{}
+			m.rail.listClickAt = time.Time{}
 			m.enterReorder(key)
 			return m, cmd
 		}
 		if m.onMenuButton(msg.X, msg.Y, row) {
-			m.listClickAt = time.Time{}
+			m.rail.listClickAt = time.Time{}
 			cmd := m.openRowMenu(row, msg.X, msg.Y)
-			m.menu.held = true
+			m.rail.menu.held = true
 			return m, cmd
 		}
 		// Both gestures act on the row under the pointer, so the cursor
 		// goes there first: a wheel notch or a key between the presses
 		// leaves it somewhere else.
 		cmd := m.selectRow(row)
-		entry := m.rows[row]
-		if !m.fullLayout && !entry.isGroup {
+		entry := m.rail.rows[row]
+		if !m.prefs.fullLayout && !entry.isGroup {
 			if !entry.sess.Archived {
-				m.clickFocusKey = key
+				m.rail.clickFocusKey = key
 			}
 			return m, cmd
 		}
 		if !double {
 			return m, cmd
 		}
-		m.listClickAt = time.Time{} // consume the pair so a third press starts a new run
+		m.rail.listClickAt = time.Time{} // consume the pair so a third press starts a new run
 		if entry.isGroup {
 			m.toggleCollapse()
 			return m, nil
@@ -364,7 +364,7 @@ func (m *Model) handleMousePress(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 // handleRightPress opens the row menu on the rail row under the pointer.
 func (m *Model) handleRightPress(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	if m.mode != modeList || m.split.resizeMode || m.split.dragging || m.searching {
+	if m.mode != modeList || m.split.resizeMode || m.split.dragging || m.rail.searching {
 		return m, nil
 	}
 	if row, ok := m.clickRow(msg.X, msg.Y); ok {
@@ -376,9 +376,9 @@ func (m *Model) handleRightPress(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 // releaseClickFocus focuses the session a split rail press armed, provided
 // the release lands back on that row.
 func (m *Model) releaseClickFocus(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	key := m.clickFocusKey
-	m.clickFocusKey = ""
-	if m.mode != modeList || m.searching || m.rowKeyAt(msg.X, msg.Y) != key {
+	key := m.rail.clickFocusKey
+	m.rail.clickFocusKey = ""
+	if m.mode != modeList || m.rail.searching || m.rowKeyAt(msg.X, msg.Y) != key {
 		return m, nil
 	}
 	row, _ := m.clickRow(msg.X, msg.Y)
@@ -393,13 +393,13 @@ func (m *Model) rowKeyAt(x, y int) string {
 	if !ok {
 		return ""
 	}
-	return rowKey(m.rows[row])
+	return rowKey(m.rail.rows[row])
 }
 
 // inRailWindow reports whether row is painted in the rail's window. A
 // "more" counter answers for a row outside it.
 func (m *Model) inRailWindow(row int) bool {
-	return row >= m.railTop && row < m.railEnd
+	return row >= m.rail.railTop && row < m.rail.railEnd
 }
 
 // onRowHead reports whether y is the first line row painted, where its
@@ -410,7 +410,7 @@ func (m *Model) onRowHead(y, row int) bool {
 	}
 	y0, _ := m.bodyYRange()
 	line := y - y0
-	return line == 0 || m.railHits[line-1] != row
+	return line == 0 || m.rail.railHits[line-1] != row
 }
 
 // clickRow reports which m.rows index a press at (x, y) selects, reading
@@ -426,13 +426,13 @@ func (m *Model) clickRow(x, y int) (int, bool) {
 		return 0, false
 	}
 	idx := y - y0
-	if idx >= len(m.railHits) {
+	if idx >= len(m.rail.railHits) {
 		return 0, false
 	}
-	row := m.railHits[idx]
+	row := m.rail.railHits[idx]
 	// A rebuild between the paint and the press can shrink m.rows under
 	// the hits this frame recorded.
-	if row < 0 || row >= len(m.rows) {
+	if row < 0 || row >= len(m.rail.rows) {
 		return 0, false
 	}
 	return row, true

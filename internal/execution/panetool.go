@@ -1,4 +1,4 @@
-package ui
+package execution
 
 import (
 	"path/filepath"
@@ -10,10 +10,10 @@ import (
 
 // Shells and blocks without a command hold no binary: a terminal row is a
 // shell whatever gets typed into it.
-type toolBinaries map[string]string
+type ToolBinaries map[string]string
 
-func newToolBinaries(cfg config.Config) toolBinaries {
-	binaries := make(toolBinaries, len(cfg.Tools))
+func NewToolBinaries(cfg config.Config) ToolBinaries {
+	binaries := make(ToolBinaries, len(cfg.Tools))
 	for name, tool := range cfg.Tools {
 		binaries[name] = toolBinary(tool)
 	}
@@ -55,7 +55,7 @@ func toolBinary(tool config.Tool) string {
 // launched as an agent, and exactly one configured tool may claim the
 // binary that is running. Everything else keeps the tool the row has,
 // since retyping a row on a guess moves it onto the wrong status rules.
-func detectRelaunchedTool(current string, children []string, binaries toolBinaries) string {
+func detectRelaunchedTool(current string, children []string, binaries ToolBinaries) string {
 	currentBinary := binaries[current]
 	if currentBinary == "" {
 		return ""
@@ -81,7 +81,7 @@ func detectRelaunchedTool(current string, children []string, binaries toolBinari
 // claimingTool names the tool that runs a binary, and nothing when the
 // binary says nothing about which tool it is: an interpreter, or a name
 // that more than one configured tool runs.
-func claimingTool(binary string, binaries toolBinaries) string {
+func claimingTool(binary string, binaries ToolBinaries) string {
 	if interpreters[binary] {
 		return ""
 	}
@@ -102,7 +102,7 @@ func claimingTool(binary string, binaries toolBinaries) string {
 // running. The status rules, the revive command and the row's icon all
 // follow the stored tool, so a pane running something else reads wrong
 // until the row agrees with it.
-func (p *poller) applyRelaunchedTool(sess *store.Session, children []string) error {
+func (p *Runner) applyRelaunchedTool(sess *store.Session, children []string) error {
 	detected := detectRelaunchedTool(sess.Tool, children, p.binaries)
 	if detected == "" {
 		return nil

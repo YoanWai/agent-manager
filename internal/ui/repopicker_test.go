@@ -9,7 +9,9 @@ import (
 // bytes, so the row has to show a control byte rather than hand it to the
 // terminal.
 func TestRepoPickRowEscapesControlBytes(t *testing.T) {
-	m := &Model{width: 120}
+	m := &Model{
+		width: 120,
+	}
 	row := pickRow{label: "br\x1b]0;P\x07anch", root: "/tmp/re\x1b[2Jpo/leaf"}
 
 	for _, selected := range []bool{false, true} {

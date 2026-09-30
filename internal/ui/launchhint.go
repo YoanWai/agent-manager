@@ -190,8 +190,8 @@ func (m *Model) startInstall() (tea.Model, tea.Cmd) {
 		Group:  m.contextGroup(),
 		Status: status.Starting,
 	}
-	statusFile := m.hooks.InstallStatusFile(sess.ID)
-	script, err := m.hooks.WriteInstallScript(sess.ID, installScript(fix.command, statusFile))
+	statusFile := m.services.hooks.InstallStatusFile(sess.ID)
+	script, err := m.services.hooks.WriteInstallScript(sess.ID, installScript(fix.command, statusFile))
 	if err != nil {
 		m.errBar.text = err.Error()
 		return m, nil
@@ -201,7 +201,7 @@ func (m *Model) startInstall() (tea.Model, tea.Cmd) {
 		m.errBar.text = err.Error()
 		return m, nil
 	}
-	if err := m.tmux.SendText(sess.ID, "sh "+tmux.ShellQuote(script)); err != nil {
+	if err := m.services.tmux.SendText(sess.ID, "sh "+tmux.ShellQuote(script)); err != nil {
 		// The shell is left open: it is a tab like any other, and the
 		// command it never ran is still on the dialog to copy.
 		removeInstallFiles(statusFile, script)
@@ -219,7 +219,7 @@ func (m *Model) startInstall() (tea.Model, tea.Cmd) {
 	}
 	m.launchFix = launchFix{}
 	m.mode = modeList
-	m.statusFilter = statusFilterAll
+	m.rail.statusFilter = statusFilterAll
 	m.focusSession(sess.ID)
 	m.reportDone("installing " + fix.binary)
 	return m, m.refreshCmd()
@@ -251,7 +251,7 @@ func (m *Model) settleInstall() {
 	data, err := os.ReadFile(install.statusFile)
 	if errors.Is(err, fs.ErrNotExist) {
 		// A shell killed before the command ended takes the launch with it.
-		if !m.tmux.Exists(install.sessionID) {
+		if !m.services.tmux.Exists(install.sessionID) {
 			m.install = nil
 			removeInstallFiles(install.statusFile, install.script)
 			dropImages(install.images)
@@ -305,7 +305,7 @@ func (m *Model) settleInstall() {
 	}
 	// The launched prompt names the image paths, so the files stay for the
 	// agent to read; the stale-paste sweep retires them.
-	m.statusFilter = statusFilterAll
+	m.rail.statusFilter = statusFilterAll
 	m.rebuildRows()
 	m.requestRefresh()
 	m.reportDone(install.binary + " installed; the session it was holding up is launching")

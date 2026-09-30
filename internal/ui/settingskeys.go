@@ -65,7 +65,7 @@ func keybindingsSummary(tables ...keybind.Table) string {
 
 func (m *Model) openKeyPicker() {
 	m.settings.keyPicker = true
-	m.settings.tables = []keybind.Table{m.keys, m.listKeys}
+	m.settings.tables = []keybind.Table{m.services.keys, m.services.listKeys}
 	m.settings.keyCursor = 0
 	m.settings.keyCapture = false
 	m.settings.keyAppend = false
@@ -185,28 +185,28 @@ func (m *Model) setBinding(binding keybind.Binding) tea.Cmd {
 // tmux keys and every live session's footer is redrawn.
 func (m *Model) saveKeys() tea.Cmd {
 	session, list := m.settings.tables[0], m.settings.tables[1]
-	if session.Equal(m.keys) && list.Equal(m.listKeys) {
+	if session.Equal(m.services.keys) && list.Equal(m.services.listKeys) {
 		return nil
 	}
-	if m.configDir == "" {
+	if m.services.configDir == "" {
 		m.errBar.text = "no config directory to save the keys to"
 		return nil
 	}
-	if !list.Equal(m.listKeys) {
-		if err := config.SaveKeys(m.configDir, list); err != nil {
+	if !list.Equal(m.services.listKeys) {
+		if err := config.SaveKeys(m.services.configDir, list); err != nil {
 			m.errBar.text = err.Error()
 			return nil
 		}
-		m.listKeys = list
+		m.services.listKeys = list
 	}
-	if session.Equal(m.keys) {
+	if session.Equal(m.services.keys) {
 		return nil
 	}
-	if err := config.SaveKeys(m.configDir, session); err != nil {
+	if err := config.SaveKeys(m.services.configDir, session); err != nil {
 		m.errBar.text = err.Error()
 		return nil
 	}
-	m.keys = session
-	m.tmux.SetSessionKeys(session)
+	m.services.keys = session
+	m.services.tmux.SetSessionKeys(session)
 	return m.refreshExistingSessionUX
 }

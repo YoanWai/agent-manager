@@ -141,7 +141,7 @@ func TestDiffAnnotateAndSend(t *testing.T) {
 		t.Fatalf("notice = %q (err=%q)", m.diff.notice, m.errBar.text)
 	}
 	sess := m.sessionRows()[0]
-	state, err := m.store.ReviewState(sess.ID, m.diff.repoSel)
+	state, err := m.services.store.ReviewState(sess.ID, m.diff.repoSel)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +182,7 @@ func TestDiffAnnotateAndSend(t *testing.T) {
 	if len(notes) != 2 || notes[0].round != 1 || notes[1].round != 2 {
 		t.Fatalf("review history = %+v, want rounds 1 and 2", notes)
 	}
-	state, err = m.store.ReviewState(sess.ID, m.diff.repoSel)
+	state, err = m.services.store.ReviewState(sess.ID, m.diff.repoSel)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +198,7 @@ func TestSendAnnotationsDoesNotDeliverAnUnpersistedRound(t *testing.T) {
 	m.openAnnotate()
 	m.diff.annInput.SetValue("do not deliver without durable state")
 	m.applyCmd(t, m.saveAnnotation())
-	if err := m.store.Close(); err != nil {
+	if err := m.services.store.Close(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -263,14 +263,14 @@ func TestHandledCommentsStayVisibleWithAMutedColor(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	t.Cleanup(func() { lipgloss.SetColorProfile(previous) })
 	m := &Model{diff: diffState{
-		sessID: "abc123", repoSel: "/repo",
-		annotations: map[string][]annotation{
-			"abc123\x00/repo": {
-				{id: "0123456789abcdef", file: "main.go", line: 1, text: "still open", round: 2, point: 1},
-				{id: "fedcba9876543210", file: "main.go", line: 1, text: "already fixed", round: 1, point: 3, handled: true},
-			},
+	sessID: "abc123", repoSel: "/repo",
+	annotations: map[string][]annotation{
+		"abc123\x00/repo": {
+			{id: "0123456789abcdef", file: "main.go", line: 1, text: "still open", round: 2, point: 1},
+			{id: "fedcba9876543210", file: "main.go", line: 1, text: "already fixed", round: 1, point: 3, handled: true},
 		},
-	}}
+	},
+}}
 	fd := &diff.FileDiff{File: git.ChangedFile{Path: "main.go"}, Lines: []diff.Line{{NewNum: 1, Text: "line"}}}
 	rows := m.annotationRows(fd, 0, 80)
 	rendered := strings.Join(rows, "\n")
@@ -561,7 +561,7 @@ func TestDiffReviewReachesEndWithWrappedLines(t *testing.T) {
 // review returns to it rather than dropping to the list.
 func TestInSessionReviewRemembersOriginAndReattaches(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	createSession(t, m, "reviewme", t.TempDir(), "")
@@ -603,7 +603,7 @@ func TestInSessionReviewRemembersOriginAndReattaches(t *testing.T) {
 // no re-attach.
 func TestListReviewLeavesToListWithoutReattach(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	createSession(t, m, "listreview", t.TempDir(), "")
@@ -631,7 +631,7 @@ func TestListReviewLeavesToListWithoutReattach(t *testing.T) {
 // what entering the session from the list does.
 func TestReattachAcknowledgesFinished(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	createSession(t, m, "finisher", t.TempDir(), "")
@@ -642,7 +642,7 @@ func TestReattachAcknowledgesFinished(t *testing.T) {
 	}
 	clearRequestOnCleanup(t, m)
 
-	if err := m.store.UpdateStatus(sess.ID, status.Finished); err != nil {
+	if err := m.services.store.UpdateStatus(sess.ID, status.Finished); err != nil {
 		t.Fatalf("set finished: %v", err)
 	}
 	if _, err := tmuxCmd("set-option", "-g", "@am_request", tmux.RequestReview).CombinedOutput(); err != nil {
@@ -666,7 +666,7 @@ func TestReattachAcknowledgesFinished(t *testing.T) {
 	if prepared.err != nil {
 		t.Fatalf("prepare re-attach: %v", prepared.err)
 	}
-	got, err := m.store.Get(sess.ID)
+	got, err := m.services.store.Get(sess.ID)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -753,7 +753,7 @@ func umbrellaWithTwoRepos(t *testing.T) (umbrella, dirtyName string) {
 // most-active repo, shows the repo in the header, and the r key picks another.
 func TestReviewPicksRepoUnderUmbrella(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	umbrella, dirtyName := umbrellaWithTwoRepos(t)
@@ -784,7 +784,7 @@ func TestReviewPicksRepoUnderUmbrella(t *testing.T) {
 
 func TestRepoPickerFiltersAndSelects(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	umbrella, dirtyName := umbrellaWithTwoRepos(t)
@@ -816,7 +816,7 @@ func TestRepoPickerFiltersAndSelects(t *testing.T) {
 
 func TestRepoPickerEscapeKeepsRepo(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	umbrella, dirtyName := umbrellaWithTwoRepos(t)
@@ -836,7 +836,7 @@ func TestRepoPickerEscapeKeepsRepo(t *testing.T) {
 
 func TestBranchPickerListsWorktreesAndSwitches(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	umbrella, _ := umbrellaWithTwoRepos(t)
@@ -876,7 +876,7 @@ func TestBranchPickerListsWorktreesAndSwitches(t *testing.T) {
 // /private/tmp, since /tmp is a symlink on macOS.
 func TestBranchPickerSeedsCursorForSymlinkedWorktree(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	umbrella, _ := umbrellaWithTwoRepos(t)
@@ -904,7 +904,7 @@ func TestBranchPickerSeedsCursorForSymlinkedWorktree(t *testing.T) {
 	createSession(t, m, "symseed", umbrella, "")
 	m.selectSessionRow(t, "symseed")
 	sess, _ := m.selected()
-	if err := m.store.SetReviewRepo(sess.ID, rawWorktree); err != nil {
+	if err := m.services.store.SetReviewRepo(sess.ID, rawWorktree); err != nil {
 		t.Fatal(err)
 	}
 	m.drainCmds(t, m.openDiff())
@@ -943,7 +943,7 @@ func TestBranchPickerSeedsCursorForSymlinkedWorktree(t *testing.T) {
 // same-named path in a sibling repo when cycling with r.
 func TestReviewMarksIsolatedPerRepo(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	umbrella, dirtyName := umbrellaWithTwoRepos(t)
@@ -977,7 +977,7 @@ func TestReviewMarksIsolatedPerRepo(t *testing.T) {
 // put a different repo first keeps the user on the repo they chose.
 func TestRepoSelectionSurvivesReload(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	umbrella, _ := umbrellaWithTwoRepos(t)
@@ -1072,7 +1072,7 @@ func openReviewOn(t *testing.T, m *Model, name, dir string) {
 
 func TestReviewLoadsFilesOnDemand(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	openReviewOn(t, m, "lazy", gitRepoWithTwoChangedFiles(t))
@@ -1104,7 +1104,7 @@ func TestReviewLoadsFilesOnDemand(t *testing.T) {
 
 func TestReviewCloseReleasesStateAndIgnoresLateLoad(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	openReviewOn(t, m, "close", gitRepoWithTwoChangedFiles(t))
@@ -1165,7 +1165,7 @@ func TestRefreshFileLoadsRunSerially(t *testing.T) {
 // file must still get its syntax highlighting.
 func TestSpaceAdvanceKeepsHighlight(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	openReviewOn(t, m, "hl", gitRepoWithTwoChangedFiles(t))
@@ -1188,7 +1188,7 @@ func TestSpaceAdvanceKeepsHighlight(t *testing.T) {
 // the same path must open the file at the top.
 func TestScrollDoesNotLeakAcrossSessions(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	dir := gitRepoWithTwoChangedFiles(t)
@@ -1215,7 +1215,7 @@ func TestScrollDoesNotLeakAcrossSessions(t *testing.T) {
 // the open editor.
 func TestNoReloadWhileAnnotating(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	openReviewOn(t, m, "ann", gitRepoWithTwoChangedFiles(t))
@@ -1262,7 +1262,7 @@ func (m *Model) refreshDiff(t *testing.T) {
 // at the line carrying their excerpt, so the agent gets the location meant.
 func TestAnnotationsReanchorAfterRefresh(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	dir := gitRepoWithTwoChangedFiles(t)
@@ -1288,7 +1288,7 @@ func TestAnnotationsReanchorAfterRefresh(t *testing.T) {
 
 func TestReviewRoundTracksOutdatedAndHandledComments(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	dir := gitRepoWithTwoChangedFiles(t)
@@ -1334,7 +1334,7 @@ func TestReviewRoundTracksOutdatedAndHandledComments(t *testing.T) {
 	if !m.diff.annotations[m.reviewKey()][0].handled {
 		t.Fatal("d should mark a sent comment handled")
 	}
-	state, err := m.store.ReviewState(m.diff.sessID, m.diff.repoSel)
+	state, err := m.services.store.ReviewState(m.diff.sessID, m.diff.repoSel)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1357,7 +1357,7 @@ func TestReviewRoundTracksOutdatedAndHandledComments(t *testing.T) {
 
 func TestAgentHandledUpdateReloadsWithoutDroppingTheComment(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	openReviewOn(t, m, "handled", gitRepoWithTwoChangedFiles(t))
@@ -1368,7 +1368,7 @@ func TestAgentHandledUpdateReloadsWithoutDroppingTheComment(t *testing.T) {
 	_, cmd := m.sendAnnotations()
 	m.applyCmd(t, cmd)
 	note := m.diff.annotations[m.reviewKey()][0]
-	if found, err := m.store.SetReviewCommentHandled(m.diff.sessID, note.id, true); err != nil || !found {
+	if found, err := m.services.store.SetReviewCommentHandled(m.diff.sessID, note.id, true); err != nil || !found {
 		t.Fatalf("agent update = %v, %v", found, err)
 	}
 	m.diff.annotations[m.reviewKey()] = append(m.diff.annotations[m.reviewKey()], annotation{
@@ -1390,7 +1390,7 @@ func TestSavedReviewRoundsGainStableIDsAndPointNumbers(t *testing.T) {
 	m.diff.annotations = map[string][]annotation{}
 	m.diff.rounds = map[string]store.ReviewRound{}
 	m.diff.stateLoaded = map[string]bool{}
-	if err := m.store.SetReviewState(m.diff.sessID, m.diff.repoSel, store.ReviewState{
+	if err := m.services.store.SetReviewState(m.diff.sessID, m.diff.repoSel, store.ReviewState{
 		Comments: []store.ReviewComment{
 			{File: "a.go", Line: 2, Text: "first", Round: 3},
 			{File: "b.go", Line: 4, Text: "second", Round: 3},
@@ -1399,7 +1399,7 @@ func TestSavedReviewRoundsGainStableIDsAndPointNumbers(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	state, err := readReviewState(m.store, m.diff.sessID, m.diff.repoSel)
+	state, err := readReviewState(m.services.store, m.diff.sessID, m.diff.repoSel)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1411,7 +1411,7 @@ func TestSavedReviewRoundsGainStableIDsAndPointNumbers(t *testing.T) {
 		notes[0].id == notes[1].id || notes[0].point != 1 || notes[1].point != 2 {
 		t.Fatalf("migrated comments = %+v", notes)
 	}
-	state, err = m.store.ReviewState(m.diff.sessID, m.diff.repoSel)
+	state, err = m.services.store.ReviewState(m.diff.sessID, m.diff.repoSel)
 	if err != nil || state.Comments[0].ID == "" || state.Comments[1].Point != 2 {
 		t.Fatalf("persisted migration = %+v, %v", state.Comments, err)
 	}
@@ -1421,7 +1421,7 @@ func TestSavedReviewRoundsGainStableIDsAndPointNumbers(t *testing.T) {
 // stored line against content it was never made against.
 func TestScopeCycleDoesNotReanchor(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	openReviewOn(t, m, "scoped", gitRepoWithTwoChangedFiles(t))
@@ -1441,7 +1441,7 @@ func TestScopeCycleDoesNotReanchor(t *testing.T) {
 // comment, and re-anchoring never stacks two comments onto one line.
 func TestReanchorKeepsAmbiguousAndAvoidsCollapse(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	m.diff.sessID = "s1"
@@ -1481,7 +1481,7 @@ func TestReanchorKeepsAmbiguousAndAvoidsCollapse(t *testing.T) {
 // the base review keymap.
 func TestReviewCtrlCQuitsFromSubmodes(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	openReviewOn(t, m, "subquit", gitRepoWithTwoChangedFiles(t))
@@ -1506,7 +1506,7 @@ func TestReviewCtrlCQuitsFromSubmodes(t *testing.T) {
 // swap the set under the editor, even though m.diff.loading is still true.
 func TestInFlightLoadDroppedWhileAnnotating(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	openReviewOn(t, m, "inflight", gitRepoWithTwoChangedFiles(t))
@@ -1528,7 +1528,7 @@ func TestInFlightLoadDroppedWhileAnnotating(t *testing.T) {
 // Ctrl+C quits from review mode like it does from the list.
 func TestReviewCtrlCQuits(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	openReviewOn(t, m, "quitter", gitRepoWithTwoChangedFiles(t))
@@ -1557,7 +1557,7 @@ func TestExcerptKeepsRuneBoundary(t *testing.T) {
 
 func TestBinaryFileShowsBinaryNotZeroCounts(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	dir := gitRepoWithTwoChangedFiles(t)
@@ -1595,7 +1595,7 @@ func TestBinaryFileShowsBinaryNotZeroCounts(t *testing.T) {
 // the binary label has to come from numstat rather than the loaded file.
 func TestTrackedBinaryPastEagerCapShowsBinary(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	dir := t.TempDir()
@@ -1760,7 +1760,7 @@ func TestNonCodePathNamesCompiledArtifacts(t *testing.T) {
 // selection nor a file switch is left on one of them.
 func TestReviewCodeOnlyHidesBinaryFiles(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	openReviewOn(t, m, "filter", gitRepoWithBinaryBetweenTextFiles(t))
@@ -1822,7 +1822,7 @@ func TestReviewCodeOnlyHidesBinaryFiles(t *testing.T) {
 // they go the moment the key is pressed and stay gone across a silent reload.
 func TestReviewCodeOnlyHidesUntrackedAndLockFiles(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	dir := writeGitRepo(t,
@@ -1885,7 +1885,7 @@ func TestReviewCodeOnlyHidesUntrackedAndLockFiles(t *testing.T) {
 // moves: with the file it lands on scrolled back where the user left it.
 func TestReviewCodeOnlyCarriesCursorOffASniffedBlob(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	var long, edited strings.Builder
@@ -1930,7 +1930,7 @@ func TestReviewCodeOnlyCarriesCursorOffASniffedBlob(t *testing.T) {
 // not one the user can review.
 func TestReviewCodeOnlySpaceSkipsHiddenFile(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	openReviewOn(t, m, "queue", writeGitRepo(t,
@@ -1977,7 +1977,7 @@ func TestReviewCodeOnlySpaceSkipsHiddenFile(t *testing.T) {
 // and leaves tab with nowhere to go.
 func TestReviewCodeOnlyWithNoCodeFiles(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	openReviewOn(t, m, "onlybin", writeGitRepo(t,
@@ -2025,7 +2025,7 @@ func TestHeaderMarksUncountedFile(t *testing.T) {
 		t.Skip("root reads any file regardless of mode")
 	}
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	dir := gitRepoWithTwoChangedFiles(t)
@@ -2043,7 +2043,7 @@ func TestHeaderMarksUncountedFile(t *testing.T) {
 	}
 	t.Cleanup(func() { os.Chmod(locked, 0o644) })
 
-	set, err := diff.BuildSet(m.gitDrv, dir, git.ScopeUncommitted, "")
+	set, err := diff.BuildSet(m.services.gitDrv, dir, git.ScopeUncommitted, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2055,7 +2055,7 @@ func TestHeaderMarksUncountedFile(t *testing.T) {
 
 func TestReviewOpensOnDeclaredRepo(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	umbrella, dirtyName := umbrellaWithTwoRepos(t)
@@ -2065,7 +2065,7 @@ func TestReviewOpensOnDeclaredRepo(t *testing.T) {
 	if !ok {
 		t.Fatal("no selected session")
 	}
-	if err := m.store.SetReviewRepo(sess.ID, filepath.Join(umbrella, "alpha")); err != nil {
+	if err := m.services.store.SetReviewRepo(sess.ID, filepath.Join(umbrella, "alpha")); err != nil {
 		t.Fatal(err)
 	}
 	m.drainCmds(t, m.openDiff())
@@ -2078,7 +2078,7 @@ func TestReviewOpensOnDeclaredRepo(t *testing.T) {
 // after review is closed and reopened.
 func TestHandPickedRepoOutlivesReopen(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	umbrella, _ := umbrellaWithTwoRepos(t)
@@ -2088,7 +2088,7 @@ func TestHandPickedRepoOutlivesReopen(t *testing.T) {
 	if !ok {
 		t.Fatal("no selected session")
 	}
-	if err := m.store.SetReviewRepo(sess.ID, filepath.Join(umbrella, "alpha")); err != nil {
+	if err := m.services.store.SetReviewRepo(sess.ID, filepath.Join(umbrella, "alpha")); err != nil {
 		t.Fatal(err)
 	}
 	m.drainCmds(t, m.openDiff())
@@ -2117,7 +2117,7 @@ func TestHandPickedRepoOutlivesReopen(t *testing.T) {
 // agent's declaration takes over instead of a dead path shadowing it forever.
 func TestVanishedHandPickedRepoIsReportedAndForgotten(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	umbrella, _ := umbrellaWithTwoRepos(t)
@@ -2128,7 +2128,7 @@ func TestVanishedHandPickedRepoIsReportedAndForgotten(t *testing.T) {
 	if !ok {
 		t.Fatal("no selected session")
 	}
-	if err := m.store.SetReviewRepo(sess.ID, filepath.Join(umbrella, "alpha")); err != nil {
+	if err := m.services.store.SetReviewRepo(sess.ID, filepath.Join(umbrella, "alpha")); err != nil {
 		t.Fatal(err)
 	}
 	m.drainCmds(t, m.openDiff())
@@ -2150,7 +2150,7 @@ func TestVanishedHandPickedRepoIsReportedAndForgotten(t *testing.T) {
 	if !strings.Contains(m.viewDiffStatus(), m.errBar.text) {
 		t.Fatalf("review status should show %q", m.errBar.text)
 	}
-	if _, still := m.pickedRepos[sess.ID]; still {
+	if _, still := m.ledger.pickedRepos[sess.ID]; still {
 		t.Fatal("the dead pick must be forgotten so the declaration can take over")
 	}
 
@@ -2165,7 +2165,7 @@ func TestVanishedHandPickedRepoIsReportedAndForgotten(t *testing.T) {
 
 func TestDeclaredWorktreeOutsideCwdIsAccepted(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	umbrella, _ := umbrellaWithTwoRepos(t)
@@ -2182,7 +2182,7 @@ func TestDeclaredWorktreeOutsideCwdIsAccepted(t *testing.T) {
 	createSession(t, m, "wtdecl", umbrella, "")
 	m.selectSessionRow(t, "wtdecl")
 	sess, _ := m.selected()
-	if err := m.store.SetReviewRepo(sess.ID, outside); err != nil {
+	if err := m.services.store.SetReviewRepo(sess.ID, outside); err != nil {
 		t.Fatal(err)
 	}
 	m.drainCmds(t, m.openDiff())
@@ -2238,7 +2238,7 @@ func addDirtyRepo(t *testing.T, umbrella, name string) {
 // silently swapped for whatever the ranking put on top.
 func TestDeclaredRepoOutsideCwdIsReported(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	umbrella, _ := umbrellaWithTwoRepos(t)
@@ -2248,7 +2248,7 @@ func TestDeclaredRepoOutsideCwdIsReported(t *testing.T) {
 	if !ok {
 		t.Fatal("no selected session")
 	}
-	if err := m.store.SetReviewRepo(sess.ID, filepath.Join(t.TempDir(), "somewhere-else")); err != nil {
+	if err := m.services.store.SetReviewRepo(sess.ID, filepath.Join(t.TempDir(), "somewhere-else")); err != nil {
 		t.Fatal(err)
 	}
 	m.drainCmds(t, m.openDiff())
@@ -2268,7 +2268,7 @@ func TestDeclaredRepoOutsideCwdIsReported(t *testing.T) {
 // dropping the user back into review with the old repo and no explanation.
 func TestRepoPickerReportsMissingSession(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	umbrella, _ := umbrellaWithTwoRepos(t)
@@ -2283,7 +2283,7 @@ func TestRepoPickerReportsMissingSession(t *testing.T) {
 		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 		*m = *updated.(*Model)
 	}
-	m.sessions = nil
+	m.workspace.sessions = nil
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	*m = *updated.(*Model)
@@ -2307,7 +2307,7 @@ func TestRepoPickerReportsMissingSession(t *testing.T) {
 // screen and must never index past the list.
 func TestRepoPickerSurvivesShrinkingRootList(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	umbrella, _ := umbrellaWithTwoRepos(t)
@@ -2390,7 +2390,7 @@ func TestRepoPickerFitsTerminalHeight(t *testing.T) {
 
 func TestCtrlRFromListOpensReview(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	createSession(t, m, "ctrlr", gitRepoWithTwoChangedFiles(t), "")
@@ -2451,7 +2451,7 @@ func (m *Model) typeAndEnter(t *testing.T, text string) {
 // repo and forces the branch scope, and auto clears the stored base.
 func TestBasePickerPersistsSwitchesScopeAndClears(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	dir := gitRepoWithSecondBranch(t)
@@ -2483,7 +2483,7 @@ func TestBasePickerPersistsSwitchesScopeAndClears(t *testing.T) {
 	if m.diff.scope != git.ScopeBranch {
 		t.Errorf("picking a base should switch scope to vs target, got %v", m.diff.scope)
 	}
-	got, err := m.store.ReviewBase(sess.ID, m.diff.repoSel)
+	got, err := m.services.store.ReviewBase(sess.ID, m.diff.repoSel)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2493,17 +2493,17 @@ func TestBasePickerPersistsSwitchesScopeAndClears(t *testing.T) {
 	// Genuine per-repo round trip: a base stored for a second repo must read
 	// back independently, and repo A's base must stay put.
 	repoB := gitRepoWithSecondBranch(t)
-	if err := m.store.SetReviewBase(sess.ID, repoB, "main"); err != nil {
+	if err := m.services.store.SetReviewBase(sess.ID, repoB, "main"); err != nil {
 		t.Fatal(err)
 	}
-	baseA, err := m.store.ReviewBase(sess.ID, m.diff.repoSel)
+	baseA, err := m.services.store.ReviewBase(sess.ID, m.diff.repoSel)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if baseA != "feature" {
 		t.Errorf("repo A base = %q, want feature", baseA)
 	}
-	baseB, err := m.store.ReviewBase(sess.ID, repoB)
+	baseB, err := m.services.store.ReviewBase(sess.ID, repoB)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2516,7 +2516,7 @@ func TestBasePickerPersistsSwitchesScopeAndClears(t *testing.T) {
 		t.Fatalf("B should reopen the base picker, mode = %v", m.mode)
 	}
 	m.typeAndEnter(t, "auto")
-	cleared, err := m.store.ReviewBase(sess.ID, m.diff.repoSel)
+	cleared, err := m.services.store.ReviewBase(sess.ID, m.diff.repoSel)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2569,7 +2569,7 @@ func umbrellaWithBranchedRepo(t *testing.T) (umbrella, repoRoot string) {
 // the only recovery path.
 func TestInvalidStoredBaseStillOpensPickerAndRecovers(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	dir := gitRepoWithSecondBranch(t)
@@ -2579,7 +2579,7 @@ func TestInvalidStoredBaseStillOpensPickerAndRecovers(t *testing.T) {
 		t.Fatal("no diff session")
 	}
 
-	if err := m.store.SetReviewBase(sess.ID, m.diff.repoSel, "gone-ref"); err != nil {
+	if err := m.services.store.SetReviewBase(sess.ID, m.diff.repoSel, "gone-ref"); err != nil {
 		t.Fatal(err)
 	}
 	m.diff.scope = git.ScopeBranch
@@ -2605,7 +2605,7 @@ func TestInvalidStoredBaseStillOpensPickerAndRecovers(t *testing.T) {
 	}
 
 	m.typeAndEnter(t, "auto")
-	base, err := m.store.ReviewBase(sess.ID, m.diff.repoSel)
+	base, err := m.services.store.ReviewBase(sess.ID, m.diff.repoSel)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2626,7 +2626,7 @@ func TestInvalidStoredBaseStillOpensPickerAndRecovers(t *testing.T) {
 // diverges from the load's and review reloads every tick forever.
 func TestProbeAndLoadAgreeOnFingerprint(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	umbrella, _ := umbrellaWithBranchedRepo(t)
@@ -2636,7 +2636,7 @@ func TestProbeAndLoadAgreeOnFingerprint(t *testing.T) {
 		t.Fatal("no diff session")
 	}
 
-	if err := m.store.SetReviewBase(sess.ID, m.diff.repoSel, "feature"); err != nil {
+	if err := m.services.store.SetReviewBase(sess.ID, m.diff.repoSel, "feature"); err != nil {
 		t.Fatal(err)
 	}
 	m.diff.scope = git.ScopeBranch
@@ -2669,7 +2669,7 @@ func TestProbeAndLoadAgreeOnFingerprint(t *testing.T) {
 // its read the same resolved way or the override silently never reaches review.
 func TestCLIReviewBaseReachesLoadAcrossSymlinkBoundary(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	_, repoRoot := umbrellaWithBranchedRepo(t)
@@ -2699,23 +2699,21 @@ func TestCLIReviewBaseReachesLoadAcrossSymlinkBoundary(t *testing.T) {
 
 	// Mirror the CLI exactly: OpenRepo yields the same symlink-resolved toplevel
 	// the review-base subcommand stores, so the mailbox holds the resolved root.
-	repo, err := m.gitDrv.OpenRepo(repoRoot)
+	repo, err := m.services.gitDrv.OpenRepo(repoRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if repo.Root != resolvedRoot {
 		t.Fatalf("test premise broken: git toplevel %q should match the resolved selection %q", repo.Root, resolvedRoot)
 	}
-	path := m.hooks.ReviewBaseFile(sess.ID)
+	path := m.services.hooks.ReviewBaseFile(sess.ID)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, []byte(repo.Root+"\nfeature\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.poller.applyPendingReviewBase(&sess); err != nil {
-		t.Fatal(err)
-	}
+	m.applyCmd(t, m.refreshCmd())
 
 	branchReload()
 	if m.diff.fingerprint == autoFingerprint {
@@ -2729,7 +2727,7 @@ func TestCLIReviewBaseReachesLoadAcrossSymlinkBoundary(t *testing.T) {
 
 func TestReviewedMarkClearsOnContentChange(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	dir := gitRepoWithTwoChangedFiles(t)
@@ -2761,7 +2759,7 @@ func TestReviewedMarkClearsOnContentChange(t *testing.T) {
 
 func TestReviewProgressAndDraftsRestoreFromStore(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	openReviewOn(t, m, "restore", gitRepoWithTwoChangedFiles(t))
@@ -2781,7 +2779,7 @@ func TestReviewProgressAndDraftsRestoreFromStore(t *testing.T) {
 	delete(m.diff.annotations, key)
 	delete(m.diff.rounds, key)
 	delete(m.diff.stateLoaded, key)
-	state, err := readReviewState(m.store, m.diff.sessID, m.diff.repoSel)
+	state, err := readReviewState(m.services.store, m.diff.sessID, m.diff.repoSel)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2803,7 +2801,7 @@ func TestReviewProgressAndDraftsRestoreFromStore(t *testing.T) {
 func TestSendAnnotationsRefusesAShell(t *testing.T) {
 	m := buildModel(t)
 	dir := gitTestRepo(t)
-	if err := m.store.CreateGroup("work", dir); err != nil {
+	if err := m.services.store.CreateGroup("work", dir); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -2826,15 +2824,15 @@ func TestSendAnnotationsRefusesAShell(t *testing.T) {
 
 func TestDiffSendConfirmIgnoresMotionKeys(t *testing.T) {
 	m := &Model{
-		mode: modeDiff,
-		diff: diffState{
-			active:      true,
-			sendConfirm: true,
-			annotations: map[string][]annotation{
-				"\x00": {{file: "main.go", line: 1, text: "keep me"}},
-			},
+	mode: modeDiff,
+	diff: diffState{
+		active:      true,
+		sendConfirm: true,
+		annotations: map[string][]annotation{
+			"\x00": {{file: "main.go", line: 1, text: "keep me"}},
 		},
-	}
+	},
+}
 	m.handleDiffKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
 	if !m.diff.sendConfirm {
 		t.Fatal("j should leave the send prompt up")
@@ -2890,11 +2888,11 @@ func TestDiffHelpRestartsLoaderOnReturn(t *testing.T) {
 	}
 	m.openHelp()
 	m.Update(startupTickMsg{})
-	if m.startupAnimating {
+	if m.startup.startupAnimating {
 		t.Fatal("loader should stop while help covers the review")
 	}
 	_, cmd := m.handleHelpKey(tea.KeyMsg{Type: tea.KeyEsc})
-	if cmd == nil || !m.startupAnimating {
+	if cmd == nil || !m.startup.startupAnimating {
 		t.Fatal("returning to a loading review should restart the loader")
 	}
 }
@@ -2978,7 +2976,7 @@ func TestCycleDiffScopeReportsAFailedBaseLookup(t *testing.T) {
 	if len(m.diff.set.Files) == 0 {
 		t.Fatal("expected files")
 	}
-	if err := m.store.Close(); err != nil {
+	if err := m.services.store.Close(); err != nil {
 		t.Fatal(err)
 	}
 	cmd := m.cycleDiffScope()
@@ -3023,7 +3021,7 @@ func TestReviewUntrackedFileShowsCountWithoutOpening(t *testing.T) {
 
 func TestReviewUntrackedImageShowsBinaryWithoutOpening(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	dir := gitTestRepo(t)
@@ -3077,13 +3075,13 @@ func TestReviewShowsLoaderWhileDiffLoads(t *testing.T) {
 
 func TestReviewShowsLoaderWhileFileLoads(t *testing.T) {
 	m := &Model{
-		width: 100, height: 30, mode: modeDiff,
-		diff: diffState{
-			active: true,
-			sessID: "s",
-			set:    diff.Set{Files: []diff.FileDiff{{File: git.ChangedFile{Path: "main.go"}}}},
-		},
-	}
+	width: 100, height: 30, mode: modeDiff,
+	diff: diffState{
+		active: true,
+		sessID: "s",
+		set:    diff.Set{Files: []diff.FileDiff{{File: git.ChangedFile{Path: "main.go"}}}},
+	},
+}
 	code := ansi.Strip(m.viewDiffCode(80, 20))
 	if !strings.Contains(code, "loading file") {
 		t.Fatalf("code pane should carry the file loader, got %q", code)
@@ -3131,7 +3129,7 @@ func TestFailedDiffLoadKeepsRepoPicker(t *testing.T) {
 // so its mark waits for the scope that shows it again.
 func TestAScopeMissingAFileKeepsItsReviewedMark(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	openReviewOn(t, m, "scopemarks", gitTestRepo(t))
@@ -3160,7 +3158,7 @@ func TestAScopeMissingAFileKeepsItsReviewedMark(t *testing.T) {
 // stale.
 func TestScopeCycleKeepsReviewedMark(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	dir := gitTestRepo(t)
@@ -3210,7 +3208,7 @@ func TestScopeCycleKeepsReviewedMark(t *testing.T) {
 
 func TestNarrowReviewKeepsBothPanesMeasurable(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	openReviewOn(t, m, "narrow", gitTestRepo(t))
@@ -3231,7 +3229,7 @@ func TestNarrowReviewKeepsBothPanesMeasurable(t *testing.T) {
 
 func TestAnotherScopeDoesNotOutdateARoundsComments(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	openReviewOn(t, m, "scopeoutdated", gitRepoWithTwoChangedFiles(t))
@@ -3261,7 +3259,7 @@ func TestAnotherScopeDoesNotOutdateARoundsComments(t *testing.T) {
 // round was sent in the current scope.
 func TestOlderRoundFromAnotherScopeIsNotOutdated(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	openReviewOn(t, m, "roundscopes", gitRepoWithTwoChangedFiles(t))
@@ -3290,7 +3288,7 @@ func TestOlderRoundFromAnotherScopeIsNotOutdated(t *testing.T) {
 // refresh: a comment whose file that scope no longer lists reads outdated.
 func TestScopeCycleOutdatesTheArrivingScopesComments(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	openReviewOn(t, m, "cycleoutdate", gitTestRepo(t))
@@ -3314,7 +3312,7 @@ func TestScopeCycleOutdatesTheArrivingScopesComments(t *testing.T) {
 // and hash it was made against.
 func TestRefreshDoesNotReanchorOtherScopesComments(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	openReviewOn(t, m, "scopereanchor", gitTestRepo(t))
@@ -3340,7 +3338,7 @@ func TestRefreshDoesNotReanchorOtherScopesComments(t *testing.T) {
 // clears them from the row.
 func TestRestoreDropsPreScopeReviewedMarks(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	openReviewOn(t, m, "baremarks", gitTestRepo(t))
@@ -3358,7 +3356,7 @@ func TestRestoreDropsPreScopeReviewedMarks(t *testing.T) {
 func TestMigratedPointsNeverRepeatWithinARound(t *testing.T) {
 	m := buildModel(t)
 	const repo = "/repo"
-	if err := m.store.SetReviewState("pts123", repo, store.ReviewState{
+	if err := m.services.store.SetReviewState("pts123", repo, store.ReviewState{
 		Comments: []store.ReviewComment{
 			{ID: "aaaaaaaaaaaaaaa1", File: "a.go", Line: 1, Text: "no point", Round: 1},
 			{ID: "aaaaaaaaaaaaaaa2", File: "a.go", Line: 2, Text: "point one", Round: 1, Point: 1},
@@ -3369,7 +3367,7 @@ func TestMigratedPointsNeverRepeatWithinARound(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	state, err := readReviewState(m.store, "pts123", repo)
+	state, err := readReviewState(m.services.store, "pts123", repo)
 	if err != nil {
 		t.Fatal(err)
 	}

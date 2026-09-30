@@ -37,7 +37,7 @@ func (m *Model) appendAgentMoveTargets() {
 	var options []groupOption
 	for _, opt := range m.form.groups {
 		options = append(options, opt)
-		for _, sess := range m.sessions {
+		for _, sess := range m.workspace.sessions {
 			if sess.Archived || m.isShell(sess.Tool) || sess.Group != opt.path {
 				continue
 			}
@@ -96,7 +96,7 @@ func (m *Model) handleMoveKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.moveGroupTo(m.selectedGroupPath())
 		}
 		opt := m.form.groups[m.form.groupIndex]
-		sess, err := m.store.Get(m.moveID)
+		sess, err := m.services.store.Get(m.moveID)
 		if err != nil {
 			m.errBar.text = err.Error()
 			return m, nil
@@ -105,7 +105,7 @@ func (m *Model) handleMoveKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// dialog, so re-picking the parent of a terminal whose agent has
 		// since gone reports that instead of a move that never happened.
 		if opt.sessID != "" {
-			if _, err := m.store.Get(opt.sessID); err != nil {
+			if _, err := m.services.store.Get(opt.sessID); err != nil {
 				m.errBar.text = err.Error()
 				return m, nil
 			}
@@ -114,7 +114,7 @@ func (m *Model) handleMoveKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.mode = modeList
 			return m, nil
 		}
-		if err := m.store.PlaceSession(m.moveID, opt.path, opt.sessID); err != nil {
+		if err := m.services.store.PlaceSession(m.moveID, opt.path, opt.sessID); err != nil {
 			m.errBar.text = err.Error()
 			return m, nil
 		}
@@ -145,10 +145,10 @@ func (m *Model) moveGroupUnder(path, parent string) error {
 	if newPath == path {
 		return nil
 	}
-	if err := m.store.MoveGroup(path, parent); err != nil {
+	if err := m.services.store.MoveGroup(path, parent); err != nil {
 		return err
 	}
-	m.renameGroupLocally(path, newPath, m.groupPaths[path], m.groupWorktrees[path])
+	m.renameGroupLocally(path, newPath, m.workspace.groupPaths[path], m.workspace.groupWorktrees[path])
 	m.relabelSubtree(newPath)
 	m.rebuildRows()
 	m.requestRefresh()

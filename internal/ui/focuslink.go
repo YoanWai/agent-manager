@@ -37,14 +37,14 @@ func (m *Model) linkAt(row, col int) string {
 		// short of the edge, indents, or carries more words ends the join.
 		current, end := line, span[1]
 		for next := row + 1; end == len(current) &&
-			ansi.StringWidth(current) >= m.pane.box.width && next < len(lines); next++ {
+			ansi.StringWidth(current) >= m.focusPane.pane.box.width && next < len(lines); next++ {
 			rest := lines[next]
 			if rest == "" || strings.HasPrefix(rest, " ") {
 				break
 			}
 			fields := strings.Fields(rest)
 			url += fields[0]
-			if len(fields) > 1 || ansi.StringWidth(rest) < m.pane.box.width {
+			if len(fields) > 1 || ansi.StringWidth(rest) < m.focusPane.pane.box.width {
 				break
 			}
 			current, end = rest, len(rest)

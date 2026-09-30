@@ -32,12 +32,12 @@ func focusedWithHistory(t *testing.T, name string) (*Model, string) {
 	m := buildModel(t)
 	createSession(t, m, name, t.TempDir(), "")
 	m.selectSessionRow(t, name)
-	sess := m.rows[m.cursor].sess
+	sess := m.rail.rows[m.rail.cursor].sess
 
 	// The watcher is normally created by StartPoller, which tests skip.
-	m.focus = newFocusWatch(m.tmux, func(tea.Msg) {})
-	t.Cleanup(m.focus.Close)
-	m.focus.setFocus(sess.ID)
+	m.focusPane.focus = newFocusWatch(m.services.tmux, func(tea.Msg) {})
+	t.Cleanup(m.focusPane.focus.Close)
+	m.focusPane.focus.setFocus(sess.ID)
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	*m = *updated.(*Model)
@@ -46,7 +46,7 @@ func focusedWithHistory(t *testing.T, name string) (*Model, string) {
 	}
 	// Wait for the control client, which every scroll query rides.
 	deadline := time.Now().Add(5 * time.Second)
-	for !m.focus.serving(sess.ID) {
+	for !m.focusPane.focus.serving(sess.ID) {
 		if time.Now().After(deadline) {
 			t.Skip("control client never came up on this host")
 		}
@@ -54,13 +54,13 @@ func focusedWithHistory(t *testing.T, name string) (*Model, string) {
 	}
 
 	command := `i=1; while [ "$i" -le 120 ]; do printf 'history-line-%03d\n' "$i"; i=$((i+1)); done`
-	if err := m.tmux.SendText(sess.ID, command); err != nil {
+	if err := m.services.tmux.SendText(sess.ID, command); err != nil {
 		t.Fatalf("SendText: %v", err)
 	}
 	// Let the pane finish painting so the history is really there.
 	deadline = time.Now().Add(10 * time.Second)
 	for {
-		pane, err := m.tmux.CapturePane(sess.ID)
+		pane, err := m.services.tmux.CapturePane(sess.ID)
 		if err != nil {
 			t.Fatalf("capture: %v", err)
 		}
@@ -77,7 +77,7 @@ func focusedWithHistory(t *testing.T, name string) (*Model, string) {
 	// way the scroll path fetches one, and the history depth the wheel
 	// clamps against.
 	seedLive(t, m, sess.ID)
-	m.pane.history = paneHistorySize(t, m, sess.ID)
+	m.focusPane.pane.history = paneHistorySize(t, m, sess.ID)
 	return m, sess.ID
 }
 
@@ -85,7 +85,7 @@ func focusedWithHistory(t *testing.T, name string) (*Model, string) {
 // pipe, standing in for the pushed capture that normally caches it.
 func paneHistorySize(t *testing.T, m *Model, sessID string) int {
 	t.Helper()
-	out, ok := m.focus.query(`display-message -p -t ` + tmux.PaneTarget(sessID) + ` "#{history_size}"`)
+	out, ok := m.focusPane.focus.query(`display-message -p -t ` + tmux.PaneTarget(sessID) + ` "#{history_size}"`)
 	if !ok {
 		t.Fatal("history query failed over the control pipe")
 	}
@@ -116,7 +116,7 @@ func seedLive(t *testing.T, m *Model, sessID string) {
 func TestFocusWheelScrollsHistory(t *testing.T) {
 	m, sessID := focusedWithHistory(t, "scroller")
 
-	live := m.preview
+	live := m.workspace.preview
 	if !strings.Contains(live, "history-line-120") {
 		t.Fatalf("live preview missing the newest line: %q", live)
 	}
@@ -126,16 +126,16 @@ func TestFocusWheelScrollsHistory(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		cmd := m.scrollFocus(-1)
 		if cmd == nil {
-			t.Fatalf("wheel up produced no capture at offset %d", m.focusScroll)
+			t.Fatalf("wheel up produced no capture at offset %d", m.focusPane.focusScroll)
 		}
 		updated, _ := m.Update(cmd())
 		*m = *updated.(*Model)
-		scrolled = m.preview
+		scrolled = m.workspace.preview
 		if !strings.Contains(scrolled, "history-line-120") {
 			break
 		}
 	}
-	if m.focusScroll == 0 {
+	if m.focusPane.focusScroll == 0 {
 		t.Fatal("wheel up never moved the pane back")
 	}
 	if strings.Contains(scrolled, "history-line-120") {
@@ -148,12 +148,12 @@ func TestFocusWheelScrollsHistory(t *testing.T) {
 	// A live push must not yank the view back to the bottom.
 	updated, _ := m.Update(focusPreviewMsg{sessID: sessID, preview: "LIVE-FRAME\n"})
 	*m = *updated.(*Model)
-	if m.preview != scrolled {
+	if m.workspace.preview != scrolled {
 		t.Fatal("a live frame overwrote the scrolled view")
 	}
 
 	// Wheel down all the way returns to the live bottom.
-	for i := 0; i < 20 && m.focusScroll > 0; i++ {
+	for i := 0; i < 20 && m.focusPane.focusScroll > 0; i++ {
 		cmd := m.scrollFocus(1)
 		if cmd == nil {
 			continue
@@ -162,10 +162,10 @@ func TestFocusWheelScrollsHistory(t *testing.T) {
 		*m = *updated.(*Model)
 	}
 	if m.scrolledBack() {
-		t.Fatalf("wheel down left the pane scrolled at %d", m.focusScroll)
+		t.Fatalf("wheel down left the pane scrolled at %d", m.focusPane.focusScroll)
 	}
-	if !strings.Contains(m.preview, "history-line-120") {
-		t.Fatalf("bottom does not show the newest line:\n%s", m.preview)
+	if !strings.Contains(m.workspace.preview, "history-line-120") {
+		t.Fatalf("bottom does not show the newest line:\n%s", m.workspace.preview)
 	}
 }
 
@@ -174,8 +174,8 @@ func TestFocusWheelScrollsHistory(t *testing.T) {
 func TestWheelFocusWalksTmuxHistory(t *testing.T) {
 	m, _ := focusedWithHistory(t, "wheel-walk")
 
-	m.wheelFocus(true, m.pane.box.x+2, m.pane.box.y+1)
-	if m.focusScroll == 0 {
+	m.wheelFocus(true, m.focusPane.pane.box.x+2, m.focusPane.pane.box.y+1)
+	if m.focusPane.focusScroll == 0 {
 		t.Fatal("wheel did not walk tmux history")
 	}
 }
@@ -206,11 +206,11 @@ func TestFocusScrollRecapturesAfterPreviewResize(t *testing.T) {
 	}
 	updated, _ = m.Update(recapture())
 	m = updated.(*Model)
-	if got, want := len(paneExact(m.preview, m.previewPaneHeight(), m.previewPaneWidth(), -1)), m.previewPaneHeight(); got != want {
+	if got, want := len(paneExact(m.workspace.preview, m.previewPaneHeight(), m.previewPaneWidth(), -1)), m.previewPaneHeight(); got != want {
 		t.Fatalf("scroll frame has %d rows, want %d", got, want)
 	}
-	if !strings.Contains(m.preview, "history-line-") {
-		t.Fatalf("recaptured frame lost history:\n%s", m.preview)
+	if !strings.Contains(m.workspace.preview, "history-line-") {
+		t.Fatalf("recaptured frame lost history:\n%s", m.workspace.preview)
 	}
 }
 
@@ -220,12 +220,12 @@ func TestFocusScrollRecapturesAfterPreviewResize(t *testing.T) {
 func TestFocusScrollKeepsDeepHistoryFrame(t *testing.T) {
 	m, sessID := focusedWithHistory(t, "deep-history")
 	command := `i=121; while [ "$i" -le 1000 ]; do printf 'history-line-%04d\n' "$i"; i=$((i+1)); done`
-	if err := m.tmux.SendText(sessID, command); err != nil {
+	if err := m.services.tmux.SendText(sessID, command); err != nil {
 		t.Fatalf("send deep history: %v", err)
 	}
 	deadline := time.Now().Add(10 * time.Second)
 	for {
-		pane, err := m.tmux.CapturePane(sessID)
+		pane, err := m.services.tmux.CapturePane(sessID)
 		if err != nil {
 			t.Fatalf("capture deep history: %v", err)
 		}
@@ -237,23 +237,23 @@ func TestFocusScrollKeepsDeepHistoryFrame(t *testing.T) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	m.pane.history = paneHistorySize(t, m, sessID)
-	if m.pane.history < 820 {
-		t.Skipf("tmux history is only %d lines", m.pane.history)
+	m.focusPane.pane.history = paneHistorySize(t, m, sessID)
+	if m.focusPane.pane.history < 820 {
+		t.Skipf("tmux history is only %d lines", m.focusPane.pane.history)
 	}
-	m.focusScroll = 807
-	cmd := m.focusRegionCmd(sessID, m.focusScroll)
+	m.focusPane.focusScroll = 807
+	cmd := m.focusRegionCmd(sessID, m.focusPane.focusScroll)
 	msg := cmd()
 	if msg == nil {
 		t.Fatal("deep capture returned nothing")
 	}
 	updated, _ := m.Update(msg)
 	m = updated.(*Model)
-	if got, want := len(paneExact(m.preview, m.previewPaneHeight(), m.previewPaneWidth(), -1)), m.previewPaneHeight(); got != want {
+	if got, want := len(paneExact(m.workspace.preview, m.previewPaneHeight(), m.previewPaneWidth(), -1)), m.previewPaneHeight(); got != want {
 		t.Fatalf("deep frame has %d rows, want %d", got, want)
 	}
-	if !strings.Contains(m.preview, "history-line-") {
-		t.Fatalf("deep frame lost history:\n%s", m.preview)
+	if !strings.Contains(m.workspace.preview, "history-line-") {
+		t.Fatalf("deep frame lost history:\n%s", m.workspace.preview)
 	}
 }
 
@@ -285,24 +285,24 @@ func TestTypingResumesLiveView(t *testing.T) {
 // empty regions forever.
 func TestScrollStopsAtHistoryTop(t *testing.T) {
 	m, _ := focusedWithHistory(t, "topstop")
-	limit := m.pane.history
+	limit := m.focusPane.pane.history
 	if limit == 0 {
 		t.Skip("pane reported no history")
 	}
 	// One capture rides the pipe at a time, so notches past the first
 	// return no command; the offset is what a notch always moves.
 	for i := 0; i < 500; i++ {
-		before := m.focusScroll
+		before := m.focusPane.focusScroll
 		m.scrollFocus(-1)
-		if m.focusScroll == before {
+		if m.focusPane.focusScroll == before {
 			break
 		}
 	}
-	if m.focusScroll > limit {
-		t.Fatalf("scrolled %d lines past a history of %d", m.focusScroll, limit)
+	if m.focusPane.focusScroll > limit {
+		t.Fatalf("scrolled %d lines past a history of %d", m.focusPane.focusScroll, limit)
 	}
-	if m.focusScroll != limit {
-		t.Fatalf("scrolling stopped at %d, want the history top %d", m.focusScroll, limit)
+	if m.focusPane.focusScroll != limit {
+		t.Fatalf("scrolling stopped at %d, want the history top %d", m.focusPane.focusScroll, limit)
 	}
 }
 
@@ -312,7 +312,7 @@ func TestScrollStopsAtHistoryTop(t *testing.T) {
 // queueing a full history capture per notch.
 func TestWheelBurstKeepsOneCaptureInFlight(t *testing.T) {
 	m, sessID := focusedWithHistory(t, "burst")
-	if m.pane.history == 0 {
+	if m.focusPane.pane.history == 0 {
 		t.Skip("pane reported no history")
 	}
 	if cmd := m.scrollFocus(-1); cmd == nil {
@@ -323,8 +323,8 @@ func TestWheelBurstKeepsOneCaptureInFlight(t *testing.T) {
 			t.Fatal("a notch behind an in-flight capture issued its own fetch")
 		}
 	}
-	moved := m.focusScroll
-	if moved != 6*focusScrollStep && moved != m.pane.history {
+	moved := m.focusPane.focusScroll
+	if moved != 6*focusScrollStep && moved != m.focusPane.pane.history {
 		t.Fatalf("offset = %d after 6 notches, want %d", moved, 6*focusScrollStep)
 	}
 	// The reply for the stale first target fetches the final viewport once.
@@ -334,12 +334,12 @@ func TestWheelBurstKeepsOneCaptureInFlight(t *testing.T) {
 		t.Fatal("the stale reply should issue the catch-up fetch")
 	}
 	// The catch-up's own reply lands on the live target and frees the pipe.
-	updated, _ = m.Update(focusScrollMsg{sessID: sessID, offset: m.focusScroll, rows: m.focusPaneRows(), preview: "frame\n", ok: true})
+	updated, _ = m.Update(focusScrollMsg{sessID: sessID, offset: m.focusPane.focusScroll, rows: m.focusPaneRows(), preview: "frame\n", ok: true})
 	*m = *updated.(*Model)
-	if m.focusFetchInFlight {
+	if m.focusPane.focusFetchInFlight {
 		t.Fatal("a reply at the live target should clear the in-flight guard")
 	}
-	if cmd := m.scrollFocus(-1); cmd == nil && m.focusScroll < m.pane.history {
+	if cmd := m.scrollFocus(-1); cmd == nil && m.focusPane.focusScroll < m.focusPane.pane.history {
 		t.Fatal("the next notch after settling should fetch again")
 	}
 }
@@ -347,12 +347,12 @@ func TestWheelBurstKeepsOneCaptureInFlight(t *testing.T) {
 // The caret belongs to the live pane; a scrolled view must not paint it.
 func TestNoCaretWhileScrolled(t *testing.T) {
 	m := paneAt(t, "one", "two")
-	m.pane.cursor = paneCursor{x: 1, y: 0, ok: true}
-	m.cursorOn = true
+	m.focusPane.pane.cursor = paneCursor{x: 1, y: 0, ok: true}
+	m.focusPane.cursorOn = true
 	if _, _, ok := m.cursorCell(2); !ok {
 		t.Fatal("caret missing on the live view")
 	}
-	m.focusScroll = 6
+	m.focusPane.focusScroll = 6
 	if _, _, ok := m.cursorCell(2); ok {
 		t.Fatal("caret drawn on a scrolled-back view")
 	}
@@ -368,7 +368,7 @@ func TestRefreshGrowsPaneHeightButNeverShrinksIt(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "sizer", t.TempDir(), "")
 	m.applyCmd(t, m.refreshCmd())
-	sess := m.rows[m.cursor].sess
+	sess := m.rail.rows[m.rail.cursor].sess
 
 	pinned := m.previewPaneHeight()
 	if got := windowHeight(t, sess.ID); got != pinned {
@@ -404,7 +404,7 @@ func TestTerminalShrinkLeavesPaneTall(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "shrunk", t.TempDir(), "")
 	m.applyCmd(t, m.refreshCmd())
-	sess := m.rows[m.cursor].sess
+	sess := m.rail.rows[m.rail.cursor].sess
 	pinned := windowHeight(t, sess.ID)
 
 	m.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height - 6})
@@ -425,7 +425,7 @@ func TestAdoptedTallerPaneIsNotShrunk(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "adopted", t.TempDir(), "")
 	m.applyCmd(t, m.refreshCmd())
-	sess := m.rows[m.cursor].sess
+	sess := m.rail.rows[m.rail.cursor].sess
 
 	width := m.previewPaneWidth()
 	taller := m.previewPaneHeight() + 10
@@ -434,7 +434,7 @@ func TestAdoptedTallerPaneIsNotShrunk(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resize-window: %v: %s", err, out)
 	}
-	m.pane.geom = nil
+	m.focusPane.pane.geom = nil
 	m.applyCmd(t, m.refreshCmd())
 	if got := windowHeight(t, sess.ID); got != taller {
 		t.Fatalf("adopted pane height = %d, want it kept at %d", got, taller)
@@ -449,7 +449,7 @@ func TestAltScreenPaneShrinksWithTheBox(t *testing.T) {
 	createSessionOn(t, m, "fullscreen", "quietchat", t.TempDir())
 	m.applyCmd(t, m.refreshCmd())
 	m.selectSessionRow(t, "fullscreen")
-	sess := m.rows[m.cursor].sess
+	sess := m.rail.rows[m.rail.cursor].sess
 	pinned := windowHeight(t, sess.ID)
 
 	// cat writes the enter sequence back to the pane, which tmux applies.
@@ -484,13 +484,13 @@ func TestAltScreenPaneShrinksWithTheBox(t *testing.T) {
 // fits_height, so its normal-screen pane follows the box down too.
 func TestFitsHeightToolShrinksWithTheBox(t *testing.T) {
 	m := buildModel(t)
-	tool := m.cfg.Tools["quietchat"]
+	tool := m.services.cfg.Tools["quietchat"]
 	tool.FitsHeight = true
-	m.cfg.Tools["quietchat"] = tool
+	m.services.cfg.Tools["quietchat"] = tool
 	createSessionOn(t, m, "inline", "quietchat", t.TempDir())
 	m.applyCmd(t, m.refreshCmd())
 	m.selectSessionRow(t, "inline")
-	sess := m.rows[m.cursor].sess
+	sess := m.rail.rows[m.rail.cursor].sess
 	pinned := windowHeight(t, sess.ID)
 
 	m.height -= 4
@@ -525,7 +525,7 @@ func TestFocusKeepsPaneHeight(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "focused", t.TempDir(), "")
 	m.applyCmd(t, m.refreshCmd())
-	sess := m.rows[m.cursor].sess
+	sess := m.rail.rows[m.rail.cursor].sess
 
 	for _, width := range []int{100, 240} {
 		m.width = width
@@ -541,7 +541,7 @@ func TestFocusKeepsPaneHeight(t *testing.T) {
 			t.Fatalf("width %d: focused pane = %d rows, want %d", width, got, listed)
 		}
 		// An agent claiming the mouse adds a key to the focused tier.
-		m.pane.mouse = true
+		m.focusPane.pane.mouse = true
 		if got := m.previewPaneHeight(); got != listed {
 			t.Fatalf("width %d: focused box with mouse = %d rows, want %d", width, got, listed)
 		}
@@ -549,7 +549,7 @@ func TestFocusKeepsPaneHeight(t *testing.T) {
 		if got := windowHeight(t, sess.ID); got != listed {
 			t.Fatalf("width %d: focused pane with mouse = %d rows, want %d", width, got, listed)
 		}
-		m.pane.mouse = false
+		m.focusPane.pane.mouse = false
 		m.applyCmd(t, m.leaveFocus())
 	}
 }
@@ -565,25 +565,25 @@ func focusedMouseApp(t *testing.T, tool, name string) (*Model, store.Session) {
 	}
 	m.applyCmd(t, m.refreshCmd())
 	m.selectSessionRow(t, name)
-	sess := m.rows[m.cursor].sess
+	sess := m.rail.rows[m.rail.cursor].sess
 
 	msgs := make(chan tea.Msg, 64)
-	m.focus = newFocusWatch(m.tmux, func(msg tea.Msg) { msgs <- msg })
-	t.Cleanup(m.focus.Close)
-	m.focus.setFocus(sess.ID)
+	m.focusPane.focus = newFocusWatch(m.services.tmux, func(msg tea.Msg) { msgs <- msg })
+	t.Cleanup(m.focusPane.focus.Close)
+	m.focusPane.focus.setFocus(sess.ID)
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	*m = *updated.(*Model)
 	m.View()
 
 	deadline := time.Now().Add(5 * time.Second)
-	for !m.focus.serving(sess.ID) {
+	for !m.focusPane.focus.serving(sess.ID) {
 		if time.Now().After(deadline) {
 			t.Skip("control client never came up on this host")
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
 	deadline = time.Now().Add(5 * time.Second)
-	for !m.pane.mouse {
+	for !m.focusPane.pane.mouse {
 		select {
 		case msg := <-msgs:
 			updated, _ := m.Update(msg)
@@ -605,15 +605,15 @@ func TestAltClickReachesMouseTrackingApp(t *testing.T) {
 
 	m.handleFocusMouse(tea.MouseMsg{
 		Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, Alt: true,
-		X: m.pane.box.x + 2, Y: m.pane.box.y + 1,
+		X: m.focusPane.pane.box.x + 2, Y: m.focusPane.pane.box.y + 1,
 	})
-	if m.sel.active {
+	if m.focusPane.sel.active {
 		t.Fatal("Alt-click on a mouse-tracking pane started a selection")
 	}
 
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		pane, err := m.tmux.CapturePane(sess.ID)
+		pane, err := m.services.tmux.CapturePane(sess.ID)
 		if err != nil {
 			t.Fatalf("capture: %v", err)
 		}
@@ -635,16 +635,16 @@ func TestAltClickReleaseOutsidePaneReachesMouseTrackingApp(t *testing.T) {
 	m, sess := focusedMouseApp(t, "mouse-tool", "outside-release")
 	m.handleFocusMouse(tea.MouseMsg{
 		Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, Alt: true,
-		X: m.pane.box.x + 2, Y: m.pane.box.y + 1,
+		X: m.focusPane.pane.box.x + 2, Y: m.focusPane.pane.box.y + 1,
 	})
 	m.handleFocusMouse(tea.MouseMsg{
 		Action: tea.MouseActionRelease, Button: tea.MouseButtonNone,
-		X: m.pane.box.x + m.pane.box.width, Y: m.pane.box.y + 1,
+		X: m.focusPane.pane.box.x + m.focusPane.pane.box.width, Y: m.focusPane.pane.box.y + 1,
 	})
 
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		pane, err := m.tmux.CapturePane(sess.ID)
+		pane, err := m.services.tmux.CapturePane(sess.ID)
 		if err != nil {
 			t.Fatalf("capture: %v", err)
 		}
@@ -668,17 +668,17 @@ func TestWheelReachesMouseTrackingApp(t *testing.T) {
 	m, sess := focusedMouseApp(t, "mouse-tool", "wheelapp")
 
 	// A wheel notch over the pane now goes to the app, not to tmux history.
-	before := m.focusScroll
-	m.wheelFocus(true, m.pane.box.x+2, m.pane.box.y+1)
-	if m.focusScroll != before {
+	before := m.focusPane.focusScroll
+	m.wheelFocus(true, m.focusPane.pane.box.x+2, m.focusPane.pane.box.y+1)
+	if m.focusPane.focusScroll != before {
 		t.Fatal("wheel scrolled tmux history while the app owned the mouse")
 	}
-	if !m.pane.sgr {
+	if !m.focusPane.pane.sgr {
 		t.Fatal("pane asked for SGR reports but the model did not read it")
 	}
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		pane, err := m.tmux.CapturePane(sess.ID)
+		pane, err := m.services.tmux.CapturePane(sess.ID)
 		if err != nil {
 			t.Fatalf("capture: %v", err)
 		}
@@ -710,9 +710,9 @@ func TestAppMouseClearsScrollback(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "sticky", t.TempDir(), "")
 	m.selectSessionRow(t, "sticky")
-	sess := m.rows[m.cursor].sess
+	sess := m.rail.rows[m.rail.cursor].sess
 	m.mode = modeFocus
-	m.focusScroll = 9
+	m.focusPane.focusScroll = 9
 	if !m.scrolledBack() {
 		t.Fatal("setup did not leave the view scrolled back")
 	}
@@ -723,11 +723,11 @@ func TestAppMouseClearsScrollback(t *testing.T) {
 		paneMouse: true,
 	})
 	m = updated.(*Model)
-	if m.focusScroll != 0 {
-		t.Fatalf("focusScroll = %d, want the app-owned pane back at the bottom", m.focusScroll)
+	if m.focusPane.focusScroll != 0 {
+		t.Fatalf("focusScroll = %d, want the app-owned pane back at the bottom", m.focusPane.focusScroll)
 	}
-	if m.preview != "LIVE-FRAME\n" {
-		t.Fatalf("preview = %q, want the live frame", m.preview)
+	if m.workspace.preview != "LIVE-FRAME\n" {
+		t.Fatalf("preview = %q, want the live frame", m.workspace.preview)
 	}
 }
 
@@ -740,11 +740,11 @@ func TestStaleMouseClaimDoesNotClearHistoryScroll(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "stale-hold", t.TempDir(), "")
 	m.selectSessionRow(t, "stale-hold")
-	sess := m.rows[m.cursor].sess
+	sess := m.rail.rows[m.rail.cursor].sess
 	m.mode = modeFocus
-	m.preview = "SCROLLED-FRAME\n"
-	m.focusScroll = 9
-	m.pane.history = 80
+	m.workspace.preview = "SCROLLED-FRAME\n"
+	m.focusPane.focusScroll = 9
+	m.focusPane.pane.history = 80
 
 	updated, _ := m.Update(focusPreviewMsg{
 		sessID:      sess.ID,
@@ -753,11 +753,11 @@ func TestStaleMouseClaimDoesNotClearHistoryScroll(t *testing.T) {
 		historySize: 80,
 	})
 	m = updated.(*Model)
-	if m.focusScroll != 9 {
-		t.Fatalf("focusScroll = %d, want the history offset kept", m.focusScroll)
+	if m.focusPane.focusScroll != 9 {
+		t.Fatalf("focusScroll = %d, want the history offset kept", m.focusPane.focusScroll)
 	}
-	if m.preview != "SCROLLED-FRAME\n" {
-		t.Fatalf("preview = %q, want the scrolled frame held", m.preview)
+	if m.workspace.preview != "SCROLLED-FRAME\n" {
+		t.Fatalf("preview = %q, want the scrolled frame held", m.workspace.preview)
 	}
 }
 
@@ -767,20 +767,20 @@ func TestPolledFrameHoldsScrolledView(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "polled", t.TempDir(), "")
 	m.selectSessionRow(t, "polled")
-	sess := m.rows[m.cursor].sess
+	sess := m.rail.rows[m.rail.cursor].sess
 	m.mode = modeFocus
-	m.preview = "SCROLLED-FRAME\n"
-	m.focusScroll = 6
+	m.workspace.preview = "SCROLLED-FRAME\n"
+	m.focusPane.focusScroll = 6
 
 	m.setPreview(sess.ID, "LIVE-FRAME\n")
-	if m.preview != "SCROLLED-FRAME\n" {
-		t.Fatalf("preview = %q, want the scrolled frame held", m.preview)
+	if m.workspace.preview != "SCROLLED-FRAME\n" {
+		t.Fatalf("preview = %q, want the scrolled frame held", m.workspace.preview)
 	}
 
-	m.focusScroll = 0
+	m.focusPane.focusScroll = 0
 	m.setPreview(sess.ID, "LIVE-FRAME\n")
-	if m.preview != "LIVE-FRAME\n" {
-		t.Fatalf("preview = %q, want the live frame back at the bottom", m.preview)
+	if m.workspace.preview != "LIVE-FRAME\n" {
+		t.Fatalf("preview = %q, want the live frame back at the bottom", m.workspace.preview)
 	}
 }
 
@@ -788,14 +788,14 @@ func TestPolledFrameHoldsScrolledView(t *testing.T) {
 // encoding, and reports in the newer one would reach it as text.
 func TestWheelFallsBackToX10Reports(t *testing.T) {
 	m, sess := focusedMouseApp(t, "x10-tool", "x10app")
-	if m.pane.sgr {
+	if m.focusPane.pane.sgr {
 		t.Fatal("a pane that never asked for SGR reported it")
 	}
 
-	m.wheelFocus(true, m.pane.box.x+2, m.pane.box.y+1)
+	m.wheelFocus(true, m.focusPane.pane.box.x+2, m.focusPane.pane.box.y+1)
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		pane, err := m.tmux.CapturePane(sess.ID)
+		pane, err := m.services.tmux.CapturePane(sess.ID)
 		if err != nil {
 			t.Fatalf("capture: %v", err)
 		}
@@ -862,19 +862,19 @@ func TestFocusReentryKeepsPaneStateOnQuietPane(t *testing.T) {
 		t.Fatalf("did not re-enter focus: %q", m.errBar.text)
 	}
 
-	if !m.pane.mouse {
+	if !m.focusPane.pane.mouse {
 		t.Fatal("re-entering focus dropped the pane's mouse claim")
 	}
-	if !m.pane.sgr {
+	if !m.focusPane.pane.sgr {
 		t.Fatal("re-entering focus dropped the pane's SGR encoding")
 	}
 	m.View()
 
 	// The wheel still reaches the app, with no pushed capture in between.
-	m.wheelFocus(true, m.pane.box.x+2, m.pane.box.y+1)
+	m.wheelFocus(true, m.focusPane.pane.box.x+2, m.focusPane.pane.box.y+1)
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		pane, err := m.tmux.CapturePane(sess.ID)
+		pane, err := m.services.tmux.CapturePane(sess.ID)
 		if err != nil {
 			t.Fatalf("capture: %v", err)
 		}
@@ -890,10 +890,10 @@ func TestFocusReentryKeepsPaneStateOnQuietPane(t *testing.T) {
 	// A cache stamped by another session's capture still resets, serving
 	// client or not: this session's first capture may not have landed.
 	m.leaveFocus()
-	m.pane.forID = "someone-else"
+	m.focusPane.pane.forID = "someone-else"
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	*m = *updated.(*Model)
-	if m.pane.mouse {
+	if m.focusPane.pane.mouse {
 		t.Fatal("another session's cached flags survived focus entry")
 	}
 }
@@ -902,13 +902,13 @@ func TestFocusReentryKeepsPaneStateOnQuietPane(t *testing.T) {
 // whatever the panel dropped off the top of a taller capture.
 func TestWheelReportUsesPaneRow(t *testing.T) {
 	m := paneAt(t, "one", "two")
-	m.pane.sgr = true
-	m.preview = "a\nb\nc\nd\none\ntwo\n"
+	m.focusPane.pane.sgr = true
+	m.workspace.preview = "a\nb\nc\nd\none\ntwo\n"
 
-	if got, want := m.paneRowOffset(m.pane.box.height), 4; got != want {
+	if got, want := m.paneRowOffset(m.focusPane.pane.box.height), 4; got != want {
 		t.Fatalf("row offset = %d, want %d", got, want)
 	}
-	report, ok := m.wheelReport(true, 3, 1+m.paneRowOffset(m.pane.box.height))
+	report, ok := m.wheelReport(true, 3, 1+m.paneRowOffset(m.focusPane.pane.box.height))
 	if !ok {
 		t.Fatal("no wheel report for a pane inside the encoding's range")
 	}

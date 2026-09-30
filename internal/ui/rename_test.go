@@ -2,6 +2,7 @@ package ui
 
 import (
 	"errors"
+	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -30,18 +31,18 @@ func TestRenameGroupCascades(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
 
-	if err := m.store.CreateGroup("old/inner", ""); err != nil {
+	if err := m.services.store.CreateGroup("old/inner", ""); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
 	createSession(t, m, "kid", dir, "old/inner")
 
-	for i, r := range m.rows {
+	for i, r := range m.rail.rows {
 		if r.isGroup && r.group == "old" {
-			m.cursor = i
+			m.rail.cursor = i
 		}
 	}
-	m.collapsed["old"] = true
+	m.rail.collapsed["old"] = true
 	m.rebuildRows()
 	m.openRename()
 	if !m.rename.isGroup || m.rename.path != "old" {
@@ -55,16 +56,16 @@ func TestRenameGroupCascades(t *testing.T) {
 	if len(kid) != 0 {
 		t.Fatalf("fresh should stay collapsed after rename, got %d sessions", len(kid))
 	}
-	if !m.collapsed["fresh"] || m.collapsed["old"] {
-		t.Fatalf("collapse state should follow rename: %v", m.collapsed)
+	if !m.rail.collapsed["fresh"] || m.rail.collapsed["old"] {
+		t.Fatalf("collapse state should follow rename: %v", m.rail.collapsed)
 	}
-	m.collapsed["fresh"] = false
+	m.rail.collapsed["fresh"] = false
 	m.rebuildRows()
 	sessions := m.sessionRows()
 	if len(sessions) != 1 || sessions[0].Group != "fresh/inner" {
 		t.Fatalf("session group should cascade to fresh/inner, got %+v", sessions)
 	}
-	groups, _ := m.store.Groups()
+	groups, _ := m.services.store.Groups()
 	for _, g := range groups {
 		if strings.HasPrefix(g.Name, "old") {
 			t.Fatalf("old group path survived rename: %v", groups)
@@ -77,7 +78,7 @@ func TestRenameSession(t *testing.T) {
 	createSession(t, m, "before", t.TempDir(), "")
 	m.selectSessionRow(t, "before")
 	id := m.sessionRows()[0].ID
-	if err := m.store.SetAgentSessionID(id, "conv-keep"); err != nil {
+	if err := m.services.store.SetAgentSessionID(id, "conv-keep"); err != nil {
 		t.Fatalf("set agent id: %v", err)
 	}
 	m.openRename()
@@ -88,7 +89,7 @@ func TestRenameSession(t *testing.T) {
 	if got.Name != "after" {
 		t.Fatalf("rename failed: %+v", got)
 	}
-	stored, err := m.store.Get(id)
+	stored, err := m.services.store.Get(id)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -114,7 +115,7 @@ func TestRenameSessionKeepsItsWorktreeDirectory(t *testing.T) {
 		t.Fatalf("rename reported: %s", m.errBar.text)
 	}
 
-	stored, err := m.store.Get(spawned.ID)
+	stored, err := m.services.store.Get(spawned.ID)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -151,7 +152,7 @@ func TestRenameSessionRefusesSharedWorktree(t *testing.T) {
 	forked := spawned
 	forked.ID = "shared-fork"
 	forked.Name = "forked"
-	if err := m.store.CreateSession(forked); err != nil {
+	if err := m.services.store.CreateSession(forked); err != nil {
 		t.Fatal(err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -189,7 +190,7 @@ func TestRenameSessionRefusesAWorktreeNameAlreadyTaken(t *testing.T) {
 	if m.mode != modeRename {
 		t.Fatalf("mode = %v, want the rename card still open to fix the name", m.mode)
 	}
-	stored, err := m.store.Get(spawned.ID)
+	stored, err := m.services.store.Get(spawned.ID)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -207,16 +208,16 @@ func TestRenameSessionWorktreeBranchPutsItBackWhenTheStoreRefuses(t *testing.T) 
 	spawned := createWorktreeSession(t, m, "claude-7a72", repo)
 
 	storeErr := errors.New("store refused branch")
-	refusingStore := &refusingWorktreeBranchStore{Store: m.store, err: storeErr}
+	refusingStore := &refusingWorktreeBranchStore{Store: m.services.store, err: storeErr}
 	sess := spawned
-	err := renameSessionWorktreeBranch(m.gitDrv, refusingStore, &sess, "renamed")
+	err := sessioncmd.RenameWorktreeBranch(m.services.gitDrv, refusingStore, &sess, "renamed")
 	if !errors.Is(err, storeErr) {
 		t.Fatalf("rename error = %v, want store refusal", err)
 	}
 	if sess.Cwd != spawned.Cwd || sess.WorktreeBranch != spawned.WorktreeBranch {
 		t.Fatalf("session changed anyway: %+v", sess)
 	}
-	stored, err := m.store.Get(spawned.ID)
+	stored, err := m.services.store.Get(spawned.ID)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -246,7 +247,7 @@ func TestRenameSessionWorktreeBranchReportsRollbackNoOp(t *testing.T) {
 
 	storeErr := errors.New("store refused branch")
 	refusingStore := &refusingWorktreeBranchStore{
-		Store: m.store,
+		Store: m.services.store,
 		err:   storeErr,
 		beforeRefusal: func(branch string) {
 			cmd := exec.Command("git", "-C", spawned.Cwd, "branch", "-m", branch, "feat/taken-over")
@@ -256,11 +257,11 @@ func TestRenameSessionWorktreeBranchReportsRollbackNoOp(t *testing.T) {
 		},
 	}
 	sess := spawned
-	err := renameSessionWorktreeBranch(m.gitDrv, refusingStore, &sess, "renamed")
+	err := sessioncmd.RenameWorktreeBranch(m.services.gitDrv, refusingStore, &sess, "renamed")
 	if !errors.Is(err, storeErr) || !strings.Contains(err.Error(), "rollback returned am/renamed instead of "+spawned.WorktreeBranch) {
 		t.Fatalf("rename error = %v", err)
 	}
-	stored, getErr := m.store.Get(spawned.ID)
+	stored, getErr := m.services.store.Get(spawned.ID)
 	if getErr != nil {
 		t.Fatalf("get: %v", getErr)
 	}
@@ -280,7 +281,7 @@ func TestRenameSessionWorktreeBranchPreservesRollbackError(t *testing.T) {
 
 	storeErr := errors.New("store refused branch")
 	refusingStore := &refusingWorktreeBranchStore{
-		Store: m.store,
+		Store: m.services.store,
 		err:   storeErr,
 		beforeRefusal: func(string) {
 			// The name the rollback wants is taken again in the meantime, so
@@ -292,7 +293,7 @@ func TestRenameSessionWorktreeBranchPreservesRollbackError(t *testing.T) {
 		},
 	}
 	sess := spawned
-	err := renameSessionWorktreeBranch(m.gitDrv, refusingStore, &sess, "renamed")
+	err := sessioncmd.RenameWorktreeBranch(m.services.gitDrv, refusingStore, &sess, "renamed")
 	if !errors.Is(err, storeErr) {
 		t.Fatalf("rename error = %v, want store refusal", err)
 	}
@@ -315,7 +316,7 @@ func TestRenameSessionWorktreeBranchReportsASwitchedRollback(t *testing.T) {
 
 	storeErr := errors.New("store refused branch")
 	refusingStore := &refusingWorktreeBranchStore{
-		Store: m.store,
+		Store: m.services.store,
 		err:   storeErr,
 		beforeRefusal: func(string) {
 			cmd := exec.Command("git", "-C", spawned.Cwd, "switch", "-c", "feat/taken-over")
@@ -325,7 +326,7 @@ func TestRenameSessionWorktreeBranchReportsASwitchedRollback(t *testing.T) {
 		},
 	}
 	sess := spawned
-	err := renameSessionWorktreeBranch(m.gitDrv, refusingStore, &sess, "renamed")
+	err := sessioncmd.RenameWorktreeBranch(m.services.gitDrv, refusingStore, &sess, "renamed")
 	if !errors.Is(err, storeErr) || !strings.Contains(err.Error(), "rollback returned am/renamed instead of "+spawned.WorktreeBranch) {
 		t.Fatalf("rename error = %v", err)
 	}
@@ -378,7 +379,7 @@ func TestRenameThenSharedSessionKeepsSpawnPath(t *testing.T) {
 		t.Fatalf("rename reported: %s", m.errBar.text)
 	}
 
-	stored, err := m.store.Get(spawned.ID)
+	stored, err := m.services.store.Get(spawned.ID)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -389,10 +390,10 @@ func TestRenameThenSharedSessionKeepsSpawnPath(t *testing.T) {
 	forked := stored
 	forked.ID = "shared-fork"
 	forked.Name = "child fork"
-	if err := m.tmux.Create(forked.ID, forked.Cwd, "cat", nil, m.previewPaneWidth(), m.previewPaneHeight()); err != nil {
+	if err := m.services.tmux.Create(forked.ID, forked.Cwd, "cat", nil, m.previewPaneWidth(), m.previewPaneHeight()); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.store.CreateSession(forked); err != nil {
+	if err := m.services.store.CreateSession(forked); err != nil {
 		t.Fatal(err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -407,7 +408,7 @@ func TestRenameThenSharedSessionKeepsSpawnPath(t *testing.T) {
 	if _, err := os.Stat(spawned.Cwd); err != nil {
 		t.Fatalf("shared spawn-time directory moved: %v", err)
 	}
-	child, err := m.store.Get("shared-fork")
+	child, err := m.services.store.Get("shared-fork")
 	if err != nil {
 		t.Fatalf("get fork: %v", err)
 	}
@@ -454,7 +455,7 @@ func TestRenameSessionWithoutAWorktreeIsUnchanged(t *testing.T) {
 	_, cmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m.applyCmd(t, cmd)
 
-	stored, err := m.store.Get(spawned.ID)
+	stored, err := m.services.store.Get(spawned.ID)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -471,7 +472,7 @@ func TestRenameSessionChangesTool(t *testing.T) {
 	if start.Tool != "claude" {
 		t.Fatalf("setup tool = %q want claude", start.Tool)
 	}
-	if err := m.store.SetAgentSessionID(start.ID, "conv-1"); err != nil {
+	if err := m.services.store.SetAgentSessionID(start.ID, "conv-1"); err != nil {
 		t.Fatalf("set agent id: %v", err)
 	}
 	m.openRename()
@@ -495,7 +496,7 @@ func TestRenameSessionChangesTool(t *testing.T) {
 	if got.AgentSessionID != "" {
 		t.Fatalf("agent session id should clear on tool change, got %q", got.AgentSessionID)
 	}
-	stored, err := m.store.Get(got.ID)
+	stored, err := m.services.store.Get(got.ID)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -508,13 +509,13 @@ func TestEditGroupRenamesAndSetsPath(t *testing.T) {
 	m := buildModel(t)
 	oldDir := t.TempDir()
 	newDir := t.TempDir()
-	if err := m.store.CreateGroup("backend", oldDir); err != nil {
+	if err := m.services.store.CreateGroup("backend", oldDir); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
-	for i, row := range m.rows {
+	for i, row := range m.rail.rows {
 		if row.isGroup && row.group == "backend" {
-			m.cursor = i
+			m.rail.cursor = i
 		}
 	}
 
@@ -532,23 +533,23 @@ func TestEditGroupRenamesAndSetsPath(t *testing.T) {
 	}
 	m.applyCmd(t, m.refreshCmd())
 
-	if m.groupPaths["platform"] != newDir {
-		t.Fatalf("platform path = %q want %q", m.groupPaths["platform"], newDir)
+	if m.workspace.groupPaths["platform"] != newDir {
+		t.Fatalf("platform path = %q want %q", m.workspace.groupPaths["platform"], newDir)
 	}
-	if _, exists := m.groupPaths["backend"]; exists {
+	if _, exists := m.workspace.groupPaths["backend"]; exists {
 		t.Fatal("old group name should be gone")
 	}
 }
 
 func TestEditGroupRejectsMissingPath(t *testing.T) {
 	m := buildModel(t)
-	if err := m.store.CreateGroup("backend", ""); err != nil {
+	if err := m.services.store.CreateGroup("backend", ""); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
-	for i, row := range m.rows {
+	for i, row := range m.rail.rows {
 		if row.isGroup && row.group == "backend" {
-			m.cursor = i
+			m.rail.cursor = i
 		}
 	}
 	m.openRename()
@@ -573,13 +574,13 @@ func TestGroupPathNeverEmpty(t *testing.T) {
 		t.Fatalf("submit: %q", m.errBar.text)
 	}
 	m.applyCmd(t, m.refreshCmd())
-	if m.groupPaths["zone"] == "" {
+	if m.workspace.groupPaths["zone"] == "" {
 		t.Fatal("created group should get a resolved default path, not empty")
 	}
 
-	for i, row := range m.rows {
+	for i, row := range m.rail.rows {
 		if row.isGroup && row.group == "zone" {
-			m.cursor = i
+			m.rail.cursor = i
 		}
 	}
 	m.openRename()
@@ -591,7 +592,7 @@ func TestGroupPathNeverEmpty(t *testing.T) {
 		t.Fatalf("apply: %q", m.errBar.text)
 	}
 	m.applyCmd(t, m.refreshCmd())
-	if m.groupPaths["zone"] == "" {
+	if m.workspace.groupPaths["zone"] == "" {
 		t.Fatal("edited group should keep a resolved path when cleared")
 	}
 }
@@ -599,7 +600,7 @@ func TestGroupPathNeverEmpty(t *testing.T) {
 func TestRenameAgentToShellWithChildrenRefused(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
-	if err := m.store.CreateGroup("backend", dir); err != nil {
+	if err := m.services.store.CreateGroup("backend", dir); err != nil {
 		t.Fatalf("group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -619,7 +620,7 @@ func TestRenameAgentToShellWithChildrenRefused(t *testing.T) {
 	if m.errBar.text == "" {
 		t.Fatal("expected refuse")
 	}
-	got, _ := m.store.Get(m.sessionRows()[0].ID)
+	got, _ := m.services.store.Get(m.sessionRows()[0].ID)
 	if m.isShell(got.Tool) {
 		t.Fatalf("tool became %q", got.Tool)
 	}
@@ -630,7 +631,7 @@ func TestRenameAgentToShellWithChildrenRefused(t *testing.T) {
 
 func TestGroupEditPersistsWorktreeChoice(t *testing.T) {
 	m := buildModel(t)
-	if err := m.store.CreateGroup("grp", t.TempDir()); err != nil {
+	if err := m.services.store.CreateGroup("grp", t.TempDir()); err != nil {
 		t.Fatalf("group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -644,7 +645,7 @@ func TestGroupEditPersistsWorktreeChoice(t *testing.T) {
 	m.handleRenameKey(tea.KeyMsg{Type: tea.KeyRight})
 	_, cmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m.applyCmd(t, cmd)
-	groups, err := m.store.Groups()
+	groups, err := m.services.store.Groups()
 	if err != nil {
 		t.Fatalf("groups: %v", err)
 	}
@@ -661,7 +662,7 @@ func TestGroupEditPersistsWorktreeChoice(t *testing.T) {
 
 func assertPaneStayedOnSpawnPath(t *testing.T, m *Model, id, want string) {
 	t.Helper()
-	got, err := m.tmux.PaneCurrentPath(id)
+	got, err := m.services.tmux.PaneCurrentPath(id)
 	if err != nil {
 		t.Fatalf("pane path: %v", err)
 	}

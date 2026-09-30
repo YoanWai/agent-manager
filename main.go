@@ -1,24 +1,24 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 
+	"github.com/YoanWai/agent-manager/internal/app"
 	"github.com/YoanWai/agent-manager/internal/cli"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/mcpserver"
 	"github.com/YoanWai/agent-manager/internal/notify"
-	"github.com/YoanWai/agent-manager/internal/status"
-	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/YoanWai/agent-manager/internal/ui"
 	"github.com/YoanWai/agent-manager/internal/update"
@@ -108,13 +108,25 @@ func printHelp(w io.Writer) error {
 func subcommands() map[string]func(args []string) error {
 	table := map[string]func(args []string) error{
 		"mcp": withConfigDir(func(args []string, caller func() string, configDir string) error {
-			return mcpserver.Run(configDir, caller(), version)
+			return withBackend(configDir, func(backend *sessioncmd.Backend) error {
+				return mcpserver.RunWithBackend(configDir, caller(), version, backend)
+			})
 		}),
 	}
-	for name, command := range cli.Commands(version) {
-		table[name] = withConfigDir(command)
+	for name := range cli.Commands(version) {
+		table[name] = withConfigDir(func(args []string, caller func() string, configDir string) error {
+			return withBackend(configDir, func(backend *sessioncmd.Backend) error {
+				return cli.CommandsWithBackend(version, backend)[name](args, caller, configDir)
+			})
+		})
 	}
 	return table
+}
+
+func withBackend(configDir string, command func(*sessioncmd.Backend) error) (err error) {
+	backend := sessioncmd.OpenBackend(configDir)
+	defer func() { err = errors.Join(err, backend.Close()) }()
+	return command(backend)
 }
 
 func withConfigDir(command cli.Command) func([]string) error {
@@ -182,36 +194,26 @@ func sessionFromAncestry() string {
 	return id
 }
 
-func run() error {
-	cfg, err := config.Load()
-	if err != nil {
-		return err
-	}
-
-	driver, err := tmux.New()
-	if err != nil {
-		return err
-	}
-
-	engine, err := status.NewEngine(cfg)
-	if err != nil {
-		return err
-	}
-
+func run() (resultErr error) {
 	dir, err := config.Dir()
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	st, err := store.Open(filepath.Join(dir, "state.db"))
+	driver, err := tmux.New()
 	if err != nil {
 		return err
 	}
-	defer st.Close()
+	local, err := app.OpenLocal(dir, driver)
+	if err != nil {
+		return err
+	}
+	defer func() { resultErr = errors.Join(resultErr, local.Close()) }()
+	rt := local.Runtime
+	model := ui.NewWithServices(ui.Dependencies{
+		Config: rt.Config, Store: rt.Store, TMux: rt.Driver, Engine: local.Engine, Hooks: rt.Hooks,
+		Git: rt.Git, Lifecycle: local.Lifecycle, Execution: local.Execution, ProfileDir: dir,
+	}, version)
 
-	model := ui.New(cfg, st, driver, engine, hooks.NewManager(dir), version)
 	// Mouse reporting claims the wheel for the app, so a notch neither
 	// scrolls the host's scrollback out from under the manager nor arrives
 	// as an arrow key that walks the session cursor. Alternate scroll is
@@ -229,7 +231,9 @@ func run() error {
 	// through tmux's passthrough envelope when a multiplexer is hosting us.
 	ui.EnableTerminalPassthrough()
 	ui.SyncTerminalBackground()
-	model.StartPoller(program.Send)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := model.StartPoller(ctx, program.Send)
+	defer func() { cancel(); <-done }()
 	final, runErr := program.Run()
 	ui.ResetTerminalBackground()
 	if runErr == nil {

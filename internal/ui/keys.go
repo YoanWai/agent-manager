@@ -26,11 +26,11 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.split.resizeMode {
 		key := keybind.Normalize(msg.String())
 		switch {
-		case key == "enter" || m.listKeys.Binding(keybind.Resize).Has(key):
+		case key == "enter" || m.services.listKeys.Binding(keybind.Resize).Has(key):
 			return m.exitResizeMode(true)
 		case key == "esc":
 			return m.exitResizeMode(false)
-		case key == "ctrl+c" || m.listKeys.Binding(keybind.Quit).Has(key):
+		case key == "ctrl+c" || m.services.listKeys.Binding(keybind.Quit).Has(key):
 			m.persistSplitRatio()
 			m.split.resizeMode = false
 			m.split.dragging = false
@@ -78,15 +78,15 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// A lifted row and an open menu sit on top of the quick bar, so they
 	// take the keys first.
-	if m.reorder.active {
+	if m.rail.reorder.active {
 		return m.handleReorderKey(msg)
 	}
-	if m.menu.active {
+	if m.rail.menu.active {
 		model, cmd := m.handleMenuKey(msg)
 		m.closeQuickOffTheList()
 		return model, cmd
 	}
-	if m.searching {
+	if m.rail.searching {
 		return m.handleSearchKey(msg)
 	}
 	if m.quick.active {
@@ -99,7 +99,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		return m, m.clearSearch()
 	}
-	action, _ := m.listKeys.ActionFor(keybind.Normalize(msg.String()))
+	action, _ := m.services.listKeys.ActionFor(keybind.Normalize(msg.String()))
 	return m.runListAction(action)
 }
 
@@ -127,21 +127,21 @@ func (m *Model) runListAction(action string) (tea.Model, tea.Cmd) {
 		}
 		return m.attachSelected()
 	case keybind.StepIn:
-		if !m.arrowStep {
+		if !m.prefs.arrowStep {
 			return m, nil
 		}
 		if entry, ok := m.selectedRow(); ok && entry.isGroup {
-			if m.collapsed[entry.group] {
+			if m.rail.collapsed[entry.group] {
 				m.toggleCollapse()
 			}
 			return m, nil
 		}
 		return m.focusSelected()
 	case keybind.StepOut:
-		if !m.arrowStep {
+		if !m.prefs.arrowStep {
 			return m, nil
 		}
-		if entry, ok := m.selectedRow(); ok && entry.isGroup && !m.collapsed[entry.group] {
+		if entry, ok := m.selectedRow(); ok && entry.isGroup && !m.rail.collapsed[entry.group] {
 			m.toggleCollapse()
 		}
 		return m, nil
@@ -187,7 +187,7 @@ func (m *Model) runListAction(action string) (tea.Model, tea.Cmd) {
 	case keybind.Resize:
 		return m.enterResizeMode()
 	case keybind.Archived:
-		m.showArchived = !m.showArchived
+		m.rail.showArchived = !m.rail.showArchived
 		m.requestRefresh()
 	case keybind.Terminal:
 		return m.terminalKey()
@@ -196,7 +196,7 @@ func (m *Model) runListAction(action string) (tea.Model, tea.Cmd) {
 	case keybind.EmptyGroups:
 		return m, m.toggleEmptyGroups()
 	case keybind.Search:
-		m.searching = true
+		m.rail.searching = true
 		m.errBar.text = ""
 	case keybind.Rename:
 		m.openRename()
@@ -217,14 +217,14 @@ func (m *Model) runListAction(action string) (tea.Model, tea.Cmd) {
 // single capture runs after the cursor settles so holding j/k cannot pile
 // up tmux work.
 func (m *Model) moveCursor(delta int) tea.Cmd {
-	if len(m.rows) == 0 {
+	if len(m.rail.rows) == 0 {
 		return nil
 	}
-	next := m.cursor + delta
+	next := m.rail.cursor + delta
 	if next < 0 {
-		next = len(m.rows) - 1
+		next = len(m.rail.rows) - 1
 	}
-	if next >= len(m.rows) {
+	if next >= len(m.rail.rows) {
 		next = 0
 	}
 	return m.selectRow(next)
@@ -235,10 +235,10 @@ func (m *Model) moveCursor(delta int) tea.Cmd {
 // so wrapping there would fling the selection to the far end mid-gesture
 // and aim every key after it somewhere the user never looked.
 func (m *Model) scrollCursor(delta int) tea.Cmd {
-	if len(m.rows) == 0 {
+	if len(m.rail.rows) == 0 {
 		return nil
 	}
-	return m.selectRow(min(max(m.cursor+delta, 0), len(m.rows)-1))
+	return m.selectRow(min(max(m.rail.cursor+delta, 0), len(m.rail.rows)-1))
 }
 
 // selectRow moves the cursor straight to index, the shared tail moveCursor
@@ -246,17 +246,17 @@ func (m *Model) scrollCursor(delta int) tea.Cmd {
 // one. A click on the row already selected is a no-op, same as a wheel
 // notch that would not move the cursor.
 func (m *Model) selectRow(index int) tea.Cmd {
-	if index < 0 || index >= len(m.rows) || index == m.cursor {
+	if index < 0 || index >= len(m.rail.rows) || index == m.rail.cursor {
 		return nil
 	}
-	m.cursor = index
-	m.preview = ""
-	m.proc = sysstat.ProcStat{}
-	m.procFor = ""
+	m.rail.cursor = index
+	m.workspace.preview = ""
+	m.workspace.proc = sysstat.ProcStat{}
+	m.workspace.procFor = ""
 	if _, ok := m.selected(); !ok {
 		return nil
 	}
-	m.previewGen++
+	m.focusPane.previewGen++
 	return m.schedulePreview()
 }
 
@@ -310,9 +310,9 @@ func (m *Model) swapRows(entry, target treeRow) error {
 	var groupSiblings []string
 	if entry.isGroup {
 		groupSiblings = m.knownGroupSiblings(parentGroup(entry.group))
-		err = m.store.SwapGroupOrder(entry.group, target.group, groupSiblings...)
+		err = m.services.store.SwapGroupOrder(entry.group, target.group, groupSiblings...)
 	} else {
-		err = m.store.SwapSessionOrder(entry.sess.ID, target.sess.ID)
+		err = m.services.store.SwapSessionOrder(entry.sess.ID, target.sess.ID)
 	}
 	if err != nil {
 		return err
@@ -337,8 +337,8 @@ func (m *Model) visibleReorderTarget(entry treeRow, delta int) (treeRow, bool) {
 	if delta < 0 {
 		step = -1
 	}
-	for i := m.cursor + step; i >= 0 && i < len(m.rows); i += step {
-		candidate := m.rows[i]
+	for i := m.rail.cursor + step; i >= 0 && i < len(m.rail.rows); i += step {
+		candidate := m.rail.rows[i]
 		if candidate.isRoot() {
 			// parentGroup("") is "" too, so root would match a top-level
 			// group as its own sibling.
@@ -358,18 +358,18 @@ func (m *Model) visibleReorderTarget(entry treeRow, delta int) (treeRow, bool) {
 }
 
 func (m *Model) knownGroupSiblings(parent string) []string {
-	paths := groupClosure(m.groups, m.sessions)
-	return childIndex(paths, m.groups)[parent]
+	paths := groupClosure(m.workspace.groups, m.workspace.sessions)
+	return childIndex(paths, m.workspace.groups)[parent]
 }
 
 func (m *Model) materializeGroupsLocal(paths []string) {
-	known := make(map[string]bool, len(m.groups))
-	for _, group := range m.groups {
+	known := make(map[string]bool, len(m.workspace.groups))
+	for _, group := range m.workspace.groups {
 		known[group] = true
 	}
 	for _, path := range paths {
 		if !known[path] {
-			m.groups = append(m.groups, path)
+			m.workspace.groups = append(m.workspace.groups, path)
 			known[path] = true
 		}
 	}
@@ -377,7 +377,7 @@ func (m *Model) materializeGroupsLocal(paths []string) {
 
 func (m *Model) swapSessionLocal(id, targetID string) {
 	current, target := -1, -1
-	for i, sess := range m.sessions {
+	for i, sess := range m.workspace.sessions {
 		switch sess.ID {
 		case id:
 			current = i
@@ -386,13 +386,13 @@ func (m *Model) swapSessionLocal(id, targetID string) {
 		}
 	}
 	if current >= 0 && target >= 0 {
-		m.sessions[current], m.sessions[target] = m.sessions[target], m.sessions[current]
+		m.workspace.sessions[current], m.workspace.sessions[target] = m.workspace.sessions[target], m.workspace.sessions[current]
 	}
 }
 
 func (m *Model) swapGroupLocal(path, targetPath string) {
 	current, target := -1, -1
-	for i, name := range m.groups {
+	for i, name := range m.workspace.groups {
 		switch name {
 		case path:
 			current = i
@@ -401,7 +401,7 @@ func (m *Model) swapGroupLocal(path, targetPath string) {
 		}
 	}
 	if current >= 0 && target >= 0 {
-		m.groups[current], m.groups[target] = m.groups[target], m.groups[current]
+		m.workspace.groups[current], m.workspace.groups[target] = m.workspace.groups[target], m.workspace.groups[current]
 	}
 }
 
@@ -417,7 +417,7 @@ func (m *Model) toggleCollapse() {
 	if path == "" {
 		return
 	}
-	m.collapsed[path] = !m.collapsed[path]
+	m.rail.collapsed[path] = !m.rail.collapsed[path]
 	m.persistCollapsed()
 	m.rebuildRows()
 }
@@ -425,10 +425,10 @@ func (m *Model) toggleCollapse() {
 // toggleCollapseAll folds every group when any is open, and unfolds all
 // when they are already collapsed, so one key flips the whole tree.
 func (m *Model) toggleCollapseAll() {
-	groups := groupClosure(m.groups, m.sessions)
+	groups := groupClosure(m.workspace.groups, m.workspace.sessions)
 	collapse := !m.allGroupsCollapsed()
 	for group := range groups {
-		m.collapsed[group] = collapse
+		m.rail.collapsed[group] = collapse
 	}
 	m.persistCollapsed()
 	m.rebuildRows()
@@ -440,8 +440,8 @@ func (m *Model) toggleCollapseAll() {
 // label must not offer it.
 func (m *Model) allGroupsCollapsed() bool {
 	any := false
-	for group := range groupClosure(m.groups, m.sessions) {
-		if !m.collapsed[group] {
+	for group := range groupClosure(m.workspace.groups, m.workspace.sessions) {
+		if !m.rail.collapsed[group] {
 			return false
 		}
 		any = true
@@ -462,7 +462,7 @@ func (m *Model) cycleStatusFilter() tea.Cmd {
 	if entry, ok := m.selectedRow(); ok {
 		previousKey = rowKey(entry)
 	}
-	m.statusFilter = m.statusFilter.next()
+	m.rail.statusFilter = m.rail.statusFilter.next()
 	m.rebuildRows()
 	return m.afterListFilter(previousKey)
 }
@@ -472,14 +472,14 @@ func (m *Model) cycleStatusFilter() tea.Cmd {
 // view ignores the filter, so the key is refused there rather than flipping
 // a setting nothing on screen reports.
 func (m *Model) toggleEmptyGroups() tea.Cmd {
-	if m.showArchived {
+	if m.rail.showArchived {
 		return nil
 	}
 	previousKey := ""
 	if entry, ok := m.selectedRow(); ok {
 		previousKey = rowKey(entry)
 	}
-	m.hideEmptyGroups = !m.hideEmptyGroups
+	m.rail.hideEmptyGroups = !m.rail.hideEmptyGroups
 	m.rebuildRows()
 	return m.afterListFilter(previousKey)
 }
@@ -495,10 +495,10 @@ func (m *Model) afterListFilter(previousKey string) tea.Cmd {
 		return nil
 	}
 
-	m.preview = ""
-	m.proc = sysstat.ProcStat{}
-	m.procFor = ""
-	m.previewGen++
+	m.workspace.preview = ""
+	m.workspace.proc = sysstat.ProcStat{}
+	m.workspace.procFor = ""
+	m.focusPane.previewGen++
 	m.syncPollInput()
 	if _, ok := m.selected(); ok {
 		return m.schedulePreview()
@@ -557,18 +557,18 @@ const hiddenToolsSetting = "hidden_tools"
 func (m *Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "enter":
-		m.searching = false
+		m.rail.searching = false
 	case "esc":
-		m.searching = false
+		m.rail.searching = false
 		return m, m.clearSearch()
 	case "backspace":
-		if len(m.search) > 0 {
-			m.search = m.search[:len(m.search)-1]
+		if len(m.rail.search) > 0 {
+			m.rail.search = m.rail.search[:len(m.rail.search)-1]
 		}
 		m.rebuildRows()
 	default:
 		if len(msg.String()) == 1 {
-			m.search += msg.String()
+			m.rail.search += msg.String()
 			m.rebuildRows()
 		}
 	}
@@ -579,14 +579,14 @@ func (m *Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // with no way back is what makes filtered-away sessions read as sessions
 // that are gone, so esc answers from the list as well as from the field.
 func (m *Model) clearSearch() tea.Cmd {
-	if m.search == "" {
+	if m.rail.search == "" {
 		return nil
 	}
 	previousKey := ""
 	if entry, ok := m.selectedRow(); ok {
 		previousKey = rowKey(entry)
 	}
-	m.search = ""
+	m.rail.search = ""
 	m.rebuildRows()
 	return m.afterListFilter(previousKey)
 }

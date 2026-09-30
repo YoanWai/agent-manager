@@ -12,14 +12,14 @@ import (
 func TestDetailHeadsFitTheirColumn(t *testing.T) {
 	for _, width := range []int{28, 40, 60, 76, 120} {
 		session := shotModel()
-		session.sessions[3].WorktreeBranch = "am/add-rate-limiting"
-		session.rows[4].sess.WorktreeBranch = "am/add-rate-limiting"
-		session.queuedMessages = map[string]int{"add-rate-limiting": 2}
+		session.workspace.sessions[3].WorktreeBranch = "am/add-rate-limiting"
+		session.rail.rows[4].sess.WorktreeBranch = "am/add-rate-limiting"
+		session.workspace.queuedMessages = map[string]int{"add-rate-limiting": 2}
 
 		group := shotModel()
-		for i, row := range group.rows {
+		for i, row := range group.rail.rows {
 			if row.isGroup && row.group == "backend" {
-				group.cursor = i
+				group.rail.cursor = i
 			}
 		}
 		heads := map[string]string{
@@ -51,8 +51,8 @@ func TestDetailHeadsFitTheirColumn(t *testing.T) {
 // so the name and the state survive the narrowest columns.
 func TestDetailHeadShedsChipsBeforeFacts(t *testing.T) {
 	m := shotModel()
-	m.sessions[3].WorktreeBranch = "am/add-rate-limiting"
-	m.rows[4].sess.WorktreeBranch = "am/add-rate-limiting"
+	m.workspace.sessions[3].WorktreeBranch = "am/add-rate-limiting"
+	m.rail.rows[4].sess.WorktreeBranch = "am/add-rate-limiting"
 
 	wide := ansi.Strip(strings.Split(m.viewDetail(120), "\n")[0])
 	for _, want := range []string{"add-rate-limiting", "claude", "am/add-rate-limiting", "working"} {
@@ -109,9 +109,9 @@ func TestGroupRosterColumnsAlign(t *testing.T) {
 // is the reading on that row, so a column too tight for both keeps it.
 func TestGroupHeadNamesTheSpawnKey(t *testing.T) {
 	m := shotModel()
-	for i, row := range m.rows {
+	for i, row := range m.rail.rows {
 		if row.isGroup && row.group == "backend" {
-			m.cursor = i
+			m.rail.cursor = i
 		}
 	}
 	wide := ansi.Strip(m.viewDetail(76))

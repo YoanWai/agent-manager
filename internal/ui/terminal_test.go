@@ -20,7 +20,7 @@ import (
 
 func shellCount(m *Model) int {
 	count := 0
-	for _, sess := range m.sessions {
+	for _, sess := range m.workspace.sessions {
 		if m.isShell(sess.Tool) {
 			count++
 		}
@@ -50,12 +50,12 @@ func resolved(t *testing.T, dir string) string {
 
 func terminalSession(t *testing.T, m *Model) store.Session {
 	t.Helper()
-	for _, sess := range m.sessions {
+	for _, sess := range m.workspace.sessions {
 		if m.isShell(sess.Tool) {
 			return sess
 		}
 	}
-	t.Fatalf("no shell session among %v", m.sessions)
+	t.Fatalf("no shell session among %v", m.workspace.sessions)
 	return store.Session{}
 }
 
@@ -78,7 +78,7 @@ func spawnTerminal(t *testing.T, m *Model) store.Session {
 func TestOpenTerminalSpawnsShellInSelectedGroup(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
-	if err := m.store.CreateGroup("backend", dir); err != nil {
+	if err := m.services.store.CreateGroup("backend", dir); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -91,7 +91,7 @@ func TestOpenTerminalSpawnsShellInSelectedGroup(t *testing.T) {
 	if sess.Cwd != dir {
 		t.Fatalf("terminal cwd = %q, want %q", sess.Cwd, dir)
 	}
-	if !m.tmux.Exists(sess.ID) {
+	if !m.services.tmux.Exists(sess.ID) {
 		t.Fatal("terminal spawn left no tmux session")
 	}
 	if row, ok := m.selected(); !ok || row.ID != sess.ID {
@@ -103,7 +103,7 @@ func TestOpenTerminalSpawnsShellInSelectedGroup(t *testing.T) {
 // is its real one and the row shows it from the first frame.
 func TestTerminalRowShowsItsNameImmediately(t *testing.T) {
 	m := buildModel(t)
-	if err := m.store.CreateGroup("backend", t.TempDir()); err != nil {
+	if err := m.services.store.CreateGroup("backend", t.TempDir()); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -124,7 +124,7 @@ func TestTerminalRowShowsItsNameImmediately(t *testing.T) {
 func TestOpenTerminalOnSessionRowUsesItsDirectory(t *testing.T) {
 	m := buildModel(t)
 	groupDir, sessionDir := t.TempDir(), t.TempDir()
-	if err := m.store.CreateGroup("backend", groupDir); err != nil {
+	if err := m.services.store.CreateGroup("backend", groupDir); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -143,7 +143,7 @@ func TestOpenTerminalOnSessionRowUsesItsDirectory(t *testing.T) {
 func TestOpenTerminalOnAgentNests(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
-	if err := m.store.CreateGroup("backend", dir); err != nil {
+	if err := m.services.store.CreateGroup("backend", dir); err != nil {
 		t.Fatalf("group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -159,7 +159,7 @@ func TestOpenTerminalOnAgentNests(t *testing.T) {
 func TestOpenTerminalOnGroupIsUnnested(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
-	if err := m.store.CreateGroup("backend", dir); err != nil {
+	if err := m.services.store.CreateGroup("backend", dir); err != nil {
 		t.Fatalf("group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -173,7 +173,7 @@ func TestOpenTerminalOnGroupIsUnnested(t *testing.T) {
 func TestOpenTerminalOnNestedShellSharesParent(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
-	if err := m.store.CreateGroup("backend", dir); err != nil {
+	if err := m.services.store.CreateGroup("backend", dir); err != nil {
 		t.Fatalf("group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -226,7 +226,7 @@ func TestTerminalsUnderOneSessionCountUp(t *testing.T) {
 // the generated name rather than taking the group's.
 func TestTerminalWithNoSessionKeepsItsGeneratedName(t *testing.T) {
 	m := buildModel(t)
-	if err := m.store.CreateGroup("backend", t.TempDir()); err != nil {
+	if err := m.services.store.CreateGroup("backend", t.TempDir()); err != nil {
 		t.Fatalf("group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -241,7 +241,7 @@ func TestTerminalWithNoSessionKeepsItsGeneratedName(t *testing.T) {
 func TestTerminalKeyOnUnnestedShellStaysUnnested(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
-	if err := m.store.CreateGroup("backend", dir); err != nil {
+	if err := m.services.store.CreateGroup("backend", dir); err != nil {
 		t.Fatalf("group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -289,7 +289,7 @@ func TestTerminalSessionRevives(t *testing.T) {
 	if err := m.reviveSession(sess); err != nil {
 		t.Fatalf("revive terminal: %v", err)
 	}
-	if !m.tmux.Exists(sess.ID) {
+	if !m.services.tmux.Exists(sess.ID) {
 		t.Fatal("revived terminal has no tmux session")
 	}
 }
@@ -314,7 +314,7 @@ func TestShellToolStaysOutOfPickers(t *testing.T) {
 
 func TestShellToolIsFoundByItsFlag(t *testing.T) {
 	m := buildModel(t)
-	m.cfg = config.Config{Tools: map[string]config.Tool{
+	m.services.cfg = config.Config{Tools: map[string]config.Tool{
 		"claude": {Command: "cat"},
 		"zsh":    {Shell: true},
 	}}
@@ -366,7 +366,7 @@ func TestTerminalKeySpawnsAgainAfterTheWindow(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 
 	pressTerminalKey(t, m)
-	m.terminalKeyAt = time.Now().Add(-2 * terminalKeyWindow)
+	m.ledger.terminalKeyAt = time.Now().Add(-2 * terminalKeyWindow)
 	pressTerminalKey(t, m)
 
 	if got := shellCount(m); got != 2 {
@@ -424,7 +424,7 @@ func TestRowLegendHidesDoubleClickWhenMouseOff(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "agent", t.TempDir(), "")
 	m.selectSessionRow(t, "agent")
-	m.mouseDisabled = true
+	m.prefs.mouseDisabled = true
 	legend := m.rowLegend()
 	if slices.ContainsFunc(legend.pairs, func(pair [2]string) bool { return strings.HasSuffix(pair[0], "click") }) {
 		t.Fatal("legend should hide the click gestures when the mouse is off")

@@ -196,8 +196,8 @@ type reviewSendRequest struct {
 
 // repoWant is matched by path so the selection survives ResolveRepos re-ranking between loads.
 func (m *Model) diffLoadCmd(sess store.Session, scope git.Scope, gen int, repoWant string, refresh bool) tea.Cmd {
-	driver := m.gitDrv
-	stor := m.store
+	driver := m.services.gitDrv
+	stor := m.services.store
 	// Restoring happens once per repo, so a reload that would only have its
 	// state discarded reads nothing and cannot migrate over a chained write.
 	restored := maps.Clone(m.diff.stateLoaded)
@@ -263,7 +263,7 @@ func finishDiffMsg(driver *git.Driver, scope git.Scope, gen int, gitRoot, overri
 }
 
 func (m *Model) diffReloadCmd(sess store.Session, scope git.Scope, gen int, gitRoot, override string, repoRoots []string) tea.Cmd {
-	driver := m.gitDrv
+	driver := m.services.gitDrv
 	return func() tea.Msg {
 		msg := diffLoadedMsg{sessID: sess.ID, scope: scope, gen: gen}
 		finishDiffMsg(driver, scope, gen, gitRoot, override, repoRoots, &msg)
@@ -275,7 +275,7 @@ func (m *Model) diffReloadCmd(sess store.Session, scope git.Scope, gen int, gitR
 // base itself: the single store connection can wait behind the poller, and
 // Update is not the place to wait for it.
 func (m *Model) diffRebaseCmd(sess store.Session, scope git.Scope, gen int, gitRoot string, repoRoots []string) tea.Cmd {
-	driver, stor := m.gitDrv, m.store
+	driver, stor := m.services.gitDrv, m.services.store
 	return func() tea.Msg {
 		msg := diffLoadedMsg{sessID: sess.ID, scope: scope, gen: gen, repoRoots: repoRoots, repoRoot: gitRoot}
 		override, err := stor.ReviewBase(sess.ID, resolveSymlinksOrSelf(gitRoot))
@@ -295,7 +295,7 @@ func (m *Model) diffHLCmd(fd diff.FileDiff, key hlKey) tea.Cmd {
 }
 
 func (m *Model) diffFileLoadCmd(set diff.Set, sessID string, scope git.Scope, gen, index int, path string) tea.Cmd {
-	driver := m.gitDrv
+	driver := m.services.gitDrv
 	return func() tea.Msg {
 		return diffFileLoadedMsg{
 			sessID:   sessID,
@@ -328,13 +328,13 @@ func diffFilesLoadCmd(cmds []tea.Cmd) tea.Cmd {
 }
 
 func (m *Model) diffProbeCmd(sess store.Session, scope git.Scope) tea.Cmd {
-	driver := m.gitDrv
+	driver := m.services.gitDrv
 	// The override is keyed by the raw selection while the git operations run
 	// against the resolved toplevel - the same split diffLoadCmd uses, so probe
 	// and load produce the same fingerprint instead of reloading every tick.
 	repoSel := m.diff.repoSel
 	gitRoot := m.diff.set.Repo.Root
-	stor := m.store
+	stor := m.services.store
 	return func() tea.Msg {
 		// Resolve symlinks so the key matches both the CLI writer and the load
 		// closure, keeping probe and load fingerprints identical.
@@ -370,9 +370,9 @@ func (m *Model) retargetDiff(sess store.Session) tea.Cmd {
 	m.diff.repoSel = ""
 	m.diff.fileLoading = nil
 	m.diff.reanchor = nil
-	if picked, ok := m.pickedRepos[sess.ID]; ok {
+	if picked, ok := m.ledger.pickedRepos[sess.ID]; ok {
 		m.diff.repoSel = picked
-	} else if declared, err := m.store.ReviewRepo(sess.ID); err != nil {
+	} else if declared, err := m.services.store.ReviewRepo(sess.ID); err != nil {
 		m.errBar.text = err.Error()
 	} else if declared != "" {
 		m.diff.repoSel = declared
@@ -381,10 +381,10 @@ func (m *Model) retargetDiff(sess store.Session) tea.Cmd {
 }
 
 func (m *Model) applyStoredScope(sessionID string) {
-	if m.store == nil {
+	if m.services.store == nil {
 		return
 	}
-	stored, err := m.store.ReviewScope(sessionID)
+	stored, err := m.services.store.ReviewScope(sessionID)
 	if err != nil || stored == "" {
 		return
 	}
@@ -504,12 +504,12 @@ func (m *Model) restoreReviewState(state store.ReviewState) bool {
 }
 
 func (m *Model) reviewStatusesCmd() tea.Cmd {
-	if m.store == nil || !m.diff.active || m.diff.sessID == "" || m.diff.repoSel == "" {
+	if m.services.store == nil || !m.diff.active || m.diff.sessID == "" || m.diff.repoSel == "" {
 		return nil
 	}
 	m.diff.reviewStatusGen++
 	gen := m.diff.reviewStatusGen
-	sessID, repoRoot, stor := m.diff.sessID, m.diff.repoSel, m.store
+	sessID, repoRoot, stor := m.diff.sessID, m.diff.repoSel, m.services.store
 	writesDone := m.diff.reviewWriteDone
 	return func() tea.Msg {
 		if writesDone != nil {
@@ -583,10 +583,10 @@ func (m *Model) chainReviewWrite(run func() tea.Msg) tea.Cmd {
 }
 
 func (m *Model) saveReviewStateCmd() tea.Cmd {
-	if m.store == nil || m.diff.sessID == "" || m.diff.repoSel == "" {
+	if m.services.store == nil || m.diff.sessID == "" || m.diff.repoSel == "" {
 		return nil
 	}
-	sessID, repoRoot, stor := m.diff.sessID, m.diff.repoSel, m.store
+	sessID, repoRoot, stor := m.diff.sessID, m.diff.repoSel, m.services.store
 	state := m.reviewStateSnapshot(m.reviewKey())
 	return m.chainReviewWrite(func() tea.Msg {
 		return reviewStateSavedMsg{sessID: sessID, repoRoot: repoRoot, err: stor.MergeReviewState(sessID, repoRoot, state)}
@@ -594,7 +594,7 @@ func (m *Model) saveReviewStateCmd() tea.Cmd {
 }
 
 func (m *Model) reviewCommentHandledCmd(commentID string, handled, previous bool) tea.Cmd {
-	sessID, repoRoot, stor := m.diff.sessID, m.diff.repoSel, m.store
+	sessID, repoRoot, stor := m.diff.sessID, m.diff.repoSel, m.services.store
 	return m.chainReviewWrite(func() tea.Msg {
 		found, err := stor.SetReviewCommentHandled(sessID, commentID, handled)
 		return reviewCommentHandledMsg{
@@ -633,7 +633,7 @@ func (m *Model) handleReviewCommentHandled(msg reviewCommentHandledMsg) {
 }
 
 func (m *Model) reviewSendCmd(req reviewSendRequest) tea.Cmd {
-	sessID, repoRoot, stor, tmuxDriver := m.diff.sessID, m.diff.repoSel, m.store, m.tmux
+	sessID, repoRoot, stor, tmuxDriver := m.diff.sessID, m.diff.repoSel, m.services.store, m.services.tmux
 	return m.chainReviewWrite(func() tea.Msg {
 		msg := reviewSendFinishedMsg{
 			sessID: sessID, repoRoot: repoRoot, commentIDs: req.commentIDs,
@@ -698,7 +698,7 @@ func (m *Model) handleReviewSendFinished(msg reviewSendFinishedMsg) {
 
 // diffSession resolves the session the diff is pinned to.
 func (m *Model) diffSession() (store.Session, bool) {
-	for _, sess := range m.sessions {
+	for _, sess := range m.workspace.sessions {
 		if sess.ID == m.diff.sessID {
 			return sess, true
 		}
@@ -744,8 +744,8 @@ func (m *Model) handleDiffLoaded(msg diffLoadedMsg) tea.Cmd {
 	if msg.missingRepo != "" {
 		m.errBar.text = fmt.Sprintf("picked or declared repo %s is no longer under the session directory",
 			filepath.Base(msg.missingRepo))
-		if m.pickedRepos[msg.sessID] == msg.missingRepo {
-			delete(m.pickedRepos, msg.sessID)
+		if m.ledger.pickedRepos[msg.sessID] == msg.missingRepo {
+			delete(m.ledger.pickedRepos, msg.sessID)
 		}
 	}
 	previousPath := ""
@@ -907,7 +907,7 @@ func (m *Model) handleDiffProbe(msg diffProbeMsg) tea.Cmd {
 // diffRefreshCmd is the poller piggyback: every second tick while the
 // diff is open, probe the repo fingerprint and reload on change.
 func (m *Model) diffRefreshCmd() tea.Cmd {
-	if !m.diff.active || m.diff.loading || m.gitDrv == nil || m.diff.set.Repo.Root == "" {
+	if !m.diff.active || m.diff.loading || m.services.gitDrv == nil || m.diff.set.Repo.Root == "" {
 		return nil
 	}
 	if m.diff.annotating || m.diff.sendConfirm {
@@ -1342,7 +1342,7 @@ func (m *Model) toggleReviewed() tea.Cmd {
 	if fd == nil || !fd.Loaded() || m.diffFileHidden(fd) {
 		return nil
 	}
-	if m.store == nil {
+	if m.services.store == nil {
 		m.errBar.text = "review state is unavailable"
 		return nil
 	}
@@ -1699,7 +1699,7 @@ func (m *Model) discardOrToggleAnnotation() tea.Cmd {
 		target = latestHandled
 	}
 	if target >= 0 {
-		if m.store == nil {
+		if m.services.store == nil {
 			m.errBar.text = "review state is unavailable"
 			return nil
 		}
@@ -1719,7 +1719,7 @@ func (m *Model) sendAnnotations() (tea.Model, tea.Cmd) {
 		m.errBar.text = "review round is already being sent"
 		return m, nil
 	}
-	if m.store == nil {
+	if m.services.store == nil {
 		m.errBar.text = "review state is unavailable"
 		return m, nil
 	}
@@ -1846,7 +1846,7 @@ const diffGutterSign = 2
 // loading its diff. The whole review takes over the screen so the
 // content scrolls freely instead of sharing the narrow sidebar.
 func (m *Model) openDiff() tea.Cmd {
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		m.errBar.text = "git not found in PATH, " + deps.Hint("git")
 		return nil
 	}

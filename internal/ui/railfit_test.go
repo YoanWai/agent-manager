@@ -17,7 +17,7 @@ func TestRailBannersSurviveShortTerminals(t *testing.T) {
 				for _, archived := range []bool{false, true} {
 					m := shotModel()
 					m.width, m.height = width, height
-					m.searching, m.showArchived = searching, archived
+					m.rail.searching, m.rail.showArchived = searching, archived
 					m.errBar.text = "worktree kept (has work): /Users/someone/dev/api"
 					rows := strings.Split(m.View(), "\n")
 					if len(rows) != height {
@@ -34,7 +34,7 @@ func TestRailBannersSurviveShortTerminals(t *testing.T) {
 func TestRailBannersLeaveRoomForEntries(t *testing.T) {
 	m := shotModel()
 	m.width, m.height = 120, 34
-	m.searching, m.search = true, "rate"
+	m.rail.searching, m.rail.search = true, "rate"
 	rail := railLinesText(m.railLines(36, m.listBodyHeight()))
 	if !strings.Contains(rail, "⌕ rate") {
 		t.Fatalf("no search field in the rail:\n%s", rail)
@@ -50,7 +50,7 @@ func TestFilterBadgesSurviveShortRails(t *testing.T) {
 	for _, height := range []int{10, 14, 20} {
 		m := shotModel()
 		m.width, m.height = 120, height
-		m.showArchived = true
+		m.rail.showArchived = true
 		rail := ansi.Strip(railLinesText(m.railLines(36, m.listBodyHeight())))
 		if !strings.Contains(rail, "ARCHIVED") {
 			t.Errorf("height %d dropped the archived badge:\n%s", height, rail)
@@ -73,7 +73,7 @@ func TestSearchFieldSurvivesTightRails(t *testing.T) {
 	for _, height := range []int{14, 20, 34} {
 		m := shotModel()
 		m.width, m.height = 120, height
-		m.searching, m.search = true, "add-rate-limiting-in-the-public-api-handler"
+		m.rail.searching, m.rail.search = true, "add-rate-limiting-in-the-public-api-handler"
 		rail := railLinesText(m.railLines(36, m.listBodyHeight()))
 		if !strings.Contains(rail, "⌕") {
 			t.Errorf("height %d dropped the search field:\n%s", height, rail)

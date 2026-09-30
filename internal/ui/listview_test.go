@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
-	"github.com/YoanWai/agent-manager/internal/launch"
+
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
@@ -44,7 +44,7 @@ func TestComputerLinesTemperatures(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			m := &Model{width: 120, height: 34, snap: tc.snap}
+			m := &Model{width: 120, height: 34, workspace: workspace{snap: tc.snap}}
 			var temp string
 			for _, line := range m.computerLines(40) {
 				plain := strings.TrimSpace(ansi.Strip(line))
@@ -88,7 +88,7 @@ func TestComputerLinesBattery(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			m := &Model{width: 120, height: 34, snap: tc.snap}
+			m := &Model{width: 120, height: 34, workspace: workspace{snap: tc.snap}}
 			var batt string
 			for _, line := range m.computerLines(40) {
 				plain := strings.TrimSpace(ansi.Strip(line))
@@ -160,14 +160,14 @@ func lastSGR(s string) string {
 func TestGroupRowRendersGroupPane(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
-	if err := m.store.CreateGroup("backend", dir); err != nil {
+	if err := m.services.store.CreateGroup("backend", dir); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
 	createSession(t, m, "api-agent", dir, "backend")
-	for i, row := range m.rows {
+	for i, row := range m.rail.rows {
 		if row.isGroup && row.group == "backend" {
-			m.cursor = i
+			m.rail.cursor = i
 		}
 	}
 
@@ -205,7 +205,7 @@ func TestArchivedViewShowsOnlyArchivedSessions(t *testing.T) {
 		t.Fatalf("active view = %v want [live-one]", names)
 	}
 
-	m.showArchived = true
+	m.rail.showArchived = true
 	m.applyCmd(t, m.refreshCmd())
 	if names := sessionNames(m); len(names) != 1 || names[0] != "old-one" {
 		t.Fatalf("archived view = %v want [old-one]", names)
@@ -219,7 +219,7 @@ func railText(t *testing.T, m *Model) []string {
 
 func railTextAt(m *Model, width int) []string {
 	var out []string
-	for _, line := range m.entryLines(m.rows, 0, width, 20) {
+	for _, line := range m.entryLines(m.rail.rows, 0, width, 20) {
 		out = append(out, strings.TrimRight(ansi.Strip(line.text), " "))
 	}
 	return out
@@ -248,7 +248,7 @@ func TestSettingsTogglesListDensity(t *testing.T) {
 	if !strings.Contains(lines[head], "claude") {
 		t.Fatalf("compact row should carry its meta inline: %q", lines[head])
 	}
-	if got := m.entryHeight(m.rows[0]); got != 1 {
+	if got := m.entryHeight(m.rail.rows[0]); got != 1 {
 		t.Fatalf("compact entry height = %d want 1", got)
 	}
 
@@ -271,14 +271,14 @@ func TestSettingsTogglesListDensity(t *testing.T) {
 	}
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
 
-	if !m.comfortableRows {
+	if !m.prefs.comfortableRows {
 		t.Fatal("model did not pick up the comfortable density")
 	}
-	if !storedComfortableRows(m.store) {
+	if !storedComfortableRows(m.services.store) {
 		t.Fatal("comfortable density did not persist")
 	}
-	sessionRow := m.rows[0]
-	for _, row := range m.rows {
+	sessionRow := m.rail.rows[0]
+	for _, row := range m.rail.rows {
 		if !row.isGroup {
 			sessionRow = row
 			break
@@ -308,7 +308,7 @@ func TestSettingsTogglesListDensity(t *testing.T) {
 // reply to carry.
 func TestComfortableGroupRowStacks(t *testing.T) {
 	m := buildModel(t)
-	m.comfortableRows = true
+	m.prefs.comfortableRows = true
 	m.openGroupForm()
 	m.groupForm.name.SetValue("fleet")
 	if _, _ = m.submitGroupForm(); m.errBar.text != "" {
@@ -329,13 +329,13 @@ func TestComfortableGroupRowStacks(t *testing.T) {
 // message lines.
 func TestComfortableRowSurvivesShortRail(t *testing.T) {
 	m := buildModel(t)
-	m.comfortableRows = true
+	m.prefs.comfortableRows = true
 	for _, name := range []string{"one", "two", "three", "four"} {
 		createSession(t, m, name, t.TempDir(), "")
 	}
 	m.selectSessionRow(t, "three")
 
-	lines := m.entryLines(m.rows, 0, 60, 2)
+	lines := m.entryLines(m.rail.rows, 0, 60, 2)
 	if len(lines) != 2 {
 		t.Fatalf("entry lines = %d want 2", len(lines))
 	}
@@ -352,7 +352,7 @@ func TestComfortableRowSurvivesShortRail(t *testing.T) {
 // down, so the tree column has no gap between an entry and the next.
 func TestComfortableMetaLineKeepsTreeGuides(t *testing.T) {
 	m := buildModel(t)
-	m.comfortableRows = true
+	m.prefs.comfortableRows = true
 	m.openGroupForm()
 	m.groupForm.name.SetValue("outer")
 	if _, _ = m.submitGroupForm(); m.errBar.text != "" {
@@ -396,8 +396,8 @@ func TestComfortableMetaLineKeepsTreeGuides(t *testing.T) {
 func TestInboxBadgeRidesTheRowWithMessages(t *testing.T) {
 	for _, comfortable := range []bool{false, true} {
 		m := shotModel()
-		m.comfortableRows = comfortable
-		m.queuedMessages = map[string]int{"add-rate-limiting": 2}
+		m.prefs.comfortableRows = comfortable
+		m.workspace.queuedMessages = map[string]int{"add-rate-limiting": 2}
 
 		rows := railText(t, m)
 		badged := lineWith(t, rows, "add-rate-limiting")
@@ -418,7 +418,7 @@ func TestInboxBadgeRidesTheRowWithMessages(t *testing.T) {
 func TestRowsWithoutMessagesRenderUnchanged(t *testing.T) {
 	bare := railText(t, shotModel())
 	badged := shotModel()
-	badged.queuedMessages = map[string]int{"add-rate-limiting": 2}
+	badged.workspace.queuedMessages = map[string]int{"add-rate-limiting": 2}
 	marked := railText(t, badged)
 
 	if len(bare) != len(marked) {
@@ -443,9 +443,9 @@ func TestRowsWithoutMessagesRenderUnchanged(t *testing.T) {
 func TestInboxBadgeOutlivesTheRowMeta(t *testing.T) {
 	for _, width := range []int{28, 30, 36, 44, 60} {
 		m := shotModel()
-		m.queuedMessages = map[string]int{"add-rate-limiting": 2}
+		m.workspace.queuedMessages = map[string]int{"add-rate-limiting": 2}
 
-		for _, line := range m.entryLines(m.rows, 0, width, 20) {
+		for _, line := range m.entryLines(m.rail.rows, 0, width, 20) {
 			if got := ansi.StringWidth(line.text); got > width {
 				t.Errorf("width %d: rail line is %d wide: %q", width, got, ansi.Strip(line.text))
 			}
@@ -462,7 +462,7 @@ func TestInboxBadgeOutlivesTheRowMeta(t *testing.T) {
 	}
 
 	m := shotModel()
-	m.queuedMessages = map[string]int{"add-rate-limiting": 2}
+	m.workspace.queuedMessages = map[string]int{"add-rate-limiting": 2}
 	rows := railTextAt(m, 30)
 	row := rows[lineWith(t, rows, "✉2")]
 	if strings.Contains(row, "ago") {
@@ -473,14 +473,14 @@ func TestInboxBadgeOutlivesTheRowMeta(t *testing.T) {
 func TestRootRowLeadsTheList(t *testing.T) {
 	m := shotModel()
 	m.rebuildRows()
-	if len(m.rows) == 0 {
+	if len(m.rail.rows) == 0 {
 		t.Fatal("no rows, want root")
 	}
-	if !m.rows[0].isRoot() {
-		t.Fatalf("first row is %+v, want root", m.rows[0])
+	if !m.rail.rows[0].isRoot() {
+		t.Fatalf("first row is %+v, want root", m.rail.rows[0])
 	}
 	// Its sessions stay flat rather than nesting under it.
-	for _, row := range m.rows[1:] {
+	for _, row := range m.rail.rows[1:] {
 		if !row.isGroup && row.sess.Group == "" && row.depth != 0 {
 			t.Fatalf("ungrouped session %q nested at depth %d", row.sess.Name, row.depth)
 		}
@@ -504,7 +504,7 @@ func TestRootRowRefusesGroupEdits(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m := shotModel()
 			m.rebuildRows()
-			m.cursor = 0
+			m.rail.cursor = 0
 			tc.run(m)
 			if m.errBar.text == "" {
 				t.Fatal("no message explaining the refusal")
@@ -528,7 +528,7 @@ func TestRootRollupCountsUngroupedOnly(t *testing.T) {
 		total += n
 	}
 	ungrouped := 0
-	for _, sess := range m.sessions {
+	for _, sess := range m.workspace.sessions {
 		if sess.Group == "" {
 			ungrouped++
 		}
@@ -541,20 +541,20 @@ func TestRootRollupCountsUngroupedOnly(t *testing.T) {
 // A launch opens on a session, not on root's rollup.
 func TestCursorSkipsRootOnFirstBuild(t *testing.T) {
 	m := shotModel()
-	m.cursor = 0
+	m.rail.cursor = 0
 	m.rebuildRows()
-	if len(m.rows) < 2 {
-		t.Fatalf("want root and a row below it, got %d rows", len(m.rows))
+	if len(m.rail.rows) < 2 {
+		t.Fatalf("want root and a row below it, got %d rows", len(m.rail.rows))
 	}
-	if m.rows[m.cursor].isRoot() {
+	if m.rail.rows[m.rail.cursor].isRoot() {
 		t.Fatal("cursor parked on root with rows available below it")
 	}
 	// With nothing but root to land on, it is the selection.
 	bare := shotModel()
-	bare.sessions, bare.rows, bare.cursor = nil, nil, 0
+	bare.workspace.sessions, bare.rail.rows, bare.rail.cursor = nil, nil, 0
 	bare.rebuildRows()
-	if len(bare.rows) != 1 || !bare.rows[0].isRoot() || bare.cursor != 0 {
-		t.Fatalf("empty list should rest on root, got %d rows cursor %d", len(bare.rows), bare.cursor)
+	if len(bare.rail.rows) != 1 || !bare.rail.rows[0].isRoot() || bare.rail.cursor != 0 {
+		t.Fatalf("empty list should rest on root, got %d rows cursor %d", len(bare.rail.rows), bare.rail.cursor)
 	}
 }
 
@@ -567,10 +567,10 @@ func TestRootRowIsDimmerThanNamedGroups(t *testing.T) {
 
 	m := shotModel()
 	m.rebuildRows()
-	if len(m.rows) == 0 {
+	if len(m.rail.rows) == 0 {
 		t.Fatal("no rows, want root")
 	}
-	root := m.renderTreeRow(m.rows[0], false, 40, 0, panelHex())
+	root := m.renderTreeRow(m.rail.rows[0], false, 40, 0, panelHex())
 	dimmed := strings.TrimPrefix(fgSeq(mix(current.Accent2, current.Subtle, 0.5)), "\x1b[")
 	if !strings.Contains(root, dimmed) {
 		t.Fatalf("root is not painted in the dimmed tone: %q", root)
@@ -589,13 +589,13 @@ func TestEmptyListKeepsItsGuidance(t *testing.T) {
 		wantText string
 	}{
 		{"no sessions", func(m *Model) {}, "no sessions yet"},
-		{"no matches", func(m *Model) { m.search = "nothing-matches-this" }, "no matches"},
-		{"nothing archived", func(m *Model) { m.showArchived = true }, "nothing archived"},
-		{"nothing needs attention", func(m *Model) { m.statusFilter = statusFilterAttention }, "nothing needs attention"},
+		{"no matches", func(m *Model) { m.rail.search = "nothing-matches-this" }, "no matches"},
+		{"nothing archived", func(m *Model) { m.rail.showArchived = true }, "nothing archived"},
+		{"nothing needs attention", func(m *Model) { m.rail.statusFilter = statusFilterAttention }, "nothing needs attention"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := shotModel()
-			m.sessions, m.rows = nil, nil
+			m.workspace.sessions, m.rail.rows = nil, nil
 			tc.setup(m)
 			m.rebuildRows()
 			rail := ansi.Strip(strings.Join(splitLines(joinContentText(m.railLines(40, 20))), "\n"))
@@ -623,7 +623,7 @@ func TestReorderSkipsRootAsSibling(t *testing.T) {
 	m := shotModel()
 	m.rebuildRows()
 	var groupRow, index = treeRow{}, -1
-	for i, row := range m.rows {
+	for i, row := range m.rail.rows {
 		if row.isGroup && !row.isRoot() && parentGroup(row.group) == "" {
 			groupRow, index = row, i
 			break
@@ -632,7 +632,7 @@ func TestReorderSkipsRootAsSibling(t *testing.T) {
 	if index < 0 {
 		t.Fatal("no top-level group row to test with")
 	}
-	m.cursor = index
+	m.rail.cursor = index
 	if target, ok := m.visibleReorderTarget(groupRow, -1); ok && target.isRoot() {
 		t.Fatalf("root matched as a reorder sibling of %q", groupRow.group)
 	}
@@ -697,7 +697,7 @@ func TestSelectedRowMetaUsesBrightNotSubtle(t *testing.T) {
 func TestSessionRowCarriesTheCapturedConversationIDInMeta(t *testing.T) {
 	const conversation = "conv-abc-123"
 	compact := &Model{}
-	comfortable := &Model{comfortableRows: true}
+	comfortable := &Model{prefs: preferences{comfortableRows: true}}
 	withID := treeRow{sess: store.Session{
 		ID: "s1", Name: "with-conversation", Tool: "claude", Status: status.Finished,
 		CreatedAt: time.Now().Add(-3 * time.Hour), AgentSessionID: conversation,
@@ -766,7 +766,7 @@ func TestSessionRowStandsInForAnAwaitedName(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m := &Model{}
 			if tc.awaited {
-				m.awaitedRenames = map[string]awaitedRename{tc.sess.ID: {generated: generated}}
+				m.ledger.awaitedRenames = map[string]awaitedRename{tc.sess.ID: {generated: generated}}
 			}
 			row := ansi.Strip(m.renderTreeRow(treeRow{sess: tc.sess}, false, 80, 0, panelHex()))
 			if !strings.Contains(row, tc.want) {
@@ -781,7 +781,7 @@ func TestSessionRowStandsInForAnAwaitedName(t *testing.T) {
 			if strings.Contains(row, namePlaceholder) {
 				t.Fatalf("row still stands in for a name it has:\n%s", row)
 			}
-			if _, still := m.awaitedRenames[tc.sess.ID]; still {
+			if _, still := m.ledger.awaitedRenames[tc.sess.ID]; still {
 				t.Fatal("a wait that is over should drop what it was holding")
 			}
 		})
@@ -794,7 +794,7 @@ func TestSessionRowStandsInForAnAwaitedName(t *testing.T) {
 func TestEveryReadingOfASessionStandsInForAnAwaitedName(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
-	if err := m.store.CreateGroup("backend", dir); err != nil {
+	if err := m.services.store.CreateGroup("backend", dir); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -868,10 +868,11 @@ func TestRailCursorAlwaysPainted(t *testing.T) {
 	for _, size := range []struct{ w, h int }{{80, 16}, {100, 24}, {120, 30}, {160, 44}} {
 		for _, cursor := range []int{0, 1, len(rows) / 2, len(rows) - 2, len(rows) - 1} {
 			m := &Model{
-				width: size.w, height: size.h, mode: modeList,
-				sessions: sessions, rows: rows, cursor: cursor,
-				collapsed: map[string]bool{}, split: splitState{ratio: defaultSplitRatio},
-			}
+	width: size.w, height: size.h, mode: modeList,
+
+	split: splitState{ratio: defaultSplitRatio}, workspace: workspace{sessions: sessions}, rail: railState{rows: rows, cursor: cursor,
+		collapsed: map[string]bool{}},
+}
 			view := ansi.Strip(m.View())
 			if !strings.Contains(view, sessions[cursor].Name) {
 				t.Errorf("%dx%d cursor=%d: %q is selected but never painted:\n%s",
@@ -947,12 +948,12 @@ func gitRepoWithManyFiles(t *testing.T, n int) string {
 func TestInboxBadgeOutlivesTheNameAndTheFocusBadge(t *testing.T) {
 	for _, width := range []int{29, 27} {
 		m := buildModel(t)
-		m.groupPaths = map[string]string{"a/b/c": "/tmp"}
-		m.sessions = []store.Session{{ID: "x", Name: "some-long-session-name", Tool: "claude", Group: "a/b/c"}}
+		m.workspace.groupPaths = map[string]string{"a/b/c": "/tmp"}
+		m.workspace.sessions = []store.Session{{ID: "x", Name: "some-long-session-name", Tool: "claude", Group: "a/b/c"}}
 		m.rebuildRows()
-		m.cursor = len(m.rows) - 1
+		m.rail.cursor = len(m.rail.rows) - 1
 		m.mode = modeFocus
-		m.queuedMessages = map[string]int{"x": 2}
+		m.workspace.queuedMessages = map[string]int{"x": 2}
 
 		rows := railTextAt(m, width)
 		row := rows[lineWith(t, rows, "✉2")]
@@ -965,8 +966,8 @@ func TestInboxBadgeOutlivesTheNameAndTheFocusBadge(t *testing.T) {
 func TestFilterBadgesStackOverTheList(t *testing.T) {
 	m := shotModel()
 	m.width, m.height = 120, 40
-	m.showArchived, m.hideEmptyGroups = true, true
-	m.statusFilter = statusFilterAttention
+	m.rail.showArchived, m.rail.hideEmptyGroups = true, true
+	m.rail.statusFilter = statusFilterAttention
 	rail := ansi.Strip(railLinesText(m.railLines(36, m.listBodyHeight())))
 	var painted []string
 	for _, line := range strings.Split(rail, "\n") {
@@ -1001,12 +1002,12 @@ func TestFilterBadgesStackOverTheList(t *testing.T) {
 func TestHideEmptyBadgeBelongsToTheActiveRail(t *testing.T) {
 	m := shotModel()
 	m.width, m.height = 120, 40
-	m.hideEmptyGroups = true
+	m.rail.hideEmptyGroups = true
 	for _, tc := range []struct {
 		archived bool
 		want     bool
 	}{{false, true}, {true, false}} {
-		m.showArchived = tc.archived
+		m.rail.showArchived = tc.archived
 		rail := ansi.Strip(railLinesText(m.railLines(36, m.listBodyHeight())))
 		if got := strings.Contains(rail, "HIDE EMPTY"); got != tc.want {
 			t.Errorf("showArchived=%v: HIDE EMPTY painted = %v, want %v:\n%s", tc.archived, got, tc.want, rail)
@@ -1020,9 +1021,8 @@ const blankCapture = "\n\n\n\n\n\n\n\n\n\n"
 
 func previewModel(sessionStatus, preview string) *Model {
 	return &Model{
-		width: 120, height: 40, mode: modeList, preview: preview,
-		rows: []treeRow{{sess: store.Session{ID: "boot", Name: "boot", Status: sessionStatus}}},
-	}
+	width: 120, height: 40, mode: modeList, workspace: workspace{preview: preview}, rail: railState{rows: []treeRow{{sess: store.Session{ID: "boot", Name: "boot", Status: sessionStatus}}}},
+}
 }
 
 func previewText(m *Model) string {
@@ -1040,13 +1040,13 @@ func TestPreviewBottomAlignsCompactPane(t *testing.T) {
 		t.Fatalf("compact pane was not bottom aligned: %q", lines)
 	}
 	wantY := m.listChromeRows() + 10
-	if !m.pane.box.ok || m.pane.box.y != wantY || m.pane.box.height != 2 {
-		t.Fatalf("pane box = %+v, want two rows starting at %d", m.pane.box, wantY)
+	if !m.focusPane.pane.box.ok || m.focusPane.pane.box.y != wantY || m.focusPane.pane.box.height != 2 {
+		t.Fatalf("pane box = %+v, want two rows starting at %d", m.focusPane.pane.box, wantY)
 	}
-	if _, _, ok := m.paneCell(m.pane.box.x, m.pane.box.y-1); ok {
+	if _, _, ok := m.paneCell(m.focusPane.pane.box.x, m.focusPane.pane.box.y-1); ok {
 		t.Fatal("padding above a compact pane became hit-testable")
 	}
-	if row, _, ok := m.paneCell(m.pane.box.x, m.pane.box.y); !ok || row != 0 {
+	if row, _, ok := m.paneCell(m.focusPane.pane.box.x, m.focusPane.pane.box.y); !ok || row != 0 {
 		t.Fatalf("first compact pane row maps to (%d,%v), want pane row zero", row, ok)
 	}
 }
@@ -1059,8 +1059,8 @@ func TestPreviewShowsLoaderWhileSessionStarts(t *testing.T) {
 	if got := previewText(m); !strings.Contains(got, "starting up") {
 		t.Fatalf("preview should carry the launch loader, got %q", got)
 	}
-	if !m.pane.box.ok || m.pane.box.height != len(paneExact(blankCapture, 12, 80, -1)) {
-		t.Fatalf("the loader must not cost the pane its geometry, box = %+v", m.pane.box)
+	if !m.focusPane.pane.box.ok || m.focusPane.pane.box.height != len(paneExact(blankCapture, 12, 80, -1)) {
+		t.Fatalf("the loader must not cost the pane its geometry, box = %+v", m.focusPane.pane.box)
 	}
 }
 
@@ -1075,8 +1075,8 @@ func TestPreviewShowsLoaderBeforeTheFirstCapture(t *testing.T) {
 	if strings.Contains(got, "(no output yet)") {
 		t.Fatalf("a starting session should not read as empty, got %q", got)
 	}
-	if m.pane.box.ok {
-		t.Fatalf("no pane rows painted means nothing to hit-test, box = %+v", m.pane.box)
+	if m.focusPane.pane.box.ok {
+		t.Fatalf("no pane rows painted means nothing to hit-test, box = %+v", m.focusPane.pane.box)
 	}
 }
 
@@ -1089,8 +1089,8 @@ func TestPreviewLoaderClearsOnFirstFrame(t *testing.T) {
 	if !strings.Contains(got, "hello") {
 		t.Fatalf("preview should paint the captured frame, got %q", got)
 	}
-	if !m.pane.box.ok {
-		t.Fatalf("captured rows must stay hit-testable, box = %+v", m.pane.box)
+	if !m.focusPane.pane.box.ok {
+		t.Fatalf("captured rows must stay hit-testable, box = %+v", m.focusPane.pane.box)
 	}
 }
 
@@ -1101,8 +1101,8 @@ func TestPreviewSkipsLoaderForSettledSessions(t *testing.T) {
 	if got := previewText(live); strings.Contains(got, "starting up") {
 		t.Fatalf("an idle session must not spin, got %q", got)
 	}
-	if !live.pane.box.ok {
-		t.Fatalf("an idle session keeps its pane rows, box = %+v", live.pane.box)
+	if !live.focusPane.pane.box.ok {
+		t.Fatalf("an idle session keeps its pane rows, box = %+v", live.focusPane.pane.box)
 	}
 	gone := previewModel(status.Dead, "")
 	if got := previewText(gone); !strings.Contains(got, "(no output yet)") {
@@ -1143,11 +1143,11 @@ func TestPreviewLoaderIsCenteredAndMovesOnThePreviewTick(t *testing.T) {
 func TestStartingSessionGlyphMovesOnTheStartupTick(t *testing.T) {
 	for _, tool := range []string{"agent", "shell"} {
 		m := previewModel(status.Starting, blankCapture)
-		m.rows[0].sess.Tool = tool
-		m.cfg.Tools = map[string]config.Tool{"shell": {Shell: true}}
-		first := ansi.Strip(m.sessionGlyph(m.rows[0].sess))
+		m.rail.rows[0].sess.Tool = tool
+		m.services.cfg.Tools = map[string]config.Tool{"shell": {Shell: true}}
+		first := ansi.Strip(m.sessionGlyph(m.rail.rows[0].sess))
 		m.Update(startupTickMsg{})
-		second := ansi.Strip(m.sessionGlyph(m.rows[0].sess))
+		second := ansi.Strip(m.sessionGlyph(m.rail.rows[0].sess))
 		if first == second {
 			t.Fatalf("starting %s glyph stayed on %q", tool, first)
 		}
@@ -1180,10 +1180,10 @@ func TestPreviewLeavesTheFocusedPaneAlone(t *testing.T) {
 
 	m := previewModel(status.Starting, blankCapture)
 	m.mode = modeFocus
-	m.cursorOn = true
-	m.pane.cursor = paneCursor{ok: true}
+	m.focusPane.cursorOn = true
+	m.focusPane.pane.cursor = paneCursor{ok: true}
 	lines := m.previewLines(80, 12, "  ")
-	first := lines[m.pane.box.y-m.listChromeRows()].text
+	first := lines[m.focusPane.pane.box.y-m.listChromeRows()].text
 	if strings.Contains(ansi.Strip(first), "starting up") {
 		t.Fatalf("the loader took the focused pane's first row: %q", first)
 	}
@@ -1233,11 +1233,13 @@ func TestRowMarksSessionsOnAnotherServer(t *testing.T) {
 				CreatedAt: now, LastStatusAt: now, TmuxSocket: tc.socket,
 			}
 			m := &Model{
-				width: 120, height: 40, mode: modeList,
-				sessions: []store.Session{sess}, rows: []treeRow{{sess: sess}},
-				collapsed: map[string]bool{}, split: splitState{ratio: defaultSplitRatio},
-				tmuxSocket: here, leadingManager: tc.leading,
-			}
+	width: 120, height: 40, mode: modeList,
+
+	split: splitState{ratio: defaultSplitRatio}, workspace: workspace{sessions: []store.Session{sess},
+
+		tmuxSocket: here, leadingManager: tc.leading}, rail: railState{rows: []treeRow{{sess: sess}},
+		collapsed: map[string]bool{}},
+}
 			view := ansi.Strip(m.View())
 			if strings.Contains(view, "elsewhere") != tc.elsewise {
 				t.Fatalf("elsewhere marker = %v, want %v:\n%s", !tc.elsewise, tc.elsewise, view)
@@ -1255,10 +1257,11 @@ func TestRowsAreUnmarkedBeforeTheFirstPoll(t *testing.T) {
 		CreatedAt: now, LastStatusAt: now, TmuxSocket: "/tmp/another-manager/agentmgr",
 	}
 	m := &Model{
-		width: 120, height: 40, mode: modeList,
-		sessions: []store.Session{sess}, rows: []treeRow{{sess: sess}},
-		collapsed: map[string]bool{}, split: splitState{ratio: defaultSplitRatio},
-	}
+	width: 120, height: 40, mode: modeList,
+
+	split: splitState{ratio: defaultSplitRatio}, workspace: workspace{sessions: []store.Session{sess}}, rail: railState{rows: []treeRow{{sess: sess}},
+		collapsed: map[string]bool{}},
+}
 	if view := ansi.Strip(m.View()); strings.Contains(view, "elsewhere") {
 		t.Fatalf("nothing to compare against should mark nothing:\n%s", view)
 	}
@@ -1270,17 +1273,17 @@ func TestRowsAreUnmarkedBeforeTheFirstPoll(t *testing.T) {
 // layout.
 func TestRowHeightsFollowDensity(t *testing.T) {
 	m := shotModel()
-	m.fullLayout = true
-	m.paneLines = map[string]string{"add-rate-limiting": "Running tests… (14s · esc to interrupt)"}
-	row := m.rows[4]
+	m.prefs.fullLayout = true
+	m.workspace.paneLines = map[string]string{"add-rate-limiting": "Running tests… (14s · esc to interrupt)"}
+	row := m.rail.rows[4]
 	row.sess.LastPrompt = "add a token bucket limiter to the public api"
-	if m.comfortableRows {
+	if m.prefs.comfortableRows {
 		t.Fatal("this test starts at the compact density")
 	}
 	if got := m.entryHeight(row); got != 1 {
 		t.Fatalf("compact session entry height = %d, want 1", got)
 	}
-	if got := m.entryHeight(m.rows[2]); got != 1 {
+	if got := m.entryHeight(m.rail.rows[2]); got != 1 {
 		t.Fatalf("group entry height = %d, want 1", got)
 	}
 	lines := splitLines(m.renderTreeRow(row, false, m.width-1, 4, panelHex()))
@@ -1294,8 +1297,8 @@ func TestRowHeightsFollowDensity(t *testing.T) {
 		}
 	}
 
-	m.comfortableRows = true
-	if got := m.entryHeight(m.rows[2]); got != 1 {
+	m.prefs.comfortableRows = true
+	if got := m.entryHeight(m.rail.rows[2]); got != 1 {
 		t.Fatalf("comfortable group entry height = %d, want 1", got)
 	}
 	if got := m.entryHeight(row); got != 3 {
@@ -1319,11 +1322,11 @@ func TestRowHeightsFollowDensity(t *testing.T) {
 	}
 
 	// The same rhythm holds in the split layout.
-	m.fullLayout = false
+	m.prefs.fullLayout = false
 	if got := m.entryHeight(row); got != 3 {
 		t.Fatalf("split comfortable session entry height = %d, want 3", got)
 	}
-	m.comfortableRows = false
+	m.prefs.comfortableRows = false
 	if got := m.entryHeight(row); got != 1 {
 		t.Fatalf("split compact session entry height = %d, want 1", got)
 	}
@@ -1339,11 +1342,11 @@ func TestRowWaitingReplyWearsTheStateColor(t *testing.T) {
 	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
 
 	m := shotModel()
-	m.fullLayout = true
-	m.comfortableRows = true
+	m.prefs.fullLayout = true
+	m.prefs.comfortableRows = true
 	question := "Allow edits to router.go?"
-	m.paneLines = map[string]string{"db-migrations": question}
-	lines := splitLines(m.renderTreeRow(m.rows[0], false, m.width-1, 0, panelHex()))
+	m.workspace.paneLines = map[string]string{"db-migrations": question}
+	lines := splitLines(m.renderTreeRow(m.rail.rows[0], false, m.width-1, 0, panelHex()))
 	if len(lines) != 3 {
 		t.Fatalf("waiting row painted %d lines, want 3", len(lines))
 	}
@@ -1356,15 +1359,15 @@ func TestRowWaitingReplyWearsTheStateColor(t *testing.T) {
 
 func TestRowQuotesEveryStateAndDashesWhenSilent(t *testing.T) {
 	m := shotModel()
-	m.fullLayout = true
-	m.comfortableRows = true
-	m.paneLines = map[string]string{"notes": "All quiet, nothing queued."}
-	lines := splitLines(m.renderTreeRow(m.rows[1], false, m.width-1, 1, panelHex()))
+	m.prefs.fullLayout = true
+	m.prefs.comfortableRows = true
+	m.workspace.paneLines = map[string]string{"notes": "All quiet, nothing queued."}
+	lines := splitLines(m.renderTreeRow(m.rail.rows[1], false, m.width-1, 1, panelHex()))
 	if reply := strings.TrimSpace(ansi.Strip(lines[2])); reply != "↳ All quiet, nothing queued." {
 		t.Fatalf("idle reply line = %q, want the last message", reply)
 	}
-	m.paneLines = nil
-	lines = splitLines(m.renderTreeRow(m.rows[1], false, m.width-1, 1, panelHex()))
+	m.workspace.paneLines = nil
+	lines = splitLines(m.renderTreeRow(m.rail.rows[1], false, m.width-1, 1, panelHex()))
 	if reply := strings.TrimSpace(ansi.Strip(lines[2])); reply != "-" {
 		t.Fatalf("silent idle reply line = %q, want a dash", reply)
 	}
@@ -1372,10 +1375,10 @@ func TestRowQuotesEveryStateAndDashesWhenSilent(t *testing.T) {
 
 func TestRowLongPromptTruncates(t *testing.T) {
 	m := shotModel()
-	m.fullLayout = true
-	m.comfortableRows = true
+	m.prefs.fullLayout = true
+	m.prefs.comfortableRows = true
 	width := 80
-	row := m.rows[1]
+	row := m.rail.rows[1]
 	row.sess.LastPrompt = strings.Repeat("triage the flaky integration suite and report ", 10)
 	rendered := m.renderTreeRow(row, false, width, 1, panelHex())
 	for _, line := range splitLines(rendered) {
@@ -1394,35 +1397,17 @@ func TestRowLongPromptTruncates(t *testing.T) {
 	}
 }
 
-// The launch notes are the manager's words, not a task: a decorated first
-// prompt sheds them, and a note delivered on its own records nothing.
-func TestTypedPromptStripsLaunchNotes(t *testing.T) {
-	decorated := launch.CoordinationNote + "\n\n" + launch.RenameDirective + "\n\nfix the login flow"
-	if got := typedPrompt(decorated); got != "fix the login flow" {
-		t.Fatalf("typedPrompt = %q, want the bare task", got)
-	}
-	if got := typedPrompt(launch.DeferredRenameDirective); got != "" {
-		t.Fatalf("a bare directive should record nothing, got %q", got)
-	}
-	if got := typedPrompt(launch.CoordinationNote); got != "" {
-		t.Fatalf("a bare note should record nothing, got %q", got)
-	}
-	if got := typedPrompt("plain prompt"); got != "plain prompt" {
-		t.Fatalf("an undecorated prompt should pass through, got %q", got)
-	}
-}
-
 // The compact cell quotes the agent's last message whenever there is
 // one, whatever the state; only a session that has said nothing yet
 // names the task it was given.
 func TestCompactCellIsStatePicked(t *testing.T) {
 	m := shotModel()
-	m.fullLayout = true
-	m.paneLines = map[string]string{
+	m.prefs.fullLayout = true
+	m.workspace.paneLines = map[string]string{
 		"notes":         "All quiet, nothing queued.",
 		"db-migrations": "Allow edits to router.go?",
 	}
-	idle := m.rows[1]
+	idle := m.rail.rows[1]
 	idle.sess.LastPrompt = "verify the staging deploy is healthy"
 	line := ansi.Strip(m.renderTreeRow(idle, false, m.width-1, 1, panelHex()))
 	if !strings.Contains(line, "↳ All quiet, nothing queued.") {
@@ -1432,13 +1417,13 @@ func TestCompactCellIsStatePicked(t *testing.T) {
 		t.Fatalf("the reply should win over the task:\n%s", line)
 	}
 
-	m.paneLines = map[string]string{"db-migrations": "Allow edits to router.go?"}
+	m.workspace.paneLines = map[string]string{"db-migrations": "Allow edits to router.go?"}
 	line = ansi.Strip(m.renderTreeRow(idle, false, m.width-1, 1, panelHex()))
 	if !strings.Contains(line, "❯ verify the staging deploy is healthy") {
 		t.Fatalf("a silent idle session should name its task:\n%s", line)
 	}
 
-	line = ansi.Strip(m.renderTreeRow(m.rows[0], false, m.width-1, 0, panelHex()))
+	line = ansi.Strip(m.renderTreeRow(m.rail.rows[0], false, m.width-1, 0, panelHex()))
 	if !strings.Contains(line, "↳ Allow edits to router.go?") {
 		t.Fatalf("waiting compact row should quote its question:\n%s", line)
 	}
@@ -1448,8 +1433,8 @@ func TestCompactCellIsStatePicked(t *testing.T) {
 // not read as alive from inside the archive.
 func TestArchivedRowReadsDead(t *testing.T) {
 	m := shotModel()
-	m.fullLayout = true
-	row := m.rows[4]
+	m.prefs.fullLayout = true
+	row := m.rail.rows[4]
 	row.sess.Archived = true
 	line := ansi.Strip(m.renderTreeRow(row, false, m.width-1, 4, panelHex()))
 	if !strings.Contains(line, statusLabel(status.Dead)) {
@@ -1462,13 +1447,13 @@ func TestArchivedRowReadsDead(t *testing.T) {
 
 func TestShellRowSkipsThePromptLine(t *testing.T) {
 	m := shotModel()
-	m.cfg = config.Config{Tools: map[string]config.Tool{"terminal": {Shell: true}, "claude": {}}}
-	m.comfortableRows = true
-	shell := m.rows[4]
+	m.services.cfg = config.Config{Tools: map[string]config.Tool{"terminal": {Shell: true}, "claude": {}}}
+	m.prefs.comfortableRows = true
+	shell := m.rail.rows[4]
 	shell.sess.Tool = "terminal"
 	shell.sess.Status = status.Idle
 	shell.sess.LastPrompt = "this never rode a shell row"
-	m.paneLines = map[string]string{shell.sess.ID: "~/dev/api $ go test ./..."}
+	m.workspace.paneLines = map[string]string{shell.sess.ID: "~/dev/api $ go test ./..."}
 
 	if got := m.entryHeight(shell); got != 2 {
 		t.Fatalf("comfortable shell entry height = %d, want 2", got)
@@ -1485,7 +1470,7 @@ func TestShellRowSkipsThePromptLine(t *testing.T) {
 	}
 
 	// An agent beside it keeps all three.
-	agent := m.rows[4]
+	agent := m.rail.rows[4]
 	if got := m.entryHeight(agent); got != 3 {
 		t.Fatalf("comfortable agent entry height = %d, want 3", got)
 	}
@@ -1494,7 +1479,7 @@ func TestShellRowSkipsThePromptLine(t *testing.T) {
 	}
 
 	// Compact keeps every session on one row, shell included.
-	m.comfortableRows = false
+	m.prefs.comfortableRows = false
 	if got := m.entryHeight(shell); got != 1 {
 		t.Fatalf("compact shell entry height = %d, want 1", got)
 	}
@@ -1576,31 +1561,31 @@ func TestRailWindowShowsAListThatFits(t *testing.T) {
 
 func TestRailTopCarriesBetweenFrames(t *testing.T) {
 	m := shotModel()
-	m.comfortableRows = true
-	m.fullLayout = true
-	m.rows = nil
+	m.prefs.comfortableRows = true
+	m.prefs.fullLayout = true
+	m.rail.rows = nil
 	for i := 0; i < 30; i++ {
 		name := fmt.Sprintf("session-%02d", i)
-		m.rows = append(m.rows, treeRow{sess: store.Session{ID: name, Name: name, Tool: "claude", Status: status.Idle}})
+		m.rail.rows = append(m.rail.rows, treeRow{sess: store.Session{ID: name, Name: name, Tool: "claude", Status: status.Idle}})
 	}
 
-	heights := make([]int, len(m.rows))
-	for i := range m.rows {
-		heights[i] = m.entryHeight(m.rows[i])
+	heights := make([]int, len(m.rail.rows))
+	for i := range m.rail.rows {
+		heights[i] = m.entryHeight(m.rail.rows[i])
 	}
 
 	const height = 20
-	tops := make([]int, len(m.rows))
-	for i := range m.rows {
-		prev, prevEnd := m.railTop, windowEnd(heights, m.railTop, height)
-		m.cursor = i
-		m.entryLines(m.rows, 0, m.width-1, height)
-		tops[i] = m.railTop
-		if m.railTop > i {
-			t.Fatalf("cursor %d: rail starts below it at %d", i, m.railTop)
+	tops := make([]int, len(m.rail.rows))
+	for i := range m.rail.rows {
+		prev, prevEnd := m.rail.railTop, windowEnd(heights, m.rail.railTop, height)
+		m.rail.cursor = i
+		m.entryLines(m.rail.rows, 0, m.width-1, height)
+		tops[i] = m.rail.railTop
+		if m.rail.railTop > i {
+			t.Fatalf("cursor %d: rail starts below it at %d", i, m.rail.railTop)
 		}
-		if i >= prev && i < prevEnd && m.railTop != prev {
-			t.Fatalf("cursor %d already sat in [%d,%d) and the rail scrolled to %d", i, prev, prevEnd, m.railTop)
+		if i >= prev && i < prevEnd && m.rail.railTop != prev {
+			t.Fatalf("cursor %d already sat in [%d,%d) and the rail scrolled to %d", i, prev, prevEnd, m.rail.railTop)
 		}
 	}
 	if tops[0] != 0 || tops[1] != 0 {
@@ -1610,15 +1595,15 @@ func TestRailTopCarriesBetweenFrames(t *testing.T) {
 		t.Fatal("the rail never scrolled across 30 comfortable entries")
 	}
 
-	for i := len(m.rows) - 1; i >= 0; i-- {
-		m.cursor = i
-		m.entryLines(m.rows, 0, m.width-1, height)
-		if m.railTop > i {
-			t.Fatalf("cursor %d: rail starts below it at %d", i, m.railTop)
+	for i := len(m.rail.rows) - 1; i >= 0; i-- {
+		m.rail.cursor = i
+		m.entryLines(m.rail.rows, 0, m.width-1, height)
+		if m.rail.railTop > i {
+			t.Fatalf("cursor %d: rail starts below it at %d", i, m.rail.railTop)
 		}
 	}
-	if m.railTop != 0 {
-		t.Fatalf("stepping back to the first entry left the rail at %d", m.railTop)
+	if m.rail.railTop != 0 {
+		t.Fatalf("stepping back to the first entry left the rail at %d", m.rail.railTop)
 	}
 }
 
@@ -1629,19 +1614,19 @@ func TestFullFocusFrameRecordsNoRailHits(t *testing.T) {
 	createSession(t, m, "alpha", t.TempDir(), "")
 	m.selectSessionRow(t, "alpha")
 	m.View()
-	if len(m.railHits) == 0 {
+	if len(m.rail.railHits) == 0 {
 		t.Fatal("test setup: the list frame should record the rail's hits")
 	}
 
-	m.fullLayout = true
+	m.prefs.fullLayout = true
 	updated, _ := m.focusSelected()
 	m = updated.(*Model)
 	if !m.fullFocus() {
 		t.Fatalf("test setup: focus alpha full screen, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 	m.View()
-	if len(m.railHits) != 0 {
-		t.Fatalf("full focus paints no rail, got %d hits", len(m.railHits))
+	if len(m.rail.railHits) != 0 {
+		t.Fatalf("full focus paints no rail, got %d hits", len(m.rail.railHits))
 	}
 }
 
@@ -1661,7 +1646,7 @@ func TestPlaceNoticeHitMapsTheFootRowsAndCardColumns(t *testing.T) {
 	if footLines == 0 {
 		t.Fatal("test setup: the rail painted no foot")
 	}
-	hit := m.noticeHit
+	hit := m.notices.noticeHit
 	if !hit.ok || hit.y0 != y0+footIndex || hit.y1 != hit.y0+footLines {
 		t.Fatalf("hit rows %d..%d, want %d..%d: %+v", hit.y0, hit.y1, y0+footIndex, y0+footIndex+footLines, hit)
 	}
@@ -1678,39 +1663,39 @@ func TestPlaceNoticeHitClearsAStaleBox(t *testing.T) {
 	m := buildModel(t)
 	m.width, m.height = 120, 34
 	m.View()
-	if !m.noticeHit.ok {
+	if !m.notices.noticeHit.ok {
 		t.Fatal("test setup: the card painted no hit")
 	}
-	x, y := m.noticeHit.x0, m.noticeHit.y0
+	x, y := m.notices.noticeHit.x0, m.notices.noticeHit.y0
 
-	m.hideStats = true
+	m.prefs.hideStats = true
 	for _, n := range m.activeNotices() {
-		m.dismissed[n.id] = true
+		m.notices.dismissed[n.id] = true
 	}
 	m.View()
-	if m.noticeHit.ok {
-		t.Fatalf("a rail with no foot must drop the box, got %+v", m.noticeHit)
+	if m.notices.noticeHit.ok {
+		t.Fatalf("a rail with no foot must drop the box, got %+v", m.notices.noticeHit)
 	}
 	if m = leftPress(m, x, y); m.mode != modeList {
 		t.Fatalf("a press where the card was should do nothing, mode = %v", m.mode)
 	}
 
-	m.hideStats = false
-	m.dismissed = map[string]bool{}
+	m.prefs.hideStats = false
+	m.notices.dismissed = map[string]bool{}
 	m.View()
-	if !m.noticeHit.ok {
+	if !m.notices.noticeHit.ok {
 		t.Fatal("test setup: the card is back")
 	}
 	m.width = 40
 	m.View()
-	if m.noticeHit.ok {
-		t.Fatalf("a rail too narrow for the card must drop the box, got %+v", m.noticeHit)
+	if m.notices.noticeHit.ok {
+		t.Fatalf("a rail too narrow for the card must drop the box, got %+v", m.notices.noticeHit)
 	}
 }
 
 func TestSearchFieldFillsOnlyWhileSearching(t *testing.T) {
 	m := shotModel()
-	m.search = "note"
+	m.rail.search = "note"
 	fieldLine := func() contentLine {
 		for _, line := range m.railLines(40, 14) {
 			if strings.Contains(ansi.Strip(line.text), "⌕") {
@@ -1721,7 +1706,7 @@ func TestSearchFieldFillsOnlyWhileSearching(t *testing.T) {
 		return contentLine{}
 	}
 
-	m.searching = true
+	m.rail.searching = true
 	open := fieldLine()
 	if open.tone != searchFieldHex() {
 		t.Fatalf("open field tone = %q, want %q", open.tone, searchFieldHex())
@@ -1730,7 +1715,7 @@ func TestSearchFieldFillsOnlyWhileSearching(t *testing.T) {
 		t.Fatalf("open field line carries no fill:\n%q", open.text)
 	}
 
-	m.searching = false
+	m.rail.searching = false
 	closed := fieldLine()
 	if closed.tone != "" {
 		t.Fatalf("closed field with a query applied should keep the panel tone, got %q", closed.tone)
@@ -1747,7 +1732,7 @@ func TestSearchLightsTheQueryInsideASessionName(t *testing.T) {
 	}}
 	lit := searchMatchStyle.Render("bui")
 
-	m := &Model{search: "BUI"}
+	m := &Model{rail: railState{search: "BUI"}}
 	row := m.renderTreeRow(entry, false, 80, 0, panelHex())
 	if !strings.Contains(row, lit) {
 		t.Fatalf("query should light its span in the name's own case:\n%q", row)
@@ -1762,13 +1747,13 @@ func TestSearchLightsTheQueryInsideASessionName(t *testing.T) {
 		t.Fatalf("selected row should keep its bright name around the lit span:\n%q", selected)
 	}
 
-	m.search = "grok"
+	m.rail.search = "grok"
 	row = m.renderTreeRow(entry, false, 80, 0, panelHex())
 	if strings.Contains(row, sgrOf(lit)) {
 		t.Fatalf("a match on the tool alone should leave the name plain:\n%q", row)
 	}
 
-	m.search = ""
+	m.rail.search = ""
 	row = m.renderTreeRow(entry, false, 80, 0, panelHex())
 	if !strings.Contains(row, valueStyle.Render("alpha-build")) {
 		t.Fatalf("no query should render the plain name:\n%q", row)
@@ -1777,7 +1762,7 @@ func TestSearchLightsTheQueryInsideASessionName(t *testing.T) {
 
 func TestSearchLightsTheQueryInsideAGroupName(t *testing.T) {
 	forceANSI256(t)
-	m := &Model{search: "END"}
+	m := &Model{rail: railState{search: "END"}}
 	row := m.renderTreeRow(treeRow{isGroup: true, group: "work/backend"}, false, 80, 0, panelHex())
 	if !strings.Contains(row, searchMatchStyle.Render("end")) {
 		t.Fatalf("group name should light the query:\n%q", row)
@@ -1792,8 +1777,8 @@ func TestSearchLightsTheQueryInsideAGroupName(t *testing.T) {
 func TestFullQuickLinesKeepTheCaretRowOnScreen(t *testing.T) {
 	m := buildModel(t)
 	seedTwoGroups(t, m)
-	m.cursor = 1
-	m.fullLayout = true
+	m.rail.cursor = 1
+	m.prefs.fullLayout = true
 	m.width = 56
 	m.height = 9
 	m.openQuickMode()
@@ -1855,16 +1840,16 @@ func TestQuickBarMeasuresRowsAtTheWidthItJustSet(t *testing.T) {
 // no handle and no menu button, and the name keeps their cells.
 func TestMouseOffPaintsNoHandleOrMenuButton(t *testing.T) {
 	m := shotModel()
-	m.mouseDisabled = true
-	for _, line := range m.entryLines(m.rows, 0, 44, 20) {
+	m.prefs.mouseDisabled = true
+	for _, line := range m.entryLines(m.rail.rows, 0, 44, 20) {
 		text := ansi.Strip(line.text)
 		if strings.Contains(text, reorderGrip) || strings.Contains(text, rowMenuGlyph) {
 			t.Fatalf("mouse off should paint no handle or %s: %q", rowMenuGlyph, text)
 		}
 	}
-	m.mouseDisabled = false
+	m.prefs.mouseDisabled = false
 	painted := false
-	for _, line := range m.entryLines(m.rows, 0, 44, 20) {
+	for _, line := range m.entryLines(m.rail.rows, 0, 44, 20) {
 		painted = painted || strings.Contains(ansi.Strip(line.text), reorderGrip)
 	}
 	if !painted {

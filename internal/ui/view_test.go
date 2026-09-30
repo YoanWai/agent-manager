@@ -286,7 +286,7 @@ func TestZZShot(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		m.bannerPhase = n
+		m.startup.bannerPhase = n
 	}
 	if err := os.WriteFile(out, []byte(m.View()), 0o644); err != nil {
 		t.Fatal(err)
@@ -321,24 +321,35 @@ func shotModel() *Model {
 		{depth: 2, sess: sessions[5]},
 	}
 	m := &Model{
-		keys:     keybind.DefaultSession(),
-		listKeys: keybind.DefaultList(),
-		width:    120, height: 34, mode: modeList, cursor: 4,
-		sessions: sessions, rows: rows, collapsed: map[string]bool{},
-		groupPaths: map[string]string{"backend": "/Users/someone/dev/api"},
-		split:      splitState{ratio: defaultSplitRatio},
-		agents:     agentStats{count: 4, cpu: 12, ram: 9, rss: 1_530_000_000},
-		net:        netStats{rates: true, down: 9_400_000, up: 2_100_000},
-		snap: sysstat.Snapshot{
-			CPUOK: true, CPUPercent: 22,
-			MemOK: true, MemPercent: 75, MemUsed: 12_100_000_000, MemTotal: 16_000_000_000,
-			SwapOK: true, SwapPercent: 43, SwapUsed: 4_500_000_000, SwapTotal: 8_000_000_000,
-			DiskOK: true, DiskPercent: 88, DiskUsed: 400_000_000_000, DiskFree: 100_000_000_000, DiskTotal: 500_000_000_000,
-			CPUTempOK: true, CPUTemp: 61, GPUTempOK: true, GPUTemp: 55,
+		width:  120,
+		height: 34,
+		mode:   modeList,
+		split:  splitState{ratio: defaultSplitRatio},
+		services: services{
+			keys:     keybind.DefaultSession(),
+			listKeys: keybind.DefaultList(),
 		},
-		preview: previewSample,
-		proc:    sysstat.ProcStat{OK: true, CPUPercent: 4.2, RamPercent: 3.6, RSS: 612_000_000},
-		procFor: "add-rate-limiting",
+		workspace: workspace{
+			sessions:   sessions,
+			groupPaths: map[string]string{"backend": "/Users/someone/dev/api"},
+			agents:     agentStats{count: 4, cpu: 12, ram: 9, rss: 1_530_000_000},
+			net:        netStats{rates: true, down: 9_400_000, up: 2_100_000},
+			snap: sysstat.Snapshot{
+				CPUOK: true, CPUPercent: 22,
+				MemOK: true, MemPercent: 75, MemUsed: 12_100_000_000, MemTotal: 16_000_000_000,
+				SwapOK: true, SwapPercent: 43, SwapUsed: 4_500_000_000, SwapTotal: 8_000_000_000,
+				DiskOK: true, DiskPercent: 88, DiskUsed: 400_000_000_000, DiskFree: 100_000_000_000, DiskTotal: 500_000_000_000,
+				CPUTempOK: true, CPUTemp: 61, GPUTempOK: true, GPUTemp: 55,
+			},
+			preview: previewSample,
+			proc:    sysstat.ProcStat{OK: true, CPUPercent: 4.2, RamPercent: 3.6, RSS: 612_000_000},
+			procFor: "add-rate-limiting",
+		},
+		rail: railState{
+			cursor:    4,
+			rows:      rows,
+			collapsed: map[string]bool{},
+		},
 	}
 	return m
 }
@@ -357,7 +368,7 @@ const previewSample = "\x1b[38;5;110m◆\x1b[0m claude \x1b[38;5;240m·\x1b[0m a
 
 func TestBootShowsFullScreenRing(t *testing.T) {
 	m := shotModel()
-	m.booting = true
+	m.startup.booting = true
 	body := ansi.Strip(m.View())
 	if strings.Contains(body, "add-rate-limiting") {
 		t.Fatalf("boot should hide the list:\n%s", body)
@@ -365,7 +376,7 @@ func TestBootShowsFullScreenRing(t *testing.T) {
 	if !strings.Contains(body, "loading") {
 		t.Fatalf("boot should be the preview ring, got:\n%s", body)
 	}
-	m.booting = false
+	m.startup.booting = false
 	body = ansi.Strip(m.View())
 	if !strings.Contains(body, "add-rate-limiting") {
 		t.Fatalf("after boot the list should show:\n%s", body)
@@ -449,7 +460,10 @@ func TestPaneSoftEdges(t *testing.T) {
 }
 
 func TestHeaderShowsUpdateBadgeBesideWordmark(t *testing.T) {
-	m := &Model{width: 120, update: updateInfo{latest: "v0.9.0"}}
+	m := &Model{
+		width:  120,
+		update: updateInfo{latest: "v0.9.0"},
+	}
 	header := ansi.Strip(m.viewHeaderRows()[0])
 	if !strings.Contains(header, "v0.9.0") || !strings.Contains(header, "available") {
 		t.Errorf("header missing update badge: %q", header)
@@ -464,7 +478,9 @@ func TestHeaderShowsUpdateBadgeBesideWordmark(t *testing.T) {
 }
 
 func TestUpdateMsgSetsAndClearsBadge(t *testing.T) {
-	m := &Model{width: 120}
+	m := &Model{
+		width: 120,
+	}
 	m.Update(updateMsg{latest: "v0.11.1", url: "https://example/rel"})
 	if m.update.latest != "v0.11.1" || m.update.url != "https://example/rel" {
 		t.Errorf("badge not set: %q %q", m.update.latest, m.update.url)
@@ -476,7 +492,10 @@ func TestUpdateMsgSetsAndClearsBadge(t *testing.T) {
 }
 
 func TestFailedUpdateCheckKeepsBadge(t *testing.T) {
-	m := &Model{width: 120, update: updateInfo{latest: "v0.11.1", url: "https://example/rel"}}
+	m := &Model{
+		width:  120,
+		update: updateInfo{latest: "v0.11.1", url: "https://example/rel"},
+	}
 	m.Update(updateMsg{failed: true})
 	if m.update.latest != "v0.11.1" || m.update.url != "https://example/rel" {
 		t.Errorf("a failed check must leave the badge alone: %q %q", m.update.latest, m.update.url)
@@ -484,7 +503,9 @@ func TestFailedUpdateCheckKeepsBadge(t *testing.T) {
 }
 
 func TestUpdateTickReArms(t *testing.T) {
-	m := &Model{width: 120}
+	m := &Model{
+		width: 120,
+	}
 	if _, cmd := m.Update(updateTickMsg{}); cmd == nil {
 		t.Error("update tick should re-arm the timer and re-check")
 	}
@@ -517,7 +538,7 @@ func TestFooterInFocusMode(t *testing.T) {
 		t.Fatalf("a plain focused pane should not offer mouse pass-through:\n%s", footer)
 	}
 	// Full screen focus paints no list, so the gesture that needs one goes.
-	m.fullLayout = true
+	m.prefs.fullLayout = true
 	full := ansi.Strip(m.viewFooter())
 	if strings.Contains(full, "click its row") {
 		t.Fatalf("full screen focus has no list to click:\n%s", full)
@@ -526,7 +547,7 @@ func TestFooterInFocusMode(t *testing.T) {
 		t.Fatalf("the button still leaves a full screen session:\n%s", full)
 	}
 
-	m.pane.mouse = true
+	m.focusPane.pane.mouse = true
 	if footer := ansi.Strip(m.viewFooter()); !strings.Contains(footer, "click / alt+drag") || !strings.Contains(footer, "agent UI") {
 		t.Fatalf("a mouse-tracking pane should advertise pass-through:\n%s", footer)
 	}
@@ -534,7 +555,7 @@ func TestFooterInFocusMode(t *testing.T) {
 
 func TestArrowStepFooterHintsFollowSetting(t *testing.T) {
 	m := buildModel(t)
-	if err := m.store.CreateGroup("arrow-group", ""); err != nil {
+	if err := m.services.store.CreateGroup("arrow-group", ""); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -548,7 +569,7 @@ func TestArrowStepFooterHintsFollowSetting(t *testing.T) {
 	}
 
 	for _, enabled := range []bool{true, false} {
-		m.arrowStep = enabled
+		m.prefs.arrowStep = enabled
 		m.mode = modeList
 		m.selectSessionRow(t, "arrow-hints")
 		assertHint("session", "→ focus", enabled)
@@ -566,14 +587,14 @@ func TestQuickBarKeepsPaneHeight(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "sizer", t.TempDir(), "")
 	m.applyCmd(t, m.refreshCmd())
-	sess := m.rows[m.cursor].sess
+	sess := m.rail.rows[m.rail.cursor].sess
 	pinned := m.previewPaneHeight()
 
 	rows := make([]string, pinned+10)
 	for i := range rows {
 		rows[i] = fmt.Sprintf("line%03d", i+1)
 	}
-	m.preview = strings.Join(rows, "\n") + "\n"
+	m.workspace.preview = strings.Join(rows, "\n") + "\n"
 	listed := paintedPreview(m)
 
 	m.openQuickMode()
@@ -639,7 +660,7 @@ func TestTransientFootersKeepListHeight(t *testing.T) {
 // carries only the app-wide tier.
 func TestFooterWithoutASelectedRow(t *testing.T) {
 	m := buildModel(t)
-	m.rows = nil
+	m.rail.rows = nil
 	footer := ansi.Strip(m.viewFooter())
 	if strings.Contains(footer, "Session") || strings.Contains(footer, "Group") {
 		t.Fatalf("no row selected, no row tier:\n%s", footer)
@@ -654,9 +675,9 @@ func TestFooterTierFollowsTheCursor(t *testing.T) {
 	createSession(t, m, "legend", t.TempDir(), "")
 	m.applyCmd(t, m.refreshCmd())
 
-	for i, row := range m.rows {
+	for i, row := range m.rail.rows {
 		if !row.isGroup {
-			m.cursor = i
+			m.rail.cursor = i
 			break
 		}
 	}
@@ -664,9 +685,9 @@ func TestFooterTierFollowsTheCursor(t *testing.T) {
 		t.Fatalf("a session under the cursor should title the tier Session:\n%s", footer)
 	}
 
-	for i, row := range m.rows {
+	for i, row := range m.rail.rows {
 		if row.isGroup {
-			m.cursor = i
+			m.rail.cursor = i
 			break
 		}
 	}
@@ -686,7 +707,7 @@ func TestFooterTogglesNameTheNextAction(t *testing.T) {
 	// Wide enough that the row budget keeps every app-wide binding.
 	m.width = 260
 	dir := t.TempDir()
-	if err := m.store.AddGroup("work", dir, "off"); err != nil {
+	if err := m.services.store.AddGroup("work", dir, "off"); err != nil {
 		t.Fatalf("seed group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -702,7 +723,7 @@ func TestFooterTogglesNameTheNextAction(t *testing.T) {
 	}
 
 	group := -1
-	for i, row := range m.rows {
+	for i, row := range m.rail.rows {
 		if row.isGroup && !row.isRoot() {
 			group = i
 			break
@@ -711,12 +732,12 @@ func TestFooterTogglesNameTheNextAction(t *testing.T) {
 	if group < 0 {
 		t.Fatalf("the fixture should list a group to fold, rows: %v", m.groupRowPaths())
 	}
-	m.cursor = group
+	m.rail.cursor = group
 	if footer := m.viewFooter(); !strings.Contains(footer, keyCap("↵", "unfold")) {
 		t.Fatalf("a collapsed group should offer unfolding:\n%s", ansi.Strip(footer))
 	}
 
-	m.showArchived = true
+	m.rail.showArchived = true
 	if footer := m.viewFooter(); !strings.Contains(footer, keyCapQuiet("t", "back to active")) {
 		t.Fatalf("the archived view should offer the way back:\n%s", ansi.Strip(footer))
 	}
@@ -735,11 +756,11 @@ func TestLegendOffersEmptyGroupsOnlyInTheActiveView(t *testing.T) {
 	if !offered() {
 		t.Fatal("the active view should offer hiding empty groups")
 	}
-	m.hideEmptyGroups = true
+	m.rail.hideEmptyGroups = true
 	if !offered() {
 		t.Fatal("the active view should offer showing empty groups again")
 	}
-	m.showArchived = true
+	m.rail.showArchived = true
 	if offered() {
 		t.Fatal("the archived view should not offer the empty-groups key")
 	}
@@ -805,7 +826,7 @@ func TestFooterInFocusModeNamesTheKeyTable(t *testing.T) {
 	if strings.Contains(footer, "review") || strings.Contains(footer, "ctrl+q") {
 		t.Fatalf("focus footer should drop the review hint and the old detach key:\n%s", footer)
 	}
-	rule := ansi.Strip(focusTopRule(80, m.keys))
+	rule := ansi.Strip(focusTopRule(80, m.services.keys))
 	if !strings.Contains(rule, "f9 back") || !strings.Contains(rule, "alt+e editor") || strings.Contains(rule, "review") {
 		t.Fatalf("split focus rule should follow the table:\n%s", rule)
 	}
@@ -815,7 +836,7 @@ func TestRowLegendDropsRestoreInActiveView(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
 
-	if err := m.store.CreateGroup("zone", ""); err != nil {
+	if err := m.services.store.CreateGroup("zone", ""); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -850,16 +871,16 @@ func TestRowLegendDropsArchiveInArchivedView(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
 
-	if err := m.store.CreateGroup("zone", ""); err != nil {
+	if err := m.services.store.CreateGroup("zone", ""); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
 	createSession(t, m, "alpha", dir, "zone")
-	if err := m.store.SetArchived(m.sessionRows()[0].ID, true); err != nil {
+	if err := m.services.store.SetArchived(m.sessionRows()[0].ID, true); err != nil {
 		t.Fatalf("archive: %v", err)
 	}
 
-	m.showArchived = true
+	m.rail.showArchived = true
 	m.applyCmd(t, m.refreshCmd())
 
 	m.selectSessionRow(t, "alpha")

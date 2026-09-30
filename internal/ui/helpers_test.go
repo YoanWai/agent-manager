@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/execution"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
@@ -135,9 +136,9 @@ func buildModel(t *testing.T) *Model {
 	m := New(cfg, st, driver, engine, hooks.NewManager(t.TempDir()), "dev")
 	m.width = 120
 	m.height = 40
-	m.booting = false
+	m.startup.booting = false
 	t.Cleanup(func() {
-		for _, s := range m.sessions {
+		for _, s := range m.workspace.sessions {
 			driver.Kill(s.ID)
 		}
 	})
@@ -180,7 +181,7 @@ func (m *Model) stepCmd(t *testing.T, cmd tea.Cmd) tea.Cmd {
 func clearRequestOnCleanup(t *testing.T, m *Model) {
 	t.Helper()
 	t.Cleanup(func() {
-		if err := m.tmux.ClearRequest(); err != nil {
+		if err := m.services.tmux.ClearRequest(); err != nil {
 			t.Errorf("ClearRequest: %v", err)
 		}
 	})
@@ -188,7 +189,7 @@ func clearRequestOnCleanup(t *testing.T, m *Model) {
 
 func (m *Model) sessionRows() []store.Session {
 	var sessions []store.Session
-	for _, r := range m.rows {
+	for _, r := range m.rail.rows {
 		if !r.isGroup {
 			sessions = append(sessions, r.sess)
 		}
@@ -198,9 +199,9 @@ func (m *Model) sessionRows() []store.Session {
 
 func (m *Model) selectSessionRow(t *testing.T, name string) {
 	t.Helper()
-	for i, r := range m.rows {
+	for i, r := range m.rail.rows {
 		if !r.isGroup && r.sess.Name == name {
-			m.cursor = i
+			m.rail.cursor = i
 			return
 		}
 	}
@@ -209,9 +210,9 @@ func (m *Model) selectSessionRow(t *testing.T, name string) {
 
 func (m *Model) selectGroupRow(t *testing.T, path string) {
 	t.Helper()
-	for i, r := range m.rows {
+	for i, r := range m.rail.rows {
 		if r.isGroup && r.group == path {
-			m.cursor = i
+			m.rail.cursor = i
 			return
 		}
 	}
@@ -221,7 +222,7 @@ func (m *Model) selectGroupRow(t *testing.T, path string) {
 // groupRowPaths lists the stored groups the tree paints, skipping root.
 func (m *Model) groupRowPaths() []string {
 	var paths []string
-	for _, r := range m.rows {
+	for _, r := range m.rail.rows {
 		if r.isGroup && !r.isRoot() {
 			paths = append(paths, r.group)
 		}
@@ -231,23 +232,23 @@ func (m *Model) groupRowPaths() []string {
 
 func loadStoredRows(t *testing.T, m *Model) {
 	t.Helper()
-	sessions, err := m.store.ListSessions(true)
+	sessions, err := m.services.store.ListSessions(true)
 	if err != nil {
 		t.Fatalf("list sessions: %v", err)
 	}
-	groups, err := m.store.Groups()
+	groups, err := m.services.store.Groups()
 	if err != nil {
 		t.Fatalf("list groups: %v", err)
 	}
-	m.sessions = sessions
-	m.groups = make([]string, len(groups))
-	m.groupPaths = make(map[string]string, len(groups))
-	m.archivedGroups = make(map[string]bool, len(groups))
+	m.workspace.sessions = sessions
+	m.workspace.groups = make([]string, len(groups))
+	m.workspace.groupPaths = make(map[string]string, len(groups))
+	m.workspace.archivedGroups = make(map[string]bool, len(groups))
 	for i, group := range groups {
-		m.groups[i] = group.Name
-		m.groupPaths[group.Name] = group.Path
+		m.workspace.groups[i] = group.Name
+		m.workspace.groupPaths[group.Name] = group.Path
 		if group.Archived {
-			m.archivedGroups[group.Name] = true
+			m.workspace.archivedGroups[group.Name] = true
 		}
 	}
 	m.rebuildRows()
@@ -335,7 +336,7 @@ func createWorktreeSession(t *testing.T, m *Model, name, repo string) store.Sess
 		t.Fatalf("after submit, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 	m.applyCmd(t, cmd)
-	for _, sess := range m.sessions {
+	for _, sess := range m.workspace.sessions {
 		if sess.Name == name {
 			if sess.WorktreeBranch == "" {
 				t.Fatalf("session %q did not spawn in a worktree: %+v", name, sess)
@@ -374,12 +375,12 @@ func waitForAgent(t *testing.T, m *Model, sessID string, want bool) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		if running, err := sessioncmd.AgentRunning(m.tmux, sessID); err == nil && running == want {
+		if running, err := sessioncmd.AgentRunning(m.services.tmux, sessID); err == nil && running == want {
 			return
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	pane, _ := m.tmux.CapturePane(sessID)
+	pane, _ := m.services.tmux.CapturePane(sessID)
 	t.Fatalf("pane never settled on agent running = %v; pane:\n%s", want, pane)
 }
 
@@ -391,7 +392,7 @@ func createSessionOn(t *testing.T, m *Model, name, tool, dir string) {
 	m.form.name.SetValue(name)
 	m.form.dir.SetValue(dir)
 	picked := false
-	for i, candidate := range sortedToolNames(m.cfg) {
+	for i, candidate := range sortedToolNames(m.services.cfg) {
 		if candidate == tool {
 			m.form.toolIndex, picked = i, true
 		}
@@ -415,7 +416,7 @@ func waitForPaneChild(t *testing.T, m *Model, sessID, name string) {
 	deadline := time.Now().Add(10 * time.Second)
 	var children []string
 	for time.Now().Before(deadline) {
-		if pid, err := m.tmux.PanePID(sessID); err == nil {
+		if pid, err := m.services.tmux.PanePID(sessID); err == nil {
 			children = sysstat.Trees([]int{pid})[pid].Children
 			for _, child := range children {
 				if filepath.Base(child) == name {
@@ -433,7 +434,7 @@ func waitForPaneChild(t *testing.T, m *Model, sessID, name string) {
 func quitAgent(t *testing.T, m *Model, sessID string) {
 	t.Helper()
 	waitForAgent(t, m, sessID, true)
-	if err := m.tmux.SendKeys(sessID, "C-d"); err != nil {
+	if err := m.services.tmux.SendKeys(sessID, "C-d"); err != nil {
 		t.Fatalf("send ctrl-d: %v", err)
 	}
 	waitForAgent(t, m, sessID, false)
@@ -443,8 +444,8 @@ func quitAgent(t *testing.T, m *Model, sessID string) {
 // read, the way a config.toml with a [keybindings.session] block would.
 func useSessionKeys(t *testing.T, m *Model, detach, review, editor []string) {
 	t.Helper()
-	m.keys = sessionOf(t, detach, review, editor)
-	m.tmux.SetSessionKeys(m.keys)
+	m.services.keys = sessionOf(t, detach, review, editor)
+	m.services.tmux.SetSessionKeys(m.services.keys)
 }
 
 func sessionOf(t *testing.T, detach, review, editor []string) keybind.Table {
@@ -478,11 +479,15 @@ func railMouse(t *testing.T, m *Model, name string, action tea.MouseAction, butt
 
 func sessionRow(t *testing.T, m *Model, name string) treeRow {
 	t.Helper()
-	for _, row := range m.rows {
+	for _, row := range m.rail.rows {
 		if !row.isGroup && row.sess.Name == name {
 			return row
 		}
 	}
 	t.Fatalf("no row %s", name)
 	return treeRow{}
+}
+
+func resetExecution(m *Model) {
+	m.poller.runner = execution.New(m.poller.dependencies, m.poller.options)
 }

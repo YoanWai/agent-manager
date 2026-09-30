@@ -9,7 +9,7 @@ import (
 func TestMoveSession(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
-	if err := m.store.CreateGroup("target/deep", ""); err != nil {
+	if err := m.services.store.CreateGroup("target/deep", ""); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -33,10 +33,10 @@ func TestMoveSession(t *testing.T) {
 func TestMoveGroupRow(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
-	if err := m.store.CreateGroup("alpha/inner", ""); err != nil {
+	if err := m.services.store.CreateGroup("alpha/inner", ""); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
-	if err := m.store.CreateGroup("beta", ""); err != nil {
+	if err := m.services.store.CreateGroup("beta", ""); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -67,7 +67,7 @@ func TestMoveGroupRow(t *testing.T) {
 
 func TestMoveGroupRowExcludesDescendants(t *testing.T) {
 	m := buildModel(t)
-	if err := m.store.CreateGroup("alpha/inner/deep", ""); err != nil {
+	if err := m.services.store.CreateGroup("alpha/inner/deep", ""); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -84,7 +84,7 @@ func TestMoveGroupRowExcludesDescendants(t *testing.T) {
 func TestMoveTerminalOntoAgentNests(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
-	if err := m.store.CreateGroup("backend", dir); err != nil {
+	if err := m.services.store.CreateGroup("backend", dir); err != nil {
 		t.Fatalf("group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -93,7 +93,7 @@ func TestMoveTerminalOntoAgentNests(t *testing.T) {
 	shell := spawnTerminal(t, m)
 	m.selectSessionRow(t, shell.Name)
 	m.openMove()
-	agent, _ := m.store.Get(m.sessionRows()[0].ID)
+	agent, _ := m.services.store.Get(m.sessionRows()[0].ID)
 	for i, opt := range m.form.groups {
 		if opt.sessID == agent.ID {
 			m.form.groupIndex = i
@@ -105,7 +105,7 @@ func TestMoveTerminalOntoAgentNests(t *testing.T) {
 	}
 	_, cmd := m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m.applyCmd(t, cmd)
-	got, err := m.store.Get(shell.ID)
+	got, err := m.services.store.Get(shell.ID)
 	if err != nil || got.ParentID != agent.ID {
 		t.Fatalf("nested = %+v err %v", got, err)
 	}
@@ -114,10 +114,10 @@ func TestMoveTerminalOntoAgentNests(t *testing.T) {
 func TestMoveTerminalOntoGroupUnnests(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
-	if err := m.store.CreateGroup("backend", dir); err != nil {
+	if err := m.services.store.CreateGroup("backend", dir); err != nil {
 		t.Fatalf("group: %v", err)
 	}
-	if err := m.store.CreateGroup("other", dir); err != nil {
+	if err := m.services.store.CreateGroup("other", dir); err != nil {
 		t.Fatalf("other: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -129,7 +129,7 @@ func TestMoveTerminalOntoGroupUnnests(t *testing.T) {
 	pickGroup(t, m, "other")
 	_, cmd := m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m.applyCmd(t, cmd)
-	got, _ := m.store.Get(shell.ID)
+	got, _ := m.services.store.Get(shell.ID)
 	if got.ParentID != "" || got.Group != "other" {
 		t.Fatalf("unnest = %+v", got)
 	}
@@ -138,7 +138,7 @@ func TestMoveTerminalOntoGroupUnnests(t *testing.T) {
 func TestMoveReportsPlacementFailure(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
-	if err := m.store.CreateGroup("backend", dir); err != nil {
+	if err := m.services.store.CreateGroup("backend", dir); err != nil {
 		t.Fatalf("group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -155,7 +155,7 @@ func TestMoveReportsPlacementFailure(t *testing.T) {
 			t.Fatal("picker must list the agent")
 		}
 	}
-	if err := m.store.Delete(agent.ID); err != nil {
+	if err := m.services.store.Delete(agent.ID); err != nil {
 		t.Fatalf("delete agent: %v", err)
 	}
 	_, cmd := m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
@@ -166,7 +166,7 @@ func TestMoveReportsPlacementFailure(t *testing.T) {
 	if m.mode != modeMove {
 		t.Fatalf("mode = %v, want modeMove", m.mode)
 	}
-	got, err := m.store.Get(shell.ID)
+	got, err := m.services.store.Get(shell.ID)
 	if err != nil || got.ParentID != agent.ID {
 		t.Fatalf("shell left its parent: %+v err %v", got, err)
 	}
@@ -175,7 +175,7 @@ func TestMoveReportsPlacementFailure(t *testing.T) {
 func TestMoveReportsMissingSource(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
-	if err := m.store.CreateGroup("backend", dir); err != nil {
+	if err := m.services.store.CreateGroup("backend", dir); err != nil {
 		t.Fatalf("group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -184,7 +184,7 @@ func TestMoveReportsMissingSource(t *testing.T) {
 	shell := spawnTerminal(t, m)
 	m.selectSessionRow(t, shell.Name)
 	m.openMove()
-	if err := m.store.Delete(shell.ID); err != nil {
+	if err := m.services.store.Delete(shell.ID); err != nil {
 		t.Fatalf("delete shell: %v", err)
 	}
 	_, cmd := m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
@@ -201,7 +201,7 @@ func TestMovePickerKeepsTheTerminalsOwnGroupSelected(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
 	for _, group := range []string{"alpha", "beta"} {
-		if err := m.store.CreateGroup(group, dir); err != nil {
+		if err := m.services.store.CreateGroup(group, dir); err != nil {
 			t.Fatalf("group %s: %v", group, err)
 		}
 	}
@@ -221,7 +221,7 @@ func TestMovePickerKeepsTheTerminalsOwnGroupSelected(t *testing.T) {
 func TestMoveAgentPickerHasNoSessionTargets(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
-	if err := m.store.CreateGroup("backend", dir); err != nil {
+	if err := m.services.store.CreateGroup("backend", dir); err != nil {
 		t.Fatalf("group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())

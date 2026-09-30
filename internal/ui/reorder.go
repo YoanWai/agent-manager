@@ -26,14 +26,14 @@ type reorderState struct {
 // onHandle reports whether a press at (x, y) on row grabs its handle,
 // counting the gap on either side so the target is wider than one cell.
 func (m *Model) onHandle(x, y, row int) bool {
-	handle, ok := m.handleX[rowKey(m.rows[row])]
+	handle, ok := m.rail.handleX[rowKey(m.rail.rows[row])]
 	return ok && x >= handle-1 && x <= handle+1 && m.onRowHead(y, row)
 }
 
 // rowHandle is the grip a movable row carries after lead. The row hides it
 // while renamed and while the mouse is off.
 func (m *Model) rowHandle(entry treeRow, selected bool) string {
-	if entry.isRoot() || m.renamingRow(entry) || m.mouseDisabled {
+	if entry.isRoot() || m.renamingRow(entry) || m.prefs.mouseDisabled {
 		return ""
 	}
 	return m.handleGlyph(entry, selected) + " "
@@ -52,36 +52,36 @@ func (m *Model) handleGlyph(entry treeRow, selected bool) string {
 }
 
 func (m *Model) liftedRow(entry treeRow) bool {
-	return m.reorder.active && rowKey(entry) == m.reorder.key
+	return m.rail.reorder.active && rowKey(entry) == m.rail.reorder.key
 }
 
 func (m *Model) enterReorder(key string) {
-	m.lifts++
-	m.menu = rowMenu{}
+	m.rail.lifts++
+	m.rail.menu = rowMenu{}
 	m.errBar.text = ""
-	m.reorder = reorderState{active: true, lift: m.lifts, key: key, dragging: true}
+	m.rail.reorder = reorderState{active: true, lift: m.rail.lifts, key: key, dragging: true}
 }
 
 // exitReorder puts the lifted row down where it stands, or with keep false
 // back where it was lifted from.
 func (m *Model) exitReorder(keep bool) {
-	for !keep && m.reorder.offset != 0 {
+	for !keep && m.rail.reorder.offset != 0 {
 		back := -1
-		if m.reorder.offset < 0 {
+		if m.rail.reorder.offset < 0 {
 			back = 1
 		}
 		if !m.reorderStep(back) {
 			break
 		}
 	}
-	m.reorder = reorderState{}
+	m.rail.reorder = reorderState{}
 }
 
 // reorderStep moves the lifted row one visible sibling over, quietly
 // refusing at either end of its level or once the row has left the list.
 func (m *Model) reorderStep(delta int) bool {
 	entry, ok := m.selectedRow()
-	if !ok || rowKey(entry) != m.reorder.key {
+	if !ok || rowKey(entry) != m.rail.reorder.key {
 		return false
 	}
 	target, ok := m.visibleReorderTarget(entry, delta)
@@ -92,29 +92,29 @@ func (m *Model) reorderStep(delta int) bool {
 		m.errBar.text = err.Error()
 		return false
 	}
-	m.reorder.offset += delta
-	m.reorder.moved = true
+	m.rail.reorder.offset += delta
+	m.rail.reorder.moved = true
 	return true
 }
 
 // stepLifted moves the lifted row from the keyboard or the wheel, which
 // drops any pending move and hands the rail window back to the cursor.
 func (m *Model) stepLifted(delta int) {
-	m.reorder.drop = nil
-	m.reorder.autoscroll.anchored = false
+	m.rail.reorder.drop = nil
+	m.rail.reorder.autoscroll.anchored = false
 	m.reorderStep(delta)
 }
 
 // dragReorderTo steps the lifted row toward the row under the pointer,
 // one sibling at a time, until the next sibling lies past the pointer.
 func (m *Model) dragReorderTo(target int) {
-	for m.cursor != target {
+	for m.rail.cursor != target {
 		entry, ok := m.selectedRow()
 		if !ok {
 			return
 		}
 		delta := 1
-		if target < m.cursor {
+		if target < m.rail.cursor {
 			delta = -1
 		}
 		next, ok := m.visibleReorderTarget(entry, delta)
@@ -132,7 +132,7 @@ func (m *Model) dragReorderTo(target int) {
 }
 
 func (m *Model) rowIndexByKey(key string) int {
-	for i, row := range m.rows {
+	for i, row := range m.rail.rows {
 		if rowKey(row) == key {
 			return i
 		}
@@ -142,7 +142,7 @@ func (m *Model) rowIndexByKey(key string) int {
 
 func (m *Model) handleReorderKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := keybind.Normalize(msg.String())
-	action, _ := m.listKeys.ActionFor(key)
+	action, _ := m.services.listKeys.ActionFor(key)
 	switch {
 	case key == "ctrl+c" || action == keybind.Quit:
 		m.exitReorder(true)
@@ -176,7 +176,7 @@ func (m *Model) handleReorderMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	switch msg.Action {
 	case tea.MouseActionMotion:
-		if !m.reorder.dragging {
+		if !m.rail.reorder.dragging {
 			return m, nil
 		}
 		if row, ok := m.clickRow(msg.X, msg.Y); ok {
@@ -184,23 +184,23 @@ func (m *Model) handleReorderMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.trackDragEdge(msg)
 	case tea.MouseActionRelease:
-		if !m.reorder.dragging {
+		if !m.rail.reorder.dragging {
 			return m, nil
 		}
-		m.reorder.dragging = false
+		m.rail.reorder.dragging = false
 		switch {
-		case m.reorder.drop != nil:
-			m.commitDrop(*m.reorder.drop)
+		case m.rail.reorder.drop != nil:
+			m.commitDrop(*m.rail.reorder.drop)
 			m.exitReorder(true)
-		case m.reorder.moved:
+		case m.rail.reorder.moved:
 			m.exitReorder(true)
 		default:
-			m.reorder.autoscroll.anchored = false
+			m.rail.reorder.autoscroll.anchored = false
 		}
 	case tea.MouseActionPress:
 		row, onRail := m.clickRow(msg.X, msg.Y)
-		if onRail && msg.Button == tea.MouseButtonLeft && rowKey(m.rows[row]) == m.reorder.key && m.onHandle(msg.X, msg.Y, row) {
-			m.reorder.dragging = true
+		if onRail && msg.Button == tea.MouseButtonLeft && rowKey(m.rail.rows[row]) == m.rail.reorder.key && m.onHandle(msg.X, msg.Y, row) {
+			m.rail.reorder.dragging = true
 			return m, nil
 		}
 		m.exitReorder(true)
@@ -210,7 +210,7 @@ func (m *Model) handleReorderMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) reorderFooter() string {
-	if drop := m.reorder.drop; drop != nil {
+	if drop := m.rail.reorder.drop; drop != nil {
 		return m.transientFooter(legendSection{title: "Move", pairs: [][2]string{
 			{"release", "move " + drop.label}, {"esc", "put back"},
 		}})

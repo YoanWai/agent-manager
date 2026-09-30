@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/git"
+	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
@@ -56,6 +58,13 @@ func NewTerminals(configDir string, words Vocabulary) *Terminals {
 	return newTerminals(configDir, words, tmux.New)
 }
 
+func NewTerminalsWithBackend(backend *Backend, words Vocabulary) *Terminals {
+	if backend == nil {
+		panic("session command backend is required")
+	}
+	return &Terminals{commands: commands{words: words, backend: backend}}
+}
+
 func newTerminals(configDir string, words Vocabulary, newDriver func() (*tmux.Driver, error)) *Terminals {
 	return &Terminals{commands: commands{configDir: configDir, words: words, newDriver: newDriver, loadConfig: config.LoadDir}}
 }
@@ -66,6 +75,7 @@ func newTerminals(configDir string, words Vocabulary, newDriver func() (*tmux.Dr
 type commands struct {
 	configDir string
 	words     Vocabulary
+	backend   *Backend
 	newDriver func() (*tmux.Driver, error)
 	// loadConfig is config.LoadDir outside the tests, which inject fake CLIs.
 	loadConfig func(string) (config.Config, error)
@@ -76,6 +86,14 @@ type runtime struct {
 	words  Vocabulary
 	store  *store.Store
 	driver *tmux.Driver
+	close  func() error
+}
+
+func (r *runtime) Close() error {
+	if r.close == nil {
+		return nil
+	}
+	return r.close()
 }
 
 // createPane opens a session's pane at the box the running manager pins
@@ -91,6 +109,9 @@ func (r *runtime) createPane(id, cwd, command string, env map[string]string) err
 }
 
 func (c *commands) open() (*runtime, error) {
+	if c.backend != nil {
+		return c.backend.commands(c.words)
+	}
 	cfg, err := c.loadConfig(c.configDir)
 	if err != nil {
 		return nil, err
@@ -104,7 +125,28 @@ func (c *commands) open() (*runtime, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &runtime{cfg: cfg, words: c.words, store: st, driver: driver}, nil
+	return &runtime{cfg: cfg, words: c.words, store: st, driver: driver, close: st.Close}, nil
+}
+
+func (c *commands) lifecycle(opened *runtime, gitDriver *git.Driver) (*Lifecycle, error) {
+	if c.backend != nil {
+		lifecycle, err := c.backend.Lifecycle()
+		if err != nil {
+			return nil, err
+		}
+		if gitDriver != nil {
+			lifecycle.runtime.Git = gitDriver
+		}
+		return lifecycle, nil
+	}
+	return NewLifecycle(Runtime{
+		Config:   opened.cfg,
+		Store:    opened.store,
+		Driver:   opened.driver,
+		Hooks:    hooks.NewManager(c.configDir),
+		Git:      gitDriver,
+		Snapshot: opened.store.SetSnapshot,
+	})
 }
 
 func (r *runtime) caller(sessionID string) (store.Session, error) {
@@ -191,7 +233,7 @@ func (t *Terminals) List(sessionID string) ([]Terminal, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer runtime.store.Close()
+	defer runtime.Close()
 	if _, err := runtime.caller(sessionID); err != nil {
 		return nil, err
 	}
@@ -223,7 +265,7 @@ func (t *Terminals) Create(sessionID string, opts CreateTerminalOptions) (Termin
 	if err != nil {
 		return Terminal{}, err
 	}
-	defer runtime.store.Close()
+	defer runtime.Close()
 	caller, err := runtime.caller(sessionID)
 	if err != nil {
 		return Terminal{}, err
@@ -255,45 +297,32 @@ func (t *Terminals) Create(sessionID string, opts CreateTerminalOptions) (Termin
 		return Terminal{}, err
 	}
 	sess := store.Session{
-		ID:     uuid.NewString()[:8],
-		Name:   name,
-		Tool:   toolName,
-		Cwd:    dir,
-		Group:  group,
-		Status: status.Starting,
+		ID:       uuid.NewString()[:8],
+		Name:     name,
+		Tool:     toolName,
+		Cwd:      dir,
+		Group:    group,
+		Status:   status.Starting,
+		ParentID: parentID,
 	}
-	if err := runtime.createPane(sess.ID, sess.Cwd, tool.Command, nil); err != nil {
+	lifecycle, err := t.lifecycle(runtime, nil)
+	if err != nil {
 		return Terminal{}, err
 	}
-	sess.TmuxSocket = runtime.driver.SocketPath()
-	create := runtime.store.CreateSession
-	if nest {
-		if callerIsShell {
-			create = func(row store.Session) error {
-				return runtime.store.CreateSessionBeside(row, caller.ID)
-			}
-		} else {
-			create = func(row store.Session) error {
-				row.ParentID = caller.ID
-				return runtime.store.CreateSession(row)
-			}
-		}
+	besideID := ""
+	if nest && callerIsShell {
+		besideID = caller.ID
 	}
-	if err := create(sess); err != nil {
-		if killErr := runtime.driver.Kill(sess.ID); killErr != nil {
-			return Terminal{}, fmt.Errorf("%w; its pane %s is still running and has no row: %w", err, sess.ID, killErr)
-		}
+	launched, err := lifecycle.Launch(LaunchRequest{
+		Session:         sess,
+		Tool:            tool,
+		BaseCommand:     tool.Command,
+		BesideSessionID: besideID,
+	})
+	if err != nil {
 		return Terminal{}, err
 	}
-	if nest {
-		stored, err := runtime.store.Get(sess.ID)
-		if err != nil {
-			return Terminal{}, err
-		}
-		sess = stored
-	}
-	_ = runtime.driver.SetLabel(sess.ID, sessionLabel(sess.Group, sess.Name))
-	return runtime.info(sess, true)
+	return runtime.info(launched.Session, true)
 }
 
 func (t *Terminals) Close(sessionID, terminalID string) error {
@@ -301,7 +330,7 @@ func (t *Terminals) Close(sessionID, terminalID string) error {
 	if err != nil {
 		return err
 	}
-	defer runtime.store.Close()
+	defer runtime.Close()
 	sess, err := runtime.nestedTerminal(sessionID, terminalID)
 	if err != nil {
 		return err
@@ -453,7 +482,7 @@ func (t *Terminals) Send(sessionID, terminalID, command string, keys []string) (
 	if err != nil {
 		return TerminalInput{}, err
 	}
-	defer runtime.store.Close()
+	defer runtime.Close()
 	terminal, err := runtime.nestedTerminal(sessionID, terminalID)
 	if err != nil {
 		return TerminalInput{}, err
@@ -478,7 +507,7 @@ func (t *Terminals) Read(sessionID, terminalID string) (TerminalScreen, error) {
 	if err != nil {
 		return TerminalScreen{}, err
 	}
-	defer runtime.store.Close()
+	defer runtime.Close()
 	if _, err := runtime.caller(sessionID); err != nil {
 		return TerminalScreen{}, err
 	}

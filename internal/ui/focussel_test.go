@@ -17,9 +17,9 @@ func paneAt(t *testing.T, lines ...string) *Model {
 	t.Helper()
 	m := &Model{}
 	m.mode = modeFocus
-	m.cursorOn = true
-	m.preview = strings.Join(lines, "\n") + "\n"
-	m.pane.box = paneBox{x: 10, y: 5, width: 40, height: len(lines), ok: true}
+	m.focusPane.cursorOn = true
+	m.workspace.preview = strings.Join(lines, "\n") + "\n"
+	m.focusPane.pane.box = paneBox{x: 10, y: 5, width: 40, height: len(lines), ok: true}
 	return m
 }
 
@@ -29,9 +29,9 @@ func paneAt(t *testing.T, lines ...string) *Model {
 func TestCaretRowSurvivesTallPaneCrop(t *testing.T) {
 	rows := append([]string{"one", "two"}, make([]string, 38)...)
 	m := paneAt(t, rows...)
-	m.pane.box.height = 10
-	m.pane.cursor = paneCursor{x: 0, y: 25, ok: true}
-	row, col, ok := m.cursorCell(m.pane.box.height)
+	m.focusPane.pane.box.height = 10
+	m.focusPane.pane.cursor = paneCursor{x: 0, y: 25, ok: true}
+	row, col, ok := m.cursorCell(m.focusPane.pane.box.height)
 	if !ok || row != 9 || col != 0 {
 		t.Fatalf("caret at pane row 25 = (%d,%d,%v), want painted row 9", row, col, ok)
 	}
@@ -44,15 +44,15 @@ func TestFocusDropsTheLastSessionsCaret(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "alpha", t.TempDir(), "")
 	m.selectSessionRow(t, "alpha")
-	m.pane.forID = "another-session"
-	m.pane.cursor = paneCursor{x: 0, y: 25, ok: true}
+	m.focusPane.pane.forID = "another-session"
+	m.focusPane.pane.cursor = paneCursor{x: 0, y: 25, ok: true}
 	updated, _ := m.focusSelected()
 	m = updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("test setup: focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
-	m.preview = "one\ntwo" + strings.Repeat("\n", 38)
-	rows := paneExact(m.preview, 10, 40, m.paneCaretRow())
+	m.workspace.preview = "one\ntwo" + strings.Repeat("\n", 38)
+	rows := paneExact(m.workspace.preview, 10, 40, m.paneCaretRow())
 	if len(rows) != 2 || rows[0] != "one" {
 		t.Fatalf("focused pane = %q, want the painted rows", rows)
 	}
@@ -73,14 +73,14 @@ func TestMouseBackLeavesFocus(t *testing.T) {
 
 func TestMouseBackLeavesFocusWhileForwarding(t *testing.T) {
 	m := paneAt(t, "hello")
-	m.pane.mouse = true
-	m.forwardingMouse = true
+	m.focusPane.pane.mouse = true
+	m.focusPane.forwardingMouse = true
 	updated, _ := m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonBackward})
 	m = updated.(*Model)
 	if m.mode != modeList {
 		t.Fatalf("mouse back should leave focus while a click is forwarded, mode = %v", m.mode)
 	}
-	if m.forwardingMouse {
+	if m.focusPane.forwardingMouse {
 		t.Fatal("leaving focus should clear a forwarded click")
 	}
 }
@@ -94,7 +94,7 @@ func drag(m *Model, x, y int) {
 func TestSelectionIgnoresOutsidePane(t *testing.T) {
 	m := paneAt(t, "alpha beta", "gamma delta")
 	press(m, 2, 6)
-	if m.sel.active {
+	if m.focusPane.sel.active {
 		t.Fatal("click on the rail started a selection")
 	}
 	if _, _, ok := m.paneCell(9, 5); ok {
@@ -112,7 +112,7 @@ func TestAltClickSelectsPlainPane(t *testing.T) {
 	m.handleFocusMouse(tea.MouseMsg{
 		Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, Alt: true, X: 10, Y: 5,
 	})
-	if !m.sel.active {
+	if !m.focusPane.sel.active {
 		t.Fatal("Alt-click on a plain pane did not start a selection")
 	}
 }
@@ -132,16 +132,16 @@ func TestAltMouseForwardingKeepsTheRelease(t *testing.T) {
 			// so forwardFocusMouse reaches its send instead of returning
 			// early on an empty selection.
 			m, sess := focusedMouseApp(t, "mouse-tool", "release-"+tc.name)
-			x, y := m.pane.box.x+2, m.pane.box.y+1
+			x, y := m.focusPane.pane.box.x+2, m.focusPane.pane.box.y+1
 
 			m.handleFocusMouse(tea.MouseMsg{
 				Action: tea.MouseActionPress, Button: tc.button, Alt: true, X: x, Y: y,
 			})
-			if !m.forwardingMouse || m.sel.active {
-				t.Fatalf("Alt press did not start forwarding: forwarding=%v selection=%v", m.forwardingMouse, m.sel.active)
+			if !m.focusPane.forwardingMouse || m.focusPane.sel.active {
+				t.Fatalf("Alt press did not start forwarding: forwarding=%v selection=%v", m.focusPane.forwardingMouse, m.focusPane.sel.active)
 			}
-			if m.forwardingButton != tc.want {
-				t.Fatalf("forwardingButton = %d, want %d", m.forwardingButton, tc.want)
+			if m.focusPane.forwardingButton != tc.want {
+				t.Fatalf("forwardingButton = %d, want %d", m.focusPane.forwardingButton, tc.want)
 			}
 
 			// X10 reports a release as MouseButtonNone, so the stored pressed
@@ -149,13 +149,13 @@ func TestAltMouseForwardingKeepsTheRelease(t *testing.T) {
 			m.handleFocusMouse(tea.MouseMsg{
 				Action: tea.MouseActionRelease, Button: tea.MouseButtonNone, X: x, Y: y,
 			})
-			if m.forwardingMouse || m.forwardingButton != leftButton {
-				t.Fatalf("release did not clear forwarding state: active=%v button=%d", m.forwardingMouse, m.forwardingButton)
+			if m.focusPane.forwardingMouse || m.focusPane.forwardingButton != leftButton {
+				t.Fatalf("release did not clear forwarding state: active=%v button=%d", m.focusPane.forwardingMouse, m.focusPane.forwardingButton)
 			}
 
 			deadline := time.Now().Add(5 * time.Second)
 			for {
-				pane, err := m.tmux.CapturePane(sess.ID)
+				pane, err := m.services.tmux.CapturePane(sess.ID)
 				if err != nil {
 					t.Fatalf("capture: %v", err)
 				}
@@ -178,13 +178,13 @@ func TestAltMouseForwardingKeepsTheRelease(t *testing.T) {
 // selection drag anchored at the press cell, and the app never sees it.
 func TestDeferredPressBecomesDragSelection(t *testing.T) {
 	m := paneAt(t, "abcdef", "ghijkl")
-	m.pane.mouse = true
+	m.focusPane.pane.mouse = true
 	press(m, 12, 5)
-	if m.sel.active || !m.pending.active {
-		t.Fatalf("press in a mouse pane should defer, not select: sel=%v pending=%v", m.sel.active, m.pending.active)
+	if m.focusPane.sel.active || !m.focusPane.pending.active {
+		t.Fatalf("press in a mouse pane should defer, not select: sel=%v pending=%v", m.focusPane.sel.active, m.focusPane.pending.active)
 	}
 	drag(m, 13, 6)
-	if m.pending.active {
+	if m.focusPane.pending.active {
 		t.Fatal("motion should resolve the pending press")
 	}
 	if got := m.selectionText(); got != "cdef\nghi" {
@@ -196,11 +196,11 @@ func TestDeferredPressBecomesDragSelection(t *testing.T) {
 // live focus session the forward is simply dropped.
 func TestDeferredPressReleaseIsAClick(t *testing.T) {
 	m := paneAt(t, "alpha beta")
-	m.pane.mouse = true
+	m.focusPane.pane.mouse = true
 	press(m, 12, 5)
 	m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 12, Y: 5})
-	if m.pending.active || m.sel.active {
-		t.Fatalf("click left state behind: pending=%v sel=%v", m.pending.active, m.sel.active)
+	if m.focusPane.pending.active || m.focusPane.sel.active {
+		t.Fatalf("click left state behind: pending=%v sel=%v", m.focusPane.pending.active, m.focusPane.sel.active)
 	}
 }
 
@@ -209,10 +209,10 @@ func TestDeferredPressReleaseIsAClick(t *testing.T) {
 // terminal's drag: it selects instead of clicking or vanishing.
 func TestDeferredPressMotionlessDragSelects(t *testing.T) {
 	m := paneAt(t, "abcdef", "ghijkl")
-	m.pane.mouse = true
+	m.focusPane.pane.mouse = true
 	press(m, 12, 5)
 	m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 13, Y: 6})
-	if m.pending.active {
+	if m.focusPane.pending.active {
 		t.Fatal("release should resolve the pending press")
 	}
 	if got := m.selectionText(); got != "cdef\nghi" {
@@ -224,7 +224,7 @@ func TestDeferredPressMotionlessDragSelects(t *testing.T) {
 // mouse-tracking pane, so word and line copy keep working there.
 func TestDoubleClickStillSelectsInMousePane(t *testing.T) {
 	m := paneAt(t, "alpha beta gamma")
-	m.pane.mouse = true
+	m.focusPane.pane.mouse = true
 	press(m, 16, 5)
 	m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 16, Y: 5})
 	press(m, 16, 5)
@@ -237,15 +237,15 @@ func TestDoubleClickStillSelectsInMousePane(t *testing.T) {
 // press-release pair.
 func TestDeferredClickForwardsPressReleasePair(t *testing.T) {
 	m, sess := focusedMouseApp(t, "mouse-tool", "deferred-click")
-	x, y := m.pane.box.x+2, m.pane.box.y+1
+	x, y := m.focusPane.pane.box.x+2, m.focusPane.pane.box.y+1
 	m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: x, Y: y})
-	if m.sel.active {
+	if m.focusPane.sel.active {
 		t.Fatal("press in a mouse pane should not open a selection")
 	}
 	m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: x, Y: y})
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		pane, err := m.tmux.CapturePane(sess.ID)
+		pane, err := m.services.tmux.CapturePane(sess.ID)
 		if err != nil {
 			t.Fatalf("capture: %v", err)
 		}
@@ -315,8 +315,8 @@ func TestDragSelectionKeepsCompleteGraphemes(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := paneAt(t, tc.line)
-			press(m, m.pane.box.x+tc.start, m.pane.box.y)
-			drag(m, m.pane.box.x+tc.end, m.pane.box.y)
+			press(m, m.focusPane.pane.box.x+tc.start, m.focusPane.pane.box.y)
+			drag(m, m.focusPane.pane.box.x+tc.end, m.focusPane.pane.box.y)
 			if got := m.selectionText(); got != tc.want {
 				t.Fatalf("drag copied %q, want %q", got, tc.want)
 			}
@@ -326,14 +326,14 @@ func TestDragSelectionKeepsCompleteGraphemes(t *testing.T) {
 
 func TestWordSelectionKeepsWideGraphemeWhole(t *testing.T) {
 	m := paneAt(t, "甲乙")
-	m.sel = focusSelection{
+	m.focusPane.sel = focusSelection{
 		active: true, granule: selectWord,
 		anchorRow: 0, anchorCol: 1,
 		headRow: 0, headCol: 1,
 	}
 	m.expandSelection()
-	if m.sel.anchorCol != 0 || m.sel.headCol != 4 {
-		t.Fatalf("word bounds = [%d,%d), want [0,4)", m.sel.anchorCol, m.sel.headCol)
+	if m.focusPane.sel.anchorCol != 0 || m.focusPane.sel.headCol != 4 {
+		t.Fatalf("word bounds = [%d,%d), want [0,4)", m.focusPane.sel.anchorCol, m.focusPane.sel.headCol)
 	}
 	if got := m.selectionText(); got != "甲乙" {
 		t.Fatalf("word selection copied %q, want %q", got, "甲乙")
@@ -352,7 +352,7 @@ func TestWordSelectionKeepsCompleteGraphemes(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := paneAt(t, tc.line)
-			m.sel = focusSelection{
+			m.focusPane.sel = focusSelection{
 				active: true, granule: selectWord,
 				anchorRow: 0, anchorCol: tc.col,
 				headRow: 0, headCol: tc.col,
@@ -378,7 +378,7 @@ func TestSelectionIgnoresANSI(t *testing.T) {
 
 func TestSelectionOverlayPreservesSurroundingANSI(t *testing.T) {
 	m := paneAt(t, "\x1b[31mred\x1b[0m \x1b[34mblue\x1b[0m")
-	m.sel = focusSelection{
+	m.focusPane.sel = focusSelection{
 		active:    true,
 		anchorRow: 0,
 		anchorCol: 3,
@@ -388,7 +388,7 @@ func TestSelectionOverlayPreservesSurroundingANSI(t *testing.T) {
 	prev := lipgloss.ColorProfile()
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
-	row := m.renderPaneRow(0, m.preview, 20)
+	row := m.renderPaneRow(0, m.workspace.preview, 20)
 	overlay := selectionStyle().Render(" ")
 	redStart := strings.Index(row, "\x1b[31mred")
 	overlayStart := strings.Index(row, overlay)
@@ -404,14 +404,14 @@ func TestSelectionOverlayPreservesSurroundingANSI(t *testing.T) {
 // rather than repeating the grapheme on both sides of the edge.
 func TestSelectionOverlayKeepsWideGraphemesWhole(t *testing.T) {
 	m := paneAt(t, "a\U0001f600b")
-	m.sel = focusSelection{
+	m.focusPane.sel = focusSelection{
 		active:    true,
 		anchorRow: 0,
 		anchorCol: 0,
 		headRow:   0,
 		headCol:   2,
 	}
-	row := m.renderPaneRow(0, m.preview, 10)
+	row := m.renderPaneRow(0, m.workspace.preview, 10)
 	if plain := strings.TrimRight(ansi.Strip(row), " "); plain != "a\U0001f600b" {
 		t.Fatalf("selection overlay changed row text: %q", plain)
 	}
@@ -433,26 +433,26 @@ func TestPaneBoxMatchesPaintedFrame(t *testing.T) {
 	createSession(t, m, "boxed", t.TempDir(), "")
 	m.selectSessionRow(t, "boxed")
 	marker := "PANE-BOX-MARKER"
-	m.preview = marker + "\nsecond row\n"
+	m.workspace.preview = marker + "\nsecond row\n"
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	*m = *updated.(*Model)
 
 	frame := splitLines(m.View())
-	if !m.pane.box.ok {
+	if !m.focusPane.pane.box.ok {
 		t.Fatal("pane box never recorded")
 	}
-	if m.pane.box.y >= len(frame) {
-		t.Fatalf("pane box row %d past frame of %d rows", m.pane.box.y, len(frame))
+	if m.focusPane.pane.box.y >= len(frame) {
+		t.Fatalf("pane box row %d past frame of %d rows", m.focusPane.pane.box.y, len(frame))
 	}
-	row := plainCells(frame[m.pane.box.y])
-	if m.pane.box.x+len(marker) > len(row) {
-		t.Fatalf("pane box x %d past row width %d", m.pane.box.x, len(row))
+	row := plainCells(frame[m.focusPane.pane.box.y])
+	if m.focusPane.pane.box.x+len(marker) > len(row) {
+		t.Fatalf("pane box x %d past row width %d", m.focusPane.pane.box.x, len(row))
 	}
-	got := string(row[m.pane.box.x : m.pane.box.x+len(marker)])
+	got := string(row[m.focusPane.pane.box.x : m.focusPane.pane.box.x+len(marker)])
 	if got != marker {
 		t.Fatalf("row %d at column %d = %q, want %q\nrow: %q",
-			m.pane.box.y, m.pane.box.x, got, marker, string(row))
+			m.focusPane.pane.box.y, m.focusPane.pane.box.x, got, marker, string(row))
 	}
 }
 
@@ -462,15 +462,15 @@ func TestTripleClickOnRealFrameTakesPaneRowOnly(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "railmate", t.TempDir(), "")
 	m.selectSessionRow(t, "railmate")
-	m.preview = "pane row one\npane row two\n"
+	m.workspace.preview = "pane row one\npane row two\n"
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	*m = *updated.(*Model)
 	m.View()
 
-	y := m.pane.box.y + 1
+	y := m.focusPane.pane.box.y + 1
 	for i := 0; i < 3; i++ {
-		press(m, m.pane.box.x+3, y)
+		press(m, m.focusPane.pane.box.x+3, y)
 	}
 	got := m.selectionText()
 	if got != "pane row two" {
@@ -494,14 +494,14 @@ func TestPushedPreviewWinsOverStalePoll(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "typing", t.TempDir(), "")
 	m.selectSessionRow(t, "typing")
-	sess := m.rows[m.cursor].sess
+	sess := m.rail.rows[m.rail.cursor].sess
 
-	m.focus = newFocusWatch(m.tmux, func(tea.Msg) {})
-	m.focus.setFocus(sess.ID)
-	t.Cleanup(m.focus.Close)
+	m.focusPane.focus = newFocusWatch(m.services.tmux, func(tea.Msg) {})
+	m.focusPane.focus.setFocus(sess.ID)
+	t.Cleanup(m.focusPane.focus.Close)
 
 	deadline := time.Now().Add(5 * time.Second)
-	for !m.focus.serving(sess.ID) {
+	for !m.focusPane.focus.serving(sess.ID) {
 		if time.Now().After(deadline) {
 			t.Skip("control client never came up on this host")
 		}
@@ -511,20 +511,20 @@ func TestPushedPreviewWinsOverStalePoll(t *testing.T) {
 	fresh := "typed-just-now"
 	updated, _ := m.Update(focusPreviewMsg{sessID: sess.ID, preview: fresh})
 	*m = *updated.(*Model)
-	if m.preview != fresh {
-		t.Fatalf("pushed preview not stored: %q", m.preview)
+	if m.workspace.preview != fresh {
+		t.Fatalf("pushed preview not stored: %q", m.workspace.preview)
 	}
 
 	updated, _ = m.Update(previewMsg{sessID: sess.ID, preview: "stale-capture"})
 	*m = *updated.(*Model)
-	if m.preview != fresh {
-		t.Fatalf("stale tick capture overwrote the pushed frame: %q", m.preview)
+	if m.workspace.preview != fresh {
+		t.Fatalf("stale tick capture overwrote the pushed frame: %q", m.workspace.preview)
 	}
 
-	updated, _ = m.Update(refreshMsg{sessions: m.sessions, procFor: sess.ID, preview: "stale-poll"})
+	updated, _ = m.Update(refreshMsg{sessions: m.workspace.sessions, procFor: sess.ID, preview: "stale-poll"})
 	*m = *updated.(*Model)
-	if m.preview != fresh {
-		t.Fatalf("stale poll capture overwrote the pushed frame: %q", m.preview)
+	if m.workspace.preview != fresh {
+		t.Fatalf("stale poll capture overwrote the pushed frame: %q", m.workspace.preview)
 	}
 }
 
@@ -534,16 +534,16 @@ func TestPollPreviewResumesAfterWatcherStops(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "released", t.TempDir(), "")
 	m.selectSessionRow(t, "released")
-	sess := m.rows[m.cursor].sess
+	sess := m.rail.rows[m.rail.cursor].sess
 
-	m.focus = newFocusWatch(m.tmux, func(tea.Msg) {})
-	m.focus.setFocus(sess.ID)
-	m.focus.Close()
+	m.focusPane.focus = newFocusWatch(m.services.tmux, func(tea.Msg) {})
+	m.focusPane.focus.setFocus(sess.ID)
+	m.focusPane.focus.Close()
 
 	updated, _ := m.Update(previewMsg{sessID: sess.ID, preview: "polled"})
 	*m = *updated.(*Model)
-	if m.preview != "polled" {
-		t.Fatalf("preview after watcher stop = %q, want the polled capture", m.preview)
+	if m.workspace.preview != "polled" {
+		t.Fatalf("preview after watcher stop = %q, want the polled capture", m.workspace.preview)
 	}
 }
 
@@ -556,7 +556,7 @@ func TestBottomParkedCaretSurvivesControlCapture(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "ccpark", t.TempDir(), "")
 	m.selectSessionRow(t, "ccpark")
-	m.rows[m.cursor].sess.Tool = "command-code"
+	m.rail.rows[m.rail.cursor].sess.Tool = "command-code"
 	rows := make([]string, 47)
 	rows[36] = " TODOS  [4 items · 2 done] Sending Tier 3 messages… (paused) [ctrl+x to expand]"
 	rows[38] = strings.Repeat("─", 60)
@@ -567,10 +567,10 @@ func TestBottomParkedCaretSurvivesControlCapture(t *testing.T) {
 	controlJoin := strings.Join(rows, "\n")
 
 	m.mode = modeFocus
-	m.preview = matchExecShape(controlJoin)
-	m.pane.forID = "s1"
-	m.pane.cursor = paneCursor{x: 0, y: 46, ok: true}
-	if got := len(strings.Split(strings.TrimSuffix(m.preview, "\n"), "\n")); got != 47 {
+	m.workspace.preview = matchExecShape(controlJoin)
+	m.focusPane.pane.forID = "s1"
+	m.focusPane.pane.cursor = paneCursor{x: 0, y: 46, ok: true}
+	if got := len(strings.Split(strings.TrimSuffix(m.workspace.preview, "\n"), "\n")); got != 47 {
 		t.Fatalf("preview kept %d rows, want all 47", got)
 	}
 	if !m.caretAtInputStart("s1", "command-code") {
@@ -583,13 +583,13 @@ func TestBottomParkedCaretSurvivesControlCapture(t *testing.T) {
 	if got := m.paneCaretRow(); got != -1 {
 		t.Fatalf("paneCaretRow = %d for a parked caret, want -1", got)
 	}
-	window, start := paneWindow(m.preview, 30, m.paneCaretRow())
+	window, start := paneWindow(m.workspace.preview, 30, m.paneCaretRow())
 	if last := window[len(window)-1]; strings.TrimSpace(last) != "? for shortcuts · PR #390 · taste on" {
 		t.Fatalf("crop bottom = %q, want the footer, not blank fill (start=%d)", last, start)
 	}
 
 	// A caret inside the content keeps the crop pinned to it.
-	m.pane.cursor = paneCursor{x: 2, y: 39, ok: true}
+	m.focusPane.pane.cursor = paneCursor{x: 2, y: 39, ok: true}
 	if got := m.paneCaretRow(); got != 39 {
 		t.Fatalf("paneCaretRow = %d for an in-content caret, want 39", got)
 	}
@@ -599,7 +599,7 @@ func TestBottomParkedCaretSurvivesControlCapture(t *testing.T) {
 // capture is taller than the panel showing its bottom rows.
 func TestCursorCellMapsIntoVisibleRows(t *testing.T) {
 	m := paneAt(t, "one", "two", "three")
-	m.pane.cursor = paneCursor{x: 2, y: 1, ok: true}
+	m.focusPane.pane.cursor = paneCursor{x: 2, y: 1, ok: true}
 	row, col, ok := m.cursorCell(3)
 	if !ok || row != 1 || col != 2 {
 		t.Fatalf("cursorCell = (%d,%d,%v), want (1,2,true)", row, col, ok)
@@ -608,15 +608,15 @@ func TestCursorCellMapsIntoVisibleRows(t *testing.T) {
 	// A capture taller than the panel is shown from its bottom, so the
 	// cursor row shifts by the lines the panel dropped.
 	tall := paneAt(t, "r0", "r1", "r2", "r3", "r4")
-	tall.pane.box.height = 3
-	tall.pane.cursor = paneCursor{x: 4, y: 4, ok: true}
+	tall.focusPane.pane.box.height = 3
+	tall.focusPane.pane.cursor = paneCursor{x: 4, y: 4, ok: true}
 	row, col, ok = tall.cursorCell(3)
 	if !ok || row != 2 || col != 4 {
 		t.Fatalf("shifted cursorCell = (%d,%d,%v), want (2,4,true)", row, col, ok)
 	}
 
 	// A cursor above the visible window is not drawn.
-	tall.pane.cursor = paneCursor{x: 0, y: 1, ok: true}
+	tall.focusPane.pane.cursor = paneCursor{x: 0, y: 1, ok: true}
 	if _, _, ok := tall.cursorCell(3); ok {
 		t.Fatal("cursor above the shown rows was mapped in")
 	}
@@ -629,7 +629,7 @@ func TestCursorPaintedOnItsRow(t *testing.T) {
 	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
 
 	m := paneAt(t, "abc", "def")
-	m.pane.cursor = paneCursor{x: 1, y: 0, ok: true}
+	m.focusPane.pane.cursor = paneCursor{x: 1, y: 0, ok: true}
 	withCursor := m.renderPaneRow(0, "abc", 20)
 	if !strings.Contains(withCursor, "\x1b[") {
 		t.Fatalf("cursor row carries no styling: %q", withCursor)
@@ -642,29 +642,6 @@ func TestCursorPaintedOnItsRow(t *testing.T) {
 	}
 }
 
-// tmux reports the cursor in display cells, so a wide rune ahead of it
-// must not shift the drawn cursor off its cell.
-func TestRuneAtColumn(t *testing.T) {
-	cases := []struct {
-		name   string
-		line   string
-		column int
-		index  int
-	}{
-		{"ascii", "abc", 1, 1},
-		{"after wide rune", "世界x", 4, 2},
-		{"inside wide rune", "世界x", 1, 0},
-		{"past end", "ab", 4, 2},
-		{"empty line", "", 0, 0},
-	}
-	for _, c := range cases {
-		if index := runeAtColumn([]rune(c.line), c.column); index != c.index {
-			t.Errorf("%s: runeAtColumn(%q,%d) = %d, want %d",
-				c.name, c.line, c.column, index, c.index)
-		}
-	}
-}
-
 // The cursor is drawn even when it sits past the end of a short line,
 // which is where a shell prompt leaves it most of the time.
 func TestCursorPastEndOfLine(t *testing.T) {
@@ -673,7 +650,7 @@ func TestCursorPastEndOfLine(t *testing.T) {
 	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
 
 	m := paneAt(t, "ab")
-	m.pane.cursor = paneCursor{x: 5, y: 0, ok: true}
+	m.focusPane.pane.cursor = paneCursor{x: 5, y: 0, ok: true}
 	row := m.renderPaneRow(0, "ab", 20)
 	if !strings.Contains(row, "\x1b[") {
 		t.Fatalf("no cursor drawn past end of line: %q", row)
@@ -693,26 +670,26 @@ func TestTabbedRowSharesItsColumns(t *testing.T) {
 
 	const width = 30
 	m := paneAt(t, "ok  \tgithub.com/x/y\t1.5s")
-	m.pane.box.width = width
-	rows := paneExact(m.preview, m.pane.box.height, width, -1)
+	m.focusPane.pane.box.width = width
+	rows := paneExact(m.workspace.preview, m.focusPane.pane.box.height, width, -1)
 
 	// Column 8 is where the pane paints the package name's first letter.
-	m.pane.cursor = paneCursor{x: 8, y: 0, ok: true}
+	m.focusPane.pane.cursor = paneCursor{x: 8, y: 0, ok: true}
 	row := m.renderPaneRow(0, rows[0], width)
 	if !strings.Contains(row, cursorStyle().Render("g")) {
 		t.Fatalf("caret missed the cell tmux reported: %q", row)
 	}
 
 	// The caret at the end of the painted row still lands inside the frame.
-	m.pane.cursor = paneCursor{x: 28, y: 0, ok: true}
+	m.focusPane.pane.cursor = paneCursor{x: 28, y: 0, ok: true}
 	if end := m.renderPaneRow(0, rows[0], width); !strings.Contains(end, "\x1b[") ||
 		ansi.StringWidth(end) != width {
 		t.Fatalf("caret at the row's end paints %d cells: %q", ansi.StringWidth(end), end)
 	}
 
-	m.pane.cursor = paneCursor{}
-	press(m, m.pane.box.x+8, m.pane.box.y)
-	drag(m, m.pane.box.x+15, m.pane.box.y)
+	m.focusPane.pane.cursor = paneCursor{}
+	press(m, m.focusPane.pane.box.x+8, m.focusPane.pane.box.y)
+	drag(m, m.focusPane.pane.box.x+15, m.focusPane.pane.box.y)
 	if text := m.selectionText(); text != "github." {
 		t.Fatalf("dragging over the painted columns copied %q", text)
 	}
@@ -725,21 +702,21 @@ func TestTabbedRowSharesItsColumns(t *testing.T) {
 func TestClickElsewhereClearsSelection(t *testing.T) {
 	for _, tracksMouse := range []bool{false, true} {
 		m := paneAt(t, "alpha beta", "gamma delta")
-		m.pane.mouse = tracksMouse
+		m.focusPane.pane.mouse = tracksMouse
 		press(m, 10, 5)
 		drag(m, 14, 5)
 		m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 14, Y: 5})
 		if got := m.selectionText(); got != "alph" {
 			t.Fatalf("mouse=%v: drag selected %q", tracksMouse, got)
 		}
-		m.copied = 4
+		m.focusPane.copied = 4
 
 		press(m, 12, 6)
 		if got := m.selectionText(); got != "" {
 			t.Fatalf("mouse=%v: click elsewhere still selects %q", tracksMouse, got)
 		}
-		if m.copied != 0 {
-			t.Fatalf("mouse=%v: click elsewhere kept the copy confirmation: %d", tracksMouse, m.copied)
+		if m.focusPane.copied != 0 {
+			t.Fatalf("mouse=%v: click elsewhere kept the copy confirmation: %d", tracksMouse, m.focusPane.copied)
 		}
 		m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 12, Y: 6})
 		if got := m.selectionText(); got != "" {
@@ -757,12 +734,12 @@ func TestLateCopyConfirmationIsDroppedAfterTheSelectionGoes(t *testing.T) {
 	press(m, 10, 5)
 	drag(m, 14, 5)
 	m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 14, Y: 5})
-	inFlight := focusCopiedMsg{chars: 4, gen: m.copyGen}
+	inFlight := focusCopiedMsg{chars: 4, gen: m.focusPane.copyGen}
 
 	press(m, 12, 6)
 	m.Update(inFlight)
-	if m.copied != 0 {
-		t.Fatalf("a write that landed after the click re-armed the count: %d", m.copied)
+	if m.focusPane.copied != 0 {
+		t.Fatalf("a write that landed after the click re-armed the count: %d", m.focusPane.copied)
 	}
 
 	// The same confirmation still counts while its own selection stands.
@@ -770,8 +747,8 @@ func TestLateCopyConfirmationIsDroppedAfterTheSelectionGoes(t *testing.T) {
 	press(m2, 10, 5)
 	drag(m2, 14, 5)
 	m2.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 14, Y: 5})
-	m2.Update(focusCopiedMsg{chars: 4, gen: m2.copyGen})
-	if m2.copied != 4 {
-		t.Fatalf("the write for the standing selection was dropped: %d", m2.copied)
+	m2.Update(focusCopiedMsg{chars: 4, gen: m2.focusPane.copyGen})
+	if m2.focusPane.copied != 4 {
+		t.Fatalf("the write for the standing selection was dropped: %d", m2.focusPane.copied)
 	}
 }

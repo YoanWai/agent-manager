@@ -378,7 +378,7 @@ func (m *Model) viewSettings() string {
 		row(settingsFieldWorktree, "spawn in worktree", worktreeDefault) + "\n" +
 		row(settingsFieldNotify, "notifications", notifications) + "\n" +
 		row(settingsFieldNotifyFinish, "notify on finish", notifyFinished) + "\n" +
-		actionRow(settingsFieldKeybindings, "keybindings", keybindingsSummary(m.keys, m.listKeys)) + "\n" +
+		actionRow(settingsFieldKeybindings, "keybindings", keybindingsSummary(m.services.keys, m.services.listKeys)) + "\n" +
 		actionRow(settingsFieldCLIs, "CLIs", "show or hide for new sessions") + "\n" +
 		ctaRow(settingsFieldBugReport, "report a bug", "open the bug report form") + "\n" +
 		ctaRow(settingsFieldFeatureRequest, "suggest a change", "open the feature request form") + "\n" +

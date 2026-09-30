@@ -8,10 +8,10 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// rail is the sidebar alone. The content column repeats the selected
+// railFrame is the sidebar alone. The content column repeats the selected
 // session's name in its detail head, so asserting against a whole frame
 // would pass on a row the rail never painted.
-func (m *Model) rail() string {
+func (m *Model) railFrame() string {
 	return ansi.Strip(railLinesText(m.railLines(40, m.listBodyHeight())))
 }
 
@@ -31,7 +31,7 @@ func railRow(rail, needle string) int {
 
 func groupWithShell(t *testing.T, m *Model, group string) {
 	t.Helper()
-	if err := m.store.CreateGroup(group, t.TempDir()); err != nil {
+	if err := m.services.store.CreateGroup(group, t.TempDir()); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -42,13 +42,13 @@ func TestRestingShellUsesCaretGlyph(t *testing.T) {
 	m := buildModel(t)
 	m.applyCmd(t, m.refreshCmd())
 	shell := spawnTerminal(t, m)
-	for i := range m.rows {
-		if m.rows[i].sess.ID == shell.ID {
-			m.rows[i].sess.Status = status.Idle
+	for i := range m.rail.rows {
+		if m.rail.rows[i].sess.ID == shell.ID {
+			m.rail.rows[i].sess.Status = status.Idle
 		}
 	}
 
-	if rail := m.rail(); !strings.Contains(rail, shellGlyph) {
+	if rail := m.railFrame(); !strings.Contains(rail, shellGlyph) {
 		t.Fatalf("a resting shell should carry the caret:\n%s", rail)
 	}
 }
@@ -80,7 +80,7 @@ func TestUnnestedShellSitsInItsGroup(t *testing.T) {
 	shell := spawnTerminal(t, m)
 
 	var row treeRow
-	for _, entry := range m.rows {
+	for _, entry := range m.rail.rows {
 		if !entry.isGroup && entry.sess.ID == shell.ID {
 			row = entry
 		}
@@ -88,7 +88,7 @@ func TestUnnestedShellSitsInItsGroup(t *testing.T) {
 	if row.depth != 1 {
 		t.Fatalf("unnested shell depth = %d, want 1 (under its group)", row.depth)
 	}
-	if rail := m.rail(); strings.Contains(rail, "Terminals") {
+	if rail := m.railFrame(); strings.Contains(rail, "Terminals") {
 		t.Fatalf("the list paints no divider:\n%s", rail)
 	}
 }
@@ -137,7 +137,7 @@ func TestCursorOnShellStaysPainted(t *testing.T) {
 		}
 		for _, height := range []int{16, 24, 30, 44} {
 			m.height = height
-			if rail := m.rail(); railRow(rail, shell) < 0 {
+			if rail := m.railFrame(); railRow(rail, shell) < 0 {
 				t.Fatalf("selected shell %s is unpainted at height %d:\n%s", shell, height, rail)
 			}
 		}
@@ -154,7 +154,7 @@ func TestRailReturnsItsBudget(t *testing.T) {
 	for _, height := range []int{3, 4, 6, 8, 10, 14, 34} {
 		for _, width := range []int{30, 60, 120} {
 			for _, searching := range []bool{false, true} {
-				m.searching = searching
+				m.rail.searching = searching
 				if got := len(m.railLines(width, height)); got != height {
 					t.Fatalf("%dx%d searching=%v returned %d rows, want %d", width, height, searching, got, height)
 				}

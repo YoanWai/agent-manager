@@ -15,7 +15,7 @@ import (
 
 func TestDefaultToolFallsBackWhenSettingStale(t *testing.T) {
 	m := buildModel(t)
-	if err := m.store.SetSetting("default_tool", "deleted-tool"); err != nil {
+	if err := m.services.store.SetSetting("default_tool", "deleted-tool"); err != nil {
 		t.Fatalf("set setting: %v", err)
 	}
 	if got := m.defaultTool(); got != "claude" {
@@ -28,7 +28,7 @@ func TestDefaultSplitLayout(t *testing.T) {
 	if !m.defaultSplitLayout() {
 		t.Fatal("split should be the default layout")
 	}
-	if err := m.store.SetSetting(diffLayoutSetting, "unified"); err != nil {
+	if err := m.services.store.SetSetting(diffLayoutSetting, "unified"); err != nil {
 		t.Fatal(err)
 	}
 	if m.defaultSplitLayout() {
@@ -86,7 +86,7 @@ func TestSettingsWorktreeDefaultPersists(t *testing.T) {
 	}
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
-	if chosen, err := m.store.Setting(worktreeSetting); err != nil || chosen != "on" {
+	if chosen, err := m.services.store.Setting(worktreeSetting); err != nil || chosen != "on" {
 		t.Fatalf("want stored on, got %q err %v", chosen, err)
 	}
 	if !m.defaultWorktree() {
@@ -110,10 +110,10 @@ func TestSettingsNotificationsPersist(t *testing.T) {
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
-	if chosen, err := m.store.Setting(notificationsSetting); err != nil || chosen != "off" {
+	if chosen, err := m.services.store.Setting(notificationsSetting); err != nil || chosen != "off" {
 		t.Fatalf("want stored off, got %q err %v", chosen, err)
 	}
-	if chosen, err := m.store.Setting(notifyFinishedSetting); err != nil || chosen != "on" {
+	if chosen, err := m.services.store.Setting(notifyFinishedSetting); err != nil || chosen != "on" {
 		t.Fatalf("want stored on, got %q err %v", chosen, err)
 	}
 }
@@ -129,22 +129,22 @@ func TestSettingsMouseTogglePersists(t *testing.T) {
 	}
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyLeft})
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
-	if chosen, err := m.store.Setting(mouseSetting); err != nil || chosen != "off" {
+	if chosen, err := m.services.store.Setting(mouseSetting); err != nil || chosen != "off" {
 		t.Fatalf("want stored off, got %q err %v", chosen, err)
 	}
-	if !m.mouseDisabled {
+	if !m.prefs.mouseDisabled {
 		t.Fatal("model should carry the toggled value after save")
 	}
-	if loaded := New(m.cfg, m.store, m.tmux, m.poller.engine, m.hooks, "dev"); !loaded.mouseDisabled {
+	if loaded := New(m.services.cfg, m.services.store, m.services.tmux, m.services.engine, m.services.hooks, "dev"); !loaded.prefs.mouseDisabled {
 		t.Fatal("a fresh model should reload the persisted choice")
 	}
 }
 
 func TestSettingsShowsVersion(t *testing.T) {
 	m := &Model{
-		update:   updateInfo{version: "v0.9.0"},
-		settings: settingsState{toolNames: []string{"claude"}},
-	}
+	update:   updateInfo{version: "v0.9.0"},
+	settings: settingsState{toolNames: []string{"claude"}},
+}
 	out := m.viewSettings()
 	if !strings.Contains(out, "version") || !strings.Contains(out, "v0.9.0") {
 		t.Errorf("settings missing version: %q", out)
@@ -172,7 +172,7 @@ func TestSettingsShowsVersion(t *testing.T) {
 
 func TestSettingsBugReportRowOpensIssue(t *testing.T) {
 	m := footModel(t)
-	m.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
+	m.services.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
 	m.openSettings()
 	if m.mode != modeSettings {
 		t.Fatalf("settings should open, mode=%v", m.mode)
@@ -209,7 +209,7 @@ func TestSettingsBugReportRowOpensIssue(t *testing.T) {
 
 func TestSettingsFeatureRequestRowOpensForm(t *testing.T) {
 	m := footModel(t)
-	m.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
+	m.services.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
 	m.openSettings()
 
 	var opened string
@@ -235,7 +235,7 @@ func TestSettingsFeatureRequestRowOpensForm(t *testing.T) {
 
 func TestSettingsBugReportRowIsHighlighted(t *testing.T) {
 	m := footModel(t)
-	m.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
+	m.services.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
 	m.openSettings()
 	// Keep focus off the CTA rows so the accent2 unfocused styling is what paints.
 	m.settings.field = settingsFieldTool
@@ -260,7 +260,7 @@ func TestSettingsBugReportRowIsHighlighted(t *testing.T) {
 
 func TestSettingsCLIPickerHidesFromNewSessions(t *testing.T) {
 	m := buildModel(t)
-	m.cfg = config.Config{Tools: map[string]config.Tool{
+	m.services.cfg = config.Config{Tools: map[string]config.Tool{
 		"claude": {Command: "cat"},
 		"codex":  {Command: "cat"},
 		"grok":   {Command: "cat"},
@@ -291,7 +291,7 @@ func TestSettingsCLIPickerHidesFromNewSessions(t *testing.T) {
 	if m.settings.cliPicker {
 		t.Fatal("esc should leave the picker")
 	}
-	raw, err := m.store.Setting(hiddenToolsSetting)
+	raw, err := m.services.store.Setting(hiddenToolsSetting)
 	if err != nil || raw != "codex" {
 		t.Fatalf("stored hidden_tools = %q err %v, want codex", raw, err)
 	}
@@ -315,7 +315,7 @@ func TestSettingsCLIPickerHidesFromNewSessions(t *testing.T) {
 
 func TestSettingsCLIPickerKeepsOneEnabled(t *testing.T) {
 	m := buildModel(t)
-	m.cfg = config.Config{Tools: map[string]config.Tool{
+	m.services.cfg = config.Config{Tools: map[string]config.Tool{
 		"claude": {Command: "cat"},
 		"codex":  {Command: "cat"},
 	}}
@@ -339,7 +339,7 @@ func TestSettingsCLIPickerKeepsOneEnabled(t *testing.T) {
 
 func TestSettingsCLIRequestSupportOpensIssue(t *testing.T) {
 	m := buildModel(t)
-	m.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
+	m.services.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
 	var opened string
 	openBrowser = func(url string) error {
 		opened = url
@@ -365,7 +365,7 @@ func TestSettingsCLIRequestSupportOpensIssue(t *testing.T) {
 
 func TestCLIPickerShowsSupportAction(t *testing.T) {
 	m := buildModel(t)
-	m.cfg = config.Config{Tools: map[string]config.Tool{
+	m.services.cfg = config.Config{Tools: map[string]config.Tool{
 		"claude": {Command: "cat"},
 		"codex":  {Command: "cat"},
 	}}
@@ -398,7 +398,7 @@ func TestParseFormatHiddenTools(t *testing.T) {
 
 func TestSettingsUpdateRowAppliesOnEnter(t *testing.T) {
 	m := footModel(t)
-	m.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
+	m.services.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
 	m.update.version = "v0.2.0"
 	m.update.latest = "v0.3.0"
 	m.openSettings()
@@ -459,7 +459,7 @@ func TestSettingsUpdateRowAppliesOnEnter(t *testing.T) {
 
 func TestSettingsUpdateRowIdleWhenCurrent(t *testing.T) {
 	m := footModel(t)
-	m.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
+	m.services.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
 	m.update.version = "v0.3.0"
 	m.openSettings()
 	m.settings.field = settingsFieldUpdate
@@ -483,7 +483,7 @@ func TestSettingsUpdateRowIdleWhenCurrent(t *testing.T) {
 
 func TestSettingsUpdateRowApplyFailureSurfaces(t *testing.T) {
 	m := footModel(t)
-	m.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
+	m.services.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
 	m.update.version = "v0.2.0"
 	m.update.latest = "v0.3.0"
 	m.openSettings()
@@ -520,7 +520,7 @@ func TestSettingsUpdateRowApplyFailureSurfaces(t *testing.T) {
 
 func TestSettingsUpdateRowPersistsStagedSettings(t *testing.T) {
 	m := footModel(t)
-	m.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
+	m.services.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
 	m.update.version = "v0.2.0"
 	m.update.latest = "v0.3.0"
 	m.openSettings()
@@ -544,7 +544,7 @@ func TestSettingsUpdateRowPersistsStagedSettings(t *testing.T) {
 	if _, cmd := m.handleSettingsKey(key("enter")); cmd == nil {
 		t.Fatal("enter on the update row should start the update")
 	}
-	got, err := m.store.Setting(themeSetting)
+	got, err := m.services.store.Setting(themeSetting)
 	if err != nil {
 		t.Fatal(err)
 	}

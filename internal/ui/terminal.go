@@ -18,14 +18,14 @@ import (
 const terminalKeyWindow = 250 * time.Millisecond
 
 func (m *Model) shellTool() (string, config.Tool) {
-	return m.cfg.ShellTool()
+	return m.services.cfg.ShellTool()
 }
 
 // isShell reports whether a session's tool opens a shell rather than an
 // agent. A tool the binary no longer ships answers false: a name we cannot
 // resolve is not something we can claim runs a shell.
 func (m *Model) isShell(toolName string) bool {
-	return m.cfg.Tools[toolName].Shell
+	return m.services.cfg.Tools[toolName].Shell
 }
 
 // terminalKey spawns a shell unless T arrived inside the burst a held key
@@ -37,12 +37,12 @@ func (m *Model) isShell(toolName string) bool {
 // holding T spawns one shell however long it is held. The other keys that
 // create something open a form first, which absorbs a burst on its own.
 func (m *Model) terminalKey() (tea.Model, tea.Cmd) {
-	if time.Since(m.terminalKeyAt) < terminalKeyWindow {
-		m.terminalKeyAt = time.Now()
+	if time.Since(m.ledger.terminalKeyAt) < terminalKeyWindow {
+		m.ledger.terminalKeyAt = time.Now()
 		return m, nil
 	}
 	model, cmd := m.openTerminal()
-	m.terminalKeyAt = time.Now()
+	m.ledger.terminalKeyAt = time.Now()
 	return model, cmd
 }
 
@@ -72,14 +72,14 @@ func (m *Model) openTerminal() (tea.Model, tea.Cmd) {
 		}
 		sess.Group = entry.sess.Group
 	}
-	sess.Name = sessioncmd.ShellName(toolName, sess.ParentID, newID()[:4], m.sessions)
+	sess.Name = sessioncmd.ShellName(toolName, sess.ParentID, newID()[:4], m.workspace.sessions)
 	if err := m.launchNewSession(sess, tool, tool.Command, launchOptions{}); err != nil {
 		m.errBar.text = err.Error()
 		return m, nil
 	}
 	// Starting sits outside the attention set, so the row the key just made
 	// would be filtered off screen.
-	m.statusFilter = statusFilterAll
+	m.rail.statusFilter = statusFilterAll
 	m.errBar.text = ""
 	m.focusSession(sess.ID)
 	return m, m.refreshCmd()
@@ -96,9 +96,9 @@ func (m *Model) rowDir() (string, bool) {
 		return "", false
 	}
 	if entry.isGroup {
-		return resolveExistingDir(m.groupPaths[entry.group], m.groupDefaultDir(entry.group))
+		return resolveExistingDir(m.workspace.groupPaths[entry.group], m.groupDefaultDir(entry.group))
 	}
-	if path, err := m.tmux.PaneCurrentPath(entry.sess.ID); err == nil && isDir(path) {
+	if path, err := m.services.tmux.PaneCurrentPath(entry.sess.ID); err == nil && isDir(path) {
 		return path, true
 	}
 	return entry.sess.Cwd, isDir(entry.sess.Cwd)

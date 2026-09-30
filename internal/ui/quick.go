@@ -56,7 +56,7 @@ func (m *Model) defaultToolSelection() ([]string, int) {
 func (m *Model) spawnToolSelection() ([]string, int) {
 	names, index := m.defaultToolSelection()
 	for i, name := range names {
-		if name == m.lastSpawnTool {
+		if name == m.ledger.lastSpawnTool {
 			return names, i
 		}
 	}
@@ -135,11 +135,11 @@ func (m *Model) submitQuick() (tea.Model, tea.Cmd) {
 		m.errBar.text = shellPromptHint(entry.sess.Name)
 		return m, nil
 	}
-	if !m.tmux.Exists(entry.sess.ID) {
+	if !m.services.tmux.Exists(entry.sess.ID) {
 		m.errBar.text = deadSessionHint
 		return m, nil
 	}
-	if err := m.tmux.SendText(entry.sess.ID, text); err != nil {
+	if err := m.services.tmux.SendText(entry.sess.ID, text); err != nil {
 		m.errBar.text = err.Error()
 		return m, nil
 	}
@@ -148,10 +148,10 @@ func (m *Model) submitQuick() (tea.Model, tea.Cmd) {
 	m.clearQuickAfterSend()
 	m.errBar.text = ""
 	// A queued answer means the user expects a fresh finished alert.
-	if err := m.store.SetAcked(entry.sess.ID, false); err != nil {
+	if err := m.services.store.SetAcked(entry.sess.ID, false); err != nil {
 		m.errBar.text = "prompt sent, but clearing the alert ack failed: " + err.Error()
 	}
-	if err := m.store.SetLastPrompt(entry.sess.ID, text); err != nil {
+	if err := m.services.store.SetLastPrompt(entry.sess.ID, text); err != nil {
 		m.errBar.text = "prompt sent, but recording it for the row failed: " + err.Error()
 	}
 	m.requestRefresh()
@@ -168,7 +168,7 @@ func (m *Model) quickSpawn(group, prompt string) (tea.Model, tea.Cmd) {
 		m.errBar.text = "no tools configured"
 		return m, nil
 	}
-	dir, ok := resolveExistingDir(m.groupPaths[group], m.groupDefaultDir(group))
+	dir, ok := resolveExistingDir(m.workspace.groupPaths[group], m.groupDefaultDir(group))
 	if !ok {
 		m.errBar.text = "group has no valid default path: " + dir
 		return m, nil
@@ -197,7 +197,7 @@ func (m *Model) quickSpawn(group, prompt string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	// Spawned sessions start outside the attention set; clear so the new row shows.
-	m.statusFilter = statusFilterAll
+	m.rail.statusFilter = statusFilterAll
 	m.clearQuickAfterSend()
 	m.errBar.text = ""
 	return m, m.refreshCmd()
@@ -243,7 +243,7 @@ func (m *Model) quickTargetGroup() string {
 // the same way quickSpawn resolves it.
 func (m *Model) quickTargetDir() string {
 	group := m.quickTargetGroup()
-	dir, _ := resolveExistingDir(m.groupPaths[group], m.groupDefaultDir(group))
+	dir, _ := resolveExistingDir(m.workspace.groupPaths[group], m.groupDefaultDir(group))
 	return dir
 }
 
@@ -260,7 +260,7 @@ func (m *Model) quickTool() string {
 // once a prompt is delivered. Staying open is the default; a stored "close"
 // choice opts in. A store error is surfaced but still yields the default.
 func (m *Model) quickCloseAfterSend() bool {
-	chosen, err := m.store.Setting(quickCloseSetting)
+	chosen, err := m.services.store.Setting(quickCloseSetting)
 	if err != nil {
 		m.errBar.text = "reading quick prompt setting: " + err.Error()
 		return false

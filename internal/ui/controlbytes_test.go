@@ -136,14 +136,14 @@ func TestEscapeSpansFollowTheEscapedText(t *testing.T) {
 // name is content the review header paints, not something the user typed.
 func TestSessionNameCannotDriveTheTerminal(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	openReviewOn(t, m, "named", gitRepoWithTwoChangedFiles(t))
 	m.width, m.height = 120, 40
-	for i := range m.sessions {
-		if m.sessions[i].ID == m.diff.sessID {
-			m.sessions[i].Name = "rev\x1b]0;PWNED\x07iew"
+	for i := range m.workspace.sessions {
+		if m.workspace.sessions[i].ID == m.diff.sessID {
+			m.workspace.sessions[i].Name = "rev\x1b]0;PWNED\x07iew"
 		}
 	}
 
@@ -186,7 +186,7 @@ func TestMultiLineGitErrorKeepsItsLines(t *testing.T) {
 // different cells.
 func TestReviewedFileCannotDriveTheTerminal(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	// An OSC window-title set and a clear-screen, sequences our renderer
@@ -212,7 +212,7 @@ func TestReviewedFileCannotDriveTheTerminal(t *testing.T) {
 // does carry nothing but SGR, so a stray control byte means something leaked.
 func TestCleanReviewFrameCarriesOnlySGR(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	openReviewOn(t, m, "clean", gitRepoWithTwoChangedFiles(t))
@@ -226,7 +226,7 @@ func TestCleanReviewFrameCarriesOnlySGR(t *testing.T) {
 // the file rail, the code title and the comment bar unquoted.
 func TestReviewedPathCannotDriveTheTerminal(t *testing.T) {
 	m := buildModel(t)
-	if m.gitDrv == nil {
+	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
 	dir := committedRepo(t)

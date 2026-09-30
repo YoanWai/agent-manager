@@ -146,7 +146,7 @@ func startEditorCmd(cmd *exec.Cmd, name, path string) tea.Cmd {
 // last because they usually name the editor set for git commit messages,
 // not the one a project is meant to open in.
 func (m *Model) resolveEditor() string {
-	candidates := []string{m.cfg.Editor, os.Getenv("AGENT_MANAGER_EDITOR")}
+	candidates := []string{m.services.cfg.Editor, os.Getenv("AGENT_MANAGER_EDITOR")}
 	for _, line := range candidates {
 		if line = strings.TrimSpace(line); line != "" {
 			return line

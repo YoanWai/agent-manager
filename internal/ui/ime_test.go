@@ -15,48 +15,58 @@ import (
 
 func TestFocusCursorAnchorTracksMirroredCaret(t *testing.T) {
 	m := &Model{
-		mode:      modeFocus,
-		rows:      []treeRow{{sess: store.Session{ID: "focused"}}},
-		preview:   "first\nsecond\nthird\n",
-		cursorOn:  false,
-		imeCursor: &cursorAnchor{},
-		pane: paneMirror{
-			forID:  "focused",
-			box:    paneBox{x: 40, y: 8, width: 30, height: 3, ok: true},
-			cursor: paneCursor{x: 7, y: 1, ok: true},
+		mode: modeFocus,
+		workspace: workspace{
+			preview: "first\nsecond\nthird\n",
+		},
+		rail: railState{
+			rows: []treeRow{{sess: store.Session{ID: "focused"}}},
+		},
+		focusPane: focusPaneState{
+			cursorOn:  false,
+			imeCursor: &cursorAnchor{},
+			pane: paneMirror{
+				forID:  "focused",
+				box:    paneBox{x: 40, y: 8, width: 30, height: 3, ok: true},
+				cursor: paneCursor{x: 7, y: 1, ok: true},
+			},
 		},
 	}
 	m.syncCursorAnchor("frame")
-	col, row, ok := m.imeCursor.get()
+	col, row, ok := m.focusPane.imeCursor.get()
 	if !ok || col != 48 || row != 10 {
 		t.Fatalf("cursor anchor = (%d, %d, %v), want (48, 10, true)", col, row, ok)
 	}
 
-	m.focusScroll = 1
+	m.focusPane.focusScroll = 1
 	m.syncCursorAnchor("frame")
-	if _, _, ok := m.imeCursor.get(); ok {
+	if _, _, ok := m.focusPane.imeCursor.get(); ok {
 		t.Fatal("scrolled pane kept a live IME cursor anchor")
 	}
 }
 
 func TestFocusCursorAnchorRemovesListSearchMarker(t *testing.T) {
 	m := &Model{
-		mode:      modeFocus,
-		searching: true,
-		search:    "active",
-		rows:      []treeRow{{sess: store.Session{ID: "focused"}}},
-		imeCursor: &cursorAnchor{},
-		pane: paneMirror{
-			forID:  "focused",
-			box:    paneBox{x: 40, y: 8, width: 30, height: 3, ok: true},
-			cursor: paneCursor{x: 7, y: 1, ok: true},
+		mode: modeFocus,
+		rail: railState{
+			searching: true,
+			search:    "active",
+			rows:      []treeRow{{sess: store.Session{ID: "focused"}}},
+		},
+		focusPane: focusPaneState{
+			imeCursor: &cursorAnchor{},
+			pane: paneMirror{
+				forID:  "focused",
+				box:    paneBox{x: 40, y: 8, width: 30, height: 3, ok: true},
+				cursor: paneCursor{x: 7, y: 1, ok: true},
+			},
 		},
 	}
 	frame := m.syncCursorAnchor(m.searchFieldLine(40) + "\nfocused pane")
 	if strings.Contains(frame, cursorAnchorMarker) {
 		t.Fatal("private list search marker leaked from the focused frame")
 	}
-	col, row, ok := m.imeCursor.get()
+	col, row, ok := m.focusPane.imeCursor.get()
 	if !ok || col != 48 || row != 10 {
 		t.Fatalf("cursor anchor = (%d, %d, %v), want (48, 10, true)", col, row, ok)
 	}
@@ -64,18 +74,24 @@ func TestFocusCursorAnchorRemovesListSearchMarker(t *testing.T) {
 
 func TestFocusCursorAnchorAccountsForDroppedCaptureRows(t *testing.T) {
 	m := &Model{
-		mode:      modeFocus,
-		rows:      []treeRow{{sess: store.Session{ID: "focused"}}},
-		preview:   "one\ntwo\nthree\nfour\n",
-		imeCursor: &cursorAnchor{},
-		pane: paneMirror{
-			forID:  "focused",
-			box:    paneBox{x: 20, y: 5, width: 12, height: 2, ok: true},
-			cursor: paneCursor{x: 4, y: 3, ok: true},
+		mode: modeFocus,
+		workspace: workspace{
+			preview: "one\ntwo\nthree\nfour\n",
+		},
+		rail: railState{
+			rows: []treeRow{{sess: store.Session{ID: "focused"}}},
+		},
+		focusPane: focusPaneState{
+			imeCursor: &cursorAnchor{},
+			pane: paneMirror{
+				forID:  "focused",
+				box:    paneBox{x: 20, y: 5, width: 12, height: 2, ok: true},
+				cursor: paneCursor{x: 4, y: 3, ok: true},
+			},
 		},
 	}
 	m.syncCursorAnchor("frame")
-	col, row, ok := m.imeCursor.get()
+	col, row, ok := m.focusPane.imeCursor.get()
 	if !ok || col != 25 || row != 7 {
 		t.Fatalf("cropped cursor anchor = (%d, %d, %v), want (25, 7, true)", col, row, ok)
 	}
@@ -164,7 +180,13 @@ func TestPreviewLineStripsCapturedCursorMarker(t *testing.T) {
 }
 
 func TestCustomSearchCursorsEmitMarkersOnlyWhileTyping(t *testing.T) {
-	m := &Model{searching: true, search: "中文", help: helpState{searching: true, query: "定位"}}
+	m := &Model{
+		help: helpState{searching: true, query: "定位"},
+		rail: railState{
+			searching: true,
+			search:    "中文",
+		},
+	}
 	if line := m.searchFieldLine(40); !strings.Contains(line, cursorAnchorMarker) {
 		t.Fatal("list search cursor has no marker")
 	}
@@ -172,7 +194,7 @@ func TestCustomSearchCursorsEmitMarkersOnlyWhileTyping(t *testing.T) {
 		t.Fatal("help search cursor has no marker")
 	}
 
-	m.searching = false
+	m.rail.searching = false
 	m.help.searching = false
 	if line := m.searchFieldLine(40); strings.Contains(line, cursorAnchorMarker) {
 		t.Fatal("closed list search kept a cursor marker")
@@ -183,31 +205,39 @@ func TestCustomSearchCursorsEmitMarkersOnlyWhileTyping(t *testing.T) {
 }
 
 func TestNoActiveInputClearsCursorAnchor(t *testing.T) {
-	m := &Model{imeCursor: &cursorAnchor{}}
-	m.imeCursor.set(9, 7, true)
+	m := &Model{
+		focusPane: focusPaneState{
+			imeCursor: &cursorAnchor{},
+		},
+	}
+	m.focusPane.imeCursor.set(9, 7, true)
 	if got := m.syncCursorAnchor("plain frame"); got != "plain frame" {
 		t.Fatalf("frame changed to %q", got)
 	}
-	if _, _, ok := m.imeCursor.get(); ok {
+	if _, _, ok := m.focusPane.imeCursor.get(); ok {
 		t.Fatal("inactive frame kept the previous cursor anchor")
 	}
 }
 
 func TestFinalHelpLayoutPublishesAndRemovesCursorMarker(t *testing.T) {
 	m := &Model{
-		width:     100,
-		height:    28,
-		mode:      modeHelp,
-		help:      helpState{searching: true, query: "中文"},
-		imeCursor: &cursorAnchor{},
-		keys:      keybind.DefaultSession(),
-		listKeys:  keybind.DefaultList(),
+		width:  100,
+		height: 28,
+		mode:   modeHelp,
+		help:   helpState{searching: true, query: "中文"},
+		services: services{
+			keys:     keybind.DefaultSession(),
+			listKeys: keybind.DefaultList(),
+		},
+		focusPane: focusPaneState{
+			imeCursor: &cursorAnchor{},
+		},
 	}
 	frame := m.View()
 	if strings.Contains(frame, cursorAnchorMarker) {
 		t.Fatal("private cursor marker leaked from the final frame")
 	}
-	col, row, ok := m.imeCursor.get()
+	col, row, ok := m.focusPane.imeCursor.get()
 	if !ok || col < 1 || col > m.width || row < 1 || row > m.height {
 		t.Fatalf("final cursor anchor = (%d, %d, %v), frame is %dx%d", col, row, ok, m.width, m.height)
 	}

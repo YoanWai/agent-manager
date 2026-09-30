@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/YoanWai/agent-manager/internal/status"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -45,10 +46,10 @@ type paneCursor struct {
 // taller than the panel is shown from its bottom, so the row shifts by
 // exactly the lines the panel dropped.
 func (m *Model) cursorCell(paneLines int) (row, col int, ok bool) {
-	cursor := m.pane.cursor
+	cursor := m.focusPane.pane.cursor
 	// The caret belongs to the live bottom, and only to the lit half of
 	// the blink.
-	if !cursor.ok || m.mode != modeFocus || paneLines <= 0 || !m.cursorOn || m.scrolledBack() {
+	if !cursor.ok || m.mode != modeFocus || paneLines <= 0 || !m.focusPane.cursorOn || m.scrolledBack() {
 		return 0, 0, false
 	}
 	row = cursor.y - m.paneRowOffset(paneLines)
@@ -63,7 +64,7 @@ func (m *Model) cursorCell(paneLines int) (row, col int, ok bool) {
 // It reads the same crop window the renderer paints, so caret and mouse
 // coordinates can never drift from what the user sees.
 func (m *Model) paneRowOffset(paneLines int) int {
-	_, start := paneWindow(m.preview, paneLines, m.paneCaretRow())
+	_, start := paneWindow(m.workspace.preview, paneLines, m.paneCaretRow())
 	return start
 }
 
@@ -76,13 +77,13 @@ func (m *Model) paneRowOffset(paneLines int) int {
 // into view above it. For every other tool a caret on a blank row IS the
 // typing point - a shell waiting below its output - and stays pinned.
 func (m *Model) paneCaretRow() int {
-	if m.mode != modeFocus || !m.pane.cursor.ok || m.scrolledBack() {
+	if m.mode != modeFocus || !m.focusPane.pane.cursor.ok || m.scrolledBack() {
 		return -1
 	}
-	caret := m.pane.cursor.y
-	if sess, ok := m.selected(); ok && m.engine != nil && m.engine.ParksItsCaret(sess.Tool) {
-		rows := strings.Split(strings.TrimSuffix(m.preview, "\n"), "\n")
-		if caret < len(rows) && caretParkedBelowContent(rows, caret, m.pane.cursor.x) {
+	caret := m.focusPane.pane.cursor.y
+	if sess, ok := m.selected(); ok && m.services.engine != nil && m.services.engine.ParksItsCaret(sess.Tool) {
+		rows := strings.Split(strings.TrimSuffix(m.workspace.preview, "\n"), "\n")
+		if caret < len(rows) && caretParkedBelowContent(rows, caret, m.focusPane.pane.cursor.x) {
 			return -1
 		}
 	}
@@ -129,12 +130,12 @@ type focusSelection struct {
 
 // paneOriginX is the first terminal column of the content panel's pane
 // area: past the rail's edge cell, the rail, the seam and the bleed.
-func (m *Model) paneOriginX() int { return m.pane.columnX }
+func (m *Model) paneOriginX() int { return m.focusPane.pane.columnX }
 
 // paneCell converts a terminal cell to a pane-relative coordinate. ok is
 // false for anything outside the painted pane.
 func (m *Model) paneCell(x, y int) (row, col int, ok bool) {
-	box := m.pane.box
+	box := m.focusPane.pane.box
 	if !box.ok || box.width <= 0 || box.height <= 0 {
 		return 0, 0, false
 	}
@@ -148,7 +149,7 @@ func (m *Model) paneCell(x, y int) (row, col int, ok bool) {
 // same slice the renderer paints, so selection indices line up with what
 // is on screen.
 func (m *Model) paneTextLines() []string {
-	rows := paneExact(m.preview, m.pane.box.height, m.pane.box.width, m.paneCaretRow())
+	rows := paneExact(m.workspace.preview, m.focusPane.pane.box.height, m.focusPane.pane.box.width, m.paneCaretRow())
 	out := make([]string, len(rows))
 	for i, row := range rows {
 		out[i] = ansi.Strip(previewDangerSeqs.ReplaceAllString(row, ""))
@@ -182,16 +183,16 @@ func (m *Model) handleFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonBackward {
 		return m, m.leaveFocus()
 	}
-	if msg.Action == tea.MouseActionPress && msg.Alt && m.pane.mouse {
+	if msg.Action == tea.MouseActionPress && msg.Alt && m.focusPane.pane.mouse {
 		if row, col, inside := m.paneCell(msg.X, msg.Y); inside {
 			m.clearSelection()
-			m.pending = pendingClick{}
-			m.forwardingMouse = true
-			m.forwardingButton = mouseButton(msg.Button)
-			m.forwardingRow, m.forwardingCol = row, col
+			m.focusPane.pending = pendingClick{}
+			m.focusPane.forwardingMouse = true
+			m.focusPane.forwardingButton = mouseButton(msg.Button)
+			m.focusPane.forwardingRow, m.focusPane.forwardingCol = row, col
 		}
 	}
-	if m.forwardingMouse {
+	if m.focusPane.forwardingMouse {
 		model, cmd := m.forwardFocusMouse(msg)
 		if msg.Action == tea.MouseActionRelease {
 			m.clearForwardingMouse()
@@ -211,7 +212,7 @@ func (m *Model) handleFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		// A repeated press at the same cell is the user asking for a word or
 		// line: keep the click run on the selection path. The first press of
 		// the run has already reached the app; a lone click is harmless there.
-		if m.pane.mouse && !m.clickRunContinues(row, col) {
+		if m.focusPane.pane.mouse && !m.clickRunContinues(row, col) {
 			m.deferClick(mouseButton(msg.Button), row, col)
 			return m, nil
 		}
@@ -219,27 +220,27 @@ func (m *Model) handleFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.MouseActionMotion:
-		if m.pending.active {
-			if row, col, ok := m.paneCell(msg.X, msg.Y); ok && row == m.pending.row && col == m.pending.col {
+		if m.focusPane.pending.active {
+			if row, col, ok := m.paneCell(msg.X, msg.Y); ok && row == m.focusPane.pending.row && col == m.focusPane.pending.col {
 				return m, nil
 			}
-			m.beginSelection(m.pending.row, m.pending.col)
-			m.pending = pendingClick{}
+			m.beginSelection(m.focusPane.pending.row, m.focusPane.pending.col)
+			m.focusPane.pending = pendingClick{}
 		}
-		if !m.sel.dragging {
+		if !m.focusPane.sel.dragging {
 			return m, nil
 		}
 		row, col, ok := m.paneCell(msg.X, msg.Y)
 		if !ok {
 			return m, nil
 		}
-		m.sel.headRow, m.sel.headCol = row, col
+		m.focusPane.sel.headRow, m.focusPane.sel.headCol = row, col
 		return m, nil
 
 	case tea.MouseActionRelease:
-		if m.pending.active {
-			pending := m.pending
-			m.pending = pendingClick{}
+		if m.focusPane.pending.active {
+			pending := m.focusPane.pending
+			m.focusPane.pending = pendingClick{}
 			row, col, ok := m.paneCell(msg.X, msg.Y)
 			if ok && row == pending.row && col == pending.col {
 				// A click on a link opens it here: the terminal's own
@@ -254,20 +255,20 @@ func (m *Model) handleFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			// A release away from the press with no motion between them is
 			// a drag from a terminal that reports no motion: select it.
 			m.beginSelection(pending.row, pending.col)
-			m.sel.dragging = false
+			m.focusPane.sel.dragging = false
 			if ok {
-				m.sel.headRow, m.sel.headCol = row, col
+				m.focusPane.sel.headRow, m.focusPane.sel.headCol = row, col
 			}
 			return m, m.copySelectionCmd()
 		}
-		if !m.sel.dragging {
+		if !m.focusPane.sel.dragging {
 			return m, nil
 		}
-		m.sel.dragging = false
+		m.focusPane.sel.dragging = false
 		// A press that never moved is a click, not a copy: on a link it
 		// opens the link, the same answer either kind of pane gives.
-		if m.sel.clickCount == 1 && m.sel.anchorRow == m.sel.headRow && m.sel.anchorCol == m.sel.headCol {
-			if url := m.linkAt(m.sel.anchorRow, m.sel.anchorCol); url != "" {
+		if m.focusPane.sel.clickCount == 1 && m.focusPane.sel.anchorRow == m.focusPane.sel.headRow && m.focusPane.sel.anchorCol == m.focusPane.sel.headCol {
+			if url := m.linkAt(m.focusPane.sel.anchorRow, m.focusPane.sel.anchorCol); url != "" {
 				m.clearSelection()
 				return m, openLinkCmd(url)
 			}
@@ -283,31 +284,31 @@ func (m *Model) handleFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 // left standing under a click elsewhere reads as still selected.
 func (m *Model) deferClick(button, row, col int) {
 	m.clearSelection()
-	m.pending = pendingClick{active: true, button: button, row: row, col: col}
-	m.sel.lastClick, m.sel.lastRow, m.sel.lastCol = time.Now(), row, col
-	m.sel.clickCount = 1
+	m.focusPane.pending = pendingClick{active: true, button: button, row: row, col: col}
+	m.focusPane.sel.lastClick, m.focusPane.sel.lastRow, m.focusPane.sel.lastCol = time.Now(), row, col
+	m.focusPane.sel.clickCount = 1
 }
 
 // clearSelection drops the highlight along with the copy confirmation that
 // belongs to it.
 func (m *Model) clearSelection() {
-	m.sel = focusSelection{}
-	m.copied = 0
-	m.copyGen++
+	m.focusPane.sel = focusSelection{}
+	m.focusPane.copied = 0
+	m.focusPane.copyGen++
 }
 
 // clickRunContinues reports whether a press at this cell extends the click
 // run the previous press opened.
 func (m *Model) clickRunContinues(row, col int) bool {
-	return row == m.sel.lastRow && col == m.sel.lastCol &&
-		time.Since(m.sel.lastClick) < multiClickWindow
+	return row == m.focusPane.sel.lastRow && col == m.focusPane.sel.lastCol &&
+		time.Since(m.focusPane.sel.lastClick) < multiClickWindow
 }
 
 // forwardClick sends a full press-release pair to the focused pane's
 // application: the press was held back until release proved the gesture a
 // click rather than a selection drag.
 func (m *Model) forwardClick(button, row, col int) {
-	paneRow := row + m.paneRowOffset(m.pane.box.height)
+	paneRow := row + m.paneRowOffset(m.focusPane.pane.box.height)
 	press, ok := m.mouseReport(button, false, col, paneRow)
 	if !ok {
 		return
@@ -323,31 +324,31 @@ func (m *Model) forwardClick(button, row, col int) {
 // holding, for the paths that leave focus between a forwarded press and
 // its release, which would leave it tracking a button nobody is holding.
 func (m *Model) endForwardedGesture() {
-	if !m.forwardingMouse {
+	if !m.focusPane.forwardingMouse {
 		return
 	}
-	paneRow := m.forwardingRow + m.paneRowOffset(m.pane.box.height)
-	if release, ok := m.mouseReport(m.forwardingButton, true, m.forwardingCol, paneRow); ok {
+	paneRow := m.focusPane.forwardingRow + m.paneRowOffset(m.focusPane.pane.box.height)
+	if release, ok := m.mouseReport(m.focusPane.forwardingButton, true, m.focusPane.forwardingCol, paneRow); ok {
 		m.sendFocusReport(release)
 	}
 	m.clearForwardingMouse()
 }
 
 func (m *Model) clearForwardingMouse() {
-	m.forwardingMouse = false
-	m.forwardingButton = leftButton
-	m.forwardingRow, m.forwardingCol = 0, 0
+	m.focusPane.forwardingMouse = false
+	m.focusPane.forwardingButton = leftButton
+	m.focusPane.forwardingRow, m.focusPane.forwardingCol = 0, 0
 }
 
 // startSelection opens a selection, widening the granularity when this
 // press continues a click run at the same cell.
 func (m *Model) startSelection(row, col int) {
 	if m.clickRunContinues(row, col) {
-		m.sel.clickCount++
+		m.focusPane.sel.clickCount++
 	} else {
-		m.sel.clickCount = 1
+		m.focusPane.sel.clickCount = 1
 	}
-	m.sel.lastClick, m.sel.lastRow, m.sel.lastCol = time.Now(), row, col
+	m.focusPane.sel.lastClick, m.focusPane.sel.lastRow, m.focusPane.sel.lastCol = time.Now(), row, col
 	m.beginSelection(row, col)
 }
 
@@ -355,19 +356,19 @@ func (m *Model) startSelection(row, col int) {
 // count, without treating the call as a fresh press: a deferred press that
 // motion turned into a drag anchors here without widening the run.
 func (m *Model) beginSelection(row, col int) {
-	m.copied = 0
-	m.copyGen++
-	m.sel.active = true
-	m.sel.dragging = true
-	m.sel.anchorRow, m.sel.anchorCol = row, col
-	m.sel.headRow, m.sel.headCol = row, col
+	m.focusPane.copied = 0
+	m.focusPane.copyGen++
+	m.focusPane.sel.active = true
+	m.focusPane.sel.dragging = true
+	m.focusPane.sel.anchorRow, m.focusPane.sel.anchorCol = row, col
+	m.focusPane.sel.headRow, m.focusPane.sel.headCol = row, col
 	switch {
-	case m.sel.clickCount >= 3:
-		m.sel.granule = selectLine
-	case m.sel.clickCount == 2:
-		m.sel.granule = selectWord
+	case m.focusPane.sel.clickCount >= 3:
+		m.focusPane.sel.granule = selectLine
+	case m.focusPane.sel.clickCount == 2:
+		m.focusPane.sel.granule = selectWord
 	default:
-		m.sel.granule = selectChar
+		m.focusPane.sel.granule = selectChar
 	}
 	m.expandSelection()
 }
@@ -375,17 +376,17 @@ func (m *Model) beginSelection(row, col int) {
 // expandSelection grows a word or line selection out from the clicked cell.
 func (m *Model) expandSelection() {
 	lines := m.paneTextLines()
-	if m.sel.anchorRow >= len(lines) {
+	if m.focusPane.sel.anchorRow >= len(lines) {
 		return
 	}
-	line := lines[m.sel.anchorRow]
-	switch m.sel.granule {
+	line := lines[m.focusPane.sel.anchorRow]
+	switch m.focusPane.sel.granule {
 	case selectLine:
-		m.sel.anchorCol = 0
-		m.sel.headCol = ansi.StringWidth(line)
+		m.focusPane.sel.anchorCol = 0
+		m.focusPane.sel.headCol = ansi.StringWidth(line)
 	case selectWord:
-		start, end := wordBounds(line, m.sel.anchorCol)
-		m.sel.anchorCol, m.sel.headCol = start, end
+		start, end := wordBounds(line, m.focusPane.sel.anchorCol)
+		m.focusPane.sel.anchorCol, m.focusPane.sel.headCol = start, end
 	}
 }
 
@@ -477,10 +478,10 @@ func (s focusSelection) selectionRange() (startRow, startCol, endRow, endCol int
 // selectionSpan is the selected column range on one pane row, or ok=false
 // when the row carries no selection.
 func (m *Model) selectionSpan(row, lineWidth int) (start, end int, ok bool) {
-	if !m.sel.active {
+	if !m.focusPane.sel.active {
 		return 0, 0, false
 	}
-	startRow, startCol, endRow, endCol := m.sel.selectionRange()
+	startRow, startCol, endRow, endCol := m.focusPane.sel.selectionRange()
 	if row < startRow || row > endRow {
 		return 0, 0, false
 	}
@@ -522,11 +523,11 @@ func graphemeRangeAtColumns(line string, start, end int) (int, int) {
 // selectionText is the selected pane text, newline-joined, with each row's
 // trailing pad dropped the way a terminal's own copy does.
 func (m *Model) selectionText() string {
-	if !m.sel.active {
+	if !m.focusPane.sel.active {
 		return ""
 	}
 	lines := m.paneTextLines()
-	startRow, _, endRow, _ := m.sel.selectionRange()
+	startRow, _, endRow, _ := m.focusPane.sel.selectionRange()
 	var out []string
 	for row := startRow; row <= endRow && row < len(lines); row++ {
 		line := lines[row]
@@ -548,7 +549,7 @@ func (m *Model) copySelectionCmd() tea.Cmd {
 	if strings.TrimSpace(text) == "" {
 		return nil
 	}
-	gen := m.copyGen
+	gen := m.focusPane.copyGen
 	return copyTextCmd(text, func(chars int) tea.Msg {
 		return focusCopiedMsg{chars: chars, gen: gen}
 	})
@@ -581,7 +582,7 @@ type focusCopiedMsg struct {
 func (m *Model) renderPaneRow(row int, raw string, width int) string {
 	clean := previewDangerSeqs.ReplaceAllString(raw, "")
 	line := ansi.Strip(clean)
-	if !m.sel.active {
+	if !m.focusPane.sel.active {
 		return m.withCursor(row, raw, []rune(line), width)
 	}
 	start, end, ok := m.selectionSpan(row, ansi.StringWidth(line))
@@ -602,7 +603,7 @@ func (m *Model) renderPaneRow(row int, raw string, width int) string {
 // drew: only the caret cell is overpainted, spliced in by display column
 // so the surrounding escape state survives on both sides of it.
 func (m *Model) withCursor(row int, raw string, line []rune, width int) string {
-	cursorRow, cursorCol, ok := m.cursorCell(m.pane.box.height)
+	cursorRow, cursorCol, ok := m.cursorCell(m.focusPane.pane.box.height)
 	if !ok || cursorRow != row {
 		return previewLine(raw, width)
 	}
@@ -616,7 +617,7 @@ func (m *Model) withCursor(row int, raw string, line []rune, width int) string {
 	}
 	head := ansi.Truncate(clean, cursorCol, "")
 	tail := ansi.TruncateLeft(clean, cursorCol+1, "")
-	index := runeAtColumn(line, cursorCol)
+	index := status.RuneAtColumn(line, cursorCol)
 	cell := " "
 	if index < len(line) {
 		cell = string(line[index])
@@ -627,17 +628,6 @@ func (m *Model) withCursor(row int, raw string, line []rune, width int) string {
 // runeAtColumn finds which rune sits at a display column, since tmux
 // reports the cursor in cells and a wide rune covers two of them. Past the
 // line's end it returns len(line).
-func runeAtColumn(line []rune, column int) int {
-	cell := 0
-	for i, r := range line {
-		next := cell + ansi.StringWidth(string(r))
-		if column < next {
-			return i
-		}
-		cell = next
-	}
-	return len(line)
-}
 
 // cursorStyle is the focused pane's cursor block: the accent behind the
 // character it sits on, which reads as a cursor in either theme.

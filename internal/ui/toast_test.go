@@ -148,8 +148,8 @@ func TestSpliceAtColumnKeepsWidth(t *testing.T) {
 func TestSearchFieldSitsInTheRail(t *testing.T) {
 	m := shotModel()
 	m.width, m.height = 120, 34
-	m.searching = true
-	m.search = "rate"
+	m.rail.searching = true
+	m.rail.search = "rate"
 
 	if status := ansi.Strip(m.statusLine()); strings.Contains(status, "rate") {
 		t.Fatalf("the query moved to the rail, the notice should not repeat it: %q", status)

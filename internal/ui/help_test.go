@@ -173,7 +173,16 @@ func TestHelpSearchOnASectionTitleKeepsItsRows(t *testing.T) {
 }
 
 func TestReviewHelpOnlyShowsReviewBindingsAndSetupGuidance(t *testing.T) {
-	m := &Model{width: 120, height: 30, mode: modeDiff, diff: diffState{active: true}, keys: keybind.DefaultSession(), listKeys: keybind.DefaultList()}
+	m := &Model{
+		width:  120,
+		height: 30,
+		mode:   modeDiff,
+		diff:   diffState{active: true},
+		services: services{
+			keys:     keybind.DefaultSession(),
+			listKeys: keybind.DefaultList(),
+		},
+	}
 	m.openHelp()
 	sections := m.visibleHelpSections()
 	if len(sections) != 1 || !strings.HasPrefix(sections[0].title, "review") {
@@ -215,7 +224,15 @@ func TestHelpArrowStepRowsFollowSetting(t *testing.T) {
 	}
 
 	for _, enabled := range []bool{true, false} {
-		sections := (&Model{arrowStep: enabled, keys: keybind.DefaultSession(), listKeys: keybind.DefaultList()}).visibleHelpSections()
+		sections := (&Model{
+			services: services{
+				keys:     keybind.DefaultSession(),
+				listKeys: keybind.DefaultList(),
+			},
+			prefs: preferences{
+				arrowStep: enabled,
+			},
+		}).visibleHelpSections()
 		for _, row := range []struct{ title, key string }{
 			{"list", "→"},
 			{"list", "←"},
@@ -229,7 +246,18 @@ func TestHelpArrowStepRowsFollowSetting(t *testing.T) {
 }
 
 func helpModel() *Model {
-	return &Model{width: 120, height: 30, mode: modeHelp, arrowStep: true, keys: keybind.DefaultSession(), listKeys: keybind.DefaultList()}
+	return &Model{
+		width:  120,
+		height: 30,
+		mode:   modeHelp,
+		services: services{
+			keys:     keybind.DefaultSession(),
+			listKeys: keybind.DefaultList(),
+		},
+		prefs: preferences{
+			arrowStep: true,
+		},
+	}
 }
 
 func TestHelpScrollClampsToContent(t *testing.T) {
@@ -315,7 +343,15 @@ func TestHelpOpensClean(t *testing.T) {
 func TestHelpFramePaintsInsideTheTerminal(t *testing.T) {
 	for _, width := range []int{60, 80, 120, 200} {
 		for _, height := range []int{14, 24, 40} {
-			m := &Model{width: width, height: height, mode: modeHelp, keys: keybind.DefaultSession(), listKeys: keybind.DefaultList()}
+			m := &Model{
+				width:  width,
+				height: height,
+				mode:   modeHelp,
+				services: services{
+					keys:     keybind.DefaultSession(),
+					listKeys: keybind.DefaultList(),
+				},
+			}
 			for _, query := range []string{"", "revive"} {
 				m.help.query = query
 				lines := strings.Split(m.View(), "\n")

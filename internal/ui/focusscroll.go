@@ -82,13 +82,13 @@ func (m *Model) wheelReport(up bool, col, row int) (string, bool) {
 // focused pane. An all-motion app needs a pointer move ahead of discrete
 // events because focus mode does not pass its ordinary pointer moves on.
 func (m *Model) mouseReport(button int, release bool, col, row int) (string, bool) {
-	if m.pane.sgr {
+	if m.focusPane.pane.sgr {
 		terminator := "M"
 		if release {
 			terminator = "m"
 		}
 		report := fmt.Sprintf("\x1b[<%d;%d;%d%s", button, col+1, row+1, terminator)
-		if m.pane.motion && !release {
+		if m.focusPane.pane.motion && !release {
 			report = sgrMouse(motionButton, col, row) + report
 		}
 		return report, true
@@ -101,7 +101,7 @@ func (m *Model) mouseReport(button int, release bool, col, row int) (string, boo
 	if !ok {
 		return "", false
 	}
-	if m.pane.motion && !release {
+	if m.focusPane.pane.motion && !release {
 		move, moveOK := x10Mouse(motionButton, col, row)
 		if !moveOK {
 			return "", false
@@ -131,21 +131,21 @@ func guardedMouseCommand(sessID, report string) (string, []string) {
 
 func (m *Model) wheelFocus(up bool, x, y int) tea.Cmd {
 	sess, ok := m.selected()
-	if !ok || m.mode != modeFocus || m.focus == nil {
+	if !ok || m.mode != modeFocus || m.focusPane.focus == nil {
 		return nil
 	}
-	if m.pane.mouse {
+	if m.focusPane.pane.mouse {
 		row, col, inside := m.paneCell(x, y)
 		if !inside {
 			return nil
 		}
-		report, ok := m.wheelReport(up, col, row+m.paneRowOffset(m.pane.box.height))
+		report, ok := m.wheelReport(up, col, row+m.paneRowOffset(m.focusPane.pane.box.height))
 		if !ok {
 			return nil
 		}
 		command, args := guardedMouseCommand(sess.ID, report)
-		if !m.focus.attempt(command) {
-			if err := m.tmux.SendCommand(args...); err != nil {
+		if !m.focusPane.focus.attempt(command) {
+			if err := m.services.tmux.SendCommand(args...); err != nil {
 				m.errBar.text = err.Error()
 			}
 		}
@@ -171,7 +171,7 @@ func (m *Model) forwardFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if msg.Action == tea.MouseActionMotion {
 		button |= motionBit
 	}
-	report, ok := m.mouseReport(button, release, col, row+m.paneRowOffset(m.pane.box.height))
+	report, ok := m.mouseReport(button, release, col, row+m.paneRowOffset(m.focusPane.pane.box.height))
 	if !ok {
 		return m, nil
 	}
@@ -183,12 +183,12 @@ func (m *Model) forwardFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 // pane, preferring the live control pipe over a forked tmux call.
 func (m *Model) sendFocusReport(report string) {
 	sess, ok := m.selected()
-	if !ok || m.focus == nil {
+	if !ok || m.focusPane.focus == nil {
 		return
 	}
 	command, args := guardedMouseCommand(sess.ID, report)
-	if !m.focus.attempt(command) {
-		if err := m.tmux.SendCommand(args...); err != nil {
+	if !m.focusPane.focus.attempt(command) {
+		if err := m.services.tmux.SendCommand(args...); err != nil {
 			m.errBar.text = err.Error()
 		}
 	}
@@ -199,11 +199,11 @@ func (m *Model) sendFocusReport(report string) {
 // so it lands at that gesture's final in-pane cell instead.
 func (m *Model) forwardedMouseCell(msg tea.MouseMsg) (row, col int, ok bool) {
 	if row, col, inside := m.paneCell(msg.X, msg.Y); inside {
-		m.forwardingRow, m.forwardingCol = row, col
+		m.focusPane.forwardingRow, m.focusPane.forwardingCol = row, col
 		return row, col, true
 	}
-	if msg.Action == tea.MouseActionRelease && m.forwardingMouse {
-		return m.forwardingRow, m.forwardingCol, true
+	if msg.Action == tea.MouseActionRelease && m.focusPane.forwardingMouse {
+		return m.focusPane.forwardingRow, m.focusPane.forwardingCol, true
 	}
 	return 0, 0, false
 }
@@ -213,7 +213,7 @@ func (m *Model) forwardedMouseCell(msg tea.MouseMsg) (row, col int, ok bool) {
 // MouseButtonNone, while SGR needs the button that was released.
 func (m *Model) forwardedMouseButton(msg tea.MouseMsg) int {
 	if msg.Action == tea.MouseActionRelease && msg.Button == tea.MouseButtonNone {
-		return m.forwardingButton
+		return m.focusPane.forwardingButton
 	}
 	return mouseButton(msg.Button)
 }
@@ -238,17 +238,17 @@ func (m *Model) scrollFocus(delta int) tea.Cmd {
 	if !ok || m.mode != modeFocus {
 		return nil
 	}
-	offset := m.focusScroll - delta*focusScrollStep
+	offset := m.focusPane.focusScroll - delta*focusScrollStep
 	if offset < 0 {
 		offset = 0
 	}
-	if offset > m.pane.history {
-		offset = m.pane.history
+	if offset > m.focusPane.pane.history {
+		offset = m.focusPane.pane.history
 	}
-	if offset == m.focusScroll {
+	if offset == m.focusPane.focusScroll {
 		return nil
 	}
-	m.focusScroll = offset
+	m.focusPane.focusScroll = offset
 	return m.requestFocusRegion(sess.ID)
 }
 
@@ -258,11 +258,11 @@ func (m *Model) scrollFocus(delta int) tea.Cmd {
 // the one catch-up fetch, so a fast wheel costs a handful of captures
 // instead of one per notch.
 func (m *Model) requestFocusRegion(sessID string) tea.Cmd {
-	if m.focusFetchInFlight {
+	if m.focusPane.focusFetchInFlight {
 		return nil
 	}
-	m.focusFetchInFlight = true
-	return m.focusRegionCmd(sessID, m.focusScroll)
+	m.focusPane.focusFetchInFlight = true
+	return m.focusRegionCmd(sessID, m.focusPane.focusScroll)
 }
 
 // focusRegionCmd captures the pane region that sits offset lines above the
@@ -278,7 +278,7 @@ func (m *Model) focusRegionCmd(sessID string, offset int) tea.Cmd {
 	rows := m.focusPaneRows()
 	command := fmt.Sprintf(`capture-pane -p -e -t %s -S %d -E -`,
 		tmux.PaneTarget(sessID), -(offset + rows))
-	watch := m.focus
+	watch := m.focusPane.focus
 	return func() tea.Msg {
 		if watch == nil {
 			return focusScrollMsg{sessID: sessID, offset: offset, rows: rows}
@@ -307,5 +307,5 @@ func bottomWindow(capture string, rows, offset int) string {
 // scrolledBack reports whether the focused pane is showing history rather
 // than its live bottom.
 func (m *Model) scrolledBack() bool {
-	return m.mode == modeFocus && m.focusScroll > 0
+	return m.mode == modeFocus && m.focusPane.focusScroll > 0
 }

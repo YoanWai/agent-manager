@@ -29,12 +29,16 @@ func newTerminals(configDir string) terminalCommands {
 }
 
 func terminalVerbs() []command {
+	return terminalVerbsWith(newTerminals)
+}
+
+func terminalVerbsWith(open func(string) terminalCommands) []command {
 	return []command{
-		{name: "list", usage: usageTerminalList, about: "find a running terminal to reuse before opening another one", run: bind(newTerminals, runTerminalList)},
-		{name: "create", usage: usageTerminalCreate, about: "open a terminal for work the user should see, such as SSH into a host; it hangs under this session unless --nest=false", run: bind(newTerminals, runTerminalCreate)},
-		{name: "send", usage: usageTerminalSend, about: "run a command there, or send exact tmux keys such as C-c to control what is running", run: bind(newTerminals, runTerminalSend)},
-		{name: "read", usage: usageTerminalRead, about: "read what that terminal's screen currently shows", run: bind(newTerminals, runTerminalRead)},
-		{name: "close", usage: usageTerminalClose, about: "close a terminal opened under this session once its job is done, killing the pane and deleting the row", run: bind(newTerminals, runTerminalClose)},
+		{name: "list", usage: usageTerminalList, about: "find a running terminal to reuse before opening another one", run: bind(open, runTerminalList)},
+		{name: "create", usage: usageTerminalCreate, about: "open a terminal for work the user should see, such as SSH into a host; it hangs under this session unless --nest=false", run: bind(open, runTerminalCreate)},
+		{name: "send", usage: usageTerminalSend, about: "run a command there, or send exact tmux keys such as C-c to control what is running", run: bind(open, runTerminalSend)},
+		{name: "read", usage: usageTerminalRead, about: "read what that terminal's screen currently shows", run: bind(open, runTerminalRead)},
+		{name: "close", usage: usageTerminalClose, about: "close a terminal opened under this session once its job is done, killing the pane and deleting the row", run: bind(open, runTerminalClose)},
 	}
 }
 

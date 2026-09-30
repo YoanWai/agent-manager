@@ -14,7 +14,7 @@ func TestNestedGroupsTree(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
 
-	if err := m.store.CreateGroup("backend/api/auth", ""); err != nil {
+	if err := m.services.store.CreateGroup("backend/api/auth", ""); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -33,11 +33,11 @@ func TestNestedGroupsTree(t *testing.T) {
 		}
 	}
 
-	if !m.rows[0].isRoot() {
-		t.Fatalf("root row should lead the list, rows[0] = %+v", m.rows[0])
+	if !m.rail.rows[0].isRoot() {
+		t.Fatalf("root row should lead the list, rows[0] = %+v", m.rail.rows[0])
 	}
-	if m.rows[1].isGroup || m.rows[1].sess.Name != "top" {
-		t.Fatalf("the top-level session should follow root, rows[1] = %+v", m.rows[1])
+	if m.rail.rows[1].isGroup || m.rail.rows[1].sess.Name != "top" {
+		t.Fatalf("the top-level session should follow root, rows[1] = %+v", m.rail.rows[1])
 	}
 
 	deep := m.sessionRows()[1]
@@ -45,21 +45,21 @@ func TestNestedGroupsTree(t *testing.T) {
 		t.Fatalf("deep session group = %q", deep.Group)
 	}
 
-	m.collapsed["backend"] = true
+	m.rail.collapsed["backend"] = true
 	m.rebuildRows()
 	if len(m.sessionRows()) != 1 {
 		t.Fatalf("collapsing backend should hide the deep session, got %d sessions", len(m.sessionRows()))
 	}
-	m.collapsed["backend"] = false
+	m.rail.collapsed["backend"] = false
 	m.rebuildRows()
 
-	m.search = "deep"
+	m.rail.search = "deep"
 	m.rebuildRows()
 	sessions := m.sessionRows()
 	if len(sessions) != 1 || sessions[0].Name != "deep" {
 		t.Fatalf("search should keep only deep, got %v", sessions)
 	}
-	m.search = ""
+	m.rail.search = ""
 	m.rebuildRows()
 
 	if m.View() == "" {
@@ -74,11 +74,11 @@ func TestPortableReorderKeysSwapVisibleSessions(t *testing.T) {
 		{ID: "hidden", Name: "filtered", Tool: "claude", Cwd: "/tmp", Status: "idle"},
 		{ID: "c", Name: "keep-charlie", Tool: "claude", Cwd: "/tmp", Status: "idle"},
 	} {
-		if err := m.store.CreateSession(sess); err != nil {
+		if err := m.services.store.CreateSession(sess); err != nil {
 			t.Fatalf("create session %q: %v", sess.ID, err)
 		}
 	}
-	m.search = "keep"
+	m.rail.search = "keep"
 	loadStoredRows(t, m)
 	m.selectSessionRow(t, "keep-charlie")
 
@@ -87,19 +87,19 @@ func TestPortableReorderKeysSwapVisibleSessions(t *testing.T) {
 	if got, want := []string{m.sessionRows()[0].ID, m.sessionRows()[1].ID}, []string{"c", "a"}; !slices.Equal(got, want) {
 		t.Fatalf("visible order after K = %v want %v", got, want)
 	}
-	if got, want := listSessionIDs(t, m.store), []string{"c", "hidden", "a"}; !slices.Equal(got, want) {
+	if got, want := listSessionIDs(t, m.services.store), []string{"c", "hidden", "a"}; !slices.Equal(got, want) {
 		t.Fatalf("stored order after K = %v want %v", got, want)
 	}
 
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'J'}})
 	m = updated.(*Model)
-	if got, want := listSessionIDs(t, m.store), []string{"a", "hidden", "c"}; !slices.Equal(got, want) {
+	if got, want := listSessionIDs(t, m.services.store), []string{"a", "hidden", "c"}; !slices.Equal(got, want) {
 		t.Fatalf("stored order after J = %v want %v", got, want)
 	}
 
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyShiftUp})
 	m = updated.(*Model)
-	if got, want := listSessionIDs(t, m.store), []string{"c", "hidden", "a"}; !slices.Equal(got, want) {
+	if got, want := listSessionIDs(t, m.services.store), []string{"c", "hidden", "a"}; !slices.Equal(got, want) {
 		t.Fatalf("stored order after shift+up = %v want %v", got, want)
 	}
 }
@@ -107,7 +107,7 @@ func TestPortableReorderKeysSwapVisibleSessions(t *testing.T) {
 func TestReorderGroupSkipsFilteredSibling(t *testing.T) {
 	m := buildModel(t)
 	for _, group := range []string{"alpha", "hidden", "gamma"} {
-		if err := m.store.CreateGroup(group, ""); err != nil {
+		if err := m.services.store.CreateGroup(group, ""); err != nil {
 			t.Fatalf("create group %q: %v", group, err)
 		}
 	}
@@ -116,11 +116,11 @@ func TestReorderGroupSkipsFilteredSibling(t *testing.T) {
 		{ID: "hidden", Name: "filtered", Tool: "claude", Cwd: "/tmp", Group: "hidden", Status: "idle"},
 		{ID: "g", Name: "keep-gamma", Tool: "claude", Cwd: "/tmp", Group: "gamma", Status: "idle"},
 	} {
-		if err := m.store.CreateSession(sess); err != nil {
+		if err := m.services.store.CreateSession(sess); err != nil {
 			t.Fatalf("create session %q: %v", sess.ID, err)
 		}
 	}
-	m.search = "keep"
+	m.rail.search = "keep"
 	loadStoredRows(t, m)
 	m.selectGroupRow(t, "gamma")
 
@@ -129,7 +129,7 @@ func TestReorderGroupSkipsFilteredSibling(t *testing.T) {
 	if got, want := m.groupRowPaths(), []string{"gamma", "alpha"}; !slices.Equal(got, want) {
 		t.Fatalf("visible group order after K = %v want %v", got, want)
 	}
-	groups, err := m.store.Groups()
+	groups, err := m.services.store.Groups()
 	if err != nil {
 		t.Fatalf("list groups: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestReorderGroupSkipsFilteredSibling(t *testing.T) {
 func TestReorderSyntheticGroupUpdatesImmediately(t *testing.T) {
 	m := buildModel(t)
 	for _, group := range []string{"alpha/deep", "beta/deep", "gamma/deep"} {
-		if err := m.store.CreateGroup(group, ""); err != nil {
+		if err := m.services.store.CreateGroup(group, ""); err != nil {
 			t.Fatalf("create group %q: %v", group, err)
 		}
 	}
@@ -168,7 +168,7 @@ func TestReorderSyntheticGroupUpdatesImmediately(t *testing.T) {
 func TestToggleEmptyGroupsFiltersTreeWithoutDeletingGroups(t *testing.T) {
 	m := buildModel(t)
 	for _, group := range []string{"empty", "work", "work/leaf", "work/unused"} {
-		if err := m.store.CreateGroup(group, ""); err != nil {
+		if err := m.services.store.CreateGroup(group, ""); err != nil {
 			t.Fatalf("create group %q: %v", group, err)
 		}
 	}
@@ -188,7 +188,7 @@ func TestToggleEmptyGroupsFiltersTreeWithoutDeletingGroups(t *testing.T) {
 	if footer := ansi.Strip(m.viewFooter()); !strings.Contains(footer, "show empty") {
 		t.Fatalf("footer should offer the inverse action while filtered:\n%s", footer)
 	}
-	groups, err := m.store.Groups()
+	groups, err := m.services.store.Groups()
 	if err != nil {
 		t.Fatalf("list stored groups: %v", err)
 	}
@@ -211,7 +211,7 @@ func TestToggleEmptyGroupsFiltersTreeWithoutDeletingGroups(t *testing.T) {
 
 func TestHideEmptyGroupsDoesNotFilterTheArchivedView(t *testing.T) {
 	m := buildModel(t)
-	if err := m.store.CreateGroup("empty", ""); err != nil {
+	if err := m.services.store.CreateGroup("empty", ""); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -220,17 +220,17 @@ func TestHideEmptyGroupsDoesNotFilterTheArchivedView(t *testing.T) {
 	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.applyCmd(t, cmd)
 
-	if err := m.store.CreateGroup("bare", ""); err != nil {
+	if err := m.services.store.CreateGroup("bare", ""); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
-	m.hideEmptyGroups = true
-	m.showArchived = true
+	m.rail.hideEmptyGroups = true
+	m.rail.showArchived = true
 	m.applyCmd(t, m.refreshCmd())
 	if got, want := m.groupRowPaths(), []string{"empty"}; !slices.Equal(got, want) {
 		t.Fatalf("archived view with hide-empty on should keep the archived empty group, got %v want %v", got, want)
 	}
 
-	m.showArchived = false
+	m.rail.showArchived = false
 	m.applyCmd(t, m.refreshCmd())
 	if got := m.groupRowPaths(); len(got) != 0 {
 		t.Fatalf("active view with hide-empty on should still hide empty groups, got %v", got)
@@ -241,7 +241,7 @@ func TestEmptyGroupsKeyIsRefusedInTheArchivedView(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
 	for _, path := range []string{"empty", "work"} {
-		if err := m.store.CreateGroup(path, ""); err != nil {
+		if err := m.services.store.CreateGroup(path, ""); err != nil {
 			t.Fatalf("create group %s: %v", path, err)
 		}
 	}
@@ -263,7 +263,7 @@ func TestEmptyGroupsKeyIsRefusedInTheArchivedView(t *testing.T) {
 
 	press("t")
 	press("e")
-	if !m.hideEmptyGroups {
+	if !m.rail.hideEmptyGroups {
 		t.Fatal("e in the archived view should leave the hide-empty setting alone")
 	}
 
@@ -277,7 +277,7 @@ func TestArchivedViewIgnoresFold(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
 
-	if err := m.store.CreateGroup("work", ""); err != nil {
+	if err := m.services.store.CreateGroup("work", ""); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -288,9 +288,9 @@ func TestArchivedViewIgnoresFold(t *testing.T) {
 	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.applyCmd(t, cmd)
 
-	m.collapsed["work"] = true
+	m.rail.collapsed["work"] = true
 
-	m.showArchived = true
+	m.rail.showArchived = true
 	m.applyCmd(t, m.refreshCmd())
 	if len(m.sessionRows()) != 1 {
 		t.Fatalf("archived session inside a folded group should still show, got %d rows", len(m.sessionRows()))
@@ -301,7 +301,7 @@ func TestArchivedViewIgnoresFold(t *testing.T) {
 	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.applyCmd(t, cmd)
 
-	active, err := m.store.ListSessions(false)
+	active, err := m.services.store.ListSessions(false)
 	if err != nil {
 		t.Fatalf("list sessions: %v", err)
 	}
@@ -316,38 +316,38 @@ func TestCursorWrapsAroundTheList(t *testing.T) {
 	createSession(t, m, "first", dir, "")
 	createSession(t, m, "second", dir, "")
 
-	m.cursor = 0
+	m.rail.cursor = 0
 	m.moveCursor(-1)
-	if m.cursor != len(m.rows)-1 {
-		t.Fatalf("up from the top should wrap to the bottom, cursor = %d", m.cursor)
+	if m.rail.cursor != len(m.rail.rows)-1 {
+		t.Fatalf("up from the top should wrap to the bottom, cursor = %d", m.rail.cursor)
 	}
 	m.moveCursor(1)
-	if m.cursor != 0 {
-		t.Fatalf("down from the bottom should wrap to the top, cursor = %d", m.cursor)
+	if m.rail.cursor != 0 {
+		t.Fatalf("down from the bottom should wrap to the top, cursor = %d", m.rail.cursor)
 	}
 
-	m.rows = nil
-	m.cursor = 0
+	m.rail.rows = nil
+	m.rail.cursor = 0
 	m.moveCursor(1)
-	if m.cursor != 0 {
-		t.Fatalf("empty list should leave the cursor alone, cursor = %d", m.cursor)
+	if m.rail.cursor != 0 {
+		t.Fatalf("empty list should leave the cursor alone, cursor = %d", m.rail.cursor)
 	}
 }
 
 func TestCollapsedStatePersistsAcrossReload(t *testing.T) {
 	m := buildModel(t)
-	m.collapsed["backend"] = true
-	m.collapsed["backend/api"] = true
+	m.rail.collapsed["backend"] = true
+	m.rail.collapsed["backend/api"] = true
 	m.persistCollapsed()
 
-	restored := loadCollapsed(m.store)
+	restored := loadCollapsed(m.services.store)
 	if !restored["backend"] || !restored["backend/api"] {
 		t.Fatalf("collapsed groups not restored: %v", restored)
 	}
 
-	m.collapsed["backend"] = false
+	m.rail.collapsed["backend"] = false
 	m.persistCollapsed()
-	restored = loadCollapsed(m.store)
+	restored = loadCollapsed(m.services.store)
 	if restored["backend"] {
 		t.Fatalf("expanded group leaked back as collapsed: %v", restored)
 	}
@@ -358,26 +358,26 @@ func TestCollapsedStatePersistsAcrossReload(t *testing.T) {
 
 func TestToggleCollapseAllFlipsEveryGroup(t *testing.T) {
 	m := buildModel(t)
-	m.sessions = []store.Session{{ID: "a", Group: "backend/api"}, {ID: "b", Group: "frontend"}}
+	m.workspace.sessions = []store.Session{{ID: "a", Group: "backend/api"}, {ID: "b", Group: "frontend"}}
 	want := []string{"backend", "backend/api", "frontend"}
 
 	m.toggleCollapseAll()
 	for _, group := range want {
-		if !m.collapsed[group] {
+		if !m.rail.collapsed[group] {
 			t.Fatalf("group %q not collapsed after fold-all", group)
 		}
 	}
-	if restored := loadCollapsed(m.store); len(restored) != 3 {
+	if restored := loadCollapsed(m.services.store); len(restored) != 3 {
 		t.Fatalf("fold-all not persisted: %v", restored)
 	}
 
 	m.toggleCollapseAll()
 	for _, group := range want {
-		if m.collapsed[group] {
+		if m.rail.collapsed[group] {
 			t.Fatalf("group %q still collapsed after unfold-all", group)
 		}
 	}
-	if restored := loadCollapsed(m.store); len(restored) != 0 {
+	if restored := loadCollapsed(m.services.store); len(restored) != 0 {
 		t.Fatalf("unfold-all not persisted: %v", restored)
 	}
 }
@@ -386,7 +386,7 @@ func TestToggleCollapseAllFlipsEveryGroup(t *testing.T) {
 // collapsed group opens without the toggle closing an open one.
 func TestRightStepsIntoTheRow(t *testing.T) {
 	m := buildModel(t)
-	if err := m.store.CreateGroup("grouped", ""); err != nil {
+	if err := m.services.store.CreateGroup("grouped", ""); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -395,17 +395,17 @@ func TestRightStepsIntoTheRow(t *testing.T) {
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
 	*m = *updated.(*Model)
-	if !m.collapsed["grouped"] {
+	if !m.rail.collapsed["grouped"] {
 		t.Fatal("left did not close the group")
 	}
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
 	*m = *updated.(*Model)
-	if m.collapsed["grouped"] {
+	if m.rail.collapsed["grouped"] {
 		t.Fatal("right did not open the group")
 	}
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
 	*m = *updated.(*Model)
-	if m.collapsed["grouped"] {
+	if m.rail.collapsed["grouped"] {
 		t.Fatal("a second right closed the group it had opened")
 	}
 
@@ -420,7 +420,7 @@ func TestRightStepsIntoTheRow(t *testing.T) {
 func TestReorderChildStaysWithItsSiblings(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
-	if err := m.store.CreateGroup("backend", dir); err != nil {
+	if err := m.services.store.CreateGroup("backend", dir); err != nil {
 		t.Fatalf("group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -433,7 +433,7 @@ func TestReorderChildStaysWithItsSiblings(t *testing.T) {
 	_, cmd := m.reorderSelected(1)
 	m.applyCmd(t, cmd)
 	var kids []string
-	for _, row := range m.rows {
+	for _, row := range m.rail.rows {
 		if !row.isGroup && row.sess.ParentID != "" {
 			kids = append(kids, row.sess.Name)
 		}
@@ -446,7 +446,7 @@ func TestReorderChildStaysWithItsSiblings(t *testing.T) {
 func TestReorderChildIgnoresAnotherParentsChild(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
-	if err := m.store.CreateGroup("backend", dir); err != nil {
+	if err := m.services.store.CreateGroup("backend", dir); err != nil {
 		t.Fatalf("group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -460,7 +460,7 @@ func TestReorderChildIgnoresAnotherParentsChild(t *testing.T) {
 	_, cmd := m.reorderSelected(1)
 	m.applyCmd(t, cmd)
 	var names []string
-	for _, row := range m.rows {
+	for _, row := range m.rail.rows {
 		if !row.isGroup {
 			names = append(names, row.sess.Name)
 		}
@@ -474,7 +474,7 @@ func TestReorderChildIgnoresAnotherParentsChild(t *testing.T) {
 func TestReorderAgentSkipsChildren(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
-	if err := m.store.CreateGroup("backend", dir); err != nil {
+	if err := m.services.store.CreateGroup("backend", dir); err != nil {
 		t.Fatalf("group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -487,7 +487,7 @@ func TestReorderAgentSkipsChildren(t *testing.T) {
 	_, cmd := m.reorderSelected(1)
 	m.applyCmd(t, cmd)
 	var names []string
-	for _, row := range m.rows {
+	for _, row := range m.rail.rows {
 		if !row.isGroup && row.sess.ParentID == "" {
 			names = append(names, row.sess.Name)
 		}
@@ -495,7 +495,7 @@ func TestReorderAgentSkipsChildren(t *testing.T) {
 	if len(names) < 2 || names[0] != "other" || names[1] != "coder" {
 		t.Fatalf("un-nested order %v", names)
 	}
-	got, err := m.store.Get(shell.ID)
+	got, err := m.services.store.Get(shell.ID)
 	if err != nil || got.ParentID != agent.ID {
 		t.Fatalf("terminal left its parent: %+v err %v", got, err)
 	}
