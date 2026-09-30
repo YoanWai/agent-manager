@@ -1027,7 +1027,13 @@ func waitForPane(t *testing.T, driver *Driver, id, want string) {
 func TestCreateExportsSessionEnvIntoTheShell(t *testing.T) {
 	driver := requireTmux(t)
 	id := "senv" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
-	marker := t.TempDir() + "/env"
+	fixture := t.TempDir()
+	marker := fixture + "/env"
+	shell := fixture + "/shell"
+	if err := os.WriteFile(shell, []byte("#!/bin/sh\nPS1='am-shell-ready> ' exec /bin/sh -i\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SHELL", shell)
 	env := map[string]string{
 		"AGENT_MANAGER_SESSION_ID":  "abc123",
 		"AGENT_MANAGER_STATUS_FILE": "/tmp/status-abc123",
@@ -1038,7 +1044,7 @@ func TestCreateExportsSessionEnvIntoTheShell(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
-	waitForPane(t, driver, id, relaunchHint)
+	waitForPane(t, driver, id, "am-shell-ready>")
 
 	// Written whole and moved into place, so the read cannot land between
 	// the two values.
