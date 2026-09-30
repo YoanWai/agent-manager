@@ -1,0 +1,31 @@
+# Application architecture
+
+PR #2 implements a local application boundary refactor. It is partially conformant to the broader architecture proposed in PR #1 and issue #646. Shared lifecycle and UI-free maintenance are implemented. Feature-owned UI behavior, read-only rendering, nonblocking lifecycle effects, remote workspace coordination, and exclusive execution authority remain incomplete.
+
+These documents retain the broader target. A requirement described here is not evidence that its implementation exists.
+
+## Read the contract and its evidence
+
+| Document | Purpose |
+| --- | --- |
+| [Boundaries](boundaries.md) | Responsibilities, vocabulary, dependencies, and file organization |
+| [Decisions](decisions.md) | Selected patterns, alternatives, and lifecycle policies |
+| [Compatibility and rollout](compatibility-and-rollout.md) | Mixed versions, scope, uncertain outcomes, and old-writer cutover |
+| [Roadmap and evidence](roadmap-and-evidence.md) | Current conformance, source references, and bounded follow-ups |
+| [Production proposal](../architecture-proposal.md) | Summary of the implemented refactor and runnable examples |
+
+## Keep the historical evidence separate
+
+[PR #1](https://github.com/ribeirojose/agent-manager/pull/1) is closed without merging. Its experiments remain available at commit `21294a3d895790e8c1937108b5c900eb43a2c2d3`. PR #2 supersedes it as the production-code proposal, not as proof that all experimental features shipped.
+
+The maintained contract reconciles these original records:
+
+| Historical record | What carries forward |
+| --- | --- |
+| [Application architecture](https://github.com/ribeirojose/agent-manager/blob/21294a3d895790e8c1937108b5c900eb43a2c2d3/docs/architecture-poc/application-architecture.md) | Workspace versus execution-profile authority, narrow ports, projections, and scope |
+| [Scope and migration](https://github.com/ribeirojose/agent-manager/blob/21294a3d895790e8c1937108b5c900eb43a2c2d3/docs/architecture-poc/scope-and-migration.md) | Incremental migration through existing use cases and preservation of UI behavior |
+| [Independent review](https://github.com/ribeirojose/agent-manager/blob/21294a3d895790e8c1937108b5c900eb43a2c2d3/docs/architecture-poc/application-review.md) | Five version domains, stale replies, uncertain mutations, and legacy-writer risks |
+| [Migration design](https://github.com/ribeirojose/agent-manager/blob/21294a3d895790e8c1937108b5c900eb43a2c2d3/docs/architecture-poc/migration-design.md) | Archive and inbox extraction with explicit actor policies and bounded ownership claims |
+| [Coverage](https://github.com/ribeirojose/agent-manager/blob/21294a3d895790e8c1937108b5c900eb43a2c2d3/docs/architecture-poc/coverage.md) | Separation of fixture evidence, real-process evidence, and production acceptance |
+
+File organization follows the maintainability direction of [issue #646](https://github.com/YoanWai/agent-manager/issues/646). Smaller files and feature types help reviewers. Neither establishes authority, compatibility, or nonblocking behavior by itself.

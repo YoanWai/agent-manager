@@ -1,0 +1,47 @@
+# Compatibility and execution-owner rollout
+
+This is a required future production contract. PR #2 implements local command binding and selected protocol-mode checks, not remote negotiation or a completed exclusive-owner rollout.
+
+## Test five independently changing version domains
+
+| Domain | Required upgrade scenario |
+| --- | --- |
+| Controller build | New controller with an older command endpoint; older controller with a new endpoint |
+| Command endpoint on disk | New endpoint communicating with an already running older owner |
+| Already running owner | Owner restart or replacement without confusing process identity with binary version |
+| Long-lived MCP process | Existing client and server session crossing an upgrade without acquiring broader scope |
+| SQLite schema and writers | Old binary encountering a newer schema without corrupting data or bypassing authority |
+
+Wire protocol and storage schema compatibility are separate policies. Support only combinations the project names and tests. Synthetic revisions and current SDK legacy modes do not prove compatibility with released binaries.
+
+Discover versions and capabilities at runtime. A mutation is available only when both the invoked endpoint and running owner implement its mandatory semantics and guards. Refuse missing guards before effects. Never downgrade a guarded write into a legacy mutation.
+
+Compatible reads can omit optional observations. Do not reinterpret a missing required field as a valid destructive target. Keep SQLite migrations append-only and refuse unsupported schemas before writes. Migration success alone does not prove that historical writers are safe.
+
+## Bind scope and authority independently
+
+Construct device-local or controller-workspace scope from trusted process composition. An MCP tool argument cannot broaden a device client into a workspace client.
+
+Capture the selected device, execution profile, session identity, connection generation, and owner instance at dispatch. Distinguish saved connection identity, authoritative environment identity, and process-instance identity. Display labels and version strings are not substitutes for these bindings.
+
+Derive the canonical execution-owner key from the authoritative store identity plus its execution binding, including the tmux socket. A socket claim or an in-process mutex alone cannot prevent a second process from writing the same profile.
+
+Before advertising exclusivity, upgrade, quiesce, reject, or isolate every incompatible legacy writer. Cooperating locks cannot constrain binaries that bypass them. Use a disposable profile to prove that exactly one maintenance path advances and competing writers cannot bypass the selected policy.
+
+## Define uncertainty at the effect boundary
+
+Validate the captured binding at the owner-side effect boundary. A changed connection generation rejects stale UI reconciliation. It does not revoke a command already accepted by the former owner.
+
+If a mutation response is lost, retain its original target and classify the outcome as uncertain. Do not automatically replay against a new endpoint or fall back to a newly opened local service. Operation-specific durable receipts and idempotency need explicit implementation before safe retry is claimed.
+
+Specify freshness and serialization separately for launch, kill, archive, delivery, and raw pane input. A read projection is not input authority. Shared interactive input and resize need explicit writer ownership, takeover, and stale-writer rejection.
+
+## Require real rollout evidence
+
+1. Choose a supported version matrix with pinned released binaries and schemas.
+2. Invoke a canonical lifecycle use case through CLI, MCP, and TUI against disposable resources.
+3. Race reconnect, retarget, removal, owner replacement, and response loss at documented commit points.
+4. Verify missing-capability denial, zero unintended mutation, stable uncertainty, and stale-reply rejection.
+5. Verify old-writer exclusion and single maintenance authority before enabling the exclusive-owner guarantee.
+
+Retain the real SSH route test from PR #1 as a replayable experiment. Extend it with supported historical endpoint and owner binaries for production acceptance. Current SSH fixture evidence does not cover that matrix.

@@ -1,5 +1,7 @@
 # Application architecture proposal
 
+The maintained [architecture contract](architecture/README.md) restores the broader rationale from PR #1. The [conformance audit](architecture/roadmap-and-evidence.md) separates implemented boundaries from outstanding requirements. PR #2 is partially conformant; synchronous UI effects, rendering mutations, feature ownership, and production compatibility remain gaps.
+
 This branch refactors the running application against upstream `d3e9075a745f47e384ee7801681cdb1958dd4017` (2026-09-30). It changes existing production callers and moves their implementations. The earlier additive architecture POC and archive/inbox-only extraction are supporting evidence, not this deliverable.
 
 ## Current application and resulting boundaries
@@ -68,11 +70,11 @@ Human and session actors are deliberately different. Session archive preserves a
 
 Launch label failure remains separately represented because the human UI reports it while session commands treat it as cosmetic. A label failure after relaunch now remains a warning while status and acknowledgement updates finish. Previously the TUI returned before those updates. Failed row creation also removes the hook file for every frontend, extending the cleanup previously used by the TUI to CLI and MCP launches. If pane rollback fails, the error retains the persistence failure and identifies the surviving pane. Restore reports label warnings after reconciling its completed effects.
 
-Batch archive, restore and delete return completed effects when a later step fails. Presentation reconciles those results rather than reporting that the whole batch succeeded. Existing snapshot preflight, child-before-parent deletion, and worktree preservation policies remain in the shared lifecycle implementation.
+Batch archive, restore and delete return completed effects when a later step fails. Delete reconciles completed removals. Archive and restore perform some local reconciliation, but their error paths return before updating visible archive membership; a later poll must refresh those flags. Complete immediate reconciliation remains a UI conformance gap. Existing snapshot preflight, child-before-parent deletion, and worktree preservation policies remain in the shared lifecycle implementation.
 
 ## Execution lifetime and local coordination
 
-`Runner.Run(ctx)` keeps the latest snapshot and retains the first unread error until its subscriber observes it. Maintenance continues when the UI stops draining observations, including during tmux attach. Cancellation stops new passes and waits for outstanding conversation capture before closing the result channel. The composition root drains execution before closing its store.
+`Runner.Run(ctx)` keeps the latest result unless an unread error is pending. That error result takes priority until its subscriber observes it. Maintenance continues when the UI stops draining observations, including during tmux attach. Cancellation stops new passes and waits for outstanding conversation capture before closing the result channel. The composition root drains execution before closing its store.
 
 Cancellation is checked between existing driver calls. Existing tmux subprocess calls do not have a context deadline, so there is no claimed fixed wall-clock shutdown bound.
 
