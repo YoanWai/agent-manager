@@ -161,7 +161,8 @@ func (p *Runner) RequestRefresh() {
 	}
 }
 
-// Run keeps only the newest result while its subscriber is suspended.
+// Run keeps the newest snapshot while its subscriber is suspended.
+// The first unread error takes priority over later results.
 // Cancellation is observed between steps; tmux calls already in flight finish first.
 func (p *Runner) Run(ctx context.Context) <-chan Result { return p.run(ctx, p.Step) }
 
@@ -189,7 +190,10 @@ func (p *Runner) run(ctx context.Context, step func() Result) <-chan Result {
 			case results <- result:
 			default:
 				select {
-				case <-results:
+				case unread := <-results:
+					if unread.Err != nil {
+						result = unread
+					}
 				default:
 				}
 				select {

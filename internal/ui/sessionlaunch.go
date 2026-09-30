@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
 )
 
@@ -12,43 +13,26 @@ type launchOptions struct {
 }
 
 func (m *Model) launchNewSession(sess store.Session, tool config.Tool, baseCommand string, opts launchOptions) error {
-	if sess.CreatedAt.IsZero() {
-		sess.CreatedAt = time.Now()
-	}
-	if sess.LastStatusAt.IsZero() {
-		sess.LastStatusAt = sess.CreatedAt
-	}
-	discardWorktree := func() {
-		if opts.rollbackWorktree {
-			m.discardWorktree(sess.WorktreeRepo, sess.Cwd, sess.WorktreeBranch)
-		}
-	}
-	command, env, err := m.buildLaunch(sess.Tool, tool, baseCommand, sess.ID)
-	if err != nil {
-		discardWorktree()
-		return err
-	}
 	paneWidth, paneHeight := m.paneTargetSize()
-	if err := m.services.tmux.Create(sess.ID, sess.Cwd, command, env, paneWidth, paneHeight); err != nil {
-		discardWorktree()
+	launched, err := m.services.lifecycle.Launch(sessioncmd.LaunchRequest{
+		Session:          sess,
+		Tool:             tool,
+		BaseCommand:      baseCommand,
+		Pane:             sessioncmd.PaneSize{Width: paneWidth, Height: paneHeight},
+		RollbackWorktree: opts.rollbackWorktree,
+	})
+	if err != nil {
 		return err
 	}
 	m.markFreshPane(sess.ID)
-	sess.TmuxSocket = m.services.tmux.SocketPath()
-	if err := m.services.store.CreateSession(sess); err != nil {
-		_ = m.services.tmux.Kill(sess.ID)
-		_ = m.services.hooks.Remove(sess.ID)
-		discardWorktree()
-		return err
-	}
-	labelErr := m.services.tmux.SetLabel(sess.ID, sessionLabel(sess.Group, sess.Name))
+	sess = launched.Session
 	if m.ledger.launched == nil {
 		m.ledger.launched = map[string]time.Time{}
 	}
 	m.ledger.launched[sess.ID] = time.Now()
 	m.workspace.sessions = append(m.workspace.sessions, sess)
 	m.rebuildRows()
-	return labelErr
+	return launched.LabelError
 }
 
 // forgetLaunch drops a row from the pending set, so a session the user has

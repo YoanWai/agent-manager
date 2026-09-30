@@ -3,6 +3,9 @@ package ui
 import (
 	"context"
 	"errors"
+	"strings"
+	"time"
+
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/execution"
 	"github.com/YoanWai/agent-manager/internal/git"
@@ -13,8 +16,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
-	"strings"
-	"time"
 )
 
 var postNotification = notify.Notify

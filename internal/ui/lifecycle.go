@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
-	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -320,78 +319,18 @@ func (m *Model) reviveSession(sess store.Session) error {
 	if m.services.tmux.Exists(sess.ID) {
 		return fmt.Errorf("session %s is still running; revive only applies to dead sessions", sess.Name)
 	}
-	tool, ok := m.services.cfg.Tools[sess.Tool]
-	if !ok {
-		return fmt.Errorf("tool %s is no longer configured", sess.Tool)
-	}
-	if !isDir(sess.Cwd) {
-		return fmt.Errorf("working directory no longer exists: %s", sess.Cwd)
-	}
-	bind := func() error {
-		launchedAt := time.Now()
-		if err := m.services.store.SetAgentLaunchedAt(sess.ID, launchedAt); err != nil {
-			return err
-		}
-		m.bindReviveLocally(sess.ID, launchedAt)
-		return nil
-	}
-	if err := sessioncmd.SnapshotRelaunch(m.services.store, sess, tool, sess.AgentSessionID); err != nil {
-		return err
-	}
-	if err := m.relaunchSession(sess, tool, launch.ReviveCommand(tool, sess.AgentSessionID), status.Starting, bind); err != nil {
-		return err
-	}
-	if sess.AgentSessionID == "" && tool.ResumePickerKeys != "" {
-		sessioncmd.InjectPickerKeys(m.services.tmux, sess.ID, tool.InputPrefix, tool.ResumePickerKeys)
-	}
-	m.rebuildRows()
-	return nil
-}
-
-// relaunchSession puts a dead session's row back on a running tmux window
-// under its old id, keeping its name, group and history. Both revive and
-// restart end here; they differ only in the command they hand it and in
-// bindConversation, which records the conversation the new pane is on once
-// the launch has actually taken. A launch that fails leaves the row exactly
-// as it was, still pointing at the conversation it can be revived on.
-func (m *Model) relaunchSession(sess store.Session, tool config.Tool, baseCommand, newStatus string, bindConversation func() error) error {
-	command, env, err := m.buildLaunch(sess.Tool, tool, baseCommand, sess.ID)
+	paneWidth, paneHeight := m.paneTargetSize()
+	result, err := m.services.lifecycle.Revive(sess, sessioncmd.PaneSize{Width: paneWidth, Height: paneHeight})
 	if err != nil {
 		return err
 	}
-	paneWidth, paneHeight := m.paneTargetSize()
-	if err := m.services.tmux.Create(sess.ID, sess.Cwd, command, env, paneWidth, paneHeight); err != nil {
-		return err
-	}
 	m.markFreshPane(sess.ID)
-	if bindConversation != nil {
-		if err := bindConversation(); err != nil {
-			_ = m.services.tmux.Kill(sess.ID)
-			return err
-		}
-	}
-	// The row now lives on this manager's server, wherever it ran before.
-	// Stamped after the launch has taken, so a row that never came back is
-	// not left pointing at a server that holds no pane for it, and a row
-	// that cannot take the stamp is gone and its fresh pane goes with it.
-	if err := m.services.store.SetTmuxSocket(sess.ID, m.services.tmux.SocketPath()); err != nil {
-		_ = m.services.tmux.Kill(sess.ID)
-		return err
-	}
-	if err := m.services.tmux.SetLabel(sess.ID, sessionLabel(sess.Group, sess.Name)); err != nil {
-		return err
-	}
-	if err := m.services.store.UpdateStatus(sess.ID, newStatus); err != nil {
-		return err
-	}
-	// The session is alive again; any watcher backoff from its dead spell
-	// no longer applies.
+	m.bindReviveLocally(sess.ID, result.LaunchedAt)
 	if m.focusPane.focus != nil {
 		m.focusPane.focus.retryNow()
 	}
-	// A leftover ack from the previous life must not swallow the relaunched
-	// agent's first finished alert.
-	return m.services.store.SetAcked(sess.ID, false)
+	m.rebuildRows()
+	return result.LabelError
 }
 
 // relaunchedMsg carries the result of starting an agent in a pane that was
@@ -412,26 +351,12 @@ type relaunchedMsg struct {
 // never given it. The probe and the send run off the update path, where a
 // pane that answers slowly would hold up the whole UI.
 func (m *Model) relaunchInPane(sess store.Session) (tea.Cmd, error) {
-	tool, ok := m.services.cfg.Tools[sess.Tool]
-	if !ok {
-		return nil, fmt.Errorf("tool %s is no longer configured", sess.Tool)
-	}
-	if tool.Shell {
-		return nil, fmt.Errorf("%s is a shell; its pane is already open", sess.Name)
-	}
-	if !isDir(sess.Cwd) {
-		return nil, fmt.Errorf("working directory no longer exists: %s", sess.Cwd)
-	}
-	driver, stor, hookManager := m.services.tmux, m.services.store, m.services.hooks
 	return func() tea.Msg {
-		launchedAt, err := sessioncmd.RelaunchInPane(driver, stor, hookManager, sess, tool)
+		result, err := m.services.lifecycle.Revive(sess, sessioncmd.PaneSize{})
 		if err != nil {
 			return relaunchedMsg{sessID: sess.ID, err: err}
 		}
-		if sess.AgentSessionID == "" && tool.ResumePickerKeys != "" {
-			sessioncmd.InjectPickerKeys(driver, sess.ID, tool.InputPrefix, tool.ResumePickerKeys)
-		}
-		return relaunchedMsg{sessID: sess.ID, launchedAt: launchedAt}
+		return relaunchedMsg{sessID: sess.ID, launchedAt: result.LaunchedAt}
 	}, nil
 }
 
@@ -464,31 +389,24 @@ func (m *Model) restartSelected() (tea.Model, tea.Cmd) {
 // it was resuming is retired rather than resumed, so the agent comes back
 // with the same name, directory and group but no context to carry.
 func (m *Model) restartSession(sess store.Session) error {
-	tool, ok := m.services.cfg.Tools[sess.Tool]
-	if !ok {
-		return fmt.Errorf("tool %s is no longer configured", sess.Tool)
+	if m.services.tmux.Exists(sess.ID) {
+		m.unwatch(sess.ID)
 	}
-	if !isDir(sess.Cwd) {
-		return fmt.Errorf("working directory no longer exists: %s", sess.Cwd)
+	paneWidth, paneHeight := m.paneTargetSize()
+	var result sessioncmd.RelaunchResult
+	var restartErr error
+	m.poller.reflowSessions([]string{sess.ID}, func() {
+		result, restartErr = m.services.lifecycle.Restart(sess, sessioncmd.PaneSize{Width: paneWidth, Height: paneHeight})
+	})
+	if restartErr != nil {
+		return restartErr
 	}
-	if err := m.killSession(sess); err != nil {
-		return err
+	m.markFreshPane(sess.ID)
+	m.bindRestartLocally(sess.ID, result.Conversation, result.LaunchedAt)
+	if m.focusPane.focus != nil {
+		m.focusPane.focus.retryNow()
 	}
-	baseCommand, agentSessionID := restartLaunch(tool)
-	if err := sessioncmd.SnapshotRelaunch(m.services.store, sess, tool, agentSessionID); err != nil {
-		return err
-	}
-	bind := func() error {
-		launchedAt := time.Now()
-		if err := m.services.store.RestartAgent(sess.ID, agentSessionID, launchedAt); err != nil {
-			return err
-		}
-		m.bindRestartLocally(sess.ID, agentSessionID, launchedAt)
-		return nil
-	}
-	// Starting, like a fresh spawn: the row reads as booting until the new
-	// agent paints its pane.
-	return m.relaunchSession(sess, tool, baseCommand, status.Starting, bind)
+	return result.LabelError
 }
 
 // restartLaunch builds what a restart runs: the tool's plain launch command,
@@ -647,33 +565,21 @@ func (m *Model) killSession(sess store.Session) error {
 	if !m.services.tmux.Exists(sess.ID) {
 		return nil
 	}
-	if pane, err := m.services.tmux.CapturePane(sess.ID); err == nil && pane != "" {
-		if err := m.services.setSnapshot(sess.ID, pane); err != nil {
-			return err
-		}
-	}
 	m.unwatch(sess.ID)
+	var killed store.Session
 	var killErr error
 	// Runs under the poller's lock so no pass can capture a half-killed
 	// pane, and drops the pane hash the revived session would be compared
 	// against.
 	m.poller.reflowSessions([]string{sess.ID}, func() {
-		killErr = m.services.tmux.Kill(sess.ID)
+		killed, killErr = m.services.lifecycle.Kill(sess)
 	})
 	if killErr != nil {
 		return killErr
 	}
-	// The agent dies without running its session-end hook, so a leftover
-	// status file would otherwise decide what the revived session reads as.
-	if err := m.services.hooks.Remove(sess.ID); err != nil {
-		return err
-	}
-	if err := m.services.store.UpdateStatus(sess.ID, status.Dead); err != nil {
-		return err
-	}
 	for i := range m.workspace.sessions {
 		if m.workspace.sessions[i].ID == sess.ID {
-			m.workspace.sessions[i].Status = status.Dead
+			m.workspace.sessions[i].Status = killed.Status
 		}
 	}
 	return nil
@@ -769,38 +675,116 @@ func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// snapshotLive stores the last pane of every still-live session. Archive
-// calls it before any kill so a capture failure cannot drop a frame.
-func (m *Model) snapshotLive(sessions []store.Session) error {
-	for _, sess := range sessions {
-		if !m.services.tmux.Exists(sess.ID) {
+func (m *Model) archiveConfirmed() error {
+	ids := make([]string, 0, len(m.confirm.sessions))
+	for _, sess := range m.confirm.sessions {
+		ids = append(ids, sess.ID)
+		if m.services.tmux.Exists(sess.ID) {
+			m.unwatch(sess.ID)
+		}
+	}
+	var result sessioncmd.ArchiveResult
+	var archiveErr error
+	archive := func() {
+		result, archiveErr = m.services.lifecycle.ArchiveForHuman(sessioncmd.ArchiveSelection{
+			Sessions:  m.confirm.sessions,
+			GroupPath: groupPath(m.confirm),
+		})
+	}
+	if len(ids) == 0 {
+		archive()
+	} else {
+		m.poller.reflowSessions(ids, archive)
+	}
+	for i := range m.workspace.sessions {
+		for _, archived := range result.Sessions {
+			if m.workspace.sessions[i].ID == archived.ID {
+				m.workspace.sessions[i].Status = archived.Status
+			}
+		}
+	}
+	if archiveErr != nil {
+		return archiveErr
+	}
+	if !m.confirm.isGroup {
+		for _, sess := range m.confirm.sessions {
+			m.forgetLaunch(sess.ID)
+		}
+	}
+	m.markArchivedLocally(result.Sessions, result.GroupPath)
+	return nil
+}
+
+func (m *Model) restoreConfirmed() error {
+	wasDead := make(map[string]bool, len(m.confirm.sessions))
+	for _, sess := range m.confirm.sessions {
+		wasDead[sess.ID] = !m.services.tmux.Exists(sess.ID)
+	}
+	paneWidth, paneHeight := m.paneTargetSize()
+	result, err := m.services.lifecycle.RestoreForHuman(sessioncmd.ArchiveSelection{
+		Sessions:  m.confirm.sessions,
+		GroupPath: groupPath(m.confirm),
+	}, sessioncmd.PaneSize{Width: paneWidth, Height: paneHeight})
+	revived := false
+	for _, sess := range result.Sessions {
+		if !wasDead[sess.ID] {
 			continue
 		}
-		pane, err := m.services.tmux.CapturePane(sess.ID)
-		if err != nil {
-			return err
-		}
-		if pane == "" {
-			continue
-		}
-		if err := m.services.setSnapshot(sess.ID, pane); err != nil {
-			return err
-		}
+		revived = true
+		m.markFreshPane(sess.ID)
+		m.bindReviveLocally(sess.ID, sess.AgentLaunchedAt)
+	}
+	if revived && m.focusPane.focus != nil {
+		m.focusPane.focus.retryNow()
+	}
+	if err != nil {
+		return err
+	}
+	m.markRestoredLocally(result.Sessions, result.GroupPath)
+	m.errBar.text = ""
+	if result.LabelError != nil {
+		m.errBar.text = result.LabelError.Error()
 	}
 	return nil
 }
 
-func (m *Model) applyConfirmedArchived(archived bool) error {
-	if m.confirm.isGroup {
-		return m.services.store.SetGroupArchived(m.confirm.path, archived)
-	}
+func (m *Model) deleteConfirmed() (sessioncmd.DeleteResult, error) {
+	ids := make([]string, 0, len(m.confirm.sessions))
 	for _, sess := range m.confirm.sessions {
-		if err := m.services.store.SetArchived(sess.ID, archived); err != nil {
-			return err
-		}
-		m.forgetLaunch(sess.ID)
+		ids = append(ids, sess.ID)
+		m.unwatch(sess.ID)
 	}
-	return nil
+	var result sessioncmd.DeleteResult
+	var deleteErr error
+	remove := func() {
+		result, deleteErr = m.services.lifecycle.DeleteForHuman(sessioncmd.DeleteSelection{
+			Sessions:     m.confirm.sessions,
+			GroupPath:    groupPath(m.confirm),
+			ArchivedOnly: m.confirm.archivedOnly,
+		})
+	}
+	if len(ids) == 0 {
+		remove()
+	} else {
+		m.poller.reflowSessions(ids, remove)
+	}
+	for _, sess := range result.Deleted {
+		delete(m.ledger.pickedRepos, sess.ID)
+		delete(m.ledger.awaitedRenames, sess.ID)
+		m.forgetLaunch(sess.ID)
+		m.removeSessionLocally(sess.ID)
+	}
+	if len(result.RemovedGroups) > 0 {
+		for _, path := range result.RemovedGroups {
+			delete(m.rail.collapsed, path)
+		}
+		m.persistCollapsed()
+		m.pruneGroupsLocally(result.RemovedGroups)
+	}
+	if result.Notice != "" {
+		m.errBar.text = result.Notice
+	}
+	return result, deleteErr
 }
 
 // removeSessionLocally takes a deleted row off the loaded list right away,
@@ -945,24 +929,6 @@ func (m *Model) sessionAndChildren(sess store.Session) ([]store.Session, error) 
 	return append(out, kids...), nil
 }
 
-// childrenFirst orders a follow-set so terminals go before the agent they
-// hang under: a cleanup that fails partway leaves no row pointing at a
-// parent that is already gone.
-func childrenFirst(sessions []store.Session) []store.Session {
-	ordered := make([]store.Session, 0, len(sessions))
-	for _, sess := range sessions {
-		if sess.ParentID != "" {
-			ordered = append(ordered, sess)
-		}
-	}
-	for _, sess := range sessions {
-		if sess.ParentID == "" {
-			ordered = append(ordered, sess)
-		}
-	}
-	return ordered
-}
-
 func followConfirmLabel(verb, name string, extra int, one, many string) string {
 	if extra <= 0 {
 		return fmt.Sprintf("%s %s? %s", verb, name, one)
@@ -1063,27 +1029,6 @@ func archivedSessions(sessions []store.Session) []store.Session {
 	return archived
 }
 
-// restoreFromArchive brings one session back and takes it out of the
-// archive. The pair is one step so that a revive the manager refused, for
-// a missing CLI it can install, finishes the restore when it runs again
-// instead of leaving a running session filed as archived. A group's rows
-// leave the archive together once the whole set is back.
-func (m *Model) restoreFromArchive(sess store.Session, isGroup bool) error {
-	if !m.services.tmux.Exists(sess.ID) {
-		if err := m.reviveSession(sess); err != nil {
-			return err
-		}
-	}
-	if isGroup {
-		return nil
-	}
-	if err := m.services.store.SetArchived(sess.ID, false); err != nil {
-		return err
-	}
-	m.markSession(sess.ID, goneMark{archived: false})
-	return nil
-}
-
 func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// The card advertises y/enter and n/esc; anything else leaves it up rather
 	// than dismissing the question the user has not answered.
@@ -1105,38 +1050,16 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "y", "enter":
 		switch m.confirm.action {
 		case actionArchive:
-			if err := m.snapshotLive(m.confirm.sessions); err != nil {
+			if err := m.archiveConfirmed(); err != nil {
 				m.errBar.text = err.Error()
 				return m, nil
 			}
-			for _, sess := range m.confirm.sessions {
-				if err := m.killSession(sess); err != nil {
-					m.errBar.text = err.Error()
-					return m, nil
-				}
-			}
-			if err := m.applyConfirmedArchived(true); err != nil {
-				m.errBar.text = err.Error()
-				return m, nil
-			}
-			m.markArchivedLocally(m.confirm.sessions, groupPath(m.confirm))
 			m.errBar.text = ""
 		case actionRestore:
-			for _, sess := range m.confirm.sessions {
-				isGroup := m.confirm.isGroup
-				if err := m.restoreFromArchive(sess, isGroup); err != nil {
-					m.reportLaunchError(err, func() error { return m.restoreFromArchive(sess, isGroup) })
-					return m, nil
-				}
+			if err := m.restoreConfirmed(); err != nil {
+				m.reportLaunchError(err, m.restoreConfirmed)
+				return m, nil
 			}
-			if m.confirm.isGroup {
-				if err := m.applyConfirmedArchived(false); err != nil {
-					m.errBar.text = err.Error()
-					return m, nil
-				}
-			}
-			m.markRestoredLocally(m.confirm.sessions, groupPath(m.confirm))
-			m.errBar.text = ""
 		case actionKill:
 			for _, sess := range m.confirm.sessions {
 				if err := m.killSession(sess); err != nil {
@@ -1182,64 +1105,9 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.errBar.text = ""
 		case actionDelete:
-			for _, sess := range childrenFirst(m.confirm.sessions) {
-				m.unwatch(sess.ID)
-				if err := m.services.tmux.Kill(sess.ID); err != nil {
-					m.errBar.text = err.Error()
-					return m, nil
-				}
-				if err := m.services.hooks.Remove(sess.ID); err != nil {
-					m.errBar.text = err.Error()
-					return m, nil
-				}
-				if err := m.services.hooks.RemoveName(sess.ID); err != nil {
-					m.errBar.text = err.Error()
-					return m, nil
-				}
-				if err := m.services.hooks.RemoveReviewRepo(sess.ID); err != nil {
-					m.errBar.text = err.Error()
-					return m, nil
-				}
-				if err := m.services.hooks.RemoveReviewBase(sess.ID); err != nil {
-					m.errBar.text = err.Error()
-					return m, nil
-				}
-				if err := m.services.hooks.RemoveReviewScope(sess.ID); err != nil {
-					m.errBar.text = err.Error()
-					return m, nil
-				}
-				delete(m.ledger.pickedRepos, sess.ID)
-				delete(m.ledger.awaitedRenames, sess.ID)
-				m.forgetLaunch(sess.ID)
-				if err := m.services.store.Delete(sess.ID); err != nil {
-					m.errBar.text = err.Error()
-					return m, nil
-				}
-				m.removeSessionLocally(sess.ID)
-				if sess.WorktreeRepo != "" && m.services.gitDrv != nil {
-					used, err := m.sessionUsesDir(sess.Cwd)
-					if err != nil {
-						m.errBar.text = "worktree cleanup: " + err.Error()
-					} else if used {
-						m.errBar.text = "worktree kept (used by another session): " + sess.Cwd
-					} else if removed, err := m.services.gitDrv.RemoveWorktreeIfClean(sess.WorktreeRepo, sess.Cwd, sess.WorktreeBranch); err != nil {
-						m.errBar.text = "worktree cleanup: " + err.Error()
-					} else if !removed {
-						m.errBar.text = "worktree kept (has work): " + sess.Cwd
-					}
-				}
-			}
-			if m.confirm.isGroup {
-				removed, err := m.deleteConfirmedGroups()
-				if err != nil {
-					m.errBar.text = err.Error()
-					return m, nil
-				}
-				for _, path := range removed {
-					delete(m.rail.collapsed, path)
-				}
-				m.persistCollapsed()
-				m.pruneGroupsLocally(removed)
+			if _, err := m.deleteConfirmed(); err != nil {
+				m.errBar.text = err.Error()
+				return m, nil
 			}
 		default:
 			m.errBar.text = fmt.Sprintf("unknown confirm action %q", m.confirm.action)
@@ -1251,26 +1119,4 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	m.confirm = confirmTarget{}
 	return m, nil
-}
-
-func (m *Model) sessionUsesDir(dir string) (bool, error) {
-	sessions, err := m.services.store.ListSessions(true)
-	if err != nil {
-		return false, err
-	}
-	for _, sess := range sessions {
-		if sess.Cwd == dir {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
-// deleteConfirmedGroups removes the group rows the confirmed delete
-// covers, reporting the paths that went so their fold state can go too.
-func (m *Model) deleteConfirmedGroups() ([]string, error) {
-	if m.confirm.archivedOnly {
-		return m.services.store.PruneArchivedGroups(m.confirm.path)
-	}
-	return m.services.store.DeleteGroup(m.confirm.path)
 }

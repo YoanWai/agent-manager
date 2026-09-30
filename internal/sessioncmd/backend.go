@@ -30,7 +30,6 @@ type Backend struct {
 	mu        sync.Mutex
 	configDir string
 	runtime   Runtime
-	openErr   error
 	opened    bool
 	owned     bool
 	closed    bool
@@ -70,10 +69,21 @@ func (b *Backend) resolve() (Runtime, error) {
 		return Runtime{}, errors.New("session command backend is closed")
 	}
 	if !b.opened {
-		b.runtime, b.openErr = openRuntime(b.configDir)
+		runtime, err := openRuntime(b.configDir)
+		if err != nil {
+			return Runtime{}, err
+		}
+		b.runtime = runtime
 		b.opened = true
+	} else if b.owned {
+		cfg, err := config.LoadDir(b.configDir)
+		if err != nil {
+			return Runtime{}, err
+		}
+		b.runtime.Config = cfg
+		b.runtime.Driver.SetSessionKeys(cfg.SessionKeys)
 	}
-	return b.runtime, b.openErr
+	return b.runtime, nil
 }
 
 func openRuntime(configDir string) (Runtime, error) {

@@ -46,23 +46,38 @@ type ArchiveSelection struct {
 }
 
 type ArchiveResult struct {
-	Sessions  []store.Session
-	GroupPath string
-	Archived  bool
+	Sessions   []store.Session
+	GroupPath  string
+	Archived   bool
+	LabelError error
+}
+
+type DeleteSelection struct {
+	Sessions     []store.Session
+	GroupPath    string
+	ArchivedOnly bool
+}
+
+type DeleteResult struct {
+	Deleted       []store.Session
+	RemovedGroups []string
+	Notice        string
 }
 
 // Lifecycle owns the ordered store, tmux, hook, and worktree effects shared
 // by the interactive manager and session-scoped commands. Its runtime is
 // borrowed; closing resources remains the composing process's responsibility.
 type Lifecycle struct {
-	runtime Runtime
+	runtime  Runtime
+	setLabel func(string, string) error
+	killPane func(string) error
 }
 
 func NewLifecycle(runtime Runtime) (*Lifecycle, error) {
 	if err := validateRuntime(runtime); err != nil {
 		return nil, err
 	}
-	return &Lifecycle{runtime: runtime}, nil
+	return &Lifecycle{runtime: runtime, setLabel: runtime.Driver.SetLabel, killPane: runtime.Driver.Kill}, nil
 }
 
 func (l *Lifecycle) requireHooks() error {
@@ -128,9 +143,12 @@ func (l *Lifecycle) Launch(request LaunchRequest) (LaunchResult, error) {
 		}
 	}
 	if err := create(sess); err != nil {
-		_ = l.runtime.Driver.Kill(sess.ID)
+		killErr := l.killPane(sess.ID)
 		_ = l.runtime.Hooks.Remove(sess.ID)
 		discard()
+		if killErr != nil {
+			return LaunchResult{}, errors.Join(err, fmt.Errorf("pane %s is still running and has no row: %w", sess.ID, killErr))
+		}
 		return LaunchResult{}, err
 	}
 	if request.BesideSessionID != "" {
@@ -142,7 +160,7 @@ func (l *Lifecycle) Launch(request LaunchRequest) (LaunchResult, error) {
 	}
 	return LaunchResult{
 		Session:    sess,
-		LabelError: l.runtime.Driver.SetLabel(sess.ID, sessionLabel(sess.Group, sess.Name)),
+		LabelError: l.setLabel(sess.ID, sessionLabel(sess.Group, sess.Name)),
 	}, nil
 }
 
@@ -183,6 +201,9 @@ func (l *Lifecycle) Revive(sess store.Session, pane PaneSize) (RelaunchResult, e
 	if _, err := resolveTerminalDirectory(sess.Cwd); err != nil {
 		return RelaunchResult{}, fmt.Errorf("working directory no longer exists: %s", sess.Cwd)
 	}
+	if tool.Shell && l.runtime.Driver.Exists(sess.ID) {
+		return RelaunchResult{}, fmt.Errorf("%s is a shell; its pane is already open", sess.Name)
+	}
 	degraded := sess.AgentSessionID == "" && tool.ResumeByIDCommand != "" && tool.ResumePickerCommand == ""
 	if l.runtime.Driver.Exists(sess.ID) {
 		launchedAt, err := RelaunchInPane(l.runtime.Driver, l.runtime.Store, l.runtime.Hooks, sess, tool)
@@ -199,7 +220,7 @@ func (l *Lifecycle) Revive(sess store.Session, pane PaneSize) (RelaunchResult, e
 	if err := SnapshotRelaunch(l.runtime.Store, sess, tool, sess.AgentSessionID); err != nil {
 		return RelaunchResult{}, err
 	}
-	return l.launchExisting(sess, tool, launch.ReviveCommand(tool, sess.AgentSessionID), pane, degraded, func(at time.Time) error {
+	return l.launchExisting(sess, tool, launch.ReviveCommand(tool, sess.AgentSessionID), pane, degraded, true, func(at time.Time) error {
 		return l.runtime.Store.SetAgentLaunchedAt(sess.ID, at)
 	})
 }
@@ -215,8 +236,10 @@ func (l *Lifecycle) Restart(sess store.Session, pane PaneSize) (RelaunchResult, 
 	if _, err := resolveTerminalDirectory(sess.Cwd); err != nil {
 		return RelaunchResult{}, fmt.Errorf("working directory no longer exists: %s", sess.Cwd)
 	}
-	if _, err := l.Kill(sess); err != nil {
-		return RelaunchResult{}, err
+	if l.runtime.Driver.Exists(sess.ID) {
+		if _, err := l.Kill(sess); err != nil {
+			return RelaunchResult{}, err
+		}
 	}
 	baseCommand, agentSessionID := tool.Command, ""
 	if tool.SessionIDFlag != "" {
@@ -226,14 +249,20 @@ func (l *Lifecycle) Restart(sess store.Session, pane PaneSize) (RelaunchResult, 
 	if err := SnapshotRelaunch(l.runtime.Store, sess, tool, agentSessionID); err != nil {
 		return RelaunchResult{}, err
 	}
-	result, err := l.launchExisting(sess, tool, baseCommand, pane, false, func(at time.Time) error {
+	result, err := l.launchExisting(sess, tool, baseCommand, pane, false, false, func(at time.Time) error {
 		return l.runtime.Store.RestartAgent(sess.ID, agentSessionID, at)
 	})
+	if err == nil {
+		if result.Session.AgentSessionID != "" {
+			result.Session.RetiredAgentSessionID = result.Session.AgentSessionID
+		}
+		result.Session.AgentSessionID = agentSessionID
+	}
 	result.Conversation = agentSessionID
 	return result, err
 }
 
-func (l *Lifecycle) launchExisting(sess store.Session, tool config.Tool, baseCommand string, pane PaneSize, degraded bool, bind func(time.Time) error) (RelaunchResult, error) {
+func (l *Lifecycle) launchExisting(sess store.Session, tool config.Tool, baseCommand string, pane PaneSize, degraded, injectPicker bool, bind func(time.Time) error) (RelaunchResult, error) {
 	command, env, err := launch.Environment(l.runtime.Hooks, sess.Tool, tool, baseCommand, sess.ID)
 	if err != nil {
 		return RelaunchResult{}, err
@@ -254,14 +283,14 @@ func (l *Lifecycle) launchExisting(sess store.Session, tool config.Tool, baseCom
 		_ = l.runtime.Driver.Kill(sess.ID)
 		return RelaunchResult{}, err
 	}
-	labelErr := l.runtime.Driver.SetLabel(sess.ID, sessionLabel(sess.Group, sess.Name))
+	labelErr := l.setLabel(sess.ID, sessionLabel(sess.Group, sess.Name))
 	if err := l.runtime.Store.UpdateStatus(sess.ID, status.Starting); err != nil {
 		return RelaunchResult{}, err
 	}
 	if err := l.runtime.Store.SetAcked(sess.ID, false); err != nil {
 		return RelaunchResult{}, err
 	}
-	if sess.AgentSessionID == "" && tool.ResumePickerKeys != "" {
+	if injectPicker && sess.AgentSessionID == "" && tool.ResumePickerKeys != "" {
 		InjectPickerKeys(l.runtime.Driver, sess.ID, tool.InputPrefix, tool.ResumePickerKeys)
 	}
 	sess.Status = status.Starting
@@ -301,65 +330,162 @@ func (l *Lifecycle) SetArchivedForSession(callerID, targetID string, archived bo
 // ArchiveForHuman preserves the interactive action: capture every live pane
 // before ending any of them, then archive the selected rows or group.
 func (l *Lifecycle) ArchiveForHuman(selection ArchiveSelection) (ArchiveResult, error) {
+	partial := func(sessions []store.Session, archived bool) ArchiveResult {
+		return ArchiveResult{Sessions: sessions, GroupPath: selection.GroupPath, Archived: archived}
+	}
 	for _, sess := range selection.Sessions {
 		if !l.runtime.Driver.Exists(sess.ID) {
 			continue
 		}
 		pane, err := l.runtime.Driver.CapturePane(sess.ID)
 		if err != nil {
-			return ArchiveResult{}, err
+			return partial(nil, false), err
 		}
 		if pane != "" {
 			if err := l.runtime.Snapshot(sess.ID, pane); err != nil {
-				return ArchiveResult{}, err
+				return partial(nil, false), err
 			}
 		}
 	}
 	archived := make([]store.Session, 0, len(selection.Sessions))
 	for _, sess := range selection.Sessions {
-		killed, err := l.Kill(sess)
-		if err != nil {
-			return ArchiveResult{}, err
+		killed := sess
+		if l.runtime.Driver.Exists(sess.ID) {
+			var err error
+			killed, err = l.Kill(sess)
+			if err != nil {
+				return partial(archived, false), err
+			}
 		}
-		killed.Archived = true
 		archived = append(archived, killed)
 	}
 	if selection.GroupPath != "" {
 		if err := l.runtime.Store.SetGroupArchived(selection.GroupPath, true); err != nil {
-			return ArchiveResult{}, err
+			return partial(archived, false), err
+		}
+		for i := range archived {
+			archived[i].Archived = true
 		}
 	} else {
-		for _, sess := range archived {
+		for i, sess := range archived {
 			if err := l.runtime.Store.SetArchived(sess.ID, true); err != nil {
-				return ArchiveResult{}, err
+				return partial(archived, false), err
 			}
+			archived[i].Archived = true
 		}
 	}
-	return ArchiveResult{Sessions: archived, GroupPath: selection.GroupPath, Archived: true}, nil
+	return partial(archived, true), nil
 }
 
 func (l *Lifecycle) RestoreForHuman(selection ArchiveSelection, pane PaneSize) (ArchiveResult, error) {
 	restored := make([]store.Session, 0, len(selection.Sessions))
+	var labelErr error
+	partial := func() ArchiveResult {
+		return ArchiveResult{Sessions: restored, GroupPath: selection.GroupPath, LabelError: labelErr}
+	}
 	for _, sess := range selection.Sessions {
 		if !l.runtime.Driver.Exists(sess.ID) {
 			result, err := l.Revive(sess, pane)
 			if err != nil {
-				return ArchiveResult{}, err
+				return partial(), err
 			}
 			sess = result.Session
+			labelErr = errors.Join(labelErr, result.LabelError)
 		}
-		sess.Archived = false
 		restored = append(restored, sess)
 		if selection.GroupPath == "" {
 			if err := l.runtime.Store.SetArchived(sess.ID, false); err != nil {
-				return ArchiveResult{}, err
+				return partial(), err
 			}
+			restored[len(restored)-1].Archived = false
 		}
 	}
 	if selection.GroupPath != "" {
 		if err := l.runtime.Store.SetGroupArchived(selection.GroupPath, false); err != nil {
-			return ArchiveResult{}, err
+			return partial(), err
+		}
+		for i := range restored {
+			restored[i].Archived = false
 		}
 	}
-	return ArchiveResult{Sessions: restored, GroupPath: selection.GroupPath}, nil
+	return partial(), nil
+}
+
+// DeleteForHuman owns the destructive effects after the UI has confirmed
+// them. Child terminals go first so a partial failure never leaves a row
+// pointing at a parent that is already gone.
+func (l *Lifecycle) DeleteForHuman(selection DeleteSelection) (DeleteResult, error) {
+	if err := l.requireHooks(); err != nil {
+		return DeleteResult{}, err
+	}
+	result := DeleteResult{Deleted: make([]store.Session, 0, len(selection.Sessions))}
+	for _, sess := range deleteChildrenFirst(selection.Sessions) {
+		if err := l.runtime.Driver.Kill(sess.ID); err != nil {
+			return result, err
+		}
+		for _, remove := range []func(string) error{
+			l.runtime.Hooks.Remove,
+			l.runtime.Hooks.RemoveName,
+			l.runtime.Hooks.RemoveReviewRepo,
+			l.runtime.Hooks.RemoveReviewBase,
+			l.runtime.Hooks.RemoveReviewScope,
+		} {
+			if err := remove(sess.ID); err != nil {
+				return result, err
+			}
+		}
+		if err := l.runtime.Store.Delete(sess.ID); err != nil {
+			return result, err
+		}
+		result.Deleted = append(result.Deleted, sess)
+		l.cleanupDeletedWorktree(sess, &result)
+	}
+	if selection.GroupPath == "" {
+		return result, nil
+	}
+	var err error
+	if selection.ArchivedOnly {
+		result.RemovedGroups, err = l.runtime.Store.PruneArchivedGroups(selection.GroupPath)
+	} else {
+		result.RemovedGroups, err = l.runtime.Store.DeleteGroup(selection.GroupPath)
+	}
+	return result, err
+}
+
+func deleteChildrenFirst(sessions []store.Session) []store.Session {
+	ordered := make([]store.Session, 0, len(sessions))
+	for _, sess := range sessions {
+		if sess.ParentID != "" {
+			ordered = append(ordered, sess)
+		}
+	}
+	for _, sess := range sessions {
+		if sess.ParentID == "" {
+			ordered = append(ordered, sess)
+		}
+	}
+	return ordered
+}
+
+func (l *Lifecycle) cleanupDeletedWorktree(sess store.Session, result *DeleteResult) {
+	if sess.WorktreeRepo == "" || l.runtime.Git == nil {
+		return
+	}
+	sessions, err := l.runtime.Store.ListSessions(true)
+	if err != nil {
+		result.Notice = "worktree cleanup: " + err.Error()
+		return
+	}
+	for _, other := range sessions {
+		if other.Cwd == sess.Cwd {
+			result.Notice = "worktree kept (used by another session): " + sess.Cwd
+			return
+		}
+	}
+	removed, err := l.runtime.Git.RemoveWorktreeIfClean(sess.WorktreeRepo, sess.Cwd, sess.WorktreeBranch)
+	if err != nil {
+		result.Notice = "worktree cleanup: " + err.Error()
+	} else if !removed {
+		result.Notice = "worktree kept (has work): " + sess.Cwd
+	}
 }

@@ -7,7 +7,7 @@ This branch refactors the running application against upstream `d3e9075a745f47e3
 | Concern | Upstream main | This proposal |
 | --- | --- | --- |
 | Background execution | `ui/poller.go` performs delivery, mailbox processing, status writes, heartbeats, conversation capture and sampling | The actual implementation and algorithm tests live in UI-free `execution`; presentation receives typed snapshots |
-| Lifecycle effects | CLI/MCP use `sessioncmd`; TUI duplicates launch, kill, revive/restart and archive ordering | `sessioncmd.Lifecycle` owns shared ordered effects and CLI/MCP use it; TUI lifecycle migration is in progress |
+| Lifecycle effects | CLI/MCP use `sessioncmd`; TUI duplicates launch, kill, revive/restart and archive ordering | `sessioncmd.Lifecycle` owns shared launch, kill, revive, restart, archive, restore and human-delete effects used by CLI, MCP and TUI |
 | Resource lifetime | UI owns its open store; CLI/MCP command operations construct and close runtimes independently | `sessioncmd.Backend` explicitly opens or borrows one runtime; borrowed command operations do not close the shared store |
 | Presentation state | `Model` has a large flat set of unrelated fields | Eight named, non-embedded groups expose state dependencies; existing selectors, constructors and tests use those groups |
 | Composition | UI constructor assembles polling/tool runtime | `app` assembles local services; `main` supplies them to the UI and explicitly binds CLI/MCP backends |
@@ -34,6 +34,19 @@ flowchart TD
 
 This is an application-wide boundary refactor, not a claim that every feature handler has been extracted into a separate object. UI handlers still use `Model`, the root message router remains substantial, and painting still records geometry. Feature-owned behavior from [#646](https://github.com/YoanWai/agent-manager/issues/646) can be extracted incrementally against these boundaries.
 
+## Relationship to the earlier POC
+
+[PR #1](https://github.com/ribeirojose/agent-manager/pull/1) remains the record of the standalone owner protocol, saved-workspace, SSH transport and synthetic version experiments. This branch carries its production archive/inbox extraction into the application refactor; it does not copy those experimental implementations into the running application.
+
+| Earlier experiment | This application refactor |
+| --- | --- |
+| Archive command owner and inbox retention ports | Retained in `sessioncmd`; maintenance runs through `execution` |
+| Standalone owner protocol and synthetic compatibility revisions | Supporting evidence in PR #1; production transport and historical-writer cutover remain future work |
+| Saved connections, remote projections and SSH owner adapter | Supporting evidence in PR #1; no production connection catalog or remote adapter is introduced here |
+| Fixture extensions and sample feature components | Replaced with examples using real application commands and execution projections; full feature-handler extraction remains incremental |
+
+Closing PR #1 as superseded means PR #2 is the production refactor to review. It does not mean every experiment or future feature in PR #1 has shipped.
+
 ## Design alternatives and synthesis
 
 Two structurally different shapes were compared.
@@ -53,11 +66,13 @@ The patterns used are explicit dependency composition, application services, fro
 
 Human and session actors are deliberately different. Session archive preserves a live pane and refuses self-archive. Human selection archive snapshots before destructive effects and reconciles the visible selection. Shared machinery must not erase that policy distinction.
 
-Launch label failure remains separately represented because the existing human UI reports it while session commands treat it as cosmetic. Hook cleanup and pane rollback are shared effects. This is explicit compatibility policy, not an assertion that all historical frontend outcomes were identical.
+Launch label failure remains separately represented because the human UI reports it while session commands treat it as cosmetic. A label failure after relaunch now remains a warning while status and acknowledgement updates finish. Previously the TUI returned before those updates. Failed row creation also removes the hook file for every frontend, extending the cleanup previously used by the TUI to CLI and MCP launches. If pane rollback fails, the error retains the persistence failure and identifies the surviving pane. Restore reports label warnings after reconciling its completed effects.
+
+Batch archive, restore and delete return completed effects when a later step fails. Presentation reconciles those results rather than reporting that the whole batch succeeded. Existing snapshot preflight, child-before-parent deletion, and worktree preservation policies remain in the shared lifecycle implementation.
 
 ## Execution lifetime and local coordination
 
-`Runner.Run(ctx)` produces a latest-result channel. Maintenance continues when the UI stops draining observations, including during tmux attach. Cancellation stops new passes and waits for outstanding conversation capture before closing the result channel. The composition root drains execution before closing its store.
+`Runner.Run(ctx)` keeps the latest snapshot and retains the first unread error until its subscriber observes it. Maintenance continues when the UI stops draining observations, including during tmux attach. Cancellation stops new passes and waits for outstanding conversation capture before closing the result channel. The composition root drains execution before closing its store.
 
 Cancellation is checked between existing driver calls. Existing tmux subprocess calls do not have a context deadline, so there is no claimed fixed wall-clock shutdown bound.
 
@@ -91,4 +106,4 @@ Use an isolated `TMUX_TMPDIR` for experiments. This example proves reusable head
 
 The clean upstream full race suite passes in an isolated shell environment. Use an empty `ZDOTDIR`, unset `TMUX`, and a separate short `TMUX_TMPDIR`; the local user's startup script otherwise prints unrelated errors into fixture panes.
 
-This first draft exposes execution extraction, backend composition and presentation state changes for review. TUI lifecycle wiring and its final integrated validation remain in progress; later commits will complete them. The pull request records validation for each published head.
+The proposal includes execution extraction, backend composition, presentation state changes and shared TUI lifecycle effects. The pull request records validation for the published head. Remote ownership and historical client cutover remain outside this refactor.

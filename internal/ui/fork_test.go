@@ -10,6 +10,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
+	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
@@ -167,6 +168,13 @@ func TestForkLaunchFailureKeepsSharedWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.services.hooks = hooks.NewManager(badConfig)
+	m.services.lifecycle, err = sessioncmd.NewLifecycle(sessioncmd.Runtime{
+		Config: m.services.cfg, Store: m.services.store, Driver: m.services.tmux,
+		Hooks: m.services.hooks, Git: m.services.gitDrv, Snapshot: m.services.setSnapshot,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	forked := source
 	forked.ID = "failed-fork"

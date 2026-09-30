@@ -96,18 +96,6 @@ func (r *runtime) Close() error {
 	return r.close()
 }
 
-// createPane opens a session's pane at the box the running manager pins
-// its panes to. Nothing here can measure the preview, and tmux hands an
-// unsized detached session 80x24, which is narrower than any manager
-// layout and holds until something resizes it.
-func (r *runtime) createPane(id, cwd, command string, env map[string]string) error {
-	width, height, err := r.store.PaneSize()
-	if err != nil {
-		return err
-	}
-	return r.driver.Create(id, cwd, command, env, width, height)
-}
-
 func (c *commands) open() (*runtime, error) {
 	if c.backend != nil {
 		return c.backend.commands(c.words)

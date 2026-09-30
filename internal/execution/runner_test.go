@@ -2,6 +2,7 @@ package execution
 
 import (
 	"context"
+	"errors"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"sync/atomic"
 	"testing"
@@ -105,5 +106,57 @@ func TestCanceledRunnerRefusesFurtherRuntimeActions(t *testing.T) {
 	}
 	if err := runner.TypeForkKeys(store.Session{}, ""); err == nil {
 		t.Fatal("stopped runtime dispatched fork keys")
+	}
+}
+
+func TestBlockedSubscriberRetainsAnErrorUntilObserved(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	runner := New(Dependencies{}, Options{Interval: time.Hour})
+	started := make(chan struct{})
+	steps := make(chan Result)
+	results := runner.run(ctx, func() Result {
+		select {
+		case started <- struct{}{}:
+		case <-ctx.Done():
+			return Result{}
+		}
+		select {
+		case result := <-steps:
+			return result
+		case <-ctx.Done():
+			return Result{}
+		}
+	})
+	defer func() {
+		cancel()
+		for range results {
+		}
+	}()
+	failed := errors.New("delivery failed")
+	for _, result := range []Result{{Err: failed}, {Snapshot: Snapshot{Agents: AgentStats{Count: 2}}}, {Snapshot: Snapshot{Agents: AgentStats{Count: 3}}}} {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("runtime stopped stepping")
+		}
+		steps <- result
+		runner.RequestRefresh()
+	}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("runtime stopped stepping")
+	}
+	if result := <-results; !errors.Is(result.Err, failed) {
+		t.Fatalf("unread delivery error was replaced: %+v", result)
+	}
+	steps <- Result{Snapshot: Snapshot{Agents: AgentStats{Count: 4}}}
+	select {
+	case result := <-results:
+		if result.Err != nil || result.Snapshot.Agents.Count != 4 {
+			t.Fatalf("next observation = %+v", result)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("runtime did not resume snapshots")
 	}
 }
