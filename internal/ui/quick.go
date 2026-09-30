@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"cmp"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textarea"
@@ -336,11 +337,20 @@ const (
 
 const quickChoiceHint = "model, effort and profile apply to a new agent: select a group to spawn one"
 
+// requireQuickSpawn reports whether the bar would spawn, and says why a
+// choice key does nothing when it would answer a session instead.
+func (m *Model) requireQuickSpawn() bool {
+	if m.quickSpawning() {
+		return true
+	}
+	m.errBar.text = quickChoiceHint
+	return false
+}
+
 // openQuickPick opens the list a key asked for, or says why the CLI has
 // none.
 func (m *Model) openQuickPick(pick int) {
-	if !m.quickSpawning() {
-		m.errBar.text = quickChoiceHint
+	if !m.requireQuickSpawn() {
 		return
 	}
 	toolName, ch := m.quickTool(), &m.quick.choice
@@ -373,8 +383,7 @@ func (m *Model) closeQuickPick() {
 // stepQuickEffort steps the effort through the model's levels, or opens
 // the typed field for a CLI that lists none.
 func (m *Model) stepQuickEffort() {
-	if !m.quickSpawning() {
-		m.errBar.text = quickChoiceHint
+	if !m.requireQuickSpawn() {
 		return
 	}
 	toolName, ch := m.quickTool(), &m.quick.choice
@@ -394,8 +403,7 @@ func (m *Model) stepQuickEffort() {
 }
 
 func (m *Model) stepQuickProfile() {
-	if !m.quickSpawning() {
-		m.errBar.text = quickChoiceHint
+	if !m.requireQuickSpawn() {
 		return
 	}
 	toolName := m.quickTool()
@@ -502,35 +510,28 @@ func (m *Model) quickLegend() [][2]string {
 	toolName, ch := m.quickTool(), &m.quick.choice
 	pairs := [][2]string{{"↵", "send"}, {"↑↓", "target or caret"}, {"tab", "tool: " + toolName}}
 	if _, listed := m.modelRowNote(toolName); listed && m.quickSpawning() {
-		model := "default"
-		if ch.model != "" {
-			model = ch.model
-		}
-		pairs = append(pairs, [2]string{quickModelKey, "model: " + model})
+		pairs = append(pairs, [2]string{quickModelKey, "model: " + cmp.Or(ch.model, "default")})
 		if _, _, active := m.effortRow(toolName, ch); active {
-			effort := "default"
-			if level := m.choiceEffort(toolName, ch); level != "" {
-				effort = level
-			}
-			pairs = append(pairs, [2]string{quickEffortKey, "effort: " + effort})
+			pairs = append(pairs, [2]string{quickEffortKey, "effort: " + cmp.Or(m.choiceEffort(toolName, ch), "default")})
 		}
 	}
 	if _, shown := m.profileRow(toolName, ch); shown && m.quickSpawning() {
-		profile := "default"
-		if name := m.choiceProfileName(toolName, ch); name != "" {
-			profile = name
-		}
-		pairs = append(pairs, [2]string{quickProfileKey, "profile: " + profile})
-	}
-	worktreeHint := "off"
-	switch {
-	case !m.worktreeCapable(m.quickTargetDir()):
-		worktreeHint = worktreeUnavailable
-	case m.quickWorktreeOn():
-		worktreeHint = "on"
+		pairs = append(pairs, [2]string{quickProfileKey, "profile: " + cmp.Or(m.choiceProfileName(toolName, ch), "default")})
 	}
 	if len(m.quick.toolNames) > 1 {
 		pairs = append(pairs, [2]string{"shift+tab", "previous tool"})
 	}
-	return append(pairs, [2]string{"ctrl+t", "worktree: " + worktreeHint}, [2]string{"esc", "close"})
+	return append(pairs, [2]string{"ctrl+t", "worktree: " + m.quickWorktreeState()}, [2]string{"esc", "close"})
+}
+
+// quickWorktreeState is the worktree toggle's word on the bar and in the
+// footer.
+func (m *Model) quickWorktreeState() string {
+	switch {
+	case !m.worktreeCapable(m.quickTargetDir()):
+		return worktreeUnavailable
+	case m.quickWorktreeOn():
+		return "on"
+	}
+	return "off"
 }

@@ -14,11 +14,7 @@ func readMuse(ctx context.Context, command, dir string) (Catalog, error) {
 	}
 	defer proc.stop()
 	client := &rpcClient{proc: proc}
-	var initialized struct{}
-	if err := client.call(ctx, "initialize", map[string]any{"clientInfo": clientInfo}, &initialized); err != nil {
-		return Catalog{}, err
-	}
-	if err := client.notify("initialized", nil); err != nil {
+	if err := client.initialize(ctx); err != nil {
 		return Catalog{}, err
 	}
 	var listed struct {

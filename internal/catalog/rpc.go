@@ -40,12 +40,14 @@ func (c *rpcClient) write(message map[string]any) error {
 	return c.proc.send(line)
 }
 
-func (c *rpcClient) notify(method string, params any) error {
-	message := map[string]any{"method": method}
-	if params != nil {
-		message["params"] = params
+// initialize opens the session codex's app server and muse serve both start
+// with.
+func (c *rpcClient) initialize(ctx context.Context) error {
+	var initialized struct{}
+	if err := c.call(ctx, "initialize", map[string]any{"clientInfo": clientInfo}, &initialized); err != nil {
+		return err
 	}
-	return c.write(message)
+	return c.write(map[string]any{"method": "initialized"})
 }
 
 // call sends a request and decodes its result into out. A request the

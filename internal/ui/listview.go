@@ -1690,11 +1690,8 @@ func (m *Model) quickChoiceLine(width, line int) string {
 		}
 		segments = append(segments, segment{subtleStyle.Render("profile ") + profile, quickClickProfile})
 	}
-	worktree := subtleStyle.Render("worktree off")
-	switch {
-	case !m.worktreeCapable(m.quickTargetDir()):
-		worktree = subtleStyle.Render("worktree " + worktreeUnavailable)
-	case m.quickWorktreeOn():
+	worktree := subtleStyle.Render("worktree " + m.quickWorktreeState())
+	if m.quickWorktreeOn() {
 		worktree = lipgloss.NewStyle().Foreground(colorAccent2).Render("worktree on")
 	}
 	segments = append(segments, segment{worktree, quickClickWorktree})

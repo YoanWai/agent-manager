@@ -69,13 +69,16 @@ func (m *Model) ensureCatalog(toolName string) tea.Cmd {
 	state.loading = true
 	configDir := m.configDir
 	return func() tea.Msg {
-		cat, fresh, ok := catalog.Cached(configDir, toolName, tool)
-		if ok {
+		if cat, fresh, ok := catalog.Cached(configDir, toolName, tool); ok {
 			return catalogMsg{tool: toolName, cat: cat, stale: !fresh}
 		}
-		cat, err := catalog.Refresh(context.Background(), configDir, toolName, tool)
-		return catalogMsg{tool: toolName, cat: cat, err: err}
+		return refreshCatalog(configDir, toolName, tool)
 	}
+}
+
+func refreshCatalog(configDir, toolName string, tool config.Tool) tea.Msg {
+	cat, err := catalog.Refresh(context.Background(), configDir, toolName, tool)
+	return catalogMsg{tool: toolName, cat: cat, err: err}
 }
 
 func (m *Model) handleCatalog(msg catalogMsg) tea.Cmd {
@@ -95,10 +98,7 @@ func (m *Model) handleCatalog(msg catalogMsg) tea.Cmd {
 		return nil
 	}
 	tool, configDir := m.cfg.Tools[msg.tool], m.configDir
-	return func() tea.Msg {
-		cat, err := catalog.Refresh(context.Background(), configDir, msg.tool, tool)
-		return catalogMsg{tool: msg.tool, cat: cat, err: err}
-	}
+	return func() tea.Msg { return refreshCatalog(configDir, msg.tool, tool) }
 }
 
 // fitChoices drops a pick the latest answer no longer offers, in whichever
