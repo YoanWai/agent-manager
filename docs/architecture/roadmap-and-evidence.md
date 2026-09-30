@@ -2,7 +2,7 @@
 
 ## PR #2 is partially conformant
 
-This audit describes implementation commit `c7a7e8247190f99a4813e6ad92078180ae0fdd3b` against upstream base `d3e9075a745f47e384ee7801681cdb1958dd4017`. The documentation update does not change executable behavior. Source links below follow the proposal branch; use the audited commit for a frozen comparison.
+This audit describes implementation commit `c7a7e8247190f99a4813e6ad92078180ae0fdd3b` against upstream base `d3e9075a745f47e384ee7801681cdb1958dd4017`. The documentation update does not change executable behavior. A subsequent [mechanical sessioncmd split](sessioncmd-file-map.md) preserves every declaration body while updating file placement. Source links below follow the proposal branch; use the audited commit for a frozen comparison.
 
 | Requirement | Status | Evidence or remaining gap |
 | --- | --- | --- |
@@ -35,7 +35,7 @@ The [repository guidelines](../../AGENTS.md) retain the full product matrix. PR 
 | Unit | Deliverable | Acceptance evidence |
 | --- | --- | --- |
 | 1. Documentation | Reconcile historical rationale, current code, and future contracts | Source trace, local links, independent claim review; no behavior change |
-| 2. Mechanical file splits | Split one package by concern, starting with sessioncmd | Identical declaration inventory, formatting, full race suite; no policy changes |
+| 2. Mechanical file splits | Sessioncmd now separates runtime, groups, spawn, messages, mailbox, and session lifecycle callers; other packages remain future work | All 318 declaration bodies and attached comments match the baseline; build, vet, and isolated full race verification |
 | 3. Small UI feature | Give help or a small dialog its own behavior and narrow host | Deterministic input and message tests, keyboard and mouse parity, real TUI frames |
 | 4. Async effects and layout | Move lifecycle I/O to commands and prepare geometry before View | Blocked-adapter tests prove Update returns; generation tests prove stale rejection; partial-failure tests prove completed archive and restore effects reconcile immediately; real geometry and focus checks |
 | 5. Workspace and authority rollout | Ship one saved connection/read use case, then one guarded canonical mutation and writer cutover | Supported historical binaries, real SSH, failure races, single maintenance proof, and explicit old-writer policy |

@@ -60,6 +60,8 @@ These are proposed moves, not claims that all listed files already exist. A file
 | `status` | Engine, matching, activity region, input, and turn state |
 | `tmux` and `config` | Driver, launch, chrome, input, attach, pane queries; built-in config separate from loading |
 
+The sessioncmd split now follows the [implemented file map](sessioncmd-file-map.md). The other package splits remain proposed.
+
 Use mechanical declaration moves and compare declaration inventories before and after. Keep behavior changes in a separate commit. Keep tests beside sources and retain explicit exceptions for shared helpers and cross-package integration tests.
 
 Keep the thin-wrapper product boundary and runtime discovery rules from [AGENTS.md](../../AGENTS.md). A saved-connection feature needs a UI-managed setting and an immediate application effect; a hand-edited per-user file is not the production configuration design.

@@ -14,6 +14,8 @@ These documents retain the broader target. A requirement described here is not e
 | [Roadmap and evidence](roadmap-and-evidence.md) | Current conformance, source references, and bounded follow-ups |
 | [Production proposal](../architecture-proposal.md) | Summary of the implemented refactor and runnable examples |
 
+The [session command file map](sessioncmd-file-map.md) records the first mechanical package split and its equivalence check.
+
 ## Keep the historical evidence separate
 
 [PR #1](https://github.com/ribeirojose/agent-manager/pull/1) is closed without merging. Its experiments remain available at commit `21294a3d895790e8c1937108b5c900eb43a2c2d3`. PR #2 supersedes it as the production-code proposal, not as proof that all experimental features shipped.

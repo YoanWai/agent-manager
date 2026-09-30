@@ -4,13 +4,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/config"
-	"github.com/YoanWai/agent-manager/internal/git"
-	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
@@ -67,85 +63,6 @@ func NewTerminalsWithBackend(backend *Backend, words Vocabulary) *Terminals {
 
 func newTerminals(configDir string, words Vocabulary, newDriver func() (*tmux.Driver, error)) *Terminals {
 	return &Terminals{commands: commands{configDir: configDir, words: words, newDriver: newDriver, loadConfig: config.LoadDir}}
-}
-
-// commands is the shared plumbing of every managed-pane command: the
-// manager's config directory, the words the calling front speaks, and the
-// tmux driver behind its socket.
-type commands struct {
-	configDir string
-	words     Vocabulary
-	backend   *Backend
-	newDriver func() (*tmux.Driver, error)
-	// loadConfig is config.LoadDir outside the tests, which inject fake CLIs.
-	loadConfig func(string) (config.Config, error)
-}
-
-type runtime struct {
-	cfg    config.Config
-	words  Vocabulary
-	store  *store.Store
-	driver *tmux.Driver
-	close  func() error
-}
-
-func (r *runtime) Close() error {
-	if r.close == nil {
-		return nil
-	}
-	return r.close()
-}
-
-func (c *commands) open() (*runtime, error) {
-	if c.backend != nil {
-		return c.backend.commands(c.words)
-	}
-	cfg, err := c.loadConfig(c.configDir)
-	if err != nil {
-		return nil, err
-	}
-	driver, err := c.newDriver()
-	if err != nil {
-		return nil, err
-	}
-	driver.SetSessionKeys(cfg.SessionKeys)
-	st, err := store.Open(filepath.Join(c.configDir, "state.db"))
-	if err != nil {
-		return nil, err
-	}
-	return &runtime{cfg: cfg, words: c.words, store: st, driver: driver, close: st.Close}, nil
-}
-
-func (c *commands) lifecycle(opened *runtime, gitDriver *git.Driver) (*Lifecycle, error) {
-	if c.backend != nil {
-		lifecycle, err := c.backend.Lifecycle()
-		if err != nil {
-			return nil, err
-		}
-		if gitDriver != nil {
-			lifecycle.runtime.Git = gitDriver
-		}
-		return lifecycle, nil
-	}
-	return NewLifecycle(Runtime{
-		Config:   opened.cfg,
-		Store:    opened.store,
-		Driver:   opened.driver,
-		Hooks:    hooks.NewManager(c.configDir),
-		Git:      gitDriver,
-		Snapshot: opened.store.SetSnapshot,
-	})
-}
-
-func (r *runtime) caller(sessionID string) (store.Session, error) {
-	if err := validSession(sessionID); err != nil {
-		return store.Session{}, err
-	}
-	sess, err := r.store.Get(sessionID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return store.Session{}, fmt.Errorf("calling session %s no longer exists", sessionID)
-	}
-	return sess, err
 }
 
 func (r *runtime) terminal(id string) (store.Session, error) {
@@ -360,99 +277,6 @@ func ShellName(toolName, parentID, fallbackSuffix string, sessions []store.Sessi
 		name = fmt.Sprintf("%s-%d", base, n)
 	}
 	return name
-}
-
-// createTarget resolves the group and directory a new pane opens in.
-// A nil requested group inherits the caller's; an explicit one must
-// already exist. An explicit directory wins outright; a caller that named
-// a group falls back to that group's nearest inherited default path; a
-// caller that named none opens beside itself.
-func (r *runtime) createTarget(caller store.Session, requestedGroup *string, directory string) (string, string, error) {
-	group := caller.Group
-	groups, err := r.store.Groups()
-	if err != nil {
-		return "", "", err
-	}
-	byName := make(map[string]store.Group, len(groups))
-	archived := make(map[string]bool, len(groups))
-	for _, candidate := range groups {
-		byName[candidate.Name] = candidate
-		archived[candidate.Name] = candidate.Archived
-	}
-	if requestedGroup != nil {
-		group = strings.TrimSpace(*requestedGroup)
-		if group != "" {
-			if _, ok := byName[group]; !ok {
-				return "", "", fmt.Errorf("group %q does not exist; call %s for the existing ones or %s to add it", group, r.words.ListGroups, r.words.CreateGroup)
-			}
-		}
-	}
-	if group != "" && store.EffectivelyArchived(archived, group) {
-		return "", "", fmt.Errorf("group %q is archived; restore it in Agent Manager first", group)
-	}
-	if strings.TrimSpace(directory) != "" {
-		dir, err := resolveTerminalDirectory(directory)
-		return group, dir, err
-	}
-	if requestedGroup != nil {
-		for current := group; current != ""; current = parentGroup(current) {
-			if candidate := byName[current].Path; candidate != "" {
-				if dir, err := resolveTerminalDirectory(candidate); err == nil {
-					return group, dir, nil
-				}
-			}
-		}
-	}
-	dir := caller.Cwd
-	if current, err := r.driver.PaneCurrentPath(caller.ID); err == nil {
-		dir = current
-	}
-	resolved, err := resolveTerminalDirectory(dir)
-	if err != nil {
-		return "", "", fmt.Errorf("no usable directory for terminal: %w", err)
-	}
-	return group, resolved, nil
-}
-
-func resolveTerminalDirectory(raw string) (string, error) {
-	dir := strings.TrimSpace(raw)
-	if dir == "~" || strings.HasPrefix(dir, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
-		if dir == "~" {
-			dir = home
-		} else {
-			dir = filepath.Join(home, strings.TrimPrefix(dir, "~/"))
-		}
-	}
-	abs, err := filepath.Abs(dir)
-	if err != nil {
-		return "", err
-	}
-	info, err := os.Stat(abs)
-	if err != nil {
-		return "", fmt.Errorf("directory %s: %w", abs, err)
-	}
-	if !info.IsDir() {
-		return "", fmt.Errorf("%s is not a directory", abs)
-	}
-	return abs, nil
-}
-
-func parentGroup(group string) string {
-	if index := strings.LastIndex(group, "/"); index >= 0 {
-		return group[:index]
-	}
-	return ""
-}
-
-func sessionLabel(group, name string) string {
-	if group == "" {
-		return name
-	}
-	return group + " · " + name
 }
 
 func (t *Terminals) Send(sessionID, terminalID, command string, keys []string) (TerminalInput, error) {
