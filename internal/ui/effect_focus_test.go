@@ -261,7 +261,7 @@ func TestFocusFenceDropsEntryAfterDialogOpened(t *testing.T) {
 	}
 }
 
-func TestPasteIsDeliveredBeforeReturningToRawKeyHandling(t *testing.T) {
+func TestPasteAndFollowingRawKeyShareTheOrderedLane(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "ordered", t.TempDir(), "")
 	m.selectSessionRow(t, "ordered")
@@ -272,8 +272,13 @@ func TestPasteIsDeliveredBeforeReturningToRawKeyHandling(t *testing.T) {
 	pasteFocused = func(d *tmux.Driver, id, text string) error { delivered = true; return nil }
 	t.Cleanup(func() { pasteFocused = original })
 	m.handleFocusKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("hello"), Paste: true})
+	if delivered {
+		t.Fatal("paste ran synchronously in key handling")
+	}
+	m.handleFocusKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
 	if !delivered {
-		t.Fatal("paste deferred while following raw Enter can overtake it")
+		t.Fatal("accepted paste did not drain before following raw input")
 	}
 }
 

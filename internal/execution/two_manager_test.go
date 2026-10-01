@@ -191,7 +191,7 @@ func TestSecondManagerTakesOverOnlyWhenTheFirstAges(t *testing.T) {
 	}
 }
 
-func TestStaleClaimFromABlockedManagerIsRetiredNotRedelivered(t *testing.T) {
+func TestOwnerlessClaimIsMarkedUncertainNotRedelivered(t *testing.T) {
 	p := pair(t, true)
 	sess := p.spawnReady(t)
 	res := p.runnerA.Step()
@@ -206,23 +206,18 @@ func TestStaleClaimFromABlockedManagerIsRetiredNotRedelivered(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	now := time.Now()
-	claimed, err := p.store.ClaimMessage(id, now)
-	if err != nil || !claimed {
-		t.Fatalf("claim = %v, %v", claimed, err)
-	}
-	rawSQL(t, p.dbPath, fmt.Sprintf("UPDATE session_inbox SET claimed_at = %d WHERE id = %d;", now.Add(-31*time.Second).UnixNano(), id))
+	claimInboxForTest(t, p.store, id, time.Now())
 
 	res = p.runnerB.Step()
-	if res.Err == nil || !strings.Contains(res.Err.Error(), "dropped an unconfirmed message") {
-		t.Fatalf("B step = %v, want the stale claim retired with a drop report", res.Err)
+	if res.Err == nil || !strings.Contains(res.Err.Error(), "uncertain prior transport") {
+		t.Fatalf("B step = %v, want the ownerless claim marked uncertain", res.Err)
 	}
 	state, err := p.store.Message(id, "sender01")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.DroppedAt.IsZero() || state.DeliveredAt.IsZero() {
-		t.Fatalf("retired message = %+v, want drop and terminal marks", state)
+	if state.Outcome != store.DeliveryUncertain || state.DeliveredAt.IsZero() || !state.DroppedAt.IsZero() {
+		t.Fatalf("retired message = %+v, want uncertain terminal marks", state)
 	}
 	pane, err := p.driver.CapturePane(sess.ID)
 	if err != nil {
@@ -244,7 +239,7 @@ func TestStaleClaimFromABlockedManagerIsRetiredNotRedelivered(t *testing.T) {
 	}
 }
 
-func TestInboxRetirementDuringInFlightSendPreservesTerminalState(t *testing.T) {
+func TestDeliveryGuardKeepsPeerFromRetiringAnInFlightSend(t *testing.T) {
 	p := pair(t, true)
 	sess := p.spawnReady(t)
 	deadline := time.Now().Add(5 * time.Second)
@@ -329,13 +324,12 @@ func TestInboxRetirementDuringInFlightSendPreservesTerminalState(t *testing.T) {
 	if err != nil || claim.ClaimedAt.IsZero() {
 		t.Fatalf("blocked send has no durable claim: %+v, %v", claim, err)
 	}
-	rawSQL(t, p.dbPath, fmt.Sprintf("UPDATE session_inbox SET claimed_at = %d WHERE id = %d", time.Now().Add(-31*time.Second).UnixNano(), id))
-	if sent, err := p.runnerB.maybeDeliverInbox(sess, pane, status.Idle, true); sent || err == nil {
-		t.Fatalf("peer retirement = %v, %v", sent, err)
+	if sent, err := p.runnerB.maybeDeliverInbox(sess, pane, status.Idle, true); sent || err != nil {
+		t.Fatalf("peer delivery while guard held = %v, %v", sent, err)
 	}
-	retired, err := peer.Message(id, "sender01")
-	if err != nil || retired.DroppedAt.IsZero() || retired.DeliveredAt.IsZero() {
-		t.Fatalf("retired claim = %+v, %v", retired, err)
+	inflight, err := peer.Message(id, "sender01")
+	if err != nil || inflight.Outcome != store.DeliveryInFlight || !inflight.DeliveredAt.IsZero() {
+		t.Fatalf("peer changed in-flight claim = %+v, %v", inflight, err)
 	}
 	if err := os.WriteFile(release, nil, 0o600); err != nil {
 		t.Fatal(err)
@@ -348,12 +342,14 @@ func TestInboxRetirementDuringInFlightSendPreservesTerminalState(t *testing.T) {
 		t.Fatal("released delivery did not finish")
 	}
 	final, err := peer.Message(id, "sender01")
-	if err != nil || !final.DroppedAt.Equal(retired.DroppedAt) || !final.DeliveredAt.Equal(retired.DeliveredAt) {
-		t.Fatalf("late completion changed terminal retirement: before=%+v after=%+v err=%v", retired, final, err)
+	if err != nil || final.Outcome != store.DeliveryConfirmed || final.DeliveredAt.IsZero() || !final.DroppedAt.IsZero() {
+		t.Fatalf("owner did not record confirmed delivery: %+v err=%v", final, err)
 	}
 	after, err := p.driver.CapturePane(sess.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("retirement probe: late_paste=%v runner_reported_sent=%v send_error=%v", strings.Contains(after, body), result.sent, result.err)
+	if !strings.Contains(after, body) || !result.sent || result.err != nil {
+		t.Fatalf("delivery result: pasted=%v sent=%v err=%v", strings.Contains(after, body), result.sent, result.err)
+	}
 }

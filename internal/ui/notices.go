@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
-	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -651,7 +650,7 @@ func (m *Model) applyNotices(apply func()) {
 }
 
 func (m *Model) listReadyForNotice() bool {
-	return m.mode == modeList && !m.rail.Searching() && !m.quick.active && !m.split.resizeMode &&
+	return !m.effects.quitting && m.mode == modeList && !m.rail.Searching() && !m.quick.active && !m.split.resizeMode &&
 		!m.rail.Reordering() && !m.rail.MenuOpen()
 }
 
@@ -1014,20 +1013,15 @@ func loadDismissed(st *store.Store) map[string]bool {
 }
 
 func (m *Model) dismissNotice(id string) {
-	m.notices.dismissed[id] = true
-	ids := make([]string, 0, len(m.notices.dismissed))
-	for dismissedID := range m.notices.dismissed {
-		ids = append(ids, dismissedID)
-	}
-	sort.Strings(ids)
-	raw, err := json.Marshal(ids)
-	if err != nil {
-		m.errBar.text = err.Error()
+	if id == "" || m.services.store == nil || m.noticeDismissQueued(id) || m.notices.dismissed[id] {
 		return
 	}
-	if err := m.services.store.SetSetting(dismissedNoticesSetting, string(raw)); err != nil {
-		m.errBar.text = err.Error()
-	}
+	m.notices.dismissed[id] = true
+	m.enqueueEffect(noticeDismissRequest{
+		id:            id,
+		foregroundGen: m.foregroundGen,
+		modal:         m.mode == modeNotices,
+	}, 0, false)
 }
 
 // The welcome names the keys as the tables bind them on this run: the first
@@ -1091,9 +1085,12 @@ func welcomeRow(leftKey, leftDoes, rightKey, rightDoes string) string {
 
 // The widths are the columns of the welcome rows around this line.
 func (m *Model) welcomeSessionKeysLine() string {
-	line := fmt.Sprintf("%-6s %-22s", m.services.keys.Binding(keybind.Detach).Keys()[0].Tea(), "back to the manager")
-	if review := m.services.keys.Binding(keybind.Review).Keys(); len(review) > 0 {
-		line += fmt.Sprintf("%-6s %s", review[0].Tea(), "review its diff")
+	first := func(action string) string {
+		keys := m.services.keys.Binding(action).Keys()
+		if len(keys) == 0 {
+			return ""
+		}
+		return keys[0].Tea()
 	}
-	return strings.TrimRight(line, " ")
+	return welcomeRow(first(keybind.Detach), "back to the manager", first(keybind.Review), "review its diff")
 }

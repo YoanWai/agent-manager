@@ -76,6 +76,22 @@ func (m *Model) enqueueEffect(request effectRequest, chain uint64, first bool) {
 	m.effects.nextID++
 	id := m.effects.nextID
 	switch value := request.(type) {
+	case inputRequest:
+		value.args = slices.Clone(value.args)
+		value.session.PendingInputs = slices.Clone(value.session.PendingInputs)
+		value.session.RelaunchSnapshot = maps.Clone(value.session.RelaunchSnapshot)
+		request = value
+	case quickSendRequest:
+		value.session.PendingInputs = slices.Clone(value.session.PendingInputs)
+		value.session.RelaunchSnapshot = maps.Clone(value.session.RelaunchSnapshot)
+		value.images = slices.Clone(value.images)
+		request = value
+	case installStartRequest:
+		value.images = slices.Clone(value.images)
+		request = value
+	case installSettleRequest:
+		value.install.images = slices.Clone(value.install.images)
+		request = value
 	case lifecycleRequest:
 		value.target.sessions = slices.Clone(value.target.sessions)
 		for i := range value.target.sessions {
@@ -92,12 +108,17 @@ func (m *Model) enqueueEffect(request effectRequest, chain uint64, first bool) {
 		value.source.RelaunchSnapshot = maps.Clone(value.source.RelaunchSnapshot)
 		request = value
 	case spawnRequest:
+		value.dirFallbacks = slices.Clone(value.dirFallbacks)
+		value.terminalDir.fallbacks = slices.Clone(value.terminalDir.fallbacks)
 		if value.plan != nil {
 			plan := *value.plan
 			plan.PendingInputs = slices.Clone(plan.PendingInputs)
 			value.plan = &plan
 		}
 		value.images = slices.Clone(value.images)
+		request = value
+	case groupRequest:
+		value.fallbacks = slices.Clone(value.fallbacks)
 		request = value
 	case renameRequest:
 		value.sess.PendingInputs = slices.Clone(value.sess.PendingInputs)
@@ -159,6 +180,28 @@ func (m *Model) nextEffectCmd() tea.Cmd {
 }
 
 func (m *Model) requestQuit() (tea.Model, tea.Cmd) {
+	if m.install != nil {
+		m.errBar.text = "install may still be running in " + m.install.name + "; finish it, kill its terminal with the session controls, or attach and interrupt it before quitting"
+		return m, nil
+	}
+	starting := func(job *effectJob) (installStartRequest, bool) {
+		if job == nil {
+			return installStartRequest{}, false
+		}
+		request, ok := job.request.(installStartRequest)
+		return request, ok
+	}
+	if request, ok := starting(m.effects.active); ok {
+		m.errBar.text = "install for " + request.binary + " is still starting; wait for its installer shell before quitting"
+		return m, nil
+	}
+	for _, job := range m.effects.pending {
+		if request, ok := starting(job); ok {
+			m.errBar.text = "install for " + request.binary + " is still queued; wait for its installer shell before quitting"
+			return m, nil
+		}
+	}
+	m.prepareSplitForQuit()
 	m.effects.quitting = true
 	return m, m.nextEffectCmd()
 }
@@ -170,7 +213,7 @@ func (m *Model) handleEffectCompleted(msg effectCompletedMsg) (tea.Model, tea.Cm
 	}
 	m.effects.active = nil
 	switch job.request.(type) {
-	case lifecycleRequest, railRequest, forkRequest, spawnRequest, groupRequest, renameRequest, focusRequest, ackRequest, attachRequest:
+	case inputRequest, quickSendRequest, installStartRequest, lifecycleRequest, railRequest, forkRequest, spawnRequest, groupRequest, renameRequest, focusRequest, ackRequest, attachRequest:
 		if msg.finishedAt.After(m.effects.latestObservation) {
 			m.effects.latestObservation = msg.finishedAt
 		}
@@ -183,6 +226,18 @@ func (m *Model) handleEffectCompleted(msg effectCompletedMsg) (tea.Model, tea.Cm
 	}
 	var command tea.Cmd
 	switch result := msg.result.(type) {
+	case inputEffectResult:
+		m.applyInputEffect(result, msg.err)
+	case quickSendResult:
+		command = m.applyQuickSend(job.request.(quickSendRequest), result, msg.err)
+	case noticeDismissResult:
+		m.applyNoticeDismiss(job, msg.err)
+	case splitSaveResult:
+		m.applySplitSave(job, msg.err)
+	case installStartResult:
+		command = m.applyInstallStart(job.request.(installStartRequest), result, msg.err)
+	case installSettleResult:
+		command = m.applyInstallSettle(job.request.(installSettleRequest), result, msg.err)
 	case lifecycleEffectResult:
 		command = m.applyLifecycleEffect(job.request.(lifecycleRequest), result, msg.err)
 	case railEffectResult:

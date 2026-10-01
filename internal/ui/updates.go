@@ -32,6 +32,14 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case effectCompletedMsg:
 		return m.handleEffectCompleted(msg)
+	case worktreeProbeMsg:
+		return m.handleWorktreeProbe(msg)
+	case pathSuggestionsMsg:
+		return m.handlePathSuggestions(msg)
+	case terminalDirectoryMsg:
+		return m.handleTerminalDirectory(msg)
+	case settingsLoadedMsg:
+		return m.handleSettingsLoaded(msg)
 	case tea.WindowSizeMsg:
 		// Resuming from a tmux attach re-sends the current size unchanged; only
 		// a real resize needs the per-session tmux resize calls, so an
@@ -372,6 +380,12 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case reviewPickerLoadedMsg:
+		return m, m.handleReviewPickerLoaded(msg)
+
+	case reviewPreferencesMsg:
+		return m.handleReviewPreferences(msg)
+
 	case reviewLoadMsg:
 		if msg.normalize != nil {
 			m.enqueueEffect(*msg.normalize, 0, false)
@@ -443,7 +457,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.enqueueEffect(detachRequest{sessionID: msg.sessID, generation: m.foregroundGen}, 0, false)
 		return m, nil
 
-	case uireview.FileCheckResult:
+	case editorFileCheckedMsg:
 		return m.handleDiffFileChecked(msg)
 
 	case editorDoneMsg:
@@ -461,15 +475,14 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Going back into the session would hide the only account of
 			// what went wrong, so a failed editor keeps the list.
 			m.errBar.text = msg.err.Error()
-			m.editorReturnID = ""
 			return m, resume
 		}
 		if msg.name != "" {
 			m.reportDone("opened " + msg.path + " in " + msg.name)
 		}
-		if id := m.editorReturnID; id != "" {
-			m.editorReturnID = ""
-			return m, tea.Batch(resume, m.reattach(id, m.review.Generation()))
+		if target := msg.returnTo; target.sessionID != "" && !m.effects.quitting &&
+			target.foregroundGen == m.foregroundGen && target.mode == m.mode {
+			return m, tea.Batch(resume, m.reattach(target.sessionID, m.review.Generation()))
 		}
 		return m, resume
 

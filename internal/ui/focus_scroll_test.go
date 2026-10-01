@@ -628,6 +628,7 @@ func TestAltClickReachesMouseTrackingApp(t *testing.T) {
 		Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, Alt: true,
 		X: box.X + 2, Y: box.Y + 1,
 	})
+	m.drainEffects(t)
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		pane, err := m.services.tmux.CapturePane(sess.ID)
@@ -660,6 +661,7 @@ func TestAltClickReleaseOutsidePaneReachesMouseTrackingApp(t *testing.T) {
 		X: box.X + box.Width, Y: box.Y + 1,
 	})
 
+	m.drainEffects(t)
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		pane, err := m.services.tmux.CapturePane(sess.ID)
@@ -695,6 +697,7 @@ func TestWheelReachesMouseTrackingApp(t *testing.T) {
 	if !m.focusPane.Pane().SGR {
 		t.Fatal("pane asked for SGR reports but the model did not read it")
 	}
+	m.drainEffects(t)
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		pane, err := m.services.tmux.CapturePane(sess.ID)
@@ -819,6 +822,7 @@ func TestWheelFallsBackToX10Reports(t *testing.T) {
 
 	box := m.focusPane.FrameBox()
 	m.wheelFocus(true, box.X+2, box.Y+1)
+	m.drainEffects(t)
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		pane, err := m.services.tmux.CapturePane(sess.ID)
@@ -869,6 +873,7 @@ func TestFocusReentryKeepsPaneStateOnQuietPane(t *testing.T) {
 	// The wheel still reaches the app, with no pushed capture in between.
 	box := m.focusPane.FrameBox()
 	m.wheelFocus(true, box.X+2, box.Y+1)
+	m.drainEffects(t)
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		pane, err := m.services.tmux.CapturePane(sess.ID)

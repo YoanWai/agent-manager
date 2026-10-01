@@ -6,6 +6,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 	"os"
 	"path/filepath"
 	"strings"
@@ -428,6 +429,7 @@ func TestReviveRunningAgentRevivesDeadChild(t *testing.T) {
 	if err := m.services.tmux.Kill(shell.ID); err != nil {
 		t.Fatalf("kill child: %v", err)
 	}
+	m.applyCmd(t, m.refreshCmd())
 	m.selectSessionRow(t, "coder")
 	_, cmd := m.reviveSelected()
 	m.drainEffects(t)
@@ -515,17 +517,24 @@ func TestReviveStartsTheAgentAgainInALivePane(t *testing.T) {
 		t.Fatal("revive must keep the window it relaunched in")
 	}
 
-	pane, err := m.services.tmux.CapturePane(sess.ID)
-	if err != nil {
-		t.Fatalf("capture: %v", err)
-	}
-	// The pane wraps the line it was sent at its own width.
-	typed := strings.ReplaceAll(pane, "\n", "")
-	if !strings.Contains(typed, "AGENT_MANAGER_SESSION_ID='"+sess.ID+"'") {
-		t.Fatalf("relaunch did not carry the session identity; pane:\n%s", pane)
-	}
-	if !strings.Contains(typed, "AGENT_MANAGER_STATUS_FILE='"+m.services.hooks.StatusFile(sess.ID)+"'") {
-		t.Fatalf("relaunch did not carry the hook status file; pane:\n%s", pane)
+	wantID := "AGENT_MANAGER_SESSION_ID='" + sess.ID + "'"
+	wantStatus := "AGENT_MANAGER_STATUS_FILE='" + m.services.hooks.StatusFile(sess.ID) + "'"
+	// AgentRunning observes the child process as soon as it forks. tmux can
+	// paint the exported command a moment later, so wait on the values this
+	// assertion owns instead of treating process startup as redraw completion.
+	deadline := time.Now().Add(5 * time.Second)
+	var pane string
+	for {
+		pane, _ = m.services.tmux.CapturePane(sess.ID)
+		// The pane wraps the line it was sent at its own width.
+		typed := strings.ReplaceAll(ansi.Strip(pane), "\n", "")
+		if strings.Contains(typed, wantID) && strings.Contains(typed, wantStatus) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("relaunch did not paint its session identity and hook status file; pane:\n%s", pane)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 	got, err := m.services.store.Get(sess.ID)
 	if err != nil {
@@ -550,7 +559,7 @@ func TestReviveStartsTheAgentAgainInALivePane(t *testing.T) {
 		t.Fatalf("read the shell environment: %v", err)
 	}
 	want := sess.ID + " " + m.services.hooks.StatusFile(sess.ID)
-	deadline := time.Now().Add(5 * time.Second)
+	deadline = time.Now().Add(5 * time.Second)
 	for {
 		if data, err := os.ReadFile(marker); err == nil && strings.TrimSpace(string(data)) == want {
 			break

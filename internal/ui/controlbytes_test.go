@@ -159,7 +159,7 @@ func TestSessionNameCannotDriveTheTerminal(t *testing.T) {
 	}
 
 	state := m.review.Snapshot()
-	m.review.ApplySend(uireview.SendResult{TargetID: state.SessionID, RepoRoot: state.RepoSelected, Round: 1, Count: 1, TargetName: "rev\x1b]0;PWNED\x07iew", Delivered: true})
+	m.review.ApplySend(uireview.SendResult{TargetID: state.SessionID, RepoRoot: state.RepoSelected, Round: 1, Count: 1, TargetName: "rev\x1b]0;PWNED\x07iew", Outcome: uireview.SendConfirmed})
 	if stray := strayControl(m.viewDiffFooter()); stray != "" {
 		t.Errorf("the review notice leaks a control byte near %q", stray)
 	}

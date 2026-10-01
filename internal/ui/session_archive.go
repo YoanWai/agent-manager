@@ -21,30 +21,24 @@ func (m *Model) archiveSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if entry.isGroup {
-		subtree, err := m.services.store.SessionsInSubtree(entry.group)
-		if err != nil {
-			m.errBar.text = err.Error()
-			return m, nil
-		}
+		subtree := m.sessionsInSubtree(entry.group)
 		m.confirm = confirmTarget{
-			isGroup:  true,
-			path:     entry.group,
-			action:   actionArchive,
-			sessions: subtree,
-			label:    fmt.Sprintf("archive group %s (%d sessions)? frees their RAM, t to find them.", entry.group, len(subtree)),
+			isGroup:   true,
+			path:      entry.group,
+			action:    actionArchive,
+			sessions:  subtree,
+			label:     fmt.Sprintf("archive group %s (%d sessions)? frees their RAM, t to find them.", entry.group, len(subtree)),
+			selection: lifecycleSelection{kind: lifecycleSelectionGroup},
 		}
 	} else {
-		sessions, err := m.sessionAndChildren(entry.sess)
-		if err != nil {
-			m.errBar.text = err.Error()
-			return m, nil
-		}
+		sessions := m.sessionAndChildren(entry.sess)
 		m.confirm = confirmTarget{
 			action:   actionArchive,
 			sessions: sessions,
 			label: followConfirmLabel("archive", entry.sess.Name, len(sessions)-1,
 				"frees its RAM, t to find it.",
 				"frees their RAM, t to find them."),
+			selection: lifecycleSelection{kind: lifecycleSelectionSession, rootID: entry.sess.ID},
 		}
 	}
 	m.mode = modeConfirmDelete
@@ -65,25 +59,18 @@ func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if entry.isGroup {
-		subtree, err := m.services.store.SessionsInSubtree(entry.group)
-		if err != nil {
-			m.errBar.text = err.Error()
-			return m, nil
-		}
+		subtree := m.sessionsInSubtree(entry.group)
 		archived := archivedSessions(subtree)
 		m.confirm = confirmTarget{
-			isGroup:  true,
-			path:     entry.group,
-			action:   actionRestore,
-			sessions: archived,
-			label:    fmt.Sprintf("restore group %s (%d archived sessions)? brings them back.", entry.group, len(archived)),
+			isGroup:   true,
+			path:      entry.group,
+			action:    actionRestore,
+			sessions:  archived,
+			label:     fmt.Sprintf("restore group %s (%d archived sessions)? brings them back.", entry.group, len(archived)),
+			selection: lifecycleSelection{kind: lifecycleSelectionGroup, archivedOnly: true},
 		}
 	} else {
-		sessions, err := m.sessionAndChildren(entry.sess)
-		if err != nil {
-			m.errBar.text = err.Error()
-			return m, nil
-		}
+		sessions := m.sessionAndChildren(entry.sess)
 		sessions = archivedSessions(sessions)
 		m.confirm = confirmTarget{
 			action:   actionRestore,
@@ -91,6 +78,7 @@ func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
 			label: followConfirmLabel("restore", entry.sess.Name, len(sessions)-1,
 				"brings it back.",
 				"brings them back."),
+			selection: lifecycleSelection{kind: lifecycleSelectionSession, rootID: entry.sess.ID, archivedOnly: true},
 		}
 	}
 	m.mode = modeConfirmDelete
@@ -191,14 +179,25 @@ func (m *Model) markGroup(path string, mark goneMark) {
 	m.ledger.goneGroups[path] = mark
 }
 
-func (m *Model) sessionAndChildren(sess store.Session) ([]store.Session, error) {
-	kids, err := m.services.store.Children(sess.ID)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]store.Session, 0, 1+len(kids))
+func (m *Model) sessionAndChildren(sess store.Session) []store.Session {
+	out := make([]store.Session, 0, 1)
 	out = append(out, sess)
-	return append(out, kids...), nil
+	for _, candidate := range m.workspace.sessions {
+		if candidate.ParentID == sess.ID {
+			out = append(out, candidate)
+		}
+	}
+	return out
+}
+
+func (m *Model) sessionsInSubtree(path string) []store.Session {
+	var sessions []store.Session
+	for _, sess := range m.workspace.sessions {
+		if inGroupSubtree(sess.Group, path) {
+			sessions = append(sessions, sess)
+		}
+	}
+	return sessions
 }
 
 func followConfirmLabel(verb, name string, extra int, one, many string) string {

@@ -490,6 +490,7 @@ func TestFocusFactsWriteHomeAsTilde(t *testing.T) {
 		t.Skip("no home directory to shorten")
 	}
 	m := shotModel()
+	m.homeDir = home
 	m.prefs.fullLayout = true
 	m.mode = modeFocus
 	setRailSessionCwd(m, railSelectedSession(m).ID, filepath.Join(home, "dev", "api"))

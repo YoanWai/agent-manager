@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"database/sql"
 	"os"
 	"path/filepath"
 	"strings"
@@ -121,13 +122,19 @@ func TestDiffAnnotateAndSend(t *testing.T) {
 }
 
 func TestSendAnnotationsDoesNotDeliverAnUnpersistedRound(t *testing.T) {
-	m := buildModel(t)
+	dbPath := filepath.Join(t.TempDir(), "state.db")
+	m := buildModelWithStorePath(t, dbPath)
 	openReviewOn(t, m, "persist-first", gitRepoWithTwoChangedFiles(t))
 	m.pressDiffKey(t, 'n')
 	m.openAnnotate()
 	typeReviewAnnotation(m, "do not deliver without durable state")
 	m.applyCmd(t, m.saveAnnotation())
-	if err := m.services.store.Close(); err != nil {
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`CREATE TRIGGER refuse_review_round BEFORE UPDATE ON review_states BEGIN SELECT RAISE(ABORT, 'review round write refused'); END`); err != nil {
 		t.Fatal(err)
 	}
 

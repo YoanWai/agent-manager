@@ -22,7 +22,7 @@ func (m *Model) viewForm() string {
 		b.WriteString(m.viewPathSuggestions() + "\n")
 	}
 	worktreeField := subtleStyle.Render(worktreeUnavailable)
-	if m.worktreeCapable(m.formSpawnDir()) {
+	if capable, known := m.cachedWorktreeCapability(m.formSpawnDir()); known && capable {
 		worktreeVal := "off"
 		if m.form.worktree {
 			worktreeVal = "on"

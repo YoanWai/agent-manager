@@ -57,6 +57,12 @@ func noticeIDs(notices []notice) []string {
 	return ids
 }
 
+func persistNoticeDismissal(t *testing.T, m *Model, id string) {
+	t.Helper()
+	m.dismissNotice(id)
+	m.drainEffects(t)
+}
+
 func TestActiveNoticesPinnedByDefault(t *testing.T) {
 	m := noticeModel(noticeStore(t), "v0.2.0")
 	ids := noticeIDs(m.activeNotices())
@@ -83,7 +89,7 @@ func TestActiveNoticesPinnedByDefault(t *testing.T) {
 func TestDismissPersistsAcrossRestart(t *testing.T) {
 	st := noticeStore(t)
 	m := noticeModel(st, "v0.2.0")
-	m.dismissNotice(noticeWelcome)
+	persistNoticeDismissal(t, m, noticeWelcome)
 	if contains(noticeIDs(m.activeNotices()), noticeWelcome) {
 		t.Fatal("dismissed notice still active")
 	}
@@ -117,7 +123,7 @@ func TestToolsRetiredNoticeNamesTheIgnoredBlocks(t *testing.T) {
 	if !strings.Contains(joined, "block you added") {
 		t.Fatalf("a custom block is not a shipped copy: %q", retired.body)
 	}
-	m.dismissNotice(noticeToolsRetired)
+	persistNoticeDismissal(t, m, noticeToolsRetired)
 	reopened := noticeModel(st, "v0.2.0")
 	reopened.services.cfg.IgnoredTools = m.services.cfg.IgnoredTools
 	if contains(noticeIDs(reopened.activeNotices()), noticeToolsRetired) {
@@ -136,7 +142,7 @@ func TestUpdateNoticePerRelease(t *testing.T) {
 		t.Fatalf("want update notice, got %v", ids)
 	}
 
-	m.dismissNotice("update-v0.3.0")
+	persistNoticeDismissal(t, m, "update-v0.3.0")
 	if contains(noticeIDs(m.activeNotices()), "update-v0.3.0") {
 		t.Fatal("dismissed update notice still active")
 	}
@@ -294,7 +300,7 @@ func TestWhatsNewSurvivesRestartUntilDismissed(t *testing.T) {
 	if !contains(noticeIDs(reopened.activeNotices()), "whatsnew-v0.2.0") {
 		t.Fatal("undismissed what's new should stay listed")
 	}
-	reopened.dismissNotice("whatsnew-v0.2.0")
+	persistNoticeDismissal(t, reopened, "whatsnew-v0.2.0")
 	if contains(noticeIDs(reopened.activeNotices()), "whatsnew-v0.2.0") {
 		t.Fatal("dismissed what's new still listed")
 	}
@@ -329,7 +335,7 @@ func TestFeedMessagesBecomeNotices(t *testing.T) {
 		t.Fatalf("feed message should be a notice, got %v", ids)
 	}
 
-	m.dismissNotice("feed-holdoff")
+	persistNoticeDismissal(t, m, "feed-holdoff")
 	if contains(noticeIDs(m.activeNotices()), "feed-holdoff") {
 		t.Fatal("dismissed feed notice still active")
 	}
@@ -348,7 +354,7 @@ func TestFeedUsesOneCanonicalTitleInCardAndModal(t *testing.T) {
 		Title:  "One title everywhere",
 		Body:   []string{"details"},
 	}}
-	m.dismissNotice(noticeWelcome)
+	persistNoticeDismissal(t, m, noticeWelcome)
 
 	card := ansi.Strip(strings.Join(m.noticeCardLines(m.activeNotices(), 50, 5), "\n"))
 	if !strings.Contains(card, "One title everywhere") || strings.Contains(card, "legacy compact copy") {
@@ -444,7 +450,7 @@ func TestRailFootNarrowDropsMessages(t *testing.T) {
 func TestRailFootAllDismissedShowsOnlyMeters(t *testing.T) {
 	m := footModel(t)
 	for _, n := range m.activeNotices() {
-		m.dismissNotice(n.id)
+		persistNoticeDismissal(t, m, n.id)
 	}
 	joined := ansi.Strip(strings.Join(m.railFootLines(70), "\n"))
 	if strings.Contains(joined, "messages") {
@@ -914,7 +920,7 @@ func TestLateReleaseKeepsModalSelection(t *testing.T) {
 
 func TestLateDismissedReleaseKeepsModalSelection(t *testing.T) {
 	m := modalModel(t)
-	m.dismissNotice("update-v9.9.9")
+	persistNoticeDismissal(t, m, "update-v9.9.9")
 	selected := m.activeNotices()[m.notices.noticeCursor].id
 
 	m.Update(updateMsg{latest: "v9.9.9", url: "https://example.com"})
@@ -968,7 +974,7 @@ func TestSameFeedDoesNotReopenNoticesModal(t *testing.T) {
 func TestDismissedFeedDoesNotOpenNoticesModal(t *testing.T) {
 	m := footModel(t)
 	m.mode = modeList
-	m.dismissNotice("feed-new")
+	persistNoticeDismissal(t, m, "feed-new")
 
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
 	if m.mode != modeList {
@@ -983,6 +989,22 @@ func TestNewFeedDoesNotStealFocus(t *testing.T) {
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
 	if m.mode != modeFocus {
 		t.Fatalf("a new message must not steal an open session, mode=%v", m.mode)
+	}
+}
+
+func TestPendingFeedDoesNotOpenDuringQuit(t *testing.T) {
+	m := footModel(t)
+	m.mode = modeFocus
+	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
+	if m.notices.pendingNotice != "feed-new" {
+		t.Fatalf("pending notice = %q, want feed-new", m.notices.pendingNotice)
+	}
+
+	m.mode = modeList
+	m.effects.quitting = true
+	m.flushPendingNotice()
+	if m.mode != modeList {
+		t.Fatalf("pending feed opened while quitting: mode=%v", m.mode)
 	}
 }
 
@@ -1466,7 +1488,7 @@ func TestArrowStepNoticeListedUntilDismissed(t *testing.T) {
 	if !found {
 		t.Fatal("arrow-step beta notice missing from active notices")
 	}
-	m.dismissNotice(noticeArrowStep)
+	persistNoticeDismissal(t, m, noticeArrowStep)
 	for _, n := range m.activeNotices() {
 		if n.id == noticeArrowStep {
 			t.Fatal("dismissed notice still listed")
@@ -1653,7 +1675,7 @@ func TestEmptyNoticesPanelStillOpensAndOffersRefresh(t *testing.T) {
 	m.width, m.height = 100, 34
 	m.mode = modeList
 	for _, n := range m.activeNotices() {
-		m.dismissNotice(n.id)
+		persistNoticeDismissal(t, m, n.id)
 	}
 	if len(m.activeNotices()) != 0 {
 		t.Fatal("test needs an empty panel")
@@ -1692,6 +1714,19 @@ func TestWelcomeSessionKeysLineFollowsTheKeyTable(t *testing.T) {
 	m.services.keys = sessionOf(t, []string{"f9"}, nil, []string{"f3"})
 	if got := m.welcomeSessionKeysLine(); got != "f9     back to the manager" {
 		t.Errorf("review off line = %q", got)
+	}
+}
+
+func TestWelcomeSessionKeysLineOmitsDisabledActions(t *testing.T) {
+	m := &Model{services: services{keys: sessionOf(t, nil, []string{"ctrl+r"}, nil)}}
+	got := m.welcomeSessionKeysLine()
+	if strings.Contains(got, "back to the manager") || !strings.Contains(got, "ctrl+r review its diff") {
+		t.Fatalf("detach off line = %q", got)
+	}
+
+	m.services.keys = sessionOf(t, nil, nil, nil)
+	if got := m.welcomeSessionKeysLine(); got != "" {
+		t.Fatalf("all session actions off line = %q", got)
 	}
 }
 

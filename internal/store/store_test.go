@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"path/filepath"
@@ -10,6 +11,43 @@ import (
 	"testing"
 	"time"
 )
+
+func withDeliveryGuard(t *testing.T, st *Store, fn func(*DeliveryGuard) error) {
+	t.Helper()
+	acquired, err := st.WithDeliveryGuard(context.Background(), fn)
+	if err != nil || !acquired {
+		t.Fatalf("delivery guard: acquired=%v err=%v", acquired, err)
+	}
+}
+
+func claimMessageForTest(t *testing.T, st *Store, id int64, at time.Time) DeliveryClaim {
+	t.Helper()
+	var claim DeliveryClaim
+	withDeliveryGuard(t, st, func(guard *DeliveryGuard) error {
+		var claimed bool
+		var err error
+		claim, claimed, err = guard.ClaimMessage(id, at)
+		if err == nil && !claimed {
+			t.Fatalf("message %d was not claimed", id)
+		}
+		return err
+	})
+	return claim
+}
+
+func finishMessageForTest(t *testing.T, st *Store, id int64, outcome DeliveryOutcome, at time.Time) {
+	t.Helper()
+	withDeliveryGuard(t, st, func(guard *DeliveryGuard) error {
+		claim, claimed, err := guard.ClaimMessage(id, at)
+		if err != nil {
+			return err
+		}
+		if !claimed {
+			t.Fatalf("message %d was not claimed", id)
+		}
+		return guard.FinishMessage(id, claim, outcome, at)
+	})
+}
 
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
@@ -77,14 +115,19 @@ func TestPendingInputsPersistAndConsumeInOrder(t *testing.T) {
 	if !slices.Equal(got.PendingInputs, []string{"first", "second"}) {
 		t.Fatalf("pending inputs = %q", got.PendingInputs)
 	}
-	claimed, err := st.ClaimPendingInput("a", "second")
-	if err != nil || claimed {
-		t.Fatalf("claim out of order = %v, %v", claimed, err)
-	}
-	claimed, err = st.ClaimPendingInput("a", "first")
-	if err != nil || !claimed {
-		t.Fatalf("claim first = %v, %v", claimed, err)
-	}
+	var claim DeliveryClaim
+	withDeliveryGuard(t, st, func(guard *DeliveryGuard) error {
+		_, claimed, err := guard.ClaimPendingInput("a", "second", time.Now())
+		if err != nil || claimed {
+			t.Fatalf("claim out of order = %v, %v", claimed, err)
+		}
+		var ok bool
+		claim, ok, err = guard.ClaimPendingInput("a", "first", time.Now())
+		if err != nil || !ok {
+			t.Fatalf("claim first = %v, %v", ok, err)
+		}
+		return nil
+	})
 	if err := st.Close(); err != nil {
 		t.Fatalf("close claimed store: %v", err)
 	}
@@ -100,10 +143,9 @@ func TestPendingInputsPersistAndConsumeInOrder(t *testing.T) {
 	if !got.PendingInputClaimed {
 		t.Fatal("pending delivery claim did not survive reopen")
 	}
-	consumed, err := st.ConsumeClaimedPendingInput("a", "first")
-	if err != nil || !consumed {
-		t.Fatalf("consume first = %v, %v", consumed, err)
-	}
+	withDeliveryGuard(t, st, func(guard *DeliveryGuard) error {
+		return guard.FinishPendingInput("a", "first", claim, DeliveryConfirmed, time.Now())
+	})
 	got, err = st.Get("a")
 	if err != nil {
 		t.Fatalf("get after consume: %v", err)

@@ -47,8 +47,9 @@ func (m *Model) viewQuickBar(width, maxRows int) string {
 			// Spawning: the tool and the worktree choice decide what gets
 			// created, so they sit where the eye lands before typing.
 			worktree := subtleStyle.Render("worktree off")
+			capable, known := m.cachedWorktreeCapability(m.quickTargetDir())
 			switch {
-			case !m.worktreeCapable(m.quickTargetDir()):
+			case !known || !capable:
 				worktree = subtleStyle.Render("worktree " + worktreeUnavailable)
 			case m.quickWorktreeOn():
 				worktree = lipgloss.NewStyle().Foreground(colorAccent2).Render("worktree on")

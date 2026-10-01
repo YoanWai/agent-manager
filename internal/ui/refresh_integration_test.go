@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"context"
+	"fmt"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -82,7 +84,17 @@ func TestRefreshReplacesTheQueuedCountsWholesale(t *testing.T) {
 	id := queueMessage(t, m, sess.ID, "rebase on main")
 	m.workspace.queuedMessages = map[string]int{sess.ID: 1}
 
-	if err := m.services.store.MarkDelivered(id, time.Now()); err != nil {
+	acquired, err := m.services.store.WithDeliveryGuard(context.Background(), func(g *store.DeliveryGuard) error {
+		claim, claimed, err := g.ClaimMessage(id, time.Now())
+		if err != nil {
+			return err
+		}
+		if !claimed {
+			return fmt.Errorf("fixture claim refused")
+		}
+		return g.FinishMessage(id, claim, store.DeliveryConfirmed, time.Now())
+	})
+	if err != nil || !acquired {
 		t.Fatal(err)
 	}
 	m.applyCmd(t, m.refreshCmd())

@@ -572,12 +572,6 @@ const (
 	// inboxPruneEvery keeps the delivered-message sweep off the hot path;
 	// at the default 2s interval this is roughly every ten minutes.
 	inboxPruneEvery = 300
-	// inboxClaimGrace is how long a claim may sit undelivered before the
-	// message counts as abandoned. Claiming and pasting are two steps, and
-	// nothing stops a second manager polling the same store, so a claim
-	// that is milliseconds old belongs to a paste in flight; only one this
-	// old belongs to a manager that died between the two.
-	inboxClaimGrace = 30 * time.Second
 )
 
 // launchPromptGrace releases pending input for a session whose prompt

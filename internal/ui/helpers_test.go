@@ -22,6 +22,11 @@ import (
 
 func buildModel(t *testing.T) *Model {
 	t.Helper()
+	return buildModelWithStorePath(t, filepath.Join(t.TempDir(), "state.db"))
+}
+
+func buildModelWithStorePath(t *testing.T, dbPath string) *Model {
+	t.Helper()
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux not installed")
 	}
@@ -117,7 +122,7 @@ func buildModel(t *testing.T) *Model {
 			},
 		},
 	}
-	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	st, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatalf("store open: %v", err)
 	}

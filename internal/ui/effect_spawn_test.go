@@ -3,6 +3,7 @@ package ui
 import (
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -10,17 +11,173 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// submitFormSpawn fills the form and submits it, returning the pending
-// command without driving it, so a test can assert what the update path
-// did on its own.
+type blockedDirectoryPreflight struct {
+	started  chan struct{}
+	release  chan struct{}
+	once     sync.Once
+	resolved string
+	dirOK    bool
+	repoOK   bool
+}
+
+func (r *blockedDirectoryPreflight) resolve(string, []string) (string, bool) {
+	r.once.Do(func() { close(r.started) })
+	<-r.release
+	return r.resolved, r.dirOK
+}
+
+func (r *blockedDirectoryPreflight) repoCapable(string) bool { return r.repoOK }
+
+func TestSpawnWorkerDefersFilesystemReadAndCapturesDraft(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	m.form.name.SetValue("captured")
+	m.form.dir.SetValue("/captured/raw")
+	reader := &blockedDirectoryPreflight{
+		started: make(chan struct{}), release: make(chan struct{}),
+		resolved: t.TempDir(), dirOK: true,
+	}
+	_, cmd := m.submitFormWithReader(reader)
+	if m.effects.active == nil {
+		t.Fatal("submit did not accept the spawn before directory validation")
+	}
+	select {
+	case <-reader.started:
+		t.Fatal("submit read the filesystem on the update path")
+	default:
+	}
+
+	completed := make(chan effectCompletedMsg, 1)
+	go func() { completed <- cmd().(effectCompletedMsg) }()
+	<-reader.started
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 151, Height: 45})
+	m = updated.(*Model)
+	if m.width != 151 {
+		t.Fatal("blocked preflight blocked an unrelated update")
+	}
+	close(reader.release)
+	msg := <-completed
+	request := m.effects.active.request.(spawnRequest)
+	if request.draftName != "captured" || request.rawDir != "/captured/raw" {
+		t.Fatalf("worker did not capture the draft: %+v", request)
+	}
+	m.applyTestMsg(t, msg)
+	if len(m.workspace.sessions) != 1 || m.workspace.sessions[0].Name != "captured" {
+		t.Fatalf("accepted spawn did not commit the captured row: %+v", m.workspace.sessions)
+	}
+}
+
+func TestAcceptedSpawnSurvivesChangedDraftWithoutClosingIt(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	m.form.name.SetValue("first")
+	reader := &blockedDirectoryPreflight{
+		started: make(chan struct{}), release: make(chan struct{}),
+		resolved: t.TempDir(), dirOK: true,
+	}
+	_, cmd := m.submitFormWithReader(reader)
+	completed := make(chan effectCompletedMsg, 1)
+	go func() { completed <- cmd().(effectCompletedMsg) }()
+	<-reader.started
+	m.form.name.SetValue("newer")
+	close(reader.release)
+	m.applyTestMsg(t, <-completed)
+	if len(m.workspace.sessions) != 1 || m.workspace.sessions[0].Name != "first" {
+		t.Fatalf("accepted spawn was cancelled or retargeted: %+v", m.workspace.sessions)
+	}
+	if m.mode != modeForm || m.form.name.Value() != "newer" {
+		t.Fatal("completion replaced the edited form")
+	}
+}
+
+func TestQuickPreflightCapturesTargetBeforeCursorMoves(t *testing.T) {
+	m := buildModel(t)
+	backend := t.TempDir()
+	frontend := t.TempDir()
+	if err := m.services.store.CreateGroup("backend", backend); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.services.store.CreateGroup("frontend", frontend); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "backend")
+	m.openQuickMode()
+	m.quick.input.SetValue("captured prompt")
+	reader := &blockedDirectoryPreflight{
+		started: make(chan struct{}), release: make(chan struct{}),
+		resolved: backend, dirOK: true,
+	}
+	_, cmd := m.quickSpawnWithReader("backend", "captured prompt", reader)
+	completed := make(chan effectCompletedMsg, 1)
+	go func() { completed <- cmd().(effectCompletedMsg) }()
+	<-reader.started
+	m.selectGroupRow(t, "frontend")
+	close(reader.release)
+	m.applyTestMsg(t, <-completed)
+	if len(m.workspace.sessions) != 1 || m.workspace.sessions[0].Group != "backend" {
+		t.Fatalf("quick preflight retargeted the spawn: %+v", m.workspace.sessions)
+	}
+}
+
+func TestGroupPreflightFailureKeepsFormAndDoesNotMutate(t *testing.T) {
+	m := buildModel(t)
+	m.openGroupForm()
+	m.groupForm.name.SetValue("docs")
+	m.groupForm.path.SetValue("/missing/docs")
+	reader := &blockedDirectoryPreflight{
+		started: make(chan struct{}), release: make(chan struct{}),
+		resolved: "/missing/docs", dirOK: false,
+	}
+	_, cmd := m.submitGroupFormWithReader(reader)
+	close(reader.release)
+	m.applyTestMsg(t, cmd())
+	if m.mode != modeGroupForm || m.effects.active != nil || len(m.effects.pending) != 0 {
+		t.Fatal("failed group validation closed the form or left a mutation queued")
+	}
+	if got := m.errBar.text; got != "default path does not exist: /missing/docs" {
+		t.Fatalf("group preflight error = %q", got)
+	}
+}
+
+func TestAcceptedGroupDrainsBlockedValidationOnQuit(t *testing.T) {
+	m := buildModel(t)
+	m.openGroupForm()
+	m.groupForm.name.SetValue("accepted")
+	reader := &blockedDirectoryPreflight{
+		started: make(chan struct{}), release: make(chan struct{}),
+		resolved: t.TempDir(), dirOK: true,
+	}
+	_, cmd := m.submitGroupFormWithReader(reader)
+	if m.effects.active == nil {
+		t.Fatal("group submission was not accepted before validation")
+	}
+	if _, quit := m.requestQuit(); quit != nil {
+		t.Fatal("quit bypassed the accepted group worker")
+	}
+	completed := make(chan tea.Msg, 1)
+	go func() { completed <- cmd() }()
+	<-reader.started
+	close(reader.release)
+	m.applyTestMsg(t, <-completed)
+	if !hasWorkspaceGroup(m, "accepted") {
+		t.Fatal("quit discarded the accepted group")
+	}
+}
+
+// submitFormSpawn fills the form, accepts its spawn effect, and returns its
+// still-unrun worker command.
 func submitFormSpawn(t *testing.T, m *Model, name, dir string) tea.Cmd {
 	t.Helper()
 	m.openForm()
 	m.form.name.SetValue(name)
 	m.form.dir.SetValue(dir)
 	m.form.toolIndex = 0
-	_, cmd := m.submitForm()
-	return cmd
+	_, command := m.submitForm()
+	if m.effects.active == nil {
+		t.Fatal("submit did not queue the spawn worker")
+	}
+	return command
 }
 
 func storeRows(t *testing.T, m *Model) int {
@@ -240,7 +397,6 @@ func TestSpawnUpdateReturnsWhileWriterIsQueued(t *testing.T) {
 func TestSpawnDuplicateCompletionIsIdempotent(t *testing.T) {
 	m := buildModel(t)
 	submitFormSpawn(t, m, "first", t.TempDir())
-	m.nextEffectCmd()
 	msg := m.effects.active.command()
 	m.applyTestMsg(t, msg)
 	fence := m.effects.latestObservation
@@ -261,12 +417,12 @@ func TestSpawnDuplicateCompletionIsIdempotent(t *testing.T) {
 // dispatch that arrives after the quit is refused, not run.
 func TestSpawnDrainsAcceptedOnQuitAndRefusesLate(t *testing.T) {
 	m := buildModel(t)
-	submitFormSpawn(t, m, "first", t.TempDir())
+	accepted := submitFormSpawn(t, m, "first", t.TempDir())
 	_, command := m.requestQuit()
-	if _, ok := command().(tea.QuitMsg); ok {
-		t.Fatal("quit discarded an accepted spawn")
+	if command != nil {
+		t.Fatal("quit started a second command while the accepted spawn was active")
 	}
-	m.drainEffects(t)
+	m.applyCmd(t, accepted)
 	if storeRows(t, m) != 1 {
 		t.Fatalf("accepted spawn did not drain on quit: %d rows", storeRows(t, m))
 	}
@@ -275,7 +431,8 @@ func TestSpawnDrainsAcceptedOnQuitAndRefusesLate(t *testing.T) {
 	m.form.name.SetValue("late")
 	m.form.dir.SetValue(t.TempDir())
 	m.form.toolIndex = 0
-	m.submitForm()
+	_, late := m.submitForm()
+	m.applyTestMsg(t, late())
 	if len(m.effects.pending) != 0 {
 		t.Fatal("quit accepted a new spawn")
 	}
@@ -318,6 +475,9 @@ func TestGroupFormCompletionDoesNotReplaceNewerDialog(t *testing.T) {
 	m.groupForm.name.SetValue("first")
 	m.groupForm.path.SetValue(t.TempDir())
 	_, cmd := m.submitGroupForm()
+	if m.effects.active == nil {
+		t.Fatal("accepted group submission did not queue the mutation")
+	}
 	// The user reopens the group form before the first one completes: a
 	// newer dialog in the same slot.
 	m.openGroupForm()
@@ -420,8 +580,15 @@ func TestQuickSpawnCompletionPreservesEditedDraft(t *testing.T) {
 func TestSpawnRepeatedSubmitKeepsOneAcceptedJob(t *testing.T) {
 	m := buildModel(t)
 	submitFormSpawn(t, m, "first", t.TempDir())
-	m.submitForm()
-	if len(m.effects.pending) != 1 {
+	_, repeated := m.submitForm()
+	if repeated != nil {
+		m.applyTestMsg(t, repeated())
+	}
+	jobs := len(m.effects.pending)
+	if m.effects.active != nil {
+		jobs++
+	}
+	if jobs != 1 {
 		t.Fatal("repeat submit accepted a duplicate spawn")
 	}
 }
@@ -432,8 +599,7 @@ func TestSpawnRetryRetainsManagerAndConversationIdentity(t *testing.T) {
 	tool.Command = "am-missing-cli-xyz"
 	tool.SessionIDFlag = "--session-id"
 	m.services.cfg.Tools["claude"] = tool
-	submitFormSpawn(t, m, "agent", t.TempDir())
-	command := m.nextEffectCmd()
+	command := submitFormSpawn(t, m, "agent", t.TempDir())
 	first := m.effects.active.request.(spawnRequest)
 	msg := command().(effectCompletedMsg)
 	m.applyTestMsg(t, msg)

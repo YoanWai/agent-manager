@@ -5,6 +5,7 @@ import (
 	"errors"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,6 +19,171 @@ type settingsScriptWriter struct {
 	failOn    string
 	failGetOn string
 	values    map[string]string
+}
+
+type blockedSettingReader struct {
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+	values  map[string]string
+}
+
+func (r *blockedSettingReader) get(key string) (string, error) {
+	r.once.Do(func() { close(r.started) })
+	<-r.release
+	return r.values[key], nil
+}
+
+func TestOpenSettingsDefersBlockedStoreRead(t *testing.T) {
+	m := buildModel(t)
+	reader := &blockedSettingReader{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+		values:  map[string]string{worktreeSetting: "on"},
+	}
+	opened := make(chan tea.Cmd, 1)
+	go func() { opened <- m.openSettingsWithReader(reader) }()
+
+	var cmd tea.Cmd
+	select {
+	case <-reader.started:
+		close(reader.release)
+		<-opened
+		t.Fatal("opening settings read the store on the update path")
+	case cmd = <-opened:
+	}
+	if cmd == nil {
+		t.Fatal("opening settings did not return the deferred refresh")
+	}
+	select {
+	case <-reader.started:
+		t.Fatal("settings reader ran before its Bubble Tea command")
+	default:
+	}
+
+	completed := make(chan tea.Msg, 1)
+	go func() { completed <- cmd() }()
+	<-reader.started
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 151, Height: 45})
+	m = updated.(*Model)
+	if m.width != 151 {
+		t.Fatal("a blocked settings reader blocked an unrelated window update")
+	}
+	close(reader.release)
+	m.applyTestMsg(t, <-completed)
+	if !m.settings.worktreeDefault {
+		t.Fatal("the accepted deferred refresh did not update the dialog")
+	}
+}
+
+func TestOpenCLIPickerDoesNotReadStore(t *testing.T) {
+	m := buildModel(t)
+	if err := m.services.store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	m.errBar.text = ""
+	m.settings.cliHidden = nil
+	m.openCLIPicker()
+	if m.errBar.text != "" {
+		t.Fatalf("opening the CLI picker read the closed store: %q", m.errBar.text)
+	}
+}
+
+func TestSettingsOpenRefreshesExternalChanges(t *testing.T) {
+	m := buildModel(t)
+	if err := m.services.store.SetSetting(worktreeSetting, "on"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.services.store.SetSetting(hiddenToolsSetting, "claude"); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := m.openSettings()
+	if m.settings.worktreeDefault || m.settings.cliHidden["claude"] {
+		t.Fatal("opening should paint the cached preferences before the refresh")
+	}
+	m.applyTestMsg(t, cmd())
+	if !m.settings.worktreeDefault || !m.settings.cliHidden["claude"] {
+		t.Fatalf("external settings were not refreshed: worktree=%t hidden=%v", m.settings.worktreeDefault, m.settings.cliHidden)
+	}
+}
+
+func TestSettingsLoadRefusesReopenedDialog(t *testing.T) {
+	m := buildModel(t)
+	cmd := m.openSettings()
+	firstGeneration := m.settingsGen
+	if err := m.services.store.SetSetting(worktreeSetting, "on"); err != nil {
+		t.Fatal(err)
+	}
+	loaded := cmd()
+
+	m.openSettings()
+	if m.settingsGen == firstGeneration {
+		t.Fatal("reopening settings reused the old generation")
+	}
+	m.applyTestMsg(t, loaded)
+	if m.settings.worktreeDefault {
+		t.Fatal("the first dialog's load overwrote the reopened dialog")
+	}
+}
+
+func TestSettingsLoadRefusesEditsAndSubpickers(t *testing.T) {
+	t.Run("staged edit", func(t *testing.T) {
+		m := buildModel(t)
+		cmd := m.openSettings()
+		m.settings.field = settingsFieldWorktree
+		m.cycleSetting(1)
+		m.applyTestMsg(t, cmd())
+		if !m.settings.worktreeDefault {
+			t.Fatal("the async load overwrote a staged setting")
+		}
+	})
+
+	t.Run("CLI picker", func(t *testing.T) {
+		m := buildModel(t)
+		cmd := m.openSettings()
+		if err := m.services.store.SetSetting(hiddenToolsSetting, "claude"); err != nil {
+			t.Fatal(err)
+		}
+		m.openCLIPicker()
+		m.applyTestMsg(t, cmd())
+		if m.settings.cliHidden["claude"] {
+			t.Fatal("the async load replaced an open CLI picker")
+		}
+	})
+
+	t.Run("key picker", func(t *testing.T) {
+		m := buildModel(t)
+		cmd := m.openSettings()
+		m.settings.keyPicker = true
+		before := m.settings.worktreeDefault
+		if err := m.services.store.SetSetting(worktreeSetting, "on"); err != nil {
+			t.Fatal(err)
+		}
+		m.applyTestMsg(t, cmd())
+		if m.settings.worktreeDefault != before {
+			t.Fatal("the async load replaced an open key picker")
+		}
+	})
+}
+
+func TestSettingsReopenUsesOptimisticPendingSave(t *testing.T) {
+	m := buildModel(t)
+	m.openSettings()
+	m.settings.field = settingsFieldWorktree
+	m.cycleSetting(1)
+	_, save := m.handleSettingsKey(key("enter"))
+	if save == nil {
+		t.Fatal("settings save was not queued")
+	}
+
+	if refresh := m.openSettings(); refresh != nil {
+		t.Fatal("a dialog reopened over a pending save should use the optimistic cache")
+	}
+	if !m.settings.worktreeDefault {
+		t.Fatal("the reopened dialog lost the pending worktree choice")
+	}
+	m.applyCmd(t, save)
 }
 
 func (w *settingsScriptWriter) set(key, value string) error {

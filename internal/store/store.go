@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -56,7 +57,12 @@ type Session struct {
 	WorktreeBranch      string
 	PendingInputs       []string
 	PendingInputClaimed bool
-	ParentID            string
+	// PendingInputOutcome records the durable result of the most recent
+	// automatic pending-input delivery. A claimed row is never replayed after
+	// its owning process disappears: the next owner records uncertain.
+	PendingInputOutcome   DeliveryOutcome
+	PendingInputClaimedAt time.Time
+	ParentID              string
 	// LaunchPrompt is the prompt handed to the agent on its command line.
 	// Pending input waits for it to show in the pane, because an agent
 	// taking it clears the composer and anything pasted there.
@@ -82,7 +88,8 @@ func (sess Session) LaunchTime() time.Time {
 }
 
 type Store struct {
-	db *sql.DB
+	db   *sql.DB
+	path string
 }
 
 // busyTimeout is how long a writer waits for the lock before giving up.
@@ -94,7 +101,19 @@ type Store struct {
 const busyTimeout = "?_pragma=busy_timeout(5000)&_txlock=immediate"
 
 func Open(path string) (*Store, error) {
-	db, err := sql.Open("sqlite", path+busyTimeout)
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return nil, fmt.Errorf("resolve store path: %w", err)
+	}
+	// Use one lock identity when callers reach the same profile through a
+	// symlinked directory. The DB itself may not exist yet, so resolve its
+	// parent and retain the requested filename.
+	if realPath, evalErr := filepath.EvalSymlinks(absPath); evalErr == nil {
+		absPath = realPath
+	} else if realDir, evalErr := filepath.EvalSymlinks(filepath.Dir(absPath)); evalErr == nil {
+		absPath = filepath.Join(realDir, filepath.Base(absPath))
+	}
+	db, err := sql.Open("sqlite", absPath+busyTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +122,7 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	store := &Store{db: db}
+	store := &Store{db: db, path: absPath}
 	if err := store.init(); err != nil {
 		db.Close()
 		return nil, err
@@ -228,6 +247,45 @@ CREATE TABLE IF NOT EXISTS settings (
 		`ALTER TABLE sessions ADD COLUMN tmux_socket TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN last_prompt TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN relaunch_snapshot TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE session_inbox ADD COLUMN attempt_token TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE session_inbox ADD COLUMN receipt_token TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE session_inbox ADD COLUMN delivery_outcome TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN pending_attempt_token TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN pending_receipt_token TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN pending_delivery_outcome TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN pending_claimed_at INTEGER NOT NULL DEFAULT 0`,
+		`UPDATE session_inbox
+		    SET attempt_token = 'legacy-' || id,
+		        receipt_token = 'legacy-' || id,
+		        delivery_outcome = CASE WHEN dropped_at = 0 AND delivered_at != 0 THEN 'confirmed' ELSE 'uncertain' END,
+		        delivered_at = CASE WHEN delivered_at = 0 THEN claimed_at ELSE delivered_at END
+		  WHERE delivery_outcome = '' AND (delivered_at != 0 OR claimed_at != 0)`,
+		`UPDATE sessions
+		    SET pending_attempt_token = 'legacy-' || id,
+		        pending_delivery_outcome = 'uncertain'
+		  WHERE pending_claimed != 0 AND pending_attempt_token = ''`,
+		`CREATE TRIGGER IF NOT EXISTS session_inbox_delivery_claim_fence
+		 BEFORE UPDATE OF claimed_at ON session_inbox
+		 WHEN OLD.claimed_at = 0 AND NEW.claimed_at != 0
+		  AND (NEW.attempt_token = '' OR NEW.delivery_outcome != 'in_flight')
+		 BEGIN SELECT RAISE(ABORT, 'delivery claim requires an attempt token'); END`,
+		`CREATE TRIGGER IF NOT EXISTS session_inbox_delivery_receipt_fence
+		 BEFORE UPDATE OF delivered_at, dropped_at ON session_inbox
+		 WHEN OLD.delivered_at = 0 AND NEW.delivered_at != 0
+		  AND (NEW.receipt_token = '' OR NEW.receipt_token != OLD.attempt_token
+		       OR NEW.delivery_outcome NOT IN ('confirmed', 'refused', 'uncertain'))
+		 BEGIN SELECT RAISE(ABORT, 'delivery receipt requires the admitted attempt token'); END`,
+		`CREATE TRIGGER IF NOT EXISTS session_pending_delivery_claim_fence
+		 BEFORE UPDATE OF pending_claimed ON sessions
+		 WHEN OLD.pending_claimed = 0 AND NEW.pending_claimed != 0
+		  AND (NEW.pending_attempt_token = '' OR NEW.pending_delivery_outcome != 'in_flight')
+		 BEGIN SELECT RAISE(ABORT, 'pending delivery claim requires an attempt token'); END`,
+		`CREATE TRIGGER IF NOT EXISTS session_pending_delivery_receipt_fence
+		 BEFORE UPDATE OF pending_claimed ON sessions
+		 WHEN OLD.pending_claimed != 0 AND NEW.pending_claimed = 0
+		  AND (NEW.pending_receipt_token = '' OR NEW.pending_receipt_token != OLD.pending_attempt_token
+		       OR NEW.pending_delivery_outcome NOT IN ('confirmed', 'refused', 'uncertain'))
+		 BEGIN SELECT RAISE(ABORT, 'pending delivery receipt requires the admitted attempt token'); END`,
 	}
 	for _, migration := range migrations {
 		if _, err := s.db.Exec(migration); err != nil {
@@ -498,7 +556,7 @@ func (s *Store) AddGroup(name, path, worktree string) error {
 }
 
 func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
-	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, relaunch_snapshot, pending_inputs, pending_claimed, parent_id, launch_prompt, last_prompt, tmux_socket
+	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, relaunch_snapshot, pending_inputs, pending_claimed, pending_delivery_outcome, pending_claimed_at, parent_id, launch_prompt, last_prompt, tmux_socket
 	          FROM sessions`
 	if !includeArchived {
 		query += ` WHERE archived = 0`
@@ -514,12 +572,14 @@ func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
 	for rows.Next() {
 		var sess Session
 		var archived, acked, pendingClaimed int
-		var created, lastStatus, agentLaunched int64
+		var created, lastStatus, agentLaunched, pendingClaimedAt int64
 		var pendingInputs, relaunchSnapshot string
 		if err := rows.Scan(&sess.ID, &sess.Name, &sess.Tool, &sess.Cwd,
 			&sess.Group, &sess.Status, &archived, &acked, &created, &lastStatus,
 			&sess.AgentSessionID, &sess.WorktreeRepo, &sess.WorktreeBranch,
-			&agentLaunched, &sess.RetiredAgentSessionID, &relaunchSnapshot, &pendingInputs, &pendingClaimed, &sess.ParentID, &sess.LaunchPrompt, &sess.LastPrompt, &sess.TmuxSocket); err != nil {
+			&agentLaunched, &sess.RetiredAgentSessionID, &relaunchSnapshot, &pendingInputs, &pendingClaimed,
+			&sess.PendingInputOutcome, &pendingClaimedAt,
+			&sess.ParentID, &sess.LaunchPrompt, &sess.LastPrompt, &sess.TmuxSocket); err != nil {
 			return nil, err
 		}
 		if err := decodeRelaunchSnapshot(relaunchSnapshot, &sess); err != nil {
@@ -531,6 +591,7 @@ func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
 		sess.Archived = archived != 0
 		sess.Acked = acked != 0
 		sess.PendingInputClaimed = pendingClaimed != 0
+		sess.PendingInputClaimedAt = decodeTime(pendingClaimedAt)
 		sess.CreatedAt = decodeTime(created)
 		sess.LastStatusAt = decodeTime(lastStatus)
 		sess.AgentLaunchedAt = decodeTime(agentLaunched)
@@ -542,14 +603,16 @@ func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
 func (s *Store) Get(id string) (Session, error) {
 	var sess Session
 	var archived, acked, pendingClaimed int
-	var created, lastStatus, agentLaunched int64
+	var created, lastStatus, agentLaunched, pendingClaimedAt int64
 	var pendingInputs, relaunchSnapshot string
 	err := s.db.QueryRow(
-		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, relaunch_snapshot, pending_inputs, pending_claimed, parent_id, launch_prompt, last_prompt, tmux_socket
+		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, relaunch_snapshot, pending_inputs, pending_claimed, pending_delivery_outcome, pending_claimed_at, parent_id, launch_prompt, last_prompt, tmux_socket
 		 FROM sessions WHERE id = ?`, id,
 	).Scan(&sess.ID, &sess.Name, &sess.Tool, &sess.Cwd, &sess.Group,
 		&sess.Status, &archived, &acked, &created, &lastStatus, &sess.AgentSessionID,
-		&sess.WorktreeRepo, &sess.WorktreeBranch, &agentLaunched, &sess.RetiredAgentSessionID, &relaunchSnapshot, &pendingInputs, &pendingClaimed, &sess.ParentID, &sess.LaunchPrompt, &sess.LastPrompt, &sess.TmuxSocket)
+		&sess.WorktreeRepo, &sess.WorktreeBranch, &agentLaunched, &sess.RetiredAgentSessionID, &relaunchSnapshot, &pendingInputs, &pendingClaimed,
+		&sess.PendingInputOutcome, &pendingClaimedAt,
+		&sess.ParentID, &sess.LaunchPrompt, &sess.LastPrompt, &sess.TmuxSocket)
 	if err != nil {
 		return Session{}, err
 	}
@@ -562,6 +625,7 @@ func (s *Store) Get(id string) (Session, error) {
 	sess.Archived = archived != 0
 	sess.Acked = acked != 0
 	sess.PendingInputClaimed = pendingClaimed != 0
+	sess.PendingInputClaimedAt = decodeTime(pendingClaimedAt)
 	sess.CreatedAt = decodeTime(created)
 	sess.LastStatusAt = decodeTime(lastStatus)
 	sess.AgentLaunchedAt = decodeTime(agentLaunched)
@@ -586,56 +650,11 @@ func (s *Store) Children(parentID string) ([]Session, error) {
 }
 
 func (s *Store) ClaimPendingInput(id, expected string) (bool, error) {
-	encoded, inputs, claimed, err := s.pendingInputState(id)
-	if err != nil {
-		return false, err
-	}
-	if claimed || len(inputs) == 0 || inputs[0] != expected {
-		return false, nil
-	}
-	res, err := s.db.Exec(
-		`UPDATE sessions SET pending_claimed = 1
-		 WHERE id = ? AND pending_inputs = ? AND pending_claimed = 0`, id, encoded)
-	if err != nil {
-		return false, err
-	}
-	affected, err := res.RowsAffected()
-	if err != nil {
-		return false, err
-	}
-	if affected == 0 {
-		return false, s.requireRowOrNoop(res, id)
-	}
-	return true, nil
+	return false, ErrDeliveryGuardRequired
 }
 
 func (s *Store) ConsumeClaimedPendingInput(id, expected string) (bool, error) {
-	encoded, inputs, claimed, err := s.pendingInputState(id)
-	if err != nil {
-		return false, err
-	}
-	if !claimed || len(inputs) == 0 || inputs[0] != expected {
-		return false, nil
-	}
-	remaining, err := encodePendingInputs(inputs[1:])
-	if err != nil {
-		return false, err
-	}
-	res, err := s.db.Exec(
-		`UPDATE sessions SET pending_inputs = ?, pending_claimed = 0
-		 WHERE id = ? AND pending_inputs = ? AND pending_claimed = 1`,
-		remaining, id, encoded)
-	if err != nil {
-		return false, err
-	}
-	affected, err := res.RowsAffected()
-	if err != nil {
-		return false, err
-	}
-	if affected == 0 {
-		return false, s.requireRowOrNoop(res, id)
-	}
-	return true, nil
+	return false, ErrDeliveryGuardRequired
 }
 
 func (s *Store) pendingInputState(id string) (string, []string, bool, error) {

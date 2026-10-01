@@ -40,11 +40,7 @@ func (m *Model) sendFocusReport(report string) {
 		return
 	}
 	command, args := guardedMouseCommand(sess.ID, report)
-	if !watch.attempt(command) {
-		if err := m.services.tmux.SendCommand(args...); err != nil {
-			m.errBar.text = err.Error()
-		}
-	}
+	m.dispatchInput(inputRequest{kind: inputMouse, session: sess, command: command, args: args})
 }
 
 func (m *Model) focusRegionCmd(sessID string, offset int) tea.Cmd {

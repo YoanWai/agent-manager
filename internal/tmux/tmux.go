@@ -1,6 +1,8 @@
 package tmux
 
 import (
+	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -206,16 +208,42 @@ func (d *Driver) args(a ...string) []string {
 }
 
 func (d *Driver) run(args ...string) (string, error) {
-	release, err := enterGate(d.socket, false)
+	ctx, cancel := context.WithTimeout(context.Background(), driverCommandTimeout)
+	defer cancel()
+	return d.runContext(ctx, args...)
+}
+
+const driverCommandTimeout = 5 * time.Second
+
+func (d *Driver) runContext(ctx context.Context, args ...string) (string, error) {
+	return d.runContextStarted(ctx, nil, args...)
+}
+
+func (d *Driver) runContextStarted(ctx context.Context, started func(), args ...string) (string, error) {
+	release, err := enterGateContext(ctx, d.socket, false)
 	if err != nil {
 		return "", err
 	}
 	defer release()
-	out, err := exec.Command(d.bin, d.args(args...)...).CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("tmux %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+	cmd := exec.CommandContext(ctx, d.bin, d.args(args...)...)
+	configureBoundedCommand(cmd)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	if err := cmd.Start(); err != nil {
+		return "", fmt.Errorf("tmux %s: %w", strings.Join(args, " "), err)
 	}
-	return string(out), nil
+	if started != nil {
+		started()
+	}
+	err = cmd.Wait()
+	if err != nil {
+		if contextErr := ctx.Err(); contextErr != nil {
+			err = contextErr
+		}
+		return "", fmt.Errorf("tmux %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(out.String()))
+	}
+	return out.String(), nil
 }
 
 // commandList joins commands into the single invocation tmux takes for a
@@ -556,7 +584,41 @@ func (d *Driver) RefreshChrome(id string) error {
 // SendText delivers text into the session's pane and presses Enter, so the
 // agent inside receives it as a user message.
 func (d *Driver) SendText(id, text string) error {
-	return d.pasteAndEnter(PaneTarget(id), text)
+	_, err := d.SendTextResult(id, text)
+	return err
+}
+
+// SendTextResult has SendText's default deadline while preserving which
+// transport phase began. Callers that own retry policy use the phase to avoid
+// resending text that may already have reached the pane.
+func (d *Driver) SendTextResult(id, text string) (SendResult, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), driverCommandTimeout)
+	defer cancel()
+	return d.SendTextContext(ctx, id, text)
+}
+
+type SendPhase uint8
+
+const (
+	SendPhaseNotStarted SendPhase = iota
+	SendPhaseLoadStarted
+	SendPhaseLoaded
+	SendPhasePasteStarted
+	SendPhasePasted
+	SendPhaseSubmitStarted
+	SendPhaseSubmitted
+)
+
+type SendResult struct {
+	Phase SendPhase
+}
+
+func (result SendResult) PasteMayHaveStarted() bool {
+	return result.Phase >= SendPhasePasteStarted
+}
+
+func (d *Driver) SendTextContext(ctx context.Context, id, text string) (SendResult, error) {
+	return d.pasteAndEnterContext(ctx, PaneTarget(id), text)
 }
 
 // SendKeys delivers exact tmux key names to a session. Keeping each key as
@@ -572,7 +634,14 @@ func (d *Driver) SendKeys(id string, keys ...string) error {
 // keystrokes would turn every newline into an Enter press and submit the
 // agent's prompt mid-paste.
 func (d *Driver) Paste(id, text string) error {
-	return d.paste(PaneTarget(id), text)
+	ctx, cancel := context.WithTimeout(context.Background(), driverCommandTimeout)
+	defer cancel()
+	return d.PasteContext(ctx, id, text)
+}
+
+func (d *Driver) PasteContext(ctx context.Context, id, text string) error {
+	_, err := d.pasteContext(ctx, PaneTarget(id), text)
+	return err
 }
 
 var pasteSeq atomic.Uint64
@@ -588,39 +657,67 @@ const (
 // writes reach one pty, and a pane too busy to read between them takes the
 // carriage return as part of the bracketed paste rather than as a submit,
 // stranding the message in the composer.
-func (d *Driver) pasteAndEnter(target, text string) error {
-	before, baseline := d.capturePlain(target)
-	if err := d.paste(target, text); err != nil {
-		return err
+func (d *Driver) pasteAndEnterContext(ctx context.Context, target, text string) (SendResult, error) {
+	before, baseline := d.capturePlainContext(ctx, target)
+	if err := ctx.Err(); err != nil {
+		return SendResult{}, err
+	}
+	result, err := d.pasteContext(ctx, target, text)
+	if err != nil {
+		return result, err
 	}
 	if baseline != nil {
 		// Without a baseline, text already on screen reads as the new paste,
 		// so the pane gets the whole window to draw it rather than a match.
-		time.Sleep(echoWait)
+		timer := time.NewTimer(echoWait)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return result, ctx.Err()
+		case <-timer.C:
+		}
 	} else {
-		d.awaitPasteEcho(target, before, text)
+		if err := d.awaitPasteEchoContext(ctx, target, before, text); err != nil {
+			return result, err
+		}
 	}
-	_, err := d.run("send-keys", "-t", target, "Enter")
-	return err
+	_, err = d.runContextStarted(ctx, func() { result.Phase = SendPhaseSubmitStarted }, "send-keys", "-t", target, "Enter")
+	if err != nil {
+		return result, err
+	}
+	result.Phase = SendPhaseSubmitted
+	return result, nil
 }
 
 // A pane that draws the paste some other way, as a collapsed placeholder or
 // not at all, is released at the cap and submits the way it did before.
-func (d *Driver) awaitPasteEcho(target, before, text string) {
+func (d *Driver) awaitPasteEchoContext(ctx context.Context, target, before, text string) error {
 	opening := MessageOpening(text)
 	if opening == "" {
-		return
+		return nil
 	}
 	was := strings.Count(before, opening)
 	deadline := time.Now().Add(echoWait)
 	for {
-		if pane, err := d.capturePlain(target); err == nil && strings.Count(pane, opening) > was {
-			return
+		if pane, err := d.capturePlainContext(ctx, target); err == nil && strings.Count(pane, opening) > was {
+			return nil
+		} else if ctx.Err() != nil {
+			return ctx.Err()
 		}
 		if time.Now().After(deadline) {
-			return
+			return nil
 		}
-		time.Sleep(echoPoll)
+		timer := time.NewTimer(echoPoll)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return ctx.Err()
+		case <-timer.C:
+		}
 	}
 }
 
@@ -645,41 +742,52 @@ func MessageOpening(text string) string {
 
 // paste loads text into a tmux buffer and pastes it into the pane.
 // tmux send-keys silently stops around 1024 bytes; load-buffer does not.
-func (d *Driver) paste(target, text string) error {
+func (d *Driver) pasteContext(ctx context.Context, target, text string) (SendResult, error) {
+	result := SendResult{}
 	file, err := os.CreateTemp("", "am-paste-*")
 	if err != nil {
-		return fmt.Errorf("paste temp file: %w", err)
+		return result, fmt.Errorf("paste temp file: %w", err)
 	}
 	path := file.Name()
 	defer os.Remove(path)
 	if _, err := file.WriteString(text); err != nil {
 		file.Close()
-		return fmt.Errorf("paste temp write: %w", err)
+		return result, fmt.Errorf("paste temp write: %w", err)
 	}
 	if err := file.Close(); err != nil {
-		return fmt.Errorf("paste temp close: %w", err)
+		return result, fmt.Errorf("paste temp close: %w", err)
 	}
 	// tmux buffers are server-wide, and every agent's MCP process pastes too.
 	buf := fmt.Sprintf("am_paste_%d_%d", os.Getpid(), pasteSeq.Add(1))
-	if _, err := d.run("load-buffer", "-b", buf, path); err != nil {
-		return err
+	if _, err := d.runContextStarted(ctx, func() { result.Phase = SendPhaseLoadStarted }, "load-buffer", "-b", buf, path); err != nil {
+		return result, err
 	}
+	result.Phase = SendPhaseLoaded
 	// Preserve bracketed-paste boundaries when the pane application requests
 	// them. Codex uses paste-burst detection without these markers and can
 	// consume the immediately following Enter as part of the paste, leaving
 	// the prompt in its composer instead of submitting it.
-	if _, err := d.run("paste-buffer", "-p", "-d", "-b", buf, "-t", target); err != nil {
-		_, _ = d.run("delete-buffer", "-b", buf)
-		return err
+	if _, err := d.runContextStarted(ctx, func() { result.Phase = SendPhasePasteStarted }, "paste-buffer", "-p", "-d", "-b", buf, "-t", target); err != nil {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+		_, _ = d.runContext(cleanupCtx, "delete-buffer", "-b", buf)
+		cancel()
+		return result, err
 	}
-	return nil
+	result.Phase = SendPhasePasted
+	return result, nil
 }
 
 // SendRaw runs one pre-assembled tmux command line. The focus path builds
 // send-keys commands from fixed tokens and hex codes, so whitespace
 // splitting is exact; nothing quoted ever rides through here.
 func (d *Driver) SendRaw(command string) error {
-	_, err := d.run(strings.Fields(command)...)
+	ctx, cancel := context.WithTimeout(context.Background(), driverCommandTimeout)
+	defer cancel()
+	return d.SendRawContext(ctx, command)
+}
+
+func (d *Driver) SendRawContext(ctx context.Context, command string) error {
+	_, err := d.runContext(ctx, strings.Fields(command)...)
 	return err
 }
 
@@ -753,8 +861,35 @@ func (d *Driver) Kill(id string) error {
 }
 
 func (d *Driver) Exists(id string) bool {
-	err := exec.Command(d.bin, d.args("has-session", "-t", sessionName(id))...).Run()
-	return err == nil
+	exists, _ := d.SessionExists(id)
+	return exists
+}
+
+// SessionExists distinguishes a confirmed missing session/server from a tmux
+// transport failure. Callers making destructive cleanup decisions must use
+// this typed result instead of treating every command error as absence.
+func (d *Driver) SessionExists(id string) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), driverCommandTimeout)
+	defer cancel()
+	return d.SessionExistsContext(ctx, id)
+}
+
+// ExistsContext checks liveness without leaving an unbounded tmux child behind
+// when its caller is shutting down.
+func (d *Driver) ExistsContext(ctx context.Context, id string) bool {
+	exists, _ := d.SessionExistsContext(ctx, id)
+	return exists
+}
+
+func (d *Driver) SessionExistsContext(ctx context.Context, id string) (bool, error) {
+	_, err := d.runContext(ctx, "has-session", "-t", sessionName(id))
+	if err == nil {
+		return true, nil
+	}
+	if noServer(err.Error()) || strings.Contains(err.Error(), "can't find session") {
+		return false, nil
+	}
+	return false, err
 }
 
 // CapturePane returns the visible pane content with ANSI escapes intact
@@ -774,6 +909,10 @@ func (d *Driver) CapturePaneHistory(id string, lines int) (string, error) {
 // free to write partway through a line, breaking a match on the text.
 func (d *Driver) capturePlain(target string) (string, error) {
 	return d.run("capture-pane", "-p", "-t", target)
+}
+
+func (d *Driver) capturePlainContext(ctx context.Context, target string) (string, error) {
+	return d.runContext(ctx, "capture-pane", "-p", "-t", target)
 }
 
 // Resize pins a detached session's window to the given dimensions so its

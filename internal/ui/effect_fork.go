@@ -200,7 +200,7 @@ func (m *Model) applyForkEffect(request forkRequest, result forkEffectResult, er
 	if result.recordedForkID != "" {
 		request.knownForkID = result.recordedForkID
 	}
-	m.reportLaunchError(err, nil)
+	m.reportLaunchError(err)
 	if m.mode == modeLaunchHint {
 		m.launchFix.effectRetry = request
 	}

@@ -347,7 +347,7 @@ func (m *Model) BeginSend() ApplyResult {
 func (m *Model) ApplySend(result SendResult) ApplyResult {
 	m.sendPending = false
 	key := result.TargetID + "\x00" + result.RepoRoot
-	if !result.Delivered {
+	if result.Outcome == SendRefused {
 		ids := make(map[string]bool, len(result.CommentIDs))
 		for _, id := range result.CommentIDs {
 			ids[id] = true
@@ -365,12 +365,28 @@ func (m *Model) ApplySend(result SendResult) ApplyResult {
 		}
 	}
 	accepted := ApplyResult{Accepted: true}
+	if result.Outcome == SendUncertain {
+		if result.TargetID == m.target.ID && result.RepoRoot == m.repoSel {
+			m.notice = ""
+		}
+		if result.Err != nil {
+			accepted.Error = result.Err.Error()
+		} else {
+			accepted.Error = "review delivery may have reached the pane; inspect it before sending anything again"
+		}
+		return accepted
+	}
 	if result.TargetID != m.target.ID || result.RepoRoot != m.repoSel {
 		return accepted
 	}
 	if result.Err != nil {
 		m.notice = ""
 		accepted.Error = result.Err.Error()
+		return accepted
+	}
+	if result.Outcome != SendConfirmed {
+		m.notice = ""
+		accepted.Error = "review prompt was not sent"
 		return accepted
 	}
 	m.notice = fmt.Sprintf("sent review round %d (%d %s) to %s", result.Round, result.Count, commentNoun(result.Count), result.TargetName)

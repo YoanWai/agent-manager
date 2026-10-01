@@ -2,6 +2,8 @@ package ui
 
 import (
 	"fmt"
+	"time"
+
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
@@ -47,7 +49,10 @@ func (m *Model) queueLifecycle(target confirmTarget, allowLive bool, emptyNotice
 
 func (s effectServices) runLifecycle(request lifecycleRequest) (effectResult, error) {
 	result := lifecycleEffectResult{}
-	target := request.target
+	target, err := s.validateLifecycleSelection(request.target)
+	if err != nil {
+		return result, err
+	}
 	ids := make([]string, 0, len(target.sessions))
 	for _, sess := range target.sessions {
 		ids = append(ids, sess.ID)
@@ -152,6 +157,61 @@ func (s effectServices) runLifecycle(request lifecycleRequest) (effectResult, er
 	return result, operationErr
 }
 
+func (s effectServices) validateLifecycleSelection(target confirmTarget) (confirmTarget, error) {
+	selection := target.selection
+	if selection.kind == lifecycleSelectionNone {
+		return target, nil
+	}
+	var (
+		current []store.Session
+		err     error
+	)
+	switch selection.kind {
+	case lifecycleSelectionSession:
+		root, getErr := s.store.Get(selection.rootID)
+		if getErr != nil {
+			return target, getErr
+		}
+		children, childrenErr := s.store.Children(selection.rootID)
+		if childrenErr != nil {
+			return target, childrenErr
+		}
+		current = append([]store.Session{root}, children...)
+	case lifecycleSelectionGroup:
+		current, err = s.store.SessionsInSubtree(target.path)
+		if err != nil {
+			return target, err
+		}
+	default:
+		return target, fmt.Errorf("unknown lifecycle selection kind %d", selection.kind)
+	}
+	if selection.archivedOnly {
+		current = archivedSessions(current)
+	}
+	if !sameSessionIDs(current, target.sessions) {
+		return target, fmt.Errorf("sessions changed since confirmation; review the selection and try again")
+	}
+	target.sessions = current
+	return target, nil
+}
+
+func sameSessionIDs(left, right []store.Session) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	ids := make(map[string]bool, len(left))
+	for _, sess := range left {
+		ids[sess.ID] = true
+	}
+	for _, sess := range right {
+		if !ids[sess.ID] {
+			return false
+		}
+		delete(ids, sess.ID)
+	}
+	return len(ids) == 0
+}
+
 func (m *Model) applyLifecycleEffect(request lifecycleRequest, result lifecycleEffectResult, err error) tea.Cmd {
 	target := request.target
 	for _, sess := range append(result.changed, result.archive.Sessions...) {
@@ -159,6 +219,12 @@ func (m *Model) applyLifecycleEffect(request lifecycleRequest, result lifecycleE
 			if m.workspace.sessions[i].ID == sess.ID {
 				m.workspace.sessions[i].Status = sess.Status
 			}
+		}
+	}
+	if target.action == actionKill {
+		for _, sess := range result.changed {
+			m.forgetLaunch(sess.ID)
+			delete(m.workspace.panes, sess.ID)
 		}
 	}
 	group := ""
@@ -195,6 +261,10 @@ func (m *Model) applyLifecycleEffect(request lifecycleRequest, result lifecycleE
 	}
 	for _, each := range result.launches {
 		m.markFreshPane(each.id)
+		if m.ledger.launched == nil {
+			m.ledger.launched = map[string]time.Time{}
+		}
+		m.ledger.launched[each.id] = time.Now()
 		if target.action == actionRestart {
 			m.bindRestartLocally(each.id, each.result.Conversation, each.result.LaunchedAt)
 		} else {
@@ -245,7 +315,7 @@ func (m *Model) applyLifecycleEffect(request lifecycleRequest, result lifecycleE
 			}
 			// An async completion must not steal a newly opened modal or its attachments.
 			if m.mode == modeList {
-				m.reportLaunchError(err, nil)
+				m.reportLaunchError(err)
 				if m.mode == modeLaunchHint {
 					m.launchFix.effectRetry = retry
 				}

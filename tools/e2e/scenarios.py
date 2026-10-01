@@ -6,6 +6,7 @@ private tmux socket pair, and asserts each transition on observable frames.
 Keep the smoke separate; this suite is the medium-budget scenario gate.
 """
 import argparse
+import contextlib
 import json
 import re
 import shlex
@@ -197,6 +198,19 @@ def scenario(sandbox, binary):
         conn.execute('UPDATE sessions SET agent_session_id=? WHERE name=?', (str(uuid.uuid4()), name))
     pane = agent_pane(sandbox, 'sleep')
     sandbox.wait('spawn-ready', lambda: pane_text(sandbox, pane), lambda text: READY_MARKER in text)
+    select_row(sandbox, name, 'quick-send')
+    key(sandbox, 'Space')
+    sandbox.tmux('send-keys', '-l', '-t', 'scen:0.0', 'scen-quick-input')
+    frame(sandbox, 'quick-prompt-typed', 'scen-quick-input')
+    key(sandbox, 'Enter')
+    def quick_prompt():
+        with contextlib.closing(sqlite3.connect(profile_dir(sandbox) / 'state.db')) as conn:
+            row = conn.execute('SELECT last_prompt FROM sessions WHERE name=?', (name,)).fetchone()
+        return row[0] if row else ''
+    sandbox.wait('quick-prompt-recorded', quick_prompt, lambda value: value == 'scen-quick-input')
+    sandbox.wait('quick-prompt-reached-pane', lambda: pane_text(sandbox, pane),
+                 lambda text: 'scen-quick-input' in text)
+    key(sandbox, 'Escape')
     key(sandbox, 'T')
     frame(sandbox, 'terminal-tab', 'terminal-')
     key(sandbox, 'g')

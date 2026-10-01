@@ -7,9 +7,11 @@ import (
 )
 
 type attachRequest struct {
-	id         string
-	reattach   bool
-	generation int
+	id            string
+	reattach      bool
+	generation    int
+	foregroundGen uint64
+	mode          mode
 }
 
 func (attachRequest) effectRequest() {}
@@ -23,7 +25,12 @@ func (attachEffectResult) effectResult() {}
 func (s effectServices) runAttach(request attachRequest) (effectResult, error) {
 	result := attachEffectResult{}
 	err := s.reflow([]string{request.id}, func() {
-		if !s.driver.Exists(request.id) {
+		exists, probeErr := s.driver.SessionExists(request.id)
+		if probeErr != nil {
+			result.fatal = probeErr
+			return
+		}
+		if !exists {
 			result.fatal = errors.New(deadSessionHint)
 			return
 		}
@@ -53,7 +60,7 @@ func (m *Model) applyAttachEffect(request attachRequest, result attachEffectResu
 	if request.reattach && (request.generation != m.review.Generation() || m.review.Active()) {
 		return nil
 	}
-	if m.effects.quitting {
+	if m.effects.quitting || request.foregroundGen != m.foregroundGen || request.mode != m.mode {
 		return nil
 	}
 	if result.warning != nil {

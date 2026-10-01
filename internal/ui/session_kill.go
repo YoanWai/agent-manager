@@ -15,11 +15,7 @@ func (m *Model) killSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if entry.isGroup {
-		live, err := m.liveSessions(m.sessionsInGroup(entry.group))
-		if err != nil {
-			m.errBar.text = err.Error()
-			return m, nil
-		}
+		live := m.liveSessions(m.sessionsInGroup(entry.group))
 		if len(live) == 0 {
 			m.errBar.text = "no live sessions to kill in " + entry.group
 			return m, nil
@@ -33,14 +29,10 @@ func (m *Model) killSelected() (tea.Model, tea.Cmd) {
 				entry.group, len(live)),
 		}
 	} else {
-		sessions, err := m.sessionAndChildren(entry.sess)
-		if err != nil {
-			m.errBar.text = err.Error()
-			return m, nil
-		}
+		sessions := m.sessionAndChildren(entry.sess)
 		live := false
 		for _, sess := range sessions {
-			if m.services.tmux.Exists(sess.ID) {
+			if m.sessionWindowProjectedLive(sess.ID) {
 				live = true
 				break
 			}
@@ -55,6 +47,7 @@ func (m *Model) killSelected() (tea.Model, tea.Cmd) {
 			label: followConfirmLabel("kill", entry.sess.Name, len(sessions)-1,
 				"frees its RAM, v revives it.",
 				"frees their RAM, v revives them."),
+			selection: lifecycleSelection{kind: lifecycleSelectionSession, rootID: entry.sess.ID},
 		}
 	}
 	m.mode = modeConfirmDelete
@@ -64,11 +57,7 @@ func (m *Model) killSelected() (tea.Model, tea.Cmd) {
 // killAllLive asks to end every live session in the current view, the
 // batch counterpart to V.
 func (m *Model) killAllLive() (tea.Model, tea.Cmd) {
-	live, err := m.liveSessions(m.listedSessions())
-	if err != nil {
-		m.errBar.text = err.Error()
-		return m, nil
-	}
+	live := m.liveSessions(m.listedSessions())
 	if len(live) == 0 {
 		m.errBar.text = "no live sessions to kill"
 		return m, nil
@@ -82,21 +71,27 @@ func (m *Model) killAllLive() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// liveSessions narrows a list to the sessions that still hold a tmux
-// window. One pane listing answers for all of them, so a wide selection
-// costs one tmux call rather than one per session.
-func (m *Model) liveSessions(sessions []store.Session) ([]store.Session, error) {
-	panes, err := m.services.tmux.Panes()
-	if err != nil {
-		return nil, err
-	}
+// liveSessions narrows a list using the pane projection from the last poll.
+// The lifecycle worker checks the live driver again before mutating it.
+func (m *Model) liveSessions(sessions []store.Session) []store.Session {
 	var live []store.Session
 	for _, sess := range sessions {
-		if panes[sess.ID].PID > 0 {
+		if m.sessionWindowProjectedLive(sess.ID) {
 			live = append(live, sess)
 		}
 	}
-	return live, nil
+	return live
+}
+
+// sessionWindowProjectedLive combines the last poll with launches accepted
+// since that poll. The lifecycle worker checks tmux again before it mutates;
+// this projection only decides which confirmation the UI presents.
+func (m *Model) sessionWindowProjectedLive(id string) bool {
+	if m.workspace.panes[id].PID > 0 {
+		return true
+	}
+	_, launched := m.ledger.launched[id]
+	return launched
 }
 
 // unwatch stops the focus watcher before a session is killed on purpose:

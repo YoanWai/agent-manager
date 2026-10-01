@@ -16,6 +16,11 @@ type splitState struct {
 	resizeMode  bool
 	dragging    bool
 	moved       bool
+	// saveID is the newest accepted persistence job. saveError remembers only
+	// this adapter's visible failure so a later successful save can clear it
+	// without erasing another feature's status.
+	saveID    uint64
+	saveError string
 }
 
 const (
@@ -47,15 +52,30 @@ func loadSplitRatio(st settingReader) float64 {
 	return ratio
 }
 
-// persistSplitRatio writes the current ratio so the next launch reopens
-// at the same split.
+// persistSplitRatio captures the current ratio for the ordered effect lane so
+// the next launch reopens at the same split without holding Update on SQLite.
 func (m *Model) persistSplitRatio() {
 	if m.services.store == nil {
 		return
 	}
-	if err := m.services.store.SetSetting(splitRatioSetting, strconv.FormatFloat(m.split.ratio, 'f', 4, 64)); err != nil {
-		m.errBar.text = err.Error()
+	previousID := m.effects.nextID
+	m.enqueueEffect(splitSaveRequest{value: strconv.FormatFloat(m.split.ratio, 'f', 4, 64)}, 0, false)
+	if m.effects.nextID != previousID {
+		m.split.saveID = m.effects.nextID
 	}
+}
+
+// prepareSplitForQuit accepts the live preview as the user's final ratio.
+// It runs only after requestQuit has passed the installer refusal gates, so a
+// refused quit leaves the active resize interaction untouched.
+func (m *Model) prepareSplitForQuit() {
+	if !m.split.resizeMode && !m.split.dragging {
+		return
+	}
+	m.persistSplitRatio()
+	m.split.resizeMode = false
+	m.split.dragging = false
+	m.split.moved = false
 }
 
 // clampSplitLeft keeps both panels above minSplitSide when the terminal

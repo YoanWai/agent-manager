@@ -165,10 +165,10 @@ func (m *Model) applyDetachEffect(request detachRequest, result detachEffectResu
 		}
 		return cmd
 	case tmux.RequestEditor:
-		_, cmd := m.openEditor()
-		if cmd != nil {
-			m.editorReturnID = sess.ID
-		}
+		_, cmd := m.openEditorWithReaderForReturn(systemTerminalDirectoryReader{
+			tmux: m.services.tmux,
+			dirs: systemDirectoryPreflight{git: m.services.gitDrv},
+		}, sess.ID)
 		return cmd
 	}
 	m.requestRefresh()

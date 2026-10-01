@@ -58,6 +58,78 @@ func quickOffsetOf(t *testing.T, m *Model, needle string) int {
 	return utf8.RuneCountInString(m.quick.input.Value()[:idx])
 }
 
+func applyQuickKeyCmd(t *testing.T, m *Model, msg tea.KeyMsg) {
+	t.Helper()
+	_, cmd := m.handleQuickKey(msg)
+	if cmd != nil {
+		m.applyTestMsg(t, cmd())
+	}
+}
+
+func TestOpenQuickModeDefersSettingsReadAndGuardsDefaults(t *testing.T) {
+	t.Run("pristine", func(t *testing.T) {
+		m := buildModel(t)
+		reader := &blockedSettingReader{
+			started: make(chan struct{}),
+			release: make(chan struct{}),
+			values: map[string]string{
+				"default_tool":    "ready-tool",
+				quickCloseSetting: "close",
+				worktreeSetting:   "on",
+			},
+		}
+		cmd := m.openQuickModeWithReader(reader)
+		select {
+		case <-reader.started:
+			t.Fatal("opening quick mode read settings before its Bubble Tea command")
+		default:
+		}
+		completed := make(chan tea.Msg, 1)
+		go func() { completed <- cmd() }()
+		<-reader.started
+		close(reader.release)
+		m.applyTestMsg(t, <-completed)
+		if got := m.quickTool(); got != "ready-tool" {
+			t.Fatalf("refreshed quick tool = %q, want ready-tool", got)
+		}
+		if !m.quick.closeAfterSend || !m.quick.worktree {
+			t.Fatalf("quick defaults were not refreshed: close=%t worktree=%t", m.quick.closeAfterSend, m.quick.worktree)
+		}
+	})
+
+	t.Run("local choice", func(t *testing.T) {
+		m := buildModel(t)
+		cmd := m.openQuickMode()
+		m.handleQuickKey(tea.KeyMsg{Type: tea.KeyTab})
+		chosen := m.quickTool()
+		if err := m.services.store.SetSetting("default_tool", "ready-tool"); err != nil {
+			t.Fatal(err)
+		}
+		m.applyTestMsg(t, cmd())
+		if got := m.quickTool(); got != chosen {
+			t.Fatalf("async defaults replaced local quick tool: got %q want %q", got, chosen)
+		}
+	})
+
+	t.Run("reopened", func(t *testing.T) {
+		m := buildModel(t)
+		cmd := m.openQuickMode()
+		generation := m.quick.gen
+		if err := m.services.store.SetSetting("default_tool", "ready-tool"); err != nil {
+			t.Fatal(err)
+		}
+		loaded := cmd()
+		m.openQuickMode()
+		if m.quick.gen == generation {
+			t.Fatal("reopened quick mode reused its generation")
+		}
+		m.applyTestMsg(t, loaded)
+		if got := m.quickTool(); got == "ready-tool" {
+			t.Fatal("old defaults replaced reopened quick mode")
+		}
+	})
+}
+
 func TestQuickPromptDeadSessionSetsError(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "gone", t.TempDir(), "")
@@ -70,7 +142,9 @@ func TestQuickPromptDeadSessionSetsError(t *testing.T) {
 
 	m.openQuickMode()
 	m.quick.input.SetValue("hello?")
-	if _, _ = m.submitQuick(); m.errBar.text != "session is dead - press v to revive or R to restart" {
+	_, cmd := m.submitQuick()
+	m.applyTestMsg(t, cmd())
+	if m.errBar.text != "session is dead - press v to revive or R to restart" {
 		t.Fatalf("err = %q", m.errBar.text)
 	}
 	if !m.quick.active {
@@ -96,7 +170,9 @@ func TestQuickPromptSendClearsAcked(t *testing.T) {
 		t.Fatalf("quick mode should activate, err = %q", m.errBar.text)
 	}
 	m.quick.input.SetValue("carry on with the plan")
-	if _, _ = m.submitQuick(); m.errBar.text != "" {
+	_, cmd := m.submitQuick()
+	m.applyTestMsg(t, cmd())
+	if m.errBar.text != "" {
 		t.Fatalf("send: %q", m.errBar.text)
 	}
 	if !m.quick.active {
@@ -601,7 +677,7 @@ func TestQuickRemembersLastSpawnWorktree(t *testing.T) {
 	initGitRepo(t, repo)
 	m := quickGroupModel(t, repo)
 	m.openQuickMode()
-	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlT})
+	applyQuickKeyCmd(t, m, tea.KeyMsg{Type: tea.KeyCtrlT})
 	if !m.quickWorktreeOn() {
 		t.Fatal("ctrl+t should turn worktree on")
 	}
@@ -614,6 +690,7 @@ func TestQuickRemembersLastSpawnWorktree(t *testing.T) {
 	closeQuick(m)
 
 	m.openQuickMode()
+	m.applyTestMsg(t, m.quickWorktreeProbeCmd(false)())
 	if !m.quickWorktreeOn() {
 		t.Fatal("next quick bar should seed worktree from the last spawn")
 	}
@@ -627,7 +704,7 @@ func TestQuickHiddenLastToolFallsBackToSettings(t *testing.T) {
 	initGitRepo(t, repo)
 	m := quickGroupModel(t, repo)
 	m.openQuickMode()
-	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlT})
+	applyQuickKeyCmd(t, m, tea.KeyMsg{Type: tea.KeyCtrlT})
 	if !m.quickWorktreeOn() {
 		t.Fatal("ctrl+t should turn worktree on")
 	}
@@ -643,7 +720,8 @@ func TestQuickHiddenLastToolFallsBackToSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m.openQuickMode()
+	m.applyTestMsg(t, m.openQuickMode()())
+	m.applyTestMsg(t, m.quickWorktreeProbeCmd(false)())
 	if m.quickWorktreeOn() {
 		t.Fatal("hidden last tool should fall back to the settings worktree default")
 	}
@@ -668,7 +746,7 @@ func TestQuickRemembersPickOnlyAfterInstallRetrySucceeds(t *testing.T) {
 			m.quick.toolIndex = i
 		}
 	}
-	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlT})
+	applyQuickKeyCmd(t, m, tea.KeyMsg{Type: tea.KeyCtrlT})
 	m.quick.input.SetValue("do a thing")
 	_, cmd := m.submitQuick()
 	m.applyCmd(t, cmd)
@@ -688,6 +766,7 @@ func TestQuickRemembersPickOnlyAfterInstallRetrySucceeds(t *testing.T) {
 	}
 	m.selectGroupRow(t, "grp")
 	m.openQuickMode()
+	m.applyTestMsg(t, m.quickWorktreeProbeCmd(false)())
 	if m.quickTool() != "claude" || !m.quickWorktreeOn() {
 		t.Fatal("next quick bar should use the successful retry's tool and worktree")
 	}
@@ -726,14 +805,15 @@ func TestQuickSeedsFromLastFormSpawn(t *testing.T) {
 
 func TestQuickCloseAfterSendDefaultsToStayingOpen(t *testing.T) {
 	m := buildModel(t)
-	if m.quickCloseAfterSend() {
+	if m.settingsCache.value(quickCloseSetting) == "close" {
 		t.Fatal("quick bar should stay open by default")
 	}
 	if err := m.services.store.SetSetting(quickCloseSetting, "close"); err != nil {
 		t.Fatal(err)
 	}
-	if !m.quickCloseAfterSend() {
-		t.Fatal("stored close choice should opt in")
+	m.applyTestMsg(t, m.openQuickMode()())
+	if !m.quick.closeAfterSend {
+		t.Fatal("refreshed close choice should opt in")
 	}
 }
 
@@ -745,9 +825,11 @@ func TestQuickPromptClosesAfterSendWhenEnabled(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m.openQuickMode()
+	m.applyTestMsg(t, m.openQuickMode()())
 	m.quick.input.SetValue("carry on with the plan")
-	if _, _ = m.submitQuick(); m.errBar.text != "" {
+	_, cmd := m.submitQuick()
+	m.applyTestMsg(t, cmd())
+	if m.errBar.text != "" {
 		t.Fatalf("send: %q", m.errBar.text)
 	}
 	if m.quick.active {
@@ -761,11 +843,11 @@ func TestQuickWorktreeToggle(t *testing.T) {
 	if m.quick.worktree {
 		t.Fatal("worktree should default off")
 	}
-	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlT})
+	applyQuickKeyCmd(t, m, tea.KeyMsg{Type: tea.KeyCtrlT})
 	if !m.quick.worktree {
 		t.Fatal("ctrl+t should toggle worktree on")
 	}
-	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}, Alt: true})
+	applyQuickKeyCmd(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}, Alt: true})
 	if m.quick.worktree {
 		t.Fatal("alt+w should toggle worktree back off")
 	}
@@ -776,7 +858,7 @@ func TestQuickWorktreeSeedsFromSetting(t *testing.T) {
 	if err := m.services.store.SetSetting(worktreeSetting, "on"); err != nil {
 		t.Fatalf("set setting: %v", err)
 	}
-	m.openQuickMode()
+	m.applyTestMsg(t, m.openQuickMode()())
 	if !m.quick.worktree {
 		t.Fatal("quick bar should seed worktree on from setting")
 	}
@@ -806,7 +888,7 @@ func TestQuickWorktreeGatedInNonRepoGroup(t *testing.T) {
 	if m.quickWorktreeOn() {
 		t.Fatal("a non-repo group dir cannot host a worktree, even with the group default on")
 	}
-	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlT})
+	applyQuickKeyCmd(t, m, tea.KeyMsg{Type: tea.KeyCtrlT})
 	if m.quickWorktreeOn() {
 		t.Fatal("ctrl+t must not turn worktree on for a non-repo dir")
 	}
@@ -850,6 +932,7 @@ func TestQuickSpawnUsesGroupWorktreeDefault(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "grp")
 	m.openQuickMode()
+	m.applyTestMsg(t, m.quickWorktreeProbeCmd(false)())
 	if !m.quickWorktreeOn() {
 		t.Fatal("quick bar should show the group's worktree default on")
 	}
@@ -881,12 +964,13 @@ func TestQuickWorktreeToggleOverridesGroupDefault(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "grp")
 	m.openQuickMode()
-	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlT})
+	applyQuickKeyCmd(t, m, tea.KeyMsg{Type: tea.KeyCtrlT})
 	if m.quickWorktreeOn() {
 		t.Fatal("ctrl+t should override the group default off")
 	}
 	m.quick.input.SetValue("do a thing")
-	m.submitQuick()
+	_, cmd := m.submitQuick()
+	m.applyTestMsg(t, cmd())
 	if m.errBar.text != "" {
 		t.Fatalf("plain spawn should succeed: %q", m.errBar.text)
 	}
@@ -903,7 +987,9 @@ func TestQuickPromptRefusesAShell(t *testing.T) {
 
 	m.openQuickMode()
 	m.quick.input.SetValue("summarise what you just did")
-	if _, _ = m.submitQuick(); m.errBar.text != shellPromptHint(sess.Name) {
+	_, cmd := m.submitQuick()
+	m.applyTestMsg(t, cmd())
+	if m.errBar.text != shellPromptHint(sess.Name) {
 		t.Fatalf("err = %q, want the shell refusal", m.errBar.text)
 	}
 	if m.quick.input.Value() == "" {
@@ -922,7 +1008,8 @@ func TestQuickPromptNeverRunsWhatIsTypedAtAShell(t *testing.T) {
 	marker := filepath.Join(t.TempDir(), "executed")
 	m.openQuickMode()
 	m.quick.input.SetValue("touch " + marker)
-	m.submitQuick()
+	_, cmd := m.submitQuick()
+	m.applyTestMsg(t, cmd())
 
 	// A shell that took the line would have created the file well inside
 	// this window; a guard that holds leaves nothing to wait for.
@@ -940,7 +1027,9 @@ func TestQuickSendRecordsLastPrompt(t *testing.T) {
 	m.selectSessionRow(t, "answer-me")
 	m.openQuickMode()
 	m.quick.input.SetValue("carry on with the plan")
-	if _, _ = m.submitQuick(); m.errBar.text != "" {
+	_, cmd := m.submitQuick()
+	m.applyTestMsg(t, cmd())
+	if m.errBar.text != "" {
 		t.Fatalf("send: %q", m.errBar.text)
 	}
 	got, err := m.services.store.Get(m.sessionRows()[0].ID)

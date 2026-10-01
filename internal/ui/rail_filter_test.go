@@ -3,6 +3,7 @@ package ui
 import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"slices"
@@ -274,6 +275,9 @@ func TestBulkActionsRespectStatusFilter(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// Confirmation reads the last poll's pane projection; the worker will
+	// revalidate the real windows before acting.
+	m.workspace.panes = map[string]tmux.Pane{"w": {PID: 1}, "busy": {PID: 2}}
 	m.rail.SetFilteringAttention(true)
 	m.rebuildRows()
 

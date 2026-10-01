@@ -46,6 +46,39 @@ func TestFocusWatchPushesPaneUpdates(t *testing.T) {
 	waitFocusPreview(t, msgs, id, "focus-watch-ping")
 }
 
+// A serving control client owns an admitted command even when tmux rejects it:
+// the caller may use a fallback only while no client is available.
+func TestFocusWatchForwardDistinguishesUnavailableFromAdmitted(t *testing.T) {
+	driver := requireFocusDriver(t)
+	watch := newFocusWatch(driver, func(tea.Msg) {})
+	t.Cleanup(watch.Close)
+	if available, err := watch.forward("display-message -p"); available || err != nil {
+		t.Fatalf("unserved forward = available %v, err %v", available, err)
+	}
+
+	id := "forward" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", "", nil, 80, 24); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+	watch.setFocus(id)
+	deadline := time.Now().Add(5 * time.Second)
+	for !watch.serving(id) {
+		if time.Now().After(deadline) {
+			t.Fatal("control client never served the session")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	command := `display-message -p -t ` + tmux.PaneTarget(id) + ` "#{session_name}"`
+	if available, err := watch.forward(command); !available || err != nil {
+		t.Fatalf("served forward = available %v, err %v", available, err)
+	}
+	if available, err := watch.forward("not-a-real-tmux-command"); !available || err == nil {
+		t.Fatalf("rejected forward = available %v, err %v", available, err)
+	}
+}
+
 // Refocusing another session stops the old watcher and serves the new one.
 func TestFocusWatchRefocus(t *testing.T) {
 	driver := requireFocusDriver(t)
@@ -252,7 +285,9 @@ func TestFocusWatchReportsCursor(t *testing.T) {
 func TestFocusWatchHonorsHiddenCursor(t *testing.T) {
 	driver := requireFocusDriver(t)
 	id := "hidecur" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
-	command := "printf '\\033[?25lhidden-cursor'; exec sleep 10"
+	// Reset the pane first: shell startup output may leave its cursor below
+	// row zero, which made this exact-coordinate assertion host-dependent.
+	command := "printf '\\033[H\\033[2J\\033[?25lhidden-cursor'; exec sleep 10"
 	if err := driver.Create(id, "/tmp", command, nil, 80, 24); err != nil {
 		t.Fatalf("Create: %v", err)
 	}

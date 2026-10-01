@@ -252,6 +252,14 @@ type SendRequest struct {
 	Count         int
 }
 
+type SendOutcome uint8
+
+const (
+	SendRefused SendOutcome = iota
+	SendUncertain
+	SendConfirmed
+)
+
 type SendResult struct {
 	TargetID      string
 	RepoRoot      string
@@ -260,7 +268,7 @@ type SendResult struct {
 	Round         int
 	Count         int
 	TargetName    string
-	Delivered     bool
+	Outcome       SendOutcome
 	Err           error
 	AckErr        error
 }

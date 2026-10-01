@@ -110,4 +110,19 @@ type confirmTarget struct {
 	sessions     []store.Session
 	action       string
 	batch        bool
+	selection    lifecycleSelection
+}
+
+type lifecycleSelectionKind uint8
+
+const (
+	lifecycleSelectionNone lifecycleSelectionKind = iota
+	lifecycleSelectionSession
+	lifecycleSelectionGroup
+)
+
+type lifecycleSelection struct {
+	kind         lifecycleSelectionKind
+	rootID       string
+	archivedOnly bool
 }

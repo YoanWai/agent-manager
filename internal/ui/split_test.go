@@ -1,12 +1,12 @@
 package ui
 
 import (
+	"errors"
+	"testing"
+
 	"github.com/YoanWai/agent-manager/internal/keybind"
-	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"path/filepath"
-	"testing"
 )
 
 type memSettings map[string]string
@@ -120,20 +120,9 @@ func TestResizeModeKeyArmsDrag(t *testing.T) {
 }
 
 func TestArrowNudgeAndPipeCommits(t *testing.T) {
-	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
-	if err != nil {
-		t.Fatalf("store: %v", err)
-	}
-	t.Cleanup(func() { st.Close() })
-
-	m := &Model{
-
-		mode:   modeList,
-		width:  100,
-		height: 40,
-		split:  splitState{ratio: 0.34}, services: services{listKeys: keybind.DefaultList(),
-			store: st},
-	}
+	m := buildModel(t)
+	st := m.services.store
+	m.width, m.height, m.split.ratio = 100, 40, 0.34
 	updated, _ := m.enterResizeMode()
 	m = updated.(*Model)
 	before, _ := m.splitWidths()
@@ -172,20 +161,9 @@ func TestArrowNudgeAndPipeCommits(t *testing.T) {
 }
 
 func TestEnterCommitsResize(t *testing.T) {
-	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
-	if err != nil {
-		t.Fatalf("store: %v", err)
-	}
-	t.Cleanup(func() { st.Close() })
-
-	m := &Model{
-
-		mode:   modeList,
-		width:  100,
-		height: 40,
-		split:  splitState{ratio: 0.34}, services: services{listKeys: keybind.DefaultList(),
-			store: st},
-	}
+	m := buildModel(t)
+	st := m.services.store
+	m.width, m.height, m.split.ratio = 100, 40, 0.34
 	updated, _ := m.enterResizeMode()
 	m = updated.(*Model)
 	m.nudgeSplit(8)
@@ -224,38 +202,140 @@ func TestArrowCancelRestoresRatio(t *testing.T) {
 }
 
 func TestQuitFromResizePersistsRatio(t *testing.T) {
-	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
-	if err != nil {
-		t.Fatalf("store: %v", err)
-	}
-	t.Cleanup(func() { st.Close() })
-
-	m := &Model{
-
-		mode:   modeList,
-		width:  100,
-		height: 40,
-		split:  splitState{ratio: 0.34}, services: services{listKeys: keybind.DefaultList(),
-			store: st},
-	}
+	m := buildModel(t)
+	st := m.services.store
+	m.width, m.height, m.split.ratio = 100, 40, 0.34
 	updated, _ := m.enterResizeMode()
 	m = updated.(*Model)
 	m.nudgeSplit(8)
 
 	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
-	m.drainEffects(t)
 	m = updated.(*Model)
 	if m.split.resizeMode || m.split.dragging {
 		t.Fatal("quit should clear resize state")
 	}
 	if cmd == nil {
-		t.Fatal("quit should return a command")
+		t.Fatal("quit should start the accepted split save")
 	}
-	if _, ok := cmd().(tea.QuitMsg); !ok {
-		t.Fatal("quit command should produce tea.QuitMsg")
+	m.applyCmd(t, cmd)
+	if quit := m.nextEffectCmd(); quit == nil {
+		t.Fatal("quit should complete after the accepted split save")
+	} else if _, ok := quit().(tea.QuitMsg); !ok {
+		t.Fatalf("after save, quit command produced %T", quit())
 	}
 	if got := loadSplitRatio(st); got != 0.42 {
 		t.Fatalf("reloaded ratio = %v want 0.42", got)
+	}
+}
+
+func TestCtrlCFromResizePersistsRatioAfterAcceptedQuit(t *testing.T) {
+	m := buildModel(t)
+	st := m.services.store
+	m.width, m.height, m.split.ratio = 100, 40, 0.34
+	updated, _ := m.enterResizeMode()
+	m = updated.(*Model)
+	m.nudgeSplit(8)
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	m = updated.(*Model)
+	if m.split.resizeMode || m.split.dragging || m.split.moved {
+		t.Fatal("accepted ctrl+c quit left resize interaction armed")
+	}
+	if !m.effects.quitting || cmd == nil {
+		t.Fatal("accepted ctrl+c quit did not drain the captured split save")
+	}
+	m.applyCmd(t, cmd)
+	if got := loadSplitRatio(st); got != 0.42 {
+		t.Fatalf("reloaded ratio = %v want 0.42", got)
+	}
+}
+
+func TestInstallerRefusedQuitKeepsResizeInteraction(t *testing.T) {
+	m := buildModel(t)
+	m.width, m.height, m.split.ratio = 100, 40, 0.34
+	updated, _ := m.enterResizeMode()
+	m = updated.(*Model)
+	m.nudgeSplit(8)
+	m.install = &pendingInstall{name: "install-test"}
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	m = updated.(*Model)
+	if cmd != nil || m.effects.quitting {
+		t.Fatal("installer gate accepted quit")
+	}
+	if !m.split.resizeMode || m.split.ratio != 0.42 {
+		t.Fatalf("refused quit changed resize interaction: mode=%v ratio=%v", m.split.resizeMode, m.split.ratio)
+	}
+	if raw, err := m.services.store.Setting(splitRatioSetting); err != nil || raw != "" {
+		t.Fatalf("refused quit persisted ratio %q (err %v)", raw, err)
+	}
+}
+
+func TestInstallerRefusedQuitKeepsMouseDrag(t *testing.T) {
+	m := buildModel(t)
+	m.width, m.height, m.split.ratio = 100, 40, 0.42
+	m.split.dragging = true
+	m.split.moved = true
+	m.install = &pendingInstall{name: "install-test"}
+
+	updated, cmd := m.handleKey(key("q"))
+	m = updated.(*Model)
+	if cmd != nil || m.effects.quitting {
+		t.Fatal("installer gate accepted quit")
+	}
+	if !m.split.dragging || !m.split.moved || m.split.ratio != 0.42 {
+		t.Fatalf("refused quit changed mouse drag: dragging=%v moved=%v ratio=%v", m.split.dragging, m.split.moved, m.split.ratio)
+	}
+	if raw, err := m.services.store.Setting(splitRatioSetting); err != nil || raw != "" {
+		t.Fatalf("refused quit persisted ratio %q (err %v)", raw, err)
+	}
+}
+
+func TestSplitPersistenceIsDeferredAndOrdered(t *testing.T) {
+	m := buildModel(t)
+	st := m.services.store
+
+	m.split.ratio = 0.41
+	m.persistSplitRatio()
+	m.split.ratio = 0.52
+	m.persistSplitRatio()
+	if raw, err := st.Setting(splitRatioSetting); err != nil || raw != "" {
+		t.Fatalf("Update path wrote split ratio before the worker ran: %q, %v", raw, err)
+	}
+	if len(m.effects.pending) != 2 {
+		t.Fatalf("queued saves = %d, want 2", len(m.effects.pending))
+	}
+	first := m.effects.pending[0].request.(splitSaveRequest)
+	second := m.effects.pending[1].request.(splitSaveRequest)
+	if first.value != "0.4100" || second.value != "0.5200" {
+		t.Fatalf("captured order = %q then %q", first.value, second.value)
+	}
+
+	m.drainEffects(t)
+	if got := loadSplitRatio(st); got != 0.52 {
+		t.Fatalf("reloaded ratio = %v, want latest accepted 0.52", got)
+	}
+}
+
+func TestNewerSplitSaveSuccessClearsOnlySplitFailure(t *testing.T) {
+	m := &Model{split: splitState{saveID: 1}}
+	m.applySplitSave(&effectJob{id: 1}, errors.New("save split ratio: database is locked"))
+	if m.errBar.text == "" {
+		t.Fatal("latest failed save did not surface its error")
+	}
+
+	m.split.saveID = 2
+	m.applySplitSave(&effectJob{id: 2}, nil)
+	if m.errBar.text != "" || m.split.saveError != "" {
+		t.Fatalf("newer successful save left stale warning %q", m.errBar.text)
+	}
+
+	m.errBar.text = "another operation failed"
+	m.split.saveID = 4
+	m.applySplitSave(&effectJob{id: 3}, errors.New("older split failure"))
+	m.applySplitSave(&effectJob{id: 4}, nil)
+	if m.errBar.text != "another operation failed" {
+		t.Fatalf("split completion erased unrelated status %q", m.errBar.text)
 	}
 }
 

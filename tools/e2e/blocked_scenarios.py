@@ -153,9 +153,72 @@ def move_blocked(sandbox, binary):
                  lambda value: json.loads(value) == 'blocked-group')
 
 
+def settings_blocked(sandbox, binary):
+    write_fixture(sandbox)
+    start_manager(sandbox, binary)
+    seed_store(sandbox)
+    key(sandbox, 's')
+    frame(sandbox, 'settings-initial-open', 'Settings')
+    for _ in range(3):
+        key(sandbox, 'Down')
+    key(sandbox, 'Right')
+    frame(sandbox, 'settings-density-edited', 'comfortable')
+    with store_lock(sandbox):
+        key(sandbox, 'Enter')
+        frame(sandbox, 'settings-save-accepted', 'A G E N T', 'Settings')
+        key(sandbox, 's')
+        frame(sandbox, 'settings-open-while-save-blocked', 'Settings')
+        for _ in range(3):
+            key(sandbox, 'Down')
+        key(sandbox, 'Right')
+        frame(sandbox, 'settings-newer-edit-while-blocked', 'compact')
+    db = profile_dir(sandbox) / 'state.db'
+    def density():
+        with sqlite3.connect(db) as conn:
+            row = conn.execute("SELECT value FROM settings WHERE key='list_density'").fetchone()
+            return row[0] if row else ''
+    sandbox.wait('settings-accepted-save-durable', density, lambda value: value == 'comfortable')
+    frame(sandbox, 'settings-newer-dialog-retained', 'compact')
+    key(sandbox, 'Escape')
+    frame(sandbox, 'settings-dismissed', 'A G E N T', 'Settings')
+
+
+def focus_blocked(sandbox, binary):
+    write_fixture(sandbox)
+    start_manager(sandbox, binary)
+    seed_store(sandbox)
+    name = spawn_form(sandbox, 'blocked-focus')
+    pane = agent_pane(sandbox, 'sleep')
+    sandbox.wait('focus-spawn-ready', lambda: pane_text(sandbox, pane),
+                 lambda text: READY_MARKER in text)
+    select_row(sandbox, name, 'focus-select')
+    key(sandbox, 's')
+    frame(sandbox, 'focus-settings-open', 'Settings')
+    with store_lock(sandbox):
+        key(sandbox, 'Enter')
+        frame(sandbox, 'focus-save-blocked', 'A G E N T', 'Settings')
+        key(sandbox, 'Enter')
+        key(sandbox, '?')
+        frame(sandbox, 'focus-help-responsive-while-blocked', '? Keys')
+        key(sandbox, '/')
+        type_text(sandbox, 'detach')
+        frame(sandbox, 'focus-help-filter-responsive', 'detach')
+    frame(sandbox, 'focus-help-retained', '? Keys')
+    key(sandbox, 'Escape')
+    key(sandbox, 'Escape')
+    frame(sandbox, 'focus-returned-list', 'A G E N T', '? Keys')
+    select_row(sandbox, name, 'focus-reselect')
+    key(sandbox, 'Enter')
+    frame(sandbox, 'focus-reentered', READY_MARKER)
+    key(sandbox, 'C-q')
+    frame(sandbox, 'focus-detached', 'A G E N T')
+
+
 CASES = [
     ('rename', rename_blocked),
     ('move', move_blocked),
+    ('settings', settings_blocked),
+    ('focus', focus_blocked),
 ]
 
 
@@ -183,7 +246,8 @@ def main():
             case_started = time.monotonic()
             try:
                 runner(sandbox, binary)
-                key(sandbox, 'C-c')
+                frame(sandbox, 'ready-to-quit', 'A G E N T', 'Settings')
+                key(sandbox, 'q')
                 sandbox.wait('manager-exit', lambda: sandbox.tmux('display-message', '-p', '-t', 'scen:0.0', '#{pane_dead} #{pane_dead_status}').stdout.strip(), lambda value: value == '1 0')
                 results[case] = dict(status='passed',
                                      seconds=round(time.monotonic() - case_started, 2))

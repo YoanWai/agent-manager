@@ -137,11 +137,11 @@ func TestNewSessionShowsStartingImmediately(t *testing.T) {
 	// submitForm dispatches the spawn; run the effect to completion and drop
 	// the refresh it returns, so the row is read from the inserted record
 	// alone, before any poller pass flips it.
-	_, _ = m.submitForm()
+	_, cmd := m.submitForm()
 	if m.errBar.text != "" {
 		t.Fatalf("submit: %q", m.errBar.text)
 	}
-	m.stepCmd(t, m.nextEffectCmd())
+	m.stepCmd(t, cmd)
 	rows := m.sessionRows()
 	if len(rows) != 1 {
 		t.Fatalf("want 1 row, got %d", len(rows))

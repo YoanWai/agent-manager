@@ -1,9 +1,12 @@
 package ui
 
 import (
+	"errors"
+
 	"github.com/YoanWai/agent-manager/internal/deps"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -38,6 +41,10 @@ func (m *Model) closeDiff() tea.Cmd {
 	case reviewReturnAttach:
 		return m.reattach(ret.sessionID, gen)
 	case reviewReturnFocus:
+		if !m.focusSession(ret.sessionID) {
+			m.errBar.text = "the review origin is no longer listed"
+			return nil
+		}
 		_, cmd := m.focusSelected()
 		return cmd
 	default:
@@ -45,7 +52,22 @@ func (m *Model) closeDiff() tea.Cmd {
 	}
 }
 
-func (m *Model) openDiff() tea.Cmd {
+type reviewPreferencesReader interface {
+	ReviewScope(string) (string, error)
+	ReviewRepo(string) (string, error)
+}
+
+type reviewPreferencesMsg struct {
+	session   store.Session
+	request   uireview.LoadRequest
+	scope     git.Scope
+	preferred string
+	err       error
+}
+
+func (m *Model) openDiff() tea.Cmd { return m.openDiffWithReader(m.services.store) }
+
+func (m *Model) openDiffWithReader(reader reviewPreferencesReader) tea.Cmd {
 	if m.services.gitDrv == nil {
 		m.errBar.text = "git not found in PATH, " + deps.Hint("git")
 		return nil
@@ -55,32 +77,47 @@ func (m *Model) openDiff() tea.Cmd {
 		m.errBar.text = "select a session to diff"
 		return nil
 	}
-	scope := m.storedReviewScope(sess.ID)
-	preferred := ""
-	if picked, ok := m.ledger.pickedRepos[sess.ID]; ok {
-		preferred = picked
-	} else if declared, err := m.services.store.ReviewRepo(sess.ID); err != nil {
-		m.errBar.text = err.Error()
-	} else {
-		preferred = declared
-	}
+	preferred, picked := m.ledger.pickedRepos[sess.ID]
 	m.reviewReturn = reviewReturn{kind: reviewReturnList}
 	m.mode = modeDiff
 	m.errBar.text = ""
 	target := reviewTarget(sess)
 	target.Cwd = m.sessionDir(sess)
-	request := m.review.Open(target, scope, preferred)
-	return tea.Batch(m.reviewLoadCmd(request), m.startStartupTick())
+	request := m.review.Open(target, git.ScopeUncommitted, preferred)
+	return func() tea.Msg {
+		result := reviewPreferencesMsg{session: sess, request: request, scope: git.ScopeUncommitted, preferred: preferred}
+		if reader != nil {
+			scope, err := reader.ReviewScope(sess.ID)
+			result.err = err
+			if err == nil {
+				result.scope = reviewScopeValue(scope)
+			}
+			if !picked {
+				repo, err := reader.ReviewRepo(sess.ID)
+				result.preferred = repo
+				result.err = errors.Join(result.err, err)
+			}
+		}
+		return result
+	}
 }
 
-func (m *Model) storedReviewScope(sessionID string) git.Scope {
-	if m.services.store == nil {
-		return git.ScopeUncommitted
+func (m *Model) handleReviewPreferences(msg reviewPreferencesMsg) (tea.Model, tea.Cmd) {
+	if m.effects.quitting || !m.review.Active() || m.review.Generation() != msg.request.Generation || m.review.SessionID() != msg.request.Target.ID {
+		return m, nil
 	}
-	stored, err := m.services.store.ReviewScope(sessionID)
-	if err != nil {
-		return git.ScopeUncommitted
+	current, ok := m.diffSession()
+	if !ok || !current.CreatedAt.Equal(msg.session.CreatedAt) || !current.LaunchTime().Equal(msg.session.LaunchTime()) || current.TmuxSocket != msg.session.TmuxSocket {
+		return m, nil
 	}
+	request := m.review.Open(msg.request.Target, msg.scope, msg.preferred)
+	if msg.err != nil {
+		m.errBar.text = "reading review preferences: " + msg.err.Error()
+	}
+	return m, tea.Batch(m.reviewLoadCmd(request), m.startStartupTick())
+}
+
+func reviewScopeValue(stored string) git.Scope {
 	switch stored {
 	case "branch":
 		return git.ScopeBranch

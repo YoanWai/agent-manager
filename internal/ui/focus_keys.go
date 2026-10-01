@@ -264,40 +264,21 @@ func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, cmd
 	}
-	// Enter is how a drafted prompt leaves the composer, so the draft is
-	// snapshotted on its way in; alt+enter only breaks the line.
-	if result.Submit {
-		m.stashTypedPrompt(sess)
-	}
 	var resume tea.Cmd
 	if result.Region != nil {
 		resume = m.focusRegionRequestCmd(*result.Region)
 	}
 	if msg.Paste {
-		if err := pasteFocused(m.services.tmux, sess.ID, string(msg.Runes)); err != nil {
-			m.errBar.text = err.Error()
-		}
-		return m, resume
+		m.dispatchInput(inputRequest{kind: inputPaste, session: sess, text: string(msg.Runes)})
+		return m, tea.Batch(resume, m.nextEffectCmd())
 	}
 	command, ok := focusKeyCommand(tmux.PaneTarget(sess.ID), msg)
 	if !ok {
 		return m, resume
 	}
-	if m.focusRuntime.watch == nil || !m.focusRuntime.watch.attempt(command) {
-		// Nothing went over the pipe; one forked send-keys keeps the key
-		// from being swallowed.
-		if err := m.services.tmux.SendRaw(command); err != nil {
-			m.errBar.text = err.Error()
-		}
-		// Without the client the echo only shows on the poll cadence, a
-		// second or more after each key. Typing is as deliberate as
-		// focusing, so it lifts the failure backoff and reopens now.
-		if m.focusRuntime.watch != nil {
-			m.focusRuntime.watch.retryNow()
-			m.watchSelection()
-		}
-	}
-	return m, resume
+	m.dispatchInput(inputRequest{kind: inputKeys, session: sess, command: command, submit: result.Submit})
+
+	return m, tea.Batch(resume, m.nextEffectCmd())
 }
 
 // pasteFocused is the seam tests swap to observe pastes into the pane.

@@ -1,8 +1,13 @@
 # In-flight delivery and claim retirement
 
-The recovered architecture does not fence a paused transport write after another
-manager retires its claim. This blocks a pilot with multiple managers on one
-profile. Released CLI task compatibility does not remove this limitation.
+The original recovered architecture allowed a paused transport to write after
+another manager retired its claim. The follow-up implements a profile delivery
+guard that spans durable admission, bounded transport and receipt. A competing
+owner cannot retire the claim while the guard remains held. See the current
+[ownership contract](delivery-ownership.md) and its offline cutover requirement.
+
+The reproduction and log below describe the pre-fix implementation; they are
+historical evidence, not the expected outcome of the current test.
 
 ## Reproduce the boundary
 
@@ -10,13 +15,16 @@ profile. Released CLI task compatibility does not remove this limitation.
 mkdir -p /tmp/am-inflight-probe
 env -u TMUX TMUX_TMPDIR=/tmp/am-inflight-probe SHELL=/bin/sh \
   go test -race ./internal/execution \
-  -run TestInboxRetirementDuringInFlightSendPreservesTerminalState -count=1 -v
+  -run TestDeliveryGuardKeepsPeerFromRetiringAnInFlightSend -count=1 -v
 ```
 
-The test uses two Runner objects, two independent SQLite connections and a real
-managed fixture pane. A fixture tmux wrapper pauses only `load-buffer`, after
-Runner A has durably claimed the inbox row. The test ages that row, lets Runner B
-retire it through the production delivery method, then releases A. No production
+The current test uses two Runner objects, two independent SQLite connections and a real
+managed fixture pane. It requires the peer to skip while the first owner holds
+the delivery guard, then observes one confirmed receipt after release.
+
+The historical version used the same fixture. A fixture tmux wrapper pauses only `load-buffer`, after
+Runner A has durably claimed the inbox row. The historical test aged that row, let Runner B
+retire it through the production delivery method, then released A. No production
 clock or transport seam is introduced. This is an execution-boundary probe, not
 a mixed-release two-process rollout test.
 
@@ -46,16 +54,18 @@ The same claim/send/terminal-record sequence exists in upstream `dc471a9`, in
 `internal/execution/polldelivery.go`; source inspection establishes inheritance,
 not a released-process reproduction.
 
-## Required follow-up
+## Follow-up design and remaining acceptance
 
-The delivery contract needs to distinguish confirmed, refused and uncertain
-outcomes. A final database read before paste narrows the race but cannot close
+The new delivery contract distinguishes confirmed, refused and uncertain
+outcomes, preserves durable attempts, and refuses historical automatic writers
+through schema admission fences. A final database read before paste narrows the race but cannot close
 it; retirement can happen after that read. A process generation alone also
 cannot revoke a tmux command that has already passed its check.
 
-A production design must coordinate claim retirement with the actual transport
-commit boundary, preserve bounded shutdown and define how historical writers
-are excluded. Review pending-input delivery against the same contract. Prove
+The implemented guard coordinates retirement with transport, and tmux commands
+are deadline-bound and reaped before the guard releases. Historical writer
+exclusion still requires stopping already admitted old processes before the
+migration. Review pending-input delivery against the same contract. Prove
 paused-write retirement, owner replacement, send failure, response loss and
 old-writer coexistence before claiming exclusive authority. Keep this change
 separate from UI ownership and file organization.

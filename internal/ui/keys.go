@@ -13,8 +13,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// that drag where it stands, esc cancelling it exactly as the footer
 	// says, and anything else is then handled normally.
 	if m.split.dragging && !m.split.resizeMode {
-		if keybind.Normalize(msg.String()) == "esc" {
+		key := keybind.Normalize(msg.String())
+		if key == "esc" {
 			return m.exitResizeMode(false)
+		}
+		if key == "ctrl+c" || m.services.listKeys.Binding(keybind.Quit).Has(key) {
+			return m.requestQuit()
 		}
 		m.exitResizeMode(m.split.moved)
 	}
@@ -28,10 +32,6 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case key == "esc":
 			return m.exitResizeMode(false)
 		case key == "ctrl+c" || m.services.listKeys.Binding(keybind.Quit).Has(key):
-			m.persistSplitRatio()
-			m.split.resizeMode = false
-			m.split.dragging = false
-			m.split.moved = false
 			return m.requestQuit()
 		case key == "left" || key == "h":
 			m.nudgeSplit(-1)

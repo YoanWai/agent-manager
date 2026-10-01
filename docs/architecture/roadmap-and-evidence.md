@@ -12,11 +12,11 @@ The initial application-boundary audit used implementation commit `c7a7e8247190f
 | Immediate reconciliation of partial lifecycle effects | Implemented for human lifecycle | [Typed completion reconciliation](../../internal/ui/effect_lifecycle.go) applies durable rows/groups before errors; row restoration and ancestor flags commit atomically. Pane effects remain distinct from membership |
 | Feature-owned UI behavior and narrow contracts | Partial across the whole UI | [Help, Review, Focus, and Rail](ui-feature-packages.md) own policy behind private models and typed value contracts. Other dialogs remain root methods; [services](../../internal/ui/model_services.go) stays in root composition |
 | UI feature packages and directory boundaries | Implemented for these four features | [Feature contracts](ui-feature-packages.md), [pure review data](review-data.md), and a [transitive production dependency check](../../tools/architecture/check-ui-boundaries) reject root and runtime imports |
-| Repeatable process and TUI end-to-end coverage | Partial | The [committed harness](../../tools/e2e/README.md) exercises Help, Review, Focus, Rail, spawn/group/move/rename/settings/fork, partial settings saves, fixture installation failure/retry, accepted-write quit drain and clean exit. Released CLI/MCP and task contracts have separate disposable matrices; headless/extension and the full product matrix remain follow-ups |
-| Nonblocking Update and read-only View | Partial | [Frame preparation](../../internal/ui/model_view.go) runs after dispatch; View only reads the prepared string. [Captured typed commands](ui-effects.md) run lifecycle, Rail, geometry, attach, spawn/fork/group, rename/move, settings/keybinding persistence, Review mutations and Focus/acknowledgment/detach outside Update. Preflight reads, raw keys/paste and installation handling remain synchronous |
-| Files organized by concern and source-adjacent tests throughout | Partial | Execution, sessioncmd, and UI concern families are implemented. Store, status, and tmux taxonomy remain future work; file moves do not establish feature ownership |
+| Repeatable process and TUI end-to-end coverage | Partial | The [committed harness](../../tools/e2e/README.md) exercises Help, Review, Focus, Rail, spawn/group/move/rename/settings/fork, partial settings saves, fixture installation failure/retry, accepted-write quit drain and clean exit. Released CLI/MCP and task contracts have separate disposable matrices; separate-process headless observations and representative extension backlog are covered; installed extensions and the full product matrix remain follow-ups |
+| Nonblocking Update and read-only View | Partial | [Frame preparation](../../internal/ui/model_view.go) runs after dispatch; View only reads the prepared string. [Captured typed commands](ui-effects.md) run lifecycle, Rail, geometry, attach, spawn/fork/group, rename/move, settings/keybinding persistence, Review mutations and Focus/acknowledgment/detach outside Update. The follow-up also captures picker/path/worktree preflights, raw keys/mouse/paste, installer start/settle, selected-session quick sends, Review preference/picker reads and base writes, notice/split persistence, and editor discovery; final combined and hosted acceptance are tracked separately |
+| Files organized by concern and source-adjacent tests throughout | Partial | Execution, sessioncmd, and UI concern families are implemented. Status classification/transcript/region/composer taxonomy is implemented with source equivalence. Delivery and bounded process ownership have source-adjacent store/tmux files; further taxonomy is incremental; file moves do not establish feature ownership |
 | Production controller workspace and remote adapter | Deferred | Saved connections and SSH remain historical PR #1 experiments |
-| Exclusive authority and historical writer cutover | Deferred | The [Runner](../../internal/execution/poller.go) uses socket-based ClaimPoller coordination without process-instance fencing; [late delivery after retirement](in-flight-delivery.md) is reproduced |
+| Automatic delivery authority and historical writer cutover | Implemented for cooperating local owners; offline cutover required | [Delivery guard and token receipts](delivery-ownership.md) span automatic inbox/pending transport. Historical admission is refused after migration, but already admitted old processes must be stopped first. Human and remote pane authority remain outside this contract |
 | Released-client compatibility | Partial for named endpoint contracts | Checksummed v0.38.0/v0.39.0 CLI/MCP, sequential tasks and concurrent task create/claim matrices pass. Installed extensions, other mutation families and live-owner cutover remain unproved |
 | Extensions using canonical production commands | Implemented for representative examples | [extensions](../../examples/extensions) demonstrate observations and explicit archive, not a general plugin platform |
 
@@ -47,7 +47,7 @@ Hosted checks must be inspected for the published head separately. None of these
 | Unit | Deliverable | Acceptance evidence |
 | --- | --- | --- |
 | 1. Documentation | Reconcile historical rationale, current code, and future contracts | Source trace, local links, independent claim review; no behavior change |
-| 2. Mechanical file splits | Sessioncmd and UI now use concern families; store, status, and tmux remain future work | Sessioncmd preserves 318 declarations; UI preserves 2,371 declarations. The UI comparator checks comments, exported names, build constraints, and init function order; initializer-order notices require source review |
+| 2. Mechanical file splits | Sessioncmd and UI use concern families; status has a declaration-preserving classification/transcript/region/composer split; delivery/process ownership has source-adjacent Store/tmux files | Sessioncmd preserves 318 declarations; UI preserves 2,371 declarations. The UI comparator checks comments, exported names, build constraints, and init function order; initializer-order notices require source review |
 | 3. UI feature packages | Help, Review, Focus, and Rail own interaction policy in child packages; root retains concrete adapters, navigation, and final frame composition | Pure feature tests, copied-data alias tests, dependency checks, root dispatch contracts, and committed TUI smoke |
 | 4. Async effects and layout | Prepared geometry, read-only View and ordered lifecycle/Rail/geometry/attach, spawn/fork/group, rename/move, settings/keys, Review and Focus/acknowledgment/detach commands are implemented; migrate remaining synchronous families in bounded units | Blocked-adapter tests prove Update returns; generation tests prove stale rejection; partial-failure tests prove completed archive and restore effects reconcile immediately; prepared-frame and real geometry checks remain regression gates |
 | 5. Workspace and authority rollout | Ship one saved connection/read use case, then one guarded canonical mutation and writer cutover | Supported historical binaries, real SSH, failure races, single maintenance proof, and explicit old-writer policy |
@@ -179,3 +179,38 @@ smoke took 2.05 seconds, existing dialog/drain checks 7.40 seconds, partial/inst
 cases 3.32 seconds and bounded rename/move observations 8.07 seconds. CI includes
 the new fixture suites and retains their evidence. Hosted checks must be verified
 at the new published head separately.
+
+
+### Complete follow-up acceptance (2026-10-01)
+
+This section supersedes the earlier synchronous-preflight and unguarded-delivery
+limitations above. Captured workers now cover Settings/picker/worktree reads,
+ordered keys/mouse/paste, selected-session quick sends, installer start/settle,
+Review opening/pickers/base saves, notice/split persistence, and editor discovery.
+Generation and session-incarnation regressions protect newer dialogs, drafts,
+Help, editor returns, and prepared attach completions. Automatic delivery uses
+the profile guard and token receipts described in [delivery ownership](delivery-ownership.md);
+legacy writers and readers require the documented offline cutover.
+
+Final candidate binary checks passed: smoke 2.29s; dialogs, confirmed quick send
+to a real fixture pane, and quit drain 8.62s; partial-save/install cases 2.90s;
+blocked rename/move/Settings/Focus 12.25s. Checksummed v0.39.0 and v0.38.0
+CLI/MCP/task matrices passed in 5.70s and 4.45s, respectively, including 16
+concurrent task creates and six single-winner claims per matrix. Fifteen E2E
+contracts and four compatibility cleanup contracts passed. The fast race gate
+passed in 26.40s; the 59-test process race gate passed in 39.35s. These are
+local selected measurements, not aggregate or hosted speedup claims.
+
+Build, vet, formatting, whitespace, and all six dependency guards passed. The
+status comparator preserved 123 declarations, 409 comment tokens, 90 exported
+names and zero init functions. Darwin/Linux amd64/arm64 compile checks passed;
+compilation does not prove runtime support on those targets. The complete
+uncached `go test -race ./... -count=1` passed with a unique private tmux
+fixture (UI 319.115s). Shellcheck and the redacted working-tree secret scan
+passed. Exact published-head hosted CI is verified separately.
+
+Real provider installation/session discovery, installed client extensions,
+mutations beyond the named matrix, remote authorization/SSH, human input
+authority, and installer crash recovery remain explicit gaps. Fresh upstream
+features at d84f3b0 must be adopted separately from this proposal's dc471a9 base.
+The live executable/profile and user-owned real-session pilot remain untouched.

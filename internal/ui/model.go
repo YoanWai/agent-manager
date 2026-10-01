@@ -68,28 +68,30 @@ type Model struct {
 	install *pendingInstall
 	// mouseReleased is true while the setup dialog has handed the mouse
 	// back to the terminal, so a drag selects its text.
-	mouseReleased  bool
-	mouseHover     bool
-	rename         renameTarget
-	fork           forkState
-	quick          quickState
-	settings       settingsState
-	settingsGen    uint64
-	dialogGen      uint64
-	help           uihelp.State
-	helpReturnMode mode
-	moveID         string
-	movePath       string
-	repoPick       repoPickState
-	// editorReturnID is the session an editor request detached from, so the
-	// attach it cost can be resumed once the editor is up.
-	editorReturnID string
-	frame          string
-	width          int
-	height         int
-	errBar         errBar
-	split          splitState
-	update         updateInfo
+	mouseReleased    bool
+	mouseHover       bool
+	rename           renameTarget
+	fork             forkState
+	quick            quickState
+	settings         settingsState
+	settingsCache    settingsCache
+	settingsPending  int
+	settingsGen      uint64
+	worktreeProbeGen uint64
+	dialogGen        uint64
+	workDir          string
+	homeDir          string
+	help             uihelp.State
+	helpReturnMode   mode
+	moveID           string
+	movePath         string
+	repoPick         repoPickState
+	frame            string
+	width            int
+	height           int
+	errBar           errBar
+	split            splitState
+	update           updateInfo
 }
 
 func NewWithInboxOwner(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, version string, owner sessioncmd.InboxMaintenance) *Model {
@@ -149,6 +151,8 @@ func newView(deps Dependencies, version string) *Model {
 		poller:  &poller{runner: deps.Execution},
 		split:   splitState{ratio: loadSplitRatio(st)},
 		mode:    modeList,
+		workDir: initialWorkingDir(),
+		homeDir: initialHomeDir(),
 		update:  updateInfo{version: version},
 		services: services{
 			cfg:         cfg,
@@ -163,7 +167,8 @@ func newView(deps Dependencies, version string) *Model {
 			engine:      engine,
 			setSnapshot: st.SetSnapshot,
 		},
-		rail: uirail.New(loadCollapsed(st)),
+		rail:          uirail.New(loadCollapsed(st)),
+		settingsCache: loadSettingsCache(st),
 		focusRuntime: focusRuntimeState{
 			imeCursor: &cursorAnchor{},
 		},

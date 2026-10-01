@@ -1,6 +1,7 @@
 package execution
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"strings"
@@ -213,12 +214,7 @@ func TestInboxDeliveryReadsTheRecipientAsWorking(t *testing.T) {
 			// A launch input is typed ahead of anything queued, so the one the
 			// spawn left goes first, the way it did long ago in a session at rest.
 			for _, input := range sess.PendingInputs {
-				if claimed, err := m.store.ClaimPendingInput(sess.ID, input); err != nil || !claimed {
-					t.Fatalf("claim launch input: claimed=%v err=%v", claimed, err)
-				}
-				if _, err := m.store.ConsumeClaimedPendingInput(sess.ID, input); err != nil {
-					t.Fatal(err)
-				}
+				finishPendingForTest(t, m.store, sess.ID, input, time.Now())
 			}
 			if err := m.store.UpdateStatus(sess.ID, stored); err != nil {
 				t.Fatal(err)
@@ -403,21 +399,17 @@ func TestThePollerResolvesTheReplyFrontPerTool(t *testing.T) {
 	}
 }
 
-// A claim left undelivered long after any paste could still be running is
-// a manager that died mid-send. Whether the text reached the pane is
-// unknowable, so it is retired rather than risk running the same
-// instruction twice.
+// Once the guard is free, an admitted claim has lost its process owner.
+// Whether the text reached the pane is unknowable, so it is retired
+// immediately rather than risk running the instruction twice.
 func TestInboxRetiresAMessageItCannotProveWasDelivered(t *testing.T) {
 	m := buildModel(t)
 	sess := spawnedSession(t, m, "claude-hooked")
 	id := queueMessage(t, m, sess.ID, "rebase on main")
-	abandoned := time.Now().Add(-inboxClaimGrace - time.Second)
-	if claimed, err := m.store.ClaimMessage(id, abandoned); err != nil || !claimed {
-		t.Fatalf("claim: %v, claimed=%v", err, claimed)
-	}
+	claimInboxForTest(t, m.store, id, time.Now())
 
 	_, err := m.poller.maybeDeliverInbox(sess, "❯ ", status.Idle, true)
-	if err == nil || !strings.Contains(err.Error(), "unconfirmed message") {
+	if err == nil || !strings.Contains(err.Error(), "uncertain prior transport") {
 		t.Fatalf("reconcile error = %v", err)
 	}
 	if queued, _ := m.store.QueuedCount(sess.ID); queued != 0 {
@@ -427,8 +419,8 @@ func TestInboxRetiresAMessageItCannotProveWasDelivered(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.DroppedAt.IsZero() {
-		t.Fatalf("an unconfirmed message was retired as delivered: %+v", state)
+	if state.Outcome != store.DeliveryUncertain || state.DeliveredAt.IsZero() || !state.DroppedAt.IsZero() {
+		t.Fatalf("an unconfirmed message was not explicitly uncertain: %+v", state)
 	}
 	pane, err := m.tmux.CapturePane(sess.ID)
 	if err != nil {
@@ -449,9 +441,27 @@ func TestInboxLeavesAClaimAnotherManagerIsStillPasting(t *testing.T) {
 	m := buildModel(t)
 	sess := spawnedSession(t, m, "claude-hooked")
 	id := queueMessage(t, m, sess.ID, "rebase on main")
-	if claimed, err := m.store.ClaimMessage(id, time.Now()); err != nil || !claimed {
-		t.Fatalf("claim: %v, claimed=%v", err, claimed)
-	}
+	ready := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		_, err := m.store.WithDeliveryGuard(context.Background(), func(guard *store.DeliveryGuard) error {
+			if _, claimed, err := guard.ClaimMessage(id, time.Now()); err != nil || !claimed {
+				return fmt.Errorf("claim: claimed=%v err=%w", claimed, err)
+			}
+			close(ready)
+			<-release
+			return nil
+		})
+		done <- err
+	}()
+	<-ready
+	defer func() {
+		close(release)
+		if err := <-done; err != nil {
+			t.Error(err)
+		}
+	}()
 
 	if _, err := m.poller.maybeDeliverInbox(sess, "❯ ", status.Idle, true); err != nil {
 		t.Fatalf("a claim being pasted right now was reported as a problem: %v", err)
@@ -460,7 +470,7 @@ func TestInboxLeavesAClaimAnotherManagerIsStillPasting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !state.DroppedAt.IsZero() || !state.DeliveredAt.IsZero() {
+	if state.Outcome != store.DeliveryInFlight || !state.DroppedAt.IsZero() || !state.DeliveredAt.IsZero() {
 		t.Fatalf("a paste in flight was retired: %+v", state)
 	}
 	if queued, _ := m.store.QueuedCount(sess.ID); queued != 1 {
@@ -501,10 +511,9 @@ func TestInboxHoldsAMessageWhileSomeoneIsTypingAtThePrompt(t *testing.T) {
 	pollUntilQueued(t, m, sess.ID, 0)
 }
 
-// A send that fails leaves a claimed row nothing may retype, so the queue
-// looks the same as it does after a delivery. Recording the drop is what
-// keeps message_status from telling the sender its message was typed in.
-func TestInboxRecordsAMessageItCouldNotTypeAsDropped(t *testing.T) {
+// Once paste-buffer has started, even a failed tmux response cannot prove
+// whether bytes reached the pane. The receipt is uncertain and never replayed.
+func TestInboxRecordsAPostPasteFailureAsUncertain(t *testing.T) {
 	m := buildModel(t)
 	sess := spawnedSession(t, m, "claude-hooked")
 	id := queueMessage(t, m, sess.ID, "rebase on main")
@@ -516,15 +525,15 @@ func TestInboxRecordsAMessageItCouldNotTypeAsDropped(t *testing.T) {
 	}
 
 	_, err := m.poller.maybeDeliverInbox(sess, "❯ ", status.Idle, true)
-	if err == nil || !strings.Contains(err.Error(), "dropped a message") {
+	if err == nil || !strings.Contains(err.Error(), "is uncertain") {
 		t.Fatalf("a failed send reported %v", err)
 	}
 	state, err := m.store.Message(id, "sender01")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.DroppedAt.IsZero() {
-		t.Fatalf("the drop was not recorded: %+v", state)
+	if state.Outcome != store.DeliveryUncertain || state.DeliveredAt.IsZero() || !state.DroppedAt.IsZero() {
+		t.Fatalf("the uncertain receipt was not recorded: %+v", state)
 	}
 	if queued, _ := m.store.QueuedCount(sess.ID); queued != 0 {
 		t.Fatal("a dropped message was left to be retried")

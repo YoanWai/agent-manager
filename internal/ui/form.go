@@ -78,7 +78,10 @@ type form struct {
 	groupIndex   int
 	worktree     bool
 	worktreeAuto bool
-	focus        int
+	// defaultsTouched protects an explicit tool or worktree choice from an
+	// external settings refresh that began when the form opened.
+	defaultsTouched bool
+	focus           int
 }
 
 type groupForm struct {
@@ -190,30 +193,6 @@ func (m *Model) contextGroup() string {
 	return ""
 }
 
-// ancestorGroupDir finds the closest configured default path walking up
-// from the group to the root; empty when no ancestor has one.
-func (m *Model) ancestorGroupDir(group string) string {
-	for g := group; g != ""; g = parentGroup(g) {
-		if p := m.workspace.groupPaths[g]; p != "" && isDir(p) {
-			return p
-		}
-	}
-	return ""
-}
-
-// groupDefaultDir resolves the working directory for a session in a group:
-// the nearest inherited default path, else the current directory.
-func (m *Model) groupDefaultDir(group string) string {
-	if p := m.ancestorGroupDir(group); p != "" {
-		return p
-	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		return ""
-	}
-	return cwd
-}
-
 // toolDisplayOrder fixes the order tools appear in when creating a session and
 // when cycling the quick-spawn tool. Tools outside this list follow, sorted
 // alphabetically.
@@ -248,28 +227,15 @@ func sortedToolNames(cfg config.Config) []string {
 	return names
 }
 
-// enabledToolNames is the create-session picker: configured tools minus any
-// the user hid in settings. Existing sessions keep their tool even when hidden.
-func (m *Model) enabledToolNames() []string {
-	all := sortedToolNames(m.services.cfg)
-	hidden := m.hiddenTools()
-	if len(hidden) == 0 {
-		return all
-	}
-	out := make([]string, 0, len(all))
-	for _, name := range all {
-		if !hidden[name] {
-			out = append(out, name)
-		}
-	}
-	return out
+func (m *Model) openForm() tea.Cmd {
+	return m.openFormWithReader(storeSettingWriter{st: m.services.store})
 }
 
-func (m *Model) openForm() {
-	tools, toolIndex := m.spawnToolSelection()
+func (m *Model) openFormWithReader(reader settingsValueReader) tea.Cmd {
+	tools, toolIndex := m.cachedSpawnToolSelection()
 	if len(tools) == 0 {
 		m.errBar.text = "no CLIs enabled: open settings (s), then CLIs, to turn some on"
-		return
+		return nil
 	}
 
 	name := textField("my-session", 60)
@@ -292,11 +258,22 @@ func (m *Model) openForm() {
 	m.syncFormFieldWidths()
 	m.forgetWorktreeCapability()
 	m.rebuildGroupOptions(m.contextGroup())
-	m.form.dir.SetValue(m.groupDefaultDir(m.selectedGroupPath()))
-	m.form.worktree = m.spawnWorktreeDefault(m.selectedGroupPath())
+	m.form.dir.SetValue(m.capturedGroupDefaultDir(m.selectedGroupPath()))
+	m.form.worktree = m.cachedSpawnWorktreeDefault(m.selectedGroupPath())
 	m.form.worktreeAuto = true
 	m.pathSugg.reset()
 	m.mode = modeForm
+	if m.settingsPending > 0 {
+		return m.formWorktreeProbeCmd(false)
+	}
+	return settingsLoadCmd(settingsLoadRequest{target: settingsLoadForm, generation: uint64(m.form.prompt.gen)}, reader)
+}
+
+func (m *Model) applyCachedFormDefaults() {
+	m.form.toolNames, m.form.toolIndex = m.cachedSpawnToolSelection()
+	if m.form.worktreeAuto {
+		m.form.worktree = m.cachedSpawnWorktreeDefault(m.selectedGroupPath())
+	}
 }
 
 func (m *Model) selectedGroupPath() string {
@@ -355,8 +332,7 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "tab":
 		if dirSuggesting {
-			m.applyPathSuggestion()
-			return m, nil
+			return m, m.applyPathSuggestion()
 		}
 		m.formFocus(1)
 		return m, nil
@@ -397,12 +373,10 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.form.focus == fieldWorktree {
-			m.toggleFormWorktree()
-			return m, nil
+			return m, m.toggleFormWorktree()
 		}
 		if m.form.focus == fieldGroup {
-			m.moveGroupCursor(-1)
-			return m, nil
+			return m, m.moveGroupCursor(-1)
 		}
 	case "right":
 		if m.form.focus == fieldTool {
@@ -410,17 +384,14 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.form.focus == fieldWorktree {
-			m.toggleFormWorktree()
-			return m, nil
+			return m, m.toggleFormWorktree()
 		}
 		if m.form.focus == fieldGroup {
-			m.moveGroupCursor(1)
-			return m, nil
+			return m, m.moveGroupCursor(1)
 		}
 	case "enter":
 		if dirSuggesting && m.pathSugg.chosen {
-			m.applyPathSuggestion()
-			return m, nil
+			return m, m.applyPathSuggestion()
 		}
 		return m.submitForm()
 	}
@@ -438,7 +409,7 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case fieldDir:
 		m.form.dir, cmd = m.form.dir.Update(msg)
 		m.form.dirAuto = false
-		m.pathSugg.recompute(m.form.dir.Value())
+		cmd = tea.Batch(cmd, m.requestPathSuggestions(pathSuggestionForm, m.form.dir.Value()), m.formWorktreeProbeCmd(false))
 	case fieldPrompt:
 		cmd = m.form.prompt.typeKey(msg)
 	}
@@ -447,21 +418,25 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // moveGroupCursor moves within the expanded group picker, wrapping at the
 // ends; a delta of 0 re-resolves the dependent defaults in place.
-func (m *Model) moveGroupCursor(delta int) {
+func (m *Model) moveGroupCursor(delta int) tea.Cmd {
 	count := len(m.form.groups)
 	if count == 0 {
-		return
+		return nil
 	}
 	m.form.groupIndex = (m.form.groupIndex + delta + count) % count
 	if m.mode == modeForm && m.form.dirAuto {
-		m.form.dir.SetValue(m.groupDefaultDir(m.selectedGroupPath()))
+		m.form.dir.SetValue(m.capturedGroupDefaultDir(m.selectedGroupPath()))
 	}
 	if m.mode == modeForm && m.form.worktreeAuto {
-		m.form.worktree = m.spawnWorktreeDefault(m.selectedGroupPath())
+		m.form.worktree = m.cachedSpawnWorktreeDefault(m.selectedGroupPath())
 	}
 	if m.mode == modeGroupForm && m.groupForm.pathAuto {
-		m.groupForm.path.SetValue(m.ancestorGroupDir(m.selectedGroupPath()))
+		m.groupForm.path.SetValue(m.capturedAncestorGroupDir(m.selectedGroupPath()))
 	}
+	if m.mode == modeForm {
+		return m.formWorktreeProbeCmd(false)
+	}
+	return nil
 }
 
 func (m *Model) formFocus(delta int) {
@@ -485,36 +460,46 @@ func (m *Model) cycleTool(delta int) {
 		return
 	}
 	m.form.toolIndex = (m.form.toolIndex + delta + len(m.form.toolNames)) % len(m.form.toolNames)
+	m.form.defaultsTouched = true
 }
 
 // formSpawnDir is the directory the form would launch in, resolved the
 // same way submit resolves it.
 func (m *Model) formSpawnDir() string {
-	cwd, _ := os.Getwd()
-	dir, _ := resolveExistingDir(m.form.dir.Value(), cwd)
-	return dir
+	return m.capturedAbsolutePath(m.form.dir.Value(), m.workDir)
 }
 
 // formWorktreeOn is the worktree state the form shows and spawns with: the
 // toggle, unless the chosen directory cannot host a worktree.
 func (m *Model) formWorktreeOn() bool {
-	return m.form.worktree && m.worktreeCapable(m.formSpawnDir())
+	capable, known := m.cachedWorktreeCapability(m.formSpawnDir())
+	return m.form.worktree && known && capable
 }
 
 // toggleFormWorktree flips the toggle, or explains why the chosen
 // directory rules a worktree out.
-func (m *Model) toggleFormWorktree() {
+func (m *Model) toggleFormWorktree() tea.Cmd {
 	dir := m.formSpawnDir()
-	if !m.worktreeCapable(dir) {
+	capable, known := m.cachedWorktreeCapability(dir)
+	if !known {
+		return m.formWorktreeProbeCmd(true)
+	}
+	if !capable {
 		m.errBar.text = "worktree sessions need a git repository: " + dir + " is not one"
-		return
+		return nil
 	}
 	m.errBar.text = ""
 	m.form.worktree = !m.form.worktree
 	m.form.worktreeAuto = false
+	m.form.defaultsTouched = true
+	return nil
 }
 
 func (m *Model) submitForm() (tea.Model, tea.Cmd) {
+	return m.submitFormWithReader(systemDirectoryPreflight{git: m.services.gitDrv})
+}
+
+func (m *Model) submitFormWithReader(reader directoryPreflight) (tea.Model, tea.Cmd) {
 	if len(m.form.toolNames) == 0 {
 		m.errBar.text = "no tools configured"
 		m.mode = modeList
@@ -531,14 +516,6 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 	if autoNamed {
 		name = toolName + "-" + newID()[:4]
 	}
-	cwd, _ := os.Getwd()
-	// Preflight read: the directory must exist now, the way the synchronous
-	// submit checked it; the worker then works from the captured path.
-	dir, ok := resolveExistingDir(m.form.dir.Value(), cwd)
-	if !ok {
-		m.errBar.text = "working directory does not exist: " + dir
-		return m, nil
-	}
 	group := m.selectedGroupPath()
 	// Chips become the paths of the images they stand for, so a first task
 	// reaches the agent with its screenshot named where it was pasted.
@@ -548,24 +525,29 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// formWorktreeOn's capability check is a cached preflight read; the
-	// effective worktree is captured, so the worker only creates.
 	paneW, paneH := m.paneTargetSize()
-	m.dispatchSpawn(spawnRequest{
+	request := spawnRequest{
 		kind:         spawnForm,
 		toolName:     toolName,
 		name:         name,
-		dir:          dir,
 		group:        group,
 		prompt:       prompt,
 		autoNamed:    autoNamed,
-		worktree:     m.formWorktreeOn(),
 		pickWorktree: m.form.worktree,
 		pane:         sessioncmd.PaneSize{Width: paneW, Height: paneH},
 		composerGen:  m.form.prompt.gen,
 		images:       m.form.prompt.attachments,
-	})
-	return m, nil
+		draft:        m.form.prompt.input.Value(),
+		draftName:    m.form.name.Value(),
+		draftDir:     m.form.dir.Value(),
+		rawDir:       m.form.dir.Value(),
+		dirFallbacks: m.groupDirCandidates(group),
+		wantWorktree: m.form.worktree,
+		dirReader:    reader,
+	}
+	m.errBar.text = ""
+	m.dispatchSpawn(request)
+	return m, m.nextEffectCmd()
 }
 
 func (m *Model) rememberSpawnPick(tool string, worktree bool) {
@@ -588,7 +570,7 @@ func (m *Model) openGroupForm() {
 		gen:      m.nextComposerGen(),
 	}
 	m.rebuildGroupOptions(m.contextGroup())
-	m.groupForm.path.SetValue(m.groupDefaultDir(m.selectedGroupPath()))
+	m.groupForm.path.SetValue(m.capturedGroupDefaultDir(m.selectedGroupPath()))
 	m.syncGroupFormFieldWidths()
 	m.pathSugg.reset()
 	m.mode = modeGroupForm
@@ -607,8 +589,7 @@ func (m *Model) handleGroupFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "tab":
 		if pathSuggesting {
-			m.applyPathSuggestion()
-			return m, nil
+			return m, m.applyPathSuggestion()
 		}
 		m.groupFormFocus(1)
 		return m, nil
@@ -640,8 +621,7 @@ func (m *Model) handleGroupFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.groupForm.focus == gfParent {
-			m.moveGroupCursor(-1)
-			return m, nil
+			return m, m.moveGroupCursor(-1)
 		}
 	case "right":
 		if m.groupForm.focus == gfWorktree {
@@ -649,13 +629,11 @@ func (m *Model) handleGroupFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.groupForm.focus == gfParent {
-			m.moveGroupCursor(1)
-			return m, nil
+			return m, m.moveGroupCursor(1)
 		}
 	case "enter":
 		if pathSuggesting && m.pathSugg.chosen {
-			m.applyPathSuggestion()
-			return m, nil
+			return m, m.applyPathSuggestion()
 		}
 		return m.submitGroupForm()
 	}
@@ -667,7 +645,7 @@ func (m *Model) handleGroupFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case gfPath:
 		m.groupForm.path, cmd = m.groupForm.path.Update(msg)
 		m.groupForm.pathAuto = false
-		m.pathSugg.recompute(m.groupForm.path.Value())
+		cmd = tea.Batch(cmd, m.requestPathSuggestions(pathSuggestionGroup, m.groupForm.path.Value()))
 	}
 	return m, cmd
 }
@@ -686,6 +664,10 @@ func (m *Model) groupFormFocus(delta int) {
 }
 
 func (m *Model) submitGroupForm() (tea.Model, tea.Cmd) {
+	return m.submitGroupFormWithReader(systemDirectoryPreflight{git: m.services.gitDrv})
+}
+
+func (m *Model) submitGroupFormWithReader(reader directoryPreflight) (tea.Model, tea.Cmd) {
 	name := strings.TrimSpace(m.groupForm.name.Value())
 	name = strings.ReplaceAll(name, "/", "-")
 	if name == "" {
@@ -697,15 +679,15 @@ func (m *Model) submitGroupForm() (tea.Model, tea.Cmd) {
 	if parent != "" {
 		full = parent + "/" + name
 	}
-	path, ok := resolveExistingDir(m.groupForm.path.Value(), m.groupDefaultDir(parent))
-	if !ok {
-		m.errBar.text = "default path does not exist: " + path
-		return m, nil
-	}
 	worktree := groupWorktreeValue(m.groupForm.worktreeIndex)
-
-	m.dispatchGroup(groupRequest{path: full, dir: path, worktree: worktree, gen: m.groupForm.gen})
-	return m, nil
+	request := groupRequest{
+		path: full, worktree: worktree, gen: m.groupForm.gen,
+		draftName: m.groupForm.name.Value(), draftDir: m.groupForm.path.Value(),
+		rawDir: m.groupForm.path.Value(), fallbacks: m.groupDirCandidates(parent), dirReader: reader,
+	}
+	m.errBar.text = ""
+	m.dispatchGroup(request)
+	return m, m.nextEffectCmd()
 }
 
 // dispatchGroup queues the group's store write on the effect lane; the row

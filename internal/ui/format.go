@@ -94,9 +94,8 @@ func humanBytes(b uint64) string {
 // shortHome writes a path under the home directory the way a shell prompt
 // does, so a narrow slot spends its room on the part that tells the
 // directories apart rather than on the same prefix every session shares.
-func shortHome(path string) string {
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" || path == "" {
+func shortHome(path, home string) string {
+	if home == "" || path == "" {
 		return path
 	}
 	if path == home {

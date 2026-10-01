@@ -16,6 +16,7 @@ type spawnKind int
 const (
 	spawnForm spawnKind = iota
 	spawnQuick
+	spawnShell
 )
 
 // spawnRequest captures everything a spawn needs at dispatch time, so the
@@ -29,6 +30,7 @@ type spawnRequest struct {
 	name         string
 	dir          string
 	group        string
+	parentID     string
 	prompt       string
 	autoNamed    bool
 	worktree     bool
@@ -38,6 +40,12 @@ type spawnRequest struct {
 	draftName    string
 	draftDir     string
 	draft        string
+	rawDir       string
+	dirFallbacks []string
+	wantWorktree bool
+	dirReader    directoryPreflight
+	terminalDir  terminalDirectoryRequest
+	terminalRead terminalDirectoryReader
 	plan         *launch.Plan
 	images       []imageAttachment
 }
@@ -48,15 +56,19 @@ func (spawnRequest) effectRequest() {}
 // session row, which exists only when the pane was created too, and a label
 // failure that stays a warning after committed placement.
 type spawnEffectResult struct {
-	plan    *launch.Plan
-	session store.Session
-	label   error
+	plan        *launch.Plan
+	session     store.Session
+	label       error
+	dir         string
+	worktree    bool
+	repoKnown   bool
+	repoCapable bool
 }
 
 func (spawnEffectResult) effectResult() {}
 
-// groupRequest captures a group creation; the directory is validated at
-// dispatch as a preflight read, and the store write is the only mutation.
+// groupRequest captures a group creation; the accepted effect validates the
+// directory before the store write.
 // gen identifies the dispatching group form so a completion cannot replace
 // a form the user has since reopened.
 type groupRequest struct {
@@ -66,6 +78,9 @@ type groupRequest struct {
 	dir       string
 	worktree  string
 	gen       int
+	rawDir    string
+	fallbacks []string
+	dirReader directoryPreflight
 }
 
 func (groupRequest) effectRequest() {}
@@ -110,14 +125,51 @@ func (s effectServices) runSpawn(request spawnRequest) (effectResult, error) {
 		return result, errors.New("spawn requires the lifecycle service")
 	}
 	tool := s.cfg.Tools[request.toolName]
-	proactive, err := s.store.ProactiveCoordination()
-	if err != nil {
-		return result, err
+	dir := request.dir
+	if dir == "" {
+		if request.kind == spawnShell {
+			reader := request.terminalRead
+			if reader == nil {
+				reader = systemTerminalDirectoryReader{tmux: s.driver, dirs: systemDirectoryPreflight{git: s.gitDrv}}
+			}
+			var ok bool
+			dir, ok = reader.resolve(request.terminalDir)
+			if !ok {
+				return result, errors.New("no directory to open a terminal in")
+			}
+		} else {
+			reader := request.dirReader
+			if reader == nil {
+				reader = systemDirectoryPreflight{git: s.gitDrv}
+			}
+			var ok bool
+			dir, ok = reader.resolve(request.rawDir, request.dirFallbacks)
+			if !ok {
+				prefix := "working directory does not exist: "
+				if request.kind == spawnQuick {
+					prefix = "group has no valid default path: "
+				}
+				return result, errors.New(prefix + dir)
+			}
+			if request.wantWorktree {
+				result.repoKnown = true
+				result.repoCapable = reader.repoCapable(dir)
+				request.worktree = result.repoCapable
+			}
+		}
 	}
+	result.dir = dir
+	result.worktree = request.worktree
 	plan := launch.Plan{}
-	if request.plan != nil {
+	if request.kind == spawnShell {
+		plan.Command = tool.Command
+	} else if request.plan != nil {
 		plan = *request.plan
 	} else {
+		proactive, err := s.store.ProactiveCoordination()
+		if err != nil {
+			return result, err
+		}
 		plan = launch.Assemble(request.toolName, tool, request.prompt, request.autoNamed, proactive)
 	}
 	result.plan = &plan
@@ -125,7 +177,6 @@ func (s effectServices) runSpawn(request spawnRequest) (effectResult, error) {
 	if id == "" {
 		id = newID()
 	}
-	dir := request.dir
 	worktreeRepo, worktreeBranch := "", ""
 	if request.worktree {
 		if s.gitDrv == nil {
@@ -143,11 +194,12 @@ func (s effectServices) runSpawn(request spawnRequest) (effectResult, error) {
 	}
 	launched, err := s.lifecycle.Launch(sessioncmd.LaunchRequest{
 		Session: store.Session{
-			ID:    id,
-			Name:  request.name,
-			Tool:  request.toolName,
-			Cwd:   dir,
-			Group: request.group,
+			ID:       id,
+			Name:     request.name,
+			Tool:     request.toolName,
+			Cwd:      dir,
+			Group:    request.group,
+			ParentID: request.parentID,
 			// Starting until the agent first draws to its pane, so the row
 			// shows a launch state immediately; the poller flips it.
 			Status:         status.Starting,
@@ -165,17 +217,37 @@ func (s effectServices) runSpawn(request spawnRequest) (effectResult, error) {
 	if err != nil {
 		return result, err
 	}
-	return spawnEffectResult{session: launched.Session, label: launched.LabelError}, nil
+	result.session = launched.Session
+	result.label = launched.LabelError
+	return result, nil
 }
 
 func (s effectServices) runGroup(request groupRequest) (effectResult, error) {
-	if err := s.store.AddGroup(request.path, request.dir, request.worktree); err != nil {
+	dir := request.dir
+	if dir == "" {
+		reader := request.dirReader
+		if reader == nil {
+			reader = systemDirectoryPreflight{git: s.gitDrv}
+		}
+		var ok bool
+		dir, ok = reader.resolve(request.rawDir, request.fallbacks)
+		if !ok {
+			return groupEffectResult{}, errors.New("default path does not exist: " + dir)
+		}
+	}
+	if err := s.store.AddGroup(request.path, dir, request.worktree); err != nil {
 		return groupEffectResult{}, err
 	}
-	return groupEffectResult{path: request.path, dir: request.dir, worktree: request.worktree}, nil
+	return groupEffectResult{path: request.path, dir: dir, worktree: request.worktree}, nil
 }
 
 func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult, err error) tea.Cmd {
+	if result.repoKnown {
+		if m.ledger.worktreeRepos == nil {
+			m.ledger.worktreeRepos = make(map[string]repoAnswer)
+		}
+		m.ledger.worktreeRepos[result.dir] = repoAnswer{capable: result.repoCapable, at: time.Now()}
+	}
 	if err == nil {
 		sess := result.session
 		m.markFreshPane(sess.ID)
@@ -192,7 +264,9 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 			}
 			m.ledger.awaitedRenames[sess.ID] = awaitedRename{generated: sess.Name, prompt: request.prompt}
 		}
-		m.rememberSpawnPick(request.toolName, request.pickWorktree)
+		if request.kind != spawnShell {
+			m.rememberSpawnPick(request.toolName, request.pickWorktree)
+		}
 		// New sessions start as starting, which attention excludes; clear so
 		// the row the spawn just created is on screen.
 		m.rail.ClearStatusFilter()
@@ -209,12 +283,23 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 			}
 		}
 		m.rebuildRows()
+		if request.kind == spawnShell {
+			m.ledger.terminalKeyAt = time.Now()
+			m.focusSession(sess.ID)
+		}
 		if result.label != nil {
 			m.errBar.text = result.label.Error()
 		}
 		return m.refreshCmd()
 	}
 	request.plan = result.plan
+	request.dir = result.dir
+	request.worktree = result.worktree
+	if request.kind == spawnShell {
+		m.ledger.terminalKeyAt = time.Now()
+		m.errBar.text = err.Error()
+		return nil
+	}
 	// Nothing was committed. A spawn the hint dialog refuses takes the
 	// dialog's place, the same way the synchronous submit did; a dialog the
 	// user opened since the dispatch is newer and keeps the screen.
@@ -228,7 +313,7 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 		takeOver = true
 	}
 	if takeOver {
-		m.reportLaunchError(err, nil)
+		m.reportLaunchError(err)
 		if m.mode == modeLaunchHint {
 			// The dialog's images are the request's: the composer was emptied
 			// at dispatch, so openLaunchHint found none of its own.

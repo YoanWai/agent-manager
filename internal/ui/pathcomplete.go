@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 const maxPathSuggestions = 5
@@ -12,9 +14,11 @@ type pathComplete struct {
 	suggestions []string
 	index       int
 	chosen      bool
+	generation  uint64
 }
 
 func (pc *pathComplete) reset() {
+	pc.generation++
 	pc.suggestions = nil
 	pc.index = 0
 	pc.chosen = false
@@ -53,10 +57,81 @@ func (pc *pathComplete) selected() string {
 	return pc.suggestions[pc.index]
 }
 
-func (pc *pathComplete) recompute(typed string) {
-	pc.suggestions = completeDirs(typed)
-	pc.index = 0
-	pc.chosen = false
+type pathSuggestionTarget uint8
+
+const (
+	pathSuggestionForm pathSuggestionTarget = iota
+	pathSuggestionGroup
+	pathSuggestionRename
+)
+
+type pathSuggestionsRequest struct {
+	target     pathSuggestionTarget
+	generation uint64
+	typed      string
+}
+
+type pathSuggestionsMsg struct {
+	request     pathSuggestionsRequest
+	suggestions []string
+}
+
+type pathSuggestionReader interface {
+	complete(typed string) []string
+}
+
+type systemPathSuggestionReader struct{}
+
+func (systemPathSuggestionReader) complete(typed string) []string { return completeDirs(typed) }
+
+func pathSuggestionsCmd(request pathSuggestionsRequest, reader pathSuggestionReader) tea.Cmd {
+	return func() tea.Msg {
+		return pathSuggestionsMsg{request: request, suggestions: reader.complete(request.typed)}
+	}
+}
+
+func (m *Model) requestPathSuggestions(target pathSuggestionTarget, typed string) tea.Cmd {
+	return m.requestPathSuggestionsWithReader(target, typed, systemPathSuggestionReader{})
+}
+
+func (m *Model) requestPathSuggestionsWithReader(target pathSuggestionTarget, typed string, reader pathSuggestionReader) tea.Cmd {
+	m.pathSugg.reset()
+	request := pathSuggestionsRequest{target: target, generation: m.pathSugg.generation, typed: typed}
+	return pathSuggestionsCmd(request, reader)
+}
+
+func (m *Model) handlePathSuggestions(msg pathSuggestionsMsg) (tea.Model, tea.Cmd) {
+	request := msg.request
+	if request.generation != m.pathSugg.generation {
+		return m, nil
+	}
+	var current string
+	switch request.target {
+	case pathSuggestionForm:
+		if m.mode != modeForm {
+			return m, nil
+		}
+		current = m.form.dir.Value()
+	case pathSuggestionGroup:
+		if m.mode != modeGroupForm {
+			return m, nil
+		}
+		current = m.groupForm.path.Value()
+	case pathSuggestionRename:
+		if m.mode != modeRename || !m.rename.isGroup {
+			return m, nil
+		}
+		current = m.rename.dir.Value()
+	default:
+		return m, nil
+	}
+	if current != request.typed {
+		return m, nil
+	}
+	m.pathSugg.suggestions = msg.suggestions
+	m.pathSugg.index = 0
+	m.pathSugg.chosen = false
+	return m, nil
 }
 
 func expandHome(path string) string {
@@ -113,20 +188,28 @@ func isDirEntry(parent string, entry os.DirEntry) bool {
 	return err == nil && info.IsDir()
 }
 
-func (m *Model) applyPathSuggestion() {
+func (m *Model) applyPathSuggestion() tea.Cmd {
 	path := m.pathSugg.selected() + "/"
+	var target pathSuggestionTarget
 	switch m.mode {
 	case modeForm:
 		m.form.dir.SetValue(path)
 		m.form.dir.CursorEnd()
 		m.form.dirAuto = false
+		target = pathSuggestionForm
 	case modeGroupForm:
 		m.groupForm.path.SetValue(path)
 		m.groupForm.path.CursorEnd()
 		m.groupForm.pathAuto = false
+		target = pathSuggestionGroup
 	case modeRename:
 		m.rename.dir.SetValue(path)
 		m.rename.dir.CursorEnd()
+		target = pathSuggestionRename
 	}
-	m.pathSugg.recompute(path)
+	completion := m.requestPathSuggestions(target, path)
+	if target == pathSuggestionForm {
+		return tea.Batch(completion, m.formWorktreeProbeCmd(false))
+	}
+	return completion
 }

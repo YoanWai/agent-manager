@@ -78,7 +78,10 @@ func (m *Model) syncPollInput() {
 			focusID = sess.ID
 		}
 	}
-	m.poller.setInput(m.rail.ShowArchived(), selectedID)
+	// Keep the loaded projection complete in both views. Rail policy decides
+	// which archive state to render, while confirmation cards need hidden
+	// children too and must not read SQLite on the Update path.
+	m.poller.setInput(true, selectedID)
 	// Only ever stop the watcher here. Opening a control client costs a
 	// process and a tmux attach, so holding j through twenty rows would
 	// pay that twenty times; the client is opened once the cursor settles

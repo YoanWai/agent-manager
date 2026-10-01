@@ -53,7 +53,7 @@ python3 tools/e2e/scenarios.py --binary /tmp/agent-manager-e2e
 ```
 
 The separate scenario gate shares one binary across two disposable profiles.
-It covers form spawn, terminal/group creation, move, rename, settings persistence
+It covers form spawn, selected-session quick input reaching a real pane with matching durable metadata, terminal/group creation, move, rename, settings persistence
 and reopening, fork launch, and zero-exit shutdown. A fixture CLI runs a real
 process; its conversation identity is seeded explicitly rather than claiming
 real provider session-store discovery. Keyboard navigation selects its live-pane
@@ -113,7 +113,25 @@ unit regression delivers the completion, fails before the generation increment
 and passes after it. The binary scenario alone is not a deterministic regression
 for that defect; it also passed against the old binary on a later run.
 
-The candidate settings/focus cases were not accepted as coverage. Reopening
-Settings can block on synchronous preflight reads behind its in-flight save;
-the focus fixture did not reach a finished session. Those foreground acceptance
-cases remain on the roadmap rather than using sleeps as proof.
+The earlier candidate settings/focus cases did not establish coverage: Settings
+preflight blocked and Focus never reached its required fixture state. The current
+blocked cases below replace those observations with explicit foreground budgets.
+
+## Blocked Settings and Focus
+
+The blocked scenario suite also accepts a Settings save under a real SQLite
+writer lock, then reopens and edits Settings within the two-second foreground
+budget. The accepted save becomes durable while the newer dialog retains its
+edits. Its Focus case queues focus behind that save and verifies Help opens and
+accepts a search while the write remains blocked; later focus remains usable.
+
+```sh
+python3 tools/e2e/blocked_scenarios.py --binary /tmp/agent-manager-e2e --scenario settings
+python3 tools/e2e/blocked_scenarios.py --binary /tmp/agent-manager-e2e --scenario focus
+```
+
+The headless example has a separate-process observation/shutdown regression in
+`examples/headless`: it starts its own runtime on a disposable profile/socket,
+reads a JSON observation and requires clean SIGTERM shutdown. This is local
+runtime and extension-backlog evidence, not paid provider conversation discovery
+or the Linux/SSH platform matrix.

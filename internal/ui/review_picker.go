@@ -2,10 +2,11 @@ package ui
 
 import (
 	"fmt"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"path/filepath"
 	"strings"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // pickKind selects what a picker's Enter does: retarget the repo/branch, or
@@ -27,11 +28,13 @@ type pickRow struct {
 
 // rows is snapshotted at open because a refresh landing behind the picker would reorder rows under the cursor.
 type repoPickState struct {
-	rows   []pickRow
-	filter string
-	cursor int
-	title  string
-	kind   pickKind
+	rows      []pickRow
+	filter    string
+	cursor    int
+	title     string
+	kind      pickKind
+	source    reviewPickerSource
+	storeRoot string
 }
 
 func (m *Model) openRepoPick() {
@@ -43,74 +46,89 @@ func (m *Model) openRepoPick() {
 	for i, root := range state.RepoRoots {
 		rows[i] = pickRow{label: filepath.Base(root), root: root}
 	}
-	m.openPick(rows, "⌥ Review repo", pickRepo, state.RepoSelected)
+	m.openPick(rows, "⌥ Review repo", pickRepo, state.RepoSelected, reviewPickerSource{
+		generation: state.Generation, targetID: state.SessionID, repoRoot: state.RepoSelected,
+	}, "")
 }
 
 // openBranchPick lists the currently selected repo's worktrees, one branch per
-// row, so the user can retarget review to another worktree. Listing shells out
-// synchronously; a failure stays in review with the error shown.
+// row, so the user can retarget review to another worktree.
 func (m *Model) openBranchPick() tea.Cmd {
-	state := m.review.Snapshot()
-	root := state.Set.Repo.Root
-	if m.services.gitDrv == nil || root == "" {
+	if m.services.gitDrv == nil {
 		m.errBar.text = "no repo under review"
 		return nil
 	}
-	worktrees, err := m.services.gitDrv.Worktrees(root)
-	if err != nil {
-		m.errBar.text = err.Error()
+	return m.openBranchPickWithReader(systemReviewPickerReader{git: m.services.gitDrv, store: m.services.store})
+}
+
+func (m *Model) openBranchPickWithReader(reader reviewPickerReader) tea.Cmd {
+	state := m.review.Snapshot()
+	if reader == nil || state.RepoSelected == "" {
+		m.errBar.text = "no repo under review"
 		return nil
 	}
-	rows := make([]pickRow, len(worktrees))
-	for i, wt := range worktrees {
-		rows[i] = pickRow{label: wt.Branch, root: wt.Root}
-	}
-	m.openPick(rows, "⌥ Review branch", pickRepo, state.RepoSelected)
-	return nil
+	return reviewPickerReadCmd(reader, reviewPickerLoadRequest{
+		kind: reviewPickerLoadBranches,
+		source: reviewPickerSource{
+			generation: state.Generation, targetID: state.SessionID, repoRoot: state.RepoSelected,
+		},
+		foregroundGen: m.foregroundGen,
+	})
 }
 
 // openBasePick lists auto plus the current repo's branch refs so the user can
 // override the base the branch scope diffs against, cursor on the stored base.
-// Listing shells out synchronously; a failure stays in review with the error shown.
 func (m *Model) openBasePick() tea.Cmd {
-	// Key off the raw selection, not the resolved toplevel: the toplevel is
-	// empty after a bad base errors the load, which would make the one control
-	// that clears the bad base unreachable exactly when it is needed.
-	root := m.review.Snapshot().RepoSelected
-	if m.services.gitDrv == nil || root == "" {
+	if m.services.gitDrv == nil || m.services.store == nil {
 		m.errBar.text = "no repo under review"
 		return nil
 	}
-	refs, err := m.services.gitDrv.BranchRefs(root)
-	if err != nil {
-		m.errBar.text = err.Error()
+	return m.openBasePickWithReader(systemReviewPickerReader{git: m.services.gitDrv, store: m.services.store})
+}
+
+func (m *Model) openBasePickWithReader(reader reviewPickerReader) tea.Cmd {
+	if m.reviewBaseSavePending() {
+		m.errBar.text = "diff base is still saving"
 		return nil
 	}
-	sess, ok := m.diffSession()
-	if !ok {
-		m.errBar.text = "session is gone"
+	// Key off the raw selection, not the resolved toplevel: the toplevel is
+	// empty after a bad base errors the load, which would make the one control
+	// that clears the bad base unreachable exactly when it is needed.
+	state := m.review.Snapshot()
+	if reader == nil || state.RepoSelected == "" {
+		m.errBar.text = "no repo under review"
 		return nil
 	}
-	// Resolve symlinks so the key matches the CLI's symlink-expanded toplevel.
-	current, err := m.services.store.ReviewBase(sess.ID, resolveSymlinksOrSelf(root))
-	if err != nil {
-		m.errBar.text = err.Error()
+	return reviewPickerReadCmd(reader, reviewPickerLoadRequest{
+		kind: reviewPickerLoadBases,
+		source: reviewPickerSource{
+			generation: state.Generation, targetID: state.SessionID, repoRoot: state.RepoSelected,
+		},
+		foregroundGen: m.foregroundGen,
+	})
+}
+
+func (m *Model) handleReviewPickerLoaded(msg reviewPickerLoadedMsg) tea.Cmd {
+	if m.effects.quitting || m.mode != modeDiff || m.foregroundGen != msg.request.foregroundGen || !m.reviewPickerSourceCurrent(msg.request.source) {
 		return nil
 	}
-	rows := make([]pickRow, 0, len(refs)+1)
-	rows = append(rows, pickRow{label: "auto", root: ""})
-	for _, ref := range refs {
-		rows = append(rows, pickRow{label: ref, root: ref})
+	if msg.err != nil {
+		m.errBar.text = msg.err.Error()
+		return nil
 	}
-	m.openPick(rows, "⌥ Diff base", pickBase, current)
+	switch msg.request.kind {
+	case reviewPickerLoadBranches:
+		m.openPick(msg.rows, "⌥ Review branch", pickRepo, msg.current, msg.request.source, "")
+	case reviewPickerLoadBases:
+		m.openPick(msg.rows, "⌥ Diff base", pickBase, msg.current, msg.request.source, msg.storeRoot)
+	}
 	return nil
 }
 
-func (m *Model) openPick(rows []pickRow, title string, kind pickKind, current string) {
-	m.repoPick = repoPickState{rows: rows, title: title, kind: kind}
-	selResolved := resolveSymlinksOrSelf(current)
+func (m *Model) openPick(rows []pickRow, title string, kind pickKind, current string, source reviewPickerSource, storeRoot string) {
+	m.repoPick = repoPickState{rows: rows, title: title, kind: kind, source: source, storeRoot: storeRoot}
 	for i, row := range rows {
-		if row.root == current || resolveSymlinksOrSelf(row.root) == selResolved {
+		if row.root == current {
 			m.repoPick.cursor = i
 			break
 		}
@@ -166,6 +184,11 @@ func (m *Model) handleRepoPickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(rows) == 0 {
 			return m, nil
 		}
+		if !m.reviewPickerSourceCurrent(m.repoPick.source) {
+			m.mode = modeDiff
+			m.errBar.text = "review changed; reopen the picker"
+			return m, nil
+		}
 		m.mode = modeDiff
 		row := rows[m.repoPick.cursor]
 		if m.repoPick.kind == pickBase {
@@ -209,17 +232,66 @@ func (m *Model) selectRepo(root string) tea.Cmd {
 // then reloads. It forces the branch scope so the freshly picked base is what
 // the review actually shows.
 func (m *Model) selectBase(ref string) tea.Cmd {
+	if m.reviewBaseSavePending() {
+		m.errBar.text = "diff base is still saving"
+		return nil
+	}
+	if !m.reviewPickerSourceCurrent(m.repoPick.source) {
+		m.errBar.text = "review changed; reopen the picker"
+		return nil
+	}
 	sess, ok := m.diffSession()
-	if !ok {
+	if !ok || sess.ID != m.repoPick.source.targetID {
 		m.errBar.text = "session is gone"
 		return nil
 	}
-	// Resolve symlinks so the key matches the CLI's symlink-expanded toplevel.
-	if err := m.services.store.SetReviewBase(sess.ID, resolveSymlinksOrSelf(m.review.Snapshot().RepoSelected), ref); err != nil {
-		m.errBar.text = err.Error()
+	if m.repoPick.storeRoot == "" {
+		m.errBar.text = "review repository is gone"
 		return nil
 	}
-	request, ok := m.review.SelectBase(ref)
+	m.enqueueEffect(reviewEffectRequest{
+		op: reviewOpSetBase, targetID: sess.ID, repoRoot: m.repoPick.storeRoot,
+		sourceRepo: m.repoPick.source.repoRoot, generation: m.repoPick.source.generation, baseRef: ref,
+	}, 0, false)
+	return m.nextEffectCmd()
+}
+
+func (m *Model) reviewPickerSourceCurrent(source reviewPickerSource) bool {
+	state := m.review.Snapshot()
+	return state.Active && state.Generation == source.generation && state.SessionID == source.targetID && state.RepoSelected == source.repoRoot
+}
+
+func (m *Model) reviewBaseSavePending() bool {
+	isBaseSave := func(job *effectJob) bool {
+		if job == nil {
+			return false
+		}
+		request, ok := job.request.(reviewEffectRequest)
+		return ok && request.op == reviewOpSetBase
+	}
+	if isBaseSave(m.effects.active) {
+		return true
+	}
+	for _, job := range m.effects.pending {
+		if isBaseSave(job) {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *Model) applyReviewBase(result reviewBaseResult) tea.Cmd {
+	source := reviewPickerSource{generation: result.generation, targetID: result.targetID, repoRoot: result.sourceRepo}
+	if result.err != nil {
+		if !m.effects.quitting {
+			m.errBar.text = result.err.Error()
+		}
+		return nil
+	}
+	if m.effects.quitting || !m.reviewPickerSourceCurrent(source) {
+		return nil
+	}
+	request, ok := m.review.SelectBase(result.ref)
 	if !ok {
 		return nil
 	}

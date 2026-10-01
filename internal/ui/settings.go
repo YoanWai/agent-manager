@@ -11,39 +11,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// defaultTool is the CLI quick spawn launches: the settings choice when it
-// is still enabled, else the first enabled tool. A store error still yields
-// the fallback but is surfaced, never swallowed.
-func (m *Model) defaultTool() string {
-	names := m.enabledToolNames()
-	if len(names) == 0 {
-		return ""
-	}
-	chosen, err := m.services.store.Setting("default_tool")
-	if err != nil {
-		m.errBar.text = "reading default tool setting: " + err.Error()
-		return names[0]
-	}
-	if chosen != "" {
-		for _, name := range names {
-			if name == chosen {
-				return chosen
-			}
-		}
-	}
-	return names[0]
-}
-
-// hiddenTools returns the set of CLI names the user turned off for new sessions.
-func (m *Model) hiddenTools() map[string]bool {
-	raw, err := m.services.store.Setting(hiddenToolsSetting)
-	if err != nil {
-		m.errBar.text = "reading hidden tools setting: " + err.Error()
-		return nil
-	}
-	return parseHiddenTools(raw)
-}
-
 func parseHiddenTools(raw string) map[string]bool {
 	if raw == "" {
 		return nil
@@ -75,16 +42,21 @@ func formatHiddenTools(hidden map[string]bool) string {
 	return strings.Join(names, ",")
 }
 
-func (m *Model) defaultWorktree() bool {
-	chosen, err := m.services.store.Setting(worktreeSetting)
-	if err != nil {
-		m.errBar.text = "reading worktree setting: " + err.Error()
-		return false
-	}
-	return chosen == "on"
+func (m *Model) cachedDefaultToolSelection() ([]string, int) {
+	return m.cachedToolSelection(m.cachedHiddenTools(), "")
 }
 
-func (m *Model) spawnWorktreeDefault(group string) bool {
+func (m *Model) cachedSpawnToolSelection() ([]string, int) {
+	names, index := m.cachedDefaultToolSelection()
+	for i, name := range names {
+		if name == m.ledger.lastSpawnTool {
+			return names, i
+		}
+	}
+	return names, index
+}
+
+func (m *Model) cachedSpawnWorktreeDefault(group string) bool {
 	for g := group; g != ""; g = parentGroup(g) {
 		switch m.workspace.groupWorktrees[g] {
 		case "on":
@@ -93,12 +65,27 @@ func (m *Model) spawnWorktreeDefault(group string) bool {
 			return false
 		}
 	}
-	for _, name := range m.enabledToolNames() {
+	for _, name := range m.cachedEnabledToolNames() {
 		if name == m.ledger.lastSpawnTool {
 			return m.ledger.lastSpawnWorktree
 		}
 	}
-	return m.defaultWorktree()
+	return m.settingsCache.value(worktreeSetting) == "on"
+}
+
+func (m *Model) cachedEnabledToolNames() []string {
+	all := sortedToolNames(m.services.cfg)
+	hidden := m.cachedHiddenTools()
+	if len(hidden) == 0 {
+		return all
+	}
+	names := make([]string, 0, len(all))
+	for _, name := range all {
+		if !hidden[name] {
+			names = append(names, name)
+		}
+	}
+	return names
 }
 
 // worktreeUnavailable is what the worktree toggle reads when the target
@@ -110,25 +97,6 @@ const worktreeUnavailable = "unavailable (not a git repo)"
 // meanwhile has to be seen without closing it, while a frame that repaints
 // on every keystroke must not shell out to git each time.
 const worktreeLookupTTL = 2 * time.Second
-
-// worktreeCapable reports whether dir can host a worktree session: git
-// installed, and the directory inside a repository. An umbrella directory
-// that merely contains repos cannot, so the toggle is gated up front
-// instead of failing once the prompt is already typed.
-func (m *Model) worktreeCapable(dir string) bool {
-	if m.services.gitDrv == nil || dir == "" {
-		return false
-	}
-	if answer, seen := m.ledger.worktreeRepos[dir]; seen && time.Since(answer.at) < worktreeLookupTTL {
-		return answer.capable
-	}
-	_, err := m.services.gitDrv.RepoRoot(dir)
-	if m.ledger.worktreeRepos == nil {
-		m.ledger.worktreeRepos = make(map[string]repoAnswer)
-	}
-	m.ledger.worktreeRepos[dir] = repoAnswer{capable: err == nil, at: time.Now()}
-	return err == nil
-}
 
 // forgetWorktreeCapability drops the memo so the next look is a fresh one.
 // Opening the form or the quick bar calls it.
@@ -245,36 +213,91 @@ func storedNotifyFinished(st *store.Store) bool {
 	return chosen == "on"
 }
 
-func (m *Model) openSettings() {
+func (m *Model) cachedHiddenTools() map[string]bool {
+	hidden := make(map[string]bool)
+	for name, on := range m.settingsCache.hidden {
+		if on {
+			if _, ok := m.services.cfg.Tools[name]; ok {
+				hidden[name] = true
+			}
+		}
+	}
+	return hidden
+}
+
+func (m *Model) cachedToolSelection(hidden map[string]bool, preferred string) ([]string, int) {
+	all := sortedToolNames(m.services.cfg)
+	names := make([]string, 0, len(all))
+	for _, name := range all {
+		if !hidden[name] {
+			names = append(names, name)
+		}
+	}
+	if preferred == "" {
+		preferred = m.settingsCache.value("default_tool")
+	}
+	for index, name := range names {
+		if name == preferred {
+			return names, index
+		}
+	}
+	return names, 0
+}
+
+func (m *Model) settingsStateFromCache() settingsState {
+	hidden := m.cachedHiddenTools()
+	names, index := m.cachedToolSelection(hidden, "")
+	manualTheme := themes[themeIndex(m.settingsCache.value(themeSetting))].Name
+	return settingsState{
+		toolNames:       names,
+		toolIndex:       index,
+		themeIndex:      themeIndex(current.Name),
+		layoutSplit:     m.settingsCache.value(diffLayoutSetting) != "unified",
+		quickCloseSend:  m.settingsCache.value(quickCloseSetting) == "close",
+		enterFocuses:    m.settingsCache.value(focusKeySetting) != "attach",
+		arrowStep:       m.settingsCache.value(arrowStepSetting) != "off",
+		comfortableRows: m.settingsCache.value(listDensitySetting) == "comfortable",
+		fullLayout:      m.settingsCache.value(sessionLayoutSetting) == "full",
+		hideHeader:      m.settingsCache.value(hideHeaderSetting) == "on",
+		hideStats:       m.settingsCache.value(hideStatsSetting) == "on",
+		mouseDisabled:   m.settingsCache.value(mouseSetting) == "off",
+		worktreeDefault: m.settingsCache.value(worktreeSetting) == "on",
+		proactive:       m.settingsCache.value("coordination") == "on",
+		notifications:   m.settingsCache.value(notificationsSetting) != "off",
+		notifyFinished:  m.settingsCache.value(notifyFinishedSetting) == "on",
+		themeAuto:       m.settingsCache.value(themeAutoSetting) == "on",
+		manualTheme:     manualTheme,
+		cliHidden:       hidden,
+	}
+}
+
+func (m *Model) applyCachedSettingsPrefs() {
+	m.prefs.focusOnEnter = m.settingsCache.value(focusKeySetting) != "attach"
+	m.prefs.arrowStep = m.settingsCache.value(arrowStepSetting) != "off"
+	m.prefs.comfortableRows = m.settingsCache.value(listDensitySetting) == "comfortable"
+	m.prefs.fullLayout = m.settingsCache.value(sessionLayoutSetting) == "full"
+	m.prefs.hideHeader = m.settingsCache.value(hideHeaderSetting) == "on"
+	m.prefs.hideStats = m.settingsCache.value(hideStatsSetting) == "on"
+	m.prefs.mouseDisabled = m.settingsCache.value(mouseSetting) == "off"
+}
+
+func (m *Model) openSettings() tea.Cmd {
+	return m.openSettingsWithReader(storeSettingWriter{st: m.services.store})
+}
+
+func (m *Model) openSettingsWithReader(reader settingsValueReader) tea.Cmd {
 	m.settingsGen++
 	if len(m.services.cfg.Tools) == 0 {
 		m.errBar.text = "no tools configured"
-		return
+		return nil
 	}
 	m.errBar.text = ""
-	names, index := m.defaultToolSelection()
-	m.settings = settingsState{
-		toolNames:      names,
-		toolIndex:      index,
-		themeIndex:     themeIndex(current.Name),
-		layoutSplit:    m.defaultSplitLayout(),
-		quickCloseSend: m.quickCloseAfterSend(),
-		enterFocuses:   m.enterFocuses(),
-		arrowStep:      m.prefs.arrowStep,
-
-		comfortableRows: m.prefs.comfortableRows,
-		fullLayout:      m.prefs.fullLayout,
-		hideHeader:      m.prefs.hideHeader,
-		hideStats:       m.prefs.hideStats,
-		mouseDisabled:   m.prefs.mouseDisabled,
-		worktreeDefault: m.defaultWorktree(),
-		proactive:       m.proactiveCoordination(),
-		notifications:   storedNotifications(m.services.store),
-		notifyFinished:  storedNotifyFinished(m.services.store),
-		themeAuto:       themeAutoEnabled(m.services.store),
-		manualTheme:     themes[themeIndex(storedTheme(m.services.store))].Name,
-	}
+	m.settings = m.settingsStateFromCache()
 	m.mode = modeSettings
+	if m.settingsPending > 0 {
+		return nil
+	}
+	return settingsLoadCmd(settingsLoadRequest{target: settingsLoadDialog, generation: m.settingsGen}, reader)
 }
 
 func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -346,6 +369,11 @@ func (m *Model) captureSettingsSave(includeHidden, followUpdate bool) tea.Cmd {
 	if includeHidden {
 		request.hidden = m.hiddenToolList()
 	}
+	m.settingsCache.applyValues(request.values)
+	if request.hidden != nil {
+		m.settingsCache.applyHidden(request.hidden)
+	}
+	m.settingsPending++
 	m.enqueueEffect(request, 0, false)
 	return m.nextEffectCmd()
 }
@@ -356,6 +384,8 @@ func (m *Model) captureHiddenSave() tea.Cmd {
 		hidden:     m.hiddenToolList(),
 		generation: m.settingsGen,
 	}
+	m.settingsCache.applyHidden(request.hidden)
+	m.settingsPending++
 	m.enqueueEffect(request, 0, false)
 	return m.nextEffectCmd()
 }
@@ -473,18 +503,9 @@ func (m *Model) applySettingsPrefs() {
 
 func (m *Model) openCLIPicker() {
 	names := sortedToolNames(m.services.cfg)
-	// In-memory is the source of truth while a save is in flight; only the
-	// first open of a fresh dialog reads the store.
 	hidden := m.settings.cliHidden
 	if hidden == nil {
-		hidden = make(map[string]bool)
-		for name, on := range m.hiddenTools() {
-			if on {
-				if _, ok := m.services.cfg.Tools[name]; ok {
-					hidden[name] = true
-				}
-			}
-		}
+		hidden = m.cachedHiddenTools()
 	}
 	m.settings.cliPicker = true
 	m.settings.cliNames = names
@@ -515,7 +536,11 @@ func (m *Model) handleCLIPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.settings.cliPicker = false
 		// Refresh the quick-spawn tool list so it matches the new filter.
-		names, index := m.defaultToolSelection()
+		preferred := ""
+		if len(m.settings.toolNames) > 0 && m.settings.toolIndex < len(m.settings.toolNames) {
+			preferred = m.settings.toolNames[m.settings.toolIndex]
+		}
+		names, index := m.cachedToolSelection(m.settings.cliHidden, preferred)
 		m.settings.toolNames = names
 		m.settings.toolIndex = index
 		return m, m.captureHiddenSave()
@@ -531,6 +556,7 @@ func (m *Model) toggleCLIHidden(name string) {
 	}
 	if m.settings.cliHidden[name] {
 		delete(m.settings.cliHidden, name)
+		m.settings.dirty = true
 		m.errBar.text = ""
 		return
 	}
@@ -545,6 +571,7 @@ func (m *Model) toggleCLIHidden(name string) {
 		return
 	}
 	m.settings.cliHidden[name] = true
+	m.settings.dirty = true
 	m.errBar.text = ""
 }
 
@@ -563,6 +590,7 @@ func requestCLISupportURL() string {
 // step pushes the pane background to tmux, which shells out, so it returns a
 // command rather than blocking the update path.
 func (m *Model) cycleSetting(step int) tea.Cmd {
+	changed := true
 	switch m.settings.field {
 	case settingsFieldTool:
 		count := len(m.settings.toolNames)
@@ -576,6 +604,7 @@ func (m *Model) cycleSetting(step int) tea.Cmd {
 		m.settings.themeAuto = false
 		m.settings.themeIndex = (m.settings.themeIndex + step + len(themes)) % len(themes)
 		m.settings.manualTheme = themes[m.settings.themeIndex].Name
+		m.settings.dirty = true
 		applyTheme(themes[m.settings.themeIndex])
 		SyncTerminalBackground()
 		return m.syncPaneTheme()
@@ -586,6 +615,7 @@ func (m *Model) cycleSetting(step int) tea.Cmd {
 			name = autoThemeName(m.settings.manualTheme, systheme.Detect())
 		}
 		m.settings.themeIndex = themeIndex(name)
+		m.settings.dirty = true
 		applyTheme(themes[m.settings.themeIndex])
 		SyncTerminalBackground()
 		return m.syncPaneTheme()
@@ -615,14 +645,11 @@ func (m *Model) cycleSetting(step int) tea.Cmd {
 		m.settings.notifications = !m.settings.notifications
 	case settingsFieldNotifyFinish:
 		m.settings.notifyFinished = !m.settings.notifyFinished
+	default:
+		changed = false
+	}
+	if changed {
+		m.settings.dirty = true
 	}
 	return nil
-}
-
-func (m *Model) proactiveCoordination() bool {
-	proactive, err := m.services.store.ProactiveCoordination()
-	if err != nil {
-		m.errBar.text = "reading coordination setting: " + err.Error()
-	}
-	return proactive
 }

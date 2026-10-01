@@ -55,25 +55,18 @@ func (m *Model) prepareDelete() {
 		return
 	}
 	if !entry.isGroup {
-		sessions, err := m.sessionAndChildren(entry.sess)
-		if err != nil {
-			m.errBar.text = err.Error()
-			return
-		}
+		sessions := m.sessionAndChildren(entry.sess)
 		m.confirm = confirmTarget{
 			label: followConfirmLabel("delete", entry.sess.Name, len(sessions)-1,
 				"kills its tmux session.",
 				"kills their tmux sessions."),
-			sessions: sessions,
+			sessions:  sessions,
+			selection: lifecycleSelection{kind: lifecycleSelectionSession, rootID: entry.sess.ID},
 		}
 		m.mode = modeConfirmDelete
 		return
 	}
-	subtree, err := m.services.store.SessionsInSubtree(entry.group)
-	if err != nil {
-		m.errBar.text = err.Error()
-		return
-	}
+	subtree := m.sessionsInSubtree(entry.group)
 	if m.rail.ShowArchived() {
 		m.confirm = archivedGroupDelete(entry.group, subtree)
 	} else {
@@ -98,6 +91,7 @@ func (m *Model) wholeGroupDelete(path string, subtree []store.Session) confirmTa
 		sessions: subtree,
 		label: fmt.Sprintf("delete group %s (%d subgroups, %d sessions incl. archived)? kills their tmux sessions.",
 			path, subgroups, len(subtree)),
+		selection: lifecycleSelection{kind: lifecycleSelectionGroup},
 	}
 }
 
@@ -114,5 +108,6 @@ func archivedGroupDelete(path string, subtree []store.Session) confirmTarget {
 		sessions:     archived,
 		label: fmt.Sprintf("delete %s from the archive (%d archived sessions)? kills their tmux sessions, live ones stay.",
 			path, len(archived)),
+		selection: lifecycleSelection{kind: lifecycleSelectionGroup, archivedOnly: true},
 	}
 }

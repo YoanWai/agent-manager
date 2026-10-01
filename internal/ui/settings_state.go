@@ -73,6 +73,16 @@ type settingsState struct {
 	keyCapture bool
 	keyAppend  bool
 	keyReset   bool
+	dirty      bool
+}
+
+type settingsCache struct {
+	values map[string]string
+	hidden map[string]bool
+}
+
+func (c settingsCache) value(key string) string {
+	return c.values[key]
 }
 
 const (

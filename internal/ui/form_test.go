@@ -1,17 +1,20 @@
 package ui
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/launch"
+	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -23,9 +26,96 @@ func TestNewSessionFormUsesSettingsDefaultTool(t *testing.T) {
 	if err := m.services.store.SetSetting("default_tool", "ready-tool"); err != nil {
 		t.Fatal(err)
 	}
-	m.openForm()
+	m.applyTestMsg(t, m.openForm()())
 	if got := m.form.toolNames[m.form.toolIndex]; got != "ready-tool" {
 		t.Fatalf("new session tool = %q, want settings default", got)
+	}
+}
+
+func TestOpenFormDefersSettingsReadAndAcceptsPristineDefaults(t *testing.T) {
+	m := buildModel(t)
+	reader := &blockedSettingReader{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+		values:  map[string]string{"default_tool": "ready-tool", worktreeSetting: "on"},
+	}
+
+	cmd := m.openFormWithReader(reader)
+	if cmd == nil {
+		t.Fatal("opening the form did not return a deferred settings refresh")
+	}
+	select {
+	case <-reader.started:
+		t.Fatal("opening the form read settings before its Bubble Tea command")
+	default:
+	}
+
+	completed := make(chan tea.Msg, 1)
+	go func() { completed <- cmd() }()
+	<-reader.started
+	if got := m.form.toolNames[m.form.toolIndex]; got != "claude" {
+		t.Fatalf("cached tool = %q, want claude before refresh", got)
+	}
+	close(reader.release)
+	m.applyTestMsg(t, <-completed)
+	if got := m.form.toolNames[m.form.toolIndex]; got != "ready-tool" {
+		t.Fatalf("refreshed tool = %q, want ready-tool", got)
+	}
+	if !m.form.worktree {
+		t.Fatal("pristine form did not accept the refreshed worktree default")
+	}
+}
+
+func TestFormSettingsLoadRefusesLocalChoiceAndReopenedForm(t *testing.T) {
+	t.Run("local choice", func(t *testing.T) {
+		m := buildModel(t)
+		cmd := m.openForm()
+		m.cycleTool(1)
+		chosen := m.form.toolNames[m.form.toolIndex]
+		if err := m.services.store.SetSetting("default_tool", "ready-tool"); err != nil {
+			t.Fatal(err)
+		}
+		m.applyTestMsg(t, cmd())
+		if got := m.form.toolNames[m.form.toolIndex]; got != chosen {
+			t.Fatalf("async defaults replaced local tool choice: got %q want %q", got, chosen)
+		}
+	})
+
+	t.Run("reopened form", func(t *testing.T) {
+		m := buildModel(t)
+		cmd := m.openForm()
+		generation := m.form.prompt.gen
+		if err := m.services.store.SetSetting("default_tool", "ready-tool"); err != nil {
+			t.Fatal(err)
+		}
+		loaded := cmd()
+		m.openForm()
+		if m.form.prompt.gen == generation {
+			t.Fatal("reopened form reused its generation")
+		}
+		m.applyTestMsg(t, loaded)
+		if got := m.form.toolNames[m.form.toolIndex]; got == "ready-tool" {
+			t.Fatal("old defaults replaced the reopened form")
+		}
+	})
+}
+
+func TestFormSettingsLoadAppliesSuccessfulReadsOnPartialFailure(t *testing.T) {
+	m := buildModel(t)
+	reader := &settingsScriptWriter{
+		failGetOn: quickCloseSetting,
+		values: map[string]string{
+			"default_tool":  "ready-tool",
+			worktreeSetting: "on",
+		},
+	}
+	cmd := m.openFormWithReader(reader)
+	m.applyTestMsg(t, cmd())
+	if got := m.form.toolNames[m.form.toolIndex]; got != "ready-tool" || !m.form.worktree {
+		t.Fatalf("successful reads were lost: tool=%q worktree=%t", got, m.form.worktree)
+	}
+	if !strings.Contains(m.errBar.text, "settings load: 1 reads failed") {
+		t.Fatalf("partial failure not surfaced: %q", m.errBar.text)
 	}
 }
 
@@ -70,7 +160,7 @@ func TestFormCancelDoesNotRememberLastPick(t *testing.T) {
 	m.form.worktree = true
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyEsc})
 
-	m.openForm()
+	m.applyTestMsg(t, m.openForm()())
 	if got := m.form.toolNames[m.form.toolIndex]; got != "claude" {
 		t.Fatalf("cancelled pick must not seed the next form, got %q", got)
 	}
@@ -95,7 +185,9 @@ func TestFormRemembersPickOnlyAfterInstallRetrySucceeds(t *testing.T) {
 	pickFormTool(t, m, "claude")
 	m.form.name.SetValue("after-install")
 	m.form.dir.SetValue(dir)
-	m.toggleFormWorktree()
+	if probe := m.toggleFormWorktree(); probe != nil {
+		m.applyTestMsg(t, probe())
+	}
 	_, cmd := m.submitForm()
 	m.applyCmd(t, cmd)
 
@@ -112,7 +204,7 @@ func TestFormRemembersPickOnlyAfterInstallRetrySucceeds(t *testing.T) {
 	if m.ledger.lastSpawnTool != "claude" || !m.ledger.lastSpawnWorktree {
 		t.Fatalf("successful retry did not remember the pick: %q, %v; err=%q", m.ledger.lastSpawnTool, m.ledger.lastSpawnWorktree, m.errBar.text)
 	}
-	m.openForm()
+	m.applyTestMsg(t, m.openForm()())
 	if m.form.toolNames[m.form.toolIndex] != "claude" || !m.form.worktree {
 		t.Fatal("next form should use the successful retry's tool and worktree")
 	}
@@ -124,7 +216,7 @@ func TestFormRemembersLastSpawnWorktree(t *testing.T) {
 	m.form.worktree = true
 	submitFormSession(t, m, "first")
 
-	m.openForm()
+	m.applyTestMsg(t, m.openForm()())
 	if !m.form.worktree {
 		t.Fatal("next form should seed worktree from the last spawn")
 	}
@@ -177,7 +269,7 @@ func TestFormHiddenLastToolFallsBackToSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m.openForm()
+	m.applyTestMsg(t, m.openForm()())
 	if got := m.form.toolNames[m.form.toolIndex]; got != "claude" {
 		t.Fatalf("hidden last tool should fall back to settings, got %q", got)
 	}
@@ -813,24 +905,29 @@ func TestSendModePromptSurvivesPollerRestart(t *testing.T) {
 	}
 }
 
-func TestSendModeReconcilesAmbiguousDeliveryWithoutResending(t *testing.T) {
+func TestSendModeReconcilesUncertainPriorDeliveryWithoutResending(t *testing.T) {
 	m := buildModel(t)
 	if err := m.spawnSession("send-tool", "custom", t.TempDir(), "", "do not resend", false, false); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	sess := m.sessionRows()[0]
 	input := sessionPendingInputs(t, m, sess.ID)[0]
-	claimed, err := m.services.store.ClaimPendingInput(sess.ID, input)
-	if err != nil || !claimed {
-		t.Fatalf("claim pending input = %v, %v", claimed, err)
+	var claimed bool
+	acquired, err := m.services.store.WithDeliveryGuard(context.Background(), func(guard *store.DeliveryGuard) error {
+		_, ok, claimErr := guard.ClaimPendingInput(sess.ID, input, time.Now())
+		claimed = ok
+		return claimErr
+	})
+	if err != nil || !acquired || !claimed {
+		t.Fatalf("claim pending input = acquired %v, claimed %v, err %v", acquired, claimed, err)
 	}
 	old := m.poller
 	m.poller = newPoller(m.services.store, m.services.tmux, m.services.engine, m.services.hooks, m.services.gitDrv,
 		old.options.StatusSources, old.options.SessionStores, old.options.MCPStyles, old.options.ShellTools, old.options.Binaries, old.options.Interval)
 	msg := m.poller.refreshOnce()
 	gotErr, ok := msg.(errMsg)
-	if !ok || !strings.Contains(gotErr.err.Error(), "ambiguous pending input") {
-		t.Fatalf("refresh result = %#v, want ambiguous-delivery error", msg)
+	if !ok || !strings.Contains(gotErr.err.Error(), "uncertain prior transport outcome") {
+		t.Fatalf("refresh result = %v, want uncertain-delivery error", msg)
 	}
 	if inputs := sessionPendingInputs(t, m, sess.ID); len(inputs) != 0 {
 		t.Fatalf("ambiguous input was not reconciled: %q", inputs)
@@ -929,7 +1026,7 @@ func TestFormWorktreeToggleSeedsFromSetting(t *testing.T) {
 	if err := m.services.store.SetSetting(worktreeSetting, "on"); err != nil {
 		t.Fatalf("set setting: %v", err)
 	}
-	m.openForm()
+	m.applyTestMsg(t, m.openForm()())
 	if !m.form.worktree {
 		t.Fatal("worktree should seed on from setting")
 	}
@@ -950,15 +1047,18 @@ func TestFormWorktreeGatedInNonRepoDir(t *testing.T) {
 		t.Fatalf("form should mark worktree unavailable, got %q", view)
 	}
 	m.form.focus = fieldWorktree
-	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
+	_, probe := m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
+	if probe != nil {
+		m.applyTestMsg(t, probe())
+	}
 	if m.formWorktreeOn() {
 		t.Fatal("toggling must not turn worktree on for a non-repo dir")
 	}
 	if !strings.Contains(m.errBar.text, "need a git repository") {
 		t.Fatalf("refused toggle should say why, got %q", m.errBar.text)
 	}
-	m.submitForm()
-	m.applyCmd(t, m.nextEffectCmd())
+	_, spawn := m.submitForm()
+	m.applyCmd(t, spawn)
 	sessions, err := m.services.store.ListSessions(true)
 	if err != nil {
 		t.Fatalf("list: %v", err)
@@ -977,18 +1077,83 @@ func TestWorktreeCapabilityExpiresSoAFreshRepoIsSeen(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if m.worktreeCapable(dir) {
-		t.Fatal("a plain directory cannot host a worktree")
+	m.openForm()
+	m.form.dir.SetValue(dir)
+	m.applyTestMsg(t, m.formWorktreeProbeCmd(false)())
+	if capable, known := m.cachedWorktreeCapability(dir); !known || capable {
+		t.Fatalf("plain directory cache = capable %t known %t", capable, known)
 	}
 	initGitRepo(t, dir)
-	if m.worktreeCapable(dir) {
-		t.Fatal("the memo should still answer from the look taken a moment ago")
+	if capable, known := m.cachedWorktreeCapability(dir); !known || capable {
+		t.Fatalf("fresh cache changed without a probe: capable %t known %t", capable, known)
 	}
 	answer := m.ledger.worktreeRepos[dir]
 	answer.at = answer.at.Add(-worktreeLookupTTL)
 	m.ledger.worktreeRepos[dir] = answer
-	if !m.worktreeCapable(dir) {
-		t.Fatal("an expired entry should be looked up again and see the new repo")
+	if _, known := m.cachedWorktreeCapability(dir); known {
+		t.Fatal("expired capability still appeared current")
+	}
+	m.applyTestMsg(t, m.formWorktreeProbeCmd(false)())
+	if capable, known := m.cachedWorktreeCapability(dir); !known || !capable {
+		t.Fatalf("fresh probe cache = capable %t known %t", capable, known)
+	}
+}
+
+type blockedRepoPreflight struct {
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+	capable bool
+}
+
+func (r *blockedRepoPreflight) resolve(string, []string) (string, bool) { return "", false }
+
+func (r *blockedRepoPreflight) repoCapable(string) bool {
+	r.once.Do(func() { close(r.started) })
+	<-r.release
+	return r.capable
+}
+
+func TestWorktreeProbeDefersGitAndRejectsReopenedForm(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	dir := t.TempDir()
+	m.form.dir.SetValue(dir)
+	reader := &blockedRepoPreflight{
+		started: make(chan struct{}), release: make(chan struct{}), capable: true,
+	}
+	m.worktreeProbeGen++
+	request := worktreeProbeRequest{
+		target: worktreeProbeForm, generation: m.form.prompt.gen,
+		sequence: m.worktreeProbeGen, dir: m.formSpawnDir(), toggle: true, from: m.form.worktree,
+	}
+	cmd := worktreeProbeCmd(request, reader)
+	select {
+	case <-reader.started:
+		t.Fatal("repo probe ran on the update path")
+	default:
+	}
+	completed := make(chan worktreeProbeMsg, 1)
+	go func() { completed <- cmd().(worktreeProbeMsg) }()
+	<-reader.started
+	m.openForm()
+	close(reader.release)
+	m.handleWorktreeProbe(<-completed)
+	if m.form.worktree {
+		t.Fatal("old repo probe toggled the reopened form")
+	}
+	if _, known := m.cachedWorktreeCapability(dir); known {
+		t.Fatal("stale repo probe populated rendering facts")
+	}
+}
+
+func TestPrepareFrameConsumesCapturedWorktreeFacts(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	m.ledger.worktreeRepos = nil
+	m.prepareFrame()
+	if m.ledger.worktreeRepos != nil {
+		t.Fatal("rendering performed a repository lookup")
 	}
 }
 
@@ -1002,8 +1167,9 @@ func TestFormWorktreeStaysOnInRepoDir(t *testing.T) {
 	if err := m.services.store.SetSetting(worktreeSetting, "on"); err != nil {
 		t.Fatalf("set setting: %v", err)
 	}
-	m.openForm()
+	m.applyTestMsg(t, m.openForm()())
 	m.form.dir.SetValue(repo)
+	m.applyTestMsg(t, m.formWorktreeProbeCmd(false)())
 	if !m.formWorktreeOn() {
 		t.Fatal("a repo dir should keep the worktree default on")
 	}

@@ -37,6 +37,60 @@ func captureEditor(t *testing.T, installed ...string) *[]string {
 	return &launched
 }
 
+func resolveEditorLookup(t *testing.T, m *Model, cmd tea.Cmd) tea.Cmd {
+	t.Helper()
+	if cmd == nil {
+		return nil
+	}
+	updated, next := m.Update(cmd())
+	*m = *updated.(*Model)
+	return m.foregroundTestCmd(t, next)
+}
+
+func applyEditorLookup(t *testing.T, m *Model, cmd tea.Cmd) {
+	t.Helper()
+	if launch := resolveEditorLookup(t, m, cmd); launch != nil {
+		m.applyCmd(t, launch)
+	}
+}
+
+func TestEditorDirectoryCommandResolvesExecutableOffUpdate(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.services.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "backend")
+	launched := captureEditor(t, "code")
+	lookupCalls := 0
+	resolvedLookup := lookPath
+	lookPath = func(name string) (string, error) {
+		lookupCalls++
+		return resolvedLookup(name)
+	}
+
+	_, cmd := m.openEditor()
+	msg := cmd()
+	if lookupCalls == 0 {
+		t.Fatal("directory command returned before resolving the editor executable")
+	}
+	prepared, ok := msg.(terminalDirectoryMsg)
+	if !ok || prepared.editor.command == nil {
+		t.Fatalf("directory command did not prepare the editor process: %#v", msg)
+	}
+	lookPath = func(string) (string, error) {
+		t.Fatal("Update performed executable resolution")
+		return "", errors.New("unreachable")
+	}
+	updated, launch := m.Update(msg)
+	*m = *updated.(*Model)
+	m.applyCmd(t, m.foregroundTestCmd(t, launch))
+	if want := []string{"code", dir}; !slices.Equal(*launched, want) {
+		t.Fatalf("launched %v, want %v", *launched, want)
+	}
+}
+
 func TestOpenEditorLaunchesGUIEditorOnSessionDirectory(t *testing.T) {
 	m := buildModel(t)
 	launched := captureEditor(t, "code")
@@ -53,7 +107,7 @@ func TestOpenEditorLaunchesGUIEditorOnSessionDirectory(t *testing.T) {
 	if len(*launched) != 0 {
 		t.Fatalf("the editor started on the update path: %v", *launched)
 	}
-	m.applyCmd(t, cmd)
+	applyEditorLookup(t, m, cmd)
 
 	// The live pane answers with the directory tmux resolved, which on
 	// macOS is the target of the /var symlink the temp dir sits behind.
@@ -63,6 +117,34 @@ func TestOpenEditorLaunchesGUIEditorOnSessionDirectory(t *testing.T) {
 	}
 	if !strings.Contains(m.errBar.text, "code") {
 		t.Fatalf("status line should name the editor, got %q", m.errBar.text)
+	}
+}
+
+func TestEditorDirectoryCompletionDoesNotReplaceNewerDialog(t *testing.T) {
+	m := buildModel(t)
+	launched := captureEditor(t, "code")
+	dir := t.TempDir()
+	createSession(t, m, "agent", dir, "")
+	m.selectSessionRow(t, "agent")
+	reader := &blockedTerminalDirectoryReader{
+		started: make(chan struct{}), release: make(chan struct{}), dir: dir,
+	}
+	_, cmd := m.openEditorWithReader(reader)
+	completed := make(chan tea.Msg, 1)
+	go func() { completed <- cmd() }()
+	<-reader.started
+	m.openForm()
+	close(reader.release)
+	updated, next := m.Update(<-completed)
+	m = updated.(*Model)
+	if next != nil {
+		m.applyTestMsg(t, next())
+	}
+	if len(*launched) != 0 {
+		t.Fatalf("stale directory result launched an editor over the newer form: %v", *launched)
+	}
+	if m.mode != modeForm {
+		t.Fatalf("stale editor result replaced the newer dialog: mode=%v", m.mode)
 	}
 }
 
@@ -80,7 +162,7 @@ func TestOpenEditorPrefersConfiguredCommand(t *testing.T) {
 	m.selectGroupRow(t, "backend")
 
 	_, cmd := m.openEditor()
-	m.applyCmd(t, cmd)
+	applyEditorLookup(t, m, cmd)
 
 	want := []string{"open", "-a", "Visual Studio Code", dir}
 	if !slices.Equal(*launched, want) {
@@ -136,7 +218,7 @@ func TestOpenEditorFallsBackToRecordedCwd(t *testing.T) {
 	}
 
 	_, cmd := m.openEditor()
-	m.applyCmd(t, cmd)
+	applyEditorLookup(t, m, cmd)
 
 	want := []string{"code", entry.sess.Cwd}
 	if !slices.Equal(*launched, want) {
@@ -165,6 +247,89 @@ func TestReviewOpensCurrentFileInEditor(t *testing.T) {
 	opened := (*launched)[len(*launched)-1]
 	if opened != want {
 		t.Fatalf("opened %q, want %q", opened, want)
+	}
+}
+
+func TestReviewFileCommandResolvesExecutableOffUpdate(t *testing.T) {
+	m := buildModel(t)
+	launched := captureEditor(t, "code")
+	openReviewOn(t, m, "opener", gitTestRepo(t))
+	lookupCalls := 0
+	resolvedLookup := lookPath
+	lookPath = func(name string) (string, error) {
+		lookupCalls++
+		return resolvedLookup(name)
+	}
+
+	_, cmd := m.openDiffFile()
+	msg := cmd()
+	if lookupCalls == 0 {
+		t.Fatal("file command returned before resolving the editor executable")
+	}
+	prepared, ok := msg.(editorFileCheckedMsg)
+	if !ok || prepared.editor.command == nil {
+		t.Fatalf("file command did not prepare the editor process: %#v", msg)
+	}
+	lookPath = func(string) (string, error) {
+		t.Fatal("Update performed executable resolution")
+		return "", errors.New("unreachable")
+	}
+	updated, launch := m.Update(msg)
+	*m = *updated.(*Model)
+	m.applyCmd(t, m.foregroundTestCmd(t, launch))
+	if len(*launched) == 0 {
+		t.Fatal("the editor never launched")
+	}
+}
+
+func TestReviewEditorCompletionCannotCrossHelpOrQuit(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func(*Model)
+	}{
+		{
+			name: "help",
+			mutate: func(m *Model) {
+				updated, _ := m.handleKey(key("?"))
+				*m = *updated.(*Model)
+			},
+		},
+		{
+			name: "quit",
+			mutate: func(m *Model) {
+				_, _ = m.requestQuit()
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := buildModel(t)
+			launched := captureEditor(t, "code")
+			openReviewOn(t, m, "opener", gitTestRepo(t))
+			started := make(chan struct{})
+			release := make(chan struct{})
+			resolvedLookup := lookPath
+			lookPath = func(name string) (string, error) {
+				close(started)
+				<-release
+				return resolvedLookup(name)
+			}
+
+			_, cmd := m.openDiffFile()
+			completed := make(chan tea.Msg, 1)
+			go func() { completed <- cmd() }()
+			<-started
+			tc.mutate(m)
+			close(release)
+
+			updated, next := m.Update(<-completed)
+			*m = *updated.(*Model)
+			if next != nil {
+				m.applyTestMsg(t, next())
+			}
+			if len(*launched) != 0 {
+				t.Fatalf("stale editor completion launched through %s: %v", tc.name, *launched)
+			}
+		})
 	}
 }
 
@@ -249,8 +414,8 @@ func TestResolveEditorPrecedence(t *testing.T) {
 			for key, value := range tc.env {
 				t.Setenv(key, value)
 			}
-			if got := m.resolveEditor(); got != tc.want {
-				t.Fatalf("resolveEditor() = %q, want %q", got, tc.want)
+			if got := m.captureEditorResolution().resolve(); got != tc.want {
+				t.Fatalf("editor resolution = %q, want %q", got, tc.want)
 			}
 		})
 	}
@@ -264,8 +429,8 @@ func TestResolveEditorFallsBackToEnvironment(t *testing.T) {
 	captureEditor(t)
 	t.Setenv("EDITOR", "nvim")
 
-	if got := m.resolveEditor(); got != "nvim" {
-		t.Fatalf("resolveEditor() = %q, want nvim", got)
+	if got := m.captureEditorResolution().resolve(); got != "nvim" {
+		t.Fatalf("editor resolution = %q, want nvim", got)
 	}
 	if detachedEditors[editorName("nvim")] {
 		t.Fatal("nvim draws in this terminal and must not start detached")
@@ -297,7 +462,8 @@ func TestOpenEditorWithoutAnyEditorExplainsItself(t *testing.T) {
 	createSession(t, m, "agent", dir, "")
 	m.selectSessionRow(t, "agent")
 
-	m.openEditor()
+	_, cmd := m.openEditor()
+	applyEditorLookup(t, m, cmd)
 
 	if len(*launched) != 0 {
 		t.Fatalf("nothing should launch without an editor, got %v", *launched)
@@ -319,7 +485,8 @@ func TestOpenEditorNamesADirectoryThatIsGone(t *testing.T) {
 		t.Fatalf("remove dir: %v", err)
 	}
 
-	m.openEditor()
+	_, cmd := m.openEditor()
+	applyEditorLookup(t, m, cmd)
 
 	if len(*launched) != 0 {
 		t.Fatalf("nothing should launch for a directory that is gone, got %v", *launched)
@@ -350,11 +517,9 @@ func TestAttachDoneOpensEditorAndReturnsToTheSession(t *testing.T) {
 	updated, cmd := m.Update(attachDoneMsg{sessID: sess.ID})
 	cmd = m.foregroundTestCmd(t, cmd)
 	*m = *updated.(*Model)
+	cmd = resolveEditorLookup(t, m, cmd)
 	if cmd == nil {
 		t.Fatalf("the request produced no launch, err = %q", m.errBar.text)
-	}
-	if m.editorReturnID != sess.ID {
-		t.Fatalf("return armed for %q, want %q", m.editorReturnID, sess.ID)
 	}
 	request, err := m.services.tmux.PendingRequest()
 	if err != nil {
@@ -368,15 +533,15 @@ func TestAttachDoneOpensEditorAndReturnsToTheSession(t *testing.T) {
 	if !isDone || done.err != nil {
 		t.Fatalf("editor launch reported %#v", done)
 	}
+	if done.returnTo.sessionID != sess.ID || done.returnTo.foregroundGen != m.foregroundGen || done.returnTo.mode != m.mode {
+		t.Fatalf("return target = %+v, want session %q at generation %d mode %v", done.returnTo, sess.ID, m.foregroundGen, m.mode)
+	}
 	if want := []string{"code", resolved(t, dir)}; !slices.Equal(*launched, want) {
 		t.Fatalf("launched %v, want %v", *launched, want)
 	}
 
 	updated, cmd = m.Update(done)
 	*m = *updated.(*Model)
-	if m.editorReturnID != "" {
-		t.Fatalf("the return should be consumed, still holds %q", m.editorReturnID)
-	}
 	if cmd == nil {
 		t.Fatal("the session should get its client back")
 	}
@@ -405,11 +570,9 @@ func TestAttachDoneRefusedEditorArmsNoReturn(t *testing.T) {
 	updated, cmd := m.Update(attachDoneMsg{sessID: sess.ID})
 	cmd = m.foregroundTestCmd(t, cmd)
 	*m = *updated.(*Model)
+	cmd = resolveEditorLookup(t, m, cmd)
 	if cmd != nil {
 		t.Fatal("a refused request should return no command")
-	}
-	if m.editorReturnID != "" {
-		t.Fatalf("nothing launched, so nothing to return from, got %q", m.editorReturnID)
 	}
 	if !strings.Contains(m.errBar.text, "no editor found") {
 		t.Fatalf("status line should say why, got %q", m.errBar.text)
@@ -436,14 +599,12 @@ func TestAttachDoneTerminalEditorArmsTheReturn(t *testing.T) {
 	updated, cmd := m.Update(attachDoneMsg{sessID: sess.ID})
 	cmd = m.foregroundTestCmd(t, cmd)
 	*m = *updated.(*Model)
+	cmd = resolveEditorLookup(t, m, cmd)
 	if cmd == nil {
 		t.Fatalf("the request produced no launch, err = %q", m.errBar.text)
 	}
 	if len(*launched) != 0 {
 		t.Fatalf("a terminal editor must not start detached, got %v", *launched)
-	}
-	if m.editorReturnID != sess.ID {
-		t.Fatalf("return armed for %q, want %q", m.editorReturnID, sess.ID)
 	}
 }
 
@@ -454,18 +615,121 @@ func TestEditorFailureKeepsTheListAndItsReason(t *testing.T) {
 	captureEditor(t, "code")
 	createSession(t, m, "editme", t.TempDir(), "")
 	m.selectSessionRow(t, "editme")
-	m.editorReturnID = m.sessionRows()[0].ID
+	returnTo := editorReturnTarget{sessionID: m.sessionRows()[0].ID, foregroundGen: m.foregroundGen, mode: m.mode}
 
-	updated, cmd := m.Update(editorDoneMsg{err: errors.New("exec: \"code\": file does not exist")})
+	updated, cmd := m.Update(editorDoneMsg{err: errors.New("exec: \"code\": file does not exist"), returnTo: returnTo})
 	*m = *updated.(*Model)
 	if cmd != nil {
 		t.Fatal("a failed editor should not hand the session back its client")
 	}
-	if m.editorReturnID != "" {
-		t.Fatalf("the return should be dropped, still holds %q", m.editorReturnID)
-	}
 	if !strings.Contains(m.errBar.text, "does not exist") {
 		t.Fatalf("status line should carry the failure, got %q", m.errBar.text)
+	}
+}
+
+func TestEditorReturnCompletionCannotCrossHelpOrQuit(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func(*Model)
+	}{
+		{
+			name: "help",
+			mutate: func(m *Model) {
+				updated, _ := m.handleKey(key("?"))
+				*m = *updated.(*Model)
+			},
+		},
+		{
+			name: "quit",
+			mutate: func(m *Model) {
+				_, _ = m.requestQuit()
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := buildModel(t)
+			captureEditor(t, "code")
+			createSession(t, m, "editme", t.TempDir(), "")
+			m.selectSessionRow(t, "editme")
+			sess := m.sessionRows()[0]
+			started := make(chan struct{})
+			release := make(chan struct{})
+			resolvedStart := startEditor
+			startEditor = func(cmd *exec.Cmd) error {
+				close(started)
+				<-release
+				return resolvedStart(cmd)
+			}
+
+			_, directory := m.openEditorWithReaderForReturn(systemTerminalDirectoryReader{
+				tmux: m.services.tmux,
+				dirs: systemDirectoryPreflight{git: m.services.gitDrv},
+			}, sess.ID)
+			rawDirectory := directory()
+			directoryMsg, ok := rawDirectory.(terminalDirectoryMsg)
+			if !ok {
+				t.Fatalf("directory command returned %T", rawDirectory)
+			}
+			updated, launch := m.handleTerminalDirectory(directoryMsg)
+			*m = *updated.(*Model)
+			if launch == nil {
+				t.Fatal("resolved directory did not prepare an editor launch")
+			}
+			completed := make(chan tea.Msg, 1)
+			go func() { completed <- launch() }()
+			<-started
+			tc.mutate(m)
+			close(release)
+
+			done := (<-completed).(editorDoneMsg)
+			if done.returnTo.sessionID != sess.ID {
+				t.Fatalf("completion return target = %+v, want %q", done.returnTo, sess.ID)
+			}
+			updated, next := m.Update(done)
+			*m = *updated.(*Model)
+			if next != nil {
+				m.applyTestMsg(t, next())
+			}
+			if m.effects.active != nil {
+				if _, ok := m.effects.active.request.(attachRequest); ok {
+					t.Fatalf("stale editor completion reattached through %s", tc.name)
+				}
+			}
+			for _, job := range m.effects.pending {
+				if _, ok := job.request.(attachRequest); ok {
+					t.Fatalf("stale editor completion queued a reattach through %s", tc.name)
+				}
+			}
+			if tc.name == "help" && m.mode != modeHelp {
+				t.Fatalf("stale editor completion replaced Help: mode=%v", m.mode)
+			}
+		})
+	}
+}
+
+func TestEditorReturnCompletionsKeepTheirOwnSessions(t *testing.T) {
+	m := buildModel(t)
+	first := editorReturnTarget{sessionID: "first", foregroundGen: m.foregroundGen, mode: m.mode}
+	second := editorReturnTarget{sessionID: "second", foregroundGen: m.foregroundGen, mode: m.mode}
+
+	updated, _ := m.Update(editorDoneMsg{returnTo: first})
+	*m = *updated.(*Model)
+	updated, _ = m.Update(editorDoneMsg{returnTo: second})
+	*m = *updated.(*Model)
+
+	if m.effects.active == nil {
+		t.Fatal("first completion did not enqueue its return")
+	}
+	active, ok := m.effects.active.request.(attachRequest)
+	if !ok || active.id != "first" {
+		t.Fatalf("first completion attached %+v", m.effects.active.request)
+	}
+	if len(m.effects.pending) != 1 {
+		t.Fatalf("pending returns = %d, want 1", len(m.effects.pending))
+	}
+	pending, ok := m.effects.pending[0].request.(attachRequest)
+	if !ok || pending.id != "second" {
+		t.Fatalf("second completion queued %+v", m.effects.pending[0].request)
 	}
 }
 
@@ -491,7 +755,7 @@ func TestAttachDoneEditorFollowsTheSessionThatDetached(t *testing.T) {
 	updated, cmd := m.Update(attachDoneMsg{sessID: attached.ID})
 	cmd = m.foregroundTestCmd(t, cmd)
 	*m = *updated.(*Model)
-	m.applyCmd(t, cmd)
+	applyEditorLookup(t, m, cmd)
 
 	if want := []string{"code", resolved(t, attachedDir)}; !slices.Equal(*launched, want) {
 		t.Fatalf("launched %v, want the attached session's directory %v", *launched, want)

@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
@@ -17,6 +19,7 @@ const (
 	reviewOpSend
 	reviewOpStatus
 	reviewOpNormalize
+	reviewOpSetBase
 )
 
 type reviewEffectRequest struct {
@@ -24,7 +27,9 @@ type reviewEffectRequest struct {
 	targetID      string
 	targetName    string
 	repoRoot      string
+	sourceRepo    string
 	generation    int
+	baseRef       string
 	state         uireview.SavedState
 	previousState uireview.SavedState
 	commentID     string
@@ -35,6 +40,7 @@ type reviewEffectRequest struct {
 	previousRound uireview.Round
 	round         int
 	count         int
+	sendTarget    reviewSendTarget
 }
 
 func (reviewEffectRequest) effectRequest() {}
@@ -45,19 +51,52 @@ type reviewEffectResult struct {
 	handle uireview.HandleCommentResult
 	send   uireview.SendResult
 	status uireview.StatusResult
+	base   reviewBaseResult
+}
+
+type reviewBaseResult struct {
+	targetID   string
+	repoRoot   string
+	sourceRepo string
+	ref        string
+	generation int
+	err        error
+}
+
+type reviewSendTarget struct {
+	id         string
+	tool       string
+	createdAt  time.Time
+	launchTime time.Time
+	socket     string
+}
+
+func captureReviewSendTarget(session store.Session) reviewSendTarget {
+	return reviewSendTarget{
+		id: session.ID, tool: session.Tool, createdAt: session.CreatedAt,
+		launchTime: session.LaunchTime(), socket: session.TmuxSocket,
+	}
+}
+
+func sameReviewSendTarget(current store.Session, expected reviewSendTarget) bool {
+	return current.ID == expected.id && current.Tool == expected.tool &&
+		current.CreatedAt.Equal(expected.createdAt) && current.LaunchTime().Equal(expected.launchTime) &&
+		current.TmuxSocket == expected.socket
 }
 
 func (reviewEffectResult) effectResult() {}
 
 type reviewSessionWriter interface {
 	exists(id string) (bool, error)
-	sendText(id, text string) error
+	sendText(id, text string) (tmux.SendResult, error)
 }
 
 type driverReviewWriter struct{ drv *tmux.Driver }
 
-func (w driverReviewWriter) exists(id string) (bool, error) { return w.drv.Exists(id), nil }
-func (w driverReviewWriter) sendText(id, text string) error { return w.drv.SendText(id, text) }
+func (w driverReviewWriter) exists(id string) (bool, error) { return w.drv.SessionExists(id) }
+func (w driverReviewWriter) sendText(id, text string) (tmux.SendResult, error) {
+	return w.drv.SendTextResult(id, text)
+}
 
 func (s effectServices) runReview(request reviewEffectRequest) (effectResult, error) {
 	writer := reviewSessionWriter(driverReviewWriter{drv: s.driver})
@@ -103,12 +142,28 @@ func runReviewWithWriter(request reviewEffectRequest, st *store.Store, writer re
 			return reviewEffectResult{op: reviewOpNormalize}, fmt.Errorf("persisting review normalization: %w", err)
 		}
 		return reviewEffectResult{op: reviewOpNormalize}, nil
+	case reviewOpSetBase:
+		return reviewEffectResult{op: reviewOpSetBase, base: reviewBaseResult{
+			targetID: request.targetID, repoRoot: request.repoRoot, sourceRepo: request.sourceRepo,
+			ref: request.baseRef, generation: request.generation,
+			err: st.SetReviewBase(request.targetID, request.repoRoot, request.baseRef),
+		}}, nil
 	case reviewOpSend:
-		exists, probeErr := writer.exists(request.targetID)
 		result := uireview.SendResult{
 			TargetID: request.targetID, RepoRoot: request.repoRoot, CommentIDs: append([]string(nil), request.commentIDs...),
 			PreviousRound: request.previousRound, Round: request.round, Count: request.count, TargetName: request.targetName,
+			Outcome: uireview.SendRefused,
 		}
+		current, targetErr := st.Get(request.targetID)
+		if targetErr != nil {
+			result.Err = fmt.Errorf("check review target identity: %w", targetErr)
+			return reviewEffectResult{op: reviewOpSend, send: result}, nil
+		}
+		if !sameReviewSendTarget(current, request.sendTarget) {
+			result.Err = errors.New("review target changed its identity, tool, launch, or socket before the accepted round ran")
+			return reviewEffectResult{op: reviewOpSend, send: result}, nil
+		}
+		exists, probeErr := writer.exists(request.targetID)
 		if probeErr != nil {
 			result.Err = probeErr
 			return reviewEffectResult{op: reviewOpSend, send: result}, nil
@@ -121,14 +176,23 @@ func runReviewWithWriter(request reviewEffectRequest, st *store.Store, writer re
 			result.Err = fmt.Errorf("saving review round: %w", err)
 			return reviewEffectResult{op: reviewOpSend, send: result}, nil
 		}
-		if err := writer.sendText(request.targetID, request.prompt); err != nil {
-			result.Err = err
+		sent, sendErr := writer.sendText(request.targetID, request.prompt)
+		if sendErr == nil && sent.Phase != tmux.SendPhaseSubmitted {
+			sendErr = errors.New("review prompt was not confirmed submitted")
+		}
+		if sendErr != nil {
+			result.Err = sendErr
+			if sent.PasteMayHaveStarted() {
+				result.Outcome = uireview.SendUncertain
+				result.Err = fmt.Errorf("review round may have reached %s and was not sent again; inspect that pane before deciding what to do: %w", request.targetName, sendErr)
+				return reviewEffectResult{op: reviewOpSend, send: result}, nil
+			}
 			if rollbackErr := st.MergeReviewState(request.targetID, request.repoRoot, reviewStateToStore(request.previousState)); rollbackErr != nil {
-				result.Err = fmt.Errorf("%w; restoring review drafts: %w", err, rollbackErr)
+				result.Err = fmt.Errorf("%w; restoring review drafts: %w", sendErr, rollbackErr)
 			}
 			return reviewEffectResult{op: reviewOpSend, send: result}, nil
 		}
-		result.Delivered = true
+		result.Outcome = uireview.SendConfirmed
 		result.AckErr = st.SetAcked(request.targetID, false)
 		return reviewEffectResult{op: reviewOpSend, send: result}, nil
 	}
@@ -145,6 +209,8 @@ func (m *Model) applyReviewEffect(job *effectJob, result reviewEffectResult, err
 		return m.handleReviewSend(result.send)
 	case reviewOpStatus:
 		return m.handleReviewStatus(result.status)
+	case reviewOpSetBase:
+		return m.applyReviewBase(result.base)
 	}
 	if err != nil {
 		m.errBar.text = err.Error()

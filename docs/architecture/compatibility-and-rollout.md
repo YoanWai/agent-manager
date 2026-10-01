@@ -80,3 +80,18 @@ The [in-flight delivery probe](in-flight-delivery.md) reproduced a paused sender
 typing after another Runner retired its claim, while the stored row still
 reported a drop. Use one manager process per profile for a bounded pilot;
 concurrent execution-owner acceptance remains blocked.
+
+## Automatic-delivery cutover supersedes read/write coexistence
+
+The task matrix still establishes its named endpoint contracts. It does not
+permit old automatic delivery writers or receipt readers to share a migrated
+profile. [Delivery ownership](delivery-ownership.md) requires all old processes
+and their admitted transports to exit before migration. A real v0.39.0 store
+claim is refused after the attempt-token fence installs. Older receipt readers
+can misread an uncertain terminal timestamp as delivered; upgrade those readers
+together. New message_status responses distinguish in_flight and uncertain,
+and session responses expose pending_input_outcome as an additive field.
+
+The earlier late-paste log above is historical. Current guarded retirement tests
+require the competing owner to skip an in-flight claim. This is cooperating
+local automatic-delivery authority, not authority over human or remote input.

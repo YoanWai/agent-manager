@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -49,18 +50,60 @@ type editorDoneMsg struct {
 	path       string
 	err        error
 	tookScreen bool
+	returnTo   editorReturnTarget
+}
+
+type editorReturnTarget struct {
+	sessionID     string
+	foregroundGen uint64
+	mode          mode
+}
+
+// editorResolution captures every input to executable discovery before a
+// command leaves Update. resolve may touch PATH, so only a tea.Cmd calls it.
+type editorResolution struct {
+	configured string
+	manager    string
+	visual     string
+	editor     string
+	gui        []string
+	lookup     func(string) (string, error)
+}
+
+type editorFileCheckedMsg struct {
+	result        uireview.FileCheckResult
+	editor        editorLaunch
+	foregroundGen uint64
+}
+
+// editorLaunch is fully prepared by a worker command. In particular, creating
+// command has already resolved a bare executable through exec.LookPath, so the
+// Update path only classifies and dispatches the captured process.
+type editorLaunch struct {
+	command *exec.Cmd
+	name    string
+	path    string
 }
 
 func (m *Model) openEditor() (tea.Model, tea.Cmd) {
-	if _, ok := m.selectedRow(); !ok {
-		return m, nil
-	}
-	dir, ok := m.rowDir()
+	return m.openEditorWithReaderForReturn(systemTerminalDirectoryReader{
+		tmux: m.services.tmux,
+		dirs: systemDirectoryPreflight{git: m.services.gitDrv},
+	}, "")
+}
+
+func (m *Model) openEditorWithReader(reader terminalDirectoryReader) (tea.Model, tea.Cmd) {
+	return m.openEditorWithReaderForReturn(reader, "")
+}
+
+func (m *Model) openEditorWithReaderForReturn(reader terminalDirectoryReader, returnID string) (tea.Model, tea.Cmd) {
+	request, ok := m.captureTerminalDirectory(terminalDirectoryEditor)
 	if !ok {
-		m.errBar.text = "directory no longer exists: " + dir
 		return m, nil
 	}
-	return m.launchEditor(dir)
+	request.returnID = returnID
+	request.editor = m.captureEditorResolution()
+	return m, terminalDirectoryCmd(request, reader)
 }
 
 func (m *Model) openDiffFile() (tea.Model, tea.Cmd) {
@@ -68,70 +111,96 @@ func (m *Model) openDiffFile() (tea.Model, tea.Cmd) {
 	if request == nil {
 		return m, nil
 	}
-	return m, reviewFileCheckCmd(*request)
+	return m, reviewFileCheckCmd(*request, m.captureEditorResolution(), m.foregroundGen)
 }
 
-func (m *Model) handleDiffFileChecked(result uireview.FileCheckResult) (tea.Model, tea.Cmd) {
-	path, accepted := m.review.ApplyFileCheck(result)
+func (m *Model) handleDiffFileChecked(msg editorFileCheckedMsg) (tea.Model, tea.Cmd) {
+	if m.effects.quitting || m.mode != modeDiff || msg.foregroundGen != m.foregroundGen {
+		return m, nil
+	}
+	path, accepted := m.review.ApplyFileCheck(msg.result)
 	if !accepted {
 		return m, nil
 	}
-	if result.Err != nil {
-		m.errBar.text = reviewOpenPathError(path, result.Err)
+	if msg.result.Err != nil {
+		m.errBar.text = reviewOpenPathError(path, msg.result.Err)
 		return m, nil
 	}
-	return m.launchEditor(path)
+	return m.launchEditor(msg.editor, editorReturnTarget{})
 }
 
-func (m *Model) launchEditor(path string) (tea.Model, tea.Cmd) {
-	line := m.resolveEditor()
-	cmd, ok := editorCommand(line, path)
-	if !ok {
+func (m *Model) launchEditor(editor editorLaunch, returnTo editorReturnTarget) (tea.Model, tea.Cmd) {
+	if editor.command == nil {
 		m.errBar.text = `no editor found: set editor = "code" in config.toml`
 		return m, nil
 	}
 	m.errBar.text = ""
-	if !detachedEditors[editorName(line)] {
-		return m, execTerminalProcess(cmd, func(err error) tea.Msg {
-			return editorDoneMsg{err: err, tookScreen: true}
+	if !detachedEditors[editor.name] {
+		return m, execTerminalProcess(editor.command, func(err error) tea.Msg {
+			return editorDoneMsg{err: err, tookScreen: true, returnTo: returnTo}
 		})
 	}
-	return m, startEditorCmd(cmd, editorName(line), path)
+	return m, startEditorCmd(editor.command, editor.name, editor.path, returnTo)
 }
 
 // Starting a process is exec, which Update must not do: a slow launch
 // would hold the next keystroke.
-func startEditorCmd(cmd *exec.Cmd, name, path string) tea.Cmd {
+func startEditorCmd(cmd *exec.Cmd, name, path string, returnTo editorReturnTarget) tea.Cmd {
 	return func() tea.Msg {
 		if err := startEditor(cmd); err != nil {
-			return editorDoneMsg{err: err}
+			return editorDoneMsg{err: err, returnTo: returnTo}
 		}
-		return editorDoneMsg{name: name, path: path}
+		return editorDoneMsg{name: name, path: path, returnTo: returnTo}
 	}
 }
 
-// resolveEditor picks the command that opens a directory: the configured
-// editor, then a GUI editor this machine has. $VISUAL and $EDITOR come
-// last because they usually name the editor set for git commit messages,
-// not the one a project is meant to open in.
-func (m *Model) resolveEditor() string {
-	candidates := []string{m.services.cfg.Editor, os.Getenv("AGENT_MANAGER_EDITOR")}
-	for _, line := range candidates {
+func (m *Model) captureEditorResolution() editorResolution {
+	return editorResolution{
+		configured: m.services.cfg.Editor,
+		manager:    os.Getenv("AGENT_MANAGER_EDITOR"),
+		visual:     os.Getenv("VISUAL"),
+		editor:     os.Getenv("EDITOR"),
+		gui:        slices.Clone(guiEditors),
+		lookup:     lookPath,
+	}
+}
+
+// resolve picks the command that opens a directory: the configured editor,
+// then a GUI editor this machine has. $VISUAL and $EDITOR come last because
+// they usually name the editor set for git commit messages, not the one a
+// project is meant to open in.
+func (r editorResolution) resolve() string {
+	for _, line := range []string{r.configured, r.manager} {
 		if line = strings.TrimSpace(line); line != "" {
 			return line
 		}
 	}
-	for _, name := range guiEditors {
-		if _, err := lookPath(name); err == nil {
-			return name
+	if r.lookup != nil {
+		for _, name := range r.gui {
+			if _, err := r.lookup(name); err == nil {
+				return name
+			}
 		}
 	}
-	for _, key := range []string{"VISUAL", "EDITOR"} {
-		if line := strings.TrimSpace(os.Getenv(key)); line != "" {
+	for _, fallback := range []string{r.visual, r.editor} {
+		if line := strings.TrimSpace(fallback); line != "" {
 			return line
 		}
 	}
 	return ""
+}
+
+// prepare performs both executable selection and exec.Cmd construction in the
+// worker that already owns directory or file validation. exec.Command may call
+// exec.LookPath for a bare command, so constructing it later in Update would
+// reintroduce filesystem work on the event loop.
+func (r editorResolution) prepare(path string) editorLaunch {
+	line := r.resolve()
+	command, ok := editorCommand(line, path)
+	if !ok {
+		return editorLaunch{}
+	}
+	return editorLaunch{command: command, name: editorName(line), path: path}
 }
 
 // Editor settings and environment variables are parsed as argv, never shell code.

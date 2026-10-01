@@ -3,6 +3,7 @@ package ui
 import (
 	"errors"
 	"github.com/YoanWai/agent-manager/internal/status"
+	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"os"
@@ -10,6 +11,50 @@ import (
 	"testing"
 	"time"
 )
+
+func TestArchiveConfirmationUsesLoadedSessionTree(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	createSession(t, m, "agent", dir, "")
+	m.selectSessionRow(t, "agent")
+	if err := m.services.store.Close(); err != nil {
+		t.Fatalf("close store: %v", err)
+	}
+
+	m.archiveSelected()
+	if m.mode != modeConfirmDelete || len(m.confirm.sessions) != 1 {
+		t.Fatalf("archive confirmation depended on the closed store: mode=%v err=%q target=%+v", m.mode, m.errBar.text, m.confirm.sessions)
+	}
+}
+
+func TestArchiveWorkerRejectsChildAddedAfterConfirmation(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	createSession(t, m, "agent", dir, "")
+	m.selectSessionRow(t, "agent")
+	agent, _ := m.selected()
+	m.archiveSelected()
+	late := store.Session{
+		ID: newID(), Name: "late-terminal", Tool: shellToolName, Cwd: dir,
+		ParentID: agent.ID, Status: status.Dead,
+	}
+	if err := m.services.store.CreateSession(late); err != nil {
+		t.Fatalf("create late child: %v", err)
+	}
+
+	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.applyCmd(t, cmd)
+	if !strings.Contains(m.errBar.text, "sessions changed since confirmation") {
+		t.Fatalf("membership change error = %q", m.errBar.text)
+	}
+	stored, err := m.services.store.Get(agent.ID)
+	if err != nil || stored.Archived {
+		t.Fatalf("stale confirmation archived root: archived=%v err=%v", stored.Archived, err)
+	}
+	if !m.services.tmux.Exists(agent.ID) {
+		t.Fatal("stale confirmation killed the root pane")
+	}
+}
 
 func TestArchiveSelectedNoopInArchivedView(t *testing.T) {
 	m := buildModel(t)

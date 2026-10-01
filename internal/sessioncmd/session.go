@@ -14,16 +14,17 @@ import (
 )
 
 type Session struct {
-	ID        string `json:"id" jsonschema:"agent session id"`
-	Name      string `json:"name" jsonschema:"session name shown in Agent Manager"`
-	Tool      string `json:"tool" jsonschema:"agent CLI the session runs"`
-	Group     string `json:"group" jsonschema:"group path holding the session; empty is the root"`
-	Directory string `json:"directory" jsonschema:"session's current working directory, or its launch directory when stopped"`
-	Status    string `json:"status" jsonschema:"Agent Manager status: starting, working, waiting, finished, idle, errored or dead"`
-	Running   bool   `json:"running" jsonschema:"whether the session currently has a live tmux pane"`
-	Archived  bool   `json:"archived" jsonschema:"whether the session is archived out of the active list"`
-	Branch    string `json:"branch,omitempty" jsonschema:"branch of the worktree Agent Manager created for this session, when it has one"`
-	Self      bool   `json:"self" jsonschema:"whether this row is the calling session itself"`
+	PendingInputOutcome string `json:"pending_input_outcome,omitempty" jsonschema:"most recent queued-input delivery receipt: in_flight, confirmed, refused or uncertain; uncertain input is never automatically retried"`
+	ID                  string `json:"id" jsonschema:"agent session id"`
+	Name                string `json:"name" jsonschema:"session name shown in Agent Manager"`
+	Tool                string `json:"tool" jsonschema:"agent CLI the session runs"`
+	Group               string `json:"group" jsonschema:"group path holding the session; empty is the root"`
+	Directory           string `json:"directory" jsonschema:"session's current working directory, or its launch directory when stopped"`
+	Status              string `json:"status" jsonschema:"Agent Manager status: starting, working, waiting, finished, idle, errored or dead"`
+	Running             bool   `json:"running" jsonschema:"whether the session currently has a live tmux pane"`
+	Archived            bool   `json:"archived" jsonschema:"whether the session is archived out of the active list"`
+	Branch              string `json:"branch,omitempty" jsonschema:"branch of the worktree Agent Manager created for this session, when it has one"`
+	Self                bool   `json:"self" jsonschema:"whether this row is the calling session itself"`
 }
 
 type SessionScreen struct {
@@ -86,16 +87,17 @@ func (r *runtime) sessionInfo(sess store.Session, running, self bool) Session {
 		}
 	}
 	return Session{
-		ID:        sess.ID,
-		Name:      sess.Name,
-		Tool:      sess.Tool,
-		Group:     sess.Group,
-		Directory: dir,
-		Status:    sess.Status,
-		Running:   running,
-		Archived:  sess.Archived,
-		Branch:    sess.WorktreeBranch,
-		Self:      self,
+		PendingInputOutcome: string(sess.PendingInputOutcome),
+		ID:                  sess.ID,
+		Name:                sess.Name,
+		Tool:                sess.Tool,
+		Group:               sess.Group,
+		Directory:           dir,
+		Status:              sess.Status,
+		Running:             running,
+		Archived:            sess.Archived,
+		Branch:              sess.WorktreeBranch,
+		Self:                self,
 	}
 }
 

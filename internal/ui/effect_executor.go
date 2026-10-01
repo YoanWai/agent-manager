@@ -4,21 +4,32 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/execution"
 	"github.com/YoanWai/agent-manager/internal/git"
+	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
+	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 )
 
 type effectServices struct {
-	saveKeys  func(string, keybind.Table) error
-	lifecycle *sessioncmd.Lifecycle
-	cfg       config.Config
-	store     *store.Store
-	driver    *tmux.Driver
-	runner    *execution.Runner
-	watch     *focusWatch
-	gitDrv    *git.Driver
+	engine                *status.Engine
+	hooks                 *hooks.Manager
+	installHomeDir        func() (string, error)
+	installCheckInstalled func(string) error
+	installSendText       func(*tmux.Driver, string, string) (tmux.SendResult, error)
+	installSessionExists  func(*tmux.Driver, string) (bool, error)
+	pasteInput            func(*tmux.Driver, string, string) error
+	saveKeys              func(string, keybind.Table) error
+	lifecycle             *sessioncmd.Lifecycle
+	cfg                   config.Config
+	store                 *store.Store
+	driver                *tmux.Driver
+	runner                *execution.Runner
+	watch                 *focusWatch
+	gitDrv                *git.Driver
+	quickSessionExists    func(*tmux.Driver, string) (bool, error)
+	quickSendText         func(*tmux.Driver, string, string) (tmux.SendResult, error)
 }
 
 func (m *Model) captureEffect(request effectRequest) func() (effectResult, error) {
@@ -29,6 +40,23 @@ func (m *Model) captureEffect(request effectRequest) func() (effectResult, error
 		cfg.Tools[name] = tool
 	}
 	services := effectServices{cfg: cfg, store: m.services.store, driver: m.services.tmux, watch: m.focusRuntime.watch, gitDrv: m.services.gitDrv}
+	services.engine = m.services.engine
+	services.hooks = m.services.hooks
+	services.installHomeDir = installHomeDir
+	services.installCheckInstalled = installCheckInstalled
+	services.installSendText = installSendText
+	services.installSessionExists = installSessionExists
+	services.pasteInput = pasteFocused
+	services.quickSessionExists = m.services.quickSessionExists
+	if services.quickSessionExists == nil {
+		services.quickSessionExists = func(driver *tmux.Driver, id string) (bool, error) { return driver.SessionExists(id) }
+	}
+	services.quickSendText = m.services.quickSendText
+	if services.quickSendText == nil {
+		services.quickSendText = func(driver *tmux.Driver, id, text string) (tmux.SendResult, error) {
+			return driver.SendTextResult(id, text)
+		}
+	}
 	services.saveKeys = m.services.saveKeys
 	if services.saveKeys == nil {
 		services.saveKeys = config.SaveKeys
@@ -41,6 +69,18 @@ func (m *Model) captureEffect(request effectRequest) func() (effectResult, error
 	}
 	return func() (effectResult, error) {
 		switch request := request.(type) {
+		case inputRequest:
+			return services.runInput(request)
+		case quickSendRequest:
+			return services.runQuickSend(request)
+		case noticeDismissRequest:
+			return services.runNoticeDismiss(request)
+		case splitSaveRequest:
+			return services.runSplitSave(request)
+		case installStartRequest:
+			return services.runInstallStart(request)
+		case installSettleRequest:
+			return services.runInstallSettle(request)
 		case lifecycleRequest:
 			return services.runLifecycle(request)
 		case railRequest:

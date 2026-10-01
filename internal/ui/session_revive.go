@@ -38,14 +38,10 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 		}
 		return m.reviveMany(sessions, "no dead sessions to revive in "+entry.group)
 	}
-	set, err := m.sessionAndChildren(entry.sess)
-	if err != nil {
-		m.errBar.text = err.Error()
-		return m, nil
-	}
+	set := m.sessionAndChildren(entry.sess)
 	dead := false
 	for _, sess := range set {
-		if !m.services.tmux.Exists(sess.ID) {
+		if !m.sessionWindowProjectedLive(sess.ID) {
 			dead = true
 			break
 		}
@@ -57,6 +53,7 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 			label: followConfirmLabel("revive", entry.sess.Name, len(set)-1,
 				"brings it back.",
 				"brings them back."),
+			selection: lifecycleSelection{kind: lifecycleSelectionSession, rootID: entry.sess.ID},
 		}
 		m.mode = modeConfirmDelete
 		return m, nil

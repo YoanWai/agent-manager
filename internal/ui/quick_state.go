@@ -23,4 +23,7 @@ type quickState struct {
 	// worktreeTouched marks an explicit toggle this run; until then the
 	// hint and spawn follow the target group's default.
 	worktreeTouched bool
+	// defaultsTouched protects an explicit tool or worktree choice from the
+	// external settings refresh queued when this quick bar opened.
+	defaultsTouched bool
 }

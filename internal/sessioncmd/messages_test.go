@@ -141,11 +141,8 @@ func TestASenderSeesItsMessageDeliveredThenAnswered(t *testing.T) {
 
 	// The manager's poller owns delivery; these are the two writes it makes
 	// once it finds the target at rest.
-	claimed, err := h.store.ClaimMessage(sent.MessageID, time.Now())
-	if err != nil || !claimed {
-		t.Fatalf("ClaimMessage: %v, claimed=%v", err, claimed)
-	}
-	if err := h.store.MarkDelivered(sent.MessageID, time.Now()); err != nil {
+
+	if err := finishMessageFixture(h.store, store.DeliveryConfirmed, sent.MessageID, time.Now()); err != nil {
 		t.Fatalf("MarkDelivered: %v", err)
 	}
 
@@ -188,7 +185,7 @@ func TestASenderIsToldWhenItsMessageWasDropped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Send: %v", err)
 	}
-	if err := h.store.MarkDropped(sent.MessageID, time.Now()); err != nil {
+	if err := finishMessageFixture(h.store, store.DeliveryRefused, sent.MessageID, time.Now()); err != nil {
 		t.Fatalf("MarkDropped: %v", err)
 	}
 
@@ -426,5 +423,44 @@ func TestSendRefusesAPingPongBetweenAPair(t *testing.T) {
 	_, err = h.sessions.Send(h.caller.ID, worker.ID, "ninth")
 	if !errors.Is(err, store.ErrInboxPairLimited) {
 		t.Fatalf("9th between the pair = %v, want ErrInboxPairLimited", err)
+	}
+}
+
+func TestMessageStatusSeparatesUncertainAndInFlightDelivery(t *testing.T) {
+	for _, outcome := range []store.DeliveryOutcome{store.DeliveryInFlight, store.DeliveryUncertain} {
+		t.Run(string(outcome), func(t *testing.T) {
+			h := newSessionHarness(t)
+			worker, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "worker"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			sent, err := h.sessions.Send(h.caller.ID, worker.ID, "check delivery")
+			if err != nil {
+				t.Fatal(err)
+			}
+			acquired, err := h.store.WithDeliveryGuard(context.Background(), func(g *store.DeliveryGuard) error {
+				claim, claimed, err := g.ClaimMessage(sent.MessageID, time.Now())
+				if err != nil {
+					return err
+				}
+				if !claimed {
+					return errors.New("claim refused")
+				}
+				if outcome == store.DeliveryInFlight {
+					return nil
+				}
+				return g.FinishMessage(sent.MessageID, claim, outcome, time.Now())
+			})
+			if err != nil || !acquired {
+				t.Fatalf("claim: acquired=%v err=%v", acquired, err)
+			}
+			state, err := h.sessions.MessageStatus(h.caller.ID, sent.MessageID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if state.State != string(outcome) || state.DeliveredAt != "" || state.Reason == "" || strings.Contains(state.Reason, "send it again") {
+				t.Fatalf("unsafe delivery state: %+v", state)
+			}
+		})
 	}
 }

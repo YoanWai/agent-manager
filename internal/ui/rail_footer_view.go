@@ -16,8 +16,9 @@ func (m *Model) viewFooter() string {
 	}
 	if m.quick.active {
 		worktreeHint := "off"
+		capable, known := m.cachedWorktreeCapability(m.quickTargetDir())
 		switch {
-		case !m.worktreeCapable(m.quickTargetDir()):
+		case !known || !capable:
 			worktreeHint = worktreeUnavailable
 		case m.quickWorktreeOn():
 			worktreeHint = "on"

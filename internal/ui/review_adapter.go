@@ -221,6 +221,7 @@ func (m *Model) reviewHandleCmd(req uireview.HandleCommentRequest) tea.Cmd {
 // and ack clear run in one ordered job behind every earlier Review
 // mutation.
 func (m *Model) reviewSendCmd(req uireview.SendRequest) tea.Cmd {
+	session, _ := m.diffSession()
 	m.enqueueEffect(reviewEffectRequest{
 		op:            reviewOpSend,
 		targetID:      req.Target.ID,
@@ -233,12 +234,21 @@ func (m *Model) reviewSendCmd(req uireview.SendRequest) tea.Cmd {
 		previousRound: req.PreviousRound,
 		round:         req.Round,
 		count:         req.Count,
+		sendTarget:    captureReviewSendTarget(session),
 	}, 0, false)
 	return nil
 }
 
-func reviewFileCheckCmd(req uireview.FileCheckRequest) tea.Cmd {
-	return func() tea.Msg { _, err := os.Stat(req.Path); return uireview.FileCheckResult{Request: req, Err: err} }
+func reviewFileCheckCmd(req uireview.FileCheckRequest, editor editorResolution, foregroundGen uint64) tea.Cmd {
+	return func() tea.Msg {
+		_, err := os.Stat(req.Path)
+		result := uireview.FileCheckResult{Request: req, Err: err}
+		var launch editorLaunch
+		if err == nil {
+			launch = editor.prepare(req.Path)
+		}
+		return editorFileCheckedMsg{result: result, editor: launch, foregroundGen: foregroundGen}
+	}
 }
 
 func (m *Model) reviewCommands(requests uireview.Requests) tea.Cmd {
@@ -268,7 +278,7 @@ func (m *Model) reviewCommands(requests uireview.Requests) tea.Cmd {
 		cmds = append(cmds, m.reviewSendCmd(*requests.Send))
 	}
 	if requests.FileCheck != nil {
-		cmds = append(cmds, reviewFileCheckCmd(*requests.FileCheck))
+		cmds = append(cmds, reviewFileCheckCmd(*requests.FileCheck, m.captureEditorResolution(), m.foregroundGen))
 	}
 	if requests.WidgetCmd != nil {
 		cmds = append(cmds, requests.WidgetCmd)

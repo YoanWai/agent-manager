@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestCompareSnapshotsAcceptsCallInitializerReordering(t *testing.T) {
 	base := snapshot{CallInitializers: []string{"first", "second"}}
@@ -30,5 +34,24 @@ func TestCompareSnapshotsRejectsInitFunctionReordering(t *testing.T) {
 	target := snapshot{InitFunctions: []string{"second", "first"}}
 	if err := compareSnapshots(base, target); err == nil {
 		t.Fatal("reordered init functions passed")
+	}
+}
+
+func TestLoadWorktreeUsesSelectedPackageRoot(t *testing.T) {
+	previous := sourceRoot
+	t.Cleanup(func() { sourceRoot = previous })
+	sourceRoot = t.TempDir()
+	if err := os.WriteFile(filepath.Join(sourceRoot, "kept.go"), []byte("package selected\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceRoot, "ignored.txt"), []byte("not Go"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	files := loadFiles("WORKTREE", nil)
+	if len(files) != 1 || filepath.Base(files[0].Path) != "kept.go" {
+		t.Fatalf("wrong package files: %+v", files)
+	}
+	if excluded := loadFiles("WORKTREE", map[string]bool{"kept.go": true}); len(excluded) != 0 {
+		t.Fatalf("excluded files: %+v", excluded)
 	}
 }

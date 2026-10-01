@@ -80,6 +80,65 @@ func TestRenameDefersSessionPersistence(t *testing.T) {
 	}
 }
 
+func TestRenameShellChildCheckRunsInWorker(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	createSession(t, m, "coder", dir, "")
+	m.selectSessionRow(t, "coder")
+	spawnTerminal(t, m)
+	m.selectSessionRow(t, "coder")
+	m.openRename()
+	m.rename.input.SetValue("renamed")
+	for index, name := range m.rename.toolNames {
+		if name == "terminal" {
+			m.rename.toolIndex = index
+		}
+	}
+	_, cmd := m.applyRename()
+	if cmd == nil {
+		t.Fatal("rename did not return the queued worker command")
+	}
+	if m.errBar.text != "" {
+		t.Fatalf("child store read ran on the update path: %q", m.errBar.text)
+	}
+	m.applyCmd(t, cmd)
+	if m.errBar.text != "move its terminals first" {
+		t.Fatalf("worker child precondition = %q", m.errBar.text)
+	}
+	stored, err := m.services.store.Get(m.rename.sessID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Name != "coder" || m.isShell(stored.Tool) {
+		t.Fatalf("failed precondition mutated the session: %+v", stored)
+	}
+}
+
+func TestRenameGroupDirectoryCheckRunsBeforeMutation(t *testing.T) {
+	m := buildModel(t)
+	if err := m.services.store.CreateGroup("old", t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "old")
+	m.openRename()
+	m.rename.input.SetValue("new")
+	m.rename.dir.SetValue("/definitely/missing/agent-manager")
+	_, cmd := m.applyRename()
+	groups, _ := m.services.store.Groups()
+	if len(groups) != 1 || groups[0].Name != "old" {
+		t.Fatalf("rename mutated before directory preflight: %+v", groups)
+	}
+	m.applyCmd(t, cmd)
+	groups, _ = m.services.store.Groups()
+	if len(groups) != 1 || groups[0].Name != "old" {
+		t.Fatalf("failed directory preflight mutated group: %+v", groups)
+	}
+	if !strings.Contains(m.errBar.text, "default path does not exist") {
+		t.Fatalf("directory preflight error = %q", m.errBar.text)
+	}
+}
+
 func TestRenameKeepsCapturedRowIdentity(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "captured", t.TempDir(), "")
@@ -289,6 +348,36 @@ func TestMoveSessionDefersPlacement(t *testing.T) {
 	}
 	if m.mode != modeList {
 		t.Fatalf("dialog should close on completion, mode=%v", m.mode)
+	}
+}
+
+func TestMoveWorkerRejectsChangedSourcePrecondition(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	for _, group := range []string{"target", "concurrent"} {
+		if err := m.services.store.CreateGroup(group, dir); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "wanderer", dir, "")
+	m.selectSessionRow(t, "wanderer")
+	m.openMove()
+	pickGroup(t, m, "target")
+	_, cmd := m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if err := m.services.store.PlaceSession(m.moveID, "concurrent", ""); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, cmd)
+	stored, err := m.services.store.Get(m.moveID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Group != "concurrent" {
+		t.Fatalf("stale move overwrote concurrent placement: %+v", stored)
+	}
+	if m.errBar.text != "move source changed before placement" {
+		t.Fatalf("precondition error = %q", m.errBar.text)
 	}
 }
 

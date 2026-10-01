@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"errors"
+	"fmt"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
@@ -19,16 +21,20 @@ const (
 // reads Model: the target, the requested values and a deep copy of the
 // session row for the worktree-branch stage.
 type renameRequest struct {
-	kind     renameKind
-	oldGroup string
-	newGroup string
-	dir      string
-	worktree string
-	sessID   string
-	sess     store.Session
-	name     string
-	tool     string
-	gen      uint64
+	kind            renameKind
+	oldGroup        string
+	newGroup        string
+	dir             string
+	rawDir          string
+	dirFallbacks    []string
+	draftDir        string
+	worktree        string
+	sessID          string
+	sess            store.Session
+	name            string
+	tool            string
+	checkNoChildren bool
+	gen             uint64
 }
 
 func (renameRequest) effectRequest() {}
@@ -44,6 +50,7 @@ type renameEffectResult struct {
 	branch       string
 	sessions     []store.Session
 	warning      error
+	dir          string
 }
 
 func (renameEffectResult) effectResult() {}
@@ -69,6 +76,16 @@ func (moveDialogCloseResult) effectResult() {}
 func (s effectServices) runRename(request renameRequest) (effectResult, error) {
 	result := renameEffectResult{}
 	if request.kind == renameGroup {
+		if request.rawDir != "" || len(request.dirFallbacks) > 0 {
+			resolved, ok := (systemDirectoryPreflight{git: s.gitDrv}).resolve(request.rawDir, request.dirFallbacks)
+			result.dir = resolved
+			if !ok {
+				return result, fmt.Errorf("default path does not exist: %s", resolved)
+			}
+			request.dir = resolved
+		} else {
+			result.dir = request.dir
+		}
 		var err error
 		if err = s.store.RenameGroup(request.oldGroup, request.newGroup); err != nil {
 			return result, err
@@ -90,6 +107,15 @@ func (s effectServices) runRename(request renameRequest) (effectResult, error) {
 		result.sessions = sessions
 		result.warning = s.relabelSessions(sessions)
 		return result, nil
+	}
+	if request.checkNoChildren {
+		children, err := s.store.Children(request.sessID)
+		if err != nil {
+			return result, err
+		}
+		if len(children) > 0 {
+			return result, errors.New("move its terminals first")
+		}
 	}
 	sess := request.sess
 	// The branch changes before the name is stored, so a name git cannot
@@ -125,11 +151,15 @@ func (s effectServices) runRename(request renameRequest) (effectResult, error) {
 func (m *Model) applyRenameEffect(job *effectJob, result renameEffectResult, err error) {
 	request := job.request.(renameRequest)
 	if request.kind == renameGroup {
+		dir := request.dir
+		if result.dir != "" {
+			dir = result.dir
+		}
 		if result.groupRenamed {
 			if result.pathSet && result.worktreeSet {
-				m.renameGroupLocally(request.oldGroup, request.newGroup, request.dir, request.worktree)
+				m.renameGroupLocally(request.oldGroup, request.newGroup, dir, request.worktree)
 			} else {
-				m.mirrorGroupRenamePartial(request.oldGroup, request.newGroup, request.dir, request.worktree, result.pathSet, result.worktreeSet)
+				m.mirrorGroupRenamePartial(request.oldGroup, request.newGroup, dir, request.worktree, result.pathSet, result.worktreeSet)
 			}
 		}
 	} else {
@@ -154,7 +184,8 @@ func (m *Model) applyRenameEffect(job *effectJob, result renameEffectResult, err
 	}
 	if err != nil {
 		m.errBar.text = err.Error()
-	} else if m.mode == modeRename && m.dialogGen == request.gen && strings.ReplaceAll(strings.TrimSpace(m.rename.input.Value()), "/", "-") == request.name {
+	} else if m.mode == modeRename && m.dialogGen == request.gen && strings.ReplaceAll(strings.TrimSpace(m.rename.input.Value()), "/", "-") == request.name &&
+		(request.kind != renameGroup || m.rename.dir.Value() == request.draftDir) {
 		// Only the dialog that submitted this job closes; a reopened or
 		// resubmitted card keeps its edits.
 		m.mode = modeList
@@ -188,13 +219,46 @@ func (m *Model) enqueueMove(mut uirail.Mutation, close moveDialogClose) tea.Cmd 
 	close.gen = m.dialogGen
 	m.effects.nextChain++
 	chain := m.effects.nextChain
-	m.enqueueEffect(railRequest{
+	request := railRequest{
 		mutation: mut,
 		dir:      m.workspace.groupPaths[mut.Path],
 		worktree: m.workspace.groupWorktrees[mut.Path],
-	}, chain, false)
+	}
+	if mut.Kind == uirail.PlaceSession {
+		request.placement = m.capturePlacementPrecondition(mut)
+	}
+	m.enqueueEffect(request, chain, false)
 	m.enqueueEffect(close, chain, false)
 	return m.nextEffectCmd()
+}
+
+func (m *Model) capturePlacementPrecondition(mutation uirail.Mutation) placementPrecondition {
+	precondition := placementPrecondition{verify: true, targetID: mutation.ParentID, targetGroup: mutation.Group}
+	for _, session := range m.workspace.sessions {
+		switch session.ID {
+		case mutation.SessionID:
+			precondition.sourceGroup = session.Group
+			precondition.sourceParentID = session.ParentID
+		case mutation.ParentID:
+			precondition.targetGroup = session.Group
+		}
+	}
+	// A newer move can be accepted while an earlier placement for the same
+	// row is still serialized ahead of it. Validate against that lane's
+	// promised destination, which is the state the worker will actually see.
+	jobs := append([]*effectJob{m.effects.active}, m.effects.pending...)
+	for _, job := range jobs {
+		if job == nil {
+			continue
+		}
+		request, ok := job.request.(railRequest)
+		if !ok || request.mutation.Kind != uirail.PlaceSession || request.mutation.SessionID != mutation.SessionID {
+			continue
+		}
+		precondition.sourceGroup = request.mutation.Group
+		precondition.sourceParentID = request.mutation.ParentID
+	}
+	return precondition
 }
 
 func (m *Model) applyMoveDialogClose(request moveDialogClose) {

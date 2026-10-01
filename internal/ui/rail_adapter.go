@@ -174,7 +174,7 @@ func (m *Model) runRailIntent(intent uirail.Intent) (tea.Model, tea.Cmd) {
 	case uirail.Attach:
 		return m.attachSelected()
 	case uirail.NewSession:
-		m.openForm()
+		return m, m.openForm()
 	case uirail.NewGroup:
 		m.openGroupForm()
 	case uirail.Fork:
@@ -198,11 +198,11 @@ func (m *Model) runRailIntent(intent uirail.Intent) (tea.Model, tea.Cmd) {
 	case uirail.Delete:
 		m.prepareDelete()
 	case uirail.Prompt:
-		m.openQuickMode()
+		return m, m.openQuickMode()
 	case uirail.CopyReply:
 		return m.copyReplySelected()
 	case uirail.OpenSettings:
-		m.openSettings()
+		return m, m.openSettings()
 	case uirail.Resize:
 		return m.enterResizeMode()
 	case uirail.NewTerminal:

@@ -40,7 +40,7 @@ func (m *Model) openRename() {
 		dir.Prompt = ""
 		dirValue := m.workspace.groupPaths[entry.group]
 		if dirValue == "" {
-			dirValue = m.groupDefaultDir(entry.group)
+			dirValue = m.capturedGroupDefaultDir(entry.group)
 		}
 		dir.SetValue(dirValue)
 		m.pathSugg.reset()
@@ -119,8 +119,7 @@ func (m *Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if pathSuggesting {
-			m.applyPathSuggestion()
-			return m, nil
+			return m, m.applyPathSuggestion()
 		}
 		m.renameFocus(1)
 		return m, nil
@@ -168,8 +167,7 @@ func (m *Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "enter":
 		if pathSuggesting && m.pathSugg.chosen {
-			m.applyPathSuggestion()
-			return m, nil
+			return m, m.applyPathSuggestion()
 		}
 		return m.applyRename()
 	}
@@ -179,7 +177,7 @@ func (m *Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.rename.input, cmd = m.rename.input.Update(msg)
 	case 1:
 		m.rename.dir, cmd = m.rename.dir.Update(msg)
-		m.pathSugg.recompute(m.rename.dir.Value())
+		cmd = tea.Batch(cmd, m.requestPathSuggestions(pathSuggestionRename, m.rename.dir.Value()))
 	}
 	return m, cmd
 }
@@ -207,27 +205,22 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.rename.isGroup {
-		// Pre-confirmation read: the default dir must exist before the job
-		// is accepted, so the dialog stays open with a specific message.
 		parent := parentGroup(m.rename.path)
-		dir, ok := resolveExistingDir(m.rename.dir.Value(), m.groupDefaultDir(parent))
-		if !ok {
-			m.errBar.text = "default path does not exist: " + dir
-			return m, nil
-		}
 		newPath := name
 		if parent != "" {
 			newPath = parent + "/" + name
 		}
 		m.dialogGen++
 		m.enqueueEffect(renameRequest{
-			kind:     renameGroup,
-			oldGroup: m.rename.path,
-			newGroup: newPath,
-			dir:      dir,
-			worktree: groupWorktreeValue(m.rename.worktreeIndex),
-			name:     name,
-			gen:      m.dialogGen,
+			kind:         renameGroup,
+			oldGroup:     m.rename.path,
+			newGroup:     newPath,
+			rawDir:       m.rename.dir.Value(),
+			dirFallbacks: m.groupDirCandidates(parent),
+			draftDir:     m.rename.dir.Value(),
+			worktree:     groupWorktreeValue(m.rename.worktreeIndex),
+			name:         name,
+			gen:          m.dialogGen,
 		}, 0, false)
 		return m, m.nextEffectCmd()
 	}
@@ -246,27 +239,15 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 		sess = m.workspace.sessions[index]
 	}
 	toolChanged := tool != "" && tool != prevTool
-	// Pre-confirmation read: the shell child restriction is checked before
-	// dispatch, so a refused rename never enters the queue.
-	if toolChanged && m.isShell(tool) {
-		kids, err := m.services.store.Children(m.rename.sessID)
-		if err != nil {
-			m.errBar.text = err.Error()
-			return m, nil
-		}
-		if len(kids) > 0 {
-			m.errBar.text = "move its terminals first"
-			return m, nil
-		}
-	}
 	m.dialogGen++
 	m.enqueueEffect(renameRequest{
-		kind:   renameSession,
-		sessID: m.rename.sessID,
-		sess:   sess,
-		name:   name,
-		tool:   tool,
-		gen:    m.dialogGen,
+		kind:            renameSession,
+		sessID:          m.rename.sessID,
+		sess:            sess,
+		name:            name,
+		tool:            tool,
+		checkNoChildren: toolChanged && m.isShell(tool),
+		gen:             m.dialogGen,
 	}, 0, false)
 	return m, m.nextEffectCmd()
 }

@@ -3,10 +3,63 @@ package ui
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+func loadPathSuggestions(m *Model, target pathSuggestionTarget, typed string) {
+	switch target {
+	case pathSuggestionForm:
+		m.form.dir.SetValue(typed)
+	case pathSuggestionGroup:
+		m.groupForm.path.SetValue(typed)
+	case pathSuggestionRename:
+		m.rename.dir.SetValue(typed)
+	}
+	msg := m.requestPathSuggestions(target, typed)().(pathSuggestionsMsg)
+	m.handlePathSuggestions(msg)
+}
+
+type blockedPathSuggestionReader struct {
+	started     chan struct{}
+	release     chan struct{}
+	once        sync.Once
+	suggestions []string
+}
+
+func (r *blockedPathSuggestionReader) complete(string) []string {
+	r.once.Do(func() { close(r.started) })
+	<-r.release
+	return r.suggestions
+}
+
+func TestPathSuggestionsDeferScanAndRejectStaleInput(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	m.form.dir.SetValue("/first")
+	reader := &blockedPathSuggestionReader{
+		started: make(chan struct{}), release: make(chan struct{}),
+		suggestions: []string{"/first-result"},
+	}
+	cmd := m.requestPathSuggestionsWithReader(pathSuggestionForm, m.form.dir.Value(), reader)
+	select {
+	case <-reader.started:
+		t.Fatal("path scan ran on the update path")
+	default:
+	}
+	completed := make(chan pathSuggestionsMsg, 1)
+	go func() { completed <- cmd().(pathSuggestionsMsg) }()
+	<-reader.started
+	m.form.dir.SetValue("/newer")
+	m.requestPathSuggestionsWithReader(pathSuggestionForm, m.form.dir.Value(), systemPathSuggestionReader{})
+	close(reader.release)
+	m.handlePathSuggestions(<-completed)
+	if len(m.pathSugg.suggestions) != 0 {
+		t.Fatalf("stale scan replaced newer input: %v", m.pathSugg.suggestions)
+	}
+}
 
 func setupCompletionDir(t *testing.T) string {
 	t.Helper()
@@ -72,7 +125,7 @@ func TestApplyPathSuggestionFillsDirField(t *testing.T) {
 		mode: modeForm,
 	}
 	m.form.dir = textField("", 400)
-	m.pathSugg.recompute(filepath.Join(root, "al"))
+	loadPathSuggestions(m, pathSuggestionForm, filepath.Join(root, "al"))
 	if !m.pathSugg.active() {
 		t.Fatal("expected suggestions")
 	}
@@ -93,7 +146,7 @@ func TestPathSuggestionsExitToAdjacentFormFields(t *testing.T) {
 	m.form.focus = fieldDir
 	m.form.name.Blur()
 	m.form.dir.Focus()
-	m.pathSugg.recompute(filepath.Join(root, "a"))
+	loadPathSuggestions(m, pathSuggestionForm, filepath.Join(root, "a"))
 
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyDown})
 	if !m.pathSugg.chosen || m.pathSugg.index != 0 {
@@ -110,7 +163,7 @@ func TestPathSuggestionsExitToAdjacentFormFields(t *testing.T) {
 	}
 
 	m.formFocus(-1)
-	m.pathSugg.recompute(filepath.Join(root, "a"))
+	loadPathSuggestions(m, pathSuggestionForm, filepath.Join(root, "a"))
 	m.pathSugg.chosen = true
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyUp})
 	if m.form.focus != fieldTool {
@@ -173,7 +226,7 @@ func TestRenamePathSuggestionsExitToName(t *testing.T) {
 	m.rename.dir = textField("", 400)
 	m.rename.focus = 1
 	m.rename.dir.Focus()
-	m.pathSugg.recompute(filepath.Join(root, "a"))
+	loadPathSuggestions(m, pathSuggestionRename, filepath.Join(root, "a"))
 	m.pathSugg.chosen = true
 	m.pathSugg.index = len(m.pathSugg.suggestions) - 1
 
@@ -223,10 +276,10 @@ func TestAncestorGroupPathWalksUp(t *testing.T) {
 			groupPaths: map[string]string{"projects": root},
 		},
 	}
-	if got := m.ancestorGroupDir("projects/api/auth"); got != root {
+	if got := m.capturedAncestorGroupDir("projects/api/auth"); got != root {
 		t.Fatalf("got %q want %q", got, root)
 	}
-	if got := m.ancestorGroupDir("other"); got != "" {
+	if got := m.capturedAncestorGroupDir("other"); got != "" {
 		t.Fatalf("got %q want empty", got)
 	}
 }

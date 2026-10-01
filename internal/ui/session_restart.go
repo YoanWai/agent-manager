@@ -23,7 +23,7 @@ func (m *Model) restartSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	label := fmt.Sprintf("restart %s with an empty context? its current conversation is left behind.", entry.sess.Name)
-	if m.services.tmux.Exists(entry.sess.ID) {
+	if m.sessionWindowProjectedLive(entry.sess.ID) {
 		label = fmt.Sprintf("restart %s with an empty context? ends the running agent and leaves its conversation behind.", entry.sess.Name)
 	}
 	m.confirm = confirmTarget{

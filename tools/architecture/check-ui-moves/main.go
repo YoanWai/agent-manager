@@ -22,6 +22,8 @@ import (
 
 const uiRoot = "internal/ui"
 
+var sourceRoot = uiRoot
+
 type declaration struct {
 	Key        string `json:"key"`
 	Hash       string `json:"hash"`
@@ -64,6 +66,7 @@ type fileContent struct {
 }
 
 func main() {
+	root := flag.String("root", uiRoot, "Go package directory for a declaration-preserving split")
 	excludes := flag.String("exclude", "", "comma-separated UI basenames or paths to omit")
 	mapOut := flag.String("map-out", "", "write the declaration location map as JSON")
 	flag.Usage = func() {
@@ -76,6 +79,7 @@ func main() {
 		flag.Usage()
 		os.Exit(2)
 	}
+	sourceRoot = filepath.Clean(*root)
 	baseRef, targetRef := flag.Arg(0), flag.Arg(1)
 	excluded := parseExcludes(*excludes)
 	base := loadSnapshot(baseRef, excluded)
@@ -241,13 +245,13 @@ func compareSnapshots(base, target snapshot) error {
 func loadFiles(ref string, excluded map[string]bool) []fileContent {
 	var paths []string
 	if ref == "WORKTREE" {
-		matches, err := filepath.Glob(filepath.Join(uiRoot, "*.go"))
+		matches, err := filepath.Glob(filepath.Join(sourceRoot, "*.go"))
 		must(err)
 		for _, path := range matches {
 			paths = append(paths, filepath.ToSlash(path))
 		}
 	} else {
-		output := git("ls-tree", "-r", "--name-only", ref, "--", uiRoot)
+		output := git("ls-tree", "-r", "--name-only", ref, "--", sourceRoot)
 		for _, path := range strings.Split(strings.TrimSpace(output), "\n") {
 			if path != "" && strings.HasSuffix(path, ".go") {
 				paths = append(paths, path)

@@ -71,7 +71,7 @@ func TestOpenedEditorReadsAsAnOutcome(t *testing.T) {
 	m.selectSessionRow(t, "agent")
 
 	_, cmd := m.openEditor()
-	m.applyCmd(t, cmd)
+	applyEditorLookup(t, m, cmd)
 	if len(*launched) == 0 {
 		t.Fatalf("the editor never launched, status = %q", m.errBar.text)
 	}

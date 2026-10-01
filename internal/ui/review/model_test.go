@@ -77,7 +77,7 @@ func TestLoadAndStatusUseIndependentFences(t *testing.T) {
 	}
 }
 
-func TestSaveFailureIsReportedOnlyForCurrentTarget(t *testing.T) {
+func TestSaveFailureIsReportedAfterTargetChanges(t *testing.T) {
 	var model review.Model
 	req := model.Open(review.Target{ID: "s1", Cwd: "/repo"}, git.ScopeUncommitted, "/repo")
 	model.ApplyLoad(review.LoadResult{TargetID: "s1", Scope: req.Scope, Generation: req.Generation, RepoRoot: "/repo", RepoRoots: []string{"/repo"}})
@@ -87,8 +87,8 @@ func TestSaveFailureIsReportedOnlyForCurrentTarget(t *testing.T) {
 		t.Fatal("current save failure was hidden")
 	}
 	other := model.ApplySave(review.SaveResult{TargetID: "other", RepoRoot: "/repo", Err: errors.New("disk full")})
-	if other.Error != "" {
-		t.Fatalf("unrelated save surfaced %q", other.Error)
+	if other.Error == "" {
+		t.Fatal("accepted save failure was hidden after the target changed")
 	}
 }
 

@@ -213,7 +213,7 @@ func TestWaitLooksPastTheRestItsOwnQueuedMessageIsAboutToEnd(t *testing.T) {
 
 	// Typed in, with the pass that did it yet to write the status: the row
 	// still holds the rest it read before typing.
-	if err := h.store.MarkDelivered(sent.MessageID, time.Now()); err != nil {
+	if err := finishMessageFixture(h.store, store.DeliveryConfirmed, sent.MessageID, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	result, err = h.sessions.Wait(context.Background(), h.caller.ID, worker.ID, nil, 300*time.Millisecond)
@@ -252,7 +252,7 @@ func TestWaitTakesTheRestAfterItsOwnMessageWasDropped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Send: %v", err)
 	}
-	if err := h.store.MarkDropped(sent.MessageID, time.Now()); err != nil {
+	if err := finishMessageFixture(h.store, store.DeliveryRefused, sent.MessageID, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 

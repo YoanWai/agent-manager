@@ -447,7 +447,7 @@ func TestFocusF3OpensEditor(t *testing.T) {
 	if cmd == nil {
 		t.Fatalf("f3 in focus returned no launch, err = %q", m.errBar.text)
 	}
-	m.applyCmd(t, cmd)
+	applyEditorLookup(t, m, cmd)
 
 	if want := []string{"code", resolved(t, dir)}; !slices.Equal(*launched, want) {
 		t.Fatalf("launched %v, want %v", *launched, want)
@@ -586,6 +586,7 @@ func TestFocusPasteKeepsPromptInComposer(t *testing.T) {
 	text := "line one\nline two\n"
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(text), Paste: true})
 	*m = *updated.(*Model)
+	m.drainEffects(t)
 	if calls != 1 {
 		t.Fatalf("paste path called %d times after completion, want 1 (err=%q)", calls, m.errBar.text)
 	}
@@ -1386,6 +1387,7 @@ func TestFocusModeRemappedReviewAndEditorKeys(t *testing.T) {
 	if cmd == nil {
 		t.Fatalf("ctrl+e should launch the editor, err = %q", m.errBar.text)
 	}
+	cmd = resolveEditorLookup(t, m, cmd)
 	if done, ok := cmd().(editorDoneMsg); !ok || done.err != nil {
 		t.Fatalf("editor launch reported %#v", done)
 	}

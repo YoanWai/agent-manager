@@ -557,7 +557,9 @@ func TestEditGroupRejectsMissingPath(t *testing.T) {
 	}
 	m.openRename()
 	m.rename.dir.SetValue("/nope/definitely/missing")
-	if _, _ = m.applyRename(); m.errBar.text == "" {
+	_, cmd := m.applyRename()
+	m.applyCmd(t, cmd)
+	if m.errBar.text == "" {
 		t.Fatal("missing path should be rejected")
 	}
 	if m.mode != modeRename {
@@ -656,10 +658,10 @@ func TestGroupEditPersistsWorktreeChoice(t *testing.T) {
 	if len(groups) != 1 || groups[0].Worktree != "on" {
 		t.Fatalf("worktree choice should persist, got %+v", groups)
 	}
-	if !m.spawnWorktreeDefault("grp") {
+	if !m.cachedSpawnWorktreeDefault("grp") {
 		t.Fatal("group worktree should resolve on")
 	}
-	if !m.spawnWorktreeDefault("grp/child") {
+	if !m.cachedSpawnWorktreeDefault("grp/child") {
 		t.Fatal("child group should inherit the parent's worktree choice")
 	}
 }

@@ -46,7 +46,7 @@ func (m *Model) renameRowInput(entry treeRow, width int) string {
 func (m *Model) groupStatusBreakdown(group string) string {
 	counts := m.groupStatusCounts(group)
 	var parts []string
-	for _, st := range []string{status.Working, status.Waiting, status.Finished, status.Errored, status.Idle, status.Dead} {
+	for _, st := range []string{status.Starting, status.Working, status.Waiting, status.Finished, status.Errored, status.Idle, status.Dead} {
 		if counts[st] > 0 {
 			// The count carries the state's color, the word stays quiet: a
 			// rollup line should read as one texture, not as six labels
@@ -75,7 +75,7 @@ func (m *Model) groupStatusCounts(group string) map[string]int {
 func (m *Model) groupStatusGlyphs(group string) string {
 	counts := m.groupStatusCounts(group)
 	var parts []string
-	for _, st := range []string{status.Working, status.Waiting, status.Finished, status.Errored, status.Idle, status.Dead} {
+	for _, st := range []string{status.Starting, status.Working, status.Waiting, status.Finished, status.Errored, status.Idle, status.Dead} {
 		if counts[st] == 0 {
 			continue
 		}

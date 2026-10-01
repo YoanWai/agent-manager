@@ -19,8 +19,9 @@ func TestDefaultToolFallsBackWhenSettingStale(t *testing.T) {
 	if err := m.services.store.SetSetting("default_tool", "deleted-tool"); err != nil {
 		t.Fatalf("set setting: %v", err)
 	}
-	if got := m.defaultTool(); got != "claude" {
-		t.Fatalf("defaultTool = %q want claude (alphabetical fallback)", got)
+	m.applyTestMsg(t, m.openForm()())
+	if got := m.form.toolNames[m.form.toolIndex]; got != "claude" {
+		t.Fatalf("form default tool = %q want claude (alphabetical fallback)", got)
 	}
 }
 
@@ -52,8 +53,8 @@ func TestSettingsTogglesQuickClose(t *testing.T) {
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
 	_, cmd := m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m.applyCmd(t, cmd)
-	if !m.quickCloseAfterSend() {
-		t.Fatal("close choice should persist after toggle")
+	if chosen, err := m.services.store.Setting(quickCloseSetting); err != nil || chosen != "close" {
+		t.Fatalf("close choice = %q err %v, want persisted close", chosen, err)
 	}
 }
 
@@ -92,9 +93,6 @@ func TestSettingsWorktreeDefaultPersists(t *testing.T) {
 	m.applyCmd(t, cmd)
 	if chosen, err := m.services.store.Setting(worktreeSetting); err != nil || chosen != "on" {
 		t.Fatalf("want stored on, got %q err %v", chosen, err)
-	}
-	if !m.defaultWorktree() {
-		t.Fatal("defaultWorktree should now report on")
 	}
 }
 
@@ -339,7 +337,7 @@ func TestSettingsCLIPickerHidesFromNewSessions(t *testing.T) {
 		t.Fatalf("stored hidden_tools = %q err %v, want codex", raw, err)
 	}
 
-	enabled := m.enabledToolNames()
+	enabled := m.cachedEnabledToolNames()
 	for _, name := range enabled {
 		if name == "codex" {
 			t.Fatalf("codex should be omitted from create pickers: %v", enabled)

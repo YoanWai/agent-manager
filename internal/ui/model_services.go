@@ -29,4 +29,8 @@ type services struct {
 	// takes the window; a seam so snapshot failures can be exercised
 	// without a broken store.
 	setSnapshot func(id, snapshot string) error
+	// quick-send seams are captured with an accepted effect. Tests use them
+	// to hold transport without blocking Bubble Tea's Update loop.
+	quickSessionExists func(*tmux.Driver, string) (bool, error)
+	quickSendText      func(*tmux.Driver, string, string) (tmux.SendResult, error)
 }

@@ -108,6 +108,7 @@ func TestKillRefusesWhenNothingIsRunning(t *testing.T) {
 	if err := m.services.tmux.Kill(sess.ID); err != nil {
 		t.Fatalf("kill: %v", err)
 	}
+	m.applyCmd(t, m.refreshCmd())
 
 	m.selectSessionRow(t, "ghost")
 	if _, _ = m.killSelected(); m.errBar.text == "" {

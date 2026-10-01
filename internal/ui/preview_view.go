@@ -285,7 +285,7 @@ func (m *Model) viewGroupDetail(group string, width int) string {
 	path := m.workspace.groupPaths[group]
 	source := ""
 	if path == "" {
-		path = m.groupDefaultDir(group)
+		path = m.capturedGroupDefaultDir(group)
 		source = subtleStyle.Render("inherited")
 	}
 	dir := func(room int) string { return mutedStyle.Render(truncateTail(path, room)) }

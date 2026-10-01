@@ -2,6 +2,7 @@ package ui
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
@@ -9,9 +10,18 @@ import (
 )
 
 type railRequest struct {
-	mutation uirail.Mutation
-	dir      string
-	worktree string
+	mutation  uirail.Mutation
+	dir       string
+	worktree  string
+	placement placementPrecondition
+}
+
+type placementPrecondition struct {
+	verify         bool
+	sourceGroup    string
+	sourceParentID string
+	targetID       string
+	targetGroup    string
 }
 
 func (railRequest) effectRequest() {}
@@ -63,6 +73,28 @@ func (m *Model) queueRail(mutations []uirail.Mutation, chain uint64, first bool)
 func (s effectServices) runRail(request railRequest) (effectResult, error) {
 	mutation := request.mutation
 	result := railEffectResult{}
+	if request.placement.verify && mutation.Kind == uirail.PlaceSession {
+		source, err := s.store.Get(mutation.SessionID)
+		if err != nil {
+			return result, err
+		}
+		if source.Group != request.placement.sourceGroup || source.ParentID != request.placement.sourceParentID {
+			return result, fmt.Errorf("move source changed before placement")
+		}
+		if request.placement.targetID != "" {
+			target, err := s.store.Get(request.placement.targetID)
+			if err != nil {
+				return result, err
+			}
+			if target.Group != request.placement.targetGroup {
+				return result, fmt.Errorf("move target changed before placement")
+			}
+		}
+		if source.ParentID == mutation.ParentID && source.Group == mutation.Group {
+			result.sessions = []store.Session{source}
+			return result, nil
+		}
+	}
 	var err error
 	switch mutation.Kind {
 	case uirail.SaveCollapsed:

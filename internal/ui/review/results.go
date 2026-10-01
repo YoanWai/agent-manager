@@ -163,7 +163,7 @@ func (m *Model) ApplyStatus(result StatusResult) ApplyResult {
 
 func (m *Model) ApplySave(result SaveResult) ApplyResult {
 	accepted := ApplyResult{Accepted: true}
-	if result.Err != nil && result.TargetID == m.target.ID && result.RepoRoot == m.repoSel {
+	if result.Err != nil {
 		accepted.Error = "saving review state: " + result.Err.Error()
 	}
 	return accepted

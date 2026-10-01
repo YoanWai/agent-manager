@@ -88,35 +88,14 @@ func (m *Model) handleMoveKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeList
 		return m, nil
 	case "up":
-		m.moveGroupCursor(-1)
-		return m, nil
+		return m, m.moveGroupCursor(-1)
 	case "down":
-		m.moveGroupCursor(1)
-		return m, nil
+		return m, m.moveGroupCursor(1)
 	case "enter":
 		if m.movePath != "" {
 			return m.moveGroupTo(m.selectedGroupPath())
 		}
 		opt := m.form.groups[m.form.groupIndex]
-		// Pre-confirmation reads: the picked session is re-read before the
-		// shortcut below closes the dialog, so re-picking the parent of a
-		// terminal whose agent has since gone reports that instead of a
-		// move that never happened.
-		sess, err := m.services.store.Get(m.moveID)
-		if err != nil {
-			m.errBar.text = err.Error()
-			return m, nil
-		}
-		if opt.sessID != "" {
-			if _, err := m.services.store.Get(opt.sessID); err != nil {
-				m.errBar.text = err.Error()
-				return m, nil
-			}
-		}
-		if sess.ParentID == opt.sessID && sess.Group == opt.path {
-			m.mode = modeList
-			return m, nil
-		}
 		return m, m.enqueueMove(uirail.Mutation{Kind: uirail.PlaceSession, SessionID: m.moveID, Group: opt.path, ParentID: opt.sessID}, moveDialogClose{sessID: m.moveID, optPath: opt.path, optSessID: opt.sessID})
 	}
 	return m, nil

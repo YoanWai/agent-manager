@@ -577,7 +577,7 @@ func (r renderer) groupStatusGlyphs(group string) string {
 		}
 	}
 	var parts []string
-	for _, state := range []string{"working", "waiting", "finished", "errored", "idle", "dead"} {
+	for _, state := range []string{"starting", "working", "waiting", "finished", "errored", "idle", "dead"} {
 		if counts[state] == 0 {
 			continue
 		}

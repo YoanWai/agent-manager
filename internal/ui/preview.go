@@ -5,7 +5,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/x/ansi"
 	"time"
 )
 
@@ -84,29 +83,15 @@ func (m *Model) needsLoaderTick() bool {
 // typedPromptCandidate is a composer draft snapshotted as enter went into
 // a focused pane, held until the session shows the send went through.
 type typedPromptCandidate struct {
-	id   string
-	text string
-	at   time.Time
+	session store.Session
+	id      string
+	text    string
+	at      time.Time
 }
 
 // typedPromptGrace is how long a candidate waits for its session to turn
 // working before it is judged a menu enter and dropped.
 const typedPromptGrace = 5 * time.Second
-
-// stashTypedPrompt snapshots the composer draft as enter goes into the
-// focused pane, from a fresh capture so the newest keystrokes are in it.
-func (m *Model) stashTypedPrompt(sess store.Session) {
-	if m.services.engine == nil || m.services.tmux == nil {
-		return
-	}
-	pane, err := m.services.tmux.CapturePane(sess.ID)
-	if err != nil {
-		return
-	}
-	if draft, ok := m.services.engine.InputDraft(sess.Tool, ansi.Strip(pane)); ok {
-		m.startup.pendingTyped = &typedPromptCandidate{id: sess.ID, text: draft, at: time.Now()}
-	}
-}
 
 // commitTypedPrompt records a stashed draft as the session's last prompt
 // once the session runs with it: an enter that opened a menu or answered
@@ -128,10 +113,7 @@ func (m *Model) commitTypedPrompt() {
 		if m.workspace.sessions[i].Status != status.Working {
 			return
 		}
-		if err := ignoreDeletedSession(m.services.store.SetLastPrompt(cand.id, cand.text)); err != nil {
-			m.errBar.text = err.Error()
-		}
-		m.workspace.sessions[i].LastPrompt = cand.text
+		m.dispatchInput(inputRequest{kind: inputPrompt, session: cand.session, text: cand.text})
 		m.startup.pendingTyped = nil
 		return
 	}

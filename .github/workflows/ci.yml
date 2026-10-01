@@ -44,7 +44,11 @@ jobs:
       - name: Vet
         run: go vet ./...
       - name: Test
-        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+        run: |
+          fixture_root=$(mktemp -d /tmp/am-ci-race.XXXXXX)
+          mkdir -p "$fixture_root/zsh"
+          env -u TMUX -u TMUX_PANE TMUX_TMPDIR="$fixture_root" ZDOTDIR="$fixture_root/zsh" SHELL=/bin/sh \
+            go test -race -coverprofile=coverage.out -covermode=atomic ./...
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
@@ -76,7 +80,7 @@ jobs:
         run: python3 tools/e2e/scenarios.py --binary "$RUNNER_TEMP/am-e2e-binary" --artifacts "$RUNNER_TEMP/am-scenario-evidence"
       - name: Partial writes and installation scenarios
         run: python3 tools/e2e/failure_scenarios.py --binary "$RUNNER_TEMP/am-e2e-binary" --artifacts "$RUNNER_TEMP/am-failure-evidence"
-      - name: Blocked rename and move scenarios
+      - name: Blocked dialog and focus scenarios
         run: python3 tools/e2e/blocked_scenarios.py --binary "$RUNNER_TEMP/am-e2e-binary" --artifacts "$RUNNER_TEMP/am-blocked-evidence"
       - name: Compatibility fixture safety
         run: python3 -m unittest discover -s tools/compatibility -p 'test_*.py'

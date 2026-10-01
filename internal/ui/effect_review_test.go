@@ -5,8 +5,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/tmux"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -22,21 +24,34 @@ func openReviewTestStore(t *testing.T) *store.Store {
 }
 
 type scriptedReviewWriter struct {
-	alive     bool
-	sendErr   error
-	sendCalls []string
+	alive      bool
+	sendResult tmux.SendResult
+	sendErr    error
+	sendCalls  []string
 }
 
 func (w *scriptedReviewWriter) exists(id string) (bool, error) { return w.alive, nil }
-func (w *scriptedReviewWriter) sendText(id, text string) error {
+func (w *scriptedReviewWriter) sendText(id, text string) (tmux.SendResult, error) {
 	if w.sendErr != nil {
-		return w.sendErr
+		return w.sendResult, w.sendErr
 	}
 	w.sendCalls = append(w.sendCalls, text)
-	return nil
+	return w.sendResult, nil
 }
 
-func reviewSendRequest(request *uireview.SendRequest) reviewEffectRequest {
+func createReviewSendSession(t *testing.T, st *store.Store, id string) store.Session {
+	t.Helper()
+	if err := st.CreateSession(store.Session{ID: id, Name: id, Tool: "pi", Cwd: "/w", TmuxSocket: "fixture"}); err != nil {
+		t.Fatal(err)
+	}
+	session, err := st.Get(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return session
+}
+
+func reviewSendRequest(request *uireview.SendRequest, session store.Session) reviewEffectRequest {
 	return reviewEffectRequest{
 		op:            reviewOpSend,
 		targetID:      request.Target.ID,
@@ -49,11 +64,13 @@ func reviewSendRequest(request *uireview.SendRequest) reviewEffectRequest {
 		previousRound: request.PreviousRound,
 		round:         request.Round,
 		count:         request.Count,
+		sendTarget:    captureReviewSendTarget(session),
 	}
 }
 
 func TestReviewSendDeadSessionWritesNothing(t *testing.T) {
 	st := openReviewTestStore(t)
+	session := createReviewSendSession(t, st, "dead1")
 	writer := &scriptedReviewWriter{alive: false}
 	req := reviewSendRequest(&uireview.SendRequest{
 		Target:   uireview.Target{ID: "dead1", Name: "dead"},
@@ -61,13 +78,13 @@ func TestReviewSendDeadSessionWritesNothing(t *testing.T) {
 		State:         uireview.SavedState{Round: uireview.Round{Number: 1}},
 		PreviousState: uireview.SavedState{},
 		Round:         1, Count: 1,
-	})
+	}, session)
 	effect, err := runReviewWithWriter(req, st, writer)
 	if err != nil {
 		t.Fatal(err)
 	}
 	result := effect.(reviewEffectResult)
-	if result.send.Delivered || result.send.Err == nil || result.send.Err.Error() != deadSessionHint {
+	if result.send.Outcome != uireview.SendRefused || result.send.Err == nil || result.send.Err.Error() != deadSessionHint {
 		t.Fatalf("dead session outcome = %+v", result.send)
 	}
 	state, err := st.ReviewState("dead1", "/repo")
@@ -79,9 +96,12 @@ func TestReviewSendDeadSessionWritesNothing(t *testing.T) {
 	}
 }
 
-func TestReviewSendRollsBackWhenDeliveryFails(t *testing.T) {
+func TestReviewSendRollsBackWhenDeliveryIsRefused(t *testing.T) {
 	st := openReviewTestStore(t)
-	writer := &scriptedReviewWriter{alive: true, sendErr: errors.New("send failed")}
+	session := createReviewSendSession(t, st, "s1")
+	writer := &scriptedReviewWriter{
+		alive: true, sendResult: tmux.SendResult{Phase: tmux.SendPhaseLoaded}, sendErr: errors.New("send failed"),
+	}
 	req := reviewSendRequest(&uireview.SendRequest{
 		Target:   uireview.Target{ID: "s1", Name: "one"},
 		RepoRoot: "/repo", Prompt: "prompt",
@@ -94,13 +114,13 @@ func TestReviewSendRollsBackWhenDeliveryFails(t *testing.T) {
 			Comments: []uireview.Comment{{ID: "c1", File: "a.go", Line: 1, Text: "old", Round: 1}},
 		},
 		CommentIDs: []string{"c1"}, Round: 2, Count: 1,
-	})
+	}, session)
 	effect, err := runReviewWithWriter(req, st, writer)
 	if err != nil {
 		t.Fatal(err)
 	}
 	result := effect.(reviewEffectResult)
-	if result.send.Delivered || result.send.Err == nil || !strings.Contains(result.send.Err.Error(), "send failed") {
+	if result.send.Outcome != uireview.SendRefused || result.send.Err == nil || !strings.Contains(result.send.Err.Error(), "send failed") {
 		t.Fatalf("failed send outcome = %+v", result.send)
 	}
 	state, err := st.ReviewState("s1", "/repo")
@@ -112,12 +132,125 @@ func TestReviewSendRollsBackWhenDeliveryFails(t *testing.T) {
 	}
 }
 
-func TestReviewSendPersistsRoundAndClearsAck(t *testing.T) {
+func TestReviewSendKeepsRoundWhenDeliveryIsUncertain(t *testing.T) {
 	st := openReviewTestStore(t)
-	writer := &scriptedReviewWriter{alive: true}
-	if err := st.CreateSession(store.Session{ID: "s1", Name: "one", Tool: "pi", Cwd: "/w"}); err != nil {
+	session := createReviewSendSession(t, st, "s1")
+	writer := &scriptedReviewWriter{
+		alive: true, sendResult: tmux.SendResult{Phase: tmux.SendPhasePasteStarted}, sendErr: errors.New("tmux reply lost"),
+	}
+	req := reviewSendRequest(&uireview.SendRequest{
+		Target: uireview.Target{ID: "s1", Name: "one"}, RepoRoot: "/repo", Prompt: "prompt",
+		State: uireview.SavedState{
+			Round:    uireview.Round{Number: 2},
+			Comments: []uireview.Comment{{ID: "c1", File: "a.go", Line: 1, Text: "new", Round: 2}},
+		},
+		PreviousState: uireview.SavedState{
+			Round:    uireview.Round{Number: 1},
+			Comments: []uireview.Comment{{ID: "c1", File: "a.go", Line: 1, Text: "old", Round: 1}},
+		},
+		CommentIDs: []string{"c1"}, Round: 2, Count: 1,
+	}, session)
+	effect, err := runReviewWithWriter(req, st, writer)
+	if err != nil {
 		t.Fatal(err)
 	}
+	result := effect.(reviewEffectResult)
+	if result.send.Outcome != uireview.SendUncertain || result.send.Err == nil || !strings.Contains(result.send.Err.Error(), "may have reached") {
+		t.Fatalf("uncertain send outcome = %+v", result.send)
+	}
+	state, err := st.ReviewState("s1", "/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Round.Number != 2 || len(state.Comments) != 1 || state.Comments[0].Text != "new" {
+		t.Fatalf("uncertain send restored resendable state: %+v", state)
+	}
+}
+
+func TestReviewSendRefusesUnconfirmedSuccess(t *testing.T) {
+	st := openReviewTestStore(t)
+	session := createReviewSendSession(t, st, "s1")
+	writer := &scriptedReviewWriter{alive: true, sendResult: tmux.SendResult{Phase: tmux.SendPhaseLoaded}}
+	request := reviewSendRequest(&uireview.SendRequest{
+		Target: uireview.Target{ID: "s1", Name: "one"}, RepoRoot: "/repo", Prompt: "prompt",
+		State: uireview.SavedState{Round: uireview.Round{Number: 1}}, Round: 1, Count: 1,
+	}, session)
+
+	effect, err := runReviewWithWriter(request, st, writer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := effect.(reviewEffectResult)
+	if result.send.Outcome != uireview.SendRefused || result.send.Err == nil || !strings.Contains(result.send.Err.Error(), "not confirmed submitted") {
+		t.Fatalf("unconfirmed success outcome = %+v", result.send)
+	}
+	state, err := st.ReviewState("s1", "/repo")
+	if err != nil || state.Round.Number != 0 {
+		t.Fatalf("unconfirmed success persisted a round: state=%+v err=%v", state, err)
+	}
+}
+
+func TestReviewSendRefusesRelaunchedTargetBeforePersistenceOrTransport(t *testing.T) {
+	st := openReviewTestStore(t)
+	session := createReviewSendSession(t, st, "s1")
+	request := reviewSendRequest(&uireview.SendRequest{
+		Target: uireview.Target{ID: "s1", Name: "one"}, RepoRoot: "/repo", Prompt: "prompt",
+		State: uireview.SavedState{Round: uireview.Round{Number: 1}}, Round: 1, Count: 1,
+	}, session)
+	if err := st.SetAgentLaunchedAt("s1", time.Now().Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	writer := &scriptedReviewWriter{alive: true, sendResult: tmux.SendResult{Phase: tmux.SendPhaseSubmitted}}
+
+	effect, err := runReviewWithWriter(request, st, writer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := effect.(reviewEffectResult)
+	if result.send.Outcome != uireview.SendRefused || result.send.Err == nil || !strings.Contains(result.send.Err.Error(), "target changed") {
+		t.Fatalf("relaunch outcome = %+v", result.send)
+	}
+	if len(writer.sendCalls) != 0 {
+		t.Fatalf("relaunch guard typed into replacement pane: %v", writer.sendCalls)
+	}
+	state, err := st.ReviewState("s1", "/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Round.Number != 0 {
+		t.Fatalf("relaunch guard persisted a round: %+v", state)
+	}
+}
+
+func TestReviewSendCommandCapturesSessionIncarnation(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "review-incarnation", t.TempDir(), "")
+	session := reviewSessionByName(t, m, "review-incarnation")
+	m.review = uireview.New(false)
+	m.review.Open(uireview.Target{ID: session.ID, Name: session.Name, Tool: session.Tool, Cwd: session.Cwd}, 0, "/repo")
+	m.mode = modeDiff
+	m.reviewSendCmd(uireview.SendRequest{
+		Target: uireview.Target{ID: session.ID, Name: session.Name}, RepoRoot: "/repo", Prompt: "prompt",
+		State: uireview.SavedState{Round: uireview.Round{Number: 1}}, Round: 1, Count: 1,
+	})
+	if err := m.services.store.SetAgentLaunchedAt(session.ID, time.Now().Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+
+	m.drainEffects(t)
+	state, err := m.services.store.ReviewState(session.ID, "/repo")
+	if err != nil || state.Round.Number != 0 {
+		t.Fatalf("queued send reached replacement incarnation: state=%+v err=%v", state, err)
+	}
+	if !strings.Contains(m.errBar.text, "target changed") {
+		t.Fatalf("relaunch refusal was not surfaced: %q", m.errBar.text)
+	}
+}
+
+func TestReviewSendPersistsRoundAndClearsAck(t *testing.T) {
+	st := openReviewTestStore(t)
+	writer := &scriptedReviewWriter{alive: true, sendResult: tmux.SendResult{Phase: tmux.SendPhaseSubmitted}}
+	session := createReviewSendSession(t, st, "s1")
 	if err := st.SetAcked("s1", true); err != nil {
 		t.Fatal(err)
 	}
@@ -129,13 +262,13 @@ func TestReviewSendPersistsRoundAndClearsAck(t *testing.T) {
 			Comments: []uireview.Comment{{ID: "c1", File: "a.go", Line: 1, Text: "new", Round: 2}},
 		},
 		CommentIDs: []string{"c1"}, Round: 2, Count: 1,
-	})
+	}, session)
 	effect, err := runReviewWithWriter(req, st, writer)
 	if err != nil {
 		t.Fatal(err)
 	}
 	result := effect.(reviewEffectResult)
-	if !result.send.Delivered || result.send.Err != nil {
+	if result.send.Outcome != uireview.SendConfirmed || result.send.Err != nil {
 		t.Fatalf("send outcome = %+v", result.send)
 	}
 	if len(writer.sendCalls) != 1 || writer.sendCalls[0] != "the prompt" {
@@ -324,6 +457,33 @@ func TestReviewSaveDefersToEffectLane(t *testing.T) {
 	}
 }
 
+func TestReviewSaveFailureSurfacesAfterReviewChanges(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func(*Model)
+	}{
+		{"closed", func(m *Model) { m.review.Close(); m.mode = modeList }},
+		{"retargeted", func(m *Model) { _, _ = m.review.SelectRepo("/other") }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := &Model{}
+			m.review = uireview.New(false)
+			m.review.Open(uireview.Target{ID: "s1", Cwd: "/repo"}, 0, "/repo")
+			m.mode = modeDiff
+			tc.mutate(m)
+			modeBefore := m.mode
+
+			cmd := m.handleReviewSave(uireview.SaveResult{TargetID: "s1", RepoRoot: "/repo", Err: errors.New("disk full")})
+			if cmd != nil {
+				t.Fatal("save failure started navigation")
+			}
+			if m.mode != modeBefore || !strings.Contains(m.errBar.text, "saving review state: disk full") {
+				t.Fatalf("accepted save failure hidden or navigated: mode=%v err=%q", m.mode, m.errBar.text)
+			}
+		})
+	}
+}
+
 func TestReviewStatusSeesPriorSave(t *testing.T) {
 	m := buildModel(t)
 	if m.services.gitDrv == nil {
@@ -482,7 +642,8 @@ func TestReviewNormalizeDispatchesAsNormalizeOp(t *testing.T) {
 	}
 	m.selectSessionRow(t, "normop")
 	open := m.openDiff()
-	batch, ok := open().(tea.BatchMsg)
+	_, ready := m.handleReviewPreferences(open().(reviewPreferencesMsg))
+	batch, ok := ready().(tea.BatchMsg)
 	if !ok {
 		t.Fatalf("openDiff command = %T, want batch", open)
 	}
@@ -551,19 +712,20 @@ func TestStaleNormalizeDoesNotOverwriteNewerSave(t *testing.T) {
 
 func TestReviewSendProbeErrorPersistsNothing(t *testing.T) {
 	st := openReviewTestStore(t)
+	session := createReviewSendSession(t, st, "s1")
 	writer := &probeFailingWriter{probeErr: errors.New("tmux probe failed")}
 	req := reviewSendRequest(&uireview.SendRequest{
 		Target:   uireview.Target{ID: "s1", Name: "one"},
 		RepoRoot: "/repo", Prompt: "prompt",
 		State: uireview.SavedState{Round: uireview.Round{Number: 1}},
 		Round: 1, Count: 1,
-	})
+	}, session)
 	effect, err := runReviewWithWriter(req, st, writer)
 	if err != nil {
 		t.Fatal(err)
 	}
 	result := effect.(reviewEffectResult)
-	if result.send.Delivered || result.send.Err == nil || result.send.Err.Error() != "tmux probe failed" {
+	if result.send.Outcome != uireview.SendRefused || result.send.Err == nil || result.send.Err.Error() != "tmux probe failed" {
 		t.Fatalf("probe failure outcome = %+v", result.send)
 	}
 	if len(writer.sent) != 0 {
@@ -584,9 +746,9 @@ type probeFailingWriter struct {
 }
 
 func (w *probeFailingWriter) exists(id string) (bool, error) { return false, w.probeErr }
-func (w *probeFailingWriter) sendText(id, text string) error {
+func (w *probeFailingWriter) sendText(id, text string) (tmux.SendResult, error) {
 	w.sent = append(w.sent, text)
-	return nil
+	return tmux.SendResult{Phase: tmux.SendPhaseSubmitted}, nil
 }
 
 func reviewSessionByName(t *testing.T, m *Model, name string) store.Session {

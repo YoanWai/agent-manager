@@ -38,7 +38,7 @@ func TestThemeAutoPersistsWithoutClobberingManualTheme(t *testing.T) {
 	if err := m.services.store.SetSetting(themeSetting, "nord"); err != nil {
 		t.Fatal(err)
 	}
-	m.openSettings()
+	m.applyTestMsg(t, m.openSettings()())
 	if m.settings.themeAuto {
 		t.Fatal("theme auto should default off")
 	}
@@ -68,7 +68,7 @@ func TestManualThemeCycleDisablesAuto(t *testing.T) {
 	if err := m.services.store.SetSetting(themeAutoSetting, "on"); err != nil {
 		t.Fatal(err)
 	}
-	m.openSettings()
+	m.applyTestMsg(t, m.openSettings()())
 	if !m.settings.themeAuto {
 		t.Fatal("open should reflect the persisted auto toggle")
 	}

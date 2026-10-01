@@ -384,6 +384,8 @@ func TestClickInFocusedPaneStaysFocused(t *testing.T) {
 	if m.mode != modeFocus {
 		t.Fatalf("test setup: focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
+	// Empty cat panes have no rendered hit box; give this click test visible content.
+	m.workspace.preview = "focused pane"
 	preparedView(m)
 	box := m.focusPane.FrameBox()
 	if !box.Valid {

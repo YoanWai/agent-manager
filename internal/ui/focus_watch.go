@@ -1,13 +1,15 @@
 package ui
 
 import (
+	"context"
 	"fmt"
-	"github.com/YoanWai/agent-manager/internal/tmux"
-	tea "github.com/charmbracelet/bubbletea"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/YoanWai/agent-manager/internal/tmux"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // focusPreviewMsg carries a pane snapshot pushed by the focus watcher,
@@ -50,8 +52,11 @@ type focusWatch struct {
 
 	mu      sync.Mutex
 	id      string
-	stop    chan struct{}
+	stop    <-chan struct{}
+	cancel  context.CancelFunc
 	control *tmux.Control
+	closed  bool
+	running sync.WaitGroup
 	// failedID/failedAt back off reopening a session whose client just
 	// died. Selection sync retries every poll pass, and without the pause
 	// a dead session's row costs one tmux fork per pass, forever.
@@ -61,7 +66,12 @@ type focusWatch struct {
 
 // focusRetryBackoff is how long a failed session sits before the watcher
 // tries its control client again.
-const focusRetryBackoff = 15 * time.Second
+const (
+	focusRetryBackoff       = 15 * time.Second
+	focusControlOpenTimeout = 5 * time.Second
+	focusControlCallTimeout = 2 * time.Second
+	focusWatchCloseTimeout  = 3 * time.Second
+)
 
 func newFocusWatch(driver *tmux.Driver, send func(tea.Msg)) *focusWatch {
 	return &focusWatch{driver: driver, send: send}
@@ -73,6 +83,10 @@ func newFocusWatch(driver *tmux.Driver, send func(tea.Msg)) *focusWatch {
 // selection sync.
 func (w *focusWatch) setFocus(id string) {
 	w.mu.Lock()
+	if w.closed {
+		w.mu.Unlock()
+		return
+	}
 	if w.id == id {
 		w.mu.Unlock()
 		return
@@ -90,19 +104,43 @@ func (w *focusWatch) setFocus(id string) {
 		w.mu.Unlock()
 		return
 	}
-	stop := make(chan struct{})
-	w.stop = stop
+	ctx, cancel := context.WithCancel(context.Background())
+	stop := ctx.Done()
+	w.stop, w.cancel = stop, cancel
+	w.running.Add(1)
 	w.mu.Unlock()
-	go w.watch(id, stop)
+	go func() {
+		defer w.running.Done()
+		defer cancel()
+		w.watch(ctx, id, stop)
+	}()
 }
 
-// Close stops the current watcher; its control client detaches on its
-// own once any in-flight send drains.
+// Close stops every watcher and waits a bounded interval for its control
+// client to be killed and reaped.
 func (w *focusWatch) Close() {
+	ctx, cancel := context.WithTimeout(context.Background(), focusWatchCloseTimeout)
+	defer cancel()
+	_ = w.CloseContext(ctx)
+}
+
+func (w *focusWatch) CloseContext(ctx context.Context) error {
 	w.mu.Lock()
+	w.closed = true
 	w.stopLocked()
 	w.id = ""
 	w.mu.Unlock()
+	done := make(chan struct{})
+	go func() {
+		w.running.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // watching is the session the watcher is currently pointed at, live client
@@ -123,20 +161,21 @@ func (w *focusWatch) serving(id string) bool {
 	return w.id == id && w.control != nil
 }
 
-// attempt forwards one tmux command over the control pipe without waiting
-// for the reply. True once a client accepted the write: the pane owns the
-// command from that moment, even if the acknowledgement is lost, so a
-// caller that resent on a slow reply would type the keystroke twice.
-// False only when nothing went out - no client, or a failed write - which
-// is the one case a forked fallback is safe.
-func (w *focusWatch) attempt(command string) bool {
+// forward sends one tmux command through the serving control client and
+// waits for its acknowledgement. Unavailable is the only result that lets a
+// caller safely use another transport: after Command starts, an error cannot
+// prove whether tmux applied the command before the acknowledgement was lost.
+func (w *focusWatch) forward(command string) (available bool, err error) {
 	w.mu.Lock()
 	control := w.control
 	w.mu.Unlock()
 	if control == nil {
-		return false
+		return false, nil
 	}
-	return control.Send(command) == nil
+	ctx, cancel := context.WithTimeout(context.Background(), focusControlCallTimeout)
+	defer cancel()
+	_, err = control.CommandContext(ctx, command)
+	return true, err
 }
 
 // query runs one tmux command over the control pipe and returns its
@@ -170,10 +209,11 @@ func (w *focusWatch) unwatch(id string) {
 // deadlocks the whole UI. A signalled watcher exits on its own and any
 // preview it was mid-sending is dropped by the sessID guard in Update.
 func (w *focusWatch) stopLocked() {
-	if w.stop != nil {
-		close(w.stop)
-		w.stop = nil
+	if w.cancel != nil {
+		w.cancel()
+		w.cancel = nil
 	}
+	w.stop = nil
 	// The stopped watcher's client is not ours to report or use anymore.
 	// Left in place until its goroutine unwound, serving() would claim a
 	// session nothing streams yet and freeze its preview on the old frame.
@@ -183,9 +223,10 @@ func (w *focusWatch) stopLocked() {
 // clearIfCurrent lets a dead watcher release its claim so a later
 // setFocus with the same id opens a fresh client (session restarted,
 // server came back).
-func (w *focusWatch) clearIfCurrent(id string, stop chan struct{}) {
+func (w *focusWatch) clearIfCurrent(id string, stop <-chan struct{}) {
 	w.mu.Lock()
 	if w.id == id && w.stop == stop {
+		w.cancel = nil
 		w.stop = nil
 		w.id = ""
 		w.failedID = id
@@ -203,19 +244,35 @@ func (w *focusWatch) retryNow() {
 	w.mu.Unlock()
 }
 
-func (w *focusWatch) watch(id string, stop chan struct{}) {
-	if !w.driver.Exists(id) {
+func (w *focusWatch) watch(ctx context.Context, id string, stop <-chan struct{}) {
+	openCtx, cancelOpen := context.WithTimeout(ctx, focusControlOpenTimeout)
+	exists := w.driver.ExistsContext(openCtx, id)
+	cancelOpen()
+	if !exists {
 		w.clearIfCurrent(id, stop)
 		return
 	}
-	control, err := w.driver.OpenControl(id)
+	openCtx, cancelOpen = context.WithTimeout(ctx, focusControlOpenTimeout)
+	control, err := w.driver.OpenControlContext(openCtx, id)
+	cancelOpen()
 	if err != nil {
 		// No control client, no pushed previews; the settle/tick capture
 		// path still serves this session.
 		w.clearIfCurrent(id, stop)
 		return
 	}
-	defer control.Close()
+	closeControl := func() {
+		closeCtx, cancelClose := context.WithTimeout(context.Background(), focusControlCallTimeout)
+		_ = control.CloseContext(closeCtx)
+		cancelClose()
+	}
+	defer closeControl()
+	// A Bubble Tea send normally unblocks when its program stops, but send is
+	// an injected synchronous callback and may block forever. Cancellation
+	// must still detach and reap the control client without waiting for this
+	// goroutine to reach its defer.
+	stopCancelClose := context.AfterFunc(ctx, closeControl)
+	defer stopCancelClose()
 	w.mu.Lock()
 	if w.stop == stop {
 		w.control = control
@@ -230,7 +287,9 @@ func (w *focusWatch) watch(id string, stop chan struct{}) {
 	}()
 	target := tmux.PaneTarget(id)
 	capture := func() bool {
-		pane, err := control.Command("capture-pane -p -e -t " + target)
+		callCtx, cancelCall := context.WithTimeout(ctx, focusControlCallTimeout)
+		pane, err := control.CommandContext(callCtx, "capture-pane -p -e -t "+target)
+		cancelCall()
 		if err != nil {
 			w.report(stop, fmt.Errorf("preview client for %s: %w", id, err))
 			return false
@@ -243,9 +302,12 @@ func (w *focusWatch) watch(id string, stop chan struct{}) {
 		// The format must be quoted: tmux's parser reads a bare { as the
 		// start of a command block and swallows the argument, which comes
 		// back as its default status message instead of coordinates.
-		if state, err := control.Command(
-			`display-message -p -t ` + target +
-				` "#{cursor_x},#{cursor_y},#{cursor_flag},#{mouse_any_flag}#{mouse_button_flag}#{mouse_standard_flag},#{history_size},#{mouse_all_flag},#{mouse_sgr_flag}"`); err == nil {
+		callCtx, cancelCall = context.WithTimeout(ctx, focusControlCallTimeout)
+		state, stateErr := control.CommandContext(callCtx,
+			`display-message -p -t `+target+
+				` "#{cursor_x},#{cursor_y},#{cursor_flag},#{mouse_any_flag}#{mouse_button_flag}#{mouse_standard_flag},#{history_size},#{mouse_all_flag},#{mouse_sgr_flag}"`)
+		cancelCall()
+		if stateErr == nil {
 			applyPaneState(&msg, state)
 		}
 		// Skip the send once stopped: it could block on the UI loop for
@@ -278,7 +340,15 @@ func (w *focusWatch) watch(id string, stop chan struct{}) {
 		}
 		// Let the paint burst settle, then fold everything queued since
 		// into this one capture.
-		time.Sleep(focusDebounce)
+		debounce := time.NewTimer(focusDebounce)
+		select {
+		case <-stop:
+			if !debounce.Stop() {
+				<-debounce.C
+			}
+			return
+		case <-debounce.C:
+		}
 		for {
 			select {
 			case <-control.Events():
@@ -298,7 +368,7 @@ func (w *focusWatch) watch(id string, stop chan struct{}) {
 // the poll cadence shows its reason instead of reading as lag. A stopped
 // watcher stays quiet: its send could block on the UI loop for a frame,
 // and the loss was asked for.
-func (w *focusWatch) report(stop chan struct{}, err error) {
+func (w *focusWatch) report(stop <-chan struct{}, err error) {
 	select {
 	case <-stop:
 		return
