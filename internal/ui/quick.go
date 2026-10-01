@@ -412,8 +412,11 @@ func (m *Model) handleQuickPickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		var cmd tea.Cmd
+		before := ch.typedEffort.Value()
 		ch.typedEffort, cmd = ch.typedEffort.Update(msg)
-		m.keepChoice(toolName, ch)
+		if ch.typedEffort.Value() != before {
+			m.keepChoice(toolName, ch)
+		}
 		return m, cmd
 	}
 	list := m.modelSuggestions(toolName, ch, ch.query())

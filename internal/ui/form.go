@@ -468,8 +468,11 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		cmd = m.form.prompt.typeKey(msg)
 	case fieldEffort:
 		if m.effortTyped(m.formTool(), &m.form.choice) {
+			before := m.form.choice.typedEffort.Value()
 			m.form.choice.typedEffort, cmd = m.form.choice.typedEffort.Update(msg)
-			m.keepChoice(m.formTool(), &m.form.choice)
+			if m.form.choice.typedEffort.Value() != before {
+				m.keepChoice(m.formTool(), &m.form.choice)
+			}
 		}
 	}
 	return m, cmd
