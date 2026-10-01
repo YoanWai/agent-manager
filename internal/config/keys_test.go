@@ -273,7 +273,7 @@ rename = "ctrl+n"
 	}
 }
 
-// A table saved before tmux_prefix existed loads it off, and the picker's line loads back.
+// An older binary refuses a tmux_prefix line, so the file carries one only while it is set.
 func TestSaveKeysRoundTripsTheTmuxPrefix(t *testing.T) {
 	dir, path := writeConfig(t, "[keybindings.session]\ndetach = \"ctrl+s\"\nreview = \"ctrl+r\"\neditor = \"f3\"\n")
 	loaded, err := LoadDir(dir)
@@ -282,6 +282,17 @@ func TestSaveKeysRoundTripsTheTmuxPrefix(t *testing.T) {
 	}
 	if got := loaded.SessionKeys.Binding(keybind.TmuxPrefix).Label(); got != "" {
 		t.Fatalf("an older table should leave tmux_prefix off, got %q", got)
+	}
+
+	off := loaded.SessionKeys.With(keybind.Detach, bindingOf(t, "f9"))
+	if err := SaveKeys(dir, off); err != nil {
+		t.Fatalf("SaveKeys with tmux_prefix off: %v", err)
+	}
+	if saved := readConfig(t, path); strings.Contains(saved, "tmux_prefix") || !strings.Contains(saved, `detach = "f9"`) {
+		t.Fatalf("an unset tmux_prefix should leave no line:\n%s", saved)
+	}
+	if reloaded, err := LoadDir(dir); err != nil || !reloaded.SessionKeys.Equal(off) {
+		t.Fatalf("the file without the line should reload the same table, err = %v", err)
 	}
 
 	keys := loaded.SessionKeys.With(keybind.TmuxPrefix, bindingOf(t, "ctrl+b", "f12"))

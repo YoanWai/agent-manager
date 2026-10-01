@@ -97,9 +97,15 @@ func keysEnd(lines []string, start int) int {
 }
 
 func keysBlock(keys keybind.Table) string {
+	defaults := keys.Defaults()
 	lines := []string{keysHeader(keys.Scope())}
 	for _, action := range keys.Actions() {
-		lines = append(lines, action.Name+" = "+bindingValue(keys.Binding(action.Name)))
+		binding := keys.Binding(action.Name)
+		// No line for an action off by default and left off, so a binary that predates it still loads the file.
+		if len(binding.Keys()) == 0 && len(defaults.Binding(action.Name).Keys()) == 0 {
+			continue
+		}
+		lines = append(lines, action.Name+" = "+bindingValue(binding))
 	}
 	return strings.Join(lines, "\n")
 }
