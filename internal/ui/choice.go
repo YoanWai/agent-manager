@@ -166,14 +166,14 @@ func savedChoiceKey(toolName string) string { return "choice." + toolName }
 
 func (m *Model) savedChoice(toolName string) *config.Choice {
 	raw, err := m.store.Setting(savedChoiceKey(toolName))
-	if err != nil || raw == "" {
-		if err != nil {
-			m.errBar.text = "reading the last choice: " + err.Error()
-		}
+	if err == nil && raw == "" {
 		return nil
 	}
 	var saved config.Choice
-	if err := json.Unmarshal([]byte(raw), &saved); err != nil {
+	if err == nil {
+		err = json.Unmarshal([]byte(raw), &saved)
+	}
+	if err != nil {
 		m.errBar.text = "reading the last choice: " + err.Error()
 		return nil
 	}
@@ -206,10 +206,10 @@ func (m *Model) restoreChoice(toolName string, ch *choice) {
 			ch.profile = i + 1
 		}
 	}
-	if key := (catalog.Model{ID: saved.Model, Provider: saved.Provider}).Key(); saved.Model != "" {
-		ch.model = key
+	if saved.Model != "" {
+		ch.model = choiceModelKey(saved)
 		if _, ok := m.pickedModel(toolName, ch); ok {
-			ch.filter.SetValue(key)
+			ch.filter.SetValue(ch.model)
 			ch.filter.CursorEnd()
 		} else {
 			ch.model = ""
@@ -360,6 +360,10 @@ func (m *Model) launchChoice(toolName string, ch *choice, typed string) (config.
 	return m.currentChoice(toolName, ch), nil
 }
 
+func choiceModelKey(c config.Choice) string {
+	return catalog.Model{ID: c.Model, Provider: c.Provider}.Key()
+}
+
 func (m *Model) currentChoice(toolName string, ch *choice) config.Choice {
 	picked := config.Choice{Profile: m.choiceProfileName(toolName, ch), Effort: m.choiceEffort(toolName, ch)}
 	if model, ok := m.pickedModel(toolName, ch); ok {
@@ -422,7 +426,7 @@ func (m *Model) rememberModel(toolName string, picked config.Choice) {
 	if picked.Model == "" {
 		return
 	}
-	key := catalog.Model{ID: picked.Model, Provider: picked.Provider}.Key()
+	key := choiceModelKey(picked)
 	keys := []string{key}
 	for _, earlier := range m.recentModels(toolName) {
 		if earlier != key && len(keys) < recentModelLimit {

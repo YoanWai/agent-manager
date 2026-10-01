@@ -1660,7 +1660,7 @@ func (m *Model) quickStatusRow(left string, width, line int) string {
 		text   string
 		action int
 	}
-	choice := func(value, fallback string) string {
+	orDefault := func(value, fallback string) string {
 		if value == "" {
 			return subtleStyle.Render(fallback)
 		}
@@ -1670,13 +1670,13 @@ func (m *Model) quickStatusRow(left string, width, line int) string {
 	if note, listed := m.modelRowNote(toolName); !listed {
 		segments = append(segments, segment{note, quickClickModel})
 	} else {
-		segments = append(segments, segment{choice(ch.model, "default model"), quickClickModel})
+		segments = append(segments, segment{orDefault(ch.model, "default model"), quickClickModel})
 		if _, _, active := m.effortRow(toolName, ch); active {
-			segments = append(segments, segment{choice(m.choiceEffort(toolName, ch), "default effort"), quickClickEffort})
+			segments = append(segments, segment{orDefault(m.choiceEffort(toolName, ch), "default effort"), quickClickEffort})
 		}
 	}
 	if _, shown := m.profileRow(toolName, ch); shown {
-		segments = append(segments, segment{choice(m.choiceProfileName(toolName, ch), "default profile"), quickClickProfile})
+		segments = append(segments, segment{orDefault(m.choiceProfileName(toolName, ch), "default profile"), quickClickProfile})
 	}
 	worktree := subtleStyle.Render("⎇ off")
 	switch {
@@ -1713,20 +1713,21 @@ func (m *Model) quickStatusRow(left string, width, line int) string {
 // the list has the rows the prompt and its target would take.
 func (m *Model) viewQuickSheet(width, maxRows int, group string) string {
 	toolName, ch := m.quickTool(), &m.quick.choice
+	var lines []string
 	if m.quick.picking == pickEffort {
-		lines := []string{
+		lines = []string{
 			subtleStyle.Render("effort for ") + group,
 			textInputView(ch.typedEffort) + "  " + subtleStyle.Render("typed · "+toolName+" lists no levels"),
 		}
-		return strings.Join(append(lines, m.quickStatusRow("", width, len(lines))), "\n")
-	}
-	lines := []string{subtleStyle.Render("model for ") + group, textInputView(ch.filter)}
-	list, entries := m.viewModelSuggestions(toolName, ch, ch.query(), 0, width, max(maxRows-len(lines)-1, 1))
-	for i, line := range list {
-		if entries[i] >= 0 {
-			m.quick.hits = append(m.quick.hits, quickHit{line: len(lines), x0: 0, x1: width, action: quickClickEntry, entry: entries[i]})
+	} else {
+		lines = []string{subtleStyle.Render("model for ") + group, textInputView(ch.filter)}
+		list, entries := m.viewModelSuggestions(toolName, ch, ch.query(), 0, width, max(maxRows-len(lines)-1, 1))
+		for i, line := range list {
+			if entries[i] >= 0 {
+				m.quick.hits = append(m.quick.hits, quickHit{line: len(lines), x0: 0, x1: width, action: quickClickEntry, entry: entries[i]})
+			}
+			lines = append(lines, line)
 		}
-		lines = append(lines, line)
 	}
 	return strings.Join(append(lines, m.quickStatusRow("", width, len(lines))), "\n")
 }
