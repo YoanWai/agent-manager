@@ -172,6 +172,25 @@ func TestEnsureBindingsIgnoresAMissingServer(t *testing.T) {
 	}
 }
 
+// Create runs on the UI's update path, and a new session cannot carry a pin,
+// so with tmux_prefix off only a refresh looks for one.
+func TestOnlyARefreshLooksForAPinnedPrefix(t *testing.T) {
+	dir := t.TempDir()
+	stub := dir + "/tmux"
+	script := "#!/bin/sh\ncase \"$*\" in *" + pinnedPrefixOption + "*) echo 'pin read' >&2; exit 1;; esac\nexit 0\n"
+	if err := os.WriteFile(stub, []byte(script), 0o700); err != nil {
+		t.Fatalf("stub: %v", err)
+	}
+	driver := &Driver{bin: stub, socket: testSocket}
+
+	if err := driver.installSessionUX("am_new"); err != nil {
+		t.Fatalf("installing a session with tmux_prefix off should not read the pin: %v", err)
+	}
+	if err := driver.RefreshChrome("live"); err == nil || !strings.Contains(err.Error(), "pin read") {
+		t.Fatalf("a refresh should look for a pin to take off, err = %v", err)
+	}
+}
+
 func TestSetLabelNeutralizesFormatStrings(t *testing.T) {
 	driver := requireTmux(t)
 	id := "lbl" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")

@@ -376,8 +376,11 @@ func (d *Driver) installSessionUX(name string) error {
 	if err := d.EnsureBindings(); err != nil {
 		return err
 	}
-	if err := d.pinPrefix(name); err != nil {
-		return err
+	// A new session carries no pin to take off, so only a chosen prefix needs work here.
+	if keys := d.tmuxPrefixKeys(); len(keys) > 0 {
+		if err := d.pinPrefix(name, keys); err != nil {
+			return err
+		}
 	}
 	if err := d.styleStatusBar(name); err != nil {
 		return err
@@ -386,12 +389,12 @@ func (d *Driver) installSessionUX(name string) error {
 	return err
 }
 
+func (d *Driver) tmuxPrefixKeys() []keybind.Key {
+	return d.currentSessionKeys().Binding(keybind.TmuxPrefix).Keys()
+}
+
 // Set per session, so unsetting hands back the server-wide prefix tmux.conf sets.
-func (d *Driver) pinPrefix(name string) error {
-	keys := d.currentSessionKeys().Binding(keybind.TmuxPrefix).Keys()
-	if len(keys) == 0 {
-		return d.unpinPrefix(name)
-	}
+func (d *Driver) pinPrefix(name string, keys []keybind.Key) error {
 	secondary := "None"
 	if len(keys) > 1 {
 		secondary = keys[1].Tmux()
@@ -589,7 +592,13 @@ func (d *Driver) ownedRootBindings() ([]string, error) {
 // RefreshChrome re-applies the prefix and status bar chrome, keeping the session's name label.
 func (d *Driver) RefreshChrome(id string) error {
 	name := sessionName(id)
-	if err := d.pinPrefix(name); err != nil {
+	var err error
+	if keys := d.tmuxPrefixKeys(); len(keys) > 0 {
+		err = d.pinPrefix(name, keys)
+	} else {
+		err = d.unpinPrefix(name)
+	}
+	if err != nil {
 		return err
 	}
 	return d.styleStatusBar(name)
