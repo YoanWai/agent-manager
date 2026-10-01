@@ -252,6 +252,11 @@ def main():
                 results[case] = dict(status='passed',
                                      seconds=round(time.monotonic() - case_started, 2))
             except Exception as error:
+                exit_state = sandbox.tmux('display-message', '-p', '-t', 'scen:0.0',
+                                         '#{pane_dead} #{pane_dead_status} #{pane_dead_signal}', check=False)
+                (sandbox.artifacts / 'manager-exit-state.txt').write_text(exit_state.stdout + exit_state.stderr)
+                history = sandbox.tmux('capture-pane', '-p', '-S', '-', '-t', 'scen:0.0', check=False)
+                (sandbox.artifacts / 'manager-history.txt').write_text(history.stdout + history.stderr)
                 (sandbox.artifacts / 'scen-last-frame.txt').write_text(capture(sandbox))
                 results[case] = dict(status='failed',
                                      error=str(error) or type(error).__name__,
