@@ -27,6 +27,24 @@ func (m *Model) queueRail(mutations []uirail.Mutation, chain uint64, first bool)
 	if len(mutations) == 0 {
 		return
 	}
+	if first {
+		// Prioritized snapshots describe current UI state. Older pending saves
+		// must not overwrite them after their reveal, rename or move completes.
+		for _, mutation := range mutations {
+			if mutation.Kind != uirail.SaveCollapsed {
+				continue
+			}
+			pending := m.effects.pending[:0]
+			for _, job := range m.effects.pending {
+				if request, ok := job.request.(railRequest); ok && request.mutation.Kind == uirail.SaveCollapsed {
+					continue
+				}
+				pending = append(pending, job)
+			}
+			m.effects.pending = pending
+			break
+		}
+	}
 	if chain == 0 {
 		m.effects.nextChain++
 		chain = m.effects.nextChain
@@ -127,21 +145,6 @@ func (m *Model) applyRailEffect(job *effectJob, result railEffectResult, err err
 		m.effects.pending = pending
 	}
 	follow := m.rail.ApplyMutation(mutation, err)
-	// A move's expansion includes every fold already accepted by the UI.
-	// Supersede older full snapshots so they cannot restore its old collapse bit.
-	for _, mutation := range follow.Mutations {
-		if mutation.Kind != uirail.SaveCollapsed {
-			continue
-		}
-		pending := m.effects.pending[:0]
-		for _, each := range m.effects.pending {
-			if request, ok := each.request.(railRequest); ok && request.mutation.Kind == uirail.SaveCollapsed {
-				continue
-			}
-			pending = append(pending, each)
-		}
-		m.effects.pending = pending
-	}
 	m.queueRail(follow.Mutations, job.chain, true)
 	follow.Mutations = nil
 	_, cmd := m.applyRailDecision(follow)

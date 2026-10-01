@@ -24,6 +24,9 @@ protocol.
    pending collapse snapshots with the combined current preferences. An error discards
    only the failed chain's remaining requests. Label failures remain warnings
    after committed placement.
+   Prioritized collapse saves from group reveal, rename and deletion reconciliation
+   also supersede older pending collapse snapshots, retaining active work and
+   unrelated queued jobs.
 5. Lifecycle/Rail completion time fences older poll listings. Fresh observations
    reconcile the next snapshot; geometry-only completion does not advance that
    fence. Geometry coalesces only adjacent requests and avoids already accepted
