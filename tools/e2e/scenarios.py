@@ -103,10 +103,12 @@ def seed_store(sandbox):
 
 
 def start_manager(sandbox, binary, session='scen'):
+    exit_file = shlex.quote(str(sandbox.artifacts / 'manager-exit-code.txt'))
     sandbox.tmux('new-session', '-d', '-s', session, '-x', '110', '-y', '30',
                  '-c', str(sandbox.home),
-                 f'exec env TERM=xterm-256color COLORTERM=truecolor NO_COLOR=1 {shlex.quote(str(binary))} '
-                 f'2>{shlex.quote(str(sandbox.artifacts / "manager-stderr.txt"))}')
+                 f'env TERM=xterm-256color COLORTERM=truecolor NO_COLOR=1 {shlex.quote(str(binary))} '
+                 f'2>{shlex.quote(str(sandbox.artifacts / "manager-stderr.txt"))}; '
+                 f'am_status=$?; printf "%s\\n" "$am_status" >{exit_file}; exit "$am_status"')
     sandbox.tmux('set-option', '-w', '-t', session, 'remain-on-exit', 'on')
     frame(sandbox, 'startup', 'A G E N T')
     key(sandbox, 'Escape')
