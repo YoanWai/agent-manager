@@ -52,12 +52,9 @@ func keybindingsSummary(tables ...keybind.Table) string {
 	for _, keys := range tables {
 		defaults := keys.Defaults()
 		for _, action := range keys.Actions() {
-			label := keys.Binding(action.Name).Label()
-			if label == defaults.Binding(action.Name).Label() {
+			label := labelOrOff(keys.Binding(action.Name))
+			if label == labelOrOff(defaults.Binding(action.Name)) {
 				continue
-			}
-			if label == "" {
-				label = "off"
 			}
 			moved = append(moved, action.Name+" "+label)
 		}
@@ -69,6 +66,13 @@ func keybindingsSummary(tables ...keybind.Table) string {
 		return strings.Join(moved, " · ")
 	}
 	return fmt.Sprintf("%d moved", len(moved))
+}
+
+func labelOrOff(binding keybind.Binding) string {
+	if label := binding.Label(); label != "" {
+		return label
+	}
+	return "off"
 }
 
 func (m *Model) openKeyPicker() {
@@ -161,15 +165,9 @@ func keyResetChanges(tables ...keybind.Table) []string {
 	for _, keys := range tables {
 		defaults := keys.Defaults()
 		for _, action := range keys.Actions() {
-			current, shipped := keys.Binding(action.Name).Label(), defaults.Binding(action.Name).Label()
+			current, shipped := labelOrOff(keys.Binding(action.Name)), labelOrOff(defaults.Binding(action.Name))
 			if current == shipped {
 				continue
-			}
-			if current == "" {
-				current = "off"
-			}
-			if shipped == "" {
-				shipped = "off"
 			}
 			changes = append(changes, fmt.Sprintf("%s: %s back to %s", action.Name, current, shipped))
 		}
