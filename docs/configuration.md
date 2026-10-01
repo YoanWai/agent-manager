@@ -41,9 +41,12 @@ Inside a session, attached or focused, the manager keeps a few keys for itself a
 detach = ["ctrl+q", "f9"]   # back to the manager; one key or a list
 review = "alt+r"            # open the session's diff review
 editor = "none"             # f3 reaches the agent instead
+tmux_prefix = "ctrl+b"      # tmux's prefix inside the manager's sessions
 ```
 
-The actions are `detach` (default `["ctrl+q", "ctrl+\\"]`), `review` (default `"ctrl+r"`) and `editor` (default `"f3"`). `"none"` hands the key to the agent like any other. Session keys are written as `ctrl+<letter>` (the symbols `@ \ ] ^ _` too), `alt+<letter or digit>`, or `f1` to `f12`. A key with no modifier is refused here, since it would take a character away from the agent, as are `ctrl+i`, `ctrl+m` and `ctrl+[`, which the terminal sends as tab, enter and escape. Bubble Tea, the framework the manager is built on, cannot read `ctrl+shift` combinations yet, so those are out for now. `detach` always keeps at least one key: it is the way back from a focused session.
+The actions are `detach` (default `["ctrl+q", "ctrl+\\"]`), `review` (default `"ctrl+r"`), `editor` (default `"f3"`) and `tmux_prefix` (default `"none"`). `"none"` hands the key to the agent like any other. Session keys are written as `ctrl+<letter>` (the symbols `@ \ ] ^ _` too), `alt+<letter or digit>`, or `f1` to `f12`. A key with no modifier is refused here, since it would take a character away from the agent, as are `ctrl+i`, `ctrl+m` and `ctrl+[`, which the terminal sends as tab, enter and escape. Bubble Tea, the framework the manager is built on, cannot read `ctrl+shift` combinations yet, so those are out for now. `detach` always keeps at least one key: it is the way back from a focused session.
+
+The manager's sessions run on their own tmux server, which loads your tmux.conf too, so your tmux prefix reaches a full-screen attach before any session key. `tmux_prefix` gives those sessions a prefix of their own and frees the key your tmux.conf uses. With `tmux_prefix = "ctrl+b"`, `ctrl+s` can stay your prefix in every other tmux session and be `detach` here. It takes one key, or two for tmux's `prefix` and `prefix2`, written like the session keys above. `"none"` leaves the prefix your tmux.conf sets. The session footer names the prefix in force, followed by `d`, as a second way back.
 
 ### In the list
 

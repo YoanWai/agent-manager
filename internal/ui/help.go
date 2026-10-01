@@ -234,6 +234,9 @@ func sessionHelpRows(keys keybind.Table, arrowStep bool, mouseRows [][2]string) 
 	if label := keys.Binding(keybind.Editor).Label(); label != "" {
 		rows = append(rows, [2]string{label, "open its directory in an editor"})
 	}
+	if label := keys.Binding(keybind.TmuxPrefix).Label(); label != "" {
+		rows = append(rows, [2]string{label, "attached: tmux's prefix, in place of yours"})
+	}
 	return append(rows, mouseRows...)
 }
 

@@ -228,6 +228,7 @@ const (
 	Detach      = "detach"
 	Review      = "review"
 	Editor      = "editor"
+	TmuxPrefix  = "tmux_prefix"
 	Quit        = "quit"
 	Up          = "up"
 	Down        = "down"
@@ -274,6 +275,7 @@ var sessionActions = []Action{
 	{Detach, "back to the manager", keys("ctrl+q", `ctrl+\`)},
 	{Review, "open the session's diff", keys("ctrl+r")},
 	{Editor, "open its directory", keys("f3")},
+	{TmuxPrefix, "replaces your tmux prefix while attached", Binding{}},
 }
 
 var listActions = []Action{
@@ -464,7 +466,8 @@ func (t Table) ActionFor(key string) (string, bool) {
 // Validate refuses a table with one key on two actions, and one with no
 // way back: a focused session with no detach key has no exit, and a list
 // with no settings key has no way to the picker. Inside a session every
-// plain key belongs to the agent, so only a key tmux can bind is taken.
+// plain key belongs to the agent, so only a key tmux can bind is taken,
+// and tmux holds two prefix keys at most.
 func (t Table) Validate() error {
 	switch t.scope {
 	case ScopeSession:
@@ -477,6 +480,9 @@ func (t Table) Validate() error {
 					return fmt.Errorf("keybindings.session.%s: %q is a plain key, which reaches the agent; a session key is ctrl+<key>, alt+<key> or f1..f12", action.Name, key)
 				}
 			}
+		}
+		if len(t.bound[TmuxPrefix].keys) > 2 {
+			return errors.New("keybindings.session.tmux_prefix takes one key or two, for tmux's prefix and prefix2")
 		}
 	case ScopeList:
 		if len(t.bound[Settings].keys) == 0 {

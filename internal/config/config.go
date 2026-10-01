@@ -390,10 +390,13 @@ const starterConfig = `poll_interval = "2s"
 # The keys the manager keeps for itself inside a session; every other key
 # reaches the agent. An action takes one key or a list, written as
 # ctrl+<key>, alt+<key> or f1..f12, and "none" hands its key to the agent.
+# tmux_prefix replaces your tmux prefix in the manager's sessions, so the
+# key your tmux.conf uses can be a session key here. "none" keeps yours.
 # [keybindings.session]
 # detach = ["ctrl+q", "ctrl+\\"]
 # review = "ctrl+r"
 # editor = "f3"
+# tmux_prefix = "none"
 
 # The keys of the manager's own list, one line per action; Settings > keys
 # in the manager names them all. A plain character, a key name (space,

@@ -272,3 +272,30 @@ rename = "ctrl+n"
 		}
 	}
 }
+
+// A table saved before tmux_prefix existed loads it off, and the picker's line loads back.
+func TestSaveKeysRoundTripsTheTmuxPrefix(t *testing.T) {
+	dir, path := writeConfig(t, "[keybindings.session]\ndetach = \"ctrl+s\"\nreview = \"ctrl+r\"\neditor = \"f3\"\n")
+	loaded, err := LoadDir(dir)
+	if err != nil {
+		t.Fatalf("LoadDir: %v", err)
+	}
+	if got := loaded.SessionKeys.Binding(keybind.TmuxPrefix).Label(); got != "" {
+		t.Fatalf("an older table should leave tmux_prefix off, got %q", got)
+	}
+
+	keys := loaded.SessionKeys.With(keybind.TmuxPrefix, bindingOf(t, "ctrl+b", "f12"))
+	if err := SaveKeys(dir, keys); err != nil {
+		t.Fatalf("SaveKeys: %v", err)
+	}
+	if saved := readConfig(t, path); !strings.Contains(saved, `tmux_prefix = ["ctrl+b", "f12"]`) {
+		t.Fatalf("config.toml should carry the prefix keys:\n%s", saved)
+	}
+	reloaded, err := LoadDir(dir)
+	if err != nil {
+		t.Fatalf("LoadDir after save: %v", err)
+	}
+	if !reloaded.SessionKeys.Equal(keys) {
+		t.Fatalf("reloaded tmux_prefix = %q", reloaded.SessionKeys.Binding(keybind.TmuxPrefix).Label())
+	}
+}

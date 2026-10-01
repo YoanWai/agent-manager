@@ -24,6 +24,14 @@ func keySectionFor(keys keybind.Table) keySection {
 	return keySection{"in the manager · esc and ctrl+c stay as they are", "off"}
 }
 
+// tmux_prefix off hands the agent no key, since tmux keeps the prefix it had.
+func (s keySection) offLabel(action string) string {
+	if action == keybind.TmuxPrefix {
+		return "off, your prefix stays"
+	}
+	return s.off
+}
+
 type keyRow struct {
 	table  int
 	action keybind.Action
@@ -159,6 +167,9 @@ func keyResetChanges(tables ...keybind.Table) []string {
 			}
 			if current == "" {
 				current = "off"
+			}
+			if shipped == "" {
+				shipped = "off"
 			}
 			changes = append(changes, fmt.Sprintf("%s: %s back to %s", action.Name, current, shipped))
 		}

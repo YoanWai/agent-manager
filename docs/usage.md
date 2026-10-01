@@ -28,7 +28,7 @@ Tell your agent what you want to review in Agent Manager. Your agent will set up
 | `A` | Attach session full screen (Settings can swap it with `enter`) |
 | `.` | Mark a finished session idle without entering it |
 | `ctrl+q` / `ctrl+\` | Inside a session: back to the manager when the terminal and tmux leave the key available. `ctrl+r`, `F3` and this pair move with `[keybindings.session]` in config.toml, and every key of the list itself moves with `[keybindings.list]` (see [Key bindings](configuration.md#key-bindings)) |
-| tmux prefix, then `d` | Inside a full-screen attach: back to the manager when the prefix reaches the inner tmux |
+| tmux prefix, then `d` | Inside a full-screen attach: back to the manager when the prefix reaches the inner tmux. `tmux_prefix` in `[keybindings.session]` sets which prefix that is (see [Key bindings](configuration.md#key-bindings)) |
 | `F3` | Inside a session: open its directory in your editor |
 | `→` | Step into the row: focus the session, or open the group. In beta; Settings (`s`) can turn the pair off |
 | `←` | Step out: close the group, or — focused, with the caret at the start of the agent's prompt — back to the manager. This needs the tool's prompt marker (its `activity_cutoff`) on the caret's row, so a CLI without one keeps `←` entirely; anywhere else in the prompt it moves the caret as usual |
