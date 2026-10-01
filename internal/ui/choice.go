@@ -306,17 +306,20 @@ func (m *Model) modelSuggestions(toolName string, ch *choice, query string) []su
 	}
 	models := m.choiceModels(toolName, ch)
 	var list []suggestion
+	listed := map[string]bool{}
+	add := func(model catalog.Model, recent bool) {
+		if matches(model) && !listed[model.Key()] {
+			listed[model.Key()] = true
+			list = append(list, suggestion{model: model, recent: recent})
+		}
+	}
 	for _, key := range ch.recent {
 		for _, model := range catalog.Match(models, key) {
-			if matches(model) {
-				list = append(list, suggestion{model: model, recent: true})
-			}
+			add(model, true)
 		}
 	}
 	for _, model := range models {
-		if matches(model) && !slices.Contains(ch.recent, model.Key()) {
-			list = append(list, suggestion{model: model})
-		}
+		add(model, false)
 	}
 	return list
 }

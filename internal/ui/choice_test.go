@@ -597,3 +597,20 @@ func TestQuickFooterKeepsShiftTabBesideTab(t *testing.T) {
 		t.Fatalf("footer keys = %v", keys)
 	}
 }
+
+// A recent pick kept under a bare id still lists its model once, though
+// the CLI now routes it through a provider.
+func TestModelListListsARecentPickOnce(t *testing.T) {
+	m := buildModel(t)
+	answered(m, config.Tool{Catalog: "hermes", CatalogCommand: "hermes", ModelArgs: "--provider {provider} -m {model}"},
+		catalog.Catalog{Models: []catalog.Model{{ID: "grok-4.6", Provider: "xai-oauth"}, {ID: "claude-opus-5", Provider: "anthropic"}}})
+	openFormOnClaude(t, m)
+	m.form.choice.recent = []string{"grok-4.6"}
+	var keys []string
+	for _, entry := range m.modelSuggestions("claude", &m.form.choice, "") {
+		keys = append(keys, entry.model.Key())
+	}
+	if !slices.Equal(keys, []string{"xai-oauth:grok-4.6", "anthropic:claude-opus-5"}) {
+		t.Fatalf("list = %v", keys)
+	}
+}
