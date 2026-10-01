@@ -99,6 +99,8 @@ The `n` form has `model` and `effort` rows under `tool`, and a `profile` row abo
 
 Left alone, each row keeps the CLI's own default, which is whatever you set up in that CLI. The model list filters as you type, the way `dir` suggests paths, the arrows scroll through every model the CLI lists, and only a listed model can be picked. Your last picks for that CLI come first. The effort row offers the levels the chosen model takes, or the levels of the model the CLI starts on while none is picked, and it leaves the form for a model that takes none. The choice is saved on the session, so restart (`R`), revive (`v`), a relaunch inside its pane and fork (`f`) all run on it.
 
+![the New Session form with Claude's model list open, twelve models read from Claude Code with a scroll bar beside them](screenshot-model.png)
+
 | CLI | Asked through | Model | Effort | Profile |
 | --- | --- | --- | --- | --- |
 | Claude Code | the Agent SDK `initialize` request | yes | per model | · |
