@@ -14,11 +14,11 @@ Tell your agent what you want to review in Agent Manager. Your agent will set up
 
 | Key | Action |
 |-----|--------|
-| `n` | New session (name, tool, the model, effort and profile the tool offers, directory, worktree toggle, optional starting prompt, group picker) |
+| `n` | New session (name, tool, the model, effort and profile the tool offers, directory, worktree toggle and the base it starts from, optional starting prompt, group picker) |
 | `T` | New terminal tab: a shell under the selected agent, or in the selected group |
 | `o` | Open the selected row's directory in your editor |
 | `f` | Fork the selected conversation into a named session in the same group and directory |
-| `g` | New group (name, parent, default path, worktree default) |
+| `g` | New group (name, parent, default path, worktree default, worktree base) |
 | `enter` | Focus session in place (keys go to the agent, list stays) / fold group |
 | click | Focus the session (the full-screen layout selects the row) |
 | double click | Fold the group / focus the session in the full-screen layout |
@@ -148,7 +148,13 @@ A known windowed editor (the six above, plus `open` and `xdg-open`) starts detac
 
 A session can spawn into its own git worktree instead of the shared working directory: the `n` form has a `worktree` field between `dir` and `prompt` (`◂ on ▸` / `◂ off ▸`, toggled with `←→`), and the quick prompt's `ctrl+t` does the same for a group spawn. Settings (`s`) has a "spawn in worktree" row that sets the default both start from, and the last session you created in this run carries its pick over to the next one.
 
-The worktree lives at `<repo>-worktrees/<name>` next to the repo, on a new branch `am/<name>`. Its starting point is the remote's default branch (`origin/HEAD`) when that resolves, falling back to a local `main` or `master`, and finally to `HEAD`. A worktree that fails to create blocks the spawn with an error instead of falling back to a shared directory.
+The worktree lives at `<repo>-worktrees/<name>` next to the repo, on a new branch `am/<name>`. Its starting point is the branch the repo's work merges into. In a repo with an `upstream` remote, which GitHub's fork layout makes the parent repository, that is upstream's default branch. Otherwise it is origin's default branch, then a local `main` or `master` in a repo with neither, and finally `HEAD`. The default branch's name comes from the remote's `HEAD`, which `git clone` records, and an upstream without one borrows origin's. A worktree that fails to create blocks the spawn with an error instead of falling back to a shared directory.
+
+A group can name the starting point itself. The `base` row of the `g` form, and of a group's edit card (`r` on the group row), steps with `←→` through `auto` and the repo's branches. A group left on `auto` takes its parent's base, and with no base set anywhere up the tree the starting point is detected as above. The same base is what review's "vs target" compares that group's sessions against, until a target is picked in review. It suits a team that branches off `develop`, and a repo whose `upstream` remote is a mirror rather than the target of its pull requests.
+
+While the `n` form or the quick prompt is set to spawn a worktree, the manager fetches the remote that holds the starting point, at most once a minute for the same directory, so the new branch starts from the remote's tip. The `n` form shows the starting point in a `base` row under `worktree`, marked `(group)` or `(auto)` by where it came from, and says while the fetch runs and when it failed. A spawn that beats the fetch, or one made offline, starts from the last fetch. Sessions created through `create_session` fetch before the worktree is made.
+
+A branch that starts from a remote other than origin, such as the parent of a fork, keeps tracking it, so `git pull` brings in the parent's changes, and `git push` sends it to origin, your fork. A `remote.pushDefault` you set routes pushes instead.
 
 A directory that is not a git repo cannot hold a worktree, so the field reads `unavailable (not a git repo)` and the quick prompt's target row `⎇ no repo` in place of on/off, the toggle says why when pressed, and the session spawns in that directory as a plain session. This is what a group path sitting above several repos does: the umbrella itself is not a repo, so its sessions launch in it directly.
 
@@ -198,7 +204,7 @@ Sessions you name yourself keep that name: the first prompt only notes that `age
 
 A session's working directory is often an umbrella folder holding many repos, so review can only guess which one the agent means. An agent that knows which repo it is working in can say so by running `agent-manager review-repo <path>` from a shell inside its session. The subcommand checks that the path is (or sits inside) a git repo, resolves it to the repo root, and drops it into a per-session file; the manager picks it up on the next poll and review opens on that repo the next time you open it. A path that is not inside a git repo is rejected, so a declaration is always a fact rather than a guess.
 
-An agent can also declare what its branch diffs against by running `agent-manager review-base <ref>` from inside its worktree: the ref is validated in that repo, stored per session and repo, and the "vs target" scope uses it from then on. `agent-manager review-base --clear` returns to automatic detection. A stored ref that stops resolving surfaces as an error in review, and `B` opens a target picker (the repo's branches plus an `auto` entry) to set or clear it by hand.
+An agent can also declare what its branch diffs against by running `agent-manager review-base <ref>` from inside its worktree: the ref is validated in that repo, stored per session and repo, and the "vs target" scope uses it from then on. `agent-manager review-base --clear` returns to the group's base, or to automatic detection when the group has none. A stored ref that stops resolving surfaces as an error in review, and `B` opens a target picker (the repo's branches plus an `auto` entry) to set or clear it by hand.
 
 Agents usually work in git worktrees, one branch per worktree, and those worktrees can live anywhere on disk. A declared path that is a worktree root is accepted wherever it lives, so one `review-repo` call names both the repo and the branch under review. Review resolves its target in a fixed order: a repo or worktree you picked by hand with `r` or `b` wins for as long as the manager is running, then the agent's declared repo, then the ranking (dirty working trees first, then most recent commit). When the picked or declared path stops being a git repo, review says so in the status line and `r` is there to pick the right one.
 

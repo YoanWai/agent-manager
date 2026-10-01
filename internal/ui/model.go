@@ -88,11 +88,15 @@ type Model struct {
 	groups         []string
 	groupPaths     map[string]string
 	groupWorktrees map[string]string
+	groupBases     map[string]string
 	// worktreeRepos memoizes which spawn directories sit inside a git
 	// repo, so gating the worktree toggle does not shell out to git on
 	// every frame. Entries expire, so a directory git-initialised while
 	// the bar is open stops reading as unavailable.
-	worktreeRepos  map[string]repoAnswer
+	worktreeRepos map[string]repoAnswer
+	// baseFetches holds the last fetch of a worktree spawn's base, per
+	// directory and base override.
+	baseFetches    map[baseFetchKey]baseFetch
 	archivedGroups map[string]bool
 	snap           sysstat.Snapshot
 	proc           sysstat.ProcStat
@@ -454,6 +458,7 @@ type renameTarget struct {
 	input         textinput.Model
 	dir           textinput.Model
 	worktreeIndex int
+	base          string
 	focus         int
 	toolNames     []string
 	toolIndex     int
@@ -566,6 +571,7 @@ type refreshMsg struct {
 	groups         []string
 	groupPaths     map[string]string
 	groupWorktrees map[string]string
+	groupBases     map[string]string
 	archivedGroups map[string]bool
 	snap           sysstat.Snapshot
 	snapOK         bool
@@ -1412,7 +1418,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	model, cmd := m.handleMsg(msg)
 	if mm, ok := model.(*Model); ok {
 		mm.flushPendingNotice()
-		return mm, tea.Batch(cmd, mm.syncMouseCapture())
+		return mm, tea.Batch(cmd, mm.syncMouseCapture(), mm.fetchSpawnBase())
 	}
 	return model, tea.Batch(cmd, m.syncMouseCapture())
 }
@@ -1511,6 +1517,9 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(m.previewCmd(sess, m.previewGen), m.previewTick())
 
+	case baseFetchedMsg:
+		return m, m.recordBaseFetch(msg)
+
 	case refreshMsg:
 		m.booting = false
 		m.ageError()
@@ -1531,6 +1540,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.groups = msg.groups
 		m.groupPaths = msg.groupPaths
 		m.groupWorktrees = msg.groupWorktrees
+		m.groupBases = msg.groupBases
 		m.archivedGroups = msg.archivedGroups
 		m.agents = msg.agents
 		m.queuedMessages = msg.queuedMessages

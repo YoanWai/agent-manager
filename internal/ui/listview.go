@@ -1459,6 +1459,10 @@ func (m *Model) viewGroupDetail(group string, width int) string {
 		if m.rename.focus == 2 {
 			worktreeLabel = lipgloss.NewStyle().Foreground(colorAccent)
 		}
+		baseLabel := labelStyle
+		if m.rename.focus == 3 {
+			baseLabel = lipgloss.NewStyle().Foreground(colorAccent)
+		}
 		if fieldWidth := width - 12; fieldWidth >= 10 {
 			m.rename.dir.Width = fieldWidth
 		}
@@ -1468,6 +1472,7 @@ func (m *Model) viewGroupDetail(group string, width int) string {
 		}
 		out += "\n" + worktreeLabel.Width(10).Render("worktree") +
 			subtleStyle.Render("◂ ") + valueStyle.Render(groupWorktreeOptions[m.rename.worktreeIndex]) + subtleStyle.Render(" ▸")
+		out += "\n" + baseLabel.Width(10).Render("base") + groupBaseChoice(m.rename.base, m.groupBase(parentGroup(group)))
 		return out
 	}
 
