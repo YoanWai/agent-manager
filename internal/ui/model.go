@@ -811,7 +811,6 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		fullLayout:          storedFullLayout(st),
 		hideHeader:          storedHideHeader(st),
 		hideStats:           storedHideStats(st),
-		terminalBackground:  storedTerminalBackground(st),
 		mouseDisabled:       storedMouseDisabled(st),
 		imeCursor:           &cursorAnchor{},
 		mode:                modeList,
@@ -829,6 +828,7 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		model.update.releases = cached.Releases
 		model.update.checked = len(cached.Releases) > 0
 	}
+	model.terminalBackground = model.storedTerminalBackground()
 	model.openStartupNotice()
 	model.indexReleaseRanges()
 	return model

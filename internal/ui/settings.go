@@ -201,10 +201,12 @@ func storedHideStats(st *store.Store) bool {
 	return chosen == "on"
 }
 
-func storedTerminalBackground(st *store.Store) bool {
-	chosen, err := st.Setting(backgroundSetting)
+// storedTerminalBackground reads the background row. A store error is
+// surfaced but still yields the painted default.
+func (m *Model) storedTerminalBackground() bool {
+	chosen, err := m.store.Setting(backgroundSetting)
 	if err != nil {
-		return false
+		m.errBar.text = "reading background setting: " + err.Error()
 	}
 	return chosen == "terminal"
 }

@@ -249,26 +249,21 @@ func clearsBackground(params ansi.Params) bool {
 		return true
 	}
 	cleared := false
-	for i := 0; i < len(params); i++ {
-		param, _, _ := params.Param(i, 0)
-		switch {
+	for i := 0; i < len(params); i += 1 + parameterArguments(params, i) {
+		switch param, _, _ := params.Param(i, 0); {
 		case param == 0 || param == 49:
 			cleared = true
-		case param >= 40 && param <= 47, param >= 100 && param <= 107:
+		case param >= 40 && param <= 48, param >= 100 && param <= 107:
 			cleared = false
-		case param == 48:
-			cleared = false
-			i += colorArguments(params, i)
-		case param == 38 || param == 58:
-			i += colorArguments(params, i)
 		}
 	}
 	return cleared
 }
 
-// colorArguments counts the parameters an extended color (38, 48, 58)
-// consumes after its own, written with colons or with semicolons.
-func colorArguments(params ansi.Params, at int) int {
+// parameterArguments counts the parameters that belong to the one at index
+// at: its colon subparameters (4:3, 48:2::r:g:b), or the semicolon arguments
+// of an extended color (38;5;n, 48;2;r;g;b, 58;5;n).
+func parameterArguments(params ansi.Params, at int) int {
 	count := 0
 	for {
 		_, subparameter, _ := params.Param(at+count, 0)
@@ -280,11 +275,14 @@ func colorArguments(params ansi.Params, at int) int {
 	if count > 0 {
 		return count
 	}
-	switch kind, _, _ := params.Param(at+1, 0); kind {
-	case 5:
-		return 2
-	case 2:
-		return 4
+	switch param, _, _ := params.Param(at, 0); param {
+	case 38, 48, 58:
+		switch kind, _, _ := params.Param(at+1, 0); kind {
+		case 5:
+			return 2
+		case 2:
+			return 4
+		}
 	}
 	return 0
 }

@@ -75,6 +75,7 @@ func TestFillBackdropPaintsOnlyDefaultCells(t *testing.T) {
 		chip + "chip\x1b[m after",
 		chip + "chip\x1b[0;1;38;2;0;0;0m black on default\x1b[0m",
 		chip + "a\x1b[38;5;0mb\x1b[38;2;0;0;0mc stays on chip\x1b[0m",
+		chip + "A\x1b[4:0mB\x1b[4:3mC stays on chip\x1b[0m",
 		"\x1b[48:2::9:8:7mcolon\x1b[38:2::0:0:0m fg only\x1b[0m",
 		"\x1b[44mindexed\x1b[0m wide 界 cell",
 		"",
@@ -166,7 +167,7 @@ func TestBackgroundSettingAppliesLiveAndPersists(t *testing.T) {
 		t.Fatal("the terminal background should apply while the picker is open")
 	}
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
-	if !storedTerminalBackground(m.store) {
+	if !m.storedTerminalBackground() {
 		t.Fatal("terminal background not persisted")
 	}
 
@@ -174,7 +175,7 @@ func TestBackgroundSettingAppliesLiveAndPersists(t *testing.T) {
 	m.settings.field = settingsFieldBackground
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyLeft})
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
-	if m.terminalBackground || storedTerminalBackground(m.store) {
+	if m.terminalBackground || m.storedTerminalBackground() {
 		t.Fatal("stepping back should return to the theme's background")
 	}
 }
