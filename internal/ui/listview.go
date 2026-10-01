@@ -1667,13 +1667,17 @@ func (m *Model) quickStatusRow(left string, width, line int) string {
 		return valueStyle.Render(value)
 	}
 	segments := []segment{{valueStyle.Render(toolName), quickClickTool}}
-	if note, listed := m.modelRowNote(toolName); !listed {
-		segments = append(segments, segment{note, quickClickModel})
-	} else {
+	tool := m.cfg.Tools[toolName]
+	switch note, listed := m.modelRowNote(toolName); {
+	case listed:
 		segments = append(segments, segment{orDefault(ch.model, "default model"), quickClickModel})
 		if _, _, active := m.effortRow(toolName, ch); active {
 			segments = append(segments, segment{orDefault(m.choiceEffort(toolName, ch), "default effort"), quickClickEffort})
 		}
+	case tool.Catalog != "" && tool.ModelArgs != "":
+		// Still reading, or the CLI failed to answer: say so. A CLI with
+		// nothing to pick shows nothing.
+		segments = append(segments, segment{note, quickClickModel})
 	}
 	if _, shown := m.profileRow(toolName, ch); shown {
 		segments = append(segments, segment{orDefault(m.choiceProfileName(toolName, ch), "default profile"), quickClickProfile})

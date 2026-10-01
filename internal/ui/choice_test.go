@@ -715,3 +715,24 @@ func TestChoiceIsKeptPerCLI(t *testing.T) {
 		}
 	})
 }
+
+// A CLI with no model to pick leaves the target row to its name and the
+// worktree, with no note about what it lacks.
+func TestQuickStatusRowLeavesOutWhatACLICannotPick(t *testing.T) {
+	m := buildModel(t)
+	if err := m.store.CreateGroup("work", t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "work")
+	m.openQuickMode()
+	m.quick.toolIndex = slices.Index(m.quick.toolNames, "command-code")
+	m.quick.choice = m.newChoice("command-code")
+	target := strings.Split(ansi.Strip(m.viewQuickBar(120, quickBarMaxRows)), "\n")[0]
+	if !strings.HasSuffix(strings.TrimRight(target, " "), "command-code · ⎇ no repo") || strings.Contains(target, "not supported") {
+		t.Fatalf("target row: %s", target)
+	}
+	if footer := ansi.Strip(m.viewFooter()); strings.Contains(footer, quickModelKey) || strings.Contains(footer, quickEffortKey) {
+		t.Fatalf("footer offers a choice the CLI does not have: %s", footer)
+	}
+}
