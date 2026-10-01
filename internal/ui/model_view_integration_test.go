@@ -35,6 +35,7 @@ func TestSettingsTogglesSessionLayout(t *testing.T) {
 	}
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
 	if chosen, err := m.services.store.Setting(sessionLayoutSetting); err != nil || chosen != "full" {
 		t.Fatalf("want stored full, got %q err %v", chosen, err)
 	}
@@ -100,6 +101,7 @@ func TestSettingsToggleChromeIndependently(t *testing.T) {
 				}
 			}
 			m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+			m.drainEffects(t)
 
 			if m.prefs.hideHeader != tc.hideHeader || m.prefs.hideStats != tc.hideStats {
 				t.Fatalf("model visibility = header %t stats %t, want header %t stats %t",

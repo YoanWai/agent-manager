@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -9,8 +8,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/launch"
-	"github.com/YoanWai/agent-manager/internal/status"
-	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -89,6 +87,9 @@ type groupForm struct {
 	pathAuto      bool
 	worktreeIndex int
 	focus         int
+	// gen tells this group form from the one that stood in the same place
+	// before it, so a completion cannot close a form the user since reopened.
+	gen int
 }
 
 // sessionLabel renders a session's identity for the tmux status bar.
@@ -531,6 +532,8 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 		name = toolName + "-" + newID()[:4]
 	}
 	cwd, _ := os.Getwd()
+	// Preflight read: the directory must exist now, the way the synchronous
+	// submit checked it; the worker then works from the captured path.
 	dir, ok := resolveExistingDir(m.form.dir.Value(), cwd)
 	if !ok {
 		m.errBar.text = "working directory does not exist: " + dir
@@ -545,100 +548,29 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	worktree := m.formWorktreeOn()
-	pickWorktree := m.form.worktree
-	spawn := func() error {
-		if err := m.spawnSession(toolName, name, dir, group, prompt, autoNamed, worktree); err != nil {
-			return err
-		}
-		m.rememberSpawnPick(toolName, pickWorktree)
-		return nil
-	}
-	if err := spawn(); err != nil {
-		// A spawn the hint dialog refused takes the form off screen with
-		// it; the dialog releases its images once no install can still
-		// spawn it. An error reported in the bar leaves the form up, and
-		// the prompt still names them.
-		m.reportLaunchError(err, spawn)
-		return m, nil
-	}
-	// New sessions start as starting, which attention excludes; clear so
-	// the row the form just created is on screen.
-	m.rail.ClearStatusFilter()
-	m.mode = modeList
-	return m, m.refreshCmd()
+	// formWorktreeOn's capability check is a cached preflight read; the
+	// effective worktree is captured, so the worker only creates.
+	paneW, paneH := m.paneTargetSize()
+	m.dispatchSpawn(spawnRequest{
+		kind:         spawnForm,
+		toolName:     toolName,
+		name:         name,
+		dir:          dir,
+		group:        group,
+		prompt:       prompt,
+		autoNamed:    autoNamed,
+		worktree:     m.formWorktreeOn(),
+		pickWorktree: m.form.worktree,
+		pane:         sessioncmd.PaneSize{Width: paneW, Height: paneH},
+		composerGen:  m.form.prompt.gen,
+		images:       m.form.prompt.attachments,
+	})
+	return m, nil
 }
 
 func (m *Model) rememberSpawnPick(tool string, worktree bool) {
 	m.ledger.lastSpawnTool = tool
 	m.ledger.lastSpawnWorktree = worktree
-}
-
-// spawnSession creates the tmux session and its store record for both
-// the New Session form and quick spawn. autoNamed marks sessions whose
-// name is a generated placeholder; those are asked to rename once.
-// Custom-named sessions only get a short note that rename is available later.
-// discardWorktree rolls back a worktree created for a spawn that failed
-// partway; a fresh worktree is clean by construction, so the removal fires.
-func (m *Model) discardWorktree(repo, path, branch string) {
-	if repo == "" {
-		return
-	}
-	_, _ = m.services.gitDrv.RemoveWorktreeIfClean(repo, path, branch)
-}
-
-func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoNamed, worktree bool) error {
-	tool := m.services.cfg.Tools[toolName]
-	proactive, err := m.services.store.ProactiveCoordination()
-	if err != nil {
-		return err
-	}
-	id := newID()
-	worktreeRepo, worktreeBranch := "", ""
-	if worktree {
-		if m.services.gitDrv == nil {
-			return errors.New("worktree sessions need git installed")
-		}
-		root, err := m.services.gitDrv.RepoRoot(dir)
-		if err != nil {
-			return err
-		}
-		path, branch, err := m.services.gitDrv.AddWorktree(root, name)
-		if err != nil {
-			return err
-		}
-		dir = path
-		worktreeRepo, worktreeBranch = root, branch
-	}
-	plan := launch.Assemble(toolName, tool, prompt, autoNamed, proactive)
-	if err := m.launchNewSession(store.Session{
-		ID:    id,
-		Name:  name,
-		Tool:  toolName,
-		Cwd:   dir,
-		Group: group,
-		// Starting until the agent first draws to its pane, so the row shows
-		// a launch state immediately; the poller flips it to the real status.
-		Status:         status.Starting,
-		AgentSessionID: plan.AgentSessionID,
-		WorktreeRepo:   worktreeRepo,
-		WorktreeBranch: worktreeBranch,
-		PendingInputs:  plan.PendingInputs,
-		LaunchPrompt:   plan.LaunchPrompt,
-	}, tool, plan.Command, launchOptions{
-		rollbackWorktree: worktreeRepo != "",
-	}); err != nil {
-		return err
-	}
-	// The directive went out with the launch, so the row waits for the name
-	// the agent picks instead of showing the one generated for it.
-	if autoNamed {
-		if m.ledger.awaitedRenames == nil {
-			m.ledger.awaitedRenames = map[string]awaitedRename{}
-		}
-		m.ledger.awaitedRenames[id] = awaitedRename{generated: name, prompt: prompt}
-	}
-	return nil
 }
 
 func (m *Model) buildLaunch(toolName string, tool config.Tool, baseCommand, id string) (string, map[string]string, error) {
@@ -653,6 +585,7 @@ func (m *Model) openGroupForm() {
 		path:     textField("default working directory", 400),
 		pathAuto: true,
 		focus:    gfName,
+		gen:      m.nextComposerGen(),
 	}
 	m.rebuildGroupOptions(m.contextGroup())
 	m.groupForm.path.SetValue(m.groupDefaultDir(m.selectedGroupPath()))
@@ -770,26 +703,15 @@ func (m *Model) submitGroupForm() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	worktree := groupWorktreeValue(m.groupForm.worktreeIndex)
-	if err := m.services.store.AddGroup(full, path, worktree); err != nil {
-		m.errBar.text = err.Error()
-		return m, nil
-	}
-	m.materializeGroupsLocal([]string{full})
-	if m.workspace.groupPaths == nil {
-		m.workspace.groupPaths = map[string]string{}
-	}
-	m.workspace.groupPaths[full] = path
-	if m.workspace.groupWorktrees == nil {
-		m.workspace.groupWorktrees = map[string]string{}
-	}
-	if worktree == "" {
-		delete(m.workspace.groupWorktrees, full)
-	} else {
-		m.workspace.groupWorktrees[full] = worktree
-	}
-	m.errBar.text = ""
-	m.mode = modeList
-	m.rebuildRows()
-	m.applyRailStateDecision(m.rail.RevealGroup(full))
-	return m, m.refreshCmd()
+
+	m.dispatchGroup(groupRequest{path: full, dir: path, worktree: worktree, gen: m.groupForm.gen})
+	return m, nil
+}
+
+// dispatchGroup queues the group's store write on the effect lane; the row
+// materialization and reveal snapshot land when it completes.
+func (m *Model) dispatchGroup(request groupRequest) {
+	request.draftName = m.groupForm.name.Value()
+	request.draftDir = m.groupForm.path.Value()
+	m.enqueueEffect(request, 0, false)
 }

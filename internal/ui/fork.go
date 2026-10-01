@@ -3,16 +3,13 @@ package ui
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/YoanWai/agent-manager/internal/agentsession"
 	"github.com/YoanWai/agent-manager/internal/config"
-	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/google/uuid"
 )
 
 // forkSessionFileResolver resolves a source conversation's on-disk session
@@ -24,6 +21,10 @@ var forkSessionFileResolver = agentsession.SessionFile
 type forkState struct {
 	source store.Session
 	name   textinput.Model
+	// gen counts opened dialogs, so a completion only closes the dialog it
+	// was submitted from; reopening a fork on the same source mints a new
+	// one that an older in-flight completion leaves alone.
+	gen int
 }
 
 func (m *Model) openFork() {
@@ -48,7 +49,7 @@ func (m *Model) openFork() {
 	name.SetValue(entry.sess.Name + "-fork")
 	name.CursorEnd()
 	name.Focus()
-	m.fork = forkState{source: entry.sess, name: name}
+	m.fork = forkState{source: entry.sess, name: name, gen: m.fork.gen + 1}
 	m.errBar.text = ""
 	m.mode = modeFork
 }
@@ -73,73 +74,8 @@ func (m *Model) submitFork() (tea.Model, tea.Cmd) {
 		m.errBar.text = "name cannot be empty"
 		return m, nil
 	}
-	source, err := m.services.store.Get(m.fork.source.ID)
-	if err != nil {
-		m.errBar.text = err.Error()
-		return m, nil
-	}
-	tool, ok := m.services.cfg.Tools[source.Tool]
-	if !ok {
-		m.errBar.text = fmt.Sprintf("tool %s is no longer configured", source.Tool)
-		return m, nil
-	}
-	if err := validateForkSource(source.Tool, tool, source); err != nil {
-		m.errBar.text = err.Error()
-		return m, nil
-	}
-	if !isDir(source.Cwd) {
-		m.errBar.text = "working directory no longer exists: " + source.Cwd
-		return m, nil
-	}
-	if tool.ForkKeys != "" {
-		m.mode = modeList
-		m.errBar.text = ""
-		return m, m.forkInSourceCmd(source, tool, name)
-	}
-
-	agentID := ""
-	if strings.Contains(tool.ForkCommand, "{new_id}") {
-		agentID = uuid.NewString()
-	}
-	sessionFile := ""
-	if strings.Contains(tool.ForkCommand, "{session_file}") {
-		resolved, err := forkSessionFileResolver(tool.SessionStore, source.AgentSessionID)
-		if err != nil {
-			m.errBar.text = err.Error()
-			return m, nil
-		}
-		sessionFile = resolved
-	}
-	return m.launchFork(source, tool, name, agentID, expandForkCommand(tool.ForkCommand, source.AgentSessionID, agentID, name, sessionFile))
-}
-
-func (m *Model) launchFork(source store.Session, tool config.Tool, name, agentID, baseCommand string) (tea.Model, tea.Cmd) {
-	managerID := newID()
-	forked := store.Session{
-		ID:             managerID,
-		Name:           name,
-		Tool:           source.Tool,
-		Cwd:            source.Cwd,
-		Group:          source.Group,
-		Status:         status.Starting,
-		AgentSessionID: agentID,
-		WorktreeRepo:   source.WorktreeRepo,
-		WorktreeBranch: source.WorktreeBranch,
-	}
-	if err := m.launchNewSession(forked, tool, baseCommand, launchOptions{}); err != nil {
-		m.reportLaunchError(err, func() error {
-			return m.launchNewSession(forked, tool, baseCommand, launchOptions{})
-		})
-		return m, nil
-	}
-	// Forks start as starting, which attention excludes; clear so the row
-	// the fork just created is on screen.
-	m.rail.ClearStatusFilter()
-	m.rebuildRows()
-	m.mode = modeList
-	m.errBar.text = ""
-	m.focusSession(managerID)
-	return m, m.refreshCmd()
+	m.queueFork(m.fork.source, name)
+	return m, m.nextEffectCmd()
 }
 
 func validateForkSource(toolName string, tool config.Tool, source store.Session) error {
@@ -162,52 +98,6 @@ func validateForkSource(toolName string, tool config.Tool, source store.Session)
 		return fmt.Errorf("%s has no captured conversation id", source.Name)
 	}
 	return nil
-}
-
-type forkedInSourceMsg struct {
-	source store.Session
-	name   string
-	forkID string
-	err    error
-}
-
-// forkInSourceWait bounds how long the tool may take to record the fork once
-// the keys land.
-const forkInSourceWait = 10 * time.Second
-
-// forkInSourceCmd types the tool's fork keys into the resting source, then
-// waits for its store to record the fork they made.
-func (m *Model) forkInSourceCmd(source store.Session, tool config.Tool, name string) tea.Cmd {
-	poller := m.poller
-	return func() tea.Msg {
-		earlier, ok := agentsession.Forks(tool.SessionStore, source.AgentSessionID)
-		if !ok {
-			return forkedInSourceMsg{err: fmt.Errorf("cannot read the forks %s recorded of %s", source.Tool, source.Name)}
-		}
-		since := time.Now()
-		if err := poller.typeForkKeys(source, tool.ForkKeys); err != nil {
-			return forkedInSourceMsg{err: err}
-		}
-		for deadline := since.Add(forkInSourceWait); time.Now().Before(deadline); time.Sleep(200 * time.Millisecond) {
-			if id, ok := agentsession.ForkedFrom(tool.SessionStore, source.AgentSessionID, since, earlier); ok {
-				return forkedInSourceMsg{source: source, name: name, forkID: id}
-			}
-		}
-		return forkedInSourceMsg{err: fmt.Errorf("%s did not record a fork of %s", source.Tool, source.Name)}
-	}
-}
-
-func (m *Model) handleForkedInSource(msg forkedInSourceMsg) (tea.Model, tea.Cmd) {
-	if msg.err != nil {
-		m.errBar.text = msg.err.Error()
-		return m, nil
-	}
-	tool, ok := m.services.cfg.Tools[msg.source.Tool]
-	if !ok {
-		m.errBar.text = fmt.Sprintf("tool %s is no longer configured", msg.source.Tool)
-		return m, nil
-	}
-	return m.launchFork(msg.source, tool, msg.name, msg.forkID, expandForkCommand(tool.ForkCommand, msg.source.AgentSessionID, msg.forkID, msg.name, ""))
 }
 
 func expandForkCommand(template, sourceID, newID, name, sessionFile string) string {

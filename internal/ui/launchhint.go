@@ -29,7 +29,7 @@ type launchFix struct {
 	command     string
 	binary      string
 	retry       func() error
-	effectRetry *lifecycleRequest
+	effectRetry effectRequest
 	images      []imageAttachment
 }
 
@@ -43,7 +43,7 @@ type pendingInstall struct {
 	statusFile  string
 	script      string
 	retry       func() error
-	effectRetry *lifecycleRequest
+	effectRetry effectRequest
 	images      []imageAttachment
 }
 
@@ -291,7 +291,7 @@ func (m *Model) settleInstall() {
 		return
 	}
 	if install.effectRetry != nil {
-		m.enqueueEffect(*install.effectRetry, 0, false)
+		m.enqueueEffect(install.effectRetry, 0, false)
 		m.reportDone(install.binary + " installed; retry queued")
 		return
 	}

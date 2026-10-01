@@ -311,10 +311,10 @@ func createSession(t *testing.T, m *Model, name, dir, group string) {
 	m.form.toolIndex = 0
 	pickGroup(t, m, group)
 	_, cmd := m.submitForm()
+	m.applyCmd(t, cmd)
 	if m.mode != modeList {
 		t.Fatalf("after submit, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
-	m.applyCmd(t, cmd)
 }
 
 // seedRepo builds a committed repo the worktree tests can branch from.
@@ -357,10 +357,10 @@ func createWorktreeSession(t *testing.T, m *Model, name, repo string) store.Sess
 	m.form.worktree = true
 	pickGroup(t, m, "")
 	_, cmd := m.submitForm()
+	m.applyCmd(t, cmd)
 	if m.mode != modeList {
 		t.Fatalf("after submit, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
-	m.applyCmd(t, cmd)
 	for _, sess := range m.workspace.sessions {
 		if sess.Name == name {
 			if sess.WorktreeBranch == "" {
@@ -427,10 +427,43 @@ func createSessionOn(t *testing.T, m *Model, name, tool, dir string) {
 	}
 	pickGroup(t, m, "")
 	_, cmd := m.submitForm()
+	m.applyCmd(t, cmd)
 	if m.mode != modeList {
 		t.Fatalf("after submit, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
-	m.applyCmd(t, cmd)
+}
+
+// spawnSession is the synchronous fixture entry point for tests that need a
+// session without going through a dialog. It drives the same worker and
+// completion the deferred form/quick spawn does, so both paths stay
+// reconciled.
+func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoNamed, worktree bool) error {
+	paneW, paneH := m.paneTargetSize()
+	request := spawnRequest{
+		kind:         spawnForm,
+		toolName:     toolName,
+		name:         name,
+		dir:          dir,
+		group:        group,
+		prompt:       prompt,
+		autoNamed:    autoNamed,
+		worktree:     worktree,
+		pickWorktree: worktree,
+		pane:         sessioncmd.PaneSize{Width: paneW, Height: paneH},
+	}
+	services := effectServices{
+		store: m.services.store, driver: m.services.tmux, gitDrv: m.services.gitDrv, cfg: m.services.cfg,
+		watch: m.focusRuntime.watch,
+	}
+	if m.poller != nil {
+		services.runner = m.poller.runner
+	}
+	if m.services.lifecycle != nil {
+		services.lifecycle = m.services.lifecycle.Capture(m.services.cfg, m.services.setSnapshot)
+	}
+	result, err := services.runSpawn(request)
+	m.applySpawnEffect(request, result.(spawnEffectResult), err)
+	return err
 }
 
 // waitForPaneChild waits for a pane to run a named program, which is a

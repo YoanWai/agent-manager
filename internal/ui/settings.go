@@ -246,6 +246,7 @@ func storedNotifyFinished(st *store.Store) bool {
 }
 
 func (m *Model) openSettings() {
+	m.settingsGen++
 	if len(m.services.cfg.Tools) == 0 {
 		m.errBar.text = "no tools configured"
 		return
@@ -310,11 +311,12 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			if m.update.latest != "" {
 				// A successful swap quits to exec the new build, so
-				// everything staged this visit must land first.
-				m.persistSettings()
+				// everything staged this visit must land first; the
+				// update command follows the save's completion.
 				m.update.applying = true
+				m.applySettingsPrefs()
 				m.errBar.text = ""
-				return m, m.applyUpdateCmd()
+				return m, m.captureSettingsSave(false, true)
 			}
 		}
 		return m.saveAndCloseSettings()
@@ -325,17 +327,59 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) saveAndCloseSettings() (tea.Model, tea.Cmd) {
-	m.persistSettings()
+	m.applySettingsPrefs()
 	m.rebuildRows()
 	m.mode = modeList
-	return m, nil
+	return m, m.captureSettingsSave(true, false)
 }
 
-func (m *Model) persistSettings() {
-	if len(m.settings.toolNames) > 0 {
-		if err := m.services.store.SetSetting("default_tool", m.settings.toolNames[m.settings.toolIndex]); err != nil {
-			m.errBar.text = err.Error()
+// captureSettingsSave enqueues the dialog's chosen preferences on the
+// effect lane; the store writes run outside Update. The captured
+// generation fences a completion against a newer dialog.
+func (m *Model) captureSettingsSave(includeHidden, followUpdate bool) tea.Cmd {
+	m.settingsGen++
+	request := settingsRequest{
+		values:       m.captureSettingValues(),
+		followUpdate: followUpdate,
+		generation:   m.settingsGen,
+	}
+	if includeHidden {
+		request.hidden = m.hiddenToolList()
+	}
+	m.enqueueEffect(request, 0, false)
+	return m.nextEffectCmd()
+}
+
+func (m *Model) captureHiddenSave() tea.Cmd {
+	m.settingsGen++
+	request := settingsRequest{
+		hidden:     m.hiddenToolList(),
+		generation: m.settingsGen,
+	}
+	m.enqueueEffect(request, 0, false)
+	return m.nextEffectCmd()
+}
+
+// hiddenToolList is the picker's hidden set in persist order (sorted
+// names, comma-joined by the worker).
+func (m *Model) hiddenToolList() []string {
+	names := make([]string, 0, len(m.settings.cliHidden))
+	for name, on := range m.settings.cliHidden {
+		if on {
+			names = append(names, name)
 		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+// captureSettingValues copies the dialog's chosen preferences into the
+// ordered write list the effect worker persists, in persistSettings'
+// former order.
+func (m *Model) captureSettingValues() []settingValue {
+	values := make([]settingValue, 0, 16)
+	if len(m.settings.toolNames) > 0 {
+		values = append(values, settingValue{key: "default_tool", value: m.settings.toolNames[m.settings.toolIndex]})
 	}
 	// With auto-detect on, the picker shows the detected theme; the theme
 	// key keeps the manual choice so turning auto off returns to it.
@@ -343,99 +387,81 @@ func (m *Model) persistSettings() {
 	if m.settings.themeAuto {
 		manualTheme = m.settings.manualTheme
 	}
-	if err := m.services.store.SetSetting(themeSetting, manualTheme); err != nil {
-		m.errBar.text = err.Error()
-	}
+	values = append(values, settingValue{key: themeSetting, value: manualTheme})
 	themeAuto := "off"
 	if m.settings.themeAuto {
 		themeAuto = "on"
 	}
-	if err := m.services.store.SetSetting(themeAutoSetting, themeAuto); err != nil {
-		m.errBar.text = err.Error()
-	}
+	values = append(values, settingValue{key: themeAutoSetting, value: themeAuto})
 	layout := "split"
 	if !m.settings.layoutSplit {
 		layout = "unified"
 	}
-	if err := m.services.store.SetSetting(diffLayoutSetting, layout); err != nil {
-		m.errBar.text = err.Error()
-	}
+	values = append(values, settingValue{key: diffLayoutSetting, value: layout})
 	quickClose := "stay"
 	if m.settings.quickCloseSend {
 		quickClose = "close"
 	}
-	if err := m.services.store.SetSetting(quickCloseSetting, quickClose); err != nil {
-		m.errBar.text = err.Error()
-	}
+	values = append(values, settingValue{key: quickCloseSetting, value: quickClose})
 	focusKey := "focus"
 	if !m.settings.enterFocuses {
 		focusKey = "attach"
 	}
-	if err := m.services.store.SetSetting(focusKeySetting, focusKey); err != nil {
-		m.errBar.text = err.Error()
-	}
+	values = append(values, settingValue{key: focusKeySetting, value: focusKey})
 	arrowStep := "on"
 	if !m.settings.arrowStep {
 		arrowStep = "off"
 	}
-	if err := m.services.store.SetSetting(arrowStepSetting, arrowStep); err != nil {
-		m.errBar.text = err.Error()
-	}
+	values = append(values, settingValue{key: arrowStepSetting, value: arrowStep})
 	density := "compact"
 	if m.settings.comfortableRows {
 		density = "comfortable"
 	}
-	if err := m.services.store.SetSetting(listDensitySetting, density); err != nil {
-		m.errBar.text = err.Error()
-	}
-	if err := m.services.store.SetSetting(sessionLayoutSetting, sessionLayoutValue(m.settings.fullLayout)); err != nil {
-		m.errBar.text = err.Error()
-	}
+	values = append(values, settingValue{key: listDensitySetting, value: density})
+	values = append(values, settingValue{key: sessionLayoutSetting, value: sessionLayoutValue(m.settings.fullLayout)})
 	hideHeader := "off"
 	if m.settings.hideHeader {
 		hideHeader = "on"
 	}
-	if err := m.services.store.SetSetting(hideHeaderSetting, hideHeader); err != nil {
-		m.errBar.text = err.Error()
-	}
+	values = append(values, settingValue{key: hideHeaderSetting, value: hideHeader})
 	hideStats := "off"
 	if m.settings.hideStats {
 		hideStats = "on"
 	}
-	if err := m.services.store.SetSetting(hideStatsSetting, hideStats); err != nil {
-		m.errBar.text = err.Error()
-	}
+	values = append(values, settingValue{key: hideStatsSetting, value: hideStats})
 	mouseMode := "on"
 	if m.settings.mouseDisabled {
 		mouseMode = "off"
 	}
-	if err := m.services.store.SetSetting(mouseSetting, mouseMode); err != nil {
-		m.errBar.text = err.Error()
-	}
+	values = append(values, settingValue{key: mouseSetting, value: mouseMode})
 	worktreeChoice := "off"
 	if m.settings.worktreeDefault {
 		worktreeChoice = "on"
 	}
-	if err := m.services.store.SetSetting(worktreeSetting, worktreeChoice); err != nil {
-		m.errBar.text = err.Error()
+	values = append(values, settingValue{key: worktreeSetting, value: worktreeChoice})
+	proactive := "off"
+	if m.settings.proactive {
+		proactive = "on"
 	}
-	if err := m.services.store.SetProactiveCoordination(m.settings.proactive); err != nil {
-		m.errBar.text = err.Error()
-	}
+	values = append(values, settingValue{key: "coordination", value: proactive, proactive: true})
 	notifications := "off"
 	if m.settings.notifications {
 		notifications = "on"
 	}
-	if err := m.services.store.SetSetting(notificationsSetting, notifications); err != nil {
-		m.errBar.text = err.Error()
-	}
+	values = append(values, settingValue{key: notificationsSetting, value: notifications})
 	notifyFinished := "off"
 	if m.settings.notifyFinished {
 		notifyFinished = "on"
 	}
-	if err := m.services.store.SetSetting(notifyFinishedSetting, notifyFinished); err != nil {
-		m.errBar.text = err.Error()
-	}
+	values = append(values, settingValue{key: notifyFinishedSetting, value: notifyFinished})
+	return values
+}
+
+// applySettingsPrefs mirrors the just chosen preferences into the live
+// session: a deliberate live preview of the staged choices, like the
+// theme's. It is not a persistence receipt — a save that later fails
+// reconciles these prefs back to the committed values on completion.
+func (m *Model) applySettingsPrefs() {
 	m.prefs.focusOnEnter = m.settings.enterFocuses
 	m.prefs.arrowStep = m.settings.arrowStep
 	m.prefs.comfortableRows = m.settings.comfortableRows
@@ -447,11 +473,16 @@ func (m *Model) persistSettings() {
 
 func (m *Model) openCLIPicker() {
 	names := sortedToolNames(m.services.cfg)
-	hidden := make(map[string]bool)
-	for name, on := range m.hiddenTools() {
-		if on {
-			if _, ok := m.services.cfg.Tools[name]; ok {
-				hidden[name] = true
+	// In-memory is the source of truth while a save is in flight; only the
+	// first open of a fresh dialog reads the store.
+	hidden := m.settings.cliHidden
+	if hidden == nil {
+		hidden = make(map[string]bool)
+		for name, on := range m.hiddenTools() {
+			if on {
+				if _, ok := m.services.cfg.Tools[name]; ok {
+					hidden[name] = true
+				}
 			}
 		}
 	}
@@ -482,14 +513,12 @@ func (m *Model) handleCLIPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.toggleCLIHidden(m.settings.cliNames[m.settings.cliCursor])
 	case "esc":
-		if err := m.services.store.SetSetting(hiddenToolsSetting, formatHiddenTools(m.settings.cliHidden)); err != nil {
-			m.errBar.text = err.Error()
-		}
 		m.settings.cliPicker = false
 		// Refresh the quick-spawn tool list so it matches the new filter.
 		names, index := m.defaultToolSelection()
 		m.settings.toolNames = names
 		m.settings.toolIndex = index
+		return m, m.captureHiddenSave()
 	}
 	return m, nil
 }

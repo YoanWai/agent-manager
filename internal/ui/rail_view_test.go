@@ -94,6 +94,7 @@ func TestSettingsTogglesListDensity(t *testing.T) {
 		t.Fatalf("toggled card does not read comfortable:\n%s", card)
 	}
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
 
 	if !m.prefs.comfortableRows {
 		t.Fatal("model did not pick up the comfortable density")

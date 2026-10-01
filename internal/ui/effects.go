@@ -87,6 +87,26 @@ func (m *Model) enqueueEffect(request effectRequest, chain uint64, first bool) {
 		value.mutation.Collapsed = slices.Clone(value.mutation.Collapsed)
 		value.mutation.GroupSiblings = slices.Clone(value.mutation.GroupSiblings)
 		request = value
+	case forkRequest:
+		value.source.PendingInputs = slices.Clone(value.source.PendingInputs)
+		value.source.RelaunchSnapshot = maps.Clone(value.source.RelaunchSnapshot)
+		request = value
+	case spawnRequest:
+		if value.plan != nil {
+			plan := *value.plan
+			plan.PendingInputs = slices.Clone(plan.PendingInputs)
+			value.plan = &plan
+		}
+		value.images = slices.Clone(value.images)
+		request = value
+	case renameRequest:
+		value.sess.PendingInputs = slices.Clone(value.sess.PendingInputs)
+		value.sess.RelaunchSnapshot = maps.Clone(value.sess.RelaunchSnapshot)
+		request = value
+	case settingsRequest:
+		value.values = slices.Clone(value.values)
+		value.hidden = slices.Clone(value.hidden)
+		request = value
 	case geometryRequest:
 		value.targets = slices.Clone(value.targets)
 		request = value
@@ -142,10 +162,11 @@ func (m *Model) handleEffectCompleted(msg effectCompletedMsg) (tea.Model, tea.Cm
 		return m, nil
 	}
 	m.effects.active = nil
-	_, lifecycleChange := job.request.(lifecycleRequest)
-	_, railChange := job.request.(railRequest)
-	if (lifecycleChange || railChange) && msg.finishedAt.After(m.effects.latestObservation) {
-		m.effects.latestObservation = msg.finishedAt
+	switch job.request.(type) {
+	case lifecycleRequest, railRequest, forkRequest, spawnRequest, groupRequest, renameRequest:
+		if msg.finishedAt.After(m.effects.latestObservation) {
+			m.effects.latestObservation = msg.finishedAt
+		}
 	}
 	var command tea.Cmd
 	switch result := msg.result.(type) {
@@ -153,8 +174,20 @@ func (m *Model) handleEffectCompleted(msg effectCompletedMsg) (tea.Model, tea.Cm
 		command = m.applyLifecycleEffect(job.request.(lifecycleRequest), result, msg.err)
 	case railEffectResult:
 		command = m.applyRailEffect(job, result, msg.err)
+	case forkEffectResult:
+		command = m.applyForkEffect(job.request.(forkRequest), result, msg.err)
 	case geometryEffectResult:
 		m.applyGeometryEffect(result, msg.err)
+	case spawnEffectResult:
+		command = m.applySpawnEffect(job.request.(spawnRequest), result, msg.err)
+	case groupEffectResult:
+		command = m.applyGroupEffect(job.request.(groupRequest), result, msg.err)
+	case renameEffectResult:
+		m.applyRenameEffect(job, result, msg.err)
+	case moveDialogCloseResult:
+		m.applyMoveDialogClose(job.request.(moveDialogClose))
+	case settingsEffectResult:
+		command = m.applySettingsEffect(job, result, msg.err)
 	case attachEffectResult:
 		command = m.applyAttachEffect(job.request.(attachRequest), result, msg.err)
 	default:

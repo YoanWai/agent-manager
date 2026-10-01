@@ -247,7 +247,7 @@ func (m *Model) applyLifecycleEffect(request lifecycleRequest, result lifecycleE
 			if m.mode == modeList {
 				m.reportLaunchError(err, nil)
 				if m.mode == modeLaunchHint {
-					m.launchFix.effectRetry = &retry
+					m.launchFix.effectRetry = retry
 				}
 			} else {
 				m.errBar.text = err.Error()

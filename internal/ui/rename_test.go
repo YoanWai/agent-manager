@@ -160,7 +160,8 @@ func TestRenameSessionRefusesSharedWorktree(t *testing.T) {
 	m.selectSessionRow(t, "owner")
 	m.openRename()
 	m.rename.input.SetValue("renamed")
-	m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
 
 	if !strings.Contains(m.errBar.text, "shared with session \"forked\"") {
 		t.Fatalf("shared worktree error = %q", m.errBar.text)
@@ -182,7 +183,8 @@ func TestRenameSessionRefusesAWorktreeNameAlreadyTaken(t *testing.T) {
 	m.selectSessionRow(t, "mover")
 	m.openRename()
 	m.rename.input.SetValue("taken")
-	m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
 
 	if m.errBar.text == "" {
 		t.Fatal("a taken worktree name should report why")
@@ -401,7 +403,8 @@ func TestRenameThenSharedSessionKeepsSpawnPath(t *testing.T) {
 	m.selectSessionRow(t, "shared source")
 	m.openRename()
 	m.rename.input.SetValue("should fail")
-	m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_, retryCmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, retryCmd)
 	if !strings.Contains(m.errBar.text, "shared with session \"child fork\"") {
 		t.Fatalf("shared worktree error = %q", m.errBar.text)
 	}
@@ -570,10 +573,11 @@ func TestGroupPathNeverEmpty(t *testing.T) {
 	}
 	m.groupForm.name.SetValue("zone")
 	m.groupForm.path.SetValue("")
-	if _, _ = m.submitGroupForm(); m.errBar.text != "" {
+	_, cmd := m.submitGroupForm()
+	if m.errBar.text != "" {
 		t.Fatalf("submit: %q", m.errBar.text)
 	}
-	m.applyCmd(t, m.refreshCmd())
+	m.applyCmd(t, cmd)
 	if m.workspace.groupPaths["zone"] == "" {
 		t.Fatal("created group should get a resolved default path, not empty")
 	}

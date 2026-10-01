@@ -13,7 +13,7 @@ The initial application-boundary audit used implementation commit `c7a7e8247190f
 | Feature-owned UI behavior and narrow contracts | Partial across the whole UI | [Help, Review, Focus, and Rail](ui-feature-packages.md) own policy behind private models and typed value contracts. Other dialogs remain root methods; [services](../../internal/ui/model_services.go) stays in root composition |
 | UI feature packages and directory boundaries | Implemented for these four features | [Feature contracts](ui-feature-packages.md), [pure review data](review-data.md), and a [transitive production dependency check](../../tools/architecture/check-ui-boundaries) reject root and runtime imports |
 | Repeatable process and TUI end-to-end coverage | Partial | The [committed harness](../../tools/e2e/README.md) and CI exercise Help, Review, Focus, Rail, terminal creation, and clean exit. CLI/MCP/headless/extension flows and the full product matrix remain follow-ups |
-| Nonblocking Update and read-only View | Partial | [Frame preparation](../../internal/ui/model_view.go) runs after dispatch; View only reads the prepared string. [Captured lifecycle/Rail commands](ui-effects.md), geometry and attach preparation run outside Update; preflight, form/spawn/fork, rename/move-dialog/settings and focus/acknowledgement paths remain follow-ups |
+| Nonblocking Update and read-only View | Partial | [Frame preparation](../../internal/ui/model_view.go) runs after dispatch; View only reads the prepared string. [Captured typed commands](ui-effects.md) run lifecycle, Rail, geometry, attach, spawn/fork/group, rename/move and settings persistence outside Update; preflight, keybinding saves, review and focus/acknowledgement paths remain follow-ups |
 | Files organized by concern and source-adjacent tests throughout | Partial | Execution, sessioncmd, and UI concern families are implemented. Store, status, and tmux taxonomy remain future work; file moves do not establish feature ownership |
 | Production controller workspace and remote adapter | Deferred | Saved connections and SSH remain historical PR #1 experiments |
 | Exclusive authority and historical writer cutover | Deferred | [ClaimPoller](../../internal/execution/poller.go) retains socket-based coordination without process-instance fencing |
@@ -49,7 +49,7 @@ Hosted checks must be inspected for the published head separately. None of these
 | 1. Documentation | Reconcile historical rationale, current code, and future contracts | Source trace, local links, independent claim review; no behavior change |
 | 2. Mechanical file splits | Sessioncmd and UI now use concern families; store, status, and tmux remain future work | Sessioncmd preserves 318 declarations; UI preserves 2,371 declarations. The UI comparator checks comments, exported names, build constraints, and init function order; initializer-order notices require source review |
 | 3. UI feature packages | Help, Review, Focus, and Rail own interaction policy in child packages; root retains concrete adapters, navigation, and final frame composition | Pure feature tests, copied-data alias tests, dependency checks, root dispatch contracts, and committed TUI smoke |
-| 4. Async effects and layout | Prepared geometry, read-only View and ordered lifecycle/Rail/geometry/attach commands are implemented; migrate remaining synchronous families in bounded units | Blocked-adapter tests prove Update returns; generation tests prove stale rejection; partial-failure tests prove completed archive and restore effects reconcile immediately; prepared-frame and real geometry checks remain regression gates |
+| 4. Async effects and layout | Prepared geometry, read-only View and ordered lifecycle/Rail/geometry/attach, spawn/fork/group, rename/move and settings commands are implemented; migrate remaining synchronous families in bounded units | Blocked-adapter tests prove Update returns; generation tests prove stale rejection; partial-failure tests prove completed archive and restore effects reconcile immediately; prepared-frame and real geometry checks remain regression gates |
 | 5. Workspace and authority rollout | Ship one saved connection/read use case, then one guarded canonical mutation and writer cutover | Supported historical binaries, real SSH, failure races, single maintenance proof, and explicit old-writer policy |
 
 Each unit needs its own implementation plan. Split unit 4 by feature and unit 5 by contract rather than landing one large rewrite. Concern-based moves and behavior changes remain separately reviewable commits.
@@ -60,7 +60,8 @@ The original flat `internal/ui` arrangement was an intermediate step. Help, Revi
 
 The production import checker rejects root UI and concrete runtime dependencies transitively. Review consumes pure line models and Git values. Data ownership tests reject aliases that would let a caller mutate private Review state through load results or copied read views. Focus and Rail derive displayed content and hit geometry together. Root prepares and publishes the complete frame after dispatch; View reads its cached text.
 
-Other dialogs remain candidates for extraction when their context and outcomes form a narrow contract. Do not expose Model, all services, or a callback for every root method to make a move compile. Keep fast feature tests independent of root runtime fixtures, preserve dispatch and adapter contracts in root tests, extend the dependency check for each new package, and update the file map. The [ordered effect lane](ui-effects.md) implements confirmed lifecycle, Rail persistence, geometry and attach preparation. Remaining synchronous families retain the acceptance conditions above.
+Other dialogs remain candidates for extraction when their context and outcomes form a narrow contract. Do not expose Model, all services, or a callback for every root method to make a move compile. Keep fast feature tests independent of root runtime fixtures, preserve dispatch and adapter contracts in root tests, extend the dependency check for each new package, and update the file map. The [ordered effect lane](ui-effects.md) implements confirmed lifecycle, Rail persistence, geometry, attach preparation,
+spawn/fork/group creation, rename/move and settings persistence. Remaining synchronous families retain the acceptance conditions above.
 
 ## Turn session checks into repeatable end-to-end tests
 
@@ -83,3 +84,25 @@ When a follow-up ships, update its row with concrete source and behavioral evide
 The [effect contract](ui-effects.md) records frozen targets, one-at-a-time execution, partial durable reconciliation, retries and normal versus abnormal shutdown. Regression tests include a deliberately blocked snapshot writer while WindowSize Update returns, FIFO and duplicate/late commands, transactional ancestor rollback and explicit stopped-runner errors. This changes no schema or external protocol and does not establish cross-process writer authority. Add lifecycle failure and quit-drain scenarios to the committed process harness in a follow-up; current smoke continues to prove the existing terminal and feature wiring.
 
 Final local validation of the async increment on 2026-09-30 passed `go test -race -p 1 ./...` with isolated tmux state and `/bin/sh`; UI reported 321.841 seconds and unchanged packages used the valid Go test cache. The focused async/failure/order regression selection passed uncached in 5.952 seconds. Build, vet, gofmt, whitespace and production dependency checks passed, as did all seven harness contract tests. The final binary smoke passed in 7.72 seconds against disposable state. These timings are evidence for those selections, not a suite-wide speedup claim. Hosted checks must be read at the published head separately.
+
+### Dialog effects integration
+
+The four worker slices share the existing root effect lane and canonical lifecycle
+service. Integration regressions cover successful settings saves after earlier
+failures, preserved newer prompt drafts and attachments, same-target reopened
+dialogs, captured fork-source identity, and recorded-fork retries without repeated
+keys. Inventory mutations also advance the existing stale-poll fence.
+
+Remaining acceptance includes real-terminal failure/quit-drain scenarios for these
+dialogs, keybinding persistence and the other synchronous paths listed in the
+effect contract. Historical-client and cross-process authority evidence remains
+required. A long runner reflow can delay its heartbeat; reproduce that separately
+with two disposable managers before changing leader-election semantics.
+
+Final coordinator validation on 2026-10-01 passed `go test -race -p 1 ./...`
+with isolated tmux state and `/bin/sh` (UI 235.000 seconds). Unchanged pure
+packages used the valid test cache. Build, vet, formatting, whitespace, six
+production dependency guards and seven harness contract tests passed. The final
+actual-binary TUI smoke passed in 3.46 seconds against disposable state. The four
+effect test files contain 60 source-adjacent regressions. These results prove the
+local integration gates, not hosted CI or the deferred release matrix.

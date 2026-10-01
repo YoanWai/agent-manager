@@ -123,6 +123,7 @@ func TestSpawnMissingCLIPromptsInstall(t *testing.T) {
 	m.form.toolIndex = claudeIndex
 	pickGroup(t, m, "")
 	m.submitForm()
+	m.drainEffects(t)
 
 	if m.mode != modeLaunchHint {
 		t.Fatalf("mode = %v, err = %q, want modeLaunchHint", m.mode, m.errBar.text)
@@ -234,6 +235,7 @@ func TestQuickSpawnHermesWithoutMCPSupportClosesTheBar(t *testing.T) {
 
 	updated, _ := m.quickSpawn("backend", "fix the tests")
 	m = updated.(*Model)
+	m.drainEffects(t)
 
 	if m.mode != modeLaunchHint {
 		t.Fatalf("mode = %v, err = %q, want modeLaunchHint", m.mode, m.errBar.text)
@@ -263,6 +265,7 @@ func TestFormSpawnRefusedByTheHintReleasesItsImages(t *testing.T) {
 	m.form.prompt.input.SetValue("match " + imageToken(1))
 
 	m.submitForm()
+	m.drainEffects(t)
 
 	if m.mode != modeLaunchHint {
 		t.Fatalf("mode = %v, err = %q, want modeLaunchHint", m.mode, m.errBar.text)
@@ -315,6 +318,7 @@ func TestFormSpawnErrorInTheBarKeepsItsImages(t *testing.T) {
 	m.form.prompt.input.SetValue("match " + imageToken(1))
 
 	m.submitForm()
+	m.drainEffects(t)
 
 	if m.mode != modeForm || m.errBar.text == "" {
 		t.Fatalf("mode = %v, err = %q, want the form still up with the error", m.mode, m.errBar.text)
@@ -360,6 +364,7 @@ func TestSpawnHermesWithoutMCPSupportPromptsInstall(t *testing.T) {
 	m.form.toolIndex = hermesIndex
 	pickGroup(t, m, "")
 	m.submitForm()
+	m.drainEffects(t)
 
 	if m.mode != modeLaunchHint {
 		t.Fatalf("mode = %v, err = %q, want modeLaunchHint", m.mode, m.errBar.text)
@@ -840,7 +845,7 @@ func TestInstallFinishesARefusedRestore(t *testing.T) {
 	if m.launchFix.effectRetry == nil {
 		t.Fatal("missing captured restore retry")
 	}
-	m.enqueueEffect(*m.launchFix.effectRetry, 0, false)
+	m.enqueueEffect(m.launchFix.effectRetry, 0, false)
 	m.drainEffects(t)
 
 	restored, err := m.services.store.Get(sess.ID)

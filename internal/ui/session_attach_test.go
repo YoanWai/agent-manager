@@ -191,10 +191,10 @@ func TestAttachClearsStaleHashBeforeReflow(t *testing.T) {
 	m.form.toolIndex = 1 // claude-hooked: configured with an activity region to hash
 	pickGroup(t, m, "")
 	_, cmd := m.submitForm()
+	m.applyCmd(t, cmd)
 	if m.mode != modeList {
 		t.Fatalf("after submit, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
-	m.applyCmd(t, cmd)
 
 	sess := m.sessionRows()[0]
 	if sess.Tool != "claude-hooked" {

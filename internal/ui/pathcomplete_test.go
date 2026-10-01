@@ -242,9 +242,11 @@ func TestRelativePathsStoredAbsolute(t *testing.T) {
 	m.openGroupForm()
 	m.groupForm.name.SetValue("relgrp")
 	m.groupForm.path.SetValue("sub")
-	if _, cmd := m.submitGroupForm(); cmd == nil {
+	_, cmd := m.submitGroupForm()
+	if m.errBar.text != "" {
 		t.Fatalf("group form should submit, err=%q", m.errBar.text)
 	}
+	m.applyCmd(t, cmd)
 	groups, _ := m.services.store.Groups()
 	for _, g := range groups {
 		if g.Name == "relgrp" && !filepath.IsAbs(g.Path) {

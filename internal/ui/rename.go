@@ -1,7 +1,7 @@
 package ui
 
 import (
-	"github.com/YoanWai/agent-manager/internal/sessioncmd"
+	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"sort"
@@ -21,6 +21,7 @@ type renameTarget struct {
 }
 
 func (m *Model) openRename() {
+	m.dialogGen++
 	entry, ok := m.selectedRow()
 	if !ok {
 		return
@@ -206,6 +207,8 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.rename.isGroup {
+		// Pre-confirmation read: the default dir must exist before the job
+		// is accepted, so the dialog stays open with a specific message.
 		parent := parentGroup(m.rename.path)
 		dir, ok := resolveExistingDir(m.rename.dir.Value(), m.groupDefaultDir(parent))
 		if !ok {
@@ -216,84 +219,76 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 		if parent != "" {
 			newPath = parent + "/" + name
 		}
-		if err := m.services.store.RenameGroup(m.rename.path, newPath); err != nil {
-			m.errBar.text = err.Error()
-			return m, nil
-		}
-		// CreateGroup upserts, so it doubles as the default-path setter.
-		if err := m.services.store.CreateGroup(newPath, dir); err != nil {
-			m.errBar.text = err.Error()
-			return m, nil
-		}
-		worktree := groupWorktreeValue(m.rename.worktreeIndex)
-		if err := m.services.store.SetGroupWorktree(newPath, worktree); err != nil {
-			m.errBar.text = err.Error()
-			return m, nil
-		}
-		m.renameGroupLocally(m.rename.path, newPath, dir, worktree)
-		m.relabelSubtree(newPath)
-	} else {
-		index := -1
-		for i := range m.workspace.sessions {
-			if m.workspace.sessions[i].ID == m.rename.sessID {
-				index = i
-				break
-			}
-		}
-		tool := m.renameTool()
-		prevTool := ""
-		if index >= 0 {
-			prevTool = m.workspace.sessions[index].Tool
-		}
-		toolChanged := tool != "" && tool != prevTool
-		if toolChanged && m.isShell(tool) {
-			kids, err := m.services.store.Children(m.rename.sessID)
-			if err != nil {
-				m.errBar.text = err.Error()
-				return m, nil
-			}
-			if len(kids) > 0 {
-				m.errBar.text = "move its terminals first"
-				return m, nil
-			}
-		}
-		// The branch changes before the name is stored, so a name git cannot
-		// give it leaves the rename card open instead of splitting them apart.
-		if index >= 0 {
-			if err := sessioncmd.RenameWorktreeBranch(m.services.gitDrv, m.services.store, &m.workspace.sessions[index], name); err != nil {
-				m.errBar.text = "worktree rename: " + err.Error()
-				return m, nil
-			}
-		}
-		if err := m.services.store.RenameSession(m.rename.sessID, name); err != nil {
-			m.errBar.text = err.Error()
-			return m, nil
-		}
-		if toolChanged {
-			if err := m.services.store.UpdateTool(m.rename.sessID, tool); err != nil {
-				m.errBar.text = err.Error()
-				return m, nil
-			}
-		}
-		if index >= 0 {
-			m.workspace.sessions[index].Name = name
-			if toolChanged {
-				m.workspace.sessions[index].Tool = tool
-				m.workspace.sessions[index].AgentSessionID = ""
-			}
-		}
-		m.relabelSession(m.rename.sessID)
+		m.dialogGen++
+		m.enqueueEffect(renameRequest{
+			kind:     renameGroup,
+			oldGroup: m.rename.path,
+			newGroup: newPath,
+			dir:      dir,
+			worktree: groupWorktreeValue(m.rename.worktreeIndex),
+			name:     name,
+			gen:      m.dialogGen,
+		}, 0, false)
+		return m, m.nextEffectCmd()
 	}
-	m.rebuildRows()
-	m.mode = modeList
-	m.requestRefresh()
-	return m, nil
+	index := -1
+	var sess store.Session
+	for i := range m.workspace.sessions {
+		if m.workspace.sessions[i].ID == m.rename.sessID {
+			index = i
+			break
+		}
+	}
+	tool := m.renameTool()
+	prevTool := ""
+	if index >= 0 {
+		prevTool = m.workspace.sessions[index].Tool
+		sess = m.workspace.sessions[index]
+	}
+	toolChanged := tool != "" && tool != prevTool
+	// Pre-confirmation read: the shell child restriction is checked before
+	// dispatch, so a refused rename never enters the queue.
+	if toolChanged && m.isShell(tool) {
+		kids, err := m.services.store.Children(m.rename.sessID)
+		if err != nil {
+			m.errBar.text = err.Error()
+			return m, nil
+		}
+		if len(kids) > 0 {
+			m.errBar.text = "move its terminals first"
+			return m, nil
+		}
+	}
+	m.dialogGen++
+	m.enqueueEffect(renameRequest{
+		kind:   renameSession,
+		sessID: m.rename.sessID,
+		sess:   sess,
+		name:   name,
+		tool:   tool,
+		gen:    m.dialogGen,
+	}, 0, false)
+	return m, m.nextEffectCmd()
 }
 
 // renameGroupLocally rewrites the in-memory tree right away, so the
 // frames between saving and the poller's next refresh already show the
 // new name and path instead of flashing the stale ones.
 func (m *Model) renameGroupLocally(old, newPath, dir, worktree string) {
+	m.renameGroupInventory(old, newPath)
+	m.workspace.groupPaths[newPath] = dir
+	if worktree == "" {
+		delete(m.workspace.groupWorktrees, newPath)
+	} else {
+		m.workspace.groupWorktrees[newPath] = worktree
+	}
+	m.applyRailStateDecision(m.rail.RenameGroup(old, newPath))
+}
+
+// renameGroupInventory moves the in-memory groups and sessions under a
+// renamed path; metadata maps are mirrored by the caller, which decides
+// which stages committed.
+func (m *Model) renameGroupInventory(old, newPath string) {
 	moved := func(group string) (string, bool) {
 		if group == old || strings.HasPrefix(group, old+"/") {
 			return newPath + group[len(old):], true
@@ -311,45 +306,11 @@ func (m *Model) renameGroupLocally(old, newPath, dir, worktree string) {
 		group, _ = moved(group)
 		groupPaths[group] = path
 	}
-	groupPaths[newPath] = dir
 	m.workspace.groupPaths = groupPaths
 	groupWorktrees := make(map[string]string, len(m.workspace.groupWorktrees))
 	for group, choice := range m.workspace.groupWorktrees {
 		group, _ = moved(group)
 		groupWorktrees[group] = choice
 	}
-	if worktree == "" {
-		delete(groupWorktrees, newPath)
-	} else {
-		groupWorktrees[newPath] = worktree
-	}
 	m.workspace.groupWorktrees = groupWorktrees
-	m.applyRailStateDecision(m.rail.RenameGroup(old, newPath))
-}
-
-// relabelSession refreshes one session's tmux status-bar label from the db.
-func (m *Model) relabelSession(id string) {
-	sess, err := m.services.store.Get(id)
-	if err != nil {
-		m.errBar.text = err.Error()
-		return
-	}
-	if !m.services.tmux.Exists(id) {
-		return
-	}
-	if err := m.services.tmux.SetLabel(id, sessionLabel(sess.Group, sess.Name)); err != nil {
-		m.errBar.text = err.Error()
-	}
-}
-
-// relabelSubtree refreshes labels for every session under a group path.
-func (m *Model) relabelSubtree(path string) {
-	sessions, err := m.services.store.SessionsInSubtree(path)
-	if err != nil {
-		m.errBar.text = err.Error()
-		return
-	}
-	for _, sess := range sessions {
-		m.relabelSession(sess.ID)
-	}
 }

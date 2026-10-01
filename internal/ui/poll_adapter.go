@@ -44,12 +44,9 @@ func pollMessage(result execution.Result) tea.Msg {
 		tmuxSocket: s.TmuxSocket, leadingManager: s.LeadingManager, focusID: s.FocusID}
 }
 
-func (p *poller) refreshOnce() tea.Msg                    { return pollMessage(p.runner.Step()) }
-func (p *poller) setInput(archived bool, selected string) { p.runner.SetInput(archived, selected) }
-func (p *poller) requestRefresh()                         { p.runner.RequestRefresh() }
-func (p *poller) typeForkKeys(session store.Session, keys string) error {
-	return p.runner.TypeForkKeys(session, keys)
-}
+func (p *poller) refreshOnce() tea.Msg                                { return pollMessage(p.runner.Step()) }
+func (p *poller) setInput(archived bool, selected string)             { p.runner.SetInput(archived, selected) }
+func (p *poller) requestRefresh()                                     { p.runner.RequestRefresh() }
 func (p *poller) results(ctx context.Context) <-chan execution.Result { return p.runner.Run(ctx) }
 
 func takeNotifyFocus() (string, bool) {

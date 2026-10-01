@@ -74,6 +74,8 @@ type Model struct {
 	fork           forkState
 	quick          quickState
 	settings       settingsState
+	settingsGen    uint64
+	dialogGen      uint64
 	help           uihelp.State
 	helpReturnMode mode
 	moveID         string

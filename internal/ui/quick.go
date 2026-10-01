@@ -3,6 +3,7 @@ package ui
 import (
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -179,33 +180,28 @@ func (m *Model) quickSpawn(group, prompt string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	name := toolName + "-" + newID()[:4]
-	worktree := m.quickWorktreeOn()
 	pickWorktree := m.spawnWorktreeDefault(group)
 	if m.quick.worktreeTouched {
 		pickWorktree = m.quick.worktree
 	}
-	spawn := func() error {
-		if err := m.spawnSession(toolName, name, dir, group, prompt, true, worktree); err != nil {
-			return err
-		}
-		m.rememberSpawnPick(toolName, pickWorktree)
-		return nil
-	}
-	if err := spawn(); err != nil {
-		m.reportLaunchError(err, spawn)
-		// A spawn the hint dialog refused leaves nothing to send, so the
-		// bar closes instead of swallowing the list keys behind the dialog;
-		// the dialog releases its images once no install can still spawn it.
-		if m.mode == modeLaunchHint {
-			m.quick.active = false
-		}
-		return m, nil
-	}
-	// Spawned sessions start outside the attention set; clear so the new row shows.
-	m.rail.ClearStatusFilter()
-	m.clearQuickAfterSend()
-	m.errBar.text = ""
-	return m, m.refreshCmd()
+	// quickWorktreeOn's capability check is a cached preflight read; the
+	// effective worktree is captured, so the worker only creates.
+	paneW, paneH := m.paneTargetSize()
+	m.dispatchSpawn(spawnRequest{
+		kind:         spawnQuick,
+		toolName:     toolName,
+		name:         name,
+		dir:          dir,
+		group:        group,
+		prompt:       prompt,
+		autoNamed:    true,
+		worktree:     m.quickWorktreeOn(),
+		pickWorktree: pickWorktree,
+		pane:         sessioncmd.PaneSize{Width: paneW, Height: paneH},
+		composerGen:  m.quick.gen,
+		images:       m.quick.attachments,
+	})
+	return m, nil
 }
 
 // clearQuickAfterSend empties the bar for the next prompt, and dismisses it

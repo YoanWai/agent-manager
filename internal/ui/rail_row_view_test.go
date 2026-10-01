@@ -54,10 +54,11 @@ func TestComfortableGroupRowStacks(t *testing.T) {
 	m.prefs.comfortableRows = true
 	m.openGroupForm()
 	m.groupForm.name.SetValue("fleet")
-	if _, _ = m.submitGroupForm(); m.errBar.text != "" {
+	_, cmd := m.submitGroupForm()
+	if m.errBar.text != "" {
 		t.Fatalf("create group: %q", m.errBar.text)
 	}
-	m.applyCmd(t, m.refreshCmd())
+	m.applyCmd(t, cmd)
 	createSession(t, m, "beta", t.TempDir(), "fleet")
 
 	lines := railText(t, m)
@@ -98,17 +99,19 @@ func TestComfortableMetaLineKeepsTreeGuides(t *testing.T) {
 	m.prefs.comfortableRows = true
 	m.openGroupForm()
 	m.groupForm.name.SetValue("outer")
-	if _, _ = m.submitGroupForm(); m.errBar.text != "" {
+	_, cmd := m.submitGroupForm()
+	if m.errBar.text != "" {
 		t.Fatalf("create outer group: %q", m.errBar.text)
 	}
-	m.applyCmd(t, m.refreshCmd())
+	m.applyCmd(t, cmd)
 	m.selectGroupRow(t, "outer")
 	m.openGroupForm()
 	m.groupForm.name.SetValue("inner")
-	if _, _ = m.submitGroupForm(); m.errBar.text != "" {
+	_, cmd = m.submitGroupForm()
+	if m.errBar.text != "" {
 		t.Fatalf("create inner group: %q", m.errBar.text)
 	}
-	m.applyCmd(t, m.refreshCmd())
+	m.applyCmd(t, cmd)
 	createSession(t, m, "nested", t.TempDir(), "outer/inner")
 	createSession(t, m, "sibling", t.TempDir(), "outer")
 
@@ -774,7 +777,12 @@ func spawnUnnamed(t *testing.T, m *Model, prompt string) store.Session {
 	m.form.dir.SetValue(t.TempDir())
 	m.form.prompt.input.SetValue(prompt)
 	m.form.toolIndex = 0
-	if _, _ = m.submitForm(); m.mode != modeList {
+	_, cmd := m.submitForm()
+	if m.errBar.text != "" {
+		t.Fatalf("submit: %q", m.errBar.text)
+	}
+	m.applyCmd(t, cmd)
+	if m.mode != modeList {
 		t.Fatalf("submit left mode=%v err=%q", m.mode, m.errBar.text)
 	}
 	rows := m.sessionRows()

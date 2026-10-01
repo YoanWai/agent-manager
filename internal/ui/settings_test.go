@@ -50,7 +50,8 @@ func TestSettingsTogglesQuickClose(t *testing.T) {
 		t.Fatalf("stepping down should reach the quick send field, got %d", m.settings.field)
 	}
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
-	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
 	if !m.quickCloseAfterSend() {
 		t.Fatal("close choice should persist after toggle")
 	}
@@ -73,7 +74,8 @@ func TestSettingsTogglesReviewLayout(t *testing.T) {
 		t.Fatalf("stepping down should reach the layout field, got %d", m.settings.field)
 	}
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyLeft})
-	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
 	if got := m.defaultSplitLayout(); got {
 		t.Fatal("layout should persist as unified after toggle")
 	}
@@ -86,7 +88,8 @@ func TestSettingsWorktreeDefaultPersists(t *testing.T) {
 		m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
 	}
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
-	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
 	if chosen, err := m.services.store.Setting(worktreeSetting); err != nil || chosen != "on" {
 		t.Fatalf("want stored on, got %q err %v", chosen, err)
 	}
@@ -112,6 +115,7 @@ func TestSettingsCoordinationBriefsTheNextSpawn(t *testing.T) {
 		t.Fatalf("the stepped row does not read proactive:\n%s", ansi.Strip(m.viewSettings()))
 	}
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
 	if proactive, err := m.services.store.ProactiveCoordination(); err != nil || !proactive {
 		t.Fatalf("want proactive stored, got %v err %v", proactive, err)
 	}
@@ -146,6 +150,7 @@ func TestSettingsNotificationsPersist(t *testing.T) {
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
 	if chosen, err := m.services.store.Setting(notificationsSetting); err != nil || chosen != "off" {
 		t.Fatalf("want stored off, got %q err %v", chosen, err)
 	}
@@ -164,7 +169,8 @@ func TestSettingsMouseTogglePersists(t *testing.T) {
 		m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
 	}
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyLeft})
-	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
 	if chosen, err := m.services.store.Setting(mouseSetting); err != nil || chosen != "off" {
 		t.Fatalf("want stored off, got %q err %v", chosen, err)
 	}
@@ -324,6 +330,7 @@ func TestSettingsCLIPickerHidesFromNewSessions(t *testing.T) {
 		t.Fatal("space should hide the focused CLI")
 	}
 	m.handleSettingsKey(key("esc"))
+	m.drainEffects(t)
 	if m.settings.cliPicker {
 		t.Fatal("esc should leave the picker")
 	}
@@ -470,17 +477,38 @@ func TestSettingsUpdateRowAppliesOnEnter(t *testing.T) {
 	if m.mode != modeSettings {
 		t.Fatal("starting the update must keep settings open")
 	}
-	msg, ok := cmd().(updateAppliedMsg)
-	if !ok {
-		t.Fatalf("cmd returned %T", cmd())
+	completed := cmd().(effectCompletedMsg)
+	if completed.err != nil {
+		t.Fatalf("staged settings save: %v", completed.err)
 	}
-	if msg.err != nil {
-		t.Fatalf("apply: %v", msg.err)
+	updated, next := m.Update(completed)
+	m = updated.(*Model)
+	if next == nil {
+		t.Fatal("no update command after the save completed")
+	}
+	var msg tea.Msg
+	switch batch := next().(type) {
+	case tea.BatchMsg:
+		for _, c := range batch {
+			if c != nil {
+				msg = c()
+				break
+			}
+		}
+	default:
+		msg = next()
+	}
+	swap, ok := msg.(updateAppliedMsg)
+	if !ok {
+		t.Fatalf("update command returned %T", msg)
+	}
+	if swap.err != nil {
+		t.Fatalf("apply: %v", swap.err)
 	}
 	if !strings.HasPrefix(applied, "v0.6.0 ") {
 		t.Fatalf("applyUpdate saw %q", applied)
 	}
-	updated, quit := m.Update(msg)
+	updated, quit := m.Update(swap)
 	m = updated.(*Model)
 	if m.update.applying {
 		t.Fatal("applying should clear once the swap lands")
@@ -508,8 +536,9 @@ func TestSettingsUpdateRowIdleWhenCurrent(t *testing.T) {
 		return nil
 	}
 
-	_, cmd := m.handleSettingsKey(key("enter"))
-	if called || cmd != nil || m.update.applying {
+	m.handleSettingsKey(key("enter"))
+	m.drainEffects(t)
+	if called || m.update.applying {
 		t.Fatal("enter on version when up to date must not start an update")
 	}
 	if m.mode != modeList {
@@ -541,7 +570,20 @@ func TestSettingsUpdateRowApplyFailureSurfaces(t *testing.T) {
 	}
 
 	_, cmd := m.handleSettingsKey(key("enter"))
-	updated, _ := m.Update(cmd().(updateAppliedMsg))
+	completed := cmd().(effectCompletedMsg)
+	if completed.err != nil {
+		t.Fatalf("staged settings save: %v", completed.err)
+	}
+	updated, next := m.Update(completed)
+	m = updated.(*Model)
+	if next == nil {
+		t.Fatal("no update command after the save completed")
+	}
+	swap, ok := next().(updateAppliedMsg)
+	if !ok {
+		t.Fatalf("update command returned %T", next())
+	}
+	updated, _ = m.Update(swap)
 	m = updated.(*Model)
 	if m.update.applying {
 		t.Fatal("applying should clear on failure")
@@ -577,9 +619,11 @@ func TestSettingsUpdateRowPersistsStagedSettings(t *testing.T) {
 	}
 	applyUpdate = func(context.Context, string, string) error { return nil }
 
-	if _, cmd := m.handleSettingsKey(key("enter")); cmd == nil {
+	_, cmd := m.handleSettingsKey(key("enter"))
+	if cmd == nil {
 		t.Fatal("enter on the update row should start the update")
 	}
+	m.applyCmd(t, cmd)
 	got, err := m.services.store.Setting(themeSetting)
 	if err != nil {
 		t.Fatal(err)

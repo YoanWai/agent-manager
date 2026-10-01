@@ -670,9 +670,10 @@ func TestQuickRemembersPickOnlyAfterInstallRetrySucceeds(t *testing.T) {
 	}
 	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlT})
 	m.quick.input.SetValue("do a thing")
-	m.submitQuick()
+	_, cmd := m.submitQuick()
+	m.applyCmd(t, cmd)
 
-	if m.mode != modeLaunchHint || m.launchFix.retry == nil {
+	if m.mode != modeLaunchHint || m.launchFix.effectRetry == nil {
 		t.Fatalf("expected a refused launch with retry, mode=%v err=%q", m.mode, m.errBar.text)
 	}
 	if m.ledger.lastSpawnTool != "ready-tool" || m.ledger.lastSpawnWorktree {
@@ -819,7 +820,8 @@ func TestQuickWorktreeGatedInNonRepoGroup(t *testing.T) {
 		t.Fatalf("quick bar should name worktree as what is unavailable, got %q", bar)
 	}
 	m.quick.input.SetValue("do a thing")
-	m.submitQuick()
+	_, cmd := m.submitQuick()
+	m.applyCmd(t, cmd)
 	sessions, err := m.services.store.ListSessions(true)
 	if err != nil {
 		t.Fatalf("list: %v", err)
@@ -852,7 +854,8 @@ func TestQuickSpawnUsesGroupWorktreeDefault(t *testing.T) {
 		t.Fatal("quick bar should show the group's worktree default on")
 	}
 	m.quick.input.SetValue("do a thing")
-	m.submitQuick()
+	_, cmd := m.submitQuick()
+	m.applyCmd(t, cmd)
 	if m.errBar.text != "" {
 		t.Fatalf("worktree spawn should succeed: %q", m.errBar.text)
 	}

@@ -27,7 +27,7 @@ protocol.
    Prioritized collapse saves from group reveal, rename and deletion reconciliation
    also supersede older pending collapse snapshots, retaining active work and
    unrelated queued jobs.
-5. Lifecycle/Rail completion time fences older poll listings. Fresh observations
+5. Lifecycle, Rail, spawn, fork, group creation and rename completion times fence older poll listings. Fresh observations
    reconcile the next snapshot; geometry-only completion does not advance that
    fence. Geometry coalesces only adjacent requests and avoids already accepted
    identical sizes, preserving lifecycle/move order and scrollback rules.
@@ -55,11 +55,11 @@ have no shared cancellation/deadline contract, so drain has no fixed time bound.
 ## Scope and compatibility
 
 Confirmed human archive, restore, delete, kill, restart and revive, direct revive,
-Rail persistence, pane resize/size publication and attach preparation use this
-lane. Existing synchronous lifecycle fixture entry points live in test files
-and drive the same executor/reconciliation. Pre-confirmation reads, form/spawn/
-fork, move-dialog and rename/settings persistence, acknowledgement/focus probes,
-review effects and detach request-marker reads are separate follow-ups. Cached
+Rail persistence, pane resize/size publication, attach preparation, form and quick
+spawn, fork, group creation, rename, move-dialog mutations, and settings/CLI-picker
+persistence use this lane. Existing synchronous lifecycle fixture entry points live in test files
+and drive the same executor/reconciliation. Pre-confirmation reads, keybinding persistence, acknowledgement/focus probes,
+review effects and detach request-marker reads remain separate follow-ups. Cached
 read-only `View` plus this lane does not make every `Update` path nonblocking.
 
 The schema, CLI/MCP messages and supported tool commands are unchanged. SQLite
@@ -78,3 +78,32 @@ ancestor rollback. Root integration fixtures explicitly drive completions rather
 than assume dispatch already wrote to SQLite/tmux. Pure feature tests still
 avoid root's tmux fixture. The existing committed TUI smoke remains the process
 wiring gate; lifecycle/failure/drain process scenarios remain roadmap work.
+
+## Dialog effect reconciliation
+
+Spawn requests transfer prompt images into the accepted job. Failed jobs return
+images by appending to the original composer when it remains open; they preserve
+attachments added while work ran. Successful quick spawns clear only an unchanged
+draft. Repeated spawn or fork submissions from the same pending dialog are
+refused. Spawn captures its manager ID on admission and retains the assembled
+launch plan, including the conversation ID, across installation retries. A
+recorded-fork retry retains the child manager ID as well. Reopened forms and group/fork dialogs retain their generation and foreground
+state while durable results still update the workspace.
+
+Fork workers validate the captured source conversation and worktree identity
+against the current row before typing keys or launching. A recorded ForkKeys
+conversation survives child-launch failure in the retry request, so installation
+retry reuses that conversation without typing the fork keys again. Delivery or
+recording failure reports an uncertain outcome for manual inspection. This is
+process-local retry evidence, not a durable crash-recovery protocol.
+
+Rename results carry committed stage flags. Partial failures update rendered rows
+before reporting the error. Move dialog closure follows the successful Rail
+mutation within its chain and cannot close a reopened or resubmitted dialog.
+
+Settings persist captured writes in order. Partial saves read back each key with
+its own error. Runtime preferences reconcile even when the submitting dialog is
+stale; dialog fields remain generation-fenced. Each successful later full save
+reapplies its captured preferences, so an earlier failure cannot leave the runtime
+behind the committed state. Hidden-only saves do not apply unrelated preferences.
+An empty committed hidden-tool set clears the dialog map.

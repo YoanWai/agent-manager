@@ -486,8 +486,9 @@ func TestForkGeminiResolverFailureReportsError(t *testing.T) {
 	before := len(m.sessionRows())
 	m.openFork()
 	m.fork.name.SetValue("forked")
-	updated, _ := m.handleForkKey(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, cmd := m.handleForkKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(*Model)
+	m.applyCmd(t, cmd)
 	if !strings.Contains(m.errBar.text, "no gemini session file") {
 		t.Fatalf("resolver error = %q", m.errBar.text)
 	}
@@ -593,10 +594,13 @@ func TestForkInSourceOpensTheForkTheSourceMade(t *testing.T) {
 	m.fork.name.SetValue("child fork")
 	updated, cmd := m.handleForkKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(*Model)
-	if m.mode != modeList {
-		t.Fatalf("after submit: mode = %v, err = %q", m.mode, m.errBar.text)
+	if m.mode != modeFork {
+		t.Fatalf("after submit: mode = %v, err = %q; the dialog stays open while the fork runs", m.mode, m.errBar.text)
 	}
 	m.applyCmd(t, cmd)
+	if m.mode != modeList {
+		t.Fatalf("after completion: mode = %v, err = %q", m.mode, m.errBar.text)
+	}
 	if m.errBar.text != "" {
 		t.Fatalf("fork error = %q", m.errBar.text)
 	}

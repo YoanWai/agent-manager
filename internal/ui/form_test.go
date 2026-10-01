@@ -45,10 +45,10 @@ func submitFormSession(t *testing.T, m *Model, name string) {
 	m.form.name.SetValue(name)
 	m.form.dir.SetValue(t.TempDir())
 	_, cmd := m.submitForm()
+	m.applyCmd(t, cmd)
 	if m.mode != modeList {
 		t.Fatalf("submit: mode=%v err=%q", m.mode, m.errBar.text)
 	}
-	m.applyCmd(t, cmd)
 }
 
 func TestFormRemembersLastSpawnTool(t *testing.T) {
@@ -96,9 +96,10 @@ func TestFormRemembersPickOnlyAfterInstallRetrySucceeds(t *testing.T) {
 	m.form.name.SetValue("after-install")
 	m.form.dir.SetValue(dir)
 	m.toggleFormWorktree()
-	m.submitForm()
+	_, cmd := m.submitForm()
+	m.applyCmd(t, cmd)
 
-	if m.mode != modeLaunchHint || m.launchFix.retry == nil {
+	if m.mode != modeLaunchHint || m.launchFix.effectRetry == nil {
 		t.Fatalf("expected a refused launch with retry, mode=%v err=%q", m.mode, m.errBar.text)
 	}
 	if m.ledger.lastSpawnTool != "ready-tool" || m.ledger.lastSpawnWorktree {
@@ -238,10 +239,10 @@ func TestGroupFormCreatesUnderParent(t *testing.T) {
 	m.groupForm.name.SetValue("sub/one")
 	m.groupForm.path.SetValue(t.TempDir())
 	_, cmd := m.submitGroupForm()
+	m.applyCmd(t, cmd)
 	if m.mode != modeList {
 		t.Fatalf("group form should close, err=%q", m.errBar.text)
 	}
-	m.applyCmd(t, cmd)
 
 	groups, _ := m.services.store.Groups()
 	found := ""
@@ -267,6 +268,7 @@ func TestGroupFormShowsNewEmptyGroupWithWorktreeOff(t *testing.T) {
 	m.groupForm.worktreeIndex = groupWorktreeIndex("off")
 
 	_, cmd := m.submitGroupForm()
+	m.applyCmd(t, cmd)
 	if m.rail.HideEmptyGroups() {
 		t.Fatal("creating a group should reveal it when empty groups were hidden")
 	}
@@ -275,15 +277,10 @@ func TestGroupFormShowsNewEmptyGroupWithWorktreeOff(t *testing.T) {
 			m.rail.Search(), m.rail.ShowArchived(), m.rail.FilteringAttention())
 	}
 	if got := m.groupRowPaths(); !reflect.DeepEqual(got, []string{"manual"}) {
-		t.Fatalf("group rows before refresh = %v, want [manual]", got)
+		t.Fatalf("group rows after completion = %v, want [manual]", got)
 	}
 	if row, ok := m.selectedRow(); !ok || !row.isGroup || row.group != "manual" {
 		t.Fatalf("new group is not selected: %+v", row)
-	}
-
-	m.applyCmd(t, cmd)
-	if got := m.groupRowPaths(); !reflect.DeepEqual(got, []string{"manual"}) {
-		t.Fatalf("group rows after refresh = %v, want [manual]", got)
 	}
 	if got := m.workspace.groupWorktrees["manual"]; got != "off" {
 		t.Fatalf("local worktree choice = %q, want off", got)
@@ -301,7 +298,8 @@ func TestGroupFormExpandsParentToShowNewChild(t *testing.T) {
 	m.openGroupForm()
 	m.groupForm.name.SetValue("api")
 
-	_, _ = m.submitGroupForm()
+	_, cmd := m.submitGroupForm()
+	m.applyCmd(t, cmd)
 	if m.rail.IsCollapsed("projects") {
 		t.Fatal("parent remained collapsed after creating a child")
 	}
@@ -328,8 +326,12 @@ func TestGroupFormRejectsDuplicateWithoutChangingIt(t *testing.T) {
 	m.groupForm.path.SetValue(second)
 	m.groupForm.worktreeIndex = groupWorktreeIndex("off")
 	_, cmd := m.submitGroupForm()
-	if cmd != nil || m.mode != modeGroupForm || !strings.Contains(m.errBar.text, "already exists") {
+	m.applyCmd(t, cmd)
+	if m.mode != modeGroupForm || !strings.Contains(m.errBar.text, "already exists") {
 		t.Fatalf("duplicate submission succeeded: mode=%v err=%q", m.mode, m.errBar.text)
+	}
+	if got := m.groupRowPaths(); !reflect.DeepEqual(got, []string{"backend"}) {
+		t.Fatalf("duplicate submission changed the rows: %v", got)
 	}
 
 	groups, err := m.services.store.Groups()
@@ -523,11 +525,13 @@ func TestFormSubmitKeepsThePastedImage(t *testing.T) {
 	m.form.dir.SetValue(t.TempDir())
 
 	path := tempImage(t, "mock.png")
-	id := pasteFormImage(t, m, path)
+	pasteFormImage(t, m, path)
 
-	if _, _ = m.submitForm(); m.errBar.text != "" {
+	_, cmd := m.submitForm()
+	if m.errBar.text != "" {
 		t.Fatalf("submit: %q", m.errBar.text)
 	}
+	m.applyCmd(t, cmd)
 	if m.mode != modeList {
 		t.Fatalf("a created session should close the form, mode = %v", m.mode)
 	}
@@ -538,8 +542,8 @@ func TestFormSubmitKeepsThePastedImage(t *testing.T) {
 		t.Fatalf("the agent still has to open this file: %v", err)
 	}
 	// And the path is what the session launched with, not the chip's text.
-	if strings.Contains(m.form.prompt.message(), imageToken(id)) {
-		t.Fatalf("the chip should have become its path: %q", m.form.prompt.message())
+	if !strings.Contains(m.workspace.sessions[0].LaunchPrompt, path) {
+		t.Fatalf("launch prompt should name the image path: %q", m.workspace.sessions[0].LaunchPrompt)
 	}
 }
 
@@ -954,6 +958,7 @@ func TestFormWorktreeGatedInNonRepoDir(t *testing.T) {
 		t.Fatalf("refused toggle should say why, got %q", m.errBar.text)
 	}
 	m.submitForm()
+	m.applyCmd(t, m.nextEffectCmd())
 	sessions, err := m.services.store.ListSessions(true)
 	if err != nil {
 		t.Fatalf("list: %v", err)
