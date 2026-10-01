@@ -353,11 +353,15 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 	if err != nil {
 		return Session{}, err
 	}
+	base, err := runtime.groupBase(group)
+	if err != nil {
+		return Session{}, err
+	}
 	proactive, err := runtime.store.ProactiveCoordination()
 	if err != nil {
 		return Session{}, err
 	}
-	dir, worktree, err := s.prepareWorktree(dir, name, wantWorktree, opts.Worktree != nil)
+	dir, worktree, err := s.prepareWorktree(dir, name, base, wantWorktree, opts.Worktree != nil)
 	if err != nil {
 		return Session{}, err
 	}
@@ -369,7 +373,7 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 			return
 		}
 		if driver, err := s.newGit(); err == nil {
-			_, _ = driver.RemoveWorktreeIfClean(worktree.repo, dir, worktree.branch)
+			_, _ = driver.RemoveWorktreeIfClean(worktree.repo, dir, worktree.branch, base)
 		}
 	}
 
@@ -417,7 +421,7 @@ type worktreeTarget struct {
 // A directory that cannot host one is only an error when the caller asked
 // for a worktree by name; an inherited default degrades to a plain spawn,
 // which is what the New Session form does rather than refusing to launch.
-func (s *Sessions) prepareWorktree(dir, name string, wanted, explicit bool) (string, worktreeTarget, error) {
+func (s *Sessions) prepareWorktree(dir, name, base string, wanted, explicit bool) (string, worktreeTarget, error) {
 	if !wanted {
 		return dir, worktreeTarget{}, nil
 	}
@@ -435,7 +439,9 @@ func (s *Sessions) prepareWorktree(dir, name string, wanted, explicit bool) (str
 		}
 		return dir, worktreeTarget{}, nil
 	}
-	path, branch, err := driver.AddWorktree(root, name)
+	// Offline or refused, the worktree branches from the last fetch instead.
+	_ = driver.FetchBase(root, base)
+	path, branch, err := driver.AddWorktree(root, name, base)
 	if err != nil {
 		return "", worktreeTarget{}, err
 	}
@@ -470,6 +476,25 @@ func (r *runtime) worktreeWanted(group string, explicit *bool) (bool, error) {
 		return false, err
 	}
 	return setting == "on", nil
+}
+
+// groupBase is the ref a spawn into group branches from: the nearest
+// ancestor group's choice, or "" to detect the repo's default branch.
+func (r *runtime) groupBase(group string) (string, error) {
+	groups, err := r.store.Groups()
+	if err != nil {
+		return "", err
+	}
+	bases := make(map[string]string, len(groups))
+	for _, candidate := range groups {
+		bases[candidate.Name] = candidate.Base
+	}
+	for current := group; current != ""; current = parentGroup(current) {
+		if base := bases[current]; base != "" {
+			return base, nil
+		}
+	}
+	return "", nil
 }
 
 func agentToolNames(r *runtime) []string {

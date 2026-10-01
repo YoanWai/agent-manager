@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"cmp"
 	"fmt"
 	"strings"
 
@@ -203,6 +204,9 @@ func (m *Model) viewForm() string {
 		worktreeField = subtleStyle.Render("◂ ") + valueStyle.Render(worktreeVal) + subtleStyle.Render(" ▸")
 	}
 	field("worktree", worktreeField, fieldWorktree)
+	if m.formWorktreeOn() {
+		field("base", m.spawnBaseLabel(m.formSpawnDir(), m.selectedGroupPath()), fieldBase)
+	}
 	// Chips are tokens inside the typed text, so they wrap and reflow with
 	// the words around them; painting happens on the rendered prompt.
 	field("prompt", m.form.prompt.renderChips(textAreaView(m.form.prompt.input)), fieldPrompt)
@@ -233,6 +237,16 @@ func (m *Model) viewForm() string {
 		hint = [][2]string{{"←→", "level"}, {"tab/↑↓", "move"}, {"↵", "create"}, {"esc", "cancel"}}
 	}
 	return m.card("◆ New Session", strings.TrimRight(b.String(), "\n"), hint)
+}
+
+// groupBaseChoice renders a group's base picker: its own ref, or auto and
+// the parent's choice that auto inherits.
+func groupBaseChoice(base, inherited string) string {
+	choice := subtleStyle.Render("◂ ") + valueStyle.Render(cmp.Or(base, "auto")) + subtleStyle.Render(" ▸")
+	if base == "" && inherited != "" {
+		choice += subtleStyle.Render("  " + inherited + " from parent")
+	}
+	return choice
 }
 
 func groupBadge(path string) string {
@@ -295,6 +309,7 @@ func (m *Model) viewGroupForm() string {
 	}
 	worktreeVal := subtleStyle.Render("◂ ") + valueStyle.Render(groupWorktreeOptions[m.groupForm.worktreeIndex]) + subtleStyle.Render(" ▸")
 	b.WriteString(formField("worktree", worktreeVal, m.groupForm.focus == gfWorktree))
+	b.WriteString(formField("base", groupBaseChoice(m.groupForm.base, m.groupBase(m.selectedGroupPath())), m.groupForm.focus == gfBase))
 	if m.groupForm.focus == gfParent {
 		b.WriteString("\n" + m.viewGroupPicker())
 	}
@@ -302,7 +317,7 @@ func (m *Model) viewGroupForm() string {
 	if m.groupForm.focus == gfParent {
 		hint = [][2]string{{"←→", "pick parent"}, {"tab/↑↓", "move"}, {"↵", "create"}, {"esc", "cancel"}}
 	}
-	if m.groupForm.focus == gfWorktree {
+	if m.groupForm.focus == gfWorktree || m.groupForm.focus == gfBase {
 		hint = [][2]string{{"tab/↑↓", "move"}, {"←→", "change"}, {"↵", "create"}, {"esc", "cancel"}}
 	}
 	if m.groupForm.focus == gfPath && m.pathSugg.active() {

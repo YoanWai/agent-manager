@@ -1024,10 +1024,10 @@ func TestGroupWorktreeRoundtrip(t *testing.T) {
 
 func TestAddGroupStoresSettingsWithoutReplacingExistingGroup(t *testing.T) {
 	st := newTestStore(t)
-	if err := st.AddGroup("backend", "/first", "off"); err != nil {
+	if err := st.AddGroup("backend", "/first", "off", "develop"); err != nil {
 		t.Fatalf("add: %v", err)
 	}
-	if err := st.AddGroup("backend", "/second", "on"); !errors.Is(err, ErrGroupExists) {
+	if err := st.AddGroup("backend", "/second", "on", "main"); !errors.Is(err, ErrGroupExists) {
 		t.Fatalf("duplicate add error = %v, want ErrGroupExists", err)
 	}
 
@@ -1035,8 +1035,35 @@ func TestAddGroupStoresSettingsWithoutReplacingExistingGroup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("groups: %v", err)
 	}
-	if len(groups) != 1 || groups[0].Path != "/first" || groups[0].Worktree != "off" {
+	if len(groups) != 1 || groups[0].Path != "/first" || groups[0].Worktree != "off" || groups[0].Base != "develop" {
 		t.Fatalf("duplicate add changed group: %+v", groups)
+	}
+}
+
+func TestGroupBaseRoundtrip(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateGroup("backend", ""); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := st.SetGroupBase("backend", "upstream/develop"); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	groups, err := st.Groups()
+	if err != nil {
+		t.Fatalf("groups: %v", err)
+	}
+	if groups[0].Base != "upstream/develop" {
+		t.Fatalf("base lost: %+v", groups[0])
+	}
+	if err := st.SetGroupBase("backend", ""); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	groups, err = st.Groups()
+	if err != nil {
+		t.Fatalf("groups: %v", err)
+	}
+	if groups[0].Base != "" {
+		t.Fatalf("base should clear back to inherit: %+v", groups[0])
 	}
 }
 
@@ -1208,6 +1235,9 @@ func TestMoveGroupReparentsSubtree(t *testing.T) {
 	if err := st.SetGroupWorktree("alpha/inner", "on"); err != nil {
 		t.Fatalf("set worktree: %v", err)
 	}
+	if err := st.SetGroupBase("alpha/inner", "develop"); err != nil {
+		t.Fatalf("set base: %v", err)
+	}
 	if err := st.CreateSession(sample("a", "alpha/inner")); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -1237,6 +1267,9 @@ func TestMoveGroupReparentsSubtree(t *testing.T) {
 	}
 	if moved.Worktree != "on" {
 		t.Fatalf("beta/inner worktree = %q, want on", moved.Worktree)
+	}
+	if moved.Base != "develop" {
+		t.Fatalf("beta/inner base = %q, want develop", moved.Base)
 	}
 	if _, ok := byName["beta/inner/deep"]; !ok {
 		t.Fatal("beta/inner/deep missing")
