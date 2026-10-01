@@ -5,6 +5,7 @@ Released binary comparisons and MCP protocol negotiation are separate checks.
 This runner does not invoke or mutate installed clients or real agent sessions.
 """
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import os
@@ -15,6 +16,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import threading
 import time
 import urllib.request
 
@@ -115,9 +117,60 @@ def run(candidate, work, tag, peer=None):
         if 'first-version task' not in tasks or 'second-version task' not in tasks:
             raise AssertionError('mixed-version tasks did not roundtrip')
         checks.append(first.name + ' shared profile task roundtrip')
+
+    home = work / 'concurrent-tasks'
+    initialize(release, home)
+    initialize(candidate, home)
+    with sqlite3.connect(profile(home) / 'state.db') as conn:
+        conn.execute("INSERT INTO sessions(id,name,tool,cwd,group_name,status,archived,created_at,last_status_at) VALUES('feedcafe','second-fixture','terminal',?,'','finished',0,?,?)", (str(home), int(time.time()), int(time.time())))
+    actors = [('candidate', candidate, 'beefcafe'), ('peer' if peer else 'released', release, 'feedcafe')]
+    create_pairs = [threading.Barrier(2) for _ in range(8)]
+    def concurrent_create(item):
+        name, binary, caller, index = item
+        title = f'concurrent-{name}-{index}'
+        create_pairs[index].wait(timeout=5)
+        task = json.loads(cli(binary, home, 'task', 'create', title, '--json', caller=caller))
+        if task.get('title') != title:
+            raise AssertionError('concurrent task creation returned wrong title')
+        return task
+    jobs = [(name, binary, caller, index) for index in range(8) for name, binary, caller in actors]
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        created = list(pool.map(concurrent_create, jobs))
+    if len({task['id'] for task in created}) != len(jobs):
+        raise AssertionError('concurrent task creation returned duplicate IDs')
+    expected = {task['id']: task['title'] for task in created}
+    for _, binary, caller in actors:
+        visible = {task['id']: task['title'] for task in json.loads(cli(binary, home, 'task', 'list', '--json', caller=caller))}
+        if any(visible.get(task_id) != title for task_id, title in expected.items()):
+            raise AssertionError('mixed-version concurrent creates lost a task')
+    races = []
+    for index in range(6):
+        task = created[index]
+        ready = threading.Barrier(2)
+        def claim(actor):
+            name, binary, caller = actor
+            env = isolated(home)
+            env['AGENT_MANAGER_SESSION_ID'] = caller
+            ready.wait(timeout=5)
+            result = subprocess.run([str(binary), 'task', 'claim', task['id'], '--json'],
+                                    cwd=home, env=env, text=True, capture_output=True, timeout=20)
+            return dict(binary=name, caller=caller, code=result.returncode, stdout=result.stdout, stderr=result.stderr)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            outcomes = list(pool.map(claim, actors))
+        winners = [result for result in outcomes if result['code'] == 0]
+        losers = [result for result in outcomes if result['code'] != 0]
+        if len(winners) != 1 or len(losers) != 1 or 'already claimed' not in losers[0]['stderr']:
+            raise AssertionError(f'mixed-version claim is not single-winner: {outcomes}')
+        for _, binary, caller in actors:
+            stored = next(row for row in json.loads(cli(binary, home, 'task', 'list', '--json', caller=caller)) if row['id'] == task['id'])
+            if stored['state'] != 'in_progress' or stored['owner'] != winners[0]['caller']:
+                raise AssertionError('claim readers disagree with winning caller')
+        races.append(dict(task_id=task['id'], outcomes=outcomes))
+    (work / 'concurrent-tasks.json').write_text(json.dumps(dict(created=created, claims=races), indent=2))
+    checks.extend(['mixed-version concurrent task creation (16 writes)', 'mixed-version task claims (6 single-winner races)'])
     return dict(status='passed', release=None if peer else tag, peer_binary=str(release),
                 peer_sha256=digest if peer else None, archive_sha256=None if peer else digest, checks=checks,
-                gaps=['installed client extension acceptance', 'live SSH', 'mixed-version concurrent writes', 'exclusive authority'])
+                gaps=['installed client extension acceptance', 'live SSH', 'mixed-version concurrent writes beyond tasks', 'exclusive authority'])
 
 
 if __name__ == '__main__':

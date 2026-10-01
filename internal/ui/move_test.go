@@ -235,3 +235,29 @@ func TestMoveAgentPickerHasNoSessionTargets(t *testing.T) {
 		}
 	}
 }
+
+func TestMoveCompletionDoesNotCloseReopenedSameTargetDialog(t *testing.T) {
+	m := buildModel(t)
+	if err := m.services.store.CreateGroup("target", ""); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "wanderer", t.TempDir(), "")
+	m.selectSessionRow(t, "wanderer")
+	m.openMove()
+	pickGroup(t, m, "target")
+	_, cmd := m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("move returned no effect command")
+	}
+	_, _ = m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m.openMove()
+	m.applyCmd(t, cmd)
+	if m.mode != modeMove {
+		t.Fatal("older move completion closed the reopened dialog")
+	}
+	got, err := m.services.store.Get(m.moveID)
+	if err != nil || got.Group != "target" {
+		t.Fatalf("accepted move did not reconcile: %+v, %v", got, err)
+	}
+}

@@ -3,6 +3,8 @@ package execution
 import (
 	"database/sql"
 	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -240,4 +242,118 @@ func TestStaleClaimFromABlockedManagerIsRetiredNotRedelivered(t *testing.T) {
 	if strings.Contains(pane, body) {
 		t.Fatalf("late tick typed the retired message: %q", pane)
 	}
+}
+
+func TestInboxRetirementDuringInFlightSendPreservesTerminalState(t *testing.T) {
+	p := pair(t, true)
+	sess := p.spawnReady(t)
+	deadline := time.Now().Add(5 * time.Second)
+	var pane string
+	for {
+		var err error
+		pane, err = p.driver.CapturePane(sess.ID)
+		if err == nil && strings.Contains(pane, "❯") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("fixture prompt not ready: %q, %v", pane, err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	body := "inflight-retirement-probe"
+	id, err := p.store.Enqueue(store.InboxMessage{
+		SessionID: sess.ID, SenderID: "sender01", SenderName: "race-probe",
+		Body: body, Fingerprint: body, SentAt: time.Now(),
+	}, store.DefaultInboxLimits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	peer, err := store.Open(p.dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { peer.Close() })
+	p.runnerB.store = peer
+	realTMux, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture := t.TempDir()
+	blocked := filepath.Join(fixture, "blocked")
+	release := filepath.Join(fixture, "release")
+	quote := func(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'" }
+	script := "#!/bin/sh\nfor arg do\nif [ \"$arg\" = load-buffer ]; then\n" +
+		": > " + quote(blocked) + "\n" +
+		"n=0\nwhile [ ! -f " + quote(release) + " ]; do\n" +
+		"n=$((n+1))\n[ \"$n\" -lt 1000 ] || exit 99\nsleep 0.01\ndone\nfi\ndone\n" +
+		"exec " + quote(realTMux) + " \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(fixture, "tmux"), []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", fixture+string(os.PathListSeparator)+os.Getenv("PATH"))
+	p.runnerA.tmux, err = tmux.NewWithSocket(testSocket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	type outcome struct {
+		sent bool
+		err  error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		sent, err := p.runnerA.maybeDeliverInbox(sess, pane, status.Idle, true)
+		done <- outcome{sent, err}
+	}()
+	joined := false
+	t.Cleanup(func() {
+		os.WriteFile(release, nil, 0o600)
+		if !joined {
+			select {
+			case <-done:
+			case <-time.After(12 * time.Second):
+				t.Error("blocked delivery did not stop")
+			}
+		}
+	})
+	deadline = time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(blocked); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("delivery did not reach the post-claim paste boundary")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	claim, err := peer.Message(id, "sender01")
+	if err != nil || claim.ClaimedAt.IsZero() {
+		t.Fatalf("blocked send has no durable claim: %+v, %v", claim, err)
+	}
+	rawSQL(t, p.dbPath, fmt.Sprintf("UPDATE session_inbox SET claimed_at = %d WHERE id = %d", time.Now().Add(-31*time.Second).UnixNano(), id))
+	if sent, err := p.runnerB.maybeDeliverInbox(sess, pane, status.Idle, true); sent || err == nil {
+		t.Fatalf("peer retirement = %v, %v", sent, err)
+	}
+	retired, err := peer.Message(id, "sender01")
+	if err != nil || retired.DroppedAt.IsZero() || retired.DeliveredAt.IsZero() {
+		t.Fatalf("retired claim = %+v, %v", retired, err)
+	}
+	if err := os.WriteFile(release, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var result outcome
+	select {
+	case result = <-done:
+		joined = true
+	case <-time.After(12 * time.Second):
+		t.Fatal("released delivery did not finish")
+	}
+	final, err := peer.Message(id, "sender01")
+	if err != nil || !final.DroppedAt.Equal(retired.DroppedAt) || !final.DeliveredAt.Equal(retired.DeliveredAt) {
+		t.Fatalf("late completion changed terminal retirement: before=%+v after=%+v err=%v", retired, final, err)
+	}
+	after, err := p.driver.CapturePane(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("retirement probe: late_paste=%v runner_reported_sent=%v send_error=%v", strings.Contains(after, body), result.sent, result.err)
 }

@@ -29,6 +29,7 @@ func (m *Model) openMove() {
 			m.appendAgentMoveTargets()
 		}
 	}
+	m.dialogGen++
 	m.mode = modeMove
 	m.errBar.text = ""
 }

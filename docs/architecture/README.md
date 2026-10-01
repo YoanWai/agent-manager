@@ -1,6 +1,6 @@
 # Application architecture
 
-PR #2 implements a local application boundary refactor. It is partially conformant to the broader architecture proposed in PR #1 and issue #646. Shared lifecycle and UI-free maintenance are implemented. Help, Review, Focus, and Rail have feature-owned packages, and rendering reads a prepared frame. Nonblocking lifecycle effects, remote workspace coordination, and exclusive execution authority remain incomplete.
+PR #2 implements a local application boundary refactor. It is partially conformant to the broader architecture proposed in PR #1 and issue #646. Shared lifecycle and UI-free maintenance are implemented. Help, Review, Focus, and Rail have feature-owned packages, and rendering reads a prepared frame. The ordered lane covers lifecycle, dialog writes, Review mutations and Focus preparation. Remaining synchronous I/O, remote workspace coordination and exclusive execution authority remain incomplete.
 
 These documents retain the broader target. A requirement described here is not evidence that its implementation exists.
 
@@ -35,3 +35,5 @@ The maintained contract reconciles these original records:
 File organization follows the maintainability direction of [issue #646](https://github.com/YoanWai/agent-manager/issues/646). Smaller files and feature types help reviewers. Neither establishes authority, compatibility, or nonblocking behavior by itself.
 
 [Ordered UI effects](ui-effects.md) records captured requests, partial reconciliation, FIFO execution, shutdown and remaining synchronous paths.
+
+[In-flight delivery](in-flight-delivery.md) records the reproduced claim-retirement gap and the single-manager pilot boundary.

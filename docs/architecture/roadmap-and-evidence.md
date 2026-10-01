@@ -12,12 +12,12 @@ The initial application-boundary audit used implementation commit `c7a7e8247190f
 | Immediate reconciliation of partial lifecycle effects | Implemented for human lifecycle | [Typed completion reconciliation](../../internal/ui/effect_lifecycle.go) applies durable rows/groups before errors; row restoration and ancestor flags commit atomically. Pane effects remain distinct from membership |
 | Feature-owned UI behavior and narrow contracts | Partial across the whole UI | [Help, Review, Focus, and Rail](ui-feature-packages.md) own policy behind private models and typed value contracts. Other dialogs remain root methods; [services](../../internal/ui/model_services.go) stays in root composition |
 | UI feature packages and directory boundaries | Implemented for these four features | [Feature contracts](ui-feature-packages.md), [pure review data](review-data.md), and a [transitive production dependency check](../../tools/architecture/check-ui-boundaries) reject root and runtime imports |
-| Repeatable process and TUI end-to-end coverage | Partial | The [committed harness](../../tools/e2e/README.md) and CI exercise Help, Review, Focus, Rail, terminal creation, and clean exit. CLI/MCP/headless/extension flows and the full product matrix remain follow-ups |
-| Nonblocking Update and read-only View | Partial | [Frame preparation](../../internal/ui/model_view.go) runs after dispatch; View only reads the prepared string. [Captured typed commands](ui-effects.md) run lifecycle, Rail, geometry, attach, spawn/fork/group, rename/move and settings persistence outside Update; preflight, keybinding saves, review and focus/acknowledgement paths remain follow-ups |
+| Repeatable process and TUI end-to-end coverage | Partial | The [committed harness](../../tools/e2e/README.md) exercises Help, Review, Focus, Rail, spawn/group/move/rename/settings/fork, partial settings saves, fixture installation failure/retry, accepted-write quit drain and clean exit. Released CLI/MCP and task contracts have separate disposable matrices; headless/extension and the full product matrix remain follow-ups |
+| Nonblocking Update and read-only View | Partial | [Frame preparation](../../internal/ui/model_view.go) runs after dispatch; View only reads the prepared string. [Captured typed commands](ui-effects.md) run lifecycle, Rail, geometry, attach, spawn/fork/group, rename/move, settings/keybinding persistence, Review mutations and Focus/acknowledgment/detach outside Update. Preflight reads, raw keys/paste and installation handling remain synchronous |
 | Files organized by concern and source-adjacent tests throughout | Partial | Execution, sessioncmd, and UI concern families are implemented. Store, status, and tmux taxonomy remain future work; file moves do not establish feature ownership |
 | Production controller workspace and remote adapter | Deferred | Saved connections and SSH remain historical PR #1 experiments |
-| Exclusive authority and historical writer cutover | Deferred | [ClaimPoller](../../internal/execution/poller.go) retains socket-based coordination without process-instance fencing |
-| Released-client compatibility | Deferred | Current pinned SDK checks older MCP protocol modes; synthetic PR #1 revisions are not released-client evidence |
+| Exclusive authority and historical writer cutover | Deferred | The [Runner](../../internal/execution/poller.go) uses socket-based ClaimPoller coordination without process-instance fencing; [late delivery after retirement](in-flight-delivery.md) is reproduced |
+| Released-client compatibility | Partial for named endpoint contracts | Checksummed v0.38.0/v0.39.0 CLI/MCP, sequential tasks and concurrent task create/claim matrices pass. Installed extensions, other mutation families and live-owner cutover remain unproved |
 | Extensions using canonical production commands | Implemented for representative examples | [extensions](../../examples/extensions) demonstrate observations and explicit archive, not a general plugin platform |
 
 Nonblocking Update and read-only View are existing requirements, not optional polish. Prepared-frame rendering now resolves the View mutation requirement. Preserved synchronous UI paths still need conversion without hiding I/O behind a differently named method.
@@ -49,7 +49,7 @@ Hosted checks must be inspected for the published head separately. None of these
 | 1. Documentation | Reconcile historical rationale, current code, and future contracts | Source trace, local links, independent claim review; no behavior change |
 | 2. Mechanical file splits | Sessioncmd and UI now use concern families; store, status, and tmux remain future work | Sessioncmd preserves 318 declarations; UI preserves 2,371 declarations. The UI comparator checks comments, exported names, build constraints, and init function order; initializer-order notices require source review |
 | 3. UI feature packages | Help, Review, Focus, and Rail own interaction policy in child packages; root retains concrete adapters, navigation, and final frame composition | Pure feature tests, copied-data alias tests, dependency checks, root dispatch contracts, and committed TUI smoke |
-| 4. Async effects and layout | Prepared geometry, read-only View and ordered lifecycle/Rail/geometry/attach, spawn/fork/group, rename/move and settings commands are implemented; migrate remaining synchronous families in bounded units | Blocked-adapter tests prove Update returns; generation tests prove stale rejection; partial-failure tests prove completed archive and restore effects reconcile immediately; prepared-frame and real geometry checks remain regression gates |
+| 4. Async effects and layout | Prepared geometry, read-only View and ordered lifecycle/Rail/geometry/attach, spawn/fork/group, rename/move, settings/keys, Review and Focus/acknowledgment/detach commands are implemented; migrate remaining synchronous families in bounded units | Blocked-adapter tests prove Update returns; generation tests prove stale rejection; partial-failure tests prove completed archive and restore effects reconcile immediately; prepared-frame and real geometry checks remain regression gates |
 | 5. Workspace and authority rollout | Ship one saved connection/read use case, then one guarded canonical mutation and writer cutover | Supported historical binaries, real SSH, failure races, single maintenance proof, and explicit old-writer policy |
 
 Each unit needs its own implementation plan. Split unit 4 by feature and unit 5 by contract rather than landing one large rewrite. Concern-based moves and behavior changes remain separately reviewable commits.
@@ -94,7 +94,7 @@ dialogs, captured fork-source identity, and recorded-fork retries without repeat
 keys. Inventory mutations also advance the existing stale-poll fence.
 
 Remaining acceptance includes real-terminal failure/quit-drain scenarios for these
-dialogs, keybinding persistence and the other synchronous paths listed in the
+dialogs, keybinding-file failure acceptance and the other synchronous paths listed in the
 effect contract. Historical-client and cross-process authority evidence remains
 required. A long runner reflow can delay its heartbeat; reproduce that separately
 with two disposable managers before changing leader-election semantics.
@@ -123,7 +123,7 @@ cleanup contracts use unrelated sentinel resources to catch scope escapes.
 The standalone release and two-manager gates remain separate from the fast
 suite; their runtime and exact coverage are documented in tools/compatibility.
 
-Remaining acceptance includes real-terminal partial settings/file failure,
+Remaining acceptance includes keybinding-file partial failures, real vendor
 installation retries, newer/reopened dialog races while a worker is blocked,
 real provider conversation capture, installed client extensions, mixed-version
 concurrent mutations and in-flight delivery authority, and real SSH/platform
@@ -138,3 +138,44 @@ Checksummed v0.38.0/v0.39.0 release matrices and a copied native dev binary
 passed disposable CLI/MCP and sequential task roundtrips. Two actual manager
 processes passed heartbeat takeover and reclamation. Hosted CI must be checked
 at the published head separately.
+
+### Pilot-gate follow-up
+
+The coordinator accepted the Qwen documentation audit selectively. Keys, Focus
+and Review are implemented on the root lane; preflight reads remain synchronous.
+The UI inventory was regenerated and remains 257 Go files, including 214 root
+files. The explicit file map now includes all three recovered effect families.
+
+The failure suite covers a true settings partial commit, installation-script
+path refusal and one successful fixture installation retry in 3.32 seconds.
+A controlled PATH excludes an already-installed host CLI.
+Removing runtime preference reconciliation made the partial-save case fail;
+restored production code passes. These cases do not prove real vendor installers
+or provider session discovery.
+
+Released v0.38.0/v0.39.0 and copied dev matrices additionally cover concurrent
+task creation and single-winner claims. Other concurrent mutations remain
+unproved. The [in-flight probe](in-flight-delivery.md) reproduced late transport
+after claim retirement; concurrent execution owners on one profile remain a
+pilot blocker. A single-manager pilot is a separate acceptance decision.
+
+Blocked actual-binary rename/move checks now reopen the same target before
+releasing a SQLite write barrier. They exposed and fixed a missing generation
+increment in `openMove`; the focused unit regression fails before the fix. The binary scenario can
+pass before an old completion is processed, so it is not the deterministic
+generation-fence regression.
+Settings reopening behind an in-flight save still blocks on synchronous
+preflight reads. The candidate focus fixture did not reach the required finished
+state, so it establishes no foreground-race evidence. Blocked settings/focus
+acceptance remains deferred. All three bounded Qwen pilot workers are stopped
+and their original artifacts are preserved; coordinator checks replace worker
+status labels as acceptance evidence.
+
+Final pilot-gate integration passed `go test -race -p 1 ./...` with private
+tmux state and `/bin/sh` (UI 260.961 seconds; unchanged packages used valid
+cached results), build/vet/format/whitespace and six boundary guards. Fifteen
+E2E contracts and four compatibility cleanup contracts pass. The final binary
+smoke took 2.05 seconds, existing dialog/drain checks 7.40 seconds, partial/install
+cases 3.32 seconds and bounded rename/move observations 8.07 seconds. CI includes
+the new fixture suites and retains their evidence. Hosted checks must be verified
+at the new published head separately.

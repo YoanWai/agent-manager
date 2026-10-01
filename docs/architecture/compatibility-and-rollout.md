@@ -56,7 +56,11 @@ reports `dev`; it was additionally copied into the disposable matrix with SHA256
 Its CLI/MCP and sequential task roundtrips passed without opening the live profile.
 This is endpoint compatibility evidence, not a concurrent live-owner cutover. It exercises CLI session/task operations,
 five MCP protocol negotiation requests, and sequential profile task-write/read roundtrips
-in both version orders. Protocol requests are not five historical client builds.
+in both version orders. Concurrent task checks additionally create 16 rows and
+race six claims through two binaries, preserving every created row and one
+claim winner as observed by both readers. These passed against v0.38.0, v0.39.0
+and the copied native dev binary. Other mutation families remain unproved.
+Protocol requests are not five historical client builds.
 No installed client configuration is changed.
 
 `tools/compatibility/two_manager.sh /absolute/path/agent-manager` runs two real
@@ -65,9 +69,14 @@ pauses one process beyond the heartbeat horizon, verifies takeover, resumes it
 without stealing a fresh competitor stamp, then verifies reclamation after the
 competitor exits. Separate store/runner tests cover stale-claim retirement and
 competing claims. These tests do not establish exclusive ownership of in-flight
-transport effects, mixed-release concurrent writers, or real SSH compatibility.
+transport effects, mixed-release concurrent writes beyond the task checks, or real SSH compatibility.
 
 Disposable tests use absolute `tmux -S` paths. A missing `TMUX_TMPDIR` can cause
 `tmux -L agentmgr` to resolve to the live server, so named-socket cleanup is not
 allowed in these process fixtures. Cleanup tests verify unrelated sentinel
 servers and processes survive even when fixture directories are missing.
+
+The [in-flight delivery probe](in-flight-delivery.md) reproduced a paused sender
+typing after another Runner retired its claim, while the stored row still
+reported a drop. Use one manager process per profile for a bounded pilot;
+concurrent execution-owner acceptance remains blocked.
