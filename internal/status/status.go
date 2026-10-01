@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
 
@@ -46,6 +47,9 @@ type toolRules struct {
 	turnEnd        *regexp.Regexp
 	chromeLine     *regexp.Regexp
 	chromeBlock    *regexp.Regexp
+	queueItem      *regexp.Regexp
+	queueStart     *regexp.Regexp
+	queueFooter    *regexp.Regexp
 	blockedLine    *regexp.Regexp
 	trailingNote   *regexp.Regexp
 	busyLine       *regexp.Regexp
@@ -89,6 +93,9 @@ func NewEngine(cfg config.Config) (*Engine, error) {
 			{tool.TurnEnd, &tr.turnEnd},
 			{tool.ChromeLine, &tr.chromeLine},
 			{tool.ChromeBlock, &tr.chromeBlock},
+			{tool.QueueItem, &tr.queueItem},
+			{tool.QueueStart, &tr.queueStart},
+			{tool.QueueFooter, &tr.queueFooter},
 			{tool.BlockedLine, &tr.blockedLine},
 			{tool.TrailingNote, &tr.trailingNote},
 			{tool.BusyLine, &tr.busyLine},
@@ -451,6 +458,7 @@ func (e *Engine) LastMessage(tool, pane string) (line string, anchored, ok bool)
 			return q, true, true
 		}
 	}
+	region, _ = tr.withoutLiveQueue(region, pane)
 	lines := strings.Split(region, "\n")
 	inBlock := tr.chromeBlockRows(lines)
 	if tr.dialogOpen(pane[len(region):]) {
@@ -544,6 +552,62 @@ var (
 	boxedText      = regexp.MustCompile(`^│ ([^│]*?)\s*│\s*$`)
 )
 
+func (tr toolRules) withoutLiveQueue(region, pane string) (string, bool) {
+	if tr.queueItem == nil || tr.queueFooter == nil {
+		return region, false
+	}
+	lines := strings.Split(strings.TrimRight(pane, "\n"), "\n")
+	if len(lines) > 12 {
+		lines = lines[len(lines)-12:]
+	}
+	tail := strings.Join(lines, "\n")
+	locs := tr.queueFooter.FindAllStringIndex(tail, -1)
+	if len(locs) == 0 {
+		return region, false
+	}
+	for _, row := range strings.Split(tail[locs[len(locs)-1][1]:], "\n") {
+		row = strings.TrimSpace(row)
+		if row == "" || tr.inputRow(row) || tr.chromeLine != nil && tr.chromeLine.MatchString(row) {
+			continue
+		}
+		return region, false
+	}
+	offset := 0
+	start, firstItem, lastItem := -1, -1, -1
+	startIndent := -1
+	startIsHeader := false
+	for _, line := range strings.SplitAfter(region, "\n") {
+		item := tr.queueItem.MatchString(line)
+		if item {
+			if firstItem < 0 {
+				firstItem = offset
+			}
+			lastItem = offset
+		}
+		if tr.queueStart != nil && tr.queueStart.MatchString(line) {
+			if !item {
+				start = offset
+				startIsHeader = true
+			} else if !startIsHeader {
+				indent := utf8.RuneCountInString(line[:strings.IndexByte(line, '#')])
+				// A deeper #1 belongs to the current queued request.
+				if startIndent < 0 || indent <= startIndent {
+					start = offset
+					startIndent = indent
+				}
+			}
+		}
+		offset += len(line)
+	}
+	if start < 0 || start > lastItem {
+		start = firstItem
+	}
+	if start < 0 {
+		return region, false
+	}
+	return region[:start], true
+}
+
 func (tr toolRules) dialogOpen(cutoffTail string) bool {
 	footer, ok := footerBelow(cutoffTail)
 	return ok && tr.dialogFooter != nil && tr.dialogFooter.MatchString(footer)
@@ -586,35 +650,62 @@ func (e *Engine) Plain(tool, pane string) string {
 	return ansi.Strip(strings.Join(lines, "\n"))
 }
 
-// chromeBlockRows marks the rows of each chrome_block: the matching row and
-// every row drawn straight under it, up to the next blank row.
+// chromeBlockRows marks each chrome block up to its next blank row. Prompt
+// echoes also own deeper-indented continuation rows across blank paragraphs.
 func (tr toolRules) chromeBlockRows(lines []string) []bool {
 	inBlock := make([]bool, len(lines))
 	if tr.chromeBlock == nil {
 		return inBlock
 	}
-	open := false
-	for i, raw := range lines {
-		line := strings.TrimRight(raw, " \t")
+	for i := 0; i < len(lines); {
+		line := strings.TrimRight(lines[i], " \t")
 		if strings.TrimSpace(line) == "" {
-			open = false
+			i++
 			continue
 		}
 		matchText := line
-		if !open {
-			// a heading wraps over up to four rows on the narrowest pane
-			for j := i + 1; j < len(lines) && j <= i+3; j++ {
-				next := strings.TrimRight(lines[j], " \t")
-				if strings.TrimSpace(next) == "" {
-					break
-				}
-				matchText += "\n" + next
+		// A heading wraps over up to four rows on the narrowest pane.
+		for j := i + 1; j < len(lines) && j <= i+3; j++ {
+			next := strings.TrimRight(lines[j], " \t")
+			if strings.TrimSpace(next) == "" {
+				break
 			}
+			matchText += "\n" + next
 		}
-		open = open || tr.chromeBlock.MatchString(matchText)
-		inBlock[i] = open
+		if !tr.chromeBlock.MatchString(matchText) {
+			i++
+			continue
+		}
+		end := tr.chromeBlockEnd(lines, i)
+		for ; i < end; i++ {
+			inBlock[i] = true
+		}
 	}
 	return inBlock
+}
+
+func (tr toolRules) chromeBlockEnd(lines []string, i int) int {
+	for i < len(lines) {
+		line := strings.TrimRight(lines[i], " \t")
+		if strings.TrimSpace(line) == "" {
+			return i
+		}
+		text := strings.TrimLeft(line, " \t")
+		i++
+		if !tr.inputRow(text) {
+			continue
+		}
+		promptIndent := len(line) - len(text)
+		for i < len(lines) {
+			line := lines[i]
+			indent := len(line) - len(strings.TrimLeft(line, " \t"))
+			if strings.TrimSpace(line) != "" && indent <= promptIndent {
+				return i
+			}
+			i++
+		}
+	}
+	return i
 }
 
 // isStructural reports whether line is the tool's own frame - chrome, a
@@ -660,9 +751,14 @@ func (e *Engine) FullTurnText(tool, pane string) (text string, bounded, ok bool)
 	if !ok {
 		return "", false, false
 	}
+	var queueRemoved bool
+	region, queueRemoved = tr.withoutLiveQueue(region, pane)
 	lines := strings.Split(region, "\n")
 	fromPane := false
 	if !slices.ContainsFunc(lines, tr.isContent) {
+		if queueRemoved {
+			return "", false, true
+		}
 		// pi opens its region at the pane origin on purpose, so that a
 		// reflow can never read as fresh output. Nothing is there to copy,
 		// and the pane itself is what the user is looking at.
