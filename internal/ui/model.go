@@ -1882,7 +1882,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Ctrl+R and F3 inside the session leave a marker before
 		// detaching; consume it here and carry it out for the session just
 		// attached.
-		request, err := m.tmux.PendingRequest()
+		request, err := m.tmux.PendingRequest(msg.sessID)
 		if err != nil {
 			m.errBar.text = err.Error()
 		} else if request != "" {
@@ -1890,7 +1890,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// request on every later detach, so surface it and stay in the
 			// list rather than letting the request reset m.errBar.text and
 			// hide it.
-			if clearErr := m.tmux.ClearRequest(); clearErr != nil {
+			if clearErr := m.tmux.ClearRequest(msg.sessID); clearErr != nil {
 				m.errBar.text = clearErr.Error()
 				m.requestRefresh()
 				return m, nil

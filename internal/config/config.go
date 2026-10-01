@@ -794,8 +794,9 @@ default_status = "idle"
 # A generic prompt row (a bare marker, or "yoan@mac ~ %") is where ← can
 # hand focus back to the list without costing the shell a keystroke. Up to
 # three leading tokens cover user@host-and-path prompts; % and ➜ cover
-# stock zsh and oh-my-zsh.
-input_prefix = "(?m)^\\s*(?:\\S+\\s+){0,3}[❯>$#›»→%➜]\\s"
+# stock zsh and oh-my-zsh, and "PS <path>>" covers PowerShell, whose path
+# runs into its marker and may hold spaces.
+input_prefix = "(?m)^\\s*(?:(?:\\S+\\s+){0,3}[❯>$#›»→%➜]|PS [^\\n>]*>)\\s"
 
 [tools.pi]
 command = "pi"

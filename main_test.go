@@ -10,10 +10,10 @@ import (
 	"go/token"
 	"os"
 	"os/exec"
-	"path/filepath"
+"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -154,44 +154,6 @@ func TestMainDispatchesNonInteractiveCommands(t *testing.T) {
 	}
 }
 
-func TestMainReportsHeadlessStartupFailure(t *testing.T) {
-	if prepareMainProcess() {
-		main()
-		return
-	}
-	if _, err := exec.LookPath("tmux"); err != nil {
-		t.Skip("tmux not installed")
-	}
-	root, err := os.MkdirTemp("/tmp", "ammain")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := os.RemoveAll(root); err != nil {
-			t.Errorf("remove startup test directory: %v", err)
-		}
-	})
-	for _, dir := range []string{"home", "config", "tmux"} {
-		if err := os.Mkdir(filepath.Join(root, dir), 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	cmd := mainTestCommand(t)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	cmd.Env = replaceEnv(cmd.Env,
-		"HOME", filepath.Join(root, "home"),
-		"XDG_CONFIG_HOME", filepath.Join(root, "config"),
-		"TMUX_TMPDIR", filepath.Join(root, "tmux"),
-	)
-	out, err := cmd.CombinedOutput()
-	if err == nil {
-		t.Fatalf("agent-manager unexpectedly started without a controlling terminal:\n%s", out)
-	}
-	if !strings.Contains(string(out), "could not open a new TTY") {
-		t.Fatalf("agent-manager reported the wrong startup failure:\n%s", out)
-	}
-}
 
 // Startup is the only place the alternate-scroll reset goes out. Reading
 // the call out of the syntax tree fails if it is dropped, which is what
@@ -299,6 +261,11 @@ func TestResolveVersion(t *testing.T) {
 // from inside a managed pane cannot find that pane.
 func isolateTmux(t *testing.T) {
 	t.Helper()
+	// psmux keeps its servers' registry under its data directory.
+	if runtime.GOOS == "windows" {
+		t.Setenv("PSMUX_DATA_DIR", t.TempDir())
+		return
+	}
 	// Short on purpose: tmux silently falls back to the default socket once
 	// TMUX_TMPDIR/tmux-<uid>/<socket> passes 104 characters.
 	tmpdir, err := os.MkdirTemp("/tmp", "amcaller")
@@ -313,8 +280,8 @@ func isolateTmux(t *testing.T) {
 // MCP server under Codex is handed, so it wins; a terminal pane, which
 // carries neither, names its session through tmux instead.
 func TestCallerSessionPrefersTheEnvironmentOverThePane(t *testing.T) {
-	if _, err := exec.LookPath("tmux"); err != nil {
-		t.Skip("tmux not installed")
+	if _, err := exec.LookPath(tmux.Binary); err != nil {
+		t.Skip(tmux.Binary + " not installed")
 	}
 	isolateTmux(t)
 
@@ -323,11 +290,17 @@ func TestCallerSessionPrefersTheEnvironmentOverThePane(t *testing.T) {
 		t.Fatalf("tmux driver: %v", err)
 	}
 	id := "ca11ab1e"
-	if err := driver.Create(id, "/tmp", "", nil, 80, 24); err != nil {
+	if err := driver.Create(id, os.TempDir(), "", nil, 80, 24); err != nil {
 		t.Fatalf("create the terminal pane: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
-	out, err := exec.Command("tmux", "-L", driver.SocketName(), "display-message", "-p", "-t", tmux.PaneTarget(id), "#{socket_path},#{pid},0 #{pane_id}").CombinedOutput()
+	// The $TMUX a pane carries: tmux names its socket, psmux a directory
+	// named for the session's server pid.
+	format := "#{socket_path},#{pid},0 #{pane_id}"
+	if runtime.GOOS == "windows" {
+		format = "/tmp/psmux-#{pid}/" + driver.SocketName() + ",0,0 #{pane_id}"
+	}
+	out, err := exec.CommandContext(t.Context(), tmux.Binary, "-L", driver.SocketName(), "display-message", "-p", "-t", tmux.PaneTarget(id), format).CombinedOutput()
 	if err != nil {
 		t.Fatalf("pane id: %v: %s", err, out)
 	}

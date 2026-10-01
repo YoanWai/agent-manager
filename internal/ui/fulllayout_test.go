@@ -489,7 +489,7 @@ func TestFocusFactsWriteHomeAsTilde(t *testing.T) {
 		}
 	}
 	facts := ansi.Strip(m.focusFactsLine(200))
-	if !strings.Contains(facts, "~/dev/api") {
+	if !strings.Contains(facts, filepath.Join("~", "dev", "api")) {
 		t.Fatalf("a path under home should read from ~:\n%s", facts)
 	}
 	if strings.Contains(facts, home) {

@@ -96,7 +96,7 @@ func antigravityRanIn(workspaces, id, cwd string, startedInCwd map[string]bool) 
 	if err != nil || parsed.Scheme != "file" {
 		return false
 	}
-	return resolvePath(parsed.Path) == cwd
+	return resolvePath(fileURIPath(parsed)) == cwd
 }
 
 // antigravityStartedIn is the conversation agy last started in cwd, once

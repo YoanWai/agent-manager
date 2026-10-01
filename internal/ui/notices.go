@@ -518,6 +518,9 @@ func browserCommands(goos, browser, target string) []*exec.Cmd {
 	if goos == "darwin" {
 		return []*exec.Cmd{exec.Command("open", target)}
 	}
+	if goos == "windows" {
+		return []*exec.Cmd{exec.Command("rundll32", "url.dll,FileProtocolHandler", target)}
+	}
 
 	var commands []*exec.Cmd
 	// Keep candidates as argv so shell syntax in a URL remains inert text.

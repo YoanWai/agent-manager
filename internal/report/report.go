@@ -23,6 +23,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/tmux"
 )
 
 const repo = "YoanWai/agent-manager"
@@ -47,6 +48,7 @@ const commandBudget = 10 * time.Second
 var (
 	lookPath    = exec.LookPath
 	runCommand  = run
+	muxVersion  = tmux.Version
 	goos        = runtime.GOOS
 	procVersion = "/proc/version"
 )
@@ -267,8 +269,8 @@ func route() (name, account, reason string) {
 
 func (r *Reporter) gather(sessionID string) (Context, error) {
 	gathered := Context{Version: r.version, OS: operatingSystem()}
-	if tmux, err := runCommand("tmux", "-V"); err == nil {
-		gathered.Tmux = tmux
+	if version, err := muxVersion(); err == nil {
+		gathered.Tmux = version
 	}
 	if strings.TrimSpace(sessionID) == "" {
 		return gathered, nil
@@ -343,6 +345,8 @@ func operatingSystem() string {
 			return "Windows (WSL2)"
 		}
 		return "Linux"
+	case "windows":
+		return "Windows"
 	}
 	return goos
 }

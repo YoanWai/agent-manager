@@ -79,6 +79,40 @@ func TestGrokInputPrefixBoxedAndMinimal(t *testing.T) {
 	}
 }
 
+// The shipped terminal tool reads the stock prompts of the shells a
+// terminal row runs, PowerShell's included: its path runs straight into
+// the marker and may hold spaces.
+func TestTerminalInputPrefixReadsShellPrompts(t *testing.T) {
+	cfg, err := config.Default()
+	if err != nil {
+		t.Fatalf("built-in config: %v", err)
+	}
+	engine, err := NewEngine(cfg)
+	if err != nil {
+		t.Fatalf("engine: %v", err)
+	}
+	cases := []struct {
+		name   string
+		row    string
+		prefix string
+		ok     bool
+	}{
+		{"zsh", "yoan@mac ~ % ls", "yoan@mac ~ % ", true},
+		{"bare marker", "$ ls", "$ ", true},
+		{"powershell", `PS C:\Users\yoan> dir`, `PS C:\Users\yoan> `, true},
+		{"powershell path with spaces", `PS C:\My Projects\api> `, `PS C:\My Projects\api> `, true},
+		{"output row", "Directory: C:\\Users\\yoan", "", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			prefix, ok := engine.InputPrefix("terminal", c.row)
+			if prefix != c.prefix || ok != c.ok {
+				t.Fatalf("InputPrefix = (%q, %v), want (%q, %v)", prefix, ok, c.prefix, c.ok)
+			}
+		})
+	}
+}
+
 // A tool whose composer row carries no marker can declare its own input
 // line with input_prefix. Pi composes on a bare blank row and opencode on
 // one of its blank gutter rows, so their declared prefixes are zero-width

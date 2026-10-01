@@ -3,6 +3,7 @@ package ui
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -138,7 +139,10 @@ func TestNotifyTransitionSilencedBySetting(t *testing.T) {
 func TestRefreshNotifiesWaitingTransitionOnce(t *testing.T) {
 	m := buildModel(t)
 	hooked := m.cfg.Tools["claude-hooked"]
-	hooked.Command = `sh -c 'exec cat' --`
+	// Windows' stand-in already ignores the --settings the launch appends.
+	if runtime.GOOS != "windows" {
+		hooked.Command = `sh -c 'exec cat' --`
+	}
 	m.cfg.Tools["claude-hooked"] = hooked
 	m.openForm()
 	m.form.name.SetValue("needy")

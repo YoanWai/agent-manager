@@ -225,6 +225,7 @@ func TestSessionsCreateCarriesNamePromptAndTargetWithRealTmux(t *testing.T) {
 // a revive carries them again on either pane path, since the row keeps the
 // choice.
 func TestSessionsCreateCarriesItsChoiceThroughRevive(t *testing.T) {
+	skipPOSIXShell(t)
 	for _, tc := range []struct {
 		name string
 		kill bool
@@ -1070,6 +1071,7 @@ func TestReviveRestartsTheAgentInsideItsLivePane(t *testing.T) {
 }
 
 func TestRevivePickerRecoveryCoversBothPanePaths(t *testing.T) {
+	skipPOSIXShell(t)
 	tests := []struct {
 		name string
 		tool string
@@ -1118,6 +1120,10 @@ func TestRevivePickerRecoveryCoversBothPanePaths(t *testing.T) {
 }
 
 func TestReviveRefusesWhileTheAgentIsStillRunning(t *testing.T) {
+	// The resting tool's agent is printf followed by cat: under PowerShell
+	// printf does not exist and cat is an in-process cmdlet, so the pane
+	// shell never gains the child process that marks a running agent.
+	skipPOSIXShell(t)
 	h := newSessionHarness(t)
 	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "chatty", Tool: "resting"})
 	if err != nil {

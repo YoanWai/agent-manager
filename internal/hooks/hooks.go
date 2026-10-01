@@ -60,10 +60,6 @@ type settingsFile struct {
 	Hooks map[string][]hookMatcher `json:"hooks"`
 }
 
-func statusCommand(state string) string {
-	return `printf ` + state + ` > "$` + EnvStatusFile + `"`
-}
-
 // blockingNotifications are the Notification types that leave the turn
 // stuck on the user. The event also fires for the idle reminder, for
 // authentication and for background agents finishing, none of which
@@ -91,10 +87,7 @@ func settingsContent(sessionID, statusFile string) ([]byte, error) {
 			"StopFailure":      report(limitStopFailures, status.Errored),
 			// compact fires SessionStart in the middle of an active turn
 			"SessionStart": report("startup|resume|clear", status.Idle),
-			"SessionEnd": {{Hooks: []hookCommand{{
-				Type:    "command",
-				Command: `rm -f "$` + EnvStatusFile + `"`,
-			}}}},
+			"SessionEnd":   {{Hooks: []hookCommand{{Type: "command", Command: sessionEndCommand()}}}},
 		},
 	}
 	return json.MarshalIndent(content, "", "  ")
@@ -149,8 +142,8 @@ func (m *Manager) WriteInstallScript(id, body string) (string, error) {
 	if err := os.MkdirAll(m.dir, 0o755); err != nil {
 		return "", err
 	}
-	path := filepath.Join(m.dir, id+".install.sh")
-	if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
+	path := filepath.Join(m.dir, id+installScriptExt)
+	if err := os.WriteFile(path, installScriptContent(body), 0o700); err != nil {
 		return "", err
 	}
 	return path, nil
@@ -206,7 +199,7 @@ const maxNameLength = 80
 // so the caller can consume it even when the content normalizes to
 // nothing.
 func (m *Manager) ReadName(id string) (request, name string, found bool) {
-	raw, err := os.ReadFile(m.NameFile(id))
+	raw, err := readMailbox(m.NameFile(id))
 	if err != nil {
 		return "", "", false
 	}
@@ -288,15 +281,15 @@ func (m *Manager) claimedNameFile(id string) string {
 // is picked up again ahead of anything newer. ReleaseName ends the claim.
 func (m *Manager) ClaimName(id string) (request, name string, found bool, err error) {
 	claimed := m.claimedNameFile(id)
-	raw, err := os.ReadFile(claimed)
+	raw, err := readMailbox(claimed)
 	if errors.Is(err, fs.ErrNotExist) {
-		if err := os.Rename(m.NameFile(id), claimed); err != nil {
+		if err := moveMailbox(m.NameFile(id), claimed); err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
 				return "", "", false, nil
 			}
 			return "", "", false, err
 		}
-		raw, err = os.ReadFile(claimed)
+		raw, err = readMailbox(claimed)
 	}
 	if err != nil {
 		return "", "", false, err
@@ -309,7 +302,7 @@ func (m *Manager) ClaimName(id string) (request, name string, found bool, err er
 // caller can tell its request being worked on from one a later rename
 // replaced in the mailbox before it was ever claimed.
 func (m *Manager) ClaimedRequest(id string) (request string, found bool, err error) {
-	raw, err := os.ReadFile(m.claimedNameFile(id))
+	raw, err := readMailbox(m.claimedNameFile(id))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return "", false, nil
@@ -361,7 +354,7 @@ type NameVerdict struct {
 // package writes is no answer at all, while a mailbox that cannot be read
 // is an error rather than silence, since silence reads as "not yet".
 func (m *Manager) ReadNameResult(id, request string) (verdict NameVerdict, found bool, err error) {
-	raw, err := os.ReadFile(m.NameResultFile(id, request))
+	raw, err := readMailbox(m.NameResultFile(id, request))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return NameVerdict{}, false, nil
@@ -393,7 +386,7 @@ func (m *Manager) ReviewRepoFile(id string) string {
 }
 
 func (m *Manager) ReadReviewRepo(id string) (root string, found bool) {
-	raw, err := os.ReadFile(m.ReviewRepoFile(id))
+	raw, err := readMailbox(m.ReviewRepoFile(id))
 	if err != nil {
 		return "", false
 	}
@@ -412,7 +405,7 @@ func (m *Manager) ReviewBaseFile(id string) string {
 }
 
 func (m *Manager) ReadReviewBase(id string) (root, ref string, found bool) {
-	raw, err := os.ReadFile(m.ReviewBaseFile(id))
+	raw, err := readMailbox(m.ReviewBaseFile(id))
 	if err != nil {
 		return "", "", false
 	}
@@ -435,7 +428,7 @@ func (m *Manager) ReviewScopeFile(id string) string {
 }
 
 func (m *Manager) ReadReviewScope(id string) (scope string, found bool) {
-	raw, err := os.ReadFile(m.ReviewScopeFile(id))
+	raw, err := readMailbox(m.ReviewScopeFile(id))
 	if err != nil {
 		return "", false
 	}
@@ -471,7 +464,7 @@ func WriteWhole(path, content string) (err error) {
 	if err := os.Chmod(staging.Name(), 0o644); err != nil {
 		return err
 	}
-	return os.Rename(staging.Name(), path)
+	return moveMailbox(staging.Name(), path)
 }
 
 func removeIfExists(path string) error {

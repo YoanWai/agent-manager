@@ -58,7 +58,7 @@ Status detection supports **Claude Code**, **OpenCode**, **Codex**, **Grok Build
 
 ## Install
 
-Runs on macOS and Linux, and on Windows inside [WSL2](docs/install.md#windows).
+Runs on macOS and Linux, natively on Windows with [psmux](docs/install.md#windows), and inside WSL2.
 
 ### Homebrew (macOS / Linux)
 
@@ -76,7 +76,15 @@ curl -fsSL https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.
 
 Downloads the latest release for your platform, verifies it against the published checksums, and installs it to `~/.local/bin`. Then it checks for tmux 3.1+ and git and offers to install whichever is missing through the package manager it finds (Homebrew, apt, dnf, pacman, zypper, or apk), printing the exact command when you decline. Set `AGENT_MANAGER_INSTALL_DIR` for another directory, `AGENT_MANAGER_VERSION` to pin a version, and `AGENT_MANAGER_INSTALL_DEPS=1` to answer the dependency prompt up front (`=0` to skip it).
 
-Arch Linux, mise, `go install`, prebuilt binaries, Windows (WSL2), dependencies, and updating: [docs/install.md](docs/install.md).
+### Install script (Windows)
+
+```powershell
+irm https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.ps1 | iex
+```
+
+Installs the latest release to `%LOCALAPPDATA%\Programs\agent-manager`, adds it to your user `Path`, and names the install command for psmux, git, or PowerShell 7 when one is missing.
+
+Arch Linux, mise, `go install`, prebuilt binaries, Windows (native and WSL2), dependencies, and updating: [docs/install.md](docs/install.md).
 
 ## Usage
 

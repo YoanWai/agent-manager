@@ -211,6 +211,10 @@ func Notify(event Event) {
 		if _, err := lookPath("notify-send"); err == nil && notifySend(event.ID, terminalBody, detail) == nil {
 			return
 		}
+	case "windows":
+		if windowsToast(subtitle, body, detail.windowsSound) == nil {
+			return
+		}
 	}
 	_ = emitSeq("\a")
 }

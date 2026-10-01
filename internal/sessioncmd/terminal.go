@@ -399,7 +399,8 @@ func (r *runtime) createTarget(caller store.Session, requestedGroup *string, dir
 
 func resolveTerminalDirectory(raw string) (string, error) {
 	dir := strings.TrimSpace(raw)
-	if dir == "~" || strings.HasPrefix(dir, "~/") {
+	nativeHome := "~" + string(filepath.Separator)
+	if dir == "~" || strings.HasPrefix(dir, "~/") || strings.HasPrefix(dir, nativeHome) {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return "", err
@@ -407,7 +408,7 @@ func resolveTerminalDirectory(raw string) (string, error) {
 		if dir == "~" {
 			dir = home
 		} else {
-			dir = filepath.Join(home, strings.TrimPrefix(dir, "~/"))
+			dir = filepath.Join(home, dir[2:])
 		}
 	}
 	abs, err := filepath.Abs(dir)

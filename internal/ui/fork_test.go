@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -19,9 +20,26 @@ import (
 func TestExpandForkCommandQuotesPlaceholders(t *testing.T) {
 	got := expandForkCommand("tool --fork {id} --new {new_id} --name {name} --file {session_file}", "source", "new", "Sam's fork", "/store/session.jsonl")
 	want := "tool --fork 'source' --new 'new' --name 'Sam'\\''s fork' --file '/store/session.jsonl'"
+	if runtime.GOOS == "windows" {
+		// The pane shell is PowerShell, which doubles a quote inside a
+		// single-quoted string.
+		want = "tool --fork 'source' --new 'new' --name 'Sam''s fork' --file '/store/session.jsonl'"
+	}
 	if got != want {
 		t.Fatalf("fork command = %q, want %q", got, want)
 	}
+}
+
+// captureArgsCommand is a fork command that writes the expanded
+// placeholders to file, one per line, and then runs cat. Whatever the launch
+// appends after the command (an --mcp-config, say) lands on the trailing
+// cat, not in the file.
+func captureArgsCommand(file string, placeholders ...string) string {
+	if runtime.GOOS == "windows" {
+		return fixtureModeCommand("capture-args "+tmux.ShellQuote(file)) + " " +
+			strings.Join(placeholders, " ") + "; " + catCommand()
+	}
+	return "printf '%s\\n' " + strings.Join(placeholders, " ") + " > " + tmux.ShellQuote(file) + "; cat"
 }
 
 func TestForkSelectedSessionCreatesNamedSibling(t *testing.T) {
@@ -47,7 +65,7 @@ func TestForkSelectedSessionCreatesNamedSibling(t *testing.T) {
 
 	argsFile := filepath.Join(t.TempDir(), "fork-args")
 	tool := m.cfg.Tools[source.Tool]
-	tool.ForkCommand = "printf '%s\\n' {id} {new_id} {name} > " + tmux.ShellQuote(argsFile) + "; cat"
+	tool.ForkCommand = captureArgsCommand(argsFile, "{id}", "{new_id}", "{name}")
 	m.cfg.Tools[source.Tool] = tool
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
@@ -114,7 +132,7 @@ func TestForkCarriesTheSourceChoice(t *testing.T) {
 	tool := m.cfg.Tools["claude"]
 	tool.ModelArgs = "--model {model}"
 	argsFile := filepath.Join(t.TempDir(), "fork-args")
-	tool.ForkCommand = "sh -c " + tmux.ShellQuote(`printf '%s\n' "$@" > `+tmux.ShellQuote(argsFile)+`; cat`) + " sh {id}"
+	tool.ForkCommand = argCaptureCommand(argsFile) + " {id}"
 	m.cfg.Tools["claude"] = tool
 	choice := config.Choice{Model: "opus"}
 	if err := m.spawnSession("claude", "source", t.TempDir(), "", "", false, false, choice); err != nil {
@@ -433,7 +451,7 @@ func TestForkGeminiResolvesSessionFile(t *testing.T) {
 
 	argsFile := filepath.Join(t.TempDir(), "fork-args")
 	tool := m.cfg.Tools["gemini"]
-	tool.ForkCommand = "printf '%s\\n' {session_file} > " + tmux.ShellQuote(argsFile) + "; cat"
+	tool.ForkCommand = captureArgsCommand(argsFile, "{session_file}")
 	tool.SessionStore = "gemini"
 	tool.MCP = "none"
 	m.cfg.Tools["gemini"] = tool
@@ -578,7 +596,7 @@ func forkInSourceModel(t *testing.T) (*Model, store.Session, string) {
 	tool := m.cfg.Tools[source.Tool]
 	tool.SessionStore = "muse"
 	tool.ForkKeys = "/fork"
-	tool.ForkCommand = "printf '%s\\n' {new_id} > " + tmux.ShellQuote(argsFile) + "; cat"
+	tool.ForkCommand = captureArgsCommand(argsFile, "{new_id}")
 	m.cfg.Tools[source.Tool] = tool
 	return m, source, argsFile
 }

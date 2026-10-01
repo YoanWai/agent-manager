@@ -1,10 +1,10 @@
 package tmux
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -32,6 +32,10 @@ const requestOption = "@am_request"
 
 // pinnedPrefixOption marks a prefix the manager set, the only kind unpinPrefix removes.
 const pinnedPrefixOption = "@am_pinned_prefix"
+
+// rootKeysOption is the user option where psmux servers record the root
+// keys the manager bound, so the next run can take them off.
+const rootKeysOption = "@am_root_keys"
 
 const (
 	RequestReview = "review"
@@ -108,14 +112,16 @@ func (d *Driver) PushPaneTheme() error {
 	if theme == nil {
 		return nil
 	}
-	out, err := exec.Command(d.bin, d.args(paneThemeArgs(*theme)...)...).CombinedOutput()
-	if err != nil {
-		if noServer(string(out)) {
-			return nil
+	return d.eachServer(func(id string) error {
+		out, err := d.output(append(sessionRoute(id), paneThemeArgs(*theme)...)...)
+		if err != nil {
+			if noServer(string(out)) {
+				return nil
+			}
+			return fmt.Errorf("tmux set pane theme: %w: %s", err, strings.TrimSpace(string(out)))
 		}
-		return fmt.Errorf("tmux set pane theme: %w: %s", err, strings.TrimSpace(string(out)))
-	}
-	return nil
+		return nil
+	})
 }
 
 func New() (*Driver, error) {
@@ -126,61 +132,36 @@ func New() (*Driver, error) {
 // isolated socket so their sessions never collide with the default socket or
 // with live agents on the production socket.
 func NewWithSocket(socket string) (*Driver, error) {
-	bin, err := exec.LookPath("tmux")
+	bin, err := exec.LookPath(Binary)
 	if err != nil {
-		return nil, fmt.Errorf("tmux not found on PATH: %w\n%s", err, deps.Hint("tmux"))
+		return nil, fmt.Errorf("%s not found on PATH: %w\n%s", Binary, err, deps.Hint(Binary))
 	}
+
 	return &Driver{bin: bin, socket: socket}, nil
+}
+
+// Version probes the multiplexer's own version on the manager's socket,
+// which the socket isolation invariant requires of every invocation, even
+// one that opens no server.
+func Version() (string, error) {
+	d, err := New()
+	if err != nil {
+		return "", err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, d.bin, d.args("-V")...)
+	cmd.Env = commandEnv()
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 func (d *Driver) SocketName() string {
 	return d.socket
 }
-
-// SocketPath is the file the server this driver talks to listens on. The
-// -L name does not identify a server on its own: tmux resolves it under
-// TMUX_TMPDIR, so two managers started with different values of that
-// variable drive different servers under one socket name, each blind to
-// the other's sessions.
-func (d *Driver) SocketPath() string {
-	if cached := d.socketPath.Load(); cached != nil {
-		return *cached
-	}
-	out, err := d.run("display-message", "-p", "#{socket_path}")
-	if err != nil {
-		return socketPathFromEnv(d.socket)
-	}
-	path := strings.TrimSpace(out)
-	if path == "" {
-		return socketPathFromEnv(d.socket)
-	}
-	d.socketPath.Store(&path)
-	return path
-}
-
-// socketPathFromEnv rebuilds what tmux resolves -L to, without asking a
-// server that may not be running. tmux reports the path with its symlinks
-// resolved, so this does too and the two agree once a server exists.
-func socketPathFromEnv(socket string) string {
-	dir := "/tmp"
-	// tmux skips a TMUX_TMPDIR it cannot resolve.
-	if custom := os.Getenv("TMUX_TMPDIR"); custom != "" {
-		if _, err := os.Stat(custom); err == nil {
-			dir = custom
-		}
-	}
-	// tmux takes a relative TMUX_TMPDIR from its own working directory and
-	// reports the resolved path, so the same absolute form is what a session
-	// has to be stamped with for a later poll to recognise it.
-	if absolute, err := filepath.Abs(dir); err == nil {
-		dir = absolute
-	}
-	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
-		dir = resolved
-	}
-	return filepath.Join(dir, fmt.Sprintf("tmux-%d", os.Getuid()), socket)
-}
-
 func sessionName(id string) string {
 	return prefix + id
 }
@@ -189,7 +170,7 @@ func sessionName(id string) string {
 // session's first, which is not the session's current window once anyone
 // opens a second one inside it.
 func windowTarget(id string) string {
-	return sessionName(id) + ":^"
+	return sessionName(id) + ":" + firstWindow
 }
 
 // PaneTarget addresses the pane the agent itself runs in. A bare session
@@ -209,17 +190,51 @@ func (d *Driver) args(a ...string) []string {
 	return append([]string{"-L", d.socket}, a...)
 }
 
+// command builds one invocation of the multiplexer on this driver's socket.
+func (d *Driver) command(args ...string) *exec.Cmd {
+	cmd := exec.Command(d.bin, d.args(args...)...)
+	cmd.Env = commandEnv()
+	return cmd
+}
+
+// output runs a command list and returns everything it printed. tmux takes
+// the list in one invocation; psmux's command line reads only one command,
+// so there each runs on its own, stopping at the first that fails the way
+// tmux does.
+func (d *Driver) output(args ...string) ([]byte, error) {
+	commands := splitCommandList(args)
+	if len(commands) == 1 {
+		return d.command(commands[0]...).CombinedOutput()
+	}
+	var out []byte
+	for _, command := range commands {
+		data, err := d.command(command...).CombinedOutput()
+		out = append(out, data...)
+		if err != nil {
+			return out, err
+		}
+	}
+	return out, nil
+}
+
 func (d *Driver) run(args ...string) (string, error) {
 	release, err := enterGate(d.socket, false)
 	if err != nil {
 		return "", err
 	}
 	defer release()
-	out, err := exec.Command(d.bin, d.args(args...)...).CombinedOutput()
+	out, err := d.output(args...)
 	if err != nil {
 		return "", fmt.Errorf("tmux %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
 	return string(out), nil
+}
+
+// runIn runs a command on the server that hosts session id. tmux has one
+// server for every session, so this is run; psmux runs a server per
+// session, and a command without a target goes to whichever it finds.
+func (d *Driver) runIn(id string, args ...string) (string, error) {
+	return d.run(append(sessionRoute(id), args...)...)
 }
 
 // commandList joins commands into the single invocation tmux takes for a
@@ -246,32 +261,23 @@ var afterCreateThemeLoad func()
 
 func (d *Driver) Create(id, cwd, command string, env map[string]string, width, height int) error {
 	name := sessionName(id)
-	var args []string
-	// Hold the push lock across loading the theme and the command list that
+	// Hold the push lock across loading the theme and the command that
 	// writes it, so a concurrent PushPaneTheme cannot land a newer theme
 	// between the load and the write and be clobbered by this stale one.
 	d.paneThemePush.Lock()
-	// Ahead of new-session in the same command list, so the options are in
-	// place before the pane process exists and can query its background.
+	theme := d.paneTheme.Load()
 	var colorFgBg string
-	if theme := d.paneTheme.Load(); theme != nil {
-		args = append(paneThemeArgs(*theme), ";")
+	if theme != nil {
 		colorFgBg = theme.ColorFgBg
 	}
 	if afterCreateThemeLoad != nil {
 		afterCreateThemeLoad()
 	}
-	args = append(args, "new-session", "-d", "-s", name, "-c", cwd)
-	// A detached session sizes to tmux's 80x24 default and holds it until a
-	// client attaches, so its pane preview renders narrow. Booting at the
-	// preview panel's size makes the preview fit from the first frame.
-	if width > 0 && height > 0 {
-		args = append(args, "-x", strconv.Itoa(width), "-y", strconv.Itoa(height))
-	}
-	// Launch via a short `sh <script>` window command. Typing the full line
-	// with send-keys truncates around 1024 bytes, which breaks long first
-	// prompts mid-path. A script has no practical length limit, and exec'ing
-	// the user shell afterwards matches "type into a shell" (pane stays up).
+	// Launch through a script. Typing the full line with send-keys
+	// truncates around 1024 bytes, which breaks long first prompts
+	// mid-path. A script has no practical length limit, and handing the
+	// pane to the user's shell afterwards matches "type into a shell"
+	// (pane stays up).
 	var scriptPath string
 	if command != "" {
 		var err error
@@ -280,9 +286,8 @@ func (d *Driver) Create(id, cwd, command string, env map[string]string, width, h
 			d.paneThemePush.Unlock()
 			return err
 		}
-		args = append(args, "sh "+ShellQuote(scriptPath))
 	}
-	_, runErr := d.run(args...)
+	runErr := d.startSession(id, cwd, width, height, scriptPath, theme)
 	d.paneThemePush.Unlock()
 	if runErr != nil {
 		if scriptPath != "" {
@@ -297,38 +302,6 @@ func (d *Driver) Create(id, cwd, command string, env map[string]string, width, h
 	return nil
 }
 
-// ShellQuote wraps a string in single quotes for POSIX sh; the config
-// dir on macOS contains a space, so paths sent into panes must be quoted.
-func ShellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
-}
-
-// ExportEnv prefixes a command with exports of the session environment, for
-// a command typed into a pane whose shell does not carry it: a session
-// launched before the manager started exporting these values still holds a
-// shell that never received them, and it keeps them once this agent exits
-// too.
-func ExportEnv(env map[string]string, command string) string {
-	var line strings.Builder
-	for _, key := range sortedKeys(env) {
-		line.WriteString("export " + key + "=" + ShellQuote(env[key]) + "; ")
-	}
-	line.WriteString(command)
-	return line.String()
-}
-
-// exportLines exports the session environment into the pane's shell, so it
-// outlives the launch command. Quitting the agent leaves a shell that still
-// knows which managed session it belongs to, and an agent started again
-// from that shell is the same session to every manager subcommand.
-func exportLines(env map[string]string) string {
-	var lines strings.Builder
-	for _, key := range sortedKeys(env) {
-		lines.WriteString("export " + key + "=" + ShellQuote(env[key]) + "\n")
-	}
-	return lines.String()
-}
-
 func sortedKeys(env map[string]string) []string {
 	keys := make([]string, 0, len(env))
 	for key := range env {
@@ -338,43 +311,12 @@ func sortedKeys(env map[string]string) []string {
 	return keys
 }
 
-func launchScriptPath(id string) string {
-	return filepath.Join(os.TempDir(), "am-launch-"+id+".sh")
-}
-
 // relaunchHint lands in the pane the moment the agent exits, which is where
 // the user is looking when they wonder how to get it back.
 const relaunchHint = "agent-manager: agent exited - press v in Agent Manager to relaunch it here."
 
-func writeLaunchScript(id string, env map[string]string, command, colorFgBg string) (string, error) {
-	path := launchScriptPath(id)
-	shell := os.Getenv("SHELL")
-	if shell == "" {
-		shell = "/bin/sh"
-	}
-	// Export COLORFGBG in the pane itself. The global option tmux carries in
-	// its environment does not reach this first process — it inherits the
-	// server's own environment, fixed when the server started, so a host
-	// shell that exports COLORFGBG hands the agent that stale pair instead.
-	// Exporting here lands the theme's value on the agent regardless.
-	var header string
-	if colorFgBg != "" {
-		header = "export COLORFGBG=" + ShellQuote(colorFgBg) + "\n"
-	}
-	// set -m puts the agent in its own process group, so tmux reports the
-	// agent's cwd as pane_current_path rather than this script's, which
-	// never moves.
-	body := "#!/bin/sh\nset -m\n" + header + exportLines(env) + command + "\n" +
-		"printf '%s\\n' " + ShellQuote(relaunchHint) + "\n" +
-		"exec " + ShellQuote(shell) + "\n"
-	if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
-		return "", fmt.Errorf("launch script: %w", err)
-	}
-	return path, nil
-}
-
 func (d *Driver) installSessionUX(name string) error {
-	if err := d.EnsureBindings(); err != nil {
+	if err := d.ensureBindingsIn(strings.TrimPrefix(name, prefix)); err != nil {
 		return err
 	}
 	// A new session carries no pin to take off, so only a chosen prefix needs work here.
@@ -433,7 +375,7 @@ func (d *Driver) resolvedOption(name, option string) (string, error) {
 	if value = strings.TrimSpace(value); value != "" {
 		return value, nil
 	}
-	global, err := d.run("show-options", "-g", "-v", option)
+	global, err := d.runIn(strings.TrimPrefix(name, prefix), "show-options", "-g", "-v", option)
 	if err != nil {
 		return "", err
 	}
@@ -459,8 +401,8 @@ func (d *Driver) styleStatusBar(name string) error {
 		{"set-option", "-t", name, "status-right", attachStatusRight(primary, secondary, d.currentSessionKeys())},
 		{"set-option", "-t", name, "status-style", "bg=colour236,fg=colour249"},
 		// hide the "0:windowname*" window list; it reads as noise here
-		{"set-option", "-t", name, "window-status-format", ""},
-		{"set-option", "-t", name, "window-status-current-format", ""},
+		{"set-option", "-t", name, "window-status-format", hiddenWindowStatus},
+		{"set-option", "-t", name, "window-status-current-format", hiddenWindowStatus},
 		// mouse on so tmux handles scrollback per-session instead of the
 		// terminal emulator, whose buffer carries content from prior attaches.
 		{"set-option", "-t", name, "mouse", "on"},
@@ -510,8 +452,9 @@ func titled(key keybind.Key) string {
 }
 
 // ownedBindingTest is the session-name check every root binding the
-// manager installs carries, so that on the next run its own bindings can
-// be told from the ones the user's tmux.conf put on this server.
+// manager installs on tmux carries, so that on the next run its own
+// bindings can be told from the ones the user's tmux.conf put on this
+// server. psmux records its keys instead (rootKeysOption).
 const ownedBindingTest = "#{m:" + prefix + "*,#{session_name}}"
 
 // EnsureBindings installs the server-wide setup every managed session
@@ -524,70 +467,46 @@ const ownedBindingTest = "#{m:" + prefix + "*,#{session_name}}"
 // The bindings an earlier run installed come off first, whatever keys
 // that run was configured with: a key the user moved or turned off would
 // otherwise stay bound until the server restarts.
+//
+// psmux keeps options and bindings per session server, so there the setup
+// goes to every managed session's server in turn.
 func (d *Driver) EnsureBindings() error {
-	stale, err := d.ownedRootBindings()
+	return d.eachServer(d.ensureBindingsIn)
+}
+
+// ensureBindingsIn installs the setup on the server hosting session id.
+func (d *Driver) ensureBindingsIn(id string) error {
+	stale, err := d.ownedRootBindings(id)
 	if err != nil {
 		return err
 	}
 	keys := d.currentSessionKeys()
-	request := func(name string) string {
-		return "set-option -g " + requestOption + " " + name + " ; detach-client"
-	}
 	commands := [][]string{
 		{"set-window-option", "-g", "pane-base-index", "0"},
 	}
 	for _, key := range stale {
 		commands = append(commands, []string{"unbind-key", "-T", "root", key})
 	}
-	for _, key := range keys.Binding(keybind.Detach).Keys() {
-		commands = append(commands, rootBinding(key, "detach-client"))
+	var bound []string
+	bind := func(binding keybind.Binding, action []string) {
+		for _, key := range binding.Keys() {
+			commands = append(commands, rootBinding(key, action...))
+			bound = append(bound, key.Tmux())
+		}
 	}
-	for _, key := range keys.Binding(keybind.Review).Keys() {
-		commands = append(commands, rootBinding(key, request(RequestReview)))
-	}
-	for _, key := range keys.Binding(keybind.Editor).Keys() {
-		commands = append(commands, rootBinding(key, request(RequestEditor)))
-	}
+	bind(keys.Binding(keybind.Detach), []string{"detach-client"})
+	bind(keys.Binding(keybind.Review), d.requestAction(id, RequestReview))
+	bind(keys.Binding(keybind.Editor), d.requestAction(id, RequestEditor))
+	commands = append(commands, recordRootBindings(bound)...)
 	// Restore the standard fallback when the prefix shadows a direct binding.
-	commands = append(commands, []string{"bind-key", "-T", "prefix", "d", "detach-client"})
+	commands = append(commands, []string{"bind-key", "-T", "prefix", "d", bindingArg("detach-client")})
 	// list-keys starts a server that exits again straight away when it has
 	// no sessions, so the list can find none. Nothing needs the setup then:
 	// Create runs this again once a session brings the server up.
-	if _, err = d.run(commandList(commands...)...); err != nil && noServer(err.Error()) {
+	if _, err = d.runIn(id, commandList(commands...)...); err != nil && noServer(err.Error()) {
 		return nil
 	}
 	return err
-}
-
-// rootBinding binds a key inside managed sessions only; anywhere else on
-// the server the key goes through to the pane as itself. That branch is a
-// command string tmux parses, so a backslash in the key name is doubled.
-func rootBinding(key keybind.Key, action string) []string {
-	passThrough := "send-keys " + strings.ReplaceAll(key.Tmux(), `\`, `\\`)
-	return []string{"bind-key", "-n", key.Tmux(), "if-shell", "-F", ownedBindingTest, action, passThrough}
-}
-
-// ownedRootBindings lists the root-table keys carrying the manager's own
-// session test. list-keys prints a key the way its parser reads it back,
-// so a backslash comes doubled and is undone here for unbind-key, which
-// takes the name as is.
-func (d *Driver) ownedRootBindings() ([]string, error) {
-	out, err := d.run("list-keys", "-T", "root")
-	if err != nil {
-		return nil, err
-	}
-	var keys []string
-	for _, line := range strings.Split(out, "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 4 || fields[0] != "bind-key" || fields[1] != "-T" || fields[2] != "root" {
-			continue
-		}
-		if !strings.Contains(line, ownedBindingTest) {
-			continue
-		}
-		keys = append(keys, strings.ReplaceAll(fields[3], `\\`, `\`))
-	}
-	return keys, nil
 }
 
 // RefreshChrome re-applies the prefix and status bar chrome, keeping the session's name label.
@@ -608,7 +527,7 @@ func (d *Driver) RefreshChrome(id string) error {
 // SendText delivers text into the session's pane and presses Enter, so the
 // agent inside receives it as a user message.
 func (d *Driver) SendText(id, text string) error {
-	return d.pasteAndEnter(PaneTarget(id), text)
+	return d.pasteAndEnter(id, text)
 }
 
 // SendKeys delivers exact tmux key names to a session. Keeping each key as
@@ -624,7 +543,7 @@ func (d *Driver) SendKeys(id string, keys ...string) error {
 // keystrokes would turn every newline into an Enter press and submit the
 // agent's prompt mid-paste.
 func (d *Driver) Paste(id, text string) error {
-	return d.paste(PaneTarget(id), text)
+	return d.paste(id, text)
 }
 
 var pasteSeq atomic.Uint64
@@ -640,9 +559,10 @@ const (
 // writes reach one pty, and a pane too busy to read between them takes the
 // carriage return as part of the bracketed paste rather than as a submit,
 // stranding the message in the composer.
-func (d *Driver) pasteAndEnter(target, text string) error {
+func (d *Driver) pasteAndEnter(id, text string) error {
+	target := PaneTarget(id)
 	before, baseline := d.capturePlain(target)
-	if err := d.paste(target, text); err != nil {
+	if err := d.paste(id, text); err != nil {
 		return err
 	}
 	if baseline != nil {
@@ -695,9 +615,10 @@ func MessageOpening(text string) string {
 	return ""
 }
 
-// paste loads text into a tmux buffer and pastes it into the pane.
+// paste loads text into a tmux buffer and pastes it into the session's pane.
 // tmux send-keys silently stops around 1024 bytes; load-buffer does not.
-func (d *Driver) paste(target, text string) error {
+func (d *Driver) paste(id, text string) error {
+	target := PaneTarget(id)
 	file, err := os.CreateTemp("", "am-paste-*")
 	if err != nil {
 		return fmt.Errorf("paste temp file: %w", err)
@@ -712,16 +633,17 @@ func (d *Driver) paste(target, text string) error {
 		return fmt.Errorf("paste temp close: %w", err)
 	}
 	// tmux buffers are server-wide, and every agent's MCP process pastes too.
+	// psmux keeps them per session server, so each step goes to this one's.
 	buf := fmt.Sprintf("am_paste_%d_%d", os.Getpid(), pasteSeq.Add(1))
-	if _, err := d.run("load-buffer", "-b", buf, path); err != nil {
+	if _, err := d.runIn(id, "load-buffer", "-b", buf, path); err != nil {
 		return err
 	}
 	// Preserve bracketed-paste boundaries when the pane application requests
 	// them. Codex uses paste-burst detection without these markers and can
 	// consume the immediately following Enter as part of the paste, leaving
 	// the prompt in its composer instead of submitting it.
-	if _, err := d.run("paste-buffer", "-p", "-d", "-b", buf, "-t", target); err != nil {
-		_, _ = d.run("delete-buffer", "-b", buf)
+	if _, err := d.runIn(id, "paste-buffer", "-p", "-d", "-b", buf, "-t", target); err != nil {
+		_, _ = d.runIn(id, "delete-buffer", "-b", buf)
 		return err
 	}
 	return nil
@@ -772,9 +694,10 @@ func sanitizeFormat(s string) string {
 }
 
 // A missing tmux server means no request rather than an error: the
-// manager outlives the sessions it opens.
-func (d *Driver) PendingRequest() (string, error) {
-	out, err := exec.Command(d.bin, d.args("show-option", "-gqv", requestOption)...).CombinedOutput()
+// manager outlives the sessions it opens. id names the session the user
+// just detached from; psmux keeps the marker on that session's server.
+func (d *Driver) PendingRequest(id string) (string, error) {
+	out, err := d.command(append(sessionRoute(id), "show-option", "-gqv", requestOption)...).CombinedOutput()
 	if err != nil {
 		if noServer(string(out)) {
 			return "", nil
@@ -785,13 +708,13 @@ func (d *Driver) PendingRequest() (string, error) {
 }
 
 // ClearRequest unsets the marker so a request is carried out once.
-func (d *Driver) ClearRequest() error {
-	_, err := d.run("set-option", "-gu", requestOption)
+func (d *Driver) ClearRequest(id string) error {
+	_, err := d.runIn(id, "set-option", "-gu", requestOption)
 	return err
 }
 
 func (d *Driver) AttachCommand(id string) *exec.Cmd {
-	return exec.Command(d.bin, d.args("attach-session", "-t", sessionName(id))...)
+	return d.command("attach-session", "-t", sessionName(id))
 }
 
 func (d *Driver) Kill(id string) error {
@@ -805,7 +728,7 @@ func (d *Driver) Kill(id string) error {
 }
 
 func (d *Driver) Exists(id string) bool {
-	err := exec.Command(d.bin, d.args("has-session", "-t", sessionName(id))...).Run()
+	err := d.command("has-session", "-t", sessionName(id)).Run()
 	return err == nil
 }
 
@@ -850,7 +773,8 @@ func (d *Driver) Resize(id string, width, height int) error {
 	// divides, whether the box grew or shrank -- which is what keeps a Codex
 	// teammate's scrollback (#369). The other axis belongs to the window, so
 	// every pane follows the box there.
-	if panes > 1 {
+	split := panes > 1 && pinsSplitPane
+	if split {
 		windowWidth = width + (windowWidth - paneWidth)
 		windowHeight = height + (windowHeight - paneHeight)
 	} else {
@@ -860,7 +784,7 @@ func (d *Driver) Resize(id string, width, height int) error {
 		"-x", strconv.Itoa(windowWidth), "-y", strconv.Itoa(windowHeight)); err != nil {
 		return err
 	}
-	if panes < 2 {
+	if !split {
 		return nil
 	}
 	_, err = d.run("resize-pane", "-t", PaneTarget(id), "-x", strconv.Itoa(width), "-y", strconv.Itoa(height))
@@ -984,11 +908,13 @@ type Pane struct {
 
 // Panes returns every managed session's agent pane in a single tmux call,
 // which doubles as a liveness check: a session absent from the map is gone.
-// The filter keeps the agent's own pane, the one PaneTarget addresses, so a
+// Only the agent's own pane counts, the one PaneTarget addresses, so a
 // session whose agent split the window reports the agent's own process and
-// the size the preview draws, never a teammate's.
+// the size the preview draws, never a teammate's. The filter runs here
+// rather than as list-panes -f, which psmux ignores: the first pane 0 of a
+// session is the one in its first window, since panes list in window order.
 func (d *Driver) Panes() (map[string]Pane, error) {
-	out, err := exec.Command(d.bin, d.args("list-panes", "-a", "-f", "#{==:#{pane_index},0}", "-F", "#{session_name} #{pane_pid} #{pane_width} #{pane_height} #{window_panes} #{alternate_on} #{pane_tty} #{pane_current_path}")...).CombinedOutput()
+	out, err := d.command("list-panes", "-a", "-F", "#{session_name} #{pane_index} #{pane_pid} #{pane_width} #{pane_height} #{window_panes} #{alternate_on} #{pane_tty} #{pane_current_path}").CombinedOutput()
 	if err != nil {
 		if noServer(string(out)) {
 			return map[string]Pane{}, nil
@@ -1007,54 +933,18 @@ func (d *Driver) Panes() (map[string]Pane, error) {
 		if _, taken := panes[id]; taken {
 			continue
 		}
-		fields := strings.SplitN(geometry, " ", 7)
-		if len(fields) < 7 {
+		fields := strings.SplitN(geometry, " ", 8)
+		if len(fields) < 8 {
 			continue
 		}
-		pane := Pane{TTY: fields[5], Path: fields[6]}
-		var altScreen int
-		if _, err := fmt.Sscanf(geometry, "%d %d %d %d %d", &pane.PID, &pane.Width, &pane.Height, &pane.Panes, &altScreen); err == nil {
+		pane := Pane{TTY: fields[6], Path: fields[7]}
+		var index, altScreen int
+		if _, err := fmt.Sscanf(geometry, "%d %d %d %d %d %d", &index, &pane.PID, &pane.Width, &pane.Height, &pane.Panes, &altScreen); err == nil && index == 0 {
 			pane.AltScreen = altScreen == 1
 			panes[id] = pane
 		}
 	}
 	return panes, nil
-}
-
-// SessionOfPane names the managed session a tmux pane belongs to, for a
-// caller that knows which pane it sits in but not which session it is.
-// A terminal the manager opens carries no launch command, so it gets no
-// launch script and the session id never reaches its environment; the
-// pane it runs in still says which session tmux filed it under.
-//
-// tmuxEnv is the caller's $TMUX, socket,server_pid,session_id. A pane on any
-// other server belongs to some other tmux, not to this manager, and answers
-// empty. The socket alone cannot tell servers apart: it keeps its path across
-// a restart while pane ids start again at %0, so an environment inherited from
-// a previous server would name whichever session owns that id now. The pid
-// is what differs.
-func (d *Driver) SessionOfPane(tmuxEnv, paneID string) (string, error) {
-	// tmux resolves a target it cannot parse to the current session and
-	// exits 0, which would answer for a session this pane is not in.
-	if !paneIDPattern.MatchString(paneID) {
-		return "", nil
-	}
-	socket, pid, ok := socketAndPid(tmuxEnv)
-	if !ok {
-		return "", nil
-	}
-	out, err := d.run("display-message", "-p", "-t", paneID, "#{socket_path} #{pid} #{session_name}")
-	if err != nil {
-		return "", err
-	}
-	serverSocket, serverPid, name := splitPaneInfo(strings.TrimRight(out, "\n"))
-	if resolvedSocket(socket) != resolvedSocket(serverSocket) || pid != serverPid {
-		return "", nil
-	}
-	if !strings.HasPrefix(name, prefix) {
-		return "", nil
-	}
-	return strings.TrimPrefix(name, prefix), nil
 }
 
 var paneIDPattern = regexp.MustCompile(`^%[0-9]+$`)
@@ -1089,26 +979,6 @@ func (d *Driver) SessionOfProcess(pid int) (string, error) {
 	return "", nil
 }
 
-func processParents() (map[int]int, error) {
-	out, err := exec.Command("ps", "-A", "-o", "pid=,ppid=").Output()
-	if err != nil {
-		return nil, fmt.Errorf("list processes: %w", err)
-	}
-	parents := map[int]int{}
-	for _, line := range strings.Split(string(out), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) != 2 {
-			continue
-		}
-		pid, pidErr := strconv.Atoi(fields[0])
-		ppid, ppidErr := strconv.Atoi(fields[1])
-		if pidErr == nil && ppidErr == nil {
-			parents[pid] = ppid
-		}
-	}
-	return parents, nil
-}
-
 // socketAndPid reads $TMUX from the right, since the socket path is the one
 // field free to contain a comma.
 func socketAndPid(tmuxEnv string) (socket, pid string, ok bool) {
@@ -1120,28 +990,10 @@ func socketAndPid(tmuxEnv string) (socket, pid string, ok bool) {
 	return socket, pid, found && socket != "" && pid != ""
 }
 
-// splitPaneInfo reads the name and the pid off the end, so a socket path
-// with spaces in it stays whole. An unknown pane leaves the name empty.
-func splitPaneInfo(out string) (socket, pid, name string) {
-	rest, name, _ := cutLast(out, " ")
-	socket, pid, _ = cutLast(rest, " ")
-	return socket, pid, name
-}
-
 func cutLast(s, sep string) (before, after string, found bool) {
 	i := strings.LastIndex(s, sep)
 	if i < 0 {
 		return s, "", false
 	}
 	return s[:i], s[i+len(sep):], true
-}
-
-// resolvedSocket puts two socket paths in the same terms before they are
-// compared: macOS reports /private/tmp where the other side says /tmp, and
-// a temporary directory is routinely a symlink on either platform.
-func resolvedSocket(path string) string {
-	if resolved, err := filepath.EvalSymlinks(path); err == nil {
-		return resolved
-	}
-	return filepath.Clean(path)
 }

@@ -20,7 +20,7 @@ type agyConversation struct {
 func writeAntigravityStore(t *testing.T, lastStarted string, conversations ...agyConversation) {
 	t.Helper()
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setHome(t, home)
 	root := antigravityRoot()
 	if err := os.MkdirAll(filepath.Join(root, "cache"), 0o755); err != nil {
 		t.Fatal(err)
@@ -59,12 +59,12 @@ func TestAntigravityCaptureReadsTheSummariesIndex(t *testing.T) {
 	cwd := t.TempDir()
 	other := t.TempDir()
 	launched := time.Now().Add(-time.Minute).Truncate(time.Microsecond)
-	uri := func(dir string) string { return `["file://` + dir + `"]` }
+	uri := func(dir string) string { return `["file://` + fileURISpelling(dir) + `"]` }
 	writeAntigravityStore(t, "",
 		agyConversation{id: "before-launch", workspaces: uri(cwd), modified: launched.Add(-time.Hour)},
 		agyConversation{id: "first-turn-running", workspaces: uri(cwd)},
 		agyConversation{id: "elsewhere", workspaces: uri(other), modified: launched.Add(time.Second)},
-		agyConversation{id: "added-dir", workspaces: `["file://` + cwd + `","file://` + other + `"]`, modified: launched.Add(time.Second)},
+		agyConversation{id: "added-dir", workspaces: `["file://` + fileURISpelling(cwd) + `","file://` + fileURISpelling(other) + `"]`, modified: launched.Add(time.Second)},
 		agyConversation{id: "subagent", workspaces: uri(cwd), parent: "mine", modified: launched.Add(time.Second)},
 		agyConversation{id: "mine", workspaces: uri(cwd), modified: launched.Add(2 * time.Second)},
 		agyConversation{id: "sibling", workspaces: uri(cwd), modified: launched.Add(3 * time.Second)},
@@ -93,7 +93,7 @@ func TestAntigravityCaptureReadsTheSummariesIndex(t *testing.T) {
 func TestAntigravityCaptureFollowsTheDirectoryMapPastTheTrustPrompt(t *testing.T) {
 	cwd := t.TempDir()
 	launched := time.Now().Add(-time.Minute).Truncate(time.Microsecond)
-	writeAntigravityStore(t, `{"`+cwd+`": "trusted-late", "/elsewhere": "other-trusted-late"}`,
+	writeAntigravityStore(t, `{`+jsonString(cwd)+`: "trusted-late", "/elsewhere": "other-trusted-late"}`,
 		agyConversation{id: "other-trusted-late", modified: launched.Add(time.Second)},
 		agyConversation{id: "trusted-late", modified: launched.Add(2 * time.Second)},
 	)

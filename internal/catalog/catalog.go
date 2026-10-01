@@ -15,7 +15,6 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -158,7 +157,7 @@ func start(command, dir string, server bool, env ...string) (*process, error) {
 	cmd := exec.Command(fields[0], fields[1:]...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), env...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	startProcessGroup(cmd)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err
@@ -223,12 +222,11 @@ func (p *process) stop() {
 	p.stopOnce.Do(func() {
 		close(p.quit)
 		_ = p.stdin.Close()
-		group := -p.cmd.Process.Pid
-		_ = syscall.Kill(group, syscall.SIGTERM)
+		killGroup(p.cmd.Process.Pid)
 		select {
 		case <-p.exited:
 		case <-time.After(2 * time.Second):
-			_ = syscall.Kill(group, syscall.SIGKILL)
+			_ = p.cmd.Process.Kill()
 		}
 		running.Lock()
 		delete(running.procs, p)
