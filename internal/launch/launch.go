@@ -182,11 +182,13 @@ func Environment(manager *hooks.Manager, toolName string, tool config.Tool, base
 		return "", nil, err
 	}
 	env := map[string]string{hooks.EnvSessionID: id}
-	// Grok's terminal theme leaves row backgrounds unpainted, and only its config file selects it.
 	if toolName == "grok" {
+		// Grok's terminal theme leaves row backgrounds unpainted, and only its config file selects it.
 		if err := ensureGrokTerminalTheme(); err != nil {
 			return "", nil, err
 		}
+		// A shared leader runs every session's shell under the environment of the session that started it.
+		baseCommand += " --no-leader"
 	}
 	command, err := mcpreg.Apply(mcpreg.Style(toolName, tool.MCP), Executable(), manager.Dir(), baseCommand, env)
 	if err != nil {

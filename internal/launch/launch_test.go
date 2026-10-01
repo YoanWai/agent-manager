@@ -278,6 +278,19 @@ func TestEnvironmentSetsGrokTerminalTheme(t *testing.T) {
 	}
 }
 
+func TestEnvironmentKeepsGrokOffTheSharedLeader(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("GROK_HOME", "")
+	grok := config.Tool{Command: "cat", MCP: mcpreg.StyleNone}
+	command, _, err := Environment(hooks.NewManager(t.TempDir()), "grok", grok, "cat --resume abc", "abcd1234")
+	if err != nil {
+		t.Fatalf("Environment grok: %v", err)
+	}
+	if command != "cat --resume abc --no-leader" {
+		t.Fatalf("grok command = %q, want every launch line to force a local agent", command)
+	}
+}
+
 func TestAssembleCarriesTheDirectiveOverAPastedImagePath(t *testing.T) {
 	flagged := config.Tool{Command: "claude", PromptFlag: "-p"}
 	prompt := "/var/folders/_b/T/agent-manager-pastes/paste-268.png why is this session working?"
