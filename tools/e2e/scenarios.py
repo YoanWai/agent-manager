@@ -105,7 +105,8 @@ def seed_store(sandbox):
 def start_manager(sandbox, binary, session='scen'):
     sandbox.tmux('new-session', '-d', '-s', session, '-x', '110', '-y', '30',
                  '-c', str(sandbox.home),
-                 f'exec env TERM=xterm-256color COLORTERM=truecolor NO_COLOR=1 {shlex.quote(str(binary))}')
+                 f'exec env TERM=xterm-256color COLORTERM=truecolor NO_COLOR=1 {shlex.quote(str(binary))} '
+                 f'2>{shlex.quote(str(sandbox.artifacts / "manager-stderr.txt"))}')
     sandbox.tmux('set-option', '-w', '-t', session, 'remain-on-exit', 'on')
     frame(sandbox, 'startup', 'A G E N T')
     key(sandbox, 'Escape')

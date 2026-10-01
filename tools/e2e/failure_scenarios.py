@@ -191,6 +191,9 @@ def main():
             results[name] = 'passed'
         except (Exception, KeyboardInterrupt) as error:
             results[name] = f'failed: {str(error) or type(error).__name__}'
+            exit_state = sandbox.tmux('display-message', '-p', '-t', 'scen:0.0',
+                                     '#{pane_dead} #{pane_dead_status} #{pane_dead_signal}', check=False)
+            (sandbox.artifacts / 'manager-exit-state.txt').write_text(exit_state.stdout + exit_state.stderr)
             (sandbox.artifacts / 'scen-last-frame.txt').write_text(capture(sandbox))
             sandbox.failure_frames()
         finally:
