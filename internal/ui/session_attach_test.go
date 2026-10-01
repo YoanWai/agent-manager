@@ -22,6 +22,7 @@ func TestAttachDoneOpensReviewWhenMarkerSet(t *testing.T) {
 		t.Fatalf("set marker: %v", err)
 	}
 	updated, _ := m.Update(attachDoneMsg{sessID: sess.ID})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeDiff {
 		t.Fatalf("marker set should enter review, mode = %v, err = %q", m.mode, m.errBar.text)
@@ -45,6 +46,7 @@ func TestAttachDoneStaysInListWithoutMarker(t *testing.T) {
 	}
 
 	updated, _ := m.Update(attachDoneMsg{})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeList {
 		t.Fatalf("no marker should stay in list, mode = %v", m.mode)
@@ -107,6 +109,7 @@ func TestDotAcknowledgesOnlyCurrentFinishedStatus(t *testing.T) {
 			}
 
 			m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'.'}})
+			m.drainEffects(t)
 			got, err := m.services.store.Get(sess.ID)
 			if err != nil {
 				t.Fatalf("get: %v", err)
@@ -141,6 +144,7 @@ func TestDotKeepsArchivedFinishedStatus(t *testing.T) {
 	}
 
 	m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'.'}})
+	m.drainEffects(t)
 	got, err := m.services.store.Get(sess.ID)
 	if err != nil {
 		t.Fatalf("get: %v", err)

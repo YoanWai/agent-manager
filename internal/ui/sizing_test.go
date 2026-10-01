@@ -68,6 +68,7 @@ func TestUnchangedWindowSizeSkipsResize(t *testing.T) {
 
 	// Same size as the model: the resume case, which must not touch sessions.
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if w, h := windowSize(t, id); w != 100 || h != 30 {
 		t.Fatalf("unchanged size should skip resize, session is %dx%d, want 100x30", w, h)
@@ -75,6 +76,8 @@ func TestUnchangedWindowSizeSkipsResize(t *testing.T) {
 
 	// A real resize propagates the preview panel box to the session.
 	updated, _ = m.Update(tea.WindowSizeMsg{Width: 150, Height: 45})
+	m.drainEffects(t)
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	wantW, wantH := m.previewPaneWidth(), m.previewPaneHeight()
 	if w, h := windowSize(t, id); w != wantW || h != wantH {
@@ -134,6 +137,8 @@ func TestRefreshPublishesThePaneSize(t *testing.T) {
 	}
 
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 150, Height: 45})
+	m.drainEffects(t)
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	width, height, err = m.services.store.PaneSize()
 	if err != nil {
@@ -219,6 +224,7 @@ func TestSessionSizesToPreviewPane(t *testing.T) {
 	id := m.sessionRows()[0].ID
 	// Create sizes from pre-selection geometry; re-pin to the live preview box.
 	m.resizeSessions()
+	m.drainEffects(t)
 
 	wantW, wantH := m.previewPaneWidth(), m.previewPaneHeight()
 	if w, h := windowSize(t, id); w != wantW || h != wantH {
@@ -226,6 +232,7 @@ func TestSessionSizesToPreviewPane(t *testing.T) {
 	}
 
 	m.Update(tea.WindowSizeMsg{Width: 150, Height: 45})
+	m.drainEffects(t)
 	wantW, wantH = m.previewPaneWidth(), m.previewPaneHeight()
 	if w, h := windowSize(t, id); w != wantW || h != wantH {
 		t.Fatalf("after resize, window = %dx%d, want %dx%d", w, h, wantW, wantH)

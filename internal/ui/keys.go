@@ -31,7 +31,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.split.resizeMode = false
 			m.split.dragging = false
 			m.split.moved = false
-			return m, tea.Quit
+			return m.requestQuit()
 		case key == "left" || key == "h":
 			m.nudgeSplit(-1)
 			return m, nil

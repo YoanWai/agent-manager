@@ -18,7 +18,7 @@ func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var navigation tea.Cmd
 	switch result.Navigation {
 	case uireview.NavigationQuit:
-		navigation = tea.Quit
+		_, navigation = m.requestQuit()
 	case uireview.NavigationExit:
 		navigation = m.closeDiff()
 	case uireview.NavigationHelp:

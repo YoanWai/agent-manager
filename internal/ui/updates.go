@@ -10,18 +10,29 @@ import (
 )
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if key, ok := msg.(tea.KeyMsg); ok && key.String() == "ctrl+c" {
+		return m.requestQuit()
+	}
+	if m.effects.quitting {
+		switch msg.(type) {
+		case tea.KeyMsg, tea.MouseMsg:
+			return m, nil
+		}
+	}
 	model, cmd := m.handleMsg(msg)
 	if mm, ok := model.(*Model); ok {
 		mm.flushPendingNotice()
 		mm.prepareFrame()
-		return mm, tea.Batch(cmd, mm.syncMouseCapture())
+		return mm, tea.Batch(cmd, mm.syncMouseCapture(), mm.nextEffectCmd())
 	}
 	m.prepareFrame()
-	return model, tea.Batch(cmd, m.syncMouseCapture())
+	return model, tea.Batch(cmd, m.syncMouseCapture(), m.nextEffectCmd())
 }
 
 func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case effectCompletedMsg:
+		return m.handleEffectCompleted(msg)
 	case tea.WindowSizeMsg:
 		// Resuming from a tmux attach re-sends the current size unchanged; only
 		// a real resize needs the per-session tmux resize calls, so an
@@ -84,6 +95,10 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.previewCmd(sess, m.focusPane.PreviewGeneration()), m.previewTick())
 
 	case refreshMsg:
+		if !msg.listedAt.IsZero() && !m.effects.latestObservation.IsZero() && !msg.listedAt.After(m.effects.latestObservation) {
+			m.requestRefresh()
+			return m, nil
+		}
 		m.startup.booting = false
 		m.ageError()
 		// The focused session can die or vanish under us; fall back to the
@@ -222,7 +237,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.update.restartPath = msg.path
-		return m, tea.Quit
+		return m.requestQuit()
 
 	case updateTickMsg:
 		return m, tea.Batch(m.checkForUpdate, m.checkFeed, m.updateTick())
@@ -417,13 +432,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			delete(m.focusRuntime.lastPaneSizes, msg.sessID)
 		}
 		width, height := m.paneTargetSize()
-		m.poller.reflowSessions([]string{msg.sessID}, func() {
-			_ = m.services.tmux.Resize(msg.sessID, width, height)
-		})
-		if m.focusRuntime.lastPaneSizes == nil {
-			m.focusRuntime.lastPaneSizes = map[string][2]int{}
-		}
-		m.focusRuntime.lastPaneSizes[msg.sessID] = [2]int{width, height}
+		m.queueGeometry(geometryRequest{targets: []paneResize{{id: msg.sessID, size: [2]int{width, height}}}})
 		if msg.err != nil {
 			m.errBar.text = msg.err.Error()
 			m.requestRefresh()
@@ -507,29 +516,6 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(resume, m.reattach(id, m.review.Generation()))
 		}
 		return m, resume
-
-	case relaunchedMsg:
-		if msg.err != nil {
-			m.reportLaunchError(msg.err, nil)
-			return m, nil
-		}
-		m.bindReviveLocally(msg.sessID, msg.launchedAt)
-		m.rebuildRows()
-		m.requestRefresh()
-		return m, nil
-
-	case reattachPreparedMsg:
-		if msg.diffGen != m.review.Generation() || m.review.Active() {
-			return m, nil
-		}
-		if msg.err != nil {
-			m.errBar.text = msg.err.Error()
-			return m, nil
-		}
-		m.errBar.text = msg.warn
-		return m, execTerminalProcess(m.services.tmux.AttachCommand(msg.sessID), func(err error) tea.Msg {
-			return attachDoneMsg{sessID: msg.sessID, err: err}
-		})
 
 	case tea.MouseMsg:
 		return m.handleMouse(msg)

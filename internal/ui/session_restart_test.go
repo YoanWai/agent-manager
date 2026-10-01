@@ -39,6 +39,7 @@ func TestRestartLaunchesAFreshConversation(t *testing.T) {
 		t.Fatalf("restart should ask first, mode = %v err = %q", m.mode, m.errBar.text)
 	}
 	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	if m.errBar.text != "" {
 		t.Fatalf("restart: %q", m.errBar.text)
@@ -100,6 +101,7 @@ func TestRestartClearsCapturedConversationID(t *testing.T) {
 
 	m.restartSelected()
 	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	if m.errBar.text != "" {
 		t.Fatalf("restart: %q", m.errBar.text)
@@ -135,6 +137,7 @@ func TestRestartEndsALiveAgentFirst(t *testing.T) {
 		t.Fatalf("confirm label = %q", m.confirm.label)
 	}
 	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	if m.errBar.text != "" {
 		t.Fatalf("restart: %q", m.errBar.text)

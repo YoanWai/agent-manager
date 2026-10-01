@@ -88,6 +88,7 @@ func TestSetSplitFromXClampsAndUpdatesRatio(t *testing.T) {
 func TestResizeModeKeyArmsDrag(t *testing.T) {
 	m := &Model{mode: modeList, split: splitState{ratio: defaultSplitRatio}, width: 120, height: 40, services: services{listKeys: keybind.DefaultList()}}
 	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'|'}})
+	m.drainEffects(t)
 	m = updated.(*Model)
 	if !m.split.resizeMode {
 		t.Fatal("| should enter resize mode")
@@ -98,6 +99,7 @@ func TestResizeModeKeyArmsDrag(t *testing.T) {
 
 	// Other keys are swallowed while armed.
 	updated, cmd = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	m.drainEffects(t)
 	m = updated.(*Model)
 	if m.mode != modeList || !m.split.resizeMode {
 		t.Fatal("resize mode should swallow n")
@@ -107,6 +109,7 @@ func TestResizeModeKeyArmsDrag(t *testing.T) {
 	}
 
 	updated, cmd = m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m.drainEffects(t)
 	m = updated.(*Model)
 	if m.split.resizeMode {
 		t.Fatal("esc should leave resize mode")
@@ -135,19 +138,23 @@ func TestArrowNudgeAndPipeCommits(t *testing.T) {
 	m = updated.(*Model)
 	before, _ := m.splitWidths()
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
+	m.drainEffects(t)
 	m = updated.(*Model)
 	after, _ := m.splitWidths()
 	if after != before+1 {
 		t.Fatalf("right arrow left width = %d want %d", after, before+1)
 	}
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
+	m.drainEffects(t)
 	m = updated.(*Model)
 	if left, _ := m.splitWidths(); left != before {
 		t.Fatalf("left arrow should undo nudge, left=%d want %d", left, before)
 	}
 	// Nudge once more, then | commits.
 	m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
+	m.drainEffects(t)
 	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'|'}})
+	m.drainEffects(t)
 	m = updated.(*Model)
 	if m.split.resizeMode {
 		t.Fatal("| should commit and exit resize mode")
@@ -184,6 +191,7 @@ func TestEnterCommitsResize(t *testing.T) {
 	m.nudgeSplit(8)
 
 	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
 	m = updated.(*Model)
 	if m.split.resizeMode || m.split.dragging {
 		t.Fatal("enter should commit and leave resize mode")
@@ -201,8 +209,11 @@ func TestArrowCancelRestoresRatio(t *testing.T) {
 	updated, _ := m.enterResizeMode()
 	m = updated.(*Model)
 	m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
+	m.drainEffects(t)
 	m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
+	m.drainEffects(t)
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m.drainEffects(t)
 	m = updated.(*Model)
 	if m.split.resizeMode {
 		t.Fatal("esc should exit")
@@ -232,6 +243,7 @@ func TestQuitFromResizePersistsRatio(t *testing.T) {
 	m.nudgeSplit(8)
 
 	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	m.drainEffects(t)
 	m = updated.(*Model)
 	if m.split.resizeMode || m.split.dragging {
 		t.Fatal("quit should clear resize state")

@@ -1,0 +1,169 @@
+package ui
+
+import (
+	"errors"
+	"maps"
+	"slices"
+	"sync"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+)
+
+var errEffectsStopped = errors.New("UI effects have stopped")
+
+type effectRequest interface{ effectRequest() }
+type effectResult interface{ effectResult() }
+
+type effectCompletedMsg struct {
+	id         uint64
+	result     effectResult
+	err        error
+	finishedAt time.Time
+}
+
+type effectJob struct {
+	id, chain uint64
+	request   effectRequest
+	command   tea.Cmd
+}
+
+type effectState struct {
+	nextID, nextChain uint64
+	active            *effectJob
+	pending           []*effectJob
+	lifetime          *effectLifetime
+	latestObservation time.Time
+	quitting          bool
+}
+
+type effectLifetime struct {
+	mu      sync.Mutex
+	closed  bool
+	running sync.WaitGroup
+}
+
+func (l *effectLifetime) begin() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.closed {
+		return false
+	}
+	l.running.Add(1)
+	return true
+}
+
+func (l *effectLifetime) closeAndWait() {
+	l.mu.Lock()
+	l.closed = true
+	l.mu.Unlock()
+	l.running.Wait()
+}
+
+func (m *Model) StopEffects() {
+	if m.effects.lifetime != nil {
+		m.effects.lifetime.closeAndWait()
+	}
+}
+
+func (m *Model) enqueueEffect(request effectRequest, chain uint64, first bool) {
+	if m.effects.quitting && !first {
+		return
+	}
+	if m.effects.lifetime == nil {
+		m.effects.lifetime = &effectLifetime{}
+	}
+	m.effects.nextID++
+	id := m.effects.nextID
+	switch value := request.(type) {
+	case lifecycleRequest:
+		value.target.sessions = slices.Clone(value.target.sessions)
+		for i := range value.target.sessions {
+			value.target.sessions[i].PendingInputs = slices.Clone(value.target.sessions[i].PendingInputs)
+			value.target.sessions[i].RelaunchSnapshot = maps.Clone(value.target.sessions[i].RelaunchSnapshot)
+		}
+		request = value
+	case railRequest:
+		value.mutation.Collapsed = slices.Clone(value.mutation.Collapsed)
+		value.mutation.GroupSiblings = slices.Clone(value.mutation.GroupSiblings)
+		request = value
+	case geometryRequest:
+		value.targets = slices.Clone(value.targets)
+		request = value
+	}
+	work := m.captureEffect(request)
+	lifetime := m.effects.lifetime
+	var once sync.Once
+	var completed effectCompletedMsg
+	job := &effectJob{id: id, chain: chain, request: request}
+	job.command = func() tea.Msg {
+		once.Do(func() {
+			completed.id = id
+			if !lifetime.begin() {
+				completed.err = errEffectsStopped
+				return
+			}
+			defer lifetime.running.Done()
+			completed.result, completed.err = work()
+			completed.finishedAt = time.Now()
+		})
+		return completed
+	}
+	if first {
+		m.effects.pending = append([]*effectJob{job}, m.effects.pending...)
+	} else {
+		m.effects.pending = append(m.effects.pending, job)
+	}
+}
+
+func (m *Model) nextEffectCmd() tea.Cmd {
+	if m.effects.active != nil {
+		return nil
+	}
+	if len(m.effects.pending) == 0 {
+		if m.effects.quitting {
+			return tea.Quit
+		}
+		return nil
+	}
+	m.effects.active = m.effects.pending[0]
+	m.effects.pending = m.effects.pending[1:]
+	return m.effects.active.command
+}
+
+func (m *Model) requestQuit() (tea.Model, tea.Cmd) {
+	m.effects.quitting = true
+	return m, m.nextEffectCmd()
+}
+
+func (m *Model) handleEffectCompleted(msg effectCompletedMsg) (tea.Model, tea.Cmd) {
+	job := m.effects.active
+	if job == nil || job.id != msg.id {
+		return m, nil
+	}
+	m.effects.active = nil
+	_, lifecycleChange := job.request.(lifecycleRequest)
+	_, railChange := job.request.(railRequest)
+	if (lifecycleChange || railChange) && msg.finishedAt.After(m.effects.latestObservation) {
+		m.effects.latestObservation = msg.finishedAt
+	}
+	var command tea.Cmd
+	switch result := msg.result.(type) {
+	case lifecycleEffectResult:
+		command = m.applyLifecycleEffect(job.request.(lifecycleRequest), result, msg.err)
+	case railEffectResult:
+		command = m.applyRailEffect(job, result, msg.err)
+	case geometryEffectResult:
+		m.applyGeometryEffect(result, msg.err)
+	case attachEffectResult:
+		command = m.applyAttachEffect(job.request.(attachRequest), result, msg.err)
+	default:
+		if msg.err != nil {
+			m.errBar.text = msg.err.Error()
+		}
+	}
+	if m.poller != nil {
+		m.requestRefresh()
+	}
+	return m, tea.Batch(command, m.nextEffectCmd())
+}

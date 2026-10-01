@@ -22,6 +22,7 @@ func TestToggleEmptyGroupsFiltersTreeWithoutDeletingGroups(t *testing.T) {
 
 	m.selectGroupRow(t, "empty")
 	_, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+	m.drainEffects(t)
 	if cmd != nil {
 		m.applyCmd(t, cmd)
 	}
@@ -42,6 +43,7 @@ func TestToggleEmptyGroupsFiltersTreeWithoutDeletingGroups(t *testing.T) {
 	}
 
 	_, cmd = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+	m.drainEffects(t)
 	if cmd != nil {
 		m.applyCmd(t, cmd)
 	}
@@ -63,6 +65,7 @@ func TestHideEmptyGroupsDoesNotFilterTheArchivedView(t *testing.T) {
 	m.selectGroupRow(t, "empty")
 	m.archiveSelected()
 	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 
 	if err := m.services.store.CreateGroup("bare", ""); err != nil {
@@ -95,6 +98,7 @@ func TestEmptyGroupsKeyIsRefusedInTheArchivedView(t *testing.T) {
 
 	press := func(key string) {
 		_, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+		m.drainEffects(t)
 		if cmd != nil {
 			m.applyCmd(t, cmd)
 		}
@@ -135,6 +139,7 @@ func TestStatusFilterKeyKeepsAttentionSessions(t *testing.T) {
 	loadStoredRows(t, m)
 
 	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
+	m.drainEffects(t)
 	m = updated.(*Model)
 	if cmd != nil {
 		m.applyCmd(t, cmd)
@@ -168,6 +173,7 @@ func TestStatusFilterKeyKeepsAttentionSessions(t *testing.T) {
 	}
 
 	updated, cmd = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
+	m.drainEffects(t)
 	m = updated.(*Model)
 	if cmd != nil {
 		m.applyCmd(t, cmd)
@@ -283,6 +289,7 @@ func TestBulkActionsRespectStatusFilter(t *testing.T) {
 	}
 
 	updated, _ = m.reviveAllDead()
+	m.drainEffects(t)
 	m = updated.(*Model)
 	if m.errBar.text != "no dead sessions to revive" {
 		t.Fatalf("filtered revive-all touched hidden sessions: %q", m.errBar.text)
@@ -311,6 +318,7 @@ func TestReviveAllLeavesSessionsTheFilterHides(t *testing.T) {
 	}
 
 	updated, _ := m.reviveAllDead()
+	m.drainEffects(t)
 	m = updated.(*Model)
 	if m.mode == modeConfirmDelete {
 		t.Fatalf("hidden sessions were counted: %q", m.confirm.label)

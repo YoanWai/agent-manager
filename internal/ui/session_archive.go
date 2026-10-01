@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
 	"strings"
@@ -97,81 +96,6 @@ func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
 	m.mode = modeConfirmDelete
 	m.errBar.text = ""
 	return m, nil
-}
-
-func (m *Model) archiveConfirmed() error {
-	defer m.restoreSurvivingWatcher(m.watchedSession())
-
-	ids := make([]string, 0, len(m.confirm.sessions))
-	for _, sess := range m.confirm.sessions {
-		ids = append(ids, sess.ID)
-		if m.services.tmux.Exists(sess.ID) {
-			m.unwatch(sess.ID)
-		}
-	}
-	var result sessioncmd.ArchiveResult
-	var archiveErr error
-	archive := func() {
-		result, archiveErr = m.services.lifecycle.ArchiveForHuman(sessioncmd.ArchiveSelection{
-			Sessions:  m.confirm.sessions,
-			GroupPath: groupPath(m.confirm),
-		})
-	}
-	if len(ids) == 0 {
-		archive()
-	} else {
-		m.poller.reflowSessions(ids, archive)
-	}
-	for i := range m.workspace.sessions {
-		for _, archived := range result.Sessions {
-			if m.workspace.sessions[i].ID == archived.ID {
-				m.workspace.sessions[i].Status = archived.Status
-			}
-		}
-	}
-	if archiveErr != nil {
-		return archiveErr
-	}
-	if !m.confirm.isGroup {
-		for _, sess := range m.confirm.sessions {
-			m.forgetLaunch(sess.ID)
-		}
-	}
-	m.markArchivedLocally(result.Sessions, result.GroupPath)
-	return nil
-}
-
-func (m *Model) restoreConfirmed() error {
-	wasDead := make(map[string]bool, len(m.confirm.sessions))
-	for _, sess := range m.confirm.sessions {
-		wasDead[sess.ID] = !m.services.tmux.Exists(sess.ID)
-	}
-	paneWidth, paneHeight := m.paneTargetSize()
-	result, err := m.services.lifecycle.RestoreForHuman(sessioncmd.ArchiveSelection{
-		Sessions:  m.confirm.sessions,
-		GroupPath: groupPath(m.confirm),
-	}, sessioncmd.PaneSize{Width: paneWidth, Height: paneHeight})
-	revived := false
-	for _, sess := range result.Sessions {
-		if !wasDead[sess.ID] {
-			continue
-		}
-		revived = true
-		m.markFreshPane(sess.ID)
-		m.bindReviveLocally(sess.ID, sess.AgentLaunchedAt)
-	}
-	if revived && m.focusRuntime.watch != nil {
-		m.focusRuntime.watch.retryNow()
-	}
-	if err != nil {
-		return err
-	}
-	m.markRestoredLocally(result.Sessions, result.GroupPath)
-	m.errBar.text = ""
-	if result.LabelError != nil {
-		m.errBar.text = result.LabelError.Error()
-	}
-	return nil
 }
 
 // markArchivedLocally flags the confirmed archive in the loaded rows, so

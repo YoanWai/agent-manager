@@ -348,6 +348,7 @@ func TestAttachDoneOpensEditorAndReturnsToTheSession(t *testing.T) {
 		t.Fatalf("set marker: %v", err)
 	}
 	updated, cmd := m.Update(attachDoneMsg{sessID: sess.ID})
+	cmd = m.foregroundTestCmd(t, cmd)
 	*m = *updated.(*Model)
 	if cmd == nil {
 		t.Fatalf("the request produced no launch, err = %q", m.errBar.text)
@@ -379,9 +380,12 @@ func TestAttachDoneOpensEditorAndReturnsToTheSession(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("the session should get its client back")
 	}
-	prepared, isPrepared := cmd().(reattachPreparedMsg)
-	if !isPrepared || prepared.sessID != sess.ID {
-		t.Fatalf("want a reattach for %q, got %#v", sess.ID, prepared)
+	attachment, isAttachment := m.effects.active.request.(attachRequest)
+	if !isAttachment || attachment.id != sess.ID {
+		t.Fatalf("reattach target=%+v", attachment)
+	}
+	if foreground := m.foregroundTestCmd(t, cmd); foreground == nil {
+		t.Fatal("prepared reattach did not emit terminal command")
 	}
 }
 
@@ -399,6 +403,7 @@ func TestAttachDoneRefusedEditorArmsNoReturn(t *testing.T) {
 		t.Fatalf("set marker: %v", err)
 	}
 	updated, cmd := m.Update(attachDoneMsg{sessID: sess.ID})
+	cmd = m.foregroundTestCmd(t, cmd)
 	*m = *updated.(*Model)
 	if cmd != nil {
 		t.Fatal("a refused request should return no command")
@@ -429,6 +434,7 @@ func TestAttachDoneTerminalEditorArmsTheReturn(t *testing.T) {
 		t.Fatalf("set marker: %v", err)
 	}
 	updated, cmd := m.Update(attachDoneMsg{sessID: sess.ID})
+	cmd = m.foregroundTestCmd(t, cmd)
 	*m = *updated.(*Model)
 	if cmd == nil {
 		t.Fatalf("the request produced no launch, err = %q", m.errBar.text)
@@ -483,6 +489,7 @@ func TestAttachDoneEditorFollowsTheSessionThatDetached(t *testing.T) {
 		t.Fatalf("set marker: %v", err)
 	}
 	updated, cmd := m.Update(attachDoneMsg{sessID: attached.ID})
+	cmd = m.foregroundTestCmd(t, cmd)
 	*m = *updated.(*Model)
 	m.applyCmd(t, cmd)
 
@@ -496,6 +503,7 @@ func TestAttachDoneEditorFollowsTheSessionThatDetached(t *testing.T) {
 	}
 	*launched = nil
 	updated, cmd = m.Update(attachDoneMsg{sessID: "gone"})
+	cmd = m.foregroundTestCmd(t, cmd)
 	*m = *updated.(*Model)
 	if cmd != nil || len(*launched) != 0 {
 		t.Fatalf("a session that is gone should launch nothing, got %v", *launched)

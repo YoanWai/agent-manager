@@ -47,7 +47,9 @@ func TestReviveRecreatesDeadSession(t *testing.T) {
 	}
 	m.workspace.preview = "old pane from last life\n"
 
-	if _, _ = m.reviveSelected(); m.errBar.text != "" {
+	m.reviveSelected()
+	m.drainEffects(t)
+	if m.errBar.text != "" {
 		t.Fatalf("revive: %q", m.errBar.text)
 	}
 	if !m.services.tmux.Exists(sess.ID) {
@@ -187,6 +189,7 @@ func TestReviveAllRecreatesEveryDeadSession(t *testing.T) {
 		t.Fatalf("confirm targets = %+v, want the two dead sessions", m.confirm.sessions)
 	}
 	_, cmd := m.handleConfirmKey(namedKey(tea.KeyEnter))
+	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	if m.errBar.text != "" {
 		t.Fatalf("revive all: %q", m.errBar.text)
@@ -207,6 +210,7 @@ func TestReviveRefusesLiveSession(t *testing.T) {
 	m.selectSessionRow(t, "alive")
 
 	_, cmd := m.reviveSelected()
+	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	if !strings.Contains(m.errBar.text, "still running") {
 		t.Fatalf("revive said %q, want it to refuse a pane that still holds its agent", m.errBar.text)
@@ -230,7 +234,9 @@ func TestReviveRefusesMissingDir(t *testing.T) {
 	}
 	m.selectSessionRow(t, "homeless")
 
-	if _, _ = m.reviveSelected(); m.errBar.text == "" {
+	m.reviveSelected()
+	m.drainEffects(t)
+	if m.errBar.text == "" {
 		t.Fatal("revive without a working directory should error")
 	}
 }
@@ -249,7 +255,9 @@ func TestReviveGroupBringsBackEverySessionInside(t *testing.T) {
 	createSession(t, m, "running", dir, "work")
 
 	m.selectGroupRow(t, "work")
-	if _, _ = m.reviveSelected(); m.mode != modeConfirmDelete {
+	m.reviveSelected()
+	m.drainEffects(t)
+	if m.mode != modeConfirmDelete {
 		t.Fatalf("reviving a group of two dead sessions should ask first, mode = %v err = %q", m.mode, m.errBar.text)
 	}
 	if title := m.confirmTitle(); title != "◆ Revive group" {
@@ -262,6 +270,7 @@ func TestReviveGroupBringsBackEverySessionInside(t *testing.T) {
 		t.Fatalf("confirm targets = %+v, want the two dead sessions", m.confirm.sessions)
 	}
 	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	if m.errBar.text != "" {
 		t.Fatalf("revive group: %q", m.errBar.text)
@@ -287,10 +296,13 @@ func TestReviveGroupConfirmedRevivesWhatItCan(t *testing.T) {
 	}
 
 	m.selectGroupRow(t, "work")
-	if _, _ = m.reviveSelected(); m.mode != modeConfirmDelete {
+	m.reviveSelected()
+	m.drainEffects(t)
+	if m.mode != modeConfirmDelete {
 		t.Fatalf("mode = %v, want the revive card (err %q)", m.mode, m.errBar.text)
 	}
 	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 
 	if !strings.HasPrefix(m.errBar.text, "revived 1, first error: working directory no longer exists") {
@@ -325,10 +337,12 @@ func TestReviveBatchCancelLeavesEverySessionDead(t *testing.T) {
 			for _, key := range []string{"v", "V"} {
 				m.selectGroupRow(t, "work")
 				m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+				m.drainEffects(t)
 				if m.mode != modeConfirmDelete {
 					t.Fatalf("%s: mode = %v, want the revive card (err %q)", key, m.mode, m.errBar.text)
 				}
 				m.handleKey(tc.key)
+				m.drainEffects(t)
 				if m.mode != modeList {
 					t.Fatalf("%s: mode = %v, want the list after %s", key, m.mode, tc.name)
 				}
@@ -354,6 +368,7 @@ func TestReviveBatchSkipsASessionBackBeforeTheAnswer(t *testing.T) {
 
 	m.selectGroupRow(t, "work")
 	m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("v")})
+	m.drainEffects(t)
 	if m.mode != modeConfirmDelete {
 		t.Fatalf("mode = %v, want the revive card (err %q)", m.mode, m.errBar.text)
 	}
@@ -362,6 +377,7 @@ func TestReviveBatchSkipsASessionBackBeforeTheAnswer(t *testing.T) {
 		t.Fatalf("revive alpha while the card is open: %v", err)
 	}
 	m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.drainEffects(t)
 
 	if m.errBar.text != "" {
 		t.Fatalf("status = %q, want no error for a session that came back on its own", m.errBar.text)
@@ -389,6 +405,7 @@ func TestReviveOneDeadSessionSkipsTheCard(t *testing.T) {
 		m.applyCmd(t, m.refreshCmd())
 		m.selectGroupRow(t, "work")
 		m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+		m.drainEffects(t)
 		if m.mode != modeList {
 			t.Fatalf("%s with one dead session: mode = %v, want it revived without a card", key, m.mode)
 		}
@@ -413,11 +430,13 @@ func TestReviveRunningAgentRevivesDeadChild(t *testing.T) {
 	}
 	m.selectSessionRow(t, "coder")
 	_, cmd := m.reviveSelected()
+	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	if m.mode != modeConfirmDelete {
 		t.Fatalf("mode = %v, want the revive confirm", m.mode)
 	}
 	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	if !m.services.tmux.Exists(shell.ID) {
 		t.Fatal("child still dead")
@@ -448,6 +467,7 @@ func TestReviveAgentIncludesDeadChildren(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	m.selectSessionRow(t, "coder")
 	m.reviveSelected()
+	m.drainEffects(t)
 	ids := map[string]bool{}
 	for _, sess := range m.confirm.sessions {
 		ids[sess.ID] = true
@@ -456,6 +476,7 @@ func TestReviveAgentIncludesDeadChildren(t *testing.T) {
 		t.Fatal("revive confirm omitted the child")
 	}
 	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	if !m.services.tmux.Exists(coder.ID) || !m.services.tmux.Exists(shell.ID) {
 		t.Fatal("confirm should revive the agent and its dead children")
@@ -484,6 +505,7 @@ func TestReviveStartsTheAgentAgainInALivePane(t *testing.T) {
 	m.selectSessionRow(t, "quit-and-back")
 
 	_, cmd := m.reviveSelected()
+	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	if m.errBar.text != "" {
 		t.Fatalf("revive: %q", m.errBar.text)

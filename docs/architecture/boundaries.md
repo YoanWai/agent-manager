@@ -19,7 +19,7 @@ Session identity is distinct from its display label. A read projection is distin
 | `internal/app` | Assemble local services and their resource lifetime | Local composition only |
 | `internal/sessioncmd` | Canonical commands, actor policy, ordered lifecycle effects, and explicit runtime binding | Some legacy constructors remain; no production RPC boundary |
 | `internal/execution` | Maintenance, delivery, status, capture, and copied observations | Existing socket claims do not fence competing process instances |
-| `internal/ui` | Input, presentation, feature state, and local reconciliation | Root methods still own substantial behavior and perform synchronous effects |
+| `internal/ui` | Input, presentation, feature state, and local reconciliation | Root composes an ordered captured-effect lane; some preflight, dialog and focus families remain synchronous |
 | `internal/cli` and `internal/mcpserver` | Translate frontend requests into canonical commands | Current MCP protocol modes are not historical-binary compatibility |
 
 `config`, `store`, `tmux`, `hooks`, and `git` retain concrete infrastructure responsibilities. Introduce an interface where a consumer needs a narrow seam, not one repository abstraction per SQLite table.

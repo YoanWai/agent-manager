@@ -33,3 +33,5 @@ The maintained contract reconciles these original records:
 | [Coverage](https://github.com/ribeirojose/agent-manager/blob/21294a3d895790e8c1937108b5c900eb43a2c2d3/docs/architecture-poc/coverage.md) | Separation of fixture evidence, real-process evidence, and production acceptance |
 
 File organization follows the maintainability direction of [issue #646](https://github.com/YoanWai/agent-manager/issues/646). Smaller files and feature types help reviewers. Neither establishes authority, compatibility, or nonblocking behavior by itself.
+
+[Ordered UI effects](ui-effects.md) records captured requests, partial reconciliation, FIFO execution, shutdown and remaining synchronous paths.

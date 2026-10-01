@@ -34,10 +34,12 @@ func dragOnto(t *testing.T, m *Model, from treeRow, line int) (*Model, tea.Mouse
 	}
 	press := tea.MouseMsg{X: m.displayedRail.Handles[rowKey(from)], Y: y0 + start, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress}
 	updated, _ := m.handleMouse(press)
+	m.drainEffects(t)
 	m = updated.(*Model)
 	move := press
 	move.Y, move.Action = y0+line, tea.MouseActionMotion
 	updated, _ = m.handleMouse(move)
+	m.drainEffects(t)
 	return updated.(*Model), move
 }
 
@@ -45,6 +47,7 @@ func release(t *testing.T, m *Model, at tea.MouseMsg) *Model {
 	t.Helper()
 	at.Action = tea.MouseActionRelease
 	updated, _ := m.handleMouse(at)
+	m.drainEffects(t)
 	m = updated.(*Model)
 	m.applyCmd(t, m.refreshCmd())
 	return m
@@ -135,6 +138,7 @@ func TestEscCancelsAPendingMove(t *testing.T) {
 	createSession(t, m, "mover", dir, "alpha")
 	m, _ = dragOnto(t, m, sessionRow(t, m, "mover"), paintedGroupLines(t, m, "beta")[0])
 	m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m.drainEffects(t)
 	m.applyCmd(t, m.refreshCmd())
 	if got := sessionRow(t, m, "mover").sess; got.Group != "alpha" || m.rail.Reordering() {
 		t.Fatalf("esc should leave mover in alpha, group = %q", got.Group)

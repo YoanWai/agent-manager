@@ -106,7 +106,7 @@ const (
 )
 
 // Mutation is a caller-shaped persistence request. Root executes it with
-// concrete store/lifecycle services and immediately calls ApplyMutation.
+// captured concrete services off-loop and calls ApplyMutation on completion.
 type Mutation struct {
 	Kind          MutationKind
 	SessionID     string

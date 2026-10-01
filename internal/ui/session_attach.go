@@ -7,15 +7,6 @@ import (
 	"strings"
 )
 
-// warn carries a PrepareAttach failure: shown to the user, but the attach
-// still proceeds, unlike err which cancels it.
-type reattachPreparedMsg struct {
-	sessID  string
-	diffGen int
-	err     error
-	warn    string
-}
-
 // shellPromptHint refuses to write into a shell. SendText pastes and then
 // presses Enter, so a sentence meant for an agent would run as a command
 // on the user's machine. Entering the session is how text reaches a shell,
@@ -59,51 +50,13 @@ func (m *Model) acknowledgeSelected() (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) attachCmd(id string) tea.Cmd {
-	// Flip the window back to auto-sizing so it fills the terminal on attach;
-	// attachDoneMsg re-pins it to the preview width on detach. Clearing the
-	// cached hash first keeps the poller from reading this reflow as
-	// streaming output, same as the detach-side resize (reflowSessions).
-	// A failure here still attaches: the worst outcome is a stale window
-	// size, which beats locking the session out (issue #114).
-	var prepErr error
-	m.poller.reflowSessions([]string{id}, func() {
-		prepErr = m.services.tmux.PrepareAttach(id)
-	})
-	if prepErr != nil {
-		m.errBar.text = prepErr.Error()
-	}
-	return execTerminalProcess(m.services.tmux.AttachCommand(id), func(err error) tea.Msg {
-		return attachDoneMsg{sessID: id, err: err}
-	})
+	m.enqueueEffect(attachRequest{id: id}, 0, false)
+	return m.nextEffectCmd()
 }
 
 func (m *Model) reattach(id string, diffGen int) tea.Cmd {
-	driver := m.services.tmux
-	stor := m.services.store
-	poller := m.poller
-	return func() tea.Msg {
-		if !driver.Exists(id) {
-			return reattachPreparedMsg{sessID: id, diffGen: diffGen, err: errors.New(deadSessionHint)}
-		}
-		sess, err := stor.Get(id)
-		if err != nil {
-			return reattachPreparedMsg{sessID: id, diffGen: diffGen, err: err}
-		}
-		if sess.Status == status.Finished {
-			if err := stor.AcknowledgeFinished(sess.ID); err != nil {
-				return reattachPreparedMsg{sessID: id, diffGen: diffGen, err: err}
-			}
-		}
-		var prepErr error
-		poller.reflowSessions([]string{id}, func() {
-			prepErr = driver.PrepareAttach(id)
-		})
-		var warn string
-		if prepErr != nil {
-			warn = prepErr.Error()
-		}
-		return reattachPreparedMsg{sessID: id, diffGen: diffGen, warn: warn}
-	}
+	m.enqueueEffect(attachRequest{id: id, reattach: true, generation: diffGen}, 0, false)
+	return m.nextEffectCmd()
 }
 
 // copyReplySelected puts the selected session's newest reply on the system

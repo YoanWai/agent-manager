@@ -49,6 +49,7 @@ func TestDeleteGroupSubtree(t *testing.T) {
 		tmuxIDs = append(tmuxIDs, s.ID)
 	}
 	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 
 	for _, id := range tmuxIDs {
@@ -86,6 +87,7 @@ func TestDeleteGroupInArchivedViewSparesLiveSessions(t *testing.T) {
 	m.selectSessionRow(t, "old")
 	m.archiveSelected()
 	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 
 	m.rail.SetArchived(true)
@@ -97,6 +99,7 @@ func TestDeleteGroupInArchivedViewSparesLiveSessions(t *testing.T) {
 	}
 	archivedID := m.confirm.sessions[0].ID
 	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 
 	m.rail.SetArchived(false)
@@ -126,6 +129,7 @@ func TestDeleteArchivedGroupInArchivedViewRemovesIt(t *testing.T) {
 	m.selectGroupRow(t, "empty")
 	m.archiveSelected()
 	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 
 	m.rail.SetArchived(true)
@@ -133,6 +137,7 @@ func TestDeleteArchivedGroupInArchivedViewRemovesIt(t *testing.T) {
 	m.selectGroupRow(t, "empty")
 	m.prepareDelete()
 	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 
 	if paths := m.groupRowPaths(); len(paths) != 0 {
@@ -262,6 +267,7 @@ func TestDeleteAgentIncludesChildren(t *testing.T) {
 	}
 	agent := m.sessionRows()[0]
 	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	for _, id := range []string{shell.ID, agent.ID} {
 		if _, err := m.services.store.Get(id); err == nil {
@@ -299,6 +305,7 @@ func TestConfirmedGroupDeleteDropsTheGroupRowAtOnce(t *testing.T) {
 	m.selectGroupRow(t, "zone")
 	m.prepareDelete()
 	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.drainEffects(t)
 
 	for _, r := range railRows(m) {
 		if r.isGroup && r.group == "zone" {

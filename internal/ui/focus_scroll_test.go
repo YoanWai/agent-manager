@@ -41,6 +41,7 @@ func focusedWithHistory(t *testing.T, name string) (*Model, string) {
 	m.focusRuntime.watch.setFocus(sess.ID)
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("did not enter focus: %q", m.errBar.text)
@@ -111,6 +112,7 @@ func seedLive(t *testing.T, m *Model, sessID string) {
 		t.Fatal("live region capture returned nothing")
 	}
 	updated, _ := m.Update(msg)
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 }
 
@@ -132,6 +134,7 @@ func TestFocusWheelScrollsHistory(t *testing.T) {
 			t.Fatalf("wheel up produced no capture at offset %d", m.focusPane.Status().ScrollOffset)
 		}
 		updated, _ := m.Update(cmd())
+		m.drainEffects(t)
 		*m = *updated.(*Model)
 		scrolled = m.workspace.preview
 		if !strings.Contains(scrolled, "history-line-120") {
@@ -150,6 +153,7 @@ func TestFocusWheelScrollsHistory(t *testing.T) {
 
 	// A live push must not yank the view back to the bottom.
 	updated, _ := m.Update(focusPreviewMsg{sessID: sessID, preview: "LIVE-FRAME\n"})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.workspace.preview != scrolled {
 		t.Fatal("a live frame overwrote the scrolled view")
@@ -162,6 +166,7 @@ func TestFocusWheelScrollsHistory(t *testing.T) {
 			continue
 		}
 		updated, _ := m.Update(cmd())
+		m.drainEffects(t)
 		*m = *updated.(*Model)
 	}
 	if m.scrolledBack() {
@@ -202,6 +207,7 @@ func TestFocusScrollRecapturesAfterPreviewResize(t *testing.T) {
 		t.Fatal("test setup did not change preview height")
 	}
 	m.resizeSessions()
+	m.drainEffects(t)
 
 	updated, recapture := m.Update(stale)
 	m = updated.(*Model)
@@ -209,6 +215,7 @@ func TestFocusScrollRecapturesAfterPreviewResize(t *testing.T) {
 		t.Fatal("stale geometry capture was accepted")
 	}
 	updated, _ = m.Update(recapture())
+	m.drainEffects(t)
 	m = updated.(*Model)
 	if got, want := len(paneExact(m.workspace.preview, m.previewPaneHeight(), m.previewPaneWidth(), -1)), m.previewPaneHeight(); got != want {
 		t.Fatalf("scroll frame has %d rows, want %d", got, want)
@@ -253,6 +260,7 @@ func TestFocusScrollKeepsDeepHistoryFrame(t *testing.T) {
 		t.Fatal("deep capture returned nothing")
 	}
 	updated, _ := m.Update(msg)
+	m.drainEffects(t)
 	m = updated.(*Model)
 	if got, want := len(paneExact(m.workspace.preview, m.previewPaneHeight(), m.previewPaneWidth(), -1)), m.previewPaneHeight(); got != want {
 		t.Fatalf("deep frame has %d rows, want %d", got, want)
@@ -269,6 +277,7 @@ func TestTypingResumesLiveView(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		if cmd := m.scrollFocus(-1); cmd != nil {
 			updated, _ := m.Update(cmd())
+			m.drainEffects(t)
 			*m = *updated.(*Model)
 		}
 	}
@@ -277,6 +286,7 @@ func TestTypingResumesLiveView(t *testing.T) {
 	}
 
 	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("z")})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.scrolledBack() {
 		t.Fatal("typing left the view scrolled back")
@@ -340,6 +350,7 @@ func TestWheelBurstKeepsOneCaptureInFlight(t *testing.T) {
 	}
 	// The catch-up's own reply lands on the live target and frees the pipe.
 	updated, _ = m.Update(focusScrollMsg{sessID: sessID, offset: m.focusPane.Status().ScrollOffset, rows: m.focusPaneRows(), preview: "frame\n", ok: true})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if cmd := m.scrollFocus(-1); cmd == nil && m.focusPane.Status().ScrollOffset < m.focusPane.Pane().History {
 		t.Fatal("the next notch after settling should fetch again")
@@ -411,11 +422,13 @@ func TestTerminalShrinkLeavesPaneTall(t *testing.T) {
 	pinned := windowHeight(t, sess.ID)
 
 	m.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height - 6})
+	m.drainEffects(t)
 	if got := windowHeight(t, sess.ID); got != pinned {
 		t.Fatalf("pane height after a terminal shrink = %d, want it kept at %d", got, pinned)
 	}
 
 	m.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height + 12})
+	m.drainEffects(t)
 	if got, want := windowHeight(t, sess.ID), m.previewPaneHeight(); got != want {
 		t.Fatalf("pane height after the terminal grew = %d, want %d", got, want)
 	}
@@ -575,6 +588,7 @@ func focusedMouseApp(t *testing.T, tool, name string) (*Model, store.Session) {
 	t.Cleanup(m.focusRuntime.watch.Close)
 	m.focusRuntime.watch.setFocus(sess.ID)
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	preparedView(m)
 
@@ -590,6 +604,7 @@ func focusedMouseApp(t *testing.T, tool, name string) (*Model, store.Session) {
 		select {
 		case msg := <-msgs:
 			updated, _ := m.Update(msg)
+			m.drainEffects(t)
 			*m = *updated.(*Model)
 		default:
 			time.Sleep(20 * time.Millisecond)
@@ -835,6 +850,7 @@ func TestFocusReentryKeepsPaneStateOnQuietPane(t *testing.T) {
 	// between — checking on an agent whose turn has ended.
 	m.leaveFocus()
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("did not re-enter focus: %q", m.errBar.text)
@@ -871,6 +887,7 @@ func TestFocusReentryKeepsPaneStateOnQuietPane(t *testing.T) {
 	m.leaveFocus()
 	setFocusPaneFacts(m, "someone-else", true, true, true, 0, paneCursor{})
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.focusPane.Pane().Mouse {
 		t.Fatal("another session's cached flags survived focus entry")

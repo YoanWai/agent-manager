@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
@@ -62,24 +61,9 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 		m.mode = modeConfirmDelete
 		return m, nil
 	}
-	// A pane the user quit the agent in is still a live window sitting at a
-	// shell; the agent alone is gone, and it comes back inside that shell.
-	if m.services.tmux.Exists(entry.sess.ID) {
-		cmd, err := m.relaunchInPane(entry.sess)
-		if err != nil {
-			m.reportLaunchError(err, nil)
-			return m, nil
-		}
-		m.errBar.text = m.degradedResumeNotice(entry.sess)
-		return m, cmd
-	}
-	if err := m.reviveSession(entry.sess); err != nil {
-		m.reportLaunchError(err, func() error { return m.reviveSession(entry.sess) })
-		return m, nil
-	}
+	m.queueLifecycle(confirmTarget{action: actionRevive, sessions: []store.Session{entry.sess}}, true, "")
 	m.errBar.text = m.degradedResumeNotice(entry.sess)
-	m.requestRefresh()
-	return m, nil
+	return m, m.nextEffectCmd()
 }
 
 // reviveAllDead relaunches every dead session in the current view, resuming
@@ -103,32 +87,8 @@ func (m *Model) reviveAllDead() (tea.Model, tea.Cmd) {
 // can and names the first failure rather than stopping, so one broken
 // session does not block the rest.
 func (m *Model) reviveMany(sessions []store.Session, emptyNotice string) (tea.Model, tea.Cmd) {
-	revived, degraded := 0, 0
-	var firstErr string
-	for _, sess := range deadSessions(sessions) {
-		if err := m.reviveSession(sess); err != nil {
-			if firstErr == "" {
-				firstErr = err.Error()
-			}
-			continue
-		}
-		revived++
-		if m.degradedResumeNotice(sess) != "" {
-			degraded++
-		}
-	}
-	switch {
-	case revived == 0 && firstErr == "":
-		m.errBar.text = emptyNotice
-	case firstErr != "":
-		m.errBar.text = fmt.Sprintf("revived %d, first error: %s", revived, firstErr)
-	case degraded > 0:
-		m.errBar.text = fmt.Sprintf("revived %d, %d without a captured id (used --continue)", revived, degraded)
-	default:
-		m.errBar.text = ""
-	}
-	m.requestRefresh()
-	return m, nil
+	m.queueLifecycle(confirmTarget{action: actionRevive, batch: true, sessions: deadSessions(sessions)}, false, emptyNotice)
+	return m, m.nextEffectCmd()
 }
 
 func deadSessions(sessions []store.Session) []store.Session {
@@ -170,23 +130,6 @@ func (m *Model) degradedResumeNotice(sess store.Session) string {
 // captured, it resumes that exact conversation via the tool's
 // resume_by_id_command instead of the working directory's most recent one,
 // which would be the wrong conversation whenever sessions share a cwd.
-func (m *Model) reviveSession(sess store.Session) error {
-	if m.services.tmux.Exists(sess.ID) {
-		return fmt.Errorf("session %s is still running; revive only applies to dead sessions", sess.Name)
-	}
-	paneWidth, paneHeight := m.paneTargetSize()
-	result, err := m.services.lifecycle.Revive(sess, sessioncmd.PaneSize{Width: paneWidth, Height: paneHeight})
-	if err != nil {
-		return err
-	}
-	m.markFreshPane(sess.ID)
-	m.bindReviveLocally(sess.ID, result.LaunchedAt)
-	if m.focusRuntime.watch != nil {
-		m.focusRuntime.watch.retryNow()
-	}
-	m.rebuildRows()
-	return result.LabelError
-}
 
 // bindReviveLocally mirrors the store write in the loaded rows, so the
 // startup loader can paint before the next poll re-reads them.

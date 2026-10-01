@@ -45,7 +45,9 @@ func TestKillEndsTheSessionAndKeepsItRevivable(t *testing.T) {
 	}
 
 	m.selectSessionRow(t, "hungry")
-	if _, _ = m.reviveSelected(); m.errBar.text != "" {
+	m.reviveSelected()
+	m.drainEffects(t)
+	if m.errBar.text != "" {
 		t.Fatalf("revive after kill: %q", m.errBar.text)
 	}
 	if !m.services.tmux.Exists(sess.ID) {
@@ -84,6 +86,7 @@ func TestKillAllEndsEveryLiveSessionInView(t *testing.T) {
 	createSession(t, m, "outside", dir, "")
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("X")})
+	m.drainEffects(t)
 	m = updated.(*Model)
 	confirmKill(t, m)
 
@@ -187,6 +190,7 @@ func TestKillDeadAgentStillKillsItsLiveChild(t *testing.T) {
 		t.Fatalf("mode = %v, want the kill confirm (errBar %q)", m.mode, m.errBar.text)
 	}
 	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	if m.services.tmux.Exists(shell.ID) {
 		t.Fatal("live child survived the kill")

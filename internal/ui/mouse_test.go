@@ -64,6 +64,7 @@ func TestDragReleasePersistsAndExits(t *testing.T) {
 	}
 	updated, _ := m.enterResizeMode()
 	m = updated.(*Model)
+	m.drainEffects(t)
 
 	div := m.dividerX()
 	// Body starts at the header's height; any y inside the body range works.
@@ -71,6 +72,7 @@ func TestDragReleasePersistsAndExits(t *testing.T) {
 		X: div, Y: 5, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if !m.split.dragging {
 		t.Fatal("press on divider should start drag")
 	}
@@ -79,6 +81,7 @@ func TestDragReleasePersistsAndExits(t *testing.T) {
 		X: 50, Y: 5, Action: tea.MouseActionMotion, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if left, _ := m.splitWidths(); left != 50 {
 		t.Fatalf("motion should set left=50, got %d", left)
 	}
@@ -87,6 +90,7 @@ func TestDragReleasePersistsAndExits(t *testing.T) {
 		X: 50, Y: 5, Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.split.dragging || m.split.resizeMode {
 		t.Fatal("release should end drag and exit resize mode")
 	}
@@ -114,6 +118,7 @@ func TestDragResizesTmuxOnlyOnRelease(t *testing.T) {
 	id := m.sessionRows()[0].ID
 	m.split.ratio = defaultSplitRatio
 	m.resizeSessions()
+	m.drainEffects(t)
 	before := windowWidth(t, id)
 	if before != m.previewPaneWidth() {
 		t.Fatalf("setup width = %d want %d", before, m.previewPaneWidth())
@@ -129,16 +134,19 @@ func TestDragResizesTmuxOnlyOnRelease(t *testing.T) {
 
 	updated, _ := m.enterResizeMode()
 	m = updated.(*Model)
+	m.drainEffects(t)
 	div := m.dividerX()
 	y0, _ := m.bodyYRange()
 	updated, _ = m.handleMouse(tea.MouseMsg{
 		X: div, Y: y0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
+	m.drainEffects(t)
 	updated, _ = m.handleMouse(tea.MouseMsg{
 		X: 50, Y: y0, Action: tea.MouseActionMotion, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if w := windowWidth(t, id); w != 100 {
 		t.Fatalf("motion must not resize tmux, width = %d want 100", w)
 	}
@@ -147,6 +155,7 @@ func TestDragResizesTmuxOnlyOnRelease(t *testing.T) {
 		X: 50, Y: y0, Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
+	m.drainEffects(t)
 	// After exit, grip is gone; measure the committed preview width.
 	wantPreview := m.previewPaneWidth()
 	if wantPreview == 100 {
@@ -169,6 +178,7 @@ func TestPressOutsideBodyDoesNotDrag(t *testing.T) {
 		X: div, Y: 0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.split.dragging {
 		t.Fatal("press on header row must not start drag")
 	}
@@ -180,6 +190,7 @@ func TestPressOutsideBodyDoesNotDrag(t *testing.T) {
 		X: div, Y: y1, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.split.dragging {
 		t.Fatal("press on exclusive body end must not start drag")
 	}
@@ -194,21 +205,25 @@ func TestDragCancelRestoresRatio(t *testing.T) {
 	}
 	updated, _ := m.enterResizeMode()
 	m = updated.(*Model)
+	m.drainEffects(t)
 	div := m.dividerX()
 	updated, _ = m.handleMouse(tea.MouseMsg{
 		X: div, Y: 5, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
+	m.drainEffects(t)
 	updated, _ = m.handleMouse(tea.MouseMsg{
 		X: 55, Y: 5, Action: tea.MouseActionMotion, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if left, _ := m.splitWidths(); left != 55 {
 		t.Fatalf("pre-cancel left = %d want 55", left)
 	}
 
 	updated, _ = m.exitResizeMode(false)
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.split.resizeMode || m.split.dragging {
 		t.Fatal("cancel should clear resize state")
 	}
@@ -228,6 +243,7 @@ func TestPressOffDividerDoesNotDrag(t *testing.T) {
 		X: 5, Y: 5, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.split.dragging {
 		t.Fatal("press far from divider should not start drag")
 	}
@@ -282,6 +298,7 @@ func TestClickSelectsRow(t *testing.T) {
 		X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
+	m.drainEffects(t)
 	sess, ok := m.selected()
 	if !ok || sess.Name != "alpha" {
 		t.Fatalf("click should select alpha, got %q ok=%v", sess.Name, ok)
@@ -301,6 +318,7 @@ func TestClickOnAnotherRowFromFocusFocusesIt(t *testing.T) {
 	m.selectSessionRow(t, "alpha")
 	updated, _ := m.focusSelected()
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.mode != modeFocus {
 		t.Fatalf("test setup: focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
@@ -309,13 +327,17 @@ func TestClickOnAnotherRowFromFocusFocusesIt(t *testing.T) {
 	y0, _ := m.bodyYRange()
 	at := tea.MouseMsg{X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft}
 	updated, _ = m.handleMouse(at)
+	m.drainEffects(t)
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.mode != modeList {
 		t.Fatalf("the press should leave focus, mode = %v", m.mode)
 	}
 	at.Action = tea.MouseActionRelease
 	updated, _ = m.handleMouse(at)
+	m.drainEffects(t)
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if sess, ok := m.selected(); m.mode != modeFocus || !ok || sess.Name != "beta" {
 		t.Fatalf("the release should focus beta, mode = %v got %q", m.mode, sess.Name)
 	}
@@ -327,6 +349,7 @@ func TestClickOnFocusedSessionRowLeavesFocus(t *testing.T) {
 	m.selectSessionRow(t, "alpha")
 	updated, _ := m.focusSelected()
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.mode != modeFocus {
 		t.Fatalf("test setup: focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
@@ -335,10 +358,14 @@ func TestClickOnFocusedSessionRowLeavesFocus(t *testing.T) {
 	y0, _ := m.bodyYRange()
 	at := tea.MouseMsg{X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft}
 	updated, _ = m.handleMouse(at)
+	m.drainEffects(t)
 	m = updated.(*Model)
+	m.drainEffects(t)
 	at.Action = tea.MouseActionRelease
 	updated, _ = m.handleMouse(at)
+	m.drainEffects(t)
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.mode != modeList {
 		t.Fatalf("click on the focused row should leave focus, mode = %v", m.mode)
 	}
@@ -353,6 +380,7 @@ func TestClickInFocusedPaneStaysFocused(t *testing.T) {
 	m.selectSessionRow(t, "alpha")
 	updated, _ := m.focusSelected()
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.mode != modeFocus {
 		t.Fatalf("test setup: focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
@@ -365,6 +393,7 @@ func TestClickInFocusedPaneStaysFocused(t *testing.T) {
 		X: box.X, Y: box.Y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.mode != modeFocus {
 		t.Fatalf("click in the pane should stay focused, mode = %v", m.mode)
 	}
@@ -383,11 +412,15 @@ func TestDoubleClickFocusesTheRowUnderThePointer(t *testing.T) {
 	y0, _ := m.bodyYRange()
 	press := tea.MouseMsg{X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft}
 	updated, _ := m.handleMouse(press)
+	m.drainEffects(t)
 	m = updated.(*Model)
+	m.drainEffects(t)
 	m.selectSessionRow(t, "beta")
 
 	updated, _ = m.handleMouse(press)
+	m.drainEffects(t)
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.mode != modeFocus {
 		t.Fatalf("double click should focus, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
@@ -417,6 +450,7 @@ func TestDoubleClickPairsAcrossARebuild(t *testing.T) {
 		X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
+	m.drainEffects(t)
 	before := m.rail.Cursor()
 
 	// Folding the group above target drops every row under it an index.
@@ -433,6 +467,7 @@ func TestDoubleClickPairsAcrossARebuild(t *testing.T) {
 		X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.mode != modeFocus {
 		t.Fatalf("the pair should survive a rebuild, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
@@ -449,6 +484,7 @@ func TestClickInTheFocusedColumnStaysFocused(t *testing.T) {
 	m.selectSessionRow(t, "alpha")
 	updated, _ := m.focusSelected()
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.mode != modeFocus {
 		t.Fatalf("test setup: focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
@@ -468,6 +504,7 @@ func TestClickInTheFocusedColumnStaysFocused(t *testing.T) {
 				X: m.focusPaneOriginX(), Y: y0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 			})
 			m = updated.(*Model)
+			m.drainEffects(t)
 			if m.mode != modeFocus {
 				t.Fatalf("a click in the session's own column must not leave focus, mode = %v", m.mode)
 			}
@@ -488,6 +525,7 @@ func TestClickInFullScreenFocusStaysFocused(t *testing.T) {
 	m.selectSessionRow(t, "alpha")
 	updated, _ := m.focusSelected()
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.mode != modeFocus {
 		t.Fatalf("test setup: focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
@@ -498,6 +536,7 @@ func TestClickInFullScreenFocusStaysFocused(t *testing.T) {
 		X: 2, Y: y0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.mode != modeFocus {
 		t.Fatalf("a click with no list on screen must not leave focus, mode = %v", m.mode)
 	}
@@ -517,12 +556,16 @@ func TestDoubleClickFocusesTheRowJustSelected(t *testing.T) {
 	y0, _ := m.bodyYRange()
 	press := tea.MouseMsg{X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft}
 	updated, _ := m.handleMouse(press)
+	m.drainEffects(t)
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.mode != modeList {
 		t.Fatalf("first click should select, mode = %v", m.mode)
 	}
 	updated, _ = m.handleMouse(press)
+	m.drainEffects(t)
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.mode != modeFocus {
 		t.Fatalf("double click should focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
@@ -539,9 +582,13 @@ func TestDoubleClickFocusesWhenEnterAttaches(t *testing.T) {
 	y0, _ := m.bodyYRange()
 	press := tea.MouseMsg{X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft}
 	updated, _ := m.handleMouse(press)
+	m.drainEffects(t)
 	m = updated.(*Model)
+	m.drainEffects(t)
 	updated, _ = m.handleMouse(press)
+	m.drainEffects(t)
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.mode != modeFocus {
 		t.Fatalf("double click should focus even when Enter attaches, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
@@ -559,8 +606,11 @@ func TestSlowSecondClickDoesNotFocus(t *testing.T) {
 	ctx := m.railMouseContext()
 	ctx.Now = time.Now().Add(-time.Second)
 	m.applyRailDecision(m.rail.Mouse(press, m.displayedRail, ctx))
+	m.drainEffects(t)
 	updated, _ := m.handleMouse(press)
+	m.drainEffects(t)
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.mode != modeList {
 		t.Fatalf("a slow second click should not focus, mode = %v", m.mode)
 	}
@@ -583,9 +633,13 @@ func TestClickOnSelectedGroupTogglesCollapse(t *testing.T) {
 	y0, _ := m.bodyYRange()
 	press := tea.MouseMsg{X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft}
 	updated, _ := m.handleMouse(press)
+	m.drainEffects(t)
 	m = updated.(*Model)
+	m.drainEffects(t)
 	updated, _ = m.handleMouse(press)
+	m.drainEffects(t)
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if !m.rail.IsCollapsed("work") {
 		t.Fatal("double click on the selected group should fold it")
 	}
@@ -594,9 +648,13 @@ func TestClickOnSelectedGroupTogglesCollapse(t *testing.T) {
 	y0, _ = m.bodyYRange()
 	press.Y = y0 + line
 	updated, _ = m.handleMouse(press)
+	m.drainEffects(t)
 	m = updated.(*Model)
+	m.drainEffects(t)
 	updated, _ = m.handleMouse(press)
+	m.drainEffects(t)
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.rail.IsCollapsed("work") {
 		t.Fatal("a second double click should unfold it")
 	}
@@ -617,6 +675,7 @@ func TestClickOnRailLastColumnSelectsRow(t *testing.T) {
 		X: m.dividerX() - 1, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.split.dragging || m.split.resizeMode {
 		t.Fatal("the rail's own last column must not grab the divider")
 	}
@@ -640,6 +699,7 @@ func TestClickInContentColumnDoesNotSelect(t *testing.T) {
 		X: m.dividerX() + 5, Y: y0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.rail.Cursor() != before || cmd != nil {
 		t.Fatal("a click in the content column should not move the cursor")
 	}
@@ -664,6 +724,7 @@ func TestDividerPressArmsDragWithoutResizeMode(t *testing.T) {
 		X: div, Y: y0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if !m.split.dragging {
 		t.Fatal("a press on the divider should arm the drag on its own")
 	}
@@ -677,6 +738,7 @@ func TestDividerPressArmsDragWithoutResizeMode(t *testing.T) {
 		X: 40, Y: y0, Action: tea.MouseActionMotion, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if left, _ := m.splitWidths(); left != 40 {
 		t.Fatalf("motion should set left=40, got %d", left)
 	}
@@ -684,6 +746,7 @@ func TestDividerPressArmsDragWithoutResizeMode(t *testing.T) {
 		X: 40, Y: y0, Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.split.dragging || m.split.resizeMode {
 		t.Fatal("release should end the drag it started without the keyboard")
 	}
@@ -714,6 +777,7 @@ func TestDividerClickWithoutMotionCommitsNothing(t *testing.T) {
 			X: div, Y: y0, Action: action, Button: tea.MouseButtonLeft,
 		})
 		m = updated.(*Model)
+		m.drainEffects(t)
 	}
 	if m.split.dragging || m.split.resizeMode {
 		t.Fatal("the click should have ended the drag it armed")
@@ -739,11 +803,14 @@ func TestKeyEndsADragWhoseReleaseNeverLands(t *testing.T) {
 		X: m.dividerX(), Y: y0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if !m.split.dragging {
 		t.Fatal("test setup: the press should have armed the drag")
 	}
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyDown})
+	m.drainEffects(t)
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.split.dragging || m.split.resizeMode {
 		t.Fatal("a key should end a drag left open by a lost release")
 	}
@@ -767,10 +834,12 @@ func TestRowClickAfterALostReleaseLeavesTheDividerAlone(t *testing.T) {
 		X: m.dividerX(), Y: y0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
+	m.drainEffects(t)
 	updated, _ = m.handleMouse(tea.MouseMsg{
 		X: m.dividerX() + 8, Y: y0, Action: tea.MouseActionMotion, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if !m.split.dragging || !m.split.moved {
 		t.Fatal("test setup: the press and motion should have armed a live drag")
 	}
@@ -783,10 +852,12 @@ func TestRowClickAfterALostReleaseLeavesTheDividerAlone(t *testing.T) {
 		X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
+	m.drainEffects(t)
 	updated, _ = m.handleMouse(tea.MouseMsg{
 		X: 2, Y: y0 + line, Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
+	m.drainEffects(t)
 
 	if m.split.dragging || m.split.moved {
 		t.Fatal("the press should have ended the drag the lost release left open")
@@ -812,11 +883,13 @@ func TestPressOffDividerWhileArmedDoesNotSelectRow(t *testing.T) {
 	preparedView(m)
 	updated, _ := m.enterResizeMode()
 	m = updated.(*Model)
+	m.drainEffects(t)
 	y0, _ := m.bodyYRange()
 	updated, _ = m.handleMouse(tea.MouseMsg{
 		X: 2, Y: y0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.rail.Cursor() != before {
 		t.Fatal("a miss while resize mode is armed should not select a row")
 	}
@@ -841,6 +914,7 @@ func TestClickSelectsRowInFullLayout(t *testing.T) {
 		X: m.width - 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
+	m.drainEffects(t)
 	sess, ok := m.selected()
 	if !ok || sess.Name != "alpha" {
 		t.Fatalf("click should select alpha, got %q ok=%v", sess.Name, ok)
@@ -866,6 +940,7 @@ func TestClickAtDividerXInFullLayoutSelectsRow(t *testing.T) {
 		X: m.dividerX(), Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.split.resizeMode || m.split.dragging {
 		t.Fatal("full layout has no divider to drag")
 	}
@@ -897,6 +972,7 @@ func TestClickSelectsRowAcrossComfortableLines(t *testing.T) {
 		X: 2, Y: y0 + last, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if sess, ok := m.selected(); !ok || sess.Name != "alpha" {
 		t.Fatalf("clicking alpha's later line should still select alpha, got %q ok=%v", sess.Name, ok)
 	}
@@ -937,6 +1013,7 @@ func TestClickOnMoreCounterSelectsTheRowItHides(t *testing.T) {
 		X: 2, Y: y0 + counter, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.rail.Cursor() != target {
 		t.Fatalf("clicking the counter should select row %d, cursor = %d", target, m.rail.Cursor())
 	}
@@ -972,10 +1049,14 @@ func TestMoreCounterOnlyScrolls(t *testing.T) {
 		}
 		at := tea.MouseMsg{X: x, Y: y0 + counter, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress}
 		updated, _ := m.handleMouse(at)
+		m.drainEffects(t)
 		m = updated.(*Model)
+		m.drainEffects(t)
 		at.Action = tea.MouseActionRelease
 		updated, _ = m.handleMouse(at)
+		m.drainEffects(t)
 		m = updated.(*Model)
+		m.drainEffects(t)
 		if m.mode != modeList || m.rail.MenuOpen() || m.rail.Reordering() {
 			t.Fatalf("a click on the counter at x=%d should only scroll, mode = %v menu = %v lifted = %v", x, m.mode, m.rail.MenuOpen(), m.rail.Reordering())
 		}
@@ -1009,6 +1090,7 @@ func TestClickOnRailChromeDoesNotSelect(t *testing.T) {
 		X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.rail.Cursor() != before || cmd != nil {
 		t.Fatal("clicking a chrome line should not move the cursor")
 	}
@@ -1030,6 +1112,7 @@ func TestWheelMovesListCursor(t *testing.T) {
 		Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress,
 	})
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.rail.Cursor() != 1 {
 		t.Fatalf("wheel down: cursor = %d want 1", m.rail.Cursor())
 	}
@@ -1040,6 +1123,7 @@ func TestWheelMovesListCursor(t *testing.T) {
 		Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress,
 	})
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.rail.Cursor() != 0 {
 		t.Fatalf("wheel up: cursor = %d want 0", m.rail.Cursor())
 	}
@@ -1078,10 +1162,14 @@ func TestClickSelectsRowWhileSearching(t *testing.T) {
 	y0, _ := m.bodyYRange()
 	at := tea.MouseMsg{X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft}
 	updated, _ := m.handleMouse(at)
+	m.drainEffects(t)
 	m = updated.(*Model)
+	m.drainEffects(t)
 	at.Action = tea.MouseActionRelease
 	updated, _ = m.handleMouse(at)
+	m.drainEffects(t)
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if sess, ok := m.selected(); m.mode != modeList || !ok || sess.Name != "alpha" {
 		t.Fatalf("click should select alpha and stay in the list, mode = %v got %q", m.mode, sess.Name)
 	}
@@ -1099,19 +1187,26 @@ func TestClickLeavingFocusDoesNotRefocus(t *testing.T) {
 	press := tea.MouseMsg{X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft}
 
 	updated, _ := m.handleMouse(press)
+	m.drainEffects(t)
 	m = updated.(*Model)
+	m.drainEffects(t)
 	updated, _ = m.focusSelected()
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.mode != modeFocus {
 		t.Fatalf("test setup: focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 	preparedView(m)
 
 	updated, _ = m.handleMouse(press)
+	m.drainEffects(t)
 	m = updated.(*Model)
+	m.drainEffects(t)
 	press.Action = tea.MouseActionRelease
 	updated, _ = m.handleMouse(press)
+	m.drainEffects(t)
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.mode != modeList {
 		t.Fatalf("the click that leaves focus must not focus again, mode = %v", m.mode)
 	}
@@ -1130,11 +1225,15 @@ func TestClickWhileSearchingOpensNoClickRun(t *testing.T) {
 	y0, _ := m.bodyYRange()
 	press := tea.MouseMsg{X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft}
 	updated, _ := m.handleMouse(press)
+	m.drainEffects(t)
 	m = updated.(*Model)
+	m.drainEffects(t)
 
 	m.rail.SetSearch(m.rail.Search(), false)
 	updated, _ = m.handleMouse(press)
+	m.drainEffects(t)
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.mode != modeList {
 		t.Fatalf("one press after search closes must not focus, mode = %v", m.mode)
 	}
@@ -1158,7 +1257,9 @@ func TestClicksDoNotFocusWhileSearching(t *testing.T) {
 				for _, action := range []tea.MouseAction{tea.MouseActionPress, tea.MouseActionRelease} {
 					at.Action = action
 					updated, _ := m.handleMouse(at)
+					m.drainEffects(t)
 					m = updated.(*Model)
+					m.drainEffects(t)
 				}
 			}
 			if m.mode != modeList {
@@ -1201,6 +1302,7 @@ func TestWheelClampsAtBothEnds(t *testing.T) {
 			Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress,
 		})
 		m = updated.(*Model)
+		m.drainEffects(t)
 	}
 	if m.rail.Cursor() != 2 {
 		t.Fatalf("wheel down off the bottom: cursor = %d want it held at 2", m.rail.Cursor())
@@ -1211,6 +1313,7 @@ func TestWheelClampsAtBothEnds(t *testing.T) {
 			Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress,
 		})
 		m = updated.(*Model)
+		m.drainEffects(t)
 	}
 	if m.rail.Cursor() != 0 {
 		t.Fatalf("wheel up off the top: cursor = %d want it held at 0", m.rail.Cursor())
@@ -1234,6 +1337,7 @@ func TestWheelSwallowedInResizeMode(t *testing.T) {
 		Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress,
 	})
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.rail.Cursor() != 0 {
 		t.Fatalf("resize mode should swallow wheel, cursor = %d", m.rail.Cursor())
 	}
@@ -1310,6 +1414,7 @@ func TestClickOnMessagesCardWhileFocusedIsLeftToFocus(t *testing.T) {
 	m.selectSessionRow(t, "alpha")
 	updated, _ := m.focusSelected()
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.mode != modeFocus {
 		t.Fatalf("test setup: focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
@@ -1329,13 +1434,17 @@ func TestSingleClickFocusesOnRelease(t *testing.T) {
 	at := tea.MouseMsg{X: 2, Y: y0 + line, Button: tea.MouseButtonLeft}
 	at.Action = tea.MouseActionPress
 	updated, _ := m.handleMouse(at)
+	m.drainEffects(t)
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.mode != modeList {
 		t.Fatalf("the press alone should only select, mode = %v", m.mode)
 	}
 	at.Action = tea.MouseActionRelease
 	updated, _ = m.handleMouse(at)
+	m.drainEffects(t)
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.mode != modeFocus {
 		t.Fatalf("release should focus, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
@@ -1353,10 +1462,14 @@ func TestSingleClickFocusesWhenEnterAttaches(t *testing.T) {
 	y0, _ := m.bodyYRange()
 	at := tea.MouseMsg{X: 2, Y: y0 + line, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress}
 	updated, _ := m.handleMouse(at)
+	m.drainEffects(t)
 	m = updated.(*Model)
+	m.drainEffects(t)
 	at.Action = tea.MouseActionRelease
 	updated, _ = m.handleMouse(at)
+	m.drainEffects(t)
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.mode != modeFocus {
 		t.Fatalf("a click should focus even when Enter attaches, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
@@ -1371,11 +1484,17 @@ func TestSingleClickReleasedOnAnotherRowDoesNotFocus(t *testing.T) {
 	alpha := paintedRailLines(t, m, "alpha")[0]
 	beta := paintedRailLines(t, m, "beta")[0]
 	updated, _ := m.handleMouse(tea.MouseMsg{X: 2, Y: y0 + alpha, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	m.drainEffects(t)
 	m = updated.(*Model)
+	m.drainEffects(t)
 	updated, _ = m.handleMouse(tea.MouseMsg{X: 2, Y: y0 + beta, Action: tea.MouseActionMotion, Button: tea.MouseButtonLeft})
+	m.drainEffects(t)
 	m = updated.(*Model)
+	m.drainEffects(t)
 	updated, _ = m.handleMouse(tea.MouseMsg{X: 2, Y: y0 + alpha, Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft})
+	m.drainEffects(t)
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.mode != modeList {
 		t.Fatalf("a press dragged off its row should not focus, mode = %v", m.mode)
 	}
@@ -1390,10 +1509,14 @@ func TestSingleClickInFullLayoutOnlySelects(t *testing.T) {
 	y0, _ := m.bodyYRange()
 	at := tea.MouseMsg{X: 2, Y: y0 + line, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress}
 	updated, _ := m.handleMouse(at)
+	m.drainEffects(t)
 	m = updated.(*Model)
+	m.drainEffects(t)
 	at.Action = tea.MouseActionRelease
 	updated, _ = m.handleMouse(at)
+	m.drainEffects(t)
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.mode != modeList {
 		t.Fatalf("full layout keeps click as select, mode = %v", m.mode)
 	}
@@ -1411,11 +1534,14 @@ func TestClicksWorkWhileTheQuickBarIsOpen(t *testing.T) {
 	beta := y0 + paintedRailLines(t, m, "beta")[0]
 
 	updated, _ := m.handleMouse(tea.MouseMsg{X: m.displayedRail.Width, Y: beta, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	m.drainEffects(t)
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if !m.rail.MenuOpen() || !m.quick.active {
 		t.Fatalf("%s should open the menu over the open quick bar, menu = %v quick = %v", rowMenuGlyph, m.rail.MenuOpen(), m.quick.active)
 	}
 	m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m.drainEffects(t)
 	if m.rail.MenuOpen() || !m.quick.active {
 		t.Fatalf("esc should close the menu first and leave the bar, menu = %v quick = %v", m.rail.MenuOpen(), m.quick.active)
 	}
@@ -1425,13 +1551,18 @@ func TestClicksWorkWhileTheQuickBarIsOpen(t *testing.T) {
 		t.Fatal("a lifted row should own the footer over the quick bar")
 	}
 	m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
 
 	at := tea.MouseMsg{X: 8, Y: y0 + paintedRailLines(t, m, "alpha")[0], Button: tea.MouseButtonLeft, Action: tea.MouseActionPress}
 	updated, _ = m.handleMouse(at)
+	m.drainEffects(t)
 	m = updated.(*Model)
+	m.drainEffects(t)
 	at.Action = tea.MouseActionRelease
 	updated, _ = m.handleMouse(at)
+	m.drainEffects(t)
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.mode != modeFocus || m.quick.active {
 		t.Fatalf("a row click should focus and close the bar, mode = %v quick = %v", m.mode, m.quick.active)
 	}

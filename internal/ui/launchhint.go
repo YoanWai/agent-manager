@@ -25,24 +25,26 @@ import (
 // prompt names. command is empty when the manager knows no recipe, which
 // leaves the dialog read-only.
 type launchFix struct {
-	text    string
-	command string
-	binary  string
-	retry   func() error
-	images  []imageAttachment
+	text        string
+	command     string
+	binary      string
+	retry       func() error
+	effectRetry *lifecycleRequest
+	images      []imageAttachment
 }
 
 // pendingInstall is an install the dialog started in a shell tab: the
 // session running it, the files its script writes and runs from, and the
 // launch to finish once the command's exit status lands.
 type pendingInstall struct {
-	sessionID  string
-	name       string
-	binary     string
-	statusFile string
-	script     string
-	retry      func() error
-	images     []imageAttachment
+	sessionID   string
+	name        string
+	binary      string
+	statusFile  string
+	script      string
+	retry       func() error
+	effectRetry *lifecycleRequest
+	images      []imageAttachment
 }
 
 // copyLaunchCommand is the seam tests swap so a copy never reaches the
@@ -129,7 +131,7 @@ func dropImages(images []imageAttachment) {
 func (m *Model) handleLaunchHintKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c":
-		return m, tea.Quit
+		return m.requestQuit()
 	case "c":
 		if m.launchFix.command == "" {
 			return m, nil
@@ -209,13 +211,14 @@ func (m *Model) startInstall() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.install = &pendingInstall{
-		sessionID:  sess.ID,
-		name:       sess.Name,
-		binary:     fix.binary,
-		statusFile: statusFile,
-		script:     script,
-		retry:      fix.retry,
-		images:     fix.images,
+		sessionID:   sess.ID,
+		name:        sess.Name,
+		binary:      fix.binary,
+		statusFile:  statusFile,
+		script:      script,
+		retry:       fix.retry,
+		effectRetry: fix.effectRetry,
+		images:      fix.images,
 	}
 	m.launchFix = launchFix{}
 	m.mode = modeList
@@ -285,6 +288,11 @@ func (m *Model) settleInstall() {
 			return
 		}
 		m.errBar.text = fmt.Sprintf("%s installer finished, but %s is still not on PATH; add its directory to PATH, the installer's output names it", install.binary, install.binary)
+		return
+	}
+	if install.effectRetry != nil {
+		m.enqueueEffect(*install.effectRetry, 0, false)
+		m.reportDone(install.binary + " installed; retry queued")
 		return
 	}
 	if install.retry == nil {

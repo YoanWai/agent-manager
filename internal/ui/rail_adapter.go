@@ -2,7 +2,6 @@ package ui
 
 import (
 	"encoding/json"
-	"sort"
 	"strings"
 	"time"
 
@@ -33,16 +32,6 @@ func loadCollapsed(st *store.Store) []string {
 		return nil
 	}
 	return paths
-}
-
-func (m *Model) persistCollapsed(paths []string) error {
-	paths = append([]string(nil), paths...)
-	sort.Strings(paths)
-	raw, err := json.Marshal(paths)
-	if err != nil {
-		return err
-	}
-	return m.services.store.SetSetting(collapsedSetting, string(raw))
 }
 
 func (m *Model) awaitingRename(session store.Session) bool {
@@ -88,17 +77,6 @@ func (m *Model) sessionGlyph(session store.Session) string {
 	return lipgloss.NewStyle().Foreground(statusColor(session.Status)).Render(statusGlyph(session.Status))
 }
 
-func (m *Model) relabelMoved(session store.Session) {
-	moved, err := m.sessionAndChildren(session)
-	if err != nil {
-		m.errBar.text = err.Error()
-		return
-	}
-	for _, each := range moved {
-		m.relabelSession(each.ID)
-	}
-}
-
 func (m *Model) applyRailDecision(decision uirail.Decision) (tea.Model, tea.Cmd) {
 	var commands []tea.Cmd
 	if decision.Error != "" {
@@ -119,14 +97,18 @@ func (m *Model) applyRailDecision(decision uirail.Decision) (tea.Model, tea.Cmd)
 			commands = append(commands, m.schedulePreview())
 		}
 	}
+	dependent := false
 	for _, mutation := range decision.Mutations {
-		follow := m.runRailMutation(mutation)
-		_, command := m.applyRailDecision(follow)
-		commands = append(commands, command)
-		if follow.Error != "" {
-			break
+		if mutation.Kind != uirail.SaveCollapsed {
+			dependent = true
 		}
 	}
+	if dependent && m.railMutationPending() {
+		decision.Mutations = nil
+		m.errBar.text = "previous Rail change is still saving"
+	}
+	m.queueRail(decision.Mutations, 0, false)
+	commands = append(commands, m.nextEffectCmd())
 	if decision.Refresh {
 		m.requestRefresh()
 	}
@@ -149,50 +131,8 @@ func (m *Model) moveCursor(delta int) tea.Cmd {
 	return command
 }
 
-func (m *Model) runRailMutation(request uirail.Mutation) uirail.Decision {
-	var err error
-	var moved store.Session
-	switch request.Kind {
-	case uirail.SaveCollapsed:
-		err = m.persistCollapsed(request.Collapsed)
-	case uirail.SwapSession:
-		err = m.services.store.SwapSessionOrder(request.SessionID, request.TargetID)
-		if err == nil {
-			m.swapSessionInventory(request.SessionID, request.TargetID)
-		}
-	case uirail.SwapGroup:
-		err = m.services.store.SwapGroupOrder(request.Path, request.TargetPath, request.GroupSiblings...)
-		if err == nil {
-			m.materializeGroupsLocal(request.GroupSiblings)
-			m.swapGroupInventory(request.Path, request.TargetPath)
-		}
-	case uirail.PlaceSession:
-		moved, _ = m.sessionByID(request.SessionID)
-		err = m.services.store.PlaceSession(request.SessionID, request.Group, request.ParentID)
-	case uirail.PlaceSessionBefore:
-		moved, _ = m.sessionByID(request.SessionID)
-		err = m.services.store.PlaceSessionBefore(request.SessionID, request.TargetID)
-	case uirail.MoveGroup:
-		err = m.moveGroupUnder(request.Path, request.Group)
-	}
-	if err == nil && moved.ID != "" {
-		m.relabelMoved(moved)
-	}
-	return m.rail.ApplyMutation(request, err)
-}
-
 func (m *Model) applyRailStateDecision(decision uirail.Decision) {
-	queue := append([]uirail.Mutation(nil), decision.Mutations...)
-	for len(queue) > 0 {
-		request := queue[0]
-		queue = queue[1:]
-		follow := m.runRailMutation(request)
-		if follow.Error != "" {
-			m.errBar.text = follow.Error
-			return
-		}
-		queue = append(queue, follow.Mutations...)
-	}
+	m.queueRail(decision.Mutations, 0, true)
 }
 
 func (m *Model) swapSessionInventory(id, targetID string) {
@@ -228,7 +168,7 @@ func (m *Model) swapGroupInventory(path, targetPath string) {
 func (m *Model) runRailIntent(intent uirail.Intent) (tea.Model, tea.Cmd) {
 	switch intent.Kind {
 	case uirail.Quit:
-		return m, tea.Quit
+		return m.requestQuit()
 	case uirail.Focus:
 		return m.focusSelected()
 	case uirail.Attach:

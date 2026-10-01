@@ -588,20 +588,18 @@ const launchPromptGrace = 30 * time.Second
 // while the Runner is paused (runMu held). A poll must not capture mid-
 // resize against a pre-resize hash: that comparison treats reflow as
 // streaming and flashes every session as working for one tick.
-func (p *Runner) ReflowSessions(ids []string, reflow func()) {
-	if len(ids) == 0 {
-		return
-	}
+func (p *Runner) ReflowSessions(ids []string, reflow func()) error {
 	p.runMu.Lock()
 	defer p.runMu.Unlock()
 	if p.stopped {
-		return
+		return errors.New("execution runner stopped before UI effect")
 	}
 	for _, id := range ids {
 		delete(p.paneHashes, id)
 		delete(p.quietSince, id)
 	}
 	reflow()
+	return nil
 }
 
 func sessionLabel(group, name string) string {

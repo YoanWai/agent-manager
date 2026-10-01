@@ -3,40 +3,12 @@ package ui
 import (
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/config"
-	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/google/uuid"
 	"time"
 )
-
-// relaunchedMsg carries the result of starting an agent in a pane that was
-// left on its shell.
-type relaunchedMsg struct {
-	sessID     string
-	launchedAt time.Time
-	err        error
-}
-
-// relaunchInPane builds the command that starts a session's tool again
-// inside the shell its pane already holds, for a session whose window is
-// alive because only the agent exited. The command is typed into that
-// shell rather than launched over a fresh window, so nothing about the
-// pane is lost and the agent comes back as the shell's child, the shape
-// every other session has. It carries the session environment inline as
-// well, since a pane opened by an older manager holds a shell that was
-// never given it. The probe and the send run off the update path, where a
-// pane that answers slowly would hold up the whole UI.
-func (m *Model) relaunchInPane(sess store.Session) (tea.Cmd, error) {
-	return func() tea.Msg {
-		result, err := m.services.lifecycle.Revive(sess, sessioncmd.PaneSize{})
-		if err != nil {
-			return relaunchedMsg{sessID: sess.ID, err: err}
-		}
-		return relaunchedMsg{sessID: sess.ID, launchedAt: result.LaunchedAt}
-	}, nil
-}
 
 // restartSelected asks to relaunch the selected session with an empty
 // context: the same row, directory and tool, running a brand new
@@ -66,26 +38,6 @@ func (m *Model) restartSelected() (tea.Model, tea.Cmd) {
 // restartSession relaunches a session's tool from scratch. The conversation
 // it was resuming is retired rather than resumed, so the agent comes back
 // with the same name, directory and group but no context to carry.
-func (m *Model) restartSession(sess store.Session) error {
-	if m.services.tmux.Exists(sess.ID) {
-		m.unwatch(sess.ID)
-	}
-	paneWidth, paneHeight := m.paneTargetSize()
-	var result sessioncmd.RelaunchResult
-	var restartErr error
-	m.poller.reflowSessions([]string{sess.ID}, func() {
-		result, restartErr = m.services.lifecycle.Restart(sess, sessioncmd.PaneSize{Width: paneWidth, Height: paneHeight})
-	})
-	if restartErr != nil {
-		return restartErr
-	}
-	m.markFreshPane(sess.ID)
-	m.bindRestartLocally(sess.ID, result.Conversation, result.LaunchedAt)
-	if m.focusRuntime.watch != nil {
-		m.focusRuntime.watch.retryNow()
-	}
-	return result.LabelError
-}
 
 // restartLaunch builds what a restart runs: the tool's plain launch command,
 // exactly as a brand new session gets it, plus a fresh conversation id for

@@ -146,7 +146,7 @@ func (m *Model) handleRepoPickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	rows := m.filteredRows()
 	switch msg.Type {
 	case tea.KeyCtrlC:
-		return m, tea.Quit
+		return m.requestQuit()
 	case tea.KeyEsc:
 		m.mode = modeDiff
 		return m, nil

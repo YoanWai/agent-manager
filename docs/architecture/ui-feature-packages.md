@@ -23,7 +23,7 @@ Review distinguishes load, file, status, probe, highlight, save, and send result
 
 Focus receives copied watcher facts for the selected session. Its scroll policy coalesces repeated requests and fetches the latest requested region after an older capture finishes. Clipboard completion is bound to the standing selection generation. Selection, links, forwarded mouse cells, and IME coordinates use the prepared pane frame, including its visible text and clipping.
 
-Rail reconciles copied inventory and keeps selection by session or group identity. Its typed persistence requests are applied through root adapters. Reorder policy retains the existing synchronous-result contract rather than introducing optimistic state and a new rollback protocol. Rendered rows and their hit geometry are produced together; root composition places that content without a second implementation of row layout.
+Rail reconciles copied inventory and keeps selection by session or group identity. Its typed persistence requests are applied through root adapters. Reorder policy applies a typed completion after ordered asynchronous persistence, before admitting another dependent move. This preserves completed-result policy without optimistic rollback state. Rendered rows and their hit geometry are produced together; root composition places that content without a second implementation of row layout.
 
 ## Prepare frames before reading them
 
@@ -31,7 +31,7 @@ The root prepares a complete frame at construction and after message dispatch. P
 
 Input is interpreted against the preceding prepared frame. The next update then prepares the replacement frame. Tests that directly construct or mutate root fixtures explicitly prepare them before checking rendered output; they do not require production `View()` to mutate the fixture.
 
-Read-only rendering does not make `Update()` nonblocking. Some lifecycle and rail persistence paths still perform synchronous effects. Their migration must preserve durable partial results and caller reconciliation, with blocked-adapter tests and generation checks. That requirement remains on the [roadmap](roadmap-and-evidence.md).
+Read-only rendering does not make `Update()` nonblocking. The [ordered effect lane](ui-effects.md) now covers confirmed lifecycle, Rail persistence, geometry and attach preparation with durable partial reconciliation and blocked-adapter tests. Remaining synchronous families and wider acceptance stay on the [roadmap](roadmap-and-evidence.md).
 
 ## Verify policy separately from process wiring
 

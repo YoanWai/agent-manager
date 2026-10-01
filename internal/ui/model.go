@@ -42,6 +42,7 @@ const (
 )
 
 type Model struct {
+	effects       effectState
 	services      services
 	workspace     workspace
 	rail          uirail.Model
@@ -120,7 +121,7 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 	var model *Model
 	lifecycle, err := sessioncmd.NewLifecycle(sessioncmd.Runtime{
 		Config: cfg, Store: st, Driver: driver, Hooks: hookManager, Git: gitDriver,
-		Snapshot: func(id, pane string) error { return model.services.setSnapshot(id, pane) },
+		Snapshot: st.SetSnapshot,
 	})
 	if err != nil {
 		panic(err)
@@ -142,10 +143,11 @@ func newView(deps Dependencies, version string) *Model {
 	applyTheme(themes[themeIndex(resolveStartupTheme(st))])
 	driver.SetSessionKeys(cfg.SessionKeys)
 	model := &Model{
-		poller: &poller{runner: deps.Execution},
-		split:  splitState{ratio: loadSplitRatio(st)},
-		mode:   modeList,
-		update: updateInfo{version: version},
+		effects: effectState{lifetime: &effectLifetime{}},
+		poller:  &poller{runner: deps.Execution},
+		split:   splitState{ratio: loadSplitRatio(st)},
+		mode:    modeList,
+		update:  updateInfo{version: version},
 		services: services{
 			cfg:         cfg,
 			lifecycle:   deps.Lifecycle,

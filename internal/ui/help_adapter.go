@@ -32,7 +32,7 @@ func (m *Model) handleHelpKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	viewport := uihelp.Viewport{Rows: layout.rows, Lines: len(layout.content.Lines)}
 	switch m.help.Update(msg, viewport) {
 	case uihelp.Quit:
-		return m, tea.Quit
+		return m.requestQuit()
 	case uihelp.Close:
 		m.mode = m.helpReturnMode
 		m.helpReturnMode = modeList

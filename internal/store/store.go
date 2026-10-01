@@ -862,35 +862,32 @@ func (s *Store) Snapshot(id string) (string, error) {
 }
 
 func (s *Store) SetArchived(id string, archived bool) error {
-	res, err := s.db.Exec(
-		`UPDATE sessions SET archived = ? WHERE id = ?`, boolToInt(archived), id)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	res, err := tx.Exec(`UPDATE sessions SET archived = ? WHERE id = ?`, boolToInt(archived), id)
 	if err != nil {
 		return err
 	}
 	if err := requireRow(res, id); err != nil {
 		return err
 	}
-	// Restoring a session out of an archived group must leave it with a live
-	// home, so un-archive its group and every ancestor.
 	if !archived {
-		sess, err := s.Get(id)
+		var group string
+		if err := tx.QueryRow(`SELECT group_name FROM sessions WHERE id = ?`, id).Scan(&group); err != nil {
+			return err
+		}
+		eachAncestor(group, func(ancestor string) bool {
+			_, err = tx.Exec(`UPDATE groups SET archived = 0 WHERE name = ?`, ancestor)
+			return err == nil
+		})
 		if err != nil {
 			return err
 		}
-		return s.unarchiveAncestorGroups(sess.Group)
 	}
-	return nil
-}
-
-// unarchiveAncestorGroups clears the archived flag on a group path and each
-// of its ancestors, leaving descendants untouched.
-func (s *Store) unarchiveAncestorGroups(path string) error {
-	var err error
-	eachAncestor(path, func(ancestor string) bool {
-		_, err = s.db.Exec(`UPDATE groups SET archived = 0 WHERE name = ?`, ancestor)
-		return err == nil
-	})
-	return err
+	return tx.Commit()
 }
 
 // Delete removes a session and the coordination state that only makes

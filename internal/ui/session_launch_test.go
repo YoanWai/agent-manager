@@ -25,6 +25,7 @@ func TestAStaleRefreshKeepsASessionLaunchedAfterItWasListed(t *testing.T) {
 	}
 
 	updated, _ := m.Update(inFlight)
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 
 	if sessionGone(m.workspace.sessions, launched[0].ID) {
@@ -44,6 +45,7 @@ func TestAStaleRefreshKeepsALaunchListedWhileTmuxWasStartingIt(t *testing.T) {
 	// Building the tmux window takes tens of milliseconds, so a poll can
 	// list the store after the launch began and still be missing its row.
 	updated, _ := m.Update(refreshMsg{listedAt: launched.CreatedAt.Add(time.Millisecond)})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 
 	if sessionGone(m.workspace.sessions, launched.ID) {
@@ -59,6 +61,7 @@ func (m *Model) pressRune(t *testing.T, r rune) {
 	if cmd != nil {
 		if msg := cmd(); msg != nil {
 			updated, _ = m.Update(msg)
+			m.drainEffects(t)
 			*m = *updated.(*Model)
 		}
 	}
@@ -92,6 +95,7 @@ func TestAStaleRefreshDoesNotBringBackASessionJustDeleted(t *testing.T) {
 	}
 
 	updated, _ := m.Update(staleRefreshAfter(m))
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 
 	if !sessionGone(m.workspace.sessions, sess.ID) {
@@ -112,6 +116,7 @@ func TestAStaleRefreshDoesNotBringBackASessionJustArchived(t *testing.T) {
 	m.pressRune(t, 'y')
 
 	updated, _ := m.Update(staleRefreshAfter(m))
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 
 	for _, row := range m.sessionRows() {
@@ -134,6 +139,7 @@ func TestAStalePollCannotResurrectADeletedRow(t *testing.T) {
 	stale := sess
 	stale.Status = status.Dead
 	updated, _ := m.Update(refreshMsg{sessions: []store.Session{stale}, listedAt: listedAt})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 
 	for _, row := range m.sessionRows() {
@@ -152,10 +158,12 @@ func TestAStalePollCannotBringAnArchivedRowBackLive(t *testing.T) {
 	m.selectSessionRow(t, "shelved")
 	m.archiveSelected()
 	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.drainEffects(t)
 
 	stale := sess
 	stale.Status = status.Dead
 	updated, _ := m.Update(refreshMsg{sessions: []store.Session{stale}, listedAt: listedAt})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 
 	for _, row := range m.sessionRows() {
@@ -174,6 +182,7 @@ func TestAFreshListingRetiresDeletionMarkers(t *testing.T) {
 
 	fresh := refreshMsg{listedAt: listedAt.Add(time.Second)}
 	updated, _ := m.Update(fresh)
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 
 	if len(m.ledger.gone) != 0 {
@@ -195,6 +204,7 @@ func TestAStalePollCannotRestoreADeletedGroupHeader(t *testing.T) {
 	m.selectGroupRow(t, "zone")
 	m.prepareDelete()
 	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.drainEffects(t)
 
 	stale := refreshMsg{
 		sessions:       []store.Session{sess},
@@ -205,6 +215,7 @@ func TestAStalePollCannotRestoreADeletedGroupHeader(t *testing.T) {
 		archivedGroups: map[string]bool{"zone": true},
 	}
 	updated, _ := m.Update(stale)
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 
 	for _, r := range railRows(m) {
@@ -237,6 +248,7 @@ func TestAStalePollCannotUndoARestore(t *testing.T) {
 	m.selectSessionRow(t, "returning")
 	m.archiveSelected()
 	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.drainEffects(t)
 	listedAt := time.Now()
 
 	m.rail.SetArchived(true)
@@ -244,10 +256,12 @@ func TestAStalePollCannotUndoARestore(t *testing.T) {
 	m.selectSessionRow(t, "returning")
 	m.restoreSelected()
 	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.drainEffects(t)
 
 	stale := sess
 	stale.Archived = true
 	updated, _ := m.Update(refreshMsg{sessions: []store.Session{stale}, listedAt: listedAt})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 
 	for _, row := range m.sessionRows() {
@@ -275,6 +289,7 @@ func TestAStalePollCannotBringAnArchivedGroupBackLive(t *testing.T) {
 	m.selectGroupRow(t, "zone")
 	m.archiveSelected()
 	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.drainEffects(t)
 
 	stale := refreshMsg{
 		sessions:   []store.Session{sess},
@@ -283,6 +298,7 @@ func TestAStalePollCannotBringAnArchivedGroupBackLive(t *testing.T) {
 		groupPaths: map[string]string{"zone": dir},
 	}
 	updated, _ := m.Update(stale)
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 
 	if !m.groupEffectivelyArchived("zone") {

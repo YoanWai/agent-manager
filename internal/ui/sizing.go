@@ -34,7 +34,6 @@ func (m *Model) resizeSessions() {
 		height int
 	}
 	var todo []target
-	var ids []string
 	for _, sess := range m.workspace.sessions {
 		if sess.Archived || sess.ID == fullFocusID {
 			continue
@@ -54,32 +53,15 @@ func (m *Model) resizeSessions() {
 			}
 		}
 		todo = append(todo, target{id: sess.ID, height: wanted})
-		ids = append(ids, sess.ID)
 	}
 	if len(todo) == 0 {
 		return
 	}
-	type result struct {
-		id     string
-		height int
-		err    error
+	request := geometryRequest{}
+	for _, target := range todo {
+		request.targets = append(request.targets, paneResize{id: target.id, size: [2]int{width, target.height}})
 	}
-	// Pause polling for the whole clear+resize window so a mid-reflow
-	// capture cannot compare against a pre-resize hash.
-	m.poller.reflowSessions(ids, func() {
-		results := make(chan result, len(todo))
-		for _, t := range todo {
-			go func(t target) {
-				results <- result{id: t.id, height: t.height, err: m.services.tmux.Resize(t.id, width, t.height)}
-			}(t)
-		}
-		for range todo {
-			r := <-results
-			if r.err == nil {
-				m.focusRuntime.lastPaneSizes[r.id] = [2]int{width, r.height}
-			}
-		}
-	})
+	m.queueGeometry(request)
 }
 
 // pinFullFocusPane sizes a session opened full screen to the whole
@@ -98,13 +80,7 @@ func (m *Model) pinFullFocusPane(id string) {
 	if last, ok := m.focusRuntime.lastPaneSizes[id]; ok && last[0] == width && last[1] >= height {
 		return
 	}
-	var resizeErr error
-	m.poller.reflowSessions([]string{id}, func() {
-		resizeErr = m.services.tmux.Resize(id, width, height)
-	})
-	if resizeErr == nil {
-		m.focusRuntime.lastPaneSizes[id] = [2]int{width, height}
-	}
+	m.queueGeometry(geometryRequest{targets: []paneResize{{id: id, size: [2]int{width, height}}}})
 }
 
 // markFreshPane queues one exact size pin for a session whose window this
@@ -129,11 +105,7 @@ func (m *Model) publishPaneSize() {
 	if width <= 0 || height <= 0 || m.focusRuntime.lastPublishedSize == [2]int{width, height} {
 		return
 	}
-	if err := m.services.store.SetPaneSize(width, height); err != nil {
-		m.errBar.text = err.Error()
-		return
-	}
-	m.focusRuntime.lastPublishedSize = [2]int{width, height}
+	m.queueGeometry(geometryRequest{publish: [2]int{width, height}})
 }
 
 // markReplacedPanesFresh spots a session whose pane process changed since

@@ -46,10 +46,11 @@ type ArchiveSelection struct {
 }
 
 type ArchiveResult struct {
-	Sessions   []store.Session
-	GroupPath  string
-	Archived   bool
-	LabelError error
+	GroupChanged bool
+	Sessions     []store.Session
+	GroupPath    string
+	Archived     bool
+	LabelError   error
 }
 
 type DeleteSelection struct {
@@ -331,7 +332,7 @@ func (l *Lifecycle) SetArchivedForSession(callerID, targetID string, archived bo
 // before ending any of them, then archive the selected rows or group.
 func (l *Lifecycle) ArchiveForHuman(selection ArchiveSelection) (ArchiveResult, error) {
 	partial := func(sessions []store.Session, archived bool) ArchiveResult {
-		return ArchiveResult{Sessions: sessions, GroupPath: selection.GroupPath, Archived: archived}
+		return ArchiveResult{Sessions: sessions, GroupPath: selection.GroupPath, Archived: archived, GroupChanged: archived && selection.GroupPath != ""}
 	}
 	for _, sess := range selection.Sessions {
 		if !l.runtime.Driver.Exists(sess.ID) {
@@ -379,9 +380,10 @@ func (l *Lifecycle) ArchiveForHuman(selection ArchiveSelection) (ArchiveResult, 
 
 func (l *Lifecycle) RestoreForHuman(selection ArchiveSelection, pane PaneSize) (ArchiveResult, error) {
 	restored := make([]store.Session, 0, len(selection.Sessions))
+	groupChanged := false
 	var labelErr error
 	partial := func() ArchiveResult {
-		return ArchiveResult{Sessions: restored, GroupPath: selection.GroupPath, LabelError: labelErr}
+		return ArchiveResult{Sessions: restored, GroupPath: selection.GroupPath, LabelError: labelErr, GroupChanged: groupChanged}
 	}
 	for _, sess := range selection.Sessions {
 		if !l.runtime.Driver.Exists(sess.ID) {
@@ -404,6 +406,7 @@ func (l *Lifecycle) RestoreForHuman(selection ArchiveSelection, pane PaneSize) (
 		if err := l.runtime.Store.SetGroupArchived(selection.GroupPath, false); err != nil {
 			return partial(), err
 		}
+		groupChanged = true
 		for i := range restored {
 			restored[i].Archived = false
 		}
@@ -488,4 +491,14 @@ func (l *Lifecycle) cleanupDeletedWorktree(sess store.Session, result *DeleteRes
 	} else if !removed {
 		result.Notice = "worktree kept (has work): " + sess.Cwd
 	}
+}
+
+// Capture borrows the same bound resources and operation policies with an
+// independently supplied configuration and snapshot writer for one dispatch.
+// The caller owns copying configuration values it may later mutate.
+func (l *Lifecycle) Capture(cfg config.Config, snapshot func(string, string) error) *Lifecycle {
+	captured := *l
+	captured.runtime.Config = cfg
+	captured.runtime.Snapshot = snapshot
+	return &captured
 }

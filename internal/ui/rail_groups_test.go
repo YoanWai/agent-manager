@@ -20,6 +20,7 @@ func TestArchivedViewIgnoresFold(t *testing.T) {
 	m.selectSessionRow(t, "alpha")
 	m.archiveSelected()
 	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 
 	m.rail.SetCollapsed("work", true)
@@ -33,6 +34,7 @@ func TestArchivedViewIgnoresFold(t *testing.T) {
 	m.selectSessionRow(t, "alpha")
 	m.restoreSelected()
 	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 
 	active, err := m.services.store.ListSessions(false)
@@ -77,6 +79,7 @@ func TestToggleCollapseAllFlipsEveryGroup(t *testing.T) {
 	want := []string{"backend", "backend/api", "frontend"}
 
 	updated, _ := m.handleKey(runeKey("F"))
+	m.drainEffects(t)
 	m = updated.(*Model)
 	for _, group := range want {
 		if !m.rail.IsCollapsed(group) {
@@ -88,6 +91,7 @@ func TestToggleCollapseAllFlipsEveryGroup(t *testing.T) {
 	}
 
 	updated, _ = m.handleKey(runeKey("F"))
+	m.drainEffects(t)
 	m = updated.(*Model)
 	for _, group := range want {
 		if m.rail.IsCollapsed(group) {

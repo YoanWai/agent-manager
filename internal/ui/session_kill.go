@@ -111,43 +111,10 @@ func (m *Model) unwatch(id string) {
 // held, while the store row keeps the name, group, history and conversation
 // id that revive needs. The pane is captured first so the preview still
 // shows the agent's last output once the window is gone.
-func (m *Model) killSession(sess store.Session) error {
-	if !m.services.tmux.Exists(sess.ID) {
-		return nil
-	}
-	m.unwatch(sess.ID)
-	var killed store.Session
-	var killErr error
-	// Runs under the poller's lock so no pass can capture a half-killed
-	// pane, and drops the pane hash the revived session would be compared
-	// against.
-	m.poller.reflowSessions([]string{sess.ID}, func() {
-		killed, killErr = m.services.lifecycle.Kill(sess)
-	})
-	if killErr != nil {
-		return killErr
-	}
-	for i := range m.workspace.sessions {
-		if m.workspace.sessions[i].ID == sess.ID {
-			m.workspace.sessions[i].Status = killed.Status
-		}
-	}
-	return nil
-}
 
 func (m *Model) watchedSession() string {
 	if m.focusRuntime.watch == nil {
 		return ""
 	}
 	return m.focusRuntime.watch.watching()
-}
-
-func (m *Model) restoreSurvivingWatcher(id string) {
-	if id == "" || m.focusRuntime.watch == nil {
-		return
-	}
-	sess, ok := m.selected()
-	if ok && sess.ID == id && !sess.Archived && m.services.tmux.Exists(id) {
-		m.watchSelection()
-	}
 }

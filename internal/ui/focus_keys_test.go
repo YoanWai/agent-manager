@@ -160,6 +160,7 @@ func TestCursorBlinks(t *testing.T) {
 	createSession(t, m, "blinker", t.TempDir(), "")
 	m.selectSessionRow(t, "blinker")
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if !m.focusPane.CursorOn() {
 		t.Fatal("caret starts hidden")
@@ -176,12 +177,14 @@ func TestCursorBlinks(t *testing.T) {
 
 	// Typing must show the caret again immediately.
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if !m.focusPane.CursorOn() {
 		t.Fatal("typing left the caret hidden")
 	}
 
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlQ})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if _, cmd := m.Update(cursorBlinkMsg{}); cmd != nil {
 		t.Fatal("blink timer kept running after focus ended")
@@ -223,11 +226,13 @@ func TestSwappedKeysRouteActions(t *testing.T) {
 
 	// Default: enter focuses.
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("enter did not focus by default, mode = %v", m.mode)
 	}
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlQ})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 
 	// Swap through the settings screen, the same path a user takes.
@@ -240,6 +245,7 @@ func TestSwappedKeysRouteActions(t *testing.T) {
 	}
 	// Swapped: A focuses instead.
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("A")})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("A did not focus after the swap, mode = %v, err = %q", m.mode, m.errBar.text)
@@ -254,6 +260,7 @@ func TestFocusModeForwardsKeys(t *testing.T) {
 	m.selectSessionRow(t, "focusme")
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
@@ -265,6 +272,7 @@ func TestFocusModeForwardsKeys(t *testing.T) {
 		{Type: tea.KeyEnter},
 	} {
 		updated, _ := m.handleKey(msg)
+		m.drainEffects(t)
 		*m = *updated.(*Model)
 	}
 	if m.errBar.text != "" {
@@ -287,6 +295,7 @@ func TestFocusModeForwardsKeys(t *testing.T) {
 	}
 
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlQ})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeList {
 		t.Fatalf("ctrl+q left mode = %v", m.mode)
@@ -303,6 +312,7 @@ func TestFocusModeForwardsArrowKeys(t *testing.T) {
 	t.Cleanup(m.focusRuntime.watch.Close)
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
@@ -336,6 +346,7 @@ func TestFocusModeForwardsArrowKeys(t *testing.T) {
 
 	for _, key := range []tea.KeyType{tea.KeyUp, tea.KeyDown, tea.KeyEnter} {
 		updated, _ = m.handleKey(tea.KeyMsg{Type: key})
+		m.drainEffects(t)
 		*m = *updated.(*Model)
 	}
 
@@ -362,6 +373,7 @@ func TestFocusModeExitsWhenSessionDies(t *testing.T) {
 	m.selectSessionRow(t, "doomed")
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("after enter, mode = %v", m.mode)
@@ -387,12 +399,14 @@ func TestFocusCtrlROpensReviewAndReturns(t *testing.T) {
 	m.selectSessionRow(t, "focusrev")
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 
 	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlR})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	m.drainCmds(t, cmd)
 	if m.mode != modeDiff || !m.review.Snapshot().Active {
@@ -403,6 +417,7 @@ func TestFocusCtrlROpensReviewAndReturns(t *testing.T) {
 	}
 
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("closing review should return to focus, mode = %v, err = %q", m.mode, m.errBar.text)
@@ -419,12 +434,14 @@ func TestFocusF3OpensEditor(t *testing.T) {
 	m.selectSessionRow(t, "focusedit")
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 
 	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyF3})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if cmd == nil {
 		t.Fatalf("f3 in focus returned no launch, err = %q", m.errBar.text)
@@ -450,6 +467,7 @@ func TestFocusEditorThatTookTheScreenRearmsMouse(t *testing.T) {
 	createSession(t, m, "screenedit", t.TempDir(), "")
 	m.selectSessionRow(t, "screenedit")
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 
 	updated, cmd := m.Update(editorDoneMsg{tookScreen: true})
@@ -477,6 +495,7 @@ func TestFocusExitKeepsMouse(t *testing.T) {
 	m.selectSessionRow(t, "mouseback")
 
 	updated, enterCmd := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if enterCmd == nil {
 		t.Fatal("entering focus issued no mouse command")
@@ -491,6 +510,7 @@ func TestFocusExitKeepsMouse(t *testing.T) {
 	// Leaving keeps mouse reporting on: handing the wheel back to the
 	// terminal here would let a notch scroll the manager out of view.
 	updated, exitCmd := m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlQ})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if exitCmd != nil && batchContains(exitCmd(), tea.DisableMouse()) {
 		t.Fatal("leaving focus released mouse reporting to the terminal")
@@ -508,6 +528,7 @@ func TestRailShowsFocusBadge(t *testing.T) {
 		t.Fatal("FOCUS badge shown before focusing")
 	}
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if !strings.Contains(ansi.Strip(preparedView(m)), "FOCUS") {
 		t.Fatal("focused rail row carries no FOCUS badge")
@@ -543,6 +564,7 @@ func TestFocusPasteKeepsPromptInComposer(t *testing.T) {
 	createSession(t, m, "paster", t.TempDir(), "")
 	m.selectSessionRow(t, "paster")
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("enter did not focus, mode = %v", m.mode)
@@ -560,6 +582,7 @@ func TestFocusPasteKeepsPromptInComposer(t *testing.T) {
 
 	text := "line one\nline two\n"
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(text), Paste: true})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 
 	if calls != 1 {
@@ -582,6 +605,7 @@ func TestDetachNoMouseReArm(t *testing.T) {
 	clearRequestOnCleanup(t, m)
 
 	_, cmd := m.Update(attachDoneMsg{})
+	cmd = m.foregroundTestCmd(t, cmd)
 	if cmd != nil {
 		t.Fatalf("detach should not re-arm mouse, got %T", cmd)
 	}
@@ -594,11 +618,13 @@ func TestFocusModeCtrlBackslashUnfocuses(t *testing.T) {
 	m.selectSessionRow(t, "focusme")
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlBackslash})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeList {
 		t.Fatalf("ctrl+\\ left mode = %v", m.mode)
@@ -869,6 +895,7 @@ func TestFocusLeftUnfocusesAtPromptHead(t *testing.T) {
 	m.selectSessionRow(t, "leftie")
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
@@ -879,6 +906,7 @@ func TestFocusLeftUnfocusesAtPromptHead(t *testing.T) {
 	m.workspace.preview = "❯ hi\n"
 
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("left inside a typed prompt left focus, mode = %v", m.mode)
@@ -889,6 +917,7 @@ func TestFocusLeftUnfocusesAtPromptHead(t *testing.T) {
 
 	setFocusCursor(m, paneCursor{x: 2, y: 0, ok: true})
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeList {
 		t.Fatalf("left at the prompt head did not unfocus, mode = %v", m.mode)
@@ -903,6 +932,7 @@ func TestFocusLeftUnfocusesTerminalAtPromptHead(t *testing.T) {
 	m.selectSessionRow(t, "shellie")
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
@@ -914,6 +944,7 @@ func TestFocusLeftUnfocusesTerminalAtPromptHead(t *testing.T) {
 	setFocusCursor(m, paneCursor{x: 11, y: 0, ok: true})
 
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("left inside a typed command left focus, mode = %v", m.mode)
@@ -933,6 +964,7 @@ func TestFocusLeftUnfocusesTerminalAtPromptHead(t *testing.T) {
 		m.workspace.preview = prompt + "\n"
 		setFocusCursor(m, paneCursor{x: len([]rune(prompt)), y: 0, ok: true})
 		updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
+		m.drainEffects(t)
 		*m = *updated.(*Model)
 		if m.mode != modeList {
 			t.Fatalf("left at the head of %q did not unfocus, mode = %v", prompt, m.mode)
@@ -959,12 +991,14 @@ func TestArrowStepSettingDisablesThePair(t *testing.T) {
 	}
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeList {
 		t.Fatalf("right focused with the pair off, mode = %v", m.mode)
 	}
 
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("enter should still focus, mode = %v", m.mode)
@@ -974,6 +1008,7 @@ func TestArrowStepSettingDisablesThePair(t *testing.T) {
 	setFocusPaneFacts(m, sess.ID, false, false, false, 0, paneCursor{x: 2, y: 0, ok: true})
 	m.workspace.preview = "❯ hi\n"
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("left left focus with the pair off, mode = %v", m.mode)
@@ -987,6 +1022,7 @@ func TestFocusAltLeftStaysWithTheAgent(t *testing.T) {
 	m.selectSessionRow(t, "altleft")
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	sess := railSelectedSession(m)
 	setRailSessionTool(m, sess.ID, "claude-hooked")
@@ -994,6 +1030,7 @@ func TestFocusAltLeftStaysWithTheAgent(t *testing.T) {
 	m.workspace.preview = "❯ hi\n"
 
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft, Alt: true})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("alt+left left focus, mode = %v", m.mode)
@@ -1009,6 +1046,7 @@ func TestFocusLeftUnfocusesOnPiBlankComposerRow(t *testing.T) {
 	m.selectSessionRow(t, "pileft")
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
@@ -1029,6 +1067,7 @@ func TestFocusLeftUnfocusesOnPiBlankComposerRow(t *testing.T) {
 	setHiddenPane(2, "────────────\nxy\n────────────\n")
 
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("left inside typed pi input left focus, mode = %v", m.mode)
@@ -1036,6 +1075,7 @@ func TestFocusLeftUnfocusesOnPiBlankComposerRow(t *testing.T) {
 
 	setHiddenPane(0, "────────────\n\n────────────\n")
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeList {
 		t.Fatalf("left on pi's blank composer row did not unfocus, mode = %v", m.mode)
@@ -1196,6 +1236,7 @@ func TestFocusLeftUnfocusesOnCommandCodesParkedCaret(t *testing.T) {
 	m.selectSessionRow(t, "ccleft")
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
@@ -1208,6 +1249,7 @@ func TestFocusLeftUnfocusesOnCommandCodesParkedCaret(t *testing.T) {
 	}
 	applyPaneState(&hidden, "0,6,0,000,0,0,0")
 	updated, _ = m.Update(hidden)
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	cursor := m.focusPane.Pane().Cursor
 	if cursor.Visible || !cursor.PositionKnown {
@@ -1215,12 +1257,14 @@ func TestFocusLeftUnfocusesOnCommandCodesParkedCaret(t *testing.T) {
 	}
 
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeList {
 		t.Fatalf("left over the parked caret did not unfocus, mode = %v", m.mode)
 	}
 
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("after re-enter, mode = %v", m.mode)
@@ -1228,6 +1272,7 @@ func TestFocusLeftUnfocusesOnCommandCodesParkedCaret(t *testing.T) {
 	setFocusCursor(m, paneCursor{x: 0, y: 6, positionOK: true})
 	m.workspace.preview = "✻ Thought for 2 seconds [ctrl+o to expand]\n\n────────────\n❯ z\n────────────\n  ? for shortcuts\n\n\n\n"
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("left over a draft left focus, mode = %v", m.mode)
@@ -1239,6 +1284,7 @@ func TestFocusLeftUnfocusesOnCommandCodesParkedCaret(t *testing.T) {
 	// caret copied from a live command-code v1.33.0 session, where the
 	// caret parks on the last row and the footers sit between.
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("after re-enter, mode = %v", m.mode)
@@ -1254,6 +1300,7 @@ func TestFocusLeftUnfocusesOnCommandCodesParkedCaret(t *testing.T) {
 		"  ? for shortcuts · taste on\n" +
 		"\n\n"
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeList {
 		t.Fatalf("left over a cleared composer did not unfocus, mode = %v", m.mode)
@@ -1272,6 +1319,7 @@ func TestFocusModeReadsTheSessionKeyTable(t *testing.T) {
 	waitForPaneChild(t, m, sess.ID, "cat")
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
@@ -1282,6 +1330,7 @@ func TestFocusModeReadsTheSessionKeyTable(t *testing.T) {
 		{Type: tea.KeyEnter},
 	} {
 		updated, _ := m.handleKey(msg)
+		m.drainEffects(t)
 		*m = *updated.(*Model)
 		if m.mode != modeFocus {
 			t.Fatalf("%s is off the table and should stay in focus, mode = %v", msg, m.mode)
@@ -1306,6 +1355,7 @@ func TestFocusModeReadsTheSessionKeyTable(t *testing.T) {
 	}
 
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyF9})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeList {
 		t.Fatalf("f9 is the detach key and should leave focus, mode = %v", m.mode)
@@ -1323,11 +1373,13 @@ func TestFocusModeRemappedReviewAndEditorKeys(t *testing.T) {
 	m.selectSessionRow(t, "remapped")
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlE})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if cmd == nil {
 		t.Fatalf("ctrl+e should launch the editor, err = %q", m.errBar.text)
@@ -1340,12 +1392,14 @@ func TestFocusModeRemappedReviewAndEditorKeys(t *testing.T) {
 	}
 
 	updated, cmd = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g"), Alt: true})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	m.drainCmds(t, cmd)
 	if m.mode != modeDiff || !m.review.Snapshot().Active {
 		t.Fatalf("alt+g should open review, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("closing review should return to focus, mode = %v", m.mode)
@@ -1362,6 +1416,7 @@ func TestFocusKeyRetriesADeadWatcher(t *testing.T) {
 	m.selectSessionRow(t, "retype")
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
@@ -1379,6 +1434,7 @@ func TestFocusKeyRetriesADeadWatcher(t *testing.T) {
 	}
 
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.errBar.text != "" {
 		t.Fatalf("forwarding set err: %q", m.errBar.text)
@@ -1401,6 +1457,7 @@ func TestKillingTheFocusedSessionReportsNoLoss(t *testing.T) {
 	m.focusRuntime.watch = newFocusWatch(m.services.tmux, func(msg tea.Msg) { msgs <- msg })
 	t.Cleanup(m.focusRuntime.watch.Close)
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	waitFocusPreview(t, msgs, sess.ID, "")
 

@@ -26,7 +26,7 @@ The mechanical split is commit `3a9ffc5a3108352807b930922b0ae2d9182feba1`, again
 
 The comparison excludes file placement and import blocks. Build, vet, and the full isolated race suite provide the separate compilation and behavioral checks. No new behavioral test is needed for an exact move; existing tests retain their bodies and assertions.
 
-The mechanical file split did not establish feature ownership or resolve effect policy. Later increments made View read-only; synchronous UI lifecycle effects, partial-result reconciliation, and production execution authority remain tracked in the [conformance audit](roadmap-and-evidence.md).
+The mechanical file split did not establish feature ownership or resolve effect policy. Later increments made View read-only; ordered UI lifecycle commands and partial-result reconciliation are implemented; remaining synchronous families and production execution authority remain tracked in the [conformance audit](roadmap-and-evidence.md).
 
 ## Reduce irrelevant fixture startup
 

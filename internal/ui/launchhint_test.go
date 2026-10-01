@@ -36,6 +36,7 @@ func TestReportLaunchErrorOpensInstallHintForHermes(t *testing.T) {
 		t.Fatalf("hint %q should name the install command", m.launchFix.text)
 	}
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	m.drainEffects(t)
 	m = updated.(*Model)
 	if m.mode != modeList {
 		t.Fatalf("after esc, mode = %v, want modeList", m.mode)
@@ -60,6 +61,7 @@ func TestReportLaunchErrorLeavesHermesHintReadOnlyWithoutAnInterpreter(t *testin
 		t.Fatalf("hint %q should still name what has to be installed", m.launchFix.text)
 	}
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	m.drainEffects(t)
 	m = updated.(*Model)
 	if m.install != nil || m.mode != modeLaunchHint {
 		t.Fatalf("a read-only dialog should run nothing on i: install = %v, mode = %v", m.install, m.mode)
@@ -205,6 +207,7 @@ func TestRestartHermesWithoutMCPSupportPromptsInstall(t *testing.T) {
 	m.mode = modeConfirmDelete
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.drainEffects(t)
 	m = updated.(*Model)
 
 	if m.mode != modeLaunchHint {
@@ -277,6 +280,7 @@ func TestFormSpawnRefusedByTheHintReleasesItsImages(t *testing.T) {
 		t.Fatalf("the image file must outlive the refusal, stat err = %v", err)
 	}
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	m.drainEffects(t)
 	m = updated.(*Model)
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("the image file should be gone, stat err = %v", err)
@@ -390,6 +394,7 @@ func (m *Model) runBatch(t *testing.T, cmd tea.Cmd) {
 		return
 	}
 	updated, _ := m.Update(msg)
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 }
 
@@ -823,6 +828,7 @@ func TestInstallFinishesARefusedRestore(t *testing.T) {
 	m.mode = modeConfirmDelete
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.drainEffects(t)
 	m = updated.(*Model)
 	if m.mode != modeLaunchHint {
 		t.Fatalf("mode = %v, err = %q, want the dialog", m.mode, m.errBar.text)
@@ -831,9 +837,11 @@ func TestInstallFinishesARefusedRestore(t *testing.T) {
 	// What the install unblocks has to be the whole restore, not the
 	// revive alone, so the retry is run here with a working CLI.
 	m.services.cfg.Tools["claude"] = config.Tool{Command: "cat", DefaultStatus: status.Idle}
-	if err := m.launchFix.retry(); err != nil {
-		t.Fatal(err)
+	if m.launchFix.effectRetry == nil {
+		t.Fatal("missing captured restore retry")
 	}
+	m.enqueueEffect(*m.launchFix.effectRetry, 0, false)
+	m.drainEffects(t)
 
 	restored, err := m.services.store.Get(sess.ID)
 	if err != nil {

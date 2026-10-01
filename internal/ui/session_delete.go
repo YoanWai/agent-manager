@@ -2,48 +2,9 @@ package ui
 
 import (
 	"fmt"
-	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"strings"
 )
-
-func (m *Model) deleteConfirmed() (sessioncmd.DeleteResult, error) {
-	defer m.restoreSurvivingWatcher(m.watchedSession())
-
-	ids := make([]string, 0, len(m.confirm.sessions))
-	for _, sess := range m.confirm.sessions {
-		ids = append(ids, sess.ID)
-		m.unwatch(sess.ID)
-	}
-	var result sessioncmd.DeleteResult
-	var deleteErr error
-	remove := func() {
-		result, deleteErr = m.services.lifecycle.DeleteForHuman(sessioncmd.DeleteSelection{
-			Sessions:     m.confirm.sessions,
-			GroupPath:    groupPath(m.confirm),
-			ArchivedOnly: m.confirm.archivedOnly,
-		})
-	}
-	if len(ids) == 0 {
-		remove()
-	} else {
-		m.poller.reflowSessions(ids, remove)
-	}
-	for _, sess := range result.Deleted {
-		delete(m.ledger.pickedRepos, sess.ID)
-		delete(m.ledger.awaitedRenames, sess.ID)
-		m.forgetLaunch(sess.ID)
-		m.removeSessionLocally(sess.ID)
-	}
-	if len(result.RemovedGroups) > 0 {
-		m.applyRailStateDecision(m.rail.ForgetGroups(result.RemovedGroups))
-		m.pruneGroupsLocally(result.RemovedGroups)
-	}
-	if result.Notice != "" {
-		m.errBar.text = result.Notice
-	}
-	return result, deleteErr
-}
 
 // removeSessionLocally takes a deleted row off the loaded list right away,
 // so it leaves the screen on this frame instead of waiting for the next

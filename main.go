@@ -241,7 +241,8 @@ func run() (resultErr error) {
 	ui.SyncTerminalBackground()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := model.StartPoller(ctx, program.Send)
-	defer func() { cancel(); <-done }()
+	stopRuntime := func() { model.StopEffects(); cancel(); <-done }
+	defer stopRuntime()
 	final, runErr := program.Run()
 	ui.ResetTerminalBackground()
 	if runErr == nil {
@@ -249,6 +250,10 @@ func run() (resultErr error) {
 			// A self-update swapped the binary on disk; exec replaces this
 			// process with the new build so the manager comes back updated
 			// without touching the tmux sessions it manages.
+			stopRuntime()
+			if err := local.Close(); err != nil {
+				return err
+			}
 			return syscall.Exec(finished.RestartPath(), os.Args, os.Environ())
 		}
 	}

@@ -44,7 +44,7 @@ Review, Focus, and Rail now follow the same private-model boundary with feature-
 
 ## Keep UI effects and rendering explicit
 
-The target remains the repository invariant that `Update` never blocks. I/O and subprocess work belong in `tea.Cmd`, with typed completion messages and request generations. Current synchronous lifecycle handlers are a documented conformance gap, even though their effects now use shared services.
+The target remains the repository invariant that `Update` never blocks. I/O and subprocess work belong in `tea.Cmd`, with typed completion messages and request generations. The [ordered effect lane](ui-effects.md) now covers confirmed lifecycle, direct revive, Rail persistence, geometry and attach preparation. Remaining synchronous preflight/dialog/focus families are a documented conformance gap.
 
 Layout runs before painting. `View` reads prepared state and does not resize inputs, change scroll, or record geometry. The root now prepares the final frame after message dispatch and returns its cached text from `View`. Child frame preparation records mouse hit regions and cursor geometry together with the displayed content. Directly constructed test fixtures prepare their frame explicitly.
 

@@ -193,6 +193,7 @@ func TestFullLayoutRightOpensFullWidthFocus(t *testing.T) {
 	m.prefs.fullLayout = true
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("right did not focus, mode = %v, err = %q", m.mode, m.errBar.text)
@@ -228,6 +229,7 @@ func TestFullLayoutRightOpensFullWidthFocus(t *testing.T) {
 	}
 
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlQ})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeList || !m.fullRows() {
 		t.Fatalf("ctrl+q should return to the full screen list, mode = %v", m.mode)
@@ -245,6 +247,7 @@ func TestFullFocusLeftReturnsAtPromptHead(t *testing.T) {
 	m.prefs.fullLayout = true
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("right did not focus, mode = %v, err = %q", m.mode, m.errBar.text)
@@ -257,6 +260,7 @@ func TestFullFocusLeftReturnsAtPromptHead(t *testing.T) {
 	m.workspace.preview = "❯ hi\n"
 
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("left inside a typed prompt left focus, mode = %v", m.mode)
@@ -264,6 +268,7 @@ func TestFullFocusLeftReturnsAtPromptHead(t *testing.T) {
 
 	setFocusCursor(m, paneCursor{x: 2, y: 0, ok: true})
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode != modeList {
 		t.Fatalf("left at the prompt head did not return, mode = %v", m.mode)
@@ -284,6 +289,7 @@ func TestFullLayoutAStillAttaches(t *testing.T) {
 	m.prefs.fullLayout = true
 
 	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("A")})
+	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.mode == modeFocus {
 		t.Fatal("A should attach, not focus")
@@ -361,6 +367,7 @@ func TestSplitRepinKeepsTallerPaneHeight(t *testing.T) {
 
 	m.prefs.fullLayout = false
 	m.resizeSessions()
+	m.drainEffects(t)
 	splitW, _ := m.paneTargetSize()
 	if w, h := windowSize(t, id); w != splitW || h < fullH {
 		t.Fatalf("split re-pin sized session to %dx%d, want %dx%d with the height kept", w, h, splitW, fullH)

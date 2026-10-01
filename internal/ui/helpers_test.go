@@ -147,11 +147,37 @@ func buildModel(t *testing.T) *Model {
 func (m *Model) applyCmd(t *testing.T, cmd tea.Cmd) {
 	t.Helper()
 	if cmd == nil {
-		// Actions poke the background poller instead of returning a
-		// command; tests run the equivalent refresh synchronously.
+		m.drainEffects(t)
 		cmd = m.refreshCmd()
 	}
-	msg := cmd()
+	m.applyTestMsg(t, cmd())
+	m.drainEffects(t)
+}
+
+// drainEffects drives only finite UI effects; recurring preview/poll timers stay idle.
+func (m *Model) drainEffects(t *testing.T) {
+	t.Helper()
+	for count := 0; count < 100; count++ {
+		if m.effects.active == nil {
+			m.nextEffectCmd()
+		}
+		if m.effects.active == nil {
+			return
+		}
+		m.applyTestMsg(t, m.effects.active.command())
+	}
+	t.Fatal("effect queue did not become idle")
+}
+func (m *Model) applyTestMsg(t *testing.T, msg tea.Msg) {
+	t.Helper()
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		for _, cmd := range batch {
+			if cmd != nil {
+				m.applyTestMsg(t, cmd())
+			}
+		}
+		return
+	}
 	if msg == nil {
 		return
 	}
@@ -473,7 +499,9 @@ func railMouse(t *testing.T, m *Model, name string, action tea.MouseAction, butt
 	y0, _ := m.bodyYRange()
 	line := paintedRailLines(t, m, name)[0]
 	updated, _ := m.handleMouse(tea.MouseMsg{X: 2, Y: y0 + line, Action: action, Button: button})
-	return updated.(*Model)
+	m = updated.(*Model)
+	m.drainEffects(t)
+	return m
 }
 
 func sessionRow(t *testing.T, m *Model, name string) treeRow {
@@ -559,3 +587,41 @@ const previewSample = "\x1b[38;5;110m◆\x1b[0m claude \x1b[38;5;240m·\x1b[0m a
 	"  \x1b[38;5;240m└\x1b[0m +48 −3\n" +
 	"\n" +
 	"\x1b[38;5;214m✳\x1b[0m Running tests… (14s · esc to interrupt)\n"
+
+// foregroundTestCmd separates finite background effect completions from the
+// editor/terminal command a wiring test is inspecting. It never runs ExecMsg.
+func (m *Model) foregroundTestCmd(t *testing.T, cmd tea.Cmd) tea.Cmd {
+	t.Helper()
+	var messages []tea.Msg
+	var collect func(tea.Msg)
+	collect = func(msg tea.Msg) {
+		if batch, ok := msg.(tea.BatchMsg); ok {
+			for _, child := range batch {
+				collect(child())
+			}
+			return
+		}
+		if _, ok := msg.(effectCompletedMsg); ok {
+			updated, next := m.Update(msg)
+			*m = *updated.(*Model)
+			if next != nil {
+				collect(next())
+			}
+			return
+		}
+		if msg != nil {
+			messages = append(messages, msg)
+		}
+	}
+	if cmd != nil {
+		collect(cmd())
+	}
+	m.drainEffects(t)
+	if len(messages) == 0 {
+		return nil
+	}
+	if len(messages) > 1 {
+		t.Fatalf("expected one foreground message, got %d", len(messages))
+	}
+	return func() tea.Msg { return messages[0] }
+}

@@ -30,6 +30,7 @@ func TestCreateArchiveRestoreDelete(t *testing.T) {
 	m.selectSessionRow(t, "alpha")
 	m.archiveSelected()
 	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	if len(m.sessionRows()) != 0 {
 		t.Fatalf("after archive, active sessions = %d want 0", len(m.sessionRows()))
@@ -47,6 +48,7 @@ func TestCreateArchiveRestoreDelete(t *testing.T) {
 	m.selectSessionRow(t, "alpha")
 	m.restoreSelected()
 	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.drainEffects(t)
 	got, err := m.services.store.Get(sess.ID)
 	if err != nil {
 		t.Fatalf("get: %v", err)
@@ -73,6 +75,7 @@ func TestCreateArchiveRestoreDelete(t *testing.T) {
 		t.Fatal("prepareDelete should enter confirm mode")
 	}
 	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.drainEffects(t)
 	if m.services.tmux.Exists(sess.ID) {
 		t.Fatal("tmux session should be killed after delete")
 	}
@@ -95,6 +98,7 @@ func seedRestoreScenario(t *testing.T, m *Model, group string) (live, sleeper, s
 	m.selectSessionRow(t, "stash")
 	m.archiveSelected()
 	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	return live, sleeper, stash
 }
@@ -172,6 +176,7 @@ func confirmKill(t *testing.T, m *Model) {
 		t.Fatalf("kill should ask before acting, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	if m.errBar.text != "" {
 		t.Fatalf("kill: %q", m.errBar.text)
@@ -194,4 +199,5 @@ func deleteSession(t *testing.T, m *Model, name string) {
 	m.selectSessionRow(t, name)
 	m.prepareDelete()
 	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.drainEffects(t)
 }
