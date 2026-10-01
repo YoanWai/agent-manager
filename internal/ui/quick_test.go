@@ -812,11 +812,8 @@ func TestQuickWorktreeGatedInNonRepoGroup(t *testing.T) {
 	if !strings.Contains(m.errBar.text, "need a git repository") {
 		t.Fatalf("refused toggle should say why, got %q", m.errBar.text)
 	}
-	if hint := m.viewFooter(); !strings.Contains(hint, worktreeUnavailable) {
-		t.Fatalf("footer should mark worktree unavailable, got %q", hint)
-	}
-	if bar := m.viewQuickBar(120, quickBarMaxRows); !strings.Contains(bar, "worktree "+worktreeUnavailable) {
-		t.Fatalf("quick bar should name worktree as what is unavailable, got %q", bar)
+	if bar := ansi.Strip(m.viewQuickBar(120, quickBarMaxRows)); !strings.Contains(bar, "⎇ no repo") {
+		t.Fatalf("quick bar should mark worktree unavailable, got %q", bar)
 	}
 	m.quick.input.SetValue("do a thing")
 	m.submitQuick()

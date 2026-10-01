@@ -1093,7 +1093,11 @@ func (m *Model) contentLines(width, height int) []contentLine {
 
 	var bar []contentLine
 	if m.quick.active {
-		bar = append([]contentLine{{}}, ours(splitLines(m.viewQuickBar(inner, quickBarMaxRows)))...)
+		rows := quickBarMaxRows
+		if m.quick.picking != pickNone {
+			rows = height - 1
+		}
+		bar = append([]contentLine{{}}, ours(splitLines(m.viewQuickBar(inner, rows)))...)
 		y0, _ := m.bodyYRange()
 		// Under the blank row, less what a bar taller than the column loses.
 		m.quick.originX, m.quick.originY = m.pane.columnX+contentGutter, y0+height-len(bar)+1
@@ -1602,15 +1606,16 @@ func lastActivity(sess store.Session) time.Time {
 func (m *Model) viewQuickBar(width, maxRows int) string {
 	label := func(text string) string { return labelStyle.Render(padRight(text, detailLabelWidth)) }
 	target := rowColumns(label("target")+mutedStyle.Render("no selection"), "", width)
-	var lines []string
 	m.quick.hits = m.quick.hits[:0]
 	if entry, ok := m.selectedRow(); ok {
 		if entry.isGroup {
-			// Spawning: the CLI and what it launches with decide what gets
-			// created, so they sit where the eye lands before typing.
-			target = rowColumns(label("new")+lipgloss.NewStyle().Foreground(colorAccent2).Render(displayGroup(entry.group)), "", width)
-			lines = append(lines, m.quickChoiceLine(width, 1))
-			lines = append(lines, m.quickPickLines(width, 2)...)
+			group := lipgloss.NewStyle().Foreground(colorAccent2).Render(displayGroup(entry.group))
+			if m.quick.picking != pickNone {
+				return m.viewQuickSheet(width, maxRows, group)
+			}
+			// Spawning: what the new agent launches with sits beside the
+			// target, where the eye lands before typing.
+			target = m.quickStatusRow(label("new")+group, width, 0)
 		} else {
 			sess := entry.sess
 			state := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).
@@ -1624,12 +1629,11 @@ func (m *Model) viewQuickBar(width, maxRows int) string {
 	// repositions the viewport inside the rows that are actually on screen.
 	// LineInfo counts wraps at the width already stored on the box.
 	m.quick.input.SetWidth(width)
-	m.quick.maxRows = m.quickBarRows(width-2, maxRows-len(lines))
+	m.quick.maxRows = m.quickBarRows(width-2, maxRows-1)
 	m.quick.input.SetHeight(m.quick.maxRows)
 	// Chips are tokens inside the typed text, so they wrap and reflow with
 	// the words around them; painting happens on the rendered prompt.
-	lines = append([]string{target}, lines...)
-	return strings.Join(append(lines, m.quick.renderChips(textAreaView(m.quick.input))), "\n")
+	return target + "\n" + m.quick.renderChips(textAreaView(m.quick.input))
 }
 
 type quickHit struct {
@@ -1647,79 +1651,89 @@ const (
 	quickClickEntry
 )
 
-func (m *Model) quickChoiceLine(width, line int) string {
+// quickStatusRow puts what a spawn launches with against the right edge of
+// the row: the CLI, model, effort, profile and worktree, each a stretch a
+// click steps the way its key does.
+func (m *Model) quickStatusRow(left string, width, line int) string {
 	toolName, ch := m.quickTool(), &m.quick.choice
 	type segment struct {
 		text   string
 		action int
 	}
-	segments := []segment{{chipStyle.Render(toolName), quickClickTool}}
-	if note, listed := m.modelRowNote(toolName); !listed {
-		segments = append(segments, segment{"model " + note, quickClickModel})
-	} else {
-		model := subtleStyle.Render("default")
-		if ch.model != "" {
-			model = valueStyle.Render(ch.model)
+	orDefault := func(value, fallback string) string {
+		if value == "" {
+			return subtleStyle.Render(fallback)
 		}
-		segments = append(segments, segment{subtleStyle.Render("model ") + model, quickClickModel})
-		if value, shown, active := m.effortRow(toolName, ch); shown {
-			effort := subtleStyle.Render("default")
-			switch level := m.choiceEffort(toolName, ch); {
-			case !active:
-				effort = value
-			case level != "":
-				effort = valueStyle.Render(level)
-			}
-			if m.effortTyped(toolName, ch) {
-				effort += subtleStyle.Render(" (typed)")
-			}
-			segments = append(segments, segment{subtleStyle.Render("effort ") + effort, quickClickEffort})
+		return valueStyle.Render(value)
+	}
+	segments := []segment{{valueStyle.Render(toolName), quickClickTool}}
+	tool := m.cfg.Tools[toolName]
+	switch note, listed := m.modelRowNote(toolName); {
+	case listed:
+		segments = append(segments, segment{orDefault(ch.model, "default model"), quickClickModel})
+		if _, _, active := m.effortRow(toolName, ch); active {
+			segments = append(segments, segment{orDefault(m.choiceEffort(toolName, ch), "default effort"), quickClickEffort})
 		}
+	case tool.Catalog != "" && tool.ModelArgs != "":
+		// Still reading, or the CLI failed to answer: say so. A CLI with
+		// nothing to pick shows nothing.
+		segments = append(segments, segment{note, quickClickModel})
 	}
 	if _, shown := m.profileRow(toolName, ch); shown {
-		profile := subtleStyle.Render("default")
-		if name := m.choiceProfileName(toolName, ch); name != "" {
-			profile = valueStyle.Render(name)
-		}
-		segments = append(segments, segment{subtleStyle.Render("profile ") + profile, quickClickProfile})
+		segments = append(segments, segment{orDefault(m.choiceProfileName(toolName, ch), "default profile"), quickClickProfile})
 	}
-	worktree := subtleStyle.Render("worktree " + m.quickWorktreeState())
-	if m.quickWorktreeOn() {
-		worktree = lipgloss.NewStyle().Foreground(colorAccent2).Render("worktree on")
+	worktree := subtleStyle.Render("⎇ off")
+	switch {
+	case !m.worktreeCapable(m.quickTargetDir()):
+		worktree = subtleStyle.Render("⎇ no repo")
+	case m.quickWorktreeOn():
+		worktree = lipgloss.NewStyle().Foreground(colorAccent2).Render("⎇ on")
 	}
 	segments = append(segments, segment{worktree, quickClickWorktree})
-	var b strings.Builder
-	x := 0
+
+	var status strings.Builder
+	offsets := make([]int, len(segments))
 	for i, seg := range segments {
 		if i > 0 {
-			b.WriteString("   ")
-			x += 3
+			status.WriteString(subtleStyle.Render(" · "))
 		}
-		w := ansi.StringWidth(seg.text)
-		m.quick.hits = append(m.quick.hits, quickHit{line: line, x0: x, x1: x + w, action: seg.action, entry: -1})
-		b.WriteString(seg.text)
-		x += w
+		offsets[i] = ansi.StringWidth(status.String())
+		status.WriteString(seg.text)
 	}
-	return ansi.Truncate(b.String(), width, "…")
+	leftWidth := ansi.StringWidth(left)
+	statusWidth := min(ansi.StringWidth(status.String()), max(width-leftWidth-2, 0))
+	start := width - statusWidth
+	for i, seg := range segments {
+		if offsets[i] >= statusWidth {
+			break
+		}
+		x1 := min(offsets[i]+ansi.StringWidth(seg.text), statusWidth)
+		m.quick.hits = append(m.quick.hits, quickHit{line: line, x0: start + offsets[i], x1: start + x1, action: seg.action, entry: -1})
+	}
+	return left + strings.Repeat(" ", max(start-leftWidth, 0)) + ansi.Truncate(status.String(), statusWidth, "…")
 }
 
-func (m *Model) quickPickLines(width, first int) []string {
+// viewQuickSheet stands in for the whole bar while a choice is picked, so
+// the list has the rows the prompt and its target would take.
+func (m *Model) viewQuickSheet(width, maxRows int, group string) string {
 	toolName, ch := m.quickTool(), &m.quick.choice
-	switch m.quick.picking {
-	case pickEffort:
-		return []string{ansi.Truncate(subtleStyle.Render("effort ")+textInputView(ch.typedEffort)+"  "+subtleStyle.Render("typed · "+toolName+" lists no levels"), width, "…")}
-	case pickModel:
-		lines := []string{subtleStyle.Render("model ") + textInputView(ch.filter)}
-		list, entries := m.viewModelSuggestions(toolName, ch, ch.query(), 0, width)
+	var lines []string
+	if m.quick.picking == pickEffort {
+		lines = []string{
+			subtleStyle.Render("effort for ") + group,
+			textInputView(ch.typedEffort) + "  " + subtleStyle.Render("typed · "+toolName+" lists no levels"),
+		}
+	} else {
+		lines = []string{subtleStyle.Render("model for ") + group, textInputView(ch.filter)}
+		list, entries := m.viewModelSuggestions(toolName, ch, ch.query(), 0, width, max(maxRows-len(lines)-1, 1))
 		for i, line := range list {
 			if entries[i] >= 0 {
-				m.quick.hits = append(m.quick.hits, quickHit{line: first + len(lines), x0: 0, x1: width, action: quickClickEntry, entry: entries[i]})
+				m.quick.hits = append(m.quick.hits, quickHit{line: len(lines), x0: 0, x1: width, action: quickClickEntry, entry: entries[i]})
 			}
 			lines = append(lines, line)
 		}
-		return lines
 	}
-	return nil
+	return strings.Join(append(lines, m.quickStatusRow("", width, len(lines))), "\n")
 }
 
 // viewHeaderRows is the full-width band over both columns: the wordmark

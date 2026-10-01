@@ -894,7 +894,7 @@ func TestQuickPromptFooterKeys(t *testing.T) {
 	if strings.Contains(footerOne, "shift+tab") || strings.Contains(footerOne, "previous tool") {
 		t.Errorf("one tool enabled, footer shouldn't have shift+tab: %q", footerOne)
 	}
-	if !strings.Contains(footerOne, "tab") || !strings.Contains(footerOne, "tool: claude") {
+	if !strings.Contains(footerOne, "tab tool") {
 		t.Errorf("one tool enabled, missing tab pair: %q", footerOne)
 	}
 
@@ -903,10 +903,10 @@ func TestQuickPromptFooterKeys(t *testing.T) {
 	if !strings.Contains(footerTwo, "shift+tab") || !strings.Contains(footerTwo, "previous tool") {
 		t.Errorf("two tools enabled, missing shift+tab pair: %q", footerTwo)
 	}
-	if !strings.Contains(footerTwo, "tab") || !strings.Contains(footerTwo, "tool: claude") {
+	if !strings.Contains(footerTwo, "tab tool") {
 		t.Errorf("two tools enabled, missing tab pair: %q", footerTwo)
 	}
-	if !strings.Contains(footerTwo, "ctrl+t") || !strings.Contains(footerTwo, "worktree: ") {
+	if !strings.Contains(footerTwo, "ctrl+t worktree") {
 		t.Errorf("missing ctrl+t worktree pair: %q", footerTwo)
 	}
 }

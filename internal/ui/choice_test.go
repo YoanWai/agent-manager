@@ -247,8 +247,8 @@ func TestQuickPromptSpawnsOnItsChoice(t *testing.T) {
 	}
 	ctrl(tea.KeyCtrlX)
 	ctrl(tea.KeyCtrlX)
-	if footer := ansi.Strip(m.viewFooter()); !strings.Contains(footer, "model: opus") || !strings.Contains(footer, "effort: medium") {
-		t.Fatalf("footer: %s", footer)
+	if target := strings.Split(ansi.Strip(m.viewQuickBar(120, quickBarMaxRows)), "\n")[0]; !strings.Contains(target, "claude · opus · medium") {
+		t.Fatalf("target row: %s", target)
 	}
 	m.quick.input.SetValue("do the work")
 	if _, _ = m.submitQuick(); m.errBar.text != "" {
@@ -423,9 +423,9 @@ func TestModelListShrinkingUnderTheHighlight(t *testing.T) {
 	})
 }
 
-// An open model list taller than the split's column gives up its top rows,
-// the way the full layout's does, so the prompt stays on screen.
-func TestQuickModelListKeepsThePromptOnScreen(t *testing.T) {
+// The model sheet takes the rows the bar had and the column can spare, so a
+// small split still shows its title, its filter and its choices.
+func TestQuickModelSheetFitsTheColumn(t *testing.T) {
 	m := buildModel(t)
 	var models []catalog.Model
 	for i := range 12 {
@@ -448,8 +448,14 @@ func TestQuickModelListKeepsThePromptOnScreen(t *testing.T) {
 	if m.fullRows() {
 		t.Fatal("80 columns should give the split")
 	}
-	if view := ansi.Strip(m.View()); !strings.Contains(view, "type and press enter") {
-		t.Fatalf("the prompt fell off the column:\n%s", view)
+	view := ansi.Strip(m.View())
+	for _, want := range []string{"model for work", "claude's default", "⎇ "} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("%q fell off the column:\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "type and press enter") {
+		t.Fatalf("the sheet should stand in for the prompt:\n%s", view)
 	}
 	var last quickHit
 	for _, hit := range m.quick.hits {
@@ -612,5 +618,121 @@ func TestModelListListsARecentPickOnce(t *testing.T) {
 	}
 	if !slices.Equal(keys, []string{"xai-oauth:grok-4.6", "anthropic:claude-opus-5"}) {
 		t.Fatalf("list = %v", keys)
+	}
+}
+
+// The model sheet steps the effort in place and esc hands the prompt back.
+func TestQuickSheetStepsEffortAndHandsThePromptBack(t *testing.T) {
+	m := buildModel(t)
+	answered(m, claudeLike, claudeAnswer)
+	if err := m.store.CreateGroup("work", t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "work")
+	m.openQuickMode()
+	m.quick.toolIndex = slices.Index(m.quick.toolNames, "claude")
+	m.quick.choice = m.newChoice("claude")
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlL})
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlX})
+	if m.quick.picking != pickModel || m.choiceEffort("claude", &m.quick.choice) != "low" {
+		t.Fatalf("picking %d effort %q", m.quick.picking, m.choiceEffort("claude", &m.quick.choice))
+	}
+	if sheet := ansi.Strip(m.viewQuickBar(120, 20)); !strings.Contains(sheet, "model for work") || !strings.HasSuffix(strings.TrimRight(sheet, " "), "low · ⎇ no repo") {
+		t.Fatalf("sheet:\n%s", sheet)
+	}
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEsc})
+	if m.quick.picking != pickNone || !strings.Contains(ansi.Strip(m.viewQuickBar(120, quickBarMaxRows)), "type and press enter") {
+		t.Fatal("esc should hand the prompt back")
+	}
+}
+
+// Each CLI keeps the model, effort and profile last picked for it, so the
+// next form or quick prompt on that CLI starts there.
+func TestChoiceIsKeptPerCLI(t *testing.T) {
+	t.Run("form", func(t *testing.T) {
+		m := buildModel(t)
+		answered(m, claudeLike, claudeAnswer)
+		openFormOnClaude(t, m)
+		m.focusFormField(fieldModel)
+		typeInto(m, "opus")
+		m.handleFormKey(tea.KeyMsg{Type: tea.KeyTab})
+		m.focusFormField(fieldEffort)
+		m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
+		m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
+		m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
+		m.handleFormKey(tea.KeyMsg{Type: tea.KeyEsc})
+		openFormOnClaude(t, m)
+		if got := m.currentChoice("claude", &m.form.choice); got != (config.Choice{Model: "opus", Effort: "high"}) {
+			t.Fatalf("reopened form choice = %+v", got)
+		}
+		if m.form.choice.filter.Value() != "opus" {
+			t.Fatalf("model field shows %q", m.form.choice.filter.Value())
+		}
+		if other := m.newChoice("command-code"); other.model != "" || other.saved != nil {
+			t.Fatalf("another CLI picked up claude's choice: %+v", other)
+		}
+	})
+	t.Run("quick prompt", func(t *testing.T) {
+		m := buildModel(t)
+		answered(m, claudeLike, claudeAnswer)
+		if err := m.store.CreateGroup("work", t.TempDir()); err != nil {
+			t.Fatal(err)
+		}
+		m.applyCmd(t, m.refreshCmd())
+		m.selectGroupRow(t, "work")
+		m.openQuickMode()
+		m.quick.toolIndex = slices.Index(m.quick.toolNames, "claude")
+		m.quick.choice = m.newChoice("claude")
+		m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlL})
+		for _, r := range "opus" {
+			m.handleQuickKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		}
+		m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter})
+		m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlX})
+		m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEsc})
+		m.openQuickMode()
+		m.quick.toolIndex = slices.Index(m.quick.toolNames, "claude")
+		m.quick.choice = m.newChoice("claude")
+		if target := strings.Split(ansi.Strip(m.viewQuickBar(120, quickBarMaxRows)), "\n")[0]; !strings.Contains(target, "claude · opus · low") {
+			t.Fatalf("reopened bar: %s", target)
+		}
+	})
+	t.Run("answer arrives after the prompt opens", func(t *testing.T) {
+		m := buildModel(t)
+		answered(m, claudeLike, catalog.Catalog{})
+		m.catalogs["claude"] = &catalogState{loading: true}
+		if err := m.store.SetSetting(savedChoiceKey("claude"), `{"Model":"opus","Effort":"medium"}`); err != nil {
+			t.Fatal(err)
+		}
+		openFormOnClaude(t, m)
+		if m.form.choice.model != "" {
+			t.Fatal("placed a model before the CLI answered")
+		}
+		m.handleCatalog(catalogMsg{tool: "claude", cat: claudeAnswer})
+		if got := m.currentChoice("claude", &m.form.choice); got != (config.Choice{Model: "opus", Effort: "medium"}) {
+			t.Fatalf("choice once answered = %+v", got)
+		}
+	})
+}
+
+// A CLI with no model to pick leaves the target row to its name and the
+// worktree, with no note about what it lacks.
+func TestQuickStatusRowLeavesOutWhatACLICannotPick(t *testing.T) {
+	m := buildModel(t)
+	if err := m.store.CreateGroup("work", t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "work")
+	m.openQuickMode()
+	m.quick.toolIndex = slices.Index(m.quick.toolNames, "command-code")
+	m.quick.choice = m.newChoice("command-code")
+	target := strings.Split(ansi.Strip(m.viewQuickBar(120, quickBarMaxRows)), "\n")[0]
+	if !strings.HasSuffix(strings.TrimRight(target, " "), "command-code · ⎇ no repo") || strings.Contains(target, "not supported") {
+		t.Fatalf("target row: %s", target)
+	}
+	if footer := ansi.Strip(m.viewFooter()); strings.Contains(footer, quickModelKey) || strings.Contains(footer, quickEffortKey) {
+		t.Fatalf("footer offers a choice the CLI does not have: %s", footer)
 	}
 }

@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"cmp"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textarea"
@@ -413,13 +412,23 @@ func (m *Model) handleQuickPickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		var cmd tea.Cmd
+		before := ch.typedEffort.Value()
 		ch.typedEffort, cmd = ch.typedEffort.Update(msg)
+		if ch.typedEffort.Value() != before {
+			m.keepChoice(toolName, ch)
+		}
 		return m, cmd
 	}
 	list := m.modelSuggestions(toolName, ch, ch.query())
 	switch msg.String() {
 	case "esc", quickModelKey:
 		m.closeQuickPick()
+		return m, nil
+	case quickEffortKey:
+		m.stepQuickEffort()
+		return m, nil
+	case quickProfileKey:
+		m.stepQuickProfile()
 		return m, nil
 	case "enter", "tab":
 		if len(list) > 0 {
@@ -483,35 +492,36 @@ func (m *Model) handleQuickClick(hit quickHit) tea.Cmd {
 }
 
 func (m *Model) quickLegend() [][2]string {
+	toolName, ch := m.quickTool(), &m.quick.choice
+	_, _, effortActive := m.effortRow(toolName, ch)
+	_, hasProfiles := m.profileRow(toolName, ch)
 	switch m.quick.picking {
 	case pickModel:
-		return [][2]string{{"type", "filter"}, {"↑↓", "pick"}, {"↵/tab", "choose"}, {"esc", "close list"}}
+		pairs := [][2]string{{"type", "filter"}, {"↑↓", "pick"}, {"↵/tab", "choose"}}
+		if effortActive {
+			pairs = append(pairs, [2]string{quickEffortKey, "effort"})
+		}
+		if hasProfiles {
+			pairs = append(pairs, [2]string{quickProfileKey, "profile"})
+		}
+		return append(pairs, [2]string{"esc", "back to the prompt"})
 	case pickEffort:
-		return [][2]string{{"type", "effort"}, {"↵", "done"}, {"esc", "close"}}
+		return [][2]string{{"type", "effort"}, {"↵", "done"}, {"esc", "back to the prompt"}}
 	}
-	toolName, ch := m.quickTool(), &m.quick.choice
-	pairs := [][2]string{{"↵", "send"}, {"↑↓", "target or caret"}, {"tab", "tool: " + toolName}}
+	pairs := [][2]string{{"↵", "send"}, {"↑↓", "target or caret"}, {"tab", "tool"}}
 	if len(m.quick.toolNames) > 1 {
 		pairs = append(pairs, [2]string{"shift+tab", "previous tool"})
 	}
-	if _, listed := m.modelRowNote(toolName); listed && m.quickSpawning() {
-		pairs = append(pairs, [2]string{quickModelKey, "model: " + cmp.Or(ch.model, "default")})
-		if _, _, active := m.effortRow(toolName, ch); active {
-			pairs = append(pairs, [2]string{quickEffortKey, "effort: " + cmp.Or(m.choiceEffort(toolName, ch), "default")})
+	if m.quickSpawning() {
+		if _, listed := m.modelRowNote(toolName); listed {
+			pairs = append(pairs, [2]string{quickModelKey, "model"})
+		}
+		if effortActive {
+			pairs = append(pairs, [2]string{quickEffortKey, "effort"})
+		}
+		if hasProfiles {
+			pairs = append(pairs, [2]string{quickProfileKey, "profile"})
 		}
 	}
-	if _, shown := m.profileRow(toolName, ch); shown && m.quickSpawning() {
-		pairs = append(pairs, [2]string{quickProfileKey, "profile: " + cmp.Or(m.choiceProfileName(toolName, ch), "default")})
-	}
-	return append(pairs, [2]string{"ctrl+t", "worktree: " + m.quickWorktreeState()}, [2]string{"esc", "close"})
-}
-
-func (m *Model) quickWorktreeState() string {
-	switch {
-	case !m.worktreeCapable(m.quickTargetDir()):
-		return worktreeUnavailable
-	case m.quickWorktreeOn():
-		return "on"
-	}
-	return "off"
+	return append(pairs, [2]string{"ctrl+t", "worktree"}, [2]string{"esc", "close"})
 }
