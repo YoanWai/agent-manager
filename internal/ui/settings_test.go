@@ -419,14 +419,7 @@ func TestCLIPickerShowsSupportAction(t *testing.T) {
 	}
 }
 
-func TestParseFormatHiddenTools(t *testing.T) {
-	if got := parseHiddenTools(""); got != nil {
-		t.Fatalf("empty parse = %v", got)
-	}
-	got := parseHiddenTools("codex, grok")
-	if !got["codex"] || !got["grok"] || len(got) != 2 {
-		t.Fatalf("parse = %v", got)
-	}
+func TestFormatHiddenToolsSorts(t *testing.T) {
 	if formatHiddenTools(map[string]bool{"grok": true, "codex": true}) != "codex,grok" {
 		t.Fatalf("format should sort: %q", formatHiddenTools(map[string]bool{"grok": true, "codex": true}))
 	}

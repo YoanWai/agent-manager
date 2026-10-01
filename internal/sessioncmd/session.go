@@ -25,6 +25,12 @@ import (
 // default the Agent Manager settings screen writes.
 const worktreeSetting = "worktree_default"
 
+// The settings a spawn with no caller takes its CLI from, as the New Session form does.
+const (
+	defaultToolSetting = "default_tool"
+	hiddenToolsSetting = "hidden_tools"
+)
+
 type Session struct {
 	ID        string `json:"id" jsonschema:"agent session id"`
 	Name      string `json:"name" jsonschema:"session name shown in Agent Manager"`
@@ -160,7 +166,7 @@ func (s *Sessions) List(sessionID string) ([]Session, error) {
 		return nil, err
 	}
 	defer runtime.store.Close()
-	if _, err := runtime.caller(sessionID); err != nil {
+	if _, err := runtime.optionalCaller(sessionID); err != nil {
 		return nil, err
 	}
 	stored, err := runtime.store.ListSessions(true)
@@ -188,7 +194,7 @@ func (s *Sessions) Groups(sessionID string) ([]Group, error) {
 		return nil, err
 	}
 	defer runtime.store.Close()
-	if _, err := runtime.caller(sessionID); err != nil {
+	if _, err := runtime.optionalCaller(sessionID); err != nil {
 		return nil, err
 	}
 	stored, err := runtime.store.Groups()
@@ -309,19 +315,15 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 		return Session{}, err
 	}
 	defer runtime.store.Close()
-	caller, err := runtime.caller(sessionID)
+	caller, err := runtime.optionalCaller(sessionID)
 	if err != nil {
 		return Session{}, err
 	}
 	toolName := strings.TrimSpace(opts.Tool)
 	if toolName == "" {
-		// A spawn with no tool named runs whatever the caller runs, which a
-		// terminal cannot supply: its tool is the user's shell. Guessing an
-		// agent for it would start a CLI nobody asked for.
-		if runtime.cfg.Tools[caller.Tool].Shell {
-			return Session{}, fmt.Errorf("a terminal runs a shell, not an agent CLI, so there is none to inherit; name one with %s (configured tools are %s)", runtime.words.SpawnTool, strings.Join(agentToolNames(runtime), ", "))
+		if toolName, err = runtime.inheritedTool(caller); err != nil {
+			return Session{}, err
 		}
-		toolName = caller.Tool
 	}
 	tool, known := runtime.cfg.Tools[toolName]
 	if !known {
@@ -406,6 +408,33 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 	}
 	_ = runtime.driver.SetLabel(sess.ID, sessionLabel(sess.Group, sess.Name))
 	return runtime.sessionInfo(sess, true, false), nil
+}
+
+// inheritedTool is the CLI a spawn runs when none is named. A terminal has none
+// to give, and guessing an agent for its shell would start a CLI nobody asked for.
+func (r *runtime) inheritedTool(caller store.Session) (string, error) {
+	switch {
+	case caller.ID == "":
+		return r.defaultTool()
+	case r.cfg.Tools[caller.Tool].Shell:
+		return "", fmt.Errorf("a terminal runs a shell, not an agent CLI, so there is none to inherit; name one with %s (configured tools are %s)", r.words.SpawnTool, strings.Join(agentToolNames(r), ", "))
+	}
+	return caller.Tool, nil
+}
+
+func (r *runtime) defaultTool() (string, error) {
+	chosen, err := r.store.Setting(defaultToolSetting)
+	if err != nil {
+		return "", err
+	}
+	hidden, err := r.store.Setting(hiddenToolsSetting)
+	if err != nil {
+		return "", err
+	}
+	if name := r.cfg.DefaultAgentTool(chosen, config.ParseHiddenTools(hidden)); name != "" {
+		return name, nil
+	}
+	return "", fmt.Errorf("every agent CLI is turned off for new sessions in settings; name one with %s (configured tools are %s)", r.words.SpawnTool, strings.Join(agentToolNames(r), ", "))
 }
 
 type worktreeTarget struct {
@@ -668,7 +697,7 @@ func (s *Sessions) Read(sessionID, targetID string) (SessionScreen, error) {
 		return SessionScreen{}, err
 	}
 	defer runtime.store.Close()
-	if _, err := runtime.caller(sessionID); err != nil {
+	if _, err := runtime.optionalCaller(sessionID); err != nil {
 		return SessionScreen{}, err
 	}
 	target, err := runtime.agent(targetID)

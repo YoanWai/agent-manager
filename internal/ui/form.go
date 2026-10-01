@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/config"
@@ -221,55 +220,8 @@ func (m *Model) groupDefaultDir(group string) string {
 	return cwd
 }
 
-// toolDisplayOrder fixes the order tools appear in when creating a session and
-// when cycling the quick-spawn tool. Tools outside this list follow, sorted
-// alphabetically.
-var toolDisplayOrder = []string{"claude", "opencode", "codex", "grok", "gemini", "pi"}
-
-// sortedToolNames is every configured agent CLI in picker order. A block
-// declaring shell = true is not a CLI to spawn agents with, so it is left
-// out; its own key launches it, and a rename still keeps a shell session
-// on it.
-func sortedToolNames(cfg config.Config) []string {
-	names := make([]string, 0, len(cfg.Tools))
-	for _, name := range cfg.ToolNames() {
-		if !cfg.Tools[name].Shell {
-			names = append(names, name)
-		}
-	}
-	rank := make(map[string]int, len(toolDisplayOrder))
-	for i, name := range toolDisplayOrder {
-		rank[name] = i
-	}
-	sort.Slice(names, func(i, j int) bool {
-		ri, iRanked := rank[names[i]]
-		rj, jRanked := rank[names[j]]
-		if iRanked && jRanked {
-			return ri < rj
-		}
-		if iRanked != jRanked {
-			return iRanked
-		}
-		return names[i] < names[j]
-	})
-	return names
-}
-
-// enabledToolNames is the create-session picker: configured tools minus any
-// the user hid in settings. Existing sessions keep their tool even when hidden.
 func (m *Model) enabledToolNames() []string {
-	all := sortedToolNames(m.cfg)
-	hidden := m.hiddenTools()
-	if len(hidden) == 0 {
-		return all
-	}
-	out := make([]string, 0, len(all))
-	for _, name := range all {
-		if !hidden[name] {
-			out = append(out, name)
-		}
-	}
-	return out
+	return m.cfg.EnabledAgentTools(m.hiddenTools())
 }
 
 func (m *Model) openForm() tea.Cmd {

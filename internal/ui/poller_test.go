@@ -922,7 +922,7 @@ func TestLiveQuietTurnResolvesFinished(t *testing.T) {
 	m.openForm()
 	m.form.name.SetValue("quiet-live")
 	m.form.dir.SetValue(t.TempDir())
-	for i, name := range sortedToolNames(m.cfg) {
+	for i, name := range m.cfg.AgentToolNames() {
 		if name == "quietchat" {
 			m.form.toolIndex = i
 		}

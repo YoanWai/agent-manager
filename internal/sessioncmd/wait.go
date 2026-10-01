@@ -92,7 +92,7 @@ func (s *Sessions) Wait(ctx context.Context, sessionID, targetID string, until [
 		return WaitResult{}, err
 	}
 	defer runtime.store.Close()
-	caller, err := runtime.caller(sessionID)
+	caller, err := runtime.optionalCaller(sessionID)
 	if err != nil {
 		return WaitResult{}, err
 	}

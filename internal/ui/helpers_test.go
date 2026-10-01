@@ -391,7 +391,7 @@ func createSessionOn(t *testing.T, m *Model, name, tool, dir string) {
 	m.form.name.SetValue(name)
 	m.form.dir.SetValue(dir)
 	picked := false
-	for i, candidate := range sortedToolNames(m.cfg) {
+	for i, candidate := range m.cfg.AgentToolNames() {
 		if candidate == tool {
 			m.form.toolIndex, picked = i, true
 		}

@@ -911,25 +911,6 @@ func TestBuildLaunchCarriesSessionID(t *testing.T) {
 	}
 }
 
-func TestSortedToolNamesOrder(t *testing.T) {
-	cfg := config.Config{Tools: map[string]config.Tool{
-		"grok":     {Command: "grok"},
-		"muse":     {Command: "muse"},
-		"gemini":   {Command: "gemini"},
-		"codex":    {Command: "codex"},
-		"claude":   {Command: "claude"},
-		"opencode": {Command: "opencode"},
-		"pi":       {Command: "pi"},
-		"zephyr":   {Command: "zephyr"},
-		"acme":     {Command: "acme"},
-	}}
-	got := sortedToolNames(cfg)
-	want := []string{"claude", "opencode", "codex", "grok", "gemini", "pi", "acme", "muse", "zephyr"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("sortedToolNames = %v want %v", got, want)
-	}
-}
-
 func initGitRepo(t *testing.T, dir string) {
 	t.Helper()
 	for _, args := range [][]string{

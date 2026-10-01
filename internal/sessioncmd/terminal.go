@@ -118,6 +118,15 @@ func (r *runtime) caller(sessionID string) (store.Session, error) {
 	return sess, err
 }
 
+// optionalCaller lets a script outside Agent Manager list, read, wait on and
+// spawn sessions, since none of those acts on the caller's own row.
+func (r *runtime) optionalCaller(sessionID string) (store.Session, error) {
+	if sessionID == "" {
+		return store.Session{}, nil
+	}
+	return r.caller(sessionID)
+}
+
 func (r *runtime) terminal(id string) (store.Session, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -387,7 +396,13 @@ func (r *runtime) createTarget(caller store.Session, requestedGroup *string, dir
 		}
 	}
 	dir := caller.Cwd
-	if current, err := r.driver.PaneCurrentPath(caller.ID); err == nil {
+	if caller.ID == "" {
+		// A script outside Agent Manager has no pane, so its session opens
+		// where the script runs.
+		if dir, err = os.Getwd(); err != nil {
+			return "", "", err
+		}
+	} else if current, err := r.driver.PaneCurrentPath(caller.ID); err == nil {
 		dir = current
 	}
 	resolved, err := resolveTerminalDirectory(dir)
