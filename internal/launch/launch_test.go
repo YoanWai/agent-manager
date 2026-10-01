@@ -247,8 +247,8 @@ func TestEnvironmentCarriesSessionIDAndHooks(t *testing.T) {
 	if env[hooks.EnvSessionID] != "abcd1234" || env[hooks.EnvStatusFile] == "" {
 		t.Fatalf("hooked tool env = %v, want session id and status file", env)
 	}
-	if !strings.Contains(command, "--mcp-config '") || !strings.Contains(command, "--settings '") {
-		t.Fatalf("hooked command = %q", command)
+	if !strings.Contains(command, "--mcp-config '") || !strings.Contains(command, "--settings "+tmux.ShellQuote(manager.SettingsFile("abcd1234"))) {
+		t.Fatalf("hooked command = %q, want this session's own settings", command)
 	}
 }
 

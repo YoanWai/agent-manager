@@ -195,7 +195,7 @@ func Environment(manager *hooks.Manager, toolName string, tool config.Tool, base
 	if tool.StatusSource != hooks.StatusSourceClaude {
 		return command, env, nil
 	}
-	settingsPath, err := manager.EnsureSettings()
+	settingsPath, err := manager.WriteSettings(id)
 	if err != nil {
 		return "", nil, err
 	}
