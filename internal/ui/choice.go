@@ -96,9 +96,11 @@ func (m *Model) handleCatalog(msg catalogMsg) tea.Cmd {
 
 func (m *Model) fitChoices() {
 	if m.mode == modeForm {
+		m.restoreChoice(m.formTool(), &m.form.choice)
 		m.fitChoice(m.formTool(), &m.form.choice)
 	}
 	if m.quick.active {
+		m.restoreChoice(m.quickTool(), &m.quick.choice)
 		m.fitChoice(m.quickTool(), &m.quick.choice)
 	}
 }
@@ -116,6 +118,8 @@ type choice struct {
 	typedEffort textinput.Model
 	sugg        modelSuggest
 	recent      []string
+	// saved is the CLI's last choice, waiting for its answer to place it.
+	saved *config.Choice
 }
 
 func (ch *choice) query() string {
@@ -153,7 +157,73 @@ func (m *Model) newChoice(toolName string) choice {
 	typed := textinput.New()
 	typed.CharLimit = 40
 	typed.Placeholder = "default"
-	return choice{filter: filter, typedEffort: typed, recent: m.recentModels(toolName)}
+	ch := choice{filter: filter, typedEffort: typed, recent: m.recentModels(toolName), saved: m.savedChoice(toolName)}
+	m.restoreChoice(toolName, &ch)
+	return ch
+}
+
+func savedChoiceKey(toolName string) string { return "choice." + toolName }
+
+func (m *Model) savedChoice(toolName string) *config.Choice {
+	raw, err := m.store.Setting(savedChoiceKey(toolName))
+	if err != nil || raw == "" {
+		if err != nil {
+			m.errBar.text = "reading the last choice: " + err.Error()
+		}
+		return nil
+	}
+	var saved config.Choice
+	if err := json.Unmarshal([]byte(raw), &saved); err != nil {
+		m.errBar.text = "reading the last choice: " + err.Error()
+		return nil
+	}
+	return &saved
+}
+
+// keepChoice saves the choice as the CLI's own, so the next form or quick
+// prompt on it starts there.
+func (m *Model) keepChoice(toolName string, ch *choice) {
+	raw, err := json.Marshal(m.currentChoice(toolName, ch))
+	if err == nil {
+		err = m.store.SetSetting(savedChoiceKey(toolName), string(raw))
+	}
+	if err != nil {
+		m.errBar.text = "saving the choice: " + err.Error()
+	}
+}
+
+// restoreChoice places the saved choice once the CLI's answer is in, keeping
+// only what that answer still offers.
+func (m *Model) restoreChoice(toolName string, ch *choice) {
+	state, _ := m.choiceAnswer(toolName)
+	if ch.saved == nil || state == nil || !state.loaded {
+		return
+	}
+	saved := *ch.saved
+	ch.saved = nil
+	for i, profile := range m.choiceProfiles(toolName) {
+		if profile.Name == saved.Profile {
+			ch.profile = i + 1
+		}
+	}
+	if key := (catalog.Model{ID: saved.Model, Provider: saved.Provider}).Key(); saved.Model != "" {
+		ch.model = key
+		if _, ok := m.pickedModel(toolName, ch); ok {
+			ch.filter.SetValue(key)
+			ch.filter.CursorEnd()
+		} else {
+			ch.model = ""
+		}
+	}
+	if m.effortTyped(toolName, ch) {
+		ch.typedEffort.SetValue(saved.Effort)
+		return
+	}
+	for i, level := range m.choiceEfforts(toolName, ch) {
+		if level == saved.Effort {
+			ch.effort = i + 1
+		}
+	}
 }
 
 // choiceAnswer is the CLI's latest answer, and whether it can be asked.
@@ -251,6 +321,7 @@ func (m *Model) pickModel(toolName string, ch *choice, key string) {
 		}
 	}
 	ch.sugg = modelSuggest{}
+	m.keepChoice(toolName, ch)
 }
 
 func (m *Model) choiceEffort(toolName string, ch *choice) string {
@@ -267,12 +338,14 @@ func (m *Model) choiceEffort(toolName string, ch *choice) string {
 func (m *Model) cycleChoiceEffort(toolName string, ch *choice, delta int) {
 	count := len(m.choiceEfforts(toolName, ch)) + 1
 	ch.effort = (ch.effort + delta + count) % count
+	m.keepChoice(toolName, ch)
 }
 
 func (m *Model) cycleChoiceProfile(toolName string, ch *choice, delta int) {
 	count := len(m.choiceProfiles(toolName)) + 1
 	ch.profile = (ch.profile + delta + count) % count
 	m.fitChoice(toolName, ch)
+	m.keepChoice(toolName, ch)
 }
 
 func (m *Model) launchChoice(toolName string, ch *choice, typed string) (config.Choice, error) {
@@ -284,11 +357,15 @@ func (m *Model) launchChoice(toolName string, ch *choice, typed string) (config.
 			return config.Choice{}, fmt.Errorf("model %q is not one %s lists: pick one from the list", typed, toolName)
 		}
 	}
+	return m.currentChoice(toolName, ch), nil
+}
+
+func (m *Model) currentChoice(toolName string, ch *choice) config.Choice {
 	picked := config.Choice{Profile: m.choiceProfileName(toolName, ch), Effort: m.choiceEffort(toolName, ch)}
 	if model, ok := m.pickedModel(toolName, ch); ok {
 		picked.Model, picked.Provider = model.ID, model.Provider
 	}
-	return picked, nil
+	return picked
 }
 
 type suggestion struct {

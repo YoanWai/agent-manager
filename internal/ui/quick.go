@@ -413,6 +413,7 @@ func (m *Model) handleQuickPickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		var cmd tea.Cmd
 		ch.typedEffort, cmd = ch.typedEffort.Update(msg)
+		m.keepChoice(toolName, ch)
 		return m, cmd
 	}
 	list := m.modelSuggestions(toolName, ch, ch.query())

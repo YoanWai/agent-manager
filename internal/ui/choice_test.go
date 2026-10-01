@@ -646,3 +646,72 @@ func TestQuickSheetStepsEffortAndHandsThePromptBack(t *testing.T) {
 		t.Fatal("esc should hand the prompt back")
 	}
 }
+
+// Each CLI keeps the model, effort and profile last picked for it, so the
+// next form or quick prompt on that CLI starts there.
+func TestChoiceIsKeptPerCLI(t *testing.T) {
+	t.Run("form", func(t *testing.T) {
+		m := buildModel(t)
+		answered(m, claudeLike, claudeAnswer)
+		openFormOnClaude(t, m)
+		m.focusFormField(fieldModel)
+		typeInto(m, "opus")
+		m.handleFormKey(tea.KeyMsg{Type: tea.KeyTab})
+		m.focusFormField(fieldEffort)
+		m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
+		m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
+		m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
+		m.handleFormKey(tea.KeyMsg{Type: tea.KeyEsc})
+		openFormOnClaude(t, m)
+		if got := m.currentChoice("claude", &m.form.choice); got != (config.Choice{Model: "opus", Effort: "high"}) {
+			t.Fatalf("reopened form choice = %+v", got)
+		}
+		if m.form.choice.filter.Value() != "opus" {
+			t.Fatalf("model field shows %q", m.form.choice.filter.Value())
+		}
+		if other := m.newChoice("command-code"); other.model != "" || other.saved != nil {
+			t.Fatalf("another CLI picked up claude's choice: %+v", other)
+		}
+	})
+	t.Run("quick prompt", func(t *testing.T) {
+		m := buildModel(t)
+		answered(m, claudeLike, claudeAnswer)
+		if err := m.store.CreateGroup("work", t.TempDir()); err != nil {
+			t.Fatal(err)
+		}
+		m.applyCmd(t, m.refreshCmd())
+		m.selectGroupRow(t, "work")
+		m.openQuickMode()
+		m.quick.toolIndex = slices.Index(m.quick.toolNames, "claude")
+		m.quick.choice = m.newChoice("claude")
+		m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlL})
+		for _, r := range "opus" {
+			m.handleQuickKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		}
+		m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter})
+		m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlX})
+		m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEsc})
+		m.openQuickMode()
+		m.quick.toolIndex = slices.Index(m.quick.toolNames, "claude")
+		m.quick.choice = m.newChoice("claude")
+		if target := strings.Split(ansi.Strip(m.viewQuickBar(120, quickBarMaxRows)), "\n")[0]; !strings.Contains(target, "claude · opus · low") {
+			t.Fatalf("reopened bar: %s", target)
+		}
+	})
+	t.Run("answer arrives after the prompt opens", func(t *testing.T) {
+		m := buildModel(t)
+		answered(m, claudeLike, catalog.Catalog{})
+		m.catalogs["claude"] = &catalogState{loading: true}
+		if err := m.store.SetSetting(savedChoiceKey("claude"), `{"Model":"opus","Effort":"medium"}`); err != nil {
+			t.Fatal(err)
+		}
+		openFormOnClaude(t, m)
+		if m.form.choice.model != "" {
+			t.Fatal("placed a model before the CLI answered")
+		}
+		m.handleCatalog(catalogMsg{tool: "claude", cat: claudeAnswer})
+		if got := m.currentChoice("claude", &m.form.choice); got != (config.Choice{Model: "opus", Effort: "medium"}) {
+			t.Fatalf("choice once answered = %+v", got)
+		}
+	})
+}

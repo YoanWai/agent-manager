@@ -469,6 +469,7 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case fieldEffort:
 		if m.effortTyped(m.formTool(), &m.form.choice) {
 			m.form.choice.typedEffort, cmd = m.form.choice.typedEffort.Update(msg)
+			m.keepChoice(m.formTool(), &m.form.choice)
 		}
 	}
 	return m, cmd
