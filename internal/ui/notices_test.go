@@ -89,33 +89,29 @@ func TestDismissPersistsAcrossRestart(t *testing.T) {
 	}
 }
 
-func TestToolsRetiredNoticeNamesTheIgnoredBlocks(t *testing.T) {
+func TestConfigNotImportedNoticeCarriesTheReason(t *testing.T) {
 	st := noticeStore(t)
 	m := noticeModel(st, "v0.2.0")
-	if contains(noticeIDs(m.activeNotices()), noticeToolsRetired) {
-		t.Fatal("a file with no tool blocks has nothing to retire")
+	if contains(noticeIDs(m.activeNotices()), noticeConfigNotImported) {
+		t.Fatal("an import that went through has nothing to report")
 	}
-	m.cfg.IgnoredTools = []string{"claude", "mytool"}
-	var retired notice
+	m.configImportError = "config.toml: keybindings.session.detach needs at least one key"
+	var refused notice
 	for _, n := range m.activeNotices() {
-		if n.id == noticeToolsRetired {
-			retired = n
+		if n.id == noticeConfigNotImported {
+			refused = n
 		}
 	}
-	if retired.id == "" {
-		t.Fatalf("want %s among %v", noticeToolsRetired, noticeIDs(m.activeNotices()))
+	if refused.id == "" {
+		t.Fatalf("want %s among %v", noticeConfigNotImported, noticeIDs(m.activeNotices()))
 	}
-	if !contains(retired.body, "claude, mytool") {
-		t.Fatalf("the notice should name the ignored blocks: %q", retired.body)
+	if !contains(refused.body, m.configImportError) {
+		t.Fatalf("the notice should carry the reason: %q", refused.body)
 	}
-	joined := strings.Join(retired.body, " ")
-	if !strings.Contains(joined, "block you added") {
-		t.Fatalf("a custom block is not a shipped copy: %q", retired.body)
-	}
-	m.dismissNotice(noticeToolsRetired)
+	m.dismissNotice(noticeConfigNotImported)
 	reopened := noticeModel(st, "v0.2.0")
-	reopened.cfg.IgnoredTools = m.cfg.IgnoredTools
-	if contains(noticeIDs(reopened.activeNotices()), noticeToolsRetired) {
+	reopened.configImportError = m.configImportError
+	if contains(noticeIDs(reopened.activeNotices()), noticeConfigNotImported) {
 		t.Fatal("dismissal did not survive restart")
 	}
 }

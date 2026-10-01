@@ -68,9 +68,13 @@ type Model struct {
 	engine   *status.Engine
 	keys     keybind.Table
 	listKeys keybind.Table
-	// configDir is resolved once, at New, so the settings screen writes
-	// keys back to the config.toml the manager loaded.
+	// editor is the command Settings picked for the editor key; empty
+	// leaves the choice to the environment and what is on PATH.
+	editor    string
 	configDir string
+	// configImportError is why the config.toml of an earlier release was
+	// refused, shown as a notice until it is dismissed.
+	configImportError string
 
 	// setSnapshot writes a session's pane capture before archive or kill
 	// takes the window; a seam so snapshot failures can be exercised
@@ -538,6 +542,7 @@ type settingsState struct {
 	keyCapture bool
 	keyAppend  bool
 	keyReset   bool
+	editor     editorRow
 }
 
 const (
@@ -559,6 +564,7 @@ const (
 	settingsFieldCoordination
 	settingsFieldNotify
 	settingsFieldNotifyFinish
+	settingsFieldEditor
 	settingsFieldKeybindings
 	settingsFieldCLIs
 	settingsFieldBugReport
@@ -787,7 +793,23 @@ type attachDoneMsg struct {
 	err    error
 }
 
-func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, version string) *Model {
+func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, version string) (*Model, error) {
+	sessionKeys, err := st.SessionKeys()
+	if err != nil {
+		return nil, err
+	}
+	listKeys, err := st.ListKeys()
+	if err != nil {
+		return nil, err
+	}
+	editor, err := st.Editor()
+	if err != nil {
+		return nil, err
+	}
+	configImportError, err := st.ConfigImportError()
+	if err != nil {
+		return nil, err
+	}
 	statusSources := make(map[string]string, len(cfg.Tools))
 	sessionStores := make(map[string]string, len(cfg.Tools))
 	mcpStyles := make(map[string]string, len(cfg.Tools))
@@ -802,18 +824,20 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 	// works without it, so the error surfaces on first use instead.
 	gitDriver, _ := git.New()
 	applyTheme(themes[themeIndex(resolveStartupTheme(st))])
-	driver.SetSessionKeys(cfg.SessionKeys)
+	driver.SetSessionKeys(sessionKeys)
 	model := &Model{
 		cfg:                 cfg,
 		store:               st,
 		tmux:                driver,
-		keys:                cfg.SessionKeys,
-		listKeys:            cfg.ListKeys,
+		keys:                sessionKeys,
+		listKeys:            listKeys,
+		editor:              editor,
+		configImportError:   configImportError,
 		hooks:               hookManager,
 		gitDrv:              gitDriver,
 		engine:              engine,
 		setSnapshot:         st.SetSnapshot,
-		poller:              newPoller(st, driver, engine, hookManager, gitDriver, statusSources, sessionStores, mcpStyles, shellTools, newToolBinaries(cfg), cfg.PollInterval.Duration),
+		poller:              newPoller(st, driver, engine, hookManager, gitDriver, statusSources, sessionStores, mcpStyles, shellTools, newToolBinaries(cfg), config.PollInterval),
 		collapsed:           loadCollapsed(st),
 		split:               splitState{ratio: loadSplitRatio(st)},
 		focusOnEnter:        storedFocusOnEnter(st),
@@ -843,7 +867,7 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 	model.terminalBackground = model.storedTerminalBackground()
 	model.openStartupNotice()
 	model.indexReleaseRanges()
-	return model
+	return model, nil
 }
 
 // storedTheme reads the persisted theme name. A read failure falls back to
@@ -1946,6 +1970,10 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case diffFileCheckedMsg:
 		return m.handleDiffFileChecked(msg)
+
+	case editorsProbedMsg:
+		m.settings.editor.applyProbe(msg)
+		return m, nil
 
 	case editorDoneMsg:
 		var resume tea.Cmd

@@ -5,7 +5,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -175,7 +174,7 @@ func keyResetChanges(tables ...keybind.Table) []string {
 	return changes
 }
 
-// The picker refuses what config load would refuse, so the table it saves
+// The picker refuses what the store would refuse, so the table it saves
 // always loads back.
 func (m *Model) setBinding(binding keybind.Binding) tea.Cmd {
 	row := m.pickedRow()
@@ -197,12 +196,8 @@ func (m *Model) saveKeys() tea.Cmd {
 	if session.Equal(m.keys) && list.Equal(m.listKeys) {
 		return nil
 	}
-	if m.configDir == "" {
-		m.errBar.text = "no config directory to save the keys to"
-		return nil
-	}
 	if !list.Equal(m.listKeys) {
-		if err := config.SaveKeys(m.configDir, list); err != nil {
+		if err := m.store.SetKeys(list); err != nil {
 			m.errBar.text = err.Error()
 			return nil
 		}
@@ -211,7 +206,7 @@ func (m *Model) saveKeys() tea.Cmd {
 	if session.Equal(m.keys) {
 		return nil
 	}
-	if err := config.SaveKeys(m.configDir, session); err != nil {
+	if err := m.store.SetKeys(session); err != nil {
 		m.errBar.text = err.Error()
 		return nil
 	}

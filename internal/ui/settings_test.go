@@ -171,7 +171,7 @@ func TestSettingsMouseTogglePersists(t *testing.T) {
 	if !m.mouseDisabled {
 		t.Fatal("model should carry the toggled value after save")
 	}
-	if loaded := New(m.cfg, m.store, m.tmux, m.poller.engine, m.hooks, "dev"); !loaded.mouseDisabled {
+	if loaded := reloadModel(t, m); !loaded.mouseDisabled {
 		t.Fatal("a fresh model should reload the persisted choice")
 	}
 }

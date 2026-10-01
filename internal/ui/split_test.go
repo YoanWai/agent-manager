@@ -1255,7 +1255,7 @@ func TestNewLoadsPersistedSplitRatio(t *testing.T) {
 	if err := m.store.SetSetting(splitRatioSetting, "0.45"); err != nil {
 		t.Fatalf("set setting: %v", err)
 	}
-	loaded := New(m.cfg, m.store, m.tmux, m.poller.engine, m.hooks, "dev")
+	loaded := reloadModel(t, m)
 	if loaded.split.ratio != 0.45 {
 		t.Fatalf("New splitRatio = %v want 0.45", loaded.split.ratio)
 	}

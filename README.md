@@ -84,7 +84,7 @@ Arch Linux, mise, `go install`, prebuilt binaries, Windows (WSL2), dependencies,
 agent-manager
 ```
 
-Sessions run inside tmux (`am_*` namespace), so they survive the manager quitting. Inside a session, **Ctrl+Q** detaches back to the manager when your terminal and tmux leave it available; **Ctrl+\\** is an alternate under the same rule. **Ctrl+R** opens the session's diff review and **F3** opens its directory in your editor; a `[keybindings.session]` table in config.toml moves any of them, or hands one back to the agent, and `[keybindings.list]` moves or turns off any action of the manager's own list, with `esc` and `ctrl+c` staying as they are (see [Key bindings](docs/configuration.md#key-bindings)). In a full-screen attach, the session footer also shows an inner tmux prefix followed by `d` when configured. When nested inside another tmux, send the inner prefix shown in the footer, then press `d`. If both tmux servers use the same prefix, invoke the outer tmux's `send-prefix` binding; if the outer tmux otherwise captures the inner prefix, configure it to forward that key. `agent-manager --version` prints the version.
+Sessions run inside tmux (`am_*` namespace), so they survive the manager quitting. Inside a session, **Ctrl+Q** detaches back to the manager when your terminal and tmux leave it available; **Ctrl+\\** is an alternate under the same rule. **Ctrl+R** opens the session's diff review and **F3** opens its directory in your editor; the **keybindings** row in Settings (`s`) moves any of them, or hands one back to the agent, and moves or turns off any action of the manager's own list, with `esc` and `ctrl+c` staying as they are (see [Key bindings](docs/configuration.md#key-bindings)). In a full-screen attach, the session footer also shows an inner tmux prefix followed by `d` when configured. When nested inside another tmux, send the inner prefix shown in the footer, then press `d`. If both tmux servers use the same prefix, invoke the outer tmux's `send-prefix` binding; if the outer tmux otherwise captures the inner prefix, configure it to forward that key. `agent-manager --version` prints the version.
 
 Agent sessions live on a private tmux server named `agentmgr`, so they never mix with the tmux you run yourself and a `kill-server` on your own socket leaves them alone. To reach one from a plain shell, name that server: `tmux -L agentmgr ls`, then `tmux -L agentmgr attach -t am_<id>`.
 
@@ -103,7 +103,7 @@ The full reference, every key, the quick prompt, killing and reviving, diff revi
 | `ctrl+r` | Review the session's changes as full-file diffs; `c` comments a line, `C` sends a numbered review round, and sent comments stay visible as open or handled |
 | `x` / `v` | Kill a session to free its RAM / revive it on its own conversation |
 | `R` | Restart a session on an empty context: same name, group, directory and tool, fresh conversation |
-| `s` | Settings (default tool, theme or follow the OS light/dark mode, list density, mouse, review layout, desktop notifications) |
+| `s` | Settings (default tool, theme or follow the OS light/dark mode, list density, mouse, review layout, desktop notifications, editor, keybindings) |
 | `?` | The key map for the current screen; review shows only review bindings |
 
 A session can spawn into its own git worktree (`<repo>-worktrees/<name>`, branch `am/<name>`), toggled on the `n` form, with `ctrl+t` in the quick prompt, or by default in Settings.
@@ -118,7 +118,7 @@ A session can start on a model, reasoning effort and profile of its own, picked 
 
 ![review, side by side, with the changed lines tinted in full file context](docs/screenshot-review.png)
 
-Configuration (the editor `o` opens, the poll interval, and the key tables) is in [docs/configuration.md](docs/configuration.md).
+Configuration (Settings, the editor `o` opens, and the key tables) is in [docs/configuration.md](docs/configuration.md).
 
 ## Development
 

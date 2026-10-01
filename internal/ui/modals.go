@@ -435,6 +435,10 @@ func (m *Model) viewSettings() string {
 		return ctaLead(field, name) + keyStyle.Render("↵") + " " +
 			lipgloss.NewStyle().Foreground(colorAccent2).Render(action)
 	}
+	editorLine := row(settingsFieldEditor, "editor", m.settings.editor.label())
+	if m.settings.editor.typing {
+		editorLine = lead(settingsFieldEditor, "editor") + textInputView(m.settings.editor.input)
+	}
 	body := row(settingsFieldTool, "default tool", toolValue) + "\n" +
 		row(settingsFieldTheme, "theme", themes[m.settings.themeIndex].Name) + "  " +
 		themeSwatch(themes[m.settings.themeIndex]) + "\n" +
@@ -454,6 +458,7 @@ func (m *Model) viewSettings() string {
 		row(settingsFieldCoordination, "coordination", coordination) + "\n" +
 		row(settingsFieldNotify, "notifications", notifications) + "\n" +
 		row(settingsFieldNotifyFinish, "notify on finish", notifyFinished) + "\n" +
+		editorLine + "\n" +
 		actionRow(settingsFieldKeybindings, "keybindings", keybindingsSummary(m.keys, m.listKeys)) + "\n" +
 		actionRow(settingsFieldCLIs, "CLIs", "show or hide for new sessions") + "\n" +
 		ctaRow(settingsFieldBugReport, "report a bug", "open the bug report form") + "\n" +
@@ -467,6 +472,13 @@ func (m *Model) viewSettings() string {
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "manage CLIs"}, {"esc", "save"}}
 	case settingsFieldKeybindings:
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "change the keys"}, {"esc", "save"}}
+	case settingsFieldEditor:
+		switch {
+		case m.settings.editor.typing:
+			hint = [][2]string{{"↵", "keep"}, {"esc", "cancel"}}
+		case m.settings.editor.custom:
+			hint = [][2]string{{"↑↓", "field"}, {"←→", "change"}, {"↵", "type the command"}, {"esc", "save"}}
+		}
 	case settingsFieldUpdate:
 		switch {
 		case m.update.applying:

@@ -277,7 +277,7 @@ func (r *Reporter) gather(sessionID string) (Context, error) {
 	if err != nil {
 		return Context{}, err
 	}
-	cfg, err := config.LoadDir(r.configDir)
+	cfg, err := config.Default()
 	if err != nil {
 		return Context{}, err
 	}

@@ -85,7 +85,7 @@ func NewSessions(configDir string, words Vocabulary) *Sessions {
 
 func newSessions(configDir string, words Vocabulary, newDriver func() (*tmux.Driver, error), newGit func() (*git.Driver, error)) *Sessions {
 	return &Sessions{
-		commands:    commands{configDir: configDir, words: words, newDriver: newDriver, loadConfig: config.LoadDir},
+		commands:    commands{configDir: configDir, words: words, newDriver: newDriver, loadConfig: config.Default},
 		newGit:      newGit,
 		loadCatalog: loadCatalog,
 	}
@@ -687,7 +687,7 @@ type MessageState struct {
 // managerAwake reports whether a manager has polled recently enough to
 // still be delivering. Queued messages only move while it runs.
 func (r *runtime) managerAwake(now time.Time) (bool, error) {
-	return r.store.ManagerAwake(now, r.cfg.PollInterval.Duration)
+	return r.store.ManagerAwake(now)
 }
 
 // fingerprint collapses whitespace before hashing so a retry that only

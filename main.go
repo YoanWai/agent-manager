@@ -193,7 +193,7 @@ func sessionFromAncestry() string {
 }
 
 func run() error {
-	cfg, err := config.Load()
+	cfg, err := config.Default()
 	if err != nil {
 		return err
 	}
@@ -221,7 +221,10 @@ func run() error {
 	}
 	defer st.Close()
 
-	model := ui.New(cfg, st, driver, engine, hooks.NewManager(dir), version)
+	model, err := ui.New(cfg, st, driver, engine, hooks.NewManager(dir), version)
+	if err != nil {
+		return err
+	}
 	// Mouse reporting claims the wheel for the app, so a notch neither
 	// scrolls the host's scrollback out from under the manager nor arrives
 	// as an arrow key that walks the session cursor. Alternate scroll is

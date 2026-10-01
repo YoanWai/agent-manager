@@ -696,17 +696,19 @@ func TestRefreshCarriesTheSocketItReadPanesFrom(t *testing.T) {
 	}
 }
 
-// New hands the config's key table to the tmux driver, so a session the
+// New hands the stored key table to the tmux driver, so a session the
 // manager creates is bound and labelled the same way focus reads its keys.
 func TestNewHandsTheKeyTableToTmux(t *testing.T) {
 	m := buildModel(t)
-	cfg := m.cfg
-	cfg.SessionKeys = keybind.DefaultSession().With(keybind.Detach, bindingOf(t, "f9")).With(keybind.Review, bindingOf(t, "ctrl+g"))
-	loaded := New(cfg, m.store, m.tmux, m.poller.engine, m.hooks, "dev")
+	stored := keybind.DefaultSession().With(keybind.Detach, bindingOf(t, "f9")).With(keybind.Review, bindingOf(t, "ctrl+g"))
+	if err := m.store.SetKeys(stored); err != nil {
+		t.Fatalf("SetKeys: %v", err)
+	}
+	loaded := reloadModel(t, m)
 	loaded.width, loaded.height = 120, 40
 	t.Cleanup(func() { m.tmux.SetSessionKeys(keybind.DefaultSession()) })
 	if got := loaded.keys.Binding(keybind.Editor).Label(); got != "f3" {
-		t.Fatalf("editor left out should take the default, got %q", got)
+		t.Fatalf("an action nobody moved should keep its default, got %q", got)
 	}
 	createSession(t, loaded, "tablebound", t.TempDir(), "")
 	loaded.selectSessionRow(t, "tablebound")
@@ -717,7 +719,7 @@ func TestNewHandsTheKeyTableToTmux(t *testing.T) {
 		t.Fatalf("status-right: %v", err)
 	}
 	if !strings.Contains(string(right), "Ctrl+g = review") || !strings.Contains(string(right), "F9") {
-		t.Fatalf("session footer should carry the config's keys, got %q", right)
+		t.Fatalf("session footer should carry the stored keys, got %q", right)
 	}
 }
 
@@ -728,7 +730,7 @@ func TestStartupPreservesExistingPaneHeight(t *testing.T) {
 	if _, err := tmuxCmd("resize-window", "-t", "am_"+id, "-x", "120", "-y", "80").CombinedOutput(); err != nil {
 		t.Fatal(err)
 	}
-	loaded := New(m.cfg, m.store, m.tmux, m.poller.engine, m.hooks, "dev")
+	loaded := reloadModel(t, m)
 	loaded.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	loaded.applyCmd(t, loaded.refreshCmd())
 	if _, h := windowSize(t, id); h < 80 {
