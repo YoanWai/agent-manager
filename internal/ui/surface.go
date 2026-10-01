@@ -7,16 +7,16 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// The list view sits on the terminal's own background, with the sessions
-// rail filling its pane flush — header rule to footer rule, window edge to
-// seam — and the selected entry lifted once more. The backdrop itself is
-// never painted: the terminal background sync keeps the terminal's default
-// at the theme's tone, so the window padding around the cell grid carries
-// the same color as the unpainted cells and the frame meets the window
-// without a ring of a different tone.
+// The list view sits on the backdrop, with the sessions rail filling its
+// pane flush — header rule to footer rule, window edge to seam — and the
+// selected entry lifted once more. Views draw the backdrop as unpainted
+// cells; fillBackdrop paints them over the finished frame, and the terminal
+// background sync keeps the window padding around the cell grid at the same
+// tone. With the terminal background setting the cells stay unpainted, so a
+// translucent window blends them exactly like its padding.
 
-// backdropHex is the backdrop's fill: none. paint treats it as "pad, but
-// leave the terminal's background alone".
+// backdropHex is the backdrop's fill while a view draws: none. paint treats
+// it as "pad, but leave the terminal's background alone".
 func backdropHex() string { return "" }
 
 // panelHex is the rail's fill: one step above the backdrop.
@@ -195,9 +195,9 @@ func paint(s string, width int, bg string) string {
 	return fill + s + "\x1b[0m"
 }
 
-// plain pads a line to width without filling it, leaving the terminal's own
-// background showing through. Captured agent output is drawn this way so a
-// session's CLI looks exactly as it does inside the session.
+// plain pads a line to width without filling it, leaving it on the backdrop.
+// Captured agent output is drawn this way so a session's CLI looks exactly
+// as it does inside the session.
 func plain(s string, width int) string {
 	if w := ansi.StringWidth(s); w > width {
 		s = ansi.Truncate(s, width, "")
@@ -207,9 +207,91 @@ func plain(s string, width int) string {
 	return "\x1b[0m" + s + "\x1b[0m"
 }
 
+// fillBackdrop paints hex under every cell the frame left on the terminal's
+// own background and pads each row to width, so the frame keeps its colors
+// on a terminal that ignored the OSC 11 background sync.
+func fillBackdrop(frame string, width int, hex string) string {
+	fill := bgSeq(hex)
+	parser := ansi.GetParser()
+	defer ansi.PutParser(parser)
+	lines := strings.Split(frame, "\n")
+	for i, line := range lines {
+		lines[i] = fillBackdropLine(line, width, fill, parser)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func fillBackdropLine(line string, width int, fill string, parser *ansi.Parser) string {
+	var out strings.Builder
+	out.WriteString(fill)
+	cells := 0
+	var state byte
+	for len(line) > 0 {
+		seq, cellWidth, n, next := ansi.DecodeSequence(line, state, parser)
+		out.WriteString(seq)
+		if ansi.HasCsiPrefix(seq) && parser.Command() == 'm' && clearsBackground(parser.Params()) {
+			out.WriteString(fill)
+		}
+		cells += cellWidth
+		line, state = line[n:], next
+	}
+	if cells < width {
+		out.WriteString("\x1b[0m" + fill + strings.Repeat(" ", width-cells))
+	}
+	out.WriteString("\x1b[0m")
+	return out.String()
+}
+
+// clearsBackground reports whether an SGR leaves the terminal's own
+// background showing once all of its parameters apply.
+func clearsBackground(params ansi.Params) bool {
+	if len(params) == 0 {
+		return true
+	}
+	cleared := false
+	for i := 0; i < len(params); i++ {
+		param, _, _ := params.Param(i, 0)
+		switch {
+		case param == 0 || param == 49:
+			cleared = true
+		case param >= 40 && param <= 47, param >= 100 && param <= 107:
+			cleared = false
+		case param == 48:
+			cleared = false
+			i += colorArguments(params, i)
+		case param == 38 || param == 58:
+			i += colorArguments(params, i)
+		}
+	}
+	return cleared
+}
+
+// colorArguments counts the parameters an extended color (38, 48, 58)
+// consumes after its own, written with colons or with semicolons.
+func colorArguments(params ansi.Params, at int) int {
+	count := 0
+	for {
+		_, subparameter, _ := params.Param(at+count, 0)
+		if !subparameter {
+			break
+		}
+		count++
+	}
+	if count > 0 {
+		return count
+	}
+	switch kind, _, _ := params.Param(at+1, 0); kind {
+	case 5:
+		return 2
+	case 2:
+		return 4
+	}
+	return 0
+}
+
 // contentLine is one row of the content column: ours to paint, a seam that
-// spans the column edge to edge, or captured output that must keep the
-// terminal's own backdrop. Rail rows also carry the tone their fill uses,
+// spans the column edge to edge, or captured output that must stay on the
+// backdrop. Rail rows also carry the tone their fill uses,
 // so the edge column beside them can match the selected entry's band.
 type contentLine struct {
 	text string

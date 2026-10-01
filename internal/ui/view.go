@@ -12,9 +12,20 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 )
 
 func (m *Model) View() string {
+	frame := m.view()
+	// A colorless profile renders the backdrop as a bare reset, which would
+	// strip the bold and reverse cells it lands beside.
+	if m.terminalBackground || lipgloss.ColorProfile() == termenv.Ascii {
+		return frame
+	}
+	return fillBackdrop(frame, m.width, current.Bg)
+}
+
+func (m *Model) view() string {
 	if m.width == 0 {
 		return m.syncCursorAnchor("loading...")
 	}

@@ -189,6 +189,10 @@ type Model struct {
 	// read them every frame.
 	hideHeader bool
 	hideStats  bool
+	// terminalBackground leaves the backdrop's cells on the terminal's own
+	// background, for translucent windows. Off polarity, so a bare Model{}
+	// paints the backdrop like the default does.
+	terminalBackground bool
 	// mouseDisabled mirrors the persisted mouse-reporting setting: true gives
 	// the rail and content column back to the terminal's own click-drag text
 	// selection. Read on every Update via syncMouseCapture. Named for its off
@@ -507,6 +511,9 @@ type settingsState struct {
 	notifications   bool
 	notifyFinished  bool
 	themeAuto       bool
+	// terminalBackground is the background row's choice, applied to the
+	// model as it is stepped so the frame previews it.
+	terminalBackground bool
 	// manualTheme is the persisted choice the theme key keeps while
 	// auto-detect drives the live palette, so turning auto off returns
 	// to it.
@@ -528,6 +535,7 @@ const (
 	settingsFieldTool = iota
 	settingsFieldTheme
 	settingsFieldThemeAuto
+	settingsFieldBackground
 	settingsFieldDensity
 	settingsFieldSessionLayout
 	settingsFieldHeader
@@ -803,6 +811,7 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		fullLayout:          storedFullLayout(st),
 		hideHeader:          storedHideHeader(st),
 		hideStats:           storedHideStats(st),
+		terminalBackground:  storedTerminalBackground(st),
 		mouseDisabled:       storedMouseDisabled(st),
 		imeCursor:           &cursorAnchor{},
 		mode:                modeList,

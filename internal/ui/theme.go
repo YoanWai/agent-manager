@@ -15,14 +15,13 @@ import (
 // through. Colors are hex so terminals with truecolor get the exact
 // palette; lipgloss degrades them to the closest 256 index elsewhere.
 //
-// No token paints a full-screen background: the terminal's own backdrop
-// shows through, and Bg is only ever used as the text color sitting on an
-// accent fill.
+// Bg is the backdrop: fillBackdrop paints it under every cell a view leaves
+// unpainted, and it is the ink on accent fills.
 type Theme struct {
 	Name string
 
 	// Surfaces and structure.
-	Bg      string // deepest tone, used as ink on accent fills
+	Bg      string // deepest tone: the backdrop, and ink on accent fills
 	Surface string // selected row / chip fill
 	Overlay string // raised fill for gauges tracks and gutters
 	Border  string // idle panel border
