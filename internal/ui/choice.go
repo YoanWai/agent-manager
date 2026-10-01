@@ -425,7 +425,7 @@ func (m *Model) profileRow(toolName string, ch *choice) (string, bool) {
 
 // viewModelSuggestions returns each line's list index in entries, -1 for a
 // heading.
-func (m *Model) viewModelSuggestions(toolName string, ch *choice, query string, indent, width int) (lines []string, entries []int) {
+func (m *Model) viewModelSuggestions(toolName string, ch *choice, query string, indent, width, visible int) (lines []string, entries []int) {
 	list := m.modelSuggestions(toolName, ch, query)
 	headingStyle := lipgloss.NewStyle().Foreground(colorSubtle).Italic(true)
 	var rows []string
@@ -463,18 +463,18 @@ func (m *Model) viewModelSuggestions(toolName string, ch *choice, query string, 
 		heading("no model matches " + strings.TrimSpace(query))
 	}
 	pad := strings.Repeat(" ", indent)
-	if len(rows) <= modelListRows {
+	if len(rows) <= visible {
 		for _, row := range rows {
 			lines = append(lines, pad+ansi.Truncate(row, width, "…"))
 		}
 		return lines, entries
 	}
-	ch.sugg.offset = scrollToShow(ch.sugg.offset, highlight, len(rows), modelListRows, entries)
-	bar := scrollBar(ch.sugg.offset, len(rows), modelListRows)
-	for i, row := range rows[ch.sugg.offset : ch.sugg.offset+modelListRows] {
+	ch.sugg.offset = scrollToShow(ch.sugg.offset, highlight, len(rows), visible, entries)
+	bar := scrollBar(ch.sugg.offset, len(rows), visible)
+	for i, row := range rows[ch.sugg.offset : ch.sugg.offset+visible] {
 		lines = append(lines, pad+padRight(row, width-2)+" "+bar[i])
 	}
-	return lines, entries[ch.sugg.offset : ch.sugg.offset+modelListRows]
+	return lines, entries[ch.sugg.offset : ch.sugg.offset+visible]
 }
 
 // scrollToShow returns to the top on the first entry, so the headings above

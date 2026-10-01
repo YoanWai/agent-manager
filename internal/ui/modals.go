@@ -181,7 +181,7 @@ func (m *Model) viewForm() string {
 	} else {
 		field("model", textInputView(ch.filter), fieldModel)
 		if m.form.focus == fieldModel && ch.sugg.open {
-			lines, entries := m.viewModelSuggestions(toolName, ch, ch.query(), formLabelColumn, m.formValueWidth())
+			lines, entries := m.viewModelSuggestions(toolName, ch, ch.query(), formLabelColumn, m.formValueWidth(), modelListRows)
 			for i, line := range lines {
 				add(line+"\n", formHit{field: fieldModel, entry: entries[i]})
 			}
