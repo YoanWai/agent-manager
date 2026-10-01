@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"github.com/YoanWai/agent-manager/internal/tmux"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
@@ -373,8 +372,11 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case uireview.LoadResult:
-		return m, m.handleReviewLoad(msg)
+	case reviewLoadMsg:
+		if msg.normalize != nil {
+			m.enqueueEffect(*msg.normalize, 0, false)
+		}
+		return m, tea.Batch(m.handleReviewLoad(msg.result), m.nextEffectCmd())
 
 	case uireview.FileResult:
 		return m, m.handleReviewFile(msg)
@@ -436,52 +438,9 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		// Ctrl+R and F3 inside the session leave a marker before
-		// detaching; consume it here and carry it out for the session just
-		// attached.
-		request, err := m.services.tmux.PendingRequest()
-		if err != nil {
-			m.errBar.text = err.Error()
-		} else if request != "" {
-			// A failed clear leaves the marker set, which would replay the
-			// request on every later detach, so surface it and stay in the
-			// list rather than letting the request reset m.errBar.text and
-			// hide it.
-			if clearErr := m.services.tmux.ClearRequest(); clearErr != nil {
-				m.errBar.text = clearErr.Error()
-				m.requestRefresh()
-				return m, nil
-			}
-			// Both requests act on the row under the cursor, and the cursor
-			// is not where the request came from: a poll handled ahead of
-			// this message rebuilds the rows, and a filter can drop the
-			// session that detached out of the list entirely.
-			m.focusSession(msg.sessID)
-			sess, ok := m.selected()
-			if !ok || sess.ID != msg.sessID {
-				m.errBar.text = "the session that asked for it has left the list"
-				m.requestRefresh()
-				return m, nil
-			}
-			switch request {
-			case tmux.RequestReview:
-				cmd := m.openDiff()
-				if m.mode == modeDiff {
-					m.reviewReturn = reviewReturn{kind: reviewReturnAttach, sessionID: sess.ID}
-				}
-				return m, cmd
-			case tmux.RequestEditor:
-				_, cmd := m.openEditor()
-				// The request cost the session its client, so the manager
-				// goes back into it once the editor is up, or once a
-				// terminal editor closes. A refused launch returns no
-				// command and stays in the list with its reason.
-				if cmd != nil {
-					m.editorReturnID = sess.ID
-				}
-				return m, cmd
-			}
-		}
-		m.requestRefresh()
+		// detaching; the lane reads it once and clears it, and the
+		// completion carries it out for the session just attached.
+		m.enqueueEffect(detachRequest{sessionID: msg.sessID, generation: m.foregroundGen}, 0, false)
 		return m, nil
 
 	case uireview.FileCheckResult:

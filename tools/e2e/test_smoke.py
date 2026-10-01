@@ -49,8 +49,8 @@ class SandboxTests(unittest.TestCase):
         with patch.object(self.sandbox, 'run', return_value=subprocess.CompletedProcess([], 0, '', '')) as run:
             self.sandbox.close()
         self.assertEqual([call.args[0] for call in run.call_args_list], [
-            ['tmux', '-L', 'e2e-outer', 'kill-server'],
-            ['tmux', '-L', 'agentmgr', 'kill-server']])
+            ['tmux', '-S', str(self.sandbox.socket_dir / f'tmux-{os.getuid()}' / 'e2e-outer'), 'kill-server'],
+            ['tmux', '-S', str(self.sandbox.socket_dir / f'tmux-{os.getuid()}' / 'agentmgr'), 'kill-server']])
         self.assertTrue(self.sandbox.home.exists())
         self.assertFalse(self.sandbox.socket_dir.exists())
         # tearDown is intentionally harmless after cleanup.

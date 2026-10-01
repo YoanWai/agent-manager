@@ -548,7 +548,9 @@ func TestFocusKeepsPaneHeight(t *testing.T) {
 		m.applyCmd(t, m.refreshCmd())
 		listed := m.previewPaneHeight()
 
-		m.focusSelected()
+		updated, _ := m.focusSelected()
+		m = updated.(*Model)
+		m.drainEffects(t)
 		if got := m.previewPaneHeight(); got != listed {
 			t.Fatalf("width %d: focused box = %d rows, want %d", width, got, listed)
 		}

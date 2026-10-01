@@ -110,6 +110,13 @@ func (m *Model) enqueueEffect(request effectRequest, chain uint64, first bool) {
 	case geometryRequest:
 		value.targets = slices.Clone(value.targets)
 		request = value
+	case reviewEffectRequest:
+		value.state.Reviewed = maps.Clone(value.state.Reviewed)
+		value.state.Comments = slices.Clone(value.state.Comments)
+		value.previousState.Reviewed = maps.Clone(value.previousState.Reviewed)
+		value.previousState.Comments = slices.Clone(value.previousState.Comments)
+		value.commentIDs = slices.Clone(value.commentIDs)
+		request = value
 	}
 	work := m.captureEffect(request)
 	lifetime := m.effects.lifetime
@@ -163,8 +170,14 @@ func (m *Model) handleEffectCompleted(msg effectCompletedMsg) (tea.Model, tea.Cm
 	}
 	m.effects.active = nil
 	switch job.request.(type) {
-	case lifecycleRequest, railRequest, forkRequest, spawnRequest, groupRequest, renameRequest:
+	case lifecycleRequest, railRequest, forkRequest, spawnRequest, groupRequest, renameRequest, focusRequest, ackRequest, attachRequest:
 		if msg.finishedAt.After(m.effects.latestObservation) {
+			m.effects.latestObservation = msg.finishedAt
+		}
+	case reviewEffectRequest:
+		// A send types into the agent pane, so a poll captured before it
+		// is stale exactly like a lifecycle mutation; reads are not.
+		if job.request.(reviewEffectRequest).op == reviewOpSend && msg.finishedAt.After(m.effects.latestObservation) {
 			m.effects.latestObservation = msg.finishedAt
 		}
 	}
@@ -188,6 +201,16 @@ func (m *Model) handleEffectCompleted(msg effectCompletedMsg) (tea.Model, tea.Cm
 		m.applyMoveDialogClose(job.request.(moveDialogClose))
 	case settingsEffectResult:
 		command = m.applySettingsEffect(job, result, msg.err)
+	case reviewEffectResult:
+		command = m.applyReviewEffect(job, result, msg.err)
+	case keysEffectResult:
+		command = m.applyKeysEffect(job, result, msg.err)
+	case focusEffectResult:
+		command = m.applyFocusEffect(job.request.(focusRequest), result, msg.err)
+	case ackEffectResult:
+		m.applyAckEffect(job, result, msg.err)
+	case detachEffectResult:
+		command = m.applyDetachEffect(job.request.(detachRequest), result, msg.err)
 	case attachEffectResult:
 		command = m.applyAttachEffect(job.request.(attachRequest), result, msg.err)
 	default:

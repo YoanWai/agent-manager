@@ -1,8 +1,6 @@
 package ui
 
 import (
-	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -14,10 +12,13 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// reviewAdapter is the concrete root edge for SQLite, git, tmux, and the
-// filesystem. Review policy and result acceptance live in uireview.Model.
-type reviewAdapter struct {
-	writeDone <-chan struct{}
+// reviewLoadMsg carries one load result and, when the stored state needed
+// normalization, the captured normalized state to persist through the
+// effect lane so the write orders with every other Review mutation. The
+// load itself stays concurrent; only its persistence joins the lane.
+type reviewLoadMsg struct {
+	result    uireview.LoadResult
+	normalize *reviewEffectRequest
 }
 
 func reviewTarget(sess store.Session) uireview.Target {
@@ -35,7 +36,7 @@ func (m *Model) reviewLoadCmd(req uireview.LoadRequest) tea.Cmd {
 			roots, err = driver.ResolveRepos(req.Target.Cwd)
 			if err != nil {
 				result.Err = err
-				return result
+				return reviewLoadMsg{result: result}
 			}
 			idx, found := 0, false
 			for i := range roots {
@@ -55,6 +56,7 @@ func (m *Model) reviewLoadCmd(req uireview.LoadRequest) tea.Cmd {
 			root = roots[idx]
 		}
 		result.RepoRoots, result.RepoRoot = roots, root
+		var normalize *reviewEffectRequest
 		key := req.Target.ID + "\x00" + root
 		if !req.Restored[key] {
 			stored, err := stor.ReviewState(req.Target.ID, root)
@@ -64,15 +66,20 @@ func (m *Model) reviewLoadCmd(req uireview.LoadRequest) tea.Cmd {
 				state := reviewStateFromStore(stored)
 				normalized, changed := uireview.NormalizeSavedState(state)
 				if changed {
-					if err := stor.MergeReviewState(req.Target.ID, root, reviewStateToStore(normalized)); err != nil {
-						result.SavedErr = err
-					} else {
-						state = normalized
+					// Persistence joins the effect lane so the merge
+					// orders with every other Review mutation; the in-memory
+					// value uses the normalized shape immediately. A failed
+					// persist is retried by the next load: normalization is a
+					// pure idempotent function of the stored shape.
+					state = normalized
+					normalize = &reviewEffectRequest{
+						op:       reviewOpNormalize,
+						targetID: req.Target.ID,
+						repoRoot: root,
+						state:    normalized,
 					}
 				}
-				if result.SavedErr == nil {
-					result.Saved, result.SavedLoaded = state, true
-				}
+				result.Saved, result.SavedLoaded = state, true
 			}
 		}
 		override := ""
@@ -83,13 +90,13 @@ func (m *Model) reviewLoadCmd(req uireview.LoadRequest) tea.Cmd {
 			override, err = stor.ReviewBase(req.Target.ID, resolveSymlinksOrSelf(root))
 			if err != nil {
 				result.Err = err
-				return result
+				return reviewLoadMsg{result: result}
 			}
 		}
 		set, err := diff.BuildSet(driver, root, req.Scope, override)
 		result.Set, result.Err = set, err
 		if err != nil {
-			return result
+			return reviewLoadMsg{result: result}
 		}
 		baseRef := set.BaseRef
 		if req.Scope == git.ScopeBranch && baseRef == "" {
@@ -105,7 +112,10 @@ func (m *Model) reviewLoadCmd(req uireview.LoadRequest) tea.Cmd {
 		for i, wt := range worktrees {
 			result.Worktrees[i] = uireview.Worktree{Root: wt.Root, Branch: wt.Branch}
 		}
-		return result
+		if normalize != nil {
+			return reviewLoadMsg{result: result, normalize: normalize}
+		}
+		return reviewLoadMsg{result: result}
 	}
 }
 
@@ -163,83 +173,68 @@ func (m *Model) reviewHighlightCmd(req uireview.HighlightRequest) tea.Cmd {
 	}
 }
 
-func (a *reviewAdapter) chain(run func() tea.Msg) tea.Cmd {
-	previous := a.writeDone
-	done := make(chan struct{})
-	a.writeDone = done
-	return func() tea.Msg {
-		if previous != nil {
-			<-previous
-		}
-		defer close(done)
-		return run()
-	}
-}
-
+// reviewSaveCmd persists one captured review state through the effect
+// lane; the worker owns the merge, so no Update path touches SQLite here.
+// Dispatch is enqueue-only: the lane's trailing nextEffectCmd starts it.
 func (m *Model) reviewSaveCmd(req uireview.SaveRequest) tea.Cmd {
-	stor := m.services.store
-	return m.reviewFX.chain(func() tea.Msg {
-		return uireview.SaveResult{TargetID: req.TargetID, RepoRoot: req.RepoRoot, Err: stor.MergeReviewState(req.TargetID, req.RepoRoot, reviewStateToStore(req.State))}
-	})
+	m.enqueueEffect(reviewEffectRequest{
+		op:       reviewOpSave,
+		targetID: req.TargetID,
+		repoRoot: req.RepoRoot,
+		state:    req.State,
+	}, 0, false)
+	return nil
 }
 
+// reviewStatusCmd reads comment statuses through the effect lane, so it
+// observes every Review mutation accepted before it without a private
+// write fence.
 func (m *Model) reviewStatusCmd(req uireview.StatusRequest) tea.Cmd {
-	stor, writesDone := m.services.store, m.reviewFX.writeDone
-	return func() tea.Msg {
-		if writesDone != nil {
-			<-writesDone
-		}
-		state, err := stor.ReviewState(req.TargetID, req.RepoRoot)
-		result := uireview.StatusResult{TargetID: req.TargetID, RepoRoot: req.RepoRoot, Generation: req.Generation, Err: err}
-		if err == nil {
-			result.Handled = make(map[string]bool, len(state.Comments))
-			for _, comment := range state.Comments {
-				if comment.ID != "" && comment.Round > 0 {
-					result.Handled[comment.ID] = comment.Resolved
-				}
-			}
-		}
-		return result
+	if m.services.store == nil {
+		return nil
 	}
+	m.enqueueEffect(reviewEffectRequest{
+		op:         reviewOpStatus,
+		targetID:   req.TargetID,
+		repoRoot:   req.RepoRoot,
+		generation: req.Generation,
+	}, 0, false)
+	return nil
 }
 
+// reviewHandleCmd marks one comment handled through the effect lane; the
+// worker owns the store write and the found/ambiguous outcome.
 func (m *Model) reviewHandleCmd(req uireview.HandleCommentRequest) tea.Cmd {
-	stor := m.services.store
-	return m.reviewFX.chain(func() tea.Msg {
-		found, err := stor.SetReviewCommentHandled(req.TargetID, req.CommentID, req.Handled)
-		return uireview.HandleCommentResult{
-			TargetID: req.TargetID, RepoRoot: req.RepoRoot, CommentID: req.CommentID,
-			Handled: req.Handled, Previous: req.Previous, Found: found, Err: err,
-		}
-	})
+	m.enqueueEffect(reviewEffectRequest{
+		op:        reviewOpHandle,
+		targetID:  req.TargetID,
+		repoRoot:  req.RepoRoot,
+		commentID: req.CommentID,
+		handled:   req.Handled,
+		previous:  req.Previous,
+	}, 0, false)
+	return nil
 }
 
+// reviewSendCmd persists the round and types the prompt through the effect
+// lane, so the existence preflight, state merge, text delivery, rollback,
+// and ack clear run in one ordered job behind every earlier Review
+// mutation.
 func (m *Model) reviewSendCmd(req uireview.SendRequest) tea.Cmd {
-	stor, driver := m.services.store, m.services.tmux
-	return m.reviewFX.chain(func() tea.Msg {
-		result := uireview.SendResult{
-			TargetID: req.Target.ID, RepoRoot: req.RepoRoot, CommentIDs: append([]string(nil), req.CommentIDs...),
-			PreviousRound: req.PreviousRound, Round: req.Round, Count: req.Count, TargetName: req.Target.Name,
-		}
-		if !driver.Exists(req.Target.ID) {
-			result.Err = errors.New(deadSessionHint)
-			return result
-		}
-		if err := stor.MergeReviewState(req.Target.ID, req.RepoRoot, reviewStateToStore(req.State)); err != nil {
-			result.Err = fmt.Errorf("saving review round: %w", err)
-			return result
-		}
-		if err := driver.SendText(req.Target.ID, req.Prompt); err != nil {
-			result.Err = err
-			if rollbackErr := stor.MergeReviewState(req.Target.ID, req.RepoRoot, reviewStateToStore(req.PreviousState)); rollbackErr != nil {
-				result.Err = fmt.Errorf("%w; restoring review drafts: %w", err, rollbackErr)
-			}
-			return result
-		}
-		result.Delivered = true
-		result.AckErr = stor.SetAcked(req.Target.ID, false)
-		return result
-	})
+	m.enqueueEffect(reviewEffectRequest{
+		op:            reviewOpSend,
+		targetID:      req.Target.ID,
+		targetName:    req.Target.Name,
+		repoRoot:      req.RepoRoot,
+		state:         req.State,
+		previousState: req.PreviousState,
+		prompt:        req.Prompt,
+		commentIDs:    req.CommentIDs,
+		previousRound: req.PreviousRound,
+		round:         req.Round,
+		count:         req.Count,
+	}, 0, false)
+	return nil
 }
 
 func reviewFileCheckCmd(req uireview.FileCheckRequest) tea.Cmd {

@@ -57,9 +57,8 @@ have no shared cancellation/deadline contract, so drain has no fixed time bound.
 Confirmed human archive, restore, delete, kill, restart and revive, direct revive,
 Rail persistence, pane resize/size publication, attach preparation, form and quick
 spawn, fork, group creation, rename, move-dialog mutations, and settings/CLI-picker
-persistence use this lane. Existing synchronous lifecycle fixture entry points live in test files
-and drive the same executor/reconciliation. Pre-confirmation reads, keybinding persistence, acknowledgement/focus probes,
-review effects and detach request-marker reads remain separate follow-ups. Cached
+persistence, keybinding saves, focus/acknowledgment probes, detach markers, and Review mutations use this lane. Existing synchronous lifecycle fixture entry points live in test files
+and drive the same executor/reconciliation. Pre-confirmation reads and focused raw input remain synchronous residual paths. Cached
 read-only `View` plus this lane does not make every `Update` path nonblocking.
 
 The schema, CLI/MCP messages and supported tool commands are unchanged. SQLite
@@ -107,3 +106,29 @@ stale; dialog fields remain generation-fenced. Each successful later full save
 reapplies its captured preferences, so an earlier failure cannot leave the runtime
 behind the committed state. Hidden-only saves do not apply unrelated preferences.
 An empty committed hidden-tool set clears the dialog map.
+
+## Focus, keys and Review integration
+
+Focus captures the selected session and foreground generation. Later keyboard input or
+mouse presses invalidates pending foreground entry, including a return to the same
+selection. Detach completion also checks generation, list mode and quit state
+before opening Review or an editor. Marker read and clear are serialized within
+this process; they are separate tmux calls, not atomic cross-client consumption.
+
+Acknowledgment, focus and attach completions advance the stale-poll fence.
+Key saves capture the instance writer and tables. Runtime tables follow the
+committed stages even on partial failure. Save admission compares against pending
+writes, so restoring the original binding queues behind an earlier change. Errors remain visible; an exited key
+picker is reopened explicitly for resubmission.
+
+Review save, handle, send, status and normalization use the root lane. Pure loads
+remain concurrent. Normalization re-reads current persisted state when it runs,
+so an older load capture cannot overwrite a newer queued save. Send retains the
+existing persistence/delivery/rollback sequence and reports preflight errors.
+This does not establish durable send-once receipts after a crash or uncertain
+transport failure.
+
+Focused paste remains synchronous with raw keys. Putting only paste behind
+unrelated queued work lets a following raw Enter overtake the paste. A future
+input architecture must preserve ordering across both kinds of input and prove
+latency before moving either independently.

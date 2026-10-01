@@ -36,7 +36,7 @@ The committed [real TUI harness](../../tools/e2e/README.md) exercises Help, Revi
 
 ## Current source inventory
 
-There are 251 Go files under `internal/ui`: help (7), review (12), focus (7), rail (15), presentation (2), and 208 root files. Tests are source-adjacent; root fixtures retain cross-feature integration.
+There are 257 Go files under `internal/ui`: help (7), review (12), focus (7), rail (15), presentation (2), and 214 root files. Tests are source-adjacent; root fixtures retain cross-feature integration.
 
 ### Help package
 
@@ -65,3 +65,8 @@ There are 251 Go files under `internal/ui`: help (7), review (12), focus (7), ra
 ## Historical mechanical migration proof
 
 `go run ./tools/architecture/check-ui-moves 560a463 7773665` reproduces the frozen filename migration check: 2,371 declarations and 4,350 comment tokens. It intentionally excludes subsequent feature extraction and behavior changes. Those changes are validated by feature contracts, root integration tests, dependency checks and the process harness; the historical lexical proof is not a claim that the final semantic diff is unchanged.
+
+The root effect adapters now include `effect_keys.go`, `effect_focus.go`, and
+`effect_review.go`, with matching source-adjacent tests. They compose persisted
+runtime services with the pure feature models; the child packages do not acquire
+SQLite or tmux dependencies.

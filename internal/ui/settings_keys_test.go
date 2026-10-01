@@ -75,16 +75,27 @@ func TestKeyPickerBindsCapturedKeyAndSavesIt(t *testing.T) {
 	if m.errBar.text != "" {
 		t.Fatalf("saving reported %q", m.errBar.text)
 	}
+	if cmd == nil {
+		t.Fatal("saving should enqueue the save work")
+	}
+	if got := m.services.keys.Binding(keybind.Detach).Label(); got != `ctrl+q / ctrl+\` {
+		t.Fatalf("runtime detach changed before the save committed: %q", got)
+	}
+	if saved := savedConfig(t, m); strings.Contains(saved, `detach = "f9"`) {
+		t.Fatalf("config.toml was written on the update path:\n%s", saved)
+	}
+	// The completion's refresh command carries the tmux rebind; run it the
+	// way the event loop would.
+	updated, next := m.Update(cmd())
+	*m = *updated.(*Model)
+	m.applyTestMsg(t, next())
+	m.drainEffects(t)
 	if got := m.services.keys.Binding(keybind.Detach).Label(); got != "f9" {
 		t.Fatalf("model detach = %q, want f9", got)
 	}
 	if saved := savedConfig(t, m); !strings.Contains(saved, `detach = "f9"`) {
 		t.Fatalf("config.toml should carry the new key:\n%s", saved)
 	}
-	if cmd == nil {
-		t.Fatal("saving should refresh the live sessions")
-	}
-	cmd()
 
 	bound, err := tmuxCmd("list-keys", "-T", "root").CombinedOutput()
 	if err != nil {
@@ -150,7 +161,8 @@ func TestKeyPickerTurnsAnActionOffButKeepsAWayBack(t *testing.T) {
 	}
 
 	m.settings.keyCursor = 2
-	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
+	cmd := m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
+	m.applyCmd(t, cmd)
 	if saved := savedConfig(t, m); !strings.Contains(saved, `editor = "none"`) {
 		t.Fatalf("config.toml should record the disabled action:\n%s", saved)
 	}
@@ -202,7 +214,8 @@ func TestKeyPickerResetsEveryActionToItsDefaultAfterAsking(t *testing.T) {
 		t.Fatalf("y should restore both tables, got %s and new_session %s", m.settings.tables[0].Binding(keybind.Detach).Label(), m.settings.tables[1].Binding(keybind.NewSession).Label())
 	}
 
-	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
+	cmd := m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
+	m.applyCmd(t, cmd)
 	if !m.services.keys.Equal(keybind.DefaultSession()) || !m.services.listKeys.Equal(keybind.DefaultList()) {
 		t.Fatalf("model keys after save = %s, new_session %s", m.services.keys.Binding(keybind.Detach).Label(), m.services.listKeys.Binding(keybind.NewSession).Label())
 	}
@@ -312,12 +325,17 @@ func TestListPickerMovesAKeyAndTheListFollows(t *testing.T) {
 	if got := m.settings.tables[1].Binding(keybind.NewSession).Label(); got != "N" {
 		t.Fatalf("new_session = %q, want N", got)
 	}
-	if cmd := m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc}); cmd != nil {
-		t.Fatal("saving the list table has no tmux work to do")
+	cmd := m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
+	if cmd == nil {
+		t.Fatal("saving the list table should enqueue the save work")
+	}
+	if saved := savedConfig(t, m); strings.Contains(saved, `new_session = "N"`) {
+		t.Fatalf("config.toml was written on the update path:\n%s", saved)
 	}
 	if m.errBar.text != "" {
 		t.Fatalf("saving reported %q", m.errBar.text)
 	}
+	m.applyCmd(t, cmd)
 	saved := savedConfig(t, m)
 	if !strings.Contains(saved, "[keybindings.list]") || !strings.Contains(saved, `new_session = "N"`) {
 		t.Fatalf("config.toml should carry the list table:\n%s", saved)

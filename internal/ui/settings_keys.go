@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	tea "github.com/charmbracelet/bubbletea"
 	"slices"
@@ -181,31 +180,34 @@ func (m *Model) setBinding(binding keybind.Binding) tea.Cmd {
 
 // The saved tables take effect without a restart: the list reads its
 // table on the next key, and for the session table the driver rebinds the
-// tmux keys and every live session's footer is redrawn.
+// tmux keys and every live session's footer is redrawn. The picker submits
+// captured tables to the effect lane; the file writes happen off the
+// update path and a partial commit reconciles the runtime to the file.
 func (m *Model) saveKeys() tea.Cmd {
 	session, list := m.settings.tables[0], m.settings.tables[1]
-	if session.Equal(m.services.keys) && list.Equal(m.services.listKeys) {
+	expectedList, expectedSession := m.services.listKeys, m.services.keys
+	for _, job := range append([]*effectJob{m.effects.active}, m.effects.pending...) {
+		if job == nil {
+			continue
+		}
+		if pending, ok := job.request.(keysRequest); ok {
+			if pending.listChanged {
+				expectedList = pending.list
+			}
+			if pending.sessionChanged {
+				expectedSession = pending.session
+			}
+		}
+	}
+	listChanged := !list.Equal(expectedList)
+	sessionChanged := !session.Equal(expectedSession)
+	if !listChanged && !sessionChanged {
 		return nil
 	}
 	if m.services.configDir == "" {
 		m.errBar.text = "no config directory to save the keys to"
 		return nil
 	}
-	if !list.Equal(m.services.listKeys) {
-		if err := config.SaveKeys(m.services.configDir, list); err != nil {
-			m.errBar.text = err.Error()
-			return nil
-		}
-		m.services.listKeys = list
-	}
-	if session.Equal(m.services.keys) {
-		return nil
-	}
-	if err := config.SaveKeys(m.services.configDir, session); err != nil {
-		m.errBar.text = err.Error()
-		return nil
-	}
-	m.services.keys = session
-	m.services.tmux.SetSessionKeys(session)
-	return m.refreshExistingSessionUX
+	m.enqueueEffect(keysRequest{configDir: m.services.configDir, list: list, session: session, listChanged: listChanged, sessionChanged: sessionChanged}, 0, false)
+	return m.nextEffectCmd()
 }

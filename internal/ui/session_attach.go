@@ -20,15 +20,9 @@ func (m *Model) attachSelected() (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
-	if !m.services.tmux.Exists(sess.ID) {
-		m.errBar.text = deadSessionHint
-		return m, nil
-	}
+	// The dead-pane probe and the finished acknowledgement run inside the
+	// attach effect; a dead session reports back from its completion.
 	m.errBar.text = ""
-	if err := m.services.store.AcknowledgeFinished(sess.ID); err != nil {
-		m.errBar.text = err.Error()
-		return m, nil
-	}
 	return m, m.attachCmd(sess.ID)
 }
 
@@ -41,12 +35,8 @@ func (m *Model) acknowledgeSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.errBar.text = ""
-	if err := m.services.store.AcknowledgeFinished(sess.ID); err != nil {
-		m.errBar.text = err.Error()
-		return m, nil
-	}
-	m.requestRefresh()
-	return m, nil
+	m.enqueueEffect(ackRequest{sessionID: sess.ID}, 0, false)
+	return m, m.nextEffectCmd()
 }
 
 func (m *Model) attachCmd(id string) tea.Cmd {

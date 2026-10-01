@@ -12,6 +12,7 @@ import (
 )
 
 type services struct {
+	saveKeys  func(string, keybind.Table) error
 	lifecycle *sessioncmd.Lifecycle
 	cfg       config.Config
 	store     *store.Store

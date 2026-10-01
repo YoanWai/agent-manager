@@ -106,3 +106,35 @@ production dependency guards and seven harness contract tests passed. The final
 actual-binary TUI smoke passed in 3.46 seconds against disposable state. The four
 effect test files contain 60 source-adjacent regressions. These results prove the
 local integration gates, not hosted CI or the deferred release matrix.
+
+### Recovered Qwen effects and compatibility work
+
+The coordinator recovered all four worktrees after the tmux cleanup incident.
+Review normalization now dispatches with an explicit operation, re-reads current
+state at execution, and propagates send preflight errors. Keys/Focus use captured
+instance writers and foreground generations. Raw keys and paste retain their
+synchronous ordering until a unified bounded input design is proved. Marker
+consumption is serialized within one frontend, not atomic across processes.
+
+The committed scenario suite adds actual-binary spawn/group/move/rename/settings/
+fork behavior and accepted-write quit drain under a SQLite lock. CI shares one
+binary build with smoke and retains both sets of artifacts. Compatibility
+cleanup contracts use unrelated sentinel resources to catch scope escapes.
+The standalone release and two-manager gates remain separate from the fast
+suite; their runtime and exact coverage are documented in tools/compatibility.
+
+Remaining acceptance includes real-terminal partial settings/file failure,
+installation retries, newer/reopened dialog races while a worker is blocked,
+real provider conversation capture, installed client extensions, mixed-version
+concurrent mutations and in-flight delivery authority, and real SSH/platform
+coverage. Passing heartbeat takeover is not proof of exclusive effect ownership.
+
+Final recovered integration passed `go test -race -p 1 ./...` with isolated
+tmux state and `/bin/sh` (UI 271.585 seconds; unchanged packages used valid
+cached results). Build, vet, formatting, whitespace and six architecture guards
+passed. Seven E2E and four cleanup contract tests passed. The final binary
+smoke passed in 2.04 seconds and dialog/quit-drain scenarios in 7.25 seconds.
+Checksummed v0.38.0/v0.39.0 release matrices and a copied native dev binary
+passed disposable CLI/MCP and sequential task roundtrips. Two actual manager
+processes passed heartbeat takeover and reclamation. Hosted CI must be checked
+at the published head separately.

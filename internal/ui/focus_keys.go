@@ -99,7 +99,9 @@ func focusKeyCommand(target string, msg tea.KeyMsg) (string, bool) {
 }
 
 // focusSelected enters focus mode: keys go to the selected session's pane
-// while the manager, its rail and its live preview stay on screen.
+// while the manager, its rail and its live preview stay on screen. The
+// dead-pane probe and the finished acknowledgement run on the effect
+// lane; the completion enters focus only while this selection holds.
 func (m *Model) focusSelected() (tea.Model, tea.Cmd) {
 	sess, ok := m.selected()
 	if !ok {
@@ -108,35 +110,8 @@ func (m *Model) focusSelected() (tea.Model, tea.Cmd) {
 	if sess.Archived {
 		return m.attachSelected()
 	}
-	if !m.services.tmux.Exists(sess.ID) {
-		m.errBar.text = deadSessionHint
-		return m, nil
-	}
-	m.errBar.text = ""
-	if err := m.services.store.AcknowledgeFinished(sess.ID); err != nil {
-		m.errBar.text = err.Error()
-		return m, nil
-	}
-	m.mode = modeFocus
-	// The full screen layout opens the session across the whole body, so
-	// its pane grows to fill the frame before the first capture paints.
-	if m.prefs.fullLayout {
-		m.pinFullFocusPane(sess.ID)
-	}
-	// Focusing is deliberate, so the client opens now rather than waiting
-	// for the cursor to settle, and any failure backoff is lifted.
-	if m.focusRuntime.watch != nil {
-		m.focusRuntime.watch.retryNow()
-	}
-	m.watchSelection()
-	pane := m.focusPane.Pane()
-	keepPaneFacts := m.focusRuntime.watch != nil &&
-		m.focusRuntime.watch.serving(sess.ID) && pane.SessionID == sess.ID
-	m.focusPane.Enter(uifocus.EnterContext{SessionID: sess.ID, KeepPaneFacts: keepPaneFacts})
-	// Mouse reporting makes the pane a closed window: clicks land here
-	// instead of the host terminal, so a drag selects pane text alone and
-	// never the rail beside it.
-	return m, tea.Batch(tea.EnableMouseCellMotion, m.cursorBlink())
+	m.enqueueEffect(focusRequest{sessionID: sess.ID, generation: m.foregroundGen}, 0, false)
+	return m, m.nextEffectCmd()
 }
 
 // caretAtInputStart reports whether the agent's caret sits at the head of

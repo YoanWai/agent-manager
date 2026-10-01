@@ -17,7 +17,7 @@ transition; a successful cached-build run should take less than 30 seconds.
 The harness creates its own HOME (the default profile therefore belongs to this
 run), XDG directories, and shell configuration directory. It removes inherited
 TMUX and uses a short, unique, precreated `/tmp/ame-*` socket directory. Every
-tmux command names either `e2e-outer` or `agentmgr`. Cleanup kills only these two
+tmux command uses an absolute `-S` socket path within the fixture. Cleanup kills only these two
 servers within that directory, including on failure. A failed cleanup still
 attempts the other server and retains the socket directory for recovery.
 Failure capture errors are reported without replacing the original failure.
@@ -44,3 +44,27 @@ This is bounded local tmux evidence, not the supported terminal/platform/tool
 matrix. CI runs this smoke in its own job and retains evidence artifacts for
 seven days. CLI, stdio MCP, headless/extension flows, historical released
 clients, and real SSH remain separate acceptance work.
+
+## Dialog and accepted-write drain scenarios
+
+```sh
+go build -o /tmp/agent-manager-e2e .
+python3 tools/e2e/scenarios.py --binary /tmp/agent-manager-e2e
+```
+
+The separate scenario gate shares one binary across two disposable profiles.
+It covers form spawn, terminal/group creation, move, rename, settings persistence
+and reopening, fork launch, and zero-exit shutdown. A fixture CLI runs a real
+process; its conversation identity is seeded explicitly rather than claiming
+real provider session-store discovery. Keyboard navigation selects its live-pane
+marker, excluding group summary tables.
+
+The second profile holds a SQLite write lock while a form spawn is accepted.
+A duplicate submission reports the pending operation. Ctrl+C requests quit,
+then releasing the lock permits the accepted row to commit before zero-exit
+shutdown. This proves an accepted blocked write drains, rather than merely
+quitting an idle manager. Every condition has a bounded observation deadline.
+
+Remaining process cases include partial settings/file saves, installation retry,
+same-target dialog reopening during an in-flight mutation, ambiguous transport
+outcomes, real provider session stores and the wider platform/SSH matrix.

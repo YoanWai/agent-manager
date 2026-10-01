@@ -94,6 +94,7 @@ func TestRightClickOnTheRailWhileFocusedOpensTheMenu(t *testing.T) {
 	m.selectSessionRow(t, "alpha")
 	updated, _ := m.focusSelected()
 	m = updated.(*Model)
+	m.drainEffects(t)
 
 	m = railMouse(t, m, "beta", tea.MouseActionPress, tea.MouseButtonRight)
 	if m.mode != modeList || !m.rail.MenuOpen() {

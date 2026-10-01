@@ -1555,12 +1555,10 @@ func TestClicksWorkWhileTheQuickBarIsOpen(t *testing.T) {
 
 	at := tea.MouseMsg{X: 8, Y: y0 + paintedRailLines(t, m, "alpha")[0], Button: tea.MouseButtonLeft, Action: tea.MouseActionPress}
 	updated, _ = m.handleMouse(at)
-	m.drainEffects(t)
 	m = updated.(*Model)
 	m.drainEffects(t)
 	at.Action = tea.MouseActionRelease
 	updated, _ = m.handleMouse(at)
-	m.drainEffects(t)
 	m = updated.(*Model)
 	m.drainEffects(t)
 	if m.mode != modeFocus || m.quick.active {

@@ -16,6 +16,7 @@ func TestFocusDropsTheLastSessionsCaret(t *testing.T) {
 	setFocusPaneFacts(m, "another-session", false, false, false, 0, paneCursor{x: 0, y: 25, ok: true})
 	updated, _ := m.focusSelected()
 	m = updated.(*Model)
+	m.drainEffects(t)
 	if m.mode != modeFocus {
 		t.Fatalf("test setup: focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
@@ -32,6 +33,7 @@ func TestMouseBackLeavesFocus(t *testing.T) {
 	m.selectSessionRow(t, "mouse-back")
 	updated, _ := m.focusSelected()
 	m = updated.(*Model)
+	m.drainEffects(t)
 	updated, _ = m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonBackward})
 	m = updated.(*Model)
 	if m.mode != modeList {
@@ -48,6 +50,7 @@ func TestPaneBoxMatchesPaintedFrame(t *testing.T) {
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	*m = *updated.(*Model)
+	m.drainEffects(t)
 	frame := splitLines(preparedView(m))
 	box := m.focusPane.FrameBox()
 	if !box.Valid {

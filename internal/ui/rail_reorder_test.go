@@ -206,6 +206,7 @@ func TestHandleLiftsARowStraightFromFocus(t *testing.T) {
 	m.selectSessionRow(t, "alpha")
 	updated, _ := m.focusSelected()
 	m = updated.(*Model)
+	m.drainEffects(t)
 	m = liftByHandle(t, m, "beta")
 	if selected, ok := m.selected(); m.mode != modeList || !m.rail.Reordering() || !ok || selected.Name != "beta" {
 		t.Fatalf("one press on beta's handle should leave focus and lift beta, mode = %v selected = %q", m.mode, selected.Name)

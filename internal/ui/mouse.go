@@ -37,6 +37,9 @@ func (m *Model) syncMouseCapture() tea.Cmd {
 }
 
 func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if msg.Action == tea.MouseActionPress {
+		m.foregroundGen++
+	}
 	model, command := m.handleMouseEvent(msg)
 	m.closeQuickOffTheList()
 	return model, command

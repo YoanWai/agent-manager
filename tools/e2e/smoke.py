@@ -18,6 +18,7 @@ class Sandbox:
         self.artifacts = Path(artifacts)
         self.artifacts.mkdir(parents=True, exist_ok=False)
         self.socket_dir = Path(tempfile.mkdtemp(prefix='ame-', dir='/tmp'))
+        (self.socket_dir / f'tmux-{os.getuid()}').mkdir(mode=0o700)
         self.home = self.artifacts / 'home'
         self.home.mkdir()
         self.prompt = f'am-shell-{time.time_ns()}> '
@@ -53,7 +54,8 @@ class Sandbox:
     def tmux(self, *args, socket='e2e-outer', check=True):
         if socket not in self.sockets:
             raise ValueError('socket is outside this sandbox')
-        return self.run(['tmux', '-L', socket, *args], check=check)
+        path = self.socket_dir / f'tmux-{os.getuid()}' / socket
+        return self.run(['tmux', '-S', str(path), *args], check=check)
 
     def wait(self, name, observe, predicate, timeout=12):
         started = time.monotonic()

@@ -7,6 +7,7 @@ import (
 )
 
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	m.foregroundGen++
 	// A drag armed by the mouse alone leaves the keyboard live, so a press
 	// whose release never lands cannot strand the list: the next key ends
 	// that drag where it stands, esc cancelling it exactly as the footer

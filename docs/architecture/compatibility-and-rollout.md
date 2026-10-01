@@ -45,3 +45,29 @@ Specify freshness and serialization separately for launch, kill, archive, delive
 5. Verify old-writer exclusion and single maintenance authority before enabling the exclusive-owner guarantee.
 
 Retain the real SSH route test from PR #1 as a replayable experiment. Extend it with supported historical endpoint and owner binaries for production acceptance. Current SSH fixture evidence does not cover that matrix.
+
+## Recovered compatibility acceptance
+
+`tools/compatibility/matrix.py` compares the candidate with a checksummed upstream
+v0.39.0 binary on the host platform. The same matrix was also run against
+v0.38.0 as an additional older released baseline. The installed native binary
+reports `dev`; it was additionally copied into the disposable matrix with SHA256
+`1d836a5479dd12e7198e931025876c0e43d54af6a9c8beaa438a8b1da14ddc91`.
+Its CLI/MCP and sequential task roundtrips passed without opening the live profile.
+This is endpoint compatibility evidence, not a concurrent live-owner cutover. It exercises CLI session/task operations,
+five MCP protocol negotiation requests, and sequential profile task-write/read roundtrips
+in both version orders. Protocol requests are not five historical client builds.
+No installed client configuration is changed.
+
+`tools/compatibility/two_manager.sh /absolute/path/agent-manager` runs two real
+manager processes on one disposable profile with explicit private sockets. It
+pauses one process beyond the heartbeat horizon, verifies takeover, resumes it
+without stealing a fresh competitor stamp, then verifies reclamation after the
+competitor exits. Separate store/runner tests cover stale-claim retirement and
+competing claims. These tests do not establish exclusive ownership of in-flight
+transport effects, mixed-release concurrent writers, or real SSH compatibility.
+
+Disposable tests use absolute `tmux -S` paths. A missing `TMUX_TMPDIR` can cause
+`tmux -L agentmgr` to resolve to the live server, so named-socket cleanup is not
+allowed in these process fixtures. Cleanup tests verify unrelated sentinel
+servers and processes survive even when fixture directories are missing.

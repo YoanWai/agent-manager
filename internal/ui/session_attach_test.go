@@ -22,8 +22,8 @@ func TestAttachDoneOpensReviewWhenMarkerSet(t *testing.T) {
 		t.Fatalf("set marker: %v", err)
 	}
 	updated, _ := m.Update(attachDoneMsg{sessID: sess.ID})
-	m.drainEffects(t)
 	*m = *updated.(*Model)
+	m.drainEffects(t)
 	if m.mode != modeDiff {
 		t.Fatalf("marker set should enter review, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
@@ -46,8 +46,8 @@ func TestAttachDoneStaysInListWithoutMarker(t *testing.T) {
 	}
 
 	updated, _ := m.Update(attachDoneMsg{})
-	m.drainEffects(t)
 	*m = *updated.(*Model)
+	m.drainEffects(t)
 	if m.mode != modeList {
 		t.Fatalf("no marker should stay in list, mode = %v", m.mode)
 	}
@@ -69,6 +69,16 @@ func TestAttachAcknowledgesFinished(t *testing.T) {
 		t.Fatalf("attach did not start, err = %q", m.errBar.text)
 	}
 	got, err := m.services.store.Get(sess.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status != status.Finished {
+		t.Fatalf("the update path acknowledged the session: %q", got.Status)
+	}
+	if _, err := m.captureEffect(attachRequest{id: sess.ID})(); err != nil {
+		t.Fatalf("attach worker: %v", err)
+	}
+	got, err = m.services.store.Get(sess.ID)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -169,6 +179,9 @@ func TestAttachKeepsWorking(t *testing.T) {
 	if _, cmd := m.attachSelected(); cmd == nil {
 		t.Fatalf("attach did not start, err = %q", m.errBar.text)
 	}
+	if _, err := m.captureEffect(attachRequest{id: sess.ID})(); err != nil {
+		t.Fatalf("attach worker: %v", err)
+	}
 	got, err := m.services.store.Get(sess.ID)
 	if err != nil {
 		t.Fatalf("get: %v", err)
@@ -215,6 +228,9 @@ func TestAttachClearsStaleHashBeforeReflow(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	if _, cmd := m.attachSelected(); cmd == nil {
 		t.Fatalf("attach did not start, err = %q", m.errBar.text)
+	}
+	if _, err := m.captureEffect(attachRequest{id: sess.ID})(); err != nil {
+		t.Fatalf("attach worker: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
 	entered, err := m.services.store.Get(sess.ID)

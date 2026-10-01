@@ -131,8 +131,8 @@ func TestSendAnnotationsDoesNotDeliverAnUnpersistedRound(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, cmd := m.sendAnnotations()
-	m.applyCmd(t, cmd)
+	m.sendAnnotations()
+	m.drainEffects(t)
 	notes := m.review.Annotations()
 	if len(notes) != 1 || notes[0].Round != 0 || m.review.Round().Number != 0 {
 		t.Fatalf("failed send did not restore the draft: notes=%+v round=%+v", notes, m.review.Round())

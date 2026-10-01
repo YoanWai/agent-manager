@@ -58,6 +58,7 @@ func TestRightStepsIntoTheRow(t *testing.T) {
 	m.selectSessionRow(t, "stepin")
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
 	*m = *updated.(*Model)
+	m.drainEffects(t)
 	if m.mode != modeFocus {
 		t.Fatalf("right did not focus the session, mode = %v, err = %q", m.mode, m.errBar.text)
 	}

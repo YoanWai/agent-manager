@@ -4,12 +4,14 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/execution"
 	"github.com/YoanWai/agent-manager/internal/git"
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 )
 
 type effectServices struct {
+	saveKeys  func(string, keybind.Table) error
 	lifecycle *sessioncmd.Lifecycle
 	cfg       config.Config
 	store     *store.Store
@@ -27,6 +29,10 @@ func (m *Model) captureEffect(request effectRequest) func() (effectResult, error
 		cfg.Tools[name] = tool
 	}
 	services := effectServices{cfg: cfg, store: m.services.store, driver: m.services.tmux, watch: m.focusRuntime.watch, gitDrv: m.services.gitDrv}
+	services.saveKeys = m.services.saveKeys
+	if services.saveKeys == nil {
+		services.saveKeys = config.SaveKeys
+	}
 	if m.poller != nil {
 		services.runner = m.poller.runner
 	}
@@ -53,6 +59,16 @@ func (m *Model) captureEffect(request effectRequest) func() (effectResult, error
 			return moveDialogCloseResult{}, nil
 		case settingsRequest:
 			return services.runSettings(request)
+		case reviewEffectRequest:
+			return services.runReview(request)
+		case keysRequest:
+			return services.runKeys(request)
+		case focusRequest:
+			return services.runFocus(request)
+		case ackRequest:
+			return services.runAck(request)
+		case detachRequest:
+			return services.runDetach(request)
 		case attachRequest:
 			return services.runAttach(request)
 		}

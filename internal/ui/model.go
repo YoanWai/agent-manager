@@ -42,6 +42,7 @@ const (
 )
 
 type Model struct {
+	foregroundGen uint64
 	effects       effectState
 	services      services
 	workspace     workspace
@@ -56,7 +57,6 @@ type Model struct {
 	poller        *poller
 	mode          mode
 	review        uireview.Model
-	reviewFX      reviewAdapter
 	reviewReturn  reviewReturn
 	form          form
 	groupForm     groupForm
