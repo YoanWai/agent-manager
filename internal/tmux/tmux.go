@@ -304,7 +304,7 @@ func (d *Driver) Create(id, cwd, command string, env map[string]string, width, h
 			d.paneThemePush.Unlock()
 			return err
 		}
-		args = append(args, "sh "+ShellQuote(scriptPath))
+		args = append(args, "exec sh "+ShellQuote(scriptPath))
 	}
 	_, runErr := d.run(args...)
 	d.paneThemePush.Unlock()
