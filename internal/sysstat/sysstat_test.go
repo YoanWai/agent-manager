@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -454,5 +456,23 @@ func TestChildNamesRequireTheSampledParent(t *testing.T) {
 	want := []string{"/opt/homebrew/bin/codex"}
 	if got := stats[100].Children; !slices.Equal(got, want) {
 		t.Fatalf("children = %v, want %v", got, want)
+	}
+}
+
+func TestPSForPIDsListsOnlyThosePIDs(t *testing.T) {
+	want := []string{strconv.Itoa(os.Getpid()), strconv.Itoa(os.Getppid())}
+	out, err := psForPIDs(want).Output()
+	if err != nil {
+		t.Fatalf("ps: %v", err)
+	}
+	var got []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		pid, _ := nextField(line)
+		got = append(got, pid)
+	}
+	slices.Sort(want)
+	slices.Sort(got)
+	if !slices.Equal(got, want) {
+		t.Fatalf("ps listed pids %v, want %v", got, want)
 	}
 }

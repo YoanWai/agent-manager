@@ -509,11 +509,22 @@ func nameChildren(stats map[int]ProcStat, children map[int][]int) {
 	// ps exits non-zero when every pid it was given has gone, which is a
 	// child that ended between the two calls rather than a failure: there is
 	// nothing left to name and the next sample sees whatever replaced it.
-	out, err := exec.Command("ps", "-o", "pid=,ppid=,args=", "-p", strings.Join(wanted, ",")).Output()
+	out, err := psForPIDs(wanted).Output()
 	if err != nil {
 		return
 	}
 	applyChildNames(stats, children, string(out))
+}
+
+func psForPIDs(pids []string) *exec.Cmd {
+	// Several -p pids make macOS ps look up the terminal of every process on
+	// the machine unless -x waives its terminal filter. Linux reads -x as
+	// every process.
+	flags := "-o"
+	if runtime.GOOS == "darwin" {
+		flags = "-xo"
+	}
+	return exec.Command("ps", flags, "pid=,ppid=,args=", "-p", strings.Join(pids, ","))
 }
 
 // applyChildNames matches the second ps pass back to the tree the first one
