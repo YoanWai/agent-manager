@@ -1062,7 +1062,7 @@ func (p *poller) promptCarriesTypedText(sess store.Session, clean string) (bool,
 	if caretY < 0 || caretY >= len(rows) {
 		return false, nil
 	}
-	return textBeforeCaret(p.engine, sess.Tool, rows[caretY], caretX), nil
+	return draftBeforeCaret(p.engine, sess.Tool, rows, caretX, caretY), nil
 }
 
 // inboxEnvelope wraps the body so the receiving agent knows the text came
