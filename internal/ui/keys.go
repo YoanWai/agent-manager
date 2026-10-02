@@ -325,6 +325,7 @@ func (m *Model) swapRows(entry, target treeRow) error {
 	} else {
 		m.swapSessionLocal(entry.sess.ID, target.sess.ID)
 	}
+	m.markReorder(entry, target)
 	m.rebuildRows()
 	m.requestRefresh()
 	return nil
