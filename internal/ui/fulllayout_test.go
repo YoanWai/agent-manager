@@ -302,7 +302,7 @@ func TestFullRowWorkingWithoutPaneLineAnimatesLoader(t *testing.T) {
 	m.comfortableRows = true
 	m.paneLines = nil
 	row := m.rows[4]
-	lines := splitLines(m.renderTreeRow(row, false, m.width-1, 4, panelHex()))
+	lines := splitLines(m.renderTreeRow(row, false, m.width-1, 4, panelHex()).text)
 	if len(lines) != 3 {
 		t.Fatalf("comfortable row painted %d lines, want 3", len(lines))
 	}

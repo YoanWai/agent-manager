@@ -632,7 +632,7 @@ func TestRefreshCarriesQueuedCountsToTheRows(t *testing.T) {
 		t.Fatalf("a session with an empty inbox got a count: %v", m.queuedMessages)
 	}
 	rows := railText(t, m)
-	if row := rows[lineWith(t, rows, "stranded")]; !strings.Contains(row, "✉2") {
+	if row := rows[lineWith(t, rows, "stranded")]; !strings.Contains(row, inboxGlyph+"2") {
 		t.Fatalf("the stranded queue is invisible on its row: %q", row)
 	}
 }

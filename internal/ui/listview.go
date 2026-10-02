@@ -638,8 +638,7 @@ func (m *Model) slotContinues(index, slot int) bool {
 // entryRowLines paints one entry, its lines tagged with the row a click on
 // them selects and ended by the entry's menu button. With the mouse off
 // nothing on the row answers a click, so it keeps those cells for itself.
-// The handle's column is read off the painted head, where the row's tree
-// depth put it. The rail starts one column in, past its edge cell.
+// The rail starts one column in, past its edge cell.
 func (m *Model) entryRowLines(entry treeRow, index, width int, tone string) []contentLine {
 	selected := index == m.cursor
 	button := !m.renamingRow(entry) && !m.mouseDisabled
@@ -647,13 +646,12 @@ func (m *Model) entryRowLines(entry treeRow, index, width int, tone string) []co
 	if button {
 		rowWidth -= menuButtonWidth
 	}
+	row := m.renderTreeRow(entry, selected, rowWidth, index, tone)
+	if row.handleX >= 0 {
+		m.handleX[rowKey(entry)] = 1 + row.handleX
+	}
 	var lines []contentLine
-	for n, line := range splitLines(m.renderTreeRow(entry, selected, rowWidth, index, tone)) {
-		if n == 0 {
-			if plain := ansi.Strip(line); strings.Contains(plain, reorderGrip) {
-				m.handleX[rowKey(entry)] = 1 + ansi.StringWidth(plain[:strings.Index(plain, reorderGrip)])
-			}
-		}
+	for n, line := range splitLines(row.text) {
 		switch {
 		case button && n == 0:
 			line += menuButton(selected, tone)
@@ -668,7 +666,7 @@ func (m *Model) entryRowLines(entry treeRow, index, width int, tone string) []co
 // renderTreeRow paints one entry: a status dot, the name, and what the
 // entry is doing set against the row's far edge. The selected entry lifts
 // onto its own band instead of wearing a marker.
-func (m *Model) renderTreeRow(entry treeRow, selected bool, width, index int, bg string) string {
+func (m *Model) renderTreeRow(entry treeRow, selected bool, width, index int, bg string) renderedTreeRow {
 	pad := strings.Repeat(" ", railInset)
 	guides := m.treeGuidesAt(index)
 	trail := m.treeGuideTrail(index)
@@ -679,13 +677,32 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width, index int, bg
 		for held := m.entryHeight(entry); held > 1; held-- {
 			row += "\n" + paint(pad+trail, width, selectedHex())
 		}
-		return row
+		return renderedTreeRow{text: row, handleX: -1}
 	}
 
 	if entry.isGroup {
 		return m.renderGroupEntry(entry, selected, width, pad, guides, trail, bg)
 	}
 	return m.renderSessionEntry(entry, selected, width, pad, guides, trail, bg)
+}
+
+type renderedTreeRow struct {
+	text    string
+	handleX int
+}
+
+func withRowHandle(text, lead, handle string) renderedTreeRow {
+	row := renderedTreeRow{text: text, handleX: -1}
+	if handle != "" {
+		x := ansi.StringWidth(lead)
+		head, _, _ := strings.Cut(text, "\n")
+		// Measure the prefix we painted, not a matching character in a
+		// name. A narrow row may have clipped the handle off entirely.
+		if ansi.Strip(ansi.Cut(head, x, x+ansi.StringWidth(reorderGrip))) == reorderGrip {
+			row.handleX = x
+		}
+	}
+	return row
 }
 
 // A shell takes a caret rather than an idle dot it would never leave, but
@@ -771,7 +788,7 @@ func promptPreview(prompt string) string {
 	return ansi.Truncate(strings.Join(words, " "), placeholderPromptWidth, "…")
 }
 
-func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad, guides, trail, bg string) string {
+func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad, guides, trail, bg string) renderedTreeRow {
 	sess := entry.sess
 	// An archived session's pane was killed on its way in; a status frozen
 	// by an older build (a "working" from before the kill recorded dead)
@@ -824,9 +841,9 @@ func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad,
 
 	if m.comfortableRows {
 		indent := metaIndent(pad, trail) + strings.Repeat(" ", ansi.StringWidth(handle))
-		return m.tallRow(sess, head, meta, indent, selected, width, bg)
+		return withRowHandle(m.tallRow(sess, head, meta, indent, selected, width, bg), lead, handle)
 	}
-	return m.compactRow(sess, head, meta, selected, width, bg)
+	return withRowHandle(m.compactRow(sess, head, meta, selected, width, bg), lead, handle)
 }
 
 // rowPromptFloor is the narrowest slot worth printing a prompt into: any
@@ -967,25 +984,22 @@ func metaIndent(pad, trail string) string {
 	return pad + trail + "  "
 }
 
-func (m *Model) renderGroupEntry(entry treeRow, selected bool, width int, pad, guides, trail, bg string) string {
-	marker := "▾"
-	if m.collapsed[entry.group] {
-		marker = "▸"
-	}
+func (m *Model) renderGroupEntry(entry treeRow, selected bool, width int, pad, guides, trail, bg string) renderedTreeRow {
+	marker := m.groupGlyph(entry)
 	nameStyle := lipgloss.NewStyle().Foreground(colorAccent2).Bold(true)
 	if selected {
 		nameStyle = nameStyle.Foreground(colorBright)
 	}
 	name := baseName(entry.group)
 	if entry.isRoot() {
-		// Nothing nests under root, so the marker is a blank that holds the column.
-		marker, name = " ", "root"
+		name = "root"
 		if !selected {
 			nameStyle = nameStyle.Foreground(lipgloss.Color(mix(current.Accent2, current.Subtle, 0.5)))
 		}
 	}
 	lead := pad + guides + subtleStyle.Render(marker) + " "
-	head := lead + m.rowHandle(entry, selected) + m.highlightQuery(name, nameStyle)
+	handle := m.rowHandle(entry, selected)
+	head := lead + handle + m.highlightQuery(name, nameStyle)
 
 	// What the group is doing rides on the same line as its name, so a
 	// folded group still reports its subtree without being opened. It is
@@ -995,7 +1009,7 @@ func (m *Model) renderGroupEntry(entry treeRow, selected bool, width int, pad, g
 		meta = subtleStyle.Render("no agents yet")
 	}
 
-	return paint(rowColumns(head, meta, width-railGutter), width, bg)
+	return withRowHandle(paint(rowColumns(head, meta, width-railGutter), width, bg), lead, handle)
 }
 
 // computerLines is the machine block docked at the rail's foot: a label
@@ -1147,7 +1161,7 @@ func (m *Model) focusFactsLine(width int) string {
 	// rather than dropping the lot.
 	facts := []focusFact{{text: valueStyle.Render(truncateTail(shortHome(m.sessionDir(sess)), focusFactsDirCap)), spare: 3}}
 	if sess.WorktreeBranch != "" {
-		facts = append(facts, focusFact{text: subtleStyle.Render("⑂ ") + valueStyle.Render(sess.WorktreeBranch), spare: 2})
+		facts = append(facts, focusFact{text: subtleStyle.Render(branchGlyph+" ") + valueStyle.Render(sess.WorktreeBranch), spare: 2})
 	}
 	if m.procFor == sess.ID && m.proc.OK {
 		facts = append(facts,
@@ -1242,8 +1256,6 @@ func focusTopRule(width int, keys keybind.Table) string {
 	return rule
 }
 
-var startupFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-
 const startupRingPoints = 12
 
 func (m *Model) startupLoader(width, height int) []string {
@@ -1261,7 +1273,7 @@ func ringLoader(width, height int, label string, phase int) []string {
 	dot := func(position int) string {
 		switch position {
 		case phase:
-			return accent.Render("●")
+			return accent.Render(workingGlyph)
 		case (phase + startupRingPoints - 1) % startupRingPoints:
 			return glow.Render("•")
 		default:
@@ -1420,7 +1432,7 @@ func (m *Model) viewDetail(width int) string {
 	withTool := name + "  " + chipStyle.Render(tool)
 	heads := []string{withTool, name}
 	if sess.WorktreeBranch != "" {
-		heads = append([]string{withTool + " " + chipStyle.Render("⑂ "+sess.WorktreeBranch)}, heads...)
+		heads = append([]string{withTool + " " + chipStyle.Render(branchGlyph+" "+sess.WorktreeBranch)}, heads...)
 	}
 
 	usage := ""

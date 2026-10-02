@@ -128,13 +128,16 @@ func sessionRowHelpRows(list keybind.Table) [][2]string {
 
 func markHelpRows(list keybind.Table) [][2]string {
 	rows := [][2]string{
-		{"◐ working", "the agent is busy on a turn"},
-		{"◆ waiting", "blocked on you: a dialog, a permission ask, a question"},
-		{"● finished", "the turn ended; entering the session clears it to idle"},
-		{"○ idle", "nothing running"},
-		{"✕ errored", "the tool reported an error, or the session is dead"},
-		{"◌ starting", "the pane is still launching"},
-		{"✉N", "messages from another agent, held until this one is at rest"},
+		{workingGlyph + " working", "the agent is busy on a turn"},
+		{waitingGlyph + " waiting", "blocked on you: a dialog, a permission ask, a question"},
+		{finishedGlyph + " finished", "the turn ended; entering the session clears it to idle"},
+		{idleGlyph + " idle", "nothing running"},
+		{erroredGlyph + " errored", "the tool reported an error, or the session is dead"},
+		{startingGlyph + " starting", "the pane is still launching; its row mark spins"},
+		{inboxGlyph + "N", "messages from another agent, held until this one is at rest"},
+		{reorderGrip, "drag handle; click, then use arrows to move, enter to drop"},
+		{branchGlyph, "worktree branch or conversation fork"},
+		{groupClosedGlyph + " / " + groupOpenGlyph, "collapsed / expanded group"},
 	}
 	if filter := list.Binding(keybind.Filter).Glyph(" / "); filter != "" {
 		rows = append(rows, [2]string{"", filter + " filters the list down to the marks that need you"})
