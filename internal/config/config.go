@@ -70,10 +70,15 @@ type Tool struct {
 	ChromeLine     string `toml:"chrome_line"`
 	BlockedLine    string `toml:"blocked_line"`
 	TrailingNote   string `toml:"trailing_note"`
-	// ChromeBlock marks a row that owns the rows drawn straight under it,
-	// up to the next blank row. A quote steps over the whole block, which
-	// covers frame rows whose wording varies or wraps.
+	// ChromeBlock marks a row that owns the rows drawn under it, up to the
+	// next blank row. Prompt echoes also own deeper-indented rows across
+	// blank paragraphs. Quotes step over the whole block.
 	ChromeBlock string `toml:"chrome_block"`
+	// QueueItem and QueueFooter identify a live queued-input block. QueueStart
+	// marks its first item or card header when numbered lines also occur in a reply.
+	QueueItem   string `toml:"queue_item"`
+	QueueStart  string `toml:"queue_start"`
+	QueueFooter string `toml:"queue_footer"`
 	// BusyLine marks work that outlives the turn which started it, such as
 	// background agents. Matching it in the newest turn keeps a turn-end
 	// summary from resolving to finished while that work runs.
@@ -642,10 +647,17 @@ activity_cutoff = "(?m)^(?:\\s*│ )?❯"
 # timer while subagents run; only the real end line gains "stop" (and usually
 # "[hooks: N]"). Trailing period after the duration is optional.
 turn_end = "(?m)^\\s*Worked for [\\dhms. ]+s\\.?(?:\\s|$).*\\bstop\\b"
-# box, scrollbar, header, opt-in card, minimal hint, model footer, hook rows
-chrome_line = "^\\s*[┃❙│─━╭╮╰╯█▴▾]*\\s*$|^\\s*⎇ |^\\s*Help improve Grok\\b|^\\s*Off by default\\. Opt-in|^\\s*Read Terms and Privacy Policy|^\\s*minimal ·|^\\s*Grok \\d|^\\s*◆ (?:user_prompt_submit|session_start)\\b|^\\s*✓ |^\\s*Shift\\+Tab:"
+# box, scrollbar, workspace header, opt-in card, minimal hint, model footer, hook rows
+chrome_line = "^\\s*[┃❙│─━╭╮╰╯█▴▾]*\\s*$|^.* │ \\[Dashboard\\]$|^\\s*⎇ |^\\s*Help improve Grok\\b|^\\s*Off by default\\. Opt-in|^\\s*Read Terms and Privacy Policy|^\\s*minimal ·|^\\s*Grok \\d|^\\s*◆ (?:user_prompt_submit|session_start)\\b|^\\s*✓ |^\\s*Shift\\+Tab:"
 # the duration line sits under the reply; LastMessage steps over it so the row quotes the reply
 trailing_note = "^Worked for "
+# Transcript prompts and their wrapped rows are not Grok replies.
+chrome_block = "^\\s+❯ |^\\s*Help improve Grok\\b"
+# Queue numbers also occur in answers; read them as queue rows only while
+# Grok's live queue footer is present.
+queue_item = "^\\s*(?:│\\s*)?#\\d+ "
+queue_start = "^\\s*(?:(?:│\\s*)?#1 |┌[^\\n]*\\[✗\\])"
+queue_footer = "(?m)^[ \\t]*(?:Queued · Enter to send now|◎ [^\\n]*\\bqueued, Enter to send now|(?:Enter:send now|x:delete row)[^\\n]*)[ \\t]*$"
 limit_line = "(?i)You've hit the rate limit|You hit your free usage limit|You've reached your free Grok Build usage limit|usage limit reached|out of credits"
 rules = [
   # first-run "Do you trust this directory?" and other y/n prompts block on the user
