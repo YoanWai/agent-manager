@@ -12,6 +12,8 @@ The Pi support requires Pi 0.76.0 or later, because it launches sessions with `-
 
 Hermes is tested with Hermes Agent 0.20.0 and launches its classic REPL with `--cli`. This keeps the input, approval, and activity markers stable even when your Hermes preference selects its modern TUI.
 
+Grok Build launches with `--no-leader`, so every session runs its own agent. A shared Grok leader runs each session's shell commands under the environment of the session that started it, which would make one session's agent-manager commands act as another. `[cli] use_leader` in Grok's `config.toml` keeps applying to the Grok sessions you start yourself.
+
 Antigravity CLI is tested with agy 1.2.14. Its first launch registers the `agent-manager` server with `agy mcp add`, which writes `~/.gemini/config/mcp_config.json`, the file the Antigravity IDE reads its servers from too. agy has no command-line fork, and its `/fork` moves the running session onto the copy, so `f` does not offer one.
 
 Muse Code is tested with Muse 1.3.0 and 1.4.0. Muse reads MCP servers only from its settings file, so the first Muse launch adds the `agent-manager` server to `~/.config/muse/settings.json` (under `$XDG_CONFIG_HOME` when set) and keeps every other setting and server. A symlinked settings file is written through the link. Muse starts that server with none of the session's environment, so the server finds its session through its process tree, which needs the manager's tmux server at the default `TMUX_TMPDIR`. Muse forks only from inside a running session: `f` types `/fork` into the source and opens the fork in its own pane.

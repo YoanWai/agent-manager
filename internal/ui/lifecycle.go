@@ -1210,6 +1210,10 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.errBar.text = err.Error()
 					return m, nil
 				}
+				if err := m.hooks.RemoveSettings(sess.ID); err != nil {
+					m.errBar.text = err.Error()
+					return m, nil
+				}
 				delete(m.pickedRepos, sess.ID)
 				delete(m.awaitedRenames, sess.ID)
 				m.forgetLaunch(sess.ID)
