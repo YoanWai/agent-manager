@@ -728,28 +728,30 @@ func waitForFile(t *testing.T, driver *Driver, id, path string) string {
 }
 
 // An agent that auto-detects its palette asks the terminal for its
-// background with OSC 11. Nothing answers that on this server — the only
-// client is in control mode and has no tty — unless the pane carries an
-// explicit background of its own, which is what the pane theme sets.
-func TestCreateAnswersBackgroundQuery(t *testing.T) {
+// foreground and background with OSC 10 and 11. Nothing answers that on this
+// server — the only client is in control mode and has no tty — unless the
+// pane carries explicit colors of its own, which is what the pane theme sets.
+func TestCreateAnswersColorQueries(t *testing.T) {
 	driver := requireTmux(t)
 	t.Cleanup(func() { clearPaneTheme(t) })
-	driver.PublishPaneTheme(PaneTheme{Background: "#1e1e2e", ColorFgBg: "15;0"})
+	driver.PublishPaneTheme(PaneTheme{Foreground: "#cdd6f4", Background: "#1e1e2e", ColorFgBg: "15;0"})
 
 	id := "osc" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
 	reply := t.TempDir() + "/reply"
 	// tmux delivers the answer on the pane's input, so the query and the
 	// read both happen inside the pane. Raw mode keeps the line discipline
 	// from holding a reply that ends in ST rather than a newline.
-	command := "stty raw; printf '\\033]11;?\\033\\\\'; cat > " + reply
+	command := "stty raw; printf '\\033]10;?\\033\\\\\\033]11;?\\033\\\\'; cat > " + reply
 	if err := driver.Create(id, "/tmp", command, nil, 0, 0); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
 
 	got := waitForFile(t, driver, id, reply)
-	if want := "]11;rgb:1e1e/1e1e/2e2e"; !strings.Contains(got, want) {
-		t.Fatalf("OSC 11 reply = %q, want one carrying %q", got, want)
+	for _, want := range []string{"]10;rgb:cdcd/d6d6/f4f4", "]11;rgb:1e1e/1e1e/2e2e"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("OSC 10/11 replies = %q, want one carrying %q", got, want)
+		}
 	}
 }
 
@@ -758,7 +760,7 @@ func TestCreateAnswersBackgroundQuery(t *testing.T) {
 func TestCreateExportsColorFgBg(t *testing.T) {
 	driver := requireTmux(t)
 	t.Cleanup(func() { clearPaneTheme(t) })
-	driver.PublishPaneTheme(PaneTheme{Background: "#1e1e2e", ColorFgBg: "15;0"})
+	driver.PublishPaneTheme(PaneTheme{Foreground: "#cdd6f4", Background: "#1e1e2e", ColorFgBg: "15;0"})
 
 	id := "fgbg" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
 	marker := t.TempDir() + "/env"
@@ -787,7 +789,7 @@ func globalWindowStyle(t *testing.T) string {
 func TestCreateAppliesPublishedThemeWithoutAPush(t *testing.T) {
 	driver := requireTmux(t)
 	t.Cleanup(func() { clearPaneTheme(t) })
-	driver.PublishPaneTheme(PaneTheme{Background: "#1e1e2e", ColorFgBg: "15;0"})
+	driver.PublishPaneTheme(PaneTheme{Foreground: "#cdd6f4", Background: "#1e1e2e", ColorFgBg: "15;0"})
 
 	id := "pub" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
 	if err := driver.Create(id, "/tmp", "", nil, 0, 0); err != nil {
@@ -795,7 +797,7 @@ func TestCreateAppliesPublishedThemeWithoutAPush(t *testing.T) {
 	}
 	t.Cleanup(func() { driver.Kill(id) })
 
-	if got, want := globalWindowStyle(t), "bg=#1e1e2e"; got != want {
+	if got, want := globalWindowStyle(t), "fg=#cdd6f4,bg=#1e1e2e"; got != want {
 		t.Fatalf("window-style = %q, want %q", got, want)
 	}
 }
@@ -811,7 +813,7 @@ func TestPushPaneThemeIsLatestWins(t *testing.T) {
 	// A session with no windows exits at once, so one holds the server up
 	// for the global option to stick to.
 	id := "race" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
-	driver.PublishPaneTheme(PaneTheme{Background: "#101010", ColorFgBg: "15;0"})
+	driver.PublishPaneTheme(PaneTheme{Foreground: "#cdd6f4", Background: "#101010", ColorFgBg: "15;0"})
 	if err := driver.Create(id, "/tmp", "", nil, 0, 0); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -820,7 +822,7 @@ func TestPushPaneThemeIsLatestWins(t *testing.T) {
 	backgrounds := []string{"#111111", "#222222", "#333333", "#444444", "#eff1f5"}
 	var wg sync.WaitGroup
 	for _, bg := range backgrounds {
-		driver.PublishPaneTheme(PaneTheme{Background: bg, ColorFgBg: "15;0"})
+		driver.PublishPaneTheme(PaneTheme{Foreground: "#cdd6f4", Background: bg, ColorFgBg: "15;0"})
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -832,7 +834,7 @@ func TestPushPaneThemeIsLatestWins(t *testing.T) {
 	wg.Wait()
 
 	last := backgrounds[len(backgrounds)-1]
-	if got, want := globalWindowStyle(t), "bg="+last; got != want {
+	if got, want := globalWindowStyle(t), "fg=#cdd6f4,bg="+last; got != want {
 		t.Fatalf("window-style = %q, want the last published theme %q", got, want)
 	}
 }
@@ -849,7 +851,7 @@ func TestCreateSerializesWithPushPaneTheme(t *testing.T) {
 
 	stamp := strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
 	hold := "hold" + stamp
-	driver.PublishPaneTheme(PaneTheme{Background: "#101010", ColorFgBg: "15;0"})
+	driver.PublishPaneTheme(PaneTheme{Foreground: "#cdd6f4", Background: "#101010", ColorFgBg: "15;0"})
 	if err := driver.Create(hold, "/tmp", "", nil, 0, 0); err != nil {
 		t.Fatalf("Create hold session: %v", err)
 	}
@@ -858,7 +860,7 @@ func TestCreateSerializesWithPushPaneTheme(t *testing.T) {
 	const newer = "#eff1f5"
 	var pushed sync.WaitGroup
 	afterCreateThemeLoad = func() {
-		driver.PublishPaneTheme(PaneTheme{Background: newer, ColorFgBg: "0;15"})
+		driver.PublishPaneTheme(PaneTheme{Foreground: "#cdd6f4", Background: newer, ColorFgBg: "0;15"})
 		pushed.Add(1)
 		go func() {
 			defer pushed.Done()
@@ -879,7 +881,7 @@ func TestCreateSerializesWithPushPaneTheme(t *testing.T) {
 	t.Cleanup(func() { driver.Kill(raced) })
 	pushed.Wait()
 
-	if got, want := globalWindowStyle(t), "bg="+newer; got != want {
+	if got, want := globalWindowStyle(t), "fg=#cdd6f4,bg="+newer; got != want {
 		t.Fatalf("window-style = %q, want the newer pushed theme %q", got, want)
 	}
 }

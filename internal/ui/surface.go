@@ -10,9 +10,9 @@ import (
 // The list view sits on the backdrop, with the sessions rail filling its
 // pane flush — header rule to footer rule, window edge to seam — and the
 // selected entry lifted once more. Views draw the backdrop as unpainted
-// cells; fillBackdrop paints them over the finished frame, and the terminal
-// background sync keeps the window padding around the cell grid at the same
-// tone. With the terminal background setting the cells stay unpainted, so a
+// cells; fillBackdrop paints them, text color included, over the finished
+// frame, and the terminal color sync keeps the window padding around the
+// cell grid at the same tone. With the terminal background setting the cells stay unpainted, so a
 // translucent window blends them exactly like its padding.
 
 // backdropHex is the backdrop's fill while a view draws: none. paint treats
@@ -207,57 +207,69 @@ func plain(s string, width int) string {
 	return "\x1b[0m" + s + "\x1b[0m"
 }
 
-// fillBackdrop paints hex under every cell the frame left on the terminal's
-// own background and pads each row to width, so the frame keeps its colors
-// on a terminal that ignored the OSC 11 background sync.
-func fillBackdrop(frame string, width int, hex string) string {
-	fill := bgSeq(hex)
+// fillBackdrop paints the theme's background and text color into every
+// cell the frame left on the terminal's own and pads each row to width, so
+// the frame keeps its colors on a terminal that ignored the OSC 10 and 11
+// sync.
+func fillBackdrop(frame string, width int, backgroundHex, foregroundHex string) string {
+	fill, ink := bgSeq(backgroundHex), fgSeq(foregroundHex)
 	parser := ansi.GetParser()
 	defer ansi.PutParser(parser)
 	lines := strings.Split(frame, "\n")
 	for i, line := range lines {
-		lines[i] = fillBackdropLine(line, width, fill, parser)
+		lines[i] = fillBackdropLine(line, width, fill, ink, parser)
 	}
 	return strings.Join(lines, "\n")
 }
 
-func fillBackdropLine(line string, width int, fill string, parser *ansi.Parser) string {
+func fillBackdropLine(line string, width int, fill, ink string, parser *ansi.Parser) string {
 	var out strings.Builder
-	out.WriteString(fill)
+	out.WriteString(fill + ink)
 	cells := 0
 	var state byte
 	for len(line) > 0 {
 		seq, cellWidth, n, next := ansi.DecodeSequence(line, state, parser)
 		out.WriteString(seq)
-		if ansi.HasCsiPrefix(seq) && parser.Command() == 'm' && clearsBackground(parser.Params()) {
-			out.WriteString(fill)
+		if ansi.HasCsiPrefix(seq) && parser.Command() == 'm' {
+			background, foreground := clearedColors(parser.Params())
+			if background {
+				out.WriteString(fill)
+			}
+			if foreground {
+				out.WriteString(ink)
+			}
 		}
 		cells += cellWidth
 		line, state = line[n:], next
 	}
 	if cells < width {
-		out.WriteString("\x1b[0m" + fill + strings.Repeat(" ", width-cells))
+		out.WriteString("\x1b[0m" + fill + ink + strings.Repeat(" ", width-cells))
 	}
 	out.WriteString("\x1b[0m")
 	return out.String()
 }
 
-// clearsBackground reports whether an SGR leaves the terminal's own
-// background showing once all of its parameters apply.
-func clearsBackground(params ansi.Params) bool {
+// clearedColors reports which of the terminal's own colors an SGR leaves
+// showing once all of its parameters apply.
+func clearedColors(params ansi.Params) (background, foreground bool) {
 	if len(params) == 0 {
-		return true
+		return true, true
 	}
-	cleared := false
 	for i := 0; i < len(params); i += 1 + parameterArguments(params, i) {
 		switch param, _, _ := params.Param(i, 0); {
-		case param == 0 || param == 49:
-			cleared = true
+		case param == 0:
+			background, foreground = true, true
+		case param == 49:
+			background = true
+		case param == 39:
+			foreground = true
 		case param >= 40 && param <= 48, param >= 100 && param <= 107:
-			cleared = false
+			background = false
+		case param >= 30 && param <= 38, param >= 90 && param <= 97:
+			foreground = false
 		}
 	}
-	return cleared
+	return background, foreground
 }
 
 // parameterArguments counts the parameters that belong to the one at index

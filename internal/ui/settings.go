@@ -577,7 +577,7 @@ func (m *Model) cycleSetting(step int) tea.Cmd {
 		m.settings.themeIndex = (m.settings.themeIndex + step + len(themes)) % len(themes)
 		m.settings.manualTheme = themes[m.settings.themeIndex].Name
 		applyTheme(themes[m.settings.themeIndex])
-		SyncTerminalBackground()
+		SyncTerminalColors()
 		return m.syncPaneTheme()
 	case settingsFieldThemeAuto:
 		m.settings.themeAuto = !m.settings.themeAuto
@@ -587,7 +587,7 @@ func (m *Model) cycleSetting(step int) tea.Cmd {
 		}
 		m.settings.themeIndex = themeIndex(name)
 		applyTheme(themes[m.settings.themeIndex])
-		SyncTerminalBackground()
+		SyncTerminalColors()
 		return m.syncPaneTheme()
 	case settingsFieldBackground:
 		m.settings.terminalBackground = !m.settings.terminalBackground

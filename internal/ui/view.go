@@ -22,7 +22,7 @@ func (m *Model) View() string {
 	if m.terminalBackground || lipgloss.ColorProfile() == termenv.Ascii {
 		return frame
 	}
-	return fillBackdrop(frame, m.width, current.Bg)
+	return fillBackdrop(frame, m.width, current.Bg, current.Text)
 }
 
 func (m *Model) view() string {

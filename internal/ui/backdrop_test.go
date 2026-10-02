@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/termseq"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -13,25 +14,27 @@ import (
 	"github.com/muesli/termenv"
 )
 
-// cellBackgrounds lays a frame out the way a terminal would and reports
-// each cell's background, nil where the terminal's own color shows through.
-func cellBackgrounds(frame string, width, height int) [][]color.Color {
+// cellColors lays a frame out the way a terminal would and reports each
+// cell's background and foreground, nil where the terminal's own color shows.
+func cellColors(frame string, width, height int) (backgrounds, foregrounds [][]color.Color) {
 	buffer := cellbuf.NewBuffer(width, height)
 	cellbuf.SetContent(buffer, frame)
-	rows := make([][]color.Color, height)
-	for y := range rows {
-		rows[y] = make([]color.Color, width)
-		for x := range rows[y] {
+	backgrounds = make([][]color.Color, height)
+	foregrounds = make([][]color.Color, height)
+	for y := range height {
+		backgrounds[y] = make([]color.Color, width)
+		foregrounds[y] = make([]color.Color, width)
+		for x := range width {
 			cell := buffer.Cell(x, y)
 			if cell.Width == 0 && x > 0 {
 				// The trailing half of a wide character wears its lead's colors.
-				rows[y][x] = rows[y][x-1]
+				backgrounds[y][x], foregrounds[y][x] = backgrounds[y][x-1], foregrounds[y][x-1]
 				continue
 			}
-			rows[y][x] = cell.Style.Bg
+			backgrounds[y][x], foregrounds[y][x] = cell.Style.Bg, cell.Style.Fg
 		}
 	}
-	return rows
+	return backgrounds, foregrounds
 }
 
 func sameColor(a, b color.Color) bool {
@@ -61,9 +64,9 @@ func usePaper(t *testing.T) {
 	t.Cleanup(func() { applyTheme(themes[0]) })
 }
 
-// Every cell the frame left on the terminal's background takes the
-// backdrop, whichever way the reset was spelled, and every cell that
-// carried its own background keeps it.
+// Every cell the frame left on the terminal's colors takes the theme's,
+// whichever way the reset was spelled, and every cell that carried a color
+// of its own keeps it.
 func TestFillBackdropPaintsOnlyDefaultCells(t *testing.T) {
 	useTrueColor(t)
 	const width = 24
@@ -78,52 +81,79 @@ func TestFillBackdropPaintsOnlyDefaultCells(t *testing.T) {
 		chip + "A\x1b[4:0mB\x1b[4:3mC stays on chip\x1b[0m",
 		"\x1b[48:2::9:8:7mcolon\x1b[38:2::0:0:0m fg only\x1b[0m",
 		"\x1b[44mindexed\x1b[0m wide 界 cell",
+		"\x1b[31mred\x1b[39m default ink \x1b[1;91mbright\x1b[22;39m ink",
 		"",
 	}, "\n")
 	height := strings.Count(frame, "\n") + 1
 
-	before := cellBackgrounds(frame, width, height)
-	after := cellBackgrounds(fillBackdrop(frame, width, "#f7f7f5"), width, height)
-	backdrop := hexColor("#f7f7f5")
-	for y := range after {
-		for x := range after[y] {
-			want := before[y][x]
-			if want == nil {
-				want = backdrop
+	beforeBg, beforeFg := cellColors(frame, width, height)
+	afterBg, afterFg := cellColors(fillBackdrop(frame, width, "#f7f7f5", "#33333a"), width, height)
+	for y := range height {
+		for x := range width {
+			if want := orTheme(beforeBg[y][x], "#f7f7f5"); !sameColor(afterBg[y][x], want) {
+				t.Errorf("row %d col %d background = %v, want %v", y, x, afterBg[y][x], want)
 			}
-			if !sameColor(after[y][x], want) {
-				t.Errorf("row %d col %d background = %v, want %v", y, x, after[y][x], want)
+			if want := orTheme(beforeFg[y][x], "#33333a"); !sameColor(afterFg[y][x], want) {
+				t.Errorf("row %d col %d foreground = %v, want %v", y, x, afterFg[y][x], want)
 			}
 		}
 	}
 }
 
+func orTheme(own color.Color, theme string) color.Color {
+	if own == nil {
+		return hexColor(theme)
+	}
+	return own
+}
+
 func TestFillBackdropKeepsText(t *testing.T) {
 	useTrueColor(t)
 	frame := "one \x1b[1mtwo\x1b[m\n\x1b[38;5;42mthree\x1b[39m"
-	got := strings.Split(ansi.Strip(fillBackdrop(frame, 8, "#f7f7f5")), "\n")
+	got := strings.Split(ansi.Strip(fillBackdrop(frame, 8, "#f7f7f5", "#33333a")), "\n")
 	want := []string{"one two ", "three   "}
 	if !slices.Equal(got, want) {
 		t.Fatalf("filled text = %q, want %q", got, want)
 	}
 }
 
-// The frame a terminal that ignores OSC 11 shows: light chrome must sit on
-// the light backdrop in every cell, including the captured agent output.
-func TestViewPaintsEveryCellWithTheBackdrop(t *testing.T) {
+// The frame a terminal that ignores OSC 10 and 11 shows: light chrome and
+// the captured agent output must carry the theme's colors in every cell.
+func TestViewPaintsEveryCellWithTheThemeColors(t *testing.T) {
 	useTrueColor(t)
 	usePaper(t)
 	m := shotModel()
-	cells := cellBackgrounds(m.View(), m.width, m.height)
-	for y, row := range cells {
-		for x, background := range row {
-			if background == nil {
+	backgrounds, foregrounds := cellColors(m.View(), m.width, m.height)
+	for y := range m.height {
+		for x := range m.width {
+			if backgrounds[y][x] == nil {
 				t.Fatalf("row %d col %d shows the terminal's own background", y, x)
+			}
+			if foregrounds[y][x] == nil {
+				t.Fatalf("row %d col %d shows the terminal's own foreground", y, x)
 			}
 		}
 	}
-	if corner := cells[m.height-1][m.width-1]; !sameColor(corner, hexColor(current.Bg)) {
+	if corner := backgrounds[m.height-1][m.width-1]; !sameColor(corner, hexColor(current.Bg)) {
 		t.Errorf("bottom right cell = %v, want the backdrop %s", corner, current.Bg)
+	}
+}
+
+func TestSyncTerminalColorsSetsTextAndBackground(t *testing.T) {
+	usePaper(t)
+	var sink strings.Builder
+	previous := termseq.Out
+	termseq.Out = &sink
+	t.Cleanup(func() { termseq.Out = previous })
+
+	SyncTerminalColors()
+	if got, want := sink.String(), "\x1b]10;#33333a\x07\x1b]11;#f7f7f5\x07"; got != want {
+		t.Fatalf("sync wrote %q, want %q", got, want)
+	}
+	sink.Reset()
+	ResetTerminalColors()
+	if got, want := sink.String(), "\x1b]110\x07\x1b]111\x07"; got != want {
+		t.Fatalf("reset wrote %q, want %q", got, want)
 	}
 }
 

@@ -146,6 +146,9 @@ func TestAgentPaneTheme(t *testing.T) {
 		if got.Background != want.Bg {
 			t.Errorf("%s: pane background = %q, want %q", tt.theme, got.Background, want.Bg)
 		}
+		if got.Foreground != want.Text {
+			t.Errorf("%s: pane foreground = %q, want %q", tt.theme, got.Foreground, want.Text)
+		}
 		if got.ColorFgBg != tt.fgbg {
 			t.Errorf("%s: COLORFGBG = %q, want %q", tt.theme, got.ColorFgBg, tt.fgbg)
 		}
@@ -178,7 +181,7 @@ func TestThemeSwitchPushesPaneBackground(t *testing.T) {
 	if m.errBar.text != "" {
 		t.Fatalf("pane theme push reported %q", m.errBar.text)
 	}
-	if got, want := globalWindowStyle(t), "bg="+light.Bg; got != want {
+	if got, want := globalWindowStyle(t), "fg="+light.Text+",bg="+light.Bg; got != want {
 		t.Errorf("light theme pushed window-style %q, want its own backdrop %q", got, want)
 	}
 
@@ -188,7 +191,8 @@ func TestThemeSwitchPushesPaneBackground(t *testing.T) {
 			m.Update(msg)
 		}
 	}
-	if got, want := globalWindowStyle(t), "bg="+themes[themeIndex("nord")].Bg; got != want {
+	nord := themes[themeIndex("nord")]
+	if got, want := globalWindowStyle(t), "fg="+nord.Text+",bg="+nord.Bg; got != want {
 		t.Errorf("dark theme pushed window-style %q, want %q", got, want)
 	}
 }

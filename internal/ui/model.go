@@ -1470,7 +1470,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		// Re-assert the terminal backdrop: a reattach or a fresh outer
 		// terminal delivers a size message and may carry stale colors.
-		SyncTerminalBackground()
+		SyncTerminalColors()
 		m.publishPaneSize()
 		m.resizeSessions()
 		if m.fullFocus() {
@@ -1859,7 +1859,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// An agent that repainted the terminal background for itself leaves
 		// it on ours; the resume's WindowSizeMsg skips its own sync when the
 		// size is unchanged, so the detach restores the theme's here.
-		SyncTerminalBackground()
+		SyncTerminalColors()
 		// The attach client sized the window to the full terminal and tmux
 		// keeps that size on detach; pin it back to the current layout's
 		// box so the capture is not clipped on the right.
@@ -1937,7 +1937,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// The terminal comes back from an editor the way it comes back
 			// from an attach: painted in the editor's background, and
 			// without the mouse reporting focus mode armed on the way in.
-			SyncTerminalBackground()
+			SyncTerminalColors()
 			if m.mode == modeFocus {
 				resume = tea.EnableMouseCellMotion
 			}

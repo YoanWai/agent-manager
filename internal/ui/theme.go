@@ -447,31 +447,33 @@ func (t Theme) lightBackdrop() bool {
 	return 0.2126*float64(r)+0.7152*float64(g)+0.0722*float64(b) > 128
 }
 
-// agentPaneTheme is the backdrop an agent pane sits on: the theme's own,
-// the same color the terminal is painted and the capture is drawn over.
-// Agents that auto-detect follow it, so a light theme hosts light agents.
+// agentPaneTheme is the backdrop and text color an agent pane sits on: the
+// theme's own, the same colors the terminal is set to and the capture is
+// drawn over. Agents that auto-detect follow it, so a light theme hosts
+// light agents.
 func agentPaneTheme() tmux.PaneTheme {
 	fgbg := "15;0"
 	if current.lightBackdrop() {
 		fgbg = "0;15"
 	}
-	return tmux.PaneTheme{Background: current.Bg, ColorFgBg: fgbg}
+	return tmux.PaneTheme{Foreground: current.Text, Background: current.Bg, ColorFgBg: fgbg}
 }
 
 // current is the live token set; renderers that need a raw SGR sequence
 // (rather than a lipgloss style) read their hex from here.
 var current = themes[0]
 
-// SyncTerminalBackground repaints the terminal's own background to the
-// theme's backdrop (OSC 11). The frame can only paint its cell grid; any
+// SyncTerminalColors sets the terminal's own text and background colors to
+// the theme's (OSC 10 and 11). The frame can only paint its cell grid; any
 // window padding the terminal draws around that grid keeps the terminal's
-// color, so the two must be the same color for the frame's edges to look
-// exact. Terminals without OSC 11 ignore it.
-func SyncTerminalBackground() {
-	emitToTerminal("\x1b]11;" + current.Bg + "\x07")
+// background, so the two must be the same color for the frame's edges to
+// look exact, and text an agent prints in the default color must read on
+// that background. Terminals without OSC 10 and 11 ignore them.
+func SyncTerminalColors() {
+	emitToTerminal("\x1b]10;" + current.Text + "\x07\x1b]11;" + current.Bg + "\x07")
 }
 
-// syncPaneTheme hands the tmux server the background agent panes render on,
+// syncPaneTheme hands the tmux server the colors agent panes render on,
 // so an agent that auto-detects its palette resolves to the same side the
 // manager is drawing. Sessions that are already running keep whatever they
 // resolved at startup; the theme reaches them on their next launch. The
@@ -488,10 +490,10 @@ func (m *Model) syncPaneTheme() tea.Cmd {
 	}
 }
 
-// ResetTerminalBackground restores the terminal's own background (OSC 111)
-// when the manager exits.
-func ResetTerminalBackground() {
-	emitToTerminal("\x1b]111\x07")
+// ResetTerminalColors restores the terminal's own text and background colors
+// (OSC 110 and 111) when the manager exits.
+func ResetTerminalColors() {
+	emitToTerminal("\x1b]110\x07\x1b]111\x07")
 }
 
 // emitToTerminal sends a control sequence to whatever is actually drawing
