@@ -1155,6 +1155,72 @@ func TestLastMessage(t *testing.T) {
 	}
 }
 
+// gemini draws a message queued during a turn under the reply, with its edit
+// hint, until the turn picks it up. Frames captured from gemini v0.61.0.
+func TestLastMessageSkipsGeminiQueuedMessage(t *testing.T) {
+	engine := defaultEngine(t)
+	echo := " > Write a 600-word essay about terminal multiplexers in plain prose paragraphs. No headings, no lists, no tools.\n" +
+		"▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀\n"
+	reply := "✦ Terminal multiplexers let one terminal hold many sessions. A multiplexer keeps programs\n" +
+		"  running after the connection drops.\n"
+	queued := "  Queued (press ↑ to edit):\n" +
+		"    Also, after that finishes, tell me in one plain sentence what a terminal multiplexer is, keeping\n" +
+		"    it short.\n"
+	footer := "\n" +
+		" ⠦ Thinking... (esc to cancel, 14s)                                                       ? for shortcuts\n" +
+		"────────────────────────────────────────────────────────────────────────────────────────────────────\n" +
+		" Shift+Tab to accept edits                                                       1 MCP server · 1 skill\n" +
+		"▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄\n" +
+		" >   Type your message or @path/to/file\n" +
+		"▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀\n" +
+		" workspace (/directory)                          sandbox                                   /model\n" +
+		" /tmp/gtest                                      no sandbox                                  Auto"
+	want, _, _ := engine.LastMessage("gemini", echo+reply+footer)
+	if want != "Terminal multiplexers let one terminal hold many sessions. A multiplexer keeps programs running after the connection drops." {
+		t.Fatalf("quote without the queued block = %q", want)
+	}
+	if line, anchored, ok := engine.LastMessage("gemini", echo+reply+queued+footer); !ok || !anchored || line != want {
+		t.Fatalf("queued pane quote = %q anchored=%v ok=%v, want %q as without the queued block", line, anchored, ok, want)
+	}
+	// before the reply starts, the queued block is all there is under the echo
+	if line, _, ok := engine.LastMessage("gemini", echo+queued+footer); !ok || strings.Contains(line, "Queued") || strings.Contains(line, "Also, after") {
+		t.Fatalf("queued pane with no reply yet quotes %q ok=%v", line, ok)
+	}
+}
+
+// gemini's approval dialog replaces the composer, so the newest "> " row is the
+// echo of the prompt that raised it and the dialog sits below. The reply line
+// quotes what the dialog asks, not the previous answer. Frame captured from
+// gemini v0.61.0.
+func TestLastMessageQuotesGeminiApprovalQuestion(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := " > Tea or coffee?\n" +
+		"▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀\n" +
+		"✦ Tea, good choice.\n" +
+		"\n" +
+		"▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄\n" +
+		" > Run the shell command `sleep 15; echo second-done` in the foreground and wait for it to finish.\n" +
+		"▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀\n" +
+		"\n" +
+		"╭────────────────────────────────────────────────────────────────╮\n" +
+		"│ ? Shell  sleep 15; echo second-done                            │\n" +
+		"│ ╭────────────────────────────────────────────────────────────╮ │\n" +
+		"│ │ sleep 15; echo second-done                                 │ │\n" +
+		"│ ╰────────────────────────────────────────────────────────────╯ │\n" +
+		"│ Allow execution of [Shell]?                                    │\n" +
+		"│                                                                │\n" +
+		"│ ● 1. Allow once                                                │\n" +
+		"│   2. Allow for this session                                    │\n" +
+		"│   3. No, suggest changes (esc)                                 │\n" +
+		"╰────────────────────────────────────────────────────────────────╯"
+	if state, ok := engine.Match("gemini", pane); !ok || state != Waiting {
+		t.Fatalf("approval pane state = %q ok=%v, want waiting", state, ok)
+	}
+	if line, anchored, ok := engine.LastMessage("gemini", pane); !ok || !anchored || line != "Allow execution of [Shell]?" {
+		t.Fatalf("approval pane quote = %q anchored=%v ok=%v, want the dialog's question", line, anchored, ok)
+	}
+}
+
 // codex draws a queued follow-up under the running step and a done time under
 // a finished reply; neither is part of the reply the row quotes.
 func TestLastMessageSkipsCodexQueuedFollowUpAndDoneTime(t *testing.T) {
