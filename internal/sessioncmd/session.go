@@ -321,7 +321,7 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 	}
 	toolName := strings.TrimSpace(opts.Tool)
 	if toolName == "" {
-		if toolName, err = runtime.inheritedTool(caller); err != nil {
+		if toolName, err = runtime.toolFor(caller); err != nil {
 			return Session{}, err
 		}
 	}
@@ -410,19 +410,19 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 	return runtime.sessionInfo(sess, true, false), nil
 }
 
-// inheritedTool is the CLI a spawn runs when none is named. A terminal has none
-// to give, and guessing an agent for its shell would start a CLI nobody asked for.
-func (r *runtime) inheritedTool(caller store.Session) (string, error) {
+// toolFor is the CLI a spawn runs when it names none. A terminal has none to
+// give, and guessing an agent for its shell would start a CLI nobody asked for.
+func (r *runtime) toolFor(caller store.Session) (string, error) {
 	switch {
 	case caller.ID == "":
-		return r.defaultTool()
+		return r.settingsTool()
 	case r.cfg.Tools[caller.Tool].Shell:
-		return "", fmt.Errorf("a terminal runs a shell, not an agent CLI, so there is none to inherit; name one with %s (configured tools are %s)", r.words.SpawnTool, strings.Join(agentToolNames(r), ", "))
+		return "", r.askForTool("a terminal runs a shell, not an agent CLI, so there is none to inherit")
 	}
 	return caller.Tool, nil
 }
 
-func (r *runtime) defaultTool() (string, error) {
+func (r *runtime) settingsTool() (string, error) {
 	chosen, err := r.store.Setting(defaultToolSetting)
 	if err != nil {
 		return "", err
@@ -434,7 +434,11 @@ func (r *runtime) defaultTool() (string, error) {
 	if name := r.cfg.DefaultAgentTool(chosen, config.ParseHiddenTools(hidden)); name != "" {
 		return name, nil
 	}
-	return "", fmt.Errorf("every agent CLI is turned off for new sessions in settings; name one with %s (configured tools are %s)", r.words.SpawnTool, strings.Join(agentToolNames(r), ", "))
+	return "", r.askForTool("every agent CLI is turned off for new sessions in settings")
+}
+
+func (r *runtime) askForTool(reason string) error {
+	return fmt.Errorf("%s; name one with %s (configured tools are %s)", reason, r.words.SpawnTool, strings.Join(agentToolNames(r), ", "))
 }
 
 type worktreeTarget struct {

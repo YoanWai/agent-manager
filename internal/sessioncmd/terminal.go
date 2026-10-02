@@ -118,8 +118,8 @@ func (r *runtime) caller(sessionID string) (store.Session, error) {
 	return sess, err
 }
 
-// optionalCaller lets a script outside Agent Manager list, read, wait on and
-// spawn sessions, since none of those acts on the caller's own row.
+// optionalCaller serves commands that never act on the caller's own row, which
+// a script outside Agent Manager may run with no session at all.
 func (r *runtime) optionalCaller(sessionID string) (store.Session, error) {
 	if sessionID == "" {
 		return store.Session{}, nil
@@ -397,8 +397,8 @@ func (r *runtime) createTarget(caller store.Session, requestedGroup *string, dir
 	}
 	dir := caller.Cwd
 	if caller.ID == "" {
-		// A script outside Agent Manager has no pane, so its session opens
-		// where the script runs.
+		// There is no pane to ask. tmux would read the empty id's target am_
+		// as a prefix and answer with another session's directory.
 		if dir, err = os.Getwd(); err != nil {
 			return "", "", err
 		}

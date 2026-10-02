@@ -11,10 +11,8 @@ import (
 // alphabetically.
 var toolDisplayOrder = []string{"claude", "opencode", "codex", "grok", "gemini", "pi"}
 
-// AgentToolNames is every configured agent CLI in picker order. A block
-// declaring shell = true is not a CLI to spawn agents with, so it is left
-// out; its own key launches it, and a rename still keeps a shell session
-// on it.
+// AgentToolNames is every configured agent CLI in picker order. The shell
+// tool is not a CLI to spawn agents with, so it is left out.
 func (c Config) AgentToolNames() []string {
 	names := make([]string, 0, len(c.Tools))
 	for _, name := range c.ToolNames() {
