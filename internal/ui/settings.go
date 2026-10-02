@@ -6,32 +6,21 @@ import (
 	"strings"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/systheme"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// defaultTool is the CLI quick spawn launches: the settings choice when it
-// is still enabled, else the first enabled tool. A store error still yields
+// defaultTool is the CLI quick spawn launches. A store error still yields
 // the fallback but is surfaced, never swallowed.
 func (m *Model) defaultTool() string {
-	names := m.enabledToolNames()
-	if len(names) == 0 {
-		return ""
-	}
+	hidden := m.hiddenTools()
 	chosen, err := m.store.Setting("default_tool")
 	if err != nil {
 		m.errBar.text = "reading default tool setting: " + err.Error()
-		return names[0]
 	}
-	if chosen != "" {
-		for _, name := range names {
-			if name == chosen {
-				return chosen
-			}
-		}
-	}
-	return names[0]
+	return m.cfg.DefaultAgentTool(chosen, hidden)
 }
 
 // hiddenTools returns the set of CLI names the user turned off for new sessions.
@@ -41,24 +30,7 @@ func (m *Model) hiddenTools() map[string]bool {
 		m.errBar.text = "reading hidden tools setting: " + err.Error()
 		return nil
 	}
-	return parseHiddenTools(raw)
-}
-
-func parseHiddenTools(raw string) map[string]bool {
-	if raw == "" {
-		return nil
-	}
-	hidden := make(map[string]bool)
-	for _, part := range strings.Split(raw, ",") {
-		name := strings.TrimSpace(part)
-		if name != "" {
-			hidden[name] = true
-		}
-	}
-	if len(hidden) == 0 {
-		return nil
-	}
-	return hidden
+	return config.ParseHiddenTools(raw)
 }
 
 func formatHiddenTools(hidden map[string]bool) string {
@@ -475,7 +447,7 @@ func (m *Model) persistSettings() {
 }
 
 func (m *Model) openCLIPicker() {
-	names := sortedToolNames(m.cfg)
+	names := m.cfg.AgentToolNames()
 	hidden := make(map[string]bool)
 	for name, on := range m.hiddenTools() {
 		if on {

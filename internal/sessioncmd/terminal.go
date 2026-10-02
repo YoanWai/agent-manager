@@ -118,6 +118,15 @@ func (r *runtime) caller(sessionID string) (store.Session, error) {
 	return sess, err
 }
 
+// optionalCaller serves commands that never act on the caller's own row, which
+// a script outside Agent Manager may run with no session at all.
+func (r *runtime) optionalCaller(sessionID string) (store.Session, error) {
+	if sessionID == "" {
+		return store.Session{}, nil
+	}
+	return r.caller(sessionID)
+}
+
 func (r *runtime) terminal(id string) (store.Session, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -387,7 +396,13 @@ func (r *runtime) createTarget(caller store.Session, requestedGroup *string, dir
 		}
 	}
 	dir := caller.Cwd
-	if current, err := r.driver.PaneCurrentPath(caller.ID); err == nil {
+	if caller.ID == "" {
+		// There is no pane to ask. tmux would read the empty id's target am_
+		// as a prefix and answer with another session's directory.
+		if dir, err = os.Getwd(); err != nil {
+			return "", "", err
+		}
+	} else if current, err := r.driver.PaneCurrentPath(caller.ID); err == nil {
 		dir = current
 	}
 	resolved, err := resolveTerminalDirectory(dir)

@@ -84,7 +84,7 @@ func (m *Model) openRename() {
 		}
 	} else {
 		input.SetValue(entry.sess.Name)
-		tools := sortedToolNames(m.cfg)
+		tools := m.cfg.AgentToolNames()
 		shells := []string{}
 		for _, name := range m.cfg.ToolNames() {
 			if m.cfg.Tools[name].Shell {

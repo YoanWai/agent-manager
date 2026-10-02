@@ -1258,3 +1258,81 @@ func TestSessionsCreateFromATerminalAsksForATool(t *testing.T) {
 	}
 	waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, "ship the fix")
 }
+
+func TestSessionsCreateWithNoCallerTakesTheSettingsDefaults(t *testing.T) {
+	h := newSessionHarness(t)
+	scriptDir := t.TempDir()
+	t.Chdir(scriptDir)
+	if err := h.store.SetSetting(defaultToolSetting, "flagged"); err != nil {
+		t.Fatalf("set default tool: %v", err)
+	}
+	created, err := h.sessions.Create("", CreateSessionOptions{Name: "ticket-123", Prompt: "fix ticket 123"})
+	if err != nil {
+		t.Fatalf("Create with no caller: %v", err)
+	}
+	wantDir, _ := filepath.EvalSymlinks(scriptDir)
+	gotDir, _ := filepath.EvalSymlinks(created.Directory)
+	if created.Tool != "flagged" || created.Group != "" || gotDir != wantDir || !created.Running {
+		t.Fatalf("created with no caller = %+v, want flagged in the root group at %s", created, wantDir)
+	}
+	row, err := h.store.Get(created.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if row.ParentID != "" {
+		t.Fatalf("a session with no caller hangs under %q", row.ParentID)
+	}
+	waitForSessionOutput(t, h.sessions, "", created.ID, "fix ticket 123")
+
+	if err := h.store.SetSetting(hiddenToolsSetting, "flagged"); err != nil {
+		t.Fatalf("hide the default tool: %v", err)
+	}
+	fallback, err := h.sessions.Create("", CreateSessionOptions{Name: "ticket-124"})
+	if err != nil {
+		t.Fatalf("Create with the default tool hidden: %v", err)
+	}
+	if fallback.Tool != "blind" {
+		t.Fatalf("tool with the default hidden = %q, want the first enabled one, blind", fallback.Tool)
+	}
+
+	backend := "backend"
+	filed, err := h.sessions.Create("", CreateSessionOptions{Tool: "echoer", Group: &backend})
+	if err != nil {
+		t.Fatalf("Create into a group with no caller: %v", err)
+	}
+	groupDir, _ := filepath.EvalSymlinks(h.caller.Cwd)
+	if gotDir, _ := filepath.EvalSymlinks(filed.Directory); filed.Group != "backend" || gotDir != groupDir {
+		t.Fatalf("created into backend = %+v, want the group's directory %s", filed, groupDir)
+	}
+
+	if err := h.store.SetSetting(hiddenToolsSetting, "blind,dialog,dialog-hidden-composer,echoer,flagged,picker,picker-exit,resting"); err != nil {
+		t.Fatalf("hide every tool: %v", err)
+	}
+	if _, err := h.sessions.Create("", CreateSessionOptions{}); err == nil || !strings.Contains(err.Error(), "create_session tool") {
+		t.Fatalf("Create with every tool hidden = %v, want a request to name one", err)
+	}
+}
+
+func TestSessionsWithNoCallerListAndReadButStillRefuseToMessage(t *testing.T) {
+	h := newSessionHarness(t)
+	listed, err := h.sessions.List("")
+	if err != nil {
+		t.Fatalf("List with no caller: %v", err)
+	}
+	if len(listed) != 1 || listed[0].ID != h.caller.ID || listed[0].Self {
+		t.Fatalf("listed with no caller = %+v", listed)
+	}
+	groups, err := h.sessions.Groups("")
+	if err != nil || len(groups) != 1 || groups[0].Path != "backend" {
+		t.Fatalf("Groups with no caller = %+v, %v", groups, err)
+	}
+	if _, err := h.sessions.Read("", h.caller.ID); err != nil {
+		t.Fatalf("Read with no caller: %v", err)
+	}
+	if _, err := h.sessions.Send("", h.caller.ID, "hello"); err == nil || !strings.Contains(err.Error(), "not inside an Agent Manager session") {
+		t.Fatalf("Send with no caller = %v, want the missing caller named", err)
+	}
+	if _, err := h.sessions.Kill("", h.caller.ID); err == nil || !strings.Contains(err.Error(), "not inside an Agent Manager session") {
+		t.Fatalf("Kill with no caller = %v, want the missing caller named", err)
+	}
+}
