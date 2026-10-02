@@ -159,6 +159,48 @@ func TestOlderPollAfterFreshPollCannotUndoReorder(t *testing.T) {
 	}
 }
 
+func TestOlderListingStillDeliversNotificationFocus(t *testing.T) {
+	m := buildModel(t)
+	for _, sess := range []store.Session{
+		{ID: "a", Name: "alpha", Tool: "claude", Cwd: "/tmp", Status: "idle"},
+		{ID: "b", Name: "bravo", Tool: "claude", Cwd: "/tmp", Status: "idle"},
+	} {
+		if err := m.store.CreateSession(sess); err != nil {
+			t.Fatal(err)
+		}
+	}
+	loadStoredRows(t, m)
+	freshAt := time.Now().Add(time.Second)
+	updated, _ := m.Update(refreshMsg{sessions: slices.Clone(m.sessions), listedAt: freshAt})
+	m = updated.(*Model)
+	m.selectSessionRow(t, "alpha")
+
+	updated, _ = m.Update(refreshMsg{
+		sessions:       []store.Session{{ID: "obsolete"}},
+		listedAt:       freshAt.Add(-time.Second),
+		groups:         []string{"obsolete"},
+		focusID:        "b",
+		queuedMessages: map[string]int{"b": 2},
+		paneLines:      map[string]string{"b": "latest pane"},
+	})
+	m = updated.(*Model)
+	if got, want := rowIDs(m), []string{"a", "b"}; !slices.Equal(got, want) {
+		t.Fatalf("older listing replaced current rows: %v want %v", got, want)
+	}
+	if len(m.groups) != 0 {
+		t.Fatalf("older listing replaced current groups: %v", m.groups)
+	}
+	if selected, ok := m.selected(); !ok || selected.ID != "b" {
+		t.Fatalf("notification focus was lost: selected = %q, found = %t", selected.ID, ok)
+	}
+	if got := m.queuedMessages["b"]; got != 2 {
+		t.Fatalf("queued message count was lost: %d", got)
+	}
+	if got := m.paneLines["b"]; got != "latest pane" {
+		t.Fatalf("pane line was lost: %q", got)
+	}
+}
+
 func TestStaleGroupPollKeepsAnotherManagersUnrelatedReorder(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()

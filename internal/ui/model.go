@@ -1515,33 +1515,34 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.previewCmd(sess, m.previewGen), m.previewTick())
 
 	case refreshMsg:
-		if !msg.listedAt.IsZero() {
-			if msg.listedAt.Before(m.lastListedAt) {
-				return m, nil
-			}
+		// An older listing still carries focus consumed from a notification.
+		staleListing := !msg.listedAt.IsZero() && msg.listedAt.Before(m.lastListedAt)
+		if !staleListing && !msg.listedAt.IsZero() {
 			m.lastListedAt = msg.listedAt
 		}
 		m.booting = false
 		m.ageError()
-		// The focused session can die or vanish under us; fall back to the
-		// list rather than typing into nothing.
-		sessions := m.dropRecentlyRemoved(m.keepPendingLaunches(msg.sessions, msg.listedAt), msg.listedAt)
-		stripDeletedGroups(&msg, m.goneGroups)
-		sessions = m.reconcileReorder(sessions, &msg)
 		var focusExit tea.Cmd
-		if m.mode == modeFocus {
-			if sess, ok := m.selected(); !ok || sessionGone(sessions, sess.ID) {
-				focusExit = m.leaveFocus()
+		if !staleListing {
+			// The focused session can die or vanish under us; fall back to the
+			// list rather than typing into nothing.
+			sessions := m.dropRecentlyRemoved(m.keepPendingLaunches(msg.sessions, msg.listedAt), msg.listedAt)
+			stripDeletedGroups(&msg, m.goneGroups)
+			sessions = m.reconcileReorder(sessions, &msg)
+			if m.mode == modeFocus {
+				if sess, ok := m.selected(); !ok || sessionGone(sessions, sess.ID) {
+					focusExit = m.leaveFocus()
+				}
 			}
+			m.sessions = sessions
+			m.groups = msg.groups
+			m.groupPaths = msg.groupPaths
+			m.groupWorktrees = msg.groupWorktrees
+			m.archivedGroups = msg.archivedGroups
 		}
-		m.sessions = sessions
 		m.tmuxSocket = msg.tmuxSocket
 		m.leadingManager = msg.leadingManager
 		m.panes = msg.panes
-		m.groups = msg.groups
-		m.groupPaths = msg.groupPaths
-		m.groupWorktrees = msg.groupWorktrees
-		m.archivedGroups = msg.archivedGroups
 		m.agents = msg.agents
 		m.queuedMessages = msg.queuedMessages
 		if m.paneLines == nil {
