@@ -189,6 +189,10 @@ type Model struct {
 	// read them every frame.
 	hideHeader bool
 	hideStats  bool
+	// terminalBackground leaves the backdrop's cells on the terminal's own
+	// colors, for translucent windows. Off polarity, so a bare Model{}
+	// paints the backdrop like the default does.
+	terminalBackground bool
 	// mouseDisabled mirrors the persisted mouse-reporting setting: true gives
 	// the rail and content column back to the terminal's own click-drag text
 	// selection. Read on every Update via syncMouseCapture. Named for its off
@@ -507,6 +511,9 @@ type settingsState struct {
 	notifications   bool
 	notifyFinished  bool
 	themeAuto       bool
+	// terminalBackground is the background row's choice, applied to the
+	// model as it is stepped so the frame previews it.
+	terminalBackground bool
 	// manualTheme is the persisted choice the theme key keeps while
 	// auto-detect drives the live palette, so turning auto off returns
 	// to it.
@@ -528,6 +535,7 @@ const (
 	settingsFieldTool = iota
 	settingsFieldTheme
 	settingsFieldThemeAuto
+	settingsFieldBackground
 	settingsFieldDensity
 	settingsFieldSessionLayout
 	settingsFieldHeader
@@ -820,6 +828,7 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		model.update.releases = cached.Releases
 		model.update.checked = len(cached.Releases) > 0
 	}
+	model.terminalBackground = model.storedTerminalBackground()
 	model.openStartupNotice()
 	model.indexReleaseRanges()
 	return model
@@ -1461,7 +1470,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		// Re-assert the terminal backdrop: a reattach or a fresh outer
 		// terminal delivers a size message and may carry stale colors.
-		SyncTerminalBackground()
+		SyncTerminalColors()
 		m.publishPaneSize()
 		m.resizeSessions()
 		if m.fullFocus() {
@@ -1850,7 +1859,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// An agent that repainted the terminal background for itself leaves
 		// it on ours; the resume's WindowSizeMsg skips its own sync when the
 		// size is unchanged, so the detach restores the theme's here.
-		SyncTerminalBackground()
+		SyncTerminalColors()
 		// The attach client sized the window to the full terminal and tmux
 		// keeps that size on detach; pin it back to the current layout's
 		// box so the capture is not clipped on the right.
@@ -1928,7 +1937,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// The terminal comes back from an editor the way it comes back
 			// from an attach: painted in the editor's background, and
 			// without the mouse reporting focus mode armed on the way in.
-			SyncTerminalBackground()
+			SyncTerminalColors()
 			if m.mode == modeFocus {
 				resume = tea.EnableMouseCellMotion
 			}

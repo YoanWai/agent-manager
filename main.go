@@ -234,15 +234,16 @@ func run() error {
 	if err := ui.DisableAlternateScroll(); err != nil {
 		return err
 	}
-	// The terminal's own background follows the theme while the manager
-	// runs, so window padding outside the cell grid matches the frame —
-	// through tmux's passthrough envelope when a multiplexer is hosting us.
+	// The terminal's own text and background colors follow the theme while
+	// the manager runs, so window padding outside the cell grid matches the
+	// frame — through tmux's passthrough envelope when a multiplexer is
+	// hosting us.
 	ui.EnableTerminalPassthrough()
-	ui.SyncTerminalBackground()
+	ui.SyncTerminalColors()
 	model.StartPoller(program.Send)
 	final, runErr := program.Run()
 	catalog.StopAll()
-	ui.ResetTerminalBackground()
+	ui.ResetTerminalColors()
 	if runErr == nil {
 		if finished, ok := final.(*ui.Model); ok && finished.RestartPath() != "" {
 			// A self-update swapped the binary on disk; exec replaces this

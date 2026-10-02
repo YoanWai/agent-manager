@@ -60,15 +60,16 @@ func (d *Driver) currentSessionKeys() keybind.Table {
 	return keybind.DefaultSession()
 }
 
-// PaneTheme is the background agent panes are rendered on. The manager
-// knows that color — it paints every capture on it and repaints the
-// terminal to it for a full-screen attach — but an agent inside a pane
-// cannot discover it: these sessions run on a server whose only client is
-// in control mode, so there is no terminal to answer an OSC 11 background
-// query, and the environment carries no COLORFGBG either. Declaring both
-// on the server hands an auto-detecting agent the answer the manager
-// already renders, instead of leaving it to guess.
+// PaneTheme is the text and background colors agent panes are rendered on.
+// The manager knows them — it paints every capture with them and sets the
+// terminal to them for a full-screen attach — but an agent inside a pane
+// cannot discover them: these sessions run on a server whose only client is
+// in control mode, so there is no terminal to answer an OSC 10 or 11 color
+// query, and the environment carries no COLORFGBG either. Declaring them on
+// the server hands an auto-detecting agent the answer the manager already
+// renders, instead of leaving it to guess.
 type PaneTheme struct {
+	Foreground string // "#rrggbb"; tmux answers pane OSC 10 queries with it
 	Background string // "#rrggbb"; tmux answers pane OSC 11 queries with it
 	ColorFgBg  string // "fg;bg" color indexes for agents reading COLORFGBG
 }
@@ -79,7 +80,7 @@ type PaneTheme struct {
 // windows a user opens inside a session later.
 func paneThemeArgs(t PaneTheme) []string {
 	return []string{
-		"set-option", "-g", "window-style", "bg=" + t.Background, ";",
+		"set-option", "-g", "window-style", "fg=" + t.Foreground + ",bg=" + t.Background, ";",
 		"set-environment", "-g", "COLORFGBG", t.ColorFgBg,
 	}
 }

@@ -369,6 +369,10 @@ func (m *Model) viewSettings() string {
 	if m.settings.themeAuto {
 		themeAuto = "on"
 	}
+	background := "theme"
+	if m.settings.terminalBackground {
+		background = "terminal"
+	}
 	notifications := "off"
 	if m.settings.notifications {
 		notifications = "on"
@@ -416,6 +420,7 @@ func (m *Model) viewSettings() string {
 		row(settingsFieldTheme, "theme", themes[m.settings.themeIndex].Name) + "  " +
 		themeSwatch(themes[m.settings.themeIndex]) + "\n" +
 		row(settingsFieldThemeAuto, "theme follows OS", themeAuto) + "\n" +
+		row(settingsFieldBackground, "background", background) + "\n" +
 		row(settingsFieldDensity, "list density", density) + "\n" +
 		row(settingsFieldSessionLayout, "sessions layout", sessionLayout) + "\n" +
 		row(settingsFieldHeader, "header", header) + "\n" +

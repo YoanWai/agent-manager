@@ -201,6 +201,16 @@ func storedHideStats(st *store.Store) bool {
 	return chosen == "on"
 }
 
+// storedTerminalBackground reads the background row. A store error is
+// surfaced but still yields the painted default.
+func (m *Model) storedTerminalBackground() bool {
+	chosen, err := m.store.Setting(backgroundSetting)
+	if err != nil {
+		m.errBar.text = "reading background setting: " + err.Error()
+	}
+	return chosen == "terminal"
+}
+
 // storedMouseDisabled reads the persisted mouse-reporting choice. On is the
 // default; only an explicit "off" gives the rail back to the terminal.
 func storedMouseDisabled(st *store.Store) bool {
@@ -282,6 +292,8 @@ func (m *Model) openSettings() {
 		notifyFinished:  storedNotifyFinished(m.store),
 		themeAuto:       themeAutoEnabled(m.store),
 		manualTheme:     themes[themeIndex(storedTheme(m.store))].Name,
+
+		terminalBackground: m.terminalBackground,
 	}
 	m.mode = modeSettings
 }
@@ -413,6 +425,13 @@ func (m *Model) persistSettings() {
 		hideStats = "on"
 	}
 	if err := m.store.SetSetting(hideStatsSetting, hideStats); err != nil {
+		m.errBar.text = err.Error()
+	}
+	background := "theme"
+	if m.settings.terminalBackground {
+		background = "terminal"
+	}
+	if err := m.store.SetSetting(backgroundSetting, background); err != nil {
 		m.errBar.text = err.Error()
 	}
 	mouseMode := "on"
@@ -558,7 +577,7 @@ func (m *Model) cycleSetting(step int) tea.Cmd {
 		m.settings.themeIndex = (m.settings.themeIndex + step + len(themes)) % len(themes)
 		m.settings.manualTheme = themes[m.settings.themeIndex].Name
 		applyTheme(themes[m.settings.themeIndex])
-		SyncTerminalBackground()
+		SyncTerminalColors()
 		return m.syncPaneTheme()
 	case settingsFieldThemeAuto:
 		m.settings.themeAuto = !m.settings.themeAuto
@@ -568,8 +587,11 @@ func (m *Model) cycleSetting(step int) tea.Cmd {
 		}
 		m.settings.themeIndex = themeIndex(name)
 		applyTheme(themes[m.settings.themeIndex])
-		SyncTerminalBackground()
+		SyncTerminalColors()
 		return m.syncPaneTheme()
+	case settingsFieldBackground:
+		m.settings.terminalBackground = !m.settings.terminalBackground
+		m.terminalBackground = m.settings.terminalBackground
 	case settingsFieldDensity:
 		m.settings.comfortableRows = !m.settings.comfortableRows
 	case settingsFieldSessionLayout:
