@@ -172,6 +172,25 @@ func TestEnsureBindingsIgnoresAMissingServer(t *testing.T) {
 	}
 }
 
+// Create runs on the UI's update path, and a new session cannot carry a pin,
+// so with tmux_prefix off only a refresh looks for one.
+func TestOnlyARefreshLooksForAPinnedPrefix(t *testing.T) {
+	dir := t.TempDir()
+	stub := dir + "/tmux"
+	script := "#!/bin/sh\ncase \"$*\" in *" + pinnedPrefixOption + "*) echo 'pin read' >&2; exit 1;; esac\nexit 0\n"
+	if err := os.WriteFile(stub, []byte(script), 0o700); err != nil {
+		t.Fatalf("stub: %v", err)
+	}
+	driver := &Driver{bin: stub, socket: testSocket}
+
+	if err := driver.installSessionUX("am_new"); err != nil {
+		t.Fatalf("installing a session with tmux_prefix off should not read the pin: %v", err)
+	}
+	if err := driver.RefreshChrome("live"); err == nil || !strings.Contains(err.Error(), "pin read") {
+		t.Fatalf("a refresh should look for a pin to take off, err = %v", err)
+	}
+}
+
 func TestSetLabelNeutralizesFormatStrings(t *testing.T) {
 	driver := requireTmux(t)
 	id := "lbl" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
@@ -702,6 +721,75 @@ func TestRefreshChromeResolvesAGloballySetPrefix(t *testing.T) {
 	}
 	if !strings.Contains(string(right), "C-q d = back") {
 		t.Fatalf("footer should advertise the prefix escape for a globally-set prefix, got %q", right)
+	}
+}
+
+// tmux.conf's prefix beats every binding, so tmux_prefix pins another one to free that key.
+func TestTmuxPrefixFreesTheServersPrefixForASessionKey(t *testing.T) {
+	driver := requireTmux(t)
+	restoreDefaultKeys(t, driver)
+	original, err := tmuxCmd("show-options", "-g", "-v", "prefix").CombinedOutput()
+	if err != nil {
+		t.Fatalf("show-options prefix: %v: %s", err, original)
+	}
+	t.Cleanup(func() {
+		if out, err := tmuxCmd("set-option", "-g", "prefix", strings.TrimSpace(string(original))).CombinedOutput(); err != nil {
+			t.Errorf("restore prefix: %v: %s", err, out)
+		}
+	})
+	if out, err := tmuxCmd("set-option", "-g", "prefix", "C-s").CombinedOutput(); err != nil {
+		t.Fatalf("set the tmux.conf prefix: %v: %s", err, out)
+	}
+	detachOnCtrlS := keybind.DefaultSession().With(keybind.Detach, bindingOf(t, "ctrl+s"))
+	driver.SetSessionKeys(detachOnCtrlS.With(keybind.TmuxPrefix, bindingOf(t, "ctrl+b")))
+	id := "tmuxprefix" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", "", nil, 0, 0); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+
+	sessionOption := func(option string) string {
+		t.Helper()
+		out, err := tmuxCmd("show-options", "-q", "-v", "-t", "am_"+id, option).CombinedOutput()
+		if err != nil {
+			t.Fatalf("show-options %s: %v: %s", option, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	footer := func() string {
+		t.Helper()
+		right, err := tmuxCmd("display-message", "-p", "-t", "am_"+id, "#{T:status-right}").CombinedOutput()
+		if err != nil {
+			t.Fatalf("status-right: %v: %s", err, right)
+		}
+		return string(right)
+	}
+	if got := sessionOption("prefix") + " " + sessionOption("prefix2"); got != "C-b None" {
+		t.Fatalf("the session should answer to the pinned prefix alone, got %q", got)
+	}
+	if right := footer(); !strings.Contains(right, "Ctrl+s / C-b d = back") {
+		t.Fatalf("ctrl+s should be free to detach, got %q", right)
+	}
+
+	driver.SetSessionKeys(detachOnCtrlS)
+	if err := driver.RefreshChrome(id); err != nil {
+		t.Fatalf("RefreshChrome without tmux_prefix: %v", err)
+	}
+	if got := sessionOption("prefix"); got != "" {
+		t.Fatalf("clearing tmux_prefix should hand back the server's prefix, the session still sets %q", got)
+	}
+	if right := footer(); strings.Contains(right, "Ctrl+s /") || !strings.Contains(right, "C-s d = back") {
+		t.Fatalf("the server's prefix should shadow ctrl+s again, got %q", right)
+	}
+
+	if out, err := tmuxCmd("set-option", "-t", "am_"+id, "prefix", "C-a").CombinedOutput(); err != nil {
+		t.Fatalf("set a session prefix by hand: %v: %s", err, out)
+	}
+	if err := driver.RefreshChrome(id); err != nil {
+		t.Fatalf("RefreshChrome over a hand-set prefix: %v", err)
+	}
+	if got := sessionOption("prefix"); got != "C-a" {
+		t.Fatalf("a prefix the manager never set should stay, got %q", got)
 	}
 }
 

@@ -30,6 +30,9 @@ const defaultSocket = "agentmgr"
 // just detached from.
 const requestOption = "@am_request"
 
+// pinnedPrefixOption marks a prefix the manager set, the only kind unpinPrefix removes.
+const pinnedPrefixOption = "@am_pinned_prefix"
+
 const (
 	RequestReview = "review"
 	RequestEditor = "editor"
@@ -373,10 +376,50 @@ func (d *Driver) installSessionUX(name string) error {
 	if err := d.EnsureBindings(); err != nil {
 		return err
 	}
+	// A new session carries no pin to take off, so only a chosen prefix needs work here.
+	if keys := d.tmuxPrefixKeys(); len(keys) > 0 {
+		if err := d.pinPrefix(name, keys); err != nil {
+			return err
+		}
+	}
 	if err := d.styleStatusBar(name); err != nil {
 		return err
 	}
 	_, err := d.run("set-option", "-t", name, "status-left", "")
+	return err
+}
+
+func (d *Driver) tmuxPrefixKeys() []keybind.Key {
+	return d.currentSessionKeys().Binding(keybind.TmuxPrefix).Keys()
+}
+
+// Set per session, so unsetting hands back the server-wide prefix tmux.conf sets.
+func (d *Driver) pinPrefix(name string, keys []keybind.Key) error {
+	secondary := "None"
+	if len(keys) > 1 {
+		secondary = keys[1].Tmux()
+	}
+	_, err := d.run(commandList(
+		[]string{"set-option", "-t", name, "prefix", keys[0].Tmux()},
+		[]string{"set-option", "-t", name, "prefix2", secondary},
+		[]string{"set-option", "-t", name, pinnedPrefixOption, "on"},
+	)...)
+	return err
+}
+
+func (d *Driver) unpinPrefix(name string) error {
+	pinned, err := d.run("show-options", "-q", "-v", "-t", name, pinnedPrefixOption)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(pinned) == "" {
+		return nil
+	}
+	_, err = d.run(commandList(
+		[]string{"set-option", "-u", "-t", name, "prefix"},
+		[]string{"set-option", "-u", "-t", name, "prefix2"},
+		[]string{"set-option", "-u", "-t", name, pinnedPrefixOption},
+	)...)
 	return err
 }
 
@@ -546,11 +589,19 @@ func (d *Driver) ownedRootBindings() ([]string, error) {
 	return keys, nil
 }
 
-// RefreshChrome re-applies the status bar chrome to a live session so a
-// session created before a manager update picks up the current footer,
-// without disturbing its name label.
+// RefreshChrome re-applies the prefix and status bar chrome, keeping the session's name label.
 func (d *Driver) RefreshChrome(id string) error {
-	return d.styleStatusBar(sessionName(id))
+	name := sessionName(id)
+	var err error
+	if keys := d.tmuxPrefixKeys(); len(keys) > 0 {
+		err = d.pinPrefix(name, keys)
+	} else {
+		err = d.unpinPrefix(name)
+	}
+	if err != nil {
+		return err
+	}
+	return d.styleStatusBar(name)
 }
 
 // SendText delivers text into the session's pane and presses Enter, so the
