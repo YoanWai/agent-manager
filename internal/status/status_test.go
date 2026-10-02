@@ -1232,6 +1232,80 @@ func TestLastMessageSkipsCodexQueuedFollowUpAndDoneTime(t *testing.T) {
 	}
 }
 
+// a message sent with Enter during a turn is drawn under the running step as
+// "Messages to be submitted ..." until the tool call ends, and a rejected
+// steer re-appears under an end-of-turn heading; the heading wraps on a
+// narrow pane, and none of it is the reply the row quotes.
+func TestLastMessageSkipsCodexPendingMessages(t *testing.T) {
+	engine := defaultEngine(t)
+	transcript := "› Run the shell command `sleep 60` in the foreground and wait for it to finish.\n" +
+		"\n" +
+		"• Running sleep 60\n" +
+		"\n" +
+		"• Working (12s • esc to interrupt)\n" +
+		"\n"
+	composer := "› Ask Codex to do anything\n" +
+		"  gpt-5.1-codex default · /home/dev"
+	want, _, _ := engine.LastMessage("codex", transcript+composer)
+	blocks := map[string]string{
+		"120 cols": "• Messages to be submitted after next tool call (press esc to interrupt and send immediately)\n" +
+			"  ↳ Please also say hello when done.\n",
+		"22 cols": "• Messages to be\n" +
+			"  submitted after\n" +
+			"  next tool call\n" +
+			"  (press esc to\n" +
+			"  interrupt and send\n" +
+			"  immediately)\n" +
+			"  ↳ Please also say\n" +
+			"    hello when done.\n",
+		"15 cols": "• Messages to\n" +
+			"  be submitted\n" +
+			"  after next\n" +
+			"  tool call\n" +
+			"  (press esc to\n" +
+			"  interrupt and\n" +
+			"  send\n" +
+			"  immediately)\n" +
+			"  ↳ Please also\n" +
+			"    say hello\n" +
+			"    when done.\n",
+		"end of turn, 120 cols": "• Messages to be submitted at end of turn\n" +
+			"  ↳ Rejected steer that will be retried.\n",
+		"end of turn, 15 cols": "• Messages to\n" +
+			"  be submitted at\n" +
+			"  end of turn\n" +
+			"  ↳ Rejected\n" +
+			"    steer.\n",
+	}
+	for name, block := range blocks {
+		pane := transcript + block + "\n" + composer
+		if line, _, ok := engine.LastMessage("codex", pane); !ok || line != want {
+			t.Errorf("%s pending block quote = %q ok=%v, want %q as without the block", name, line, ok, want)
+		}
+	}
+
+	reply := "› Status?\n" +
+		"\n" +
+		"• Messages arrive in order.\n" +
+		"  done 12:59 AM\n" +
+		"\n" +
+		composer
+	if line, _, ok := engine.LastMessage("codex", reply); !ok || line != "Messages arrive in order." {
+		t.Fatalf("genuine reply starting 'Messages' quote = %q ok=%v", line, ok)
+	}
+
+	for name, text := range map[string]struct{ body, want string }{
+		"one line":  {"• Messages to be retried go to the dead-letter queue.\n", "Messages to be retried go to the dead-letter queue."},
+		"wrapped":   {"• Messages to\n  be retried go to the DLQ.\n", "Messages to be retried go to the DLQ."},
+		"submitted": {"• Messages to be submitted soon are batched.\n", "Messages to be submitted soon are batched."},
+	} {
+		pane := "› Status?\n\n" + text.body + "  done 12:59 AM\n\n" + composer
+		if line, _, ok := engine.LastMessage("codex", pane); !ok || line != text.want {
+			t.Errorf("%s genuine reply quote = %q ok=%v, want %q", name, line, ok, text.want)
+		}
+	}
+}
+
 // InputDraft reads what the user has typed after the composer marker, and
 // refuses the placeholder wording a composer paints on its empty row.
 func TestInputDraft(t *testing.T) {

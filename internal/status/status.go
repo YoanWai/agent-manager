@@ -526,12 +526,13 @@ func (tr toolRules) chromeBlockRows(lines []string) []bool {
 		}
 		matchText := line
 		if !open {
-			for j := i + 1; j < len(lines); j++ {
+			// a heading wraps over up to four rows on the narrowest pane
+			for j := i + 1; j < len(lines) && j <= i+3; j++ {
 				next := strings.TrimRight(lines[j], " \t")
-				if strings.TrimSpace(next) != "" {
-					matchText += "\n" + next
+				if strings.TrimSpace(next) == "" {
 					break
 				}
+				matchText += "\n" + next
 			}
 		}
 		open = open || tr.chromeBlock.MatchString(matchText)
