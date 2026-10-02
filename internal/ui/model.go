@@ -190,7 +190,7 @@ type Model struct {
 	hideHeader bool
 	hideStats  bool
 	// terminalBackground leaves the backdrop's cells on the terminal's own
-	// background, for translucent windows. Off polarity, so a bare Model{}
+	// colors, for translucent windows. Off polarity, so a bare Model{}
 	// paints the backdrop like the default does.
 	terminalBackground bool
 	// mouseDisabled mirrors the persisted mouse-reporting setting: true gives

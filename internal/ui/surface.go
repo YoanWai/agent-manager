@@ -12,8 +12,9 @@ import (
 // selected entry lifted once more. Views draw the backdrop as unpainted
 // cells; fillBackdrop paints them, text color included, over the finished
 // frame, and the terminal color sync keeps the window padding around the
-// cell grid at the same tone. With the terminal background setting the cells stay unpainted, so a
-// translucent window blends them exactly like its padding.
+// cell grid at the same tone. With the terminal background setting the
+// cells stay unpainted, so a translucent window blends them exactly like
+// its padding.
 
 // backdropHex is the backdrop's fill while a view draws: none. paint treats
 // it as "pad, but leave the terminal's background alone".
@@ -301,8 +302,8 @@ func parameterArguments(params ansi.Params, at int) int {
 
 // contentLine is one row of the content column: ours to paint, a seam that
 // spans the column edge to edge, or captured output that must stay on the
-// backdrop. Rail rows also carry the tone their fill uses,
-// so the edge column beside them can match the selected entry's band.
+// backdrop. Rail rows also carry the tone their fill uses, so the edge
+// column beside them can match the selected entry's band.
 type contentLine struct {
 	text string
 	raw  bool

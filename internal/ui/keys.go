@@ -532,7 +532,7 @@ const hideHeaderSetting = "hide_header"
 const hideStatsSetting = "hide_stats"
 
 // backgroundSetting is what fills the backdrop's cells: "terminal" leaves
-// the terminal's own background, anything else paints the theme's.
+// the terminal's own colors, anything else paints the theme's.
 const backgroundSetting = "background"
 
 const focusKeySetting = "focus_key"
