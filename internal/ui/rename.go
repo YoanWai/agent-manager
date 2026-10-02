@@ -81,6 +81,7 @@ func (m *Model) openRename() {
 			input:         input,
 			dir:           dir,
 			worktreeIndex: groupWorktreeIndex(m.groupWorktrees[entry.group]),
+			base:          m.groupBases[entry.group],
 		}
 	} else {
 		input.SetValue(entry.sess.Name)
@@ -121,7 +122,7 @@ func (m *Model) renameFocus(delta int) {
 	m.pathSugg.reset()
 	fields := 2
 	if m.rename.isGroup {
-		fields = 3
+		fields = 4
 	}
 	m.rename.focus = (m.rename.focus + delta + fields) % fields
 	m.rename.input.Blur()
@@ -188,13 +189,18 @@ func (m *Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "left", "right":
+		delta := 1
+		if msg.String() == "left" {
+			delta = -1
+		}
 		if m.rename.isGroup && m.rename.focus == 2 {
-			delta := 1
-			if msg.String() == "left" {
-				delta = -1
-			}
 			count := len(groupWorktreeOptions)
 			m.rename.worktreeIndex = (m.rename.worktreeIndex + delta + count) % count
+			return m, nil
+		}
+		if m.rename.isGroup && m.rename.focus == 3 {
+			dir, _ := resolveExistingDir(m.rename.dir.Value(), m.groupDefaultDir(parentGroup(m.rename.path)))
+			m.rename.base = m.stepGroupBase(dir, m.rename.base, delta)
 			return m, nil
 		}
 	case "enter":
@@ -262,7 +268,11 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 			m.errBar.text = err.Error()
 			return m, nil
 		}
-		m.renameGroupLocally(m.rename.path, newPath, dir, worktree)
+		if err := m.store.SetGroupBase(newPath, m.rename.base); err != nil {
+			m.errBar.text = err.Error()
+			return m, nil
+		}
+		m.renameGroupLocally(m.rename.path, newPath, dir, worktree, m.rename.base)
 		m.relabelSubtree(newPath)
 	} else {
 		index := -1
@@ -325,7 +335,7 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 // renameGroupLocally rewrites the in-memory tree right away, so the
 // frames between saving and the poller's next refresh already show the
 // new name and path instead of flashing the stale ones.
-func (m *Model) renameGroupLocally(old, newPath, dir, worktree string) {
+func (m *Model) renameGroupLocally(old, newPath, dir, worktree, base string) {
 	moved := func(group string) (string, bool) {
 		if group == old || strings.HasPrefix(group, old+"/") {
 			return newPath + group[len(old):], true
@@ -345,17 +355,8 @@ func (m *Model) renameGroupLocally(old, newPath, dir, worktree string) {
 	}
 	groupPaths[newPath] = dir
 	m.groupPaths = groupPaths
-	groupWorktrees := make(map[string]string, len(m.groupWorktrees))
-	for group, choice := range m.groupWorktrees {
-		group, _ = moved(group)
-		groupWorktrees[group] = choice
-	}
-	if worktree == "" {
-		delete(groupWorktrees, newPath)
-	} else {
-		groupWorktrees[newPath] = worktree
-	}
-	m.groupWorktrees = groupWorktrees
+	m.groupWorktrees = setGroupChoice(movedChoices(m.groupWorktrees, moved), newPath, worktree)
+	m.groupBases = setGroupChoice(movedChoices(m.groupBases, moved), newPath, base)
 	for group, folded := range m.collapsed {
 		if renamed, ok := moved(group); ok {
 			delete(m.collapsed, group)
@@ -363,6 +364,29 @@ func (m *Model) renameGroupLocally(old, newPath, dir, worktree string) {
 		}
 	}
 	m.persistCollapsed()
+}
+
+// movedChoices rekeys a per-group choice map for a renamed subtree.
+func movedChoices(choices map[string]string, moved func(string) (string, bool)) map[string]string {
+	out := make(map[string]string, len(choices))
+	for group, choice := range choices {
+		group, _ = moved(group)
+		out[group] = choice
+	}
+	return out
+}
+
+// setGroupChoice records a group's own choice, "" dropping it to inherit.
+func setGroupChoice(choices map[string]string, group, value string) map[string]string {
+	if choices == nil {
+		choices = map[string]string{}
+	}
+	if value == "" {
+		delete(choices, group)
+	} else {
+		choices[group] = value
+	}
+	return choices
 }
 
 // relabelSession refreshes one session's tmux status-bar label from the db.

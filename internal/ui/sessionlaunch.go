@@ -20,7 +20,7 @@ func (m *Model) launchNewSession(sess store.Session, tool config.Tool, baseComma
 	}
 	discardWorktree := func() {
 		if opts.rollbackWorktree {
-			m.discardWorktree(sess.WorktreeRepo, sess.Cwd, sess.WorktreeBranch)
+			m.discardWorktree(sess.WorktreeRepo, sess.Cwd, sess.WorktreeBranch, m.groupBase(sess.Group))
 		}
 	}
 	command, env, err := m.buildLaunch(sess.Tool, tool, baseCommand, sess.ID)
@@ -170,6 +170,7 @@ func stripDeletedGroups(msg *refreshMsg, gone map[string]goneMark) {
 	for path := range removed {
 		delete(msg.groupPaths, path)
 		delete(msg.groupWorktrees, path)
+		delete(msg.groupBases, path)
 		delete(msg.archivedGroups, path)
 	}
 }
