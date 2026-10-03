@@ -50,13 +50,3 @@ func TestDefaultAgentToolKeepsAnEnabledChoiceElseTakesTheFirstEnabled(t *testing
 		}
 	}
 }
-
-func TestParseHiddenTools(t *testing.T) {
-	if got := ParseHiddenTools(""); got != nil {
-		t.Fatalf("empty parse = %v", got)
-	}
-	got := ParseHiddenTools("codex, grok")
-	if !got["codex"] || !got["grok"] || len(got) != 2 {
-		t.Fatalf("parse = %v", got)
-	}
-}

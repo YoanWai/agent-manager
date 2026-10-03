@@ -2,11 +2,8 @@ package ui
 
 import (
 	"net/url"
-	"sort"
-	"strings"
 	"time"
 
-	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/systheme"
 	tea "github.com/charmbracelet/bubbletea"
@@ -16,7 +13,7 @@ import (
 // the fallback but is surfaced, never swallowed.
 func (m *Model) defaultTool() string {
 	hidden := m.hiddenTools()
-	chosen, err := m.store.Setting("default_tool")
+	chosen, err := m.store.DefaultTool()
 	if err != nil {
 		m.errBar.text = "reading default tool setting: " + err.Error()
 	}
@@ -25,26 +22,12 @@ func (m *Model) defaultTool() string {
 
 // hiddenTools returns the set of CLI names the user turned off for new sessions.
 func (m *Model) hiddenTools() map[string]bool {
-	raw, err := m.store.Setting(hiddenToolsSetting)
+	hidden, err := m.store.HiddenTools()
 	if err != nil {
 		m.errBar.text = "reading hidden tools setting: " + err.Error()
 		return nil
 	}
-	return config.ParseHiddenTools(raw)
-}
-
-func formatHiddenTools(hidden map[string]bool) string {
-	if len(hidden) == 0 {
-		return ""
-	}
-	names := make([]string, 0, len(hidden))
-	for name, on := range hidden {
-		if on {
-			names = append(names, name)
-		}
-	}
-	sort.Strings(names)
-	return strings.Join(names, ",")
+	return hidden
 }
 
 func (m *Model) defaultWorktree() bool {
@@ -315,7 +298,7 @@ func (m *Model) saveAndCloseSettings() (tea.Model, tea.Cmd) {
 
 func (m *Model) persistSettings() {
 	if len(m.settings.toolNames) > 0 {
-		if err := m.store.SetSetting("default_tool", m.settings.toolNames[m.settings.toolIndex]); err != nil {
+		if err := m.store.SetDefaultTool(m.settings.toolNames[m.settings.toolIndex]); err != nil {
 			m.errBar.text = err.Error()
 		}
 	}
@@ -464,7 +447,7 @@ func (m *Model) handleCLIPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.toggleCLIHidden(m.settings.cliNames[m.settings.cliCursor])
 	case "esc":
-		if err := m.store.SetSetting(hiddenToolsSetting, formatHiddenTools(m.settings.cliHidden)); err != nil {
+		if err := m.store.SetHiddenTools(m.settings.cliHidden); err != nil {
 			m.errBar.text = err.Error()
 		}
 		m.settings.cliPicker = false

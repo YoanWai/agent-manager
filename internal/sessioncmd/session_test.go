@@ -1263,7 +1263,7 @@ func TestSessionsCreateWithNoCallerTakesTheSettingsDefaults(t *testing.T) {
 	h := newSessionHarness(t)
 	scriptDir := t.TempDir()
 	t.Chdir(scriptDir)
-	if err := h.store.SetSetting(defaultToolSetting, "flagged"); err != nil {
+	if err := h.store.SetDefaultTool("flagged"); err != nil {
 		t.Fatalf("set default tool: %v", err)
 	}
 	created, err := h.sessions.Create("", CreateSessionOptions{Name: "ticket-123", Prompt: "fix ticket 123"})
@@ -1284,7 +1284,7 @@ func TestSessionsCreateWithNoCallerTakesTheSettingsDefaults(t *testing.T) {
 	}
 	waitForSessionOutput(t, h.sessions, "", created.ID, "fix ticket 123")
 
-	if err := h.store.SetSetting(hiddenToolsSetting, "flagged"); err != nil {
+	if err := h.store.SetHiddenTools(map[string]bool{"flagged": true}); err != nil {
 		t.Fatalf("hide the default tool: %v", err)
 	}
 	fallback, err := h.sessions.Create("", CreateSessionOptions{Name: "ticket-124"})
@@ -1305,7 +1305,16 @@ func TestSessionsCreateWithNoCallerTakesTheSettingsDefaults(t *testing.T) {
 		t.Fatalf("created into backend = %+v, want the group's directory %s", filed, groupDir)
 	}
 
-	if err := h.store.SetSetting(hiddenToolsSetting, "blind,dialog,dialog-hidden-composer,echoer,flagged,picker,picker-exit,resting"); err != nil {
+	runtime, err := h.sessions.open()
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	everyTool := map[string]bool{}
+	for _, name := range runtime.cfg.AgentToolNames() {
+		everyTool[name] = true
+	}
+	runtime.store.Close()
+	if err := h.store.SetHiddenTools(everyTool); err != nil {
 		t.Fatalf("hide every tool: %v", err)
 	}
 	if _, err := h.sessions.Create("", CreateSessionOptions{}); err == nil || !strings.Contains(err.Error(), "create_session tool") {

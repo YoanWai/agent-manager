@@ -25,12 +25,6 @@ import (
 // default the Agent Manager settings screen writes.
 const worktreeSetting = "worktree_default"
 
-// The settings a spawn with no caller takes its CLI from, as the New Session form does.
-const (
-	defaultToolSetting = "default_tool"
-	hiddenToolsSetting = "hidden_tools"
-)
-
 type Session struct {
 	ID        string `json:"id" jsonschema:"agent session id"`
 	Name      string `json:"name" jsonschema:"session name shown in Agent Manager"`
@@ -423,15 +417,15 @@ func (r *runtime) toolFor(caller store.Session) (string, error) {
 }
 
 func (r *runtime) settingsTool() (string, error) {
-	chosen, err := r.store.Setting(defaultToolSetting)
+	chosen, err := r.store.DefaultTool()
 	if err != nil {
 		return "", err
 	}
-	hidden, err := r.store.Setting(hiddenToolsSetting)
+	hidden, err := r.store.HiddenTools()
 	if err != nil {
 		return "", err
 	}
-	if name := r.cfg.DefaultAgentTool(chosen, config.ParseHiddenTools(hidden)); name != "" {
+	if name := r.cfg.DefaultAgentTool(chosen, hidden); name != "" {
 		return name, nil
 	}
 	return "", r.askForTool("every agent CLI is turned off for new sessions in settings")

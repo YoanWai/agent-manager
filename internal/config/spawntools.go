@@ -3,7 +3,6 @@ package config
 import (
 	"slices"
 	"sort"
-	"strings"
 )
 
 // toolDisplayOrder fixes the order tools appear in when creating a session and
@@ -65,22 +64,4 @@ func (c Config) DefaultAgentTool(chosen string, hidden map[string]bool) string {
 		return chosen
 	}
 	return enabled[0]
-}
-
-// ParseHiddenTools reads the stored list of CLIs hidden from new sessions.
-func ParseHiddenTools(raw string) map[string]bool {
-	if raw == "" {
-		return nil
-	}
-	hidden := make(map[string]bool)
-	for _, part := range strings.Split(raw, ",") {
-		name := strings.TrimSpace(part)
-		if name != "" {
-			hidden[name] = true
-		}
-	}
-	if len(hidden) == 0 {
-		return nil
-	}
-	return hidden
 }

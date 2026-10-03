@@ -242,7 +242,7 @@ The `coordination` row in Settings (`s`) sets how far agents go with the other s
 
 `create_session` gives an agent the same spawn the `n` form gives a human: a name, a CLI, a group, a working directory, a first prompt and a worktree choice. A session created this way is a normal row in the list, and the manager picks it up on its next poll, so it attaches, revives, forks and reviews like any other.
 
-Each field falls back the way the form does. The CLI defaults to the one the calling agent runs, the group and directory default to the caller's, an explicit group uses that group's nearest inherited default path, and an explicit directory wins over both. With no calling session, as from a script outside Agent Manager, the CLI defaults to the one picked in Settings, the group to the root and the directory to the one the script runs in. A name is the agent's to choose and should describe the work; leaving it empty generates a placeholder and asks the new session to rename itself, exactly as a promptless spawn from the form does. Passing `worktree: true` adds a git worktree and branch off the directory's repo, which is what keeps several agents working in one project from editing the same checkout; omitting it inherits the group's default, then the global setting. `model`, `effort` and `profile` launch the CLI on values it lists instead of its defaults, the way the form's rows do (see [Model, effort and profile](#model-effort-and-profile)). A value the CLI does not list is refused with the ones it does.
+Each field falls back the way the form does. The CLI defaults to the one the calling agent runs, the group and directory default to the caller's, an explicit group uses that group's nearest inherited default path, and an explicit directory wins over both. A name is the agent's to choose and should describe the work; leaving it empty generates a placeholder and asks the new session to rename itself, exactly as a promptless spawn from the form does. Passing `worktree: true` adds a git worktree and branch off the directory's repo, which is what keeps several agents working in one project from editing the same checkout; omitting it inherits the group's default, then the global setting. `model`, `effort` and `profile` launch the CLI on values it lists instead of its defaults, the way the form's rows do (see [Model, effort and profile](#model-effort-and-profile)). A value the CLI does not list is refused with the ones it does.
 
 `read_session` returns the target's current screen, and its last captured screen once the session has stopped. `kill_session` ends the process and leaves the row dead with its last screen, `revive_session` brings it back on the conversation it held, and `archive_session` files a finished row away or restores it. An agent that quit while its window stayed open is relaunched inside that pane, so the row keeps the screen its last life left there.
 
@@ -280,12 +280,14 @@ Registration is per tool. Claude gets a generated `--mcp-config` file. Codex get
 
 Pi does not include an MCP client. Its sessions reach the same workspace through the subcommands: `agent-manager --help` lists them, from `sessions`, `spawn`, `send` and `wait` to the shared task list, file reservations, terminals and the review declarations. `update` needs no caller at all, and `issue` and `feature` use only the session id the launch exported. Every other subcommand acts as the session or terminal it runs in, resolved from that environment or, for a [terminal tab](#terminal-tabs) that has none, from the tmux pane, so the same subcommands work from a shell you opened with `T`.
 
-`sessions`, `groups`, `spawn`, `read` and `wait` also run with no caller at all, so a script, a cron job or a CI step outside Agent Manager can open sessions that show up in your list:
+`sessions`, `groups`, `spawn`, `read` and `wait` also run with no caller at all, so a script, a cron job or a CI step outside Agent Manager can open sessions that show up in your list. Such a `spawn` runs the CLI picked in Settings, in the root group and the directory the script runs in, unless `--tool`, `--group` or `--directory` says otherwise:
 
 ```bash
 agent-manager spawn --tool claude --group "Sprint Manager" --worktree \
   --name ticket-123 --prompt "Fix TICKET-123 and open a pull request" --json
 ```
+
+The MCP tools always act as the session that runs them, since several CLIs keep the server registered for their runs outside Agent Manager too.
 
 ### Bugs and ideas
 

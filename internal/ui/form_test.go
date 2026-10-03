@@ -20,7 +20,7 @@ import (
 
 func TestNewSessionFormUsesSettingsDefaultTool(t *testing.T) {
 	m := buildModel(t)
-	if err := m.store.SetSetting("default_tool", "ready-tool"); err != nil {
+	if err := m.store.SetDefaultTool("ready-tool"); err != nil {
 		t.Fatal(err)
 	}
 	m.openForm()
@@ -172,7 +172,7 @@ func TestFormHiddenLastToolFallsBackToSettings(t *testing.T) {
 	pickFormTool(t, m, "ready-tool")
 	m.form.worktree = true
 	submitFormSession(t, m, "first")
-	if err := m.store.SetSetting(hiddenToolsSetting, "ready-tool"); err != nil {
+	if err := m.store.SetHiddenTools(map[string]bool{"ready-tool": true}); err != nil {
 		t.Fatal(err)
 	}
 

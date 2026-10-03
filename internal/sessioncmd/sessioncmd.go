@@ -23,6 +23,11 @@ import (
 var sessionIDPattern = regexp.MustCompile(`^[0-9a-f]+$`)
 var reviewCommentIDPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)
 
+// RequireCaller refuses an empty caller for a front that must act as a session.
+func RequireCaller(sessionID string) error {
+	return validSession(sessionID)
+}
+
 func validSession(sessionID string) error {
 	if sessionID == "" {
 		return fmt.Errorf("not inside an Agent Manager session or terminal (%s is unset and this pane is not one Agent Manager runs)", hooks.EnvSessionID)

@@ -55,7 +55,7 @@ type listSessionsArgs struct{}
 type createSessionArgs struct {
 	Name      string  `json:"name,omitempty" jsonschema:"kebab-case name for the new session, 2-4 words naming the work it will do (e.g. payments-retry-fix); leave empty only when the task is unknown, and the new agent will name itself"`
 	Prompt    string  `json:"prompt,omitempty" jsonschema:"first task to hand the new agent, written as a full instruction; it starts idle when empty"`
-	Tool      string  `json:"tool,omitempty" jsonschema:"agent CLI to run, such as claude, codex, opencode, gemini or grok; defaults to the caller's CLI, or to the one picked in settings when there is no caller, and is required when the caller is a terminal; call list_sessions to see which are in use"`
+	Tool      string  `json:"tool,omitempty" jsonschema:"agent CLI to run, such as claude, codex, opencode, gemini or grok; defaults to the caller's CLI, and is required when the caller is a terminal; call list_sessions to see which are in use"`
 	Group     *string `json:"group,omitempty" jsonschema:"existing group path to file the session under; pass an empty string for the root group; defaults to this agent's group; call list_groups for the existing ones"`
 	Directory string  `json:"directory,omitempty" jsonschema:"existing directory the session works in; defaults to this agent's own directory, or to the selected group's inherited path when group is set"`
 	Worktree  *bool   `json:"worktree,omitempty" jsonschema:"true gives the session its own git worktree and branch off the directory's repo, which is what keeps parallel agents from overwriting each other; omit to inherit the group's default"`
@@ -238,6 +238,9 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 		&mcp.Implementation{Name: "agent-manager", Version: version},
 		&mcp.ServerOptions{Instructions: serverInstructions(proactive)},
 	)
+	// Several CLIs register this server at user scope, so one with no caller is
+	// that CLI running outside Agent Manager, and the workspace stays closed to it.
+	noCaller := sessioncmd.RequireCaller(sessionID)
 	spawnWhen := "Call it only when the user asks for parallel work, another agent or an independent opinion. "
 	taskListWhen := "list reads it: call it when the user asks about shared work, and before reporting progress on a fleet. "
 	if proactive {
@@ -320,6 +323,9 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 			"Reuse a relevant idle session instead of creating another; otherwise call create_session.",
 		Annotations: toolAnnotations(true, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listSessionsArgs) (*mcp.CallToolResult, listSessionsOutput, error) {
+		if noCaller != nil {
+			return nil, listSessionsOutput{}, noCaller
+		}
 		listed, err := sessions.List(sessionID)
 		if err != nil {
 			return nil, listSessionsOutput{}, err
@@ -336,6 +342,9 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 			"Follow it with read_session and send_session; use create_terminal instead for a plain shell.",
 		Annotations: toolAnnotations(false, false, true),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args createSessionArgs) (*mcp.CallToolResult, sessioncmd.Session, error) {
+		if noCaller != nil {
+			return nil, sessioncmd.Session{}, noCaller
+		}
 		created, err := sessions.Create(sessionID, sessioncmd.CreateSessionOptions{
 			Tool:      args.Tool,
 			Name:      args.Name,
@@ -360,6 +369,9 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 			"A stopped session returns the last screen Agent Manager captured.",
 		Annotations: toolAnnotations(true, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args sessionTargetArgs) (*mcp.CallToolResult, sessioncmd.SessionScreen, error) {
+		if noCaller != nil {
+			return nil, sessioncmd.SessionScreen{}, noCaller
+		}
 		screen, err := sessions.Read(sessionID, args.SessionID)
 		if err != nil {
 			return nil, sessioncmd.SessionScreen{}, err
@@ -410,6 +422,9 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 			"Follow it with read_session to see what the agent produced.",
 		Annotations: toolAnnotations(true, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args waitSessionArgs) (*mcp.CallToolResult, sessioncmd.WaitResult, error) {
+		if noCaller != nil {
+			return nil, sessioncmd.WaitResult{}, noCaller
+		}
 		result, err := sessions.Wait(ctx, sessionID, args.SessionID, args.Until, time.Duration(args.TimeoutS)*time.Second)
 		if err != nil {
 			return nil, sessioncmd.WaitResult{}, err
@@ -560,6 +575,9 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 			"Call before passing a group to create_session or create_terminal, since a group must already exist.",
 		Annotations: toolAnnotations(true, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listGroupsArgs) (*mcp.CallToolResult, listGroupsOutput, error) {
+		if noCaller != nil {
+			return nil, listGroupsOutput{}, noCaller
+		}
 		listed, err := sessions.Groups(sessionID)
 		if err != nil {
 			return nil, listGroupsOutput{}, err
