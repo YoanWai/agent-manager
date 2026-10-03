@@ -49,13 +49,31 @@ Requires Go 1.27.1+, tmux 3.1+, and git; installs to `$(go env GOPATH)/bin`.
 
 ## Prebuilt binaries
 
-Download from [Releases](https://github.com/YoanWai/agent-manager/releases) (macOS and Linux, amd64/arm64), and install tmux and git with your package manager.
+Download from [Releases](https://github.com/YoanWai/agent-manager/releases) (macOS, Linux and Windows, amd64/arm64), and install tmux (psmux on Windows) and git with your package manager.
 
 ## Windows
 
-Run inside [WSL2](https://learn.microsoft.com/windows/wsl/install): agent-manager lives on tmux, which is a Linux/macOS tool. In a WSL shell, install with the install script, with Homebrew, or grab the Linux binary from Releases.
+agent-manager runs natively on Windows on [psmux](https://github.com/psmux/psmux), a tmux-compatible multiplexer, with PowerShell as the pane shell. In PowerShell:
 
-The agent CLIs belong in the distro too. WSL appends the Windows `PATH` to the distro's, so a CLI installed on the Windows side is visible in a WSL shell, and running it there starts a Windows process or fails for want of a Linux runtime. A spawn finding only that copy stops on the setup dialog, which names where the Windows copy is and the command that installs the CLI in the distro.
+```powershell
+irm https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.ps1 | iex
+```
+
+The script installs `agent-manager.exe` to `%LOCALAPPDATA%\Programs\agent-manager` (or `$env:AGENT_MANAGER_INSTALL_DIR`), adds that directory to your user `Path`, and names whatever is missing of its dependencies:
+
+| Tool | Install |
+| --- | --- |
+| psmux | `winget install psmux` (or `cargo install psmux`) |
+| git | `winget install --id Git.Git -e` |
+| PowerShell 7 | `winget install Microsoft.PowerShell` (Windows PowerShell 5.1 works, but can mangle quotes in arguments to agent CLIs) |
+
+Differences from macOS and Linux:
+
+- Each session runs on its own psmux server. Previews poll the pane rather than streaming it, since the manager does not use psmux's control mode.
+- Inside an attached session, the review and editor keys detach through a short PowerShell `run-shell`, so they take a moment longer than on tmux.
+- Command Code (`cmd`) shares its name with `cmd.exe` and is not supported natively.
+
+agent-manager also still runs inside [WSL2](https://learn.microsoft.com/windows/wsl/install), on tmux: in a WSL shell, install with the install script, with Homebrew, or grab the Linux binary from Releases. The agent CLIs then belong in the distro too. WSL appends the Windows `PATH` to the distro's, so a CLI installed on the Windows side is visible in a WSL shell, and running it there starts a Windows process or fails without a Linux runtime. A spawn finding only that copy stops on the setup dialog, which names where the Windows copy is and the command that installs the CLI in the distro.
 
 ## Updating
 

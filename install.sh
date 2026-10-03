@@ -21,7 +21,7 @@ detect_os() {
 	case $(uname -s) in
 	Darwin) echo darwin ;;
 	Linux) echo linux ;;
-	*) err "unsupported operating system: $(uname -s). On Windows, run this inside WSL2." ;;
+	*) err "unsupported operating system: $(uname -s). On Windows, run in PowerShell: irm https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.ps1 | iex" ;;
 	esac
 }
 

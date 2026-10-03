@@ -1,17 +1,51 @@
 package hooks
 
 import (
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf16"
 
 	"github.com/YoanWai/agent-manager/internal/status"
 )
+
+// hookScript is the script a hook command runs: the command itself, or on
+// Windows the PowerShell its -EncodedCommand carries.
+func hookScript(t *testing.T, command string) string {
+	t.Helper()
+	if runtime.GOOS != "windows" {
+		return command
+	}
+	encoded, ok := strings.CutPrefix(command, "powershell.exe -NoProfile -NonInteractive -EncodedCommand ")
+	if !ok {
+		t.Fatalf("hook command %q does not run an encoded PowerShell script", command)
+	}
+	raw, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil || len(raw)%2 != 0 {
+		t.Fatalf("hook command %q carries no UTF-16LE base64: %v", command, err)
+	}
+	units := make([]uint16, len(raw)/2)
+	for i := range units {
+		units[i] = binary.LittleEndian.Uint16(raw[2*i:])
+	}
+	return string(utf16.Decode(units))
+}
+
+// stateWrite is the part of a hook script that writes state.
+func stateWrite(state string) string {
+	if runtime.GOOS == "windows" {
+		return "'" + state + "')"
+	}
+	return "printf " + state
+}
 
 func TestWriteSettingsWritesValidHookJSON(t *testing.T) {
 	manager := NewManager(t.TempDir())
@@ -40,6 +74,9 @@ func TestWriteSettingsWritesValidHookJSON(t *testing.T) {
 		t.Fatalf("hooks has %d events, want %d: %v", len(parsed.Hooks), len(events), parsed.Hooks)
 	}
 	target := `"$` + EnvStatusFile + `"`
+	if runtime.GOOS == "windows" {
+		target = `$env:` + EnvStatusFile
+	}
 	for _, event := range events {
 		matchers, ok := parsed.Hooks[event]
 		if !ok {
@@ -50,7 +87,7 @@ func TestWriteSettingsWritesValidHookJSON(t *testing.T) {
 				if hook.Type != "command" {
 					t.Fatalf("event %s hook type = %q, want command", event, hook.Type)
 				}
-				if !strings.Contains(hook.Command, target) {
+				if !strings.Contains(hookScript(t, hook.Command), target) {
 					t.Fatalf("event %s command does not write the status file: %q", event, hook.Command)
 				}
 			}
@@ -72,7 +109,7 @@ func TestWriteSettingsWritesValidHookJSON(t *testing.T) {
 			t.Fatalf("Notification matcher %q subscribes to %s", notification.Matcher, unwanted)
 		}
 	}
-	if command := notification.Hooks[0].Command; !strings.Contains(command, "printf "+status.Waiting) || strings.Contains(command, "grep") {
+	if command := hookScript(t, notification.Hooks[0].Command); !strings.Contains(command, stateWrite(status.Waiting)) || strings.Contains(command, "grep") {
 		t.Fatalf("Notification command = %q, want a plain %s write", command, status.Waiting)
 	}
 	if got := parsed.Hooks["SessionStart"][0].Matcher; got != "startup|resume|clear" {
@@ -82,7 +119,7 @@ func TestWriteSettingsWritesValidHookJSON(t *testing.T) {
 	if stopFailure.Matcher != limitStopFailures {
 		t.Fatalf("StopFailure matcher = %q, want %q", stopFailure.Matcher, limitStopFailures)
 	}
-	if command := stopFailure.Hooks[0].Command; !strings.Contains(command, "printf "+status.Errored) {
+	if command := hookScript(t, stopFailure.Hooks[0].Command); !strings.Contains(command, stateWrite(status.Errored)) {
 		t.Fatalf("StopFailure command = %q, want a plain %s write", command, status.Errored)
 	}
 }
@@ -158,15 +195,23 @@ func TestWriteInstallScriptCreatesAnExecutableScript(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WriteInstallScript: %v", err)
 	}
-	if want := filepath.Join(manager.Dir(), "abcd1234.install.sh"); path != want {
+	if want := filepath.Join(manager.Dir(), "abcd1234"+installScriptExt); path != want {
 		t.Fatalf("path = %q, want %q", path, want)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read script: %v", err)
 	}
-	if string(data) != body {
-		t.Fatalf("script = %q, want %q", data, body)
+	want := body
+	if runtime.GOOS == "windows" {
+		// a BOM, so Windows PowerShell 5.1 reads the script as UTF-8
+		want = "\ufeff" + body
+	}
+	if string(data) != want {
+		t.Fatalf("script = %q, want %q", data, want)
+	}
+	if runtime.GOOS == "windows" {
+		return // Windows file modes carry no execute or group bits
 	}
 	info, err := os.Stat(path)
 	if err != nil {
@@ -569,7 +614,7 @@ func TestWriteWholeSurvivesConcurrentWriters(t *testing.T) {
 					t.Errorf("WriteWhole(%q): %v", content, err)
 					return
 				}
-				raw, err := os.ReadFile(path)
+				raw, err := readMailbox(path)
 				if err != nil {
 					t.Errorf("read: %v", err)
 					return

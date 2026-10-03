@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -163,11 +164,20 @@ func TestDiffAnnotateAndSend(t *testing.T) {
 	m.diff.scope = originalScope
 	// Join wrapped lines so the delivery check does not depend on where the
 	// pane's width breaks the prompt; the session sizes to the model width.
-	out, err := tmuxCmd("capture-pane", "-p", "-J", "-t", "am_"+sess.ID).CombinedOutput()
+	// psmux's -J only trims each row, so on Windows keep every row at the
+	// full pane width (-N) and join them by hand.
+	capture := []string{"capture-pane", "-p", "-J", "-t", "am_" + sess.ID}
+	if runtime.GOOS == "windows" {
+		capture = []string{"capture-pane", "-p", "-N", "-t", "am_" + sess.ID}
+	}
+	out, err := tmuxCmd(capture...).CombinedOutput()
 	if err != nil {
 		t.Fatal(err)
 	}
 	pane := string(out)
+	if runtime.GOOS == "windows" {
+		pane = strings.NewReplacer("\r", "", "\n", "").Replace(pane)
+	}
 	if !strings.Contains(pane, "use fmt.Println here") || !strings.Contains(pane, "main.go:3") ||
 		!strings.Contains(pane, "[comment "+notes[0].id+"]") || !strings.Contains(pane, "review_comment") {
 		t.Fatalf("prompt not delivered:\n%s", pane)
@@ -570,9 +580,9 @@ func TestInSessionReviewRemembersOriginAndReattaches(t *testing.T) {
 	if !ok {
 		t.Fatal("no session selected")
 	}
-	clearRequestOnCleanup(t, m)
+	clearRequestOnCleanup(t, m, sess.ID)
 
-	if _, err := tmuxCmd("set-option", "-g", "@am_request", tmux.RequestReview).CombinedOutput(); err != nil {
+	if _, err := sessionTmuxCmd(sess.ID, "set-option", "-g", "@am_request", tmux.RequestReview).CombinedOutput(); err != nil {
 		t.Fatalf("set marker: %v", err)
 	}
 	updated, _ := m.Update(attachDoneMsg{sessID: sess.ID})
@@ -640,12 +650,12 @@ func TestReattachAcknowledgesFinished(t *testing.T) {
 	if !ok {
 		t.Fatal("no session selected")
 	}
-	clearRequestOnCleanup(t, m)
+	clearRequestOnCleanup(t, m, sess.ID)
 
 	if err := m.store.UpdateStatus(sess.ID, status.Finished); err != nil {
 		t.Fatalf("set finished: %v", err)
 	}
-	if _, err := tmuxCmd("set-option", "-g", "@am_request", tmux.RequestReview).CombinedOutput(); err != nil {
+	if _, err := sessionTmuxCmd(sess.ID, "set-option", "-g", "@am_request", tmux.RequestReview).CombinedOutput(); err != nil {
 		t.Fatalf("set marker: %v", err)
 	}
 	updated, _ := m.Update(attachDoneMsg{sessID: sess.ID})
@@ -872,8 +882,8 @@ func TestBranchPickerListsWorktreesAndSwitches(t *testing.T) {
 }
 
 // The b picker must seed its cursor on the worktree under review even when
-// that worktree was declared via a /tmp path that git resolves to
-// /private/tmp, since /tmp is a symlink on macOS.
+// that worktree was declared via a temp path that git resolves elsewhere
+// (/var -> /private/var on macOS, where the temp dir lives behind a symlink).
 func TestBranchPickerSeedsCursorForSymlinkedWorktree(t *testing.T) {
 	m := buildModel(t)
 	if m.gitDrv == nil {
@@ -882,13 +892,13 @@ func TestBranchPickerSeedsCursorForSymlinkedWorktree(t *testing.T) {
 	umbrella, _ := umbrellaWithTwoRepos(t)
 	alpha := filepath.Join(umbrella, "alpha")
 
-	linkedParent, err := os.MkdirTemp("/tmp", "am-p2-symlink-seed-*")
+	linkedParent, err := os.MkdirTemp(os.TempDir(), "am-p2-symlink-seed-*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.RemoveAll(linkedParent) })
 	if resolved, _ := filepath.EvalSymlinks(linkedParent); resolved == linkedParent {
-		t.Skip("/tmp does not resolve to a different path on this system")
+		t.Skip("the temp dir does not resolve to a different path on this system")
 	}
 	rawWorktree := filepath.Join(linkedParent, "wt-declared")
 
@@ -2021,6 +2031,9 @@ func TestReviewCodeOnlyWithNoCodeFiles(t *testing.T) {
 // A file whose line count is unknown must not be silently summed as zero in
 // the header: the totals carry a marker instead of asserting an exact count.
 func TestHeaderMarksUncountedFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod cannot deny reads on Windows")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("root reads any file regardless of mode")
 	}
@@ -2283,6 +2296,11 @@ func TestRepoPickerReportsMissingSession(t *testing.T) {
 		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 		*m = *updated.(*Model)
 	}
+	// Hand the sessions back before buildModel's cleanup kills m.sessions:
+	// a leaked pane keeps its cwd busy, and Windows will not remove a live
+	// process's working directory with the rest of the temp dir.
+	sessions := m.sessions
+	t.Cleanup(func() { m.sessions = sessions })
 	m.sessions = nil
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})

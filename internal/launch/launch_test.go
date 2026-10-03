@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +14,13 @@ import (
 	"github.com/YoanWai/agent-manager/internal/mcpreg"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 )
+
+func skipPOSIXShell(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture is a POSIX shell script")
+	}
+}
 
 func TestPromptInjectsDirectiveOnlyForAutoNamedWithPrompt(t *testing.T) {
 	withDirective := Prompt("", "build the api", true)
@@ -165,9 +173,15 @@ func TestReviveCommandResumesTheConversationItHeld(t *testing.T) {
 // semicolon ends the resume command and starts whatever follows.
 func TestReviveCommandQuotesAnIDThatSpellsAnotherCommand(t *testing.T) {
 	tool := config.Tool{ResumeByIDCommand: "codex resume {id}"}
+	// A POSIX single-quoted string escapes a quote by closing, escaping and
+	// reopening; a PowerShell one escapes it by doubling.
+	closingQuote := `codex resume 'abc'\''; touch pwned; echo '\'''`
+	if runtime.GOOS == "windows" {
+		closingQuote = `codex resume 'abc''; touch pwned; echo '''`
+	}
 	for _, tc := range []struct{ name, id, want string }{
 		{"a command after a semicolon", `abc; touch pwned`, `codex resume 'abc; touch pwned'`},
-		{"an id closing the quote itself", `abc'; touch pwned; echo '`, `codex resume 'abc'\''; touch pwned; echo '\'''`},
+		{"an id closing the quote itself", `abc'; touch pwned; echo '`, closingQuote},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := ReviveCommand(tool, tc.id); got != tc.want {
@@ -180,6 +194,9 @@ func TestReviveCommandQuotesAnIDThatSpellsAnotherCommand(t *testing.T) {
 // The quoting has to hold against a real shell, not just against a string
 // comparison: the revive command reaches one through tmux.
 func TestReviveCommandKeepsACapturedIDOutOfTheShell(t *testing.T) {
+	// The fixture leans on POSIX echo printing its arguments on one line and
+	// on touch; PowerShell's echo prints one argument per line.
+	skipPOSIXShell(t)
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux not installed")
 	}
@@ -257,6 +274,8 @@ func TestEnvironmentSetsGrokTerminalTheme(t *testing.T) {
 		t.Run(source, func(t *testing.T) {
 			home := t.TempDir()
 			t.Setenv("HOME", home)
+			// os.UserHomeDir reads USERPROFILE on Windows.
+			t.Setenv("USERPROFILE", home)
 			t.Setenv("GROK_HOME", "")
 			dir := filepath.Join(home, ".grok")
 			if source == "GROK_HOME" {

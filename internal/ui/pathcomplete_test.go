@@ -75,7 +75,7 @@ func TestApplyPathSuggestionFillsDirField(t *testing.T) {
 		t.Fatal("expected suggestions")
 	}
 	m.applyPathSuggestion()
-	want := filepath.Join(root, "alpha") + "/"
+	want := filepath.Join(root, "alpha") + string(filepath.Separator)
 	if m.form.dir.Value() != want {
 		t.Fatalf("dir = %q want %q", m.form.dir.Value(), want)
 	}

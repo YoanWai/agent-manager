@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -27,16 +29,19 @@ func TestGuardedMouseCommandWrapsTheSend(t *testing.T) {
 // The guard has to be transparent while the application really is tracking
 // the mouse, and silent once it has stopped.
 func TestGuardedMouseCommandFollowsTheLiveFlag(t *testing.T) {
-	if _, err := exec.LookPath("tmux"); err != nil {
-		t.Skip("tmux not installed")
+	if _, err := exec.LookPath(tmux.Binary); err != nil {
+		t.Skip(tmux.Binary + " not installed")
+	}
+	command := `printf '\033[?1003h\033[?1006h'; cat`
+	if runtime.GOOS == "windows" {
+		command = fixtureCommand("mouse-tool")
 	}
 	driver, err := tmux.NewWithSocket("amguard")
 	if err != nil {
 		t.Fatalf("driver: %v", err)
 	}
 	sessID := "guard-probe"
-	if err := driver.Create(sessID, t.TempDir(),
-		`printf '\033[?1003h\033[?1006h'; cat`, map[string]string{}, 80, 24); err != nil {
+	if err := driver.Create(sessID, t.TempDir(), command, map[string]string{}, 80, 24); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	t.Cleanup(func() { _ = driver.Kill(sessID) })
@@ -72,8 +77,14 @@ func waitForMouseFlag(t *testing.T, driver *tmux.Driver, sessID, want string) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		out, err := exec.Command("tmux", "-L", driver.SocketName(),
-			"display-message", "-p", "-t", tmux.PaneTarget(sessID), "#{mouse_any_flag}").Output()
+		cmd := exec.Command(tmux.Binary, "-L", driver.SocketName(),
+			"display-message", "-p", "-t", tmux.PaneTarget(sessID), "#{mouse_any_flag}")
+		if runtime.GOOS == "windows" {
+			// The same PSMUX_NO_WARM tmuxCmd sets, so a poll does not
+			// start a standby server.
+			cmd.Env = append(os.Environ(), "PSMUX_NO_WARM=1")
+		}
+		out, err := cmd.Output()
 		if err == nil && strings.TrimSpace(string(out)) == want {
 			return
 		}

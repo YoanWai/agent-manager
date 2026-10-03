@@ -1,13 +1,119 @@
 package git
 
 import (
+	"bytes"
+	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
+
+func skipPOSIXShell(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture is a POSIX shell script")
+	}
+}
+
+// helperProcessEnv selects a fixture in TestHelperProcess when the test
+// binary re-executes itself as a child process with a chosen cwd.
+const helperProcessEnv = "AM_GIT_TEST_HELPER"
+
+// helperProcess starts the test binary as the named fixture in dir.
+func helperProcess(t *testing.T, dir, fixture string, args ...string) *exec.Cmd {
+	t.Helper()
+	cmd := exec.Command(os.Args[0], append([]string{"-test.run=^TestHelperProcess$", "--"}, args...)...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), helperProcessEnv+"="+fixture)
+	return cmd
+}
+
+// TestHelperProcess is not a test: it runs a fixture process for tests that
+// need a live child sitting in a worktree.
+func TestHelperProcess(t *testing.T) {
+	fixture := os.Getenv(helperProcessEnv)
+	if fixture == "" {
+		return
+	}
+	args := os.Args
+	for i, arg := range args {
+		if arg == "--" {
+			args = args[i+1:]
+			break
+		}
+	}
+	if err := runFixture(fixture, args); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	os.Exit(0)
+}
+
+func runFixture(fixture string, args []string) error {
+	goFile, outFile := args[0], args[1]
+	released := func() bool {
+		_, err := os.Stat(goFile)
+		return err == nil
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	switch fixture {
+	case "live-cwd":
+		for !released() {
+			time.Sleep(50 * time.Millisecond)
+		}
+		if err := os.WriteFile("live.txt", []byte("still-here\n"), 0o644); err != nil {
+			return err
+		}
+		return os.WriteFile(outFile, []byte(cwd+"\n"), 0o644)
+	case "agent":
+		log, err := os.OpenFile("agent.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = log.Close() }()
+		git := func(stdout io.Writer, args ...string) error {
+			cmd := exec.Command("git", args...)
+			cmd.Stdout = stdout
+			cmd.Stderr = os.Stderr
+			if err := cmd.Run(); err != nil {
+				return fmt.Errorf("git %s: %w", args[0], err)
+			}
+			return nil
+		}
+		for !released() {
+			if err := git(log, "status", "--porcelain"); err != nil {
+				return err
+			}
+			if err := git(log, "rev-parse", "--abbrev-ref", "HEAD"); err != nil {
+				return err
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		if err := os.WriteFile("wip.txt", []byte("still-working\n"), 0o644); err != nil {
+			return err
+		}
+		if err := git(io.Discard, "add", "wip.txt"); err != nil {
+			return err
+		}
+		if err := git(io.Discard, "commit", "-m", "agent kept working"); err != nil {
+			return err
+		}
+		out, err := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(outFile, append(out, []byte(cwd+"\n")...), 0o644)
+	}
+	return fmt.Errorf("unknown fixture %q", fixture)
+}
 
 func testRepo(t *testing.T) (*Driver, string) {
 	t.Helper()
@@ -665,6 +771,7 @@ func gitFailingOn(t *testing.T, arg string) string {
 
 func gitShim(t *testing.T, arg, action string) string {
 	t.Helper()
+	skipPOSIXShell(t)
 	real, err := exec.LookPath("git")
 	if err != nil {
 		t.Skip("git not installed")
@@ -1235,6 +1342,9 @@ func TestRenameWorktreeBranchUnreadableDirFails(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root reads through a stripped directory")
 	}
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod cannot deny reads on Windows")
+	}
 	driver, dir := testRepo(t)
 	write(t, dir, "a.txt", "x")
 	commit(t, dir, "seed")
@@ -1280,10 +1390,7 @@ func TestRenameWorktreeBranchKeepsLiveProcessCwd(t *testing.T) {
 	tmp := t.TempDir()
 	goFile := filepath.Join(tmp, "go")
 	pwdFile := filepath.Join(tmp, "pwd")
-	cmd := exec.Command("sh", "-c", `while [ ! -f "$1" ]; do sleep 0.05; done
-echo still-here > live.txt
-pwd > "$2"`, "worktree-proc", goFile, pwdFile)
-	cmd.Dir = path
+	cmd := helperProcess(t, path, "live-cwd", goFile, pwdFile)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -1367,18 +1474,9 @@ func TestRenameWorktreeBranchLetsAgentKeepWorking(t *testing.T) {
 	goFile := filepath.Join(tmp, "go")
 	outFile := filepath.Join(tmp, "out")
 	logFile := filepath.Join(path, "agent.log")
-	cmd := exec.Command("sh", "-c", `exec 3>>agent.log
-while [ ! -f "$1" ]; do
-  git status --porcelain >&3 || exit 1
-  git rev-parse --abbrev-ref HEAD >&3 || exit 1
-  sleep 0.05
-done
-echo still-working > wip.txt
-git add wip.txt
-git commit -m "agent kept working" >/dev/null
-git rev-parse --abbrev-ref HEAD > "$2"
-pwd >> "$2"`, "agent", goFile, outFile)
-	cmd.Dir = path
+	cmd := helperProcess(t, path, "agent", goFile, outFile)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -1407,7 +1505,7 @@ pwd >> "$2"`, "agent", goFile, outFile)
 	select {
 	case err := <-waited:
 		if err != nil {
-			t.Fatalf("agent after rename: %v", err)
+			t.Fatalf("agent after rename: %v: %s", err, stderr.String())
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("agent did not finish after rename")

@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -402,7 +403,7 @@ func TestFormPromptComposesWithSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildLaunch: %v", err)
 	}
-	if !strings.HasPrefix(command, "cat 'fix the bug' --mcp-config '") || !strings.Contains(command, "--settings '") {
+	if !strings.HasPrefix(command, tool.Command+" 'fix the bug' --mcp-config '") || !strings.Contains(command, "--settings '") {
 		t.Fatalf("command = %q", command)
 	}
 }
@@ -1085,6 +1086,9 @@ func TestSpawnWorktreeInNonRepoBlocks(t *testing.T) {
 }
 
 func TestSpawnWorktreeRollsBackWhenLaunchBuildFails(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod cannot deny writes on Windows")
+	}
 	m := buildModel(t)
 	repo := filepath.Join(t.TempDir(), "repo")
 	if err := os.MkdirAll(repo, 0o755); err != nil {

@@ -22,7 +22,7 @@ type fakeCommands struct {
 
 func swapSeams(t *testing.T, fake *fakeCommands) {
 	t.Helper()
-	oldLookPath, oldRun, oldGoos, oldProc := lookPath, runCommand, goos, procVersion
+	oldLookPath, oldRun, oldGoos, oldProc, oldMux := lookPath, runCommand, goos, procVersion, muxVersion
 	lookPath = func(string) (string, error) { return "/usr/bin/gh", fake.ghPath }
 	runCommand = func(name string, args ...string) (string, error) {
 		line := strings.Join(append([]string{name}, args...), " ")
@@ -35,15 +35,20 @@ func swapSeams(t *testing.T, fake *fakeCommands) {
 		}
 		return "", errors.New("no such command: " + line)
 	}
+	muxVersion = func() (string, error) {
+		if err, failed := fake.failing["mux version"]; failed {
+			return "", err
+		}
+		return "tmux 3.5a", nil
+	}
 	goos = "darwin"
 	procVersion = filepath.Join(t.TempDir(), "absent")
-	t.Cleanup(func() { lookPath, runCommand, goos, procVersion = oldLookPath, oldRun, oldGoos, oldProc })
+	t.Cleanup(func() { lookPath, runCommand, goos, procVersion, muxVersion = oldLookPath, oldRun, oldGoos, oldProc, oldMux })
 }
 
 func loggedIn() *fakeCommands {
 	return &fakeCommands{
 		answers: map[string]string{
-			"tmux -V":                 "tmux 3.5a",
 			"claude --version":        "2.4.1 (Claude Code)\nextra line",
 			"gh api user --jq .login": "yoan",
 			"gh issue create --repo " + repo + " --title Space lands in the wrong pane --body " + bugBody() + " --label bug": "https://github.com/" + repo + "/issues/512",
@@ -444,6 +449,7 @@ func TestTheOperatingSystemIsSpelledLikeTheFormDropdown(t *testing.T) {
 		{"linux", "", "Linux"},
 		{"linux", wsl, "Windows (WSL2)"},
 		{"freebsd", "", "freebsd"},
+		{"windows", "", "Windows"},
 	} {
 		goos, procVersion = platform.goos, platform.proc
 		if got := operatingSystem(); got != platform.want {
@@ -467,8 +473,10 @@ func TestToolLabelsMatchTheFormDropdown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A Windows checkout with core.autocrlf holds the form with CRLF endings.
+	options := strings.ReplaceAll(string(form), "\r\n", "\n")
 	for _, label := range []string{"Claude Code", "Codex", "OpenCode", "Grok Build", "Gemini CLI", "Antigravity CLI", "Pi", "Hermes Agent", "Command Code", "Not tool specific"} {
-		if !strings.Contains(string(form), "- "+label+"\n") {
+		if !strings.Contains(options, "- "+label+"\n") {
 			t.Errorf("the bug form's dropdown has no %q option", label)
 		}
 	}

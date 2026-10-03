@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -16,6 +17,13 @@ import (
 )
 
 const reviewTestComment = "0123456789abcdef"
+
+func skipPOSIXShell(t *testing.T) {
+	t.Helper()
+	if goruntime.GOOS == "windows" {
+		t.Skip("fixture is a POSIX shell script")
+	}
+}
 
 func reviewConfigDir(t *testing.T) string {
 	t.Helper()
@@ -125,7 +133,9 @@ func newTestGitRepo(t *testing.T, dir string) testGitRepo {
 		run(args...)
 	}
 	return testGitRepo{
-		root:    run("rev-parse", "--show-toplevel"),
+		// git prints forward slashes on Windows; the driver hands out the
+		// native form.
+		root:    filepath.FromSlash(run("rev-parse", "--show-toplevel")),
 		baseRef: "test-base",
 	}
 }

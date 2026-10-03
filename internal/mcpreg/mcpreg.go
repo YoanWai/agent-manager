@@ -385,25 +385,7 @@ func hermesPipCommand() string {
 	if python == "" || exec.Command(python, "-m", "pip", "--version").Run() != nil {
 		return ""
 	}
-	return tmux.ShellQuote(python) + " -m pip install mcp"
-}
-
-// The install directory Hermes reports is its site-packages, so the
-// interpreter sits three levels above it.
-func pythonFromVersion(version string) string {
-	for _, line := range strings.Split(version, "\n") {
-		dir, found := strings.CutPrefix(strings.TrimSpace(line), "Install directory:")
-		if !found {
-			continue
-		}
-		dir = strings.TrimSpace(dir)
-		if filepath.Base(dir) != "site-packages" {
-			return ""
-		}
-		root := filepath.Dir(filepath.Dir(filepath.Dir(dir)))
-		return filepath.Join(root, "bin", "python3")
-	}
-	return ""
+	return tmux.ShellInvoke(python) + " -m pip install mcp"
 }
 
 // ensureRegisteredOnce runs a tool's own mcp-add command once per binary

@@ -3,6 +3,7 @@ package atomicfile
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -20,6 +21,9 @@ func TestWriteFileCreatesAndReplacesAtomically(t *testing.T) {
 	}
 	if string(raw) != "second" {
 		t.Fatalf("content = %q", raw)
+	}
+	if runtime.GOOS == "windows" {
+		return // Windows has no Unix permission bits to assert.
 	}
 	info, err := os.Stat(path)
 	if err != nil {
@@ -51,6 +55,9 @@ func TestWriteFileRejectsAParentThatIsAFile(t *testing.T) {
 func TestWriteFileRejectsAReadOnlyDirectory(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root ignores directory permissions")
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod cannot deny writes on Windows")
 	}
 	dir := filepath.Join(t.TempDir(), "read-only")
 	if err := os.Mkdir(dir, 0o500); err != nil {

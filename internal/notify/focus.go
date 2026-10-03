@@ -41,7 +41,7 @@ func RequestFocus(configDir string, manager int, sessionID string) error {
 	if err := os.WriteFile(pending, []byte(sessionID+"\n"), 0o600); err != nil {
 		return err
 	}
-	if err := os.Rename(pending, focusPath(configDir, manager)); err != nil {
+	if err := publishRename(pending, focusPath(configDir, manager)); err != nil {
 		os.Remove(pending)
 		return err
 	}

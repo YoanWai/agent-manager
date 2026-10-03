@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"path/filepath"
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/config"
@@ -26,6 +25,7 @@ func newToolBinaries(cfg config.Config) toolBinaries {
 // other pane would otherwise be read as that tool.
 var interpreters = map[string]bool{
 	"sh": true, "bash": true, "zsh": true, "dash": true, "fish": true,
+	"pwsh": true, "powershell": true,
 	"env": true, "node": true, "npx": true, "deno": true, "bun": true,
 	"python": true, "python3": true, "ruby": true, "perl": true,
 	"uv": true, "uvx": true,
@@ -39,7 +39,7 @@ func toolBinary(tool config.Tool) string {
 	if len(fields) == 0 {
 		return ""
 	}
-	binary := filepath.Base(fields[0])
+	binary := executableName(fields[0])
 	if interpreters[binary] {
 		return ""
 	}
@@ -62,7 +62,7 @@ func detectRelaunchedTool(current string, children []string, binaries toolBinari
 	}
 	detected := ""
 	for _, child := range children {
-		running := filepath.Base(child)
+		running := executableName(child)
 		if running == currentBinary {
 			return ""
 		}

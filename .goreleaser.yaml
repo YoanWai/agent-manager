@@ -8,6 +8,7 @@ builds:
     goos:
       - darwin
       - linux
+      - windows
     goarch:
       - amd64
       - arm64
@@ -18,6 +19,9 @@ archives:
   - formats: [tar.gz]
     name_template: >-
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    format_overrides:
+      - goos: windows
+        formats: [zip]
     # naming files replaces goreleaser's defaults, so LICENSE and README repeat here
     files:
       - LICENSE
@@ -32,7 +36,7 @@ changelog:
 
 release:
   header: |
-    Run every AI coding agent from one terminal. Claude Code, Codex, OpenCode, Grok Build, Gemini CLI, Antigravity CLI, Pi, Command Code, Hermes Agent, and Muse Code run side by side, each in its own tmux session, with live status, a project tree, quick prompts, and full-file diff review. Runs on macOS and Linux, and on Windows inside WSL2. [See it running](https://github.com/YoanWai/agent-manager#agent-manager).
+    Run every AI coding agent from one terminal. Claude Code, Codex, OpenCode, Grok Build, Gemini CLI, Antigravity CLI, Pi, Command Code, Hermes Agent, and Muse Code run side by side, each in its own tmux session, with live status, a project tree, quick prompts, and full-file diff review. Runs on macOS, Linux and Windows (with psmux), and inside WSL2. [See it running](https://github.com/YoanWai/agent-manager#agent-manager).
 
   footer: |
     ## Install
@@ -48,7 +52,12 @@ release:
     yay -S agent-manager-bin
     ```
 
-    Prebuilt macOS and Linux binaries are attached below. Windows runs it inside WSL2.
+    ```powershell
+    # Windows
+    irm https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.ps1 | iex
+    ```
+
+    Prebuilt macOS, Linux and Windows binaries are attached below.
 
     ## Get involved
 

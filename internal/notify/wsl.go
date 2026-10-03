@@ -1,9 +1,6 @@
 package notify
 
-import (
-	"encoding/base64"
-	"unicode/utf16"
-)
+import "github.com/YoanWai/agent-manager/internal/pwsh"
 
 // powershellFallback is where Windows keeps PowerShell when WSL interop
 // has not put it on PATH.
@@ -40,16 +37,5 @@ func windowsToast(subtitle, body, sound string) error {
 		"AM_TOAST_BODY":     body,
 		"AM_TOAST_SOUND":    sound,
 		"AM_TOAST_APPID":    toastAppID,
-	}, shell, "-NoProfile", "-NonInteractive", "-EncodedCommand", encodedCommand(toastScript))
-}
-
-// encodedCommand renders a script as -EncodedCommand takes it: UTF-16LE,
-// then base64.
-func encodedCommand(script string) string {
-	units := utf16.Encode([]rune(script))
-	raw := make([]byte, 0, len(units)*2)
-	for _, unit := range units {
-		raw = append(raw, byte(unit), byte(unit>>8))
-	}
-	return base64.StdEncoding.EncodeToString(raw)
+	}, shell, "-NoProfile", "-NonInteractive", "-EncodedCommand", pwsh.EncodedCommand(toastScript))
 }

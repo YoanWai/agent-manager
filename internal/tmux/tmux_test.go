@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -31,37 +32,89 @@ func TestMain(m *testing.M) {
 	if action := os.Getenv(otherProcessEnv); action != "" {
 		os.Exit(repeatUntilStdinCloses(&Driver{bin: os.Args[1], socket: testSocket}, action, os.Args[2]))
 	}
+	os.Exit(runTests(m))
+}
+
+func runTests(m *testing.M) int {
+	// psmux keeps its servers' registry under its data directory, which a
+	// fresh one isolates the way the private socket does for tmux.
+	if runtime.GOOS == "windows" {
+		dir, err := os.MkdirTemp("", "amtmuxtest-psmux-")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "psmux data dir: %v\n", err)
+			return 1
+		}
+		defer os.RemoveAll(dir)
+		os.Setenv("PSMUX_DATA_DIR", dir)
+	}
 	// kill-server fails whenever no server is up, which is the normal case.
 	tmuxCmd("kill-server").Run()
 	// Without tmux the run still starts: each test skips through its own
 	// requireTmux. With tmux, a run that could not plant the anchor would
 	// pass or flake on luck, so it stops instead.
-	if _, err := exec.LookPath("tmux"); err == nil {
+	if _, err := exec.LookPath(Binary); err == nil {
 		if out, err := tmuxCmd("new-session", "-d", "-s", "anchor").CombinedOutput(); err != nil {
 			fmt.Fprintf(os.Stderr, "anchor session: %v: %s\n", err, out)
-			os.Exit(1)
+			return 1
 		}
 	}
 	code := m.Run()
 	tmuxCmd("kill-server").Run()
-	os.Exit(code)
+	return code
 }
 
 // tmuxCmd builds a raw tmux command aimed at the test socket.
 func tmuxCmd(args ...string) *exec.Cmd {
-	return exec.Command("tmux", append([]string{"-L", testSocket}, args...)...)
+	cmd := exec.Command(Binary, append([]string{"-L", testSocket}, args...)...)
+	cmd.Env = commandEnv()
+	return cmd
 }
 
 func requireTmux(t *testing.T) *Driver {
 	t.Helper()
-	if _, err := exec.LookPath("tmux"); err != nil {
-		t.Skip("tmux not installed")
+	if _, err := exec.LookPath(Binary); err != nil {
+		t.Skip(Binary + " not installed")
 	}
 	driver, err := NewWithSocket(testSocket)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	return driver
+}
+
+// skipPOSIXShell skips a test whose fixture only a POSIX shell runs.
+func skipPOSIXShell(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture is a POSIX shell script")
+	}
+}
+
+// paneDir is a directory every platform's sessions can start in.
+func paneDir() string {
+	if runtime.GOOS == "windows" {
+		return os.TempDir()
+	}
+	return "/tmp"
+}
+
+// bindingServer runs commands where a test inspects server-scoped setup.
+// tmux keeps it on its one server, which the anchor session holds up; psmux
+// keeps it per session server, so there a managed session is created and
+// every command is routed to its server.
+func bindingServer(t *testing.T, driver *Driver) func(args ...string) *exec.Cmd {
+	t.Helper()
+	if runtime.GOOS != "windows" {
+		return tmuxCmd
+	}
+	id := "bind" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, paneDir(), "", nil, 0, 0); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+	return func(args ...string) *exec.Cmd {
+		return tmuxCmd(append(sessionRoute(id), args...)...)
+	}
 }
 
 func windowSizeOption(t *testing.T, id string) string {
@@ -79,7 +132,7 @@ func windowSizeOption(t *testing.T, id string) string {
 func TestPrepareAttachRestoresAutoSize(t *testing.T) {
 	driver := requireTmux(t)
 	id := "attach" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
-	if err := driver.Create(id, "/tmp", "", nil, 100, 30); err != nil {
+	if err := driver.Create(id, paneDir(), "", nil, 100, 30); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
@@ -108,6 +161,7 @@ func TestPrepareAttachRestoresAutoSize(t *testing.T) {
 // tmux that rejects "latest" stands in for the old server and logs its
 // calls, so the test also proves the second attach skips the doomed try.
 func TestPrepareAttachFallsBackWhenLatestRejected(t *testing.T) {
+	skipPOSIXShell(t)
 	dir := t.TempDir()
 	callLog := dir + "/calls"
 	stub := dir + "/tmux"
@@ -142,6 +196,7 @@ func TestPrepareAttachFallsBackWhenLatestRejected(t *testing.T) {
 // stale socket); that error must reach the caller, not just the
 // session-scoped read's.
 func TestResolvedOptionPropagatesTheGlobalFallbackError(t *testing.T) {
+	skipPOSIXShell(t)
 	dir := t.TempDir()
 	stub := dir + "/tmux"
 	script := "#!/bin/sh\ncase \"$*\" in *'-g -v prefix'*) echo 'no server running' >&2; exit 1;; esac\nexit 0\n"
@@ -159,6 +214,7 @@ func TestResolvedOptionPropagatesTheGlobalFallbackError(t *testing.T) {
 // straight after, and only the command list finds none. That is not an
 // error: Create installs the bindings once a session starts the server.
 func TestEnsureBindingsIgnoresAMissingServer(t *testing.T) {
+	skipPOSIXShell(t)
 	dir := t.TempDir()
 	stub := dir + "/tmux"
 	script := "#!/bin/sh\ncase \"$*\" in *list-keys*) exit 0;; esac\necho 'no server running on /tmp/agentmgr' >&2; exit 1\n"
@@ -175,6 +231,7 @@ func TestEnsureBindingsIgnoresAMissingServer(t *testing.T) {
 // Create runs on the UI's update path, and a new session cannot carry a pin,
 // so with tmux_prefix off only a refresh looks for one.
 func TestOnlyARefreshLooksForAPinnedPrefix(t *testing.T) {
+	skipPOSIXShell(t)
 	dir := t.TempDir()
 	stub := dir + "/tmux"
 	script := "#!/bin/sh\ncase \"$*\" in *" + pinnedPrefixOption + "*) echo 'pin read' >&2; exit 1;; esac\nexit 0\n"
@@ -194,7 +251,7 @@ func TestOnlyARefreshLooksForAPinnedPrefix(t *testing.T) {
 func TestSetLabelNeutralizesFormatStrings(t *testing.T) {
 	driver := requireTmux(t)
 	id := "lbl" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
-	if err := driver.Create(id, "/tmp", "", nil, 0, 0); err != nil {
+	if err := driver.Create(id, paneDir(), "", nil, 0, 0); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
@@ -218,9 +275,10 @@ func TestSetLabelNeutralizesFormatStrings(t *testing.T) {
 }
 
 func TestSendText(t *testing.T) {
+	skipPOSIXShell(t)
 	driver := requireTmux(t)
 	id := "send" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
-	if err := driver.Create(id, "/tmp", "cat", nil, 0, 0); err != nil {
+	if err := driver.Create(id, paneDir(), "cat", nil, 0, 0); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
@@ -251,6 +309,7 @@ func TestSendText(t *testing.T) {
 const pasteReady = "paste-ready"
 
 func TestSendTextKeepsEnterOutsideBracketedPaste(t *testing.T) {
+	skipPOSIXShell(t)
 	driver := requireTmux(t)
 	id := "bracket" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
 	marker := "/tmp/am-bracket-" + id
@@ -260,7 +319,7 @@ func TestSendTextKeepsEnterOutsideBracketedPaste(t *testing.T) {
 	want := "\x1b[200~" + text + "\x1b[201~\r"
 	command := "stty raw -echo; printf '\\033[?2004h" + pasteReady + "'; dd bs=1 count=" +
 		strconv.Itoa(len(want)) + " of=" + ShellQuote(marker) + " 2>/dev/null"
-	if err := driver.Create(id, "/tmp", command, nil, 0, 0); err != nil {
+	if err := driver.Create(id, paneDir(), command, nil, 0, 0); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
@@ -286,6 +345,7 @@ func TestSendTextKeepsEnterOutsideBracketedPaste(t *testing.T) {
 // as part of the bracketed paste, so the Enter has to reach it as a read of
 // its own, however late the pane gets around to reading.
 func TestSendTextSubmitsIntoAPaneThatReadsLate(t *testing.T) {
+	skipPOSIXShell(t)
 	driver := requireTmux(t)
 	id := "late" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
 	reads := "/tmp/am-late-" + id
@@ -298,7 +358,7 @@ func TestSendTextSubmitsIntoAPaneThatReadsLate(t *testing.T) {
 	command := "stty raw -echo; printf '\\033[?2004h" + pasteReady + "'; sleep 0.4; " +
 		"while :; do dd bs=4096 count=1 2>/dev/null | tee -a " + ShellQuote(reads) +
 		"; printf '|' >> " + ShellQuote(reads) + "; done"
-	if err := driver.Create(id, "/tmp", command, nil, 0, 0); err != nil {
+	if err := driver.Create(id, paneDir(), command, nil, 0, 0); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
@@ -324,6 +384,7 @@ func TestSendTextSubmitsIntoAPaneThatReadsLate(t *testing.T) {
 // text already on screen would pass for it, so the Enter waits the window out
 // rather than matching against nothing.
 func TestSendTextWaitsOutTheWindowWhenTheBaselineCaptureFails(t *testing.T) {
+	skipPOSIXShell(t)
 	dir := t.TempDir()
 	callLog := dir + "/calls"
 	stub := dir + "/tmux"
@@ -358,6 +419,7 @@ func TestSendTextWaitsOutTheWindowWhenTheBaselineCaptureFails(t *testing.T) {
 // pane's bracketed-paste markers with no Enter after it, so agent composers
 // keep multi-line text instead of submitting on the first newline.
 func TestPasteDeliversWithoutSubmitting(t *testing.T) {
+	skipPOSIXShell(t)
 	driver := requireTmux(t)
 	id := "paste" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
 	marker := "/tmp/am-paste-nosubmit-" + id
@@ -369,7 +431,7 @@ func TestPasteDeliversWithoutSubmitting(t *testing.T) {
 	want := "\x1b[200~first line\rsecond line\r\x1b[201~"
 	command := "stty raw -echo; printf '\\033[?2004h" + pasteReady + "'; dd bs=1 count=" +
 		strconv.Itoa(len(want)+1) + " of=" + ShellQuote(marker) + " 2>/dev/null"
-	if err := driver.Create(id, "/tmp", command, nil, 0, 0); err != nil {
+	if err := driver.Create(id, paneDir(), command, nil, 0, 0); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
@@ -400,6 +462,7 @@ func TestPasteDeliversWithoutSubmitting(t *testing.T) {
 // tmux keeps paste buffers per server, where the manager and every agent's MCP
 // process paste side by side.
 func TestPasteBufferNamesDifferAcrossProcesses(t *testing.T) {
+	skipPOSIXShell(t)
 	dir := t.TempDir()
 	callLog := dir + "/calls"
 	stub := dir + "/tmux"
@@ -426,6 +489,7 @@ func TestPasteBufferNamesDifferAcrossProcesses(t *testing.T) {
 // truncates around 1024 bytes and left long first prompts as a broken
 // shell command. paste-buffer must deliver the full line.
 func TestCreateDeliversLongCommand(t *testing.T) {
+	skipPOSIXShell(t)
 	driver := requireTmux(t)
 	id := "long" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
 	marker := "/tmp/am-long-" + id
@@ -436,7 +500,7 @@ func TestCreateDeliversLongCommand(t *testing.T) {
 	if len(command) < 1024 {
 		t.Fatalf("test command must exceed the old 1024-byte send-keys limit, got %d", len(command))
 	}
-	if err := driver.Create(id, "/tmp", command, nil, 0, 0); err != nil {
+	if err := driver.Create(id, paneDir(), command, nil, 0, 0); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
@@ -458,20 +522,20 @@ func TestDetachRequestRoundTrip(t *testing.T) {
 	driver := requireTmux(t)
 	// A live server is needed for global options to stick.
 	id := "rev" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
-	if err := driver.Create(id, "/tmp", "", nil, 0, 0); err != nil {
+	if err := driver.Create(id, paneDir(), "", nil, 0, 0); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
 	t.Cleanup(func() {
-		if err := driver.ClearRequest(); err != nil {
+		if err := driver.ClearRequest(id); err != nil {
 			t.Errorf("ClearRequest: %v", err)
 		}
 	})
 
-	if err := driver.ClearRequest(); err != nil {
+	if err := driver.ClearRequest(id); err != nil {
 		t.Fatalf("ClearRequest: %v", err)
 	}
-	request, err := driver.PendingRequest()
+	request, err := driver.PendingRequest(id)
 	if err != nil {
 		t.Fatalf("PendingRequest: %v", err)
 	}
@@ -480,10 +544,10 @@ func TestDetachRequestRoundTrip(t *testing.T) {
 	}
 
 	for _, want := range []string{RequestReview, RequestEditor} {
-		if _, err := tmuxCmd("set-option", "-g", requestOption, want).CombinedOutput(); err != nil {
+		if _, err := tmuxCmd(append(sessionRoute(id), "set-option", "-g", requestOption, want)...).CombinedOutput(); err != nil {
 			t.Fatalf("set marker: %v", err)
 		}
-		request, err = driver.PendingRequest()
+		request, err = driver.PendingRequest(id)
 		if err != nil {
 			t.Fatalf("PendingRequest: %v", err)
 		}
@@ -491,10 +555,10 @@ func TestDetachRequestRoundTrip(t *testing.T) {
 			t.Fatalf("marker reads as %q, want %q", request, want)
 		}
 
-		if err := driver.ClearRequest(); err != nil {
+		if err := driver.ClearRequest(id); err != nil {
 			t.Fatalf("ClearRequest: %v", err)
 		}
-		request, err = driver.PendingRequest()
+		request, err = driver.PendingRequest(id)
 		if err != nil {
 			t.Fatalf("PendingRequest: %v", err)
 		}
@@ -509,17 +573,21 @@ func TestDetachRequestRoundTrip(t *testing.T) {
 // binding, so EnsureBindings has to drop it as well as install F3.
 func TestEnsureBindingsMovesTheEditorKeyToF3(t *testing.T) {
 	driver := requireTmux(t)
-	stale := []string{"bind-key", "-n", "C-o", "if-shell", "-F", ownedBindingTest,
-		"set-option -g " + requestOption + " " + RequestEditor + " ; detach-client", "send-keys C-o"}
-	if out, err := tmuxCmd(stale...).CombinedOutput(); err != nil {
-		t.Fatalf("seed the old binding: %v: %s", err, out)
+	server := bindingServer(t, driver)
+	oldKey := bindingOf(t, "ctrl+o").Keys()[0]
+	stale := append([][]string{rootBinding(oldKey, "set-option -g "+requestOption+" "+RequestEditor+" ; detach-client")},
+		recordRootBindings([]string{oldKey.Tmux()})...)
+	for _, command := range stale {
+		if out, err := server(command...).CombinedOutput(); err != nil {
+			t.Fatalf("seed the old binding: %v: %s", err, out)
+		}
 	}
 
 	if err := driver.EnsureBindings(); err != nil {
 		t.Fatalf("EnsureBindings: %v", err)
 	}
 
-	bound, err := tmuxCmd("list-keys", "-T", "root").CombinedOutput()
+	bound, err := server("list-keys", "-T", "root").CombinedOutput()
 	if err != nil {
 		t.Fatalf("list root keys: %v: %s", err, bound)
 	}
@@ -543,19 +611,20 @@ func TestEnsureBindingsMovesTheEditorKeyToF3(t *testing.T) {
 
 func TestEnsureBindingsRestoresPrefixDetach(t *testing.T) {
 	driver := requireTmux(t)
+	server := bindingServer(t, driver)
 	t.Cleanup(func() {
-		if out, err := tmuxCmd("bind-key", "-T", "prefix", "d", "detach-client").CombinedOutput(); err != nil {
+		if out, err := server("bind-key", "-T", "prefix", "d", "detach-client").CombinedOutput(); err != nil {
 			t.Errorf("restore prefix d: %v: %s", err, out)
 		}
 	})
-	if out, err := tmuxCmd("unbind-key", "-T", "prefix", "d").CombinedOutput(); err != nil {
+	if out, err := server("unbind-key", "-T", "prefix", "d").CombinedOutput(); err != nil {
 		t.Fatalf("unbind prefix d: %v: %s", err, out)
 	}
 
 	if err := driver.EnsureBindings(); err != nil {
 		t.Fatalf("EnsureBindings: %v", err)
 	}
-	bound, err := tmuxCmd("list-keys", "-T", "prefix").CombinedOutput()
+	bound, err := server("list-keys", "-T", "prefix").CombinedOutput()
 	if err != nil {
 		t.Fatalf("list prefix d: %v: %s", err, bound)
 	}
@@ -575,7 +644,7 @@ func TestEnsureBindingsRestoresPrefixDetach(t *testing.T) {
 func TestRefreshChromeKeepsLabelAndAddsSessionHints(t *testing.T) {
 	driver := requireTmux(t)
 	id := "chr" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
-	if err := driver.Create(id, "/tmp", "", nil, 0, 0); err != nil {
+	if err := driver.Create(id, paneDir(), "", nil, 0, 0); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
@@ -637,6 +706,10 @@ func TestRefreshChromeKeepsLabelAndAddsSessionHints(t *testing.T) {
 	}
 	if !strings.Contains(string(right), `C-\ d = back`) {
 		t.Fatalf("footer should retain the primary-prefix escape, got %q", right)
+	}
+	// psmux has no None prefix: it ignores the value and keeps the old key.
+	if runtime.GOOS == "windows" {
+		return
 	}
 	if out, err := tmuxCmd("set-option", "-t", "am_"+id, "prefix", "None").CombinedOutput(); err != nil {
 		t.Fatalf("disable prefix: %v: %s", err, out)
@@ -700,7 +773,7 @@ func TestRefreshChromeResolvesAGloballySetPrefix(t *testing.T) {
 	})
 
 	id := "globalprefix" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
-	if err := driver.Create(id, "/tmp", "", nil, 0, 0); err != nil {
+	if err := driver.Create(id, paneDir(), "", nil, 0, 0); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
@@ -737,17 +810,13 @@ func TestTmuxPrefixFreesTheServersPrefixForASessionKey(t *testing.T) {
 			t.Errorf("restore prefix: %v: %s", err, out)
 		}
 	})
-	if out, err := tmuxCmd("set-option", "-g", "prefix", "C-s").CombinedOutput(); err != nil {
-		t.Fatalf("set the tmux.conf prefix: %v: %s", err, out)
-	}
 	detachOnCtrlS := keybind.DefaultSession().With(keybind.Detach, bindingOf(t, "ctrl+s"))
 	driver.SetSessionKeys(detachOnCtrlS.With(keybind.TmuxPrefix, bindingOf(t, "ctrl+b")))
 	id := "tmuxprefix" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
-	if err := driver.Create(id, "/tmp", "", nil, 0, 0); err != nil {
+	if err := driver.Create(id, paneDir(), "", nil, 0, 0); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
-
 	sessionOption := func(option string) string {
 		t.Helper()
 		out, err := tmuxCmd("show-options", "-q", "-v", "-t", "am_"+id, option).CombinedOutput()
@@ -763,6 +832,39 @@ func TestTmuxPrefixFreesTheServersPrefixForASessionKey(t *testing.T) {
 			t.Fatalf("status-right: %v: %s", err, right)
 		}
 		return string(right)
+	}
+	// psmux keeps global and session options in one store per session
+	// server, so a server-global prefix cannot sit under a session pin the
+	// way tmux.conf's does on tmux; the pin is the only prefix there.
+	// psmux also has no None prefix: it normalizes the marker to none, and
+	// an unset session prefix answers the server's own default, not empty.
+	if runtime.GOOS == "windows" {
+		if got := sessionOption("prefix") + " " + sessionOption("prefix2"); got != "C-b none" {
+			t.Fatalf("the session should answer to the pinned prefix alone, got %q", got)
+		}
+		driver.SetSessionKeys(detachOnCtrlS)
+		if err := driver.RefreshChrome(id); err != nil {
+			t.Fatalf("RefreshChrome without tmux_prefix: %v", err)
+		}
+		if got := sessionOption("prefix"); got != "C-b" {
+			t.Fatalf("clearing tmux_prefix should hand back the server's default prefix, the session still sets %q", got)
+		}
+		if right := footer(); !strings.Contains(right, "Ctrl+s / C-b d = back") {
+			t.Fatalf("after clearing tmux_prefix the footer should advertise the free key and the default prefix, got %q", right)
+		}
+		if out, err := tmuxCmd("set-option", "-t", "am_"+id, "prefix", "C-a").CombinedOutput(); err != nil {
+			t.Fatalf("set a session prefix by hand: %v: %s", err, out)
+		}
+		if err := driver.RefreshChrome(id); err != nil {
+			t.Fatalf("RefreshChrome over a hand-set prefix: %v", err)
+		}
+		if got := sessionOption("prefix"); got != "C-a" {
+			t.Fatalf("a prefix the manager never set should stay, got %q", got)
+		}
+		return
+	}
+	if out, err := tmuxCmd("set-option", "-g", "prefix", "C-s").CombinedOutput(); err != nil {
+		t.Fatalf("set the tmux.conf prefix: %v: %s", err, out)
 	}
 	if got := sessionOption("prefix") + " " + sessionOption("prefix2"); got != "C-b None" {
 		t.Fatalf("the session should answer to the pinned prefix alone, got %q", got)
@@ -820,6 +922,7 @@ func waitForFile(t *testing.T, driver *Driver, id, path string) string {
 // server — the only client is in control mode and has no tty — unless the
 // pane carries explicit colors of its own, which is what the pane theme sets.
 func TestCreateAnswersColorQueries(t *testing.T) {
+	skipPOSIXShell(t)
 	driver := requireTmux(t)
 	t.Cleanup(func() { clearPaneTheme(t) })
 	driver.PublishPaneTheme(PaneTheme{Foreground: "#cdd6f4", Background: "#1e1e2e", ColorFgBg: "15;0"})
@@ -830,7 +933,7 @@ func TestCreateAnswersColorQueries(t *testing.T) {
 	// read both happen inside the pane. Raw mode keeps the line discipline
 	// from holding a reply that ends in ST rather than a newline.
 	command := "stty raw; printf '\\033]10;?\\033\\\\\\033]11;?\\033\\\\'; cat > " + reply
-	if err := driver.Create(id, "/tmp", command, nil, 0, 0); err != nil {
+	if err := driver.Create(id, paneDir(), command, nil, 0, 0); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
@@ -846,13 +949,14 @@ func TestCreateAnswersColorQueries(t *testing.T) {
 // COLORFGBG is the fallback for agents that read the environment instead of
 // querying, and nothing in a pane's environment carries it otherwise.
 func TestCreateExportsColorFgBg(t *testing.T) {
+	skipPOSIXShell(t)
 	driver := requireTmux(t)
 	t.Cleanup(func() { clearPaneTheme(t) })
 	driver.PublishPaneTheme(PaneTheme{Foreground: "#cdd6f4", Background: "#1e1e2e", ColorFgBg: "15;0"})
 
 	id := "fgbg" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
 	marker := t.TempDir() + "/env"
-	if err := driver.Create(id, "/tmp", "printenv COLORFGBG > "+marker, nil, 0, 0); err != nil {
+	if err := driver.Create(id, paneDir(), "printenv COLORFGBG > "+marker, nil, 0, 0); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
@@ -880,7 +984,7 @@ func TestCreateAppliesPublishedThemeWithoutAPush(t *testing.T) {
 	driver.PublishPaneTheme(PaneTheme{Foreground: "#cdd6f4", Background: "#1e1e2e", ColorFgBg: "15;0"})
 
 	id := "pub" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
-	if err := driver.Create(id, "/tmp", "", nil, 0, 0); err != nil {
+	if err := driver.Create(id, paneDir(), "", nil, 0, 0); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
@@ -902,7 +1006,7 @@ func TestPushPaneThemeIsLatestWins(t *testing.T) {
 	// for the global option to stick to.
 	id := "race" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
 	driver.PublishPaneTheme(PaneTheme{Foreground: "#cdd6f4", Background: "#101010", ColorFgBg: "15;0"})
-	if err := driver.Create(id, "/tmp", "", nil, 0, 0); err != nil {
+	if err := driver.Create(id, paneDir(), "", nil, 0, 0); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
@@ -940,7 +1044,7 @@ func TestCreateSerializesWithPushPaneTheme(t *testing.T) {
 	stamp := strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
 	hold := "hold" + stamp
 	driver.PublishPaneTheme(PaneTheme{Foreground: "#cdd6f4", Background: "#101010", ColorFgBg: "15;0"})
-	if err := driver.Create(hold, "/tmp", "", nil, 0, 0); err != nil {
+	if err := driver.Create(hold, paneDir(), "", nil, 0, 0); err != nil {
 		t.Fatalf("Create hold session: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(hold) })
@@ -963,7 +1067,7 @@ func TestCreateSerializesWithPushPaneTheme(t *testing.T) {
 	t.Cleanup(func() { afterCreateThemeLoad = nil })
 
 	raced := "raced" + stamp
-	if err := driver.Create(raced, "/tmp", "", nil, 0, 0); err != nil {
+	if err := driver.Create(raced, paneDir(), "", nil, 0, 0); err != nil {
 		t.Fatalf("Create raced session: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(raced) })
@@ -975,11 +1079,12 @@ func TestCreateSerializesWithPushPaneTheme(t *testing.T) {
 }
 
 func TestLifecycle(t *testing.T) {
+	skipPOSIXShell(t)
 	driver := requireTmux(t)
 	id := "test" + time.Now().Format("150405.000000")
 	id = strings.ReplaceAll(id, ".", "")
 
-	if err := driver.Create(id, "/tmp", "printf 'hello-pane-marker'", nil, 0, 0); err != nil {
+	if err := driver.Create(id, paneDir(), "printf 'hello-pane-marker'", nil, 0, 0); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
@@ -1056,7 +1161,7 @@ func TestCommandListSeparatesCommands(t *testing.T) {
 func TestCommandListRunsAgainstTmux(t *testing.T) {
 	driver := requireTmux(t)
 	id := "cmdlist" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
-	if err := driver.Create(id, "/tmp", "", nil, 0, 0); err != nil {
+	if err := driver.Create(id, paneDir(), "", nil, 0, 0); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
@@ -1075,6 +1180,11 @@ func TestCommandListRunsAgainstTmux(t *testing.T) {
 		t.Fatalf("@second = %q, want the command after the separator to run", got)
 	}
 
+	// psmux answers an option set on a missing session with a warning at
+	// exit 0, so there is no failure for the list to stop at.
+	if runtime.GOOS == "windows" {
+		return
+	}
 	if _, err := driver.run(commandList(
 		[]string{"set-option", "-t", "am_no_such_session", "@third", "gamma"},
 		[]string{"set-option", "-t", name, "@fourth", "delta"},
@@ -1115,6 +1225,7 @@ func waitForPane(t *testing.T, driver *Driver, id, want string) {
 // inherits these values: the rename subcommand and the MCP server both
 // identify the session by AGENT_MANAGER_SESSION_ID alone.
 func TestCreateExportsSessionEnvIntoTheShell(t *testing.T) {
+	skipPOSIXShell(t)
 	driver := requireTmux(t)
 	id := "senv" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
 	marker := t.TempDir() + "/env"
@@ -1124,7 +1235,7 @@ func TestCreateExportsSessionEnvIntoTheShell(t *testing.T) {
 	}
 	// A launch command that returns at once stands in for the user quitting
 	// the agent back to the pane's shell.
-	if err := driver.Create(id, "/tmp", "printf 'agent ran\\n'", env, 0, 0); err != nil {
+	if err := driver.Create(id, paneDir(), "printf 'agent ran\\n'", env, 0, 0); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
@@ -1147,9 +1258,10 @@ func TestCreateExportsSessionEnvIntoTheShell(t *testing.T) {
 // The pane is where the user is looking when the agent exits, so the way
 // back to a wired agent is named there.
 func TestCreateNamesTheWayBackWhenTheAgentExits(t *testing.T) {
+	skipPOSIXShell(t)
 	driver := requireTmux(t)
 	id := "hint" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
-	if err := driver.Create(id, "/tmp", "printf 'agent ran\\n'", nil, 0, 0); err != nil {
+	if err := driver.Create(id, paneDir(), "printf 'agent ran\\n'", nil, 0, 0); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
@@ -1160,6 +1272,7 @@ func TestCreateNamesTheWayBackWhenTheAgentExits(t *testing.T) {
 // EnterWorktree do, is a child of the launch script, and tmux reports the
 // directory of the pane's foreground process group.
 func TestPanesFollowsTheAgentIntoANewDirectory(t *testing.T) {
+	skipPOSIXShell(t)
 	driver := requireTmux(t)
 	id := "cwd" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
 	moved := filepath.Join(t.TempDir(), "moved dir")
@@ -1192,6 +1305,7 @@ func TestPanesFollowsTheAgentIntoANewDirectory(t *testing.T) {
 }
 
 func TestExportEnvPrefixesTheCommand(t *testing.T) {
+	skipPOSIXShell(t)
 	env := map[string]string{"B": "second", "A": "fir st"}
 	want := `export A='fir st'; export B='second'; claude --resume 7`
 	if got := ExportEnv(env, "claude --resume 7"); got != want {
@@ -1204,9 +1318,10 @@ func TestExportEnvPrefixesTheCommand(t *testing.T) {
 // leader. Everything the manager reads and types has to stay on the agent's
 // own pane through that.
 func TestManagerStaysOnTheAgentPaneAfterASplit(t *testing.T) {
+	skipPOSIXShell(t)
 	driver := requireTmux(t)
 	id := "split" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
-	if err := driver.Create(id, "/tmp", "cat", nil, 0, 0); err != nil {
+	if err := driver.Create(id, paneDir(), "cat", nil, 0, 0); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
@@ -1265,16 +1380,17 @@ func TestManagerStaysOnTheAgentPaneAfterASplit(t *testing.T) {
 // would point every capture and keystroke at whatever pane has focus.
 func TestEnsureBindingsPinsPaneNumbering(t *testing.T) {
 	driver := requireTmux(t)
-	if out, err := tmuxCmd("set-window-option", "-g", "pane-base-index", "1").CombinedOutput(); err != nil {
+	server := bindingServer(t, driver)
+	if out, err := server("set-window-option", "-g", "pane-base-index", "1").CombinedOutput(); err != nil {
 		t.Fatalf("set pane-base-index: %v: %s", err, out)
 	}
-	t.Cleanup(func() { tmuxCmd("set-window-option", "-g", "pane-base-index", "0").Run() })
+	t.Cleanup(func() { server("set-window-option", "-g", "pane-base-index", "0").Run() })
 
 	if err := driver.EnsureBindings(); err != nil {
 		t.Fatalf("EnsureBindings: %v", err)
 	}
 
-	out, err := tmuxCmd("show-window-options", "-gv", "pane-base-index").CombinedOutput()
+	out, err := server("show-window-options", "-gv", "pane-base-index").CombinedOutput()
 	if err != nil {
 		t.Fatalf("show-window-options: %v: %s", err, out)
 	}
@@ -1292,6 +1408,7 @@ func TestEnsureBindingsPinsPaneNumbering(t *testing.T) {
 // line it holds, and one that loses height clears a Codex scrollback
 // (#369). The other axis is the window's own and every pane follows it.
 func TestResizeFitsTheAgentPaneInASplitWindow(t *testing.T) {
+	skipPOSIXShell(t)
 	for _, split := range []struct {
 		axis string
 		flag string
@@ -1306,7 +1423,7 @@ func TestResizeFitsTheAgentPaneInASplitWindow(t *testing.T) {
 			t.Run(split.axis+"/"+box.name, func(t *testing.T) {
 				driver := requireTmux(t)
 				id := "fit" + split.axis[:1] + box.name[:1] + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
-				if err := driver.Create(id, "/tmp", "cat", nil, 80, 24); err != nil {
+				if err := driver.Create(id, paneDir(), "cat", nil, 80, 24); err != nil {
 					t.Fatalf("Create: %v", err)
 				}
 				t.Cleanup(func() { driver.Kill(id) })
@@ -1337,6 +1454,7 @@ func TestResizeFitsTheAgentPaneInASplitWindow(t *testing.T) {
 // A geometry line tmux did not answer in numbers leaves the agent pane at
 // whatever the split gave it, so the resize reports rather than returns.
 func TestResizeReportsUnreadableGeometry(t *testing.T) {
+	skipPOSIXShell(t)
 	dir := t.TempDir()
 	stub := dir + "/tmux"
 	script := "#!/bin/sh\ncase \"$*\" in *display-message*) echo 'no geometry here';; esac\nexit 0\n"
@@ -1371,9 +1489,10 @@ func teammateSize(t *testing.T, id string) [2]int {
 // window, which is not the one the agent runs in. Everything the preview
 // pins has to stay on the agent's window through that.
 func TestResizePinsTheAgentWindowNotTheCurrentOne(t *testing.T) {
+	skipPOSIXShell(t)
 	driver := requireTmux(t)
 	id := "window" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
-	if err := driver.Create(id, "/tmp", "cat", nil, 80, 24); err != nil {
+	if err := driver.Create(id, paneDir(), "cat", nil, 80, 24); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
@@ -1400,6 +1519,7 @@ func TestResizePinsTheAgentWindowNotTheCurrentOne(t *testing.T) {
 // pane: a bare session target resolves to whichever pane is active, and an
 // agent that split its window would have its quotes read off the teammate.
 func TestCapturePaneHistoryTargetsTheAgentPane(t *testing.T) {
+	skipPOSIXShell(t)
 	dir := t.TempDir()
 	callLog := dir + "/calls"
 	stub := dir + "/tmux"
@@ -1417,74 +1537,6 @@ func TestCapturePaneHistoryTargetsTheAgentPane(t *testing.T) {
 	}
 	if !strings.Contains(string(logged), "-S -300 -t "+PaneTarget("x1")) {
 		t.Fatalf("history capture went to the wrong target, calls:\n%s", logged)
-	}
-}
-
-func TestSocketPathNamesTheRunningServer(t *testing.T) {
-	driver := requireTmux(t)
-	out, err := tmuxCmd("display-message", "-p", "#{socket_path}").CombinedOutput()
-	if err != nil {
-		t.Fatalf("%v: %s", err, out)
-	}
-	want := strings.TrimSpace(string(out))
-	if got := driver.SocketPath(); got != want {
-		t.Fatalf("SocketPath = %q, want tmux's own %q", got, want)
-	}
-}
-
-// The -L name is shared by every manager; only the path tells two servers
-// apart, and it is the path a session is stamped with.
-func TestSocketPathSeparatesServersUnderOneName(t *testing.T) {
-	here := requireTmux(t)
-	herePath := here.SocketPath()
-	t.Setenv("TMUX_TMPDIR", t.TempDir())
-	elsewhere, err := NewWithSocket(testSocket)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if herePath == elsewhere.SocketPath() {
-		t.Fatalf("both servers resolved to %q", herePath)
-	}
-	if !strings.HasSuffix(elsewhere.SocketPath(), "/"+testSocket) {
-		t.Fatalf("path %q does not end in the socket name", elsewhere.SocketPath())
-	}
-}
-
-// tmux resolves a relative TMUX_TMPDIR from its own working directory, so
-// the path a session is stamped with has to be the absolute one or a later
-// poll reads its own sessions as another server's.
-func TestSocketPathFromRelativeTmpdirIsAbsolute(t *testing.T) {
-	root := t.TempDir()
-	t.Chdir(root)
-	if err := os.MkdirAll("sockets", 0o700); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("TMUX_TMPDIR", "sockets")
-
-	got := socketPathFromEnv(testSocket)
-	if !filepath.IsAbs(got) {
-		t.Fatalf("socket path %q is not absolute", got)
-	}
-	resolved, err := filepath.EvalSymlinks(filepath.Join(root, "sockets"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := filepath.Join(resolved, fmt.Sprintf("tmux-%d", os.Getuid()), testSocket)
-	if got != want {
-		t.Fatalf("socket path = %q, want %q", got, want)
-	}
-}
-
-// tmux skips a TMUX_TMPDIR it cannot resolve and puts its socket under /tmp.
-func TestSocketPathFromMissingTmpdirFallsBackToTmp(t *testing.T) {
-	t.Setenv("TMUX_TMPDIR", filepath.Join(t.TempDir(), "missing"))
-	tmp, err := filepath.EvalSymlinks("/tmp")
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := filepath.Join(tmp, fmt.Sprintf("tmux-%d", os.Getuid()), testSocket)
-	if got := socketPathFromEnv(testSocket); got != want {
-		t.Fatalf("socket path = %q, want %q", got, want)
 	}
 }
 
@@ -1511,19 +1563,33 @@ func bindingOf(t *testing.T, specs ...string) keybind.Binding {
 
 // ownedRootLines reads the root-table bindings the manager owns, keyed by
 // the key name as unbind-key takes it.
-func ownedRootLines(t *testing.T) map[string]string {
+func ownedRootLines(t *testing.T, server func(args ...string) *exec.Cmd) map[string]string {
 	t.Helper()
-	bound, err := tmuxCmd("list-keys", "-T", "root").CombinedOutput()
+	bound, err := server("list-keys", "-T", "root").CombinedOutput()
 	if err != nil {
 		t.Fatalf("list root keys: %v: %s", err, bound)
+	}
+	// tmux bindings carry the session test; psmux's are recorded by key.
+	recorded := map[string]bool{}
+	if runtime.GOOS == "windows" {
+		keys, err := server("show-option", "-gqv", rootKeysOption).CombinedOutput()
+		if err != nil {
+			t.Fatalf("recorded root keys: %v: %s", err, keys)
+		}
+		for _, key := range strings.Fields(string(keys)) {
+			recorded[key] = true
+		}
 	}
 	owned := map[string]string{}
 	for _, line := range strings.Split(string(bound), "\n") {
 		fields := strings.Fields(line)
-		if len(fields) < 4 || !strings.Contains(line, ownedBindingTest) {
+		if len(fields) < 4 {
 			continue
 		}
-		owned[strings.ReplaceAll(fields[3], `\\`, `\`)] = line
+		key := strings.ReplaceAll(fields[3], `\\`, `\`)
+		if runtime.GOOS == "windows" && recorded[key] || strings.Contains(line, ownedBindingTest) {
+			owned[key] = line
+		}
 	}
 	return owned
 }
@@ -1543,15 +1609,18 @@ func restoreDefaultKeys(t *testing.T, driver *Driver) {
 // the server, and moving back drops the keys it had moved to.
 func TestEnsureBindingsFollowsTheKeyTable(t *testing.T) {
 	driver := requireTmux(t)
+	server := bindingServer(t, driver)
 	restoreDefaultKeys(t, driver)
 	custom := sessionOf(t, []string{"f9", "alt+q"}, []string{"ctrl+g"}, nil)
 	driver.SetSessionKeys(custom)
 	if err := driver.EnsureBindings(); err != nil {
 		t.Fatalf("EnsureBindings: %v", err)
 	}
-	owned := ownedRootLines(t)
+	owned := ownedRootLines(t, server)
 	for _, key := range []string{"F9", "M-q"} {
-		if line := owned[key]; !strings.Contains(line, "detach-client") || !strings.Contains(line, "send-keys "+key) {
+		// psmux bindings have no other session to pass the key through to.
+		passes := runtime.GOOS == "windows" || strings.Contains(owned[key], "send-keys "+key)
+		if line := owned[key]; !strings.Contains(line, "detach-client") || !passes {
 			t.Errorf("%s should detach inside a session and pass through elsewhere, got %q", key, line)
 		}
 	}
@@ -1568,13 +1637,19 @@ func TestEnsureBindingsFollowsTheKeyTable(t *testing.T) {
 	if err := driver.EnsureBindings(); err != nil {
 		t.Fatalf("EnsureBindings with defaults: %v", err)
 	}
-	owned = ownedRootLines(t)
+	owned = ownedRootLines(t, server)
 	for _, key := range []string{"F9", "M-q", "C-g"} {
 		if line, bound := owned[key]; bound {
 			t.Errorf("%s should come off with the table that bound it, got %q", key, line)
 		}
 	}
-	if line := owned[`C-\`]; !strings.Contains(line, "detach-client") || !strings.Contains(line, `send-keys C-\\\\`) {
+	// tmux lists the stored branch with its backslashes doubled; psmux
+	// binds the key straight to detach-client.
+	passThrough := `send-keys C-\\\\`
+	if runtime.GOOS == "windows" {
+		passThrough = "detach-client"
+	}
+	if line := owned[`C-\`]; !strings.Contains(line, "detach-client") || !strings.Contains(line, passThrough) {
 		t.Errorf(`C-\ should detach and pass itself through, got %q`, line)
 	}
 	if line := owned["C-q"]; !strings.Contains(line, "detach-client") {
@@ -1593,15 +1668,16 @@ func TestEnsureBindingsFollowsTheKeyTable(t *testing.T) {
 // remove.
 func TestEnsureBindingsLeavesTheUsersOwnBindingsAlone(t *testing.T) {
 	driver := requireTmux(t)
-	if out, err := tmuxCmd("bind-key", "-n", "F9", "display-message", "mine").CombinedOutput(); err != nil {
+	server := bindingServer(t, driver)
+	if out, err := server("bind-key", "-n", "F9", "display-message", "mine").CombinedOutput(); err != nil {
 		t.Fatalf("seed the user binding: %v: %s", err, out)
 	}
-	t.Cleanup(func() { tmuxCmd("unbind-key", "-n", "F9").Run() })
+	t.Cleanup(func() { server("unbind-key", "-n", "F9").Run() })
 
 	if err := driver.EnsureBindings(); err != nil {
 		t.Fatalf("EnsureBindings: %v", err)
 	}
-	bound, err := tmuxCmd("list-keys", "-T", "root").CombinedOutput()
+	bound, err := server("list-keys", "-T", "root").CombinedOutput()
 	if err != nil {
 		t.Fatalf("list root keys: %v: %s", err, bound)
 	}
@@ -1634,7 +1710,7 @@ func TestSessionFooterNamesTheConfiguredKeys(t *testing.T) {
 	restoreDefaultKeys(t, driver)
 	driver.SetSessionKeys(sessionOf(t, []string{"f9"}, []string{"ctrl+g"}, nil))
 	id := "footerkeys"
-	if err := driver.Create(id, "/tmp", "", nil, 0, 0); err != nil {
+	if err := driver.Create(id, paneDir(), "", nil, 0, 0); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
@@ -1648,185 +1724,11 @@ func TestSessionFooterNamesTheConfiguredKeys(t *testing.T) {
 	}
 }
 
-// A terminal pane carries no session id in its environment, so the CLI
-// running in one asks which managed session tmux filed that pane under.
-func TestSessionOfPaneResolvesAManagedPane(t *testing.T) {
-	driver := requireTmux(t)
-	id := "pane" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
-	if err := driver.Create(id, "/tmp", "", nil, 80, 24); err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	t.Cleanup(func() { driver.Kill(id) })
-
-	pane := paneID(t, id)
-	got, err := driver.SessionOfPane(tmuxEnv(t, driver), pane)
-	if err != nil {
-		t.Fatalf("SessionOfPane: %v", err)
-	}
-	if got != id {
-		t.Fatalf("SessionOfPane = %q, want %q", got, id)
-	}
-
-	// A $TMUX naming another server belongs to the user's own tmux, whose
-	// pane ids mean nothing here.
-	got, err = driver.SessionOfPane("/tmp/tmux-999/somebody-else,"+serverPid(t)+",0", pane)
-	if err != nil {
-		t.Fatalf("SessionOfPane on a foreign socket: %v", err)
-	}
-	if got != "" {
-		t.Fatalf("a foreign socket resolved to %q", got)
-	}
-
-	if got, err := driver.SessionOfPane("", pane); err != nil || got != "" {
-		t.Fatalf("an empty TMUX resolved to %q, err %v", got, err)
-	}
-}
-
-// Muse starts an MCP server with none of the pane's environment, so the
-// server can only find its session by walking up to the pane's process.
-func TestSessionOfProcessWalksUpToAManagedPane(t *testing.T) {
-	driver := requireTmux(t)
-	id := "proc" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
-	if err := driver.Create(id, "/tmp", "sleep 60", nil, 80, 24); err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	t.Cleanup(func() { driver.Kill(id) })
-
-	out, err := tmuxCmd("display-message", "-p", "-t", PaneTarget(id), "#{pane_pid}").CombinedOutput()
-	if err != nil {
-		t.Fatalf("pane pid: %v: %s", err, out)
-	}
-	panePID := strings.TrimSpace(string(out))
-	var child int
-	for deadline := time.Now().Add(5 * time.Second); child == 0 && time.Now().Before(deadline); {
-		out, _ := exec.Command("pgrep", "-P", panePID, "sleep").Output()
-		child, _ = strconv.Atoi(strings.TrimSpace(string(out)))
-		time.Sleep(50 * time.Millisecond)
-	}
-	if child == 0 {
-		t.Fatalf("no sleep process under pane pid %s", panePID)
-	}
-
-	if got, err := driver.SessionOfProcess(child); err != nil || got != id {
-		t.Fatalf("SessionOfProcess(pane child) = %q, %v; want %q", got, err, id)
-	}
-	if got, err := driver.SessionOfProcess(os.Getpid()); err != nil || got != "" {
-		t.Fatalf("SessionOfProcess(test process) = %q, %v; want no session", got, err)
-	}
-}
-
-// A session outside the am_ namespace is one the user started on this
-// server themselves, not a managed session the CLI may act as.
-func TestSessionOfPaneIgnoresAnUnmanagedSession(t *testing.T) {
-	driver := requireTmux(t)
-	name := "unmanaged" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
-	if out, err := tmuxCmd("new-session", "-d", "-s", name).CombinedOutput(); err != nil {
-		t.Fatalf("new-session: %v: %s", err, out)
-	}
-	t.Cleanup(func() { tmuxCmd("kill-session", "-t", name).Run() })
-
-	out, err := tmuxCmd("display-message", "-p", "-t", name, "#{pane_id}").CombinedOutput()
-	if err != nil {
-		t.Fatalf("pane id: %v: %s", err, out)
-	}
-	pane := strings.TrimSpace(string(out))
-	got, err := driver.SessionOfPane(tmuxEnv(t, driver), pane)
-	if err != nil {
-		t.Fatalf("SessionOfPane: %v", err)
-	}
-	if got != "" {
-		t.Fatalf("an unmanaged session resolved to %q", got)
-	}
-}
-
-// tmux reports the socket with its symlinks resolved, and a $TMUX copied
-// out of a pane can name the same file through a symlinked directory: on
-// macOS /tmp is itself a link to /private/tmp. The two still have to meet.
-func TestSessionOfPaneMatchesASymlinkedSocketPath(t *testing.T) {
-	driver := requireTmux(t)
-	id := "link" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
-	if err := driver.Create(id, "/tmp", "", nil, 80, 24); err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	t.Cleanup(func() { driver.Kill(id) })
-
-	socket := driver.SocketPath()
-	link := filepath.Join(t.TempDir(), "socketdir")
-	if err := os.Symlink(filepath.Dir(socket), link); err != nil {
-		t.Fatalf("symlink the socket directory: %v", err)
-	}
-	through := filepath.Join(link, filepath.Base(socket))
-	got, err := driver.SessionOfPane(through+","+serverPid(t)+",0", paneID(t, id))
-	if err != nil {
-		t.Fatalf("SessionOfPane: %v", err)
-	}
-	if got != id {
-		t.Fatalf("SessionOfPane through a symlink = %q, want %q", got, id)
-	}
-}
-
-// tmux reads a target it cannot parse as the current session and exits 0,
-// so anything that is not a pane id has to answer empty before tmux sees it.
-func TestSessionOfPaneRejectsAMalformedPaneID(t *testing.T) {
-	driver := requireTmux(t)
-	id := "bad" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
-	if err := driver.Create(id, "/tmp", "", nil, 80, 24); err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	t.Cleanup(func() { driver.Kill(id) })
-
-	for _, pane := range []string{"", "-X", ".", ":", "%", "%1x", "am_" + id} {
-		got, err := driver.SessionOfPane(tmuxEnv(t, driver), pane)
-		if err != nil || got != "" {
-			t.Fatalf("pane %q resolved to %q, err %v", pane, got, err)
-		}
-	}
-}
-
-// A restarted server keeps its socket path but numbers panes from %0 again,
-// so a $TMUX left over from the previous server must not name a session on
-// this one.
-func TestSessionOfPaneIgnoresAnotherServerOnTheSameSocket(t *testing.T) {
-	driver := requireTmux(t)
-	id := "pid" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
-	if err := driver.Create(id, "/tmp", "", nil, 80, 24); err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	t.Cleanup(func() { driver.Kill(id) })
-
-	pid, err := strconv.Atoi(serverPid(t))
-	if err != nil {
-		t.Fatalf("server pid: %v", err)
-	}
-	stale := driver.SocketPath() + "," + strconv.Itoa(pid+1) + ",0"
-	got, err := driver.SessionOfPane(stale, paneID(t, id))
-	if err != nil {
-		t.Fatalf("SessionOfPane: %v", err)
-	}
-	if got != "" {
-		t.Fatalf("a $TMUX from another server resolved to %q", got)
-	}
-}
-
-func tmuxEnv(t *testing.T, driver *Driver) string {
-	t.Helper()
-	return driver.SocketPath() + "," + serverPid(t) + ",0"
-}
-
 func serverPid(t *testing.T) string {
 	t.Helper()
 	out, err := tmuxCmd("display-message", "-p", "#{pid}").CombinedOutput()
 	if err != nil {
 		t.Fatalf("server pid: %v: %s", err, out)
-	}
-	return strings.TrimSpace(string(out))
-}
-
-func paneID(t *testing.T, id string) string {
-	t.Helper()
-	out, err := tmuxCmd("display-message", "-p", "-t", PaneTarget(id), "#{pane_id}").CombinedOutput()
-	if err != nil {
-		t.Fatalf("pane id for %s: %v: %s", id, err, out)
 	}
 	return strings.TrimSpace(string(out))
 }

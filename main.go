@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 
 	"github.com/YoanWai/agent-manager/internal/catalog"
 	"github.com/YoanWai/agent-manager/internal/cli"
@@ -246,10 +245,10 @@ func run() error {
 	ui.ResetTerminalColors()
 	if runErr == nil {
 		if finished, ok := final.(*ui.Model); ok && finished.RestartPath() != "" {
-			// A self-update swapped the binary on disk; exec replaces this
-			// process with the new build so the manager comes back updated
-			// without touching the tmux sessions it manages.
-			return syscall.Exec(finished.RestartPath(), os.Args, os.Environ())
+			// A self-update swapped the binary on disk; restart hands over
+			// to the new build so the manager comes back updated without
+			// touching the tmux sessions it manages.
+			return restart(finished.RestartPath())
 		}
 	}
 	return runErr

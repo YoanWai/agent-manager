@@ -2,6 +2,7 @@ package ui
 
 import (
 	"errors"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -635,6 +636,9 @@ func TestSearchMatchingArchivedChildDoesNotHoistLiveParent(t *testing.T) {
 // the geometry cache to follow. A later refresh has to notice and pin that
 // pane back to the box.
 func TestRefreshRepinsAnAgentSplitPane(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("psmux resize-pane on a detached window scales against the last client area; the manager does not pin split panes there")
+	}
 	for _, split := range []struct {
 		axis string
 		flag string

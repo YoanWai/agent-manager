@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -342,6 +343,9 @@ func TestForkClearsStatusFilter(t *testing.T) {
 
 	tool := m.cfg.Tools[source.Tool]
 	tool.ForkCommand = "true {id}; cat"
+	if runtime.GOOS == "windows" {
+		tool.ForkCommand = fixtureModeCommand("cat-stdin") + " {id}"
+	}
 	m.cfg.Tools[source.Tool] = tool
 
 	m.openFork()

@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -261,6 +263,9 @@ func TestTerminalKeyOnUnnestedShellStaysUnnested(t *testing.T) {
 // it, so the row checks both the pane path and the recorded cwd rather than
 // handing back somewhere that is no longer there.
 func TestRowDirRefusesADirectoryThatIsGone(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows refuses to delete a directory that is a live pane's working directory")
+	}
 	m := buildModel(t)
 	gone := t.TempDir()
 	createSession(t, m, "agent", gone, "")
@@ -329,9 +334,10 @@ func TestShellToolIsFoundByItsFlag(t *testing.T) {
 // machine does.
 func slowSpawn(t *testing.T, delay time.Duration) {
 	t.Helper()
-	realTmux, err := exec.LookPath("tmux")
+	skipPOSIXShell(t)
+	realTmux, err := exec.LookPath(tmux.Binary)
 	if err != nil {
-		t.Skip("tmux not installed")
+		t.Skip(tmux.Binary + " not installed")
 	}
 	dir := t.TempDir()
 	script := fmt.Sprintf("#!/bin/sh\ncase \" $* \" in *' new-session '*) sleep %.3f ;; esac\nexec %s \"$@\"\n", delay.Seconds(), realTmux)

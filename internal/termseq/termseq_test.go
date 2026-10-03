@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -13,6 +14,13 @@ func swap(tmux bool) (*strings.Builder, func()) {
 	var sink strings.Builder
 	Out, inTmux = &sink, func() bool { return tmux }
 	return &sink, func() { Out, inTmux = origOut, origTmux }
+}
+
+func skipPOSIXShell(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture is a POSIX shell script")
+	}
 }
 
 // tmux forwards a passthrough payload after undoubling ESC bytes; a
@@ -47,6 +55,7 @@ func TestEmitWrapsOnlyUnderTmux(t *testing.T) {
 }
 
 func TestEnablePassthroughOnlyRunsUnderTmux(t *testing.T) {
+	skipPOSIXShell(t)
 	binDir := t.TempDir()
 	argsFile := filepath.Join(t.TempDir(), "args")
 	t.Setenv("TERMSEQ_TMUX_ARGS", argsFile)

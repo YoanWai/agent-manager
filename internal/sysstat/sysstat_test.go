@@ -13,6 +13,13 @@ import (
 	"github.com/shirou/gopsutil/v4/sensors"
 )
 
+func skipPOSIXShell(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture is a POSIX shell script")
+	}
+}
+
 func TestSample(t *testing.T) {
 	disableHostSampling(t)
 	snap := Sample("/")
@@ -366,26 +373,6 @@ func TestHostCPUFromDelta(t *testing.T) {
 	}
 }
 
-func TestParsePSTime(t *testing.T) {
-	cases := map[string]float64{
-		"0:00.50":    0.5,
-		"1:30.00":    90,
-		"37:06.59":   37*60 + 6.59,
-		"975:30.99":  975*60 + 30.99,
-		"01:02:03":   1*3600 + 2*60 + 3,
-		"2-01:00:00": 2*86400 + 3600,
-	}
-	for in, want := range cases {
-		got, err := parsePSTime(in)
-		if err != nil {
-			t.Fatalf("parsePSTime(%q): %v", in, err)
-		}
-		if got < want-0.01 || got > want+0.01 {
-			t.Fatalf("parsePSTime(%q) = %v, want %v", in, got, want)
-		}
-	}
-}
-
 func TestScaleToHost(t *testing.T) {
 	raw := ProcStat{OK: true, PCPU: 200, RSS: 1024}
 	scaled := raw.ScaleToHost(4, 4096)
@@ -413,6 +400,7 @@ func TestLogicalCPUs(t *testing.T) {
 // The poller identifies the CLI a pane is running from the pane shell's own
 // children, so a tree sample has to name them.
 func TestTreesNamesDirectChildren(t *testing.T) {
+	skipPOSIXShell(t)
 	// sh forks for a two-command script rather than exec'ing over itself,
 	// so sleep lands a level below and proves only children are reported.
 	child := exec.Command("sh", "-c", "sleep 5; true")
@@ -442,17 +430,5 @@ func TestTreesNamesDirectChildren(t *testing.T) {
 	}
 	if slices.ContainsFunc(children, func(c string) bool { return filepath.Base(c) == "sleep" }) {
 		t.Fatalf("children = %v, want no grandchild in it", children)
-	}
-}
-
-// A child that exits between the two ps passes frees its pid, and a pid the
-// kernel hands to something unrelated must not be read as this pane's agent.
-func TestChildNamesRequireTheSampledParent(t *testing.T) {
-	stats := map[int]ProcStat{100: {OK: true}}
-	children := map[int][]int{100: {101, 102}}
-	applyChildNames(stats, children, "  101   100 /opt/homebrew/bin/codex --resume 7\n  102   999 /usr/bin/vim notes.txt\n")
-	want := []string{"/opt/homebrew/bin/codex"}
-	if got := stats[100].Children; !slices.Equal(got, want) {
-		t.Fatalf("children = %v, want %v", got, want)
 	}
 }

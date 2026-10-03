@@ -77,6 +77,7 @@ func TestInjectPickerKeysStopsOnInvalidInputAndPaneDisappearance(t *testing.T) {
 // composer command, and returns the pane's id.
 func startPickerPane(t *testing.T, h *sessionHarness, script string) string {
 	t.Helper()
+	skipPOSIXShell(t)
 	path := filepath.Join(t.TempDir(), "tui.sh")
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatal(err)

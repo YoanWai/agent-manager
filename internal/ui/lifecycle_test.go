@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -386,9 +387,9 @@ func TestAttachDoneOpensReviewWhenMarkerSet(t *testing.T) {
 	createSession(t, m, "reviewme", t.TempDir(), "")
 	m.selectSessionRow(t, "reviewme")
 	sess := m.sessionRows()[0]
-	clearRequestOnCleanup(t, m)
+	clearRequestOnCleanup(t, m, sess.ID)
 
-	if _, err := tmuxCmd("set-option", "-g", "@am_request", tmux.RequestReview).CombinedOutput(); err != nil {
+	if _, err := sessionTmuxCmd(sess.ID, "set-option", "-g", "@am_request", tmux.RequestReview).CombinedOutput(); err != nil {
 		t.Fatalf("set marker: %v", err)
 	}
 	updated, _ := m.Update(attachDoneMsg{sessID: sess.ID})
@@ -397,7 +398,7 @@ func TestAttachDoneOpensReviewWhenMarkerSet(t *testing.T) {
 		t.Fatalf("marker set should enter review, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 
-	request, err := m.tmux.PendingRequest()
+	request, err := m.tmux.PendingRequest(sess.ID)
 	if err != nil {
 		t.Fatalf("PendingRequest: %v", err)
 	}
@@ -410,7 +411,7 @@ func TestAttachDoneStaysInListWithoutMarker(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "plainexit", t.TempDir(), "")
 	m.selectSessionRow(t, "plainexit")
-	if err := m.tmux.ClearRequest(); err != nil {
+	if err := m.tmux.ClearRequest(m.sessionRows()[0].ID); err != nil {
 		t.Fatalf("clear marker: %v", err)
 	}
 
@@ -748,6 +749,9 @@ func TestDegradedResumeNoticeWarnsOnlyForBlindFallbacks(t *testing.T) {
 // manager appended to it and then holds the pane open, so a test can prove
 // which flags a launch carried.
 func argCaptureCommand(argsFile string) string {
+	if runtime.GOOS == "windows" {
+		return fixtureModeCommand("capture-args") + " " + tmux.ShellQuote(argsFile)
+	}
 	script := `printf '%s\n' "$@" > ` + tmux.ShellQuote(argsFile) + `; cat`
 	return "sh -c " + tmux.ShellQuote(script) + " sh"
 }
@@ -2090,6 +2094,11 @@ func TestReviveStartsTheAgentAgainInALivePane(t *testing.T) {
 	// survives the settings flag a hooked tool launches with.
 	hooked := m.cfg.Tools[sess.Tool]
 	hooked.Command = "sh -c 'cat'"
+	assignment := func(key, value string) string { return key + "='" + value + "'" }
+	if runtime.GOOS == "windows" {
+		hooked.Command = fixtureModeCommand("cat-stdin")
+		assignment = func(key, value string) string { return "$env:" + key + " = '" + value + "'" }
+	}
 	hooked.StatusSource = "claude-hooks"
 	m.cfg.Tools[sess.Tool] = hooked
 	quitAgent(t, m, sess.ID)
@@ -2113,11 +2122,11 @@ func TestReviveStartsTheAgentAgainInALivePane(t *testing.T) {
 		t.Fatalf("capture: %v", err)
 	}
 	// The pane wraps the line it was sent at its own width.
-	typed := strings.ReplaceAll(pane, "\n", "")
-	if !strings.Contains(typed, "AGENT_MANAGER_SESSION_ID='"+sess.ID+"'") {
+	typed := strings.ReplaceAll(ansi.Strip(pane), "\n", "")
+	if !strings.Contains(typed, assignment("AGENT_MANAGER_SESSION_ID", sess.ID)) {
 		t.Fatalf("relaunch did not carry the session identity; pane:\n%s", pane)
 	}
-	if !strings.Contains(typed, "AGENT_MANAGER_STATUS_FILE='"+m.hooks.StatusFile(sess.ID)+"'") {
+	if !strings.Contains(typed, assignment("AGENT_MANAGER_STATUS_FILE", m.hooks.StatusFile(sess.ID))) {
 		t.Fatalf("relaunch did not carry the hook status file; pane:\n%s", pane)
 	}
 	got, err := m.store.Get(sess.ID)
@@ -2139,6 +2148,10 @@ func TestReviveStartsTheAgentAgainInALivePane(t *testing.T) {
 	waitForAgent(t, m, sess.ID, false)
 	marker := filepath.Join(t.TempDir(), "env")
 	report := `printf '%s %s\n' "$AGENT_MANAGER_SESSION_ID" "$AGENT_MANAGER_STATUS_FILE" > ` + marker + `.part && mv ` + marker + `.part ` + marker
+	if runtime.GOOS == "windows" {
+		report = `Set-Content -LiteralPath ` + tmux.ShellQuote(marker+".part") + ` -Value "$env:AGENT_MANAGER_SESSION_ID $env:AGENT_MANAGER_STATUS_FILE"; ` +
+			`Move-Item -LiteralPath ` + tmux.ShellQuote(marker+".part") + ` -Destination ` + tmux.ShellQuote(marker)
+	}
 	if err := m.tmux.SendKeys(sess.ID, report, "Enter"); err != nil {
 		t.Fatalf("read the shell environment: %v", err)
 	}

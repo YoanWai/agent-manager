@@ -18,7 +18,7 @@ func TestClaudeProjectSlug(t *testing.T) {
 // entries.
 func TestClaudeTranscriptTail(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setHome(t, home)
 	cwd := t.TempDir()
 	dir := filepath.Join(home, ".claude", "projects", claudeProjectSlug(resolvePath(cwd)))
 	if err := os.MkdirAll(dir, 0o755); err != nil {

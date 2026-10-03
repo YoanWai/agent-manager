@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/config"
@@ -67,7 +69,11 @@ func TestDetectRelaunchedTool(t *testing.T) {
 // retype it by hand.
 func TestPollRetypesARowOntoTheCLIItsPaneRuns(t *testing.T) {
 	m := buildModel(t)
-	m.cfg.Tools["tail-tool"] = config.Tool{Command: "tail -f /dev/null", DefaultStatus: status.Idle}
+	tail := "tail -f /dev/null"
+	if runtime.GOOS == "windows" {
+		tail = filepath.Join(fixtureDir, "tail.exe") + " -f NUL"
+	}
+	m.cfg.Tools["tail-tool"] = config.Tool{Command: tail, DefaultStatus: status.Idle}
 	engine, err := status.NewEngine(m.cfg)
 	if err != nil {
 		t.Fatalf("engine: %v", err)
@@ -83,7 +89,7 @@ func TestPollRetypesARowOntoTheCLIItsPaneRuns(t *testing.T) {
 	}
 	quitAgent(t, m, sess.ID)
 
-	if err := m.tmux.SendKeys(sess.ID, "tail -f /dev/null", "Enter"); err != nil {
+	if err := m.tmux.SendKeys(sess.ID, tail, "Enter"); err != nil {
 		t.Fatalf("start the other CLI: %v", err)
 	}
 	waitForPaneChild(t, m, sess.ID, "tail")

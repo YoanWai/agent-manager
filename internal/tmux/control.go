@@ -73,14 +73,23 @@ func enterGate(socket string, exclusive bool) (release func(), err error) {
 }
 
 // OpenControl attaches a control-mode client to a live session. It returns
-// once tmux has greeted the client or the client has exited.
+// once tmux has greeted the client or the client has exited. Where the
+// multiplexer's control client cannot be relied on it fails, and callers
+// poll captures instead.
 func (d *Driver) OpenControl(id string) (*Control, error) {
+	if err := controlUnavailable(); err != nil {
+		return nil, err
+	}
+	return d.openControl(id)
+}
+
+func (d *Driver) openControl(id string) (*Control, error) {
 	release, err := enterGate(d.socket, true)
 	if err != nil {
 		return nil, err
 	}
 	defer release()
-	cmd := exec.Command(d.bin, d.args("-C", "attach-session", "-t", sessionName(id))...)
+	cmd := d.command(controlFlag, "attach-session", "-t", sessionName(id))
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("control stdin: %w", err)
@@ -239,7 +248,8 @@ func (c *Control) readLoop(stdout io.Reader) {
 	inBlock := false
 	blockTag := ""
 	for scanner.Scan() {
-		line := scanner.Text()
+		// psmux -CC glues its DCS opener to the greeting; tmux -C sends none.
+		line := strings.TrimPrefix(scanner.Text(), "\x1bP1000p")
 		switch {
 		case !inBlock && strings.HasPrefix(line, "%begin "):
 			inBlock = true

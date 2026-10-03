@@ -3,7 +3,6 @@
 package systheme
 
 import (
-	"strconv"
 	"strings"
 	"time"
 
@@ -84,31 +83,4 @@ func readOSCReply(fd int, deadline time.Time) (string, bool) {
 			return "", false
 		}
 	}
-}
-
-// parseOSC11 extracts the color from a "\x1b]11;rgb:RRRR/GGGG/BBBB"
-// reply, scaling each channel down from however many hex digits the
-// terminal chose to answer with.
-func parseOSC11(response string) (r, g, b int, ok bool) {
-	start := strings.Index(response, "]11;")
-	if start < 0 {
-		return 0, 0, 0, false
-	}
-	spec := response[start+len("]11;"):]
-	spec = strings.TrimSuffix(strings.TrimSuffix(spec, "\a"), "\x1b\\")
-	spec = strings.TrimPrefix(strings.TrimSpace(spec), "rgb:")
-	channels := strings.Split(spec, "/")
-	if len(channels) != 3 {
-		return 0, 0, 0, false
-	}
-	var out [3]int
-	for i, channel := range channels {
-		value, err := strconv.ParseUint(channel, 16, 32)
-		if err != nil || len(channel) == 0 || len(channel) > 4 {
-			return 0, 0, 0, false
-		}
-		max := uint64(1)<<(4*len(channel)) - 1
-		out[i] = int(value * 255 / max)
-	}
-	return out[0], out[1], out[2], true
 }
