@@ -357,6 +357,125 @@ func TestFocusModeForwardsArrowKeys(t *testing.T) {
 	}
 }
 
+func TestFocusPageKeysReachOtherAgents(t *testing.T) {
+	m := buildModel(t)
+	createSessionOn(t, m, "page-key-pass-through", "control-echo", t.TempDir())
+	m.selectSessionRow(t, "page-key-pass-through")
+	sess := m.rows[m.cursor].sess
+	waitForPaneChild(t, m, sess.ID, "cat")
+	m.focus = newFocusWatch(m.tmux, func(tea.Msg) {})
+	t.Cleanup(m.focus.Close)
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(*Model)
+	for _, key := range []tea.KeyType{tea.KeyPgUp, tea.KeyPgDown} {
+		updated, _ = m.handleKey(tea.KeyMsg{Type: key})
+		m = updated.(*Model)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		pane, err := m.tmux.CapturePane(sess.ID)
+		if err != nil {
+			t.Fatalf("capture: %v", err)
+		}
+		if strings.Contains(pane, "^[[5~^[[6~") {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("page-key bytes never reached the agent: %q", pane)
+		}
+		time.Sleep(30 * time.Millisecond)
+	}
+}
+
+// Muse's inline transcript lives in tmux history, so plain page keys use
+// the same capture path as the wheel when the pane is still Muse's screen.
+func TestFocusMusePageKeysScrollHistory(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		key      tea.KeyType
+		scrollUp bool
+	}{
+		{name: "page-up", key: tea.KeyPgUp, scrollUp: true},
+		{name: "page-down", key: tea.KeyPgDown},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m, sessID := focusedWithHistory(t, tc.name)
+			m.rows[m.cursor].sess.Tool = "muse"
+			m.pane.forID = sessID
+			if m.pane.mouse {
+				t.Fatal("test setup: expected a pane whose scrollback belongs to tmux")
+			}
+			rows := m.focusPaneRows()
+			if m.pane.history < 3*rows {
+				t.Fatalf("test setup: need at least three pages of history, got %d lines for %d rows", m.pane.history, rows)
+			}
+			if !tc.scrollUp {
+				// Start more than a page back without depending on Page Up.
+				for m.focusScroll < 2*rows {
+					cmd := m.wheelFocus(true, m.pane.box.x+2, m.pane.box.y+1)
+					if cmd == nil {
+						t.Fatal("test setup: wheel did not request a history capture")
+					}
+					m.applyCmd(t, cmd)
+				}
+			}
+			beforeOffset, beforePreview := m.focusScroll, m.preview
+			updated, cmd := m.handleKey(tea.KeyMsg{Type: tc.key})
+			m = updated.(*Model)
+			if m.errBar.text != "" {
+				t.Fatalf("page key: %s", m.errBar.text)
+			}
+			moved := beforeOffset - m.focusScroll
+			if tc.scrollUp {
+				moved = -moved
+			}
+			if moved <= 0 || moved > rows {
+				t.Fatalf("%s moved scrollback from %d to %d; want to move toward the requested page by at most %d rows",
+					tc.name, beforeOffset, m.focusScroll, rows)
+			}
+			if cmd == nil {
+				t.Fatal("page key moved the scroll position without requesting a capture")
+			}
+			m.applyCmd(t, cmd)
+			if m.preview == beforePreview {
+				t.Fatal("page key left the visible history unchanged")
+			}
+		})
+	}
+}
+
+func TestFocusMusePagingAndFooterFollowTheSamePolicy(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		prepare    func(*Model)
+		key        tea.KeyMsg
+		wantScroll bool
+		wantHint   bool
+	}{
+		{"Muse normal screen", func(*Model) {}, tea.KeyMsg{Type: tea.KeyPgUp}, true, true},
+		{"other tool", func(m *Model) { m.rows[m.cursor].sess.Tool = "claude" }, tea.KeyMsg{Type: tea.KeyPgUp}, false, false},
+		{"alternate screen", func(m *Model) { m.pane.alt = true }, tea.KeyMsg{Type: tea.KeyPgUp}, false, false},
+		{"mouse tracking", func(m *Model) { m.pane.mouse = true }, tea.KeyMsg{Type: tea.KeyPgUp}, false, false},
+		{"no history", func(m *Model) { m.pane.history = 0 }, tea.KeyMsg{Type: tea.KeyPgUp}, false, false},
+		{"unknown pane", func(m *Model) { m.pane.forID = "other" }, tea.KeyMsg{Type: tea.KeyPgUp}, false, false},
+		{"alt page", func(*Model) {}, tea.KeyMsg{Type: tea.KeyPgUp, Alt: true}, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m, sessID := focusedWithHistory(t, tc.name)
+			m.rows[m.cursor].sess.Tool = "muse"
+			m.pane.forID = sessID
+			tc.prepare(m)
+			hint := strings.Contains(ansi.Strip(m.viewFooter()), "pgup/pgdn history")
+			if hint != tc.wantHint {
+				t.Fatalf("paging footer visible=%v, want %v", hint, tc.wantHint)
+			}
+			if _, cmd := m.handleKey(tc.key); (cmd != nil) != tc.wantScroll || (m.focusScroll > 0) != tc.wantScroll {
+				t.Fatalf("PgUp capture=%v, offset=%d; want scroll=%v", cmd != nil, m.focusScroll, tc.wantScroll)
+			}
+		})
+	}
+}
+
 // A focused session that disappears drops the UI back to the list.
 func TestFocusModeExitsWhenSessionDies(t *testing.T) {
 	m := buildModel(t)
@@ -1215,7 +1334,7 @@ func TestFocusLeftUnfocusesOnCommandCodesParkedCaret(t *testing.T) {
 		sessID:  sess.ID,
 		preview: "✻ Thought for 2 seconds [ctrl+o to expand]\n\n────────────\n❯ Ask your question...\n────────────\n  ? for shortcuts\n\n\n\n",
 	}
-	applyPaneState(&hidden, "0,6,0,000,0,0,0")
+	applyPaneState(&hidden, "0,6,0,000,0,0,0,0")
 	updated, _ = m.Update(hidden)
 	*m = *updated.(*Model)
 	if m.pane.cursor.ok || !m.pane.cursor.positionOK {

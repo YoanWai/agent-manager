@@ -242,11 +242,15 @@ func mouseButton(button tea.MouseButton) int {
 // Scrolling stops the live view the same way tmux's own copy mode does:
 // pushed frames are ignored until the pane is back at the bottom.
 func (m *Model) scrollFocus(delta int) tea.Cmd {
+	return m.scrollFocusLines(delta * focusScrollStep)
+}
+
+func (m *Model) scrollFocusLines(lines int) tea.Cmd {
 	sess, ok := m.selected()
 	if !ok || m.mode != modeFocus {
 		return nil
 	}
-	offset := m.focusScroll - delta*focusScrollStep
+	offset := m.focusScroll - lines
 	if offset < 0 {
 		offset = 0
 	}

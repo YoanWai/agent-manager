@@ -495,12 +495,18 @@ func (m *Model) viewFooter() string {
 			back += " / click its row"
 		}
 		back += " / mouse back"
-		pairs := [][2]string{
-			{"typing", "to agent"},
-			{back, "back"},
+		sess, selected := m.selected()
+		pagesHistory := selected && m.focusPagesHistory(sess)
+		pairs := [][2]string{{back, "back"}}
+		if !m.fullLayout {
+			pairs = append([][2]string{{"typing", "to agent"}}, pairs...)
 		}
 		if m.arrowStep {
-			pairs = append(pairs, [2]string{"←", "prompt start: back"})
+			label := "prompt start: back"
+			if m.fullLayout && pagesHistory {
+				label = "back"
+			}
+			pairs = append(pairs, [2]string{"←", label})
 		}
 		if label := m.keys.Binding(keybind.Review).Label(); label != "" {
 			pairs = append(pairs, [2]string{label, "review"})
@@ -508,9 +514,14 @@ func (m *Model) viewFooter() string {
 		if label := m.keys.Binding(keybind.Editor).Label(); label != "" {
 			pairs = append(pairs, [2]string{label, "editor"})
 		}
+		if pagesHistory {
+			pairs = append(pairs, [2]string{"pgup/pgdn", "history"})
+		}
 		// The word and line gestures stay in the key map, where there is
 		// room to name all three.
-		pairs = append(pairs, [2]string{"drag / click", "copy"})
+		if !m.fullLayout || !pagesHistory {
+			pairs = append(pairs, [2]string{"drag / click", "copy"})
+		}
 		if m.pane.mouse {
 			pairs = append(pairs, [2]string{"click / alt+drag", "agent UI"})
 		}

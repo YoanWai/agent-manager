@@ -287,7 +287,7 @@ func TestFocusWatchHonorsHiddenCursor(t *testing.T) {
 
 func TestApplyPaneState(t *testing.T) {
 	var msg focusPreviewMsg
-	applyPaneState(&msg, "12,34,1,010,250,0,1\n")
+	applyPaneState(&msg, "12,34,1,010,250,0,1,0\n")
 	if !msg.paneStateOK || !msg.cursorOK || msg.cursorX != 12 || msg.cursorY != 34 {
 		t.Fatalf("pane state = %+v", msg)
 	}
@@ -304,19 +304,19 @@ func TestApplyPaneState(t *testing.T) {
 	// tmux reports 1003 in mouse_all_flag, the apps that want a pointer
 	// move with every event.
 	var motion focusPreviewMsg
-	applyPaneState(&motion, "0,0,1,100,0,1,1")
+	applyPaneState(&motion, "0,0,1,100,0,1,1,0")
 	if !motion.paneStateOK || !motion.paneMouse || !motion.paneMotion {
 		t.Fatalf("all-motion pane state = %+v", motion)
 	}
 
 	var plain focusPreviewMsg
-	applyPaneState(&plain, "0,0,1,000,0,0,0")
+	applyPaneState(&plain, "0,0,1,000,0,0,0,0")
 	if !plain.paneStateOK || plain.paneMouse || plain.paneMotion || plain.historySize != 0 || !plain.cursorOK {
 		t.Fatalf("plain pane state = %+v", plain)
 	}
 
 	var hidden focusPreviewMsg
-	applyPaneState(&hidden, "7,8,0,000,0,0,0")
+	applyPaneState(&hidden, "7,8,0,000,0,0,0,0")
 	if !hidden.paneStateOK || hidden.cursorOK || hidden.cursorX != 7 || hidden.cursorY != 8 {
 		t.Fatalf("hidden cursor pane state = %+v, want its coordinates kept", hidden)
 	}
@@ -334,14 +334,19 @@ func TestApplyPaneState(t *testing.T) {
 	}
 
 	var badCursor focusPreviewMsg
-	applyPaneState(&badCursor, "12,y,1,010,250,0,1")
+	applyPaneState(&badCursor, "12,y,1,010,250,0,1,0")
 	if badCursor.paneStateOK || badCursor.cursorOK {
 		t.Fatal("applyPaneState accepted a non-numeric cursor")
 	}
 	var badHistory focusPreviewMsg
-	applyPaneState(&badHistory, "12,34,1,010,n,0,1")
+	applyPaneState(&badHistory, "12,34,1,010,n,0,1,0")
 	if badHistory.paneStateOK || badHistory.historySize != 0 {
 		t.Fatal("applyPaneState accepted a non-numeric history size")
+	}
+	var alternate focusPreviewMsg
+	applyPaneState(&alternate, "0,0,1,000,250,0,0,1")
+	if !alternate.paneStateOK || !alternate.paneAlt {
+		t.Fatalf("alternate-screen flag lost: %+v", alternate)
 	}
 }
 
