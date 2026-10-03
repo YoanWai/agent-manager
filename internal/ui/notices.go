@@ -27,8 +27,8 @@ const (
 	noticeWelcome = "welcome"
 	// noticeArrowStep introduces the beta ←→ pair; it ships in the binary
 	// and stays listed until dismissed, like the welcome.
-	noticeArrowStep    = "arrow-step-beta"
-	noticeToolsRetired = "tools-config-retired"
+	noticeArrowStep         = "arrow-step-beta"
+	noticeConfigNotImported = "config-not-imported"
 
 	dismissedNoticesSetting = "dismissed_notices"
 	lastSeenVersionSetting  = "last_seen_version"
@@ -138,29 +138,26 @@ func (m *Model) activeNotices() []notice {
 			url:   msg.URL,
 		})
 	}
-	if len(m.cfg.IgnoredTools) > 0 {
+	if m.configImportError != "" {
 		notices = append(notices, notice{
-			id:    noticeToolsRetired,
+			id:    noticeConfigNotImported,
 			glyph: "⚙",
 			tint:  lipgloss.Color("#e2c044"),
-			title: "Tool blocks in your config.toml no longer apply",
+			title: "Your config.toml was not carried into Settings",
 			body: []string{
-				"Every tool's command and status rules now come from Agent Manager",
-				"itself, so these blocks in your config.toml are no longer read:",
+				"The keys and the editor live in Settings now. A config.toml that",
+				"names them is read once to carry them over, and yours was refused:",
 				"",
-				strings.Join(m.cfg.IgnoredTools, ", "),
+				m.configImportError,
 				"",
-				"Nothing on disk changed. They are inert, and yours to delete.",
-				"",
-				"Copies of the defaults from the day your file was written, and any",
-				"block you added, are ignored the same way. A fix for a CLI's new",
-				"screen now reaches you instead of stopping at a frozen copy.",
+				"The keys are the defaults and the editor is picked for you until",
+				"you set them in Settings. The file is not read again, and is yours",
+				"to delete.",
 			},
 			after: []string{
-				"If a session reads its status wrong, Enter opens a report: the rules",
-				"are ours to fix, for everyone.",
+				"Enter opens the page on what Settings holds.",
 			},
-			url: bugReportURL(m.update.version),
+			url: repoURL + "/blob/main/docs/configuration.md",
 		})
 	}
 	notices = append(notices,

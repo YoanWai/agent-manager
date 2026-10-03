@@ -17,6 +17,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/catalog"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/git"
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -94,15 +95,11 @@ default_status = "idle"
 command = ""
 shell = true
 default_status = "idle"
-
-[keybindings.session]
-review = "ctrl+g"
 `
 
-// testConfigLoader loads the harness config the manager would, with the
-// document's own tool blocks in place of the built-in CLIs, so a test gets
-// a pane it can predict.
-func testConfigLoader(t *testing.T, doc string) func(string) (config.Config, error) {
+// testConfigLoader stands the document's tool blocks in for the built-in
+// CLIs, so a test gets a pane it can predict.
+func testConfigLoader(t *testing.T, doc string) func() (config.Config, error) {
 	t.Helper()
 	var declared struct {
 		Tools map[string]config.Tool `toml:"tools"`
@@ -110,13 +107,8 @@ func testConfigLoader(t *testing.T, doc string) func(string) (config.Config, err
 	if _, err := toml.Decode(doc, &declared); err != nil {
 		t.Fatalf("decode the test tools: %v", err)
 	}
-	return func(dir string) (config.Config, error) {
-		cfg, err := config.LoadDir(dir)
-		if err != nil {
-			return cfg, err
-		}
-		cfg.Tools = declared.Tools
-		return cfg, nil
+	return func() (config.Config, error) {
+		return config.Config{Tools: declared.Tools}, nil
 	}
 }
 
@@ -126,9 +118,6 @@ func newSessionHarness(t *testing.T) *sessionHarness {
 		t.Skip("tmux not installed")
 	}
 	configDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(sessionConfig), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
 	driver, err := tmux.NewWithSocket("amsesstest-" + uuid.NewString()[:8])
 	if err != nil {
 		t.Fatalf("tmux driver: %v", err)
@@ -1228,12 +1217,31 @@ func TestReviveRefusesWhileTheAgentIsStillRunning(t *testing.T) {
 }
 
 // A spawn from an agent installs the session bindings the way the manager
-// does, read from the same config: the key table reaches the driver before
+// does, read from the same store: the key table reaches the driver before
 // the first session is created.
-func TestSessionsCreateBindsTheConfiguredSessionKeys(t *testing.T) {
+func TestSessionsCreateBindsTheStoredSessionKeys(t *testing.T) {
 	h := newSessionHarness(t)
-	if _, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "bound"}); err != nil {
+	reviewKey, err := keybind.Parse("ctrl+g")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	prefixKey, err := keybind.Parse("ctrl+a")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	stored := keybind.DefaultSession().
+		With(keybind.Review, keybind.Keys(reviewKey)).
+		With(keybind.TmuxPrefix, keybind.Keys(prefixKey))
+	if err := h.store.SetKeys(stored); err != nil {
+		t.Fatalf("SetKeys: %v", err)
+	}
+	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "bound"})
+	if err != nil {
 		t.Fatalf("Create: %v", err)
+	}
+	prefix, err := exec.Command("tmux", "-L", h.driver.SocketName(), "show-options", "-v", "-t", "am_"+created.ID, "prefix").CombinedOutput()
+	if err != nil || strings.TrimSpace(string(prefix)) != "C-a" {
+		t.Fatalf("the session should carry the stored tmux_prefix, got %q, %v", prefix, err)
 	}
 	bound, err := exec.Command("tmux", "-L", h.driver.SocketName(), "list-keys", "-T", "root").CombinedOutput()
 	if err != nil {
@@ -1253,7 +1261,7 @@ func TestSessionsCreateBindsTheConfiguredSessionKeys(t *testing.T) {
 		}
 	}
 	if review == "" {
-		t.Fatalf("ctrl+g from config.toml should request the review, got:\n%s", bound)
+		t.Fatalf("ctrl+g from Settings should request the review, got:\n%s", bound)
 	}
 	if stale != "" {
 		t.Fatalf("the default review key should not be bound alongside the configured one: %q", stale)

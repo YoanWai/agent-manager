@@ -27,7 +27,7 @@ Tell your agent what you want to review in Agent Manager. Your agent will set up
 | click its row / mouse back | Focused: back to the list |
 | `A` | Attach session full screen (Settings can swap it with `enter`) |
 | `.` | Mark a finished session idle without entering it |
-| `ctrl+q` / `ctrl+\` | Inside a session: back to the manager when the terminal and tmux leave the key available. `ctrl+r`, `F3` and this pair move with `[keybindings.session]` in config.toml, and every key of the list itself moves with `[keybindings.list]` (see [Key bindings](configuration.md#key-bindings)) |
+| `ctrl+q` / `ctrl+\` | Inside a session: back to the manager when the terminal and tmux leave the key available. `ctrl+r`, `F3` and this pair move in the **keybindings** row of Settings, and so does every key of the list itself (see [Key bindings](configuration.md#key-bindings)) |
 | tmux prefix, then `d` | Inside a full-screen attach: back to the manager when the prefix reaches the inner tmux |
 | `F3` | Inside a session: open its directory in your editor |
 | `→` | Step into the row: focus the session, or open the group. In beta; Settings (`s`) can turn the pair off |
@@ -46,7 +46,7 @@ Tell your agent what you want to review in Agent Manager. Your agent will set up
 | `space` | Quick prompt: answer the selected session, or spawn an agent in the selected group |
 | `ctrl+r` | Review the selected session's changes: full-screen whole-file diffs, with `c` to comment a line and `C` to send the comments to the agent |
 | `F` | Fold / unfold every group |
-| `s` | Settings (default tool, theme, theme follows OS, background, list density, sessions layout, header and computer stats visibility, review layout, after quick send, session keys, ←→ step in/out, mouse, spawn in worktree, fetch on spawn, coordination, notifications, notify on finish, keybindings, CLIs, report a bug, suggest a change, and the version row that updates in place) |
+| `s` | Settings (default tool, theme, theme follows OS, background, list density, sessions layout, header and computer stats visibility, review layout, after quick send, session keys, ←→ step in/out, mouse, spawn in worktree, fetch on spawn, coordination, notifications, notify on finish, editor, keybindings, CLIs, report a bug, suggest a change, and the version row that updates in place) |
 | `\|` | Resize the split: `←→` nudge the divider, `enter` commits, `esc` cancels |
 | `t` | Toggle archived view |
 | `w` | Filter to sessions that need attention (`waiting`, `finished`, `errored`); press again to show all |
@@ -134,13 +134,13 @@ Shells live in the tree with the agents they belong to, marked with `❯` where 
 
 `o` opens the row under the cursor in your editor: a session's live working directory (wherever its shell or agent has moved to, not only where it started), the directory it was created in when the live one cannot be read, or a group's default path. It works on a [terminal tab](#terminal-tabs) too — the shell you ran the build in is usually sitting in the directory you want open.
 
-Agent Manager takes the first of these it finds: `editor` in [config.toml](configuration.md), `$AGENT_MANAGER_EDITOR`, a GUI editor on `PATH` (`code`, `cursor`, `windsurf`, `zed`, `subl`, `idea`), then `$VISUAL` or `$EDITOR`. The environment comes last because it usually names the editor you set for git commit messages rather than the one a project should open in.
+The **editor** row in Settings (`s`) picks it. `←→` steps through `auto`, each GUI editor found on your `PATH` (`code`, `cursor`, `windsurf`, `zed`, `subl`, `idea`), the editors `$VISUAL` and `$EDITOR` name, and `custom`, where `↵` opens a field for a command of your own. `auto` names the editor it resolves to: `$AGENT_MANAGER_EDITOR`, then the first of those GUI editors on `PATH`, then `$VISUAL` or `$EDITOR`. The environment comes last because it usually names the editor you set for git commit messages, and a project is better opened in a windowed one.
 
-The line is run directly, never through a shell, so nothing in it is expanded and an `.envrc` that sets `EDITOR` cannot smuggle a command in behind it. Arguments are allowed, and quotes group one that carries a space: `editor = "code -n"`, `editor = "open -a 'Visual Studio Code'"`.
+The line is run directly, never through a shell, so nothing in it is expanded and an `.envrc` that sets `EDITOR` cannot smuggle a command in behind it. A custom command takes arguments, and quotes group one that carries a space: `code -n`, `open -a 'Visual Studio Code'`.
 
 Inside a session, attached or focused, `F3` opens that session's directory the same way. It costs an attach its client, so the manager steps back into the session once a windowed editor is running, or once one that draws in the terminal exits. An editor that fails to start keeps the manager on screen, where you can read why.
 
-Like `ctrl+q` and `ctrl+r`, the manager keeps `F3` for itself inside a session, so a program running in there stops seeing it. Every other `ctrl` combination reaches the program, `ctrl+o` included: Claude Code shows more lines with it, Gemini CLI toggles copy mode, and in a [terminal tab](#terminal-tabs) `nano` writes the file out. A `[keybindings.session]` table in config.toml moves any of the three keys, or sets one to `none` so the agent gets it (see [Key bindings](configuration.md#key-bindings)).
+Like `ctrl+q` and `ctrl+r`, the manager keeps `F3` for itself inside a session, so a program running in there stops seeing it. Every other `ctrl` combination reaches the program, `ctrl+o` included: Claude Code shows more lines with it, Gemini CLI toggles copy mode, and in a [terminal tab](#terminal-tabs) `nano` writes the file out. The **keybindings** row in Settings moves any of the three keys, or turns one off so the agent gets it (see [Key bindings](configuration.md#key-bindings)).
 
 A known windowed editor (the six above, plus `open` and `xdg-open`) starts detached and the manager stays on screen, with the status line naming what opened. Everything else takes the terminal over the way an attach does and hands it back on exit — that way round because a terminal editor started detached would have nowhere to draw, while a windowed one launched this way only costs a repaint.
 

@@ -183,7 +183,7 @@ func (m *Model) runListAction(action string) (tea.Model, tea.Cmd) {
 	case keybind.Filter:
 		return m, m.cycleStatusFilter()
 	case keybind.Settings:
-		m.openSettings()
+		return m, m.openSettings()
 	case keybind.Resize:
 		return m.enterResizeMode()
 	case keybind.Archived:

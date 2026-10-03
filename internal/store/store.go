@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -108,6 +109,10 @@ func Open(path string) (*Store, error) {
 	}
 	store := &Store{db: db}
 	if err := store.init(); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := store.importConfigFile(filepath.Dir(path)); err != nil {
 		db.Close()
 		return nil, err
 	}

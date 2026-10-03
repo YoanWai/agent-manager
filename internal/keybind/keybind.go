@@ -1,8 +1,7 @@
-// Package keybind is the vocabulary for keys written by name in
-// config.toml: one spelling in, and the spelling each surface reads out of
-// it, Bubble Tea's for the manager's own keyboard and tmux's for the
-// bindings a managed session carries. A Table is one scope's actions and
-// the keys each answers to.
+// Package keybind is the vocabulary for keys written by name: one spelling
+// in, and the spelling each surface reads out of it, Bubble Tea's for the
+// manager's own keyboard and tmux's for the bindings a managed session
+// carries. A Table is one scope's actions and the keys each answers to.
 package keybind
 
 import (
@@ -348,8 +347,9 @@ func DefaultList() Table {
 	return table
 }
 
-// SessionTable is the session table a file declares: an action left out
-// keeps its default, and a table that could not work is refused.
+// SessionTable is the session table over what was written for it: an
+// action left out keeps its default, and a table that could not work is
+// refused.
 func SessionTable(written map[string]Binding) (Table, error) {
 	return build(ScopeSession, sessionActions, written)
 }
@@ -382,12 +382,12 @@ func build(scope string, actions []Action, written map[string]Binding) (Table, e
 }
 
 // yieldDefaults takes a key away from the action that only holds it by
-// default, wherever the file gives that key to something else. A table
-// cannot know to move out of the way of an action added after it was
+// default, wherever the written table gives that key to something else. A
+// table cannot know to move out of the way of an action added after it was
 // written, so without this the day such an action ships its default key
 // is the day everyone who spent that key is locked out of the manager,
-// and their running sessions with it. What the file asks for wins; the
-// action that yielded is left unbound, and the picker can give it a key.
+// and their running sessions with it. What was written wins; the action
+// that yielded is left unbound, and the picker can give it a key.
 func (t Table) yieldDefaults(written map[string]Binding) {
 	claimed := make(map[string]bool, len(written))
 	for name := range written {

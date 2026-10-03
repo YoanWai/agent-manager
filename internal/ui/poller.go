@@ -422,7 +422,7 @@ func (p *poller) refreshOnce() tea.Msg {
 	// long as the manager is open; its readers allow the stamp to age instead.
 	if time.Since(p.heartbeatAt) >= store.PollerHeartbeatPeriod {
 		claimed := time.Now()
-		holder, err := p.store.ClaimPoller(socket, claimed, p.interval)
+		holder, err := p.store.ClaimPoller(socket, claimed)
 		if err != nil {
 			return errMsg{err}
 		}

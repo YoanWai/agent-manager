@@ -365,10 +365,10 @@ func storedNotifyFinished(st *store.Store) bool {
 	return chosen == "on"
 }
 
-func (m *Model) openSettings() {
+func (m *Model) openSettings() tea.Cmd {
 	if len(m.cfg.Tools) == 0 {
 		m.errBar.text = "no tools configured"
-		return
+		return nil
 	}
 	m.errBar.text = ""
 	names, index := m.defaultToolSelection()
@@ -393,10 +393,12 @@ func (m *Model) openSettings() {
 		notifyFinished:  storedNotifyFinished(m.store),
 		themeAuto:       themeAutoEnabled(m.store),
 		manualTheme:     themes[themeIndex(storedTheme(m.store))].Name,
+		editor:          newEditorRow(m.editor),
 
 		terminalBackground: m.terminalBackground,
 	}
 	m.mode = modeSettings
+	return probeEditors
 }
 
 func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -405,6 +407,9 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.settings.keyPicker {
 		return m.handleKeyPickerKey(msg)
+	}
+	if m.settings.editor.typing {
+		return m.handleEditorTypingKey(msg)
 	}
 	switch msg.String() {
 	case "up", "k":
@@ -427,6 +432,11 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case settingsFieldKeybindings:
 			m.openKeyPicker()
 			return m, nil
+		case settingsFieldEditor:
+			if m.settings.editor.custom {
+				m.openEditorTyping()
+				return m, nil
+			}
 		case settingsFieldUpdate:
 			if m.update.applying {
 				return m, nil
@@ -573,6 +583,10 @@ func (m *Model) persistSettings() {
 	if err := m.store.SetSetting(notifyFinishedSetting, notifyFinished); err != nil {
 		m.errBar.text = err.Error()
 	}
+	if err := m.store.SetEditor(m.settings.editor.line()); err != nil {
+		m.errBar.text = err.Error()
+	}
+	m.editor = m.settings.editor.line()
 	m.focusOnEnter = m.settings.enterFocuses
 	m.arrowStep = m.settings.arrowStep
 	m.comfortableRows = m.settings.comfortableRows
@@ -729,6 +743,8 @@ func (m *Model) cycleSetting(step int) tea.Cmd {
 		m.settings.notifications = !m.settings.notifications
 	case settingsFieldNotifyFinish:
 		m.settings.notifyFinished = !m.settings.notifyFinished
+	case settingsFieldEditor:
+		m.settings.editor.cycle(step)
 	}
 	return nil
 }

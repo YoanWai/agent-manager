@@ -69,7 +69,7 @@ reviews:
         mode: warning
         instructions: >-
           Detect breaking changes to the public CLI (flags, subcommands),
-          config.toml keys, documented environment variables, or MCP tool
+          stored Settings values, documented environment variables, or MCP tool
           names and schemas. Exported identifiers under internal/ are not
           a public API. Fail if a breaking change is present and the PR
           description has no Breaking Changes section that names each
@@ -121,9 +121,8 @@ reviews:
           Fail when the diff adds a UI action, row, panel, or handle that
           works by keyboard only or by mouse only; each new action has both,
           and the footer or key map names the key. Fail when the diff adds a
-          user-facing setting that is read from a hand-edited file, a
-          config.toml block, or an environment variable instead of a
-          Settings row the manager stores. Fail when the diff adds a list of
+          user-facing setting that is read from a hand-edited file or an
+          environment variable instead of a Settings row the manager stores. Fail when the diff adds a list of
           values an upstream release can change (model names, thinking
           modes, capabilities, prompts) instead of discovering them at
           runtime. Pass when the change touches none of these surfaces.
@@ -184,11 +183,10 @@ reviews:
       instructions: |
         builtinTools is the only source of tool definitions and loads on every
         start, so an edited tool pattern or command reaches every install on
-        that release and needs no migration. A [tools.*] block in a user's
-        config.toml is ignored. starterConfig is written once, when no
-        config.toml exists, so editing it reaches new installs only. Flag a
-        change that relies on starterConfig text to reach existing users. A
-        default belongs in code, where every unset field picks it up.
+        that release and needs no migration. A config.toml from an earlier
+        release is read once, by the import in internal/store, for its
+        editor and key tables. Flag any other read or write of that file. A
+        default belongs in code.
     - path: "internal/store/**"
       instructions: |
         The migrations slice is append-only. Editing or reordering an existing
