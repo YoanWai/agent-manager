@@ -931,8 +931,9 @@ func (d *Driver) RemoveWorktreeIfClean(root, path, branch, baseOverride string) 
 	// Remote-tracking refs are a local cache, so a branch deleted or
 	// force-pushed elsewhere can read as saved until the next fetch. The
 	// branch ref costs nothing and keeps those commits reachable, so only
-	// a branch the base already holds earns deleting it.
-	if !branchMerged {
+	// a branch the base already holds earns deleting it. A branch that is
+	// itself the base holds its commits for every session built on it.
+	if !branchMerged || base == branch {
 		return true, nil
 	}
 	if _, err := d.run(root, "branch", "-D", branch); err != nil {

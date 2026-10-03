@@ -841,6 +841,27 @@ func TestRemoveWorktreeIfCleanMeasuresAgainstTheOverride(t *testing.T) {
 	}
 }
 
+func TestRemoveWorktreeIfCleanKeepsABranchThatIsTheBase(t *testing.T) {
+	driver, dir := testRepo(t)
+	write(t, dir, "a.txt", "x")
+	commit(t, dir, "seed")
+	path, branch, err := driver.AddWorktree(dir, "source", "")
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	write(t, path, "b.txt", "work")
+	commit(t, path, "unpushed work")
+	tip := revParse(t, driver, path, "HEAD")
+
+	removed, err := driver.RemoveWorktreeIfClean(dir, path, branch, branch)
+	if err != nil || !removed {
+		t.Fatalf("the branch keeps the commits, so the worktree can go: removed=%v err=%v", removed, err)
+	}
+	if got := revParse(t, driver, dir, "refs/heads/"+branch); got != tip {
+		t.Fatalf("a group base branch holding unpushed work was moved or deleted: got %s, want %s", got, tip)
+	}
+}
+
 func TestBaseRefPrefersUpstream(t *testing.T) {
 	driver, work, _, _ := forkClone(t)
 	gitIn(t, work, "checkout", "-q", "-b", "feature", "upstream/main")
