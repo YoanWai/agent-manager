@@ -83,7 +83,7 @@ func runSpawn(out io.Writer, sessions sessionCommands, args []string, sessionID 
 	set := newFlagSet(usageSpawn)
 	name := set.String("name", "", "kebab-case name naming the work it will do; the new agent names itself when this is empty")
 	prompt := set.String("prompt", "", "first task to hand it, written as a full instruction, since it cannot see your conversation")
-	tool := set.String("tool", "", "agent CLI to run; defaults to the caller's CLI, or to the one picked in settings when there is no caller, and is required when the caller is a terminal")
+	tool := set.String("tool", "", "agent CLI to run; defaults to the caller's CLI, or to the one picked in settings from a terminal or with no caller")
 	model := set.String("model", "", "model to run it on, one the CLI lists; defaults to the CLI's own, and a restart, revive or fork keeps it")
 	effort := set.String("effort", "", "reasoning effort, one the model takes; defaults to the CLI's own")
 	profile := set.String("profile", "", "profile to launch the CLI under, for a CLI that has them")

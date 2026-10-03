@@ -1222,38 +1222,20 @@ func TestSessionHarnessCleanupRemovesSocket(t *testing.T) {
 // A terminal is a caller like any session now that the CLI resolves one
 // from its pane, but its tool is the user's shell: a spawn from a terminal
 // has no agent CLI to inherit and has to be told which one to run.
-func TestSessionsCreateFromATerminalAsksForATool(t *testing.T) {
+func TestSessionsCreateFromATerminalTakesTheSettingsTool(t *testing.T) {
 	h := newSessionHarness(t)
 	terminal, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{})
 	if err != nil {
 		t.Fatalf("Create terminal: %v", err)
 	}
-	_, err = h.sessions.Create(terminal.ID, CreateSessionOptions{Prompt: "ship the fix"})
-	if err == nil {
-		t.Fatal("a toolless spawn from a terminal succeeded")
+	if err := h.store.SetDefaultTool("flagged"); err != nil {
+		t.Fatalf("set default tool: %v", err)
 	}
-	for _, want := range []string{"create_session tool", "echoer"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("error %q does not mention %q", err, want)
-		}
-	}
-	runtime, openErr := h.sessions.open()
-	if openErr != nil {
-		t.Fatalf("open: %v", openErr)
-	}
-	shell, _ := runtime.cfg.ShellTool()
-	runtime.store.Close()
-	_, listed, _ := strings.Cut(err.Error(), "(configured tools are ")
-	offered := strings.Split(strings.TrimSuffix(listed, ")"), ", ")
-	if slices.Contains(offered, shell) {
-		t.Fatalf("the error offers the shell tool %q as a choice: %v", shell, err)
-	}
-
-	created, err := h.sessions.Create(terminal.ID, CreateSessionOptions{Tool: "echoer", Prompt: "ship the fix"})
+	created, err := h.sessions.Create(terminal.ID, CreateSessionOptions{Prompt: "ship the fix"})
 	if err != nil {
-		t.Fatalf("Create with a tool named: %v", err)
+		t.Fatalf("Create from a terminal: %v", err)
 	}
-	if created.Tool != "echoer" || created.Group != terminal.Group || !created.Running {
+	if created.Tool != "flagged" || created.Group != terminal.Group || !created.Running {
 		t.Fatalf("created from a terminal = %+v, terminal = %+v", created, terminal)
 	}
 	waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, "ship the fix")
@@ -1317,8 +1299,14 @@ func TestSessionsCreateWithNoCallerTakesTheSettingsDefaults(t *testing.T) {
 	if err := h.store.SetHiddenTools(everyTool); err != nil {
 		t.Fatalf("hide every tool: %v", err)
 	}
-	if _, err := h.sessions.Create("", CreateSessionOptions{}); err == nil || !strings.Contains(err.Error(), "create_session tool") {
+	_, err = h.sessions.Create("", CreateSessionOptions{})
+	if err == nil || !strings.Contains(err.Error(), "create_session tool") {
 		t.Fatalf("Create with every tool hidden = %v, want a request to name one", err)
+	}
+	shell, _ := runtime.cfg.ShellTool()
+	_, listed, _ := strings.Cut(err.Error(), "(configured tools are ")
+	if slices.Contains(strings.Split(strings.TrimSuffix(listed, ")"), ", "), shell) {
+		t.Fatalf("the error offers the shell tool %q as a choice: %v", shell, err)
 	}
 }
 

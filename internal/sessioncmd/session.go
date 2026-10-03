@@ -321,7 +321,7 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 	}
 	tool, known := runtime.cfg.Tools[toolName]
 	if !known {
-		return Session{}, fmt.Errorf("tool %q is not configured; configured tools are %s", toolName, strings.Join(agentToolNames(runtime), ", "))
+		return Session{}, fmt.Errorf("tool %q is not configured; configured tools are %s", toolName, strings.Join(runtime.cfg.AgentToolNames(), ", "))
 	}
 	if tool.Shell {
 		return Session{}, fmt.Errorf("tool %q opens a shell, not an agent; use %s for that", toolName, runtime.words.CreateTerminal)
@@ -404,14 +404,11 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 	return runtime.sessionInfo(sess, true, false), nil
 }
 
-// toolFor is the CLI a spawn runs when it names none. A terminal has none to
-// give, and guessing an agent for its shell would start a CLI nobody asked for.
+// toolFor is the CLI a spawn runs when it names none. A terminal or a script
+// runs no agent to copy, so it takes the one picked in Settings.
 func (r *runtime) toolFor(caller store.Session) (string, error) {
-	switch {
-	case caller.ID == "":
+	if caller.ID == "" || r.cfg.Tools[caller.Tool].Shell {
 		return r.settingsTool()
-	case r.cfg.Tools[caller.Tool].Shell:
-		return "", r.askForTool("a terminal runs a shell, not an agent CLI, so there is none to inherit")
 	}
 	return caller.Tool, nil
 }
@@ -428,11 +425,7 @@ func (r *runtime) settingsTool() (string, error) {
 	if name := r.cfg.DefaultAgentTool(chosen, hidden); name != "" {
 		return name, nil
 	}
-	return "", r.askForTool("every agent CLI is turned off for new sessions in settings")
-}
-
-func (r *runtime) askForTool(reason string) error {
-	return fmt.Errorf("%s; name one with %s (configured tools are %s)", reason, r.words.SpawnTool, strings.Join(agentToolNames(r), ", "))
+	return "", fmt.Errorf("every agent CLI is turned off for new sessions in settings; name one with %s (configured tools are %s)", r.words.SpawnTool, strings.Join(r.cfg.AgentToolNames(), ", "))
 }
 
 type worktreeTarget struct {
@@ -497,16 +490,6 @@ func (r *runtime) worktreeWanted(group string, explicit *bool) (bool, error) {
 		return false, err
 	}
 	return setting == "on", nil
-}
-
-func agentToolNames(r *runtime) []string {
-	names := make([]string, 0, len(r.cfg.Tools))
-	for _, name := range r.cfg.ToolNames() {
-		if !r.cfg.Tools[name].Shell {
-			names = append(names, name)
-		}
-	}
-	return names
 }
 
 type SendResult struct {
