@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"os"
 	"slices"
 	"strings"
 
@@ -9,8 +10,8 @@ import (
 )
 
 // editorRow is the Settings row for the command the editor key runs. It
-// steps through automatic, each GUI editor found on PATH, and a custom
-// line, which is the only entry that is typed.
+// steps through automatic, each GUI editor found on PATH, what $VISUAL and
+// $EDITOR name, and a custom line, which is the only entry that is typed.
 type editorRow struct {
 	found  []string
 	auto   string
@@ -33,6 +34,11 @@ func probeEditors() tea.Msg {
 	for _, name := range guiEditors {
 		if _, err := lookPath(name); err == nil {
 			found = append(found, name)
+		}
+	}
+	for _, key := range []string{"VISUAL", "EDITOR"} {
+		if line := strings.TrimSpace(os.Getenv(key)); line != "" && !slices.Contains(found, line) {
+			found = append(found, line)
 		}
 	}
 	return editorsProbedMsg{found: found, auto: detectEditor()}

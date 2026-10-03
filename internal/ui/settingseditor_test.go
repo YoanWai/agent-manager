@@ -63,6 +63,23 @@ func TestEditorRowPlacesTheStoredLine(t *testing.T) {
 	}
 }
 
+// The editors the shell names are offered beside the ones found on PATH,
+// once each, so a terminal editor is a step away rather than a typed line.
+func TestProbeOffersTheShellsEditors(t *testing.T) {
+	captureEditor(t, "code")
+	t.Setenv("VISUAL", "code")
+	t.Setenv("EDITOR", " nvim ")
+	probed := probeEditors().(editorsProbedMsg)
+	if got := strings.Join(probed.found, ","); got != "code,nvim" {
+		t.Fatalf("found = %q, want code once and nvim", got)
+	}
+	row := newEditorRow("nvim")
+	row.applyProbe(probed)
+	if row.custom || row.label() != "nvim" {
+		t.Fatalf("a stored nvim should sit on its own entry, got %q custom %v", row.label(), row.custom)
+	}
+}
+
 func TestEditorRowSaysWhenAutoFindsNothing(t *testing.T) {
 	row := newEditorRow("")
 	row.applyProbe(editorsProbedMsg{})
