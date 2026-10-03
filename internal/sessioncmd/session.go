@@ -164,7 +164,7 @@ func (s *Sessions) List(sessionID string) ([]Session, error) {
 		return nil, err
 	}
 	defer runtime.store.Close()
-	if _, err := runtime.caller(sessionID); err != nil {
+	if _, err := runtime.optionalCaller(sessionID); err != nil {
 		return nil, err
 	}
 	stored, err := runtime.store.ListSessions(true)
@@ -192,7 +192,7 @@ func (s *Sessions) Groups(sessionID string) ([]Group, error) {
 		return nil, err
 	}
 	defer runtime.store.Close()
-	if _, err := runtime.caller(sessionID); err != nil {
+	if _, err := runtime.optionalCaller(sessionID); err != nil {
 		return nil, err
 	}
 	stored, err := runtime.store.Groups()
@@ -313,23 +313,19 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 		return Session{}, err
 	}
 	defer runtime.store.Close()
-	caller, err := runtime.caller(sessionID)
+	caller, err := runtime.optionalCaller(sessionID)
 	if err != nil {
 		return Session{}, err
 	}
 	toolName := strings.TrimSpace(opts.Tool)
 	if toolName == "" {
-		// A spawn with no tool named runs whatever the caller runs, which a
-		// terminal cannot supply: its tool is the user's shell. Guessing an
-		// agent for it would start a CLI nobody asked for.
-		if runtime.cfg.Tools[caller.Tool].Shell {
-			return Session{}, fmt.Errorf("a terminal runs a shell, not an agent CLI, so there is none to inherit; name one with %s (configured tools are %s)", runtime.words.SpawnTool, strings.Join(agentToolNames(runtime), ", "))
+		if toolName, err = runtime.toolFor(caller); err != nil {
+			return Session{}, err
 		}
-		toolName = caller.Tool
 	}
 	tool, known := runtime.cfg.Tools[toolName]
 	if !known {
-		return Session{}, fmt.Errorf("tool %q is not configured; configured tools are %s", toolName, strings.Join(agentToolNames(runtime), ", "))
+		return Session{}, fmt.Errorf("tool %q is not configured; configured tools are %s", toolName, strings.Join(runtime.cfg.AgentToolNames(), ", "))
 	}
 	if tool.Shell {
 		return Session{}, fmt.Errorf("tool %q opens a shell, not an agent; use %s for that", toolName, runtime.words.CreateTerminal)
@@ -420,6 +416,30 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 	return runtime.sessionInfo(sess, true, false), nil
 }
 
+// toolFor is the CLI a spawn runs when it names none. A terminal or a script
+// runs no agent to copy, so it takes the one picked in Settings.
+func (r *runtime) toolFor(caller store.Session) (string, error) {
+	if caller.ID == "" || r.cfg.Tools[caller.Tool].Shell {
+		return r.settingsTool()
+	}
+	return caller.Tool, nil
+}
+
+func (r *runtime) settingsTool() (string, error) {
+	chosen, err := r.store.DefaultTool()
+	if err != nil {
+		return "", err
+	}
+	hidden, err := r.store.HiddenTools()
+	if err != nil {
+		return "", err
+	}
+	if name := r.cfg.DefaultAgentTool(chosen, hidden); name != "" {
+		return name, nil
+	}
+	return "", fmt.Errorf("every agent CLI is turned off for new sessions in settings; name one with %s (configured tools are %s)", r.words.SpawnTool, strings.Join(r.cfg.AgentToolNames(), ", "))
+}
+
 type worktreeTarget struct {
 	repo   string
 	branch string
@@ -505,16 +525,6 @@ func (r *runtime) groupBase(group string) (string, error) {
 		}
 	}
 	return "", nil
-}
-
-func agentToolNames(r *runtime) []string {
-	names := make([]string, 0, len(r.cfg.Tools))
-	for _, name := range r.cfg.ToolNames() {
-		if !r.cfg.Tools[name].Shell {
-			names = append(names, name)
-		}
-	}
-	return names
 }
 
 type SendResult struct {
@@ -703,7 +713,7 @@ func (s *Sessions) Read(sessionID, targetID string) (SessionScreen, error) {
 		return SessionScreen{}, err
 	}
 	defer runtime.store.Close()
-	if _, err := runtime.caller(sessionID); err != nil {
+	if _, err := runtime.optionalCaller(sessionID); err != nil {
 		return SessionScreen{}, err
 	}
 	target, err := runtime.agent(targetID)

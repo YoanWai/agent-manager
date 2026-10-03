@@ -558,10 +558,6 @@ const notificationsSetting = "notifications"
 
 const notifyFinishedSetting = "notify_finished"
 
-// hiddenToolsSetting lists CLI tools omitted from new-session pickers
-// (comma-separated names). Empty means every configured tool is shown.
-const hiddenToolsSetting = "hidden_tools"
-
 func (m *Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "enter":

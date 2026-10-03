@@ -1973,6 +1973,35 @@ func TestCoordinationWaitsForTheUserUntilSetProactive(t *testing.T) {
 	}
 }
 
+func TestSettingsCLIChoicesRoundTrip(t *testing.T) {
+	st := newTestStore(t)
+	if tool, err := st.DefaultTool(); err != nil || tool != "" {
+		t.Fatalf("unset default tool = %q, %v; want empty, nil", tool, err)
+	}
+	if hidden, err := st.HiddenTools(); err != nil || len(hidden) != 0 {
+		t.Fatalf("unset hidden tools = %v, %v; want none", hidden, err)
+	}
+	if err := st.SetDefaultTool("codex"); err != nil {
+		t.Fatalf("SetDefaultTool: %v", err)
+	}
+	if tool, err := st.DefaultTool(); err != nil || tool != "codex" {
+		t.Fatalf("default tool = %q, %v; want codex", tool, err)
+	}
+	if err := st.SetHiddenTools(map[string]bool{"grok": true, "codex": true, "pi": false}); err != nil {
+		t.Fatalf("SetHiddenTools: %v", err)
+	}
+	if raw, err := st.Setting(hiddenToolsSetting); err != nil || raw != "codex,grok" {
+		t.Fatalf("stored hidden tools = %q, %v; want the sorted names that are on", raw, err)
+	}
+	if err := st.SetSetting(hiddenToolsSetting, "codex, grok"); err != nil {
+		t.Fatalf("SetSetting: %v", err)
+	}
+	hidden, err := st.HiddenTools()
+	if err != nil || len(hidden) != 2 || !hidden["codex"] || !hidden["grok"] {
+		t.Fatalf("hidden tools = %v, %v; want codex and grok", hidden, err)
+	}
+}
+
 func TestPlaceSessionBeforeLandsAheadOfItsNewSibling(t *testing.T) {
 	st := newTestStore(t)
 	for _, id := range []string{"a", "b", "c"} {

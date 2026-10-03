@@ -383,6 +383,48 @@ func (s *Store) SetProactiveCoordination(proactive bool) error {
 	return s.SetSetting(coordinationSetting, value)
 }
 
+// The New Session form and a spawn with no caller both take their CLI from
+// these, so the manager and the CLI read them here.
+const (
+	defaultToolSetting = "default_tool"
+	hiddenToolsSetting = "hidden_tools"
+)
+
+// DefaultTool is the CLI picked in Settings for new sessions, empty when none was.
+func (s *Store) DefaultTool() (string, error) {
+	return s.Setting(defaultToolSetting)
+}
+
+func (s *Store) SetDefaultTool(name string) error {
+	return s.SetSetting(defaultToolSetting, name)
+}
+
+// HiddenTools is the set of CLIs turned off for new sessions in Settings.
+func (s *Store) HiddenTools() (map[string]bool, error) {
+	raw, err := s.Setting(hiddenToolsSetting)
+	if err != nil {
+		return nil, err
+	}
+	hidden := make(map[string]bool)
+	for _, part := range strings.Split(raw, ",") {
+		if name := strings.TrimSpace(part); name != "" {
+			hidden[name] = true
+		}
+	}
+	return hidden, nil
+}
+
+func (s *Store) SetHiddenTools(hidden map[string]bool) error {
+	names := make([]string, 0, len(hidden))
+	for name, on := range hidden {
+		if on {
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
+	return s.SetSetting(hiddenToolsSetting, strings.Join(names, ","))
+}
+
 func (s *Store) SetSetting(key, value string) error {
 	_, err := s.db.Exec(
 		`INSERT INTO settings (key, value) VALUES (?, ?)

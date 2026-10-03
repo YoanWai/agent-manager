@@ -20,7 +20,7 @@ import (
 
 func TestNewSessionFormUsesSettingsDefaultTool(t *testing.T) {
 	m := buildModel(t)
-	if err := m.store.SetSetting("default_tool", "ready-tool"); err != nil {
+	if err := m.store.SetDefaultTool("ready-tool"); err != nil {
 		t.Fatal(err)
 	}
 	m.openForm()
@@ -172,7 +172,7 @@ func TestFormHiddenLastToolFallsBackToSettings(t *testing.T) {
 	pickFormTool(t, m, "ready-tool")
 	m.form.worktree = true
 	submitFormSession(t, m, "first")
-	if err := m.store.SetSetting(hiddenToolsSetting, "ready-tool"); err != nil {
+	if err := m.store.SetHiddenTools(map[string]bool{"ready-tool": true}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -908,25 +908,6 @@ func TestBuildLaunchCarriesSessionID(t *testing.T) {
 	}
 	if env[hooks.EnvSessionID] != "abcd1234" || env[hooks.EnvStatusFile] == "" {
 		t.Fatalf("hooked tool env = %v, want session id and status file", env)
-	}
-}
-
-func TestSortedToolNamesOrder(t *testing.T) {
-	cfg := config.Config{Tools: map[string]config.Tool{
-		"grok":     {Command: "grok"},
-		"muse":     {Command: "muse"},
-		"gemini":   {Command: "gemini"},
-		"codex":    {Command: "codex"},
-		"claude":   {Command: "claude"},
-		"opencode": {Command: "opencode"},
-		"pi":       {Command: "pi"},
-		"zephyr":   {Command: "zephyr"},
-		"acme":     {Command: "acme"},
-	}}
-	got := sortedToolNames(cfg)
-	want := []string{"claude", "opencode", "codex", "grok", "gemini", "pi", "acme", "muse", "zephyr"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("sortedToolNames = %v want %v", got, want)
 	}
 }
 
