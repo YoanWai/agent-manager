@@ -2,6 +2,7 @@ package ui
 
 import (
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -109,6 +110,140 @@ func (m *Model) spawnWorktreeDefault(group string) bool {
 		}
 	}
 	return m.defaultWorktree()
+}
+
+// groupBase is the ref a spawn into group branches from: the nearest
+// ancestor group's choice, or "" to detect the repo's default branch.
+func (m *Model) groupBase(group string) string {
+	for g := group; g != ""; g = parentGroup(g) {
+		if base := m.groupBases[g]; base != "" {
+			return base
+		}
+	}
+	return ""
+}
+
+// stepGroupBase moves a group's base choice through auto and the branches
+// of the repo at dir.
+func (m *Model) stepGroupBase(dir, current string, delta int) string {
+	if m.gitDrv == nil {
+		m.errBar.text = "a group base needs git installed"
+		return current
+	}
+	refs, err := m.gitDrv.BranchRefs(dir)
+	if err != nil {
+		m.errBar.text = "group base: " + err.Error()
+		return current
+	}
+	m.errBar.text = ""
+	choices := append([]string{""}, refs...)
+	at := max(slices.Index(choices, current), 0)
+	return choices[(at+delta+len(choices))%len(choices)]
+}
+
+// baseFetchInterval keeps a burst of spawns into one repo to one fetch.
+const baseFetchInterval = time.Minute
+
+type baseFetchKey struct{ dir, override string }
+
+// baseFetch is one refresh of a spawn's base: when it started, the default
+// branch the repo resolved to, and how the fetch ended.
+type baseFetch struct {
+	at       time.Time
+	resolved bool
+	detected string
+	fetched  bool
+	err      error
+}
+
+type baseFetchedMsg struct {
+	key      baseFetchKey
+	detected string
+	fetched  bool
+	err      error
+}
+
+// refreshSpawnBase resolves the base of the worktree spawn the form or the
+// quick bar is set to make, for the form to show, then fetches it unless
+// Settings turned that off. A spawn that beats the fetch branches from the
+// last one.
+func (m *Model) refreshSpawnBase() tea.Cmd {
+	dir, group, ok := m.pendingWorktreeSpawn()
+	if !ok {
+		return nil
+	}
+	key := baseFetchKey{dir: dir, override: m.groupBase(group)}
+	if last, seen := m.baseFetches[key]; seen && time.Since(last.at) < baseFetchInterval {
+		return nil
+	}
+	if m.baseFetches == nil {
+		m.baseFetches = map[baseFetchKey]baseFetch{}
+	}
+	m.baseFetches[key] = baseFetch{at: time.Now()}
+	driver := m.gitDrv
+	return func() tea.Msg {
+		return baseFetchedMsg{key: key, detected: driver.DefaultBase(dir)}
+	}
+}
+
+// recordBaseFetch keeps what a step of a base refresh found, and starts the
+// fetch once the resolving step is in.
+func (m *Model) recordBaseFetch(msg baseFetchedMsg) tea.Cmd {
+	fetch, ok := m.baseFetches[msg.key]
+	if !ok {
+		return nil
+	}
+	fetch.resolved, fetch.detected = true, msg.detected
+	if msg.fetched {
+		fetch.fetched, fetch.err = true, msg.err
+	}
+	m.baseFetches[msg.key] = fetch
+	if msg.fetched || m.baseFetchOff {
+		return nil
+	}
+	driver, key := m.gitDrv, msg.key
+	return func() tea.Msg {
+		err := driver.FetchBase(key.dir, key.override)
+		return baseFetchedMsg{key: key, detected: driver.DefaultBase(key.dir), fetched: true, err: err}
+	}
+}
+
+// pendingWorktreeSpawn is the directory and group of the worktree spawn
+// the New Session form or the quick bar is set to make.
+func (m *Model) pendingWorktreeSpawn() (dir, group string, ok bool) {
+	switch {
+	case m.mode == modeForm && m.formWorktreeOn():
+		return m.formSpawnDir(), m.selectedGroupPath(), true
+	case m.mode == modeList && m.quick.active && m.quickSpawning() && m.quickWorktreeOn():
+		return m.quickTargetDir(), m.quickTargetGroup(), true
+	}
+	return "", "", false
+}
+
+// spawnBaseLabel names the ref a worktree spawn into dir branches from,
+// where that choice came from, and how fetching it went.
+func (m *Model) spawnBaseLabel(dir, group string) string {
+	override := m.groupBase(group)
+	fetch := m.baseFetches[baseFetchKey{dir: dir, override: override}]
+	label := valueStyle.Render(override) + subtleStyle.Render(" (group)")
+	if override == "" {
+		switch {
+		case !fetch.resolved:
+			label = subtleStyle.Render("…")
+		case fetch.detected == "":
+			label = valueStyle.Render("HEAD") + subtleStyle.Render(" (auto)")
+		default:
+			label = valueStyle.Render(fetch.detected) + subtleStyle.Render(" (auto)")
+		}
+	}
+	switch {
+	case m.baseFetchOff:
+	case !fetch.fetched:
+		label += subtleStyle.Render(" · fetching")
+	case fetch.err != nil:
+		label += subtleStyle.Render(" · fetch failed")
+	}
+	return label
 }
 
 // worktreeUnavailable is what the worktree toggle reads when the target
@@ -221,6 +356,16 @@ func storedMouseDisabled(st *store.Store) bool {
 	return chosen == "off"
 }
 
+// storedBaseFetchOff reads the persisted fetch-on-spawn choice. On is the
+// default; only an explicit "off" skips the fetch.
+func storedBaseFetchOff(st *store.Store) bool {
+	chosen, err := st.Setting(baseFetchSetting)
+	if err != nil {
+		return false
+	}
+	return chosen == "off"
+}
+
 // enterFocuses reports which key opens a session where. Enter focuses the
 // preview and A attaches full screen by default; a stored "attach" choice
 // swaps the pair. Cached on the model because the footer reads it every
@@ -287,6 +432,7 @@ func (m *Model) openSettings() {
 		hideStats:       m.hideStats,
 		mouseDisabled:   m.mouseDisabled,
 		worktreeDefault: m.defaultWorktree(),
+		baseFetch:       !m.baseFetchOff,
 		proactive:       m.proactiveCoordination(),
 		notifications:   storedNotifications(m.store),
 		notifyFinished:  storedNotifyFinished(m.store),
@@ -448,6 +594,13 @@ func (m *Model) persistSettings() {
 	if err := m.store.SetSetting(worktreeSetting, worktreeChoice); err != nil {
 		m.errBar.text = err.Error()
 	}
+	baseFetch := "on"
+	if !m.settings.baseFetch {
+		baseFetch = "off"
+	}
+	if err := m.store.SetSetting(baseFetchSetting, baseFetch); err != nil {
+		m.errBar.text = err.Error()
+	}
 	if err := m.store.SetProactiveCoordination(m.settings.proactive); err != nil {
 		m.errBar.text = err.Error()
 	}
@@ -472,6 +625,7 @@ func (m *Model) persistSettings() {
 	m.hideHeader = m.settings.hideHeader
 	m.hideStats = m.settings.hideStats
 	m.mouseDisabled = m.settings.mouseDisabled
+	m.baseFetchOff = !m.settings.baseFetch
 }
 
 func (m *Model) openCLIPicker() {
@@ -612,6 +766,8 @@ func (m *Model) cycleSetting(step int) tea.Cmd {
 		m.settings.mouseDisabled = !m.settings.mouseDisabled
 	case settingsFieldWorktree:
 		m.settings.worktreeDefault = !m.settings.worktreeDefault
+	case settingsFieldBaseFetch:
+		m.settings.baseFetch = !m.settings.baseFetch
 	case settingsFieldCoordination:
 		m.settings.proactive = !m.settings.proactive
 	case settingsFieldNotify:

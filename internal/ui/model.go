@@ -88,11 +88,15 @@ type Model struct {
 	groups         []string
 	groupPaths     map[string]string
 	groupWorktrees map[string]string
+	groupBases     map[string]string
 	// worktreeRepos memoizes which spawn directories sit inside a git
 	// repo, so gating the worktree toggle does not shell out to git on
 	// every frame. Entries expire, so a directory git-initialised while
 	// the bar is open stops reading as unavailable.
-	worktreeRepos  map[string]repoAnswer
+	worktreeRepos map[string]repoAnswer
+	// baseFetches holds the last fetch of a worktree spawn's base, per
+	// directory and base override.
+	baseFetches    map[baseFetchKey]baseFetch
 	archivedGroups map[string]bool
 	snap           sysstat.Snapshot
 	proc           sysstat.ProcStat
@@ -199,6 +203,9 @@ type Model struct {
 	// polarity, like hideHeader/hideStats, so a bare Model{} in a test still
 	// defaults to mouse reporting on.
 	mouseDisabled bool
+	// baseFetchOff mirrors the persisted fetch-on-spawn setting, read on
+	// every Update while a worktree spawn is being set up.
+	baseFetchOff bool
 	// watchedGen is previewGen as of the last poll pass, so a selection
 	// that has not moved since can be recognised as at rest.
 	watchedGen        uint64
@@ -458,6 +465,7 @@ type renameTarget struct {
 	input         textinput.Model
 	dir           textinput.Model
 	worktreeIndex int
+	base          string
 	focus         int
 	toolNames     []string
 	toolIndex     int
@@ -507,6 +515,7 @@ type settingsState struct {
 	hideStats       bool
 	mouseDisabled   bool
 	worktreeDefault bool
+	baseFetch       bool
 	proactive       bool
 	notifications   bool
 	notifyFinished  bool
@@ -546,6 +555,7 @@ const (
 	settingsFieldArrowStep
 	settingsFieldMouse
 	settingsFieldWorktree
+	settingsFieldBaseFetch
 	settingsFieldCoordination
 	settingsFieldNotify
 	settingsFieldNotifyFinish
@@ -574,6 +584,7 @@ type refreshMsg struct {
 	groups         []string
 	groupPaths     map[string]string
 	groupWorktrees map[string]string
+	groupBases     map[string]string
 	archivedGroups map[string]bool
 	snap           sysstat.Snapshot
 	snapOK         bool
@@ -812,6 +823,7 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		hideHeader:          storedHideHeader(st),
 		hideStats:           storedHideStats(st),
 		mouseDisabled:       storedMouseDisabled(st),
+		baseFetchOff:        storedBaseFetchOff(st),
 		imeCursor:           &cursorAnchor{},
 		mode:                modeList,
 		booting:             true,
@@ -1421,7 +1433,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	model, cmd := m.handleMsg(msg)
 	if mm, ok := model.(*Model); ok {
 		mm.flushPendingNotice()
-		return mm, tea.Batch(cmd, mm.syncMouseCapture())
+		return mm, tea.Batch(cmd, mm.syncMouseCapture(), mm.refreshSpawnBase())
 	}
 	return model, tea.Batch(cmd, m.syncMouseCapture())
 }
@@ -1520,6 +1532,9 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(m.previewCmd(sess, m.previewGen), m.previewTick())
 
+	case baseFetchedMsg:
+		return m, m.recordBaseFetch(msg)
+
 	case refreshMsg:
 		m.booting = false
 		m.ageError()
@@ -1540,6 +1555,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.groups = msg.groups
 		m.groupPaths = msg.groupPaths
 		m.groupWorktrees = msg.groupWorktrees
+		m.groupBases = msg.groupBases
 		m.archivedGroups = msg.archivedGroups
 		m.agents = msg.agents
 		m.queuedMessages = msg.queuedMessages

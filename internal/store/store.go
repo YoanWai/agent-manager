@@ -235,6 +235,7 @@ CREATE TABLE IF NOT EXISTS settings (
 		`ALTER TABLE sessions ADD COLUMN model TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN effort TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN profile TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE groups ADD COLUMN base TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, migration := range migrations {
 		if _, err := s.db.Exec(migration); err != nil {
@@ -487,14 +488,14 @@ func (s *Store) CreateGroup(name, path string) error {
 	return err
 }
 
-func (s *Store) AddGroup(name, path, worktree string) error {
+func (s *Store) AddGroup(name, path, worktree, base string) error {
 	if name == "" {
 		return errors.New("group name cannot be empty")
 	}
 	res, err := s.db.Exec(
-		`INSERT INTO groups (name, path, worktree, sort_order)
-		 VALUES (?, ?, ?, (SELECT COALESCE(MAX(sort_order)+1, 0) FROM groups))
-		 ON CONFLICT(name) DO NOTHING`, name, path, worktree)
+		`INSERT INTO groups (name, path, worktree, base, sort_order)
+		 VALUES (?, ?, ?, ?, (SELECT COALESCE(MAX(sort_order)+1, 0) FROM groups))
+		 ON CONFLICT(name) DO NOTHING`, name, path, worktree, base)
 	if err != nil {
 		return err
 	}
@@ -1366,10 +1367,14 @@ type Group struct {
 	// "" to inherit from the nearest ancestor with a choice, else the
 	// global setting.
 	Worktree string
+	// Base is the ref the group's worktree sessions branch from and review
+	// diffs against, or "" to inherit from the nearest ancestor with one,
+	// else to detect the repo's default branch.
+	Base string
 }
 
 func (s *Store) Groups() ([]Group, error) {
-	rows, err := s.db.Query(`SELECT name, path, archived, worktree FROM groups ORDER BY sort_order, name`)
+	rows, err := s.db.Query(`SELECT name, path, archived, worktree, base FROM groups ORDER BY sort_order, name`)
 	if err != nil {
 		return nil, err
 	}
@@ -1378,7 +1383,7 @@ func (s *Store) Groups() ([]Group, error) {
 	for rows.Next() {
 		var g Group
 		var archived int
-		if err := rows.Scan(&g.Name, &g.Path, &archived, &g.Worktree); err != nil {
+		if err := rows.Scan(&g.Name, &g.Path, &archived, &g.Worktree, &g.Base); err != nil {
 			return nil, err
 		}
 		g.Archived = archived != 0
@@ -1391,6 +1396,13 @@ func (s *Store) Groups() ([]Group, error) {
 // "off", or "" to inherit.
 func (s *Store) SetGroupWorktree(name, worktree string) error {
 	_, err := s.db.Exec(`UPDATE groups SET worktree = ? WHERE name = ?`, worktree, name)
+	return err
+}
+
+// SetGroupBase stores the ref a group's worktree sessions branch from, or
+// "" to inherit.
+func (s *Store) SetGroupBase(name, base string) error {
+	_, err := s.db.Exec(`UPDATE groups SET base = ? WHERE name = ?`, base, name)
 	return err
 }
 

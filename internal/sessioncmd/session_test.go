@@ -578,6 +578,102 @@ func TestSessionsCreateOpensItsOwnWorktreeWhenAsked(t *testing.T) {
 	}
 }
 
+func TestSessionsCreateBranchesFromTheGroupBase(t *testing.T) {
+	h := newSessionHarness(t)
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	repo := t.TempDir()
+	runGit := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repo
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	runGit("init", "-b", "main")
+	runGit("config", "user.email", "t@t")
+	runGit("config", "user.name", "t")
+	runGit("commit", "--allow-empty", "-m", "init")
+	runGit("branch", "develop")
+	runGit("checkout", "-q", "develop")
+	runGit("commit", "--allow-empty", "-m", "develop work")
+	runGit("checkout", "-q", "main")
+	if err := h.store.SetGroupBase(h.caller.Group, "develop"); err != nil {
+		t.Fatalf("set base: %v", err)
+	}
+
+	wanted := true
+	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{
+		Name:      "develop-worker",
+		Directory: repo,
+		Worktree:  &wanted,
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	head := exec.Command("git", "rev-parse", "HEAD")
+	head.Dir = created.Directory
+	out, err := head.Output()
+	if err != nil {
+		t.Fatalf("worktree head: %v", err)
+	}
+	if got, want := strings.TrimSpace(string(out)), runGit("rev-parse", "develop"); got != want {
+		t.Fatalf("worktree starts at %s, want the group's base develop at %s", got, want)
+	}
+}
+
+func TestSessionsCreateFetchesTheBaseUnlessTurnedOff(t *testing.T) {
+	h := newSessionHarness(t)
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	runGit := func(dir string, args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	remote := t.TempDir()
+	runGit(remote, "init", "-b", "main")
+	runGit(remote, "config", "user.email", "t@t")
+	runGit(remote, "config", "user.name", "t")
+	runGit(remote, "commit", "--allow-empty", "-m", "init")
+	clone := filepath.Join(t.TempDir(), "clone")
+	runGit(remote, "clone", "-q", remote, clone)
+	cached := runGit(clone, "rev-parse", "origin/main")
+	runGit(remote, "commit", "--allow-empty", "-m", "after the clone")
+	wanted := true
+	spawnAt := func(name string) string {
+		t.Helper()
+		created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: name, Directory: clone, Worktree: &wanted})
+		if err != nil {
+			t.Fatalf("Create %s: %v", name, err)
+		}
+		return runGit(created.Directory, "rev-parse", "HEAD")
+	}
+
+	if err := h.store.SetSetting(baseFetchSetting, "off"); err != nil {
+		t.Fatalf("set setting: %v", err)
+	}
+	if got := spawnAt("unfetched"); got != cached {
+		t.Fatalf("with the fetch off the worktree starts at %s, want the cached origin/main %s", got, cached)
+	}
+	if err := h.store.SetSetting(baseFetchSetting, ""); err != nil {
+		t.Fatalf("clear setting: %v", err)
+	}
+	if got, want := spawnAt("fetched"), runGit(remote, "rev-parse", "HEAD"); got != want {
+		t.Fatalf("by default the worktree starts at %s, want the remote's tip %s", got, want)
+	}
+}
+
 func TestSendAndWaitRefuseATargetTheManagerNoLongerPolls(t *testing.T) {
 	h := newSessionHarness(t)
 	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "worker"})

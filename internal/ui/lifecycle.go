@@ -932,6 +932,7 @@ func (m *Model) pruneGroupsLocally(removed []string) {
 	for _, path := range removed {
 		delete(m.groupPaths, path)
 		delete(m.groupWorktrees, path)
+		delete(m.groupBases, path)
 		delete(m.archivedGroups, path)
 	}
 	m.rebuildRows()
@@ -1228,7 +1229,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 						m.errBar.text = "worktree cleanup: " + err.Error()
 					} else if used {
 						m.errBar.text = "worktree kept (used by another session): " + sess.Cwd
-					} else if removed, err := m.gitDrv.RemoveWorktreeIfClean(sess.WorktreeRepo, sess.Cwd, sess.WorktreeBranch); err != nil {
+					} else if removed, err := m.gitDrv.RemoveWorktreeIfClean(sess.WorktreeRepo, sess.Cwd, sess.WorktreeBranch, m.groupBase(sess.Group)); err != nil {
 						m.errBar.text = "worktree cleanup: " + err.Error()
 					} else if !removed {
 						m.errBar.text = "worktree kept (has work): " + sess.Cwd
