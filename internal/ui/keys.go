@@ -531,6 +531,10 @@ const hideHeaderSetting = "hide_header"
 
 const hideStatsSetting = "hide_stats"
 
+// backgroundSetting is what fills the backdrop's cells: "terminal" leaves
+// the terminal's own colors, anything else paints the theme's.
+const backgroundSetting = "background"
+
 const focusKeySetting = "focus_key"
 
 // arrowStepSetting is the beta ←→ pair: "off" turns it off, anything else
@@ -545,6 +549,10 @@ const mouseSetting = "mouse_mode"
 const quickCloseSetting = "quick_prompt_close"
 
 const worktreeSetting = "worktree_default"
+
+// baseFetchSetting is the fetch ahead of a worktree spawn: "off" skips it,
+// anything else fetches (the default).
+const baseFetchSetting = "worktree_fetch"
 
 const notificationsSetting = "notifications"
 

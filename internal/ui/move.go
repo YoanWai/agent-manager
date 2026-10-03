@@ -148,7 +148,7 @@ func (m *Model) moveGroupUnder(path, parent string) error {
 	if err := m.store.MoveGroup(path, parent); err != nil {
 		return err
 	}
-	m.renameGroupLocally(path, newPath, m.groupPaths[path], m.groupWorktrees[path])
+	m.renameGroupLocally(path, newPath, m.groupPaths[path], m.groupWorktrees[path], m.groupBases[path])
 	m.relabelSubtree(newPath)
 	m.rebuildRows()
 	m.requestRefresh()

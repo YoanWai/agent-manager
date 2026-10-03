@@ -388,3 +388,52 @@ func listRow(t *testing.T, m *Model, name string) int {
 	t.Fatalf("no list action %q", name)
 	return -1
 }
+
+// The picker sets tmux_prefix like a session key and refuses a third prefix key.
+func TestKeyPickerSetsTheTmuxPrefix(t *testing.T) {
+	m := keyPickerModel(t)
+	m.settings.keyCursor = 3
+	if row := m.pickedRow(); row.action.Name != keybind.TmuxPrefix {
+		t.Fatalf("row 3 = %q, want tmux_prefix", row.action.Name)
+	}
+	if view := ansi.Strip(m.viewKeyPicker()); !strings.Contains(view, "off, your prefix stays") {
+		t.Fatalf("an unset tmux_prefix should say tmux keeps its prefix:\n%s", view)
+	}
+
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyCtrlB})
+	m.pressInPicker(t, runeKey("a"))
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyF12})
+	m.pressInPicker(t, runeKey("a"))
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyCtrlG})
+	if !strings.Contains(m.errBar.text, "takes one key or two") {
+		t.Fatalf("err = %q, want the two-key rule", m.errBar.text)
+	}
+	if got := m.settings.tables[0].Binding(keybind.TmuxPrefix).Label(); got != "ctrl+b / f12" {
+		t.Fatalf("tmux_prefix = %q, want both keys", got)
+	}
+
+	cmd := m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
+	if got := m.keys.Binding(keybind.TmuxPrefix).Label(); got != "ctrl+b / f12" {
+		t.Fatalf("model tmux_prefix = %q", got)
+	}
+	if saved := savedConfig(t, m); !strings.Contains(saved, `tmux_prefix = ["ctrl+b", "f12"]`) {
+		t.Fatalf("config.toml should carry the prefix keys:\n%s", saved)
+	}
+	if cmd == nil {
+		t.Fatal("saving should refresh the live sessions")
+	}
+	if msg := cmd(); msg != nil {
+		t.Fatalf("refreshing the sessions reported %v", msg)
+	}
+}
+
+// Reset puts tmux_prefix back to off, and the question says so in words.
+func TestKeyPickerResetNamesTheTmuxPrefixGoingOff(t *testing.T) {
+	m := keyPickerModel(t)
+	m.settings.tables[0] = m.settings.tables[0].With(keybind.TmuxPrefix, bindingOf(t, "ctrl+b"))
+	m.pressInPicker(t, runeKey("r"))
+	if ask := ansi.Strip(m.viewKeyPicker()); !strings.Contains(ask, "tmux_prefix: ctrl+b back to off") {
+		t.Fatalf("the question should name tmux_prefix going off:\n%s", ask)
+	}
+}

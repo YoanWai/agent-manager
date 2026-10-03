@@ -24,6 +24,14 @@ func keySectionFor(keys keybind.Table) keySection {
 	return keySection{"in the manager · esc and ctrl+c stay as they are", "off"}
 }
 
+// tmux_prefix off hands the agent no key, since tmux keeps the prefix it had.
+func (s keySection) offLabel(action string) string {
+	if action == keybind.TmuxPrefix {
+		return "off, your prefix stays"
+	}
+	return s.off
+}
+
 type keyRow struct {
 	table  int
 	action keybind.Action
@@ -44,12 +52,9 @@ func keybindingsSummary(tables ...keybind.Table) string {
 	for _, keys := range tables {
 		defaults := keys.Defaults()
 		for _, action := range keys.Actions() {
-			label := keys.Binding(action.Name).Label()
-			if label == defaults.Binding(action.Name).Label() {
+			label := labelOrOff(keys.Binding(action.Name))
+			if label == labelOrOff(defaults.Binding(action.Name)) {
 				continue
-			}
-			if label == "" {
-				label = "off"
 			}
 			moved = append(moved, action.Name+" "+label)
 		}
@@ -61,6 +66,13 @@ func keybindingsSummary(tables ...keybind.Table) string {
 		return strings.Join(moved, " · ")
 	}
 	return fmt.Sprintf("%d moved", len(moved))
+}
+
+func labelOrOff(binding keybind.Binding) string {
+	if label := binding.Label(); label != "" {
+		return label
+	}
+	return "off"
 }
 
 func (m *Model) openKeyPicker() {
@@ -153,12 +165,9 @@ func keyResetChanges(tables ...keybind.Table) []string {
 	for _, keys := range tables {
 		defaults := keys.Defaults()
 		for _, action := range keys.Actions() {
-			current, shipped := keys.Binding(action.Name).Label(), defaults.Binding(action.Name).Label()
+			current, shipped := labelOrOff(keys.Binding(action.Name)), labelOrOff(defaults.Binding(action.Name))
 			if current == shipped {
 				continue
-			}
-			if current == "" {
-				current = "off"
 			}
 			changes = append(changes, fmt.Sprintf("%s: %s back to %s", action.Name, current, shipped))
 		}

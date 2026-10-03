@@ -2620,6 +2620,45 @@ func TestInvalidStoredBaseStillOpensPickerAndRecovers(t *testing.T) {
 	}
 }
 
+func TestReviewTargetsTheGroupBaseUnlessOnePicked(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	repo := gitRepoWithSecondBranch(t)
+	if err := m.store.CreateGroup("grp", repo); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	if err := m.store.SetGroupBase("grp", "feature"); err != nil {
+		t.Fatalf("set base: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "based", repo, "grp")
+	m.selectSessionRow(t, "based")
+	m.drainCmds(t, m.openDiff())
+	sess, ok := m.diffSession()
+	if !ok {
+		t.Fatal("no diff session")
+	}
+	load := func() {
+		m.diff.scope = git.ScopeBranch
+		m.diff.gen++
+		m.drainCmds(t, m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false))
+	}
+
+	load()
+	if !strings.HasPrefix(m.diff.set.BaseDesc, "feature@") {
+		t.Fatalf("vs target should read the group's base, got %q (err=%q)", m.diff.set.BaseDesc, m.diff.errText)
+	}
+	if err := m.store.SetReviewBase(sess.ID, m.diff.repoSel, "main"); err != nil {
+		t.Fatal(err)
+	}
+	load()
+	if !strings.HasPrefix(m.diff.set.BaseDesc, "main@") {
+		t.Fatalf("a base picked in review wins over the group's, got %q", m.diff.set.BaseDesc)
+	}
+}
+
 // Probe and load must derive the base and fingerprint identically. With an
 // unresolved umbrella root and a stored override, the probe has to read the
 // base under the raw selection - not the resolved toplevel - or its fingerprint

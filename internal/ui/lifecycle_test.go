@@ -1714,6 +1714,20 @@ func TestDeleteKeepsDirtyWorktree(t *testing.T) {
 	}
 }
 
+func TestDeleteRemovesTheSessionSettings(t *testing.T) {
+	m := buildModel(t)
+	createSessionOn(t, m, "hooked", "claude-hooked", t.TempDir())
+	settings := m.hooks.SettingsFile(m.sessionRows()[0].ID)
+	if _, err := os.Stat(settings); err != nil {
+		t.Fatalf("launch should write the session's settings: %v", err)
+	}
+
+	deleteSession(t, m, "hooked")
+	if _, err := os.Stat(settings); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("delete left the session's settings behind: %v", err)
+	}
+}
+
 // Restart has to hold for every CLI the manager ships with, not just the one
 // the fake tools stand in for: it launches each tool the way a brand new
 // session does, and never reaches for a resume, continue or fork command.
