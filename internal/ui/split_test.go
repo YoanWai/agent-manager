@@ -130,7 +130,7 @@ func TestArrowNudgeAndPipeCommits(t *testing.T) {
 	}
 	t.Cleanup(func() { st.Close() })
 
-	m := &Model{listKeys: keybind.DefaultList(),
+	m := &Model{keys: keybind.DefaultSession(), listKeys: keybind.DefaultList(),
 		store:  st,
 		mode:   modeList,
 		width:  100,
@@ -177,7 +177,7 @@ func TestEnterCommitsResize(t *testing.T) {
 	}
 	t.Cleanup(func() { st.Close() })
 
-	m := &Model{listKeys: keybind.DefaultList(),
+	m := &Model{keys: keybind.DefaultSession(), listKeys: keybind.DefaultList(),
 		store:  st,
 		mode:   modeList,
 		width:  100,
@@ -224,7 +224,7 @@ func TestQuitFromResizePersistsRatio(t *testing.T) {
 	}
 	t.Cleanup(func() { st.Close() })
 
-	m := &Model{listKeys: keybind.DefaultList(),
+	m := &Model{keys: keybind.DefaultSession(), listKeys: keybind.DefaultList(),
 		store:  st,
 		mode:   modeList,
 		width:  100,
@@ -258,7 +258,7 @@ func TestDragReleasePersistsAndExits(t *testing.T) {
 	}
 	t.Cleanup(func() { st.Close() })
 
-	m := &Model{listKeys: keybind.DefaultList(),
+	m := &Model{keys: keybind.DefaultSession(), listKeys: keybind.DefaultList(),
 		store:  st,
 		mode:   modeList,
 		width:  100,
@@ -936,7 +936,7 @@ func TestDividerClickWithoutMotionCommitsNothing(t *testing.T) {
 	}
 	t.Cleanup(func() { st.Close() })
 
-	m := &Model{listKeys: keybind.DefaultList(),
+	m := &Model{keys: keybind.DefaultSession(), listKeys: keybind.DefaultList(),
 		store:  st,
 		mode:   modeList,
 		width:  100,
@@ -1533,9 +1533,16 @@ func TestMessagesLegendOpensNoticesByMouseAndKey(t *testing.T) {
 				for _, n := range m.activeNotices() {
 					m.dismissNotice(n.id)
 				}
-				x, y = messagesCell(t, m)
-				if m = leftPress(m, x, y); m.mode != modeNotices {
-					t.Fatal("the mouse must still reach Messages after every notice is dismissed")
+				m.View()
+				if footer := ansi.Strip(m.viewFooter()); strings.Contains(footer, "messages") {
+					t.Fatalf("with nothing unread the legend must give its room back:\n%s", footer)
+				}
+				if m = leftPress(m, x, y); m.mode != modeList {
+					t.Fatalf("a click where the entry was must not open Messages, mode=%v", m.mode)
+				}
+				m.handleKey(msg)
+				if m.mode != modeNotices {
+					t.Fatalf("%s should still open an empty Messages, mode=%v", binding, m.mode)
 				}
 			}
 		}

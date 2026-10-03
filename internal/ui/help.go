@@ -190,7 +190,7 @@ func helpSections(session, list keybind.Table, arrowStep bool) []helpSection {
 		})},
 		reviewHelpSection(list),
 		{title: titledWith("messages", list, keybind.Messages), rows: [][2]string{
-			{"click messages", "open from the list's key legend"},
+			{"click messages", "open from the key legend while any is left"},
 			{"↑↓", "pick a message"},
 			{"pgup / pgdn", "scroll its body"},
 			{"↵", "open its link in the browser"},
