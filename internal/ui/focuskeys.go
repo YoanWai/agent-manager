@@ -2,12 +2,13 @@ package ui
 
 import (
 	"fmt"
-	"github.com/YoanWai/agent-manager/internal/keybind"
 	"strings"
 	"time"
 	"unicode"
 
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/status"
+	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -143,6 +144,7 @@ func (m *Model) focusSelected() (tea.Model, tea.Cmd) {
 	// pane with no history until the agent next paints.
 	if m.focus == nil || !m.focus.serving(sess.ID) || m.pane.forID != sess.ID {
 		m.pane.mouse = false
+		m.pane.alt = false
 		m.pane.motion = false
 		m.pane.sgr = false
 		m.pane.history = 0
@@ -315,10 +317,17 @@ func (m *Model) leaveFocus() tea.Cmd {
 	return nil
 }
 
-// handleFocusKey forwards every key into the focused pane. The session key
-// table holds the exceptions, the same ones a real attach gets: detach
-// returns to the list, review opens the diff and editor the directory.
-// Every plain character - q included - reaches the agent.
+// focusPagesHistory is the one policy decision shared by input and its
+// footer: Muse's normal-screen transcript lives in tmux history. The pane
+// guards leave alternate-screen and mouse-tracking programs their keys.
+func (m *Model) focusPagesHistory(sess store.Session) bool {
+	return sess.Tool == "muse" && m.pane.forID == sess.ID &&
+		!m.pane.alt && !m.pane.mouse && m.pane.history > 0
+}
+
+// handleFocusKey forwards focused input to the pane except for session
+// actions and Muse's normal-screen paging. Every plain character, q
+// included, still reaches the agent.
 func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.keys.Binding(keybind.Detach).Has(msg.String()) {
 		return m, m.leaveFocus()
@@ -326,6 +335,17 @@ func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	sess, ok := m.selected()
 	if !ok {
 		return m, m.leaveFocus()
+	}
+	// Muse paints its transcript on the normal screen and leaves scrolling
+	// to terminal history. Route page keys through the same path as the wheel
+	// while that history exists; an app-owned screen keeps its own keys.
+	if !msg.Alt && m.focusPagesHistory(sess) {
+		switch msg.Type {
+		case tea.KeyPgUp:
+			return m, m.scrollFocusLines(-m.focusPaneRows())
+		case tea.KeyPgDown:
+			return m, m.scrollFocusLines(m.focusPaneRows())
+		}
 	}
 	// A windowed editor leaves the focus where it is; one that draws in the
 	// terminal takes it back on exit.

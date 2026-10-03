@@ -533,6 +533,21 @@ func TestFooterInFocusMode(t *testing.T) {
 	}
 }
 
+func TestMusePagingHintFitsFullFocusFooter(t *testing.T) {
+	m, sessID := focusedWithHistory(t, "muse-footer")
+	m.rows[m.cursor].sess.Tool = "muse"
+	m.pane.forID = sessID
+	m.fullLayout = true
+	m.width = 110
+	footer := ansi.Strip(m.viewFooter())
+	if !strings.Contains(footer, "pgup/pgdn history") {
+		t.Fatalf("full focus footer omits Muse paging: %q", footer)
+	}
+	if got := lipgloss.Height(m.viewFooter()); got != 1 {
+		t.Fatalf("full focus footer spans %d rows, want one: %q", got, footer)
+	}
+}
+
 func TestArrowStepFooterHintsFollowSetting(t *testing.T) {
 	m := buildModel(t)
 	if err := m.store.CreateGroup("arrow-group", ""); err != nil {

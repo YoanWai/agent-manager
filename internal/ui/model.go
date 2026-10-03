@@ -359,6 +359,7 @@ type paneMirror struct {
 	// first capture may still be in flight.
 	forID   string
 	mouse   bool
+	alt     bool
 	motion  bool
 	sgr     bool
 	history int
@@ -1825,6 +1826,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.pane.forID = msg.sessID
 		m.pane.mouse = msg.paneMouse
+		m.pane.alt = msg.paneAlt
 		m.pane.motion = msg.paneMotion
 		m.pane.sgr = msg.paneSGR
 		m.pane.history = msg.historySize
