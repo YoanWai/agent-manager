@@ -26,6 +26,7 @@ func (m *Model) View() string {
 }
 
 func (m *Model) view() string {
+	m.noticeHit = noticeHit{}
 	if m.width == 0 {
 		return m.syncCursorAnchor("loading...")
 	}
@@ -698,17 +699,19 @@ func (m *Model) viewLegend() legendSection {
 	if m.allGroupsCollapsed() {
 		foldAllAction = "unfold all"
 	}
-	// Ordered by what a narrow terminal must keep: moving around, making
-	// something, the filters, then the keys a user already knows to look for.
+	// Keep Messages first so its mouse entry survives a narrow footer.
 	k := m.listGlyph
 	emptyGroupsKey := k(keybind.EmptyGroups)
 	if m.showArchived {
 		emptyGroupsKey = ""
 	}
-	pairs := [][2]string{{strings.TrimSpace(k(keybind.Up) + " " + k(keybind.Down)), "navigate"}}
+	pairs := [][2]string{
+		{k(keybind.Messages), "messages"},
+		{strings.TrimSpace(k(keybind.Up) + " " + k(keybind.Down)), "navigate"},
+	}
 	pairs = append(pairs, [][2]string{
-		{k(keybind.NewSession), "new"}, {k(keybind.Terminal), "terminal"}, {k(keybind.NewGroup), "group"}, {k(keybind.Search), "search"},
 		{k(keybind.Archived), archivedAction}, {k(keybind.Filter), statusFilterAction}, {emptyGroupsKey, emptyGroupsAction},
+		{k(keybind.NewSession), "new"}, {k(keybind.Terminal), "terminal"}, {k(keybind.NewGroup), "group"}, {k(keybind.Search), "search"},
 		{k(keybind.Help), "keys"}, {k(keybind.Quit), "quit"},
 		{k(keybind.ReorderUp, keybind.ReorderDown), "reorder"}, {k(keybind.FoldAll), foldAllAction}, {k(keybind.Resize), "resize"}, {k(keybind.Settings), "settings"},
 	}...)

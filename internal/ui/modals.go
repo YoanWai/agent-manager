@@ -381,7 +381,7 @@ func (m *Model) viewSettings() string {
 	if m.settings.mouseDisabled {
 		mouseMode = "off"
 	}
-	// The beta tag borrows the messages card's yellow, so the row reads as
+	// The beta tag borrows the messages modal's yellow, so the row reads as
 	// the one still under test.
 	betaTag := lipgloss.NewStyle().Foreground(lipgloss.Color("#e2c044")).Render(" beta")
 	themeAuto := "off"
