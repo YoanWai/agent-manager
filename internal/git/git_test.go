@@ -778,8 +778,9 @@ func TestAddWorktreeRollsBackWhenPushRemoteFails(t *testing.T) {
 	}
 }
 
-func TestFetchBaseBringsUpstreamForward(t *testing.T) {
+func TestFetchBaseBringsOnlyTheBaseForward(t *testing.T) {
 	driver, work, parent, _ := forkClone(t)
+	gitIn(t, parent, "branch", "other")
 	write(t, parent, "c.txt", "later")
 	commit(t, parent, "later")
 	if err := driver.FetchBase(work, ""); err != nil {
@@ -787,6 +788,9 @@ func TestFetchBaseBringsUpstreamForward(t *testing.T) {
 	}
 	if got, want := revParse(t, driver, work, "refs/remotes/upstream/main"), revParse(t, driver, parent, "HEAD"); got != want {
 		t.Fatalf("upstream/main = %s after the fetch, want %s", got, want)
+	}
+	if _, err := driver.run(work, "rev-parse", "--verify", "--quiet", "refs/remotes/upstream/other"); err == nil {
+		t.Fatal("the fetch should bring the base branch alone, upstream/other arrived too")
 	}
 }
 

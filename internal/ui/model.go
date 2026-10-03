@@ -203,6 +203,9 @@ type Model struct {
 	// polarity, like hideHeader/hideStats, so a bare Model{} in a test still
 	// defaults to mouse reporting on.
 	mouseDisabled bool
+	// baseFetchOff mirrors the persisted fetch-on-spawn setting, read on
+	// every Update while a worktree spawn is being set up.
+	baseFetchOff bool
 	// watchedGen is previewGen as of the last poll pass, so a selection
 	// that has not moved since can be recognised as at rest.
 	watchedGen        uint64
@@ -512,6 +515,7 @@ type settingsState struct {
 	hideStats       bool
 	mouseDisabled   bool
 	worktreeDefault bool
+	baseFetch       bool
 	proactive       bool
 	notifications   bool
 	notifyFinished  bool
@@ -551,6 +555,7 @@ const (
 	settingsFieldArrowStep
 	settingsFieldMouse
 	settingsFieldWorktree
+	settingsFieldBaseFetch
 	settingsFieldCoordination
 	settingsFieldNotify
 	settingsFieldNotifyFinish
@@ -818,6 +823,7 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		hideHeader:          storedHideHeader(st),
 		hideStats:           storedHideStats(st),
 		mouseDisabled:       storedMouseDisabled(st),
+		baseFetchOff:        storedBaseFetchOff(st),
 		imeCursor:           &cursorAnchor{},
 		mode:                modeList,
 		booting:             true,
@@ -1427,7 +1433,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	model, cmd := m.handleMsg(msg)
 	if mm, ok := model.(*Model); ok {
 		mm.flushPendingNotice()
-		return mm, tea.Batch(cmd, mm.syncMouseCapture(), mm.fetchSpawnBase())
+		return mm, tea.Batch(cmd, mm.syncMouseCapture(), mm.refreshSpawnBase())
 	}
 	return model, tea.Batch(cmd, m.syncMouseCapture())
 }

@@ -1258,7 +1258,7 @@ func TestFormShowsAndFetchesTheWorktreeBase(t *testing.T) {
 	m.openForm()
 	m.form.dir.SetValue(clone)
 
-	cmd := m.fetchSpawnBase()
+	cmd := m.refreshSpawnBase()
 	if cmd == nil {
 		t.Fatal("an open form spawning a worktree should refresh its base")
 	}
@@ -1273,8 +1273,45 @@ func TestFormShowsAndFetchesTheWorktreeBase(t *testing.T) {
 	if view := m.viewForm(); !strings.Contains(view, "origin/main (auto)") || strings.Contains(view, "fetching") {
 		t.Fatalf("a finished fetch leaves the base alone on its row, got %q", view)
 	}
-	if m.fetchSpawnBase() != nil {
+	if m.refreshSpawnBase() != nil {
 		t.Fatal("a base fetched a moment ago should not be fetched again")
+	}
+}
+
+func TestSettingsFetchOnSpawnTurnsTheFetchOff(t *testing.T) {
+	m := buildModel(t)
+	remote := seedRepo(t)
+	clone := filepath.Join(t.TempDir(), "clone")
+	runGit(t, remote, "clone", "-q", remote, clone)
+	runGit(t, remote, "commit", "-q", "--allow-empty", "-m", "after the clone")
+	cached := gitOutput(t, clone, "rev-parse", "origin/main")
+
+	m.openSettings()
+	for m.settings.field != settingsFieldBaseFetch {
+		m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
+	}
+	if !strings.Contains(ansi.Strip(m.viewSettings()), "fetch on spawn") {
+		t.Fatalf("settings do not show the fetch row:\n%s", ansi.Strip(m.viewSettings()))
+	}
+	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
+	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if chosen, err := m.store.Setting(baseFetchSetting); err != nil || chosen != "off" {
+		t.Fatalf("want stored off, got %q err %v", chosen, err)
+	}
+
+	if err := m.store.SetSetting(worktreeSetting, "on"); err != nil {
+		t.Fatalf("set setting: %v", err)
+	}
+	m.openForm()
+	m.form.dir.SetValue(clone)
+	if next := m.recordBaseFetch(m.refreshSpawnBase()().(baseFetchedMsg)); next != nil {
+		t.Fatal("with the fetch turned off, resolving the base should be the last step")
+	}
+	if view := m.viewForm(); !strings.Contains(view, "origin/main (auto)") || strings.Contains(view, "fetch") {
+		t.Fatalf("the base row should name the base alone, got %q", view)
+	}
+	if got := gitOutput(t, clone, "rev-parse", "origin/main"); got != cached {
+		t.Fatalf("origin/main moved to %s with the fetch off, want %s", got, cached)
 	}
 }
 
@@ -1289,7 +1326,7 @@ func TestFormMarksAFailedBaseFetch(t *testing.T) {
 	}
 	m.openForm()
 	m.form.dir.SetValue(clone)
-	next := m.recordBaseFetch(m.fetchSpawnBase()().(baseFetchedMsg))
+	next := m.recordBaseFetch(m.refreshSpawnBase()().(baseFetchedMsg))
 	m.recordBaseFetch(next().(baseFetchedMsg))
 	if view := m.viewForm(); !strings.Contains(view, "origin/main (auto) · fetch failed") {
 		t.Fatalf("form should say the base was not refreshed, got %q", view)

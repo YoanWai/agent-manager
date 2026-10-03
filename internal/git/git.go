@@ -719,21 +719,21 @@ func (d *Driver) worktreeBase(dir, override string) (string, error) {
 // lands well inside it.
 const fetchTimeout = 30 * time.Second
 
-// FetchBase updates the remote-tracking ref a worktree would branch from,
-// so a session starts from the remote's tip rather than from whatever the
-// last fetch left behind.
+// FetchBase updates the remote-tracking branch a worktree would branch
+// from, and only that branch, so a session starts from the remote's tip
+// rather than from whatever the last fetch left behind.
 func (d *Driver) FetchBase(dir, override string) error {
 	base, err := d.worktreeBase(dir, override)
 	if err != nil || base == "" {
 		return err
 	}
-	remote, err := d.remoteOf(dir, base)
+	remote, branch, err := d.remoteBranch(dir, base)
 	if err != nil || remote == "" {
 		return err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, d.bin, "fetch", "--quiet", remote)
+	cmd := exec.CommandContext(ctx, d.bin, "fetch", "--quiet", remote, branch)
 	cmd.Dir = dir
 	// Nobody can answer a background fetch, so git's, askpass's and ssh's tty prompts are all shut off.
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "SSH_ASKPASS_REQUIRE=never")
@@ -741,29 +741,29 @@ func (d *Driver) FetchBase(dir, override string) error {
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
 	cmd.WaitDelay = time.Second
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git fetch %s: %w: %s", remote, err, strings.TrimSpace(string(out)))
+		return fmt.Errorf("git fetch %s %s: %w: %s", remote, branch, err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }
 
-// remoteOf names the remote a remote-tracking ref belongs to, "" for any
-// other ref.
-func (d *Driver) remoteOf(dir, ref string) (string, error) {
+// remoteBranch splits a remote-tracking ref into its remote and branch,
+// both "" for any other ref.
+func (d *Driver) remoteBranch(dir, ref string) (remote, branch string, err error) {
 	full, err := d.run(dir, "rev-parse", "--symbolic-full-name", ref)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	remotes, err := d.run(dir, "remote")
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	owner := ""
-	for _, remote := range strings.Fields(remotes) {
-		if strings.HasPrefix(full, "refs/remotes/"+remote+"/") && len(remote) > len(owner) {
-			owner = remote
+	for _, candidate := range strings.Fields(remotes) {
+		prefix := "refs/remotes/" + candidate + "/"
+		if strings.HasPrefix(full, prefix) && len(candidate) > len(remote) {
+			remote, branch = candidate, strings.TrimPrefix(full, prefix)
 		}
 	}
-	return owner, nil
+	return remote, branch, nil
 }
 
 // pushToOrigin sends git push to origin for a branch that tracks another

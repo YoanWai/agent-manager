@@ -365,6 +365,10 @@ func (m *Model) viewSettings() string {
 	if m.settings.worktreeDefault {
 		worktreeDefault = "on"
 	}
+	baseFetch := "off"
+	if m.settings.baseFetch {
+		baseFetch = "on"
+	}
 	coordination := "on request"
 	if m.settings.proactive {
 		coordination = "proactive"
@@ -446,6 +450,7 @@ func (m *Model) viewSettings() string {
 		row(settingsFieldArrowStep, "←→ step in/out", arrowStep) + betaTag + "\n" +
 		row(settingsFieldMouse, "mouse", mouseMode) + "\n" +
 		row(settingsFieldWorktree, "spawn in worktree", worktreeDefault) + "\n" +
+		row(settingsFieldBaseFetch, "fetch on spawn", baseFetch) + "\n" +
 		row(settingsFieldCoordination, "coordination", coordination) + "\n" +
 		row(settingsFieldNotify, "notifications", notifications) + "\n" +
 		row(settingsFieldNotifyFinish, "notify on finish", notifyFinished) + "\n" +

@@ -25,6 +25,10 @@ import (
 // default the Agent Manager settings screen writes.
 const worktreeSetting = "worktree_default"
 
+// baseFetchSetting is the store key that, set to "off", skips the fetch
+// ahead of a worktree spawn.
+const baseFetchSetting = "worktree_fetch"
+
 type Session struct {
 	ID        string `json:"id" jsonschema:"agent session id"`
 	Name      string `json:"name" jsonschema:"session name shown in Agent Manager"`
@@ -357,11 +361,15 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 	if err != nil {
 		return Session{}, err
 	}
+	fetchSetting, err := runtime.store.Setting(baseFetchSetting)
+	if err != nil {
+		return Session{}, err
+	}
 	proactive, err := runtime.store.ProactiveCoordination()
 	if err != nil {
 		return Session{}, err
 	}
-	dir, worktree, err := s.prepareWorktree(dir, name, base, wantWorktree, opts.Worktree != nil)
+	dir, worktree, err := s.prepareWorktree(dir, name, base, fetchSetting != "off", wantWorktree, opts.Worktree != nil)
 	if err != nil {
 		return Session{}, err
 	}
@@ -421,7 +429,7 @@ type worktreeTarget struct {
 // A directory that cannot host one is only an error when the caller asked
 // for a worktree by name; an inherited default degrades to a plain spawn,
 // which is what the New Session form does rather than refusing to launch.
-func (s *Sessions) prepareWorktree(dir, name, base string, wanted, explicit bool) (string, worktreeTarget, error) {
+func (s *Sessions) prepareWorktree(dir, name, base string, fetch, wanted, explicit bool) (string, worktreeTarget, error) {
 	if !wanted {
 		return dir, worktreeTarget{}, nil
 	}
@@ -439,8 +447,10 @@ func (s *Sessions) prepareWorktree(dir, name, base string, wanted, explicit bool
 		}
 		return dir, worktreeTarget{}, nil
 	}
-	// Offline or refused, the worktree branches from the last fetch instead.
-	_ = driver.FetchBase(root, base)
+	if fetch {
+		// Offline or refused, the worktree branches from the last fetch instead.
+		_ = driver.FetchBase(root, base)
+	}
 	path, branch, err := driver.AddWorktree(root, name, base)
 	if err != nil {
 		return "", worktreeTarget{}, err

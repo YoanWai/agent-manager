@@ -626,6 +626,54 @@ func TestSessionsCreateBranchesFromTheGroupBase(t *testing.T) {
 	}
 }
 
+func TestSessionsCreateFetchesTheBaseUnlessTurnedOff(t *testing.T) {
+	h := newSessionHarness(t)
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	runGit := func(dir string, args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	remote := t.TempDir()
+	runGit(remote, "init", "-b", "main")
+	runGit(remote, "config", "user.email", "t@t")
+	runGit(remote, "config", "user.name", "t")
+	runGit(remote, "commit", "--allow-empty", "-m", "init")
+	clone := filepath.Join(t.TempDir(), "clone")
+	runGit(remote, "clone", "-q", remote, clone)
+	cached := runGit(clone, "rev-parse", "origin/main")
+	runGit(remote, "commit", "--allow-empty", "-m", "after the clone")
+	wanted := true
+	spawnAt := func(name string) string {
+		t.Helper()
+		created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: name, Directory: clone, Worktree: &wanted})
+		if err != nil {
+			t.Fatalf("Create %s: %v", name, err)
+		}
+		return runGit(created.Directory, "rev-parse", "HEAD")
+	}
+
+	if err := h.store.SetSetting(baseFetchSetting, "off"); err != nil {
+		t.Fatalf("set setting: %v", err)
+	}
+	if got := spawnAt("unfetched"); got != cached {
+		t.Fatalf("with the fetch off the worktree starts at %s, want the cached origin/main %s", got, cached)
+	}
+	if err := h.store.SetSetting(baseFetchSetting, ""); err != nil {
+		t.Fatalf("clear setting: %v", err)
+	}
+	if got, want := spawnAt("fetched"), runGit(remote, "rev-parse", "HEAD"); got != want {
+		t.Fatalf("by default the worktree starts at %s, want the remote's tip %s", got, want)
+	}
+}
+
 func TestSendAndWaitRefuseATargetTheManagerNoLongerPolls(t *testing.T) {
 	h := newSessionHarness(t)
 	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "worker"})

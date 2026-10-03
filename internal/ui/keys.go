@@ -550,6 +550,10 @@ const quickCloseSetting = "quick_prompt_close"
 
 const worktreeSetting = "worktree_default"
 
+// baseFetchSetting is the fetch ahead of a worktree spawn: "off" skips it,
+// anything else fetches (the default).
+const baseFetchSetting = "worktree_fetch"
+
 const notificationsSetting = "notifications"
 
 const notifyFinishedSetting = "notify_finished"

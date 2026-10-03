@@ -163,11 +163,11 @@ type baseFetchedMsg struct {
 	err      error
 }
 
-// fetchSpawnBase refreshes the base of the worktree spawn the form or the
-// quick bar is set to make, so the session starts from the remote's tip.
-// It resolves the base first, for the form to show, then fetches it. A
-// spawn that beats the fetch branches from the last one.
-func (m *Model) fetchSpawnBase() tea.Cmd {
+// refreshSpawnBase resolves the base of the worktree spawn the form or the
+// quick bar is set to make, for the form to show, then fetches it unless
+// Settings turned that off. A spawn that beats the fetch branches from the
+// last one.
+func (m *Model) refreshSpawnBase() tea.Cmd {
 	dir, group, ok := m.pendingWorktreeSpawn()
 	if !ok {
 		return nil
@@ -198,7 +198,7 @@ func (m *Model) recordBaseFetch(msg baseFetchedMsg) tea.Cmd {
 		fetch.fetched, fetch.err = true, msg.err
 	}
 	m.baseFetches[msg.key] = fetch
-	if msg.fetched {
+	if msg.fetched || m.baseFetchOff {
 		return nil
 	}
 	driver, key := m.gitDrv, msg.key
@@ -237,6 +237,7 @@ func (m *Model) spawnBaseLabel(dir, group string) string {
 		}
 	}
 	switch {
+	case m.baseFetchOff:
 	case !fetch.fetched:
 		label += subtleStyle.Render(" · fetching")
 	case fetch.err != nil:
@@ -355,6 +356,16 @@ func storedMouseDisabled(st *store.Store) bool {
 	return chosen == "off"
 }
 
+// storedBaseFetchOff reads the persisted fetch-on-spawn choice. On is the
+// default; only an explicit "off" skips the fetch.
+func storedBaseFetchOff(st *store.Store) bool {
+	chosen, err := st.Setting(baseFetchSetting)
+	if err != nil {
+		return false
+	}
+	return chosen == "off"
+}
+
 // enterFocuses reports which key opens a session where. Enter focuses the
 // preview and A attaches full screen by default; a stored "attach" choice
 // swaps the pair. Cached on the model because the footer reads it every
@@ -421,6 +432,7 @@ func (m *Model) openSettings() {
 		hideStats:       m.hideStats,
 		mouseDisabled:   m.mouseDisabled,
 		worktreeDefault: m.defaultWorktree(),
+		baseFetch:       !m.baseFetchOff,
 		proactive:       m.proactiveCoordination(),
 		notifications:   storedNotifications(m.store),
 		notifyFinished:  storedNotifyFinished(m.store),
@@ -582,6 +594,13 @@ func (m *Model) persistSettings() {
 	if err := m.store.SetSetting(worktreeSetting, worktreeChoice); err != nil {
 		m.errBar.text = err.Error()
 	}
+	baseFetch := "on"
+	if !m.settings.baseFetch {
+		baseFetch = "off"
+	}
+	if err := m.store.SetSetting(baseFetchSetting, baseFetch); err != nil {
+		m.errBar.text = err.Error()
+	}
 	if err := m.store.SetProactiveCoordination(m.settings.proactive); err != nil {
 		m.errBar.text = err.Error()
 	}
@@ -606,6 +625,7 @@ func (m *Model) persistSettings() {
 	m.hideHeader = m.settings.hideHeader
 	m.hideStats = m.settings.hideStats
 	m.mouseDisabled = m.settings.mouseDisabled
+	m.baseFetchOff = !m.settings.baseFetch
 }
 
 func (m *Model) openCLIPicker() {
@@ -746,6 +766,8 @@ func (m *Model) cycleSetting(step int) tea.Cmd {
 		m.settings.mouseDisabled = !m.settings.mouseDisabled
 	case settingsFieldWorktree:
 		m.settings.worktreeDefault = !m.settings.worktreeDefault
+	case settingsFieldBaseFetch:
+		m.settings.baseFetch = !m.settings.baseFetch
 	case settingsFieldCoordination:
 		m.settings.proactive = !m.settings.proactive
 	case settingsFieldNotify:
