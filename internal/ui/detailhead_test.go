@@ -41,7 +41,7 @@ func TestDetailHeadsFitTheirColumn(t *testing.T) {
 		if len(lines) != 3 {
 			t.Errorf("badged head at %d is %d lines: %q", width, len(lines), ansi.Strip(heads["session"]))
 		}
-		if !strings.Contains(ansi.Strip(lines[0]), "✉2") {
+		if !strings.Contains(ansi.Strip(lines[0]), inboxGlyph+"2") {
 			t.Errorf("head at %d dropped the badge: %q", width, ansi.Strip(lines[0]))
 		}
 	}
@@ -60,7 +60,7 @@ func TestDetailHeadShedsChipsBeforeFacts(t *testing.T) {
 			t.Fatalf("wide head is missing %q: %q", want, wide)
 		}
 	}
-	if strings.Contains(wide, "✉") {
+	if strings.Contains(wide, inboxGlyph) {
 		t.Errorf("head badged a session holding no queued message: %q", wide)
 	}
 	mid := ansi.Strip(strings.Split(m.viewDetail(60), "\n")[0])

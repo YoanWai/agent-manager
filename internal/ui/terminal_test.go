@@ -113,7 +113,7 @@ func TestTerminalRowShowsItsNameImmediately(t *testing.T) {
 	if m.awaitingRename(sess) {
 		t.Fatalf("shell %q has no rename to wait for", sess.Name)
 	}
-	row := ansi.Strip(m.renderTreeRow(treeRow{sess: sess}, false, 80, 0, panelHex()))
+	row := ansi.Strip(m.renderTreeRow(treeRow{sess: sess}, false, 80, 0, panelHex()).text)
 	if !strings.Contains(row, sess.Name) {
 		t.Fatalf("shell row is missing its name %q:\n%s", sess.Name, row)
 	}

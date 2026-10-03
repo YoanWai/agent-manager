@@ -6,9 +6,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// reorderGrip is the drag handle every movable row carries beside its name.
-const reorderGrip = "⠿"
-
 // reorderState is a row lifted by its handle. Steps among its siblings are
 // stored as they happen, so offset is what esc walks back. A move to
 // another level waits in drop until the release.

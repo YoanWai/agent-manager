@@ -3097,7 +3097,7 @@ func TestReviewShowsLoaderWhileDiffLoads(t *testing.T) {
 	if !strings.Contains(code, "loading diff") {
 		t.Fatalf("code pane should carry the diff loader, got %q", code)
 	}
-	if strings.Count(code, "●") != 1 || strings.Count(code, "•") != 1 {
+	if strings.Count(code, workingGlyph) != 1 || strings.Count(code, "•") != 1 {
 		t.Fatalf("diff loader should show the ring, got %q", code)
 	}
 	list := ansi.Strip(m.viewDiffFileList(28, 10))
@@ -3127,7 +3127,7 @@ func TestReviewShowsLoaderWhileFileLoads(t *testing.T) {
 	if !strings.Contains(code, "loading file") {
 		t.Fatalf("code pane should carry the file loader, got %q", code)
 	}
-	if strings.Count(code, "●") != 1 {
+	if strings.Count(code, workingGlyph) != 1 {
 		t.Fatalf("file loader should show the ring, got %q", code)
 	}
 	list := ansi.Strip(m.viewDiffFileList(40, 8))
