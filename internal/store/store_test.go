@@ -1830,7 +1830,7 @@ func TestUpdateStatusOnSocketWritesOnlyWhatThisServerOwns(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	written, err := st.UpdateStatusOnSocket(sess.ID, "idle", mine)
+	written, _, err := st.UpdateStatusOnSocket(sess.ID, "idle", mine)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1841,7 +1841,7 @@ func TestUpdateStatusOnSocketWritesOnlyWhatThisServerOwns(t *testing.T) {
 	if err := st.SetTmuxSocket(sess.ID, theirs); err != nil {
 		t.Fatal(err)
 	}
-	written, err = st.UpdateStatusOnSocket(sess.ID, "dead", mine)
+	written, _, err = st.UpdateStatusOnSocket(sess.ID, "dead", mine)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1856,12 +1856,49 @@ func TestUpdateStatusOnSocketWritesOnlyWhatThisServerOwns(t *testing.T) {
 		t.Fatalf("status = %q, want the claim to have held it at idle", got.Status)
 	}
 
-	written, err = st.UpdateStatusOnSocket(sess.ID, "dead", theirs)
+	written, _, err = st.UpdateStatusOnSocket(sess.ID, "dead", theirs)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !written {
 		t.Fatal("the server holding the row writes it")
+	}
+}
+
+// Two managers on one server both list a row as working and both derive
+// waiting. Both writes land, but only the first moved the status, so only
+// that manager may announce the transition.
+func TestUpdateStatusOnSocketReportsWhichWriteMovedTheStatus(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "shared.db")
+	first, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { first.Close() })
+	second, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { second.Close() })
+	const socket = "/tmp/shared/agentmgr"
+	sess := Session{ID: "sess-1", Name: "one", Tool: "claude", Cwd: "/tmp", Status: "working"}
+	if err := first.CreateSession(sess); err != nil {
+		t.Fatal(err)
+	}
+
+	written, changed, err := first.UpdateStatusOnSocket(sess.ID, "waiting", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !written || !changed {
+		t.Fatalf("first write: written=%v changed=%v, want both", written, changed)
+	}
+	written, changed, err = second.UpdateStatusOnSocket(sess.ID, "waiting", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !written || changed {
+		t.Fatalf("second write: written=%v changed=%v, want written without a change", written, changed)
 	}
 }
 
