@@ -90,7 +90,7 @@
 	function Add-UserPath([string]$dir) {
 		$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 		$entries = @()
-		if ($userPath) { $entries = $userPath.Split(';') | Where-Object { $_ } }
+		if ($userPath) { $entries = @($userPath.Split(';') | Where-Object { $_ }) }
 		foreach ($entry in $entries) {
 			if ($entry.TrimEnd('\') -eq $dir.TrimEnd('\')) { return }
 		}
