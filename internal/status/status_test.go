@@ -2212,3 +2212,22 @@ func TestLastMessageJoinsWrappedGeminiQuestion(t *testing.T) {
 		t.Fatalf("wrapped question quote = %q anchored=%v ok=%v, want %q", line, anchored, ok, want)
 	}
 }
+
+// A question's wrapped rows are measured in terminal cells: a wide-character
+// word that fits by rune count can still not fit on the row above it.
+func TestLastMessageJoinsWrappedGeminiQuestionByCells(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := " > Ask me.\n" +
+		"▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀\n\n" +
+		"╭──────────────────────────────────────────────────────────────────────╮\n" +
+		"│ ? Ask User                                                           │\n" +
+		"│ Which shell do you prefer for daily work on remote servers           │\n" +
+		"│ 世界你好吗 and more?                                                 │\n" +
+		"│                                                                      │\n" +
+		"│ ● 1. bash                                                            │\n" +
+		"╰──────────────────────────────────────────────────────────────────────╯"
+	want := "Which shell do you prefer for daily work on remote servers 世界你好吗 and more?"
+	if line, anchored, ok := engine.LastMessage("gemini", pane); !ok || !anchored || line != want {
+		t.Fatalf("wide-character question quote = %q anchored=%v ok=%v, want %q", line, anchored, ok, want)
+	}
+}

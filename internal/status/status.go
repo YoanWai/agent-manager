@@ -5,7 +5,6 @@ import (
 	"slices"
 	"strings"
 	"unicode"
-	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
 
@@ -494,7 +493,7 @@ func (tr toolRules) askedQuestion(tail string) string {
 			break
 		}
 		first, _, _ := strings.Cut(question, " ")
-		if utf8.RuneCountInString(above)+1+utf8.RuneCountInString(first) <= utf8.RuneCountInString(rows[i])-4 {
+		if ansi.StringWidth(above)+1+ansi.StringWidth(first) <= ansi.StringWidth(rows[i])-4 {
 			break
 		}
 		question = above + " " + question
