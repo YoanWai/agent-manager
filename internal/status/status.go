@@ -507,7 +507,7 @@ func (tr toolRules) askedQuestion(tail string) string {
 	question := text(q)
 	for i := q - 1; i >= 0; i-- {
 		above := text(i)
-		if above == "" || strings.ContainsAny(string([]rune(above)[:1]), "╭╰│─") {
+		if above == "" || strings.HasPrefix(above, "- ") || strings.ContainsAny(string([]rune(above)[:1]), "╭╰│─") {
 			break
 		}
 		first, _, _ := strings.Cut(question, " ")

@@ -2361,3 +2361,20 @@ func TestRegionContentLeavesTheFrameOut(t *testing.T) {
 		t.Error("a new transcript row left the content unchanged")
 	}
 }
+
+// A list item that fills its row does not continue the question below it.
+func TestLastMessageKeepsFullListRowOutOfGeminiQuestion(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := " > Fetch it.\n" +
+		"▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀\n\n" +
+		"╭──────────────────────────────────────────────────────────────────────╮\n" +
+		"│ URLs to fetch:                                                       │\n" +
+		"│ - https://example.com/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa   │\n" +
+		"│ Do you want to proceed?                                              │\n" +
+		"│                                                                      │\n" +
+		"│ ● 1. Allow once                                                      │\n" +
+		"╰──────────────────────────────────────────────────────────────────────╯"
+	if line, anchored, ok := engine.LastMessage("gemini", pane); !ok || !anchored || line != "Do you want to proceed?" {
+		t.Fatalf("quote with a full URL row = %q anchored=%v ok=%v, want the dialog's question", line, anchored, ok)
+	}
+}
