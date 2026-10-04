@@ -2171,3 +2171,44 @@ func TestMusePromptAndReply(t *testing.T) {
 		t.Fatalf("picker TypingHold = %q", got)
 	}
 }
+
+// A web_fetch dialog draws the tool's prompt above its own question; the quote
+// is the question nearest the options, not the first row ending in "?".
+func TestLastMessageQuotesGeminiQuestionNearestOptions(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := " > Read https://example.com and tell me, what is its main heading?\n" +
+		"▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀\n\n" +
+		"╭──────────────────────────────────────────────────────────────────────╮\n" +
+		"│ Read https://example.com and tell me, what is its main heading?      │\n" +
+		"│                                                                      │\n" +
+		"│ URLs to fetch:                                                       │\n" +
+		"│  - https://example.com/                                              │\n" +
+		"│ Do you want to proceed?                                              │\n" +
+		"│                                                                      │\n" +
+		"│ ● 1. Allow once                                                      │\n" +
+		"│   2. Allow for this session                                          │\n" +
+		"│   3. No, suggest changes (esc)                                       │\n" +
+		"╰──────────────────────────────────────────────────────────────────────╯"
+	if line, anchored, ok := engine.LastMessage("gemini", pane); !ok || !anchored || line != "Do you want to proceed?" {
+		t.Fatalf("web_fetch dialog quote = %q anchored=%v ok=%v, want the dialog's question", line, anchored, ok)
+	}
+}
+
+// A question wider than the pane wraps across rows; the quote joins them.
+func TestLastMessageJoinsWrappedGeminiQuestion(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := " > Ask me which shell I prefer.\n" +
+		"▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀\n\n" +
+		"╭──────────────────────────────────────────────────────────────────────╮\n" +
+		"│ ? Ask User                                                           │\n" +
+		"│ Which shell do you prefer for daily work on remote servers and on   │\n" +
+		"│ local machines alike?                                                      │\n" +
+		"│                                                                      │\n" +
+		"│ ● 1. bash                                                            │\n" +
+		"│   2. zsh                                                             │\n" +
+		"╰──────────────────────────────────────────────────────────────────────╯"
+	want := "Which shell do you prefer for daily work on remote servers and on local machines alike?"
+	if line, anchored, ok := engine.LastMessage("gemini", pane); !ok || !anchored || line != want {
+		t.Fatalf("wrapped question quote = %q anchored=%v ok=%v, want %q", line, anchored, ok, want)
+	}
+}

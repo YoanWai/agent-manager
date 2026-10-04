@@ -606,7 +606,8 @@ limit_line = "Usage limit reached"
 chrome_block = "^\\s*Queued \\(press ↑ to edit\\):"
 # an approval dialog replaces the composer, so the newest "> " row is the echo
 # of the prompt that raised it. The question is the box row that ends in "?",
-# not the "? Shell" title row or the command's own inner box.
+# not the "? Shell" title row or the command's own inner box; the row nearest
+# above the options wins, and rows it wraps over are joined.
 dialog_question = "(?m)^│ ([^?│\\s][^│]*\\?)\\s*│\\s*$"
 # model replies open on a "✦ " glyph
 message_start = "^\\s*✦ "

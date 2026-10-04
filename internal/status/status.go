@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
 
@@ -409,8 +410,8 @@ func (e *Engine) LastMessage(tool, pane string) (line string, anchored, ok bool)
 		return "", false, false
 	}
 	if tr.dialogAsks != nil {
-		if m := tr.dialogAsks.FindStringSubmatch(pane[len(region):]); m != nil {
-			return strings.TrimSpace(m[1]), true, true
+		if q := tr.askedQuestion(pane[len(region):]); q != "" {
+			return q, true, true
 		}
 	}
 	lines := strings.Split(region, "\n")
@@ -456,6 +457,55 @@ func (e *Engine) LastMessage(tool, pane string) (line string, anchored, ok bool)
 	}
 	return strings.TrimSpace(strings.Join(parts, " ")), true, true
 }
+
+// askedQuestion is the dialog_question row nearest above the selected option,
+// since a tool may draw its own prompt, which can end in "?" too, above the
+// question. A question wider than the pane wraps; the rows above it that the
+// next row's first word would not have fitted on are its start.
+func (tr toolRules) askedQuestion(tail string) string {
+	rows := strings.Split(tail, "\n")
+	end := len(rows)
+	for i, row := range rows {
+		if selectedOption.MatchString(row) {
+			end = i
+			break
+		}
+	}
+	q := -1
+	for i := 0; i < end; i++ {
+		if tr.dialogAsks.MatchString(rows[i]) {
+			q = i
+		}
+	}
+	if q == -1 {
+		return ""
+	}
+	text := func(i int) string {
+		m := boxedText.FindStringSubmatch(rows[i])
+		if m == nil {
+			return ""
+		}
+		return strings.TrimSpace(m[1])
+	}
+	question := text(q)
+	for i := q - 1; i >= 0; i-- {
+		above := text(i)
+		if above == "" || strings.ContainsAny(string([]rune(above)[:1]), "╭╰│─") {
+			break
+		}
+		first, _, _ := strings.Cut(question, " ")
+		if utf8.RuneCountInString(above)+1+utf8.RuneCountInString(first) <= utf8.RuneCountInString(rows[i])-4 {
+			break
+		}
+		question = above + " " + question
+	}
+	return question
+}
+
+var (
+	selectedOption = regexp.MustCompile(`^[\s│]*●\s*\d+\.`)
+	boxedText      = regexp.MustCompile(`^│ ([^│]*?)\s*│\s*$`)
+)
 
 func (tr toolRules) dialogOpen(cutoffTail string) bool {
 	footer, ok := footerBelow(cutoffTail)
