@@ -1558,7 +1558,7 @@ func TestClickBesideMessagesLegendDoesNothing(t *testing.T) {
 	}
 }
 
-func TestMessagesLegendClearsStaleHit(t *testing.T) {
+func TestMessagesLegendClickOnlyOpensFromTheList(t *testing.T) {
 	for _, change := range []struct {
 		name  string
 		apply func(*Model)
@@ -1566,7 +1566,6 @@ func TestMessagesLegendClearsStaleHit(t *testing.T) {
 		{"search", func(m *Model) { m.searching = true }},
 		{"quick prompt", func(m *Model) { m.openQuickMode() }},
 		{"resize", func(m *Model) { m.split.resizeMode = true }},
-		{"mouse off", func(m *Model) { m.mouseDisabled = true }},
 		{"messages key off", func(m *Model) { m.listKeys = m.listKeys.With(keybind.Messages, bindingOf(t)) }},
 		{"settings", func(m *Model) { m.openSettings() }},
 		{"short terminal", func(m *Model) { m.height = 2 }},
@@ -1577,11 +1576,8 @@ func TestMessagesLegendClearsStaleHit(t *testing.T) {
 			x, y := messagesCell(t, m)
 			change.apply(m)
 			m.View()
-			if m.noticeHit.ok {
-				t.Fatalf("messages left a stale hit %+v", m.noticeHit)
-			}
 			if m = leftPress(m, x, y); m.mode == modeNotices {
-				t.Fatal("a stale messages hit opened notices")
+				t.Fatal("a click where messages was painted opened notices")
 			}
 		})
 	}

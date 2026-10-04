@@ -307,9 +307,6 @@ func (h noticeHit) contains(x, y int) bool {
 }
 
 func (m *Model) placeNoticeHit(footer string, firstRow int) {
-	if !m.listReadyForNotice() || m.mouseDisabled || m.split.dragging {
-		return
-	}
 	binding := m.listGlyph(keybind.Messages)
 	if binding == "" {
 		return
