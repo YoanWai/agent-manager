@@ -1866,39 +1866,62 @@ func TestUpdateStatusOnSocketWritesOnlyWhatThisServerOwns(t *testing.T) {
 }
 
 // Two managers on one server both list a row as working and both derive
-// waiting. Both writes land, but only the first moved the status, so only
-// that manager may announce the transition.
+// waiting at the same moment. Both writes land, but only one moved the
+// status, so only that manager may announce the transition. A third
+// connection holds the write lock while both writes start, so a read taken
+// outside the write's transaction would see working twice.
 func TestUpdateStatusOnSocketReportsWhichWriteMovedTheStatus(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "shared.db")
-	first, err := Open(path)
-	if err != nil {
-		t.Fatal(err)
+	open := func() *Store {
+		st, err := Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { st.Close() })
+		return st
 	}
-	t.Cleanup(func() { first.Close() })
-	second, err := Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { second.Close() })
+	holder, managers := open(), []*Store{open(), open()}
 	const socket = "/tmp/shared/agentmgr"
 	sess := Session{ID: "sess-1", Name: "one", Tool: "claude", Cwd: "/tmp", Status: "working"}
-	if err := first.CreateSession(sess); err != nil {
+	if err := holder.CreateSession(sess); err != nil {
 		t.Fatal(err)
 	}
 
-	written, changed, err := first.UpdateStatusOnSocket(sess.ID, "waiting", socket)
+	lock, err := holder.db.Begin()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !written || !changed {
-		t.Fatalf("first write: written=%v changed=%v, want both", written, changed)
+	type result struct {
+		written, changed bool
+		err              error
 	}
-	written, changed, err = second.UpdateStatusOnSocket(sess.ID, "waiting", socket)
-	if err != nil {
+	results := make(chan result, len(managers))
+	for _, manager := range managers {
+		go func() {
+			written, changed, err := manager.UpdateStatusOnSocket(sess.ID, "waiting", socket)
+			results <- result{written, changed, err}
+		}()
+	}
+	time.Sleep(200 * time.Millisecond)
+	if err := lock.Rollback(); err != nil {
 		t.Fatal(err)
 	}
-	if !written || changed {
-		t.Fatalf("second write: written=%v changed=%v, want written without a change", written, changed)
+
+	changes := 0
+	for range managers {
+		got := <-results
+		if got.err != nil {
+			t.Fatal(got.err)
+		}
+		if !got.written {
+			t.Fatal("both managers own the row, so both writes must land")
+		}
+		if got.changed {
+			changes++
+		}
+	}
+	if changes != 1 {
+		t.Fatalf("%d writes reported moving the status, want exactly 1", changes)
 	}
 }
 
