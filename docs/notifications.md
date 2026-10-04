@@ -66,7 +66,8 @@ Rules:
 
 - `id` is permanent, lowercase kebab-case, and unique. Changing it resurfaces a
   dismissed message.
-- `title` is the canonical copy shown in both the compact card and modal.
+- `title` is the canonical copy shown in the messages modal, and in the compact
+  card that older clients still draw.
 - `banner` must mirror `title` while older clients still read that legacy field.
 - `body` explains impact and action in short plain-text lines.
 - `url` is optional and must be HTTPS.
