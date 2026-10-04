@@ -172,6 +172,25 @@ func TestEnsureBindingsIgnoresAMissingServer(t *testing.T) {
 	}
 }
 
+// Create runs on the UI's update path, and a new session cannot carry a pin,
+// so with tmux_prefix off only a refresh looks for one.
+func TestOnlyARefreshLooksForAPinnedPrefix(t *testing.T) {
+	dir := t.TempDir()
+	stub := dir + "/tmux"
+	script := "#!/bin/sh\ncase \"$*\" in *" + pinnedPrefixOption + "*) echo 'pin read' >&2; exit 1;; esac\nexit 0\n"
+	if err := os.WriteFile(stub, []byte(script), 0o700); err != nil {
+		t.Fatalf("stub: %v", err)
+	}
+	driver := &Driver{bin: stub, socket: testSocket}
+
+	if err := driver.installSessionUX("am_new"); err != nil {
+		t.Fatalf("installing a session with tmux_prefix off should not read the pin: %v", err)
+	}
+	if err := driver.RefreshChrome("live"); err == nil || !strings.Contains(err.Error(), "pin read") {
+		t.Fatalf("a refresh should look for a pin to take off, err = %v", err)
+	}
+}
+
 func TestSetLabelNeutralizesFormatStrings(t *testing.T) {
 	driver := requireTmux(t)
 	id := "lbl" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
@@ -705,6 +724,75 @@ func TestRefreshChromeResolvesAGloballySetPrefix(t *testing.T) {
 	}
 }
 
+// tmux.conf's prefix beats every binding, so tmux_prefix pins another one to free that key.
+func TestTmuxPrefixFreesTheServersPrefixForASessionKey(t *testing.T) {
+	driver := requireTmux(t)
+	restoreDefaultKeys(t, driver)
+	original, err := tmuxCmd("show-options", "-g", "-v", "prefix").CombinedOutput()
+	if err != nil {
+		t.Fatalf("show-options prefix: %v: %s", err, original)
+	}
+	t.Cleanup(func() {
+		if out, err := tmuxCmd("set-option", "-g", "prefix", strings.TrimSpace(string(original))).CombinedOutput(); err != nil {
+			t.Errorf("restore prefix: %v: %s", err, out)
+		}
+	})
+	if out, err := tmuxCmd("set-option", "-g", "prefix", "C-s").CombinedOutput(); err != nil {
+		t.Fatalf("set the tmux.conf prefix: %v: %s", err, out)
+	}
+	detachOnCtrlS := keybind.DefaultSession().With(keybind.Detach, bindingOf(t, "ctrl+s"))
+	driver.SetSessionKeys(detachOnCtrlS.With(keybind.TmuxPrefix, bindingOf(t, "ctrl+b")))
+	id := "tmuxprefix" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", "", nil, 0, 0); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+
+	sessionOption := func(option string) string {
+		t.Helper()
+		out, err := tmuxCmd("show-options", "-q", "-v", "-t", "am_"+id, option).CombinedOutput()
+		if err != nil {
+			t.Fatalf("show-options %s: %v: %s", option, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	footer := func() string {
+		t.Helper()
+		right, err := tmuxCmd("display-message", "-p", "-t", "am_"+id, "#{T:status-right}").CombinedOutput()
+		if err != nil {
+			t.Fatalf("status-right: %v: %s", err, right)
+		}
+		return string(right)
+	}
+	if got := sessionOption("prefix") + " " + sessionOption("prefix2"); got != "C-b None" {
+		t.Fatalf("the session should answer to the pinned prefix alone, got %q", got)
+	}
+	if right := footer(); !strings.Contains(right, "Ctrl+s / C-b d = back") {
+		t.Fatalf("ctrl+s should be free to detach, got %q", right)
+	}
+
+	driver.SetSessionKeys(detachOnCtrlS)
+	if err := driver.RefreshChrome(id); err != nil {
+		t.Fatalf("RefreshChrome without tmux_prefix: %v", err)
+	}
+	if got := sessionOption("prefix"); got != "" {
+		t.Fatalf("clearing tmux_prefix should hand back the server's prefix, the session still sets %q", got)
+	}
+	if right := footer(); strings.Contains(right, "Ctrl+s /") || !strings.Contains(right, "C-s d = back") {
+		t.Fatalf("the server's prefix should shadow ctrl+s again, got %q", right)
+	}
+
+	if out, err := tmuxCmd("set-option", "-t", "am_"+id, "prefix", "C-a").CombinedOutput(); err != nil {
+		t.Fatalf("set a session prefix by hand: %v: %s", err, out)
+	}
+	if err := driver.RefreshChrome(id); err != nil {
+		t.Fatalf("RefreshChrome over a hand-set prefix: %v", err)
+	}
+	if got := sessionOption("prefix"); got != "C-a" {
+		t.Fatalf("a prefix the manager never set should stay, got %q", got)
+	}
+}
+
 // clearPaneTheme drops the server-global colors a pane-theme test left
 // behind, so the rest of the package sees an unstyled server.
 func clearPaneTheme(t *testing.T) {
@@ -728,28 +816,30 @@ func waitForFile(t *testing.T, driver *Driver, id, path string) string {
 }
 
 // An agent that auto-detects its palette asks the terminal for its
-// background with OSC 11. Nothing answers that on this server — the only
-// client is in control mode and has no tty — unless the pane carries an
-// explicit background of its own, which is what the pane theme sets.
-func TestCreateAnswersBackgroundQuery(t *testing.T) {
+// foreground and background with OSC 10 and 11. Nothing answers that on this
+// server — the only client is in control mode and has no tty — unless the
+// pane carries explicit colors of its own, which is what the pane theme sets.
+func TestCreateAnswersColorQueries(t *testing.T) {
 	driver := requireTmux(t)
 	t.Cleanup(func() { clearPaneTheme(t) })
-	driver.PublishPaneTheme(PaneTheme{Background: "#1e1e2e", ColorFgBg: "15;0"})
+	driver.PublishPaneTheme(PaneTheme{Foreground: "#cdd6f4", Background: "#1e1e2e", ColorFgBg: "15;0"})
 
 	id := "osc" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
 	reply := t.TempDir() + "/reply"
 	// tmux delivers the answer on the pane's input, so the query and the
 	// read both happen inside the pane. Raw mode keeps the line discipline
 	// from holding a reply that ends in ST rather than a newline.
-	command := "stty raw; printf '\\033]11;?\\033\\\\'; cat > " + reply
+	command := "stty raw; printf '\\033]10;?\\033\\\\\\033]11;?\\033\\\\'; cat > " + reply
 	if err := driver.Create(id, "/tmp", command, nil, 0, 0); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
 
 	got := waitForFile(t, driver, id, reply)
-	if want := "]11;rgb:1e1e/1e1e/2e2e"; !strings.Contains(got, want) {
-		t.Fatalf("OSC 11 reply = %q, want one carrying %q", got, want)
+	for _, want := range []string{"]10;rgb:cdcd/d6d6/f4f4", "]11;rgb:1e1e/1e1e/2e2e"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("OSC 10/11 replies = %q, want one carrying %q", got, want)
+		}
 	}
 }
 
@@ -758,7 +848,7 @@ func TestCreateAnswersBackgroundQuery(t *testing.T) {
 func TestCreateExportsColorFgBg(t *testing.T) {
 	driver := requireTmux(t)
 	t.Cleanup(func() { clearPaneTheme(t) })
-	driver.PublishPaneTheme(PaneTheme{Background: "#1e1e2e", ColorFgBg: "15;0"})
+	driver.PublishPaneTheme(PaneTheme{Foreground: "#cdd6f4", Background: "#1e1e2e", ColorFgBg: "15;0"})
 
 	id := "fgbg" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
 	marker := t.TempDir() + "/env"
@@ -787,7 +877,7 @@ func globalWindowStyle(t *testing.T) string {
 func TestCreateAppliesPublishedThemeWithoutAPush(t *testing.T) {
 	driver := requireTmux(t)
 	t.Cleanup(func() { clearPaneTheme(t) })
-	driver.PublishPaneTheme(PaneTheme{Background: "#1e1e2e", ColorFgBg: "15;0"})
+	driver.PublishPaneTheme(PaneTheme{Foreground: "#cdd6f4", Background: "#1e1e2e", ColorFgBg: "15;0"})
 
 	id := "pub" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
 	if err := driver.Create(id, "/tmp", "", nil, 0, 0); err != nil {
@@ -795,7 +885,7 @@ func TestCreateAppliesPublishedThemeWithoutAPush(t *testing.T) {
 	}
 	t.Cleanup(func() { driver.Kill(id) })
 
-	if got, want := globalWindowStyle(t), "bg=#1e1e2e"; got != want {
+	if got, want := globalWindowStyle(t), "fg=#cdd6f4,bg=#1e1e2e"; got != want {
 		t.Fatalf("window-style = %q, want %q", got, want)
 	}
 }
@@ -811,7 +901,7 @@ func TestPushPaneThemeIsLatestWins(t *testing.T) {
 	// A session with no windows exits at once, so one holds the server up
 	// for the global option to stick to.
 	id := "race" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
-	driver.PublishPaneTheme(PaneTheme{Background: "#101010", ColorFgBg: "15;0"})
+	driver.PublishPaneTheme(PaneTheme{Foreground: "#cdd6f4", Background: "#101010", ColorFgBg: "15;0"})
 	if err := driver.Create(id, "/tmp", "", nil, 0, 0); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -820,7 +910,7 @@ func TestPushPaneThemeIsLatestWins(t *testing.T) {
 	backgrounds := []string{"#111111", "#222222", "#333333", "#444444", "#eff1f5"}
 	var wg sync.WaitGroup
 	for _, bg := range backgrounds {
-		driver.PublishPaneTheme(PaneTheme{Background: bg, ColorFgBg: "15;0"})
+		driver.PublishPaneTheme(PaneTheme{Foreground: "#cdd6f4", Background: bg, ColorFgBg: "15;0"})
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -832,7 +922,7 @@ func TestPushPaneThemeIsLatestWins(t *testing.T) {
 	wg.Wait()
 
 	last := backgrounds[len(backgrounds)-1]
-	if got, want := globalWindowStyle(t), "bg="+last; got != want {
+	if got, want := globalWindowStyle(t), "fg=#cdd6f4,bg="+last; got != want {
 		t.Fatalf("window-style = %q, want the last published theme %q", got, want)
 	}
 }
@@ -849,7 +939,7 @@ func TestCreateSerializesWithPushPaneTheme(t *testing.T) {
 
 	stamp := strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
 	hold := "hold" + stamp
-	driver.PublishPaneTheme(PaneTheme{Background: "#101010", ColorFgBg: "15;0"})
+	driver.PublishPaneTheme(PaneTheme{Foreground: "#cdd6f4", Background: "#101010", ColorFgBg: "15;0"})
 	if err := driver.Create(hold, "/tmp", "", nil, 0, 0); err != nil {
 		t.Fatalf("Create hold session: %v", err)
 	}
@@ -858,7 +948,7 @@ func TestCreateSerializesWithPushPaneTheme(t *testing.T) {
 	const newer = "#eff1f5"
 	var pushed sync.WaitGroup
 	afterCreateThemeLoad = func() {
-		driver.PublishPaneTheme(PaneTheme{Background: newer, ColorFgBg: "0;15"})
+		driver.PublishPaneTheme(PaneTheme{Foreground: "#cdd6f4", Background: newer, ColorFgBg: "0;15"})
 		pushed.Add(1)
 		go func() {
 			defer pushed.Done()
@@ -879,7 +969,7 @@ func TestCreateSerializesWithPushPaneTheme(t *testing.T) {
 	t.Cleanup(func() { driver.Kill(raced) })
 	pushed.Wait()
 
-	if got, want := globalWindowStyle(t), "bg="+newer; got != want {
+	if got, want := globalWindowStyle(t), "fg=#cdd6f4,bg="+newer; got != want {
 		t.Fatalf("window-style = %q, want the newer pushed theme %q", got, want)
 	}
 }
@@ -1064,6 +1154,41 @@ func TestCreateNamesTheWayBackWhenTheAgentExits(t *testing.T) {
 	}
 	t.Cleanup(func() { driver.Kill(id) })
 	waitForPane(t, driver, id, relaunchHint)
+}
+
+// An agent that changes directory mid-session, as Claude Code's /cd and
+// EnterWorktree do, is a child of the launch script, and tmux reports the
+// directory of the pane's foreground process group.
+func TestPanesFollowsTheAgentIntoANewDirectory(t *testing.T) {
+	driver := requireTmux(t)
+	id := "cwd" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	moved := filepath.Join(t.TempDir(), "moved dir")
+	if err := os.Mkdir(moved, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	moved, err := filepath.EvalSymlinks(moved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.Create(id, "/tmp", "sh -c "+ShellQuote("cd "+ShellQuote(moved)+" && exec sleep 30"), nil, 0, 0); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+	var got string
+	for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+		panes, err := driver.Panes()
+		if err != nil {
+			t.Fatalf("Panes: %v", err)
+		}
+		if got = panes[id].Path; got == moved {
+			// the tty rides just ahead of the path, which holds a space
+			if tty := panes[id].TTY; !strings.HasPrefix(tty, "/dev/") {
+				t.Fatalf("Panes tty = %q, want a /dev/ device", tty)
+			}
+			return
+		}
+	}
+	t.Fatalf("Panes path = %q, want %q", got, moved)
 }
 
 func TestExportEnvPrefixesTheCommand(t *testing.T) {

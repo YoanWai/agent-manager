@@ -4,7 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/config"
@@ -20,11 +20,15 @@ import (
 const (
 	fieldName = iota
 	fieldTool
+	fieldProfile
+	fieldModel
+	fieldEffort
 	fieldDir
 	fieldWorktree
 	fieldPrompt
 	fieldGroup
-	fieldCount
+	// fieldBase labels the read-only base line, which never takes focus.
+	fieldBase
 )
 
 const (
@@ -32,6 +36,7 @@ const (
 	gfParent
 	gfPath
 	gfWorktree
+	gfBase
 	gfCount
 )
 
@@ -81,6 +86,9 @@ type form struct {
 	worktree     bool
 	worktreeAuto bool
 	focus        int
+	choice       choice
+	// hits maps each painted body line to what a click there does.
+	hits []formHit
 }
 
 type groupForm struct {
@@ -88,6 +96,7 @@ type groupForm struct {
 	path          textinput.Model
 	pathAuto      bool
 	worktreeIndex int
+	base          string
 	focus         int
 }
 
@@ -167,6 +176,8 @@ func (m *Model) syncFormFieldWidths() {
 	m.form.name.SetCursor(m.form.name.Position())
 	m.form.dir.SetCursor(m.form.dir.Position())
 	m.form.prompt.input.SetWidth(inner)
+	m.form.choice.filter.Width = inner - 3
+	m.form.choice.filter.SetCursor(m.form.choice.filter.Position())
 }
 
 func (m *Model) syncGroupFormFieldWidths() {
@@ -213,62 +224,15 @@ func (m *Model) groupDefaultDir(group string) string {
 	return cwd
 }
 
-// toolDisplayOrder fixes the order tools appear in when creating a session and
-// when cycling the quick-spawn tool. Tools outside this list follow, sorted
-// alphabetically.
-var toolDisplayOrder = []string{"claude", "opencode", "codex", "grok", "gemini", "pi"}
-
-// sortedToolNames is every configured agent CLI in picker order. A block
-// declaring shell = true is not a CLI to spawn agents with, so it is left
-// out; its own key launches it, and a rename still keeps a shell session
-// on it.
-func sortedToolNames(cfg config.Config) []string {
-	names := make([]string, 0, len(cfg.Tools))
-	for _, name := range cfg.ToolNames() {
-		if !cfg.Tools[name].Shell {
-			names = append(names, name)
-		}
-	}
-	rank := make(map[string]int, len(toolDisplayOrder))
-	for i, name := range toolDisplayOrder {
-		rank[name] = i
-	}
-	sort.Slice(names, func(i, j int) bool {
-		ri, iRanked := rank[names[i]]
-		rj, jRanked := rank[names[j]]
-		if iRanked && jRanked {
-			return ri < rj
-		}
-		if iRanked != jRanked {
-			return iRanked
-		}
-		return names[i] < names[j]
-	})
-	return names
-}
-
-// enabledToolNames is the create-session picker: configured tools minus any
-// the user hid in settings. Existing sessions keep their tool even when hidden.
 func (m *Model) enabledToolNames() []string {
-	all := sortedToolNames(m.cfg)
-	hidden := m.hiddenTools()
-	if len(hidden) == 0 {
-		return all
-	}
-	out := make([]string, 0, len(all))
-	for _, name := range all {
-		if !hidden[name] {
-			out = append(out, name)
-		}
-	}
-	return out
+	return m.cfg.EnabledAgentTools(m.hiddenTools())
 }
 
-func (m *Model) openForm() {
+func (m *Model) openForm() tea.Cmd {
 	tools, toolIndex := m.spawnToolSelection()
 	if len(tools) == 0 {
 		m.errBar.text = "no CLIs enabled: open settings (s), then CLIs, to turn some on"
-		return
+		return nil
 	}
 
 	name := textField("my-session", 60)
@@ -286,6 +250,7 @@ func (m *Model) openForm() {
 		toolNames: tools,
 		toolIndex: toolIndex,
 		focus:     fieldName,
+		choice:    m.newChoice(tools[toolIndex]),
 	}
 	m.errBar.text = ""
 	m.syncFormFieldWidths()
@@ -296,6 +261,14 @@ func (m *Model) openForm() {
 	m.form.worktreeAuto = true
 	m.pathSugg.reset()
 	m.mode = modeForm
+	return m.ensureCatalog(tools[toolIndex])
+}
+
+func (m *Model) formTool() string {
+	if len(m.form.toolNames) == 0 {
+		return ""
+	}
+	return m.form.toolNames[m.form.toolIndex]
 }
 
 func (m *Model) selectedGroupPath() string {
@@ -339,6 +312,11 @@ func (m *Model) rebuildGroupOptions(selectPath string) {
 }
 
 func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.form.focus == fieldModel {
+		if model, cmd, handled := m.handleFormModelKey(msg); handled {
+			return model, cmd
+		}
+	}
 	dirSuggesting := m.form.focus == fieldDir && m.pathSugg.active()
 	promptFocused := m.form.focus == fieldPrompt
 	switch msg.String() {
@@ -392,7 +370,9 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "left":
 		if m.form.focus == fieldTool {
-			m.cycleTool(-1)
+			return m, m.cycleTool(-1)
+		}
+		if m.stepFormChoice(-1) {
 			return m, nil
 		}
 		if m.form.focus == fieldWorktree {
@@ -405,7 +385,9 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "right":
 		if m.form.focus == fieldTool {
-			m.cycleTool(1)
+			return m, m.cycleTool(1)
+		}
+		if m.stepFormChoice(1) {
 			return m, nil
 		}
 		if m.form.focus == fieldWorktree {
@@ -440,8 +422,129 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.pathSugg.recompute(m.form.dir.Value())
 	case fieldPrompt:
 		cmd = m.form.prompt.typeKey(msg)
+	case fieldEffort:
+		if m.effortTyped(m.formTool(), &m.form.choice) {
+			before := m.form.choice.typedEffort.Value()
+			m.form.choice.typedEffort, cmd = m.form.choice.typedEffort.Update(msg)
+			if m.form.choice.typedEffort.Value() != before {
+				m.keepChoice(m.formTool(), &m.form.choice)
+			}
+		}
 	}
 	return m, cmd
+}
+
+// handleFormModelKey lets the keys the list does not take fall through.
+func (m *Model) handleFormModelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
+	toolName, ch := m.formTool(), &m.form.choice
+	list := m.modelSuggestions(toolName, ch, ch.query())
+	open := ch.sugg.open && len(list) > 0
+	pick := func() { m.pickModel(toolName, ch, list[ch.sugg.index].model.Key()) }
+	var cmd tea.Cmd
+	switch msg.String() {
+	case "esc":
+		if !ch.sugg.open {
+			return m, nil, false
+		}
+		ch.sugg = modelSuggest{}
+		return m, nil, true
+	case "tab":
+		if !open {
+			return m, nil, false
+		}
+		pick()
+		return m, nil, true
+	case "enter":
+		if !open || !ch.sugg.chosen {
+			return m, nil, false
+		}
+		pick()
+		return m, nil, true
+	case "up", "down":
+		delta := 1
+		if msg.String() == "up" {
+			delta = -1
+		}
+		if !open || !ch.sugg.move(len(list), delta) {
+			m.formFocus(delta)
+		}
+		return m, nil, true
+	case "shift+tab":
+		return m, nil, false
+	case "left", "right":
+		ch.filter, cmd = ch.filter.Update(msg)
+		return m, cmd, true
+	}
+	ch.filter, cmd = ch.filter.Update(msg)
+	ch.filtering = true
+	if strings.TrimSpace(ch.filter.Value()) == "" {
+		m.pickModel(toolName, ch, "")
+	}
+	ch.sugg = modelSuggest{open: true}
+	return m, cmd, true
+}
+
+func (m *Model) handleFormClick(x, y int) (tea.Model, tea.Cmd) {
+	// The body starts under the card's title row and the blank row after it.
+	line := y - m.cardTop - 2
+	if line < 0 || line >= len(m.form.hits) || x < m.cardLeft || x >= m.cardRight {
+		return m, nil
+	}
+	hit := m.form.hits[line]
+	toolName, ch := m.formTool(), &m.form.choice
+	switch {
+	case hit.field == fieldModel && hit.entry >= 0:
+		if list := m.modelSuggestions(toolName, ch, ch.query()); hit.entry < len(list) {
+			m.pickModel(toolName, ch, list[hit.entry].model.Key())
+		}
+		return m, nil
+	case hit.field == fieldGroup && hit.entry >= 0:
+		m.moveGroupCursor(hit.entry - m.form.groupIndex)
+		return m, nil
+	case hit.field != m.form.focus:
+		if slices.Contains(m.formFields(), hit.field) {
+			m.focusFormField(hit.field)
+		}
+		return m, nil
+	}
+	switch hit.field {
+	case fieldTool:
+		return m, m.cycleTool(1)
+	case fieldWorktree:
+		m.toggleFormWorktree()
+	default:
+		m.stepFormChoice(1)
+	}
+	return m, nil
+}
+
+func (m *Model) stepFormChoice(delta int) bool {
+	toolName, ch := m.formTool(), &m.form.choice
+	switch {
+	case m.form.focus == fieldProfile:
+		m.cycleChoiceProfile(toolName, ch, delta)
+	case m.form.focus == fieldEffort && !m.effortTyped(toolName, ch):
+		m.cycleChoiceEffort(toolName, ch, delta)
+	default:
+		return false
+	}
+	return true
+}
+
+// formFields holds a choice row only where the CLI has something to pick.
+func (m *Model) formFields() []int {
+	toolName, ch := m.formTool(), &m.form.choice
+	fields := []int{fieldName, fieldTool}
+	if _, shown := m.profileRow(toolName, ch); shown {
+		fields = append(fields, fieldProfile)
+	}
+	if _, listed := m.modelRowNote(toolName); listed {
+		fields = append(fields, fieldModel)
+	}
+	if _, shown, active := m.effortRow(toolName, ch); shown && active {
+		fields = append(fields, fieldEffort)
+	}
+	return append(fields, fieldDir, fieldWorktree, fieldPrompt, fieldGroup)
 }
 
 // moveGroupCursor moves within the expanded group picker, wrapping at the
@@ -464,14 +567,28 @@ func (m *Model) moveGroupCursor(delta int) {
 }
 
 func (m *Model) formFocus(delta int) {
+	fields := m.formFields()
+	at := max(slices.Index(fields, m.form.focus), 0)
+	m.focusFormField(fields[(at+delta+len(fields))%len(fields)])
+}
+
+func (m *Model) focusFormField(field int) {
 	m.pathSugg.reset()
-	m.form.focus = (m.form.focus + delta + fieldCount) % fieldCount
+	m.form.focus = field
 	m.form.name.Blur()
 	m.form.dir.Blur()
 	m.form.prompt.input.Blur()
-	switch m.form.focus {
+	m.form.choice.filter.Blur()
+	m.form.choice.typedEffort.Blur()
+	m.form.choice.sugg = modelSuggest{}
+	switch field {
 	case fieldName:
 		m.form.name.Focus()
+	case fieldModel:
+		m.form.choice.filter.Focus()
+		m.openModelList(m.formTool(), &m.form.choice)
+	case fieldEffort:
+		m.form.choice.typedEffort.Focus()
 	case fieldDir:
 		m.form.dir.Focus()
 	case fieldPrompt:
@@ -479,11 +596,16 @@ func (m *Model) formFocus(delta int) {
 	}
 }
 
-func (m *Model) cycleTool(delta int) {
+// cycleTool starts the choice rows over and asks the new CLI what it offers.
+func (m *Model) cycleTool(delta int) tea.Cmd {
 	if len(m.form.toolNames) == 0 {
-		return
+		return nil
 	}
 	m.form.toolIndex = (m.form.toolIndex + delta + len(m.form.toolNames)) % len(m.form.toolNames)
+	toolName := m.formTool()
+	m.form.choice = m.newChoice(toolName)
+	m.syncFormFieldWidths()
+	return m.ensureCatalog(toolName)
 }
 
 // formSpawnDir is the directory the form would launch in, resolved the
@@ -545,13 +667,19 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	picked, err := m.launchChoice(toolName, &m.form.choice, m.form.choice.filter.Value())
+	if err != nil {
+		m.errBar.text = err.Error()
+		return m, nil
+	}
 	worktree := m.formWorktreeOn()
 	pickWorktree := m.form.worktree
 	spawn := func() error {
-		if err := m.spawnSession(toolName, name, dir, group, prompt, autoNamed, worktree); err != nil {
+		if err := m.spawnSession(toolName, name, dir, group, prompt, autoNamed, worktree, picked); err != nil {
 			return err
 		}
 		m.rememberSpawnPick(toolName, pickWorktree)
+		m.rememberModel(toolName, picked)
 		return nil
 	}
 	if err := spawn(); err != nil {
@@ -580,15 +708,19 @@ func (m *Model) rememberSpawnPick(tool string, worktree bool) {
 // Custom-named sessions only get a short note that rename is available later.
 // discardWorktree rolls back a worktree created for a spawn that failed
 // partway; a fresh worktree is clean by construction, so the removal fires.
-func (m *Model) discardWorktree(repo, path, branch string) {
+func (m *Model) discardWorktree(repo, path, branch, base string) {
 	if repo == "" {
 		return
 	}
-	_, _ = m.gitDrv.RemoveWorktreeIfClean(repo, path, branch)
+	_, _ = m.gitDrv.RemoveWorktreeIfClean(repo, path, branch, base)
 }
 
-func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoNamed, worktree bool) error {
-	tool := m.cfg.Tools[toolName]
+func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoNamed, worktree bool, choice config.Choice) error {
+	tool := m.cfg.Tools[toolName].WithChoice(choice)
+	proactive, err := m.store.ProactiveCoordination()
+	if err != nil {
+		return err
+	}
 	id := newID()
 	worktreeRepo, worktreeBranch := "", ""
 	if worktree {
@@ -599,14 +731,14 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 		if err != nil {
 			return err
 		}
-		path, branch, err := m.gitDrv.AddWorktree(root, name)
+		path, branch, err := m.gitDrv.AddWorktree(root, name, m.groupBase(group))
 		if err != nil {
 			return err
 		}
 		dir = path
 		worktreeRepo, worktreeBranch = root, branch
 	}
-	plan := launch.Assemble(toolName, tool, prompt, autoNamed)
+	plan := launch.Assemble(toolName, tool, prompt, autoNamed, proactive)
 	if err := m.launchNewSession(store.Session{
 		ID:    id,
 		Name:  name,
@@ -621,6 +753,7 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 		WorktreeBranch: worktreeBranch,
 		PendingInputs:  plan.PendingInputs,
 		LaunchPrompt:   plan.LaunchPrompt,
+		Choice:         choice,
 	}, tool, plan.Command, launchOptions{
 		rollbackWorktree: worktreeRepo != "",
 	}); err != nil {
@@ -702,6 +835,10 @@ func (m *Model) handleGroupFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.groupForm.worktreeIndex = (m.groupForm.worktreeIndex + count - 1) % count
 			return m, nil
 		}
+		if m.groupForm.focus == gfBase {
+			m.groupForm.base = m.stepGroupBase(m.groupFormDir(), m.groupForm.base, -1)
+			return m, nil
+		}
 		if m.groupForm.focus == gfParent {
 			m.moveGroupCursor(-1)
 			return m, nil
@@ -709,6 +846,10 @@ func (m *Model) handleGroupFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "right":
 		if m.groupForm.focus == gfWorktree {
 			m.groupForm.worktreeIndex = (m.groupForm.worktreeIndex + 1) % len(groupWorktreeOptions)
+			return m, nil
+		}
+		if m.groupForm.focus == gfBase {
+			m.groupForm.base = m.stepGroupBase(m.groupFormDir(), m.groupForm.base, 1)
 			return m, nil
 		}
 		if m.groupForm.focus == gfParent {
@@ -748,6 +889,13 @@ func (m *Model) groupFormFocus(delta int) {
 	}
 }
 
+// groupFormDir is the default path the group form would save, resolved
+// the way submit resolves it.
+func (m *Model) groupFormDir() string {
+	dir, _ := resolveExistingDir(m.groupForm.path.Value(), m.groupDefaultDir(m.selectedGroupPath()))
+	return dir
+}
+
 func (m *Model) submitGroupForm() (tea.Model, tea.Cmd) {
 	name := strings.TrimSpace(m.groupForm.name.Value())
 	name = strings.ReplaceAll(name, "/", "-")
@@ -766,7 +914,7 @@ func (m *Model) submitGroupForm() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	worktree := groupWorktreeValue(m.groupForm.worktreeIndex)
-	if err := m.store.AddGroup(full, path, worktree); err != nil {
+	if err := m.store.AddGroup(full, path, worktree, m.groupForm.base); err != nil {
 		m.errBar.text = err.Error()
 		return m, nil
 	}
@@ -775,14 +923,8 @@ func (m *Model) submitGroupForm() (tea.Model, tea.Cmd) {
 		m.groupPaths = map[string]string{}
 	}
 	m.groupPaths[full] = path
-	if m.groupWorktrees == nil {
-		m.groupWorktrees = map[string]string{}
-	}
-	if worktree == "" {
-		delete(m.groupWorktrees, full)
-	} else {
-		m.groupWorktrees[full] = worktree
-	}
+	m.groupWorktrees = setGroupChoice(m.groupWorktrees, full, worktree)
+	m.groupBases = setGroupChoice(m.groupBases, full, m.groupForm.base)
 	for group := parent; group != ""; group = parentGroup(group) {
 		delete(m.collapsed, group)
 	}

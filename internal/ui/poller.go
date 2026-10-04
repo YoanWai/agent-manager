@@ -165,7 +165,7 @@ func isManagerEcho(line string) bool {
 // anchor scrolled off it, the recovery is the tool's own transcript for
 // Claude Code (which repaints in place, so tmux holds no history for
 // it), and a deeper pane capture for everything else.
-func (p *poller) rowLines(sess store.Session, pane string) (quote, prompt string) {
+func (p *poller) rowLines(sess store.Session, pane, dir string) (quote, prompt string) {
 	clean := p.engine.Plain(sess.Tool, pane)
 	quote, anchored, ok := p.engine.LastMessage(sess.Tool, clean)
 	if !ok {
@@ -178,7 +178,7 @@ func (p *poller) rowLines(sess store.Session, pane string) (quote, prompt string
 	quoteAdrift := ok && !anchored && p.engine.HasMessageStart(sess.Tool)
 	promptAdrift := echoOK && prompt == ""
 	if (quoteAdrift || promptAdrift) && p.mcpStyles[sess.Tool] == "claude" && sess.AgentSessionID != "" {
-		tailPrompt, tailReply := p.claudeTail(sess)
+		tailPrompt, tailReply := p.claudeTail(sess, dir)
 		if quoteAdrift && tailReply != "" {
 			quote = tailReply
 		}
@@ -202,6 +202,7 @@ func (p *poller) rowLines(sess store.Session, pane string) (quote, prompt string
 // claudeTailCache keeps one transcript's extraction keyed to its file
 // stats, so an unchanged transcript is not re-read every tick.
 type claudeTailCache struct {
+	path    string
 	size    int64
 	modTime time.Time
 	prompt  string
@@ -209,17 +210,35 @@ type claudeTailCache struct {
 }
 
 // claudeTail is the newest prompt and reply in a Claude Code session's
-// own transcript, flattened to single lines.
-func (p *poller) claudeTail(sess store.Session) (prompt, reply string) {
-	path, err := agentsession.ClaudeTranscriptPath(sess.Cwd, sess.AgentSessionID)
-	if err != nil {
+// own transcript, flattened to single lines. Claude moves the transcript
+// with a session that changes directory, so dir, where the agent sits now,
+// is tried before the launch directory.
+func (p *poller) claudeTail(sess store.Session, dir string) (prompt, reply string) {
+	var info os.FileInfo
+	var path string
+	for _, candidate := range []string{dir, sess.Cwd} {
+		if candidate == "" {
+			continue
+		}
+		candidatePath, err := agentsession.ClaudeTranscriptPath(candidate, sess.AgentSessionID)
+		if err != nil {
+			return "", ""
+		}
+		info, err = os.Stat(candidatePath)
+		if err == nil {
+			dir, path = candidate, candidatePath
+			break
+		}
+		// A launch directory copy is only the transcript when the live one
+		// is absent; one that exists but cannot be read may be newer.
+		if !errors.Is(err, os.ErrNotExist) {
+			return "", ""
+		}
+	}
+	if path == "" {
 		return "", ""
 	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return "", ""
-	}
-	if cached, ok := p.claudeTails[sess.ID]; ok && cached.size == info.Size() && cached.modTime.Equal(info.ModTime()) {
+	if cached, ok := p.claudeTails[sess.ID]; ok && cached.path == path && cached.size == info.Size() && cached.modTime.Equal(info.ModTime()) {
 		return cached.prompt, cached.reply
 	}
 	cleanUser := func(text string) string {
@@ -229,13 +248,13 @@ func (p *poller) claudeTail(sess store.Session) (prompt, reply string) {
 		}
 		return cleaned
 	}
-	tailPrompt, tailReply, ok := agentsession.ClaudeTranscriptTail(sess.Cwd, sess.AgentSessionID, cleanUser)
+	tailPrompt, tailReply, ok := agentsession.ClaudeTranscriptTail(dir, sess.AgentSessionID, cleanUser)
 	if !ok {
 		return "", ""
 	}
 	prompt = oneLine(tailPrompt)
 	reply = oneLine(tailReply)
-	p.claudeTails[sess.ID] = claudeTailCache{size: info.Size(), modTime: info.ModTime(), prompt: prompt, reply: reply}
+	p.claudeTails[sess.ID] = claudeTailCache{path: path, size: info.Size(), modTime: info.ModTime(), prompt: prompt, reply: reply}
 	return prompt, reply
 }
 
@@ -403,7 +422,7 @@ func (p *poller) refreshOnce() tea.Msg {
 	// long as the manager is open; its readers allow the stamp to age instead.
 	if time.Since(p.heartbeatAt) >= store.PollerHeartbeatPeriod {
 		claimed := time.Now()
-		holder, err := p.store.ClaimPoller(socket, claimed, p.interval)
+		holder, err := p.store.ClaimPoller(socket, claimed)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -427,6 +446,12 @@ func (p *poller) refreshOnce() tea.Msg {
 	panes, err := p.tmux.Panes()
 	if err != nil {
 		return errMsg{err}
+	}
+	for id, pane := range panes {
+		if pane.Path != "" && !isDir(pane.Path) {
+			pane.Path = ""
+			panes[id] = pane
+		}
 	}
 	var livePIDs []int
 	for _, sess := range sessions {
@@ -528,7 +553,7 @@ func (p *poller) refreshOnce() tea.Msg {
 			// sample proves nothing, so it counts as alive.
 			agentAlive := !stat.OK || stat.Procs > 1
 			if pane, err := p.tmux.CapturePane(sess.ID); err == nil {
-				paneLastLines[sess.ID], panePrompts[sess.ID] = p.rowLines(sess, pane)
+				paneLastLines[sess.ID], panePrompts[sess.ID] = p.rowLines(sess, pane, panes[sess.ID].Path)
 				derived, err := p.derivePaneStatus(sess, pane, agentAlive, paneHashes)
 				if err != nil {
 					return errMsg{err}
@@ -630,12 +655,16 @@ func (p *poller) refreshOnce() tea.Msg {
 	names := make([]string, len(groups))
 	paths := make(map[string]string, len(groups))
 	worktrees := make(map[string]string, len(groups))
+	bases := make(map[string]string, len(groups))
 	archivedGroups := make(map[string]bool, len(groups))
 	for i, g := range groups {
 		names[i] = g.Name
 		paths[g.Name] = g.Path
 		if g.Worktree != "" {
 			worktrees[g.Name] = g.Worktree
+		}
+		if g.Base != "" {
+			bases[g.Name] = g.Base
 		}
 		if g.Archived {
 			archivedGroups[g.Name] = true
@@ -661,6 +690,7 @@ func (p *poller) refreshOnce() tea.Msg {
 		groups:         names,
 		groupPaths:     paths,
 		groupWorktrees: worktrees,
+		groupBases:     bases,
 		archivedGroups: archivedGroups,
 		proc:           proc,
 		procFor:        selectedID,
@@ -777,7 +807,7 @@ cands:
 		var agentID string
 		var ok bool
 		if sess.AgentLaunchedAt.IsZero() && sess.RelaunchSnapshot == nil {
-			agentID, ok = agentsession.Capture(p.sessionStores[sess.Tool], sess.Cwd, sess.LaunchTime(), claimed)
+			agentID, ok = agentsession.Capture(p.sessionStores[sess.Tool], sess.Cwd, sess.LaunchTime(), claimed, panes[sess.ID].TTY)
 		} else {
 			if recaptureCounts[recaptureScope(sess)] > 1 {
 				p.clearRecaptureSeen(sess.ID)
@@ -1264,7 +1294,8 @@ func (p *poller) reflowSessions(ids []string, reflow func()) {
 // capture carries ANSI escapes for the preview; rules match against the
 // stripped text. Streaming output often renders without any spinner, so
 // when no rule matches but the content region above the input box changed
-// since the previous poll, the session counts as working. The reverse
+// since the previous poll, its frame rows aside, the session counts as
+// working. The reverse
 // transition closes marker-less turns: a session that was mid-turn whose
 // region stopped changing has ended its turn even when the tool printed
 // no turn_end line, so the region's last content line decides finished
@@ -1282,7 +1313,7 @@ func (p *poller) derivePaneStatus(sess store.Session, pane string, agentAlive bo
 	region, hasRegion := p.engine.ActivityRegion(sess.Tool, text)
 	var regionHash uint64
 	if hasRegion {
-		regionHash = hashString(region)
+		regionHash = hashString(p.engine.RegionContent(sess.Tool, region))
 		paneHashes[sess.ID] = regionHash
 	}
 	if p.statusSources[sess.Tool] == hooks.StatusSourceClaude {

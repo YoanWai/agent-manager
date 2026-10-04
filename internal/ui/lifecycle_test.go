@@ -14,6 +14,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/google/uuid"
 )
 
@@ -122,6 +123,121 @@ func TestArchiveSelectedNoopInArchivedView(t *testing.T) {
 	m.archiveSelected()
 	if m.mode == modeConfirmDelete {
 		t.Fatal("archiveSelected should not open a confirm dialog for a group row in the archived view")
+	}
+}
+
+func seedRestoreScenario(t *testing.T, m *Model, group string) (live, sleeper, stash store.Session) {
+	t.Helper()
+	dir := t.TempDir()
+	for _, name := range []string{"live", "sleeper", "stash"} {
+		createSession(t, m, name, dir, group)
+	}
+	live, sleeper, stash = sessionRow(t, m, "live").sess, sessionRow(t, m, "sleeper").sess, sessionRow(t, m, "stash").sess
+	m.selectSessionRow(t, "sleeper")
+	m.killSelected()
+	confirmKill(t, m)
+	m.selectSessionRow(t, "stash")
+	m.archiveSelected()
+	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.applyCmd(t, cmd)
+	return live, sleeper, stash
+}
+
+func TestRestoreSelectedNoopInActiveView(t *testing.T) {
+	m := buildModel(t)
+	seedGroups(t, m, "zone")
+	_, sleeper, stash := seedRestoreScenario(t, m, "zone")
+	press := func(key string) {
+		m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+	}
+
+	m.selectGroupRow(t, "zone")
+	press("u")
+	if m.mode == modeConfirmDelete {
+		t.Errorf("u on a group opened %q in the active view", m.confirm.label)
+	}
+	press("y")
+	if m.tmux.Exists(sleeper.ID) {
+		t.Fatal("sleeper was killed on purpose and came back")
+	}
+	if got, err := m.store.Get(stash.ID); err != nil || !got.Archived || m.tmux.Exists(stash.ID) {
+		t.Fatalf("stash left the archive: archived=%v err=%v", got.Archived, err)
+	}
+
+	m.selectSessionRow(t, "live")
+	press("u")
+	if m.mode == modeConfirmDelete {
+		t.Fatalf("u on a session opened %q in the active view", m.confirm.label)
+	}
+}
+
+func TestRestoreGroupBringsBackOnlyItsArchivedSessions(t *testing.T) {
+	m := buildModel(t)
+	seedGroups(t, m, "zone")
+	live, sleeper, stash := seedRestoreScenario(t, m, "zone")
+
+	m.showArchived = true
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "zone")
+	m.restoreSelected()
+	if len(m.confirm.sessions) != 1 || m.confirm.sessions[0].ID != stash.ID {
+		t.Errorf("restore targets %d sessions, want stash alone", len(m.confirm.sessions))
+	}
+	if want := "restore group zone (1 archived sessions)? brings them back."; m.confirm.label != want {
+		t.Errorf("label = %q, want %q", m.confirm.label, want)
+	}
+	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.applyCmd(t, cmd)
+
+	if m.tmux.Exists(sleeper.ID) {
+		t.Fatal("the group restore revived sleeper, which was never archived")
+	}
+	if !m.tmux.Exists(live.ID) || !m.tmux.Exists(stash.ID) {
+		t.Fatal("live and stash should both be running")
+	}
+	if got, err := m.store.Get(stash.ID); err != nil || got.Archived {
+		t.Fatalf("stash is still filed as archived: archived=%v err=%v", got.Archived, err)
+	}
+	m.showArchived = false
+	m.applyCmd(t, m.refreshCmd())
+	if names := strings.Join(sessionNames(m), " "); names != "live sleeper stash" {
+		t.Fatalf("active view = %q, want all of zone back", names)
+	}
+}
+
+func TestArchiveAndRestoreRefuseTheRootRow(t *testing.T) {
+	for _, tc := range []struct {
+		action, key, next string
+		archived          bool
+	}{
+		{"archive", "a", "live", false},
+		{"restore", "u", "stash", true},
+	} {
+		t.Run(tc.action, func(t *testing.T) {
+			m := buildModel(t)
+			live, sleeper, stash := seedRestoreScenario(t, m, rootGroup)
+			m.showArchived = tc.archived
+			m.applyCmd(t, m.refreshCmd())
+			m.selectGroupRow(t, rootGroup)
+
+			m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(tc.key)})
+			if want := "root is the top level, not a group to " + tc.action; m.mode != modeList || m.errBar.text != want {
+				t.Errorf("mode = %v, errBar = %q, want the list and %q", m.mode, m.errBar.text, want)
+			}
+			m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+			if !m.tmux.Exists(live.ID) || m.tmux.Exists(sleeper.ID) || m.tmux.Exists(stash.ID) {
+				t.Fatalf("%s on root touched its sessions", tc.action)
+			}
+			if got, err := m.store.Get(stash.ID); err != nil || !got.Archived {
+				t.Fatalf("stash left the archive: archived=%v err=%v", got.Archived, err)
+			}
+
+			m.selectSessionRow(t, tc.next)
+			m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(tc.key)})
+			if card := ansi.Strip(m.View()); !strings.Contains(card, tc.action+" "+tc.next+"?") || strings.Contains(card, "root is the top level") {
+				t.Errorf("the %s card on %s should drop the root refusal:\n%s", tc.action, tc.next, card)
+			}
+		})
 	}
 }
 
@@ -717,6 +833,28 @@ func TestRestartLaunchesAFreshConversation(t *testing.T) {
 	}
 }
 
+// A restart starts a fresh conversation on the model the session chose.
+func TestRestartKeepsTheSessionChoice(t *testing.T) {
+	m := buildModel(t)
+	tool := m.cfg.Tools["claude"]
+	tool.ModelArgs = "--model {model}"
+	tool.EffortArgs = "--effort {effort}"
+	m.cfg.Tools["claude"] = tool
+	if err := m.spawnSession("claude", "phoenix", t.TempDir(), "", "", false, false, config.Choice{Model: "sonnet", Effort: "high"}); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	sess := m.sessionRows()[0]
+	argsFile := filepath.Join(t.TempDir(), "launch-args")
+	tool.Command = argCaptureCommand(argsFile)
+	m.cfg.Tools["claude"] = tool
+	if err := m.restartSession(sess); err != nil {
+		t.Fatalf("restart: %v", err)
+	}
+	if args := readWhenWritten(t, argsFile); !strings.Contains(args, "--model\nsonnet\n--effort\nhigh") {
+		t.Fatalf("restart launch arguments = %q, want the session's model and effort", args)
+	}
+}
+
 // A tool that mints its own conversation id has nothing to
 // hand the launch, so restart clears the binding and leaves the id for the
 // poller to capture once the new conversation lands.
@@ -843,8 +981,20 @@ func TestReviveAllRecreatesEveryDeadSession(t *testing.T) {
 	}
 	// A refresh marks the pane-less sessions dead so revive-all picks them up.
 	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "running", dir, "")
 
-	if _, _ = m.reviveAllDead(); m.errBar.text != "" {
+	if _, _ = m.reviveAllDead(); m.mode != modeConfirmDelete {
+		t.Fatalf("reviving two dead sessions should ask first, mode = %v err = %q", m.mode, m.errBar.text)
+	}
+	if want := "revive every dead session (2)? brings them back."; m.confirm.label != want {
+		t.Fatalf("label = %q, want %q", m.confirm.label, want)
+	}
+	if len(m.confirm.sessions) != 2 {
+		t.Fatalf("confirm targets = %+v, want the two dead sessions", m.confirm.sessions)
+	}
+	_, cmd := m.handleConfirmKey(namedKey(tea.KeyEnter))
+	m.applyCmd(t, cmd)
+	if m.errBar.text != "" {
 		t.Fatalf("revive all: %q", m.errBar.text)
 	}
 	for _, sess := range m.visibleSessions() {
@@ -1265,14 +1415,154 @@ func TestReviveGroupBringsBackEverySessionInside(t *testing.T) {
 	m.selectGroupRow(t, "work")
 	m.killSelected()
 	confirmKill(t, m)
+	createSession(t, m, "running", dir, "work")
 
 	m.selectGroupRow(t, "work")
-	if _, _ = m.reviveSelected(); m.errBar.text != "" {
+	if _, _ = m.reviveSelected(); m.mode != modeConfirmDelete {
+		t.Fatalf("reviving a group of two dead sessions should ask first, mode = %v err = %q", m.mode, m.errBar.text)
+	}
+	if title := m.confirmTitle(); title != "◆ Revive group" {
+		t.Fatalf("title = %q, want ◆ Revive group", title)
+	}
+	if want := "revive group work (2 dead sessions)? brings them back."; m.confirm.label != want {
+		t.Fatalf("label = %q, want %q", m.confirm.label, want)
+	}
+	if len(m.confirm.sessions) != 2 {
+		t.Fatalf("confirm targets = %+v, want the two dead sessions", m.confirm.sessions)
+	}
+	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.applyCmd(t, cmd)
+	if m.errBar.text != "" {
 		t.Fatalf("revive group: %q", m.errBar.text)
 	}
 	for _, sess := range m.visibleSessions() {
 		if !m.tmux.Exists(sess.ID) {
 			t.Fatalf("revive group should have brought back %s", sess.Name)
+		}
+	}
+}
+
+func TestReviveGroupConfirmedRevivesWhatItCan(t *testing.T) {
+	m := buildModel(t)
+	gone, kept := t.TempDir(), t.TempDir()
+	seedGroups(t, m, "work")
+	createSession(t, m, "homeless", gone, "work")
+	createSession(t, m, "housed", kept, "work")
+	m.selectGroupRow(t, "work")
+	m.killSelected()
+	confirmKill(t, m)
+	if err := os.RemoveAll(gone); err != nil {
+		t.Fatalf("remove dir: %v", err)
+	}
+
+	m.selectGroupRow(t, "work")
+	if _, _ = m.reviveSelected(); m.mode != modeConfirmDelete {
+		t.Fatalf("mode = %v, want the revive card (err %q)", m.mode, m.errBar.text)
+	}
+	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.applyCmd(t, cmd)
+
+	if !strings.HasPrefix(m.errBar.text, "revived 1, first error: working directory no longer exists") {
+		t.Fatalf("status = %q, want the count revived and the first failure", m.errBar.text)
+	}
+	if m.mode != modeList {
+		t.Fatalf("mode = %v, want the list", m.mode)
+	}
+	if !m.tmux.Exists(sessionRow(t, m, "housed").sess.ID) {
+		t.Fatal("a failed revive must not keep the rest of the group dead")
+	}
+}
+
+func TestReviveBatchCancelLeavesEverySessionDead(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		key  tea.KeyMsg
+	}{
+		{"n", tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")}},
+		{"esc", namedKey(tea.KeyEsc)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := buildModel(t)
+			dir := t.TempDir()
+			seedGroups(t, m, "work")
+			createSession(t, m, "alpha", dir, "work")
+			createSession(t, m, "beta", dir, "work")
+			m.selectGroupRow(t, "work")
+			m.killSelected()
+			confirmKill(t, m)
+
+			for _, key := range []string{"v", "V"} {
+				m.selectGroupRow(t, "work")
+				m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+				if m.mode != modeConfirmDelete {
+					t.Fatalf("%s: mode = %v, want the revive card (err %q)", key, m.mode, m.errBar.text)
+				}
+				m.handleKey(tc.key)
+				if m.mode != modeList {
+					t.Fatalf("%s: mode = %v, want the list after %s", key, m.mode, tc.name)
+				}
+				for _, sess := range m.visibleSessions() {
+					if m.tmux.Exists(sess.ID) {
+						t.Fatalf("%s then %s brought back %s", key, tc.name, sess.Name)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestReviveBatchSkipsASessionBackBeforeTheAnswer(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	seedGroups(t, m, "work")
+	createSession(t, m, "alpha", dir, "work")
+	createSession(t, m, "beta", dir, "work")
+	m.selectGroupRow(t, "work")
+	m.killSelected()
+	confirmKill(t, m)
+
+	m.selectGroupRow(t, "work")
+	m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("v")})
+	if m.mode != modeConfirmDelete {
+		t.Fatalf("mode = %v, want the revive card (err %q)", m.mode, m.errBar.text)
+	}
+	alpha := sessionRow(t, m, "alpha").sess
+	if err := m.reviveSession(alpha); err != nil {
+		t.Fatalf("revive alpha while the card is open: %v", err)
+	}
+	m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+
+	if m.errBar.text != "" {
+		t.Fatalf("status = %q, want no error for a session that came back on its own", m.errBar.text)
+	}
+	for _, name := range []string{"alpha", "beta"} {
+		if !m.tmux.Exists(sessionRow(t, m, name).sess.ID) {
+			t.Fatalf("%s should be running", name)
+		}
+	}
+}
+
+func TestReviveOneDeadSessionSkipsTheCard(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	seedGroups(t, m, "work")
+	createSession(t, m, "alpha", dir, "work")
+	// beta stays live, leaving two rows in scope and only one of them dead.
+	createSession(t, m, "beta", dir, "work")
+	alpha := sessionRow(t, m, "alpha").sess
+
+	for _, key := range []string{"v", "V"} {
+		if err := m.tmux.Kill(alpha.ID); err != nil {
+			t.Fatalf("kill alpha: %v", err)
+		}
+		m.applyCmd(t, m.refreshCmd())
+		m.selectGroupRow(t, "work")
+		m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+		if m.mode != modeList {
+			t.Fatalf("%s with one dead session: mode = %v, want it revived without a card", key, m.mode)
+		}
+		if !m.tmux.Exists(alpha.ID) {
+			t.Fatalf("%s should revive the one dead session at once, err = %q", key, m.errBar.text)
 		}
 	}
 }
@@ -1339,7 +1629,7 @@ func TestDeleteRemovesCleanWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 	initGitRepo(t, repo)
-	if err := m.spawnSession("claude", "wt-clean", repo, "", "", false, true); err != nil {
+	if err := m.spawnSession("claude", "wt-clean", repo, "", "", false, true, config.Choice{}); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	sessions, _ := m.store.ListSessions(true)
@@ -1355,7 +1645,7 @@ func TestDeleteRemovesCleanWorktree(t *testing.T) {
 func TestDeleteKeepsWorktreeUntilLastSharingSession(t *testing.T) {
 	m := buildModel(t)
 	repo := seedRepo(t)
-	if err := m.spawnSession("claude", "owner", repo, "", "", false, true); err != nil {
+	if err := m.spawnSession("claude", "owner", repo, "", "", false, true, config.Choice{}); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	sessions, err := m.store.ListSessions(true)
@@ -1402,7 +1692,7 @@ func TestDeleteKeepsDirtyWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 	initGitRepo(t, repo)
-	if err := m.spawnSession("claude", "wt-dirty", repo, "", "", false, true); err != nil {
+	if err := m.spawnSession("claude", "wt-dirty", repo, "", "", false, true, config.Choice{}); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	sessions, _ := m.store.ListSessions(true)
@@ -1421,6 +1711,20 @@ func TestDeleteKeepsDirtyWorktree(t *testing.T) {
 	}
 	if remaining, _ := m.store.ListSessions(true); len(remaining) != 0 {
 		t.Fatal("session record should still be deleted")
+	}
+}
+
+func TestDeleteRemovesTheSessionSettings(t *testing.T) {
+	m := buildModel(t)
+	createSessionOn(t, m, "hooked", "claude-hooked", t.TempDir())
+	settings := m.hooks.SettingsFile(m.sessionRows()[0].ID)
+	if _, err := os.Stat(settings); err != nil {
+		t.Fatalf("launch should write the session's settings: %v", err)
+	}
+
+	deleteSession(t, m, "hooked")
+	if _, err := os.Stat(settings); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("delete left the session's settings behind: %v", err)
 	}
 }
 
@@ -1625,6 +1929,44 @@ func TestRestoreAgentUnarchivesEveryChild(t *testing.T) {
 		if !m.tmux.Exists(id) {
 			t.Fatalf("%s not running", id)
 		}
+	}
+}
+
+func TestRestoreAgentBringsBackOnlyItsArchivedTerminals(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "coder", dir, "backend")
+	m.selectSessionRow(t, "coder")
+	shell := spawnTerminal(t, m)
+	agent := m.sessionRows()[0]
+	m.selectSessionRow(t, "coder")
+	m.archiveSelected()
+	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.applyCmd(t, cmd)
+	m.showArchived = true
+	m.applyCmd(t, m.refreshCmd())
+	m.selectSessionRow(t, shell.Name)
+	m.restoreSelected()
+	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.applyCmd(t, cmd)
+	if err := m.tmux.Kill(shell.ID); err != nil {
+		t.Fatalf("kill terminal: %v", err)
+	}
+
+	m.selectSessionRow(t, "coder")
+	m.restoreSelected()
+	if want := "restore coder? brings it back."; m.confirm.label != want {
+		t.Errorf("label = %q, want %q", m.confirm.label, want)
+	}
+	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.applyCmd(t, cmd)
+	if !m.tmux.Exists(agent.ID) || m.tmux.Exists(shell.ID) {
+		t.Fatalf("coder running=%v, terminal running=%v; want coder back and the terminal left dead",
+			m.tmux.Exists(agent.ID), m.tmux.Exists(shell.ID))
 	}
 }
 

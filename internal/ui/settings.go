@@ -2,8 +2,7 @@ package ui
 
 import (
 	"net/url"
-	"sort"
-	"strings"
+	"slices"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -11,68 +10,25 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// defaultTool is the CLI quick spawn launches: the settings choice when it
-// is still enabled, else the first enabled tool. A store error still yields
+// defaultTool is the CLI quick spawn launches. A store error still yields
 // the fallback but is surfaced, never swallowed.
 func (m *Model) defaultTool() string {
-	names := m.enabledToolNames()
-	if len(names) == 0 {
-		return ""
-	}
-	chosen, err := m.store.Setting("default_tool")
+	hidden := m.hiddenTools()
+	chosen, err := m.store.DefaultTool()
 	if err != nil {
 		m.errBar.text = "reading default tool setting: " + err.Error()
-		return names[0]
 	}
-	if chosen != "" {
-		for _, name := range names {
-			if name == chosen {
-				return chosen
-			}
-		}
-	}
-	return names[0]
+	return m.cfg.DefaultAgentTool(chosen, hidden)
 }
 
 // hiddenTools returns the set of CLI names the user turned off for new sessions.
 func (m *Model) hiddenTools() map[string]bool {
-	raw, err := m.store.Setting(hiddenToolsSetting)
+	hidden, err := m.store.HiddenTools()
 	if err != nil {
 		m.errBar.text = "reading hidden tools setting: " + err.Error()
 		return nil
 	}
-	return parseHiddenTools(raw)
-}
-
-func parseHiddenTools(raw string) map[string]bool {
-	if raw == "" {
-		return nil
-	}
-	hidden := make(map[string]bool)
-	for _, part := range strings.Split(raw, ",") {
-		name := strings.TrimSpace(part)
-		if name != "" {
-			hidden[name] = true
-		}
-	}
-	if len(hidden) == 0 {
-		return nil
-	}
 	return hidden
-}
-
-func formatHiddenTools(hidden map[string]bool) string {
-	if len(hidden) == 0 {
-		return ""
-	}
-	names := make([]string, 0, len(hidden))
-	for name, on := range hidden {
-		if on {
-			names = append(names, name)
-		}
-	}
-	sort.Strings(names)
-	return strings.Join(names, ",")
 }
 
 func (m *Model) defaultWorktree() bool {
@@ -82,6 +38,16 @@ func (m *Model) defaultWorktree() bool {
 		return false
 	}
 	return chosen == "on"
+}
+
+// proactiveCoordination reads how sessions treat each other for the
+// settings row. A store error is surfaced but still yields the default.
+func (m *Model) proactiveCoordination() bool {
+	proactive, err := m.store.ProactiveCoordination()
+	if err != nil {
+		m.errBar.text = "reading coordination setting: " + err.Error()
+	}
+	return proactive
 }
 
 func (m *Model) spawnWorktreeDefault(group string) bool {
@@ -99,6 +65,140 @@ func (m *Model) spawnWorktreeDefault(group string) bool {
 		}
 	}
 	return m.defaultWorktree()
+}
+
+// groupBase is the ref a spawn into group branches from: the nearest
+// ancestor group's choice, or "" to detect the repo's default branch.
+func (m *Model) groupBase(group string) string {
+	for g := group; g != ""; g = parentGroup(g) {
+		if base := m.groupBases[g]; base != "" {
+			return base
+		}
+	}
+	return ""
+}
+
+// stepGroupBase moves a group's base choice through auto and the branches
+// of the repo at dir.
+func (m *Model) stepGroupBase(dir, current string, delta int) string {
+	if m.gitDrv == nil {
+		m.errBar.text = "a group base needs git installed"
+		return current
+	}
+	refs, err := m.gitDrv.BranchRefs(dir)
+	if err != nil {
+		m.errBar.text = "group base: " + err.Error()
+		return current
+	}
+	m.errBar.text = ""
+	choices := append([]string{""}, refs...)
+	at := max(slices.Index(choices, current), 0)
+	return choices[(at+delta+len(choices))%len(choices)]
+}
+
+// baseFetchInterval keeps a burst of spawns into one repo to one fetch.
+const baseFetchInterval = time.Minute
+
+type baseFetchKey struct{ dir, override string }
+
+// baseFetch is one refresh of a spawn's base: when it started, the default
+// branch the repo resolved to, and how the fetch ended.
+type baseFetch struct {
+	at       time.Time
+	resolved bool
+	detected string
+	fetched  bool
+	err      error
+}
+
+type baseFetchedMsg struct {
+	key      baseFetchKey
+	detected string
+	fetched  bool
+	err      error
+}
+
+// refreshSpawnBase resolves the base of the worktree spawn the form or the
+// quick bar is set to make, for the form to show, then fetches it unless
+// Settings turned that off. A spawn that beats the fetch branches from the
+// last one.
+func (m *Model) refreshSpawnBase() tea.Cmd {
+	dir, group, ok := m.pendingWorktreeSpawn()
+	if !ok {
+		return nil
+	}
+	key := baseFetchKey{dir: dir, override: m.groupBase(group)}
+	if last, seen := m.baseFetches[key]; seen && time.Since(last.at) < baseFetchInterval {
+		return nil
+	}
+	if m.baseFetches == nil {
+		m.baseFetches = map[baseFetchKey]baseFetch{}
+	}
+	m.baseFetches[key] = baseFetch{at: time.Now()}
+	driver := m.gitDrv
+	return func() tea.Msg {
+		return baseFetchedMsg{key: key, detected: driver.DefaultBase(dir)}
+	}
+}
+
+// recordBaseFetch keeps what a step of a base refresh found, and starts the
+// fetch once the resolving step is in.
+func (m *Model) recordBaseFetch(msg baseFetchedMsg) tea.Cmd {
+	fetch, ok := m.baseFetches[msg.key]
+	if !ok {
+		return nil
+	}
+	fetch.resolved, fetch.detected = true, msg.detected
+	if msg.fetched {
+		fetch.fetched, fetch.err = true, msg.err
+	}
+	m.baseFetches[msg.key] = fetch
+	if msg.fetched || m.baseFetchOff {
+		return nil
+	}
+	driver, key := m.gitDrv, msg.key
+	return func() tea.Msg {
+		err := driver.FetchBase(key.dir, key.override)
+		return baseFetchedMsg{key: key, detected: driver.DefaultBase(key.dir), fetched: true, err: err}
+	}
+}
+
+// pendingWorktreeSpawn is the directory and group of the worktree spawn
+// the New Session form or the quick bar is set to make.
+func (m *Model) pendingWorktreeSpawn() (dir, group string, ok bool) {
+	switch {
+	case m.mode == modeForm && m.formWorktreeOn():
+		return m.formSpawnDir(), m.selectedGroupPath(), true
+	case m.mode == modeList && m.quick.active && m.quickSpawning() && m.quickWorktreeOn():
+		return m.quickTargetDir(), m.quickTargetGroup(), true
+	}
+	return "", "", false
+}
+
+// spawnBaseLabel names the ref a worktree spawn into dir branches from,
+// where that choice came from, and how fetching it went.
+func (m *Model) spawnBaseLabel(dir, group string) string {
+	override := m.groupBase(group)
+	fetch := m.baseFetches[baseFetchKey{dir: dir, override: override}]
+	label := valueStyle.Render(override) + subtleStyle.Render(" (group)")
+	if override == "" {
+		switch {
+		case !fetch.resolved:
+			label = subtleStyle.Render("…")
+		case fetch.detected == "":
+			label = valueStyle.Render("HEAD") + subtleStyle.Render(" (auto)")
+		default:
+			label = valueStyle.Render(fetch.detected) + subtleStyle.Render(" (auto)")
+		}
+	}
+	switch {
+	case m.baseFetchOff:
+	case !fetch.fetched:
+		label += subtleStyle.Render(" · fetching")
+	case fetch.err != nil:
+		label += subtleStyle.Render(" · fetch failed")
+	}
+	return label
 }
 
 // worktreeUnavailable is what the worktree toggle reads when the target
@@ -191,10 +291,30 @@ func storedHideStats(st *store.Store) bool {
 	return chosen == "on"
 }
 
+// storedTerminalBackground reads the background row. A store error is
+// surfaced but still yields the painted default.
+func (m *Model) storedTerminalBackground() bool {
+	chosen, err := m.store.Setting(backgroundSetting)
+	if err != nil {
+		m.errBar.text = "reading background setting: " + err.Error()
+	}
+	return chosen == "terminal"
+}
+
 // storedMouseDisabled reads the persisted mouse-reporting choice. On is the
 // default; only an explicit "off" gives the rail back to the terminal.
 func storedMouseDisabled(st *store.Store) bool {
 	chosen, err := st.Setting(mouseSetting)
+	if err != nil {
+		return false
+	}
+	return chosen == "off"
+}
+
+// storedBaseFetchOff reads the persisted fetch-on-spawn choice. On is the
+// default; only an explicit "off" skips the fetch.
+func storedBaseFetchOff(st *store.Store) bool {
+	chosen, err := st.Setting(baseFetchSetting)
 	if err != nil {
 		return false
 	}
@@ -245,10 +365,10 @@ func storedNotifyFinished(st *store.Store) bool {
 	return chosen == "on"
 }
 
-func (m *Model) openSettings() {
+func (m *Model) openSettings() tea.Cmd {
 	if len(m.cfg.Tools) == 0 {
 		m.errBar.text = "no tools configured"
-		return
+		return nil
 	}
 	m.errBar.text = ""
 	names, index := m.defaultToolSelection()
@@ -267,12 +387,18 @@ func (m *Model) openSettings() {
 		hideStats:       m.hideStats,
 		mouseDisabled:   m.mouseDisabled,
 		worktreeDefault: m.defaultWorktree(),
+		baseFetch:       !m.baseFetchOff,
+		proactive:       m.proactiveCoordination(),
 		notifications:   storedNotifications(m.store),
 		notifyFinished:  storedNotifyFinished(m.store),
 		themeAuto:       themeAutoEnabled(m.store),
 		manualTheme:     themes[themeIndex(storedTheme(m.store))].Name,
+		editor:          newEditorRow(m.editor),
+
+		terminalBackground: m.terminalBackground,
 	}
 	m.mode = modeSettings
+	return probeEditors
 }
 
 func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -281,6 +407,9 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.settings.keyPicker {
 		return m.handleKeyPickerKey(msg)
+	}
+	if m.settings.editor.typing {
+		return m.handleEditorTypingKey(msg)
 	}
 	switch msg.String() {
 	case "up", "k":
@@ -303,6 +432,11 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case settingsFieldKeybindings:
 			m.openKeyPicker()
 			return m, nil
+		case settingsFieldEditor:
+			if m.settings.editor.custom {
+				m.openEditorTyping()
+				return m, nil
+			}
 		case settingsFieldUpdate:
 			if m.update.applying {
 				return m, nil
@@ -332,7 +466,7 @@ func (m *Model) saveAndCloseSettings() (tea.Model, tea.Cmd) {
 
 func (m *Model) persistSettings() {
 	if len(m.settings.toolNames) > 0 {
-		if err := m.store.SetSetting("default_tool", m.settings.toolNames[m.settings.toolIndex]); err != nil {
+		if err := m.store.SetDefaultTool(m.settings.toolNames[m.settings.toolIndex]); err != nil {
 			m.errBar.text = err.Error()
 		}
 	}
@@ -404,6 +538,13 @@ func (m *Model) persistSettings() {
 	if err := m.store.SetSetting(hideStatsSetting, hideStats); err != nil {
 		m.errBar.text = err.Error()
 	}
+	background := "theme"
+	if m.settings.terminalBackground {
+		background = "terminal"
+	}
+	if err := m.store.SetSetting(backgroundSetting, background); err != nil {
+		m.errBar.text = err.Error()
+	}
 	mouseMode := "on"
 	if m.settings.mouseDisabled {
 		mouseMode = "off"
@@ -416,6 +557,16 @@ func (m *Model) persistSettings() {
 		worktreeChoice = "on"
 	}
 	if err := m.store.SetSetting(worktreeSetting, worktreeChoice); err != nil {
+		m.errBar.text = err.Error()
+	}
+	baseFetch := "on"
+	if !m.settings.baseFetch {
+		baseFetch = "off"
+	}
+	if err := m.store.SetSetting(baseFetchSetting, baseFetch); err != nil {
+		m.errBar.text = err.Error()
+	}
+	if err := m.store.SetProactiveCoordination(m.settings.proactive); err != nil {
 		m.errBar.text = err.Error()
 	}
 	notifications := "off"
@@ -432,6 +583,10 @@ func (m *Model) persistSettings() {
 	if err := m.store.SetSetting(notifyFinishedSetting, notifyFinished); err != nil {
 		m.errBar.text = err.Error()
 	}
+	if err := m.store.SetEditor(m.settings.editor.line()); err != nil {
+		m.errBar.text = err.Error()
+	}
+	m.editor = m.settings.editor.line()
 	m.focusOnEnter = m.settings.enterFocuses
 	m.arrowStep = m.settings.arrowStep
 	m.comfortableRows = m.settings.comfortableRows
@@ -439,10 +594,11 @@ func (m *Model) persistSettings() {
 	m.hideHeader = m.settings.hideHeader
 	m.hideStats = m.settings.hideStats
 	m.mouseDisabled = m.settings.mouseDisabled
+	m.baseFetchOff = !m.settings.baseFetch
 }
 
 func (m *Model) openCLIPicker() {
-	names := sortedToolNames(m.cfg)
+	names := m.cfg.AgentToolNames()
 	hidden := make(map[string]bool)
 	for name, on := range m.hiddenTools() {
 		if on {
@@ -478,7 +634,7 @@ func (m *Model) handleCLIPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.toggleCLIHidden(m.settings.cliNames[m.settings.cliCursor])
 	case "esc":
-		if err := m.store.SetSetting(hiddenToolsSetting, formatHiddenTools(m.settings.cliHidden)); err != nil {
+		if err := m.store.SetHiddenTools(m.settings.cliHidden); err != nil {
 			m.errBar.text = err.Error()
 		}
 		m.settings.cliPicker = false
@@ -544,7 +700,7 @@ func (m *Model) cycleSetting(step int) tea.Cmd {
 		m.settings.themeIndex = (m.settings.themeIndex + step + len(themes)) % len(themes)
 		m.settings.manualTheme = themes[m.settings.themeIndex].Name
 		applyTheme(themes[m.settings.themeIndex])
-		SyncTerminalBackground()
+		SyncTerminalColors()
 		return m.syncPaneTheme()
 	case settingsFieldThemeAuto:
 		m.settings.themeAuto = !m.settings.themeAuto
@@ -554,8 +710,11 @@ func (m *Model) cycleSetting(step int) tea.Cmd {
 		}
 		m.settings.themeIndex = themeIndex(name)
 		applyTheme(themes[m.settings.themeIndex])
-		SyncTerminalBackground()
+		SyncTerminalColors()
 		return m.syncPaneTheme()
+	case settingsFieldBackground:
+		m.settings.terminalBackground = !m.settings.terminalBackground
+		m.terminalBackground = m.settings.terminalBackground
 	case settingsFieldDensity:
 		m.settings.comfortableRows = !m.settings.comfortableRows
 	case settingsFieldSessionLayout:
@@ -576,10 +735,16 @@ func (m *Model) cycleSetting(step int) tea.Cmd {
 		m.settings.mouseDisabled = !m.settings.mouseDisabled
 	case settingsFieldWorktree:
 		m.settings.worktreeDefault = !m.settings.worktreeDefault
+	case settingsFieldBaseFetch:
+		m.settings.baseFetch = !m.settings.baseFetch
+	case settingsFieldCoordination:
+		m.settings.proactive = !m.settings.proactive
 	case settingsFieldNotify:
 		m.settings.notifications = !m.settings.notifications
 	case settingsFieldNotifyFinish:
 		m.settings.notifyFinished = !m.settings.notifyFinished
+	case settingsFieldEditor:
+		m.settings.editor.cycle(step)
 	}
 	return nil
 }

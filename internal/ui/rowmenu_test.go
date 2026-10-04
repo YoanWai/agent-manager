@@ -124,6 +124,32 @@ func TestGroupMenuCreatesAndNeverAttaches(t *testing.T) {
 	}
 }
 
+func TestGroupMenuReviveAsksLikeTheKey(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	seedGroups(t, m, "work")
+	createSession(t, m, "alpha", dir, "work")
+	createSession(t, m, "beta", dir, "work")
+	m.selectGroupRow(t, "work")
+	m.killSelected()
+	confirmKill(t, m)
+	for i, row := range m.rows {
+		if row.isGroup && row.group == "work" {
+			m.openRowMenu(i, 2, 2)
+		}
+	}
+
+	m.runMenuItem(menuEntry(t, m, "Revive"))
+	if m.mode != modeConfirmDelete || !m.confirm.isGroup {
+		t.Fatalf("Revive on a group with two dead sessions should open the group card, mode = %v isGroup = %v", m.mode, m.confirm.isGroup)
+	}
+	for _, sess := range m.visibleSessions() {
+		if m.tmux.Exists(sess.ID) {
+			t.Fatalf("the menu revived %s before the question was answered", sess.Name)
+		}
+	}
+}
+
 func TestDotsOnAnUnselectedRowOpenItsMenuAtOnce(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "alpha", t.TempDir(), "")

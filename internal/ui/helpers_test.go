@@ -26,8 +26,6 @@ func buildModel(t *testing.T) *Model {
 		t.Skip("tmux not installed")
 	}
 	cfg := config.Config{
-		SessionKeys: keybind.DefaultSession(),
-		ListKeys:    keybind.DefaultList(),
 		Tools: map[string]config.Tool{
 			"claude": {Command: "cat", DefaultStatus: status.Idle},
 			// Parks the terminal cursor below its footer and paints the
@@ -132,7 +130,10 @@ func buildModel(t *testing.T) *Model {
 		t.Fatalf("engine: %v", err)
 	}
 
-	m := New(cfg, st, driver, engine, hooks.NewManager(t.TempDir()), "dev")
+	m, err := New(cfg, st, driver, engine, hooks.NewManager(t.TempDir()), "dev")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
 	m.width = 120
 	m.height = 40
 	m.booting = false
@@ -391,7 +392,7 @@ func createSessionOn(t *testing.T, m *Model, name, tool, dir string) {
 	m.form.name.SetValue(name)
 	m.form.dir.SetValue(dir)
 	picked := false
-	for i, candidate := range sortedToolNames(m.cfg) {
+	for i, candidate := range m.cfg.AgentToolNames() {
 		if candidate == tool {
 			m.form.toolIndex, picked = i, true
 		}
@@ -439,8 +440,19 @@ func quitAgent(t *testing.T, m *Model, sessID string) {
 	waitForAgent(t, m, sessID, false)
 }
 
+// reloadModel is the manager started again on the same store, the way a
+// restart reads back what Settings saved.
+func reloadModel(t *testing.T, m *Model) *Model {
+	t.Helper()
+	loaded, err := New(m.cfg, m.store, m.tmux, m.poller.engine, m.hooks, "dev")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	return loaded
+}
+
 // useSessionKeys swaps the session key table the model and its driver
-// read, the way a config.toml with a [keybindings.session] block would.
+// read, the way the keys Settings stored would.
 func useSessionKeys(t *testing.T, m *Model, detach, review, editor []string) {
 	t.Helper()
 	m.keys = sessionOf(t, detach, review, editor)

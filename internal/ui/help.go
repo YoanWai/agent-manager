@@ -167,8 +167,13 @@ func helpSections(session, list keybind.Table, arrowStep bool) []helpSection {
 		{title: titledWith("quick prompt", list, keybind.Prompt), rows: [][2]string{
 			{"↵", "send"},
 			{"↑↓", "switch the target session, or step the caret in a taller prompt"},
-			{"tab", "switch the tool a spawn uses (alt+m too)"},
-			{"shift+tab", "toggle worktree for the spawned agent (alt+w too)"},
+			{"tab", "step the tool a spawn uses forward (alt+m too)"},
+			{"shift+tab", "step the tool a spawn uses back one"},
+			{quickModelKey, "pick the spawn's model from the ones the tool lists; type to filter"},
+			{quickEffortKey, "step the spawn's reasoning effort through the model's levels"},
+			{quickProfileKey, "step the spawn's profile, for a tool that has them"},
+			{"click", "step a spawn choice the way its key does, or pick a listed model"},
+			{"ctrl+t", "toggle worktree for the spawned agent (alt+w too)"},
 			{"ctrl+v", "paste an image as a chip at the cursor"},
 			{"⌫", "next to a chip, delete the whole chip"},
 			{"←→", "step over a chip as one token"},
@@ -185,6 +190,7 @@ func helpSections(session, list keybind.Table, arrowStep bool) []helpSection {
 		})},
 		reviewHelpSection(list),
 		{title: titledWith("messages", list, keybind.Messages), rows: [][2]string{
+			{"click messages", "in the key legend, shown while any remain"},
 			{"↑↓", "pick a message"},
 			{"pgup / pgdn", "scroll its body"},
 			{"↵", "open its link in the browser"},
@@ -204,6 +210,8 @@ func helpSections(session, list keybind.Table, arrowStep bool) []helpSection {
 			{"↑↓", "next field, or step the caret in a taller New Session prompt"},
 			{"ctrl+v", "in a prompt field, paste an image as a chip"},
 			{"←→", "change a picker's value"},
+			{"type", "in the model field, filter what the tool lists; tab fills one in"},
+			{"click", "focus a field, click it again to change it, or pick a listed entry"},
 			{"↵", "confirm"},
 			{"esc", "cancel"},
 		}},
@@ -226,6 +234,9 @@ func sessionHelpRows(keys keybind.Table, arrowStep bool, mouseRows [][2]string) 
 	}
 	if label := keys.Binding(keybind.Editor).Label(); label != "" {
 		rows = append(rows, [2]string{label, "open its directory in an editor"})
+	}
+	if label := keys.Binding(keybind.TmuxPrefix).Label(); label != "" {
+		rows = append(rows, [2]string{label, "attached: tmux's prefix, in place of yours"})
 	}
 	return append(rows, mouseRows...)
 }

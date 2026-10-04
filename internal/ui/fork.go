@@ -110,7 +110,7 @@ func (m *Model) submitFork() (tea.Model, tea.Cmd) {
 		}
 		sessionFile = resolved
 	}
-	return m.launchFork(source, tool, name, agentID, expandForkCommand(tool.ForkCommand, source.AgentSessionID, agentID, name, sessionFile))
+	return m.launchFork(source, tool, name, agentID, expandForkCommand(tool.WithChoice(source.Choice).ForkCommand, source.AgentSessionID, agentID, name, sessionFile))
 }
 
 func (m *Model) launchFork(source store.Session, tool config.Tool, name, agentID, baseCommand string) (tea.Model, tea.Cmd) {
@@ -125,6 +125,7 @@ func (m *Model) launchFork(source store.Session, tool config.Tool, name, agentID
 		AgentSessionID: agentID,
 		WorktreeRepo:   source.WorktreeRepo,
 		WorktreeBranch: source.WorktreeBranch,
+		Choice:         source.Choice,
 	}
 	if err := m.launchNewSession(forked, tool, baseCommand, launchOptions{}); err != nil {
 		m.reportLaunchError(err, func() error {
@@ -207,7 +208,7 @@ func (m *Model) handleForkedInSource(msg forkedInSourceMsg) (tea.Model, tea.Cmd)
 		m.errBar.text = fmt.Sprintf("tool %s is no longer configured", msg.source.Tool)
 		return m, nil
 	}
-	return m.launchFork(msg.source, tool, msg.name, msg.forkID, expandForkCommand(tool.ForkCommand, msg.source.AgentSessionID, msg.forkID, msg.name, ""))
+	return m.launchFork(msg.source, tool, msg.name, msg.forkID, expandForkCommand(tool.WithChoice(msg.source.Choice).ForkCommand, msg.source.AgentSessionID, msg.forkID, msg.name, ""))
 }
 
 func expandForkCommand(template, sourceID, newID, name, sessionFile string) string {

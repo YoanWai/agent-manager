@@ -1,24 +1,17 @@
 package config
 
 import (
-	"os"
-	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
 	"testing"
-	"time"
-
-	"github.com/YoanWai/agent-manager/internal/keybind"
 )
 
 func TestDefaultDefinesEveryShippedTool(t *testing.T) {
 	cfg, err := Default()
 	if err != nil {
 		t.Fatalf("Default: %v", err)
-	}
-	if cfg.PollInterval.Duration != 2*time.Second {
-		t.Fatalf("poll interval = %v want 2s", cfg.PollInterval.Duration)
 	}
 	if _, ok := cfg.Tools["claude"]; !ok {
 		t.Fatal("expected claude tool in default config")
@@ -162,98 +155,6 @@ func TestDefaultDefinesEveryShippedTool(t *testing.T) {
 	}
 }
 
-// The file a first run leaves behind holds what the manager reads from it
-// and nothing else. Tools are not in it, because they are not read from it.
-func TestFirstRunWritesAStarterFileThatDeclaresNoTools(t *testing.T) {
-	dir := t.TempDir()
-	cfg, err := LoadDir(dir)
-	if err != nil {
-		t.Fatalf("LoadDir: %v", err)
-	}
-	written, err := os.ReadFile(filepath.Join(dir, "config.toml"))
-	if err != nil {
-		t.Fatalf("config file: %v", err)
-	}
-	if strings.Contains(string(written), "[tools.") {
-		t.Fatalf("the starter file should declare no tools:\n%s", written)
-	}
-	if len(cfg.IgnoredTools) != 0 {
-		t.Fatalf("a fresh file ignores nothing, got %v", cfg.IgnoredTools)
-	}
-	if _, ok := cfg.Tools["terminal"]; !ok {
-		t.Fatal("the built-in terminal tool is missing")
-	}
-	if cfg.PollInterval.Duration != 2*time.Second {
-		t.Fatalf("poll interval = %v want 2s", cfg.PollInterval.Duration)
-	}
-}
-
-// A file written by an older release carries every block it shipped that
-// day; they define nothing now, and their names feed the notice.
-func TestToolBlocksInTheFileAreIgnoredAndReported(t *testing.T) {
-	dir := writeConfigText(t, `
-[tools.claude]
-command = "not-claude"
-activity_cutoff = "nonsense"
-
-[tools.mine]
-command = "mine"
-`)
-	cfg, err := LoadDir(dir)
-	if err != nil {
-		t.Fatalf("LoadDir: %v", err)
-	}
-	builtin, err := Default()
-	if err != nil {
-		t.Fatalf("Default: %v", err)
-	}
-	if got, want := cfg.Tools["claude"].Command, builtin.Tools["claude"].Command; got != want {
-		t.Fatalf("claude command = %q, want the built-in %q", got, want)
-	}
-	if got, want := cfg.Tools["claude"].ActivityCutoff, builtin.Tools["claude"].ActivityCutoff; got != want {
-		t.Fatalf("claude activity_cutoff = %q, want the built-in %q", got, want)
-	}
-	if _, ok := cfg.Tools["mine"]; ok {
-		t.Fatal("a block the binary does not ship must not become a tool")
-	}
-	if len(cfg.IgnoredTools) != 2 || cfg.IgnoredTools[0] != "claude" || cfg.IgnoredTools[1] != "mine" {
-		t.Fatalf("ignored blocks = %v, want claude and mine", cfg.IgnoredTools)
-	}
-}
-
-// A hand-edit that no longer fits the Tool shape is as inert as a
-// well-formed block, and an empty table still gets named.
-func TestAnIgnoredToolBlockCannotFailTheLoad(t *testing.T) {
-	dir := writeConfigText(t, `
-poll_interval = "3s"
-
-[tools.claude]
-shell = "yes"
-rules = "not an array"
-
-[tools.empty]
-
-[keybindings.session]
-review = "ctrl+g"
-`)
-	cfg, err := LoadDir(dir)
-	if err != nil {
-		t.Fatalf("LoadDir: %v", err)
-	}
-	if got := cfg.IgnoredTools; len(got) != 2 || got[0] != "claude" || got[1] != "empty" {
-		t.Fatalf("ignored blocks = %v, want claude and empty", got)
-	}
-	if cfg.PollInterval.Duration != 3*time.Second {
-		t.Fatalf("poll interval = %v, want the file's 3s", cfg.PollInterval.Duration)
-	}
-	if got := cfg.SessionKeys.Binding(keybind.Review).Label(); got != "ctrl+g" {
-		t.Fatalf("review key = %q, want the file's ctrl+g", got)
-	}
-	if cfg.Tools["claude"].Shell {
-		t.Fatal("the built-in claude block is not a shell")
-	}
-}
-
 // Nothing types into a pane it cannot read, so every agent CLI has to mark
 // where its input box is. The shell is exempt: nothing types into it.
 func TestEveryAgentToolMarksItsInputBox(t *testing.T) {
@@ -346,9 +247,6 @@ func TestDefaultWaitingRulesPrecedeWorking(t *testing.T) {
 func TestApplyDefaults(t *testing.T) {
 	var cfg Config
 	cfg.applyDefaults()
-	if cfg.PollInterval.Duration != 2*time.Second {
-		t.Fatalf("poll = %v", cfg.PollInterval.Duration)
-	}
 	if cfg.Tools == nil {
 		t.Fatal("tools should be non-nil after defaults")
 	}
@@ -373,7 +271,7 @@ func TestDefaultResumeByIDFields(t *testing.T) {
 		t.Fatalf("pi resume_by_id_command = %q want \"pi --session {id}\"", got)
 	}
 	// Tools that mint their own id declare a store to capture it from.
-	for _, name := range []string{"codex", "opencode", "hermes", "command-code"} {
+	for _, name := range []string{"codex", "opencode", "hermes", "command-code", "antigravity", "omp"} {
 		tool := cfg.Tools[name]
 		if tool.SessionStore != name {
 			t.Fatalf("%s session_store = %q want %q", name, tool.SessionStore, name)
@@ -393,8 +291,9 @@ func TestDefaultResumeByIDFields(t *testing.T) {
 		{"command-code", "cmd --resume"},
 		{"grok", "grok"},
 		{"gemini", "gemini -i /resume"},
-		{"hermes", "hermes --cli sessions browse"},
+		{"hermes", "hermes --cli {choice} sessions browse"},
 		{"pi", "pi --resume"},
+		{"omp", "omp --resume"},
 	} {
 		if got := cfg.Tools[tc.name].ResumePickerCommand; got != tc.want {
 			t.Fatalf("%s resume_picker_command = %q want %q", tc.name, got, tc.want)
@@ -409,7 +308,14 @@ func TestDefaultResumeByIDFields(t *testing.T) {
 	if got := cfg.Tools["opencode"].ResumePickerKeys; got != "/sessions" {
 		t.Fatalf("opencode resume_picker_keys = %q want \"/sessions\"", got)
 	}
-	for _, name := range []string{"claude", "codex", "command-code", "grok", "gemini", "hermes", "pi"} {
+	// agy -i /resume would hand "/resume" to the model as a prompt.
+	if got := cfg.Tools["antigravity"].ResumePickerCommand; got != "agy" {
+		t.Fatalf("antigravity resume_picker_command = %q want \"agy\"", got)
+	}
+	if got := cfg.Tools["antigravity"].ResumePickerKeys; got != "/resume" {
+		t.Fatalf("antigravity resume_picker_keys = %q want \"/resume\"", got)
+	}
+	for _, name := range []string{"claude", "codex", "command-code", "grok", "gemini", "hermes", "pi", "omp"} {
 		if got := cfg.Tools[name].ResumePickerKeys; got != "" {
 			t.Fatalf("%s resume_picker_keys = %q want empty", name, got)
 		}
@@ -441,94 +347,8 @@ func TestPiActivityCutoffReadsTheSpinnerBorder(t *testing.T) {
 	}
 }
 
-func writeConfigText(t *testing.T, text string) string {
-	t.Helper()
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(text), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
-	return dir
-}
-
-func TestLoadDirReadsTheKeyTables(t *testing.T) {
-	dir := writeConfigText(t, `
-[keybindings.session]
-detach = ["f9", "alt+q"]
-review = "none"
-
-[keybindings.list]
-new_session = "N"
-quit = "none"
-`)
-	cfg, err := LoadDir(dir)
-	if err != nil {
-		t.Fatalf("LoadDir: %v", err)
-	}
-	keys := cfg.SessionKeys
-	if got := keys.Binding(keybind.Detach).Label(); got != "f9 / alt+q" {
-		t.Errorf("detach = %q", got)
-	}
-	if got := keys.Binding(keybind.Review).Label(); got != "" {
-		t.Errorf("review none should be off, got %q", got)
-	}
-	if got := keys.Binding(keybind.Editor).Label(); got != "f3" {
-		t.Errorf("editor left out should take the default, got %q", got)
-	}
-	if got, _ := cfg.ListKeys.ActionFor("N"); got != keybind.NewSession {
-		t.Errorf("N should open a new session, got %q", got)
-	}
-	if _, bound := cfg.ListKeys.ActionFor("q"); bound {
-		t.Error("quit none should leave q unbound")
-	}
-	if got, _ := cfg.ListKeys.ActionFor("?"); got != keybind.Help {
-		t.Errorf("an action left out keeps its key, got %q", got)
-	}
-}
-
-// A config that names no keys, the generated one included, binds what the
-// manager always bound.
-func TestKeyTableDefaultsWhenTheFileNamesNone(t *testing.T) {
-	cfg, err := LoadDir(t.TempDir())
-	if err != nil {
-		t.Fatalf("LoadDir: %v", err)
-	}
-	def, err := Default()
-	if err != nil {
-		t.Fatalf("Default: %v", err)
-	}
-	for name, keys := range map[string]Config{"generated": cfg, "built-in": def} {
-		if !keys.SessionKeys.Equal(keybind.DefaultSession()) {
-			t.Errorf("%s: session keys = %q", name, sessionLabels(keys.SessionKeys))
-		}
-		if !keys.ListKeys.Equal(keybind.DefaultList()) {
-			t.Errorf("%s: list keys are not the defaults", name)
-		}
-	}
-}
-
-func TestLoadDirRefusesAKeyTableThatCannotWork(t *testing.T) {
-	for _, tc := range []struct{ table, text, reason string }{
-		{"session", `editor = "ctrl+i"`, "ctrl+i is tab"},
-		{"session", `editor = "o"`, `"o" is a plain key, which reaches the agent`},
-		{"session", `detach = "none"`, "detach needs at least one key"},
-		{"list", `settings = "none"`, "settings needs at least one key"},
-		{"list", `quit = "esc"`, "stays as it is"},
-		{"list", `detach = "f9"`, `no action named "detach"`},
-	} {
-		dir := writeConfigText(t, "[keybindings."+tc.table+"]\n"+tc.text+"\n")
-		_, err := LoadDir(dir)
-		if err == nil || !strings.Contains(err.Error(), tc.reason) {
-			t.Errorf("%s %s: err = %v, want %q", tc.table, tc.text, err, tc.reason)
-		}
-	}
-}
-
-func TestMuseDefaultsOnLoad(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte("[tools.claude]\ncommand = 'claude'\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := LoadDir(dir)
+func TestMuseDefaults(t *testing.T) {
+	cfg, err := Default()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -541,5 +361,129 @@ func TestMuseDefaultsOnLoad(t *testing.T) {
 	}
 	if tool.SessionIDFlag != "" || tool.PromptFlag != "" {
 		t.Fatalf("unsupported Muse flags: %+v", tool)
+	}
+}
+
+// A choice puts its flags on every line that launches the tool, quoted for
+// the shell, and changes nothing else: the status rules stay the tool's.
+func TestWithChoiceFlagsEveryLaunchLine(t *testing.T) {
+	cfg, err := Default()
+	if err != nil {
+		t.Fatalf("Default: %v", err)
+	}
+	base := cfg.Tools["pi"]
+	chosen := base.WithChoice(Choice{Model: "openai-codex/gpt-6-sol", Effort: "it's high"})
+	suffix := ` --model 'openai-codex/gpt-6-sol' --thinking 'it'\''s high'`
+	for _, tc := range []struct{ field, base, got string }{
+		{"command", base.Command, chosen.Command},
+		{"revive_command", base.ReviveCommand, chosen.ReviveCommand},
+		{"resume_by_id_command", base.ResumeByIDCommand, chosen.ResumeByIDCommand},
+		{"resume_picker_command", base.ResumePickerCommand, chosen.ResumePickerCommand},
+		{"fork_command", base.ForkCommand, chosen.ForkCommand},
+	} {
+		if tc.base == "" {
+			t.Fatalf("pi %s is empty; the test needs a line to flag", tc.field)
+		}
+		if want := tc.base + suffix; tc.got != want {
+			t.Errorf("%s = %q, want %q", tc.field, tc.got, want)
+		}
+	}
+	if !reflect.DeepEqual(chosen.Rules, base.Rules) || chosen.ActivityCutoff != base.ActivityCutoff || chosen.SessionIDFlag != base.SessionIDFlag {
+		t.Errorf("the choice changed how pi's screen is read:\n%+v\n%+v", chosen, base)
+	}
+}
+
+// Hermes takes the profile, the provider with its model, and the effort, in
+// that order; its session browser takes them ahead of the subcommand, and
+// the fork line it does not have stays empty.
+func TestWithChoicePlacesFlagsAtTheChoiceMark(t *testing.T) {
+	cfg, err := Default()
+	if err != nil {
+		t.Fatalf("Default: %v", err)
+	}
+	chosen := cfg.Tools["hermes"].WithChoice(Choice{Provider: "xai-oauth", Model: "grok-4.6", Effort: "high", Profile: "work"})
+	flags := ` -p 'work' --provider 'xai-oauth' -m 'grok-4.6' --reasoning 'high'`
+	if want := "hermes --cli" + flags; chosen.Command != want {
+		t.Errorf("command = %q, want %q", chosen.Command, want)
+	}
+	if want := "hermes --cli" + flags + " sessions browse"; chosen.ResumePickerCommand != want {
+		t.Errorf("resume_picker_command = %q, want %q", chosen.ResumePickerCommand, want)
+	}
+	if chosen.ForkCommand != "" {
+		t.Errorf("fork_command = %q, want empty like hermes's own", chosen.ForkCommand)
+	}
+	for line, want := range map[string]string{
+		"cli {choice}":     "cli -m 'x'",
+		"cli{choice} sub":  "cli -m 'x' sub",
+		"cli {choice} sub": "cli -m 'x' sub",
+	} {
+		if got := placeChoice(line, " -m 'x'"); got != want {
+			t.Errorf("placeChoice(%q) = %q, want %q", line, got, want)
+		}
+	}
+}
+
+// With nothing chosen every line launches as the tool ships it, the choice
+// mark gone.
+func TestWithAnEmptyChoiceLaunchesAsShipped(t *testing.T) {
+	cfg, err := Default()
+	if err != nil {
+		t.Fatalf("Default: %v", err)
+	}
+	for name, tool := range cfg.Tools {
+		plain := tool.WithChoice(Choice{})
+		for _, line := range []string{plain.Command, plain.ReviveCommand, plain.ResumeByIDCommand, plain.ResumePickerCommand, plain.ForkCommand} {
+			if strings.Contains(line, "{choice}") || strings.Contains(line, "  ") {
+				t.Errorf("%s launches %q", name, line)
+			}
+		}
+	}
+	if got := cfg.Tools["hermes"].WithChoice(Choice{}).ResumePickerCommand; got != "hermes --cli sessions browse" {
+		t.Errorf("hermes resume_picker_command = %q", got)
+	}
+}
+
+// Every CLI that can be asked for its models says how, and takes the model
+// it answers with; the ones asked for effort levels take an effort too.
+func TestEveryCatalogToolTakesWhatItLists(t *testing.T) {
+	cfg, err := Default()
+	if err != nil {
+		t.Fatalf("Default: %v", err)
+	}
+	for name, tool := range cfg.Tools {
+		if tool.Catalog == "" {
+			if tool.ModelArgs != "" || tool.EffortArgs != "" || tool.ProfileArgs != "" {
+				t.Errorf("%s takes a choice nothing can list", name)
+			}
+			continue
+		}
+		if tool.CatalogCommand == "" || !strings.Contains(tool.ModelArgs, "{model}") {
+			t.Errorf("%s catalog %q command %q model_args %q", name, tool.Catalog, tool.CatalogCommand, tool.ModelArgs)
+		}
+		if tool.EffortArgs != "" && !strings.Contains(tool.EffortArgs, "{effort}") {
+			t.Errorf("%s effort_args = %q", name, tool.EffortArgs)
+		}
+		if tool.ProfileArgs != "" && !strings.Contains(tool.ProfileArgs, "{profile}") {
+			t.Errorf("%s profile_args = %q", name, tool.ProfileArgs)
+		}
+	}
+}
+
+func TestOmpDefaults(t *testing.T) {
+	cfg, err := Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool, ok := cfg.Tools["omp"]
+	if !ok || tool.Command != "omp" || tool.SessionStore != "omp" || tool.ResumeByIDCommand != "omp --resume {id}" || tool.ReviveCommand != "omp --continue" {
+		t.Fatalf("omp defaults = %+v", tool)
+	}
+	// omp has no flag that picks the session id or forks from the command
+	// line, and takes its startup prompt as a positional argument.
+	if tool.SessionIDFlag != "" || tool.ForkCommand != "" || tool.ForkKeys != "" || tool.PromptFlag != "" {
+		t.Fatalf("unsupported omp flags: %+v", tool)
+	}
+	if tool.MCP != "" || tool.DefaultStatus != "finished" || tool.InputPrefix == "" {
+		t.Fatalf("omp status defaults = %+v", tool)
 	}
 }

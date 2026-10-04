@@ -20,7 +20,7 @@ import (
 
 func TestNewSessionFormUsesSettingsDefaultTool(t *testing.T) {
 	m := buildModel(t)
-	if err := m.store.SetSetting("default_tool", "ready-tool"); err != nil {
+	if err := m.store.SetDefaultTool("ready-tool"); err != nil {
 		t.Fatal(err)
 	}
 	m.openForm()
@@ -172,7 +172,7 @@ func TestFormHiddenLastToolFallsBackToSettings(t *testing.T) {
 	pickFormTool(t, m, "ready-tool")
 	m.form.worktree = true
 	submitFormSession(t, m, "first")
-	if err := m.store.SetSetting(hiddenToolsSetting, "ready-tool"); err != nil {
+	if err := m.store.SetHiddenTools(map[string]bool{"ready-tool": true}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -317,7 +317,7 @@ func TestGroupFormRejectsDuplicateWithoutChangingIt(t *testing.T) {
 	m := buildModel(t)
 	first := t.TempDir()
 	second := t.TempDir()
-	if err := m.store.AddGroup("backend", first, "on"); err != nil {
+	if err := m.store.AddGroup("backend", first, "on", ""); err != nil {
 		t.Fatalf("seed group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -702,10 +702,10 @@ func TestSpawnAwaitsARenameOnlyWhenItAsksForOne(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
 
-	if err := m.spawnSession("claude", "claude-aaaa", dir, "", "do things", true, false); err != nil {
+	if err := m.spawnSession("claude", "claude-aaaa", dir, "", "do things", true, false, config.Choice{}); err != nil {
 		t.Fatalf("auto-named spawn: %v", err)
 	}
-	if err := m.spawnSession("claude", "custom", dir, "", "do things", false, false); err != nil {
+	if err := m.spawnSession("claude", "custom", dir, "", "do things", false, false, config.Choice{}); err != nil {
 		t.Fatalf("custom spawn: %v", err)
 	}
 	for _, sess := range m.sessions {
@@ -723,7 +723,7 @@ func TestSpawnMarksDeferredDirective(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
 
-	if err := m.spawnSession("claude", "claude-aaaa", dir, "", "/compact", true, false); err != nil {
+	if err := m.spawnSession("claude", "claude-aaaa", dir, "", "/compact", true, false, config.Choice{}); err != nil {
 		t.Fatalf("slash spawn: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -732,10 +732,10 @@ func TestSpawnMarksDeferredDirective(t *testing.T) {
 		t.Fatal("slash-prompt spawn should defer the directive")
 	}
 
-	if err := m.spawnSession("claude", "claude-bbbb", dir, "", "do things", true, false); err != nil {
+	if err := m.spawnSession("claude", "claude-bbbb", dir, "", "do things", true, false, config.Choice{}); err != nil {
 		t.Fatalf("plain spawn: %v", err)
 	}
-	if err := m.spawnSession("claude", "custom", dir, "", "/compact", false, false); err != nil {
+	if err := m.spawnSession("claude", "custom", dir, "", "/compact", false, false, config.Choice{}); err != nil {
 		t.Fatalf("custom spawn: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -751,7 +751,7 @@ func TestSpawnMarksDeferredDirective(t *testing.T) {
 
 func TestDeferredDirectiveSentWhenPaneReady(t *testing.T) {
 	m := buildModel(t)
-	if err := m.spawnSession("ready-tool", "ready-tool-abcd", t.TempDir(), "", "", true, false); err != nil {
+	if err := m.spawnSession("ready-tool", "ready-tool-abcd", t.TempDir(), "", "", true, false, config.Choice{}); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -780,7 +780,7 @@ func TestDeferredDirectiveSentWhenPaneReady(t *testing.T) {
 
 func TestSendModePromptSurvivesPollerRestart(t *testing.T) {
 	m := buildModel(t)
-	if err := m.spawnSession("send-tool", "custom", t.TempDir(), "", "do the work", false, false); err != nil {
+	if err := m.spawnSession("send-tool", "custom", t.TempDir(), "", "do the work", false, false, config.Choice{}); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	sess := m.sessionRows()[0]
@@ -810,7 +810,7 @@ func TestSendModePromptSurvivesPollerRestart(t *testing.T) {
 
 func TestSendModeReconcilesAmbiguousDeliveryWithoutResending(t *testing.T) {
 	m := buildModel(t)
-	if err := m.spawnSession("send-tool", "custom", t.TempDir(), "", "do not resend", false, false); err != nil {
+	if err := m.spawnSession("send-tool", "custom", t.TempDir(), "", "do not resend", false, false, config.Choice{}); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	sess := m.sessionRows()[0]
@@ -841,7 +841,7 @@ func TestSendModeReconcilesAmbiguousDeliveryWithoutResending(t *testing.T) {
 
 func TestSendModeSurfacesSendFailureAndDoesNotRetry(t *testing.T) {
 	m := buildModel(t)
-	if err := m.spawnSession("send-tool", "custom", t.TempDir(), "", "cannot deliver", false, false); err != nil {
+	if err := m.spawnSession("send-tool", "custom", t.TempDir(), "", "cannot deliver", false, false, config.Choice{}); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	sess, err := m.store.Get(m.sessionRows()[0].ID)
@@ -908,25 +908,6 @@ func TestBuildLaunchCarriesSessionID(t *testing.T) {
 	}
 	if env[hooks.EnvSessionID] != "abcd1234" || env[hooks.EnvStatusFile] == "" {
 		t.Fatalf("hooked tool env = %v, want session id and status file", env)
-	}
-}
-
-func TestSortedToolNamesOrder(t *testing.T) {
-	cfg := config.Config{Tools: map[string]config.Tool{
-		"grok":     {Command: "grok"},
-		"muse":     {Command: "muse"},
-		"gemini":   {Command: "gemini"},
-		"codex":    {Command: "codex"},
-		"claude":   {Command: "claude"},
-		"opencode": {Command: "opencode"},
-		"pi":       {Command: "pi"},
-		"zephyr":   {Command: "zephyr"},
-		"acme":     {Command: "acme"},
-	}}
-	got := sortedToolNames(cfg)
-	want := []string{"claude", "opencode", "codex", "grok", "gemini", "pi", "acme", "muse", "zephyr"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("sortedToolNames = %v want %v", got, want)
 	}
 }
 
@@ -1048,7 +1029,7 @@ func TestSpawnWorktreeSessionCreatesWorktree(t *testing.T) {
 	}
 	initGitRepo(t, repo)
 
-	if err := m.spawnSession("claude", "wt-feat", repo, "", "", false, true); err != nil {
+	if err := m.spawnSession("claude", "wt-feat", repo, "", "", false, true, config.Choice{}); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	sessions, err := m.store.ListSessions(true)
@@ -1071,7 +1052,7 @@ func TestSpawnWorktreeSessionCreatesWorktree(t *testing.T) {
 func TestSpawnWorktreeInNonRepoBlocks(t *testing.T) {
 	m := buildModel(t)
 	plain := t.TempDir()
-	err := m.spawnSession("claude", "wt-fail", plain, "", "", false, true)
+	err := m.spawnSession("claude", "wt-fail", plain, "", "", false, true, config.Choice{})
 	if err == nil {
 		t.Fatal("non-repo dir must block the spawn")
 	}
@@ -1100,7 +1081,7 @@ func TestSpawnWorktreeRollsBackWhenLaunchBuildFails(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(hooksDir, 0o755) })
 
-	err := m.spawnSession("claude", "wt-launchfail", repo, "", "", false, true)
+	err := m.spawnSession("claude", "wt-launchfail", repo, "", "", false, true, config.Choice{})
 	if err == nil {
 		t.Fatal("launch-build failure must block the spawn")
 	}
@@ -1149,6 +1130,190 @@ func TestGroupFormStoresWorktreeChoice(t *testing.T) {
 	}
 }
 
+// repoWithDevelop is a committed repo whose develop branch sits one commit
+// past main.
+func repoWithDevelop(t *testing.T) string {
+	t.Helper()
+	repo := seedRepo(t)
+	runGit(t, repo, "checkout", "-q", "-b", "develop")
+	runGit(t, repo, "commit", "-q", "--allow-empty", "-m", "develop work")
+	runGit(t, repo, "checkout", "-q", "main")
+	return repo
+}
+
+func TestGroupFormStepsBaseThroughTheRepoBranches(t *testing.T) {
+	m := buildModel(t)
+	repo := repoWithDevelop(t)
+	m.openGroupForm()
+	m.groupForm.name.SetValue("based")
+	m.groupForm.path.SetValue(repo)
+	m.groupForm.focus = gfBase
+	m.handleGroupFormKey(tea.KeyMsg{Type: tea.KeyRight})
+	if m.groupForm.base != "develop" {
+		t.Fatalf("first step past auto = %q, want develop", m.groupForm.base)
+	}
+	if view := m.viewGroupForm(); !strings.Contains(view, "◂ develop ▸") {
+		t.Fatalf("base row should show the pick, got %q", view)
+	}
+	m.handleGroupFormKey(tea.KeyMsg{Type: tea.KeyLeft})
+	if m.groupForm.base != "" {
+		t.Fatalf("stepping back = %q, want auto", m.groupForm.base)
+	}
+	m.handleGroupFormKey(tea.KeyMsg{Type: tea.KeyRight})
+	_, cmd := m.handleGroupFormKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
+	groups, err := m.store.Groups()
+	if err != nil {
+		t.Fatalf("groups: %v", err)
+	}
+	if len(groups) != 1 || groups[0].Base != "develop" {
+		t.Fatalf("group form should store the base, got %+v", groups)
+	}
+}
+
+func TestGroupFormShowsTheBaseAutoInherits(t *testing.T) {
+	m := buildModel(t)
+	if err := m.store.CreateGroup("parent", t.TempDir()); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	if err := m.store.SetGroupBase("parent", "develop"); err != nil {
+		t.Fatalf("set base: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "parent")
+	m.openGroupForm()
+	if view := m.viewGroupForm(); !strings.Contains(view, "◂ auto ▸  develop from parent") {
+		t.Fatalf("auto under a parent with a base should name it, got %q", view)
+	}
+}
+
+func TestGroupFormBaseNeedsARepository(t *testing.T) {
+	m := buildModel(t)
+	m.openGroupForm()
+	m.groupForm.path.SetValue(t.TempDir())
+	m.groupForm.focus = gfBase
+	m.handleGroupFormKey(tea.KeyMsg{Type: tea.KeyRight})
+	if m.groupForm.base != "" {
+		t.Fatalf("a directory with no branches has nothing to pick, got %q", m.groupForm.base)
+	}
+	if !strings.Contains(m.errBar.text, "group base") {
+		t.Fatalf("refused step should say why, got %q", m.errBar.text)
+	}
+}
+
+func TestSpawnWorktreeBranchesFromTheGroupBase(t *testing.T) {
+	m := buildModel(t)
+	repo := repoWithDevelop(t)
+	if err := m.store.CreateGroup("parent", repo); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	if err := m.store.CreateGroup("parent/child", ""); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	if err := m.store.SetGroupBase("parent", "develop"); err != nil {
+		t.Fatalf("set base: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+
+	if err := m.spawnSession("claude", "on-develop", repo, "parent/child", "", false, true, config.Choice{}); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	sessions, err := m.store.ListSessions(true)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if got, want := gitOutput(t, sessions[0].Cwd, "rev-parse", "HEAD"), gitOutput(t, repo, "rev-parse", "develop"); got != want {
+		t.Fatalf("worktree starts at %s, want the inherited base develop at %s", got, want)
+	}
+}
+
+func TestFormShowsAndFetchesTheWorktreeBase(t *testing.T) {
+	m := buildModel(t)
+	remote := seedRepo(t)
+	clone := filepath.Join(t.TempDir(), "clone")
+	runGit(t, remote, "clone", "-q", remote, clone)
+	runGit(t, remote, "commit", "-q", "--allow-empty", "-m", "after the clone")
+	if err := m.store.SetSetting(worktreeSetting, "on"); err != nil {
+		t.Fatalf("set setting: %v", err)
+	}
+	m.openForm()
+	m.form.dir.SetValue(clone)
+
+	cmd := m.refreshSpawnBase()
+	if cmd == nil {
+		t.Fatal("an open form spawning a worktree should refresh its base")
+	}
+	next := m.recordBaseFetch(cmd().(baseFetchedMsg))
+	if view := m.viewForm(); !strings.Contains(view, "origin/main (auto) · fetching") {
+		t.Fatalf("form should name the base while it fetches, got %q", view)
+	}
+	m.recordBaseFetch(next().(baseFetchedMsg))
+	if got, want := gitOutput(t, clone, "rev-parse", "origin/main"), gitOutput(t, remote, "rev-parse", "HEAD"); got != want {
+		t.Fatalf("origin/main = %s after the fetch, want %s", got, want)
+	}
+	if view := m.viewForm(); !strings.Contains(view, "origin/main (auto)") || strings.Contains(view, "fetching") {
+		t.Fatalf("a finished fetch leaves the base alone on its row, got %q", view)
+	}
+	if m.refreshSpawnBase() != nil {
+		t.Fatal("a base fetched a moment ago should not be fetched again")
+	}
+}
+
+func TestSettingsFetchOnSpawnTurnsTheFetchOff(t *testing.T) {
+	m := buildModel(t)
+	remote := seedRepo(t)
+	clone := filepath.Join(t.TempDir(), "clone")
+	runGit(t, remote, "clone", "-q", remote, clone)
+	runGit(t, remote, "commit", "-q", "--allow-empty", "-m", "after the clone")
+	cached := gitOutput(t, clone, "rev-parse", "origin/main")
+
+	m.openSettings()
+	for m.settings.field != settingsFieldBaseFetch {
+		m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
+	}
+	if !strings.Contains(ansi.Strip(m.viewSettings()), "fetch on spawn") {
+		t.Fatalf("settings do not show the fetch row:\n%s", ansi.Strip(m.viewSettings()))
+	}
+	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
+	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if chosen, err := m.store.Setting(baseFetchSetting); err != nil || chosen != "off" {
+		t.Fatalf("want stored off, got %q err %v", chosen, err)
+	}
+
+	if err := m.store.SetSetting(worktreeSetting, "on"); err != nil {
+		t.Fatalf("set setting: %v", err)
+	}
+	m.openForm()
+	m.form.dir.SetValue(clone)
+	if next := m.recordBaseFetch(m.refreshSpawnBase()().(baseFetchedMsg)); next != nil {
+		t.Fatal("with the fetch turned off, resolving the base should be the last step")
+	}
+	if view := m.viewForm(); !strings.Contains(view, "origin/main (auto)") || strings.Contains(view, "fetch") {
+		t.Fatalf("the base row should name the base alone, got %q", view)
+	}
+	if got := gitOutput(t, clone, "rev-parse", "origin/main"); got != cached {
+		t.Fatalf("origin/main moved to %s with the fetch off, want %s", got, cached)
+	}
+}
+
+func TestFormMarksAFailedBaseFetch(t *testing.T) {
+	m := buildModel(t)
+	remote := seedRepo(t)
+	clone := filepath.Join(t.TempDir(), "clone")
+	runGit(t, remote, "clone", "-q", remote, clone)
+	runGit(t, clone, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "gone"))
+	if err := m.store.SetSetting(worktreeSetting, "on"); err != nil {
+		t.Fatalf("set setting: %v", err)
+	}
+	m.openForm()
+	m.form.dir.SetValue(clone)
+	next := m.recordBaseFetch(m.refreshSpawnBase()().(baseFetchedMsg))
+	m.recordBaseFetch(next().(baseFetchedMsg))
+	if view := m.viewForm(); !strings.Contains(view, "origin/main (auto) · fetch failed") {
+		t.Fatalf("form should say the base was not refreshed, got %q", view)
+	}
+}
+
 // The poller waits for a prompt the agent has to pick up on its own, so only
 // a command-line prompt is stored; a tool typed into gets its prompt as the
 // first pending input instead. Read before the first poll, which delivers it.
@@ -1156,10 +1321,10 @@ func TestSpawnStoresOnlyACommandLinePrompt(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
 
-	if err := m.spawnSession("ready-tool", "ready-tool-abcd", dir, "", "/compact", true, false); err != nil {
+	if err := m.spawnSession("ready-tool", "ready-tool-abcd", dir, "", "/compact", true, false, config.Choice{}); err != nil {
 		t.Fatalf("command-line spawn: %v", err)
 	}
-	if err := m.spawnSession("send-tool", "send-tool-abcd", dir, "", "/compact", true, false); err != nil {
+	if err := m.spawnSession("send-tool", "send-tool-abcd", dir, "", "/compact", true, false, config.Choice{}); err != nil {
 		t.Fatalf("send spawn: %v", err)
 	}
 

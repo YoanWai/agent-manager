@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/YoanWai/agent-manager/internal/config"
 )
 
 func newTestStore(t *testing.T) *Store {
@@ -885,6 +887,28 @@ func TestLaunchPromptRoundTrip(t *testing.T) {
 	}
 }
 
+func TestChoiceRoundTrip(t *testing.T) {
+	s := newTestStore(t)
+	choice := config.Choice{Provider: "xai-oauth", Model: "grok-4.6", Effort: "high", Profile: "work"}
+	if err := s.CreateSession(Session{ID: "c1", Name: "hermes-1ff0", Tool: "hermes", Cwd: "/tmp", Choice: choice}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	got, err := s.Get("c1")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Choice != choice {
+		t.Fatalf("choice = %+v, want %+v", got.Choice, choice)
+	}
+	list, err := s.ListSessions(true)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if list[0].Choice != choice {
+		t.Fatalf("list dropped the choice: %+v", list[0])
+	}
+}
+
 // A database from before the column reaches it through the migration, where
 // its rows read back with the empty prompt that turns the wait off.
 func TestLaunchPromptMigratesAnExistingDatabase(t *testing.T) {
@@ -1000,10 +1024,10 @@ func TestGroupWorktreeRoundtrip(t *testing.T) {
 
 func TestAddGroupStoresSettingsWithoutReplacingExistingGroup(t *testing.T) {
 	st := newTestStore(t)
-	if err := st.AddGroup("backend", "/first", "off"); err != nil {
+	if err := st.AddGroup("backend", "/first", "off", "develop"); err != nil {
 		t.Fatalf("add: %v", err)
 	}
-	if err := st.AddGroup("backend", "/second", "on"); !errors.Is(err, ErrGroupExists) {
+	if err := st.AddGroup("backend", "/second", "on", "main"); !errors.Is(err, ErrGroupExists) {
 		t.Fatalf("duplicate add error = %v, want ErrGroupExists", err)
 	}
 
@@ -1011,8 +1035,35 @@ func TestAddGroupStoresSettingsWithoutReplacingExistingGroup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("groups: %v", err)
 	}
-	if len(groups) != 1 || groups[0].Path != "/first" || groups[0].Worktree != "off" {
+	if len(groups) != 1 || groups[0].Path != "/first" || groups[0].Worktree != "off" || groups[0].Base != "develop" {
 		t.Fatalf("duplicate add changed group: %+v", groups)
+	}
+}
+
+func TestGroupBaseRoundtrip(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateGroup("backend", ""); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := st.SetGroupBase("backend", "upstream/develop"); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	groups, err := st.Groups()
+	if err != nil {
+		t.Fatalf("groups: %v", err)
+	}
+	if groups[0].Base != "upstream/develop" {
+		t.Fatalf("base lost: %+v", groups[0])
+	}
+	if err := st.SetGroupBase("backend", ""); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	groups, err = st.Groups()
+	if err != nil {
+		t.Fatalf("groups: %v", err)
+	}
+	if groups[0].Base != "" {
+		t.Fatalf("base should clear back to inherit: %+v", groups[0])
 	}
 }
 
@@ -1184,6 +1235,9 @@ func TestMoveGroupReparentsSubtree(t *testing.T) {
 	if err := st.SetGroupWorktree("alpha/inner", "on"); err != nil {
 		t.Fatalf("set worktree: %v", err)
 	}
+	if err := st.SetGroupBase("alpha/inner", "develop"); err != nil {
+		t.Fatalf("set base: %v", err)
+	}
 	if err := st.CreateSession(sample("a", "alpha/inner")); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -1213,6 +1267,9 @@ func TestMoveGroupReparentsSubtree(t *testing.T) {
 	}
 	if moved.Worktree != "on" {
 		t.Fatalf("beta/inner worktree = %q, want on", moved.Worktree)
+	}
+	if moved.Base != "develop" {
+		t.Fatalf("beta/inner base = %q, want develop", moved.Base)
 	}
 	if _, ok := byName["beta/inner/deep"]; !ok {
 		t.Fatal("beta/inner/deep missing")
@@ -1898,6 +1955,50 @@ func TestPaneSizeRoundTripsAndRefusesJunk(t *testing.T) {
 		if _, _, err := st.PaneSize(); err == nil {
 			t.Fatalf("pane size %q was read as a size", junk)
 		}
+	}
+}
+
+func TestCoordinationWaitsForTheUserUntilSetProactive(t *testing.T) {
+	st := newTestStore(t)
+	if proactive, err := st.ProactiveCoordination(); err != nil || proactive {
+		t.Fatalf("an unset store is proactive = %v, err = %v; want on request", proactive, err)
+	}
+	for _, want := range []bool{true, false} {
+		if err := st.SetProactiveCoordination(want); err != nil {
+			t.Fatalf("SetProactiveCoordination(%v): %v", want, err)
+		}
+		if proactive, err := st.ProactiveCoordination(); err != nil || proactive != want {
+			t.Fatalf("proactive = %v, err = %v; want %v", proactive, err, want)
+		}
+	}
+}
+
+func TestSettingsCLIChoicesRoundTrip(t *testing.T) {
+	st := newTestStore(t)
+	if tool, err := st.DefaultTool(); err != nil || tool != "" {
+		t.Fatalf("unset default tool = %q, %v; want empty, nil", tool, err)
+	}
+	if hidden, err := st.HiddenTools(); err != nil || len(hidden) != 0 {
+		t.Fatalf("unset hidden tools = %v, %v; want none", hidden, err)
+	}
+	if err := st.SetDefaultTool("codex"); err != nil {
+		t.Fatalf("SetDefaultTool: %v", err)
+	}
+	if tool, err := st.DefaultTool(); err != nil || tool != "codex" {
+		t.Fatalf("default tool = %q, %v; want codex", tool, err)
+	}
+	if err := st.SetHiddenTools(map[string]bool{"grok": true, "codex": true, "pi": false}); err != nil {
+		t.Fatalf("SetHiddenTools: %v", err)
+	}
+	if raw, err := st.Setting(hiddenToolsSetting); err != nil || raw != "codex,grok" {
+		t.Fatalf("stored hidden tools = %q, %v; want the sorted names that are on", raw, err)
+	}
+	if err := st.SetSetting(hiddenToolsSetting, "codex, grok"); err != nil {
+		t.Fatalf("SetSetting: %v", err)
+	}
+	hidden, err := st.HiddenTools()
+	if err != nil || len(hidden) != 2 || !hidden["codex"] || !hidden["grok"] {
+		t.Fatalf("hidden tools = %v, %v; want codex and grok", hidden, err)
 	}
 }
 

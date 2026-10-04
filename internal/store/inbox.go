@@ -69,7 +69,7 @@ const (
 // Read and write share one immediate transaction: two managers starting
 // together would otherwise both read an empty holder and both speak for
 // the sessions no server has claimed.
-func (s *Store) ClaimPoller(socket string, now time.Time, pollInterval time.Duration) (string, error) {
+func (s *Store) ClaimPoller(socket string, now time.Time) (string, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return "", err
@@ -81,7 +81,7 @@ func (s *Store) ClaimPoller(socket string, now time.Time, pollInterval time.Dura
 		return "", err
 	}
 	if holder != "" && holder != socket {
-		awake, err := heartbeatAwake(tx, now, pollInterval)
+		awake, err := heartbeatAwake(tx, now)
 		if err != nil {
 			return "", err
 		}
@@ -101,8 +101,8 @@ func (s *Store) ClaimPoller(socket string, now time.Time, pollInterval time.Dura
 
 // ManagerAwake reports whether a manager stamped the heartbeat recently
 // enough to still be polling. Queued messages only move while it runs.
-func (s *Store) ManagerAwake(now time.Time, pollInterval time.Duration) (bool, error) {
-	return heartbeatAwake(s.db, now, pollInterval)
+func (s *Store) ManagerAwake(now time.Time) (bool, error) {
+	return heartbeatAwake(s.db, now)
 }
 
 // rowQuerier lets the claim read the stamp inside its own transaction.
@@ -110,7 +110,7 @@ type rowQuerier interface {
 	QueryRow(query string, args ...any) *sql.Row
 }
 
-func heartbeatAwake(q rowQuerier, now time.Time, pollInterval time.Duration) (bool, error) {
+func heartbeatAwake(q rowQuerier, now time.Time) (bool, error) {
 	var raw string
 	err := q.QueryRow(`SELECT value FROM settings WHERE key = ?`, PollerHeartbeatKey).Scan(&raw)
 	if err == sql.ErrNoRows || raw == "" {
@@ -123,7 +123,7 @@ func heartbeatAwake(q rowQuerier, now time.Time, pollInterval time.Duration) (bo
 	if err != nil {
 		return false, fmt.Errorf("poller heartbeat %q is not a timestamp: %w", raw, err)
 	}
-	return now.Sub(time.Unix(0, stamp)) < max(3*pollInterval, PollerHeartbeatStale), nil
+	return now.Sub(time.Unix(0, stamp)) < PollerHeartbeatStale, nil
 }
 
 var (

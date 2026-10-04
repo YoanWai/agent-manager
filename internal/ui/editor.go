@@ -10,8 +10,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// guiEditors are probed on PATH when nothing is configured, in the order
-// preferred.
+// guiEditors are probed on PATH, in the order preferred: Settings offers
+// the ones found, and the first found opens when nothing is picked.
 var guiEditors = []string{"code", "cursor", "windsurf", "zed", "subl", "idea"}
 
 // detachedEditors open a window of their own and return at once, leaving
@@ -118,7 +118,7 @@ func (m *Model) launchEditor(path string) (tea.Model, tea.Cmd) {
 	line := m.resolveEditor()
 	cmd, ok := editorCommand(line, path)
 	if !ok {
-		m.errBar.text = `no editor found: set editor = "code" in config.toml`
+		m.errBar.text = "no editor found: pick one in Settings > editor"
 		return m, nil
 	}
 	m.errBar.text = ""
@@ -141,16 +141,22 @@ func startEditorCmd(cmd *exec.Cmd, name, path string) tea.Cmd {
 	}
 }
 
-// resolveEditor picks the command that opens a directory: the configured
-// editor, then a GUI editor this machine has. $VISUAL and $EDITOR come
-// last because they usually name the editor set for git commit messages,
-// not the one a project is meant to open in.
+// resolveEditor picks the command that opens a directory: the one Settings
+// holds, else the one this machine offers.
 func (m *Model) resolveEditor() string {
-	candidates := []string{m.cfg.Editor, os.Getenv("AGENT_MANAGER_EDITOR")}
-	for _, line := range candidates {
-		if line = strings.TrimSpace(line); line != "" {
-			return line
-		}
+	if line := strings.TrimSpace(m.editor); line != "" {
+		return line
+	}
+	return detectEditor()
+}
+
+// detectEditor is the editor an unset Settings row falls back to:
+// $AGENT_MANAGER_EDITOR, then a GUI editor this machine has. $VISUAL and
+// $EDITOR come last because they usually name the editor set for git
+// commit messages, not the one a project is meant to open in.
+func detectEditor() string {
+	if line := strings.TrimSpace(os.Getenv("AGENT_MANAGER_EDITOR")); line != "" {
+		return line
 	}
 	for _, name := range guiEditors {
 		if _, err := lookPath(name); err == nil {
@@ -165,7 +171,7 @@ func (m *Model) resolveEditor() string {
 	return ""
 }
 
-// Editor settings and environment variables are parsed as argv, never shell code.
+// Settings and environment lines are parsed as argv, never shell code.
 func editorCommand(line, path string) (*exec.Cmd, bool) {
 	argv := splitEditorLine(line)
 	if len(argv) == 0 {

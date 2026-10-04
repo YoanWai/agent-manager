@@ -44,6 +44,9 @@ func DetectManager(execPath string) Manager {
 		return Manager{Name: "Homebrew", Command: []string{"brew", "upgrade", "agent-manager"}}
 	case miseManaged(slashPath):
 		return Manager{Name: "mise", Command: []string{"mise", "upgrade", "--bump", "ubi:YoanWai/agent-manager"}}
+	case strings.HasPrefix(slashPath, "/nix/store/"):
+		// The store is read-only, and the user's Nix profile or config owns the install.
+		return Manager{Name: "Nix", Advice: "installed with Nix; update it through Nix, for example: nix profile upgrade agent-manager"}
 	case pacmanOwns(path):
 		return archManager()
 	}

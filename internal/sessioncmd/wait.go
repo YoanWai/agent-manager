@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 )
@@ -21,7 +22,6 @@ const (
 	// schedule: Codex CLI stops at 60s by default. A caller asking for more
 	// gets it only where its own client allows it.
 	MaxWaitTimeout = 5 * time.Minute
-	minWaitPoll    = 500 * time.Millisecond
 
 	WaitReached  = "reached"
 	WaitTimedOut = "timed_out"
@@ -92,7 +92,7 @@ func (s *Sessions) Wait(ctx context.Context, sessionID, targetID string, until [
 		return WaitResult{}, err
 	}
 	defer runtime.store.Close()
-	caller, err := runtime.caller(sessionID)
+	caller, err := runtime.optionalCaller(sessionID)
 	if err != nil {
 		return WaitResult{}, err
 	}
@@ -111,13 +111,9 @@ func (s *Sessions) Wait(ctx context.Context, sessionID, targetID string, until [
 	for _, state := range states {
 		wanted[state] = true
 	}
-	poll := runtime.cfg.PollInterval.Duration
-	if poll < minWaitPoll {
-		poll = minWaitPoll
-	}
 	started := time.Now()
 	deadline := started.Add(timeout)
-	ticker := time.NewTicker(poll)
+	ticker := time.NewTicker(config.PollInterval)
 	defer ticker.Stop()
 	// Waking only on the poll would overshoot a timeout shorter than the
 	// interval, which is the one thing a caller asked this call to bound.

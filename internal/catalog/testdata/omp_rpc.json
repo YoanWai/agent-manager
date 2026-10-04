@@ -1,0 +1,44 @@
+{
+ "models": [
+  {
+   "id": "deepseek-ai/DeepSeek-R1",
+   "name": "DeepSeek-R1",
+   "provider": "huggingface",
+   "reasoning": true
+  },
+  {
+   "id": "deepseek-ai/DeepSeek-V3",
+   "name": "DeepSeek-V3",
+   "provider": "huggingface",
+   "reasoning": false
+  },
+  {
+   "id": "moonshotai/Kimi-K3",
+   "name": "Kimi K3",
+   "provider": "huggingface",
+   "reasoning": true
+  }
+ ],
+ "state_model": {
+  "id": "deepseek-ai/DeepSeek-R1",
+  "name": "DeepSeek-R1",
+  "provider": "huggingface",
+  "reasoning": true
+ },
+ "levels": {
+  "huggingface/deepseek-ai/DeepSeek-R1": [
+   "off",
+   "high",
+   "max"
+  ],
+  "huggingface/deepseek-ai/DeepSeek-V3": [
+   "off"
+  ],
+  "huggingface/moonshotai/Kimi-K3": [
+   "off",
+   "low",
+   "high",
+   "max"
+  ]
+ }
+}

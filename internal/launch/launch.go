@@ -31,16 +31,22 @@ const DeferredRenameDirective = `Run this exact shell command once, replacing <n
 // later use without asking it to rename now.
 const RenameAvailableNote = `This session is already named. You can rename it later with agent-manager rename "<name>" only if the user asks. Do not rename it now. Then do the task:`
 
-// CoordinationNote points a session at the subcommands. Only tools whose
-// agent has no MCP client get it; the rest are told the same thing by the
-// tool descriptions the MCP server registers.
-const CoordinationNote = `Other agent sessions may be running beside you in Agent Manager: run "agent-manager help" in your shell for the subcommands that list them, message them, share a task list and reserve the files you are about to edit.`
+// The coordination notes point a session at the subcommands, in the mode
+// the user picked. Only tools whose agent has no MCP client get one; the
+// rest hear the same from the MCP server's instructions. Both open alike,
+// which is how the poller tells either echo for the manager's own words.
+const ProactiveCoordinationNote = `Other agent sessions may be running beside you in Agent Manager: run "agent-manager help" in your shell for the subcommands that list them, message them, share a task list and reserve the files you are about to edit.`
 
-func coordinationNote(toolName string, tool config.Tool) string {
+const OnRequestCoordinationNote = `Other agent sessions may be running beside you in Agent Manager. Work with them only when the user asks: on your own, do not list, message, spawn or wait on sessions, or claim tasks from the shared list. When the user does ask, run "agent-manager help" in your shell for the subcommands.`
+
+func coordinationNote(toolName string, tool config.Tool, proactive bool) string {
 	if mcpreg.Style(toolName, tool.MCP) != mcpreg.StyleNone {
 		return ""
 	}
-	return CoordinationNote
+	if proactive {
+		return ProactiveCoordinationNote
+	}
+	return OnRequestCoordinationNote
 }
 
 // DirectiveEmbeddable reports whether a launch note can ride the
@@ -117,8 +123,8 @@ type Plan struct {
 // session id launch with one, so a later revive resumes this exact
 // conversation rather than the directory's most recent one; tools without
 // the flag mint their own id, captured after launch by the poller.
-func Assemble(toolName string, tool config.Tool, rawPrompt string, autoNamed bool) Plan {
-	note := coordinationNote(toolName, tool)
+func Assemble(toolName string, tool config.Tool, rawPrompt string, autoNamed, proactive bool) Plan {
+	note := coordinationNote(toolName, tool, proactive)
 	carried := DirectiveEmbeddable(rawPrompt)
 	prompt := Prompt(note, rawPrompt, autoNamed)
 	plan := Plan{Command: WithPrompt(tool, tool.Command, prompt)}
@@ -176,11 +182,13 @@ func Environment(manager *hooks.Manager, toolName string, tool config.Tool, base
 		return "", nil, err
 	}
 	env := map[string]string{hooks.EnvSessionID: id}
-	// Grok's terminal theme leaves row backgrounds unpainted, and only its config file selects it.
 	if toolName == "grok" {
+		// Grok's terminal theme leaves row backgrounds unpainted, and only its config file selects it.
 		if err := ensureGrokTerminalTheme(); err != nil {
 			return "", nil, err
 		}
+		// A shared leader runs every session's shell under the environment of the session that started it.
+		baseCommand += " --no-leader"
 	}
 	command, err := mcpreg.Apply(mcpreg.Style(toolName, tool.MCP), Executable(), manager.Dir(), baseCommand, env)
 	if err != nil {
@@ -189,7 +197,7 @@ func Environment(manager *hooks.Manager, toolName string, tool config.Tool, base
 	if tool.StatusSource != hooks.StatusSourceClaude {
 		return command, env, nil
 	}
-	settingsPath, err := manager.EnsureSettings()
+	settingsPath, err := manager.WriteSettings(id)
 	if err != nil {
 		return "", nil, err
 	}

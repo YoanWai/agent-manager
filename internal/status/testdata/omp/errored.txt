@@ -1,0 +1,30 @@
+ now fail
+
+
+ Error: 429 Rate limit reached for requests
+   Rate limit reached for requests (type=rate_limit_exceeded)
+
+ Error: 429 Rate limit reached for requests
+   Rate limit reached for requests (type=rate_limit_exceeded)
+
+ Error: Retry failed after 2 attempts: Retry cancelled
+
+
+ now boom
+
+
+
+ again boom
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ✘ 400 invalid request: model rejected the input
+   invalid request: model rejected the input (type=invalid_request_error)
+   raw-http-request=/home/user/.omp/logs/omp
+   /http-400-requests/1790502442006-3lqw53u8mgg1w.json
+ Dismissed when you send your next message.
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+                                                                                     Hello from the fake model
+ π > ⬢ Local Model > 🗑 ~/project                                ▶─0.1%─────╎──────────┃───────────────────33K─
+╰─

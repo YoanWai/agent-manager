@@ -1,15 +1,19 @@
 package config
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
-	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/YoanWai/agent-manager/internal/tmux"
 )
+
+// PollInterval is how often the manager reads every pane for status,
+// preview and stats.
+const PollInterval = 2 * time.Second
 
 type Rule struct {
 	State   string `toml:"state"`
@@ -54,11 +58,11 @@ type Tool struct {
 	ForkKeys string `toml:"fork_keys"`
 	// SessionStore names the built-in capturer that reads back the id a tool
 	// minted itself when it has no SessionIDFlag ("codex", "opencode",
-	// "gemini", "hermes", "command-code" or "muse").
+	// "gemini", "hermes", "command-code", "muse", "antigravity" or "omp").
 	SessionStore string `toml:"session_store"`
 	// MCP picks how the agent-manager MCP server is registered into this
 	// tool's sessions: "claude", "codex", "opencode", "grok", "gemini",
-	// "hermes", "command-code", "muse" or "none".
+	// "hermes", "command-code", "muse", "antigravity" or "none".
 	// Empty uses the tool's config key when it names a known style.
 	MCP            string `toml:"mcp"`
 	StatusSource   string `toml:"status_source"`
@@ -133,39 +137,28 @@ type Tool struct {
 	// preview's height, not only grow it. A tool opts in once a height
 	// shrink is measured to keep its scrollback. Codex clears it (#369).
 	FitsHeight bool `toml:"fits_height"`
+	// Catalog names the reader that asks CatalogCommand for models, efforts
+	// and profiles; empty leaves those choices to the CLI.
+	Catalog        string `toml:"catalog"`
+	CatalogCommand string `toml:"catalog_command"`
+	// ModelArgs, EffortArgs and ProfileArgs take {provider}, {model},
+	// {effort} and {profile}; a launch line holding {choice} takes them there.
+	ModelArgs   string `toml:"model_args"`
+	EffortArgs  string `toml:"effort_args"`
+	ProfileArgs string `toml:"profile_args"`
+}
+
+// Choice is what a session launches its CLI on; empty keeps the CLI's default.
+type Choice struct {
+	// Provider routes Model where the CLI picks per provider (hermes).
+	Provider string
+	Model    string
+	Effort   string
+	Profile  string
 }
 
 type Config struct {
-	PollInterval Duration `toml:"poll_interval"`
-	// Editor is the command the o key opens a directory in, arguments
-	// included. Empty falls back to $AGENT_MANAGER_EDITOR, then a GUI
-	// editor found on PATH, then $VISUAL / $EDITOR.
-	Editor string `toml:"editor"`
-	// Tools is what the binary ships. The file is never decoded for it, so a
-	// [tools.<name>] block left there cannot fail the load.
-	Tools        map[string]Tool `toml:"-"`
-	IgnoredTools []string        `toml:"-"`
-	Keybindings  Keybindings     `toml:"keybindings"`
-	SessionKeys  keybind.Table   `toml:"-"`
-	ListKeys     keybind.Table   `toml:"-"`
-}
-
-type Keybindings struct {
-	Session map[string]keybind.Binding `toml:"session"`
-	List    map[string]keybind.Binding `toml:"list"`
-}
-
-type Duration struct {
-	time.Duration
-}
-
-func (d *Duration) UnmarshalText(text []byte) error {
-	parsed, err := time.ParseDuration(string(text))
-	if err != nil {
-		return err
-	}
-	d.Duration = parsed
-	return nil
+	Tools map[string]Tool
 }
 
 func Dir() (string, error) {
@@ -176,61 +169,50 @@ func Dir() (string, error) {
 	return filepath.Join(base, "agent-manager"), nil
 }
 
-func Path() (string, error) {
-	dir, err := Dir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, "config.toml"), nil
+// WithChoice puts the choice's flags on every line that launches the tool.
+// A line the tool leaves empty stays empty, so the fallbacks that read
+// emptiness still take the same path.
+func (t Tool) WithChoice(choice Choice) Tool {
+	flags := choice.flags(t)
+	t.Command = placeChoice(t.Command, flags)
+	t.ReviveCommand = placeChoice(t.ReviveCommand, flags)
+	t.ResumeByIDCommand = placeChoice(t.ResumeByIDCommand, flags)
+	t.ResumePickerCommand = placeChoice(t.ResumePickerCommand, flags)
+	t.ForkCommand = placeChoice(t.ForkCommand, flags)
+	return t
 }
 
-func Load() (Config, error) {
-	dir, err := Dir()
-	if err != nil {
-		return Config{}, err
+// choicePlaceholder puts the flags ahead of a subcommand that refuses them.
+const choicePlaceholder = "{choice}"
+
+func placeChoice(line, flags string) string {
+	if line == "" {
+		return ""
 	}
-	return LoadDir(dir)
+	if before, after, found := strings.Cut(line, choicePlaceholder); found {
+		return strings.TrimRight(before, " ") + flags + after
+	}
+	return line + flags
 }
 
-// LoadDir loads the configuration kept in dir. Session-scoped commands
-// already receive the manager's config directory, so they must not resolve
-// it again from a possibly different process environment.
-func LoadDir(dir string) (Config, error) {
-	path := filepath.Join(dir, "config.toml")
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		if err := writeStarter(path); err != nil {
-			return Config{}, err
+func (c Choice) flags(t Tool) string {
+	values := strings.NewReplacer(
+		"{provider}", tmux.ShellQuote(c.Provider),
+		"{model}", tmux.ShellQuote(c.Model),
+		"{effort}", tmux.ShellQuote(c.Effort),
+		"{profile}", tmux.ShellQuote(c.Profile),
+	)
+	var flags strings.Builder
+	for _, arg := range []struct{ template, value string }{
+		{t.ProfileArgs, c.Profile},
+		{t.ModelArgs, c.Model},
+		{t.EffortArgs, c.Effort},
+	} {
+		if arg.template != "" && arg.value != "" {
+			flags.WriteString(" " + values.Replace(arg.template))
 		}
 	}
-	var cfg Config
-	meta, err := toml.DecodeFile(path, &cfg)
-	if err != nil {
-		return Config{}, fmt.Errorf("parse config %s: %w", path, err)
-	}
-	builtin, err := Default()
-	if err != nil {
-		return Config{}, err
-	}
-	cfg.IgnoredTools = declaredTools(meta)
-	cfg.Tools = builtin.Tools
-	cfg.applyDefaults()
-	if err := cfg.resolveKeys(); err != nil {
-		return Config{}, fmt.Errorf("config %s: %w", path, err)
-	}
-	return cfg, nil
-}
-
-// declaredTools reads the [tools.<name>] headers off the key list, since
-// nothing under them is decoded.
-func declaredTools(meta toml.MetaData) []string {
-	var names []string
-	for _, key := range meta.Keys() {
-		if len(key) == 2 && key[0] == "tools" {
-			names = append(names, key[1])
-		}
-	}
-	sort.Strings(names)
-	return names
+	return flags.String()
 }
 
 // Default returns the built-in configuration without touching the filesystem.
@@ -243,36 +225,10 @@ func Default() (Config, error) {
 	}
 	cfg := Config{Tools: shipped.Tools}
 	cfg.applyDefaults()
-	if err := cfg.resolveKeys(); err != nil {
-		return Config{}, err
-	}
 	return cfg, nil
 }
 
-func (c *Config) resolveKeys() error {
-	session, err := keybind.SessionTable(c.Keybindings.Session)
-	if err != nil {
-		return err
-	}
-	list, err := keybind.ListTable(c.Keybindings.List)
-	if err != nil {
-		return err
-	}
-	c.SessionKeys, c.ListKeys = session, list
-	return nil
-}
-
-func (c Config) keys(scope string) keybind.Table {
-	if scope == keybind.ScopeList {
-		return c.ListKeys
-	}
-	return c.SessionKeys
-}
-
 func (c *Config) applyDefaults() {
-	if c.PollInterval.Duration <= 0 {
-		c.PollInterval.Duration = 2 * time.Second
-	}
 	if c.Tools == nil {
 		c.Tools = map[string]Tool{}
 	}
@@ -307,42 +263,6 @@ func (c Config) ShellTool() (string, Tool) {
 	return chosen, c.Tools[chosen]
 }
 
-func writeStarter(path string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(path, []byte(starterConfig), 0o644)
-}
-
-// starterConfig is the file a first run writes: what the manager reads
-// from it, and nothing else.
-const starterConfig = `poll_interval = "2s"
-
-# The editor "o" opens a directory in, arguments allowed: "code -n", or
-# "open -a 'Visual Studio Code'". Quotes group an argument that carries a
-# space; the line is run directly, never through a shell. Left unset,
-# Agent Manager takes $AGENT_MANAGER_EDITOR, then the first GUI editor on
-# PATH (code, cursor, windsurf, zed, subl, idea), then $VISUAL or $EDITOR.
-# editor = "code"
-
-# The keys the manager keeps for itself inside a session; every other key
-# reaches the agent. An action takes one key or a list, written as
-# ctrl+<key>, alt+<key> or f1..f12, and "none" hands its key to the agent.
-# [keybindings.session]
-# detach = ["ctrl+q", "ctrl+\\"]
-# review = "ctrl+r"
-# editor = "f3"
-
-# The keys of the manager's own list, one line per action; Settings > keys
-# in the manager names them all. A plain character, a key name (space,
-# enter, up, shift+up ...), ctrl+<key>, alt+<key> or f1..f12; "none" turns
-# an action off. esc and ctrl+c stay as they are.
-# [keybindings.list]
-# new_session = "N"
-# prompt = ["space", "p"]
-# quit = "none"
-`
-
 // builtinTools is the only source of tool definitions, so a release that
 // fixes a CLI's new screen fixes it for everyone on that release.
 const builtinTools = `# Rules are matched top-down against the visible pane text (ANSI stripped);
@@ -372,6 +292,11 @@ resume_picker_command = "claude --resume"
 fork_command = "claude --resume {id} --fork-session --session-id {new_id} --name {name}"
 # fallback when a session predates id tracking: resumes the last conversation there
 revive_command = "claude --continue"
+# safe mode keeps hooks and MCP servers out of the probe
+catalog = "claude"
+catalog_command = "claude -p --input-format stream-json --output-format stream-json --verbose --safe-mode --no-session-persistence"
+model_args = "--model {model}"
+effort_args = "--effort {effort}"
 # hooks report status events directly; the pane rules below stay as fallback
 status_source = "claude-hooks"
 default_status = "idle"
@@ -434,6 +359,10 @@ fork_command = "opencode --session {id} --fork"
 resume_picker_command = "opencode"
 resume_picker_keys = "/sessions"
 revive_command = "opencode --continue"
+# its ACP server would leave a session in the global session list
+catalog = "opencode"
+catalog_command = "opencode serve --port 0"
+model_args = "-m {model}"
 # opencode's positional argument is the project path, so the optional
 # session prompt travels behind this flag
 prompt_flag = "--prompt"
@@ -481,6 +410,10 @@ resume_picker_command = "codex resume"
 fork_command = "codex fork {id}"
 # fallback: resumes the most recent session in the working directory
 revive_command = "codex resume --last"
+catalog = "codex"
+catalog_command = "codex app-server"
+model_args = "-m {model}"
+effort_args = "-c model_reasoning_effort={effort}"
 default_status = "idle"
 activity_cutoff = "(?m)^›"
 # a completed turn closes on a dim label ("  02:41", "  done 2:41 AM",
@@ -521,6 +454,10 @@ session_store = "muse"
 resume_by_id_command = "muse resume {id}"
 resume_picker_command = "muse resume"
 revive_command = "muse resume --last"
+catalog = "muse"
+catalog_command = "muse serve --no-session-log"
+model_args = "--model {model}"
+effort_args = "--reasoning-effort {effort}"
 # A second process cannot open a running session, so the fork is made inside
 # the source by /fork and opens in its own pane by id.
 fork_keys = "/fork"
@@ -552,6 +489,10 @@ fork_command = "grok --resume {id} --fork-session --session-id {new_id}"
 resume_picker_command = "grok"
 # fallback: resumes the most recent session for the working directory
 revive_command = "grok --continue"
+catalog = "acp"
+catalog_command = "grok agent stdio"
+model_args = "-m {model}"
+effort_args = "--reasoning-effort {effort}"
 default_status = "idle"
 # boxed fullscreen and flush-left minimal; indented transcript prompt lines stay out
 activity_cutoff = "(?m)^(?:\\s*│ )?❯"
@@ -592,6 +533,10 @@ resume_picker_command = "gemini -i /resume"
 # fallback when a session predates id tracking: resumes the project's most
 # recent session
 revive_command = "gemini --resume latest"
+# gemini takes no effort flag
+catalog = "acp"
+catalog_command = "gemini --acp"
+model_args = "-m {model}"
 default_status = "idle"
 # the composer line: "> " normally, "! " in shell mode, "* " in yolo mode
 activity_cutoff = "(?m)^\\s*[>!*] "
@@ -626,15 +571,60 @@ rules = [
   { state = "errored", pattern = "(?m)^✕ " },
 ]
 
+# Antigravity CLI (agy), Google's successor to Gemini CLI
+[tools.antigravity]
+command = "agy"
+# agy reads a startup prompt only from -p, which exits after one turn, or -i
+prompt_flag = "-i"
+# agy mints its own conversation id; capture it after launch and resume it
+session_store = "antigravity"
+resume_by_id_command = "agy --conversation {id}"
+# agy -i /resume hands "/resume" to the model as a prompt; typed at the
+# composer it opens the conversation picker
+resume_picker_command = "agy"
+resume_picker_keys = "/resume"
+revive_command = "agy -c"
+default_status = "idle"
+# the composer row: ">" at rest, "!" in bash mode
+activity_cutoff = "(?m)^[>!]"
+# blanks, rules, and the logo rows with the account and model beside them
+chrome_line = "^\\s*─*\\s*$|^\\s*[▄▀]{2}"
+# a thinking summary and a queued message both open on ▸ and own the rows
+# drawn under them
+chrome_block = "^▸ "
+# accept-edits and plan modes name themselves inside the empty composer
+input_placeholder = "^\\S+ mode: .+ \\(shift\\+tab to cycle\\)$"
+# a submitted prompt echoes into the transcript on its own ">" row; replies
+# carry no marker of their own
+user_echo = "^> "
+rules = [
+  # dialogs, the slash-command menu and the /resume picker draw this hint in
+  # their footer, which the resting composer never does; anchoring it to the
+  # pane's tail keeps a reply quoting it from reading as a dialog
+  { state = "waiting", pattern = "(?m)^[ \\t]*(?:Keyboard: )?↑/↓ Navigate\\b[^\\n]*(?:\\n[^\\n]*){0,3}(?:\\n[ \\t]*)*\\z" },
+  # the spinner row of a running turn ("⣻  Generating..."), which stays up
+  # while a queued message swaps the footer below for its own hint
+  { state = "working", pattern = "(?m)^[\\x{2800}-\\x{28FF}][ \\t]+\\S" },
+  # the footer of a running turn; bash mode's footer indents the same words
+  { state = "working", pattern = "(?m)^esc to cancel\\b" },
+]
+
 [tools.hermes]
 # The classic REPL exposes stable prompt markers for status and prompt delivery.
 command = "hermes --cli"
 # Hermes creates its session id on first input and records it in state.db.
 session_store = "hermes"
 resume_by_id_command = "hermes --cli --resume {id}"
-# the interactive session browser; Enter on a row resumes it
-resume_picker_command = "hermes --cli sessions browse"
+# the interactive session browser; Enter on a row resumes it, carrying the
+# flags given before the subcommand, which refuses them after it
+resume_picker_command = "hermes --cli {choice} sessions browse"
 revive_command = "hermes --cli --continue"
+# hermes lists no effort levels, so the effort is typed
+catalog = "hermes"
+catalog_command = "hermes serve --skip-build --port 0"
+model_args = "--provider {provider} -m {model}"
+effort_args = "--reasoning {effort}"
+profile_args = "-p {profile}"
 # Hermes only accepts startup text through chat -q, which is one-shot and
 # exits. Start the real REPL, then submit the prompt when its composer appears.
 prompt_mode = "send"
@@ -680,6 +670,10 @@ resume_by_id_command = "pi --session {id}"
 fork_command = "pi --fork {id} --session-id {new_id}"
 resume_picker_command = "pi --resume"
 revive_command = "pi --continue"
+catalog = "pi"
+catalog_command = "pi --mode rpc --no-session"
+model_args = "--model {model}"
+effort_args = "--thinking {effort}"
 # Pi shows a spinner for active work. A resting pane is a finished turn until
 # the user acknowledges it; a resumed conversation is already acknowledged.
 default_status = "finished"
@@ -707,6 +701,45 @@ rules = [
   # editors keep the standalone shape, so both are live. The composer may
   # hold a draft typed mid-turn.
   { state = "working", pattern = "(?ms)^[ \\t]*(?:[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏][ \\t]+(?:Working|Running|Retrying|Compacting context|Auto-compacting|Context overflow detected, Auto-compacting|Summarizing branch)\\b[^\\n]*\\n[ \\t]*\\n─{8,}[ \\t]*|─+[ \\t]+[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏][ \\t]+(?:Working|Running|Retrying|Compacting context|Auto-compacting|Context overflow detected, Auto-compacting|Summarizing branch)\\b[^\\n]*)\\n(?:(?:[^─\\n][^\\n]*)?\\n)*─{8,}[ \\t]*(?:\\n[^\\n]*){2,5}[ \\t]*(?:\\n[ \\t]*)*\\z" },
+]
+
+[tools.omp]
+command = "omp"
+# omp mints its own UUIDv7 and writes the session file once the first
+# reply lands; capture it from ~/.omp/agent/sessions and resume it
+session_store = "omp"
+resume_by_id_command = "omp --resume {id}"
+resume_picker_command = "omp --resume"
+revive_command = "omp --continue"
+catalog = "omp"
+catalog_command = "omp --mode rpc --no-session"
+model_args = "--model {model}"
+effort_args = "--thinking {effort}"
+# omp prints no turn-end marker: a resting pane is a finished turn until
+# the user acknowledges it, the same as pi.
+default_status = "finished"
+# The default "band" composer is a status band over a "╰─ " gutter row the
+# caret sits on. The activity region starts at the pane origin, as for pi,
+# so the rules below decide every state and a reflow is never streaming.
+input_prefix = "^╰─ ?"
+activity_cutoff = "(?ms)\\A.*^╰─(?:[ \\t][^\\n]*)?$"
+# rules, the status band, and the session title omp docks at the right edge
+chrome_line = "^[ \\t]*─{8,}[ \\t]*$|^ [^ \\n](?: \\d+[smh])? [^\\n]*─{4,}[^\\n]*$|^[ \\t]{20,}\\S[^\\n]*$"
+rules = [
+  # tool approval and ask dialogs replace the composer
+  { state = "waiting", pattern = "(?m)^│ \\S+ navigate  \\S+ select  \\S+ cancel[ \\t]*│$" },
+  # first-run splash and setup wizard
+  { state = "waiting", pattern = "(?m)press \\S+ to skip|\\S+ confirm · \\S+ skip · \\S+ exit setup" },
+  # a reply that ends in a question waits on the user; while a turn runs
+  # the "⎋ Working…" row sits between the reply and the band
+  { state = "waiting", pattern = "(?ms)\\?[ \\t]*\\n(?:[ \\t]*\\n)*(?:[ \\t]{20,}\\S[^\\n]*\\n)? [^ \\n][^\\n]*\\n╰─(?:[ \\t][^\\n]*)?(?:\\n(?:[ \\t][^\\n]*)?)*\\z" },
+  # while a turn runs the band trades its idle brand for a spinner and an
+  # elapsed timer ("⠋ 4s > ⬢ model > …"); retries keep it running
+  { state = "working", pattern = "(?ms)^ [^ \\n] \\d+[smh] [^\\n]*\\n╰─(?:[ \\t][^\\n]*)?(?:\\n(?:[ \\t][^\\n]*)?)*\\z" },
+  # a failed turn: the boxed provider error, or an "Error:" row, right
+  # above the resting band
+  { state = "errored", pattern = "(?ms)^ Dismissed when you send your next message\\.[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*(?:[ \\t]{20,}\\S[^\\n]*\\n)? [^ \\n][^\\n]*\\n╰─(?:[ \\t][^\\n]*)?(?:\\n(?:[ \\t][^\\n]*)?)*\\z" },
+  { state = "errored", pattern = "(?ms)^ Error: [^\\n]*(?:\\n[ \\t]+\\S[^\\n]*){0,8}\\n(?:[ \\t]*\\n)*(?:[ \\t]{20,}\\S[^\\n]*\\n)? [^ \\n][^\\n]*\\n╰─(?:[ \\t][^\\n]*)?(?:\\n(?:[ \\t][^\\n]*)?)*\\z" },
 ]
 
 [tools.command-code]

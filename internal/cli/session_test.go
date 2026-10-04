@@ -162,12 +162,15 @@ func TestSessionCommandsParseArgumentsAndPrintSentences(t *testing.T) {
 func TestSpawnPassesOnlyTheFlagsGiven(t *testing.T) {
 	out := &bytes.Buffer{}
 	fake := &fakeSessions{session: sampleSession()}
-	args := []string{"--name", "api-worker", "--prompt", "build the api", "--tool", "claude", "--directory", "/repo"}
+	args := []string{"--name", "api-worker", "--prompt", "build the api", "--tool", "claude", "--directory", "/repo", "--model", "sonnet", "--effort", "high", "--profile", "work"}
 	if err := runSpawn(out, fake, args, "cafe0001"); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	if fake.opts.Name != "api-worker" || fake.opts.Prompt != "build the api" || fake.opts.Tool != "claude" || fake.opts.Directory != "/repo" {
 		t.Fatalf("spawn opts = %+v", fake.opts)
+	}
+	if fake.opts.Model != "sonnet" || fake.opts.Effort != "high" || fake.opts.Profile != "work" {
+		t.Fatalf("spawn choice = %+v", fake.opts)
 	}
 	if fake.opts.Group != nil || fake.opts.Worktree != nil {
 		t.Fatalf("untyped flags should stay inherited, got group=%v worktree=%v", fake.opts.Group, fake.opts.Worktree)

@@ -686,7 +686,7 @@ func TestFooterTogglesNameTheNextAction(t *testing.T) {
 	// Wide enough that the row budget keeps every app-wide binding.
 	m.width = 260
 	dir := t.TempDir()
-	if err := m.store.AddGroup("work", dir, "off"); err != nil {
+	if err := m.store.AddGroup("work", dir, "off", ""); err != nil {
 		t.Fatalf("seed group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -811,6 +811,39 @@ func TestFooterInFocusModeNamesTheKeyTable(t *testing.T) {
 	}
 }
 
+func TestRowLegendDropsRestoreInActiveView(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+
+	if err := m.store.CreateGroup("zone", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "alpha", dir, "zone")
+
+	m.selectSessionRow(t, "alpha")
+	legend := m.rowLegend()
+	for _, pair := range legend.pairs {
+		if strings.Contains(pair[1], "restore") {
+			t.Fatalf("session legend in active view should not offer restore, got %+v", pair)
+		}
+	}
+	if !slices.ContainsFunc(legend.pairs, func(pair [2]string) bool { return pair[1] == "archive" }) {
+		t.Fatal("session legend in active view should still offer archive")
+	}
+
+	m.selectGroupRow(t, "zone")
+	legend = m.rowLegend()
+	for _, pair := range legend.pairs {
+		if strings.Contains(pair[1], "restore") {
+			t.Fatalf("group legend in active view should not offer restore, got %+v", pair)
+		}
+	}
+	if !slices.ContainsFunc(legend.pairs, func(pair [2]string) bool { return pair[1] == "archive" }) {
+		t.Fatal("group legend in active view should still offer archive")
+	}
+}
+
 // In the archived view, archiveSelected no-ops, so the legend should offer
 // only restore, on both a session row and a group row.
 func TestRowLegendDropsArchiveInArchivedView(t *testing.T) {
@@ -849,5 +882,31 @@ func TestRowLegendDropsArchiveInArchivedView(t *testing.T) {
 	}
 	if !slices.ContainsFunc(legend.pairs, func(pair [2]string) bool { return pair[1] == "restore" }) {
 		t.Fatal("group legend in archived view should still offer restore")
+	}
+}
+
+func TestQuickPromptFooterKeys(t *testing.T) {
+	m := shotModel()
+	m.quick.active = true
+	m.quick.toolNames = []string{"claude"}
+
+	footerOne := m.viewFooter()
+	if strings.Contains(footerOne, "shift+tab") || strings.Contains(footerOne, "previous tool") {
+		t.Errorf("one tool enabled, footer shouldn't have shift+tab: %q", footerOne)
+	}
+	if !strings.Contains(footerOne, "tab tool") {
+		t.Errorf("one tool enabled, missing tab pair: %q", footerOne)
+	}
+
+	m.quick.toolNames = []string{"claude", "codex"}
+	footerTwo := m.viewFooter()
+	if !strings.Contains(footerTwo, "shift+tab") || !strings.Contains(footerTwo, "previous tool") {
+		t.Errorf("two tools enabled, missing shift+tab pair: %q", footerTwo)
+	}
+	if !strings.Contains(footerTwo, "tab tool") {
+		t.Errorf("two tools enabled, missing tab pair: %q", footerTwo)
+	}
+	if !strings.Contains(footerTwo, "ctrl+t worktree") {
+		t.Errorf("missing ctrl+t worktree pair: %q", footerTwo)
 	}
 }

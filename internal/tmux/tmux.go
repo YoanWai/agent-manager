@@ -30,6 +30,9 @@ const defaultSocket = "agentmgr"
 // just detached from.
 const requestOption = "@am_request"
 
+// pinnedPrefixOption marks a prefix the manager set, the only kind unpinPrefix removes.
+const pinnedPrefixOption = "@am_pinned_prefix"
+
 const (
 	RequestReview = "review"
 	RequestEditor = "editor"
@@ -57,15 +60,16 @@ func (d *Driver) currentSessionKeys() keybind.Table {
 	return keybind.DefaultSession()
 }
 
-// PaneTheme is the background agent panes are rendered on. The manager
-// knows that color — it paints every capture on it and repaints the
-// terminal to it for a full-screen attach — but an agent inside a pane
-// cannot discover it: these sessions run on a server whose only client is
-// in control mode, so there is no terminal to answer an OSC 11 background
-// query, and the environment carries no COLORFGBG either. Declaring both
-// on the server hands an auto-detecting agent the answer the manager
-// already renders, instead of leaving it to guess.
+// PaneTheme is the text and background colors agent panes are rendered on.
+// The manager knows them — it paints every capture with them and sets the
+// terminal to them for a full-screen attach — but an agent inside a pane
+// cannot discover them: these sessions run on a server whose only client is
+// in control mode, so there is no terminal to answer an OSC 10 or 11 color
+// query, and the environment carries no COLORFGBG either. Declaring them on
+// the server hands an auto-detecting agent the answer the manager already
+// renders, instead of leaving it to guess.
 type PaneTheme struct {
+	Foreground string // "#rrggbb"; tmux answers pane OSC 10 queries with it
 	Background string // "#rrggbb"; tmux answers pane OSC 11 queries with it
 	ColorFgBg  string // "fg;bg" color indexes for agents reading COLORFGBG
 }
@@ -76,7 +80,7 @@ type PaneTheme struct {
 // windows a user opens inside a session later.
 func paneThemeArgs(t PaneTheme) []string {
 	return []string{
-		"set-option", "-g", "window-style", "bg=" + t.Background, ";",
+		"set-option", "-g", "window-style", "fg=" + t.Foreground + ",bg=" + t.Background, ";",
 		"set-environment", "-g", "COLORFGBG", t.ColorFgBg,
 	}
 }
@@ -357,7 +361,10 @@ func writeLaunchScript(id string, env map[string]string, command, colorFgBg stri
 	if colorFgBg != "" {
 		header = "export COLORFGBG=" + ShellQuote(colorFgBg) + "\n"
 	}
-	body := "#!/bin/sh\n" + header + exportLines(env) + command + "\n" +
+	// set -m puts the agent in its own process group, so tmux reports the
+	// agent's cwd as pane_current_path rather than this script's, which
+	// never moves.
+	body := "#!/bin/sh\nset -m\n" + header + exportLines(env) + command + "\n" +
 		"printf '%s\\n' " + ShellQuote(relaunchHint) + "\n" +
 		"exec " + ShellQuote(shell) + "\n"
 	if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
@@ -370,10 +377,50 @@ func (d *Driver) installSessionUX(name string) error {
 	if err := d.EnsureBindings(); err != nil {
 		return err
 	}
+	// A new session carries no pin to take off, so only a chosen prefix needs work here.
+	if keys := d.tmuxPrefixKeys(); len(keys) > 0 {
+		if err := d.pinPrefix(name, keys); err != nil {
+			return err
+		}
+	}
 	if err := d.styleStatusBar(name); err != nil {
 		return err
 	}
 	_, err := d.run("set-option", "-t", name, "status-left", "")
+	return err
+}
+
+func (d *Driver) tmuxPrefixKeys() []keybind.Key {
+	return d.currentSessionKeys().Binding(keybind.TmuxPrefix).Keys()
+}
+
+// Set per session, so unsetting hands back the server-wide prefix tmux.conf sets.
+func (d *Driver) pinPrefix(name string, keys []keybind.Key) error {
+	secondary := "None"
+	if len(keys) > 1 {
+		secondary = keys[1].Tmux()
+	}
+	_, err := d.run(commandList(
+		[]string{"set-option", "-t", name, "prefix", keys[0].Tmux()},
+		[]string{"set-option", "-t", name, "prefix2", secondary},
+		[]string{"set-option", "-t", name, pinnedPrefixOption, "on"},
+	)...)
+	return err
+}
+
+func (d *Driver) unpinPrefix(name string) error {
+	pinned, err := d.run("show-options", "-q", "-v", "-t", name, pinnedPrefixOption)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(pinned) == "" {
+		return nil
+	}
+	_, err = d.run(commandList(
+		[]string{"set-option", "-u", "-t", name, "prefix"},
+		[]string{"set-option", "-u", "-t", name, "prefix2"},
+		[]string{"set-option", "-u", "-t", name, pinnedPrefixOption},
+	)...)
 	return err
 }
 
@@ -543,11 +590,19 @@ func (d *Driver) ownedRootBindings() ([]string, error) {
 	return keys, nil
 }
 
-// RefreshChrome re-applies the status bar chrome to a live session so a
-// session created before a manager update picks up the current footer,
-// without disturbing its name label.
+// RefreshChrome re-applies the prefix and status bar chrome, keeping the session's name label.
 func (d *Driver) RefreshChrome(id string) error {
-	return d.styleStatusBar(sessionName(id))
+	name := sessionName(id)
+	var err error
+	if keys := d.tmuxPrefixKeys(); len(keys) > 0 {
+		err = d.pinPrefix(name, keys)
+	} else {
+		err = d.unpinPrefix(name)
+	}
+	if err != nil {
+		return err
+	}
+	return d.styleStatusBar(name)
 }
 
 // SendText delivers text into the session's pane and presses Enter, so the
@@ -911,15 +966,20 @@ func noServer(out string) bool {
 }
 
 // Pane is a managed session's agent pane: the process running in it, the
-// size the preview draws it at, and how many panes share its window. A
-// count above one means the agent split the window itself, leaving its own
-// pane a fraction of the geometry the manager pinned.
+// size the preview draws it at, how many panes share its window, its tty,
+// and the directory the agent sits in now. A count above one means the agent split
+// the window itself, leaving its own pane a fraction of the geometry the
+// manager pinned.
 type Pane struct {
 	PID       int
 	Width     int
 	Height    int
 	Panes     int
 	AltScreen bool
+	// TTY is the pane's tty device ("/dev/pts/3"), which omp keys the
+	// session it runs by.
+	TTY  string
+	Path string
 }
 
 // Panes returns every managed session's agent pane in a single tmux call,
@@ -928,7 +988,7 @@ type Pane struct {
 // session whose agent split the window reports the agent's own process and
 // the size the preview draws, never a teammate's.
 func (d *Driver) Panes() (map[string]Pane, error) {
-	out, err := exec.Command(d.bin, d.args("list-panes", "-a", "-f", "#{==:#{pane_index},0}", "-F", "#{session_name} #{pane_pid} #{pane_width} #{pane_height} #{window_panes} #{alternate_on}")...).CombinedOutput()
+	out, err := exec.Command(d.bin, d.args("list-panes", "-a", "-f", "#{==:#{pane_index},0}", "-F", "#{session_name} #{pane_pid} #{pane_width} #{pane_height} #{window_panes} #{alternate_on} #{pane_tty} #{pane_current_path}")...).CombinedOutput()
 	if err != nil {
 		if noServer(string(out)) {
 			return map[string]Pane{}, nil
@@ -936,7 +996,9 @@ func (d *Driver) Panes() (map[string]Pane, error) {
 		return nil, fmt.Errorf("tmux list-panes: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	panes := map[string]Pane{}
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+	// Only the final line break is trimmed: the last line may end in a
+	// space that is its path, or the separator before an empty one.
+	for _, line := range strings.Split(strings.TrimSuffix(string(out), "\n"), "\n") {
 		name, geometry, ok := strings.Cut(line, " ")
 		if !ok || !strings.HasPrefix(name, prefix) {
 			continue
@@ -945,7 +1007,11 @@ func (d *Driver) Panes() (map[string]Pane, error) {
 		if _, taken := panes[id]; taken {
 			continue
 		}
-		var pane Pane
+		fields := strings.SplitN(geometry, " ", 7)
+		if len(fields) < 7 {
+			continue
+		}
+		pane := Pane{TTY: fields[5], Path: fields[6]}
 		var altScreen int
 		if _, err := fmt.Sscanf(geometry, "%d %d %d %d %d", &pane.PID, &pane.Width, &pane.Height, &pane.Panes, &altScreen); err == nil {
 			pane.AltScreen = altScreen == 1

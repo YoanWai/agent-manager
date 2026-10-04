@@ -1,0 +1,164 @@
+{
+ "session_new": {
+  "sessionId": "01a0f3d4-aa45-7481-8436-6e1f018bb22f",
+  "models": {
+   "currentModelId": "grok-4.7",
+   "availableModels": [
+    {
+     "modelId": "grok-4.7",
+     "name": "Grok 4.7",
+     "description": "SpaceXAI's latest frontier model"
+    },
+    {
+     "modelId": "grok-4.5",
+     "name": "Grok 4.5"
+    }
+   ]
+  },
+  "configOptions": [
+   {
+    "id": "model",
+    "name": "Model",
+    "category": "model",
+    "type": "select",
+    "currentValue": "grok-4.7",
+    "options": [
+     {
+      "value": "grok-4.7",
+      "name": "Grok 4.7"
+     },
+     {
+      "value": "grok-4.5",
+      "name": "Grok 4.5"
+     }
+    ]
+   },
+   {
+    "id": "reasoning_effort",
+    "name": "Reasoning Effort",
+    "category": "thought_level",
+    "type": "select",
+    "currentValue": "xhigh",
+    "options": [
+     {
+      "value": "xhigh",
+      "name": "Extra High",
+      "description": "Maximum reasoning for the hardest tasks."
+     },
+     {
+      "value": "high",
+      "name": "High",
+      "description": "Thorough reasoning and quality. Recommended."
+     },
+     {
+      "value": "medium",
+      "name": "Medium",
+      "description": "Strong quality with a faster turnaround."
+     },
+     {
+      "value": "low",
+      "name": "Low",
+      "description": "Fastest responses. Best for simple tasks."
+     }
+    ]
+   }
+  ]
+ },
+ "set_config_option": {
+  "grok-4.7": {
+   "configOptions": [
+    {
+     "id": "model",
+     "name": "Model",
+     "category": "model",
+     "type": "select",
+     "currentValue": "grok-4.7",
+     "options": [
+      {
+       "value": "grok-4.7",
+       "name": "Grok 4.7"
+      },
+      {
+       "value": "grok-4.5",
+       "name": "Grok 4.5"
+      }
+     ]
+    },
+    {
+     "id": "reasoning_effort",
+     "name": "Reasoning Effort",
+     "category": "thought_level",
+     "type": "select",
+     "currentValue": "xhigh",
+     "options": [
+      {
+       "value": "xhigh",
+       "name": "Extra High",
+       "description": "Maximum reasoning for the hardest tasks."
+      },
+      {
+       "value": "high",
+       "name": "High",
+       "description": "Thorough reasoning and quality. Recommended."
+      },
+      {
+       "value": "medium",
+       "name": "Medium",
+       "description": "Strong quality with a faster turnaround."
+      },
+      {
+       "value": "low",
+       "name": "Low",
+       "description": "Fastest responses. Best for simple tasks."
+      }
+     ]
+    }
+   ]
+  },
+  "grok-4.5": {
+   "configOptions": [
+    {
+     "id": "model",
+     "name": "Model",
+     "category": "model",
+     "type": "select",
+     "currentValue": "grok-4.5",
+     "options": [
+      {
+       "value": "grok-4.7",
+       "name": "Grok 4.7"
+      },
+      {
+       "value": "grok-4.5",
+       "name": "Grok 4.5"
+      }
+     ]
+    },
+    {
+     "id": "reasoning_effort",
+     "name": "Reasoning Effort",
+     "category": "thought_level",
+     "type": "select",
+     "currentValue": "xhigh",
+     "options": [
+      {
+       "value": "high",
+       "name": "High",
+       "description": "Highest implementation quality with extensive reasoning"
+      },
+      {
+       "value": "medium",
+       "name": "Medium",
+       "description": "Balanced effort with standard implementation and testing"
+      },
+      {
+       "value": "low",
+       "name": "Low",
+       "description": "Quick, fast implementations"
+      }
+     ]
+    }
+   ]
+  }
+ }
+}

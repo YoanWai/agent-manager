@@ -12,9 +12,21 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 )
 
 func (m *Model) View() string {
+	frame := m.view()
+	// A colorless profile renders the backdrop as a bare reset, which would
+	// strip the bold and reverse cells it lands beside.
+	if m.terminalBackground || lipgloss.ColorProfile() == termenv.Ascii {
+		return frame
+	}
+	return fillBackdrop(frame, m.width, current.Bg, current.Text)
+}
+
+func (m *Model) view() string {
+	m.noticeHit = noticeHit{}
 	if m.width == 0 {
 		return m.syncCursorAnchor("loading...")
 	}
@@ -493,17 +505,7 @@ func (m *Model) viewFooter() string {
 		return m.reorderFooter()
 	}
 	if m.quick.active {
-		worktreeHint := "off"
-		switch {
-		case !m.worktreeCapable(m.quickTargetDir()):
-			worktreeHint = worktreeUnavailable
-		case m.quickWorktreeOn():
-			worktreeHint = "on"
-		}
-		return m.transientFooter(legendSection{title: "Prompt", pairs: [][2]string{
-			{"↵", "send"}, {"↑↓", "target or caret"}, {"tab", "tool: " + m.quickTool()},
-			{"shift+tab", "worktree: " + worktreeHint}, {"esc", "close"},
-		}})
+		return m.transientFooter(legendSection{title: "Prompt", pairs: m.quickLegend()})
 	}
 	if m.split.resizeMode || m.split.dragging {
 		return m.transientFooter(legendSection{title: "Resize", pairs: [][2]string{
@@ -635,14 +637,12 @@ func (m *Model) rowLegend() legendSection {
 	return legendSection{title: title, pairs: legendPairsBound(pairs)}
 }
 
-// archiveRestoreLegend drops archive from the pair in the archived view: the
-// key is bound there but archiveSelected no-ops on an already-archived row,
-// so offering it would name a dead key.
+// archiveRestoreLegend leaves out the key of the pair that no-ops in this view.
 func (m *Model) archiveRestoreLegend() [2]string {
 	if m.showArchived {
 		return [2]string{m.listGlyph(keybind.Restore), "restore"}
 	}
-	return m.legendPair(keybind.Archive, "archive", keybind.Restore, "restore")
+	return [2]string{m.listGlyph(keybind.Archive), "archive"}
 }
 
 func (m *Model) legendPair(first, firstLabel, second, secondLabel string) [2]string {
@@ -699,15 +699,20 @@ func (m *Model) viewLegend() legendSection {
 	if m.allGroupsCollapsed() {
 		foldAllAction = "unfold all"
 	}
-	// Ordered by what a narrow terminal must keep: moving around, making
+	// Ordered by what a narrow terminal must keep: unread messages, which
+	// the footer is the only mouse path to, moving around, making
 	// something, the filters, then the keys a user already knows to look for.
 	k := m.listGlyph
 	emptyGroupsKey := k(keybind.EmptyGroups)
 	if m.showArchived {
 		emptyGroupsKey = ""
 	}
-	pairs := [][2]string{{strings.TrimSpace(k(keybind.Up) + " " + k(keybind.Down)), "navigate"}}
+	var pairs [][2]string
+	if len(m.activeNotices()) > 0 {
+		pairs = append(pairs, [2]string{k(keybind.Messages), "messages"})
+	}
 	pairs = append(pairs, [][2]string{
+		{strings.TrimSpace(k(keybind.Up) + " " + k(keybind.Down)), "navigate"},
 		{k(keybind.NewSession), "new"}, {k(keybind.Terminal), "terminal"}, {k(keybind.NewGroup), "group"}, {k(keybind.Search), "search"},
 		{k(keybind.Archived), archivedAction}, {k(keybind.Filter), statusFilterAction}, {emptyGroupsKey, emptyGroupsAction},
 		{k(keybind.Help), "keys"}, {k(keybind.Quit), "quit"},

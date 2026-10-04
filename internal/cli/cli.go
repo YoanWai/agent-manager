@@ -62,12 +62,15 @@ func Commands(version string) map[string]Command {
 	return table
 }
 
-func Help(version string) string {
+func Help(version string, proactive bool) string {
 	var help strings.Builder
 	help.WriteString("Usage: agent-manager [command]\n\n")
 	help.WriteString("Run the interactive manager when no command is given.\n\n")
 	help.WriteString("agent-manager runs your session beside the user's other agents and terminals.\n")
-	help.WriteString("update needs no caller, and issue and feature use only the exported session id. Every other command acts as the session or terminal it runs in, resolved from the environment or from the tmux pane, so run them from your own shell.\n")
+	if !proactive {
+		help.WriteString("Work with those other agents only when the user asks: on your own, do not list, message, spawn or wait on them, or create or claim shared tasks.\n")
+	}
+	help.WriteString("update needs no caller, and issue and feature use only the exported session id. Every other command acts as the session or terminal it runs in, resolved from the environment or from the tmux pane, so run them from your own shell. sessions, groups, spawn, read and wait also run from a script outside Agent Manager, where spawn defaults to the CLI picked in settings, the root group and the script's directory.\n")
 	for _, section := range sections(version) {
 		help.WriteString("\n" + section.title + "\n")
 		help.WriteString(usageLines(section.commands))

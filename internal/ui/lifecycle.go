@@ -169,7 +169,21 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if entry.isGroup {
-		return m.reviveMany(m.sessionsInGroup(entry.group), "no dead sessions to revive in "+entry.group)
+		sessions := m.sessionsInGroup(entry.group)
+		if dead := deadSessions(sessions); len(dead) > 1 {
+			m.confirm = confirmTarget{
+				isGroup:  true,
+				path:     entry.group,
+				action:   actionRevive,
+				batch:    true,
+				sessions: dead,
+				label: fmt.Sprintf("revive group %s (%d dead sessions)? brings them back.",
+					displayGroup(entry.group), len(dead)),
+			}
+			m.mode = modeConfirmDelete
+			return m, nil
+		}
+		return m.reviveMany(sessions, "no dead sessions to revive in "+entry.group)
 	}
 	set, err := m.sessionAndChildren(entry.sess)
 	if err != nil {
@@ -217,7 +231,18 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 // reviveAllDead relaunches every dead session in the current view, resuming
 // each by its captured id where one exists.
 func (m *Model) reviveAllDead() (tea.Model, tea.Cmd) {
-	return m.reviveMany(m.listedSessions(), "no dead sessions to revive")
+	sessions := m.listedSessions()
+	if dead := deadSessions(sessions); len(dead) > 1 {
+		m.confirm = confirmTarget{
+			action:   actionRevive,
+			batch:    true,
+			sessions: dead,
+			label:    fmt.Sprintf("revive every dead session (%d)? brings them back.", len(dead)),
+		}
+		m.mode = modeConfirmDelete
+		return m, nil
+	}
+	return m.reviveMany(sessions, "no dead sessions to revive")
 }
 
 // reviveMany relaunches every dead session in the list. It revives what it
@@ -226,10 +251,7 @@ func (m *Model) reviveAllDead() (tea.Model, tea.Cmd) {
 func (m *Model) reviveMany(sessions []store.Session, emptyNotice string) (tea.Model, tea.Cmd) {
 	revived, degraded := 0, 0
 	var firstErr string
-	for _, sess := range sessions {
-		if sess.Status != status.Dead {
-			continue
-		}
+	for _, sess := range deadSessions(sessions) {
 		if err := m.reviveSession(sess); err != nil {
 			if firstErr == "" {
 				firstErr = err.Error()
@@ -253,6 +275,16 @@ func (m *Model) reviveMany(sessions []store.Session, emptyNotice string) (tea.Mo
 	}
 	m.requestRefresh()
 	return m, nil
+}
+
+func deadSessions(sessions []store.Session) []store.Session {
+	var dead []store.Session
+	for _, sess := range sessions {
+		if sess.Status == status.Dead {
+			dead = append(dead, sess)
+		}
+	}
+	return dead
 }
 
 // sessionsInGroup lists the sessions the current view shows at or below a
@@ -292,6 +324,7 @@ func (m *Model) reviveSession(sess store.Session) error {
 	if !ok {
 		return fmt.Errorf("tool %s is no longer configured", sess.Tool)
 	}
+	tool = tool.WithChoice(sess.Choice)
 	if !isDir(sess.Cwd) {
 		return fmt.Errorf("working directory no longer exists: %s", sess.Cwd)
 	}
@@ -310,7 +343,7 @@ func (m *Model) reviveSession(sess store.Session) error {
 		return err
 	}
 	if sess.AgentSessionID == "" && tool.ResumePickerKeys != "" {
-		sessioncmd.InjectPickerKeys(m.tmux, sess.ID, tool.InputPrefix, tool.ResumePickerKeys)
+		sessioncmd.InjectPickerKeys(m.tmux, sess.ID, tool)
 	}
 	m.rebuildRows()
 	return nil
@@ -397,7 +430,7 @@ func (m *Model) relaunchInPane(sess store.Session) (tea.Cmd, error) {
 			return relaunchedMsg{sessID: sess.ID, err: err}
 		}
 		if sess.AgentSessionID == "" && tool.ResumePickerKeys != "" {
-			sessioncmd.InjectPickerKeys(driver, sess.ID, tool.InputPrefix, tool.ResumePickerKeys)
+			sessioncmd.InjectPickerKeys(driver, sess.ID, tool)
 		}
 		return relaunchedMsg{sessID: sess.ID, launchedAt: launchedAt}
 	}, nil
@@ -442,6 +475,7 @@ func (m *Model) restartSession(sess store.Session) error {
 	if err := m.killSession(sess); err != nil {
 		return err
 	}
+	tool = tool.WithChoice(sess.Choice)
 	baseCommand, agentSessionID := restartLaunch(tool)
 	if err := sessioncmd.SnapshotRelaunch(m.store, sess, tool, agentSessionID); err != nil {
 		return err
@@ -655,6 +689,10 @@ func (m *Model) archiveSelected() (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
+	if entry.isRoot() {
+		m.errBar.text = "root is the top level, not a group to archive"
+		return m, nil
+	}
 	if entry.isGroup {
 		subtree, err := m.store.SessionsInSubtree(entry.group)
 		if err != nil {
@@ -683,12 +721,20 @@ func (m *Model) archiveSelected() (tea.Model, tea.Cmd) {
 		}
 	}
 	m.mode = modeConfirmDelete
+	m.errBar.text = ""
 	return m, nil
 }
 
 func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
+	if !m.showArchived {
+		return m, nil
+	}
 	entry, ok := m.selectedRow()
 	if !ok {
+		return m, nil
+	}
+	if entry.isRoot() {
+		m.errBar.text = "root is the top level, not a group to restore"
 		return m, nil
 	}
 	if entry.isGroup {
@@ -697,12 +743,13 @@ func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
 			m.errBar.text = err.Error()
 			return m, nil
 		}
+		archived := archivedSessions(subtree)
 		m.confirm = confirmTarget{
 			isGroup:  true,
 			path:     entry.group,
 			action:   actionRestore,
-			sessions: subtree,
-			label:    fmt.Sprintf("restore group %s (%d sessions)? brings them back.", entry.group, len(subtree)),
+			sessions: archived,
+			label:    fmt.Sprintf("restore group %s (%d archived sessions)? brings them back.", entry.group, len(archived)),
 		}
 	} else {
 		sessions, err := m.sessionAndChildren(entry.sess)
@@ -710,6 +757,7 @@ func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
 			m.errBar.text = err.Error()
 			return m, nil
 		}
+		sessions = archivedSessions(sessions)
 		m.confirm = confirmTarget{
 			action:   actionRestore,
 			sessions: sessions,
@@ -719,6 +767,7 @@ func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
 		}
 	}
 	m.mode = modeConfirmDelete
+	m.errBar.text = ""
 	return m, nil
 }
 
@@ -883,6 +932,7 @@ func (m *Model) pruneGroupsLocally(removed []string) {
 	for _, path := range removed {
 		delete(m.groupPaths, path)
 		delete(m.groupWorktrees, path)
+		delete(m.groupBases, path)
 		delete(m.archivedGroups, path)
 	}
 	m.rebuildRows()
@@ -995,12 +1045,7 @@ func (m *Model) wholeGroupDelete(path string, subtree []store.Session) confirmTa
 // itself belong to the active view and survive; the group row goes only
 // once nothing is left beneath it.
 func archivedGroupDelete(path string, subtree []store.Session) confirmTarget {
-	var archived []store.Session
-	for _, sess := range subtree {
-		if sess.Archived {
-			archived = append(archived, sess)
-		}
-	}
+	archived := archivedSessions(subtree)
 	return confirmTarget{
 		isGroup:      true,
 		archivedOnly: true,
@@ -1009,6 +1054,16 @@ func archivedGroupDelete(path string, subtree []store.Session) confirmTarget {
 		label: fmt.Sprintf("delete %s from the archive (%d archived sessions)? kills their tmux sessions, live ones stay.",
 			path, len(archived)),
 	}
+}
+
+func archivedSessions(sessions []store.Session) []store.Session {
+	var archived []store.Session
+	for _, sess := range sessions {
+		if sess.Archived {
+			archived = append(archived, sess)
+		}
+	}
+	return archived
 }
 
 // restoreFromArchive brings one session back and takes it out of the
@@ -1104,6 +1159,21 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.errBar.text = ""
 			m.rebuildRows()
 		case actionRevive:
+			if m.confirm.batch {
+				panes, err := m.tmux.Panes()
+				if err != nil {
+					m.errBar.text = err.Error()
+					return m, nil
+				}
+				var stillDead []store.Session
+				for _, sess := range m.confirm.sessions {
+					if panes[sess.ID].PID == 0 {
+						stillDead = append(stillDead, sess)
+					}
+				}
+				m.confirm = confirmTarget{}
+				return m.reviveMany(stillDead, "")
+			}
 			for _, sess := range m.confirm.sessions {
 				if m.tmux.Exists(sess.ID) {
 					continue
@@ -1141,6 +1211,10 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.errBar.text = err.Error()
 					return m, nil
 				}
+				if err := m.hooks.RemoveSettings(sess.ID); err != nil {
+					m.errBar.text = err.Error()
+					return m, nil
+				}
 				delete(m.pickedRepos, sess.ID)
 				delete(m.awaitedRenames, sess.ID)
 				m.forgetLaunch(sess.ID)
@@ -1155,7 +1229,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 						m.errBar.text = "worktree cleanup: " + err.Error()
 					} else if used {
 						m.errBar.text = "worktree kept (used by another session): " + sess.Cwd
-					} else if removed, err := m.gitDrv.RemoveWorktreeIfClean(sess.WorktreeRepo, sess.Cwd, sess.WorktreeBranch); err != nil {
+					} else if removed, err := m.gitDrv.RemoveWorktreeIfClean(sess.WorktreeRepo, sess.Cwd, sess.WorktreeBranch, m.groupBase(sess.Group)); err != nil {
 						m.errBar.text = "worktree cleanup: " + err.Error()
 					} else if !removed {
 						m.errBar.text = "worktree kept (has work): " + sess.Cwd

@@ -220,6 +220,42 @@ func TestBulkActionsRespectStatusFilter(t *testing.T) {
 	}
 }
 
+func TestReviveAllLeavesSessionsTheFilterHides(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	for _, sess := range []store.Session{
+		{ID: "shown", Name: "held-dead", Tool: "claude", Cwd: dir, Status: status.Dead},
+		{ID: "hidden-a", Name: "filtered-a", Tool: "claude", Cwd: dir, Status: status.Dead},
+		{ID: "hidden-b", Name: "filtered-b", Tool: "claude", Cwd: dir, Status: status.Dead},
+	} {
+		if err := m.store.CreateSession(sess); err != nil {
+			t.Fatalf("create session %q: %v", sess.ID, err)
+		}
+	}
+	loadStoredRows(t, m)
+	// The attention filter lists a dead session only while the cursor holds it.
+	m.selectSessionRow(t, "held-dead")
+	m.statusFilter = statusFilterAttention
+	m.rebuildRows()
+	if got := sessionNames(m); !slices.Equal(got, []string{"held-dead"}) {
+		t.Fatalf("filtered list = %v, want only the selected dead session", got)
+	}
+
+	updated, _ := m.reviveAllDead()
+	m = updated.(*Model)
+	if m.mode == modeConfirmDelete {
+		t.Fatalf("hidden sessions were counted: %q", m.confirm.label)
+	}
+	if !m.tmux.Exists("shown") {
+		t.Fatalf("the listed dead session should revive at once, err = %q", m.errBar.text)
+	}
+	for _, id := range []string{"hidden-a", "hidden-b"} {
+		if m.tmux.Exists(id) {
+			t.Fatalf("revive all brought back %s, which the filter hides", id)
+		}
+	}
+}
+
 func TestAttentionFilterKeepsSelectedAfterAck(t *testing.T) {
 	m := attentionFilterAckFixture(t)
 	m.selectSessionRow(t, "just-finished")

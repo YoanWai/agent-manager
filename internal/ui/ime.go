@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -223,9 +224,7 @@ func (w *cursorOutputWriter) resetTerminalState() {
 func (w *cursorOutputWriter) trackAltScreen(p []byte) bool {
 	data := p
 	if len(w.altScreenPrefix) > 0 {
-		data = make([]byte, len(w.altScreenPrefix)+len(p))
-		copy(data, w.altScreenPrefix)
-		copy(data[len(w.altScreenPrefix):], p)
+		data = slices.Concat(w.altScreenPrefix, p)
 	}
 	enter := bytes.LastIndex(data, altScreenEnter)
 	exit := bytes.LastIndex(data, altScreenExit)

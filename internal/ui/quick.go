@@ -6,13 +6,14 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
-func (m *Model) openQuickMode() {
+func (m *Model) openQuickMode() tea.Cmd {
 	names, index := m.spawnToolSelection()
 	if len(names) == 0 {
 		m.errBar.text = "no CLIs enabled: open settings (s), then CLIs, to turn some on"
-		return
+		return nil
 	}
 	input := textarea.New()
 	input.CharLimit = 2000
@@ -36,7 +37,9 @@ func (m *Model) openQuickMode() {
 		toolIndex:      index,
 		closeAfterSend: m.quickCloseAfterSend(),
 		worktree:       m.spawnWorktreeDefault(m.quickTargetGroup()),
+		choice:         m.newChoice(names[index]),
 	}
+	return m.ensureCatalog(names[index])
 }
 
 // defaultToolSelection returns enabled tool names with the index of
@@ -68,6 +71,13 @@ func (m *Model) spawnToolSelection() ([]string, int) {
 // caret has a prompt row to move to, enter submits against whatever is
 // selected, and every other key is typed text.
 func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.quick.picking != pickNone {
+		// A click can move the target off the group the list was opened for.
+		if m.quickSpawning() {
+			return m.handleQuickPickKey(msg)
+		}
+		m.closeQuickPick()
+	}
 	switch msg.String() {
 	case "esc":
 		m.quick.active = false
@@ -86,19 +96,20 @@ func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.moveCursor(1)
 	case "tab", "alt+m":
-		if len(m.quick.toolNames) > 0 {
-			m.quick.toolIndex = (m.quick.toolIndex + 1) % len(m.quick.toolNames)
-		}
+		return m, m.cycleQuickTool(1)
+	case "shift+tab":
+		return m, m.cycleQuickTool(-1)
+	case quickModelKey:
+		m.openQuickPick(pickModel)
 		return m, nil
-	case "shift+tab", "alt+w":
-		dir := m.quickTargetDir()
-		if !m.worktreeCapable(dir) {
-			m.errBar.text = "worktree sessions need a git repository: " + dir + " is not one"
-			return m, nil
-		}
-		m.errBar.text = ""
-		m.quick.worktree = !m.quickWorktreeOn()
-		m.quick.worktreeTouched = true
+	case quickEffortKey:
+		m.stepQuickEffort()
+		return m, nil
+	case quickProfileKey:
+		m.stepQuickProfile()
+		return m, nil
+	case "ctrl+t", "alt+w":
+		m.toggleQuickWorktree()
 		return m, nil
 	case "enter":
 		return m.submitQuick()
@@ -168,6 +179,11 @@ func (m *Model) quickSpawn(group, prompt string) (tea.Model, tea.Cmd) {
 		m.errBar.text = "no tools configured"
 		return m, nil
 	}
+	picked, err := m.launchChoice(toolName, &m.quick.choice, "")
+	if err != nil {
+		m.errBar.text = err.Error()
+		return m, nil
+	}
 	dir, ok := resolveExistingDir(m.groupPaths[group], m.groupDefaultDir(group))
 	if !ok {
 		m.errBar.text = "group has no valid default path: " + dir
@@ -180,10 +196,11 @@ func (m *Model) quickSpawn(group, prompt string) (tea.Model, tea.Cmd) {
 		pickWorktree = m.quick.worktree
 	}
 	spawn := func() error {
-		if err := m.spawnSession(toolName, name, dir, group, prompt, true, worktree); err != nil {
+		if err := m.spawnSession(toolName, name, dir, group, prompt, true, worktree, picked); err != nil {
 			return err
 		}
 		m.rememberSpawnPick(toolName, pickWorktree)
+		m.rememberModel(toolName, picked)
 		return nil
 	}
 	if err := spawn(); err != nil {
@@ -213,8 +230,19 @@ func (m *Model) clearQuickAfterSend() {
 	}
 }
 
+func (m *Model) toggleQuickWorktree() {
+	dir := m.quickTargetDir()
+	if !m.worktreeCapable(dir) {
+		m.errBar.text = "worktree sessions need a git repository: " + dir + " is not one"
+		return
+	}
+	m.errBar.text = ""
+	m.quick.worktree = !m.quickWorktreeOn()
+	m.quick.worktreeTouched = true
+}
+
 // quickWorktreeOn is the worktree state the quick bar shows and spawns
-// with: the target group's default until shift+tab overrides it, and off
+// with: the target group's default until ctrl+t overrides it, and off
 // whenever the target directory cannot host a worktree.
 func (m *Model) quickWorktreeOn() bool {
 	if !m.worktreeCapable(m.quickTargetDir()) {
@@ -266,4 +294,234 @@ func (m *Model) quickCloseAfterSend() bool {
 		return false
 	}
 	return chosen == "close"
+}
+
+// The list open above the prompt, if any.
+const (
+	pickNone = iota
+	pickModel
+	pickEffort
+)
+
+// cycleQuickTool steps the spawn CLI by delta and starts its choices over.
+func (m *Model) cycleQuickTool(delta int) tea.Cmd {
+	count := len(m.quick.toolNames)
+	if count == 0 {
+		return nil
+	}
+	m.quick.toolIndex = (m.quick.toolIndex + delta + count) % count
+	toolName := m.quickTool()
+	m.quick.choice = m.newChoice(toolName)
+	return m.ensureCatalog(toolName)
+}
+
+// Choices apply to a spawn only, never to an answer.
+func (m *Model) quickSpawning() bool {
+	entry, ok := m.selectedRow()
+	return ok && entry.isGroup
+}
+
+// Control keys, since alt never arrives from many terminals, and ones the
+// prompt's editor, the manager and the common multiplexers leave free.
+const (
+	quickModelKey   = "ctrl+l"
+	quickEffortKey  = "ctrl+x"
+	quickProfileKey = "ctrl+y"
+)
+
+const quickChoiceHint = "model, effort and profile apply to a new agent: select a group to spawn one"
+
+func (m *Model) requireQuickSpawn() bool {
+	if m.quickSpawning() {
+		return true
+	}
+	m.errBar.text = quickChoiceHint
+	return false
+}
+
+func (m *Model) openQuickPick(pick int) {
+	if !m.requireQuickSpawn() {
+		return
+	}
+	toolName, ch := m.quickTool(), &m.quick.choice
+	if note, listed := m.modelRowNote(toolName); !listed {
+		m.errBar.text = "model: " + ansi.Strip(note)
+		return
+	}
+	m.errBar.text = ""
+	m.quick.picking = pick
+	switch pick {
+	case pickModel:
+		ch.filter.SetValue("")
+		ch.filter.Focus()
+		m.openModelList(toolName, ch)
+	case pickEffort:
+		ch.typedEffort.Focus()
+	}
+	m.quick.input.Blur()
+}
+
+func (m *Model) closeQuickPick() {
+	m.quick.picking = pickNone
+	m.quick.choice.filter.Blur()
+	m.quick.choice.typedEffort.Blur()
+	m.quick.choice.sugg = modelSuggest{}
+	m.quick.input.Focus()
+}
+
+// stepQuickEffort opens the typed field for a CLI that lists no levels.
+func (m *Model) stepQuickEffort() {
+	if !m.requireQuickSpawn() {
+		return
+	}
+	toolName, ch := m.quickTool(), &m.quick.choice
+	if m.effortTyped(toolName, ch) {
+		m.openQuickPick(pickEffort)
+		return
+	}
+	if value, shown, active := m.effortRow(toolName, ch); !active {
+		if !shown {
+			value = "no levels for this model"
+		}
+		m.errBar.text = "effort: " + ansi.Strip(value)
+		return
+	}
+	m.errBar.text = ""
+	m.cycleChoiceEffort(toolName, ch, 1)
+}
+
+func (m *Model) stepQuickProfile() {
+	if !m.requireQuickSpawn() {
+		return
+	}
+	toolName := m.quickTool()
+	if _, shown := m.profileRow(toolName, &m.quick.choice); !shown {
+		m.errBar.text = "profile: " + toolName + " has none"
+		return
+	}
+	m.errBar.text = ""
+	m.cycleChoiceProfile(toolName, &m.quick.choice, 1)
+}
+
+func (m *Model) handleQuickPickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	toolName, ch := m.quickTool(), &m.quick.choice
+	if m.quick.picking == pickEffort {
+		switch msg.String() {
+		case "esc", "enter", "tab":
+			m.closeQuickPick()
+			return m, nil
+		}
+		var cmd tea.Cmd
+		before := ch.typedEffort.Value()
+		ch.typedEffort, cmd = ch.typedEffort.Update(msg)
+		if ch.typedEffort.Value() != before {
+			m.keepChoice(toolName, ch)
+		}
+		return m, cmd
+	}
+	list := m.modelSuggestions(toolName, ch, ch.query())
+	switch msg.String() {
+	case "esc", quickModelKey:
+		m.closeQuickPick()
+		return m, nil
+	case quickEffortKey:
+		m.stepQuickEffort()
+		return m, nil
+	case quickProfileKey:
+		m.stepQuickProfile()
+		return m, nil
+	case "enter", "tab":
+		if len(list) > 0 {
+			m.pickModel(toolName, ch, list[ch.sugg.index].model.Key())
+		}
+		m.closeQuickPick()
+		return m, nil
+	case "up", "down":
+		delta := 1
+		if msg.String() == "up" {
+			delta = -1
+		}
+		ch.sugg.move(len(list), delta)
+		return m, nil
+	}
+	var cmd tea.Cmd
+	ch.filter, cmd = ch.filter.Update(msg)
+	ch.filtering = true
+	ch.sugg = modelSuggest{open: true}
+	return m, cmd
+}
+
+func (m *Model) quickHitAt(x, y int) (quickHit, bool) {
+	if !m.quick.active {
+		return quickHit{}, false
+	}
+	line, col := y-m.quick.originY, x-m.quick.originX
+	for _, hit := range m.quick.hits {
+		if hit.line == line && col >= hit.x0 && col < hit.x1 {
+			return hit, true
+		}
+	}
+	return quickHit{}, false
+}
+
+func (m *Model) handleQuickClick(hit quickHit) tea.Cmd {
+	switch hit.action {
+	case quickClickTool:
+		m.closeQuickPick()
+		return m.cycleQuickTool(1)
+	case quickClickModel:
+		if m.quick.picking == pickModel {
+			m.closeQuickPick()
+		} else {
+			m.openQuickPick(pickModel)
+		}
+	case quickClickEffort:
+		m.stepQuickEffort()
+	case quickClickProfile:
+		m.stepQuickProfile()
+	case quickClickWorktree:
+		m.toggleQuickWorktree()
+	case quickClickEntry:
+		toolName, ch := m.quickTool(), &m.quick.choice
+		if list := m.modelSuggestions(toolName, ch, ch.query()); hit.entry < len(list) {
+			m.pickModel(toolName, ch, list[hit.entry].model.Key())
+		}
+		m.closeQuickPick()
+	}
+	return nil
+}
+
+func (m *Model) quickLegend() [][2]string {
+	toolName, ch := m.quickTool(), &m.quick.choice
+	_, _, effortActive := m.effortRow(toolName, ch)
+	_, hasProfiles := m.profileRow(toolName, ch)
+	switch m.quick.picking {
+	case pickModel:
+		pairs := [][2]string{{"type", "filter"}, {"↑↓", "pick"}, {"↵/tab", "choose"}}
+		if effortActive {
+			pairs = append(pairs, [2]string{quickEffortKey, "effort"})
+		}
+		if hasProfiles {
+			pairs = append(pairs, [2]string{quickProfileKey, "profile"})
+		}
+		return append(pairs, [2]string{"esc", "back to the prompt"})
+	case pickEffort:
+		return [][2]string{{"type", "effort"}, {"↵", "done"}, {"esc", "back to the prompt"}}
+	}
+	pairs := [][2]string{{"↵", "send"}, {"↑↓", "target or caret"}, {"tab", "tool"}}
+	if len(m.quick.toolNames) > 1 {
+		pairs = append(pairs, [2]string{"shift+tab", "previous tool"})
+	}
+	if m.quickSpawning() {
+		if _, listed := m.modelRowNote(toolName); listed {
+			pairs = append(pairs, [2]string{quickModelKey, "model"})
+		}
+		if effortActive {
+			pairs = append(pairs, [2]string{quickEffortKey, "effort"})
+		}
+		if hasProfiles {
+			pairs = append(pairs, [2]string{quickProfileKey, "profile"})
+		}
+	}
+	return append(pairs, [2]string{"ctrl+t", "worktree"}, [2]string{"esc", "close"})
 }

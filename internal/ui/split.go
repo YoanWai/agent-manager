@@ -301,12 +301,18 @@ func (m *Model) handleMousePress(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.mode == modeForm {
+		return m.handleFormClick(msg.X, msg.Y)
+	}
 	if m.split.resizeMode || m.mode != modeList {
 		return m, nil
 	}
 	if m.noticeHit.contains(msg.X, msg.Y) && !m.searching {
 		m.openNotices("")
 		return m, nil
+	}
+	if hit, ok := m.quickHitAt(msg.X, msg.Y); ok {
+		return m, m.handleQuickClick(hit)
 	}
 	if row, ok := m.clickRow(msg.X, msg.Y); ok {
 		// Search owns Enter, and a "more" counter only steps the window onto

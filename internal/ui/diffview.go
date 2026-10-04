@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"maps"
@@ -198,12 +199,14 @@ type reviewSendRequest struct {
 func (m *Model) diffLoadCmd(sess store.Session, scope git.Scope, gen int, repoWant string, refresh bool) tea.Cmd {
 	driver := m.gitDrv
 	stor := m.store
+	groupBase := m.groupBase(sess.Group)
 	// Restoring happens once per repo, so a reload that would only have its
 	// state discarded reads nothing and cannot migrate over a chained write.
 	restored := maps.Clone(m.diff.stateLoaded)
+	cwd := m.sessionDir(sess)
 	return func() tea.Msg {
 		msg := diffLoadedMsg{sessID: sess.ID, scope: scope, gen: gen, refresh: refresh}
-		roots, err := driver.ResolveRepos(sess.Cwd)
+		roots, err := driver.ResolveRepos(cwd)
 		if err != nil {
 			msg.err = err
 			return msg
@@ -234,7 +237,7 @@ func (m *Model) diffLoadCmd(sess store.Session, scope git.Scope, gen int, repoWa
 			msg.err = err
 			return msg
 		}
-		finishDiffMsg(driver, scope, gen, roots[repoIdx], override, roots, &msg)
+		finishDiffMsg(driver, scope, gen, roots[repoIdx], cmp.Or(override, groupBase), roots, &msg)
 		return msg
 	}
 }
@@ -276,6 +279,7 @@ func (m *Model) diffReloadCmd(sess store.Session, scope git.Scope, gen int, gitR
 // Update is not the place to wait for it.
 func (m *Model) diffRebaseCmd(sess store.Session, scope git.Scope, gen int, gitRoot string, repoRoots []string) tea.Cmd {
 	driver, stor := m.gitDrv, m.store
+	groupBase := m.groupBase(sess.Group)
 	return func() tea.Msg {
 		msg := diffLoadedMsg{sessID: sess.ID, scope: scope, gen: gen, repoRoots: repoRoots, repoRoot: gitRoot}
 		override, err := stor.ReviewBase(sess.ID, resolveSymlinksOrSelf(gitRoot))
@@ -283,7 +287,7 @@ func (m *Model) diffRebaseCmd(sess store.Session, scope git.Scope, gen int, gitR
 			msg.err = err
 			return msg
 		}
-		finishDiffMsg(driver, scope, gen, gitRoot, override, repoRoots, &msg)
+		finishDiffMsg(driver, scope, gen, gitRoot, cmp.Or(override, groupBase), repoRoots, &msg)
 		return msg
 	}
 }
@@ -335,6 +339,7 @@ func (m *Model) diffProbeCmd(sess store.Session, scope git.Scope) tea.Cmd {
 	repoSel := m.diff.repoSel
 	gitRoot := m.diff.set.Repo.Root
 	stor := m.store
+	groupBase := m.groupBase(sess.Group)
 	return func() tea.Msg {
 		// Resolve symlinks so the key matches both the CLI writer and the load
 		// closure, keeping probe and load fingerprints identical.
@@ -344,7 +349,7 @@ func (m *Model) diffProbeCmd(sess store.Session, scope git.Scope) tea.Cmd {
 		}
 		baseRef := ""
 		if scope == git.ScopeBranch {
-			baseRef, _, _ = driver.BranchBase(gitRoot, override)
+			baseRef, _, _ = driver.BranchBase(gitRoot, cmp.Or(override, groupBase))
 		}
 		fp, err := driver.Fingerprint(gitRoot, scope, baseRef)
 		if err != nil {

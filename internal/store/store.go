@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/status"
 	_ "modernc.org/sqlite"
 )
@@ -70,6 +72,8 @@ type Session struct {
 	// only derives status for the sessions on its own server: a pane it
 	// cannot see belongs to another manager, not to a dead agent.
 	TmuxSocket string
+	// Choice rides every launch: restart, revive and fork.
+	Choice config.Choice
 }
 
 // LaunchTime is when the agent now in the pane started: the last restart
@@ -105,6 +109,10 @@ func Open(path string) (*Store, error) {
 	}
 	store := &Store{db: db}
 	if err := store.init(); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := store.importConfigFile(filepath.Dir(path)); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -228,6 +236,11 @@ CREATE TABLE IF NOT EXISTS settings (
 		`ALTER TABLE sessions ADD COLUMN tmux_socket TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN last_prompt TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN relaunch_snapshot TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN model_provider TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN model TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN effort TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN profile TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE groups ADD COLUMN base TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, migration := range migrations {
 		if _, err := s.db.Exec(migration); err != nil {
@@ -353,6 +366,70 @@ func (s *Store) PaneSize() (int, int, error) {
 	return width, height, nil
 }
 
+// coordinationSetting says how sessions treat each other. The manager, the
+// CLI and the MCP server each launch or brief sessions, so all of them read
+// it here.
+const coordinationSetting = "coordination"
+
+const coordinationProactive = "proactive"
+
+// ProactiveCoordination reports whether agents delegate and coordinate on
+// their own. The default waits for the user to ask.
+func (s *Store) ProactiveCoordination() (bool, error) {
+	value, err := s.Setting(coordinationSetting)
+	return value == coordinationProactive, err
+}
+
+func (s *Store) SetProactiveCoordination(proactive bool) error {
+	value := "on-request"
+	if proactive {
+		value = coordinationProactive
+	}
+	return s.SetSetting(coordinationSetting, value)
+}
+
+// The New Session form and a spawn with no caller both take their CLI from
+// these, so the manager and the CLI read them here.
+const (
+	defaultToolSetting = "default_tool"
+	hiddenToolsSetting = "hidden_tools"
+)
+
+// DefaultTool is the CLI picked in Settings for new sessions, empty when none was.
+func (s *Store) DefaultTool() (string, error) {
+	return s.Setting(defaultToolSetting)
+}
+
+func (s *Store) SetDefaultTool(name string) error {
+	return s.SetSetting(defaultToolSetting, name)
+}
+
+// HiddenTools is the set of CLIs turned off for new sessions in Settings.
+func (s *Store) HiddenTools() (map[string]bool, error) {
+	raw, err := s.Setting(hiddenToolsSetting)
+	if err != nil {
+		return nil, err
+	}
+	hidden := make(map[string]bool)
+	for _, part := range strings.Split(raw, ",") {
+		if name := strings.TrimSpace(part); name != "" {
+			hidden[name] = true
+		}
+	}
+	return hidden, nil
+}
+
+func (s *Store) SetHiddenTools(hidden map[string]bool) error {
+	names := make([]string, 0, len(hidden))
+	for name, on := range hidden {
+		if on {
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
+	return s.SetSetting(hiddenToolsSetting, strings.Join(names, ","))
+}
+
 func (s *Store) SetSetting(key, value string) error {
 	_, err := s.db.Exec(
 		`INSERT INTO settings (key, value) VALUES (?, ?)
@@ -409,12 +486,13 @@ func (s *Store) createSession(sess Session, anchorID string) error {
 		sess.Group = parentGroup
 	}
 	_, err = tx.Exec(
-		`INSERT INTO sessions (id, name, tool, cwd, group_name, status, archived, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, pending_inputs, parent_id, launch_prompt, tmux_socket, sort_order)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+		`INSERT INTO sessions (id, name, tool, cwd, group_name, status, archived, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, pending_inputs, parent_id, launch_prompt, tmux_socket, model_provider, model, effort, profile, sort_order)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 		         (SELECT COALESCE(MAX(sort_order)+1, 0) FROM sessions WHERE group_name = ? AND parent_id = ?))`,
 		sess.ID, sess.Name, sess.Tool, sess.Cwd, sess.Group, sess.Status,
 		boolToInt(sess.Archived), encodeTime(sess.CreatedAt), encodeTime(sess.LastStatusAt), sess.AgentSessionID,
 		sess.WorktreeRepo, sess.WorktreeBranch, pendingInputs, sess.ParentID, sess.LaunchPrompt, sess.TmuxSocket,
+		sess.Choice.Provider, sess.Choice.Model, sess.Choice.Effort, sess.Choice.Profile,
 		sess.Group, sess.ParentID,
 	)
 	if err != nil {
@@ -457,14 +535,14 @@ func (s *Store) CreateGroup(name, path string) error {
 	return err
 }
 
-func (s *Store) AddGroup(name, path, worktree string) error {
+func (s *Store) AddGroup(name, path, worktree, base string) error {
 	if name == "" {
 		return errors.New("group name cannot be empty")
 	}
 	res, err := s.db.Exec(
-		`INSERT INTO groups (name, path, worktree, sort_order)
-		 VALUES (?, ?, ?, (SELECT COALESCE(MAX(sort_order)+1, 0) FROM groups))
-		 ON CONFLICT(name) DO NOTHING`, name, path, worktree)
+		`INSERT INTO groups (name, path, worktree, base, sort_order)
+		 VALUES (?, ?, ?, ?, (SELECT COALESCE(MAX(sort_order)+1, 0) FROM groups))
+		 ON CONFLICT(name) DO NOTHING`, name, path, worktree, base)
 	if err != nil {
 		return err
 	}
@@ -479,7 +557,7 @@ func (s *Store) AddGroup(name, path, worktree string) error {
 }
 
 func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
-	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, relaunch_snapshot, pending_inputs, pending_claimed, parent_id, launch_prompt, last_prompt, tmux_socket
+	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, relaunch_snapshot, pending_inputs, pending_claimed, parent_id, launch_prompt, last_prompt, tmux_socket, model_provider, model, effort, profile
 	          FROM sessions`
 	if !includeArchived {
 		query += ` WHERE archived = 0`
@@ -500,7 +578,8 @@ func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
 		if err := rows.Scan(&sess.ID, &sess.Name, &sess.Tool, &sess.Cwd,
 			&sess.Group, &sess.Status, &archived, &acked, &created, &lastStatus,
 			&sess.AgentSessionID, &sess.WorktreeRepo, &sess.WorktreeBranch,
-			&agentLaunched, &sess.RetiredAgentSessionID, &relaunchSnapshot, &pendingInputs, &pendingClaimed, &sess.ParentID, &sess.LaunchPrompt, &sess.LastPrompt, &sess.TmuxSocket); err != nil {
+			&agentLaunched, &sess.RetiredAgentSessionID, &relaunchSnapshot, &pendingInputs, &pendingClaimed, &sess.ParentID, &sess.LaunchPrompt, &sess.LastPrompt, &sess.TmuxSocket,
+			&sess.Choice.Provider, &sess.Choice.Model, &sess.Choice.Effort, &sess.Choice.Profile); err != nil {
 			return nil, err
 		}
 		if err := decodeRelaunchSnapshot(relaunchSnapshot, &sess); err != nil {
@@ -526,11 +605,12 @@ func (s *Store) Get(id string) (Session, error) {
 	var created, lastStatus, agentLaunched int64
 	var pendingInputs, relaunchSnapshot string
 	err := s.db.QueryRow(
-		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, relaunch_snapshot, pending_inputs, pending_claimed, parent_id, launch_prompt, last_prompt, tmux_socket
+		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, relaunch_snapshot, pending_inputs, pending_claimed, parent_id, launch_prompt, last_prompt, tmux_socket, model_provider, model, effort, profile
 		 FROM sessions WHERE id = ?`, id,
 	).Scan(&sess.ID, &sess.Name, &sess.Tool, &sess.Cwd, &sess.Group,
 		&sess.Status, &archived, &acked, &created, &lastStatus, &sess.AgentSessionID,
-		&sess.WorktreeRepo, &sess.WorktreeBranch, &agentLaunched, &sess.RetiredAgentSessionID, &relaunchSnapshot, &pendingInputs, &pendingClaimed, &sess.ParentID, &sess.LaunchPrompt, &sess.LastPrompt, &sess.TmuxSocket)
+		&sess.WorktreeRepo, &sess.WorktreeBranch, &agentLaunched, &sess.RetiredAgentSessionID, &relaunchSnapshot, &pendingInputs, &pendingClaimed, &sess.ParentID, &sess.LaunchPrompt, &sess.LastPrompt, &sess.TmuxSocket,
+		&sess.Choice.Provider, &sess.Choice.Model, &sess.Choice.Effort, &sess.Choice.Profile)
 	if err != nil {
 		return Session{}, err
 	}
@@ -1334,10 +1414,14 @@ type Group struct {
 	// "" to inherit from the nearest ancestor with a choice, else the
 	// global setting.
 	Worktree string
+	// Base is the ref the group's worktree sessions branch from and review
+	// diffs against, or "" to inherit from the nearest ancestor with one,
+	// else to detect the repo's default branch.
+	Base string
 }
 
 func (s *Store) Groups() ([]Group, error) {
-	rows, err := s.db.Query(`SELECT name, path, archived, worktree FROM groups ORDER BY sort_order, name`)
+	rows, err := s.db.Query(`SELECT name, path, archived, worktree, base FROM groups ORDER BY sort_order, name`)
 	if err != nil {
 		return nil, err
 	}
@@ -1346,7 +1430,7 @@ func (s *Store) Groups() ([]Group, error) {
 	for rows.Next() {
 		var g Group
 		var archived int
-		if err := rows.Scan(&g.Name, &g.Path, &archived, &g.Worktree); err != nil {
+		if err := rows.Scan(&g.Name, &g.Path, &archived, &g.Worktree, &g.Base); err != nil {
 			return nil, err
 		}
 		g.Archived = archived != 0
@@ -1359,6 +1443,13 @@ func (s *Store) Groups() ([]Group, error) {
 // "off", or "" to inherit.
 func (s *Store) SetGroupWorktree(name, worktree string) error {
 	_, err := s.db.Exec(`UPDATE groups SET worktree = ? WHERE name = ?`, worktree, name)
+	return err
+}
+
+// SetGroupBase stores the ref a group's worktree sessions branch from, or
+// "" to inherit.
+func (s *Store) SetGroupBase(name, base string) error {
+	_, err := s.db.Exec(`UPDATE groups SET base = ? WHERE name = ?`, base, name)
 	return err
 }
 

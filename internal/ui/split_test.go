@@ -130,7 +130,7 @@ func TestArrowNudgeAndPipeCommits(t *testing.T) {
 	}
 	t.Cleanup(func() { st.Close() })
 
-	m := &Model{listKeys: keybind.DefaultList(),
+	m := &Model{keys: keybind.DefaultSession(), listKeys: keybind.DefaultList(),
 		store:  st,
 		mode:   modeList,
 		width:  100,
@@ -177,7 +177,7 @@ func TestEnterCommitsResize(t *testing.T) {
 	}
 	t.Cleanup(func() { st.Close() })
 
-	m := &Model{listKeys: keybind.DefaultList(),
+	m := &Model{keys: keybind.DefaultSession(), listKeys: keybind.DefaultList(),
 		store:  st,
 		mode:   modeList,
 		width:  100,
@@ -224,7 +224,7 @@ func TestQuitFromResizePersistsRatio(t *testing.T) {
 	}
 	t.Cleanup(func() { st.Close() })
 
-	m := &Model{listKeys: keybind.DefaultList(),
+	m := &Model{keys: keybind.DefaultSession(), listKeys: keybind.DefaultList(),
 		store:  st,
 		mode:   modeList,
 		width:  100,
@@ -258,7 +258,7 @@ func TestDragReleasePersistsAndExits(t *testing.T) {
 	}
 	t.Cleanup(func() { st.Close() })
 
-	m := &Model{listKeys: keybind.DefaultList(),
+	m := &Model{keys: keybind.DefaultSession(), listKeys: keybind.DefaultList(),
 		store:  st,
 		mode:   modeList,
 		width:  100,
@@ -936,7 +936,7 @@ func TestDividerClickWithoutMotionCommitsNothing(t *testing.T) {
 	}
 	t.Cleanup(func() { st.Close() })
 
-	m := &Model{listKeys: keybind.DefaultList(),
+	m := &Model{keys: keybind.DefaultSession(), listKeys: keybind.DefaultList(),
 		store:  st,
 		mode:   modeList,
 		width:  100,
@@ -1255,7 +1255,7 @@ func TestNewLoadsPersistedSplitRatio(t *testing.T) {
 	if err := m.store.SetSetting(splitRatioSetting, "0.45"); err != nil {
 		t.Fatalf("set setting: %v", err)
 	}
-	loaded := New(m.cfg, m.store, m.tmux, m.poller.engine, m.hooks, "dev")
+	loaded := reloadModel(t, m)
 	if loaded.split.ratio != 0.45 {
 		t.Fatalf("New splitRatio = %v want 0.45", loaded.split.ratio)
 	}
@@ -1486,17 +1486,15 @@ func TestWheelSwallowedInResizeMode(t *testing.T) {
 	}
 }
 
-// messagesCell finds the column and screen row the word "messages" was
-// painted on in the last frame: the card's legend in the split, the badge
-// in full screen.
+// messagesCell locates the messages entry in the painted key legend.
 func messagesCell(t *testing.T, m *Model) (x, y int) {
 	t.Helper()
 	for row, line := range strings.Split(ansi.Strip(m.View()), "\n") {
 		if col := strings.Index(line, "messages"); col >= 0 {
-			return col, row
+			return ansi.StringWidth(line[:col]), row
 		}
 	}
-	t.Fatal("test setup: the frame painted no messages card or badge")
+	t.Fatal("test setup: the frame painted no messages entry")
 	return 0, 0
 }
 
@@ -1507,39 +1505,85 @@ func leftPress(m *Model, x, y int) *Model {
 	return updated.(*Model)
 }
 
-func TestClickOnMessagesCardOpensNotices(t *testing.T) {
-	m := buildModel(t)
-	m.width, m.height = 120, 34
-	x, y := messagesCell(t, m)
-	if m = leftPress(m, x, y); m.mode != modeNotices {
-		t.Fatalf("click on the card should open messages, mode = %v", m.mode)
+func TestMessagesLegendOpensNoticesByMouseAndKey(t *testing.T) {
+	for _, full := range []bool{false, true} {
+		for _, width := range []int{30, 60, 120} {
+			for _, binding := range []string{"M", "alt+m"} {
+				m := buildModel(t)
+				m.width, m.height, m.fullLayout = width, 34, full
+				m.hideStats = true
+				m.listKeys = m.listKeys.With(keybind.Messages, bindingOf(t, binding))
+				x, y := messagesCell(t, m)
+				if !m.noticeHit.contains(x, y) {
+					t.Fatalf("full=%v width=%d binding=%s: painted messages entry misses its hit box %+v", full, width, binding, m.noticeHit)
+				}
+				if m = leftPress(m, x, y); m.mode != modeNotices {
+					t.Fatalf("click on messages should open notices, mode=%v", m.mode)
+				}
+				m.handleNoticesKey(key("esc"))
+				msg := key(binding)
+				if binding == "alt+m" {
+					msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}, Alt: true}
+				}
+				m.handleKey(msg)
+				if m.mode != modeNotices {
+					t.Fatalf("%s should open notices, mode=%v", binding, m.mode)
+				}
+				m.handleNoticesKey(key("esc"))
+				for _, n := range m.activeNotices() {
+					m.dismissNotice(n.id)
+				}
+				m.View()
+				if footer := ansi.Strip(m.viewFooter()); strings.Contains(footer, "messages") {
+					t.Fatalf("with nothing unread the legend must give its room back:\n%s", footer)
+				}
+				if m = leftPress(m, x, y); m.mode != modeList {
+					t.Fatalf("a click where the entry was must not open Messages, mode=%v", m.mode)
+				}
+				m.handleKey(msg)
+				if m.mode != modeNotices {
+					t.Fatalf("%s should still open an empty Messages, mode=%v", binding, m.mode)
+				}
+			}
+		}
 	}
 }
 
-func TestClickOnMetersBesideTheCardDoesNothing(t *testing.T) {
+func TestClickBesideMessagesLegendDoesNothing(t *testing.T) {
 	m := buildModel(t)
 	m.width, m.height = 120, 34
 	_, y := messagesCell(t, m)
 	if m = leftPress(m, 2, y); m.mode != modeList {
-		t.Fatalf("click on the meters should stay on the list, mode = %v", m.mode)
+		t.Fatalf("click outside messages should stay on the list, mode=%v", m.mode)
 	}
 }
 
-func TestClickOnFullScreenBadgeOpensNotices(t *testing.T) {
-	m := buildModel(t)
-	m.width, m.height = 120, 34
-	m.fullLayout = true
-	x, y := messagesCell(t, m)
-	if m = leftPress(m, x, y); m.mode != modeNotices {
-		t.Fatalf("click on the badge should open messages, mode = %v", m.mode)
-	}
-	m.mode = modeList
-	if m = leftPress(m, 2, y); m.mode != modeList {
-		t.Fatalf("click on the readings should stay on the list, mode = %v", m.mode)
+func TestMessagesLegendClickOnlyOpensFromTheList(t *testing.T) {
+	for _, change := range []struct {
+		name  string
+		apply func(*Model)
+	}{
+		{"search", func(m *Model) { m.searching = true }},
+		{"quick prompt", func(m *Model) { m.openQuickMode() }},
+		{"resize", func(m *Model) { m.split.resizeMode = true }},
+		{"messages key off", func(m *Model) { m.listKeys = m.listKeys.With(keybind.Messages, bindingOf(t)) }},
+		{"settings", func(m *Model) { m.openSettings() }},
+		{"short terminal", func(m *Model) { m.height = 2 }},
+	} {
+		t.Run(change.name, func(t *testing.T) {
+			m := buildModel(t)
+			m.width, m.height = 120, 34
+			x, y := messagesCell(t, m)
+			change.apply(m)
+			m.View()
+			if m = leftPress(m, x, y); m.mode == modeNotices {
+				t.Fatal("a click where messages was painted opened notices")
+			}
+		})
 	}
 }
 
-func TestClickOnMessagesCardWhileSearchingKeepsTheField(t *testing.T) {
+func TestClickOnMessagesLegendWhileSearchingKeepsTheField(t *testing.T) {
 	m := buildModel(t)
 	m.width, m.height = 120, 34
 	m.searching = true
@@ -1549,7 +1593,7 @@ func TestClickOnMessagesCardWhileSearchingKeepsTheField(t *testing.T) {
 	}
 }
 
-func TestClickOnMessagesCardWhileFocusedIsLeftToFocus(t *testing.T) {
+func TestClickOnMessagesLegendWhileFocusedIsLeftToFocus(t *testing.T) {
 	m := buildModel(t)
 	m.width, m.height = 200, 34
 	createSession(t, m, "alpha", t.TempDir(), "")

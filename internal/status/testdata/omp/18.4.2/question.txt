@@ -1,0 +1,30 @@
+ Hello from the fake model
+
+
+ run a tool
+
+
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ $ echo approved                                                                                            │
+├─── Output ─────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ approved                                                                                                   │
+│ ⟦Wall: 0.06s | Timeout: 300s⟧                                                                              │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+ Done.
+
+
+ slow please
+
+
+ Working through this slowly one word at a time until done
+
+
+ ask me something
+
+
+ I can do that. Which file should I edit?
+
+                                                                                     Hello from the fake model
+ π > ⬢ Local Model > 📁 ~/project ▶────5%──────────────────────────────────────────────╎───────┃─────────128K─
+╰─

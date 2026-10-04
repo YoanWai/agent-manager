@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/agentsession"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/launch"
@@ -636,7 +637,7 @@ func seedRegionHash(t *testing.T, m *Model, sess store.Session, pane string) {
 	if !ok {
 		t.Fatal("pane should have an activity region")
 	}
-	m.poller.paneHashes = map[string]uint64{sess.ID: hashString(region)}
+	m.poller.paneHashes = map[string]uint64{sess.ID: hashString(m.poller.engine.RegionContent(sess.Tool, region))}
 }
 
 func disableQuietEndGrace(t *testing.T) {
@@ -858,6 +859,25 @@ func TestChangedRegionStillDerivesWorking(t *testing.T) {
 	}
 }
 
+// agy fills its header in after its composer is up. A resting session whose
+// only change is that redraw stays idle rather than passing through working
+// into a finished alert nobody asked for.
+func TestAFrameRedrawIsNotWork(t *testing.T) {
+	m := buildModel(t)
+	defaultEngine(t, m)
+	sess := store.Session{ID: "agy-boot", Tool: "antigravity", Status: status.Idle}
+	rule := strings.Repeat("─", 120)
+	pane := func(account string) string {
+		return "\n      ▄▀▀▄        Antigravity CLI 1.2.14\n     ▀▀▀▀▀▀       " + account +
+			"\n    ▀▀▀▀▀▀▀▀      Gemini 3.8 Flash (High)\n   ▄▀▀    ▀▀▄     /tmp/agy/proj6\n  ▄▀▀      ▀▀▄\n\n" +
+			rule + "\n>\n" + rule + "\n? for shortcuts                    Gemini 3.8 Flash · high\n\n\n"
+	}
+	seedRegionHash(t, m, sess, pane("dev@example.com"))
+	if got := deriveStatus(t, m, sess, pane("dev@example.com (Google AI Plus)"), true); got != status.Idle {
+		t.Fatalf("the header filling in read as %q", got)
+	}
+}
+
 // A post-resize rebaseline (no prior hash) must keep finished instead of
 // inventing working from reflowed content or collapsing to idle.
 func TestRebaselineKeepsFinishedWithoutFlashingWorking(t *testing.T) {
@@ -902,7 +922,7 @@ func TestLiveQuietTurnResolvesFinished(t *testing.T) {
 	m.openForm()
 	m.form.name.SetValue("quiet-live")
 	m.form.dir.SetValue(t.TempDir())
-	for i, name := range sortedToolNames(m.cfg) {
+	for i, name := range m.cfg.AgentToolNames() {
 		if name == "quietchat" {
 			m.form.toolIndex = i
 		}
@@ -1648,7 +1668,7 @@ func TestThePollLeavesTheHeartbeatAloneBetweenStamps(t *testing.T) {
 // before then is discarded and has to wait for the prompt to reach output.
 func TestPendingInputWaitsForTheLaunchPrompt(t *testing.T) {
 	m := buildModel(t)
-	if err := m.spawnSession("slow-take-tool", "slow-take-tool-abcd", t.TempDir(), "", "/compact", true, false); err != nil {
+	if err := m.spawnSession("slow-take-tool", "slow-take-tool-abcd", t.TempDir(), "", "/compact", true, false, config.Choice{}); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -1700,7 +1720,7 @@ func TestPendingInputWaitsForBetweenTurn(t *testing.T) {
 				t.Fatal(err)
 			}
 			m.poller.engine = engine
-			if err := m.spawnSession("ready-tool", "ready-tool-abcd", t.TempDir(), "", "/compact", true, false); err != nil {
+			if err := m.spawnSession("ready-tool", "ready-tool-abcd", t.TempDir(), "", "/compact", true, false, config.Choice{}); err != nil {
 				t.Fatal(err)
 			}
 			sess := m.sessionRows()[0]
@@ -1740,7 +1760,7 @@ func TestPendingInputWaitsForBetweenTurn(t *testing.T) {
 
 func TestPendingInputWaitsForTypedText(t *testing.T) {
 	m := buildModel(t)
-	if err := m.spawnSession("ready-tool", "ready-tool-abcd", t.TempDir(), "", "", true, false); err != nil {
+	if err := m.spawnSession("ready-tool", "ready-tool-abcd", t.TempDir(), "", "", true, false, config.Choice{}); err != nil {
 		t.Fatal(err)
 	}
 	sess, err := m.store.Get(m.sessionRows()[0].ID)
@@ -1787,7 +1807,7 @@ func TestPendingInputLandsOnAnErroredPane(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.poller.engine = engine
-	if err := m.spawnSession("ready-tool", "ready-tool-abcd", t.TempDir(), "", "", true, false); err != nil {
+	if err := m.spawnSession("ready-tool", "ready-tool-abcd", t.TempDir(), "", "", true, false, config.Choice{}); err != nil {
 		t.Fatal(err)
 	}
 	sess := m.sessionRows()[0]
@@ -2006,5 +2026,52 @@ func TestLastMeaningfulPaneLineSkipsChrome(t *testing.T) {
 	}
 	if got := lastMeaningfulPaneLine("\n╭──╮\n│  │\n╰──╯\n"); got != "" {
 		t.Fatalf("a pane of borders should yield nothing, got %q", got)
+	}
+}
+
+// A session that moves reads its transcript under the new directory, and two
+// transcripts that happen to share a size and a modification time are still
+// two different conversations.
+func TestClaudeTailFollowsTheLiveTranscript(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	launchDir, liveDir := t.TempDir(), t.TempDir()
+	stamp := time.Now().Add(-time.Hour)
+	write := func(cwd, reply string) string {
+		t.Helper()
+		path, err := agentsession.ClaudeTranscriptPath(cwd, "abc")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		line := `{"type":"assistant","message":{"content":[{"type":"text","text":"` + reply + `"}]}}` + "\n"
+		if err := os.WriteFile(path, []byte(line), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, stamp, stamp); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	sess := store.Session{ID: "s", Cwd: launchDir, AgentSessionID: "abc"}
+	p := &poller{claudeTails: map[string]claudeTailCache{}}
+
+	write(launchDir, "launch reply")
+	if _, reply := p.claudeTail(sess, liveDir); reply != "launch reply" {
+		t.Fatalf("reply = %q, want the launch transcript while the live one is absent", reply)
+	}
+	livePath := write(liveDir, "moved reply!")
+	if _, reply := p.claudeTail(sess, liveDir); reply != "moved reply!" {
+		t.Fatalf("reply = %q, want the live transcript over a cached one of the same size and time", reply)
+	}
+
+	liveProject := filepath.Dir(livePath)
+	if err := os.Chmod(liveProject, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(liveProject, 0o755) })
+	if _, reply := p.claudeTail(sess, liveDir); reply != "" {
+		t.Fatalf("reply = %q, want nothing while the live transcript cannot be read", reply)
 	}
 }

@@ -5,7 +5,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -22,6 +21,14 @@ func keySectionFor(keys keybind.Table) keySection {
 		return keySection{"inside a session · every other key reaches the agent", "off, the agent gets it"}
 	}
 	return keySection{"in the manager · esc and ctrl+c stay as they are", "off"}
+}
+
+// tmux_prefix off hands the agent no key, since tmux keeps the prefix it had.
+func (s keySection) offLabel(action string) string {
+	if action == keybind.TmuxPrefix {
+		return "off, your prefix stays"
+	}
+	return s.off
 }
 
 type keyRow struct {
@@ -44,12 +51,9 @@ func keybindingsSummary(tables ...keybind.Table) string {
 	for _, keys := range tables {
 		defaults := keys.Defaults()
 		for _, action := range keys.Actions() {
-			label := keys.Binding(action.Name).Label()
-			if label == defaults.Binding(action.Name).Label() {
+			label := labelOrOff(keys.Binding(action.Name))
+			if label == labelOrOff(defaults.Binding(action.Name)) {
 				continue
-			}
-			if label == "" {
-				label = "off"
 			}
 			moved = append(moved, action.Name+" "+label)
 		}
@@ -61,6 +65,13 @@ func keybindingsSummary(tables ...keybind.Table) string {
 		return strings.Join(moved, " · ")
 	}
 	return fmt.Sprintf("%d moved", len(moved))
+}
+
+func labelOrOff(binding keybind.Binding) string {
+	if label := binding.Label(); label != "" {
+		return label
+	}
+	return "off"
 }
 
 func (m *Model) openKeyPicker() {
@@ -153,12 +164,9 @@ func keyResetChanges(tables ...keybind.Table) []string {
 	for _, keys := range tables {
 		defaults := keys.Defaults()
 		for _, action := range keys.Actions() {
-			current, shipped := keys.Binding(action.Name).Label(), defaults.Binding(action.Name).Label()
+			current, shipped := labelOrOff(keys.Binding(action.Name)), labelOrOff(defaults.Binding(action.Name))
 			if current == shipped {
 				continue
-			}
-			if current == "" {
-				current = "off"
 			}
 			changes = append(changes, fmt.Sprintf("%s: %s back to %s", action.Name, current, shipped))
 		}
@@ -166,7 +174,7 @@ func keyResetChanges(tables ...keybind.Table) []string {
 	return changes
 }
 
-// The picker refuses what config load would refuse, so the table it saves
+// The picker refuses what the store would refuse, so the table it saves
 // always loads back.
 func (m *Model) setBinding(binding keybind.Binding) tea.Cmd {
 	row := m.pickedRow()
@@ -188,12 +196,8 @@ func (m *Model) saveKeys() tea.Cmd {
 	if session.Equal(m.keys) && list.Equal(m.listKeys) {
 		return nil
 	}
-	if m.configDir == "" {
-		m.errBar.text = "no config directory to save the keys to"
-		return nil
-	}
 	if !list.Equal(m.listKeys) {
-		if err := config.SaveKeys(m.configDir, list); err != nil {
+		if err := m.store.SetKeys(list); err != nil {
 			m.errBar.text = err.Error()
 			return nil
 		}
@@ -202,7 +206,7 @@ func (m *Model) saveKeys() tea.Cmd {
 	if session.Equal(m.keys) {
 		return nil
 	}
-	if err := config.SaveKeys(m.configDir, session); err != nil {
+	if err := m.store.SetKeys(session); err != nil {
 		m.errBar.text = err.Error()
 		return nil
 	}

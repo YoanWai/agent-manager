@@ -31,8 +31,6 @@ const EnvSessionID = "AGENT_MANAGER_SESSION_ID"
 // package for a tool.
 const StatusSourceClaude = "claude-hooks"
 
-const settingsName = "claude-settings.json"
-
 type Manager struct {
 	dir string
 }
@@ -58,13 +56,12 @@ type hookMatcher struct {
 }
 
 type settingsFile struct {
+	Env   map[string]string        `json:"env"`
 	Hooks map[string][]hookMatcher `json:"hooks"`
 }
 
-// statusCommand always exits 0 and no-ops outside managed sessions, so
-// the settings file is harmless if Claude Code loads it elsewhere.
 func statusCommand(state string) string {
-	return `[ -z "$` + EnvStatusFile + `" ] || printf ` + state + ` > "$` + EnvStatusFile + `"`
+	return `printf ` + state + ` > "$` + EnvStatusFile + `"`
 }
 
 // blockingNotifications are the Notification types that leave the turn
@@ -78,38 +75,42 @@ const blockingNotifications = "permission_prompt|elicitation_dialog"
 // the hook write covers the turn before the banner is visible.
 const limitStopFailures = "rate_limit"
 
-func settingsContent() ([]byte, error) {
+func settingsContent(sessionID, statusFile string) ([]byte, error) {
 	report := func(matcher, state string) []hookMatcher {
 		return []hookMatcher{{Matcher: matcher, Hooks: []hookCommand{{Type: "command", Command: statusCommand(state)}}}}
 	}
-	content := settingsFile{Hooks: map[string][]hookMatcher{
-		"UserPromptSubmit": report("", status.Working),
-		"PreToolUse":       report("*", status.Working),
-		"PostToolUse":      report("*", status.Working),
-		"Notification":     report(blockingNotifications, status.Waiting),
-		"Stop":             report("", status.Finished),
-		"StopFailure":      report(limitStopFailures, status.Errored),
-		// compact fires SessionStart in the middle of an active turn
-		"SessionStart": report("startup|resume|clear", status.Idle),
-		"SessionEnd": {{Hooks: []hookCommand{{
-			Type:    "command",
-			Command: `[ -z "$` + EnvStatusFile + `" ] || rm -f "$` + EnvStatusFile + `"`,
-		}}}},
-	}}
+	content := settingsFile{
+		// /background and the agent view rerun the conversation in Claude Code's daemon, under another session's environment.
+		Env: map[string]string{EnvSessionID: sessionID, EnvStatusFile: statusFile},
+		Hooks: map[string][]hookMatcher{
+			"UserPromptSubmit": report("", status.Working),
+			"PreToolUse":       report("*", status.Working),
+			"PostToolUse":      report("*", status.Working),
+			"Notification":     report(blockingNotifications, status.Waiting),
+			"Stop":             report("", status.Finished),
+			"StopFailure":      report(limitStopFailures, status.Errored),
+			// compact fires SessionStart in the middle of an active turn
+			"SessionStart": report("startup|resume|clear", status.Idle),
+			"SessionEnd": {{Hooks: []hookCommand{{
+				Type:    "command",
+				Command: `rm -f "$` + EnvStatusFile + `"`,
+			}}}},
+		},
+	}
 	return json.MarshalIndent(content, "", "  ")
 }
 
-// EnsureSettings writes the hook settings file, refreshing it when the
-// wanted content changed (e.g. after an upgrade), and returns its path.
-func (m *Manager) EnsureSettings() (string, error) {
+// WriteSettings writes a session's hook settings file, refreshing it when
+// the wanted content changed (e.g. after an upgrade), and returns its path.
+func (m *Manager) WriteSettings(id string) (string, error) {
 	if err := os.MkdirAll(m.dir, 0o755); err != nil {
 		return "", err
 	}
-	wanted, err := settingsContent()
+	wanted, err := settingsContent(id, m.StatusFile(id))
 	if err != nil {
 		return "", err
 	}
-	path := filepath.Join(m.dir, settingsName)
+	path := m.SettingsFile(id)
 	existing, err := os.ReadFile(path)
 	if err == nil && bytes.Equal(existing, wanted) {
 		return path, nil
@@ -121,6 +122,14 @@ func (m *Manager) EnsureSettings() (string, error) {
 		return "", err
 	}
 	return path, nil
+}
+
+func (m *Manager) SettingsFile(id string) string {
+	return filepath.Join(m.dir, id+".settings.json")
+}
+
+func (m *Manager) RemoveSettings(id string) error {
+	return removeIfExists(m.SettingsFile(id))
 }
 
 func (m *Manager) StatusFile(id string) string {

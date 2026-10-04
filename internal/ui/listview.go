@@ -85,6 +85,7 @@ func (m *Model) viewListFrame() string {
 		bottom = m.focusBottomRule(leftWidth+1, m.width)
 	}
 	frame = append(frame, bottom)
+	m.placeNoticeHit(footer, len(frame))
 	for _, line := range splitLines(footer) {
 		frame = append(frame, paint(line, m.width, backdropHex()))
 	}
@@ -114,6 +115,10 @@ func (m *Model) viewFullListFrame() string {
 	}
 	quickRows := m.fullQuickLines(railWidth, bodyHeight)
 	railRows := m.railLines(railWidth, bodyHeight-len(quickRows))
+	if m.quick.active {
+		y0, _ := m.bodyYRange()
+		m.quick.originY += y0 + len(railRows)
+	}
 	railRows = append(railRows, quickRows...)
 	m.recordRailHits(railRows)
 	edge := make([]string, bodyHeight)
@@ -130,6 +135,7 @@ func (m *Model) viewFullListFrame() string {
 		paintContent(railRows, railWidth, bodyHeight, panelHex()),
 	)...)
 	frame = append(frame, m.boundedRuleRow(railWidth, m.width, "▄"))
+	m.placeNoticeHit(footer, len(frame))
 	for _, line := range splitLines(footer) {
 		frame = append(frame, paint(line, m.width, backdropHex()))
 	}
@@ -147,7 +153,6 @@ func (m *Model) viewFullFocusFrame() string {
 	// This frame paints no rail, so a click lands on no row: the list
 	// frame's hits would otherwise select a row nobody pointed at.
 	m.recordRailHits(nil)
-	m.noticeHit = noticeHit{}
 	frame := []string{}
 	for _, line := range m.viewHeaderRows() {
 		frame = append(frame, paint(line, m.width, backdropHex()))
@@ -190,7 +195,10 @@ func (m *Model) fullQuickLines(width, height int) []contentLine {
 		return out
 	}
 	lines := append([]contentLine{{rule: true}}, inset(splitLines(m.viewQuickBar(inner, height-quickBarChrome)))...)
+	// Under the rule, less what the cap cuts off the top.
+	m.quick.originX, m.quick.originY = 1+contentGutter, 1
 	if len(lines) > height {
+		m.quick.originY -= len(lines) - height
 		lines = lines[len(lines)-height:]
 	}
 	return lines
@@ -255,7 +263,7 @@ func (m *Model) searchFieldLine(width int) string {
 }
 
 // railLines is the sessions rail: the entry list on top, the machine
-// meters and the messages card docked at the bottom behind their seam.
+// meters docked at the bottom behind their seam.
 func (m *Model) railLines(width, height int) []contentLine {
 	var rows []contentLine
 	// chrome lays lines that carry no row, so a click landing on one of
@@ -322,23 +330,7 @@ func (m *Model) railLines(width, height int) []contentLine {
 			chrome(contentLine{text: line})
 		}
 	}
-	m.placeNoticeHit(len(meters), listHeight+1)
 	return rows
-}
-
-// placeNoticeHit pins the card or badge's columns to the screen rows the
-// foot took this frame: one edge cell sits left of the rail's content, and
-// the foot starts under the rule that closes the list.
-func (m *Model) placeNoticeHit(footLines, footIndex int) {
-	if footLines == 0 || !m.noticeHit.ok {
-		m.noticeHit = noticeHit{}
-		return
-	}
-	y0, _ := m.bodyYRange()
-	m.noticeHit.x0++
-	m.noticeHit.x1++
-	m.noticeHit.y0 = y0 + footIndex
-	m.noticeHit.y1 = m.noticeHit.y0 + footLines
 }
 
 // recordRailHits reads the row each rail line carries into m.railHits, so
@@ -918,13 +910,18 @@ func (m *Model) rowPrompt(sess store.Session) string {
 }
 
 // typedPrompt is a delivered prompt with the launch notes peeled off: the
-// rename directives and the coordination note are the manager's words, not
+// rename directives and the coordination notes are the manager's words, not
 // a task, and a note delivered on its own leaves nothing typed at all.
 func typedPrompt(text string) string {
-	if text == launch.DeferredRenameDirective || text == launch.CoordinationNote {
+	if text == launch.DeferredRenameDirective {
 		return ""
 	}
-	text = strings.TrimPrefix(text, launch.CoordinationNote+"\n\n")
+	for _, note := range []string{launch.ProactiveCoordinationNote, launch.OnRequestCoordinationNote} {
+		if text == note {
+			return ""
+		}
+		text = strings.TrimPrefix(text, note+"\n\n")
+	}
 	text = strings.TrimPrefix(text, launch.RenameDirective+"\n\n")
 	text = strings.TrimPrefix(text, launch.RenameAvailableNote+"\n\n")
 	return text
@@ -1081,7 +1078,17 @@ func (m *Model) contentLines(width, height int) []contentLine {
 
 	var bar []contentLine
 	if m.quick.active {
-		bar = append([]contentLine{{}}, ours(splitLines(m.viewQuickBar(inner, quickBarMaxRows)))...)
+		rows := quickBarMaxRows
+		if m.quick.picking != pickNone {
+			rows = height - 1
+		}
+		bar = append([]contentLine{{}}, ours(splitLines(m.viewQuickBar(inner, rows)))...)
+		y0, _ := m.bodyYRange()
+		// Under the blank row, less what a bar taller than the column loses.
+		m.quick.originX, m.quick.originY = m.pane.columnX+contentGutter, y0+height-len(bar)+1
+		if len(bar) > height {
+			bar = bar[len(bar)-height:]
+		}
 	}
 	body := ours(splitLines(m.viewDetail(inner)))
 	rest := height - len(body) - len(bar) - 1
@@ -1123,7 +1130,7 @@ func (m *Model) focusFactsLine(width int) string {
 	// The facts give way one at a time as the terminal narrows, the least
 	// telling first, so a tight line still carries what it has room for
 	// rather than dropping the lot.
-	facts := []focusFact{{text: valueStyle.Render(truncateTail(shortHome(sess.Cwd), focusFactsDirCap)), spare: 3}}
+	facts := []focusFact{{text: valueStyle.Render(truncateTail(shortHome(m.sessionDir(sess)), focusFactsDirCap)), spare: 3}}
 	if sess.WorktreeBranch != "" {
 		facts = append(facts, focusFact{text: subtleStyle.Render("⑂ ") + valueStyle.Render(sess.WorktreeBranch), spare: 2})
 	}
@@ -1410,7 +1417,8 @@ func (m *Model) viewDetail(width int) string {
 	}
 	started := subtleStyle.Render("started " + relSince(sess.CreatedAt))
 	group := lipgloss.NewStyle().Foreground(colorAccent2).Render(displayGroup(sess.Group))
-	dir := func(room int) string { return mutedStyle.Render(truncateTail(sess.Cwd, room)) }
+	cwd := m.sessionDir(sess)
+	dir := func(room int) string { return mutedStyle.Render(truncateTail(cwd, room)) }
 	return fitColumns(heads, []string{state}, width) + "\n" +
 		factRow("group", plainValue(group), started, width) + "\n" +
 		factRow("dir", dir, usage, width)
@@ -1436,6 +1444,10 @@ func (m *Model) viewGroupDetail(group string, width int) string {
 		if m.rename.focus == 2 {
 			worktreeLabel = lipgloss.NewStyle().Foreground(colorAccent)
 		}
+		baseLabel := labelStyle
+		if m.rename.focus == 3 {
+			baseLabel = lipgloss.NewStyle().Foreground(colorAccent)
+		}
 		if fieldWidth := width - 12; fieldWidth >= 10 {
 			m.rename.dir.Width = fieldWidth
 		}
@@ -1445,6 +1457,7 @@ func (m *Model) viewGroupDetail(group string, width int) string {
 		}
 		out += "\n" + worktreeLabel.Width(10).Render("worktree") +
 			subtleStyle.Render("◂ ") + valueStyle.Render(groupWorktreeOptions[m.rename.worktreeIndex]) + subtleStyle.Render(" ▸")
+		out += "\n" + baseLabel.Width(10).Render("base") + groupBaseChoice(m.rename.base, m.groupBase(parentGroup(group)))
 		return out
 	}
 
@@ -1583,21 +1596,16 @@ func lastActivity(sess store.Session) time.Time {
 func (m *Model) viewQuickBar(width, maxRows int) string {
 	label := func(text string) string { return labelStyle.Render(padRight(text, detailLabelWidth)) }
 	target := rowColumns(label("target")+mutedStyle.Render("no selection"), "", width)
+	m.quick.hits = m.quick.hits[:0]
 	if entry, ok := m.selectedRow(); ok {
 		if entry.isGroup {
-			// Spawning: the tool and the worktree choice decide what gets
-			// created, so they sit where the eye lands before typing.
-			worktree := subtleStyle.Render("worktree off")
-			switch {
-			case !m.worktreeCapable(m.quickTargetDir()):
-				worktree = subtleStyle.Render("worktree " + worktreeUnavailable)
-			case m.quickWorktreeOn():
-				worktree = lipgloss.NewStyle().Foreground(colorAccent2).Render("worktree on")
+			group := lipgloss.NewStyle().Foreground(colorAccent2).Render(displayGroup(entry.group))
+			if m.quick.picking != pickNone {
+				return m.viewQuickSheet(width, maxRows, group)
 			}
-			tool := chipStyle.Render(m.quickTool())
-			target = fitColumns(
-				[]string{label("new") + lipgloss.NewStyle().Foreground(colorAccent2).Render(displayGroup(entry.group))},
-				[]string{tool + " " + worktree, tool, ""}, width)
+			// Spawning: what the new agent launches with sits beside the
+			// target, where the eye lands before typing.
+			target = m.quickStatusRow(label("new")+group, width, 0)
 		} else {
 			sess := entry.sess
 			state := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).
@@ -1611,11 +1619,111 @@ func (m *Model) viewQuickBar(width, maxRows int) string {
 	// repositions the viewport inside the rows that are actually on screen.
 	// LineInfo counts wraps at the width already stored on the box.
 	m.quick.input.SetWidth(width)
-	m.quick.maxRows = m.quickBarRows(width-2, maxRows)
+	m.quick.maxRows = m.quickBarRows(width-2, maxRows-1)
 	m.quick.input.SetHeight(m.quick.maxRows)
 	// Chips are tokens inside the typed text, so they wrap and reflow with
 	// the words around them; painting happens on the rendered prompt.
 	return target + "\n" + m.quick.renderChips(textAreaView(m.quick.input))
+}
+
+type quickHit struct {
+	line, x0, x1 int
+	action       int
+	entry        int
+}
+
+const (
+	quickClickTool = iota
+	quickClickModel
+	quickClickEffort
+	quickClickProfile
+	quickClickWorktree
+	quickClickEntry
+)
+
+// quickStatusRow puts what a spawn launches with against the right edge of
+// the row: the CLI, model, effort, profile and worktree, each a stretch a
+// click steps the way its key does.
+func (m *Model) quickStatusRow(left string, width, line int) string {
+	toolName, ch := m.quickTool(), &m.quick.choice
+	type segment struct {
+		text   string
+		action int
+	}
+	orDefault := func(value, fallback string) string {
+		if value == "" {
+			return subtleStyle.Render(fallback)
+		}
+		return valueStyle.Render(value)
+	}
+	segments := []segment{{valueStyle.Render(toolName), quickClickTool}}
+	tool := m.cfg.Tools[toolName]
+	switch note, listed := m.modelRowNote(toolName); {
+	case listed:
+		segments = append(segments, segment{orDefault(ch.model, "default model"), quickClickModel})
+		if _, _, active := m.effortRow(toolName, ch); active {
+			segments = append(segments, segment{orDefault(m.choiceEffort(toolName, ch), "default effort"), quickClickEffort})
+		}
+	case tool.Catalog != "" && tool.ModelArgs != "":
+		// Still reading, or the CLI failed to answer: say so. A CLI with
+		// nothing to pick shows nothing.
+		segments = append(segments, segment{note, quickClickModel})
+	}
+	if _, shown := m.profileRow(toolName, ch); shown {
+		segments = append(segments, segment{orDefault(m.choiceProfileName(toolName, ch), "default profile"), quickClickProfile})
+	}
+	worktree := subtleStyle.Render("⎇ off")
+	switch {
+	case !m.worktreeCapable(m.quickTargetDir()):
+		worktree = subtleStyle.Render("⎇ no repo")
+	case m.quickWorktreeOn():
+		worktree = lipgloss.NewStyle().Foreground(colorAccent2).Render("⎇ on")
+	}
+	segments = append(segments, segment{worktree, quickClickWorktree})
+
+	var status strings.Builder
+	offsets := make([]int, len(segments))
+	for i, seg := range segments {
+		if i > 0 {
+			status.WriteString(subtleStyle.Render(" · "))
+		}
+		offsets[i] = ansi.StringWidth(status.String())
+		status.WriteString(seg.text)
+	}
+	leftWidth := ansi.StringWidth(left)
+	statusWidth := min(ansi.StringWidth(status.String()), max(width-leftWidth-2, 0))
+	start := width - statusWidth
+	for i, seg := range segments {
+		if offsets[i] >= statusWidth {
+			break
+		}
+		x1 := min(offsets[i]+ansi.StringWidth(seg.text), statusWidth)
+		m.quick.hits = append(m.quick.hits, quickHit{line: line, x0: start + offsets[i], x1: start + x1, action: seg.action, entry: -1})
+	}
+	return left + strings.Repeat(" ", max(start-leftWidth, 0)) + ansi.Truncate(status.String(), statusWidth, "…")
+}
+
+// viewQuickSheet stands in for the whole bar while a choice is picked, so
+// the list has the rows the prompt and its target would take.
+func (m *Model) viewQuickSheet(width, maxRows int, group string) string {
+	toolName, ch := m.quickTool(), &m.quick.choice
+	var lines []string
+	if m.quick.picking == pickEffort {
+		lines = []string{
+			subtleStyle.Render("effort for ") + group,
+			textInputView(ch.typedEffort) + "  " + subtleStyle.Render("typed · "+toolName+" lists no levels"),
+		}
+	} else {
+		lines = []string{subtleStyle.Render("model for ") + group, textInputView(ch.filter)}
+		list, entries := m.viewModelSuggestions(toolName, ch, ch.query(), 0, width, max(maxRows-len(lines)-1, 1))
+		for i, line := range list {
+			if entries[i] >= 0 {
+				m.quick.hits = append(m.quick.hits, quickHit{line: len(lines), x0: 0, x1: width, action: quickClickEntry, entry: entries[i]})
+			}
+			lines = append(lines, line)
+		}
+	}
+	return strings.Join(append(lines, m.quickStatusRow("", width, len(lines))), "\n")
 }
 
 // viewHeaderRows is the full-width band over both columns: the wordmark
