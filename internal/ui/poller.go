@@ -617,13 +617,15 @@ func (p *poller) refreshOnce() tea.Msg {
 			// The row can be claimed by the manager that can see its pane
 			// between this pass listing it and reaching here, and a status
 			// derived without that pane must not land on top of the claim.
-			written, err := p.store.UpdateStatusOnSocket(sess.ID, newStatus, socket)
+			written, changed, err := p.store.UpdateStatusOnSocket(sess.ID, newStatus, socket)
 			if err != nil {
 				return errMsg{err}
 			}
 			if written && newStatus != sess.Status {
 				sessions[i].Status = newStatus
-				p.notifyTransition(sess, newStatus)
+				if changed {
+					p.notifyTransition(sess, newStatus)
+				}
 			}
 		}
 	}

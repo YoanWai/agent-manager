@@ -1830,7 +1830,7 @@ func TestUpdateStatusOnSocketWritesOnlyWhatThisServerOwns(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	written, err := st.UpdateStatusOnSocket(sess.ID, "idle", mine)
+	written, _, err := st.UpdateStatusOnSocket(sess.ID, "idle", mine)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1841,7 +1841,7 @@ func TestUpdateStatusOnSocketWritesOnlyWhatThisServerOwns(t *testing.T) {
 	if err := st.SetTmuxSocket(sess.ID, theirs); err != nil {
 		t.Fatal(err)
 	}
-	written, err = st.UpdateStatusOnSocket(sess.ID, "dead", mine)
+	written, _, err = st.UpdateStatusOnSocket(sess.ID, "dead", mine)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1856,12 +1856,72 @@ func TestUpdateStatusOnSocketWritesOnlyWhatThisServerOwns(t *testing.T) {
 		t.Fatalf("status = %q, want the claim to have held it at idle", got.Status)
 	}
 
-	written, err = st.UpdateStatusOnSocket(sess.ID, "dead", theirs)
+	written, _, err = st.UpdateStatusOnSocket(sess.ID, "dead", theirs)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !written {
 		t.Fatal("the server holding the row writes it")
+	}
+}
+
+// Two managers on one server both list a row as working and both derive
+// waiting at the same moment. Both writes land, but only one moved the
+// status, so only that manager may announce the transition. A third
+// connection holds the write lock while both writes start, so a read taken
+// outside the write's transaction would see working twice.
+func TestUpdateStatusOnSocketReportsWhichWriteMovedTheStatus(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "shared.db")
+	open := func() *Store {
+		st, err := Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { st.Close() })
+		return st
+	}
+	holder, managers := open(), []*Store{open(), open()}
+	const socket = "/tmp/shared/agentmgr"
+	sess := Session{ID: "sess-1", Name: "one", Tool: "claude", Cwd: "/tmp", Status: "working"}
+	if err := holder.CreateSession(sess); err != nil {
+		t.Fatal(err)
+	}
+
+	lock, err := holder.db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	type result struct {
+		written, changed bool
+		err              error
+	}
+	results := make(chan result, len(managers))
+	for _, manager := range managers {
+		go func() {
+			written, changed, err := manager.UpdateStatusOnSocket(sess.ID, "waiting", socket)
+			results <- result{written, changed, err}
+		}()
+	}
+	time.Sleep(200 * time.Millisecond)
+	if err := lock.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+
+	changes := 0
+	for range managers {
+		got := <-results
+		if got.err != nil {
+			t.Fatal(got.err)
+		}
+		if !got.written {
+			t.Fatal("both managers own the row, so both writes must land")
+		}
+		if got.changed {
+			changes++
+		}
+	}
+	if changes != 1 {
+		t.Fatalf("%d writes reported moving the status, want exactly 1", changes)
 	}
 }
 

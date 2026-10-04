@@ -775,20 +775,28 @@ func (s *Store) UpdateStatus(id, newStatus string) error {
 // manager's to speak for: claimed by this tmux server, or claimed by none.
 // It reports whether the write landed, so a manager whose listing predates
 // another one claiming the row leaves that row's status alone rather than
-// announcing what it derived from a pane it cannot see.
-func (s *Store) UpdateStatusOnSocket(id, newStatus, socket string) (bool, error) {
-	res, err := s.db.Exec(
-		`UPDATE sessions SET status = ?, last_status_at = ?
-		 WHERE id = ? AND tmux_socket IN ('', ?)`,
-		newStatus, encodeTime(time.Now()), id, socket)
+// announcing what it derived from a pane it cannot see. It also reports
+// whether this write is what moved the stored status: managers sharing a
+// server derive the same transition, and only one of them may announce it.
+func (s *Store) UpdateStatusOnSocket(id, newStatus, socket string) (written, changed bool, err error) {
+	tx, err := s.db.Begin()
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
-	changed, err := res.RowsAffected()
+	defer tx.Rollback()
+	var previous string
+	err = tx.QueryRow(`SELECT status FROM sessions WHERE id = ? AND tmux_socket IN ('', ?)`, id, socket).Scan(&previous)
+	if err == sql.ErrNoRows {
+		return false, false, nil
+	}
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
-	return changed > 0, nil
+	if _, err := tx.Exec(`UPDATE sessions SET status = ?, last_status_at = ? WHERE id = ?`,
+		newStatus, encodeTime(time.Now()), id); err != nil {
+		return false, false, err
+	}
+	return true, previous != newStatus, tx.Commit()
 }
 
 // AcknowledgeFinished atomically marks a session idle and acked if its stored
