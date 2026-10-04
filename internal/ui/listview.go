@@ -85,6 +85,7 @@ func (m *Model) viewListFrame() string {
 		bottom = m.focusBottomRule(leftWidth+1, m.width)
 	}
 	frame = append(frame, bottom)
+	m.placeNoticeHit(footer, len(frame))
 	for _, line := range splitLines(footer) {
 		frame = append(frame, paint(line, m.width, backdropHex()))
 	}
@@ -134,6 +135,7 @@ func (m *Model) viewFullListFrame() string {
 		paintContent(railRows, railWidth, bodyHeight, panelHex()),
 	)...)
 	frame = append(frame, m.boundedRuleRow(railWidth, m.width, "▄"))
+	m.placeNoticeHit(footer, len(frame))
 	for _, line := range splitLines(footer) {
 		frame = append(frame, paint(line, m.width, backdropHex()))
 	}
@@ -151,7 +153,6 @@ func (m *Model) viewFullFocusFrame() string {
 	// This frame paints no rail, so a click lands on no row: the list
 	// frame's hits would otherwise select a row nobody pointed at.
 	m.recordRailHits(nil)
-	m.noticeHit = noticeHit{}
 	frame := []string{}
 	for _, line := range m.viewHeaderRows() {
 		frame = append(frame, paint(line, m.width, backdropHex()))
@@ -262,7 +263,7 @@ func (m *Model) searchFieldLine(width int) string {
 }
 
 // railLines is the sessions rail: the entry list on top, the machine
-// meters and the messages card docked at the bottom behind their seam.
+// meters docked at the bottom behind their seam.
 func (m *Model) railLines(width, height int) []contentLine {
 	var rows []contentLine
 	// chrome lays lines that carry no row, so a click landing on one of
@@ -329,23 +330,7 @@ func (m *Model) railLines(width, height int) []contentLine {
 			chrome(contentLine{text: line})
 		}
 	}
-	m.placeNoticeHit(len(meters), listHeight+1)
 	return rows
-}
-
-// placeNoticeHit pins the card or badge's columns to the screen rows the
-// foot took this frame: one edge cell sits left of the rail's content, and
-// the foot starts under the rule that closes the list.
-func (m *Model) placeNoticeHit(footLines, footIndex int) {
-	if footLines == 0 || !m.noticeHit.ok {
-		m.noticeHit = noticeHit{}
-		return
-	}
-	y0, _ := m.bodyYRange()
-	m.noticeHit.x0++
-	m.noticeHit.x1++
-	m.noticeHit.y0 = y0 + footIndex
-	m.noticeHit.y1 = m.noticeHit.y0 + footLines
 }
 
 // recordRailHits reads the row each rail line carries into m.railHits, so

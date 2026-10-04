@@ -38,9 +38,6 @@ const (
 	repoURL = "https://github.com/YoanWai/agent-manager"
 )
 
-// notice is one dismissible message shown in the rail's messages panel
-// and readable in full from the notices modal. url is what enter opens;
-// glyph and tint are its mark in both places.
 type notice struct {
 	id            string
 	glyph         string
@@ -280,12 +277,7 @@ func loadWhatsNewFromVersion(st *store.Store) string {
 	return version
 }
 
-// noticePanelMin is the narrowest messages column worth reading; a rail
-// too tight for it keeps the machine meters alone.
-const noticePanelMin = 16
-
-// noticeCardHex is the messages card's fill: the rail's panel tone warmed
-// toward yellow, so the card reads as a sticky note in any theme.
+// noticeCardHex warms the messages modal's fill toward yellow.
 func noticeCardHex() string { return mix(panelHex(), "#e2c044", 0.16) }
 
 // noticeBorderStyle is the card's rounded frame, dimmed toward the same
@@ -294,8 +286,6 @@ func noticeBorderStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(lipgloss.Color(mix(current.Subtle, "#e2c044", 0.45)))
 }
 
-// noticeTitleStyle is the warm bold tone the card's legend and the full
-// screen badge share, so a message reads the same in either layout.
 func noticeTitleStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(lipgloss.Color(mix(current.Bright, "#e2c044", 0.5))).Bold(true)
 }
@@ -306,9 +296,7 @@ func noticeLegend() string {
 	return noticeTitleStyle().Render(" messages ")
 }
 
-// noticeHit is the rail columns and screen rows the messages card or
-// badge covered on the last frame, so a click resolves against what was
-// painted, the way railHits does for rows.
+// noticeHit follows the messages entry in the painted key legend.
 type noticeHit struct {
 	x0, x1, y0, y1 int
 	ok             bool
@@ -318,64 +306,38 @@ func (h noticeHit) contains(x, y int) bool {
 	return h.ok && x >= h.x0 && x < h.x1 && y >= h.y0 && y < h.y1
 }
 
-// railFootLines is the rail's foot: the machine meters with the messages
-// card docked to their right when both notices and width exist. The card
-// hugs its content behind a rule that separates the two blocks.
+func (m *Model) placeNoticeHit(footer string, firstRow int) {
+	binding := m.listGlyph(keybind.Messages)
+	if binding == "" {
+		return
+	}
+	label := ansi.Strip(keyCapQuiet(binding, "messages"))
+	for i, line := range splitLines(footer) {
+		line = ansi.Strip(line)
+		start := strings.Index(line, label)
+		if start < 0 {
+			continue
+		}
+		x := ansi.StringWidth(line[:start])
+		y := firstRow + i
+		if x+ansi.StringWidth(label) <= m.width && y < m.height {
+			m.noticeHit = noticeHit{x0: x, x1: x + ansi.StringWidth(label), y0: y, y1: y + 1, ok: true}
+		}
+		return
+	}
+}
+
 func (m *Model) railFootLines(width int) []string {
-	m.noticeHit = noticeHit{}
+	if m.hideStats {
+		return nil
+	}
 	if m.fullLayout {
 		return m.fullFootLine(width)
 	}
-	meters := m.computerLines(width)
-	notices := m.activeNotices()
-	if m.hideStats {
-		if len(notices) == 0 {
-			return nil
-		}
-		m.noticeHit = noticeHit{x0: 0, x1: width, ok: true}
-		return m.noticeCardLines(notices, width, len(meters))
-	}
-	metersWidth := maxLineWidth(meters)
-	room := width - metersWidth - 3
-	if len(notices) == 0 || room < noticePanelMin {
-		return meters
-	}
-	m.noticeHit = noticeHit{x0: metersWidth + 3, x1: width, ok: true}
-
-	card := m.noticeCardLines(notices, room, len(meters))
-	separator := subtleStyle.Render("│")
-	lines := make([]string, len(meters))
-	for i := range meters {
-		row := ""
-		if i < len(card) {
-			row = card[i]
-		}
-		lines[i] = padRight(meters[i], metersWidth) + " " + separator + " " + row
-	}
-	return lines
+	return m.computerLines(width)
 }
 
-// fullFootLine is the rail foot the full screen layout keeps: the meter
-// block and the messages card condensed to one line, machine readings
-// inline on the left and the messages count against the right edge.
 func (m *Model) fullFootLine(width int) []string {
-	badge := ""
-	if count := len(m.activeNotices()); count > 0 {
-		badge = noticeTitleStyle().Render(fmt.Sprintf("messages %d", count)) + "  " + keyCap("M", "open")
-	}
-	if m.hideStats {
-		if badge == "" {
-			return nil
-		}
-		available := width - railInset
-		if available <= 0 {
-			return nil
-		}
-		badge = ansi.Truncate(badge, available, "…")
-		indent := max(width-railInset-ansi.StringWidth(badge), railInset)
-		m.noticeHit = noticeHit{x0: indent, x1: indent + ansi.StringWidth(badge), ok: true}
-		return []string{strings.Repeat(" ", indent) + badge}
-	}
 	reading := func(label, value string, ok bool) string {
 		if !ok {
 			return labelStyle.Render(label+" ") + subtleStyle.Render("n/a")
@@ -405,59 +367,7 @@ func (m *Model) fullFootLine(width int) []string {
 		parts = append(parts, reading("net", "↓ "+humanBytes(m.net.down)+"/s ↑ "+humanBytes(m.net.up)+"/s", true))
 	}
 	line := strings.Repeat(" ", railInset) + strings.Join(parts, "  ")
-	// The readings yield to the badge and the badge to the width: a
-	// narrow terminal trims values from the right rather than wrapping
-	// the one-line foot into the list.
-	room := width - railInset
-	if badge != "" {
-		room -= ansi.StringWidth(badge) + 2
-	}
-	if room > 0 && ansi.StringWidth(line) > room {
-		line = ansi.Truncate(line, room, "…")
-	}
-	if badge != "" {
-		gap := width - railInset - ansi.StringWidth(line) - ansi.StringWidth(badge)
-		if gap >= 2 {
-			line += strings.Repeat(" ", gap) + badge
-			m.noticeHit = noticeHit{x0: ansi.StringWidth(line) - ansi.StringWidth(badge), x1: ansi.StringWidth(line), ok: true}
-		}
-	}
-	return []string{line}
-}
-
-// noticeCardLines is the messages card: a fieldset — the messages legend
-// set into the rounded top border, the open key into the bottom one —
-// hugging its content in width and spanning the meters block in height.
-func (m *Model) noticeCardLines(notices []notice, maxWidth, height int) []string {
-	room := height - 2
-	shown := notices
-	overflow := ""
-	if len(shown) > room {
-		shown = shown[:room-1]
-		overflow = subtleStyle.Render(fmt.Sprintf("+%d more · M", len(notices)-len(shown)))
-	}
-
-	var rows []string
-	for _, n := range shown {
-		rows = append(rows, n.mark()+" "+valueStyle.Render(n.title))
-	}
-	if overflow != "" {
-		rows = append(rows, overflow)
-	}
-
-	head := noticeLegend()
-	foot := keyCap("M", "open") + subtleStyle.Render(" ")
-	inner := max(lipgloss.Width(head), lipgloss.Width(foot)) + 2
-	if w := maxLineWidth(rows); w > inner {
-		inner = w
-	}
-	if inner > maxWidth-4 {
-		inner = maxWidth - 4
-	}
-
-	filled := make([]string, height-2)
-	copy(filled, rows)
-	return noticeFrame(filled, inner, head, foot)
+	return []string{ansi.Truncate(line, max(width-railInset, 0), "…")}
 }
 
 // noticeFrame wraps content rows in the notices fieldset: a rounded

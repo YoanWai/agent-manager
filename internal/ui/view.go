@@ -26,6 +26,7 @@ func (m *Model) View() string {
 }
 
 func (m *Model) view() string {
+	m.noticeHit = noticeHit{}
 	if m.width == 0 {
 		return m.syncCursorAnchor("loading...")
 	}
@@ -698,15 +699,20 @@ func (m *Model) viewLegend() legendSection {
 	if m.allGroupsCollapsed() {
 		foldAllAction = "unfold all"
 	}
-	// Ordered by what a narrow terminal must keep: moving around, making
+	// Ordered by what a narrow terminal must keep: unread messages, which
+	// the footer is the only mouse path to, moving around, making
 	// something, the filters, then the keys a user already knows to look for.
 	k := m.listGlyph
 	emptyGroupsKey := k(keybind.EmptyGroups)
 	if m.showArchived {
 		emptyGroupsKey = ""
 	}
-	pairs := [][2]string{{strings.TrimSpace(k(keybind.Up) + " " + k(keybind.Down)), "navigate"}}
+	var pairs [][2]string
+	if len(m.activeNotices()) > 0 {
+		pairs = append(pairs, [2]string{k(keybind.Messages), "messages"})
+	}
 	pairs = append(pairs, [][2]string{
+		{strings.TrimSpace(k(keybind.Up) + " " + k(keybind.Down)), "navigate"},
 		{k(keybind.NewSession), "new"}, {k(keybind.Terminal), "terminal"}, {k(keybind.NewGroup), "group"}, {k(keybind.Search), "search"},
 		{k(keybind.Archived), archivedAction}, {k(keybind.Filter), statusFilterAction}, {emptyGroupsKey, emptyGroupsAction},
 		{k(keybind.Help), "keys"}, {k(keybind.Quit), "quit"},

@@ -36,9 +36,15 @@ func legendBar(sections []legendSection, width int) string {
 	more := subtleStyle.Render("…")
 
 	var out []string
-	for _, section := range sections {
+	for i, section := range sections {
 		if len(section.pairs) == 0 || len(out) >= legendMaxRows {
 			continue
+		}
+		maxRows := legendMaxRows
+		for _, next := range sections[i+1:] {
+			if len(next.pairs) > 0 {
+				maxRows--
+			}
 		}
 		title := legendBadgeStyle.Render(section.title)
 		if section.quiet {
@@ -56,7 +62,7 @@ func legendBar(sections []legendSection, width int) string {
 			// The row that cannot wrap further keeps room for the cut
 			// marker, so the marker never lands past the terminal edge.
 			avail := width
-			if len(out) >= legendMaxRows-1 {
+			if len(out) >= maxRows-1 {
 				avail = width - 1 - ansi.StringWidth(more)
 			}
 			switch {
@@ -65,7 +71,7 @@ func legendBar(sections []legendSection, width int) string {
 			case lineWidth+partWidth <= avail:
 				line += gap + part
 				lineWidth += partWidth
-			case len(out) < legendMaxRows-1:
+			case len(out) < maxRows-1:
 				out = append(out, line)
 				line, lineWidth = cont+part, ansi.StringWidth(cont)+ansi.StringWidth(part)
 			default:
