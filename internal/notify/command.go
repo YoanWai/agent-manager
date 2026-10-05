@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -40,6 +41,10 @@ func runBoundedShell(env []string, command string) (string, error) {
 	output := &cappedBuffer{limit: commandOutputLimit}
 	cmd.Stdout = output
 	cmd.Stderr = output
+	// The timeout ends the whole command, not only sh: a curl or a
+	// backgrounded job would otherwise outlive it, one per notification.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
 	// A child that outlives sh keeps the output pipe open; this stops
 	// waiting for it once sh is gone.
 	cmd.WaitDelay = time.Second
