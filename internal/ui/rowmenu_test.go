@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -243,4 +245,22 @@ func TestAPendingEndOffersItsCancelInTheMenuAndTheFooter(t *testing.T) {
 	if strings.Contains(ansi.Strip(m.View()), "alpha ↓") {
 		t.Fatal("the row still wears the archive mark after the cancel")
 	}
+}
+
+// A row the poll has not yet ended still carries its request once dead, and
+// c cancels it there, so the menu has to as well.
+func TestADeadRowWithAPendingEndOffersItsCancel(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	sess := askAfterTurn(t, m, "alpha", store.AfterTurnKill)
+	if err := m.store.UpdateStatus(sess.ID, status.Dead); err != nil {
+		t.Fatalf("UpdateStatus: %v", err)
+	}
+	loadStoredRows(t, m)
+	for _, item := range m.rowMenuItems(sessionRow(t, m, "alpha")) {
+		if item.label == "Cancel kill" && item.action == keybind.CancelEnd {
+			return
+		}
+	}
+	t.Fatalf("the dead row's menu has no Cancel kill: %+v", m.rowMenuItems(sessionRow(t, m, "alpha")))
 }
