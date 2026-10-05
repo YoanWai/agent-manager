@@ -31,12 +31,6 @@ const (
 	existsEvery = 4
 )
 
-// restingStates is what "the session stopped working" means. Finished is
-// rewritten to idle once the manager acknowledges it, and a manager tick
-// can pass through both between two polls, so waiting on the whole set is
-// the only way not to miss the moment.
-var restingStates = []string{status.Finished, status.Waiting, status.Idle, status.Errored, status.Dead}
-
 type WaitResult struct {
 	Session      Session `json:"session"`
 	Reached      bool    `json:"reached" jsonschema:"true when the session reached one of the awaited states"`
@@ -47,7 +41,7 @@ type WaitResult struct {
 
 func normalizeWaitStates(until []string) ([]string, error) {
 	if len(until) == 0 {
-		return restingStates, nil
+		return status.Resting, nil
 	}
 	known := map[string]bool{
 		status.Starting: true, status.Working: true, status.Waiting: true,

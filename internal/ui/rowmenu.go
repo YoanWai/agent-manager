@@ -118,10 +118,14 @@ func (m *Model) rowMenuItems(entry treeRow) []menuItem {
 			{label: "New terminal", action: keybind.Terminal},
 		}
 	}
+	end := []menuItem{{label: "Restart", action: keybind.Restart}}
+	if sess.AfterTurn != "" {
+		end = append(end, menuItem{label: "Cancel " + sess.AfterTurn, action: keybind.CancelEnd})
+	}
 	return menuSections(
 		[]menuItem{{label: "Attach", action: menuAttach}},
 		agent, manage,
-		[]menuItem{{label: "Restart", action: keybind.Restart}, m.archiveMenuItem(), kill, remove},
+		append(end, m.archiveMenuItem(), kill, remove),
 	)
 }
 

@@ -450,8 +450,8 @@ func TestSessionsKillKeepsTheScreenAndReviveBringsItBack(t *testing.T) {
 	if !revived.Running || !h.driver.Exists(created.ID) {
 		t.Fatalf("revived session = %+v", revived)
 	}
-	if _, err := h.sessions.Kill(h.caller.ID, h.caller.ID); err == nil {
-		t.Fatal("a session must not kill itself")
+	if _, err := h.sessions.Kill(h.caller.ID, h.caller.ID); err == nil || !strings.Contains(err.Error(), "kill_self") {
+		t.Fatalf("killing itself = %v, want kill_self named", err)
 	}
 }
 
@@ -479,8 +479,8 @@ func TestSessionsArchiveHidesAndRestores(t *testing.T) {
 	if restored.Archived {
 		t.Fatalf("restored session = %+v", restored)
 	}
-	if _, err := h.sessions.Archive(h.caller.ID, h.caller.ID, true); err == nil {
-		t.Fatal("a session must not archive itself")
+	if _, err := h.sessions.Archive(h.caller.ID, h.caller.ID, true); err == nil || !strings.Contains(err.Error(), "archive_self") {
+		t.Fatalf("archiving itself = %v, want archive_self named", err)
 	}
 }
 
@@ -1411,6 +1411,63 @@ func TestSessionsCreateWithNoCallerTakesTheSettingsDefaults(t *testing.T) {
 	_, listed, _ := strings.Cut(err.Error(), "(configured tools are ")
 	if slices.Contains(strings.Split(strings.TrimSuffix(listed, ")"), ", "), shell) {
 		t.Fatalf("the error offers the shell tool %q as a choice: %v", shell, err)
+	}
+}
+
+// The request arrives mid-turn, while the stored status can still be the
+// last turn's rest; the row reads working with it, so only a rest the poll
+// derives after this call can count as the turn ending.
+func TestASessionAsksToEndItselfOnceItsTurnEnds(t *testing.T) {
+	h := newSessionHarness(t)
+	if err := h.store.UpdateStatus(h.caller.ID, status.Finished); err != nil {
+		t.Fatalf("UpdateStatus: %v", err)
+	}
+	asked, err := h.sessions.EndAfterTurn(h.caller.ID, store.AfterTurnArchive)
+	if err != nil {
+		t.Fatalf("EndAfterTurn: %v", err)
+	}
+	if asked.Pending != store.AfterTurnArchive || asked.Replaced != "" {
+		t.Fatalf("asked = %+v", asked)
+	}
+	stored, err := h.store.Get(h.caller.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if stored.AfterTurn != store.AfterTurnArchive || stored.AfterTurnAt.IsZero() || stored.Status != status.Working {
+		t.Fatalf("stored = after %q at %v, status %q", stored.AfterTurn, stored.AfterTurnAt, stored.Status)
+	}
+
+	switched, err := h.sessions.EndAfterTurn(h.caller.ID, store.AfterTurnKill)
+	if err != nil || switched.Pending != store.AfterTurnKill || switched.Replaced != store.AfterTurnArchive {
+		t.Fatalf("switching to a kill = %+v, %v", switched, err)
+	}
+
+	canceled, err := h.sessions.CancelAfterTurn(h.caller.ID)
+	if err != nil || canceled.Canceled != store.AfterTurnKill || canceled.Pending != "" {
+		t.Fatalf("cancel = %+v, %v", canceled, err)
+	}
+	if stored, err := h.store.Get(h.caller.ID); err != nil || stored.AfterTurn != "" || !stored.AfterTurnAt.IsZero() {
+		t.Fatalf("after cancel the row holds %q at %v, err %v", stored.AfterTurn, stored.AfterTurnAt, err)
+	}
+	if again, err := h.sessions.CancelAfterTurn(h.caller.ID); err != nil || again.Canceled != "" {
+		t.Fatalf("canceling nothing = %+v, %v", again, err)
+	}
+	if FormatAfterTurn(AfterTurn{ManagerAwake: true}) != "no archive or kill was pending" {
+		t.Fatalf("nothing pending reads %q", FormatAfterTurn(AfterTurn{ManagerAwake: true}))
+	}
+}
+
+func TestATerminalHasNoTurnToEndItselfAfter(t *testing.T) {
+	h := newSessionHarness(t)
+	terminal, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{})
+	if err != nil {
+		t.Fatalf("create terminal: %v", err)
+	}
+	if _, err := h.sessions.EndAfterTurn(terminal.ID, store.AfterTurnKill); err == nil || !strings.Contains(err.Error(), "terminal") {
+		t.Fatalf("a terminal asking to be killed after its turn = %v", err)
+	}
+	if _, err := h.sessions.EndAfterTurn("", store.AfterTurnArchive); err == nil || !strings.Contains(err.Error(), "not inside an Agent Manager session") {
+		t.Fatalf("no caller = %v, want the missing caller named", err)
 	}
 }
 

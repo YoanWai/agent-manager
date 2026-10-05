@@ -252,6 +252,7 @@ const (
 	Revive      = "revive"
 	ReviveAll   = "revive_all"
 	Archive     = "archive"
+	CancelEnd   = "cancel_end"
 	Restore     = "restore"
 	Delete      = "delete"
 	Search      = "search"
@@ -303,6 +304,7 @@ var listActions = []Action{
 	{Revive, "revive the session, or every dead one in the group", keys("v")},
 	{ReviveAll, "revive every dead session in view", keys("V")},
 	{Archive, "archive the session or group", keys("a")},
+	{CancelEnd, "cancel the archive or kill a session asked for once its turn ends", keys("c")},
 	{Restore, "restore the session or group", keys("u")},
 	{Delete, "delete the session or group", keys("d")},
 	{Search, "search the list", keys("/")},

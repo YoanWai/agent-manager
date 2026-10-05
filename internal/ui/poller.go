@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -474,6 +475,7 @@ func (p *poller) refreshOnce() tea.Msg {
 	paneHashes := make(map[string]uint64, len(sessions))
 	paneLastLines := make(map[string]string, len(sessions))
 	panePrompts := make(map[string]string, len(sessions))
+	var turnsEnded []string
 	for i, sess := range sessions {
 		if sess.Archived {
 			continue
@@ -628,6 +630,13 @@ func (p *poller) refreshOnce() tea.Msg {
 				}
 			}
 		}
+		due, err := p.afterTurnDue(sess, newStatus)
+		if err != nil {
+			return errMsg{err}
+		}
+		if due {
+			turnsEnded = append(turnsEnded, sess.ID)
+		}
 	}
 	if preview == "" && selectedID != "" {
 		for _, sess := range sessions {
@@ -702,6 +711,7 @@ func (p *poller) refreshOnce() tea.Msg {
 		paneLines:      paneLastLines,
 		panePrompts:    panePrompts,
 		panes:          panes,
+		turnsEnded:     turnsEnded,
 	}
 	if p.takeFocus != nil {
 		if id, ok := p.takeFocus(); ok {
@@ -713,6 +723,20 @@ func (p *poller) refreshOnce() tea.Msg {
 		msg.snapOK = true
 	}
 	return msg
+}
+
+// afterTurnDue reports whether the archive or kill a session asked for is
+// due: this pass read it at rest, and the request stamped the row working,
+// so that rest came after the call. A request older than the agent now in
+// the pane came from a run a restart or revive already ended, and is dropped.
+func (p *poller) afterTurnDue(sess store.Session, current string) (bool, error) {
+	if sess.AfterTurn == "" {
+		return false, nil
+	}
+	if sess.AfterTurnAt.Before(sess.LaunchTime()) {
+		return false, ignoreDeletedSession(p.store.ClearAfterTurn(sess.ID))
+	}
+	return slices.Contains(status.Resting, current), nil
 }
 
 // idMinting reports whether a live, not-yet-captured session belongs to a

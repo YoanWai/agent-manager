@@ -2075,3 +2075,27 @@ func TestClaudeTailFollowsTheLiveTranscript(t *testing.T) {
 		t.Fatalf("reply = %q, want nothing while the live transcript cannot be read", reply)
 	}
 }
+
+// Only a rest read after the request ends the turn that asked; a pass that
+// still reads it working leaves the request standing.
+func TestAnEndAfterTheTurnWaitsForTheSessionToRest(t *testing.T) {
+	p, sess := newTestPollerWithSession(t)
+	if err := p.store.RequestAfterTurn(sess.ID, store.AfterTurnKill, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := p.store.Get(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if due, err := p.afterTurnDue(sess, status.Working); err != nil || due {
+		t.Fatalf("working: due=%v err=%v", due, err)
+	}
+	for _, rest := range status.Resting {
+		if due, err := p.afterTurnDue(sess, rest); err != nil || !due {
+			t.Fatalf("%s: due=%v err=%v", rest, due, err)
+		}
+	}
+	if got, _ := p.store.Get(sess.ID); got.AfterTurn != store.AfterTurnKill {
+		t.Fatalf("reporting the end cleared the request before the manager acted: %q", got.AfterTurn)
+	}
+}

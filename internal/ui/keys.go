@@ -170,6 +170,8 @@ func (m *Model) runListAction(action string) (tea.Model, tea.Cmd) {
 		return m.killAllLive()
 	case keybind.Archive:
 		return m.archiveSelected()
+	case keybind.CancelEnd:
+		return m.cancelEndSelected()
 	case keybind.Restore:
 		return m.restoreSelected()
 	case keybind.Delete:

@@ -3,6 +3,8 @@ package sessioncmd
 import (
 	"fmt"
 	"strings"
+
+	"github.com/YoanWai/agent-manager/internal/store"
 )
 
 // The CLI subcommands and the MCP tools describe the same workspace to the
@@ -74,6 +76,29 @@ func FormatArchiveState(session Session) string {
 		return "archived " + FormatSession(session)
 	}
 	return "restored " + FormatSession(session)
+}
+
+// FormatAfterTurn tells the agent what happens to it, in the order it acts
+// on: what is pending, and whether anything is running to carry it out.
+func FormatAfterTurn(result AfterTurn) string {
+	switch {
+	case result.Canceled != "":
+		return "canceled the pending " + result.Canceled + "; this session stays as it is when the turn ends"
+	case result.Pending == "":
+		return "no archive or kill was pending"
+	}
+	verb := "archived"
+	if result.Pending == store.AfterTurnKill {
+		verb = "killed"
+	}
+	text := "this session is " + verb + " once the current turn ends, so finish your reply now"
+	if result.Replaced != "" {
+		text += "; this replaces the pending " + result.Replaced
+	}
+	if !result.ManagerAwake {
+		text += "; Agent Manager is not running, so it happens once the user opens it"
+	}
+	return text
 }
 
 func FormatSessionScreen(screen SessionScreen) string {

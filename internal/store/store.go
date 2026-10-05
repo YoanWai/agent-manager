@@ -74,7 +74,16 @@ type Session struct {
 	TmuxSocket string
 	// Choice rides every launch: restart, revive and fork.
 	Choice config.Choice
+	// AfterTurn is what the session asked the manager to do to it once the
+	// turn that asked ends: AfterTurnArchive, AfterTurnKill, or empty.
+	AfterTurn   string
+	AfterTurnAt time.Time
 }
+
+const (
+	AfterTurnArchive = "archive"
+	AfterTurnKill    = "kill"
+)
 
 // LaunchTime is when the agent now in the pane started: the last restart
 // or revive, or the row's creation for a session that never relaunched.
@@ -241,6 +250,8 @@ CREATE TABLE IF NOT EXISTS settings (
 		`ALTER TABLE sessions ADD COLUMN effort TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN profile TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE groups ADD COLUMN base TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN after_turn TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN after_turn_at INTEGER NOT NULL DEFAULT 0`,
 	}
 	for _, migration := range migrations {
 		if _, err := s.db.Exec(migration); err != nil {
@@ -557,7 +568,7 @@ func (s *Store) AddGroup(name, path, worktree, base string) error {
 }
 
 func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
-	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, relaunch_snapshot, pending_inputs, pending_claimed, parent_id, launch_prompt, last_prompt, tmux_socket, model_provider, model, effort, profile
+	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, relaunch_snapshot, pending_inputs, pending_claimed, parent_id, launch_prompt, last_prompt, tmux_socket, model_provider, model, effort, profile, after_turn, after_turn_at
 	          FROM sessions`
 	if !includeArchived {
 		query += ` WHERE archived = 0`
@@ -573,13 +584,13 @@ func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
 	for rows.Next() {
 		var sess Session
 		var archived, acked, pendingClaimed int
-		var created, lastStatus, agentLaunched int64
+		var created, lastStatus, agentLaunched, afterTurnAt int64
 		var pendingInputs, relaunchSnapshot string
 		if err := rows.Scan(&sess.ID, &sess.Name, &sess.Tool, &sess.Cwd,
 			&sess.Group, &sess.Status, &archived, &acked, &created, &lastStatus,
 			&sess.AgentSessionID, &sess.WorktreeRepo, &sess.WorktreeBranch,
 			&agentLaunched, &sess.RetiredAgentSessionID, &relaunchSnapshot, &pendingInputs, &pendingClaimed, &sess.ParentID, &sess.LaunchPrompt, &sess.LastPrompt, &sess.TmuxSocket,
-			&sess.Choice.Provider, &sess.Choice.Model, &sess.Choice.Effort, &sess.Choice.Profile); err != nil {
+			&sess.Choice.Provider, &sess.Choice.Model, &sess.Choice.Effort, &sess.Choice.Profile, &sess.AfterTurn, &afterTurnAt); err != nil {
 			return nil, err
 		}
 		if err := decodeRelaunchSnapshot(relaunchSnapshot, &sess); err != nil {
@@ -594,6 +605,7 @@ func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
 		sess.CreatedAt = decodeTime(created)
 		sess.LastStatusAt = decodeTime(lastStatus)
 		sess.AgentLaunchedAt = decodeTime(agentLaunched)
+		sess.AfterTurnAt = decodeTime(afterTurnAt)
 		sessions = append(sessions, sess)
 	}
 	return sessions, rows.Err()
@@ -602,15 +614,15 @@ func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
 func (s *Store) Get(id string) (Session, error) {
 	var sess Session
 	var archived, acked, pendingClaimed int
-	var created, lastStatus, agentLaunched int64
+	var created, lastStatus, agentLaunched, afterTurnAt int64
 	var pendingInputs, relaunchSnapshot string
 	err := s.db.QueryRow(
-		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, relaunch_snapshot, pending_inputs, pending_claimed, parent_id, launch_prompt, last_prompt, tmux_socket, model_provider, model, effort, profile
+		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, relaunch_snapshot, pending_inputs, pending_claimed, parent_id, launch_prompt, last_prompt, tmux_socket, model_provider, model, effort, profile, after_turn, after_turn_at
 		 FROM sessions WHERE id = ?`, id,
 	).Scan(&sess.ID, &sess.Name, &sess.Tool, &sess.Cwd, &sess.Group,
 		&sess.Status, &archived, &acked, &created, &lastStatus, &sess.AgentSessionID,
 		&sess.WorktreeRepo, &sess.WorktreeBranch, &agentLaunched, &sess.RetiredAgentSessionID, &relaunchSnapshot, &pendingInputs, &pendingClaimed, &sess.ParentID, &sess.LaunchPrompt, &sess.LastPrompt, &sess.TmuxSocket,
-		&sess.Choice.Provider, &sess.Choice.Model, &sess.Choice.Effort, &sess.Choice.Profile)
+		&sess.Choice.Provider, &sess.Choice.Model, &sess.Choice.Effort, &sess.Choice.Profile, &sess.AfterTurn, &afterTurnAt)
 	if err != nil {
 		return Session{}, err
 	}
@@ -626,6 +638,7 @@ func (s *Store) Get(id string) (Session, error) {
 	sess.CreatedAt = decodeTime(created)
 	sess.LastStatusAt = decodeTime(lastStatus)
 	sess.AgentLaunchedAt = decodeTime(agentLaunched)
+	sess.AfterTurnAt = decodeTime(afterTurnAt)
 	return sess, nil
 }
 
@@ -928,6 +941,28 @@ func (s *Store) Snapshot(id string) (string, error) {
 		return "", nil
 	}
 	return snapshot, err
+}
+
+// RequestAfterTurn files action to run once the session's current turn
+// ends. The caller is mid-turn, so the row is stamped working with it: a
+// resting status the poll has yet to move off would otherwise read as the
+// end of a turn still running.
+func (s *Store) RequestAfterTurn(id, action string, at time.Time) error {
+	res, err := s.db.Exec(
+		`UPDATE sessions SET after_turn = ?, after_turn_at = ?, status = ?, last_status_at = ? WHERE id = ?`,
+		action, encodeTime(at), status.Working, encodeTime(at), id)
+	if err != nil {
+		return err
+	}
+	return requireRow(res, id)
+}
+
+func (s *Store) ClearAfterTurn(id string) error {
+	res, err := s.db.Exec(`UPDATE sessions SET after_turn = '', after_turn_at = 0 WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	return requireRow(res, id)
 }
 
 func (s *Store) SetArchived(id string, archived bool) error {

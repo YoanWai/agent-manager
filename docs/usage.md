@@ -42,6 +42,7 @@ Tell your agent what you want to review in Agent Manager. Your agent will set up
 | `V` | Revive every dead session in view, asking first when more than one is dead |
 | `R` | Restart the selected session on an empty context: same name, group, directory and tool |
 | `a` / `u` | Archive / restore a session or group. Archive kills the process and keeps the last preview; restore resumes it |
+| `c` | Keep a session that asked to be archived or killed once its turn ends: cancels that request |
 | `d` | Delete session, or a group + its entire subtree |
 | `space` | Quick prompt: answer the selected session, or spawn an agent in the selected group |
 | `ctrl+r` | Review the selected session's changes: full-screen whole-file diffs, with `c` to comment a line and `C` to send the comments to the agent |
@@ -227,6 +228,8 @@ Every session of an MCP-capable tool carries the agent-manager MCP server on spa
 | `revive_session` | Bring a dead session back, resuming the conversation it held |
 | `kill_session` | Stop a running agent, keeping its row and last screen |
 | `archive_session` | File a finished session out of the active list, or restore it |
+| `archive_self` | Archive the calling session once its current turn ends, the way `a` does |
+| `kill_self` | Kill the calling session once its current turn ends, keeping its row for revive, the way `x` does |
 | `task` | The shared work list in one tool: `action` is `list`, `create`, `claim`, `finish`, `release` or `delete` |
 | `reserve_files` | Declare the files this session is editing, and see who else claims them |
 | `release_files` | Give those claims back |
@@ -251,6 +254,8 @@ The `coordination` row in Settings (`s`) sets how far agents go with the other s
 Each field falls back the way the form does. The CLI defaults to the one the calling agent runs, the group and directory default to the caller's, an explicit group uses that group's nearest inherited default path, and an explicit directory wins over both. A name is the agent's to choose and should describe the work; leaving it empty generates a placeholder and asks the new session to rename itself, exactly as a promptless spawn from the form does. Passing `worktree: true` adds a git worktree and branch off the directory's repo, which is what keeps several agents working in one project from editing the same checkout; omitting it inherits the group's default, then the global setting. `model`, `effort` and `profile` launch the CLI on values it lists instead of its defaults, the way the form's rows do (see [Model, effort and profile](#model-effort-and-profile)). A value the CLI does not list is refused with the ones it does.
 
 `read_session` returns the target's current screen, and its last captured screen once the session has stopped. `kill_session` ends the process and leaves the row dead with its last screen, `revive_session` brings it back on the conversation it held, and `archive_session` files a finished row away or restores it. An agent that quit while its window stayed open is relaunched inside that pane, so the row keeps the screen its last life left there.
+
+An agent ends its own session with `archive_self` or `kill_self` (`agent-manager archive-self` and `kill-self` from a shell), so "archive yourself when it is merged" needs no trip back to the list. The call files the request and returns, the agent finishes its reply, and the manager acts on the first poll that reads the session at rest: finished, waiting on a question, errored or dead. Archive and kill then take the same steps as `a` and `x`, nested terminals included. Until then the row wears `↓` (archive) or `■` (kill) next to its name, and the preview header says when it goes. `c`, or Cancel in the row's menu, keeps the session. The agent can withdraw it too with `cancel`. A restart or revive in between drops the request, since it came from the run that ended.
 
 ### Messages between agents
 
@@ -359,6 +364,8 @@ Each session's tmux pane is polled (default every 2s) to derive a status:
 Every row carries its mark, and each state has its own color from the active theme, so a glance down the rail tells you who needs you. The key map (`?`) lists the marks under "the mark on a session row".
 
 A session with messages from another agent waiting to be typed in wears `✉` and the count next to its name. The count clears when the manager delivers them.
+
+A session that asked to be archived or killed once its turn ends wears `↓` or `■` next to its name until the manager does it, or until `c` cancels it.
 
 A session stuck on the wrong mark is a rules question, and the rules are ours: they ship in the binary, so an upgrade is what moves them. [Configuration](configuration.md#agent-clis) has what to put in the issue and how to read the pane the poller reads.
 
