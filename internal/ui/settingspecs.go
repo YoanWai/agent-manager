@@ -38,6 +38,7 @@ func SettingSpecs() ([]store.SettingSpec, error) {
 		{Key: store.CoordinationSetting, Values: []string{"on-request", "proactive"}, Default: "on-request", Row: "coordination"},
 		{Key: notificationsSetting, Values: onOff, Default: "on", Row: "notifications"},
 		{Key: notifyFinishedSetting, Values: onOff, Default: "off", Row: "notify on finish"},
+		{Key: notifyCommandSetting, Row: "notify command"},
 		{Key: store.EditorSetting, Row: "editor"},
 		{Key: store.HiddenToolsSetting, Values: tools, List: true, Row: "CLIs"},
 	}, nil

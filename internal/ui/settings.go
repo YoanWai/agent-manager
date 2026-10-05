@@ -403,6 +403,7 @@ func (m *Model) openSettings() tea.Cmd {
 		proactive:       m.proactiveCoordination(),
 		notifications:   storedNotifications(m.store),
 		notifyFinished:  storedNotifyFinished(m.store),
+		notifyCommand:   notifyCommandRow{value: storedNotifyCommand(m.store)},
 		themeAuto:       themeAuto,
 		manualTheme:     manualTheme,
 		editor:          newEditorRow(m.storedEditor()),
@@ -432,6 +433,9 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.settings.editor.typing {
 		return m.handleEditorTypingKey(msg)
 	}
+	if m.settings.notifyCommand.typing {
+		return m.handleNotifyCommandTypingKey(msg)
+	}
 	switch msg.String() {
 	case "up", "k":
 		m.settings.field = (m.settings.field + settingsFieldCount - 1) % settingsFieldCount
@@ -454,6 +458,9 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case settingsFieldKeybindings:
 			m.openKeyPicker()
+			return m, nil
+		case settingsFieldNotifyCommand:
+			m.openNotifyCommandTyping()
 			return m, nil
 		case settingsFieldEditor:
 			if m.settings.editor.custom {
@@ -616,6 +623,9 @@ func (m *Model) persistSettings() {
 		notifyFinished = "on"
 	}
 	if err := m.store.SetSetting(notifyFinishedSetting, notifyFinished); err != nil {
+		m.errBar.text = err.Error()
+	}
+	if err := m.store.SetSetting(notifyCommandSetting, m.settings.notifyCommand.value); err != nil {
 		m.errBar.text = err.Error()
 	}
 	if err := m.store.SetEditor(m.settings.editor.line()); err != nil {

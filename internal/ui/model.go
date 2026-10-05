@@ -548,6 +548,8 @@ type settingsState struct {
 	keyAppend  bool
 	keyReset   bool
 	editor     editorRow
+
+	notifyCommand notifyCommandRow
 }
 
 const (
@@ -569,6 +571,7 @@ const (
 	settingsFieldCoordination
 	settingsFieldNotify
 	settingsFieldNotifyFinish
+	settingsFieldNotifyCommand
 	settingsFieldEditor
 	settingsFieldKeybindings
 	settingsFieldCLIs
