@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -202,11 +203,25 @@ func TestRunCommandStopsTheCommandsChildrenAtTheTimeout(t *testing.T) {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(5 * time.Second)
-	for syscall.Kill(pid, 0) == nil {
+	for running(pid) {
 		if time.Now().After(deadline) {
 			_ = syscall.Kill(pid, syscall.SIGKILL)
 			t.Fatalf("child %d outlived the command's timeout", pid)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+}
+
+// running reports whether pid is a live process. A killed child the shell
+// never reaped can linger as a zombie on a host whose init does not reap
+// orphans, and a zombie still answers kill -0.
+func running(pid int) bool {
+	if syscall.Kill(pid, 0) != nil {
+		return false
+	}
+	state, err := exec.Command("ps", "-o", "stat=", "-p", strconv.Itoa(pid)).Output()
+	if err != nil {
+		return false
+	}
+	return !strings.HasPrefix(strings.TrimSpace(string(state)), "Z")
 }
