@@ -5,7 +5,6 @@ import (
 	"slices"
 	"strings"
 	"unicode"
-	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
 
@@ -47,9 +46,6 @@ type toolRules struct {
 	turnEnd        *regexp.Regexp
 	chromeLine     *regexp.Regexp
 	chromeBlock    *regexp.Regexp
-	queueItem      *regexp.Regexp
-	queueStart     *regexp.Regexp
-	queueFooter    *regexp.Regexp
 	blockedLine    *regexp.Regexp
 	trailingNote   *regexp.Regexp
 	busyLine       *regexp.Regexp
@@ -93,9 +89,6 @@ func NewEngine(cfg config.Config) (*Engine, error) {
 			{tool.TurnEnd, &tr.turnEnd},
 			{tool.ChromeLine, &tr.chromeLine},
 			{tool.ChromeBlock, &tr.chromeBlock},
-			{tool.QueueItem, &tr.queueItem},
-			{tool.QueueStart, &tr.queueStart},
-			{tool.QueueFooter, &tr.queueFooter},
 			{tool.BlockedLine, &tr.blockedLine},
 			{tool.TrailingNote, &tr.trailingNote},
 			{tool.BusyLine, &tr.busyLine},
@@ -458,7 +451,6 @@ func (e *Engine) LastMessage(tool, pane string) (line string, anchored, ok bool)
 			return q, true, true
 		}
 	}
-	region, _ = tr.withoutLiveQueue(region, pane)
 	lines := strings.Split(region, "\n")
 	inBlock := tr.chromeBlockRows(lines)
 	if tr.dialogOpen(pane[len(region):]) {
@@ -551,62 +543,6 @@ var (
 	selectedOption = regexp.MustCompile(`^[\s│]*●\s*\d+\.`)
 	boxedText      = regexp.MustCompile(`^│ ([^│]*?)\s*│\s*$`)
 )
-
-func (tr toolRules) withoutLiveQueue(region, pane string) (string, bool) {
-	if tr.queueItem == nil || tr.queueFooter == nil {
-		return region, false
-	}
-	lines := strings.Split(strings.TrimRight(pane, "\n"), "\n")
-	if len(lines) > 12 {
-		lines = lines[len(lines)-12:]
-	}
-	tail := strings.Join(lines, "\n")
-	locs := tr.queueFooter.FindAllStringIndex(tail, -1)
-	if len(locs) == 0 {
-		return region, false
-	}
-	for _, row := range strings.Split(tail[locs[len(locs)-1][1]:], "\n") {
-		row = strings.TrimSpace(row)
-		if row == "" || tr.inputRow(row) || tr.chromeLine != nil && tr.chromeLine.MatchString(row) {
-			continue
-		}
-		return region, false
-	}
-	offset := 0
-	start, firstItem, lastItem := -1, -1, -1
-	startIndent := -1
-	startIsHeader := false
-	for _, line := range strings.SplitAfter(region, "\n") {
-		item := tr.queueItem.MatchString(line)
-		if item {
-			if firstItem < 0 {
-				firstItem = offset
-			}
-			lastItem = offset
-		}
-		if tr.queueStart != nil && tr.queueStart.MatchString(line) {
-			if !item {
-				start = offset
-				startIsHeader = true
-			} else if !startIsHeader {
-				indent := utf8.RuneCountInString(line[:strings.IndexByte(line, '#')])
-				// A deeper #1 belongs to the current queued request.
-				if startIndent < 0 || indent <= startIndent {
-					start = offset
-					startIndent = indent
-				}
-			}
-		}
-		offset += len(line)
-	}
-	if start < 0 || start > lastItem {
-		start = firstItem
-	}
-	if start < 0 {
-		return region, false
-	}
-	return region[:start], true
-}
 
 func (tr toolRules) dialogOpen(cutoffTail string) bool {
 	footer, ok := footerBelow(cutoffTail)
@@ -751,14 +687,9 @@ func (e *Engine) FullTurnText(tool, pane string) (text string, bounded, ok bool)
 	if !ok {
 		return "", false, false
 	}
-	var queueRemoved bool
-	region, queueRemoved = tr.withoutLiveQueue(region, pane)
 	lines := strings.Split(region, "\n")
 	fromPane := false
 	if !slices.ContainsFunc(lines, tr.isContent) {
-		if queueRemoved {
-			return "", false, true
-		}
 		// pi opens its region at the pane origin on purpose, so that a
 		// reflow can never read as fresh output. Nothing is there to copy,
 		// and the pane itself is what the user is looking at.

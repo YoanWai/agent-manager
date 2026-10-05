@@ -1,6 +1,7 @@
 package status
 
 import (
+	"os"
 	"regexp"
 	"slices"
 	"strings"
@@ -1671,137 +1672,54 @@ func TestCommandCodeRowShapes(t *testing.T) {
 	}
 }
 
-func TestGrokQuoteSkipsLiveQueueAndPrompt(t *testing.T) {
+func TestGrokCapturedQueue(t *testing.T) {
 	engine := defaultEngine(t)
-	base := "  ❯ Reply with exactly this sentence and nothing else: Tea, good choice.\n" +
-		"    continuation of the prompt\n\n" +
-		"Grok is answering.\n"
-	for _, footer := range []string{"Queued · Enter to send now", "◎ 1 command still running · 1 queued, Enter to send now"} {
-		pane := base + "#1 Also, after that finishes, explain tmux\n" +
-			"   in one sentence.\n" + footer + "\n│ ❯ "
-		if line, _, ok := engine.LastMessage("grok", pane); !ok || line != "Grok is answering." {
-			t.Fatalf("footer %q quote = %q ok=%v", footer, line, ok)
-		}
-	}
-	current := "     ❯ Write about tmux.\n       wrapped prompt.\n\n" +
-		"     The answer is streaming.\n\n" +
-		"    #1 Also explain it briefly.\n" +
-		"    ⠹ Responding… 7.3s\n\n" +
-		"  Help improve Grok  [Opt out] [Opt in]\n" +
-		"  Off by default. Opt-in to allow data retention.\n" +
-		"  settings.\n" +
-		"  Read Terms and Privacy Policy.\n\n" +
-		"  ╭────────────────╮\n" +
-		"  │ ❯            │\n" +
-		"  ╰──── Grok ────╯\n\n" +
-		"  Enter:send now  │  Ctrl+c:cancel  │  Ctrl+;:queue"
-	if line, _, ok := engine.LastMessage("grok", current); !ok || line != "The answer is streaming." {
-		t.Fatalf("current grok queue quote = %q ok=%v", line, ok)
-	}
-	withoutQueue := strings.Replace(current, "    #1 Also explain it briefly.\n", "", 1)
-	withoutQueue = strings.Replace(withoutQueue, "  Enter:send now  │  Ctrl+c:cancel  │  Ctrl+;:queue", "  Shift+Tab:mode", 1)
-	if line, _, ok := engine.LastMessage("grok", withoutQueue); !ok || line != "The answer is streaming." {
-		t.Fatalf("opt-in card quote = %q ok=%v", line, ok)
-	}
-	if line, _, ok := engine.LastMessage("grok", "  ❯ A wrapped user prompt\n    tail of prompt\n\n│ ❯ "); !ok || line != "" {
-		t.Fatalf("prompt-only quote = %q ok=%v", line, ok)
-	}
-	if line, _, ok := engine.LastMessage("grok", "#1 A genuine answer.\n│ ❯ "); !ok || line != "#1 A genuine answer." {
-		t.Fatalf("numbered reply quote = %q ok=%v", line, ok)
-	}
-	staleQueue := "#1 Earlier queued input\nQueued · Enter to send now\n" +
-		"The later reply.\n│ ❯ "
-	if line, _, ok := engine.LastMessage("grok", staleQueue); !ok || line != "The later reply." {
-		t.Fatalf("stale queue quote = %q ok=%v", line, ok)
-	}
-}
-
-func TestGrokQuoteKeepsNumberedReplyAheadOfQueue(t *testing.T) {
-	engine := defaultEngine(t)
-	// Reusing #1 is intentional: the first is answer content; the later #1 starts the queue.
-	// Both the full and width-clipped footers must preserve the answer.
-	for _, footer := range []string{"Enter:send now │ Ctrl+;:queue", "Enter:send now  │  Shift+Tab:mode  │  Ctrl+c:cancel  │  Ctrl+;:"} {
-		pane := "     ❯ Recommend two approaches.\n\n" +
-			"     Intro.\n     #1 First recommendation.\n     The latest useful answer.\n\n" +
-			"    #1 Follow-up queued by user\n    #2 Another queued request\n\n" +
-			"  │ ❯ │\n  " + footer + "\n"
-		if line, _, ok := engine.LastMessage("grok", pane); !ok || line != "The latest useful answer." {
-			t.Fatalf("footer %q numbered reply with queue quote = %q ok=%v", footer, line, ok)
-		}
-		if text, _, ok := engine.FullTurnText("grok", pane); !ok || !strings.Contains(text, "The latest useful answer.") || strings.Contains(text, "queued") {
-			t.Fatalf("footer %q numbered reply with queue copy = %q ok=%v", footer, text, ok)
-		}
-	}
-}
-
-func TestGrokQuoteSkipsFocusedQueue(t *testing.T) {
-	engine := defaultEngine(t)
-	for _, footer := range []string{
-		"x:delete row │ e:edit │ Shift+j/k:reorder │ y:copy │ Ctrl+Enter:send now │ Ctrl+x:shortcuts",
-		"x:delete row │ e:edit │ Shift+j/k:reorder │ y:copy │ Ctrl+Enter:",
-	} {
-		// The answer's #1 must survive when the later #1 is inside the focused queue card.
-		answer := "     #1 First recommendation.\n     The latest useful answer."
-		queue := " ┌                                                       [✗]\n" +
-			" │  #1 Follow-up queued by user                             │\n" +
-			" │     A wrapped continuation.                             │\n" +
-			" │  #2 Another queued request       [Send now][edit][cancel]│\n" +
-			" └                                                        ┘\n" +
-			"  ⠹ Working… 2.5s\n\n  │ ❯ │\n  " + footer + "\n"
-		pane := "     ❯ Recommend two approaches.\n\n" + answer + "\n\n" + queue
-		if line, _, ok := engine.LastMessage("grok", pane); !ok || line != "The latest useful answer." {
-			t.Errorf("footer %q focused queue quote = %q ok=%v", footer, line, ok)
-		}
-		if text, _, ok := engine.FullTurnText("grok", pane); !ok || text != answer {
-			t.Errorf("footer %q focused queue copy = %q ok=%v, want %q", footer, text, ok, answer)
-		}
-		if text, _, ok := engine.FullTurnText("grok", queue); !ok || text != "" {
-			t.Errorf("footer %q focused queue before reply copy = %q ok=%v", footer, text, ok)
-		}
-	}
-}
-
-func TestGrokQuoteSkipsVisibleQueueWhenStartClipped(t *testing.T) {
-	engine := defaultEngine(t)
-	for _, tc := range []struct {
-		name   string
-		answer string
-		queue  string
-	}{
-		{"focused card header clipped", "     The latest useful answer.", " │  #1 First queued request                │\n │  #2 Second queued request               │\n └                                           ┘\n  ⠹ Working… 2.5s\n\n  │ ❯ │\n  x:delete row  │  e:edit  │  Ctrl+Enter:send now"},
-		{"first queue row clipped", "     The latest useful answer.", "    #2 Second queued request\n    #3 Third queued request\n\n  │ ❯ │\n  Enter:send now  │  Ctrl+;:queue"},
-		{"numbered answer before clipped card header", "     #1 First recommendation.\n     The latest useful answer.", " │  #1 First queued request                │\n │  #2 Second queued request               │\n └                                           ┘\n  ⠹ Working… 2.5s\n\n  │ ❯ │\n  x:delete row  │  e:edit  │  Ctrl+Enter:send now"},
+	for _, tc := range []struct{ name, want string }{
+		{"queued", "the twentieth" + strings.Repeat(" ", 63) + "█"},
+		{"queued-draft", "The rig is the mast, boom, stays, shrouds, and sails considered"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			pane := "     ❯ Ask Grok.\n\n" + tc.answer + "\n\n" + tc.queue
-			if line, _, ok := engine.LastMessage("grok", pane); !ok || line != "The latest useful answer." {
-				t.Errorf("quote = %q ok=%v", line, ok)
+			data, err := os.ReadFile("testdata/grok/1.0.46/" + tc.name + ".txt")
+			if err != nil {
+				t.Fatal(err)
 			}
-			if text, _, ok := engine.FullTurnText("grok", pane); !ok || text != tc.answer {
-				t.Errorf("copy = %q ok=%v, want %q", text, ok, tc.answer)
+			pane := engine.Plain("grok", string(data))
+			if line, _, ok := engine.LastMessage("grok", pane); !ok || line != tc.want {
+				t.Fatalf("quote = %q ok=%v, want %q", line, ok, tc.want)
+			}
+			text, _, ok := engine.FullTurnText("grok", pane)
+			if !ok || !strings.Contains(text, tc.want) {
+				t.Fatalf("copy = %q ok=%v", text, ok)
+			}
+			for _, chrome := range []string{"Queued", "READY", "Unsent draft", "settings.", "[Dashboard]", "rename it now"} {
+				if strings.Contains(text, chrome) {
+					t.Errorf("copy includes %q: %q", chrome, text)
+				}
 			}
 		})
 	}
 }
 
-func TestGrokQuoteSkipsNumberedQueueContinuation(t *testing.T) {
+func TestGrokQuoteSkipsQueue(t *testing.T) {
 	engine := defaultEngine(t)
 	answer := "     #1 First recommendation.\n     The latest useful answer."
-	for _, tc := range []struct {
-		name, queue string
-	}{
-		{"ordinary queue", "    #1 Follow-up queued by user\n        #1 A numbered continuation of that request\n    #2 Another queued request\n\n  │ ❯ │\n  Enter:send now  │  Ctrl+;:queue\n"},
-		{"clipped focused card", " │  #1 Follow-up queued by user          │\n │     #1 A numbered continuation       │\n │  #2 Another queued request           │\n └                                       ┘\n  │ ❯ │\n  x:delete row  │  e:edit  │  Ctrl+Enter:send now\n"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			pane := "     ❯ Recommend an approach.\n\n" + answer + "\n\n" + tc.queue
-			if line, _, ok := engine.LastMessage("grok", pane); !ok || line != "The latest useful answer." {
-				t.Errorf("quote = %q ok=%v", line, ok)
+	for _, heading := range []string{"   ▾ Queued 1\n     #1 Queued request\n        wrapped continuation", "   ▸ Queued 1", "   ▾ Queued 2\n ┌                       [✗]\n │ #1 Queued request      │\n │ #2 Another request     │\n └                        ┘"} {
+		for _, composer := range []string{"  │ ❯ │\n  Enter:send now │ Ctrl+;:queue", "  │ ❯ Unsent draft │\n  Enter:queue │ Ctrl+Enter:send now", "  │ ❯ │\n  x:delete row │ e:edit │ Ctrl+Enter:", "  │ ❯ │"} {
+			queue := heading + "\n\n" + composer
+			for _, reply := range []string{answer, ""} {
+				pane := "     ❯ Recommend an approach.\n\n" + reply + "\n\n" + queue
+				want := ""
+				if reply != "" {
+					want = "The latest useful answer."
+				}
+				if line, _, ok := engine.LastMessage("grok", pane); !ok || line != want {
+					t.Errorf("pane %q: quote = %q ok=%v, want %q", pane, line, ok, want)
+				}
+				if text, _, ok := engine.FullTurnText("grok", pane); !ok || text != reply {
+					t.Errorf("pane %q: copy = %q ok=%v, want %q", pane, text, ok, reply)
+				}
 			}
-			if text, _, ok := engine.FullTurnText("grok", pane); !ok || text != answer {
-				t.Errorf("copy = %q ok=%v, want %q", text, ok, answer)
-			}
-		})
+		}
 	}
 }
 
@@ -1838,14 +1756,6 @@ func TestGrokQuoteSkipsWorkspaceHeader(t *testing.T) {
 	withReply := strings.Replace(pane, "\n  │ ❯ │", "\n     hello\n\n  │ ❯ │", 1)
 	if line, _, ok := engine.LastMessage("grok", withReply); !ok || line != "hello" {
 		t.Fatalf("header with reply quote = %q ok=%v", line, ok)
-	}
-}
-
-func TestGrokCopySkipsQueueBeforeFirstReply(t *testing.T) {
-	engine := defaultEngine(t)
-	pane := "#1 Queued user input\nQueued · Enter to send now\n│ ❯ "
-	if text, _, ok := engine.FullTurnText("grok", pane); !ok || text != "" {
-		t.Fatalf("queue before reply copy = %q ok=%v", text, ok)
 	}
 }
 
