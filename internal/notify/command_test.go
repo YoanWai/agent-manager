@@ -203,7 +203,7 @@ func TestRunCommandStopsTheCommandsChildrenAtTheTimeout(t *testing.T) {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(5 * time.Second)
-	for running(pid) {
+	for running(t, pid) {
 		if time.Now().After(deadline) {
 			_ = syscall.Kill(pid, syscall.SIGKILL)
 			t.Fatalf("child %d outlived the command's timeout", pid)
@@ -214,14 +214,24 @@ func TestRunCommandStopsTheCommandsChildrenAtTheTimeout(t *testing.T) {
 
 // running reports whether pid is a live process. A killed child the shell
 // never reaped can linger as a zombie on a host whose init does not reap
-// orphans, and a zombie still answers kill -0.
-func running(pid int) bool {
-	if syscall.Kill(pid, 0) != nil {
+// orphans, and a zombie still answers kill -0. A state it cannot read
+// fails the test rather than passing for a stopped child.
+func running(t *testing.T, pid int) bool {
+	t.Helper()
+	if err := syscall.Kill(pid, 0); errors.Is(err, syscall.ESRCH) {
 		return false
+	} else if err != nil {
+		t.Fatalf("signal 0 to %d: %v", pid, err)
 	}
 	state, err := exec.Command("ps", "-o", "stat=", "-p", strconv.Itoa(pid)).Output()
-	if err != nil {
+	var exit *exec.ExitError
+	// ps exits non-zero with nothing printed when the pid went away
+	// between the signal and the lookup.
+	if errors.As(err, &exit) && strings.TrimSpace(string(state)) == "" {
 		return false
+	}
+	if err != nil {
+		t.Fatalf("reading the state of %d: %v", pid, err)
 	}
 	return !strings.HasPrefix(strings.TrimSpace(string(state)), "Z")
 }
