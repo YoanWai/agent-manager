@@ -6,8 +6,10 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -181,5 +183,30 @@ func TestLogCommandFailureFromConcurrentDeliveries(t *testing.T) {
 	}
 	if lines := strings.Count(string(log), "exit status 1\n"); lines != 20 {
 		t.Fatalf("log holds %d whole lines, want 20:\n%s", lines, log)
+	}
+}
+
+// The timeout stops what the command started, not only the shell.
+func TestRunCommandStopsTheCommandsChildrenAtTheTimeout(t *testing.T) {
+	defer func(previous time.Duration) { commandTimeout = previous }(commandTimeout)
+	commandTimeout = 300 * time.Millisecond
+	dir := t.TempDir()
+	pidFile := filepath.Join(dir, "child.pid")
+	RunCommand(`sleep 30 & echo $! > `+pidFile+`; wait`, dir, Event{ID: "sess-1", Session: "s", Kind: Waiting})
+	raw, err := os.ReadFile(pidFile)
+	if err != nil {
+		t.Fatalf("the child never started: %v", err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for syscall.Kill(pid, 0) == nil {
+		if time.Now().After(deadline) {
+			_ = syscall.Kill(pid, syscall.SIGKILL)
+			t.Fatalf("child %d outlived the command's timeout", pid)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }
