@@ -131,13 +131,19 @@ func (w *focusWatch) serving(id string) bool {
 // False only when nothing went out - no client, or a failed write - which
 // is the one case a forked fallback is safe.
 func (w *focusWatch) attempt(command string) bool {
+	return w.attemptBlocks(command, 1)
+}
+
+// attemptBlocks is attempt for a command tmux answers with several reply
+// blocks, which the client has to be told to expect.
+func (w *focusWatch) attemptBlocks(command string, blocks int) bool {
 	w.mu.Lock()
 	control := w.control
 	w.mu.Unlock()
 	if control == nil {
 		return false
 	}
-	return control.Send(command) == nil
+	return control.SendBlocks(command, blocks) == nil
 }
 
 // query runs one tmux command over the control pipe and returns its

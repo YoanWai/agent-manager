@@ -120,14 +120,21 @@ func (m *Model) mouseReport(button int, release bool, col, row int) (string, boo
 // the mouse when it arrives. The cached flag trails a pane that left mouse
 // mode by a debounce, and a report the application no longer expects is
 // printed on its input line instead. mouse_any_flag covers every mode, so
-// the per-mode flags would only repeat it.
+// the per-mode flags would only repeat it. The branch for a pane that has
+// stopped tracking runs a command with no effect, so tmux answers the guard
+// with guardedMouseReplies blocks whichever way it goes.
 func guardedMouseCommand(sessID, report string) (string, []string) {
 	target := tmux.PaneTarget(sessID)
 	const condition = "#{mouse_any_flag}"
+	const drop = "display-message -p"
 	send := "send-keys -t " + target + " -H " + hexBytes(report)
-	command := "if-shell -F -t " + target + " '" + condition + "' '" + send + "'"
-	return command, []string{"if-shell", "-F", "-t", target, condition, send}
+	command := "if-shell -F -t " + target + " '" + condition + "' '" + send + "' '" + drop + "'"
+	return command, []string{"if-shell", "-F", "-t", target, condition, send, drop}
 }
+
+// guardedMouseReplies is the reply blocks a guarded report costs on the
+// control pipe: one for if-shell, one for the branch it ran.
+const guardedMouseReplies = 2
 
 func (m *Model) wheelFocus(up bool, x, y int) tea.Cmd {
 	sess, ok := m.selected()
@@ -144,11 +151,7 @@ func (m *Model) wheelFocus(up bool, x, y int) tea.Cmd {
 			return nil
 		}
 		command, args := guardedMouseCommand(sess.ID, report)
-		if !m.focus.attempt(command) {
-			if err := m.tmux.SendCommand(args...); err != nil {
-				m.errBar.text = err.Error()
-			}
-		}
+		m.sendGuardedMouse(command, args)
 		return nil
 	}
 	delta := 1
@@ -187,10 +190,15 @@ func (m *Model) sendFocusReport(report string) {
 		return
 	}
 	command, args := guardedMouseCommand(sess.ID, report)
-	if !m.focus.attempt(command) {
-		if err := m.tmux.SendCommand(args...); err != nil {
-			m.errBar.text = err.Error()
-		}
+	m.sendGuardedMouse(command, args)
+}
+
+func (m *Model) sendGuardedMouse(command string, args []string) {
+	if m.focus.attemptBlocks(command, guardedMouseReplies) {
+		return
+	}
+	if err := m.tmux.SendCommand(args...); err != nil {
+		m.errBar.text = err.Error()
 	}
 }
 
