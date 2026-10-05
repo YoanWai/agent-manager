@@ -48,8 +48,8 @@ func TestSettingsNotifyCommandIsTypedAndStored(t *testing.T) {
 	if m.mode != modeList {
 		t.Fatalf("esc should save and leave, mode = %v", m.mode)
 	}
-	if got := storedNotifyCommand(m.store); got != `curl -d "$AM_BODY" ntfy.sh/jk` {
-		t.Fatalf("stored command = %q", got)
+	if got, err := storedNotifyCommand(m.store); err != nil || got != `curl -d "$AM_BODY" ntfy.sh/jk` {
+		t.Fatalf("stored command = %q, %v", got, err)
 	}
 
 	notifyCommandSettings(t, m)
@@ -62,8 +62,8 @@ func TestSettingsNotifyCommandIsTypedAndStored(t *testing.T) {
 	}
 	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyEnter})
 	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyEsc})
-	if got := storedNotifyCommand(m.store); got != "" {
-		t.Fatalf("an emptied field should turn the command off, stored %q", got)
+	if got, err := storedNotifyCommand(m.store); err != nil || got != "" {
+		t.Fatalf("an emptied field should turn the command off, stored %q, %v", got, err)
 	}
 }
 
@@ -78,5 +78,30 @@ func TestSettingsNotifyCommandEscDropsWhatWasTyped(t *testing.T) {
 	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyEsc})
 	if m.settings.notifyCommand.typing || m.mode != modeSettings || m.settings.notifyCommand.value != "say done" {
 		t.Fatalf("esc should close the field and keep the old command, got %q", m.settings.notifyCommand.value)
+	}
+}
+
+// A command Settings could not read is not saved back as the empty line
+// the row fell back to, unless the user typed one.
+func TestSettingsKeepsANotifyCommandItCouldNotRead(t *testing.T) {
+	m := buildModel(t)
+	if err := m.store.SetSetting(notifyCommandSetting, "say done"); err != nil {
+		t.Fatal(err)
+	}
+	notifyCommandSettings(t, m)
+	m.settings.notifyCommand = notifyCommandRow{}
+	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyEsc})
+	if got, err := storedNotifyCommand(m.store); err != nil || got != "say done" {
+		t.Fatalf("stored command = %q, %v; want it kept", got, err)
+	}
+
+	notifyCommandSettings(t, m)
+	m.settings.notifyCommand = notifyCommandRow{}
+	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyEnter})
+	m.pressInSettings(t, runeKey("say typed"))
+	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyEnter})
+	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyEsc})
+	if got, err := storedNotifyCommand(m.store); err != nil || got != "say typed" {
+		t.Fatalf("stored command = %q, %v; want what was typed", got, err)
 	}
 }
