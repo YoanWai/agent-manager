@@ -58,7 +58,7 @@ func TestReadOSCReply(t *testing.T) {
 		{"BEL terminator", strings.Repeat("x", 70) + "\a", strings.Repeat("x", 70) + "\a", true},
 		{"ST terminator", "\x1b]11;rgb:00/00/00\x1b\\", "\x1b]11;rgb:00/00/00\x1b\\", true},
 		{"end of stream", "", "", false},
-		{"reply too long", strings.Repeat("x", 129), "", false},
+		{"reply too long", strings.Repeat("x", 192) + "\a", "", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
