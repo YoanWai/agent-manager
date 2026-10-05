@@ -316,7 +316,7 @@ dialog_footer = "(?m)^\\s*Enter to select\\b"
 # 2 background agents and 1 dynamic workflow to finish") and a slow MCP call
 # moved to the background ("· 1 MCP task still running"). Shells and
 # monitors can outlive their use, so they do not count, and neither does a
-# mixed "· 2 background tasks still running", which may be a shell.
+# mixed "· 2 background tasks still running", which names no kind.
 busy_line = "^[✻✳✶✽✢·✦✧+*] (?:Waiting for \\d+ (?:background agents?(?: and \\d+ dynamic workflows?)?|dynamic workflows?) to finish|.* · \\d+ MCP tasks? still running)"
 # a usage/rate-limit banner sits above the turn-end summary
 limit_line = "(?m)You've hit your .+limit"

@@ -285,6 +285,20 @@ func TestDefaultRulesRealPanes(t *testing.T) {
 			"  Called slow\n⏺ The lookup moved to the background (task kxs68idfr); I'll get its result when it completes.\n" +
 				"✻ Cooked for 2m 4s · done 20:50 · 1 MCP task still running\n────\n❯ \n────\n" +
 				"  ⏵⏵ bypass permissions on · 1 MCP task · ← for agents · ↓ to manage", Working},
+		{"claude turn end with an MCP call next to a background shell (real capture)", "claude",
+			"  Called slow, ran 1 shell command\n⏺ The lookup moved to the background; I'll get its result when it completes.\n" +
+				"✻ Brewed for 2m 5s · done 20:55 · 2 background tasks still running\n────\n❯ \n────\n" +
+				"  ⏵⏵ bypass permissions on · 2 background tasks · ← for agents · ↓ to manage", Finished},
+		// 2026-10-05 real captures in a 48-column pane, the preview width of an
+		// 80-column terminal: the line wraps before the words that tell.
+		{"claude wait line wrapped in a narrow pane (real capture)", "claude",
+			"⏺ Workflow (two 90s sleepers) and the background\n  agent (50s sleeper) are both launched and\n  running.\n" +
+				"✻ Waiting for 1 background agent and 1 dynamic\n  workflow to finish\n" +
+				"────────────────────────────────────────────────\n❯ report when they all finish\n────────────────────────────────────────────────", Working},
+		{"claude MCP turn end wrapped in a narrow pane (real capture)", "claude",
+			"⏺ The lookup moved to the background and is\n  still running; I'll report its result when it\n  completes.\n" +
+				"✻ Crunched for 11s · done 21:21 · 1 MCP task\n  still running\n" +
+				"────────────────────────────────────────────────\n❯ \n────────────────────────────────────────────────", Working},
 		// 2026-08-14 and 2026-09-24 real captures: a background shell or
 		// monitor can outlive its use (a wait loop whose job already ended, a
 		// dev server), so the turn that leaves one running has still ended,

@@ -247,12 +247,26 @@ func (tr toolRules) isBusy(pane string) bool {
 	}
 	lines := strings.Split(region, "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
-		if !tr.busyLine.MatchString(strings.TrimRight(lines[i], " \t")) {
+		if !tr.busyLine.MatchString(unwrapped(lines, i)) {
 			continue
 		}
 		return tr.turnEnd == nil || tr.lastTurnEndIndex(lines) <= i
 	}
 	return false
+}
+
+// unwrapped joins row i with the indented rows a narrow pane wraps it onto,
+// since a busy line's telling words sit at its end.
+func unwrapped(lines []string, i int) string {
+	row := strings.TrimRight(lines[i], " \t")
+	for _, next := range lines[i+1:] {
+		body := strings.TrimSpace(next)
+		if body == "" || !wrapsAbove(next) {
+			break
+		}
+		row += " " + body
+	}
+	return row
 }
 
 // matchScope narrows rule matching to the current turn: the text after
