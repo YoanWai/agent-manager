@@ -425,8 +425,10 @@ turn_end = "(?m)^(?:─+ Worked for [\\dhms. ]+─+|─+|  (?:Worked for [\\dhms
 # between the transcript and the composer
 chrome_line = "^\\s*─*\\s*$|^\\s+(?:⚠|↓|Tip: |Copied )"
 # a message queued during a turn is drawn under the running step, with its
-# edit hint, until the turn picks it up; a narrow pane wraps the heading
-chrome_block = "^• Queued(?: follow-|\\s*\\n\\s+(?:follow-up|inputs))"
+# edit hint, until the turn picks it up; a message sent with Enter shows under
+# "Messages to be submitted after next tool call" (or "at end of turn")
+# instead; a narrow pane wraps the heading between any words
+chrome_block = "^• (?:Queued(?: follow-|\\s*\\n\\s+(?:follow-up|inputs))|Messages(?: |\\s*\\n\\s+)to(?: |\\s*\\n\\s+)be(?: |\\s*\\n\\s+)submitted(?: |\\s*\\n\\s+)(?:after(?: |\\s*\\n\\s+)next(?: |\\s*\\n\\s+)tool(?: |\\s*\\n\\s+)call|at(?: |\\s*\\n\\s+)end(?: |\\s*\\n\\s+)of(?: |\\s*\\n\\s+)turn))"
 # every message and tool call opens on a "• " bullet
 message_start = "^• "
 # a command's output is drawn under this glyph, on its own indented row
