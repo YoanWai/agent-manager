@@ -39,11 +39,15 @@ func queryTerminalBg() (r, g, b int, ok bool) {
 	}
 	defer unix.IoctlSetTermios(fd, ioctlWriteTermios, saved)
 
+	return queryTerminalBgFD(fd, time.Now().Add(queryDeadline))
+}
+
+func queryTerminalBgFD(fd int, deadline time.Time) (r, g, b int, ok bool) {
 	if _, err := unix.Write(fd, []byte("\x1b]11;?\x1b\\")); err != nil {
 		return 0, 0, 0, false
 	}
 
-	response, ok := readOSCReply(fd, time.Now().Add(queryDeadline))
+	response, ok := readOSCReply(fd, deadline)
 	if !ok {
 		return 0, 0, 0, false
 	}

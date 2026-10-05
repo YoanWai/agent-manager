@@ -771,19 +771,22 @@ func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad,
 	}
 	lead := pad + guides + dot + " "
 	handle := m.rowHandle(entry, selected)
-	var focus, inbox string
+	var focus, badges string
 	if selected && m.mode == modeFocus {
 		focus = " " + focusBadgeStyle.Render(" FOCUS ")
 	}
 	if queued := m.queuedMessages[sess.ID]; queued > 0 {
-		inbox = " " + inboxBadge(queued)
+		badges = " " + inboxBadge(queued)
+	}
+	if sess.AfterTurn != "" {
+		badges += " " + afterTurnBadge(sess.AfterTurn)
 	}
 	// A rail too narrow for the whole head shortens the name before it
 	// loses a badge: a waiting message shows nowhere else on the row. With
 	// no room left for any name, the focus badge goes instead: the pane
 	// beside the rail already shows what is focused.
 	name := m.displayName(sess)
-	room := width - railGutter - ansi.StringWidth(lead+handle+focus+inbox)
+	room := width - railGutter - ansi.StringWidth(lead+handle+focus+badges)
 	if room <= 0 {
 		room += ansi.StringWidth(focus)
 		focus = ""
@@ -791,7 +794,7 @@ func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad,
 	if ansi.StringWidth(name) > room {
 		name = ansi.Truncate(name, max(room, 0), "…")
 	}
-	head := lead + handle + m.highlightQuery(name, nameStyle) + focus + inbox
+	head := lead + handle + m.highlightQuery(name, nameStyle) + focus + badges
 
 	metaStyle := subtleStyle
 	if selected {
@@ -1392,6 +1395,9 @@ func (m *Model) viewDetail(width int) string {
 	state := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).
 		Render(statusGlyph(sess.Status)+" "+statusLabel(sess.Status)) +
 		subtleStyle.Render(" · "+relSince(lastActivity(sess))+m.elsewhereNote(sess))
+	if sess.AfterTurn != "" {
+		state += subtleStyle.Render(" · ") + afterTurnBadge(sess.AfterTurn) + subtleStyle.Render(" "+afterTurnNote[sess.AfterTurn])
+	}
 	// The branch a worktree session lives on is the fact that tells it apart
 	// from its siblings, so it rides beside the tool while the row has room,
 	// and the tool chip goes before the name does.

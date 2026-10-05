@@ -92,6 +92,8 @@ type fakeSessionCommands struct {
 	killedID      string
 	archivedID    string
 	archived      bool
+	endedAction   string
+	endCanceled   bool
 	groupPath     string
 	groupDir      string
 	err           error
@@ -151,6 +153,16 @@ func (f *fakeSessionCommands) Archive(_ string, id string, archived bool) (sessi
 	updated := f.created
 	updated.Archived = archived
 	return updated, f.err
+}
+
+func (f *fakeSessionCommands) EndAfterTurn(_ string, action string) (sessioncmd.AfterTurn, error) {
+	f.endedAction = action
+	return sessioncmd.AfterTurn{Pending: action, ManagerAwake: true}, f.err
+}
+
+func (f *fakeSessionCommands) CancelAfterTurn(string) (sessioncmd.AfterTurn, error) {
+	f.endCanceled = true
+	return sessioncmd.AfterTurn{Canceled: store.AfterTurnKill, ManagerAwake: true}, f.err
 }
 
 func (f *fakeSessionCommands) Tasks(string) ([]sessioncmd.Task, error) {
@@ -725,7 +737,7 @@ func TestListsFleetTools(t *testing.T) {
 	}
 	for _, want := range []string{
 		"list_sessions", "create_session", "read_session", "send_session",
-		"revive_session", "kill_session", "archive_session",
+		"revive_session", "kill_session", "archive_session", "archive_self", "kill_self",
 		"list_groups", "create_group", "delete_group", "message_status", "wait_for_session",
 		"task",
 		"reserve_files", "release_files", "list_reservations",
@@ -812,8 +824,10 @@ func TestSessionDescriptionsTeachWhenAndHowToChainTools(t *testing.T) {
 		"message_status":   {"delivered", "queued"},
 		"wait_for_session": {"instead of calling read_session in a loop", "timeout is a normal answer", "reached false"},
 		"revive_session":   {"dead session"},
-		"kill_session":     {"revive_session", "ask first"},
-		"archive_session":  {"archived false"},
+		"kill_session":     {"revive_session", "ask first", "kill_self"},
+		"archive_session":  {"archived false", "archive_self"},
+		"archive_self":     {"once the turn making this call ends", "finish your reply", "cancel true", "archive_session"},
+		"kill_self":        {"once the turn making this call ends", "finish your reply", "cancel true", "revive_session", "kill_session"},
 		"create_group":     {"list_groups", "parent"},
 	} {
 		for _, want := range wants {
@@ -933,6 +947,23 @@ func TestSessionToolsExposeStructuredResultsAndForwardArguments(t *testing.T) {
 		t.Fatal("archived false should restore")
 	}
 
+	for tool, action := range map[string]string{"archive_self": store.AfterTurnArchive, "kill_self": store.AfterTurnKill} {
+		text, isError := callText(t, session, tool, map[string]any{})
+		if isError || !strings.Contains(text, "once the current turn ends") {
+			t.Fatalf("%s = %q, isError=%v", tool, text, isError)
+		}
+		if fake.endedAction != action {
+			t.Fatalf("%s asked the layer for %q", tool, fake.endedAction)
+		}
+	}
+	fake.endedAction = ""
+	if text, isError := callText(t, session, "archive_self", map[string]any{"cancel": true}); isError || !strings.Contains(text, "canceled the pending kill") {
+		t.Fatalf("archive_self cancel = %q, isError=%v", text, isError)
+	}
+	if !fake.endCanceled || fake.endedAction != "" {
+		t.Fatalf("cancel reached the layer as canceled=%v action=%q", fake.endCanceled, fake.endedAction)
+	}
+
 	if text, _ := callText(t, session, "list_groups", map[string]any{}); !strings.Contains(text, "backend") {
 		t.Fatalf("list_groups text = %q", text)
 	}
@@ -967,7 +998,7 @@ func TestSessionToolAnnotationsDescribeLocalRisk(t *testing.T) {
 	}
 	// A rename is the change this test exists to catch, and reading the
 	// annotations off a tool that is no longer there panics the package.
-	for _, name := range []string{"list_sessions", "read_session", "list_groups", "kill_session", "create_session", "send_session"} {
+	for _, name := range []string{"list_sessions", "read_session", "list_groups", "kill_session", "kill_self", "archive_self", "create_session", "send_session"} {
 		if tools[name] == nil {
 			t.Fatalf("%s is not registered", name)
 		}
@@ -980,8 +1011,10 @@ func TestSessionToolAnnotationsDescribeLocalRisk(t *testing.T) {
 			t.Fatalf("%s has no structured output schema", name)
 		}
 	}
-	if annotations := tools["kill_session"].Annotations; annotations == nil || annotations.DestructiveHint == nil || !*annotations.DestructiveHint {
-		t.Fatalf("kill annotations = %+v", annotations)
+	for _, name := range []string{"kill_session", "kill_self", "archive_self"} {
+		if annotations := tools[name].Annotations; annotations == nil || annotations.DestructiveHint == nil || !*annotations.DestructiveHint {
+			t.Fatalf("%s annotations = %+v", name, annotations)
+		}
 	}
 	for _, name := range []string{"create_session", "send_session"} {
 		annotations := tools[name].Annotations
@@ -1016,6 +1049,8 @@ func TestSessionToolErrorsAreToolErrors(t *testing.T) {
 		{"revive_session", map[string]any{"session_id": "a1"}},
 		{"kill_session", map[string]any{"session_id": "a1"}},
 		{"archive_session", map[string]any{"session_id": "a1"}},
+		{"archive_self", map[string]any{}},
+		{"kill_self", map[string]any{"cancel": true}},
 		{"list_groups", map[string]any{}},
 		{"create_group", map[string]any{"path": "work"}},
 		{"delete_group", map[string]any{"path": "work"}},

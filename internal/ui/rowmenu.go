@@ -105,8 +105,12 @@ func (m *Model) rowMenuItems(entry treeRow) []menuItem {
 	if sess.Archived {
 		return []menuItem{{label: "Restore", action: keybind.Restore}, remove}
 	}
+	var keep []menuItem
+	if sess.AfterTurn != "" {
+		keep = []menuItem{{label: "Cancel " + sess.AfterTurn, action: keybind.CancelEnd}}
+	}
 	if sess.Status == status.Dead {
-		return menuSections(manage, []menuItem{revive, m.archiveMenuItem(), remove})
+		return menuSections(manage, keep, []menuItem{revive, m.archiveMenuItem(), remove})
 	}
 	var agent []menuItem
 	if !m.isShell(sess.Tool) {
@@ -120,7 +124,7 @@ func (m *Model) rowMenuItems(entry treeRow) []menuItem {
 	}
 	return menuSections(
 		[]menuItem{{label: "Attach", action: menuAttach}},
-		agent, manage,
+		agent, manage, keep,
 		[]menuItem{{label: "Restart", action: keybind.Restart}, m.archiveMenuItem(), kill, remove},
 	)
 }

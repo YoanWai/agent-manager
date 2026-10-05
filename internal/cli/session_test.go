@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
+	"github.com/YoanWai/agent-manager/internal/store"
 )
 
 func TestSessionCommandsParseArgumentsAndPrintSentences(t *testing.T) {
@@ -89,6 +90,43 @@ func TestSessionCommandsParseArgumentsAndPrintSentences(t *testing.T) {
 			inspect: func(t *testing.T, f *fakeSessions) {
 				if f.archived {
 					t.Fatal("--restore should unarchive")
+				}
+			},
+		},
+		{
+			name: "archive-self asks for an archive once the turn ends",
+			run: func(out *bytes.Buffer, f *fakeSessions, args []string) error {
+				return runArchiveSelf(out, f, args, "cafe0001")
+			},
+			want: "this session is archived once the current turn ends",
+			inspect: func(t *testing.T, f *fakeSessions) {
+				if f.action != store.AfterTurnArchive || f.callerID != "cafe0001" || f.canceled {
+					t.Fatalf("archive-self asked for %q as %q, canceled=%v", f.action, f.callerID, f.canceled)
+				}
+			},
+		},
+		{
+			name: "kill-self asks for a kill once the turn ends",
+			run: func(out *bytes.Buffer, f *fakeSessions, args []string) error {
+				return runKillSelf(out, f, args, "cafe0001")
+			},
+			want: "this session is killed once the current turn ends",
+			inspect: func(t *testing.T, f *fakeSessions) {
+				if f.action != store.AfterTurnKill {
+					t.Fatalf("kill-self asked for %q", f.action)
+				}
+			},
+		},
+		{
+			name: "kill-self --cancel withdraws instead",
+			run: func(out *bytes.Buffer, f *fakeSessions, args []string) error {
+				return runKillSelf(out, f, args, "cafe0001")
+			},
+			args: []string{"--cancel"},
+			want: "canceled the pending archive",
+			inspect: func(t *testing.T, f *fakeSessions) {
+				if !f.canceled || f.action != "" {
+					t.Fatalf("--cancel reached the layer as canceled=%v action=%q", f.canceled, f.action)
 				}
 			},
 		},

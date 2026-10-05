@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/YoanWai/agent-manager/internal/store"
 )
 
 // The key map is the one place every binding in the app is written down, so
@@ -122,6 +123,7 @@ func sessionRowHelpRows(list keybind.Table) [][2]string {
 	h.action("kill it / kill every live session (frees their RAM)", keybind.Kill, keybind.KillAll)
 	h.action("revive it, its pane included / revive every dead session", keybind.Revive, keybind.ReviveAll)
 	h.action("archive / restore (archive kills, restore revives)", keybind.Archive, keybind.Restore)
+	h.action("keep it once its turn ends: cancel the archive or kill it asked for", keybind.CancelEnd)
 	h.action("delete it", keybind.Delete)
 	return h.rows
 }
@@ -135,6 +137,7 @@ func markHelpRows(list keybind.Table) [][2]string {
 		{"✕ errored", "the tool reported an error, or the session is dead"},
 		{"◌ starting", "the pane is still launching"},
 		{"✉N", "messages from another agent, held until this one is at rest"},
+		{afterTurnGlyphs[store.AfterTurnArchive] + " / " + afterTurnGlyphs[store.AfterTurnKill], "the agent asked to be archived / killed once this turn ends"},
 	}
 	if filter := list.Binding(keybind.Filter).Glyph(" / "); filter != "" {
 		rows = append(rows, [2]string{"", filter + " filters the list down to the marks that need you"})

@@ -24,6 +24,12 @@ const (
 	Starting = "starting"
 )
 
+// Resting is what "the session stopped working" means. Finished is
+// rewritten to idle once the manager acknowledges it, and a manager tick
+// can pass through both between two polls, so only the whole set is sure
+// to catch the moment.
+var Resting = []string{Finished, Waiting, Idle, Errored, Dead}
+
 type rule struct {
 	state string
 	re    *regexp.Regexp
@@ -49,6 +55,7 @@ type toolRules struct {
 	placeholder    *regexp.Regexp
 	userEcho       *regexp.Regexp
 	dialogFooter   *regexp.Regexp
+	dialogAsks     *regexp.Regexp
 	busyFooter     *regexp.Regexp
 	// composerPlaceholder is the literal text a tool paints inside its
 	// empty composer; a draft replaces it. Searched in a stripped row.
@@ -91,6 +98,7 @@ func NewEngine(cfg config.Config) (*Engine, error) {
 			{tool.InputPlaceholder, &tr.placeholder},
 			{tool.UserEcho, &tr.userEcho},
 			{tool.DialogFooter, &tr.dialogFooter},
+			{tool.DialogQuestion, &tr.dialogAsks},
 			{tool.BusyFooter, &tr.busyFooter},
 		}
 		for _, opt := range optional {
@@ -247,12 +255,26 @@ func (tr toolRules) isBusy(pane string) bool {
 	}
 	lines := strings.Split(region, "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
-		if !tr.busyLine.MatchString(strings.TrimRight(lines[i], " \t")) {
+		if !tr.busyLine.MatchString(unwrapped(lines, i)) {
 			continue
 		}
 		return tr.turnEnd == nil || tr.lastTurnEndIndex(lines) <= i
 	}
 	return false
+}
+
+// unwrapped joins row i with the indented rows a narrow pane wraps it onto,
+// since a busy line's telling words sit at its end.
+func unwrapped(lines []string, i int) string {
+	row := strings.TrimRight(lines[i], " \t")
+	for _, next := range lines[i+1:] {
+		body := strings.TrimSpace(next)
+		if body == "" || !wrapsAbove(next) {
+			break
+		}
+		row += " " + body
+	}
+	return row
 }
 
 // matchScope narrows rule matching to the current turn: the text after
@@ -424,6 +446,11 @@ func (e *Engine) LastMessage(tool, pane string) (line string, anchored, ok bool)
 	if !ok {
 		return "", false, false
 	}
+	if tr.dialogAsks != nil {
+		if q := tr.askedQuestion(pane[len(region):]); q != "" {
+			return q, true, true
+		}
+	}
 	lines := strings.Split(region, "\n")
 	inBlock := tr.chromeBlockRows(lines)
 	if tr.dialogOpen(pane[len(region):]) {
@@ -467,6 +494,55 @@ func (e *Engine) LastMessage(tool, pane string) (line string, anchored, ok bool)
 	}
 	return strings.TrimSpace(strings.Join(parts, " ")), true, true
 }
+
+// askedQuestion is the dialog_question row nearest above the selected option,
+// since a tool may draw its own prompt, which can end in "?" too, above the
+// question. A question wider than the pane wraps; the rows above it that the
+// next row's first word would not have fitted on are its start.
+func (tr toolRules) askedQuestion(tail string) string {
+	rows := strings.Split(tail, "\n")
+	end := len(rows)
+	for i, row := range rows {
+		if selectedOption.MatchString(row) {
+			end = i
+			break
+		}
+	}
+	q := -1
+	for i := 0; i < end; i++ {
+		if tr.dialogAsks.MatchString(rows[i]) {
+			q = i
+		}
+	}
+	if q == -1 {
+		return ""
+	}
+	text := func(i int) string {
+		m := boxedText.FindStringSubmatch(rows[i])
+		if m == nil {
+			return ""
+		}
+		return strings.TrimSpace(m[1])
+	}
+	question := text(q)
+	for i := q - 1; i >= 0; i-- {
+		above := text(i)
+		if above == "" || strings.HasPrefix(above, "- ") || strings.ContainsAny(string([]rune(above)[:1]), "╭╰│─") {
+			break
+		}
+		first, _, _ := strings.Cut(question, " ")
+		if ansi.StringWidth(above)+1+ansi.StringWidth(first) <= ansi.StringWidth(rows[i])-4 {
+			break
+		}
+		question = above + " " + question
+	}
+	return question
+}
+
+var (
+	selectedOption = regexp.MustCompile(`^[\s│]*●\s*\d+\.`)
+	boxedText      = regexp.MustCompile(`^│ ([^│]*?)\s*│\s*$`)
+)
 
 func (tr toolRules) dialogOpen(cutoffTail string) bool {
 	footer, ok := footerBelow(cutoffTail)
@@ -526,12 +602,13 @@ func (tr toolRules) chromeBlockRows(lines []string) []bool {
 		}
 		matchText := line
 		if !open {
-			for j := i + 1; j < len(lines); j++ {
+			// a heading wraps over up to four rows on the narrowest pane
+			for j := i + 1; j < len(lines) && j <= i+3; j++ {
 				next := strings.TrimRight(lines[j], " \t")
-				if strings.TrimSpace(next) != "" {
-					matchText += "\n" + next
+				if strings.TrimSpace(next) == "" {
 					break
 				}
+				matchText += "\n" + next
 			}
 		}
 		open = open || tr.chromeBlock.MatchString(matchText)

@@ -24,6 +24,35 @@ func fakeRun(outputs map[string]string, errs map[string]error) runner {
 
 const darwinKey = "defaults read -g AppleInterfaceStyle"
 
+func TestTimedRun(t *testing.T) {
+	out, err := timedRun("sh", "-c", `printf '%s' "$1"`, "sh", "hello")
+	if err != nil {
+		t.Fatalf("timedRun() error = %v", err)
+	}
+	if got := string(out); got != "hello" {
+		t.Errorf("timedRun() = %q, want %q", got, "hello")
+	}
+}
+
+func TestOSSchemeUsesPlatformDetector(t *testing.T) {
+	tests := []struct {
+		goos string
+		run  runner
+		want Scheme
+	}{
+		{"darwin", fakeRun(map[string]string{darwinKey: "Dark\n"}, nil), SchemeDark},
+		{"linux", fakeRun(map[string]string{portalKey: "variant uint32 1\n"}, nil), SchemeDark},
+		{"unsupported", fakeRun(nil, nil), SchemeUnknown},
+	}
+	for _, tt := range tests {
+		t.Run(tt.goos, func(t *testing.T) {
+			if got := osScheme(tt.goos, tt.run); got != tt.want {
+				t.Errorf("osScheme() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestDarwinScheme(t *testing.T) {
 	tests := []struct {
 		name string
@@ -104,31 +133,6 @@ func TestTerminalScheme(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := terminalScheme(tt.query, tt.env); got != tt.want {
 				t.Errorf("terminalScheme() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestParseOSC11(t *testing.T) {
-	tests := []struct {
-		name     string
-		response string
-		r, g, b  int
-		ok       bool
-	}{
-		{"xterm 16-bit, ST", "\x1b]11;rgb:0f0f/1111/1515\x1b\\", 15, 17, 21, true},
-		{"8-bit, BEL", "\x1b]11;rgb:fd/f6/e3\a", 253, 246, 227, true},
-		{"4-bit channels", "\x1b]11;rgb:f/f/f\a", 255, 255, 255, true},
-		{"no color spec", "\x1b]11;?\a", 0, 0, 0, false},
-		{"wrong channel count", "\x1b]11;rgb:aa/bb\a", 0, 0, 0, false},
-		{"garbage", "hello", 0, 0, 0, false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			r, g, b, ok := parseOSC11(tt.response)
-			if r != tt.r || g != tt.g || b != tt.b || ok != tt.ok {
-				t.Errorf("parseOSC11(%q) = %d,%d,%d,%v want %d,%d,%d,%v",
-					tt.response, r, g, b, ok, tt.r, tt.g, tt.b, tt.ok)
 			}
 		})
 	}

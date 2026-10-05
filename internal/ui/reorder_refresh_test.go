@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -245,5 +246,34 @@ func TestStaleGroupPollKeepsAnotherManagersUnrelatedReorder(t *testing.T) {
 	m = updated.(*Model)
 	if !slices.Equal(m.groups, want) {
 		t.Fatalf("stale poll undid another manager's unrelated reorder: %v want %v", m.groups, want)
+	}
+}
+
+func TestOlderListingStillCompletesAfterTurnRequest(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	sess := askAfterTurn(t, m, "alpha", store.AfterTurnKill)
+	if err := m.store.UpdateStatus(sess.ID, status.Idle); err != nil {
+		t.Fatal(err)
+	}
+	loadStoredRows(t, m)
+	freshAt := time.Now().Add(time.Second)
+	updated, _ := m.Update(refreshMsg{sessions: slices.Clone(m.sessions), listedAt: freshAt})
+	m = updated.(*Model)
+	updated, _ = m.Update(refreshMsg{
+		sessions:   []store.Session{{ID: "obsolete"}},
+		listedAt:   freshAt.Add(-time.Second),
+		turnsEnded: []string{sess.ID},
+	})
+	m = updated.(*Model)
+	got, err := m.store.Get(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.tmux.Exists(sess.ID) || got.Status != status.Dead || got.AfterTurn != "" {
+		t.Fatalf("older listing lost the completed turn: running=%v status=%q pending=%q", m.tmux.Exists(sess.ID), got.Status, got.AfterTurn)
+	}
+	if rows := m.sessionRows(); len(rows) != 1 || rows[0].ID != sess.ID || rows[0].Status != status.Dead {
+		t.Fatalf("older listing replaced the killed row: %+v", rows)
 	}
 }

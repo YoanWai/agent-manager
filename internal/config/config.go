@@ -108,6 +108,10 @@ type Tool struct {
 	// for its selected option from a draft typed at a resting composer, so
 	// the rows below the marker join what the rules read.
 	DialogFooter string `toml:"dialog_footer"`
+	// DialogQuestion matches the row of a dialog that replaces the input box,
+	// so the question sits under the input marker rather than above it. Its
+	// first group is what a quote of the session's last reply shows.
+	DialogQuestion string `toml:"dialog_question"`
 	// BusyFooter is a line the tool draws under its activity cutoff only
 	// while a turn runs. A working rule that matches without it belongs to
 	// a turn that died before printing its end marker, which is errored.
@@ -311,12 +315,13 @@ trailing_note = "^※"
 # ("❯ 1. Spaces"), where a numbered draft would sit; this footer under it
 # is what tells the two apart
 dialog_footer = "(?m)^\\s*Enter to select\\b"
-# background agents keep running after the turn that spawned them ends, and
-# the line saying so carries the same shape as a turn-end summary:
-# "✻ Waiting for 2 background agents to finish". Shells and monitors left
-# running ("· 1 shell still running") can outlive their use, so they do not
-# count.
-busy_line = "^[✻✳✶✽✢·✦✧+*] Waiting for \\d+ background agents? to finish"
+# work that outlives its turn and reports back, drawn in the shape of a
+# turn-end summary: background agents and dynamic workflows ("✻ Waiting for
+# 2 background agents and 1 dynamic workflow to finish") and a slow MCP call
+# moved to the background ("· 1 MCP task still running"). Shells and
+# monitors can outlive their use, so they do not count, and neither does a
+# mixed "· 2 background tasks still running", which names no kind.
+busy_line = "^[✻✳✶✽✢·✦✧+*] (?:Waiting for \\d+ (?:background agents?(?: and \\d+ dynamic workflows?)?|dynamic workflows?) to finish|.* · \\d+ MCP tasks? still running)"
 # a usage/rate-limit banner sits above the turn-end summary
 limit_line = "(?m)You've hit your .+limit"
 # every message and tool call opens on a bullet at the left edge; the
@@ -421,8 +426,10 @@ turn_end = "(?m)^(?:─+ Worked for [\\dhms. ]+─+|─+|  (?:Worked for [\\dhms
 # between the transcript and the composer
 chrome_line = "^\\s*─*\\s*$|^\\s+(?:⚠|↓|Tip: |Copied )"
 # a message queued during a turn is drawn under the running step, with its
-# edit hint, until the turn picks it up; a narrow pane wraps the heading
-chrome_block = "^• Queued(?: follow-|\\s*\\n\\s+(?:follow-up|inputs))"
+# edit hint, until the turn picks it up; a message sent with Enter shows under
+# "Messages to be submitted after next tool call" (or "at end of turn")
+# instead; a narrow pane wraps the heading between any words
+chrome_block = "^• (?:Queued(?: follow-|\\s*\\n\\s+(?:follow-up|inputs))|Messages(?: |\\s*\\n\\s+)to(?: |\\s*\\n\\s+)be(?: |\\s*\\n\\s+)submitted(?: |\\s*\\n\\s+)(?:after(?: |\\s*\\n\\s+)next(?: |\\s*\\n\\s+)tool(?: |\\s*\\n\\s+)call|at(?: |\\s*\\n\\s+)end(?: |\\s*\\n\\s+)of(?: |\\s*\\n\\s+)turn))"
 # every message and tool call opens on a "• " bullet
 message_start = "^• "
 # a command's output is drawn under this glyph, on its own indented row
@@ -542,6 +549,14 @@ activity_cutoff = "(?m)^\\s*[>!*] "
 # shift+tab to manual", ...) are all chrome above the composer
 chrome_line = "^\\s*[╭╮╰╯│─▄▀█]*\\s*$|^\\s*\\? for shortcuts\\s*$|^\\s*press tab twice for more\\s*$|^\\s*Press Ctrl\\+O to show more lines.*$|(?i)^\\s*(auto-accept edits |plan |yolo )?\\S*tab\\S* to (accept edits|manual|plan|auto-accept edits)\\b.*$"
 limit_line = "Usage limit reached"
+# a message queued during a turn is drawn under the reply, with its edit hint,
+# until the turn picks it up
+chrome_block = "^\\s*Queued \\(press ↑ to edit\\):"
+# an approval dialog replaces the composer, so the newest "> " row is the echo
+# of the prompt that raised it. The question is the box row that ends in "?",
+# not the "? Shell" title row or the command's own inner box; the row nearest
+# above the options wins, and rows it wraps over are joined.
+dialog_question = "(?m)^│ ([^?│\\s][^│]*\\?)\\s*│\\s*$"
 # model replies open on a "✦ " glyph
 message_start = "^\\s*✦ "
 input_placeholder = "^Type your message or @path/to/file"

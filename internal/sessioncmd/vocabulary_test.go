@@ -18,6 +18,8 @@ func TestCLIVocabulary(t *testing.T) {
 		Restore:        "agent-manager archive --restore",
 		Send:           "agent-manager send",
 		Read:           "agent-manager read",
+		ArchiveSelf:    "agent-manager archive-self",
+		KillSelf:       "agent-manager kill-self",
 	}
 	if got := CLIVocabulary(); got != want {
 		t.Fatalf("CLIVocabulary() = %+v, want %+v", got, want)

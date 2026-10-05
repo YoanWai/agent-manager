@@ -261,6 +261,44 @@ func TestDefaultRulesRealPanes(t *testing.T) {
 			"✻ Waiting for 2 background agents to finish\n※ recap: goal was X; next is Y.\n────\n❯ \n────", Working},
 		{"claude background wait superseded by a newer turn", "claude",
 			"✻ Waiting for 2 background agents to finish\n⏺ all agents reported\n✻ Worked for 5s\n────\n❯ \n────", Finished},
+		// 2026-10-05 real captures (Claude Code 2.1.289): a dynamic workflow
+		// outlives its turn the way a background agent does, and the wait
+		// line names both when both are pending.
+		{"claude waiting on a dynamic workflow (real capture)", "claude",
+			"⏺ Workflow launched (task w9cwg31xe) — two agents are running the 100s sleep in parallel.\n✻ Waiting for 1 dynamic workflow to finish\n" +
+				"────\n❯ check the workflow status\n────\n  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents\n" +
+				"  ◯ parallel-sleep  ▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱  0/2 · 46s · ↓ 83.5k tokens", Working},
+		{"claude waiting on a background agent and a dynamic workflow (real capture)", "claude",
+			"⏺ Both launched: the workflow (task wbpbwxmd6) with two parallel 100s sleeps, and a background\n  agent running the 60s sleep.\n" +
+				"✻ Waiting for 1 background agent and 1 dynamic workflow to finish\n────\n❯ \n────\n" +
+				"  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents · ↓ to manage\n  ⏺ main\n" +
+				"  ◯ general-purpose  Run 60s sleep                                         6s · ↓ 40.3k tokens\n" +
+				"  ◯ parallel-sleep   ▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱  0/2 · 7s · ↓ 83.5k tokens", Working},
+		{"claude dynamic workflow superseded by its completion turn (real capture)", "claude",
+			"✻ Waiting for 1 dynamic workflow to finish\n⏺ Dynamic workflow \"Two agents in parallel each run a 100s sleep command and reply done\"\ncompleted · 1m 43s\n" +
+				"⏺ The workflow finished: both agents ran the 100-second sleep and replied done (about 103\n  seconds total, confirming they ran in parallel).\n" +
+				"✻ Churned for 1m 47s · done 20:48\n────\n❯ run it again with four agents\n────", Finished},
+		// 2026-10-05 real capture (Claude Code 2.1.289): an MCP call that
+		// runs past two minutes moves to the background, and its result
+		// wakes the agent when it lands.
+		{"claude turn end with a backgrounded MCP call (real capture)", "claude",
+			"  Called slow\n⏺ The lookup moved to the background (task kxs68idfr); I'll get its result when it completes.\n" +
+				"✻ Cooked for 2m 4s · done 20:50 · 1 MCP task still running\n────\n❯ \n────\n" +
+				"  ⏵⏵ bypass permissions on · 1 MCP task · ← for agents · ↓ to manage", Working},
+		{"claude turn end with an MCP call next to a background shell (real capture)", "claude",
+			"  Called slow, ran 1 shell command\n⏺ The lookup moved to the background; I'll get its result when it completes.\n" +
+				"✻ Brewed for 2m 5s · done 20:55 · 2 background tasks still running\n────\n❯ \n────\n" +
+				"  ⏵⏵ bypass permissions on · 2 background tasks · ← for agents · ↓ to manage", Finished},
+		// 2026-10-05 real captures in a 48-column pane, the preview width of an
+		// 80-column terminal: the line wraps before the words that tell.
+		{"claude wait line wrapped in a narrow pane (real capture)", "claude",
+			"⏺ Workflow (two 90s sleepers) and the background\n  agent (50s sleeper) are both launched and\n  running.\n" +
+				"✻ Waiting for 1 background agent and 1 dynamic\n  workflow to finish\n" +
+				"────────────────────────────────────────────────\n❯ report when they all finish\n────────────────────────────────────────────────", Working},
+		{"claude MCP turn end wrapped in a narrow pane (real capture)", "claude",
+			"⏺ The lookup moved to the background and is\n  still running; I'll report its result when it\n  completes.\n" +
+				"✻ Crunched for 11s · done 21:21 · 1 MCP task\n  still running\n" +
+				"────────────────────────────────────────────────\n❯ \n────────────────────────────────────────────────", Working},
 		// 2026-08-14 and 2026-09-24 real captures: a background shell or
 		// monitor can outlive its use (a wait loop whose job already ended, a
 		// dev server), so the turn that leaves one running has still ended,
@@ -1155,6 +1193,72 @@ func TestLastMessage(t *testing.T) {
 	}
 }
 
+// gemini draws a message queued during a turn under the reply, with its edit
+// hint, until the turn picks it up. Frames captured from gemini v0.61.0.
+func TestLastMessageSkipsGeminiQueuedMessage(t *testing.T) {
+	engine := defaultEngine(t)
+	echo := " > Write a 600-word essay about terminal multiplexers in plain prose paragraphs. No headings, no lists, no tools.\n" +
+		"▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀\n"
+	reply := "✦ Terminal multiplexers let one terminal hold many sessions. A multiplexer keeps programs\n" +
+		"  running after the connection drops.\n"
+	queued := "  Queued (press ↑ to edit):\n" +
+		"    Also, after that finishes, tell me in one plain sentence what a terminal multiplexer is, keeping\n" +
+		"    it short.\n"
+	footer := "\n" +
+		" ⠦ Thinking... (esc to cancel, 14s)                                                       ? for shortcuts\n" +
+		"────────────────────────────────────────────────────────────────────────────────────────────────────\n" +
+		" Shift+Tab to accept edits                                                       1 MCP server · 1 skill\n" +
+		"▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄\n" +
+		" >   Type your message or @path/to/file\n" +
+		"▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀\n" +
+		" workspace (/directory)                          sandbox                                   /model\n" +
+		" /tmp/gtest                                      no sandbox                                  Auto"
+	want, _, _ := engine.LastMessage("gemini", echo+reply+footer)
+	if want != "Terminal multiplexers let one terminal hold many sessions. A multiplexer keeps programs running after the connection drops." {
+		t.Fatalf("quote without the queued block = %q", want)
+	}
+	if line, anchored, ok := engine.LastMessage("gemini", echo+reply+queued+footer); !ok || !anchored || line != want {
+		t.Fatalf("queued pane quote = %q anchored=%v ok=%v, want %q as without the queued block", line, anchored, ok, want)
+	}
+	// before the reply starts, the queued block is all there is under the echo
+	if line, _, ok := engine.LastMessage("gemini", echo+queued+footer); !ok || strings.Contains(line, "Queued") || strings.Contains(line, "Also, after") {
+		t.Fatalf("queued pane with no reply yet quotes %q ok=%v", line, ok)
+	}
+}
+
+// gemini's approval dialog replaces the composer, so the newest "> " row is the
+// echo of the prompt that raised it and the dialog sits below. The reply line
+// quotes what the dialog asks, not the previous answer. Frame captured from
+// gemini v0.61.0.
+func TestLastMessageQuotesGeminiApprovalQuestion(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := " > Tea or coffee?\n" +
+		"▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀\n" +
+		"✦ Tea, good choice.\n" +
+		"\n" +
+		"▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄\n" +
+		" > Run the shell command `sleep 15; echo second-done` in the foreground and wait for it to finish.\n" +
+		"▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀\n" +
+		"\n" +
+		"╭────────────────────────────────────────────────────────────────╮\n" +
+		"│ ? Shell  sleep 15; echo second-done                            │\n" +
+		"│ ╭────────────────────────────────────────────────────────────╮ │\n" +
+		"│ │ sleep 15; echo second-done                                 │ │\n" +
+		"│ ╰────────────────────────────────────────────────────────────╯ │\n" +
+		"│ Allow execution of [Shell]?                                    │\n" +
+		"│                                                                │\n" +
+		"│ ● 1. Allow once                                                │\n" +
+		"│   2. Allow for this session                                    │\n" +
+		"│   3. No, suggest changes (esc)                                 │\n" +
+		"╰────────────────────────────────────────────────────────────────╯"
+	if state, ok := engine.Match("gemini", pane); !ok || state != Waiting {
+		t.Fatalf("approval pane state = %q ok=%v, want waiting", state, ok)
+	}
+	if line, anchored, ok := engine.LastMessage("gemini", pane); !ok || !anchored || line != "Allow execution of [Shell]?" {
+		t.Fatalf("approval pane quote = %q anchored=%v ok=%v, want the dialog's question", line, anchored, ok)
+	}
+}
+
 // codex draws a queued follow-up under the running step and a done time under
 // a finished reply; neither is part of the reply the row quotes.
 func TestLastMessageSkipsCodexQueuedFollowUpAndDoneTime(t *testing.T) {
@@ -1229,6 +1333,80 @@ func TestLastMessageSkipsCodexQueuedFollowUpAndDoneTime(t *testing.T) {
 		"  gpt-5.1-codex default · /home/dev"
 	if line, _, ok := engine.LastMessage("codex", reply); !ok || line != "Queued" {
 		t.Fatalf("genuine reply 'Queued' quote = %q ok=%v, want 'Queued'", line, ok)
+	}
+}
+
+// a message sent with Enter during a turn is drawn under the running step as
+// "Messages to be submitted ..." until the tool call ends, and a rejected
+// steer re-appears under an end-of-turn heading; the heading wraps on a
+// narrow pane, and none of it is the reply the row quotes.
+func TestLastMessageSkipsCodexPendingMessages(t *testing.T) {
+	engine := defaultEngine(t)
+	transcript := "› Run the shell command `sleep 60` in the foreground and wait for it to finish.\n" +
+		"\n" +
+		"• Running sleep 60\n" +
+		"\n" +
+		"• Working (12s • esc to interrupt)\n" +
+		"\n"
+	composer := "› Ask Codex to do anything\n" +
+		"  gpt-5.1-codex default · /home/dev"
+	want, _, _ := engine.LastMessage("codex", transcript+composer)
+	blocks := map[string]string{
+		"120 cols": "• Messages to be submitted after next tool call (press esc to interrupt and send immediately)\n" +
+			"  ↳ Please also say hello when done.\n",
+		"22 cols": "• Messages to be\n" +
+			"  submitted after\n" +
+			"  next tool call\n" +
+			"  (press esc to\n" +
+			"  interrupt and send\n" +
+			"  immediately)\n" +
+			"  ↳ Please also say\n" +
+			"    hello when done.\n",
+		"15 cols": "• Messages to\n" +
+			"  be submitted\n" +
+			"  after next\n" +
+			"  tool call\n" +
+			"  (press esc to\n" +
+			"  interrupt and\n" +
+			"  send\n" +
+			"  immediately)\n" +
+			"  ↳ Please also\n" +
+			"    say hello\n" +
+			"    when done.\n",
+		"end of turn, 120 cols": "• Messages to be submitted at end of turn\n" +
+			"  ↳ Rejected steer that will be retried.\n",
+		"end of turn, 15 cols": "• Messages to\n" +
+			"  be submitted at\n" +
+			"  end of turn\n" +
+			"  ↳ Rejected\n" +
+			"    steer.\n",
+	}
+	for name, block := range blocks {
+		pane := transcript + block + "\n" + composer
+		if line, _, ok := engine.LastMessage("codex", pane); !ok || line != want {
+			t.Errorf("%s pending block quote = %q ok=%v, want %q as without the block", name, line, ok, want)
+		}
+	}
+
+	reply := "› Status?\n" +
+		"\n" +
+		"• Messages arrive in order.\n" +
+		"  done 12:59 AM\n" +
+		"\n" +
+		composer
+	if line, _, ok := engine.LastMessage("codex", reply); !ok || line != "Messages arrive in order." {
+		t.Fatalf("genuine reply starting 'Messages' quote = %q ok=%v", line, ok)
+	}
+
+	for name, text := range map[string]struct{ body, want string }{
+		"one line":  {"• Messages to be retried go to the dead-letter queue.\n", "Messages to be retried go to the dead-letter queue."},
+		"wrapped":   {"• Messages to\n  be retried go to the DLQ.\n", "Messages to be retried go to the DLQ."},
+		"submitted": {"• Messages to be submitted soon are batched.\n", "Messages to be submitted soon are batched."},
+	} {
+		pane := "› Status?\n\n" + text.body + "  done 12:59 AM\n\n" + composer
+		if line, _, ok := engine.LastMessage("codex", pane); !ok || line != text.want {
+			t.Errorf("%s genuine reply quote = %q ok=%v, want %q", name, line, ok, text.want)
+		}
 	}
 }
 
@@ -2106,6 +2284,66 @@ func TestMusePromptAndReply(t *testing.T) {
 	}
 }
 
+// A web_fetch dialog draws the tool's prompt above its own question; the quote
+// is the question nearest the options, not the first row ending in "?".
+func TestLastMessageQuotesGeminiQuestionNearestOptions(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := " > Read https://example.com and tell me, what is its main heading?\n" +
+		"▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀\n\n" +
+		"╭──────────────────────────────────────────────────────────────────────╮\n" +
+		"│ Read https://example.com and tell me, what is its main heading?      │\n" +
+		"│                                                                      │\n" +
+		"│ URLs to fetch:                                                       │\n" +
+		"│  - https://example.com/                                              │\n" +
+		"│ Do you want to proceed?                                              │\n" +
+		"│                                                                      │\n" +
+		"│ ● 1. Allow once                                                      │\n" +
+		"│   2. Allow for this session                                          │\n" +
+		"│   3. No, suggest changes (esc)                                       │\n" +
+		"╰──────────────────────────────────────────────────────────────────────╯"
+	if line, anchored, ok := engine.LastMessage("gemini", pane); !ok || !anchored || line != "Do you want to proceed?" {
+		t.Fatalf("web_fetch dialog quote = %q anchored=%v ok=%v, want the dialog's question", line, anchored, ok)
+	}
+}
+
+// A question wider than the pane wraps across rows; the quote joins them.
+func TestLastMessageJoinsWrappedGeminiQuestion(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := " > Ask me which shell I prefer.\n" +
+		"▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀\n\n" +
+		"╭──────────────────────────────────────────────────────────────────────╮\n" +
+		"│ ? Ask User                                                           │\n" +
+		"│ Which shell do you prefer for daily work on remote servers and on   │\n" +
+		"│ local machines alike?                                                      │\n" +
+		"│                                                                      │\n" +
+		"│ ● 1. bash                                                            │\n" +
+		"│   2. zsh                                                             │\n" +
+		"╰──────────────────────────────────────────────────────────────────────╯"
+	want := "Which shell do you prefer for daily work on remote servers and on local machines alike?"
+	if line, anchored, ok := engine.LastMessage("gemini", pane); !ok || !anchored || line != want {
+		t.Fatalf("wrapped question quote = %q anchored=%v ok=%v, want %q", line, anchored, ok, want)
+	}
+}
+
+// A question's wrapped rows are measured in terminal cells: a wide-character
+// word that fits by rune count can still not fit on the row above it.
+func TestLastMessageJoinsWrappedGeminiQuestionByCells(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := " > Ask me.\n" +
+		"▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀\n\n" +
+		"╭──────────────────────────────────────────────────────────────────────╮\n" +
+		"│ ? Ask User                                                           │\n" +
+		"│ Which shell do you prefer for daily work on remote servers           │\n" +
+		"│ 世界你好吗 and more?                                                 │\n" +
+		"│                                                                      │\n" +
+		"│ ● 1. bash                                                            │\n" +
+		"╰──────────────────────────────────────────────────────────────────────╯"
+	want := "Which shell do you prefer for daily work on remote servers 世界你好吗 and more?"
+	if line, anchored, ok := engine.LastMessage("gemini", pane); !ok || !anchored || line != want {
+		t.Fatalf("wide-character question quote = %q anchored=%v ok=%v, want %q", line, anchored, ok, want)
+	}
+}
+
 // Antigravity CLI 1.2.14 frames, captured from a live agy in a 120x40 pane.
 // agy draws inline from the top, so every frame ends in blank rows.
 var (
@@ -2233,5 +2471,22 @@ func TestRegionContentLeavesTheFrameOut(t *testing.T) {
 	}
 	if replied := content(header("dev@example.com") + "> hi\n\n  Hello!\n\n" + agyRule + "\n" + composer); replied == booting {
 		t.Error("a new transcript row left the content unchanged")
+	}
+}
+
+// A list item that fills its row does not continue the question below it.
+func TestLastMessageKeepsFullListRowOutOfGeminiQuestion(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := " > Fetch it.\n" +
+		"▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀\n\n" +
+		"╭──────────────────────────────────────────────────────────────────────╮\n" +
+		"│ URLs to fetch:                                                       │\n" +
+		"│ - https://example.com/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa   │\n" +
+		"│ Do you want to proceed?                                              │\n" +
+		"│                                                                      │\n" +
+		"│ ● 1. Allow once                                                      │\n" +
+		"╰──────────────────────────────────────────────────────────────────────╯"
+	if line, anchored, ok := engine.LastMessage("gemini", pane); !ok || !anchored || line != "Do you want to proceed?" {
+		t.Fatalf("quote with a full URL row = %q anchored=%v ok=%v, want the dialog's question", line, anchored, ok)
 	}
 }
