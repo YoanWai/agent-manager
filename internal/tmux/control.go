@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -142,7 +143,7 @@ const commandTimeout = 2 * time.Second
 // output. Replies arrive strictly in command order, so each call enqueues
 // a waiter that the read loop resolves from the front of the queue.
 func (c *Control) Command(command string) (string, error) {
-	waiter, err := c.submit(command)
+	waiter, err := c.submit(command, 1)
 	if err != nil {
 		return "", err
 	}
@@ -166,15 +167,27 @@ func (c *Control) Command(command string) (string, error) {
 // discarded reply still pops this command's own waiter, so the queue
 // stays aligned.
 func (c *Control) Send(command string) error {
-	_, err := c.submit(command)
+	return c.SendBlocks(command, 1)
+}
+
+// SendBlocks is Send for a command tmux answers with several reply blocks.
+// tmux answers every command it runs, so one that runs another, as if-shell
+// runs its branch, answers once for each, and a block nobody claimed would
+// resolve the next command's waiter instead.
+func (c *Control) SendBlocks(command string, blocks int) error {
+	_, err := c.submit(command, blocks)
 	return err
 }
 
-// submit enqueues a reply waiter and writes the command line. The queue
+// submit enqueues one reply waiter per block the command answers with and
+// writes the command line, returning the last block's waiter. The queue
 // append rides inside the write lock so waiter order always matches write
 // order, while mu itself is never held across the pipe write.
-func (c *Control) submit(command string) (chan reply, error) {
-	waiter := make(chan reply, 1)
+func (c *Control) submit(command string, blocks int) (chan reply, error) {
+	waiters := make([]chan reply, blocks)
+	for i := range waiters {
+		waiters[i] = make(chan reply, 1)
+	}
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 	c.mu.Lock()
@@ -182,22 +195,19 @@ func (c *Control) submit(command string) (chan reply, error) {
 		c.mu.Unlock()
 		return nil, fmt.Errorf("control client closed")
 	}
-	c.pending = append(c.pending, waiter)
+	c.pending = append(c.pending, waiters...)
 	c.mu.Unlock()
 	if _, err := io.WriteString(c.stdin, command+"\n"); err != nil {
-		// Nothing went out, so no reply will come: leaving the waiter
+		// Nothing went out, so no reply will come: leaving the waiters
 		// queued would shift every later reply onto the wrong caller.
 		c.mu.Lock()
-		for i := len(c.pending) - 1; i >= 0; i-- {
-			if c.pending[i] == waiter {
-				c.pending = append(c.pending[:i], c.pending[i+1:]...)
-				break
-			}
-		}
+		c.pending = slices.DeleteFunc(c.pending, func(pending chan reply) bool {
+			return slices.Contains(waiters, pending)
+		})
 		c.mu.Unlock()
 		return nil, fmt.Errorf("control write: %w", err)
 	}
-	return waiter, nil
+	return waiters[blocks-1], nil
 }
 
 // Close detaches the client. tmux exits on stdin EOF; one that ignores it
