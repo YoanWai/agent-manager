@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -700,8 +701,9 @@ func (m *Model) endAfterTurn(id string) error {
 	if err != nil {
 		return err
 	}
-	// A later pass can report the same turn before this one's work lands.
-	if sess.AfterTurn == "" {
+	// The report can trail the row: an earlier pass's work already landed, or
+	// a new turn has started since that pass read the session at rest.
+	if sess.AfterTurn == "" || !slices.Contains(status.Resting, sess.Status) {
 		return nil
 	}
 	sessions, err := m.sessionAndChildren(sess)

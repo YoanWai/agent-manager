@@ -2557,6 +2557,22 @@ func TestASessionAskingToBeKilledStaysListedDead(t *testing.T) {
 	}
 }
 
+// A report the Model reads after a new turn began must not end that turn.
+func TestAStaleReportLeavesAWorkingSessionAlone(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	sess := askAfterTurn(t, m, "alpha", store.AfterTurnKill)
+
+	m.endAfterTurns([]string{sess.ID})
+	got, err := m.store.Get(sess.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if !m.tmux.Exists(sess.ID) || got.AfterTurn != store.AfterTurnKill {
+		t.Fatalf("a working session was ended: running=%v pending=%q", m.tmux.Exists(sess.ID), got.AfterTurn)
+	}
+}
+
 // A restart or revive since the request means the user wants this agent
 // running, so the request dies with the run that made it.
 func TestARelaunchDropsAnEarlierRequest(t *testing.T) {
