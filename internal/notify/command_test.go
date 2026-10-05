@@ -1,6 +1,7 @@
 package notify
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -143,5 +144,19 @@ func TestCappedBufferTakesEveryWrite(t *testing.T) {
 	}
 	if got := buffer.String(); got != "abcd" {
 		t.Fatalf("kept %q, want abcd", got)
+	}
+}
+
+func TestLogCommandFailureNamesTheEventAndCause(t *testing.T) {
+	dir := t.TempDir()
+	LogCommandFailure(dir, Event{ID: "sess-1", Kind: Waiting}, errors.New("reading the notify command: database is closed"))
+	log, err := os.ReadFile(filepath.Join(dir, CommandLog))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"waiting", "sess-1", "database is closed"} {
+		if !strings.Contains(string(log), want) {
+			t.Fatalf("log %q does not name %q", log, want)
+		}
 	}
 }

@@ -61,9 +61,9 @@ type poller struct {
 
 	// notifyFn delivers one desktop notification; tests swap in a recorder.
 	notifyFn func(notify.Event)
-	// commandFn runs the user's notify command for the same event; tests
-	// swap in a recorder.
-	commandFn func(command string, event notify.Event)
+	// commandFn runs the user's notify command for the same event, or logs
+	// why it could not; tests swap in a recorder.
+	commandFn func(event notify.Event, command string, readErr error)
 	// takeFocus collects the session a clicked notification named; tests
 	// swap in a stub.
 	takeFocus func() (string, bool)
@@ -288,9 +288,13 @@ func lastMeaningfulPaneLine(pane string) string {
 
 var postNotification = notify.Notify
 
-func runNotifyCommand(command string, event notify.Event) {
+func runNotifyCommand(event notify.Event, command string, readErr error) {
 	dir, err := config.Dir()
 	if err != nil {
+		return
+	}
+	if readErr != nil {
+		notify.LogCommandFailure(dir, event, fmt.Errorf("reading the notify command: %w", readErr))
 		return
 	}
 	notify.RunCommand(command, dir, event)
@@ -1505,15 +1509,14 @@ func (p *poller) notifyTransition(sess store.Session, newStatus string) {
 		return
 	}
 	event := notify.Event{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: kind, Dir: sess.Cwd, Branch: sess.WorktreeBranch}
-	// An unreadable command runs nothing, like an unset one.
-	command, _ := storedNotifyCommand(p.store)
+	command, readErr := storedNotifyCommand(p.store)
 	// Delivery can wait on an external process (osascript, notify-send,
 	// the user's command), so it must never run inside refreshOnce, which
 	// holds runMu.
 	go func() {
 		p.notifyFn(event)
-		if command != "" {
-			p.commandFn(command, event)
+		if command != "" || readErr != nil {
+			p.commandFn(event, command, readErr)
 		}
 	}()
 }

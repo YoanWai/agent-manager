@@ -59,13 +59,14 @@ func newNotifyTestPoller(t *testing.T) (*poller, store.Session, *notifyRecorder)
 	p, sess := newTestPollerWithSession(t)
 	rec := &notifyRecorder{}
 	p.notifyFn = rec.fn()
-	p.commandFn = func(string, notify.Event) {}
+	p.commandFn = func(notify.Event, string, error) {}
 	return p, sess, rec
 }
 
 type commandCall struct {
 	command string
 	event   notify.Event
+	readErr error
 }
 
 type commandRecorder struct {
@@ -73,10 +74,10 @@ type commandRecorder struct {
 	calls []commandCall
 }
 
-func (r *commandRecorder) fn() func(string, notify.Event) {
-	return func(command string, event notify.Event) {
+func (r *commandRecorder) fn() func(notify.Event, string, error) {
+	return func(event notify.Event, command string, readErr error) {
 		r.mu.Lock()
-		r.calls = append(r.calls, commandCall{command, event})
+		r.calls = append(r.calls, commandCall{command, event, readErr})
 		r.mu.Unlock()
 	}
 }
@@ -124,7 +125,7 @@ func TestNotifyTransitionRunsTheCommandBesideTheBanner(t *testing.T) {
 		t.Fatalf("banner got %+v, want %+v", calls[0], want)
 	}
 	calls := waitForCommands(t, commands, 1)
-	if calls[0].command != `curl -d "$AM_BODY" ntfy.sh/topic` || calls[0].event != want {
+	if calls[0].command != `curl -d "$AM_BODY" ntfy.sh/topic` || calls[0].event != want || calls[0].readErr != nil {
 		t.Fatalf("command got %+v, want the trimmed command with %+v", calls[0], want)
 	}
 }
@@ -136,6 +137,22 @@ func TestNotifyTransitionWithoutACommandRunsNone(t *testing.T) {
 	settle()
 	if calls := commands.all(); len(calls) != 0 {
 		t.Fatalf("no command is set, got %v", calls)
+	}
+}
+
+// A command the store cannot hand back is not taken for an unset one: the
+// banner still goes up, and the read failure goes where command failures
+// are logged.
+func TestNotifyTransitionReportsAnUnreadableCommand(t *testing.T) {
+	p, sess, rec, commands := newCommandTestPoller(t, "true")
+	if err := p.store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	p.notifyTransition(sess, status.Waiting)
+	waitForCalls(t, rec, 1)
+	calls := waitForCommands(t, commands, 1)
+	if calls[0].readErr == nil || calls[0].command != "" || calls[0].event.Kind != notify.Waiting {
+		t.Fatalf("want the read error handed on for the waiting event, got %+v", calls[0])
 	}
 }
 
