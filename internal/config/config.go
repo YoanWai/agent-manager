@@ -108,6 +108,10 @@ type Tool struct {
 	// for its selected option from a draft typed at a resting composer, so
 	// the rows below the marker join what the rules read.
 	DialogFooter string `toml:"dialog_footer"`
+	// DialogQuestion matches the row of a dialog that replaces the input box,
+	// so the question sits under the input marker rather than above it. Its
+	// first group is what a quote of the session's last reply shows.
+	DialogQuestion string `toml:"dialog_question"`
 	// BusyFooter is a line the tool draws under its activity cutoff only
 	// while a turn runs. A working rule that matches without it belongs to
 	// a turn that died before printing its end marker, which is errored.
@@ -542,6 +546,14 @@ activity_cutoff = "(?m)^\\s*[>!*] "
 # shift+tab to manual", ...) are all chrome above the composer
 chrome_line = "^\\s*[╭╮╰╯│─▄▀█]*\\s*$|^\\s*\\? for shortcuts\\s*$|^\\s*press tab twice for more\\s*$|^\\s*Press Ctrl\\+O to show more lines.*$|(?i)^\\s*(auto-accept edits |plan |yolo )?\\S*tab\\S* to (accept edits|manual|plan|auto-accept edits)\\b.*$"
 limit_line = "Usage limit reached"
+# a message queued during a turn is drawn under the reply, with its edit hint,
+# until the turn picks it up
+chrome_block = "^\\s*Queued \\(press ↑ to edit\\):"
+# an approval dialog replaces the composer, so the newest "> " row is the echo
+# of the prompt that raised it. The question is the box row that ends in "?",
+# not the "? Shell" title row or the command's own inner box; the row nearest
+# above the options wins, and rows it wraps over are joined.
+dialog_question = "(?m)^│ ([^?│\\s][^│]*\\?)\\s*│\\s*$"
 # model replies open on a "✦ " glyph
 message_start = "^\\s*✦ "
 input_placeholder = "^Type your message or @path/to/file"
