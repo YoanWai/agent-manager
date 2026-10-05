@@ -14,6 +14,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/report"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
+	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -76,6 +77,10 @@ type sendSessionArgs struct {
 type archiveSessionArgs struct {
 	SessionID string `json:"session_id" jsonschema:"session id returned by list_sessions"`
 	Archived  *bool  `json:"archived,omitempty" jsonschema:"true archives the session out of the active list, false restores it; defaults to true"`
+}
+
+type endSelfArgs struct {
+	Cancel bool `json:"cancel,omitempty" jsonschema:"true withdraws the archive or kill this session has pending instead of asking for one"`
 }
 
 type taskArgs struct {
@@ -179,6 +184,8 @@ type sessionCommands interface {
 	Revive(sessionID, targetID string) (sessioncmd.Session, error)
 	Kill(sessionID, targetID string) (sessioncmd.Session, error)
 	Archive(sessionID, targetID string, archived bool) (sessioncmd.Session, error)
+	EndAfterTurn(sessionID, action string) (sessioncmd.AfterTurn, error)
+	CancelAfterTurn(sessionID string) (sessioncmd.AfterTurn, error)
 	Tasks(sessionID string) ([]sessioncmd.Task, error)
 	CreateTask(sessionID, title, body string, dependsOn []string) (sessioncmd.Task, error)
 	ClaimTask(sessionID, taskID string) (sessioncmd.Task, error)
@@ -450,7 +457,7 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 		Name: "kill_session",
 		Description: "Stop another agent's process, ending whatever it is doing. The row stays with its last screen and can be brought back with revive_session. " +
 			"Reserve it for a session whose work is finished or has gone wrong, and prefer send_session to redirect an agent that is still useful. " +
-			"Killing interrupts work in progress on the user's machine, so ask first unless the user asked for it.",
+			"Killing interrupts work in progress on the user's machine, so ask first unless the user asked for it. To stop yourself, call kill_self.",
 		Annotations: toolAnnotations(false, true, true),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args sessionTargetArgs) (*mcp.CallToolResult, sessioncmd.Session, error) {
 		killed, err := sessions.Kill(sessionID, args.SessionID)
@@ -463,7 +470,8 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "archive_session",
 		Description: "File a finished session out of the active list, or restore an archived one with archived false. " +
-			"Use it to keep the user's list readable once a session's work is done; the row and its last screen are kept, and a running pane keeps running.",
+			"Use it to keep the user's list readable once a session's work is done; the row and its last screen are kept, and a running pane keeps running. " +
+			"To archive yourself, call archive_self.",
 		Annotations: toolAnnotations(false, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args archiveSessionArgs) (*mcp.CallToolResult, sessioncmd.Session, error) {
 		archived := true
@@ -476,6 +484,38 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 		}
 		return textContent(sessioncmd.FormatArchiveState(updated)), updated, nil
 	})
+
+	endSelf := func(action string) func(context.Context, *mcp.CallToolRequest, endSelfArgs) (*mcp.CallToolResult, sessioncmd.AfterTurn, error) {
+		return func(ctx context.Context, req *mcp.CallToolRequest, args endSelfArgs) (*mcp.CallToolResult, sessioncmd.AfterTurn, error) {
+			var result sessioncmd.AfterTurn
+			var err error
+			if args.Cancel {
+				result, err = sessions.CancelAfterTurn(sessionID)
+			} else {
+				result, err = sessions.EndAfterTurn(sessionID, action)
+			}
+			if err != nil {
+				return nil, sessioncmd.AfterTurn{}, err
+			}
+			return textContent(sessioncmd.FormatAfterTurn(result)), result, nil
+		}
+	}
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "archive_self",
+		Description: "Archive this session once the turn making this call ends: Agent Manager stops its agent, keeps the last screen, and files the row out of the active list, the way the user's archive key does. " +
+			"Call it when the user asks you to archive yourself once the work is done, then finish your reply. Whatever the turn ends on, finished, a question to the user or an error, the archive follows it. " +
+			"Pass cancel true to withdraw a pending archive or kill. archive_session is for other sessions.",
+		Annotations: toolAnnotations(false, true, false),
+	}, endSelf(store.AfterTurnArchive))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "kill_self",
+		Description: "Stop this session's agent once the turn making this call ends, keeping its row and last screen in the list so revive_session can bring it back, the way the user's kill key does. " +
+			"Call it when the user asks you to kill or stop yourself once the work is done, then finish your reply. Whatever the turn ends on, finished, a question to the user or an error, the kill follows it. " +
+			"Pass cancel true to withdraw a pending archive or kill. kill_session is for other sessions.",
+		Annotations: toolAnnotations(false, true, true),
+	}, endSelf(store.AfterTurnKill))
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "task",

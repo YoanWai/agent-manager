@@ -1,8 +1,10 @@
 package ui
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -679,6 +681,83 @@ func (m *Model) killSession(sess store.Session) error {
 		}
 	}
 	return nil
+}
+
+// endAfterTurns archives or kills each session whose turn ended after it
+// asked for that, taking the same steps the archive and kill keys take.
+func (m *Model) endAfterTurns(ids []string) {
+	for _, id := range ids {
+		if err := m.endAfterTurn(id); err != nil {
+			m.errBar.text = err.Error()
+		}
+	}
+}
+
+func (m *Model) endAfterTurn(id string) error {
+	sess, err := m.store.Get(id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	// The report can trail the row: an earlier pass's work already landed, or
+	// a new turn has started since that pass read the session at rest.
+	if sess.AfterTurn == "" || !slices.Contains(status.Resting, sess.Status) {
+		return nil
+	}
+	sessions, err := m.sessionAndChildren(sess)
+	if err != nil {
+		return err
+	}
+	if sess.AfterTurn == store.AfterTurnArchive {
+		if err := m.snapshotLive(sessions); err != nil {
+			return err
+		}
+	}
+	for _, each := range sessions {
+		if err := m.killSession(each); err != nil {
+			return err
+		}
+	}
+	if sess.AfterTurn == store.AfterTurnArchive {
+		for _, each := range sessions {
+			if err := m.store.SetArchived(each.ID, true); err != nil {
+				return err
+			}
+			m.forgetLaunch(each.ID)
+		}
+		m.markArchivedLocally(sessions, "")
+	}
+	return m.clearAfterTurn(id)
+}
+
+func (m *Model) clearAfterTurn(id string) error {
+	if err := m.store.ClearAfterTurn(id); err != nil {
+		return err
+	}
+	for i := range m.sessions {
+		if m.sessions[i].ID == id {
+			m.sessions[i].AfterTurn, m.sessions[i].AfterTurnAt = "", time.Time{}
+		}
+	}
+	return nil
+}
+
+// cancelEndSelected keeps the selected session past its turn, withdrawing
+// the archive or kill it asked for.
+func (m *Model) cancelEndSelected() (tea.Model, tea.Cmd) {
+	entry, ok := m.selectedRow()
+	if !ok || entry.isGroup || entry.sess.AfterTurn == "" {
+		return m, nil
+	}
+	if err := m.clearAfterTurn(entry.sess.ID); err != nil {
+		m.errBar.text = err.Error()
+		return m, nil
+	}
+	m.rebuildRows()
+	m.reportDone(m.displayName(entry.sess) + " stays once its turn ends")
+	return m, nil
 }
 
 func (m *Model) archiveSelected() (tea.Model, tea.Cmd) {

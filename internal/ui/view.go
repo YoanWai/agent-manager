@@ -626,6 +626,9 @@ func (m *Model) rowLegend() legendSection {
 	if row.sess.Status == status.Finished && !row.sess.Archived {
 		pairs = append(pairs, [2]string{k(keybind.MarkIdle), "mark idle"})
 	}
+	if row.sess.AfterTurn != "" {
+		pairs = append(pairs, [2]string{k(keybind.CancelEnd), "cancel " + row.sess.AfterTurn})
+	}
 	pairs = append(pairs, conversation...)
 	// o sits outside the conversation keys: a shell's directory is worth
 	// opening as much as an agent's.

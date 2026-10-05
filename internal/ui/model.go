@@ -614,6 +614,9 @@ type refreshMsg struct {
 	// focusID is the session a clicked notification named, taken from
 	// the config directory by this pass.
 	focusID string
+	// turnsEnded are the sessions whose turn this pass saw end after they
+	// asked to be archived or killed once it did.
+	turnsEnded []string
 }
 
 type previewMsg struct {
@@ -1573,6 +1576,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.sessions = sessions
+		m.endAfterTurns(msg.turnsEnded)
 		m.tmuxSocket = msg.tmuxSocket
 		m.leadingManager = msg.leadingManager
 		m.panes = msg.panes

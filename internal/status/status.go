@@ -24,6 +24,12 @@ const (
 	Starting = "starting"
 )
 
+// Resting is what "the session stopped working" means. Finished is
+// rewritten to idle once the manager acknowledges it, and a manager tick
+// can pass through both between two polls, so only the whole set is sure
+// to catch the moment.
+var Resting = []string{Finished, Waiting, Idle, Errored, Dead}
+
 type rule struct {
 	state string
 	re    *regexp.Regexp

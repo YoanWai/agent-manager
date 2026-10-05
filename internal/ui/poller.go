@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -474,6 +475,7 @@ func (p *poller) refreshOnce() tea.Msg {
 	paneHashes := make(map[string]uint64, len(sessions))
 	paneLastLines := make(map[string]string, len(sessions))
 	panePrompts := make(map[string]string, len(sessions))
+	var turnsEnded []string
 	for i, sess := range sessions {
 		if sess.Archived {
 			continue
@@ -487,6 +489,9 @@ func (p *poller) refreshOnce() tea.Msg {
 		}
 		live := panes[sess.ID].PID > 0
 		claimed, delivered := false, false
+		// Only a pane this pass read without typing into it, or one that is
+		// gone, can say the turn that asked to end has ended.
+		observed := !live
 		if sess.TmuxSocket == "" {
 			// Sessions that predate the column are the leading manager's to
 			// speak for until one of them shows a pane here to claim.
@@ -580,6 +585,7 @@ func (p *poller) refreshOnce() tea.Msg {
 					}
 					sessions[i].PendingInputs = sessions[i].PendingInputs[1:]
 				}
+				observed = !sent
 				// Launch inputs open the conversation, so they go first; a
 				// message from another agent waits its turn behind them.
 				// A launch input sent this tick leaves pane and derived
@@ -626,6 +632,15 @@ func (p *poller) refreshOnce() tea.Msg {
 				if changed {
 					p.notifyTransition(sess, newStatus)
 				}
+			}
+		}
+		if observed {
+			due, err := p.afterTurnDue(sess, newStatus)
+			if err != nil {
+				return errMsg{err}
+			}
+			if due {
+				turnsEnded = append(turnsEnded, sess.ID)
 			}
 		}
 	}
@@ -702,6 +717,7 @@ func (p *poller) refreshOnce() tea.Msg {
 		paneLines:      paneLastLines,
 		panePrompts:    panePrompts,
 		panes:          panes,
+		turnsEnded:     turnsEnded,
 	}
 	if p.takeFocus != nil {
 		if id, ok := p.takeFocus(); ok {
@@ -713,6 +729,20 @@ func (p *poller) refreshOnce() tea.Msg {
 		msg.snapOK = true
 	}
 	return msg
+}
+
+// afterTurnDue reports whether the archive or kill a session asked for is
+// due: this pass read it at rest, and the request stamped the row working,
+// so that rest came after the call. A request older than the agent now in
+// the pane came from a run a restart or revive already ended, and is dropped.
+func (p *poller) afterTurnDue(sess store.Session, current string) (bool, error) {
+	if sess.AfterTurn == "" {
+		return false, nil
+	}
+	if sess.AfterTurnAt.Before(sess.LaunchTime()) {
+		return false, ignoreDeletedSession(p.store.ClearAfterTurn(sess.ID))
+	}
+	return slices.Contains(status.Resting, current), nil
 }
 
 // idMinting reports whether a live, not-yet-captured session belongs to a

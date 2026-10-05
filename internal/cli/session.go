@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
+	"github.com/YoanWai/agent-manager/internal/store"
 )
 
 const (
@@ -22,6 +23,8 @@ const (
 	usageKill          = "kill <session-id> [--json]"
 	usageRevive        = "revive <session-id> [--json]"
 	usageArchive       = "archive <session-id> [--restore] [--json]"
+	usageArchiveSelf   = "archive-self [--cancel] [--json]"
+	usageKillSelf      = "kill-self [--cancel] [--json]"
 	usageGroups        = "groups [--json]"
 	usageCreateGroup   = "create-group <path> [--directory <path>] [--json]"
 	usageDeleteGroup   = "delete-group <path> [--json]"
@@ -37,6 +40,8 @@ type sessionCommands interface {
 	Kill(sessionID, targetID string) (sessioncmd.Session, error)
 	Revive(sessionID, targetID string) (sessioncmd.Session, error)
 	Archive(sessionID, targetID string, archived bool) (sessioncmd.Session, error)
+	EndAfterTurn(sessionID, action string) (sessioncmd.AfterTurn, error)
+	CancelAfterTurn(sessionID string) (sessioncmd.AfterTurn, error)
 	Groups(sessionID string) ([]sessioncmd.Group, error)
 	CreateGroup(sessionID, path, directory string) (sessioncmd.Group, error)
 	DeleteGroup(sessionID, path string) (sessioncmd.GroupRemoval, error)
@@ -59,6 +64,8 @@ func sessionSection() section {
 			{name: "kill", usage: usageKill, about: "stop another agent's process, ending whatever it is doing; its row keeps the last screen", run: bind(newSessions, runKill)},
 			{name: "revive", usage: usageRevive, about: "bring a dead session back on its old row, resuming the conversation it held; an agent that quit inside a live pane comes back there", run: bind(newSessions, runRevive)},
 			{name: "archive", usage: usageArchive, about: "file a finished session out of the active list, or restore it with --restore", run: bind(newSessions, runArchive)},
+			{name: "archive-self", usage: usageArchiveSelf, about: "archive this session once the current turn ends, the way the archive key does; --cancel withdraws a pending archive or kill", run: bind(newSessions, runArchiveSelf)},
+			{name: "kill-self", usage: usageKillSelf, about: "stop this session's agent once the current turn ends, keeping its row for revive; --cancel withdraws a pending archive or kill", run: bind(newSessions, runKillSelf)},
 			{name: "groups", usage: usageGroups, about: "list the groups sessions and terminals are filed under", run: bind(newSessions, runGroups)},
 			{name: "create-group", usage: usageCreateGroup, about: "create a group so a fleet you spawn stays together in the user's list", run: bind(newSessions, runCreateGroup)},
 			{name: "delete-group", usage: usageDeleteGroup, about: "remove a group whose work is done; sessions still in it move to the root rather than stopping", run: bind(newSessions, runDeleteGroup)},
@@ -236,6 +243,34 @@ func runArchive(out io.Writer, sessions sessionCommands, args []string, sessionI
 		return err
 	}
 	return emit(out, *asJSON, updated, sessioncmd.FormatArchiveState(updated))
+}
+
+func runArchiveSelf(out io.Writer, sessions sessionCommands, args []string, sessionID string) error {
+	return runEndSelf(out, sessions, args, sessionID, usageArchiveSelf, store.AfterTurnArchive)
+}
+
+func runKillSelf(out io.Writer, sessions sessionCommands, args []string, sessionID string) error {
+	return runEndSelf(out, sessions, args, sessionID, usageKillSelf, store.AfterTurnKill)
+}
+
+func runEndSelf(out io.Writer, sessions sessionCommands, args []string, sessionID, usage, action string) error {
+	set := newFlagSet(usage)
+	cancel := set.Bool("cancel", false, "withdraw the archive or kill this session has pending")
+	asJSON := jsonFlag(set)
+	if _, err := parseCommand(out, set, args, 0, 0); err != nil {
+		return err
+	}
+	var result sessioncmd.AfterTurn
+	var err error
+	if *cancel {
+		result, err = sessions.CancelAfterTurn(sessionID)
+	} else {
+		result, err = sessions.EndAfterTurn(sessionID, action)
+	}
+	if err != nil {
+		return err
+	}
+	return emit(out, *asJSON, result, sessioncmd.FormatAfterTurn(result))
 }
 
 func runGroups(out io.Writer, sessions sessionCommands, args []string, sessionID string) error {

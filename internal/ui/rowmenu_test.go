@@ -4,6 +4,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/YoanWai/agent-manager/internal/status"
+	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -211,4 +214,53 @@ func TestMenuHighlightsTheEntryUnderAHover(t *testing.T) {
 	if cmd := m.syncMouseCapture(); cmd == nil || m.mouseHover {
 		t.Fatal("closing the menu should hand motion back to button tracking")
 	}
+}
+
+// The pending end is reachable both ways: the menu entry for the mouse,
+// the footer naming its key for the keyboard.
+func TestAPendingEndOffersItsCancelInTheMenuAndTheFooter(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	askAfterTurn(t, m, "alpha", store.AfterTurnArchive)
+	loadStoredRows(t, m)
+	m.selectSessionRow(t, "alpha")
+
+	frame := ansi.Strip(m.View())
+	for _, want := range []string{"alpha ↓", "archives when this turn ends", "c cancel archive"} {
+		if !strings.Contains(frame, want) {
+			t.Fatalf("the frame does not show %q:\n%s", want, frame)
+		}
+	}
+	m = railMouse(t, m, "alpha", tea.MouseActionPress, tea.MouseButtonRight)
+	m.View()
+	cancel := menuEntry(t, m, "Cancel archive")
+	updated, _ := m.handleMouse(tea.MouseMsg{
+		X: m.menu.left + 2, Y: m.menu.top + 1 + cancel, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
+	})
+	m = updated.(*Model)
+	sess, _ := m.selected()
+	if got, _ := m.store.Get(sess.ID); got.AfterTurn != "" {
+		t.Fatalf("Cancel archive left %q pending", got.AfterTurn)
+	}
+	if strings.Contains(ansi.Strip(m.View()), "alpha ↓") {
+		t.Fatal("the row still wears the archive mark after the cancel")
+	}
+}
+
+// A row the poll has not yet ended still carries its request once dead, and
+// c cancels it there, so the menu has to as well.
+func TestADeadRowWithAPendingEndOffersItsCancel(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	sess := askAfterTurn(t, m, "alpha", store.AfterTurnKill)
+	if err := m.store.UpdateStatus(sess.ID, status.Dead); err != nil {
+		t.Fatalf("UpdateStatus: %v", err)
+	}
+	loadStoredRows(t, m)
+	for _, item := range m.rowMenuItems(sessionRow(t, m, "alpha")) {
+		if item.label == "Cancel kill" && item.action == keybind.CancelEnd {
+			return
+		}
+	}
+	t.Fatalf("the dead row's menu has no Cancel kill: %+v", m.rowMenuItems(sessionRow(t, m, "alpha")))
 }

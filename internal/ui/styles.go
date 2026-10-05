@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/status"
+	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -246,6 +247,22 @@ func pill(text string, fg lipgloss.Color) string {
 // the manager's own accent so it cannot be read as a state the agent is in.
 func inboxBadge(count int) string {
 	return inboxBadgeStyle.Render("✉" + strconv.Itoa(count))
+}
+
+// afterTurnGlyphs mark a session that asked to be archived or killed once
+// its turn ends, so a row about to leave the list says so beforehand.
+var afterTurnGlyphs = map[string]string{
+	store.AfterTurnArchive: "↓",
+	store.AfterTurnKill:    "■",
+}
+
+var afterTurnNote = map[string]string{
+	store.AfterTurnArchive: "archives when this turn ends",
+	store.AfterTurnKill:    "killed when this turn ends",
+}
+
+func afterTurnBadge(action string) string {
+	return inboxBadgeStyle.Render(afterTurnGlyphs[action])
 }
 
 // keyPill renders a chip with the key that changes it dimmed in front, so

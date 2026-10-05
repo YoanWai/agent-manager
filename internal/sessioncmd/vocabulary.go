@@ -19,6 +19,8 @@ type Vocabulary struct {
 	Restore        string
 	Send           string
 	Read           string
+	ArchiveSelf    string
+	KillSelf       string
 }
 
 // MCPVocabulary spells the actions as the tools an MCP client sees.
@@ -38,6 +40,8 @@ func MCPVocabulary() Vocabulary {
 		Restore:        "archive_session archived false",
 		Send:           "send_session",
 		Read:           "read_session",
+		ArchiveSelf:    "archive_self",
+		KillSelf:       "kill_self",
 	}
 }
 
@@ -58,5 +62,7 @@ func CLIVocabulary() Vocabulary {
 		Restore:        "agent-manager archive --restore",
 		Send:           "agent-manager send",
 		Read:           "agent-manager read",
+		ArchiveSelf:    "agent-manager archive-self",
+		KillSelf:       "agent-manager kill-self",
 	}
 }
