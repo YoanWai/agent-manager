@@ -315,12 +315,13 @@ trailing_note = "^※"
 # ("❯ 1. Spaces"), where a numbered draft would sit; this footer under it
 # is what tells the two apart
 dialog_footer = "(?m)^\\s*Enter to select\\b"
-# background agents keep running after the turn that spawned them ends, and
-# the line saying so carries the same shape as a turn-end summary:
-# "✻ Waiting for 2 background agents to finish". Shells and monitors left
-# running ("· 1 shell still running") can outlive their use, so they do not
-# count.
-busy_line = "^[✻✳✶✽✢·✦✧+*] Waiting for \\d+ background agents? to finish"
+# work that outlives its turn and reports back, drawn in the shape of a
+# turn-end summary: background agents and dynamic workflows ("✻ Waiting for
+# 2 background agents and 1 dynamic workflow to finish") and a slow MCP call
+# moved to the background ("· 1 MCP task still running"). Shells and
+# monitors can outlive their use, so they do not count, and neither does a
+# mixed "· 2 background tasks still running", which names no kind.
+busy_line = "^[✻✳✶✽✢·✦✧+*] (?:Waiting for \\d+ (?:background agents?(?: and \\d+ dynamic workflows?)?|dynamic workflows?) to finish|.* · \\d+ MCP tasks? still running)"
 # a usage/rate-limit banner sits above the turn-end summary
 limit_line = "(?m)You've hit your .+limit"
 # every message and tool call opens on a bullet at the left edge; the

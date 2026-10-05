@@ -261,6 +261,44 @@ func TestDefaultRulesRealPanes(t *testing.T) {
 			"✻ Waiting for 2 background agents to finish\n※ recap: goal was X; next is Y.\n────\n❯ \n────", Working},
 		{"claude background wait superseded by a newer turn", "claude",
 			"✻ Waiting for 2 background agents to finish\n⏺ all agents reported\n✻ Worked for 5s\n────\n❯ \n────", Finished},
+		// 2026-10-05 real captures (Claude Code 2.1.289): a dynamic workflow
+		// outlives its turn the way a background agent does, and the wait
+		// line names both when both are pending.
+		{"claude waiting on a dynamic workflow (real capture)", "claude",
+			"⏺ Workflow launched (task w9cwg31xe) — two agents are running the 100s sleep in parallel.\n✻ Waiting for 1 dynamic workflow to finish\n" +
+				"────\n❯ check the workflow status\n────\n  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents\n" +
+				"  ◯ parallel-sleep  ▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱  0/2 · 46s · ↓ 83.5k tokens", Working},
+		{"claude waiting on a background agent and a dynamic workflow (real capture)", "claude",
+			"⏺ Both launched: the workflow (task wbpbwxmd6) with two parallel 100s sleeps, and a background\n  agent running the 60s sleep.\n" +
+				"✻ Waiting for 1 background agent and 1 dynamic workflow to finish\n────\n❯ \n────\n" +
+				"  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents · ↓ to manage\n  ⏺ main\n" +
+				"  ◯ general-purpose  Run 60s sleep                                         6s · ↓ 40.3k tokens\n" +
+				"  ◯ parallel-sleep   ▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱  0/2 · 7s · ↓ 83.5k tokens", Working},
+		{"claude dynamic workflow superseded by its completion turn (real capture)", "claude",
+			"✻ Waiting for 1 dynamic workflow to finish\n⏺ Dynamic workflow \"Two agents in parallel each run a 100s sleep command and reply done\"\ncompleted · 1m 43s\n" +
+				"⏺ The workflow finished: both agents ran the 100-second sleep and replied done (about 103\n  seconds total, confirming they ran in parallel).\n" +
+				"✻ Churned for 1m 47s · done 20:48\n────\n❯ run it again with four agents\n────", Finished},
+		// 2026-10-05 real capture (Claude Code 2.1.289): an MCP call that
+		// runs past two minutes moves to the background, and its result
+		// wakes the agent when it lands.
+		{"claude turn end with a backgrounded MCP call (real capture)", "claude",
+			"  Called slow\n⏺ The lookup moved to the background (task kxs68idfr); I'll get its result when it completes.\n" +
+				"✻ Cooked for 2m 4s · done 20:50 · 1 MCP task still running\n────\n❯ \n────\n" +
+				"  ⏵⏵ bypass permissions on · 1 MCP task · ← for agents · ↓ to manage", Working},
+		{"claude turn end with an MCP call next to a background shell (real capture)", "claude",
+			"  Called slow, ran 1 shell command\n⏺ The lookup moved to the background; I'll get its result when it completes.\n" +
+				"✻ Brewed for 2m 5s · done 20:55 · 2 background tasks still running\n────\n❯ \n────\n" +
+				"  ⏵⏵ bypass permissions on · 2 background tasks · ← for agents · ↓ to manage", Finished},
+		// 2026-10-05 real captures in a 48-column pane, the preview width of an
+		// 80-column terminal: the line wraps before the words that tell.
+		{"claude wait line wrapped in a narrow pane (real capture)", "claude",
+			"⏺ Workflow (two 90s sleepers) and the background\n  agent (50s sleeper) are both launched and\n  running.\n" +
+				"✻ Waiting for 1 background agent and 1 dynamic\n  workflow to finish\n" +
+				"────────────────────────────────────────────────\n❯ report when they all finish\n────────────────────────────────────────────────", Working},
+		{"claude MCP turn end wrapped in a narrow pane (real capture)", "claude",
+			"⏺ The lookup moved to the background and is\n  still running; I'll report its result when it\n  completes.\n" +
+				"✻ Crunched for 11s · done 21:21 · 1 MCP task\n  still running\n" +
+				"────────────────────────────────────────────────\n❯ \n────────────────────────────────────────────────", Working},
 		// 2026-08-14 and 2026-09-24 real captures: a background shell or
 		// monitor can outlive its use (a wait loop whose job already ended, a
 		// dev server), so the turn that leaves one running has still ended,
