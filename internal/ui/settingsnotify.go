@@ -14,6 +14,9 @@ type notifyCommandRow struct {
 	value  string
 	typing bool
 	input  textinput.Model
+	// loaded is false when the stored command could not be read; saving
+	// then would overwrite it with an empty line nobody typed.
+	loaded bool
 }
 
 // notifyCommandLabelRunes keeps a long command, a curl with a URL and
@@ -30,12 +33,23 @@ func (r notifyCommandRow) label() string {
 	return r.value
 }
 
-func storedNotifyCommand(st settingReader) string {
+func storedNotifyCommand(st settingReader) (string, error) {
 	command, err := st.Setting(notifyCommandSetting)
 	if err != nil {
-		return ""
+		return "", err
 	}
-	return strings.TrimSpace(command)
+	return strings.TrimSpace(command), nil
+}
+
+// loadNotifyCommandRow reads the row for Settings. A store error is
+// surfaced, and the row keeps the stored command out of the save.
+func (m *Model) loadNotifyCommandRow() notifyCommandRow {
+	command, err := storedNotifyCommand(m.store)
+	if err != nil {
+		m.errBar.text = "reading notify command: " + err.Error()
+		return notifyCommandRow{}
+	}
+	return notifyCommandRow{value: command, loaded: true}
 }
 
 func (m *Model) openNotifyCommandTyping() {
@@ -53,6 +67,7 @@ func (m *Model) handleNotifyCommandTypingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd
 	case "enter":
 		row.value = strings.TrimSpace(row.input.Value())
 		row.typing = false
+		row.loaded = true
 		return m, nil
 	case "esc":
 		row.typing = false

@@ -1505,7 +1505,8 @@ func (p *poller) notifyTransition(sess store.Session, newStatus string) {
 		return
 	}
 	event := notify.Event{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: kind, Dir: sess.Cwd, Branch: sess.WorktreeBranch}
-	command := storedNotifyCommand(p.store)
+	// An unreadable command runs nothing, like an unset one.
+	command, _ := storedNotifyCommand(p.store)
 	// Delivery can wait on an external process (osascript, notify-send,
 	// the user's command), so it must never run inside refreshOnce, which
 	// holds runMu.

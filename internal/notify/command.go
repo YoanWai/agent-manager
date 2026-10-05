@@ -36,14 +36,33 @@ func runBoundedShell(env []string, command string) (string, error) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "sh", "-c", command)
 	cmd.Env = append(os.Environ(), env...)
-	var output bytes.Buffer
-	cmd.Stdout = &output
-	cmd.Stderr = &output
+	output := &cappedBuffer{limit: commandOutputLimit}
+	cmd.Stdout = output
+	cmd.Stderr = output
 	// A child that outlives sh keeps the output pipe open; this stops
 	// waiting for it once sh is gone.
 	cmd.WaitDelay = time.Second
 	err := cmd.Run()
 	return output.String(), err
+}
+
+// cappedBuffer keeps the start of a command's output and drops the rest,
+// while reporting every write as taken so the pipes keep draining and a
+// chatty command cannot grow the manager's memory.
+type cappedBuffer struct {
+	buf   bytes.Buffer
+	limit int
+}
+
+func (b *cappedBuffer) Write(p []byte) (int, error) {
+	if room := b.limit - b.buf.Len(); room > 0 {
+		b.buf.Write(p[:min(len(p), room)])
+	}
+	return len(p), nil
+}
+
+func (b *cappedBuffer) String() string {
+	return b.buf.String()
 }
 
 // CommandEnv is the environment the notify command runs with, on top of
@@ -90,9 +109,6 @@ func RunCommand(command, configDir string, event Event) {
 	output, err := runShell(env, command)
 	if err == nil {
 		return
-	}
-	if len(output) > commandOutputLimit {
-		output = output[:commandOutputLimit]
 	}
 	line := fmt.Sprintf("%s %s %s: %v: %s\n", time.Now().Format(time.RFC3339), kindName(event.Kind),
 		event.ID, err, sanitize(output))

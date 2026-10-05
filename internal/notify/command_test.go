@@ -121,3 +121,27 @@ func TestCommandLogStartsOverPastItsLimit(t *testing.T) {
 		t.Fatalf("log is %d bytes, want it started over below %d", info.Size(), commandLogLimit)
 	}
 }
+
+// A command that prints far more than the log keeps is drained, not
+// buffered whole, and only its start is kept.
+func TestRunShellKeepsOnlyTheStartOfTheOutput(t *testing.T) {
+	output, err := runBoundedShell(nil, `i=0; while [ $i -lt 2000 ]; do echo 0123456789abcdef0123456789abcdef; i=$((i+1)); done; echo tail >&2`)
+	if err != nil {
+		t.Fatalf("the command should finish: %v", err)
+	}
+	if len(output) != commandOutputLimit || !strings.HasPrefix(output, "0123456789abcdef") {
+		t.Fatalf("kept %d bytes starting %q, want the first %d", len(output), output[:min(len(output), 16)], commandOutputLimit)
+	}
+}
+
+func TestCappedBufferTakesEveryWrite(t *testing.T) {
+	buffer := &cappedBuffer{limit: 4}
+	for _, chunk := range []string{"ab", "cdef", "gh"} {
+		if n, err := buffer.Write([]byte(chunk)); n != len(chunk) || err != nil {
+			t.Fatalf("Write(%q) = %d, %v; want every byte taken", chunk, n, err)
+		}
+	}
+	if got := buffer.String(); got != "abcd" {
+		t.Fatalf("kept %q, want abcd", got)
+	}
+}
