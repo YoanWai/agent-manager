@@ -110,8 +110,13 @@ func RunCommand(command, configDir string, event Event) {
 	if err == nil {
 		return
 	}
-	line := fmt.Sprintf("%s %s %s: %v: %s\n", time.Now().Format(time.RFC3339), kindName(event.Kind),
-		event.ID, err, sanitize(output))
+	LogCommandFailure(configDir, event, fmt.Errorf("%w: %s", err, sanitize(output)))
+}
+
+// LogCommandFailure records a notify command that did not run as asked,
+// whether it failed or could not be read from the store.
+func LogCommandFailure(configDir string, event Event, failure error) {
+	line := fmt.Sprintf("%s %s %s: %v\n", time.Now().Format(time.RFC3339), kindName(event.Kind), event.ID, failure)
 	_ = appendLog(filepath.Join(configDir, CommandLog), line)
 }
 
