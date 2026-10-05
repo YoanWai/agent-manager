@@ -1468,7 +1468,9 @@ func (p *poller) applyHookStatus(sess store.Session, text, hookStatus string) st
 // finished stays quiet unless opted in, since most turn ends are routine.
 // There is no focus gate: the poll cannot tell whether the user is looking
 // at the manager, and the session they are watching is precisely the one
-// whose ping they must not miss.
+// whose ping they must not miss. A hook-backed session's finished or
+// waiting banner carries what the agent said, from its hook payload;
+// every other banner says the state alone.
 func (p *poller) notifyTransition(sess store.Session, newStatus string) {
 	if p.notifyFn == nil {
 		return
@@ -1490,9 +1492,13 @@ func (p *poller) notifyTransition(sess store.Session, newStatus string) {
 	if !p.notificationsOn() {
 		return
 	}
+	event := notify.Event{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: kind, Dir: sess.Cwd, Branch: sess.WorktreeBranch}
+	if kind != notify.Errored && p.statusSources[sess.Tool] == hooks.StatusSourceClaude {
+		event.Body, _ = p.hooks.ReadBody(sess.ID)
+	}
 	// Delivery can wait on an external process (osascript, notify-send),
 	// so it must never run inside refreshOnce, which holds runMu.
-	go p.notifyFn(notify.Event{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: kind})
+	go p.notifyFn(event)
 }
 
 func (p *poller) notificationsOn() bool {

@@ -11,17 +11,25 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/YoanWai/agent-manager/internal/status"
+	"github.com/YoanWai/agent-manager/internal/tmux"
 )
 
 const EnvStatusFile = "AGENT_MANAGER_STATUS_FILE"
+
+// EnvBodyFile is where hook-capture keeps the text behind the last
+// finished or waiting state, for the notification that state fires.
+const EnvBodyFile = "AGENT_MANAGER_BODY_FILE"
 
 // EnvSessionID identifies the managed session to the rename subcommand;
 // every session gets it regardless of tool.
@@ -64,6 +72,15 @@ func statusCommand(state string) string {
 	return `printf ` + state + ` > "$` + EnvStatusFile + `"`
 }
 
+// captureCommand records the state together with the text Claude Code
+// hands the hook. The binary can be gone by the time the hook fires (an
+// upgrade moved it, or a go run build was cleaned up), so the plain write
+// stays behind it and drops the body, which would be a turn too old.
+func captureCommand(exe, state string) string {
+	return tmux.ShellQuote(exe) + ` hook-capture --state ` + state +
+		` || { rm -f "$` + EnvBodyFile + `"; ` + statusCommand(state) + `; }`
+}
+
 // blockingNotifications are the Notification types that leave the turn
 // stuck on the user. The event also fires for the idle reminder, for
 // authentication and for background agents finishing, none of which
@@ -75,25 +92,31 @@ const blockingNotifications = "permission_prompt|elicitation_dialog"
 // the hook write covers the turn before the banner is visible.
 const limitStopFailures = "rate_limit"
 
-func settingsContent(sessionID, statusFile string) ([]byte, error) {
+func settingsContent(sessionID, statusFile, bodyFile, exe string) ([]byte, error) {
 	report := func(matcher, state string) []hookMatcher {
 		return []hookMatcher{{Matcher: matcher, Hooks: []hookCommand{{Type: "command", Command: statusCommand(state)}}}}
 	}
+	capture := func(matcher, state string) []hookMatcher {
+		if !filepath.IsAbs(exe) {
+			return report(matcher, state)
+		}
+		return []hookMatcher{{Matcher: matcher, Hooks: []hookCommand{{Type: "command", Command: captureCommand(exe, state)}}}}
+	}
 	content := settingsFile{
 		// /background and the agent view rerun the conversation in Claude Code's daemon, under another session's environment.
-		Env: map[string]string{EnvSessionID: sessionID, EnvStatusFile: statusFile},
+		Env: map[string]string{EnvSessionID: sessionID, EnvStatusFile: statusFile, EnvBodyFile: bodyFile},
 		Hooks: map[string][]hookMatcher{
 			"UserPromptSubmit": report("", status.Working),
 			"PreToolUse":       report("*", status.Working),
 			"PostToolUse":      report("*", status.Working),
-			"Notification":     report(blockingNotifications, status.Waiting),
-			"Stop":             report("", status.Finished),
+			"Notification":     capture(blockingNotifications, status.Waiting),
+			"Stop":             capture("", status.Finished),
 			"StopFailure":      report(limitStopFailures, status.Errored),
 			// compact fires SessionStart in the middle of an active turn
 			"SessionStart": report("startup|resume|clear", status.Idle),
 			"SessionEnd": {{Hooks: []hookCommand{{
 				Type:    "command",
-				Command: `rm -f "$` + EnvStatusFile + `"`,
+				Command: `rm -f "$` + EnvStatusFile + `" "$` + EnvBodyFile + `"`,
 			}}}},
 		},
 	}
@@ -102,11 +125,13 @@ func settingsContent(sessionID, statusFile string) ([]byte, error) {
 
 // WriteSettings writes a session's hook settings file, refreshing it when
 // the wanted content changed (e.g. after an upgrade), and returns its path.
-func (m *Manager) WriteSettings(id string) (string, error) {
+// exe is the absolute path of the binary the hooks run hook-capture
+// through; without one, the hooks write the state alone.
+func (m *Manager) WriteSettings(id, exe string) (string, error) {
 	if err := os.MkdirAll(m.dir, 0o755); err != nil {
 		return "", err
 	}
-	wanted, err := settingsContent(id, m.StatusFile(id))
+	wanted, err := settingsContent(id, m.StatusFile(id), m.BodyFile(id), exe)
 	if err != nil {
 		return "", err
 	}
@@ -172,7 +197,95 @@ func (m *Manager) Read(id string) (string, bool) {
 }
 
 func (m *Manager) Remove(id string) error {
+	if err := removeIfExists(m.BodyFile(id)); err != nil {
+		return err
+	}
 	return removeIfExists(m.StatusFile(id))
+}
+
+func (m *Manager) BodyFile(id string) string {
+	return filepath.Join(m.dir, id+".body")
+}
+
+// ReadBody returns the text hook-capture kept for a session's current
+// hook state. The body is stamped with the state it was captured for, and
+// any later hook event rewrites the status file without touching it, so a
+// body whose state no longer matches belongs to an earlier turn.
+func (m *Manager) ReadBody(id string) (string, bool) {
+	hookState, ok := m.Read(id)
+	if !ok {
+		return "", false
+	}
+	raw, err := os.ReadFile(m.BodyFile(id))
+	if err != nil {
+		return "", false
+	}
+	state, body, found := strings.Cut(string(raw), "\n")
+	if !found || state != hookState || strings.TrimSpace(body) == "" {
+		return "", false
+	}
+	return body, true
+}
+
+// maxBodyBytes bounds what a hook can make the manager read back; a
+// notification shows one line of it.
+const maxBodyBytes = 64 << 10
+
+// maxHookInput bounds the hook payload read from stdin. A final message
+// past it is left out rather than stalling the hook.
+const maxHookInput = 8 << 20
+
+type hookInput struct {
+	LastAssistantMessage string `json:"last_assistant_message"`
+	Message              string `json:"message"`
+}
+
+// Capture is the hook-capture subcommand: it records state in the status
+// file exactly as the plain hook write does, and keeps the text Claude
+// Code passed the hook beside it. Stop carries last_assistant_message,
+// and a Notification carries message. The body lands before the state,
+// so a poll that sees the new state finds the body that goes with it; an
+// input without text clears the body rather than leaving the last one.
+func Capture(stdin io.Reader, state, statusFile, bodyFile string) error {
+	switch state {
+	case status.Working, status.Waiting, status.Finished, status.Idle, status.Errored:
+	default:
+		return fmt.Errorf("unknown state %q", state)
+	}
+	if statusFile == "" || bodyFile == "" {
+		return fmt.Errorf("%s and %s must be set", EnvStatusFile, EnvBodyFile)
+	}
+	var input hookInput
+	raw, err := io.ReadAll(io.LimitReader(stdin, maxHookInput))
+	if err != nil {
+		return err
+	}
+	// A payload that does not parse still ends the turn; it only has no text.
+	_ = json.Unmarshal(raw, &input)
+	body := input.LastAssistantMessage
+	if strings.TrimSpace(body) == "" {
+		body = input.Message
+	}
+	if strings.TrimSpace(body) == "" {
+		err = removeIfExists(bodyFile)
+	} else {
+		err = WriteWhole(bodyFile, state+"\n"+truncateBytes(body, maxBodyBytes))
+	}
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(statusFile, []byte(state), 0o644)
+}
+
+// truncateBytes cuts s to at most limit bytes without splitting a rune.
+func truncateBytes(s string, limit int) string {
+	if len(s) <= limit {
+		return s
+	}
+	for limit > 0 && !utf8.RuneStart(s[limit]) {
+		limit--
+	}
+	return s[:limit]
 }
 
 // NameFile is the mailbox the rename subcommand writes a session's

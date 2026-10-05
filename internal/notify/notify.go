@@ -22,6 +22,8 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -107,15 +109,20 @@ const (
 
 // Event is one session transition worth telling the user about. ID is the
 // session's store id, which a click hands back so the manager can select
-// that row.
+// that row. Body is what the agent said, when its tool reports that; the
+// banner shows a line of it in place of the state's stock text.
 type Event struct {
 	ID      string
 	Session string
 	Tool    string
 	Kind    Kind
+	Dir     string
+	Branch  string
+	Body    string
 }
 
 type presentation struct {
+	glyph         string
 	body          string
 	macSound      string
 	windowsSound  string
@@ -129,6 +136,7 @@ func describe(kind Kind) (presentation, bool) {
 	switch kind {
 	case Waiting:
 		return presentation{
+			glyph:         "◆",
 			body:          "◆ Waiting for your input",
 			macSound:      "Funk",
 			windowsSound:  "ms-winsoundevent:Notification.Reminder",
@@ -139,6 +147,7 @@ func describe(kind Kind) (presentation, bool) {
 		}, true
 	case Finished:
 		return presentation{
+			glyph:         "●",
 			body:          "● Finished",
 			macSound:      "Hero",
 			windowsSound:  "ms-winsoundevent:Notification.Default",
@@ -149,6 +158,7 @@ func describe(kind Kind) (presentation, bool) {
 		}, true
 	case Errored:
 		return presentation{
+			glyph:         "✕",
 			body:          "✕ Errored",
 			macSound:      "Basso",
 			windowsSound:  "ms-winsoundevent:Notification.IM",
@@ -170,13 +180,11 @@ func Notify(event Event) {
 	if !ok {
 		return
 	}
-	session := sanitize(event.Session)
-	tool := sanitize(event.Tool)
-	subtitle := session
-	if tool != "" {
-		subtitle += " · " + tool
-	}
+	subtitle := title(event)
 	body := detail.body
+	if excerpt := Excerpt(event.Body); excerpt != "" {
+		body = detail.glyph + " " + excerpt
+	}
 	terminalBody := body + " — " + subtitle
 	// A terminal that understands OSC 777 turns it into a native
 	// notification wherever the terminal actually is — including at the
@@ -213,6 +221,56 @@ func Notify(event Event) {
 		}
 	}
 	_ = emitSeq("\a")
+}
+
+// title names the session and where it works: its directory, and the
+// branch when the manager made it a worktree.
+func title(event Event) string {
+	parts := []string{sanitize(event.Session)}
+	if event.Dir != "" {
+		parts = append(parts, sanitize(filepath.Base(event.Dir)))
+	}
+	if event.Branch != "" {
+		parts = append(parts, sanitize(event.Branch))
+	}
+	if tool := sanitize(event.Tool); tool != "" {
+		parts = append(parts, tool)
+	}
+	return strings.Join(parts, " · ")
+}
+
+// excerptRunes is about what a banner shows on one line before the
+// desktop cuts it.
+const excerptRunes = 120
+
+var (
+	markdownLink   = regexp.MustCompile(`!?\[([^\]]*)\]\([^)]*\)`)
+	markdownPrefix = regexp.MustCompile(`^(?:#{1,6}\s+|>\s*|[-*+]\s+\[[ xX]\]\s+|[-*+]\s+|\d+[.)]\s+)+`)
+	markdownMarks  = strings.NewReplacer("**", "", "__", "", "~~", "", "`", "")
+)
+
+// Excerpt is the line of an agent's message a banner carries: the first
+// line with any text once Markdown syntax is gone, cut to excerptRunes.
+// A fenced block's opening fence is skipped, so a message that opens on
+// code shows its first line of code.
+func Excerpt(message string) string {
+	for _, line := range strings.Split(message, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "```") || strings.HasPrefix(line, "~~~") {
+			continue
+		}
+		line = markdownPrefix.ReplaceAllString(line, "")
+		line = markdownLink.ReplaceAllString(line, "$1")
+		line = sanitize(markdownMarks.Replace(line))
+		if line == "" || strings.Trim(line, "-*_=|: ") == "" {
+			continue
+		}
+		if runes := []rune(line); len(runes) > excerptRunes {
+			line = strings.TrimSpace(string(runes[:excerptRunes-1])) + "…"
+		}
+		return line
+	}
+	return ""
 }
 
 // notifySend keeps the call open for the banner's lifetime when the

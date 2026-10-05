@@ -4,18 +4,22 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/YoanWai/agent-manager/internal/status"
 )
 
+const testExe = "/opt/agent manager/agent-manager"
+
 func TestWriteSettingsWritesValidHookJSON(t *testing.T) {
 	manager := NewManager(t.TempDir())
-	path, err := manager.WriteSettings("abcd1234")
+	path, err := manager.WriteSettings("abcd1234", testExe)
 	if err != nil {
 		t.Fatalf("WriteSettings: %v", err)
 	}
@@ -91,7 +95,7 @@ func TestWriteSettingsWritesValidHookJSON(t *testing.T) {
 func TestWriteSettingsCarriesTheSessionIdentity(t *testing.T) {
 	manager := NewManager(t.TempDir())
 	for _, id := range []string{"aaaa1111", "bbbb2222"} {
-		path, err := manager.WriteSettings(id)
+		path, err := manager.WriteSettings(id, testExe)
 		if err != nil {
 			t.Fatalf("WriteSettings %s: %v", id, err)
 		}
@@ -108,8 +112,8 @@ func TestWriteSettingsCarriesTheSessionIdentity(t *testing.T) {
 		if err := json.Unmarshal(raw, &parsed); err != nil {
 			t.Fatalf("settings is not valid JSON: %v", err)
 		}
-		want := map[string]string{EnvSessionID: id, EnvStatusFile: manager.StatusFile(id)}
-		if len(parsed.Env) != len(want) || parsed.Env[EnvSessionID] != want[EnvSessionID] || parsed.Env[EnvStatusFile] != want[EnvStatusFile] {
+		want := map[string]string{EnvSessionID: id, EnvStatusFile: manager.StatusFile(id), EnvBodyFile: manager.BodyFile(id)}
+		if len(parsed.Env) != len(want) || parsed.Env[EnvSessionID] != want[EnvSessionID] || parsed.Env[EnvStatusFile] != want[EnvStatusFile] || parsed.Env[EnvBodyFile] != want[EnvBodyFile] {
 			t.Fatalf("settings env for %s = %v, want %v", id, parsed.Env, want)
 		}
 	}
@@ -117,7 +121,7 @@ func TestWriteSettingsCarriesTheSessionIdentity(t *testing.T) {
 
 func TestWriteSettingsIdempotent(t *testing.T) {
 	manager := NewManager(t.TempDir())
-	first, err := manager.WriteSettings("abcd1234")
+	first, err := manager.WriteSettings("abcd1234", testExe)
 	if err != nil {
 		t.Fatalf("first WriteSettings: %v", err)
 	}
@@ -125,7 +129,7 @@ func TestWriteSettingsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat: %v", err)
 	}
-	second, err := manager.WriteSettings("abcd1234")
+	second, err := manager.WriteSettings("abcd1234", testExe)
 	if err != nil {
 		t.Fatalf("second WriteSettings: %v", err)
 	}
@@ -638,5 +642,197 @@ func TestClaimedRequestReportsWhatWasClaimed(t *testing.T) {
 				t.Fatalf("ReleaseName: %v", err)
 			}
 		})
+	}
+}
+
+func TestWriteSettingsCapturesTheTextOfStopAndNotification(t *testing.T) {
+	manager := NewManager(t.TempDir())
+	path, err := manager.WriteSettings("abcd1234", testExe)
+	if err != nil {
+		t.Fatalf("WriteSettings: %v", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read settings: %v", err)
+	}
+	var parsed settingsFile
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		t.Fatalf("settings is not valid JSON: %v", err)
+	}
+	for event, state := range map[string]string{"Stop": status.Finished, "Notification": status.Waiting} {
+		command := parsed.Hooks[event][0].Hooks[0].Command
+		want := `'` + testExe + `' hook-capture --state ` + state + ` || `
+		if !strings.HasPrefix(command, want) {
+			t.Fatalf("%s command = %q, want it to start with %q", event, command, want)
+		}
+		if !strings.Contains(command, statusCommand(state)) {
+			t.Fatalf("%s command = %q, want the plain write behind it", event, command)
+		}
+	}
+	for _, event := range []string{"UserPromptSubmit", "PreToolUse", "PostToolUse", "StopFailure", "SessionStart"} {
+		if command := parsed.Hooks[event][0].Hooks[0].Command; strings.Contains(command, "hook-capture") {
+			t.Fatalf("%s command = %q, want the plain write alone", event, command)
+		}
+	}
+	end := parsed.Hooks["SessionEnd"][0].Hooks[0].Command
+	if !strings.Contains(end, `"$`+EnvStatusFile+`"`) || !strings.Contains(end, `"$`+EnvBodyFile+`"`) {
+		t.Fatalf("SessionEnd command = %q, want it to remove the status and body files", end)
+	}
+}
+
+// The binary a hook names can be gone (an upgrade moved it), and the
+// state still has to land the way it did before hook-capture existed.
+func TestCaptureCommandFallsBackToThePlainWrite(t *testing.T) {
+	manager := NewManager(t.TempDir())
+	if err := os.MkdirAll(manager.Dir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	statusFile, bodyFile := manager.StatusFile("x"), manager.BodyFile("x")
+	if err := os.WriteFile(bodyFile, []byte("finished\nan older turn"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("sh", "-c", captureCommand(filepath.Join(t.TempDir(), "gone"), status.Finished))
+	cmd.Env = append(os.Environ(), EnvStatusFile+"="+statusFile, EnvBodyFile+"="+bodyFile)
+	cmd.Stdin = strings.NewReader(`{"last_assistant_message":"done"}`)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("hook command failed: %v: %s", err, out)
+	}
+	if got, ok := manager.Read("x"); !ok || got != status.Finished {
+		t.Fatalf("status = %q, %v; want finished", got, ok)
+	}
+	if _, err := os.Stat(bodyFile); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the fallback should drop the older body, stat err = %v", err)
+	}
+}
+
+func captureInto(t *testing.T, manager *Manager, state, input string) error {
+	t.Helper()
+	if err := os.MkdirAll(manager.Dir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return Capture(strings.NewReader(input), state, manager.StatusFile("x"), manager.BodyFile("x"))
+}
+
+func TestCaptureKeepsTheTextBesideTheState(t *testing.T) {
+	tests := []struct {
+		name  string
+		state string
+		input string
+		want  string
+	}{
+		{"stop", status.Finished, `{"hook_event_name":"Stop","last_assistant_message":"All tests pass."}`, "All tests pass."},
+		{"notification", status.Waiting, `{"hook_event_name":"Notification","notification_type":"permission_prompt","message":"Claude needs your permission to use Bash"}`, "Claude needs your permission to use Bash"},
+		{"multiline unicode", status.Finished, `{"last_assistant_message":"\n## Готово ✅\n\nПочинил ` + "`main.go`" + ` — 日本語\n"}`, "\n## Готово ✅\n\nПочинил `main.go` — 日本語\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			manager := NewManager(t.TempDir())
+			if err := captureInto(t, manager, test.state, test.input); err != nil {
+				t.Fatalf("Capture: %v", err)
+			}
+			if got, ok := manager.Read("x"); !ok || got != test.state {
+				t.Fatalf("status = %q, %v; want %q", got, ok, test.state)
+			}
+			body, ok := manager.ReadBody("x")
+			if !ok || body != test.want {
+				t.Fatalf("body = %q, %v; want %q", body, ok, test.want)
+			}
+		})
+	}
+}
+
+// A payload without text, or one that does not parse, still reports the
+// state; it only leaves no body, and never the previous turn's.
+func TestCaptureWithoutTextWritesTheStateAndDropsTheBody(t *testing.T) {
+	for name, input := range map[string]string{
+		"missing field": `{"hook_event_name":"Stop","stop_hook_active":false}`,
+		"blank field":   `{"last_assistant_message":"  \n "}`,
+		"malformed":     `{"last_assistant_message":`,
+		"empty":         ``,
+	} {
+		t.Run(name, func(t *testing.T) {
+			manager := NewManager(t.TempDir())
+			if err := captureInto(t, manager, status.Finished, `{"last_assistant_message":"earlier"}`); err != nil {
+				t.Fatal(err)
+			}
+			if err := captureInto(t, manager, status.Finished, input); err != nil {
+				t.Fatalf("Capture: %v", err)
+			}
+			if got, ok := manager.Read("x"); !ok || got != status.Finished {
+				t.Fatalf("status = %q, %v; want finished", got, ok)
+			}
+			if body, ok := manager.ReadBody("x"); ok {
+				t.Fatalf("body = %q, want none", body)
+			}
+		})
+	}
+}
+
+func TestCaptureRejectsAnUnknownState(t *testing.T) {
+	manager := NewManager(t.TempDir())
+	if err := captureInto(t, manager, "done", `{"last_assistant_message":"x"}`); err == nil {
+		t.Fatal("an unknown state should fail")
+	}
+	if _, err := os.Stat(manager.StatusFile("x")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a refused state must not reach the status file, stat err = %v", err)
+	}
+}
+
+func TestCaptureBoundsTheBody(t *testing.T) {
+	manager := NewManager(t.TempDir())
+	long := strings.Repeat("ж", maxBodyBytes)
+	input, err := json.Marshal(hookInput{LastAssistantMessage: long})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := captureInto(t, manager, status.Finished, string(input)); err != nil {
+		t.Fatalf("Capture: %v", err)
+	}
+	body, ok := manager.ReadBody("x")
+	if !ok || len(body) > maxBodyBytes || !utf8.ValidString(body) || !strings.HasPrefix(long, body) {
+		t.Fatalf("body is %d bytes, valid utf8 %v; want a whole-rune prefix of at most %d", len(body), utf8.ValidString(body), maxBodyBytes)
+	}
+}
+
+// Any hook event after the capture rewrites the state, so a body stamped
+// with another state is an earlier turn's and must not reach a banner.
+func TestReadBodyIgnoresABodyFromAnotherState(t *testing.T) {
+	manager := NewManager(t.TempDir())
+	if err := captureInto(t, manager, status.Finished, `{"last_assistant_message":"turn one"}`); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manager.StatusFile("x"), []byte(status.Working), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if body, ok := manager.ReadBody("x"); ok {
+		t.Fatalf("body = %q, want none while the hook state is working", body)
+	}
+}
+
+func TestRemoveDropsTheBody(t *testing.T) {
+	manager := NewManager(t.TempDir())
+	if err := captureInto(t, manager, status.Finished, `{"last_assistant_message":"done"}`); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Remove("x"); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	for _, path := range []string{manager.StatusFile("x"), manager.BodyFile("x")} {
+		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("%s should be gone, stat err = %v", path, err)
+		}
+	}
+}
+
+// A bare name would resolve through PATH, possibly to another install.
+func TestWriteSettingsWithoutAnAbsoluteBinaryWritesTheStateAlone(t *testing.T) {
+	for _, exe := range []string{"", "agent-manager"} {
+		raw, err := settingsContent("x", "/s", "/b", exe)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(raw), "hook-capture") {
+			t.Fatalf("exe %q: settings run hook-capture: %s", exe, raw)
+		}
 	}
 }

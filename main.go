@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -120,11 +121,22 @@ func subcommands() map[string]func(args []string) error {
 		"mcp": withConfigDir(func(args []string, caller func() string, configDir string) error {
 			return mcpserver.Run(configDir, caller(), version)
 		}),
+		// Run by the generated Claude Code hooks, never by hand, so it stays out of the help.
+		"hook-capture": hookCapture,
 	}
 	for name, command := range cli.Commands(version) {
 		table[name] = withConfigDir(command)
 	}
 	return table
+}
+
+func hookCapture(args []string) error {
+	flags := flag.NewFlagSet("hook-capture", flag.ContinueOnError)
+	state := flags.String("state", "", "the status the hook reports")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	return hooks.Capture(os.Stdin, *state, os.Getenv(hooks.EnvStatusFile), os.Getenv(hooks.EnvBodyFile))
 }
 
 func withConfigDir(command cli.Command) func([]string) error {

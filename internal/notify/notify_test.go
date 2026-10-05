@@ -520,3 +520,72 @@ func TestNotifyLinuxCapsBannersWaitingForAClick(t *testing.T) {
 		t.Fatalf("%d banners went up without a click, want 3", without)
 	}
 }
+
+func TestNotifyTitlesTheDirectoryAndBranchAndShowsTheBody(t *testing.T) {
+	defer restore()()
+	plainMac(t)
+	var posted []string
+	macPost = func(sessionID, subtitle, body, sound string) error {
+		posted = []string{subtitle, body}
+		return nil
+	}
+	emitSeq = func(string) error { return nil }
+	Notify(Event{ID: "s", Session: "deploy", Tool: "claude", Kind: Finished, Dir: "/src/api-worktrees/am-x", Branch: "am/fix-login", Body: "## Done\n\nLogin works again."})
+	want := []string{"deploy · am-x · am/fix-login · claude", "● Done"}
+	if !slices.Equal(posted, want) {
+		t.Fatalf("posted %v, want %v", posted, want)
+	}
+}
+
+func TestNotifyWithoutABodyKeepsTheStateText(t *testing.T) {
+	defer restore()()
+	plainMac(t)
+	var body string
+	macPost = func(_, _, posted, _ string) error {
+		body = posted
+		return nil
+	}
+	emitSeq = func(string) error { return nil }
+	Notify(Event{ID: "s", Session: "deploy", Tool: "codex", Kind: Waiting, Dir: "/src/api", Body: " \n```\n"})
+	if body != "◆ Waiting for your input" {
+		t.Fatalf("body = %q, want the stock waiting text", body)
+	}
+}
+
+func TestExcerpt(t *testing.T) {
+	tests := []struct {
+		name, message, want string
+	}{
+		{"plain", "All tests pass.", "All tests pass."},
+		{"first non-empty line", "\n\n  \nSecond paragraph\nthird", "Second paragraph"},
+		{"heading", "### Summary of changes", "Summary of changes"},
+		{"emphasis and code", "Fixed **the race** in `poller.go` and __docs__", "Fixed the race in poller.go and docs"},
+		{"link", "See [the PR](https://example.com/pr/1) for details", "See the PR for details"},
+		{"list item", "- [x] migrated the store", "migrated the store"},
+		{"numbered", "1. First step", "First step"},
+		{"quote", "> Should I proceed?", "Should I proceed?"},
+		{"rule then text", "---\nNext", "Next"},
+		{"fence opens the message", "```go\nfunc main() {}\n```", "func main() {}"},
+		{"control characters", "tab\there\x1b[31m", "tab here [31m"},
+		{"unicode", "Готово ✅ — 日本語", "Готово ✅ — 日本語"},
+		{"only markup", "```\n---\n**\n", ""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := Excerpt(test.message); got != test.want {
+				t.Fatalf("Excerpt(%q) = %q, want %q", test.message, got, test.want)
+			}
+		})
+	}
+}
+
+func TestExcerptTruncatesByRunes(t *testing.T) {
+	got := Excerpt(strings.Repeat("ё", 300))
+	runes := []rune(got)
+	if len(runes) != excerptRunes || runes[len(runes)-1] != '…' {
+		t.Fatalf("excerpt has %d runes ending %q, want %d ending with an ellipsis", len(runes), runes[len(runes)-1], excerptRunes)
+	}
+	if got := Excerpt(strings.Repeat("a", excerptRunes)); got != strings.Repeat("a", excerptRunes) {
+		t.Fatalf("a line of exactly %d runes should stay whole, got %d", excerptRunes, len([]rune(got)))
+	}
+}

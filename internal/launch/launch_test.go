@@ -244,8 +244,20 @@ func TestEnvironmentCarriesSessionIDAndHooks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Environment hooked: %v", err)
 	}
-	if env[hooks.EnvSessionID] != "abcd1234" || env[hooks.EnvStatusFile] == "" {
-		t.Fatalf("hooked tool env = %v, want session id and status file", env)
+	if env[hooks.EnvSessionID] != "abcd1234" || env[hooks.EnvStatusFile] == "" || env[hooks.EnvBodyFile] != manager.BodyFile("abcd1234") {
+		t.Fatalf("hooked tool env = %v, want session id, status file and body file", env)
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings, err := os.ReadFile(manager.SettingsFile("abcd1234"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The hook runs the binary that launched the session, never whatever PATH finds.
+	if !strings.Contains(string(settings), tmux.ShellQuote(exe)+" hook-capture") {
+		t.Fatalf("settings = %s, want hook-capture through %s", settings, exe)
 	}
 	if !strings.Contains(command, "--mcp-config '") || !strings.Contains(command, "--settings "+tmux.ShellQuote(manager.SettingsFile("abcd1234"))) {
 		t.Fatalf("hooked command = %q, want this session's own settings", command)

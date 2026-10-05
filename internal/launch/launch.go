@@ -197,7 +197,12 @@ func Environment(manager *hooks.Manager, toolName string, tool config.Tool, base
 	if tool.StatusSource != hooks.StatusSourceClaude {
 		return command, env, nil
 	}
-	settingsPath, err := manager.WriteSettings(id)
+	// A hook resolving the name through PATH could run another install.
+	exe, err := os.Executable()
+	if err != nil {
+		exe = ""
+	}
+	settingsPath, err := manager.WriteSettings(id, exe)
 	if err != nil {
 		return "", nil, err
 	}
@@ -205,6 +210,7 @@ func Environment(manager *hooks.Manager, toolName string, tool config.Tool, base
 		return "", nil, err
 	}
 	env[hooks.EnvStatusFile] = manager.StatusFile(id)
+	env[hooks.EnvBodyFile] = manager.BodyFile(id)
 	return command + " --settings " + tmux.ShellQuote(settingsPath), env, nil
 }
 
