@@ -171,14 +171,22 @@ func TestOlderListingStillDeliversNotificationFocus(t *testing.T) {
 	}
 	loadStoredRows(t, m)
 	freshAt := time.Now().Add(time.Second)
-	updated, _ := m.Update(refreshMsg{sessions: slices.Clone(m.sessions), listedAt: freshAt})
+	updated, _ := m.Update(refreshMsg{
+		sessions:   slices.Clone(m.sessions),
+		listedAt:   freshAt,
+		groupBases: map[string]string{"current": "main"},
+	})
 	m = updated.(*Model)
+	if got := m.groupBases["current"]; got != "main" {
+		t.Fatalf("fresh listing lost group base: %q", got)
+	}
 	m.selectSessionRow(t, "alpha")
 
 	updated, _ = m.Update(refreshMsg{
 		sessions:       []store.Session{{ID: "obsolete"}},
 		listedAt:       freshAt.Add(-time.Second),
 		groups:         []string{"obsolete"},
+		groupBases:     map[string]string{"obsolete": "old-base"},
 		focusID:        "b",
 		queuedMessages: map[string]int{"b": 2},
 		paneLines:      map[string]string{"b": "latest pane"},
@@ -189,6 +197,9 @@ func TestOlderListingStillDeliversNotificationFocus(t *testing.T) {
 	}
 	if len(m.groups) != 0 {
 		t.Fatalf("older listing replaced current groups: %v", m.groups)
+	}
+	if len(m.groupBases) != 1 || m.groupBases["current"] != "main" {
+		t.Fatalf("older listing replaced current group bases: %v", m.groupBases)
 	}
 	if selected, ok := m.selected(); !ok || selected.ID != "b" {
 		t.Fatalf("notification focus was lost: selected = %q, found = %t", selected.ID, ok)

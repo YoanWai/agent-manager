@@ -3,6 +3,7 @@ package git
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"hash/fnv"
@@ -15,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/deps"
 )
@@ -271,29 +274,49 @@ func forEachIndex(count int, work func(i int)) {
 	wg.Wait()
 }
 
-// BaseRef finds the merge base against the repo's main branch for the
+// BaseRef finds the merge base against the repo's default base for the
 // branch scope, returning the resolved ref and a short description.
 func (d *Driver) BaseRef(root string) (ref, describe string, err error) {
-	candidate := ""
-	if out, err := d.run(root, "symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD"); err == nil && out != "" {
-		candidate = out
-	} else {
-		for _, name := range []string{"main", "master", "develop"} {
-			if _, err := d.run(root, "rev-parse", "--verify", "-q", name+"^{commit}"); err == nil {
-				candidate = name
-				break
-			}
-		}
-	}
+	candidate := d.DefaultBase(root)
 	if candidate == "" {
-		if out, err := d.run(root, "rev-parse", "--abbrev-ref", "-q", "@{upstream}"); err == nil && out != "" {
-			candidate = out
-		}
-	}
-	if candidate == "" {
-		return "", "", errors.New("no base branch (main/master/origin) found")
+		return "", "", errors.New("no default branch found on upstream, origin, or as a local main or master")
 	}
 	return d.baseRefFor(root, candidate)
+}
+
+// DefaultBase is the branch work in the repo merges into: the default
+// branch on upstream, which GitHub's fork layout names the parent, else on
+// origin, else the local branch. "" when the repo names no default branch.
+func (d *Driver) DefaultBase(dir string) string {
+	name := d.defaultBranchName(dir)
+	if name == "" {
+		return ""
+	}
+	for _, remoteRef := range []string{"upstream/" + name, "origin/" + name} {
+		if d.ResolveRef(dir, "refs/remotes/"+remoteRef) == nil {
+			return remoteRef
+		}
+	}
+	if d.ResolveRef(dir, "refs/heads/"+name) == nil {
+		return name
+	}
+	return ""
+}
+
+// defaultBranchName reads the default branch a clone or fetch recorded as
+// a remote's HEAD, or takes a local main or master when no remote names one.
+func (d *Driver) defaultBranchName(dir string) string {
+	for _, remote := range []string{"upstream", "origin"} {
+		if target, err := d.run(dir, "symbolic-ref", "-q", "--short", "refs/remotes/"+remote+"/HEAD"); err == nil {
+			return strings.TrimPrefix(target, remote+"/")
+		}
+	}
+	for _, name := range []string{"main", "master"} {
+		if d.ResolveRef(dir, "refs/heads/"+name) == nil {
+			return name
+		}
+	}
+	return ""
 }
 
 // baseRefFor returns the merge base of candidate against HEAD and a short
@@ -323,17 +346,18 @@ func (d *Driver) BranchBase(root, override string) (ref, describe string, err er
 	return d.BaseRef(root)
 }
 
-// BranchRefs lists local and remote branch short names, dropping origin/HEAD
-// and the bare origin ref that name a remote's default rather than a branch.
+// BranchRefs lists local and remote branch short names, dropping the
+// symbolic refs such as origin/HEAD that name a remote's default rather
+// than a branch.
 func (d *Driver) BranchRefs(root string) ([]string, error) {
-	out, err := d.run(root, "for-each-ref", "--format=%(refname:short)", "refs/heads", "refs/remotes")
+	out, err := d.run(root, "for-each-ref", "--format=%(symref) %(refname:short)", "refs/heads", "refs/remotes")
 	if err != nil {
 		return nil, err
 	}
 	var refs []string
 	for _, line := range strings.Split(out, "\n") {
-		name := strings.TrimSpace(line)
-		if name == "" || name == "origin" || name == "origin/HEAD" {
+		symref, name, _ := strings.Cut(line, " ")
+		if symref != "" || name == "" {
 			continue
 		}
 		refs = append(refs, name)
@@ -672,21 +696,105 @@ func sanitizeWorktreeName(name string) string {
 	return strings.Trim(worktreeNamePattern.ReplaceAllString(name, "-"), "-.")
 }
 
-// worktreeBase picks the ref a session worktree branches from: the remote
-// default branch when cached, else a local default branch, else HEAD.
-func (d *Driver) worktreeBase(root string) string {
-	if _, err := d.run(root, "rev-parse", "--verify", "--quiet", "origin/HEAD"); err == nil {
-		return "origin/HEAD"
+// worktreeBase picks the ref a session worktree branches from and is
+// measured against before removal: the override when one is set, else the
+// repo's default base, else HEAD. "" means the repo has no commits.
+func (d *Driver) worktreeBase(dir, override string) (string, error) {
+	if override != "" {
+		if err := d.ResolveRef(dir, override); err != nil {
+			return "", fmt.Errorf("base %w", err)
+		}
+		return override, nil
 	}
-	for _, candidate := range []string{"main", "master"} {
-		if _, err := d.run(root, "rev-parse", "--verify", "--quiet", "refs/heads/"+candidate); err == nil {
-			return candidate
+	if base := d.DefaultBase(dir); base != "" {
+		return base, nil
+	}
+	if d.ResolveRef(dir, "HEAD") == nil {
+		return "HEAD", nil
+	}
+	return "", nil
+}
+
+// fetchTimeout bounds a fetch stuck on a dead connection; a working one
+// lands well inside it.
+const fetchTimeout = 30 * time.Second
+
+// FetchBase updates the remote-tracking branch a worktree would branch
+// from, and only that branch, so a session starts from the remote's tip
+// rather than from whatever the last fetch left behind.
+func (d *Driver) FetchBase(dir, override string) error {
+	base, err := d.worktreeBase(dir, override)
+	if err != nil || base == "" {
+		return err
+	}
+	remote, branch, err := d.remoteBranch(dir, base)
+	if err != nil || remote == "" {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, d.bin, "fetch", "--quiet", remote, branch)
+	cmd.Dir = dir
+	// Nobody can answer a background fetch, so git's, askpass's and ssh's tty prompts are all shut off.
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "SSH_ASKPASS_REQUIRE=never")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	cmd.WaitDelay = time.Second
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git fetch %s %s: %w: %s", remote, branch, err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// remoteBranch splits a remote-tracking ref into its remote and branch,
+// both "" for any other ref.
+func (d *Driver) remoteBranch(dir, ref string) (remote, branch string, err error) {
+	full, err := d.run(dir, "rev-parse", "--symbolic-full-name", ref)
+	if err != nil {
+		return "", "", err
+	}
+	remotes, err := d.run(dir, "remote")
+	if err != nil {
+		return "", "", err
+	}
+	for _, candidate := range strings.Fields(remotes) {
+		prefix := "refs/remotes/" + candidate + "/"
+		if strings.HasPrefix(full, prefix) && len(candidate) > len(remote) {
+			remote, branch = candidate, strings.TrimPrefix(full, prefix)
 		}
 	}
-	if _, err := d.run(root, "rev-parse", "--verify", "--quiet", "HEAD"); err == nil {
-		return "HEAD"
+	return remote, branch, nil
+}
+
+// pushToOrigin sends git push to origin for a branch that tracks another
+// remote: in a fork layout that remote is the parent, which the user cannot
+// push to. A remote.pushDefault the user set already decides this.
+func (d *Driver) pushToOrigin(root, branch string) error {
+	tracked, err := d.configValue(root, "branch."+branch+".remote")
+	if err != nil || tracked == "" || tracked == "origin" {
+		return err
 	}
-	return ""
+	pushDefault, err := d.configValue(root, "remote.pushDefault")
+	if err != nil || pushDefault != "" {
+		return err
+	}
+	origin, err := d.configValue(root, "remote.origin.url")
+	if err != nil || origin == "" {
+		return err
+	}
+	_, err = d.run(root, "config", "branch."+branch+".pushRemote", "origin")
+	return err
+}
+
+// configValue reads a git config key, "" when it is unset.
+func (d *Driver) configValue(dir, key string) (string, error) {
+	value, err := d.run(dir, "config", "--get", key)
+	// --get exits 1 for a missing key; anything else is a real failure.
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		return "", nil
+	}
+	return value, err
 }
 
 // worktreePlacement is where a session of this name keeps its worktree:
@@ -695,7 +803,7 @@ func worktreePlacement(root, name string) (string, string) {
 	return filepath.Join(filepath.Dir(root), filepath.Base(root)+"-worktrees", name), "am/" + name
 }
 
-func (d *Driver) AddWorktree(root, sessionName string) (string, string, error) {
+func (d *Driver) AddWorktree(root, sessionName, baseOverride string) (string, string, error) {
 	name := sanitizeWorktreeName(sessionName)
 	if name == "" {
 		return "", "", fmt.Errorf("session name %q leaves nothing usable for a worktree directory", sessionName)
@@ -704,12 +812,20 @@ func (d *Driver) AddWorktree(root, sessionName string) (string, string, error) {
 	if _, err := os.Stat(path); err == nil {
 		return "", "", fmt.Errorf("worktree path already exists: %s", path)
 	}
-	base := d.worktreeBase(root)
+	base, err := d.worktreeBase(root, baseOverride)
+	if err != nil {
+		return "", "", err
+	}
 	if base == "" {
 		return "", "", fmt.Errorf("no base ref for a worktree in %s: repository has no commits", root)
 	}
 	if _, err := d.run(root, "worktree", "add", "-b", branch, path, base); err != nil {
 		return "", "", err
+	}
+	if err := d.pushToOrigin(root, branch); err != nil {
+		_, removeErr := d.run(root, "worktree", "remove", "--force", path)
+		_, branchErr := d.run(root, "branch", "-D", branch)
+		return "", "", errors.Join(err, removeErr, branchErr)
 	}
 	return path, branch, nil
 }
@@ -767,7 +883,7 @@ func (d *Driver) RenameWorktreeBranch(root, path, branch, newName string) (strin
 // RemoveWorktreeIfClean removes a session's worktree and its am/ branch
 // only when nothing would be lost: no uncommitted or untracked files, and
 // no commits that exist nowhere else. A kept worktree is not an error.
-func (d *Driver) RemoveWorktreeIfClean(root, path, branch string) (bool, error) {
+func (d *Driver) RemoveWorktreeIfClean(root, path, branch, baseOverride string) (bool, error) {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return false, nil
 	}
@@ -778,7 +894,10 @@ func (d *Driver) RemoveWorktreeIfClean(root, path, branch string) (bool, error) 
 	if porcelain != "" {
 		return false, nil
 	}
-	base := d.worktreeBase(root)
+	base, err := d.worktreeBase(root, baseOverride)
+	if err != nil {
+		return false, err
+	}
 	if base == "" {
 		return false, fmt.Errorf("no base ref in %s to compare %s against", root, branch)
 	}
@@ -812,8 +931,9 @@ func (d *Driver) RemoveWorktreeIfClean(root, path, branch string) (bool, error) 
 	// Remote-tracking refs are a local cache, so a branch deleted or
 	// force-pushed elsewhere can read as saved until the next fetch. The
 	// branch ref costs nothing and keeps those commits reachable, so only
-	// a branch the base already holds earns deleting it.
-	if !branchMerged {
+	// a branch the base already holds earns deleting it. A branch that is
+	// itself the base holds its commits for every session built on it.
+	if !branchMerged || base == branch {
 		return true, nil
 	}
 	if _, err := d.run(root, "branch", "-D", branch); err != nil {

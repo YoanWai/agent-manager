@@ -1024,10 +1024,10 @@ func TestGroupWorktreeRoundtrip(t *testing.T) {
 
 func TestAddGroupStoresSettingsWithoutReplacingExistingGroup(t *testing.T) {
 	st := newTestStore(t)
-	if err := st.AddGroup("backend", "/first", "off"); err != nil {
+	if err := st.AddGroup("backend", "/first", "off", "develop"); err != nil {
 		t.Fatalf("add: %v", err)
 	}
-	if err := st.AddGroup("backend", "/second", "on"); !errors.Is(err, ErrGroupExists) {
+	if err := st.AddGroup("backend", "/second", "on", "main"); !errors.Is(err, ErrGroupExists) {
 		t.Fatalf("duplicate add error = %v, want ErrGroupExists", err)
 	}
 
@@ -1035,8 +1035,35 @@ func TestAddGroupStoresSettingsWithoutReplacingExistingGroup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("groups: %v", err)
 	}
-	if len(groups) != 1 || groups[0].Path != "/first" || groups[0].Worktree != "off" {
+	if len(groups) != 1 || groups[0].Path != "/first" || groups[0].Worktree != "off" || groups[0].Base != "develop" {
 		t.Fatalf("duplicate add changed group: %+v", groups)
+	}
+}
+
+func TestGroupBaseRoundtrip(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateGroup("backend", ""); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := st.SetGroupBase("backend", "upstream/develop"); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	groups, err := st.Groups()
+	if err != nil {
+		t.Fatalf("groups: %v", err)
+	}
+	if groups[0].Base != "upstream/develop" {
+		t.Fatalf("base lost: %+v", groups[0])
+	}
+	if err := st.SetGroupBase("backend", ""); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	groups, err = st.Groups()
+	if err != nil {
+		t.Fatalf("groups: %v", err)
+	}
+	if groups[0].Base != "" {
+		t.Fatalf("base should clear back to inherit: %+v", groups[0])
 	}
 }
 
@@ -1208,6 +1235,9 @@ func TestMoveGroupReparentsSubtree(t *testing.T) {
 	if err := st.SetGroupWorktree("alpha/inner", "on"); err != nil {
 		t.Fatalf("set worktree: %v", err)
 	}
+	if err := st.SetGroupBase("alpha/inner", "develop"); err != nil {
+		t.Fatalf("set base: %v", err)
+	}
 	if err := st.CreateSession(sample("a", "alpha/inner")); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -1237,6 +1267,9 @@ func TestMoveGroupReparentsSubtree(t *testing.T) {
 	}
 	if moved.Worktree != "on" {
 		t.Fatalf("beta/inner worktree = %q, want on", moved.Worktree)
+	}
+	if moved.Base != "develop" {
+		t.Fatalf("beta/inner base = %q, want develop", moved.Base)
 	}
 	if _, ok := byName["beta/inner/deep"]; !ok {
 		t.Fatal("beta/inner/deep missing")
@@ -1797,7 +1830,7 @@ func TestUpdateStatusOnSocketWritesOnlyWhatThisServerOwns(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	written, err := st.UpdateStatusOnSocket(sess.ID, "idle", mine)
+	written, _, err := st.UpdateStatusOnSocket(sess.ID, "idle", mine)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1808,7 +1841,7 @@ func TestUpdateStatusOnSocketWritesOnlyWhatThisServerOwns(t *testing.T) {
 	if err := st.SetTmuxSocket(sess.ID, theirs); err != nil {
 		t.Fatal(err)
 	}
-	written, err = st.UpdateStatusOnSocket(sess.ID, "dead", mine)
+	written, _, err = st.UpdateStatusOnSocket(sess.ID, "dead", mine)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1823,12 +1856,72 @@ func TestUpdateStatusOnSocketWritesOnlyWhatThisServerOwns(t *testing.T) {
 		t.Fatalf("status = %q, want the claim to have held it at idle", got.Status)
 	}
 
-	written, err = st.UpdateStatusOnSocket(sess.ID, "dead", theirs)
+	written, _, err = st.UpdateStatusOnSocket(sess.ID, "dead", theirs)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !written {
 		t.Fatal("the server holding the row writes it")
+	}
+}
+
+// Two managers on one server both list a row as working and both derive
+// waiting at the same moment. Both writes land, but only one moved the
+// status, so only that manager may announce the transition. A third
+// connection holds the write lock while both writes start, so a read taken
+// outside the write's transaction would see working twice.
+func TestUpdateStatusOnSocketReportsWhichWriteMovedTheStatus(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "shared.db")
+	open := func() *Store {
+		st, err := Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { st.Close() })
+		return st
+	}
+	holder, managers := open(), []*Store{open(), open()}
+	const socket = "/tmp/shared/agentmgr"
+	sess := Session{ID: "sess-1", Name: "one", Tool: "claude", Cwd: "/tmp", Status: "working"}
+	if err := holder.CreateSession(sess); err != nil {
+		t.Fatal(err)
+	}
+
+	lock, err := holder.db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	type result struct {
+		written, changed bool
+		err              error
+	}
+	results := make(chan result, len(managers))
+	for _, manager := range managers {
+		go func() {
+			written, changed, err := manager.UpdateStatusOnSocket(sess.ID, "waiting", socket)
+			results <- result{written, changed, err}
+		}()
+	}
+	time.Sleep(200 * time.Millisecond)
+	if err := lock.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+
+	changes := 0
+	for range managers {
+		got := <-results
+		if got.err != nil {
+			t.Fatal(got.err)
+		}
+		if !got.written {
+			t.Fatal("both managers own the row, so both writes must land")
+		}
+		if got.changed {
+			changes++
+		}
+	}
+	if changes != 1 {
+		t.Fatalf("%d writes reported moving the status, want exactly 1", changes)
 	}
 }
 
@@ -1937,6 +2030,35 @@ func TestCoordinationWaitsForTheUserUntilSetProactive(t *testing.T) {
 		if proactive, err := st.ProactiveCoordination(); err != nil || proactive != want {
 			t.Fatalf("proactive = %v, err = %v; want %v", proactive, err, want)
 		}
+	}
+}
+
+func TestSettingsCLIChoicesRoundTrip(t *testing.T) {
+	st := newTestStore(t)
+	if tool, err := st.DefaultTool(); err != nil || tool != "" {
+		t.Fatalf("unset default tool = %q, %v; want empty, nil", tool, err)
+	}
+	if hidden, err := st.HiddenTools(); err != nil || len(hidden) != 0 {
+		t.Fatalf("unset hidden tools = %v, %v; want none", hidden, err)
+	}
+	if err := st.SetDefaultTool("codex"); err != nil {
+		t.Fatalf("SetDefaultTool: %v", err)
+	}
+	if tool, err := st.DefaultTool(); err != nil || tool != "codex" {
+		t.Fatalf("default tool = %q, %v; want codex", tool, err)
+	}
+	if err := st.SetHiddenTools(map[string]bool{"grok": true, "codex": true, "pi": false}); err != nil {
+		t.Fatalf("SetHiddenTools: %v", err)
+	}
+	if raw, err := st.Setting(hiddenToolsSetting); err != nil || raw != "codex,grok" {
+		t.Fatalf("stored hidden tools = %q, %v; want the sorted names that are on", raw, err)
+	}
+	if err := st.SetSetting(hiddenToolsSetting, "codex, grok"); err != nil {
+		t.Fatalf("SetSetting: %v", err)
+	}
+	hidden, err := st.HiddenTools()
+	if err != nil || len(hidden) != 2 || !hidden["codex"] || !hidden["grok"] {
+		t.Fatalf("hidden tools = %v, %v; want codex and grok", hidden, err)
 	}
 }
 

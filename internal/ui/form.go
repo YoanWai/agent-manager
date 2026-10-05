@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/config"
@@ -28,6 +27,8 @@ const (
 	fieldWorktree
 	fieldPrompt
 	fieldGroup
+	// fieldBase labels the read-only base line, which never takes focus.
+	fieldBase
 )
 
 const (
@@ -35,6 +36,7 @@ const (
 	gfParent
 	gfPath
 	gfWorktree
+	gfBase
 	gfCount
 )
 
@@ -94,6 +96,7 @@ type groupForm struct {
 	path          textinput.Model
 	pathAuto      bool
 	worktreeIndex int
+	base          string
 	focus         int
 }
 
@@ -221,55 +224,8 @@ func (m *Model) groupDefaultDir(group string) string {
 	return cwd
 }
 
-// toolDisplayOrder fixes the order tools appear in when creating a session and
-// when cycling the quick-spawn tool. Tools outside this list follow, sorted
-// alphabetically.
-var toolDisplayOrder = []string{"claude", "opencode", "codex", "grok", "gemini", "pi"}
-
-// sortedToolNames is every configured agent CLI in picker order. A block
-// declaring shell = true is not a CLI to spawn agents with, so it is left
-// out; its own key launches it, and a rename still keeps a shell session
-// on it.
-func sortedToolNames(cfg config.Config) []string {
-	names := make([]string, 0, len(cfg.Tools))
-	for _, name := range cfg.ToolNames() {
-		if !cfg.Tools[name].Shell {
-			names = append(names, name)
-		}
-	}
-	rank := make(map[string]int, len(toolDisplayOrder))
-	for i, name := range toolDisplayOrder {
-		rank[name] = i
-	}
-	sort.Slice(names, func(i, j int) bool {
-		ri, iRanked := rank[names[i]]
-		rj, jRanked := rank[names[j]]
-		if iRanked && jRanked {
-			return ri < rj
-		}
-		if iRanked != jRanked {
-			return iRanked
-		}
-		return names[i] < names[j]
-	})
-	return names
-}
-
-// enabledToolNames is the create-session picker: configured tools minus any
-// the user hid in settings. Existing sessions keep their tool even when hidden.
 func (m *Model) enabledToolNames() []string {
-	all := sortedToolNames(m.cfg)
-	hidden := m.hiddenTools()
-	if len(hidden) == 0 {
-		return all
-	}
-	out := make([]string, 0, len(all))
-	for _, name := range all {
-		if !hidden[name] {
-			out = append(out, name)
-		}
-	}
-	return out
+	return m.cfg.EnabledAgentTools(m.hiddenTools())
 }
 
 func (m *Model) openForm() tea.Cmd {
@@ -752,11 +708,11 @@ func (m *Model) rememberSpawnPick(tool string, worktree bool) {
 // Custom-named sessions only get a short note that rename is available later.
 // discardWorktree rolls back a worktree created for a spawn that failed
 // partway; a fresh worktree is clean by construction, so the removal fires.
-func (m *Model) discardWorktree(repo, path, branch string) {
+func (m *Model) discardWorktree(repo, path, branch, base string) {
 	if repo == "" {
 		return
 	}
-	_, _ = m.gitDrv.RemoveWorktreeIfClean(repo, path, branch)
+	_, _ = m.gitDrv.RemoveWorktreeIfClean(repo, path, branch, base)
 }
 
 func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoNamed, worktree bool, choice config.Choice) error {
@@ -775,7 +731,7 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 		if err != nil {
 			return err
 		}
-		path, branch, err := m.gitDrv.AddWorktree(root, name)
+		path, branch, err := m.gitDrv.AddWorktree(root, name, m.groupBase(group))
 		if err != nil {
 			return err
 		}
@@ -879,6 +835,10 @@ func (m *Model) handleGroupFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.groupForm.worktreeIndex = (m.groupForm.worktreeIndex + count - 1) % count
 			return m, nil
 		}
+		if m.groupForm.focus == gfBase {
+			m.groupForm.base = m.stepGroupBase(m.groupFormDir(), m.groupForm.base, -1)
+			return m, nil
+		}
 		if m.groupForm.focus == gfParent {
 			m.moveGroupCursor(-1)
 			return m, nil
@@ -886,6 +846,10 @@ func (m *Model) handleGroupFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "right":
 		if m.groupForm.focus == gfWorktree {
 			m.groupForm.worktreeIndex = (m.groupForm.worktreeIndex + 1) % len(groupWorktreeOptions)
+			return m, nil
+		}
+		if m.groupForm.focus == gfBase {
+			m.groupForm.base = m.stepGroupBase(m.groupFormDir(), m.groupForm.base, 1)
 			return m, nil
 		}
 		if m.groupForm.focus == gfParent {
@@ -925,6 +889,13 @@ func (m *Model) groupFormFocus(delta int) {
 	}
 }
 
+// groupFormDir is the default path the group form would save, resolved
+// the way submit resolves it.
+func (m *Model) groupFormDir() string {
+	dir, _ := resolveExistingDir(m.groupForm.path.Value(), m.groupDefaultDir(m.selectedGroupPath()))
+	return dir
+}
+
 func (m *Model) submitGroupForm() (tea.Model, tea.Cmd) {
 	name := strings.TrimSpace(m.groupForm.name.Value())
 	name = strings.ReplaceAll(name, "/", "-")
@@ -943,7 +914,7 @@ func (m *Model) submitGroupForm() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	worktree := groupWorktreeValue(m.groupForm.worktreeIndex)
-	if err := m.store.AddGroup(full, path, worktree); err != nil {
+	if err := m.store.AddGroup(full, path, worktree, m.groupForm.base); err != nil {
 		m.errBar.text = err.Error()
 		return m, nil
 	}
@@ -952,14 +923,8 @@ func (m *Model) submitGroupForm() (tea.Model, tea.Cmd) {
 		m.groupPaths = map[string]string{}
 	}
 	m.groupPaths[full] = path
-	if m.groupWorktrees == nil {
-		m.groupWorktrees = map[string]string{}
-	}
-	if worktree == "" {
-		delete(m.groupWorktrees, full)
-	} else {
-		m.groupWorktrees[full] = worktree
-	}
+	m.groupWorktrees = setGroupChoice(m.groupWorktrees, full, worktree)
+	m.groupBases = setGroupChoice(m.groupBases, full, m.groupForm.base)
 	for group := parent; group != ""; group = parentGroup(group) {
 		delete(m.collapsed, group)
 	}

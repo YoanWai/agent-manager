@@ -190,6 +190,7 @@ func helpSections(session, list keybind.Table, arrowStep bool) []helpSection {
 		})},
 		reviewHelpSection(list),
 		{title: titledWith("messages", list, keybind.Messages), rows: [][2]string{
+			{"click messages", "in the key legend, shown while any remain"},
 			{"↑↓", "pick a message"},
 			{"pgup / pgdn", "scroll its body"},
 			{"↵", "open its link in the browser"},
@@ -233,6 +234,9 @@ func sessionHelpRows(keys keybind.Table, arrowStep bool, mouseRows [][2]string) 
 	}
 	if label := keys.Binding(keybind.Editor).Label(); label != "" {
 		rows = append(rows, [2]string{label, "open its directory in an editor"})
+	}
+	if label := keys.Binding(keybind.TmuxPrefix).Label(); label != "" {
+		rows = append(rows, [2]string{label, "attached: tmux's prefix, in place of yours"})
 	}
 	return append(rows, mouseRows...)
 }

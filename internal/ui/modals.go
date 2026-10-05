@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"cmp"
 	"fmt"
 	"strings"
 
@@ -203,6 +204,9 @@ func (m *Model) viewForm() string {
 		worktreeField = subtleStyle.Render("◂ ") + valueStyle.Render(worktreeVal) + subtleStyle.Render(" ▸")
 	}
 	field("worktree", worktreeField, fieldWorktree)
+	if m.formWorktreeOn() {
+		field("base", m.spawnBaseLabel(m.formSpawnDir(), m.selectedGroupPath()), fieldBase)
+	}
 	// Chips are tokens inside the typed text, so they wrap and reflow with
 	// the words around them; painting happens on the rendered prompt.
 	field("prompt", m.form.prompt.renderChips(textAreaView(m.form.prompt.input)), fieldPrompt)
@@ -233,6 +237,16 @@ func (m *Model) viewForm() string {
 		hint = [][2]string{{"←→", "level"}, {"tab/↑↓", "move"}, {"↵", "create"}, {"esc", "cancel"}}
 	}
 	return m.card("◆ New Session", strings.TrimRight(b.String(), "\n"), hint)
+}
+
+// groupBaseChoice renders a group's base picker: its own ref, or auto and
+// the parent's choice that auto inherits.
+func groupBaseChoice(base, inherited string) string {
+	choice := subtleStyle.Render("◂ ") + valueStyle.Render(cmp.Or(base, "auto")) + subtleStyle.Render(" ▸")
+	if base == "" && inherited != "" {
+		choice += subtleStyle.Render("  " + inherited + " from parent")
+	}
+	return choice
 }
 
 func groupBadge(path string) string {
@@ -295,6 +309,7 @@ func (m *Model) viewGroupForm() string {
 	}
 	worktreeVal := subtleStyle.Render("◂ ") + valueStyle.Render(groupWorktreeOptions[m.groupForm.worktreeIndex]) + subtleStyle.Render(" ▸")
 	b.WriteString(formField("worktree", worktreeVal, m.groupForm.focus == gfWorktree))
+	b.WriteString(formField("base", groupBaseChoice(m.groupForm.base, m.groupBase(m.selectedGroupPath())), m.groupForm.focus == gfBase))
 	if m.groupForm.focus == gfParent {
 		b.WriteString("\n" + m.viewGroupPicker())
 	}
@@ -302,7 +317,7 @@ func (m *Model) viewGroupForm() string {
 	if m.groupForm.focus == gfParent {
 		hint = [][2]string{{"←→", "pick parent"}, {"tab/↑↓", "move"}, {"↵", "create"}, {"esc", "cancel"}}
 	}
-	if m.groupForm.focus == gfWorktree {
+	if m.groupForm.focus == gfWorktree || m.groupForm.focus == gfBase {
 		hint = [][2]string{{"tab/↑↓", "move"}, {"←→", "change"}, {"↵", "create"}, {"esc", "cancel"}}
 	}
 	if m.groupForm.focus == gfPath && m.pathSugg.active() {
@@ -350,6 +365,10 @@ func (m *Model) viewSettings() string {
 	if m.settings.worktreeDefault {
 		worktreeDefault = "on"
 	}
+	baseFetch := "off"
+	if m.settings.baseFetch {
+		baseFetch = "on"
+	}
 	coordination := "on request"
 	if m.settings.proactive {
 		coordination = "proactive"
@@ -362,12 +381,16 @@ func (m *Model) viewSettings() string {
 	if m.settings.mouseDisabled {
 		mouseMode = "off"
 	}
-	// The beta tag borrows the messages card's yellow, so the row reads as
+	// The beta tag borrows the messages modal's yellow, so the row reads as
 	// the one still under test.
 	betaTag := lipgloss.NewStyle().Foreground(lipgloss.Color("#e2c044")).Render(" beta")
 	themeAuto := "off"
 	if m.settings.themeAuto {
 		themeAuto = "on"
+	}
+	background := "theme"
+	if m.settings.terminalBackground {
+		background = "terminal"
 	}
 	notifications := "off"
 	if m.settings.notifications {
@@ -412,10 +435,15 @@ func (m *Model) viewSettings() string {
 		return ctaLead(field, name) + keyStyle.Render("↵") + " " +
 			lipgloss.NewStyle().Foreground(colorAccent2).Render(action)
 	}
+	editorLine := row(settingsFieldEditor, "editor", m.settings.editor.label())
+	if m.settings.editor.typing {
+		editorLine = lead(settingsFieldEditor, "editor") + textInputView(m.settings.editor.input)
+	}
 	body := row(settingsFieldTool, "default tool", toolValue) + "\n" +
 		row(settingsFieldTheme, "theme", themes[m.settings.themeIndex].Name) + "  " +
 		themeSwatch(themes[m.settings.themeIndex]) + "\n" +
 		row(settingsFieldThemeAuto, "theme follows OS", themeAuto) + "\n" +
+		row(settingsFieldBackground, "background", background) + "\n" +
 		row(settingsFieldDensity, "list density", density) + "\n" +
 		row(settingsFieldSessionLayout, "sessions layout", sessionLayout) + "\n" +
 		row(settingsFieldHeader, "header", header) + "\n" +
@@ -426,9 +454,11 @@ func (m *Model) viewSettings() string {
 		row(settingsFieldArrowStep, "←→ step in/out", arrowStep) + betaTag + "\n" +
 		row(settingsFieldMouse, "mouse", mouseMode) + "\n" +
 		row(settingsFieldWorktree, "spawn in worktree", worktreeDefault) + "\n" +
+		row(settingsFieldBaseFetch, "fetch on spawn", baseFetch) + "\n" +
 		row(settingsFieldCoordination, "coordination", coordination) + "\n" +
 		row(settingsFieldNotify, "notifications", notifications) + "\n" +
 		row(settingsFieldNotifyFinish, "notify on finish", notifyFinished) + "\n" +
+		editorLine + "\n" +
 		actionRow(settingsFieldKeybindings, "keybindings", keybindingsSummary(m.keys, m.listKeys)) + "\n" +
 		actionRow(settingsFieldCLIs, "CLIs", "show or hide for new sessions") + "\n" +
 		ctaRow(settingsFieldBugReport, "report a bug", "open the bug report form") + "\n" +
@@ -442,6 +472,13 @@ func (m *Model) viewSettings() string {
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "manage CLIs"}, {"esc", "save"}}
 	case settingsFieldKeybindings:
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "change the keys"}, {"esc", "save"}}
+	case settingsFieldEditor:
+		switch {
+		case m.settings.editor.typing:
+			hint = [][2]string{{"↵", "keep"}, {"esc", "cancel"}}
+		case m.settings.editor.custom:
+			hint = [][2]string{{"↑↓", "field"}, {"←→", "change"}, {"↵", "type the command"}, {"esc", "save"}}
+		}
 	case settingsFieldUpdate:
 		switch {
 		case m.update.applying:
@@ -576,7 +613,7 @@ func (m *Model) viewKeyPicker() string {
 		value := keys.Binding(row.action.Name).Label()
 		valueRender := valueStyle.Render(value)
 		if value == "" {
-			valueRender = subtleStyle.Render(section.off)
+			valueRender = subtleStyle.Render(section.offLabel(row.action.Name))
 		}
 		if m.settings.keyCapture && m.settings.keyCursor == i {
 			word := "press a key"

@@ -347,3 +347,32 @@ func TestCopyReplyIsBoundToY(t *testing.T) {
 		t.Fatalf("y = %q ok=%v, want %q", action, ok, CopyReply)
 	}
 }
+
+// tmux_prefix starts off and takes at most the two keys tmux has a prefix for.
+func TestTmuxPrefixIsOffUntilWrittenAndTakesTwoKeysAtMost(t *testing.T) {
+	if got := DefaultSession().Binding(TmuxPrefix).Label(); got != "" {
+		t.Fatalf("tmux_prefix should start off, got %q", got)
+	}
+	for _, tc := range []struct{ text, want string }{
+		{`tmux_prefix = "ctrl+b"`, "ctrl+b"},
+		{`tmux_prefix = ["ctrl+b", "f12"]`, "ctrl+b / f12"},
+		{"detach = \"ctrl+s\"\ntmux_prefix = \"ctrl+b\"", "ctrl+b"},
+	} {
+		table, err := decodeSession(t, tc.text)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.text, err)
+		}
+		if got := table.Binding(TmuxPrefix).Label(); got != tc.want {
+			t.Errorf("%s: tmux_prefix = %q, want %q", tc.text, got, tc.want)
+		}
+	}
+	for _, tc := range []struct{ text, reason string }{
+		{`tmux_prefix = ["ctrl+a", "ctrl+b", "ctrl+g"]`, "tmux_prefix takes one key or two"},
+		{`tmux_prefix = "b"`, `keybindings.session.tmux_prefix: "b" is a plain key`},
+		{"detach = \"ctrl+s\"\ntmux_prefix = \"ctrl+s\"", "ctrl+s is bound to both detach and tmux_prefix"},
+	} {
+		if _, err := decodeSession(t, tc.text); err == nil || !strings.Contains(err.Error(), tc.reason) {
+			t.Errorf("%s: err = %v, want %q", tc.text, err, tc.reason)
+		}
+	}
+}

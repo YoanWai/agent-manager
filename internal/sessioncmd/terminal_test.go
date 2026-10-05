@@ -575,3 +575,25 @@ func TestTerminalHarnessCleanupRemovesSocket(t *testing.T) {
 		t.Fatalf("socket %q survived harness cleanup: %v", socket, err)
 	}
 }
+
+// A command can be the first thing to run on a machine, before a manager
+// ever made the config directory, and still has to reach its own answer.
+func TestOpenMakesTheConfigDirectoryAFirstCommandFinds(t *testing.T) {
+	configDir := filepath.Join(t.TempDir(), "agent-manager")
+	driver, err := tmux.NewWithSocket("amtermtest-" + uuid.NewString()[:8])
+	if err != nil {
+		t.Fatalf("tmux driver: %v", err)
+	}
+	terminals := newTerminals(configDir, CLIVocabulary(), func() (*tmux.Driver, error) { return driver, nil })
+	runtime, err := terminals.open()
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer runtime.store.Close()
+	if _, err := os.Stat(filepath.Join(configDir, "state.db")); err != nil {
+		t.Fatalf("the store should exist: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(configDir, "config.toml")); !os.IsNotExist(err) {
+		t.Fatalf("no config.toml should be written: %v", err)
+	}
+}

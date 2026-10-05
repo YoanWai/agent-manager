@@ -1,7 +1,6 @@
 package config
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -9,9 +8,12 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
-	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 )
+
+// PollInterval is how often the manager reads every pane for status,
+// preview and stats.
+const PollInterval = 2 * time.Second
 
 type Rule struct {
 	State   string `toml:"state"`
@@ -152,36 +154,7 @@ type Choice struct {
 }
 
 type Config struct {
-	PollInterval Duration `toml:"poll_interval"`
-	// Editor is the command the o key opens a directory in, arguments
-	// included. Empty falls back to $AGENT_MANAGER_EDITOR, then a GUI
-	// editor found on PATH, then $VISUAL / $EDITOR.
-	Editor string `toml:"editor"`
-	// Tools is what the binary ships. The file is never decoded for it, so a
-	// [tools.<name>] block left there cannot fail the load.
-	Tools        map[string]Tool `toml:"-"`
-	IgnoredTools []string        `toml:"-"`
-	Keybindings  Keybindings     `toml:"keybindings"`
-	SessionKeys  keybind.Table   `toml:"-"`
-	ListKeys     keybind.Table   `toml:"-"`
-}
-
-type Keybindings struct {
-	Session map[string]keybind.Binding `toml:"session"`
-	List    map[string]keybind.Binding `toml:"list"`
-}
-
-type Duration struct {
-	time.Duration
-}
-
-func (d *Duration) UnmarshalText(text []byte) error {
-	parsed, err := time.ParseDuration(string(text))
-	if err != nil {
-		return err
-	}
-	d.Duration = parsed
-	return nil
+	Tools map[string]Tool
 }
 
 func Dir() (string, error) {
@@ -190,50 +163,6 @@ func Dir() (string, error) {
 		return "", err
 	}
 	return filepath.Join(base, "agent-manager"), nil
-}
-
-func Path() (string, error) {
-	dir, err := Dir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, "config.toml"), nil
-}
-
-func Load() (Config, error) {
-	dir, err := Dir()
-	if err != nil {
-		return Config{}, err
-	}
-	return LoadDir(dir)
-}
-
-// LoadDir loads the configuration kept in dir. Session-scoped commands
-// already receive the manager's config directory, so they must not resolve
-// it again from a possibly different process environment.
-func LoadDir(dir string) (Config, error) {
-	path := filepath.Join(dir, "config.toml")
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		if err := writeStarter(path); err != nil {
-			return Config{}, err
-		}
-	}
-	var cfg Config
-	meta, err := toml.DecodeFile(path, &cfg)
-	if err != nil {
-		return Config{}, fmt.Errorf("parse config %s: %w", path, err)
-	}
-	builtin, err := Default()
-	if err != nil {
-		return Config{}, err
-	}
-	cfg.IgnoredTools = declaredTools(meta)
-	cfg.Tools = builtin.Tools
-	cfg.applyDefaults()
-	if err := cfg.resolveKeys(); err != nil {
-		return Config{}, fmt.Errorf("config %s: %w", path, err)
-	}
-	return cfg, nil
 }
 
 // WithChoice puts the choice's flags on every line that launches the tool.
@@ -282,19 +211,6 @@ func (c Choice) flags(t Tool) string {
 	return flags.String()
 }
 
-// declaredTools reads the [tools.<name>] headers off the key list, since
-// nothing under them is decoded.
-func declaredTools(meta toml.MetaData) []string {
-	var names []string
-	for _, key := range meta.Keys() {
-		if len(key) == 2 && key[0] == "tools" {
-			names = append(names, key[1])
-		}
-	}
-	sort.Strings(names)
-	return names
-}
-
 // Default returns the built-in configuration without touching the filesystem.
 func Default() (Config, error) {
 	var shipped struct {
@@ -305,36 +221,10 @@ func Default() (Config, error) {
 	}
 	cfg := Config{Tools: shipped.Tools}
 	cfg.applyDefaults()
-	if err := cfg.resolveKeys(); err != nil {
-		return Config{}, err
-	}
 	return cfg, nil
 }
 
-func (c *Config) resolveKeys() error {
-	session, err := keybind.SessionTable(c.Keybindings.Session)
-	if err != nil {
-		return err
-	}
-	list, err := keybind.ListTable(c.Keybindings.List)
-	if err != nil {
-		return err
-	}
-	c.SessionKeys, c.ListKeys = session, list
-	return nil
-}
-
-func (c Config) keys(scope string) keybind.Table {
-	if scope == keybind.ScopeList {
-		return c.ListKeys
-	}
-	return c.SessionKeys
-}
-
 func (c *Config) applyDefaults() {
-	if c.PollInterval.Duration <= 0 {
-		c.PollInterval.Duration = 2 * time.Second
-	}
 	if c.Tools == nil {
 		c.Tools = map[string]Tool{}
 	}
@@ -368,42 +258,6 @@ func (c Config) ShellTool() (string, Tool) {
 	}
 	return chosen, c.Tools[chosen]
 }
-
-func writeStarter(path string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(path, []byte(starterConfig), 0o644)
-}
-
-// starterConfig is the file a first run writes: what the manager reads
-// from it, and nothing else.
-const starterConfig = `poll_interval = "2s"
-
-# The editor "o" opens a directory in, arguments allowed: "code -n", or
-# "open -a 'Visual Studio Code'". Quotes group an argument that carries a
-# space; the line is run directly, never through a shell. Left unset,
-# Agent Manager takes $AGENT_MANAGER_EDITOR, then the first GUI editor on
-# PATH (code, cursor, windsurf, zed, subl, idea), then $VISUAL or $EDITOR.
-# editor = "code"
-
-# The keys the manager keeps for itself inside a session; every other key
-# reaches the agent. An action takes one key or a list, written as
-# ctrl+<key>, alt+<key> or f1..f12, and "none" hands its key to the agent.
-# [keybindings.session]
-# detach = ["ctrl+q", "ctrl+\\"]
-# review = "ctrl+r"
-# editor = "f3"
-
-# The keys of the manager's own list, one line per action; Settings > keys
-# in the manager names them all. A plain character, a key name (space,
-# enter, up, shift+up ...), ctrl+<key>, alt+<key> or f1..f12; "none" turns
-# an action off. esc and ctrl+c stay as they are.
-# [keybindings.list]
-# new_session = "N"
-# prompt = ["space", "p"]
-# quit = "none"
-`
 
 // builtinTools is the only source of tool definitions, so a release that
 // fixes a CLI's new screen fixes it for everyone on that release.

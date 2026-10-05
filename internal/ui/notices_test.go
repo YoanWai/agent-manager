@@ -89,33 +89,29 @@ func TestDismissPersistsAcrossRestart(t *testing.T) {
 	}
 }
 
-func TestToolsRetiredNoticeNamesTheIgnoredBlocks(t *testing.T) {
+func TestConfigNotImportedNoticeCarriesTheReason(t *testing.T) {
 	st := noticeStore(t)
 	m := noticeModel(st, "v0.2.0")
-	if contains(noticeIDs(m.activeNotices()), noticeToolsRetired) {
-		t.Fatal("a file with no tool blocks has nothing to retire")
+	if contains(noticeIDs(m.activeNotices()), noticeConfigNotImported) {
+		t.Fatal("an import that went through has nothing to report")
 	}
-	m.cfg.IgnoredTools = []string{"claude", "mytool"}
-	var retired notice
+	m.configImportError = "config.toml: keybindings.session.detach needs at least one key"
+	var refused notice
 	for _, n := range m.activeNotices() {
-		if n.id == noticeToolsRetired {
-			retired = n
+		if n.id == noticeConfigNotImported {
+			refused = n
 		}
 	}
-	if retired.id == "" {
-		t.Fatalf("want %s among %v", noticeToolsRetired, noticeIDs(m.activeNotices()))
+	if refused.id == "" {
+		t.Fatalf("want %s among %v", noticeConfigNotImported, noticeIDs(m.activeNotices()))
 	}
-	if !contains(retired.body, "claude, mytool") {
-		t.Fatalf("the notice should name the ignored blocks: %q", retired.body)
+	if !contains(refused.body, m.configImportError) {
+		t.Fatalf("the notice should carry the reason: %q", refused.body)
 	}
-	joined := strings.Join(retired.body, " ")
-	if !strings.Contains(joined, "block you added") {
-		t.Fatalf("a custom block is not a shipped copy: %q", retired.body)
-	}
-	m.dismissNotice(noticeToolsRetired)
+	m.dismissNotice(noticeConfigNotImported)
 	reopened := noticeModel(st, "v0.2.0")
-	reopened.cfg.IgnoredTools = m.cfg.IgnoredTools
-	if contains(noticeIDs(reopened.activeNotices()), noticeToolsRetired) {
+	reopened.configImportError = m.configImportError
+	if contains(noticeIDs(reopened.activeNotices()), noticeConfigNotImported) {
 		t.Fatal("dismissal did not survive restart")
 	}
 }
@@ -335,7 +331,7 @@ func TestFeedMessagesBecomeNotices(t *testing.T) {
 	}
 }
 
-func TestFeedUsesOneCanonicalTitleInCardAndModal(t *testing.T) {
+func TestFeedUsesCanonicalTitleInModal(t *testing.T) {
 	m := modalModel(t)
 	m.feedMessages = []feed.Message{{
 		ID:     "feed-canonical",
@@ -345,14 +341,10 @@ func TestFeedUsesOneCanonicalTitleInCardAndModal(t *testing.T) {
 	}}
 	m.dismissNotice(noticeWelcome)
 
-	card := ansi.Strip(strings.Join(m.noticeCardLines(m.activeNotices(), 50, 5), "\n"))
-	if !strings.Contains(card, "One title everywhere") || strings.Contains(card, "legacy compact copy") {
-		t.Fatalf("card did not use canonical title:\n%s", card)
-	}
 	m.openNotices("feed-canonical")
 	modal := ansi.Strip(m.View())
 	if !strings.Contains(modal, "One title everywhere") || strings.Contains(modal, "legacy compact copy") {
-		t.Fatalf("modal and card titles diverged:\n%s", modal)
+		t.Fatalf("modal did not use the canonical title:\n%s", modal)
 	}
 }
 
@@ -399,80 +391,22 @@ func footModel(t *testing.T) *Model {
 	return m
 }
 
-func TestRailFootPutsMessagesRightOfComputer(t *testing.T) {
-	m := footModel(t)
-	lines := m.railFootLines(70)
-
-	joined := ansi.Strip(strings.Join(lines, "\n"))
-	if !strings.Contains(joined, "messages") {
-		t.Fatalf("want a messages card, got %q", joined)
-	}
-	if !strings.Contains(joined, "Welcome to agent-manager") {
-		t.Fatalf("want the canonical welcome title, got %q", joined)
-	}
-
-	for _, line := range lines {
-		clean := ansi.Strip(line)
-		if !strings.Contains(clean, "messages") {
-			continue
+func TestRailFootOnlyShowsComputerStats(t *testing.T) {
+	for _, full := range []bool{false, true} {
+		for _, width := range []int{34, 70, 120} {
+			m := footModel(t)
+			m.fullLayout = full
+			foot := strings.Join(m.railFootLines(width), "\n")
+			if !strings.Contains(ansi.Strip(foot), "cpu") || strings.Contains(ansi.Strip(foot), "messages") {
+				t.Fatalf("full=%v width=%d: stats foot contains messages or loses readings:\n%s", full, width, ansi.Strip(foot))
+			}
+			for _, n := range m.activeNotices() {
+				m.dismissNotice(n.id)
+			}
+			if got := strings.Join(m.railFootLines(width), "\n"); got != foot {
+				t.Fatalf("full=%v width=%d: notices changed the stats foot", full, width)
+			}
 		}
-		if strings.Index(clean, "messages") < strings.Index(ansi.Strip(lines[0]), "computer") {
-			t.Fatalf("messages must sit right of computer, got %q", clean)
-		}
-		return
-	}
-	t.Fatal("MESSAGES header row not found")
-}
-
-func TestRailFootNarrowDropsMessages(t *testing.T) {
-	m := footModel(t)
-	lines := m.railFootLines(34)
-	joined := ansi.Strip(strings.Join(lines, "\n"))
-	if strings.Contains(joined, "messages") {
-		t.Fatalf("narrow rail should keep only the meters, got %q", joined)
-	}
-	if !strings.Contains(joined, "computer") {
-		t.Fatalf("meters must survive, got %q", joined)
-	}
-}
-
-func TestRailFootAllDismissedShowsOnlyMeters(t *testing.T) {
-	m := footModel(t)
-	for _, n := range m.activeNotices() {
-		m.dismissNotice(n.id)
-	}
-	joined := ansi.Strip(strings.Join(m.railFootLines(70), "\n"))
-	if strings.Contains(joined, "messages") {
-		t.Fatalf("no notices means no panel, got %q", joined)
-	}
-}
-
-func TestRailFootCardBorderAndFit(t *testing.T) {
-	m := footModel(t)
-	lines := m.railFootLines(90)
-	joined := ansi.Strip(strings.Join(lines, "\n"))
-	for _, corner := range []string{"╭", "╮", "╰", "╯"} {
-		if !strings.Contains(joined, corner) {
-			t.Fatalf("card border missing %q:\n%s", corner, joined)
-		}
-	}
-	if !strings.Contains(strings.Join(lines, "\n"), bgSeq(noticeCardHex())) {
-		t.Fatal("card interior missing its fill")
-	}
-	for i, line := range lines {
-		if !strings.Contains(ansi.Strip(line), "│") {
-			t.Fatalf("row %d missing the separator: %q", i, ansi.Strip(line))
-		}
-	}
-
-	var top string
-	for _, line := range lines {
-		if strings.Contains(ansi.Strip(line), "╭") {
-			top = line
-		}
-	}
-	if got := lipgloss.Width(top); got >= 90 {
-		t.Fatalf("card must hug its content, top border spans %d of 90", got)
 	}
 }
 
@@ -933,15 +867,17 @@ func TestLateFeedKeepsModalSelection(t *testing.T) {
 }
 
 func TestNewFeedOpensNoticesModal(t *testing.T) {
-	m := footModel(t)
-	m.mode = modeList
-
-	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
-	if m.mode != modeNotices {
-		t.Fatalf("a new feed message should open the modal, mode=%v", m.mode)
-	}
-	if got := m.activeNotices()[m.noticeCursor].id; got != "feed-new" {
-		t.Fatalf("new message should be selected, got %q", got)
+	for _, hidden := range []bool{false, true} {
+		m := footModel(t)
+		m.mode = modeList
+		m.hideStats = hidden
+		m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
+		if m.mode != modeNotices {
+			t.Fatalf("hidden=%v: a new feed message should open the modal, mode=%v", hidden, m.mode)
+		}
+		if got := m.activeNotices()[m.noticeCursor].id; got != "feed-new" {
+			t.Fatalf("new message should be selected, got %q", got)
+		}
 	}
 }
 
@@ -1468,8 +1404,7 @@ func TestArrowStepNoticeListedUntilDismissed(t *testing.T) {
 	}
 }
 
-// Meters and messages leave the rail foot in full screen for one condensed
-// line: the machine readings inline, and the messages count when any exist.
+// Full screen condenses the machine readings to one line.
 func TestFullLayoutFootLine(t *testing.T) {
 	m := shotModel()
 	m.fullLayout = true
@@ -1487,20 +1422,6 @@ func TestFullLayoutFootLine(t *testing.T) {
 	}
 }
 
-func TestFullLayoutFootLineCountsMessages(t *testing.T) {
-	m := buildModel(t)
-	m.width, m.height = 120, 34
-	m.fullLayout = true
-	foot := ansi.Strip(strings.Join(m.railFootLines(m.width-1), "\n"))
-	if !strings.Contains(foot, "messages") {
-		t.Fatalf("active notices should show a messages count:\n%s", foot)
-	}
-	full := ansi.Strip(m.View())
-	if !strings.Contains(full, "messages") {
-		t.Fatalf("full screen frame lost the messages count:\n%s", full)
-	}
-}
-
 func TestLayoutsCanHideStats(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -1511,7 +1432,8 @@ func TestLayoutsCanHideStats(t *testing.T) {
 		{name: "full", full: true, width: 119},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			m := shotModel()
+			m := footModel(t)
+			m.width, m.height = 120, 34
 			m.fullLayout = tc.full
 			m.hideStats = true
 			if foot := m.railFootLines(tc.width); len(foot) > 0 {
@@ -1527,50 +1449,6 @@ func TestLayoutsCanHideStats(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestHiddenStatsStillShowMessages(t *testing.T) {
-	for _, tc := range []struct {
-		name  string
-		full  bool
-		width int
-	}{
-		{name: "split", width: 36},
-		{name: "full", full: true, width: 119},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			m := buildModel(t)
-			m.width, m.height = 120, 34
-			m.fullLayout = tc.full
-			m.hideStats = true
-			foot := ansi.Strip(strings.Join(m.railFootLines(tc.width), "\n"))
-			if !strings.Contains(foot, "messages") {
-				t.Fatalf("hidden stats lost active messages:\n%s", foot)
-			}
-			for _, hidden := range []string{"cpu", "mem", "disk", "net"} {
-				if strings.Contains(foot, hidden) {
-					t.Fatalf("message-only foot still contains %q:\n%s", hidden, foot)
-				}
-			}
-		})
-	}
-}
-
-func TestHiddenStatsMessageBadgeFitsNarrowWidth(t *testing.T) {
-	m := buildModel(t)
-	m.fullLayout = true
-	m.hideStats = true
-	const width = 8
-	lines := m.railFootLines(width)
-	if len(lines) != 1 {
-		t.Fatalf("narrow message foot has %d lines, want 1", len(lines))
-	}
-	if got := ansi.StringWidth(lines[0]); got > width {
-		t.Fatalf("narrow message foot is %d columns, want at most %d", got, width)
-	}
-	if lines := m.railFootLines(railInset); len(lines) != 0 {
-		t.Fatalf("message foot without usable width has %d lines, want 0", len(lines))
 	}
 }
 
@@ -1710,20 +1588,6 @@ func TestWelcomeBodyFollowsTheListTable(t *testing.T) {
 		if strings.Contains(body, gone) {
 			t.Errorf("remapped welcome should drop %q:\n%s", gone, body)
 		}
-	}
-}
-
-func TestFullLayoutBadgeWearsTheCardYellow(t *testing.T) {
-	m := buildModel(t)
-	m.width, m.height = 120, 34
-	m.fullLayout = true
-	foot := strings.Join(m.railFootLines(m.width-1), "\n")
-	want := noticeTitleStyle().Render(fmt.Sprintf("messages %d", len(m.activeNotices())))
-	if !strings.Contains(foot, want) {
-		t.Fatalf("badge should carry the card's tone %q:\n%q", want, foot)
-	}
-	if !m.noticeHit.ok || m.noticeHit.x1 > m.width-1 {
-		t.Fatalf("badge should record its columns inside the rail, got %+v", m.noticeHit)
 	}
 }
 

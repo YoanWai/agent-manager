@@ -422,7 +422,7 @@ func (p *poller) refreshOnce() tea.Msg {
 	// long as the manager is open; its readers allow the stamp to age instead.
 	if time.Since(p.heartbeatAt) >= store.PollerHeartbeatPeriod {
 		claimed := time.Now()
-		holder, err := p.store.ClaimPoller(socket, claimed, p.interval)
+		holder, err := p.store.ClaimPoller(socket, claimed)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -617,13 +617,15 @@ func (p *poller) refreshOnce() tea.Msg {
 			// The row can be claimed by the manager that can see its pane
 			// between this pass listing it and reaching here, and a status
 			// derived without that pane must not land on top of the claim.
-			written, err := p.store.UpdateStatusOnSocket(sess.ID, newStatus, socket)
+			written, changed, err := p.store.UpdateStatusOnSocket(sess.ID, newStatus, socket)
 			if err != nil {
 				return errMsg{err}
 			}
 			if written && newStatus != sess.Status {
 				sessions[i].Status = newStatus
-				p.notifyTransition(sess, newStatus)
+				if changed {
+					p.notifyTransition(sess, newStatus)
+				}
 			}
 		}
 	}
@@ -655,12 +657,16 @@ func (p *poller) refreshOnce() tea.Msg {
 	names := make([]string, len(groups))
 	paths := make(map[string]string, len(groups))
 	worktrees := make(map[string]string, len(groups))
+	bases := make(map[string]string, len(groups))
 	archivedGroups := make(map[string]bool, len(groups))
 	for i, g := range groups {
 		names[i] = g.Name
 		paths[g.Name] = g.Path
 		if g.Worktree != "" {
 			worktrees[g.Name] = g.Worktree
+		}
+		if g.Base != "" {
+			bases[g.Name] = g.Base
 		}
 		if g.Archived {
 			archivedGroups[g.Name] = true
@@ -686,6 +692,7 @@ func (p *poller) refreshOnce() tea.Msg {
 		groups:         names,
 		groupPaths:     paths,
 		groupWorktrees: worktrees,
+		groupBases:     bases,
 		archivedGroups: archivedGroups,
 		proc:           proc,
 		procFor:        selectedID,

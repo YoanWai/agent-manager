@@ -17,6 +17,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/catalog"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/git"
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -94,15 +95,11 @@ default_status = "idle"
 command = ""
 shell = true
 default_status = "idle"
-
-[keybindings.session]
-review = "ctrl+g"
 `
 
-// testConfigLoader loads the harness config the manager would, with the
-// document's own tool blocks in place of the built-in CLIs, so a test gets
-// a pane it can predict.
-func testConfigLoader(t *testing.T, doc string) func(string) (config.Config, error) {
+// testConfigLoader stands the document's tool blocks in for the built-in
+// CLIs, so a test gets a pane it can predict.
+func testConfigLoader(t *testing.T, doc string) func() (config.Config, error) {
 	t.Helper()
 	var declared struct {
 		Tools map[string]config.Tool `toml:"tools"`
@@ -110,13 +107,8 @@ func testConfigLoader(t *testing.T, doc string) func(string) (config.Config, err
 	if _, err := toml.Decode(doc, &declared); err != nil {
 		t.Fatalf("decode the test tools: %v", err)
 	}
-	return func(dir string) (config.Config, error) {
-		cfg, err := config.LoadDir(dir)
-		if err != nil {
-			return cfg, err
-		}
-		cfg.Tools = declared.Tools
-		return cfg, nil
+	return func() (config.Config, error) {
+		return config.Config{Tools: declared.Tools}, nil
 	}
 }
 
@@ -126,9 +118,6 @@ func newSessionHarness(t *testing.T) *sessionHarness {
 		t.Skip("tmux not installed")
 	}
 	configDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(sessionConfig), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
 	driver, err := tmux.NewWithSocket("amsesstest-" + uuid.NewString()[:8])
 	if err != nil {
 		t.Fatalf("tmux driver: %v", err)
@@ -575,6 +564,102 @@ func TestSessionsCreateOpensItsOwnWorktreeWhenAsked(t *testing.T) {
 	}
 	if stored.WorktreeRepo == "" || stored.WorktreeBranch != created.Branch {
 		t.Fatalf("stored worktree = %+v", stored)
+	}
+}
+
+func TestSessionsCreateBranchesFromTheGroupBase(t *testing.T) {
+	h := newSessionHarness(t)
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	repo := t.TempDir()
+	runGit := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repo
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	runGit("init", "-b", "main")
+	runGit("config", "user.email", "t@t")
+	runGit("config", "user.name", "t")
+	runGit("commit", "--allow-empty", "-m", "init")
+	runGit("branch", "develop")
+	runGit("checkout", "-q", "develop")
+	runGit("commit", "--allow-empty", "-m", "develop work")
+	runGit("checkout", "-q", "main")
+	if err := h.store.SetGroupBase(h.caller.Group, "develop"); err != nil {
+		t.Fatalf("set base: %v", err)
+	}
+
+	wanted := true
+	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{
+		Name:      "develop-worker",
+		Directory: repo,
+		Worktree:  &wanted,
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	head := exec.Command("git", "rev-parse", "HEAD")
+	head.Dir = created.Directory
+	out, err := head.Output()
+	if err != nil {
+		t.Fatalf("worktree head: %v", err)
+	}
+	if got, want := strings.TrimSpace(string(out)), runGit("rev-parse", "develop"); got != want {
+		t.Fatalf("worktree starts at %s, want the group's base develop at %s", got, want)
+	}
+}
+
+func TestSessionsCreateFetchesTheBaseUnlessTurnedOff(t *testing.T) {
+	h := newSessionHarness(t)
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	runGit := func(dir string, args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	remote := t.TempDir()
+	runGit(remote, "init", "-b", "main")
+	runGit(remote, "config", "user.email", "t@t")
+	runGit(remote, "config", "user.name", "t")
+	runGit(remote, "commit", "--allow-empty", "-m", "init")
+	clone := filepath.Join(t.TempDir(), "clone")
+	runGit(remote, "clone", "-q", remote, clone)
+	cached := runGit(clone, "rev-parse", "origin/main")
+	runGit(remote, "commit", "--allow-empty", "-m", "after the clone")
+	wanted := true
+	spawnAt := func(name string) string {
+		t.Helper()
+		created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: name, Directory: clone, Worktree: &wanted})
+		if err != nil {
+			t.Fatalf("Create %s: %v", name, err)
+		}
+		return runGit(created.Directory, "rev-parse", "HEAD")
+	}
+
+	if err := h.store.SetSetting(baseFetchSetting, "off"); err != nil {
+		t.Fatalf("set setting: %v", err)
+	}
+	if got := spawnAt("unfetched"); got != cached {
+		t.Fatalf("with the fetch off the worktree starts at %s, want the cached origin/main %s", got, cached)
+	}
+	if err := h.store.SetSetting(baseFetchSetting, ""); err != nil {
+		t.Fatalf("clear setting: %v", err)
+	}
+	if got, want := spawnAt("fetched"), runGit(remote, "rev-parse", "HEAD"); got != want {
+		t.Fatalf("by default the worktree starts at %s, want the remote's tip %s", got, want)
 	}
 }
 
@@ -1132,12 +1217,31 @@ func TestReviveRefusesWhileTheAgentIsStillRunning(t *testing.T) {
 }
 
 // A spawn from an agent installs the session bindings the way the manager
-// does, read from the same config: the key table reaches the driver before
+// does, read from the same store: the key table reaches the driver before
 // the first session is created.
-func TestSessionsCreateBindsTheConfiguredSessionKeys(t *testing.T) {
+func TestSessionsCreateBindsTheStoredSessionKeys(t *testing.T) {
 	h := newSessionHarness(t)
-	if _, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "bound"}); err != nil {
+	reviewKey, err := keybind.Parse("ctrl+g")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	prefixKey, err := keybind.Parse("ctrl+a")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	stored := keybind.DefaultSession().
+		With(keybind.Review, keybind.Keys(reviewKey)).
+		With(keybind.TmuxPrefix, keybind.Keys(prefixKey))
+	if err := h.store.SetKeys(stored); err != nil {
+		t.Fatalf("SetKeys: %v", err)
+	}
+	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "bound"})
+	if err != nil {
 		t.Fatalf("Create: %v", err)
+	}
+	prefix, err := exec.Command("tmux", "-L", h.driver.SocketName(), "show-options", "-v", "-t", "am_"+created.ID, "prefix").CombinedOutput()
+	if err != nil || strings.TrimSpace(string(prefix)) != "C-a" {
+		t.Fatalf("the session should carry the stored tmux_prefix, got %q, %v", prefix, err)
 	}
 	bound, err := exec.Command("tmux", "-L", h.driver.SocketName(), "list-keys", "-T", "root").CombinedOutput()
 	if err != nil {
@@ -1157,7 +1261,7 @@ func TestSessionsCreateBindsTheConfiguredSessionKeys(t *testing.T) {
 		}
 	}
 	if review == "" {
-		t.Fatalf("ctrl+g from config.toml should request the review, got:\n%s", bound)
+		t.Fatalf("ctrl+g from Settings should request the review, got:\n%s", bound)
 	}
 	if stale != "" {
 		t.Fatalf("the default review key should not be bound alongside the configured one: %q", stale)
@@ -1222,39 +1326,114 @@ func TestSessionHarnessCleanupRemovesSocket(t *testing.T) {
 // A terminal is a caller like any session now that the CLI resolves one
 // from its pane, but its tool is the user's shell: a spawn from a terminal
 // has no agent CLI to inherit and has to be told which one to run.
-func TestSessionsCreateFromATerminalAsksForATool(t *testing.T) {
+func TestSessionsCreateFromATerminalTakesTheSettingsTool(t *testing.T) {
 	h := newSessionHarness(t)
 	terminal, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{})
 	if err != nil {
 		t.Fatalf("Create terminal: %v", err)
 	}
-	_, err = h.sessions.Create(terminal.ID, CreateSessionOptions{Prompt: "ship the fix"})
-	if err == nil {
-		t.Fatal("a toolless spawn from a terminal succeeded")
+	if err := h.store.SetDefaultTool("flagged"); err != nil {
+		t.Fatalf("set default tool: %v", err)
 	}
-	for _, want := range []string{"create_session tool", "echoer"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("error %q does not mention %q", err, want)
-		}
-	}
-	runtime, openErr := h.sessions.open()
-	if openErr != nil {
-		t.Fatalf("open: %v", openErr)
-	}
-	shell, _ := runtime.cfg.ShellTool()
-	runtime.store.Close()
-	_, listed, _ := strings.Cut(err.Error(), "(configured tools are ")
-	offered := strings.Split(strings.TrimSuffix(listed, ")"), ", ")
-	if slices.Contains(offered, shell) {
-		t.Fatalf("the error offers the shell tool %q as a choice: %v", shell, err)
-	}
-
-	created, err := h.sessions.Create(terminal.ID, CreateSessionOptions{Tool: "echoer", Prompt: "ship the fix"})
+	created, err := h.sessions.Create(terminal.ID, CreateSessionOptions{Prompt: "ship the fix"})
 	if err != nil {
-		t.Fatalf("Create with a tool named: %v", err)
+		t.Fatalf("Create from a terminal: %v", err)
 	}
-	if created.Tool != "echoer" || created.Group != terminal.Group || !created.Running {
+	if created.Tool != "flagged" || created.Group != terminal.Group || !created.Running {
 		t.Fatalf("created from a terminal = %+v, terminal = %+v", created, terminal)
 	}
 	waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, "ship the fix")
+}
+
+func TestSessionsCreateWithNoCallerTakesTheSettingsDefaults(t *testing.T) {
+	h := newSessionHarness(t)
+	scriptDir := t.TempDir()
+	t.Chdir(scriptDir)
+	if err := h.store.SetDefaultTool("flagged"); err != nil {
+		t.Fatalf("set default tool: %v", err)
+	}
+	created, err := h.sessions.Create("", CreateSessionOptions{Name: "ticket-123", Prompt: "fix ticket 123"})
+	if err != nil {
+		t.Fatalf("Create with no caller: %v", err)
+	}
+	wantDir, _ := filepath.EvalSymlinks(scriptDir)
+	gotDir, _ := filepath.EvalSymlinks(created.Directory)
+	if created.Tool != "flagged" || created.Group != "" || gotDir != wantDir || !created.Running {
+		t.Fatalf("created with no caller = %+v, want flagged in the root group at %s", created, wantDir)
+	}
+	row, err := h.store.Get(created.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if row.ParentID != "" {
+		t.Fatalf("a session with no caller hangs under %q", row.ParentID)
+	}
+	waitForSessionOutput(t, h.sessions, "", created.ID, "fix ticket 123")
+
+	if err := h.store.SetHiddenTools(map[string]bool{"flagged": true}); err != nil {
+		t.Fatalf("hide the default tool: %v", err)
+	}
+	fallback, err := h.sessions.Create("", CreateSessionOptions{Name: "ticket-124"})
+	if err != nil {
+		t.Fatalf("Create with the default tool hidden: %v", err)
+	}
+	if fallback.Tool != "blind" {
+		t.Fatalf("tool with the default hidden = %q, want the first enabled one, blind", fallback.Tool)
+	}
+
+	backend := "backend"
+	filed, err := h.sessions.Create("", CreateSessionOptions{Tool: "echoer", Group: &backend})
+	if err != nil {
+		t.Fatalf("Create into a group with no caller: %v", err)
+	}
+	groupDir, _ := filepath.EvalSymlinks(h.caller.Cwd)
+	if gotDir, _ := filepath.EvalSymlinks(filed.Directory); filed.Group != "backend" || gotDir != groupDir {
+		t.Fatalf("created into backend = %+v, want the group's directory %s", filed, groupDir)
+	}
+
+	runtime, err := h.sessions.open()
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	everyTool := map[string]bool{}
+	for _, name := range runtime.cfg.AgentToolNames() {
+		everyTool[name] = true
+	}
+	runtime.store.Close()
+	if err := h.store.SetHiddenTools(everyTool); err != nil {
+		t.Fatalf("hide every tool: %v", err)
+	}
+	_, err = h.sessions.Create("", CreateSessionOptions{})
+	if err == nil || !strings.Contains(err.Error(), "create_session tool") {
+		t.Fatalf("Create with every tool hidden = %v, want a request to name one", err)
+	}
+	shell, _ := runtime.cfg.ShellTool()
+	_, listed, _ := strings.Cut(err.Error(), "(configured tools are ")
+	if slices.Contains(strings.Split(strings.TrimSuffix(listed, ")"), ", "), shell) {
+		t.Fatalf("the error offers the shell tool %q as a choice: %v", shell, err)
+	}
+}
+
+func TestSessionsWithNoCallerListAndReadButStillRefuseToMessage(t *testing.T) {
+	h := newSessionHarness(t)
+	listed, err := h.sessions.List("")
+	if err != nil {
+		t.Fatalf("List with no caller: %v", err)
+	}
+	if len(listed) != 1 || listed[0].ID != h.caller.ID || listed[0].Self {
+		t.Fatalf("listed with no caller = %+v", listed)
+	}
+	groups, err := h.sessions.Groups("")
+	if err != nil || len(groups) != 1 || groups[0].Path != "backend" {
+		t.Fatalf("Groups with no caller = %+v, %v", groups, err)
+	}
+	if _, err := h.sessions.Read("", h.caller.ID); err != nil {
+		t.Fatalf("Read with no caller: %v", err)
+	}
+	if _, err := h.sessions.Send("", h.caller.ID, "hello"); err == nil || !strings.Contains(err.Error(), "not inside an Agent Manager session") {
+		t.Fatalf("Send with no caller = %v, want the missing caller named", err)
+	}
+	if _, err := h.sessions.Kill("", h.caller.ID); err == nil || !strings.Contains(err.Error(), "not inside an Agent Manager session") {
+		t.Fatalf("Kill with no caller = %v, want the missing caller named", err)
+	}
 }

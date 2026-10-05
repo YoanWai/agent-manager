@@ -183,7 +183,7 @@ func (m *Model) runListAction(action string) (tea.Model, tea.Cmd) {
 	case keybind.Filter:
 		return m, m.cycleStatusFilter()
 	case keybind.Settings:
-		m.openSettings()
+		return m, m.openSettings()
 	case keybind.Resize:
 		return m.enterResizeMode()
 	case keybind.Archived:
@@ -532,6 +532,10 @@ const hideHeaderSetting = "hide_header"
 
 const hideStatsSetting = "hide_stats"
 
+// backgroundSetting is what fills the backdrop's cells: "terminal" leaves
+// the terminal's own colors, anything else paints the theme's.
+const backgroundSetting = "background"
+
 const focusKeySetting = "focus_key"
 
 // arrowStepSetting is the beta ←→ pair: "off" turns it off, anything else
@@ -547,13 +551,13 @@ const quickCloseSetting = "quick_prompt_close"
 
 const worktreeSetting = "worktree_default"
 
+// baseFetchSetting is the fetch ahead of a worktree spawn: "off" skips it,
+// anything else fetches (the default).
+const baseFetchSetting = "worktree_fetch"
+
 const notificationsSetting = "notifications"
 
 const notifyFinishedSetting = "notify_finished"
-
-// hiddenToolsSetting lists CLI tools omitted from new-session pickers
-// (comma-separated names). Empty means every configured tool is shown.
-const hiddenToolsSetting = "hidden_tools"
 
 func (m *Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {

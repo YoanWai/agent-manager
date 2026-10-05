@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -108,6 +109,10 @@ func Open(path string) (*Store, error) {
 	}
 	store := &Store{db: db}
 	if err := store.init(); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := store.importConfigFile(filepath.Dir(path)); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -235,6 +240,7 @@ CREATE TABLE IF NOT EXISTS settings (
 		`ALTER TABLE sessions ADD COLUMN model TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN effort TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN profile TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE groups ADD COLUMN base TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, migration := range migrations {
 		if _, err := s.db.Exec(migration); err != nil {
@@ -382,6 +388,48 @@ func (s *Store) SetProactiveCoordination(proactive bool) error {
 	return s.SetSetting(coordinationSetting, value)
 }
 
+// The New Session form and a spawn with no caller both take their CLI from
+// these, so the manager and the CLI read them here.
+const (
+	defaultToolSetting = "default_tool"
+	hiddenToolsSetting = "hidden_tools"
+)
+
+// DefaultTool is the CLI picked in Settings for new sessions, empty when none was.
+func (s *Store) DefaultTool() (string, error) {
+	return s.Setting(defaultToolSetting)
+}
+
+func (s *Store) SetDefaultTool(name string) error {
+	return s.SetSetting(defaultToolSetting, name)
+}
+
+// HiddenTools is the set of CLIs turned off for new sessions in Settings.
+func (s *Store) HiddenTools() (map[string]bool, error) {
+	raw, err := s.Setting(hiddenToolsSetting)
+	if err != nil {
+		return nil, err
+	}
+	hidden := make(map[string]bool)
+	for _, part := range strings.Split(raw, ",") {
+		if name := strings.TrimSpace(part); name != "" {
+			hidden[name] = true
+		}
+	}
+	return hidden, nil
+}
+
+func (s *Store) SetHiddenTools(hidden map[string]bool) error {
+	names := make([]string, 0, len(hidden))
+	for name, on := range hidden {
+		if on {
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
+	return s.SetSetting(hiddenToolsSetting, strings.Join(names, ","))
+}
+
 func (s *Store) SetSetting(key, value string) error {
 	_, err := s.db.Exec(
 		`INSERT INTO settings (key, value) VALUES (?, ?)
@@ -487,14 +535,14 @@ func (s *Store) CreateGroup(name, path string) error {
 	return err
 }
 
-func (s *Store) AddGroup(name, path, worktree string) error {
+func (s *Store) AddGroup(name, path, worktree, base string) error {
 	if name == "" {
 		return errors.New("group name cannot be empty")
 	}
 	res, err := s.db.Exec(
-		`INSERT INTO groups (name, path, worktree, sort_order)
-		 VALUES (?, ?, ?, (SELECT COALESCE(MAX(sort_order)+1, 0) FROM groups))
-		 ON CONFLICT(name) DO NOTHING`, name, path, worktree)
+		`INSERT INTO groups (name, path, worktree, base, sort_order)
+		 VALUES (?, ?, ?, ?, (SELECT COALESCE(MAX(sort_order)+1, 0) FROM groups))
+		 ON CONFLICT(name) DO NOTHING`, name, path, worktree, base)
 	if err != nil {
 		return err
 	}
@@ -727,20 +775,28 @@ func (s *Store) UpdateStatus(id, newStatus string) error {
 // manager's to speak for: claimed by this tmux server, or claimed by none.
 // It reports whether the write landed, so a manager whose listing predates
 // another one claiming the row leaves that row's status alone rather than
-// announcing what it derived from a pane it cannot see.
-func (s *Store) UpdateStatusOnSocket(id, newStatus, socket string) (bool, error) {
-	res, err := s.db.Exec(
-		`UPDATE sessions SET status = ?, last_status_at = ?
-		 WHERE id = ? AND tmux_socket IN ('', ?)`,
-		newStatus, encodeTime(time.Now()), id, socket)
+// announcing what it derived from a pane it cannot see. It also reports
+// whether this write is what moved the stored status: managers sharing a
+// server derive the same transition, and only one of them may announce it.
+func (s *Store) UpdateStatusOnSocket(id, newStatus, socket string) (written, changed bool, err error) {
+	tx, err := s.db.Begin()
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
-	changed, err := res.RowsAffected()
+	defer tx.Rollback()
+	var previous string
+	err = tx.QueryRow(`SELECT status FROM sessions WHERE id = ? AND tmux_socket IN ('', ?)`, id, socket).Scan(&previous)
+	if err == sql.ErrNoRows {
+		return false, false, nil
+	}
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
-	return changed > 0, nil
+	if _, err := tx.Exec(`UPDATE sessions SET status = ?, last_status_at = ? WHERE id = ?`,
+		newStatus, encodeTime(time.Now()), id); err != nil {
+		return false, false, err
+	}
+	return true, previous != newStatus, tx.Commit()
 }
 
 // AcknowledgeFinished atomically marks a session idle and acked if its stored
@@ -1366,10 +1422,14 @@ type Group struct {
 	// "" to inherit from the nearest ancestor with a choice, else the
 	// global setting.
 	Worktree string
+	// Base is the ref the group's worktree sessions branch from and review
+	// diffs against, or "" to inherit from the nearest ancestor with one,
+	// else to detect the repo's default branch.
+	Base string
 }
 
 func (s *Store) Groups() ([]Group, error) {
-	rows, err := s.db.Query(`SELECT name, path, archived, worktree FROM groups ORDER BY sort_order, name`)
+	rows, err := s.db.Query(`SELECT name, path, archived, worktree, base FROM groups ORDER BY sort_order, name`)
 	if err != nil {
 		return nil, err
 	}
@@ -1378,7 +1438,7 @@ func (s *Store) Groups() ([]Group, error) {
 	for rows.Next() {
 		var g Group
 		var archived int
-		if err := rows.Scan(&g.Name, &g.Path, &archived, &g.Worktree); err != nil {
+		if err := rows.Scan(&g.Name, &g.Path, &archived, &g.Worktree, &g.Base); err != nil {
 			return nil, err
 		}
 		g.Archived = archived != 0
@@ -1391,6 +1451,13 @@ func (s *Store) Groups() ([]Group, error) {
 // "off", or "" to inherit.
 func (s *Store) SetGroupWorktree(name, worktree string) error {
 	_, err := s.db.Exec(`UPDATE groups SET worktree = ? WHERE name = ?`, worktree, name)
+	return err
+}
+
+// SetGroupBase stores the ref a group's worktree sessions branch from, or
+// "" to inherit.
+func (s *Store) SetGroupBase(name, base string) error {
+	_, err := s.db.Exec(`UPDATE groups SET base = ? WHERE name = ?`, base, name)
 	return err
 }
 

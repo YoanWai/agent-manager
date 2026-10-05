@@ -57,7 +57,7 @@ func NewTerminals(configDir string, words Vocabulary) *Terminals {
 }
 
 func newTerminals(configDir string, words Vocabulary, newDriver func() (*tmux.Driver, error)) *Terminals {
-	return &Terminals{commands: commands{configDir: configDir, words: words, newDriver: newDriver, loadConfig: config.LoadDir}}
+	return &Terminals{commands: commands{configDir: configDir, words: words, newDriver: newDriver, loadConfig: config.Default}}
 }
 
 // commands is the shared plumbing of every managed-pane command: the
@@ -67,8 +67,8 @@ type commands struct {
 	configDir string
 	words     Vocabulary
 	newDriver func() (*tmux.Driver, error)
-	// loadConfig is config.LoadDir outside the tests, which inject fake CLIs.
-	loadConfig func(string) (config.Config, error)
+	// loadConfig is config.Default outside the tests, which inject fake CLIs.
+	loadConfig func() (config.Config, error)
 }
 
 type runtime struct {
@@ -90,8 +90,17 @@ func (r *runtime) createPane(id, cwd, command string, env map[string]string) err
 	return r.driver.Create(id, cwd, command, env, width, height)
 }
 
+// openStore makes the config directory first: a command can be the first
+// thing to run here, before any manager made it.
+func openStore(configDir string) (*store.Store, error) {
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		return nil, err
+	}
+	return store.Open(filepath.Join(configDir, "state.db"))
+}
+
 func (c *commands) open() (*runtime, error) {
-	cfg, err := c.loadConfig(c.configDir)
+	cfg, err := c.loadConfig()
 	if err != nil {
 		return nil, err
 	}
@@ -99,11 +108,16 @@ func (c *commands) open() (*runtime, error) {
 	if err != nil {
 		return nil, err
 	}
-	driver.SetSessionKeys(cfg.SessionKeys)
-	st, err := store.Open(filepath.Join(c.configDir, "state.db"))
+	st, err := openStore(c.configDir)
 	if err != nil {
 		return nil, err
 	}
+	keys, err := st.SessionKeys()
+	if err != nil {
+		st.Close()
+		return nil, err
+	}
+	driver.SetSessionKeys(keys)
 	return &runtime{cfg: cfg, words: c.words, store: st, driver: driver}, nil
 }
 
@@ -116,6 +130,15 @@ func (r *runtime) caller(sessionID string) (store.Session, error) {
 		return store.Session{}, fmt.Errorf("calling session %s no longer exists", sessionID)
 	}
 	return sess, err
+}
+
+// optionalCaller serves commands that never act on the caller's own row, which
+// a script outside Agent Manager may run with no session at all.
+func (r *runtime) optionalCaller(sessionID string) (store.Session, error) {
+	if sessionID == "" {
+		return store.Session{}, nil
+	}
+	return r.caller(sessionID)
 }
 
 func (r *runtime) terminal(id string) (store.Session, error) {
@@ -387,7 +410,13 @@ func (r *runtime) createTarget(caller store.Session, requestedGroup *string, dir
 		}
 	}
 	dir := caller.Cwd
-	if current, err := r.driver.PaneCurrentPath(caller.ID); err == nil {
+	if caller.ID == "" {
+		// There is no pane to ask. tmux would read the empty id's target am_
+		// as a prefix and answer with another session's directory.
+		if dir, err = os.Getwd(); err != nil {
+			return "", "", err
+		}
+	} else if current, err := r.driver.PaneCurrentPath(caller.ID); err == nil {
 		dir = current
 	}
 	resolved, err := resolveTerminalDirectory(dir)

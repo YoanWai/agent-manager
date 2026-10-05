@@ -1,25 +1,17 @@
 package config
 
 import (
-	"os"
-	"path/filepath"
 	"reflect"
 	"regexp"
 	"sort"
 	"strings"
 	"testing"
-	"time"
-
-	"github.com/YoanWai/agent-manager/internal/keybind"
 )
 
 func TestDefaultDefinesEveryShippedTool(t *testing.T) {
 	cfg, err := Default()
 	if err != nil {
 		t.Fatalf("Default: %v", err)
-	}
-	if cfg.PollInterval.Duration != 2*time.Second {
-		t.Fatalf("poll interval = %v want 2s", cfg.PollInterval.Duration)
 	}
 	if _, ok := cfg.Tools["claude"]; !ok {
 		t.Fatal("expected claude tool in default config")
@@ -163,98 +155,6 @@ func TestDefaultDefinesEveryShippedTool(t *testing.T) {
 	}
 }
 
-// The file a first run leaves behind holds what the manager reads from it
-// and nothing else. Tools are not in it, because they are not read from it.
-func TestFirstRunWritesAStarterFileThatDeclaresNoTools(t *testing.T) {
-	dir := t.TempDir()
-	cfg, err := LoadDir(dir)
-	if err != nil {
-		t.Fatalf("LoadDir: %v", err)
-	}
-	written, err := os.ReadFile(filepath.Join(dir, "config.toml"))
-	if err != nil {
-		t.Fatalf("config file: %v", err)
-	}
-	if strings.Contains(string(written), "[tools.") {
-		t.Fatalf("the starter file should declare no tools:\n%s", written)
-	}
-	if len(cfg.IgnoredTools) != 0 {
-		t.Fatalf("a fresh file ignores nothing, got %v", cfg.IgnoredTools)
-	}
-	if _, ok := cfg.Tools["terminal"]; !ok {
-		t.Fatal("the built-in terminal tool is missing")
-	}
-	if cfg.PollInterval.Duration != 2*time.Second {
-		t.Fatalf("poll interval = %v want 2s", cfg.PollInterval.Duration)
-	}
-}
-
-// A file written by an older release carries every block it shipped that
-// day; they define nothing now, and their names feed the notice.
-func TestToolBlocksInTheFileAreIgnoredAndReported(t *testing.T) {
-	dir := writeConfigText(t, `
-[tools.claude]
-command = "not-claude"
-activity_cutoff = "nonsense"
-
-[tools.mine]
-command = "mine"
-`)
-	cfg, err := LoadDir(dir)
-	if err != nil {
-		t.Fatalf("LoadDir: %v", err)
-	}
-	builtin, err := Default()
-	if err != nil {
-		t.Fatalf("Default: %v", err)
-	}
-	if got, want := cfg.Tools["claude"].Command, builtin.Tools["claude"].Command; got != want {
-		t.Fatalf("claude command = %q, want the built-in %q", got, want)
-	}
-	if got, want := cfg.Tools["claude"].ActivityCutoff, builtin.Tools["claude"].ActivityCutoff; got != want {
-		t.Fatalf("claude activity_cutoff = %q, want the built-in %q", got, want)
-	}
-	if _, ok := cfg.Tools["mine"]; ok {
-		t.Fatal("a block the binary does not ship must not become a tool")
-	}
-	if len(cfg.IgnoredTools) != 2 || cfg.IgnoredTools[0] != "claude" || cfg.IgnoredTools[1] != "mine" {
-		t.Fatalf("ignored blocks = %v, want claude and mine", cfg.IgnoredTools)
-	}
-}
-
-// A hand-edit that no longer fits the Tool shape is as inert as a
-// well-formed block, and an empty table still gets named.
-func TestAnIgnoredToolBlockCannotFailTheLoad(t *testing.T) {
-	dir := writeConfigText(t, `
-poll_interval = "3s"
-
-[tools.claude]
-shell = "yes"
-rules = "not an array"
-
-[tools.empty]
-
-[keybindings.session]
-review = "ctrl+g"
-`)
-	cfg, err := LoadDir(dir)
-	if err != nil {
-		t.Fatalf("LoadDir: %v", err)
-	}
-	if got := cfg.IgnoredTools; len(got) != 2 || got[0] != "claude" || got[1] != "empty" {
-		t.Fatalf("ignored blocks = %v, want claude and empty", got)
-	}
-	if cfg.PollInterval.Duration != 3*time.Second {
-		t.Fatalf("poll interval = %v, want the file's 3s", cfg.PollInterval.Duration)
-	}
-	if got := cfg.SessionKeys.Binding(keybind.Review).Label(); got != "ctrl+g" {
-		t.Fatalf("review key = %q, want the file's ctrl+g", got)
-	}
-	if cfg.Tools["claude"].Shell {
-		t.Fatal("the built-in claude block is not a shell")
-	}
-}
-
 // Nothing types into a pane it cannot read, so every agent CLI has to mark
 // where its input box is. The shell is exempt: nothing types into it.
 func TestEveryAgentToolMarksItsInputBox(t *testing.T) {
@@ -347,9 +247,6 @@ func TestDefaultWaitingRulesPrecedeWorking(t *testing.T) {
 func TestApplyDefaults(t *testing.T) {
 	var cfg Config
 	cfg.applyDefaults()
-	if cfg.PollInterval.Duration != 2*time.Second {
-		t.Fatalf("poll = %v", cfg.PollInterval.Duration)
-	}
 	if cfg.Tools == nil {
 		t.Fatal("tools should be non-nil after defaults")
 	}
@@ -450,94 +347,8 @@ func TestPiActivityCutoffReadsTheSpinnerBorder(t *testing.T) {
 	}
 }
 
-func writeConfigText(t *testing.T, text string) string {
-	t.Helper()
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(text), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
-	return dir
-}
-
-func TestLoadDirReadsTheKeyTables(t *testing.T) {
-	dir := writeConfigText(t, `
-[keybindings.session]
-detach = ["f9", "alt+q"]
-review = "none"
-
-[keybindings.list]
-new_session = "N"
-quit = "none"
-`)
-	cfg, err := LoadDir(dir)
-	if err != nil {
-		t.Fatalf("LoadDir: %v", err)
-	}
-	keys := cfg.SessionKeys
-	if got := keys.Binding(keybind.Detach).Label(); got != "f9 / alt+q" {
-		t.Errorf("detach = %q", got)
-	}
-	if got := keys.Binding(keybind.Review).Label(); got != "" {
-		t.Errorf("review none should be off, got %q", got)
-	}
-	if got := keys.Binding(keybind.Editor).Label(); got != "f3" {
-		t.Errorf("editor left out should take the default, got %q", got)
-	}
-	if got, _ := cfg.ListKeys.ActionFor("N"); got != keybind.NewSession {
-		t.Errorf("N should open a new session, got %q", got)
-	}
-	if _, bound := cfg.ListKeys.ActionFor("q"); bound {
-		t.Error("quit none should leave q unbound")
-	}
-	if got, _ := cfg.ListKeys.ActionFor("?"); got != keybind.Help {
-		t.Errorf("an action left out keeps its key, got %q", got)
-	}
-}
-
-// A config that names no keys, the generated one included, binds what the
-// manager always bound.
-func TestKeyTableDefaultsWhenTheFileNamesNone(t *testing.T) {
-	cfg, err := LoadDir(t.TempDir())
-	if err != nil {
-		t.Fatalf("LoadDir: %v", err)
-	}
-	def, err := Default()
-	if err != nil {
-		t.Fatalf("Default: %v", err)
-	}
-	for name, keys := range map[string]Config{"generated": cfg, "built-in": def} {
-		if !keys.SessionKeys.Equal(keybind.DefaultSession()) {
-			t.Errorf("%s: session keys = %q", name, sessionLabels(keys.SessionKeys))
-		}
-		if !keys.ListKeys.Equal(keybind.DefaultList()) {
-			t.Errorf("%s: list keys are not the defaults", name)
-		}
-	}
-}
-
-func TestLoadDirRefusesAKeyTableThatCannotWork(t *testing.T) {
-	for _, tc := range []struct{ table, text, reason string }{
-		{"session", `editor = "ctrl+i"`, "ctrl+i is tab"},
-		{"session", `editor = "o"`, `"o" is a plain key, which reaches the agent`},
-		{"session", `detach = "none"`, "detach needs at least one key"},
-		{"list", `settings = "none"`, "settings needs at least one key"},
-		{"list", `quit = "esc"`, "stays as it is"},
-		{"list", `detach = "f9"`, `no action named "detach"`},
-	} {
-		dir := writeConfigText(t, "[keybindings."+tc.table+"]\n"+tc.text+"\n")
-		_, err := LoadDir(dir)
-		if err == nil || !strings.Contains(err.Error(), tc.reason) {
-			t.Errorf("%s %s: err = %v, want %q", tc.table, tc.text, err, tc.reason)
-		}
-	}
-}
-
-func TestMuseDefaultsOnLoad(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte("[tools.claude]\ncommand = 'claude'\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := LoadDir(dir)
+func TestMuseDefaults(t *testing.T) {
+	cfg, err := Default()
 	if err != nil {
 		t.Fatal(err)
 	}

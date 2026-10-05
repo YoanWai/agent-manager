@@ -68,9 +68,13 @@ type Model struct {
 	engine   *status.Engine
 	keys     keybind.Table
 	listKeys keybind.Table
-	// configDir is resolved once, at New, so the settings screen writes
-	// keys back to the config.toml the manager loaded.
+	// editor is the command Settings picked for the editor key; empty
+	// leaves the choice to the environment and what is on PATH.
+	editor    string
 	configDir string
+	// configImportError is why the config.toml of an earlier release was
+	// refused, shown as a notice until it is dismissed.
+	configImportError string
 
 	// setSnapshot writes a session's pane capture before archive or kill
 	// takes the window; a seam so snapshot failures can be exercised
@@ -88,11 +92,15 @@ type Model struct {
 	groups         []string
 	groupPaths     map[string]string
 	groupWorktrees map[string]string
+	groupBases     map[string]string
 	// worktreeRepos memoizes which spawn directories sit inside a git
 	// repo, so gating the worktree toggle does not shell out to git on
 	// every frame. Entries expire, so a directory git-initialised while
 	// the bar is open stops reading as unavailable.
-	worktreeRepos  map[string]repoAnswer
+	worktreeRepos map[string]repoAnswer
+	// baseFetches holds the last fetch of a worktree spawn's base, per
+	// directory and base override.
+	baseFetches    map[baseFetchKey]baseFetch
 	archivedGroups map[string]bool
 	snap           sysstat.Snapshot
 	proc           sysstat.ProcStat
@@ -192,12 +200,19 @@ type Model struct {
 	// read them every frame.
 	hideHeader bool
 	hideStats  bool
+	// terminalBackground leaves the backdrop's cells on the terminal's own
+	// colors, for translucent windows. Off polarity, so a bare Model{}
+	// paints the backdrop like the default does.
+	terminalBackground bool
 	// mouseDisabled mirrors the persisted mouse-reporting setting: true gives
 	// the rail and content column back to the terminal's own click-drag text
 	// selection. Read on every Update via syncMouseCapture. Named for its off
 	// polarity, like hideHeader/hideStats, so a bare Model{} in a test still
 	// defaults to mouse reporting on.
 	mouseDisabled bool
+	// baseFetchOff mirrors the persisted fetch-on-spawn setting, read on
+	// every Update while a worktree spawn is being set up.
+	baseFetchOff bool
 	// watchedGen is previewGen as of the last poll pass, so a selection
 	// that has not moved since can be recognised as at rest.
 	watchedGen        uint64
@@ -457,6 +472,7 @@ type renameTarget struct {
 	input         textinput.Model
 	dir           textinput.Model
 	worktreeIndex int
+	base          string
 	focus         int
 	toolNames     []string
 	toolIndex     int
@@ -506,10 +522,14 @@ type settingsState struct {
 	hideStats       bool
 	mouseDisabled   bool
 	worktreeDefault bool
+	baseFetch       bool
 	proactive       bool
 	notifications   bool
 	notifyFinished  bool
 	themeAuto       bool
+	// terminalBackground is the background row's choice, applied to the
+	// model as it is stepped so the frame previews it.
+	terminalBackground bool
 	// manualTheme is the persisted choice the theme key keeps while
 	// auto-detect drives the live palette, so turning auto off returns
 	// to it.
@@ -525,12 +545,14 @@ type settingsState struct {
 	keyCapture bool
 	keyAppend  bool
 	keyReset   bool
+	editor     editorRow
 }
 
 const (
 	settingsFieldTool = iota
 	settingsFieldTheme
 	settingsFieldThemeAuto
+	settingsFieldBackground
 	settingsFieldDensity
 	settingsFieldSessionLayout
 	settingsFieldHeader
@@ -541,9 +563,11 @@ const (
 	settingsFieldArrowStep
 	settingsFieldMouse
 	settingsFieldWorktree
+	settingsFieldBaseFetch
 	settingsFieldCoordination
 	settingsFieldNotify
 	settingsFieldNotifyFinish
+	settingsFieldEditor
 	settingsFieldKeybindings
 	settingsFieldCLIs
 	settingsFieldBugReport
@@ -569,6 +593,7 @@ type refreshMsg struct {
 	groups         []string
 	groupPaths     map[string]string
 	groupWorktrees map[string]string
+	groupBases     map[string]string
 	archivedGroups map[string]bool
 	snap           sysstat.Snapshot
 	snapOK         bool
@@ -771,7 +796,23 @@ type attachDoneMsg struct {
 	err    error
 }
 
-func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, version string) *Model {
+func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, version string) (*Model, error) {
+	sessionKeys, err := st.SessionKeys()
+	if err != nil {
+		return nil, err
+	}
+	listKeys, err := st.ListKeys()
+	if err != nil {
+		return nil, err
+	}
+	editor, err := st.Editor()
+	if err != nil {
+		return nil, err
+	}
+	configImportError, err := st.ConfigImportError()
+	if err != nil {
+		return nil, err
+	}
 	statusSources := make(map[string]string, len(cfg.Tools))
 	sessionStores := make(map[string]string, len(cfg.Tools))
 	mcpStyles := make(map[string]string, len(cfg.Tools))
@@ -786,18 +827,20 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 	// works without it, so the error surfaces on first use instead.
 	gitDriver, _ := git.New()
 	applyTheme(themes[themeIndex(resolveStartupTheme(st))])
-	driver.SetSessionKeys(cfg.SessionKeys)
+	driver.SetSessionKeys(sessionKeys)
 	model := &Model{
 		cfg:                 cfg,
 		store:               st,
 		tmux:                driver,
-		keys:                cfg.SessionKeys,
-		listKeys:            cfg.ListKeys,
+		keys:                sessionKeys,
+		listKeys:            listKeys,
+		editor:              editor,
+		configImportError:   configImportError,
 		hooks:               hookManager,
 		gitDrv:              gitDriver,
 		engine:              engine,
 		setSnapshot:         st.SetSnapshot,
-		poller:              newPoller(st, driver, engine, hookManager, gitDriver, statusSources, sessionStores, mcpStyles, shellTools, newToolBinaries(cfg), cfg.PollInterval.Duration),
+		poller:              newPoller(st, driver, engine, hookManager, gitDriver, statusSources, sessionStores, mcpStyles, shellTools, newToolBinaries(cfg), config.PollInterval),
 		collapsed:           loadCollapsed(st),
 		split:               splitState{ratio: loadSplitRatio(st)},
 		focusOnEnter:        storedFocusOnEnter(st),
@@ -807,6 +850,7 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		hideHeader:          storedHideHeader(st),
 		hideStats:           storedHideStats(st),
 		mouseDisabled:       storedMouseDisabled(st),
+		baseFetchOff:        storedBaseFetchOff(st),
 		imeCursor:           &cursorAnchor{},
 		mode:                modeList,
 		booting:             true,
@@ -823,9 +867,10 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		model.update.releases = cached.Releases
 		model.update.checked = len(cached.Releases) > 0
 	}
+	model.terminalBackground = model.storedTerminalBackground()
 	model.openStartupNotice()
 	model.indexReleaseRanges()
-	return model
+	return model, nil
 }
 
 // storedTheme reads the persisted theme name. A read failure falls back to
@@ -1415,7 +1460,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	model, cmd := m.handleMsg(msg)
 	if mm, ok := model.(*Model); ok {
 		mm.flushPendingNotice()
-		return mm, tea.Batch(cmd, mm.syncMouseCapture())
+		return mm, tea.Batch(cmd, mm.syncMouseCapture(), mm.refreshSpawnBase())
 	}
 	return model, tea.Batch(cmd, m.syncMouseCapture())
 }
@@ -1464,7 +1509,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		// Re-assert the terminal backdrop: a reattach or a fresh outer
 		// terminal delivers a size message and may carry stale colors.
-		SyncTerminalBackground()
+		SyncTerminalColors()
 		m.publishPaneSize()
 		m.resizeSessions()
 		if m.fullFocus() {
@@ -1514,6 +1559,9 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(m.previewCmd(sess, m.previewGen), m.previewTick())
 
+	case baseFetchedMsg:
+		return m, m.recordBaseFetch(msg)
+
 	case refreshMsg:
 		// An older listing still carries focus consumed from a notification.
 		staleListing := !msg.listedAt.IsZero() && msg.listedAt.Before(m.lastListedAt)
@@ -1538,6 +1586,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.groups = msg.groups
 			m.groupPaths = msg.groupPaths
 			m.groupWorktrees = msg.groupWorktrees
+			m.groupBases = msg.groupBases
 			m.archivedGroups = msg.archivedGroups
 		}
 		m.tmuxSocket = msg.tmuxSocket
@@ -1861,7 +1910,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// An agent that repainted the terminal background for itself leaves
 		// it on ours; the resume's WindowSizeMsg skips its own sync when the
 		// size is unchanged, so the detach restores the theme's here.
-		SyncTerminalBackground()
+		SyncTerminalColors()
 		// The attach client sized the window to the full terminal and tmux
 		// keeps that size on detach; pin it back to the current layout's
 		// box so the capture is not clipped on the right.
@@ -1933,13 +1982,17 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case diffFileCheckedMsg:
 		return m.handleDiffFileChecked(msg)
 
+	case editorsProbedMsg:
+		m.settings.editor.applyProbe(msg)
+		return m, nil
+
 	case editorDoneMsg:
 		var resume tea.Cmd
 		if msg.tookScreen {
 			// The terminal comes back from an editor the way it comes back
 			// from an attach: painted in the editor's background, and
 			// without the mouse reporting focus mode armed on the way in.
-			SyncTerminalBackground()
+			SyncTerminalColors()
 			if m.mode == modeFocus {
 				resume = tea.EnableMouseCellMotion
 			}

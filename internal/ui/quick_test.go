@@ -469,7 +469,7 @@ func TestQuickSpawnOnGroupCreatesSession(t *testing.T) {
 	if err := m.store.CreateGroup("backend", dir); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
-	if err := m.store.SetSetting("default_tool", "claude"); err != nil {
+	if err := m.store.SetDefaultTool("claude"); err != nil {
 		t.Fatalf("set setting: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -639,7 +639,7 @@ func TestQuickHiddenLastToolFallsBackToSettings(t *testing.T) {
 	m.applyCmd(t, cmd)
 	closeQuick(m)
 
-	if err := m.store.SetSetting(hiddenToolsSetting, m.lastSpawnTool); err != nil {
+	if err := m.store.SetHiddenTools(map[string]bool{m.lastSpawnTool: true}); err != nil {
 		t.Fatal(err)
 	}
 

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"cmp"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -237,7 +238,7 @@ func (m *Model) selectBase(ref string) tea.Cmd {
 	m.diff.fileLoading = nil
 	m.diff.reanchor = nil
 	if m.diff.repoSel != "" && len(m.diff.repoRoots) > 0 {
-		return m.diffReloadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, ref, m.diff.repoRoots)
+		return m.diffReloadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, cmp.Or(ref, m.groupBase(sess.Group)), m.diff.repoRoots)
 	}
 	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false)
 }

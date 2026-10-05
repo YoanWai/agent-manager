@@ -659,6 +659,38 @@ func TestGroupEditPersistsWorktreeChoice(t *testing.T) {
 	}
 }
 
+func TestGroupEditPersistsBase(t *testing.T) {
+	m := buildModel(t)
+	if err := m.store.CreateGroup("grp", repoWithDevelop(t)); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "grp")
+	m.openRename()
+	for range 3 {
+		m.handleRenameKey(tea.KeyMsg{Type: tea.KeyDown})
+	}
+	if m.rename.focus != 3 {
+		t.Fatalf("focus should reach the base field, got %d", m.rename.focus)
+	}
+	m.handleRenameKey(tea.KeyMsg{Type: tea.KeyRight})
+	if view := m.viewGroupDetail("grp", 80); !strings.Contains(view, "◂ develop ▸") {
+		t.Fatalf("base row should show the pick, got %q", view)
+	}
+	_, cmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
+	groups, err := m.store.Groups()
+	if err != nil {
+		t.Fatalf("groups: %v", err)
+	}
+	if len(groups) != 1 || groups[0].Base != "develop" {
+		t.Fatalf("base should persist, got %+v", groups)
+	}
+	if m.groupBase("grp/child") != "develop" {
+		t.Fatal("child group should inherit the parent's base")
+	}
+}
+
 func assertPaneStayedOnSpawnPath(t *testing.T, m *Model, id, want string) {
 	t.Helper()
 	got, err := m.tmux.PaneCurrentPath(id)
