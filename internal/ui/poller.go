@@ -61,6 +61,9 @@ type poller struct {
 
 	// notifyFn delivers one desktop notification; tests swap in a recorder.
 	notifyFn func(notify.Event)
+	// commandFn runs the user's notify command for the same event; tests
+	// swap in a recorder.
+	commandFn func(command string, event notify.Event)
 	// takeFocus collects the session a clicked notification named; tests
 	// swap in a stub.
 	takeFocus func() (string, bool)
@@ -285,6 +288,14 @@ func lastMeaningfulPaneLine(pane string) string {
 
 var postNotification = notify.Notify
 
+func runNotifyCommand(command string, event notify.Event) {
+	dir, err := config.Dir()
+	if err != nil {
+		return
+	}
+	notify.RunCommand(command, dir, event)
+}
+
 func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, gitDriver *git.Driver, statusSources, sessionStores, mcpStyles map[string]string, shellTools map[string]bool, binaries toolBinaries, interval time.Duration) *poller {
 	return &poller{
 		store:         st,
@@ -304,6 +315,7 @@ func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hook
 		quietSince:    map[string]quietTimer{},
 		recaptureSeen: map[string]recaptureSighting{},
 		notifyFn:      postNotification,
+		commandFn:     runNotifyCommand,
 		takeFocus:     takeNotifyFocus,
 	}
 }
@@ -1468,7 +1480,9 @@ func (p *poller) applyHookStatus(sess store.Session, text, hookStatus string) st
 // finished stays quiet unless opted in, since most turn ends are routine.
 // There is no focus gate: the poll cannot tell whether the user is looking
 // at the manager, and the session they are watching is precisely the one
-// whose ping they must not miss.
+// whose ping they must not miss. The notify command from Settings runs
+// for the same transitions, after the native banner and never instead of
+// it.
 func (p *poller) notifyTransition(sess store.Session, newStatus string) {
 	if p.notifyFn == nil {
 		return
@@ -1490,9 +1504,17 @@ func (p *poller) notifyTransition(sess store.Session, newStatus string) {
 	if !p.notificationsOn() {
 		return
 	}
-	// Delivery can wait on an external process (osascript, notify-send),
-	// so it must never run inside refreshOnce, which holds runMu.
-	go p.notifyFn(notify.Event{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: kind})
+	event := notify.Event{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: kind, Dir: sess.Cwd, Branch: sess.WorktreeBranch}
+	command := storedNotifyCommand(p.store)
+	// Delivery can wait on an external process (osascript, notify-send,
+	// the user's command), so it must never run inside refreshOnce, which
+	// holds runMu.
+	go func() {
+		p.notifyFn(event)
+		if command != "" {
+			p.commandFn(command, event)
+		}
+	}()
 }
 
 func (p *poller) notificationsOn() bool {
