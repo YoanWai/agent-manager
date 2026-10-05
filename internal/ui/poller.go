@@ -489,6 +489,9 @@ func (p *poller) refreshOnce() tea.Msg {
 		}
 		live := panes[sess.ID].PID > 0
 		claimed, delivered := false, false
+		// Only a pane this pass read without typing into it, or one that is
+		// gone, can say the turn that asked to end has ended.
+		observed := !live
 		if sess.TmuxSocket == "" {
 			// Sessions that predate the column are the leading manager's to
 			// speak for until one of them shows a pane here to claim.
@@ -582,6 +585,7 @@ func (p *poller) refreshOnce() tea.Msg {
 					}
 					sessions[i].PendingInputs = sessions[i].PendingInputs[1:]
 				}
+				observed = !sent
 				// Launch inputs open the conversation, so they go first; a
 				// message from another agent waits its turn behind them.
 				// A launch input sent this tick leaves pane and derived
@@ -630,12 +634,14 @@ func (p *poller) refreshOnce() tea.Msg {
 				}
 			}
 		}
-		due, err := p.afterTurnDue(sess, newStatus)
-		if err != nil {
-			return errMsg{err}
-		}
-		if due {
-			turnsEnded = append(turnsEnded, sess.ID)
+		if observed {
+			due, err := p.afterTurnDue(sess, newStatus)
+			if err != nil {
+				return errMsg{err}
+			}
+			if due {
+				turnsEnded = append(turnsEnded, sess.ID)
+			}
 		}
 	}
 	if preview == "" && selectedID != "" {
