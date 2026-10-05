@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -117,10 +118,20 @@ func RunCommand(command, configDir string, event Event) {
 // whether it failed or could not be read from the store.
 func LogCommandFailure(configDir string, event Event, failure error) {
 	line := fmt.Sprintf("%s %s %s: %v\n", time.Now().Format(time.RFC3339), kindName(event.Kind), event.ID, failure)
+	// The log is the last place this can go: stderr is the screen the
+	// manager draws on, and the error bar is not where a missed ping
+	// belongs. A log that cannot be written loses the line, as a banner
+	// that cannot be posted loses the ping.
 	_ = appendLog(filepath.Join(configDir, CommandLog), line)
 }
 
+// logMu keeps one delivery from starting the log over between another's
+// size check and its write.
+var logMu sync.Mutex
+
 func appendLog(path, line string) error {
+	logMu.Lock()
+	defer logMu.Unlock()
 	if info, err := os.Stat(path); err == nil && info.Size() > commandLogLimit {
 		if err := os.Truncate(path, 0); err != nil {
 			return err

@@ -2,10 +2,12 @@ package notify
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -158,5 +160,26 @@ func TestLogCommandFailureNamesTheEventAndCause(t *testing.T) {
 		if !strings.Contains(string(log), want) {
 			t.Fatalf("log %q does not name %q", log, want)
 		}
+	}
+}
+
+// Deliveries log from goroutines of their own; every line lands whole.
+func TestLogCommandFailureFromConcurrentDeliveries(t *testing.T) {
+	dir := t.TempDir()
+	var wg sync.WaitGroup
+	for i := range 20 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			LogCommandFailure(dir, Event{ID: fmt.Sprintf("sess-%d", i), Kind: Errored}, errors.New("exit status 1"))
+		}()
+	}
+	wg.Wait()
+	log, err := os.ReadFile(filepath.Join(dir, CommandLog))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lines := strings.Count(string(log), "exit status 1\n"); lines != 20 {
+		t.Fatalf("log holds %d whole lines, want 20:\n%s", lines, log)
 	}
 }
