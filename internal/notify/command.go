@@ -20,6 +20,8 @@ var commandTimeout = 15 * time.Second
 
 // commandOutputLimit is how much of a failing command's output the log
 // keeps, enough for curl's error line without storing a response page.
+// The log exists to debug the user's own command, and its error output is
+// the part that says what went wrong.
 const commandOutputLimit = 2 << 10
 
 // commandLogLimit caps the failure log. Past it the log starts over, so a
@@ -142,7 +144,9 @@ func appendLog(path, line string) error {
 			return err
 		}
 	}
-	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	// The output can carry what the command was sent with, a token in a
+	// URL or a header, so only the user reads it.
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
