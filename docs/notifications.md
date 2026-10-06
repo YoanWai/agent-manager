@@ -33,17 +33,19 @@ Two or three sentences of summary. `Backticks` put a word in the accent color.
 - **Headline**: a bold first line under the version heading. It opens the
   notice in bold over an accent rule.
 - **Summary**: the paragraph under it. It opens the newest release in the
-  notice.
+  notice and wraps at 76 columns.
 - **Highlights**: short bullets naming what the release gives someone. A
   sentence each, feature and fix language, no pull request numbers.
 - **Thank you**: one bullet per contributor or reporter, with handle and the
   PR or issue.
 
-Under them the panel lists What's Changed itself, sorted into Features, Fixes
-and Other by Conventional Commit type, with outside authors credited on their
-row. `docs`, `chore`, `test`, `ci`, `build`, `refactor` and `style` lines stay
-on the web page. There is no second changelog in `docs/messages.json` to
-maintain.
+The newest release lists its Features, Fixes and Other changes between its
+Highlights and its Thank you lines. The panel sorts What's Changed into those
+groups by Conventional Commit type, with `perf` under Features, and credits
+outside authors on their row. An older release in a range shows its Highlights
+and a count of the rest, or its whole list when it has no Highlights. `docs`,
+`chore`, `test`, `ci`, `build`, `refactor` and `style` lines stay on the web
+page. There is no second changelog in `docs/messages.json` to maintain.
 
 Two notices read these notes. "vX available" is drawn by the version a person
 is still on, and "Updated to X" by the new one, so notes are written for both
@@ -60,9 +62,10 @@ Updating remains one operation straight to the latest version. After restart,
 the same cached catalog explains what was installed.
 
 The client bounds remote data to keep rendering predictable: 100 stable
-releases, 8 highlights, 24 thanks and 100 changes per release, and 160 visible
-characters per line. Backticks are not counted. The full release page remains
-one keypress away when a release exceeds those limits.
+releases, 8 highlights, 24 thanks and 100 changes per release, 160 visible
+characters per line, 80 for the headline and 600 for the summary. Backticks are
+not counted. The full release page remains one keypress away when a release
+exceeds those limits.
 
 ## Publishing an editorial message
 
@@ -74,18 +77,18 @@ target a version range.
 ```json
 [
   {
-    "id": "known-issue-0180",
-    "banner": "Known issue in v0.18.0",
-    "title": "Known issue in v0.18.0",
-    "headline": "Known issue in v0.18.0",
+    "id": "known-issue-0400",
+    "banner": "Known issue in v0.40.0",
+    "title": "Known issue in v0.40.0",
+    "headline": "Known issue in v0.40.0",
     "accent": ["safe action"],
     "body": [
       "What users will observe.",
       "The safe action to take while a fix is prepared."
     ],
     "url": "https://github.com/YoanWai/agent-manager/issues/234",
-    "min_version": "v0.18.0",
-    "max_version": "v0.18.0",
+    "min_version": "v0.40.0",
+    "max_version": "v0.40.0",
     "expires_at": "2026-08-09T12:00:00Z"
   }
 ]
@@ -102,10 +105,12 @@ Rules:
   message in v0.40.0 and later. Earlier versions ignore it.
 - `accent` is optional: up to 8 phrases of at most 40 characters. Every
   occurrence in `body` is drawn in the accent color in v0.40.0 and later.
-- `body` holds up to 16 lines of 160 characters. Versions before v0.40.0 show
-  the first 8 lines and cut each at 120, so an entry they can see stays within
-  that, and one that needs more sets `min_version` to `0.40.0`.
-- `body` explains impact and action in short plain-text lines.
+  Matching is case-sensitive and also finds a phrase inside a longer word, so
+  `tab` also colors "table".
+- `body` explains impact and action in short plain-text lines, up to 16 lines
+  of 160 characters. Versions before v0.40.0 show the first 8 lines and cut
+  each at 120, so an entry they can see stays within that, and one that needs
+  more sets `min_version` to `v0.40.0`.
 - `url` is optional and must be HTTPS.
 - `min_version` and `max_version` are inclusive and optional. Time-sensitive or
   version-specific messages should have narrow version bounds.
