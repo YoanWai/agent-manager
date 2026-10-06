@@ -32,7 +32,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/github/license/YoanWai/agent-manager?style=for-the-badge&label=license&labelColor=1f2328&color=59636e" alt="licence"></a>
 </p>
 
-![five prompts to five fresh agents without moving the cursor, one per CLI, then the blocked one answered and its diff opened](docs/demo.gif)
+![five prompts to five fresh agents without moving the cursor, one per CLI, the first on Opus at high effort picked in the prompt bar, then a session's diff opened in review](docs/demo.gif)
 
 Claude Code, Codex, OpenCode, Grok, Gemini CLI, Antigravity CLI, Pi, Command Code, Hermes Agent, Muse Code, and Oh My Pi run side by side. Each tool runs in its own persistent tmux session.
 
@@ -110,9 +110,9 @@ A session can spawn into its own git worktree (`<repo>-worktrees/<name>`, branch
 
 A session can start on a model, reasoning effort and profile of its own, picked on the `n` form, with `ctrl+l`, `ctrl+x` and `ctrl+y` in quick prompt mode, or with `spawn --model --effort --profile`. The lists come from each CLI at runtime, so a new model shows up the day the CLI ships it, and restart, revive and fork keep the choice (see [Model, effort and profile](docs/usage.md#model-effort-and-profile)).
 
-![the session tree, with a waiting agent's permission prompt in the preview](docs/screenshot-sessions.png)
+![the session tree, with a Claude Code session's latest answer in the preview](docs/screenshot-sessions.png)
 
-![the session list taking the whole terminal, one-line rows with the messages badge on the foot, then a session focused full screen](docs/demo-fullscreen.gif)
+![the session list taking the whole terminal, one-line rows with the computer stats on the foot, then a session focused full screen](docs/demo-fullscreen.gif)
 
 ![the same full-screen list at the comfortable density: every session on three lines, its task and the agent's last message under the name](docs/demo-fullscreen-comfortable.gif)
 
