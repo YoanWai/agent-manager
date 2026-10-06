@@ -153,8 +153,6 @@ type formHit struct {
 }
 
 func (m *Model) viewForm() string {
-	m.form.prompt.input.SetHeight(textareaRows(m.form.prompt.input, m.formValueWidth()-2, formPromptMaxRows))
-
 	var b strings.Builder
 	m.form.hits = m.form.hits[:0]
 	add := func(text string, hit formHit) {
@@ -209,7 +207,7 @@ func (m *Model) viewForm() string {
 	}
 	// Chips are tokens inside the typed text, so they wrap and reflow with
 	// the words around them; painting happens on the rendered prompt.
-	field("prompt", m.form.prompt.renderChips(textAreaView(m.form.prompt.input)), fieldPrompt)
+	field("prompt", m.form.prompt.view(), fieldPrompt)
 	field("group", groupBadge(displayGroup(m.form.groups[m.form.groupIndex].path)), fieldGroup)
 
 	if m.form.focus == fieldGroup {
@@ -449,7 +447,7 @@ func (m *Model) viewSettings() string {
 		row(settingsFieldHeader, "header", header) + "\n" +
 		row(settingsFieldStats, "computer stats", stats) + "\n" +
 		row(settingsFieldLayout, "review layout", layout) + "\n" +
-		row(settingsFieldQuickClose, "after quick send", quickClose) + "\n" +
+		row(settingsFieldQuickClose, "after quick prompt", quickClose) + "\n" +
 		row(settingsFieldFocusKey, "session keys", focusKey) + "\n" +
 		row(settingsFieldArrowStep, "←→ step in/out", arrowStep) + betaTag + "\n" +
 		row(settingsFieldMouse, "mouse", mouseMode) + "\n" +

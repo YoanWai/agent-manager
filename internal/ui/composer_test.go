@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // newComposer is a composer detached from any screen, so the chip logic can
@@ -452,4 +453,60 @@ func TestComposerTargetsRouteToTheirOwnBox(t *testing.T) {
 func fileGone(path string) bool {
 	_, err := os.Stat(path)
 	return os.IsNotExist(err)
+}
+
+func TestComposerDisplayRowsMatchTheTextarea(t *testing.T) {
+	values := []string{
+		"",
+		"x",
+		"1234567890",
+		"1234567890\nx",
+		"one two three four five six seven eight nine ten eleven twelve",
+		"averyveryverylongwordthatcannotwrapanywhereatall and more",
+		"日本語のテキストをここに書きます日本語のテキストをここに書きます",
+		"emoji 🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉 done",
+		"\n\n\nlast",
+		"first\n\nthird line that is long enough to wrap around the box\n",
+		strings.Repeat("word ", 40),
+		strings.Repeat("ab ", 33) + "\n" + strings.Repeat("x", 31),
+	}
+	for _, width := range []int{5, 8, 12, 13, 22, 40} {
+		for _, value := range values {
+			c := newComposer("")
+			c.input.EndOfBufferCharacter = '~'
+			c.input.SetWidth(width)
+			c.input.SetValue(value)
+			_, total := c.displayRows()
+			c.input.SetHeight(200)
+			lines := strings.Split(ansi.Strip(c.input.View()), "\n")
+			content := 0
+			for content < len(lines) && !strings.Contains(lines[content], "~") {
+				content++
+			}
+			if value == "" {
+				content = 1
+			}
+			if total != content {
+				t.Errorf("width %d value %q: displayRows total %d, textarea paints %d rows", width, value, total, content)
+			}
+			c.input.SetValue("")
+			c.input.InsertString(value)
+			_ = c.updateInput(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'<'}, Alt: true})
+			prev, _ := c.displayRows()
+			if prev != 0 {
+				t.Errorf("width %d value %q: caret at start on row %d", width, value, prev)
+			}
+			for range len([]rune(value)) {
+				_ = c.updateInput(tea.KeyMsg{Type: tea.KeyRight})
+				row, _ := c.displayRows()
+				if row < prev || row > prev+1 {
+					t.Errorf("width %d value %q: caret jumped from row %d to %d", width, value, prev, row)
+				}
+				prev = row
+			}
+			if value != "" && prev != total-1 {
+				t.Errorf("width %d value %q: caret at end on row %d of %d", width, value, prev, total)
+			}
+		}
+	}
 }

@@ -152,6 +152,14 @@ func (m *Model) listBodyHeight() int {
 	return bodyHeight
 }
 
+// A growing footer crops previews instead of resizing running panes.
+func (m *Model) restingBodyHeight() int {
+	if !m.quick.active {
+		return m.listBodyHeight()
+	}
+	return max(m.height-m.listChromeRows()-1-lipgloss.Height(m.listFooter()), 3)
+}
+
 // bodyYRange is the inclusive-start exclusive-end row range of the main
 // sessions/sidebar body, matching the layout in View.
 func (m *Model) bodyYRange() (start, end int) {

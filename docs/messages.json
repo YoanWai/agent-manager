@@ -10,7 +10,7 @@
       "tab picks the CLI, shift+tab turns its own git worktree on or off.",
       "The bar stays open for the next prompt. Settings (s), after quick send, can close it instead."
     ],
-    "url": "https://github.com/YoanWai/agent-manager/blob/main/docs/usage.md#quick-prompt",
+    "url": "https://github.com/YoanWai/agent-manager/blob/main/docs/usage.md#quick-prompt-mode",
     "min_version": "0.16.0",
     "max_version": "0.39.0",
     "expires_at": "2026-10-08T09:00:00Z"

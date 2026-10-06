@@ -4,11 +4,13 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 	"unicode/utf8"
 
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -1063,5 +1065,107 @@ func TestQuickUpStepsOffTheRowWhenAChipIsInTheWay(t *testing.T) {
 		if m.cursor != 1 {
 			t.Fatal("up inside the prompt should not move the selection")
 		}
+	}
+}
+
+func TestQuickPromptKeepsItsFirstRowAsItWrapsAndShrinks(t *testing.T) {
+	for _, full := range []bool{false, true} {
+		m := buildModel(t)
+		seedTwoGroups(t, m)
+		m.cursor = 1
+		m.fullLayout = full
+		m.openQuickMode()
+		_ = m.View()
+		firstRowShown := func() bool {
+			return strings.Contains(ansi.Strip(m.View()), "❯ first")
+		}
+		for _, r := range "first " + strings.Repeat("word ", 200) {
+			m = applyMsg(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+			_, rows := m.quick.displayRows()
+			if m.quick.input.Length() > len("first") && rows <= m.quick.maxRows && !firstRowShown() {
+				t.Fatalf("full layout %v: typing to %d rows scrolled the first row away", full, rows)
+			}
+		}
+		if _, rows := m.quick.displayRows(); rows <= m.quick.maxRows {
+			t.Fatalf("full layout %v: the prompt should overflow the bar, got %d rows", full, rows)
+		}
+		for {
+			_, rows := m.quick.displayRows()
+			if rows <= m.quick.maxRows && !firstRowShown() {
+				t.Fatalf("full layout %v: deleting back to %d rows left the first row scrolled away", full, rows)
+			}
+			if rows == 1 {
+				break
+			}
+			m = applyMsg(t, m, tea.KeyMsg{Type: tea.KeyBackspace})
+		}
+	}
+}
+
+func TestQuickPromptModeLeadsTheFooterAndNamesTheOpenBar(t *testing.T) {
+	m := buildModel(t)
+	seedTwoGroups(t, m)
+	m.cursor = 1
+	if leads := m.rowLegend().leads; !slices.Equal(leads, [][2]string{{"space", "quick prompt mode"}}) {
+		t.Fatalf("group row leads = %q, want quick prompt mode", leads)
+	}
+	footer := m.listFooter()
+	if !strings.Contains(footer, keyCapLead("space", "quick prompt mode")) {
+		t.Fatalf("footer should carry the filled quick prompt mode binding:\n%q", footer)
+	}
+	m.listKeys = m.listKeys.With(keybind.Prompt, bindingOf(t))
+	if strings.Contains(m.listFooter(), "quick prompt mode") {
+		t.Fatalf("an unbound prompt key should leave the lead out:\n%s", ansi.Strip(m.listFooter()))
+	}
+	m.listKeys = keybind.DefaultList()
+
+	for _, full := range []bool{false, true} {
+		m.fullLayout = full
+		m.openQuickMode()
+		m.quick.input.SetValue("hello")
+		frame := m.View()
+		if !strings.Contains(ansi.Strip(m.viewFooter()), quickModeTitle) {
+			t.Fatalf("full layout %v: the open bar's footer should be titled %q:\n%s", full, quickModeTitle, ansi.Strip(m.viewFooter()))
+		}
+		footer := m.viewFooter()
+		frameRows := strings.Split(ansi.Strip(frame), "\n")
+		footerRows := strings.Split(ansi.Strip(footer), "\n")
+		bottom := frameRows[len(frameRows)-len(footerRows):]
+		for i := range bottom {
+			bottom[i] = strings.TrimRight(bottom[i], " ")
+			footerRows[i] = strings.TrimRight(footerRows[i], " ")
+		}
+		if !slices.Equal(bottom, footerRows) || !strings.Contains(ansi.Strip(footer), "❯ hello") {
+			t.Fatalf("full layout %v: the prompt should sit in the footer:\n%s", full, ansi.Strip(frame))
+		}
+		rows := strings.Split(footer, "\n")
+		keysHeight := lipgloss.Height(legendBar([]legendSection{{title: quickModeTitle, pairs: m.quickLegend()}}, m.width-1))
+		for i, line := range rows {
+			tone := quickModeHex()
+			if i > 0 && i < len(rows)-keysHeight {
+				tone = blockHex()
+			}
+			if !strings.HasPrefix(line, bgSeq(tone)) || !strings.HasPrefix(ansi.Strip(line), quickEdge) || ansi.StringWidth(line) != m.width {
+				t.Fatalf("full layout %v: every bar row should open on the accent edge over the band, across the width: %q", full, line)
+			}
+		}
+		m.quick.active = false
+	}
+}
+
+func TestQuickPromptTypesWordsNamedLikeKeys(t *testing.T) {
+	m := buildModel(t)
+	seedTwoGroups(t, m)
+	m.cursor = 1
+	m.openQuickMode()
+	words := []string{"the", "end", "up", "down", "left", "right", "home", "tab", "enter", "esc", "delete"}
+	for i, word := range words {
+		if i > 0 {
+			m = applyMsg(t, m, tea.KeyMsg{Type: tea.KeySpace, Runes: []rune{' '}})
+		}
+		m = applyMsg(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(word)})
+	}
+	if want := strings.Join(words, " "); m.quick.input.Value() != want || !m.quick.active || m.cursor != 1 {
+		t.Fatalf("prompt %q, open %v, selection %d; want %q typed in an open bar on row 1", m.quick.input.Value(), m.quick.active, m.cursor, want)
 	}
 }

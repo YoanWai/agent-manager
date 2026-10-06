@@ -197,7 +197,7 @@ with `gh release edit <tag> --notes-file notes.md`.
 - `main.go` dispatches subcommands (`rename`, `review-repo`, `sessions`,
   `spawn`, `mcp`, and the rest of the workspace CLI) and boots the TUI.
 - `internal/ui` is the Bubble Tea program: one `Model`, files grouped by
-  feature (list, diff review, focus, quick prompt, settings).
+  feature (list, diff review, focus, quick prompt mode, settings).
 - `internal/tmux` owns the dedicated tmux socket and control-mode client;
   `internal/store` is the SQLite state, Settings included; `internal/status`
   classifies pane output into agent states; `internal/config` holds the

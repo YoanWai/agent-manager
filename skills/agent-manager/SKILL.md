@@ -46,7 +46,7 @@ prebuilt binary from the releases page.
 
 | Key | What it does |
 | --- | --- |
-| `space` | Docks a prompt bar. On a group row it spawns a new agent with that prompt; on a session row it answers the agent already running there. |
+| `space` | Opens quick prompt mode, a prompt bar docked in the footer. On a group row it spawns a new agent with that prompt; on a session row it answers the agent already running there. |
 | `tab` / `alt+m` | Cycles which CLI the next spawn starts. |
 | `shift+tab` | Steps the CLI back one. |
 | `ctrl+l` / `ctrl+x` / `ctrl+y` | Picks the spawn's model, reasoning effort and profile from the ones the CLI reports. |

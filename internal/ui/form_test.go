@@ -601,12 +601,27 @@ func TestFormLongPromptWrapsAcrossRows(t *testing.T) {
 	}
 }
 
-func TestTextareaRowsCountsExactMultipleWrap(t *testing.T) {
-	in := promptField().input
-	in.SetWidth(12) // content width 10
-	in.SetValue("1234567890\nx")
-	if rows := textareaRows(in, 10, 5); rows != 3 {
-		t.Fatalf("a line filling its row exactly adds a wrap row: want 3, got %d", rows)
+func TestFormTypesWordsNamedLikeKeys(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	for i, word := range []string{"enter", "tab", "esc"} {
+		if i > 0 {
+			m = applyMsg(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'-'}})
+		}
+		m = applyMsg(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(word)})
+	}
+	if m.mode != modeForm || m.form.name.Value() != "enter-tab-esc" {
+		t.Fatalf("mode %v, name %q; want the form open with the words typed", m.mode, m.form.name.Value())
+	}
+}
+
+func TestComposerRowsCountAnExactFillAsAWrap(t *testing.T) {
+	prompt := promptField()
+	prompt.input.SetWidth(12) // content width 10
+	prompt.input.Focus()
+	prompt.input.SetValue("1234567890\nx")
+	if _, total := prompt.displayRows(); total != 3 {
+		t.Fatalf("a line filling its row exactly adds a wrap row: want 3, got %d", total)
 	}
 }
 

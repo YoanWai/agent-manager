@@ -88,12 +88,12 @@ Sessions run inside tmux (`am_*` namespace), so they survive the manager quittin
 
 Agent sessions live on a private tmux server named `agentmgr`, so they never mix with the tmux you run yourself and a `kill-server` on your own socket leaves them alone. To reach one from a plain shell, name that server: `tmux -L agentmgr ls`, then `tmux -L agentmgr attach -t am_<id>`.
 
-The full reference, every key, the quick prompt, killing and reviving, diff review, groups, status detection, stats, and themes, lives in [docs/usage.md](docs/usage.md). Tell your agent what you want to review in Agent Manager, and your agent will set it up for you to view in the review panel. You can also tell your agent to manage sessions and terminals in Agent Manager. The short version:
+The full reference, every key, quick prompt mode, killing and reviving, diff review, groups, status detection, stats, and themes, lives in [docs/usage.md](docs/usage.md). Tell your agent what you want to review in Agent Manager, and your agent will set it up for you to view in the review panel. You can also tell your agent to manage sessions and terminals in Agent Manager. The short version:
 
 | Key | Action |
 |-----|--------|
 | `n` | New session (name, tool, the model, effort and profile the tool reports, directory, optional starting prompt, group) |
-| `space` | Quick prompt: answer the selected session, or spawn an agent in the selected group |
+| `space` | Quick prompt mode: answer the selected session, or spawn an agent in the selected group |
 | `enter` | Focus the session in place; keys go to the agent while the list stays |
 | click / double click | Focus a session / fold or unfold a group. The full-screen layout selects on a click and focuses on a double click |
 | drag `⠿` | Reorder a row, drop it into another group, or nest a terminal under an agent |
@@ -106,9 +106,9 @@ The full reference, every key, the quick prompt, killing and reviving, diff revi
 | `s` | Settings (default tool, theme or follow the OS light/dark mode, list density, mouse, review layout, desktop notifications, editor, keybindings) |
 | `?` | The key map for the current screen; review shows only review bindings |
 
-A session can spawn into its own git worktree (`<repo>-worktrees/<name>`, branch `am/<name>`), toggled on the `n` form, with `ctrl+t` in the quick prompt, or by default in Settings.
+A session can spawn into its own git worktree (`<repo>-worktrees/<name>`, branch `am/<name>`), toggled on the `n` form, with `ctrl+t` in quick prompt mode, or by default in Settings.
 
-A session can start on a model, reasoning effort and profile of its own, picked on the `n` form, with `ctrl+l`, `ctrl+x` and `ctrl+y` in the quick prompt, or with `spawn --model --effort --profile`. The lists come from each CLI at runtime, so a new model shows up the day the CLI ships it, and restart, revive and fork keep the choice (see [Model, effort and profile](docs/usage.md#model-effort-and-profile)).
+A session can start on a model, reasoning effort and profile of its own, picked on the `n` form, with `ctrl+l`, `ctrl+x` and `ctrl+y` in quick prompt mode, or with `spawn --model --effort --profile`. The lists come from each CLI at runtime, so a new model shows up the day the CLI ships it, and restart, revive and fork keep the choice (see [Model, effort and profile](docs/usage.md#model-effort-and-profile)).
 
 ![the session tree, with a waiting agent's permission prompt in the preview](docs/screenshot-sessions.png)
 

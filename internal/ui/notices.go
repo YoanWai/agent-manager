@@ -964,14 +964,14 @@ func (m *Model) welcomeBody() []string {
 	body := []string{
 		"Every row on the left is a live agent session.",
 		"",
-		welcomeRow(m.firstListKey(keybind.NewSession), "new session", prompt, "prompt it, no attach"),
+		welcomeRow(m.firstListKey(keybind.NewSession), "new session", prompt, "quick prompt mode"),
 		welcomeRow(m.firstListKey(keybind.Open), "focus it", m.firstListKey(keybind.Attach), "attach it full screen"),
 		m.welcomeSessionKeysLine(),
 		welcomeRow(m.firstListKeys(keybind.Kill, keybind.Revive), "kill / revive", settings, "settings"),
 		"",
 	}
 	if prompt != "" {
-		body = append(body, prompt+" on a group row starts a new agent there on what you type.")
+		body = append(body, prompt+" on a group row opens quick prompt mode to start a new agent there.")
 	}
 	body = append(body, "Each row's mark is its state: ◐ working, ◆ waiting, ● finished, ○ idle.", "")
 	if help != "" {
