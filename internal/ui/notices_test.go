@@ -164,9 +164,9 @@ func TestUpdateNoticeSummarizesEverySkippedRelease(t *testing.T) {
 	frame := ansi.Strip(m.View())
 	for _, want := range []string{
 		"4 releases available · v0.6.0",
-		"v0.3.0 · 1 change",
+		"v0.3.0",
 		"Worktree: Respect group defaults",
-		"v0.6.0 · 1 change",
+		"v0.6.0",
 		"updates once to v0.6.0",
 	} {
 		if !strings.Contains(frame, want) {
@@ -202,8 +202,8 @@ func TestPostUpdateNoticeUsesPersistedStartingVersion(t *testing.T) {
 	for _, want := range []string{
 		"Updated across 4 releases · v0.5.0",
 		"Updated from v0.1.0 to v0.5.0.",
-		"v0.2.0 · 1 change",
-		"v0.5.0 · 1 change",
+		"v0.2.0",
+		"v0.5.0",
 	} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("post-update modal missing %q:\n%s", want, frame)
@@ -580,7 +580,7 @@ func TestReleaseSummaryMarksOmittedChangesAndPartialRange(t *testing.T) {
 		rangeComplete: false,
 	}
 	body := ansi.Strip(strings.Join(renderNoticeBody(n, noticeModalInner), "\n"))
-	for _, want := range []string{"v0.3.0 · 4 changes", "+3 more in the full notes", "catalog covers part of this range"} {
+	for _, want := range []string{"OTHER · 1", "+3 more in the full notes", "catalog covers part of this range"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("partial summary missing %q:\n%s", want, body)
 		}
@@ -1455,7 +1455,7 @@ func TestLayoutsCanHideStats(t *testing.T) {
 	}
 }
 
-func TestReleaseSummaryPrefersAuthoredHighlights(t *testing.T) {
+func TestReleaseSummaryShowsTheListUnderTheHighlights(t *testing.T) {
 	release := uiReleaseWithTotal("v0.34.0", 17, "UI: Full screen sessions mode")
 	release.Highlights = []string{"The session list can take the whole terminal"}
 	body := ansi.Strip(strings.Join(renderNoticeBody(notice{releases: []update.Release{release}, rangeComplete: true}, noticeModalInner), "\n"))
@@ -1463,9 +1463,9 @@ func TestReleaseSummaryPrefersAuthoredHighlights(t *testing.T) {
 	if !strings.Contains(body, "• The session list can take the whole terminal") {
 		t.Fatalf("highlights missing:\n%s", body)
 	}
-	for _, unwanted := range []string{"Full screen sessions mode", "17 changes", "more in the full notes"} {
-		if strings.Contains(body, unwanted) {
-			t.Fatalf("highlights should stand alone, found %q:\n%s", unwanted, body)
+	for _, want := range []string{"OTHER · 1", "• UI: Full screen sessions mode", "+16 more in the full notes"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("the generated list follows the highlights, missing %q:\n%s", want, body)
 		}
 	}
 }
@@ -1481,7 +1481,7 @@ func TestReleaseSummaryShowsThanksUnderHighlights(t *testing.T) {
 
 	for _, want := range []string{
 		"• Revive without a captured id opens the tool's own picker",
-		"Thank you",
+		"THANK YOU",
 		"• @dolutech asked in #388 and built the picker (#400)",
 		"• @fruch reported that a live rename moved the worktree (#418)",
 	} {
@@ -1489,8 +1489,8 @@ func TestReleaseSummaryShowsThanksUnderHighlights(t *testing.T) {
 			t.Fatalf("thanks under highlights missing %q:\n%s", want, body)
 		}
 	}
-	if strings.Contains(body, "Add header and stats visibility settings") {
-		t.Fatalf("generated list should stay hidden when highlights exist:\n%s", body)
+	if !strings.Contains(body, "Add header and stats visibility settings") {
+		t.Fatalf("the generated list follows the highlights:\n%s", body)
 	}
 }
 
@@ -1502,9 +1502,9 @@ func TestReleaseSummaryShowsThanksUnderGeneratedList(t *testing.T) {
 		rangeComplete: true,
 	}, noticeModalInner), "\n"))
 	for _, want := range []string{
-		"v0.33.0 · 1 change",
+		"OTHER · 1",
 		"• UI: A change",
-		"Thank you",
+		"THANK YOU",
 		"• @pandysp asked for a way to put the preview away in #357",
 	} {
 		if !strings.Contains(body, want) {
@@ -1518,7 +1518,7 @@ func TestReleaseSummaryFallsBackToTheGeneratedList(t *testing.T) {
 		releases:      []update.Release{uiRelease("v0.33.0", "UI: A change")},
 		rangeComplete: true,
 	}, noticeModalInner), "\n"))
-	if !strings.Contains(body, "v0.33.0 · 1 change") || !strings.Contains(body, "• UI: A change") {
+	if !strings.Contains(body, "OTHER · 1") || !strings.Contains(body, "• UI: A change") {
 		t.Fatalf("release without highlights lost its generated list:\n%s", body)
 	}
 }

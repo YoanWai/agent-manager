@@ -39,11 +39,16 @@ const (
 )
 
 type notice struct {
-	id            string
-	glyph         string
-	tint          lipgloss.Color
-	title         string
-	body          []string
+	id       string
+	glyph    string
+	tint     lipgloss.Color
+	title    string
+	headline string
+	// accent holds the phrases of body drawn in the accent color.
+	accent []string
+	body   []string
+	// releaseNotes marks the two notices whose body introduces releases.
+	releaseNotes  bool
 	releases      []update.Release
 	after         []string
 	rangeComplete bool
@@ -59,6 +64,14 @@ func (n notice) mark() string {
 func (m *Model) indexReleaseRanges() {
 	m.update.available = update.Between(m.update.releases, m.update.version, m.update.latest)
 	m.update.installed = update.Between(m.update.releases, m.whatsNewFromVersion, m.update.version)
+}
+
+// newestHeadline is the headline of the last release in an oldest-first range.
+func newestHeadline(releases []update.Release) string {
+	if len(releases) == 0 {
+		return ""
+	}
+	return releases[len(releases)-1].Headline
 }
 
 func releaseCountLabel(releaseRange update.ReleaseRange) string {
@@ -89,6 +102,8 @@ func (m *Model) activeNotices() []notice {
 			glyph:         "↑",
 			tint:          colorAccent,
 			title:         title,
+			headline:      newestHeadline(releaseRange.Releases),
+			releaseNotes:  true,
 			body:          body,
 			releases:      releaseRange.Releases,
 			rangeComplete: releaseRange.Complete,
@@ -112,12 +127,14 @@ func (m *Model) activeNotices() []notice {
 			body = append(body, "No generated change summary was found; r refreshes GitHub now.")
 		}
 		notices = append(notices, notice{
-			id:       "whatsnew-" + m.update.version,
-			glyph:    "✦",
-			tint:     colorAccent2,
-			title:    title,
-			body:     body,
-			releases: releaseRange.Releases,
+			id:           "whatsnew-" + m.update.version,
+			glyph:        "✦",
+			tint:         colorAccent2,
+			title:        title,
+			headline:     newestHeadline(releaseRange.Releases),
+			releaseNotes: true,
+			body:         body,
+			releases:     releaseRange.Releases,
 			after: []string{
 				"Enter opens the full release notes.",
 			},
@@ -127,12 +144,14 @@ func (m *Model) activeNotices() []notice {
 	}
 	for _, msg := range m.feedMessages {
 		notices = append(notices, notice{
-			id:    msg.ID,
-			glyph: "◆",
-			tint:  colorAccent2,
-			title: msg.Title,
-			body:  msg.Body,
-			url:   msg.URL,
+			id:       msg.ID,
+			glyph:    "◆",
+			tint:     colorAccent2,
+			title:    msg.Title,
+			headline: msg.Headline,
+			accent:   msg.Accent,
+			body:     msg.Body,
+			url:      msg.URL,
 		})
 	}
 	if m.configImportError != "" {
@@ -784,98 +803,6 @@ func (m *Model) viewNotices() string {
 	return m.centerOnBackdrop(frame)
 }
 
-func noticeInnerWidth(notices []notice, terminalWidth int) int {
-	inner := noticeModalInner
-	for _, n := range notices {
-		lines := append(append([]string{}, n.body...), n.after...)
-		for _, release := range n.releases {
-			lines = append(lines, release.Version)
-			for _, change := range release.Highlights {
-				lines = append(lines, "• "+plainMarks(change))
-			}
-			for _, change := range release.Changes {
-				lines = append(lines, "• "+changeRow(change))
-			}
-			if len(release.Thanks) > 0 {
-				lines = append(lines, "Thank you")
-			}
-			for _, change := range release.Thanks {
-				lines = append(lines, "• "+change)
-			}
-		}
-		for _, line := range lines {
-			if w := lipgloss.Width(line); w > inner {
-				inner = w
-			}
-		}
-	}
-	if fit := terminalWidth - 8; inner > fit {
-		inner = max(fit, 1)
-	}
-	return inner
-}
-
-func renderNoticeBody(n notice, width int) []string {
-	var body []string
-	for _, line := range n.body {
-		body = appendStyledWrap(body, line, width, mutedStyle)
-	}
-	if len(n.releases) > 0 {
-		body = append(body, "")
-	}
-	for i, release := range n.releases {
-		if i > 0 {
-			body = append(body, "")
-		}
-		// Authored bullets are the release in its own words, so they
-		// replace the generated list rather than being counted against it.
-		if len(release.Highlights) > 0 {
-			body = append(body, lipgloss.NewStyle().Foreground(colorBright).Bold(true).Render(release.Version))
-			highlights := make([]string, len(release.Highlights))
-			for index, highlight := range release.Highlights {
-				highlights[index] = plainMarks(highlight)
-			}
-			body = appendNoticeBullets(body, highlights, width)
-		} else {
-			count := release.TotalChanges
-			label := "change"
-			if count != 1 {
-				label = "changes"
-			}
-			heading := release.Version
-			if count > 0 {
-				heading += fmt.Sprintf(" · %d %s", count, label)
-			}
-			body = append(body, lipgloss.NewStyle().Foreground(colorBright).Bold(true).Render(heading))
-			if len(release.Changes) == 0 {
-				body = append(body, subtleStyle.Render("  No summarized changes."))
-			}
-			rows := make([]string, len(release.Changes))
-			for index, change := range release.Changes {
-				rows[index] = changeRow(change)
-			}
-			body = appendNoticeBullets(body, rows, width)
-			if omitted := release.TotalChanges - len(release.Changes); omitted > 0 {
-				body = append(body, subtleStyle.Render(fmt.Sprintf("  +%d more in the full notes", omitted)))
-			}
-		}
-		if len(release.Thanks) > 0 {
-			body = append(body, "", subtleStyle.Render("Thank you"))
-			body = appendNoticeBullets(body, release.Thanks, width)
-		}
-	}
-	if len(n.releases) > 0 && !n.rangeComplete {
-		body = append(body, "", subtleStyle.Render("The local catalog covers part of this range; Enter opens the complete notes."))
-	}
-	if len(n.after) > 0 {
-		body = append(body, "")
-		for _, line := range n.after {
-			body = appendStyledWrap(body, line, width, mutedStyle)
-		}
-	}
-	return body
-}
-
 func changeRow(change update.Change) string {
 	if change.Author == "" {
 		return change.Text
@@ -886,30 +813,6 @@ func changeRow(change update.Change) string {
 // plainMarks drops the accent marks release text carries.
 func plainMarks(text string) string {
 	return strings.ReplaceAll(text, "`", "")
-}
-
-func appendNoticeBullets(lines []string, items []string, width int) []string {
-	for _, item := range items {
-		wrapped := strings.Split(ansi.Wordwrap(item, max(width-2, 1), "-"), "\n")
-		for lineIndex, line := range wrapped {
-			prefix := "  "
-			if lineIndex == 0 {
-				prefix = "• "
-			}
-			lines = append(lines, mutedStyle.Render(prefix+line))
-		}
-	}
-	return lines
-}
-
-func appendStyledWrap(lines []string, text string, width int, style lipgloss.Style) []string {
-	if text == "" {
-		return append(lines, "")
-	}
-	for _, wrapped := range strings.Split(ansi.Wordwrap(text, width, "-"), "\n") {
-		lines = append(lines, style.Render(wrapped))
-	}
-	return lines
 }
 
 // fitBody returns a scrollable window without letting a short terminal eat
