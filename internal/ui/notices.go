@@ -794,7 +794,7 @@ func noticeInnerWidth(notices []notice, terminalWidth int) int {
 				lines = append(lines, "• "+change)
 			}
 			for _, change := range release.Changes {
-				lines = append(lines, "• "+change)
+				lines = append(lines, "• "+changeRow(change))
 			}
 			if len(release.Thanks) > 0 {
 				lines = append(lines, "Thank you")
@@ -846,7 +846,11 @@ func renderNoticeBody(n notice, width int) []string {
 			if len(release.Changes) == 0 {
 				body = append(body, subtleStyle.Render("  No summarized changes."))
 			}
-			body = appendNoticeBullets(body, release.Changes, width)
+			rows := make([]string, len(release.Changes))
+			for index, change := range release.Changes {
+				rows[index] = changeRow(change)
+			}
+			body = appendNoticeBullets(body, rows, width)
 			if omitted := release.TotalChanges - len(release.Changes); omitted > 0 {
 				body = append(body, subtleStyle.Render(fmt.Sprintf("  +%d more in the full notes", omitted)))
 			}
@@ -866,6 +870,13 @@ func renderNoticeBody(n notice, width int) []string {
 		}
 	}
 	return body
+}
+
+func changeRow(change update.Change) string {
+	if change.Author == "" {
+		return change.Text
+	}
+	return change.Text + " · " + change.Author
 }
 
 func appendNoticeBullets(lines []string, items []string, width int) []string {

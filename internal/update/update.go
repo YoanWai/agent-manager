@@ -30,10 +30,10 @@ const (
 	refreshBudget        = 2 * time.Minute
 	maxPayload           = 16 << 20
 	maxReleases          = 100
-	maxChangesPerRelease = 12
-	maxChangeLength      = 120
-	maxHighlights        = 6
-	maxThanks            = 8
+	maxChangesPerRelease = 100
+	maxLineLength        = 160
+	maxHighlights        = 8
+	maxThanks            = 24
 )
 
 const (
@@ -60,15 +60,29 @@ var (
 	markdownLink      = regexp.MustCompile(`\[([^]]+)]\([^)]+\)`)
 )
 
+const (
+	KindFeature = "feat"
+	KindFix     = "fix"
+	KindOther   = "other"
+)
+
+// Change is one line of a release's generated list.
+type Change struct {
+	Kind   string `json:"kind"`
+	Text   string `json:"text"`
+	Author string `json:"author,omitempty"`
+}
+
 // Release is one stable GitHub release with a compact, terminal-safe summary.
-// Highlights stand in for Changes when the notes carry them. TotalChanges may
-// exceed len(Changes) when a large release was bounded.
+// Highlights stand in for Changes when the notes carry them. Changes are every
+// user-facing line of the generated list, kept up to a bound that TotalChanges
+// may exceed.
 type Release struct {
 	Version      string   `json:"version"`
 	URL          string   `json:"url"`
 	Highlights   []string `json:"highlights,omitempty"`
 	Thanks       []string `json:"thanks,omitempty"`
-	Changes      []string `json:"changes"`
+	Changes      []Change `json:"changes,omitempty"`
 	TotalChanges int      `json:"total_changes"`
 }
 
@@ -311,7 +325,7 @@ func extractSectionBullets(body, heading string, limit int) []string {
 		if text = plainText(text); text == "" {
 			continue
 		}
-		bullets = append(bullets, sentenceCase(truncateChange(text)))
+		bullets = append(bullets, sentenceCase(truncate(text, maxLineLength)))
 		if len(bullets) == limit {
 			break
 		}
@@ -327,20 +341,16 @@ func extractThanks(body string) []string {
 	return extractSectionBullets(body, thanksHeading, maxThanks)
 }
 
-func extractChanges(body string) ([]string, int) {
-	var changes []string
+func extractChanges(body string) ([]Change, int) {
+	var changes []Change
 	total := 0
 	for _, line := range sectionLines(body, changesHeading) {
 		bullet, ok := bulletText(line)
 		if !ok {
 			continue
 		}
-		change, kind := cleanChange(bullet)
-		if change == "" {
-			continue
-		}
-		// A bullet that names no type cannot be judged, so it stays.
-		if kind != "" && !userFacingTypes[kind] {
+		change, ok := cleanChange(bullet)
+		if !ok {
 			continue
 		}
 		total++
@@ -351,18 +361,26 @@ func extractChanges(body string) ([]string, int) {
 	return changes, total
 }
 
-func cleanChange(change string) (row, kind string) {
+// A bullet that names no type cannot be judged, so it stays.
+func cleanChange(bullet string) (Change, bool) {
+	change := Change{Kind: KindOther}
 	// Credit outside contributors on their digest lines; the maintainer's
 	// own handle and bot handles would be noise on every row.
-	author := ""
-	if match := pullSuffix.FindStringSubmatch(change); match != nil {
+	if match := pullSuffix.FindStringSubmatch(bullet); match != nil {
 		if handle := match[1]; handle != "@YoanWai" && !strings.HasSuffix(handle, "[bot]") {
-			author = handle
+			change.Author = handle
 		}
 	}
-	row = plainText(pullSuffix.ReplaceAllString(change, ""))
+	row := plainText(pullSuffix.ReplaceAllString(bullet, ""))
 	if match := conventionalTitle.FindStringSubmatch(row); match != nil {
-		kind = strings.ToLower(match[1])
+		kind := strings.ToLower(match[1])
+		if !userFacingTypes[kind] {
+			return Change{}, false
+		}
+		change.Kind = KindFeature
+		if kind == KindFix {
+			change.Kind = KindFix
+		}
 		description := sentenceCase(match[3])
 		if scope := labelCase(match[2]); scope != "" {
 			row = scope + ": " + description
@@ -372,11 +390,11 @@ func cleanChange(change string) (row, kind string) {
 	} else {
 		row = sentenceCase(row)
 	}
-	row = truncateChange(row)
-	if author != "" {
-		row += " · " + author
+	if row == "" {
+		return Change{}, false
 	}
-	return row, kind
+	change.Text = truncate(row, maxLineLength)
+	return change, true
 }
 
 func plainText(text string) string {
@@ -385,12 +403,12 @@ func plainText(text string) string {
 	return cleanText(text)
 }
 
-func truncateChange(text string) string {
+func truncate(text string, limit int) string {
 	runes := []rune(text)
-	if len(runes) <= maxChangeLength {
+	if len(runes) <= limit {
 		return text
 	}
-	return strings.TrimSpace(string(runes[:maxChangeLength-1])) + "…"
+	return strings.TrimSpace(string(runes[:limit-1])) + "…"
 }
 
 func cleanText(text string) string {

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -72,14 +73,14 @@ func TestExtractChangesHumanizesGeneratedNotes(t *testing.T) {
 	}, "\n")
 
 	changes, total := extractChanges(body)
-	want := []string{
-		"Groups: Make group creation immediate and reliable",
-		"Config: Add Pi as a built-in tool · @steveprentice",
-		"UI: Add a message browser with scrolling",
-		"MCP editor: Expose tool capabilities",
+	want := []Change{
+		{Kind: KindFix, Text: "Groups: Make group creation immediate and reliable"},
+		{Kind: KindFeature, Text: "Config: Add Pi as a built-in tool", Author: "@steveprentice"},
+		{Kind: KindFeature, Text: "UI: Add a message browser with scrolling"},
+		{Kind: KindFeature, Text: "MCP editor: Expose tool capabilities"},
 	}
-	if total != len(want) || fmt.Sprint(changes) != fmt.Sprint(want) {
-		t.Fatalf("extractChanges() = %q total %d, want %q", changes, total, want)
+	if total != len(want) || !slices.Equal(changes, want) {
+		t.Fatalf("extractChanges() = %+v total %d, want %+v", changes, total, want)
 	}
 }
 
@@ -92,8 +93,8 @@ func TestExtractChangesIsBoundedAndTerminalSafe(t *testing.T) {
 	if len(changes) != maxChangesPerRelease || total != maxChangesPerRelease+3 {
 		t.Fatalf("got %d stored / %d total", len(changes), total)
 	}
-	if strings.Contains(changes[0], "\x1b") {
-		t.Fatalf("terminal control sequence survived: %q", changes[0])
+	if strings.Contains(changes[0].Text, "\x1b") {
+		t.Fatalf("terminal control sequence survived: %q", changes[0].Text)
 	}
 }
 
@@ -140,8 +141,8 @@ func TestCheckFetchesStableCatalogAndFindsLatest(t *testing.T) {
 	if result.Latest != "v0.11.0" || len(result.Releases) != 2 {
 		t.Fatalf("unexpected result: %+v", result)
 	}
-	if got := result.Releases[0].Changes; len(got) != 1 || got[0] != "UI: Actual latest" {
-		t.Fatalf("release changes = %q", got)
+	if got := result.Releases[0].Changes; len(got) != 1 || got[0] != (Change{Kind: KindFeature, Text: "UI: Actual latest"}) {
+		t.Fatalf("release changes = %+v", got)
 	}
 }
 
@@ -196,8 +197,8 @@ func TestCatalogBehindTheRunningBuildRefetches(t *testing.T) {
 	}
 	// The notice is built from these lines, so reaching the release is only
 	// half of it: an entry with no changes leaves it as empty as before.
-	if got := result.Releases[0].Changes; len(got) != 1 || got[0] != "UI: Refreshed" {
-		t.Fatalf("changes are %q, want the fetched release's own", got)
+	if got := result.Releases[0].Changes; len(got) != 1 || got[0].Text != "UI: Refreshed" {
+		t.Fatalf("changes are %+v, want the fetched release's own", got)
 	}
 	if result.Latest != "" {
 		t.Fatalf("nothing is newer than the running build, got %q", result.Latest)
@@ -339,11 +340,25 @@ func TestCachedNeverTouchesNetworkOrTrustsLegacyShape(t *testing.T) {
 }
 
 func testRelease(version string, changes ...string) Release {
-	return Release{
+	release := Release{
 		Version:      version,
 		URL:          "https://github.com/YoanWai/agent-manager/releases/tag/" + version,
-		Changes:      changes,
 		TotalChanges: len(changes),
+	}
+	for _, text := range changes {
+		release.Changes = append(release.Changes, Change{Kind: KindOther, Text: text})
+	}
+	return release
+}
+
+func TestLongChangeIsCutAtTheLineLimit(t *testing.T) {
+	body := "## What's Changed\n* fix(ui): " + strings.Repeat("a", maxLineLength+20)
+	changes, _ := extractChanges(body)
+	if got := len([]rune(changes[0].Text)); got != maxLineLength {
+		t.Fatalf("change is %d characters, want %d", got, maxLineLength)
+	}
+	if !strings.HasSuffix(changes[0].Text, "…") {
+		t.Fatalf("a cut change must say so: %q", changes[0].Text)
 	}
 }
 
@@ -400,14 +415,14 @@ func TestExtractChangesKeepsWhatAReaderCanAct(t *testing.T) {
 	}, "\n")
 
 	changes, total := extractChanges(body)
-	want := []string{
-		"UI: A feature",
-		"UI: A fix",
-		"UI: A speedup",
-		"Ship the two agent skills for install via skills.sh",
+	want := []Change{
+		{Kind: KindFeature, Text: "UI: A feature"},
+		{Kind: KindFix, Text: "UI: A fix"},
+		{Kind: KindFeature, Text: "UI: A speedup"},
+		{Kind: KindOther, Text: "Ship the two agent skills for install via skills.sh"},
 	}
-	if total != len(want) || fmt.Sprint(changes) != fmt.Sprint(want) {
-		t.Fatalf("extractChanges() = %q total %d, want %q", changes, total, want)
+	if total != len(want) || !slices.Equal(changes, want) {
+		t.Fatalf("extractChanges() = %+v total %d, want %+v", changes, total, want)
 	}
 }
 

@@ -1312,12 +1312,15 @@ func uiRelease(version string, changes ...string) update.Release {
 }
 
 func uiReleaseWithTotal(version string, total int, changes ...string) update.Release {
-	return update.Release{
+	release := update.Release{
 		Version:      version,
 		URL:          "https://github.com/YoanWai/agent-manager/releases/tag/" + version,
-		Changes:      changes,
 		TotalChanges: total,
 	}
+	for _, text := range changes {
+		release.Changes = append(release.Changes, update.Change{Kind: update.KindOther, Text: text})
+	}
+	return release
 }
 
 func TestUpdateDelegatesToPackageManager(t *testing.T) {
