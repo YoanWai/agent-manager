@@ -990,7 +990,9 @@ type Pane struct {
 func (d *Driver) Panes() (map[string]Pane, error) {
 	out, err := exec.Command(d.bin, d.args("list-panes", "-a", "-f", "#{==:#{pane_index},0}", "-F", "#{session_name} #{pane_pid} #{pane_width} #{pane_height} #{window_panes} #{alternate_on} #{pane_tty} #{pane_current_path}")...).CombinedOutput()
 	if err != nil {
-		if noServer(string(out)) {
+		// A server with no session in it, as the startup list-keys leaves
+		// for a moment, answers "no current target".
+		if noServer(string(out)) || strings.Contains(string(out), "no current target") {
 			return map[string]Pane{}, nil
 		}
 		return nil, fmt.Errorf("tmux list-panes: %w: %s", err, strings.TrimSpace(string(out)))
