@@ -586,35 +586,62 @@ func (e *Engine) Plain(tool, pane string) string {
 	return ansi.Strip(strings.Join(lines, "\n"))
 }
 
-// chromeBlockRows marks the rows of each chrome_block: the matching row and
-// every row drawn straight under it, up to the next blank row.
+// chromeBlockRows marks each chrome block up to its next blank row. Prompt
+// echoes also own deeper-indented continuation rows across blank paragraphs.
 func (tr toolRules) chromeBlockRows(lines []string) []bool {
 	inBlock := make([]bool, len(lines))
 	if tr.chromeBlock == nil {
 		return inBlock
 	}
-	open := false
-	for i, raw := range lines {
-		line := strings.TrimRight(raw, " \t")
+	for i := 0; i < len(lines); {
+		line := strings.TrimRight(lines[i], " \t")
 		if strings.TrimSpace(line) == "" {
-			open = false
+			i++
 			continue
 		}
 		matchText := line
-		if !open {
-			// a heading wraps over up to four rows on the narrowest pane
-			for j := i + 1; j < len(lines) && j <= i+3; j++ {
-				next := strings.TrimRight(lines[j], " \t")
-				if strings.TrimSpace(next) == "" {
-					break
-				}
-				matchText += "\n" + next
+		// A heading wraps over up to four rows on the narrowest pane.
+		for j := i + 1; j < len(lines) && j <= i+3; j++ {
+			next := strings.TrimRight(lines[j], " \t")
+			if strings.TrimSpace(next) == "" {
+				break
 			}
+			matchText += "\n" + next
 		}
-		open = open || tr.chromeBlock.MatchString(matchText)
-		inBlock[i] = open
+		if !tr.chromeBlock.MatchString(matchText) {
+			i++
+			continue
+		}
+		end := tr.chromeBlockEnd(lines, i)
+		for ; i < end; i++ {
+			inBlock[i] = true
+		}
 	}
 	return inBlock
+}
+
+func (tr toolRules) chromeBlockEnd(lines []string, i int) int {
+	for i < len(lines) {
+		line := strings.TrimRight(lines[i], " \t")
+		if strings.TrimSpace(line) == "" {
+			return i
+		}
+		text := strings.TrimLeft(line, " \t")
+		i++
+		if !tr.inputRow(text) {
+			continue
+		}
+		promptIndent := len(line) - len(text)
+		for i < len(lines) {
+			line := lines[i]
+			indent := len(line) - len(strings.TrimLeft(line, " \t"))
+			if strings.TrimSpace(line) != "" && indent <= promptIndent {
+				return i
+			}
+			i++
+		}
+	}
+	return i
 }
 
 // isStructural reports whether line is the tool's own frame - chrome, a

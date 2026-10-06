@@ -1,6 +1,9 @@
 package status
 
 import (
+	"os"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -1666,6 +1669,143 @@ func TestCommandCodeRowShapes(t *testing.T) {
 	}
 	if _, ok := engine.InputDraft("command-code", "⠶ Done.\n❯ Ask your question..."); ok {
 		t.Fatal("the composer placeholder should not read as a draft")
+	}
+}
+
+func TestGrokCapturedQueue(t *testing.T) {
+	engine := defaultEngine(t)
+	for _, tc := range []struct{ name, want string }{
+		{"queued", "the twentieth" + strings.Repeat(" ", 63) + "█"},
+		{"queued-draft", "The rig is the mast, boom, stays, shrouds, and sails considered"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data, err := os.ReadFile("testdata/grok/1.0.46/" + tc.name + ".txt")
+			if err != nil {
+				t.Fatal(err)
+			}
+			pane := engine.Plain("grok", string(data))
+			if line, _, ok := engine.LastMessage("grok", pane); !ok || line != tc.want {
+				t.Fatalf("quote = %q ok=%v, want %q", line, ok, tc.want)
+			}
+			text, _, ok := engine.FullTurnText("grok", pane)
+			if !ok || !strings.Contains(text, tc.want) {
+				t.Fatalf("copy = %q ok=%v", text, ok)
+			}
+			for _, chrome := range []string{"Queued", "READY", "Unsent draft", "settings.", "[Dashboard]", "rename it now"} {
+				if strings.Contains(text, chrome) {
+					t.Errorf("copy includes %q: %q", chrome, text)
+				}
+			}
+		})
+	}
+}
+
+func TestGrokQuoteSkipsQueue(t *testing.T) {
+	engine := defaultEngine(t)
+	answer := "     #1 First recommendation.\n     The latest useful answer."
+	for _, heading := range []string{"   ▾ Queued 1\n     #1 Queued request\n        wrapped continuation", "   ▸ Queued 1", "   ▾ Queued 2\n ┌                       [✗]\n │ #1 Queued request      │\n │ #2 Another request     │\n └                        ┘"} {
+		for _, composer := range []string{"  │ ❯ │\n  Enter:send now │ Ctrl+;:queue", "  │ ❯ Unsent draft │\n  Enter:queue │ Ctrl+Enter:send now", "  │ ❯ │\n  x:delete row │ e:edit │ Ctrl+Enter:", "  │ ❯ │"} {
+			queue := heading + "\n\n" + composer
+			for _, reply := range []string{answer, ""} {
+				pane := "     ❯ Recommend an approach.\n\n" + reply + "\n\n" + queue
+				want := ""
+				if reply != "" {
+					want = "The latest useful answer."
+				}
+				if line, _, ok := engine.LastMessage("grok", pane); !ok || line != want {
+					t.Errorf("pane %q: quote = %q ok=%v, want %q", pane, line, ok, want)
+				}
+				if text, _, ok := engine.FullTurnText("grok", pane); !ok || text != reply {
+					t.Errorf("pane %q: copy = %q ok=%v, want %q", pane, text, ok, reply)
+				}
+			}
+		}
+	}
+}
+
+func TestGrokQuoteSkipsMultilinePromptParagraphs(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := "     ❯ Reply with only READY.\n\n" +
+		"       This is paragraph two of my prompt.\n\n" +
+		"  │ ❯ │\n  Shift+Tab:mode\n"
+	if line, _, ok := engine.LastMessage("grok", pane); !ok || line != "" {
+		t.Fatalf("multiline prompt before reply quote = %q ok=%v", line, ok)
+	}
+	if text, _, ok := engine.FullTurnText("grok", pane); !ok || text != "" {
+		t.Fatalf("multiline prompt before reply copy = %q ok=%v", text, ok)
+	}
+	withReply := strings.Replace(pane, "\n  │ ❯ │", "\n     READY\n\n  │ ❯ │", 1)
+	if line, _, ok := engine.LastMessage("grok", withReply); !ok || line != "READY" {
+		t.Fatalf("multiline prompt with reply quote = %q ok=%v", line, ok)
+	}
+	if text, _, ok := engine.FullTurnText("grok", withReply); !ok || text != "     READY" {
+		t.Fatalf("multiline prompt with reply copy = %q ok=%v", text, ok)
+	}
+}
+
+func TestGrokQuoteSkipsWorkspaceHeader(t *testing.T) {
+	engine := defaultEngine(t)
+	header := "  am/grok-test worktree ~/d/agent-manager-worktrees/grok-test 44K / 256K │ [Dashboard]\n\n"
+	pane := header + "     ❯ When this is done say hello\n\n  │ ❯ │\n"
+	if line, _, ok := engine.LastMessage("grok", pane); !ok || line != "" {
+		t.Fatalf("header before reply quote = %q ok=%v", line, ok)
+	}
+	if text, _, ok := engine.FullTurnText("grok", pane); !ok || text != "" {
+		t.Fatalf("header before reply copy = %q ok=%v", text, ok)
+	}
+	withReply := strings.Replace(pane, "\n  │ ❯ │", "\n     hello\n\n  │ ❯ │", 1)
+	if line, _, ok := engine.LastMessage("grok", withReply); !ok || line != "hello" {
+		t.Fatalf("header with reply quote = %q ok=%v", line, ok)
+	}
+}
+
+func TestChromeBlockRows(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		pattern string
+		lines   []string
+		want    []bool
+	}{
+		{
+			name:    "ordinary block ends at blank",
+			pattern: `^Help improve Grok|^\s+❯ `,
+			lines:   []string{"Help improve Grok", "  details", "", "reply"},
+			want:    []bool{true, true, false, false},
+		},
+		{
+			name:    "prompt inside ordinary block",
+			pattern: `^Help improve Grok|^\s+❯ `,
+			lines:   []string{"Help improve Grok", "     ❯ prompt", "", "       continued", "     reply"},
+			want:    []bool{true, true, true, true, false},
+		},
+		{
+			name:    "prompt crosses blank and ends at equal indent",
+			pattern: `^\s+❯ `,
+			lines:   []string{"     ❯ prompt", "", "       second paragraph", "     reply"},
+			want:    []bool{true, true, true, false},
+		},
+		{
+			name:    "prompt ends at lesser indent",
+			pattern: `^\s+❯ `,
+			lines:   []string{"     ❯ prompt", "       continuation", "    reply"},
+			want:    []bool{true, true, false},
+		},
+		{
+			name:    "prompt reaches end of pane",
+			pattern: `^\s+❯ `,
+			lines:   []string{"     ❯ prompt", "", "       continuation"},
+			want:    []bool{true, true, true},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tr := toolRules{
+				chromeBlock:    regexp.MustCompile(tc.pattern),
+				activityCutoff: regexp.MustCompile(`^❯`),
+			}
+			if got := tr.chromeBlockRows(tc.lines); !slices.Equal(got, tc.want) {
+				t.Fatalf("chromeBlockRows(%q) = %v, want %v", tc.lines, got, tc.want)
+			}
+		})
 	}
 }
 
