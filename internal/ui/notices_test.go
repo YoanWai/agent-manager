@@ -541,8 +541,8 @@ func TestNoticesShortTerminalKeepsFrameAndHint(t *testing.T) {
 	if !strings.Contains(joined, "↑↓ pick") {
 		t.Fatalf("short terminal ate the key hint:\n%s", joined)
 	}
-	if !strings.Contains(joined, "…") {
-		t.Fatalf("a clipped body must say so:\n%s", joined)
+	if !strings.Contains(joined, "┃") {
+		t.Fatalf("a clipped body must show its scrollbar:\n%s", joined)
 	}
 }
 
@@ -557,13 +557,12 @@ func TestNoticesBodyScrollIsBoundedAndVisible(t *testing.T) {
 	m.openNotices("feed-scroll")
 
 	before := ansi.Strip(m.View())
-	if !strings.Contains(before, "↓ more below…") {
-		t.Fatalf("clipped summary did not advertise more content:\n%s", before)
+	if !strings.Contains(before, "┃") {
+		t.Fatalf("a clipped body shows its scrollbar:\n%s", before)
 	}
 	m.handleNoticesKey(key("pgdown"))
-	after := ansi.Strip(m.View())
-	if m.noticeScroll == 0 || !strings.Contains(after, "↑ more above…") {
-		t.Fatalf("page down did not move the summary:\n%s", after)
+	if m.noticeScroll == 0 {
+		t.Fatalf("page down did not move the summary:\n%s", ansi.Strip(m.View()))
 	}
 	limit := m.noticeScrollLimit(m.activeNotices())
 	for i := 0; i < 20; i++ {

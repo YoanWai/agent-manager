@@ -12,6 +12,8 @@ import (
 // noticeModalMax is the widest the content column grows, the longest line remote text may carry.
 const noticeModalMax = 160
 
+const noticeWheelRows = 3
+
 var changeGroups = []struct {
 	kind, label, one, many string
 }{
@@ -34,6 +36,33 @@ func noticeInnerWidth(notices []notice, terminalWidth int) int {
 		inner = max(fit, 1)
 	}
 	return inner
+}
+
+// A body that overflows gives two columns to the scrollbar and the gap beside it.
+func noticeBodyLayout(n notice, inner, room int) (body []string, scrolls bool) {
+	body = renderNoticeBody(n, inner)
+	if len(body) <= room {
+		return body, false
+	}
+	return renderNoticeBody(n, max(inner-2, 1)), true
+}
+
+func noticeScrollWindow(body []string, room, offset, inner int) []string {
+	lastOffset := len(body) - room
+	offset = min(max(offset, 0), lastOffset)
+	thumb := max(1, room*room/len(body))
+	thumbTop := offset * (room - thumb) / lastOffset
+	track := subtleStyle.Render("│")
+	grip := lipgloss.NewStyle().Foreground(colorAccent).Render("┃")
+	rows := make([]string, room)
+	for index := range rows {
+		cell := track
+		if index >= thumbTop && index < thumbTop+thumb {
+			cell = grip
+		}
+		rows[index] = padRight(body[offset+index], inner-1) + cell
+	}
+	return rows
 }
 
 // noticeMeasure leaves the summary out: a paragraph wraps to the modal and must never widen it.

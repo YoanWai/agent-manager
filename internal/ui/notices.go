@@ -699,9 +699,13 @@ func (m *Model) handleNoticesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.noticeScroll = 0
 		}
 	case "pgup", "ctrl+u":
-		m.noticeScroll = max(0, m.noticeScroll-max(4, m.height/3))
+		m.scrollNotice(notices, -max(4, m.height/3))
 	case "pgdown", "ctrl+d":
-		m.noticeScroll = min(m.noticeScroll+max(4, m.height/3), m.noticeScrollLimit(notices))
+		m.scrollNotice(notices, max(4, m.height/3))
+	case "home", "g":
+		m.noticeScroll = 0
+	case "end", "G":
+		m.noticeScroll = m.noticeScrollLimit(notices)
 	case "enter":
 		if m.noticeCursor < len(notices) && notices[m.noticeCursor].url != "" {
 			return m, openLink(notices[m.noticeCursor].url)
@@ -734,9 +738,15 @@ func (m *Model) noticeScrollLimit(notices []notice) int {
 		return 0
 	}
 	inner := noticeInnerWidth(notices, m.width)
-	bodyRows := len(renderNoticeBody(notices[m.noticeCursor], inner))
-	bodyRoom := noticeBodyRoom(m.height, len(notices), len(m.noticeTail(notices, inner))+1)
-	return max(0, bodyRows-bodyRoom)
+	room := noticeBodyRoom(m.height, len(notices), len(m.noticeTail(notices, inner))+1)
+	body, _ := noticeBodyLayout(notices[m.noticeCursor], inner, room)
+	return max(0, len(body)-room)
+}
+
+// A resize can leave the saved offset past the last page.
+func (m *Model) scrollNotice(notices []notice, rows int) {
+	limit := m.noticeScrollLimit(notices)
+	m.noticeScroll = min(max(min(m.noticeScroll, limit)+rows, 0), limit)
 }
 
 func noticeBodyRoom(height, noticeCount, tailRows int) int {
@@ -786,11 +796,15 @@ func (m *Model) viewNotices() string {
 	selected := notices[m.noticeCursor]
 	rows = append(rows, noticeBorderStyle().Render(strings.Repeat("┄", inner)))
 
-	body := renderNoticeBody(selected, inner)
 	tail := m.noticeTail(notices, inner)
 	tail = append(tail, "")
 
-	rows = append(rows, fitBody(body, noticeBodyRoom(m.height, len(notices), len(tail)), m.noticeScroll)...)
+	room := noticeBodyRoom(m.height, len(notices), len(tail))
+	body, scrolls := noticeBodyLayout(selected, inner, room)
+	if scrolls {
+		body = noticeScrollWindow(body, room, m.noticeScroll, inner)
+	}
+	rows = append(rows, body...)
 	rows = append(rows, tail...)
 
 	hint := "↑↓ pick · pgup/pgdn scroll · r refresh · ↵ open · x dismiss · esc "

@@ -1,10 +1,13 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/feed"
 	"github.com/YoanWai/agent-manager/internal/update"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -206,5 +209,128 @@ func TestModalWidthStopsAtItsCeiling(t *testing.T) {
 	}
 	if got := noticeInnerWidth(notices, 100); got != 92 {
 		t.Fatalf("inner width = %d, want the terminal less 8", got)
+	}
+}
+
+func scrollModel(t *testing.T, lines int) *Model {
+	t.Helper()
+	m := modalModel(t)
+	m.width, m.height = 70, 14
+	var body []string
+	for index := 0; index < lines; index++ {
+		body = append(body, fmt.Sprintf("change line %02d", index))
+	}
+	m.feedMessages = []feed.Message{{ID: "feed-scroll", Banner: "scroll", Title: "Scrollable summary", Body: body}}
+	m.openNotices("feed-scroll")
+	return m
+}
+
+func thumbRows(frame string) []int {
+	var rows []int
+	for index, line := range strings.Split(frame, "\n") {
+		if strings.Contains(line, "┃") {
+			rows = append(rows, index)
+		}
+	}
+	return rows
+}
+
+func TestScrollWindowDrawsAThumbThatFollowsTheOffset(t *testing.T) {
+	body := make([]string, 40)
+	for index := range body {
+		body[index] = fmt.Sprintf("row %02d", index)
+	}
+	top := noticeScrollWindow(body, 10, 0, 20)
+	if len(top) != 10 || !strings.HasSuffix(ansi.Strip(top[0]), "┃") || !strings.HasSuffix(ansi.Strip(top[9]), "│") {
+		t.Fatalf("at the top the thumb leads the track:\n%s", ansi.Strip(strings.Join(top, "\n")))
+	}
+	bottom := noticeScrollWindow(body, 10, 30, 20)
+	if !strings.HasSuffix(ansi.Strip(bottom[9]), "┃") || !strings.HasPrefix(ansi.Strip(bottom[9]), "row 39") {
+		t.Fatalf("at the bottom the thumb ends the track and the last row shows:\n%s", ansi.Strip(strings.Join(bottom, "\n")))
+	}
+	for _, row := range top {
+		if lipgloss.Width(row) != 20 {
+			t.Fatalf("every row fills the inner width: %q is %d", ansi.Strip(row), lipgloss.Width(row))
+		}
+	}
+}
+
+func TestScrollWindowClampsAnOffsetPastTheEnd(t *testing.T) {
+	body := []string{"a", "b", "c", "d", "e", "f"}
+	rows := noticeScrollWindow(body, 4, 99, 10)
+	if got := ansi.Strip(rows[3]); !strings.HasPrefix(got, "f") {
+		t.Fatalf("an offset past the end shows the last page, got %q", got)
+	}
+}
+
+func TestShortBodyHasNoScrollbar(t *testing.T) {
+	m := scrollModel(t, 2)
+	if frame := ansi.Strip(m.View()); strings.Contains(frame, "┃") {
+		t.Fatalf("a body that fits needs no scrollbar:\n%s", frame)
+	}
+}
+
+func TestWheelScrollsTheMessageBody(t *testing.T) {
+	m := scrollModel(t, 30)
+	before := thumbRows(ansi.Strip(m.View()))
+	m.handleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
+	if m.noticeScroll != noticeWheelRows {
+		t.Fatalf("wheel down moved %d rows, want %d", m.noticeScroll, noticeWheelRows)
+	}
+	for i := 0; i < 40; i++ {
+		m.handleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
+	}
+	limit := m.noticeScrollLimit(m.activeNotices())
+	if m.noticeScroll != limit {
+		t.Fatalf("wheel scrolled to %d, want it bounded at %d", m.noticeScroll, limit)
+	}
+	after := thumbRows(ansi.Strip(m.View()))
+	if len(before) == 0 || len(after) == 0 || after[0] <= before[0] {
+		t.Fatalf("the thumb should have moved down: before %v, after %v", before, after)
+	}
+	m.handleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress})
+	if m.noticeScroll != limit-noticeWheelRows {
+		t.Fatalf("wheel up moved to %d, want %d", m.noticeScroll, limit-noticeWheelRows)
+	}
+	if m.mode != modeNotices {
+		t.Fatalf("the wheel must not leave the panel, mode=%v", m.mode)
+	}
+}
+
+func TestHomeAndEndJumpTheMessageBody(t *testing.T) {
+	m := scrollModel(t, 30)
+	limit := m.noticeScrollLimit(m.activeNotices())
+	for _, jump := range []string{"end", "G"} {
+		m.noticeScroll = 0
+		m.handleNoticesKey(key(jump))
+		if m.noticeScroll != limit {
+			t.Fatalf("%s moved to %d, want the bottom at %d", jump, m.noticeScroll, limit)
+		}
+	}
+	for _, jump := range []string{"home", "g"} {
+		m.noticeScroll = limit
+		m.handleNoticesKey(key(jump))
+		if m.noticeScroll != 0 {
+			t.Fatalf("%s moved to %d, want the top", jump, m.noticeScroll)
+		}
+	}
+}
+
+func TestGrowingTheTerminalKeepsTheLastPageInView(t *testing.T) {
+	m := scrollModel(t, 30)
+	m.handleNoticesKey(key("end"))
+	bottom := m.noticeScroll
+	m.height = 20
+	frame := ansi.Strip(m.View())
+	if !strings.Contains(frame, "change line 29") || !strings.Contains(frame, "╰") {
+		t.Fatalf("an offset past the new last page shows that last page inside the frame:\n%s", frame)
+	}
+	limit := m.noticeScrollLimit(m.activeNotices())
+	if limit >= bottom {
+		t.Fatalf("the taller terminal should have fewer pages: limit %d, saved offset %d", limit, bottom)
+	}
+	m.handleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress})
+	if m.noticeScroll != limit-noticeWheelRows {
+		t.Fatalf("the first scroll up starts from the page on screen: offset %d, want %d", m.noticeScroll, limit-noticeWheelRows)
 	}
 }

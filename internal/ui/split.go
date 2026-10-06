@@ -457,7 +457,8 @@ func (m *Model) clickRow(x, y int) (int, bool) {
 // same as an arrow key, and the diff cursor in review. The search field
 // and the quick bar keep it: search otherwise leaves a narrowed list with
 // no way to reach a row in it, and the quick bar retargets on up/down the
-// way its own footer advertises.
+// way its own footer advertises. In the messages panel it scrolls the open
+// message, the mouse's way to what pgup and pgdn do.
 func (m *Model) handleMouseWheel(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.split.resizeMode || m.split.dragging {
 		return m, nil
@@ -479,6 +480,13 @@ func (m *Model) handleMouseWheel(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			m.moveDiffCursor(-1, m.diffCodeHeight())
 		case tea.MouseButtonWheelDown:
 			m.moveDiffCursor(1, m.diffCodeHeight())
+		}
+	case modeNotices:
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			m.scrollNotice(m.activeNotices(), -noticeWheelRows)
+		case tea.MouseButtonWheelDown:
+			m.scrollNotice(m.activeNotices(), noticeWheelRows)
 		}
 	}
 	return m, nil
