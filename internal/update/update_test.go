@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -282,7 +283,7 @@ func TestStaleCatalogUsesConditionalRequest(t *testing.T) {
 		t.Fatalf("result=%+v err=%v calls=%d", result, err, calls.Load())
 	}
 	written, ok := readCache(filepath.Join(dir, cacheFile))
-	if !ok || !written.CheckedAt.After(oldCheckedAt) || written.ETag != `"catalog-1"` {
+	if !ok || !written.CheckedAt.After(oldCheckedAt) || written.ETag != `"catalog-1"` || written.Parser != catalogParser {
 		t.Fatalf("conditional refresh did not advance cache: %+v", written)
 	}
 }
@@ -752,4 +753,65 @@ func TestCatalogCarriesTheLeadThroughTheCache(t *testing.T) {
 	if release.Headline != "Pickers are here!" || release.Summary != "A summary with `ctrl+x`." {
 		t.Fatalf("lead lost in the cache: %q / %q", release.Headline, release.Summary)
 	}
+}
+
+func TestCatalogFileWinsOverTheLegacyFile(t *testing.T) {
+	dir := t.TempDir()
+	seedCache(t, dir, cache{CheckedAt: time.Now(), Releases: []Release{testRelease("v0.41.0", "from the catalog")}})
+	seedFile(t, dir, legacyCacheFile, legacyCatalogJSON)
+	catalogBytes, err := os.ReadFile(filepath.Join(dir, cacheFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := Cached(dir, "v0.39.0"); got.Latest != "v0.41.0" || len(got.Releases) != 1 {
+		t.Fatalf("Cached read the legacy file: %+v", got)
+	}
+
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { calls.Add(1) }))
+	defer server.Close()
+	defer swapReleasesURL(server.URL)()
+
+	result, err := Check(context.Background(), dir, "v0.39.0")
+	if err != nil || calls.Load() != 0 || result.Latest != "v0.41.0" || len(result.Releases) != 1 {
+		t.Fatalf("result=%+v err=%v calls=%d, want the fresh catalog with no fetch", result, err, calls.Load())
+	}
+	if kept, err := os.ReadFile(filepath.Join(dir, cacheFile)); err != nil || string(kept) != string(catalogBytes) {
+		t.Fatalf("the catalog file changed: %v", err)
+	}
+	if kept, err := os.ReadFile(filepath.Join(dir, legacyCacheFile)); err != nil || string(kept) != legacyCatalogJSON {
+		t.Fatalf("the legacy file must stay byte for byte: %v", err)
+	}
+}
+
+func TestParserNumberPinsTheReleaseShape(t *testing.T) {
+	shapes := map[int][]string{
+		1: {"version", "url", "headline", "summary", "highlights", "thanks", "changes.kind", "changes.text", "changes.author", "total_changes"},
+	}
+	want, ok := shapes[catalogParser]
+	if !ok {
+		t.Fatalf("catalogParser %d has no pinned shape: list Release's fields under it here", catalogParser)
+	}
+	if got := jsonKeys(reflect.TypeOf(Release{}), ""); !slices.Equal(got, want) {
+		t.Fatalf("Release has fields %q, parser %d names %q: a changed field set needs a higher parser number", got, catalogParser, want)
+	}
+}
+
+func jsonKeys(structType reflect.Type, prefix string) []string {
+	var keys []string
+	for index := range structType.NumField() {
+		field := structType.Field(index)
+		name := prefix + strings.Split(field.Tag.Get("json"), ",")[0]
+		elem := field.Type
+		if elem.Kind() == reflect.Slice {
+			elem = elem.Elem()
+		}
+		if elem.Kind() == reflect.Struct {
+			keys = append(keys, jsonKeys(elem, name+".")...)
+			continue
+		}
+		keys = append(keys, name)
+	}
+	return keys
 }

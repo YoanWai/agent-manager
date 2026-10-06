@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
@@ -188,6 +189,9 @@ func TestRefreshUsesConditionalRequest(t *testing.T) {
 	messages, err := Refresh(t.Context(), dir, "v0.14.2")
 	if err != nil || len(messages) != 1 || messages[0].ID != "feed-one" {
 		t.Fatalf("messages=%+v err=%v", messages, err)
+	}
+	if written, ok := readCache(filepath.Join(dir, cacheFile)); !ok || written.Parser != feedParser || written.ETag != `"feed-1"` {
+		t.Fatalf("a not-modified answer must keep the parser stamp: %+v", written)
 	}
 }
 
@@ -443,5 +447,78 @@ func TestLegacyFeedSeedsUntilTheFirstFetch(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, cacheFile)); !os.IsNotExist(err) {
 		t.Fatalf("a failed fetch must not write a cache: %v", err)
+	}
+}
+
+func TestFeedFileWinsOverTheLegacyFile(t *testing.T) {
+	dir := t.TempDir()
+	writeCache(filepath.Join(dir, cacheFile), cache{
+		CheckedAt: time.Now(),
+		Parser:    feedParser,
+		Messages:  []rawMessage{{ID: "one", Banner: "x", Title: "From the new file"}},
+	})
+	if err := os.WriteFile(filepath.Join(dir, legacyCacheFile), []byte(legacyFeedJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { hits.Add(1) }))
+	t.Cleanup(server.Close)
+	old := feedURL
+	feedURL = server.URL
+	t.Cleanup(func() { feedURL = old })
+
+	messages := fetch(t, dir, "v0.40.0")
+	if hits.Load() != 0 || len(messages) != 1 || messages[0].Title != "From the new file" {
+		t.Fatalf("hits=%d messages=%+v, want the fresh new file with no fetch", hits.Load(), messages)
+	}
+	if kept, err := os.ReadFile(filepath.Join(dir, legacyCacheFile)); err != nil || string(kept) != legacyFeedJSON {
+		t.Fatalf("the legacy file must stay byte for byte: %v", err)
+	}
+}
+
+func TestLegacyFeedSeedIsFetchedAtOnceWithoutItsETag(t *testing.T) {
+	dir := t.TempDir()
+	seed := `{"checked_at":"` + time.Now().Format(time.RFC3339) + `","etag":"\"legacy-feed\"","messages":[{"id":"one","banner":"x","title":"Seeded"}]}`
+	if err := os.WriteFile(filepath.Join(dir, legacyCacheFile), []byte(seed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		if got := r.Header.Get("If-None-Match"); got != "" {
+			t.Errorf("If-None-Match = %q, want none: a not-modified answer would keep the older build's parse", got)
+		}
+		w.Write([]byte(`[{"id":"one","banner":"x","title":"Fetched"}]`))
+	}))
+	t.Cleanup(server.Close)
+	old := feedURL
+	feedURL = server.URL
+	t.Cleanup(func() { feedURL = old })
+
+	messages := fetch(t, dir, "v0.40.0")
+	if hits.Load() != 1 || len(messages) != 1 || messages[0].Title != "Fetched" {
+		t.Fatalf("hits=%d messages=%+v, want one fetch at once: a seed is never fresh", hits.Load(), messages)
+	}
+	written, ok := readCache(filepath.Join(dir, cacheFile))
+	if !ok || written.Parser != feedParser || len(written.Messages) != 1 {
+		t.Fatalf("feed not cached with its parser: %+v", written)
+	}
+}
+
+func TestParserNumberPinsTheEntryShape(t *testing.T) {
+	shapes := map[int][]string{
+		1: {"id", "banner", "title", "headline", "accent", "body", "url", "min_version", "max_version", "expires_at"},
+	}
+	want, ok := shapes[feedParser]
+	if !ok {
+		t.Fatalf("feedParser %d has no pinned shape: list rawMessage's fields under it here", feedParser)
+	}
+	var got []string
+	entryType := reflect.TypeOf(rawMessage{})
+	for index := range entryType.NumField() {
+		got = append(got, strings.Split(entryType.Field(index).Tag.Get("json"), ",")[0])
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("rawMessage has fields %q, parser %d names %q: a changed field set needs a higher parser number", got, feedParser, want)
 	}
 }
