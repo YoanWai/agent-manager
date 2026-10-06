@@ -380,8 +380,11 @@ func TestLegacyCatalogSeedsTheFirstPaint(t *testing.T) {
 	if !slices.Equal(newest.Highlights, []string{"Pickers are here"}) || !slices.Equal(newest.Thanks, []string{"@someone asked (#1)"}) {
 		t.Fatalf("the authored sections must carry over: %+v", newest)
 	}
-	if len(newest.Changes) != 0 {
-		t.Fatalf("legacy change rows have no kind and must wait for the fetch: %+v", newest.Changes)
+	if !slices.Equal(newest.Changes, []Change{{Kind: KindOther, Text: "UI: A feature · @someone"}}) || newest.TotalChanges != 1 {
+		t.Fatalf("legacy change rows must seed as other: %+v", newest)
+	}
+	if older := seeded.Releases[1]; !slices.Equal(older.Changes, []Change{{Kind: KindOther, Text: "UI: Older"}}) {
+		t.Fatalf("a release without highlights must not seed empty: %+v", older)
 	}
 
 	var calls atomic.Int32

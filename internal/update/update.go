@@ -118,13 +118,15 @@ type cache struct {
 	Releases  []Release `json:"releases,omitempty"`
 }
 
-// legacyCache is update-check.json from releases before v0.40.0, whose kindless change rows are not carried over.
+// legacyCache is update-check.json from releases before v0.40.0, whose change rows carry no kind and seed as other.
 type legacyCache struct {
 	Releases []struct {
-		Version    string   `json:"version"`
-		URL        string   `json:"url"`
-		Highlights []string `json:"highlights"`
-		Thanks     []string `json:"thanks"`
+		Version      string   `json:"version"`
+		URL          string   `json:"url"`
+		Highlights   []string `json:"highlights"`
+		Thanks       []string `json:"thanks"`
+		Changes      []string `json:"changes"`
+		TotalChanges int      `json:"total_changes"`
 	} `json:"releases"`
 }
 
@@ -181,11 +183,17 @@ func legacyCatalog(path string) cache {
 	}
 	var seeded cache
 	for _, release := range legacy.Releases {
+		changes := make([]Change, 0, len(release.Changes))
+		for _, row := range release.Changes {
+			changes = append(changes, Change{Kind: KindOther, Text: row})
+		}
 		seeded.Releases = append(seeded.Releases, Release{
-			Version:    release.Version,
-			URL:        release.URL,
-			Highlights: release.Highlights,
-			Thanks:     release.Thanks,
+			Version:      release.Version,
+			URL:          release.URL,
+			Highlights:   release.Highlights,
+			Thanks:       release.Thanks,
+			Changes:      changes,
+			TotalChanges: release.TotalChanges,
 		})
 	}
 	return seeded
