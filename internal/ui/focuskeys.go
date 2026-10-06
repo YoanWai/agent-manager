@@ -257,8 +257,37 @@ func textBeforeCaret(engine *status.Engine, tool, row string, caretX int) bool {
 	if !ok {
 		return false
 	}
+	return textBetween(row, ansi.StringWidth(prefix), caretX)
+}
+
+// draftBeforeCaret is textBeforeCaret for a draft that may wrap: a tool that
+// draws its marker on the first composer row only (omp) leaves the caret on
+// a markerless row once the draft wraps. Such a row holds a draft when it has
+// text before the caret and the unbroken rows above it lead to a marker row
+// that carries text too.
+func draftBeforeCaret(engine *status.Engine, tool string, rows []string, caretX, caretY int) bool {
+	row := rows[caretY]
+	if _, ok := engine.InputPrefix(tool, row); ok {
+		return textBeforeCaret(engine, tool, row, caretX)
+	}
+	if !textBetween(row, 0, caretX) {
+		return false
+	}
+	for y := caretY - 1; y >= 0; y-- {
+		above := rows[y]
+		if prefix, ok := engine.InputPrefix(tool, above); ok {
+			return strings.TrimSpace(above[len(prefix):]) != ""
+		}
+		if strings.TrimSpace(above) == "" || engine.MatchesActivityCutoff(tool, above) {
+			return false
+		}
+	}
+	return false
+}
+
+func textBetween(row string, from, caretX int) bool {
 	line := []rune(row)
-	for cell := ansi.StringWidth(prefix); cell < caretX; {
+	for cell := from; cell < caretX; {
 		index := runeAtColumn(line, cell)
 		if index >= len(line) {
 			return false

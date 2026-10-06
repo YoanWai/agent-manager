@@ -26,7 +26,7 @@ body:
       options:
         - Sessions and groups
         - Status detection
-        - Quick prompt
+        - Quick prompt mode
         - Diff review
         - Settings and themes
         - Config and tool support

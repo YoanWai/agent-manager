@@ -153,7 +153,7 @@ func promptField() composer {
 		return "  "
 	})
 	in.FocusedStyle.CursorLine = lipgloss.NewStyle()
-	in.SetHeight(1)
+	holdOpen(&in)
 	return composer{input: in, maxRows: formPromptMaxRows}
 }
 
@@ -312,6 +312,7 @@ func (m *Model) rebuildGroupOptions(selectPath string) {
 }
 
 func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	msg = typedText(msg)
 	if m.form.focus == fieldModel {
 		if model, cmd, handled := m.handleFormModelKey(msg); handled {
 			return model, cmd

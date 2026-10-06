@@ -86,6 +86,7 @@ func (m *Model) viewListFrame() string {
 	}
 	frame = append(frame, bottom)
 	m.placeNoticeHit(footer, len(frame))
+	m.quick.originY = len(frame)
 	for _, line := range splitLines(footer) {
 		frame = append(frame, paint(line, m.width, backdropHex()))
 	}
@@ -113,13 +114,7 @@ func (m *Model) viewFullListFrame() string {
 	for _, line := range m.viewHeaderRows() {
 		frame = append(frame, paint(line, m.width, backdropHex()))
 	}
-	quickRows := m.fullQuickLines(railWidth, bodyHeight)
-	railRows := m.railLines(railWidth, bodyHeight-len(quickRows))
-	if m.quick.active {
-		y0, _ := m.bodyYRange()
-		m.quick.originY += y0 + len(railRows)
-	}
-	railRows = append(railRows, quickRows...)
+	railRows := m.railLines(railWidth, bodyHeight)
 	m.recordRailHits(railRows)
 	edge := make([]string, bodyHeight)
 	for i := range edge {
@@ -136,6 +131,7 @@ func (m *Model) viewFullListFrame() string {
 	)...)
 	frame = append(frame, m.boundedRuleRow(railWidth, m.width, "▄"))
 	m.placeNoticeHit(footer, len(frame))
+	m.quick.originY = len(frame)
 	for _, line := range splitLines(footer) {
 		frame = append(frame, paint(line, m.width, backdropHex()))
 	}
@@ -168,40 +164,6 @@ func (m *Model) viewFullFocusFrame() string {
 		frame = append(frame, paint(line, m.width, backdropHex()))
 	}
 	return m.overlayTopRight(strings.Join(frame, "\n"), m.statusToast(), m.listChromeRows()+1)
-}
-
-// quickBarChrome is what the docked bar spends around the prompt: the rule
-// that parts it from the list, and the target line.
-const quickBarChrome = 2
-
-// fullQuickLines docks the open quick bar at the full screen frame's foot,
-// the prompt capped to the rows left over so the textarea scrolls the caret
-// into view rather than the frame cutting the row it sits on. Empty while
-// the bar is closed.
-func (m *Model) fullQuickLines(width, height int) []contentLine {
-	if !m.quick.active {
-		return nil
-	}
-	gutter := strings.Repeat(" ", contentGutter)
-	inner := width - 2*contentGutter
-	if inner < 1 {
-		inner = 1
-	}
-	inset := func(block []string) []contentLine {
-		out := make([]contentLine, len(block))
-		for i, line := range block {
-			out[i] = contentLine{text: gutter + line}
-		}
-		return out
-	}
-	lines := append([]contentLine{{rule: true}}, inset(splitLines(m.viewQuickBar(inner, height-quickBarChrome)))...)
-	// Under the rule, less what the cap cuts off the top.
-	m.quick.originX, m.quick.originY = 1+contentGutter, 1
-	if len(lines) > height {
-		m.quick.originY -= len(lines) - height
-		lines = lines[len(lines)-height:]
-	}
-	return lines
 }
 
 func (m *Model) highlightQuery(name string, base lipgloss.Style) string {
@@ -1064,10 +1026,7 @@ func tempReadings(snap sysstat.Snapshot) string {
 	return strings.Join(parts, subtleStyle.Render("  "))
 }
 
-// contentLines is the right column: what the cursor is on, then its live
-// pane, with the quick prompt docked at the foot when it is open. width is
-// the whole column; our own blocks sit inside its gutters, while the
-// captured pane spans it edge to edge.
+// Captured panes use the whole column to preserve terminal layout.
 func (m *Model) contentLines(width, height int) []contentLine {
 	gutter := strings.Repeat(" ", contentGutter)
 	inner := width - 2*contentGutter
@@ -1079,22 +1038,8 @@ func (m *Model) contentLines(width, height int) []contentLine {
 		return out
 	}
 
-	var bar []contentLine
-	if m.quick.active {
-		rows := quickBarMaxRows
-		if m.quick.picking != pickNone {
-			rows = height - 1
-		}
-		bar = append([]contentLine{{}}, ours(splitLines(m.viewQuickBar(inner, rows)))...)
-		y0, _ := m.bodyYRange()
-		// Under the blank row, less what a bar taller than the column loses.
-		m.quick.originX, m.quick.originY = m.pane.columnX+contentGutter, y0+height-len(bar)+1
-		if len(bar) > height {
-			bar = bar[len(bar)-height:]
-		}
-	}
 	body := ours(splitLines(m.viewDetail(inner)))
-	rest := height - len(body) - len(bar) - 1
+	rest := height - len(body) - 1
 	if rest >= 3 {
 		if group, ok := m.selectedGroup(); ok {
 			body = append(body, contentLine{rule: true})
@@ -1109,10 +1054,10 @@ func (m *Model) contentLines(width, height int) []contentLine {
 			body = append(body, m.previewLines(width, rest, gutter)...)
 		}
 	}
-	for len(body)+len(bar) < height {
+	for len(body) < height {
 		body = append(body, contentLine{})
 	}
-	return append(body[:max(height-len(bar), 0)], bar...)
+	return body[:max(height, 0)]
 }
 
 // focusFactsLine says which session a full screen frame is showing, where
@@ -1597,10 +1542,43 @@ func lastActivity(sess store.Session) time.Time {
 	return sess.LastStatusAt
 }
 
+func (m *Model) quickFooter() string {
+	edge := keyStyle.Render(quickEdge)
+	gutter := strings.Repeat(" ", quickGutter-1)
+	keys := splitLines(legendBar([]legendSection{{title: quickModeTitle, pairs: m.quickLegend()}}, max(m.width-1, 1)))
+	rows := quickBarMaxRows + 1
+	if m.quick.picking != pickNone {
+		rows = max(m.height/2, rows)
+	}
+	const minBody = 3
+	room := m.height - m.listChromeRows() - 1 - minBody - len(keys)
+	rows = max(min(rows, room), 2)
+	var lines []string
+	for i, line := range splitLines(m.viewQuickBar(max(m.width-2*quickGutter, 1), rows)) {
+		tone := quickModeHex()
+		if i > 0 && m.quick.picking == pickNone {
+			tone = blockHex()
+		}
+		lines = append(lines, paint(edge+gutter+line, m.width, tone))
+	}
+	for _, line := range keys {
+		lines = append(lines, paint(edge+line, m.width, quickModeHex()))
+	}
+	m.quick.originX = quickGutter
+	return strings.Join(lines, "\n")
+}
+
+const (
+	quickEdge   = "▌"
+	quickGutter = 3
+)
+
 // viewQuickBar is the docked prompt: enter answers the selected session, or
 // spawns a fresh agent when a group is selected.
 func (m *Model) viewQuickBar(width, maxRows int) string {
-	label := func(text string) string { return labelStyle.Render(padRight(text, detailLabelWidth)) }
+	label := func(text string) string {
+		return labelStyle.Render(padRight(text, detailLabelWidth)) + subtleStyle.Render("│ ")
+	}
 	target := rowColumns(label("target")+mutedStyle.Render("no selection"), "", width)
 	m.quick.hits = m.quick.hits[:0]
 	if entry, ok := m.selectedRow(); ok {
@@ -1621,15 +1599,10 @@ func (m *Model) viewQuickBar(width, maxRows int) string {
 				[]string{state + " " + chipStyle.Render(sess.Tool), state, ""}, width)
 		}
 	}
-	// The rows the frame can spare become the box's own cap, so a keystroke
-	// repositions the viewport inside the rows that are actually on screen.
-	// LineInfo counts wraps at the width already stored on the box.
+	// Count wrapped rows only after setting the width.
 	m.quick.input.SetWidth(width)
-	m.quick.maxRows = m.quickBarRows(width-2, maxRows-1)
-	m.quick.input.SetHeight(m.quick.maxRows)
-	// Chips are tokens inside the typed text, so they wrap and reflow with
-	// the words around them; painting happens on the rendered prompt.
-	return target + "\n" + m.quick.renderChips(textAreaView(m.quick.input))
+	m.quick.maxRows = max(min(maxRows-1, quickBarMaxRows), 1)
+	return target + "\n" + m.quick.view()
 }
 
 type quickHit struct {

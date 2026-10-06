@@ -26,7 +26,7 @@ func (m *Model) openQuickMode() tea.Cmd {
 		return "  "
 	})
 	input.FocusedStyle.CursorLine = lipgloss.NewStyle()
-	input.SetHeight(1)
+	holdOpen(&input)
 	input.Focus()
 	m.errBar.text = ""
 	m.forgetWorktreeCapability()
@@ -71,6 +71,7 @@ func (m *Model) spawnToolSelection() ([]string, int) {
 // caret has a prompt row to move to, enter submits against whatever is
 // selected, and every other key is typed text.
 func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	msg = typedText(msg)
 	if m.quick.picking != pickNone {
 		// A click can move the target off the group the list was opened for.
 		if m.quickSpawning() {
@@ -290,7 +291,7 @@ func (m *Model) quickTool() string {
 func (m *Model) quickCloseAfterSend() bool {
 	chosen, err := m.store.Setting(quickCloseSetting)
 	if err != nil {
-		m.errBar.text = "reading quick prompt setting: " + err.Error()
+		m.errBar.text = "reading the quick prompt mode setting: " + err.Error()
 		return false
 	}
 	return chosen == "close"
