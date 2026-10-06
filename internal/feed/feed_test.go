@@ -155,6 +155,7 @@ func TestFetchRefetchesFutureDatedCache(t *testing.T) {
 	dir := t.TempDir()
 	writeCache(filepath.Join(dir, cacheFile), cache{
 		CheckedAt: time.Now().Add(time.Hour),
+		Parser:    feedParser,
 		Messages:  []rawMessage{{ID: "stale", Banner: "x", Title: "x"}},
 	})
 	serve(t, `[{"id":"fresh","banner":"x","title":"x"}]`)
@@ -169,6 +170,7 @@ func TestRefreshUsesConditionalRequest(t *testing.T) {
 	dir := t.TempDir()
 	writeCache(filepath.Join(dir, cacheFile), cache{
 		CheckedAt: time.Now().Add(-checkInterval),
+		Parser:    feedParser,
 		ETag:      `"feed-1"`,
 		Messages:  []rawMessage{{ID: "one", Banner: "x", Title: "x"}},
 	})
@@ -374,4 +376,72 @@ func majorAbove(t *testing.T, version string) string {
 		t.Fatalf("version bound %q has a non-numeric major field", version)
 	}
 	return strconv.Itoa(major+1) + "." + fields[1] + "." + fields[2]
+}
+
+const legacyFeedJSON = `{"checked_at":"2099-01-01T00:00:00Z","etag":"\"legacy-feed\"","messages":[{"id":"one","banner":"x","title":"Seeded","body":["from the older build"]}]}`
+
+func TestFeedIsCachedInItsOwnFile(t *testing.T) {
+	serve(t, `[{"id":"one","banner":"x","title":"x"}]`)
+	dir := t.TempDir()
+	fetch(t, dir, "v0.40.0")
+	written, ok := readCache(filepath.Join(dir, "feed-messages.json"))
+	if !ok || written.Parser != feedParser || len(written.Messages) != 1 {
+		t.Fatalf("feed not cached with its parser: %+v", written)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "message-feed.json")); !os.IsNotExist(err) {
+		t.Fatalf("the file older builds own must be left alone: %v", err)
+	}
+}
+
+func TestFeedFromAnotherParserIsRefetchedWithoutItsETag(t *testing.T) {
+	dir := t.TempDir()
+	writeCache(filepath.Join(dir, cacheFile), cache{
+		CheckedAt: time.Now(),
+		Parser:    feedParser + 1,
+		ETag:      `"other-parser"`,
+		Messages:  []rawMessage{{ID: "one", Banner: "x", Title: "stale"}},
+	})
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		if got := r.Header.Get("If-None-Match"); got != "" {
+			t.Errorf("If-None-Match = %q, want none", got)
+		}
+		w.Write([]byte(`[{"id":"one","banner":"x","title":"fresh","accent":["fresh"],"body":["fresh text"]}]`))
+	}))
+	t.Cleanup(server.Close)
+	old := feedURL
+	feedURL = server.URL
+	t.Cleanup(func() { feedURL = old })
+
+	messages := fetch(t, dir, "v0.40.0")
+	if hits.Load() != 1 || messages[0].Title != "fresh" || len(messages[0].Accent) != 1 {
+		t.Fatalf("hits=%d messages=%+v, want one full fetch despite the fresh timestamp", hits.Load(), messages)
+	}
+}
+
+func TestLegacyFeedSeedsUntilTheFirstFetch(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "message-feed.json"), []byte(legacyFeedJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "down", http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(server.Close)
+	old := feedURL
+	feedURL = server.URL
+	t.Cleanup(func() { feedURL = old })
+
+	messages := fetch(t, dir, "v0.40.0")
+	if len(messages) != 1 || messages[0].Title != "Seeded" {
+		t.Fatalf("the older build's feed should show while the fetch fails: %+v", messages)
+	}
+	kept, err := os.ReadFile(filepath.Join(dir, "message-feed.json"))
+	if err != nil || string(kept) != legacyFeedJSON {
+		t.Fatalf("the legacy file must stay byte for byte: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, cacheFile)); !os.IsNotExist(err) {
+		t.Fatalf("a failed fetch must not write a cache: %v", err)
+	}
 }

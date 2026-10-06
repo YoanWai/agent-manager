@@ -24,7 +24,10 @@ import (
 )
 
 const (
-	cacheFile = "message-feed.json"
+	cacheFile       = "feed-messages.json"
+	legacyCacheFile = "message-feed.json"
+	// feedParser names the fields this build keeps of an entry. Raise it whenever rawMessage changes.
+	feedParser = 1
 	// checkInterval matches the release check. The feed exists to reach
 	// installs that are already running, so a floor longer than that one
 	// lets a release notice arrive hours before the message announcing it,
@@ -81,6 +84,7 @@ type rawMessage struct {
 
 type cache struct {
 	CheckedAt time.Time    `json:"checked_at"`
+	Parser    int          `json:"parser"`
 	ETag      string       `json:"etag,omitempty"`
 	Messages  []rawMessage `json:"messages"`
 }
@@ -100,17 +104,26 @@ func Refresh(ctx context.Context, configDir, version string) ([]Message, error) 
 	return fetchMessages(ctx, configDir, version, true)
 }
 
+// loadCache reports parsedHere false for a feed it must neither trust as fresh nor revalidate by ETag.
+func loadCache(configDir string) (cached cache, found, parsedHere bool) {
+	if stored, ok := readCache(filepath.Join(configDir, cacheFile)); ok {
+		return stored, true, stored.Parser == feedParser
+	}
+	cached, found = readCache(filepath.Join(configDir, legacyCacheFile))
+	return cached, found, false
+}
+
 func fetchMessages(ctx context.Context, configDir, version string, force bool) ([]Message, error) {
 	now := time.Now()
 	cachePath := filepath.Join(configDir, cacheFile)
-	cached, haveCache := readCache(cachePath)
+	cached, haveCache, parsedHere := loadCache(configDir)
 	age := now.Sub(cached.CheckedAt)
-	if !force && haveCache && age >= 0 && age < checkInterval {
+	if !force && parsedHere && age >= 0 && age < checkInterval {
 		return sanitize(cached.Messages, version, now), nil
 	}
 
 	etag := ""
-	if haveCache {
+	if parsedHere {
 		etag = cached.ETag
 	}
 	raw, nextETag, notModified, err := download(ctx, etag)
@@ -129,7 +142,7 @@ func fetchMessages(ctx context.Context, configDir, version string, force bool) (
 		writeCache(cachePath, cached)
 		return sanitize(cached.Messages, version, now), nil
 	}
-	writeCache(cachePath, cache{CheckedAt: now, ETag: nextETag, Messages: raw})
+	writeCache(cachePath, cache{CheckedAt: now, Parser: feedParser, ETag: nextETag, Messages: raw})
 	return sanitize(raw, version, now), nil
 }
 
