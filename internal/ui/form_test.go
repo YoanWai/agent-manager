@@ -601,6 +601,20 @@ func TestFormLongPromptWrapsAcrossRows(t *testing.T) {
 	}
 }
 
+func TestFormTypesWordsNamedLikeKeys(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	for i, word := range []string{"enter", "tab", "esc"} {
+		if i > 0 {
+			m = applyMsg(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'-'}})
+		}
+		m = applyMsg(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(word)})
+	}
+	if m.mode != modeForm || m.form.name.Value() != "enter-tab-esc" {
+		t.Fatalf("mode %v, name %q; want the form open with the words typed", m.mode, m.form.name.Value())
+	}
+}
+
 func TestComposerRowsCountAnExactFillAsAWrap(t *testing.T) {
 	prompt := promptField()
 	prompt.input.SetWidth(12) // content width 10

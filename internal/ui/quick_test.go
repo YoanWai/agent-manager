@@ -1169,17 +1169,3 @@ func TestQuickPromptTypesWordsNamedLikeKeys(t *testing.T) {
 		t.Fatalf("prompt %q, open %v, selection %d; want %q typed in an open bar on row 1", m.quick.input.Value(), m.quick.active, m.cursor, want)
 	}
 }
-
-func TestFormTypesWordsNamedLikeKeys(t *testing.T) {
-	m := buildModel(t)
-	m.openForm()
-	for i, word := range []string{"enter", "tab", "esc"} {
-		if i > 0 {
-			m = applyMsg(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'-'}})
-		}
-		m = applyMsg(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(word)})
-	}
-	if m.mode != modeForm || m.form.name.Value() != "enter-tab-esc" {
-		t.Fatalf("mode %v, name %q; want the form open with the words typed", m.mode, m.form.name.Value())
-	}
-}

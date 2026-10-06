@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"github.com/charmbracelet/bubbles/textarea"
 	"os"
 	"slices"
 	"strconv"
@@ -14,6 +13,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
