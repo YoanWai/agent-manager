@@ -287,20 +287,6 @@ func TestStaleCatalogUsesConditionalRequest(t *testing.T) {
 	}
 }
 
-func TestLegacyCacheWithoutCatalogRefetches(t *testing.T) {
-	dir := t.TempDir()
-	seedCache(t, dir, cache{CheckedAt: time.Now(), Latest: "v0.9.0", URL: "https://github.com/old"})
-	var calls atomic.Int32
-	server := releaseServer(t, &calls, "v0.10.0")
-	defer server.Close()
-	defer swapReleasesURL(server.URL)()
-
-	result, err := Check(context.Background(), dir, "v0.8.2")
-	if err != nil || calls.Load() != 1 || result.Latest != "v0.10.0" {
-		t.Fatalf("result=%+v err=%v calls=%d", result, err, calls.Load())
-	}
-}
-
 func TestFetchFailureReturnsStaleCatalogWithoutOverwritingIt(t *testing.T) {
 	dir := t.TempDir()
 	seed := cache{
@@ -327,15 +313,112 @@ func TestFetchFailureReturnsStaleCatalogWithoutOverwritingIt(t *testing.T) {
 	}
 }
 
-func TestCachedNeverTouchesNetworkOrTrustsLegacyShape(t *testing.T) {
+func TestCatalogIsWrittenToItsOwnFile(t *testing.T) {
+	var calls atomic.Int32
+	server := releaseServer(t, &calls, "v0.40.0")
+	defer server.Close()
+	defer swapReleasesURL(server.URL)()
+
 	dir := t.TempDir()
-	seedCache(t, dir, cache{CheckedAt: time.Now(), Latest: "v0.9.0"})
-	if result := Cached(dir, "v0.8.2"); len(result.Releases) != 0 {
-		t.Fatalf("legacy cache should be ignored: %+v", result)
+	if _, err := Check(context.Background(), dir, "v0.39.0"); err != nil {
+		t.Fatal(err)
 	}
-	seedCache(t, dir, cache{CheckedAt: time.Now(), Releases: []Release{testRelease("v0.9.0", "new")}})
-	if result := Cached(dir, "v0.8.2"); result.Latest != "v0.9.0" {
-		t.Fatalf("cached catalog not returned: %+v", result)
+	written, ok := readCache(filepath.Join(dir, "release-catalog.json"))
+	if !ok || written.Parser != catalogParser || len(written.Releases) != 1 {
+		t.Fatalf("catalog not written with its parser: %+v", written)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "update-check.json")); !os.IsNotExist(err) {
+		t.Fatalf("the file older builds own must be left alone: %v", err)
+	}
+}
+
+func TestCatalogFromAnotherParserIsRefetchedWithoutItsETag(t *testing.T) {
+	dir := t.TempDir()
+	stale, err := json.Marshal(cache{
+		CheckedAt: time.Now(),
+		Parser:    catalogParser + 1,
+		ETag:      `"other-parser"`,
+		Releases:  []Release{testRelease("v0.40.0", "kept for the first paint")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedFile(t, dir, cacheFile, string(stale))
+	if got := Cached(dir, "v0.39.0"); got.Latest != "v0.40.0" {
+		t.Fatalf("another parser's releases still paint: %+v", got)
+	}
+
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if got := r.Header.Get("If-None-Match"); got != "" {
+			t.Errorf("If-None-Match = %q, want none: a not-modified answer would keep the other parse", got)
+		}
+		fmt.Fprint(w, `[{"tag_name":"v0.40.0","html_url":"https://github.com/YoanWai/agent-manager/releases/tag/v0.40.0","body":"## What's Changed\n* fix(ui): reparsed"}]`)
+	}))
+	defer server.Close()
+	defer swapReleasesURL(server.URL)()
+
+	result, err := Check(context.Background(), dir, "v0.39.0")
+	if err != nil || calls.Load() != 1 {
+		t.Fatalf("err=%v calls=%d, want one full fetch despite the fresh timestamp", err, calls.Load())
+	}
+	if got := result.Releases[0].Changes[0].Text; got != "UI: Reparsed" {
+		t.Fatalf("changes = %q, want this build's parse", got)
+	}
+}
+
+func TestLegacyCatalogSeedsTheFirstPaint(t *testing.T) {
+	dir := t.TempDir()
+	seedFile(t, dir, "update-check.json", legacyCatalogJSON)
+
+	seeded := Cached(dir, "v0.39.0")
+	if seeded.Latest != "v0.40.0" || len(seeded.Releases) != 2 {
+		t.Fatalf("seed = %+v", seeded)
+	}
+	newest := seeded.Releases[0]
+	if !slices.Equal(newest.Highlights, []string{"Pickers are here"}) || !slices.Equal(newest.Thanks, []string{"@someone asked (#1)"}) {
+		t.Fatalf("the authored sections must carry over: %+v", newest)
+	}
+	if len(newest.Changes) != 0 {
+		t.Fatalf("legacy change rows have no kind and must wait for the fetch: %+v", newest.Changes)
+	}
+
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if got := r.Header.Get("If-None-Match"); got != "" {
+			t.Errorf("If-None-Match = %q, want none", got)
+		}
+		fmt.Fprint(w, `[{"tag_name":"v0.40.0","html_url":"https://github.com/YoanWai/agent-manager/releases/tag/v0.40.0","body":"## What's Changed\n* feat(ui): fetched"}]`)
+	}))
+	defer server.Close()
+	defer swapReleasesURL(server.URL)()
+
+	if _, err := Check(context.Background(), dir, "v0.39.0"); err != nil || calls.Load() != 1 {
+		t.Fatalf("err=%v calls=%d, want a fetch at once: a seed is never fresh", err, calls.Load())
+	}
+	kept, err := os.ReadFile(filepath.Join(dir, "update-check.json"))
+	if err != nil || string(kept) != legacyCatalogJSON {
+		t.Fatalf("the legacy file must stay byte for byte: %v", err)
+	}
+}
+
+func TestFailedFetchKeepsTheLegacySeedOnScreen(t *testing.T) {
+	dir := t.TempDir()
+	seedFile(t, dir, "update-check.json", legacyCatalogJSON)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "rate limited", http.StatusForbidden)
+	}))
+	defer server.Close()
+	defer swapReleasesURL(server.URL)()
+
+	result, err := Check(context.Background(), dir, "v0.39.0")
+	if err == nil || result.Latest != "v0.40.0" {
+		t.Fatalf("the seed should survive a failed fetch: %+v, %v", result, err)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, cacheFile)); !os.IsNotExist(statErr) {
+		t.Fatalf("a failed fetch must not write a catalog: %v", statErr)
 	}
 }
 
@@ -372,14 +455,34 @@ func releaseVersions(releases []Release) []string {
 
 func seedCache(t *testing.T, dir string, value cache) {
 	t.Helper()
+	value.Parser = catalogParser
 	raw, err := json.Marshal(value)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, cacheFile), raw, 0o644); err != nil {
+	seedFile(t, dir, cacheFile, string(raw))
+}
+
+func seedFile(t *testing.T, dir, name, content string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
+
+const legacyCatalogJSON = `{
+	"checked_at": "2099-01-01T00:00:00Z",
+	"latest": "v0.40.0",
+	"url": "https://github.com/YoanWai/agent-manager/releases/tag/v0.40.0",
+	"etag": "\"legacy-1\"",
+	"releases": [
+		{"version": "v0.40.0", "url": "https://github.com/YoanWai/agent-manager/releases/tag/v0.40.0",
+		 "highlights": ["Pickers are here"], "thanks": ["@someone asked (#1)"],
+		 "changes": ["UI: A feature · @someone"], "total_changes": 1},
+		{"version": "v0.39.0", "url": "https://github.com/YoanWai/agent-manager/releases/tag/v0.39.0",
+		 "changes": ["UI: Older"], "total_changes": 1}
+	]
+}`
 
 func releaseServer(t *testing.T, calls *atomic.Int32, version string) *httptest.Server {
 	t.Helper()

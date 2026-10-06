@@ -24,7 +24,10 @@ import (
 )
 
 const (
-	cacheFile            = "update-check.json"
+	cacheFile       = "release-catalog.json"
+	legacyCacheFile = "update-check.json"
+	// catalogParser names the shape this build parses a release into. Raise it when that shape changes.
+	catalogParser        = 1
 	checkInterval        = 10 * time.Minute
 	requestBudget        = 4 * time.Second
 	refreshBudget        = 2 * time.Minute
@@ -110,11 +113,19 @@ type ReleaseRange struct {
 
 type cache struct {
 	CheckedAt time.Time `json:"checked_at"`
-	// Latest and URL keep the cache backward-readable by older binaries.
-	Latest   string    `json:"latest"`
-	URL      string    `json:"url"`
-	ETag     string    `json:"etag,omitempty"`
-	Releases []Release `json:"releases,omitempty"`
+	Parser    int       `json:"parser"`
+	ETag      string    `json:"etag,omitempty"`
+	Releases  []Release `json:"releases,omitempty"`
+}
+
+// legacyCache is update-check.json from releases before v0.40.0, whose kindless change rows are not carried over.
+type legacyCache struct {
+	Releases []struct {
+		Version    string   `json:"version"`
+		URL        string   `json:"url"`
+		Highlights []string `json:"highlights"`
+		Thanks     []string `json:"thanks"`
+	} `json:"releases"`
 }
 
 type githubRelease struct {
@@ -144,11 +155,40 @@ func Cached(configDir, current string) Result {
 	if !ok {
 		return Result{}
 	}
-	cached, ok := readCache(filepath.Join(configDir, cacheFile))
-	if !ok || len(cached.Releases) == 0 {
+	cached, _ := loadCatalog(configDir)
+	if len(cached.Releases) == 0 {
 		return Result{}
 	}
 	return resultFor(currentParts, cached.Releases)
+}
+
+// loadCatalog reports parsedHere false for a catalog it must neither trust as fresh nor revalidate by ETag.
+func loadCatalog(configDir string) (cached cache, parsedHere bool) {
+	if stored, ok := readCache(filepath.Join(configDir, cacheFile)); ok {
+		return stored, stored.Parser == catalogParser
+	}
+	return legacyCatalog(filepath.Join(configDir, legacyCacheFile)), false
+}
+
+func legacyCatalog(path string) cache {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return cache{}
+	}
+	var legacy legacyCache
+	if err := json.Unmarshal(raw, &legacy); err != nil {
+		return cache{}
+	}
+	var seeded cache
+	for _, release := range legacy.Releases {
+		seeded.Releases = append(seeded.Releases, Release{
+			Version:    release.Version,
+			URL:        release.URL,
+			Highlights: release.Highlights,
+			Thanks:     release.Thanks,
+		})
+	}
+	return seeded
 }
 
 func check(ctx context.Context, configDir, current string, force bool) (Result, error) {
@@ -158,19 +198,19 @@ func check(ctx context.Context, configDir, current string, force bool) (Result, 
 	}
 
 	cachePath := filepath.Join(configDir, cacheFile)
-	cached, haveCache := readCache(cachePath)
-	haveCatalog := haveCache && len(cached.Releases) > 0
+	cached, parsedHere := loadCatalog(configDir)
+	haveCatalog := len(cached.Releases) > 0
 	newest, _ := latestRelease(cached.Releases)
 	// A catalog that stops short of the running build was fetched before the
 	// release that is now installed, so however recently that was, it cannot
 	// name what the update brought. Updating within the interval lands in
 	// exactly that state, which is when the notes are read.
-	if !force && haveCatalog && cacheFresh(cached, time.Now()) && !Newer(current, newest) {
+	if !force && parsedHere && haveCatalog && cacheFresh(cached, time.Now()) && !Newer(current, newest) {
 		return resultFor(currentParts, cached.Releases), nil
 	}
 
 	etag := ""
-	if haveCatalog {
+	if parsedHere && haveCatalog {
 		etag = cached.ETag
 	}
 	// A background Check gives up quickly and silently; a Refresh answers
@@ -191,11 +231,9 @@ func check(ctx context.Context, configDir, current string, force bool) (Result, 
 		writeCache(cachePath, cached)
 		return resultFor(currentParts, cached.Releases), nil
 	}
-	latest, releaseURL := latestRelease(releases)
 	writeCache(cachePath, cache{
 		CheckedAt: time.Now(),
-		Latest:    latest,
-		URL:       releaseURL,
+		Parser:    catalogParser,
 		ETag:      nextETag,
 		Releases:  releases,
 	})
