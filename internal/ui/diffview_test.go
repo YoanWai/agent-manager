@@ -169,7 +169,9 @@ func TestDiffAnnotateAndSend(t *testing.T) {
 	}
 	pane := string(out)
 	if !strings.Contains(pane, "use fmt.Println here") || !strings.Contains(pane, "main.go:3") ||
-		!strings.Contains(pane, "[comment "+notes[0].id+"]") || !strings.Contains(pane, "review_comment") {
+		!strings.Contains(pane, "[comment "+notes[0].id+"]") || !strings.Contains(pane, "review_comment") ||
+		!strings.Contains(pane, "Code review of the uncommitted changes on `main` (`") ||
+		!strings.Contains(pane, "in `"+m.diff.repoSel+"`") {
 		t.Fatalf("prompt not delivered:\n%s", pane)
 	}
 
@@ -188,6 +190,69 @@ func TestDiffAnnotateAndSend(t *testing.T) {
 	}
 	if state.Round.Number != 2 || len(state.Comments) != 2 {
 		t.Fatalf("second persisted review round = %+v", state)
+	}
+}
+
+func TestReviewSubjectNamesTheCheckout(t *testing.T) {
+	driver, err := git.New()
+	if err != nil {
+		t.Skip("git not installed")
+	}
+	dir := t.TempDir()
+	write := func(name, content string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	shortSHA := func(rev string) string {
+		out, err := exec.Command("git", "-C", dir, "rev-parse", "--short", rev).Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	runGit(t, dir, "init", "-b", "stack-1")
+	write("a.go", "package a\n")
+	runGit(t, dir, "add", ".")
+	runGit(t, dir, "commit", "-m", "base")
+	mergeBase := shortSHA("HEAD")
+	runGit(t, dir, "checkout", "-b", "stack-2")
+	write("a.go", "package a\n\nfunc A() {}\n")
+	runGit(t, dir, "commit", "-am", "stack 2")
+	head := shortSHA("HEAD")
+	write("a.go", "package a\n\nfunc A() int { return 1 }\n")
+	runGit(t, dir, "add", ".")
+	write("a.go", "package a\n\nfunc A() int { return 2 }\n")
+
+	for _, tc := range []struct {
+		scope git.Scope
+		want  string
+	}{
+		{git.ScopeBranch, "the branch changes on `stack-2` (`" + head + "`) vs `stack-1` (merge-base `" + mergeBase + "`) in `" + dir + "`"},
+		{git.ScopeLastCommit, "the last commit on `stack-2` (`" + head + "`) in `" + dir + "`"},
+		{git.ScopeStaged, "the staged changes on `stack-2` (`" + head + "`) in `" + dir + "`"},
+		{git.ScopeUncommitted, "the uncommitted changes on `stack-2` (`" + head + "`) in `" + dir + "`"},
+	} {
+		set, err := diff.BuildSet(driver, dir, tc.scope, "stack-1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := reviewSubject(tc.scope, set, dir); got != tc.want {
+			t.Errorf("%s:\n got %s\nwant %s", tc.scope, got, tc.want)
+		}
+	}
+
+	runGit(t, dir, "checkout", "-q", "--detach")
+	set, err := diff.BuildSet(driver, dir, git.ScopeUncommitted, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := reviewSubject(git.ScopeUncommitted, set, dir), "the uncommitted changes on detached HEAD `"+head+"` in `"+dir+"`"; got != want {
+		t.Errorf("detached:\n got %s\nwant %s", got, want)
+	}
+
+	if got, want := reviewSubject(git.ScopeBranch, diff.Set{}, dir), "the branch changes in `"+dir+"`"; got != want {
+		t.Errorf("a diff that failed to load:\n got %s\nwant %s", got, want)
 	}
 }
 

@@ -54,6 +54,40 @@ func TestNotARepo(t *testing.T) {
 	}
 }
 
+func TestOpenRepoReadsHead(t *testing.T) {
+	driver, dir := testRepo(t)
+	unborn, err := driver.OpenRepo(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unborn.Head != "" || !unborn.Unborn || unborn.Branch != "main" {
+		t.Fatalf("unborn repo = %+v", unborn)
+	}
+
+	write(t, dir, "a.go", "package a\n")
+	commit(t, dir, "init")
+	short, err := driver.run(dir, "rev-parse", "--short", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	onBranch, err := driver.OpenRepo(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if onBranch.Head != short || onBranch.Branch != "main" || onBranch.Detached {
+		t.Fatalf("repo on main = %+v, want head %s", onBranch, short)
+	}
+
+	gitIn(t, dir, "checkout", "-q", "--detach")
+	detached, err := driver.OpenRepo(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detached.Head != short || !detached.Detached {
+		t.Fatalf("detached repo = %+v, want head %s", detached, short)
+	}
+}
+
 func initRepoAt(t *testing.T, dir string) {
 	t.Helper()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
