@@ -2,6 +2,8 @@ package ui
 
 import (
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -23,6 +25,7 @@ func markedRuns(text string) []textRun {
 }
 
 // Where two phrases start at one place the longer wins.
+// An empty phrase would loop forever here, and feed.sanitize drops them.
 func phraseRuns(text string, phrases []string) []textRun {
 	var runs []textRun
 	for text != "" {
@@ -51,21 +54,26 @@ func phraseRuns(text string, phrases []string) []textRun {
 	return runs
 }
 
-// gap counts the spaces written before the word, kept when it shares a row.
 type runWord struct {
 	text   string
 	accent bool
-	gap    int
+	// gap counts the spaces written before the word, kept when it shares a row.
+	gap int
+	// glued is true when no row may break before the word: it follows the one before with no space.
+	glued bool
 }
 
 func runWords(runs []textRun) []runWord {
 	var words []runWord
-	gap := 0
+	gap, field := 0, ""
 	for _, run := range runs {
 		rest := run.text
 		for rest != "" {
 			trimmed := strings.TrimLeft(rest, " ")
-			gap += len(rest) - len(trimmed)
+			if trimmed != rest {
+				gap += len(rest) - len(trimmed)
+				field = ""
+			}
 			end := strings.IndexByte(trimmed, ' ')
 			if end < 0 {
 				end = len(trimmed)
@@ -74,7 +82,9 @@ func runWords(runs []textRun) []runWord {
 				if piece == "" {
 					continue
 				}
-				words = append(words, runWord{text: piece, accent: run.accent, gap: gap})
+				glued := field != "" && !breaksAfterHyphen(field, piece)
+				words = append(words, runWord{text: piece, accent: run.accent, gap: gap, glued: glued})
+				field += piece
 				gap = 0
 			}
 			rest = trimmed[end:]
@@ -83,14 +93,29 @@ func runWords(runs []textRun) []runWord {
 	return words
 }
 
+func breaksAfterHyphen(field, next string) bool {
+	before, found := strings.CutSuffix(field, "-")
+	if !found || before == "" {
+		return false
+	}
+	last, _ := utf8.DecodeLastRuneInString(before)
+	first, _ := utf8.DecodeRuneInString(next)
+	return wordRune(last) && wordRune(first)
+}
+
+func wordRune(r rune) bool {
+	return unicode.IsLetter(r) || unicode.IsDigit(r)
+}
+
 // Spacing inside a row stays as written so column-aligned lines survive.
 func wrapRuns(runs []textRun, width int) [][]textRun {
 	var lines [][]textRun
 	var line []textRun
 	used := 0
-	for index, word := range runWords(runs) {
+	words := runWords(runs)
+	for index, word := range words {
 		cells := ansi.StringWidth(word.text)
-		if index > 0 && used+word.gap+cells > width {
+		if index > 0 && !word.glued && used+word.gap+gluedWidth(words[index:]) > width {
 			lines = append(lines, line)
 			line, used = nil, 0
 		} else if word.gap > 0 {
@@ -105,6 +130,17 @@ func wrapRuns(runs []textRun, width int) [][]textRun {
 		lines = append(lines, line)
 	}
 	return lines
+}
+
+func gluedWidth(words []runWord) int {
+	cells := ansi.StringWidth(words[0].text)
+	for _, word := range words[1:] {
+		if !word.glued {
+			break
+		}
+		cells += ansi.StringWidth(word.text)
+	}
+	return cells
 }
 
 func appendRun(line []textRun, text string, accent bool) []textRun {

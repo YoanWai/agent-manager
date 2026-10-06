@@ -137,3 +137,46 @@ func TestRenderRunsStylesTheAccent(t *testing.T) {
 		t.Fatalf("text changed: %q", ansi.Strip(rendered))
 	}
 }
+
+func TestWrapRunsBreaksOnlyAtSpacesAndInsideHyphenatedWords(t *testing.T) {
+	text := "Press `ctrl+x`, then (`space`) to pick the `--model` flag with `agent-manager` now."
+	plain := strings.ReplaceAll(text, "`", "")
+	for width := 8; width <= 60; width++ {
+		lines := wrapRuns(markedRuns(text), width)
+		var joined strings.Builder
+		for index, line := range lines {
+			row := runsText(line)
+			if strings.HasPrefix(row, ",") || strings.HasPrefix(row, ")") || strings.HasSuffix(row, "(") || strings.HasSuffix(row, "--") || row == "--" {
+				t.Fatalf("width %d: row %d %q breaks where no space or inner hyphen is", width, index, row)
+			}
+			if index > 0 && !strings.HasSuffix(joined.String(), "-") {
+				joined.WriteString(" ")
+			}
+			joined.WriteString(row)
+		}
+		if joined.String() != plain {
+			t.Fatalf("width %d: rows re-join to %q, want %q", width, joined.String(), plain)
+		}
+		if got := strings.Join(accented(lines), ""); got != "ctrl+xspace--modelagent-manager" {
+			t.Fatalf("width %d: accented %q, want every marked word", width, got)
+		}
+	}
+}
+
+func TestWrapRunsBreaksAfterTheInnerHyphenOfAFlag(t *testing.T) {
+	lines := wrapRuns([]textRun{{text: "aaaa --no-leader"}}, 9)
+	var rows []string
+	for _, line := range lines {
+		rows = append(rows, runsText(line))
+	}
+	if !slices.Equal(rows, []string{"aaaa", "--no-", "leader"}) {
+		t.Fatalf("rows = %q, want the flag split only after no-", rows)
+	}
+}
+
+func TestWrapRunsAccentsTheSpaceBetweenAccentedWords(t *testing.T) {
+	lines := wrapRuns(markedRuns("x `model effort` y"), 80)
+	if len(lines) != 1 || !slices.Contains(lines[0], textRun{text: "model effort", accent: true}) {
+		t.Fatalf("rows = %+v, want one accented run with its inner space", lines)
+	}
+}
