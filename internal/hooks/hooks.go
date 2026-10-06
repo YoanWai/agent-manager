@@ -74,11 +74,15 @@ func statusCommand(state string) string {
 
 // captureCommand records the state together with the text Claude Code
 // hands the hook. The binary can be gone by the time the hook fires (an
-// upgrade moved it, or a go run build was cleaned up), so the plain write
-// stays behind it and drops the body, which would be a turn too old.
+// upgrade moved it, or a go run build was cleaned up), which sh reports as
+// 126 or 127; only then does the plain write stand in, dropping the body,
+// which would be a turn too old. Any other failure is hook-capture's own:
+// it has written the state already, and the hook exits 1 so Claude Code
+// shows its error, as it does for any hook that fails. Never 2, which on
+// Stop would keep the turn going.
 func captureCommand(exe, state string) string {
 	return tmux.ShellQuote(exe) + ` hook-capture --state ` + state +
-		` || { rm -f "$` + EnvBodyFile + `"; ` + statusCommand(state) + `; }`
+		`; case $? in 0) ;; 126|127) rm -f "$` + EnvBodyFile + `"; ` + statusCommand(state) + `;; *) exit 1;; esac`
 }
 
 // blockingNotifications are the Notification types that leave the turn
@@ -246,6 +250,9 @@ type hookInput struct {
 // and a Notification carries message. The body lands before the state,
 // so a poll that sees the new state finds the body that goes with it; an
 // input without text clears the body rather than leaving the last one.
+// The state is written whatever became of the body, since a lost
+// transition leaves the session on the wrong mark; the body's error is
+// still returned.
 func Capture(stdin io.Reader, state, statusFile, bodyFile string) error {
 	switch state {
 	case status.Working, status.Waiting, status.Finished, status.Idle, status.Errored:
@@ -255,11 +262,24 @@ func Capture(stdin io.Reader, state, statusFile, bodyFile string) error {
 	if statusFile == "" || bodyFile == "" {
 		return fmt.Errorf("%s and %s must be set", EnvStatusFile, EnvBodyFile)
 	}
-	var input hookInput
+	bodyErr := captureBody(stdin, state, bodyFile)
+	if bodyErr != nil {
+		// A body left from an earlier turn of the same state would pass
+		// for this one's.
+		bodyErr = errors.Join(bodyErr, removeIfExists(bodyFile))
+	}
+	return errors.Join(bodyErr, os.WriteFile(statusFile, []byte(state), 0o644))
+}
+
+// bodyMode keeps the agent's words readable by the user alone.
+const bodyMode = 0o600
+
+func captureBody(stdin io.Reader, state, bodyFile string) error {
 	raw, err := io.ReadAll(io.LimitReader(stdin, maxHookInput))
 	if err != nil {
-		return err
+		return fmt.Errorf("reading the hook input: %w", err)
 	}
+	var input hookInput
 	// A payload that does not parse still ends the turn; it only has no text.
 	_ = json.Unmarshal(raw, &input)
 	body := input.LastAssistantMessage
@@ -267,14 +287,9 @@ func Capture(stdin io.Reader, state, statusFile, bodyFile string) error {
 		body = input.Message
 	}
 	if strings.TrimSpace(body) == "" {
-		err = removeIfExists(bodyFile)
-	} else {
-		err = WriteWhole(bodyFile, state+"\n"+truncateBytes(body, maxBodyBytes))
+		return removeIfExists(bodyFile)
 	}
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(statusFile, []byte(state), 0o644)
+	return writeWhole(bodyFile, state+"\n"+truncateBytes(body, maxBodyBytes), bodyMode)
 }
 
 // truncateBytes cuts s to at most limit bytes without splitting a rune.
@@ -563,7 +578,11 @@ func (m *Manager) RemoveReviewScope(id string) error {
 // a reader polling for it never picks up a partial line. Each writer
 // stages under a name of its own, so two of them cannot publish each
 // other's content.
-func WriteWhole(path, content string) (err error) {
+func WriteWhole(path, content string) error {
+	return writeWhole(path, content, 0o644)
+}
+
+func writeWhole(path, content string, mode os.FileMode) (err error) {
 	staging, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.part")
 	if err != nil {
 		return err
@@ -581,7 +600,7 @@ func WriteWhole(path, content string) (err error) {
 	if err := staging.Close(); err != nil {
 		return err
 	}
-	if err := os.Chmod(staging.Name(), 0o644); err != nil {
+	if err := os.Chmod(staging.Name(), mode); err != nil {
 		return err
 	}
 	return os.Rename(staging.Name(), path)

@@ -3,12 +3,14 @@ package hooks
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"testing/iotest"
 	"time"
 	"unicode/utf8"
 
@@ -661,7 +663,7 @@ func TestWriteSettingsCapturesTheTextOfStopAndNotification(t *testing.T) {
 	}
 	for event, state := range map[string]string{"Stop": status.Finished, "Notification": status.Waiting} {
 		command := parsed.Hooks[event][0].Hooks[0].Command
-		want := `'` + testExe + `' hook-capture --state ` + state + ` || `
+		want := `'` + testExe + `' hook-capture --state ` + state + `; case $? in `
 		if !strings.HasPrefix(command, want) {
 			t.Fatalf("%s command = %q, want it to start with %q", event, command, want)
 		}
@@ -680,28 +682,91 @@ func TestWriteSettingsCapturesTheTextOfStopAndNotification(t *testing.T) {
 	}
 }
 
-// The binary a hook names can be gone (an upgrade moved it), and the
-// state still has to land the way it did before hook-capture existed.
-func TestCaptureCommandFallsBackToThePlainWrite(t *testing.T) {
-	manager := NewManager(t.TempDir())
-	if err := os.MkdirAll(manager.Dir(), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	statusFile, bodyFile := manager.StatusFile("x"), manager.BodyFile("x")
-	if err := os.WriteFile(bodyFile, []byte("finished\nan older turn"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	cmd := exec.Command("sh", "-c", captureCommand(filepath.Join(t.TempDir(), "gone"), status.Finished))
+// runHook runs a generated hook command the way Claude Code does, through
+// sh with the session's files in the environment.
+func runHook(t *testing.T, command, statusFile, bodyFile string) (int, string) {
+	t.Helper()
+	cmd := exec.Command("sh", "-c", command)
 	cmd.Env = append(os.Environ(), EnvStatusFile+"="+statusFile, EnvBodyFile+"="+bodyFile)
 	cmd.Stdin = strings.NewReader(`{"last_assistant_message":"done"}`)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("hook command failed: %v: %s", err, out)
+	out, err := cmd.CombinedOutput()
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		return exit.ExitCode(), string(out)
 	}
-	if got, ok := manager.Read("x"); !ok || got != status.Finished {
-		t.Fatalf("status = %q, %v; want finished", got, ok)
+	if err != nil {
+		t.Fatalf("running the hook: %v", err)
 	}
-	if _, err := os.Stat(bodyFile); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("the fallback should drop the older body, stat err = %v", err)
+	return 0, string(out)
+}
+
+// The binary a hook names can be gone (an upgrade moved it) or no longer
+// runnable, and the state still has to land the way it did before
+// hook-capture existed.
+func TestCaptureCommandFallsBackWhenTheBinaryCannotRun(t *testing.T) {
+	for name, exe := range map[string]func(t *testing.T) string{
+		"missing (127)": func(t *testing.T) string { return filepath.Join(t.TempDir(), "gone") },
+		"not executable (126)": func(t *testing.T) string {
+			path := filepath.Join(t.TempDir(), "agent-manager")
+			if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			return path
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			manager := NewManager(t.TempDir())
+			if err := os.MkdirAll(manager.Dir(), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			statusFile, bodyFile := manager.StatusFile("x"), manager.BodyFile("x")
+			if err := os.WriteFile(bodyFile, []byte("finished\nan older turn"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if code, out := runHook(t, captureCommand(exe(t), status.Finished), statusFile, bodyFile); code != 0 {
+				t.Fatalf("the fallback should leave the hook succeeding, exit %d: %s", code, out)
+			}
+			if got, ok := manager.Read("x"); !ok || got != status.Finished {
+				t.Fatalf("status = %q, %v; want finished", got, ok)
+			}
+			if _, err := os.Stat(bodyFile); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("the fallback should drop the older body, stat err = %v", err)
+			}
+		})
+	}
+}
+
+// A hook-capture that ran and failed is not a missing binary: the plain
+// write must not paper over it, and the hook fails with its message so
+// Claude Code shows it. A panic's exit 2 would block a Stop, so every
+// failure reaches Claude Code as 1.
+func TestCaptureCommandSurfacesACaptureFailure(t *testing.T) {
+	for _, code := range []int{1, 2} {
+		t.Run(fmt.Sprintf("exit %d", code), func(t *testing.T) {
+			manager := NewManager(t.TempDir())
+			if err := os.MkdirAll(manager.Dir(), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			statusFile, bodyFile := manager.StatusFile("x"), manager.BodyFile("x")
+			if err := os.WriteFile(bodyFile, []byte("finished\nkept"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			exe := filepath.Join(t.TempDir(), "agent-manager")
+			stub := fmt.Sprintf("#!/bin/sh\necho 'agent-manager: capture broke' >&2\nexit %d\n", code)
+			if err := os.WriteFile(exe, []byte(stub), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			got, out := runHook(t, captureCommand(exe, status.Finished), statusFile, bodyFile)
+			if got != 1 || !strings.Contains(out, "capture broke") {
+				t.Fatalf("hook exit %d output %q, want 1 with the capture error", got, out)
+			}
+			if _, err := os.Stat(statusFile); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("the plain write ran on a capture failure, stat err = %v", err)
+			}
+			if raw, err := os.ReadFile(bodyFile); err != nil || string(raw) != "finished\nkept" {
+				t.Fatalf("the fallback touched the body: %q, %v", raw, err)
+			}
+		})
 	}
 }
 
@@ -834,5 +899,64 @@ func TestWriteSettingsWithoutAnAbsoluteBinaryWritesTheStateAlone(t *testing.T) {
 		if strings.Contains(string(raw), "hook-capture") {
 			t.Fatalf("exe %q: settings run hook-capture: %s", exe, raw)
 		}
+	}
+}
+
+// A body that cannot be written fails the capture, but never the state:
+// the transition lands, and no body from an earlier turn is left to pass
+// for this one's.
+func TestCaptureWritesTheStateWhenTheBodyFails(t *testing.T) {
+	manager := NewManager(t.TempDir())
+	if err := os.MkdirAll(manager.Dir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bodyFile := filepath.Join(t.TempDir(), "missing-dir", "x.body")
+	err := Capture(strings.NewReader(`{"last_assistant_message":"done"}`), status.Finished, manager.StatusFile("x"), bodyFile)
+	if err == nil {
+		t.Fatal("a body that cannot be written should fail the capture")
+	}
+	if got, ok := manager.Read("x"); !ok || got != status.Finished {
+		t.Fatalf("status = %q, %v; want finished despite the body error", got, ok)
+	}
+}
+
+func TestCaptureReadFailureStillWritesTheState(t *testing.T) {
+	manager := NewManager(t.TempDir())
+	if err := captureInto(t, manager, status.Finished, `{"last_assistant_message":"earlier"}`); err != nil {
+		t.Fatal(err)
+	}
+	err := Capture(iotest.ErrReader(errors.New("stdin closed")), status.Waiting, manager.StatusFile("x"), manager.BodyFile("x"))
+	if err == nil || !strings.Contains(err.Error(), "stdin closed") {
+		t.Fatalf("err = %v, want the read error", err)
+	}
+	if got, ok := manager.Read("x"); !ok || got != status.Waiting {
+		t.Fatalf("status = %q, %v; want waiting", got, ok)
+	}
+	if _, err := os.Stat(manager.BodyFile("x")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the earlier body should be gone, stat err = %v", err)
+	}
+}
+
+// The body is what the agent said, so only the user reads it; the status
+// file keeps the mode the plain hook write gives it.
+func TestCaptureFileModes(t *testing.T) {
+	manager := NewManager(t.TempDir())
+	if err := captureInto(t, manager, status.Finished, `{"last_assistant_message":"secret plan"}`); err != nil {
+		t.Fatal(err)
+	}
+	for path, want := range map[string]os.FileMode{manager.BodyFile("x"): 0o600, manager.StatusFile("x"): 0o644} {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := info.Mode().Perm(); got != want {
+			t.Fatalf("%s mode = %o, want %o", filepath.Base(path), got, want)
+		}
+	}
+	if err := WriteWhole(manager.NameResultFile("x", "0123456789abcdef"), "renamed\na\nb"); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(manager.NameResultFile("x", "0123456789abcdef")); err != nil || info.Mode().Perm() != 0o644 {
+		t.Fatalf("WriteWhole should keep 0644 for the other mailboxes, got %v, %v", info.Mode().Perm(), err)
 	}
 }

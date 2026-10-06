@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"go/ast"
@@ -364,5 +365,97 @@ func TestCallerSessionOutsideTmuxLeavesTheCommandToExplainIt(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %q does not mention %q", err, want)
 		}
+	}
+}
+
+// hookCaptureExe is a stand-in for the installed binary: the generated hook
+// names one executable path, and this one re-enters the test as
+// agent-manager.
+func hookCaptureExe(t *testing.T) string {
+	t.Helper()
+	args := []string{"-test.run=^" + t.Name() + "$"}
+	if coverDir := testCoverDir(); coverDir != "" {
+		args = append(args, "-test.gocoverdir="+coverDir)
+	}
+	script := "#!/bin/sh\nAGENT_MANAGER_MAIN_TEST=1 exec " + tmux.ShellQuote(os.Args[0])
+	for _, arg := range args {
+		script += " " + tmux.ShellQuote(arg)
+	}
+	script += ` -- "$@"` + "\n"
+	path := filepath.Join(t.TempDir(), "agent-manager")
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// stopHook is the Stop command the manager generates for exe.
+func stopHook(t *testing.T, manager *hooks.Manager, exe string) string {
+	t.Helper()
+	path, err := manager.WriteSettings("x", exe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var settings struct {
+		Hooks map[string][]struct {
+			Hooks []struct {
+				Command string `json:"command"`
+			} `json:"hooks"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal(raw, &settings); err != nil {
+		t.Fatal(err)
+	}
+	return settings.Hooks["Stop"][0].Hooks[0].Command
+}
+
+// The generated Stop hook runs the real hook-capture: a capture that works
+// leaves the state and a private body, and one that fails still leaves the
+// state while the hook fails with the error for Claude Code to show.
+func TestStopHookRunsHookCapture(t *testing.T) {
+	if prepareMainProcess() {
+		main()
+		return
+	}
+	manager := hooks.NewManager(t.TempDir())
+	command := stopHook(t, manager, hookCaptureExe(t))
+	run := func(bodyFile string) (int, string) {
+		cmd := exec.Command("sh", "-c", command)
+		cmd.Env = append(os.Environ(), hooks.EnvStatusFile+"="+manager.StatusFile("x"), hooks.EnvBodyFile+"="+bodyFile)
+		cmd.Stdin = strings.NewReader(`{"hook_event_name":"Stop","last_assistant_message":"All tests pass."}`)
+		out, err := cmd.CombinedOutput()
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			return exit.ExitCode(), string(out)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		return 0, string(out)
+	}
+
+	if code, out := run(manager.BodyFile("x")); code != 0 {
+		t.Fatalf("hook exit %d: %s", code, out)
+	}
+	if body, ok := manager.ReadBody("x"); !ok || body != "All tests pass." {
+		t.Fatalf("body = %q, %v", body, ok)
+	}
+	if info, err := os.Stat(manager.BodyFile("x")); err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("body mode = %v, %v; want 0600", info.Mode().Perm(), err)
+	}
+
+	if err := manager.Remove("x"); err != nil {
+		t.Fatal(err)
+	}
+	code, out := run(filepath.Join(t.TempDir(), "missing-dir", "x.body"))
+	if code != 1 || !strings.Contains(out, "agent-manager:") {
+		t.Fatalf("hook exit %d output %q, want 1 with hook-capture's error", code, out)
+	}
+	if state, ok := manager.Read("x"); !ok || state != "finished" {
+		t.Fatalf("status = %q, %v; a failed capture must still record the transition", state, ok)
 	}
 }
