@@ -82,6 +82,7 @@ func (s Scope) String() string {
 type Repo struct {
 	Root     string
 	Branch   string
+	Head     string
 	Unborn   bool
 	Detached bool
 }
@@ -98,10 +99,12 @@ func (d *Driver) OpenRepo(dir string) (Repo, error) {
 		branch, _ = d.run(root, "rev-parse", "--short", "HEAD")
 	}
 	repo.Branch = branch
-	if _, err := d.run(root, "rev-parse", "--verify", "-q", "HEAD"); err != nil {
+	head, err := d.run(root, "rev-parse", "--verify", "-q", "--short", "HEAD")
+	if err != nil {
 		repo.Unborn = true
 		repo.Detached = false
 	}
+	repo.Head = head
 	return repo, nil
 }
 
