@@ -1846,7 +1846,7 @@ func reviewSubject(scope git.Scope, set diff.Set, repoDir string) string {
 		target := stripBaseHash(set.BaseDesc)
 		subject += fmt.Sprintf(" vs `%s` (merge-base `%s`)", target, strings.TrimPrefix(set.BaseDesc, target+"@"))
 	}
-	return subject + fmt.Sprintf(" in `%s`", repoDir)
+	return subject + fmt.Sprintf(" in `%s`", escapeControlsInline(repoDir))
 }
 
 func scopePhrase(scope git.Scope) string {

@@ -254,6 +254,10 @@ func TestReviewSubjectNamesTheCheckout(t *testing.T) {
 	if got, want := reviewSubject(git.ScopeBranch, diff.Set{}, dir), "the branch changes in `"+dir+"`"; got != want {
 		t.Errorf("a diff that failed to load:\n got %s\nwant %s", got, want)
 	}
+
+	if got, want := reviewSubject(git.ScopeUncommitted, diff.Set{}, "/tmp/repo\ntwo\x1b"), "the uncommitted changes in `/tmp/repo two^[`"; got != want {
+		t.Errorf("a folder name with control bytes:\n got %q\nwant %q", got, want)
+	}
 }
 
 func TestSendAnnotationsDoesNotDeliverAnUnpersistedRound(t *testing.T) {
