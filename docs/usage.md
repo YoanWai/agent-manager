@@ -402,7 +402,7 @@ The values come from the session and the agent, so quote them (`"$AM_BODY"`) and
 curl -fsS -H "Title: $AM_TITLE" -H "Tags: $AM_NOTIFY_KIND" -d "$AM_BODY" https://ntfy.sh/your-private-topic
 ```
 
-A command that runs past 15 seconds is stopped. When one fails, exits non-zero, or is stopped, the time, the session, the error, and the start of what it printed go to `notify-command.log` in the manager's config directory (`~/Library/Application Support/agent-manager` on macOS, `~/.config/agent-manager` on Linux), and nothing interrupts the manager.
+A command that runs past 15 seconds is stopped. When one fails, exits non-zero, or is stopped, the time, the session, the error, and the start of what it printed go to `notify-command.log` in the manager's config directory (`~/Library/Application Support/agent-manager` on macOS, `~/.config/agent-manager` on Linux), a file only you can read, and nothing interrupts the manager.
 
 ## Stats
 

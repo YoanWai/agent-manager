@@ -235,3 +235,15 @@ func running(t *testing.T, pid int) bool {
 	}
 	return !strings.HasPrefix(strings.TrimSpace(string(state)), "Z")
 }
+
+func TestCommandLogIsPrivate(t *testing.T) {
+	dir := t.TempDir()
+	LogCommandFailure(dir, Event{ID: "sess-1", Kind: Waiting}, errors.New("curl: (22) 401 for https://ntfy.example/topic?auth=secret"))
+	info, err := os.Stat(filepath.Join(dir, CommandLog))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("log mode = %o, want 600", got)
+	}
+}
