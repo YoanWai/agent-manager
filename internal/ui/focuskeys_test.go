@@ -833,6 +833,36 @@ func TestCaretOnOpencodesMultiLineDraftWithShippedDefaults(t *testing.T) {
 	}
 }
 
+// omp draws its ╰─ marker on the first composer row only, so a draft that
+// wraps leaves the caret on a markerless row; delivery must still hold.
+func TestDraftBeforeCaretReadsAWrappedOmpDraft(t *testing.T) {
+	cfg, err := config.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine, err := status.NewEngine(cfg)
+	if err != nil {
+		t.Fatalf("engine: %v", err)
+	}
+	wrapped := []string{
+		" ⬢ model",
+		"╰─ this is a long draft typed while the turn runs, long enough to wrap",
+		"   the composer below the gutter",
+	}
+	if !draftBeforeCaret(engine, "omp", wrapped, 33, 2) {
+		t.Fatal("a draft wrapped onto a second composer row was read as empty")
+	}
+	if !draftBeforeCaret(engine, "omp", []string{" ⬢ model", "╰─ short draft"}, 14, 1) {
+		t.Fatal("a one-row draft was read as empty")
+	}
+	if draftBeforeCaret(engine, "omp", []string{" ⬢ model", "╰─ "}, 3, 1) {
+		t.Fatal("an empty composer was read as a draft")
+	}
+	if draftBeforeCaret(engine, "omp", []string{"", "   some output"}, 14, 1) {
+		t.Fatal("a row with no marker above it was read as a draft")
+	}
+}
+
 // The mirror belongs to whichever session pushed it, and a scrolled-back
 // pane's rows no longer line up with the live caret: neither can decide.
 func TestCaretAtInputStartNeedsCurrentPane(t *testing.T) {
