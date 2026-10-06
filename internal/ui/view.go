@@ -498,7 +498,7 @@ func (m *Model) viewFooter() string {
 		sess, selected := m.selected()
 		pagesHistory := selected && m.focusPagesHistory(sess)
 		pairs := [][2]string{{back, "back"}}
-		if !m.fullLayout {
+		if !m.fullLayout || !pagesHistory {
 			pairs = append([][2]string{{"typing", "to agent"}}, pairs...)
 		}
 		if m.arrowStep {

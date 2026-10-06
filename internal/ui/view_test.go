@@ -526,6 +526,9 @@ func TestFooterInFocusMode(t *testing.T) {
 	if !strings.Contains(full, "mouse back") {
 		t.Fatalf("the button still leaves a full screen session:\n%s", full)
 	}
+	if !strings.Contains(full, "typing to agent") {
+		t.Fatalf("full screen focus still sends typing to the agent:\n%s", full)
+	}
 
 	m.pane.mouse = true
 	if footer := ansi.Strip(m.viewFooter()); !strings.Contains(footer, "click / alt+drag") || !strings.Contains(footer, "agent UI") {
