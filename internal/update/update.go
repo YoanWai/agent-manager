@@ -34,6 +34,8 @@ const (
 	maxLineLength        = 160
 	maxHighlights        = 8
 	maxThanks            = 24
+	maxHeadlineLength    = 80
+	maxSummaryLength     = 600
 )
 
 const (
@@ -58,6 +60,7 @@ var (
 	conventionalTitle = regexp.MustCompile(`(?i)^(feat|fix|docs|refactor|perf|test|build|ci|chore|style)(?:\(([^)]+)\))?!?:\s*(.+)$`)
 	pullSuffix        = regexp.MustCompile(`\s+by\s+(@[A-Za-z0-9-]+(?:\[bot])?)\s+in\s+https://github\.com/\S+\s*$`)
 	markdownLink      = regexp.MustCompile(`\[([^]]+)]\([^)]+\)`)
+	boldLine          = regexp.MustCompile(`^\*\*([^*]+)\*\*$`)
 )
 
 const (
@@ -77,9 +80,12 @@ type Change struct {
 // Highlights stand in for Changes when the notes carry them. Changes are every
 // user-facing line of the generated list, kept up to a bound that TotalChanges
 // may exceed.
+// Highlights and Summary keep the backticks their author put around the words to accent.
 type Release struct {
 	Version      string   `json:"version"`
 	URL          string   `json:"url"`
+	Headline     string   `json:"headline,omitempty"`
+	Summary      string   `json:"summary,omitempty"`
 	Highlights   []string `json:"highlights,omitempty"`
 	Thanks       []string `json:"thanks,omitempty"`
 	Changes      []Change `json:"changes,omitempty"`
@@ -263,9 +269,12 @@ func fetchReleases(ctx context.Context, etag string, budget time.Duration) ([]Re
 			continue
 		}
 		changes, total := extractChanges(item.Body)
+		headline, summary := extractLead(item.Body, item.TagName)
 		releases = append(releases, Release{
 			Version:      item.TagName,
 			URL:          item.HTMLURL,
+			Headline:     headline,
+			Summary:      summary,
 			Highlights:   extractHighlights(item.Body),
 			Thanks:       extractThanks(item.Body),
 			Changes:      changes,
@@ -315,14 +324,14 @@ func bulletText(line string) (string, bool) {
 
 // Prose under an authored heading is the release page's own copy, written
 // for a browser rather than a modal, so only bullets travel.
-func extractSectionBullets(body, heading string, limit int) []string {
+func extractSectionBullets(body, heading string, limit int, clean func(string) string) []string {
 	var bullets []string
 	for _, line := range sectionLines(body, heading) {
 		text, ok := bulletText(line)
 		if !ok {
 			continue
 		}
-		if text = plainText(text); text == "" {
+		if text = clean(text); text == "" {
 			continue
 		}
 		bullets = append(bullets, sentenceCase(truncate(text, maxLineLength)))
@@ -334,11 +343,28 @@ func extractSectionBullets(body, heading string, limit int) []string {
 }
 
 func extractHighlights(body string) []string {
-	return extractSectionBullets(body, highlightsHeading, maxHighlights)
+	return extractSectionBullets(body, highlightsHeading, maxHighlights, markedText)
 }
 
 func extractThanks(body string) []string {
-	return extractSectionBullets(body, thanksHeading, maxThanks)
+	return extractSectionBullets(body, thanksHeading, maxThanks, plainText)
+}
+
+// extractLead reads an optional bold headline, then the summary, under the release's own heading.
+func extractLead(body, tag string) (headline, summary string) {
+	var paragraph []string
+	for _, line := range sectionLines(body, "## "+tag) {
+		if line == "" {
+			continue
+		}
+		if match := boldLine.FindStringSubmatch(line); match != nil && headline == "" && len(paragraph) == 0 {
+			headline = truncate(plainText(match[1]), maxHeadlineLength)
+			continue
+		}
+		paragraph = append(paragraph, line)
+	}
+	joined := strings.ReplaceAll(strings.Join(paragraph, " "), "**", "")
+	return headline, truncate(markedText(joined), maxSummaryLength)
 }
 
 func extractChanges(body string) ([]Change, int) {
@@ -403,12 +429,38 @@ func plainText(text string) string {
 	return cleanText(text)
 }
 
+// markedText keeps accent marks only when every span closes, since one stray backtick would accent the rest of the line.
+func markedText(text string) string {
+	text = cleanText(markdownLink.ReplaceAllString(text, "$1"))
+	if strings.Count(text, "`")%2 != 0 {
+		return strings.ReplaceAll(text, "`", "")
+	}
+	return text
+}
+
+// truncate counts visible characters, so accent marks are free and a span the cut leaves open is closed.
 func truncate(text string, limit int) string {
-	runes := []rune(text)
-	if len(runes) <= limit {
+	if len([]rune(text))-strings.Count(text, "`") <= limit {
 		return text
 	}
-	return strings.TrimSpace(string(runes[:limit-1])) + "…"
+	var kept strings.Builder
+	visible, open := 0, false
+	for _, character := range text {
+		if visible == limit-1 {
+			break
+		}
+		kept.WriteRune(character)
+		if character == '`' {
+			open = !open
+		} else {
+			visible++
+		}
+	}
+	cut := strings.TrimRight(kept.String(), " ")
+	if open {
+		cut += "`"
+	}
+	return cut + "…"
 }
 
 func cleanText(text string) string {

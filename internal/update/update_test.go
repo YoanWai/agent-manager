@@ -446,7 +446,7 @@ func TestExtractHighlightsReadsTheAuthoredBullets(t *testing.T) {
 
 	want := []string{
 		"The session list can take the whole terminal",
-		"Rows carry the agent's last message beside the name",
+		"Rows carry the agent's `last message` beside the name",
 		"Full notes explain the rest",
 	}
 	if got := extractHighlights(body); fmt.Sprint(got) != fmt.Sprint(want) {
@@ -550,5 +550,100 @@ func TestCatalogCarriesHighlightsThroughTheCache(t *testing.T) {
 	}
 	if got := cached.Releases[0].Thanks; fmt.Sprint(got) != fmt.Sprint(wantThanks) {
 		t.Fatalf("cached thanks = %q, want %q", got, wantThanks)
+	}
+}
+
+func TestExtractLeadReadsTheHeadlineAndTheSummary(t *testing.T) {
+	body := strings.Join([]string{
+		"A pitch the release tool writes above everything.",
+		"",
+		"## v0.40.0",
+		"**Model + reasoning pickers are here!**",
+		"",
+		"Every session runs on its own model. Press `ctrl+x` for effort,",
+		"read live from [each CLI](https://example.com).",
+		"",
+		"## Highlights",
+		"- a highlight",
+	}, "\n")
+
+	headline, summary := extractLead(body, "v0.40.0")
+	if headline != "Model + reasoning pickers are here!" {
+		t.Fatalf("headline = %q", headline)
+	}
+	want := "Every session runs on its own model. Press `ctrl+x` for effort, read live from each CLI."
+	if summary != want {
+		t.Fatalf("summary = %q, want %q", summary, want)
+	}
+}
+
+func TestExtractLeadWithoutABoldFirstLineHasNoHeadline(t *testing.T) {
+	body := "## v0.39.0\n\nOne click now focuses a session, and **every** row opens its actions.\n\n## Highlights\n- a highlight"
+	headline, summary := extractLead(body, "v0.39.0")
+	if headline != "" {
+		t.Fatalf("a paragraph is not a headline: %q", headline)
+	}
+	if summary != "One click now focuses a session, and every row opens its actions." {
+		t.Fatalf("summary = %q", summary)
+	}
+}
+
+func TestExtractLeadIsEmptyWithoutTheVersionSection(t *testing.T) {
+	headline, summary := extractLead("## Highlights\n- a highlight", "v0.40.0")
+	if headline != "" || summary != "" {
+		t.Fatalf("got %q / %q, want nothing", headline, summary)
+	}
+}
+
+func TestExtractLeadBoundsTheSummary(t *testing.T) {
+	body := "## v0.40.0\n" + strings.Repeat("word ", 200)
+	_, summary := extractLead(body, "v0.40.0")
+	if got := len([]rune(summary)); got > maxSummaryLength || !strings.HasSuffix(summary, "…") {
+		t.Fatalf("summary is %d characters, want at most %d ending in an ellipsis", got, maxSummaryLength)
+	}
+}
+
+func TestHighlightsKeepBalancedAccentMarks(t *testing.T) {
+	body := "## Highlights\n- press `ctrl+x` to step effort\n- a stray ` mark is dropped\n"
+	want := []string{"Press `ctrl+x` to step effort", "A stray  mark is dropped"}
+	if got := extractHighlights(body); !slices.Equal(got, want) {
+		t.Fatalf("extractHighlights() = %q, want %q", got, want)
+	}
+}
+
+func TestThanksStayPlain(t *testing.T) {
+	body := "## Thank you\n- @someone fixed `the thing` (#12)\n"
+	want := []string{"@someone fixed the thing (#12)"}
+	if got := extractThanks(body); !slices.Equal(got, want) {
+		t.Fatalf("extractThanks() = %q, want %q", got, want)
+	}
+}
+
+func TestTruncateCountsVisibleCharacters(t *testing.T) {
+	marked := "`" + strings.Repeat("a", maxLineLength) + "`"
+	if got := truncate(marked, maxLineLength); got != marked {
+		t.Fatalf("marks take no cell, so %d visible characters must fit", maxLineLength)
+	}
+	cut := truncate("`"+strings.Repeat("a", maxLineLength+1)+"`", maxLineLength)
+	if want := "`" + strings.Repeat("a", maxLineLength-1) + "`…"; cut != want {
+		t.Fatalf("truncate() = %q, want the span closed before the ellipsis", cut)
+	}
+}
+
+func TestCatalogCarriesTheLeadThroughTheCache(t *testing.T) {
+	body := `## v0.40.0\n**Pickers are here!**\n\nA summary with ` + "`ctrl+x`" + `.\n\n## Highlights\n- a highlight\n\n## What's Changed\n* feat(ui): a feature`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintf(w, `[{"tag_name":"v0.40.0","html_url":"https://github.com/YoanWai/agent-manager/releases/tag/v0.40.0","body":"%s","draft":false,"prerelease":false}]`, body)
+	}))
+	defer server.Close()
+	defer swapReleasesURL(server.URL)()
+
+	dir := t.TempDir()
+	if _, err := Check(context.Background(), dir, "v0.39.0"); err != nil {
+		t.Fatal(err)
+	}
+	release := Cached(dir, "v0.39.0").Releases[0]
+	if release.Headline != "Pickers are here!" || release.Summary != "A summary with `ctrl+x`." {
+		t.Fatalf("lead lost in the cache: %q / %q", release.Headline, release.Summary)
 	}
 }

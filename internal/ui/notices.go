@@ -791,7 +791,7 @@ func noticeInnerWidth(notices []notice, terminalWidth int) int {
 		for _, release := range n.releases {
 			lines = append(lines, release.Version)
 			for _, change := range release.Highlights {
-				lines = append(lines, "• "+change)
+				lines = append(lines, "• "+plainMarks(change))
 			}
 			for _, change := range release.Changes {
 				lines = append(lines, "• "+changeRow(change))
@@ -831,7 +831,11 @@ func renderNoticeBody(n notice, width int) []string {
 		// replace the generated list rather than being counted against it.
 		if len(release.Highlights) > 0 {
 			body = append(body, lipgloss.NewStyle().Foreground(colorBright).Bold(true).Render(release.Version))
-			body = appendNoticeBullets(body, release.Highlights, width)
+			highlights := make([]string, len(release.Highlights))
+			for index, highlight := range release.Highlights {
+				highlights[index] = plainMarks(highlight)
+			}
+			body = appendNoticeBullets(body, highlights, width)
 		} else {
 			count := release.TotalChanges
 			label := "change"
@@ -877,6 +881,11 @@ func changeRow(change update.Change) string {
 		return change.Text
 	}
 	return change.Text + " · " + change.Author
+}
+
+// plainMarks drops the accent marks release text carries.
+func plainMarks(text string) string {
+	return strings.ReplaceAll(text, "`", "")
 }
 
 func appendNoticeBullets(lines []string, items []string, width int) []string {
