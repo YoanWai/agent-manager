@@ -9,10 +9,16 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// noticeModalMax is the widest the content column grows, the longest line remote text may carry.
+// noticeModalMax is the widest row the modal makes room for, the longest line remote text may carry.
 const noticeModalMax = 160
 
 const noticeWheelRows = 3
+
+// noticeScrollbarWidth is the scrollbar's column and the gap before it.
+const noticeScrollbarWidth = 2
+
+// noticeProseWidth keeps a paragraph to a readable measure on a wide modal.
+const noticeProseWidth = 76
 
 var changeGroups = []struct {
 	kind, label, one, many string
@@ -23,28 +29,26 @@ var changeGroups = []struct {
 }
 
 func noticeInnerWidth(notices []notice, terminalWidth int) int {
-	inner := noticeModalInner
+	widest := 0
 	for _, n := range notices {
 		for _, line := range noticeMeasure(n) {
-			if width := lipgloss.Width(line); width > inner {
-				inner = width
-			}
+			widest = max(widest, lipgloss.Width(line))
 		}
 	}
-	inner = min(inner, noticeModalMax)
+	inner := min(max(widest+noticeScrollbarWidth, noticeModalInner), noticeModalMax+noticeScrollbarWidth)
 	if fit := terminalWidth - 8; inner > fit {
 		inner = max(fit, 1)
 	}
 	return inner
 }
 
-// A body that overflows gives two columns to the scrollbar and the gap beside it.
+// noticeBodyLayout gives a body that overflows narrower rows, leaving room for the scrollbar.
 func noticeBodyLayout(n notice, inner, room int) (body []string, scrolls bool) {
 	body = renderNoticeBody(n, inner)
 	if len(body) <= room {
 		return body, false
 	}
-	return renderNoticeBody(n, max(inner-2, 1)), true
+	return renderNoticeBody(n, max(inner-noticeScrollbarWidth, 1)), true
 }
 
 func noticeScrollWindow(body []string, room, offset, inner int) []string {
@@ -69,12 +73,22 @@ func noticeScrollWindow(body []string, room, offset, inner int) []string {
 func noticeMeasure(n notice) []string {
 	lines := append([]string{n.headline}, n.body...)
 	lines = append(lines, n.after...)
-	for _, release := range n.releases {
+	ranged := len(n.releases) > 1
+	for index, release := range n.releases {
+		newest := index == len(n.releases)-1
+		if ranged {
+			lines = append(lines, releaseHeading(release, newest))
+		}
 		for _, highlight := range release.Highlights {
 			lines = append(lines, "• "+plainMarks(highlight))
 		}
-		for _, change := range release.Changes {
-			lines = append(lines, "• "+changeRow(change))
+		switch {
+		case newest || len(release.Highlights) == 0:
+			for _, change := range release.Changes {
+				lines = append(lines, measuredChange(change))
+			}
+		case len(release.Changes) > 0:
+			lines = append(lines, changeCounts(release.Changes))
 		}
 		for _, thanks := range release.Thanks {
 			lines = append(lines, "• "+thanks)
@@ -86,10 +100,12 @@ func noticeMeasure(n notice) []string {
 func renderNoticeBody(n notice, width int) []string {
 	var body []string
 	if n.headline != "" {
-		headline := ansi.Truncate(n.headline, width, "…")
-		body = append(body,
-			lipgloss.NewStyle().Foreground(colorBright).Bold(true).Render(headline),
-			lipgloss.NewStyle().Foreground(colorAccent).Render(strings.Repeat("━", lipgloss.Width(headline))))
+		body = appendWrapped(body, []textRun{{text: n.headline}}, width, noticeHeadingStyle())
+		rule := 0
+		for _, row := range body {
+			rule = max(rule, lipgloss.Width(row))
+		}
+		body = append(body, lipgloss.NewStyle().Foreground(colorAccent).Render(strings.Repeat("━", rule)))
 		if !n.releaseNotes {
 			body = append(body, "")
 		}
@@ -110,7 +126,7 @@ func renderNoticeBody(n notice, width int) []string {
 		}
 	}
 	if len(n.releases) > 0 && !n.rangeComplete {
-		body = append(body, "", subtleStyle.Render("The local catalog covers part of this range; Enter opens the complete notes."))
+		body = appendWrapped(append(body, ""), []textRun{{text: "The local catalog covers part of this range; Enter opens the complete notes."}}, width, subtleStyle)
 	}
 	if len(n.after) > 0 {
 		body = append(body, "")
@@ -121,19 +137,15 @@ func renderNoticeBody(n notice, width int) []string {
 	return body
 }
 
-// An older release shows counts in place of its changes, unless it has no highlights to stand for them.
+// releaseSections shows counts in place of an older release's changes, unless it has no highlights to stand for them.
 func releaseSections(release update.Release, newest, ranged bool, width int) [][]string {
 	var sections [][]string
 	var opening []string
 	if ranged {
-		heading := release.Version
-		if !newest && release.Headline != "" {
-			heading += " · " + release.Headline
-		}
-		opening = append(opening, lipgloss.NewStyle().Foreground(colorBright).Bold(true).Render(ansi.Truncate(heading, width, "…")))
+		opening = append(opening, noticeHeadingStyle().Render(ansi.Truncate(releaseHeading(release, newest), width, "…")))
 	}
 	if newest && release.Summary != "" {
-		opening = appendWrapped(opening, markedRuns(release.Summary), width, valueStyle)
+		opening = appendWrapped(opening, markedRuns(release.Summary), min(width, noticeProseWidth), valueStyle)
 	}
 	if len(opening) > 0 {
 		sections = append(sections, opening)
@@ -164,6 +176,13 @@ func releaseSections(release update.Release, newest, ranged bool, width int) [][
 		sections = append(sections, []string{subtleStyle.Render("No summarized changes.")})
 	}
 	return sections
+}
+
+func releaseHeading(release update.Release, newest bool) string {
+	if newest || release.Headline == "" {
+		return release.Version
+	}
+	return release.Version + " · " + release.Headline
 }
 
 func changeSections(release update.Release, width int) [][]string {
@@ -208,19 +227,35 @@ func changeCounts(changes []update.Change) string {
 	return strings.Join(parts, " · ")
 }
 
-// A body too narrow to set the author at the right edge keeps the credit beside the text.
+// appendChange sets the author at the right edge of the last wrapped row, or of a row of its own when two spaces do not fit.
 func appendChange(rows []string, change update.Change, width int) []string {
-	text := "• " + change.Text
-	gap := width - lipgloss.Width(text) - lipgloss.Width(change.Author)
-	if change.Author == "" || gap < 2 {
-		return appendBullet(rows, []textRun{{text: changeRow(change)}}, width, mutedStyle, mutedStyle)
+	rows = appendBullet(rows, []textRun{{text: change.Text}}, width, mutedStyle, mutedStyle)
+	if change.Author == "" {
+		return rows
 	}
 	author := lipgloss.NewStyle().Foreground(colorAccent2).Render(change.Author)
-	return append(rows, mutedStyle.Render(text)+strings.Repeat(" ", gap)+author)
+	authorWidth := lipgloss.Width(change.Author)
+	last := len(rows) - 1
+	if gap := width - lipgloss.Width(rows[last]) - authorWidth; gap >= 2 {
+		rows[last] += strings.Repeat(" ", gap) + author
+		return rows
+	}
+	return append(rows, strings.Repeat(" ", max(width-authorWidth, 0))+author)
+}
+
+func measuredChange(change update.Change) string {
+	if change.Author == "" {
+		return "• " + change.Text
+	}
+	return "• " + change.Text + "  " + change.Author
 }
 
 func noticeLabel(label string) string {
 	return lipgloss.NewStyle().Foreground(colorSubtle).Bold(true).Render(label)
+}
+
+func noticeHeadingStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(colorBright).Bold(true)
 }
 
 func appendBullet(rows []string, runs []textRun, width int, base, mark lipgloss.Style) []string {

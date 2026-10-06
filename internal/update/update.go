@@ -80,7 +80,7 @@ type Change struct {
 }
 
 // Release is one stable GitHub release with a compact, terminal-safe summary.
-// Highlights stand in for Changes when the notes carry them. Changes are every
+// The panel lists Changes under Highlights for the newest release. Changes are every
 // user-facing line of the generated list, kept up to a bound that TotalChanges
 // may exceed.
 // Highlights and Summary keep the backticks their author put around the words to accent.

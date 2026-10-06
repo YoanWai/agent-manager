@@ -116,17 +116,85 @@ func TestReleaseBodyRightAlignsTheAuthor(t *testing.T) {
 	}
 }
 
-func TestReleaseBodyKeepsTheAuthorInlineWhenItCannotFit(t *testing.T) {
+func TestNarrowReleaseBodySetsTheAuthorAtTheRightEdgeOfItsOwnRows(t *testing.T) {
 	n := notice{releaseNotes: true, releases: []update.Release{pickersRelease()}, rangeComplete: true}
 	rows := bodyText(n, 30)
-	joined := strings.Join(rows, " ")
-	if !strings.Contains(strings.Join(strings.Fields(joined), " "), "support · @mateuszgachowski") {
-		t.Fatalf("a narrow body keeps the credit beside the text:\n%s", strings.Join(rows, "\n"))
-	}
 	for _, row := range rows {
 		if lipgloss.Width(row) > 30 {
 			t.Fatalf("row is wider than the body: %q", row)
 		}
+	}
+	for _, author := range []string{"@mateuszgachowski", "@drakeo338"} {
+		at := rowIndex(rows, author)
+		if at < 0 || !strings.HasSuffix(rows[at], author) || lipgloss.Width(rows[at]) != 30 {
+			t.Fatalf("%s sits at the right edge of its row:\n%s", author, strings.Join(rows, "\n"))
+		}
+		if strings.Contains(rows[at], "·") {
+			t.Fatalf("no separator before the author: %q", rows[at])
+		}
+	}
+}
+
+func TestAuthorSharesTheLastWrappedRowWhenItFits(t *testing.T) {
+	release := pickersRelease()
+	release.Changes = []update.Change{{Kind: update.KindFix, Text: "Codex: Keep pending messages out of the reply line when the queue fills up", Author: "@drakeo338"}}
+	rows := bodyText(notice{releaseNotes: true, releases: []update.Release{release}, rangeComplete: true}, 60)
+	first := rowIndex(rows, "• Codex: Keep pending")
+	if first < 0 || first+1 >= len(rows) {
+		t.Fatalf("change row missing:\n%s", strings.Join(rows, "\n"))
+	}
+	second := rows[first+1]
+	if !strings.Contains(second, "fills up") || !strings.HasSuffix(second, "@drakeo338") || lipgloss.Width(second) != 60 {
+		t.Fatalf("the author shares the second row at the right edge: %q", second)
+	}
+}
+
+func TestLongHeadlineWrapsUnderOneRule(t *testing.T) {
+	headline := "Model and reasoning pickers are here for every agent in every session you run now"
+	rows := bodyText(notice{headline: headline, body: []string{"text"}}, 30)
+	rule := rowIndex(rows, "━")
+	if rule < 2 {
+		t.Fatalf("the headline wraps onto rows above its rule:\n%s", strings.Join(rows, "\n"))
+	}
+	widest := 0
+	for _, row := range rows[:rule] {
+		widest = max(widest, lipgloss.Width(row))
+	}
+	if lipgloss.Width(rows[rule]) != widest {
+		t.Fatalf("rule is %d cells, want the widest headline row %d", lipgloss.Width(rows[rule]), widest)
+	}
+	if got := strings.Join(rows[:rule], " "); got != headline || strings.Contains(got, "…") {
+		t.Fatalf("headline rows = %q, want every word", got)
+	}
+}
+
+func TestPartialRangeLineWraps(t *testing.T) {
+	rows := bodyText(notice{releaseNotes: true, releases: []update.Release{pickersRelease()}}, 40)
+	for _, row := range rows {
+		if lipgloss.Width(row) > 40 {
+			t.Fatalf("row is wider than the body: %q", row)
+		}
+	}
+	if joined := strings.Join(strings.Fields(strings.Join(rows, " ")), " "); !strings.Contains(joined, "Enter opens the complete notes.") {
+		t.Fatalf("partial-range line lost words:\n%s", strings.Join(rows, "\n"))
+	}
+}
+
+func TestSummaryWrapsAtProseWidth(t *testing.T) {
+	release := pickersRelease()
+	release.Summary = strings.Repeat("summary words keep going ", 12)
+	rows := bodyText(notice{releaseNotes: true, releases: []update.Release{release}, rangeComplete: true}, 120)
+	summaryRows := 0
+	for _, row := range rows {
+		if strings.Contains(row, "summary") {
+			summaryRows++
+			if lipgloss.Width(row) > noticeProseWidth {
+				t.Fatalf("summary row is %d cells, want at most %d: %q", lipgloss.Width(row), noticeProseWidth, row)
+			}
+		}
+	}
+	if summaryRows < 2 {
+		t.Fatalf("the summary should wrap, got %d rows", summaryRows)
 	}
 }
 
@@ -204,11 +272,59 @@ func TestSummaryNeverWidensTheModal(t *testing.T) {
 
 func TestModalWidthStopsAtItsCeiling(t *testing.T) {
 	notices := []notice{{body: []string{strings.Repeat("x", 400)}}}
-	if got := noticeInnerWidth(notices, 300); got != noticeModalMax {
-		t.Fatalf("inner width = %d, want %d", got, noticeModalMax)
+	if got := noticeInnerWidth(notices, 300); got != noticeModalMax+noticeScrollbarWidth {
+		t.Fatalf("inner width = %d, want %d", got, noticeModalMax+noticeScrollbarWidth)
 	}
 	if got := noticeInnerWidth(notices, 100); got != 92 {
 		t.Fatalf("inner width = %d, want the terminal less 8", got)
+	}
+}
+
+func TestScrollingBodyKeepsItsWidestRowWhole(t *testing.T) {
+	release := pickersRelease()
+	wide := update.Change{Kind: update.KindFeature, Text: "Coordination: Agents hand each other work through the shared task list and more words", Author: "@Qusavin"}
+	release.Changes = append([]update.Change{wide}, release.Changes...)
+	for index := 0; index < 30; index++ {
+		release.Changes = append(release.Changes, update.Change{Kind: update.KindFix, Text: fmt.Sprintf("UI: Fix %02d", index)})
+	}
+	n := notice{releaseNotes: true, releases: []update.Release{release}, rangeComplete: true}
+	inner := noticeInnerWidth([]notice{n}, 300)
+	body, scrolls := noticeBodyLayout(n, inner, 10)
+	if !scrolls {
+		t.Fatal("the body should scroll")
+	}
+	rows := make([]string, len(body))
+	for index, row := range body {
+		rows[index] = ansi.Strip(row)
+	}
+	at := rowIndex(rows, "• Coordination:")
+	if at < 0 || !strings.Contains(rows[at], "and more words") || !strings.HasSuffix(rows[at], "@Qusavin") {
+		t.Fatalf("the widest row wrapped beside the scrollbar:\n%s", strings.Join(rows, "\n"))
+	}
+}
+
+func TestOlderHeadlineWidensTheModal(t *testing.T) {
+	older := update.Release{Version: "v0.39.0", Headline: strings.Repeat("h", 80), Highlights: []string{"A highlight"}}
+	n := notice{releaseNotes: true, releases: []update.Release{older, pickersRelease()}, rangeComplete: true}
+	want := lipgloss.Width("v0.39.0 · "+older.Headline) + noticeScrollbarWidth
+	if got := noticeInnerWidth([]notice{n}, 300); got != want {
+		t.Fatalf("inner width = %d, want %d to fit the older release's heading", got, want)
+	}
+	if rows := bodyText(n, want-noticeScrollbarWidth); rowIndex(rows, "v0.39.0 · "+older.Headline) < 0 {
+		t.Fatalf("the heading is cut at the measured width:\n%s", strings.Join(rows, "\n"))
+	}
+}
+
+func TestOlderChangesBehindHighlightsDoNotWidenTheModal(t *testing.T) {
+	older := update.Release{
+		Version:      "v0.39.0",
+		Highlights:   []string{"A highlight"},
+		Changes:      []update.Change{{Kind: update.KindFix, Text: strings.Repeat("c", 140)}},
+		TotalChanges: 1,
+	}
+	n := notice{releaseNotes: true, releases: []update.Release{older, pickersRelease()}, rangeComplete: true}
+	if got := noticeInnerWidth([]notice{n}, 300); got > 100 {
+		t.Fatalf("inner width = %d follows a change row that only counts", got)
 	}
 }
 
@@ -243,6 +359,13 @@ func TestScrollWindowDrawsAThumbThatFollowsTheOffset(t *testing.T) {
 	top := noticeScrollWindow(body, 10, 0, 20)
 	if len(top) != 10 || !strings.HasSuffix(ansi.Strip(top[0]), "┃") || !strings.HasSuffix(ansi.Strip(top[9]), "│") {
 		t.Fatalf("at the top the thumb leads the track:\n%s", ansi.Strip(strings.Join(top, "\n")))
+	}
+	middle := noticeScrollWindow(body, 10, 15, 20)
+	for index, row := range middle {
+		thumb := index == 4 || index == 5
+		if strings.HasSuffix(ansi.Strip(row), "┃") != thumb {
+			t.Fatalf("in the middle the thumb sits on rows 4 and 5:\n%s", ansi.Strip(strings.Join(middle, "\n")))
+		}
 	}
 	bottom := noticeScrollWindow(body, 10, 30, 20)
 	if !strings.HasSuffix(ansi.Strip(bottom[9]), "┃") || !strings.HasPrefix(ansi.Strip(bottom[9]), "row 39") {
@@ -300,6 +423,9 @@ func TestWheelScrollsTheMessageBody(t *testing.T) {
 func TestHomeAndEndJumpTheMessageBody(t *testing.T) {
 	m := scrollModel(t, 30)
 	limit := m.noticeScrollLimit(m.activeNotices())
+	if limit <= 0 {
+		t.Fatalf("the body should scroll, limit %d", limit)
+	}
 	for _, jump := range []string{"end", "G"} {
 		m.noticeScroll = 0
 		m.handleNoticesKey(key(jump))
@@ -332,5 +458,25 @@ func TestGrowingTheTerminalKeepsTheLastPageInView(t *testing.T) {
 	m.handleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress})
 	if m.noticeScroll != limit-noticeWheelRows {
 		t.Fatalf("the first scroll up starts from the page on screen: offset %d, want %d", m.noticeScroll, limit-noticeWheelRows)
+	}
+}
+
+func TestHintNamesHomeAndEndWhenItFits(t *testing.T) {
+	m := modalModel(t)
+	m.feedMessages = []feed.Message{{ID: "feed-wide", Banner: "wide", Title: "Wide", Body: []string{strings.Repeat("wide words ", 12)}}}
+	m.openNotices("feed-wide")
+	m.width = 180
+	if frame := ansi.Strip(m.View()); !strings.Contains(frame, "pgup/pgdn/home/end scroll") {
+		t.Fatalf("a wide frame names home and end:\n%s", frame)
+	}
+	m.width = 80
+	frame := ansi.Strip(m.View())
+	for _, want := range []string{"x dismiss", "esc"} {
+		if !strings.Contains(frame, want) {
+			t.Fatalf("a narrow frame keeps %q:\n%s", want, frame)
+		}
+	}
+	if strings.Contains(frame, "home/end") {
+		t.Fatalf("a narrow frame keeps the short hint:\n%s", frame)
 	}
 }

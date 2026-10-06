@@ -47,7 +47,7 @@ type notice struct {
 	// accent holds the phrases of body drawn in the accent color.
 	accent []string
 	body   []string
-	// releaseNotes marks the two notices whose body introduces releases.
+	// releaseNotes marks a body that introduces releases.
 	releaseNotes  bool
 	releases      []update.Release
 	after         []string
@@ -743,7 +743,7 @@ func (m *Model) noticeScrollLimit(notices []notice) int {
 	return max(0, len(body)-room)
 }
 
-// A resize can leave the saved offset past the last page.
+// scrollNotice steps from the page on screen, since a resize can leave the saved offset past the last page.
 func (m *Model) scrollNotice(notices []notice, rows int) {
 	limit := m.noticeScrollLimit(notices)
 	m.noticeScroll = min(max(min(m.noticeScroll, limit)+rows, 0), limit)
@@ -807,21 +807,21 @@ func (m *Model) viewNotices() string {
 	rows = append(rows, body...)
 	rows = append(rows, tail...)
 
-	hint := "↑↓ pick · pgup/pgdn scroll · r refresh · ↵ open · x dismiss · esc "
-	if isUpdateNotice(selected) {
-		hint = "↑↓ pick · pgup/pgdn scroll · r refresh · u update · ↵ open · x dismiss · esc "
-	}
 	frame := noticeFrame(rows, inner,
 		noticeLegend(),
-		mutedStyle.Render(hint))
+		mutedStyle.Render(noticeHint(selected, inner)))
 	return m.centerOnBackdrop(frame)
 }
 
-func changeRow(change update.Change) string {
-	if change.Author == "" {
-		return change.Text
+func noticeHint(selected notice, inner int) string {
+	updateKey := ""
+	if isUpdateNotice(selected) {
+		updateKey = "u update · "
 	}
-	return change.Text + " · " + change.Author
+	if hint := "↑↓ pick · pgup/pgdn/home/end scroll · r refresh · " + updateKey + "↵ open · x dismiss · esc "; lipgloss.Width(hint) <= inner+1 {
+		return hint
+	}
+	return "↑↓ pick · pgup/pgdn scroll · r refresh · " + updateKey + "↵ open · x dismiss · esc "
 }
 
 // plainMarks drops the accent marks release text carries.
