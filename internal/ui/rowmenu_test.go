@@ -122,8 +122,12 @@ func TestGroupMenuCreatesAndNeverAttaches(t *testing.T) {
 		labels = append(labels, item.label)
 	}
 	joined := strings.Join(labels, ",")
-	if !strings.Contains(joined, "New session") || strings.Contains(joined, "Attach") {
+	if !strings.Contains(joined, "New session") || !strings.Contains(joined, "Quick prompt mode") || strings.Contains(joined, "Attach") {
 		t.Fatalf("group menu should create and never attach, got %v", labels)
+	}
+	m.runMenuItem(menuEntry(t, m, "Quick prompt mode"))
+	if !m.quick.active || m.mode != modeList {
+		t.Fatalf("group menu should open quick prompt mode, active = %v mode = %v", m.quick.active, m.mode)
 	}
 }
 

@@ -78,6 +78,7 @@ func (m *Model) openRowMenu(row, x, y int) tea.Cmd {
 
 func (m *Model) rowMenuItems(entry treeRow) []menuItem {
 	create := []menuItem{
+		{label: "Quick prompt mode", action: keybind.Prompt},
 		{label: "New session", action: keybind.NewSession},
 		{label: "New terminal", action: keybind.Terminal},
 	}
