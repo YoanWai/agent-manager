@@ -24,16 +24,21 @@ import (
 )
 
 const (
-	cacheFile            = "update-check.json"
+	cacheFile       = "release-catalog.json"
+	legacyCacheFile = "update-check.json"
+	// catalogParser names the shape this build parses a release into. Raise it when that shape changes.
+	catalogParser        = 1
 	checkInterval        = 10 * time.Minute
 	requestBudget        = 4 * time.Second
 	refreshBudget        = 2 * time.Minute
 	maxPayload           = 16 << 20
 	maxReleases          = 100
-	maxChangesPerRelease = 12
-	maxChangeLength      = 120
-	maxHighlights        = 6
-	maxThanks            = 8
+	maxChangesPerRelease = 100
+	maxLineLength        = 160
+	maxHighlights        = 8
+	maxThanks            = 24
+	maxHeadlineLength    = 80
+	maxSummaryLength     = 600
 )
 
 const (
@@ -58,17 +63,35 @@ var (
 	conventionalTitle = regexp.MustCompile(`(?i)^(feat|fix|docs|refactor|perf|test|build|ci|chore|style)(?:\(([^)]+)\))?!?:\s*(.+)$`)
 	pullSuffix        = regexp.MustCompile(`\s+by\s+(@[A-Za-z0-9-]+(?:\[bot])?)\s+in\s+https://github\.com/\S+\s*$`)
 	markdownLink      = regexp.MustCompile(`\[([^]]+)]\([^)]+\)`)
+	boldLine          = regexp.MustCompile(`^\*\*([^*]+)\*\*$`)
 )
 
+const (
+	KindFeature = "feat"
+	KindFix     = "fix"
+	KindOther   = "other"
+)
+
+// Change is one line of a release's generated list.
+type Change struct {
+	Kind   string `json:"kind"`
+	Text   string `json:"text"`
+	Author string `json:"author,omitempty"`
+}
+
 // Release is one stable GitHub release with a compact, terminal-safe summary.
-// Highlights stand in for Changes when the notes carry them. TotalChanges may
-// exceed len(Changes) when a large release was bounded.
+// The panel lists Changes under Highlights for the newest release. Changes are every
+// user-facing line of the generated list, kept up to a bound that TotalChanges
+// may exceed.
+// Highlights and Summary keep the backticks their author put around the words to accent.
 type Release struct {
 	Version      string   `json:"version"`
 	URL          string   `json:"url"`
+	Headline     string   `json:"headline,omitempty"`
+	Summary      string   `json:"summary,omitempty"`
 	Highlights   []string `json:"highlights,omitempty"`
 	Thanks       []string `json:"thanks,omitempty"`
-	Changes      []string `json:"changes"`
+	Changes      []Change `json:"changes,omitempty"`
 	TotalChanges int      `json:"total_changes"`
 }
 
@@ -90,11 +113,21 @@ type ReleaseRange struct {
 
 type cache struct {
 	CheckedAt time.Time `json:"checked_at"`
-	// Latest and URL keep the cache backward-readable by older binaries.
-	Latest   string    `json:"latest"`
-	URL      string    `json:"url"`
-	ETag     string    `json:"etag,omitempty"`
-	Releases []Release `json:"releases,omitempty"`
+	Parser    int       `json:"parser"`
+	ETag      string    `json:"etag,omitempty"`
+	Releases  []Release `json:"releases,omitempty"`
+}
+
+// legacyCache is update-check.json from releases before v0.40.0, whose change rows carry no kind and seed as other.
+type legacyCache struct {
+	Releases []struct {
+		Version      string   `json:"version"`
+		URL          string   `json:"url"`
+		Highlights   []string `json:"highlights"`
+		Thanks       []string `json:"thanks"`
+		Changes      []string `json:"changes"`
+		TotalChanges int      `json:"total_changes"`
+	} `json:"releases"`
 }
 
 type githubRelease struct {
@@ -124,11 +157,46 @@ func Cached(configDir, current string) Result {
 	if !ok {
 		return Result{}
 	}
-	cached, ok := readCache(filepath.Join(configDir, cacheFile))
-	if !ok || len(cached.Releases) == 0 {
+	cached, _ := loadCatalog(configDir)
+	if len(cached.Releases) == 0 {
 		return Result{}
 	}
 	return resultFor(currentParts, cached.Releases)
+}
+
+// loadCatalog reports parsedHere false for a catalog it must neither trust as fresh nor revalidate by ETag.
+func loadCatalog(configDir string) (cached cache, parsedHere bool) {
+	if stored, ok := readCache(filepath.Join(configDir, cacheFile)); ok {
+		return stored, stored.Parser == catalogParser
+	}
+	return legacyCatalog(filepath.Join(configDir, legacyCacheFile)), false
+}
+
+func legacyCatalog(path string) cache {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return cache{}
+	}
+	var legacy legacyCache
+	if err := json.Unmarshal(raw, &legacy); err != nil {
+		return cache{}
+	}
+	var seeded cache
+	for _, release := range legacy.Releases {
+		changes := make([]Change, 0, len(release.Changes))
+		for _, row := range release.Changes {
+			changes = append(changes, Change{Kind: KindOther, Text: row})
+		}
+		seeded.Releases = append(seeded.Releases, Release{
+			Version:      release.Version,
+			URL:          release.URL,
+			Highlights:   release.Highlights,
+			Thanks:       release.Thanks,
+			Changes:      changes,
+			TotalChanges: release.TotalChanges,
+		})
+	}
+	return seeded
 }
 
 func check(ctx context.Context, configDir, current string, force bool) (Result, error) {
@@ -138,19 +206,19 @@ func check(ctx context.Context, configDir, current string, force bool) (Result, 
 	}
 
 	cachePath := filepath.Join(configDir, cacheFile)
-	cached, haveCache := readCache(cachePath)
-	haveCatalog := haveCache && len(cached.Releases) > 0
+	cached, parsedHere := loadCatalog(configDir)
+	haveCatalog := len(cached.Releases) > 0
 	newest, _ := latestRelease(cached.Releases)
 	// A catalog that stops short of the running build was fetched before the
 	// release that is now installed, so however recently that was, it cannot
 	// name what the update brought. Updating within the interval lands in
 	// exactly that state, which is when the notes are read.
-	if !force && haveCatalog && cacheFresh(cached, time.Now()) && !Newer(current, newest) {
+	if !force && parsedHere && haveCatalog && cacheFresh(cached, time.Now()) && !Newer(current, newest) {
 		return resultFor(currentParts, cached.Releases), nil
 	}
 
 	etag := ""
-	if haveCatalog {
+	if parsedHere && haveCatalog {
 		etag = cached.ETag
 	}
 	// A background Check gives up quickly and silently; a Refresh answers
@@ -171,11 +239,9 @@ func check(ctx context.Context, configDir, current string, force bool) (Result, 
 		writeCache(cachePath, cached)
 		return resultFor(currentParts, cached.Releases), nil
 	}
-	latest, releaseURL := latestRelease(releases)
 	writeCache(cachePath, cache{
 		CheckedAt: time.Now(),
-		Latest:    latest,
-		URL:       releaseURL,
+		Parser:    catalogParser,
 		ETag:      nextETag,
 		Releases:  releases,
 	})
@@ -249,9 +315,12 @@ func fetchReleases(ctx context.Context, etag string, budget time.Duration) ([]Re
 			continue
 		}
 		changes, total := extractChanges(item.Body)
+		headline, summary := extractLead(item.Body, item.TagName)
 		releases = append(releases, Release{
 			Version:      item.TagName,
 			URL:          item.HTMLURL,
+			Headline:     headline,
+			Summary:      summary,
 			Highlights:   extractHighlights(item.Body),
 			Thanks:       extractThanks(item.Body),
 			Changes:      changes,
@@ -301,17 +370,17 @@ func bulletText(line string) (string, bool) {
 
 // Prose under an authored heading is the release page's own copy, written
 // for a browser rather than a modal, so only bullets travel.
-func extractSectionBullets(body, heading string, limit int) []string {
+func extractSectionBullets(body, heading string, limit int, clean func(string) string) []string {
 	var bullets []string
 	for _, line := range sectionLines(body, heading) {
 		text, ok := bulletText(line)
 		if !ok {
 			continue
 		}
-		if text = plainText(text); text == "" {
+		if text = clean(text); text == "" {
 			continue
 		}
-		bullets = append(bullets, sentenceCase(truncateChange(text)))
+		bullets = append(bullets, sentenceCase(truncate(text, maxLineLength)))
 		if len(bullets) == limit {
 			break
 		}
@@ -320,27 +389,40 @@ func extractSectionBullets(body, heading string, limit int) []string {
 }
 
 func extractHighlights(body string) []string {
-	return extractSectionBullets(body, highlightsHeading, maxHighlights)
+	return extractSectionBullets(body, highlightsHeading, maxHighlights, markedText)
 }
 
 func extractThanks(body string) []string {
-	return extractSectionBullets(body, thanksHeading, maxThanks)
+	return extractSectionBullets(body, thanksHeading, maxThanks, plainText)
 }
 
-func extractChanges(body string) ([]string, int) {
-	var changes []string
+// extractLead reads an optional bold headline, then the summary, under the release's own heading.
+func extractLead(body, tag string) (headline, summary string) {
+	var paragraph []string
+	for _, line := range sectionLines(body, "## "+tag) {
+		if line == "" {
+			continue
+		}
+		if match := boldLine.FindStringSubmatch(line); match != nil && headline == "" && len(paragraph) == 0 {
+			headline = truncate(plainText(match[1]), maxHeadlineLength)
+			continue
+		}
+		paragraph = append(paragraph, line)
+	}
+	joined := strings.ReplaceAll(strings.Join(paragraph, " "), "**", "")
+	return headline, truncate(markedText(joined), maxSummaryLength)
+}
+
+func extractChanges(body string) ([]Change, int) {
+	var changes []Change
 	total := 0
 	for _, line := range sectionLines(body, changesHeading) {
 		bullet, ok := bulletText(line)
 		if !ok {
 			continue
 		}
-		change, kind := cleanChange(bullet)
-		if change == "" {
-			continue
-		}
-		// A bullet that names no type cannot be judged, so it stays.
-		if kind != "" && !userFacingTypes[kind] {
+		change, ok := cleanChange(bullet)
+		if !ok {
 			continue
 		}
 		total++
@@ -351,18 +433,26 @@ func extractChanges(body string) ([]string, int) {
 	return changes, total
 }
 
-func cleanChange(change string) (row, kind string) {
+// A bullet that names no type cannot be judged, so it stays.
+func cleanChange(bullet string) (Change, bool) {
+	change := Change{Kind: KindOther}
 	// Credit outside contributors on their digest lines; the maintainer's
 	// own handle and bot handles would be noise on every row.
-	author := ""
-	if match := pullSuffix.FindStringSubmatch(change); match != nil {
+	if match := pullSuffix.FindStringSubmatch(bullet); match != nil {
 		if handle := match[1]; handle != "@YoanWai" && !strings.HasSuffix(handle, "[bot]") {
-			author = handle
+			change.Author = handle
 		}
 	}
-	row = plainText(pullSuffix.ReplaceAllString(change, ""))
+	row := plainText(pullSuffix.ReplaceAllString(bullet, ""))
 	if match := conventionalTitle.FindStringSubmatch(row); match != nil {
-		kind = strings.ToLower(match[1])
+		kind := strings.ToLower(match[1])
+		if !userFacingTypes[kind] {
+			return Change{}, false
+		}
+		change.Kind = KindFeature
+		if kind == KindFix {
+			change.Kind = KindFix
+		}
 		description := sentenceCase(match[3])
 		if scope := labelCase(match[2]); scope != "" {
 			row = scope + ": " + description
@@ -372,11 +462,11 @@ func cleanChange(change string) (row, kind string) {
 	} else {
 		row = sentenceCase(row)
 	}
-	row = truncateChange(row)
-	if author != "" {
-		row += " · " + author
+	if row == "" {
+		return Change{}, false
 	}
-	return row, kind
+	change.Text = truncate(row, maxLineLength)
+	return change, true
 }
 
 func plainText(text string) string {
@@ -385,12 +475,38 @@ func plainText(text string) string {
 	return cleanText(text)
 }
 
-func truncateChange(text string) string {
-	runes := []rune(text)
-	if len(runes) <= maxChangeLength {
+// markedText keeps accent marks only when every span closes, since one stray backtick would accent the rest of the line.
+func markedText(text string) string {
+	text = cleanText(markdownLink.ReplaceAllString(text, "$1"))
+	if strings.Count(text, "`")%2 != 0 {
+		return strings.ReplaceAll(text, "`", "")
+	}
+	return text
+}
+
+// truncate counts visible characters, so accent marks are free and a span the cut leaves open is closed.
+func truncate(text string, limit int) string {
+	if len([]rune(text))-strings.Count(text, "`") <= limit {
 		return text
 	}
-	return strings.TrimSpace(string(runes[:maxChangeLength-1])) + "…"
+	var kept strings.Builder
+	visible, open := 0, false
+	for _, character := range text {
+		if visible == limit-1 {
+			break
+		}
+		kept.WriteRune(character)
+		if character == '`' {
+			open = !open
+		} else {
+			visible++
+		}
+	}
+	cut := strings.TrimRight(kept.String(), " ")
+	if open {
+		cut += "`"
+	}
+	return cut + "…"
 }
 
 func cleanText(text string) string {

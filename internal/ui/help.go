@@ -196,6 +196,8 @@ func helpSections(session, list keybind.Table, arrowStep bool) []helpSection {
 			{"click messages", "in the key legend, shown while any remain"},
 			{"↑↓", "pick a message"},
 			{"pgup / pgdn", "scroll its body"},
+			{"wheel", "scroll its body"},
+			{"home / end", "jump to its top or bottom"},
 			{"↵", "open its link in the browser"},
 			{"u", "on an update message: update and restart"},
 			{"r", "refresh releases and messages"},

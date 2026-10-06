@@ -24,7 +24,10 @@ import (
 )
 
 const (
-	cacheFile = "message-feed.json"
+	cacheFile       = "feed-messages.json"
+	legacyCacheFile = "message-feed.json"
+	// feedParser names the fields this build keeps of an entry. Raise it whenever rawMessage changes.
+	feedParser = 1
 	// checkInterval matches the release check. The feed exists to reach
 	// installs that are already running, so a floor longer than that one
 	// lets a release notice arrive hours before the message announcing it,
@@ -32,14 +35,17 @@ const (
 	checkInterval = 10 * time.Minute
 	requestBudget = 4 * time.Second
 
-	maxPayload    = 64 << 10
-	maxMessages   = 16
-	maxBannerLen  = 60
-	maxTitleLen   = 80
-	maxBodyLines  = 8
-	maxBodyLine   = 120
-	maxURLLen     = 200
-	feedIDPattern = `^[a-z0-9][a-z0-9-]{0,63}$`
+	maxPayload     = 64 << 10
+	maxMessages    = 16
+	maxBannerLen   = 60
+	maxTitleLen    = 80
+	maxBodyLines   = 16
+	maxBodyLine    = 160
+	maxHeadlineLen = 60
+	maxAccents     = 8
+	maxAccentLen   = 40
+	maxURLLen      = 200
+	feedIDPattern  = `^[a-z0-9][a-z0-9-]{0,63}$`
 )
 
 // feedURL is a var so tests can point the fetch at a local server.
@@ -54,9 +60,12 @@ type Message struct {
 	ID string
 	// Banner remains in the wire contract for released clients; current UI
 	// surfaces use Title as their one canonical label.
-	Banner string
-	Title  string
-	Body   []string
+	Banner   string
+	Title    string
+	Headline string
+	Body     []string
+	// Accent holds phrases of Body to draw in the accent color, never an empty one.
+	Accent []string
 	URL    string
 }
 
@@ -64,6 +73,8 @@ type rawMessage struct {
 	ID         string   `json:"id"`
 	Banner     string   `json:"banner"`
 	Title      string   `json:"title"`
+	Headline   string   `json:"headline"`
+	Accent     []string `json:"accent"`
 	Body       []string `json:"body"`
 	URL        string   `json:"url"`
 	MinVersion string   `json:"min_version"`
@@ -73,6 +84,7 @@ type rawMessage struct {
 
 type cache struct {
 	CheckedAt time.Time    `json:"checked_at"`
+	Parser    int          `json:"parser"`
 	ETag      string       `json:"etag,omitempty"`
 	Messages  []rawMessage `json:"messages"`
 }
@@ -92,17 +104,26 @@ func Refresh(ctx context.Context, configDir, version string) ([]Message, error) 
 	return fetchMessages(ctx, configDir, version, true)
 }
 
+// loadCache reports parsedHere false for a feed it must neither trust as fresh nor revalidate by ETag.
+func loadCache(configDir string) (cached cache, found, parsedHere bool) {
+	if stored, ok := readCache(filepath.Join(configDir, cacheFile)); ok {
+		return stored, true, stored.Parser == feedParser
+	}
+	cached, found = readCache(filepath.Join(configDir, legacyCacheFile))
+	return cached, found, false
+}
+
 func fetchMessages(ctx context.Context, configDir, version string, force bool) ([]Message, error) {
 	now := time.Now()
 	cachePath := filepath.Join(configDir, cacheFile)
-	cached, haveCache := readCache(cachePath)
+	cached, haveCache, parsedHere := loadCache(configDir)
 	age := now.Sub(cached.CheckedAt)
-	if !force && haveCache && age >= 0 && age < checkInterval {
+	if !force && parsedHere && age >= 0 && age < checkInterval {
 		return sanitize(cached.Messages, version, now), nil
 	}
 
 	etag := ""
-	if haveCache {
+	if parsedHere {
 		etag = cached.ETag
 	}
 	raw, nextETag, notModified, err := download(ctx, etag)
@@ -121,7 +142,7 @@ func fetchMessages(ctx context.Context, configDir, version string, force bool) (
 		writeCache(cachePath, cached)
 		return sanitize(cached.Messages, version, now), nil
 	}
-	writeCache(cachePath, cache{CheckedAt: now, ETag: nextETag, Messages: raw})
+	writeCache(cachePath, cache{CheckedAt: now, Parser: feedParser, ETag: nextETag, Messages: raw})
 	return sanitize(raw, version, now), nil
 }
 
@@ -180,10 +201,11 @@ func sanitize(raw []rawMessage, version string, now time.Time) []Message {
 			}
 		}
 		msg := Message{
-			ID:     "feed-" + entry.ID,
-			Banner: cleanText(entry.Banner, maxBannerLen),
-			Title:  cleanText(entry.Title, maxTitleLen),
-			URL:    entry.URL,
+			ID:       "feed-" + entry.ID,
+			Banner:   cleanText(entry.Banner, maxBannerLen),
+			Title:    cleanText(entry.Title, maxTitleLen),
+			Headline: cleanText(entry.Headline, maxHeadlineLen),
+			URL:      entry.URL,
 		}
 		if msg.Banner == "" || msg.Title == "" {
 			continue
@@ -194,6 +216,14 @@ func sanitize(raw []rawMessage, version string, now time.Time) []Message {
 			}
 			if line = cleanText(line, maxBodyLine); line != "" {
 				msg.Body = append(msg.Body, line)
+			}
+		}
+		for _, phrase := range entry.Accent {
+			if len(msg.Accent) == maxAccents {
+				break
+			}
+			if phrase = cleanText(phrase, maxAccentLen); phrase != "" {
+				msg.Accent = append(msg.Accent, phrase)
 			}
 		}
 		messages = append(messages, msg)
