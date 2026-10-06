@@ -51,7 +51,7 @@ Tell your agent what you want to review in Agent Manager. Your agent will set up
 | `\|` | Resize the split: `←→` nudge the divider, `enter` commits, `esc` cancels |
 | `t` | Toggle archived view |
 | `w` | Filter to sessions that need attention (`waiting`, `finished`, `errored`); press again to show all |
-| `M` | Messages (the update notice with a release's highlights and thanks, maintainer messages, and tips, where `x` dismisses one for good). New notices open automatically. While any message is left, the key legend leads with `messages`, and a click on it reopens them in either layout. The welcome message points at Settings for a bug or an idea. |
+| `M` | Messages (the update notice with a release's highlights and thanks, maintainer messages, and tips, where `x` dismisses one for good). New notices open automatically. A long message scrolls with the wheel, `pgup`/`pgdn`, and `home`/`end`. While any message is left, the key legend leads with `messages`, and a click on it reopens them in either layout. The welcome message points at Settings for a bug or an idea. |
 | `e` | Hide / show empty groups |
 | `/` | Search the list by name. The field takes an accent fill while it is open, and the query lights up inside every matching session and group name |
 | `?` | The key map for the current screen. From the list it shows every group; from review it shows only review bindings. It scrolls (`↑↓`/`jk`, `pgup`/`pgdn`, `g`/`G`) and `/` searches it down to one line. |
