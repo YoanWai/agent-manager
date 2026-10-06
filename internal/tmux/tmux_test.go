@@ -1191,6 +1191,30 @@ func TestPanesFollowsTheAgentIntoANewDirectory(t *testing.T) {
 	t.Fatalf("Panes path = %q, want %q", got, moved)
 }
 
+// The startup list-keys brings up a server that holds no session for a
+// moment, and tmux answers list-panes there with "no current target".
+func TestPanesOnAServerWithNoSessionsIsEmpty(t *testing.T) {
+	requireTmux(t)
+	socket := testSocket + "empty"
+	driver, err := NewWithSocket(socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	killServer := func() { exec.Command("tmux", "-L", socket, "kill-server").Run() }
+	killServer()
+	t.Cleanup(killServer)
+	if out, err := exec.Command("tmux", "-L", socket, "start-server", ";", "set-option", "-g", "exit-empty", "off").CombinedOutput(); err != nil {
+		t.Fatalf("start an empty server: %v: %s", err, out)
+	}
+	panes, err := driver.Panes()
+	if err != nil {
+		t.Fatalf("Panes: %v", err)
+	}
+	if len(panes) != 0 {
+		t.Fatalf("Panes = %v, want none", panes)
+	}
+}
+
 func TestExportEnvPrefixesTheCommand(t *testing.T) {
 	env := map[string]string{"B": "second", "A": "fir st"}
 	want := `export A='fir st'; export B='second'; claude --resume 7`
