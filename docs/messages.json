@@ -1,5 +1,29 @@
 [
   {
+    "id": "v0400-model-reasoning-pickers",
+    "banner": "Model + reasoning pickers are here!",
+    "title": "v0.40.0: model and reasoning pickers are here!",
+    "headline": "Model + reasoning pickers are here!",
+    "accent": [
+      "model and reasoning effort",
+      "ctrl+l",
+      "ctrl+x",
+      "always up to date"
+    ],
+    "body": [
+      "Pick the model and reasoning effort for every session, in the New Session modal and in quick prompt mode.",
+      "In quick prompt mode, ctrl+l opens the model list and ctrl+x steps the effort.",
+      "Every choice is read live from the CLI, so a new model shows up without an Agent Manager update.",
+      "So the list is always up to date and never goes stale, like it unfortunately does in a lot of similar TUIs and programs.",
+      "Each CLI remembers your last pick, and restart, revive and fork keep the session's choice.",
+      "Effort works on Claude, Codex, Grok, Pi, Muse and Hermes. OpenCode and Gemini get the model picker.",
+      "Thanks @calsmith1-nokia, @ipl31 and @pandysp for helping out.",
+      "Press Enter for the full v0.40.0 release notes."
+    ],
+    "url": "https://github.com/YoanWai/agent-manager/releases/tag/v0.40.0",
+    "max_version": "0.40.0"
+  },
+  {
     "id": "tip-quick-prompt-spawns-agents",
     "banner": "Quick tip: space on a group starts a new agent",
     "title": "Quick tip: space on a group starts a new agent",
