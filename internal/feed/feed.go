@@ -32,14 +32,17 @@ const (
 	checkInterval = 10 * time.Minute
 	requestBudget = 4 * time.Second
 
-	maxPayload    = 64 << 10
-	maxMessages   = 16
-	maxBannerLen  = 60
-	maxTitleLen   = 80
-	maxBodyLines  = 8
-	maxBodyLine   = 120
-	maxURLLen     = 200
-	feedIDPattern = `^[a-z0-9][a-z0-9-]{0,63}$`
+	maxPayload     = 64 << 10
+	maxMessages    = 16
+	maxBannerLen   = 60
+	maxTitleLen    = 80
+	maxBodyLines   = 16
+	maxBodyLine    = 160
+	maxHeadlineLen = 60
+	maxAccents     = 8
+	maxAccentLen   = 40
+	maxURLLen      = 200
+	feedIDPattern  = `^[a-z0-9][a-z0-9-]{0,63}$`
 )
 
 // feedURL is a var so tests can point the fetch at a local server.
@@ -54,9 +57,12 @@ type Message struct {
 	ID string
 	// Banner remains in the wire contract for released clients; current UI
 	// surfaces use Title as their one canonical label.
-	Banner string
-	Title  string
-	Body   []string
+	Banner   string
+	Title    string
+	Headline string
+	Body     []string
+	// Accent holds phrases of Body to draw in the accent color, never an empty one.
+	Accent []string
 	URL    string
 }
 
@@ -64,6 +70,8 @@ type rawMessage struct {
 	ID         string   `json:"id"`
 	Banner     string   `json:"banner"`
 	Title      string   `json:"title"`
+	Headline   string   `json:"headline"`
+	Accent     []string `json:"accent"`
 	Body       []string `json:"body"`
 	URL        string   `json:"url"`
 	MinVersion string   `json:"min_version"`
@@ -180,10 +188,11 @@ func sanitize(raw []rawMessage, version string, now time.Time) []Message {
 			}
 		}
 		msg := Message{
-			ID:     "feed-" + entry.ID,
-			Banner: cleanText(entry.Banner, maxBannerLen),
-			Title:  cleanText(entry.Title, maxTitleLen),
-			URL:    entry.URL,
+			ID:       "feed-" + entry.ID,
+			Banner:   cleanText(entry.Banner, maxBannerLen),
+			Title:    cleanText(entry.Title, maxTitleLen),
+			Headline: cleanText(entry.Headline, maxHeadlineLen),
+			URL:      entry.URL,
 		}
 		if msg.Banner == "" || msg.Title == "" {
 			continue
@@ -194,6 +203,14 @@ func sanitize(raw []rawMessage, version string, now time.Time) []Message {
 			}
 			if line = cleanText(line, maxBodyLine); line != "" {
 				msg.Body = append(msg.Body, line)
+			}
+		}
+		for _, phrase := range entry.Accent {
+			if len(msg.Accent) == maxAccents {
+				break
+			}
+			if phrase = cleanText(phrase, maxAccentLen); phrase != "" {
+				msg.Accent = append(msg.Accent, phrase)
 			}
 		}
 		messages = append(messages, msg)

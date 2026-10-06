@@ -7,11 +7,14 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/YoanWai/agent-manager/internal/update"
 )
 
 func serve(t *testing.T, body string) *httptest.Server {
@@ -233,6 +236,56 @@ func TestFetchCapsCountAndSize(t *testing.T) {
 	}
 }
 
+func TestFetchCarriesHeadlineAndAccent(t *testing.T) {
+	serve(t, `[{"id":"pickers","banner":"Pickers are here","title":"v0.40.0: pickers are here","headline":"Model + reasoning pickers are here!","accent":["ctrl+l","ctrl+x"],"body":["ctrl+l opens the model list and ctrl+x steps the effort."]}]`)
+	msg := fetch(t, t.TempDir(), "v0.40.0")[0]
+	if msg.Headline != "Model + reasoning pickers are here!" {
+		t.Fatalf("headline = %q", msg.Headline)
+	}
+	if !slices.Equal(msg.Accent, []string{"ctrl+l", "ctrl+x"}) {
+		t.Fatalf("accent = %q", msg.Accent)
+	}
+}
+
+func TestFetchBoundsHeadlineAndAccent(t *testing.T) {
+	phrases := []string{`""`, `"` + strings.Repeat("y", maxAccentLen+20) + `"`}
+	for index := 0; index < maxAccents+2; index++ {
+		phrases = append(phrases, `"phrase `+strconv.Itoa(index)+`"`)
+	}
+	serve(t, `[{"id":"bounded","banner":"x","title":"x","headline":"`+strings.Repeat("h", maxHeadlineLen+20)+`","accent":[`+strings.Join(phrases, ",")+`]}]`)
+	msg := fetch(t, t.TempDir(), "v0.40.0")[0]
+	if len([]rune(msg.Headline)) != maxHeadlineLen {
+		t.Fatalf("headline is %d characters, want %d", len([]rune(msg.Headline)), maxHeadlineLen)
+	}
+	if len(msg.Accent) != maxAccents {
+		t.Fatalf("kept %d accent phrases, want %d", len(msg.Accent), maxAccents)
+	}
+	if slices.Contains(msg.Accent, "") {
+		t.Fatalf("an empty phrase would match everywhere: %q", msg.Accent)
+	}
+	if got := len([]rune(msg.Accent[0])); got != maxAccentLen {
+		t.Fatalf("a long phrase is %d characters, want it cut to %d", got, maxAccentLen)
+	}
+}
+
+func TestFetchKeepsSixteenBodyLines(t *testing.T) {
+	lines := make([]string, 0, maxBodyLines+4)
+	for index := 0; index < maxBodyLines+4; index++ {
+		lines = append(lines, `"line `+strconv.Itoa(index)+`"`)
+	}
+	serve(t, `[{"id":"long","banner":"x","title":"x","body":[`+strings.Join(lines, ",")+`]}]`)
+	if got := len(fetch(t, t.TempDir(), "v0.40.0")[0].Body); got != 16 {
+		t.Fatalf("kept %d body lines, want 16", got)
+	}
+}
+
+// The panel releases before v0.40.0 draw shows this much of an entry.
+const (
+	legacyBodyLines = 8
+	legacyBodyLine  = 120
+	firstWidePanel  = "0.40.0"
+)
+
 func TestShippedFeedFileIsRenderableAndRetires(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "..", "docs", "messages.json"))
 	if err != nil {
@@ -256,12 +309,30 @@ func TestShippedFeedFileIsRenderableAndRetires(t *testing.T) {
 		if got := cleanText(entry.Title, maxTitleLen); got != entry.Title {
 			t.Errorf("%s: title is cut to %q", entry.ID, got)
 		}
-		if len(entry.Body) > maxBodyLines {
-			t.Errorf("%s: %d body lines, only the first %d render", entry.ID, len(entry.Body), maxBodyLines)
+		bodyLines, lineLength := maxBodyLines, maxBodyLine
+		if entry.MinVersion == "" || update.Newer(firstWidePanel, entry.MinVersion) {
+			bodyLines, lineLength = legacyBodyLines, legacyBodyLine
+		}
+		if len(entry.Body) > bodyLines {
+			t.Errorf("%s: %d body lines, only the first %d render for the versions it reaches", entry.ID, len(entry.Body), bodyLines)
 		}
 		for i, line := range entry.Body {
-			if got := cleanText(line, maxBodyLine); got != line {
-				t.Errorf("%s: body line %d is cut to %q", entry.ID, i+1, got)
+			if got := cleanText(line, lineLength); got != line {
+				t.Errorf("%s: body line %d is cut to %q for the versions it reaches", entry.ID, i+1, got)
+			}
+		}
+		if got := cleanText(entry.Headline, maxHeadlineLen); got != entry.Headline {
+			t.Errorf("%s: headline is cut to %q", entry.ID, got)
+		}
+		if len(entry.Accent) > maxAccents {
+			t.Errorf("%s: %d accent phrases, only the first %d apply", entry.ID, len(entry.Accent), maxAccents)
+		}
+		for _, phrase := range entry.Accent {
+			if got := cleanText(phrase, maxAccentLen); got != phrase || phrase == "" {
+				t.Errorf("%s: accent phrase %q is cut to %q", entry.ID, phrase, got)
+			}
+			if !slices.ContainsFunc(entry.Body, func(line string) bool { return strings.Contains(line, phrase) }) {
+				t.Errorf("%s: accent phrase %q is in no body line", entry.ID, phrase)
 			}
 		}
 		if entry.MaxVersion == "" && entry.ExpiresAt == "" {
