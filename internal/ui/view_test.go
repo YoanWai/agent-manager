@@ -560,10 +560,7 @@ func TestArrowStepFooterHintsFollowSetting(t *testing.T) {
 	}
 }
 
-// A prompt that grows quick prompt mode's footer takes its rows from the
-// painted preview alone: resizing the pane for it would make an agent
-// drawing on the normal screen redraw its whole transcript, so the pane
-// stays pinned and the view crops instead.
+// Resizing a pane for prompt growth makes agents redraw their transcripts.
 func TestQuickBarKeepsPaneHeight(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "sizer", t.TempDir(), "")

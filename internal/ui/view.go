@@ -609,13 +609,8 @@ func (m *Model) rowLegend() legendSection {
 
 const quickModeTitle = "Quick prompt mode"
 
-// reviewModeHint follows the review key: the agent's review tool sets
-// which repo, base and diff scope review opens with.
 const reviewModeHint = `tell your agent "set review mode"`
 
-// quickModeLead is the binding a row's tier opens with, filled so it reads
-// first: quick prompt mode answers a session or spawns into a group without
-// leaving the list, and is the key people miss.
 func (m *Model) quickModeLead() [2]string {
 	return [2]string{m.listGlyph(keybind.Prompt), "quick prompt mode"}
 }

@@ -1026,10 +1026,7 @@ func tempReadings(snap sysstat.Snapshot) string {
 	return strings.Join(parts, subtleStyle.Render("  "))
 }
 
-// contentLines is the right column: what the cursor is on, then its live
-// pane. width is
-// the whole column; our own blocks sit inside its gutters, while the
-// captured pane spans it edge to edge.
+// Captured panes use the whole column to preserve terminal layout.
 func (m *Model) contentLines(width, height int) []contentLine {
 	gutter := strings.Repeat(" ", contentGutter)
 	inner := width - 2*contentGutter
@@ -1545,14 +1542,10 @@ func lastActivity(sess store.Session) time.Time {
 	return sess.LastStatusAt
 }
 
-// quickFooter puts the target, prompt and keys on a full-width band.
 func (m *Model) quickFooter() string {
 	edge := keyStyle.Render(quickEdge)
 	gutter := strings.Repeat(" ", quickGutter-1)
 	keys := splitLines(legendBar([]legendSection{{title: quickModeTitle, pairs: m.quickLegend()}}, max(m.width-1, 1)))
-	// The bar takes what the body can spare above its smallest height: the
-	// target row and a prompt row at the least, a few prompt rows at most,
-	// and half the terminal for the model sheet.
 	rows := quickBarMaxRows + 1
 	if m.quick.picking != pickNone {
 		rows = max(m.height/2, rows)
@@ -1606,8 +1599,7 @@ func (m *Model) viewQuickBar(width, maxRows int) string {
 				[]string{state + " " + chipStyle.Render(sess.Tool), state, ""}, width)
 		}
 	}
-	// The rows the frame can spare become the box's cap. The width is set
-	// first, since the rows are counted at the width stored on the box.
+	// Count wrapped rows only after setting the width.
 	m.quick.input.SetWidth(width)
 	m.quick.maxRows = max(min(maxRows-1, quickBarMaxRows), 1)
 	return target + "\n" + m.quick.view()

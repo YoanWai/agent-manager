@@ -285,8 +285,6 @@ func keyCap(key, label string) string {
 	return keyStyle.Render(key) + " " + legendLabelStyle.Render(label)
 }
 
-// keyCapLead is keyCap on a fill of its own, for the one binding a tier
-// wants read before the others.
 func keyCapLead(key, label string) string {
 	return legendLeadKey.Render(key) + legendLeadLabel.Render(label)
 }

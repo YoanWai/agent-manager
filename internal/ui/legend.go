@@ -23,17 +23,12 @@ const (
 // secondary tier that recedes behind the tier above it.
 type legendSection struct {
 	title string
-	// leads are bindings the tier puts first and fills, so they read
-	// before the rest; an empty key leaves one out. hint follows them in a
-	// quiet tone.
 	leads [][2]string
 	hint  string
 	pairs [][2]string
 	quiet bool
 }
 
-// parts renders the tier's bindings in order, the leads and their hint
-// first.
 func (s legendSection) parts() []string {
 	var parts []string
 	for _, lead := range s.leads {
@@ -77,8 +72,6 @@ func legendBar(sections []legendSection, width int) string {
 		if section.quiet {
 			title = legendTitleStyle.Render(section.title)
 		}
-		// A title wider than the shared column, which only a tier shown on
-		// its own carries, widens the column rather than losing its words.
 		column := max(legendTitleColumn, ansi.StringWidth(title)+legendGap)
 		head := indent + padRight(title, column)
 		cont := indent + strings.Repeat(" ", column)

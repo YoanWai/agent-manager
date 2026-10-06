@@ -24,10 +24,8 @@ type composer struct {
 	input       textarea.Model
 	attachments []imageAttachment
 	lastImageID int
-	// maxRows is the most rows the box shows; a longer prompt scrolls to
-	// keep the caret in sight, and top is the first row it shows.
-	maxRows int
-	top     int
+	maxRows     int
+	top         int
 	// gen tells this box from the one that stood in the same place before
 	// it. A clipboard read outlives the prompt that started it, and closing
 	// a form and opening another is fast enough to beat one home; without
@@ -55,11 +53,7 @@ const (
 	composerForm
 )
 
-// typedText marks a run of several runes as text. Keystrokes that reach the
-// terminal faster than the manager reads them arrive a word at a time, and
-// a key's name is its runes, so a typed "end", "up" or "enter" would fire
-// the binding of that name: the caret jumps, the target moves, or half a
-// prompt goes out. Bubbletea keeps a paste off the bindings the same way.
+// Multi-rune input must bypass Bubble Tea's named-key bindings.
 func typedText(msg tea.KeyMsg) tea.KeyMsg {
 	if msg.Type == tea.KeyRunes && len(msg.Runes) > 1 && !msg.Alt {
 		msg.Paste = true
@@ -396,18 +390,12 @@ func (c *composer) message() string {
 	return strings.TrimSpace(value)
 }
 
-// holdOpen sizes the box taller than any prompt can wrap. The textarea
-// scrolls its viewport during a keystroke only to chase the caret, and
-// never scrolls it back, so a box left at its rendered height loses its
-// first row for good to the keystroke that wraps a second one. Held open,
-// the viewport stays at the top and view does the scrolling.
+// Keep the textarea viewport at row zero so view owns scrolling.
 func holdOpen(input *textarea.Model) {
 	input.MaxHeight = 0
 	input.SetHeight(input.CharLimit + 1)
 }
 
-// view renders the prompt at the rows its text wraps to, at most maxRows,
-// scrolled only as far as the caret's row needs.
 func (c *composer) view() string {
 	caret, total := c.displayRows()
 	rows := max(min(total, c.maxRows), 1)
@@ -424,9 +412,7 @@ func (c *composer) view() string {
 	return strings.Join(lines[c.top:min(c.top+rows, len(lines))], "\n")
 }
 
-// displayRows counts the rows the prompt wraps to and the row the caret is
-// on, walking copies of the box a whole line at a time so the caret itself
-// never moves.
+// Walk copies to reuse textarea wrapping without moving the live caret.
 func (c *composer) displayRows() (caret, total int) {
 	info := c.input.LineInfo()
 	caret, total = info.RowOffset, info.Height

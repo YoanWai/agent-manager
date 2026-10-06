@@ -382,10 +382,6 @@ func TestFullFocusFooterIsOneRow(t *testing.T) {
 	}
 }
 
-// Quick prompt mode's footer grows with its prompt and takes those rows
-// from the body, but the panes stay the size the list's own footer gives
-// them: resizing every session for a passing prompt would cost an agent a
-// full transcript redraw.
 func TestQuickFooterLeavesThePaneSizeAlone(t *testing.T) {
 	for _, full := range []bool{false, true} {
 		m := buildModel(t)

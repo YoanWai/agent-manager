@@ -1760,8 +1760,6 @@ func TestSearchLightsTheQueryInsideAGroupName(t *testing.T) {
 	}
 }
 
-// The footer bar is bounded by the terminal, so a prompt taller than the
-// rows it can spare still shows the row the caret is on, in either layout.
 func TestQuickFooterKeepsTheCaretRowOnScreen(t *testing.T) {
 	for _, full := range []bool{false, true} {
 		m := buildModel(t)

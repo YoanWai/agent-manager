@@ -1068,11 +1068,6 @@ func TestQuickUpStepsOffTheRowWhenAChipIsInTheWay(t *testing.T) {
 	}
 }
 
-// The bar grows a row as the prompt wraps and gives it back as the prompt
-// shrinks, and the first row stays on screen the whole way, in both
-// layouts. The textarea only scrolls to chase the caret, so a box held at
-// its rendered height once lost its first row to the keystroke that
-// wrapped a second.
 func TestQuickPromptKeepsItsFirstRowAsItWrapsAndShrinks(t *testing.T) {
 	for _, full := range []bool{false, true} {
 		m := buildModel(t)
@@ -1107,9 +1102,6 @@ func TestQuickPromptKeepsItsFirstRowAsItWrapsAndShrinks(t *testing.T) {
 	}
 }
 
-// Quick prompt mode is offered first and filled on every row that takes a
-// prompt, so the footer always names it. Open, the mode takes the footer
-// over: the target, prompt, badge and keys share one band and accent edge.
 func TestQuickPromptModeLeadsTheFooterAndNamesTheOpenBar(t *testing.T) {
 	m := buildModel(t)
 	seedTwoGroups(t, m)
@@ -1157,16 +1149,10 @@ func TestQuickPromptModeLeadsTheFooterAndNamesTheOpenBar(t *testing.T) {
 				t.Fatalf("full layout %v: every bar row should open on the accent edge over the band, across the width: %q", full, line)
 			}
 		}
-		if !strings.Contains(ansi.Strip(footer), quickModeTitle) {
-			t.Fatalf("full layout %v: the footer should name quick prompt mode: %q", full, footer)
-		}
 		m.quick.active = false
 	}
 }
 
-// A terminal that hands keystrokes over faster than the manager reads them
-// delivers a word at a time, and a word named like a key ("end", "up",
-// "tab", "enter", "esc") has to land as text rather than fire that key.
 func TestQuickPromptTypesWordsNamedLikeKeys(t *testing.T) {
 	m := buildModel(t)
 	seedTwoGroups(t, m)

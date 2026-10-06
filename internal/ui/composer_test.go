@@ -455,9 +455,6 @@ func fileGone(path string) bool {
 	return os.IsNotExist(err)
 }
 
-// displayRows has to agree with the rows the textarea paints, wide runes,
-// unbreakable words, exact fills and blank lines included, and the caret's
-// row has to climb one at a time from the first row to the last.
 func TestComposerDisplayRowsMatchTheTextarea(t *testing.T) {
 	values := []string{
 		"",
@@ -492,8 +489,6 @@ func TestComposerDisplayRowsMatchTheTextarea(t *testing.T) {
 			if total != content {
 				t.Errorf("width %d value %q: displayRows total %d, textarea paints %d rows", width, value, total, content)
 			}
-			// Walk the caret from the start to the end: its row must climb one
-			// step at a time and finish on the last row.
 			c.input.SetValue("")
 			c.input.InsertString(value)
 			_ = c.updateInput(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'<'}, Alt: true})

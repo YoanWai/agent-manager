@@ -152,10 +152,7 @@ func (m *Model) listBodyHeight() int {
 	return bodyHeight
 }
 
-// restingBodyHeight is the body panes are sized to. Quick prompt mode's
-// footer grows with its prompt, so while it is open the body is measured
-// over the list's own footer: the preview crops instead of every pane
-// resizing.
+// A growing footer crops previews instead of resizing running panes.
 func (m *Model) restingBodyHeight() int {
 	if !m.quick.active {
 		return m.listBodyHeight()
