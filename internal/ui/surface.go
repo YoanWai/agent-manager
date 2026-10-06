@@ -30,6 +30,9 @@ func blockHex() string { return mix(current.Bg, current.Surface, 0.35) }
 // selectedHex is the band under the cursor's entry.
 func selectedHex() string { return current.Surface }
 
+// quickModeHex is the band quick prompt mode lays across the footer.
+func quickModeHex() string { return panelHex() }
+
 // searchFieldHex is the band under the open search field.
 func searchFieldHex() string { return mix(panelHex(), current.Accent, 0.2) }
 

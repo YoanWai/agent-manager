@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"github.com/charmbracelet/bubbles/textarea"
 	"os"
 	"slices"
 	"strconv"
@@ -559,9 +560,10 @@ func TestArrowStepFooterHintsFollowSetting(t *testing.T) {
 	}
 }
 
-// The quick bar takes its rows from the painted preview alone: resizing the
-// pane for it would make an agent drawing on the normal screen redraw its
-// whole transcript, so the pane stays pinned and the view crops instead.
+// A prompt that grows quick prompt mode's footer takes its rows from the
+// painted preview alone: resizing the pane for it would make an agent
+// drawing on the normal screen redraw its whole transcript, so the pane
+// stays pinned and the view crops instead.
 func TestQuickBarKeepsPaneHeight(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "sizer", t.TempDir(), "")
@@ -577,6 +579,7 @@ func TestQuickBarKeepsPaneHeight(t *testing.T) {
 	listed := paintedPreview(m)
 
 	m.openQuickMode()
+	m.quick.input.SetValue(strings.Repeat("filler word ", 40))
 	if got := m.previewPaneHeight(); got != pinned {
 		t.Fatalf("box height with the quick bar open = %d, want %d", got, pinned)
 	}
@@ -622,7 +625,6 @@ func TestTransientFootersKeepListHeight(t *testing.T) {
 		name string
 		open func()
 	}{
-		{"prompt", func() { m.openQuickMode() }},
 		{"resize", func() { m.split.resizeMode = true }},
 		{"rename", func() { m.mode = modeRename }},
 		{"focus", func() { m.mode = modeFocus }},
@@ -888,6 +890,7 @@ func TestRowLegendDropsArchiveInArchivedView(t *testing.T) {
 func TestQuickPromptFooterKeys(t *testing.T) {
 	m := shotModel()
 	m.quick.active = true
+	m.quick.input = textarea.New()
 	m.quick.toolNames = []string{"claude"}
 
 	footerOne := m.viewFooter()

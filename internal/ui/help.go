@@ -112,7 +112,7 @@ func sessionRowHelpRows(list keybind.Table) [][2]string {
 	h.action("attach it: the pane takes the whole terminal", keybind.Attach)
 	h.fixed("", "settings swap what the two do")
 	h.action("mark it idle when it is finished, without entering it", keybind.MarkIdle)
-	h.action("quick prompt: answer the session without attaching", keybind.Prompt)
+	h.action("quick prompt mode: answer the session without attaching", keybind.Prompt)
 	h.action("copy its newest reply to the clipboard", keybind.CopyReply)
 	h.action("review its diff", keybind.Review)
 	h.action("fork it into a new session in the same group", keybind.Fork)
@@ -148,7 +148,7 @@ func markHelpRows(list keybind.Table) [][2]string {
 func groupRowHelpRows(list keybind.Table) [][2]string {
 	h := helpRows{list: list}
 	h.action("fold / unfold", keybind.Open)
-	h.action("quick prompt: spawn a new agent in the group", keybind.Prompt)
+	h.action("quick prompt mode: spawn a new agent in the group", keybind.Prompt)
 	h.action("edit it: name, default path, worktree", keybind.Rename)
 	h.action("move it, with its whole subtree, under another group", keybind.Move)
 	h.action("open its default path in your editor", keybind.Editor)
@@ -167,7 +167,7 @@ func helpSections(session, list keybind.Table, arrowStep bool) []helpSection {
 		{title: "session under the cursor", rows: sessionRowHelpRows(list)},
 		{title: "the mark on a session row", rows: markHelpRows(list)},
 		{title: "group under the cursor", rows: groupRowHelpRows(list)},
-		{title: titledWith("quick prompt", list, keybind.Prompt), rows: [][2]string{
+		{title: titledWith("quick prompt mode", list, keybind.Prompt), rows: [][2]string{
 			{"↵", "send"},
 			{"↑↓", "switch the target session, or step the caret in a taller prompt"},
 			{"tab", "step the tool a spawn uses forward (alt+m too)"},

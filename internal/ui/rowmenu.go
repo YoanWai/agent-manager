@@ -115,7 +115,7 @@ func (m *Model) rowMenuItems(entry treeRow) []menuItem {
 	var agent []menuItem
 	if !m.isShell(sess.Tool) {
 		agent = []menuItem{
-			{label: "Prompt", action: keybind.Prompt},
+			{label: "Quick prompt mode", action: keybind.Prompt},
 			{label: "Copy last reply", action: keybind.CopyReply},
 			{label: "Review changes", action: keybind.Review},
 			{label: "Fork", action: keybind.Fork},

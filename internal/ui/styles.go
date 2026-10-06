@@ -59,6 +59,8 @@ var (
 	legendTitleStyle lipgloss.Style
 	legendBadgeStyle lipgloss.Style
 	legendLabelStyle lipgloss.Style
+	legendLeadKey    lipgloss.Style
+	legendLeadLabel  lipgloss.Style
 )
 
 func init() { applyTheme(themes[0]) }
@@ -99,6 +101,9 @@ func rebuildStyles() {
 	legendBadgeStyle = lipgloss.NewStyle().
 		Foreground(colorBg).Background(colorAccent).Bold(true).Padding(0, 1)
 	legendLabelStyle = lipgloss.NewStyle().Foreground(colorText)
+	lead := lipgloss.Color(mix(current.Bg, current.Accent, 0.28))
+	legendLeadKey = lipgloss.NewStyle().Foreground(colorAccent).Background(lead).Bold(true).PaddingLeft(1)
+	legendLeadLabel = lipgloss.NewStyle().Foreground(colorBright).Background(lead).Padding(0, 1)
 }
 
 // renderSelectedRow wraps a pre-styled line with the selected row's
@@ -278,6 +283,12 @@ func keyPill(key, text string, fg lipgloss.Color) string {
 // row of bindings reads as prose under a header rather than as buttons.
 func keyCap(key, label string) string {
 	return keyStyle.Render(key) + " " + legendLabelStyle.Render(label)
+}
+
+// keyCapLead is keyCap on a fill of its own, for the one binding a tier
+// wants read before the others.
+func keyCapLead(key, label string) string {
+	return legendLeadKey.Render(key) + legendLeadLabel.Render(label)
 }
 
 // keyCapQuiet is keyCap for a secondary tier: the label drops to the dim

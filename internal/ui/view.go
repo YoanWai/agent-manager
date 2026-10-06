@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/status"
-	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
@@ -122,14 +121,7 @@ func (m *Model) previewPaneWidth() int {
 // screen layout, which paints captures across the full width.
 func (m *Model) paneTargetSize() (int, int) {
 	if m.fullLayout {
-		width, height := m.width, m.listBodyHeight()
-		if width < 1 {
-			width = 1
-		}
-		if height < 3 {
-			height = 3
-		}
-		return width, height
+		return max(m.width, 1), m.restingBodyHeight()
 	}
 	return m.previewPaneWidth(), m.previewPaneHeight()
 }
@@ -148,7 +140,7 @@ func (m *Model) previewPaneHeight() int {
 	if m.height < 1 {
 		return 1
 	}
-	avail := m.listBodyHeight()
+	avail := m.restingBodyHeight()
 	if avail < 1 {
 		return 1
 	}
@@ -292,36 +284,6 @@ func divider(label string, width int) string {
 }
 
 const quickBarMaxRows = 5
-
-// quickBarRows is the rows the typed text needs at the current width,
-// capped so the bar never swallows the sidebar. Single-line values (the
-// normal case) count exact soft-wrap rows; pasted multi-line values are
-// estimated, with the textarea scrolling to keep the cursor visible.
-func (m *Model) quickBarRows(textWidth, maxRows int) int {
-	return textareaRows(m.quick.input, textWidth, min(maxRows, quickBarMaxRows))
-}
-
-func textareaRows(input textarea.Model, textWidth, maxRows int) int {
-	rows := 0
-	if input.LineCount() == 1 {
-		rows = input.LineInfo().Height
-	} else {
-		if textWidth < 1 {
-			textWidth = 1
-		}
-		// A line filling its last row exactly wraps onto one more empty row.
-		for _, line := range strings.Split(input.Value(), "\n") {
-			rows += 1 + max(lipgloss.Width(line), 1)/textWidth
-		}
-	}
-	if rows > maxRows {
-		rows = maxRows
-	}
-	if rows < 1 {
-		rows = 1
-	}
-	return rows
-}
 
 func (m *Model) selectedGroup() (string, bool) {
 	if entry, ok := m.selectedRow(); ok && entry.isGroup {
@@ -505,7 +467,7 @@ func (m *Model) viewFooter() string {
 		return m.reorderFooter()
 	}
 	if m.quick.active {
-		return m.transientFooter(legendSection{title: "Prompt", pairs: m.quickLegend()})
+		return m.quickFooter()
 	}
 	if m.split.resizeMode || m.split.dragging {
 		return m.transientFooter(legendSection{title: "Resize", pairs: [][2]string{
@@ -603,14 +565,19 @@ func (m *Model) rowLegend() legendSection {
 			m.legendPair(keybind.Kill, "kill", keybind.KillAll, "all"), m.legendPair(keybind.Revive, "revive", keybind.ReviveAll, "all"),
 			m.archiveRestoreLegend(), {k(keybind.Delete), "delete"},
 		}...)
-		return legendSection{title: "Group", pairs: legendPairsBound(pairs)}
+		return legendSection{title: "Group", leads: [][2]string{m.quickModeLead()}, pairs: legendPairsBound(pairs)}
 	}
 	title := "Session"
-	conversation := [][2]string{{k(keybind.Prompt), "prompt"}, {k(keybind.CopyReply), "copy"}, {k(keybind.Review), "review"}, {k(keybind.Fork), "fork"}}
+	leads := [][2]string{m.quickModeLead(), {k(keybind.Review), "review mode"}}
+	hint := ""
+	if k(keybind.Review) != "" {
+		hint = reviewModeHint
+	}
+	conversation := [][2]string{{k(keybind.CopyReply), "copy"}, {k(keybind.Fork), "fork"}}
 	if m.isShell(row.sess.Tool) {
 		// A shell has no conversation, so the keys that would prompt,
 		// review or fork one are left off rather than offered and refused.
-		title, conversation = "Shell", nil
+		title, leads, hint, conversation = "Shell", nil, "", nil
 	}
 	pairs := [][2]string{{k(keybind.Open), enterHint}, {k(keybind.Attach), attachHint}}
 	if !m.mouseDisabled {
@@ -637,7 +604,20 @@ func (m *Model) rowLegend() legendSection {
 		m.legendPair(keybind.Kill, "kill", keybind.KillAll, "all"), m.legendPair(keybind.Revive, "revive", keybind.ReviveAll, "all"), {k(keybind.Restart), "restart"},
 		m.archiveRestoreLegend(), {k(keybind.Delete), "delete"},
 	}...)
-	return legendSection{title: title, pairs: legendPairsBound(pairs)}
+	return legendSection{title: title, leads: leads, hint: hint, pairs: legendPairsBound(pairs)}
+}
+
+const quickModeTitle = "Quick prompt mode"
+
+// reviewModeHint follows the review key: the agent's review tool sets
+// which repo, base and diff scope review opens with.
+const reviewModeHint = `tell your agent "set review mode"`
+
+// quickModeLead is the binding a row's tier opens with, filled so it reads
+// first: quick prompt mode answers a session or spawns into a group without
+// leaving the list, and is the key people miss.
+func (m *Model) quickModeLead() [2]string {
+	return [2]string{m.listGlyph(keybind.Prompt), "quick prompt mode"}
 }
 
 // archiveRestoreLegend leaves out the key of the pair that no-ops in this view.

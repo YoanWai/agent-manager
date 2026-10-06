@@ -601,12 +601,13 @@ func TestFormLongPromptWrapsAcrossRows(t *testing.T) {
 	}
 }
 
-func TestTextareaRowsCountsExactMultipleWrap(t *testing.T) {
-	in := promptField().input
-	in.SetWidth(12) // content width 10
-	in.SetValue("1234567890\nx")
-	if rows := textareaRows(in, 10, 5); rows != 3 {
-		t.Fatalf("a line filling its row exactly adds a wrap row: want 3, got %d", rows)
+func TestComposerRowsCountAnExactFillAsAWrap(t *testing.T) {
+	prompt := promptField()
+	prompt.input.SetWidth(12) // content width 10
+	prompt.input.Focus()
+	prompt.input.SetValue("1234567890\nx")
+	if _, total := prompt.displayRows(); total != 3 {
+		t.Fatalf("a line filling its row exactly adds a wrap row: want 3, got %d", total)
 	}
 }
 

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"github.com/charmbracelet/bubbles/textarea"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -1423,7 +1424,7 @@ func TestDividerPressWhileSearchingOrPrompting(t *testing.T) {
 		drag bool
 	}{
 		"searching": {&Model{listKeys: keybind.DefaultList(), mode: modeList, searching: true, width: 100, height: 40, split: splitState{ratio: defaultSplitRatio}}, false},
-		"quick bar": {&Model{listKeys: keybind.DefaultList(), mode: modeList, quick: quickState{active: true}, width: 100, height: 40, split: splitState{ratio: defaultSplitRatio}}, true},
+		"quick bar": {&Model{listKeys: keybind.DefaultList(), mode: modeList, quick: quickState{active: true, composer: composer{input: textarea.New()}}, width: 100, height: 40, split: splitState{ratio: defaultSplitRatio}}, true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			y0, _ := tc.m.bodyYRange()
