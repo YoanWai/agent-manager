@@ -47,10 +47,11 @@ maintain.
 
 Two notices read these notes. "vX available" is drawn by the version a person
 is still on, and "Updated to X" by the new one, so notes are written for both
-panels. Releases before v0.40.0 show the first 6 Highlights and 8 thank-you
+panels. v0.35.0 through v0.39.0 show the first 6 Highlights and 8 thank-you
 lines, cut each line at 120 visible characters, and show neither the headline
-nor the summary. Put what matters first and keep lines within 120 while those
-versions are in use.
+nor the summary. v0.18.0 through v0.34.0 draw the first 12 rows of What's
+Changed, of every type, each cut at 120. Put what matters first and keep lines
+within 120 while those versions are in use.
 
 When an install skips releases, the modal groups the intervening releases in the
 retained catalog into one summary. If the installed version is older than that

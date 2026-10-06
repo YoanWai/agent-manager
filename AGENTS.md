@@ -132,8 +132,8 @@ release or a user's sessions before.
 - Every entry in `docs/messages.json` sets `max_version` to the release it
   announces; an unbounded entry shows to every user forever.
 - Release notes: a `## Highlights` or `## Thank you` bullet past 120 visible
-  characters is cut in the messages panel of every version before v0.40.0,
-  and past 160 in later ones. Backticks are not counted.
+  characters is cut in the messages panel of v0.35.0 through v0.39.0, and
+  past 160 in later ones. Backticks are not counted.
 - A tmux `send-keys` stops around 1024 bytes; paste through `load-buffer`,
   which `Driver` already does, with a buffer name that carries the pid so
   the manager, the MCP server, and the CLI never swap text between panes.
