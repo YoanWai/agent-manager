@@ -62,7 +62,7 @@ func (m *Model) view() string {
 	case modeNotices:
 		frame = m.viewNotices()
 	default:
-		frame = m.overlayRowMenu(m.viewListFrame())
+		frame = m.overlayRowMenu(m.titleTopRowWithUpdate(m.viewListFrame()))
 	}
 	return m.syncCursorAnchor(clampFrame(frame, m.height))
 }

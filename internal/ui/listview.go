@@ -1714,9 +1714,8 @@ func (m *Model) viewHeaderRows() []string {
 		return nil
 	}
 	left := m.viewBanner()[0]
-	if m.update.latest != "" {
-		left += subtleStyle.Render("  ") +
-			lipgloss.NewStyle().Foreground(colorAccent).Render("↑ "+m.update.latest+" available")
+	if tag := m.updateTag(); tag != "" {
+		left += subtleStyle.Render("  ") + tag
 	}
 	sep := subtleStyle.Render("   ")
 	scope := m.headerScope()
@@ -1735,6 +1734,28 @@ func (m *Model) viewHeaderRows() []string {
 		return []string{left + strings.Repeat(" ", gap) + right + strings.Repeat(" ", railGutter)}
 	}
 	return []string{left}
+}
+
+func (m *Model) updateTag() string {
+	if m.update.latest == "" {
+		return ""
+	}
+	return lipgloss.NewStyle().Foreground(colorAccent).Render("↑ " + m.update.latest + " available")
+}
+
+func (m *Model) titleTopRowWithUpdate(frame string) string {
+	tag := m.updateTag()
+	if !m.hideHeader || tag == "" {
+		return frame
+	}
+	title := paint(" "+tag+" ", ansi.StringWidth(tag)+2, backdropHex())
+	left := m.width - ansi.StringWidth(title) - railGutter
+	if left < railGutter {
+		return frame
+	}
+	rows := strings.SplitN(frame, "\n", 2)
+	rows[0] = spliceAtColumn(rows[0], title, left)
+	return strings.Join(rows, "\n")
 }
 
 // joinHeaderPieces joins the header's non-empty readings with a separator.
