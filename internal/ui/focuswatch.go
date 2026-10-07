@@ -33,14 +33,10 @@ type focusPreviewMsg struct {
 	historySize int
 }
 
-// focusDebounce is how long the watcher lets a paint burst settle before
-// capturing, so a stream of tmux output events becomes a few captures.
-// It is also the preview's frame budget: every capture repaints the
-// preview in the outer terminal, and a scrolling agent captured at 25ms
-// drove forty full-frame repaints a second through it, which is what
-// made the terminal fall behind the keyboard. At 80ms a typed key still
-// echoes within a frame while a stream costs the terminal a third.
-const focusDebounce = 80 * time.Millisecond
+// focusFrameBudget is the least time between two captures that change the
+// preview. Each change repaints the outer terminal, and a stream captured
+// every 25ms made that terminal fall behind the keyboard.
+const focusFrameBudget = 80 * time.Millisecond
 
 // focusWatch keeps one tmux control-mode client on the selected session.
 // tmux pushes an event the moment the pane paints and the capture rides
@@ -237,11 +233,11 @@ func (w *focusWatch) watch(id string, stop chan struct{}) {
 		w.mu.Unlock()
 	}()
 	target := tmux.PaneTarget(id)
-	capture := func() bool {
+	capture := func() (string, bool) {
 		pane, err := control.Command("capture-pane -p -e -t " + target)
 		if err != nil {
 			w.report(stop, fmt.Errorf("preview client for %s: %w", id, err))
-			return false
+			return "", false
 		}
 		msg := focusPreviewMsg{sessID: id, preview: matchExecShape(pane)}
 		// The capture carries no cursor, and a terminal without a visible
@@ -260,16 +256,18 @@ func (w *focusWatch) watch(id string, stop chan struct{}) {
 		// a frame, and its result is already stale.
 		select {
 		case <-stop:
-			return false
+			return "", false
 		default:
 		}
 		w.send(msg)
-		return true
+		return pane, true
 	}
-	if !capture() {
+	shown, ok := capture()
+	if !ok {
 		w.clearIfCurrent(id, stop)
 		return
 	}
+	shownAt := time.Now()
 	for {
 		select {
 		case <-stop:
@@ -284,9 +282,9 @@ func (w *focusWatch) watch(id string, stop chan struct{}) {
 			return
 		case <-control.Events():
 		}
-		// Let the paint burst settle, then fold everything queued since
-		// into this one capture.
-		time.Sleep(focusDebounce)
+		// Hold off only while the last change shown is younger than a
+		// frame, then fold everything queued since into this one capture.
+		time.Sleep(focusFrameBudget - time.Since(shownAt))
 		for {
 			select {
 			case <-control.Events():
@@ -295,9 +293,15 @@ func (w *focusWatch) watch(id string, stop chan struct{}) {
 			}
 			break
 		}
-		if !capture() {
+		pane, ok := capture()
+		if !ok {
 			w.clearIfCurrent(id, stop)
 			return
+		}
+		// A paint that left the text as it was, such as the cursor move some
+		// TUIs write ahead of the echo, must not hold back the echo.
+		if pane != shown {
+			shown, shownAt = pane, time.Now()
 		}
 	}
 }
