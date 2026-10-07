@@ -504,7 +504,7 @@ func TestFooterInFocusMode(t *testing.T) {
 	if !strings.Contains(footer, "Focused") {
 		t.Fatalf("the tier should name the mode it describes:\n%s", footer)
 	}
-	if !strings.Contains(footer, "ctrl+q / ctrl+\\") || !strings.Contains(footer, "click its row") || !strings.Contains(footer, "mouse back") || !strings.Contains(footer, "typing to agent") {
+	if !strings.Contains(footer, "ctrl+q / ctrl+\\") || !strings.Contains(footer, "click its row") || !strings.Contains(footer, "mouse back") {
 		t.Fatalf("focus footer should carry the reserved keys and mouse leave:\n%s", footer)
 	}
 	listH := lipgloss.Height(m.listFooter())
@@ -527,9 +527,6 @@ func TestFooterInFocusMode(t *testing.T) {
 	}
 	if !strings.Contains(full, "mouse back") {
 		t.Fatalf("the button still leaves a full screen session:\n%s", full)
-	}
-	if !strings.Contains(full, "typing to agent") {
-		t.Fatalf("full screen focus still sends typing to the agent:\n%s", full)
 	}
 
 	m.pane.mouse = true

@@ -502,9 +502,6 @@ func (m *Model) viewFooter() string {
 		sess, selected := m.selected()
 		pagesScrollback := selected && m.focusPagesScrollback(sess)
 		pairs := [][2]string{{back, "back"}}
-		if !m.fullLayout || !pagesScrollback {
-			pairs = append([][2]string{{"typing", "to agent"}}, pairs...)
-		}
 		if m.arrowStep {
 			label := "prompt start: back"
 			if m.fullLayout && pagesScrollback {
@@ -520,11 +517,6 @@ func (m *Model) viewFooter() string {
 		}
 		if pagesScrollback {
 			pairs = append(pairs, [2]string{"pgup/pgdn", "scroll"})
-		}
-		// The word and line gestures stay in the key map, where there is
-		// room to name all three.
-		if !m.fullLayout || !pagesScrollback {
-			pairs = append(pairs, [2]string{"drag / click", "copy"})
 		}
 		if m.pane.mouse {
 			pairs = append(pairs, [2]string{"click / alt+drag", "agent UI"})
