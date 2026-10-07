@@ -38,6 +38,10 @@ type focusPreviewMsg struct {
 // every 25ms made that terminal fall behind the keyboard.
 const focusFrameBudget = 80 * time.Millisecond
 
+// focusCaptureGap is the least time between any two captures: one 60Hz
+// display frame, since nothing captured faster could be seen.
+const focusCaptureGap = 16 * time.Millisecond
+
 // focusWatch keeps one tmux control-mode client on the selected session.
 // tmux pushes an event the moment the pane paints and the capture rides
 // the same pipe, so the focused preview updates event-driven, with no
@@ -268,6 +272,7 @@ func (w *focusWatch) watch(id string, stop chan struct{}) {
 		return
 	}
 	shownAt := time.Now()
+	capturedAt := shownAt
 	for {
 		select {
 		case <-stop:
@@ -284,7 +289,7 @@ func (w *focusWatch) watch(id string, stop chan struct{}) {
 		}
 		// Hold off only while the last change shown is younger than a
 		// frame, then fold everything queued since into this one capture.
-		time.Sleep(focusFrameBudget - time.Since(shownAt))
+		time.Sleep(max(focusFrameBudget-time.Since(shownAt), focusCaptureGap-time.Since(capturedAt)))
 		for {
 			select {
 			case <-control.Events():
@@ -298,6 +303,7 @@ func (w *focusWatch) watch(id string, stop chan struct{}) {
 			w.clearIfCurrent(id, stop)
 			return
 		}
+		capturedAt = time.Now()
 		// A paint that left the text as it was, such as the cursor move some
 		// TUIs write ahead of the echo, must not hold back the echo.
 		if pane != shown {

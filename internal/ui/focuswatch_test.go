@@ -62,23 +62,15 @@ func TestFocusWatchEchoesAQuietPaneAtOnce(t *testing.T) {
 		t.Fatalf("SendText: %v", err)
 	}
 
-	type arrival struct {
-		at      time.Time
-		preview string
-	}
-	arrivals := make(chan arrival, 64)
+	arrivals := make(chan focusArrival, 64)
 	watch := newFocusWatch(driver, func(msg tea.Msg) {
 		if preview, ok := msg.(focusPreviewMsg); ok && preview.sessID == id {
-			arrivals <- arrival{time.Now(), preview.preview}
+			arrivals <- focusArrival{time.Now(), preview.preview}
 		}
 	})
 	t.Cleanup(watch.Close)
 	watch.setFocus(id)
-	for got := range arrivals {
-		if strings.Contains(got.preview, "42ready") {
-			break
-		}
-	}
+	waitFocusArrival(t, arrivals, "42ready")
 
 	// The fastest of a few tries keeps a loaded machine from failing it,
 	// while a fixed wait before every capture can never get under it.
@@ -123,23 +115,20 @@ func TestFocusWatchSpacesAStreamByTheFrameBudget(t *testing.T) {
 	}
 	t.Cleanup(func() { driver.Kill(id) })
 
-	type arrival struct {
-		at      time.Time
-		preview string
-	}
-	sends := make(chan arrival, 256)
+	sends := make(chan focusArrival, 256)
 	watch := newFocusWatch(driver, func(msg tea.Msg) {
 		if preview, ok := msg.(focusPreviewMsg); ok && preview.sessID == id {
-			sends <- arrival{time.Now(), preview.preview}
+			sends <- focusArrival{time.Now(), preview.preview}
 		}
 	})
 	t.Cleanup(watch.Close)
 	watch.setFocus(id)
-	<-sends
+	waitFocusArrival(t, sends, "")
 
 	if err := driver.SendText(id, "for i in $(seq 1 300); do echo line$i; sleep 0.005; done"); err != nil {
 		t.Fatalf("SendText: %v", err)
 	}
+	waitFocusArrival(t, sends, "line1")
 	var changes []time.Time
 	shown := ""
 	collect := time.After(time.Second)
@@ -160,6 +149,51 @@ func TestFocusWatchSpacesAStreamByTheFrameBudget(t *testing.T) {
 	for index := 1; index < len(changes); index++ {
 		if gap := changes[index].Sub(changes[index-1]); gap < focusFrameBudget {
 			t.Fatalf("previews %d and %d came %v apart, want at least %v", index-1, index, gap, focusFrameBudget)
+		}
+	}
+}
+
+// A pane that keeps writing without changing what it shows still costs at
+// most one capture a display frame, not one per write.
+func TestFocusWatchSpacesUnchangedWritesByADisplayFrame(t *testing.T) {
+	driver := requireFocusDriver(t)
+	id := "noop" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", "", nil, 80, 24); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+
+	sends := make(chan focusArrival, 1024)
+	watch := newFocusWatch(driver, func(msg tea.Msg) {
+		if preview, ok := msg.(focusPreviewMsg); ok && preview.sessID == id {
+			sends <- focusArrival{time.Now(), preview.preview}
+		}
+	})
+	t.Cleanup(watch.Close)
+	watch.setFocus(id)
+	waitFocusArrival(t, sends, "")
+
+	spam := `clear; echo $((6*7))spam; bash -c 'for i in $(seq 1 1500); do printf "\033[?25h"; sleep 0.001; done'`
+	if err := driver.SendText(id, spam); err != nil {
+		t.Fatalf("SendText: %v", err)
+	}
+	waitFocusArrival(t, sends, "42spam")
+	var stamps []time.Time
+	collect := time.After(time.Second)
+	for collecting := true; collecting; {
+		select {
+		case got := <-sends:
+			stamps = append(stamps, got.at)
+		case <-collect:
+			collecting = false
+		}
+	}
+	if len(stamps) < 5 {
+		t.Fatalf("writing pane produced %d previews in a second, want at least 5", len(stamps))
+	}
+	for index := 1; index < len(stamps); index++ {
+		if gap := stamps[index].Sub(stamps[index-1]); gap < focusCaptureGap {
+			t.Fatalf("previews %d and %d came %v apart, want at least %v", index-1, index, gap, focusCaptureGap)
 		}
 	}
 }
@@ -215,6 +249,26 @@ func waitFocusPreview(t *testing.T, msgs <-chan tea.Msg, id, contains string) {
 			}
 		case <-deadline:
 			t.Fatalf("no focusPreviewMsg containing %q", contains)
+		}
+	}
+}
+
+type focusArrival struct {
+	at      time.Time
+	preview string
+}
+
+func waitFocusArrival(t *testing.T, arrivals <-chan focusArrival, contains string) {
+	t.Helper()
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case got := <-arrivals:
+			if strings.Contains(got.preview, contains) {
+				return
+			}
+		case <-deadline:
+			t.Fatalf("no preview containing %q", contains)
 		}
 	}
 }
