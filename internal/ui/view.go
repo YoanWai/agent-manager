@@ -180,8 +180,12 @@ func (m *Model) statusLine() string {
 	case m.mode == modeFocus && m.errBar.text != "":
 		return m.statusMessage("✕", "●", "▲")
 	case m.scrolledBack():
+		catchUp := "wheel down or type"
+		if sess, ok := m.selected(); ok && m.focusPagesScrollback(sess) {
+			catchUp = "wheel down, pgdn or type"
+		}
 		return keyStyle.Render("scrolled ") +
-			subtleStyle.Render(fmt.Sprintf("%d lines back · wheel down or type to catch up", m.focusScroll))
+			subtleStyle.Render(fmt.Sprintf("%d lines back · %s to catch up", m.focusScroll, catchUp))
 	case m.mode == modeFocus && m.copied > 0:
 		return keyStyle.Render("copied ") +
 			subtleStyle.Render(fmt.Sprintf("%d chars to clipboard", m.copied))
@@ -496,14 +500,14 @@ func (m *Model) viewFooter() string {
 		}
 		back += " / mouse back"
 		sess, selected := m.selected()
-		pagesHistory := selected && m.focusPagesHistory(sess)
+		pagesScrollback := selected && m.focusPagesScrollback(sess)
 		pairs := [][2]string{{back, "back"}}
-		if !m.fullLayout || !pagesHistory {
+		if !m.fullLayout || !pagesScrollback {
 			pairs = append([][2]string{{"typing", "to agent"}}, pairs...)
 		}
 		if m.arrowStep {
 			label := "prompt start: back"
-			if m.fullLayout && pagesHistory {
+			if m.fullLayout && pagesScrollback {
 				label = "back"
 			}
 			pairs = append(pairs, [2]string{"←", label})
@@ -514,12 +518,12 @@ func (m *Model) viewFooter() string {
 		if label := m.keys.Binding(keybind.Editor).Label(); label != "" {
 			pairs = append(pairs, [2]string{label, "editor"})
 		}
-		if pagesHistory {
-			pairs = append(pairs, [2]string{"pgup/pgdn", "history"})
+		if pagesScrollback {
+			pairs = append(pairs, [2]string{"pgup/pgdn", "scroll"})
 		}
 		// The word and line gestures stay in the key map, where there is
 		// room to name all three.
-		if !m.fullLayout || !pagesHistory {
+		if !m.fullLayout || !pagesScrollback {
 			pairs = append(pairs, [2]string{"drag / click", "copy"})
 		}
 		if m.pane.mouse {

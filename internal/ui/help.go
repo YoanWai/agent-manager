@@ -243,7 +243,7 @@ func sessionHelpRows(keys keybind.Table, arrowStep bool, mouseRows [][2]string) 
 	if label := keys.Binding(keybind.TmuxPrefix).Label(); label != "" {
 		rows = append(rows, [2]string{label, "attached: tmux's prefix, in place of yours"})
 	}
-	rows = append(rows, [2]string{"pgup/pgdn", "focused Muse: page available history on its normal screen"})
+	rows = append(rows, [2]string{"pgup/pgdn", "focused: scroll the pane's history on its normal screen"})
 	return append(rows, mouseRows...)
 }
 

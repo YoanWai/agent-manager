@@ -9,11 +9,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	"github.com/charmbracelet/bubbles/textarea"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
@@ -536,18 +538,42 @@ func TestFooterInFocusMode(t *testing.T) {
 	}
 }
 
-func TestMusePagingHintFitsFullFocusFooter(t *testing.T) {
-	m, sessID := focusedWithHistory(t, "muse-footer")
-	m.rows[m.cursor].sess.Tool = "muse"
+func TestPagingHintFitsFullFocusFooter(t *testing.T) {
+	shipped, err := config.Default()
+	if err != nil {
+		t.Fatalf("default config: %v", err)
+	}
+	m, sessID := focusedWithHistory(t, "paging-footer")
+	m.cfg.Tools["gemini"] = shipped.Tools["gemini"]
+	m.rows[m.cursor].sess.Tool = "gemini"
 	m.pane.forID = sessID
 	m.fullLayout = true
 	m.width = 110
 	footer := ansi.Strip(m.viewFooter())
-	if !strings.Contains(footer, "pgup/pgdn history") {
-		t.Fatalf("full focus footer omits Muse paging: %q", footer)
+	if !strings.Contains(footer, "pgup/pgdn scroll") {
+		t.Fatalf("full focus footer omits paging: %q", footer)
 	}
 	if got := lipgloss.Height(m.viewFooter()); got != 1 {
 		t.Fatalf("full focus footer spans %d rows, want one: %q", got, footer)
+	}
+}
+
+// The scrolled notice names PgDn only while PgDn is what walks the pane
+// back down.
+func TestScrolledStatusNamesPgDnWhileItPages(t *testing.T) {
+	m, sessID := focusedWithHistory(t, "scrolled-status")
+	m.pane.forID = sessID
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyPgUp})
+	m = updated.(*Model)
+	if !m.scrolledBack() {
+		t.Fatal("test setup: PgUp did not scroll the pane back")
+	}
+	if got := ansi.Strip(m.statusLine()); !strings.Contains(got, "lines back · wheel down, pgdn or type to catch up") {
+		t.Fatalf("paging pane's scrolled notice = %q", got)
+	}
+	m.pane.mouse = true
+	if got := ansi.Strip(m.statusLine()); !strings.Contains(got, "lines back · wheel down or type to catch up") {
+		t.Fatalf("mouse-tracking pane's scrolled notice = %q", got)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -357,39 +358,88 @@ func TestFocusModeForwardsArrowKeys(t *testing.T) {
 	}
 }
 
+// A program that owns its screen, or a pane with no history to page,
+// gets the page keys itself.
 func TestFocusPageKeysReachOtherAgents(t *testing.T) {
-	m := buildModel(t)
-	createSessionOn(t, m, "page-key-pass-through", "control-echo", t.TempDir())
-	m.selectSessionRow(t, "page-key-pass-through")
-	sess := m.rows[m.cursor].sess
-	waitForPaneChild(t, m, sess.ID, "cat")
-	m.focus = newFocusWatch(m.tmux, func(tea.Msg) {})
-	t.Cleanup(m.focus.Close)
-	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
-	m = updated.(*Model)
-	for _, key := range []tea.KeyType{tea.KeyPgUp, tea.KeyPgDown} {
-		updated, _ = m.handleKey(tea.KeyMsg{Type: key})
-		m = updated.(*Model)
-	}
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		pane, err := m.tmux.CapturePane(sess.ID)
-		if err != nil {
-			t.Fatalf("capture: %v", err)
-		}
-		if strings.Contains(pane, "^[[5~^[[6~") {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("page-key bytes never reached the agent: %q", pane)
-		}
-		time.Sleep(30 * time.Millisecond)
+	for _, tc := range []struct {
+		name    string
+		command string
+		alt     bool
+	}{
+		{"normal screen without history", "sh -c 'stty -ixon -iexten; exec cat -v'", false},
+		{"alternate screen with history",
+			`sh -c 'stty -ixon -iexten; i=1; while [ $i -le 120 ]; do echo line-$i; i=$((i+1)); done; printf "\033[?1049h"; exec cat -v'`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := buildModel(t)
+			m.cfg.Tools["page-echo"] = config.Tool{Command: tc.command, DefaultStatus: status.Idle}
+			createSessionOn(t, m, "page-key-pass-through", "page-echo", t.TempDir())
+			m.selectSessionRow(t, "page-key-pass-through")
+			sess := m.rows[m.cursor].sess
+			waitForPaneChild(t, m, sess.ID, "cat")
+			m.focus = newFocusWatch(m.tmux, func(tea.Msg) {})
+			t.Cleanup(m.focus.Close)
+			updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+			m = updated.(*Model)
+			mirrorPaneScreen(t, m, sess.ID, tc.alt)
+			if tc.alt && m.pane.history == 0 {
+				t.Fatal("test setup: the alternate-screen pane kept no history")
+			}
+			if !tc.alt && m.pane.history != 0 {
+				t.Fatalf("test setup: the pane already holds %d lines of history", m.pane.history)
+			}
+			for _, key := range []tea.KeyType{tea.KeyPgUp, tea.KeyPgDown} {
+				updated, _ = m.handleKey(tea.KeyMsg{Type: key})
+				m = updated.(*Model)
+			}
+			deadline := time.Now().Add(5 * time.Second)
+			for {
+				pane, err := m.tmux.CapturePane(sess.ID)
+				if err != nil {
+					t.Fatalf("capture: %v", err)
+				}
+				if strings.Contains(pane, "^[[5~^[[6~") {
+					return
+				}
+				if time.Now().After(deadline) {
+					t.Fatalf("page-key bytes never reached the agent: %q", pane)
+				}
+				time.Sleep(30 * time.Millisecond)
+			}
+		})
 	}
 }
 
-// Muse's inline transcript lives in tmux history, so plain page keys use
-// the same capture path as the wheel when the pane is still Muse's screen.
-func TestFocusMusePageKeysScrollHistory(t *testing.T) {
+// mirrorPaneScreen waits for the pane to reach the wanted screen and copies
+// its screen and history depth into the model, the way the watcher's pushed
+// capture would.
+func mirrorPaneScreen(t *testing.T, m *Model, sessID string, alt bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		out, err := tmuxCmd("display-message", "-p", "-t", "am_"+sessID, "#{alternate_on},#{history_size}").CombinedOutput()
+		if err != nil {
+			t.Fatalf("display-message: %v: %s", err, out)
+		}
+		screen, depth, _ := strings.Cut(strings.TrimSpace(string(out)), ",")
+		history, err := strconv.Atoi(depth)
+		if err != nil {
+			t.Fatalf("history size %q: %v", out, err)
+		}
+		if (screen == "1") == alt {
+			m.pane.forID, m.pane.alt, m.pane.history = sessID, alt, history
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("test setup: pane alternate_on=%s, want alternate screen %v", screen, alt)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// A normal-screen pane leaves its transcript in tmux history, so plain page
+// keys use the same capture path as the wheel.
+func TestFocusPageKeysScrollHistory(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		key      tea.KeyType
@@ -400,7 +450,6 @@ func TestFocusMusePageKeysScrollHistory(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m, sessID := focusedWithHistory(t, tc.name)
-			m.rows[m.cursor].sess.Tool = "muse"
 			m.pane.forID = sessID
 			if m.pane.mouse {
 				t.Fatal("test setup: expected a pane whose scrollback belongs to tmux")
@@ -444,7 +493,11 @@ func TestFocusMusePageKeysScrollHistory(t *testing.T) {
 	}
 }
 
-func TestFocusMusePagingAndFooterFollowTheSamePolicy(t *testing.T) {
+func TestFocusPagingAndFooterFollowTheSamePolicy(t *testing.T) {
+	shipped, err := config.Default()
+	if err != nil {
+		t.Fatalf("default config: %v", err)
+	}
 	for _, tc := range []struct {
 		name       string
 		prepare    func(*Model)
@@ -452,8 +505,7 @@ func TestFocusMusePagingAndFooterFollowTheSamePolicy(t *testing.T) {
 		wantScroll bool
 		wantHint   bool
 	}{
-		{"Muse normal screen", func(*Model) {}, tea.KeyMsg{Type: tea.KeyPgUp}, true, true},
-		{"other tool", func(m *Model) { m.rows[m.cursor].sess.Tool = "claude" }, tea.KeyMsg{Type: tea.KeyPgUp}, false, false},
+		{"normal screen", func(*Model) {}, tea.KeyMsg{Type: tea.KeyPgUp}, true, true},
 		{"alternate screen", func(m *Model) { m.pane.alt = true }, tea.KeyMsg{Type: tea.KeyPgUp}, false, false},
 		{"mouse tracking", func(m *Model) { m.pane.mouse = true }, tea.KeyMsg{Type: tea.KeyPgUp}, false, false},
 		{"no history", func(m *Model) { m.pane.history = 0 }, tea.KeyMsg{Type: tea.KeyPgUp}, false, false},
@@ -462,15 +514,19 @@ func TestFocusMusePagingAndFooterFollowTheSamePolicy(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m, sessID := focusedWithHistory(t, tc.name)
-			m.rows[m.cursor].sess.Tool = "muse"
 			m.pane.forID = sessID
 			tc.prepare(m)
-			hint := strings.Contains(ansi.Strip(m.viewFooter()), "pgup/pgdn history")
-			if hint != tc.wantHint {
-				t.Fatalf("paging footer visible=%v, want %v", hint, tc.wantHint)
-			}
-			if _, cmd := m.handleKey(tc.key); (cmd != nil) != tc.wantScroll || (m.focusScroll > 0) != tc.wantScroll {
-				t.Fatalf("PgUp capture=%v, offset=%d; want scroll=%v", cmd != nil, m.focusScroll, tc.wantScroll)
+			for _, tool := range shipped.ToolNames() {
+				m.cfg.Tools[tool] = shipped.Tools[tool]
+				m.rows[m.cursor].sess.Tool = tool
+				m.focusScroll, m.focusFetchInFlight = 0, false
+				hint := strings.Contains(ansi.Strip(m.viewFooter()), "pgup/pgdn scroll")
+				if hint != tc.wantHint {
+					t.Fatalf("%s: paging footer visible=%v, want %v", tool, hint, tc.wantHint)
+				}
+				if _, cmd := m.handleKey(tc.key); (cmd != nil) != tc.wantScroll || (m.focusScroll > 0) != tc.wantScroll {
+					t.Fatalf("%s: PgUp capture=%v, offset=%d; want scroll=%v", tool, cmd != nil, m.focusScroll, tc.wantScroll)
+				}
 			}
 		})
 	}
