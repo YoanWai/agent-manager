@@ -106,8 +106,8 @@ func TestOverlayHostFresh(t *testing.T) {
 	if snap.MemPercent != 62.5 {
 		t.Fatalf("mem%% = %v", snap.MemPercent)
 	}
-	if !snap.DiskOK || snap.DiskTotal != 500000 || snap.DiskUsed != 400000 || snap.DiskFree != 100000 {
-		t.Fatalf("disk = %v %v %v %v", snap.DiskUsed, snap.DiskTotal, snap.DiskFree, snap.DiskOK)
+	if !snap.DiskOK || snap.DiskTotal != 500000 || snap.DiskUsed != 400000 || snap.DiskAvailable != 100000 {
+		t.Fatalf("disk = %v %v %v %v", snap.DiskUsed, snap.DiskTotal, snap.DiskAvailable, snap.DiskOK)
 	}
 	if snap.DiskPercent != 80 {
 		t.Fatalf("disk%% = %v", snap.DiskPercent)

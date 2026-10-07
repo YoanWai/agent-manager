@@ -371,7 +371,7 @@ func (m *Model) fullFootLine(width int) []string {
 	if snap.SwapOK && snap.SwapTotal > 0 {
 		parts = append(parts, reading("swap", fmt.Sprintf("%.0f%% %s/%s", snap.SwapPercent, humanBytes(snap.SwapUsed), humanBytes(snap.SwapTotal)), true))
 	}
-	parts = append(parts, reading("disk", fmt.Sprintf("%.0f%% %s free", snap.DiskPercent, humanBytes(snap.DiskFree)), snap.DiskOK))
+	parts = append(parts, reading("disk", fmt.Sprintf("%.0f%% %s available", snap.DiskPercent, diskBytes(snap.DiskAvailable)), snap.DiskOK))
 	if snap.BatteryOK {
 		value := fmt.Sprintf("%.0f%%", snap.BatteryPercent)
 		if snap.BatteryCharging {

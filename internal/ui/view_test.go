@@ -336,7 +336,7 @@ func shotModel() *Model {
 			CPUOK: true, CPUPercent: 22,
 			MemOK: true, MemPercent: 75, MemUsed: 12_100_000_000, MemTotal: 16_000_000_000,
 			SwapOK: true, SwapPercent: 43, SwapUsed: 4_500_000_000, SwapTotal: 8_000_000_000,
-			DiskOK: true, DiskPercent: 88, DiskUsed: 400_000_000_000, DiskFree: 100_000_000_000, DiskTotal: 500_000_000_000,
+			DiskOK: true, DiskPercent: 88, DiskUsed: 400_000_000_000, DiskAvailable: 100_000_000_000, DiskTotal: 500_000_000_000,
 			CPUTempOK: true, CPUTemp: 61, GPUTempOK: true, GPUTemp: 55,
 		},
 		preview: previewSample,
@@ -949,5 +949,23 @@ func TestQuickPromptFooterKeys(t *testing.T) {
 	}
 	if !strings.Contains(footerTwo, "ctrl+t worktree") {
 		t.Errorf("missing ctrl+t worktree pair: %q", footerTwo)
+	}
+}
+
+func TestDiskBytes(t *testing.T) {
+	for _, tc := range []struct {
+		bytes uint64
+		want  string
+	}{
+		{0, "0B"},
+		{999, "999B"},
+		{1000, "1.0KB"},
+		{1_000_000, "1.0MB"},
+		{169_850_000_000, "169.8GB"},
+		{1_000_000_000_000, "1.0TB"},
+	} {
+		if got := diskBytes(tc.bytes); got != tc.want {
+			t.Errorf("diskBytes(%d) = %q, want %q", tc.bytes, got, tc.want)
+		}
 	}
 }

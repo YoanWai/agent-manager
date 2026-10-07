@@ -43,13 +43,11 @@ func TestSample(t *testing.T) {
 		t.Fatal("disk reported OK but total is zero")
 	}
 	if snap.DiskOK {
-		if snap.DiskFree == 0 && snap.DiskUsed == 0 {
-			t.Fatal("disk free and used both zero")
+		if snap.DiskAvailable == 0 && snap.DiskUsed == 0 {
+			t.Fatal("disk available and used both zero")
 		}
-		// Free is what the UI shows; it must be the kernel's available
-		// figure (Bavail), not Total-Used (which includes reserved).
-		if snap.DiskFree > snap.DiskTotal {
-			t.Fatalf("disk free %d > total %d", snap.DiskFree, snap.DiskTotal)
+		if snap.DiskAvailable > snap.DiskTotal {
+			t.Fatalf("disk available %d > total %d", snap.DiskAvailable, snap.DiskTotal)
 		}
 	}
 	if snap.CPUTempOK && snap.CPUTemp <= 0 {

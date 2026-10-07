@@ -386,7 +386,7 @@ func footModel(t *testing.T) *Model {
 	m.snap = sysstat.Snapshot{
 		CPUPercent: 42, CPUOK: true,
 		MemPercent: 63, MemOK: true, MemUsed: 10 << 30, MemTotal: 16 << 30,
-		DiskPercent: 71, DiskOK: true, DiskFree: 120 << 30,
+		DiskPercent: 71, DiskOK: true, DiskAvailable: 120 << 30,
 	}
 	return m
 }
@@ -1607,5 +1607,15 @@ func TestNoticesWaitForADragOrTheRowMenu(t *testing.T) {
 	m.reorder.active, m.menu.active = false, true
 	if m.listReadyForNotice() {
 		t.Fatal("an open row menu should hold notices back")
+	}
+}
+
+func TestFullFootDiskAvailable(t *testing.T) {
+	m := &Model{snap: sysstat.Snapshot{
+		DiskOK: true, DiskPercent: 66, DiskAvailable: 167_950_000_000,
+	}}
+	line := ansi.Strip(strings.Join(m.fullFootLine(200), "\n"))
+	if !strings.Contains(line, "disk 66% 167.9GB available") {
+		t.Fatalf("disk reading = %q", line)
 	}
 }
