@@ -146,6 +146,52 @@ func TestLayoutsCanHideHeader(t *testing.T) {
 	}
 }
 
+func TestHiddenHeaderTitlesTopEdgeWithUpdate(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		full  bool
+		focus bool
+	}{
+		{name: "split"},
+		{name: "full", full: true},
+		{name: "full focus", full: true, focus: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := shotModel()
+			m.fullLayout = tc.full
+			if tc.focus {
+				m.mode = modeFocus
+			}
+			m.update.latest = "v9.9.9"
+			const tag = "↑ v9.9.9 available"
+			if top := ansi.Strip(m.View()); strings.Count(top, tag) != 1 {
+				t.Fatalf("shown header should carry the tag once:\n%s", top)
+			}
+
+			m.hideHeader = true
+			rows := strings.Split(ansi.Strip(m.View()), "\n")
+			if len(rows) != m.height {
+				t.Fatalf("titled frame = %d rows, terminal is %d", len(rows), m.height)
+			}
+			if got := ansi.StringWidth(rows[0]); got != m.width {
+				t.Fatalf("titled top row is %d cells wide, terminal is %d", got, m.width)
+			}
+			at := strings.Index(rows[0], tag)
+			if at < 0 || ansi.StringWidth(rows[0][:at]) < m.width/2 {
+				t.Fatalf("hidden header leaves the top edge untitled:\n%s", rows[0])
+			}
+			if footer := ansi.Strip(m.viewFooter()); strings.Contains(footer, tag) {
+				t.Fatalf("footer carries the tag too:\n%s", footer)
+			}
+
+			m.update.latest = ""
+			if top := strings.Split(ansi.Strip(m.View()), "\n")[0]; strings.Contains(top, "available") {
+				t.Fatalf("up to date, the top edge still carries a tag:\n%s", top)
+			}
+		})
+	}
+}
+
 // The full screen frame is the rail alone: no preview column, so the
 // captured pane and the detail head stay with the split layout.
 func TestFullLayoutFrameHasNoPreviewColumn(t *testing.T) {
