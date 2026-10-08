@@ -188,26 +188,34 @@ func TestRenameChainedWhileQueuedActsOnThePreviousResult(t *testing.T) {
 	}
 }
 
-func TestRenameRefusesARelaunchedTarget(t *testing.T) {
+func TestRenameFollowsARelaunchButRefusesAReplacedRow(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "before", t.TempDir(), "")
 	m.selectSessionRow(t, "before")
 	m.openRename()
 	m.rename.input.SetValue("after")
 	_, cmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
-	if err := m.services.store.SetAgentLaunchedAt(m.rename.sessID, time.Now().Add(time.Hour)); err != nil {
+	id := m.rename.sessID
+	if err := m.services.store.SetAgentLaunchedAt(id, time.Now().Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
 	m.applyCmd(t, cmd)
-	if !strings.Contains(m.errBar.text, "changed its creation, launch, or socket") {
-		t.Fatalf("relaunched target error = %q", m.errBar.text)
+	if stored, err := m.services.store.Get(id); err != nil || stored.Name != "after" {
+		t.Fatalf("relaunched session not renamed: %q, %v", stored.Name, err)
 	}
-	stored, err := m.services.store.Get(m.rename.sessID)
-	if err != nil {
+	m.selectSessionRow(t, "after")
+	m.openRename()
+	m.rename.input.SetValue("replaced")
+	_, cmd = m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if err := m.services.store.SetTmuxSocket(id, "elsewhere"); err != nil {
 		t.Fatal(err)
 	}
-	if stored.Name != "before" {
-		t.Fatalf("relaunched target renamed to %q", stored.Name)
+	m.applyCmd(t, cmd)
+	if !strings.Contains(m.errBar.text, "was replaced") {
+		t.Fatalf("replaced target error = %q", m.errBar.text)
+	}
+	if stored, err := m.services.store.Get(id); err != nil || stored.Name != "after" {
+		t.Fatalf("replaced target renamed to %q, %v", stored.Name, err)
 	}
 }
 

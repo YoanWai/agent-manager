@@ -23,8 +23,8 @@ type fakeConfirmHost struct {
 func (h *fakeConfirmHost) confirmCard(title, question, consequence string, destructive bool, answer string) string {
 	return title + "|" + question + "|" + consequence + "|" + answer
 }
-func (h *fakeConfirmHost) quit() tea.Cmd { h.quits++; return tea.Quit }
-func (h *fakeConfirmHost) setMode(next mode)                 { h.mode = next }
+func (h *fakeConfirmHost) quit() tea.Cmd     { h.quits++; return tea.Quit }
+func (h *fakeConfirmHost) setMode(next mode) { h.mode = next }
 func (h *fakeConfirmHost) queueLifecycle(target confirmTarget, allowLive bool, emptyNotice string) {
 	h.queued = append(h.queued, target)
 }

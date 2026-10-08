@@ -162,8 +162,10 @@ func (s effectServices) runRename(request renameRequest) (effectResult, error) {
 	if err != nil {
 		return result, err
 	}
-	if !sess.CreatedAt.Equal(request.sess.CreatedAt) || sess.TmuxSocket != request.sess.TmuxSocket || !sess.LaunchTime().Equal(request.sess.LaunchTime()) {
-		return result, errors.New("rename target changed its creation, launch, or socket before the accepted rename ran")
+	// A rename names the session, not one run of its agent, so a restart or
+	// revive while it waits still renames; a replaced row does not.
+	if !sess.CreatedAt.Equal(request.sess.CreatedAt) || sess.TmuxSocket != request.sess.TmuxSocket {
+		return result, errors.New("rename target was replaced (its creation or socket changed) before the accepted rename ran")
 	}
 	// The branch changes before the name is stored, so a name git cannot
 	// give it leaves the rename card open instead of splitting them apart.
