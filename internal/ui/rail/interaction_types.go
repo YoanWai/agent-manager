@@ -88,6 +88,7 @@ const (
 	OpenHelp
 	OpenReview
 	CancelEnd
+	NewConnection
 )
 
 type Intent struct {

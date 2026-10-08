@@ -15,6 +15,9 @@ func (m *Model) requestReorder(delta int) Decision {
 	if row.isRoot() {
 		return Decision{Consumed: true, Error: "root stays at the top of the list"}
 	}
+	if row.host != "" {
+		return Decision{Consumed: true, Error: RemoteRefusal("reorder")}
+	}
 	request, ok := m.swapRequest(row, delta)
 	if !ok {
 		edge, what := "top", "group"
@@ -60,7 +63,7 @@ func (m Model) visibleReorderTarget(row treeRow, delta int) (treeRow, bool) {
 	}
 	for index := m.cursor + step; index >= 0 && index < len(m.rows); index += step {
 		candidate := m.rows[index]
-		if candidate.isRoot() {
+		if candidate.isRoot() || candidate.host != row.host {
 			continue
 		}
 		if row.kind == GroupRow {
@@ -289,6 +292,9 @@ func (m Model) resolveDrop(target Selection) (dropTarget, bool) {
 		return dropTarget{}, false
 	}
 	lifted, targetRow := m.rows[liftedIndex], m.rows[targetIndex]
+	if lifted.host != "" || targetRow.host != "" {
+		return dropTarget{}, false
+	}
 	if lifted.kind == GroupRow {
 		return resolveGroupDrop(lifted.group, targetRow)
 	}

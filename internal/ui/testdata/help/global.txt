@@ -15,6 +15,7 @@
               │   n                new session                                                           │
               │   T                new terminal tab: a shell under the selected agent, or in the group   │
               │   g                new group (name, parent, default path, worktree)                      │
+              │   C                new SSH connection: another machine's sessions in this list           │
               │   /                search the list by name                                               │
               │   w                filter to what needs attention (waiting, finished, errored)           │
               │   t                archived view                                                         │
@@ -22,7 +23,6 @@
               │   F                fold / unfold every group                                             │
               │   |                resize the split (←→ or hl, or drag; ↵ commits, esc cancels)          │
               │   s                settings                                                              │
-              │   M                messages                                                              │
               │   ↓ more below…                                                                          │
               │                                                                                          │
               ├──────────────────────────────────────────────────────────────────────────────────────────┤

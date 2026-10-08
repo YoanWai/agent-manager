@@ -111,7 +111,7 @@ func TestThemeTextContrast(t *testing.T) {
 		}
 		// Badges paint Bg as bold ink on an accent fill, so both accents
 		// have to clear the large-text floor against the backdrop tone.
-		for token, accent := range map[string]string{"Accent": theme.Accent, "Accent2": theme.Accent2} {
+		for token, accent := range map[string]string{"Accent": theme.Accent, "Accent2": theme.Accent2, "Remote": theme.Remote} {
 			if ratio := contrastRatio(theme.Bg, accent); ratio < 3.0 {
 				t.Errorf("%s: Bg %s on %s fill %s contrast %.2f, want >= 3.0",
 					theme.Name, theme.Bg, token, accent, ratio)

@@ -175,7 +175,7 @@ func (m *Model) action(action string, ctx KeyContext) Decision {
 	case keybind.ReorderDown:
 		return m.requestReorder(1)
 	case keybind.Open:
-		if row, ok := m.row(); ok && row.kind == GroupRow {
+		if row, ok := m.row(); ok && row.folds() {
 			return m.toggleCollapse()
 		}
 		if ctx.EnterFocuses {
@@ -186,8 +186,8 @@ func (m *Model) action(action string, ctx KeyContext) Decision {
 		if !ctx.ArrowStep {
 			return Decision{Consumed: true}
 		}
-		if row, ok := m.row(); ok && row.kind == GroupRow {
-			if m.collapsed[row.group] {
+		if row, ok := m.row(); ok && row.folds() {
+			if m.collapsed[row.foldKey()] {
 				return m.toggleCollapse()
 			}
 			return Decision{Consumed: true}
@@ -197,7 +197,7 @@ func (m *Model) action(action string, ctx KeyContext) Decision {
 		if !ctx.ArrowStep {
 			return Decision{Consumed: true}
 		}
-		if row, ok := m.row(); ok && row.kind == GroupRow && !m.collapsed[row.group] {
+		if row, ok := m.row(); ok && row.folds() && !m.collapsed[row.foldKey()] {
 			return m.toggleCollapse()
 		}
 		return Decision{Consumed: true}
@@ -210,6 +210,8 @@ func (m *Model) action(action string, ctx KeyContext) Decision {
 		return m.intent(NewSession)
 	case keybind.NewGroup:
 		return m.intent(NewGroup)
+	case keybind.NewConnection:
+		return m.intent(NewConnection)
 	case keybind.Fork:
 		return m.intent(Fork)
 	case keybind.Revive:
@@ -360,23 +362,19 @@ func (m *Model) toggleCollapse() Decision {
 	if !ok {
 		return Decision{Consumed: true}
 	}
-	path := row.group
-	if row.kind == SessionRow {
-		path = row.sess.Group
-	}
-	if path == "" {
+	key := row.foldKey()
+	if key == "" {
 		return Decision{Consumed: true}
 	}
-	m.collapsed[path] = !m.collapsed[path]
+	m.collapsed[key] = !m.collapsed[key]
 	m.rebuildRows()
 	return m.collapsedDecision()
 }
 
 func (m *Model) toggleCollapseAll() Decision {
-	groups := groupClosure(m.snapshot.Groups, m.snapshot.Sessions)
 	collapse := !m.AllGroupsCollapsed()
-	for group := range groups {
-		m.collapsed[group] = collapse
+	for key := range m.foldable() {
+		m.collapsed[key] = collapse
 	}
 	m.rebuildRows()
 	return m.collapsedDecision()
@@ -384,8 +382,8 @@ func (m *Model) toggleCollapseAll() Decision {
 
 func (m Model) AllGroupsCollapsed() bool {
 	any := false
-	for group := range groupClosure(m.snapshot.Groups, m.snapshot.Sessions) {
-		if !m.collapsed[group] {
+	for key := range m.foldable() {
+		if !m.collapsed[key] {
 			return false
 		}
 		any = true

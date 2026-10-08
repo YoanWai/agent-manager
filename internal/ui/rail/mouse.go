@@ -97,7 +97,9 @@ func (m *Model) mousePress(msg tea.MouseMsg, frame Frame, ctx MouseContext) Deci
 	m.cursor = index
 	row := m.rows[index]
 	decision := previewSelectionDecision(previous != index, selection)
-	if !ctx.FullLayout && row.kind == SessionRow {
+	// A remote row's focus is an SSH attach that takes the terminal, which
+	// a single click should not start.
+	if !ctx.FullLayout && row.kind == SessionRow && row.host == "" {
 		if !row.sess.Archived {
 			m.clickFocusKey = key
 		}
@@ -107,7 +109,7 @@ func (m *Model) mousePress(msg tea.MouseMsg, frame Frame, ctx MouseContext) Deci
 		return decision
 	}
 	m.listClickAt = time.Time{}
-	if row.kind == GroupRow {
+	if row.folds() {
 		collapse := m.toggleCollapse()
 		collapse.SelectionChanged = decision.SelectionChanged
 		collapse.SelectionEffect = decision.SelectionEffect

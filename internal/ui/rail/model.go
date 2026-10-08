@@ -1,6 +1,7 @@
 package rail
 
 import (
+	"maps"
 	"sort"
 	"strings"
 	"time"
@@ -41,6 +42,9 @@ type Snapshot struct {
 	Sessions       []Session
 	Groups         []string
 	ArchivedGroups map[string]bool
+	// Hosts are the SSH connections, listed after the local tree in this
+	// order.
+	Hosts []Host
 }
 
 type RowKind uint8
@@ -48,18 +52,32 @@ type RowKind uint8
 const (
 	SessionRow RowKind = iota
 	GroupRow
+	ConnectionRow
 )
 
 // Selection names a row without exposing Rail's cursor or row storage.
+// Host names the connection a remote row belongs to and is empty on every
+// local row.
 type Selection struct {
 	Kind      RowKind
 	SessionID string
 	Group     string
+	Host      string
 }
 
+// Remote reports whether the row lives on an SSH connection, the
+// connection's own row included.
+func (s Selection) Remote() bool { return s.Host != "" }
+
 func (s Selection) key() string {
-	if s.Kind == GroupRow {
-		return "g:" + s.Group
+	switch s.Kind {
+	case ConnectionRow:
+		return "c:" + s.Host
+	case GroupRow:
+		return "g:" + foldKey(s.Host, s.Group)
+	}
+	if s.Host != "" {
+		return "s:" + s.Host + hostSeparator + s.SessionID
 	}
 	return "s:" + s.SessionID
 }
@@ -109,18 +127,25 @@ type treeRow struct {
 	group string
 	depth int
 	sess  Session
+	host  string
 }
 
 func (r treeRow) selection() Selection {
-	if r.kind == GroupRow {
-		return Selection{Kind: GroupRow, Group: r.group}
+	switch r.kind {
+	case ConnectionRow:
+		return Selection{Kind: ConnectionRow, Host: r.host}
+	case GroupRow:
+		return Selection{Kind: GroupRow, Group: r.group, Host: r.host}
 	}
-	return Selection{Kind: SessionRow, SessionID: r.sess.ID, Group: r.sess.Group}
+	return Selection{Kind: SessionRow, SessionID: r.sess.ID, Group: r.sess.Group, Host: r.host}
 }
 
 func (r treeRow) key() string { return r.selection().key() }
 
-func (r treeRow) isRoot() bool { return r.kind == GroupRow && r.group == "" }
+func (r treeRow) isRoot() bool { return r.kind == GroupRow && r.group == "" && r.host == "" }
+
+// folds reports whether the row opens and closes: a group or a connection.
+func (r treeRow) folds() bool { return r.kind == GroupRow || r.kind == ConnectionRow }
 
 type statusFilter uint8
 
@@ -160,9 +185,16 @@ func cloneSnapshot(snapshot Snapshot) Snapshot {
 		Sessions:       append([]Session(nil), snapshot.Sessions...),
 		Groups:         append([]string(nil), snapshot.Groups...),
 		ArchivedGroups: make(map[string]bool, len(snapshot.ArchivedGroups)),
+		Hosts:          make([]Host, len(snapshot.Hosts)),
 	}
 	for path, archived := range snapshot.ArchivedGroups {
 		copyOf.ArchivedGroups[path] = archived
+	}
+	for i, host := range snapshot.Hosts {
+		host.Sessions = append([]Session(nil), host.Sessions...)
+		host.Groups = append([]string(nil), host.Groups...)
+		host.ArchivedGroups = maps.Clone(host.ArchivedGroups)
+		copyOf.Hosts[i] = host
 	}
 	return copyOf
 }
@@ -186,14 +218,16 @@ func (m Model) Selected() (Selection, bool) {
 	return m.rows[m.cursor].selection(), true
 }
 
+// SelectedSession is the selected local session; a remote row is none.
 func (m Model) SelectedSession() (string, bool) {
 	selected, ok := m.Selected()
-	return selected.SessionID, ok && selected.Kind == SessionRow
+	return selected.SessionID, ok && selected.Kind == SessionRow && !selected.Remote()
 }
 
+// SelectedGroup is the selected local group; a remote row is none.
 func (m Model) SelectedGroup() (string, bool) {
 	selected, ok := m.Selected()
-	return selected.Group, ok && selected.Kind == GroupRow
+	return selected.Group, ok && selected.Kind == GroupRow && !selected.Remote()
 }
 
 func (m Model) Rows() []Row {
@@ -206,11 +240,13 @@ func (m Model) Rows() []Row {
 			Tool:      row.sess.Tool,
 			Status:    row.sess.Status,
 		}
-		if row.kind == GroupRow {
+		switch {
+		case row.kind == ConnectionRow:
+			rows[i].Name = row.host
+		case row.isRoot():
+			rows[i].Name = "root"
+		case row.kind == GroupRow:
 			rows[i].Name = baseName(row.group)
-			if row.isRoot() {
-				rows[i].Name = "root"
-			}
 		}
 	}
 	return rows
@@ -242,7 +278,7 @@ func (m *Model) Move(delta int, wrap bool) Decision {
 
 func (m *Model) FocusSession(id string) bool {
 	for i, row := range m.rows {
-		if row.kind == SessionRow && row.sess.ID == id {
+		if row.kind == SessionRow && row.host == "" && row.sess.ID == id {
 			m.cursor = i
 			return true
 		}
@@ -267,28 +303,26 @@ func (m Model) row() (treeRow, bool) {
 	return m.rows[m.cursor], true
 }
 
-func (m Model) visibleSessions() []Session {
-	visible := make([]Session, 0, len(m.snapshot.Sessions))
-	for _, session := range m.snapshot.Sessions {
+func (m Model) listedSessions() []Session {
+	return m.listed("", m.snapshot.Sessions)
+}
+
+// listed is what the view and the status filter keep of one host's
+// sessions; the selected session stays while the filter is on.
+func (m Model) listed(host string, sessions []Session) []Session {
+	visible := make([]Session, 0, len(sessions))
+	for _, session := range sessions {
 		if session.Archived == m.showArchived {
 			visible = append(visible, session)
 		}
 	}
-	return visible
-}
-
-func (m Model) listedSessions() []Session {
-	visible := m.visibleSessions()
 	if m.filter == statusFilterAll {
 		return visible
 	}
-	held := ""
-	if id, ok := m.SelectedSession(); ok {
-		held = id
-	}
+	held, _ := m.Selected()
 	listed := make([]Session, 0, len(visible))
 	for _, session := range visible {
-		if attentionStatus(session.Status) || session.ID == held {
+		if attentionStatus(session.Status) || held.Kind == SessionRow && held.Host == host && held.SessionID == session.ID {
 			listed = append(listed, session)
 		}
 	}
@@ -304,15 +338,52 @@ func (m *Model) rebuildRows() {
 	if row, ok := m.row(); ok {
 		previous = row.key()
 	}
+	rows := []treeRow{{kind: GroupRow}}
+	rows = append(rows, m.treeRows("", m.snapshot.Sessions, m.snapshot.Groups, m.snapshot.ArchivedGroups, 0)...)
+	for _, host := range m.snapshot.Hosts {
+		rows = append(rows, treeRow{kind: ConnectionRow, host: host.Name})
+		if m.honorFolds() && m.collapsed[foldKey(host.Name, "")] {
+			continue
+		}
+		rows = append(rows, m.treeRows(host.Name, host.Sessions, host.Groups, host.ArchivedGroups, 1)...)
+	}
+
+	m.rows = rows
+	if previous != "" {
+		for i, row := range rows {
+			if row.key() == previous {
+				m.cursor = i
+				break
+			}
+		}
+	} else if m.cursor == 0 && len(rows) > 1 && rows[0].isRoot() {
+		m.cursor = 1
+	}
+	if m.cursor >= len(rows) {
+		m.cursor = len(rows) - 1
+	}
+	if m.cursor < 0 {
+		m.cursor = 0
+	}
+}
+
+func (m Model) pruned() bool {
+	return strings.TrimSpace(m.search) != "" || m.filter != statusFilterAll
+}
+
+func (m Model) honorFolds() bool { return !m.pruned() && !m.showArchived }
+
+// treeRows lays out one host's groups and sessions from depth on: the
+// local host's under the root row, a connection's under its own row.
+func (m Model) treeRows(host string, all []Session, groups []string, archivedGroups map[string]bool, depth int) []treeRow {
 	query := strings.ToLower(strings.TrimSpace(m.search))
-	pruned := query != "" || m.filter != statusFilterAll
-	listed := m.listedSessions()
+	listed := m.listed(host, all)
 	listedIDs := make(map[string]bool, len(listed))
 	for _, session := range listed {
 		listedIDs[session.ID] = true
 	}
-	byID := make(map[string]Session, len(m.snapshot.Sessions))
-	for _, session := range m.snapshot.Sessions {
+	byID := make(map[string]Session, len(all))
+	for _, session := range all {
 		byID[session.ID] = session
 	}
 	matched := make(map[string]bool, len(listed))
@@ -360,46 +431,45 @@ func (m *Model) rebuildRows() {
 		delete(childrenByParent, parentID)
 	}
 
-	paths := groupClosure(m.snapshot.Groups, m.snapshot.Sessions)
+	paths := groupClosure(groups, all)
 	if m.showArchived {
 		kept := pathsWithSessions(paths, sessionsByGroup)
 		for path := range paths {
-			if effectivelyArchived(m.snapshot.ArchivedGroups, path) {
+			if effectivelyArchived(archivedGroups, path) {
 				addWithAncestors(kept, path)
 			}
 		}
 		paths = kept
 	} else {
 		for path := range paths {
-			if effectivelyArchived(m.snapshot.ArchivedGroups, path) {
+			if effectivelyArchived(archivedGroups, path) {
 				delete(paths, path)
 			}
 		}
-		if pruned {
+		if m.pruned() {
 			paths = pathsWithSessions(paths, sessionsByGroup)
 		}
 	}
 	if m.hideEmptyGroups && !m.showArchived {
 		paths = pathsWithSessions(paths, sessionsByGroup)
 	}
-	children := childIndex(paths, m.snapshot.Groups)
-	honorFolds := !pruned && !m.showArchived
+	children := childIndex(paths, groups)
+	honorFolds := m.honorFolds()
 
-	rows := make([]treeRow, 0, len(m.snapshot.Sessions)+len(paths)+1)
+	rows := make([]treeRow, 0, len(all)+len(paths))
 	appendSession := func(session Session, depth int) {
-		rows = append(rows, treeRow{kind: SessionRow, sess: session, depth: depth})
+		rows = append(rows, treeRow{kind: SessionRow, sess: session, depth: depth, host: host})
 		for _, child := range childrenByParent[session.ID] {
-			rows = append(rows, treeRow{kind: SessionRow, sess: child, depth: depth + 1})
+			rows = append(rows, treeRow{kind: SessionRow, sess: child, depth: depth + 1, host: host})
 		}
 	}
-	rows = append(rows, treeRow{kind: GroupRow})
 	for _, session := range sessionsByGroup[""] {
-		appendSession(session, 0)
+		appendSession(session, depth)
 	}
 	var walk func(string, int)
 	walk = func(path string, depth int) {
-		rows = append(rows, treeRow{kind: GroupRow, group: path, depth: depth})
-		if honorFolds && m.collapsed[path] {
+		rows = append(rows, treeRow{kind: GroupRow, group: path, depth: depth, host: host})
+		if honorFolds && m.collapsed[foldKey(host, path)] {
 			return
 		}
 		for _, session := range sessionsByGroup[path] {
@@ -410,26 +480,9 @@ func (m *Model) rebuildRows() {
 		}
 	}
 	for _, root := range children[""] {
-		walk(root, 0)
+		walk(root, depth)
 	}
-
-	m.rows = rows
-	if previous != "" {
-		for i, row := range rows {
-			if row.key() == previous {
-				m.cursor = i
-				break
-			}
-		}
-	} else if m.cursor == 0 && len(rows) > 1 && rows[0].isRoot() {
-		m.cursor = 1
-	}
-	if m.cursor >= len(rows) {
-		m.cursor = len(rows) - 1
-	}
-	if m.cursor < 0 {
-		m.cursor = 0
-	}
+	return rows
 }
 
 func groupClosure(groups []string, sessions []Session) map[string]bool {

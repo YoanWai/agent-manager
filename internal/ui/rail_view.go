@@ -151,7 +151,7 @@ func (m *Model) railTheme() uirail.Theme {
 	return uirail.Theme{
 		Bg: current.Bg, Surface: current.Surface, Overlay: current.Overlay, Border: current.Border,
 		Bright: current.Bright, Text: current.Text, Dim: current.Dim, Subtle: current.Subtle,
-		Accent: current.Accent, Accent2: current.Accent2,
+		Accent: current.Accent, Accent2: current.Accent2, Remote: current.Remote,
 		Working: current.Working, Waiting: current.Waiting, Finished: current.Finished,
 		Errored: current.Errored, Idle: current.Idle,
 	}

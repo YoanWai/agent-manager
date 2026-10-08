@@ -26,7 +26,7 @@ const (
 type Theme struct {
 	Bg, Surface, Overlay, Border        string
 	Bright, Text, Dim, Subtle           string
-	Accent, Accent2                     string
+	Accent, Accent2, Remote             string
 	Working, Waiting, Finished, Errored string
 	Idle                                string
 }
