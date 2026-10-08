@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 const maxPathSuggestions = 5
@@ -90,48 +91,81 @@ func pathSuggestionsCmd(request pathSuggestionsRequest, reader pathSuggestionRea
 	}
 }
 
+// pathSuggestions is the completer the form and group form path fields
+// share.
+func (m *Model) pathSuggestions() *pathComplete { return &m.pathSugg }
+
 func (m *Model) requestPathSuggestions(target pathSuggestionTarget, typed string) tea.Cmd {
-	return m.requestPathSuggestionsWithReader(target, typed, systemPathSuggestionReader{})
+	return m.pathSugg.request(target, typed, systemPathSuggestionReader{})
 }
 
-func (m *Model) requestPathSuggestionsWithReader(target pathSuggestionTarget, typed string, reader pathSuggestionReader) tea.Cmd {
-	m.pathSugg.reset()
-	request := pathSuggestionsRequest{target: target, generation: m.pathSugg.generation, typed: typed}
+// request starts a fresh read for typed, retiring any read in flight.
+func (pc *pathComplete) request(target pathSuggestionTarget, typed string, reader pathSuggestionReader) tea.Cmd {
+	pc.reset()
+	request := pathSuggestionsRequest{target: target, generation: pc.generation, typed: typed}
 	return pathSuggestionsCmd(request, reader)
 }
 
-func (m *Model) handlePathSuggestions(msg pathSuggestionsMsg) (tea.Model, tea.Cmd) {
-	request := msg.request
-	if request.generation != m.pathSugg.generation {
-		return m, nil
-	}
-	var current string
-	switch request.target {
+// pathCompleteHost reports the value of the path field a read was started from,
+// and false once that field is off screen.
+type pathCompleteHost interface {
+	pathSuggestionField(target pathSuggestionTarget) (string, bool)
+}
+
+func (m *Model) pathSuggestionField(target pathSuggestionTarget) (string, bool) {
+	switch target {
 	case pathSuggestionForm:
 		if m.mode != modeForm {
-			return m, nil
+			return "", false
 		}
-		current = m.form.dir.Value()
+		return m.form.dir.Value(), true
 	case pathSuggestionGroup:
 		if m.mode != modeGroupForm {
-			return m, nil
+			return "", false
 		}
-		current = m.groupForm.path.Value()
+		return m.groupForm.path.Value(), true
 	case pathSuggestionRename:
 		if m.mode != modeRename || !m.rename.isGroup {
-			return m, nil
+			return "", false
 		}
-		current = m.rename.dir.Value()
-	default:
-		return m, nil
+		return m.rename.dir.Value(), true
 	}
-	if current != request.typed {
-		return m, nil
+	return "", false
+}
+
+// handle takes a read's suggestions only while its field still holds what
+// was typed.
+func (pc *pathComplete) handle(h pathCompleteHost, msg pathSuggestionsMsg) {
+	request := msg.request
+	if request.generation != pc.generation {
+		return
 	}
-	m.pathSugg.suggestions = msg.suggestions
-	m.pathSugg.index = 0
-	m.pathSugg.chosen = false
-	return m, nil
+	current, open := h.pathSuggestionField(request.target)
+	if !open || current != request.typed {
+		return
+	}
+	pc.suggestions = msg.suggestions
+	pc.index = 0
+	pc.chosen = false
+}
+
+// viewPathSuggestions is the dropdown under the rename dialog's path field.
+func (m *Model) viewPathSuggestions() string { return m.pathSugg.view() }
+
+// view renders the directory-completion dropdown under a focused path
+// field.
+func (pc *pathComplete) view() string {
+	var b strings.Builder
+	for i, path := range pc.suggestions {
+		marker := "  "
+		style := mutedStyle
+		if i == pc.index {
+			marker = lipgloss.NewStyle().Foreground(colorAccent).Render("❯ ")
+			style = lipgloss.NewStyle().Foreground(colorAccent2).Bold(true)
+		}
+		b.WriteString("      " + marker + style.Render(truncateTail(path, 40)) + "\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func expandHome(path string) string {

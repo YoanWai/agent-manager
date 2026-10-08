@@ -8,7 +8,6 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/launch"
-	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -28,39 +27,6 @@ const (
 	// fieldBase labels the read-only base line, which never takes focus.
 	fieldBase
 )
-
-const (
-	gfName = iota
-	gfParent
-	gfPath
-	gfWorktree
-	gfBase
-	gfCount
-)
-
-// groupWorktreeOptions are the picker states for a group's spawn-in-worktree
-// choice; index 0 stores as "" so the group keeps inheriting.
-var groupWorktreeOptions = []string{"inherit", "on", "off"}
-
-func groupWorktreeValue(index int) string {
-	switch index {
-	case 1:
-		return "on"
-	case 2:
-		return "off"
-	}
-	return ""
-}
-
-func groupWorktreeIndex(value string) int {
-	switch value {
-	case "on":
-		return 1
-	case "off":
-		return 2
-	}
-	return 0
-}
 
 type groupOption struct {
 	path   string
@@ -92,24 +58,36 @@ type form struct {
 	hits []formHit
 }
 
-type groupForm struct {
-	name          textinput.Model
-	path          textinput.Model
-	pathAuto      bool
-	worktreeIndex int
-	base          string
-	focus         int
-	// gen tells this group form from the one that stood in the same place
-	// before it, so a completion cannot close a form the user since reopened.
-	gen int
+// formDialog is the New Session form: its fields, keys, view, validation
+// and the spawn request enter builds. The root opens it, resolves its
+// defaults and runs what its formRequest asks for.
+type formDialog struct{ form }
+
+// formHost is what the form reads from the root: the choice facts, the
+// status bar, the path completer under its dir field, and the launch
+// inputs of a spawn into a group.
+type formHost interface {
+	choiceHost
+	clearErr()
+	pathSuggestions() *pathComplete
+	spawnDefaults(group string) spawnDefaults
 }
 
-// sessionLabel renders a session's identity for the tmux status bar.
-func sessionLabel(group, name string) string {
-	if group == "" {
-		return name
-	}
-	return group + " · " + name
+// formRequest is root work a form key or click asks for once the form has
+// taken its own share. At most one is set.
+type formRequest struct {
+	close     bool
+	applyPath bool
+	// group steps the group picker, which the group form and the move
+	// dialog share.
+	group int
+	// toggle flips the worktree choice once the directory is known to host
+	// one; probe only asks.
+	toggle bool
+	probe  bool
+	// catalog names the CLI the form moved to, whose choice rows are new.
+	catalog string
+	spawn   *spawnRequest
 }
 
 // resolveExistingDir turns raw field input into a usable directory:
@@ -166,30 +144,25 @@ func (m *Model) formValueWidth() int {
 	return cardInnerWidth(m.cardWidth()) - formLabelColumn
 }
 
-// syncFormFieldWidths fits the field widgets to the card so long values
-// scroll (inputs) or wrap (prompt) instead of clipping at the card edge.
-// Inputs reserve 3 columns: their "> " prompt plus the cursor cell that
-// renders past the last character.
 func (m *Model) syncFormFieldWidths() {
-	inner := m.formValueWidth()
-	m.form.name.Width = inner - 3
-	m.form.dir.Width = inner - 3
+	m.form.syncWidths(m.formValueWidth())
+}
+
+// syncWidths fits the field widgets to the card so long values scroll
+// (inputs) or wrap (prompt) instead of clipping at the card edge. Inputs
+// reserve 3 columns: their "> " prompt plus the cursor cell that renders
+// past the last character.
+func (d *formDialog) syncWidths(inner int) {
+	d.name.Width = inner - 3
+	d.dir.Width = inner - 3
 	// textinput recomputes its scroll window only inside Update/SetValue/
 	// SetCursor, so a width change alone would render a stale window until
 	// the next keystroke.
-	m.form.name.SetCursor(m.form.name.Position())
-	m.form.dir.SetCursor(m.form.dir.Position())
-	m.form.prompt.input.SetWidth(inner)
-	m.form.choice.filter.Width = inner - 3
-	m.form.choice.filter.SetCursor(m.form.choice.filter.Position())
-}
-
-func (m *Model) syncGroupFormFieldWidths() {
-	width := m.formValueWidth() - 3
-	m.groupForm.name.Width = width
-	m.groupForm.path.Width = width
-	m.groupForm.name.SetCursor(m.groupForm.name.Position())
-	m.groupForm.path.SetCursor(m.groupForm.path.Position())
+	d.name.SetCursor(d.name.Position())
+	d.dir.SetCursor(d.dir.Position())
+	d.prompt.input.SetWidth(inner)
+	d.choice.filter.Width = inner - 3
+	d.choice.filter.SetCursor(d.choice.filter.Position())
 }
 
 // contextGroup is the group the cursor currently sits in: a highlighted
@@ -222,7 +195,7 @@ func (m *Model) openFormWithReader(reader settingsValueReader) tea.Cmd {
 	prompt := promptField()
 	prompt.gen = m.nextComposerGen()
 
-	m.form = form{
+	m.form = formDialog{form{
 		name:      name,
 		dir:       dir,
 		prompt:    prompt,
@@ -230,8 +203,8 @@ func (m *Model) openFormWithReader(reader settingsValueReader) tea.Cmd {
 		toolNames: tools,
 		toolIndex: toolIndex,
 		focus:     fieldName,
-		choice:    m.newChoice(tools[toolIndex]),
-	}
+		choice:    newChoice(m, tools[toolIndex]),
+	}}
 	m.clearErr()
 	m.syncFormFieldWidths()
 	m.forgetWorktreeCapability()
@@ -251,30 +224,36 @@ func (m *Model) openFormWithReader(reader settingsValueReader) tea.Cmd {
 // applyCachedFormDefaults takes the loaded tool and worktree defaults. A
 // tool the load moved to starts its choice rows over and asks its CLI.
 func (m *Model) applyCachedFormDefaults() tea.Cmd {
-	before := m.formTool()
+	before := m.form.tool()
 	m.form.toolNames, m.form.toolIndex = m.cachedSpawnToolSelection()
 	if m.form.worktreeAuto {
 		m.form.worktree = m.cachedSpawnWorktreeDefault(m.selectedGroupPath())
 	}
-	toolName := m.formTool()
+	toolName := m.form.tool()
 	if toolName == before || toolName == "" {
 		return nil
 	}
-	m.form.choice = m.newChoice(toolName)
+	m.form.choice = newChoice(m, toolName)
 	m.syncFormFieldWidths()
 	return m.ensureCatalog(toolName)
 }
 
-func (m *Model) formTool() string {
-	if len(m.form.toolNames) == 0 {
+func (m *Model) formTool() string { return m.form.tool() }
+
+func (d *formDialog) tool() string {
+	if len(d.toolNames) == 0 {
 		return ""
 	}
-	return m.form.toolNames[m.form.toolIndex]
+	return d.toolNames[d.toolIndex]
 }
 
-func (m *Model) selectedGroupPath() string {
-	if m.form.groupIndex >= 0 && m.form.groupIndex < len(m.form.groups) {
-		return m.form.groups[m.form.groupIndex].path
+func (m *Model) selectedGroupPath() string { return m.form.groupPath() }
+
+// groupPath is the group the picker highlights. The group form and the
+// move dialog pick from the same list.
+func (d *formDialog) groupPath() string {
+	if d.groupIndex >= 0 && d.groupIndex < len(d.groups) {
+		return d.groups[d.groupIndex].path
 	}
 	return ""
 }
@@ -313,171 +292,202 @@ func (m *Model) rebuildGroupOptions(selectPath string) {
 }
 
 func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	cmd, request := m.form.handleKey(m, msg)
+	return m, tea.Batch(cmd, m.runFormRequest(request, systemDirectoryPreflight{git: m.services.gitDrv}))
+}
+
+// runFormRequest executes what a form key or click asked of the root.
+func (m *Model) runFormRequest(request formRequest, reader directoryPreflight) tea.Cmd {
+	switch {
+	case request.close:
+		m.mode = modeList
+	case request.applyPath:
+		return m.applyPathSuggestion()
+	case request.group != 0:
+		return m.moveGroupCursor(request.group)
+	case request.toggle:
+		return m.toggleFormWorktree()
+	case request.probe:
+		return m.formWorktreeProbeCmd(false)
+	case request.catalog != "":
+		m.syncFormFieldWidths()
+		return m.ensureCatalog(request.catalog)
+	case request.spawn != nil:
+		spawn := *request.spawn
+		spawn.dirReader = reader
+		m.clearErr()
+		m.dispatchSpawn(spawn)
+		return m.nextEffectCmd()
+	}
+	return nil
+}
+
+func (d *formDialog) handleKey(h formHost, msg tea.KeyMsg) (tea.Cmd, formRequest) {
 	msg = typedText(msg)
-	if m.form.focus == fieldModel {
-		if model, cmd, handled := m.handleFormModelKey(msg); handled {
-			return model, cmd
+	if d.focus == fieldModel {
+		if cmd, handled := d.handleModelKey(h, msg); handled {
+			return cmd, formRequest{}
 		}
 	}
-	dirSuggesting := m.form.focus == fieldDir && m.pathSugg.active()
-	promptFocused := m.form.focus == fieldPrompt
+	paths := h.pathSuggestions()
+	dirSuggesting := d.focus == fieldDir && paths.active()
+	promptFocused := d.focus == fieldPrompt
 	switch msg.String() {
 	case "esc":
 		if dirSuggesting {
-			m.pathSugg.reset()
-			return m, nil
+			paths.reset()
+			return nil, formRequest{}
 		}
 		// The form is gone, and with it the only text naming the images it
 		// was holding.
-		m.form.prompt.release()
-		m.mode = modeList
-		return m, nil
+		d.prompt.release()
+		return nil, formRequest{close: true}
 	case "tab":
 		if dirSuggesting {
-			return m, m.applyPathSuggestion()
+			return nil, formRequest{applyPath: true}
 		}
-		m.formFocus(1)
-		return m, nil
+		d.focusStep(h, 1)
+		return nil, formRequest{}
 	case "shift+tab":
-		m.formFocus(-1)
-		return m, nil
+		d.focusStep(h, -1)
+		return nil, formRequest{}
 	case "up":
 		if promptFocused {
-			if cmd, stepped := m.form.prompt.stepRow(msg); stepped {
-				return m, cmd
+			if cmd, stepped := d.prompt.stepRow(msg); stepped {
+				return cmd, formRequest{}
 			}
 		}
 		if dirSuggesting {
-			if !m.pathSugg.move(-1) {
-				m.formFocus(-1)
+			if !paths.move(-1) {
+				d.focusStep(h, -1)
 			}
 		} else {
-			m.formFocus(-1)
+			d.focusStep(h, -1)
 		}
-		return m, nil
+		return nil, formRequest{}
 	case "down":
 		if promptFocused {
-			if cmd, stepped := m.form.prompt.stepRow(msg); stepped {
-				return m, cmd
+			if cmd, stepped := d.prompt.stepRow(msg); stepped {
+				return cmd, formRequest{}
 			}
 		}
 		if dirSuggesting {
-			if !m.pathSugg.move(1) {
-				m.formFocus(1)
+			if !paths.move(1) {
+				d.focusStep(h, 1)
 			}
 		} else {
-			m.formFocus(1)
+			d.focusStep(h, 1)
 		}
-		return m, nil
+		return nil, formRequest{}
 	case "left":
-		if m.form.focus == fieldTool {
-			return m, m.cycleTool(-1)
+		if d.focus == fieldTool {
+			return nil, d.cycleTool(h, -1)
 		}
-		if m.stepFormChoice(-1) {
-			return m, nil
+		if d.stepChoice(h, -1) {
+			return nil, formRequest{}
 		}
-		if m.form.focus == fieldWorktree {
-			return m, m.toggleFormWorktree()
+		if d.focus == fieldWorktree {
+			return nil, formRequest{toggle: true}
 		}
-		if m.form.focus == fieldGroup {
-			return m, m.moveGroupCursor(-1)
+		if d.focus == fieldGroup {
+			return nil, formRequest{group: -1}
 		}
 	case "right":
-		if m.form.focus == fieldTool {
-			return m, m.cycleTool(1)
+		if d.focus == fieldTool {
+			return nil, d.cycleTool(h, 1)
 		}
-		if m.stepFormChoice(1) {
-			return m, nil
+		if d.stepChoice(h, 1) {
+			return nil, formRequest{}
 		}
-		if m.form.focus == fieldWorktree {
-			return m, m.toggleFormWorktree()
+		if d.focus == fieldWorktree {
+			return nil, formRequest{toggle: true}
 		}
-		if m.form.focus == fieldGroup {
-			return m, m.moveGroupCursor(1)
+		if d.focus == fieldGroup {
+			return nil, formRequest{group: 1}
 		}
 	case "enter":
-		if dirSuggesting && m.pathSugg.chosen {
-			return m, m.applyPathSuggestion()
+		if dirSuggesting && paths.chosen {
+			return nil, formRequest{applyPath: true}
 		}
-		return m.submitForm()
+		return nil, d.submit(h)
 	}
 
 	if promptFocused {
-		if cmd, handled := m.composerKey(composerForm, msg); handled {
-			return m, cmd
+		if cmd, handled := d.prompt.handleChipKey(h, composerForm, msg); handled {
+			return cmd, formRequest{}
 		}
 	}
 
 	var cmd tea.Cmd
-	switch m.form.focus {
+	switch d.focus {
 	case fieldName:
-		m.form.name, cmd = m.form.name.Update(msg)
+		d.name, cmd = d.name.Update(msg)
 	case fieldDir:
-		m.form.dir, cmd = m.form.dir.Update(msg)
-		m.form.dirAuto = false
-		cmd = tea.Batch(cmd, m.requestPathSuggestions(pathSuggestionForm, m.form.dir.Value()), m.formWorktreeProbeCmd(false))
+		d.dir, cmd = d.dir.Update(msg)
+		d.dirAuto = false
+		return tea.Batch(cmd, paths.request(pathSuggestionForm, d.dir.Value(), systemPathSuggestionReader{})), formRequest{probe: true}
 	case fieldPrompt:
-		cmd = m.form.prompt.typeKey(msg)
+		cmd = d.prompt.typeKey(msg)
 	case fieldEffort:
-		if m.effortTyped(m.formTool(), &m.form.choice) {
-			before := m.form.choice.typedEffort.Value()
-			m.form.choice.typedEffort, cmd = m.form.choice.typedEffort.Update(msg)
-			if m.form.choice.typedEffort.Value() != before {
-				m.keepChoice(m.formTool(), &m.form.choice)
+		if d.choice.effortTyped(h, d.tool()) {
+			before := d.choice.typedEffort.Value()
+			d.choice.typedEffort, cmd = d.choice.typedEffort.Update(msg)
+			if d.choice.typedEffort.Value() != before {
+				d.choice.keep(h, d.tool())
 			}
 		}
 	}
-	return m, cmd
+	return cmd, formRequest{}
 }
 
-// handleFormModelKey lets the keys the list does not take fall through.
-func (m *Model) handleFormModelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
-	toolName, ch := m.formTool(), &m.form.choice
-	list := m.modelSuggestions(toolName, ch, ch.query())
+// handleModelKey lets the keys the list does not take fall through.
+func (d *formDialog) handleModelKey(h formHost, msg tea.KeyMsg) (tea.Cmd, bool) {
+	toolName, ch := d.tool(), &d.choice
+	list := ch.suggestions(h, toolName, ch.query())
 	open := ch.sugg.open && len(list) > 0
-	pick := func() { m.pickModel(toolName, ch, list[ch.sugg.index].model.Key()) }
+	pick := func() { ch.pickModel(h, toolName, list[ch.sugg.index].model.Key()) }
 	var cmd tea.Cmd
 	switch msg.String() {
 	case "esc":
 		if !ch.sugg.open {
-			return m, nil, false
+			return nil, false
 		}
 		ch.sugg = modelSuggest{}
-		return m, nil, true
+		return nil, true
 	case "tab":
 		if !open {
-			return m, nil, false
+			return nil, false
 		}
 		pick()
-		return m, nil, true
+		return nil, true
 	case "enter":
 		if !open || !ch.sugg.chosen {
-			return m, nil, false
+			return nil, false
 		}
 		pick()
-		return m, nil, true
+		return nil, true
 	case "up", "down":
 		delta := 1
 		if msg.String() == "up" {
 			delta = -1
 		}
 		if !open || !ch.sugg.move(len(list), delta) {
-			m.formFocus(delta)
+			d.focusStep(h, delta)
 		}
-		return m, nil, true
+		return nil, true
 	case "shift+tab":
-		return m, nil, false
+		return nil, false
 	case "left", "right":
 		ch.filter, cmd = ch.filter.Update(msg)
-		return m, cmd, true
+		return cmd, true
 	}
 	ch.filter, cmd = ch.filter.Update(msg)
 	ch.filtering = true
 	if strings.TrimSpace(ch.filter.Value()) == "" {
-		m.pickModel(toolName, ch, "")
+		ch.pickModel(h, toolName, "")
 	}
 	ch.sugg = modelSuggest{open: true}
-	return m, cmd, true
+	return cmd, true
 }
 
 func (m *Model) handleFormClick(x, y int) (tea.Model, tea.Cmd) {
@@ -486,57 +496,62 @@ func (m *Model) handleFormClick(x, y int) (tea.Model, tea.Cmd) {
 	if line < 0 || line >= len(m.form.hits) || x < m.layout.cardLeft || x >= m.layout.cardRight {
 		return m, nil
 	}
-	hit := m.form.hits[line]
-	toolName, ch := m.formTool(), &m.form.choice
+	return m, m.runFormRequest(m.form.click(m, line), nil)
+}
+
+// click acts on the painted body line a click landed on.
+func (d *formDialog) click(h formHost, line int) formRequest {
+	hit := d.hits[line]
+	toolName, ch := d.tool(), &d.choice
 	switch {
 	case hit.field == fieldModel && hit.entry >= 0:
-		if list := m.modelSuggestions(toolName, ch, ch.query()); hit.entry < len(list) {
-			m.pickModel(toolName, ch, list[hit.entry].model.Key())
+		if list := ch.suggestions(h, toolName, ch.query()); hit.entry < len(list) {
+			ch.pickModel(h, toolName, list[hit.entry].model.Key())
 		}
-		return m, nil
+		return formRequest{}
 	case hit.field == fieldGroup && hit.entry >= 0:
-		return m, m.moveGroupCursor(hit.entry - m.form.groupIndex)
-	case hit.field != m.form.focus:
-		if slices.Contains(m.formFields(), hit.field) {
-			m.focusFormField(hit.field)
+		return formRequest{group: hit.entry - d.groupIndex}
+	case hit.field != d.focus:
+		if slices.Contains(d.fields(h), hit.field) {
+			d.focusField(h, hit.field)
 		}
-		return m, nil
+		return formRequest{}
 	}
 	switch hit.field {
 	case fieldTool:
-		return m, m.cycleTool(1)
+		return d.cycleTool(h, 1)
 	case fieldWorktree:
-		return m, m.toggleFormWorktree()
+		return formRequest{toggle: true}
 	default:
-		m.stepFormChoice(1)
+		d.stepChoice(h, 1)
 	}
-	return m, nil
+	return formRequest{}
 }
 
-func (m *Model) stepFormChoice(delta int) bool {
-	toolName, ch := m.formTool(), &m.form.choice
+func (d *formDialog) stepChoice(h choiceHost, delta int) bool {
+	toolName, ch := d.tool(), &d.choice
 	switch {
-	case m.form.focus == fieldProfile:
-		m.cycleChoiceProfile(toolName, ch, delta)
-	case m.form.focus == fieldEffort && !m.effortTyped(toolName, ch):
-		m.cycleChoiceEffort(toolName, ch, delta)
+	case d.focus == fieldProfile:
+		ch.cycleProfile(h, toolName, delta)
+	case d.focus == fieldEffort && !ch.effortTyped(h, toolName):
+		ch.cycleEffort(h, toolName, delta)
 	default:
 		return false
 	}
 	return true
 }
 
-// formFields holds a choice row only where the CLI has something to pick.
-func (m *Model) formFields() []int {
-	toolName, ch := m.formTool(), &m.form.choice
+// fields holds a choice row only where the CLI has something to pick.
+func (d *formDialog) fields(h choiceHost) []int {
+	toolName, ch := d.tool(), &d.choice
 	fields := []int{fieldName, fieldTool}
-	if _, shown := m.profileRow(toolName, ch); shown {
+	if _, shown := ch.profileRow(h, toolName); shown {
 		fields = append(fields, fieldProfile)
 	}
-	if _, listed := m.modelRowNote(toolName); listed {
+	if _, listed := modelRowNote(h, toolName); listed {
 		fields = append(fields, fieldModel)
 	}
-	if _, shown, active := m.effortRow(toolName, ch); shown && active {
+	if _, shown, active := ch.effortRow(h, toolName); shown && active {
 		fields = append(fields, fieldEffort)
 	}
 	return append(fields, fieldDir, fieldWorktree, fieldPrompt, fieldGroup)
@@ -565,47 +580,47 @@ func (m *Model) moveGroupCursor(delta int) tea.Cmd {
 	return nil
 }
 
-func (m *Model) formFocus(delta int) {
-	fields := m.formFields()
-	at := max(slices.Index(fields, m.form.focus), 0)
-	m.focusFormField(fields[(at+delta+len(fields))%len(fields)])
+func (d *formDialog) focusStep(h formHost, delta int) {
+	fields := d.fields(h)
+	at := max(slices.Index(fields, d.focus), 0)
+	d.focusField(h, fields[(at+delta+len(fields))%len(fields)])
 }
 
-func (m *Model) focusFormField(field int) {
-	m.pathSugg.reset()
-	m.form.focus = field
-	m.form.name.Blur()
-	m.form.dir.Blur()
-	m.form.prompt.input.Blur()
-	m.form.choice.filter.Blur()
-	m.form.choice.typedEffort.Blur()
-	m.form.choice.sugg = modelSuggest{}
+func (d *formDialog) focusField(h formHost, field int) {
+	h.pathSuggestions().reset()
+	d.focus = field
+	d.name.Blur()
+	d.dir.Blur()
+	d.prompt.input.Blur()
+	d.choice.filter.Blur()
+	d.choice.typedEffort.Blur()
+	d.choice.sugg = modelSuggest{}
 	switch field {
 	case fieldName:
-		m.form.name.Focus()
+		d.name.Focus()
 	case fieldModel:
-		m.form.choice.filter.Focus()
-		m.openModelList(m.formTool(), &m.form.choice)
+		d.choice.filter.Focus()
+		d.choice.openModelList(h, d.tool())
 	case fieldEffort:
-		m.form.choice.typedEffort.Focus()
+		d.choice.typedEffort.Focus()
 	case fieldDir:
-		m.form.dir.Focus()
+		d.dir.Focus()
 	case fieldPrompt:
-		m.form.prompt.input.Focus()
+		d.prompt.input.Focus()
 	}
 }
 
-// cycleTool starts the choice rows over and asks the new CLI what it offers.
-func (m *Model) cycleTool(delta int) tea.Cmd {
-	if len(m.form.toolNames) == 0 {
-		return nil
+// cycleTool starts the choice rows over; the root fits them to the card and
+// asks the new CLI what it offers.
+func (d *formDialog) cycleTool(h choiceHost, delta int) formRequest {
+	if len(d.toolNames) == 0 {
+		return formRequest{}
 	}
-	m.form.toolIndex = (m.form.toolIndex + delta + len(m.form.toolNames)) % len(m.form.toolNames)
-	m.form.defaultsTouched = true
-	toolName := m.formTool()
-	m.form.choice = m.newChoice(toolName)
-	m.syncFormFieldWidths()
-	return m.ensureCatalog(toolName)
+	d.toolIndex = (d.toolIndex + delta + len(d.toolNames)) % len(d.toolNames)
+	d.defaultsTouched = true
+	toolName := d.tool()
+	d.choice = newChoice(h, toolName)
+	return formRequest{catalog: toolName}
 }
 
 // formSpawnDir is the directory the form would launch in, resolved the
@@ -634,10 +649,15 @@ func (m *Model) toggleFormWorktree() tea.Cmd {
 		return nil
 	}
 	m.clearErr()
-	m.form.worktree = !m.form.worktree
-	m.form.worktreeAuto = false
-	m.form.defaultsTouched = true
+	m.form.setWorktree(!m.form.worktree)
 	return nil
+}
+
+// setWorktree is an explicit worktree choice, which later defaults leave be.
+func (d *formDialog) setWorktree(on bool) {
+	d.worktree = on
+	d.worktreeAuto = false
+	d.defaultsTouched = true
 }
 
 func (m *Model) submitForm() (tea.Model, tea.Cmd) {
@@ -645,37 +665,42 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) submitFormWithReader(reader directoryPreflight) (tea.Model, tea.Cmd) {
-	if len(m.form.toolNames) == 0 {
-		m.reportErr("no tools configured")
-		m.mode = modeList
-		return m, nil
+	return m, m.runFormRequest(m.form.submit(m), reader)
+}
+
+// submit validates the form and builds its spawn; the root checks the
+// directory on the effect lane.
+func (d *formDialog) submit(h formHost) formRequest {
+	if len(d.toolNames) == 0 {
+		h.reportErr("no tools configured")
+		return formRequest{close: true}
 	}
-	toolName := m.form.toolNames[m.form.toolIndex]
-	if m.form.prompt.pasting() {
-		m.reportErr("still reading the pasted image - try again in a moment")
-		return m, nil
+	toolName := d.toolNames[d.toolIndex]
+	if d.prompt.pasting() {
+		h.reportErr("still reading the pasted image - try again in a moment")
+		return formRequest{}
 	}
 
-	name := strings.TrimSpace(m.form.name.Value())
+	name := strings.TrimSpace(d.name.Value())
 	autoNamed := name == ""
 	if autoNamed {
 		name = toolName + "-" + newID()[:4]
 	}
-	group := m.selectedGroupPath()
+	group := d.groupPath()
 	// Chips become the paths of the images they stand for, so a first task
 	// reaches the agent with its screenshot named where it was pasted.
-	prompt := m.form.prompt.message()
+	prompt := d.prompt.message()
 	if strings.HasPrefix(prompt, "-") {
-		m.reportErr(`prompt cannot start with "-": the tool would read it as a flag`)
-		return m, nil
+		h.reportErr(`prompt cannot start with "-": the tool would read it as a flag`)
+		return formRequest{}
 	}
-	picked, err := m.launchChoice(toolName, &m.form.choice, m.form.choice.filter.Value())
+	picked, err := d.choice.launch(h, toolName, d.choice.filter.Value())
 	if err != nil {
-		m.reportErr(err.Error())
-		return m, nil
+		h.reportErr(err.Error())
+		return formRequest{}
 	}
 
-	paneW, paneH := m.paneTargetSize()
+	defaults := h.spawnDefaults(group)
 	request := spawnRequest{
 		kind:         spawnForm,
 		toolName:     toolName,
@@ -683,23 +708,20 @@ func (m *Model) submitFormWithReader(reader directoryPreflight) (tea.Model, tea.
 		group:        group,
 		prompt:       prompt,
 		autoNamed:    autoNamed,
-		pickWorktree: m.form.worktree,
+		pickWorktree: d.worktree,
 		choice:       picked,
-		base:         m.groupBase(group),
-		pane:         sessioncmd.PaneSize{Width: paneW, Height: paneH},
-		composerGen:  m.form.prompt.gen,
-		images:       m.form.prompt.attachments,
-		draft:        m.form.prompt.input.Value(),
-		draftName:    m.form.name.Value(),
-		draftDir:     m.form.dir.Value(),
-		rawDir:       m.form.dir.Value(),
-		dirFallbacks: m.groupDirCandidates(group),
-		wantWorktree: m.form.worktree,
-		dirReader:    reader,
+		base:         defaults.base,
+		pane:         defaults.pane,
+		composerGen:  d.prompt.gen,
+		images:       d.prompt.attachments,
+		draft:        d.prompt.input.Value(),
+		draftName:    d.name.Value(),
+		draftDir:     d.dir.Value(),
+		rawDir:       d.dir.Value(),
+		dirFallbacks: defaults.fallbacks,
+		wantWorktree: d.worktree,
 	}
-	m.clearErr()
-	m.dispatchSpawn(request)
-	return m, m.nextEffectCmd()
+	return formRequest{spawn: &request}
 }
 
 func (m *Model) rememberSpawnPick(tool string, worktree bool) {
@@ -711,168 +733,14 @@ func (m *Model) buildLaunch(toolName string, tool config.Tool, baseCommand, id s
 	return launch.Environment(m.services.hooks, toolName, tool, baseCommand, id)
 }
 
-func (m *Model) openGroupForm() {
-	name := textField("group-name", 60)
-	name.Focus()
-	m.groupForm = groupForm{
-		name:     name,
-		path:     textField("default working directory", 400),
-		pathAuto: true,
-		focus:    gfName,
-		gen:      m.nextComposerGen(),
-	}
-	m.rebuildGroupOptions(m.contextGroup())
-	m.groupForm.path.SetValue(m.capturedGroupDefaultDir(m.selectedGroupPath()))
-	m.syncGroupFormFieldWidths()
-	m.pathSugg.reset()
-	m.mode = modeGroupForm
-	m.clearErr()
-}
-
-func (m *Model) handleGroupFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	pathSuggesting := m.groupForm.focus == gfPath && m.pathSugg.active()
-	switch msg.String() {
-	case "esc":
-		if pathSuggesting {
-			m.pathSugg.reset()
-			return m, nil
-		}
-		m.mode = modeList
-		return m, nil
-	case "tab":
-		if pathSuggesting {
-			return m, m.applyPathSuggestion()
-		}
-		m.groupFormFocus(1)
-		return m, nil
-	case "shift+tab":
-		m.groupFormFocus(-1)
-		return m, nil
-	case "up":
-		if pathSuggesting {
-			if !m.pathSugg.move(-1) {
-				m.groupFormFocus(-1)
-			}
-		} else {
-			m.groupFormFocus(-1)
-		}
-		return m, nil
-	case "down":
-		if pathSuggesting {
-			if !m.pathSugg.move(1) {
-				m.groupFormFocus(1)
-			}
-		} else {
-			m.groupFormFocus(1)
-		}
-		return m, nil
-	case "left":
-		if m.groupForm.focus == gfWorktree {
-			count := len(groupWorktreeOptions)
-			m.groupForm.worktreeIndex = (m.groupForm.worktreeIndex + count - 1) % count
-			return m, nil
-		}
-		if m.groupForm.focus == gfBase {
-			var cmd tea.Cmd
-			m.groupForm.base, cmd = m.stepGroupBase(groupBaseForm, uint64(m.groupForm.gen), m.groupFormDir(), m.groupForm.base, -1)
-			return m, cmd
-		}
-		if m.groupForm.focus == gfParent {
-			return m, m.moveGroupCursor(-1)
-		}
-	case "right":
-		if m.groupForm.focus == gfWorktree {
-			m.groupForm.worktreeIndex = (m.groupForm.worktreeIndex + 1) % len(groupWorktreeOptions)
-			return m, nil
-		}
-		if m.groupForm.focus == gfBase {
-			var cmd tea.Cmd
-			m.groupForm.base, cmd = m.stepGroupBase(groupBaseForm, uint64(m.groupForm.gen), m.groupFormDir(), m.groupForm.base, 1)
-			return m, cmd
-		}
-		if m.groupForm.focus == gfParent {
-			return m, m.moveGroupCursor(1)
-		}
-	case "enter":
-		if pathSuggesting && m.pathSugg.chosen {
-			return m, m.applyPathSuggestion()
-		}
-		return m.submitGroupForm()
-	}
-
-	var cmd tea.Cmd
-	switch m.groupForm.focus {
-	case gfName:
-		m.groupForm.name, cmd = m.groupForm.name.Update(msg)
-	case gfPath:
-		m.groupForm.path, cmd = m.groupForm.path.Update(msg)
-		m.groupForm.pathAuto = false
-		cmd = tea.Batch(cmd, m.requestPathSuggestions(pathSuggestionGroup, m.groupForm.path.Value()))
-	}
-	return m, cmd
-}
-
-func (m *Model) groupFormFocus(delta int) {
-	m.pathSugg.reset()
-	m.groupForm.focus = (m.groupForm.focus + delta + gfCount) % gfCount
-	m.groupForm.name.Blur()
-	m.groupForm.path.Blur()
-	switch m.groupForm.focus {
-	case gfName:
-		m.groupForm.name.Focus()
-	case gfPath:
-		m.groupForm.path.Focus()
-	}
-}
-
-// groupFormDir is the default path the group form would save, resolved
-// the way the group worker resolves it.
-func (m *Model) groupFormDir() string {
-	return m.capturedAbsolutePath(m.groupForm.path.Value(), m.capturedGroupDefaultDir(m.selectedGroupPath()))
-}
-
-func (m *Model) submitGroupForm() (tea.Model, tea.Cmd) {
-	return m.submitGroupFormWithReader(systemDirectoryPreflight{git: m.services.gitDrv})
-}
-
-func (m *Model) submitGroupFormWithReader(reader directoryPreflight) (tea.Model, tea.Cmd) {
-	name := strings.TrimSpace(m.groupForm.name.Value())
-	name = strings.ReplaceAll(name, "/", "-")
-	if name == "" {
-		m.reportErr("group name cannot be empty")
-		return m, nil
-	}
-	parent := m.selectedGroupPath()
-	full := name
-	if parent != "" {
-		full = parent + "/" + name
-	}
-	worktree := groupWorktreeValue(m.groupForm.worktreeIndex)
-	request := groupRequest{
-		path: full, worktree: worktree, base: m.groupForm.base, gen: m.groupForm.gen,
-		draftName: m.groupForm.name.Value(), draftDir: m.groupForm.path.Value(),
-		rawDir: m.groupForm.path.Value(), fallbacks: m.groupDirCandidates(parent), dirReader: reader,
-	}
-	m.clearErr()
-	m.dispatchGroup(request)
-	return m, m.nextEffectCmd()
-}
-
-// dispatchGroup queues the group's store write on the effect lane; the row
-// materialization and reveal snapshot land when it completes.
-func (m *Model) dispatchGroup(request groupRequest) {
-	request.draftName = m.groupForm.name.Value()
-	request.draftDir = m.groupForm.path.Value()
-	m.enqueueEffect(request, 0, false)
-}
-
 func (m *Model) routeSpawnMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case worktreeProbeMsg:
 		return routed(m.handleWorktreeProbe(msg))
 
 	case pathSuggestionsMsg:
-		return routed(m.handlePathSuggestions(msg))
+		m.pathSugg.handle(m, msg)
+		return routed(m, nil)
 
 	case terminalDirectoryMsg:
 		return routed(m.handleTerminalDirectory(msg))

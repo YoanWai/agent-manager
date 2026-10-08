@@ -1157,7 +1157,7 @@ func TestWheelMovesListCursor(t *testing.T) {
 func TestWheelMovesCursorWhileSearchingOrPrompting(t *testing.T) {
 	for name, m := range map[string]*Model{
 		"searching": {mode: modeList, layout: layoutState{width: 80, height: 24}, rail: railModelCount(2, 0, true)},
-		"quick bar": {mode: modeList, quick: quickState{active: true}, layout: layoutState{width: 80, height: 24}, rail: railModelCount(2, 0, false)},
+		"quick bar": {mode: modeList, quick: quickBar{quickState{active: true}}, layout: layoutState{width: 80, height: 24}, rail: railModelCount(2, 0, false)},
 	} {
 		t.Run(name, func(t *testing.T) {
 			updated, _ := m.handleMouse(tea.MouseMsg{
@@ -1299,7 +1299,7 @@ func TestDividerPressWhileSearchingOrPrompting(t *testing.T) {
 		drag bool
 	}{
 		"searching": {&Model{mode: modeList, layout: layoutState{width: 100, height: 40, split: splitState{ratio: defaultSplitRatio}}, services: services{listKeys: keybind.DefaultList()}, rail: railModelCount(0, 0, true)}, false},
-		"quick bar": {&Model{mode: modeList, quick: quickState{active: true, composer: composer{input: textarea.New()}}, layout: layoutState{width: 100, height: 40, split: splitState{ratio: defaultSplitRatio}}, services: services{listKeys: keybind.DefaultList()}}, true},
+		"quick bar": {&Model{mode: modeList, quick: quickBar{quickState{active: true, composer: composer{input: textarea.New()}}}, layout: layoutState{width: 100, height: 40, split: splitState{ratio: defaultSplitRatio}}, services: services{listKeys: keybind.DefaultList()}}, true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			y0, _ := tc.m.bodyYRange()

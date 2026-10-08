@@ -36,13 +36,17 @@ func (m *Model) choiceSettingKeys() []string {
 	return choiceSettingKeys(slices.Sorted(maps.Keys(m.services.cfg.Tools)))
 }
 
-// refreshChoicePrefs takes a newer read of the CLI's kept choice while the
-// open choice still waits to place it.
-func (m *Model) refreshChoicePrefs(toolName string, ch *choice) {
-	ch.recent = m.recentModels(toolName)
+// refreshChoicePrefs takes a newer read of the CLI's kept choice into an
+// open choice.
+func (m *Model) refreshChoicePrefs(toolName string, ch *choice) { ch.refreshPrefs(m, toolName) }
+
+// refreshPrefs takes a newer read of the CLI's kept choice while the open
+// choice still waits to place it.
+func (ch *choice) refreshPrefs(h choiceHost, toolName string) {
+	ch.recent = recentModels(h, toolName)
 	if ch.saved != nil {
-		ch.saved = m.savedChoice(toolName)
-		m.restoreChoice(toolName, ch)
+		ch.saved = savedChoice(h, toolName)
+		ch.restore(h, toolName)
 	}
 }
 

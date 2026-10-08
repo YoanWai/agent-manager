@@ -96,14 +96,31 @@ func (m *Model) handleCatalog(msg catalogMsg) tea.Cmd {
 
 func (m *Model) fitChoices() {
 	if m.mode == modeForm {
-		m.restoreChoice(m.formTool(), &m.form.choice)
-		m.fitChoice(m.formTool(), &m.form.choice)
+		m.form.choice.restore(m, m.form.tool())
+		m.form.choice.fit(m, m.form.tool())
 	}
 	if m.quick.active {
-		m.restoreChoice(m.quickTool(), &m.quick.choice)
-		m.fitChoice(m.quickTool(), &m.quick.choice)
+		m.quick.choice.restore(m, m.quick.tool())
+		m.quick.choice.fit(m, m.quick.tool())
 	}
 }
+
+// choiceHost is what a choice reads from the root: the CLI's flags, its
+// latest catalog answer, and the cached choice settings, with the status
+// bar for an unreadable one and the effect lane that keeps a new one.
+type choiceHost interface {
+	choiceTool(toolName string) config.Tool
+	choiceCatalog(toolName string) *catalogState
+	choiceSetting(key string) string
+	saveChoiceSetting(key, value string)
+	reportErr(text string)
+}
+
+func (m *Model) choiceTool(toolName string) config.Tool { return m.services.cfg.Tools[toolName] }
+
+func (m *Model) choiceCatalog(toolName string) *catalogState { return m.ledger.catalogs[toolName] }
+
+func (m *Model) choiceSetting(key string) string { return m.settings.cache.value(key) }
 
 // choice is what a new session launches its CLI with. Index 0 of profile
 // and effort, and an empty model, leave the CLI's own default.
@@ -129,13 +146,13 @@ func (ch *choice) query() string {
 	return ch.filter.Value()
 }
 
-func (m *Model) openModelList(toolName string, ch *choice) {
+func (ch *choice) openModelList(h choiceHost, toolName string) {
 	ch.filtering = false
 	ch.sugg = modelSuggest{open: true}
 	if ch.model == "" {
 		return
 	}
-	for i, entry := range m.modelSuggestions(toolName, ch, "") {
+	for i, entry := range ch.suggestions(h, toolName, "") {
 		if entry.model.Key() == ch.model {
 			ch.sugg.index = i
 		}
@@ -150,72 +167,72 @@ type modelSuggest struct {
 	offset int
 }
 
-func (m *Model) newChoice(toolName string) choice {
+func newChoice(h choiceHost, toolName string) choice {
 	filter := textinput.New()
 	filter.CharLimit = 200
 	filter.Placeholder = toolName + "'s default"
 	typed := textinput.New()
 	typed.CharLimit = 40
 	typed.Placeholder = "default"
-	ch := choice{filter: filter, typedEffort: typed, recent: m.recentModels(toolName), saved: m.savedChoice(toolName)}
-	m.restoreChoice(toolName, &ch)
+	ch := choice{filter: filter, typedEffort: typed, recent: recentModels(h, toolName), saved: savedChoice(h, toolName)}
+	ch.restore(h, toolName)
 	return ch
 }
 
 func savedChoiceKey(toolName string) string { return "choice." + toolName }
 
-func (m *Model) savedChoice(toolName string) *config.Choice {
-	raw := m.settings.cache.value(savedChoiceKey(toolName))
+func savedChoice(h choiceHost, toolName string) *config.Choice {
+	raw := h.choiceSetting(savedChoiceKey(toolName))
 	if raw == "" {
 		return nil
 	}
 	var saved config.Choice
 	if err := json.Unmarshal([]byte(raw), &saved); err != nil {
-		m.reportErr("reading the last choice: " + err.Error())
+		h.reportErr("reading the last choice: " + err.Error())
 		return nil
 	}
 	return &saved
 }
 
-// keepChoice saves the choice as the CLI's own, so the next form or quick
+// keep saves the choice as the CLI's own, so the next form or quick
 // prompt on it starts there.
-func (m *Model) keepChoice(toolName string, ch *choice) {
-	raw, err := json.Marshal(m.currentChoice(toolName, ch))
+func (ch *choice) keep(h choiceHost, toolName string) {
+	raw, err := json.Marshal(ch.current(h, toolName))
 	if err != nil {
-		m.reportErr("saving the choice: " + err.Error())
+		h.reportErr("saving the choice: " + err.Error())
 		return
 	}
-	m.saveChoiceSetting(savedChoiceKey(toolName), string(raw))
+	h.saveChoiceSetting(savedChoiceKey(toolName), string(raw))
 }
 
-// restoreChoice places the saved choice once the CLI's answer is in, keeping
+// restore places the saved choice once the CLI's answer is in, keeping
 // only what that answer still offers.
-func (m *Model) restoreChoice(toolName string, ch *choice) {
-	state, _ := m.choiceAnswer(toolName)
+func (ch *choice) restore(h choiceHost, toolName string) {
+	state, _ := choiceAnswer(h, toolName)
 	if ch.saved == nil || state == nil || !state.loaded {
 		return
 	}
 	saved := *ch.saved
 	ch.saved = nil
-	for i, profile := range m.choiceProfiles(toolName) {
+	for i, profile := range choiceProfiles(h, toolName) {
 		if profile.Name == saved.Profile {
 			ch.profile = i + 1
 		}
 	}
 	if saved.Model != "" {
 		ch.model = choiceModelKey(saved)
-		if _, ok := m.pickedModel(toolName, ch); ok {
+		if _, ok := ch.pickedModel(h, toolName); ok {
 			ch.filter.SetValue(ch.model)
 			ch.filter.CursorEnd()
 		} else {
 			ch.model = ""
 		}
 	}
-	if m.effortTyped(toolName, ch) {
+	if ch.effortTyped(h, toolName) {
 		ch.typedEffort.SetValue(saved.Effort)
 		return
 	}
-	for i, level := range m.choiceEfforts(toolName, ch) {
+	for i, level := range ch.efforts(h, toolName) {
 		if level == saved.Effort {
 			ch.effort = i + 1
 		}
@@ -223,41 +240,41 @@ func (m *Model) restoreChoice(toolName string, ch *choice) {
 }
 
 // choiceAnswer is the CLI's latest answer, and whether it can be asked.
-func (m *Model) choiceAnswer(toolName string) (*catalogState, bool) {
-	if m.services.cfg.Tools[toolName].Catalog == "" {
+func choiceAnswer(h choiceHost, toolName string) (*catalogState, bool) {
+	if h.choiceTool(toolName).Catalog == "" {
 		return nil, false
 	}
-	return m.ledger.catalogs[toolName], true
+	return h.choiceCatalog(toolName), true
 }
 
-func (m *Model) choiceProfiles(toolName string) []catalog.Profile {
-	if state, _ := m.choiceAnswer(toolName); state != nil && m.services.cfg.Tools[toolName].ProfileArgs != "" {
+func choiceProfiles(h choiceHost, toolName string) []catalog.Profile {
+	if state, _ := choiceAnswer(h, toolName); state != nil && h.choiceTool(toolName).ProfileArgs != "" {
 		return state.cat.Profiles
 	}
 	return nil
 }
 
-func (m *Model) choiceProfileName(toolName string, ch *choice) string {
-	profiles := m.choiceProfiles(toolName)
+func (ch *choice) profileName(h choiceHost, toolName string) string {
+	profiles := choiceProfiles(h, toolName)
 	if ch.profile == 0 || ch.profile > len(profiles) {
 		return ""
 	}
 	return profiles[ch.profile-1].Name
 }
 
-func (m *Model) choiceModels(toolName string, ch *choice) []catalog.Model {
-	state, _ := m.choiceAnswer(toolName)
-	if state == nil || m.services.cfg.Tools[toolName].ModelArgs == "" {
+func (ch *choice) models(h choiceHost, toolName string) []catalog.Model {
+	state, _ := choiceAnswer(h, toolName)
+	if state == nil || h.choiceTool(toolName).ModelArgs == "" {
 		return nil
 	}
-	return state.cat.ModelsFor(m.choiceProfileName(toolName, ch))
+	return state.cat.ModelsFor(ch.profileName(h, toolName))
 }
 
-func (m *Model) pickedModel(toolName string, ch *choice) (catalog.Model, bool) {
+func (ch *choice) pickedModel(h choiceHost, toolName string) (catalog.Model, bool) {
 	if ch.model == "" {
 		return catalog.Model{}, false
 	}
-	matches := catalog.Match(m.choiceModels(toolName, ch), ch.model)
+	matches := catalog.Match(ch.models(h, toolName), ch.model)
 	if len(matches) != 1 {
 		return catalog.Model{}, false
 	}
@@ -266,103 +283,103 @@ func (m *Model) pickedModel(toolName string, ch *choice) (catalog.Model, bool) {
 
 // effortModel is the model the effort applies to: the pick, else the one
 // the CLI starts on.
-func (m *Model) effortModel(toolName string, ch *choice) (catalog.Model, bool) {
+func (ch *choice) effortModel(h choiceHost, toolName string) (catalog.Model, bool) {
 	switch {
-	case m.services.cfg.Tools[toolName].EffortArgs == "":
+	case h.choiceTool(toolName).EffortArgs == "":
 		return catalog.Model{}, false
 	case ch.model != "":
-		return m.pickedModel(toolName, ch)
+		return ch.pickedModel(h, toolName)
 	}
-	return catalog.Default(m.choiceModels(toolName, ch))
+	return catalog.Default(ch.models(h, toolName))
 }
 
-func (m *Model) choiceEfforts(toolName string, ch *choice) []string {
-	model, _ := m.effortModel(toolName, ch)
+func (ch *choice) efforts(h choiceHost, toolName string) []string {
+	model, _ := ch.effortModel(h, toolName)
 	return model.Efforts
 }
 
-func (m *Model) effortTyped(toolName string, ch *choice) bool {
-	model, _ := m.effortModel(toolName, ch)
+func (ch *choice) effortTyped(h choiceHost, toolName string) bool {
+	model, _ := ch.effortModel(h, toolName)
 	return model.EffortTyped
 }
 
-func (m *Model) fitChoice(toolName string, ch *choice) {
-	if ch.profile > len(m.choiceProfiles(toolName)) {
+func (ch *choice) fit(h choiceHost, toolName string) {
+	if ch.profile > len(choiceProfiles(h, toolName)) {
 		ch.profile = 0
 	}
 	if ch.model != "" {
-		if _, ok := m.pickedModel(toolName, ch); !ok {
+		if _, ok := ch.pickedModel(h, toolName); !ok {
 			ch.model = ""
 		}
 	}
-	if ch.effort > len(m.choiceEfforts(toolName, ch)) {
+	if ch.effort > len(ch.efforts(h, toolName)) {
 		ch.effort = 0
 	}
-	if ch.sugg.index >= len(m.modelSuggestions(toolName, ch, ch.query())) {
+	if ch.sugg.index >= len(ch.suggestions(h, toolName, ch.query())) {
 		ch.sugg.index, ch.sugg.chosen, ch.sugg.offset = 0, false, 0
 	}
 }
 
 // pickModel keeps the effort when the new model offers the same level.
-func (m *Model) pickModel(toolName string, ch *choice, key string) {
-	level := m.choiceEffort(toolName, ch)
+func (ch *choice) pickModel(h choiceHost, toolName string, key string) {
+	level := ch.effortLevel(h, toolName)
 	ch.model = key
 	ch.filter.SetValue(key)
 	ch.filter.CursorEnd()
 	ch.filtering = false
 	ch.effort = 0
-	for i, offered := range m.choiceEfforts(toolName, ch) {
+	for i, offered := range ch.efforts(h, toolName) {
 		if offered == level {
 			ch.effort = i + 1
 		}
 	}
 	ch.sugg = modelSuggest{}
-	m.keepChoice(toolName, ch)
+	ch.keep(h, toolName)
 }
 
-func (m *Model) choiceEffort(toolName string, ch *choice) string {
-	if m.effortTyped(toolName, ch) {
+func (ch *choice) effortLevel(h choiceHost, toolName string) string {
+	if ch.effortTyped(h, toolName) {
 		return strings.TrimSpace(ch.typedEffort.Value())
 	}
-	efforts := m.choiceEfforts(toolName, ch)
+	efforts := ch.efforts(h, toolName)
 	if ch.effort == 0 || ch.effort > len(efforts) {
 		return ""
 	}
 	return efforts[ch.effort-1]
 }
 
-func (m *Model) cycleChoiceEffort(toolName string, ch *choice, delta int) {
-	count := len(m.choiceEfforts(toolName, ch)) + 1
+func (ch *choice) cycleEffort(h choiceHost, toolName string, delta int) {
+	count := len(ch.efforts(h, toolName)) + 1
 	ch.effort = (ch.effort + delta + count) % count
-	m.keepChoice(toolName, ch)
+	ch.keep(h, toolName)
 }
 
-func (m *Model) cycleChoiceProfile(toolName string, ch *choice, delta int) {
-	count := len(m.choiceProfiles(toolName)) + 1
+func (ch *choice) cycleProfile(h choiceHost, toolName string, delta int) {
+	count := len(choiceProfiles(h, toolName)) + 1
 	ch.profile = (ch.profile + delta + count) % count
-	m.fitChoice(toolName, ch)
-	m.keepChoice(toolName, ch)
+	ch.fit(h, toolName)
+	ch.keep(h, toolName)
 }
 
-func (m *Model) launchChoice(toolName string, ch *choice, typed string) (config.Choice, error) {
+func (ch *choice) launch(h choiceHost, toolName string, typed string) (config.Choice, error) {
 	typed = strings.TrimSpace(typed)
 	if typed != "" && typed != ch.model {
-		if matches := catalog.Match(m.choiceModels(toolName, ch), typed); len(matches) == 1 {
-			m.pickModel(toolName, ch, matches[0].Key())
+		if matches := catalog.Match(ch.models(h, toolName), typed); len(matches) == 1 {
+			ch.pickModel(h, toolName, matches[0].Key())
 		} else {
 			return config.Choice{}, fmt.Errorf("model %q is not one %s lists: pick one from the list", typed, toolName)
 		}
 	}
-	return m.currentChoice(toolName, ch), nil
+	return ch.current(h, toolName), nil
 }
 
 func choiceModelKey(c config.Choice) string {
 	return catalog.Model{ID: c.Model, Provider: c.Provider}.Key()
 }
 
-func (m *Model) currentChoice(toolName string, ch *choice) config.Choice {
-	picked := config.Choice{Profile: m.choiceProfileName(toolName, ch), Effort: m.choiceEffort(toolName, ch)}
-	if model, ok := m.pickedModel(toolName, ch); ok {
+func (ch *choice) current(h choiceHost, toolName string) config.Choice {
+	picked := config.Choice{Profile: ch.profileName(h, toolName), Effort: ch.effortLevel(h, toolName)}
+	if model, ok := ch.pickedModel(h, toolName); ok {
 		picked.Model, picked.Provider = model.ID, model.Provider
 	}
 	return picked
@@ -375,13 +392,13 @@ type suggestion struct {
 
 const modelListRows = 9
 
-// modelSuggestions lists the recent picks first, then the rest.
-func (m *Model) modelSuggestions(toolName string, ch *choice, query string) []suggestion {
+// suggestions lists the recent picks first, then the rest.
+func (ch *choice) suggestions(h choiceHost, toolName string, query string) []suggestion {
 	query = strings.ToLower(strings.TrimSpace(query))
 	matches := func(model catalog.Model) bool {
 		return query == "" || strings.Contains(strings.ToLower(model.Key()), query) || strings.Contains(strings.ToLower(model.Label), query)
 	}
-	models := m.choiceModels(toolName, ch)
+	models := ch.models(h, toolName)
 	var list []suggestion
 	listed := map[string]bool{}
 	add := func(model catalog.Model, recent bool) {
@@ -405,43 +422,43 @@ const recentModelLimit = 3
 
 func recentModelsKey(toolName string) string { return "recent_models." + toolName }
 
-func (m *Model) recentModels(toolName string) []string {
+func recentModels(h choiceHost, toolName string) []string {
 	var keys []string
-	raw := m.settings.cache.value(recentModelsKey(toolName))
+	raw := h.choiceSetting(recentModelsKey(toolName))
 	if raw == "" {
 		return nil
 	}
 	if err := json.Unmarshal([]byte(raw), &keys); err != nil {
-		m.reportErr("reading recent models: " + err.Error())
+		h.reportErr("reading recent models: " + err.Error())
 		return nil
 	}
 	return keys
 }
 
-func (m *Model) rememberModel(toolName string, picked config.Choice) {
+func rememberModel(h choiceHost, toolName string, picked config.Choice) {
 	if picked.Model == "" {
 		return
 	}
 	key := choiceModelKey(picked)
 	keys := []string{key}
-	for _, earlier := range m.recentModels(toolName) {
+	for _, earlier := range recentModels(h, toolName) {
 		if earlier != key && len(keys) < recentModelLimit {
 			keys = append(keys, earlier)
 		}
 	}
 	raw, err := json.Marshal(keys)
 	if err != nil {
-		m.reportErr("remembering the model: " + err.Error())
+		h.reportErr("remembering the model: " + err.Error())
 		return
 	}
-	m.saveChoiceSetting(recentModelsKey(toolName), string(raw))
+	h.saveChoiceSetting(recentModelsKey(toolName), string(raw))
 }
 
 // modelRowNote says why the model row has no list, or reports it has one.
-func (m *Model) modelRowNote(toolName string) (string, bool) {
-	state, supported := m.choiceAnswer(toolName)
+func modelRowNote(h choiceHost, toolName string) (string, bool) {
+	state, supported := choiceAnswer(h, toolName)
 	switch {
-	case !supported || m.services.cfg.Tools[toolName].ModelArgs == "":
+	case !supported || h.choiceTool(toolName).ModelArgs == "":
 		return subtleStyle.Render("not supported by " + toolName), false
 	case state == nil || (!state.loaded && state.loading):
 		return subtleStyle.Render("reading models from " + toolName + "…"), false
@@ -454,15 +471,15 @@ func (m *Model) modelRowNote(toolName string) (string, bool) {
 }
 
 // effortRow is the row's value, whether it shows, and whether it takes keys.
-func (m *Model) effortRow(toolName string, ch *choice) (value string, shown, active bool) {
-	state, supported := m.choiceAnswer(toolName)
-	if !supported || m.services.cfg.Tools[toolName].EffortArgs == "" {
+func (ch *choice) effortRow(h choiceHost, toolName string) (value string, shown, active bool) {
+	state, supported := choiceAnswer(h, toolName)
+	if !supported || h.choiceTool(toolName).EffortArgs == "" {
 		return subtleStyle.Render("not supported by " + toolName), true, false
 	}
-	if state == nil || !state.loaded || len(m.choiceModels(toolName, ch)) == 0 {
+	if state == nil || !state.loaded || len(ch.models(h, toolName)) == 0 {
 		return "", false, false
 	}
-	model, known := m.effortModel(toolName, ch)
+	model, known := ch.effortModel(h, toolName)
 	switch {
 	case !known:
 		return subtleStyle.Render("pick a model to see its levels"), true, false
@@ -471,7 +488,7 @@ func (m *Model) effortRow(toolName string, ch *choice) (value string, shown, act
 	case len(model.Efforts) == 0:
 		return "", false, false
 	}
-	level := m.choiceEffort(toolName, ch)
+	level := ch.effortLevel(h, toolName)
 	shownLevel := subtleStyle.Render("default")
 	if level != "" {
 		shownLevel = valueStyle.Render(level)
@@ -483,8 +500,8 @@ func (m *Model) effortRow(toolName string, ch *choice) (value string, shown, act
 	return value, true, true
 }
 
-func (m *Model) profileRow(toolName string, ch *choice) (string, bool) {
-	profiles := m.choiceProfiles(toolName)
+func (ch *choice) profileRow(h choiceHost, toolName string) (string, bool) {
+	profiles := choiceProfiles(h, toolName)
 	if len(profiles) == 0 {
 		return "", false
 	}
@@ -499,10 +516,10 @@ func (m *Model) profileRow(toolName string, ch *choice) (string, bool) {
 	return subtleStyle.Render("◂ ") + value + subtleStyle.Render(" ▸"), true
 }
 
-// viewModelSuggestions returns each line's list index in entries, -1 for a
+// viewSuggestions returns each line's list index in entries, -1 for a
 // heading.
-func (m *Model) viewModelSuggestions(toolName string, ch *choice, query string, indent, width, visible int) (lines []string, entries []int) {
-	list := m.modelSuggestions(toolName, ch, query)
+func (ch *choice) viewSuggestions(h choiceHost, toolName string, query string, indent, width, visible int) (lines []string, entries []int) {
+	list := ch.suggestions(h, toolName, query)
 	headingStyle := lipgloss.NewStyle().Foreground(colorSubtle).Italic(true)
 	var rows []string
 	heading := func(text string) {
@@ -510,13 +527,13 @@ func (m *Model) viewModelSuggestions(toolName string, ch *choice, query string, 
 		entries = append(entries, -1)
 	}
 	highlight := -1
-	state, _ := m.choiceAnswer(toolName)
+	state, _ := choiceAnswer(h, toolName)
 	for i, entry := range list {
 		if i == 0 && entry.recent {
 			heading("recent")
 		}
 		if !entry.recent && (i == 0 || list[i-1].recent) {
-			source := fmt.Sprintf("from %s · %d models", toolName, len(m.choiceModels(toolName, ch)))
+			source := fmt.Sprintf("from %s · %d models", toolName, len(ch.models(h, toolName)))
 			if state.err != nil {
 				source += " · refresh failed: " + state.err.Error()
 			}

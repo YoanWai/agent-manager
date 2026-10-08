@@ -91,16 +91,12 @@ func (m *Model) handleWorktreeProbe(msg worktreeProbeMsg) (tea.Model, tea.Cmd) {
 		if m.form.worktree != request.from {
 			return m, nil
 		}
-		m.form.worktree = !request.from
-		m.form.worktreeAuto = false
-		m.form.defaultsTouched = true
+		m.form.setWorktree(!request.from)
 	} else {
 		if m.quick.worktree != request.from {
 			return m, nil
 		}
-		m.quick.worktree = !request.from
-		m.quick.worktreeTouched = true
-		m.quick.defaultsTouched = true
+		m.quick.setWorktree(!request.from)
 	}
 	return m, nil
 }

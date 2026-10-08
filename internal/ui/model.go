@@ -58,15 +58,15 @@ type Model struct {
 	mode       mode
 	review     uireview.Model
 	reviewNav  reviewNavState
-	form       form
-	groupForm  groupForm
+	form       formDialog
+	groupForm  groupFormDialog
 	pathSugg   pathComplete
 	confirm    confirmDialog
 	launchHint launchHintDialog
 	mouse      mouseCapture
 	rename     renameDialog
 	fork       forkDialog
-	quick      quickState
+	quick      quickBar
 	settings   settingsFeature
 	env        environment
 	help       helpFeature

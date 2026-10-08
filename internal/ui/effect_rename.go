@@ -313,7 +313,7 @@ func (s effectServices) relabelSessions(sessions []store.Session) error {
 		if !s.driver.Exists(sess.ID) {
 			continue
 		}
-		if err := s.driver.SetLabel(sess.ID, sessionLabel(sess.Group, sess.Name)); err != nil && first == nil {
+		if err := s.driver.SetLabel(sess.ID, sessioncmd.SessionLabel(sess.Group, sess.Name)); err != nil && first == nil {
 			first = err
 		}
 	}

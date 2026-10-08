@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	"github.com/YoanWai/agent-manager/internal/tmux"
@@ -137,7 +138,7 @@ func (m *Model) refreshExistingSessionUX() tea.Msg {
 		// errors harmlessly and must not abort the rest, and the bindings that
 		// matter are already installed above.
 		_ = m.services.tmux.RefreshChrome(sess.ID)
-		_ = m.services.tmux.SetLabel(sess.ID, sessionLabel(sess.Group, sess.Name))
+		_ = m.services.tmux.SetLabel(sess.ID, sessioncmd.SessionLabel(sess.Group, sess.Name))
 	}
 	return nil
 }

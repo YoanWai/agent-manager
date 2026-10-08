@@ -145,7 +145,7 @@ func (m *Model) handleMousePress(msg tea.MouseMsg, ctx uirail.MouseContext) (tea
 		m.notices.open(m, "")
 		return m, nil
 	}
-	if hit, ok := m.quickHitAt(msg.X, msg.Y); ok {
+	if hit, ok := m.quick.hitAt(msg.X, msg.Y); ok {
 		return m, m.handleQuickClick(hit)
 	}
 	return m.applyRailDecision(m.rail.Mouse(msg, m.layout.displayedRail, ctx))

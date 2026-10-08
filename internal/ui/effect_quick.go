@@ -107,7 +107,7 @@ func (m *Model) applyQuickSend(request quickSendRequest, result quickSendResult,
 		return cleanup
 	}
 
-	m.clearAcceptedQuickSend(request)
+	m.quick.clearAccepted(request)
 	// Once paste may have started, the pane may still need image paths from
 	// the accepted text. They remain owned by that delivery, never by a retry.
 	if result.outcome == quickSendUncertain {
@@ -129,13 +129,15 @@ func (m *Model) applyQuickSend(request quickSendRequest, result quickSendResult,
 	return nil
 }
 
-func (m *Model) clearAcceptedQuickSend(request quickSendRequest) {
-	if !m.quick.active || m.quick.gen != request.composerGen || m.quick.input.Value() != request.draft || len(m.quick.attachments) != 0 {
+// clearAccepted empties the bar a confirmed send came from, unless its
+// prompt has changed since.
+func (q *quickBar) clearAccepted(request quickSendRequest) {
+	if !q.active || q.gen != request.composerGen || q.input.Value() != request.draft || len(q.attachments) != 0 {
 		return
 	}
-	m.quick.input.SetValue("")
+	q.input.SetValue("")
 	if request.closeAfterSend {
-		m.quick.active = false
+		q.active = false
 	}
 }
 

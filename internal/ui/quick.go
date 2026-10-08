@@ -3,12 +3,40 @@ package ui
 import (
 	"strings"
 
-	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
+
+// quickBar is the docked prompt bar: its prompt, tool and choice, the list
+// open above it, its keys, clicks and view, and the send or spawn request
+// enter builds. The root opens it, moves its target and runs what its
+// quickRequest asks for.
+type quickBar struct{ quickState }
+
+// quickHost is what the bar reads from the root: the choice facts, the
+// status bar, the selected row it answers or spawns into, and the launch
+// inputs of a spawn into a group.
+type quickHost interface {
+	choiceHost
+	clearErr()
+	selectedRow() (treeRow, bool)
+	spawnDefaults(group string) spawnDefaults
+}
+
+// quickRequest is root work a bar key or click asks for once the bar has
+// taken its own share. At most one is set.
+type quickRequest struct {
+	// move steps the list cursor, which retargets the bar.
+	move int
+	// toggle flips the worktree choice once the target is known to host one.
+	toggle bool
+	// catalog names the CLI the bar moved to, whose choices are new.
+	catalog string
+	send    *quickSendRequest
+	spawn   *spawnRequest
+}
 
 func (m *Model) openQuickMode() tea.Cmd {
 	return m.openQuickModeWithReader(storeSettingWriter{st: m.services.store})
@@ -35,15 +63,15 @@ func (m *Model) openQuickModeWithReader(reader settingsValueReader) tea.Cmd {
 	input.Focus()
 	m.clearErr()
 	m.forgetWorktreeCapability()
-	m.quick = quickState{
+	m.quick = quickBar{quickState{
 		active:         true,
 		composer:       composer{input: input, maxRows: quickBarMaxRows, gen: m.nextComposerGen()},
 		toolNames:      names,
 		toolIndex:      index,
 		closeAfterSend: m.settings.cache.value(quickCloseSetting) == "close",
 		worktree:       m.cachedSpawnWorktreeDefault(m.quickTargetGroup()),
-		choice:         m.newChoice(names[index]),
-	}
+		choice:         newChoice(m, names[index]),
+	}}
 	catalog := m.ensureCatalog(names[index])
 	if m.settings.pending > 0 {
 		return tea.Batch(m.quickWorktreeProbeCmd(false), catalog)
@@ -54,109 +82,138 @@ func (m *Model) openQuickModeWithReader(reader settingsValueReader) tea.Cmd {
 // applyCachedQuickDefaults takes the loaded defaults. A tool the load moved
 // to starts its choices over and asks its CLI.
 func (m *Model) applyCachedQuickDefaults() tea.Cmd {
-	before := m.quickTool()
+	before := m.quick.tool()
 	m.quick.toolNames, m.quick.toolIndex = m.cachedSpawnToolSelection()
 	m.quick.closeAfterSend = m.settings.cache.value(quickCloseSetting) == "close"
 	if !m.quick.worktreeTouched {
 		m.quick.worktree = m.cachedSpawnWorktreeDefault(m.quickTargetGroup())
 	}
-	toolName := m.quickTool()
+	toolName := m.quick.tool()
 	if toolName == before || toolName == "" {
 		return nil
 	}
-	m.quick.choice = m.newChoice(toolName)
+	m.quick.choice = newChoice(m, toolName)
 	return m.ensureCatalog(toolName)
 }
 
-// handleQuickKey runs while the quick bar is docked in the sidebar: arrows
+func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	cmd, request := m.quick.handleKey(m, msg)
+	return m, tea.Batch(cmd, m.runQuickRequest(request))
+}
+
+// runQuickRequest executes what a bar key or click asked of the root.
+func (m *Model) runQuickRequest(request quickRequest) tea.Cmd {
+	switch {
+	case request.move != 0:
+		return tea.Batch(m.moveCursor(request.move), m.quickWorktreeProbeCmd(false))
+	case request.toggle:
+		return m.toggleQuickWorktree()
+	case request.catalog != "":
+		return m.ensureCatalog(request.catalog)
+	case request.send != nil:
+		if !m.dispatchQuickSend(*request.send) {
+			return nil
+		}
+		m.clearErr()
+		return m.nextEffectCmd()
+	case request.spawn != nil:
+		return m.dispatchQuickSpawn(*request.spawn, systemDirectoryPreflight{git: m.services.gitDrv})
+	}
+	return nil
+}
+
+// handleKey runs while the quick bar is docked in the sidebar: arrows
 // keep moving the selection (the target follows the cursor) unless the
 // caret has a prompt row to move to, enter submits against whatever is
 // selected, and every other key is typed text.
-func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (q *quickBar) handleKey(h quickHost, msg tea.KeyMsg) (tea.Cmd, quickRequest) {
 	msg = typedText(msg)
-	if m.quick.picking != pickNone {
+	if q.picking != pickNone {
 		// A click can move the target off the group the list was opened for.
-		if m.quickSpawning() {
-			return m.handleQuickPickKey(msg)
+		if q.spawning(h) {
+			return q.handlePickKey(h, msg), quickRequest{}
 		}
-		m.closeQuickPick()
+		q.closePick()
 	}
 	switch msg.String() {
 	case "esc":
-		m.quick.active = false
+		q.active = false
 		// Reopening the bar starts a fresh prompt, so the images this one
 		// was holding have nowhere left to be referenced from.
-		m.quick.release()
-		return m, nil
+		q.release()
+		return nil, quickRequest{}
 	case "up":
-		if cmd, stepped := m.quick.stepRow(msg); stepped {
-			return m, cmd
+		if cmd, stepped := q.stepRow(msg); stepped {
+			return cmd, quickRequest{}
 		}
-		return m, tea.Batch(m.moveCursor(-1), m.quickWorktreeProbeCmd(false))
+		return nil, quickRequest{move: -1}
 	case "down":
-		if cmd, stepped := m.quick.stepRow(msg); stepped {
-			return m, cmd
+		if cmd, stepped := q.stepRow(msg); stepped {
+			return cmd, quickRequest{}
 		}
-		return m, tea.Batch(m.moveCursor(1), m.quickWorktreeProbeCmd(false))
+		return nil, quickRequest{move: 1}
 	case "tab", "alt+m":
-		return m, m.cycleQuickTool(1)
+		return nil, q.cycleTool(h, 1)
 	case "shift+tab":
-		return m, m.cycleQuickTool(-1)
+		return nil, q.cycleTool(h, -1)
 	case quickModelKey:
-		m.openQuickPick(pickModel)
-		return m, nil
+		q.openPick(h, pickModel)
+		return nil, quickRequest{}
 	case quickEffortKey:
-		m.stepQuickEffort()
-		return m, nil
+		q.stepEffort(h)
+		return nil, quickRequest{}
 	case quickProfileKey:
-		m.stepQuickProfile()
-		return m, nil
+		q.stepProfile(h)
+		return nil, quickRequest{}
 	case "ctrl+t", "alt+w":
-		return m, m.toggleQuickWorktree()
+		return nil, quickRequest{toggle: true}
 	case "enter":
-		return m.submitQuick()
+		return nil, q.submit(h)
 	}
-	if cmd, handled := m.composerKey(composerQuick, msg); handled {
-		return m, cmd
+	if cmd, handled := q.handleChipKey(h, composerQuick, msg); handled {
+		return cmd, quickRequest{}
 	}
-	return m, m.quick.typeKey(msg)
+	return q.typeKey(msg), quickRequest{}
 }
 
-// submitQuick answers the selected session, or spawns a new session with
-// the prompt embedded when a group is selected. The bar stays active by
+// submit answers the selected session, or spawns a new session with the
+// prompt embedded when a group is selected. The bar stays active by
 // default so consecutive prompts flow without re-arming; the "after quick
 // send" setting closes it instead.
-func (m *Model) submitQuick() (tea.Model, tea.Cmd) {
-	entry, ok := m.selectedRow()
+func (q *quickBar) submit(h quickHost) quickRequest {
+	entry, ok := h.selectedRow()
 	if !ok {
-		m.reportErr("nothing selected")
-		return m, nil
+		h.reportErr("nothing selected")
+		return quickRequest{}
 	}
-	if m.quick.pasting() {
-		m.reportErr("still reading the pasted image - try again in a moment")
-		return m, nil
+	if q.pasting() {
+		h.reportErr("still reading the pasted image - try again in a moment")
+		return quickRequest{}
 	}
-	text := m.quick.message()
+	text := q.message()
 	if text == "" {
-		m.reportErr("prompt cannot be empty")
-		return m, nil
+		h.reportErr("prompt cannot be empty")
+		return quickRequest{}
 	}
 	if entry.isGroup {
-		return m.quickSpawn(entry.group, text)
+		spawn, ok := q.spawnRequest(h, entry.group, text)
+		if !ok {
+			return quickRequest{}
+		}
+		return quickRequest{spawn: &spawn}
 	}
-	request := quickSendRequest{
+	return quickRequest{send: &quickSendRequest{
 		session:        entry.sess,
-		composerGen:    m.quick.gen,
-		draft:          m.quick.input.Value(),
+		composerGen:    q.gen,
+		draft:          q.input.Value(),
 		text:           text,
-		closeAfterSend: m.quick.closeAfterSend,
-		images:         m.quick.attachments,
-	}
-	if !m.dispatchQuickSend(request) {
-		return m, nil
-	}
-	m.clearErr()
-	return m, m.nextEffectCmd()
+		closeAfterSend: q.closeAfterSend,
+		images:         q.attachments,
+	}}
+}
+
+func (m *Model) submitQuick() (tea.Model, tea.Cmd) {
+	return m, m.runQuickRequest(m.quick.submit(m))
 }
 
 func (m *Model) quickSpawn(group, prompt string) (tea.Model, tea.Cmd) {
@@ -164,27 +221,44 @@ func (m *Model) quickSpawn(group, prompt string) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) quickSpawnWithReader(group, prompt string, reader directoryPreflight) (tea.Model, tea.Cmd) {
+	request, ok := m.quick.spawnRequest(m, group, prompt)
+	if !ok {
+		return m, nil
+	}
+	return m, m.dispatchQuickSpawn(request, reader)
+}
+
+func (m *Model) dispatchQuickSpawn(request spawnRequest, reader directoryPreflight) tea.Cmd {
+	request.dirReader = reader
+	m.clearErr()
+	m.dispatchSpawn(request)
+	return m.nextEffectCmd()
+}
+
+// spawnRequest validates a spawn of prompt into group and builds it; the
+// root checks the directory on the effect lane.
+func (q *quickBar) spawnRequest(h quickHost, group, prompt string) (spawnRequest, bool) {
 	if strings.HasPrefix(prompt, "-") {
-		m.reportErr(`prompt cannot start with "-": the tool would read it as a flag`)
-		return m, nil
+		h.reportErr(`prompt cannot start with "-": the tool would read it as a flag`)
+		return spawnRequest{}, false
 	}
-	toolName := m.quickTool()
+	toolName := q.tool()
 	if toolName == "" {
-		m.reportErr("no tools configured")
-		return m, nil
+		h.reportErr("no tools configured")
+		return spawnRequest{}, false
 	}
-	picked, err := m.launchChoice(toolName, &m.quick.choice, "")
+	picked, err := q.choice.launch(h, toolName, "")
 	if err != nil {
-		m.reportErr(err.Error())
-		return m, nil
+		h.reportErr(err.Error())
+		return spawnRequest{}, false
 	}
 	name := toolName + "-" + newID()[:4]
-	pickWorktree := m.cachedSpawnWorktreeDefault(group)
-	if m.quick.worktreeTouched {
-		pickWorktree = m.quick.worktree
+	defaults := h.spawnDefaults(group)
+	pickWorktree := defaults.worktree
+	if q.worktreeTouched {
+		pickWorktree = q.worktree
 	}
-	paneW, paneH := m.paneTargetSize()
-	request := spawnRequest{
+	return spawnRequest{
 		kind:         spawnQuick,
 		toolName:     toolName,
 		name:         name,
@@ -193,28 +267,24 @@ func (m *Model) quickSpawnWithReader(group, prompt string, reader directoryPrefl
 		autoNamed:    true,
 		pickWorktree: pickWorktree,
 		choice:       picked,
-		base:         m.groupBase(group),
-		pane:         sessioncmd.PaneSize{Width: paneW, Height: paneH},
-		composerGen:  m.quick.gen,
-		images:       m.quick.attachments,
-		draft:        m.quick.input.Value(),
-		rawDir:       m.workspace.groupPaths[group],
-		dirFallbacks: m.groupDirCandidates(group),
+		base:         defaults.base,
+		pane:         defaults.pane,
+		composerGen:  q.gen,
+		images:       q.attachments,
+		draft:        q.input.Value(),
+		rawDir:       defaults.groupDir,
+		dirFallbacks: defaults.fallbacks,
 		wantWorktree: pickWorktree,
-		dirReader:    reader,
-	}
-	m.clearErr()
-	m.dispatchSpawn(request)
-	return m, m.nextEffectCmd()
+	}, true
 }
 
-// clearQuickAfterSend empties the bar for the next prompt, and dismisses it
+// clearAfterSend empties the bar for the next prompt, and dismisses it
 // entirely when the settings toggle asks for that.
-func (m *Model) clearQuickAfterSend() {
-	m.quick.input.SetValue("")
-	m.quick.attachments = nil
-	if m.quick.closeAfterSend {
-		m.quick.active = false
+func (q *quickBar) clearAfterSend() {
+	q.input.SetValue("")
+	q.attachments = nil
+	if q.closeAfterSend {
+		q.active = false
 	}
 }
 
@@ -231,10 +301,16 @@ func (m *Model) toggleQuickWorktree() tea.Cmd {
 		return nil
 	}
 	m.clearErr()
-	m.quick.worktree = !m.quick.worktree
-	m.quick.worktreeTouched = true
-	m.quick.defaultsTouched = true
+	m.quick.setWorktree(!m.quick.worktree)
 	return nil
+}
+
+// setWorktree is an explicit worktree choice for this run, which the target
+// group's default and later settings refreshes leave be.
+func (q *quickBar) setWorktree(on bool) {
+	q.worktree = on
+	q.worktreeTouched = true
+	q.defaultsTouched = true
 }
 
 func (m *Model) quickWorktreeOn() bool {
@@ -268,13 +344,15 @@ func (m *Model) quickTargetDir() string {
 	return m.capturedAbsolutePath(m.workspace.groupPaths[group], m.capturedGroupDefaultDir(group))
 }
 
-// quickTool is the spawn CLI for the current quick-mode run: the settings
+func (m *Model) quickTool() string { return m.quick.tool() }
+
+// tool is the spawn CLI for the current quick-mode run: the settings
 // default until tab cycles it.
-func (m *Model) quickTool() string {
-	if len(m.quick.toolNames) == 0 {
+func (q *quickBar) tool() string {
+	if len(q.toolNames) == 0 {
 		return ""
 	}
-	return m.quick.toolNames[m.quick.toolIndex]
+	return q.toolNames[q.toolIndex]
 }
 
 // The list open above the prompt, if any.
@@ -284,22 +362,25 @@ const (
 	pickEffort
 )
 
-// cycleQuickTool steps the spawn CLI by delta and starts its choices over.
-func (m *Model) cycleQuickTool(delta int) tea.Cmd {
-	count := len(m.quick.toolNames)
+// cycleTool steps the spawn CLI by delta and starts its choices over; the
+// root asks the new CLI what it offers.
+func (q *quickBar) cycleTool(h choiceHost, delta int) quickRequest {
+	count := len(q.toolNames)
 	if count == 0 {
-		return nil
+		return quickRequest{}
 	}
-	m.quick.toolIndex = (m.quick.toolIndex + delta + count) % count
-	m.quick.defaultsTouched = true
-	toolName := m.quickTool()
-	m.quick.choice = m.newChoice(toolName)
-	return m.ensureCatalog(toolName)
+	q.toolIndex = (q.toolIndex + delta + count) % count
+	q.defaultsTouched = true
+	toolName := q.tool()
+	q.choice = newChoice(h, toolName)
+	return quickRequest{catalog: toolName}
 }
 
+func (m *Model) quickSpawning() bool { return m.quick.spawning(m) }
+
 // Choices apply to a spawn only, never to an answer.
-func (m *Model) quickSpawning() bool {
-	entry, ok := m.selectedRow()
+func (q *quickBar) spawning(h quickHost) bool {
+	entry, ok := h.selectedRow()
 	return ok && entry.isGroup
 }
 
@@ -313,132 +394,132 @@ const (
 
 const quickChoiceHint = "model, effort and profile apply to a new agent: select a group to spawn one"
 
-func (m *Model) requireQuickSpawn() bool {
-	if m.quickSpawning() {
+func (q *quickBar) requireSpawn(h quickHost) bool {
+	if q.spawning(h) {
 		return true
 	}
-	m.reportErr(quickChoiceHint)
+	h.reportErr(quickChoiceHint)
 	return false
 }
 
-func (m *Model) openQuickPick(pick int) {
-	if !m.requireQuickSpawn() {
+func (q *quickBar) openPick(h quickHost, pick int) {
+	if !q.requireSpawn(h) {
 		return
 	}
-	toolName, ch := m.quickTool(), &m.quick.choice
-	if note, listed := m.modelRowNote(toolName); !listed {
-		m.reportErr("model: " + ansi.Strip(note))
+	toolName, ch := q.tool(), &q.choice
+	if note, listed := modelRowNote(h, toolName); !listed {
+		h.reportErr("model: " + ansi.Strip(note))
 		return
 	}
-	m.clearErr()
-	m.quick.picking = pick
+	h.clearErr()
+	q.picking = pick
 	switch pick {
 	case pickModel:
 		ch.filter.SetValue("")
 		ch.filter.Focus()
-		m.openModelList(toolName, ch)
+		ch.openModelList(h, toolName)
 	case pickEffort:
 		ch.typedEffort.Focus()
 	}
-	m.quick.input.Blur()
+	q.input.Blur()
 }
 
-func (m *Model) closeQuickPick() {
-	m.quick.picking = pickNone
-	m.quick.choice.filter.Blur()
-	m.quick.choice.typedEffort.Blur()
-	m.quick.choice.sugg = modelSuggest{}
-	m.quick.input.Focus()
+func (q *quickBar) closePick() {
+	q.picking = pickNone
+	q.choice.filter.Blur()
+	q.choice.typedEffort.Blur()
+	q.choice.sugg = modelSuggest{}
+	q.input.Focus()
 }
 
-// stepQuickEffort opens the typed field for a CLI that lists no levels.
-func (m *Model) stepQuickEffort() {
-	if !m.requireQuickSpawn() {
+// stepEffort opens the typed field for a CLI that lists no levels.
+func (q *quickBar) stepEffort(h quickHost) {
+	if !q.requireSpawn(h) {
 		return
 	}
-	toolName, ch := m.quickTool(), &m.quick.choice
-	if m.effortTyped(toolName, ch) {
-		m.openQuickPick(pickEffort)
+	toolName, ch := q.tool(), &q.choice
+	if ch.effortTyped(h, toolName) {
+		q.openPick(h, pickEffort)
 		return
 	}
-	if value, shown, active := m.effortRow(toolName, ch); !active {
+	if value, shown, active := ch.effortRow(h, toolName); !active {
 		if !shown {
 			value = "no levels for this model"
 		}
-		m.reportErr("effort: " + ansi.Strip(value))
+		h.reportErr("effort: " + ansi.Strip(value))
 		return
 	}
-	m.clearErr()
-	m.cycleChoiceEffort(toolName, ch, 1)
+	h.clearErr()
+	ch.cycleEffort(h, toolName, 1)
 }
 
-func (m *Model) stepQuickProfile() {
-	if !m.requireQuickSpawn() {
+func (q *quickBar) stepProfile(h quickHost) {
+	if !q.requireSpawn(h) {
 		return
 	}
-	toolName := m.quickTool()
-	if _, shown := m.profileRow(toolName, &m.quick.choice); !shown {
-		m.reportErr("profile: " + toolName + " has none")
+	toolName := q.tool()
+	if _, shown := q.choice.profileRow(h, toolName); !shown {
+		h.reportErr("profile: " + toolName + " has none")
 		return
 	}
-	m.clearErr()
-	m.cycleChoiceProfile(toolName, &m.quick.choice, 1)
+	h.clearErr()
+	q.choice.cycleProfile(h, toolName, 1)
 }
 
-func (m *Model) handleQuickPickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	toolName, ch := m.quickTool(), &m.quick.choice
-	if m.quick.picking == pickEffort {
+func (q *quickBar) handlePickKey(h quickHost, msg tea.KeyMsg) tea.Cmd {
+	toolName, ch := q.tool(), &q.choice
+	if q.picking == pickEffort {
 		switch msg.String() {
 		case "esc", "enter", "tab":
-			m.closeQuickPick()
-			return m, nil
+			q.closePick()
+			return nil
 		}
 		var cmd tea.Cmd
 		before := ch.typedEffort.Value()
 		ch.typedEffort, cmd = ch.typedEffort.Update(msg)
 		if ch.typedEffort.Value() != before {
-			m.keepChoice(toolName, ch)
+			ch.keep(h, toolName)
 		}
-		return m, cmd
+		return cmd
 	}
-	list := m.modelSuggestions(toolName, ch, ch.query())
+	list := ch.suggestions(h, toolName, ch.query())
 	switch msg.String() {
 	case "esc", quickModelKey:
-		m.closeQuickPick()
-		return m, nil
+		q.closePick()
+		return nil
 	case quickEffortKey:
-		m.stepQuickEffort()
-		return m, nil
+		q.stepEffort(h)
+		return nil
 	case quickProfileKey:
-		m.stepQuickProfile()
-		return m, nil
+		q.stepProfile(h)
+		return nil
 	case "enter", "tab":
 		if len(list) > 0 {
-			m.pickModel(toolName, ch, list[ch.sugg.index].model.Key())
+			ch.pickModel(h, toolName, list[ch.sugg.index].model.Key())
 		}
-		m.closeQuickPick()
-		return m, nil
+		q.closePick()
+		return nil
 	case "up", "down":
 		delta := 1
 		if msg.String() == "up" {
 			delta = -1
 		}
 		ch.sugg.move(len(list), delta)
-		return m, nil
+		return nil
 	}
 	var cmd tea.Cmd
 	ch.filter, cmd = ch.filter.Update(msg)
 	ch.filtering = true
 	ch.sugg = modelSuggest{open: true}
-	return m, cmd
+	return cmd
 }
 
-func (m *Model) quickHitAt(x, y int) (quickHit, bool) {
-	if !m.quick.active {
+func (q *quickBar) hitAt(x, y int) (quickHit, bool) {
+	if !q.active {
 		return quickHit{}, false
 	}
-	line, col := y-m.quick.originY, x-m.quick.originX
-	for _, hit := range m.quick.hits {
+	line, col := y-q.originY, x-q.originX
+	for _, hit := range q.hits {
 		if hit.line == line && col >= hit.x0 && col < hit.x1 {
 			return hit, true
 		}
@@ -447,37 +528,41 @@ func (m *Model) quickHitAt(x, y int) (quickHit, bool) {
 }
 
 func (m *Model) handleQuickClick(hit quickHit) tea.Cmd {
-	switch hit.action {
-	case quickClickTool:
-		m.closeQuickPick()
-		return m.cycleQuickTool(1)
-	case quickClickModel:
-		if m.quick.picking == pickModel {
-			m.closeQuickPick()
-		} else {
-			m.openQuickPick(pickModel)
-		}
-	case quickClickEffort:
-		m.stepQuickEffort()
-	case quickClickProfile:
-		m.stepQuickProfile()
-	case quickClickWorktree:
-		return m.toggleQuickWorktree()
-	case quickClickEntry:
-		toolName, ch := m.quickTool(), &m.quick.choice
-		if list := m.modelSuggestions(toolName, ch, ch.query()); hit.entry < len(list) {
-			m.pickModel(toolName, ch, list[hit.entry].model.Key())
-		}
-		m.closeQuickPick()
-	}
-	return nil
+	return m.runQuickRequest(m.quick.click(m, hit))
 }
 
-func (m *Model) quickLegend() [][2]string {
-	toolName, ch := m.quickTool(), &m.quick.choice
-	_, _, effortActive := m.effortRow(toolName, ch)
-	_, hasProfiles := m.profileRow(toolName, ch)
-	switch m.quick.picking {
+func (q *quickBar) click(h quickHost, hit quickHit) quickRequest {
+	switch hit.action {
+	case quickClickTool:
+		q.closePick()
+		return q.cycleTool(h, 1)
+	case quickClickModel:
+		if q.picking == pickModel {
+			q.closePick()
+		} else {
+			q.openPick(h, pickModel)
+		}
+	case quickClickEffort:
+		q.stepEffort(h)
+	case quickClickProfile:
+		q.stepProfile(h)
+	case quickClickWorktree:
+		return quickRequest{toggle: true}
+	case quickClickEntry:
+		toolName, ch := q.tool(), &q.choice
+		if list := ch.suggestions(h, toolName, ch.query()); hit.entry < len(list) {
+			ch.pickModel(h, toolName, list[hit.entry].model.Key())
+		}
+		q.closePick()
+	}
+	return quickRequest{}
+}
+
+func (q *quickBar) legend(h quickHost) [][2]string {
+	toolName, ch := q.tool(), &q.choice
+	_, _, effortActive := ch.effortRow(h, toolName)
+	_, hasProfiles := ch.profileRow(h, toolName)
+	switch q.picking {
 	case pickModel:
 		pairs := [][2]string{{"type", "filter"}, {"↑↓", "pick"}, {"↵/tab", "choose"}}
 		if effortActive {
@@ -491,11 +576,11 @@ func (m *Model) quickLegend() [][2]string {
 		return [][2]string{{"type", "effort"}, {"↵", "done"}, {"esc", "back to the prompt"}}
 	}
 	pairs := [][2]string{{"↵", "send"}, {"↑↓", "target or caret"}, {"tab", "tool"}}
-	if len(m.quick.toolNames) > 1 {
+	if len(q.toolNames) > 1 {
 		pairs = append(pairs, [2]string{"shift+tab", "previous tool"})
 	}
-	if m.quickSpawning() {
-		if _, listed := m.modelRowNote(toolName); listed {
+	if q.spawning(h) {
+		if _, listed := modelRowNote(h, toolName); listed {
 			pairs = append(pairs, [2]string{quickModelKey, "model"})
 		}
 		if effortActive {

@@ -8,8 +8,8 @@ func TestChoicePickDefersTheStoreWrite(t *testing.T) {
 	m := buildModel(t)
 	answered(m, claudeLike, claudeAnswer)
 	openFormOnClaude(t, m)
-	m.pickModel("claude", &m.form.choice, "opus")
-	if got := m.savedChoice("claude"); got == nil || got.Model != "opus" {
+	m.form.choice.pickModel(m, "claude", "opus")
+	if got := savedChoice(m, "claude"); got == nil || got.Model != "opus" {
 		t.Fatalf("cached choice = %+v, want opus", got)
 	}
 	if raw, err := m.services.store.Setting(savedChoiceKey("claude")); err != nil || raw != "" {

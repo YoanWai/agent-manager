@@ -271,7 +271,7 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 		}
 		if request.kind != spawnShell {
 			m.rememberSpawnPick(request.toolName, request.pickWorktree)
-			m.rememberModel(request.toolName, request.choice)
+			rememberModel(m, request.toolName, request.choice)
 		}
 		// New sessions start as starting, which attention excludes; clear so
 		// the row the spawn just created is on screen.
@@ -285,7 +285,7 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 			}
 		case spawnQuick:
 			if m.quick.active && m.quick.gen == request.composerGen && m.quick.input.Value() == request.draft && len(m.quick.attachments) == 0 {
-				m.clearQuickAfterSend()
+				m.quick.clearAfterSend()
 			}
 		}
 		m.rebuildRows()

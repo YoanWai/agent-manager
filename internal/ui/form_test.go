@@ -70,7 +70,7 @@ func TestFormSettingsLoadRefusesLocalChoiceAndReopenedForm(t *testing.T) {
 	t.Run("local choice", func(t *testing.T) {
 		m := buildModel(t)
 		cmd := m.openForm()
-		m.cycleTool(1)
+		m.runFormRequest(m.form.cycleTool(m, 1), nil)
 		chosen := m.form.toolNames[m.form.toolIndex]
 		if err := m.services.store.SetSetting("default_tool", "ready-tool"); err != nil {
 			t.Fatal(err)
@@ -505,7 +505,7 @@ func TestFormPromptComposesWithSettings(t *testing.T) {
 func TestFormLongDirKeepsCursorEndVisible(t *testing.T) {
 	m := buildModel(t)
 	m.openForm()
-	m.formFocus(2) // name -> tool -> dir
+	m.form.focusStep(m, 2) // name -> tool -> dir
 	m.form.dir.SetValue("/very/long/" + strings.Repeat("a", 80) + "/tail-end")
 	m.form.dir.CursorEnd()
 	view := ansi.Strip(m.viewForm())
@@ -518,7 +518,7 @@ func TestFormLongDirKeepsCursorEndVisible(t *testing.T) {
 // image keys apply.
 func focusFormPrompt(t *testing.T, m *Model) {
 	t.Helper()
-	m.formFocus(-2) // name -> group -> prompt
+	m.form.focusStep(m, -2) // name -> group -> prompt
 	if m.form.focus != fieldPrompt {
 		t.Fatalf("focus = %v, want fieldPrompt", m.form.focus)
 	}
@@ -690,7 +690,7 @@ func TestFormSubmitWaitsForAPasteStillReading(t *testing.T) {
 func TestFormLongPromptWrapsAcrossRows(t *testing.T) {
 	m := buildModel(t)
 	m.openForm()
-	m.formFocus(-2) // name -> group -> prompt
+	m.form.focusStep(m, -2) // name -> group -> prompt
 	m.form.prompt.input.SetValue(strings.Repeat("word ", 25) + "finale")
 	view := ansi.Strip(m.viewForm())
 	if !strings.Contains(view, "finale") {
@@ -729,7 +729,7 @@ func TestFormGroupArrowsMoveFocusNotSelection(t *testing.T) {
 	}
 	m.applyCmd(t, m.refreshCmd())
 	m.openForm()
-	m.formFocus(-1) // wrap from name to group
+	m.form.focusStep(m, -1) // wrap from name to group
 	if m.form.focus != fieldGroup {
 		t.Fatalf("focus = %v, want fieldGroup", m.form.focus)
 	}
@@ -1534,7 +1534,7 @@ func TestFormUpDownMoveTheCaretBetweenPromptRows(t *testing.T) {
 		t.Fatal("up from the first row should leave the prompt field")
 	}
 
-	m.formFocus(1)
+	m.form.focusStep(m, 1)
 	if m.form.focus != fieldPrompt {
 		t.Fatalf("focus = %v, want fieldPrompt", m.form.focus)
 	}
@@ -1547,5 +1547,74 @@ func TestFormUpDownMoveTheCaretBetweenPromptRows(t *testing.T) {
 	_, _ = m.handleFormKey(tea.KeyMsg{Type: tea.KeyDown})
 	if m.form.focus == fieldPrompt {
 		t.Fatal("down from the last row should leave the prompt field")
+	}
+}
+
+// fakeFormHost drives the New Session form without a root model.
+type fakeFormHost struct {
+	*fakeChoiceHost
+	paths    pathComplete
+	defaults spawnDefaults
+}
+
+func (h *fakeFormHost) pathSuggestions() *pathComplete { return &h.paths }
+
+func (h *fakeFormHost) spawnDefaults(string) spawnDefaults { return h.defaults }
+
+func fakeHostForm(h *fakeFormHost) *formDialog {
+	name := textField("my-session", 60)
+	name.Focus()
+	return &formDialog{form{
+		name:      name,
+		dir:       textField("", 400),
+		prompt:    promptField(),
+		dirAuto:   true,
+		toolNames: []string{"claude", "plain"},
+		groups:    []groupOption{{path: ""}, {path: "backend", depth: 1}},
+		focus:     fieldName,
+		choice:    newChoice(h, "claude"),
+	}}
+}
+
+// The form's keys update its own fields and hand the root a request for
+// the rest: a new CLI's catalog, a worktree probe, closing, or the spawn.
+func TestFormDialogThroughAFakeHost(t *testing.T) {
+	h := &fakeFormHost{
+		fakeChoiceHost: newFakeChoiceHost(),
+		defaults:       spawnDefaults{base: "develop", fallbacks: []string{"/work/backend"}},
+	}
+	d := fakeHostForm(h)
+	for _, r := range "fix" {
+		d.handleKey(h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	d.focusField(h, fieldTool)
+	if _, request := d.handleKey(h, tea.KeyMsg{Type: tea.KeyRight}); request.catalog != "plain" || d.tool() != "plain" {
+		t.Fatalf("right on the tool row asked for %+v on %q", request, d.tool())
+	}
+	d.focusField(h, fieldGroup)
+	if _, request := d.handleKey(h, tea.KeyMsg{Type: tea.KeyRight}); request.group != 1 {
+		t.Fatalf("right on the group row asked for %+v", request)
+	}
+	d.groupIndex = 1
+	d.focusField(h, fieldDir)
+	cmd, request := d.handleKey(h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	if !request.probe || cmd == nil || d.dirAuto || h.paths.generation == 0 {
+		t.Fatalf("typing a path should read suggestions and probe: %+v", request)
+	}
+	_, request = d.handleKey(h, tea.KeyMsg{Type: tea.KeyEnter})
+	if request.spawn == nil {
+		t.Fatalf("enter built no spawn: %v", h.errs)
+	}
+	spawn := request.spawn
+	if spawn.kind != spawnForm || spawn.name != "fix" || spawn.group != "backend" || spawn.toolName != "plain" ||
+		spawn.base != "develop" || spawn.rawDir != "/" || !reflect.DeepEqual(spawn.dirFallbacks, []string{"/work/backend"}) {
+		t.Fatalf("spawn = %+v", spawn)
+	}
+	d.prompt.input.SetValue("-rf")
+	if request = d.submit(h); request.spawn != nil || len(h.errs) == 0 {
+		t.Fatal("a prompt that reads as a flag spawned")
+	}
+	if _, request = d.handleKey(h, tea.KeyMsg{Type: tea.KeyEsc}); !request.close {
+		t.Fatalf("esc asked for %+v", request)
 	}
 }

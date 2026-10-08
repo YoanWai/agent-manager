@@ -3,6 +3,7 @@ package ui
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
@@ -140,7 +141,7 @@ func (s effectServices) runRail(request railRequest) (effectResult, error) {
 	result.warning = err
 	for _, sess := range result.sessions {
 		if s.driver.Exists(sess.ID) {
-			if labelErr := s.driver.SetLabel(sess.ID, sessionLabel(sess.Group, sess.Name)); labelErr != nil && result.warning == nil {
+			if labelErr := s.driver.SetLabel(sess.ID, sessioncmd.SessionLabel(sess.Group, sess.Name)); labelErr != nil && result.warning == nil {
 				result.warning = labelErr
 			}
 		}

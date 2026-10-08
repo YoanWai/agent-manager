@@ -19,7 +19,7 @@ func loadPathSuggestions(m *Model, target pathSuggestionTarget, typed string) {
 		m.rename.dir.SetValue(typed)
 	}
 	msg := m.requestPathSuggestions(target, typed)().(pathSuggestionsMsg)
-	m.handlePathSuggestions(msg)
+	m.pathSugg.handle(m, msg)
 }
 
 type blockedPathSuggestionReader struct {
@@ -43,7 +43,7 @@ func TestPathSuggestionsDeferScanAndRejectStaleInput(t *testing.T) {
 		started: make(chan struct{}), release: make(chan struct{}),
 		suggestions: []string{"/first-result"},
 	}
-	cmd := m.requestPathSuggestionsWithReader(pathSuggestionForm, m.form.dir.Value(), reader)
+	cmd := m.pathSugg.request(pathSuggestionForm, m.form.dir.Value(), reader)
 	select {
 	case <-reader.started:
 		t.Fatal("path scan ran on the update path")
@@ -53,9 +53,9 @@ func TestPathSuggestionsDeferScanAndRejectStaleInput(t *testing.T) {
 	go func() { completed <- cmd().(pathSuggestionsMsg) }()
 	<-reader.started
 	m.form.dir.SetValue("/newer")
-	m.requestPathSuggestionsWithReader(pathSuggestionForm, m.form.dir.Value(), systemPathSuggestionReader{})
+	m.pathSugg.request(pathSuggestionForm, m.form.dir.Value(), systemPathSuggestionReader{})
 	close(reader.release)
-	m.handlePathSuggestions(<-completed)
+	m.pathSugg.handle(m, <-completed)
 	if len(m.pathSugg.suggestions) != 0 {
 		t.Fatalf("stale scan replaced newer input: %v", m.pathSugg.suggestions)
 	}
@@ -162,7 +162,7 @@ func TestPathSuggestionsExitToAdjacentFormFields(t *testing.T) {
 		t.Fatalf("down past the last suggestion should focus worktree, focus=%d", m.form.focus)
 	}
 
-	m.formFocus(-1)
+	m.form.focusStep(m, -1)
 	loadPathSuggestions(m, pathSuggestionForm, filepath.Join(root, "a"))
 	m.pathSugg.chosen = true
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyUp})
@@ -175,7 +175,7 @@ func TestGroupPickerExitsToAdjacentFields(t *testing.T) {
 	m := buildModel(t)
 
 	m.openGroupForm()
-	m.groupFormFocus(1)
+	m.groupForm.focusStep(m, 1)
 	m.form.groupIndex = 0
 	m.handleGroupFormKey(tea.KeyMsg{Type: tea.KeyUp})
 	if m.groupForm.focus != gfName {
@@ -183,7 +183,7 @@ func TestGroupPickerExitsToAdjacentFields(t *testing.T) {
 	}
 
 	m.openGroupForm()
-	m.groupFormFocus(1)
+	m.groupForm.focusStep(m, 1)
 	m.form.groupIndex = len(m.form.groups) - 1
 	m.handleGroupFormKey(tea.KeyMsg{Type: tea.KeyDown})
 	if m.groupForm.focus != gfPath {
@@ -309,5 +309,43 @@ func TestRelativePathsStoredAbsolute(t *testing.T) {
 		if g.Name == "relgrp" && !filepath.IsAbs(g.Path) {
 			t.Fatalf("group path stored relative: %q", g.Path)
 		}
+	}
+}
+
+type fakePathCompleteHost struct {
+	value string
+	open  bool
+}
+
+func (h fakePathCompleteHost) pathSuggestionField(pathSuggestionTarget) (string, bool) {
+	return h.value, h.open
+}
+
+type fixedPathSuggestionReader []string
+
+func (r fixedPathSuggestionReader) complete(string) []string { return r }
+
+// The completer takes a read's answer only for the latest request, and only
+// while its field still holds what was typed.
+func TestPathCompleteThroughAFakeHost(t *testing.T) {
+	var pc pathComplete
+	reader := fixedPathSuggestionReader{"/work/alpha", "/work/amber"}
+	stale := pc.request(pathSuggestionGroup, "/work/a", reader)().(pathSuggestionsMsg)
+	fresh := pc.request(pathSuggestionGroup, "/work/a", reader)().(pathSuggestionsMsg)
+	pc.handle(fakePathCompleteHost{value: "/work/a", open: true}, stale)
+	if pc.active() {
+		t.Fatal("a superseded read filled the list")
+	}
+	pc.handle(fakePathCompleteHost{value: "/work/a", open: false}, fresh)
+	if pc.active() {
+		t.Fatal("a read for a closed field filled the list")
+	}
+	pc.handle(fakePathCompleteHost{value: "/work/al", open: true}, fresh)
+	if pc.active() {
+		t.Fatal("a read for text since edited filled the list")
+	}
+	pc.handle(fakePathCompleteHost{value: "/work/a", open: true}, fresh)
+	if !pc.move(1) || pc.selected() != "/work/alpha" {
+		t.Fatalf("suggestions = %v", pc.suggestions)
 	}
 }

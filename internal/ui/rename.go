@@ -32,7 +32,7 @@ type renameDialog struct{ renameTarget }
 // completion, the group base stepper, mode changes, the status bar and the
 // rename effect lane.
 type renameHost interface {
-	pathCompletion() *pathComplete
+	pathSuggestions() *pathComplete
 	applyPathSuggestion() tea.Cmd
 	requestPathSuggestions(target pathSuggestionTarget, typed string) tea.Cmd
 	stepRenameBase(current string, delta int) (string, tea.Cmd)
@@ -42,11 +42,6 @@ type renameHost interface {
 }
 
 var _ renameHost = (*Model)(nil)
-
-// pathCompletion is the directory completion the path fields share.
-func (m *Model) pathCompletion() *pathComplete {
-	return &m.pathSugg
-}
 
 // stepRenameBase steps the group base choice, probing the default path the
 // open group edit would save.
@@ -124,7 +119,7 @@ func (m *Model) openRename() {
 }
 
 func (d *renameDialog) focusField(h renameHost, delta int) {
-	h.pathCompletion().reset()
+	h.pathSuggestions().reset()
 	fields := 2
 	if d.isGroup {
 		fields = 4
@@ -141,7 +136,7 @@ func (d *renameDialog) focusField(h renameHost, delta int) {
 }
 
 func (d *renameDialog) handleKey(h renameHost, msg tea.KeyMsg) tea.Cmd {
-	pathSugg := h.pathCompletion()
+	pathSugg := h.pathSuggestions()
 	pathSuggesting := d.isGroup && d.focus == 1 && pathSugg.active()
 	switch msg.String() {
 	case "esc":

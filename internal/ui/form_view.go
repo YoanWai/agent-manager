@@ -14,89 +14,111 @@ type formHit struct {
 	entry int
 }
 
+// formFacts are the root facts the form paints: the width a value has and
+// what the chosen directory allows.
+type formFacts struct {
+	width                          int
+	worktreeKnown, worktreeCapable bool
+	// base names the ref a worktree spawn branches from, set while the
+	// worktree is on.
+	base string
+}
+
 func (m *Model) viewForm() string {
+	facts := formFacts{width: m.formValueWidth()}
+	facts.worktreeCapable, facts.worktreeKnown = m.cachedWorktreeCapability(m.formSpawnDir())
+	if m.formWorktreeOn() {
+		facts.base = m.spawnBaseLabel(m.formSpawnDir(), m.selectedGroupPath())
+	}
+	body, hint := m.form.view(m, facts)
+	return m.card("◆ New Session", body, hint)
+}
+
+// view paints the form's body and its key hint, and records the line each
+// field takes for clicks.
+func (d *formDialog) view(h formHost, facts formFacts) (string, [][2]string) {
 	var b strings.Builder
-	m.form.hits = m.form.hits[:0]
+	d.hits = d.hits[:0]
 	add := func(text string, hit formHit) {
 		b.WriteString(text)
 		for range strings.Count(text, "\n") {
-			m.form.hits = append(m.form.hits, hit)
+			d.hits = append(d.hits, hit)
 		}
 	}
 	field := func(label, value string, id int) {
-		add(formField(label, value, m.form.focus == id), formHit{field: id, entry: -1})
+		add(formField(label, value, d.focus == id), formHit{field: id, entry: -1})
 	}
-	field("name", textInputView(m.form.name), fieldName)
+	field("name", textInputView(d.name), fieldName)
 
 	toolVal := "(none configured)"
-	if len(m.form.toolNames) > 0 {
-		toolVal = subtleStyle.Render("◂ ") + valueStyle.Render(m.form.toolNames[m.form.toolIndex]) + subtleStyle.Render(" ▸")
+	if len(d.toolNames) > 0 {
+		toolVal = subtleStyle.Render("◂ ") + valueStyle.Render(d.toolNames[d.toolIndex]) + subtleStyle.Render(" ▸")
 	}
 	field("tool", toolVal, fieldTool)
-	toolName, ch := m.formTool(), &m.form.choice
-	if value, shown := m.profileRow(toolName, ch); shown {
+	toolName, ch := d.tool(), &d.choice
+	if value, shown := ch.profileRow(h, toolName); shown {
 		field("profile", value, fieldProfile)
 	}
-	if note, listed := m.modelRowNote(toolName); !listed {
-		field("model", ansi.Wrap(note, m.formValueWidth(), ""), fieldModel)
+	if note, listed := modelRowNote(h, toolName); !listed {
+		field("model", ansi.Wrap(note, facts.width, ""), fieldModel)
 	} else {
 		field("model", textInputView(ch.filter), fieldModel)
-		if m.form.focus == fieldModel && ch.sugg.open {
-			lines, entries := m.viewModelSuggestions(toolName, ch, ch.query(), formLabelColumn, m.formValueWidth(), modelListRows)
+		if d.focus == fieldModel && ch.sugg.open {
+			lines, entries := ch.viewSuggestions(h, toolName, ch.query(), formLabelColumn, facts.width, modelListRows)
 			for i, line := range lines {
 				add(line+"\n", formHit{field: fieldModel, entry: entries[i]})
 			}
 		}
 	}
-	if value, shown, _ := m.effortRow(toolName, ch); shown {
+	if value, shown, _ := ch.effortRow(h, toolName); shown {
 		field("effort", value, fieldEffort)
 	}
-	field("dir", textInputView(m.form.dir), fieldDir)
-	if m.form.focus == fieldDir && m.pathSugg.active() {
-		add(m.viewPathSuggestions()+"\n", formHit{field: fieldDir, entry: -1})
+	field("dir", textInputView(d.dir), fieldDir)
+	if d.focus == fieldDir && h.pathSuggestions().active() {
+		add(h.pathSuggestions().view()+"\n", formHit{field: fieldDir, entry: -1})
 	}
 	worktreeField := subtleStyle.Render(worktreeUnavailable)
-	if capable, known := m.cachedWorktreeCapability(m.formSpawnDir()); known && capable {
+	if facts.worktreeKnown && facts.worktreeCapable {
 		worktreeVal := "off"
-		if m.form.worktree {
+		if d.worktree {
 			worktreeVal = "on"
 		}
 		worktreeField = subtleStyle.Render("◂ ") + valueStyle.Render(worktreeVal) + subtleStyle.Render(" ▸")
 	}
 	field("worktree", worktreeField, fieldWorktree)
-	if m.formWorktreeOn() {
-		field("base", m.spawnBaseLabel(m.formSpawnDir(), m.selectedGroupPath()), fieldBase)
+	if d.worktree && facts.worktreeKnown && facts.worktreeCapable {
+		field("base", facts.base, fieldBase)
 	}
 	// Chips are tokens inside the typed text, so they wrap and reflow with
 	// the words around them; painting happens on the rendered prompt.
-	field("prompt", m.form.prompt.view(), fieldPrompt)
-	field("group", groupBadge(displayGroup(m.form.groups[m.form.groupIndex].path)), fieldGroup)
+	field("prompt", d.prompt.view(), fieldPrompt)
+	field("group", groupBadge(displayGroup(d.groups[d.groupIndex].path)), fieldGroup)
 
-	if m.form.focus == fieldGroup {
+	if d.focus == fieldGroup {
 		add("\n", formHit{field: fieldGroup, entry: -1})
-		for i, line := range strings.Split(m.viewGroupPicker(), "\n") {
+		for i, line := range strings.Split(d.viewGroupPicker(), "\n") {
 			add(line+"\n", formHit{field: fieldGroup, entry: i})
 		}
 	}
 
 	hint := [][2]string{{"tab/↑↓", "move"}, {"←→", "change"}, {"↵", "create"}, {"esc", "cancel"}}
 	switch {
-	case m.form.focus == fieldPrompt:
+	case d.focus == fieldPrompt:
 		hint = [][2]string{{"ctrl+v", "paste an image"}, {"tab", "move"}, {"↑↓", "caret or move"}, {"↵", "create"}, {"esc", "cancel"}}
-	case m.form.focus == fieldGroup:
+	case d.focus == fieldGroup:
 		hint = [][2]string{{"←→", "pick group"}, {"tab/↑↓", "move"}, {"↵", "create"}, {"esc", "cancel"}}
-	case m.form.focus == fieldDir && m.pathSugg.active():
-		hint = pathSuggestHint(m.pathSugg.chosen)
-	case m.form.focus == fieldModel && ch.sugg.open:
+	case d.focus == fieldDir && h.pathSuggestions().active():
+		hint = pathSuggestHint(h.pathSuggestions().chosen)
+	case d.focus == fieldModel && ch.sugg.open:
 		hint = [][2]string{{"type", "filter"}, {"↑↓", "pick"}, {"tab", "fill in"}, {"↵", "create"}, {"esc", "close"}}
-	case m.form.focus == fieldModel:
+	case d.focus == fieldModel:
 		hint = [][2]string{{"type", "filter"}, {"tab/↑↓", "move"}, {"↵", "create"}, {"esc", "cancel"}}
-	case m.form.focus == fieldEffort && m.effortTyped(toolName, ch):
+	case d.focus == fieldEffort && ch.effortTyped(h, toolName):
 		hint = [][2]string{{"type", "level"}, {"tab/↑↓", "move"}, {"↵", "create"}, {"esc", "cancel"}}
-	case m.form.focus == fieldEffort:
+	case d.focus == fieldEffort:
 		hint = [][2]string{{"←→", "level"}, {"tab/↑↓", "move"}, {"↵", "create"}, {"esc", "cancel"}}
 	}
-	return m.card("◆ New Session", strings.TrimRight(b.String(), "\n"), hint)
+	return strings.TrimRight(b.String(), "\n"), hint
 }
 
 func groupBadge(path string) string {
@@ -108,22 +130,6 @@ func pathSuggestHint(chosen bool) [][2]string {
 		return [][2]string{{"↑↓", "pick"}, {"↵/tab", "complete"}, {"esc", "close"}}
 	}
 	return [][2]string{{"↑↓", "pick"}, {"tab", "complete"}, {"↵", "create"}, {"esc", "close"}}
-}
-
-// viewPathSuggestions renders the directory-completion dropdown under
-// a focused path field.
-func (m *Model) viewPathSuggestions() string {
-	var b strings.Builder
-	for i, path := range m.pathSugg.suggestions {
-		marker := "  "
-		style := mutedStyle
-		if i == m.pathSugg.index {
-			marker = lipgloss.NewStyle().Foreground(colorAccent).Render("❯ ")
-			style = lipgloss.NewStyle().Foreground(colorAccent2).Bold(true)
-		}
-		b.WriteString("      " + marker + style.Render(truncateTail(path, 40)) + "\n")
-	}
-	return strings.TrimRight(b.String(), "\n")
 }
 
 func formField(label, value string, focused bool) string {

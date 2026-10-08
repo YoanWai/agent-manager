@@ -45,7 +45,7 @@ func openFormOnClaude(t *testing.T, m *Model) {
 	t.Helper()
 	m.openForm()
 	m.form.toolIndex = slices.Index(m.form.toolNames, "claude")
-	m.form.choice = m.newChoice("claude")
+	m.form.choice = newChoice(m, "claude")
 }
 
 func typeInto(m *Model, text string) {
@@ -63,24 +63,24 @@ func TestFormEffortFollowsTheModel(t *testing.T) {
 	m := buildModel(t)
 	answered(m, claudeLike, claudeAnswer)
 	openFormOnClaude(t, m)
-	if !slices.Contains(m.formFields(), fieldEffort) {
+	if !slices.Contains(m.form.fields(m), fieldEffort) {
 		t.Fatal("the default model's levels should show before any pick")
 	}
-	m.focusFormField(fieldModel)
+	m.form.focusField(m, fieldModel)
 	typeInto(m, "hai")
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyTab})
 	if m.form.choice.model != "haiku" || m.form.choice.filter.Value() != "haiku" {
 		t.Fatalf("tab filled in %q / %q", m.form.choice.model, m.form.choice.filter.Value())
 	}
-	if slices.Contains(m.formFields(), fieldEffort) || strings.Contains(formBody(m), "effort    ") {
+	if slices.Contains(m.form.fields(m), fieldEffort) || strings.Contains(formBody(m), "effort    ") {
 		t.Fatalf("haiku takes no effort, the row should go:\n%s", formBody(m))
 	}
 	m.form.choice.filter.SetValue("")
-	m.pickModel("claude", &m.form.choice, "opus")
-	m.focusFormField(fieldEffort)
+	m.form.choice.pickModel(m, "claude", "opus")
+	m.form.focusField(m, fieldEffort)
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
-	if got := m.choiceEffort("claude", &m.form.choice); got != "medium" {
+	if got := m.form.choice.effortLevel(m, "claude"); got != "medium" {
 		t.Fatalf("effort = %q, want medium", got)
 	}
 	if body := formBody(m); !strings.Contains(body, "effort    ◂ medium ▸ ") {
@@ -115,13 +115,13 @@ func TestFormSpawnsOnTheChoice(t *testing.T) {
 	if want := (config.Choice{Model: "opus", Effort: "high"}); stored.Choice != want {
 		t.Fatalf("choice = %+v, want %+v", stored.Choice, want)
 	}
-	if recent := m.recentModels("claude"); !slices.Equal(recent, []string{"opus"}) {
+	if recent := recentModels(m, "claude"); !slices.Equal(recent, []string{"opus"}) {
 		t.Fatalf("recent = %v", recent)
 	}
 	m.openForm()
 	m.form.toolIndex = slices.Index(m.form.toolNames, "claude")
-	m.form.choice = m.newChoice("claude")
-	list := m.modelSuggestions("claude", &m.form.choice, "")
+	m.form.choice = newChoice(m, "claude")
+	list := m.form.choice.suggestions(m, "claude", "")
 	if len(list) == 0 || !list[0].recent || list[0].model.ID != "opus" {
 		t.Fatalf("the last pick should lead the list: %+v", list)
 	}
@@ -136,7 +136,7 @@ func TestFormSaysWhatACLIDoesNotSupport(t *testing.T) {
 	if !strings.Contains(body, "model     not supported by claude") || !strings.Contains(body, "effort    not supported by claude") {
 		t.Fatalf("form:\n%s", body)
 	}
-	if fields := m.formFields(); slices.Contains(fields, fieldModel) || slices.Contains(fields, fieldEffort) {
+	if fields := m.form.fields(m); slices.Contains(fields, fieldModel) || slices.Contains(fields, fieldEffort) {
 		t.Fatalf("unsupported rows take focus: %v", fields)
 	}
 }
@@ -152,23 +152,23 @@ func TestFormProfileScopesModelsAndTypedEffort(t *testing.T) {
 			Profiles: []catalog.Profile{{Name: "work", Detail: "grok-4.6 · xai-oauth", Models: work}},
 		})
 	openFormOnClaude(t, m)
-	if slices.Contains(m.formFields(), fieldEffort) {
+	if slices.Contains(m.form.fields(m), fieldEffort) {
 		t.Fatal("the active profile's default model does not reason, so no effort row")
 	}
-	m.focusFormField(fieldProfile)
+	m.form.focusField(m, fieldProfile)
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
 	if body := formBody(m); !strings.Contains(body, "profile   ◂ work  grok-4.6 · xai-oauth ▸") {
 		t.Fatalf("profile row:\n%s", body)
 	}
-	m.focusFormField(fieldModel)
+	m.form.focusField(m, fieldModel)
 	typeInto(m, "grok")
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyTab})
-	m.focusFormField(fieldEffort)
+	m.form.focusField(m, fieldEffort)
 	typeInto(m, "high")
 	if body := formBody(m); !strings.Contains(body, "typed · claude lists no levels") {
 		t.Fatalf("typed effort row:\n%s", body)
 	}
-	picked, err := m.launchChoice("claude", &m.form.choice, m.form.choice.filter.Value())
+	picked, err := m.form.choice.launch(m, "claude", m.form.choice.filter.Value())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +213,7 @@ func TestFormClicks(t *testing.T) {
 	}
 	click(at("effort "))
 	click(at("effort "))
-	if got := m.choiceEffort("claude", &m.form.choice); got != "low" {
+	if got := m.form.choice.effortLevel(m, "claude"); got != "low" {
 		t.Fatalf("second click stepped the effort to %q", got)
 	}
 }
@@ -231,7 +231,7 @@ func TestQuickPromptSpawnsOnItsChoice(t *testing.T) {
 	m.selectGroupRow(t, "work")
 	m.openQuickMode()
 	m.quick.toolIndex = slices.Index(m.quick.toolNames, "claude")
-	m.quick.choice = m.newChoice("claude")
+	m.quick.choice = newChoice(m, "claude")
 	ctrl := func(key tea.KeyType) { m.handleQuickKey(tea.KeyMsg{Type: key}) }
 	ctrl(tea.KeyCtrlL)
 	if m.quick.picking != pickModel {
@@ -286,7 +286,7 @@ func TestQuickPromptClicks(t *testing.T) {
 	m.selectGroupRow(t, "work")
 	m.openQuickMode()
 	m.quick.toolIndex = slices.Index(m.quick.toolNames, "claude")
-	m.quick.choice = m.newChoice("claude")
+	m.quick.choice = newChoice(m, "claude")
 	click := func(action, entry int) {
 		t.Helper()
 		preparedView(m)
@@ -328,7 +328,7 @@ func TestCatalogIsReadFromTheKeptAnswer(t *testing.T) {
 	}
 	m.applyCmd(t, cmd)
 	openFormOnClaude(t, m)
-	if list := m.modelSuggestions("claude", &m.form.choice, ""); len(list) != 3 {
+	if list := m.form.choice.suggestions(m, "claude", ""); len(list) != 3 {
 		t.Fatalf("list from the kept answer = %+v", list)
 	}
 }
@@ -343,10 +343,10 @@ func TestFormLaunchesOnDefaultsWhenTheCLIFailsToAnswer(t *testing.T) {
 	if body := formBody(m); !strings.Contains(body, "couldn't read models from claude: app-server") || !strings.Contains(body, "exited (status 1)") {
 		t.Fatalf("form:\n%s", body)
 	}
-	if slices.Contains(m.formFields(), fieldModel) {
+	if slices.Contains(m.form.fields(m), fieldModel) {
 		t.Fatal("a failed answer leaves nothing to pick")
 	}
-	picked, err := m.launchChoice("claude", &m.form.choice, "")
+	picked, err := m.form.choice.launch(m, "claude", "")
 	if err != nil || picked != (config.Choice{}) {
 		t.Fatalf("launch choice = %+v, %v", picked, err)
 	}
@@ -393,7 +393,7 @@ func TestModelListShrinkingUnderTheHighlight(t *testing.T) {
 		m := buildModel(t)
 		answered(m, claudeLike, claudeAnswer)
 		openFormOnClaude(t, m)
-		m.focusFormField(fieldModel)
+		m.form.focusField(m, fieldModel)
 		for range 3 {
 			m.handleFormKey(down)
 		}
@@ -417,12 +417,12 @@ func TestModelListShrinkingUnderTheHighlight(t *testing.T) {
 		m.selectGroupRow(t, "work")
 		m.openQuickMode()
 		m.quick.toolIndex = slices.Index(m.quick.toolNames, "claude")
-		m.quick.choice = m.newChoice("claude")
+		m.quick.choice = newChoice(m, "claude")
 		m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlL})
 		for range 3 {
 			m.handleQuickKey(down)
 		}
-		m.stepQuickProfile()
+		m.quick.stepProfile(m)
 		m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter})
 		if m.quick.choice.model != "grok-4.6" {
 			t.Fatalf("picked %q", m.quick.choice.model)
@@ -448,7 +448,7 @@ func TestQuickModelSheetFitsTheColumn(t *testing.T) {
 	m.selectGroupRow(t, "work")
 	m.openQuickMode()
 	m.quick.toolIndex = slices.Index(m.quick.toolNames, "claude")
-	m.quick.choice = m.newChoice("claude")
+	m.quick.choice = newChoice(m, "claude")
 	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlL})
 	if m.fullRows() {
 		t.Fatal("80 columns should give the split")
@@ -468,7 +468,7 @@ func TestQuickModelSheetFitsTheColumn(t *testing.T) {
 			last = hit
 		}
 	}
-	want := m.modelSuggestions("claude", &m.quick.choice, "")[last.entry].model.ID
+	want := m.quick.choice.suggestions(m, "claude", "")[last.entry].model.ID
 	m.handleMouseEvent(tea.MouseMsg{X: m.quick.originX + last.x0, Y: m.quick.originY + last.line, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
 	if m.quick.choice.model != want {
 		t.Fatalf("a click on the list's last entry picked %q, want %q", m.quick.choice.model, want)
@@ -485,7 +485,7 @@ func TestFormModelListScrollsThroughEveryModel(t *testing.T) {
 	}
 	answered(m, claudeLike, catalog.Catalog{Models: models})
 	openFormOnClaude(t, m)
-	m.focusFormField(fieldModel)
+	m.form.focusField(m, fieldModel)
 	for i := range models {
 		m.handleFormKey(tea.KeyMsg{Type: tea.KeyDown})
 		body := formBody(m)
@@ -561,14 +561,14 @@ func TestFormModelListOpensOnEveryModelWithThePickHighlighted(t *testing.T) {
 	m := buildModel(t)
 	answered(m, claudeLike, claudeAnswer)
 	openFormOnClaude(t, m)
-	m.focusFormField(fieldModel)
+	m.form.focusField(m, fieldModel)
 	typeInto(m, "opus")
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyTab})
 	if m.form.choice.model != "opus" {
 		t.Fatalf("picked %q", m.form.choice.model)
 	}
-	m.focusFormField(fieldDir)
-	m.focusFormField(fieldModel)
+	m.form.focusField(m, fieldDir)
+	m.form.focusField(m, fieldModel)
 	body := formBody(m)
 	for _, model := range claudeAnswer.Models {
 		if !strings.Contains(body, model.ID) {
@@ -598,9 +598,9 @@ func TestQuickFooterKeepsShiftTabBesideTab(t *testing.T) {
 	m.selectGroupRow(t, "work")
 	m.openQuickMode()
 	m.quick.toolIndex = slices.Index(m.quick.toolNames, "claude")
-	m.quick.choice = m.newChoice("claude")
+	m.quick.choice = newChoice(m, "claude")
 	var keys []string
-	for _, pair := range m.quickLegend() {
+	for _, pair := range m.quick.legend(m) {
 		keys = append(keys, pair[0])
 	}
 	tab := slices.Index(keys, "tab")
@@ -618,7 +618,7 @@ func TestModelListListsARecentPickOnce(t *testing.T) {
 	openFormOnClaude(t, m)
 	m.form.choice.recent = []string{"grok-4.6"}
 	var keys []string
-	for _, entry := range m.modelSuggestions("claude", &m.form.choice, "") {
+	for _, entry := range m.form.choice.suggestions(m, "claude", "") {
 		keys = append(keys, entry.model.Key())
 	}
 	if !slices.Equal(keys, []string{"xai-oauth:grok-4.6", "anthropic:claude-opus-5"}) {
@@ -637,11 +637,11 @@ func TestQuickSheetStepsEffortAndHandsThePromptBack(t *testing.T) {
 	m.selectGroupRow(t, "work")
 	m.openQuickMode()
 	m.quick.toolIndex = slices.Index(m.quick.toolNames, "claude")
-	m.quick.choice = m.newChoice("claude")
+	m.quick.choice = newChoice(m, "claude")
 	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlL})
 	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlX})
-	if m.quick.picking != pickModel || m.choiceEffort("claude", &m.quick.choice) != "low" {
-		t.Fatalf("picking %d effort %q", m.quick.picking, m.choiceEffort("claude", &m.quick.choice))
+	if m.quick.picking != pickModel || m.quick.choice.effortLevel(m, "claude") != "low" {
+		t.Fatalf("picking %d effort %q", m.quick.picking, m.quick.choice.effortLevel(m, "claude"))
 	}
 	if sheet := ansi.Strip(m.viewQuickBar(120, 20)); !strings.Contains(sheet, "model for work") || !strings.HasSuffix(strings.TrimRight(sheet, " "), "low · ⎇ no repo") {
 		t.Fatalf("sheet:\n%s", sheet)
@@ -659,22 +659,22 @@ func TestChoiceIsKeptPerCLI(t *testing.T) {
 		m := buildModel(t)
 		answered(m, claudeLike, claudeAnswer)
 		openFormOnClaude(t, m)
-		m.focusFormField(fieldModel)
+		m.form.focusField(m, fieldModel)
 		typeInto(m, "opus")
 		m.handleFormKey(tea.KeyMsg{Type: tea.KeyTab})
-		m.focusFormField(fieldEffort)
+		m.form.focusField(m, fieldEffort)
 		m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
 		m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
 		m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
 		m.handleFormKey(tea.KeyMsg{Type: tea.KeyEsc})
 		openFormOnClaude(t, m)
-		if got := m.currentChoice("claude", &m.form.choice); got != (config.Choice{Model: "opus", Effort: "high"}) {
+		if got := m.form.choice.current(m, "claude"); got != (config.Choice{Model: "opus", Effort: "high"}) {
 			t.Fatalf("reopened form choice = %+v", got)
 		}
 		if m.form.choice.filter.Value() != "opus" {
 			t.Fatalf("model field shows %q", m.form.choice.filter.Value())
 		}
-		if other := m.newChoice("command-code"); other.model != "" || other.saved != nil {
+		if other := newChoice(m, "command-code"); other.model != "" || other.saved != nil {
 			t.Fatalf("another CLI picked up claude's choice: %+v", other)
 		}
 	})
@@ -688,7 +688,7 @@ func TestChoiceIsKeptPerCLI(t *testing.T) {
 		m.selectGroupRow(t, "work")
 		m.openQuickMode()
 		m.quick.toolIndex = slices.Index(m.quick.toolNames, "claude")
-		m.quick.choice = m.newChoice("claude")
+		m.quick.choice = newChoice(m, "claude")
 		m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlL})
 		for _, r := range "opus" {
 			m.handleQuickKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
@@ -698,7 +698,7 @@ func TestChoiceIsKeptPerCLI(t *testing.T) {
 		m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEsc})
 		m.openQuickMode()
 		m.quick.toolIndex = slices.Index(m.quick.toolNames, "claude")
-		m.quick.choice = m.newChoice("claude")
+		m.quick.choice = newChoice(m, "claude")
 		if target := strings.Split(ansi.Strip(m.viewQuickBar(120, quickBarMaxRows)), "\n")[0]; !strings.Contains(target, "claude · opus · low") {
 			t.Fatalf("reopened bar: %s", target)
 		}
@@ -713,7 +713,7 @@ func TestChoiceIsKeptPerCLI(t *testing.T) {
 			t.Fatal("placed a model before the CLI answered")
 		}
 		m.handleCatalog(catalogMsg{tool: "claude", cat: claudeAnswer})
-		if got := m.currentChoice("claude", &m.form.choice); got != (config.Choice{Model: "opus", Effort: "medium"}) {
+		if got := m.form.choice.current(m, "claude"); got != (config.Choice{Model: "opus", Effort: "medium"}) {
 			t.Fatalf("choice once answered = %+v", got)
 		}
 	})
@@ -730,7 +730,7 @@ func TestQuickStatusRowLeavesOutWhatACLICannotPick(t *testing.T) {
 	m.selectGroupRow(t, "work")
 	m.openQuickMode()
 	m.quick.toolIndex = slices.Index(m.quick.toolNames, "command-code")
-	m.quick.choice = m.newChoice("command-code")
+	m.quick.choice = newChoice(m, "command-code")
 	target := strings.Split(ansi.Strip(m.viewQuickBar(120, quickBarMaxRows)), "\n")[0]
 	if !strings.HasSuffix(strings.TrimRight(target, " "), "command-code · ⎇ no repo") || strings.Contains(target, "not supported") {
 		t.Fatalf("target row: %s", target)
@@ -748,4 +748,67 @@ func keepSetting(t *testing.T, m *Model, key, value string) {
 		t.Fatal(err)
 	}
 	m.settings.cache.applyValues([]settingValue{{key: key, value: value}})
+}
+
+// fakeChoiceHost answers a choice, and the features built on one, without
+// a root model: the tool flags, the catalog answer and the settings cache
+// are plain maps, and the status bar is a list.
+type fakeChoiceHost struct {
+	tools    map[string]config.Tool
+	catalogs map[string]*catalogState
+	settings map[string]string
+	errs     []string
+	cleared  int
+}
+
+func newFakeChoiceHost() *fakeChoiceHost {
+	return &fakeChoiceHost{
+		tools:    map[string]config.Tool{"claude": claudeLike},
+		catalogs: map[string]*catalogState{"claude": {cat: claudeAnswer, loaded: true}},
+		settings: map[string]string{},
+	}
+}
+
+func (h *fakeChoiceHost) choiceTool(toolName string) config.Tool { return h.tools[toolName] }
+
+func (h *fakeChoiceHost) choiceCatalog(toolName string) *catalogState { return h.catalogs[toolName] }
+
+func (h *fakeChoiceHost) choiceSetting(key string) string { return h.settings[key] }
+
+func (h *fakeChoiceHost) saveChoiceSetting(key, value string) { h.settings[key] = value }
+
+func (h *fakeChoiceHost) reportErr(text string) { h.errs = append(h.errs, text) }
+
+func (h *fakeChoiceHost) clearErr() { h.cleared++ }
+
+// A choice restores, keeps and remembers through its host alone.
+func TestChoiceThroughAFakeHost(t *testing.T) {
+	h := newFakeChoiceHost()
+	h.settings[savedChoiceKey("claude")] = `{"Model":"opus","Effort":"high"}`
+	ch := newChoice(h, "claude")
+	if got := ch.current(h, "claude"); got != (config.Choice{Model: "opus", Effort: "high"}) {
+		t.Fatalf("restored choice = %+v", got)
+	}
+	ch.pickModel(h, "claude", "default")
+	if got := ch.effortLevel(h, "claude"); got != "high" {
+		t.Fatalf("a model offering the same level kept %q", got)
+	}
+	if saved := savedChoice(h, "claude"); saved == nil || saved.Model != "default" {
+		t.Fatalf("the pick was not kept: %+v", saved)
+	}
+	ch.pickModel(h, "claude", "haiku")
+	if _, shown, _ := ch.effortRow(h, "claude"); shown || ch.effortLevel(h, "claude") != "" {
+		t.Fatal("haiku lists no levels, so no effort should show")
+	}
+	rememberModel(h, "claude", config.Choice{Model: "opus"})
+	if recent := recentModels(h, "claude"); !slices.Equal(recent, []string{"opus"}) {
+		t.Fatalf("recent = %v", recent)
+	}
+	if _, err := ch.launch(h, "claude", "nope"); err == nil {
+		t.Fatal("a model the CLI does not list launched")
+	}
+	h.settings[recentModelsKey("claude")] = "{"
+	if recentModels(h, "claude") != nil || len(h.errs) != 1 {
+		t.Fatalf("an unreadable setting should report once: %v", h.errs)
+	}
 }
