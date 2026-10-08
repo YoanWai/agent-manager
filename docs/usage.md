@@ -304,6 +304,8 @@ agent-manager spawn --tool claude --group "Sprint Manager" --worktree \
 
 `send <session-id> "<message>" --from <name>` queues a message from a sender with no session on this machine, such as an agent on another machine sending over SSH. The name is up to 64 bytes with no control characters, and `--from` is refused from inside a session, which sends as itself. The delivered message names the sender as being on another machine and says a reply cannot reach it.
 
+Queued messages, status and after-turn archives and kills move only while a manager runs. `agent-manager serve` runs one with no screen, on a machine where nobody keeps the TUI open, until it is interrupted or sent SIGTERM. `serve --background` starts that manager detached, with its output appended to `serve.log` in the profile directory, unless one is already running, and prints `{"started":true,"pid":N}` or `{"started":false}`. It runs on macOS and Linux.
+
 The MCP tools always act as the session that runs them, since several CLIs keep the server registered for their runs outside Agent Manager too.
 
 ### Bugs and ideas

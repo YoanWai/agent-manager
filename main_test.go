@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/cli"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/tmux"
@@ -362,5 +363,29 @@ func TestCallerSessionOutsideTmuxLeavesTheCommandToExplainIt(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %q does not mention %q", err, want)
 		}
+	}
+}
+
+// The SSH client runs `serve --background` with no --json and reads the
+// line it prints as JSON.
+func TestServeBackgroundPrintsWhetherItStartedOne(t *testing.T) {
+	var args []string
+	start := func(given []string, _ string) (int, error) { args = given; return 4242, nil }
+	out := &bytes.Buffer{}
+	if err := runServe(out, &bytes.Buffer{}, []string{"--background"}, t.TempDir(), start); err != nil {
+		t.Fatalf("serve --background: %v", err)
+	}
+	if got := out.String(); got != `{"started":true,"pid":4242}`+"\n" {
+		t.Fatalf("serve --background printed %q", got)
+	}
+	if strings.Join(args, " ") != "serve" {
+		t.Fatalf("started %v", args)
+	}
+	if err := runServe(&bytes.Buffer{}, &bytes.Buffer{}, []string{"--background", "extra"}, t.TempDir(), start); err == nil ||
+		!strings.Contains(err.Error(), "usage: agent-manager serve [--background]") {
+		t.Fatalf("serve with an operand = %v", err)
+	}
+	if err := runServe(&bytes.Buffer{}, &bytes.Buffer{}, []string{"-h"}, t.TempDir(), start); !errors.Is(err, cli.ErrUsageShown) {
+		t.Fatalf("serve -h = %v", err)
 	}
 }

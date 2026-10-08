@@ -2,15 +2,19 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/app"
 	"github.com/YoanWai/agent-manager/internal/catalog"
@@ -121,6 +125,13 @@ func subcommands() map[string]func(args []string) error {
 				return mcpserver.RunWithBackend(configDir, caller(), version, backend)
 			})
 		}),
+		"serve": func(args []string) error {
+			dir, err := config.Dir()
+			if err != nil {
+				return err
+			}
+			return runServe(os.Stdout, os.Stderr, args, dir, app.StartDetached)
+		},
 	}
 	for name := range cli.Commands(version) {
 		table[name] = withConfigDir(func(args []string, caller func() string, configDir string) error {
@@ -130,6 +141,48 @@ func subcommands() map[string]func(args []string) error {
 		})
 	}
 	return table
+}
+
+const usageServe = "serve [--background]"
+
+// runServe runs a manager with no TUI, for a host reached over SSH where
+// nobody keeps one open: it delivers queued messages, tracks status and
+// carries out after-turn archives and kills.
+func runServe(out, errs io.Writer, args []string, dir string, start app.Starter) error {
+	set := flag.NewFlagSet(usageServe, flag.ContinueOnError)
+	set.SetOutput(io.Discard)
+	background := set.Bool("background", false, "start a detached manager unless one is already running, print {\"started\":bool,\"pid\":N} and return at once")
+	if err := set.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			fmt.Fprintln(out, "usage: agent-manager "+usageServe)
+			set.SetOutput(out)
+			set.PrintDefaults()
+			return cli.ErrUsageShown
+		}
+		return fmt.Errorf("%w; usage: agent-manager %s", err, usageServe)
+	}
+	if set.NArg() != 0 {
+		return fmt.Errorf("usage: agent-manager %s", usageServe)
+	}
+	if *background {
+		started, err := app.ServeBackground(dir, time.Now(), start)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(out).Encode(started)
+	}
+	driver, err := tmux.New()
+	if err != nil {
+		return err
+	}
+	local, err := app.OpenLocal(dir, driver)
+	if err != nil {
+		return err
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	local.Serve(ctx, errs)
+	return local.Close()
 }
 
 func withBackend(configDir string, command func(*sessioncmd.Backend) error) (err error) {
