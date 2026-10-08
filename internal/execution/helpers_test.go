@@ -2,22 +2,25 @@ package execution
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/launch"
+	"github.com/YoanWai/agent-manager/internal/notify"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/google/uuid"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"strings"
-	"testing"
-	"time"
 )
 
 const testSocket = "amexectest"
@@ -411,4 +414,94 @@ func waitForPane(t *testing.T, m *harness, id, marker string) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+}
+
+// settledPane waits for the pane to hold every marker and stop changing.
+// The markers come from the tty echo of what was pasted; the fixture tools
+// consume their input and print only a fresh prompt.
+func settledPane(t *testing.T, m *harness, sessionID string, markers ...string) string {
+	t.Helper()
+	// Two waits, not one. A paste still landing resets the quiet run, so
+	// requiring the markers and the quiet in the same capture can burn
+	// the whole deadline on a loaded runner: first wait for every marker
+	// to have rendered, then for the pane to stop changing.
+	deadline := time.Now().Add(60 * time.Second)
+	var previous string
+	for {
+		pane, err := m.tmux.CapturePane(sessionID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		previous = pane
+		if containsAll(pane, markers) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("pane never showed %v:\n%s", markers, previous)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	// The quiet run gets its own budget: markers rendering can eat most
+	// of the first deadline on a loaded runner, and the few captures the
+	// settle needs should not have to fit in whatever is left.
+	settleDeadline := time.Now().Add(20 * time.Second)
+	repeats := 0
+	for time.Now().Before(settleDeadline) {
+		pane, err := m.tmux.CapturePane(sessionID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if pane == previous {
+			repeats++
+		} else {
+			repeats = 0
+		}
+		previous = pane
+		if repeats >= 3 {
+			if !containsAll(previous, markers) {
+				t.Fatalf("pane settled without %v:\n%s", markers, previous)
+			}
+			return previous
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("pane never settled holding %v:\n%s", markers, previous)
+	return ""
+}
+
+// The envelope wraps at the pane width, and tmux wraps without inserting
+// anything, so the unwrapped text is the joined rows.
+func containsAll(pane string, markers []string) bool {
+	flat := strings.ReplaceAll(pane, "\n", "")
+	for _, marker := range markers {
+		if !strings.Contains(flat, marker) {
+			return false
+		}
+	}
+	return true
+}
+
+type notifyRecorder struct {
+	mu    sync.Mutex
+	calls []notify.Event
+}
+
+func (r *notifyRecorder) fn() func(notify.Event) {
+	return func(event notify.Event) {
+		r.mu.Lock()
+		r.calls = append(r.calls, event)
+		r.mu.Unlock()
+	}
+}
+
+func (r *notifyRecorder) all() []notify.Event {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]notify.Event(nil), r.calls...)
+}
+
+// settle gives a delivery that should NOT happen a window to arrive before
+// asserting the recorder stayed empty.
+func settle() {
+	time.Sleep(100 * time.Millisecond)
 }

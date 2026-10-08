@@ -1,6 +1,7 @@
 package execution
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -18,7 +19,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
-
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -1972,5 +1972,71 @@ func TestAnEndAfterTheTurnWaitsForTheSessionToRest(t *testing.T) {
 	}
 	if got, _ := p.store.Get(sess.ID); got.AfterTurn != store.AfterTurnKill {
 		t.Fatalf("reporting the end cleared the request before the manager acted: %q", got.AfterTurn)
+	}
+}
+
+type recordingInboxOwner struct {
+	calls int
+	err   error
+}
+
+func (owner *recordingInboxOwner) MaintainInbox() error {
+	owner.calls++
+	return owner.err
+}
+
+func TestPollerRoutesInboxMaintenanceAtExistingCadence(t *testing.T) {
+	m := buildModel(t)
+	owner := &recordingInboxOwner{}
+	m.poller.inboxOwner = owner
+	for _, tick := range []int{0, 1, inboxPruneEvery} {
+		m.poller.tick = tick
+		if msg, failed := testPollMessage(m.poller.Step()).(errMsg); failed {
+			t.Fatal(msg.err)
+		}
+	}
+	if owner.calls != 2 {
+		t.Fatalf("maintenance calls = %d, want 2", owner.calls)
+	}
+}
+
+func TestPollerOwnerFailureDoesNotPruneLocally(t *testing.T) {
+	m := buildModel(t)
+	old := time.Now().Add(-48 * time.Hour)
+	id, err := m.store.Enqueue(store.InboxMessage{SessionID: "beef", SenderID: "cafe", Body: "expired", Fingerprint: "expired", SentAt: old}, store.DefaultInboxLimits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	finishInboxForTest(t, m.store, id, store.DeliveryConfirmed, old)
+	want := errors.New("owner unavailable")
+	m.poller.inboxOwner = &recordingInboxOwner{err: want}
+	msg, failed := testPollMessage(m.poller.Step()).(errMsg)
+	if !failed || !errors.Is(msg.err, want) {
+		t.Fatalf("refresh = %+v", msg)
+	}
+	if _, err := m.store.Message(id, "cafe"); err != nil {
+		t.Fatalf("local fallback pruned message: %v", err)
+	}
+}
+
+func TestStoppedReflowReportsUnexecutedWork(t *testing.T) {
+	runner := &Runner{stopped: true}
+	ran := false
+	if err := runner.ReflowSessions(nil, func() { ran = true }); err == nil {
+		t.Fatal("stopped reflow reported success")
+	}
+	if ran {
+		t.Fatal("stopped runner executed work")
+	}
+}
+
+func TestEmptyReflowStillExecutesGroupWork(t *testing.T) {
+	runner := &Runner{}
+	ran := false
+	if err := runner.ReflowSessions(nil, func() { ran = true }); err != nil {
+		t.Fatal(err)
+	}
+	if !ran {
+		t.Fatal("empty group work was skipped")
 	}
 }

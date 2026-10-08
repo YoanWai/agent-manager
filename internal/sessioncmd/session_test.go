@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
-
 	"github.com/YoanWai/agent-manager/internal/catalog"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/git"
+	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
@@ -297,5 +297,28 @@ func TestSessionsWithNoCallerListAndReadButStillRefuseToMessage(t *testing.T) {
 	}
 	if _, err := h.sessions.Kill("", h.caller.ID); err == nil || !strings.Contains(err.Error(), "not inside an Agent Manager session") {
 		t.Fatalf("Kill with no caller = %v, want the missing caller named", err)
+	}
+}
+
+func harnessRuntime(t *testing.T, h *sessionHarness) Runtime {
+	t.Helper()
+	cfg, err := h.sessions.loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return Runtime{
+		Config:   cfg,
+		Store:    h.store,
+		Driver:   h.driver,
+		Hooks:    hooks.NewManager(h.sessions.configDir),
+		Snapshot: h.store.SetSnapshot,
+	}
+}
+
+func TestSessionInfoExposesPendingInputUncertainty(t *testing.T) {
+	r := &runtime{}
+	got := r.sessionInfo(store.Session{ID: "target", PendingInputOutcome: store.DeliveryUncertain}, false, false)
+	if got.PendingInputOutcome != "uncertain" {
+		t.Fatalf("queued-input receipt hidden: %+v", got)
 	}
 }

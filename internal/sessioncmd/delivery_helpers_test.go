@@ -3,9 +3,9 @@ package sessioncmd
 import (
 	"context"
 	"fmt"
-	"github.com/YoanWai/agent-manager/internal/store"
-	"testing"
 	"time"
+
+	"github.com/YoanWai/agent-manager/internal/store"
 )
 
 func finishMessageFixture(st *store.Store, outcome store.DeliveryOutcome, id int64, at time.Time) error {
@@ -26,12 +26,4 @@ func finishMessageFixture(st *store.Store, outcome store.DeliveryOutcome, id int
 		return fmt.Errorf("fixture delivery guard busy")
 	}
 	return nil
-}
-
-func TestSessionInfoExposesPendingInputUncertainty(t *testing.T) {
-	r := &runtime{}
-	got := r.sessionInfo(store.Session{ID: "target", PendingInputOutcome: store.DeliveryUncertain}, false, false)
-	if got.PendingInputOutcome != "uncertain" {
-		t.Fatalf("queued-input receipt hidden: %+v", got)
-	}
 }

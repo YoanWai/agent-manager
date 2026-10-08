@@ -3,7 +3,6 @@ package execution
 import (
 	"os"
 	"path/filepath"
-	"sync"
 	"testing"
 	"time"
 
@@ -11,25 +10,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 )
-
-type notifyRecorder struct {
-	mu    sync.Mutex
-	calls []notify.Event
-}
-
-func (r *notifyRecorder) fn() func(notify.Event) {
-	return func(event notify.Event) {
-		r.mu.Lock()
-		r.calls = append(r.calls, event)
-		r.mu.Unlock()
-	}
-}
-
-func (r *notifyRecorder) all() []notify.Event {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return append([]notify.Event(nil), r.calls...)
-}
 
 // waitForCalls blocks until n notifications have landed. Delivery runs off
 // the refresh path, so assertions have to give it a moment.
@@ -46,12 +26,6 @@ func waitForCalls(t *testing.T, rec *notifyRecorder, n int) []notify.Event {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-}
-
-// settle gives a delivery that should NOT happen a window to arrive before
-// asserting the recorder stayed empty.
-func settle() {
-	time.Sleep(100 * time.Millisecond)
 }
 
 func newNotifyTestPoller(t *testing.T) (*Runner, store.Session, *notifyRecorder) {

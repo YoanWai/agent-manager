@@ -105,3 +105,42 @@ func TestBorrowedBackendReadsCoordinationFromItsStore(t *testing.T) {
 		t.Fatalf("stored coordination = %v, %v; want proactive", proactive, err)
 	}
 }
+
+func TestBorrowBackendKeepsItsStoreOpenAndFailsClosed(t *testing.T) {
+	h := newSessionHarness(t)
+	backend, err := BorrowBackend(harnessRuntime(t, h))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cli := NewSessionsWithBackend(backend, CLIVocabulary())
+	mcp := NewSessionsWithBackend(backend, MCPVocabulary())
+
+	for name, tc := range map[string]struct {
+		sessions *Sessions
+		want     string
+	}{
+		"cli": {sessions: cli, want: CLIVocabulary().ListSessions},
+		"mcp": {sessions: mcp, want: MCPVocabulary().ListSessions},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := tc.sessions.Read(h.caller.ID, ""); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("target error = %v, want vocabulary %q", err, tc.want)
+			}
+		})
+	}
+	if _, err := cli.List(h.caller.ID); err != nil {
+		t.Fatalf("first command: %v", err)
+	}
+	if _, err := mcp.List(h.caller.ID); err != nil {
+		t.Fatalf("second command reused a closed store: %v", err)
+	}
+	if err := backend.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.store.ListSessions(true); err != nil {
+		t.Fatalf("closing a borrowed backend closed its store: %v", err)
+	}
+	if _, err := cli.List(h.caller.ID); err == nil || !strings.Contains(err.Error(), "backend is closed") {
+		t.Fatalf("command after close = %v", err)
+	}
+}
