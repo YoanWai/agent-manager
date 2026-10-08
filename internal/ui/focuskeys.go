@@ -382,6 +382,8 @@ func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.Paste {
 		if err := pasteFocused(m.tmux, sess.ID, string(msg.Runes)); err != nil {
 			m.errBar.text = err.Error()
+		} else if m.focus != nil {
+			m.focus.inputSent(sess.ID)
 		}
 		return m, resume
 	}
@@ -402,6 +404,9 @@ func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.focus.retryNow()
 			m.watchSelection()
 		}
+	}
+	if m.focus != nil {
+		m.focus.inputSent(sess.ID)
 	}
 	return m, resume
 }

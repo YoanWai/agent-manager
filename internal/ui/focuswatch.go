@@ -51,6 +51,7 @@ type focusWatch struct {
 	mu      sync.Mutex
 	id      string
 	stop    chan struct{}
+	input   chan struct{}
 	control *tmux.Control
 	// failedID/failedAt back off reopening a session whose client just
 	// died. Selection sync retries every poll pass, and without the pause
@@ -91,9 +92,23 @@ func (w *focusWatch) setFocus(id string) {
 		return
 	}
 	stop := make(chan struct{})
+	input := make(chan struct{}, 1)
 	w.stop = stop
+	w.input = input
 	w.mu.Unlock()
-	go w.watch(id, stop)
+	go w.watch(id, stop, input)
+}
+
+func (w *focusWatch) inputSent(id string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.id != id {
+		return
+	}
+	select {
+	case w.input <- struct{}{}:
+	default:
+	}
 }
 
 // Close stops the current watcher; its control client detaches on its
@@ -180,6 +195,7 @@ func (w *focusWatch) stopLocked() {
 		close(w.stop)
 		w.stop = nil
 	}
+	w.input = nil
 	// The stopped watcher's client is not ours to report or use anymore.
 	// Left in place until its goroutine unwound, serving() would claim a
 	// session nothing streams yet and freeze its preview on the old frame.
@@ -209,7 +225,7 @@ func (w *focusWatch) retryNow() {
 	w.mu.Unlock()
 }
 
-func (w *focusWatch) watch(id string, stop chan struct{}) {
+func (w *focusWatch) watch(id string, stop, input chan struct{}) {
 	if !w.driver.Exists(id) {
 		w.clearIfCurrent(id, stop)
 		return
@@ -269,7 +285,9 @@ func (w *focusWatch) watch(id string, stop chan struct{}) {
 		w.clearIfCurrent(id, stop)
 		return
 	}
-	nextCapture := time.Now()
+	lastCapture := time.Now()
+	nextCapture := lastCapture.Add(focusCaptureGap)
+	var inputUntil time.Time
 	for {
 		select {
 		case <-stop:
@@ -283,8 +301,27 @@ func (w *focusWatch) watch(id string, stop chan struct{}) {
 			w.report(stop, lost)
 			return
 		case <-control.Events():
+		case <-input:
+			inputUntil = time.Now().Add(focusFrameBudget)
 		}
-		time.Sleep(time.Until(nextCapture))
+		captureAt := nextCapture
+		// Echo may arrive after a streaming paint or a cursor-only update.
+		if time.Now().Before(inputUntil) {
+			captureAt = lastCapture.Add(focusCaptureGap)
+		}
+		for wait := time.Until(captureAt); wait > 0; wait = time.Until(captureAt) {
+			timer := time.NewTimer(wait)
+			select {
+			case <-stop:
+				timer.Stop()
+				return
+			case <-input:
+				inputUntil = time.Now().Add(focusFrameBudget)
+				captureAt = lastCapture.Add(focusCaptureGap)
+			case <-timer.C:
+			}
+			timer.Stop()
+		}
 		for {
 			select {
 			case <-control.Events():
@@ -305,7 +342,8 @@ func (w *focusWatch) watch(id string, stop chan struct{}) {
 			gap = focusFrameBudget
 		}
 		previous = pane
-		nextCapture = time.Now().Add(gap)
+		lastCapture = time.Now()
+		nextCapture = lastCapture.Add(gap)
 	}
 }
 

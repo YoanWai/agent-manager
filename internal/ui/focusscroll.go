@@ -179,6 +179,11 @@ func (m *Model) forwardFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.sendFocusReport(report)
+	if msg.Action != tea.MouseActionMotion {
+		if sess, ok := m.selected(); ok && m.focus != nil {
+			m.focus.inputSent(sess.ID)
+		}
+	}
 	return m, nil
 }
 

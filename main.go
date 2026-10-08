@@ -231,6 +231,7 @@ func run() error {
 	// cleared too: a crashed earlier run can leave it set.
 	program := tea.NewProgram(model,
 		tea.WithAltScreen(),
+		tea.WithFPS(120),
 		tea.WithMouseCellMotion(),
 		tea.WithOutput(model.CursorOutput(os.Stdout)),
 	)
