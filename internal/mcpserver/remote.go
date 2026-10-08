@@ -298,8 +298,14 @@ func (h *remoteHosts) send(ctx context.Context, ref remote.Ref, message string) 
 	if err != nil {
 		return "", sessioncmd.SendResult{}, err
 	}
-	text := sessioncmd.FormatSendResult(result, ref.String()) +
-		"; message_status follows messages to this host's sessions only, so call read_session on " + ref.String() + " to see what the agent did with it"
+	// The id is the remote host's own; handed to this host's message_status
+	// it would name another message, so it never leaves this function.
+	result.MessageID = 0
+	text := fmt.Sprintf("queued a message for session %s at position %d", ref, result.QueuePosition)
+	if !result.ManagerAwake {
+		text += "; no manager is running on " + ref.Host + " yet, so it waits until one starts"
+	}
+	text += "; message_status follows messages to this host's sessions only, so call read_session on " + ref.String() + " to see what the agent did with it"
 	return text, result, nil
 }
 
