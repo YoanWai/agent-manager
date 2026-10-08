@@ -38,7 +38,7 @@ These are future application rules. Current UI observations and PR #1 fixture wo
 
 ## Extract feature packages from concern families
 
-Keep root composition and adapters in `ui`. Move a feature into a child package when its context and outcomes are narrow enough to enforce ownership. Help, Review, Focus, and Rail now have private child models and [explicit package contracts](ui-feature-packages.md). Root adapters retain concrete effects and cross-feature navigation. Other dialogs remain root concern families until their dependencies meet the same conditions.
+Keep root composition and adapters in `ui`. Move a feature into a child package when its context and outcomes are narrow enough to enforce ownership. Help, Review, Focus, and Rail now have private child models and [explicit package contracts](ui-feature-packages.md). Root adapters retain concrete effects and cross-feature navigation. Features that stay in `ui` are types with narrow hosts ([root feature types](ui-feature-packages.md#root-feature-types)); one moves to a child package when its dependencies meet the same conditions.
 
 | Concern | File family | Acceptance condition |
 | --- | --- | --- |

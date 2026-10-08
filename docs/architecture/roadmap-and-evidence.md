@@ -10,11 +10,11 @@ The initial application-boundary audit used implementation commit `c7a7e8247190f
 | Explicit local composition and borrowed resource lifetime | Implemented in this slice | [app](../../internal/app), [backend](../../internal/sessioncmd/backend.go), [main](../../main.go) |
 | Shared lifecycle with explicit actor and failure policies | Implemented in this slice | [lifecycle](../../internal/sessioncmd/lifecycle.go), [contract tests](../../internal/sessioncmd/backend_lifecycle_test.go), [UI executor](../../internal/ui/effect_lifecycle.go) |
 | Immediate reconciliation of partial lifecycle effects | Implemented for human lifecycle | [Typed completion reconciliation](../../internal/ui/effect_lifecycle.go) applies durable rows/groups before errors; row restoration and ancestor flags commit atomically. Pane effects remain distinct from membership |
-| Feature-owned UI behavior and narrow contracts | Partial across the whole UI | [Help, Review, Focus, and Rail](ui-feature-packages.md) own policy behind private models and typed value contracts. Other dialogs remain root methods; [services](../../internal/ui/model_services.go) stays in root composition |
+| Feature-owned UI behavior and narrow contracts | Implemented | [Help, Review, Focus, and Rail](ui-feature-packages.md) own policy behind private models and typed value contracts. Settings, the New Session and New Group forms, quick bar, choice, path completion, composers, rename, move, fork, confirm, launch hint, notices and the repo picker are [root feature types](ui-feature-packages.md#root-feature-types) behind narrow hosts; [services](../../internal/ui/model_services.go) stays in root composition |
 | UI feature packages and directory boundaries | Implemented for these four features | [Feature contracts](ui-feature-packages.md), [pure review data](review-data.md), and a [transitive production dependency check](../../tools/architecture/check-ui-boundaries) reject root and runtime imports |
 | Repeatable process and TUI end-to-end coverage | Partial | The [committed harness](../../tools/e2e/README.md) exercises Help, Review, Focus, Rail, spawn/group/move/rename/settings/fork, partial settings saves, fixture installation failure/retry, accepted-write quit drain and clean exit. Released CLI/MCP and task contracts have separate disposable matrices; separate-process headless observations and representative extension backlog are covered; installed extensions and the full product matrix remain follow-ups |
 | Nonblocking Update and read-only View | Partial | [Frame preparation](../../internal/ui/model_view.go) runs after dispatch; View only reads the prepared string. [Captured typed commands](ui-effects.md) run lifecycle, Rail, geometry, attach, spawn/fork/group, rename/move, settings/keybinding persistence, Review mutations and Focus/acknowledgment/detach outside Update. The follow-up also captures picker/path/worktree preflights, raw keys/mouse/paste, installer start/settle, selected-session quick sends, Review preference/picker reads and base writes, notice/split persistence, and editor discovery; final combined and hosted acceptance are tracked separately |
-| Files organized by concern and source-adjacent tests throughout | Partial | Execution, sessioncmd, and UI concern families are implemented. Status classification/transcript/region/composer taxonomy is implemented with source equivalence. Delivery and bounded process ownership have source-adjacent store/tmux files; further taxonomy is incremental; file moves do not establish feature ownership |
+| Files organized by concern and source-adjacent tests throughout | Implemented | Execution, sessioncmd, and UI concern families are implemented. [check-test-names](../../tools/architecture/check-test-names) fails on a test file not named after its source; four cross-source tests are listed with reasons. Status classification/transcript/region/composer taxonomy is implemented with source equivalence. Delivery and bounded process ownership have source-adjacent store/tmux files; further taxonomy is incremental; file moves do not establish feature ownership |
 | Production controller workspace and remote adapter | Deferred | Saved connections and SSH remain historical PR #1 experiments |
 | Automatic delivery authority and historical writer cutover | Implemented for cooperating local owners; offline cutover required | [Delivery guard and token receipts](delivery-ownership.md) span automatic inbox/pending transport. Historical admission is refused after migration, but already admitted old processes must be stopped first. Human and remote pane authority remain outside this contract |
 | Released-client compatibility | Partial for named endpoint contracts | Checksummed v0.38.0/v0.39.0 CLI/MCP, sequential tasks and concurrent task create/claim matrices pass. Installed extensions, other mutation families and live-owner cutover remain unproved |
@@ -60,7 +60,7 @@ The original flat `internal/ui` arrangement was an intermediate step. Help, Revi
 
 The production import checker rejects root UI and concrete runtime dependencies transitively. Review consumes pure line models and Git values. Data ownership tests reject aliases that would let a caller mutate private Review state through load results or copied read views. Focus and Rail derive displayed content and hit geometry together. Root prepares and publishes the complete frame after dispatch; View reads its cached text.
 
-Other dialogs remain candidates for extraction when their context and outcomes form a narrow contract. Do not expose Model, all services, or a callback for every root method to make a move compile. Keep fast feature tests independent of root runtime fixtures, preserve dispatch and adapter contracts in root tests, extend the dependency check for each new package, and update the file map. The [ordered effect lane](ui-effects.md) implements confirmed lifecycle, Rail persistence, geometry, attach preparation,
+The remaining root features are types in package `ui` with their own hosts, per [issue #646](https://github.com/YoanWai/agent-manager/issues/646) step 3. Do not expose Model, all services, or a callback for every root method to make a move compile. Keep fast feature tests independent of root runtime fixtures, preserve dispatch and adapter contracts in root tests, extend the dependency check for each new package, and update the file map. The [ordered effect lane](ui-effects.md) implements confirmed lifecycle, Rail persistence, geometry, attach preparation,
 spawn/fork/group creation, rename/move and settings persistence. Remaining synchronous families retain the acceptance conditions above.
 
 ## Turn session checks into repeatable end-to-end tests
@@ -235,3 +235,23 @@ review guard now permits the shared presentation package. Actual-binary
 smoke (2.6s), scenarios, failure and blocked suites passed after the
 settings scenarios stepped past the new background row; fifteen harness
 contracts passed. Hosted CI must be read at the published head.
+
+### Issue #646 feature types (2026-10-08)
+
+Every feature that stays in package `ui` is now a type embedding its state
+with a host interface declared beside it: `settingsFeature`, `formDialog`,
+`groupFormDialog`, `quickBar`, `choice`, `pathComplete`, `composer`,
+`renameDialog`, `moveDialog`, `forkDialog`, `confirmDialog`,
+`launchHintDialog`, `noticesPanel` and `repoPicker`. Hosts stay at eight
+methods or fewer; features that need the store, tmux or Git return typed
+requests that root adapters run on the effect lane. Each type has a test
+that drives it through a fake host. `handleMsg` is a 55-line router
+(`TestHandleMsgLineCap`), `Model` holds 30 fields (`TestModelFieldCap`), no
+source file reaches 1,000 lines, and `check-test-names` keeps tests beside
+their sources.
+
+Uncached `go test -race ./... -count=1` passed with private tmux state
+(40 packages); build, vet, formatting and the dependency and test-name
+guards passed; actual-binary smoke, scenarios, failure and blocked suites
+and the harness contracts passed. Hosted CI must be read at the published
+head.

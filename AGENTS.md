@@ -197,8 +197,17 @@ with `gh release edit <tag> --notes-file notes.md`.
 
 - `main.go` dispatches subcommands (`rename`, `review-repo`, `sessions`,
   `spawn`, `mcp`, and the rest of the workspace CLI) and boots the TUI.
-- `internal/ui` is the Bubble Tea program: one `Model`, files grouped by
-  feature (list, diff review, focus, quick prompt mode, settings).
+- `internal/ui` is the Bubble Tea program: one `Model` that routes messages
+  and composes the frame. Help, Review, Focus and the Rail live in child
+  packages (`internal/ui/{help,review,focus,rail}`); `presentation` holds
+  shared text helpers. Features that stay in `ui` each own their state, keys
+  and view through a type with a narrow host interface: `settingsFeature`,
+  `formDialog`, `groupFormDialog`, `quickBar`, `choice`, `pathComplete`,
+  `composer`, `renameDialog`, `moveDialog`, `forkDialog`, `confirmDialog`,
+  `launchHintDialog`, `noticesPanel` and `repoPicker`. Store, tmux and Git
+  work runs on the ordered effect lane (`effect_*.go`). The contracts are in
+  `docs/architecture/ui-feature-packages.md`; `ui-file-map.md` places each
+  file.
 - `internal/tmux` owns the dedicated tmux socket and control-mode client;
   `internal/store` is the SQLite state, Settings included; `internal/status`
   classifies pane output into agent states; `internal/config` holds the
@@ -210,4 +219,6 @@ with `gh release edit <tag> --notes-file notes.md`.
 
 - Comments are rare and explain a non-obvious why, never what the code does.
 - Tests live next to the file they cover: a test for `listview.go` belongs
-  in `listview_test.go`.
+  in `listview_test.go`, or `listview_<aspect>_test.go` when it splits.
+  `tools/architecture/check-test-names` fails on any other name; shared
+  fixtures go in `*_helpers_test.go`.
