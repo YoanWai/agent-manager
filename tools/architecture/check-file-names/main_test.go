@@ -17,6 +17,32 @@ func TestEveryTestFileNamesItsSource(t *testing.T) {
 	}
 }
 
+func TestEveryRootUISourceStartsWithItsFeature(t *testing.T) {
+	strays, err := unfiledSources(filepath.Join("../../..", uiRoot))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(strays) > 0 {
+		t.Fatalf("root UI sources that start with no feature name; rename them <feature>_<concern>.go or add the feature: %q", strays)
+	}
+}
+
+func TestUnfiledSources(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"settings.go", "settings_effect.go", "keys.go", "effect_settings.go", "misc.go", "misc_test.go"} {
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	strays, err := unfiledSources(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"effect_settings.go", "misc.go"}; !reflect.DeepEqual(strays, want) {
+		t.Fatalf("strays = %q, want %q", strays, want)
+	}
+}
+
 func TestAllowedFilesStillExist(t *testing.T) {
 	for path := range allowed {
 		if _, err := os.Stat(filepath.Join("../../..", path)); err != nil {

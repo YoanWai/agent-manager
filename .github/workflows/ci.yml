@@ -72,8 +72,8 @@ jobs:
         run: python3 -m unittest discover -s tools/e2e -p 'test_*.py'
       - name: Feature dependencies
         run: go run ./tools/architecture/check-ui-boundaries
-      - name: Test file names
-        run: go run ./tools/architecture/check-test-names
+      - name: File names
+        run: go run ./tools/architecture/check-file-names
       - name: Build terminal test binary
         run: go build -o "$RUNNER_TEMP/am-e2e-binary" .
       - name: Real terminal smoke

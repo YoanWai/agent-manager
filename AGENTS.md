@@ -205,9 +205,13 @@ with `gh release edit <tag> --notes-file notes.md`.
   `formDialog`, `groupFormDialog`, `quickBar`, `choice`, `pathComplete`,
   `composer`, `renameDialog`, `moveDialog`, `forkDialog`, `confirmDialog`,
   `launchHintDialog`, `noticesPanel` and `repoPicker`. Store, tmux and Git
-  work runs on the ordered effect lane (`effect_*.go`). The contracts are in
-  `docs/architecture/ui-feature-packages.md`; `ui-file-map.md` places each
-  file.
+  work runs on the ordered effect lane (`effects.go`) through each feature's
+  `<feature>_effect.go`. Root files are named `<feature>_<concern>.go`, so
+  `ls internal/ui/settings_*` is the whole Settings feature; only `keys.go`,
+  `mouse.go`, `updates.go` and `ids.go` route instead of owning a feature. A
+  new feature adds its name to `tools/architecture/check-file-names`. The
+  contracts are in `docs/architecture/ui-feature-packages.md`;
+  `ui-file-map.md` lists each feature's files.
 - `internal/tmux` owns the dedicated tmux socket and control-mode client;
   `internal/store` is the SQLite state, Settings included; `internal/status`
   classifies pane output into agent states; `internal/config` holds the
@@ -220,5 +224,5 @@ with `gh release edit <tag> --notes-file notes.md`.
 - Comments are rare and explain a non-obvious why, never what the code does.
 - Tests live next to the file they cover: a test for `listview.go` belongs
   in `listview_test.go`, or `listview_<aspect>_test.go` when it splits.
-  `tools/architecture/check-test-names` fails on any other name; shared
+  `tools/architecture/check-file-names` fails on any other name; shared
   fixtures go in `*_helpers_test.go`.

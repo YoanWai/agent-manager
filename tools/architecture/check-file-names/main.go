@@ -1,5 +1,6 @@
-// Command check-test-names fails when a test file is not named after the
-// source beside it, so a feature's tests stay where its code is.
+// Command check-file-names keeps each feature's files together: every root
+// UI source starts with its feature's name, and every test file is named
+// after the source beside it.
 package main
 
 import (
@@ -19,7 +20,55 @@ var allowed = map[string]string{
 	"internal/ui/session_lifecycle_integration_test.go": "drives create, archive, restore and delete end to end",
 }
 
+// uiRoot holds the root UI package, whose files are named <feature>_<concern>.go.
+const uiRoot = "internal/ui"
+
+// features are the prefixes a root UI source may start with.
+var features = map[string]string{
+	"composer":     "prompt composers, chips and pasted images",
+	"confirm":      "the confirm dialog",
+	"effects":      "the ordered effect lane and its executor",
+	"focus":        "the Focus adapter and pane watch",
+	"fork":         "the fork dialog",
+	"frame":        "frame composition: dialog chrome, header, legend, IME and text layout",
+	"geometry":     "pane sizing, layout widths and the split ratio",
+	"group":        "the New Group form",
+	"help":         "the Help adapter",
+	"input":        "raw input forwarded to panes",
+	"launchhint":   "the launch fix dialog and CLI install",
+	"model":        "the root Model, its services and shared host methods",
+	"move":         "the move dialog",
+	"notices":      "the notices panel and release feed",
+	"pathcomplete": "directory completion for path fields",
+	"preview":      "the session preview",
+	"quick":        "the quick bar",
+	"rail":         "the Rail adapter",
+	"rename":       "the rename dialog",
+	"review":       "the Review adapter and repo picker",
+	"session":      "session lifecycle: launch, attach, kill, revive, archive, delete, restart, editor",
+	"settings":     "the Settings dialog, key bindings and editor row",
+	"spawn":        "the New Session form, model choice, spawn preflight and worktree probe",
+	"startup":      "startup greeting and banner",
+	"status":       "the status bar and toasts",
+	"terminal":     "terminal handoff and link pages",
+	"theme":        "themes, styles, surfaces and the stored theme",
+	"workspace":    "polling, refresh and what the last poll returned",
+}
+
+// dispatch are the root files that route rather than own a feature.
+var dispatch = map[string]bool{"keys.go": true, "mouse.go": true, "updates.go": true, "ids.go": true}
+
 func main() {
+	failed := false
+	strays, err := unfiledSources(uiRoot)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	if len(strays) > 0 {
+		fmt.Fprintf(os.Stderr, "root UI sources that start with no feature name:\n  %s\n", strings.Join(strays, "\n  "))
+		failed = true
+	}
 	orphans, err := orphanTests(".")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -27,9 +76,33 @@ func main() {
 	}
 	if len(orphans) > 0 {
 		fmt.Fprintf(os.Stderr, "test files with no source of the same name:\n  %s\n", strings.Join(orphans, "\n  "))
+		failed = true
+	}
+	if failed {
 		os.Exit(1)
 	}
+	fmt.Println("PASS: every root UI source starts with its feature")
 	fmt.Println("PASS: every test file is named after its source")
+}
+
+// unfiledSources returns the root UI sources whose name starts with no feature.
+func unfiledSources(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var strays []string
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || dispatch[name] {
+			continue
+		}
+		feature, _, _ := strings.Cut(strings.TrimSuffix(name, ".go"), "_")
+		if _, ok := features[feature]; !ok {
+			strays = append(strays, name)
+		}
+	}
+	return strays, nil
 }
 
 // orphanTests walks root and returns the test files that pair with no source.
