@@ -47,33 +47,18 @@ func TestFocusWatchPushesPaneUpdates(t *testing.T) {
 	waitFocusPreview(t, msgs, id, "focus-watch-ping")
 }
 
-// A key typed into a quiet pane echoes at once, even from a TUI that first
-// writes an invisible update and draws the character a moment later, as
-// Codex, Muse and Oh My Pi do.
+// The pane writes an invisible update before each echo, as Codex, Muse and
+// Oh My Pi do.
 func TestFocusWatchEchoesAQuietPaneAtOnce(t *testing.T) {
-	driver := requireFocusDriver(t)
-	id := "echo" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
-	if err := driver.Create(id, "/tmp", "", nil, 80, 24); err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	t.Cleanup(func() { driver.Kill(id) })
+	driver, id, arrivals := startFocusArrivalWatch(t)
 	echo := `bash -c 'echo $((6*7))ready; while IFS= read -rsn1 key; do printf "\033[?25h"; sleep 0.01; printf "<%s>" "$key"; done'`
 	if err := driver.SendText(id, echo); err != nil {
 		t.Fatalf("SendText: %v", err)
 	}
 
-	arrivals := make(chan focusArrival, 64)
-	watch := newFocusWatch(driver, func(msg tea.Msg) {
-		if preview, ok := msg.(focusPreviewMsg); ok && preview.sessID == id {
-			arrivals <- focusArrival{time.Now(), preview.preview}
-		}
-	})
-	t.Cleanup(watch.Close)
-	watch.setFocus(id)
 	waitFocusArrival(t, arrivals, "42ready")
 
-	// The fastest of a few tries keeps a loaded machine from failing it,
-	// while a fixed wait before every capture can never get under it.
+	// Use the fastest attempt to tolerate scheduler delays on busy hosts.
 	fastest := time.Hour
 	for attempt := range 5 {
 		time.Sleep(2 * focusFrameBudget)
@@ -86,43 +71,17 @@ func TestFocusWatchEchoesAQuietPaneAtOnce(t *testing.T) {
 			t.Fatalf("send-keys: %v", err)
 		}
 		sent := time.Now()
-		deadline := time.After(5 * time.Second)
-	wait:
-		for {
-			select {
-			case got := <-arrivals:
-				if strings.Contains(got.preview, token) {
-					fastest = min(fastest, got.at.Sub(sent))
-					break wait
-				}
-			case <-deadline:
-				t.Fatalf("no preview showed %q", token)
-			}
-		}
+		got := waitFocusArrival(t, arrivals, token)
+		fastest = min(fastest, got.at.Sub(sent))
 	}
 	if fastest >= focusFrameBudget/2 {
 		t.Fatalf("fastest echo took %v, want under %v", fastest, focusFrameBudget/2)
 	}
 }
 
-// A streaming pane still changes the preview at most once a frame, which
-// is what keeps the outer terminal from falling behind the keyboard.
 func TestFocusWatchSpacesAStreamByTheFrameBudget(t *testing.T) {
-	driver := requireFocusDriver(t)
-	id := "stream" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
-	if err := driver.Create(id, "/tmp", "", nil, 80, 24); err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	t.Cleanup(func() { driver.Kill(id) })
+	driver, id, sends := startFocusArrivalWatch(t)
 
-	sends := make(chan focusArrival, 256)
-	watch := newFocusWatch(driver, func(msg tea.Msg) {
-		if preview, ok := msg.(focusPreviewMsg); ok && preview.sessID == id {
-			sends <- focusArrival{time.Now(), preview.preview}
-		}
-	})
-	t.Cleanup(watch.Close)
-	watch.setFocus(id)
 	waitFocusArrival(t, sends, "")
 
 	if err := driver.SendText(id, "for i in $(seq 1 300); do echo line$i; sleep 0.005; done"); err != nil {
@@ -153,24 +112,9 @@ func TestFocusWatchSpacesAStreamByTheFrameBudget(t *testing.T) {
 	}
 }
 
-// A pane that keeps writing without changing what it shows still costs at
-// most one capture a display frame, not one per write.
 func TestFocusWatchSpacesUnchangedWritesByADisplayFrame(t *testing.T) {
-	driver := requireFocusDriver(t)
-	id := "noop" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
-	if err := driver.Create(id, "/tmp", "", nil, 80, 24); err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	t.Cleanup(func() { driver.Kill(id) })
+	driver, id, sends := startFocusArrivalWatch(t)
 
-	sends := make(chan focusArrival, 1024)
-	watch := newFocusWatch(driver, func(msg tea.Msg) {
-		if preview, ok := msg.(focusPreviewMsg); ok && preview.sessID == id {
-			sends <- focusArrival{time.Now(), preview.preview}
-		}
-	})
-	t.Cleanup(watch.Close)
-	watch.setFocus(id)
 	waitFocusArrival(t, sends, "")
 
 	spam := `clear; echo $((6*7))spam; bash -c 'for i in $(seq 1 1500); do printf "\033[?25h"; sleep 0.001; done'`
@@ -258,14 +202,34 @@ type focusArrival struct {
 	preview string
 }
 
-func waitFocusArrival(t *testing.T, arrivals <-chan focusArrival, contains string) {
+func startFocusArrivalWatch(t *testing.T) (*tmux.Driver, string, <-chan focusArrival) {
+	t.Helper()
+	driver := requireFocusDriver(t)
+	id := "timing" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", "", nil, 80, 24); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+
+	arrivals := make(chan focusArrival, 1024)
+	watch := newFocusWatch(driver, func(msg tea.Msg) {
+		if preview, ok := msg.(focusPreviewMsg); ok && preview.sessID == id {
+			arrivals <- focusArrival{time.Now(), preview.preview}
+		}
+	})
+	t.Cleanup(watch.Close)
+	watch.setFocus(id)
+	return driver, id, arrivals
+}
+
+func waitFocusArrival(t *testing.T, arrivals <-chan focusArrival, contains string) focusArrival {
 	t.Helper()
 	deadline := time.After(5 * time.Second)
 	for {
 		select {
 		case got := <-arrivals:
 			if strings.Contains(got.preview, contains) {
-				return
+				return got
 			}
 		case <-deadline:
 			t.Fatalf("no preview containing %q", contains)

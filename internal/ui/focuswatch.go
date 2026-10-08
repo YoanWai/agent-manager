@@ -33,13 +33,11 @@ type focusPreviewMsg struct {
 	historySize int
 }
 
-// focusFrameBudget is the least time between two captures that change the
-// preview. Each change repaints the outer terminal, and a stream captured
-// every 25ms made that terminal fall behind the keyboard.
+// focusFrameBudget spaces captures that change the preview, so a stream
+// cannot repaint the outer terminal faster than it keeps up with.
 const focusFrameBudget = 80 * time.Millisecond
 
-// focusCaptureGap is the least time between any two captures: one 60Hz
-// display frame, since nothing captured faster could be seen.
+// focusCaptureGap spaces every other capture by one 60Hz display frame.
 const focusCaptureGap = 16 * time.Millisecond
 
 // focusWatch keeps one tmux control-mode client on the selected session.
@@ -266,13 +264,12 @@ func (w *focusWatch) watch(id string, stop chan struct{}) {
 		w.send(msg)
 		return pane, true
 	}
-	shown, ok := capture()
+	previous, ok := capture()
 	if !ok {
 		w.clearIfCurrent(id, stop)
 		return
 	}
-	shownAt := time.Now()
-	capturedAt := shownAt
+	nextCapture := time.Now().Add(focusFrameBudget)
 	for {
 		select {
 		case <-stop:
@@ -287,9 +284,7 @@ func (w *focusWatch) watch(id string, stop chan struct{}) {
 			return
 		case <-control.Events():
 		}
-		// Hold off only while the last change shown is younger than a
-		// frame, then fold everything queued since into this one capture.
-		time.Sleep(max(focusFrameBudget-time.Since(shownAt), focusCaptureGap-time.Since(capturedAt)))
+		time.Sleep(time.Until(nextCapture))
 		for {
 			select {
 			case <-control.Events():
@@ -303,12 +298,14 @@ func (w *focusWatch) watch(id string, stop chan struct{}) {
 			w.clearIfCurrent(id, stop)
 			return
 		}
-		capturedAt = time.Now()
-		// A paint that left the text as it was, such as the cursor move some
-		// TUIs write ahead of the echo, must not hold back the echo.
-		if pane != shown {
-			shown, shownAt = pane, time.Now()
+		// A write that leaves the text unchanged, like the cursor move some
+		// TUIs send ahead of an echo, must not hold back that echo.
+		gap := focusCaptureGap
+		if pane != previous {
+			gap = focusFrameBudget
 		}
+		previous = pane
+		nextCapture = time.Now().Add(gap)
 	}
 }
 
