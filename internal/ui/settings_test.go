@@ -625,3 +625,78 @@ func TestSettingsHasNoTerminalRows(t *testing.T) {
 		t.Fatal("terminal rows setting must be gone")
 	}
 }
+
+// otherWriterTheme is a theme this manager would not write on its own.
+func otherWriterTheme(t *testing.T) string {
+	t.Helper()
+	for _, theme := range themes {
+		if theme.Name != current.Name {
+			return theme.Name
+		}
+	}
+	t.Fatal("need a second theme")
+	return ""
+}
+
+// Another manager or the CLI may change a key after this manager's cache
+// loaded; a save must not write the stale cached value back over it.
+func TestSettingsSaveKeepsOtherWritersKeys(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		applyLoad bool
+	}{
+		{name: "save before the fresh load lands"},
+		{name: "fresh load discarded by the staged edit", applyLoad: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := buildModel(t)
+			load := m.openSettings()
+			m.settings.dialog.field = settingsFieldWorktree
+			m.settings.cycleSetting(m, 1)
+
+			theirs := otherWriterTheme(t)
+			if err := m.services.store.SetSetting(themeSetting, theirs); err != nil {
+				t.Fatal(err)
+			}
+			if err := m.services.store.SetProactiveCoordination(true); err != nil {
+				t.Fatal(err)
+			}
+			if tc.applyLoad {
+				m.applyTestMsg(t, load())
+			}
+			_, save := m.handleSettingsKey(key("enter"))
+			m.applyCmd(t, save)
+
+			if got, err := m.services.store.Setting(worktreeSetting); err != nil || got != "on" {
+				t.Fatalf("worktree=%q err %v, want the changed value on", got, err)
+			}
+			if got, err := m.services.store.Setting(themeSetting); err != nil || got != theirs {
+				t.Fatalf("theme=%q err %v, want the other writer's %q", got, err, theirs)
+			}
+			if proactive, err := m.services.store.ProactiveCoordination(); err != nil || !proactive {
+				t.Fatalf("coordination proactive=%t err %v, want the other writer's proactive", proactive, err)
+			}
+		})
+	}
+}
+
+func TestSettingsEscWithoutChangesWritesNothing(t *testing.T) {
+	m := buildModel(t)
+	m.openSettings()
+	_, save := m.handleSettingsKey(key("esc"))
+	if m.mode != modeList {
+		t.Fatalf("esc should close the dialog, mode=%v", m.mode)
+	}
+	m.applyCmd(t, save)
+
+	values, hidden, hiddenErr := settingsReadback(storeSettingWriter{st: m.services.store})
+	for _, value := range values {
+		raw, err := m.services.store.Setting(value.key)
+		if err != nil || raw != "" {
+			t.Errorf("%s=%q err %v, want unwritten", value.key, raw, err)
+		}
+	}
+	if hiddenErr != nil || hidden != "" {
+		t.Errorf("%s=%q err %v, want unwritten", hiddenToolsSetting, hidden, hiddenErr)
+	}
+}

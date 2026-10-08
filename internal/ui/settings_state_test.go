@@ -121,8 +121,11 @@ func TestSettingsFeatureDrivesThroughNarrowHost(t *testing.T) {
 		t.Fatalf("save submitted %d requests with %d pending, want 1 and 1", len(h.submitted), s.pending)
 	}
 	request, ok := h.submitted[0].(settingsRequest)
-	if !ok || request.generation != s.gen || request.hidden == nil || s.cache.value(backgroundSetting) != "terminal" {
+	if !ok || request.generation != s.gen || s.cache.value(backgroundSetting) != "terminal" {
 		t.Fatalf("submitted %#v; want a fenced settings request staged in the cache", h.submitted[0])
+	}
+	if len(request.values) != 1 || request.values[0].key != backgroundSetting || request.hidden != nil {
+		t.Fatalf("submitted %#v; want only the changed background key", request)
 	}
 }
 

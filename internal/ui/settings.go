@@ -546,6 +546,7 @@ func (s *settingsFeature) open(h settingsHost, reader settingsValueReader) (tea.
 	}
 	h.clearErr()
 	s.dialog = s.settingsStateFromCache(cfg)
+	s.markSettingsBaseline()
 	probe := s.probeEditorsCmd()
 	if s.pending > 0 {
 		return probe, true
@@ -639,13 +640,14 @@ func (m *Model) saveAndCloseSettings() (tea.Model, tea.Cmd) {
 func (s *settingsFeature) captureSettingsSave(h settingsHost, includeHidden, followUpdate bool) tea.Cmd {
 	s.gen++
 	request := settingsRequest{
-		values:       s.captureSettingValues(),
+		values:       s.changedSettingValues(),
 		followUpdate: followUpdate,
 		generation:   s.gen,
 	}
-	if includeHidden {
-		request.hidden = s.hiddenToolList()
+	if hidden := s.hiddenToolList(); includeHidden && !s.hiddenAtBaseline(hidden) {
+		request.hidden = hidden
 	}
+	s.advanceSettingsBaseline(request.values, request.hidden)
 	s.cache.applyValues(request.values)
 	if request.hidden != nil {
 		s.cache.applyHidden(request.hidden)
@@ -660,9 +662,54 @@ func (s *settingsFeature) captureHiddenSave(h settingsHost) tea.Cmd {
 		hidden:     s.hiddenToolList(),
 		generation: s.gen,
 	}
+	s.advanceSettingsBaseline(nil, request.hidden)
 	s.cache.applyHidden(request.hidden)
 	s.pending++
 	return h.submitEffect(request)
+}
+
+// markSettingsBaseline records the freshly built dialog as the state a
+// save compares against.
+func (s *settingsFeature) markSettingsBaseline() {
+	s.dialog.baseline = make(map[string]string)
+	for _, value := range s.captureSettingValues() {
+		s.dialog.baseline[value.key] = value.value
+	}
+	hidden := strings.Join(s.hiddenToolList(), ",")
+	s.dialog.baselineHidden = &hidden
+}
+
+// changedSettingValues is the write list narrowed to the keys the user
+// changed in this dialog.
+func (s *settingsFeature) changedSettingValues() []settingValue {
+	all := s.captureSettingValues()
+	changed := all[:0:0]
+	for _, value := range all {
+		if before, ok := s.dialog.baseline[value.key]; !ok || before != value.value {
+			changed = append(changed, value)
+		}
+	}
+	return changed
+}
+
+func (s *settingsFeature) hiddenAtBaseline(hidden []string) bool {
+	return s.dialog.baselineHidden != nil && *s.dialog.baselineHidden == strings.Join(hidden, ",")
+}
+
+// advanceSettingsBaseline moves the baseline to a save's captured
+// values, so a dialog left open after it (the update row) writes only
+// later changes.
+func (s *settingsFeature) advanceSettingsBaseline(values []settingValue, hidden []string) {
+	if s.dialog.baseline == nil {
+		s.dialog.baseline = make(map[string]string)
+	}
+	for _, value := range values {
+		s.dialog.baseline[value.key] = value.value
+	}
+	if hidden != nil {
+		raw := strings.Join(hidden, ",")
+		s.dialog.baselineHidden = &raw
+	}
 }
 
 // hiddenToolList is the picker's hidden set in persist order (sorted

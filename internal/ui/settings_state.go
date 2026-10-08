@@ -93,6 +93,11 @@ type settingsState struct {
 	keyReset   bool
 	editor     editorRow
 	dirty      bool
+	// baseline is what the dialog started from, by key: a save writes
+	// only keys that differ, so it never puts this process's stale cache
+	// over another writer's value. A missing key is always written.
+	baseline       map[string]string
+	baselineHidden *string
 }
 
 type settingsCache struct {

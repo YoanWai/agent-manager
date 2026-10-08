@@ -252,6 +252,7 @@ func (m *Model) handleSettingsLoaded(msg settingsLoadedMsg) (tea.Model, tea.Cmd)
 		m.settings.cache.applyReadback(msg.result.values, msg.result.hiddenRaw, msg.result.hiddenErr)
 		field := m.settings.dialog.field
 		m.settings.dialog = m.settings.settingsStateFromCache(m.services.cfg)
+		m.settings.markSettingsBaseline()
 		m.settings.dialog.field = field
 	case settingsLoadForm:
 		if m.mode != modeForm || uint64(m.form.prompt.gen) != msg.request.generation ||
@@ -426,5 +427,26 @@ func (s *settingsFeature) restoreSettingsDialog(restored []restoredValue, hidden
 		if s.dialog.cliHidden == nil {
 			s.dialog.cliHidden = map[string]bool{}
 		}
+	}
+	// The restored keys now show the store, so they match the baseline;
+	// a key whose read failed leaves it, so the next save writes it.
+	if s.dialog.baseline == nil {
+		s.dialog.baseline = make(map[string]string)
+	}
+	shown := make(map[string]string)
+	for _, value := range s.captureSettingValues() {
+		shown[value.key] = value.value
+	}
+	for _, value := range restored {
+		if value.err != nil {
+			delete(s.dialog.baseline, value.key)
+		} else if v, ok := shown[value.key]; ok {
+			s.dialog.baseline[value.key] = v
+		}
+	}
+	s.dialog.baselineHidden = nil
+	if hiddenErr == nil {
+		raw := strings.Join(s.hiddenToolList(), ",")
+		s.dialog.baselineHidden = &raw
 	}
 }
