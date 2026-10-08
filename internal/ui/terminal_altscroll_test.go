@@ -52,7 +52,7 @@ func TestNoAlternateScrollEnableInTree(t *testing.T) {
 			}
 			return nil
 		}
-		if filepath.Ext(path) != ".go" || path == filepath.Join(root, "internal", "ui", "altscroll_test.go") {
+		if filepath.Ext(path) != ".go" || path == filepath.Join(root, "internal", "ui", "terminal_altscroll_test.go") {
 			return nil
 		}
 		source, err := os.ReadFile(path)
