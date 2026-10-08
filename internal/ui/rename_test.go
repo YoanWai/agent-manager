@@ -36,7 +36,7 @@ type fakeRenameHost struct {
 }
 
 func (h *fakeRenameHost) pathSuggestions() *pathComplete { return &h.paths }
-func (h *fakeRenameHost) applyPathSuggestion() tea.Cmd  { return nil }
+func (h *fakeRenameHost) applyPathSuggestion() tea.Cmd   { return nil }
 func (h *fakeRenameHost) requestPathSuggestions(target pathSuggestionTarget, typed string) tea.Cmd {
 	h.requested = append(h.requested, typed)
 	return nil
