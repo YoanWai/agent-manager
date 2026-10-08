@@ -140,8 +140,8 @@ func (m *Model) connectionDetail(host string, width int) []string {
 		if !state.Snapshot.ManagerAwake {
 			manager = "no manager running"
 		}
-		lines = append(lines, factRow("host", plainValue(mutedStyle.Render(fmt.Sprintf("%d sessions · %d terminals · %s",
-			len(state.Snapshot.Sessions), len(state.Snapshot.Terminals), manager))), "", width))
+		lines = append(lines, factRow("host", plainValue(mutedStyle.Render(countNoun(len(state.Snapshot.Sessions), "session")+" · "+
+			countNoun(len(state.Snapshot.Terminals), "terminal")+" · "+manager)), "", width))
 	}
 	if seen && state.Err != nil {
 		for _, line := range strings.Split(ansi.Wordwrap(escapeControls(state.Err.Error()), max(width-detailLabelWidth, 8), " "), "\n") {
@@ -263,4 +263,11 @@ func (m *Model) remoteQuickFacts(facts *quickFacts) {
 	facts.worktreeKnown, facts.worktreeCapable = true, true
 	facts.worktreeOn = m.quick.worktreeTouched && m.quick.worktree
 	facts.worktreeInherit = !m.quick.worktreeTouched
+}
+
+func countNoun(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
 }

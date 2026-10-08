@@ -67,7 +67,7 @@ func TestConnectionRowShowsItsFacts(t *testing.T) {
 	m := connectedModel(t, fake)
 	m.rail.Focus(boxRow)
 	text := contentText(m)
-	for _, want := range []string{"box", "online", "me@box", "3 sessions · 1 terminals · manager awake"} {
+	for _, want := range []string{"box", "online", "me@box", "3 sessions · 1 terminal · manager awake"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("content lacks %q:\n%s", want, text)
 		}
