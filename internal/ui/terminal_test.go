@@ -286,7 +286,7 @@ func TestTerminalSessionRevives(t *testing.T) {
 		t.Fatalf("kill terminal: %v", err)
 	}
 	sess.Status = status.Dead
-	if err := m.reviveSession(sess); err != nil {
+	if _, err := m.reviveSession(sess); err != nil {
 		t.Fatalf("revive terminal: %v", err)
 	}
 	if !m.tmux.Exists(sess.ID) {

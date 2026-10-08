@@ -7,12 +7,16 @@ package launch
 
 import (
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/conversation"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/mcpreg"
+	"github.com/YoanWai/agent-manager/internal/sessionreport"
+	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/google/uuid"
 )
@@ -168,10 +172,15 @@ func ReviveCommand(tool config.Tool, agentSessionID string) string {
 
 // Environment resolves the shell command and environment a session
 // launches with. Every session carries its id so the rename subcommand
-// can find it; tools backed by hooks additionally get the generated
-// settings file and their status-file path, plus a clean slate from any
-// earlier files under the same id.
-func Environment(manager *hooks.Manager, toolName string, tool config.Tool, baseCommand, id string) (string, map[string]string, error) {
+// can find it, and the launch it belongs to, which is the agent_launched_at
+// the caller stamps for it (zero for a row's first launch), so a
+// conversation the agent reports lands on this launch only. The agent runs
+// under the pid its line exports and records, so only it can report and the
+// poller can read what its CLI keeps for that pid. cwd is where the agent
+// starts. Tools backed by hooks additionally get the generated settings file
+// and their status-file path, plus a clean slate from any earlier files under
+// the same id.
+func Environment(manager *hooks.Manager, toolName string, tool config.Tool, baseCommand, id, cwd string, launchedAt time.Time) (string, map[string]string, error) {
 	if err := config.CheckInstalled(baseCommand); err != nil {
 		return "", nil, err
 	}
@@ -181,7 +190,9 @@ func Environment(manager *hooks.Manager, toolName string, tool config.Tool, base
 	if err := manager.SweepNameResults(time.Now()); err != nil {
 		return "", nil, err
 	}
-	env := map[string]string{hooks.EnvSessionID: id}
+	stamp := store.LaunchStamp(launchedAt)
+	launch := strconv.FormatInt(stamp, 10)
+	env := map[string]string{hooks.EnvSessionID: id, hooks.EnvLaunch: launch}
 	if toolName == "grok" {
 		// Grok's terminal theme leaves row backgrounds unpainted, and only its config file selects it.
 		if err := ensureGrokTerminalTheme(); err != nil {
@@ -190,14 +201,30 @@ func Environment(manager *hooks.Manager, toolName string, tool config.Tool, base
 		// A shared leader runs every session's shell under the environment of the session that started it.
 		baseCommand += " --no-leader"
 	}
-	command, err := mcpreg.Apply(mcpreg.Style(toolName, tool.MCP), Executable(), manager.Dir(), baseCommand, env)
+	if baseCommand == "" {
+		return "", env, nil
+	}
+	if err := os.MkdirAll(manager.Dir(), 0o755); err != nil {
+		return "", nil, err
+	}
+	command, err := mcpreg.Apply(mcpreg.Style(toolName, tool.MCP), Executable(), manager.Dir(), "exec "+baseCommand, env)
 	if err != nil {
 		return "", nil, err
 	}
-	if tool.StatusSource != hooks.StatusSourceClaude {
-		return command, env, nil
+	target := sessionreport.Target{Exe: Executable(), HooksDir: manager.Dir(), TelemetryFile: manager.TelemetryFile(id), Cwd: cwd}
+	command, err = sessionreport.Apply(tool.SessionReport, target, command, env)
+	if err != nil {
+		return "", nil, err
 	}
-	settingsPath, err := manager.WriteSettings(id)
+	agentFile := manager.AgentFile(id)
+	if tool.StatusSource != hooks.StatusSourceClaude {
+		return asAgentProcess(agentFile, stamp, command), env, nil
+	}
+	trackCommand := ""
+	if tool.SessionReport == sessionreport.StyleClaude {
+		trackCommand = sessionreport.HookCommand(Executable(), sessionreport.StyleClaude, "session_id")
+	}
+	settingsPath, err := manager.WriteSettings(id, launch, trackCommand)
 	if err != nil {
 		return "", nil, err
 	}
@@ -205,7 +232,16 @@ func Environment(manager *hooks.Manager, toolName string, tool config.Tool, base
 		return "", nil, err
 	}
 	env[hooks.EnvStatusFile] = manager.StatusFile(id)
-	return command + " --settings " + tmux.ShellQuote(settingsPath), env, nil
+	return asAgentProcess(agentFile, stamp, command+" --settings "+tmux.ShellQuote(settingsPath)), env, nil
+}
+
+// asAgentProcess runs a launch line, whose agent is started with exec, in a
+// shell of its own that exports and records its pid first. The agent then
+// runs under that pid, whichever shell the pane holds and however deeply it
+// is nested. The shell that started it marks the record once it has quit.
+func asAgentProcess(agentFile string, launch int64, command string) string {
+	agent := "export " + hooks.EnvAgentPID + "=$$; " + conversation.RecordCommand(agentFile, launch) + "; " + command
+	return "sh -c " + tmux.ShellQuote(agent) + "; " + conversation.EndedCommand(agentFile)
 }
 
 // Executable names the binary generated MCP configs point at: the

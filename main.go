@@ -120,6 +120,12 @@ func subcommands() map[string]func(args []string) error {
 		"mcp": withConfigDir(func(args []string, caller func() string, configDir string) error {
 			return mcpserver.Run(configDir, caller(), version)
 		}),
+		"track-conversation": withConfigDir(func(args []string, _ func() string, configDir string) error {
+			return sessioncmd.TrackConversation(configDir, args, os.Stdin)
+		}),
+		"follow-telemetry": withConfigDir(func(args []string, _ func() string, configDir string) error {
+			return sessioncmd.FollowTelemetry(configDir, args)
+		}),
 	}
 	for name, command := range cli.Commands(version) {
 		table[name] = withConfigDir(command)

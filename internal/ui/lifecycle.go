@@ -218,14 +218,17 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 			m.reportLaunchError(err, nil)
 			return m, nil
 		}
-		m.errBar.text = m.degradedResumeNotice(entry.sess)
 		return m, cmd
 	}
-	if err := m.reviveSession(entry.sess); err != nil {
-		m.reportLaunchError(err, func() error { return m.reviveSession(entry.sess) })
+	revived, err := m.reviveSession(entry.sess)
+	if err != nil {
+		m.reportLaunchError(err, func() error {
+			_, err := m.reviveSession(entry.sess)
+			return err
+		})
 		return m, nil
 	}
-	m.errBar.text = m.degradedResumeNotice(entry.sess)
+	m.errBar.text = m.degradedResumeNotice(revived)
 	m.requestRefresh()
 	return m, nil
 }
@@ -254,14 +257,15 @@ func (m *Model) reviveMany(sessions []store.Session, emptyNotice string) (tea.Mo
 	revived, degraded := 0, 0
 	var firstErr string
 	for _, sess := range deadSessions(sessions) {
-		if err := m.reviveSession(sess); err != nil {
+		relaunched, err := m.reviveSession(sess)
+		if err != nil {
 			if firstErr == "" {
 				firstErr = err.Error()
 			}
 			continue
 		}
 		revived++
-		if m.degradedResumeNotice(sess) != "" {
+		if m.degradedResumeNotice(relaunched) != "" {
 			degraded++
 		}
 	}
@@ -317,21 +321,34 @@ func (m *Model) degradedResumeNotice(sess store.Session) string {
 // name, group, and history. When the session's own conversation id was
 // captured, it resumes that exact conversation via the tool's
 // resume_by_id_command instead of the working directory's most recent one,
-// which would be the wrong conversation whenever sessions share a cwd.
-func (m *Model) reviveSession(sess store.Session) error {
+// which would be the wrong conversation whenever sessions share a cwd. The
+// row is read again first, since the listed copy can predate the last
+// conversation the agent reported, and the row it revived is returned.
+func (m *Model) reviveSession(listed store.Session) (store.Session, error) {
+	sess, err := m.store.Get(listed.ID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return store.Session{}, fmt.Errorf("session %s: %w", listed.ID, store.ErrSessionGone)
+	}
+	if err != nil {
+		return store.Session{}, err
+	}
 	if m.tmux.Exists(sess.ID) {
-		return fmt.Errorf("session %s is still running; revive only applies to dead sessions", sess.Name)
+		return store.Session{}, fmt.Errorf("session %s is still running; revive only applies to dead sessions", sess.Name)
 	}
 	tool, ok := m.cfg.Tools[sess.Tool]
 	if !ok {
-		return fmt.Errorf("tool %s is no longer configured", sess.Tool)
+		return store.Session{}, fmt.Errorf("tool %s is no longer configured", sess.Tool)
+	}
+	// The update path never waits on an agent still closing; one that has
+	// quit has already named the conversation it was on.
+	if sess, err = sessioncmd.SettleConversation(m.store, m.hooks, sess, tool.SessionReport, true, 0); err != nil {
+		return store.Session{}, err
 	}
 	tool = tool.WithChoice(sess.Choice)
 	if !isDir(sess.Cwd) {
-		return fmt.Errorf("working directory no longer exists: %s", sess.Cwd)
+		return store.Session{}, fmt.Errorf("working directory no longer exists: %s", sess.Cwd)
 	}
-	bind := func() error {
-		launchedAt := time.Now()
+	bind := func(launchedAt time.Time) error {
 		if err := m.store.SetAgentLaunchedAt(sess.ID, launchedAt); err != nil {
 			return err
 		}
@@ -339,26 +356,28 @@ func (m *Model) reviveSession(sess store.Session) error {
 		return nil
 	}
 	if err := sessioncmd.SnapshotRelaunch(m.store, sess, tool, sess.AgentSessionID); err != nil {
-		return err
+		return store.Session{}, err
 	}
 	if err := m.relaunchSession(sess, tool, launch.ReviveCommand(tool, sess.AgentSessionID), status.Starting, bind); err != nil {
-		return err
+		return store.Session{}, err
 	}
 	if sess.AgentSessionID == "" && tool.ResumePickerKeys != "" {
 		sessioncmd.InjectPickerKeys(m.tmux, sess.ID, tool)
 	}
 	m.rebuildRows()
-	return nil
+	return sess, nil
 }
 
 // relaunchSession puts a dead session's row back on a running tmux window
 // under its old id, keeping its name, group and history. Both revive and
 // restart end here; they differ only in the command they hand it and in
 // bindConversation, which records the conversation the new pane is on once
-// the launch has actually taken. A launch that fails leaves the row exactly
-// as it was, still pointing at the conversation it can be revived on.
-func (m *Model) relaunchSession(sess store.Session, tool config.Tool, baseCommand, newStatus string, bindConversation func() error) error {
-	command, env, err := m.buildLaunch(sess.Tool, tool, baseCommand, sess.ID)
+// the launch has actually taken, under the launch time the pane was started
+// with. A launch that fails leaves the row exactly as it was, still pointing
+// at the conversation it can be revived on.
+func (m *Model) relaunchSession(sess store.Session, tool config.Tool, baseCommand, newStatus string, bindConversation func(launchedAt time.Time) error) error {
+	launchedAt := time.Now()
+	command, env, err := m.buildLaunch(sess.Tool, tool, baseCommand, sess.ID, sess.Cwd, launchedAt)
 	if err != nil {
 		return err
 	}
@@ -368,7 +387,7 @@ func (m *Model) relaunchSession(sess store.Session, tool config.Tool, baseComman
 	}
 	m.markFreshPane(sess.ID)
 	if bindConversation != nil {
-		if err := bindConversation(); err != nil {
+		if err := bindConversation(launchedAt); err != nil {
 			_ = m.tmux.Kill(sess.ID)
 			return err
 		}
@@ -398,11 +417,10 @@ func (m *Model) relaunchSession(sess store.Session, tool config.Tool, baseComman
 }
 
 // relaunchedMsg carries the result of starting an agent in a pane that was
-// left on its shell.
+// left on its shell: the row as it was relaunched.
 type relaunchedMsg struct {
-	sessID     string
-	launchedAt time.Time
-	err        error
+	sess store.Session
+	err  error
 }
 
 // relaunchInPane builds the command that starts a session's tool again
@@ -427,14 +445,14 @@ func (m *Model) relaunchInPane(sess store.Session) (tea.Cmd, error) {
 	}
 	driver, stor, hookManager := m.tmux, m.store, m.hooks
 	return func() tea.Msg {
-		launchedAt, err := sessioncmd.RelaunchInPane(driver, stor, hookManager, sess, tool)
+		relaunched, err := sessioncmd.RelaunchInPane(driver, stor, hookManager, sess.ID, tool)
 		if err != nil {
-			return relaunchedMsg{sessID: sess.ID, err: err}
+			return relaunchedMsg{err: err}
 		}
-		if sess.AgentSessionID == "" && tool.ResumePickerKeys != "" {
-			sessioncmd.InjectPickerKeys(driver, sess.ID, tool)
+		if relaunched.AgentSessionID == "" && tool.ResumePickerKeys != "" {
+			sessioncmd.InjectPickerKeys(driver, relaunched.ID, tool)
 		}
-		return relaunchedMsg{sessID: sess.ID, launchedAt: launchedAt}
+		return relaunchedMsg{sess: relaunched}
 	}, nil
 }
 
@@ -482,8 +500,7 @@ func (m *Model) restartSession(sess store.Session) error {
 	if err := sessioncmd.SnapshotRelaunch(m.store, sess, tool, agentSessionID); err != nil {
 		return err
 	}
-	bind := func() error {
-		launchedAt := time.Now()
+	bind := func(launchedAt time.Time) error {
 		if err := m.store.RestartAgent(sess.ID, agentSessionID, launchedAt); err != nil {
 			return err
 		}
@@ -1152,7 +1169,7 @@ func archivedSessions(sessions []store.Session) []store.Session {
 // leave the archive together once the whole set is back.
 func (m *Model) restoreFromArchive(sess store.Session, isGroup bool) error {
 	if !m.tmux.Exists(sess.ID) {
-		if err := m.reviveSession(sess); err != nil {
+		if _, err := m.reviveSession(sess); err != nil {
 			return err
 		}
 	}
@@ -1257,8 +1274,11 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				if m.tmux.Exists(sess.ID) {
 					continue
 				}
-				if err := m.reviveSession(sess); err != nil {
-					m.reportLaunchError(err, func() error { return m.reviveSession(sess) })
+				if _, err := m.reviveSession(sess); err != nil {
+					m.reportLaunchError(err, func() error {
+						_, err := m.reviveSession(sess)
+						return err
+					})
 					return m, nil
 				}
 			}
@@ -1291,6 +1311,10 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				if err := m.hooks.RemoveSettings(sess.ID); err != nil {
+					m.errBar.text = err.Error()
+					return m, nil
+				}
+				if err := m.hooks.RemoveAgentFiles(sess.ID); err != nil {
 					m.errBar.text = err.Error()
 					return m, nil
 				}
