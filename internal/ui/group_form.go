@@ -41,6 +41,7 @@ func groupWorktreeIndex(value string) int {
 }
 
 type groupForm struct {
+	paths         pathComplete
 	name          textinput.Model
 	path          textinput.Model
 	pathAuto      bool
@@ -63,7 +64,6 @@ type groupFormDialog struct{ groupForm }
 type groupFormHost interface {
 	reportErr(text string)
 	clearErr()
-	pathSuggestions() *pathComplete
 	selectedGroupPath() string
 	viewGroupPicker() string
 	groupBase(group string) string
@@ -97,6 +97,7 @@ func (m *Model) openGroupForm() {
 	name := textField("group-name", 60)
 	name.Focus()
 	m.groupForm = groupFormDialog{groupForm{
+		paths:    m.groupForm.paths.fresh(),
 		name:     name,
 		path:     textField("default working directory", 400),
 		pathAuto: true,
@@ -106,7 +107,6 @@ func (m *Model) openGroupForm() {
 	m.rebuildGroupOptions(m.contextGroup())
 	m.groupForm.path.SetValue(m.capturedGroupDefaultDir(m.selectedGroupPath()))
 	m.syncGroupFormFieldWidths()
-	m.pathSugg.reset()
 	m.mode = modeGroupForm
 	m.clearErr()
 }
@@ -140,7 +140,7 @@ func (m *Model) runGroupFormRequest(request groupFormRequest, reader directoryPr
 }
 
 func (d *groupFormDialog) handleKey(h groupFormHost, msg tea.KeyMsg) (tea.Cmd, groupFormRequest) {
-	paths := h.pathSuggestions()
+	paths := &d.paths
 	pathSuggesting := d.focus == gfPath && paths.active()
 	switch msg.String() {
 	case "esc":
@@ -219,7 +219,7 @@ func (d *groupFormDialog) handleKey(h groupFormHost, msg tea.KeyMsg) (tea.Cmd, g
 }
 
 func (d *groupFormDialog) focusStep(h groupFormHost, delta int) {
-	h.pathSuggestions().reset()
+	d.paths.reset()
 	d.focus = (d.focus + delta + gfCount) % gfCount
 	d.name.Blur()
 	d.path.Blur()

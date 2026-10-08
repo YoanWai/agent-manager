@@ -274,7 +274,7 @@ func (m *Model) viewGroupDetail(group string, width int) string {
 			m.rename.dir.Width = fieldWidth
 		}
 		out := head + "\n" + pathLabel.Width(10).Render("path") + textInputView(m.rename.dir)
-		if m.rename.focus == 1 && m.pathSugg.active() {
+		if m.rename.focus == 1 && m.rename.paths.active() {
 			out += "\n" + m.viewPathSuggestions()
 		}
 		out += "\n" + worktreeLabel.Width(10).Render("worktree") +

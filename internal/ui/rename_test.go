@@ -25,22 +25,15 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 	return m, m.rename.submit(m)
 }
 
-// fakeRenameHost stands in for the root's path completion, base stepper,
+// fakeRenameHost stands in for the root's path apply, base stepper,
 // status bar and rename effect lane.
 type fakeRenameHost struct {
-	paths     pathComplete
-	mode      mode
-	err       string
-	requested []string
-	queued    []renameRequest
+	mode   mode
+	err    string
+	queued []renameRequest
 }
 
-func (h *fakeRenameHost) pathSuggestions() *pathComplete { return &h.paths }
-func (h *fakeRenameHost) applyPathSuggestion() tea.Cmd   { return nil }
-func (h *fakeRenameHost) requestPathSuggestions(target pathSuggestionTarget, typed string) tea.Cmd {
-	h.requested = append(h.requested, typed)
-	return nil
-}
+func (h *fakeRenameHost) applyPathSuggestion() tea.Cmd { return nil }
 func (h *fakeRenameHost) stepRenameBase(current string, delta int) (string, tea.Cmd) {
 	return "main", nil
 }
@@ -79,9 +72,9 @@ func TestRenameDialogWithFakeHost(t *testing.T) {
 	}
 	group.input.SetValue("new")
 	group.handleKey(h, tea.KeyMsg{Type: tea.KeyDown})
-	group.handleKey(h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
-	if group.focus != 1 || group.dir.Value() != "/" || !slices.Equal(h.requested, []string{"/"}) {
-		t.Fatalf("focus %d dir %q requested %v, want typing in the path field to ask for completions", group.focus, group.dir.Value(), h.requested)
+	read := group.handleKey(h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	if group.focus != 1 || group.dir.Value() != "/" || read == nil || group.paths.generation == 0 {
+		t.Fatalf("focus %d dir %q, want typing in the path field to ask for completions", group.focus, group.dir.Value())
 	}
 	group.handleKey(h, tea.KeyMsg{Type: tea.KeyDown})
 	group.handleKey(h, tea.KeyMsg{Type: tea.KeyDown})

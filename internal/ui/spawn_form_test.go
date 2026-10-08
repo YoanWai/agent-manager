@@ -1553,11 +1553,8 @@ func TestFormUpDownMoveTheCaretBetweenPromptRows(t *testing.T) {
 // fakeFormHost drives the New Session form without a root model.
 type fakeFormHost struct {
 	*fakeChoiceHost
-	paths    pathComplete
 	defaults spawnDefaults
 }
-
-func (h *fakeFormHost) pathSuggestions() *pathComplete { return &h.paths }
 
 func (h *fakeFormHost) spawnDefaults(string) spawnDefaults { return h.defaults }
 
@@ -1598,7 +1595,7 @@ func TestFormDialogThroughAFakeHost(t *testing.T) {
 	d.groupIndex = 1
 	d.focusField(h, fieldDir)
 	cmd, request := d.handleKey(h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
-	if !request.probe || cmd == nil || d.dirAuto || h.paths.generation == 0 {
+	if !request.probe || cmd == nil || d.dirAuto || d.paths.generation == 0 {
 		t.Fatalf("typing a path should read suggestions and probe: %+v", request)
 	}
 	_, request = d.handleKey(h, tea.KeyMsg{Type: tea.KeyEnter})

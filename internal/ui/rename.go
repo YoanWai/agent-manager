@@ -8,6 +8,7 @@ import (
 )
 
 type renameTarget struct {
+	paths         pathComplete
 	isGroup       bool
 	path          string
 	sessID        string
@@ -23,18 +24,16 @@ type renameTarget struct {
 // renameDialog edits the selected session's name and tool, or a group's
 // name, default path, worktree and base choices. It owns the fields, focus,
 // keys, validation and the rename request it submits. The root opens it from
-// the selected row and configuration, shares its path completion and base
-// probe, runs the request on the effect lane and closes it from the fenced
-// completion.
+// the selected row and configuration, applies its path completion, shares
+// the base probe, runs the request on the effect lane and closes it from
+// the fenced completion.
 type renameDialog struct{ renameTarget }
 
-// renameHost is what the rename dialog reaches on the root: the shared path
-// completion, the group base stepper, mode changes, the status bar and the
+// renameHost is what the rename dialog reaches on the root: applying a path
+// suggestion, the group base stepper, mode changes, the status bar and the
 // rename effect lane.
 type renameHost interface {
-	pathSuggestions() *pathComplete
 	applyPathSuggestion() tea.Cmd
-	requestPathSuggestions(target pathSuggestionTarget, typed string) tea.Cmd
 	stepRenameBase(current string, delta int) (string, tea.Cmd)
 	setMode(next mode)
 	reportErr(text string)
@@ -74,8 +73,8 @@ func (m *Model) openRename() {
 			dirValue = m.capturedGroupDefaultDir(entry.group)
 		}
 		dir.SetValue(dirValue)
-		m.pathSugg.reset()
 		m.rename.renameTarget = renameTarget{
+			paths:         m.rename.paths.fresh(),
 			isGroup:       true,
 			path:          entry.group,
 			input:         input,
@@ -108,6 +107,7 @@ func (m *Model) openRename() {
 			toolIndex = 0
 		}
 		m.rename.renameTarget = renameTarget{
+			paths:     m.rename.paths.fresh(),
 			sessID:    entry.sess.ID,
 			input:     input,
 			toolNames: tools,
@@ -119,7 +119,7 @@ func (m *Model) openRename() {
 }
 
 func (d *renameDialog) focusField(h renameHost, delta int) {
-	h.pathSuggestions().reset()
+	d.paths.reset()
 	fields := 2
 	if d.isGroup {
 		fields = 4
@@ -136,7 +136,7 @@ func (d *renameDialog) focusField(h renameHost, delta int) {
 }
 
 func (d *renameDialog) handleKey(h renameHost, msg tea.KeyMsg) tea.Cmd {
-	pathSugg := h.pathSuggestions()
+	pathSugg := &d.paths
 	pathSuggesting := d.isGroup && d.focus == 1 && pathSugg.active()
 	switch msg.String() {
 	case "esc":
@@ -215,7 +215,7 @@ func (d *renameDialog) handleKey(h renameHost, msg tea.KeyMsg) tea.Cmd {
 		d.input, cmd = d.input.Update(msg)
 	case 1:
 		d.dir, cmd = d.dir.Update(msg)
-		cmd = tea.Batch(cmd, h.requestPathSuggestions(pathSuggestionRename, d.dir.Value()))
+		cmd = tea.Batch(cmd, d.paths.request(pathSuggestionRename, d.dir.Value(), systemPathSuggestionReader{}))
 	}
 	return cmd
 }

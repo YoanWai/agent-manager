@@ -118,7 +118,16 @@ type choiceHost interface {
 
 func (m *Model) choiceTool(toolName string) config.Tool { return m.services.cfg.Tools[toolName] }
 
-func (m *Model) choiceCatalog(toolName string) *catalogState { return m.ledger.catalogs[toolName] }
+// choiceCatalog hands the choice a copy, so only the root's catalog
+// handlers change what the CLI answered.
+func (m *Model) choiceCatalog(toolName string) *catalogState {
+	state := m.ledger.catalogs[toolName]
+	if state == nil {
+		return nil
+	}
+	answer := *state
+	return &answer
+}
 
 func (m *Model) choiceSetting(key string) string { return m.settings.cache.value(key) }
 

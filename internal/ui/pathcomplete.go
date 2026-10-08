@@ -25,6 +25,10 @@ func (pc *pathComplete) reset() {
 	pc.chosen = false
 }
 
+// fresh is an empty completer whose reads outrank every read pc started, so
+// a reopened dialog never takes a scan its previous opening asked for.
+func (pc pathComplete) fresh() pathComplete { return pathComplete{generation: pc.generation + 1} }
+
 func (pc *pathComplete) active() bool { return len(pc.suggestions) > 0 }
 
 // move advances within the suggestions without wrapping. It returns false
@@ -91,12 +95,19 @@ func pathSuggestionsCmd(request pathSuggestionsRequest, reader pathSuggestionRea
 	}
 }
 
-// pathSuggestions is the completer the form and group form path fields
-// share.
-func (m *Model) pathSuggestions() *pathComplete { return &m.pathSugg }
+// completer is the path completer of the dialog a read was started from.
+func (m *Model) completer(target pathSuggestionTarget) *pathComplete {
+	switch target {
+	case pathSuggestionGroup:
+		return &m.groupForm.paths
+	case pathSuggestionRename:
+		return &m.rename.paths
+	}
+	return &m.form.paths
+}
 
 func (m *Model) requestPathSuggestions(target pathSuggestionTarget, typed string) tea.Cmd {
-	return m.pathSugg.request(target, typed, systemPathSuggestionReader{})
+	return m.completer(target).request(target, typed, systemPathSuggestionReader{})
 }
 
 // request starts a fresh read for typed, retiring any read in flight.
@@ -150,7 +161,7 @@ func (pc *pathComplete) handle(h pathCompleteHost, msg pathSuggestionsMsg) {
 }
 
 // viewPathSuggestions is the dropdown under the rename dialog's path field.
-func (m *Model) viewPathSuggestions() string { return m.pathSugg.view() }
+func (m *Model) viewPathSuggestions() string { return m.rename.paths.view() }
 
 // view renders the directory-completion dropdown under a focused path
 // field.
@@ -223,20 +234,23 @@ func isDirEntry(parent string, entry os.DirEntry) bool {
 }
 
 func (m *Model) applyPathSuggestion() tea.Cmd {
-	path := m.pathSugg.selected() + "/"
+	var path string
 	var target pathSuggestionTarget
 	switch m.mode {
 	case modeForm:
+		path = m.form.paths.selected() + "/"
 		m.form.dir.SetValue(path)
 		m.form.dir.CursorEnd()
 		m.form.dirAuto = false
 		target = pathSuggestionForm
 	case modeGroupForm:
+		path = m.groupForm.paths.selected() + "/"
 		m.groupForm.path.SetValue(path)
 		m.groupForm.path.CursorEnd()
 		m.groupForm.pathAuto = false
 		target = pathSuggestionGroup
 	case modeRename:
+		path = m.rename.paths.selected() + "/"
 		m.rename.dir.SetValue(path)
 		m.rename.dir.CursorEnd()
 		target = pathSuggestionRename

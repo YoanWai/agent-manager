@@ -10,15 +10,12 @@ import (
 // fakeGroupFormHost drives the New Group form without a root model.
 type fakeGroupFormHost struct {
 	errs   []string
-	paths  pathComplete
 	parent string
 }
 
 func (h *fakeGroupFormHost) reportErr(text string) { h.errs = append(h.errs, text) }
 
 func (h *fakeGroupFormHost) clearErr() {}
-
-func (h *fakeGroupFormHost) pathSuggestions() *pathComplete { return &h.paths }
 
 func (h *fakeGroupFormHost) selectedGroupPath() string { return h.parent }
 

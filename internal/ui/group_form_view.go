@@ -38,7 +38,7 @@ func (m *Model) viewGroupForm() string {
 }
 
 func (d *groupFormDialog) view(h groupFormHost) (string, [][2]string) {
-	paths := h.pathSuggestions()
+	paths := &d.paths
 	var b strings.Builder
 	b.WriteString(formField("name", textInputView(d.name), d.focus == gfName))
 	b.WriteString(formField("parent", groupBadge(displayGroup(h.selectedGroupPath())), d.focus == gfParent))

@@ -74,8 +74,8 @@ func (d *formDialog) view(h formHost, facts formFacts) (string, [][2]string) {
 		field("effort", value, fieldEffort)
 	}
 	field("dir", textInputView(d.dir), fieldDir)
-	if d.focus == fieldDir && h.pathSuggestions().active() {
-		add(h.pathSuggestions().view()+"\n", formHit{field: fieldDir, entry: -1})
+	if d.focus == fieldDir && d.paths.active() {
+		add(d.paths.view()+"\n", formHit{field: fieldDir, entry: -1})
 	}
 	worktreeField := subtleStyle.Render(worktreeUnavailable)
 	if facts.worktreeKnown && facts.worktreeCapable {
@@ -107,8 +107,8 @@ func (d *formDialog) view(h formHost, facts formFacts) (string, [][2]string) {
 		hint = [][2]string{{"ctrl+v", "paste an image"}, {"tab", "move"}, {"↑↓", "caret or move"}, {"↵", "create"}, {"esc", "cancel"}}
 	case d.focus == fieldGroup:
 		hint = [][2]string{{"←→", "pick group"}, {"tab/↑↓", "move"}, {"↵", "create"}, {"esc", "cancel"}}
-	case d.focus == fieldDir && h.pathSuggestions().active():
-		hint = pathSuggestHint(h.pathSuggestions().chosen)
+	case d.focus == fieldDir && d.paths.active():
+		hint = pathSuggestHint(d.paths.chosen)
 	case d.focus == fieldModel && ch.sugg.open:
 		hint = [][2]string{{"type", "filter"}, {"↑↓", "pick"}, {"tab", "fill in"}, {"↵", "create"}, {"esc", "close"}}
 	case d.focus == fieldModel:

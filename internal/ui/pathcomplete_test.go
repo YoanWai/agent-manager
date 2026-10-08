@@ -19,7 +19,7 @@ func loadPathSuggestions(m *Model, target pathSuggestionTarget, typed string) {
 		m.rename.dir.SetValue(typed)
 	}
 	msg := m.requestPathSuggestions(target, typed)().(pathSuggestionsMsg)
-	m.pathSugg.handle(m, msg)
+	m.completer(target).handle(m, msg)
 }
 
 type blockedPathSuggestionReader struct {
@@ -43,7 +43,7 @@ func TestPathSuggestionsDeferScanAndRejectStaleInput(t *testing.T) {
 		started: make(chan struct{}), release: make(chan struct{}),
 		suggestions: []string{"/first-result"},
 	}
-	cmd := m.pathSugg.request(pathSuggestionForm, m.form.dir.Value(), reader)
+	cmd := m.form.paths.request(pathSuggestionForm, m.form.dir.Value(), reader)
 	select {
 	case <-reader.started:
 		t.Fatal("path scan ran on the update path")
@@ -53,11 +53,11 @@ func TestPathSuggestionsDeferScanAndRejectStaleInput(t *testing.T) {
 	go func() { completed <- cmd().(pathSuggestionsMsg) }()
 	<-reader.started
 	m.form.dir.SetValue("/newer")
-	m.pathSugg.request(pathSuggestionForm, m.form.dir.Value(), systemPathSuggestionReader{})
+	m.form.paths.request(pathSuggestionForm, m.form.dir.Value(), systemPathSuggestionReader{})
 	close(reader.release)
-	m.pathSugg.handle(m, <-completed)
-	if len(m.pathSugg.suggestions) != 0 {
-		t.Fatalf("stale scan replaced newer input: %v", m.pathSugg.suggestions)
+	m.form.paths.handle(m, <-completed)
+	if len(m.form.paths.suggestions) != 0 {
+		t.Fatalf("stale scan replaced newer input: %v", m.form.paths.suggestions)
 	}
 }
 
@@ -126,7 +126,7 @@ func TestApplyPathSuggestionFillsDirField(t *testing.T) {
 	}
 	m.form.dir = textField("", 400)
 	loadPathSuggestions(m, pathSuggestionForm, filepath.Join(root, "al"))
-	if !m.pathSugg.active() {
+	if !m.form.paths.active() {
 		t.Fatal("expected suggestions")
 	}
 	m.applyPathSuggestion()
@@ -149,13 +149,13 @@ func TestPathSuggestionsExitToAdjacentFormFields(t *testing.T) {
 	loadPathSuggestions(m, pathSuggestionForm, filepath.Join(root, "a"))
 
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyDown})
-	if !m.pathSugg.chosen || m.pathSugg.index != 0 {
+	if !m.form.paths.chosen || m.form.paths.index != 0 {
 		t.Fatalf("first down should select the first suggestion, chosen=%v index=%d",
-			m.pathSugg.chosen, m.pathSugg.index)
+			m.form.paths.chosen, m.form.paths.index)
 	}
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyDown})
-	if m.pathSugg.index != 1 {
-		t.Fatalf("second down should select the second suggestion, index=%d", m.pathSugg.index)
+	if m.form.paths.index != 1 {
+		t.Fatalf("second down should select the second suggestion, index=%d", m.form.paths.index)
 	}
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyDown})
 	if m.form.focus != fieldWorktree {
@@ -164,7 +164,7 @@ func TestPathSuggestionsExitToAdjacentFormFields(t *testing.T) {
 
 	m.form.focusStep(m, -1)
 	loadPathSuggestions(m, pathSuggestionForm, filepath.Join(root, "a"))
-	m.pathSugg.chosen = true
+	m.form.paths.chosen = true
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyUp})
 	if m.form.focus != fieldTool {
 		t.Fatalf("up past the first suggestion should focus tool, focus=%d", m.form.focus)
@@ -227,8 +227,8 @@ func TestRenamePathSuggestionsExitToName(t *testing.T) {
 	m.rename.focus = 1
 	m.rename.dir.Focus()
 	loadPathSuggestions(m, pathSuggestionRename, filepath.Join(root, "a"))
-	m.pathSugg.chosen = true
-	m.pathSugg.index = len(m.pathSugg.suggestions) - 1
+	m.rename.paths.chosen = true
+	m.rename.paths.index = len(m.rename.paths.suggestions) - 1
 
 	m.handleRenameKey(tea.KeyMsg{Type: tea.KeyDown})
 	if m.rename.focus != 2 {
@@ -347,5 +347,27 @@ func TestPathCompleteThroughAFakeHost(t *testing.T) {
 	pc.handle(fakePathCompleteHost{value: "/work/a", open: true}, fresh)
 	if !pc.move(1) || pc.selected() != "/work/alpha" {
 		t.Fatalf("suggestions = %v", pc.suggestions)
+	}
+}
+
+// A scan the form's previous opening asked for never fills the reopened
+// form, even over the same text.
+func TestReopenedFormIgnoresTheLastOpeningsScan(t *testing.T) {
+	root := setupCompletionDir(t)
+	m := buildModel(t)
+	m.openForm()
+	typed := filepath.Join(root, "a")
+	m.form.dir.SetValue(typed)
+	stale := m.requestPathSuggestions(pathSuggestionForm, typed)().(pathSuggestionsMsg)
+	m.mode = modeList
+	m.openForm()
+	m.form.dir.SetValue(typed)
+	m.requestPathSuggestions(pathSuggestionForm, typed)
+	m.completer(pathSuggestionForm).handle(m, stale)
+	if m.form.paths.active() {
+		t.Fatalf("reopened form took the last opening's scan: %v", m.form.paths.suggestions)
+	}
+	if m.groupForm.paths.active() || m.rename.paths.active() {
+		t.Fatal("a form scan filled another dialog's completer")
 	}
 }

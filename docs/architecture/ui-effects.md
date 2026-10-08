@@ -79,6 +79,11 @@ Installer start/settle also uses the ordered lane. Raw keys, mouse reports and
 paste run on a second FIFO lane of their own, so typing never waits behind a
 spawn, fork or poll-locked reflow; each input rechecks its session's creation,
 launch and socket in the worker, so it needs no order against lifecycle work.
+Rename rereads its session row in the worker and refuses one that was replaced
+(its creation or socket changed) after the dialog accepted it. Form, quick and
+terminal spawns launch through `sessioncmd.Lifecycle.Spawn`, the same path the
+CLI and MCP `spawn` take, which opens the worktree and hands it back on a failed
+launch.
 
 The queue adds no RPC or plugin protocol. The separate automatic-delivery
 contract adds schema receipts and in_flight/uncertain message states; old delivery

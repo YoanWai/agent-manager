@@ -36,8 +36,9 @@ type groupOption struct {
 }
 
 type form struct {
-	name textinput.Model
-	dir  textinput.Model
+	paths pathComplete
+	name  textinput.Model
+	dir   textinput.Model
 	// prompt is a composer rather than a plain textarea: a first task is
 	// often a screenshot, so the box has to hold pasted images the way the
 	// quick prompt does.
@@ -69,7 +70,6 @@ type formDialog struct{ form }
 type formHost interface {
 	choiceHost
 	clearErr()
-	pathSuggestions() *pathComplete
 	spawnDefaults(group string) spawnDefaults
 }
 
@@ -196,6 +196,7 @@ func (m *Model) openFormWithReader(reader settingsValueReader) tea.Cmd {
 	prompt.gen = m.nextComposerGen()
 
 	m.form = formDialog{form{
+		paths:     m.form.paths.fresh(),
 		name:      name,
 		dir:       dir,
 		prompt:    prompt,
@@ -212,7 +213,6 @@ func (m *Model) openFormWithReader(reader settingsValueReader) tea.Cmd {
 	m.form.dir.SetValue(m.capturedGroupDefaultDir(m.selectedGroupPath()))
 	m.form.worktree = m.cachedSpawnWorktreeDefault(m.selectedGroupPath())
 	m.form.worktreeAuto = true
-	m.pathSugg.reset()
 	m.mode = modeForm
 	catalog := m.ensureCatalog(tools[toolIndex])
 	if m.settings.pending > 0 {
@@ -329,7 +329,7 @@ func (d *formDialog) handleKey(h formHost, msg tea.KeyMsg) (tea.Cmd, formRequest
 			return cmd, formRequest{}
 		}
 	}
-	paths := h.pathSuggestions()
+	paths := &d.paths
 	dirSuggesting := d.focus == fieldDir && paths.active()
 	promptFocused := d.focus == fieldPrompt
 	switch msg.String() {
@@ -587,7 +587,7 @@ func (d *formDialog) focusStep(h formHost, delta int) {
 }
 
 func (d *formDialog) focusField(h formHost, field int) {
-	h.pathSuggestions().reset()
+	d.paths.reset()
 	d.focus = field
 	d.name.Blur()
 	d.dir.Blur()
@@ -739,7 +739,7 @@ func (m *Model) routeSpawnMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		return routed(m.handleWorktreeProbe(msg))
 
 	case pathSuggestionsMsg:
-		m.pathSugg.handle(m, msg)
+		m.completer(msg.request.target).handle(m, msg)
 		return routed(m, nil)
 
 	case terminalDirectoryMsg:

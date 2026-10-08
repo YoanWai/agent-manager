@@ -60,7 +60,6 @@ type Model struct {
 	reviewNav  reviewNavState
 	form       formDialog
 	groupForm  groupFormDialog
-	pathSugg   pathComplete
 	confirm    confirmDialog
 	launchHint launchHintDialog
 	mouse      mouseCapture
