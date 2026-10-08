@@ -1,10 +1,7 @@
 package ui
 
 import (
-	"fmt"
-	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
-	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -29,489 +26,49 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if model, cmd, ok := m.routeEffectMsg(msg); ok {
+		return model, cmd
+	}
+	if model, cmd, ok := m.routeSpawnMsg(msg); ok {
+		return model, cmd
+	}
+	if model, cmd, ok := m.routeSettingsMsg(msg); ok {
+		return model, cmd
+	}
+	if model, cmd, ok := m.routeResizeMsg(msg); ok {
+		return model, cmd
+	}
+	if model, cmd, ok := m.routeStartupMsg(msg); ok {
+		return model, cmd
+	}
+	if model, cmd, ok := m.routePreviewMsg(msg); ok {
+		return model, cmd
+	}
+	if model, cmd, ok := m.routeRefreshMsg(msg); ok {
+		return model, cmd
+	}
+	if model, cmd, ok := m.routeNoticesMsg(msg); ok {
+		return model, cmd
+	}
+	if model, cmd, ok := m.routePasteMsg(msg); ok {
+		return model, cmd
+	}
+	if model, cmd, ok := m.routeFocusMsg(msg); ok {
+		return model, cmd
+	}
+	if model, cmd, ok := m.routeSessionMsg(msg); ok {
+		return model, cmd
+	}
+	if model, cmd, ok := m.routeReviewMsg(msg); ok {
+		return model, cmd
+	}
+	if model, cmd, ok := m.routeEditorMsg(msg); ok {
+		return model, cmd
+	}
+	if model, cmd, ok := m.routeStatusMsg(msg); ok {
+		return model, cmd
+	}
 	switch msg := msg.(type) {
-	case effectCompletedMsg:
-		return m.handleEffectCompleted(msg)
-	case worktreeProbeMsg:
-		return m.handleWorktreeProbe(msg)
-	case pathSuggestionsMsg:
-		return m.handlePathSuggestions(msg)
-	case terminalDirectoryMsg:
-		return m.handleTerminalDirectory(msg)
-	case settingsLoadedMsg:
-		return m.handleSettingsLoaded(msg)
-	case tea.WindowSizeMsg:
-		// Resuming from a tmux attach re-sends the current size unchanged; only
-		// a real resize needs the per-session tmux resize calls, so an
-		// unchanged size skips them and keeps detach latency flat.
-		if msg.Width == m.layout.width && msg.Height == m.layout.height {
-			return m, nil
-		}
-		m.layout.width = msg.Width
-		m.layout.height = msg.Height
-		// Re-assert the terminal backdrop: a reattach or a fresh outer
-		// terminal delivers a size message and may carry stale colors.
-		SyncTerminalColors()
-		m.publishPaneSize()
-		m.resizeSessions()
-		if m.fullFocus() {
-			if sess, ok := m.selected(); ok {
-				m.pinFullFocusPane(sess.ID)
-			}
-		}
-		if m.mode == modeForm {
-			m.syncFormFieldWidths()
-		} else if m.mode == modeGroupForm {
-			m.syncGroupFormFieldWidths()
-		}
-		return m, nil
-
-	case bannerTickMsg:
-		m.startup.bannerPhase++
-		return m, m.bannerTick()
-
-	case bannerShimmerMsg:
-		m.startup.bannerPhase = 0
-		return m, m.bannerTick()
-
-	case browserOpenMsg:
-		m.handleBrowserOpen(msg)
-		return m, nil
-
-	case startupTickMsg:
-		if !m.needsLoaderTick() {
-			m.startup.startupAnimating = false
-			return m, nil
-		}
-		m.startup.startupPhase++
-		return m, m.startupTick()
-
-	case previewTickMsg:
-		// Only the list keeps a live pane on screen; review and the modal
-		// screens have no preview to feed, so they skip the capture and
-		// just keep the timer alive.
-		sess, ok := m.selected()
-		if !ok || (m.mode != modeList && m.mode != modeRename && m.mode != modeFocus) {
-			return m, m.previewTick()
-		}
-		// A session with a control client already pushes every frame; a
-		// tick capture on top of that is work whose result is discarded.
-		if m.focus.runtime.watch != nil && m.focus.runtime.watch.serving(sess.ID) {
-			return m, m.previewTick()
-		}
-		return m, tea.Batch(m.previewCmd(sess, m.focus.pane.PreviewGeneration()), m.previewTick())
-
-	case baseFetchedMsg:
-		return m, m.recordBaseFetch(msg)
-
-	case refreshMsg:
-		// A listing older than a committed mutation or a newer listing keeps
-		// its rows out, but still carries focus consumed from a notification,
-		// the turns it saw end and its pane facts.
-		fenced := !msg.listedAt.IsZero() && !m.effects.latestObservation.IsZero() && !msg.listedAt.After(m.effects.latestObservation)
-		staleListing := fenced || (!msg.listedAt.IsZero() && msg.listedAt.Before(m.workspace.lastListedAt))
-		if !staleListing && !msg.listedAt.IsZero() {
-			m.workspace.lastListedAt = msg.listedAt
-		}
-		if fenced {
-			m.requestRefresh()
-		}
-		m.startup.booting = false
-		m.ageError()
-		var focusExit tea.Cmd
-		if !staleListing {
-			// The focused session can die or vanish under us; fall back to the
-			// list rather than typing into nothing.
-			sessions := m.dropRecentlyRemoved(m.keepPendingLaunches(msg.sessions, msg.listedAt), msg.listedAt)
-			stripDeletedGroups(&msg, m.ledger.goneGroups)
-			if m.mode == modeFocus {
-				if sess, ok := m.selected(); !ok || sessionGone(sessions, sess.ID) {
-					focusExit = m.leaveFocus()
-				}
-			}
-			m.workspace.sessions = sessions
-			m.workspace.groups = msg.groups
-			m.workspace.groupPaths = msg.groupPaths
-			m.workspace.groupWorktrees = msg.groupWorktrees
-			m.workspace.groupBases = msg.groupBases
-			m.workspace.archivedGroups = msg.archivedGroups
-		}
-		m.endAfterTurns(msg.turnsEnded)
-		m.workspace.tmuxSocket = msg.tmuxSocket
-		m.workspace.leadingManager = msg.leadingManager
-		m.workspace.panes = msg.panes
-		m.workspace.agents = msg.agents
-		m.workspace.queuedMessages = msg.queuedMessages
-		if m.workspace.paneLines == nil {
-			m.workspace.paneLines = map[string]string{}
-		}
-		for id, line := range msg.paneLines {
-			m.workspace.paneLines[id] = line
-		}
-		if m.workspace.panePrompts == nil {
-			m.workspace.panePrompts = map[string]string{}
-		}
-		for id, prompt := range msg.panePrompts {
-			if prompt != "" {
-				m.workspace.panePrompts[id] = prompt
-			}
-		}
-		m.commitTypedPrompt()
-		if msg.snapOK {
-			m.workspace.snap = msg.snap
-			m.updateNetRates(msg.snap)
-		}
-		// Sessions left from a previous run carry that run's window size,
-		// which the cache knows nothing about; seedPaneGeom adopts their
-		// real geometry on the first pass, so nothing resets the cache here.
-		if !m.startup.sessionsSized && m.layout.width > 0 && len(m.workspace.sessions) > 0 {
-			m.startup.sessionsSized = true
-		}
-		m.publishPaneSize()
-		// The preview box changes height for more reasons than a terminal
-		// resize: the quick bar opening, the status line appearing, a new
-		// badge in the header. A pane shorter than the box paints a dead
-		// band under its output, so every pass grows what falls short.
-		// The call is free when nothing moved: it diffs against paneGeom.
-		if m.startup.sessionsSized && m.layout.width > 0 {
-			m.resizeSessions()
-		}
-		m.settleInstall()
-		m.rebuildRows()
-		if msg.focusID != "" {
-			focused, ok := m.selected()
-			// Moving the cursor under a focused pane would leave the
-			// keyboard pinned to the session the user was in while the
-			// list claims another. The click steps back to the list, and
-			// only once its session turns out to have a row to land on.
-			if m.focusSession(msg.focusID) && m.mode == modeFocus && (!ok || focused.ID != msg.focusID) {
-				focusExit = m.leaveFocus()
-			}
-		}
-		reviewStatuses := m.reviewStatusesCmd()
-		// A pass that ran with a stale selection (a session created this
-		// tick, or one a notification click just chose) carries the wrong
-		// preview; resync and fetch it directly.
-		if sess, ok := m.selected(); ok && sess.ID != msg.procFor {
-			m.syncPollInput()
-			gen := m.focus.pane.MovePreview()
-			return m, tea.Batch(focusExit, m.previewCmd(sess, gen), m.diffRefreshCmd(), reviewStatuses, m.startStartupTick())
-		}
-		m.workspace.proc = msg.proc
-		m.workspace.procFor = msg.procFor
-		m.setPreview(msg.procFor, msg.preview)
-		// A selection that has not moved since the last pass is at rest,
-		// so this covers the startup case where no settle ever fired.
-		if m.focus.pane.ObservePoll() {
-			m.watchSelection()
-		}
-		return m, tea.Batch(focusExit, m.diffRefreshCmd(), reviewStatuses, m.startStartupTick())
-
-	case updateMsg:
-		if msg.manual {
-			m.finishNoticeRefresh()
-		}
-		if msg.failed && len(msg.releases) == 0 {
-			if msg.manual && msg.err != nil {
-				m.errBar.text = "refresh failed: " + msg.err.Error()
-			}
-			return m, nil
-		}
-		m.applyNotices(func() {
-			m.update.latest = msg.latest
-			m.update.url = msg.url
-			m.update.releases = msg.releases
-			m.update.checked = true
-			m.indexReleaseRanges()
-		})
-		if msg.manual && msg.err != nil {
-			m.errBar.text = "refresh failed: " + msg.err.Error()
-		}
-		return m, nil
-
-	case updateAppliedMsg:
-		m.update.applying = false
-		if len(msg.result.Releases) > 0 {
-			m.keepNoticeSelection(func() {
-				m.update.latest = msg.result.Latest
-				m.update.url = msg.result.URL
-				m.update.releases = msg.result.Releases
-				m.update.checked = true
-				m.indexReleaseRanges()
-			})
-		}
-		if msg.err != nil {
-			m.errBar.text = "update failed: " + msg.err.Error()
-			return m, nil
-		}
-		if msg.upToDate {
-			m.keepNoticeSelection(func() {
-				m.update.latest = ""
-				m.update.url = ""
-				if len(msg.result.Releases) == 0 {
-					m.update.releases = nil
-					m.update.checked = true
-				}
-				m.indexReleaseRanges()
-			})
-			m.reportDone("already up to date")
-			return m, nil
-		}
-		m.update.restartPath = msg.path
-		return m.requestQuit()
-
-	case updateTickMsg:
-		return m, tea.Batch(m.checkForUpdate, m.checkFeed, m.updateTick())
-
-	case feedMsg:
-		if msg.manual {
-			m.finishNoticeRefresh()
-		}
-		if !msg.failed || len(msg.messages) > 0 {
-			m.applyNotices(func() { m.notices.feedMessages = msg.messages })
-		}
-		if msg.manual && msg.err != nil {
-			m.errBar.text = "refresh failed: " + msg.err.Error()
-		}
-		return m, nil
-
-	case pasteSweepMsg:
-		if msg.err != nil {
-			m.errBar.text = "clearing old pasted images: " + msg.err.Error()
-		}
-		return m, nil
-
-	case pasteSweepTickMsg:
-		return m, tea.Batch(m.sweepPastes, m.pasteSweepTick())
-
-	case replyCopiedMsg:
-		if msg.unreadable {
-			m.reportWarn(fmt.Sprintf("no reply to read in %s: a %s pane is not read that way", msg.name, msg.tool))
-			return m, nil
-		}
-		if msg.chars == 0 {
-			m.errBar.text = "nothing to copy from " + msg.name
-			return m, nil
-		}
-		if msg.unbounded {
-			m.reportWarn(fmt.Sprintf("copied %d chars from %s: %s marks no turn start here, so this is the whole pane",
-				msg.chars, msg.name, msg.tool))
-			return m, nil
-		}
-		m.reportDone(fmt.Sprintf("copied %d chars from %s", msg.chars, msg.name))
-		return m, nil
-
-	case previewSettleMsg:
-		if !m.focus.pane.PreviewSettled(msg.gen) {
-			return m, nil
-		}
-		sess, ok := m.selected()
-		if !ok {
-			return m, nil
-		}
-		// The cursor has come to rest: this is where the control client is
-		// worth opening.
-		m.watchSelection()
-		return m, m.previewCmd(sess, msg.gen)
-
-	case cursorBlinkMsg:
-		if m.mode != modeFocus {
-			return m, nil
-		}
-		m.focus.pane.Blink()
-		return m, m.cursorBlink()
-
-	case linkOpenErrMsg:
-		m.errBar.text = msg.err.Error()
-		return m, nil
-
-	case linkPageMsg:
-		return m, showLinkPage(msg.url)
-
-	case launchCommandCopiedMsg:
-		m.handleLaunchCommandCopied(msg)
-		return m, nil
-
-	case focusCopiedMsg:
-		// The clipboard writer runs off the update loop and can take
-		// hundreds of milliseconds, long enough for a click elsewhere to
-		// drop the highlight this count belongs to.
-		if !m.focus.pane.ApplyCopied(msg.gen, msg.chars) {
-			return m, nil
-		}
-		m.errBar.text = ""
-		return m, nil
-
-	case focusScrollMsg:
-		currentID := ""
-		if sess, ok := m.selected(); ok {
-			currentID = sess.ID
-		}
-		result := m.focus.pane.ApplyRegion(uifocus.RegionResult{
-			SessionID: msg.sessID,
-			Offset:    msg.offset,
-			Rows:      msg.rows,
-			Preview:   msg.preview,
-			OK:        msg.ok,
-		}, currentID, m.focusPaneRows())
-		if result.Next != nil {
-			return m, m.focusRegionRequestCmd(*result.Next)
-		}
-		if result.Apply {
-			m.workspace.preview = result.Preview
-		}
-		return m, nil
-
-	case focusPreviewMsg:
-		currentID := ""
-		if sess, ok := m.selected(); ok {
-			currentID = sess.ID
-		}
-		result := m.focus.pane.ApplyPane(uifocus.PaneUpdate{
-			SessionID: msg.sessID,
-			Mouse:     msg.paneMouse,
-			Alt:       msg.paneAlt,
-			Motion:    msg.paneMotion,
-			SGR:       msg.paneSGR,
-			History:   msg.historySize,
-			Cursor: uifocus.Cursor{
-				X: msg.cursorX, Y: msg.cursorY,
-				Visible: msg.cursorOK, PositionKnown: msg.paneStateOK,
-			},
-		}, currentID)
-		if result.UsePreview {
-			m.workspace.preview = msg.preview
-		}
-		return m, nil
-
-	case previewMsg:
-		if !m.focus.pane.AcceptPreview(msg.gen) {
-			return m, nil
-		}
-		if sess, ok := m.selected(); ok && sess.ID == msg.sessID {
-			m.setPreview(msg.sessID, msg.preview)
-			m.workspace.proc = msg.proc
-			m.workspace.procFor = msg.sessID
-		}
-		return m, nil
-
-	case reviewPickerLoadedMsg:
-		return m, m.handleReviewPickerLoaded(msg)
-
-	case reviewPreferencesMsg:
-		return m.handleReviewPreferences(msg)
-
-	case reviewLoadMsg:
-		if msg.normalize != nil {
-			m.enqueueEffect(*msg.normalize, 0, false)
-		}
-		return m, tea.Batch(m.handleReviewLoad(msg.result), m.nextEffectCmd())
-
-	case uireview.FileResult:
-		return m, m.handleReviewFile(msg)
-
-	case reviewFilesResult:
-		var cmds []tea.Cmd
-		for _, loaded := range msg {
-			if cmd := m.handleReviewFile(loaded); cmd != nil {
-				cmds = append(cmds, cmd)
-			}
-		}
-		return m, tea.Batch(cmds...)
-
-	case uireview.HighlightResult:
-		m.review.ApplyHighlight(msg)
-		return m, nil
-
-	case uireview.ProbeResult:
-		return m, m.handleReviewProbe(msg)
-
-	case uireview.StatusResult:
-		return m, m.handleReviewStatus(msg)
-
-	case uireview.SaveResult:
-		return m, m.handleReviewSave(msg)
-
-	case uireview.HandleCommentResult:
-		return m, m.handleReviewComment(msg)
-
-	case uireview.SendResult:
-		return m, m.handleReviewSend(msg)
-
-	case errMsg:
-		m.errBar.text = msg.err.Error()
-		return m, nil
-
-	case pasteImageMsg:
-		return m.handlePasteImageMsg(msg)
-
-	case pasteTextMsg:
-		return m.handlePasteTextMsg(msg)
-
-	case attachDoneMsg:
-		// An agent that repainted the terminal background for itself leaves
-		// it on ours; the resume's WindowSizeMsg skips its own sync when the
-		// size is unchanged, so the detach restores the theme's here.
-		SyncTerminalColors()
-		// The attach client sized the window to the full terminal and tmux
-		// keeps that size on detach; pin it back to the current layout's
-		// box so the capture is not clipped on the right.
-		if m.focus.runtime.lastPaneSizes != nil {
-			delete(m.focus.runtime.lastPaneSizes, msg.sessID)
-		}
-		width, height := m.paneTargetSize()
-		m.queueGeometry(geometryRequest{targets: []paneResize{{id: msg.sessID, size: [2]int{width, height}}}})
-		if msg.err != nil {
-			m.errBar.text = msg.err.Error()
-			m.requestRefresh()
-			return m, nil
-		}
-		// Ctrl+R and F3 inside the session leave a marker before
-		// detaching; the lane reads it once and clears it, and the
-		// completion carries it out for the session just attached.
-		m.enqueueEffect(detachRequest{sessionID: msg.sessID, generation: m.gens.foreground}, 0, false)
-		return m, nil
-
-	case editorFileCheckedMsg:
-		return m.handleDiffFileChecked(msg)
-
-	case editorsProbedMsg:
-		m.applyEditorsProbe(msg)
-		return m, nil
-
-	case groupBaseStepMsg:
-		m.handleGroupBaseStep(msg)
-		return m, nil
-
-	case editorDoneMsg:
-		var resume tea.Cmd
-		if msg.tookScreen {
-			// The terminal comes back from an editor the way it comes back
-			// from an attach: painted in the editor's background, and
-			// without the mouse reporting focus mode armed on the way in.
-			SyncTerminalColors()
-			if m.mode == modeFocus {
-				resume = tea.EnableMouseCellMotion
-			}
-		}
-		if msg.err != nil {
-			// Going back into the session would hide the only account of
-			// what went wrong, so a failed editor keeps the list.
-			m.errBar.text = msg.err.Error()
-			return m, resume
-		}
-		if msg.name != "" {
-			m.reportDone("opened " + msg.path + " in " + msg.name)
-		}
-		if target := msg.returnTo; target.sessionID != "" && !m.effects.quitting &&
-			target.foregroundGen == m.gens.foreground && target.mode == m.mode {
-			return m, tea.Batch(resume, m.reattach(target.sessionID, m.review.Generation()))
-		}
-		return m, resume
-
-	case catalogMsg:
-		return m, m.handleCatalog(msg)
-
 	case tea.MouseMsg:
 		return m.handleMouse(msg)
 
@@ -524,4 +81,8 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return model, cmd
 	}
 	return m, nil
+}
+
+func routed(model tea.Model, cmd tea.Cmd) (tea.Model, tea.Cmd, bool) {
+	return model, cmd, true
 }

@@ -882,3 +882,25 @@ func (m *Model) cycleSetting(step int) tea.Cmd {
 	}
 	return nil
 }
+
+func (m *Model) routeSettingsMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	switch msg := msg.(type) {
+	case settingsLoadedMsg:
+		return routed(m.handleSettingsLoaded(msg))
+
+	case baseFetchedMsg:
+		return routed(m, m.recordBaseFetch(msg))
+
+	case editorsProbedMsg:
+		m.applyEditorsProbe(msg)
+		return routed(m, nil)
+
+	case groupBaseStepMsg:
+		m.handleGroupBaseStep(msg)
+		return routed(m, nil)
+
+	case catalogMsg:
+		return routed(m, m.handleCatalog(msg))
+	}
+	return nil, nil, false
+}

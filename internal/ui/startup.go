@@ -31,3 +31,24 @@ type startupState struct {
 	booting          bool
 	pendingTyped     *typedPromptCandidate
 }
+
+func (m *Model) routeStartupMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	switch msg.(type) {
+	case bannerTickMsg:
+		m.startup.bannerPhase++
+		return routed(m, m.bannerTick())
+
+	case bannerShimmerMsg:
+		m.startup.bannerPhase = 0
+		return routed(m, m.bannerTick())
+
+	case startupTickMsg:
+		if !m.needsLoaderTick() {
+			m.startup.startupAnimating = false
+			return routed(m, nil)
+		}
+		m.startup.startupPhase++
+		return routed(m, m.startupTick())
+	}
+	return nil, nil, false
+}

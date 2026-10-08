@@ -1,5 +1,7 @@
 package ui
 
+import tea "github.com/charmbracelet/bubbletea"
+
 type errBar struct {
 	text  string
 	done  string
@@ -47,4 +49,13 @@ func (m *Model) ageError() {
 	if m.errBar.age >= 2 {
 		m.errBar = errBar{}
 	}
+}
+
+func (m *Model) routeStatusMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	switch msg := msg.(type) {
+	case errMsg:
+		m.errBar.text = msg.err.Error()
+		return routed(m, nil)
+	}
+	return nil, nil, false
 }

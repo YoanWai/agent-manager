@@ -265,3 +265,37 @@ func editorName(line string) string {
 	}
 	return filepath.Base(argv[0])
 }
+
+func (m *Model) routeEditorMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	switch msg := msg.(type) {
+	case editorFileCheckedMsg:
+		return routed(m.handleDiffFileChecked(msg))
+
+	case editorDoneMsg:
+		var resume tea.Cmd
+		if msg.tookScreen {
+			// The terminal comes back from an editor the way it comes back
+			// from an attach: painted in the editor's background, and
+			// without the mouse reporting focus mode armed on the way in.
+			SyncTerminalColors()
+			if m.mode == modeFocus {
+				resume = tea.EnableMouseCellMotion
+			}
+		}
+		if msg.err != nil {
+			// Going back into the session would hide the only account of
+			// what went wrong, so a failed editor keeps the list.
+			m.errBar.text = msg.err.Error()
+			return routed(m, resume)
+		}
+		if msg.name != "" {
+			m.reportDone("opened " + msg.path + " in " + msg.name)
+		}
+		if target := msg.returnTo; target.sessionID != "" && !m.effects.quitting &&
+			target.foregroundGen == m.gens.foreground && target.mode == m.mode {
+			return routed(m, tea.Batch(resume, m.reattach(target.sessionID, m.review.Generation())))
+		}
+		return routed(m, resume)
+	}
+	return nil, nil, false
+}

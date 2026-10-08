@@ -2,6 +2,7 @@ package ui
 
 import (
 	"errors"
+	"fmt"
 	"github.com/YoanWai/agent-manager/internal/status"
 	tea "github.com/charmbracelet/bubbletea"
 	"strings"
@@ -102,4 +103,54 @@ type replyCopiedMsg struct {
 type attachDoneMsg struct {
 	sessID string
 	err    error
+}
+
+func (m *Model) routeSessionMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	switch msg := msg.(type) {
+	case replyCopiedMsg:
+		if msg.unreadable {
+			m.reportWarn(fmt.Sprintf("no reply to read in %s: a %s pane is not read that way", msg.name, msg.tool))
+			return routed(m, nil)
+		}
+		if msg.chars == 0 {
+			m.errBar.text = "nothing to copy from " + msg.name
+			return routed(m, nil)
+		}
+		if msg.unbounded {
+			m.reportWarn(fmt.Sprintf("copied %d chars from %s: %s marks no turn start here, so this is the whole pane",
+				msg.chars, msg.name, msg.tool))
+			return routed(m, nil)
+		}
+		m.reportDone(fmt.Sprintf("copied %d chars from %s", msg.chars, msg.name))
+		return routed(m, nil)
+
+	case launchCommandCopiedMsg:
+		m.handleLaunchCommandCopied(msg)
+		return routed(m, nil)
+
+	case attachDoneMsg:
+		// An agent that repainted the terminal background for itself leaves
+		// it on ours; the resume's WindowSizeMsg skips its own sync when the
+		// size is unchanged, so the detach restores the theme's here.
+		SyncTerminalColors()
+		// The attach client sized the window to the full terminal and tmux
+		// keeps that size on detach; pin it back to the current layout's
+		// box so the capture is not clipped on the right.
+		if m.focus.runtime.lastPaneSizes != nil {
+			delete(m.focus.runtime.lastPaneSizes, msg.sessID)
+		}
+		width, height := m.paneTargetSize()
+		m.queueGeometry(geometryRequest{targets: []paneResize{{id: msg.sessID, size: [2]int{width, height}}}})
+		if msg.err != nil {
+			m.errBar.text = msg.err.Error()
+			m.requestRefresh()
+			return routed(m, nil)
+		}
+		// Ctrl+R and F3 inside the session leave a marker before
+		// detaching; the lane reads it once and clears it, and the
+		// completion carries it out for the session just attached.
+		m.enqueueEffect(detachRequest{sessionID: msg.sessID, generation: m.gens.foreground}, 0, false)
+		return routed(m, nil)
+	}
+	return nil, nil, false
 }

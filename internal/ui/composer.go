@@ -631,3 +631,23 @@ func (m *Model) handlePasteTextMsg(msg pasteTextMsg) (tea.Model, tea.Cmd) {
 	c.snapCursorOutOfToken(snapNearest)
 	return m, cmd
 }
+
+func (m *Model) routePasteMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	switch msg := msg.(type) {
+	case pasteSweepMsg:
+		if msg.err != nil {
+			m.errBar.text = "clearing old pasted images: " + msg.err.Error()
+		}
+		return routed(m, nil)
+
+	case pasteSweepTickMsg:
+		return routed(m, tea.Batch(m.sweepPastes, m.pasteSweepTick()))
+
+	case pasteImageMsg:
+		return routed(m.handlePasteImageMsg(msg))
+
+	case pasteTextMsg:
+		return routed(m.handlePasteTextMsg(msg))
+	}
+	return nil, nil, false
+}

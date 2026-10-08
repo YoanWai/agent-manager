@@ -121,3 +121,80 @@ func (m *Model) fetchFeed(force bool) tea.Msg {
 	}
 	return feedMsg{messages: messages, manual: force}
 }
+
+func (m *Model) routeNoticesMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	switch msg := msg.(type) {
+	case browserOpenMsg:
+		m.handleBrowserOpen(msg)
+		return routed(m, nil)
+
+	case updateMsg:
+		if msg.manual {
+			m.finishNoticeRefresh()
+		}
+		if msg.failed && len(msg.releases) == 0 {
+			if msg.manual && msg.err != nil {
+				m.errBar.text = "refresh failed: " + msg.err.Error()
+			}
+			return routed(m, nil)
+		}
+		m.applyNotices(func() {
+			m.update.latest = msg.latest
+			m.update.url = msg.url
+			m.update.releases = msg.releases
+			m.update.checked = true
+			m.indexReleaseRanges()
+		})
+		if msg.manual && msg.err != nil {
+			m.errBar.text = "refresh failed: " + msg.err.Error()
+		}
+		return routed(m, nil)
+
+	case updateAppliedMsg:
+		m.update.applying = false
+		if len(msg.result.Releases) > 0 {
+			m.keepNoticeSelection(func() {
+				m.update.latest = msg.result.Latest
+				m.update.url = msg.result.URL
+				m.update.releases = msg.result.Releases
+				m.update.checked = true
+				m.indexReleaseRanges()
+			})
+		}
+		if msg.err != nil {
+			m.errBar.text = "update failed: " + msg.err.Error()
+			return routed(m, nil)
+		}
+		if msg.upToDate {
+			m.keepNoticeSelection(func() {
+				m.update.latest = ""
+				m.update.url = ""
+				if len(msg.result.Releases) == 0 {
+					m.update.releases = nil
+					m.update.checked = true
+				}
+				m.indexReleaseRanges()
+			})
+			m.reportDone("already up to date")
+			return routed(m, nil)
+		}
+		m.update.restartPath = msg.path
+		return routed(m.requestQuit())
+
+	case updateTickMsg:
+		return routed(m, tea.Batch(m.checkForUpdate, m.checkFeed, m.updateTick()))
+
+	case feedMsg:
+		if msg.manual {
+			m.finishNoticeRefresh()
+		}
+		if !msg.failed || len(msg.messages) > 0 {
+			m.applyNotices(func() { m.notices.feedMessages = msg.messages })
+		}
+		if msg.manual && msg.err != nil {
+			m.errBar.text = "refresh failed: " + msg.err.Error()
+		}
+		return routed(m, nil)
+	}
+	return nil, nil, false
+}

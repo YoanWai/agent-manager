@@ -280,3 +280,11 @@ func (m *Model) handleEffectCompleted(msg effectCompletedMsg) (tea.Model, tea.Cm
 	}
 	return m, tea.Batch(command, m.nextEffectCmd())
 }
+
+func (m *Model) routeEffectMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	switch msg := msg.(type) {
+	case effectCompletedMsg:
+		return routed(m.handleEffectCompleted(msg))
+	}
+	return nil, nil, false
+}

@@ -200,3 +200,54 @@ func sessionGone(sessions []store.Session, id string) bool {
 	}
 	return true
 }
+
+func (m *Model) routePreviewMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	switch msg := msg.(type) {
+	case previewTickMsg:
+		// Only the list keeps a live pane on screen; review and the modal
+		// screens have no preview to feed, so they skip the capture and
+		// just keep the timer alive.
+		sess, ok := m.selected()
+		if !ok || (m.mode != modeList && m.mode != modeRename && m.mode != modeFocus) {
+			return routed(m, m.previewTick())
+		}
+		// A session with a control client already pushes every frame; a
+		// tick capture on top of that is work whose result is discarded.
+		if m.focus.runtime.watch != nil && m.focus.runtime.watch.serving(sess.ID) {
+			return routed(m, m.previewTick())
+		}
+		return routed(m, tea.Batch(m.previewCmd(sess, m.focus.pane.PreviewGeneration()), m.previewTick()))
+
+	case previewSettleMsg:
+		if !m.focus.pane.PreviewSettled(msg.gen) {
+			return routed(m, nil)
+		}
+		sess, ok := m.selected()
+		if !ok {
+			return routed(m, nil)
+		}
+		// The cursor has come to rest: this is where the control client is
+		// worth opening.
+		m.watchSelection()
+		return routed(m, m.previewCmd(sess, msg.gen))
+
+	case cursorBlinkMsg:
+		if m.mode != modeFocus {
+			return routed(m, nil)
+		}
+		m.focus.pane.Blink()
+		return routed(m, m.cursorBlink())
+
+	case previewMsg:
+		if !m.focus.pane.AcceptPreview(msg.gen) {
+			return routed(m, nil)
+		}
+		if sess, ok := m.selected(); ok && sess.ID == msg.sessID {
+			m.setPreview(msg.sessID, msg.preview)
+			m.workspace.proc = msg.proc
+			m.workspace.procFor = msg.sessID
+		}
+		return routed(m, nil)
+	}
+	return nil, nil, false
+}

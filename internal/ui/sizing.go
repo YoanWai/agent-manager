@@ -1,5 +1,7 @@
 package ui
 
+import tea "github.com/charmbracelet/bubbletea"
+
 // resizeSessions syncs every live session's tmux window to the preview
 // panel's pixel box so a capture fills the preview 1:1, resizing in
 // parallel so a fleet of sessions does not serialize N tmux round-trips
@@ -150,4 +152,35 @@ func (m *Model) seedPaneGeom() {
 		}
 		m.focus.runtime.lastPaneSizes[id] = [2]int{geom.Width, geom.Height}
 	}
+}
+
+func (m *Model) routeResizeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		// Resuming from a tmux attach re-sends the current size unchanged; only
+		// a real resize needs the per-session tmux resize calls, so an
+		// unchanged size skips them and keeps detach latency flat.
+		if msg.Width == m.layout.width && msg.Height == m.layout.height {
+			return routed(m, nil)
+		}
+		m.layout.width = msg.Width
+		m.layout.height = msg.Height
+		// Re-assert the terminal backdrop: a reattach or a fresh outer
+		// terminal delivers a size message and may carry stale colors.
+		SyncTerminalColors()
+		m.publishPaneSize()
+		m.resizeSessions()
+		if m.fullFocus() {
+			if sess, ok := m.selected(); ok {
+				m.pinFullFocusPane(sess.ID)
+			}
+		}
+		if m.mode == modeForm {
+			m.syncFormFieldWidths()
+		} else if m.mode == modeGroupForm {
+			m.syncGroupFormFieldWidths()
+		}
+		return routed(m, nil)
+	}
+	return nil, nil, false
 }

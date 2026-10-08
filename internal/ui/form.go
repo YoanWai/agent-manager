@@ -865,3 +865,17 @@ func (m *Model) dispatchGroup(request groupRequest) {
 	request.draftDir = m.groupForm.path.Value()
 	m.enqueueEffect(request, 0, false)
 }
+
+func (m *Model) routeSpawnMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	switch msg := msg.(type) {
+	case worktreeProbeMsg:
+		return routed(m.handleWorktreeProbe(msg))
+
+	case pathSuggestionsMsg:
+		return routed(m.handlePathSuggestions(msg))
+
+	case terminalDirectoryMsg:
+		return routed(m.handleTerminalDirectory(msg))
+	}
+	return nil, nil, false
+}

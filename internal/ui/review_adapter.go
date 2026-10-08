@@ -328,3 +328,51 @@ func reviewOpenPathError(path string, err error) string {
 	}
 	return "checking file " + filepath.Clean(path) + ": " + err.Error()
 }
+
+func (m *Model) routeReviewMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	switch msg := msg.(type) {
+	case reviewPickerLoadedMsg:
+		return routed(m, m.handleReviewPickerLoaded(msg))
+
+	case reviewPreferencesMsg:
+		return routed(m.handleReviewPreferences(msg))
+
+	case reviewLoadMsg:
+		if msg.normalize != nil {
+			m.enqueueEffect(*msg.normalize, 0, false)
+		}
+		return routed(m, tea.Batch(m.handleReviewLoad(msg.result), m.nextEffectCmd()))
+
+	case uireview.FileResult:
+		return routed(m, m.handleReviewFile(msg))
+
+	case reviewFilesResult:
+		var cmds []tea.Cmd
+		for _, loaded := range msg {
+			if cmd := m.handleReviewFile(loaded); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+		return routed(m, tea.Batch(cmds...))
+
+	case uireview.HighlightResult:
+		m.review.ApplyHighlight(msg)
+		return routed(m, nil)
+
+	case uireview.ProbeResult:
+		return routed(m, m.handleReviewProbe(msg))
+
+	case uireview.StatusResult:
+		return routed(m, m.handleReviewStatus(msg))
+
+	case uireview.SaveResult:
+		return routed(m, m.handleReviewSave(msg))
+
+	case uireview.HandleCommentResult:
+		return routed(m, m.handleReviewComment(msg))
+
+	case uireview.SendResult:
+		return routed(m, m.handleReviewSend(msg))
+	}
+	return nil, nil, false
+}
