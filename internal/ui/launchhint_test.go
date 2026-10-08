@@ -21,6 +21,67 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
+// fakeLaunchHintHost stands in for the root's composers, effect lane,
+// status bar and card chrome.
+type fakeLaunchHintHost struct {
+	mode     mode
+	gens     int
+	images   []imageAttachment
+	err      string
+	admit    bool
+	installs []installStartRequest
+}
+
+func (h *fakeLaunchHintHost) requestQuit() (tea.Model, tea.Cmd) { return nil, tea.Quit }
+func (h *fakeLaunchHintHost) setMode(next mode)                 { h.mode = next }
+func (h *fakeLaunchHintHost) advanceDialogGen()                 { h.gens++ }
+func (h *fakeLaunchHintHost) takeComposerImages() []imageAttachment {
+	images := h.images
+	h.images = nil
+	return images
+}
+func (h *fakeLaunchHintHost) reportErr(text string) { h.err = text }
+func (h *fakeLaunchHintHost) startInstall(request installStartRequest) bool {
+	h.installs = append(h.installs, request)
+	return h.admit
+}
+func (h *fakeLaunchHintHost) cardWidth() int { return 40 }
+func (h *fakeLaunchHintHost) cardSized(width int, title, body string, hint [][2]string) string {
+	return title + "\n" + body
+}
+
+func TestLaunchHintDialogWithFakeHost(t *testing.T) {
+	h := &fakeLaunchHintHost{images: []imageAttachment{{id: 1}}}
+	var d launchHintDialog
+	d.open(h, launchFix{text: "tool is not installed.\n\nRun the installer.", command: "install tool", binary: "tool"})
+	if h.mode != modeLaunchHint || h.gens != 1 || len(d.fix.images) != 1 || h.images != nil {
+		t.Fatalf("open: mode %v gens %d fix %+v, want the composer images taken", h.mode, h.gens, d.fix)
+	}
+	if got := d.view(h); !strings.Contains(got, "Session needs a setup step") || !strings.Contains(got, "Run the installer.") {
+		t.Fatalf("view = %q", got)
+	}
+
+	d.handleKey(h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")})
+	if len(h.installs) != 1 || h.installs[0].command != "install tool" || len(d.fix.images) != 1 {
+		t.Fatalf("installs %+v images %d, want a refused start to keep the images", h.installs, len(d.fix.images))
+	}
+	h.admit = true
+	d.handleKey(h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")})
+	if len(h.installs) != 2 || len(h.installs[1].images) != 1 || d.fix.images != nil {
+		t.Fatalf("installs %+v images %v, want the images handed to the admitted install", h.installs, d.fix.images)
+	}
+	d.install = &pendingInstall{name: "install-tool"}
+	d.handleKey(h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")})
+	if len(h.installs) != 2 || h.err != "an install is already running in install-tool" {
+		t.Fatalf("installs %d err %q, want a running install refused", len(h.installs), h.err)
+	}
+
+	d.handleKey(h, tea.KeyMsg{Type: tea.KeyEsc})
+	if h.mode != modeList || d.fix.command != "" {
+		t.Fatalf("esc: mode %v fix %+v", h.mode, d.fix)
+	}
+}
+
 func TestReportLaunchErrorOpensInstallHintForHermes(t *testing.T) {
 	m := buildModel(t)
 	want := "'/opt/hermes/libexec/bin/python3' -m pip install mcp"
@@ -83,7 +144,7 @@ func TestReportLaunchErrorOpensInstallHintForMissingCLI(t *testing.T) {
 	if !strings.Contains(m.launchHint.fix.text, "claude") {
 		t.Fatalf("hint %q should name the missing CLI", m.launchHint.fix.text)
 	}
-	frame := ansi.Strip(m.viewLaunchHint())
+	frame := ansi.Strip(m.launchHint.view(m))
 	if !strings.Contains(frame, "claude.ai/install.sh") {
 		t.Fatalf("dialog should show the install command:\n%s", frame)
 	}
@@ -205,7 +266,7 @@ func TestRestartHermesWithoutMCPSupportPromptsInstall(t *testing.T) {
 	m.services.cfg.Tools["hermes"] = config.Tool{Command: "cat", DefaultStatus: status.Idle}
 	installSDKlessHermes(t)
 	sess := store.Session{ID: newID(), Name: "agent", Tool: "hermes", Cwd: t.TempDir()}
-	m.confirm = confirmTarget{action: actionRestart, sessions: []store.Session{sess}}
+	m.confirm.confirmTarget = confirmTarget{action: actionRestart, sessions: []store.Session{sess}}
 	m.mode = modeConfirmDelete
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
@@ -447,7 +508,7 @@ func TestLaunchHintWithoutARecipeOffersOnlyClose(t *testing.T) {
 	m := buildModel(t)
 	m.reportLaunchError(config.MissingToolError{Binary: "acme"})
 
-	frame := ansi.Strip(m.viewLaunchHint())
+	frame := ansi.Strip(m.launchHint.view(m))
 	if strings.Contains(frame, "copy") {
 		t.Fatalf("dialog should offer neither copy nor install:\n%s", frame)
 	}
@@ -522,7 +583,7 @@ func installFixture(t *testing.T, m *Model, command string) (retryName, image st
 		pane:     sessioncmd.PaneSize{Width: w, Height: h},
 		images:   []imageAttachment{{id: 1, path: image}},
 	}
-	m.openLaunchHint(launchFix{
+	m.launchHint.open(m, launchFix{
 		text:        "am-fake-cli is not installed.\n\ninstall it with: " + command,
 		command:     command,
 		binary:      "am-fake-cli",
@@ -679,7 +740,7 @@ func TestLaunchHintNamesAWindowsOnlyInstall(t *testing.T) {
 
 	m.reportLaunchError(config.MissingToolError{Binary: "claude", WindowsPath: windowsPath})
 
-	frame := ansi.Strip(m.viewLaunchHint())
+	frame := ansi.Strip(m.launchHint.view(m))
 	for _, want := range []string{"installed on Windows", "WSL distro", "claude.ai/install.sh"} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("dialog is missing %q:\n%s", want, frame)
@@ -863,7 +924,7 @@ func TestInstallFinishesARefusedRestore(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.services.cfg.Tools["claude"] = config.Tool{Command: "am-missing-cli-xyz", DefaultStatus: status.Idle}
-	m.confirm = confirmTarget{action: actionRestore, sessions: []store.Session{sess}}
+	m.confirm.confirmTarget = confirmTarget{action: actionRestore, sessions: []store.Session{sess}}
 	m.mode = modeConfirmDelete
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})

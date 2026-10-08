@@ -9,7 +9,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/deps"
 	"github.com/YoanWai/agent-manager/internal/mcpreg"
-	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -42,6 +41,52 @@ type pendingInstall struct {
 	images      []imageAttachment
 }
 
+type launchHintState struct {
+	fix launchFix
+	// install is the setup-dialog install still running in a shell tab,
+	// nil when none is.
+	install *pendingInstall
+}
+
+// launchHintDialog holds a refused launch's fix: the text, the command
+// that unblocks it, the images the refused prompt named and the install it
+// started. It owns its keys, view and the install request it builds. The
+// root routes launch errors into it, starts that install on the effect lane,
+// and releases the mouse while it is open (syncMouseCapture keys
+// mouse.released on modeLaunchHint) so a drag selects the command.
+type launchHintDialog struct{ launchHintState }
+
+// launchHintHost is what the setup dialog reaches on the root.
+type launchHintHost interface {
+	requestQuit() (tea.Model, tea.Cmd)
+	setMode(next mode)
+	advanceDialogGen()
+	takeComposerImages() []imageAttachment
+	reportErr(text string)
+	startInstall(request installStartRequest) bool
+	cardWidth() int
+	cardSized(width int, title, body string, hint [][2]string) string
+}
+
+var _ launchHintHost = (*Model)(nil)
+
+// advanceDialogGen fences completions submitted from the dialog it
+// replaces.
+func (m *Model) advanceDialogGen() {
+	m.gens.dialog++
+}
+
+// takeComposerImages hands over the images the spawn form's prompt and the
+// quick bar hold, leaving both composers empty.
+func (m *Model) takeComposerImages() []imageAttachment {
+	var images []imageAttachment
+	images = append(images, m.form.prompt.attachments...)
+	images = append(images, m.quick.attachments...)
+	m.form.prompt.attachments = nil
+	m.quick.attachments = nil
+	return images
+}
+
 // copyLaunchCommand is the seam tests swap so a copy never reaches the
 // desktop clipboard.
 var copyLaunchCommand = clipboard.WriteText
@@ -62,7 +107,7 @@ func (m *Model) reportLaunchError(err error) {
 		if hermesMCP.PipCommand != "" {
 			step = "Run `" + hermesMCP.PipCommand + "` to add the mcp package to the Python that runs Hermes, then spawn again."
 		}
-		m.openLaunchHint(launchFix{
+		m.launchHint.open(m, launchFix{
 			text: "Hermes sessions carry the agent-manager MCP tools, and this Hermes cannot load them: its MCP SDK is not installed.\n\n" +
 				step,
 			command: hermesMCP.PipCommand,
@@ -72,7 +117,7 @@ func (m *Model) reportLaunchError(err error) {
 	}
 	var missing config.MissingToolError
 	if errors.As(err, &missing) {
-		m.openLaunchHint(launchFix{
+		m.launchHint.open(m, launchFix{
 			text:    missingToolText(missing),
 			command: deps.Command(missing.Binary),
 			binary:  missing.Binary,
@@ -95,18 +140,15 @@ func missingToolText(missing config.MissingToolError) string {
 	return head + "\n\n" + deps.Hint(missing.Binary)
 }
 
-// openLaunchHint takes the refused prompt's images out of the composers:
+// open takes the refused prompt's images out of the composers:
 // the prompt text already names their paths, and the dialog owns the
 // files until the launch runs or is given up, so the form and the quick
 // bar can be reopened meanwhile.
-func (m *Model) openLaunchHint(fix launchFix) {
-	m.gens.dialog++
-	fix.images = append(fix.images, m.form.prompt.attachments...)
-	fix.images = append(fix.images, m.quick.attachments...)
-	m.form.prompt.attachments = nil
-	m.quick.attachments = nil
-	m.launchHint.fix = fix
-	m.mode = modeLaunchHint
+func (d *launchHintDialog) open(h launchHintHost, fix launchFix) {
+	h.advanceDialogGen()
+	fix.images = append(fix.images, h.takeComposerImages()...)
+	d.fix = fix
+	h.setMode(modeLaunchHint)
 }
 
 func removeInstallFiles(statusFile, script string) {
@@ -122,35 +164,37 @@ func dropImages(images []imageAttachment) {
 	}
 }
 
-func (m *Model) handleLaunchHintKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (d *launchHintDialog) handleKey(h launchHintHost, msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "ctrl+c":
-		return m.requestQuit()
+		_, cmd := h.requestQuit()
+		return cmd
 	case "c":
-		if m.launchHint.fix.command == "" {
-			return m, nil
+		if d.fix.command == "" {
+			return nil
 		}
-		command := m.launchHint.fix.command
-		return m, func() tea.Msg {
+		command := d.fix.command
+		return func() tea.Msg {
 			return launchCommandCopiedMsg{err: copyLaunchCommand(command)}
 		}
 	case "i":
-		if m.launchHint.fix.command == "" {
-			return m, nil
+		if d.fix.command == "" {
+			return nil
 		}
-		return m.startInstall()
+		d.startInstall(h)
+		return nil
 	case "esc", "q", "enter":
-		m.closeLaunchHint()
+		d.close(h)
 	}
-	return m, nil
+	return nil
 }
 
-// closeLaunchHint drops the dialog and the images the refused prompt was
+// close drops the dialog and the images the refused prompt was
 // holding: they stayed alive while an install could still spawn it.
-func (m *Model) closeLaunchHint() {
-	dropImages(m.launchHint.fix.images)
-	m.launchHint.fix = launchFix{}
-	m.mode = modeList
+func (d *launchHintDialog) close(h launchHintHost) {
+	dropImages(d.fix.images)
+	d.fix = launchFix{}
+	h.setMode(modeList)
 }
 
 func (m *Model) handleLaunchCommandCopied(msg launchCommandCopiedMsg) {
@@ -161,44 +205,29 @@ func (m *Model) handleLaunchCommandCopied(msg launchCommandCopiedMsg) {
 	m.reportDone("copied to clipboard")
 }
 
-// startInstall captures the setup dialog and queues its filesystem, store,
-// lifecycle, and tmux work. The dialog stays in front until that job says
-// the command was typed into a durable shell row.
-func (m *Model) startInstall() (tea.Model, tea.Cmd) {
-	if m.launchHint.install != nil {
-		m.reportErr("an install is already running in " + m.launchHint.install.name)
-		return m, nil
+// startInstall captures the setup dialog's install and hands it to the
+// root, which queues its filesystem, store, lifecycle, and tmux work. The
+// dialog stays in front until that job says the command was typed into a
+// durable shell row; the images move to the request once it is admitted.
+func (d *launchHintDialog) startInstall(h launchHintHost) {
+	if d.install != nil {
+		h.reportErr("an install is already running in " + d.install.name)
+		return
 	}
-	for _, job := range append([]*effectJob{m.effects.active}, m.effects.pending...) {
-		if job == nil {
-			continue
-		}
-		if request, ok := job.request.(installStartRequest); ok {
-			m.reportErr("an install is already starting for " + request.binary)
-			return m, nil
-		}
-	}
-	fix := m.launchHint.fix
-	toolName, _ := m.shellTool()
-	w, h := m.paneTargetSize()
+	fix := d.fix
 	retry := fix.effectRetry
 	if spawn, ok := retry.(spawnRequest); ok && len(spawn.images) == 0 {
 		spawn.images = append([]imageAttachment(nil), fix.images...)
 		retry = spawn
 	}
-	m.launchHint.fix.images = nil
-	m.enqueueEffect(installStartRequest{
-		gen:         m.gens.dialog,
-		id:          newID(),
+	if h.startInstall(installStartRequest{
 		command:     fix.command,
 		binary:      fix.binary,
-		toolName:    toolName,
-		group:       m.contextGroup(),
-		pane:        sessioncmd.PaneSize{Width: w, Height: h},
 		effectRetry: retry,
 		images:      fix.images,
-	}, 0, false)
-	return m, nil
+	}) {
+		d.fix.images = nil
+	}
 }
 
 // installScript shows the command, runs it, and records how it ended. The
@@ -233,13 +262,13 @@ func (m *Model) settleInstall() {
 	m.enqueueEffect(installSettleRequest{install: *install}, 0, false)
 }
 
-func (m *Model) viewLaunchHint() string {
-	width := m.cardWidth()
+func (d *launchHintDialog) view(h launchHintHost) string {
+	width := h.cardWidth()
 	inner := cardInnerWidth(width)
 	tone := lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 
 	var body strings.Builder
-	for i, paragraph := range strings.Split(m.launchHint.fix.text, "\n\n") {
+	for i, paragraph := range strings.Split(d.fix.text, "\n\n") {
 		style := mutedStyle
 		if i == 0 {
 			style = tone
@@ -252,8 +281,8 @@ func (m *Model) viewLaunchHint() string {
 		}
 	}
 	hint := [][2]string{{"esc", "close"}}
-	if m.launchHint.fix.command != "" {
+	if d.fix.command != "" {
 		hint = [][2]string{{"i", "install"}, {"c", "copy"}, {"esc", "close"}}
 	}
-	return m.cardSized(width, "◈ Session needs a setup step", strings.TrimRight(body.String(), "\n"), hint)
+	return h.cardSized(width, "◈ Session needs a setup step", strings.TrimRight(body.String(), "\n"), hint)
 }

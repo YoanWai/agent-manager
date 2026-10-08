@@ -1,9 +1,59 @@
 package ui
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
 	"testing"
+
+	"github.com/YoanWai/agent-manager/internal/store"
+	tea "github.com/charmbracelet/bubbletea"
 )
+
+// handleConfirmKey drives the confirm dialog with the root as its host, the
+// way the key dispatch does.
+func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	return m, m.confirm.handleKey(m, msg)
+}
+
+// fakeConfirmHost records what the confirm dialog asks of the root.
+type fakeConfirmHost struct {
+	mode   mode
+	queued []confirmTarget
+	quits  int
+}
+
+func (h *fakeConfirmHost) confirmCard(title, question, consequence string, destructive bool, answer string) string {
+	return title + "|" + question + "|" + consequence + "|" + answer
+}
+func (h *fakeConfirmHost) requestQuit() (tea.Model, tea.Cmd) { h.quits++; return nil, tea.Quit }
+func (h *fakeConfirmHost) setMode(next mode)                 { h.mode = next }
+func (h *fakeConfirmHost) queueLifecycle(target confirmTarget, allowLive bool, emptyNotice string) {
+	h.queued = append(h.queued, target)
+}
+func (h *fakeConfirmHost) nextEffectCmd() tea.Cmd { return func() tea.Msg { return nil } }
+
+func TestConfirmDialogWithFakeHost(t *testing.T) {
+	sessions := []store.Session{{ID: "a"}}
+	d := confirmDialog{confirmTarget{action: actionKill, sessions: sessions, label: "kill a? frees its RAM."}}
+	h := &fakeConfirmHost{mode: modeConfirmDelete}
+
+	if got := d.view(h); got != "✕ Kill session|kill a?|frees its RAM.|kill" {
+		t.Fatalf("view = %q", got)
+	}
+	if cmd := d.handleKey(h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}); cmd != nil || h.mode != modeConfirmDelete {
+		t.Fatalf("unbound key changed the dialog: mode %v", h.mode)
+	}
+	if cmd := d.handleKey(h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")}); cmd == nil {
+		t.Fatal("confirm returned no effect command")
+	}
+	if h.mode != modeList || len(h.queued) != 1 || h.queued[0].action != actionKill {
+		t.Fatalf("mode %v queued %+v, want the captured kill queued and the dialog closed", h.mode, h.queued)
+	}
+	if &h.queued[0].sessions[0] == &sessions[0] {
+		t.Fatal("queued target shares the dialog's session slice")
+	}
+	if d.action != "" || d.sessions != nil {
+		t.Fatalf("dialog kept its target after confirming: %+v", d.confirmTarget)
+	}
+}
 
 func TestConfirmKeyIgnoresUnboundKeys(t *testing.T) {
 	cases := []struct {

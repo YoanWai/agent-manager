@@ -17,7 +17,7 @@ func TestArchiveReconcilesDurableRowsBeforeLaterFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	loadStoredRows(t, m)
-	m.confirm = confirmTarget{action: actionArchive, sessions: []store.Session{first, {ID: "beef", Status: status.Dead}}}
+	m.confirm.confirmTarget = confirmTarget{action: actionArchive, sessions: []store.Session{first, {ID: "beef", Status: status.Dead}}}
 	if err := m.archiveConfirmed(); err == nil {
 		t.Fatal("expected missing second row failure")
 	}
@@ -40,7 +40,7 @@ func TestRestoreReconcilesDurableRowsBeforeLaterFailure(t *testing.T) {
 		}
 	}
 	loadStoredRows(t, m)
-	m.confirm = confirmTarget{action: actionRestore, sessions: []store.Session{first, second}}
+	m.confirm.confirmTarget = confirmTarget{action: actionRestore, sessions: []store.Session{first, second}}
 	if err := m.restoreConfirmed(); err == nil {
 		t.Fatal("expected second revive failure")
 	}
@@ -87,7 +87,7 @@ func TestFailedGroupRestoreDoesNotClearMembership(t *testing.T) {
 		t.Fatal(err)
 	}
 	loadStoredRows(t, m)
-	m.confirm = confirmTarget{action: actionRestore, isGroup: true, path: "zone", sessions: []store.Session{sess}}
+	m.confirm.confirmTarget = confirmTarget{action: actionRestore, isGroup: true, path: "zone", sessions: []store.Session{sess}}
 	if err := m.restoreConfirmed(); err == nil {
 		t.Fatal("expected group write failure")
 	}

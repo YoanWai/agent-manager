@@ -11,8 +11,93 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+// handleRenameKey and applyRename drive the rename dialog with the root as
+// its host, the way the key dispatch does.
+func (m *Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	return m, m.rename.handleKey(m, msg)
+}
+
+func (m *Model) applyRename() (tea.Model, tea.Cmd) {
+	return m, m.rename.submit(m)
+}
+
+// fakeRenameHost stands in for the root's path completion, base stepper,
+// status bar and rename effect lane.
+type fakeRenameHost struct {
+	paths     pathComplete
+	mode      mode
+	err       string
+	requested []string
+	queued    []renameRequest
+}
+
+func (h *fakeRenameHost) pathCompletion() *pathComplete { return &h.paths }
+func (h *fakeRenameHost) applyPathSuggestion() tea.Cmd  { return nil }
+func (h *fakeRenameHost) requestPathSuggestions(target pathSuggestionTarget, typed string) tea.Cmd {
+	h.requested = append(h.requested, typed)
+	return nil
+}
+func (h *fakeRenameHost) stepRenameBase(current string, delta int) (string, tea.Cmd) {
+	return "main", nil
+}
+func (h *fakeRenameHost) setMode(next mode)     { h.mode = next }
+func (h *fakeRenameHost) reportErr(text string) { h.err = text }
+func (h *fakeRenameHost) queueRename(request renameRequest) tea.Cmd {
+	h.queued = append(h.queued, request)
+	return func() tea.Msg { return nil }
+}
+
+func TestRenameDialogWithFakeHost(t *testing.T) {
+	input := textinput.New()
+	input.SetValue("box")
+	input.Focus()
+	d := renameDialog{renameTarget{sessID: "s1", input: input, toolNames: []string{"claude", "zsh"}}}
+	h := &fakeRenameHost{mode: modeRename}
+
+	d.handleKey(h, tea.KeyMsg{Type: tea.KeyTab})
+	if d.tool() != "zsh" {
+		t.Fatalf("tab picked %q, want the next tool", d.tool())
+	}
+	d.input.SetValue(" a/b ")
+	if cmd := d.handleKey(h, tea.KeyMsg{Type: tea.KeyEnter}); cmd == nil {
+		t.Fatal("enter queued nothing")
+	}
+	want := renameRequest{kind: renameSession, sessID: "s1", name: "a-b", tool: "zsh"}
+	if len(h.queued) != 1 || h.queued[0].kind != want.kind || h.queued[0].sessID != want.sessID || h.queued[0].name != want.name || h.queued[0].tool != want.tool {
+		t.Fatalf("queued = %+v, want %+v", h.queued, want)
+	}
+
+	group := renameDialog{renameTarget{isGroup: true, path: "work/old", input: input, dir: textinput.New()}}
+	group.input.SetValue("")
+	group.handleKey(h, tea.KeyMsg{Type: tea.KeyEnter})
+	if h.err != "name cannot be empty" || len(h.queued) != 1 {
+		t.Fatalf("err %q queued %d, want the empty name refused", h.err, len(h.queued))
+	}
+	group.input.SetValue("new")
+	group.handleKey(h, tea.KeyMsg{Type: tea.KeyDown})
+	group.handleKey(h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	if group.focus != 1 || group.dir.Value() != "/" || !slices.Equal(h.requested, []string{"/"}) {
+		t.Fatalf("focus %d dir %q requested %v, want typing in the path field to ask for completions", group.focus, group.dir.Value(), h.requested)
+	}
+	group.handleKey(h, tea.KeyMsg{Type: tea.KeyDown})
+	group.handleKey(h, tea.KeyMsg{Type: tea.KeyDown})
+	group.handleKey(h, tea.KeyMsg{Type: tea.KeyRight})
+	if group.focus != 3 || group.base != "main" {
+		t.Fatalf("focus %d base %q, want the base stepped through the host", group.focus, group.base)
+	}
+	group.handleKey(h, tea.KeyMsg{Type: tea.KeyEnter})
+	if len(h.queued) != 2 || h.queued[1].newGroup != "work/new" || h.queued[1].rawDir != "/" || h.queued[1].base != "main" {
+		t.Fatalf("queued = %+v, want the group renamed within its parent", h.queued)
+	}
+	group.handleKey(h, tea.KeyMsg{Type: tea.KeyEsc})
+	if h.mode != modeList {
+		t.Fatalf("esc left mode %v", h.mode)
+	}
+}
 
 type refusingWorktreeBranchStore struct {
 	*store.Store
@@ -479,16 +564,16 @@ func TestRenameSessionChangesTool(t *testing.T) {
 		t.Fatalf("set agent id: %v", err)
 	}
 	m.openRename()
-	if m.renameTool() != "claude" {
-		t.Fatalf("rename tool start = %q want claude", m.renameTool())
+	if m.rename.tool() != "claude" {
+		t.Fatalf("rename tool start = %q want claude", m.rename.tool())
 	}
 	if len(m.rename.toolNames) < 2 {
 		t.Fatalf("need at least 2 tools to cycle, got %v", m.rename.toolNames)
 	}
 	m.handleRenameKey(tea.KeyMsg{Type: tea.KeyTab})
 	wantTool := m.rename.toolNames[1]
-	if m.renameTool() != wantTool {
-		t.Fatalf("after tab tool = %q want %q", m.renameTool(), wantTool)
+	if m.rename.tool() != wantTool {
+		t.Fatalf("after tab tool = %q want %q", m.rename.tool(), wantTool)
 	}
 	_, cmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m.applyCmd(t, cmd)

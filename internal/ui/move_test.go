@@ -1,10 +1,77 @@
 package ui
 
 import (
+	"reflect"
 	"testing"
 
+	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+// handleMoveKey drives the move dialog with the root as its host, the way
+// the key dispatch does.
+func (m *Model) handleMoveKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	return m, m.move.handleKey(m, msg)
+}
+
+// fakeMoveHost stands in for the root's borrowed group picker and effect
+// lane.
+type fakeMoveHost struct {
+	mode     mode
+	options  []groupOption
+	index    int
+	moves    []uirail.Mutation
+	closes   []moveDialogClose
+	cursored int
+}
+
+func (h *fakeMoveHost) setMode(next mode) { h.mode = next }
+func (h *fakeMoveHost) moveGroupCursor(delta int) tea.Cmd {
+	h.cursored += delta
+	h.index = (h.index + delta + len(h.options)) % len(h.options)
+	return nil
+}
+func (h *fakeMoveHost) pickedGroupOption() groupOption { return h.options[h.index] }
+func (h *fakeMoveHost) selectedGroupPath() string      { return h.options[h.index].path }
+func (h *fakeMoveHost) enqueueMove(mut uirail.Mutation, close moveDialogClose) tea.Cmd {
+	h.moves = append(h.moves, mut)
+	h.closes = append(h.closes, close)
+	return func() tea.Msg { return nil }
+}
+func (h *fakeMoveHost) card(title, body string, hint [][2]string) string { return title + "|" + body }
+func (h *fakeMoveHost) viewGroupPicker() string                          { return "picker" }
+
+func TestMoveDialogWithFakeHost(t *testing.T) {
+	h := &fakeMoveHost{mode: modeMove, options: []groupOption{{path: ""}, {path: "work", depth: 1}, {path: "work", depth: 2, sessID: "parent", name: "agent"}}}
+	d := moveDialog{moveTarget{id: "shell"}}
+	if got := d.view(h); got != "⇄ Move|picker" {
+		t.Fatalf("view = %q", got)
+	}
+	d.handleKey(h, tea.KeyMsg{Type: tea.KeyDown})
+	d.handleKey(h, tea.KeyMsg{Type: tea.KeyDown})
+	if cmd := d.handleKey(h, tea.KeyMsg{Type: tea.KeyEnter}); cmd == nil {
+		t.Fatal("enter queued nothing")
+	}
+	want := uirail.Mutation{Kind: uirail.PlaceSession, SessionID: "shell", Group: "work", ParentID: "parent"}
+	if len(h.moves) != 1 || !reflect.DeepEqual(h.moves[0], want) || h.closes[0].optSessID != "parent" {
+		t.Fatalf("moves = %+v closes = %+v, want the session placed under its picked agent", h.moves, h.closes)
+	}
+
+	group := moveDialog{moveTarget{path: "work/sub"}}
+	h = &fakeMoveHost{mode: modeMove, options: []groupOption{{path: ""}, {path: "work", depth: 1}}, index: 1}
+	if cmd := group.handleKey(h, tea.KeyMsg{Type: tea.KeyEnter}); cmd != nil || h.mode != modeList || len(h.moves) != 0 {
+		t.Fatalf("moving a group onto its own parent should just close: mode %v moves %+v", h.mode, h.moves)
+	}
+	h = &fakeMoveHost{mode: modeMove, options: []groupOption{{path: ""}, {path: "work", depth: 1}}}
+	group.handleKey(h, tea.KeyMsg{Type: tea.KeyEnter})
+	if len(h.moves) != 1 || !reflect.DeepEqual(h.moves[0], uirail.Mutation{Kind: uirail.MoveGroup, Path: "work/sub", Group: ""}) {
+		t.Fatalf("moves = %+v, want the group moved to root", h.moves)
+	}
+	d.handleKey(h, tea.KeyMsg{Type: tea.KeyEsc})
+	if h.mode != modeList {
+		t.Fatalf("esc left mode %v", h.mode)
+	}
+}
 
 func TestMoveSession(t *testing.T) {
 	m := buildModel(t)

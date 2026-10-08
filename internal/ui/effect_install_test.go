@@ -155,7 +155,7 @@ func TestInstallStartKeepsUncertainSendWithoutBlindRetry(t *testing.T) {
 	if !strings.Contains(m.errBar.text, "may be running") || !strings.Contains(m.errBar.text, "inspect") {
 		t.Fatalf("status = %q, want explicit uncertain-send guidance", m.errBar.text)
 	}
-	_, _ = m.startInstall()
+	m.launchHint.startInstall(m)
 	if calls != 1 {
 		t.Fatalf("uncertain install was sent %d times, want no blind retry", calls)
 	}
@@ -168,7 +168,7 @@ func TestInstallStartCompletionDoesNotReplaceNewerDialog(t *testing.T) {
 	first := m.effects.active.command
 
 	secondImage := tempImage(t, "second.png")
-	m.openLaunchHint(launchFix{
+	m.launchHint.open(m, launchFix{
 		text:    "second setup step",
 		command: "true",
 		binary:  "second-cli",

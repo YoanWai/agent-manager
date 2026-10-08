@@ -17,6 +17,65 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// openFork and handleForkKey drive the fork dialog with the root as its
+// host, the way the rail intent and the key dispatch do.
+func (m *Model) openFork() { m.fork.open(m) }
+
+func (m *Model) handleForkKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	return m, m.fork.handleKey(m, msg)
+}
+
+// fakeForkHost stands in for the root's selection, configuration, status
+// bar and effect lane.
+type fakeForkHost struct {
+	row    treeRow
+	tools  map[string]config.Tool
+	mode   mode
+	err    string
+	queued []forkRequest
+}
+
+func (h *fakeForkHost) selectedRow() (treeRow, bool) { return h.row, true }
+func (h *fakeForkHost) configuredTool(name string) (config.Tool, bool) {
+	tool, ok := h.tools[name]
+	return tool, ok
+}
+func (h *fakeForkHost) reportErr(text string)                            { h.err = text }
+func (h *fakeForkHost) clearErr()                                        { h.err = "" }
+func (h *fakeForkHost) setMode(next mode)                                { h.mode = next }
+func (h *fakeForkHost) queueFork(request forkRequest)                    { h.queued = append(h.queued, request) }
+func (h *fakeForkHost) nextEffectCmd() tea.Cmd                           { return func() tea.Msg { return nil } }
+func (h *fakeForkHost) card(title, body string, hint [][2]string) string { return title }
+
+func TestForkDialogWithFakeHost(t *testing.T) {
+	source := store.Session{ID: "src", Name: "alpha", Tool: "agent", AgentSessionID: "conv"}
+	h := &fakeForkHost{
+		row:   treeRow{sess: source},
+		tools: map[string]config.Tool{"agent": {ForkCommand: "agent --fork {id}"}},
+	}
+	var d forkDialog
+	d.open(h)
+	if h.mode != modeFork || d.source.ID != "src" || d.name.Value() != "alpha-fork" || d.gen != 1 {
+		t.Fatalf("open: mode %v dialog %+v", h.mode, d.forkState)
+	}
+	if got := d.view(h); got != "⑂ Fork Session" {
+		t.Fatalf("view = %q", got)
+	}
+	d.name.SetValue(" a/b ")
+	if cmd := d.handleKey(h, tea.KeyMsg{Type: tea.KeyEnter}); cmd == nil {
+		t.Fatal("submit returned no effect command")
+	}
+	if len(h.queued) != 1 || h.queued[0].name != "a-b" || h.queued[0].gen != 1 || h.queued[0].source.ID != "src" {
+		t.Fatalf("queued = %+v, want the captured source under the cleaned name", h.queued)
+	}
+
+	h.tools = map[string]config.Tool{}
+	d.open(h)
+	if h.err != "tool agent is no longer configured" || d.gen != 1 {
+		t.Fatalf("err %q gen %d, want the missing tool refused without a new dialog", h.err, d.gen)
+	}
+}
+
 func TestExpandForkCommandQuotesPlaceholders(t *testing.T) {
 	got := expandForkCommand("tool --fork {id} --new {new_id} --name {name} --file {session_file}", "source", "new", "Sam's fork", "/store/session.jsonl")
 	want := "tool --fork 'source' --new 'new' --name 'Sam'\\''s fork' --file '/store/session.jsonl'"

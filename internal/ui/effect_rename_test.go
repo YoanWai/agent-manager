@@ -175,7 +175,7 @@ func TestRenameGroupPartialFailureReconcilesCommittedStages(t *testing.T) {
 	job := &effectJob{request: request}
 	m.mode = modeRename
 	m.gens.dialog = 7
-	m.rename = renameTarget{isGroup: true, path: "old"}
+	m.rename.renameTarget = renameTarget{isGroup: true, path: "old"}
 	m.applyRenameEffect(job, renameEffectResult{groupRenamed: true}, errRenameStageTwo)
 
 	groups, _ := m.services.store.Groups()
@@ -476,7 +476,7 @@ func TestRenameCompletionDoesNotCloseResubmittedDialog(t *testing.T) {
 	}
 	// Same dialog, same name; resubmit without reopening (e.g. after
 	// cycling the tool). gens.dialog advanced, so cmd1's completion is stale.
-	m.cycleRenameTool(1)
+	m.rename.cycleTool(1)
 	_, _ = m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
 	if len(m.effects.pending) == 0 {
 		t.Fatal("resubmit did not enqueue a job")

@@ -88,6 +88,31 @@ func installImageCleanupCmd(images []imageAttachment) tea.Cmd {
 	}
 }
 
+// startInstall admits the setup dialog's install onto the effect lane,
+// stamped with the dialog generation, a new shell row id, the shell tool,
+// the placement group and the pane geometry. It refuses while another
+// install is still starting.
+func (m *Model) startInstall(request installStartRequest) bool {
+	for _, job := range append([]*effectJob{m.effects.active}, m.effects.pending...) {
+		if job == nil {
+			continue
+		}
+		if starting, ok := job.request.(installStartRequest); ok {
+			m.reportErr("an install is already starting for " + starting.binary)
+			return false
+		}
+	}
+	toolName, _ := m.shellTool()
+	w, h := m.paneTargetSize()
+	request.gen = m.gens.dialog
+	request.id = newID()
+	request.toolName = toolName
+	request.group = m.contextGroup()
+	request.pane = sessioncmd.PaneSize{Width: w, Height: h}
+	m.enqueueEffect(request, 0, false)
+	return true
+}
+
 func (s effectServices) runInstallStart(request installStartRequest) (effectResult, error) {
 	result := installStartResult{}
 	if s.lifecycle == nil || s.hooks == nil || s.driver == nil {

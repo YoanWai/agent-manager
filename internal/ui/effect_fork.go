@@ -44,18 +44,23 @@ type forkEffectResult struct {
 
 func (forkEffectResult) effectResult() {}
 
-func (m *Model) queueFork(source store.Session, name string) {
+// queueFork admits the fork dialog's request onto the effect lane once per
+// dialog generation, minting the child id and the pane geometry it launches
+// at.
+func (m *Model) queueFork(request forkRequest) {
 	for _, job := range append([]*effectJob{m.effects.active}, m.effects.pending...) {
 		if job == nil {
 			continue
 		}
-		if pending, ok := job.request.(forkRequest); ok && pending.gen == m.fork.gen {
+		if pending, ok := job.request.(forkRequest); ok && pending.gen == request.gen {
 			m.reportErr("this fork is already in progress")
 			return
 		}
 	}
 	w, h := m.paneTargetSize()
-	m.enqueueEffect(forkRequest{childID: newID(), source: source, name: name, gen: m.fork.gen, pane: sessioncmd.PaneSize{Width: w, Height: h}}, 0, false)
+	request.childID = newID()
+	request.pane = sessioncmd.PaneSize{Width: w, Height: h}
+	m.enqueueEffect(request, 0, false)
 }
 
 // forkInSourceWait bounds how long the tool may take to record the fork once

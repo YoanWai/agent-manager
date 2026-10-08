@@ -2,21 +2,22 @@ package ui
 
 import tea "github.com/charmbracelet/bubbletea"
 
-func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (d *confirmDialog) handleKey(h confirmHost, msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "ctrl+c":
-		return m.requestQuit()
+		_, cmd := h.requestQuit()
+		return cmd
 	case "n", "esc":
-		m.confirm = confirmTarget{}
-		m.mode = modeList
-		return m, nil
+		d.confirmTarget = confirmTarget{}
+		h.setMode(modeList)
+		return nil
 	case "y", "enter":
-		target := m.confirm
+		target := d.confirmTarget
 		target.sessions = append(target.sessions[:0:0], target.sessions...)
-		m.confirm = confirmTarget{}
-		m.mode = modeList
-		m.queueLifecycle(target, false, "")
-		return m, m.nextEffectCmd()
+		d.confirmTarget = confirmTarget{}
+		h.setMode(modeList)
+		h.queueLifecycle(target, false, "")
+		return h.nextEffectCmd()
 	}
-	return m, nil
+	return nil
 }

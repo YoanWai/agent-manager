@@ -26,7 +26,7 @@ func (m *Model) restartSelected() (tea.Model, tea.Cmd) {
 	if m.sessionWindowProjectedLive(entry.sess.ID) {
 		label = fmt.Sprintf("restart %s with an empty context? ends the running agent and leaves its conversation behind.", entry.sess.Name)
 	}
-	m.confirm = confirmTarget{
+	m.confirm.confirmTarget = confirmTarget{
 		action:   actionRestart,
 		sessions: []store.Session{entry.sess},
 		label:    label,

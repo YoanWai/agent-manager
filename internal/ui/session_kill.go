@@ -20,7 +20,7 @@ func (m *Model) killSelected() (tea.Model, tea.Cmd) {
 			m.reportErr("no live sessions to kill in " + entry.group)
 			return m, nil
 		}
-		m.confirm = confirmTarget{
+		m.confirm.confirmTarget = confirmTarget{
 			isGroup:  true,
 			path:     entry.group,
 			action:   actionKill,
@@ -41,7 +41,7 @@ func (m *Model) killSelected() (tea.Model, tea.Cmd) {
 			m.reportErr(entry.sess.Name + " is already dead")
 			return m, nil
 		}
-		m.confirm = confirmTarget{
+		m.confirm.confirmTarget = confirmTarget{
 			action:   actionKill,
 			sessions: sessions,
 			label: followConfirmLabel("kill", entry.sess.Name, len(sessions)-1,
@@ -62,7 +62,7 @@ func (m *Model) killAllLive() (tea.Model, tea.Cmd) {
 		m.reportErr("no live sessions to kill")
 		return m, nil
 	}
-	m.confirm = confirmTarget{
+	m.confirm.confirmTarget = confirmTarget{
 		action:   actionKill,
 		sessions: live,
 		label:    fmt.Sprintf("kill every live session (%d)? frees their RAM, v revives them.", len(live)),

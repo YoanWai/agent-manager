@@ -26,7 +26,7 @@ func (m *Model) viewFooter() string {
 		pairs := [][2]string{{"↵", "save"}, {"esc", "cancel"}}
 		if m.rename.isGroup {
 			pairs = [][2]string{{"tab", "name / path"}, {"↵", "save"}, {"esc", "cancel"}}
-		} else if tool := m.renameTool(); tool != "" {
+		} else if tool := m.rename.tool(); tool != "" {
 			pairs = [][2]string{{"tab", "tool: " + tool}, {"↵", "save"}, {"esc", "cancel"}}
 		}
 		return m.transientFooter(legendSection{title: "Rename", pairs: pairs})

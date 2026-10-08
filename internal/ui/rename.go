@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"sort"
@@ -21,6 +20,42 @@ type renameTarget struct {
 	toolIndex     int
 }
 
+// renameDialog edits the selected session's name and tool, or a group's
+// name, default path, worktree and base choices. It owns the fields, focus,
+// keys, validation and the rename request it submits. The root opens it from
+// the selected row and configuration, shares its path completion and base
+// probe, runs the request on the effect lane and closes it from the fenced
+// completion.
+type renameDialog struct{ renameTarget }
+
+// renameHost is what the rename dialog reaches on the root: the shared path
+// completion, the group base stepper, mode changes, the status bar and the
+// rename effect lane.
+type renameHost interface {
+	pathCompletion() *pathComplete
+	applyPathSuggestion() tea.Cmd
+	requestPathSuggestions(target pathSuggestionTarget, typed string) tea.Cmd
+	stepRenameBase(current string, delta int) (string, tea.Cmd)
+	setMode(next mode)
+	reportErr(text string)
+	queueRename(request renameRequest) tea.Cmd
+}
+
+var _ renameHost = (*Model)(nil)
+
+// pathCompletion is the directory completion the path fields share.
+func (m *Model) pathCompletion() *pathComplete {
+	return &m.pathSugg
+}
+
+// stepRenameBase steps the group base choice, probing the default path the
+// open group edit would save.
+func (m *Model) stepRenameBase(current string, delta int) (string, tea.Cmd) {
+	return m.stepGroupBase(groupBaseRename, m.gens.dialog, m.renameGroupDir(), current, delta)
+}
+
+// openRename stays on the root: it reads the selected row, the workspace's
+// group choices and the configured tools to seed the dialog.
 func (m *Model) openRename() {
 	m.gens.dialog++
 	entry, ok := m.selectedRow()
@@ -45,7 +80,7 @@ func (m *Model) openRename() {
 		}
 		dir.SetValue(dirValue)
 		m.pathSugg.reset()
-		m.rename = renameTarget{
+		m.rename.renameTarget = renameTarget{
 			isGroup:       true,
 			path:          entry.group,
 			input:         input,
@@ -77,7 +112,7 @@ func (m *Model) openRename() {
 			tools = append([]string{entry.sess.Tool}, tools...)
 			toolIndex = 0
 		}
-		m.rename = renameTarget{
+		m.rename.renameTarget = renameTarget{
 			sessID:    entry.sess.ID,
 			input:     input,
 			toolNames: tools,
@@ -88,105 +123,106 @@ func (m *Model) openRename() {
 	m.clearErr()
 }
 
-func (m *Model) renameFocus(delta int) {
-	m.pathSugg.reset()
+func (d *renameDialog) focusField(h renameHost, delta int) {
+	h.pathCompletion().reset()
 	fields := 2
-	if m.rename.isGroup {
+	if d.isGroup {
 		fields = 4
 	}
-	m.rename.focus = (m.rename.focus + delta + fields) % fields
-	m.rename.input.Blur()
-	m.rename.dir.Blur()
-	switch m.rename.focus {
+	d.focus = (d.focus + delta + fields) % fields
+	d.input.Blur()
+	d.dir.Blur()
+	switch d.focus {
 	case 0:
-		m.rename.input.Focus()
+		d.input.Focus()
 	case 1:
-		m.rename.dir.Focus()
+		d.dir.Focus()
 	}
 }
 
-func (m *Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	pathSuggesting := m.rename.isGroup && m.rename.focus == 1 && m.pathSugg.active()
+func (d *renameDialog) handleKey(h renameHost, msg tea.KeyMsg) tea.Cmd {
+	pathSugg := h.pathCompletion()
+	pathSuggesting := d.isGroup && d.focus == 1 && pathSugg.active()
 	switch msg.String() {
 	case "esc":
 		if pathSuggesting {
-			m.pathSugg.reset()
-			return m, nil
+			pathSugg.reset()
+			return nil
 		}
-		m.mode = modeList
-		return m, nil
+		h.setMode(modeList)
+		return nil
 	case "tab":
-		if !m.rename.isGroup {
-			m.cycleRenameTool(1)
-			return m, nil
+		if !d.isGroup {
+			d.cycleTool(1)
+			return nil
 		}
 		if pathSuggesting {
-			return m, m.applyPathSuggestion()
+			return h.applyPathSuggestion()
 		}
-		m.renameFocus(1)
-		return m, nil
+		d.focusField(h, 1)
+		return nil
 	case "shift+tab":
-		if !m.rename.isGroup {
-			m.cycleRenameTool(-1)
-			return m, nil
+		if !d.isGroup {
+			d.cycleTool(-1)
+			return nil
 		}
 		if pathSuggesting {
-			return m, nil
+			return nil
 		}
-		m.renameFocus(-1)
-		return m, nil
+		d.focusField(h, -1)
+		return nil
 	case "up", "down":
-		if !m.rename.isGroup {
+		if !d.isGroup {
 			break
 		}
 		if pathSuggesting {
 			if msg.String() == "up" {
-				if !m.pathSugg.move(-1) {
-					m.renameFocus(-1)
+				if !pathSugg.move(-1) {
+					d.focusField(h, -1)
 				}
 			} else {
-				if !m.pathSugg.move(1) {
-					m.renameFocus(1)
+				if !pathSugg.move(1) {
+					d.focusField(h, 1)
 				}
 			}
-			return m, nil
+			return nil
 		}
 		if msg.String() == "up" {
-			m.renameFocus(-1)
+			d.focusField(h, -1)
 		} else {
-			m.renameFocus(1)
+			d.focusField(h, 1)
 		}
-		return m, nil
+		return nil
 	case "left", "right":
 		delta := 1
 		if msg.String() == "left" {
 			delta = -1
 		}
-		if m.rename.isGroup && m.rename.focus == 2 {
+		if d.isGroup && d.focus == 2 {
 			count := len(groupWorktreeOptions)
-			m.rename.worktreeIndex = (m.rename.worktreeIndex + delta + count) % count
-			return m, nil
+			d.worktreeIndex = (d.worktreeIndex + delta + count) % count
+			return nil
 		}
-		if m.rename.isGroup && m.rename.focus == 3 {
+		if d.isGroup && d.focus == 3 {
 			var cmd tea.Cmd
-			m.rename.base, cmd = m.stepGroupBase(groupBaseRename, m.gens.dialog, m.renameGroupDir(), m.rename.base, delta)
-			return m, cmd
+			d.base, cmd = h.stepRenameBase(d.base, delta)
+			return cmd
 		}
 	case "enter":
-		if pathSuggesting && m.pathSugg.chosen {
-			return m, m.applyPathSuggestion()
+		if pathSuggesting && pathSugg.chosen {
+			return h.applyPathSuggestion()
 		}
-		return m.applyRename()
+		return d.submit(h)
 	}
 	var cmd tea.Cmd
-	switch m.rename.focus {
+	switch d.focus {
 	case 0:
-		m.rename.input, cmd = m.rename.input.Update(msg)
+		d.input, cmd = d.input.Update(msg)
 	case 1:
-		m.rename.dir, cmd = m.rename.dir.Update(msg)
-		cmd = tea.Batch(cmd, m.requestPathSuggestions(pathSuggestionRename, m.rename.dir.Value()))
+		d.dir, cmd = d.dir.Update(msg)
+		cmd = tea.Batch(cmd, h.requestPathSuggestions(pathSuggestionRename, d.dir.Value()))
 	}
-	return m, cmd
+	return cmd
 }
 
 // renameGroupDir is the default path the group edit would save, resolved
@@ -195,75 +231,53 @@ func (m *Model) renameGroupDir() string {
 	return m.capturedAbsolutePath(m.rename.dir.Value(), m.capturedGroupDefaultDir(parentGroup(m.rename.path)))
 }
 
-func (m *Model) cycleRenameTool(delta int) {
-	if len(m.rename.toolNames) == 0 {
+func (d *renameDialog) cycleTool(delta int) {
+	if len(d.toolNames) == 0 {
 		return
 	}
-	n := len(m.rename.toolNames)
-	m.rename.toolIndex = (m.rename.toolIndex + delta + n) % n
+	n := len(d.toolNames)
+	d.toolIndex = (d.toolIndex + delta + n) % n
 }
 
-func (m *Model) renameTool() string {
-	if len(m.rename.toolNames) == 0 {
+func (d *renameDialog) tool() string {
+	if len(d.toolNames) == 0 {
 		return ""
 	}
-	return m.rename.toolNames[m.rename.toolIndex]
+	return d.toolNames[d.toolIndex]
 }
 
-func (m *Model) applyRename() (tea.Model, tea.Cmd) {
-	name := strings.TrimSpace(m.rename.input.Value())
+// submit validates the name and hands the root the rename it captured; the
+// root fills in the inventory facts and the dialog generation.
+func (d *renameDialog) submit(h renameHost) tea.Cmd {
+	name := strings.TrimSpace(d.input.Value())
 	name = strings.ReplaceAll(name, "/", "-")
 	if name == "" {
-		m.reportErr("name cannot be empty")
-		return m, nil
+		h.reportErr("name cannot be empty")
+		return nil
 	}
-	if m.rename.isGroup {
-		parent := parentGroup(m.rename.path)
+	if d.isGroup {
+		parent := parentGroup(d.path)
 		newPath := name
 		if parent != "" {
 			newPath = parent + "/" + name
 		}
-		m.gens.dialog++
-		m.enqueueEffect(renameRequest{
-			kind:         renameGroup,
-			oldGroup:     m.rename.path,
-			newGroup:     newPath,
-			rawDir:       m.rename.dir.Value(),
-			dirFallbacks: m.groupDirCandidates(parent),
-			draftDir:     m.rename.dir.Value(),
-			worktree:     groupWorktreeValue(m.rename.worktreeIndex),
-			base:         m.rename.base,
-			name:         name,
-			gen:          m.gens.dialog,
-		}, 0, false)
-		return m, m.nextEffectCmd()
+		return h.queueRename(renameRequest{
+			kind:     renameGroup,
+			oldGroup: d.path,
+			newGroup: newPath,
+			rawDir:   d.dir.Value(),
+			draftDir: d.dir.Value(),
+			worktree: groupWorktreeValue(d.worktreeIndex),
+			base:     d.base,
+			name:     name,
+		})
 	}
-	index := -1
-	var sess store.Session
-	for i := range m.workspace.sessions {
-		if m.workspace.sessions[i].ID == m.rename.sessID {
-			index = i
-			break
-		}
-	}
-	tool := m.renameTool()
-	prevTool := ""
-	if index >= 0 {
-		prevTool = m.workspace.sessions[index].Tool
-		sess = m.workspace.sessions[index]
-	}
-	toolChanged := tool != "" && tool != prevTool
-	m.gens.dialog++
-	m.enqueueEffect(renameRequest{
-		kind:            renameSession,
-		sessID:          m.rename.sessID,
-		sess:            sess,
-		name:            name,
-		tool:            tool,
-		checkNoChildren: toolChanged && m.isShell(tool),
-		gen:             m.gens.dialog,
-	}, 0, false)
-	return m, m.nextEffectCmd()
+	return h.queueRename(renameRequest{
+		kind:   renameSession,
+		sessID: d.sessID,
+		name:   name,
+		tool:   d.tool(),
+	})
 }
 
 // renameGroupLocally rewrites the in-memory tree right away, so the

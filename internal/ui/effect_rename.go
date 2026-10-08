@@ -75,6 +75,38 @@ type moveDialogCloseResult struct{}
 
 func (moveDialogCloseResult) effectResult() {}
 
+// queueRename completes the rename dialog's request with the inventory it
+// was captured against (the group's default-path fallbacks, or the session
+// row and whether a tool change must first find it childless), fences it to
+// a new dialog generation and runs it on the effect lane.
+func (m *Model) queueRename(request renameRequest) tea.Cmd {
+	if request.kind == renameGroup {
+		m.gens.dialog++
+		request.dirFallbacks = m.groupDirCandidates(parentGroup(request.oldGroup))
+		request.gen = m.gens.dialog
+		m.enqueueEffect(request, 0, false)
+		return m.nextEffectCmd()
+	}
+	index := -1
+	for i := range m.workspace.sessions {
+		if m.workspace.sessions[i].ID == request.sessID {
+			index = i
+			break
+		}
+	}
+	prevTool := ""
+	if index >= 0 {
+		prevTool = m.workspace.sessions[index].Tool
+		request.sess = m.workspace.sessions[index]
+	}
+	toolChanged := request.tool != "" && request.tool != prevTool
+	m.gens.dialog++
+	request.checkNoChildren = toolChanged && m.isShell(request.tool)
+	request.gen = m.gens.dialog
+	m.enqueueEffect(request, 0, false)
+	return m.nextEffectCmd()
+}
+
 func (s effectServices) runRename(request renameRequest) (effectResult, error) {
 	result := renameEffectResult{}
 	if request.kind == renameGroup {

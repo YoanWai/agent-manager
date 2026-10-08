@@ -178,7 +178,7 @@ func (m *Model) runRailIntent(intent uirail.Intent) (tea.Model, tea.Cmd) {
 	case uirail.NewGroup:
 		m.openGroupForm()
 	case uirail.Fork:
-		m.openFork()
+		m.fork.open(m)
 	case uirail.Revive:
 		return m.reviveSelected()
 	case uirail.MarkIdle:

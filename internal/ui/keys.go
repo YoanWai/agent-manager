@@ -48,17 +48,17 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case modeForm:
 		return m.handleFormKey(msg)
 	case modeConfirmDelete:
-		return m.handleConfirmKey(msg)
+		return m, m.confirm.handleKey(m, msg)
 	case modeLaunchHint:
-		return m.handleLaunchHintKey(msg)
+		return m, m.launchHint.handleKey(m, msg)
 	case modeRename:
-		return m.handleRenameKey(msg)
+		return m, m.rename.handleKey(m, msg)
 	case modeFork:
-		return m.handleForkKey(msg)
+		return m, m.fork.handleKey(m, msg)
 	case modeSettings:
 		return m.handleSettingsKey(msg)
 	case modeMove:
-		return m.handleMoveKey(msg)
+		return m, m.move.handleKey(m, msg)
 	case modeRepoPick:
 		return m, m.reviewNav.picker.handleKey(m, msg)
 	case modeGroupForm:

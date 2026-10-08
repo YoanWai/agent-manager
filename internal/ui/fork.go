@@ -27,55 +27,80 @@ type forkState struct {
 	gen int
 }
 
-func (m *Model) openFork() {
-	entry, ok := m.selectedRow()
+// forkDialog names a fork of the selected session. It owns the captured
+// source, the name field, the dialog generation and the request it submits;
+// the root runs that request on the effect lane and applies its completion.
+type forkDialog struct{ forkState }
+
+// forkHost is what the fork dialog reaches on the root.
+type forkHost interface {
+	selectedRow() (treeRow, bool)
+	configuredTool(name string) (config.Tool, bool)
+	reportErr(text string)
+	clearErr()
+	setMode(next mode)
+	queueFork(request forkRequest)
+	nextEffectCmd() tea.Cmd
+	card(title, body string, hint [][2]string) string
+}
+
+var _ forkHost = (*Model)(nil)
+
+// configuredTool looks a tool up in the loaded configuration.
+func (m *Model) configuredTool(name string) (config.Tool, bool) {
+	tool, ok := m.services.cfg.Tools[name]
+	return tool, ok
+}
+
+func (d *forkDialog) open(h forkHost) {
+	entry, ok := h.selectedRow()
 	if !ok {
 		return
 	}
 	if entry.isGroup {
-		m.reportErr("select a session to fork")
+		h.reportErr("select a session to fork")
 		return
 	}
-	tool, ok := m.services.cfg.Tools[entry.sess.Tool]
+	tool, ok := h.configuredTool(entry.sess.Tool)
 	if !ok {
-		m.reportErr(fmt.Sprintf("tool %s is no longer configured", entry.sess.Tool))
+		h.reportErr(fmt.Sprintf("tool %s is no longer configured", entry.sess.Tool))
 		return
 	}
 	if err := validateForkSource(entry.sess.Tool, tool, entry.sess); err != nil {
-		m.reportErr(err.Error())
+		h.reportErr(err.Error())
 		return
 	}
 	name := textField("fork name", 60)
 	name.SetValue(entry.sess.Name + "-fork")
 	name.CursorEnd()
 	name.Focus()
-	m.fork = forkState{source: entry.sess, name: name, gen: m.fork.gen + 1}
-	m.clearErr()
-	m.mode = modeFork
+	d.forkState = forkState{source: entry.sess, name: name, gen: d.gen + 1}
+	h.clearErr()
+	h.setMode(modeFork)
 }
 
-func (m *Model) handleForkKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (d *forkDialog) handleKey(h forkHost, msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "esc":
-		m.mode = modeList
-		m.clearErr()
-		return m, nil
+		h.setMode(modeList)
+		h.clearErr()
+		return nil
 	case "enter":
-		return m.submitFork()
+		return d.submit(h)
 	}
 	var cmd tea.Cmd
-	m.fork.name, cmd = m.fork.name.Update(msg)
-	return m, cmd
+	d.name, cmd = d.name.Update(msg)
+	return cmd
 }
 
-func (m *Model) submitFork() (tea.Model, tea.Cmd) {
-	name := strings.ReplaceAll(strings.TrimSpace(m.fork.name.Value()), "/", "-")
+func (d *forkDialog) submit(h forkHost) tea.Cmd {
+	name := strings.ReplaceAll(strings.TrimSpace(d.name.Value()), "/", "-")
 	if name == "" {
-		m.reportErr("name cannot be empty")
-		return m, nil
+		h.reportErr("name cannot be empty")
+		return nil
 	}
-	m.queueFork(m.fork.source, name)
-	return m, m.nextEffectCmd()
+	h.queueFork(forkRequest{source: d.source, name: name, gen: d.gen})
+	return h.nextEffectCmd()
 }
 
 func validateForkSource(toolName string, tool config.Tool, source store.Session) error {
@@ -109,9 +134,9 @@ func expandForkCommand(template, sourceID, newID, name, sessionFile string) stri
 	).Replace(template)
 }
 
-func (m *Model) viewFork() string {
-	body := "  source  " + valueStyle.Render(m.fork.source.Name) + "\n" +
-		"  group   " + groupBadge(displayGroup(m.fork.source.Group)) + "\n" +
-		formField("name", textInputView(m.fork.name), true)
-	return m.card("⑂ Fork Session", body, [][2]string{{"↵", "create"}, {"esc", "cancel"}})
+func (d *forkDialog) view(h forkHost) string {
+	body := "  source  " + valueStyle.Render(d.source.Name) + "\n" +
+		"  group   " + groupBadge(displayGroup(d.source.Group)) + "\n" +
+		formField("name", textInputView(d.name), true)
+	return h.card("⑂ Fork Session", body, [][2]string{{"↵", "create"}, {"esc", "cancel"}})
 }

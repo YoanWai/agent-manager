@@ -579,8 +579,8 @@ func TestForkCompletionClearsStatusFilter(t *testing.T) {
 func TestForkRepeatedSubmitKeepsOneAcceptedJob(t *testing.T) {
 	m := buildModel(t)
 	m.fork.gen = 1
-	m.queueFork(store.Session{ID: "source"}, "child")
-	m.queueFork(store.Session{ID: "source"}, "child")
+	m.queueFork(forkRequest{source: store.Session{ID: "source"}, name: "child", gen: m.fork.gen})
+	m.queueFork(forkRequest{source: store.Session{ID: "source"}, name: "child", gen: m.fork.gen})
 	if len(m.effects.pending) != 1 {
 		t.Fatal("repeat submit accepted a second fork")
 	}

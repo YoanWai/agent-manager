@@ -204,7 +204,7 @@ func (m *Model) viewDetail(width int) string {
 	}
 	tool := sess.Tool
 	if m.mode == modeRename && !m.rename.isGroup && m.rename.sessID == sess.ID {
-		if picked := m.renameTool(); picked != "" {
+		if picked := m.rename.tool(); picked != "" {
 			tool = picked
 		}
 	}

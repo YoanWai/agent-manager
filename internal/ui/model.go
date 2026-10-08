@@ -61,11 +61,11 @@ type Model struct {
 	form       form
 	groupForm  groupForm
 	pathSugg   pathComplete
-	confirm    confirmTarget
-	launchHint launchHintState
+	confirm    confirmDialog
+	launchHint launchHintDialog
 	mouse      mouseCapture
-	rename     renameTarget
-	fork       forkState
+	rename     renameDialog
+	fork       forkDialog
 	quick      quickState
 	settings   settingsFeature
 	env        environment
@@ -104,13 +104,6 @@ type reviewNavState struct {
 	picker repoPicker
 }
 
-type launchHintState struct {
-	fix launchFix
-	// install is the setup-dialog install still running in a shell tab,
-	// nil when none is.
-	install *pendingInstall
-}
-
 type mouseCapture struct {
 	// released is true while the setup dialog has handed the mouse
 	// back to the terminal, so a drag selects its text.
@@ -133,11 +126,6 @@ type environment struct {
 type helpFeature struct {
 	state      uihelp.State
 	returnMode mode
-}
-
-type moveDialog struct {
-	id   string
-	path string
 }
 
 func NewWithInboxOwner(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, version string, owner sessioncmd.InboxMaintenance) (*Model, error) {

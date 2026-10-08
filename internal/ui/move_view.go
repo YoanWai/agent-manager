@@ -1,6 +1,6 @@
 package ui
 
-func (m *Model) viewMove() string {
-	return m.card("⇄ Move", m.viewGroupPicker(),
+func (d *moveDialog) view(h moveHost) string {
+	return h.card("⇄ Move", h.viewGroupPicker(),
 		[][2]string{{"↑↓", "pick"}, {"↵", "move"}, {"esc", "cancel"}})
 }

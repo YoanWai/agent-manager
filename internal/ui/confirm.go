@@ -2,6 +2,7 @@ package ui
 
 import (
 	"github.com/YoanWai/agent-manager/internal/store"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"strings"
@@ -11,13 +12,31 @@ import (
 // the question sits in the middle of the frame, its target is spelled out,
 // and the safe answer is the one already under the cursor.
 
-// confirmTitle names the dialog after the act it is about to commit.
-func (m *Model) confirmTitle() string {
+// confirmDialog asks before a captured lifecycle request runs. It owns the
+// pending target, the y/n keys and the card's wording. The lifecycle
+// adapters fill its target and open it; the root switches modes and runs
+// the confirmed request on the effect lane.
+type confirmDialog struct{ confirmTarget }
+
+// confirmHost is what the confirm dialog reaches on the root: the shared
+// confirm card, quitting, mode changes and the lifecycle effect lane.
+type confirmHost interface {
+	confirmCard(title, question, consequence string, destructive bool, answer string) string
+	requestQuit() (tea.Model, tea.Cmd)
+	setMode(next mode)
+	queueLifecycle(target confirmTarget, allowLive bool, emptyNotice string)
+	nextEffectCmd() tea.Cmd
+}
+
+var _ confirmHost = (*Model)(nil)
+
+// title names the dialog after the act it is about to commit.
+func (d *confirmDialog) title() string {
 	subject := "session"
-	if m.confirm.isGroup {
+	if d.isGroup {
 		subject = "group"
 	}
-	switch m.confirm.action {
+	switch d.action {
 	case actionKill:
 		return "✕ Kill " + subject
 	case actionArchive:
@@ -33,17 +52,17 @@ func (m *Model) confirmTitle() string {
 	}
 }
 
-// confirmDestructive reports whether the pending answer takes something
+// destructive reports whether the pending answer takes something
 // away, which decides whether the dialog reads as an alarm or as a move.
-func (m *Model) confirmDestructive() bool {
-	return m.confirm.action == actionKill || m.confirm.action == actionDelete ||
-		m.confirm.action == actionRestart || m.confirm.action == actionArchive
+func (d *confirmDialog) destructive() bool {
+	return d.action == actionKill || d.action == actionDelete ||
+		d.action == actionRestart || d.action == actionArchive
 }
 
-func (m *Model) viewConfirm() string {
-	question, consequence := splitConfirmLabel(m.confirm.label)
+func (d *confirmDialog) view(h confirmHost) string {
+	question, consequence := splitConfirmLabel(d.label)
 	answer := "delete"
-	switch m.confirm.action {
+	switch d.action {
 	case actionKill:
 		answer = "kill"
 	case actionArchive:
@@ -55,7 +74,7 @@ func (m *Model) viewConfirm() string {
 	case actionRevive:
 		answer = "revive"
 	}
-	return m.confirmCard(m.confirmTitle(), question, consequence, m.confirmDestructive(), answer)
+	return h.confirmCard(d.title(), question, consequence, d.destructive(), answer)
 }
 
 func (m *Model) confirmCard(title, question, consequence string, destructive bool, answer string) string {

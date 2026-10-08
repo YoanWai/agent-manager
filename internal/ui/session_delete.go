@@ -57,7 +57,7 @@ func (m *Model) prepareDelete() {
 	}
 	if !entry.isGroup {
 		sessions := m.sessionAndChildren(entry.sess)
-		m.confirm = confirmTarget{
+		m.confirm.confirmTarget = confirmTarget{
 			label: followConfirmLabel("delete", entry.sess.Name, len(sessions)-1,
 				"kills its tmux session.",
 				"kills their tmux sessions."),
@@ -69,9 +69,9 @@ func (m *Model) prepareDelete() {
 	}
 	subtree := m.sessionsInSubtree(entry.group)
 	if m.rail.ShowArchived() {
-		m.confirm = archivedGroupDelete(entry.group, subtree)
+		m.confirm.confirmTarget = archivedGroupDelete(entry.group, subtree)
 	} else {
-		m.confirm = m.wholeGroupDelete(entry.group, subtree)
+		m.confirm.confirmTarget = m.wholeGroupDelete(entry.group, subtree)
 	}
 	m.mode = modeConfirmDelete
 }

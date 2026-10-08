@@ -7,6 +7,40 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+type moveTarget struct {
+	id   string
+	path string
+}
+
+// moveDialog picks a new parent for the selected session or group. It owns
+// the captured row, the picker keys and the Rail mutation it submits. Its
+// target list is the spawn form's group picker, which the root rebuilds and
+// shapes when the dialog opens; the root runs the mutation on the effect
+// lane and closes the dialog from its fenced follow-up.
+type moveDialog struct{ moveTarget }
+
+// moveHost is what the move dialog reaches on the root: the borrowed group
+// picker, mode changes, the effect lane and the card chrome.
+type moveHost interface {
+	setMode(next mode)
+	moveGroupCursor(delta int) tea.Cmd
+	pickedGroupOption() groupOption
+	selectedGroupPath() string
+	enqueueMove(mut uirail.Mutation, close moveDialogClose) tea.Cmd
+	card(title, body string, hint [][2]string) string
+	viewGroupPicker() string
+}
+
+var _ moveHost = (*Model)(nil)
+
+// pickedGroupOption is the group picker's highlighted row.
+func (m *Model) pickedGroupOption() groupOption {
+	return m.form.groups[m.form.groupIndex]
+}
+
+// openMove captures the selected row and shapes the spawn form's group
+// picker into the targets it may land in. It stays on the root because it
+// rebuilds that borrowed picker from the workspace inventory.
 func (m *Model) openMove() {
 	row, ok := m.selectedRow()
 	if !ok {
@@ -82,34 +116,34 @@ func (m *Model) pruneMoveTargets(subtree string) {
 	}
 }
 
-func (m *Model) handleMoveKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (d *moveDialog) handleKey(h moveHost, msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "esc":
-		m.mode = modeList
-		return m, nil
+		h.setMode(modeList)
+		return nil
 	case "up":
-		return m, m.moveGroupCursor(-1)
+		return h.moveGroupCursor(-1)
 	case "down":
-		return m, m.moveGroupCursor(1)
+		return h.moveGroupCursor(1)
 	case "enter":
-		if m.move.path != "" {
-			return m.moveGroupTo(m.selectedGroupPath())
+		if d.path != "" {
+			return d.moveGroupTo(h, h.selectedGroupPath())
 		}
-		opt := m.form.groups[m.form.groupIndex]
-		return m, m.enqueueMove(uirail.Mutation{Kind: uirail.PlaceSession, SessionID: m.move.id, Group: opt.path, ParentID: opt.sessID}, moveDialogClose{sessID: m.move.id, optPath: opt.path, optSessID: opt.sessID})
+		opt := h.pickedGroupOption()
+		return h.enqueueMove(uirail.Mutation{Kind: uirail.PlaceSession, SessionID: d.id, Group: opt.path, ParentID: opt.sessID}, moveDialogClose{sessID: d.id, optPath: opt.path, optSessID: opt.sessID})
 	}
-	return m, nil
+	return nil
 }
 
-func (m *Model) moveGroupTo(parent string) (tea.Model, tea.Cmd) {
-	path := m.move.path
+func (d *moveDialog) moveGroupTo(h moveHost, parent string) tea.Cmd {
+	path := d.path
 	newPath := baseName(path)
 	if parent != "" {
 		newPath = parent + "/" + newPath
 	}
 	if newPath == path {
-		m.mode = modeList
-		return m, nil
+		h.setMode(modeList)
+		return nil
 	}
-	return m, m.enqueueMove(uirail.Mutation{Kind: uirail.MoveGroup, Path: path, Group: parent}, moveDialogClose{isGroup: true, group: path, parent: parent})
+	return h.enqueueMove(uirail.Mutation{Kind: uirail.MoveGroup, Path: path, Group: parent}, moveDialogClose{isGroup: true, group: path, parent: parent})
 }

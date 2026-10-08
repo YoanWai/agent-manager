@@ -55,12 +55,6 @@ type noticeSources struct {
 	listKeys    keybind.Table
 }
 
-func (m *Model) size() (width, height int) { return m.layout.width, m.layout.height }
-
-func (m *Model) currentMode() mode { return m.mode }
-
-func (m *Model) setMode(next mode) { m.mode = next }
-
 func (m *Model) noticeSources() noticeSources {
 	return noticeSources{
 		store:       m.services.store != nil,

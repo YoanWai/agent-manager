@@ -22,7 +22,7 @@ func (m *Model) archiveSelected() (tea.Model, tea.Cmd) {
 	}
 	if entry.isGroup {
 		subtree := m.sessionsInSubtree(entry.group)
-		m.confirm = confirmTarget{
+		m.confirm.confirmTarget = confirmTarget{
 			isGroup:   true,
 			path:      entry.group,
 			action:    actionArchive,
@@ -32,7 +32,7 @@ func (m *Model) archiveSelected() (tea.Model, tea.Cmd) {
 		}
 	} else {
 		sessions := m.sessionAndChildren(entry.sess)
-		m.confirm = confirmTarget{
+		m.confirm.confirmTarget = confirmTarget{
 			action:   actionArchive,
 			sessions: sessions,
 			label: followConfirmLabel("archive", entry.sess.Name, len(sessions)-1,
@@ -61,7 +61,7 @@ func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
 	if entry.isGroup {
 		subtree := m.sessionsInSubtree(entry.group)
 		archived := archivedSessions(subtree)
-		m.confirm = confirmTarget{
+		m.confirm.confirmTarget = confirmTarget{
 			isGroup:   true,
 			path:      entry.group,
 			action:    actionRestore,
@@ -72,7 +72,7 @@ func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
 	} else {
 		sessions := m.sessionAndChildren(entry.sess)
 		sessions = archivedSessions(sessions)
-		m.confirm = confirmTarget{
+		m.confirm.confirmTarget = confirmTarget{
 			action:   actionRestore,
 			sessions: sessions,
 			label: followConfirmLabel("restore", entry.sess.Name, len(sessions)-1,

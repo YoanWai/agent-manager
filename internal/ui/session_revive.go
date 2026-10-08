@@ -24,7 +24,7 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 	if entry.isGroup {
 		sessions := m.sessionsInGroup(entry.group)
 		if dead := deadSessions(sessions); len(dead) > 1 {
-			m.confirm = confirmTarget{
+			m.confirm.confirmTarget = confirmTarget{
 				isGroup:  true,
 				path:     entry.group,
 				action:   actionRevive,
@@ -47,7 +47,7 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 		}
 	}
 	if len(set) > 1 && dead {
-		m.confirm = confirmTarget{
+		m.confirm.confirmTarget = confirmTarget{
 			action:   actionRevive,
 			sessions: set,
 			label: followConfirmLabel("revive", entry.sess.Name, len(set)-1,
@@ -68,7 +68,7 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 func (m *Model) reviveAllDead() (tea.Model, tea.Cmd) {
 	sessions := m.listedSessions()
 	if dead := deadSessions(sessions); len(dead) > 1 {
-		m.confirm = confirmTarget{
+		m.confirm.confirmTarget = confirmTarget{
 			action:   actionRevive,
 			batch:    true,
 			sessions: dead,
