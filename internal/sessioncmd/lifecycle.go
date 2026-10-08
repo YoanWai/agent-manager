@@ -167,7 +167,7 @@ func (l *Lifecycle) Launch(request LaunchRequest) (LaunchResult, error) {
 	}
 	return LaunchResult{
 		Session:    sess,
-		LabelError: l.setLabel(sess.ID, sessionLabel(sess.Group, sess.Name)),
+		LabelError: l.setLabel(sess.ID, SessionLabel(sess.Group, sess.Name)),
 	}, nil
 }
 
@@ -292,7 +292,7 @@ func (l *Lifecycle) launchExisting(sess store.Session, tool config.Tool, baseCom
 		_ = l.runtime.Driver.Kill(sess.ID)
 		return RelaunchResult{}, err
 	}
-	labelErr := l.setLabel(sess.ID, sessionLabel(sess.Group, sess.Name))
+	labelErr := l.setLabel(sess.ID, SessionLabel(sess.Group, sess.Name))
 	if err := l.runtime.Store.UpdateStatus(sess.ID, status.Starting); err != nil {
 		return RelaunchResult{}, err
 	}

@@ -60,7 +60,7 @@ func (p *Runner) renamePending(sess *store.Session, name string) error {
 		return err
 	}
 	sess.Name = name
-	_ = p.tmux.SetLabel(sess.ID, sessionLabel(sess.Group, name))
+	_ = p.tmux.SetLabel(sess.ID, sessioncmd.SessionLabel(sess.Group, name))
 	return nil
 }
 

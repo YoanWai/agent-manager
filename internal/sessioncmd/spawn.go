@@ -352,7 +352,8 @@ func resolveTerminalDirectory(raw string) (string, error) {
 	return abs, nil
 }
 
-func sessionLabel(group, name string) string {
+// SessionLabel renders a session's identity for the tmux status bar.
+func SessionLabel(group, name string) string {
 	if group == "" {
 		return name
 	}

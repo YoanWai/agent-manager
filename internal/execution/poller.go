@@ -635,12 +635,5 @@ func (p *Runner) ReflowSessions(ids []string, reflow func()) error {
 	return nil
 }
 
-func sessionLabel(group, name string) string {
-	if group == "" {
-		return name
-	}
-	return group + " · " + name
-}
-
 const notificationsSetting = "notifications"
 const notifyFinishedSetting = "notify_finished"
