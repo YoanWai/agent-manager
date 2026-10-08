@@ -47,7 +47,7 @@ type repoPickerHost interface {
 	setMode(mode)
 	clearErr()
 	reportErr(string)
-	requestQuit() (tea.Model, tea.Cmd)
+	quit() tea.Cmd
 	reviewPickerSourceCurrent(reviewPickerSource) bool
 	selectRepo(root string) tea.Cmd
 	selectBase(ref string) tea.Cmd
@@ -187,7 +187,7 @@ func (p *repoPicker) handleKey(h repoPickerHost, msg tea.KeyMsg) tea.Cmd {
 	rows := p.filteredRows()
 	switch msg.Type {
 	case tea.KeyCtrlC:
-		_, cmd := h.requestQuit()
+		cmd := h.quit()
 		return cmd
 	case tea.KeyEsc:
 		h.setMode(modeDiff)

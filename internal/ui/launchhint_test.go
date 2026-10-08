@@ -32,7 +32,7 @@ type fakeLaunchHintHost struct {
 	installs []installStartRequest
 }
 
-func (h *fakeLaunchHintHost) requestQuit() (tea.Model, tea.Cmd) { return nil, tea.Quit }
+func (h *fakeLaunchHintHost) quit() tea.Cmd { return tea.Quit }
 func (h *fakeLaunchHintHost) setMode(next mode)                 { h.mode = next }
 func (h *fakeLaunchHintHost) advanceDialogGen()                 { h.gens++ }
 func (h *fakeLaunchHintHost) takeComposerImages() []imageAttachment {

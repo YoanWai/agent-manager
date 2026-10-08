@@ -58,7 +58,7 @@ type launchHintDialog struct{ launchHintState }
 
 // launchHintHost is what the setup dialog reaches on the root.
 type launchHintHost interface {
-	requestQuit() (tea.Model, tea.Cmd)
+	quit() tea.Cmd
 	setMode(next mode)
 	advanceDialogGen()
 	takeComposerImages() []imageAttachment
@@ -167,7 +167,7 @@ func dropImages(images []imageAttachment) {
 func (d *launchHintDialog) handleKey(h launchHintHost, msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "ctrl+c":
-		_, cmd := h.requestQuit()
+		cmd := h.quit()
 		return cmd
 	case "c":
 		if d.fix.command == "" {

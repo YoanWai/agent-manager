@@ -695,9 +695,9 @@ type fakeRepoPickerHost struct {
 func (h *fakeRepoPickerHost) setMode(next mode)     { h.mode = next }
 func (h *fakeRepoPickerHost) clearErr()             { h.cleared++ }
 func (h *fakeRepoPickerHost) reportErr(text string) { h.errs = append(h.errs, text) }
-func (h *fakeRepoPickerHost) requestQuit() (tea.Model, tea.Cmd) {
+func (h *fakeRepoPickerHost) quit() tea.Cmd {
 	h.quits++
-	return nil, func() tea.Msg { return nil }
+	return func() tea.Msg { return nil }
 }
 func (h *fakeRepoPickerHost) reviewPickerSourceCurrent(reviewPickerSource) bool { return !h.stale }
 func (h *fakeRepoPickerHost) selectRepo(root string) tea.Cmd                    { h.repo = root; return nil }

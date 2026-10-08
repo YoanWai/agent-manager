@@ -22,7 +22,7 @@ type confirmDialog struct{ confirmTarget }
 // confirm card, quitting, mode changes and the lifecycle effect lane.
 type confirmHost interface {
 	confirmCard(title, question, consequence string, destructive bool, answer string) string
-	requestQuit() (tea.Model, tea.Cmd)
+	quit() tea.Cmd
 	setMode(next mode)
 	queueLifecycle(target confirmTarget, allowLive bool, emptyNotice string)
 	nextEffectCmd() tea.Cmd

@@ -5,7 +5,7 @@ import tea "github.com/charmbracelet/bubbletea"
 func (d *confirmDialog) handleKey(h confirmHost, msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "ctrl+c":
-		_, cmd := h.requestQuit()
+		cmd := h.quit()
 		return cmd
 	case "n", "esc":
 		d.confirmTarget = confirmTarget{}
