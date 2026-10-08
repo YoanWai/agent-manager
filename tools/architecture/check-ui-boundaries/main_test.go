@@ -61,3 +61,9 @@ func TestFeaturePackagesRejectRuntimeTransitively(t *testing.T) {
 		})
 	}
 }
+
+func TestPresentationDependsOnNothingInTheModule(t *testing.T) {
+	if err := checkBoundary(presentBoundary); err != nil {
+		t.Fatal(err)
+	}
+}
