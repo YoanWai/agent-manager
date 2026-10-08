@@ -106,7 +106,7 @@ def settings_partial_save(sandbox, binary):
         key(sandbox, 'Down')
     key(sandbox, 'Right')
     key(sandbox, 'Enter')
-    frame(sandbox, 'save-failed', 'committed 8 of')
+    frame(sandbox, 'save-failed', 'committed 2 of 3')
     assert setting_value(sandbox, 'list_density') == 'comfortable', 'earlier density write was lost'
     assert setting_value(sandbox, 'focus_key') == 'attach', 'earlier focus preference was lost'
     assert setting_value(sandbox, 'layout') == '', 'failed layout write unexpectedly committed'
@@ -118,8 +118,14 @@ def settings_partial_save(sandbox, binary):
     assert '↵ attach' in focus_line, 'committed focus preference was not reconciled'
     with sqlite3.connect(db) as conn:
         conn.execute('DROP TRIGGER fail_layout')
+    # A save writes only the rows changed in the dialog, so the retry makes
+    # the layout change again.
+    for _ in range(5):
+        key(sandbox, 'Down')
+    key(sandbox, 'Right')
+    frame(sandbox, 'settings-layout-retried', 'full')
     key(sandbox, 'Enter')
-    sandbox.wait('settings-retry', lambda: setting_value(sandbox, 'layout'), lambda value: value == 'split')
+    sandbox.wait('settings-retry', lambda: setting_value(sandbox, 'layout'), lambda value: value == 'full')
 
 
 def install_script_write_failure(sandbox, binary):
