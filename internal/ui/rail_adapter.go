@@ -83,6 +83,9 @@ func (m *Model) applyRailDecision(decision uirail.Decision) (tea.Model, tea.Cmd)
 		m.reportErr(decision.Error)
 	}
 	if decision.SelectionEffect != uirail.SelectionEffectNone {
+		// Only a move the user made comes through here; a refresh that
+		// slides the cursor does not re-aim the quick bar.
+		m.quick.aim, _ = m.rail.Selected()
 		m.workspace.preview = ""
 		m.workspace.proc = sysstat.ProcStat{}
 		m.workspace.procFor = ""

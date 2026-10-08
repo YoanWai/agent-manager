@@ -2,6 +2,7 @@ package ui
 
 import (
 	"github.com/YoanWai/agent-manager/internal/clipboard"
+	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 )
 
 // captureClipboardImage is the seam the quick bar uses to save a pasted
@@ -29,6 +30,10 @@ type quickState struct {
 	choice          choice
 	// picking is the list open above the prompt, which takes the typing.
 	picking int
+	// aim is the row the user last pointed the bar at. A refresh that
+	// drops a connection's row moves the cursor on its own, and enter must
+	// not follow it to another agent or host.
+	aim uirail.Selection
 	// hits are relative to the origin, the bar's first painted line.
 	hits             []quickHit
 	originX, originY int

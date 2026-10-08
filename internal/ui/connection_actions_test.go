@@ -256,3 +256,51 @@ func TestRemoteLifecycleAsksFirstAndNoSendsNothing(t *testing.T) {
 		t.Fatalf("calls = %q, mode %v after n", calls, m.mode)
 	}
 }
+
+func TestQuickBarRefusesWhenARefreshDropsItsRemoteTarget(t *testing.T) {
+	fake := &fakeSSH{}
+	m := connectedModel(t, fake)
+	m.rail.Focus(boxSession("s1"))
+	m.openQuickMode()
+	m.quick.input.SetValue("hello there")
+	fake.mu.Lock()
+	fake.snapshot.Sessions = fake.snapshot.Sessions[1:]
+	fake.mu.Unlock()
+	m.applyTestMsg(t, m.pollConnection("box")())
+	if selection, _ := m.rail.Selected(); selection.SessionID == "s1" {
+		t.Fatal("the refresh should have moved the cursor off the dropped row")
+	}
+
+	_, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil {
+		m.runRemoteCmd(t, cmd)
+	}
+	if calls := fake.taken(); len(calls) != 1 || calls[0][0] != "snapshot" {
+		t.Fatalf("calls = %q, want only the refresh", calls)
+	}
+	for _, lane := range m.lanes() {
+		if lane.active != nil || len(lane.pending) != 0 {
+			t.Fatal("enter queued an effect for the row the cursor slid to")
+		}
+	}
+	if !strings.Contains(m.errBar.text, "gone from box") || m.quick.input.Value() != "hello there" {
+		t.Fatalf("status %q draft %q", m.errBar.text, m.quick.input.Value())
+	}
+}
+
+func TestQuickBarFollowsAMoveTheUserMakes(t *testing.T) {
+	fake := &fakeSSH{}
+	m := connectedModel(t, fake)
+	m.rail.Focus(boxSession("s1"))
+	m.openQuickMode()
+	m.quick.input.SetValue("hello there")
+	m.runQuickRequest(quickRequest{move: 1})
+	if selection, _ := m.rail.Selected(); selection.SessionID != "s2" {
+		t.Fatalf("selection = %+v, want s2 below s1", selection)
+	}
+	_, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.runRemoteCmd(t, cmd)
+	if calls := fake.taken(); len(calls) != 1 || calls[0][0] != "send" || !slices.Contains(calls[0], "s2") {
+		t.Fatalf("calls = %q, want a send to s2", calls)
+	}
+}

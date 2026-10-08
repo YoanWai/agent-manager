@@ -206,6 +206,10 @@ func (m *Model) remoteQuickKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 		return nil, false
 	}
 	selection, _ := m.rail.Selected()
+	if refusal, lost := m.quickAimLost(selection); lost {
+		m.reportErr(refusal)
+		return nil, true
+	}
 	row, ok := m.ssh.row(selection)
 	if !ok {
 		return nil, false
@@ -245,6 +249,32 @@ func (m *Model) remoteQuickKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 		request.spawn.Worktree = &worktree
 	}
 	return m.queueRemote(request), true
+}
+
+// quickAimLost refuses an enter whose target a refresh moved when either
+// end is on a connection: the remote row the bar was aimed at is gone, or
+// the cursor slid to another row without the user moving it.
+func (m *Model) quickAimLost(selection uirail.Selection) (string, bool) {
+	aim := m.quick.aim
+	if !aim.Remote() && !selection.Remote() {
+		return "", false
+	}
+	if _, ok := m.ssh.row(aim); aim.Remote() && !ok {
+		return "the agent this prompt was aimed at is gone from " + aim.Host + "; nothing was sent", true
+	}
+	if !sameRow(aim, selection) {
+		return "the selection moved since this prompt was aimed; nothing was sent", true
+	}
+	return "", false
+}
+
+// sameRow compares rows by identity; a session that changed group is
+// still the same session.
+func sameRow(a, b uirail.Selection) bool {
+	if a.Kind == uirail.SessionRow && b.Kind == uirail.SessionRow {
+		return a.Host == b.Host && a.SessionID == b.SessionID
+	}
+	return a == b
 }
 
 // remoteTarget is the connection and group a spawn from the selected row

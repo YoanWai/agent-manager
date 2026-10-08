@@ -63,7 +63,9 @@ func (m *Model) openQuickModeWithReader(reader settingsValueReader) tea.Cmd {
 	input.Focus()
 	m.clearErr()
 	m.forgetWorktreeCapability()
+	aim, _ := m.rail.Selected()
 	m.quick = quickBar{quickState{
+		aim:            aim,
 		active:         true,
 		composer:       composer{input: input, maxRows: quickBarMaxRows, gen: m.nextComposerGen()},
 		toolNames:      names,
