@@ -345,10 +345,12 @@ func TestShippedFeedFileIsRenderableAndRetires(t *testing.T) {
 			t.Errorf("%s: needs max_version or expires_at, or it keeps showing after it stops being true", entry.ID)
 		}
 		if entry.MaxVersion != "" {
-			if !serves(sanitize(entries, entry.MaxVersion, now), entry.ID) {
+			versionEntry := entry
+			versionEntry.ExpiresAt = ""
+			if !serves(sanitize([]rawMessage{versionEntry}, entry.MaxVersion, now), entry.ID) {
 				t.Errorf("%s: max_version %q hides it from its own release; a bound that fails to parse hides it from everyone", entry.ID, entry.MaxVersion)
 			}
-			if above := majorAbove(t, entry.MaxVersion); serves(sanitize(entries, above, now), entry.ID) {
+			if above := majorAbove(t, entry.MaxVersion); serves(sanitize([]rawMessage{versionEntry}, above, now), entry.ID) {
 				t.Errorf("%s: still served on %s", entry.ID, above)
 			}
 		}
