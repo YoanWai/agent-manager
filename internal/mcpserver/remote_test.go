@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/remote"
+	"github.com/YoanWai/agent-manager/internal/remote/remotetest"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -40,12 +41,17 @@ type fakeHosts struct {
 }
 
 func (f *fakeHosts) run(_ context.Context, argv []string) ([]byte, []byte, error) {
-	call := hostCall{destination: argv[len(argv)-2], words: remoteArgs(f.t, argv[len(argv)-1])}
+	words, err := remotetest.Words(argv)
+	if err != nil || words[0] != "agent-manager" {
+		f.t.Fatalf("remote command %q: %v", argv, err)
+	}
+	call := hostCall{destination: argv[len(argv)-2], words: words[1:]}
 	f.mu.Lock()
 	f.calls = append(f.calls, call)
 	answer := f.answer
 	f.mu.Unlock()
-	return answer(call.destination, call.words)
+	stdout, stderr, err := answer(call.destination, call.words)
+	return remotetest.Answer(stdout), stderr, err
 }
 
 func (f *fakeHosts) recorded() []hostCall {
@@ -58,60 +64,6 @@ func (f *fakeHosts) reset() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls = nil
-}
-
-// remoteArgs undoes the login-shell quoting of the remote command and drops
-// the agent-manager word.
-func remoteArgs(t *testing.T, command string) []string {
-	t.Helper()
-	inner, ok := strings.CutPrefix(command, `exec "$SHELL" -lc `)
-	if !ok {
-		t.Fatalf("remote command %q does not go through the login shell", command)
-	}
-	outer := splitQuoted(t, inner)
-	if len(outer) != 1 {
-		t.Fatalf("login shell gets %d words, want 1", len(outer))
-	}
-	words := splitQuoted(t, outer[0])
-	if len(words) == 0 || words[0] != "agent-manager" {
-		t.Fatalf("remote command runs %v", words)
-	}
-	return words[1:]
-}
-
-func splitQuoted(t *testing.T, line string) []string {
-	t.Helper()
-	var words []string
-	var word strings.Builder
-	inWord := false
-	for i := 0; i < len(line); i++ {
-		switch ch := line[i]; ch {
-		case ' ':
-			if inWord {
-				words = append(words, word.String())
-				word.Reset()
-				inWord = false
-			}
-		case '\'':
-			end := strings.IndexByte(line[i+1:], '\'')
-			if end < 0 {
-				t.Fatalf("unterminated quote in %q", line)
-			}
-			word.WriteString(line[i+1 : i+1+end])
-			i += end + 1
-			inWord = true
-		case '\\':
-			i++
-			word.WriteByte(line[i])
-			inWord = true
-		default:
-			t.Fatalf("unquoted %q in %q", ch, line)
-		}
-	}
-	if inWord {
-		words = append(words, word.String())
-	}
-	return words
 }
 
 func mustJSON(t *testing.T, value any) []byte {

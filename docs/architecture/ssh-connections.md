@@ -81,7 +81,7 @@ Every call runs `ssh` with:
 
 The remote command runs in the user's login shell (`exec "$SHELL" -lc ...`),
 so the `PATH` the user set up there finds the binary, wherever it was
-installed. Every argument is single-quoted. Each call has a deadline, and
+installed. Every argument is single-quoted. The command prints a marker once the login profile has run, and the client reads only what follows it, so a profile that prints to stdout does not break the answer. The client strips control characters and escape sequences from every string a host answers with, drops rows whose ids are malformed, caps output at 8 MiB, and kills ssh's whole process group at the deadline. A stored connection is validated again before any call uses it. Each call has a deadline, and
 each host has one call in flight at a time.
 
 ## Pieces

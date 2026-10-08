@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/remote"
+	"github.com/YoanWai/agent-manager/internal/remote/remotetest"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
@@ -32,9 +33,14 @@ type fakeExit int
 func (e fakeExit) Error() string { return fmt.Sprintf("exit status %d", int(e)) }
 func (e fakeExit) ExitCode() int { return int(e) }
 
-func (f *fakeSSH) run(_ context.Context, argv []string) ([]byte, []byte, error) {
-	inner := shellWords(strings.TrimPrefix(argv[len(argv)-1], `exec "$SHELL" -lc `))
-	words := shellWords(inner[0])[1:]
+func (f *fakeSSH) run(ctx context.Context, argv []string) ([]byte, []byte, error) {
+	stdout, stderr, err := f.answer(ctx, argv)
+	return remotetest.Answer(stdout), stderr, err
+}
+
+func (f *fakeSSH) answer(_ context.Context, argv []string) ([]byte, []byte, error) {
+	all, _ := remotetest.Words(argv)
+	words := all[1:]
 	f.mu.Lock()
 	f.calls = append(f.calls, words)
 	snapshot, screen, stderr, code := f.snapshot, f.screen, f.stderr, f.code
@@ -58,6 +64,8 @@ func (f *fakeSSH) run(_ context.Context, argv []string) ([]byte, []byte, error) 
 			return []byte("closed\n"), nil, nil
 		case "read":
 			reply = sessioncmd.TerminalScreen{Output: screen}
+		case "send":
+			reply = sessioncmd.TerminalInput{TerminalID: words[len(words)-1], Sent: "command"}
 		default:
 			reply = sessioncmd.Terminal{ID: "t9", Name: "shell"}
 		}
@@ -72,42 +80,6 @@ func (f *fakeSSH) taken() [][]string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return slices.Clone(f.calls)
-}
-
-// shellWords splits single-quoted POSIX words, the way the remote shell
-// reads what remoteCommand built.
-func shellWords(s string) []string {
-	var words []string
-	var word strings.Builder
-	quoted, started := false, false
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		switch {
-		case quoted && c == '\'':
-			quoted = false
-		case quoted:
-			word.WriteByte(c)
-		case c == '\'':
-			quoted, started = true, true
-		case c == '\\' && i+1 < len(s):
-			i++
-			word.WriteByte(s[i])
-			started = true
-		case c == ' ':
-			if started {
-				words = append(words, word.String())
-				word.Reset()
-				started = false
-			}
-		default:
-			word.WriteByte(c)
-			started = true
-		}
-	}
-	if started {
-		words = append(words, word.String())
-	}
-	return words
 }
 
 func boxSnapshot() sessioncmd.Snapshot {

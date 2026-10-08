@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -89,8 +90,15 @@ func TestHostTextCannotDriveTheTerminal(t *testing.T) {
 	fake.snapshot.Sessions = []sessioncmd.Session{{ID: "s1", Name: "api" + hostile, Tool: "claude" + hostile, Group: group, Status: "idle" + hostile}}
 	fake.snapshot.Terminals = nil
 	fake.screen = "build" + hostile + "ing\x1bc\x0e\x0fdone\n$ "
+	raw := fake.snapshot
 	fake.mu.Unlock()
 	m.applyTestMsg(t, m.pollConnection("box")())
+	// internal/remote already cleans what a host answers; the UI escapes on
+	// its own too, so this test hands it the host's raw rows.
+	state := m.ssh.hosts["box"]
+	state.Snapshot = raw
+	m.ssh.hosts["box"] = state
+	m.rebuildRows()
 
 	frame := func(surface string) {
 		t.Helper()
@@ -138,6 +146,10 @@ func TestHostTextCannotDriveTheTerminal(t *testing.T) {
 	frame("a failed read")
 
 	m.applyTestMsg(t, m.pollConnection("box")())
+	state = m.ssh.hosts["box"]
+	state.Snapshot, state.Err = raw, errors.New("box: denied"+hostile)
+	m.ssh.hosts["box"] = state
+	m.rebuildRows()
 	m.rail.Focus(boxRow)
 	frame("an offline host")
 }
