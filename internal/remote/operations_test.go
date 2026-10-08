@@ -119,7 +119,7 @@ func TestOperationArgv(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			c, calls := recorder(t, `{"version":1}`)
+			c, calls := recorder(t, `{"version":1,"id":"a1","terminal_id":"a1"}`)
 			if err := tc.run(context.Background(), c); err != nil {
 				t.Fatal(err)
 			}

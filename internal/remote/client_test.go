@@ -86,7 +86,7 @@ func TestCallsToOneHostRunOneAtATime(t *testing.T) {
 	c := newTestClient(t, func(ctx context.Context, argv []string) ([]byte, []byte, error) {
 		entered <- argv[len(argv)-2]
 		<-release
-		return []byte(`{}`), nil, nil
+		return []byte(`{"id":"a1"}`), nil, nil
 	})
 	var wg sync.WaitGroup
 	call := func(host string) {

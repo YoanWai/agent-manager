@@ -161,8 +161,10 @@ type Error struct {
 	sshFailed bool
 }
 
+// Error cleans the host's name too: one read back from the store or passed
+// by an agent may not have been validated.
 func (e *Error) Error() string {
-	return e.Host + ": " + e.Err.Error()
+	return cleanText(e.Host) + ": " + e.Err.Error()
 }
 
 func (e *Error) Unwrap() error {
@@ -207,7 +209,7 @@ func classify(ctx context.Context, host string, stderr []byte, err error) error 
 // the line that says what went wrong.
 func lastLine(output []byte) string {
 	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	return strings.TrimSpace(lines[len(lines)-1])
+	return strings.TrimSpace(cleanText(lines[len(lines)-1]))
 }
 
 func (c *Client) decode(ctx context.Context, host string, timeout time.Duration, into any, args ...string) error {
@@ -215,8 +217,12 @@ func (c *Client) decode(ctx context.Context, host string, timeout time.Duration,
 	if err != nil {
 		return err
 	}
-	if err := json.Unmarshal(out, into); err != nil {
-		return &Error{Host: host, Err: fmt.Errorf("unreadable answer to %s: %w", args[0], err)}
+	return unreadable(host, args[0], json.Unmarshal(out, into))
+}
+
+func unreadable(host, command string, err error) error {
+	if err == nil {
+		return nil
 	}
-	return nil
+	return &Error{Host: host, Err: fmt.Errorf("unreadable answer to %s: %w", command, err)}
 }

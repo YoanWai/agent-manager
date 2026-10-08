@@ -35,7 +35,7 @@ func (c *Client) Snapshot(ctx context.Context, host string) (sessioncmd.Snapshot
 	case snapshot.Version > sessioncmd.SnapshotVersion:
 		return sessioncmd.Snapshot{}, &Error{Host: host, Err: errors.New("agent-manager there is newer than this one; update agent-manager on this machine")}
 	}
-	return snapshot, nil
+	return cleanSnapshot(snapshot), nil
 }
 
 func outdated(host string) error {
@@ -58,11 +58,11 @@ func (c *Client) Read(ctx context.Context, ref Ref, terminal bool) (string, erro
 	if terminal {
 		var screen sessioncmd.TerminalScreen
 		err := c.decode(ctx, ref.Host, callTimeout, &screen, "terminal", "read", "--json", "--", ref.ID)
-		return screen.Output, err
+		return cleanScreen(screen.Output), err
 	}
 	var screen sessioncmd.SessionScreen
 	err := c.decode(ctx, ref.Host, callTimeout, &screen, "read", "--json", "--", ref.ID)
-	return screen.Output, err
+	return cleanScreen(screen.Output), err
 }
 
 // Send queues text for the agent at ref, from a sender with no session on
@@ -98,8 +98,11 @@ func (c *Client) Spawn(ctx context.Context, host string, opts sessioncmd.CreateS
 		args = append(args, "--worktree="+strconv.FormatBool(*opts.Worktree))
 	}
 	var created sessioncmd.Session
-	err := c.decode(ctx, host, createTimeout, &created, args...)
-	return created, err
+	if err := c.decode(ctx, host, createTimeout, &created, args...); err != nil {
+		return created, err
+	}
+	created, err := cleanSession(created)
+	return created, unreadable(host, "spawn", err)
 }
 
 func (c *Client) CreateTerminal(ctx context.Context, host string, opts sessioncmd.CreateTerminalOptions) (sessioncmd.Terminal, error) {
@@ -114,8 +117,11 @@ func (c *Client) CreateTerminal(ctx context.Context, host string, opts sessioncm
 		args = append(args, "--nest="+strconv.FormatBool(*opts.Nest))
 	}
 	var created sessioncmd.Terminal
-	err := c.decode(ctx, host, createTimeout, &created, args...)
-	return created, err
+	if err := c.decode(ctx, host, createTimeout, &created, args...); err != nil {
+		return created, err
+	}
+	created, err := cleanTerminal(created)
+	return created, unreadable(host, "terminal create", err)
 }
 
 // TerminalSend passes each key as its own --keys, since the CLI splits a
@@ -132,8 +138,14 @@ func (c *Client) TerminalSend(ctx context.Context, ref Ref, command string, keys
 	for _, key := range keys {
 		args = append(args, "--keys="+key)
 	}
-	err := c.decode(ctx, ref.Host, callTimeout, &input, append(args, "--", ref.ID)...)
-	return input, err
+	if err := c.decode(ctx, ref.Host, callTimeout, &input, append(args, "--", ref.ID)...); err != nil {
+		return input, err
+	}
+	if err := validID(input.TerminalID); err != nil {
+		return sessioncmd.TerminalInput{}, unreadable(ref.Host, "terminal send", err)
+	}
+	input.Sent = cleanText(input.Sent)
+	return input, nil
 }
 
 // TerminalClose has no JSON form; the remote prints a sentence.
@@ -166,8 +178,11 @@ func (c *Client) lifecycle(ctx context.Context, ref Ref, args ...string) (sessio
 	if err := validRef(ref); err != nil {
 		return session, err
 	}
-	err := c.decode(ctx, ref.Host, callTimeout, &session, append(args, "--", ref.ID)...)
-	return session, err
+	if err := c.decode(ctx, ref.Host, callTimeout, &session, append(args, "--", ref.ID)...); err != nil {
+		return session, err
+	}
+	session, err := cleanSession(session)
+	return session, unreadable(ref.Host, args[0], err)
 }
 
 func (c *Client) CreateGroup(ctx context.Context, host, path, directory string) (sessioncmd.Group, error) {
@@ -177,13 +192,13 @@ func (c *Client) CreateGroup(ctx context.Context, host, path, directory string) 
 	}
 	var created sessioncmd.Group
 	err := c.decode(ctx, host, callTimeout, &created, append(args, "--", path)...)
-	return created, err
+	return cleanGroup(created), err
 }
 
 func (c *Client) DeleteGroup(ctx context.Context, host, path string) (sessioncmd.GroupRemoval, error) {
 	var removal sessioncmd.GroupRemoval
 	err := c.decode(ctx, host, callTimeout, &removal, "delete-group", "--json", "--", path)
-	return removal, err
+	return cleanRemoval(removal), err
 }
 
 func validRef(ref Ref) error {
