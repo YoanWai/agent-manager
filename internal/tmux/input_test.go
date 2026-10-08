@@ -1,7 +1,9 @@
 package tmux
 
 import (
+	"context"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -210,5 +212,74 @@ func TestPasteBufferNamesDifferAcrossProcesses(t *testing.T) {
 			t.Fatalf("two pastes loaded buffer %s", name)
 		}
 		loaded[name] = true
+	}
+}
+
+// A human send and an automatic delivery to one pane each paste and then
+// press Enter. Interleaved, the second paste lands before the first Enter and
+// both texts submit as one prompt.
+func TestSendTextHoldsASecondSendToThePaneUntilTheFirstSubmits(t *testing.T) {
+	dir := t.TempDir()
+	callLog := dir + "/calls"
+	held := dir + "/held"
+	release := dir + "/release"
+	stub := dir + "/tmux"
+	// The first paste blocks inside its send until the test releases it.
+	script := "#!/bin/sh\necho \"$*\" >> " + callLog + "\n" +
+		"case \"$*\" in *paste-buffer*)\n" +
+		"  [ -e " + held + " ] && exit 0\n" +
+		"  : > " + held + "\n" +
+		"  while [ ! -e " + release + " ]; do sleep 0.01; done;;\nesac\nexit 0\n"
+	if err := os.WriteFile(stub, []byte(script), 0o700); err != nil {
+		t.Fatalf("stub: %v", err)
+	}
+	unblock := func() { _ = os.WriteFile(release, nil, 0o600) }
+	t.Cleanup(unblock)
+	automatic := &Driver{bin: stub, socket: testSocket}
+	human := &Driver{bin: stub, socket: testSocket}
+
+	automaticDone := make(chan error, 1)
+	go func() {
+		_, err := automatic.SendTextContext(context.Background(), "x1", "automatic delivery")
+		automaticDone <- err
+	}()
+	for deadline := time.Now().Add(2 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		if _, err := os.Stat(held); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the automatic paste never started")
+		}
+	}
+	humanDone := make(chan error, 1)
+	go func() {
+		_, err := human.SendTextResult("x1", "human quick send")
+		humanDone <- err
+	}()
+	// Long enough for a send that does not wait to reach the pane.
+	for deadline := time.Now().Add(300 * time.Millisecond); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		if logged, _ := os.ReadFile(callLog); strings.Count(string(logged), "load-buffer") > 1 {
+			break
+		}
+	}
+	unblock()
+	if err := <-automaticDone; err != nil {
+		t.Fatalf("automatic send: %v", err)
+	}
+	if err := <-humanDone; err != nil {
+		t.Fatalf("human send: %v", err)
+	}
+
+	logged, err := os.ReadFile(callLog)
+	if err != nil {
+		t.Fatalf("read call log: %v", err)
+	}
+	calls := strings.Split(string(logged), "\n")
+	firstEnter := slices.IndexFunc(calls, func(call string) bool { return strings.HasSuffix(call, " Enter") })
+	if firstEnter < 0 {
+		t.Fatalf("no Enter sent, calls:\n%s", logged)
+	}
+	if loads := strings.Count(strings.Join(calls[:firstEnter], "\n"), "load-buffer"); loads != 1 {
+		t.Fatalf("%d pastes reached the pane before the first Enter, calls:\n%s", loads, logged)
 	}
 }

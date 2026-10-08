@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -46,7 +47,54 @@ func (result SendResult) PasteMayHaveStarted() bool {
 }
 
 func (d *Driver) SendTextContext(ctx context.Context, id, text string) (SendResult, error) {
-	return d.pasteAndEnterContext(ctx, PaneTarget(id), text)
+	target := PaneTarget(id)
+	release, err := enterPaneSendGate(ctx, d.socket, target)
+	if err != nil {
+		return SendResult{}, err
+	}
+	defer release()
+	return d.pasteAndEnterContext(ctx, target, text)
+}
+
+// A human send from the effect lane and the poller's automatic delivery can
+// reach one pane at once. Interleaved, the second paste lands before the
+// first Enter and both texts submit as one prompt, so each pane takes one
+// whole send at a time while other panes do not wait. The gates are keyed by
+// socket and pane, so every Driver in the process shares them.
+var paneSendGates = struct {
+	sync.Mutex
+	gates map[string]*paneSendGate
+}{gates: map[string]*paneSendGate{}}
+
+type paneSendGate struct {
+	slot  chan struct{}
+	users int
+}
+
+func enterPaneSendGate(ctx context.Context, socket, target string) (release func(), err error) {
+	key := socket + "\x00" + target
+	paneSendGates.Lock()
+	gate := paneSendGates.gates[key]
+	if gate == nil {
+		gate = &paneSendGate{slot: make(chan struct{}, 1)}
+		paneSendGates.gates[key] = gate
+	}
+	gate.users++
+	paneSendGates.Unlock()
+	leave := func() {
+		paneSendGates.Lock()
+		if gate.users--; gate.users == 0 {
+			delete(paneSendGates.gates, key)
+		}
+		paneSendGates.Unlock()
+	}
+	select {
+	case gate.slot <- struct{}{}:
+		return func() { <-gate.slot; leave() }, nil
+	case <-ctx.Done():
+		leave()
+		return nil, ctx.Err()
+	}
 }
 
 // SendKeys delivers exact tmux key names to a session. Keeping each key as
