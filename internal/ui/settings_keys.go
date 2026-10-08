@@ -92,7 +92,7 @@ func (s *settingsFeature) pickedTable() keybind.Table {
 	return s.dialog.tables[s.pickedRow().table]
 }
 
-func (s *settingsFeature) handleKeyPickerKey(h settingsHost, msg tea.KeyMsg) tea.Cmd {
+func (s *settingsFeature) handleKeyPickerKey(h keyPickerHost, msg tea.KeyMsg) tea.Cmd {
 	if s.dialog.keyCapture {
 		return s.captureKey(h, msg)
 	}
@@ -123,7 +123,7 @@ func (s *settingsFeature) handleKeyPickerKey(h settingsHost, msg tea.KeyMsg) tea
 
 // Every key reaches here, so esc leaves rather than binds; Parse would
 // refuse it anyway.
-func (s *settingsFeature) captureKey(h settingsHost, msg tea.KeyMsg) tea.Cmd {
+func (s *settingsFeature) captureKey(h keyPickerHost, msg tea.KeyMsg) tea.Cmd {
 	s.dialog.keyCapture = false
 	if msg.String() == "esc" {
 		h.clearErr()
@@ -176,7 +176,7 @@ func keyResetChanges(tables ...keybind.Table) []string {
 
 // The picker refuses what the store would refuse, so the table it saves
 // always loads back.
-func (s *settingsFeature) setBinding(h settingsHost, binding keybind.Binding) tea.Cmd {
+func (s *settingsFeature) setBinding(h keyPickerHost, binding keybind.Binding) tea.Cmd {
 	row := s.pickedRow()
 	candidate := s.dialog.tables[row.table].With(row.action.Name, binding)
 	if err := candidate.Validate(); err != nil {
@@ -193,17 +193,15 @@ func (s *settingsFeature) setBinding(h settingsHost, binding keybind.Binding) te
 // tmux keys and every live session's footer is redrawn. The picker submits
 // captured tables to the effect lane; the store writes happen off the
 // update path and a partial commit reconciles the runtime to the store.
-func (s *settingsFeature) saveKeys(h settingsHost) tea.Cmd {
+func (s *settingsFeature) saveKeys(h keyPickerHost) tea.Cmd {
 	session, list := s.dialog.tables[0], s.dialog.tables[1]
 	expectedSession, expectedList := h.keyTables()
-	for _, request := range h.queuedEffects() {
-		if pending, ok := request.(keysRequest); ok {
-			if pending.listChanged {
-				expectedList = pending.list
-			}
-			if pending.sessionChanged {
-				expectedSession = pending.session
-			}
+	for _, pending := range h.queuedKeys() {
+		if pending.listChanged {
+			expectedList = pending.list
+		}
+		if pending.sessionChanged {
+			expectedSession = pending.session
 		}
 	}
 	listChanged := !list.Equal(expectedList)
@@ -211,5 +209,5 @@ func (s *settingsFeature) saveKeys(h settingsHost) tea.Cmd {
 	if !listChanged && !sessionChanged {
 		return nil
 	}
-	return h.submitEffect(keysRequest{list: list, session: session, listChanged: listChanged, sessionChanged: sessionChanged})
+	return h.submitKeys(keysRequest{list: list, session: session, listChanged: listChanged, sessionChanged: sessionChanged})
 }

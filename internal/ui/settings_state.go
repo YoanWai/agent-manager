@@ -142,18 +142,27 @@ const (
 
 // settingsHost is what the Settings dialog's keys reach in the root: the
 // status bar, the configured tools, the live key tables, the effect lane
-// its captured writes go through, and the two live previews a step makes.
-// Closing the dialog, the in-place update, and the store writes stay with
-// the root adapters.
+// its captured settings writes go through, and the two live previews a
+// step makes. Closing the dialog, the in-place update, and the store writes
+// stay with the root adapters.
 type settingsHost interface {
 	reportErr(text string)
 	clearErr()
 	toolConfig() config.Config
 	keyTables() (session, list keybind.Table)
-	queuedEffects() []effectRequest
-	submitEffect(request effectRequest) tea.Cmd
+	submitSettings(request settingsRequest) tea.Cmd
 	syncPaneTheme() tea.Cmd
 	previewBackground(terminal bool)
+}
+
+// keyPickerHost is what the key picker reaches: the status bar, the live
+// key tables, the key saves already on the lane, and the lane for its own.
+type keyPickerHost interface {
+	reportErr(text string)
+	clearErr()
+	keyTables() (session, list keybind.Table)
+	queuedKeys() []keysRequest
+	submitKeys(request keysRequest) tea.Cmd
 }
 
 // settingsViewHost is what painting the dialog reads from the root: the

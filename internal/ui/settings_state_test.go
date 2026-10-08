@@ -14,7 +14,7 @@ import (
 type fakeSettingsHost struct {
 	cfg             config.Config
 	session, list   keybind.Table
-	queued          []effectRequest
+	queued          []keysRequest
 	submitted       []effectRequest
 	err             string
 	paneSyncs       int
@@ -30,8 +30,12 @@ func (h *fakeSettingsHost) toolConfig() config.Config { return h.cfg }
 func (h *fakeSettingsHost) keyTables() (session, list keybind.Table) {
 	return h.session, h.list
 }
-func (h *fakeSettingsHost) queuedEffects() []effectRequest { return h.queued }
-func (h *fakeSettingsHost) submitEffect(request effectRequest) tea.Cmd {
+func (h *fakeSettingsHost) queuedKeys() []keysRequest { return h.queued }
+func (h *fakeSettingsHost) submitSettings(request settingsRequest) tea.Cmd {
+	h.submitted = append(h.submitted, request)
+	return nil
+}
+func (h *fakeSettingsHost) submitKeys(request keysRequest) tea.Cmd {
 	h.submitted = append(h.submitted, request)
 	return nil
 }
@@ -77,6 +81,11 @@ func pressSettings(t *testing.T, s *settingsFeature, h settingsHost, keys ...str
 	var cmd tea.Cmd
 	exit := settingsStay
 	for _, k := range keys {
+		// The root adapter routes an open key picker the same way.
+		if s.dialog.keyPicker && !s.dialog.cliPicker {
+			cmd, exit = s.handleKeyPickerKey(h.(keyPickerHost), key(k)), settingsStay
+			continue
+		}
 		cmd, exit = s.handleKey(h, key(k))
 	}
 	return cmd, exit
@@ -177,7 +186,7 @@ func TestSettingsFeatureKeyPickerThroughHost(t *testing.T) {
 		t.Fatalf("keys request = %#v, want only the session table", changed)
 	}
 
-	h.queued, h.submitted = []effectRequest{changed}, nil
+	h.queued, h.submitted = []keysRequest{changed}, nil
 	s.dialog.keyPicker = true
 	pressSettings(t, &s, h, "esc")
 	if len(h.submitted) != 0 {

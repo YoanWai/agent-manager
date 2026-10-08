@@ -418,20 +418,27 @@ func (m *Model) keyTables() (session, list keybind.Table) {
 	return m.services.keys, m.services.listKeys
 }
 
-// queuedEffects lists the lane's running request, then the waiting ones,
-// in the order they commit.
-func (m *Model) queuedEffects() []effectRequest {
-	var requests []effectRequest
+// queuedKeys lists the key saves on the lane, running first, in the order
+// they commit.
+func (m *Model) queuedKeys() []keysRequest {
+	var requests []keysRequest
 	for _, job := range append([]*effectJob{m.effects.main.active}, m.effects.main.pending...) {
 		if job == nil {
 			continue
 		}
-		requests = append(requests, job.request)
+		if request, ok := job.request.(keysRequest); ok {
+			requests = append(requests, request)
+		}
 	}
 	return requests
 }
 
-func (m *Model) submitEffect(request effectRequest) tea.Cmd {
+func (m *Model) submitSettings(request settingsRequest) tea.Cmd {
+	m.enqueueEffect(request, 0, false)
+	return m.nextEffectCmd()
+}
+
+func (m *Model) submitKeys(request keysRequest) tea.Cmd {
 	m.enqueueEffect(request, 0, false)
 	return m.nextEffectCmd()
 }
@@ -557,6 +564,9 @@ func (s *settingsFeature) open(h settingsHost, reader settingsValueReader) (tea.
 // handleSettingsKey is the root adapter for the dialog's keys: it runs
 // the exits that close the dialog or start the in-place update.
 func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.settings.dialog.keyPicker && !m.settings.dialog.cliPicker {
+		return m, m.settings.handleKeyPickerKey(m, msg)
+	}
 	cmd, exit := m.settings.handleKey(m, msg)
 	switch exit {
 	case settingsReportBug:
@@ -584,9 +594,6 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (s *settingsFeature) handleKey(h settingsHost, msg tea.KeyMsg) (tea.Cmd, settingsExit) {
 	if s.dialog.cliPicker {
 		return s.handleCLIPickerKey(h, msg), settingsStay
-	}
-	if s.dialog.keyPicker {
-		return s.handleKeyPickerKey(h, msg), settingsStay
 	}
 	if s.dialog.editor.typing {
 		return s.handleEditorTypingKey(msg), settingsStay
@@ -653,7 +660,7 @@ func (s *settingsFeature) captureSettingsSave(h settingsHost, includeHidden, fol
 		s.cache.applyHidden(request.hidden)
 	}
 	s.pending++
-	return h.submitEffect(request)
+	return h.submitSettings(request)
 }
 
 func (s *settingsFeature) captureHiddenSave(h settingsHost) tea.Cmd {
@@ -665,7 +672,7 @@ func (s *settingsFeature) captureHiddenSave(h settingsHost) tea.Cmd {
 	s.advanceSettingsBaseline(nil, request.hidden)
 	s.cache.applyHidden(request.hidden)
 	s.pending++
-	return h.submitEffect(request)
+	return h.submitSettings(request)
 }
 
 // markSettingsBaseline records the freshly built dialog as the state a
