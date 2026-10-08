@@ -58,6 +58,8 @@ func (m *Model) renderFrame() string {
 		frame = m.reviewNav.picker.view(m)
 	case modeGroupForm:
 		frame = m.viewGroupForm()
+	case modeConnection:
+		frame = m.ssh.dialog.view(m)
 	case modeDiff:
 		frame = m.viewDiffFull()
 	case modeNotices:

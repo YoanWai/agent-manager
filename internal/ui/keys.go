@@ -63,6 +63,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.reviewNav.picker.handleKey(m, msg)
 	case modeGroupForm:
 		return m.handleGroupFormKey(msg)
+	case modeConnection:
+		return m.handleConnectionKey(msg)
 	case modeDiff:
 		return m.handleDiffKey(msg)
 	case modeFocus:

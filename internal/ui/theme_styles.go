@@ -23,6 +23,7 @@ var (
 	colorSubtle  lipgloss.Color
 	colorAccent  lipgloss.Color
 	colorAccent2 lipgloss.Color
+	colorRemote  lipgloss.Color
 	colorSelBg   lipgloss.Color
 
 	colorWorking  lipgloss.Color

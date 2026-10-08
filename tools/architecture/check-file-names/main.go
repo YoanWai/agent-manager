@@ -27,6 +27,7 @@ const uiRoot = "internal/ui"
 var features = map[string]string{
 	"composer":     "prompt composers, chips and pasted images",
 	"confirm":      "the confirm dialog",
+	"connection":   "SSH connections: the dialog, remote rows, polling, preview and routed actions",
 	"effects":      "the ordered effect lane and its executor",
 	"focus":        "the Focus adapter and pane watch",
 	"fork":         "the fork dialog",

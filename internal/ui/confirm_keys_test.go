@@ -15,9 +15,10 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // fakeConfirmHost records what the confirm dialog asks of the root.
 type fakeConfirmHost struct {
-	mode   mode
-	queued []confirmTarget
-	quits  int
+	mode    mode
+	queued  []confirmTarget
+	quits   int
+	removed []string
 }
 
 func (h *fakeConfirmHost) confirmCard(title, question, consequence string, destructive bool, answer string) string {
@@ -28,7 +29,21 @@ func (h *fakeConfirmHost) setMode(next mode) { h.mode = next }
 func (h *fakeConfirmHost) queueLifecycle(target confirmTarget, allowLive bool, emptyNotice string) {
 	h.queued = append(h.queued, target)
 }
-func (h *fakeConfirmHost) nextEffectCmd() tea.Cmd { return func() tea.Msg { return nil } }
+func (h *fakeConfirmHost) nextEffectCmd() tea.Cmd       { return func() tea.Msg { return nil } }
+func (h *fakeConfirmHost) removeConnection(name string) { h.removed = append(h.removed, name) }
+
+func TestConfirmDialogRemovesAConnection(t *testing.T) {
+	d := confirmDialog{confirmTarget{action: actionRemoveConnection, connection: "box",
+		label: "remove connection box? Its sessions keep running on the host."}}
+	h := &fakeConfirmHost{mode: modeConfirmDelete}
+	if got := d.view(h); got != "⚠ Remove connection|remove connection box?|Its sessions keep running on the host.|remove" {
+		t.Fatalf("view = %q", got)
+	}
+	d.handleKey(h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	if h.mode != modeList || len(h.queued) != 0 || len(h.removed) != 1 || h.removed[0] != "box" {
+		t.Fatalf("mode %v queued %+v removed %v, want box removed and nothing queued", h.mode, h.queued, h.removed)
+	}
+}
 
 func TestConfirmDialogWithFakeHost(t *testing.T) {
 	sessions := []store.Session{{ID: "a"}}

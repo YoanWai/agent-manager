@@ -115,6 +115,8 @@ func (m *Model) captureEffect(request effectRequest) func() (effectResult, error
 			return services.runDetach(request)
 		case attachRequest:
 			return services.runAttach(request)
+		case connectionRequest:
+			return services.runConnection(request)
 		}
 		panic("unknown UI effect request")
 	}

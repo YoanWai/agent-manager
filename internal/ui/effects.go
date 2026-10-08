@@ -354,6 +354,8 @@ func (m *Model) handleEffectCompleted(msg effectCompletedMsg) (tea.Model, tea.Cm
 		command = m.applyDetachEffect(job.request.(detachRequest), result, msg.err)
 	case attachEffectResult:
 		command = m.applyAttachEffect(job.request.(attachRequest), result, msg.err)
+	case connectionEffectResult:
+		command = m.applyConnectionEffect(job.request.(connectionRequest), result, msg.err)
 	default:
 		if msg.err != nil {
 			m.reportErr(msg.err.Error())
@@ -407,6 +409,8 @@ func effectName(request effectRequest) string {
 		return "key binding save"
 	case focusRequest, ackRequest, detachRequest, attachRequest:
 		return "focus or attach"
+	case connectionRequest:
+		return "SSH connection save"
 	}
 	return "effect"
 }

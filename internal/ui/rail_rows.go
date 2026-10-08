@@ -29,6 +29,7 @@ func (m *Model) railSnapshot() uirail.Snapshot {
 		Sessions:       make([]uirail.Session, 0, len(m.workspace.sessions)),
 		Groups:         append([]string(nil), m.workspace.groups...),
 		ArchivedGroups: make(map[string]bool, len(m.workspace.archivedGroups)),
+		Hosts:          m.ssh.railHosts(),
 	}
 	for path, archived := range m.workspace.archivedGroups {
 		snapshot.ArchivedGroups[path] = archived
@@ -83,7 +84,7 @@ func (m *Model) selected() (store.Session, bool) {
 
 func (m *Model) selectedRow() (treeRow, bool) {
 	selection, ok := m.rail.Selected()
-	if !ok {
+	if !ok || selection.Remote() {
 		return treeRow{}, false
 	}
 	if selection.Kind == uirail.GroupRow {

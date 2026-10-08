@@ -166,6 +166,9 @@ func (m *Model) swapGroupInventory(path, targetPath string) {
 }
 
 func (m *Model) runRailIntent(intent uirail.Intent) (tea.Model, tea.Cmd) {
+	if cmd, taken := m.connectionIntent(intent); taken {
+		return m, cmd
+	}
 	switch intent.Kind {
 	case uirail.Quit:
 		return m.requestQuit()

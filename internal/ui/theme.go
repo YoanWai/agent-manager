@@ -449,6 +449,7 @@ func applyTheme(t Theme) {
 	colorSubtle = lipgloss.Color(t.Subtle)
 	colorAccent = lipgloss.Color(t.Accent)
 	colorAccent2 = lipgloss.Color(t.Accent2)
+	colorRemote = lipgloss.Color(t.Remote)
 	colorSelBg = colorSurface
 
 	colorWorking = lipgloss.Color(t.Working)

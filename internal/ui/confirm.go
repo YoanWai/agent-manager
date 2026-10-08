@@ -25,6 +25,7 @@ type confirmHost interface {
 	quit() tea.Cmd
 	setMode(next mode)
 	queueLifecycle(target confirmTarget, allowLive bool, emptyNotice string)
+	removeConnection(name string)
 	nextEffectCmd() tea.Cmd
 }
 
@@ -47,6 +48,8 @@ func (d *confirmDialog) title() string {
 		return "↻ Restart " + subject
 	case actionRevive:
 		return "◆ Revive " + subject
+	case actionRemoveConnection:
+		return "⚠ Remove connection"
 	default:
 		return "⚠ Delete " + subject
 	}
@@ -56,7 +59,7 @@ func (d *confirmDialog) title() string {
 // away, which decides whether the dialog reads as an alarm or as a move.
 func (d *confirmDialog) destructive() bool {
 	return d.action == actionKill || d.action == actionDelete ||
-		d.action == actionRestart || d.action == actionArchive
+		d.action == actionRestart || d.action == actionArchive || d.action == actionRemoveConnection
 }
 
 func (d *confirmDialog) view(h confirmHost) string {
@@ -73,6 +76,8 @@ func (d *confirmDialog) view(h confirmHost) string {
 		answer = "restart"
 	case actionRevive:
 		answer = "revive"
+	case actionRemoveConnection:
+		answer = "remove"
 	}
 	return h.confirmCard(d.title(), question, consequence, d.destructive(), answer)
 }
@@ -117,6 +122,9 @@ const (
 	actionKill    = "kill"
 	actionRestart = "restart"
 	actionRevive  = "revive"
+	// actionRemoveConnection takes an SSH connection off the list; the
+	// target names it and holds no sessions.
+	actionRemoveConnection = "remove connection"
 )
 
 type confirmTarget struct {
@@ -130,6 +138,7 @@ type confirmTarget struct {
 	action       string
 	batch        bool
 	selection    lifecycleSelection
+	connection   string
 }
 
 type lifecycleSelectionKind uint8
