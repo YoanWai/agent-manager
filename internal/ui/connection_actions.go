@@ -103,8 +103,38 @@ func (m *Model) remoteSessionIntent(kind uirail.ActionKind, row remoteRow) (tea.
 	default:
 		return nil, false
 	}
-	return m.queueRemote(request), true
+	return m.confirmRemote(request), true
 }
+
+// remoteConfirm is the act and question a remote lifecycle call asks, the
+// way the same call on a local row does.
+var remoteConfirm = map[remoteOp]struct{ action, verb, consequence string }{
+	remoteKill:          {actionKill, "kill", " frees its RAM there, v revives it."},
+	remoteCloseTerminal: {actionKill, "close terminal", ""},
+	remoteRevive:        {actionRevive, "revive", ""},
+	remoteArchive:       {actionArchive, "archive", ""},
+	remoteRestore:       {actionRestore, "restore", ""},
+}
+
+// confirmRemote asks before a lifecycle call goes to the host; an offline
+// host refuses before the question.
+func (m *Model) confirmRemote(request remoteRequest) tea.Cmd {
+	if refusal, offline := m.ssh.offline(request.host); offline {
+		m.reportErr(refusal)
+		return nil
+	}
+	ask := remoteConfirm[request.op]
+	m.confirm.confirmTarget = confirmTarget{
+		action: ask.action,
+		label:  ask.verb + " " + request.name + " on " + request.host + "?" + ask.consequence,
+		remote: &request,
+	}
+	m.mode = modeConfirmDelete
+	return nil
+}
+
+// runRemote is the confirmed remote call.
+func (m *Model) runRemote(request remoteRequest) tea.Cmd { return m.queueRemote(request) }
 
 // queueRemote puts a call on the remote lane, unless the host's last
 // refresh could not reach it.

@@ -16,9 +16,12 @@ func (d *confirmDialog) handleKey(h confirmHost, msg tea.KeyMsg) tea.Cmd {
 		target.sessions = append(target.sessions[:0:0], target.sessions...)
 		d.confirmTarget = confirmTarget{}
 		h.setMode(modeList)
-		if target.connection != "" {
+		switch {
+		case target.remote != nil:
+			return h.runRemote(*target.remote)
+		case target.connection != "":
 			h.removeConnection(target.connection)
-		} else {
+		default:
 			h.queueLifecycle(target, false, "")
 		}
 		return h.nextEffectCmd()

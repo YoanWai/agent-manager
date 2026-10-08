@@ -19,6 +19,20 @@ func (m *Model) runRemoteCmd(t *testing.T, cmd tea.Cmd) {
 	m.drainEffects(t)
 }
 
+// answerRemote answers the confirm a remote lifecycle call opens, after
+// checking that nothing reached the host while it was asked.
+func (m *Model) answerRemote(t *testing.T, fake *fakeSSH, cmd tea.Cmd, key string) tea.Cmd {
+	t.Helper()
+	if m.mode != modeConfirmDelete {
+		return cmd
+	}
+	m.runRemoteCmd(t, cmd)
+	if calls := fake.taken(); len(calls) != 0 {
+		t.Fatalf("calls before the answer = %q", calls)
+	}
+	return m.confirm.handleKey(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+}
+
 func (m *Model) remoteIdle() bool {
 	return m.effects.remote.active == nil && len(m.effects.remote.pending) == 0
 }
@@ -45,7 +59,7 @@ func TestRemoteActionsBuildTheirRemoteCall(t *testing.T) {
 			m := connectedModel(t, fake)
 			m.rail.Focus(tc.target)
 			_, cmd := m.runRailIntent(uirail.Intent{Kind: tc.kind, Target: tc.target})
-			m.runRemoteCmd(t, cmd)
+			m.runRemoteCmd(t, m.answerRemote(t, fake, cmd, "y"))
 			if calls := fake.taken(); len(calls) != 1 || !slices.Equal(calls[0], tc.want) {
 				t.Fatalf("calls = %q, want one %q", calls, tc.want)
 			}
@@ -113,7 +127,7 @@ func TestRemoteCallReportsTheHostsError(t *testing.T) {
 	fake.stderr, fake.code = "agent-manager: no session named s1\n", 1
 	fake.mu.Unlock()
 	_, cmd := m.runRailIntent(uirail.Intent{Kind: uirail.Kill, Target: boxSession("s1")})
-	m.runRemoteCmd(t, cmd)
+	m.runRemoteCmd(t, m.answerRemote(t, fake, cmd, "y"))
 	if m.errBar.text != "box: no session named s1" {
 		t.Fatalf("status = %q", m.errBar.text)
 	}
@@ -227,5 +241,18 @@ func TestNewSessionFormSpawnsOnTheConnection(t *testing.T) {
 	}
 	if m.mode != modeList {
 		t.Fatalf("mode = %v, want the form closed", m.mode)
+	}
+}
+
+func TestRemoteLifecycleAsksFirstAndNoSendsNothing(t *testing.T) {
+	fake := &fakeSSH{}
+	m := connectedModel(t, fake)
+	_, cmd := m.runRailIntent(uirail.Intent{Kind: uirail.Kill, Target: boxSession("s1")})
+	if m.mode != modeConfirmDelete || m.confirm.label != "kill api on box? frees its RAM there, v revives it." {
+		t.Fatalf("mode %v label %q, want the kill confirm", m.mode, m.confirm.label)
+	}
+	m.runRemoteCmd(t, m.answerRemote(t, fake, cmd, "n"))
+	if calls := fake.taken(); len(calls) != 0 || m.mode != modeList {
+		t.Fatalf("calls = %q, mode %v after n", calls, m.mode)
 	}
 }

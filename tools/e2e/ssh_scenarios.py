@@ -175,6 +175,8 @@ def scenario(sandbox, remote, binary):
     key(sandbox, 'Escape')
     frame(sandbox, 'quick-closed', f'{REMOTE_AGENT}  on {CONNECTION}', 'Quick prompt mode')
     key(sandbox, 'x')
+    frame(sandbox, 'remote-kill-confirm', f'kill {REMOTE_AGENT} on {CONNECTION}?')
+    key(sandbox, 'y')
     frame(sandbox, 'remote-killed', f'killed {REMOTE_AGENT} on {CONNECTION}')
     sandbox.wait('remote-pane-gone', lambda: str(remote.tmux(sandbox, 'has-session', '-t', 'am_' + agent_id).returncode),
                  lambda code: code != '0')

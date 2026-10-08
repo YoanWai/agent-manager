@@ -26,6 +26,7 @@ type confirmHost interface {
 	setMode(next mode)
 	queueLifecycle(target confirmTarget, allowLive bool, emptyNotice string)
 	removeConnection(name string)
+	runRemote(request remoteRequest) tea.Cmd
 	nextEffectCmd() tea.Cmd
 }
 
@@ -139,6 +140,8 @@ type confirmTarget struct {
 	batch        bool
 	selection    lifecycleSelection
 	connection   string
+	// remote is a call on an SSH row, run on the host once confirmed.
+	remote *remoteRequest
 }
 
 type lifecycleSelectionKind uint8

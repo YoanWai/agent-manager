@@ -19,6 +19,7 @@ type fakeConfirmHost struct {
 	queued  []confirmTarget
 	quits   int
 	removed []string
+	remote  []remoteRequest
 }
 
 func (h *fakeConfirmHost) confirmCard(title, question, consequence string, destructive bool, answer string) string {
@@ -31,6 +32,10 @@ func (h *fakeConfirmHost) queueLifecycle(target confirmTarget, allowLive bool, e
 }
 func (h *fakeConfirmHost) nextEffectCmd() tea.Cmd       { return func() tea.Msg { return nil } }
 func (h *fakeConfirmHost) removeConnection(name string) { h.removed = append(h.removed, name) }
+func (h *fakeConfirmHost) runRemote(request remoteRequest) tea.Cmd {
+	h.remote = append(h.remote, request)
+	return nil
+}
 
 func TestConfirmDialogRemovesAConnection(t *testing.T) {
 	d := confirmDialog{confirmTarget{action: actionRemoveConnection, connection: "box",
