@@ -28,17 +28,18 @@ type effectJob struct {
 	command   tea.Cmd
 }
 
-// Effects run on two FIFO lanes. Input forwarded to a pane has its own lane
+// Effects run on three FIFO lanes. Input forwarded to a pane has its own lane
 // so a keystroke never waits behind a spawn, fork or poll-locked reflow; each
 // input re-checks its session's identity in the worker, so it needs no order
-// against lifecycle work.
+// against lifecycle work. Calls to SSH connections have the third, so a slow
+// host holds up only its own kind of work.
 type effectState struct {
-	nextID, nextChain uint64
-	main, input       effectLane
-	lifetime          *effectLifetime
-	latestObservation time.Time
-	quitting          bool
-	abandoned         []string
+	nextID, nextChain   uint64
+	main, input, remote effectLane
+	lifetime            *effectLifetime
+	latestObservation   time.Time
+	quitting            bool
+	abandoned           []string
 }
 
 type effectLane struct {
@@ -47,10 +48,17 @@ type effectLane struct {
 }
 
 func (m *Model) laneFor(request effectRequest) *effectLane {
-	if _, ok := request.(inputRequest); ok {
+	switch request.(type) {
+	case inputRequest:
 		return &m.effects.input
+	case remoteRequest:
+		return &m.effects.remote
 	}
 	return &m.effects.main
+}
+
+func (m *Model) lanes() []*effectLane {
+	return []*effectLane{&m.effects.main, &m.effects.input, &m.effects.remote}
 }
 
 type effectLifetime struct {
@@ -104,7 +112,7 @@ func (m *Model) StopEffects() {
 		limit = 0
 	}
 	if !m.effects.lifetime.closeAndWait(limit) && len(m.effects.abandoned) == 0 {
-		for _, lane := range []*effectLane{&m.effects.main, &m.effects.input} {
+		for _, lane := range m.lanes() {
 			if lane.active != nil {
 				m.effects.abandoned = append(m.effects.abandoned, effectName(lane.active.request)+" was still running")
 			}
@@ -218,7 +226,7 @@ func (m *Model) enqueueEffect(request effectRequest, chain uint64, first bool) {
 func (m *Model) nextEffectCmd() tea.Cmd {
 	var commands []tea.Cmd
 	idle := true
-	for _, lane := range []*effectLane{&m.effects.main, &m.effects.input} {
+	for _, lane := range m.lanes() {
 		if lane.active == nil && len(lane.pending) > 0 {
 			lane.active, lane.pending = lane.pending[0], lane.pending[1:]
 			commands = append(commands, lane.active.command)
@@ -267,7 +275,7 @@ func (m *Model) requestQuit() (tea.Model, tea.Cmd) {
 // waiting and records what may or may not have happened, rather than leaving
 // a stuck effect as the only way out being kill -9.
 func (m *Model) abandonEffects() tea.Cmd {
-	for _, lane := range []*effectLane{&m.effects.main, &m.effects.input} {
+	for _, lane := range m.lanes() {
 		if lane.active != nil {
 			m.effects.abandoned = append(m.effects.abandoned, effectName(lane.active.request)+" was still running")
 		}
@@ -281,7 +289,7 @@ func (m *Model) abandonEffects() tea.Cmd {
 
 func (m *Model) handleEffectCompleted(msg effectCompletedMsg) (tea.Model, tea.Cmd) {
 	var job *effectJob
-	for _, lane := range []*effectLane{&m.effects.main, &m.effects.input} {
+	for _, lane := range m.lanes() {
 		if lane.active != nil && lane.active.id == msg.id {
 			job, lane.active = lane.active, nil
 		}
@@ -356,6 +364,8 @@ func (m *Model) handleEffectCompleted(msg effectCompletedMsg) (tea.Model, tea.Cm
 		command = m.applyAttachEffect(job.request.(attachRequest), result, msg.err)
 	case connectionEffectResult:
 		command = m.applyConnectionEffect(job.request.(connectionRequest), result, msg.err)
+	case remoteEffectResult:
+		command = m.applyRemoteEffect(job.request.(remoteRequest), result, msg.err)
 	default:
 		if msg.err != nil {
 			m.reportErr(msg.err.Error())
@@ -411,6 +421,8 @@ func effectName(request effectRequest) string {
 		return "focus or attach"
 	case connectionRequest:
 		return "SSH connection save"
+	case remoteRequest:
+		return "call to an SSH connection"
 	}
 	return "effect"
 }

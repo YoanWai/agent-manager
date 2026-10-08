@@ -55,6 +55,8 @@ type form struct {
 	defaultsTouched bool
 	focus           int
 	choice          choice
+	// remote is the connection a spawn goes to, when one is the target.
+	remote formRemote
 	// hits maps each painted body line to what a click there does.
 	hits []formHit
 }
@@ -213,6 +215,9 @@ func (m *Model) openFormWithReader(reader settingsValueReader) tea.Cmd {
 	m.form.dir.SetValue(m.capturedGroupDefaultDir(m.selectedGroupPath()))
 	m.form.worktree = m.cachedSpawnWorktreeDefault(m.selectedGroupPath())
 	m.form.worktreeAuto = true
+	if target, ok := m.remoteTarget(); ok {
+		m.form.aimRemote(target)
+	}
 	m.mode = modeForm
 	catalog := m.ensureCatalog(tools[toolIndex])
 	if m.settings.pending > 0 {
@@ -298,6 +303,9 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // runFormRequest executes what a form key or click asked of the root.
 func (m *Model) runFormRequest(request formRequest, reader directoryPreflight) tea.Cmd {
+	if cmd, taken := m.remoteFormRequest(request); taken {
+		return cmd
+	}
 	switch {
 	case request.close:
 		m.mode = modeList
@@ -425,6 +433,9 @@ func (d *formDialog) handleKey(h formHost, msg tea.KeyMsg) (tea.Cmd, formRequest
 	case fieldDir:
 		d.dir, cmd = d.dir.Update(msg)
 		d.dirAuto = false
+		if d.remote.on() {
+			return cmd, formRequest{}
+		}
 		return tea.Batch(cmd, paths.request(pathSuggestionForm, d.dir.Value(), systemPathSuggestionReader{})), formRequest{probe: true}
 	case fieldPrompt:
 		cmd = d.prompt.typeKey(msg)

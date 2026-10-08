@@ -27,7 +27,9 @@ type formFacts struct {
 func (m *Model) viewForm() string {
 	facts := formFacts{width: m.formValueWidth()}
 	facts.worktreeCapable, facts.worktreeKnown = m.cachedWorktreeCapability(m.formSpawnDir())
-	if m.formWorktreeOn() {
+	if m.form.remote.on() {
+		facts.worktreeCapable, facts.worktreeKnown = true, true
+	} else if m.formWorktreeOn() {
 		facts.base = m.spawnBaseLabel(m.formSpawnDir(), m.selectedGroupPath())
 	}
 	body, hint := m.form.view(m, facts)
@@ -80,19 +82,26 @@ func (d *formDialog) view(h formHost, facts formFacts) (string, [][2]string) {
 	worktreeField := subtleStyle.Render(worktreeUnavailable)
 	if facts.worktreeKnown && facts.worktreeCapable {
 		worktreeVal := "off"
-		if d.worktree {
+		switch {
+		case d.remote.on() && d.worktreeAuto:
+			worktreeVal = "host default"
+		case d.worktree:
 			worktreeVal = "on"
 		}
 		worktreeField = subtleStyle.Render("◂ ") + valueStyle.Render(worktreeVal) + subtleStyle.Render(" ▸")
 	}
 	field("worktree", worktreeField, fieldWorktree)
-	if d.worktree && facts.worktreeKnown && facts.worktreeCapable {
+	if d.worktree && facts.worktreeKnown && facts.worktreeCapable && !d.remote.on() {
 		field("base", facts.base, fieldBase)
 	}
 	// Chips are tokens inside the typed text, so they wrap and reflow with
 	// the words around them; painting happens on the rendered prompt.
 	field("prompt", d.prompt.view(), fieldPrompt)
-	field("group", groupBadge(displayGroup(d.groups[d.groupIndex].path)), fieldGroup)
+	group := groupBadge(displayGroup(d.groups[d.groupIndex].path))
+	if d.remote.on() {
+		group = lipgloss.NewStyle().Foreground(colorRemote).Render(d.remote.host) + subtleStyle.Render(" · ") + group
+	}
+	field("group", group, fieldGroup)
 
 	if d.focus == fieldGroup {
 		add("\n", formHit{field: fieldGroup, entry: -1})

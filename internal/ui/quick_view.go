@@ -44,10 +44,16 @@ type quickFacts struct {
 	name                           string
 	worktreeKnown, worktreeCapable bool
 	worktreeOn                     bool
+	// remote is the connection target's row, which a spawn there extends
+	// with what it launches with; inherit leaves the worktree to the host.
+	remote          string
+	remoteSpawn     bool
+	worktreeInherit bool
 }
 
 func (m *Model) viewQuickBar(width, maxRows int) string {
 	facts := quickFacts{worktreeOn: m.quickWorktreeOn()}
+	m.remoteQuickFacts(&facts)
 	facts.worktreeCapable, facts.worktreeKnown = m.cachedWorktreeCapability(m.quickTargetDir())
 	if entry, ok := m.selectedRow(); ok && !entry.isGroup {
 		facts.name = m.displayName(entry.sess)
@@ -63,7 +69,12 @@ func (q *quickBar) viewBar(h quickHost, facts quickFacts, width, maxRows int) st
 	}
 	target := rowColumns(label("target")+mutedStyle.Render("no selection"), "", width)
 	q.hits = q.hits[:0]
-	if entry, ok := h.selectedRow(); ok {
+	if facts.remote != "" {
+		target = label("answer") + facts.remote
+		if facts.remoteSpawn {
+			target = q.statusRow(h, facts, label("new")+facts.remote, width, 0)
+		}
+	} else if entry, ok := h.selectedRow(); ok {
 		if entry.isGroup {
 			group := lipgloss.NewStyle().Foreground(colorAccent2).Render(displayGroup(entry.group))
 			if q.picking != pickNone {
@@ -137,6 +148,8 @@ func (q *quickBar) statusRow(h quickHost, facts quickFacts, left string, width, 
 	}
 	worktree := subtleStyle.Render("⎇ off")
 	switch {
+	case facts.worktreeInherit:
+		worktree = subtleStyle.Render("⎇ host default")
 	case !facts.worktreeKnown || !facts.worktreeCapable:
 		worktree = subtleStyle.Render("⎇ no repo")
 	case facts.worktreeOn:

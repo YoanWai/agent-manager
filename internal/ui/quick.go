@@ -97,6 +97,9 @@ func (m *Model) applyCachedQuickDefaults() tea.Cmd {
 }
 
 func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if cmd, taken := m.remoteQuickKey(msg); taken {
+		return m, cmd
+	}
 	cmd, request := m.quick.handleKey(m, msg)
 	return m, tea.Batch(cmd, m.runQuickRequest(request))
 }
@@ -291,6 +294,10 @@ func (q *quickBar) clearAfterSend() {
 // toggleQuickWorktree flips the worktree choice, or probes the target first
 // when its repo verdict is not cached.
 func (m *Model) toggleQuickWorktree() tea.Cmd {
+	if _, remote := m.remoteTarget(); remote {
+		m.quick.setWorktree(!m.quick.worktreeTouched || !m.quick.worktree)
+		return nil
+	}
 	dir := m.quickTargetDir()
 	capable, known := m.cachedWorktreeCapability(dir)
 	if !known {

@@ -51,10 +51,16 @@ func (m *Model) requestWorktreeProbe(target worktreeProbeTarget, generation int,
 }
 
 func (m *Model) formWorktreeProbeCmd(toggleOn bool) tea.Cmd {
+	if m.form.remote.on() {
+		return nil
+	}
 	return m.requestWorktreeProbe(worktreeProbeForm, m.form.prompt.gen, m.formSpawnDir(), toggleOn, m.form.worktree)
 }
 
 func (m *Model) quickWorktreeProbeCmd(toggleOn bool) tea.Cmd {
+	if _, remote := m.remoteTarget(); remote {
+		return nil
+	}
 	return m.requestWorktreeProbe(worktreeProbeQuick, m.quick.gen, m.quickTargetDir(), toggleOn, m.quick.worktree)
 }
 

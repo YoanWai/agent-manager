@@ -97,7 +97,7 @@ func (m *Model) rowLegend() legendSection {
 	}
 	row, ok := m.selectedRow()
 	if !ok {
-		return legendSection{}
+		return m.remoteRowLegend()
 	}
 	if row.isGroup {
 		foldAction := "fold"

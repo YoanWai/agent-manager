@@ -6,6 +6,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/YoanWai/agent-manager/internal/remote"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -30,6 +31,7 @@ type effectServices struct {
 	gitDrv                *git.Driver
 	quickSessionExists    func(*tmux.Driver, string) (bool, error)
 	quickSendText         func(*tmux.Driver, string, string) (tmux.SendResult, error)
+	remote                *remote.Client
 }
 
 func (m *Model) captureEffect(request effectRequest) func() (effectResult, error) {
@@ -39,7 +41,7 @@ func (m *Model) captureEffect(request effectRequest) func() (effectResult, error
 		tool.Rules = append([]config.Rule(nil), tool.Rules...)
 		cfg.Tools[name] = tool
 	}
-	services := effectServices{cfg: cfg, store: m.services.store, driver: m.services.tmux, watch: m.focus.runtime.watch, gitDrv: m.services.gitDrv}
+	services := effectServices{cfg: cfg, store: m.services.store, driver: m.services.tmux, watch: m.focus.runtime.watch, gitDrv: m.services.gitDrv, remote: m.ssh.client}
 	services.engine = m.services.engine
 	services.hooks = m.services.hooks
 	services.installHomeDir = installHomeDir
@@ -117,6 +119,8 @@ func (m *Model) captureEffect(request effectRequest) func() (effectResult, error
 			return services.runAttach(request)
 		case connectionRequest:
 			return services.runConnection(request)
+		case remoteRequest:
+			return services.runRemote(request)
 		}
 		panic("unknown UI effect request")
 	}

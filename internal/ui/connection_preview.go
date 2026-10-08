@@ -190,3 +190,60 @@ func (m *Model) remoteScreen(width, height int) []string {
 	}
 	return lines
 }
+
+// remoteRowLegend is the footer tier for a connection's rows: only the keys
+// the connection carries out.
+func (m *Model) remoteRowLegend() legendSection {
+	selection, _ := m.rail.Selected()
+	row, ok := m.ssh.row(selection)
+	if !ok {
+		return legendSection{}
+	}
+	k := m.listGlyph
+	fold := "fold"
+	if m.rail.SelectionCollapsed(selection) {
+		fold = "unfold"
+	}
+	leads := [][2]string{m.quickModeLead()}
+	switch row.kind {
+	case uirail.ConnectionRow:
+		return legendSection{title: "SSH connection", leads: leads, pairs: legendPairsBound([][2]string{
+			{k(keybind.Open), fold}, {k(keybind.Terminal), "terminal"}, {k(keybind.Rename), "edit"}, {k(keybind.Delete), "remove"},
+		})}
+	case uirail.GroupRow:
+		return legendSection{title: "Group", leads: leads, pairs: legendPairsBound([][2]string{
+			{k(keybind.Open), fold}, {k(keybind.Terminal), "terminal"},
+		})}
+	}
+	title, kill := "Session", "kill"
+	if row.terminal {
+		title, kill, leads = "Shell", "close", nil
+	}
+	pairs := [][2]string{{k(keybind.Open, keybind.Attach), "attach over SSH"}, {k(keybind.Kill), kill}}
+	if row.status == "dead" {
+		pairs = append(pairs, [2]string{k(keybind.Revive), "revive"})
+	}
+	pairs = append(pairs, m.archiveRestoreLegend())
+	return legendSection{title: title + " on " + row.host, leads: leads, pairs: legendPairsBound(pairs)}
+}
+
+// remoteQuickFacts aims the quick bar's target row at a connection: a
+// remote session it answers, or the connection or remote group it spawns
+// into, with the worktree left to the host until picked.
+func (m *Model) remoteQuickFacts(facts *quickFacts) {
+	selection, _ := m.rail.Selected()
+	row, ok := m.ssh.row(selection)
+	if !ok {
+		return
+	}
+	host := subtleStyle.Render(" on ") + lipgloss.NewStyle().Foreground(colorRemote).Render(row.host)
+	if row.kind == uirail.SessionRow {
+		facts.remote = lipgloss.NewStyle().Foreground(colorBright).Bold(true).Render(row.name) + host
+		return
+	}
+	facts.remote = lipgloss.NewStyle().Foreground(colorAccent2).Render(displayGroup(row.group)) + host
+	facts.remoteSpawn = true
+	facts.worktreeKnown, facts.worktreeCapable = true, true
+	facts.worktreeOn = m.quick.worktreeTouched && m.quick.worktree
+	facts.worktreeInherit = !m.quick.worktreeTouched
+}

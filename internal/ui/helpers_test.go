@@ -170,6 +170,9 @@ func (m *Model) drainEffects(t *testing.T) {
 			job = m.effects.main.active
 		}
 		if job == nil {
+			job = m.effects.remote.active
+		}
+		if job == nil {
 			return
 		}
 		m.applyTestMsg(t, job.command())

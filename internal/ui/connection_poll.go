@@ -55,6 +55,13 @@ func (m *Model) routeConnectionMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	case remotePreviewMsg:
 		m.applyRemotePreview(msg)
 		return routed(m, nil)
+	case remoteAttachReadyMsg:
+		return routed(m, m.runRemoteAttach(msg))
+	case remoteAttachDoneMsg:
+		if msg.err != nil {
+			m.reportErr(msg.host + ": attach ended: " + msg.err.Error())
+		}
+		return routed(m, tea.Batch(m.pollConnection(msg.host), m.readRemotePreview()))
 	}
 	return nil, nil, false
 }
