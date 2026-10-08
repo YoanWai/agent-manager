@@ -1,6 +1,7 @@
 package remote
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -195,5 +196,29 @@ func TestAttachCommand(t *testing.T) {
 	}
 	if _, err := c.AttachCommand(Ref{Host: "nowhere", ID: "a1"}); err == nil {
 		t.Fatal("an unknown connection was attached")
+	}
+}
+
+func TestRunSSHCapsWhatAHostPrints(t *testing.T) {
+	cases := []struct {
+		name, script, want string
+	}{
+		{"stdout", "head -c 9000000 /dev/zero", "answered with more than 8 MiB"},
+		{"stderr", "head -c 70000 /dev/zero >&2", "printed more than 64 KiB of errors"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout, stderr, err := runSSH(context.Background(), []string{"sh", "-c", tc.script})
+			if err == nil || err.Error() != tc.want {
+				t.Fatalf("error = %v, want %s", err, tc.want)
+			}
+			if len(stdout) > 8<<20 || len(stderr) > 64<<10 {
+				t.Fatalf("kept %d bytes of stdout and %d of stderr", len(stdout), len(stderr))
+			}
+		})
+	}
+	stdout, _, err := runSSH(context.Background(), []string{"sh", "-c", "head -c 8388608 /dev/zero"})
+	if err != nil || len(stdout) != 8<<20 {
+		t.Fatalf("an answer of exactly the cap = %d bytes, %v", len(stdout), err)
 	}
 }

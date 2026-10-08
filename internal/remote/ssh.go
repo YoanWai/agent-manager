@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -16,12 +17,42 @@ import (
 // exited carries an ExitCode, as *exec.ExitError does.
 type Runner func(ctx context.Context, argv []string) (stdout, stderr []byte, err error)
 
+const (
+	maxStdout = 8 << 20
+	maxStderr = 64 << 10
+)
+
+var errOverflow = errors.New("output past its cap")
+
 func runSSH(ctx context.Context, argv []string) ([]byte, []byte, error) {
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	stdout, stderr := &cappedBuffer{max: maxStdout}, &cappedBuffer{max: maxStderr}
+	cmd.Stdout, cmd.Stderr = stdout, stderr
 	err := cmd.Run()
-	return stdout.Bytes(), stderr.Bytes(), err
+	switch {
+	case stdout.over:
+		err = fmt.Errorf("answered with more than %d MiB", maxStdout>>20)
+	case stderr.over:
+		err = fmt.Errorf("printed more than %d KiB of errors", maxStderr>>10)
+	}
+	return stdout.buf.Bytes(), stderr.buf.Bytes(), err
+}
+
+// cappedBuffer refuses the write that would take it past max, which closes
+// the pipe and so ends a host that prints without end. It wraps rather than
+// embeds the buffer, whose ReadFrom would let io.Copy go around Write.
+type cappedBuffer struct {
+	buf  bytes.Buffer
+	max  int
+	over bool
+}
+
+func (b *cappedBuffer) Write(p []byte) (int, error) {
+	if b.buf.Len()+len(p) > b.max {
+		b.over = true
+		return 0, errOverflow
+	}
+	return b.buf.Write(p)
 }
 
 // controlDir is short because OpenSSH caps a control socket path near 104
