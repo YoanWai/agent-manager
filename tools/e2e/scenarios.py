@@ -103,13 +103,7 @@ def seed_store(sandbox):
 
 
 def start_manager(sandbox, binary, session='scen'):
-    exit_file = shlex.quote(str(sandbox.artifacts / 'manager-exit-code.txt'))
-    sandbox.tmux('new-session', '-d', '-s', session, '-x', '110', '-y', '30',
-                 '-c', str(sandbox.home),
-                 f'env TERM=xterm-256color COLORTERM=truecolor NO_COLOR=1 {shlex.quote(str(binary))} '
-                 f'2>{shlex.quote(str(sandbox.artifacts / "manager-stderr.txt"))}; '
-                 f'am_status=$?; printf "%s\\n" "$am_status" >{exit_file}; exit "$am_status"')
-    sandbox.tmux('set-option', '-w', '-t', session, 'remain-on-exit', 'on')
+    sandbox.start_manager(session, sandbox.home, binary)
     frame(sandbox, 'startup', 'A G E N T')
     key(sandbox, 'Escape')
 
@@ -269,8 +263,7 @@ def scenario(sandbox, binary):
                  lambda text: READY_MARKER in text)
     # remain-on-exit exposes the process exit code.
     key(sandbox, 'C-c')
-    sandbox.wait('manager-exit', lambda: sandbox.tmux('display-message', '-p', '-t', 'scen:0.0',
-              '#{pane_dead} #{pane_dead_status}').stdout.strip(), lambda value: value == '1 0')
+    sandbox.wait_manager_exit('scen:0.0')
 
 
 def quit_drain(sandbox, binary):
@@ -296,8 +289,7 @@ def quit_drain(sandbox, binary):
         lock.close()
     sandbox.wait('drain-committed', lambda: json.dumps(store_sessions(sandbox)),
                  lambda value: any(row['name'] == 'drained-agent' for row in json.loads(value)))
-    sandbox.wait('drain-exit', lambda: sandbox.tmux('display-message', '-p', '-t', 'scen:0.0',
-                 '#{pane_dead} #{pane_dead_status}').stdout.strip(), lambda value: value == '1 0')
+    sandbox.wait_manager_exit('scen:0.0', 'drain-exit')
 
 
 def main():

@@ -74,6 +74,32 @@ class Sandbox:
             # Poll cadence only: transitions always require observable conditions.
             time.sleep(0.05)
 
+    def start_manager(self, session, cwd, binary):
+        # remain-on-exit permits exit-code inspection instead of mistaking a vanished pane for success.
+        exit_file = shlex.quote(str(self.artifacts / 'manager-exit-code.txt'))
+        self.tmux('new-session', '-d', '-s', session, '-x', '110', '-y', '30', '-c', str(cwd),
+                  f'env TERM=xterm-256color COLORTERM=truecolor NO_COLOR=1 {shlex.quote(str(binary))} '
+                  f'2>{shlex.quote(str(self.artifacts / "manager-stderr.txt"))}; '
+                  f'am_status=$?; printf "%s\\n" "$am_status" >{exit_file}; exit "$am_status"')
+        self.tmux('set-option', '-w', '-t', session, 'remain-on-exit', 'on')
+
+    def wait_manager_exit(self, target, name='manager-exit'):
+        # Linux tmux can mark the pane dead and never record its status, so the
+        # wrapper's record of the manager's own exit code decides.
+        exit_file = self.artifacts / 'manager-exit-code.txt'
+
+        def observe():
+            state = self.tmux('display-message', '-p', '-t', target,
+                              '#{pane_dead} #{pane_dead_status}').stdout.split()
+            code = exit_file.read_text().strip() if exit_file.exists() else ''
+            return ' '.join(state + [f'code={code}'])
+
+        def exited(value):
+            fields = value.split()
+            return fields[0] == '1' and fields[-1] == 'code=0' and fields[1:-1] in ([], ['0'])
+
+        return self.wait(name, observe, exited)
+
     def capture(self):
         return self.tmux('capture-pane', '-p', '-t', 'smoke:0.0').stdout
 
@@ -124,10 +150,7 @@ def smoke(sandbox, binary):
                  '-c', 'user.email=e2e@example.invalid', '-c', 'commit.gpgsign=false',
                  'commit', '-m', 'fixture baseline'])
     changed.write_text('after_review_e2e\n')
-    # remain-on-exit permits exit-code inspection instead of mistaking a vanished pane for success.
-    sandbox.tmux('new-session', '-d', '-s', 'smoke', '-x', '110', '-y', '30', '-c', str(repo),
-                 f'exec env TERM=xterm-256color COLORTERM=truecolor NO_COLOR=1 {shlex.quote(str(binary))}')
-    sandbox.tmux('set-option', '-w', '-t', 'smoke', 'remain-on-exit', 'on')
+    sandbox.start_manager('smoke', repo, binary)
     sandbox.frame('startup', 'A G E N T')
     sandbox.key('Escape')
     sandbox.key('?')
@@ -177,8 +200,7 @@ def smoke(sandbox, binary):
                  lambda value: value == 'shell-ready')
     feature_flows(sandbox, pane)
     sandbox.key('C-c')
-    sandbox.wait('manager-exit', lambda: sandbox.tmux('display-message', '-p', '-t', 'smoke:0.0',
-                  '#{pane_dead} #{pane_dead_status}').stdout.strip(), lambda value: value == '1 0')
+    sandbox.wait_manager_exit('smoke:0.0')
 
 
 def feature_flows(sandbox, pane):

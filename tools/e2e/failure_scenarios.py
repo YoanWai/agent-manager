@@ -188,7 +188,7 @@ def main():
             run(sandbox, binary)
             frame(sandbox, 'ready-to-quit', 'A G E N T', 'Settings')
             key(sandbox, 'q')
-            sandbox.wait('manager-exit', lambda: sandbox.tmux('display-message', '-p', '-t', 'scen:0.0', '#{pane_dead} #{pane_dead_status}').stdout.strip(), lambda value: value == '1 0')
+            sandbox.wait_manager_exit('scen:0.0')
             results[name] = 'passed'
         except (Exception, KeyboardInterrupt) as error:
             results[name] = f'failed: {str(error) or type(error).__name__}'

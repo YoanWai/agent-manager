@@ -249,7 +249,7 @@ def main():
                 runner(sandbox, binary)
                 frame(sandbox, 'ready-to-quit', 'A G E N T', 'Settings')
                 key(sandbox, 'q')
-                sandbox.wait('manager-exit', lambda: sandbox.tmux('display-message', '-p', '-t', 'scen:0.0', '#{pane_dead} #{pane_dead_status}').stdout.strip(), lambda value: value == '1 0')
+                sandbox.wait_manager_exit('scen:0.0')
                 results[case] = dict(status='passed',
                                      seconds=round(time.monotonic() - case_started, 2))
             except Exception as error:

@@ -45,6 +45,21 @@ class SandboxTests(unittest.TestCase):
             self.sandbox.wait('readiness', lambda: 'still starting', lambda _: False, timeout=0)
         self.assertEqual((self.sandbox.artifacts / 'readiness-failure.txt').read_text(), 'still starting')
 
+    def test_manager_exit_reads_the_wrappers_exit_code(self):
+        def wait_on(pane_state, code):
+            if code is not None:
+                (self.sandbox.artifacts / 'manager-exit-code.txt').write_text(code + '\n')
+            result = subprocess.CompletedProcess([], 0, pane_state, '')
+            with patch.object(self.sandbox, 'tmux', return_value=result):
+                return self.sandbox.wait_manager_exit('smoke:0.0')
+
+        self.assertEqual(wait_on('1 0\n', '0'), '1 0 code=0')
+        # tmux marked the pane dead without recording a status.
+        self.assertEqual(wait_on('1 \n', '0'), '1 code=0')
+        with patch('smoke.time.monotonic', side_effect=[0, 0, 13]):
+            with self.assertRaises(TimeoutError):
+                wait_on('1 2\n', '2')
+
     def test_cleanup_names_only_owned_servers(self):
         with patch.object(self.sandbox, 'run', return_value=subprocess.CompletedProcess([], 0, '', '')) as run:
             self.sandbox.close()
