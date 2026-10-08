@@ -1891,3 +1891,21 @@ func TestMouseOffPaintsNoHandleOrMenuButton(t *testing.T) {
 		t.Fatal("test setup: the mouse on should paint handles")
 	}
 }
+
+func TestComputerDiskAvailable(t *testing.T) {
+	m := &Model{snap: sysstat.Snapshot{
+		DiskOK: true, DiskPercent: 66, DiskAvailable: 167_950_000_000,
+	}}
+	for _, width := range []int{29, 34, 40, 55} {
+		lines := m.computerLines(width)
+		plain := ansi.Strip(strings.Join(lines, "\n"))
+		if !strings.Contains(plain, "66%") || !strings.Contains(plain, "167.9GB available") {
+			t.Fatalf("disk reading = %q", plain)
+		}
+		for _, line := range lines {
+			if got := ansi.StringWidth(line); got > width {
+				t.Fatalf("disk line width %d exceeds %d: %q", got, width, plain)
+			}
+		}
+	}
+}

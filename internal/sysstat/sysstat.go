@@ -28,7 +28,7 @@ type Snapshot struct {
 	SwapPercent     float64
 	SwapOK          bool
 	DiskUsed        uint64
-	DiskFree        uint64
+	DiskAvailable   uint64
 	DiskTotal       uint64
 	DiskPercent     float64
 	DiskOK          bool
@@ -101,7 +101,7 @@ func sampleSwap(snap *Snapshot) {
 	snap.SwapOK = true
 }
 
-func sampleDisk(snap *Snapshot, diskPath string) {
+func sampleDiskFallback(snap *Snapshot, diskPath string) {
 	if diskPath == "" {
 		diskPath = "/"
 	}
@@ -110,7 +110,7 @@ func sampleDisk(snap *Snapshot, diskPath string) {
 		return
 	}
 	snap.DiskUsed = usage.Used
-	snap.DiskFree = usage.Free
+	snap.DiskAvailable = usage.Free
 	snap.DiskTotal = usage.Total
 	// used/(used+free) matches df Capacity and ignores reserved blocks
 	// that sit in Total but are not available to ordinary processes.

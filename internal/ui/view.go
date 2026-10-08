@@ -735,8 +735,15 @@ func relTime(t time.Time) string {
 	}
 }
 
+func diskBytes(b uint64) string {
+	return formatBytes(b, 1000)
+}
+
 func humanBytes(b uint64) string {
-	const unit = 1024
+	return formatBytes(b, 1024)
+}
+
+func formatBytes(b, unit uint64) string {
 	if b < unit {
 		return fmt.Sprintf("%dB", b)
 	}

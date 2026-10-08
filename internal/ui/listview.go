@@ -988,8 +988,14 @@ func (m *Model) computerLines(width int) []string {
 			humanBytes(snap.SwapUsed)+"/"+humanBytes(snap.SwapTotal)))
 	}
 	if snap.DiskOK {
-		lines = append(lines, meter("disk", snap.DiskPercent, true,
-			humanBytes(snap.DiskFree)+" free"))
+		extra := diskBytes(snap.DiskAvailable) + " available"
+		line := meter("disk", snap.DiskPercent, true, extra)
+		if ansi.StringWidth(line) > width {
+			lines = append(lines, meter("disk", snap.DiskPercent, true, ""),
+				pad+strings.Repeat(" ", 5)+subtleStyle.Render(extra))
+		} else {
+			lines = append(lines, line)
+		}
 	} else {
 		lines = append(lines, meter("disk", 0, false, ""))
 	}
