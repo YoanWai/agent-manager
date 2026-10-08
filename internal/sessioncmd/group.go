@@ -33,9 +33,13 @@ func (s *Sessions) Groups(sessionID string) ([]Group, error) {
 	if err != nil {
 		return nil, err
 	}
+	return runtime.groupRows(stored, sessions), nil
+}
+
+func (r *runtime) groupRows(stored []store.Group, sessions []store.Session) []Group {
 	counts := make(map[string]int, len(stored))
 	for _, sess := range sessions {
-		if runtime.cfg.Tools[sess.Tool].Shell || sess.Archived {
+		if r.cfg.Tools[sess.Tool].Shell || sess.Archived {
 			continue
 		}
 		counts[sess.Group]++
@@ -50,7 +54,7 @@ func (s *Sessions) Groups(sessionID string) ([]Group, error) {
 			Sessions:  counts[group.Name],
 		})
 	}
-	return groups, nil
+	return groups
 }
 
 // CreateGroup adds a group under an existing parent, so sessions spawned

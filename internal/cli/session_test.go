@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -260,5 +261,27 @@ func TestMessageStatusRefusesANonNumericID(t *testing.T) {
 	err := runMessageStatus(&bytes.Buffer{}, &fakeSessions{}, []string{"seven"}, "cafe0001")
 	if err == nil || !strings.Contains(err.Error(), "agent-manager send prints the id it queued") {
 		t.Fatalf("error = %v, want it to say where the id comes from", err)
+	}
+}
+
+func TestSnapshotPrintsOnlyJSON(t *testing.T) {
+	fake := &fakeSessions{session: sampleSession()}
+	err := runSnapshot(&bytes.Buffer{}, fake, nil, "")
+	if err == nil || err.Error() != "usage: agent-manager "+usageSnapshot {
+		t.Fatalf("snapshot without --json = %v, want the usage", err)
+	}
+	if fake.callCount != 0 {
+		t.Fatal("a refused snapshot should not reach the layer")
+	}
+	out := &bytes.Buffer{}
+	if err := runSnapshot(out, fake, []string{"--json"}, ""); err != nil {
+		t.Fatalf("snapshot --json: %v", err)
+	}
+	var snapshot sessioncmd.Snapshot
+	if err := json.Unmarshal(out.Bytes(), &snapshot); err != nil {
+		t.Fatalf("snapshot --json is not JSON: %v (%q)", err, out.String())
+	}
+	if snapshot.Version != sessioncmd.SnapshotVersion || !snapshot.ManagerAwake || len(snapshot.Sessions) != 1 || fake.callerID != "" {
+		t.Fatalf("snapshot = %+v, caller %q", snapshot, fake.callerID)
 	}
 }

@@ -59,6 +59,12 @@ func (f *fakeSessions) List(sessionID string) ([]sessioncmd.Session, error) {
 	return []sessioncmd.Session{f.session}, f.failWith
 }
 
+func (f *fakeSessions) Snapshot(sessionID string) (sessioncmd.Snapshot, error) {
+	f.callerID = sessionID
+	f.callCount++
+	return sessioncmd.Snapshot{Version: sessioncmd.SnapshotVersion, ManagerAwake: true, Sessions: []sessioncmd.Session{f.session}}, f.failWith
+}
+
 func (f *fakeSessions) Create(sessionID string, opts sessioncmd.CreateSessionOptions) (sessioncmd.Session, error) {
 	f.callerID, f.opts = sessionID, opts
 	return f.session, f.failWith
@@ -234,6 +240,7 @@ func TestALayerFailureReachesTheCaller(t *testing.T) {
 		run  func(io.Writer, []string) error
 	}{
 		{"sessions", nil, func(out io.Writer, args []string) error { return runSessions(out, sessions, args, "cafe0001") }},
+		{"snapshot", []string{"--json"}, func(out io.Writer, args []string) error { return runSnapshot(out, sessions, args, "cafe0001") }},
 		{"spawn", nil, func(out io.Writer, args []string) error { return runSpawn(out, sessions, args, "cafe0001") }},
 		{"send", []string{"beef1234", "ship it"}, func(out io.Writer, args []string) error { return runSend(out, sessions, args, "cafe0001") }},
 		{"read", []string{"beef1234"}, func(out io.Writer, args []string) error { return runRead(out, sessions, args, "cafe0001") }},
@@ -503,7 +510,7 @@ func TestCommandsThatActAsNoSessionNeverResolveACaller(t *testing.T) {
 func TestCommandsAndHelpCoverEverySection(t *testing.T) {
 	table := Commands("dev")
 	registered := []string{
-		"sessions", "spawn", "send", "read", "wait", "message-status", "kill", "revive", "archive", "archive-self", "kill-self",
+		"sessions", "snapshot", "spawn", "send", "read", "wait", "message-status", "kill", "revive", "archive", "archive-self", "kill-self",
 		"groups", "create-group", "delete-group", "task", "reserve", "release-files", "reservations", "terminal",
 		"rename", "review-repo", "review-base", "review-mode", "review-comment", "issue", "feature", "update",
 	}

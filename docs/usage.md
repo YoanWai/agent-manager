@@ -293,12 +293,14 @@ Registration is per tool. Claude gets a generated `--mcp-config` file. Codex get
 
 Pi does not include an MCP client. Its sessions reach the same workspace through the subcommands: `agent-manager --help` lists them, from `sessions`, `spawn`, `send` and `wait` to the shared task list, file reservations, terminals and the review declarations. `update` needs no caller at all, and `issue` and `feature` use only the session id the launch exported. Every other subcommand acts as the session or terminal it runs in, resolved from that environment or, for a [terminal tab](#terminal-tabs) that has none, from the tmux pane, so the same subcommands work from a shell you opened with `T`. Claude Code also gets the id in the `env` block of its generated `--settings` file, so a conversation that `/background` or the agent view moves into Claude's daemon keeps acting as its own session. A `spawn` from a terminal tab with no `--tool` runs the CLI picked in Settings.
 
-`sessions`, `groups`, `spawn`, `read` and `wait` also run with no caller at all, so a script, a cron job or a CI step outside Agent Manager can open sessions that show up in your list. Such a `spawn` runs the CLI picked in Settings, in the root group and the directory the script runs in, unless `--tool`, `--group` or `--directory` says otherwise:
+`sessions`, `groups`, `snapshot`, `spawn`, `read` and `wait` also run with no caller at all, so a script, a cron job or a CI step outside Agent Manager can open sessions that show up in your list. Such a `spawn` runs the CLI picked in Settings, in the root group and the directory the script runs in, unless `--tool`, `--group` or `--directory` says otherwise:
 
 ```bash
 agent-manager spawn --tool claude --group "Sprint Manager" --worktree \
   --name ticket-123 --prompt "Fix TICKET-123 and open a pull request" --json
 ```
+
+`snapshot --json` prints this machine's whole list as one JSON document: every session and terminal, archived ones included, the groups, and whether a manager is running here to deliver queued messages. It is what another manager reads over an SSH connection.
 
 The MCP tools always act as the session that runs them, since several CLIs keep the server registered for their runs outside Agent Manager too.
 

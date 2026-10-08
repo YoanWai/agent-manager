@@ -23,6 +23,7 @@ type Terminal struct {
 	Running    bool   `json:"running" jsonschema:"whether the terminal currently has a live tmux pane"`
 	ParentID   string `json:"parent_id" jsonschema:"id of the parent session when nested; empty when un-nested"`
 	ParentName string `json:"parent_name" jsonschema:"name of the parent session when nested; empty when un-nested"`
+	Archived   bool   `json:"archived,omitempty" jsonschema:"whether the terminal is archived out of the active list"`
 }
 
 type TerminalScreen struct {
@@ -102,12 +103,6 @@ func (r *runtime) nestedTerminal(sessionID, terminalID string) (store.Session, e
 }
 
 func (r *runtime) info(sess store.Session, running bool) (Terminal, error) {
-	dir := sess.Cwd
-	if running {
-		if current, err := r.driver.PaneCurrentPath(sess.ID); err == nil {
-			dir = current
-		}
-	}
 	parentName := ""
 	if sess.ParentID != "" {
 		// A parent row that is gone leaves the terminal orphaned, which the
@@ -121,6 +116,16 @@ func (r *runtime) info(sess store.Session, running bool) (Terminal, error) {
 			parentName = parent.Name
 		}
 	}
+	return r.terminalInfo(sess, running, parentName), nil
+}
+
+func (r *runtime) terminalInfo(sess store.Session, running bool, parentName string) Terminal {
+	dir := sess.Cwd
+	if running {
+		if current, err := r.driver.PaneCurrentPath(sess.ID); err == nil {
+			dir = current
+		}
+	}
 	return Terminal{
 		ID:         sess.ID,
 		Name:       sess.Name,
@@ -130,7 +135,8 @@ func (r *runtime) info(sess store.Session, running bool) (Terminal, error) {
 		Running:    running,
 		ParentID:   sess.ParentID,
 		ParentName: parentName,
-	}, nil
+		Archived:   sess.Archived,
+	}
 }
 
 func (t *Terminals) List(sessionID string) ([]Terminal, error) {

@@ -15,6 +15,7 @@ import (
 
 const (
 	usageSessions      = "sessions [--json]"
+	usageSnapshot      = "snapshot --json"
 	usageSpawn         = "spawn [--name <name>] [--prompt <text>] [--tool <cli>] [--model <model>] [--effort <level>] [--profile <name>] [--group <path>] [--directory <path>] [--worktree] [--json]"
 	usageSend          = `send <session-id> "<message>" [--json]`
 	usageRead          = "read <session-id> [--json]"
@@ -32,6 +33,7 @@ const (
 
 type sessionCommands interface {
 	List(sessionID string) ([]sessioncmd.Session, error)
+	Snapshot(sessionID string) (sessioncmd.Snapshot, error)
 	Create(sessionID string, opts sessioncmd.CreateSessionOptions) (sessioncmd.Session, error)
 	Send(sessionID, targetID, message string) (sessioncmd.SendResult, error)
 	Read(sessionID, targetID string) (sessioncmd.SessionScreen, error)
@@ -60,6 +62,7 @@ func sessionSectionWith(open func(string) sessionCommands) section {
 		title: "Agent sessions",
 		commands: []command{
 			{name: "sessions", usage: usageSessions, about: "list every agent session with its id, CLI, group, directory and status; call it before delegating anything", run: bind(open, runSessions)},
+			{name: "snapshot", usage: usageSnapshot, about: "print every session, terminal and group on this host, archived ones included, and whether a manager is running here, as one JSON document another manager reads over SSH", run: bind(open, runSnapshot)},
 			{name: "spawn", usage: usageSpawn, about: "start another agent CLI on a task of its own, so independent work runs beside you instead of queued behind you", run: bind(open, runSpawn)},
 			{name: "send", usage: usageSend, about: "queue a message for another agent; it is typed in once that agent is at rest, so it never lands on an approval prompt", run: bind(open, runSend)},
 			{name: "read", usage: usageRead, about: "read what another agent's screen currently shows", run: bind(open, runRead)},
@@ -88,6 +91,22 @@ func runSessions(out io.Writer, sessions sessionCommands, args []string, session
 		return err
 	}
 	return emit(out, *asJSON, listed, sessioncmd.FormatSessionList(listed))
+}
+
+func runSnapshot(out io.Writer, sessions sessionCommands, args []string, sessionID string) error {
+	set := newFlagSet(usageSnapshot)
+	asJSON := jsonFlag(set)
+	if _, err := parseCommand(out, set, args, 0, 0); err != nil {
+		return err
+	}
+	if !*asJSON {
+		return usageError(usageSnapshot)
+	}
+	snapshot, err := sessions.Snapshot(sessionID)
+	if err != nil {
+		return err
+	}
+	return writeJSON(out, snapshot)
 }
 
 func runSpawn(out io.Writer, sessions sessionCommands, args []string, sessionID string) error {
