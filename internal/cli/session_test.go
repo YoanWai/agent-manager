@@ -264,6 +264,48 @@ func TestMessageStatusRefusesANonNumericID(t *testing.T) {
 	}
 }
 
+func TestSendFromReachesTheLayerOnlyWhenGiven(t *testing.T) {
+	plain := &fakeSessions{}
+	if err := runSend(&bytes.Buffer{}, plain, []string{"beef1234", "ship it"}, "cafe0001"); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	if plain.from != nil {
+		t.Fatalf("a send without --from went out as %q", *plain.from)
+	}
+
+	out := &bytes.Buffer{}
+	remote := &fakeSessions{}
+	if err := runSend(out, remote, []string{"beef1234", "ship it", "--from", "laptop-agent", "--json"}, ""); err != nil {
+		t.Fatalf("send --from: %v", err)
+	}
+	if remote.from == nil || *remote.from != "laptop-agent" || remote.callerID != "" || remote.targetID != "beef1234" || remote.message != "ship it" {
+		t.Fatalf("send --from reached the layer as from=%v caller=%q target=%q message=%q", remote.from, remote.callerID, remote.targetID, remote.message)
+	}
+	var result sessioncmd.SendResult
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil || result.MessageID != 8 {
+		t.Fatalf("send --from --json = %q (%v)", out.String(), err)
+	}
+
+	// The SSH client puts every flag first and the operands after a bare --,
+	// so a message that starts with a dash stays the message.
+	routed := &fakeSessions{}
+	if err := runSend(&bytes.Buffer{}, routed, []string{"--from=laptop-agent", "--json", "--", "beef1234", "--force it"}, ""); err != nil {
+		t.Fatalf("send --from=X --json -- id text: %v", err)
+	}
+	if routed.from == nil || *routed.from != "laptop-agent" || routed.targetID != "beef1234" || routed.message != "--force it" {
+		t.Fatalf("routed send reached the layer as from=%v target=%q message=%q", routed.from, routed.targetID, routed.message)
+	}
+
+	// An empty name is the layer's to refuse, not a flag to drop silently.
+	blank := &fakeSessions{}
+	if err := runSend(&bytes.Buffer{}, blank, []string{"beef1234", "ship it", "--from="}, ""); err != nil {
+		t.Fatalf("send --from=: %v", err)
+	}
+	if blank.from == nil || *blank.from != "" {
+		t.Fatalf("an empty --from did not reach the layer: %v", blank.from)
+	}
+}
+
 func TestSnapshotPrintsOnlyJSON(t *testing.T) {
 	fake := &fakeSessions{session: sampleSession()}
 	err := runSnapshot(&bytes.Buffer{}, fake, nil, "")

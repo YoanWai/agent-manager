@@ -25,6 +25,7 @@ type fakeSessions struct {
 	callerID  string
 	targetID  string
 	message   string
+	from      *string
 	opts      sessioncmd.CreateSessionOptions
 	until     []string
 	timeout   time.Duration
@@ -73,6 +74,11 @@ func (f *fakeSessions) Create(sessionID string, opts sessioncmd.CreateSessionOpt
 func (f *fakeSessions) Send(sessionID, targetID, message string) (sessioncmd.SendResult, error) {
 	f.callerID, f.targetID, f.message = sessionID, targetID, message
 	return sessioncmd.SendResult{MessageID: 7, QueuePosition: 1, ManagerAwake: true}, f.failWith
+}
+
+func (f *fakeSessions) SendFrom(sessionID, senderName, targetID, message string) (sessioncmd.SendResult, error) {
+	f.callerID, f.from, f.targetID, f.message = sessionID, &senderName, targetID, message
+	return sessioncmd.SendResult{MessageID: 8, QueuePosition: 2}, f.failWith
 }
 
 func (f *fakeSessions) Read(sessionID, targetID string) (sessioncmd.SessionScreen, error) {
@@ -243,6 +249,7 @@ func TestALayerFailureReachesTheCaller(t *testing.T) {
 		{"snapshot", []string{"--json"}, func(out io.Writer, args []string) error { return runSnapshot(out, sessions, args, "cafe0001") }},
 		{"spawn", nil, func(out io.Writer, args []string) error { return runSpawn(out, sessions, args, "cafe0001") }},
 		{"send", []string{"beef1234", "ship it"}, func(out io.Writer, args []string) error { return runSend(out, sessions, args, "cafe0001") }},
+		{"send --from", []string{"beef1234", "ship it", "--from", "laptop-agent"}, func(out io.Writer, args []string) error { return runSend(out, sessions, args, "") }},
 		{"read", []string{"beef1234"}, func(out io.Writer, args []string) error { return runRead(out, sessions, args, "cafe0001") }},
 		{"wait", []string{"beef1234"}, func(out io.Writer, args []string) error { return runWait(out, sessions, args, "cafe0001") }},
 		{"message-status", []string{"7"}, func(out io.Writer, args []string) error { return runMessageStatus(out, sessions, args, "cafe0001") }},

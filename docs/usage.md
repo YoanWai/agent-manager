@@ -302,6 +302,8 @@ agent-manager spawn --tool claude --group "Sprint Manager" --worktree \
 
 `snapshot --json` prints this machine's whole list as one JSON document: every session and terminal, archived ones included, the groups, and whether a manager is running here to deliver queued messages. It is what another manager reads over an SSH connection.
 
+`send <session-id> "<message>" --from <name>` queues a message from a sender with no session on this machine, such as an agent on another machine sending over SSH. The name is up to 64 bytes with no control characters, and `--from` is refused from inside a session, which sends as itself. The delivered message names the sender as being on another machine and says a reply cannot reach it.
+
 The MCP tools always act as the session that runs them, since several CLIs keep the server registered for their runs outside Agent Manager too.
 
 ### Bugs and ideas

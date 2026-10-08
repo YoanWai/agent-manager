@@ -17,7 +17,7 @@ const (
 	usageSessions      = "sessions [--json]"
 	usageSnapshot      = "snapshot --json"
 	usageSpawn         = "spawn [--name <name>] [--prompt <text>] [--tool <cli>] [--model <model>] [--effort <level>] [--profile <name>] [--group <path>] [--directory <path>] [--worktree] [--json]"
-	usageSend          = `send <session-id> "<message>" [--json]`
+	usageSend          = `send <session-id> "<message>" [--from <name>] [--json]`
 	usageRead          = "read <session-id> [--json]"
 	usageWait          = "wait <session-id> [--until <state>] [--timeout <duration>] [--json]"
 	usageMessageStatus = "message-status <message-id> [--json]"
@@ -36,6 +36,7 @@ type sessionCommands interface {
 	Snapshot(sessionID string) (sessioncmd.Snapshot, error)
 	Create(sessionID string, opts sessioncmd.CreateSessionOptions) (sessioncmd.Session, error)
 	Send(sessionID, targetID, message string) (sessioncmd.SendResult, error)
+	SendFrom(sessionID, senderName, targetID, message string) (sessioncmd.SendResult, error)
 	Read(sessionID, targetID string) (sessioncmd.SessionScreen, error)
 	Wait(ctx context.Context, sessionID, targetID string, until []string, timeout time.Duration) (sessioncmd.WaitResult, error)
 	MessageStatus(sessionID string, messageID int64) (sessioncmd.MessageState, error)
@@ -152,12 +153,20 @@ func runSpawn(out io.Writer, sessions sessionCommands, args []string, sessionID 
 
 func runSend(out io.Writer, sessions sessionCommands, args []string, sessionID string) error {
 	set := newFlagSet(usageSend)
+	from := set.String("from", "", "name to send as when this runs outside any session on this machine, as an agent on another machine does over SSH; the message says no reply can reach it")
 	asJSON := jsonFlag(set)
 	operands, err := parseCommand(out, set, args, 2, 2)
 	if err != nil {
 		return err
 	}
-	result, err := sessions.Send(sessionID, operands[0], operands[1])
+	fromGiven := false
+	set.Visit(func(given *flag.Flag) { fromGiven = fromGiven || given.Name == "from" })
+	var result sessioncmd.SendResult
+	if fromGiven {
+		result, err = sessions.SendFrom(sessionID, *from, operands[0], operands[1])
+	} else {
+		result, err = sessions.Send(sessionID, operands[0], operands[1])
+	}
 	if err != nil {
 		return err
 	}

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/status"
@@ -57,6 +58,46 @@ const maxMessageBytes = 8000
 // approval dialog, so a message sent the moment it is written would answer
 // that dialog. The manager's poller types it in once the target is at rest.
 func (s *Sessions) Send(sessionID, targetID, message string) (SendResult, error) {
+	return s.send(targetID, message, func(runtime *runtime) (store.Session, error) {
+		return runtime.caller(sessionID)
+	})
+}
+
+// maxSenderNameBytes bounds a name given with SendFrom, which the envelope
+// quotes on the line that introduces the message.
+const maxSenderNameBytes = 64
+
+// SendFrom queues a message from a caller with no session on this machine,
+// such as an agent on another one, under the name it gives. Nothing here
+// can carry a reply back, and the envelope says so.
+func (s *Sessions) SendFrom(sessionID, senderName, targetID, message string) (SendResult, error) {
+	if sessionID != "" {
+		return SendResult{}, fmt.Errorf("a sender name is for a caller with no session on this machine; this runs as session %s, which is the sender", sessionID)
+	}
+	if err := validSenderName(senderName); err != nil {
+		return SendResult{}, err
+	}
+	return s.send(targetID, message, func(*runtime) (store.Session, error) {
+		return store.Session{Name: senderName}, nil
+	})
+}
+
+func validSenderName(name string) error {
+	if strings.TrimSpace(name) == "" {
+		return errors.New("sender name is empty")
+	}
+	if len(name) > maxSenderNameBytes {
+		return fmt.Errorf("sender name is %d bytes, over the %d byte limit", len(name), maxSenderNameBytes)
+	}
+	if strings.ContainsFunc(name, unicode.IsControl) {
+		return fmt.Errorf("sender name %q holds a control character", name)
+	}
+	return nil
+}
+
+// send queues a message from the sender its caller resolves. A sender with
+// no ID has no session here to refuse as the target or to mark as answered.
+func (s *Sessions) send(targetID, message string, resolveSender func(*runtime) (store.Session, error)) (SendResult, error) {
 	message = strings.TrimSpace(message)
 	if message == "" {
 		return SendResult{}, errors.New("message is empty")
@@ -69,7 +110,7 @@ func (s *Sessions) Send(sessionID, targetID, message string) (SendResult, error)
 		return SendResult{}, err
 	}
 	defer runtime.Close()
-	caller, err := runtime.caller(sessionID)
+	sender, err := resolveSender(runtime)
 	if err != nil {
 		return SendResult{}, err
 	}
@@ -77,7 +118,7 @@ func (s *Sessions) Send(sessionID, targetID, message string) (SendResult, error)
 	if err != nil {
 		return SendResult{}, err
 	}
-	if target.ID == caller.ID {
+	if target.ID == sender.ID {
 		return SendResult{}, errors.New("a session cannot message itself")
 	}
 	if err := runtime.deliverable(target); err != nil {
@@ -86,8 +127,8 @@ func (s *Sessions) Send(sessionID, targetID, message string) (SendResult, error)
 	now := time.Now()
 	id, err := runtime.store.Enqueue(store.InboxMessage{
 		SessionID:   target.ID,
-		SenderID:    caller.ID,
-		SenderName:  caller.Name,
+		SenderID:    sender.ID,
+		SenderName:  sender.Name,
 		Body:        message,
 		Fingerprint: fingerprint(message),
 		SentAt:      now,
@@ -97,8 +138,10 @@ func (s *Sessions) Send(sessionID, targetID, message string) (SendResult, error)
 	}
 	// Answering is the acknowledgement: whatever this session was sent by
 	// the agent it is now writing to has plainly been read.
-	if err := runtime.store.MarkRead(caller.ID, target.ID, now); err != nil {
-		return SendResult{}, err
+	if sender.ID != "" {
+		if err := runtime.store.MarkRead(sender.ID, target.ID, now); err != nil {
+			return SendResult{}, err
+		}
 	}
 	queued, err := runtime.store.QueuedCount(target.ID)
 	if err != nil {
