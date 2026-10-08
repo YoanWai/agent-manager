@@ -18,8 +18,8 @@ const (
 )
 
 // renameRequest carries everything the rename worker needs so it never
-// reads Model: the target, the requested values and a deep copy of the
-// session row for the worktree-branch stage.
+// reads Model: the target, the requested values and a copy of the session
+// row that pins which creation, launch and socket the rename was meant for.
 type renameRequest struct {
 	kind            renameKind
 	oldGroup        string
@@ -155,7 +155,16 @@ func (s effectServices) runRename(request renameRequest) (effectResult, error) {
 			return result, errors.New("move its terminals first")
 		}
 	}
-	sess := request.sess
+	// A rename queued behind another on the same row must start from the
+	// branch that one left, so the worker reads the row instead of trusting
+	// the enqueue-time copy, which only pins which launch it was meant for.
+	sess, err := s.store.Get(request.sessID)
+	if err != nil {
+		return result, err
+	}
+	if !sess.CreatedAt.Equal(request.sess.CreatedAt) || sess.TmuxSocket != request.sess.TmuxSocket || !sess.LaunchTime().Equal(request.sess.LaunchTime()) {
+		return result, errors.New("rename target changed its creation, launch, or socket before the accepted rename ran")
+	}
 	// The branch changes before the name is stored, so a name git cannot
 	// give it leaves the rename card open instead of splitting them apart.
 	if sess.WorktreeRepo != "" && sess.WorktreeBranch != "" {
@@ -166,7 +175,6 @@ func (s effectServices) runRename(request renameRequest) (effectResult, error) {
 			result.branch = sess.WorktreeBranch
 		}
 	}
-	var err error
 	if err = s.store.RenameSession(request.sessID, request.name); err != nil {
 		return result, err
 	}

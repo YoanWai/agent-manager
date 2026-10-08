@@ -2,6 +2,7 @@ package ui
 
 import (
 	"errors"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -152,6 +153,61 @@ func TestRenameKeepsCapturedRowIdentity(t *testing.T) {
 	m.applyCmd(t, cmd)
 	if names := sessionNames(m); len(names) != 1 || names[0] != "saved" {
 		t.Fatalf("completion used the live row, want the captured one: %v", names)
+	}
+}
+
+func TestRenameChainedWhileQueuedActsOnThePreviousResult(t *testing.T) {
+	m := buildModel(t)
+	repo := seedRepo(t)
+	spawned := createWorktreeSession(t, m, "alpha", repo)
+
+	m.selectSessionRow(t, "alpha")
+	m.openRename()
+	m.rename.input.SetValue("beta")
+	_, first := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.rename.input.SetValue("gamma")
+	m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, first)
+	if m.errBar.text != "" {
+		t.Fatalf("rename reported: %s", m.errBar.text)
+	}
+
+	stored, err := m.services.store.Get(spawned.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Name != "gamma" || stored.WorktreeBranch != "am/gamma" {
+		t.Fatalf("stored name/branch = %q/%q, want gamma/am/gamma", stored.Name, stored.WorktreeBranch)
+	}
+	if row := m.sessionRows()[0]; row.Name != "gamma" || row.WorktreeBranch != "am/gamma" {
+		t.Fatalf("row name/branch = %q/%q, want gamma/am/gamma", row.Name, row.WorktreeBranch)
+	}
+	head, err := exec.Command("git", "-C", spawned.Cwd, "rev-parse", "--abbrev-ref", "HEAD").Output()
+	if err != nil || strings.TrimSpace(string(head)) != "am/gamma" {
+		t.Fatalf("worktree HEAD = %q err=%v", strings.TrimSpace(string(head)), err)
+	}
+}
+
+func TestRenameRefusesARelaunchedTarget(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "before", t.TempDir(), "")
+	m.selectSessionRow(t, "before")
+	m.openRename()
+	m.rename.input.SetValue("after")
+	_, cmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if err := m.services.store.SetAgentLaunchedAt(m.rename.sessID, time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, cmd)
+	if !strings.Contains(m.errBar.text, "changed its creation, launch, or socket") {
+		t.Fatalf("relaunched target error = %q", m.errBar.text)
+	}
+	stored, err := m.services.store.Get(m.rename.sessID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Name != "before" {
+		t.Fatalf("relaunched target renamed to %q", stored.Name)
 	}
 }
 
