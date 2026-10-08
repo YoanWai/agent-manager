@@ -48,7 +48,7 @@ func (forkEffectResult) effectResult() {}
 // dialog generation, minting the child id and the pane geometry it launches
 // at.
 func (m *Model) queueFork(request forkRequest) {
-	for _, job := range append([]*effectJob{m.effects.active}, m.effects.pending...) {
+	for _, job := range append([]*effectJob{m.effects.main.active}, m.effects.main.pending...) {
 		if job == nil {
 			continue
 		}

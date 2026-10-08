@@ -164,13 +164,15 @@ func (m *Model) applyCmd(t *testing.T, cmd tea.Cmd) {
 func (m *Model) drainEffects(t *testing.T) {
 	t.Helper()
 	for count := 0; count < 100; count++ {
-		if m.effects.active == nil {
-			m.nextEffectCmd()
+		m.nextEffectCmd()
+		job := m.effects.input.active
+		if job == nil {
+			job = m.effects.main.active
 		}
-		if m.effects.active == nil {
+		if job == nil {
 			return
 		}
-		m.applyTestMsg(t, m.effects.active.command())
+		m.applyTestMsg(t, job.command())
 	}
 	t.Fatal("effect queue did not become idle")
 }

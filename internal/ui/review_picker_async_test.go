@@ -185,7 +185,7 @@ func TestReviewBaseSavePersistsButDoesNotReloadStaleOrQuittingReview(t *testing.
 			}
 
 			cmd := m.selectBase("feature")
-			if cmd == nil || m.effects.active == nil {
+			if cmd == nil || m.effects.main.active == nil {
 				t.Fatal("accepted base did not enter the FIFO effect lane")
 			}
 			tc.mutate(m)
@@ -227,8 +227,8 @@ func TestReviewBaseSaveAllowsOnlyOnePendingRequest(t *testing.T) {
 	if second := m.selectBase("main"); second != nil {
 		t.Fatal("second base save started while the first was pending")
 	}
-	if len(m.effects.pending) != 0 || m.effects.active == nil {
-		t.Fatalf("base save jobs active=%v pending=%d, want exactly one", m.effects.active != nil, len(m.effects.pending))
+	if len(m.effects.main.pending) != 0 || m.effects.main.active == nil {
+		t.Fatalf("base save jobs active=%v pending=%d, want exactly one", m.effects.main.active != nil, len(m.effects.main.pending))
 	}
 	if m.errBar.text == "" {
 		t.Fatal("second base save was not refused clearly")

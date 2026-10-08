@@ -12,12 +12,12 @@ func TestDismissNoticeDeduplicatesPendingEffect(t *testing.T) {
 	m.dismissNotice(noticeWelcome)
 	m.dismissNotice(noticeWelcome)
 
-	if len(m.effects.pending) != 1 {
-		t.Fatalf("duplicate dismissal queued %d effects, want 1", len(m.effects.pending))
+	if len(m.effects.main.pending) != 1 {
+		t.Fatalf("duplicate dismissal queued %d effects, want 1", len(m.effects.main.pending))
 	}
-	request, ok := m.effects.pending[0].request.(noticeDismissRequest)
+	request, ok := m.effects.main.pending[0].request.(noticeDismissRequest)
 	if !ok || request.id != noticeWelcome {
-		t.Fatalf("queued request = %#v", m.effects.pending[0].request)
+		t.Fatalf("queued request = %#v", m.effects.main.pending[0].request)
 	}
 	m.drainEffects(t)
 }

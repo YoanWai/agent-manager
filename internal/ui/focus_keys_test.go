@@ -572,16 +572,7 @@ func TestFocusPagingAndFooterFollowTheSamePolicy(t *testing.T) {
 // focusInputQueued reports whether a key is waiting on the effect lane to
 // reach the focused pane.
 func focusInputQueued(m *Model) bool {
-	jobs := append([]*effectJob(nil), m.effects.pending...)
-	if m.effects.active != nil {
-		jobs = append(jobs, m.effects.active)
-	}
-	for _, job := range jobs {
-		if _, ok := job.request.(inputRequest); ok {
-			return true
-		}
-	}
-	return false
+	return m.effects.input.active != nil || len(m.effects.input.pending) > 0
 }
 
 // A focused session that disappears drops the UI back to the list.

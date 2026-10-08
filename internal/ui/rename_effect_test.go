@@ -478,7 +478,7 @@ func TestRenameCompletionDoesNotCloseResubmittedDialog(t *testing.T) {
 	// cycling the tool). gens.dialog advanced, so cmd1's completion is stale.
 	m.rename.cycleTool(1)
 	_, _ = m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
-	if len(m.effects.pending) == 0 {
+	if len(m.effects.main.pending) == 0 {
 		t.Fatal("resubmit did not enqueue a job")
 	}
 

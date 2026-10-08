@@ -529,16 +529,16 @@ func TestReviewSendDrainsOnQuit(t *testing.T) {
 	m.drainEffects(t)
 
 	m.sendAnnotations()
-	if m.effects.active != nil || len(m.effects.pending) != 1 {
-		t.Fatalf("send not queued: active=%v pending=%d", m.effects.active, len(m.effects.pending))
+	if m.effects.main.active != nil || len(m.effects.main.pending) != 1 {
+		t.Fatalf("send not queued: active=%v pending=%d", m.effects.main.active, len(m.effects.main.pending))
 	}
 	_, command := m.requestQuit()
 	if _, ok := command().(tea.QuitMsg); ok {
 		t.Fatal("quit discarded an accepted review send")
 	}
 	m.drainEffects(t)
-	if len(m.effects.pending) != 0 {
-		t.Fatalf("quit left review work in the queue: %d pending", len(m.effects.pending))
+	if len(m.effects.main.pending) != 0 {
+		t.Fatalf("quit left review work in the queue: %d pending", len(m.effects.main.pending))
 	}
 	state, err := m.services.store.ReviewState(sess.ID, m.review.Snapshot().RepoSelected)
 	if err != nil {
@@ -588,8 +588,8 @@ func TestReviewLoadNormalizesThroughLane(t *testing.T) {
 
 	m.drainCmds(t, m.cycleDiffScope())
 	m.drainEffects(t)
-	if m.effects.active != nil || len(m.effects.pending) != 0 {
-		t.Fatalf("reload left review work in the lane: active=%v pending=%d", m.effects.active, len(m.effects.pending))
+	if m.effects.main.active != nil || len(m.effects.main.pending) != 0 {
+		t.Fatalf("reload left review work in the lane: active=%v pending=%d", m.effects.main.active, len(m.effects.main.pending))
 	}
 	state, err = m.services.store.ReviewState(sess.ID, repo)
 	if err != nil {
@@ -613,15 +613,15 @@ func TestReviewSendOnceRefusesDuplicateSubmit(t *testing.T) {
 	m.drainEffects(t)
 
 	_, cmd := m.sendAnnotations()
-	if m.effects.active != nil || len(m.effects.pending) != 1 {
-		t.Fatalf("send did not reach the effect lane: active=%v pending=%d", m.effects.active, len(m.effects.pending))
+	if m.effects.main.active != nil || len(m.effects.main.pending) != 1 {
+		t.Fatalf("send did not reach the effect lane: active=%v pending=%d", m.effects.main.active, len(m.effects.main.pending))
 	}
 	second := m.review.BeginSend()
 	if second.Error == "" || second.Requests.Send != nil {
 		t.Fatalf("duplicate send accepted: %+v", second)
 	}
-	if len(m.effects.pending) != 1 {
-		t.Fatalf("duplicate submit enqueued a second job: %d pending", len(m.effects.pending))
+	if len(m.effects.main.pending) != 1 {
+		t.Fatalf("duplicate submit enqueued a second job: %d pending", len(m.effects.main.pending))
 	}
 	m.applyCmd(t, cmd)
 }

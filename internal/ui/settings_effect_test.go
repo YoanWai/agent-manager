@@ -723,7 +723,7 @@ func TestSettingsRequestCopiesMutableValues(t *testing.T) {
 	m.enqueueEffect(request, 0, false)
 	request.values[0].value = "changed"
 	request.hidden[0] = "changed"
-	stored := m.effects.pending[0].request.(settingsRequest)
+	stored := m.effects.main.pending[0].request.(settingsRequest)
 	if stored.values[0].value == "changed" || stored.hidden[0] == "changed" {
 		t.Fatal("request retained mutable dialog aliases")
 	}

@@ -292,6 +292,36 @@ def quit_drain(sandbox, binary):
     sandbox.wait_manager_exit('scen:0.0', 'drain-exit')
 
 
+def quit_abandon(sandbox, binary):
+    """A second ctrl+c stops waiting on a stuck drain and names what it left."""
+    write_fixture(sandbox)
+    start_manager(sandbox, binary)
+    seed_store(sandbox)
+    key(sandbox, 'n')
+    frame(sandbox, 'abandon-form', '◆ New Session')
+    sandbox.tmux('send-keys', '-l', '-t', 'scen:0.0', 'stuck-agent')
+    frame(sandbox, 'abandon-name', 'stuck-agent')
+    lock = sqlite3.connect(profile_dir(sandbox) / 'state.db', timeout=1)
+    lock.execute('BEGIN IMMEDIATE')
+    try:
+        key(sandbox, 'Enter')
+        key(sandbox, 'Enter')
+        frame(sandbox, 'abandon-accepted', 'already in progress')
+        key(sandbox, 'C-c')
+        if sandbox.tmux('display-message', '-p', '-t', 'scen:0.0', '#{pane_dead}').stdout.strip() != '0':
+            raise AssertionError('first quit did not wait for the accepted spawn')
+        key(sandbox, 'C-c')
+        exit_file = sandbox.artifacts / 'manager-exit-code.txt'
+        sandbox.wait('abandon-exit', lambda: exit_file.read_text().strip() if exit_file.exists() else '',
+                     lambda value: value == '1')
+    finally:
+        lock.rollback()
+        lock.close()
+    stderr = (sandbox.artifacts / 'manager-stderr.txt').read_text()
+    if 'spawn was still running' not in stderr:
+        raise AssertionError(f'abandoned spawn not reported: {stderr!r}')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--binary', type=Path, help='existing binary; otherwise build once before isolating HOME')
@@ -309,6 +339,11 @@ def main():
             raise RuntimeError(str(cleanup_errors))
         sandbox = Sandbox(artifacts / 'quit-drain')
         quit_drain(sandbox, binary)
+        cleanup_errors = sandbox.close()
+        if cleanup_errors:
+            raise RuntimeError(str(cleanup_errors))
+        sandbox = Sandbox(artifacts / 'quit-abandon')
+        quit_abandon(sandbox, binary)
         result = dict(status='passed', seconds=round(time.monotonic()-started, 2))
     except (Exception, KeyboardInterrupt) as error:
         (sandbox.artifacts / 'scenario-last-frame.txt').write_text(capture(sandbox))

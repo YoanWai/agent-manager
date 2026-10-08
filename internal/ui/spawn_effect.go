@@ -100,7 +100,7 @@ func (groupEffectResult) effectResult() {}
 // dispatchSpawn takes the prompt's images out of the composer and queues
 // the spawn on the shared effect lane; completion routes the images.
 func (m *Model) dispatchSpawn(request spawnRequest) {
-	for _, job := range append([]*effectJob{m.effects.active}, m.effects.pending...) {
+	for _, job := range append([]*effectJob{m.effects.main.active}, m.effects.main.pending...) {
 		if job == nil {
 			continue
 		}

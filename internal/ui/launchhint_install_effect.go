@@ -93,7 +93,7 @@ func installImageCleanupCmd(images []imageAttachment) tea.Cmd {
 // the placement group and the pane geometry. It refuses while another
 // install is still starting.
 func (m *Model) startInstall(request installStartRequest) bool {
-	for _, job := range append([]*effectJob{m.effects.active}, m.effects.pending...) {
+	for _, job := range append([]*effectJob{m.effects.main.active}, m.effects.main.pending...) {
 		if job == nil {
 			continue
 		}

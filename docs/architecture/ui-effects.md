@@ -27,7 +27,9 @@ protocol.
    Prioritized collapse saves from group reveal, rename and deletion reconciliation
    also supersede older pending collapse snapshots, retaining active work and
    unrelated queued jobs.
-5. Lifecycle, Rail, spawn, fork, group creation and rename completion times fence older poll listings. Fresh observations
+5. Lifecycle, Rail, spawn, fork, group creation, rename and recorded-prompt completion times fence older poll listings.
+   Keys, mouse reports and paste change no stored row, so they neither fence listings nor request a poll, and an
+   installer settle check waits for the next poll instead of requesting one. Fresh observations
    reconcile the next snapshot; geometry-only completion does not advance that
    fence. Geometry coalesces only adjacent requests and avoids already accepted
    identical sizes, preserving lifecycle/move order and scrollback rules.
@@ -52,8 +54,14 @@ work finishes while its borrowed resources remain open.
 
 Runner reflow reports an explicit error if stopped; it cannot silently report
 unexecuted work as success. Empty-group work still runs. Tmux commands and control clients now have bounded cancellation and reaping.
-Git and filesystem operations do not share one global deadline, so the overall
-drain still has no fixed time bound.
+Git runs without a controlling terminal and with terminal and askpass prompts
+off, so a hook or filter that wants credentials fails instead of hanging.
+Git and filesystem operations still have no shared deadline, so the drain has
+no fixed time bound; the user and shutdown bound it instead. A second quit
+while the drain waits stops waiting: jobs that never started are dropped, the
+running one is left to finish or die with the process, and the manager exits
+non-zero naming each as "never started" or "was still running". Shutdown waits
+at most five seconds for begun effects and reports the same way.
 
 ## Scope and compatibility
 
@@ -67,7 +75,10 @@ loaded workspace; workers revalidate membership before mutations. Submission
 path/repository validation belongs to the accepted job so a later draft edit or
 quit cannot drop it. Picker defaults, path suggestions, worktree probes and
 editor path lookup use independent read-only commands with stale-result fences.
-Raw keys/mouse/paste and installer start/settle also use the ordered lane.
+Installer start/settle also uses the ordered lane. Raw keys, mouse reports and
+paste run on a second FIFO lane of their own, so typing never waits behind a
+spawn, fork or poll-locked reflow; each input rechecks its session's creation,
+launch and socket in the worker, so it needs no order against lifecycle work.
 
 The queue adds no RPC or plugin protocol. The separate automatic-delivery
 contract adds schema receipts and in_flight/uncertain message states; old delivery
@@ -144,7 +155,7 @@ turn it into resendable drafts. Captured session identity rejects a relaunch
 before the send begins. This does not establish durable human send-once receipts
 after a crash or revoke another process after the final identity check.
 
-Focused raw keys, mouse reports and paste now share the FIFO effect lane.
+Focused raw keys, mouse reports and paste share the input lane, FIFO among themselves.
 Key workers prefer bounded control-client commands and wait for acknowledgment.
 They use the driver only when no client exists, and never replay an uncertain
 control outcome. Mouse reports also prefer the acknowledged control client; paste uses bounded driver commands.

@@ -293,10 +293,10 @@ func (m *Model) reviewBaseSavePending() bool {
 		request, ok := job.request.(reviewEffectRequest)
 		return ok && request.op == reviewOpSetBase
 	}
-	if isBaseSave(m.effects.active) {
+	if isBaseSave(m.effects.main.active) {
 		return true
 	}
-	for _, job := range m.effects.pending {
+	for _, job := range m.effects.main.pending {
 		if isBaseSave(job) {
 			return true
 		}

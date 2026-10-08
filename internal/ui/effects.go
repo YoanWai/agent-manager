@@ -28,13 +28,29 @@ type effectJob struct {
 	command   tea.Cmd
 }
 
+// Effects run on two FIFO lanes. Input forwarded to a pane has its own lane
+// so a keystroke never waits behind a spawn, fork or poll-locked reflow; each
+// input re-checks its session's identity in the worker, so it needs no order
+// against lifecycle work.
 type effectState struct {
 	nextID, nextChain uint64
-	active            *effectJob
-	pending           []*effectJob
+	main, input       effectLane
 	lifetime          *effectLifetime
 	latestObservation time.Time
 	quitting          bool
+	abandoned         []string
+}
+
+type effectLane struct {
+	active  *effectJob
+	pending []*effectJob
+}
+
+func (m *Model) laneFor(request effectRequest) *effectLane {
+	if _, ok := request.(inputRequest); ok {
+		return &m.effects.input
+	}
+	return &m.effects.main
 }
 
 type effectLifetime struct {
@@ -53,18 +69,52 @@ func (l *effectLifetime) begin() bool {
 	return true
 }
 
-func (l *effectLifetime) closeAndWait() {
+// closeAndWait refuses new work and waits up to limit for running work,
+// reporting whether it all finished.
+func (l *effectLifetime) closeAndWait(limit time.Duration) bool {
 	l.mu.Lock()
 	l.closed = true
 	l.mu.Unlock()
-	l.running.Wait()
-}
-
-func (m *Model) StopEffects() {
-	if m.effects.lifetime != nil {
-		m.effects.lifetime.closeAndWait()
+	finished := make(chan struct{})
+	go func() {
+		l.running.Wait()
+		close(finished)
+	}()
+	select {
+	case <-finished:
+		return true
+	case <-time.After(limit):
+		return false
 	}
 }
+
+// effectStopWait bounds shutdown: an effect stuck on a hook or an unanswered
+// prompt must not keep the process alive after its terminal is gone.
+var effectStopWait = 5 * time.Second
+
+// StopEffects refuses new effects and waits briefly for running ones. A quit
+// the user forced, or work that outlives the wait, is recorded in
+// AbandonedEffects.
+func (m *Model) StopEffects() {
+	if m.effects.lifetime == nil {
+		return
+	}
+	limit := effectStopWait
+	if len(m.effects.abandoned) > 0 {
+		limit = 0
+	}
+	if !m.effects.lifetime.closeAndWait(limit) && len(m.effects.abandoned) == 0 {
+		for _, lane := range []*effectLane{&m.effects.main, &m.effects.input} {
+			if lane.active != nil {
+				m.effects.abandoned = append(m.effects.abandoned, effectName(lane.active.request)+" was still running")
+			}
+		}
+	}
+}
+
+// AbandonedEffects lists effects whose outcome the manager could not confirm
+// before it exited.
+func (m *Model) AbandonedEffects() []string { return slices.Clone(m.effects.abandoned) }
 
 func (m *Model) enqueueEffect(request effectRequest, chain uint64, first bool) {
 	if m.effects.quitting && !first {
@@ -144,6 +194,7 @@ func (m *Model) enqueueEffect(request effectRequest, chain uint64, first bool) {
 	var once sync.Once
 	var completed effectCompletedMsg
 	job := &effectJob{id: id, chain: chain, request: request}
+	lane := m.laneFor(request)
 	job.command = func() tea.Msg {
 		once.Do(func() {
 			completed.id = id
@@ -158,25 +209,28 @@ func (m *Model) enqueueEffect(request effectRequest, chain uint64, first bool) {
 		return completed
 	}
 	if first {
-		m.effects.pending = append([]*effectJob{job}, m.effects.pending...)
+		lane.pending = append([]*effectJob{job}, lane.pending...)
 	} else {
-		m.effects.pending = append(m.effects.pending, job)
+		lane.pending = append(lane.pending, job)
 	}
 }
 
 func (m *Model) nextEffectCmd() tea.Cmd {
-	if m.effects.active != nil {
-		return nil
-	}
-	if len(m.effects.pending) == 0 {
-		if m.effects.quitting {
-			return tea.Quit
+	var commands []tea.Cmd
+	idle := true
+	for _, lane := range []*effectLane{&m.effects.main, &m.effects.input} {
+		if lane.active == nil && len(lane.pending) > 0 {
+			lane.active, lane.pending = lane.pending[0], lane.pending[1:]
+			commands = append(commands, lane.active.command)
 		}
-		return nil
+		if lane.active != nil {
+			idle = false
+		}
 	}
-	m.effects.active = m.effects.pending[0]
-	m.effects.pending = m.effects.pending[1:]
-	return m.effects.active.command
+	if idle && m.effects.quitting {
+		return tea.Quit
+	}
+	return tea.Batch(commands...)
 }
 
 func (m *Model) requestQuit() (tea.Model, tea.Cmd) {
@@ -191,27 +245,57 @@ func (m *Model) requestQuit() (tea.Model, tea.Cmd) {
 		request, ok := job.request.(installStartRequest)
 		return request, ok
 	}
-	if request, ok := starting(m.effects.active); ok {
+	if request, ok := starting(m.effects.main.active); ok {
 		m.reportErr("install for " + request.binary + " is still starting; wait for its installer shell before quitting")
 		return m, nil
 	}
-	for _, job := range m.effects.pending {
+	for _, job := range m.effects.main.pending {
 		if request, ok := starting(job); ok {
 			m.reportErr("install for " + request.binary + " is still queued; wait for its installer shell before quitting")
 			return m, nil
 		}
+	}
+	if m.effects.quitting {
+		return m, m.abandonEffects()
 	}
 	m.prepareSplitForQuit()
 	m.effects.quitting = true
 	return m, m.nextEffectCmd()
 }
 
+// abandonEffects answers a second quit while the drain waits: it stops
+// waiting and records what may or may not have happened, rather than leaving
+// a stuck effect as the only way out being kill -9.
+func (m *Model) abandonEffects() tea.Cmd {
+	for _, lane := range []*effectLane{&m.effects.main, &m.effects.input} {
+		if lane.active != nil {
+			m.effects.abandoned = append(m.effects.abandoned, effectName(lane.active.request)+" was still running")
+		}
+		for _, job := range lane.pending {
+			m.effects.abandoned = append(m.effects.abandoned, effectName(job.request)+" never started")
+		}
+		lane.pending = nil
+	}
+	return tea.Quit
+}
+
 func (m *Model) handleEffectCompleted(msg effectCompletedMsg) (tea.Model, tea.Cmd) {
-	job := m.effects.active
-	if job == nil || job.id != msg.id {
+	var job *effectJob
+	for _, lane := range []*effectLane{&m.effects.main, &m.effects.input} {
+		if lane.active != nil && lane.active.id == msg.id {
+			job, lane.active = lane.active, nil
+		}
+	}
+	if job == nil {
 		return m, nil
 	}
-	m.effects.active = nil
+	// Keys, paste and mouse change no stored row, so they neither fence a
+	// listing nor ask for a poll; a typed prompt records LastPrompt and does.
+	if request, ok := job.request.(inputRequest); ok && request.kind != inputPrompt {
+		result, _ := msg.result.(inputEffectResult)
+		m.applyInputEffect(result, msg.err)
+		return m, m.nextEffectCmd()
+	}
 	switch job.request.(type) {
 	case inputRequest, quickSendRequest, installStartRequest, lifecycleRequest, afterTurnRequest, railRequest, forkRequest, spawnRequest, groupRequest, renameRequest, focusRequest, ackRequest, attachRequest:
 		if msg.finishedAt.After(m.effects.latestObservation) {
@@ -275,10 +359,56 @@ func (m *Model) handleEffectCompleted(msg effectCompletedMsg) (tea.Model, tea.Cm
 			m.reportErr(msg.err.Error())
 		}
 	}
-	if m.poller != nil {
+	// A settle check runs once per poll; asking for a poll after it would
+	// spin the poller for as long as the installer runs.
+	if _, settling := job.request.(installSettleRequest); m.poller != nil && !settling {
 		m.requestRefresh()
 	}
 	return m, tea.Batch(command, m.nextEffectCmd())
+}
+
+func effectName(request effectRequest) string {
+	switch request.(type) {
+	case inputRequest:
+		return "input to a session"
+	case quickSendRequest:
+		return "quick send"
+	case noticeDismissRequest:
+		return "notice dismissal"
+	case splitSaveRequest:
+		return "split ratio save"
+	case choiceSaveRequest:
+		return "model choice save"
+	case installStartRequest, installSettleRequest:
+		return "CLI install"
+	case lifecycleRequest:
+		return "session lifecycle change"
+	case afterTurnRequest:
+		return "after-turn archive or kill"
+	case railRequest:
+		return "rail change"
+	case forkRequest:
+		return "fork"
+	case geometryRequest:
+		return "pane resize"
+	case spawnRequest:
+		return "spawn"
+	case groupRequest:
+		return "group creation"
+	case renameRequest:
+		return "rename"
+	case moveDialogClose:
+		return "move"
+	case settingsRequest:
+		return "settings save"
+	case reviewEffectRequest:
+		return "review change"
+	case keysRequest:
+		return "key binding save"
+	case focusRequest, ackRequest, detachRequest, attachRequest:
+		return "focus or attach"
+	}
+	return "effect"
 }
 
 func (m *Model) routeEffectMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {

@@ -130,7 +130,7 @@ func TestReattachAcknowledgesFinished(t *testing.T) {
 func TestStaleReattachDoesNotInterruptReopenedReview(t *testing.T) {
 	m := &Model{mode: modeDiff}
 	seedReviewForTest(m, uireview.Target{ID: "new"}, git.ScopeUncommitted, "/repo", diff.Set{}, false)
-	m.effects.active = &effectJob{id: 1, request: attachRequest{id: "old", reattach: true, generation: 0}}
+	m.effects.main.active = &effectJob{id: 1, request: attachRequest{id: "old", reattach: true, generation: 0}}
 	updated, cmd := m.Update(effectCompletedMsg{id: 1, result: attachEffectResult{}})
 	m = updated.(*Model)
 	if cmd != nil {

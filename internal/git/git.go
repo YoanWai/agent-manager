@@ -44,6 +44,11 @@ func New() (*Driver, error) {
 func (d *Driver) run(dir string, args ...string) (string, error) {
 	cmd := exec.Command(d.bin, append([]string{"-c", "core.quotepath=false"}, args...)...)
 	cmd.Dir = dir
+	// The manager's UI owns the terminal, so a credential, askpass or ssh
+	// prompt from a hook or LFS filter would hang unseen; off its terminal
+	// and with prompts disabled, git fails instead.
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "SSH_ASKPASS_REQUIRE=never")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	out, err := cmd.CombinedOutput()
 	text := strings.TrimRight(string(out), "\n")
 	if err != nil {

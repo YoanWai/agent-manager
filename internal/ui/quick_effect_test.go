@@ -260,8 +260,8 @@ func TestBlockedQuickSendsKeepUpdateResponsiveRunFIFOAndDrainOnQuit(t *testing.T
 	}
 	m.openQuickMode()
 	m.quick.input.SetValue("second")
-	if _, second := m.submitQuick(); second != nil || len(m.effects.pending) != 1 {
-		t.Fatalf("second send did not queue behind the first: cmd=%v pending=%d", second != nil, len(m.effects.pending))
+	if _, second := m.submitQuick(); second != nil || len(m.effects.main.pending) != 1 {
+		t.Fatalf("second send did not queue behind the first: cmd=%v pending=%d", second != nil, len(m.effects.main.pending))
 	}
 
 	completed := make(chan tea.Msg, 1)
@@ -283,15 +283,15 @@ func TestBlockedQuickSendsKeepUpdateResponsiveRunFIFOAndDrainOnQuit(t *testing.T
 	if got := m.quick.input.Value(); got != "second" {
 		t.Fatalf("first completion replaced newer composer: %q", got)
 	}
-	if m.effects.active == nil {
+	if m.effects.main.active == nil {
 		t.Fatal("quit drain did not activate the queued quick send")
 	}
-	updated, quit := m.Update(m.effects.active.command())
+	updated, quit := m.Update(m.effects.main.active.command())
 	m = updated.(*Model)
 	if len(calls) != 2 || calls[0] != "first" || calls[1] != "second" {
 		t.Fatalf("send order = %q", calls)
 	}
-	if m.effects.active != nil || quit == nil {
+	if m.effects.main.active != nil || quit == nil {
 		t.Fatal("queued quick send did not finish the quit drain")
 	}
 }

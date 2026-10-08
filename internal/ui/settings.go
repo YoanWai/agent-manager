@@ -422,7 +422,7 @@ func (m *Model) keyTables() (session, list keybind.Table) {
 // in the order they commit.
 func (m *Model) queuedEffects() []effectRequest {
 	var requests []effectRequest
-	for _, job := range append([]*effectJob{m.effects.active}, m.effects.pending...) {
+	for _, job := range append([]*effectJob{m.effects.main.active}, m.effects.main.pending...) {
 		if job == nil {
 			continue
 		}

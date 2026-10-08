@@ -540,7 +540,7 @@ func TestAttachDoneOpensEditorAndReturnsToTheSession(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("the session should get its client back")
 	}
-	attachment, isAttachment := m.effects.active.request.(attachRequest)
+	attachment, isAttachment := m.effects.main.active.request.(attachRequest)
 	if !isAttachment || attachment.id != sess.ID {
 		t.Fatalf("reattach target=%+v", attachment)
 	}
@@ -685,12 +685,12 @@ func TestEditorReturnCompletionCannotCrossHelpOrQuit(t *testing.T) {
 			if next != nil {
 				m.applyTestMsg(t, next())
 			}
-			if m.effects.active != nil {
-				if _, ok := m.effects.active.request.(attachRequest); ok {
+			if m.effects.main.active != nil {
+				if _, ok := m.effects.main.active.request.(attachRequest); ok {
 					t.Fatalf("stale editor completion reattached through %s", tc.name)
 				}
 			}
-			for _, job := range m.effects.pending {
+			for _, job := range m.effects.main.pending {
 				if _, ok := job.request.(attachRequest); ok {
 					t.Fatalf("stale editor completion queued a reattach through %s", tc.name)
 				}
@@ -712,19 +712,19 @@ func TestEditorReturnCompletionsKeepTheirOwnSessions(t *testing.T) {
 	updated, _ = m.Update(editorDoneMsg{returnTo: second})
 	*m = *updated.(*Model)
 
-	if m.effects.active == nil {
+	if m.effects.main.active == nil {
 		t.Fatal("first completion did not enqueue its return")
 	}
-	active, ok := m.effects.active.request.(attachRequest)
+	active, ok := m.effects.main.active.request.(attachRequest)
 	if !ok || active.id != "first" {
-		t.Fatalf("first completion attached %+v", m.effects.active.request)
+		t.Fatalf("first completion attached %+v", m.effects.main.active.request)
 	}
-	if len(m.effects.pending) != 1 {
-		t.Fatalf("pending returns = %d, want 1", len(m.effects.pending))
+	if len(m.effects.main.pending) != 1 {
+		t.Fatalf("pending returns = %d, want 1", len(m.effects.main.pending))
 	}
-	pending, ok := m.effects.pending[0].request.(attachRequest)
+	pending, ok := m.effects.main.pending[0].request.(attachRequest)
 	if !ok || pending.id != "second" {
-		t.Fatalf("second completion queued %+v", m.effects.pending[0].request)
+		t.Fatalf("second completion queued %+v", m.effects.main.pending[0].request)
 	}
 }
 

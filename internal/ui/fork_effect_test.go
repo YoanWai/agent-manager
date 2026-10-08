@@ -74,11 +74,11 @@ func TestForkSubmitDefersWorkOffTheUpdatePath(t *testing.T) {
 	if _, err := os.Stat(argsFile); err == nil {
 		t.Fatal("submit ran the fork command on the update path")
 	}
-	if m.effects.active == nil {
+	if m.effects.main.active == nil {
 		t.Fatal("no active effect, want the queued fork request")
 	}
-	if _, ok := m.effects.active.request.(forkRequest); !ok {
-		t.Fatalf("active effect = %T, want a forkRequest", m.effects.active.request)
+	if _, ok := m.effects.main.active.request.(forkRequest); !ok {
+		t.Fatalf("active effect = %T, want a forkRequest", m.effects.main.active.request)
 	}
 
 	m.applyCmd(t, cmd)
@@ -209,7 +209,7 @@ func TestForkRequestDeepCopiesMutableSourceFields(t *testing.T) {
 	m.enqueueEffect(forkRequest{source: source, name: "child"}, 0, false)
 	source.PendingInputs[0] = "changed"
 	source.RelaunchSnapshot["conversation"] = 2
-	request := m.effects.pending[0].request.(forkRequest)
+	request := m.effects.main.pending[0].request.(forkRequest)
 	if request.source.PendingInputs[0] != "first" || request.source.RelaunchSnapshot["conversation"] != 1 {
 		t.Fatal("request retained mutable source aliases")
 	}
@@ -240,7 +240,7 @@ func TestForkQuitDrainsAcceptedJobAndRefusesLate(t *testing.T) {
 	if _, ok := forkRow(m, "drained fork"); !ok {
 		t.Fatal("quit discarded the accepted fork")
 	}
-	if len(m.effects.pending) != 0 {
+	if len(m.effects.main.pending) != 0 {
 		t.Fatal("quit accepted new user work")
 	}
 	if _, ok := m.nextEffectCmd()().(tea.QuitMsg); !ok {
@@ -581,7 +581,7 @@ func TestForkRepeatedSubmitKeepsOneAcceptedJob(t *testing.T) {
 	m.fork.gen = 1
 	m.queueFork(forkRequest{source: store.Session{ID: "source"}, name: "child", gen: m.fork.gen})
 	m.queueFork(forkRequest{source: store.Session{ID: "source"}, name: "child", gen: m.fork.gen})
-	if len(m.effects.pending) != 1 {
+	if len(m.effects.main.pending) != 1 {
 		t.Fatal("repeat submit accepted a second fork")
 	}
 }

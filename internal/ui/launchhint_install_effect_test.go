@@ -28,18 +28,18 @@ func TestInstallStartDefersWorkOffUpdate(t *testing.T) {
 	t.Cleanup(func() { installHomeDir = original })
 
 	pressInLaunchHint(t, m, 'i')
-	if m.effects.active == nil {
+	if m.effects.main.active == nil {
 		t.Fatal("install press queued no effect")
 	}
-	if _, ok := m.effects.active.request.(installStartRequest); !ok {
-		t.Fatalf("active effect = %T, want installStartRequest", m.effects.active.request)
+	if _, ok := m.effects.main.active.request.(installStartRequest); !ok {
+		t.Fatalf("active effect = %T, want installStartRequest", m.effects.main.active.request)
 	}
 	if m.launchHint.install != nil || storeRows(t, m) != 0 {
 		t.Fatalf("install ran on Update: pending=%+v rows=%d", m.launchHint.install, storeRows(t, m))
 	}
 
 	completed := make(chan tea.Msg, 1)
-	go func() { completed <- m.effects.active.command() }()
+	go func() { completed <- m.effects.main.active.command() }()
 	<-started
 	updated := make(chan struct{})
 	go func() {
@@ -66,11 +66,11 @@ func TestInstallStartRefusesDuplicateWhileQueued(t *testing.T) {
 	installFixture(t, m, "sleep 30")
 
 	pressInLaunchHint(t, m, 'i')
-	first := m.effects.active
+	first := m.effects.main.active
 	pressInLaunchHint(t, m, 'i')
 
-	if m.effects.active != first || len(m.effects.pending) != 0 {
-		t.Fatalf("duplicate install changed the queue: active=%p first=%p pending=%d", m.effects.active, first, len(m.effects.pending))
+	if m.effects.main.active != first || len(m.effects.main.pending) != 0 {
+		t.Fatalf("duplicate install changed the queue: active=%p first=%p pending=%d", m.effects.main.active, first, len(m.effects.main.pending))
 	}
 	if !strings.Contains(m.errBar.text, "already") {
 		t.Fatalf("duplicate status = %q, want the in-progress install named", m.errBar.text)
@@ -165,7 +165,7 @@ func TestInstallStartCompletionDoesNotReplaceNewerDialog(t *testing.T) {
 	m := buildModel(t)
 	_, firstImage := installFixture(t, m, "sleep 30")
 	pressInLaunchHint(t, m, 'i')
-	first := m.effects.active.command
+	first := m.effects.main.active.command
 
 	secondImage := tempImage(t, "second.png")
 	m.launchHint.open(m, launchFix{
@@ -232,7 +232,7 @@ func TestInstallBlocksQuitUntilPendingRetrySettles(t *testing.T) {
 		if cmd != nil || m.effects.quitting {
 			t.Fatalf("quit was accepted during install start: cmd=%v quitting=%t", cmd, m.effects.quitting)
 		}
-		if m.effects.active == nil {
+		if m.effects.main.active == nil {
 			t.Fatal("refused quit discarded the accepted install start")
 		}
 		if !strings.Contains(m.errBar.text, "starting") || !strings.Contains(m.errBar.text, "wait") {
@@ -300,18 +300,18 @@ func TestInstallSettleDefersStatusAndBinaryChecks(t *testing.T) {
 	t.Cleanup(func() { installCheckInstalled = original })
 
 	m.settleInstall()
-	if m.effects.active != nil {
+	if m.effects.main.active != nil {
 		t.Fatal("settle started its worker instead of only queuing it")
 	}
-	if len(m.effects.pending) != 1 {
-		t.Fatalf("settle queue = %d, want one request", len(m.effects.pending))
+	if len(m.effects.main.pending) != 1 {
+		t.Fatalf("settle queue = %d, want one request", len(m.effects.main.pending))
 	}
 	if _, err := os.Stat(statusFile); err != nil {
 		t.Fatalf("Update-path settle touched the status file: %v", err)
 	}
 	m.nextEffectCmd()
 	completed := make(chan tea.Msg, 1)
-	go func() { completed <- m.effects.active.command() }()
+	go func() { completed <- m.effects.main.active.command() }()
 	<-started
 	updated := make(chan struct{})
 	go func() {
@@ -447,7 +447,7 @@ func TestInstallSettleRetriesTransientInstalledCheck(t *testing.T) {
 			t.Fatalf("transient installed check removed %s: %v", path, err)
 		}
 	}
-	if m.effects.active != nil || len(m.effects.pending) != 0 {
+	if m.effects.main.active != nil || len(m.effects.main.pending) != 0 {
 		t.Fatal("transient installed check queued the captured retry")
 	}
 	if !strings.Contains(m.errBar.text, "looking") || !strings.Contains(m.errBar.text, "PATH lookup") {
@@ -458,12 +458,12 @@ func TestInstallSettleRetriesTransientInstalledCheck(t *testing.T) {
 	if m.launchHint.install != nil {
 		t.Fatalf("successful recheck kept the tracker: %+v", m.launchHint.install)
 	}
-	if m.effects.active == nil {
+	if m.effects.main.active == nil {
 		t.Fatal("successful recheck did not activate the captured retry")
 	}
-	request, ok := m.effects.active.request.(spawnRequest)
+	request, ok := m.effects.main.active.request.(spawnRequest)
 	if !ok || request.name != retryName {
-		t.Fatalf("successful recheck active effect = %#v, want captured retry %q", m.effects.active.request, retryName)
+		t.Fatalf("successful recheck active effect = %#v, want captured retry %q", m.effects.main.active.request, retryName)
 	}
 	for _, path := range []string{statusFile, script} {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {

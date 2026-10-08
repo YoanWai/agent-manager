@@ -137,7 +137,7 @@ func TestReviewFocusReturnKeepsItsCapturedSession(t *testing.T) {
 	m.mode = modeDiff
 	m.reviewNav.ret = reviewReturn{kind: reviewReturnFocus, sessionID: a.ID}
 	m.closeDiff()
-	if m.effects.active == nil || m.effects.active.request.(focusRequest).sessionID != a.ID {
+	if m.effects.main.active == nil || m.effects.main.active.request.(focusRequest).sessionID != a.ID {
 		t.Fatal("review returned into a different session")
 	}
 }

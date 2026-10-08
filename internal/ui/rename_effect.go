@@ -282,7 +282,7 @@ func (m *Model) capturePlacementPrecondition(mutation uirail.Mutation) placement
 	// A newer move can be accepted while an earlier placement for the same
 	// row is still serialized ahead of it. Validate against that lane's
 	// promised destination, which is the state the worker will actually see.
-	jobs := append([]*effectJob{m.effects.active}, m.effects.pending...)
+	jobs := append([]*effectJob{m.effects.main.active}, m.effects.main.pending...)
 	for _, job := range jobs {
 		if job == nil {
 			continue

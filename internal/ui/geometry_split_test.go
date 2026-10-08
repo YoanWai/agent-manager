@@ -302,11 +302,11 @@ func TestSplitPersistenceIsDeferredAndOrdered(t *testing.T) {
 	if raw, err := st.Setting(splitRatioSetting); err != nil || raw != "" {
 		t.Fatalf("Update path wrote split ratio before the worker ran: %q, %v", raw, err)
 	}
-	if len(m.effects.pending) != 2 {
-		t.Fatalf("queued saves = %d, want 2", len(m.effects.pending))
+	if len(m.effects.main.pending) != 2 {
+		t.Fatalf("queued saves = %d, want 2", len(m.effects.main.pending))
 	}
-	first := m.effects.pending[0].request.(splitSaveRequest)
-	second := m.effects.pending[1].request.(splitSaveRequest)
+	first := m.effects.main.pending[0].request.(splitSaveRequest)
+	second := m.effects.main.pending[1].request.(splitSaveRequest)
 	if first.value != "0.4100" || second.value != "0.5200" {
 		t.Fatalf("captured order = %q then %q", first.value, second.value)
 	}

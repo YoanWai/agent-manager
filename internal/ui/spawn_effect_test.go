@@ -38,7 +38,7 @@ func TestSpawnWorkerDefersFilesystemReadAndCapturesDraft(t *testing.T) {
 		resolved: t.TempDir(), dirOK: true,
 	}
 	_, cmd := m.submitFormWithReader(reader)
-	if m.effects.active == nil {
+	if m.effects.main.active == nil {
 		t.Fatal("submit did not accept the spawn before directory validation")
 	}
 	select {
@@ -57,7 +57,7 @@ func TestSpawnWorkerDefersFilesystemReadAndCapturesDraft(t *testing.T) {
 	}
 	close(reader.release)
 	msg := <-completed
-	request := m.effects.active.request.(spawnRequest)
+	request := m.effects.main.active.request.(spawnRequest)
 	if request.draftName != "captured" || request.rawDir != "/captured/raw" {
 		t.Fatalf("worker did not capture the draft: %+v", request)
 	}
@@ -132,7 +132,7 @@ func TestGroupPreflightFailureKeepsFormAndDoesNotMutate(t *testing.T) {
 	_, cmd := m.submitGroupFormWithReader(reader)
 	close(reader.release)
 	m.applyTestMsg(t, cmd())
-	if m.mode != modeGroupForm || m.effects.active != nil || len(m.effects.pending) != 0 {
+	if m.mode != modeGroupForm || m.effects.main.active != nil || len(m.effects.main.pending) != 0 {
 		t.Fatal("failed group validation closed the form or left a mutation queued")
 	}
 	if got := m.errBar.text; got != "default path does not exist: /missing/docs" {
@@ -149,7 +149,7 @@ func TestAcceptedGroupDrainsBlockedValidationOnQuit(t *testing.T) {
 		resolved: t.TempDir(), dirOK: true,
 	}
 	_, cmd := m.submitGroupFormWithReader(reader)
-	if m.effects.active == nil {
+	if m.effects.main.active == nil {
 		t.Fatal("group submission was not accepted before validation")
 	}
 	if _, quit := m.requestQuit(); quit != nil {
@@ -174,7 +174,7 @@ func submitFormSpawn(t *testing.T, m *Model, name, dir string) tea.Cmd {
 	m.form.dir.SetValue(dir)
 	m.form.toolIndex = 0
 	_, command := m.submitForm()
-	if m.effects.active == nil {
+	if m.effects.main.active == nil {
 		t.Fatal("submit did not queue the spawn worker")
 	}
 	return command
@@ -397,7 +397,7 @@ func TestSpawnUpdateReturnsWhileWriterIsQueued(t *testing.T) {
 func TestSpawnDuplicateCompletionIsIdempotent(t *testing.T) {
 	m := buildModel(t)
 	submitFormSpawn(t, m, "first", t.TempDir())
-	msg := m.effects.active.command()
+	msg := m.effects.main.active.command()
 	m.applyTestMsg(t, msg)
 	fence := m.effects.latestObservation
 	rows := storeRows(t, m)
@@ -433,7 +433,7 @@ func TestSpawnDrainsAcceptedOnQuitAndRefusesLate(t *testing.T) {
 	m.form.toolIndex = 0
 	_, late := m.submitForm()
 	m.applyTestMsg(t, late())
-	if len(m.effects.pending) != 0 {
+	if len(m.effects.main.pending) != 0 {
 		t.Fatal("quit accepted a new spawn")
 	}
 }
@@ -475,7 +475,7 @@ func TestGroupFormCompletionDoesNotReplaceNewerDialog(t *testing.T) {
 	m.groupForm.name.SetValue("first")
 	m.groupForm.path.SetValue(t.TempDir())
 	_, cmd := m.submitGroupForm()
-	if m.effects.active == nil {
+	if m.effects.main.active == nil {
 		t.Fatal("accepted group submission did not queue the mutation")
 	}
 	// The user reopens the group form before the first one completes: a
@@ -569,7 +569,7 @@ func TestQuickSpawnCompletionPreservesEditedDraft(t *testing.T) {
 	m.quick.input.SetValue("first task")
 	request := spawnRequest{kind: spawnQuick, composerGen: m.quick.gen}
 	m.dispatchSpawn(request)
-	request = m.effects.pending[0].request.(spawnRequest)
+	request = m.effects.main.pending[0].request.(spawnRequest)
 	m.quick.input.SetValue("next task")
 	m.applySpawnEffect(request, spawnEffectResult{session: store.Session{ID: "child", Name: "child"}}, nil)
 	if m.quick.input.Value() != "next task" {
@@ -584,8 +584,8 @@ func TestSpawnRepeatedSubmitKeepsOneAcceptedJob(t *testing.T) {
 	if repeated != nil {
 		m.applyTestMsg(t, repeated())
 	}
-	jobs := len(m.effects.pending)
-	if m.effects.active != nil {
+	jobs := len(m.effects.main.pending)
+	if m.effects.main.active != nil {
 		jobs++
 	}
 	if jobs != 1 {
@@ -600,7 +600,7 @@ func TestSpawnRetryRetainsManagerAndConversationIdentity(t *testing.T) {
 	tool.SessionIDFlag = "--session-id"
 	m.services.cfg.Tools["claude"] = tool
 	command := submitFormSpawn(t, m, "agent", t.TempDir())
-	first := m.effects.active.request.(spawnRequest)
+	first := m.effects.main.active.request.(spawnRequest)
 	msg := command().(effectCompletedMsg)
 	m.applyTestMsg(t, msg)
 	retry, ok := m.launchHint.fix.effectRetry.(spawnRequest)
@@ -620,7 +620,7 @@ func TestGroupCompletionPreservesEditedForm(t *testing.T) {
 	m.openGroupForm()
 	m.groupForm.name.SetValue("first")
 	m.dispatchGroup(groupRequest{path: "first", gen: m.groupForm.gen})
-	request := m.effects.pending[0].request.(groupRequest)
+	request := m.effects.main.pending[0].request.(groupRequest)
 	m.groupForm.name.SetValue("next")
 	m.applyGroupEffect(request, groupEffectResult{path: "first"}, nil)
 	if m.mode != modeGroupForm || m.groupForm.name.Value() != "next" {

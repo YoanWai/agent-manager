@@ -26,7 +26,7 @@ func TestPreparedAttachDoesNotReplaceNewerHelp(t *testing.T) {
 			} else {
 				command = m.attachCmd(sess.ID)
 			}
-			request := m.effects.active.request.(attachRequest)
+			request := m.effects.main.active.request.(attachRequest)
 			result := command().(effectCompletedMsg)
 			if result.err != nil {
 				t.Fatal(result.err)

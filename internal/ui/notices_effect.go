@@ -25,10 +25,10 @@ func (m *Model) noticeDismissQueued(id string) bool {
 		request, ok := job.request.(noticeDismissRequest)
 		return ok && request.id == id
 	}
-	if queued(m.effects.active) {
+	if queued(m.effects.main.active) {
 		return true
 	}
-	for _, job := range m.effects.pending {
+	for _, job := range m.effects.main.pending {
 		if queued(job) {
 			return true
 		}

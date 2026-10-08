@@ -39,7 +39,7 @@ type quickSendResult struct {
 func (quickSendResult) effectResult() {}
 
 func (m *Model) dispatchQuickSend(request quickSendRequest) bool {
-	jobs := append([]*effectJob{m.effects.active}, m.effects.pending...)
+	jobs := append([]*effectJob{m.effects.main.active}, m.effects.main.pending...)
 	for _, job := range jobs {
 		if job == nil {
 			continue

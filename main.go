@@ -246,11 +246,16 @@ func run() (resultErr error) {
 	ui.SyncTerminalColors()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := model.StartPoller(ctx, program.Send)
-	stopRuntime := func() { model.StopEffects(); cancel(); <-done }
+	var stopOnce sync.Once
+	stopRuntime := func() { stopOnce.Do(func() { model.StopEffects(); cancel(); <-done }) }
 	defer stopRuntime()
 	final, runErr := program.Run()
 	catalog.StopAll()
 	ui.ResetTerminalColors()
+	stopRuntime()
+	if abandoned := model.AbandonedEffects(); len(abandoned) > 0 && runErr == nil {
+		runErr = fmt.Errorf("quit before these finished, so check their result: %s", strings.Join(abandoned, "; "))
+	}
 	if runErr == nil {
 		if finished, ok := final.(*ui.Model); ok && finished.RestartPath() != "" {
 			// A self-update swapped the binary on disk; exec replaces this

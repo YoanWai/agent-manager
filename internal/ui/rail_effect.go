@@ -46,14 +46,14 @@ func (m *Model) queueRail(mutations []uirail.Mutation, chain uint64, first bool)
 			if mutation.Kind != uirail.SaveCollapsed {
 				continue
 			}
-			pending := m.effects.pending[:0]
-			for _, job := range m.effects.pending {
+			pending := m.effects.main.pending[:0]
+			for _, job := range m.effects.main.pending {
 				if request, ok := job.request.(railRequest); ok && request.mutation.Kind == uirail.SaveCollapsed {
 					continue
 				}
 				pending = append(pending, job)
 			}
-			m.effects.pending = pending
+			m.effects.main.pending = pending
 			break
 		}
 	}
@@ -170,13 +170,13 @@ func (m *Model) applyRailEffect(job *effectJob, result railEffectResult, err err
 			}
 		}
 	} else {
-		pending := m.effects.pending[:0]
-		for _, each := range m.effects.pending {
+		pending := m.effects.main.pending[:0]
+		for _, each := range m.effects.main.pending {
 			if each.chain != job.chain {
 				pending = append(pending, each)
 			}
 		}
-		m.effects.pending = pending
+		m.effects.main.pending = pending
 	}
 	follow := m.rail.ApplyMutation(mutation, err)
 	m.queueRail(follow.Mutations, job.chain, true)
@@ -190,9 +190,9 @@ func (m *Model) applyRailEffect(job *effectJob, result railEffectResult, err err
 }
 
 func (m *Model) railMutationPending() bool {
-	jobs := append([]*effectJob(nil), m.effects.pending...)
-	if m.effects.active != nil {
-		jobs = append(jobs, m.effects.active)
+	jobs := append([]*effectJob(nil), m.effects.main.pending...)
+	if m.effects.main.active != nil {
+		jobs = append(jobs, m.effects.main.active)
 	}
 	for _, job := range jobs {
 		if request, ok := job.request.(railRequest); ok && request.mutation.Kind != uirail.SaveCollapsed {

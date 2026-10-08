@@ -13,7 +13,7 @@ func TestEffectLifetimeWaitsForRunningWork(t *testing.T) {
 	}
 	started := make(chan struct{})
 	stopped := make(chan struct{})
-	go func() { close(started); lifetime.closeAndWait(); close(stopped) }()
+	go func() { close(started); lifetime.closeAndWait(time.Minute); close(stopped) }()
 	<-started
 	deadline := time.Now().Add(time.Second)
 	for lifetime.begin() {

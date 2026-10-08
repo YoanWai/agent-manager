@@ -22,9 +22,9 @@ func (m *Model) queueGeometry(request geometryRequest) {
 	// Ignore an already accepted identical target, while allowing a newer size.
 	desired := map[string][2]int{}
 	published := [2]int{}
-	jobs := append([]*effectJob(nil), m.effects.pending...)
-	if m.effects.active != nil {
-		jobs = append([]*effectJob{m.effects.active}, jobs...)
+	jobs := append([]*effectJob(nil), m.effects.main.pending...)
+	if m.effects.main.active != nil {
+		jobs = append([]*effectJob{m.effects.main.active}, jobs...)
 	}
 	for _, job := range jobs {
 		if existing, ok := job.request.(geometryRequest); ok {
@@ -50,8 +50,8 @@ func (m *Model) queueGeometry(request geometryRequest) {
 		return
 	}
 	// Coalesce only the adjacent geometry job, never across an accepted mutation.
-	if n := len(m.effects.pending); n > 0 {
-		if previous, ok := m.effects.pending[n-1].request.(geometryRequest); ok {
+	if n := len(m.effects.main.pending); n > 0 {
+		if previous, ok := m.effects.main.pending[n-1].request.(geometryRequest); ok {
 			byID := map[string]int{}
 			for i, target := range previous.targets {
 				byID[target.id] = i
@@ -67,7 +67,7 @@ func (m *Model) queueGeometry(request geometryRequest) {
 				previous.publish = request.publish
 			}
 			request = previous
-			m.effects.pending = m.effects.pending[:n-1]
+			m.effects.main.pending = m.effects.main.pending[:n-1]
 		}
 	}
 	request.targets = append([]paneResize(nil), request.targets...)

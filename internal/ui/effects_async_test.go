@@ -74,7 +74,7 @@ func TestEffectQueueDrainsAcceptedWritesOnQuit(t *testing.T) {
 		t.Fatalf("FIFO final write=%s", raw)
 	}
 	m.queueRail([]uirail.Mutation{{Kind: uirail.SaveCollapsed, Collapsed: []string{"late"}}}, 0, false)
-	if len(m.effects.pending) != 0 {
+	if len(m.effects.main.pending) != 0 {
 		t.Fatal("quit accepted a new user write")
 	}
 	if _, ok := m.nextEffectCmd()().(tea.QuitMsg); !ok {
@@ -172,7 +172,7 @@ func TestLifecycleRequestCopiesNestedSessionValues(t *testing.T) {
 	m.enqueueEffect(lifecycleRequest{target: confirmTarget{sessions: sessions}}, 0, false)
 	sessions[0].PendingInputs[0] = "changed"
 	sessions[0].RelaunchSnapshot["conversation"] = 2
-	request := m.effects.pending[0].request.(lifecycleRequest)
+	request := m.effects.main.pending[0].request.(lifecycleRequest)
 	if request.target.sessions[0].PendingInputs[0] != "first" || request.target.sessions[0].RelaunchSnapshot["conversation"] != 1 {
 		t.Fatal("request retained mutable session aliases")
 	}
