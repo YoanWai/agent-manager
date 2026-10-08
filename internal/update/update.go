@@ -166,7 +166,7 @@ func Cached(configDir, current string) Result {
 
 // loadCatalog reports parsedHere false for a catalog it must neither trust as fresh nor revalidate by ETag.
 func loadCatalog(configDir string) (cached cache, parsedHere bool) {
-	if stored, ok := readCache(filepath.Join(configDir, cacheFile)); ok {
+	if stored, ok := atomicfile.ReadJSON[cache](filepath.Join(configDir, cacheFile)); ok {
 		return stored, stored.Parser == catalogParser
 	}
 	return legacyCatalog(filepath.Join(configDir, legacyCacheFile)), false
@@ -236,15 +236,15 @@ func check(ctx context.Context, configDir, current string, force bool) (Result, 
 	}
 	if notModified {
 		cached.CheckedAt = time.Now()
-		writeCache(cachePath, cached)
+		_ = atomicfile.WriteJSON(cachePath, cached, 0o644)
 		return resultFor(currentParts, cached.Releases), nil
 	}
-	writeCache(cachePath, cache{
+	_ = atomicfile.WriteJSON(cachePath, cache{
 		CheckedAt: time.Now(),
 		Parser:    catalogParser,
 		ETag:      nextETag,
 		Releases:  releases,
-	})
+	}, 0o644)
 	return resultFor(currentParts, releases), nil
 }
 
@@ -587,26 +587,6 @@ func Newer(version, base string) bool {
 	versionParts, versionOK := parseVersion(version)
 	baseParts, baseOK := parseVersion(base)
 	return versionOK && baseOK && greater(versionParts, baseParts)
-}
-
-func readCache(path string) (cache, bool) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return cache{}, false
-	}
-	var c cache
-	if err := json.Unmarshal(raw, &c); err != nil {
-		return cache{}, false
-	}
-	return c, true
-}
-
-func writeCache(path string, c cache) {
-	raw, err := json.Marshal(c)
-	if err != nil {
-		return
-	}
-	_ = atomicfile.WriteFile(path, raw, 0o644)
 }
 
 // parseVersion turns "v0.8.2" or "0.8.2" into its three numeric parts.

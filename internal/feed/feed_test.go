@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/atomicfile"
 	"github.com/YoanWai/agent-manager/internal/update"
 )
 
@@ -154,11 +155,11 @@ func TestRefreshBypassesCache(t *testing.T) {
 
 func TestFetchRefetchesFutureDatedCache(t *testing.T) {
 	dir := t.TempDir()
-	writeCache(filepath.Join(dir, cacheFile), cache{
+	_ = atomicfile.WriteJSON(filepath.Join(dir, cacheFile), cache{
 		CheckedAt: time.Now().Add(time.Hour),
 		Parser:    feedParser,
 		Messages:  []rawMessage{{ID: "stale", Banner: "x", Title: "x"}},
-	})
+	}, 0o644)
 	serve(t, `[{"id":"fresh","banner":"x","title":"x"}]`)
 
 	messages := fetch(t, dir, "v0.14.2")
@@ -169,12 +170,12 @@ func TestFetchRefetchesFutureDatedCache(t *testing.T) {
 
 func TestRefreshUsesConditionalRequest(t *testing.T) {
 	dir := t.TempDir()
-	writeCache(filepath.Join(dir, cacheFile), cache{
+	_ = atomicfile.WriteJSON(filepath.Join(dir, cacheFile), cache{
 		CheckedAt: time.Now().Add(-checkInterval),
 		Parser:    feedParser,
 		ETag:      `"feed-1"`,
 		Messages:  []rawMessage{{ID: "one", Banner: "x", Title: "x"}},
-	})
+	}, 0o644)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("If-None-Match"); got != `"feed-1"` {
 			t.Errorf("If-None-Match = %q", got)
@@ -190,7 +191,7 @@ func TestRefreshUsesConditionalRequest(t *testing.T) {
 	if err != nil || len(messages) != 1 || messages[0].ID != "feed-one" {
 		t.Fatalf("messages=%+v err=%v", messages, err)
 	}
-	if written, ok := readCache(filepath.Join(dir, cacheFile)); !ok || written.Parser != feedParser || written.ETag != `"feed-1"` {
+	if written, ok := atomicfile.ReadJSON[cache](filepath.Join(dir, cacheFile)); !ok || written.Parser != feedParser || written.ETag != `"feed-1"` {
 		t.Fatalf("a not-modified answer must keep the parser stamp: %+v", written)
 	}
 }
@@ -388,7 +389,7 @@ func TestFeedIsCachedInItsOwnFile(t *testing.T) {
 	serve(t, `[{"id":"one","banner":"x","title":"x"}]`)
 	dir := t.TempDir()
 	fetch(t, dir, "v0.40.0")
-	written, ok := readCache(filepath.Join(dir, "feed-messages.json"))
+	written, ok := atomicfile.ReadJSON[cache](filepath.Join(dir, "feed-messages.json"))
 	if !ok || written.Parser != feedParser || len(written.Messages) != 1 {
 		t.Fatalf("feed not cached with its parser: %+v", written)
 	}
@@ -399,12 +400,12 @@ func TestFeedIsCachedInItsOwnFile(t *testing.T) {
 
 func TestFeedFromAnotherParserIsRefetchedWithoutItsETag(t *testing.T) {
 	dir := t.TempDir()
-	writeCache(filepath.Join(dir, cacheFile), cache{
+	_ = atomicfile.WriteJSON(filepath.Join(dir, cacheFile), cache{
 		CheckedAt: time.Now(),
 		Parser:    feedParser + 1,
 		ETag:      `"other-parser"`,
 		Messages:  []rawMessage{{ID: "one", Banner: "x", Title: "stale"}},
-	})
+	}, 0o644)
 	var hits atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits.Add(1)
@@ -452,11 +453,11 @@ func TestLegacyFeedSeedsUntilTheFirstFetch(t *testing.T) {
 
 func TestFeedFileWinsOverTheLegacyFile(t *testing.T) {
 	dir := t.TempDir()
-	writeCache(filepath.Join(dir, cacheFile), cache{
+	_ = atomicfile.WriteJSON(filepath.Join(dir, cacheFile), cache{
 		CheckedAt: time.Now(),
 		Parser:    feedParser,
 		Messages:  []rawMessage{{ID: "one", Banner: "x", Title: "From the new file"}},
-	})
+	}, 0o644)
 	if err := os.WriteFile(filepath.Join(dir, legacyCacheFile), []byte(legacyFeedJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -499,7 +500,7 @@ func TestLegacyFeedSeedIsFetchedAtOnceWithoutItsETag(t *testing.T) {
 	if hits.Load() != 1 || len(messages) != 1 || messages[0].Title != "Fetched" {
 		t.Fatalf("hits=%d messages=%+v, want one fetch at once: a seed is never fresh", hits.Load(), messages)
 	}
-	written, ok := readCache(filepath.Join(dir, cacheFile))
+	written, ok := atomicfile.ReadJSON[cache](filepath.Join(dir, cacheFile))
 	if !ok || written.Parser != feedParser || len(written.Messages) != 1 {
 		t.Fatalf("feed not cached with its parser: %+v", written)
 	}

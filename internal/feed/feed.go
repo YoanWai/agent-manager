@@ -12,7 +12,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -106,10 +105,10 @@ func Refresh(ctx context.Context, configDir, version string) ([]Message, error) 
 
 // loadCache reports parsedHere false for a feed it must neither trust as fresh nor revalidate by ETag.
 func loadCache(configDir string) (cached cache, found, parsedHere bool) {
-	if stored, ok := readCache(filepath.Join(configDir, cacheFile)); ok {
+	if stored, ok := atomicfile.ReadJSON[cache](filepath.Join(configDir, cacheFile)); ok {
 		return stored, true, stored.Parser == feedParser
 	}
-	cached, found = readCache(filepath.Join(configDir, legacyCacheFile))
+	cached, found = atomicfile.ReadJSON[cache](filepath.Join(configDir, legacyCacheFile))
 	return cached, found, false
 }
 
@@ -139,10 +138,10 @@ func fetchMessages(ctx context.Context, configDir, version string, force bool) (
 	}
 	if notModified {
 		cached.CheckedAt = now
-		writeCache(cachePath, cached)
+		_ = atomicfile.WriteJSON(cachePath, cached, 0o644)
 		return sanitize(cached.Messages, version, now), nil
 	}
-	writeCache(cachePath, cache{CheckedAt: now, Parser: feedParser, ETag: nextETag, Messages: raw})
+	_ = atomicfile.WriteJSON(cachePath, cache{CheckedAt: now, Parser: feedParser, ETag: nextETag, Messages: raw}, 0o644)
 	return sanitize(raw, version, now), nil
 }
 
@@ -259,24 +258,4 @@ func cleanText(s string, maxLen int) string {
 		out = string(runes[:maxLen])
 	}
 	return out
-}
-
-func readCache(path string) (cache, bool) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return cache{}, false
-	}
-	var c cache
-	if err := json.Unmarshal(raw, &c); err != nil {
-		return cache{}, false
-	}
-	return c, true
-}
-
-func writeCache(path string, c cache) {
-	raw, err := json.Marshal(c)
-	if err != nil {
-		return
-	}
-	_ = atomicfile.WriteFile(path, raw, 0o644)
 }
