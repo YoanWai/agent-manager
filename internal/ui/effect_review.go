@@ -213,7 +213,7 @@ func (m *Model) applyReviewEffect(job *effectJob, result reviewEffectResult, err
 		return m.applyReviewBase(result.base)
 	}
 	if err != nil {
-		m.errBar.text = err.Error()
+		m.reportErr(err.Error())
 	}
 	return nil
 }

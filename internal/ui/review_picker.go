@@ -55,7 +55,7 @@ func (m *Model) openRepoPick() {
 // row, so the user can retarget review to another worktree.
 func (m *Model) openBranchPick() tea.Cmd {
 	if m.services.gitDrv == nil {
-		m.errBar.text = "no repo under review"
+		m.reportErr("no repo under review")
 		return nil
 	}
 	return m.openBranchPickWithReader(systemReviewPickerReader{git: m.services.gitDrv, store: m.services.store})
@@ -64,7 +64,7 @@ func (m *Model) openBranchPick() tea.Cmd {
 func (m *Model) openBranchPickWithReader(reader reviewPickerReader) tea.Cmd {
 	state := m.review.Snapshot()
 	if reader == nil || state.RepoSelected == "" {
-		m.errBar.text = "no repo under review"
+		m.reportErr("no repo under review")
 		return nil
 	}
 	return reviewPickerReadCmd(reader, reviewPickerLoadRequest{
@@ -80,7 +80,7 @@ func (m *Model) openBranchPickWithReader(reader reviewPickerReader) tea.Cmd {
 // override the base the branch scope diffs against, cursor on the stored base.
 func (m *Model) openBasePick() tea.Cmd {
 	if m.services.gitDrv == nil || m.services.store == nil {
-		m.errBar.text = "no repo under review"
+		m.reportErr("no repo under review")
 		return nil
 	}
 	return m.openBasePickWithReader(systemReviewPickerReader{git: m.services.gitDrv, store: m.services.store})
@@ -88,7 +88,7 @@ func (m *Model) openBasePick() tea.Cmd {
 
 func (m *Model) openBasePickWithReader(reader reviewPickerReader) tea.Cmd {
 	if m.reviewBaseSavePending() {
-		m.errBar.text = "diff base is still saving"
+		m.reportErr("diff base is still saving")
 		return nil
 	}
 	// Key off the raw selection, not the resolved toplevel: the toplevel is
@@ -96,7 +96,7 @@ func (m *Model) openBasePickWithReader(reader reviewPickerReader) tea.Cmd {
 	// that clears the bad base unreachable exactly when it is needed.
 	state := m.review.Snapshot()
 	if reader == nil || state.RepoSelected == "" {
-		m.errBar.text = "no repo under review"
+		m.reportErr("no repo under review")
 		return nil
 	}
 	return reviewPickerReadCmd(reader, reviewPickerLoadRequest{
@@ -113,7 +113,7 @@ func (m *Model) handleReviewPickerLoaded(msg reviewPickerLoadedMsg) tea.Cmd {
 		return nil
 	}
 	if msg.err != nil {
-		m.errBar.text = msg.err.Error()
+		m.reportErr(msg.err.Error())
 		return nil
 	}
 	switch msg.request.kind {
@@ -134,7 +134,7 @@ func (m *Model) openPick(rows []pickRow, title string, kind pickKind, current st
 		}
 	}
 	m.mode = modeRepoPick
-	m.errBar.text = ""
+	m.clearErr()
 }
 
 func resolveSymlinksOrSelf(path string) string {
@@ -186,7 +186,7 @@ func (m *Model) handleRepoPickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if !m.reviewPickerSourceCurrent(m.reviewNav.picker.source) {
 			m.mode = modeDiff
-			m.errBar.text = "review changed; reopen the picker"
+			m.reportErr("review changed; reopen the picker")
 			return m, nil
 		}
 		m.mode = modeDiff
@@ -214,7 +214,7 @@ func (m *Model) moveRepoPickCursor(delta, count int) {
 func (m *Model) selectRepo(root string) tea.Cmd {
 	sess, ok := m.diffSession()
 	if !ok {
-		m.errBar.text = "session is gone"
+		m.reportErr("session is gone")
 		return nil
 	}
 	if m.ledger.pickedRepos == nil {
@@ -233,20 +233,20 @@ func (m *Model) selectRepo(root string) tea.Cmd {
 // the review actually shows.
 func (m *Model) selectBase(ref string) tea.Cmd {
 	if m.reviewBaseSavePending() {
-		m.errBar.text = "diff base is still saving"
+		m.reportErr("diff base is still saving")
 		return nil
 	}
 	if !m.reviewPickerSourceCurrent(m.reviewNav.picker.source) {
-		m.errBar.text = "review changed; reopen the picker"
+		m.reportErr("review changed; reopen the picker")
 		return nil
 	}
 	sess, ok := m.diffSession()
 	if !ok || sess.ID != m.reviewNav.picker.source.targetID {
-		m.errBar.text = "session is gone"
+		m.reportErr("session is gone")
 		return nil
 	}
 	if m.reviewNav.picker.storeRoot == "" {
-		m.errBar.text = "review repository is gone"
+		m.reportErr("review repository is gone")
 		return nil
 	}
 	m.enqueueEffect(reviewEffectRequest{
@@ -284,7 +284,7 @@ func (m *Model) applyReviewBase(result reviewBaseResult) tea.Cmd {
 	source := reviewPickerSource{generation: result.generation, targetID: result.targetID, repoRoot: result.sourceRepo}
 	if result.err != nil {
 		if !m.effects.quitting {
-			m.errBar.text = result.err.Error()
+			m.reportErr(result.err.Error())
 		}
 		return nil
 	}

@@ -33,16 +33,16 @@ func (m *Model) openFork() {
 		return
 	}
 	if entry.isGroup {
-		m.errBar.text = "select a session to fork"
+		m.reportErr("select a session to fork")
 		return
 	}
 	tool, ok := m.services.cfg.Tools[entry.sess.Tool]
 	if !ok {
-		m.errBar.text = fmt.Sprintf("tool %s is no longer configured", entry.sess.Tool)
+		m.reportErr(fmt.Sprintf("tool %s is no longer configured", entry.sess.Tool))
 		return
 	}
 	if err := validateForkSource(entry.sess.Tool, tool, entry.sess); err != nil {
-		m.errBar.text = err.Error()
+		m.reportErr(err.Error())
 		return
 	}
 	name := textField("fork name", 60)
@@ -50,7 +50,7 @@ func (m *Model) openFork() {
 	name.CursorEnd()
 	name.Focus()
 	m.fork = forkState{source: entry.sess, name: name, gen: m.fork.gen + 1}
-	m.errBar.text = ""
+	m.clearErr()
 	m.mode = modeFork
 }
 
@@ -58,7 +58,7 @@ func (m *Model) handleForkKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.mode = modeList
-		m.errBar.text = ""
+		m.clearErr()
 		return m, nil
 	case "enter":
 		return m.submitFork()
@@ -71,7 +71,7 @@ func (m *Model) handleForkKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) submitFork() (tea.Model, tea.Cmd) {
 	name := strings.ReplaceAll(strings.TrimSpace(m.fork.name.Value()), "/", "-")
 	if name == "" {
-		m.errBar.text = "name cannot be empty"
+		m.reportErr("name cannot be empty")
 		return m, nil
 	}
 	m.queueFork(m.fork.source, name)

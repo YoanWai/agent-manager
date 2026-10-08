@@ -28,7 +28,7 @@ func (m *Model) openRename() {
 		return
 	}
 	if entry.isRoot() {
-		m.errBar.text = "root is the top level, not a group to rename"
+		m.reportErr("root is the top level, not a group to rename")
 		return
 	}
 	input := textinput.New()
@@ -85,7 +85,7 @@ func (m *Model) openRename() {
 		}
 	}
 	m.mode = modeRename
-	m.errBar.text = ""
+	m.clearErr()
 }
 
 func (m *Model) renameFocus(delta int) {
@@ -214,7 +214,7 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 	name := strings.TrimSpace(m.rename.input.Value())
 	name = strings.ReplaceAll(name, "/", "-")
 	if name == "" {
-		m.errBar.text = "name cannot be empty"
+		m.reportErr("name cannot be empty")
 		return m, nil
 	}
 	if m.rename.isGroup {

@@ -181,7 +181,7 @@ func (m *Model) nextEffectCmd() tea.Cmd {
 
 func (m *Model) requestQuit() (tea.Model, tea.Cmd) {
 	if m.launchHint.install != nil {
-		m.errBar.text = "install may still be running in " + m.launchHint.install.name + "; finish it, kill its terminal with the session controls, or attach and interrupt it before quitting"
+		m.reportErr("install may still be running in " + m.launchHint.install.name + "; finish it, kill its terminal with the session controls, or attach and interrupt it before quitting")
 		return m, nil
 	}
 	starting := func(job *effectJob) (installStartRequest, bool) {
@@ -192,12 +192,12 @@ func (m *Model) requestQuit() (tea.Model, tea.Cmd) {
 		return request, ok
 	}
 	if request, ok := starting(m.effects.active); ok {
-		m.errBar.text = "install for " + request.binary + " is still starting; wait for its installer shell before quitting"
+		m.reportErr("install for " + request.binary + " is still starting; wait for its installer shell before quitting")
 		return m, nil
 	}
 	for _, job := range m.effects.pending {
 		if request, ok := starting(job); ok {
-			m.errBar.text = "install for " + request.binary + " is still queued; wait for its installer shell before quitting"
+			m.reportErr("install for " + request.binary + " is still queued; wait for its installer shell before quitting")
 			return m, nil
 		}
 	}
@@ -272,7 +272,7 @@ func (m *Model) handleEffectCompleted(msg effectCompletedMsg) (tea.Model, tea.Cm
 		command = m.applyAttachEffect(job.request.(attachRequest), result, msg.err)
 	default:
 		if msg.err != nil {
-			m.errBar.text = msg.err.Error()
+			m.reportErr(msg.err.Error())
 		}
 	}
 	if m.poller != nil {

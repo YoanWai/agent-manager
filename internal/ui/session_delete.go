@@ -52,7 +52,7 @@ func (m *Model) prepareDelete() {
 		return
 	}
 	if entry.isRoot() {
-		m.errBar.text = "root is the top level; delete the sessions under it instead"
+		m.reportErr("root is the top level; delete the sessions under it instead")
 		return
 	}
 	if !entry.isGroup {

@@ -13,7 +13,7 @@ func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	result := m.review.Key(msg, ctx)
 	if result.Error != "" {
-		m.errBar.text = result.Error
+		m.reportErr(result.Error)
 	}
 	var navigation tea.Cmd
 	switch result.Navigation {

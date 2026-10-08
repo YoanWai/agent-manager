@@ -50,7 +50,7 @@ func (m *Model) queueFork(source store.Session, name string) {
 			continue
 		}
 		if pending, ok := job.request.(forkRequest); ok && pending.gen == m.fork.gen {
-			m.errBar.text = "this fork is already in progress"
+			m.reportErr("this fork is already in progress")
 			return
 		}
 	}
@@ -189,13 +189,13 @@ func (m *Model) applyForkEffect(request forkRequest, result forkEffectResult, er
 	if err == nil {
 		if stillOpen {
 			m.mode = modeList
-			m.errBar.text = ""
+			m.clearErr()
 			m.focusSession(launched.ID)
 		}
 		return m.refreshCmd()
 	}
 	if !stillOpen {
-		m.errBar.text = err.Error()
+		m.reportErr(err.Error())
 		return nil
 	}
 	request.childID = result.childID

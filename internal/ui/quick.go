@@ -17,7 +17,7 @@ func (m *Model) openQuickMode() tea.Cmd {
 func (m *Model) openQuickModeWithReader(reader settingsValueReader) tea.Cmd {
 	names, index := m.cachedSpawnToolSelection()
 	if len(names) == 0 {
-		m.errBar.text = "no CLIs enabled: open settings (s), then CLIs, to turn some on"
+		m.reportErr("no CLIs enabled: open settings (s), then CLIs, to turn some on")
 		return nil
 	}
 	input := textarea.New()
@@ -33,7 +33,7 @@ func (m *Model) openQuickModeWithReader(reader settingsValueReader) tea.Cmd {
 	input.FocusedStyle.CursorLine = lipgloss.NewStyle()
 	holdOpen(&input)
 	input.Focus()
-	m.errBar.text = ""
+	m.clearErr()
 	m.forgetWorktreeCapability()
 	m.quick = quickState{
 		active:         true,
@@ -129,16 +129,16 @@ func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) submitQuick() (tea.Model, tea.Cmd) {
 	entry, ok := m.selectedRow()
 	if !ok {
-		m.errBar.text = "nothing selected"
+		m.reportErr("nothing selected")
 		return m, nil
 	}
 	if m.quick.pasting() {
-		m.errBar.text = "still reading the pasted image - try again in a moment"
+		m.reportErr("still reading the pasted image - try again in a moment")
 		return m, nil
 	}
 	text := m.quick.message()
 	if text == "" {
-		m.errBar.text = "prompt cannot be empty"
+		m.reportErr("prompt cannot be empty")
 		return m, nil
 	}
 	if entry.isGroup {
@@ -155,7 +155,7 @@ func (m *Model) submitQuick() (tea.Model, tea.Cmd) {
 	if !m.dispatchQuickSend(request) {
 		return m, nil
 	}
-	m.errBar.text = ""
+	m.clearErr()
 	return m, m.nextEffectCmd()
 }
 
@@ -165,17 +165,17 @@ func (m *Model) quickSpawn(group, prompt string) (tea.Model, tea.Cmd) {
 
 func (m *Model) quickSpawnWithReader(group, prompt string, reader directoryPreflight) (tea.Model, tea.Cmd) {
 	if strings.HasPrefix(prompt, "-") {
-		m.errBar.text = `prompt cannot start with "-": the tool would read it as a flag`
+		m.reportErr(`prompt cannot start with "-": the tool would read it as a flag`)
 		return m, nil
 	}
 	toolName := m.quickTool()
 	if toolName == "" {
-		m.errBar.text = "no tools configured"
+		m.reportErr("no tools configured")
 		return m, nil
 	}
 	picked, err := m.launchChoice(toolName, &m.quick.choice, "")
 	if err != nil {
-		m.errBar.text = err.Error()
+		m.reportErr(err.Error())
 		return m, nil
 	}
 	name := toolName + "-" + newID()[:4]
@@ -203,7 +203,7 @@ func (m *Model) quickSpawnWithReader(group, prompt string, reader directoryPrefl
 		wantWorktree: pickWorktree,
 		dirReader:    reader,
 	}
-	m.errBar.text = ""
+	m.clearErr()
 	m.dispatchSpawn(request)
 	return m, m.nextEffectCmd()
 }
@@ -227,10 +227,10 @@ func (m *Model) toggleQuickWorktree() tea.Cmd {
 		return m.quickWorktreeProbeCmd(true)
 	}
 	if !capable {
-		m.errBar.text = "worktree sessions need a git repository: " + dir + " is not one"
+		m.reportErr("worktree sessions need a git repository: " + dir + " is not one")
 		return nil
 	}
-	m.errBar.text = ""
+	m.clearErr()
 	m.quick.worktree = !m.quick.worktree
 	m.quick.worktreeTouched = true
 	m.quick.defaultsTouched = true
@@ -317,7 +317,7 @@ func (m *Model) requireQuickSpawn() bool {
 	if m.quickSpawning() {
 		return true
 	}
-	m.errBar.text = quickChoiceHint
+	m.reportErr(quickChoiceHint)
 	return false
 }
 
@@ -327,10 +327,10 @@ func (m *Model) openQuickPick(pick int) {
 	}
 	toolName, ch := m.quickTool(), &m.quick.choice
 	if note, listed := m.modelRowNote(toolName); !listed {
-		m.errBar.text = "model: " + ansi.Strip(note)
+		m.reportErr("model: " + ansi.Strip(note))
 		return
 	}
-	m.errBar.text = ""
+	m.clearErr()
 	m.quick.picking = pick
 	switch pick {
 	case pickModel:
@@ -365,10 +365,10 @@ func (m *Model) stepQuickEffort() {
 		if !shown {
 			value = "no levels for this model"
 		}
-		m.errBar.text = "effort: " + ansi.Strip(value)
+		m.reportErr("effort: " + ansi.Strip(value))
 		return
 	}
-	m.errBar.text = ""
+	m.clearErr()
 	m.cycleChoiceEffort(toolName, ch, 1)
 }
 
@@ -378,10 +378,10 @@ func (m *Model) stepQuickProfile() {
 	}
 	toolName := m.quickTool()
 	if _, shown := m.profileRow(toolName, &m.quick.choice); !shown {
-		m.errBar.text = "profile: " + toolName + " has none"
+		m.reportErr("profile: " + toolName + " has none")
 		return
 	}
-	m.errBar.text = ""
+	m.clearErr()
 	m.cycleChoiceProfile(toolName, &m.quick.choice, 1)
 }
 

@@ -211,7 +211,7 @@ func (m *Model) openForm() tea.Cmd {
 func (m *Model) openFormWithReader(reader settingsValueReader) tea.Cmd {
 	tools, toolIndex := m.cachedSpawnToolSelection()
 	if len(tools) == 0 {
-		m.errBar.text = "no CLIs enabled: open settings (s), then CLIs, to turn some on"
+		m.reportErr("no CLIs enabled: open settings (s), then CLIs, to turn some on")
 		return nil
 	}
 
@@ -232,7 +232,7 @@ func (m *Model) openFormWithReader(reader settingsValueReader) tea.Cmd {
 		focus:     fieldName,
 		choice:    m.newChoice(tools[toolIndex]),
 	}
-	m.errBar.text = ""
+	m.clearErr()
 	m.syncFormFieldWidths()
 	m.forgetWorktreeCapability()
 	m.rebuildGroupOptions(m.contextGroup())
@@ -630,10 +630,10 @@ func (m *Model) toggleFormWorktree() tea.Cmd {
 		return m.formWorktreeProbeCmd(true)
 	}
 	if !capable {
-		m.errBar.text = "worktree sessions need a git repository: " + dir + " is not one"
+		m.reportErr("worktree sessions need a git repository: " + dir + " is not one")
 		return nil
 	}
-	m.errBar.text = ""
+	m.clearErr()
 	m.form.worktree = !m.form.worktree
 	m.form.worktreeAuto = false
 	m.form.defaultsTouched = true
@@ -646,13 +646,13 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 
 func (m *Model) submitFormWithReader(reader directoryPreflight) (tea.Model, tea.Cmd) {
 	if len(m.form.toolNames) == 0 {
-		m.errBar.text = "no tools configured"
+		m.reportErr("no tools configured")
 		m.mode = modeList
 		return m, nil
 	}
 	toolName := m.form.toolNames[m.form.toolIndex]
 	if m.form.prompt.pasting() {
-		m.errBar.text = "still reading the pasted image - try again in a moment"
+		m.reportErr("still reading the pasted image - try again in a moment")
 		return m, nil
 	}
 
@@ -666,12 +666,12 @@ func (m *Model) submitFormWithReader(reader directoryPreflight) (tea.Model, tea.
 	// reaches the agent with its screenshot named where it was pasted.
 	prompt := m.form.prompt.message()
 	if strings.HasPrefix(prompt, "-") {
-		m.errBar.text = `prompt cannot start with "-": the tool would read it as a flag`
+		m.reportErr(`prompt cannot start with "-": the tool would read it as a flag`)
 		return m, nil
 	}
 	picked, err := m.launchChoice(toolName, &m.form.choice, m.form.choice.filter.Value())
 	if err != nil {
-		m.errBar.text = err.Error()
+		m.reportErr(err.Error())
 		return m, nil
 	}
 
@@ -697,7 +697,7 @@ func (m *Model) submitFormWithReader(reader directoryPreflight) (tea.Model, tea.
 		wantWorktree: m.form.worktree,
 		dirReader:    reader,
 	}
-	m.errBar.text = ""
+	m.clearErr()
 	m.dispatchSpawn(request)
 	return m, m.nextEffectCmd()
 }
@@ -726,7 +726,7 @@ func (m *Model) openGroupForm() {
 	m.syncGroupFormFieldWidths()
 	m.pathSugg.reset()
 	m.mode = modeGroupForm
-	m.errBar.text = ""
+	m.clearErr()
 }
 
 func (m *Model) handleGroupFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -839,7 +839,7 @@ func (m *Model) submitGroupFormWithReader(reader directoryPreflight) (tea.Model,
 	name := strings.TrimSpace(m.groupForm.name.Value())
 	name = strings.ReplaceAll(name, "/", "-")
 	if name == "" {
-		m.errBar.text = "group name cannot be empty"
+		m.reportErr("group name cannot be empty")
 		return m, nil
 	}
 	parent := m.selectedGroupPath()
@@ -853,7 +853,7 @@ func (m *Model) submitGroupFormWithReader(reader directoryPreflight) (tea.Model,
 		draftName: m.groupForm.name.Value(), draftDir: m.groupForm.path.Value(),
 		rawDir: m.groupForm.path.Value(), fallbacks: m.groupDirCandidates(parent), dirReader: reader,
 	}
-	m.errBar.text = ""
+	m.clearErr()
 	m.dispatchGroup(request)
 	return m, m.nextEffectCmd()
 }

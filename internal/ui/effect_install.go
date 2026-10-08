@@ -238,7 +238,7 @@ func (m *Model) applyInstallStart(request installStartRequest, result installSta
 				m.rail.ClearStatusFilter()
 				m.focusSession(result.session.ID)
 			}
-			m.errBar.text = err.Error()
+			m.reportErr(err.Error())
 			return m.refreshCmd()
 		}
 		var cleanup tea.Cmd
@@ -247,7 +247,7 @@ func (m *Model) applyInstallStart(request installStartRequest, result installSta
 		} else {
 			cleanup = installImageCleanupCmd(request.images)
 		}
-		m.errBar.text = err.Error()
+		m.reportErr(err.Error())
 		return cleanup
 	}
 	m.launchHint.install = result.install
@@ -267,23 +267,23 @@ func (m *Model) applyInstallSettle(request installSettleRequest, result installS
 	}
 	if result.state == installStillRunning {
 		if err != nil {
-			m.errBar.text = err.Error()
+			m.reportErr(err.Error())
 		}
 		return nil
 	}
 	m.launchHint.install = nil
 	install := request.install
 	if err != nil {
-		m.errBar.text = err.Error()
+		m.reportErr(err.Error())
 		return nil
 	}
 	switch result.state {
 	case installShellGone:
 		return nil
 	case installExited:
-		m.errBar.text = fmt.Sprintf("%s install exited with status %s; its output is in %s", install.binary, result.code, install.name)
+		m.reportErr(fmt.Sprintf("%s install exited with status %s; its output is in %s", install.binary, result.code, install.name))
 	case installBinaryMissing:
-		m.errBar.text = fmt.Sprintf("%s installer finished, but %s is still not on PATH; add its directory to PATH, the installer's output names it", install.binary, install.binary)
+		m.reportErr(fmt.Sprintf("%s installer finished, but %s is still not on PATH; add its directory to PATH, the installer's output names it", install.binary, install.binary))
 	case installReady:
 		if install.effectRetry != nil {
 			m.enqueueEffect(install.effectRetry, 0, false)

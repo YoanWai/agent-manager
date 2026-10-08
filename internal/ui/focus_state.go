@@ -16,7 +16,7 @@ type focusRuntimeState struct {
 func (m *Model) routeFocusMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case linkOpenErrMsg:
-		m.errBar.text = msg.err.Error()
+		m.reportErr(msg.err.Error())
 		return routed(m, nil)
 
 	case linkPageMsg:
@@ -29,7 +29,7 @@ func (m *Model) routeFocusMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		if !m.focus.pane.ApplyCopied(msg.gen, msg.chars) {
 			return routed(m, nil)
 		}
-		m.errBar.text = ""
+		m.clearErr()
 		return routed(m, nil)
 
 	case focusScrollMsg:

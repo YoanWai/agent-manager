@@ -113,7 +113,7 @@ func terminalDirectoryCmd(request terminalDirectoryRequest, reader terminalDirec
 func (m *Model) openTerminalWithReader(reader terminalDirectoryReader) (tea.Model, tea.Cmd) {
 	request, ok := m.captureTerminalDirectory(terminalDirectorySpawn)
 	if !ok {
-		m.errBar.text = "no directory to open a terminal in"
+		m.reportErr("no directory to open a terminal in")
 		return m, nil
 	}
 	toolName, _ := m.shellTool()
@@ -174,9 +174,9 @@ func (m *Model) handleTerminalDirectory(msg terminalDirectoryMsg) (tea.Model, te
 	}
 	if !msg.ok {
 		if msg.request.target == terminalDirectoryEditor {
-			m.errBar.text = "directory no longer exists: " + msg.dir
+			m.reportErr("directory no longer exists: " + msg.dir)
 		} else {
-			m.errBar.text = "no directory to open a terminal in"
+			m.reportErr("no directory to open a terminal in")
 		}
 		return m, nil
 	}

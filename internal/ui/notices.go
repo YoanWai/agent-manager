@@ -248,27 +248,27 @@ func (m *Model) startupNotice() string {
 	}
 	if seen == "" {
 		if err := m.services.store.SetSetting(lastSeenVersionSetting, m.update.version); err != nil {
-			m.errBar.text = err.Error()
+			m.reportErr(err.Error())
 			return ""
 		}
 		return noticeWelcome
 	}
 	if !update.Newer(m.update.version, seen) {
 		if err := m.services.store.SetSetting(lastSeenVersionSetting, m.update.version); err != nil {
-			m.errBar.text = err.Error()
+			m.reportErr(err.Error())
 		}
 		return ""
 	}
 	if err := m.services.store.SetSetting(whatsNewFromSetting, seen); err != nil {
-		m.errBar.text = err.Error()
+		m.reportErr(err.Error())
 		return ""
 	}
 	if err := m.services.store.SetSetting(whatsNewVersionSetting, m.update.version); err != nil {
-		m.errBar.text = err.Error()
+		m.reportErr(err.Error())
 		return ""
 	}
 	if err := m.services.store.SetSetting(lastSeenVersionSetting, m.update.version); err != nil {
-		m.errBar.text = err.Error()
+		m.reportErr(err.Error())
 		return ""
 	}
 	m.notices.whatsNewFromVersion = seen
@@ -490,10 +490,10 @@ func (m *Model) handleBrowserOpen(msg browserOpenMsg) {
 		return
 	}
 	if msg.copyErr == nil {
-		m.errBar.text = fmt.Sprintf("could not open link; URL copied to clipboard: %v", msg.err)
+		m.reportErr(fmt.Sprintf("could not open link; URL copied to clipboard: %v", msg.err))
 		return
 	}
-	m.errBar.text = fmt.Sprintf("could not open %s: %v; copying URL: %v", msg.target, msg.err, msg.copyErr)
+	m.reportErr(fmt.Sprintf("could not open %s: %v; copying URL: %v", msg.target, msg.err, msg.copyErr))
 }
 
 // openNotices shows the panel even with nothing in it: a fresh install and
@@ -676,7 +676,7 @@ func (m *Model) handleNoticesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.update.refreshing = true
 		m.update.refreshPending = 2
-		m.errBar.text = ""
+		m.clearErr()
 		return m, tea.Batch(m.refreshUpdates, m.refreshFeed)
 	case "u":
 		if m.update.applying {
@@ -684,7 +684,7 @@ func (m *Model) handleNoticesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.notices.noticeCursor < len(notices) && isUpdateNotice(notices[m.notices.noticeCursor]) {
 			m.update.applying = true
-			m.errBar.text = ""
+			m.clearErr()
 			return m, m.applyUpdateCmd()
 		}
 	case "up", "k":

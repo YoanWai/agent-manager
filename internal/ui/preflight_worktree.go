@@ -83,10 +83,10 @@ func (m *Model) handleWorktreeProbe(msg worktreeProbeMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if !msg.capable {
-		m.errBar.text = "worktree sessions need a git repository: " + request.dir + " is not one"
+		m.reportErr("worktree sessions need a git repository: " + request.dir + " is not one")
 		return m, nil
 	}
-	m.errBar.text = ""
+	m.clearErr()
 	if request.target == worktreeProbeForm {
 		if m.form.worktree != request.from {
 			return m, nil

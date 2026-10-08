@@ -80,7 +80,7 @@ func (m *Model) openKeyPicker() {
 	m.settings.dialog.keyCapture = false
 	m.settings.dialog.keyAppend = false
 	m.settings.dialog.keyReset = false
-	m.errBar.text = ""
+	m.clearErr()
 }
 
 func (m *Model) pickedRow() keyRow {
@@ -107,12 +107,12 @@ func (m *Model) handleKeyPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter", "a":
 		m.settings.dialog.keyCapture = true
 		m.settings.dialog.keyAppend = msg.String() == "a"
-		m.errBar.text = ""
+		m.clearErr()
 	case "d":
 		return m, m.setBinding(keybind.Keys())
 	case "r":
 		m.settings.dialog.keyReset = len(keyResetChanges(m.settings.dialog.tables...)) > 0
-		m.errBar.text = ""
+		m.clearErr()
 	case "esc":
 		m.settings.dialog.keyPicker = false
 		return m, m.saveKeys()
@@ -125,19 +125,19 @@ func (m *Model) handleKeyPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) captureKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.settings.dialog.keyCapture = false
 	if msg.String() == "esc" {
-		m.errBar.text = ""
+		m.clearErr()
 		return m, nil
 	}
 	key, err := keybind.Parse(msg.String())
 	if err != nil {
-		m.errBar.text = err.Error()
+		m.reportErr(err.Error())
 		return m, nil
 	}
 	binding := keybind.Keys(key)
 	if m.settings.dialog.keyAppend {
 		existing := m.pickedTable().Binding(m.pickedRow().action.Name)
 		if existing.Has(key.Tea()) {
-			m.errBar.text = fmt.Sprintf("%s already answers to %s", m.pickedRow().action.Name, key)
+			m.reportErr(fmt.Sprintf("%s already answers to %s", m.pickedRow().action.Name, key))
 			return m, nil
 		}
 		binding = keybind.Keys(append(slices.Clone(existing.Keys()), key)...)
@@ -179,11 +179,11 @@ func (m *Model) setBinding(binding keybind.Binding) tea.Cmd {
 	row := m.pickedRow()
 	candidate := m.settings.dialog.tables[row.table].With(row.action.Name, binding)
 	if err := candidate.Validate(); err != nil {
-		m.errBar.text = err.Error()
+		m.reportErr(err.Error())
 		return nil
 	}
 	m.settings.dialog.tables[row.table] = candidate
-	m.errBar.text = ""
+	m.clearErr()
 	return nil
 }
 

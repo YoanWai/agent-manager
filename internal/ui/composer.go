@@ -550,10 +550,10 @@ func (m *Model) composerKey(target composerID, msg tea.KeyMsg) (tea.Cmd, bool) {
 		}
 		cmd, ok := c.paste(target)
 		if !ok {
-			m.errBar.text = "prompt is full - shorten it before pasting an image"
+			m.reportErr("prompt is full - shorten it before pasting an image")
 			return nil, true
 		}
-		m.errBar.text = ""
+		m.clearErr()
 		return cmd, true
 	case "left":
 		if span, ok := c.tokenEndingAt(c.cursorOffset()); ok {
@@ -568,13 +568,13 @@ func (m *Model) composerKey(target composerID, msg tea.KeyMsg) (tea.Cmd, bool) {
 	case "backspace", "ctrl+h":
 		if span, ok := c.tokenEndingAt(c.cursorOffset()); ok {
 			cmd := c.removeToken(span)
-			m.errBar.text = ""
+			m.clearErr()
 			return cmd, true
 		}
 	case "delete":
 		if span, ok := c.tokenStartingAt(c.cursorOffset()); ok {
 			cmd := c.removeToken(span)
-			m.errBar.text = ""
+			m.clearErr()
 			return cmd, true
 		}
 	}
@@ -607,7 +607,7 @@ func (m *Model) handlePasteImageMsg(msg pasteImageMsg) (tea.Model, tea.Cmd) {
 	}
 	if msg.err != nil {
 		cmd := c.removeImage(msg.id)
-		m.errBar.text = msg.err.Error()
+		m.reportErr(msg.err.Error())
 		return m, cmd
 	}
 	if msg.noImage {
@@ -615,7 +615,7 @@ func (m *Model) handlePasteImageMsg(msg pasteImageMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmd, pasteTextCmd(msg.target, c.gen))
 	}
 	att.path = msg.path
-	m.errBar.text = ""
+	m.clearErr()
 	return m, nil
 }
 
@@ -636,7 +636,7 @@ func (m *Model) routePasteMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case pasteSweepMsg:
 		if msg.err != nil {
-			m.errBar.text = "clearing old pasted images: " + msg.err.Error()
+			m.reportErr("clearing old pasted images: " + msg.err.Error())
 		}
 		return routed(m, nil)
 

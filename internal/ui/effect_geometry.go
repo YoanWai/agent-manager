@@ -117,6 +117,6 @@ func (m *Model) applyGeometryEffect(result geometryEffectResult, err error) {
 		m.focus.runtime.lastPublishedSize = result.publish
 	}
 	if err != nil {
-		m.errBar.text = err.Error()
+		m.reportErr(err.Error())
 	}
 }

@@ -134,7 +134,7 @@ func (m *Model) routeNoticesMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		}
 		if msg.failed && len(msg.releases) == 0 {
 			if msg.manual && msg.err != nil {
-				m.errBar.text = "refresh failed: " + msg.err.Error()
+				m.reportErr("refresh failed: " + msg.err.Error())
 			}
 			return routed(m, nil)
 		}
@@ -146,7 +146,7 @@ func (m *Model) routeNoticesMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			m.indexReleaseRanges()
 		})
 		if msg.manual && msg.err != nil {
-			m.errBar.text = "refresh failed: " + msg.err.Error()
+			m.reportErr("refresh failed: " + msg.err.Error())
 		}
 		return routed(m, nil)
 
@@ -162,7 +162,7 @@ func (m *Model) routeNoticesMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			})
 		}
 		if msg.err != nil {
-			m.errBar.text = "update failed: " + msg.err.Error()
+			m.reportErr("update failed: " + msg.err.Error())
 			return routed(m, nil)
 		}
 		if msg.upToDate {
@@ -192,7 +192,7 @@ func (m *Model) routeNoticesMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			m.applyNotices(func() { m.notices.feedMessages = msg.messages })
 		}
 		if msg.manual && msg.err != nil {
-			m.errBar.text = "refresh failed: " + msg.err.Error()
+			m.reportErr("refresh failed: " + msg.err.Error())
 		}
 		return routed(m, nil)
 	}

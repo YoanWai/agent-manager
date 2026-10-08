@@ -42,7 +42,7 @@ func (m *Model) closeDiff() tea.Cmd {
 		return m.reattach(ret.sessionID, gen)
 	case reviewReturnFocus:
 		if !m.focusSession(ret.sessionID) {
-			m.errBar.text = "the review origin is no longer listed"
+			m.reportErr("the review origin is no longer listed")
 			return nil
 		}
 		_, cmd := m.focusSelected()
@@ -69,18 +69,18 @@ func (m *Model) openDiff() tea.Cmd { return m.openDiffWithReader(m.services.stor
 
 func (m *Model) openDiffWithReader(reader reviewPreferencesReader) tea.Cmd {
 	if m.services.gitDrv == nil {
-		m.errBar.text = "git not found in PATH, " + deps.Hint("git")
+		m.reportErr("git not found in PATH, " + deps.Hint("git"))
 		return nil
 	}
 	sess, ok := m.selected()
 	if !ok {
-		m.errBar.text = "select a session to diff"
+		m.reportErr("select a session to diff")
 		return nil
 	}
 	preferred, picked := m.ledger.pickedRepos[sess.ID]
 	m.reviewNav.ret = reviewReturn{kind: reviewReturnList}
 	m.mode = modeDiff
-	m.errBar.text = ""
+	m.clearErr()
 	target := reviewTarget(sess)
 	target.Cwd = m.sessionDir(sess)
 	request := m.review.Open(target, git.ScopeUncommitted, preferred)
@@ -112,7 +112,7 @@ func (m *Model) handleReviewPreferences(msg reviewPreferencesMsg) (tea.Model, te
 	}
 	request := m.review.Open(msg.request.Target, msg.scope, msg.preferred)
 	if msg.err != nil {
-		m.errBar.text = "reading review preferences: " + msg.err.Error()
+		m.reportErr("reading review preferences: " + msg.err.Error())
 	}
 	return m, tea.Batch(m.reviewLoadCmd(request), m.startStartupTick())
 }

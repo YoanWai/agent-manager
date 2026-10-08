@@ -171,7 +171,7 @@ func (m *Model) savedChoice(toolName string) *config.Choice {
 	}
 	var saved config.Choice
 	if err := json.Unmarshal([]byte(raw), &saved); err != nil {
-		m.errBar.text = "reading the last choice: " + err.Error()
+		m.reportErr("reading the last choice: " + err.Error())
 		return nil
 	}
 	return &saved
@@ -182,7 +182,7 @@ func (m *Model) savedChoice(toolName string) *config.Choice {
 func (m *Model) keepChoice(toolName string, ch *choice) {
 	raw, err := json.Marshal(m.currentChoice(toolName, ch))
 	if err != nil {
-		m.errBar.text = "saving the choice: " + err.Error()
+		m.reportErr("saving the choice: " + err.Error())
 		return
 	}
 	m.saveChoiceSetting(savedChoiceKey(toolName), string(raw))
@@ -412,7 +412,7 @@ func (m *Model) recentModels(toolName string) []string {
 		return nil
 	}
 	if err := json.Unmarshal([]byte(raw), &keys); err != nil {
-		m.errBar.text = "reading recent models: " + err.Error()
+		m.reportErr("reading recent models: " + err.Error())
 		return nil
 	}
 	return keys
@@ -431,7 +431,7 @@ func (m *Model) rememberModel(toolName string, picked config.Choice) {
 	}
 	raw, err := json.Marshal(keys)
 	if err != nil {
-		m.errBar.text = "remembering the model: " + err.Error()
+		m.reportErr("remembering the model: " + err.Error())
 		return
 	}
 	m.saveChoiceSetting(recentModelsKey(toolName), string(raw))

@@ -13,7 +13,7 @@ func (m *Model) openMove() {
 		return
 	}
 	if row.isRoot() {
-		m.errBar.text = "root is the top level, not a group to move"
+		m.reportErr("root is the top level, not a group to move")
 		return
 	}
 	if row.isGroup {
@@ -31,7 +31,7 @@ func (m *Model) openMove() {
 	}
 	m.gens.dialog++
 	m.mode = modeMove
-	m.errBar.text = ""
+	m.clearErr()
 }
 
 func (m *Model) appendAgentMoveTargets() {

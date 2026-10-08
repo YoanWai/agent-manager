@@ -110,12 +110,12 @@ type groupBaseStepMsg struct {
 // otherwise the read runs as a command and the step lands with it.
 func (m *Model) stepGroupBase(target groupBaseTarget, gen uint64, dir, current string, delta int) (string, tea.Cmd) {
 	if answer, ok := m.ledger.baseRefs[dir]; ok && time.Since(answer.at) < baseRefsTTL {
-		m.errBar.text = ""
+		m.clearErr()
 		return stepBaseChoice(answer.refs, current, delta), nil
 	}
 	driver := m.services.gitDrv
 	if driver == nil {
-		m.errBar.text = "a group base needs git installed"
+		m.reportErr("a group base needs git installed")
 		return current, nil
 	}
 	return current, func() tea.Msg {
@@ -147,7 +147,7 @@ func (m *Model) handleGroupBaseStep(msg groupBaseStepMsg) {
 		return
 	}
 	if msg.err != nil {
-		m.errBar.text = "group base: " + msg.err.Error()
+		m.reportErr("group base: " + msg.err.Error())
 		return
 	}
 	if m.ledger.baseRefs == nil {
@@ -157,7 +157,7 @@ func (m *Model) handleGroupBaseStep(msg groupBaseStepMsg) {
 	if *base != msg.from {
 		return
 	}
-	m.errBar.text = ""
+	m.clearErr()
 	*base = stepBaseChoice(msg.refs, msg.from, msg.delta)
 }
 
@@ -288,7 +288,7 @@ func (m *Model) forgetWorktreeCapability() {
 func (m *Model) defaultSplitLayout() bool {
 	chosen, err := m.services.store.Setting(diffLayoutSetting)
 	if err != nil {
-		m.errBar.text = "reading diff layout setting: " + err.Error()
+		m.reportErr("reading diff layout setting: " + err.Error())
 		return true
 	}
 	return chosen != "unified"
@@ -352,7 +352,7 @@ func storedMouseDisabled(st *store.Store) bool {
 func (m *Model) storedTerminalBackground() bool {
 	chosen, err := m.services.store.Setting(backgroundSetting)
 	if err != nil {
-		m.errBar.text = "reading background setting: " + err.Error()
+		m.reportErr("reading background setting: " + err.Error())
 	}
 	return chosen == "terminal"
 }
@@ -487,10 +487,10 @@ func (m *Model) openSettings() tea.Cmd {
 func (m *Model) openSettingsWithReader(reader settingsValueReader) tea.Cmd {
 	m.settings.gen++
 	if len(m.services.cfg.Tools) == 0 {
-		m.errBar.text = "no tools configured"
+		m.reportErr("no tools configured")
 		return nil
 	}
-	m.errBar.text = ""
+	m.clearErr()
 	m.settings.dialog = m.settingsStateFromCache()
 	m.mode = modeSettings
 	probe := m.probeEditorsCmd()
@@ -546,7 +546,7 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				// update command follows the save's completion.
 				m.update.applying = true
 				m.applySettingsPrefs()
-				m.errBar.text = ""
+				m.clearErr()
 				return m, m.captureSettingsSave(false, true)
 			}
 		}
@@ -779,7 +779,7 @@ func (m *Model) toggleCLIHidden(name string) {
 	if m.settings.dialog.cliHidden[name] {
 		delete(m.settings.dialog.cliHidden, name)
 		m.settings.dialog.dirty = true
-		m.errBar.text = ""
+		m.clearErr()
 		return
 	}
 	enabled := 0
@@ -789,12 +789,12 @@ func (m *Model) toggleCLIHidden(name string) {
 		}
 	}
 	if enabled <= 1 {
-		m.errBar.text = "keep at least one CLI enabled"
+		m.reportErr("keep at least one CLI enabled")
 		return
 	}
 	m.settings.dialog.cliHidden[name] = true
 	m.settings.dialog.dirty = true
-	m.errBar.text = ""
+	m.clearErr()
 }
 
 // requestCLISupportURL opens a prefilled feature request for another CLI.

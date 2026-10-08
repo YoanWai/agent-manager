@@ -186,10 +186,10 @@ func (m *Model) applyRenameEffect(job *effectJob, result renameEffectResult, err
 		}
 	}
 	if result.warning != nil && err == nil {
-		m.errBar.text = result.warning.Error()
+		m.reportErr(result.warning.Error())
 	}
 	if err != nil {
-		m.errBar.text = err.Error()
+		m.reportErr(err.Error())
 	} else if m.mode == modeRename && m.gens.dialog == request.gen && strings.ReplaceAll(strings.TrimSpace(m.rename.input.Value()), "/", "-") == request.name &&
 		(request.kind != renameGroup || m.rename.dir.Value() == request.draftDir) {
 		// Only the dialog that submitted this job closes; a reopened or

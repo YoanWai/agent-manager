@@ -54,7 +54,7 @@ func (s effectServices) runAttach(request attachRequest) (effectResult, error) {
 }
 func (m *Model) applyAttachEffect(request attachRequest, result attachEffectResult, err error) tea.Cmd {
 	if err != nil {
-		m.errBar.text = err.Error()
+		m.reportErr(err.Error())
 		return nil
 	}
 	if request.reattach && (request.generation != m.review.Generation() || m.review.Active()) {
@@ -64,7 +64,7 @@ func (m *Model) applyAttachEffect(request attachRequest, result attachEffectResu
 		return nil
 	}
 	if result.warning != nil {
-		m.errBar.text = result.warning.Error()
+		m.reportErr(result.warning.Error())
 	}
 	return execTerminalProcess(m.services.tmux.AttachCommand(request.id), func(err error) tea.Msg { return attachDoneMsg{sessID: request.id, err: err} })
 }

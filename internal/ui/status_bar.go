@@ -21,6 +21,16 @@ func (e errBar) worked() bool { return e.text != "" && e.text == e.done }
 // failure.
 func (e errBar) warned() bool { return e.text != "" && e.text == e.warn }
 
+// reportErr puts a failure on the status bar; the poll ages it out.
+func (m *Model) reportErr(text string) {
+	m.errBar.text = text
+}
+
+// clearErr takes whatever message is on the status bar down.
+func (m *Model) clearErr() {
+	m.errBar.text = ""
+}
+
 // reportDone puts an action that went through on the status bar.
 func (m *Model) reportDone(text string) {
 	m.errBar.text, m.errBar.done = text, text
@@ -54,7 +64,7 @@ func (m *Model) ageError() {
 func (m *Model) routeStatusMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case errMsg:
-		m.errBar.text = msg.err.Error()
+		m.reportErr(msg.err.Error())
 		return routed(m, nil)
 	}
 	return nil, nil, false

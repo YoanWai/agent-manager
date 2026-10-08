@@ -58,7 +58,7 @@ func (m *Model) applyKeysEffect(job *effectJob, result keysEffectResult, err err
 		m.services.tmux.SetSessionKeys(request.session)
 	}
 	if err != nil {
-		m.errBar.text = err.Error()
+		m.reportErr(err.Error())
 		return nil
 	}
 	if result.sessionCommitted {

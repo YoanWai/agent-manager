@@ -42,7 +42,7 @@ func (s effectServices) runFocus(request focusRequest) (effectResult, error) {
 
 func (m *Model) applyFocusEffect(request focusRequest, result focusEffectResult, err error) tea.Cmd {
 	if err != nil {
-		m.errBar.text = err.Error()
+		m.reportErr(err.Error())
 		return nil
 	}
 	if m.effects.quitting || request.generation != m.gens.foreground {
@@ -55,7 +55,7 @@ func (m *Model) applyFocusEffect(request focusRequest, result focusEffectResult,
 	if !ok || sess.ID != request.sessionID {
 		return nil
 	}
-	m.errBar.text = ""
+	m.clearErr()
 	return m.enterFocus(sess)
 }
 
@@ -98,7 +98,7 @@ func (s effectServices) runAck(request ackRequest) (effectResult, error) {
 
 func (m *Model) applyAckEffect(job *effectJob, result ackEffectResult, err error) tea.Cmd {
 	if err != nil {
-		m.errBar.text = err.Error()
+		m.reportErr(err.Error())
 		return nil
 	}
 	m.requestRefresh()
@@ -135,11 +135,11 @@ func (s effectServices) runDetach(request detachRequest) (effectResult, error) {
 
 func (m *Model) applyDetachEffect(request detachRequest, result detachEffectResult, err error) tea.Cmd {
 	if err != nil {
-		m.errBar.text = err.Error()
+		m.reportErr(err.Error())
 		return nil
 	}
 	if result.clearErr != nil {
-		m.errBar.text = result.clearErr.Error()
+		m.reportErr(result.clearErr.Error())
 		m.requestRefresh()
 		return nil
 	}
@@ -153,7 +153,7 @@ func (m *Model) applyDetachEffect(request detachRequest, result detachEffectResu
 	m.focusSession(request.sessionID)
 	sess, ok := m.selected()
 	if !ok || sess.ID != request.sessionID {
-		m.errBar.text = "the session that asked for it has left the list"
+		m.reportErr("the session that asked for it has left the list")
 		m.requestRefresh()
 		return nil
 	}

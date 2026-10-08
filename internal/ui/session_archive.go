@@ -17,7 +17,7 @@ func (m *Model) archiveSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if entry.isRoot() {
-		m.errBar.text = "root is the top level, not a group to archive"
+		m.reportErr("root is the top level, not a group to archive")
 		return m, nil
 	}
 	if entry.isGroup {
@@ -42,7 +42,7 @@ func (m *Model) archiveSelected() (tea.Model, tea.Cmd) {
 		}
 	}
 	m.mode = modeConfirmDelete
-	m.errBar.text = ""
+	m.clearErr()
 	return m, nil
 }
 
@@ -55,7 +55,7 @@ func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if entry.isRoot() {
-		m.errBar.text = "root is the top level, not a group to restore"
+		m.reportErr("root is the top level, not a group to restore")
 		return m, nil
 	}
 	if entry.isGroup {
@@ -82,7 +82,7 @@ func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
 		}
 	}
 	m.mode = modeConfirmDelete
-	m.errBar.text = ""
+	m.clearErr()
 	return m, nil
 }
 

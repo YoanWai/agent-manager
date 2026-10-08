@@ -46,7 +46,7 @@ func (m *Model) dispatchQuickSend(request quickSendRequest) bool {
 		}
 		pending, ok := job.request.(quickSendRequest)
 		if ok && pending.composerGen == request.composerGen {
-			m.errBar.text = "this prompt is already being sent"
+			m.reportErr("this prompt is already being sent")
 			return false
 		}
 	}
@@ -100,9 +100,9 @@ func (m *Model) applyQuickSend(request quickSendRequest, result quickSendResult,
 	if err != nil || result.outcome == quickSendRefused {
 		cleanup := m.returnQuickSendImages(request)
 		if err != nil {
-			m.errBar.text = err.Error()
+			m.reportErr(err.Error())
 		} else {
-			m.errBar.text = fmt.Sprintf("prompt was not sent to %s: %v", request.session.Name, result.sendErr)
+			m.reportErr(fmt.Sprintf("prompt was not sent to %s: %v", request.session.Name, result.sendErr))
 		}
 		return cleanup
 	}
@@ -111,11 +111,11 @@ func (m *Model) applyQuickSend(request quickSendRequest, result quickSendResult,
 	// Once paste may have started, the pane may still need image paths from
 	// the accepted text. They remain owned by that delivery, never by a retry.
 	if result.outcome == quickSendUncertain {
-		m.errBar.text = fmt.Sprintf("prompt may have reached %s and was not sent again: %v", request.session.Name, result.sendErr)
+		m.reportErr(fmt.Sprintf("prompt may have reached %s and was not sent again: %v", request.session.Name, result.sendErr))
 		return nil
 	}
 	if result.metadataErr != nil {
-		m.errBar.text = "prompt sent, but recording it for the row failed: " + result.metadataErr.Error()
+		m.reportErr("prompt sent, but recording it for the row failed: " + result.metadataErr.Error())
 		return nil
 	}
 
@@ -125,7 +125,7 @@ func (m *Model) applyQuickSend(request quickSendRequest, result quickSendResult,
 			m.workspace.sessions[i].LastPrompt = request.text
 		}
 	}
-	m.errBar.text = ""
+	m.clearErr()
 	return nil
 }
 

@@ -17,7 +17,7 @@ func (m *Model) killSelected() (tea.Model, tea.Cmd) {
 	if entry.isGroup {
 		live := m.liveSessions(m.sessionsInGroup(entry.group))
 		if len(live) == 0 {
-			m.errBar.text = "no live sessions to kill in " + entry.group
+			m.reportErr("no live sessions to kill in " + entry.group)
 			return m, nil
 		}
 		m.confirm = confirmTarget{
@@ -38,7 +38,7 @@ func (m *Model) killSelected() (tea.Model, tea.Cmd) {
 			}
 		}
 		if !live {
-			m.errBar.text = entry.sess.Name + " is already dead"
+			m.reportErr(entry.sess.Name + " is already dead")
 			return m, nil
 		}
 		m.confirm = confirmTarget{
@@ -59,7 +59,7 @@ func (m *Model) killSelected() (tea.Model, tea.Cmd) {
 func (m *Model) killAllLive() (tea.Model, tea.Cmd) {
 	live := m.liveSessions(m.listedSessions())
 	if len(live) == 0 {
-		m.errBar.text = "no live sessions to kill"
+		m.reportErr("no live sessions to kill")
 		return m, nil
 	}
 	m.confirm = confirmTarget{

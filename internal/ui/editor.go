@@ -123,7 +123,7 @@ func (m *Model) handleDiffFileChecked(msg editorFileCheckedMsg) (tea.Model, tea.
 		return m, nil
 	}
 	if msg.result.Err != nil {
-		m.errBar.text = reviewOpenPathError(path, msg.result.Err)
+		m.reportErr(reviewOpenPathError(path, msg.result.Err))
 		return m, nil
 	}
 	return m.launchEditor(msg.editor, editorReturnTarget{})
@@ -131,10 +131,10 @@ func (m *Model) handleDiffFileChecked(msg editorFileCheckedMsg) (tea.Model, tea.
 
 func (m *Model) launchEditor(editor editorLaunch, returnTo editorReturnTarget) (tea.Model, tea.Cmd) {
 	if editor.command == nil {
-		m.errBar.text = "no editor found: pick one in Settings > editor"
+		m.reportErr("no editor found: pick one in Settings > editor")
 		return m, nil
 	}
-	m.errBar.text = ""
+	m.clearErr()
 	if !detachedEditors[editor.name] {
 		return m, execTerminalProcess(editor.command, func(err error) tea.Msg {
 			return editorDoneMsg{err: err, tookScreen: true, returnTo: returnTo}
@@ -285,7 +285,7 @@ func (m *Model) routeEditorMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		if msg.err != nil {
 			// Going back into the session would hide the only account of
 			// what went wrong, so a failed editor keeps the list.
-			m.errBar.text = msg.err.Error()
+			m.reportErr(msg.err.Error())
 			return routed(m, resume)
 		}
 		if msg.name != "" {

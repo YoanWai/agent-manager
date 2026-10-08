@@ -182,7 +182,7 @@ func (m *Model) applyRailEffect(job *effectJob, result railEffectResult, err err
 	follow.Mutations = nil
 	_, cmd := m.applyRailDecision(follow)
 	if result.warning != nil {
-		m.errBar.text = result.warning.Error()
+		m.reportErr(result.warning.Error())
 	}
 	m.rebuildRows()
 	return cmd

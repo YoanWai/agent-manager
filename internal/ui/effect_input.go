@@ -95,7 +95,7 @@ func (s effectServices) runInput(request inputRequest) (effectResult, error) {
 
 func (m *Model) applyInputEffect(result inputEffectResult, err error) {
 	if err != nil {
-		m.errBar.text = err.Error()
+		m.reportErr(err.Error())
 		return
 	}
 	if !m.effects.quitting && result.inputID != "" && m.mode == modeFocus && m.focus.runtime.watch != nil {

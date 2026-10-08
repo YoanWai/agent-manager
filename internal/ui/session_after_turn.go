@@ -99,7 +99,7 @@ func (m *Model) applyAfterTurn(request afterTurnRequest, result afterTurnResult,
 		command = m.applyLifecycleEffect(lifecycleRequest{target: result.target, watched: request.watched}, result.lifecycle, err)
 	} else {
 		if err != nil {
-			m.errBar.text = err.Error()
+			m.reportErr(err.Error())
 		}
 		m.rewatchSurvivor(request.watched, result.lifecycle.survivor)
 	}

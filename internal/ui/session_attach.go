@@ -23,7 +23,7 @@ func (m *Model) attachSelected() (tea.Model, tea.Cmd) {
 	}
 	// The dead-pane probe and the finished acknowledgement run inside the
 	// attach effect; a dead session reports back from its completion.
-	m.errBar.text = ""
+	m.clearErr()
 	return m, m.attachCmd(sess.ID)
 }
 
@@ -35,7 +35,7 @@ func (m *Model) acknowledgeSelected() (tea.Model, tea.Cmd) {
 	if !ok || sess.Archived || sess.Status != status.Finished {
 		return m, nil
 	}
-	m.errBar.text = ""
+	m.clearErr()
 	m.enqueueEffect(ackRequest{sessionID: sess.ID}, 0, false)
 	return m, m.nextEffectCmd()
 }
@@ -58,11 +58,11 @@ func (m *Model) copyReplySelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	sess := entry.sess
-	m.errBar.text = ""
+	m.clearErr()
 	// A shell has no reply, and its scrollback is the user's own commands
 	// and their output rather than anything an agent said.
 	if m.isShell(sess.Tool) {
-		m.errBar.text = shellPromptHint(sess.Name)
+		m.reportErr(shellPromptHint(sess.Name))
 		return m, nil
 	}
 	engine, driver := m.services.engine, m.services.tmux
@@ -113,7 +113,7 @@ func (m *Model) routeSessionMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			return routed(m, nil)
 		}
 		if msg.chars == 0 {
-			m.errBar.text = "nothing to copy from " + msg.name
+			m.reportErr("nothing to copy from " + msg.name)
 			return routed(m, nil)
 		}
 		if msg.unbounded {
@@ -142,7 +142,7 @@ func (m *Model) routeSessionMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		width, height := m.paneTargetSize()
 		m.queueGeometry(geometryRequest{targets: []paneResize{{id: msg.sessID, size: [2]int{width, height}}}})
 		if msg.err != nil {
-			m.errBar.text = msg.err.Error()
+			m.reportErr(msg.err.Error())
 			m.requestRefresh()
 			return routed(m, nil)
 		}

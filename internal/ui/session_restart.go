@@ -19,7 +19,7 @@ func (m *Model) restartSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if entry.isGroup {
-		m.errBar.text = "restart applies to a session; pick one under " + displayGroup(entry.group)
+		m.reportErr("restart applies to a session; pick one under " + displayGroup(entry.group))
 		return m, nil
 	}
 	label := fmt.Sprintf("restart %s with an empty context? its current conversation is left behind.", entry.sess.Name)

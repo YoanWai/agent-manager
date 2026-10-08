@@ -105,7 +105,7 @@ func (m *Model) dispatchSpawn(request spawnRequest) {
 			continue
 		}
 		if pending, ok := job.request.(spawnRequest); ok && pending.kind == request.kind && pending.composerGen == request.composerGen {
-			m.errBar.text = "this spawn is already in progress"
+			m.reportErr("this spawn is already in progress")
 			return
 		}
 	}
@@ -294,7 +294,7 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 			m.focusSession(sess.ID)
 		}
 		if result.label != nil {
-			m.errBar.text = result.label.Error()
+			m.reportErr(result.label.Error())
 		}
 		return m.refreshCmd()
 	}
@@ -303,7 +303,7 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 	request.worktree = result.worktree
 	if request.kind == spawnShell {
 		m.ledger.terminalKeyAt = time.Now()
-		m.errBar.text = err.Error()
+		m.reportErr(err.Error())
 		return nil
 	}
 	// Nothing was committed. A spawn the hint dialog refuses takes the
@@ -335,7 +335,7 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 		return nil
 	}
 	m.returnSpawnImages(request)
-	m.errBar.text = err.Error()
+	m.reportErr(err.Error())
 	return nil
 }
 
@@ -360,7 +360,7 @@ func (m *Model) returnSpawnImages(request spawnRequest) {
 
 func (m *Model) applyGroupEffect(request groupRequest, result groupEffectResult, err error) tea.Cmd {
 	if err != nil {
-		m.errBar.text = err.Error()
+		m.reportErr(err.Error())
 		return nil
 	}
 	// The durable inventory reconciles no matter what is on screen: the row
@@ -380,7 +380,7 @@ func (m *Model) applyGroupEffect(request groupRequest, result groupEffectResult,
 	// snapshot queues after the row exists, the order the synchronous submit
 	// kept.
 	if m.mode == modeGroupForm && m.groupForm.gen == request.gen && m.groupForm.name.Value() == request.draftName && m.groupForm.path.Value() == request.draftDir {
-		m.errBar.text = ""
+		m.clearErr()
 		m.mode = modeList
 		m.applyRailStateDecision(m.rail.RevealGroup(result.path))
 	}

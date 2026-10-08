@@ -28,11 +28,11 @@ func (m *Model) applySplitSave(job *effectJob, err error) {
 	}
 	if err == nil {
 		if m.errBar.text == m.layout.split.saveError {
-			m.errBar.text = ""
+			m.clearErr()
 		}
 		m.layout.split.saveError = ""
 		return
 	}
 	m.layout.split.saveError = err.Error()
-	m.errBar.text = m.layout.split.saveError
+	m.reportErr(m.layout.split.saveError)
 }

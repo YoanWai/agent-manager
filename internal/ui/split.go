@@ -125,7 +125,7 @@ func (m *Model) enterResizeMode() (tea.Model, tea.Cmd) {
 	m.layout.split.resizeMode = true
 	m.layout.split.dragging = false
 	m.layout.split.ratioBefore = m.layout.split.ratio
-	m.errBar.text = ""
+	m.clearErr()
 	return m, nil
 }
 

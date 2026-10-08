@@ -276,17 +276,17 @@ func (m *Model) applyLifecycleEffect(request lifecycleRequest, result lifecycleE
 	}
 	m.rewatchSurvivor(request.watched, result.survivor)
 	m.rebuildRows()
-	m.errBar.text = result.notice
+	m.reportErr(result.notice)
 	if result.deleted.Notice != "" {
-		m.errBar.text = result.deleted.Notice
+		m.reportErr(result.deleted.Notice)
 	}
 	if result.warning != nil && err == nil {
-		m.errBar.text = result.warning.Error()
+		m.reportErr(result.warning.Error())
 	}
 	if err != nil {
 		if target.batch {
 			if result.notice == "" {
-				m.errBar.text = err.Error()
+				m.reportErr(err.Error())
 			}
 			return nil
 		}
@@ -316,10 +316,10 @@ func (m *Model) applyLifecycleEffect(request lifecycleRequest, result lifecycleE
 					m.launchHint.fix.effectRetry = retry
 				}
 			} else {
-				m.errBar.text = err.Error()
+				m.reportErr(err.Error())
 			}
 		} else {
-			m.errBar.text = err.Error()
+			m.reportErr(err.Error())
 		}
 	}
 	return nil

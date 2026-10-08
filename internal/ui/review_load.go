@@ -10,7 +10,7 @@ func (m *Model) applyReviewResult(result uireview.ApplyResult) tea.Cmd {
 		return nil
 	}
 	if result.Error != "" {
-		m.errBar.text = result.Error
+		m.reportErr(result.Error)
 	}
 	if result.ForgetPreferredRepo != "" && m.ledger.pickedRepos[m.review.SessionID()] == result.ForgetPreferredRepo {
 		delete(m.ledger.pickedRepos, m.review.SessionID())

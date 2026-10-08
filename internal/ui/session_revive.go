@@ -59,7 +59,7 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.queueLifecycle(confirmTarget{action: actionRevive, sessions: []store.Session{entry.sess}}, true, "")
-	m.errBar.text = m.degradedResumeNotice(entry.sess)
+	m.reportErr(m.degradedResumeNotice(entry.sess))
 	return m, m.nextEffectCmd()
 }
 

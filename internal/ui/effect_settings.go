@@ -275,9 +275,9 @@ func (m *Model) handleSettingsLoaded(msg settingsLoadedMsg) (tea.Model, tea.Cmd)
 	m.applyCachedSettingsPrefs()
 	m.rebuildRows()
 	if msg.err != nil {
-		m.errBar.text = msg.err.Error()
+		m.reportErr(msg.err.Error())
 	} else {
-		m.errBar.text = ""
+		m.clearErr()
 	}
 	return m, follow
 }
@@ -296,11 +296,11 @@ func (m *Model) applySettingsEffect(job *effectJob, result settingsEffectResult,
 	}
 	stale := m.settings.gen != request.generation
 	if err != nil {
-		m.errBar.text = err.Error()
+		m.reportErr(err.Error())
 		if result.restored != nil {
 			m.settings.cache.applyReadback(result.restored, result.restoredHidden, result.hiddenErr)
 			if note := m.reconcileSettingsPrefs(result.restored); note != "" {
-				m.errBar.text += "; " + note
+				m.reportErr(m.errBar.text + "; " + note)
 			}
 			if !stale {
 				m.restoreSettingsDialog(result.restored, result.restoredHidden, result.hiddenErr)

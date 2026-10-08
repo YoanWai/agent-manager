@@ -80,7 +80,7 @@ func (m *Model) sessionGlyph(session store.Session) string {
 func (m *Model) applyRailDecision(decision uirail.Decision) (tea.Model, tea.Cmd) {
 	var commands []tea.Cmd
 	if decision.Error != "" {
-		m.errBar.text = decision.Error
+		m.reportErr(decision.Error)
 	}
 	if decision.SelectionEffect != uirail.SelectionEffectNone {
 		m.workspace.preview = ""
@@ -105,7 +105,7 @@ func (m *Model) applyRailDecision(decision uirail.Decision) (tea.Model, tea.Cmd)
 	}
 	if dependent && m.railMutationPending() {
 		decision.Mutations = nil
-		m.errBar.text = "previous Rail change is still saving"
+		m.reportErr("previous Rail change is still saving")
 	}
 	m.queueRail(decision.Mutations, 0, false)
 	commands = append(commands, m.nextEffectCmd())

@@ -79,7 +79,7 @@ func (m *Model) reportLaunchError(err error) {
 		})
 		return
 	}
-	m.errBar.text = err.Error()
+	m.reportErr(err.Error())
 }
 
 // missingToolText opens on why the launch stopped, then the command that
@@ -155,7 +155,7 @@ func (m *Model) closeLaunchHint() {
 
 func (m *Model) handleLaunchCommandCopied(msg launchCommandCopiedMsg) {
 	if msg.err != nil {
-		m.errBar.text = "copy failed: " + msg.err.Error()
+		m.reportErr("copy failed: " + msg.err.Error())
 		return
 	}
 	m.reportDone("copied to clipboard")
@@ -166,7 +166,7 @@ func (m *Model) handleLaunchCommandCopied(msg launchCommandCopiedMsg) {
 // the command was typed into a durable shell row.
 func (m *Model) startInstall() (tea.Model, tea.Cmd) {
 	if m.launchHint.install != nil {
-		m.errBar.text = "an install is already running in " + m.launchHint.install.name
+		m.reportErr("an install is already running in " + m.launchHint.install.name)
 		return m, nil
 	}
 	for _, job := range append([]*effectJob{m.effects.active}, m.effects.pending...) {
@@ -174,7 +174,7 @@ func (m *Model) startInstall() (tea.Model, tea.Cmd) {
 			continue
 		}
 		if request, ok := job.request.(installStartRequest); ok {
-			m.errBar.text = "an install is already starting for " + request.binary
+			m.reportErr("an install is already starting for " + request.binary)
 			return m, nil
 		}
 	}
