@@ -269,7 +269,7 @@ func (w *focusWatch) watch(id string, stop chan struct{}) {
 		w.clearIfCurrent(id, stop)
 		return
 	}
-	nextCapture := time.Now().Add(focusFrameBudget)
+	nextCapture := time.Now()
 	for {
 		select {
 		case <-stop:
