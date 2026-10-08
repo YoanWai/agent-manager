@@ -5,88 +5,93 @@ import (
 	"strings"
 )
 
+// viewSettings is the root's frame for the dialog.
 func (m *Model) viewSettings() string {
-	if m.settings.dialog.cliPicker {
-		return m.viewCLIPicker()
+	return m.settings.view(m)
+}
+
+func (s *settingsFeature) view(h settingsViewHost) string {
+	if s.dialog.cliPicker {
+		return s.viewCLIPicker(h)
 	}
-	if m.settings.dialog.keyPicker {
-		return m.viewKeyPicker()
+	if s.dialog.keyPicker {
+		return s.viewKeyPicker(h)
 	}
 	layout := "unified"
-	if m.settings.dialog.layoutSplit {
+	if s.dialog.layoutSplit {
 		layout = "split"
 	}
 	density := "compact"
-	if m.settings.dialog.comfortableRows {
+	if s.dialog.comfortableRows {
 		density = "comfortable"
 	}
 	sessionLayout := "split"
-	if m.settings.dialog.fullLayout {
+	if s.dialog.fullLayout {
 		sessionLayout = "full screen"
 	}
 	header := "show"
-	if m.settings.dialog.hideHeader {
+	if s.dialog.hideHeader {
 		header = "hide"
 	}
 	stats := "show"
-	if m.settings.dialog.hideStats {
+	if s.dialog.hideStats {
 		stats = "hide"
 	}
 	quickClose := "stay open"
-	if m.settings.dialog.quickCloseSend {
+	if s.dialog.quickCloseSend {
 		quickClose = "close"
 	}
 	focusKey := "↵ focus · A attach"
-	if !m.settings.dialog.enterFocuses {
+	if !s.dialog.enterFocuses {
 		focusKey = "↵ attach · A focus"
 	}
 	worktreeDefault := "off"
-	if m.settings.dialog.worktreeDefault {
+	if s.dialog.worktreeDefault {
 		worktreeDefault = "on"
 	}
 	baseFetch := "off"
-	if m.settings.dialog.baseFetch {
+	if s.dialog.baseFetch {
 		baseFetch = "on"
 	}
 	coordination := "on request"
-	if m.settings.dialog.proactive {
+	if s.dialog.proactive {
 		coordination = "proactive"
 	}
 	arrowStep := "off"
-	if m.settings.dialog.arrowStep {
+	if s.dialog.arrowStep {
 		arrowStep = "on"
 	}
 	mouseMode := "on"
-	if m.settings.dialog.mouseDisabled {
+	if s.dialog.mouseDisabled {
 		mouseMode = "off"
 	}
 	// The beta tag borrows the messages modal's yellow, so the row reads as
 	// the one still under test.
 	betaTag := lipgloss.NewStyle().Foreground(lipgloss.Color("#e2c044")).Render(" beta")
 	themeAuto := "off"
-	if m.settings.dialog.themeAuto {
+	if s.dialog.themeAuto {
 		themeAuto = "on"
 	}
 	background := "theme"
-	if m.settings.dialog.terminalBackground {
+	if s.dialog.terminalBackground {
 		background = "terminal"
 	}
 	notifications := "off"
-	if m.settings.dialog.notifications {
+	if s.dialog.notifications {
 		notifications = "on"
 	}
 	notifyFinished := "off"
-	if m.settings.dialog.notifyFinished {
+	if s.dialog.notifyFinished {
 		notifyFinished = "on"
 	}
 	toolValue := ""
-	if len(m.settings.dialog.toolNames) > 0 {
-		toolValue = m.settings.dialog.toolNames[m.settings.dialog.toolIndex]
+	if len(s.dialog.toolNames) > 0 {
+		toolValue = s.dialog.toolNames[s.dialog.toolIndex]
 	}
 	lead := func(field int, name string) string {
 		marker := "  "
 		labelStyle := valueStyle
-		if m.settings.dialog.field == field {
+		if s.dialog.field == field {
 			marker = lipgloss.NewStyle().Foreground(colorAccent).Render("❯ ")
 			labelStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 		}
@@ -104,7 +109,7 @@ func (m *Model) viewSettings() string {
 	ctaLead := func(field int, name string) string {
 		marker := "  "
 		labelStyle := lipgloss.NewStyle().Foreground(colorAccent2).Bold(true)
-		if m.settings.dialog.field == field {
+		if s.dialog.field == field {
 			marker = lipgloss.NewStyle().Foreground(colorAccent).Render("❯ ")
 			labelStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 		}
@@ -114,13 +119,13 @@ func (m *Model) viewSettings() string {
 		return ctaLead(field, name) + keyStyle.Render("↵") + " " +
 			lipgloss.NewStyle().Foreground(colorAccent2).Render(action)
 	}
-	editorLine := row(settingsFieldEditor, "editor", m.settings.dialog.editor.label())
-	if m.settings.dialog.editor.typing {
-		editorLine = lead(settingsFieldEditor, "editor") + textInputView(m.settings.dialog.editor.input)
+	editorLine := row(settingsFieldEditor, "editor", s.dialog.editor.label())
+	if s.dialog.editor.typing {
+		editorLine = lead(settingsFieldEditor, "editor") + textInputView(s.dialog.editor.input)
 	}
 	body := row(settingsFieldTool, "default tool", toolValue) + "\n" +
-		row(settingsFieldTheme, "theme", themes[m.settings.dialog.themeIndex].Name) + "  " +
-		themeSwatch(themes[m.settings.dialog.themeIndex]) + "\n" +
+		row(settingsFieldTheme, "theme", themes[s.dialog.themeIndex].Name) + "  " +
+		themeSwatch(themes[s.dialog.themeIndex]) + "\n" +
 		row(settingsFieldThemeAuto, "theme follows OS", themeAuto) + "\n" +
 		row(settingsFieldBackground, "background", background) + "\n" +
 		row(settingsFieldDensity, "list density", density) + "\n" +
@@ -138,13 +143,13 @@ func (m *Model) viewSettings() string {
 		row(settingsFieldNotify, "notifications", notifications) + "\n" +
 		row(settingsFieldNotifyFinish, "notify on finish", notifyFinished) + "\n" +
 		editorLine + "\n" +
-		actionRow(settingsFieldKeybindings, "keybindings", keybindingsSummary(m.services.keys, m.services.listKeys)) + "\n" +
+		actionRow(settingsFieldKeybindings, "keybindings", keybindingsSummary(h.keyTables())) + "\n" +
 		actionRow(settingsFieldCLIs, "CLIs", "show or hide for new sessions") + "\n" +
 		ctaRow(settingsFieldBugReport, "report a bug", "open the bug report form") + "\n" +
 		ctaRow(settingsFieldFeatureRequest, "suggest a change", "open the feature request form") + "\n" +
-		m.settingsVersionRow(lead, actionRow)
+		s.settingsVersionRow(h, lead, actionRow)
 	hint := [][2]string{{"↑↓", "field"}, {"←→", "change"}, {"↵/esc", "save"}}
-	switch m.settings.dialog.field {
+	switch s.dialog.field {
 	case settingsFieldBugReport, settingsFieldFeatureRequest:
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "open form"}, {"esc", "save"}}
 	case settingsFieldCLIs:
@@ -153,53 +158,55 @@ func (m *Model) viewSettings() string {
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "change the keys"}, {"esc", "save"}}
 	case settingsFieldEditor:
 		switch {
-		case m.settings.dialog.editor.typing:
+		case s.dialog.editor.typing:
 			hint = [][2]string{{"↵", "keep"}, {"esc", "cancel"}}
-		case m.settings.dialog.editor.custom:
+		case s.dialog.editor.custom:
 			hint = [][2]string{{"↑↓", "field"}, {"←→", "change"}, {"↵", "type the command"}, {"esc", "save"}}
 		}
 	case settingsFieldUpdate:
+		_, latest, applying := h.release()
 		switch {
-		case m.update.applying:
+		case applying:
 			hint = [][2]string{{"↑↓", "field"}, {"esc", "save"}}
-		case m.update.latest != "":
+		case latest != "":
 			hint = [][2]string{{"↑↓", "field"}, {"↵", "update"}, {"esc", "save"}}
 		default:
 			hint = [][2]string{{"↑↓", "field"}, {"↵/esc", "save"}}
 		}
 	}
-	return m.cardFlex("⚙ Settings", body, hint)
+	return h.cardFlex("⚙ Settings", body, hint)
 }
 
 // settingsVersionRow is the focusable version line: when a newer release is
 // known it is an action row that starts the same in-place update as the
 // messages modal's u key.
-func (m *Model) settingsVersionRow(lead func(int, string) string, actionRow func(int, string, string) string) string {
-	if m.update.applying {
-		label := m.update.latest
+func (s *settingsFeature) settingsVersionRow(h settingsViewHost, lead func(int, string) string, actionRow func(int, string, string) string) string {
+	version, latest, applying := h.release()
+	if applying {
+		label := latest
 		if label == "" {
 			label = "update"
 		}
 		return lead(settingsFieldUpdate, "version") +
 			lipgloss.NewStyle().Foreground(colorAccent).Render("↓ downloading "+label+"…")
 	}
-	if m.update.latest != "" {
-		return actionRow(settingsFieldUpdate, "version "+m.update.version, "update to "+m.update.latest)
+	if latest != "" {
+		return actionRow(settingsFieldUpdate, "version "+version, "update to "+latest)
 	}
-	return lead(settingsFieldUpdate, "version") + valueStyle.Render(m.update.version)
+	return lead(settingsFieldUpdate, "version") + valueStyle.Render(version)
 }
 
-func (m *Model) viewCLIPicker() string {
+func (s *settingsFeature) viewCLIPicker(h settingsViewHost) string {
 	var b strings.Builder
-	for i, name := range m.settings.dialog.cliNames {
+	for i, name := range s.dialog.cliNames {
 		marker := "  "
 		labelStyle := valueStyle
-		if m.settings.dialog.cliCursor == i {
+		if s.dialog.cliCursor == i {
 			marker = lipgloss.NewStyle().Foreground(colorAccent).Render("❯ ")
 			labelStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 		}
 		box := "[x]"
-		if m.settings.dialog.cliHidden[name] {
+		if s.dialog.cliHidden[name] {
 			box = "[ ]"
 		}
 		b.WriteString(marker)
@@ -207,7 +214,7 @@ func (m *Model) viewCLIPicker() string {
 		b.WriteByte('\n')
 	}
 	// Request row matches other settings actions; the note below is not focusable.
-	reqFocused := m.settings.dialog.cliCursor >= len(m.settings.dialog.cliNames)
+	reqFocused := s.dialog.cliCursor >= len(s.dialog.cliNames)
 	reqMarker := "  "
 	reqLabel := mutedStyle.Render("request CLI support")
 	if reqFocused {
@@ -227,7 +234,7 @@ func (m *Model) viewCLIPicker() string {
 		hint = [][2]string{{"↑↓", "move"}, {"↵", "open request issue"}, {"esc", "back"}}
 	}
 	// Fixed card width: short checkbox rows must not stretch a wide empty panel.
-	return m.card("⚙ CLIs", strings.TrimRight(b.String(), "\n"), hint)
+	return h.card("⚙ CLIs", strings.TrimRight(b.String(), "\n"), hint)
 }
 
 // themeSwatch previews a palette as a run of blocks, so a theme can be

@@ -49,8 +49,8 @@ func (r editorResolution) probe() editorsProbedMsg {
 	return editorsProbedMsg{found: found, auto: r.resolve()}
 }
 
-func (m *Model) probeEditorsCmd() tea.Cmd {
-	resolution, generation := detectedEditors(), m.settings.gen
+func (s *settingsFeature) probeEditorsCmd() tea.Cmd {
+	resolution, generation := detectedEditors(), s.gen
 	return func() tea.Msg {
 		msg := resolution.probe()
 		msg.generation = generation
@@ -59,18 +59,18 @@ func (m *Model) probeEditorsCmd() tea.Cmd {
 }
 
 // applyEditorsProbe keeps the answer for the rows later loads rebuild, and
-// fills the row of the visit that asked.
-func (m *Model) applyEditorsProbe(msg editorsProbedMsg) {
-	m.settings.cache.editors = &msg
-	if m.mode == modeSettings && msg.generation == m.settings.gen {
-		m.settings.dialog.editor.applyProbe(msg)
+// fills the row of the visit that asked while the dialog is open.
+func (s *settingsFeature) applyEditorsProbe(msg editorsProbedMsg, open bool) {
+	s.cache.editors = &msg
+	if open && msg.generation == s.gen {
+		s.dialog.editor.applyProbe(msg)
 	}
 }
 
-func (m *Model) cachedEditorRow() editorRow {
-	row := newEditorRow(m.settings.cache.value(editorSetting))
-	if m.settings.cache.editors != nil {
-		row.applyProbe(*m.settings.cache.editors)
+func (s *settingsFeature) cachedEditorRow() editorRow {
+	row := newEditorRow(s.cache.value(editorSetting))
+	if s.cache.editors != nil {
+		row.applyProbe(*s.cache.editors)
 	}
 	return row
 }
@@ -124,28 +124,28 @@ func (r editorRow) label() string {
 	return "auto · " + r.auto
 }
 
-func (m *Model) openEditorTyping() {
+func (s *settingsFeature) openEditorTyping() {
 	input := textField("a command, such as code -n", 400)
 	input.Prompt = ""
-	input.SetValue(m.settings.dialog.editor.typed)
+	input.SetValue(s.dialog.editor.typed)
 	input.Focus()
-	m.settings.dialog.editor.input = input
-	m.settings.dialog.editor.typing = true
+	s.dialog.editor.input = input
+	s.dialog.editor.typing = true
 }
 
-func (m *Model) handleEditorTypingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	row := &m.settings.dialog.editor
+func (s *settingsFeature) handleEditorTypingKey(msg tea.KeyMsg) tea.Cmd {
+	row := &s.dialog.editor
 	switch msg.String() {
 	case "enter":
 		row.typed = strings.TrimSpace(row.input.Value())
 		row.typing = false
-		m.settings.dialog.dirty = true
-		return m, nil
+		s.dialog.dirty = true
+		return nil
 	case "esc":
 		row.typing = false
-		return m, nil
+		return nil
 	}
 	var cmd tea.Cmd
 	row.input, cmd = row.input.Update(msg)
-	return m, cmd
+	return cmd
 }

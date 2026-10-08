@@ -202,7 +202,7 @@ func TestKeyPickerResetsEveryActionToItsDefaultAfterAsking(t *testing.T) {
 	if !m.settings.dialog.keyReset {
 		t.Fatal("r should ask before resetting")
 	}
-	ask := ansi.Strip(m.viewKeyPicker())
+	ask := ansi.Strip(m.settings.viewKeyPicker(m))
 	for _, want := range []string{"Reset every key", "detach: ctrl+q / f9 back to ctrl+q / ctrl+\\", "review: off back to ctrl+r", "editor: f5 back to f3", "new_session: N back to n"} {
 		if !strings.Contains(ask, want) {
 			t.Fatalf("the question should say %q:\n%s", want, ask)
@@ -276,20 +276,20 @@ func TestKeyPickerLeavesTheStoreAloneWithoutAChange(t *testing.T) {
 
 func TestKeyPickerViewNamesTheKeysAndTheCapture(t *testing.T) {
 	m := keyPickerModel(t)
-	view := ansi.Strip(m.viewKeyPicker())
+	view := ansi.Strip(m.settings.viewKeyPicker(m))
 	for _, want := range []string{"detach", `ctrl+q / ctrl+\`, "back to the manager", "every other key reaches the agent"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("picker view is missing %q:\n%s", want, view)
 		}
 	}
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
-	if capture := ansi.Strip(m.viewKeyPicker()); !strings.Contains(capture, "press a key") {
+	if capture := ansi.Strip(m.settings.viewKeyPicker(m)); !strings.Contains(capture, "press a key") {
 		t.Fatalf("a waiting row should say so:\n%s", capture)
 	}
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
 	m.settings.dialog.keyCursor = 2
 	m.pressInPicker(t, runeKey("d"))
-	if off := ansi.Strip(m.viewKeyPicker()); !strings.Contains(off, "off, the agent gets it") {
+	if off := ansi.Strip(m.settings.viewKeyPicker(m)); !strings.Contains(off, "off, the agent gets it") {
 		t.Fatalf("a disabled action should say where its key goes:\n%s", off)
 	}
 }
@@ -321,7 +321,7 @@ func TestSettingsRowCountsTheMovedKeys(t *testing.T) {
 
 func TestListPickerMovesAKeyAndTheListFollows(t *testing.T) {
 	m := keyPickerModel(t)
-	view := ansi.Strip(m.viewKeyPicker())
+	view := ansi.Strip(m.settings.viewKeyPicker(m))
 	for _, want := range []string{"Keybindings", "inside a session", "detach", "in the manager", "new_session", "esc and ctrl+c stay as they are"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("list picker is missing %q:\n%s", want, view)
@@ -395,12 +395,12 @@ func TestListPickerScrollsAroundTheCursor(t *testing.T) {
 	m := keyPickerModel(t)
 	m.layout.height = 20
 	below, above := regexp.MustCompile(`↓ \d+ more`), regexp.MustCompile(`↑ \d+ more`)
-	top := ansi.Strip(m.viewKeyPicker())
+	top := ansi.Strip(m.settings.viewKeyPicker(m))
 	if !below.MatchString(top) || above.MatchString(top) {
 		t.Fatalf("at the top only the rows below should be counted:\n%s", top)
 	}
 	m.settings.dialog.keyCursor = len(keyRowsOf(m.settings.dialog.tables)) - 1
-	bottom := ansi.Strip(m.viewKeyPicker())
+	bottom := ansi.Strip(m.settings.viewKeyPicker(m))
 	if !strings.Contains(bottom, "quit") || !above.MatchString(bottom) || below.MatchString(bottom) {
 		t.Fatalf("at the bottom the last row shows and only the rows above are counted:\n%s", bottom)
 	}
@@ -421,10 +421,10 @@ func listRow(t *testing.T, m *Model, name string) int {
 func TestKeyPickerSetsTheTmuxPrefix(t *testing.T) {
 	m := keyPickerModel(t)
 	m.settings.dialog.keyCursor = 3
-	if row := m.pickedRow(); row.action.Name != keybind.TmuxPrefix {
+	if row := m.settings.pickedRow(); row.action.Name != keybind.TmuxPrefix {
 		t.Fatalf("row 3 = %q, want tmux_prefix", row.action.Name)
 	}
-	if view := ansi.Strip(m.viewKeyPicker()); !strings.Contains(view, "off, your prefix stays") {
+	if view := ansi.Strip(m.settings.viewKeyPicker(m)); !strings.Contains(view, "off, your prefix stays") {
 		t.Fatalf("an unset tmux_prefix should say tmux keeps its prefix:\n%s", view)
 	}
 
@@ -470,7 +470,7 @@ func TestKeyPickerResetNamesTheTmuxPrefixGoingOff(t *testing.T) {
 	m := keyPickerModel(t)
 	m.settings.dialog.tables[0] = m.settings.dialog.tables[0].With(keybind.TmuxPrefix, bindingOf(t, "ctrl+b"))
 	m.pressInPicker(t, runeKey("r"))
-	if ask := ansi.Strip(m.viewKeyPicker()); !strings.Contains(ask, "tmux_prefix: ctrl+b back to off") {
+	if ask := ansi.Strip(m.settings.viewKeyPicker(m)); !strings.Contains(ask, "tmux_prefix: ctrl+b back to off") {
 		t.Fatalf("the question should name tmux_prefix going off:\n%s", ask)
 	}
 }

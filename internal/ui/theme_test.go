@@ -173,7 +173,7 @@ func TestThemeSwitchPushesPaneBackground(t *testing.T) {
 
 	light := themes[themeIndex("solarized light")]
 	m.settings.dialog.themeIndex = themeIndex("solarized light") - 1
-	if cmd := m.cycleSetting(1); cmd != nil {
+	if cmd := m.settings.cycleSetting(m, 1); cmd != nil {
 		if msg := cmd(); msg != nil {
 			m.Update(msg)
 		}
@@ -186,7 +186,7 @@ func TestThemeSwitchPushesPaneBackground(t *testing.T) {
 	}
 
 	m.settings.dialog.themeIndex = themeIndex("nord") - 1
-	if cmd := m.cycleSetting(1); cmd != nil {
+	if cmd := m.settings.cycleSetting(m, 1); cmd != nil {
 		if msg := cmd(); msg != nil {
 			m.Update(msg)
 		}

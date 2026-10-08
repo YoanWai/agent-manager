@@ -361,7 +361,7 @@ func TestSettingsCLIPickerKeepsOneEnabled(t *testing.T) {
 		"codex":  {Command: "cat"},
 	}}
 	m.openSettings()
-	m.openCLIPicker()
+	m.settings.openCLIPicker(m)
 	m.settings.dialog.cliCursor = 0
 	m.handleSettingsKey(key("enter"))
 	if !m.settings.dialog.cliHidden["claude"] {
@@ -389,7 +389,7 @@ func TestSettingsCLIRequestSupportOpensIssue(t *testing.T) {
 	t.Cleanup(func() { openBrowser = defaultOpenBrowser })
 
 	m.openSettings()
-	m.openCLIPicker()
+	m.settings.openCLIPicker(m)
 	m.settings.dialog.cliCursor = len(m.settings.dialog.cliNames)
 	_, cmd := m.handleSettingsKey(key("enter"))
 	if opened != "" {
@@ -413,7 +413,7 @@ func TestCLIPickerShowsSupportAction(t *testing.T) {
 	m.layout.width = 80
 	m.layout.height = 40
 	m.openSettings()
-	m.openCLIPicker()
+	m.settings.openCLIPicker(m)
 	m.settings.dialog.cliCursor = len(m.settings.dialog.cliNames)
 	out := m.viewSettings()
 	if !strings.Contains(out, "request CLI support") {

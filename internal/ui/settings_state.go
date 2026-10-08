@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 const diffLayoutSetting = "diff_layout"
@@ -131,4 +133,43 @@ const (
 	settingsFieldFeatureRequest
 	settingsFieldUpdate
 	settingsFieldCount
+)
+
+// settingsHost is what the Settings dialog's keys reach in the root: the
+// status bar, the configured tools, the live key tables, the effect lane
+// its captured writes go through, and the two live previews a step makes.
+// Closing the dialog, the in-place update, and the store writes stay with
+// the root adapters.
+type settingsHost interface {
+	reportErr(text string)
+	clearErr()
+	toolConfig() config.Config
+	keyTables() (session, list keybind.Table)
+	queuedEffects() []effectRequest
+	submitEffect(request effectRequest) tea.Cmd
+	syncPaneTheme() tea.Cmd
+	previewBackground(terminal bool)
+}
+
+// settingsViewHost is what painting the dialog reads from the root: the
+// live key tables for the keybindings row, the release facts for the
+// version row, the room the key picker scrolls in, and the card chrome.
+type settingsViewHost interface {
+	keyTables() (session, list keybind.Table)
+	release() (version, latest string, applying bool)
+	dialogHeight() int
+	card(title, body string, hint [][2]string) string
+	cardFlex(title, body string, hint [][2]string) string
+	confirmCard(title, question, consequence string, destructive bool, answer string) string
+}
+
+// settingsExit is what a dialog key asks of the root beyond the dialog's
+// own state.
+type settingsExit uint8
+
+const (
+	settingsStay settingsExit = iota
+	settingsSave
+	settingsUpdate
+	settingsReportBug
 )

@@ -251,7 +251,7 @@ func (m *Model) handleSettingsLoaded(msg settingsLoadedMsg) (tea.Model, tea.Cmd)
 		}
 		m.settings.cache.applyReadback(msg.result.values, msg.result.hiddenRaw, msg.result.hiddenErr)
 		field := m.settings.dialog.field
-		m.settings.dialog = m.settingsStateFromCache()
+		m.settings.dialog = m.settings.settingsStateFromCache(m.services.cfg)
 		m.settings.dialog.field = field
 	case settingsLoadForm:
 		if m.mode != modeForm || uint64(m.form.prompt.gen) != msg.request.generation ||
@@ -303,7 +303,7 @@ func (m *Model) applySettingsEffect(job *effectJob, result settingsEffectResult,
 				m.reportErr(m.errBar.text + "; " + note)
 			}
 			if !stale {
-				m.restoreSettingsDialog(result.restored, result.restoredHidden, result.hiddenErr)
+				m.settings.restoreSettingsDialog(result.restored, result.restoredHidden, result.hiddenErr)
 			}
 		}
 	}
@@ -365,66 +365,66 @@ func (m *Model) reconcileSettingsPrefs(restored []restoredValue) string {
 // restoreSettingsDialog applies committed store values back to a live
 // dialog after a partial failure, so the dialog shows what persisted.
 // Keys whose read failed keep their current state.
-func (m *Model) restoreSettingsDialog(restored []restoredValue, hiddenRaw string, hiddenErr error) {
+func (s *settingsFeature) restoreSettingsDialog(restored []restoredValue, hiddenRaw string, hiddenErr error) {
 	for _, value := range restored {
 		if value.err != nil {
 			continue
 		}
 		switch value.key {
 		case "default_tool":
-			for i, name := range m.settings.dialog.toolNames {
+			for i, name := range s.dialog.toolNames {
 				if name == value.value {
-					m.settings.dialog.toolIndex = i
+					s.dialog.toolIndex = i
 					break
 				}
 			}
 		case themeSetting:
-			m.settings.dialog.themeIndex = themeIndex(value.value)
-			if !m.settings.dialog.themeAuto {
-				m.settings.dialog.manualTheme = value.value
+			s.dialog.themeIndex = themeIndex(value.value)
+			if !s.dialog.themeAuto {
+				s.dialog.manualTheme = value.value
 			}
 		case themeAutoSetting:
-			m.settings.dialog.themeAuto = value.value == "on"
+			s.dialog.themeAuto = value.value == "on"
 		case diffLayoutSetting:
-			m.settings.dialog.layoutSplit = value.value == "split"
+			s.dialog.layoutSplit = value.value == "split"
 		case quickCloseSetting:
-			m.settings.dialog.quickCloseSend = value.value == "close"
+			s.dialog.quickCloseSend = value.value == "close"
 		case focusKeySetting:
-			m.settings.dialog.enterFocuses = value.value == "focus"
+			s.dialog.enterFocuses = value.value == "focus"
 		case arrowStepSetting:
-			m.settings.dialog.arrowStep = value.value == "on"
+			s.dialog.arrowStep = value.value == "on"
 		case listDensitySetting:
-			m.settings.dialog.comfortableRows = value.value == "comfortable"
+			s.dialog.comfortableRows = value.value == "comfortable"
 		case sessionLayoutSetting:
-			m.settings.dialog.fullLayout = value.value == sessionLayoutValue(true)
+			s.dialog.fullLayout = value.value == sessionLayoutValue(true)
 		case hideHeaderSetting:
-			m.settings.dialog.hideHeader = value.value == "on"
+			s.dialog.hideHeader = value.value == "on"
 		case hideStatsSetting:
-			m.settings.dialog.hideStats = value.value == "on"
+			s.dialog.hideStats = value.value == "on"
 		case mouseSetting:
-			m.settings.dialog.mouseDisabled = value.value == "off"
+			s.dialog.mouseDisabled = value.value == "off"
 		case worktreeSetting:
-			m.settings.dialog.worktreeDefault = value.value == "on"
+			s.dialog.worktreeDefault = value.value == "on"
 		case notificationsSetting:
-			m.settings.dialog.notifications = value.value == "on"
+			s.dialog.notifications = value.value == "on"
 		case notifyFinishedSetting:
-			m.settings.dialog.notifyFinished = value.value == "on"
+			s.dialog.notifyFinished = value.value == "on"
 		case "coordination":
-			m.settings.dialog.proactive = value.value == "on"
+			s.dialog.proactive = value.value == "on"
 		case backgroundSetting:
-			m.settings.dialog.terminalBackground = value.value == "terminal"
+			s.dialog.terminalBackground = value.value == "terminal"
 		case baseFetchSetting:
-			m.settings.dialog.baseFetch = value.value != "off"
+			s.dialog.baseFetch = value.value != "off"
 		case editorSetting:
-			m.settings.dialog.editor = m.cachedEditorRow()
+			s.dialog.editor = s.cachedEditorRow()
 		}
 	}
 	// An empty committed hidden state is a real state: it clears the
 	// dialog's map. Only a failed read leaves the old map in place.
 	if hiddenErr == nil {
-		m.settings.dialog.cliHidden = parseHiddenTools(hiddenRaw)
-		if m.settings.dialog.cliHidden == nil {
-			m.settings.dialog.cliHidden = map[string]bool{}
+		s.dialog.cliHidden = parseHiddenTools(hiddenRaw)
+		if s.dialog.cliHidden == nil {
+			s.dialog.cliHidden = map[string]bool{}
 		}
 	}
 }

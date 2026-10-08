@@ -17,6 +17,14 @@ Each feature has concrete context and outcome types. There is no shared generic 
 
 The [production dependency checker](../../tools/architecture/check-ui-boundaries) follows transitive Go imports. It permits only each feature's explicit pure dependencies and rejects root UI, store, tmux, config, execution, and application packages. Review consumes [pure diff models and Git values](review-data.md); the concrete Git runner stays in its root adapter.
 
+## Root feature types
+
+Features that stay in package `ui` own their state, keys and view through a type that reaches the root only through a host interface it declares. `*Model` satisfies each host; the small host methods sit next to the feature. A host that would need the store, tmux or Git instead returns a typed request or exit that a root adapter runs.
+
+| Type | Feature-owned state and policy | Host | Root responsibilities |
+| --- | --- | --- | --- |
+| Settings (`settingsFeature`) | Dialog state, cache, request generation and pending count; field stepping; CLI picker and its one-CLI rule; key picker capture, validation, reset and the lane-aware table diff; editor row and probe; the `settingsRequest` and `keysRequest` it captures; restoring the dialog from a partial save's read-back; dialog, CLI and key picker views | `settingsHost`: `reportErr`, `clearErr`, `toolConfig`, `keyTables`, `queuedEffects`, `submitEffect`, `syncPaneTheme`, `previewBackground`. `settingsViewHost`: `keyTables`, `release`, `dialogHeight`, `card`, `cardFlex`, `confirmCard` | Mode switch on open and close; `settingsExit` (save and close, in-place update, bug report link); live prefs mirror and reconcile; store and key writes on the effect lane; load completions for the dialog, form and quick bar |
+
 ## Preserve the interaction contracts
 
 Review distinguishes load, file, status, probe, highlight, save, and send results. Its target and generation checks prevent stale replies from replacing current feature state. Closing a review invalidates presentation work while preserving process-lifetime draft and review caches. Durable review writes and send rollback retain their original ordering. A request fence does not revoke a mutation already accepted by a concrete adapter.

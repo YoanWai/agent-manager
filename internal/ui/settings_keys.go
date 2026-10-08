@@ -73,89 +73,90 @@ func labelOrOff(binding keybind.Binding) string {
 	return "off"
 }
 
-func (m *Model) openKeyPicker() {
-	m.settings.dialog.keyPicker = true
-	m.settings.dialog.tables = []keybind.Table{m.services.keys, m.services.listKeys}
-	m.settings.dialog.keyCursor = 0
-	m.settings.dialog.keyCapture = false
-	m.settings.dialog.keyAppend = false
-	m.settings.dialog.keyReset = false
-	m.clearErr()
+func (s *settingsFeature) openKeyPicker(h settingsHost) {
+	s.dialog.keyPicker = true
+	session, list := h.keyTables()
+	s.dialog.tables = []keybind.Table{session, list}
+	s.dialog.keyCursor = 0
+	s.dialog.keyCapture = false
+	s.dialog.keyAppend = false
+	s.dialog.keyReset = false
+	h.clearErr()
 }
 
-func (m *Model) pickedRow() keyRow {
-	return keyRowsOf(m.settings.dialog.tables)[m.settings.dialog.keyCursor]
+func (s *settingsFeature) pickedRow() keyRow {
+	return keyRowsOf(s.dialog.tables)[s.dialog.keyCursor]
 }
 
-func (m *Model) pickedTable() keybind.Table {
-	return m.settings.dialog.tables[m.pickedRow().table]
+func (s *settingsFeature) pickedTable() keybind.Table {
+	return s.dialog.tables[s.pickedRow().table]
 }
 
-func (m *Model) handleKeyPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.settings.dialog.keyCapture {
-		return m.captureKey(msg)
+func (s *settingsFeature) handleKeyPickerKey(h settingsHost, msg tea.KeyMsg) tea.Cmd {
+	if s.dialog.keyCapture {
+		return s.captureKey(h, msg)
 	}
-	if m.settings.dialog.keyReset {
-		return m.answerKeyReset(msg)
+	if s.dialog.keyReset {
+		return s.answerKeyReset(msg)
 	}
-	count := len(keyRowsOf(m.settings.dialog.tables))
+	count := len(keyRowsOf(s.dialog.tables))
 	switch msg.String() {
 	case "up", "k":
-		m.settings.dialog.keyCursor = (m.settings.dialog.keyCursor + count - 1) % count
+		s.dialog.keyCursor = (s.dialog.keyCursor + count - 1) % count
 	case "down", "j":
-		m.settings.dialog.keyCursor = (m.settings.dialog.keyCursor + 1) % count
+		s.dialog.keyCursor = (s.dialog.keyCursor + 1) % count
 	case "enter", "a":
-		m.settings.dialog.keyCapture = true
-		m.settings.dialog.keyAppend = msg.String() == "a"
-		m.clearErr()
+		s.dialog.keyCapture = true
+		s.dialog.keyAppend = msg.String() == "a"
+		h.clearErr()
 	case "d":
-		return m, m.setBinding(keybind.Keys())
+		return s.setBinding(h, keybind.Keys())
 	case "r":
-		m.settings.dialog.keyReset = len(keyResetChanges(m.settings.dialog.tables...)) > 0
-		m.clearErr()
+		s.dialog.keyReset = len(keyResetChanges(s.dialog.tables...)) > 0
+		h.clearErr()
 	case "esc":
-		m.settings.dialog.keyPicker = false
-		return m, m.saveKeys()
+		s.dialog.keyPicker = false
+		return s.saveKeys(h)
 	}
-	return m, nil
+	return nil
 }
 
 // Every key reaches here, so esc leaves rather than binds; Parse would
 // refuse it anyway.
-func (m *Model) captureKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	m.settings.dialog.keyCapture = false
+func (s *settingsFeature) captureKey(h settingsHost, msg tea.KeyMsg) tea.Cmd {
+	s.dialog.keyCapture = false
 	if msg.String() == "esc" {
-		m.clearErr()
-		return m, nil
+		h.clearErr()
+		return nil
 	}
 	key, err := keybind.Parse(msg.String())
 	if err != nil {
-		m.reportErr(err.Error())
-		return m, nil
+		h.reportErr(err.Error())
+		return nil
 	}
 	binding := keybind.Keys(key)
-	if m.settings.dialog.keyAppend {
-		existing := m.pickedTable().Binding(m.pickedRow().action.Name)
+	if s.dialog.keyAppend {
+		existing := s.pickedTable().Binding(s.pickedRow().action.Name)
 		if existing.Has(key.Tea()) {
-			m.reportErr(fmt.Sprintf("%s already answers to %s", m.pickedRow().action.Name, key))
-			return m, nil
+			h.reportErr(fmt.Sprintf("%s already answers to %s", s.pickedRow().action.Name, key))
+			return nil
 		}
 		binding = keybind.Keys(append(slices.Clone(existing.Keys()), key)...)
 	}
-	return m, m.setBinding(binding)
+	return s.setBinding(h, binding)
 }
 
-func (m *Model) answerKeyReset(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (s *settingsFeature) answerKeyReset(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "y", "enter":
-		for i, keys := range m.settings.dialog.tables {
-			m.settings.dialog.tables[i] = keys.Defaults()
+		for i, keys := range s.dialog.tables {
+			s.dialog.tables[i] = keys.Defaults()
 		}
-		m.settings.dialog.keyReset = false
+		s.dialog.keyReset = false
 	case "n", "esc":
-		m.settings.dialog.keyReset = false
+		s.dialog.keyReset = false
 	}
-	return m, nil
+	return nil
 }
 
 func keyResetChanges(tables ...keybind.Table) []string {
@@ -175,15 +176,15 @@ func keyResetChanges(tables ...keybind.Table) []string {
 
 // The picker refuses what the store would refuse, so the table it saves
 // always loads back.
-func (m *Model) setBinding(binding keybind.Binding) tea.Cmd {
-	row := m.pickedRow()
-	candidate := m.settings.dialog.tables[row.table].With(row.action.Name, binding)
+func (s *settingsFeature) setBinding(h settingsHost, binding keybind.Binding) tea.Cmd {
+	row := s.pickedRow()
+	candidate := s.dialog.tables[row.table].With(row.action.Name, binding)
 	if err := candidate.Validate(); err != nil {
-		m.reportErr(err.Error())
+		h.reportErr(err.Error())
 		return nil
 	}
-	m.settings.dialog.tables[row.table] = candidate
-	m.clearErr()
+	s.dialog.tables[row.table] = candidate
+	h.clearErr()
 	return nil
 }
 
@@ -192,14 +193,11 @@ func (m *Model) setBinding(binding keybind.Binding) tea.Cmd {
 // tmux keys and every live session's footer is redrawn. The picker submits
 // captured tables to the effect lane; the store writes happen off the
 // update path and a partial commit reconciles the runtime to the store.
-func (m *Model) saveKeys() tea.Cmd {
-	session, list := m.settings.dialog.tables[0], m.settings.dialog.tables[1]
-	expectedList, expectedSession := m.services.listKeys, m.services.keys
-	for _, job := range append([]*effectJob{m.effects.active}, m.effects.pending...) {
-		if job == nil {
-			continue
-		}
-		if pending, ok := job.request.(keysRequest); ok {
+func (s *settingsFeature) saveKeys(h settingsHost) tea.Cmd {
+	session, list := s.dialog.tables[0], s.dialog.tables[1]
+	expectedSession, expectedList := h.keyTables()
+	for _, request := range h.queuedEffects() {
+		if pending, ok := request.(keysRequest); ok {
 			if pending.listChanged {
 				expectedList = pending.list
 			}
@@ -213,6 +211,5 @@ func (m *Model) saveKeys() tea.Cmd {
 	if !listChanged && !sessionChanged {
 		return nil
 	}
-	m.enqueueEffect(keysRequest{list: list, session: session, listChanged: listChanged, sessionChanged: sessionChanged}, 0, false)
-	return m.nextEffectCmd()
+	return h.submitEffect(keysRequest{list: list, session: session, listChanged: listChanged, sessionChanged: sessionChanged})
 }

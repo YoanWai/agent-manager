@@ -186,9 +186,9 @@ func TestKeySaveCanRestoreOriginalBindingBehindPendingSave(t *testing.T) {
 	m := keyPickerModel(t)
 	original := m.services.keys
 	m.settings.dialog.tables[0] = original.With(keybind.Detach, bindingOf(t, "f9"))
-	m.saveKeys()
+	m.settings.saveKeys(m)
 	m.settings.dialog.tables[0] = original
-	m.saveKeys()
+	m.settings.saveKeys(m)
 	m.drainEffects(t)
 	if !m.services.keys.Equal(original) {
 		t.Fatal("pending save overwrote the user's later return to the original binding")

@@ -241,7 +241,7 @@ func TestSwappedKeysRouteActions(t *testing.T) {
 	// Swap through the settings screen, the same path a user takes.
 	m.openSettings()
 	m.settings.dialog.field = settingsFieldFocusKey
-	m.cycleSetting(1)
+	m.settings.cycleSetting(m, 1)
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m.drainEffects(t)
 	if chosen, err := m.services.store.Setting(focusKeySetting); err != nil || chosen != "attach" {
@@ -1200,7 +1200,7 @@ func TestArrowStepSettingDisablesThePair(t *testing.T) {
 
 	m.openSettings()
 	m.settings.dialog.field = settingsFieldArrowStep
-	m.cycleSetting(1)
+	m.settings.cycleSetting(m, 1)
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m.drainEffects(t)
 	if chosen, err := m.services.store.Setting(arrowStepSetting); err != nil || chosen != "off" {
