@@ -90,6 +90,8 @@ type fakeSessionCommands struct {
 	reservations  []sessioncmd.Reservation
 	revivedID     string
 	killedID      string
+	focusedID     string
+	focusEntered  bool
 	archivedID    string
 	archived      bool
 	endedAction   string
@@ -133,6 +135,11 @@ func (f *fakeSessionCommands) MessageStatus(_ string, messageID int64) (sessionc
 func (f *fakeSessionCommands) Read(_ string, id string) (sessioncmd.SessionScreen, error) {
 	f.readID = id
 	return f.screen, f.err
+}
+
+func (f *fakeSessionCommands) Focus(id string, enter bool) (sessioncmd.Session, error) {
+	f.focusedID, f.focusEntered = id, enter
+	return f.created, f.err
 }
 
 func (f *fakeSessionCommands) Revive(_ string, id string) (sessioncmd.Session, error) {
@@ -736,7 +743,7 @@ func TestListsFleetTools(t *testing.T) {
 		names[tool.Name] = true
 	}
 	for _, want := range []string{
-		"list_sessions", "create_session", "read_session", "send_session",
+		"list_sessions", "create_session", "read_session", "focus_session", "send_session",
 		"revive_session", "kill_session", "archive_session", "archive_self", "kill_self",
 		"list_groups", "create_group", "delete_group", "message_status", "wait_for_session",
 		"task",
@@ -825,6 +832,7 @@ func TestSessionDescriptionsTeachWhenAndHowToChainTools(t *testing.T) {
 		"wait_for_session": {"instead of calling read_session in a loop", "timeout is a normal answer", "reached false"},
 		"revive_session":   {"dead session"},
 		"kill_session":     {"revive_session", "ask first", "kill_self"},
+		"focus_session":    {"only when the user asked", "stays open"},
 		"archive_session":  {"archived false", "archive_self"},
 		"archive_self":     {"once the turn making this call ends", "finish your reply", "cancel true", "archive_session"},
 		"kill_self":        {"once the turn making this call ends", "finish your reply", "cancel true", "revive_session", "kill_session"},
@@ -925,6 +933,13 @@ func TestSessionToolsExposeStructuredResultsAndForwardArguments(t *testing.T) {
 	}
 	if fake.revivedID != "a1b2c3d4" {
 		t.Fatalf("revive id = %q", fake.revivedID)
+	}
+
+	if text, isError := callText(t, session, "focus_session", map[string]any{"session_id": "a1b2c3d4"}); isError || !strings.HasPrefix(text, "focused ") {
+		t.Fatalf("focus_session = %q, isError=%v", text, isError)
+	}
+	if fake.focusedID != "a1b2c3d4" || !fake.focusEntered {
+		t.Fatalf("focus args = id %q enter %v", fake.focusedID, fake.focusEntered)
 	}
 
 	if _, isError := callText(t, session, "kill_session", map[string]any{"session_id": "a1b2c3d4"}); isError {

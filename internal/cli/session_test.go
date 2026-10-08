@@ -52,6 +52,32 @@ func TestSessionCommandsParseArgumentsAndPrintSentences(t *testing.T) {
 			want: "screen text",
 		},
 		{
+			name: "focus opens the session it names",
+			run: func(out *bytes.Buffer, f *fakeSessions, args []string) error {
+				return runFocus(out, f, args, "")
+			},
+			args: []string{"beef1234"},
+			want: "focused api-worker (id beef1234)",
+			inspect: func(t *testing.T, f *fakeSessions) {
+				if f.targetID != "beef1234" || !f.entered {
+					t.Fatalf("focus got target %q enter %v", f.targetID, f.entered)
+				}
+			},
+		},
+		{
+			name: "select only moves the cursor",
+			run: func(out *bytes.Buffer, f *fakeSessions, args []string) error {
+				return runSelect(out, f, args, "")
+			},
+			args: []string{"beef1234"},
+			want: "selected api-worker (id beef1234)",
+			inspect: func(t *testing.T, f *fakeSessions) {
+				if f.targetID != "beef1234" || f.entered {
+					t.Fatalf("select got target %q enter %v", f.targetID, f.entered)
+				}
+			},
+		},
+		{
 			name: "kill names what it stopped",
 			run: func(out *bytes.Buffer, f *fakeSessions, args []string) error {
 				return runKill(out, f, args, "cafe0001")

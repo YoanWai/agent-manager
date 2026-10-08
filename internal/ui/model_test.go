@@ -10,6 +10,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/diff"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
@@ -751,5 +752,193 @@ func TestStartupErrorStaysVisibleUntilFirstRefresh(t *testing.T) {
 	m.Update(refreshMsg{listedAt: time.Now()})
 	if m.booting {
 		t.Fatal("the first successful refresh must finish boot")
+	}
+}
+
+// focusRequestModel lays out a root session and one filed two groups deep,
+// with both groups folded so the deep one has no row until it is unfolded.
+func focusRequestModel(t *testing.T) (*Model, store.Session) {
+	t.Helper()
+	m := buildModel(t)
+	if err := m.store.CreateGroup("backend/api", ""); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "top", t.TempDir(), "")
+	createSession(t, m, "deep", t.TempDir(), "backend/api")
+	var deep store.Session
+	for _, sess := range m.sessions {
+		if sess.Name == "deep" {
+			deep = sess
+		}
+	}
+	if deep.ID == "" {
+		t.Fatal("deep session missing")
+	}
+	m.collapsed["backend"] = true
+	m.collapsed["backend/api"] = true
+	m.rebuildRows()
+	m.selectSessionRow(t, "top")
+	return m, deep
+}
+
+// serveFocusRequest hands the model a request the way the focus endpoint
+// does and returns the answer the endpoint would write back.
+func (m *Model) serveFocusRequest(t *testing.T, id string, enter bool) error {
+	t.Helper()
+	answer := make(chan error, 1)
+	updated, _ := m.Update(focusRequestMsg{
+		request: sessioncmd.FocusRequest{ID: id, Enter: enter},
+		answer:  answer,
+		expires: time.Now().Add(time.Minute),
+	})
+	*m = *updated.(*Model)
+	select {
+	case err := <-answer:
+		return err
+	default:
+		t.Fatal("the request was not answered")
+		return nil
+	}
+}
+
+// A focus request lands on the session from wherever the user is, closing
+// the layers that hold no typed input the way esc would and unfolding the
+// groups that hide the row, then opens it the way enter does.
+func TestFocusRequestUnfoldsAndEntersFromEveryStartingState(t *testing.T) {
+	for _, start := range []struct {
+		name  string
+		setup func(t *testing.T, m *Model)
+	}{
+		{"list", func(t *testing.T, m *Model) {}},
+		{"search hiding the row", func(t *testing.T, m *Model) {
+			m.searching = true
+			m.search = "top"
+			m.rebuildRows()
+		}},
+		{"help with a query typed", func(t *testing.T, m *Model) {
+			m.openHelp()
+			m.help.searching = true
+			m.help.query = "attach"
+		}},
+		{"focused on another session", func(t *testing.T, m *Model) {
+			m.focusSelected()
+			if m.mode != modeFocus {
+				t.Fatalf("setup: mode = %v, want focus", m.mode)
+			}
+		}},
+	} {
+		t.Run(start.name, func(t *testing.T) {
+			m, deep := focusRequestModel(t)
+			start.setup(t, m)
+			if err := m.serveFocusRequest(t, deep.ID, true); err != nil {
+				t.Fatalf("focus answered %v", err)
+			}
+			if m.mode != modeFocus {
+				t.Fatalf("mode = %v, err = %q; want focus", m.mode, m.errBar.text)
+			}
+			if sess, ok := m.selected(); !ok || sess.ID != deep.ID {
+				t.Fatalf("cursor is on %+v, want deep", sess)
+			}
+			if m.collapsed["backend"] || m.collapsed["backend/api"] {
+				t.Fatalf("groups above the session are still folded: %v", m.collapsed)
+			}
+			if m.search != "" || m.searching {
+				t.Fatalf("search = %q (field open %v), want it cleared", m.search, m.searching)
+			}
+		})
+	}
+}
+
+// Without enter the request only selects, so a focused pane is left for the
+// list even when it is the session asked for: staying would keep every key
+// going to that agent while the request reported a selection.
+func TestSelectRequestLeavesFocusAndStaysOnTheList(t *testing.T) {
+	for _, start := range []string{"top", "deep"} {
+		t.Run("focused on "+start, func(t *testing.T) {
+			m, deep := focusRequestModel(t)
+			if start == "deep" {
+				if err := m.serveFocusRequest(t, deep.ID, true); err != nil {
+					t.Fatalf("setup: focus answered %v", err)
+				}
+			} else {
+				m.focusSelected()
+			}
+			if m.mode != modeFocus {
+				t.Fatalf("setup: mode = %v, want focus", m.mode)
+			}
+			if err := m.serveFocusRequest(t, deep.ID, false); err != nil {
+				t.Fatalf("select answered %v", err)
+			}
+			if m.mode != modeList {
+				t.Fatalf("mode = %v, want the list", m.mode)
+			}
+			if sess, ok := m.selected(); !ok || sess.ID != deep.ID {
+				t.Fatalf("cursor is on %+v, want deep", sess)
+			}
+		})
+	}
+}
+
+// A dialog may hold input the user has not finished, so a request never
+// closes it: the cursor moves under it, as a clicked banner always did. A
+// focus is answered with why the session was not opened over it.
+func TestFocusRequestKeepsADialogHoldingInput(t *testing.T) {
+	for _, enter := range []bool{false, true} {
+		t.Run(map[bool]string{false: "select", true: "focus"}[enter], func(t *testing.T) {
+			m, deep := focusRequestModel(t)
+			m.openForm()
+			m.form.name.SetValue("half typed")
+			err := m.serveFocusRequest(t, deep.ID, enter)
+			if enter != (err != nil && strings.Contains(err.Error(), "dialog")) {
+				t.Fatalf("answer = %v, want the dialog named only for a focus", err)
+			}
+			if m.mode != modeForm || m.form.name.Value() != "half typed" {
+				t.Fatalf("mode = %v, name = %q; want the form kept with its text", m.mode, m.form.name.Value())
+			}
+			if sess, ok := m.selected(); !ok || sess.ID != deep.ID {
+				t.Fatalf("cursor is on %+v, want deep under the form", sess)
+			}
+		})
+	}
+}
+
+// A status filter that hides the session is dropped rather than leaving the
+// request with nowhere to land.
+func TestFocusRequestDropsAStatusFilterHidingTheRow(t *testing.T) {
+	m, deep := focusRequestModel(t)
+	m.statusFilter = statusFilterCycle[1]
+	delete(m.collapsed, "backend")
+	delete(m.collapsed, "backend/api")
+	m.rebuildRows()
+	for _, sess := range m.sessionRows() {
+		if sess.ID == deep.ID {
+			t.Fatalf("setup: filter %v still shows the idle session", m.statusFilter)
+		}
+	}
+	if err := m.serveFocusRequest(t, deep.ID, false); err != nil {
+		t.Fatalf("select answered %v", err)
+	}
+	if sess, ok := m.selected(); !ok || sess.ID != deep.ID {
+		t.Fatalf("cursor is on %+v, want deep", sess)
+	}
+}
+
+// A request the program could not take in time has already been answered
+// as timed out, so it must not move the list when it finally arrives.
+func TestExpiredFocusRequestIsDropped(t *testing.T) {
+	m, deep := focusRequestModel(t)
+	answer := make(chan error, 1)
+	updated, _ := m.Update(focusRequestMsg{
+		request: sessioncmd.FocusRequest{ID: deep.ID, Enter: true},
+		answer:  answer,
+		expires: time.Now().Add(-time.Second),
+	})
+	m = updated.(*Model)
+	if sess, ok := m.selected(); !ok || sess.Name != "top" || m.mode != modeList {
+		t.Fatalf("an expired request moved the list: cursor %+v, mode %v", sess, m.mode)
+	}
+	if len(answer) != 0 {
+		t.Fatal("an expired request was answered a second time")
 	}
 }

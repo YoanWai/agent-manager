@@ -125,6 +125,8 @@ type Model struct {
 
 	poller *poller
 	focus  *focusWatch
+	// stopFocusEndpoint closes the socket focus requests arrive on.
+	stopFocusEndpoint func()
 	// sel is the focused-pane selection, written during paint so clicks
 	// resolve against the current frame. copied is the size of the last
 	// clipboard write, shown once in the status line and cleared on the
@@ -971,7 +973,16 @@ func (m *Model) persistCollapsed() {
 func (m *Model) StartPoller(send func(tea.Msg)) {
 	m.focus = newFocusWatch(m.tmux, send)
 	m.syncPollInput()
+	m.stopFocusEndpoint = listenFocus(m.tmux.FocusEndpoint(), send)
 	go m.poller.run(send)
+}
+
+// StopFocusEndpoint stops answering focus requests and removes the socket,
+// so a caller after this finds no manager rather than one that never acts.
+func (m *Model) StopFocusEndpoint() {
+	if m.stopFocusEndpoint != nil {
+		m.stopFocusEndpoint()
+	}
 }
 
 func (m *Model) syncPollInput() {
@@ -1234,6 +1245,92 @@ func (m *Model) focusSession(id string) bool {
 		}
 	}
 	return false
+}
+
+// overlayLayers bounds the esc presses bringForward spends closing what
+// covers the list. Each press closes at most one layer; the bound is for a
+// layer whose esc does not close it, which would otherwise loop.
+const overlayLayers = 8
+
+// bringForward serves a focus request from another process: it unfolds the
+// groups hiding the session, moves the cursor to its row and, when asked,
+// opens it the way the enter key does. Layers that hold nothing the user
+// typed (help, messages, the search, the row menu, a lifted row, a divider
+// drag) close the way esc closes them. A dialog that may hold unfinished
+// input stays open with the cursor moved under it, and the session is not
+// opened over it. A session with no row to land on changes nothing. The
+// error says why the session was not selected or, with enter, not opened.
+func (m *Model) bringForward(id string, enter bool) (tea.Cmd, error) {
+	sess, ok := m.sessionByID(id)
+	if !ok || (sess.Archived && !m.showArchived) {
+		return nil, fmt.Errorf("session %s has no row in Agent Manager's list yet", id)
+	}
+	var cmds []tea.Cmd
+	// A select is a request to look at the list, and a focus on another
+	// session would leave the keyboard pinned to the one the user was in
+	// while the list claims a different row.
+	if focused, ok := m.selected(); m.mode == modeFocus && (!enter || !ok || focused.ID != sess.ID) {
+		cmds = append(cmds, m.leaveFocus())
+	}
+	for presses := 0; m.inputFreeLayerOpen() && presses < overlayLayers; presses++ {
+		_, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
+		cmds = append(cmds, cmd)
+	}
+	unfolded := false
+	for group := sess.Group; group != ""; group = parentGroup(group) {
+		if m.collapsed[group] {
+			delete(m.collapsed, group)
+			unfolded = true
+		}
+	}
+	if unfolded {
+		m.persistCollapsed()
+	}
+	m.rebuildRows()
+	if !m.focusSession(sess.ID) && m.statusFilter.active() {
+		m.statusFilter = statusFilterAll
+		m.rebuildRows()
+		m.focusSession(sess.ID)
+	}
+	if selected, ok := m.selected(); !ok || selected.ID != sess.ID {
+		return tea.Batch(cmds...), fmt.Errorf("session %s has no row in Agent Manager's list", sess.ID)
+	}
+	if !enter || m.mode == modeFocus {
+		return tea.Batch(cmds...), nil
+	}
+	if !m.listUncovered() {
+		return tea.Batch(cmds...), fmt.Errorf("session %s is selected under a dialog open in Agent Manager, which is left as it is; close it to open the session", sess.ID)
+	}
+	_, cmd := m.runListAction(keybind.Open)
+	cmds = append(cmds, cmd)
+	// Enter attaches instead when Settings swaps the pair, and the attach
+	// runs from cmd; a focus that did not start left its reason on the bar.
+	if m.enterFocuses() && m.mode != modeFocus {
+		return tea.Batch(cmds...), fmt.Errorf("session %s was selected but not opened: %s", sess.ID, m.errBar.text)
+	}
+	return tea.Batch(cmds...), nil
+}
+
+// inputFreeLayerOpen reports whether a layer that holds nothing the user
+// typed stands over the rows, so esc can close it without losing work.
+// Focus mode is not one; esc there belongs to the pane.
+func (m *Model) inputFreeLayerOpen() bool {
+	if m.split.resizeMode || m.split.dragging {
+		return true
+	}
+	switch m.mode {
+	case modeHelp, modeNotices:
+		return true
+	case modeList:
+		return m.reorder.active || m.menu.active || m.searching || m.search != ""
+	}
+	return false
+}
+
+// listUncovered reports whether the list is on screen with nothing over it,
+// which is where the enter key opens the selected row.
+func (m *Model) listUncovered() bool {
+	return m.mode == modeList && !m.quick.active && !m.inputFreeLayerOpen()
 }
 
 // schedulePreview arms a single capture after previewSettle. Call after
@@ -1502,6 +1599,19 @@ func (m *Model) syncMouseCapture() tea.Cmd {
 
 func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case focusRequestMsg:
+		if time.Now().After(msg.expires) {
+			return m, nil
+		}
+		jump, err := m.bringForward(msg.request.ID, msg.request.Enter)
+		msg.answer <- err
+		sess, ok := m.selected()
+		if !ok || sess.ID == m.procFor {
+			return m, jump
+		}
+		m.syncPollInput()
+		m.previewGen++
+		return m, tea.Batch(jump, m.previewCmd(sess, m.previewGen), m.diffRefreshCmd())
 	case tea.WindowSizeMsg:
 		// Resuming from a tmux attach re-sends the current size unchanged; only
 		// a real resize needs the per-session tmux resize calls, so an
@@ -1636,14 +1746,8 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.settleInstall()
 		m.rebuildRows()
 		if msg.focusID != "" {
-			focused, ok := m.selected()
-			// Moving the cursor under a focused pane would leave the
-			// keyboard pinned to the session the user was in while the
-			// list claims another. The click steps back to the list, and
-			// only once its session turns out to have a row to land on.
-			if m.focusSession(msg.focusID) && m.mode == modeFocus && (!ok || focused.ID != msg.focusID) {
-				focusExit = m.leaveFocus()
-			}
+			jump, _ := m.bringForward(msg.focusID, false)
+			focusExit = tea.Batch(focusExit, jump)
 		}
 		reviewStatuses := m.reviewStatusesCmd()
 		// A pass that ran with a stale selection (a session created this
