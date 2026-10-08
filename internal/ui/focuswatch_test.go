@@ -256,6 +256,27 @@ func TestFocusWatchEchoesRepeatedInputBeforeTheFrameBudget(t *testing.T) {
 	}
 }
 
+func TestFocusWatchWaitsForPaneOutputAfterInput(t *testing.T) {
+	driver, id, arrivals, watch := startFocusArrivalWatch(t)
+	if err := driver.SendText(id, `stty -echo; echo $((6*7))ready; exec sleep 10`); err != nil {
+		t.Fatal(err)
+	}
+	waitFocusArrival(t, arrivals, "42ready")
+	time.Sleep(2 * focusFrameBudget)
+	for len(arrivals) > 0 {
+		<-arrivals
+	}
+	if !watch.attempt("send-keys -t " + tmux.PaneTarget(id) + " -l a") {
+		t.Fatal("control client did not accept input")
+	}
+	watch.inputSent(id)
+	select {
+	case got := <-arrivals:
+		t.Fatalf("input without pane output produced a preview: %q", got.preview)
+	case <-time.After(2 * focusFrameBudget):
+	}
+}
+
 func TestFocusWatchBoundsInputCapturesAndRestoresTheStreamBudget(t *testing.T) {
 	driver, id, arrivals, watch := startFocusArrivalWatch(t)
 	if err := driver.SendText(id, "for i in $(seq 1 800); do echo line$i; sleep 0.004; done"); err != nil {

@@ -288,6 +288,8 @@ func (w *focusWatch) watch(id string, stop, input chan struct{}) {
 	lastCapture := time.Now()
 	nextCapture := lastCapture.Add(focusCaptureGap)
 	var inputUntil time.Time
+	timer := time.NewTimer(0)
+	defer timer.Stop()
 	for {
 		select {
 		case <-stop:
@@ -303,6 +305,7 @@ func (w *focusWatch) watch(id string, stop, input chan struct{}) {
 		case <-control.Events():
 		case <-input:
 			inputUntil = time.Now().Add(focusFrameBudget)
+			continue
 		}
 		captureAt := nextCapture
 		// Echo may arrive after a streaming paint or a cursor-only update.
@@ -310,10 +313,9 @@ func (w *focusWatch) watch(id string, stop, input chan struct{}) {
 			captureAt = lastCapture.Add(focusCaptureGap)
 		}
 		for wait := time.Until(captureAt); wait > 0; wait = time.Until(captureAt) {
-			timer := time.NewTimer(wait)
+			timer.Reset(wait)
 			select {
 			case <-stop:
-				timer.Stop()
 				return
 			case <-input:
 				inputUntil = time.Now().Add(focusFrameBudget)
