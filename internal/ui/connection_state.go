@@ -24,6 +24,7 @@ type connectionsFeature struct {
 	gen     uint64
 	hosts   map[string]remote.HostState
 	polling map[string]bool
+	preview remotePreview
 	dialog  connectionDialog
 	// from names the user on this machine to the agent a remote send
 	// reaches.

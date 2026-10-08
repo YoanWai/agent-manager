@@ -96,6 +96,7 @@ func (m *Model) applyRailDecision(decision uirail.Decision) (tea.Model, tea.Cmd)
 		if selectedSession {
 			commands = append(commands, m.schedulePreview())
 		}
+		commands = append(commands, m.syncRemotePreview())
 	}
 	dependent := false
 	for _, mutation := range decision.Mutations {

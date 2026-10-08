@@ -245,7 +245,7 @@ func (m *Model) routeRefreshMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		if sess, ok := m.selected(); ok && sess.ID != msg.procFor {
 			m.syncPollInput()
 			gen := m.focus.pane.MovePreview()
-			return routed(m, tea.Batch(focusExit, m.previewCmd(sess, gen), m.diffRefreshCmd(), reviewStatuses, m.startStartupTick()))
+			return routed(m, tea.Batch(focusExit, m.previewCmd(sess, gen), m.diffRefreshCmd(), reviewStatuses, m.startStartupTick(), m.pollConnections()))
 		}
 		m.workspace.proc = msg.proc
 		m.workspace.procFor = msg.procFor
@@ -255,7 +255,7 @@ func (m *Model) routeRefreshMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		if m.focus.pane.ObservePoll() {
 			m.watchSelection()
 		}
-		return routed(m, tea.Batch(focusExit, m.diffRefreshCmd(), reviewStatuses, m.startStartupTick()))
+		return routed(m, tea.Batch(focusExit, m.diffRefreshCmd(), reviewStatuses, m.startStartupTick(), m.pollConnections()))
 	}
 	return nil, nil, false
 }

@@ -209,7 +209,7 @@ func (m *Model) routePreviewMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		// just keep the timer alive.
 		sess, ok := m.selected()
 		if !ok || (m.mode != modeList && m.mode != modeRename && m.mode != modeFocus) {
-			return routed(m, m.previewTick())
+			return routed(m, tea.Batch(m.readRemotePreview(), m.previewTick()))
 		}
 		// A session with a control client already pushes every frame; a
 		// tick capture on top of that is work whose result is discarded.

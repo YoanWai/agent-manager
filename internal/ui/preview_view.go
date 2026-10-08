@@ -13,6 +13,9 @@ import (
 
 // Captured panes use the whole column to preserve terminal layout.
 func (m *Model) contentLines(width, height int) []contentLine {
+	if lines, ok := m.remoteContentLines(width, height); ok {
+		return lines
+	}
 	gutter := strings.Repeat(" ", contentGutter)
 	inner := width - 2*contentGutter
 	ours := func(lines []string) []contentLine {

@@ -68,6 +68,9 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if model, cmd, ok := m.routeStatusMsg(msg); ok {
 		return model, cmd
 	}
+	if model, cmd, ok := m.routeConnectionMsg(msg); ok {
+		return model, cmd
+	}
 	switch msg := msg.(type) {
 	case tea.MouseMsg:
 		return m.handleMouse(msg)

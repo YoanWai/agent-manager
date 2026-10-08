@@ -64,7 +64,8 @@ func (m *Model) applyConnectionEffect(request connectionRequest, result connecti
 	switch request.op {
 	case connectionAdd, connectionUpdate:
 		m.rail.Focus(uirail.Selection{Kind: uirail.ConnectionRow, Host: request.next.Name})
-		m.reportDone("saved connection " + request.next.Name)
+		m.reportDone("connecting to " + request.next.Name + " over SSH")
+		return m.pollConnections()
 	default:
 		m.reportDone("removed " + request.name + "; its sessions keep running on that host")
 	}
