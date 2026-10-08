@@ -54,9 +54,9 @@ func TestServerWithNoCallerKeepsTheWorkspaceClosed(t *testing.T) {
 		{"read_terminal", map[string]any{"terminal_id": "box::t1"}},
 		{"close_terminal", map[string]any{"terminal_id": "t1"}},
 		{"close_terminal", map[string]any{"terminal_id": "box::t1"}},
-		{"report_issue", map[string]any{"kind": "bug", "title": "t", "body": "b"}},
 	}
-	checked := map[string]bool{}
+	// report_issue touches no session and stays open outside Agent Manager.
+	checked := map[string]bool{"report_issue": true}
 	for _, call := range calls {
 		checked[call.name] = true
 		text, isError := callText(t, session, call.name, call.args)

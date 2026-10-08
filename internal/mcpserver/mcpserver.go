@@ -827,7 +827,9 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		return textContent("closed terminal " + args.TerminalID), nil, nil
 	})
 
-	addTool(server, noCaller, &mcp.Tool{
+	// Filing an issue touches no session, so a CLI outside Agent Manager may
+	// still report a bug in the manager itself.
+	mcp.AddTool(server, &mcp.Tool{
 		Name: "report_issue",
 		Description: "File a bug report or a feature request on Agent Manager's public GitHub repo for the user. " +
 			"Offer it when the user hits a bug in the manager itself (a wrong status, a lost message, a tool refusing what it should allow) or asks for something the manager cannot do; it is not for bugs in the user's own project. " +
