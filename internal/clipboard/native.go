@@ -1,4 +1,4 @@
-//go:build linux
+//go:build darwin || linux
 
 package clipboard
 
@@ -10,8 +10,11 @@ import (
 )
 
 func init() {
-	// In-process X11/Wayland pasteboard when the runtime can open a display.
-	// Falls through to wl-paste/xclip/WSL when Init fails or no image is set.
+	// macOS: in-process NSPasteboard via purego (no cgo, no osascript).
+	// Reading a ~1MB screenshot is typically under a millisecond after the
+	// first call. Linux: in-process X11/Wayland pasteboard when the runtime
+	// can open a display; falls through to wl-paste/xclip/WSL when Init
+	// fails or no image is set.
 	readNativeImage = func() ([]byte, error) {
 		if err := designclip.Init(); err != nil {
 			return nil, err
