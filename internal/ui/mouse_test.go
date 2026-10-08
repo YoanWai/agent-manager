@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"path/filepath"
@@ -1280,7 +1281,7 @@ func TestDividerPressWhileSearchingOrPrompting(t *testing.T) {
 		drag bool
 	}{
 		"searching": {&Model{mode: modeList, width: 100, height: 40, split: splitState{ratio: defaultSplitRatio}, services: services{listKeys: keybind.DefaultList()}, rail: railModelCount(0, 0, true)}, false},
-		"quick bar": {&Model{mode: modeList, quick: quickState{active: true}, width: 100, height: 40, split: splitState{ratio: defaultSplitRatio}, services: services{listKeys: keybind.DefaultList()}}, true},
+		"quick bar": {&Model{mode: modeList, quick: quickState{active: true, composer: composer{input: textarea.New()}}, width: 100, height: 40, split: splitState{ratio: defaultSplitRatio}, services: services{listKeys: keybind.DefaultList()}}, true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			y0, _ := tc.m.bodyYRange()

@@ -24,11 +24,8 @@ type composer struct {
 	input       textarea.Model
 	attachments []imageAttachment
 	lastImageID int
-	// maxRows is the height the input is pinned to before an Update, which
-	// repositions its viewport against the height set at the last render; a
-	// keystroke adding a wrapped row would otherwise scroll the first row
-	// away for good.
-	maxRows int
+	maxRows     int
+	top         int
 	// gen tells this box from the one that stood in the same place before
 	// it. A clipboard read outlives the prompt that started it, and closing
 	// a form and opening another is fast enough to beat one home; without
@@ -55,6 +52,14 @@ const (
 	composerQuick composerID = iota
 	composerForm
 )
+
+// Multi-rune input must bypass Bubble Tea's named-key bindings.
+func typedText(msg tea.KeyMsg) tea.KeyMsg {
+	if msg.Type == tea.KeyRunes && len(msg.Runes) > 1 && !msg.Alt {
+		msg.Paste = true
+	}
+	return msg
+}
 
 // pasteImageMsg is the result of an async clipboard image read started by
 // a composer's ctrl+v handler.
@@ -286,7 +291,6 @@ func (c *composer) removeToken(span tokenSpan) tea.Cmd {
 	case cursor > span.start:
 		cursor = span.start
 	}
-	c.input.SetHeight(c.maxRows)
 	cmd := c.setValue(string(runes[:span.start])+string(runes[span.end:]), cursor)
 	c.drop(span.id)
 	return cmd
@@ -330,7 +334,6 @@ func (c *composer) insertToken(att *imageAttachment) {
 		token += " "
 		att.trailPad = true
 	}
-	c.input.SetHeight(c.maxRows)
 	c.input.InsertString(token)
 }
 
@@ -387,6 +390,49 @@ func (c *composer) message() string {
 	return strings.TrimSpace(value)
 }
 
+// Keep the textarea viewport at row zero so view owns scrolling.
+func holdOpen(input *textarea.Model) {
+	input.MaxHeight = 0
+	input.SetHeight(input.CharLimit + 1)
+}
+
+func (c *composer) view() string {
+	caret, total := c.displayRows()
+	rows := max(min(total, c.maxRows), 1)
+	if caret < c.top {
+		c.top = caret
+	}
+	if caret >= c.top+rows {
+		c.top = caret - rows + 1
+	}
+	c.top = max(min(c.top, total-rows), 0)
+	c.input.SetHeight(total)
+	lines := strings.Split(c.renderChips(textAreaView(c.input)), "\n")
+	holdOpen(&c.input)
+	return strings.Join(lines[c.top:min(c.top+rows, len(lines))], "\n")
+}
+
+// Walk copies to reuse textarea wrapping without moving the live caret.
+func (c *composer) displayRows() (caret, total int) {
+	info := c.input.LineInfo()
+	caret, total = info.RowOffset, info.Height
+	above := c.input
+	for above.Line() > 0 {
+		above.CursorStart()
+		above.CursorUp()
+		height := above.LineInfo().Height
+		caret += height
+		total += height
+	}
+	below := c.input
+	for below.Line() < below.LineCount()-1 {
+		below.CursorEnd()
+		below.CursorDown()
+		total += below.LineInfo().Height
+	}
+	return caret, total
+}
+
 // renderChips paints the image tokens inside an already rendered prompt.
 // The styling adds color only, never characters, so the wrapping the
 // textarea computed still matches what the terminal draws.
@@ -406,7 +452,6 @@ func (c *composer) renderChips(view string) string {
 // edit did to the chips around the caret: one that got swallowed releases
 // its image, and the caret never rests inside a chip.
 func (c *composer) typeKey(msg tea.KeyMsg) tea.Cmd {
-	c.input.SetHeight(c.maxRows)
 	var cmd tea.Cmd
 	c.input, cmd = c.input.Update(msg)
 	c.prune()
@@ -433,7 +478,6 @@ func (c *composer) stepRow(msg tea.KeyMsg) (tea.Cmd, bool) {
 	default:
 		return nil, false
 	}
-	c.input.SetHeight(c.maxRows)
 	var cmd tea.Cmd
 	c.input, cmd = c.input.Update(msg)
 	c.snapCursorOutOfToken(edge)
@@ -582,7 +626,6 @@ func (m *Model) handlePasteTextMsg(msg pasteTextMsg) (tea.Model, tea.Cmd) {
 	if c.gen != msg.gen || !m.composerOpen(msg.target) {
 		return m, nil
 	}
-	c.input.SetHeight(c.maxRows)
 	cmd := c.updateInput(msg.inner)
 	c.prune()
 	c.snapCursorOutOfToken(snapNearest)

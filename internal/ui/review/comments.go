@@ -9,6 +9,7 @@ import (
 
 	diff "github.com/YoanWai/agent-manager/internal/diff/model"
 	git "github.com/YoanWai/agent-manager/internal/git/value"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -320,7 +321,7 @@ func (m *Model) BeginSend() ApplyResult {
 	if len(parts) == 0 {
 		return ApplyResult{Accepted: true, Error: "no comments to send - press c on a line first"}
 	}
-	prompt := fmt.Sprintf("Code review of %s. Address each numbered point, then mark its comment handled with the review_comment tool (or `agent-manager review-comment <comment-id>`), and summarize what you changed per point: %s", scopePhrase(m.scope), strings.Join(parts, "; "))
+	prompt := fmt.Sprintf("Code review of %s. Address each numbered point, then mark its comment handled with the review_comment tool (or `agent-manager review-comment <comment-id>`), and summarize what you changed per point: %s", reviewSubject(m.scope, m.set, m.repoSel), strings.Join(parts, "; "))
 	round.Number = nextRound
 	round.Scope = m.scope.String()
 	round.Fingerprint = m.fingerprint
@@ -435,16 +436,35 @@ func NormalizeSavedState(state SavedState) (SavedState, bool) {
 	return state, changed
 }
 
+// reviewSubject names the checkout a round was written against, because the
+// session receiving it may sit on another branch or worktree, or none at all.
+func reviewSubject(scope git.Scope, set diff.Set, repoDir string) string {
+	subject := scopePhrase(scope)
+	if set.Repo.Detached {
+		subject += fmt.Sprintf(" on detached HEAD `%s`", set.Repo.Head)
+	} else if set.Repo.Branch != "" {
+		subject += fmt.Sprintf(" on `%s`", set.Repo.Branch)
+		if set.Repo.Head != "" {
+			subject += fmt.Sprintf(" (`%s`)", set.Repo.Head)
+		}
+	}
+	if scope == git.ScopeBranch && set.BaseDesc != "" {
+		target := StripBaseHash(set.BaseDesc)
+		subject += fmt.Sprintf(" vs `%s` (merge-base `%s`)", target, strings.TrimPrefix(set.BaseDesc, target+"@"))
+	}
+	return subject + fmt.Sprintf(" in `%s`", presentation.EscapeControlsInline(repoDir))
+}
+
 func scopePhrase(scope git.Scope) string {
 	switch scope {
 	case git.ScopeBranch:
-		return "your branch changes vs target"
+		return "the branch changes"
 	case git.ScopeLastCommit:
-		return "your last commit"
+		return "the last commit"
 	case git.ScopeStaged:
-		return "your staged changes"
+		return "the staged changes"
 	default:
-		return "your uncommitted changes"
+		return "the uncommitted changes"
 	}
 }
 

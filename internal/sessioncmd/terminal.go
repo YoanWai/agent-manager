@@ -62,7 +62,7 @@ func NewTerminalsWithBackend(backend *Backend, words Vocabulary) *Terminals {
 }
 
 func newTerminals(configDir string, words Vocabulary, newDriver func() (*tmux.Driver, error)) *Terminals {
-	return &Terminals{commands: commands{configDir: configDir, words: words, newDriver: newDriver, loadConfig: config.LoadDir}}
+	return &Terminals{commands: commands{configDir: configDir, words: words, newDriver: newDriver, loadConfig: config.Default}}
 }
 
 func (r *runtime) terminal(id string) (store.Session, error) {

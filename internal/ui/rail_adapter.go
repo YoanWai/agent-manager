@@ -201,6 +201,8 @@ func (m *Model) runRailIntent(intent uirail.Intent) (tea.Model, tea.Cmd) {
 		return m, m.openQuickMode()
 	case uirail.CopyReply:
 		return m.copyReplySelected()
+	case uirail.CancelEnd:
+		return m.cancelEndSelected()
 	case uirail.OpenSettings:
 		return m, m.openSettings()
 	case uirail.Resize:

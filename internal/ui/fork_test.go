@@ -109,6 +109,56 @@ func TestForkSelectedSessionCreatesNamedSibling(t *testing.T) {
 	}
 }
 
+// A fork launches on its source's model and keeps it for its own relaunches.
+func TestForkCarriesTheSourceChoice(t *testing.T) {
+	m := buildModel(t)
+	tool := m.services.cfg.Tools["claude"]
+	tool.ModelArgs = "--model {model}"
+	argsFile := filepath.Join(t.TempDir(), "fork-args")
+	tool.ForkCommand = "sh -c " + tmux.ShellQuote(`printf '%s\n' "$@" > `+tmux.ShellQuote(argsFile)+`; cat`) + " sh {id}"
+	m.services.cfg.Tools["claude"] = tool
+	choice := config.Choice{Model: "opus"}
+	if err := m.spawnSession("claude", "source", t.TempDir(), "", "", false, false, choice); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	source := m.sessionRows()[0]
+	if err := m.services.store.SetAgentSessionID(source.ID, "source-conversation"); err != nil {
+		t.Fatal(err)
+	}
+	for i := range m.workspace.sessions {
+		if m.workspace.sessions[i].ID == source.ID {
+			m.workspace.sessions[i].AgentSessionID = "source-conversation"
+		}
+	}
+	m.rebuildRows()
+	m.selectSessionRow(t, "source")
+	m.openFork()
+	m.fork.name.SetValue("child")
+	updated, cmd := m.handleForkKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(*Model)
+	m.applyCmd(t, cmd)
+	if m.errBar.text != "" {
+		t.Fatalf("fork: %q", m.errBar.text)
+	}
+	if args := readWhenWritten(t, argsFile); !strings.HasPrefix(args, "source-conversation\n--model\nopus\n") {
+		t.Fatalf("fork launch arguments = %q", args)
+	}
+	for _, sess := range m.sessionRows() {
+		if sess.Name != "child" {
+			continue
+		}
+		stored, err := m.services.store.Get(sess.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if stored.Choice != choice {
+			t.Fatalf("fork choice = %+v, want %+v", stored.Choice, choice)
+		}
+		return
+	}
+	t.Fatal("forked session not found")
+}
+
 func TestForkCopiesManagedWorktreeReference(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
@@ -155,7 +205,7 @@ func TestForkCopiesManagedWorktreeReference(t *testing.T) {
 func TestForkLaunchFailureKeepsSharedWorktree(t *testing.T) {
 	m := buildModel(t)
 	repo := seedRepo(t)
-	if err := m.spawnSession("claude", "source", repo, "", "", false, true); err != nil {
+	if err := m.spawnSession("claude", "source", repo, "", "", false, true, config.Choice{}); err != nil {
 		t.Fatal(err)
 	}
 	sessions, err := m.services.store.ListSessions(true)

@@ -22,7 +22,7 @@ func (s *Sessions) Groups(sessionID string) ([]Group, error) {
 		return nil, err
 	}
 	defer runtime.Close()
-	if _, err := runtime.caller(sessionID); err != nil {
+	if _, err := runtime.optionalCaller(sessionID); err != nil {
 		return nil, err
 	}
 	stored, err := runtime.store.Groups()

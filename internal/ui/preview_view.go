@@ -11,10 +11,7 @@ import (
 	"time"
 )
 
-// contentLines is the right column: what the cursor is on, then its live
-// pane, with the quick prompt docked at the foot when it is open. width is
-// the whole column; our own blocks sit inside its gutters, while the
-// captured pane spans it edge to edge.
+// Captured panes use the whole column to preserve terminal layout.
 func (m *Model) contentLines(width, height int) []contentLine {
 	gutter := strings.Repeat(" ", contentGutter)
 	inner := width - 2*contentGutter
@@ -26,12 +23,8 @@ func (m *Model) contentLines(width, height int) []contentLine {
 		return out
 	}
 
-	var bar []contentLine
-	if m.quick.active {
-		bar = append([]contentLine{{}}, ours(splitLines(m.viewQuickBar(inner, quickBarMaxRows)))...)
-	}
 	body := ours(splitLines(m.viewDetail(inner)))
-	rest := height - len(body) - len(bar) - 1
+	rest := height - len(body) - 1
 	if rest >= 3 {
 		if group, ok := m.selectedGroup(); ok {
 			body = append(body, contentLine{rule: true})
@@ -45,10 +38,10 @@ func (m *Model) contentLines(width, height int) []contentLine {
 			body = append(body, m.previewLines(width, rest, gutter, m.listChromeRows()+len(body))...)
 		}
 	}
-	for len(body)+len(bar) < height {
+	for len(body) < height {
 		body = append(body, contentLine{})
 	}
-	return append(body[:max(height-len(bar), 0)], bar...)
+	return body[:max(height, 0)]
 }
 
 // focusTopRule is the hairline that caps the focused pane in the split,
@@ -219,6 +212,9 @@ func (m *Model) viewDetail(width int) string {
 	state := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).
 		Render(statusGlyph(sess.Status)+" "+statusLabel(sess.Status)) +
 		subtleStyle.Render(" · "+relSince(lastActivity(sess))+m.elsewhereNote(sess))
+	if sess.AfterTurn != "" {
+		state += subtleStyle.Render(" · ") + afterTurnBadge(sess.AfterTurn) + subtleStyle.Render(" "+afterTurnNote[sess.AfterTurn])
+	}
 	// The branch a worktree session lives on is the fact that tells it apart
 	// from its siblings, so it rides beside the tool while the row has room,
 	// and the tool chip goes before the name does.
@@ -270,6 +266,10 @@ func (m *Model) viewGroupDetail(group string, width int) string {
 		if m.rename.focus == 2 {
 			worktreeLabel = lipgloss.NewStyle().Foreground(colorAccent)
 		}
+		baseLabel := labelStyle
+		if m.rename.focus == 3 {
+			baseLabel = lipgloss.NewStyle().Foreground(colorAccent)
+		}
 		if fieldWidth := width - 12; fieldWidth >= 10 {
 			m.rename.dir.Width = fieldWidth
 		}
@@ -279,6 +279,7 @@ func (m *Model) viewGroupDetail(group string, width int) string {
 		}
 		out += "\n" + worktreeLabel.Width(10).Render("worktree") +
 			subtleStyle.Render("◂ ") + valueStyle.Render(groupWorktreeOptions[m.rename.worktreeIndex]) + subtleStyle.Render(" ▸")
+		out += "\n" + baseLabel.Width(10).Render("base") + groupBaseChoice(m.rename.base, m.groupBase(parentGroup(group)))
 		return out
 	}
 

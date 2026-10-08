@@ -439,15 +439,18 @@ func (r renderer) renderSession(row treeRow, selected bool, width int, pad, guid
 	if selected && r.ctx.Focused {
 		focus = " " + r.palette.focusBadge.Render(" FOCUS ")
 	}
-	inbox := ""
+	badges := ""
 	if session.Queued > 0 {
-		inbox = " " + r.palette.inbox(session.Queued)
+		badges = " " + r.palette.inbox(session.Queued)
+	}
+	if session.AfterTurn != "" {
+		badges += " " + r.palette.inboxBadge.Render(session.AfterTurnGlyph)
 	}
 	name := session.DisplayName
 	if name == "" {
 		name = session.Name
 	}
-	room := width - railGutter - ansi.StringWidth(lead+handle+focus+inbox)
+	room := width - railGutter - ansi.StringWidth(lead+handle+focus+badges)
 	if room <= 0 {
 		room += ansi.StringWidth(focus)
 		focus = ""
@@ -455,7 +458,7 @@ func (r renderer) renderSession(row treeRow, selected bool, width int, pad, guid
 	if ansi.StringWidth(name) > room {
 		name = ansi.Truncate(name, max(room, 0), "…")
 	}
-	head := lead + handle + r.palette.highlight(name, r.model.search, nameStyle) + focus + inbox
+	head := lead + handle + r.palette.highlight(name, r.model.search, nameStyle) + focus + badges
 	metaStyle := r.palette.subtle
 	if selected {
 		metaStyle = r.palette.muted

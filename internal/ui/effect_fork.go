@@ -93,6 +93,7 @@ func (s effectServices) runFork(request forkRequest) (effectResult, error) {
 	}
 	agentID := ""
 	var baseCommand string
+	forkCommand := tool.WithChoice(source.Choice).ForkCommand
 	switch {
 	case tool.ForkKeys != "":
 		if request.knownForkID != "" {
@@ -106,7 +107,7 @@ func (s effectServices) runFork(request forkRequest) (effectResult, error) {
 				return result, fmt.Errorf("the fork %s %s recorded is gone; fork again", request.knownForkID, source.Name)
 			}
 			agentID = request.knownForkID
-			baseCommand = expandForkCommand(tool.ForkCommand, source.AgentSessionID, agentID, request.name, "")
+			baseCommand = expandForkCommand(forkCommand, source.AgentSessionID, agentID, request.name, "")
 		} else {
 			earlier, ok := agentsession.Forks(tool.SessionStore, source.AgentSessionID)
 			if !ok {
@@ -120,7 +121,7 @@ func (s effectServices) runFork(request forkRequest) (effectResult, error) {
 				if id, ok := agentsession.ForkedFrom(tool.SessionStore, source.AgentSessionID, since, earlier); ok {
 					agentID = id
 					result.recordedForkID = id
-					baseCommand = expandForkCommand(tool.ForkCommand, source.AgentSessionID, id, request.name, "")
+					baseCommand = expandForkCommand(forkCommand, source.AgentSessionID, id, request.name, "")
 					break
 				}
 			}
@@ -140,7 +141,7 @@ func (s effectServices) runFork(request forkRequest) (effectResult, error) {
 			}
 			sessionFile = resolved
 		}
-		baseCommand = expandForkCommand(tool.ForkCommand, source.AgentSessionID, agentID, request.name, sessionFile)
+		baseCommand = expandForkCommand(forkCommand, source.AgentSessionID, agentID, request.name, sessionFile)
 	}
 	forked := store.Session{
 		ID:             result.childID,
@@ -152,6 +153,7 @@ func (s effectServices) runFork(request forkRequest) (effectResult, error) {
 		AgentSessionID: agentID,
 		WorktreeRepo:   request.source.WorktreeRepo,
 		WorktreeBranch: request.source.WorktreeBranch,
+		Choice:         request.source.Choice,
 	}
 	launched, err := s.lifecycle.Launch(sessioncmd.LaunchRequest{
 		Session:     forked,

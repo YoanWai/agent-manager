@@ -274,11 +274,7 @@ func (m *Model) applyLifecycleEffect(request lifecycleRequest, result lifecycleE
 	if len(result.launches) > 0 && m.focusRuntime.watch != nil {
 		m.focusRuntime.watch.retryNow()
 	}
-	if result.survivor && m.focusRuntime.watch != nil {
-		if sess, ok := m.selected(); ok && sess.ID == request.watched && !sess.Archived {
-			m.watchSelection()
-		}
-	}
+	m.rewatchSurvivor(request.watched, result.survivor)
 	m.rebuildRows()
 	m.errBar.text = result.notice
 	if result.deleted.Notice != "" {
@@ -327,4 +323,15 @@ func (m *Model) applyLifecycleEffect(request lifecycleRequest, result lifecycleE
 		}
 	}
 	return nil
+}
+
+// rewatchSurvivor restarts the preview watcher a lifecycle worker stopped
+// when the session it watched is still selected and still running.
+func (m *Model) rewatchSurvivor(watched string, survivor bool) {
+	if !survivor || m.focusRuntime.watch == nil {
+		return
+	}
+	if sess, ok := m.selected(); ok && sess.ID == watched && !sess.Archived {
+		m.watchSelection()
+	}
 }

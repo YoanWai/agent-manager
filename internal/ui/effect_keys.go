@@ -8,7 +8,6 @@ import (
 )
 
 type keysRequest struct {
-	configDir      string
 	list, session  keybind.Table
 	listChanged    bool
 	sessionChanged bool
@@ -34,14 +33,14 @@ func (s effectServices) runKeys(request keysRequest) (effectResult, error) {
 	}
 	committed := 0
 	if request.listChanged {
-		if err := s.saveKeys(request.configDir, request.list); err != nil {
+		if err := s.saveKeys(request.list); err != nil {
 			return result, fmt.Errorf("key save committed %d of %d writes: %w", committed, tot, err)
 		}
 		result.listCommitted = true
 		committed++
 	}
 	if request.sessionChanged {
-		if err := s.saveKeys(request.configDir, request.session); err != nil {
+		if err := s.saveKeys(request.session); err != nil {
 			return result, fmt.Errorf("key save committed %d of %d writes: %w", committed, tot, err)
 		}
 		result.sessionCommitted = true

@@ -61,6 +61,8 @@ const (
 type settingsLoadRequest struct {
 	target     settingsLoadTarget
 	generation uint64
+	// extra are keys outside the dialog, read into the cache alongside it.
+	extra []string
 }
 
 type settingsLoadResult struct {
@@ -95,11 +97,21 @@ func (w storeSettingWriter) setProactive(proactive bool) error {
 }
 func (w storeSettingWriter) get(key string) (string, error) { return w.st.Setting(key) }
 
-func loadSettingsCache(st *store.Store) settingsCache {
-	result, _ := loadSettingsWithReader(storeSettingWriter{st: st})
+func loadSettingsCache(st *store.Store, extra []string) settingsCache {
+	reader := storeSettingWriter{st: st}
+	result, _ := loadSettingsWithReader(reader)
 	cache := settingsCache{values: make(map[string]string)}
-	cache.applyReadback(result.values, result.hiddenRaw, result.hiddenErr)
+	cache.applyReadback(append(result.values, readSettingKeys(reader, extra)...), result.hiddenRaw, result.hiddenErr)
 	return cache
+}
+
+func readSettingKeys(reader settingsValueReader, keys []string) []restoredValue {
+	values := make([]restoredValue, 0, len(keys))
+	for _, key := range keys {
+		value, err := reader.get(key)
+		values = append(values, restoredValue{key: key, value: value, err: err})
+	}
+	return values
 }
 
 func loadSettingsWithReader(reader settingsValueReader) (settingsLoadResult, error) {
@@ -130,6 +142,7 @@ func loadSettingsWithReader(reader settingsValueReader) (settingsLoadResult, err
 func settingsLoadCmd(request settingsLoadRequest, reader settingsValueReader) tea.Cmd {
 	return func() tea.Msg {
 		result, err := loadSettingsWithReader(reader)
+		result.values = append(result.values, readSettingKeys(reader, request.extra)...)
 		return settingsLoadedMsg{request: request, result: result, err: err}
 	}
 }
@@ -177,6 +190,7 @@ func settingsReadback(writer settingsValueReader) ([]restoredValue, string, erro
 		quickCloseSetting, focusKeySetting, arrowStepSetting, listDensitySetting,
 		sessionLayoutSetting, hideHeaderSetting, hideStatsSetting, mouseSetting,
 		worktreeSetting, notificationsSetting, notifyFinishedSetting,
+		backgroundSetting, baseFetchSetting, editorSetting,
 	}
 	values := make([]restoredValue, 0, len(keys)+1)
 	for _, key := range keys {
@@ -245,16 +259,16 @@ func (m *Model) handleSettingsLoaded(msg settingsLoadedMsg) (tea.Model, tea.Cmd)
 			return m, nil
 		}
 		m.settingsCache.applyReadback(msg.result.values, msg.result.hiddenRaw, msg.result.hiddenErr)
-		m.applyCachedFormDefaults()
-		follow = m.formWorktreeProbeCmd(false)
+		m.refreshChoicePrefs(m.formTool(), &m.form.choice)
+		follow = tea.Batch(m.applyCachedFormDefaults(), m.formWorktreeProbeCmd(false))
 	case settingsLoadQuick:
 		if !m.quick.active || uint64(m.quick.gen) != msg.request.generation ||
 			m.quick.defaultsTouched || m.settingsPending > 0 {
 			return m, nil
 		}
 		m.settingsCache.applyReadback(msg.result.values, msg.result.hiddenRaw, msg.result.hiddenErr)
-		m.applyCachedQuickDefaults()
-		follow = m.quickWorktreeProbeCmd(false)
+		m.refreshChoicePrefs(m.quickTool(), &m.quick.choice)
+		follow = tea.Batch(m.applyCachedQuickDefaults(), m.quickWorktreeProbeCmd(false))
 	default:
 		return m, nil
 	}
@@ -334,6 +348,12 @@ func (m *Model) reconcileSettingsPrefs(restored []restoredValue) string {
 			m.prefs.hideStats = value.value == "on"
 		case mouseSetting:
 			m.prefs.mouseDisabled = value.value == "off"
+		case backgroundSetting:
+			m.prefs.terminalBackground = value.value == "terminal"
+		case baseFetchSetting:
+			m.prefs.baseFetchOff = value.value == "off"
+		case editorSetting:
+			m.services.editor = value.value
 		}
 	}
 	if failed == 0 {
@@ -391,6 +411,12 @@ func (m *Model) restoreSettingsDialog(restored []restoredValue, hiddenRaw string
 			m.settings.notifyFinished = value.value == "on"
 		case "coordination":
 			m.settings.proactive = value.value == "on"
+		case backgroundSetting:
+			m.settings.terminalBackground = value.value == "terminal"
+		case baseFetchSetting:
+			m.settings.baseFetch = value.value != "off"
+		case editorSetting:
+			m.settings.editor = m.cachedEditorRow()
 		}
 	}
 	// An empty committed hidden state is a real state: it clears the

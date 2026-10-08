@@ -19,7 +19,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/store"
-	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/YoanWai/agent-manager/internal/update"
 )
 
@@ -27,8 +26,8 @@ const (
 	noticeWelcome = "welcome"
 	// noticeArrowStep introduces the beta ←→ pair; it ships in the binary
 	// and stays listed until dismissed, like the welcome.
-	noticeArrowStep    = "arrow-step-beta"
-	noticeToolsRetired = "tools-config-retired"
+	noticeArrowStep         = "arrow-step-beta"
+	noticeConfigNotImported = "config-not-imported"
 
 	dismissedNoticesSetting = "dismissed_notices"
 	lastSeenVersionSetting  = "last_seen_version"
@@ -38,15 +37,17 @@ const (
 	repoURL = "https://github.com/YoanWai/agent-manager"
 )
 
-// notice is one dismissible message shown in the rail's messages panel
-// and readable in full from the notices modal. url is what enter opens;
-// glyph and tint are its mark in both places.
 type notice struct {
-	id            string
-	glyph         string
-	tint          lipgloss.Color
-	title         string
-	body          []string
+	id       string
+	glyph    string
+	tint     lipgloss.Color
+	title    string
+	headline string
+	// accent holds the phrases of body drawn in the accent color.
+	accent []string
+	body   []string
+	// releaseNotes marks a body that introduces releases.
+	releaseNotes  bool
 	releases      []update.Release
 	after         []string
 	rangeComplete bool
@@ -62,6 +63,14 @@ func (n notice) mark() string {
 func (m *Model) indexReleaseRanges() {
 	m.update.available = update.Between(m.update.releases, m.update.version, m.update.latest)
 	m.update.installed = update.Between(m.update.releases, m.notices.whatsNewFromVersion, m.update.version)
+}
+
+// newestHeadline is the headline of the last release in an oldest-first range.
+func newestHeadline(releases []update.Release) string {
+	if len(releases) == 0 {
+		return ""
+	}
+	return releases[len(releases)-1].Headline
 }
 
 func releaseCountLabel(releaseRange update.ReleaseRange) string {
@@ -92,6 +101,8 @@ func (m *Model) activeNotices() []notice {
 			glyph:         "↑",
 			tint:          colorAccent,
 			title:         title,
+			headline:      newestHeadline(releaseRange.Releases),
+			releaseNotes:  true,
 			body:          body,
 			releases:      releaseRange.Releases,
 			rangeComplete: releaseRange.Complete,
@@ -115,12 +126,14 @@ func (m *Model) activeNotices() []notice {
 			body = append(body, "No generated change summary was found; r refreshes GitHub now.")
 		}
 		notices = append(notices, notice{
-			id:       "whatsnew-" + m.update.version,
-			glyph:    "✦",
-			tint:     colorAccent2,
-			title:    title,
-			body:     body,
-			releases: releaseRange.Releases,
+			id:           "whatsnew-" + m.update.version,
+			glyph:        "✦",
+			tint:         colorAccent2,
+			title:        title,
+			headline:     newestHeadline(releaseRange.Releases),
+			releaseNotes: true,
+			body:         body,
+			releases:     releaseRange.Releases,
 			after: []string{
 				"Enter opens the full release notes.",
 			},
@@ -130,37 +143,36 @@ func (m *Model) activeNotices() []notice {
 	}
 	for _, msg := range m.notices.feedMessages {
 		notices = append(notices, notice{
-			id:    msg.ID,
-			glyph: "◆",
-			tint:  colorAccent2,
-			title: msg.Title,
-			body:  msg.Body,
-			url:   msg.URL,
+			id:       msg.ID,
+			glyph:    "◆",
+			tint:     colorAccent2,
+			title:    msg.Title,
+			headline: msg.Headline,
+			accent:   msg.Accent,
+			body:     msg.Body,
+			url:      msg.URL,
 		})
 	}
-	if len(m.services.cfg.IgnoredTools) > 0 {
+	if m.notices.configImportError != "" {
 		notices = append(notices, notice{
-			id:    noticeToolsRetired,
+			id:    noticeConfigNotImported,
 			glyph: "⚙",
 			tint:  lipgloss.Color("#e2c044"),
-			title: "Tool blocks in your config.toml no longer apply",
+			title: "Your config.toml was not carried into Settings",
 			body: []string{
-				"Every tool's command and status rules now come from Agent Manager",
-				"itself, so these blocks in your config.toml are no longer read:",
+				"The keys and the editor live in Settings now. A config.toml that",
+				"names them is read once to carry them over, and yours was refused:",
 				"",
-				strings.Join(m.services.cfg.IgnoredTools, ", "),
+				m.notices.configImportError,
 				"",
-				"Nothing on disk changed. They are inert, and yours to delete.",
-				"",
-				"Copies of the defaults from the day your file was written, and any",
-				"block you added, are ignored the same way. A fix for a CLI's new",
-				"screen now reaches you instead of stopping at a frozen copy.",
+				"The keys are the defaults and the editor is picked for you until",
+				"you set them in Settings. The file is not read again, and is yours",
+				"to delete.",
 			},
 			after: []string{
-				"If a session reads its status wrong, Enter opens a report: the rules",
-				"are ours to fix, for everyone.",
+				"Enter opens the page on what Settings holds.",
 			},
-			url: bugReportURL(m.update.version),
+			url: repoURL + "/blob/main/docs/configuration.md",
 		})
 	}
 	notices = append(notices,
@@ -283,12 +295,7 @@ func loadWhatsNewFromVersion(st *store.Store) string {
 	return version
 }
 
-// noticePanelMin is the narrowest messages column worth reading; a rail
-// too tight for it keeps the machine meters alone.
-const noticePanelMin = 16
-
-// noticeCardHex is the messages card's fill: the rail's panel tone warmed
-// toward yellow, so the card reads as a sticky note in any theme.
+// noticeCardHex warms the messages modal's fill toward yellow.
 func noticeCardHex() string { return mix(panelHex(), "#e2c044", 0.16) }
 
 // noticeBorderStyle is the card's rounded frame, dimmed toward the same
@@ -297,8 +304,6 @@ func noticeBorderStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(lipgloss.Color(mix(current.Subtle, "#e2c044", 0.45)))
 }
 
-// noticeTitleStyle is the warm bold tone the card's legend and the full
-// screen badge share, so a message reads the same in either layout.
 func noticeTitleStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(lipgloss.Color(mix(current.Bright, "#e2c044", 0.5))).Bold(true)
 }
@@ -309,9 +314,7 @@ func noticeLegend() string {
 	return noticeTitleStyle().Render(" messages ")
 }
 
-// noticeHit is the rail columns and screen rows the messages card or
-// badge covered on the last frame, so a click resolves against what was
-// painted, the way railHits does for rows.
+// noticeHit follows the messages entry in the painted key legend.
 type noticeHit struct {
 	x0, x1, y0, y1 int
 	ok             bool
@@ -321,64 +324,38 @@ func (h noticeHit) contains(x, y int) bool {
 	return h.ok && x >= h.x0 && x < h.x1 && y >= h.y0 && y < h.y1
 }
 
-// railFootLines is the rail's foot: the machine meters with the messages
-// card docked to their right when both notices and width exist. The card
-// hugs its content behind a rule that separates the two blocks.
+func (m *Model) placeNoticeHit(footer string, firstRow int) {
+	binding := m.listGlyph(keybind.Messages)
+	if binding == "" {
+		return
+	}
+	label := ansi.Strip(keyCapQuiet(binding, "messages"))
+	for i, line := range splitLines(footer) {
+		line = ansi.Strip(line)
+		start := strings.Index(line, label)
+		if start < 0 {
+			continue
+		}
+		x := ansi.StringWidth(line[:start])
+		y := firstRow + i
+		if x+ansi.StringWidth(label) <= m.width && y < m.height {
+			m.notices.noticeHit = noticeHit{x0: x, x1: x + ansi.StringWidth(label), y0: y, y1: y + 1, ok: true}
+		}
+		return
+	}
+}
+
 func (m *Model) railFootLines(width int) []string {
-	m.notices.noticeHit = noticeHit{}
+	if m.prefs.hideStats {
+		return nil
+	}
 	if m.prefs.fullLayout {
 		return m.fullFootLine(width)
 	}
-	meters := m.computerLines(width)
-	notices := m.activeNotices()
-	if m.prefs.hideStats {
-		if len(notices) == 0 {
-			return nil
-		}
-		m.notices.noticeHit = noticeHit{x0: 0, x1: width, ok: true}
-		return m.noticeCardLines(notices, width, len(meters))
-	}
-	metersWidth := maxLineWidth(meters)
-	room := width - metersWidth - 3
-	if len(notices) == 0 || room < noticePanelMin {
-		return meters
-	}
-	m.notices.noticeHit = noticeHit{x0: metersWidth + 3, x1: width, ok: true}
-
-	card := m.noticeCardLines(notices, room, len(meters))
-	separator := subtleStyle.Render("│")
-	lines := make([]string, len(meters))
-	for i := range meters {
-		row := ""
-		if i < len(card) {
-			row = card[i]
-		}
-		lines[i] = padRight(meters[i], metersWidth) + " " + separator + " " + row
-	}
-	return lines
+	return m.computerLines(width)
 }
 
-// fullFootLine is the rail foot the full screen layout keeps: the meter
-// block and the messages card condensed to one line, machine readings
-// inline on the left and the messages count against the right edge.
 func (m *Model) fullFootLine(width int) []string {
-	badge := ""
-	if count := len(m.activeNotices()); count > 0 {
-		badge = noticeTitleStyle().Render(fmt.Sprintf("messages %d", count)) + "  " + keyCap("M", "open")
-	}
-	if m.prefs.hideStats {
-		if badge == "" {
-			return nil
-		}
-		available := width - railInset
-		if available <= 0 {
-			return nil
-		}
-		badge = ansi.Truncate(badge, available, "…")
-		indent := max(width-railInset-ansi.StringWidth(badge), railInset)
-		m.notices.noticeHit = noticeHit{x0: indent, x1: indent + ansi.StringWidth(badge), ok: true}
-		return []string{strings.Repeat(" ", indent) + badge}
-	}
 	reading := func(label, value string, ok bool) string {
 		if !ok {
 			return labelStyle.Render(label+" ") + subtleStyle.Render("n/a")
@@ -393,7 +370,7 @@ func (m *Model) fullFootLine(width int) []string {
 	if snap.SwapOK && snap.SwapTotal > 0 {
 		parts = append(parts, reading("swap", fmt.Sprintf("%.0f%% %s/%s", snap.SwapPercent, humanBytes(snap.SwapUsed), humanBytes(snap.SwapTotal)), true))
 	}
-	parts = append(parts, reading("disk", fmt.Sprintf("%.0f%% %s free", snap.DiskPercent, humanBytes(snap.DiskFree)), snap.DiskOK))
+	parts = append(parts, reading("disk", fmt.Sprintf("%.0f%% %s available", snap.DiskPercent, diskBytes(snap.DiskAvailable)), snap.DiskOK))
 	if snap.BatteryOK {
 		value := fmt.Sprintf("%.0f%%", snap.BatteryPercent)
 		if snap.BatteryCharging {
@@ -408,59 +385,7 @@ func (m *Model) fullFootLine(width int) []string {
 		parts = append(parts, reading("net", "↓ "+humanBytes(m.workspace.net.down)+"/s ↑ "+humanBytes(m.workspace.net.up)+"/s", true))
 	}
 	line := strings.Repeat(" ", railInset) + strings.Join(parts, "  ")
-	// The readings yield to the badge and the badge to the width: a
-	// narrow terminal trims values from the right rather than wrapping
-	// the one-line foot into the list.
-	room := width - railInset
-	if badge != "" {
-		room -= ansi.StringWidth(badge) + 2
-	}
-	if room > 0 && ansi.StringWidth(line) > room {
-		line = ansi.Truncate(line, room, "…")
-	}
-	if badge != "" {
-		gap := width - railInset - ansi.StringWidth(line) - ansi.StringWidth(badge)
-		if gap >= 2 {
-			line += strings.Repeat(" ", gap) + badge
-			m.notices.noticeHit = noticeHit{x0: ansi.StringWidth(line) - ansi.StringWidth(badge), x1: ansi.StringWidth(line), ok: true}
-		}
-	}
-	return []string{line}
-}
-
-// noticeCardLines is the messages card: a fieldset — the messages legend
-// set into the rounded top border, the open key into the bottom one —
-// hugging its content in width and spanning the meters block in height.
-func (m *Model) noticeCardLines(notices []notice, maxWidth, height int) []string {
-	room := height - 2
-	shown := notices
-	overflow := ""
-	if len(shown) > room {
-		shown = shown[:room-1]
-		overflow = subtleStyle.Render(fmt.Sprintf("+%d more · M", len(notices)-len(shown)))
-	}
-
-	var rows []string
-	for _, n := range shown {
-		rows = append(rows, n.mark()+" "+valueStyle.Render(n.title))
-	}
-	if overflow != "" {
-		rows = append(rows, overflow)
-	}
-
-	head := noticeLegend()
-	foot := keyCap("M", "open") + subtleStyle.Render(" ")
-	inner := max(lipgloss.Width(head), lipgloss.Width(foot)) + 2
-	if w := maxLineWidth(rows); w > inner {
-		inner = w
-	}
-	if inner > maxWidth-4 {
-		inner = maxWidth - 4
-	}
-
-	filled := make([]string, height-2)
-	copy(filled, rows)
-	return noticeFrame(filled, inner, head, foot)
+	return []string{ansi.Truncate(line, max(width-railInset, 0), "…")}
 }
 
 // noticeFrame wraps content rows in the notices fieldset: a rounded
@@ -773,9 +698,13 @@ func (m *Model) handleNoticesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.notices.noticeScroll = 0
 		}
 	case "pgup", "ctrl+u":
-		m.notices.noticeScroll = max(0, m.notices.noticeScroll-max(4, m.height/3))
+		m.scrollNotice(notices, -max(4, m.height/3))
 	case "pgdown", "ctrl+d":
-		m.notices.noticeScroll = min(m.notices.noticeScroll+max(4, m.height/3), m.noticeScrollLimit(notices))
+		m.scrollNotice(notices, max(4, m.height/3))
+	case "home", "g":
+		m.notices.noticeScroll = 0
+	case "end", "G":
+		m.notices.noticeScroll = m.noticeScrollLimit(notices)
 	case "enter":
 		if m.notices.noticeCursor < len(notices) && notices[m.notices.noticeCursor].url != "" {
 			return m, openLink(notices[m.notices.noticeCursor].url)
@@ -808,9 +737,15 @@ func (m *Model) noticeScrollLimit(notices []notice) int {
 		return 0
 	}
 	inner := noticeInnerWidth(notices, m.width)
-	bodyRows := len(renderNoticeBody(notices[m.notices.noticeCursor], inner))
-	bodyRoom := noticeBodyRoom(m.height, len(notices), len(m.noticeTail(notices, inner))+1)
-	return max(0, bodyRows-bodyRoom)
+	room := noticeBodyRoom(m.height, len(notices), len(m.noticeTail(notices, inner))+1)
+	body, _ := noticeBodyLayout(notices[m.notices.noticeCursor], inner, room)
+	return max(0, len(body)-room)
+}
+
+// scrollNotice steps from the page on screen, since a resize can leave the saved offset past the last page.
+func (m *Model) scrollNotice(notices []notice, rows int) {
+	limit := m.noticeScrollLimit(notices)
+	m.notices.noticeScroll = min(max(min(m.notices.noticeScroll, limit)+rows, 0), limit)
 }
 
 func noticeBodyRoom(height, noticeCount, tailRows int) int {
@@ -860,135 +795,37 @@ func (m *Model) viewNotices() string {
 	selected := notices[m.notices.noticeCursor]
 	rows = append(rows, noticeBorderStyle().Render(strings.Repeat("┄", inner)))
 
-	body := renderNoticeBody(selected, inner)
 	tail := m.noticeTail(notices, inner)
 	tail = append(tail, "")
 
-	rows = append(rows, fitBody(body, noticeBodyRoom(m.height, len(notices), len(tail)), m.notices.noticeScroll)...)
+	room := noticeBodyRoom(m.height, len(notices), len(tail))
+	body, scrolls := noticeBodyLayout(selected, inner, room)
+	if scrolls {
+		body = noticeScrollWindow(body, room, m.notices.noticeScroll, inner)
+	}
+	rows = append(rows, body...)
 	rows = append(rows, tail...)
 
-	hint := "↑↓ pick · pgup/pgdn scroll · r refresh · ↵ open · x dismiss · esc "
-	if isUpdateNotice(selected) {
-		hint = "↑↓ pick · pgup/pgdn scroll · r refresh · u update · ↵ open · x dismiss · esc "
-	}
 	frame := noticeFrame(rows, inner,
 		noticeLegend(),
-		mutedStyle.Render(hint))
+		mutedStyle.Render(noticeHint(selected, inner)))
 	return m.centerOnBackdrop(frame)
 }
 
-func noticeInnerWidth(notices []notice, terminalWidth int) int {
-	inner := noticeModalInner
-	for _, n := range notices {
-		lines := append(append([]string{}, n.body...), n.after...)
-		for _, release := range n.releases {
-			lines = append(lines, release.Version)
-			for _, change := range release.Highlights {
-				lines = append(lines, "• "+change)
-			}
-			for _, change := range release.Changes {
-				lines = append(lines, "• "+change)
-			}
-			if len(release.Thanks) > 0 {
-				lines = append(lines, "Thank you")
-			}
-			for _, change := range release.Thanks {
-				lines = append(lines, "• "+change)
-			}
-		}
-		for _, line := range lines {
-			if w := lipgloss.Width(line); w > inner {
-				inner = w
-			}
-		}
+func noticeHint(selected notice, inner int) string {
+	updateKey := ""
+	if isUpdateNotice(selected) {
+		updateKey = "u update · "
 	}
-	if fit := terminalWidth - 8; inner > fit {
-		inner = max(fit, 1)
+	if hint := "↑↓ pick · pgup/pgdn/home/end scroll · r refresh · " + updateKey + "↵ open · x dismiss · esc "; lipgloss.Width(hint) <= inner+1 {
+		return hint
 	}
-	return inner
+	return "↑↓ pick · pgup/pgdn scroll · r refresh · " + updateKey + "↵ open · x dismiss · esc "
 }
 
-func renderNoticeBody(n notice, width int) []string {
-	var body []string
-	for _, line := range n.body {
-		body = appendStyledWrap(body, line, width, mutedStyle)
-	}
-	if len(n.releases) > 0 {
-		body = append(body, "")
-	}
-	for i, release := range n.releases {
-		if i > 0 {
-			body = append(body, "")
-		}
-		// Authored bullets are the release in its own words, so they
-		// replace the generated list rather than being counted against it.
-		if len(release.Highlights) > 0 {
-			body = append(body, lipgloss.NewStyle().Foreground(colorBright).Bold(true).Render(release.Version))
-			body = appendNoticeBullets(body, release.Highlights, width)
-		} else {
-			count := release.TotalChanges
-			label := "change"
-			if count != 1 {
-				label = "changes"
-			}
-			heading := release.Version
-			if count > 0 {
-				heading += fmt.Sprintf(" · %d %s", count, label)
-			}
-			body = append(body, lipgloss.NewStyle().Foreground(colorBright).Bold(true).Render(heading))
-			if len(release.Changes) == 0 {
-				body = append(body, subtleStyle.Render("  No summarized changes."))
-			}
-			body = appendNoticeBullets(body, release.Changes, width)
-			if omitted := release.TotalChanges - len(release.Changes); omitted > 0 {
-				body = append(body, subtleStyle.Render(fmt.Sprintf("  +%d more in the full notes", omitted)))
-			}
-		}
-		if len(release.Thanks) > 0 {
-			body = append(body, "", subtleStyle.Render("Thank you"))
-			body = appendNoticeBullets(body, release.Thanks, width)
-		}
-	}
-	if len(n.releases) > 0 && !n.rangeComplete {
-		body = append(body, "", subtleStyle.Render("The local catalog covers part of this range; Enter opens the complete notes."))
-	}
-	if len(n.after) > 0 {
-		body = append(body, "")
-		for _, line := range n.after {
-			body = appendStyledWrap(body, line, width, mutedStyle)
-		}
-	}
-	return body
-}
-
-func appendNoticeBullets(lines []string, items []string, width int) []string {
-	for _, item := range items {
-		wrapped := strings.Split(ansi.Wordwrap(item, max(width-2, 1), "-"), "\n")
-		for lineIndex, line := range wrapped {
-			prefix := "  "
-			if lineIndex == 0 {
-				prefix = "• "
-			}
-			lines = append(lines, mutedStyle.Render(prefix+line))
-		}
-	}
-	return lines
-}
-
-func appendStyledWrap(lines []string, text string, width int, style lipgloss.Style) []string {
-	if text == "" {
-		return append(lines, "")
-	}
-	for _, wrapped := range strings.Split(ansi.Wordwrap(text, width, "-"), "\n") {
-		lines = append(lines, style.Render(wrapped))
-	}
-	return lines
-}
-
-// fitBody returns a scrollable window without letting a short terminal eat
-// the modal border or hints. Continuation rows make hidden content explicit.
-func fitBody(body []string, room, offset int) []string {
-	return presentation.Window(body, room, offset, subtleStyle)
+// plainMarks drops the accent marks release text carries.
+func plainMarks(text string) string {
+	return strings.ReplaceAll(text, "`", "")
 }
 
 // noticeModalInner is the modal content column's floor, sized for the
@@ -1031,14 +868,14 @@ func (m *Model) welcomeBody() []string {
 	body := []string{
 		"Every row on the left is a live agent session.",
 		"",
-		welcomeRow(m.firstListKey(keybind.NewSession), "new session", prompt, "prompt it, no attach"),
+		welcomeRow(m.firstListKey(keybind.NewSession), "new session", prompt, "quick prompt mode"),
 		welcomeRow(m.firstListKey(keybind.Open), "focus it", m.firstListKey(keybind.Attach), "attach it full screen"),
 		m.welcomeSessionKeysLine(),
 		welcomeRow(m.firstListKeys(keybind.Kill, keybind.Revive), "kill / revive", settings, "settings"),
 		"",
 	}
 	if prompt != "" {
-		body = append(body, prompt+" on a group row starts a new agent there on what you type.")
+		body = append(body, prompt+" on a group row opens quick prompt mode to start a new agent there.")
 	}
 	body = append(body, "Each row's mark is its state: ◐ working, ◆ waiting, ● finished, ○ idle.", "")
 	if help != "" {

@@ -13,11 +13,11 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 )
 
-func TestEnsureSettingsWritesValidHookJSON(t *testing.T) {
+func TestWriteSettingsWritesValidHookJSON(t *testing.T) {
 	manager := NewManager(t.TempDir())
-	path, err := manager.EnsureSettings()
+	path, err := manager.WriteSettings("abcd1234")
 	if err != nil {
-		t.Fatalf("EnsureSettings: %v", err)
+		t.Fatalf("WriteSettings: %v", err)
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -39,7 +39,7 @@ func TestEnsureSettingsWritesValidHookJSON(t *testing.T) {
 	if len(parsed.Hooks) != len(events) {
 		t.Fatalf("hooks has %d events, want %d: %v", len(parsed.Hooks), len(events), parsed.Hooks)
 	}
-	guard := `[ -z "$` + EnvStatusFile + `" ] ||`
+	target := `"$` + EnvStatusFile + `"`
 	for _, event := range events {
 		matchers, ok := parsed.Hooks[event]
 		if !ok {
@@ -50,8 +50,8 @@ func TestEnsureSettingsWritesValidHookJSON(t *testing.T) {
 				if hook.Type != "command" {
 					t.Fatalf("event %s hook type = %q, want command", event, hook.Type)
 				}
-				if !strings.Contains(hook.Command, guard) {
-					t.Fatalf("event %s command lacks env guard: %q", event, hook.Command)
+				if !strings.Contains(hook.Command, target) {
+					t.Fatalf("event %s command does not write the status file: %q", event, hook.Command)
 				}
 			}
 		}
@@ -87,19 +87,47 @@ func TestEnsureSettingsWritesValidHookJSON(t *testing.T) {
 	}
 }
 
-func TestEnsureSettingsIdempotent(t *testing.T) {
+// /background reruns a conversation under Claude Code's daemon, whose environment is another session's.
+func TestWriteSettingsCarriesTheSessionIdentity(t *testing.T) {
 	manager := NewManager(t.TempDir())
-	first, err := manager.EnsureSettings()
+	for _, id := range []string{"aaaa1111", "bbbb2222"} {
+		path, err := manager.WriteSettings(id)
+		if err != nil {
+			t.Fatalf("WriteSettings %s: %v", id, err)
+		}
+		if path != manager.SettingsFile(id) {
+			t.Fatalf("WriteSettings %s path = %q, want %q", id, path, manager.SettingsFile(id))
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read settings: %v", err)
+		}
+		var parsed struct {
+			Env map[string]string `json:"env"`
+		}
+		if err := json.Unmarshal(raw, &parsed); err != nil {
+			t.Fatalf("settings is not valid JSON: %v", err)
+		}
+		want := map[string]string{EnvSessionID: id, EnvStatusFile: manager.StatusFile(id)}
+		if len(parsed.Env) != len(want) || parsed.Env[EnvSessionID] != want[EnvSessionID] || parsed.Env[EnvStatusFile] != want[EnvStatusFile] {
+			t.Fatalf("settings env for %s = %v, want %v", id, parsed.Env, want)
+		}
+	}
+}
+
+func TestWriteSettingsIdempotent(t *testing.T) {
+	manager := NewManager(t.TempDir())
+	first, err := manager.WriteSettings("abcd1234")
 	if err != nil {
-		t.Fatalf("first EnsureSettings: %v", err)
+		t.Fatalf("first WriteSettings: %v", err)
 	}
 	info, err := os.Stat(first)
 	if err != nil {
 		t.Fatalf("stat: %v", err)
 	}
-	second, err := manager.EnsureSettings()
+	second, err := manager.WriteSettings("abcd1234")
 	if err != nil {
-		t.Fatalf("second EnsureSettings: %v", err)
+		t.Fatalf("second WriteSettings: %v", err)
 	}
 	if first != second {
 		t.Fatalf("paths differ: %q vs %q", first, second)

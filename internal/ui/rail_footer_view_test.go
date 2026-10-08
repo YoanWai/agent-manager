@@ -1,6 +1,10 @@
 package ui
 
 import (
+	"github.com/YoanWai/agent-manager/internal/config"
+	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
+	"github.com/charmbracelet/bubbles/textarea"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"slices"
@@ -19,7 +23,7 @@ func TestFooterInFocusMode(t *testing.T) {
 	if !strings.Contains(footer, "Focused") {
 		t.Fatalf("the tier should name the mode it describes:\n%s", footer)
 	}
-	if !strings.Contains(footer, "ctrl+q / ctrl+\\") || !strings.Contains(footer, "click its row") || !strings.Contains(footer, "mouse back") || !strings.Contains(footer, "typing to agent") {
+	if !strings.Contains(footer, "ctrl+q / ctrl+\\") || !strings.Contains(footer, "click its row") || !strings.Contains(footer, "mouse back") {
 		t.Fatalf("focus footer should carry the reserved keys and mouse leave:\n%s", footer)
 	}
 	listH := lipgloss.Height(m.listFooter())
@@ -47,6 +51,48 @@ func TestFooterInFocusMode(t *testing.T) {
 	setFocusPaneFacts(m, railSelectedSession(m).ID, true, false, false, 0, paneCursor{})
 	if footer := ansi.Strip(m.viewFooter()); !strings.Contains(footer, "click / alt+drag") || !strings.Contains(footer, "agent UI") {
 		t.Fatalf("a mouse-tracking pane should advertise pass-through:\n%s", footer)
+	}
+}
+
+func TestPagingHintFitsFullFocusFooter(t *testing.T) {
+	shipped, err := config.Default()
+	if err != nil {
+		t.Fatalf("default config: %v", err)
+	}
+	m, sessID := focusedWithHistory(t, "paging-footer")
+	m.services.cfg.Tools["gemini"] = shipped.Tools["gemini"]
+	for i := range m.workspace.sessions {
+		if m.workspace.sessions[i].ID == sessID {
+			m.workspace.sessions[i].Tool = "gemini"
+		}
+	}
+	m.rebuildRows()
+	m.prefs.fullLayout = true
+	m.width = 110
+	footer := ansi.Strip(m.viewFooter())
+	if !strings.Contains(footer, "pgup/pgdn scroll") {
+		t.Fatalf("full focus footer omits paging: %q", footer)
+	}
+	if got := lipgloss.Height(m.viewFooter()); got != 1 {
+		t.Fatalf("full focus footer spans %d rows, want one: %q", got, footer)
+	}
+}
+
+// The scrolled notice names PgDn only while PgDn is what walks the pane
+// back down.
+func TestScrolledStatusNamesPgDnWhileItPages(t *testing.T) {
+	m, sessID := focusedWithHistory(t, "scrolled-status")
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyPgUp})
+	m = updated.(*Model)
+	if !m.focusPane.ScrolledBack() {
+		t.Fatal("test setup: PgUp did not scroll the pane back")
+	}
+	if got := ansi.Strip(m.statusLine()); !strings.Contains(got, "lines back · wheel down, pgdn or type to catch up") {
+		t.Fatalf("paging pane's scrolled notice = %q", got)
+	}
+	updateFocusPane(m, sessID, func(update *uifocus.PaneUpdate) { update.Mouse = true })
+	if got := ansi.Strip(m.statusLine()); !strings.Contains(got, "lines back · wheel down or type to catch up") {
+		t.Fatalf("mouse-tracking pane's scrolled notice = %q", got)
 	}
 }
 
@@ -90,7 +136,6 @@ func TestTransientFootersKeepListHeight(t *testing.T) {
 		name string
 		open func()
 	}{
-		{"prompt", func() { m.openQuickMode() }},
 		{"resize", func() { m.split.resizeMode = true }},
 		{"rename", func() { m.mode = modeRename }},
 		{"focus", func() { m.mode = modeFocus }},
@@ -154,7 +199,7 @@ func TestFooterTogglesNameTheNextAction(t *testing.T) {
 	// Wide enough that the row budget keeps every app-wide binding.
 	m.width = 260
 	dir := t.TempDir()
-	if err := m.services.store.AddGroup("work", dir, "off"); err != nil {
+	if err := m.services.store.AddGroup("work", dir, "off", ""); err != nil {
 		t.Fatalf("seed group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -310,13 +355,14 @@ func TestRowLegendDropsArchiveInArchivedView(t *testing.T) {
 func TestQuickPromptFooterKeys(t *testing.T) {
 	m := shotModel()
 	m.quick.active = true
+	m.quick.input = textarea.New()
 	m.quick.toolNames = []string{"claude"}
 
 	footerOne := m.viewFooter()
 	if strings.Contains(footerOne, "shift+tab") || strings.Contains(footerOne, "previous tool") {
 		t.Errorf("one tool enabled, footer shouldn't have shift+tab: %q", footerOne)
 	}
-	if !strings.Contains(footerOne, "tab") || !strings.Contains(footerOne, "tool: claude") {
+	if !strings.Contains(footerOne, "tab tool") {
 		t.Errorf("one tool enabled, missing tab pair: %q", footerOne)
 	}
 
@@ -325,10 +371,10 @@ func TestQuickPromptFooterKeys(t *testing.T) {
 	if !strings.Contains(footerTwo, "shift+tab") || !strings.Contains(footerTwo, "previous tool") {
 		t.Errorf("two tools enabled, missing shift+tab pair: %q", footerTwo)
 	}
-	if !strings.Contains(footerTwo, "tab") || !strings.Contains(footerTwo, "tool: claude") {
+	if !strings.Contains(footerTwo, "tab tool") {
 		t.Errorf("two tools enabled, missing tab pair: %q", footerTwo)
 	}
-	if !strings.Contains(footerTwo, "ctrl+t") || !strings.Contains(footerTwo, "worktree: ") {
+	if !strings.Contains(footerTwo, "ctrl+t worktree") {
 		t.Errorf("missing ctrl+t worktree pair: %q", footerTwo)
 	}
 }

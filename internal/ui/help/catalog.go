@@ -72,7 +72,7 @@ func sessionRowHelpRows(list keybind.Table) [][2]string {
 	h.action("attach it: the pane takes the whole terminal", keybind.Attach)
 	h.fixed("", "settings swap what the two do")
 	h.action("mark it idle when it is finished, without entering it", keybind.MarkIdle)
-	h.action("quick prompt: answer the session without attaching", keybind.Prompt)
+	h.action("quick prompt mode: answer the session without attaching", keybind.Prompt)
 	h.action("copy its newest reply to the clipboard", keybind.CopyReply)
 	h.action("review its diff", keybind.Review)
 	h.action("fork it into a new session in the same group", keybind.Fork)
@@ -83,11 +83,12 @@ func sessionRowHelpRows(list keybind.Table) [][2]string {
 	h.action("kill it / kill every live session (frees their RAM)", keybind.Kill, keybind.KillAll)
 	h.action("revive it, its pane included / revive every dead session", keybind.Revive, keybind.ReviveAll)
 	h.action("archive / restore (archive kills, restore revives)", keybind.Archive, keybind.Restore)
+	h.action("keep it once its turn ends: cancel the archive or kill it asked for", keybind.CancelEnd)
 	h.action("delete it", keybind.Delete)
 	return h.rows
 }
 
-func markHelpRows(list keybind.Table) [][2]string {
+func markHelpRows(list keybind.Table, glyphs Glyphs) [][2]string {
 	rows := [][2]string{
 		{"◐ working", "the agent is busy on a turn"},
 		{"◆ waiting", "blocked on you: a dialog, a permission ask, a question"},
@@ -96,6 +97,7 @@ func markHelpRows(list keybind.Table) [][2]string {
 		{"✕ errored", "the tool reported an error, or the session is dead"},
 		{"◌ starting", "the pane is still launching"},
 		{"✉N", "messages from another agent, held until this one is at rest"},
+		{glyphs.AfterTurnArchive + " / " + glyphs.AfterTurnKill, "the agent asked to be archived / killed once this turn ends"},
 	}
 	if filter := list.Binding(keybind.Filter).Glyph(" / "); filter != "" {
 		rows = append(rows, [2]string{"", filter + " filters the list down to the marks that need you"})
@@ -106,7 +108,7 @@ func markHelpRows(list keybind.Table) [][2]string {
 func groupRowHelpRows(list keybind.Table) [][2]string {
 	h := helpRows{list: list}
 	h.action("fold / unfold", keybind.Open)
-	h.action("quick prompt: spawn a new agent in the group", keybind.Prompt)
+	h.action("quick prompt mode: spawn a new agent in the group", keybind.Prompt)
 	h.action("edit it: name, default path, worktree", keybind.Rename)
 	h.action("move it, with its whole subtree, under another group", keybind.Move)
 	h.action("open its default path in your editor", keybind.Editor)
@@ -124,13 +126,17 @@ func helpSections(ctx Context) []helpSection {
 	return []helpSection{
 		{title: "list", rows: listHelpRows(list, ctx.ArrowStep, ctx.Glyphs)},
 		{title: "session under the cursor", rows: sessionRowHelpRows(list)},
-		{title: "the mark on a session row", rows: markHelpRows(list)},
+		{title: "the mark on a session row", rows: markHelpRows(list, ctx.Glyphs)},
 		{title: "group under the cursor", rows: groupRowHelpRows(list)},
-		{title: titledWith("quick prompt", list, keybind.Prompt), rows: [][2]string{
+		{title: titledWith("quick prompt mode", list, keybind.Prompt), rows: [][2]string{
 			{"↵", "send"},
 			{"↑↓", "switch the target session, or step the caret in a taller prompt"},
 			{"tab", "step the tool a spawn uses forward (alt+m too)"},
 			{"shift+tab", "step the tool a spawn uses back one"},
+			{ctx.QuickKeys.Model, "pick the spawn's model from the ones the tool lists; type to filter"},
+			{ctx.QuickKeys.Effort, "step the spawn's reasoning effort through the model's levels"},
+			{ctx.QuickKeys.Profile, "step the spawn's profile, for a tool that has them"},
+			{"click", "step a spawn choice the way its key does, or pick a listed model"},
 			{"ctrl+t", "toggle worktree for the spawned agent (alt+w too)"},
 			{"ctrl+v", "paste an image as a chip at the cursor"},
 			{"⌫", "next to a chip, delete the whole chip"},
@@ -148,8 +154,11 @@ func helpSections(ctx Context) []helpSection {
 		})},
 		reviewHelpSection(list),
 		{title: titledWith("messages", list, keybind.Messages), rows: [][2]string{
+			{"click messages", "in the key legend, shown while any remain"},
 			{"↑↓", "pick a message"},
 			{"pgup / pgdn", "scroll its body"},
+			{"wheel", "scroll its body"},
+			{"home / end", "jump to its top or bottom"},
 			{"↵", "open its link in the browser"},
 			{"u", "on an update message: update and restart"},
 			{"r", "refresh releases and messages"},
@@ -167,6 +176,8 @@ func helpSections(ctx Context) []helpSection {
 			{"↑↓", "next field, or step the caret in a taller New Session prompt"},
 			{"ctrl+v", "in a prompt field, paste an image as a chip"},
 			{"←→", "change a picker's value"},
+			{"type", "in the model field, filter what the tool lists; tab fills one in"},
+			{"click", "focus a field, click it again to change it, or pick a listed entry"},
 			{"↵", "confirm"},
 			{"esc", "cancel"},
 		}},
@@ -190,6 +201,10 @@ func sessionHelpRows(keys keybind.Table, arrowStep bool, mouseRows [][2]string) 
 	if label := keys.Binding(keybind.Editor).Label(); label != "" {
 		rows = append(rows, [2]string{label, "open its directory in an editor"})
 	}
+	if label := keys.Binding(keybind.TmuxPrefix).Label(); label != "" {
+		rows = append(rows, [2]string{label, "attached: tmux's prefix, in place of yours"})
+	}
+	rows = append(rows, [2]string{"pgup/pgdn", "focused: scroll the pane's history on its normal screen"})
 	return append(rows, mouseRows...)
 }
 

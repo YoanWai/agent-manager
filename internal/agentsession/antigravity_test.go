@@ -69,10 +69,10 @@ func TestAntigravityCaptureReadsTheSummariesIndex(t *testing.T) {
 		agyConversation{id: "mine", workspaces: uri(cwd), modified: launched.Add(2 * time.Second)},
 		agyConversation{id: "sibling", workspaces: uri(cwd), modified: launched.Add(3 * time.Second)},
 	)
-	if id, ok := Capture("antigravity", cwd, launched, nil); !ok || id != "mine" {
+	if id, ok := Capture("antigravity", cwd, launched, nil, ""); !ok || id != "mine" {
 		t.Fatalf("Capture = %q, %v, want the earliest finished turn in cwd", id, ok)
 	}
-	if id, ok := Capture("antigravity", cwd, launched, map[string]bool{"mine": true}); !ok || id != "sibling" {
+	if id, ok := Capture("antigravity", cwd, launched, map[string]bool{"mine": true}, ""); !ok || id != "sibling" {
 		t.Fatalf("Capture with mine claimed = %q, %v", id, ok)
 	}
 	snapshot, ok := Snapshot("antigravity", cwd)
@@ -97,14 +97,14 @@ func TestAntigravityCaptureFollowsTheDirectoryMapPastTheTrustPrompt(t *testing.T
 		agyConversation{id: "other-trusted-late", modified: launched.Add(time.Second)},
 		agyConversation{id: "trusted-late", modified: launched.Add(2 * time.Second)},
 	)
-	if id, ok := Capture("antigravity", cwd, launched, nil); !ok || id != "trusted-late" {
+	if id, ok := Capture("antigravity", cwd, launched, nil, ""); !ok || id != "trusted-late" {
 		t.Fatalf("Capture = %q, %v", id, ok)
 	}
 }
 
 func TestAntigravityCaptureWithoutAStore(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	if id, ok := Capture("antigravity", t.TempDir(), time.Now(), nil); ok {
+	if id, ok := Capture("antigravity", t.TempDir(), time.Now(), nil, ""); ok {
 		t.Fatalf("captured %q with no agy store", id)
 	}
 	if _, ok := Snapshot("antigravity", t.TempDir()); ok {

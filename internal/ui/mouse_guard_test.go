@@ -13,7 +13,7 @@ func TestGuardedMouseCommandWrapsTheSend(t *testing.T) {
 	if !strings.HasPrefix(command, "if-shell -F -t "+tmux.PaneTarget("abc")+" '#{mouse_any_flag}' 'send-keys") {
 		t.Fatalf("control-pipe command = %q", command)
 	}
-	if len(args) != 6 || args[0] != "if-shell" || args[4] != "#{mouse_any_flag}" {
+	if len(args) != 7 || args[0] != "if-shell" || args[4] != "#{mouse_any_flag}" {
 		t.Fatalf("fallback args = %q", args)
 	}
 	// The nested send has to stay one argument, which is why it cannot ride
@@ -49,13 +49,7 @@ func TestGuardedMouseCommandFollowsTheLiveFlag(t *testing.T) {
 		t.Fatal("a report was dropped while the application was tracking the mouse")
 	}
 
-	// cat holds the line until a newline arrives, and only what it echoes
-	// reaches the pane's terminal to turn mouse reporting off.
-	if err := driver.SendRaw("send-keys -t " + tmux.PaneTarget(sessID) +
-		" -H 1b 5b 3f 31 30 30 33 6c 1b 5b 3f 31 30 30 36 6c 0a"); err != nil {
-		t.Fatalf("disable: %v", err)
-	}
-	waitForMouseFlag(t, driver, sessID, "0")
+	stopMouseTracking(t, driver, sessID)
 
 	_, args = guardedMouseCommand(sessID, "\x1b[<64;9;4M")
 	if err := driver.SendCommand(args...); err != nil {
@@ -65,6 +59,60 @@ func TestGuardedMouseCommandFollowsTheLiveFlag(t *testing.T) {
 		pane, _ := driver.CapturePane(sessID)
 		t.Fatalf("a report reached the pane after the application left mouse mode:\n%s", strings.TrimSpace(pane))
 	}
+}
+
+// A report forwarded over the control pipe must leave the replies behind it
+// on their own commands, whichever branch the guard takes: a capture that
+// receives the guard's spare block paints the focused pane blank.
+func TestGuardedMouseCommandKeepsControlRepliesAligned(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux not installed")
+	}
+	driver, err := tmux.NewWithSocket("amguard")
+	if err != nil {
+		t.Fatalf("driver: %v", err)
+	}
+	sessID := "guard-replies"
+	if err := driver.Create(sessID, t.TempDir(),
+		`printf '\033[?1003h\033[?1006h'; cat`, map[string]string{}, 80, 24); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	t.Cleanup(func() { _ = driver.Kill(sessID) })
+	control, err := driver.OpenControl(sessID)
+	if err != nil {
+		t.Fatalf("control: %v", err)
+	}
+	t.Cleanup(func() { _ = control.Close() })
+
+	expectAligned := func(state string) {
+		t.Helper()
+		command, _ := guardedMouseCommand(sessID, "\x1b[<64;7;3M")
+		if err := control.SendBlocks(command, guardedMouseReplies); err != nil {
+			t.Fatalf("guarded send while %s: %v", state, err)
+		}
+		for _, marker := range []string{"first", "second"} {
+			reply, err := control.Command("display-message -p " + marker)
+			if err != nil || reply != marker {
+				t.Fatalf("while %s, reply = %q (%v), want %q", state, reply, err, marker)
+			}
+		}
+	}
+	waitForMouseFlag(t, driver, sessID, "1")
+	expectAligned("tracking the mouse")
+
+	stopMouseTracking(t, driver, sessID)
+	expectAligned("not tracking the mouse")
+}
+
+// cat holds the line until a newline arrives, and only what it echoes
+// reaches the pane's terminal to turn mouse reporting off.
+func stopMouseTracking(t *testing.T, driver *tmux.Driver, sessID string) {
+	t.Helper()
+	if err := driver.SendRaw("send-keys -t " + tmux.PaneTarget(sessID) +
+		" -H 1b 5b 3f 31 30 30 33 6c 1b 5b 3f 31 30 30 36 6c 0a"); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	waitForMouseFlag(t, driver, sessID, "0")
 }
 
 func waitForMouseFlag(t *testing.T, driver *tmux.Driver, sessID, want string) {

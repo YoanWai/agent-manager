@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -41,13 +43,11 @@ func TestSample(t *testing.T) {
 		t.Fatal("disk reported OK but total is zero")
 	}
 	if snap.DiskOK {
-		if snap.DiskFree == 0 && snap.DiskUsed == 0 {
-			t.Fatal("disk free and used both zero")
+		if snap.DiskAvailable == 0 && snap.DiskUsed == 0 {
+			t.Fatal("disk available and used both zero")
 		}
-		// Free is what the UI shows; it must be the kernel's available
-		// figure (Bavail), not Total-Used (which includes reserved).
-		if snap.DiskFree > snap.DiskTotal {
-			t.Fatalf("disk free %d > total %d", snap.DiskFree, snap.DiskTotal)
+		if snap.DiskAvailable > snap.DiskTotal {
+			t.Fatalf("disk available %d > total %d", snap.DiskAvailable, snap.DiskTotal)
 		}
 	}
 	if snap.CPUTempOK && snap.CPUTemp <= 0 {
@@ -445,6 +445,47 @@ func TestTreesNamesDirectChildren(t *testing.T) {
 	}
 }
 
+// One ps call names the children of every pane at once, so each name has to
+// land on the root that started it.
+func TestTreesNamesTheChildrenOfEachRoot(t *testing.T) {
+	start := func(name string, args ...string) int {
+		cmd := exec.Command(name, args...)
+		if err := cmd.Start(); err != nil {
+			t.Fatalf("start %s: %v", name, err)
+		}
+		t.Cleanup(func() {
+			cmd.Process.Kill()
+			cmd.Wait()
+		})
+		return cmd.Process.Pid
+	}
+	start("sleep", "5")
+	shell := start("sh", "-c", "sleep 5; true")
+	self := os.Getpid()
+
+	wantSelf, wantShell := []string{"sh", "sleep"}, []string{"sleep"}
+	var gotSelf, gotShell []string
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		stats := Trees([]int{self, shell})
+		gotSelf, gotShell = childNames(stats[self]), childNames(stats[shell])
+		if slices.Equal(gotSelf, wantSelf) && slices.Equal(gotShell, wantShell) {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("children of the test process = %v, want %v; of its shell = %v, want %v", gotSelf, wantSelf, gotShell, wantShell)
+}
+
+func childNames(stat ProcStat) []string {
+	var names []string
+	for _, command := range stat.Children {
+		names = append(names, filepath.Base(command))
+	}
+	slices.Sort(names)
+	return names
+}
+
 // A child that exits between the two ps passes frees its pid, and a pid the
 // kernel hands to something unrelated must not be read as this pane's agent.
 func TestChildNamesRequireTheSampledParent(t *testing.T) {
@@ -454,5 +495,23 @@ func TestChildNamesRequireTheSampledParent(t *testing.T) {
 	want := []string{"/opt/homebrew/bin/codex"}
 	if got := stats[100].Children; !slices.Equal(got, want) {
 		t.Fatalf("children = %v, want %v", got, want)
+	}
+}
+
+func TestPSForPIDsListsOnlyThosePIDs(t *testing.T) {
+	want := []string{strconv.Itoa(os.Getpid()), strconv.Itoa(os.Getppid())}
+	out, err := psForPIDs(want).Output()
+	if err != nil {
+		t.Fatalf("ps: %v", err)
+	}
+	var got []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		pid, _ := nextField(line)
+		got = append(got, pid)
+	}
+	slices.Sort(want)
+	slices.Sort(got)
+	if !slices.Equal(got, want) {
+		t.Fatalf("ps listed pids %v, want %v", got, want)
 	}
 }

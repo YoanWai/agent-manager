@@ -244,8 +244,8 @@ func TestEnvironmentCarriesSessionIDAndHooks(t *testing.T) {
 	if env[hooks.EnvSessionID] != "abcd1234" || env[hooks.EnvStatusFile] == "" {
 		t.Fatalf("hooked tool env = %v, want session id and status file", env)
 	}
-	if !strings.Contains(command, "--mcp-config '") || !strings.Contains(command, "--settings '") {
-		t.Fatalf("hooked command = %q", command)
+	if !strings.Contains(command, "--mcp-config '") || !strings.Contains(command, "--settings "+tmux.ShellQuote(manager.SettingsFile("abcd1234"))) {
+		t.Fatalf("hooked command = %q, want this session's own settings", command)
 	}
 }
 
@@ -272,6 +272,19 @@ func TestEnvironmentSetsGrokTerminalTheme(t *testing.T) {
 				t.Fatalf("grok config = %q", written)
 			}
 		})
+	}
+}
+
+func TestEnvironmentKeepsGrokOffTheSharedLeader(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("GROK_HOME", "")
+	grok := config.Tool{Command: "cat", MCP: mcpreg.StyleNone}
+	command, _, err := Environment(hooks.NewManager(t.TempDir()), "grok", grok, "cat --resume abc", "abcd1234")
+	if err != nil {
+		t.Fatalf("Environment grok: %v", err)
+	}
+	if command != "cat --resume abc --no-leader" {
+		t.Fatalf("grok command = %q, want every launch line to force a local agent", command)
 	}
 }
 

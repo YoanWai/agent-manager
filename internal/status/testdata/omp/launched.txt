@@ -1,0 +1,30 @@
+│                          │ Tips                                                                  │
+│      Welcome back!       │ # for prompt actions                                                  │
+│                          │ / for commands                                                        │
+│       ████████████       │ ! to run bash                                                         │
+│          ██  ██          │ $ to run python                                                       │
+│          ██  ██          │ ───────────────────────────────────────────────────────────────────── │
+│          ▒▒  ██          │ LSP Servers                                                           │
+│              ██          │ No LSP servers                                                        │
+│                          │                                                                       │
+│       Local Model        │                                                                       │
+│       local-proxy        │                                                                       │
+│                          │ ───────────────────────────────────────────────────────────────────── │
+│                          │ Recent sessions                                                       │
+│                          │ No recent sessions                                                    │
+│                          │                                                                       │
+│                          │                                                                       │
+│                          │                                                                       │
+│                          │                                                                       │
+╰──────────────────────────┴───────────────────────────────────────────────────────────────────────╯
+ Tip: Bulk data to classify or triage? Say `jevify` in your message — the eval kernel's `judge()`
+      processes the batch and you read only what it flags — watch it glow as you type
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Update Available
+ New version 18.3.4 is available. Run: omp update
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+ π > ⬢ Local Model > 🗑 ~/project                                ▶──────────╎──────────┃53%────────────────33K─
+╰─

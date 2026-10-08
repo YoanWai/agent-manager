@@ -58,6 +58,8 @@ func (m *Model) viewListFrame() string {
 		bottom = m.focusBottomRule(leftWidth+1, m.width)
 	}
 	frame = append(frame, bottom)
+	m.placeNoticeHit(footer, len(frame))
+	m.quick.originY = len(frame)
 	for _, line := range splitLines(footer) {
 		frame = append(frame, paint(line, m.width, backdropHex()))
 	}
@@ -75,13 +77,8 @@ func (m *Model) viewFullListFrame() string {
 	for _, line := range m.viewHeaderRows() {
 		frame = append(frame, paint(line, m.width, backdropHex()))
 	}
-	quickRows := m.fullQuickLines(railWidth, bodyHeight)
-	m.prepareRailFrame(railWidth, bodyHeight-len(quickRows))
+	m.prepareRailFrame(railWidth, bodyHeight)
 	railRows := railContentLines(m.displayedRail.Lines)
-	for _, line := range quickRows {
-		railRows = append(railRows, line)
-		m.displayedRail.Lines = append(m.displayedRail.Lines, uirail.Line{Text: line.text, Tone: line.tone, Rule: line.rule, Raw: line.raw})
-	}
 	edge := make([]string, bodyHeight)
 	for i := range edge {
 		tone := panelHex()
@@ -93,6 +90,8 @@ func (m *Model) viewFullListFrame() string {
 	frame = append(frame, m.railTopRow(railWidth, m.width))
 	frame = append(frame, joinColumns(edge, paintContent(railRows, railWidth, bodyHeight, panelHex()))...)
 	frame = append(frame, m.boundedRuleRow(railWidth, m.width, "▄"))
+	m.placeNoticeHit(footer, len(frame))
+	m.quick.originY = len(frame)
 	for _, line := range splitLines(footer) {
 		frame = append(frame, paint(line, m.width, backdropHex()))
 	}
@@ -145,7 +144,6 @@ func (m *Model) prepareRailFrame(width, height int) {
 		Foot:            foot,
 	}
 	m.displayedRail = m.rail.Render(ctx, m.displayedRail)
-	m.placeRailNoticeHit()
 }
 
 func (m *Model) railTheme() uirail.Theme {
@@ -164,17 +162,6 @@ func railContentLines(lines []uirail.Line) []contentLine {
 		out[i] = contentLine{text: line.Text, tone: line.Tone, rule: line.Rule, raw: line.Raw}
 	}
 	return out
-}
-
-func (m *Model) placeRailNoticeHit() {
-	if m.displayedRail.FootLines == 0 || !m.notices.noticeHit.ok {
-		m.notices.noticeHit = noticeHit{}
-		return
-	}
-	m.notices.noticeHit.x0++
-	m.notices.noticeHit.x1++
-	m.notices.noticeHit.y0 = m.listChromeRows() + m.displayedRail.FootStart
-	m.notices.noticeHit.y1 = m.notices.noticeHit.y0 + m.displayedRail.FootLines
 }
 
 func (m *Model) overlayRowMenu(frame string) string { return m.displayedRail.Overlay(frame) }

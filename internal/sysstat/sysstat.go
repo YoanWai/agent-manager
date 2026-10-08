@@ -28,7 +28,7 @@ type Snapshot struct {
 	SwapPercent     float64
 	SwapOK          bool
 	DiskUsed        uint64
-	DiskFree        uint64
+	DiskAvailable   uint64
 	DiskTotal       uint64
 	DiskPercent     float64
 	DiskOK          bool
@@ -101,7 +101,7 @@ func sampleSwap(snap *Snapshot) {
 	snap.SwapOK = true
 }
 
-func sampleDisk(snap *Snapshot, diskPath string) {
+func sampleDiskFallback(snap *Snapshot, diskPath string) {
 	if diskPath == "" {
 		diskPath = "/"
 	}
@@ -110,7 +110,7 @@ func sampleDisk(snap *Snapshot, diskPath string) {
 		return
 	}
 	snap.DiskUsed = usage.Used
-	snap.DiskFree = usage.Free
+	snap.DiskAvailable = usage.Free
 	snap.DiskTotal = usage.Total
 	// used/(used+free) matches df Capacity and ignores reserved blocks
 	// that sit in Total but are not available to ordinary processes.
@@ -509,11 +509,22 @@ func nameChildren(stats map[int]ProcStat, children map[int][]int) {
 	// ps exits non-zero when every pid it was given has gone, which is a
 	// child that ended between the two calls rather than a failure: there is
 	// nothing left to name and the next sample sees whatever replaced it.
-	out, err := exec.Command("ps", "-o", "pid=,ppid=,args=", "-p", strings.Join(wanted, ",")).Output()
+	out, err := psForPIDs(wanted).Output()
 	if err != nil {
 		return
 	}
 	applyChildNames(stats, children, string(out))
+}
+
+func psForPIDs(pids []string) *exec.Cmd {
+	// Several -p pids make macOS ps look up the terminal of every process on
+	// the machine unless -x waives its terminal filter. Linux reads -x as
+	// every process.
+	flags := "-o"
+	if runtime.GOOS == "darwin" {
+		flags = "-xo"
+	}
+	return exec.Command("ps", flags, "pid=,ppid=,args=", "-p", strings.Join(pids, ","))
 }
 
 // applyChildNames matches the second ps pass back to the tree the first one

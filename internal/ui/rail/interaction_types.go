@@ -87,6 +87,7 @@ const (
 	OpenMessages
 	OpenHelp
 	OpenReview
+	CancelEnd
 )
 
 type Intent struct {

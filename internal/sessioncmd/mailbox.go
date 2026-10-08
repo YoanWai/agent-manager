@@ -14,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -22,6 +21,11 @@ import (
 
 var sessionIDPattern = regexp.MustCompile(`^[0-9a-f]+$`)
 var reviewCommentIDPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)
+
+// RequireCaller refuses an empty caller for a front that must act as a session.
+func RequireCaller(sessionID string) error {
+	return validSession(sessionID)
+}
 
 func validSession(sessionID string) error {
 	if sessionID == "" {
@@ -43,11 +47,9 @@ func writeMailbox(path, content string) error {
 }
 
 // A rename is applied by the manager's poll, so the answer arrives one
-// interval later. The floor covers a poll that ran long, and the ceiling
-// keeps a generous poll_interval from parking the agent's tool call.
+// interval later. The wait covers a poll that ran long.
 const (
-	renameWaitFloor  = 10 * time.Second
-	renameWaitCap    = 30 * time.Second
+	renameWait       = 10 * time.Second
 	renameResultPoll = 100 * time.Millisecond
 )
 
@@ -63,14 +65,17 @@ func Rename(ctx context.Context, configDir, sessionID, name string) (string, err
 	if err := validSession(sessionID); err != nil {
 		return "", err
 	}
-	awake, pollInterval, err := managerAwake(configDir)
+	// Whether anyone is home is read before the name is queued, so a
+	// manager that cannot be reached at all is reported instead of a name
+	// left pending behind an error.
+	awake, err := managerAwake(configDir)
 	if err != nil {
 		return "", err
 	}
-	return renameMailbox(ctx, hooks.NewManager(configDir), sessionID, name, awake, pollInterval)
+	return renameMailbox(ctx, hooks.NewManager(configDir), sessionID, name, awake)
 }
 
-func renameMailbox(ctx context.Context, mailbox *hooks.Manager, sessionID, name string, awake bool, pollInterval time.Duration) (string, error) {
+func renameMailbox(ctx context.Context, mailbox *hooks.Manager, sessionID, name string, awake bool) (string, error) {
 	request, err := hooks.NewRequestID()
 	if err != nil {
 		return "", err
@@ -84,7 +89,7 @@ func renameMailbox(ctx context.Context, mailbox *hooks.Manager, sessionID, name 
 	// The manager answers the name as it will take it, so the wait
 	// recognizes its own answer by that name rather than the typed one.
 	asked := hooks.NormalizeName(name)
-	deadline := time.Now().Add(min(max(3*pollInterval, renameWaitFloor), renameWaitCap))
+	deadline := time.Now().Add(renameWait)
 	for time.Now().Before(deadline) {
 		answer, found, err := readRenameAnswer(mailbox, sessionID, request, asked)
 		if err != nil || found {
@@ -149,18 +154,13 @@ func readRenameAnswer(mailbox *hooks.Manager, sessionID, request, asked string) 
 	return "session renamed to " + verdict.Applied, true, nil
 }
 
-func managerAwake(configDir string) (bool, time.Duration, error) {
-	cfg, err := config.LoadDir(configDir)
+func managerAwake(configDir string) (bool, error) {
+	st, err := openStore(configDir)
 	if err != nil {
-		return false, 0, err
-	}
-	st, err := store.Open(filepath.Join(configDir, "state.db"))
-	if err != nil {
-		return false, 0, err
+		return false, err
 	}
 	defer st.Close()
-	awake, err := st.ManagerAwake(time.Now(), cfg.PollInterval.Duration)
-	return awake, cfg.PollInterval.Duration, err
+	return st.ManagerAwake(time.Now())
 }
 
 // ProactiveCoordination reads the coordination mode the user picked in

@@ -30,6 +30,7 @@ type focusPreviewMsg struct {
 	paneMouse   bool
 	paneMotion  bool
 	paneSGR     bool
+	paneAlt     bool
 	historySize int
 }
 
@@ -166,16 +167,19 @@ func (w *focusWatch) serving(id string) bool {
 // caller safely use another transport: after Command starts, an error cannot
 // prove whether tmux applied the command before the acknowledgement was lost.
 func (w *focusWatch) forward(command string) (available bool, err error) {
+	return w.forwardBlocks(command, 1)
+}
+
+// forwardBlocks is forward for a command tmux answers with several reply
+// blocks, which the client has to be told to expect.
+func (w *focusWatch) forwardBlocks(command string, blocks int) (available bool, err error) {
 	w.mu.Lock()
 	control := w.control
 	w.mu.Unlock()
 	if control == nil {
 		return false, nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), focusControlCallTimeout)
-	defer cancel()
-	_, err = control.CommandContext(ctx, command)
-	return true, err
+	return true, control.SendBlocks(command, blocks)
 }
 
 // query runs one tmux command over the control pipe and returns its
@@ -305,7 +309,7 @@ func (w *focusWatch) watch(ctx context.Context, id string, stop <-chan struct{})
 		callCtx, cancelCall = context.WithTimeout(ctx, focusControlCallTimeout)
 		state, stateErr := control.CommandContext(callCtx,
 			`display-message -p -t `+target+
-				` "#{cursor_x},#{cursor_y},#{cursor_flag},#{mouse_any_flag}#{mouse_button_flag}#{mouse_standard_flag},#{history_size},#{mouse_all_flag},#{mouse_sgr_flag}"`)
+				` "#{cursor_x},#{cursor_y},#{cursor_flag},#{mouse_any_flag}#{mouse_button_flag}#{mouse_standard_flag},#{history_size},#{mouse_all_flag},#{mouse_sgr_flag},#{alternate_on}"`)
 		cancelCall()
 		if stateErr == nil {
 			applyPaneState(&msg, state)
@@ -391,7 +395,7 @@ func matchExecShape(pane string) string {
 // default status text when it does not receive the format expression.
 func applyPaneState(msg *focusPreviewMsg, reply string) {
 	parts := strings.Split(strings.TrimSpace(reply), ",")
-	if len(parts) != 7 {
+	if len(parts) != 8 {
 		return
 	}
 	x, errX := strconv.Atoi(strings.TrimSpace(parts[0]))
@@ -409,4 +413,5 @@ func applyPaneState(msg *focusPreviewMsg, reply string) {
 	}
 	msg.paneMotion = strings.TrimSpace(parts[5]) == "1"
 	msg.paneSGR = strings.TrimSpace(parts[6]) == "1"
+	msg.paneAlt = strings.TrimSpace(parts[7]) == "1"
 }

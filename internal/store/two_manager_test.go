@@ -34,7 +34,7 @@ func TestClaimPollerStealsOnlyStaleStamps(t *testing.T) {
 	socketB := "/tmp/manager-b/tmux-501/agentmgr"
 	now := time.Now()
 
-	holder, err := st.ClaimPoller(socketA, now, 2*time.Second)
+	holder, err := st.ClaimPoller(socketA, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +42,7 @@ func TestClaimPollerStealsOnlyStaleStamps(t *testing.T) {
 		t.Fatalf("first claim = %q, want %q", holder, socketA)
 	}
 
-	holder, err = st.ClaimPoller(socketB, now.Add(2*time.Second), 2*time.Second)
+	holder, err = st.ClaimPoller(socketB, now.Add(2*time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,14 +51,14 @@ func TestClaimPollerStealsOnlyStaleStamps(t *testing.T) {
 	}
 
 	backdateHeartbeat(t, st, now.Add(-40*time.Second))
-	holder, err = st.ClaimPoller(socketB, now.Add(40*time.Second), 2*time.Second)
+	holder, err = st.ClaimPoller(socketB, now.Add(40*time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if holder != socketB {
 		t.Fatalf("stale-stamp claim = %q, want %q to take over", holder, socketB)
 	}
-	holder, err = st.ClaimPoller(socketA, now.Add(41*time.Second), 2*time.Second)
+	holder, err = st.ClaimPoller(socketA, now.Add(41*time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func TestClaimPollerStealsOnlyStaleStamps(t *testing.T) {
 	}
 
 	backdateHeartbeat(t, st, now.Add(35*time.Second))
-	holder, err = st.ClaimPoller(socketA, now.Add(80*time.Second), 2*time.Second)
+	holder, err = st.ClaimPoller(socketA, now.Add(80*time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,22 +192,22 @@ func TestClaimMessageIsSingleWinnerUnderConcurrentClaims(t *testing.T) {
 func TestManagerAwakeAgesWithTheNewestStamp(t *testing.T) {
 	st := openTwoManagerStore(t)
 	now := time.Now()
-	if _, err := st.ClaimPoller("/tmp/a/agentmgr", now, 2*time.Second); err != nil {
+	if _, err := st.ClaimPoller("/tmp/a/agentmgr", now); err != nil {
 		t.Fatal(err)
 	}
-	awake, err := st.ManagerAwake(now.Add(1*time.Second), 2*time.Second)
+	awake, err := st.ManagerAwake(now.Add(1 * time.Second))
 	if err != nil || !awake {
 		t.Fatalf("fresh stamp awake = %v, %v", awake, err)
 	}
 	backdateHeartbeat(t, st, now.Add(-31*time.Second))
-	awake, err = st.ManagerAwake(now.Add(31*time.Second), 2*time.Second)
+	awake, err = st.ManagerAwake(now.Add(31 * time.Second))
 	if err != nil || awake {
 		t.Fatalf("aged stamp awake = %v, %v; want the manager reading as closed", awake, err)
 	}
-	if _, err := st.ClaimPoller("/tmp/b/agentmgr", now.Add(40*time.Second), 2*time.Second); err != nil {
+	if _, err := st.ClaimPoller("/tmp/b/agentmgr", now.Add(40*time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	awake, err = st.ManagerAwake(now.Add(41*time.Second), 2*time.Second)
+	awake, err = st.ManagerAwake(now.Add(41 * time.Second))
 	if err != nil || !awake {
 		t.Fatalf("competitor stamp awake = %v, %v; want the profile to stay awake", awake, err)
 	}

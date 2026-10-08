@@ -480,6 +480,9 @@ func TestShellRowLegendDropsTheConversationKeys(t *testing.T) {
 	if legend.title != "Shell" {
 		t.Fatalf("legend title = %q, want Shell", legend.title)
 	}
+	if len(legend.leads) != 0 || legend.hint != "" {
+		t.Fatalf("legend leads with %q on a shell row, which refuses a prompt and a review", legend.leads)
+	}
 	for _, pair := range legend.pairs {
 		switch pair[0] {
 		case "space", "y", "ctrl+r", "f":
@@ -504,7 +507,10 @@ func TestAgentRowLegendKeepsTheConversationKeys(t *testing.T) {
 	if legend.title != "Session" {
 		t.Fatalf("legend title = %q, want Session", legend.title)
 	}
-	for _, key := range []string{"space", "y", "ctrl+r", "f"} {
+	if !slices.Equal(legend.leads, [][2]string{{"space", "quick prompt mode"}, {"ctrl+r", "review mode"}}) || legend.hint != reviewModeHint {
+		t.Fatalf("legend should lead with quick prompt mode and review mode, got %q, hint %q", legend.leads, legend.hint)
+	}
+	for _, key := range []string{"y", "f"} {
 		if !slices.ContainsFunc(legend.pairs, func(pair [2]string) bool { return pair[0] == key }) {
 			t.Fatalf("legend should offer %q on an agent row", key)
 		}

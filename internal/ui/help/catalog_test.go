@@ -208,4 +208,9 @@ func TestCatalogSessionRowsFollowCustomBindings(t *testing.T) {
 	if desc, ok := rowFor(custom, "alt+e"); !ok || desc != "open its directory in an editor" {
 		t.Errorf("custom editor row = %q, %v", desc, ok)
 	}
+
+	pinned := defaults.With(keybind.TmuxPrefix, bindingOf(t, "ctrl+b"))
+	if desc, ok := rowFor(pinned, "ctrl+b"); !ok || desc != "attached: tmux's prefix, in place of yours" {
+		t.Errorf("tmux_prefix row = %q, %v", desc, ok)
+	}
 }

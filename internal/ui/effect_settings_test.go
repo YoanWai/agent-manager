@@ -61,8 +61,16 @@ func TestOpenSettingsDefersBlockedStoreRead(t *testing.T) {
 	default:
 	}
 
-	completed := make(chan tea.Msg, 1)
-	go func() { completed <- cmd() }()
+	// Opening batches the store read with the editor probe; each runs as
+	// its own command, so the blocked read holds only itself.
+	batch, ok := cmd().(tea.BatchMsg)
+	if !ok {
+		t.Fatal("opening settings should batch the store read with the editor probe")
+	}
+	completed := make(chan tea.Msg, len(batch))
+	for _, each := range batch {
+		go func() { completed <- each() }()
+	}
 	<-reader.started
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 151, Height: 45})
 	m = updated.(*Model)
@@ -70,7 +78,9 @@ func TestOpenSettingsDefersBlockedStoreRead(t *testing.T) {
 		t.Fatal("a blocked settings reader blocked an unrelated window update")
 	}
 	close(reader.release)
-	m.applyTestMsg(t, <-completed)
+	for range batch {
+		m.applyTestMsg(t, <-completed)
+	}
 	if !m.settings.worktreeDefault {
 		t.Fatal("the accepted deferred refresh did not update the dialog")
 	}
@@ -177,8 +187,11 @@ func TestSettingsReopenUsesOptimisticPendingSave(t *testing.T) {
 		t.Fatal("settings save was not queued")
 	}
 
+	// Only the editor PATH probe may run; a store load would race the save.
 	if refresh := m.openSettings(); refresh != nil {
-		t.Fatal("a dialog reopened over a pending save should use the optimistic cache")
+		if _, probe := refresh().(editorsProbedMsg); !probe {
+			t.Fatal("a dialog reopened over a pending save should use the optimistic cache")
+		}
 	}
 	if !m.settings.worktreeDefault {
 		t.Fatal("the reopened dialog lost the pending worktree choice")

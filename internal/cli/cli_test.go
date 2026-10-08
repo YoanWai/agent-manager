@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
+	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/update"
 )
 
@@ -25,6 +26,8 @@ type fakeSessions struct {
 	timeout   time.Duration
 	messageID int64
 	archived  bool
+	action    string
+	canceled  bool
 	groupPath string
 	directory string
 	taskID    string
@@ -94,6 +97,16 @@ func (f *fakeSessions) Archive(sessionID, targetID string, archived bool) (sessi
 	updated := f.session
 	updated.Archived = archived
 	return updated, f.failWith
+}
+
+func (f *fakeSessions) EndAfterTurn(sessionID, action string) (sessioncmd.AfterTurn, error) {
+	f.callerID, f.action = sessionID, action
+	return sessioncmd.AfterTurn{Pending: action, ManagerAwake: true}, f.failWith
+}
+
+func (f *fakeSessions) CancelAfterTurn(sessionID string) (sessioncmd.AfterTurn, error) {
+	f.callerID, f.canceled = sessionID, true
+	return sessioncmd.AfterTurn{Canceled: store.AfterTurnArchive, ManagerAwake: true}, f.failWith
 }
 
 func (f *fakeSessions) Groups(sessionID string) ([]sessioncmd.Group, error) {
@@ -225,6 +238,8 @@ func TestALayerFailureReachesTheCaller(t *testing.T) {
 		{"kill", []string{"beef1234"}, func(out io.Writer, args []string) error { return runKill(out, sessions, args, "cafe0001") }},
 		{"revive", []string{"beef1234"}, func(out io.Writer, args []string) error { return runRevive(out, sessions, args, "cafe0001") }},
 		{"archive", []string{"beef1234"}, func(out io.Writer, args []string) error { return runArchive(out, sessions, args, "cafe0001") }},
+		{"archive-self", nil, func(out io.Writer, args []string) error { return runArchiveSelf(out, sessions, args, "cafe0001") }},
+		{"kill-self", []string{"--cancel"}, func(out io.Writer, args []string) error { return runKillSelf(out, sessions, args, "cafe0001") }},
 		{"groups", nil, func(out io.Writer, args []string) error { return runGroups(out, sessions, args, "cafe0001") }},
 		{"create-group", []string{"api/web"}, func(out io.Writer, args []string) error { return runCreateGroup(out, sessions, args, "cafe0001") }},
 		{"delete-group", []string{"api/web"}, func(out io.Writer, args []string) error { return runDeleteGroup(out, sessions, args, "cafe0001") }},
@@ -484,7 +499,7 @@ func TestCommandsThatActAsNoSessionNeverResolveACaller(t *testing.T) {
 func TestCommandsAndHelpCoverEverySection(t *testing.T) {
 	table := Commands("dev")
 	registered := []string{
-		"sessions", "spawn", "send", "read", "wait", "message-status", "kill", "revive", "archive",
+		"sessions", "spawn", "send", "read", "wait", "message-status", "kill", "revive", "archive", "archive-self", "kill-self",
 		"groups", "create-group", "delete-group", "task", "reserve", "release-files", "reservations", "terminal",
 		"rename", "review-repo", "review-base", "review-mode", "review-comment", "issue", "feature", "update",
 	}

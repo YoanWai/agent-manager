@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -72,14 +74,14 @@ func TestExtractChangesHumanizesGeneratedNotes(t *testing.T) {
 	}, "\n")
 
 	changes, total := extractChanges(body)
-	want := []string{
-		"Groups: Make group creation immediate and reliable",
-		"Config: Add Pi as a built-in tool · @steveprentice",
-		"UI: Add a message browser with scrolling",
-		"MCP editor: Expose tool capabilities",
+	want := []Change{
+		{Kind: KindFix, Text: "Groups: Make group creation immediate and reliable"},
+		{Kind: KindFeature, Text: "Config: Add Pi as a built-in tool", Author: "@steveprentice"},
+		{Kind: KindFeature, Text: "UI: Add a message browser with scrolling"},
+		{Kind: KindFeature, Text: "MCP editor: Expose tool capabilities"},
 	}
-	if total != len(want) || fmt.Sprint(changes) != fmt.Sprint(want) {
-		t.Fatalf("extractChanges() = %q total %d, want %q", changes, total, want)
+	if total != len(want) || !slices.Equal(changes, want) {
+		t.Fatalf("extractChanges() = %+v total %d, want %+v", changes, total, want)
 	}
 }
 
@@ -92,8 +94,8 @@ func TestExtractChangesIsBoundedAndTerminalSafe(t *testing.T) {
 	if len(changes) != maxChangesPerRelease || total != maxChangesPerRelease+3 {
 		t.Fatalf("got %d stored / %d total", len(changes), total)
 	}
-	if strings.Contains(changes[0], "\x1b") {
-		t.Fatalf("terminal control sequence survived: %q", changes[0])
+	if strings.Contains(changes[0].Text, "\x1b") {
+		t.Fatalf("terminal control sequence survived: %q", changes[0].Text)
 	}
 }
 
@@ -140,8 +142,8 @@ func TestCheckFetchesStableCatalogAndFindsLatest(t *testing.T) {
 	if result.Latest != "v0.11.0" || len(result.Releases) != 2 {
 		t.Fatalf("unexpected result: %+v", result)
 	}
-	if got := result.Releases[0].Changes; len(got) != 1 || got[0] != "UI: Actual latest" {
-		t.Fatalf("release changes = %q", got)
+	if got := result.Releases[0].Changes; len(got) != 1 || got[0] != (Change{Kind: KindFeature, Text: "UI: Actual latest"}) {
+		t.Fatalf("release changes = %+v", got)
 	}
 }
 
@@ -196,8 +198,8 @@ func TestCatalogBehindTheRunningBuildRefetches(t *testing.T) {
 	}
 	// The notice is built from these lines, so reaching the release is only
 	// half of it: an entry with no changes leaves it as empty as before.
-	if got := result.Releases[0].Changes; len(got) != 1 || got[0] != "UI: Refreshed" {
-		t.Fatalf("changes are %q, want the fetched release's own", got)
+	if got := result.Releases[0].Changes; len(got) != 1 || got[0].Text != "UI: Refreshed" {
+		t.Fatalf("changes are %+v, want the fetched release's own", got)
 	}
 	if result.Latest != "" {
 		t.Fatalf("nothing is newer than the running build, got %q", result.Latest)
@@ -281,22 +283,8 @@ func TestStaleCatalogUsesConditionalRequest(t *testing.T) {
 		t.Fatalf("result=%+v err=%v calls=%d", result, err, calls.Load())
 	}
 	written, ok := readCache(filepath.Join(dir, cacheFile))
-	if !ok || !written.CheckedAt.After(oldCheckedAt) || written.ETag != `"catalog-1"` {
+	if !ok || !written.CheckedAt.After(oldCheckedAt) || written.ETag != `"catalog-1"` || written.Parser != catalogParser {
 		t.Fatalf("conditional refresh did not advance cache: %+v", written)
-	}
-}
-
-func TestLegacyCacheWithoutCatalogRefetches(t *testing.T) {
-	dir := t.TempDir()
-	seedCache(t, dir, cache{CheckedAt: time.Now(), Latest: "v0.9.0", URL: "https://github.com/old"})
-	var calls atomic.Int32
-	server := releaseServer(t, &calls, "v0.10.0")
-	defer server.Close()
-	defer swapReleasesURL(server.URL)()
-
-	result, err := Check(context.Background(), dir, "v0.8.2")
-	if err != nil || calls.Load() != 1 || result.Latest != "v0.10.0" {
-		t.Fatalf("result=%+v err=%v calls=%d", result, err, calls.Load())
 	}
 }
 
@@ -326,24 +314,138 @@ func TestFetchFailureReturnsStaleCatalogWithoutOverwritingIt(t *testing.T) {
 	}
 }
 
-func TestCachedNeverTouchesNetworkOrTrustsLegacyShape(t *testing.T) {
+func TestCatalogIsWrittenToItsOwnFile(t *testing.T) {
+	var calls atomic.Int32
+	server := releaseServer(t, &calls, "v0.40.0")
+	defer server.Close()
+	defer swapReleasesURL(server.URL)()
+
 	dir := t.TempDir()
-	seedCache(t, dir, cache{CheckedAt: time.Now(), Latest: "v0.9.0"})
-	if result := Cached(dir, "v0.8.2"); len(result.Releases) != 0 {
-		t.Fatalf("legacy cache should be ignored: %+v", result)
+	if _, err := Check(context.Background(), dir, "v0.39.0"); err != nil {
+		t.Fatal(err)
 	}
-	seedCache(t, dir, cache{CheckedAt: time.Now(), Releases: []Release{testRelease("v0.9.0", "new")}})
-	if result := Cached(dir, "v0.8.2"); result.Latest != "v0.9.0" {
-		t.Fatalf("cached catalog not returned: %+v", result)
+	written, ok := readCache(filepath.Join(dir, "release-catalog.json"))
+	if !ok || written.Parser != catalogParser || len(written.Releases) != 1 {
+		t.Fatalf("catalog not written with its parser: %+v", written)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "update-check.json")); !os.IsNotExist(err) {
+		t.Fatalf("the file older builds own must be left alone: %v", err)
+	}
+}
+
+func TestCatalogFromAnotherParserIsRefetchedWithoutItsETag(t *testing.T) {
+	dir := t.TempDir()
+	stale, err := json.Marshal(cache{
+		CheckedAt: time.Now(),
+		Parser:    catalogParser + 1,
+		ETag:      `"other-parser"`,
+		Releases:  []Release{testRelease("v0.40.0", "kept for the first paint")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedFile(t, dir, cacheFile, string(stale))
+	if got := Cached(dir, "v0.39.0"); got.Latest != "v0.40.0" {
+		t.Fatalf("another parser's releases still paint: %+v", got)
+	}
+
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if got := r.Header.Get("If-None-Match"); got != "" {
+			t.Errorf("If-None-Match = %q, want none: a not-modified answer would keep the other parse", got)
+		}
+		fmt.Fprint(w, `[{"tag_name":"v0.40.0","html_url":"https://github.com/YoanWai/agent-manager/releases/tag/v0.40.0","body":"## What's Changed\n* fix(ui): reparsed"}]`)
+	}))
+	defer server.Close()
+	defer swapReleasesURL(server.URL)()
+
+	result, err := Check(context.Background(), dir, "v0.39.0")
+	if err != nil || calls.Load() != 1 {
+		t.Fatalf("err=%v calls=%d, want one full fetch despite the fresh timestamp", err, calls.Load())
+	}
+	if got := result.Releases[0].Changes[0].Text; got != "UI: Reparsed" {
+		t.Fatalf("changes = %q, want this build's parse", got)
+	}
+}
+
+func TestLegacyCatalogSeedsTheFirstPaint(t *testing.T) {
+	dir := t.TempDir()
+	seedFile(t, dir, "update-check.json", legacyCatalogJSON)
+
+	seeded := Cached(dir, "v0.39.0")
+	if seeded.Latest != "v0.40.0" || len(seeded.Releases) != 2 {
+		t.Fatalf("seed = %+v", seeded)
+	}
+	newest := seeded.Releases[0]
+	if !slices.Equal(newest.Highlights, []string{"Pickers are here"}) || !slices.Equal(newest.Thanks, []string{"@someone asked (#1)"}) {
+		t.Fatalf("the authored sections must carry over: %+v", newest)
+	}
+	if !slices.Equal(newest.Changes, []Change{{Kind: KindOther, Text: "UI: A feature · @someone"}}) || newest.TotalChanges != 1 {
+		t.Fatalf("legacy change rows must seed as other: %+v", newest)
+	}
+	if older := seeded.Releases[1]; !slices.Equal(older.Changes, []Change{{Kind: KindOther, Text: "UI: Older"}}) {
+		t.Fatalf("a release without highlights must not seed empty: %+v", older)
+	}
+
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if got := r.Header.Get("If-None-Match"); got != "" {
+			t.Errorf("If-None-Match = %q, want none", got)
+		}
+		fmt.Fprint(w, `[{"tag_name":"v0.40.0","html_url":"https://github.com/YoanWai/agent-manager/releases/tag/v0.40.0","body":"## What's Changed\n* feat(ui): fetched"}]`)
+	}))
+	defer server.Close()
+	defer swapReleasesURL(server.URL)()
+
+	if _, err := Check(context.Background(), dir, "v0.39.0"); err != nil || calls.Load() != 1 {
+		t.Fatalf("err=%v calls=%d, want a fetch at once: a seed is never fresh", err, calls.Load())
+	}
+	kept, err := os.ReadFile(filepath.Join(dir, "update-check.json"))
+	if err != nil || string(kept) != legacyCatalogJSON {
+		t.Fatalf("the legacy file must stay byte for byte: %v", err)
+	}
+}
+
+func TestFailedFetchKeepsTheLegacySeedOnScreen(t *testing.T) {
+	dir := t.TempDir()
+	seedFile(t, dir, "update-check.json", legacyCatalogJSON)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "rate limited", http.StatusForbidden)
+	}))
+	defer server.Close()
+	defer swapReleasesURL(server.URL)()
+
+	result, err := Check(context.Background(), dir, "v0.39.0")
+	if err == nil || result.Latest != "v0.40.0" {
+		t.Fatalf("the seed should survive a failed fetch: %+v, %v", result, err)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, cacheFile)); !os.IsNotExist(statErr) {
+		t.Fatalf("a failed fetch must not write a catalog: %v", statErr)
 	}
 }
 
 func testRelease(version string, changes ...string) Release {
-	return Release{
+	release := Release{
 		Version:      version,
 		URL:          "https://github.com/YoanWai/agent-manager/releases/tag/" + version,
-		Changes:      changes,
 		TotalChanges: len(changes),
+	}
+	for _, text := range changes {
+		release.Changes = append(release.Changes, Change{Kind: KindOther, Text: text})
+	}
+	return release
+}
+
+func TestLongChangeIsCutAtTheLineLimit(t *testing.T) {
+	body := "## What's Changed\n* fix(ui): " + strings.Repeat("a", maxLineLength+20)
+	changes, _ := extractChanges(body)
+	if got := len([]rune(changes[0].Text)); got != maxLineLength {
+		t.Fatalf("change is %d characters, want %d", got, maxLineLength)
+	}
+	if !strings.HasSuffix(changes[0].Text, "…") {
+		t.Fatalf("a cut change must say so: %q", changes[0].Text)
 	}
 }
 
@@ -357,14 +459,34 @@ func releaseVersions(releases []Release) []string {
 
 func seedCache(t *testing.T, dir string, value cache) {
 	t.Helper()
+	value.Parser = catalogParser
 	raw, err := json.Marshal(value)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, cacheFile), raw, 0o644); err != nil {
+	seedFile(t, dir, cacheFile, string(raw))
+}
+
+func seedFile(t *testing.T, dir, name, content string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
+
+const legacyCatalogJSON = `{
+	"checked_at": "2099-01-01T00:00:00Z",
+	"latest": "v0.40.0",
+	"url": "https://github.com/YoanWai/agent-manager/releases/tag/v0.40.0",
+	"etag": "\"legacy-1\"",
+	"releases": [
+		{"version": "v0.40.0", "url": "https://github.com/YoanWai/agent-manager/releases/tag/v0.40.0",
+		 "highlights": ["Pickers are here"], "thanks": ["@someone asked (#1)"],
+		 "changes": ["UI: A feature · @someone"], "total_changes": 1},
+		{"version": "v0.39.0", "url": "https://github.com/YoanWai/agent-manager/releases/tag/v0.39.0",
+		 "changes": ["UI: Older"], "total_changes": 1}
+	]
+}`
 
 func releaseServer(t *testing.T, calls *atomic.Int32, version string) *httptest.Server {
 	t.Helper()
@@ -400,14 +522,14 @@ func TestExtractChangesKeepsWhatAReaderCanAct(t *testing.T) {
 	}, "\n")
 
 	changes, total := extractChanges(body)
-	want := []string{
-		"UI: A feature",
-		"UI: A fix",
-		"UI: A speedup",
-		"Ship the two agent skills for install via skills.sh",
+	want := []Change{
+		{Kind: KindFeature, Text: "UI: A feature"},
+		{Kind: KindFix, Text: "UI: A fix"},
+		{Kind: KindFeature, Text: "UI: A speedup"},
+		{Kind: KindOther, Text: "Ship the two agent skills for install via skills.sh"},
 	}
-	if total != len(want) || fmt.Sprint(changes) != fmt.Sprint(want) {
-		t.Fatalf("extractChanges() = %q total %d, want %q", changes, total, want)
+	if total != len(want) || !slices.Equal(changes, want) {
+		t.Fatalf("extractChanges() = %+v total %d, want %+v", changes, total, want)
 	}
 }
 
@@ -431,7 +553,7 @@ func TestExtractHighlightsReadsTheAuthoredBullets(t *testing.T) {
 
 	want := []string{
 		"The session list can take the whole terminal",
-		"Rows carry the agent's last message beside the name",
+		"Rows carry the agent's `last message` beside the name",
 		"Full notes explain the rest",
 	}
 	if got := extractHighlights(body); fmt.Sprint(got) != fmt.Sprint(want) {
@@ -536,4 +658,160 @@ func TestCatalogCarriesHighlightsThroughTheCache(t *testing.T) {
 	if got := cached.Releases[0].Thanks; fmt.Sprint(got) != fmt.Sprint(wantThanks) {
 		t.Fatalf("cached thanks = %q, want %q", got, wantThanks)
 	}
+}
+
+func TestExtractLeadReadsTheHeadlineAndTheSummary(t *testing.T) {
+	body := strings.Join([]string{
+		"A pitch the release tool writes above everything.",
+		"",
+		"## v0.40.0",
+		"**Model + reasoning pickers are here!**",
+		"",
+		"Every session runs on its own model. Press `ctrl+x` for effort,",
+		"read live from [each CLI](https://example.com).",
+		"",
+		"## Highlights",
+		"- a highlight",
+	}, "\n")
+
+	headline, summary := extractLead(body, "v0.40.0")
+	if headline != "Model + reasoning pickers are here!" {
+		t.Fatalf("headline = %q", headline)
+	}
+	want := "Every session runs on its own model. Press `ctrl+x` for effort, read live from each CLI."
+	if summary != want {
+		t.Fatalf("summary = %q, want %q", summary, want)
+	}
+}
+
+func TestExtractLeadWithoutABoldFirstLineHasNoHeadline(t *testing.T) {
+	body := "## v0.39.0\n\nOne click now focuses a session, and **every** row opens its actions.\n\n## Highlights\n- a highlight"
+	headline, summary := extractLead(body, "v0.39.0")
+	if headline != "" {
+		t.Fatalf("a paragraph is not a headline: %q", headline)
+	}
+	if summary != "One click now focuses a session, and every row opens its actions." {
+		t.Fatalf("summary = %q", summary)
+	}
+}
+
+func TestExtractLeadIsEmptyWithoutTheVersionSection(t *testing.T) {
+	headline, summary := extractLead("## Highlights\n- a highlight", "v0.40.0")
+	if headline != "" || summary != "" {
+		t.Fatalf("got %q / %q, want nothing", headline, summary)
+	}
+}
+
+func TestExtractLeadBoundsTheSummary(t *testing.T) {
+	body := "## v0.40.0\n" + strings.Repeat("word ", 200)
+	_, summary := extractLead(body, "v0.40.0")
+	if got := len([]rune(summary)); got > maxSummaryLength || !strings.HasSuffix(summary, "…") {
+		t.Fatalf("summary is %d characters, want at most %d ending in an ellipsis", got, maxSummaryLength)
+	}
+}
+
+func TestHighlightsKeepBalancedAccentMarks(t *testing.T) {
+	body := "## Highlights\n- press `ctrl+x` to step effort\n- a stray ` mark is dropped\n"
+	want := []string{"Press `ctrl+x` to step effort", "A stray  mark is dropped"}
+	if got := extractHighlights(body); !slices.Equal(got, want) {
+		t.Fatalf("extractHighlights() = %q, want %q", got, want)
+	}
+}
+
+func TestThanksStayPlain(t *testing.T) {
+	body := "## Thank you\n- @someone fixed `the thing` (#12)\n"
+	want := []string{"@someone fixed the thing (#12)"}
+	if got := extractThanks(body); !slices.Equal(got, want) {
+		t.Fatalf("extractThanks() = %q, want %q", got, want)
+	}
+}
+
+func TestTruncateCountsVisibleCharacters(t *testing.T) {
+	marked := "`" + strings.Repeat("a", maxLineLength) + "`"
+	if got := truncate(marked, maxLineLength); got != marked {
+		t.Fatalf("marks take no cell, so %d visible characters must fit", maxLineLength)
+	}
+	cut := truncate("`"+strings.Repeat("a", maxLineLength+1)+"`", maxLineLength)
+	if want := "`" + strings.Repeat("a", maxLineLength-1) + "`…"; cut != want {
+		t.Fatalf("truncate() = %q, want the span closed before the ellipsis", cut)
+	}
+}
+
+func TestCatalogCarriesTheLeadThroughTheCache(t *testing.T) {
+	body := `## v0.40.0\n**Pickers are here!**\n\nA summary with ` + "`ctrl+x`" + `.\n\n## Highlights\n- a highlight\n\n## What's Changed\n* feat(ui): a feature`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintf(w, `[{"tag_name":"v0.40.0","html_url":"https://github.com/YoanWai/agent-manager/releases/tag/v0.40.0","body":"%s","draft":false,"prerelease":false}]`, body)
+	}))
+	defer server.Close()
+	defer swapReleasesURL(server.URL)()
+
+	dir := t.TempDir()
+	if _, err := Check(context.Background(), dir, "v0.39.0"); err != nil {
+		t.Fatal(err)
+	}
+	release := Cached(dir, "v0.39.0").Releases[0]
+	if release.Headline != "Pickers are here!" || release.Summary != "A summary with `ctrl+x`." {
+		t.Fatalf("lead lost in the cache: %q / %q", release.Headline, release.Summary)
+	}
+}
+
+func TestCatalogFileWinsOverTheLegacyFile(t *testing.T) {
+	dir := t.TempDir()
+	seedCache(t, dir, cache{CheckedAt: time.Now(), Releases: []Release{testRelease("v0.41.0", "from the catalog")}})
+	seedFile(t, dir, legacyCacheFile, legacyCatalogJSON)
+	catalogBytes, err := os.ReadFile(filepath.Join(dir, cacheFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := Cached(dir, "v0.39.0"); got.Latest != "v0.41.0" || len(got.Releases) != 1 {
+		t.Fatalf("Cached read the legacy file: %+v", got)
+	}
+
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { calls.Add(1) }))
+	defer server.Close()
+	defer swapReleasesURL(server.URL)()
+
+	result, err := Check(context.Background(), dir, "v0.39.0")
+	if err != nil || calls.Load() != 0 || result.Latest != "v0.41.0" || len(result.Releases) != 1 {
+		t.Fatalf("result=%+v err=%v calls=%d, want the fresh catalog with no fetch", result, err, calls.Load())
+	}
+	if kept, err := os.ReadFile(filepath.Join(dir, cacheFile)); err != nil || string(kept) != string(catalogBytes) {
+		t.Fatalf("the catalog file changed: %v", err)
+	}
+	if kept, err := os.ReadFile(filepath.Join(dir, legacyCacheFile)); err != nil || string(kept) != legacyCatalogJSON {
+		t.Fatalf("the legacy file must stay byte for byte: %v", err)
+	}
+}
+
+func TestParserNumberPinsTheReleaseShape(t *testing.T) {
+	shapes := map[int][]string{
+		1: {"version", "url", "headline", "summary", "highlights", "thanks", "changes.kind", "changes.text", "changes.author", "total_changes"},
+	}
+	want, ok := shapes[catalogParser]
+	if !ok {
+		t.Fatalf("catalogParser %d has no pinned shape: list Release's fields under it here", catalogParser)
+	}
+	if got := jsonKeys(reflect.TypeOf(Release{}), ""); !slices.Equal(got, want) {
+		t.Fatalf("Release has fields %q, parser %d names %q: a changed field set needs a higher parser number", got, catalogParser, want)
+	}
+}
+
+func jsonKeys(structType reflect.Type, prefix string) []string {
+	var keys []string
+	for index := range structType.NumField() {
+		field := structType.Field(index)
+		name := prefix + strings.Split(field.Tag.Get("json"), ",")[0]
+		elem := field.Type
+		if elem.Kind() == reflect.Slice {
+			elem = elem.Elem()
+		}
+		if elem.Kind() == reflect.Struct {
+			keys = append(keys, jsonKeys(elem, name+".")...)
+			continue
+		}
+		keys = append(keys, name)
+	}
+	return keys
 }

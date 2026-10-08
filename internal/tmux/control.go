@@ -214,7 +214,7 @@ const commandTimeout = 2 * time.Second
 func (c *Control) Command(command string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
 	defer cancel()
-	text, err := c.CommandContext(ctx, command)
+	text, err := c.commandContext(ctx, command, 1)
 	if errors.Is(err, context.DeadlineExceeded) {
 		return "", fmt.Errorf("control command timed out: %w", err)
 	}
@@ -227,6 +227,11 @@ func (c *Control) Command(command string) (string, error) {
 // must not overlap another process's exclusive attach handshake. Parser-only
 // controls have no subprocess or server and skip that gate.
 func (c *Control) CommandContext(ctx context.Context, command string) (string, error) {
+	return c.commandContext(ctx, command, 1)
+}
+
+// commandContext waits for the last of the reply blocks command answers with.
+func (c *Control) commandContext(ctx context.Context, command string, blocks int) (string, error) {
 	var release func()
 	if c.cmd != nil {
 		var err error
@@ -236,7 +241,7 @@ func (c *Control) CommandContext(ctx context.Context, command string) (string, e
 		}
 		defer release()
 	}
-	waiter, err := c.submitContext(ctx, command)
+	waiter, err := c.submitContext(ctx, command, blocks)
 	if err != nil {
 		if c.cmd != nil {
 			select {
@@ -277,16 +282,25 @@ func (c *Control) CommandContext(ctx context.Context, command string) (string, e
 // the shared attach gate around the complete notification boundary; an error
 // after submission is ambiguous and must not trigger an automatic retry.
 func (c *Control) Send(command string) error {
+	return c.SendBlocks(command, 1)
+}
+
+// SendBlocks is Send for a command tmux answers with several reply blocks.
+// tmux answers every command it runs, so one that runs another, as if-shell
+// runs its branch, answers once for each, and a block nobody claimed would
+// resolve the next command's waiter instead.
+func (c *Control) SendBlocks(command string, blocks int) error {
 	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
 	defer cancel()
-	_, err := c.CommandContext(ctx, command)
+	_, err := c.commandContext(ctx, command, blocks)
 	return err
 }
 
-// submitContext enqueues a reply waiter and writes the command line. The queue
+// submitContext enqueues one reply waiter per block the command answers with
+// and writes the command line, returning the last block's waiter. The queue
 // append rides inside the write gate so waiter order always matches write
 // order, while mu itself is never held across the pipe write.
-func (c *Control) submitContext(ctx context.Context, command string) (chan reply, error) {
+func (c *Control) submitContext(ctx context.Context, command string, blocks int) (chan reply, error) {
 	select {
 	case <-ctx.Done():
 		return nil, fmt.Errorf("control write: %w", ctx.Err())
@@ -296,13 +310,16 @@ func (c *Control) submitContext(ctx context.Context, command string) (chan reply
 	}
 	defer func() { c.writeGate <- struct{}{} }()
 
-	waiter := make(chan reply, 1)
+	waiters := make([]chan reply, blocks)
+	for i := range waiters {
+		waiters[i] = make(chan reply, 1)
+	}
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
 		return nil, fmt.Errorf("control client closed")
 	}
-	c.pending = append(c.pending, waiter)
+	c.pending = append(c.pending, waiters...)
 	c.mu.Unlock()
 	writeDone := make(chan error, 1)
 	go func() {
@@ -312,7 +329,7 @@ func (c *Control) submitContext(ctx context.Context, command string) (chan reply
 	select {
 	case err := <-writeDone:
 		if err == nil {
-			return waiter, nil
+			return waiters[blocks-1], nil
 		}
 		wrapped := fmt.Errorf("control write: %w", err)
 		c.abort(wrapped)

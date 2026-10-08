@@ -26,6 +26,7 @@ type refreshMsg struct {
 	groups         []string
 	groupPaths     map[string]string
 	groupWorktrees map[string]string
+	groupBases     map[string]string
 	archivedGroups map[string]bool
 	snap           sysstat.Snapshot
 	snapOK         bool
@@ -49,6 +50,9 @@ type refreshMsg struct {
 	// focusID is the session a clicked notification named, taken from
 	// the config directory by this pass.
 	focusID string
+	// turnsEnded are the sessions whose turn this pass saw end after they
+	// asked to be archived or killed once it did.
+	turnsEnded []string
 }
 
 // StartPoller launches the background polling loop. It runs outside the

@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -148,12 +147,12 @@ func TestEditorDirectoryCompletionDoesNotReplaceNewerDialog(t *testing.T) {
 	}
 }
 
-// A configured editor outranks anything found on PATH, and an argument
+// The editor Settings holds outranks anything found on PATH, and an argument
 // carrying a space stays one argument without a shell to group it.
 func TestOpenEditorPrefersConfiguredCommand(t *testing.T) {
 	m := buildModel(t)
 	launched := captureEditor(t, "code")
-	m.services.cfg.Editor = `open -a 'Visual Studio Code'`
+	m.services.editor = `open -a 'Visual Studio Code'`
 	dir := t.TempDir()
 	if err := m.services.store.CreateGroup("backend", dir); err != nil {
 		t.Fatalf("create group: %v", err)
@@ -398,18 +397,14 @@ func TestResolveEditorPrecedence(t *testing.T) {
 		installed  []string
 		want       string
 	}{
-		{"config over environment", "cfg-edit", map[string]string{"AGENT_MANAGER_EDITOR": "env-edit"}, []string{"code"}, "cfg-edit"},
+		{"Settings over environment", "cfg-edit", map[string]string{"AGENT_MANAGER_EDITOR": "env-edit"}, []string{"code"}, "cfg-edit"},
 		{"environment over PATH", "", map[string]string{"AGENT_MANAGER_EDITOR": "env-edit"}, []string{"code"}, "env-edit"},
 		{"first GUI editor on PATH wins", "", nil, []string{"zed", "cursor"}, "cursor"},
 		{"PATH over $VISUAL", "", map[string]string{"VISUAL": "vim"}, []string{"code"}, "code"},
 		{"$VISUAL over $EDITOR", "", map[string]string{"VISUAL": "vim", "EDITOR": "nano"}, nil, "vim"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			m := &Model{
-				services: services{
-					cfg: config.Config{Editor: tc.configured},
-				},
-			}
+			m := &Model{services: services{editor: tc.configured}}
 			captureEditor(t, tc.installed...)
 			for key, value := range tc.env {
 				t.Setenv(key, value)
@@ -442,7 +437,7 @@ func TestResolveEditorFallsBackToEnvironment(t *testing.T) {
 func TestUnknownEditorTakesTheScreen(t *testing.T) {
 	m := buildModel(t)
 	launched := captureEditor(t)
-	m.services.cfg.Editor = "my-own-edit-wrapper"
+	m.services.editor = "my-own-edit-wrapper"
 	dir := t.TempDir()
 	createSession(t, m, "agent", dir, "")
 	m.selectSessionRow(t, "agent")
@@ -468,7 +463,7 @@ func TestOpenEditorWithoutAnyEditorExplainsItself(t *testing.T) {
 	if len(*launched) != 0 {
 		t.Fatalf("nothing should launch without an editor, got %v", *launched)
 	}
-	if !strings.Contains(m.errBar.text, "config.toml") {
+	if !strings.Contains(m.errBar.text, "Settings > editor") {
 		t.Fatalf("status line should point at the setting, got %q", m.errBar.text)
 	}
 }
@@ -584,7 +579,7 @@ func TestAttachDoneRefusedEditorArmsNoReturn(t *testing.T) {
 func TestAttachDoneTerminalEditorArmsTheReturn(t *testing.T) {
 	m := buildModel(t)
 	launched := captureEditor(t)
-	m.services.cfg.Editor = "my-own-edit-wrapper"
+	m.services.editor = "my-own-edit-wrapper"
 	createSession(t, m, "editme", t.TempDir(), "")
 	m.selectSessionRow(t, "editme")
 	sess, ok := m.selected()

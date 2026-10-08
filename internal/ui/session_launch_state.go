@@ -9,7 +9,9 @@ type launchLedger struct {
 	// repo, so gating the worktree toggle does not shell out to git on
 	// every frame. Entries expire, so a directory git-initialised while
 	// the bar is open stops reading as unavailable.
-	worktreeRepos     map[string]repoAnswer
+	worktreeRepos map[string]repoAnswer
+	// baseRefs memoizes each repo's branches for the group base pickers.
+	baseRefs          map[string]baseRefsAnswer
 	lastSpawnTool     string
 	lastSpawnWorktree bool
 	// composerSeq numbers the prompt boxes this run has opened.

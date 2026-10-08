@@ -154,6 +154,47 @@ func TestControlCommandRoundTrip(t *testing.T) {
 	}
 }
 
+// if-shell answers once for itself and once for the branch it runs. Both
+// blocks belong to that one command: a second block left unclaimed resolves
+// the next command's waiter, and every reply after it lands one caller late.
+func TestControlSendBlocksClaimsEveryReplyBlock(t *testing.T) {
+	server := newFakeServer()
+	server.send("%begin 1 0 0", "%end 1 0 0")
+
+	// Send waits for its acknowledgement here, so both commands are queued
+	// before any reply arrives, the way they are on a busy server.
+	sent := make(chan error, 1)
+	go func() {
+		sent <- server.control.SendBlocks("if-shell -F 1 'send-keys x' 'display-message -p'", 2)
+	}()
+	waitWritten(t, server, "display-message -p'\n")
+	got := make(chan string, 1)
+	go func() {
+		text, _ := server.control.Command("capture-pane -p")
+		got <- text
+	}()
+	waitWritten(t, server, "capture-pane -p\n")
+
+	server.send("%begin 2 1 1", "%end 2 1 1", "%begin 2 2 1", "%end 2 2 1",
+		"%begin 2 3 1", "pane row", "%end 2 3 1")
+	select {
+	case err := <-sent:
+		if err != nil {
+			t.Fatalf("SendBlocks: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("SendBlocks never resolved")
+	}
+	select {
+	case text := <-got:
+		if text != "pane row" {
+			t.Fatalf("capture reply = %q, want the capture's own block", text)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("reply never resolved")
+	}
+}
+
 // Pane text is echoed raw inside reply blocks, so a pane that happens to
 // display the control protocol (a diff of this file, tmux docs) must not
 // terminate the block early: only the %end carrying the block's own tag

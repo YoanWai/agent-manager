@@ -1,0 +1,30 @@
+
+                                                 ████████████
+                                                    ██  ██
+                                                    ██  ██
+                                                    ▒▒  ██
+                                                        ██
+                                                     omp
+                                              Setup step 1 of 5
+
+    Set up your providers
+    Sign in and pick a web search provider. Press ⎋ when you're done.
+
+    Providers:   Sign in    Web search   (⇥ to cycle)
+
+    ╭─ Select provider to login ─────────────────────────────────────────────────────────────────────────╮
+    │ ❯ ChatGPT Plus/Pro (Codex Subscription)                                                          █ │
+    │   Anthropic (Claude Pro/Max)                                                                     │ │
+    │   Z.AI (GLM Coding Plan)                                                                         │ │
+    │   Z.AI (GLM Coding Plan · Sign in)                                                               │ │
+    │   Kimi Code                                                                                      │ │
+    │   OpenRouter                                                                                     │ │
+    │   GitHub Copilot                                                                                 │ │
+    │   Cursor (Claude, GPT, etc.)                                                                     │ │
+    │   Devin                                                                                          │ │
+    │   Antigravity (Gemini 3, Claude, GPT-OSS)                                                        │ │
+    │ Type to search                                                                                     │
+    ╰────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+                             ↑/↓ select · ⏎ confirm · ⎋ skip · Ctrl+C exit setup

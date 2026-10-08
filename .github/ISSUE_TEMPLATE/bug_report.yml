@@ -60,6 +60,7 @@ body:
         - Hermes Agent
         - Command Code
         - Muse Code
+        - Oh My Pi
         - Not tool specific
 
   - type: input
@@ -72,9 +73,9 @@ body:
   - type: textarea
     id: config
     attributes:
-      label: Relevant config
-      description: The lines from your config.toml involved, if any.
-      render: toml
+      label: Relevant settings
+      description: The Settings rows involved and what they are set to, if any.
+      render: text
 
   - type: textarea
     id: extra

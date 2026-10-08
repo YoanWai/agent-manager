@@ -16,6 +16,7 @@ type workspace struct {
 	groups         []string
 	groupPaths     map[string]string
 	groupWorktrees map[string]string
+	groupBases     map[string]string
 	archivedGroups map[string]bool
 	snap           sysstat.Snapshot
 	proc           sysstat.ProcStat

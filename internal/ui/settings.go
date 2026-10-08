@@ -2,6 +2,7 @@ package ui
 
 import (
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -26,20 +27,6 @@ func parseHiddenTools(raw string) map[string]bool {
 		return nil
 	}
 	return hidden
-}
-
-func formatHiddenTools(hidden map[string]bool) string {
-	if len(hidden) == 0 {
-		return ""
-	}
-	names := make([]string, 0, len(hidden))
-	for name, on := range hidden {
-		if on {
-			names = append(names, name)
-		}
-	}
-	sort.Strings(names)
-	return strings.Join(names, ",")
 }
 
 func (m *Model) cachedDefaultToolSelection() ([]string, int) {
@@ -74,18 +61,209 @@ func (m *Model) cachedSpawnWorktreeDefault(group string) bool {
 }
 
 func (m *Model) cachedEnabledToolNames() []string {
-	all := sortedToolNames(m.services.cfg)
-	hidden := m.cachedHiddenTools()
-	if len(hidden) == 0 {
-		return all
-	}
-	names := make([]string, 0, len(all))
-	for _, name := range all {
-		if !hidden[name] {
-			names = append(names, name)
+	return m.services.cfg.EnabledAgentTools(m.cachedHiddenTools())
+}
+
+// groupBase is the ref a spawn into group branches from: the nearest
+// ancestor group's choice, or "" to detect the repo's default branch.
+func (m *Model) groupBase(group string) string {
+	for g := group; g != ""; g = parentGroup(g) {
+		if base := m.workspace.groupBases[g]; base != "" {
+			return base
 		}
 	}
-	return names
+	return ""
+}
+
+// groupBaseTarget names the base picker a branch read answers.
+type groupBaseTarget uint8
+
+const (
+	groupBaseForm groupBaseTarget = iota
+	groupBaseRename
+)
+
+// baseRefsTTL bounds how long a repo's branch list steps a base picker
+// without a fresh read, so a held arrow steps at key speed.
+const baseRefsTTL = 10 * time.Second
+
+type baseRefsAnswer struct {
+	refs []string
+	at   time.Time
+}
+
+// groupBaseStepMsg is a base picker's step, answered off the update path
+// with the branches of dir. It lands only on the picker that asked, while
+// it still shows from.
+type groupBaseStepMsg struct {
+	target groupBaseTarget
+	gen    uint64
+	dir    string
+	from   string
+	delta  int
+	refs   []string
+	err    error
+}
+
+// stepGroupBase moves a group's base choice through auto and the branches
+// of the repo at dir. Branches read within baseRefsTTL step at once;
+// otherwise the read runs as a command and the step lands with it.
+func (m *Model) stepGroupBase(target groupBaseTarget, gen uint64, dir, current string, delta int) (string, tea.Cmd) {
+	if answer, ok := m.ledger.baseRefs[dir]; ok && time.Since(answer.at) < baseRefsTTL {
+		m.errBar.text = ""
+		return stepBaseChoice(answer.refs, current, delta), nil
+	}
+	driver := m.services.gitDrv
+	if driver == nil {
+		m.errBar.text = "a group base needs git installed"
+		return current, nil
+	}
+	return current, func() tea.Msg {
+		refs, err := driver.BranchRefs(dir)
+		return groupBaseStepMsg{target: target, gen: gen, dir: dir, from: current, delta: delta, refs: refs, err: err}
+	}
+}
+
+func stepBaseChoice(refs []string, current string, delta int) string {
+	choices := append([]string{""}, refs...)
+	at := max(slices.Index(choices, current), 0)
+	return choices[(at+delta+len(choices))%len(choices)]
+}
+
+func (m *Model) handleGroupBaseStep(msg groupBaseStepMsg) {
+	var base *string
+	switch msg.target {
+	case groupBaseForm:
+		if m.mode != modeGroupForm || uint64(m.groupForm.gen) != msg.gen || m.groupFormDir() != msg.dir {
+			return
+		}
+		base = &m.groupForm.base
+	case groupBaseRename:
+		if m.mode != modeRename || m.dialogGen != msg.gen || m.renameGroupDir() != msg.dir {
+			return
+		}
+		base = &m.rename.base
+	default:
+		return
+	}
+	if msg.err != nil {
+		m.errBar.text = "group base: " + msg.err.Error()
+		return
+	}
+	if m.ledger.baseRefs == nil {
+		m.ledger.baseRefs = map[string]baseRefsAnswer{}
+	}
+	m.ledger.baseRefs[msg.dir] = baseRefsAnswer{refs: msg.refs, at: time.Now()}
+	if *base != msg.from {
+		return
+	}
+	m.errBar.text = ""
+	*base = stepBaseChoice(msg.refs, msg.from, msg.delta)
+}
+
+// baseFetchInterval keeps a burst of spawns into one repo to one fetch.
+const baseFetchInterval = time.Minute
+
+type baseFetchKey struct{ dir, override string }
+
+// baseFetch is one refresh of a spawn's base: when it started, the default
+// branch the repo resolved to, and how the fetch ended.
+type baseFetch struct {
+	at       time.Time
+	resolved bool
+	detected string
+	fetched  bool
+	err      error
+}
+
+type baseFetchedMsg struct {
+	key      baseFetchKey
+	detected string
+	fetched  bool
+	err      error
+}
+
+// refreshSpawnBase resolves the base of the worktree spawn the form or the
+// quick bar is set to make, for the form to show, then fetches it unless
+// Settings turned that off. A spawn that beats the fetch branches from the
+// last one.
+func (m *Model) refreshSpawnBase() tea.Cmd {
+	dir, group, ok := m.pendingWorktreeSpawn()
+	if !ok {
+		return nil
+	}
+	key := baseFetchKey{dir: dir, override: m.groupBase(group)}
+	if last, seen := m.baseFetches[key]; seen && time.Since(last.at) < baseFetchInterval {
+		return nil
+	}
+	if m.baseFetches == nil {
+		m.baseFetches = map[baseFetchKey]baseFetch{}
+	}
+	m.baseFetches[key] = baseFetch{at: time.Now()}
+	driver := m.services.gitDrv
+	return func() tea.Msg {
+		return baseFetchedMsg{key: key, detected: driver.DefaultBase(dir)}
+	}
+}
+
+// recordBaseFetch keeps what a step of a base refresh found, and starts the
+// fetch once the resolving step is in.
+func (m *Model) recordBaseFetch(msg baseFetchedMsg) tea.Cmd {
+	fetch, ok := m.baseFetches[msg.key]
+	if !ok {
+		return nil
+	}
+	fetch.resolved, fetch.detected = true, msg.detected
+	if msg.fetched {
+		fetch.fetched, fetch.err = true, msg.err
+	}
+	m.baseFetches[msg.key] = fetch
+	if msg.fetched || m.prefs.baseFetchOff {
+		return nil
+	}
+	driver, key := m.services.gitDrv, msg.key
+	return func() tea.Msg {
+		err := driver.FetchBase(key.dir, key.override)
+		return baseFetchedMsg{key: key, detected: driver.DefaultBase(key.dir), fetched: true, err: err}
+	}
+}
+
+// pendingWorktreeSpawn is the directory and group of the worktree spawn
+// the New Session form or the quick bar is set to make.
+func (m *Model) pendingWorktreeSpawn() (dir, group string, ok bool) {
+	switch {
+	case m.mode == modeForm && m.formWorktreeOn():
+		return m.formSpawnDir(), m.selectedGroupPath(), true
+	case m.mode == modeList && m.quick.active && m.quickSpawning() && m.quickWorktreeOn():
+		return m.quickTargetDir(), m.quickTargetGroup(), true
+	}
+	return "", "", false
+}
+
+// spawnBaseLabel names the ref a worktree spawn into dir branches from,
+// where that choice came from, and how fetching it went.
+func (m *Model) spawnBaseLabel(dir, group string) string {
+	override := m.groupBase(group)
+	fetch := m.baseFetches[baseFetchKey{dir: dir, override: override}]
+	label := valueStyle.Render(override) + subtleStyle.Render(" (group)")
+	if override == "" {
+		switch {
+		case !fetch.resolved:
+			label = subtleStyle.Render("…")
+		case fetch.detected == "":
+			label = valueStyle.Render("HEAD") + subtleStyle.Render(" (auto)")
+		default:
+			label = valueStyle.Render(fetch.detected) + subtleStyle.Render(" (auto)")
+		}
+	}
+	switch {
+	case m.prefs.baseFetchOff:
+	case !fetch.fetched:
+		label += subtleStyle.Render(" · fetching")
+	case fetch.err != nil:
+		label += subtleStyle.Render(" · fetch failed")
+	}
+	return label
 }
 
 // worktreeUnavailable is what the worktree toggle reads when the target
@@ -169,6 +347,26 @@ func storedMouseDisabled(st *store.Store) bool {
 	return chosen == "off"
 }
 
+// storedTerminalBackground reads the background row. A store error is
+// surfaced but still yields the painted default.
+func (m *Model) storedTerminalBackground() bool {
+	chosen, err := m.services.store.Setting(backgroundSetting)
+	if err != nil {
+		m.errBar.text = "reading background setting: " + err.Error()
+	}
+	return chosen == "terminal"
+}
+
+// storedBaseFetchOff reads the persisted fetch-on-spawn choice. On is the
+// default; only an explicit "off" skips the fetch.
+func storedBaseFetchOff(st *store.Store) bool {
+	chosen, err := st.Setting(baseFetchSetting)
+	if err != nil {
+		return false
+	}
+	return chosen == "off"
+}
+
 // enterFocuses reports which key opens a session where. Enter focuses the
 // preview and A attaches full screen by default; a stored "attach" choice
 // swaps the pair. Cached on the model because the footer reads it every
@@ -226,13 +424,7 @@ func (m *Model) cachedHiddenTools() map[string]bool {
 }
 
 func (m *Model) cachedToolSelection(hidden map[string]bool, preferred string) ([]string, int) {
-	all := sortedToolNames(m.services.cfg)
-	names := make([]string, 0, len(all))
-	for _, name := range all {
-		if !hidden[name] {
-			names = append(names, name)
-		}
-	}
+	names := m.services.cfg.EnabledAgentTools(hidden)
 	if preferred == "" {
 		preferred = m.settingsCache.value("default_tool")
 	}
@@ -262,12 +454,16 @@ func (m *Model) settingsStateFromCache() settingsState {
 		hideStats:       m.settingsCache.value(hideStatsSetting) == "on",
 		mouseDisabled:   m.settingsCache.value(mouseSetting) == "off",
 		worktreeDefault: m.settingsCache.value(worktreeSetting) == "on",
+		baseFetch:       m.settingsCache.value(baseFetchSetting) != "off",
 		proactive:       m.settingsCache.value("coordination") == "on",
 		notifications:   m.settingsCache.value(notificationsSetting) != "off",
 		notifyFinished:  m.settingsCache.value(notifyFinishedSetting) == "on",
 		themeAuto:       m.settingsCache.value(themeAutoSetting) == "on",
 		manualTheme:     manualTheme,
 		cliHidden:       hidden,
+		editor:          m.cachedEditorRow(),
+
+		terminalBackground: m.settingsCache.value(backgroundSetting) == "terminal",
 	}
 }
 
@@ -279,6 +475,9 @@ func (m *Model) applyCachedSettingsPrefs() {
 	m.prefs.hideHeader = m.settingsCache.value(hideHeaderSetting) == "on"
 	m.prefs.hideStats = m.settingsCache.value(hideStatsSetting) == "on"
 	m.prefs.mouseDisabled = m.settingsCache.value(mouseSetting) == "off"
+	m.prefs.terminalBackground = m.settingsCache.value(backgroundSetting) == "terminal"
+	m.prefs.baseFetchOff = m.settingsCache.value(baseFetchSetting) == "off"
+	m.services.editor = m.settingsCache.value(editorSetting)
 }
 
 func (m *Model) openSettings() tea.Cmd {
@@ -294,10 +493,11 @@ func (m *Model) openSettingsWithReader(reader settingsValueReader) tea.Cmd {
 	m.errBar.text = ""
 	m.settings = m.settingsStateFromCache()
 	m.mode = modeSettings
+	probe := m.probeEditorsCmd()
 	if m.settingsPending > 0 {
-		return nil
+		return probe
 	}
-	return settingsLoadCmd(settingsLoadRequest{target: settingsLoadDialog, generation: m.settingsGen}, reader)
+	return tea.Batch(settingsLoadCmd(settingsLoadRequest{target: settingsLoadDialog, generation: m.settingsGen}, reader), probe)
 }
 
 func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -306,6 +506,9 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.settings.keyPicker {
 		return m.handleKeyPickerKey(msg)
+	}
+	if m.settings.editor.typing {
+		return m.handleEditorTypingKey(msg)
 	}
 	switch msg.String() {
 	case "up", "k":
@@ -328,6 +531,11 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case settingsFieldKeybindings:
 			m.openKeyPicker()
 			return m, nil
+		case settingsFieldEditor:
+			if m.settings.editor.custom {
+				m.openEditorTyping()
+				return m, nil
+			}
 		case settingsFieldUpdate:
 			if m.update.applying {
 				return m, nil
@@ -459,6 +667,11 @@ func (m *Model) captureSettingValues() []settingValue {
 		hideStats = "on"
 	}
 	values = append(values, settingValue{key: hideStatsSetting, value: hideStats})
+	background := "theme"
+	if m.settings.terminalBackground {
+		background = "terminal"
+	}
+	values = append(values, settingValue{key: backgroundSetting, value: background})
 	mouseMode := "on"
 	if m.settings.mouseDisabled {
 		mouseMode = "off"
@@ -469,6 +682,11 @@ func (m *Model) captureSettingValues() []settingValue {
 		worktreeChoice = "on"
 	}
 	values = append(values, settingValue{key: worktreeSetting, value: worktreeChoice})
+	baseFetch := "on"
+	if !m.settings.baseFetch {
+		baseFetch = "off"
+	}
+	values = append(values, settingValue{key: baseFetchSetting, value: baseFetch})
 	proactive := "off"
 	if m.settings.proactive {
 		proactive = "on"
@@ -484,6 +702,7 @@ func (m *Model) captureSettingValues() []settingValue {
 		notifyFinished = "on"
 	}
 	values = append(values, settingValue{key: notifyFinishedSetting, value: notifyFinished})
+	values = append(values, settingValue{key: editorSetting, value: m.settings.editor.line()})
 	return values
 }
 
@@ -499,10 +718,13 @@ func (m *Model) applySettingsPrefs() {
 	m.prefs.hideHeader = m.settings.hideHeader
 	m.prefs.hideStats = m.settings.hideStats
 	m.prefs.mouseDisabled = m.settings.mouseDisabled
+	m.prefs.terminalBackground = m.settings.terminalBackground
+	m.prefs.baseFetchOff = !m.settings.baseFetch
+	m.services.editor = m.settings.editor.line()
 }
 
 func (m *Model) openCLIPicker() {
-	names := sortedToolNames(m.services.cfg)
+	names := m.services.cfg.AgentToolNames()
 	hidden := m.settings.cliHidden
 	if hidden == nil {
 		hidden = m.cachedHiddenTools()
@@ -606,7 +828,7 @@ func (m *Model) cycleSetting(step int) tea.Cmd {
 		m.settings.manualTheme = themes[m.settings.themeIndex].Name
 		m.settings.dirty = true
 		applyTheme(themes[m.settings.themeIndex])
-		SyncTerminalBackground()
+		SyncTerminalColors()
 		return m.syncPaneTheme()
 	case settingsFieldThemeAuto:
 		m.settings.themeAuto = !m.settings.themeAuto
@@ -617,8 +839,11 @@ func (m *Model) cycleSetting(step int) tea.Cmd {
 		m.settings.themeIndex = themeIndex(name)
 		m.settings.dirty = true
 		applyTheme(themes[m.settings.themeIndex])
-		SyncTerminalBackground()
+		SyncTerminalColors()
 		return m.syncPaneTheme()
+	case settingsFieldBackground:
+		m.settings.terminalBackground = !m.settings.terminalBackground
+		m.prefs.terminalBackground = m.settings.terminalBackground
 	case settingsFieldDensity:
 		m.settings.comfortableRows = !m.settings.comfortableRows
 	case settingsFieldSessionLayout:
@@ -639,12 +864,16 @@ func (m *Model) cycleSetting(step int) tea.Cmd {
 		m.settings.mouseDisabled = !m.settings.mouseDisabled
 	case settingsFieldWorktree:
 		m.settings.worktreeDefault = !m.settings.worktreeDefault
+	case settingsFieldBaseFetch:
+		m.settings.baseFetch = !m.settings.baseFetch
 	case settingsFieldCoordination:
 		m.settings.proactive = !m.settings.proactive
 	case settingsFieldNotify:
 		m.settings.notifications = !m.settings.notifications
 	case settingsFieldNotifyFinish:
 		m.settings.notifyFinished = !m.settings.notifyFinished
+	case settingsFieldEditor:
+		m.settings.editor.cycle(step)
 	default:
 		changed = false
 	}

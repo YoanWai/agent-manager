@@ -70,7 +70,8 @@ func cardTitle(title string) string {
 // cardSized is card at an explicit width, for the key map, whose lines are
 // too long to read inside the default column.
 func (m *Model) cardSized(width int, title, body string, hint [][2]string) string {
-	return renderDialog(m.dialogRenderContext(), width, title, body, hint)
+	ctx := m.dialogRenderContext()
+	return m.centerOnBackdrop(dialogBox(ctx, width, title, body, hint))
 }
 
 // cardTitleRow sets the title into the top edge, so the frame names the
@@ -88,7 +89,9 @@ func cardTitleRow(width int, title string, border lipgloss.Style) string {
 // centerOnBackdrop floats a block of pre-painted lines in the middle of
 // the app frame, filling the rest with the backdrop.
 func (m *Model) centerOnBackdrop(box []string) string {
-	return centerDialog(m.dialogRenderContext(), box)
+	ctx := m.dialogRenderContext()
+	m.cardTop, m.cardLeft, m.cardRight = dialogPlacement(ctx, box)
+	return centerDialog(ctx, box)
 }
 
 func maxLineWidth(lines []string) int {

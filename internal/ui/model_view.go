@@ -2,6 +2,9 @@ package ui
 
 import (
 	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 )
 
 func (m *Model) View() string {
@@ -13,10 +16,17 @@ func (m *Model) View() string {
 
 func (m *Model) prepareFrame() {
 	m.prepareReviewLayout()
-	m.frame = m.renderFrame()
+	frame := m.renderFrame()
+	// A colorless profile renders the backdrop as a bare reset, which would
+	// strip the bold and reverse cells it lands beside.
+	if !m.prefs.terminalBackground && lipgloss.ColorProfile() != termenv.Ascii {
+		frame = fillBackdrop(frame, m.width, current.Bg, current.Text)
+	}
+	m.frame = frame
 }
 
 func (m *Model) renderFrame() string {
+	m.notices.noticeHit = noticeHit{}
 	if m.width == 0 {
 		return m.syncCursorAnchor("loading...")
 	}
@@ -53,7 +63,7 @@ func (m *Model) renderFrame() string {
 	case modeNotices:
 		frame = m.viewNotices()
 	default:
-		frame = m.overlayRowMenu(m.viewListFrame())
+		frame = m.overlayRowMenu(m.titleTopRowWithUpdate(m.viewListFrame()))
 	}
 	return m.syncCursorAnchor(clampFrame(frame, m.height))
 }

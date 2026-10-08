@@ -16,6 +16,9 @@ import (
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	"github.com/YoanWai/agent-manager/internal/update"
 	tea "github.com/charmbracelet/bubbletea"
+	"maps"
+	"slices"
+	"time"
 )
 
 type mode int
@@ -92,16 +95,28 @@ type Model struct {
 	errBar           errBar
 	split            splitState
 	update           updateInfo
+	catalogs         map[string]*catalogState
+	// cardTop, cardLeft and cardRight place the last card painted, for clicks.
+	cardTop, cardLeft, cardRight int
+	// baseFetches holds the last fetch of a worktree spawn's base, per
+	// directory and base override.
+	baseFetches map[baseFetchKey]baseFetch
+	// lastListedAt is the newest listing applied; an older one still carries
+	// focus, turn ends and pane facts, but not the rows it saw.
+	lastListedAt time.Time
 }
 
-func NewWithInboxOwner(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, version string, owner sessioncmd.InboxMaintenance) *Model {
+func NewWithInboxOwner(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, version string, owner sessioncmd.InboxMaintenance) (*Model, error) {
 	if owner == nil {
 		panic("inbox owner is required for explicit composition")
 	}
-	model := New(cfg, st, driver, engine, hookManager, version)
+	model, err := New(cfg, st, driver, engine, hookManager, version)
+	if err != nil {
+		return nil, err
+	}
 	model.poller.dependencies.Inbox = owner
 	model.poller.runner = execution.New(model.poller.dependencies, model.poller.options)
-	return model
+	return model, nil
 }
 
 type Dependencies struct {
@@ -116,7 +131,7 @@ type Dependencies struct {
 	ProfileDir string
 }
 
-func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, version string) *Model {
+func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, version string) (*Model, error) {
 	gitDriver, _ := git.New()
 	dir, _ := config.Dir()
 	deps := execution.Dependencies{Store: st, TMux: driver, Engine: engine, Hooks: hookManager, Git: gitDriver, Notify: postNotification,
@@ -128,24 +143,43 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		Snapshot: st.SetSnapshot,
 	})
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	model = newView(Dependencies{Config: cfg, Store: st, TMux: driver, Engine: engine, Hooks: hookManager, Git: gitDriver, Lifecycle: lifecycle, Execution: execution.New(deps, opts), ProfileDir: dir}, version)
+	model, err = newView(Dependencies{Config: cfg, Store: st, TMux: driver, Engine: engine, Hooks: hookManager, Git: gitDriver, Lifecycle: lifecycle, Execution: execution.New(deps, opts), ProfileDir: dir}, version)
+	if err != nil {
+		return nil, err
+	}
 	model.poller.dependencies, model.poller.options = deps, opts
-	return model
+	return model, nil
 }
 
-func NewWithServices(deps Dependencies, version string) *Model {
+func NewWithServices(deps Dependencies, version string) (*Model, error) {
 	if deps.Execution == nil || deps.Lifecycle == nil {
 		panic("execution and lifecycle services are required")
 	}
 	return newView(deps, version)
 }
 
-func newView(deps Dependencies, version string) *Model {
+func newView(deps Dependencies, version string) (*Model, error) {
 	cfg, st, driver, engine, hookManager, gitDriver := deps.Config, deps.Store, deps.TMux, deps.Engine, deps.Hooks, deps.Git
+	sessionKeys, err := st.SessionKeys()
+	if err != nil {
+		return nil, err
+	}
+	listKeys, err := st.ListKeys()
+	if err != nil {
+		return nil, err
+	}
+	editor, err := st.Editor()
+	if err != nil {
+		return nil, err
+	}
+	configImportError, err := st.ConfigImportError()
+	if err != nil {
+		return nil, err
+	}
 	applyTheme(themes[themeIndex(resolveStartupTheme(st))])
-	driver.SetSessionKeys(cfg.SessionKeys)
+	driver.SetSessionKeys(sessionKeys)
 	model := &Model{
 		effects: effectState{lifetime: &effectLifetime{}},
 		poller:  &poller{runner: deps.Execution},
@@ -160,15 +194,16 @@ func newView(deps Dependencies, version string) *Model {
 			configDir:   deps.ProfileDir,
 			store:       st,
 			tmux:        driver,
-			keys:        cfg.SessionKeys,
-			listKeys:    cfg.ListKeys,
+			keys:        sessionKeys,
+			listKeys:    listKeys,
+			editor:      editor,
 			hooks:       hookManager,
 			gitDrv:      gitDriver,
 			engine:      engine,
 			setSnapshot: st.SetSnapshot,
 		},
 		rail:          uirail.New(loadCollapsed(st)),
-		settingsCache: loadSettingsCache(st),
+		settingsCache: loadSettingsCache(st, choiceSettingKeys(slices.Sorted(maps.Keys(cfg.Tools)))),
 		focusRuntime: focusRuntimeState{
 			imeCursor: &cursorAnchor{},
 		},
@@ -180,6 +215,7 @@ func newView(deps Dependencies, version string) *Model {
 			hideHeader:      storedHideHeader(st),
 			hideStats:       storedHideStats(st),
 			mouseDisabled:   storedMouseDisabled(st),
+			baseFetchOff:    storedBaseFetchOff(st),
 		},
 		startup: startupState{
 			booting: true,
@@ -188,6 +224,7 @@ func newView(deps Dependencies, version string) *Model {
 			dismissed:           loadDismissed(st),
 			whatsNewVersion:     loadWhatsNewVersion(st),
 			whatsNewFromVersion: loadWhatsNewFromVersion(st),
+			configImportError:   configImportError,
 		},
 	}
 	if deps.ProfileDir != "" {
@@ -197,11 +234,12 @@ func newView(deps Dependencies, version string) *Model {
 		model.update.releases = cached.Releases
 		model.update.checked = len(cached.Releases) > 0
 	}
+	model.prefs.terminalBackground = model.storedTerminalBackground()
 	model.openStartupNotice()
 	model.indexReleaseRanges()
 	model.review = uireview.New(model.defaultSplitLayout())
 	model.prepareFrame()
-	return model
+	return model, nil
 }
 
 func (m *Model) Init() tea.Cmd {

@@ -2,7 +2,6 @@ package sessioncmd
 
 import (
 	"errors"
-	"path/filepath"
 	"sync"
 
 	"github.com/YoanWai/agent-manager/internal/config"
@@ -76,18 +75,19 @@ func (b *Backend) resolve() (Runtime, error) {
 		b.runtime = runtime
 		b.opened = true
 	} else if b.owned {
-		cfg, err := config.LoadDir(b.configDir)
+		// Settings can change between commands of a long-lived owner, so the
+		// session keys are reread from the store each time.
+		keys, err := b.runtime.Store.SessionKeys()
 		if err != nil {
 			return Runtime{}, err
 		}
-		b.runtime.Config = cfg
-		b.runtime.Driver.SetSessionKeys(cfg.SessionKeys)
+		b.runtime.Driver.SetSessionKeys(keys)
 	}
 	return b.runtime, nil
 }
 
 func openRuntime(configDir string) (Runtime, error) {
-	cfg, err := config.LoadDir(configDir)
+	cfg, err := config.Default()
 	if err != nil {
 		return Runtime{}, err
 	}
@@ -95,11 +95,16 @@ func openRuntime(configDir string) (Runtime, error) {
 	if err != nil {
 		return Runtime{}, err
 	}
-	driver.SetSessionKeys(cfg.SessionKeys)
-	st, err := store.Open(filepath.Join(configDir, "state.db"))
+	st, err := openStore(configDir)
 	if err != nil {
 		return Runtime{}, err
 	}
+	keys, err := st.SessionKeys()
+	if err != nil {
+		st.Close()
+		return Runtime{}, err
+	}
+	driver.SetSessionKeys(keys)
 	gitDriver, _ := git.New()
 	return Runtime{
 		Config:   cfg,

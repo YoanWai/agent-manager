@@ -40,14 +40,7 @@ func (m *Model) previewPaneWidth() int {
 // screen layout, which paints captures across the full width.
 func (m *Model) paneTargetSize() (int, int) {
 	if m.prefs.fullLayout {
-		width, height := m.width, m.listBodyHeight()
-		if width < 1 {
-			width = 1
-		}
-		if height < 3 {
-			height = 3
-		}
-		return width, height
+		return max(m.width, 1), m.restingBodyHeight()
 	}
 	return m.previewPaneWidth(), m.previewPaneHeight()
 }
@@ -66,7 +59,7 @@ func (m *Model) previewPaneHeight() int {
 	if m.height < 1 {
 		return 1
 	}
-	avail := m.listBodyHeight()
+	avail := m.restingBodyHeight()
 	if avail < 1 {
 		return 1
 	}

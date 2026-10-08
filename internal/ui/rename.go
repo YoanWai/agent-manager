@@ -15,6 +15,7 @@ type renameTarget struct {
 	input         textinput.Model
 	dir           textinput.Model
 	worktreeIndex int
+	base          string
 	focus         int
 	toolNames     []string
 	toolIndex     int
@@ -50,10 +51,11 @@ func (m *Model) openRename() {
 			input:         input,
 			dir:           dir,
 			worktreeIndex: groupWorktreeIndex(m.workspace.groupWorktrees[entry.group]),
+			base:          m.workspace.groupBases[entry.group],
 		}
 	} else {
 		input.SetValue(entry.sess.Name)
-		tools := sortedToolNames(m.services.cfg)
+		tools := m.services.cfg.AgentToolNames()
 		shells := []string{}
 		for _, name := range m.services.cfg.ToolNames() {
 			if m.services.cfg.Tools[name].Shell {
@@ -90,7 +92,7 @@ func (m *Model) renameFocus(delta int) {
 	m.pathSugg.reset()
 	fields := 2
 	if m.rename.isGroup {
-		fields = 3
+		fields = 4
 	}
 	m.rename.focus = (m.rename.focus + delta + fields) % fields
 	m.rename.input.Blur()
@@ -156,14 +158,19 @@ func (m *Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "left", "right":
+		delta := 1
+		if msg.String() == "left" {
+			delta = -1
+		}
 		if m.rename.isGroup && m.rename.focus == 2 {
-			delta := 1
-			if msg.String() == "left" {
-				delta = -1
-			}
 			count := len(groupWorktreeOptions)
 			m.rename.worktreeIndex = (m.rename.worktreeIndex + delta + count) % count
 			return m, nil
+		}
+		if m.rename.isGroup && m.rename.focus == 3 {
+			var cmd tea.Cmd
+			m.rename.base, cmd = m.stepGroupBase(groupBaseRename, m.dialogGen, m.renameGroupDir(), m.rename.base, delta)
+			return m, cmd
 		}
 	case "enter":
 		if pathSuggesting && m.pathSugg.chosen {
@@ -180,6 +187,12 @@ func (m *Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		cmd = tea.Batch(cmd, m.requestPathSuggestions(pathSuggestionRename, m.rename.dir.Value()))
 	}
 	return m, cmd
+}
+
+// renameGroupDir is the default path the group edit would save, resolved
+// the way the rename worker resolves it.
+func (m *Model) renameGroupDir() string {
+	return m.capturedAbsolutePath(m.rename.dir.Value(), m.capturedGroupDefaultDir(parentGroup(m.rename.path)))
 }
 
 func (m *Model) cycleRenameTool(delta int) {
@@ -219,6 +232,7 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 			dirFallbacks: m.groupDirCandidates(parent),
 			draftDir:     m.rename.dir.Value(),
 			worktree:     groupWorktreeValue(m.rename.worktreeIndex),
+			base:         m.rename.base,
 			name:         name,
 			gen:          m.dialogGen,
 		}, 0, false)
@@ -255,14 +269,11 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 // renameGroupLocally rewrites the in-memory tree right away, so the
 // frames between saving and the poller's next refresh already show the
 // new name and path instead of flashing the stale ones.
-func (m *Model) renameGroupLocally(old, newPath, dir, worktree string) {
+func (m *Model) renameGroupLocally(old, newPath, dir, worktree, base string) {
 	m.renameGroupInventory(old, newPath)
 	m.workspace.groupPaths[newPath] = dir
-	if worktree == "" {
-		delete(m.workspace.groupWorktrees, newPath)
-	} else {
-		m.workspace.groupWorktrees[newPath] = worktree
-	}
+	m.workspace.groupWorktrees = setGroupChoice(m.workspace.groupWorktrees, newPath, worktree)
+	m.workspace.groupBases = setGroupChoice(m.workspace.groupBases, newPath, base)
 	m.applyRailStateDecision(m.rail.RenameGroup(old, newPath))
 }
 
@@ -288,10 +299,29 @@ func (m *Model) renameGroupInventory(old, newPath string) {
 		groupPaths[group] = path
 	}
 	m.workspace.groupPaths = groupPaths
-	groupWorktrees := make(map[string]string, len(m.workspace.groupWorktrees))
-	for group, choice := range m.workspace.groupWorktrees {
+	m.workspace.groupWorktrees = movedChoices(m.workspace.groupWorktrees, moved)
+	m.workspace.groupBases = movedChoices(m.workspace.groupBases, moved)
+}
+
+// movedChoices rekeys a per-group choice map for a renamed subtree.
+func movedChoices(choices map[string]string, moved func(string) (string, bool)) map[string]string {
+	out := make(map[string]string, len(choices))
+	for group, choice := range choices {
 		group, _ = moved(group)
-		groupWorktrees[group] = choice
+		out[group] = choice
 	}
-	m.workspace.groupWorktrees = groupWorktrees
+	return out
+}
+
+// setGroupChoice records a group's own choice, "" dropping it to inherit.
+func setGroupChoice(choices map[string]string, group, value string) map[string]string {
+	if choices == nil {
+		choices = map[string]string{}
+	}
+	if value == "" {
+		delete(choices, group)
+	} else {
+		choices[group] = value
+	}
+	return choices
 }

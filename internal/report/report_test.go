@@ -456,6 +456,7 @@ func TestToolLabelsMatchTheFormDropdown(t *testing.T) {
 	for tool, want := range map[string]string{
 		"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode", "grok": "Grok Build",
 		"gemini": "Gemini CLI", "antigravity": "Antigravity CLI", "pi": "Pi", "hermes": "Hermes Agent", "command-code": "Command Code", "muse": "Muse Code",
+		"omp":      "Oh My Pi",
 		"my-agent": "Not tool specific",
 	} {
 		if got := toolLabel(tool); got != want {

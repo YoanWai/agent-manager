@@ -1,0 +1,30 @@
+│              ██          │ No LSP servers                                                        │
+│                          │                                                                       │
+│       Local Model        │                                                                       │
+│       local-proxy        │                                                                       │
+│                          │ ───────────────────────────────────────────────────────────────────── │
+│                          │ Recent sessions                                                       │
+│                          │ No recent sessions                                                    │
+│                          │                                                                       │
+│                          │                                                                       │
+│                          │                                                                       │
+│                          │                                                                       │
+╰──────────────────────────┴───────────────────────────────────────────────────────────────────────╯
+ Tip: Bulk data to classify or triage? Say `jevify` in your message — the eval kernel's `judge()`
+      processes the batch and you read only what it flags — watch it glow as you type
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Update Available
+ New version 18.3.4 is available. Run: omp update
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+ say hi
+
+
+ Hello from the fake model.
+
+                                                                                     Hello from the fake model
+ π > ⬢ Local Model > 🗑 ~/project                                ▶─0.0%─────╎──────────┃───────────────────33K─
+╰─

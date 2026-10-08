@@ -277,7 +277,7 @@ func (r *Reporter) gather(sessionID string) (Context, error) {
 	if err != nil {
 		return Context{}, err
 	}
-	cfg, err := config.LoadDir(r.configDir)
+	cfg, err := config.Default()
 	if err != nil {
 		return Context{}, err
 	}
@@ -325,6 +325,7 @@ func toolLabel(toolName string) string {
 		"hermes":       "Hermes Agent",
 		"command-code": "Command Code",
 		"muse":         "Muse Code",
+		"omp":          "Oh My Pi",
 	}
 	if label, known := labels[toolName]; known {
 		return label

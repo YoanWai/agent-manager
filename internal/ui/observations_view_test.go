@@ -142,3 +142,39 @@ func lastSGR(s string) string {
 	code, _, _ := strings.Cut(s[idx+2:], "m")
 	return code
 }
+
+func TestComputerDiskAvailable(t *testing.T) {
+	m := &Model{workspace: workspace{snap: sysstat.Snapshot{
+		DiskOK: true, DiskPercent: 66, DiskAvailable: 167_950_000_000,
+	}}}
+	for _, width := range []int{29, 34, 40, 55} {
+		lines := m.computerLines(width)
+		plain := ansi.Strip(strings.Join(lines, "\n"))
+		if !strings.Contains(plain, "66%") || !strings.Contains(plain, "167.9GB available") {
+			t.Fatalf("disk reading = %q", plain)
+		}
+		for _, line := range lines {
+			if got := ansi.StringWidth(line); got > width {
+				t.Fatalf("disk line width %d exceeds %d: %q", got, width, plain)
+			}
+		}
+	}
+}
+
+func TestDiskBytes(t *testing.T) {
+	for _, tc := range []struct {
+		bytes uint64
+		want  string
+	}{
+		{0, "0B"},
+		{999, "999B"},
+		{1000, "1.0KB"},
+		{1_000_000, "1.0MB"},
+		{169_850_000_000, "169.8GB"},
+		{1_000_000_000_000, "1.0TB"},
+	} {
+		if got := diskBytes(tc.bytes); got != tc.want {
+			t.Errorf("diskBytes(%d) = %q, want %q", tc.bytes, got, tc.want)
+		}
+	}
+}

@@ -36,6 +36,21 @@ func TestWaitReturnsAsSoonAsTheSessionRests(t *testing.T) {
 	}
 }
 
+func TestWaitWorksWithNoCaller(t *testing.T) {
+	h := newSessionHarness(t)
+	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "worker"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := h.store.UpdateStatus(created.ID, status.Finished); err != nil {
+		t.Fatalf("UpdateStatus: %v", err)
+	}
+	result, err := h.sessions.Wait(context.Background(), "", created.ID, nil, 5*time.Second)
+	if err != nil || !result.Reached || result.Session.Status != status.Finished {
+		t.Fatalf("Wait with no caller = %+v, %v", result, err)
+	}
+}
+
 func TestWaitTimesOutWithTheCurrentStateRatherThanAnError(t *testing.T) {
 	h := newSessionHarness(t)
 	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "worker"})

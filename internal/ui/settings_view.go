@@ -44,6 +44,10 @@ func (m *Model) viewSettings() string {
 	if m.settings.worktreeDefault {
 		worktreeDefault = "on"
 	}
+	baseFetch := "off"
+	if m.settings.baseFetch {
+		baseFetch = "on"
+	}
 	coordination := "on request"
 	if m.settings.proactive {
 		coordination = "proactive"
@@ -56,12 +60,16 @@ func (m *Model) viewSettings() string {
 	if m.settings.mouseDisabled {
 		mouseMode = "off"
 	}
-	// The beta tag borrows the messages card's yellow, so the row reads as
+	// The beta tag borrows the messages modal's yellow, so the row reads as
 	// the one still under test.
 	betaTag := lipgloss.NewStyle().Foreground(lipgloss.Color("#e2c044")).Render(" beta")
 	themeAuto := "off"
 	if m.settings.themeAuto {
 		themeAuto = "on"
+	}
+	background := "theme"
+	if m.settings.terminalBackground {
+		background = "terminal"
 	}
 	notifications := "off"
 	if m.settings.notifications {
@@ -106,23 +114,30 @@ func (m *Model) viewSettings() string {
 		return ctaLead(field, name) + keyStyle.Render("↵") + " " +
 			lipgloss.NewStyle().Foreground(colorAccent2).Render(action)
 	}
+	editorLine := row(settingsFieldEditor, "editor", m.settings.editor.label())
+	if m.settings.editor.typing {
+		editorLine = lead(settingsFieldEditor, "editor") + textInputView(m.settings.editor.input)
+	}
 	body := row(settingsFieldTool, "default tool", toolValue) + "\n" +
 		row(settingsFieldTheme, "theme", themes[m.settings.themeIndex].Name) + "  " +
 		themeSwatch(themes[m.settings.themeIndex]) + "\n" +
 		row(settingsFieldThemeAuto, "theme follows OS", themeAuto) + "\n" +
+		row(settingsFieldBackground, "background", background) + "\n" +
 		row(settingsFieldDensity, "list density", density) + "\n" +
 		row(settingsFieldSessionLayout, "sessions layout", sessionLayout) + "\n" +
 		row(settingsFieldHeader, "header", header) + "\n" +
 		row(settingsFieldStats, "computer stats", stats) + "\n" +
 		row(settingsFieldLayout, "review layout", layout) + "\n" +
-		row(settingsFieldQuickClose, "after quick send", quickClose) + "\n" +
+		row(settingsFieldQuickClose, "after quick prompt", quickClose) + "\n" +
 		row(settingsFieldFocusKey, "session keys", focusKey) + "\n" +
 		row(settingsFieldArrowStep, "←→ step in/out", arrowStep) + betaTag + "\n" +
 		row(settingsFieldMouse, "mouse", mouseMode) + "\n" +
 		row(settingsFieldWorktree, "spawn in worktree", worktreeDefault) + "\n" +
+		row(settingsFieldBaseFetch, "fetch on spawn", baseFetch) + "\n" +
 		row(settingsFieldCoordination, "coordination", coordination) + "\n" +
 		row(settingsFieldNotify, "notifications", notifications) + "\n" +
 		row(settingsFieldNotifyFinish, "notify on finish", notifyFinished) + "\n" +
+		editorLine + "\n" +
 		actionRow(settingsFieldKeybindings, "keybindings", keybindingsSummary(m.services.keys, m.services.listKeys)) + "\n" +
 		actionRow(settingsFieldCLIs, "CLIs", "show or hide for new sessions") + "\n" +
 		ctaRow(settingsFieldBugReport, "report a bug", "open the bug report form") + "\n" +
@@ -136,6 +151,13 @@ func (m *Model) viewSettings() string {
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "manage CLIs"}, {"esc", "save"}}
 	case settingsFieldKeybindings:
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "change the keys"}, {"esc", "save"}}
+	case settingsFieldEditor:
+		switch {
+		case m.settings.editor.typing:
+			hint = [][2]string{{"↵", "keep"}, {"esc", "cancel"}}
+		case m.settings.editor.custom:
+			hint = [][2]string{{"↑↓", "field"}, {"←→", "change"}, {"↵", "type the command"}, {"esc", "save"}}
+		}
 	case settingsFieldUpdate:
 		switch {
 		case m.update.applying:

@@ -153,6 +153,7 @@ func stripDeletedGroups(msg *refreshMsg, gone map[string]goneMark) {
 	for path := range removed {
 		delete(msg.groupPaths, path)
 		delete(msg.groupWorktrees, path)
+		delete(msg.groupBases, path)
 		delete(msg.archivedGroups, path)
 	}
 }

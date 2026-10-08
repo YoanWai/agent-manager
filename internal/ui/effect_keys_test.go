@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -15,17 +14,17 @@ func TestKeySaveDefersDiskWritesToTheEffect(t *testing.T) {
 	m := keyPickerModel(t)
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyF9})
-	before := savedConfig(t, m)
+	before := savedKeys(t, m)
 	cmd := m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
 	if cmd == nil {
 		t.Fatal("a changed table should enqueue the save work")
 	}
-	if got := savedConfig(t, m); got != before {
-		t.Fatalf("config.toml was written on the update path:\n%s", got)
+	if got := savedKeys(t, m); got != before {
+		t.Fatalf("the key table was written on the update path:\n%s", got)
 	}
 	m.applyCmd(t, cmd)
-	if saved := savedConfig(t, m); !strings.Contains(saved, `detach = "f9"`) {
-		t.Fatalf("config.toml should carry the new key:\n%s", saved)
+	if saved := savedKeys(t, m); !strings.Contains(saved, `"detach":["f9"]`) {
+		t.Fatalf("the store should carry the new key:\n%s", saved)
 	}
 	if got := m.services.keys.Binding(keybind.Detach).Label(); got != "f9" {
 		t.Fatalf("runtime detach = %q, want f9", got)
@@ -44,11 +43,11 @@ func TestKeySavePersistsCapturedTablesNotLaterEdits(t *testing.T) {
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
 	m.pressInPicker(t, runeKey("t")) // ctrl+t, while the save is pending
 	m.applyCmd(t, cmd)
-	saved := savedConfig(t, m)
-	if !strings.Contains(saved, `detach = "f9"`) {
+	saved := savedKeys(t, m)
+	if !strings.Contains(saved, `"detach":["f9"]`) {
 		t.Fatalf("the captured detach save is missing:\n%s", saved)
 	}
-	if strings.Contains(saved, `review = "ctrl+t"`) {
+	if strings.Contains(saved, `"review":["ctrl+t"]`) {
 		t.Fatalf("a later edit reached the captured save:\n%s", saved)
 	}
 	if got := m.services.keys.Binding(keybind.Detach).Label(); got != "f9" {
@@ -67,24 +66,24 @@ func TestKeySavePartialFailureCommitsListOnly(t *testing.T) {
 	m.settings.keyCursor = 0
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyF9})
-	original := config.SaveKeys
+	original := m.services.store.SetKeys
 	failOnce := true
-	m.services.saveKeys = func(dir string, keys keybind.Table) error {
+	m.services.saveKeys = func(keys keybind.Table) error {
 		if keys.Scope() == keybind.ScopeSession && failOnce {
 			failOnce = false
 			return errors.New("scripted session write failure")
 		}
-		return original(dir, keys)
+		return original(keys)
 	}
 
 	cmd := m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
 	m.applyCmd(t, cmd)
-	saved := savedConfig(t, m)
-	if !strings.Contains(saved, `new_session = "N"`) {
+	saved := savedKeys(t, m)
+	if !strings.Contains(saved, `"new_session":["N"]`) {
 		t.Fatalf("the committed list table is missing:\n%s", saved)
 	}
-	if strings.Contains(saved, `detach = "f9"`) {
-		t.Fatalf("the failed session table reached the file:\n%s", saved)
+	if strings.Contains(saved, `"detach":["f9"]`) {
+		t.Fatalf("the failed session table reached the store:\n%s", saved)
 	}
 	if got := m.services.listKeys.Binding(keybind.NewSession).Label(); got != "N" {
 		t.Fatalf("runtime list new_session = %q, want N", got)
@@ -107,7 +106,7 @@ func TestKeySavePartialFailureCommitsListOnly(t *testing.T) {
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyF9})
 	cmd = m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
 	m.applyCmd(t, cmd)
-	if saved := savedConfig(t, m); !strings.Contains(saved, `detach = "f9"`) {
+	if saved := savedKeys(t, m); !strings.Contains(saved, `"detach":["f9"]`) {
 		t.Fatalf("the resubmission should finish the save:\n%s", saved)
 	}
 	if got := m.services.keys.Binding(keybind.Detach).Label(); got != "f9" {
@@ -119,13 +118,13 @@ func TestBlockedKeySaveLeavesNavigationAndResizeRunning(t *testing.T) {
 	m := keyPickerModel(t)
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyF9})
-	original := config.SaveKeys
+	original := m.services.store.SetKeys
 	started := make(chan struct{})
 	release := make(chan struct{})
-	m.services.saveKeys = func(dir string, keys keybind.Table) error {
+	m.services.saveKeys = func(keys keybind.Table) error {
 		close(started)
 		<-release
-		return original(dir, keys)
+		return original(keys)
 	}
 
 	cmd := m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
@@ -151,8 +150,8 @@ func TestBlockedKeySaveLeavesNavigationAndResizeRunning(t *testing.T) {
 	close(release)
 	m.applyTestMsg(t, <-completed)
 	m.drainEffects(t)
-	if saved := savedConfig(t, m); !strings.Contains(saved, `detach = "f9"`) {
-		t.Fatalf("config.toml should carry the new key once the writer unblocks:\n%s", saved)
+	if saved := savedKeys(t, m); !strings.Contains(saved, `"detach":["f9"]`) {
+		t.Fatalf("the store should carry the new key once the writer unblocks:\n%s", saved)
 	}
 	if m.width != 150 || m.height != 45 {
 		t.Fatalf("resize lost behind the blocked save: %dx%d", m.width, m.height)
@@ -174,9 +173,9 @@ func TestKeySaveCapturesTheInstanceWriter(t *testing.T) {
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyF9})
 	calls := 0
-	m.services.saveKeys = func(dir string, keys keybind.Table) error { calls++; return config.SaveKeys(dir, keys) }
+	m.services.saveKeys = func(keys keybind.Table) error { calls++; return m.services.store.SetKeys(keys) }
 	cmd := m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
-	m.services.saveKeys = func(string, keybind.Table) error { t.Fatal("accepted job borrowed a newer writer"); return nil }
+	m.services.saveKeys = func(keybind.Table) error { t.Fatal("accepted job borrowed a newer writer"); return nil }
 	m.applyCmd(t, cmd)
 	if calls != 1 {
 		t.Fatalf("captured writer calls=%d", calls)
@@ -194,4 +193,10 @@ func TestKeySaveCanRestoreOriginalBindingBehindPendingSave(t *testing.T) {
 	if !m.services.keys.Equal(original) {
 		t.Fatal("pending save overwrote the user's later return to the original binding")
 	}
+}
+
+// savedKeys is both stored key rows, so a test reads what a save committed.
+func savedKeys(t *testing.T, m *Model) string {
+	t.Helper()
+	return storedKeyRow(t, m, keybind.ScopeSession) + "\n" + storedKeyRow(t, m, keybind.ScopeList)
 }

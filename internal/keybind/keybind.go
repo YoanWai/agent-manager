@@ -1,8 +1,7 @@
-// Package keybind is the vocabulary for keys written by name in
-// config.toml: one spelling in, and the spelling each surface reads out of
-// it, Bubble Tea's for the manager's own keyboard and tmux's for the
-// bindings a managed session carries. A Table is one scope's actions and
-// the keys each answers to.
+// Package keybind is the vocabulary for keys written by name: one spelling
+// in, and the spelling each surface reads out of it, Bubble Tea's for the
+// manager's own keyboard and tmux's for the bindings a managed session
+// carries. A Table is one scope's actions and the keys each answers to.
 package keybind
 
 import (
@@ -228,6 +227,7 @@ const (
 	Detach      = "detach"
 	Review      = "review"
 	Editor      = "editor"
+	TmuxPrefix  = "tmux_prefix"
 	Quit        = "quit"
 	Up          = "up"
 	Down        = "down"
@@ -252,6 +252,7 @@ const (
 	Revive      = "revive"
 	ReviveAll   = "revive_all"
 	Archive     = "archive"
+	CancelEnd   = "cancel_end"
 	Restore     = "restore"
 	Delete      = "delete"
 	Search      = "search"
@@ -274,6 +275,7 @@ var sessionActions = []Action{
 	{Detach, "back to the manager", keys("ctrl+q", `ctrl+\`)},
 	{Review, "open the session's diff", keys("ctrl+r")},
 	{Editor, "open its directory", keys("f3")},
+	{TmuxPrefix, "replaces your tmux prefix while attached", Binding{}},
 }
 
 var listActions = []Action{
@@ -289,7 +291,7 @@ var listActions = []Action{
 	{Terminal, "new terminal tab", keys("T")},
 	{NewGroup, "new group", keys("g")},
 	{Fork, "fork the session", keys("f")},
-	{Prompt, "quick prompt", keys("space")},
+	{Prompt, "quick prompt mode", keys("space")},
 	{CopyReply, "copy the session's newest reply to the clipboard", keys("y")},
 	{Review, "review the session's diff", keys("ctrl+r")},
 	{MarkIdle, "mark a finished session idle", keys(".")},
@@ -302,6 +304,7 @@ var listActions = []Action{
 	{Revive, "revive the session, or every dead one in the group", keys("v")},
 	{ReviveAll, "revive every dead session in view", keys("V")},
 	{Archive, "archive the session or group", keys("a")},
+	{CancelEnd, "cancel the archive or kill a session asked for once its turn ends", keys("c")},
 	{Restore, "restore the session or group", keys("u")},
 	{Delete, "delete the session or group", keys("d")},
 	{Search, "search the list", keys("/")},
@@ -346,8 +349,9 @@ func DefaultList() Table {
 	return table
 }
 
-// SessionTable is the session table a file declares: an action left out
-// keeps its default, and a table that could not work is refused.
+// SessionTable is the session table over what was written for it: an
+// action left out keeps its default, and a table that could not work is
+// refused.
 func SessionTable(written map[string]Binding) (Table, error) {
 	return build(ScopeSession, sessionActions, written)
 }
@@ -380,12 +384,12 @@ func build(scope string, actions []Action, written map[string]Binding) (Table, e
 }
 
 // yieldDefaults takes a key away from the action that only holds it by
-// default, wherever the file gives that key to something else. A table
-// cannot know to move out of the way of an action added after it was
+// default, wherever the written table gives that key to something else. A
+// table cannot know to move out of the way of an action added after it was
 // written, so without this the day such an action ships its default key
 // is the day everyone who spent that key is locked out of the manager,
-// and their running sessions with it. What the file asks for wins; the
-// action that yielded is left unbound, and the picker can give it a key.
+// and their running sessions with it. What was written wins; the action
+// that yielded is left unbound, and the picker can give it a key.
 func (t Table) yieldDefaults(written map[string]Binding) {
 	claimed := make(map[string]bool, len(written))
 	for name := range written {
@@ -464,7 +468,8 @@ func (t Table) ActionFor(key string) (string, bool) {
 // Validate refuses a table with one key on two actions, and one with no
 // way back: a focused session with no detach key has no exit, and a list
 // with no settings key has no way to the picker. Inside a session every
-// plain key belongs to the agent, so only a key tmux can bind is taken.
+// plain key belongs to the agent, so only a key tmux can bind is taken,
+// and tmux holds two prefix keys at most.
 func (t Table) Validate() error {
 	switch t.scope {
 	case ScopeSession:
@@ -477,6 +482,9 @@ func (t Table) Validate() error {
 					return fmt.Errorf("keybindings.session.%s: %q is a plain key, which reaches the agent; a session key is ctrl+<key>, alt+<key> or f1..f12", action.Name, key)
 				}
 			}
+		}
+		if len(t.bound[TmuxPrefix].keys) > 2 {
+			return errors.New("keybindings.session.tmux_prefix takes one key or two, for tmux's prefix and prefix2")
 		}
 	case ScopeList:
 		if len(t.bound[Settings].keys) == 0 {

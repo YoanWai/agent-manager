@@ -62,6 +62,8 @@ func (m *Model) railSnapshot() uirail.Snapshot {
 			Queued:         m.workspace.queuedMessages[session.ID],
 			IsShell:        m.isShell(session.Tool),
 			Elsewhere:      m.elsewhereNote(session) != "",
+			AfterTurn:      session.AfterTurn,
+			AfterTurnGlyph: afterTurnGlyphs[session.AfterTurn],
 		})
 	}
 	return snapshot

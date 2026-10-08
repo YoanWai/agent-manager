@@ -12,7 +12,7 @@ import (
 )
 
 type services struct {
-	saveKeys  func(string, keybind.Table) error
+	saveKeys  func(keybind.Table) error
 	lifecycle *sessioncmd.Lifecycle
 	cfg       config.Config
 	store     *store.Store
@@ -22,8 +22,9 @@ type services struct {
 	engine    *status.Engine
 	keys      keybind.Table
 	listKeys  keybind.Table
-	// configDir is resolved once, at New, so the settings screen writes
-	// keys back to the config.toml the manager loaded.
+	// editor is the command Settings picked for the editor key; empty
+	// leaves the choice to the environment and what is on PATH.
+	editor    string
 	configDir string
 	// setSnapshot writes a session's pane capture before archive or kill
 	// takes the window; a seam so snapshot failures can be exercised

@@ -27,6 +27,7 @@ type Model struct {
 type paneState struct {
 	sessionID string
 	mouse     bool
+	alt       bool
 	motion    bool
 	sgr       bool
 	history   int
@@ -61,6 +62,7 @@ type Cursor struct {
 type PaneState struct {
 	SessionID string
 	Mouse     bool
+	Alt       bool
 	Motion    bool
 	SGR       bool
 	History   int
@@ -83,6 +85,7 @@ type EnterContext struct {
 type PaneUpdate struct {
 	SessionID string
 	Mouse     bool
+	Alt       bool
 	Motion    bool
 	SGR       bool
 	History   int
@@ -105,6 +108,7 @@ func (m *Model) Enter(ctx EnterContext) {
 	m.fetchInFlight = false
 	if !ctx.KeepPaneFacts || m.pane.sessionID != ctx.SessionID {
 		m.pane.mouse = false
+		m.pane.alt = false
 		m.pane.motion = false
 		m.pane.sgr = false
 		m.pane.history = 0
@@ -130,6 +134,7 @@ func (m *Model) ApplyPane(update PaneUpdate, currentSessionID string) PaneResult
 	}
 	m.pane.sessionID = update.SessionID
 	m.pane.mouse = update.Mouse
+	m.pane.alt = update.Alt
 	m.pane.motion = update.Motion
 	m.pane.sgr = update.SGR
 	m.pane.history = max(update.History, 0)
@@ -147,6 +152,7 @@ func (m Model) Pane() PaneState {
 	return PaneState{
 		SessionID: m.pane.sessionID,
 		Mouse:     m.pane.mouse,
+		Alt:       m.pane.alt,
 		Motion:    m.pane.motion,
 		SGR:       m.pane.sgr,
 		History:   m.pane.history,
@@ -161,6 +167,14 @@ func (m Model) Status() Status {
 func (m Model) FrameBox() Box { return m.frame.box }
 
 func (m Model) ScrolledBack() bool { return m.scroll > 0 }
+
+// PagesScrollback is the one policy decision shared by input, footer and
+// status line: a normal-screen pane's transcript lives in tmux history,
+// while alternate-screen and mouse-tracking programs keep their keys.
+func (m Model) PagesScrollback(sessionID string) bool {
+	return sessionID != "" && m.pane.sessionID == sessionID &&
+		!m.pane.alt && !m.pane.mouse && m.pane.history > 0
+}
 
 func (m Model) CursorOn() bool { return m.cursorOn }
 

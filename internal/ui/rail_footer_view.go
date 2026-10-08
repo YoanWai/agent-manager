@@ -15,22 +15,7 @@ func (m *Model) viewFooter() string {
 		return m.reorderFooter()
 	}
 	if m.quick.active {
-		worktreeHint := "off"
-		capable, known := m.cachedWorktreeCapability(m.quickTargetDir())
-		switch {
-		case !known || !capable:
-			worktreeHint = worktreeUnavailable
-		case m.quickWorktreeOn():
-			worktreeHint = "on"
-		}
-		pairs := [][2]string{
-			{"↵", "send"}, {"↑↓", "target or caret"}, {"tab", "tool: " + m.quickTool()},
-		}
-		if len(m.quick.toolNames) > 1 {
-			pairs = append(pairs, [2]string{"shift+tab", "previous tool"})
-		}
-		pairs = append(pairs, [2]string{"ctrl+t", "worktree: " + worktreeHint}, [2]string{"esc", "close"})
-		return m.transientFooter(legendSection{title: "Prompt", pairs: pairs})
+		return m.quickFooter()
 	}
 	if m.split.resizeMode || m.split.dragging {
 		return m.transientFooter(legendSection{title: "Resize", pairs: [][2]string{
@@ -58,12 +43,15 @@ func (m *Model) viewFooter() string {
 			back += " / click its row"
 		}
 		back += " / mouse back"
-		pairs := [][2]string{
-			{"typing", "to agent"},
-			{back, "back"},
-		}
+		sess, selected := m.selected()
+		pagesScrollback := selected && m.focusPagesScrollback(sess)
+		pairs := [][2]string{{back, "back"}}
 		if m.prefs.arrowStep {
-			pairs = append(pairs, [2]string{"←", "prompt start: back"})
+			label := "prompt start: back"
+			if m.prefs.fullLayout && pagesScrollback {
+				label = "back"
+			}
+			pairs = append(pairs, [2]string{"←", label})
 		}
 		if label := m.services.keys.Binding(keybind.Review).Label(); label != "" {
 			pairs = append(pairs, [2]string{label, "review"})
@@ -71,9 +59,9 @@ func (m *Model) viewFooter() string {
 		if label := m.services.keys.Binding(keybind.Editor).Label(); label != "" {
 			pairs = append(pairs, [2]string{label, "editor"})
 		}
-		// The word and line gestures stay in the key map, where there is
-		// room to name all three.
-		pairs = append(pairs, [2]string{"drag / click", "copy"})
+		if pagesScrollback {
+			pairs = append(pairs, [2]string{"pgup/pgdn", "scroll"})
+		}
 		if m.focusPane.Pane().Mouse {
 			pairs = append(pairs, [2]string{"click / alt+drag", "agent UI"})
 		}
@@ -128,14 +116,19 @@ func (m *Model) rowLegend() legendSection {
 			m.legendPair(keybind.Kill, "kill", keybind.KillAll, "all"), m.legendPair(keybind.Revive, "revive", keybind.ReviveAll, "all"),
 			m.archiveRestoreLegend(), {k(keybind.Delete), "delete"},
 		}...)
-		return legendSection{title: "Group", pairs: legendPairsBound(pairs)}
+		return legendSection{title: "Group", leads: [][2]string{m.quickModeLead()}, pairs: legendPairsBound(pairs)}
 	}
 	title := "Session"
-	conversation := [][2]string{{k(keybind.Prompt), "prompt"}, {k(keybind.CopyReply), "copy"}, {k(keybind.Review), "review"}, {k(keybind.Fork), "fork"}}
+	leads := [][2]string{m.quickModeLead(), {k(keybind.Review), "review mode"}}
+	hint := ""
+	if k(keybind.Review) != "" {
+		hint = reviewModeHint
+	}
+	conversation := [][2]string{{k(keybind.CopyReply), "copy"}, {k(keybind.Fork), "fork"}}
 	if m.isShell(row.sess.Tool) {
 		// A shell has no conversation, so the keys that would prompt,
 		// review or fork one are left off rather than offered and refused.
-		title, conversation = "Shell", nil
+		title, leads, hint, conversation = "Shell", nil, "", nil
 	}
 	pairs := [][2]string{{k(keybind.Open), enterHint}, {k(keybind.Attach), attachHint}}
 	if !m.prefs.mouseDisabled {
@@ -151,6 +144,9 @@ func (m *Model) rowLegend() legendSection {
 	if row.sess.Status == status.Finished && !row.sess.Archived {
 		pairs = append(pairs, [2]string{k(keybind.MarkIdle), "mark idle"})
 	}
+	if row.sess.AfterTurn != "" {
+		pairs = append(pairs, [2]string{k(keybind.CancelEnd), "cancel " + row.sess.AfterTurn})
+	}
 	pairs = append(pairs, conversation...)
 	// o sits outside the conversation keys: a shell's directory is worth
 	// opening as much as an agent's.
@@ -159,7 +155,15 @@ func (m *Model) rowLegend() legendSection {
 		m.legendPair(keybind.Kill, "kill", keybind.KillAll, "all"), m.legendPair(keybind.Revive, "revive", keybind.ReviveAll, "all"), {k(keybind.Restart), "restart"},
 		m.archiveRestoreLegend(), {k(keybind.Delete), "delete"},
 	}...)
-	return legendSection{title: title, pairs: legendPairsBound(pairs)}
+	return legendSection{title: title, leads: leads, hint: hint, pairs: legendPairsBound(pairs)}
+}
+
+const quickModeTitle = "Quick prompt mode"
+
+const reviewModeHint = `tell your agent "set review mode"`
+
+func (m *Model) quickModeLead() [2]string {
+	return [2]string{m.listGlyph(keybind.Prompt), "quick prompt mode"}
 }
 
 // archiveRestoreLegend leaves out the key of the pair that no-ops in this view.
@@ -224,15 +228,20 @@ func (m *Model) viewLegend() legendSection {
 	if m.rail.AllGroupsCollapsed() {
 		foldAllAction = "unfold all"
 	}
-	// Ordered by what a narrow terminal must keep: moving around, making
+	// Ordered by what a narrow terminal must keep: unread messages, which
+	// the footer is the only mouse path to, moving around, making
 	// something, the filters, then the keys a user already knows to look for.
 	k := m.listGlyph
 	emptyGroupsKey := k(keybind.EmptyGroups)
 	if m.rail.ShowArchived() {
 		emptyGroupsKey = ""
 	}
-	pairs := [][2]string{{strings.TrimSpace(k(keybind.Up) + " " + k(keybind.Down)), "navigate"}}
+	var pairs [][2]string
+	if len(m.activeNotices()) > 0 {
+		pairs = append(pairs, [2]string{k(keybind.Messages), "messages"})
+	}
 	pairs = append(pairs, [][2]string{
+		{strings.TrimSpace(k(keybind.Up) + " " + k(keybind.Down)), "navigate"},
 		{k(keybind.NewSession), "new"}, {k(keybind.Terminal), "terminal"}, {k(keybind.NewGroup), "group"}, {k(keybind.Search), "search"},
 		{k(keybind.Archived), archivedAction}, {k(keybind.Filter), statusFilterAction}, {emptyGroupsKey, emptyGroupsAction},
 		{k(keybind.Help), "keys"}, {k(keybind.Quit), "quit"},

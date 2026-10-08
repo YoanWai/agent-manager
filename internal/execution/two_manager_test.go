@@ -13,7 +13,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
-	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -37,8 +36,6 @@ type twoManagers struct {
 func pair(t *testing.T, sameSocket bool) *twoManagers {
 	t.Helper()
 	cfg := config.Config{
-		SessionKeys: keybind.DefaultSession(),
-		ListKeys:    keybind.DefaultList(),
 		Tools: map[string]config.Tool{
 			"ready-tool": {
 				Command:        `sh -c 'printf "❯ "; while IFS= read -r line; do printf "\n❯ "; done'`,
@@ -142,7 +139,7 @@ func TestSecondManagerTakesOverOnlyWhenTheFirstAges(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now()
-	holder, err := p.store.ClaimPoller(p.driver.SocketPath(), now, 2*time.Second)
+	holder, err := p.store.ClaimPoller(p.driver.SocketPath(), now)
 	if err != nil || holder != p.driver.SocketPath() {
 		t.Fatalf("pre-stamp = %q, %v", holder, err)
 	}

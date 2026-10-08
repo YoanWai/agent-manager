@@ -4,6 +4,7 @@ import (
 	"errors"
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"os"
+	"slices"
 
 	"sync"
 	"sync/atomic"
@@ -279,7 +280,7 @@ func (p *Runner) Step() Result {
 	// long as the manager is open; its readers allow the stamp to age instead.
 	if time.Since(p.heartbeatAt) >= store.PollerHeartbeatPeriod {
 		claimed := time.Now()
-		holder, err := p.store.ClaimPoller(socket, claimed, p.interval)
+		holder, err := p.store.ClaimPoller(socket, claimed)
 		if err != nil {
 			return Result{Err: err}
 		}
@@ -334,6 +335,7 @@ func (p *Runner) Step() Result {
 	paneHashes := make(map[string]uint64, len(sessions))
 	paneLastLines := make(map[string]string, len(sessions))
 	panePrompts := make(map[string]string, len(sessions))
+	var turnsEnded []string
 	for i, sess := range sessions {
 		if sess.Archived {
 			continue
@@ -347,6 +349,9 @@ func (p *Runner) Step() Result {
 		}
 		live := panes[sess.ID].PID > 0
 		claimed, delivered := false, false
+		// Only a pane this pass read without typing into it, or one that is
+		// gone, can say the turn that asked to end has ended.
+		observed := !live
 		if sess.TmuxSocket == "" {
 			// Sessions that predate the column are the leading manager's to
 			// speak for until one of them shows a pane here to claim.
@@ -440,6 +445,7 @@ func (p *Runner) Step() Result {
 					}
 					sessions[i].PendingInputs = sessions[i].PendingInputs[1:]
 				}
+				observed = !sent
 				// Launch inputs open the conversation, so they go first; a
 				// message from another agent waits its turn behind them.
 				// A launch input sent this tick leaves pane and derived
@@ -477,13 +483,26 @@ func (p *Runner) Step() Result {
 			// The row can be claimed by the manager that can see its pane
 			// between this pass listing it and reaching here, and a status
 			// derived without that pane must not land on top of the claim.
-			written, err := p.store.UpdateStatusOnSocket(sess.ID, newStatus, socket)
+			written, changed, err := p.store.UpdateStatusOnSocket(sess.ID, newStatus, socket)
 			if err != nil {
 				return Result{Err: err}
 			}
 			if written && newStatus != sess.Status {
 				sessions[i].Status = newStatus
-				p.notifyTransition(sess, newStatus)
+				// Managers sharing a server derive the same transition; only
+				// the one whose write moved the stored status announces it.
+				if changed {
+					p.notifyTransition(sess, newStatus)
+				}
+			}
+		}
+		if observed {
+			due, err := p.afterTurnDue(sess, newStatus)
+			if err != nil {
+				return Result{Err: err}
+			}
+			if due {
+				turnsEnded = append(turnsEnded, sess.ID)
 			}
 		}
 	}
@@ -515,12 +534,16 @@ func (p *Runner) Step() Result {
 	names := make([]string, len(groups))
 	paths := make(map[string]string, len(groups))
 	worktrees := make(map[string]string, len(groups))
+	bases := make(map[string]string, len(groups))
 	archivedGroups := make(map[string]bool, len(groups))
 	for i, g := range groups {
 		names[i] = g.Name
 		paths[g.Name] = g.Path
 		if g.Worktree != "" {
 			worktrees[g.Name] = g.Worktree
+		}
+		if g.Base != "" {
+			bases[g.Name] = g.Base
 		}
 		if g.Archived {
 			archivedGroups[g.Name] = true
@@ -546,6 +569,7 @@ func (p *Runner) Step() Result {
 		Groups:         names,
 		GroupPaths:     paths,
 		GroupWorktrees: worktrees,
+		GroupBases:     bases,
 		ArchivedGroups: archivedGroups,
 		Proc:           proc,
 		ProcFor:        selectedID,
@@ -555,6 +579,7 @@ func (p *Runner) Step() Result {
 		PaneLines:      paneLastLines,
 		PanePrompts:    panePrompts,
 		Panes:          panes,
+		TurnsEnded:     turnsEnded,
 	}
 	if p.takeFocus != nil {
 		if id, ok := p.takeFocus(); ok {
@@ -566,6 +591,20 @@ func (p *Runner) Step() Result {
 		msg.SnapOK = true
 	}
 	return Result{Snapshot: msg}
+}
+
+// afterTurnDue reports whether the archive or kill a session asked for is
+// due: this pass read it at rest, and the request stamped the row working,
+// so that rest came after the call. A request older than the agent now in
+// the pane came from a run a restart or revive already ended, and is dropped.
+func (p *Runner) afterTurnDue(sess store.Session, current string) (bool, error) {
+	if sess.AfterTurn == "" {
+		return false, nil
+	}
+	if sess.AfterTurnAt.Before(sess.LaunchTime()) {
+		return false, ignoreDeletedSession(p.store.ClearAfterTurn(sess.ID))
+	}
+	return slices.Contains(status.Resting, current), nil
 }
 
 const (

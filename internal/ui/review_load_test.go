@@ -423,3 +423,43 @@ func TestFailedDiffLoadKeepsRepoPicker(t *testing.T) {
 		t.Fatalf("r should still open, mode = %v", m.mode)
 	}
 }
+
+func TestReviewTargetsTheGroupBaseUnlessOnePicked(t *testing.T) {
+	m := buildModel(t)
+	if m.services.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	repo := gitRepoWithSecondBranch(t)
+	if err := m.services.store.CreateGroup("grp", repo); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	if err := m.services.store.SetGroupBase("grp", "feature"); err != nil {
+		t.Fatalf("set base: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "based", repo, "grp")
+	m.selectSessionRow(t, "based")
+	m.drainCmds(t, m.openDiff())
+	sess, ok := m.diffSession()
+	if !ok {
+		t.Fatal("no diff session")
+	}
+	load := func() uireview.LoadResult {
+		state := m.review.Snapshot()
+		msg := m.reviewLoadCmd(uireview.LoadRequest{
+			Target: reviewTarget(sess), Scope: git.ScopeBranch, Generation: state.Generation,
+			RepoRoot: state.RepoSelected, RepoRoots: []string{state.RepoSelected},
+		})()
+		return msg.(reviewLoadMsg).result
+	}
+
+	if result := load(); !strings.HasPrefix(result.Set.BaseDesc, "feature@") {
+		t.Fatalf("vs target should read the group's base, got %q (err=%v)", result.Set.BaseDesc, result.Err)
+	}
+	if err := m.services.store.SetReviewBase(sess.ID, m.review.Snapshot().RepoSelected, "main"); err != nil {
+		t.Fatal(err)
+	}
+	if result := load(); !strings.HasPrefix(result.Set.BaseDesc, "main@") {
+		t.Fatalf("a base picked in review wins over the group's, got %q", result.Set.BaseDesc)
+	}
+}

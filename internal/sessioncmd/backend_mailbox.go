@@ -19,12 +19,14 @@ func (b *Backend) Rename(ctx context.Context, sessionID, name string) (string, e
 	if err := validSession(sessionID); err != nil {
 		return "", err
 	}
-	interval := runtime.Config.PollInterval.Duration
-	awake, err := runtime.Store.ManagerAwake(time.Now(), interval)
+	// Whether anyone is home is read before the name is queued, so a
+	// manager that cannot be reached at all is reported instead of a name
+	// left pending behind an error.
+	awake, err := runtime.Store.ManagerAwake(time.Now())
 	if err != nil {
 		return "", err
 	}
-	return renameMailbox(ctx, runtime.Hooks, sessionID, name, awake, interval)
+	return renameMailbox(ctx, runtime.Hooks, sessionID, name, awake)
 }
 
 func (b *Backend) ReviewRepo(sessionID, target string) (string, error) {

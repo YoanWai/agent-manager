@@ -192,7 +192,7 @@ func overlayHost(snap *Snapshot) {
 	snap.MemOK = true
 	snap.DiskTotal = s.DiskTotal
 	snap.DiskUsed = s.DiskTotal - s.DiskFree
-	snap.DiskFree = s.DiskFree
+	snap.DiskAvailable = s.DiskFree
 	snap.DiskPercent = usedPercent(snap.DiskUsed, s.DiskTotal)
 	snap.DiskOK = true
 }

@@ -25,7 +25,7 @@ func TestSessionsOwnerFailureDoesNotOpenLocalRuntime(t *testing.T) {
 	want := errors.New("owner unavailable")
 	owner := &refusingArchiveOwner{err: want}
 	sessions := NewSessionsWithArchiveOwner(t.TempDir(), CLIVocabulary(), owner)
-	sessions.loadConfig = func(string) (config.Config, error) {
+	sessions.loadConfig = func() (config.Config, error) {
 		t.Fatal("an explicitly routed archive must not open local config or store")
 		return config.Config{}, nil
 	}
@@ -45,7 +45,7 @@ func TestSessionOwnerPreservesArchiveAndRestore(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, "OWNER-SNAPSHOT")
-	cfg, err := h.sessions.loadConfig(h.sessions.configDir)
+	cfg, err := h.sessions.loadConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestSessionOwnerPreservesArchiveAndRestore(t *testing.T) {
 	if snapshot == "" {
 		t.Fatal("live pane was not snapshotted")
 	}
-	if _, err := h.sessions.Archive(h.caller.ID, h.caller.ID, true); err == nil || !strings.Contains(err.Error(), "archive itself") {
+	if _, err := h.sessions.Archive(h.caller.ID, h.caller.ID, true); err == nil || !strings.Contains(err.Error(), "archive_self") {
 		t.Fatalf("self archive = %v", err)
 	}
 	restored, err := h.sessions.Archive(h.caller.ID, created.ID, false)

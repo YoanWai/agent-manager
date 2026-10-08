@@ -5,7 +5,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
-	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/status"
@@ -64,8 +63,6 @@ func buildModel(t *testing.T) *harness {
 		t.Skip("tmux not installed")
 	}
 	cfg := config.Config{
-		SessionKeys: keybind.DefaultSession(),
-		ListKeys:    keybind.DefaultList(),
 		Tools: map[string]config.Tool{
 			"claude": {Command: "cat", DefaultStatus: status.Idle},
 			// Parks the terminal cursor below its footer and paints the
@@ -208,7 +205,7 @@ func (h *harness) spawnSession(toolName, name, dir, group, prompt string, autoNa
 		if err != nil {
 			return err
 		}
-		dir, branch, err = h.gitDrv.AddWorktree(repo, name)
+		dir, branch, err = h.gitDrv.AddWorktree(repo, name, "")
 		if err != nil {
 			return err
 		}

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/status"
@@ -15,7 +16,7 @@ import (
 
 func harnessRuntime(t *testing.T, h *sessionHarness) Runtime {
 	t.Helper()
-	cfg, err := h.sessions.loadConfig(h.sessions.configDir)
+	cfg, err := h.sessions.loadConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -399,5 +400,79 @@ func TestLifecycleLaunchReportsFailedPaneRollback(t *testing.T) {
 	}
 	if !h.driver.Exists(sess.ID) {
 		t.Fatal("rollback fixture did not leave a pane")
+	}
+}
+
+// An agent that asked to be archived once its turn ends goes the way the
+// archive key sends it: it and the shells nested under it stop, their last
+// screens stay, and the request is spent.
+func TestLifecycleEndAfterTurnArchivesTheSessionAndItsShells(t *testing.T) {
+	h := newSessionHarness(t)
+	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Tool: "resting", Name: "alpha"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	shell, err := h.terminals.Create(created.ID, CreateTerminalOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, "❯")
+	lifecycle, err := NewLifecycle(harnessRuntime(t, h))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.store.RequestAfterTurn(created.ID, store.AfterTurnArchive, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	// The request stamps the row working, so nothing ends until a rest.
+	if result, err := lifecycle.EndAfterTurn(created.ID); err != nil || result.Action != "" || !h.driver.Exists(created.ID) {
+		t.Fatalf("a working session was ended: %+v, %v", result, err)
+	}
+	if err := h.store.UpdateStatus(created.ID, status.Idle); err != nil {
+		t.Fatal(err)
+	}
+	result, err := lifecycle.EndAfterTurn(created.ID)
+	if err != nil || result.Action != store.AfterTurnArchive || len(result.Sessions) != 2 {
+		t.Fatalf("EndAfterTurn = %+v, %v", result, err)
+	}
+	for _, id := range []string{created.ID, shell.ID} {
+		got, err := h.store.Get(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !got.Archived || h.driver.Exists(id) || got.AfterTurn != "" {
+			t.Fatalf("%s: archived=%v running=%v pending=%q", got.Name, got.Archived, h.driver.Exists(id), got.AfterTurn)
+		}
+	}
+	if snapshot, _ := h.store.Snapshot(created.ID); !strings.Contains(snapshot, "❯") {
+		t.Fatalf("the archived row lost its last screen: %q", snapshot)
+	}
+}
+
+func TestLifecycleEndAfterTurnKillsAndKeepsTheRow(t *testing.T) {
+	h := newSessionHarness(t)
+	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Tool: "resting", Name: "alpha"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lifecycle, err := NewLifecycle(harnessRuntime(t, h))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.store.RequestAfterTurn(created.ID, store.AfterTurnKill, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.store.UpdateStatus(created.ID, status.Finished); err != nil {
+		t.Fatal(err)
+	}
+	if result, err := lifecycle.EndAfterTurn(created.ID); err != nil || result.Action != store.AfterTurnKill {
+		t.Fatalf("EndAfterTurn = %+v, %v", result, err)
+	}
+	got, err := h.store.Get(created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h.driver.Exists(created.ID) || got.Status != status.Dead || got.Archived || got.AfterTurn != "" {
+		t.Fatalf("after its turn: running=%v status=%q archived=%v pending=%q", h.driver.Exists(created.ID), got.Status, got.Archived, got.AfterTurn)
 	}
 }

@@ -53,7 +53,7 @@ func (tr toolRules) isBusy(pane string) bool {
 	}
 	lines := strings.Split(region, "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
-		if !tr.busyLine.MatchString(strings.TrimRight(lines[i], " \t")) {
+		if !tr.busyLine.MatchString(unwrapped(lines, i)) {
 			continue
 		}
 		return tr.turnEnd == nil || tr.lastTurnEndIndex(lines) <= i
@@ -124,6 +124,20 @@ func (tr toolRules) withoutInputRows(lines []string) string {
 // wrapsAbove reports whether a row belongs to the block above it rather
 // than starting one: tools indent what wraps and leave the blank rows
 // between blocks empty.
+// unwrapped joins row i with the indented rows a narrow pane wraps it onto,
+// since a busy line's telling words sit at its end.
+func unwrapped(lines []string, i int) string {
+	row := strings.TrimRight(lines[i], " \t")
+	for _, next := range lines[i+1:] {
+		body := strings.TrimSpace(next)
+		if body == "" || !wrapsAbove(next) {
+			break
+		}
+		row += " " + body
+	}
+	return row
+}
+
 func wrapsAbove(row string) bool {
 	body := strings.TrimLeftFunc(row, unicode.IsSpace)
 	return body == "" || len(body) < len(row)

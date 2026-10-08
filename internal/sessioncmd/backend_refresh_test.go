@@ -9,16 +9,25 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 )
 
-func TestOwnedBackendReloadsBindingsBeforeCreatingATerminal(t *testing.T) {
-	h := newSessionHarness(t)
-	initial := "[keybindings.session]\nreview = \"ctrl+g\"\n"
-	if err := os.WriteFile(filepath.Join(h.sessions.configDir, "config.toml"), []byte(initial), 0o644); err != nil {
+func storeReviewKey(t *testing.T, h *sessionHarness, spec string) {
+	t.Helper()
+	key, err := keybind.Parse(spec)
+	if err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := config.LoadDir(h.sessions.configDir)
+	if err := h.store.SetKeys(keybind.DefaultSession().With(keybind.Review, keybind.Keys(key))); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestOwnedBackendReloadsBindingsBeforeCreatingATerminal(t *testing.T) {
+	h := newSessionHarness(t)
+	storeReviewKey(t, h, "ctrl+g")
+	cfg, err := config.Default()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,10 +38,7 @@ func TestOwnedBackendReloadsBindingsBeforeCreatingATerminal(t *testing.T) {
 	if _, err := sessions.List(h.caller.ID); err != nil {
 		t.Fatal(err)
 	}
-	updated := strings.Replace(initial, `review = "ctrl+g"`, `review = "alt+g"`, 1)
-	if err := os.WriteFile(filepath.Join(h.sessions.configDir, "config.toml"), []byte(updated), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	storeReviewKey(t, h, "alt+g")
 	terminals := NewTerminalsWithBackend(backend, MCPVocabulary())
 	if _, err := terminals.Create(h.caller.ID, CreateTerminalOptions{}); err != nil {
 		t.Fatal(err)
@@ -55,31 +61,30 @@ func TestOwnedBackendReloadsBindingsBeforeCreatingATerminal(t *testing.T) {
 	}
 }
 
-func TestOwnedBackendCanOpenAfterConfigurationIsRepaired(t *testing.T) {
+func TestOwnedBackendCanOpenAfterItsStoreIsRepaired(t *testing.T) {
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux not installed")
 	}
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.toml")
-	if err := os.WriteFile(path, []byte("[tools"), 0o644); err != nil {
+	dir := filepath.Join(t.TempDir(), "agent-manager")
+	if err := os.WriteFile(dir, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	backend := OpenBackend(dir)
 	defer backend.Close()
 	if _, err := backend.Lifecycle(); err == nil {
-		t.Fatal("malformed configuration was accepted")
+		t.Fatal("a config directory that is a file was accepted")
 	}
-	if err := os.WriteFile(path, []byte(""), 0o644); err != nil {
+	if err := os.Remove(dir); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := backend.Lifecycle(); err != nil {
-		t.Fatalf("backend retained the repaired configuration error: %v", err)
+		t.Fatalf("backend retained the repaired open error: %v", err)
 	}
 }
 
 func TestBorrowedBackendReadsCoordinationFromItsStore(t *testing.T) {
 	h := newSessionHarness(t)
-	cfg, err := config.LoadDir(h.sessions.configDir)
+	cfg, err := config.Default()
 	if err != nil {
 		t.Fatal(err)
 	}

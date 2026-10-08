@@ -46,6 +46,7 @@ type Snapshot struct {
 	ListedAt                   time.Time
 	Groups                     []string
 	GroupPaths, GroupWorktrees map[string]string
+	GroupBases                 map[string]string
 	ArchivedGroups             map[string]bool
 	Snap                       sysstat.Snapshot
 	SnapOK                     bool
@@ -58,6 +59,9 @@ type Snapshot struct {
 	TmuxSocket                 string
 	LeadingManager             bool
 	FocusID                    string
+	// TurnsEnded are the sessions whose archive or kill asked for after
+	// their turn is due: this pass read each at rest after the request.
+	TurnsEnded []string
 }
 
 type Result struct {
@@ -90,7 +94,7 @@ func New(deps Dependencies, opts Options) *Runner {
 }
 
 func OptionsFromConfig(cfg config.Config) Options {
-	opts := Options{Interval: cfg.PollInterval.Duration, StatusSources: map[string]string{}, SessionStores: map[string]string{}, MCPStyles: map[string]string{}, ShellTools: map[string]bool{}, Binaries: NewToolBinaries(cfg)}
+	opts := Options{Interval: config.PollInterval, StatusSources: map[string]string{}, SessionStores: map[string]string{}, MCPStyles: map[string]string{}, ShellTools: map[string]bool{}, Binaries: NewToolBinaries(cfg)}
 	for name, tool := range cfg.Tools {
 		opts.StatusSources[name] = tool.StatusSource
 		opts.SessionStores[name] = tool.SessionStore

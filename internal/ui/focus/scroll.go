@@ -26,7 +26,12 @@ type RegionOutcome struct {
 // Scroll moves the target by wheel delta. Negative delta moves into history,
 // matching the existing focused-pane wheel convention.
 func (m *Model) Scroll(delta int, sessionID string, rows int) *RegionRequest {
-	offset := m.scroll - delta*scrollStep
+	return m.ScrollLines(delta*scrollStep, sessionID, rows)
+}
+
+// ScrollLines moves the target by whole lines, the step page keys take.
+func (m *Model) ScrollLines(lines int, sessionID string, rows int) *RegionRequest {
+	offset := m.scroll - lines
 	offset = min(max(offset, 0), m.pane.history)
 	if offset == m.scroll {
 		return nil

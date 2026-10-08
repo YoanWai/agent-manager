@@ -23,9 +23,12 @@ func testContext(width int) Context {
 		ArrowStep:   true,
 		Width:       width,
 		Glyphs: Glyphs{
-			RowMenu: "[…]",
-			Reorder: "⠿",
+			RowMenu:          "[…]",
+			Reorder:          "⠿",
+			AfterTurnArchive: "↓",
+			AfterTurnKill:    "■",
 		},
+		QuickKeys:    QuickKeys{Model: "ctrl+l", Effort: "ctrl+x", Profile: "ctrl+y"},
 		CursorMarker: testCursorMarker,
 		Styles: Styles{
 			Section: lipgloss.NewStyle().Bold(true),

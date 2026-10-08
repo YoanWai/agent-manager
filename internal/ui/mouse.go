@@ -135,12 +135,18 @@ func (m *Model) handleMousePress(msg tea.MouseMsg, ctx uirail.MouseContext) (tea
 		}
 		return m, nil
 	}
+	if m.mode == modeForm {
+		return m.handleFormClick(msg.X, msg.Y)
+	}
 	if m.split.resizeMode || m.mode != modeList {
 		return m, nil
 	}
 	if m.notices.noticeHit.contains(msg.X, msg.Y) && !m.rail.Searching() {
 		m.openNotices("")
 		return m, nil
+	}
+	if hit, ok := m.quickHitAt(msg.X, msg.Y); ok {
+		return m, m.handleQuickClick(hit)
 	}
 	return m.applyRailDecision(m.rail.Mouse(msg, m.displayedRail, ctx))
 }
@@ -162,6 +168,13 @@ func (m *Model) handleMouseWheel(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			m.review.Wheel(-1, m.diffCodeHeight())
 		case tea.MouseButtonWheelDown:
 			m.review.Wheel(1, m.diffCodeHeight())
+		}
+	case modeNotices:
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			m.scrollNotice(m.activeNotices(), -noticeWheelRows)
+		case tea.MouseButtonWheelDown:
+			m.scrollNotice(m.activeNotices(), noticeWheelRows)
 		}
 	}
 	return m, nil

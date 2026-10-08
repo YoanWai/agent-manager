@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/catalog"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -36,6 +37,8 @@ type Sessions struct {
 	commands
 	newGit       func() (*git.Driver, error)
 	archiveOwner ArchiveOwner
+	// loadCatalog is swapped in tests.
+	loadCatalog func(configDir, toolName string, tool config.Tool) (catalog.Catalog, error)
 }
 
 func NewSessions(configDir string, words Vocabulary) *Sessions {
@@ -47,15 +50,17 @@ func NewSessionsWithBackend(backend *Backend, words Vocabulary) *Sessions {
 		panic("session command backend is required")
 	}
 	return &Sessions{
-		commands: commands{words: words, backend: backend},
-		newGit:   backend.gitDriver,
+		commands:    commands{configDir: backend.configDir, words: words, backend: backend},
+		newGit:      backend.gitDriver,
+		loadCatalog: loadCatalog,
 	}
 }
 
 func newSessions(configDir string, words Vocabulary, newDriver func() (*tmux.Driver, error), newGit func() (*git.Driver, error)) *Sessions {
 	return &Sessions{
-		commands: commands{configDir: configDir, words: words, newDriver: newDriver, loadConfig: config.LoadDir},
-		newGit:   newGit,
+		commands:    commands{configDir: configDir, words: words, newDriver: newDriver, loadConfig: config.Default},
+		newGit:      newGit,
+		loadCatalog: loadCatalog,
 	}
 }
 
@@ -107,7 +112,7 @@ func (s *Sessions) List(sessionID string) ([]Session, error) {
 		return nil, err
 	}
 	defer runtime.Close()
-	if _, err := runtime.caller(sessionID); err != nil {
+	if _, err := runtime.optionalCaller(sessionID); err != nil {
 		return nil, err
 	}
 	stored, err := runtime.store.ListSessions(true)
@@ -135,7 +140,7 @@ func (s *Sessions) Read(sessionID, targetID string) (SessionScreen, error) {
 		return SessionScreen{}, err
 	}
 	defer runtime.Close()
-	if _, err := runtime.caller(sessionID); err != nil {
+	if _, err := runtime.optionalCaller(sessionID); err != nil {
 		return SessionScreen{}, err
 	}
 	target, err := runtime.agent(targetID)

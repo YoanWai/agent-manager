@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/status"
+	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	tea "github.com/charmbracelet/bubbletea"
@@ -231,10 +232,15 @@ func (m *Model) leaveFocusMode() tea.Cmd {
 	return nil
 }
 
-// handleFocusKey forwards every key into the focused pane. The session key
-// table holds the exceptions, the same ones a real attach gets: detach
-// returns to the list, review opens the diff and editor the directory.
-// Every plain character - q included - reaches the agent.
+// focusPagesScrollback reads the Focus policy for the footer and status
+// line, which name the page keys only while they page.
+func (m *Model) focusPagesScrollback(sess store.Session) bool {
+	return m.focusPane.PagesScrollback(sess.ID)
+}
+
+// handleFocusKey forwards focused input to the pane except for session
+// actions and paging a normal-screen pane's history. Every plain
+// character, q included, still reaches the agent.
 func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	sess, ok := m.selected()
 	if !ok {
@@ -255,6 +261,11 @@ func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.sendFocusReport(result.SendReport)
 		}
 		return m, m.leaveFocusMode()
+	case uifocus.ScrollPane:
+		if result.Region == nil {
+			return m, nil
+		}
+		return m, m.focusRegionRequestCmd(*result.Region)
 	case uifocus.OpenEditor:
 		return m.openEditor()
 	case uifocus.OpenReview:

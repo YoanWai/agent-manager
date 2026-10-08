@@ -11,10 +11,15 @@ func TestCLIVocabulary(t *testing.T) {
 		CreateGroup:    "agent-manager create-group",
 		CreateTerminal: "agent-manager terminal create",
 		SpawnTool:      "agent-manager spawn --tool",
+		SpawnModel:     "agent-manager spawn --model",
+		SpawnEffort:    "agent-manager spawn --effort",
+		SpawnProfile:   "agent-manager spawn --profile",
 		Revive:         "agent-manager revive",
 		Restore:        "agent-manager archive --restore",
 		Send:           "agent-manager send",
 		Read:           "agent-manager read",
+		ArchiveSelf:    "agent-manager archive-self",
+		KillSelf:       "agent-manager kill-self",
 	}
 	if got := CLIVocabulary(); got != want {
 		t.Fatalf("CLIVocabulary() = %+v, want %+v", got, want)

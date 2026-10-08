@@ -14,6 +14,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/report"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
+	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -55,10 +56,13 @@ type listSessionsArgs struct{}
 type createSessionArgs struct {
 	Name      string  `json:"name,omitempty" jsonschema:"kebab-case name for the new session, 2-4 words naming the work it will do (e.g. payments-retry-fix); leave empty only when the task is unknown, and the new agent will name itself"`
 	Prompt    string  `json:"prompt,omitempty" jsonschema:"first task to hand the new agent, written as a full instruction; it starts idle when empty"`
-	Tool      string  `json:"tool,omitempty" jsonschema:"agent CLI to run, such as claude, codex, opencode, gemini or grok; defaults to the caller's CLI, and is required when the caller is a terminal; call list_sessions to see which are in use"`
+	Tool      string  `json:"tool,omitempty" jsonschema:"agent CLI to run, such as claude, codex, opencode, gemini or grok; defaults to the caller's CLI, or to the one picked in settings when the caller is a terminal; call list_sessions to see which are in use"`
 	Group     *string `json:"group,omitempty" jsonschema:"existing group path to file the session under; pass an empty string for the root group; defaults to this agent's group; call list_groups for the existing ones"`
 	Directory string  `json:"directory,omitempty" jsonschema:"existing directory the session works in; defaults to this agent's own directory, or to the selected group's inherited path when group is set"`
 	Worktree  *bool   `json:"worktree,omitempty" jsonschema:"true gives the session its own git worktree and branch off the directory's repo, which is what keeps parallel agents from overwriting each other; omit to inherit the group's default"`
+	Model     string  `json:"model,omitempty" jsonschema:"model to run the CLI on, one it lists; omit to keep the CLI's own default, which is what the user set up; a wrong name is refused with the models the CLI lists"`
+	Effort    string  `json:"effort,omitempty" jsonschema:"reasoning effort, one the chosen model takes; omit to keep the CLI's own"`
+	Profile   string  `json:"profile,omitempty" jsonschema:"profile to launch the CLI under, for a CLI that has them (hermes); omit for the CLI's active one"`
 }
 
 type sessionTargetArgs struct {
@@ -73,6 +77,10 @@ type sendSessionArgs struct {
 type archiveSessionArgs struct {
 	SessionID string `json:"session_id" jsonschema:"session id returned by list_sessions"`
 	Archived  *bool  `json:"archived,omitempty" jsonschema:"true archives the session out of the active list, false restores it; defaults to true"`
+}
+
+type endSelfArgs struct {
+	Cancel bool `json:"cancel,omitempty" jsonschema:"true withdraws the archive or kill this session has pending instead of asking for one"`
 }
 
 type taskArgs struct {
@@ -176,6 +184,8 @@ type sessionCommands interface {
 	Revive(sessionID, targetID string) (sessioncmd.Session, error)
 	Kill(sessionID, targetID string) (sessioncmd.Session, error)
 	Archive(sessionID, targetID string, archived bool) (sessioncmd.Session, error)
+	EndAfterTurn(sessionID, action string) (sessioncmd.AfterTurn, error)
+	CancelAfterTurn(sessionID string) (sessioncmd.AfterTurn, error)
 	Tasks(sessionID string) ([]sessioncmd.Task, error)
 	CreateTask(sessionID, title, body string, dependsOn []string) (sessioncmd.Task, error)
 	ClaimTask(sessionID, taskID string) (sessioncmd.Task, error)
@@ -254,6 +264,9 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		&mcp.Implementation{Name: "agent-manager", Version: version},
 		&mcp.ServerOptions{Instructions: serverInstructions(proactive)},
 	)
+	// Several CLIs register this server at user scope, so one with no caller is
+	// that CLI running outside Agent Manager, and the workspace stays closed to it.
+	noCaller := sessioncmd.RequireCaller(sessionID)
 	spawnWhen := "Call it only when the user asks for parallel work, another agent or an independent opinion. "
 	taskListWhen := "list reads it: call it when the user asks about shared work, and before reporting progress on a fleet. "
 	if proactive {
@@ -336,6 +349,9 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 			"Reuse a relevant idle session instead of creating another; otherwise call create_session.",
 		Annotations: toolAnnotations(true, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listSessionsArgs) (*mcp.CallToolResult, listSessionsOutput, error) {
+		if noCaller != nil {
+			return nil, listSessionsOutput{}, noCaller
+		}
 		listed, err := sessions.List(sessionID)
 		if err != nil {
 			return nil, listSessionsOutput{}, err
@@ -352,6 +368,9 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 			"Follow it with read_session and send_session; use create_terminal instead for a plain shell.",
 		Annotations: toolAnnotations(false, false, true),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args createSessionArgs) (*mcp.CallToolResult, sessioncmd.Session, error) {
+		if noCaller != nil {
+			return nil, sessioncmd.Session{}, noCaller
+		}
 		created, err := sessions.Create(sessionID, sessioncmd.CreateSessionOptions{
 			Tool:      args.Tool,
 			Name:      args.Name,
@@ -359,6 +378,9 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 			Directory: args.Directory,
 			Prompt:    args.Prompt,
 			Worktree:  args.Worktree,
+			Model:     args.Model,
+			Effort:    args.Effort,
+			Profile:   args.Profile,
 		})
 		if err != nil {
 			return nil, sessioncmd.Session{}, err
@@ -373,6 +395,9 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 			"A stopped session returns the last screen Agent Manager captured.",
 		Annotations: toolAnnotations(true, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args sessionTargetArgs) (*mcp.CallToolResult, sessioncmd.SessionScreen, error) {
+		if noCaller != nil {
+			return nil, sessioncmd.SessionScreen{}, noCaller
+		}
 		screen, err := sessions.Read(sessionID, args.SessionID)
 		if err != nil {
 			return nil, sessioncmd.SessionScreen{}, err
@@ -423,6 +448,9 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 			"Follow it with read_session to see what the agent produced.",
 		Annotations: toolAnnotations(true, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args waitSessionArgs) (*mcp.CallToolResult, sessioncmd.WaitResult, error) {
+		if noCaller != nil {
+			return nil, sessioncmd.WaitResult{}, noCaller
+		}
 		result, err := sessions.Wait(ctx, sessionID, args.SessionID, args.Until, time.Duration(args.TimeoutS)*time.Second)
 		if err != nil {
 			return nil, sessioncmd.WaitResult{}, err
@@ -448,7 +476,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		Name: "kill_session",
 		Description: "Stop another agent's process, ending whatever it is doing. The row stays with its last screen and can be brought back with revive_session. " +
 			"Reserve it for a session whose work is finished or has gone wrong, and prefer send_session to redirect an agent that is still useful. " +
-			"Killing interrupts work in progress on the user's machine, so ask first unless the user asked for it.",
+			"Killing interrupts work in progress on the user's machine, so ask first unless the user asked for it. To stop yourself, call kill_self.",
 		Annotations: toolAnnotations(false, true, true),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args sessionTargetArgs) (*mcp.CallToolResult, sessioncmd.Session, error) {
 		killed, err := sessions.Kill(sessionID, args.SessionID)
@@ -461,7 +489,8 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "archive_session",
 		Description: "File a finished session out of the active list, or restore an archived one with archived false. " +
-			"Use it to keep the user's list readable once a session's work is done; the row and its last screen are kept, and a running pane keeps running.",
+			"Use it to keep the user's list readable once a session's work is done; the row and its last screen are kept, and a running pane keeps running. " +
+			"To archive yourself, call archive_self.",
 		Annotations: toolAnnotations(false, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args archiveSessionArgs) (*mcp.CallToolResult, sessioncmd.Session, error) {
 		archived := true
@@ -474,6 +503,38 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		}
 		return textContent(sessioncmd.FormatArchiveState(updated)), updated, nil
 	})
+
+	endSelf := func(action string) func(context.Context, *mcp.CallToolRequest, endSelfArgs) (*mcp.CallToolResult, sessioncmd.AfterTurn, error) {
+		return func(ctx context.Context, req *mcp.CallToolRequest, args endSelfArgs) (*mcp.CallToolResult, sessioncmd.AfterTurn, error) {
+			var result sessioncmd.AfterTurn
+			var err error
+			if args.Cancel {
+				result, err = sessions.CancelAfterTurn(sessionID)
+			} else {
+				result, err = sessions.EndAfterTurn(sessionID, action)
+			}
+			if err != nil {
+				return nil, sessioncmd.AfterTurn{}, err
+			}
+			return textContent(sessioncmd.FormatAfterTurn(result)), result, nil
+		}
+	}
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "archive_self",
+		Description: "Archive this session once the turn making this call ends: Agent Manager stops its agent, keeps the last screen, and files the row out of the active list, the way the user's archive key does. " +
+			"Call it when the user asks you to archive yourself once the work is done, then finish your reply. Whatever the turn ends on, finished, a question to the user or an error, the archive follows it. " +
+			"Pass cancel true to withdraw a pending archive or kill. archive_session is for other sessions.",
+		Annotations: toolAnnotations(false, true, false),
+	}, endSelf(store.AfterTurnArchive))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "kill_self",
+		Description: "Stop this session's agent once the turn making this call ends, keeping its row and last screen in the list so revive_session can bring it back, the way the user's kill key does. " +
+			"Call it when the user asks you to kill or stop yourself once the work is done, then finish your reply. Whatever the turn ends on, finished, a question to the user or an error, the kill follows it. " +
+			"Pass cancel true to withdraw a pending archive or kill. kill_session is for other sessions.",
+		Annotations: toolAnnotations(false, true, true),
+	}, endSelf(store.AfterTurnKill))
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "task",
@@ -573,6 +634,9 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 			"Call before passing a group to create_session or create_terminal, since a group must already exist.",
 		Annotations: toolAnnotations(true, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listGroupsArgs) (*mcp.CallToolResult, listGroupsOutput, error) {
+		if noCaller != nil {
+			return nil, listGroupsOutput{}, noCaller
+		}
 		listed, err := sessions.Groups(sessionID)
 		if err != nil {
 			return nil, listGroupsOutput{}, err

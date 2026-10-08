@@ -1,0 +1,37 @@
+{
+ "model_list": {
+  "models": [
+   {
+    "modelId": "muse-spark-1.3",
+    "displayLabel": "Muse Spark 1.3",
+    "isDefault": false,
+    "isActive": false,
+    "providerId": "meta",
+    "profileId": null,
+    "releaseDate": "2026-09-01",
+    "variants": [
+     "minimal",
+     "low",
+     "medium",
+     "high",
+     "xhigh",
+     "max",
+     "ultra"
+    ]
+   },
+   {
+    "modelId": "muse-spark-1.2",
+    "displayLabel": "Muse Spark 1.2",
+    "isDefault": true,
+    "isActive": false,
+    "providerId": "meta",
+    "profileId": null,
+    "releaseDate": "2026-07-01",
+    "variants": "unknown"
+   }
+  ],
+  "profileId": null,
+  "providerId": "meta",
+  "source": "liveProvider"
+ }
+}

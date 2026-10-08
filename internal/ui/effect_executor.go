@@ -20,7 +20,7 @@ type effectServices struct {
 	installSendText       func(*tmux.Driver, string, string) (tmux.SendResult, error)
 	installSessionExists  func(*tmux.Driver, string) (bool, error)
 	pasteInput            func(*tmux.Driver, string, string) error
-	saveKeys              func(string, keybind.Table) error
+	saveKeys              func(keybind.Table) error
 	lifecycle             *sessioncmd.Lifecycle
 	cfg                   config.Config
 	store                 *store.Store
@@ -59,7 +59,7 @@ func (m *Model) captureEffect(request effectRequest) func() (effectResult, error
 	}
 	services.saveKeys = m.services.saveKeys
 	if services.saveKeys == nil {
-		services.saveKeys = config.SaveKeys
+		services.saveKeys = m.services.store.SetKeys
 	}
 	if m.poller != nil {
 		services.runner = m.poller.runner
@@ -77,12 +77,16 @@ func (m *Model) captureEffect(request effectRequest) func() (effectResult, error
 			return services.runNoticeDismiss(request)
 		case splitSaveRequest:
 			return services.runSplitSave(request)
+		case choiceSaveRequest:
+			return services.runChoiceSave(request)
 		case installStartRequest:
 			return services.runInstallStart(request)
 		case installSettleRequest:
 			return services.runInstallSettle(request)
 		case lifecycleRequest:
 			return services.runLifecycle(request)
+		case afterTurnRequest:
+			return services.runAfterTurn(request)
 		case railRequest:
 			return services.runRail(request)
 		case forkRequest:

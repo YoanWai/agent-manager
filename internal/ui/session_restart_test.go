@@ -10,6 +10,28 @@ import (
 	"testing"
 )
 
+// A restart starts a fresh conversation on the model the session chose.
+func TestRestartKeepsTheSessionChoice(t *testing.T) {
+	m := buildModel(t)
+	tool := m.services.cfg.Tools["claude"]
+	tool.ModelArgs = "--model {model}"
+	tool.EffortArgs = "--effort {effort}"
+	m.services.cfg.Tools["claude"] = tool
+	if err := m.spawnSession("claude", "phoenix", t.TempDir(), "", "", false, false, config.Choice{Model: "sonnet", Effort: "high"}); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	sess := m.sessionRows()[0]
+	argsFile := filepath.Join(t.TempDir(), "launch-args")
+	tool.Command = argCaptureCommand(argsFile)
+	m.services.cfg.Tools["claude"] = tool
+	if err := m.restartSession(sess); err != nil {
+		t.Fatalf("restart: %v", err)
+	}
+	if args := readWhenWritten(t, argsFile); !strings.Contains(args, "--model\nsonnet\n--effort\nhigh") {
+		t.Fatalf("restart launch arguments = %q, want the session's model and effort", args)
+	}
+}
+
 // Restart is revive's opposite number: same row, same directory, same tool,
 // but a conversation the agent has never seen. The old one is retired rather
 // than resumed, so the resume flags revive would have used stay unused.

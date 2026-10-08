@@ -69,7 +69,13 @@ func (s effectServices) runInput(request inputRequest) (effectResult, error) {
 	case inputKeys, inputMouse:
 		available := false
 		if s.watch != nil && request.command != "" {
-			available, err = s.watch.forward(request.command)
+			blocks := 1
+			if request.kind == inputMouse {
+				// The guarded report answers with one block for if-shell and
+				// one for whichever branch it ran.
+				blocks = guardedMouseReplies
+			}
+			available, err = s.watch.forwardBlocks(request.command, blocks)
 			if available && err != nil {
 				err = fmt.Errorf("focused input may have reached the pane and was not replayed: %w", err)
 			}

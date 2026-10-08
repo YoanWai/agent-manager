@@ -12,8 +12,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// guiEditors are probed on PATH when nothing is configured, in the order
-// preferred.
+// guiEditors are probed on PATH, in the order preferred: Settings offers
+// the ones found, and the first found opens when nothing is picked.
 var guiEditors = []string{"code", "cursor", "windsurf", "zed", "subl", "idea"}
 
 // detachedEditors open a window of their own and return at once, leaving
@@ -131,7 +131,7 @@ func (m *Model) handleDiffFileChecked(msg editorFileCheckedMsg) (tea.Model, tea.
 
 func (m *Model) launchEditor(editor editorLaunch, returnTo editorReturnTarget) (tea.Model, tea.Cmd) {
 	if editor.command == nil {
-		m.errBar.text = `no editor found: set editor = "code" in config.toml`
+		m.errBar.text = "no editor found: pick one in Settings > editor"
 		return m, nil
 	}
 	m.errBar.text = ""
@@ -155,20 +155,26 @@ func startEditorCmd(cmd *exec.Cmd, name, path string, returnTo editorReturnTarge
 }
 
 func (m *Model) captureEditorResolution() editorResolution {
+	resolution := detectedEditors()
+	resolution.configured = m.services.editor
+	return resolution
+}
+
+// detectedEditors captures what an unset Settings row falls back to.
+func detectedEditors() editorResolution {
 	return editorResolution{
-		configured: m.services.cfg.Editor,
-		manager:    os.Getenv("AGENT_MANAGER_EDITOR"),
-		visual:     os.Getenv("VISUAL"),
-		editor:     os.Getenv("EDITOR"),
-		gui:        slices.Clone(guiEditors),
-		lookup:     lookPath,
+		manager: os.Getenv("AGENT_MANAGER_EDITOR"),
+		visual:  os.Getenv("VISUAL"),
+		editor:  os.Getenv("EDITOR"),
+		gui:     slices.Clone(guiEditors),
+		lookup:  lookPath,
 	}
 }
 
-// resolve picks the command that opens a directory: the configured editor,
-// then a GUI editor this machine has. $VISUAL and $EDITOR come last because
-// they usually name the editor set for git commit messages, not the one a
-// project is meant to open in.
+// resolve picks the command that opens a directory: the one Settings holds,
+// then $AGENT_MANAGER_EDITOR, then a GUI editor this machine has. $VISUAL
+// and $EDITOR come last because they usually name the editor set for git
+// commit messages, not the one a project is meant to open in.
 func (r editorResolution) resolve() string {
 	for _, line := range []string{r.configured, r.manager} {
 		if line = strings.TrimSpace(line); line != "" {
@@ -203,7 +209,7 @@ func (r editorResolution) prepare(path string) editorLaunch {
 	return editorLaunch{command: command, name: editorName(line), path: path}
 }
 
-// Editor settings and environment variables are parsed as argv, never shell code.
+// Settings and environment lines are parsed as argv, never shell code.
 func editorCommand(line, path string) (*exec.Cmd, bool) {
 	argv := splitEditorLine(line)
 	if len(argv) == 0 {

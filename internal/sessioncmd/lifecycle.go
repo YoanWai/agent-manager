@@ -1,8 +1,10 @@
 package sessioncmd
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
@@ -100,7 +102,11 @@ func (l *Lifecycle) discardWorktree(sess store.Session) {
 	if sess.WorktreeRepo == "" || l.runtime.Git == nil {
 		return
 	}
-	_, _ = l.runtime.Git.RemoveWorktreeIfClean(sess.WorktreeRepo, sess.Cwd, sess.WorktreeBranch)
+	base, err := groupBase(l.runtime.Store, sess.Group)
+	if err != nil {
+		return
+	}
+	_, _ = l.runtime.Git.RemoveWorktreeIfClean(sess.WorktreeRepo, sess.Cwd, sess.WorktreeBranch, base)
 }
 
 // Launch creates the pane before its row and rolls the pane back if the row
@@ -218,6 +224,7 @@ func (l *Lifecycle) Revive(sess store.Session, pane PaneSize) (RelaunchResult, e
 		sess.AgentLaunchedAt = launchedAt
 		return RelaunchResult{Session: sess, LaunchedAt: launchedAt, ReusedPane: true, Degraded: degraded}, nil
 	}
+	tool = tool.WithChoice(sess.Choice)
 	if err := SnapshotRelaunch(l.runtime.Store, sess, tool, sess.AgentSessionID); err != nil {
 		return RelaunchResult{}, err
 	}
@@ -242,6 +249,7 @@ func (l *Lifecycle) Restart(sess store.Session, pane PaneSize) (RelaunchResult, 
 			return RelaunchResult{}, err
 		}
 	}
+	tool = tool.WithChoice(sess.Choice)
 	baseCommand, agentSessionID := tool.Command, ""
 	if tool.SessionIDFlag != "" {
 		agentSessionID = uuid.NewString()
@@ -311,7 +319,7 @@ func (l *Lifecycle) SetArchivedForSession(callerID, targetID string, archived bo
 		return Session{}, err
 	}
 	if target.ID == callerID && archived {
-		return Session{}, errors.New("a session cannot archive itself")
+		return Session{}, fmt.Errorf("a session archives itself with %s, which waits for this turn to end", words.ArchiveSelf)
 	}
 	running := l.runtime.Driver.Exists(target.ID)
 	if archived && running {
@@ -432,6 +440,7 @@ func (l *Lifecycle) DeleteForHuman(selection DeleteSelection) (DeleteResult, err
 			l.runtime.Hooks.RemoveReviewRepo,
 			l.runtime.Hooks.RemoveReviewBase,
 			l.runtime.Hooks.RemoveReviewScope,
+			l.runtime.Hooks.RemoveSettings,
 		} {
 			if err := remove(sess.ID); err != nil {
 				return result, err
@@ -485,12 +494,74 @@ func (l *Lifecycle) cleanupDeletedWorktree(sess store.Session, result *DeleteRes
 			return
 		}
 	}
-	removed, err := l.runtime.Git.RemoveWorktreeIfClean(sess.WorktreeRepo, sess.Cwd, sess.WorktreeBranch)
+	base, err := groupBase(l.runtime.Store, sess.Group)
+	if err != nil {
+		result.Notice = "worktree cleanup: " + err.Error()
+		return
+	}
+	removed, err := l.runtime.Git.RemoveWorktreeIfClean(sess.WorktreeRepo, sess.Cwd, sess.WorktreeBranch, base)
 	if err != nil {
 		result.Notice = "worktree cleanup: " + err.Error()
 	} else if !removed {
 		result.Notice = "worktree kept (has work): " + sess.Cwd
 	}
+}
+
+// EndAfterTurnResult names what EndAfterTurn did, so the manager can mirror
+// it in memory without reading the rows back.
+type EndAfterTurnResult struct {
+	Action   string
+	Sessions []store.Session
+}
+
+// EndAfterTurn archives or kills a session whose turn ended after it asked
+// for that, taking the same steps the archive and kill keys take. A request
+// the row no longer carries, or a session that started a new turn since the
+// pass that reported it, is left alone and returns an empty Action.
+func (l *Lifecycle) EndAfterTurn(id string) (EndAfterTurnResult, error) {
+	if err := l.requireHooks(); err != nil {
+		return EndAfterTurnResult{}, err
+	}
+	sess, err := l.runtime.Store.Get(id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return EndAfterTurnResult{}, nil
+	}
+	if err != nil {
+		return EndAfterTurnResult{}, err
+	}
+	if sess.AfterTurn == "" || !slices.Contains(status.Resting, sess.Status) {
+		return EndAfterTurnResult{}, nil
+	}
+	children, err := l.runtime.Store.Children(sess.ID)
+	if err != nil {
+		return EndAfterTurnResult{}, err
+	}
+	sessions := append([]store.Session{sess}, children...)
+	result := EndAfterTurnResult{Action: sess.AfterTurn}
+	if sess.AfterTurn == store.AfterTurnArchive {
+		archived, err := l.ArchiveForHuman(ArchiveSelection{Sessions: sessions})
+		if err != nil {
+			return EndAfterTurnResult{}, err
+		}
+		result.Sessions = archived.Sessions
+	} else {
+		for _, each := range sessions {
+			killed, err := l.Kill(each)
+			if err != nil {
+				return EndAfterTurnResult{}, err
+			}
+			result.Sessions = append(result.Sessions, killed)
+		}
+	}
+	if err := l.runtime.Store.ClearAfterTurn(id); err != nil {
+		return EndAfterTurnResult{}, err
+	}
+	for i := range result.Sessions {
+		if result.Sessions[i].ID == id {
+			result.Sessions[i].AfterTurn, result.Sessions[i].AfterTurnAt = "", time.Time{}
+		}
+	}
+	return result, nil
 }
 
 // Capture borrows the same bound resources and operation policies with an

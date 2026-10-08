@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/YoanWai/agent-manager/internal/catalog"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/status"
@@ -31,6 +33,9 @@ type sessionHarness struct {
 const sessionConfig = `[tools.echoer]
 command = "echo"
 revive_command = "echo resumed"
+catalog = "stand-in"
+model_args = "--model {model}"
+effort_args = "--effort {effort}"
 default_status = "idle"
 activity_cutoff = "(?m)^\u276f"
 
@@ -84,15 +89,11 @@ default_status = "idle"
 command = ""
 shell = true
 default_status = "idle"
-
-[keybindings.session]
-review = "ctrl+g"
 `
 
-// testConfigLoader loads the harness config the manager would, with the
-// document's own tool blocks in place of the built-in CLIs, so a test gets
-// a pane it can predict.
-func testConfigLoader(t *testing.T, doc string) func(string) (config.Config, error) {
+// testConfigLoader stands the document's tool blocks in for the built-in
+// CLIs, so a test gets a pane it can predict.
+func testConfigLoader(t *testing.T, doc string) func() (config.Config, error) {
 	t.Helper()
 	var declared struct {
 		Tools map[string]config.Tool `toml:"tools"`
@@ -100,13 +101,8 @@ func testConfigLoader(t *testing.T, doc string) func(string) (config.Config, err
 	if _, err := toml.Decode(doc, &declared); err != nil {
 		t.Fatalf("decode the test tools: %v", err)
 	}
-	return func(dir string) (config.Config, error) {
-		cfg, err := config.LoadDir(dir)
-		if err != nil {
-			return cfg, err
-		}
-		cfg.Tools = declared.Tools
-		return cfg, nil
+	return func() (config.Config, error) {
+		return config.Config{Tools: declared.Tools}, nil
 	}
 }
 
@@ -116,9 +112,6 @@ func newStoreSessionHarness(t *testing.T) *sessionHarness {
 		t.Skip("tmux not installed")
 	}
 	configDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(sessionConfig), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
 	driver, err := tmux.NewWithSocket("amsesstest-" + uuid.NewString()[:8])
 	if err != nil {
 		t.Fatalf("tmux driver: %v", err)
@@ -178,9 +171,6 @@ func newSessionHarness(t *testing.T) *sessionHarness {
 		t.Skip("tmux not installed")
 	}
 	configDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(sessionConfig), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
 	driver, err := tmux.NewWithSocket("amsesstest-" + uuid.NewString()[:8])
 	if err != nil {
 		t.Fatalf("tmux driver: %v", err)
@@ -212,6 +202,12 @@ func newSessionHarness(t *testing.T) *sessionHarness {
 	loadConfig := testConfigLoader(t, sessionConfig)
 	sessions := newSessions(configDir, MCPVocabulary(), newDriver, git.New)
 	sessions.loadConfig = loadConfig
+	sessions.loadCatalog = func(string, string, config.Tool) (catalog.Catalog, error) {
+		return catalog.Catalog{Models: []catalog.Model{
+			{ID: "small", Default: true},
+			{ID: "big", Efforts: []string{"low", "high"}},
+		}}, nil
+	}
 	terminals := newTerminals(configDir, MCPVocabulary(), newDriver)
 	terminals.loadConfig = loadConfig
 	h := &sessionHarness{
@@ -278,5 +274,28 @@ func TestSessionHarnessCleanupRemovesSocket(t *testing.T) {
 	}
 	if _, err := os.Stat(socket); !os.IsNotExist(err) {
 		t.Fatalf("socket %q survived harness cleanup: %v", socket, err)
+	}
+}
+func TestSessionsWithNoCallerListAndReadButStillRefuseToMessage(t *testing.T) {
+	h := newSessionHarness(t)
+	listed, err := h.sessions.List("")
+	if err != nil {
+		t.Fatalf("List with no caller: %v", err)
+	}
+	if len(listed) != 1 || listed[0].ID != h.caller.ID || listed[0].Self {
+		t.Fatalf("listed with no caller = %+v", listed)
+	}
+	groups, err := h.sessions.Groups("")
+	if err != nil || len(groups) != 1 || groups[0].Path != "backend" {
+		t.Fatalf("Groups with no caller = %+v, %v", groups, err)
+	}
+	if _, err := h.sessions.Read("", h.caller.ID); err != nil {
+		t.Fatalf("Read with no caller: %v", err)
+	}
+	if _, err := h.sessions.Send("", h.caller.ID, "hello"); err == nil || !strings.Contains(err.Error(), "not inside an Agent Manager session") {
+		t.Fatalf("Send with no caller = %v, want the missing caller named", err)
+	}
+	if _, err := h.sessions.Kill("", h.caller.ID); err == nil || !strings.Contains(err.Error(), "not inside an Agent Manager session") {
+		t.Fatalf("Kill with no caller = %v, want the missing caller named", err)
 	}
 }

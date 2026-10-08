@@ -22,7 +22,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if mm, ok := model.(*Model); ok {
 		mm.flushPendingNotice()
 		mm.prepareFrame()
-		return mm, tea.Batch(cmd, mm.syncMouseCapture(), mm.nextEffectCmd())
+		return mm, tea.Batch(cmd, mm.syncMouseCapture(), mm.refreshSpawnBase(), mm.nextEffectCmd())
 	}
 	m.prepareFrame()
 	return model, tea.Batch(cmd, m.syncMouseCapture(), m.nextEffectCmd())
@@ -51,7 +51,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		// Re-assert the terminal backdrop: a reattach or a fresh outer
 		// terminal delivers a size message and may carry stale colors.
-		SyncTerminalBackground()
+		SyncTerminalColors()
 		m.publishPaneSize()
 		m.resizeSessions()
 		if m.fullFocus() {
@@ -101,31 +101,45 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(m.previewCmd(sess, m.focusPane.PreviewGeneration()), m.previewTick())
 
+	case baseFetchedMsg:
+		return m, m.recordBaseFetch(msg)
+
 	case refreshMsg:
-		if !msg.listedAt.IsZero() && !m.effects.latestObservation.IsZero() && !msg.listedAt.After(m.effects.latestObservation) {
+		// A listing older than a committed mutation or a newer listing keeps
+		// its rows out, but still carries focus consumed from a notification,
+		// the turns it saw end and its pane facts.
+		fenced := !msg.listedAt.IsZero() && !m.effects.latestObservation.IsZero() && !msg.listedAt.After(m.effects.latestObservation)
+		staleListing := fenced || (!msg.listedAt.IsZero() && msg.listedAt.Before(m.lastListedAt))
+		if !staleListing && !msg.listedAt.IsZero() {
+			m.lastListedAt = msg.listedAt
+		}
+		if fenced {
 			m.requestRefresh()
-			return m, nil
 		}
 		m.startup.booting = false
 		m.ageError()
-		// The focused session can die or vanish under us; fall back to the
-		// list rather than typing into nothing.
-		sessions := m.dropRecentlyRemoved(m.keepPendingLaunches(msg.sessions, msg.listedAt), msg.listedAt)
-		stripDeletedGroups(&msg, m.ledger.goneGroups)
 		var focusExit tea.Cmd
-		if m.mode == modeFocus {
-			if sess, ok := m.selected(); !ok || sessionGone(sessions, sess.ID) {
-				focusExit = m.leaveFocus()
+		if !staleListing {
+			// The focused session can die or vanish under us; fall back to the
+			// list rather than typing into nothing.
+			sessions := m.dropRecentlyRemoved(m.keepPendingLaunches(msg.sessions, msg.listedAt), msg.listedAt)
+			stripDeletedGroups(&msg, m.ledger.goneGroups)
+			if m.mode == modeFocus {
+				if sess, ok := m.selected(); !ok || sessionGone(sessions, sess.ID) {
+					focusExit = m.leaveFocus()
+				}
 			}
+			m.workspace.sessions = sessions
+			m.workspace.groups = msg.groups
+			m.workspace.groupPaths = msg.groupPaths
+			m.workspace.groupWorktrees = msg.groupWorktrees
+			m.workspace.groupBases = msg.groupBases
+			m.workspace.archivedGroups = msg.archivedGroups
 		}
-		m.workspace.sessions = sessions
+		m.endAfterTurns(msg.turnsEnded)
 		m.workspace.tmuxSocket = msg.tmuxSocket
 		m.workspace.leadingManager = msg.leadingManager
 		m.workspace.panes = msg.panes
-		m.workspace.groups = msg.groups
-		m.workspace.groupPaths = msg.groupPaths
-		m.workspace.groupWorktrees = msg.groupWorktrees
-		m.workspace.archivedGroups = msg.archivedGroups
 		m.workspace.agents = msg.agents
 		m.workspace.queuedMessages = msg.queuedMessages
 		if m.workspace.paneLines == nil {
@@ -356,6 +370,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		result := m.focusPane.ApplyPane(uifocus.PaneUpdate{
 			SessionID: msg.sessID,
 			Mouse:     msg.paneMouse,
+			Alt:       msg.paneAlt,
 			Motion:    msg.paneMotion,
 			SGR:       msg.paneSGR,
 			History:   msg.historySize,
@@ -437,7 +452,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// An agent that repainted the terminal background for itself leaves
 		// it on ours; the resume's WindowSizeMsg skips its own sync when the
 		// size is unchanged, so the detach restores the theme's here.
-		SyncTerminalBackground()
+		SyncTerminalColors()
 		// The attach client sized the window to the full terminal and tmux
 		// keeps that size on detach; pin it back to the current layout's
 		// box so the capture is not clipped on the right.
@@ -460,13 +475,21 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case editorFileCheckedMsg:
 		return m.handleDiffFileChecked(msg)
 
+	case editorsProbedMsg:
+		m.applyEditorsProbe(msg)
+		return m, nil
+
+	case groupBaseStepMsg:
+		m.handleGroupBaseStep(msg)
+		return m, nil
+
 	case editorDoneMsg:
 		var resume tea.Cmd
 		if msg.tookScreen {
 			// The terminal comes back from an editor the way it comes back
 			// from an attach: painted in the editor's background, and
 			// without the mouse reporting focus mode armed on the way in.
-			SyncTerminalBackground()
+			SyncTerminalColors()
 			if m.mode == modeFocus {
 				resume = tea.EnableMouseCellMotion
 			}
@@ -485,6 +508,9 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(resume, m.reattach(target.sessionID, m.review.Generation()))
 		}
 		return m, resume
+
+	case catalogMsg:
+		return m, m.handleCatalog(msg)
 
 	case tea.MouseMsg:
 		return m.handleMouse(msg)

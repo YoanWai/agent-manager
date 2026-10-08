@@ -23,40 +23,70 @@ const (
 // secondary tier that recedes behind the tier above it.
 type legendSection struct {
 	title string
+	leads [][2]string
+	hint  string
 	pairs [][2]string
 	quiet bool
+}
+
+func (s legendSection) parts() []string {
+	var parts []string
+	for _, lead := range s.leads {
+		if lead[0] != "" {
+			parts = append(parts, keyCapLead(lead[0], lead[1]))
+		}
+	}
+	if s.hint != "" {
+		parts = append(parts, mutedStyle.Render(s.hint))
+	}
+	for _, pair := range s.pairs {
+		if s.quiet {
+			parts = append(parts, keyCapQuiet(pair[0], pair[1]))
+		} else {
+			parts = append(parts, keyCap(pair[0], pair[1]))
+		}
+	}
+	return parts
 }
 
 // legendBar renders a legend as the app's footer, one tier per line where
 // the terminal allows it and the tail marked when it does not.
 func legendBar(sections []legendSection, width int) string {
 	indent := strings.Repeat(" ", railGutter)
-	cont := indent + strings.Repeat(" ", legendTitleColumn)
 	sep := subtleStyle.Render(" · ")
 	more := subtleStyle.Render("…")
 
 	var out []string
-	for _, section := range sections {
-		if len(section.pairs) == 0 || len(out) >= legendMaxRows {
+	for i, section := range sections {
+		parts := section.parts()
+		if len(parts) == 0 || len(out) >= legendMaxRows {
 			continue
+		}
+		maxRows := legendMaxRows
+		for _, next := range sections[i+1:] {
+			if len(next.parts()) > 0 {
+				maxRows--
+			}
 		}
 		title := legendBadgeStyle.Render(section.title)
 		if section.quiet {
 			title = legendTitleStyle.Render(section.title)
 		}
-		head := indent + padRight(title, legendTitleColumn)
+		column := max(legendTitleColumn, ansi.StringWidth(title)+legendGap)
+		head := indent + padRight(title, column)
+		cont := indent + strings.Repeat(" ", column)
 		line, lineWidth, started := head, ansi.StringWidth(head), false
 		cut := false
-		for _, pair := range section.pairs {
-			part, gap := keyCap(pair[0], pair[1]), strings.Repeat(" ", legendGap)
-			if section.quiet {
-				part, gap = keyCapQuiet(pair[0], pair[1]), sep
-			}
+		gap := strings.Repeat(" ", legendGap)
+		if section.quiet {
+			gap = sep
+		}
+		for _, part := range parts {
 			partWidth := ansi.StringWidth(part) + ansi.StringWidth(gap)
 			// The row that cannot wrap further keeps room for the cut
 			// marker, so the marker never lands past the terminal edge.
 			avail := width
-			if len(out) >= legendMaxRows-1 {
+			if len(out) >= maxRows-1 {
 				avail = width - 1 - ansi.StringWidth(more)
 			}
 			switch {
@@ -65,7 +95,7 @@ func legendBar(sections []legendSection, width int) string {
 			case lineWidth+partWidth <= avail:
 				line += gap + part
 				lineWidth += partWidth
-			case len(out) < legendMaxRows-1:
+			case len(out) < maxRows-1:
 				out = append(out, line)
 				line, lineWidth = cont+part, ansi.StringWidth(cont)+ansi.StringWidth(part)
 			default:

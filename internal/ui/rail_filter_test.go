@@ -13,6 +13,7 @@ import (
 
 func TestToggleEmptyGroupsFiltersTreeWithoutDeletingGroups(t *testing.T) {
 	m := buildModel(t)
+	m.width = 200
 	for _, group := range []string{"empty", "work", "work/leaf", "work/unused"} {
 		if err := m.services.store.CreateGroup(group, ""); err != nil {
 			t.Fatalf("create group %q: %v", group, err)

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"cmp"
 	"os"
 	"path/filepath"
 	"sync"
@@ -25,8 +26,20 @@ func reviewTarget(sess store.Session) uireview.Target {
 	return uireview.Target{ID: sess.ID, Name: sess.Name, Tool: sess.Tool, Cwd: sess.Cwd}
 }
 
+// reviewGroupBase is the base the target's group sets for its branch
+// scope. A base picked in review wins over it.
+func (m *Model) reviewGroupBase(targetID string) string {
+	for _, sess := range m.workspace.sessions {
+		if sess.ID == targetID {
+			return m.groupBase(sess.Group)
+		}
+	}
+	return ""
+}
+
 func (m *Model) reviewLoadCmd(req uireview.LoadRequest) tea.Cmd {
 	driver, stor := m.services.gitDrv, m.services.store
+	groupBase := m.reviewGroupBase(req.Target.ID)
 	return func() tea.Msg {
 		result := uireview.LoadResult{TargetID: req.Target.ID, Scope: req.Scope, Generation: req.Generation, Refresh: req.Refresh}
 		roots := append([]string(nil), req.RepoRoots...)
@@ -93,6 +106,7 @@ func (m *Model) reviewLoadCmd(req uireview.LoadRequest) tea.Cmd {
 				return reviewLoadMsg{result: result}
 			}
 		}
+		override = cmp.Or(override, groupBase)
 		set, err := diff.BuildSet(driver, root, req.Scope, override)
 		result.Set, result.Err = set, err
 		if err != nil {
@@ -152,6 +166,7 @@ type reviewFilesResult []uireview.FileResult
 
 func (m *Model) reviewProbeCmd(req uireview.ProbeRequest) tea.Cmd {
 	driver, stor := m.services.gitDrv, m.services.store
+	groupBase := m.reviewGroupBase(req.Target.ID)
 	return func() tea.Msg {
 		result := uireview.ProbeResult{TargetID: req.Target.ID, Scope: req.Scope, RepoSelected: req.RepoSelected}
 		override, err := stor.ReviewBase(req.Target.ID, resolveSymlinksOrSelf(req.RepoSelected))
@@ -160,7 +175,7 @@ func (m *Model) reviewProbeCmd(req uireview.ProbeRequest) tea.Cmd {
 		}
 		baseRef := ""
 		if req.Scope == git.ScopeBranch {
-			baseRef, _, _ = driver.BranchBase(req.GitRoot, override)
+			baseRef, _, _ = driver.BranchBase(req.GitRoot, cmp.Or(override, groupBase))
 		}
 		result.Fingerprint, _ = driver.Fingerprint(req.GitRoot, req.Scope, baseRef)
 		return result

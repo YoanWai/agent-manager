@@ -289,7 +289,7 @@ func TestClaimPollerHoldsForOneManagerAtATime(t *testing.T) {
 	now := time.Now()
 	const first, second = "/tmp/first/agentmgr", "/tmp/second/agentmgr"
 
-	holder, err := st.ClaimPoller(first, now, time.Second)
+	holder, err := st.ClaimPoller(first, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,7 +297,7 @@ func TestClaimPollerHoldsForOneManagerAtATime(t *testing.T) {
 		t.Fatalf("holder of an unclaimed store = %q, want %q", holder, first)
 	}
 
-	holder, err = st.ClaimPoller(second, now, time.Second)
+	holder, err = st.ClaimPoller(second, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -305,7 +305,7 @@ func TestClaimPollerHoldsForOneManagerAtATime(t *testing.T) {
 		t.Fatalf("holder = %q, want the awake %q to keep it", holder, first)
 	}
 
-	holder, err = st.ClaimPoller(second, now.Add(2*PollerHeartbeatStale), time.Second)
+	holder, err = st.ClaimPoller(second, now.Add(2*PollerHeartbeatStale))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -347,7 +347,7 @@ func TestClaimPollerSettlesOneHolderUnderARace(t *testing.T) {
 	}{{first, "/tmp/first/agentmgr"}, {second, "/tmp/second/agentmgr"}} {
 		go func() {
 			<-start
-			holder, err := claim.store.ClaimPoller(claim.socket, now, time.Second)
+			holder, err := claim.store.ClaimPoller(claim.socket, now)
 			holders <- holder
 			errs <- err
 		}()

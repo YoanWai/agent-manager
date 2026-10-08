@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
+	"github.com/YoanWai/agent-manager/internal/store"
 )
 
 func TestSessionCommandsParseArgumentsAndPrintSentences(t *testing.T) {
@@ -93,6 +94,43 @@ func TestSessionCommandsParseArgumentsAndPrintSentences(t *testing.T) {
 			},
 		},
 		{
+			name: "archive-self asks for an archive once the turn ends",
+			run: func(out *bytes.Buffer, f *fakeSessions, args []string) error {
+				return runArchiveSelf(out, f, args, "cafe0001")
+			},
+			want: "this session is archived once the current turn ends",
+			inspect: func(t *testing.T, f *fakeSessions) {
+				if f.action != store.AfterTurnArchive || f.callerID != "cafe0001" || f.canceled {
+					t.Fatalf("archive-self asked for %q as %q, canceled=%v", f.action, f.callerID, f.canceled)
+				}
+			},
+		},
+		{
+			name: "kill-self asks for a kill once the turn ends",
+			run: func(out *bytes.Buffer, f *fakeSessions, args []string) error {
+				return runKillSelf(out, f, args, "cafe0001")
+			},
+			want: "this session is killed once the current turn ends",
+			inspect: func(t *testing.T, f *fakeSessions) {
+				if f.action != store.AfterTurnKill {
+					t.Fatalf("kill-self asked for %q", f.action)
+				}
+			},
+		},
+		{
+			name: "kill-self --cancel withdraws instead",
+			run: func(out *bytes.Buffer, f *fakeSessions, args []string) error {
+				return runKillSelf(out, f, args, "cafe0001")
+			},
+			args: []string{"--cancel"},
+			want: "canceled the pending archive",
+			inspect: func(t *testing.T, f *fakeSessions) {
+				if !f.canceled || f.action != "" {
+					t.Fatalf("--cancel reached the layer as canceled=%v action=%q", f.canceled, f.action)
+				}
+			},
+		},
+		{
 			name: "message-status reads the id back",
 			run: func(out *bytes.Buffer, f *fakeSessions, args []string) error {
 				return runMessageStatus(out, f, args, "cafe0001")
@@ -162,12 +200,15 @@ func TestSessionCommandsParseArgumentsAndPrintSentences(t *testing.T) {
 func TestSpawnPassesOnlyTheFlagsGiven(t *testing.T) {
 	out := &bytes.Buffer{}
 	fake := &fakeSessions{session: sampleSession()}
-	args := []string{"--name", "api-worker", "--prompt", "build the api", "--tool", "claude", "--directory", "/repo"}
+	args := []string{"--name", "api-worker", "--prompt", "build the api", "--tool", "claude", "--directory", "/repo", "--model", "sonnet", "--effort", "high", "--profile", "work"}
 	if err := runSpawn(out, fake, args, "cafe0001"); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	if fake.opts.Name != "api-worker" || fake.opts.Prompt != "build the api" || fake.opts.Tool != "claude" || fake.opts.Directory != "/repo" {
 		t.Fatalf("spawn opts = %+v", fake.opts)
+	}
+	if fake.opts.Model != "sonnet" || fake.opts.Effort != "high" || fake.opts.Profile != "work" {
+		t.Fatalf("spawn choice = %+v", fake.opts)
 	}
 	if fake.opts.Group != nil || fake.opts.Worktree != nil {
 		t.Fatalf("untyped flags should stay inherited, got group=%v worktree=%v", fake.opts.Group, fake.opts.Worktree)

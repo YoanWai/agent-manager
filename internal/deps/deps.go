@@ -42,6 +42,7 @@ var official = map[string]string{
 	"cmd":      "npm install -g command-code",
 	"codex":    "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
 	"muse":     "curl -fsSL https://dev.meta.ai/install.sh | bash",
+	"omp":      "curl -fsSL https://omp.sh/install | sh",
 	"grok":     "curl -fsSL https://x.ai/cli/install.sh | bash",
 	"gemini":   "npm install -g @google/gemini-cli",
 	"agy":      "curl -fsSL https://antigravity.google/cli/install.sh | bash",

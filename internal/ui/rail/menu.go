@@ -26,7 +26,11 @@ func (m *Model) openMenu(selection Selection, x, y int, held bool) Decision {
 }
 
 func (m Model) rowMenuItems(row treeRow) []menuItem {
-	create := []menuItem{{label: "New session", action: NewSession}, {label: "New terminal", action: NewTerminal}}
+	create := []menuItem{
+		{label: "Quick prompt mode", action: Prompt},
+		{label: "New session", action: NewSession},
+		{label: "New terminal", action: NewTerminal},
+	}
 	editor := menuItem{label: "Open in editor", action: OpenEditor}
 	manage := []menuItem{editor, {label: "Rename", action: RenameAction}, {label: "Move to group", action: MoveToGroup}}
 	revive := menuItem{label: "Revive", action: Revive}
@@ -50,13 +54,17 @@ func (m Model) rowMenuItems(row treeRow) []menuItem {
 	if row.sess.Archived {
 		return []menuItem{{label: "Restore", action: Restore}, remove}
 	}
+	var keep []menuItem
+	if row.sess.AfterTurn != "" {
+		keep = []menuItem{{label: "Cancel " + row.sess.AfterTurn, action: CancelEnd}}
+	}
 	if row.sess.Status == "dead" {
-		return menuSections(manage, []menuItem{revive, m.archiveMenuItem(), remove})
+		return menuSections(manage, keep, []menuItem{revive, m.archiveMenuItem(), remove})
 	}
 	var agent []menuItem
 	if !row.sess.IsShell {
 		agent = []menuItem{
-			{label: "Prompt", action: Prompt},
+			{label: "Quick prompt mode", action: Prompt},
 			{label: "Copy last reply", action: CopyReply},
 			{label: "Review changes", action: OpenReview},
 			{label: "Fork", action: Fork},
@@ -65,7 +73,7 @@ func (m Model) rowMenuItems(row treeRow) []menuItem {
 	}
 	return menuSections(
 		[]menuItem{{label: "Attach", action: Attach}},
-		agent, manage,
+		agent, manage, keep,
 		[]menuItem{{label: "Restart", action: Restart}, m.archiveMenuItem(), kill, remove},
 	)
 }
@@ -198,6 +206,8 @@ func actionKind(action string) ActionKind {
 		return MoveToGroup
 	case keybind.Review:
 		return OpenReview
+	case keybind.CancelEnd:
+		return CancelEnd
 	default:
 		return NoAction
 	}

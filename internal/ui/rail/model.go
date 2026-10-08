@@ -29,6 +29,10 @@ type Session struct {
 	Queued         int
 	IsShell        bool
 	Elsewhere      bool
+	// AfterTurn is the archive or kill the agent asked for once its turn
+	// ends; AfterTurnGlyph is root's mark for it.
+	AfterTurn      string
+	AfterTurnGlyph string
 }
 
 // Snapshot is an immutable-by-convention inventory copied at the root

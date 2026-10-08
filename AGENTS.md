@@ -36,11 +36,11 @@ that.
   documented interface, the feature stays in the underlying TUI.
 - **Configurable in the UI, or not configurable.** A setting a user can
   change lives in Settings (`s`), is stored by the manager, and takes effect
-  from the picker, the way the keybindings row does. The manager owns
-  config.toml: the picker writes it, and a user never has to open it for a
-  feature to work. A new per-user file, environment variable, or hand-edited
-  block is the wrong shape; put the choice on a Settings row or pick a
-  default in code.
+  from the picker, the way the keybindings and editor rows do. The value
+  lives in `state.db`, where the manager, the CLI and the MCP server all
+  read it. A new per-user file, environment variable, or hand-edited block
+  is the wrong shape; put the choice on a Settings row or pick a default in
+  code.
 - **Every tool.** A field, status rule, or command added to one `[tools.*]`
   block is added to every tool it applies to, in the same PR.
 - **Every platform.** A `runtime.GOOS` branch, a platform-only command, or
@@ -110,8 +110,12 @@ release or a user's sessions before.
   new entry at the end, written so re-running it is harmless.
 - **`builtinTools` is the only source of tool definitions.** It loads on
   every start, so an edited pattern reaches every install on that release.
-  `starterConfig` is written once, when no config.toml exists, so text there
-  reaches new installs only; a default belongs in code.
+  A default belongs in code.
+- **The key tables and the editor are read from the store, by every
+  process.** The manager, the CLI and the MCP server each install the tmux
+  bindings, so a table read from anywhere else gives a session the wrong
+  keys. A `config.toml` from an earlier release is read once, by the import
+  in `internal/store`.
 - **`internal/update` verifies the checksum before anything is renamed over
   the running binary.** No redirect to another host, no wider permissions on
   the staged file, no write outside the staging directory.
@@ -127,8 +131,9 @@ release or a user's sessions before.
   checkout, a pop lands on someone else's work. Commit to the branch instead.
 - Every entry in `docs/messages.json` sets `max_version` to the release it
   announces; an unbounded entry shows to every user forever.
-- Release notes: a `## Highlights` or `## Thank you` bullet past 120 raw
-  characters, backticks included, is cut mid-word in the messages panel.
+- Release notes: a `## Highlights` or `## Thank you` bullet past 120 visible
+  characters is cut in the messages panel of v0.35.0 through v0.39.0, and
+  past 160 in later ones. Backticks are not counted.
 - A tmux `send-keys` stops around 1024 bytes; paste through `load-buffer`,
   which `Driver` already does, with a buffer name that carries the pid so
   the manager, the MCP server, and the CLI never swap text between panes.
@@ -193,11 +198,11 @@ with `gh release edit <tag> --notes-file notes.md`.
 - `main.go` dispatches subcommands (`rename`, `review-repo`, `sessions`,
   `spawn`, `mcp`, and the rest of the workspace CLI) and boots the TUI.
 - `internal/ui` is the Bubble Tea program: one `Model`, files grouped by
-  feature (list, diff review, focus, quick prompt, settings).
+  feature (list, diff review, focus, quick prompt mode, settings).
 - `internal/tmux` owns the dedicated tmux socket and control-mode client;
-  `internal/store` is the SQLite state; `internal/status` classifies pane
-  output into agent states; `internal/config` loads `config.toml` and the
-  tool rules.
+  `internal/store` is the SQLite state, Settings included; `internal/status`
+  classifies pane output into agent states; `internal/config` holds the
+  built-in tool rules.
 - The badges workflow publishes the clone count and contributor image to the
   `badges` branch; neither generated asset is edited by hand.
 

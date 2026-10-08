@@ -25,13 +25,22 @@ func hexBytes(s string) string {
 	return strings.Join(codes, " ")
 }
 
+// guardedMouseCommand sends a report only while the pane still tracks the
+// mouse. The branch for a pane that has stopped tracking runs a command with
+// no effect, so tmux answers the guard with guardedMouseReplies blocks
+// whichever way it goes.
 func guardedMouseCommand(sessID, report string) (string, []string) {
 	target := tmux.PaneTarget(sessID)
 	const condition = "#{mouse_any_flag}"
+	const drop = "display-message -p"
 	send := "send-keys -t " + target + " -H " + hexBytes(report)
-	command := "if-shell -F -t " + target + " '" + condition + "' '" + send + "'"
-	return command, []string{"if-shell", "-F", "-t", target, condition, send}
+	command := "if-shell -F -t " + target + " '" + condition + "' '" + send + "' '" + drop + "'"
+	return command, []string{"if-shell", "-F", "-t", target, condition, send, drop}
 }
+
+// guardedMouseReplies is the reply blocks a guarded report costs on the
+// control pipe: one for if-shell, one for the branch it ran.
+const guardedMouseReplies = 2
 
 func (m *Model) sendFocusReport(report string) {
 	sess, ok := m.selected()

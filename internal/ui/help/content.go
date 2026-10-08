@@ -13,8 +13,17 @@ import (
 const helpCardMaxWidth = 92
 
 type Glyphs struct {
-	RowMenu string
-	Reorder string
+	RowMenu          string
+	Reorder          string
+	AfterTurnArchive string
+	AfterTurnKill    string
+}
+
+// QuickKeys are the quick prompt's fixed spawn-choice keys, which root owns.
+type QuickKeys struct {
+	Model   string
+	Effort  string
+	Profile string
 }
 
 // Styles is a snapshot of the root UI's active presentation values. State
@@ -37,6 +46,7 @@ type Context struct {
 	ArrowStep    bool
 	Width        int
 	Glyphs       Glyphs
+	QuickKeys    QuickKeys
 	Styles       Styles
 	CursorMarker string
 }

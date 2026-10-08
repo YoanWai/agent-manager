@@ -17,6 +17,10 @@ import (
 // default the Agent Manager settings screen writes.
 const worktreeSetting = "worktree_default"
 
+// baseFetchSetting is the store key that, set to "off", skips the fetch
+// ahead of a worktree spawn.
+const baseFetchSetting = "worktree_fetch"
+
 type CreateSessionOptions struct {
 	Tool string
 	Name string
@@ -28,6 +32,10 @@ type CreateSessionOptions struct {
 	// Nil inherits the group's spawn-in-worktree choice, then the global
 	// setting.
 	Worktree *bool
+	// Model, Effort and Profile ride every later launch of the session.
+	Model   string
+	Effort  string
+	Profile string
 }
 
 func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session, error) {
@@ -36,28 +44,28 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 		return Session{}, err
 	}
 	defer runtime.Close()
-	caller, err := runtime.caller(sessionID)
+	caller, err := runtime.optionalCaller(sessionID)
 	if err != nil {
 		return Session{}, err
 	}
 	toolName := strings.TrimSpace(opts.Tool)
 	if toolName == "" {
-		// A spawn with no tool named runs whatever the caller runs, which a
-		// terminal cannot supply: its tool is the user's shell. Guessing an
-		// agent for it would start a CLI nobody asked for.
-		if runtime.cfg.Tools[caller.Tool].Shell {
-			return Session{}, fmt.Errorf("a terminal runs a shell, not an agent CLI, so there is none to inherit; name one with %s (configured tools are %s)", runtime.words.SpawnTool, strings.Join(agentToolNames(runtime), ", "))
+		if toolName, err = runtime.toolFor(caller); err != nil {
+			return Session{}, err
 		}
-		toolName = caller.Tool
 	}
 	tool, known := runtime.cfg.Tools[toolName]
 	if !known {
-		return Session{}, fmt.Errorf("tool %q is not configured; configured tools are %s", toolName, strings.Join(agentToolNames(runtime), ", "))
+		return Session{}, fmt.Errorf("tool %q is not configured; configured tools are %s", toolName, strings.Join(runtime.cfg.AgentToolNames(), ", "))
 	}
 	if tool.Shell {
 		return Session{}, fmt.Errorf("tool %q opens a shell, not an agent; use %s for that", toolName, runtime.words.CreateTerminal)
 	}
 	group, dir, err := runtime.createTarget(caller, opts.Group, opts.Directory)
+	if err != nil {
+		return Session{}, err
+	}
+	choice, err := s.choose(runtime.words, toolName, tool, opts)
 	if err != nil {
 		return Session{}, err
 	}
@@ -76,11 +84,19 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 	if err != nil {
 		return Session{}, err
 	}
+	base, err := runtime.groupBase(group)
+	if err != nil {
+		return Session{}, err
+	}
+	fetchSetting, err := runtime.store.Setting(baseFetchSetting)
+	if err != nil {
+		return Session{}, err
+	}
 	proactive, err := runtime.store.ProactiveCoordination()
 	if err != nil {
 		return Session{}, err
 	}
-	dir, worktree, err := s.prepareWorktree(dir, name, wantWorktree, opts.Worktree != nil)
+	dir, worktree, err := s.prepareWorktree(dir, name, base, fetchSetting != "off", wantWorktree, opts.Worktree != nil)
 	if err != nil {
 		return Session{}, err
 	}
@@ -92,11 +108,11 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 			return
 		}
 		if driver, err := s.newGit(); err == nil {
-			_, _ = driver.RemoveWorktreeIfClean(worktree.repo, dir, worktree.branch)
+			_, _ = driver.RemoveWorktreeIfClean(worktree.repo, dir, worktree.branch, base)
 		}
 	}
 
-	plan := launch.Assemble(toolName, tool, prompt, autoNamed, proactive)
+	plan := launch.Assemble(toolName, tool.WithChoice(choice), prompt, autoNamed, proactive)
 	var lifecycleGit *git.Driver
 	if worktree.repo != "" {
 		lifecycleGit, err = s.newGit()
@@ -122,6 +138,7 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 		WorktreeBranch: worktree.branch,
 		PendingInputs:  plan.PendingInputs,
 		LaunchPrompt:   plan.LaunchPrompt,
+		Choice:         choice,
 	}
 	launched, err := lifecycle.Launch(LaunchRequest{
 		Session:          sess,
@@ -135,6 +152,30 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 	return runtime.sessionInfo(launched.Session, true, false), nil
 }
 
+// toolFor is the CLI a spawn runs when it names none. A terminal or a script
+// runs no agent to copy, so it takes the one picked in Settings.
+func (r *runtime) toolFor(caller store.Session) (string, error) {
+	if caller.ID == "" || r.cfg.Tools[caller.Tool].Shell {
+		return r.settingsTool()
+	}
+	return caller.Tool, nil
+}
+
+func (r *runtime) settingsTool() (string, error) {
+	chosen, err := r.store.DefaultTool()
+	if err != nil {
+		return "", err
+	}
+	hidden, err := r.store.HiddenTools()
+	if err != nil {
+		return "", err
+	}
+	if name := r.cfg.DefaultAgentTool(chosen, hidden); name != "" {
+		return name, nil
+	}
+	return "", fmt.Errorf("every agent CLI is turned off for new sessions in settings; name one with %s (configured tools are %s)", r.words.SpawnTool, strings.Join(r.cfg.AgentToolNames(), ", "))
+}
+
 type worktreeTarget struct {
 	repo   string
 	branch string
@@ -144,7 +185,7 @@ type worktreeTarget struct {
 // A directory that cannot host one is only an error when the caller asked
 // for a worktree by name; an inherited default degrades to a plain spawn,
 // which is what the New Session form does rather than refusing to launch.
-func (s *Sessions) prepareWorktree(dir, name string, wanted, explicit bool) (string, worktreeTarget, error) {
+func (s *Sessions) prepareWorktree(dir, name, base string, fetch, wanted, explicit bool) (string, worktreeTarget, error) {
 	if !wanted {
 		return dir, worktreeTarget{}, nil
 	}
@@ -162,7 +203,11 @@ func (s *Sessions) prepareWorktree(dir, name string, wanted, explicit bool) (str
 		}
 		return dir, worktreeTarget{}, nil
 	}
-	path, branch, err := driver.AddWorktree(root, name)
+	if fetch {
+		// Offline or refused, the worktree branches from the last fetch instead.
+		_ = driver.FetchBase(root, base)
+	}
+	path, branch, err := driver.AddWorktree(root, name, base)
 	if err != nil {
 		return "", worktreeTarget{}, err
 	}
@@ -199,14 +244,27 @@ func (r *runtime) worktreeWanted(group string, explicit *bool) (bool, error) {
 	return setting == "on", nil
 }
 
-func agentToolNames(r *runtime) []string {
-	names := make([]string, 0, len(r.cfg.Tools))
-	for _, name := range r.cfg.ToolNames() {
-		if !r.cfg.Tools[name].Shell {
-			names = append(names, name)
+// groupBase is the ref a spawn into group branches from: the nearest
+// ancestor group's choice, or "" to detect the repo's default branch.
+func (r *runtime) groupBase(group string) (string, error) {
+	return groupBase(r.store, group)
+}
+
+func groupBase(st *store.Store, group string) (string, error) {
+	groups, err := st.Groups()
+	if err != nil {
+		return "", err
+	}
+	bases := make(map[string]string, len(groups))
+	for _, candidate := range groups {
+		bases[candidate.Name] = candidate.Base
+	}
+	for current := group; current != ""; current = parentGroup(current) {
+		if base := bases[current]; base != "" {
+			return base, nil
 		}
 	}
-	return names
+	return "", nil
 }
 
 // createTarget resolves the group and directory a new pane opens in.
@@ -251,7 +309,13 @@ func (r *runtime) createTarget(caller store.Session, requestedGroup *string, dir
 		}
 	}
 	dir := caller.Cwd
-	if current, err := r.driver.PaneCurrentPath(caller.ID); err == nil {
+	if caller.ID == "" {
+		// There is no pane to ask. tmux would read the empty id's target am_
+		// as a prefix and answer with another session's directory.
+		if dir, err = os.Getwd(); err != nil {
+			return "", "", err
+		}
+	} else if current, err := r.driver.PaneCurrentPath(caller.ID); err == nil {
 		dir = current
 	}
 	resolved, err := resolveTerminalDirectory(dir)

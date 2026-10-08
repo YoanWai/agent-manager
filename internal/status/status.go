@@ -19,6 +19,12 @@ const (
 	Starting = "starting"
 )
 
+// Resting is what "the session stopped working" means. Finished is
+// rewritten to idle once the manager acknowledges it, and a manager tick
+// can pass through both between two polls, so only the whole set is sure
+// to catch the moment.
+var Resting = []string{Finished, Waiting, Idle, Errored, Dead}
+
 type rule struct {
 	state string
 	re    *regexp.Regexp
@@ -44,6 +50,7 @@ type toolRules struct {
 	placeholder    *regexp.Regexp
 	userEcho       *regexp.Regexp
 	dialogFooter   *regexp.Regexp
+	dialogAsks     *regexp.Regexp
 	busyFooter     *regexp.Regexp
 	// composerPlaceholder is the literal text a tool paints inside its
 	// empty composer; a draft replaces it. Searched in a stripped row.
@@ -86,6 +93,7 @@ func NewEngine(cfg config.Config) (*Engine, error) {
 			{tool.InputPlaceholder, &tr.placeholder},
 			{tool.UserEcho, &tr.userEcho},
 			{tool.DialogFooter, &tr.dialogFooter},
+			{tool.DialogQuestion, &tr.dialogAsks},
 			{tool.BusyFooter, &tr.busyFooter},
 		}
 		for _, opt := range optional {

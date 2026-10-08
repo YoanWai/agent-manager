@@ -42,15 +42,15 @@ func TestMuseCaptureAndRecapture(t *testing.T) {
 	writeMuseSession(t, root, "2026/09/09/old", "old", cwd, now.Add(-time.Hour), now)
 	writeMuseSession(t, root, "2026/09/09/other", "other", t.TempDir(), now, now)
 	writeMuseSession(t, root, "2026/09/09/first/subagent/child", "child", cwd, now, now)
-	if id, ok := Capture("muse", cwd, now, nil); ok {
+	if id, ok := Capture("muse", cwd, now, nil, ""); ok {
 		t.Fatalf("captured stale, foreign, or child session %q", id)
 	}
 	path := writeMuseSession(t, root, "2026/09/09/first", "first", cwd, now, now)
 	writeMuseSession(t, root, "2026/09/09/second", "second", cwd, now.Add(time.Second), now.Add(time.Second))
-	if id, ok := Capture("muse", cwd, now, nil); !ok || id != "first" {
+	if id, ok := Capture("muse", cwd, now, nil, ""); !ok || id != "first" {
 		t.Fatalf("Capture = %q, %v", id, ok)
 	}
-	if id, ok := Capture("muse", cwd, now, map[string]bool{"first": true}); !ok || id != "second" {
+	if id, ok := Capture("muse", cwd, now, map[string]bool{"first": true}, ""); !ok || id != "second" {
 		t.Fatalf("claimed Capture = %q, %v", id, ok)
 	}
 	snapshot, ok := Snapshot("muse", cwd)

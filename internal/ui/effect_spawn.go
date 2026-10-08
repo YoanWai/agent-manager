@@ -2,6 +2,7 @@ package ui
 
 import (
 	"errors"
+	"github.com/YoanWai/agent-manager/internal/config"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/launch"
@@ -48,6 +49,8 @@ type spawnRequest struct {
 	terminalRead terminalDirectoryReader
 	plan         *launch.Plan
 	images       []imageAttachment
+	choice       config.Choice
+	base         string
 }
 
 func (spawnRequest) effectRequest() {}
@@ -77,6 +80,7 @@ type groupRequest struct {
 	path      string
 	dir       string
 	worktree  string
+	base      string
 	gen       int
 	rawDir    string
 	fallbacks []string
@@ -124,7 +128,7 @@ func (s effectServices) runSpawn(request spawnRequest) (effectResult, error) {
 	if s.lifecycle == nil {
 		return result, errors.New("spawn requires the lifecycle service")
 	}
-	tool := s.cfg.Tools[request.toolName]
+	tool := s.cfg.Tools[request.toolName].WithChoice(request.choice)
 	dir := request.dir
 	if dir == "" {
 		if request.kind == spawnShell {
@@ -186,7 +190,7 @@ func (s effectServices) runSpawn(request spawnRequest) (effectResult, error) {
 		if err != nil {
 			return result, err
 		}
-		path, branch, err := s.gitDrv.AddWorktree(root, request.name)
+		path, branch, err := s.gitDrv.AddWorktree(root, request.name, request.base)
 		if err != nil {
 			return result, err
 		}
@@ -208,6 +212,7 @@ func (s effectServices) runSpawn(request spawnRequest) (effectResult, error) {
 			WorktreeBranch: worktreeBranch,
 			PendingInputs:  plan.PendingInputs,
 			LaunchPrompt:   plan.LaunchPrompt,
+			Choice:         request.choice,
 		},
 		Tool:             tool,
 		BaseCommand:      plan.Command,
@@ -235,7 +240,7 @@ func (s effectServices) runGroup(request groupRequest) (effectResult, error) {
 			return groupEffectResult{}, errors.New("default path does not exist: " + dir)
 		}
 	}
-	if err := s.store.AddGroup(request.path, dir, request.worktree); err != nil {
+	if err := s.store.AddGroup(request.path, dir, request.worktree, request.base); err != nil {
 		return groupEffectResult{}, err
 	}
 	return groupEffectResult{path: request.path, dir: dir, worktree: request.worktree}, nil
@@ -266,6 +271,7 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 		}
 		if request.kind != spawnShell {
 			m.rememberSpawnPick(request.toolName, request.pickWorktree)
+			m.rememberModel(request.toolName, request.choice)
 		}
 		// New sessions start as starting, which attention excludes; clear so
 		// the row the spawn just created is on screen.
@@ -365,14 +371,8 @@ func (m *Model) applyGroupEffect(request groupRequest, result groupEffectResult,
 		m.workspace.groupPaths = map[string]string{}
 	}
 	m.workspace.groupPaths[result.path] = result.dir
-	if m.workspace.groupWorktrees == nil {
-		m.workspace.groupWorktrees = map[string]string{}
-	}
-	if result.worktree == "" {
-		delete(m.workspace.groupWorktrees, result.path)
-	} else {
-		m.workspace.groupWorktrees[result.path] = result.worktree
-	}
+	m.workspace.groupWorktrees = setGroupChoice(m.workspace.groupWorktrees, result.path, result.worktree)
+	m.workspace.groupBases = setGroupChoice(m.workspace.groupBases, result.path, request.base)
 	m.rebuildRows()
 	// Presentation (closing the form, revealing and selecting the new group)
 	// lands only when the dispatching group form is still the dialog on

@@ -29,6 +29,7 @@ type renameRequest struct {
 	dirFallbacks    []string
 	draftDir        string
 	worktree        string
+	base            string
 	sessID          string
 	sess            store.Session
 	name            string
@@ -45,6 +46,7 @@ type renameEffectResult struct {
 	groupRenamed bool
 	pathSet      bool
 	worktreeSet  bool
+	baseSet      bool
 	nameRenamed  bool
 	toolChanged  bool
 	branch       string
@@ -100,6 +102,10 @@ func (s effectServices) runRename(request renameRequest) (effectResult, error) {
 			return result, err
 		}
 		result.worktreeSet = true
+		if err = s.store.SetGroupBase(request.newGroup, request.base); err != nil {
+			return result, err
+		}
+		result.baseSet = true
 		sessions, err := s.store.SessionsInSubtree(request.newGroup)
 		if err != nil {
 			return result, err
@@ -156,10 +162,10 @@ func (m *Model) applyRenameEffect(job *effectJob, result renameEffectResult, err
 			dir = result.dir
 		}
 		if result.groupRenamed {
-			if result.pathSet && result.worktreeSet {
-				m.renameGroupLocally(request.oldGroup, request.newGroup, dir, request.worktree)
+			if result.pathSet && result.worktreeSet && result.baseSet {
+				m.renameGroupLocally(request.oldGroup, request.newGroup, dir, request.worktree, request.base)
 			} else {
-				m.mirrorGroupRenamePartial(request.oldGroup, request.newGroup, dir, request.worktree, result.pathSet, result.worktreeSet)
+				m.mirrorGroupRenamePartial(request, dir, result)
 			}
 		}
 	} else {
@@ -196,17 +202,14 @@ func (m *Model) applyRenameEffect(job *effectJob, result renameEffectResult, err
 // mirrorGroupRenamePartial mirrors only the stages that committed, so a
 // failed default-dir or worktree write does not leak the requested value
 // into the local inventory.
-func (m *Model) mirrorGroupRenamePartial(old, newPath, dir, worktree string, pathSet, worktreeSet bool) {
+func (m *Model) mirrorGroupRenamePartial(request renameRequest, dir string, result renameEffectResult) {
+	old, newPath := request.oldGroup, request.newGroup
 	m.renameGroupInventory(old, newPath)
-	if pathSet {
+	if result.pathSet {
 		m.workspace.groupPaths[newPath] = dir
 	}
-	if worktreeSet {
-		if worktree == "" {
-			delete(m.workspace.groupWorktrees, newPath)
-		} else {
-			m.workspace.groupWorktrees[newPath] = worktree
-		}
+	if result.worktreeSet {
+		m.workspace.groupWorktrees = setGroupChoice(m.workspace.groupWorktrees, newPath, request.worktree)
 	}
 	m.applyRailStateDecision(m.rail.RenameGroup(old, newPath))
 }
@@ -223,6 +226,7 @@ func (m *Model) enqueueMove(mut uirail.Mutation, close moveDialogClose) tea.Cmd 
 		mutation: mut,
 		dir:      m.workspace.groupPaths[mut.Path],
 		worktree: m.workspace.groupWorktrees[mut.Path],
+		base:     m.workspace.groupBases[mut.Path],
 	}
 	if mut.Kind == uirail.PlaceSession {
 		request.placement = m.capturePlacementPrecondition(mut)

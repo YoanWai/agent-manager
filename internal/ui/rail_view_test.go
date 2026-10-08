@@ -387,66 +387,35 @@ func TestRailTopCarriesBetweenFrames(t *testing.T) {
 	}
 }
 
-func TestPlaceNoticeHitMapsTheFootRowsAndCardColumns(t *testing.T) {
-	m := buildModel(t)
-	m.width, m.height = 120, 34
-	frame := strings.Split(ansi.Strip(preparedView(m)), "\n")
-	y0, _ := m.bodyYRange()
-	rail := m.railLines(m.dividerX()-1, m.listBodyHeight())
-	footIndex := len(rail)
-	for i, line := range rail {
-		if line.rule {
-			footIndex = i + 1
+func TestHiddenStatsReturnRowsToSessions(t *testing.T) {
+	for _, full := range []bool{false, true} {
+		m := footModel(t)
+		m.width, m.height, m.prefs.fullLayout = 120, 34, full
+		for i := 0; i < 50; i++ {
+			name := fmt.Sprintf("session-%02d", i)
+			m.workspace.sessions = append(m.workspace.sessions, store.Session{ID: name, Name: name, Tool: "claude", Status: status.Idle})
 		}
-	}
-	footLines := len(rail) - footIndex
-	if footLines == 0 {
-		t.Fatal("test setup: the rail painted no foot")
-	}
-	hit := m.notices.noticeHit
-	if !hit.ok || hit.y0 != y0+footIndex || hit.y1 != hit.y0+footLines {
-		t.Fatalf("hit rows %d..%d, want %d..%d: %+v", hit.y0, hit.y1, y0+footIndex, y0+footIndex+footLines, hit)
-	}
-	col := strings.Index(frame[hit.y0], "messages")
-	if col < hit.x0 || col >= hit.x1 || hit.x1 > m.dividerX() {
-		t.Fatalf("legend at column %d outside hit columns %d..%d (divider %d)", col, hit.x0, hit.x1, m.dividerX())
-	}
-	if meters := strings.Index(frame[hit.y0+1], "cpu"); meters >= hit.x0 {
-		t.Fatalf("meters at column %d fall inside the card's columns %d..%d", meters, hit.x0, hit.x1)
-	}
-}
-
-func TestPlaceNoticeHitClearsAStaleBox(t *testing.T) {
-	m := buildModel(t)
-	m.width, m.height = 120, 34
-	preparedView(m)
-	if !m.notices.noticeHit.ok {
-		t.Fatal("test setup: the card painted no hit")
-	}
-	x, y := m.notices.noticeHit.x0, m.notices.noticeHit.y0
-
-	m.prefs.hideStats = true
-	for _, n := range m.activeNotices() {
-		m.notices.dismissed[n.id] = true
-	}
-	preparedView(m)
-	if m.notices.noticeHit.ok {
-		t.Fatalf("a rail with no foot must drop the box, got %+v", m.notices.noticeHit)
-	}
-	if m = leftPress(m, x, y); m.mode != modeList {
-		t.Fatalf("a press where the card was should do nothing, mode = %v", m.mode)
-	}
-
-	m.prefs.hideStats = false
-	m.notices.dismissed = map[string]bool{}
-	preparedView(m)
-	if !m.notices.noticeHit.ok {
-		t.Fatal("test setup: the card is back")
-	}
-	m.width = 40
-	preparedView(m)
-	if m.notices.noticeHit.ok {
-		t.Fatalf("a rail too narrow for the card must drop the box, got %+v", m.notices.noticeHit)
+		m.rebuildRows()
+		const height = 25
+		visibleRows := func() int {
+			m.railLines(70, height)
+			count := 0
+			for _, line := range m.displayedRail.Lines {
+				if line.HitOK && line.Hit.Kind == uirail.SessionRow {
+					count++
+				}
+			}
+			return count
+		}
+		footRows := len(m.railFootLines(70)) + 1
+		shown := visibleRows()
+		m.prefs.hideStats = true
+		if got := visibleRows(); got != shown+footRows {
+			t.Fatalf("full=%v: hidden stats expose %d sessions, want %d", full, got, shown+footRows)
+		}
+		if len(m.activeNotices()) == 0 {
+			t.Fatal("hiding stats must retain unread notices")
+		}
 	}
 }
 

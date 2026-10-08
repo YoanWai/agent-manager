@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"github.com/YoanWai/agent-manager/internal/status"
+	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"strings"
@@ -117,8 +119,16 @@ func TestGroupMenuCreatesAndNeverAttaches(t *testing.T) {
 	if !strings.Contains(joined, "New session") {
 		t.Fatalf("group menu should offer creation:\n%s", joined)
 	}
-	if strings.Contains(joined, "Attach") {
-		t.Fatalf("group menu should never offer attach:\n%s", joined)
+	if !strings.Contains(joined, "Quick prompt mode") || strings.Contains(joined, "Attach") {
+		t.Fatalf("group menu should create and never attach:\n%s", joined)
+	}
+	quick := menuEntry(t, m, "Quick prompt mode")
+	updated, _ := m.handleMouse(tea.MouseMsg{
+		X: m.displayedRail.MenuRect.Left + 2, Y: m.displayedRail.MenuRect.Top + 1 + quick, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
+	})
+	m = updated.(*Model)
+	if !m.quick.active || m.mode != modeList {
+		t.Fatalf("group menu should open quick prompt mode, active = %v mode = %v", m.quick.active, m.mode)
 	}
 }
 
@@ -213,4 +223,57 @@ func railMouseAtLine(t *testing.T, m *Model, line int, action tea.MouseAction, b
 	y0, _ := m.bodyYRange()
 	updated, _ := m.handleMouse(tea.MouseMsg{X: 2, Y: y0 + line, Action: action, Button: button})
 	return updated.(*Model)
+}
+
+// The pending end is reachable both ways: the menu entry for the mouse,
+// the footer naming its key for the keyboard.
+func TestAPendingEndOffersItsCancelInTheMenuAndTheFooter(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	askAfterTurn(t, m, "alpha", store.AfterTurnArchive)
+	loadStoredRows(t, m)
+	m.selectSessionRow(t, "alpha")
+
+	frame := ansi.Strip(preparedView(m))
+	for _, want := range []string{"alpha ↓", "archives when this turn ends", "c cancel archive"} {
+		if !strings.Contains(frame, want) {
+			t.Fatalf("the frame does not show %q:\n%s", want, frame)
+		}
+	}
+	m = railMouse(t, m, "alpha", tea.MouseActionPress, tea.MouseButtonRight)
+	cancel := menuEntry(t, m, "Cancel archive")
+	updated, _ := m.handleMouse(tea.MouseMsg{
+		X: m.displayedRail.MenuRect.Left + 2, Y: m.displayedRail.MenuRect.Top + 1 + cancel, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
+	})
+	m = updated.(*Model)
+	m.drainEffects(t)
+	sess, _ := m.selected()
+	if got, _ := m.services.store.Get(sess.ID); got.AfterTurn != "" {
+		t.Fatalf("Cancel archive left %q pending", got.AfterTurn)
+	}
+	if strings.Contains(ansi.Strip(preparedView(m)), "alpha ↓") {
+		t.Fatal("the row still wears the archive mark after the cancel")
+	}
+}
+
+// A row the poll has not yet ended still carries its request once dead, and
+// c cancels it there, so the menu has to as well.
+func TestADeadRowWithAPendingEndOffersItsCancel(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	sess := askAfterTurn(t, m, "alpha", store.AfterTurnKill)
+	if err := m.services.store.UpdateStatus(sess.ID, status.Dead); err != nil {
+		t.Fatalf("UpdateStatus: %v", err)
+	}
+	loadStoredRows(t, m)
+	m = railMouse(t, m, "alpha", tea.MouseActionPress, tea.MouseButtonRight)
+	cancel := menuEntry(t, m, "Cancel kill")
+	updated, _ := m.handleMouse(tea.MouseMsg{
+		X: m.displayedRail.MenuRect.Left + 2, Y: m.displayedRail.MenuRect.Top + 1 + cancel, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
+	})
+	m = updated.(*Model)
+	m.drainEffects(t)
+	if got, _ := m.services.store.Get(sess.ID); got.AfterTurn != "" {
+		t.Fatalf("Cancel kill on the dead row left %q pending", got.AfterTurn)
+	}
 }

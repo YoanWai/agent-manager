@@ -15,8 +15,12 @@ func (m *Model) statusLine() string {
 	case m.mode == modeFocus && m.errBar.text != "":
 		return m.statusMessage("✕", "●", "▲")
 	case m.focusPane.ScrolledBack():
+		catchUp := "wheel down or type"
+		if sess, ok := m.selected(); ok && m.focusPane.PagesScrollback(sess.ID) {
+			catchUp = "wheel down, pgdn or type"
+		}
 		return keyStyle.Render("scrolled ") +
-			subtleStyle.Render(fmt.Sprintf("%d lines back · wheel down or type to catch up", focusStatus.ScrollOffset))
+			subtleStyle.Render(fmt.Sprintf("%d lines back · %s to catch up", focusStatus.ScrollOffset, catchUp))
 	case m.mode == modeFocus && focusStatus.CopiedChars > 0:
 		return keyStyle.Render("copied ") +
 			subtleStyle.Render(fmt.Sprintf("%d chars to clipboard", focusStatus.CopiedChars))

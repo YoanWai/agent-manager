@@ -28,6 +28,7 @@ func (s Scope) String() string {
 type Repo struct {
 	Root     string
 	Branch   string
+	Head     string
 	Unborn   bool
 	Detached bool
 }

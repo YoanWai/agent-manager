@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"github.com/YoanWai/agent-manager/internal/config"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -143,6 +142,52 @@ func TestLayoutsCanHideHeader(t *testing.T) {
 			}
 			if rows := strings.Split(preparedView(m), "\n"); len(rows) != m.height {
 				t.Fatalf("headerless frame = %d rows, terminal is %d", len(rows), m.height)
+			}
+		})
+	}
+}
+
+func TestHiddenHeaderTitlesTopEdgeWithUpdate(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		full  bool
+		focus bool
+	}{
+		{name: "split"},
+		{name: "full", full: true},
+		{name: "full focus", full: true, focus: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := shotModel()
+			m.prefs.fullLayout = tc.full
+			if tc.focus {
+				m.mode = modeFocus
+			}
+			m.update.latest = "v9.9.9"
+			const tag = "↑ v9.9.9 available"
+			if top := ansi.Strip(preparedView(m)); strings.Count(top, tag) != 1 {
+				t.Fatalf("shown header should carry the tag once:\n%s", top)
+			}
+
+			m.prefs.hideHeader = true
+			rows := strings.Split(ansi.Strip(preparedView(m)), "\n")
+			if len(rows) != m.height {
+				t.Fatalf("titled frame = %d rows, terminal is %d", len(rows), m.height)
+			}
+			if got := ansi.StringWidth(rows[0]); got != m.width {
+				t.Fatalf("titled top row is %d cells wide, terminal is %d", got, m.width)
+			}
+			at := strings.Index(rows[0], tag)
+			if at < 0 || ansi.StringWidth(rows[0][:at]) < m.width/2 {
+				t.Fatalf("hidden header leaves the top edge untitled:\n%s", rows[0])
+			}
+			if footer := ansi.Strip(m.viewFooter()); strings.Contains(footer, tag) {
+				t.Fatalf("footer carries the tag too:\n%s", footer)
+			}
+
+			m.update.latest = ""
+			if top := strings.Split(ansi.Strip(preparedView(m)), "\n")[0]; strings.Contains(top, "available") {
+				t.Fatalf("up to date, the top edge still carries a tag:\n%s", top)
 			}
 		})
 	}
@@ -393,31 +438,26 @@ func TestFullFocusFooterIsOneRow(t *testing.T) {
 	}
 }
 
-func TestFullLayoutTransientFootersAreOneRow(t *testing.T) {
-	m := shotModel()
-	m.services.cfg = config.Config{Tools: map[string]config.Tool{"claude": {}}}
-	m.prefs.fullLayout = true
-	m.quick.active = true
-	if got := lipgloss.Height(m.viewFooter()); got != 1 {
-		t.Fatalf("full screen quick prompt footer = %d rows, want 1", got)
-	}
-	body := m.listBodyHeight()
+func TestQuickFooterLeavesThePaneSizeAlone(t *testing.T) {
+	for _, full := range []bool{false, true} {
+		m := buildModel(t)
+		seedTwoGroups(t, m)
+		setRailCursor(m, 1)
+		m.prefs.fullLayout = full
+		preparedView(m)
+		width, height := m.paneTargetSize()
+		resting := m.listBodyHeight()
 
-	m.prefs.fullLayout = false
-	listed := lipgloss.Height(m.listFooter())
-	if listed < 2 {
-		t.Fatalf("this test needs a list footer taller than a tier, got %d rows", listed)
-	}
-	if got := lipgloss.Height(m.viewFooter()); got != listed {
-		t.Fatalf("split quick prompt footer = %d rows, want the padded %d", got, listed)
-	}
-
-	// The rows the tier gives up go to the list body, which is what the
-	// full screen pane is pinned to.
-	m.prefs.fullLayout = true
-	m.quick.active = false
-	if resting := m.listBodyHeight(); body <= resting {
-		t.Fatalf("quick prompt body = %d rows, want more than the resting %d", body, resting)
+		m.openQuickMode()
+		m = applyMsg(t, m, pasteTextMsg{target: composerQuick, gen: m.quick.gen,
+			inner: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(strings.Repeat("filler word ", 40))}})
+		preparedView(m)
+		if w, h := m.paneTargetSize(); w != width || h != height {
+			t.Fatalf("full layout %v: pane target moved from %dx%d to %dx%d", full, width, height, w, h)
+		}
+		if body := m.listBodyHeight(); body >= resting {
+			t.Fatalf("full layout %v: the prompt's rows should come from the body: %d, resting %d", full, body, resting)
+		}
 	}
 }
 

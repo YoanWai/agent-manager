@@ -16,6 +16,10 @@ const hideHeaderSetting = "hide_header"
 
 const hideStatsSetting = "hide_stats"
 
+// backgroundSetting is what fills the backdrop's cells: "terminal" leaves
+// the terminal's own colors, anything else paints the theme's.
+const backgroundSetting = "background"
+
 const focusKeySetting = "focus_key"
 
 // arrowStepSetting is the beta ←→ pair: "off" turns it off, anything else
@@ -31,6 +35,10 @@ const quickCloseSetting = "quick_prompt_close"
 
 const worktreeSetting = "worktree_default"
 
+// baseFetchSetting is the fetch ahead of a worktree spawn: "off" skips it,
+// anything else fetches (the default).
+const baseFetchSetting = "worktree_fetch"
+
 const notificationsSetting = "notifications"
 
 const notifyFinishedSetting = "notify_finished"
@@ -38,6 +46,10 @@ const notifyFinishedSetting = "notify_finished"
 // hiddenToolsSetting lists CLI tools omitted from new-session pickers
 // (comma-separated names). Empty means every configured tool is shown.
 const hiddenToolsSetting = "hidden_tools"
+
+// editorSetting is the row store.Editor reads; the settings lane writes it
+// with the other preferences.
+const editorSetting = "editor"
 
 type settingsState struct {
 	toolNames       []string
@@ -54,10 +66,14 @@ type settingsState struct {
 	hideStats       bool
 	mouseDisabled   bool
 	worktreeDefault bool
+	baseFetch       bool
 	proactive       bool
 	notifications   bool
 	notifyFinished  bool
 	themeAuto       bool
+	// terminalBackground is the background row's choice, applied to the
+	// model as it is stepped so the frame previews it.
+	terminalBackground bool
 	// manualTheme is the persisted choice the theme key keeps while
 	// auto-detect drives the live palette, so turning auto off returns
 	// to it.
@@ -73,12 +89,16 @@ type settingsState struct {
 	keyCapture bool
 	keyAppend  bool
 	keyReset   bool
+	editor     editorRow
 	dirty      bool
 }
 
 type settingsCache struct {
 	values map[string]string
 	hidden map[string]bool
+	// editors is the last PATH probe, kept so a dialog rebuilt from a
+	// later load still lists what was found.
+	editors *editorsProbedMsg
 }
 
 func (c settingsCache) value(key string) string {
@@ -89,6 +109,7 @@ const (
 	settingsFieldTool = iota
 	settingsFieldTheme
 	settingsFieldThemeAuto
+	settingsFieldBackground
 	settingsFieldDensity
 	settingsFieldSessionLayout
 	settingsFieldHeader
@@ -99,9 +120,11 @@ const (
 	settingsFieldArrowStep
 	settingsFieldMouse
 	settingsFieldWorktree
+	settingsFieldBaseFetch
 	settingsFieldCoordination
 	settingsFieldNotify
 	settingsFieldNotifyFinish
+	settingsFieldEditor
 	settingsFieldKeybindings
 	settingsFieldCLIs
 	settingsFieldBugReport

@@ -109,7 +109,7 @@ cands:
 		var agentID string
 		var ok bool
 		if sess.AgentLaunchedAt.IsZero() && sess.RelaunchSnapshot == nil {
-			agentID, ok = agentsession.Capture(p.sessionStores[sess.Tool], sess.Cwd, sess.LaunchTime(), claimed)
+			agentID, ok = agentsession.Capture(p.sessionStores[sess.Tool], sess.Cwd, sess.LaunchTime(), claimed, panes[sess.ID].TTY)
 		} else {
 			if recaptureCounts[recaptureScope(sess)] > 1 {
 				p.clearRecaptureSeen(sess.ID)

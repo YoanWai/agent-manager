@@ -100,33 +100,29 @@ func TestDismissPersistsAcrossRestart(t *testing.T) {
 	}
 }
 
-func TestToolsRetiredNoticeNamesTheIgnoredBlocks(t *testing.T) {
+func TestConfigNotImportedNoticeCarriesTheReason(t *testing.T) {
 	st := noticeStore(t)
 	m := noticeModel(st, "v0.2.0")
-	if contains(noticeIDs(m.activeNotices()), noticeToolsRetired) {
-		t.Fatal("a file with no tool blocks has nothing to retire")
+	if contains(noticeIDs(m.activeNotices()), noticeConfigNotImported) {
+		t.Fatal("an import that went through has nothing to report")
 	}
-	m.services.cfg.IgnoredTools = []string{"claude", "mytool"}
-	var retired notice
+	m.notices.configImportError = "config.toml: keybindings.session.detach needs at least one key"
+	var refused notice
 	for _, n := range m.activeNotices() {
-		if n.id == noticeToolsRetired {
-			retired = n
+		if n.id == noticeConfigNotImported {
+			refused = n
 		}
 	}
-	if retired.id == "" {
-		t.Fatalf("want %s among %v", noticeToolsRetired, noticeIDs(m.activeNotices()))
+	if refused.id == "" {
+		t.Fatalf("want %s among %v", noticeConfigNotImported, noticeIDs(m.activeNotices()))
 	}
-	if !contains(retired.body, "claude, mytool") {
-		t.Fatalf("the notice should name the ignored blocks: %q", retired.body)
+	if !contains(refused.body, m.notices.configImportError) {
+		t.Fatalf("the notice should carry the reason: %q", refused.body)
 	}
-	joined := strings.Join(retired.body, " ")
-	if !strings.Contains(joined, "block you added") {
-		t.Fatalf("a custom block is not a shipped copy: %q", retired.body)
-	}
-	persistNoticeDismissal(t, m, noticeToolsRetired)
+	persistNoticeDismissal(t, m, noticeConfigNotImported)
 	reopened := noticeModel(st, "v0.2.0")
-	reopened.services.cfg.IgnoredTools = m.services.cfg.IgnoredTools
-	if contains(noticeIDs(reopened.activeNotices()), noticeToolsRetired) {
+	reopened.notices.configImportError = m.notices.configImportError
+	if contains(noticeIDs(reopened.activeNotices()), noticeConfigNotImported) {
 		t.Fatal("dismissal did not survive restart")
 	}
 }
@@ -179,9 +175,9 @@ func TestUpdateNoticeSummarizesEverySkippedRelease(t *testing.T) {
 	frame := ansi.Strip(preparedView(m))
 	for _, want := range []string{
 		"4 releases available · v0.6.0",
-		"v0.3.0 · 1 change",
+		"v0.3.0",
 		"Worktree: Respect group defaults",
-		"v0.6.0 · 1 change",
+		"v0.6.0",
 		"updates once to v0.6.0",
 	} {
 		if !strings.Contains(frame, want) {
@@ -217,8 +213,8 @@ func TestPostUpdateNoticeUsesPersistedStartingVersion(t *testing.T) {
 	for _, want := range []string{
 		"Updated across 4 releases · v0.5.0",
 		"Updated from v0.1.0 to v0.5.0.",
-		"v0.2.0 · 1 change",
-		"v0.5.0 · 1 change",
+		"v0.2.0",
+		"v0.5.0",
 	} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("post-update modal missing %q:\n%s", want, frame)
@@ -346,7 +342,7 @@ func TestFeedMessagesBecomeNotices(t *testing.T) {
 	}
 }
 
-func TestFeedUsesOneCanonicalTitleInCardAndModal(t *testing.T) {
+func TestFeedUsesCanonicalTitleInModal(t *testing.T) {
 	m := modalModel(t)
 	m.notices.feedMessages = []feed.Message{{
 		ID:     "feed-canonical",
@@ -356,14 +352,10 @@ func TestFeedUsesOneCanonicalTitleInCardAndModal(t *testing.T) {
 	}}
 	persistNoticeDismissal(t, m, noticeWelcome)
 
-	card := ansi.Strip(strings.Join(m.noticeCardLines(m.activeNotices(), 50, 5), "\n"))
-	if !strings.Contains(card, "One title everywhere") || strings.Contains(card, "legacy compact copy") {
-		t.Fatalf("card did not use canonical title:\n%s", card)
-	}
 	m.openNotices("feed-canonical")
 	modal := ansi.Strip(preparedView(m))
 	if !strings.Contains(modal, "One title everywhere") || strings.Contains(modal, "legacy compact copy") {
-		t.Fatalf("modal and card titles diverged:\n%s", modal)
+		t.Fatalf("modal did not use the canonical title:\n%s", modal)
 	}
 }
 
@@ -405,85 +397,27 @@ func footModel(t *testing.T) *Model {
 	m.workspace.snap = sysstat.Snapshot{
 		CPUPercent: 42, CPUOK: true,
 		MemPercent: 63, MemOK: true, MemUsed: 10 << 30, MemTotal: 16 << 30,
-		DiskPercent: 71, DiskOK: true, DiskFree: 120 << 30,
+		DiskPercent: 71, DiskOK: true, DiskAvailable: 120 << 30,
 	}
 	return m
 }
 
-func TestRailFootPutsMessagesRightOfComputer(t *testing.T) {
-	m := footModel(t)
-	lines := m.railFootLines(70)
-
-	joined := ansi.Strip(strings.Join(lines, "\n"))
-	if !strings.Contains(joined, "messages") {
-		t.Fatalf("want a messages card, got %q", joined)
-	}
-	if !strings.Contains(joined, "Welcome to agent-manager") {
-		t.Fatalf("want the canonical welcome title, got %q", joined)
-	}
-
-	for _, line := range lines {
-		clean := ansi.Strip(line)
-		if !strings.Contains(clean, "messages") {
-			continue
+func TestRailFootOnlyShowsComputerStats(t *testing.T) {
+	for _, full := range []bool{false, true} {
+		for _, width := range []int{34, 70, 120} {
+			m := footModel(t)
+			m.prefs.fullLayout = full
+			foot := strings.Join(m.railFootLines(width), "\n")
+			if !strings.Contains(ansi.Strip(foot), "cpu") || strings.Contains(ansi.Strip(foot), "messages") {
+				t.Fatalf("full=%v width=%d: stats foot contains messages or loses readings:\n%s", full, width, ansi.Strip(foot))
+			}
+			for _, n := range m.activeNotices() {
+				m.dismissNotice(n.id)
+			}
+			if got := strings.Join(m.railFootLines(width), "\n"); got != foot {
+				t.Fatalf("full=%v width=%d: notices changed the stats foot", full, width)
+			}
 		}
-		if strings.Index(clean, "messages") < strings.Index(ansi.Strip(lines[0]), "computer") {
-			t.Fatalf("messages must sit right of computer, got %q", clean)
-		}
-		return
-	}
-	t.Fatal("MESSAGES header row not found")
-}
-
-func TestRailFootNarrowDropsMessages(t *testing.T) {
-	m := footModel(t)
-	lines := m.railFootLines(34)
-	joined := ansi.Strip(strings.Join(lines, "\n"))
-	if strings.Contains(joined, "messages") {
-		t.Fatalf("narrow rail should keep only the meters, got %q", joined)
-	}
-	if !strings.Contains(joined, "computer") {
-		t.Fatalf("meters must survive, got %q", joined)
-	}
-}
-
-func TestRailFootAllDismissedShowsOnlyMeters(t *testing.T) {
-	m := footModel(t)
-	for _, n := range m.activeNotices() {
-		persistNoticeDismissal(t, m, n.id)
-	}
-	joined := ansi.Strip(strings.Join(m.railFootLines(70), "\n"))
-	if strings.Contains(joined, "messages") {
-		t.Fatalf("no notices means no panel, got %q", joined)
-	}
-}
-
-func TestRailFootCardBorderAndFit(t *testing.T) {
-	m := footModel(t)
-	lines := m.railFootLines(90)
-	joined := ansi.Strip(strings.Join(lines, "\n"))
-	for _, corner := range []string{"╭", "╮", "╰", "╯"} {
-		if !strings.Contains(joined, corner) {
-			t.Fatalf("card border missing %q:\n%s", corner, joined)
-		}
-	}
-	if !strings.Contains(strings.Join(lines, "\n"), bgSeq(noticeCardHex())) {
-		t.Fatal("card interior missing its fill")
-	}
-	for i, line := range lines {
-		if !strings.Contains(ansi.Strip(line), "│") {
-			t.Fatalf("row %d missing the separator: %q", i, ansi.Strip(line))
-		}
-	}
-
-	var top string
-	for _, line := range lines {
-		if strings.Contains(ansi.Strip(line), "╭") {
-			top = line
-		}
-	}
-	if got := lipgloss.Width(top); got >= 90 {
-		t.Fatalf("card must hug its content, top border spans %d of 90", got)
 	}
 }
 
@@ -618,8 +552,8 @@ func TestNoticesShortTerminalKeepsFrameAndHint(t *testing.T) {
 	if !strings.Contains(joined, "↑↓ pick") {
 		t.Fatalf("short terminal ate the key hint:\n%s", joined)
 	}
-	if !strings.Contains(joined, "…") {
-		t.Fatalf("a clipped body must say so:\n%s", joined)
+	if !strings.Contains(joined, "┃") {
+		t.Fatalf("a clipped body must show its scrollbar:\n%s", joined)
 	}
 }
 
@@ -634,13 +568,12 @@ func TestNoticesBodyScrollIsBoundedAndVisible(t *testing.T) {
 	m.openNotices("feed-scroll")
 
 	before := ansi.Strip(preparedView(m))
-	if !strings.Contains(before, "↓ more below…") {
-		t.Fatalf("clipped summary did not advertise more content:\n%s", before)
+	if !strings.Contains(before, "┃") {
+		t.Fatalf("a clipped body shows its scrollbar:\n%s", before)
 	}
 	m.handleNoticesKey(key("pgdown"))
-	after := ansi.Strip(preparedView(m))
-	if m.notices.noticeScroll == 0 || !strings.Contains(after, "↑ more above…") {
-		t.Fatalf("page down did not move the summary:\n%s", after)
+	if m.notices.noticeScroll == 0 {
+		t.Fatalf("page down did not move the summary:\n%s", ansi.Strip(preparedView(m)))
 	}
 	limit := m.noticeScrollLimit(m.activeNotices())
 	for i := 0; i < 20; i++ {
@@ -657,7 +590,7 @@ func TestReleaseSummaryMarksOmittedChangesAndPartialRange(t *testing.T) {
 		rangeComplete: false,
 	}
 	body := ansi.Strip(strings.Join(renderNoticeBody(n, noticeModalInner), "\n"))
-	for _, want := range []string{"v0.3.0 · 4 changes", "+3 more in the full notes", "catalog covers part of this range"} {
+	for _, want := range []string{"OTHER · 1", "+3 more in the full notes", "catalog covers part of this range"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("partial summary missing %q:\n%s", want, body)
 		}
@@ -944,15 +877,17 @@ func TestLateFeedKeepsModalSelection(t *testing.T) {
 }
 
 func TestNewFeedOpensNoticesModal(t *testing.T) {
-	m := footModel(t)
-	m.mode = modeList
-
-	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
-	if m.mode != modeNotices {
-		t.Fatalf("a new feed message should open the modal, mode=%v", m.mode)
-	}
-	if got := m.activeNotices()[m.notices.noticeCursor].id; got != "feed-new" {
-		t.Fatalf("new message should be selected, got %q", got)
+	for _, hidden := range []bool{false, true} {
+		m := footModel(t)
+		m.mode = modeList
+		m.prefs.hideStats = hidden
+		m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
+		if m.mode != modeNotices {
+			t.Fatalf("hidden=%v: a new feed message should open the modal, mode=%v", hidden, m.mode)
+		}
+		if got := m.activeNotices()[m.notices.noticeCursor].id; got != "feed-new" {
+			t.Fatalf("new message should be selected, got %q", got)
+		}
 	}
 }
 
@@ -1404,12 +1339,15 @@ func uiRelease(version string, changes ...string) update.Release {
 }
 
 func uiReleaseWithTotal(version string, total int, changes ...string) update.Release {
-	return update.Release{
+	release := update.Release{
 		Version:      version,
 		URL:          "https://github.com/YoanWai/agent-manager/releases/tag/" + version,
-		Changes:      changes,
 		TotalChanges: total,
 	}
+	for _, text := range changes {
+		release.Changes = append(release.Changes, update.Change{Kind: update.KindOther, Text: text})
+	}
+	return release
 }
 
 func TestUpdateDelegatesToPackageManager(t *testing.T) {
@@ -1496,8 +1434,7 @@ func TestArrowStepNoticeListedUntilDismissed(t *testing.T) {
 	}
 }
 
-// Meters and messages leave the rail foot in full screen for one condensed
-// line: the machine readings inline, and the messages count when any exist.
+// Full screen condenses the machine readings to one line.
 func TestFullLayoutFootLine(t *testing.T) {
 	m := shotModel()
 	m.prefs.fullLayout = true
@@ -1515,20 +1452,6 @@ func TestFullLayoutFootLine(t *testing.T) {
 	}
 }
 
-func TestFullLayoutFootLineCountsMessages(t *testing.T) {
-	m := buildModel(t)
-	m.width, m.height = 120, 34
-	m.prefs.fullLayout = true
-	foot := ansi.Strip(strings.Join(m.railFootLines(m.width-1), "\n"))
-	if !strings.Contains(foot, "messages") {
-		t.Fatalf("active notices should show a messages count:\n%s", foot)
-	}
-	full := ansi.Strip(preparedView(m))
-	if !strings.Contains(full, "messages") {
-		t.Fatalf("full screen frame lost the messages count:\n%s", full)
-	}
-}
-
 func TestLayoutsCanHideStats(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -1539,7 +1462,8 @@ func TestLayoutsCanHideStats(t *testing.T) {
 		{name: "full", full: true, width: 119},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			m := shotModel()
+			m := footModel(t)
+			m.width, m.height = 120, 34
 			m.prefs.fullLayout = tc.full
 			m.prefs.hideStats = true
 			if foot := m.railFootLines(tc.width); len(foot) > 0 {
@@ -1558,51 +1482,7 @@ func TestLayoutsCanHideStats(t *testing.T) {
 	}
 }
 
-func TestHiddenStatsStillShowMessages(t *testing.T) {
-	for _, tc := range []struct {
-		name  string
-		full  bool
-		width int
-	}{
-		{name: "split", width: 36},
-		{name: "full", full: true, width: 119},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			m := buildModel(t)
-			m.width, m.height = 120, 34
-			m.prefs.fullLayout = tc.full
-			m.prefs.hideStats = true
-			foot := ansi.Strip(strings.Join(m.railFootLines(tc.width), "\n"))
-			if !strings.Contains(foot, "messages") {
-				t.Fatalf("hidden stats lost active messages:\n%s", foot)
-			}
-			for _, hidden := range []string{"cpu", "mem", "disk", "net"} {
-				if strings.Contains(foot, hidden) {
-					t.Fatalf("message-only foot still contains %q:\n%s", hidden, foot)
-				}
-			}
-		})
-	}
-}
-
-func TestHiddenStatsMessageBadgeFitsNarrowWidth(t *testing.T) {
-	m := buildModel(t)
-	m.prefs.fullLayout = true
-	m.prefs.hideStats = true
-	const width = 8
-	lines := m.railFootLines(width)
-	if len(lines) != 1 {
-		t.Fatalf("narrow message foot has %d lines, want 1", len(lines))
-	}
-	if got := ansi.StringWidth(lines[0]); got > width {
-		t.Fatalf("narrow message foot is %d columns, want at most %d", got, width)
-	}
-	if lines := m.railFootLines(railInset); len(lines) != 0 {
-		t.Fatalf("message foot without usable width has %d lines, want 0", len(lines))
-	}
-}
-
-func TestReleaseSummaryPrefersAuthoredHighlights(t *testing.T) {
+func TestReleaseSummaryShowsTheListUnderTheHighlights(t *testing.T) {
 	release := uiReleaseWithTotal("v0.34.0", 17, "UI: Full screen sessions mode")
 	release.Highlights = []string{"The session list can take the whole terminal"}
 	body := ansi.Strip(strings.Join(renderNoticeBody(notice{releases: []update.Release{release}, rangeComplete: true}, noticeModalInner), "\n"))
@@ -1610,9 +1490,9 @@ func TestReleaseSummaryPrefersAuthoredHighlights(t *testing.T) {
 	if !strings.Contains(body, "• The session list can take the whole terminal") {
 		t.Fatalf("highlights missing:\n%s", body)
 	}
-	for _, unwanted := range []string{"Full screen sessions mode", "17 changes", "more in the full notes"} {
-		if strings.Contains(body, unwanted) {
-			t.Fatalf("highlights should stand alone, found %q:\n%s", unwanted, body)
+	for _, want := range []string{"OTHER · 1", "• UI: Full screen sessions mode", "+16 more in the full notes"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("the generated list follows the highlights, missing %q:\n%s", want, body)
 		}
 	}
 }
@@ -1628,7 +1508,7 @@ func TestReleaseSummaryShowsThanksUnderHighlights(t *testing.T) {
 
 	for _, want := range []string{
 		"• Revive without a captured id opens the tool's own picker",
-		"Thank you",
+		"THANK YOU",
 		"• @dolutech asked in #388 and built the picker (#400)",
 		"• @fruch reported that a live rename moved the worktree (#418)",
 	} {
@@ -1636,8 +1516,8 @@ func TestReleaseSummaryShowsThanksUnderHighlights(t *testing.T) {
 			t.Fatalf("thanks under highlights missing %q:\n%s", want, body)
 		}
 	}
-	if strings.Contains(body, "Add header and stats visibility settings") {
-		t.Fatalf("generated list should stay hidden when highlights exist:\n%s", body)
+	if !strings.Contains(body, "Add header and stats visibility settings") {
+		t.Fatalf("the generated list follows the highlights:\n%s", body)
 	}
 }
 
@@ -1649,9 +1529,9 @@ func TestReleaseSummaryShowsThanksUnderGeneratedList(t *testing.T) {
 		rangeComplete: true,
 	}, noticeModalInner), "\n"))
 	for _, want := range []string{
-		"v0.33.0 · 1 change",
+		"OTHER · 1",
 		"• UI: A change",
-		"Thank you",
+		"THANK YOU",
 		"• @pandysp asked for a way to put the preview away in #357",
 	} {
 		if !strings.Contains(body, want) {
@@ -1665,7 +1545,7 @@ func TestReleaseSummaryFallsBackToTheGeneratedList(t *testing.T) {
 		releases:      []update.Release{uiRelease("v0.33.0", "UI: A change")},
 		rangeComplete: true,
 	}, noticeModalInner), "\n"))
-	if !strings.Contains(body, "v0.33.0 · 1 change") || !strings.Contains(body, "• UI: A change") {
+	if !strings.Contains(body, "OTHER · 1") || !strings.Contains(body, "• UI: A change") {
 		t.Fatalf("release without highlights lost its generated list:\n%s", body)
 	}
 }
@@ -1740,7 +1620,7 @@ func TestWelcomeBodyFollowsTheListTable(t *testing.T) {
 		},
 	}
 	body := strings.Join(m.welcomeBody(), "\n")
-	for _, want := range []string{"n      new session           space  prompt it, no attach", "↵      focus it              A      attach it full screen", "x / v  kill / revive         s      settings", "space on a group row", "Press ? for every key: the map scrolls, and / searches it.", "Settings (s)"} {
+	for _, want := range []string{"n      new session           space  quick prompt mode", "↵      focus it              A      attach it full screen", "x / v  kill / revive         s      settings", "space on a group row", "Press ? for every key: the map scrolls, and / searches it.", "Settings (s)"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("default welcome is missing %q:\n%s", want, body)
 		}
@@ -1760,20 +1640,6 @@ func TestWelcomeBodyFollowsTheListTable(t *testing.T) {
 		if strings.Contains(body, gone) {
 			t.Errorf("remapped welcome should drop %q:\n%s", gone, body)
 		}
-	}
-}
-
-func TestFullLayoutBadgeWearsTheCardYellow(t *testing.T) {
-	m := buildModel(t)
-	m.width, m.height = 120, 34
-	m.prefs.fullLayout = true
-	foot := strings.Join(m.railFootLines(m.width-1), "\n")
-	want := noticeTitleStyle().Render(fmt.Sprintf("messages %d", len(m.activeNotices())))
-	if !strings.Contains(foot, want) {
-		t.Fatalf("badge should carry the card's tone %q:\n%q", want, foot)
-	}
-	if !m.notices.noticeHit.ok || m.notices.noticeHit.x1 > m.width-1 {
-		t.Fatalf("badge should record its columns inside the rail, got %+v", m.notices.noticeHit)
 	}
 }
 
@@ -1800,5 +1666,15 @@ func TestNoticesWaitForADragOrTheRowMenu(t *testing.T) {
 	m.handleMouse(tea.MouseMsg{X: 2, Y: y0 + line, Button: tea.MouseButtonRight, Action: tea.MouseActionPress})
 	if m.listReadyForNotice() {
 		t.Fatal("an open row menu should hold notices back")
+	}
+}
+
+func TestFullFootDiskAvailable(t *testing.T) {
+	m := &Model{workspace: workspace{snap: sysstat.Snapshot{
+		DiskOK: true, DiskPercent: 66, DiskAvailable: 167_950_000_000,
+	}}}
+	line := ansi.Strip(strings.Join(m.fullFootLine(200), "\n"))
+	if !strings.Contains(line, "disk 66% 167.9GB available") {
+		t.Fatalf("disk reading = %q", line)
 	}
 }

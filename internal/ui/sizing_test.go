@@ -207,7 +207,10 @@ func TestStartupPreservesExistingPaneHeight(t *testing.T) {
 	if _, err := tmuxCmd("resize-window", "-t", "am_"+id, "-x", "120", "-y", "80").CombinedOutput(); err != nil {
 		t.Fatal(err)
 	}
-	loaded := New(m.services.cfg, m.services.store, m.services.tmux, m.services.engine, m.services.hooks, "dev")
+	loaded, err := New(m.services.cfg, m.services.store, m.services.tmux, m.services.engine, m.services.hooks, "dev")
+	if err != nil {
+		t.Fatal(err)
+	}
 	loaded.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	loaded.applyCmd(t, loaded.refreshCmd())
 	if _, h := windowSize(t, id); h < 80 {

@@ -70,6 +70,7 @@ func updateFocusPane(m *Model, id string, change func(*uifocus.PaneUpdate)) {
 	update := uifocus.PaneUpdate{
 		SessionID: id,
 		Mouse:     pane.Mouse,
+		Alt:       pane.Alt,
 		Motion:    pane.Motion,
 		SGR:       pane.SGR,
 		History:   pane.History,

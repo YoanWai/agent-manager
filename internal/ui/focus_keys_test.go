@@ -1,19 +1,22 @@
 package ui
 
 import (
+	"os"
+	"path/filepath"
+	"slices"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
-	"os"
-	"path/filepath"
-	"slices"
-	"strings"
-	"testing"
-	"time"
 )
 
 func TestFocusKeyCommand(t *testing.T) {
@@ -365,6 +368,220 @@ func TestFocusModeForwardsArrowKeys(t *testing.T) {
 		}
 		time.Sleep(30 * time.Millisecond)
 	}
+}
+
+// A program that owns its screen, or a pane with no history to page,
+// gets the page keys itself.
+func TestFocusPageKeysReachOtherAgents(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		command string
+		alt     bool
+	}{
+		{"normal screen without history", "sh -c 'stty -ixon -iexten; exec cat -v'", false},
+		{"alternate screen with history",
+			`sh -c 'stty -ixon -iexten; i=1; while [ $i -le 120 ]; do echo line-$i; i=$((i+1)); done; printf "\033[?1049h"; exec cat -v'`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := buildModel(t)
+			m.services.cfg.Tools["page-echo"] = config.Tool{Command: tc.command, DefaultStatus: status.Idle}
+			createSessionOn(t, m, "page-key-pass-through", "page-echo", t.TempDir())
+			m.selectSessionRow(t, "page-key-pass-through")
+			sess := railSelectedSession(m)
+			waitForPaneChild(t, m, sess.ID, "cat")
+			m.focusRuntime.watch = newFocusWatch(m.services.tmux, func(tea.Msg) {})
+			t.Cleanup(m.focusRuntime.watch.Close)
+			updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+			m = updated.(*Model)
+			m.drainEffects(t)
+			mirrorPaneScreen(t, m, sess.ID, tc.alt)
+			history := m.focusPane.Pane().History
+			if tc.alt && history == 0 {
+				t.Fatal("test setup: the alternate-screen pane kept no history")
+			}
+			if !tc.alt && history != 0 {
+				t.Fatalf("test setup: the pane already holds %d lines of history", history)
+			}
+			for _, key := range []tea.KeyType{tea.KeyPgUp, tea.KeyPgDown} {
+				updated, _ = m.handleKey(tea.KeyMsg{Type: key})
+				m = updated.(*Model)
+			}
+			m.drainEffects(t)
+			deadline := time.Now().Add(5 * time.Second)
+			for {
+				pane, err := m.services.tmux.CapturePane(sess.ID)
+				if err != nil {
+					t.Fatalf("capture: %v", err)
+				}
+				if strings.Contains(pane, "^[[5~^[[6~") {
+					return
+				}
+				if time.Now().After(deadline) {
+					t.Fatalf("page-key bytes never reached the agent: %q", pane)
+				}
+				time.Sleep(30 * time.Millisecond)
+			}
+		})
+	}
+}
+
+// mirrorPaneScreen waits for the pane to reach the wanted screen and copies
+// its screen and history depth into the model, the way the watcher's pushed
+// capture would.
+func mirrorPaneScreen(t *testing.T, m *Model, sessID string, alt bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		out, err := tmuxCmd("display-message", "-p", "-t", "am_"+sessID, "#{alternate_on},#{history_size}").CombinedOutput()
+		if err != nil {
+			t.Fatalf("display-message: %v: %s", err, out)
+		}
+		screen, depth, _ := strings.Cut(strings.TrimSpace(string(out)), ",")
+		history, err := strconv.Atoi(depth)
+		if err != nil {
+			t.Fatalf("history size %q: %v", out, err)
+		}
+		if (screen == "1") == alt {
+			updateFocusPane(m, sessID, func(update *uifocus.PaneUpdate) {
+				update.Alt, update.History = alt, history
+			})
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("test setup: pane alternate_on=%s, want alternate screen %v", screen, alt)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// A normal-screen pane leaves its transcript in tmux history, so plain page
+// keys use the same capture path as the wheel.
+func TestFocusPageKeysScrollHistory(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		key      tea.KeyType
+		scrollUp bool
+	}{
+		{name: "page-up", key: tea.KeyPgUp, scrollUp: true},
+		{name: "page-down", key: tea.KeyPgDown},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m, _ := focusedWithHistory(t, tc.name)
+			pane := m.focusPane.Pane()
+			if pane.Mouse {
+				t.Fatal("test setup: expected a pane whose scrollback belongs to tmux")
+			}
+			rows := m.focusPaneRows()
+			if pane.History < 3*rows {
+				t.Fatalf("test setup: need at least three pages of history, got %d lines for %d rows", pane.History, rows)
+			}
+			if !tc.scrollUp {
+				// Start more than a page back without depending on Page Up.
+				for m.focusPane.Status().ScrollOffset < 2*rows {
+					box := m.focusPane.FrameBox()
+					cmd := m.wheelFocus(true, box.X+2, box.Y+1)
+					if cmd == nil {
+						t.Fatal("test setup: wheel did not request a history capture")
+					}
+					m.applyCmd(t, cmd)
+				}
+			}
+			beforeOffset, beforePreview := m.focusPane.Status().ScrollOffset, m.workspace.preview
+			updated, cmd := m.handleKey(tea.KeyMsg{Type: tc.key})
+			m = updated.(*Model)
+			if m.errBar.text != "" {
+				t.Fatalf("page key: %s", m.errBar.text)
+			}
+			offset := m.focusPane.Status().ScrollOffset
+			moved := beforeOffset - offset
+			if tc.scrollUp {
+				moved = -moved
+			}
+			if moved <= 0 || moved > rows {
+				t.Fatalf("%s moved scrollback from %d to %d; want to move toward the requested page by at most %d rows",
+					tc.name, beforeOffset, offset, rows)
+			}
+			if cmd == nil {
+				t.Fatal("page key moved the scroll position without requesting a capture")
+			}
+			if focusInputQueued(m) {
+				t.Fatal("a page key that scrolled was also forwarded to the pane")
+			}
+			m.applyCmd(t, cmd)
+			if m.workspace.preview == beforePreview {
+				t.Fatal("page key left the visible history unchanged")
+			}
+		})
+	}
+}
+
+func TestFocusPagingAndFooterFollowTheSamePolicy(t *testing.T) {
+	shipped, err := config.Default()
+	if err != nil {
+		t.Fatalf("default config: %v", err)
+	}
+	for _, tc := range []struct {
+		name       string
+		prepare    func(*Model, string)
+		key        tea.KeyMsg
+		wantScroll bool
+		wantHint   bool
+	}{
+		{"normal screen", func(*Model, string) {}, tea.KeyMsg{Type: tea.KeyPgUp}, true, true},
+		{"alternate screen", func(m *Model, id string) {
+			updateFocusPane(m, id, func(update *uifocus.PaneUpdate) { update.Alt = true })
+		}, tea.KeyMsg{Type: tea.KeyPgUp}, false, false},
+		{"mouse tracking", func(m *Model, id string) {
+			updateFocusPane(m, id, func(update *uifocus.PaneUpdate) { update.Mouse = true })
+		}, tea.KeyMsg{Type: tea.KeyPgUp}, false, false},
+		{"no history", func(m *Model, id string) {
+			updateFocusPane(m, id, func(update *uifocus.PaneUpdate) { update.History = 0 })
+		}, tea.KeyMsg{Type: tea.KeyPgUp}, false, false},
+		{"unknown pane", func(m *Model, _ string) {
+			updateFocusPane(m, "other", func(*uifocus.PaneUpdate) {})
+		}, tea.KeyMsg{Type: tea.KeyPgUp}, false, false},
+		{"alt page", func(*Model, string) {}, tea.KeyMsg{Type: tea.KeyPgUp, Alt: true}, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m, sessID := focusedWithHistory(t, tc.name)
+			tc.prepare(m, sessID)
+			for _, tool := range shipped.ToolNames() {
+				m.services.cfg.Tools[tool] = shipped.Tools[tool]
+				for i := range m.workspace.sessions {
+					if m.workspace.sessions[i].ID == sessID {
+						m.workspace.sessions[i].Tool = tool
+					}
+				}
+				m.focusPane.Enter(uifocus.EnterContext{SessionID: sessID, KeepPaneFacts: true})
+				hint := strings.Contains(ansi.Strip(m.viewFooter()), "pgup/pgdn scroll")
+				if hint != tc.wantHint {
+					t.Fatalf("%s: paging footer visible=%v, want %v", tool, hint, tc.wantHint)
+				}
+				_, cmd := m.handleKey(tc.key)
+				scrolled := m.focusPane.Status().ScrollOffset > 0
+				if scrolled != tc.wantScroll || (tc.wantScroll && cmd == nil) || focusInputQueued(m) == tc.wantScroll {
+					t.Fatalf("%s: PgUp capture=%v, offset=%d, forwarded=%v; want scroll=%v",
+						tool, cmd != nil, m.focusPane.Status().ScrollOffset, focusInputQueued(m), tc.wantScroll)
+				}
+				m.drainEffects(t)
+			}
+		})
+	}
+}
+
+// focusInputQueued reports whether a key is waiting on the effect lane to
+// reach the focused pane.
+func focusInputQueued(m *Model) bool {
+	jobs := append([]*effectJob(nil), m.effects.pending...)
+	if m.effects.active != nil {
+		jobs = append(jobs, m.effects.active)
+	}
+	for _, job := range jobs {
+		if _, ok := job.request.(inputRequest); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // A focused session that disappears drops the UI back to the list.
@@ -1250,7 +1467,7 @@ func TestFocusLeftUnfocusesOnCommandCodesParkedCaret(t *testing.T) {
 		sessID:  sess.ID,
 		preview: "✻ Thought for 2 seconds [ctrl+o to expand]\n\n────────────\n❯ Ask your question...\n────────────\n  ? for shortcuts\n\n\n\n",
 	}
-	applyPaneState(&hidden, "0,6,0,000,0,0,0")
+	applyPaneState(&hidden, "0,6,0,000,0,0,0,0")
 	updated, _ = m.Update(hidden)
 	m.drainEffects(t)
 	*m = *updated.(*Model)

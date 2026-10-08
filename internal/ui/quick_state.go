@@ -26,4 +26,10 @@ type quickState struct {
 	// defaultsTouched protects an explicit tool or worktree choice from the
 	// external settings refresh queued when this quick bar opened.
 	defaultsTouched bool
+	choice          choice
+	// picking is the list open above the prompt, which takes the typing.
+	picking int
+	// hits are relative to the origin, the bar's first painted line.
+	hits             []quickHit
+	originX, originY int
 }

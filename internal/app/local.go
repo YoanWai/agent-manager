@@ -29,7 +29,7 @@ func OpenLocal(profileDir string, driver *tmux.Driver) (*Local, error) {
 	if driver == nil {
 		return nil, errors.New("local application requires an explicit tmux driver")
 	}
-	cfg, err := config.LoadDir(profileDir)
+	cfg, err := config.Default()
 	if err != nil {
 		return nil, err
 	}
@@ -44,7 +44,12 @@ func OpenLocal(profileDir string, driver *tmux.Driver) (*Local, error) {
 	if err != nil {
 		return nil, err
 	}
-	driver.SetSessionKeys(cfg.SessionKeys)
+	keys, err := st.SessionKeys()
+	if err != nil {
+		st.Close()
+		return nil, err
+	}
+	driver.SetSessionKeys(keys)
 	optionalGitDriver, _ := git.New()
 	runtime := sessioncmd.Runtime{
 		Config: cfg, Store: st, Driver: driver, Hooks: hooks.NewManager(profileDir),

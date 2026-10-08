@@ -1,11 +1,13 @@
 package ui
 
 import (
+	"testing"
+	"time"
+
+	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
-	"testing"
-	"time"
 )
 
 func TestAStaleRefreshKeepsASessionLaunchedAfterItWasListed(t *testing.T) {
@@ -16,7 +18,7 @@ func TestAStaleRefreshKeepsASessionLaunchedAfterItWasListed(t *testing.T) {
 	// opened, delivered once the pass has finished its tmux and ps calls.
 	inFlight := m.poller.refreshOnce()
 
-	if err := m.spawnSession("claude", "late-arrival", t.TempDir(), "", "", false, false); err != nil {
+	if err := m.spawnSession("claude", "late-arrival", t.TempDir(), "", "", false, false, config.Choice{}); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	launched := m.sessionRows()
@@ -37,7 +39,7 @@ func TestAStaleRefreshKeepsALaunchListedWhileTmuxWasStartingIt(t *testing.T) {
 	m := buildModel(t)
 	m.applyCmd(t, m.refreshCmd())
 
-	if err := m.spawnSession("claude", "slow-window", t.TempDir(), "", "", false, false); err != nil {
+	if err := m.spawnSession("claude", "slow-window", t.TempDir(), "", "", false, false, config.Choice{}); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	launched := m.sessionRows()[0]
@@ -82,7 +84,7 @@ func staleRefreshAfter(m *Model) refreshMsg {
 func TestAStaleRefreshDoesNotBringBackASessionJustDeleted(t *testing.T) {
 	m := buildModel(t)
 	m.applyCmd(t, m.refreshCmd())
-	if err := m.spawnSession("claude", "doomed", t.TempDir(), "", "", false, false); err != nil {
+	if err := m.spawnSession("claude", "doomed", t.TempDir(), "", "", false, false, config.Choice{}); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	sess := m.sessionRows()[0]
@@ -106,7 +108,7 @@ func TestAStaleRefreshDoesNotBringBackASessionJustDeleted(t *testing.T) {
 func TestAStaleRefreshDoesNotBringBackASessionJustArchived(t *testing.T) {
 	m := buildModel(t)
 	m.applyCmd(t, m.refreshCmd())
-	if err := m.spawnSession("claude", "shelved", t.TempDir(), "", "", false, false); err != nil {
+	if err := m.spawnSession("claude", "shelved", t.TempDir(), "", "", false, false, config.Choice{}); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	sess := m.sessionRows()[0]

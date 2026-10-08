@@ -58,6 +58,11 @@ func (e *Engine) LastMessage(tool, pane string) (line string, anchored, ok bool)
 	if !ok {
 		return "", false, false
 	}
+	if tr.dialogAsks != nil {
+		if q := tr.askedQuestion(pane[len(region):]); q != "" {
+			return q, true, true
+		}
+	}
 	lines := strings.Split(region, "\n")
 	inBlock := tr.chromeBlockRows(lines)
 	if tr.dialogOpen(pane[len(region):]) {
@@ -102,6 +107,55 @@ func (e *Engine) LastMessage(tool, pane string) (line string, anchored, ok bool)
 	return strings.TrimSpace(strings.Join(parts, " ")), true, true
 }
 
+// askedQuestion is the dialog_question row nearest above the selected option,
+// since a tool may draw its own prompt, which can end in "?" too, above the
+// question. A question wider than the pane wraps; the rows above it that the
+// next row's first word would not have fitted on are its start.
+func (tr toolRules) askedQuestion(tail string) string {
+	rows := strings.Split(tail, "\n")
+	end := len(rows)
+	for i, row := range rows {
+		if selectedOption.MatchString(row) {
+			end = i
+			break
+		}
+	}
+	q := -1
+	for i := 0; i < end; i++ {
+		if tr.dialogAsks.MatchString(rows[i]) {
+			q = i
+		}
+	}
+	if q == -1 {
+		return ""
+	}
+	text := func(i int) string {
+		m := boxedText.FindStringSubmatch(rows[i])
+		if m == nil {
+			return ""
+		}
+		return strings.TrimSpace(m[1])
+	}
+	question := text(q)
+	for i := q - 1; i >= 0; i-- {
+		above := text(i)
+		if above == "" || strings.HasPrefix(above, "- ") || strings.ContainsAny(string([]rune(above)[:1]), "╭╰│─") {
+			break
+		}
+		first, _, _ := strings.Cut(question, " ")
+		if ansi.StringWidth(above)+1+ansi.StringWidth(first) <= ansi.StringWidth(rows[i])-4 {
+			break
+		}
+		question = above + " " + question
+	}
+	return question
+}
+
+var (
+	selectedOption = regexp.MustCompile(`^[\s│]*●\s*\d+\.`)
+	boxedText      = regexp.MustCompile(`^│ ([^│]*?)\s*│\s*$`)
+)
+
 func (tr toolRules) dialogOpen(cutoffTail string) bool {
 	footer, ok := footerBelow(cutoffTail)
 	return ok && tr.dialogFooter != nil && tr.dialogFooter.MatchString(footer)
@@ -144,34 +198,62 @@ func (e *Engine) Plain(tool, pane string) string {
 	return ansi.Strip(strings.Join(lines, "\n"))
 }
 
-// chromeBlockRows marks the rows of each chrome_block: the matching row and
-// every row drawn straight under it, up to the next blank row.
+// chromeBlockRows marks each chrome block up to its next blank row. Prompt
+// echoes also own deeper-indented continuation rows across blank paragraphs.
 func (tr toolRules) chromeBlockRows(lines []string) []bool {
 	inBlock := make([]bool, len(lines))
 	if tr.chromeBlock == nil {
 		return inBlock
 	}
-	open := false
-	for i, raw := range lines {
-		line := strings.TrimRight(raw, " \t")
+	for i := 0; i < len(lines); {
+		line := strings.TrimRight(lines[i], " \t")
 		if strings.TrimSpace(line) == "" {
-			open = false
+			i++
 			continue
 		}
 		matchText := line
-		if !open {
-			for j := i + 1; j < len(lines); j++ {
-				next := strings.TrimRight(lines[j], " \t")
-				if strings.TrimSpace(next) != "" {
-					matchText += "\n" + next
-					break
-				}
+		// A heading wraps over up to four rows on the narrowest pane.
+		for j := i + 1; j < len(lines) && j <= i+3; j++ {
+			next := strings.TrimRight(lines[j], " \t")
+			if strings.TrimSpace(next) == "" {
+				break
 			}
+			matchText += "\n" + next
 		}
-		open = open || tr.chromeBlock.MatchString(matchText)
-		inBlock[i] = open
+		if !tr.chromeBlock.MatchString(matchText) {
+			i++
+			continue
+		}
+		end := tr.chromeBlockEnd(lines, i)
+		for ; i < end; i++ {
+			inBlock[i] = true
+		}
 	}
 	return inBlock
+}
+
+func (tr toolRules) chromeBlockEnd(lines []string, i int) int {
+	for i < len(lines) {
+		line := strings.TrimRight(lines[i], " \t")
+		if strings.TrimSpace(line) == "" {
+			return i
+		}
+		text := strings.TrimLeft(line, " \t")
+		i++
+		if !tr.inputRow(text) {
+			continue
+		}
+		promptIndent := len(line) - len(text)
+		for i < len(lines) {
+			line := lines[i]
+			indent := len(line) - len(strings.TrimLeft(line, " \t"))
+			if strings.TrimSpace(line) != "" && indent <= promptIndent {
+				return i
+			}
+			i++
+		}
+	}
+	return i
 }
 
 // isStructural reports whether line is the tool's own frame - chrome, a

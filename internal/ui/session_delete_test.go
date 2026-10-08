@@ -3,6 +3,7 @@ package ui
 import (
 	"errors"
 	"fmt"
+	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
@@ -161,7 +162,7 @@ func TestDeleteRemovesCleanWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 	initGitRepo(t, repo)
-	if err := m.spawnSession("claude", "wt-clean", repo, "", "", false, true); err != nil {
+	if err := m.spawnSession("claude", "wt-clean", repo, "", "", false, true, config.Choice{}); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	sessions, _ := m.services.store.ListSessions(true)
@@ -177,7 +178,7 @@ func TestDeleteRemovesCleanWorktree(t *testing.T) {
 func TestDeleteKeepsWorktreeUntilLastSharingSession(t *testing.T) {
 	m := buildModel(t)
 	repo := seedRepo(t)
-	if err := m.spawnSession("claude", "owner", repo, "", "", false, true); err != nil {
+	if err := m.spawnSession("claude", "owner", repo, "", "", false, true, config.Choice{}); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	sessions, err := m.services.store.ListSessions(true)
@@ -224,7 +225,7 @@ func TestDeleteKeepsDirtyWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 	initGitRepo(t, repo)
-	if err := m.spawnSession("claude", "wt-dirty", repo, "", "", false, true); err != nil {
+	if err := m.spawnSession("claude", "wt-dirty", repo, "", "", false, true, config.Choice{}); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	sessions, _ := m.services.store.ListSessions(true)
@@ -243,6 +244,20 @@ func TestDeleteKeepsDirtyWorktree(t *testing.T) {
 	}
 	if remaining, _ := m.services.store.ListSessions(true); len(remaining) != 0 {
 		t.Fatal("session record should still be deleted")
+	}
+}
+
+func TestDeleteRemovesTheSessionSettings(t *testing.T) {
+	m := buildModel(t)
+	createSessionOn(t, m, "hooked", "claude-hooked", t.TempDir())
+	settings := m.services.hooks.SettingsFile(m.sessionRows()[0].ID)
+	if _, err := os.Stat(settings); err != nil {
+		t.Fatalf("launch should write the session's settings: %v", err)
+	}
+
+	deleteSession(t, m, "hooked")
+	if _, err := os.Stat(settings); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("delete left the session's settings behind: %v", err)
 	}
 }
 

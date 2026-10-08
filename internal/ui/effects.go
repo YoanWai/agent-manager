@@ -213,7 +213,7 @@ func (m *Model) handleEffectCompleted(msg effectCompletedMsg) (tea.Model, tea.Cm
 	}
 	m.effects.active = nil
 	switch job.request.(type) {
-	case inputRequest, quickSendRequest, installStartRequest, lifecycleRequest, railRequest, forkRequest, spawnRequest, groupRequest, renameRequest, focusRequest, ackRequest, attachRequest:
+	case inputRequest, quickSendRequest, installStartRequest, lifecycleRequest, afterTurnRequest, railRequest, forkRequest, spawnRequest, groupRequest, renameRequest, focusRequest, ackRequest, attachRequest:
 		if msg.finishedAt.After(m.effects.latestObservation) {
 			m.effects.latestObservation = msg.finishedAt
 		}
@@ -240,6 +240,8 @@ func (m *Model) handleEffectCompleted(msg effectCompletedMsg) (tea.Model, tea.Cm
 		command = m.applyInstallSettle(job.request.(installSettleRequest), result, msg.err)
 	case lifecycleEffectResult:
 		command = m.applyLifecycleEffect(job.request.(lifecycleRequest), result, msg.err)
+	case afterTurnResult:
+		command = m.applyAfterTurn(job.request.(afterTurnRequest), result, msg.err)
 	case railEffectResult:
 		command = m.applyRailEffect(job, result, msg.err)
 	case forkEffectResult:

@@ -16,7 +16,7 @@ import (
 
 func TestDefaultToolFallsBackWhenSettingStale(t *testing.T) {
 	m := buildModel(t)
-	if err := m.services.store.SetSetting("default_tool", "deleted-tool"); err != nil {
+	if err := m.services.store.SetDefaultTool("deleted-tool"); err != nil {
 		t.Fatalf("set setting: %v", err)
 	}
 	m.applyTestMsg(t, m.openForm()())
@@ -120,7 +120,7 @@ func TestSettingsCoordinationBriefsTheNextSpawn(t *testing.T) {
 
 	// ready-tool has no MCP client, so the mode reaches it as the note its
 	// first prompt opens with.
-	if err := m.spawnSession("ready-tool", "api-build", t.TempDir(), "", "build the api", false, false); err != nil {
+	if err := m.spawnSession("ready-tool", "api-build", t.TempDir(), "", "build the api", false, false, config.Choice{}); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	sess, err := m.services.store.Get(m.sessionRows()[0].ID)
@@ -175,7 +175,7 @@ func TestSettingsMouseTogglePersists(t *testing.T) {
 	if !m.prefs.mouseDisabled {
 		t.Fatal("model should carry the toggled value after save")
 	}
-	if loaded := New(m.services.cfg, m.services.store, m.services.tmux, m.services.engine, m.services.hooks, "dev"); !loaded.prefs.mouseDisabled {
+	if loaded := reloadModel(t, m); !loaded.prefs.mouseDisabled {
 		t.Fatal("a fresh model should reload the persisted choice")
 	}
 }
@@ -332,9 +332,9 @@ func TestSettingsCLIPickerHidesFromNewSessions(t *testing.T) {
 	if m.settings.cliPicker {
 		t.Fatal("esc should leave the picker")
 	}
-	raw, err := m.services.store.Setting(hiddenToolsSetting)
-	if err != nil || raw != "codex" {
-		t.Fatalf("stored hidden_tools = %q err %v, want codex", raw, err)
+	hidden, err := m.services.store.HiddenTools()
+	if err != nil || len(hidden) != 1 || !hidden["codex"] {
+		t.Fatalf("stored hidden tools = %v err %v, want codex", hidden, err)
 	}
 
 	enabled := m.cachedEnabledToolNames()
@@ -421,19 +421,6 @@ func TestCLIPickerShowsSupportAction(t *testing.T) {
 	}
 	if !strings.Contains(out, "more will be supported soon") {
 		t.Fatalf("missing support note:\n%s", out)
-	}
-}
-
-func TestParseFormatHiddenTools(t *testing.T) {
-	if got := parseHiddenTools(""); got != nil {
-		t.Fatalf("empty parse = %v", got)
-	}
-	got := parseHiddenTools("codex, grok")
-	if !got["codex"] || !got["grok"] || len(got) != 2 {
-		t.Fatalf("parse = %v", got)
-	}
-	if formatHiddenTools(map[string]bool{"grok": true, "codex": true}) != "codex,grok" {
-		t.Fatalf("format should sort: %q", formatHiddenTools(map[string]bool{"grok": true, "codex": true}))
 	}
 }
 

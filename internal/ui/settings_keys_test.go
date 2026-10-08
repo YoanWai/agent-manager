@@ -1,25 +1,19 @@
 package ui
 
 import (
-	"github.com/YoanWai/agent-manager/internal/keybind"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/x/ansi"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/YoanWai/agent-manager/internal/keybind"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
-// keyPickerModel opens the settings screen on its own config directory and
-// steps into the key picker, so a test never writes the real config.
+// keyPickerModel opens the settings screen and steps into the key picker.
 func keyPickerModel(t *testing.T) *Model {
 	t.Helper()
 	m := buildModel(t)
-	m.services.configDir = t.TempDir()
-	if err := os.WriteFile(filepath.Join(m.services.configDir, "config.toml"), []byte("poll_interval = \"2s\"\n"), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
 	m.services.keys = keybind.DefaultSession()
 	m.services.tmux.SetSessionKeys(m.services.keys)
 	t.Cleanup(func() {
@@ -45,17 +39,28 @@ func (m *Model) pressInPicker(t *testing.T, msg tea.KeyMsg) tea.Cmd {
 	return cmd
 }
 
-func savedConfig(t *testing.T, m *Model) string {
+func storedSessionKeys(t *testing.T, m *Model) keybind.Table {
 	t.Helper()
-	text, err := os.ReadFile(filepath.Join(m.services.configDir, "config.toml"))
+	keys, err := m.services.store.SessionKeys()
 	if err != nil {
-		t.Fatalf("read config: %v", err)
+		t.Fatalf("SessionKeys: %v", err)
 	}
-	return string(text)
+	return keys
+}
+
+// storedKeyRow is the raw row a scope's table is kept in, empty until the
+// picker saves that table.
+func storedKeyRow(t *testing.T, m *Model, scope string) string {
+	t.Helper()
+	row, err := m.services.store.Setting("keybindings." + scope)
+	if err != nil {
+		t.Fatalf("Setting: %v", err)
+	}
+	return row
 }
 
 // The picker binds the key that was pressed: leaving it writes the table to
-// config.toml, puts it on the model, and rebinds the tmux server so a live
+// the store, puts it on the model, and rebinds the tmux server so a live
 // session answers to the new key.
 func TestKeyPickerBindsCapturedKeyAndSavesIt(t *testing.T) {
 	m := keyPickerModel(t)
@@ -81,8 +86,8 @@ func TestKeyPickerBindsCapturedKeyAndSavesIt(t *testing.T) {
 	if got := m.services.keys.Binding(keybind.Detach).Label(); got != `ctrl+q / ctrl+\` {
 		t.Fatalf("runtime detach changed before the save committed: %q", got)
 	}
-	if saved := savedConfig(t, m); strings.Contains(saved, `detach = "f9"`) {
-		t.Fatalf("config.toml was written on the update path:\n%s", saved)
+	if row := storedKeyRow(t, m, keybind.ScopeSession); row != "" {
+		t.Fatalf("the store was written on the update path: %s", row)
 	}
 	// The completion's refresh command carries the tmux rebind; run it the
 	// way the event loop would.
@@ -93,8 +98,8 @@ func TestKeyPickerBindsCapturedKeyAndSavesIt(t *testing.T) {
 	if got := m.services.keys.Binding(keybind.Detach).Label(); got != "f9" {
 		t.Fatalf("model detach = %q, want f9", got)
 	}
-	if saved := savedConfig(t, m); !strings.Contains(saved, `detach = "f9"`) {
-		t.Fatalf("config.toml should carry the new key:\n%s", saved)
+	if got := storedSessionKeys(t, m).Binding(keybind.Detach).Label(); got != "f9" {
+		t.Fatalf("stored detach = %q, want f9", got)
 	}
 
 	bound, err := tmuxCmd("list-keys", "-T", "root").CombinedOutput()
@@ -112,8 +117,8 @@ func TestKeyPickerBindsCapturedKeyAndSavesIt(t *testing.T) {
 	}
 }
 
-// A key the manager cannot bind is refused in the picker with the same
-// reason the config file gives, and nothing changes.
+// A key the manager cannot bind is refused in the picker with the reason,
+// and nothing changes.
 func TestKeyPickerRefusesAKeyTheAgentNeeds(t *testing.T) {
 	m := keyPickerModel(t)
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
@@ -163,8 +168,8 @@ func TestKeyPickerTurnsAnActionOffButKeepsAWayBack(t *testing.T) {
 	m.settings.keyCursor = 2
 	cmd := m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
 	m.applyCmd(t, cmd)
-	if saved := savedConfig(t, m); !strings.Contains(saved, `editor = "none"`) {
-		t.Fatalf("config.toml should record the disabled action:\n%s", saved)
+	if got := storedSessionKeys(t, m).Binding(keybind.Editor).Label(); got != "" {
+		t.Fatalf("the store should record the disabled action, got %q", got)
 	}
 }
 
@@ -219,14 +224,15 @@ func TestKeyPickerResetsEveryActionToItsDefaultAfterAsking(t *testing.T) {
 	if !m.services.keys.Equal(keybind.DefaultSession()) || !m.services.listKeys.Equal(keybind.DefaultList()) {
 		t.Fatalf("model keys after save = %s, new_session %s", m.services.keys.Binding(keybind.Detach).Label(), m.services.listKeys.Binding(keybind.NewSession).Label())
 	}
-	saved := savedConfig(t, m)
-	for _, want := range []string{"[keybindings.session]", `review = "ctrl+r"`, `editor = "f3"`, "[keybindings.list]", `new_session = "n"`} {
-		if !strings.Contains(saved, want) {
-			t.Fatalf("saved config is missing %q:\n%s", want, saved)
-		}
+	if !storedSessionKeys(t, m).Equal(keybind.DefaultSession()) {
+		t.Fatalf("stored session keys = %s", storedKeyRow(t, m, keybind.ScopeSession))
 	}
-	if strings.Contains(saved, "f9") {
-		t.Fatalf("the added key should be gone:\n%s", saved)
+	storedList, err := m.services.store.ListKeys()
+	if err != nil {
+		t.Fatalf("ListKeys: %v", err)
+	}
+	if !storedList.Equal(keybind.DefaultList()) {
+		t.Fatalf("stored list keys = %s", storedKeyRow(t, m, keybind.ScopeList))
 	}
 }
 
@@ -253,16 +259,18 @@ func TestKeyPickerEscapeCancelsCapture(t *testing.T) {
 	}
 }
 
-// Leaving the picker without a change writes nothing, so a visit cannot
-// rewrite a config file the user hand-wrote.
-func TestKeyPickerLeavesTheFileAloneWithoutAChange(t *testing.T) {
+// Leaving the picker without a change writes nothing, so an action nobody
+// moved keeps following the default a later release gives it.
+func TestKeyPickerLeavesTheStoreAloneWithoutAChange(t *testing.T) {
 	m := keyPickerModel(t)
-	before := savedConfig(t, m)
 	if cmd := m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc}); cmd != nil {
 		t.Fatal("an unchanged table should not refresh the sessions")
 	}
-	if after := savedConfig(t, m); after != before {
-		t.Fatalf("the file should be untouched:\n%s", after)
+	m.drainEffects(t)
+	for _, scope := range []string{keybind.ScopeSession, keybind.ScopeList} {
+		if row := storedKeyRow(t, m, scope); row != "" {
+			t.Fatalf("the %s table should not be stored: %s", scope, row)
+		}
 	}
 }
 
@@ -329,19 +337,22 @@ func TestListPickerMovesAKeyAndTheListFollows(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("saving the list table should enqueue the save work")
 	}
-	if saved := savedConfig(t, m); strings.Contains(saved, `new_session = "N"`) {
-		t.Fatalf("config.toml was written on the update path:\n%s", saved)
+	if row := storedKeyRow(t, m, keybind.ScopeList); row != "" {
+		t.Fatalf("the store was written on the update path: %s", row)
 	}
 	if m.errBar.text != "" {
 		t.Fatalf("saving reported %q", m.errBar.text)
 	}
 	m.applyCmd(t, cmd)
-	saved := savedConfig(t, m)
-	if !strings.Contains(saved, "[keybindings.list]") || !strings.Contains(saved, `new_session = "N"`) {
-		t.Fatalf("config.toml should carry the list table:\n%s", saved)
+	stored, err := m.services.store.ListKeys()
+	if err != nil {
+		t.Fatalf("ListKeys: %v", err)
 	}
-	if strings.Contains(saved, "[keybindings.session]") {
-		t.Fatalf("the session table was not touched and should not be written:\n%s", saved)
+	if got := stored.Binding(keybind.NewSession).Label(); got != "N" {
+		t.Fatalf("stored new_session = %q, want N", got)
+	}
+	if row := storedKeyRow(t, m, keybind.ScopeSession); row != "" {
+		t.Fatalf("the session table was not touched and should not be stored: %s", row)
 	}
 
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
@@ -404,4 +415,62 @@ func listRow(t *testing.T, m *Model, name string) int {
 	}
 	t.Fatalf("no list action %q", name)
 	return -1
+}
+
+// The picker sets tmux_prefix like a session key and refuses a third prefix key.
+func TestKeyPickerSetsTheTmuxPrefix(t *testing.T) {
+	m := keyPickerModel(t)
+	m.settings.keyCursor = 3
+	if row := m.pickedRow(); row.action.Name != keybind.TmuxPrefix {
+		t.Fatalf("row 3 = %q, want tmux_prefix", row.action.Name)
+	}
+	if view := ansi.Strip(m.viewKeyPicker()); !strings.Contains(view, "off, your prefix stays") {
+		t.Fatalf("an unset tmux_prefix should say tmux keeps its prefix:\n%s", view)
+	}
+
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyCtrlB})
+	m.pressInPicker(t, runeKey("a"))
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyF12})
+	m.pressInPicker(t, runeKey("a"))
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyCtrlG})
+	if !strings.Contains(m.errBar.text, "takes one key or two") {
+		t.Fatalf("err = %q, want the two-key rule", m.errBar.text)
+	}
+	if got := m.settings.tables[0].Binding(keybind.TmuxPrefix).Label(); got != "ctrl+b / f12" {
+		t.Fatalf("tmux_prefix = %q, want both keys", got)
+	}
+
+	// The refused third key's message belongs to the picker; the save
+	// itself must report nothing.
+	m.errBar.text = ""
+	cmd := m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
+	if cmd == nil {
+		t.Fatal("saving should enqueue the save work")
+	}
+	// The completion's refresh command carries the tmux rebind; run it the
+	// way the event loop would.
+	updated, next := m.Update(cmd())
+	*m = *updated.(*Model)
+	m.applyTestMsg(t, next())
+	m.drainEffects(t)
+	if m.errBar.text != "" {
+		t.Fatalf("saving reported %q", m.errBar.text)
+	}
+	if got := m.services.keys.Binding(keybind.TmuxPrefix).Label(); got != "ctrl+b / f12" {
+		t.Fatalf("model tmux_prefix = %q", got)
+	}
+	if got := storedSessionKeys(t, m).Binding(keybind.TmuxPrefix).Label(); got != "ctrl+b / f12" {
+		t.Fatalf("stored tmux_prefix = %q, want both keys", got)
+	}
+}
+
+// Reset puts tmux_prefix back to off, and the question says so in words.
+func TestKeyPickerResetNamesTheTmuxPrefixGoingOff(t *testing.T) {
+	m := keyPickerModel(t)
+	m.settings.tables[0] = m.settings.tables[0].With(keybind.TmuxPrefix, bindingOf(t, "ctrl+b"))
+	m.pressInPicker(t, runeKey("r"))
+	if ask := ansi.Strip(m.viewKeyPicker()); !strings.Contains(ask, "tmux_prefix: ctrl+b back to off") {
+		t.Fatalf("the question should name tmux_prefix going off:\n%s", ask)
+	}
 }

@@ -31,8 +31,6 @@ func buildModelWithStorePath(t *testing.T, dbPath string) *Model {
 		t.Skip("tmux not installed")
 	}
 	cfg := config.Config{
-		SessionKeys: keybind.DefaultSession(),
-		ListKeys:    keybind.DefaultList(),
 		Tools: map[string]config.Tool{
 			"claude": {Command: "cat", DefaultStatus: status.Idle},
 			// Parks the terminal cursor below its footer and paints the
@@ -137,7 +135,10 @@ func buildModelWithStorePath(t *testing.T, dbPath string) *Model {
 		t.Fatalf("engine: %v", err)
 	}
 
-	m := New(cfg, st, driver, engine, hooks.NewManager(t.TempDir()), "dev")
+	m, err := New(cfg, st, driver, engine, hooks.NewManager(t.TempDir()), "dev")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
 	m.width = 120
 	m.height = 40
 	m.startup.booting = false
@@ -422,7 +423,7 @@ func createSessionOn(t *testing.T, m *Model, name, tool, dir string) {
 	m.form.name.SetValue(name)
 	m.form.dir.SetValue(dir)
 	picked := false
-	for i, candidate := range sortedToolNames(m.services.cfg) {
+	for i, candidate := range m.services.cfg.AgentToolNames() {
 		if candidate == tool {
 			m.form.toolIndex, picked = i, true
 		}
@@ -442,7 +443,7 @@ func createSessionOn(t *testing.T, m *Model, name, tool, dir string) {
 // session without going through a dialog. It drives the same worker and
 // completion the deferred form/quick spawn does, so both paths stay
 // reconciled.
-func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoNamed, worktree bool) error {
+func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoNamed, worktree bool, choice config.Choice) error {
 	paneW, paneH := m.paneTargetSize()
 	request := spawnRequest{
 		kind:         spawnForm,
@@ -455,6 +456,8 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 		worktree:     worktree,
 		pickWorktree: worktree,
 		pane:         sessioncmd.PaneSize{Width: paneW, Height: paneH},
+		choice:       choice,
+		base:         m.groupBase(group),
 	}
 	services := effectServices{
 		store: m.services.store, driver: m.services.tmux, gitDrv: m.services.gitDrv, cfg: m.services.cfg,
@@ -503,8 +506,19 @@ func quitAgent(t *testing.T, m *Model, sessID string) {
 	waitForAgent(t, m, sessID, false)
 }
 
+// reloadModel is the manager started again on the same store, the way a
+// restart reads back what Settings saved.
+func reloadModel(t *testing.T, m *Model) *Model {
+	t.Helper()
+	loaded, err := New(m.services.cfg, m.services.store, m.services.tmux, m.services.engine, m.services.hooks, "dev")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	return loaded
+}
+
 // useSessionKeys swaps the session key table the model and its driver
-// read, the way a config.toml with a [keybindings.session] block would.
+// read, the way the keys Settings stored would.
 func useSessionKeys(t *testing.T, m *Model, detach, review, editor []string) {
 	t.Helper()
 	m.services.keys = sessionOf(t, detach, review, editor)
@@ -602,7 +616,7 @@ func shotModel() *Model {
 				CPUOK: true, CPUPercent: 22,
 				MemOK: true, MemPercent: 75, MemUsed: 12_100_000_000, MemTotal: 16_000_000_000,
 				SwapOK: true, SwapPercent: 43, SwapUsed: 4_500_000_000, SwapTotal: 8_000_000_000,
-				DiskOK: true, DiskPercent: 88, DiskUsed: 400_000_000_000, DiskFree: 100_000_000_000, DiskTotal: 500_000_000_000,
+				DiskOK: true, DiskPercent: 88, DiskUsed: 400_000_000_000, DiskAvailable: 100_000_000_000, DiskTotal: 500_000_000_000,
 				CPUTempOK: true, CPUTemp: 61, GPUTempOK: true, GPUTemp: 55,
 			},
 			preview: previewSample,
@@ -662,4 +676,15 @@ func (m *Model) foregroundTestCmd(t *testing.T, cmd tea.Cmd) tea.Cmd {
 		t.Fatalf("expected one foreground message, got %d", len(messages))
 	}
 	return func() tea.Msg { return messages[0] }
+}
+
+func gitOutput(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git %v: %v", args, err)
+	}
+	return strings.TrimSpace(string(out))
 }

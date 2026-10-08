@@ -38,10 +38,10 @@ func pollMessage(result execution.Result) tea.Msg {
 	}
 	s := result.Snapshot
 	return refreshMsg{sessions: s.Sessions, listedAt: s.ListedAt, groups: s.Groups, groupPaths: s.GroupPaths,
-		groupWorktrees: s.GroupWorktrees, archivedGroups: s.ArchivedGroups, snap: s.Snap, snapOK: s.SnapOK,
+		groupWorktrees: s.GroupWorktrees, groupBases: s.GroupBases, archivedGroups: s.ArchivedGroups, snap: s.Snap, snapOK: s.SnapOK,
 		proc: s.Proc, procFor: s.ProcFor, preview: s.Preview, agents: agentStats{count: s.Agents.Count, cpu: s.Agents.CPU, ram: s.Agents.RAM, rss: s.Agents.RSS},
 		queuedMessages: s.QueuedMessages, paneLines: s.PaneLines, panePrompts: s.PanePrompts, panes: s.Panes,
-		tmuxSocket: s.TmuxSocket, leadingManager: s.LeadingManager, focusID: s.FocusID}
+		tmuxSocket: s.TmuxSocket, leadingManager: s.LeadingManager, focusID: s.FocusID, turnsEnded: s.TurnsEnded}
 }
 
 func (p *poller) refreshOnce() tea.Msg                                { return pollMessage(p.runner.Step()) }

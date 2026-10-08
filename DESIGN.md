@@ -63,7 +63,7 @@ Every theme implements the same semantic roles. The classic palette above is the
 - **Bright/Text/Dim/Subtle:** a four-step reading hierarchy.
 - **Working/Waiting/Finished/Error/Idle:** agent state, always paired with a distinct glyph or label.
 
-The warm messages surface is reserved for notices. Accent color is state, never decoration.
+The warm messages surface is reserved for notices. Accent color is state, never decoration, with one exception: inside a notice the author may accent the words that name what changed, and the headline's rule and the Highlights marks share that accent.
 
 ## Typography
 
@@ -71,9 +71,9 @@ The user's terminal monospace is the only typeface. Hierarchy comes from weight,
 
 - **Title:** bold, short, and unique within a surface.
 - **Body:** regular weight, wrapped to roughly 65–75 columns when prose is the focus.
-- **Label:** bold or dim according to importance; uppercase is reserved for the product wordmark and compact badges.
+- **Label:** bold or dim according to importance; uppercase is reserved for the product wordmark, compact badges, and the section labels inside a notice.
 
-Compact and expanded representations use the same canonical title. Do not substitute unrelated teaser copy when a surface expands.
+Compact and expanded representations use the same canonical title. Do not substitute unrelated teaser copy when a surface expands. A notice may open with one authored headline under its canonical title, which stays its label in the list.
 
 ## Elevation
 
@@ -91,7 +91,7 @@ The rail shows canonical notice titles in a bounded fieldset. Overflow is summar
 
 ### Notices modal
 
-The modal presents a short list first, then a readable summary of the selected notice. Release notices group changes by version, show the direct upgrade path, and cap visible detail with an explicit remainder rather than clipping silently.
+The modal presents a short list first, then a readable summary of the selected notice. A notice may open with an authored headline. Release notices group changes by version, newest first, list the newest release's features and fixes under its highlights, show the direct upgrade path, and cap visible detail with an explicit remainder rather than clipping silently. A long notice scrolls beside a scrollbar.
 
 ### Inputs and actions
 

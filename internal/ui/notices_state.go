@@ -15,6 +15,9 @@ type noticesState struct {
 	// the notices list, rebuilt every frame, never reads the database.
 	whatsNewVersion     string
 	whatsNewFromVersion string
+	// configImportError is why the config.toml of an earlier release was
+	// refused, shown as a notice until it is dismissed.
+	configImportError string
 	// feedMessages is the remote message feed, refreshed on the update
 	// tick and folded into the notices next to the built-in ones.
 	feedMessages []feed.Message

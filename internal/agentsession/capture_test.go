@@ -313,7 +313,7 @@ func TestParseOpencodeExportReadsDirectoryAndTime(t *testing.T) {
 }
 
 func TestCaptureUnknownStore(t *testing.T) {
-	if _, ok := Capture("weird", "/repo", time.Now(), map[string]bool{}); ok {
+	if _, ok := Capture("weird", "/repo", time.Now(), map[string]bool{}, ""); ok {
 		t.Fatal("unknown store should not match")
 	}
 }

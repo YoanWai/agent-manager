@@ -234,6 +234,8 @@ func (m *Model) action(action string, ctx KeyContext) Decision {
 		return m.intent(Prompt)
 	case keybind.CopyReply:
 		return m.intent(CopyReply)
+	case keybind.CancelEnd:
+		return m.intent(CancelEnd)
 	case keybind.FoldAll:
 		return m.toggleCollapseAll()
 	case keybind.Filter:

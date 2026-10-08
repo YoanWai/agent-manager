@@ -13,6 +13,7 @@ import (
 	"syscall"
 
 	"github.com/YoanWai/agent-manager/internal/app"
+	"github.com/YoanWai/agent-manager/internal/catalog"
 	"github.com/YoanWai/agent-manager/internal/cli"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
@@ -217,10 +218,13 @@ func run() (resultErr error) {
 	}
 	defer func() { resultErr = errors.Join(resultErr, local.Close()) }()
 	rt := local.Runtime
-	model := ui.NewWithServices(ui.Dependencies{
+	model, err := ui.NewWithServices(ui.Dependencies{
 		Config: rt.Config, Store: rt.Store, TMux: rt.Driver, Engine: local.Engine, Hooks: rt.Hooks,
 		Git: rt.Git, Lifecycle: local.Lifecycle, Execution: local.Execution, ProfileDir: dir,
 	}, version)
+	if err != nil {
+		return err
+	}
 
 	// Mouse reporting claims the wheel for the app, so a notch neither
 	// scrolls the host's scrollback out from under the manager nor arrives
@@ -234,17 +238,19 @@ func run() (resultErr error) {
 	if err := ui.DisableAlternateScroll(); err != nil {
 		return err
 	}
-	// The terminal's own background follows the theme while the manager
-	// runs, so window padding outside the cell grid matches the frame —
-	// through tmux's passthrough envelope when a multiplexer is hosting us.
+	// The terminal's own text and background colors follow the theme while
+	// the manager runs, so window padding outside the cell grid matches the
+	// frame — through tmux's passthrough envelope when a multiplexer is
+	// hosting us.
 	ui.EnableTerminalPassthrough()
-	ui.SyncTerminalBackground()
+	ui.SyncTerminalColors()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := model.StartPoller(ctx, program.Send)
 	stopRuntime := func() { model.StopEffects(); cancel(); <-done }
 	defer stopRuntime()
 	final, runErr := program.Run()
-	ui.ResetTerminalBackground()
+	catalog.StopAll()
+	ui.ResetTerminalColors()
 	if runErr == nil {
 		if finished, ok := final.(*ui.Model); ok && finished.RestartPath() != "" {
 			// A self-update swapped the binary on disk; exec replaces this

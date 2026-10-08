@@ -3,6 +3,7 @@ package ui
 import (
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/store"
 	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
@@ -49,9 +50,12 @@ func (m *Model) helpContext(width int) uihelp.Context {
 		ArrowStep:   m.prefs.arrowStep,
 		Width:       width,
 		Glyphs: uihelp.Glyphs{
-			RowMenu: uirail.MenuGlyph,
-			Reorder: uirail.ReorderGlyph,
+			RowMenu:          uirail.MenuGlyph,
+			Reorder:          uirail.ReorderGlyph,
+			AfterTurnArchive: afterTurnGlyphs[store.AfterTurnArchive],
+			AfterTurnKill:    afterTurnGlyphs[store.AfterTurnKill],
 		},
+		QuickKeys:    uihelp.QuickKeys{Model: quickModelKey, Effort: quickEffortKey, Profile: quickProfileKey},
 		CursorMarker: cursorAnchorMarker,
 		Styles: uihelp.Styles{
 			Section: sectionStyle,

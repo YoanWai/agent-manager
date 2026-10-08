@@ -50,3 +50,45 @@ func TestArchivedToggleWaitsForFreshInventory(t *testing.T) {
 		t.Fatalf("toggle rebuilt stale inventory: %+v", rows)
 	}
 }
+
+func TestPendingEndMenuOffersCancelOnLiveAndDeadRows(t *testing.T) {
+	for _, state := range []string{"idle", "dead"} {
+		model := New(nil)
+		model.Reconcile(Snapshot{Sessions: []Session{{ID: "agent", Name: "agent", Status: state, AfterTurn: "kill", AfterTurnGlyph: "■"}}})
+		selection := Selection{Kind: SessionRow, SessionID: "agent"}
+		model.Focus(selection)
+		model.openMenu(selection, 0, 0, false)
+		cancel := -1
+		for index, item := range model.menu.items {
+			if item.label == "Cancel kill" && item.action == CancelEnd {
+				cancel = index
+			}
+		}
+		if cancel < 0 {
+			t.Fatalf("%s row menu has no Cancel kill: %+v", state, model.menu.items)
+		}
+		if decision := model.runMenuItem(cancel); decision.Intent.Kind != CancelEnd || decision.Intent.Target != selection {
+			t.Fatalf("%s cancel decision = %+v", state, decision)
+		}
+	}
+}
+
+func TestCancelEndKeyReturnsTypedIntent(t *testing.T) {
+	model := New(nil)
+	model.Reconcile(Snapshot{Sessions: []Session{{ID: "agent", Name: "agent", AfterTurn: "archive"}}})
+	model.Focus(Selection{Kind: SessionRow, SessionID: "agent"})
+	if decision := model.action(keybind.CancelEnd, KeyContext{}); decision.Intent.Kind != CancelEnd {
+		t.Fatalf("cancel key decision = %+v", decision)
+	}
+}
+
+func TestGroupAndRootMenusOfferQuickPromptMode(t *testing.T) {
+	model := New(nil)
+	model.Reconcile(Snapshot{Groups: []string{"work"}})
+	for _, selection := range []Selection{{Kind: GroupRow, Group: "work"}, {Kind: GroupRow}} {
+		model.openMenu(selection, 0, 0, false)
+		if len(model.menu.items) == 0 || model.menu.items[0].label != "Quick prompt mode" || model.menu.items[0].action != Prompt {
+			t.Fatalf("menu for %+v = %+v, want quick prompt mode first", selection, model.menu.items)
+		}
+	}
+}

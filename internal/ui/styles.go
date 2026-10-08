@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/status"
+	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -58,6 +59,8 @@ var (
 	legendTitleStyle lipgloss.Style
 	legendBadgeStyle lipgloss.Style
 	legendLabelStyle lipgloss.Style
+	legendLeadKey    lipgloss.Style
+	legendLeadLabel  lipgloss.Style
 )
 
 func init() { applyTheme(themes[0]) }
@@ -98,6 +101,9 @@ func rebuildStyles() {
 	legendBadgeStyle = lipgloss.NewStyle().
 		Foreground(colorBg).Background(colorAccent).Bold(true).Padding(0, 1)
 	legendLabelStyle = lipgloss.NewStyle().Foreground(colorText)
+	lead := lipgloss.Color(mix(current.Bg, current.Accent, 0.28))
+	legendLeadKey = lipgloss.NewStyle().Foreground(colorAccent).Background(lead).Bold(true).PaddingLeft(1)
+	legendLeadLabel = lipgloss.NewStyle().Foreground(colorBright).Background(lead).Padding(0, 1)
 }
 
 // renderSelectedRow wraps a pre-styled line with the selected row's
@@ -237,6 +243,22 @@ func inboxBadge(count int) string {
 	return inboxBadgeStyle.Render("✉" + strconv.Itoa(count))
 }
 
+// afterTurnGlyphs mark a session that asked to be archived or killed once
+// its turn ends, so a row about to leave the list says so beforehand.
+var afterTurnGlyphs = map[string]string{
+	store.AfterTurnArchive: "↓",
+	store.AfterTurnKill:    "■",
+}
+
+var afterTurnNote = map[string]string{
+	store.AfterTurnArchive: "archives when this turn ends",
+	store.AfterTurnKill:    "killed when this turn ends",
+}
+
+func afterTurnBadge(action string) string {
+	return inboxBadgeStyle.Render(afterTurnGlyphs[action])
+}
+
 // keyPill renders a chip with the key that changes it dimmed in front, so
 // the header doubles as a key legend: each changeable value wears its
 // shortcut. The key is dim enough to lose to the value at a glance but
@@ -250,6 +272,10 @@ func keyPill(key, text string, fg lipgloss.Color) string {
 // row of bindings reads as prose under a header rather than as buttons.
 func keyCap(key, label string) string {
 	return keyStyle.Render(key) + " " + legendLabelStyle.Render(label)
+}
+
+func keyCapLead(key, label string) string {
+	return legendLeadKey.Render(key) + legendLeadLabel.Render(label)
 }
 
 // keyCapQuiet is keyCap for a secondary tier: the label drops to the dim

@@ -574,17 +574,6 @@ func (m *Model) viewDiffFull() string {
 	return strings.Join(frame, "\n")
 }
 
-// stripBaseHash drops the @<short-sha> suffix BaseDesc carries from
-// baseRefFor. The hash matters for telling two merge-bases apart in logs
-// but reads as noise in the header, where only the ref name carries
-// signal for the user picking a target.
-func stripBaseHash(desc string) string {
-	if i := strings.LastIndexByte(desc, '@'); i >= 0 {
-		return desc[:i]
-	}
-	return desc
-}
-
 func (m *Model) viewDiffHeader(sessName string) string {
 	state := m.review.Snapshot()
 	layout := "unified"
@@ -609,7 +598,7 @@ func (m *Model) viewDiffHeader(sessName string) string {
 		left += "  " + keyPill("r", name, colorAccent)
 		branch := escapeControlsInline(state.Set.Repo.Branch)
 		if state.Scope == git.ScopeBranch && state.Set.BaseDesc != "" && branch != "" {
-			target := escapeControlsInline(stripBaseHash(state.Set.BaseDesc))
+			target := escapeControlsInline(uireview.StripBaseHash(state.Set.BaseDesc))
 			summary := target + " → " + branch
 			if state.Set.BaseOverride == "" {
 				summary += " " + subtleStyle.Render("(auto)")

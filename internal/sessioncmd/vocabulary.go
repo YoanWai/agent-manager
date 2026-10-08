@@ -12,10 +12,15 @@ type Vocabulary struct {
 	CreateGroup    string
 	CreateTerminal string
 	SpawnTool      string
+	SpawnModel     string
+	SpawnEffort    string
+	SpawnProfile   string
 	Revive         string
 	Restore        string
 	Send           string
 	Read           string
+	ArchiveSelf    string
+	KillSelf       string
 }
 
 // MCPVocabulary spells the actions as the tools an MCP client sees.
@@ -28,10 +33,15 @@ func MCPVocabulary() Vocabulary {
 		CreateGroup:    "create_group",
 		CreateTerminal: "create_terminal",
 		SpawnTool:      "create_session tool",
+		SpawnModel:     "create_session model",
+		SpawnEffort:    "create_session effort",
+		SpawnProfile:   "create_session profile",
 		Revive:         "revive_session",
 		Restore:        "archive_session archived false",
 		Send:           "send_session",
 		Read:           "read_session",
+		ArchiveSelf:    "archive_self",
+		KillSelf:       "kill_self",
 	}
 }
 
@@ -45,9 +55,14 @@ func CLIVocabulary() Vocabulary {
 		CreateGroup:    "agent-manager create-group",
 		CreateTerminal: "agent-manager terminal create",
 		SpawnTool:      "agent-manager spawn --tool",
+		SpawnModel:     "agent-manager spawn --model",
+		SpawnEffort:    "agent-manager spawn --effort",
+		SpawnProfile:   "agent-manager spawn --profile",
 		Revive:         "agent-manager revive",
 		Restore:        "agent-manager archive --restore",
 		Send:           "agent-manager send",
 		Read:           "agent-manager read",
+		ArchiveSelf:    "agent-manager archive-self",
+		KillSelf:       "agent-manager kill-self",
 	}
 }

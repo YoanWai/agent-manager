@@ -78,4 +78,11 @@ type preferences struct {
 	// polarity, like hideHeader/hideStats, so a bare Model{} in a test still
 	// defaults to mouse reporting on.
 	mouseDisabled bool
+	// terminalBackground leaves the backdrop's cells on the terminal's own
+	// colors, for translucent windows. Off polarity, so a bare Model{}
+	// paints the backdrop like the default does.
+	terminalBackground bool
+	// baseFetchOff mirrors the persisted fetch-on-spawn setting, read on
+	// every Update while a worktree spawn is being set up.
+	baseFetchOff bool
 }

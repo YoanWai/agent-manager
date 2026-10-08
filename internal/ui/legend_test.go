@@ -45,3 +45,29 @@ func TestLegendBarCapsRowsAndMarksTheCut(t *testing.T) {
 		}
 	}
 }
+
+func TestLegendBarReservesRowForNextTier(t *testing.T) {
+	var pairs [][2]string
+	for i := 0; i < 40; i++ {
+		pairs = append(pairs, [2]string{"k", "an action"})
+	}
+	out := ansi.Strip(legendBar([]legendSection{
+		{title: "Session", pairs: pairs},
+		{title: "View", quiet: true, pairs: [][2]string{{"M", "messages"}}},
+	}, 30))
+	lines := strings.Split(out, "\n")
+	if len(lines) != legendMaxRows {
+		t.Fatalf("legend took %d rows, want %d:\n%s", len(lines), legendMaxRows, out)
+	}
+	if !strings.Contains(lines[1], "…") {
+		t.Fatalf("crowded first tier must mark its cut:\n%s", out)
+	}
+	if !strings.Contains(lines[2], "View") || !strings.Contains(lines[2], "M messages") {
+		t.Fatalf("the next tier must remain visible:\n%s", out)
+	}
+	for _, line := range lines {
+		if w := ansi.StringWidth(line); w > 30 {
+			t.Fatalf("legend row is %d columns wide, budget is 30: %q", w, line)
+		}
+	}
+}

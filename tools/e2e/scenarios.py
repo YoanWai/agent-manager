@@ -243,7 +243,8 @@ def scenario(sandbox, binary):
     assert renamed and renamed[0]['group'] == 'scen-group', f'rename not persisted in group: {renamed}'
     key(sandbox, 's')
     frame(sandbox, 'settings-open', 'compact')
-    for _ in range(3):
+    # default tool, theme, theme follows OS and background sit above density.
+    for _ in range(4):
         key(sandbox, 'Down')
     key(sandbox, 'Right')
     sandbox.wait('settings-density-cycled', lambda: capture(sandbox), lambda value: 'comfortable' in value)

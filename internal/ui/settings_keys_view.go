@@ -37,7 +37,7 @@ func (m *Model) viewKeyPicker() string {
 		value := keys.Binding(row.action.Name).Label()
 		valueRender := valueStyle.Render(value)
 		if value == "" {
-			valueRender = subtleStyle.Render(section.off)
+			valueRender = subtleStyle.Render(section.offLabel(row.action.Name))
 		}
 		if m.settings.keyCapture && m.settings.keyCursor == i {
 			word := "press a key"

@@ -19,7 +19,6 @@ func (m *Model) viewFullFocusFrame() string {
 	// This frame paints no rail, so a click lands on no row: the list
 	// frame's hits would otherwise select a row nobody pointed at.
 	m.displayedRail = uirail.Frame{}
-	m.notices.noticeHit = noticeHit{}
 	frame := []string{}
 	for _, line := range m.viewHeaderRows() {
 		frame = append(frame, paint(line, m.width, backdropHex()))

@@ -1,0 +1,24 @@
+
+                                                 ████████████
+                                                    ██  ██
+                                                    ██  ██
+                                                    ▒▒  ██
+                                                        ██
+                                                     omp
+                                              Setup step 1 of 5
+
+    Set up your providers
+    Sign in and pick a web search provider. Press Esc when you're done.
+
+    Providers:   Sign in    Web search   (tab to cycle)
+
+    Signing in to openai-codex
+    Browser login: Open login URL (clipboard copy attempted; Alt+C retries)
+    Local shortcut (this machine only): http://localhost:1455/launch
+    Paste the authorization code (or full redirect URL):
+    >
+    A browser window should open. Complete login to finish.
+    Paste the returned code or redirect URL when prompted.
+    Waiting for browser authentication...
+
+                          ↑/↓ select · enter confirm · esc skip · ctrl+c exit setup

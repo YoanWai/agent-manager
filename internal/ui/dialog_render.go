@@ -9,6 +9,11 @@ type dialogRenderContext struct {
 }
 
 func renderDialog(ctx dialogRenderContext, width int, title, body string, hint [][2]string) string {
+	return centerDialog(ctx, dialogBox(ctx, width, title, body, hint))
+}
+
+// dialogBox is a card's own lines, before the backdrop surrounds them.
+func dialogBox(ctx dialogRenderContext, width int, title, body string, hint [][2]string) []string {
 	inner := cardInnerWidth(width)
 	border := cardBorderStyle()
 	pad := strings.Repeat(" ", cardPaddingX)
@@ -36,15 +41,24 @@ func renderDialog(ctx dialogRenderContext, width int, title, body string, hint [
 		}
 	}
 	lines = append(lines, rule("╰", "╯"))
-	return centerDialog(ctx, lines)
+	return lines
+}
+
+// dialogPlacement is where centerDialog puts box: its first row, and the
+// columns it spans.
+func dialogPlacement(ctx dialogRenderContext, box []string) (top, left, right int) {
+	width := maxLineWidth(box)
+	height := max(ctx.height, len(box))
+	left = max((ctx.width-width)/2, 0)
+	top = max((height-len(box))/2, 0)
+	return top, left, left + width
 }
 
 func centerDialog(ctx dialogRenderContext, box []string) string {
 	width := maxLineWidth(box)
 	height := max(ctx.height, len(box))
-	left := max((ctx.width-width)/2, 0)
+	top, left, _ := dialogPlacement(ctx, box)
 	frameWidth := max(ctx.width, left+width)
-	top := max((height-len(box))/2, 0)
 	frame := make([]string, 0, height)
 	for i := 0; i < height; i++ {
 		row := ""

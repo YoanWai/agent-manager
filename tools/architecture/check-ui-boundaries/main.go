@@ -18,7 +18,7 @@ type boundary struct {
 var (
 	helpBoundary   = boundary{"Help", "/internal/ui/help", []string{"/internal/ui/help", "/internal/keybind", "/internal/ui/presentation"}}
 	diffBoundary   = boundary{"Diff model", "/internal/diff/model", []string{"/internal/diff/model", "/internal/git/value"}}
-	reviewBoundary = boundary{"Review", "/internal/ui/review", []string{"/internal/ui/review", "/internal/diff/model", "/internal/git/value"}}
+	reviewBoundary = boundary{"Review", "/internal/ui/review", []string{"/internal/ui/review", "/internal/diff/model", "/internal/git/value", "/internal/ui/presentation"}}
 	focusBoundary  = boundary{"Focus", "/internal/ui/focus", []string{"/internal/ui/focus"}}
 	railBoundary   = boundary{"Rail", "/internal/ui/rail", []string{"/internal/ui/rail", "/internal/keybind", "/internal/ui/presentation"}}
 	valueBoundary  = boundary{"Git values", "/internal/git/value", []string{"/internal/git/value"}}

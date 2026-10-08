@@ -77,7 +77,9 @@ func TestDiffAnnotateAndSend(t *testing.T) {
 	}
 	pane := string(out)
 	if !strings.Contains(pane, "use fmt.Println here") || !strings.Contains(pane, "main.go:3") ||
-		!strings.Contains(pane, "[comment "+notes[0].ID+"]") || !strings.Contains(pane, "review_comment") {
+		!strings.Contains(pane, "[comment "+notes[0].ID+"]") || !strings.Contains(pane, "review_comment") ||
+		!strings.Contains(pane, "Code review of the uncommitted changes on `main` (`") ||
+		!strings.Contains(pane, "in `"+m.review.Snapshot().RepoSelected+"`") {
 		t.Fatalf("prompt not delivered:\n%s", pane)
 	}
 

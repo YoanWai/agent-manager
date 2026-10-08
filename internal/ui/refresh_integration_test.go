@@ -31,7 +31,7 @@ func queueMessage(t *testing.T, m *Model, targetID, body string) int64 {
 
 func spawnedSession(t *testing.T, m *Model, tool string) store.Session {
 	t.Helper()
-	if err := m.spawnSession(tool, "worker", t.TempDir(), "", "", false, false); err != nil {
+	if err := m.spawnSession(tool, "worker", t.TempDir(), "", "", false, false, config.Choice{}); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	sess, err := m.services.store.Get(m.sessionRows()[0].ID)

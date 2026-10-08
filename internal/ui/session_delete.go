@@ -40,6 +40,7 @@ func (m *Model) pruneGroupsLocally(removed []string) {
 	for _, path := range removed {
 		delete(m.workspace.groupPaths, path)
 		delete(m.workspace.groupWorktrees, path)
+		delete(m.workspace.groupBases, path)
 		delete(m.workspace.archivedGroups, path)
 	}
 	m.rebuildRows()

@@ -1,0 +1,12 @@
+Captured on Linux on 2026-10-05 with grok 1.0.46 (2765805b9442) [stable].
+
+Built agent-manager and ran it with a throwaway manager HOME and a dedicated
+TMUX_TMPDIR, using the existing Grok authentication and configuration.
+Queued a follow-up while Grok answered, then typed an unsent composer draft.
+
+Raw captures (no escape preservation or whitespace normalization):
+  env -u TMUX TMUX_TMPDIR=/tmp/am665/sock tmux -L agentmgr capture-pane -p -t am_4e232b46:0.0
+
+queued.txt: expanded queue, empty composer, clipped Enter:send now footer.
+queued-draft.txt: expanded queue, unsent draft, clipped Enter:queue footer.
+Both panes were 82 columns by 30 rows.
