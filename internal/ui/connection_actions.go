@@ -126,7 +126,7 @@ func (m *Model) confirmRemote(request remoteRequest) tea.Cmd {
 	ask := remoteConfirm[request.op]
 	m.confirm.confirmTarget = confirmTarget{
 		action: ask.action,
-		label:  ask.verb + " " + request.name + " on " + request.host + "?" + ask.consequence,
+		label:  ask.verb + " " + escapeControlsInline(request.name) + " on " + request.host + "?" + ask.consequence,
 		remote: &request,
 	}
 	m.mode = modeConfirmDelete

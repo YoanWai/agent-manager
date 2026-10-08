@@ -27,7 +27,7 @@ func (d *formDialog) viewGroupPicker() string {
 		if selected {
 			style = lipgloss.NewStyle().Foreground(colorAccent2).Bold(true)
 		}
-		b.WriteString("  " + marker + style.Render(label) + "\n")
+		b.WriteString("  " + marker + style.Render(escapeControlsInline(label)) + "\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -449,10 +450,8 @@ func (r renderer) renderSession(row treeRow, selected bool, width int, pad, guid
 	if session.AfterTurn != "" {
 		badges += " " + r.palette.inboxBadge.Render(session.AfterTurnGlyph)
 	}
-	name := session.DisplayName
-	if name == "" {
-		name = session.Name
-	}
+	// A connection's rows carry whatever its host sent.
+	name := presentation.EscapeControlsInline(sessionName(session))
 	room := width - railGutter - ansi.StringWidth(lead+handle+focus+badges)
 	if room <= 0 {
 		room += ansi.StringWidth(focus)
@@ -466,8 +465,8 @@ func (r renderer) renderSession(row treeRow, selected bool, width int, pad, guid
 	if selected {
 		metaStyle = r.palette.muted
 	}
-	meta := lipgloss.NewStyle().Foreground(r.palette.statusColor(session.Status)).Render(statusLabel(session.Status)) +
-		metaStyle.Render(" · "+session.Tool)
+	meta := lipgloss.NewStyle().Foreground(r.palette.statusColor(session.Status)).Render(presentation.EscapeControlsInline(statusLabel(session.Status))) +
+		metaStyle.Render(" · "+presentation.EscapeControlsInline(session.Tool))
 	if session.AgentSessionID != "" && r.ctx.ComfortableRows {
 		meta += metaStyle.Render(" · " + session.AgentSessionID)
 	}
@@ -559,7 +558,7 @@ func (r renderer) renderGroup(row treeRow, selected bool, width int, pad, guides
 		marker = "▸"
 	}
 	nameStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(r.ctx.Theme.Accent2)).Bold(true)
-	name := baseName(row.group)
+	name := presentation.EscapeControlsInline(baseName(row.group))
 	if selected {
 		nameStyle = nameStyle.Foreground(lipgloss.Color(r.ctx.Theme.Bright))
 	}

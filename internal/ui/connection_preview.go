@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/remote"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -95,7 +97,7 @@ func (m *Model) remoteContentLines(width, height int) ([]contentLine, bool) {
 	case uirail.ConnectionRow:
 		head = m.connectionDetail(row.host, inner)
 	case uirail.GroupRow:
-		head = []string{lipgloss.NewStyle().Foreground(colorAccent2).Bold(true).Render(displayGroup(row.group)) +
+		head = []string{lipgloss.NewStyle().Foreground(colorAccent2).Bold(true).Render(escapeControlsInline(displayGroup(row.group))) +
 			subtleStyle.Render("  on ") + lipgloss.NewStyle().Foreground(colorRemote).Render(row.host)}
 		body = []string{mutedStyle.Render("press " + m.listGlyph(keybind.Prompt) + " to start an agent here")}
 	default:
@@ -142,7 +144,7 @@ func (m *Model) connectionDetail(host string, width int) []string {
 			len(state.Snapshot.Sessions), len(state.Snapshot.Terminals), manager))), "", width))
 	}
 	if seen && state.Err != nil {
-		for _, line := range strings.Split(ansi.Wordwrap(state.Err.Error(), max(width-detailLabelWidth, 8), " "), "\n") {
+		for _, line := range strings.Split(ansi.Wordwrap(escapeControls(state.Err.Error()), max(width-detailLabelWidth, 8), " "), "\n") {
 			lines = append(lines, labelStyle.Render(padRight("error", detailLabelWidth))+errStyle.Render(line))
 		}
 	}
@@ -154,10 +156,10 @@ func (m *Model) remoteSessionDetail(row remoteRow, width int) []string {
 	if row.archived {
 		status = "archived"
 	}
-	state := lipgloss.NewStyle().Foreground(statusColor(row.status)).Render(statusGlyph(row.status) + " " + statusLabel(status))
-	name := lipgloss.NewStyle().Foreground(colorBright).Bold(true).Render(row.name)
+	state := lipgloss.NewStyle().Foreground(statusColor(row.status)).Render(statusGlyph(row.status) + " " + escapeControlsInline(statusLabel(status)))
+	name := lipgloss.NewStyle().Foreground(colorBright).Bold(true).Render(escapeControlsInline(row.name))
 	host := lipgloss.NewStyle().Foreground(colorRemote).Render(row.host)
-	group := lipgloss.NewStyle().Foreground(colorAccent2).Render(displayGroup(row.group))
+	group := lipgloss.NewStyle().Foreground(colorAccent2).Render(escapeControlsInline(displayGroup(row.group)))
 	return []string{
 		fitColumns([]string{name + subtleStyle.Render("  on ") + host, name}, []string{state}, width),
 		factRow("group", plainValue(group), "", width),
@@ -172,7 +174,7 @@ func (m *Model) remoteScreen(width, height int) []string {
 		return []string{}
 	}
 	if p.err != "" {
-		return []string{errStyle.Render(ansi.Truncate(p.err, width, "…"))}
+		return []string{errStyle.Render(ansi.Truncate(escapeControlsInline(p.err), width, "…"))}
 	}
 	text := strings.TrimRight(p.text, "\n ")
 	if text == "" {
@@ -181,14 +183,29 @@ func (m *Model) remoteScreen(width, height int) []string {
 		}
 		return []string{mutedStyle.Render("(no output yet)")}
 	}
-	lines := strings.Split(ansi.Strip(text), "\n")
+	lines := strings.Split(screenText(text), "\n")
 	if len(lines) > height {
 		lines = lines[len(lines)-height:]
 	}
 	for i, line := range lines {
-		lines[i] = ansi.Truncate(line, width, "")
+		lines[i] = ansi.Truncate(expandPaneTabs(line, width), width, "")
 	}
 	return lines
+}
+
+// screenText is a remote screen as plain text: escape sequences stripped,
+// and every control but a newline or tab dropped, since a bare \r or \b
+// moves the cursor of the terminal the frame paints into.
+func screenText(text string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\t' {
+			return r
+		}
+		if (r < utf8.RuneSelf && presentation.IsControlByte(byte(r))) || presentation.IsEscapedRune(r) {
+			return -1
+		}
+		return r
+	}, ansi.Strip(text))
 }
 
 // remoteRowLegend is the footer tier for a connection's rows: only the keys
@@ -238,10 +255,10 @@ func (m *Model) remoteQuickFacts(facts *quickFacts) {
 	}
 	host := subtleStyle.Render(" on ") + lipgloss.NewStyle().Foreground(colorRemote).Render(row.host)
 	if row.kind == uirail.SessionRow {
-		facts.remote = lipgloss.NewStyle().Foreground(colorBright).Bold(true).Render(row.name) + host
+		facts.remote = lipgloss.NewStyle().Foreground(colorBright).Bold(true).Render(escapeControlsInline(row.name)) + host
 		return
 	}
-	facts.remote = lipgloss.NewStyle().Foreground(colorAccent2).Render(displayGroup(row.group)) + host
+	facts.remote = lipgloss.NewStyle().Foreground(colorAccent2).Render(escapeControlsInline(displayGroup(row.group))) + host
 	facts.remoteSpawn = true
 	facts.worktreeKnown, facts.worktreeCapable = true, true
 	facts.worktreeOn = m.quick.worktreeTouched && m.quick.worktree

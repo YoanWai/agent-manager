@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/sessioncmd"
+	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -69,4 +71,73 @@ func TestConnectionRowShowsItsFacts(t *testing.T) {
 			t.Fatalf("content lacks %q:\n%s", want, text)
 		}
 	}
+}
+
+// hostile is what a compromised host could put in any string it returns:
+// an OSC 52 clipboard write, a carriage return, a backspace and a bell.
+const hostile = "\x1b]52;c;cHduZWQ=\x07\r\b\x07"
+
+// A connection's host is not trusted to drive the terminal: whatever it
+// names, reports or prints reaches a frame as text.
+func TestHostTextCannotDriveTheTerminal(t *testing.T) {
+	fake := &fakeSSH{}
+	m := connectedModel(t, fake)
+	m.layout.width, m.layout.height = 120, 40
+	group := "web" + hostile
+	fake.mu.Lock()
+	fake.snapshot.Groups = []sessioncmd.Group{{Path: group}}
+	fake.snapshot.Sessions = []sessioncmd.Session{{ID: "s1", Name: "api" + hostile, Tool: "claude" + hostile, Group: group, Status: "idle" + hostile}}
+	fake.snapshot.Terminals = nil
+	fake.screen = "build" + hostile + "ing\x1bc\x0e\x0fdone\n$ "
+	fake.mu.Unlock()
+	m.applyTestMsg(t, m.pollConnection("box")())
+
+	frame := func(surface string) {
+		t.Helper()
+		view := preparedView(m)
+		if stray := strayControl(view); stray != "" {
+			t.Fatalf("%s leaks a control byte near %q", surface, stray)
+		}
+		if !strings.Contains(view, "52;c;cHduZWQ=") {
+			t.Fatalf("%s: the host's text should be on screen to be a real test:\n%s", surface, ansi.Strip(view))
+		}
+	}
+	session := uirail.Selection{Kind: uirail.SessionRow, SessionID: "s1", Group: group, Host: "box"}
+	m.rail.Focus(session)
+	m.applyTestMsg(t, m.syncRemotePreview()())
+	if text := contentText(m); !strings.Contains(text, "building") || !strings.Contains(text, "done") {
+		t.Fatalf("the screen lost its text:\n%s", text)
+	}
+	frame("the rail and the remote screen")
+
+	m.rail.Focus(uirail.Selection{Kind: uirail.GroupRow, Group: group, Host: "box"})
+	frame("a remote group")
+	m.openForm()
+	m.form.focus = fieldGroup
+	frame("the New Session form")
+	m.mode = modeList
+
+	m.rail.Focus(session)
+	m.openQuickMode()
+	frame("the quick bar")
+	m.quick.active = false
+
+	_, cmd := m.runRailIntent(uirail.Intent{Kind: uirail.Kill, Target: session})
+	m.runRemoteCmd(t, cmd)
+	if m.mode != modeConfirmDelete {
+		t.Fatalf("mode = %v, want the kill confirm", m.mode)
+	}
+	frame("the confirm")
+	m.mode = modeList
+
+	fake.mu.Lock()
+	fake.stderr, fake.code = "denied"+hostile, 1
+	fake.mu.Unlock()
+	m.ssh.preview = remotePreview{}
+	m.applyTestMsg(t, m.syncRemotePreview()())
+	frame("a failed read")
+
+	m.applyTestMsg(t, m.pollConnection("box")())
+	m.rail.Focus(boxRow)
+	frame("an offline host")
 }

@@ -97,7 +97,7 @@ func (d *formDialog) view(h formHost, facts formFacts) (string, [][2]string) {
 	// Chips are tokens inside the typed text, so they wrap and reflow with
 	// the words around them; painting happens on the rendered prompt.
 	field("prompt", d.prompt.view(), fieldPrompt)
-	group := groupBadge(displayGroup(d.groups[d.groupIndex].path))
+	group := groupBadge(escapeControlsInline(displayGroup(d.groups[d.groupIndex].path)))
 	if d.remote.on() {
 		group = lipgloss.NewStyle().Foreground(colorRemote).Render(d.remote.host) + subtleStyle.Render(" · ") + group
 	}

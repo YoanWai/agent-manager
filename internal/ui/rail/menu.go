@@ -2,6 +2,7 @@ package rail
 
 import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -21,7 +22,7 @@ func (m *Model) openMenu(selection Selection, x, y int, held bool) Decision {
 		title = row.host
 	}
 	m.menu = rowMenu{
-		active: true, held: held, key: row.key(), title: title,
+		active: true, held: held, key: row.key(), title: presentation.EscapeControlsInline(title),
 		items: m.rowMenuItems(row), anchorX: x, anchorY: y,
 	}
 	m.menu.index = m.menu.nextItem(-1, 1)
