@@ -2,7 +2,7 @@
 
 The maintained [architecture contract](architecture/README.md) restores the broader rationale from PR #1. The [conformance audit](architecture/roadmap-and-evidence.md) separates implemented boundaries from outstanding requirements. PR #2 is partially conformant. Help, Review, Focus, and Rail own behavior in private packages, and View reads a prepared frame. Synchronous UI effects, partial lifecycle reconciliation, remaining dialog ownership, and production compatibility remain gaps.
 
-This branch refactors the running application against upstream `dc471a97f3ca4fdd06eb822a31e8e5119c39b997` (2026-09-30). It changes existing production callers and moves their implementations. The earlier additive architecture POC and archive/inbox-only extraction are supporting evidence, not this deliverable.
+This branch refactors the running application against upstream `dc471a97f3ca4fdd06eb822a31e8e5119c39b997` (2026-09-30) and has since merged upstream `cf9ed0d` (2026-10-07). It changes existing production callers and moves their implementations. The earlier additive architecture POC and archive/inbox-only extraction are supporting evidence, not this deliverable.
 
 ## Current application and resulting boundaries
 

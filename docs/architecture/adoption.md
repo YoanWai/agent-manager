@@ -25,9 +25,10 @@ git diff --shortstat "$main_sha"..upstream/main
 | Recorded proposal three-dot diff | 403 files, 50,188 insertions, 32,221 deletions |
 | Freshly fetched `upstream/main` | `d84f3b024f4c8eb8b9eb6a523b29de3586995cb3` |
 | Proposal-head divergence from fresh upstream | 12 upstream commits absent, 37 proposal commits absent upstream |
+| Merged `upstream/main` (2026-10-07) | `cf9ed0d`; proposal 0 behind, 43 ahead after merge `5ef5a11` |
 | Upstream changes since the fork point | 104 files, 5,660 insertions, 168 deletions |
 
-More than half of the recorded proposal's changed-file distribution is under `internal/ui`; `internal/sessioncmd` and `internal/execution` are the next largest production areas. File extraction accounts for much of the volume, but the branch also changes runtime ownership, asynchronous effects, coordination behavior, storage schema, and acceptance tooling. The 12 newer upstream commits include catalog, model/profile, and Oh My Pi work that this branch has not reconciled. The later follow-up is also absent from the proposal-head statistics above. Fetch current upstream and regenerate both comparisons before creating each slice.
+More than half of the recorded proposal's changed-file distribution is under `internal/ui`; `internal/sessioncmd` and `internal/execution` are the next largest production areas. File extraction accounts for much of the volume, but the branch also changes runtime ownership, asynchronous effects, coordination behavior, storage schema, and acceptance tooling. Merge `5ef5a11` has since reconciled upstream through `cf9ed0d`, including the catalog, model/profile and Oh My Pi work. The later follow-up is also absent from the proposal-head statistics above. Fetch current upstream and regenerate both comparisons before creating each slice.
 
 ## Adopt in five bounded stages
 

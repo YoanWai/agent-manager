@@ -211,6 +211,27 @@ passed. Exact published-head hosted CI is verified separately.
 
 Real provider installation/session discovery, installed client extensions,
 mutations beyond the named matrix, remote authorization/SSH, human input
-authority, and installer crash recovery remain explicit gaps. Fresh upstream
-features at d84f3b0 must be adopted separately from this proposal's dc471a9 base.
+authority, and installer crash recovery remain explicit gaps. The upstream
+integration below supersedes the earlier note that d84f3b0 was not adopted.
 The live executable/profile and user-owned real-session pilot remain untouched.
+
+### Upstream cf9ed0d integration (2026-10-07)
+
+Merge `5ef5a11` brings the 45 upstream commits from `dc471a9` to `cf9ed0d`
+into the proposal's owners rather than the monolithic files upstream edited.
+Catalog choices persist through the settings cache and a choice-save effect;
+keys, editor, background and fetch-on-spawn rows use the settings and keys
+lanes; group bases travel in captured spawn, group, rename and rail-move
+requests; after-turn archive/kill runs `Lifecycle.EndAfterTurn` on the lane.
+Upstream reorder marks (#683) are replaced by the effect fence plus listing
+time: a listing older than a committed mutation keeps its structural fields
+out, so new rows from that listing wait for the next poll. Upstream's
+`TestReorderKnownPreservesNewRowsAndFreshValues` covers a helper this
+design does not have.
+
+Uncached `go test -race ./... -count=1` passed with private tmux state
+(40 packages). Build, vet, formatting and six dependency guards passed; the
+review guard now permits the shared presentation package. Actual-binary
+smoke (2.6s), scenarios, failure and blocked suites passed after the
+settings scenarios stepped past the new background row; fifteen harness
+contracts passed. Hosted CI must be read at the published head.
