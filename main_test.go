@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/app"
 	"github.com/YoanWai/agent-manager/internal/cli"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
@@ -363,6 +364,25 @@ func TestCallerSessionOutsideTmuxLeavesTheCommandToExplainIt(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %q does not mention %q", err, want)
 		}
+	}
+}
+
+// A second serve on one profile leaves the first alone and exits cleanly,
+// so a supervisor that starts one on every login does not see a failure.
+func TestServeExitsWhenAnotherServeHoldsTheProfile(t *testing.T) {
+	dir := t.TempDir()
+	release, acquired, err := app.LockServe(dir)
+	if err != nil || !acquired {
+		t.Fatalf("LockServe = %v, %v", acquired, err)
+	}
+	defer release()
+	out := &bytes.Buffer{}
+	start := func([]string, string) (int, error) { t.Fatal("serve started a manager"); return 0, nil }
+	if err := runServe(out, &bytes.Buffer{}, nil, dir, start); err != nil {
+		t.Fatalf("serve beside a running one: %v", err)
+	}
+	if !strings.Contains(out.String(), "already running") {
+		t.Fatalf("serve printed %q", out.String())
 	}
 }
 

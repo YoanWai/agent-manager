@@ -15,6 +15,10 @@ import (
 // output is appended to.
 const ServeLog = "serve.log"
 
+// ServeLock is the file in the profile directory a running serve holds an
+// exclusive lock on for its lifetime.
+const ServeLock = "serve.lock"
+
 // BackgroundStart is what `serve --background` prints.
 type BackgroundStart struct {
 	Started bool `json:"started"`
@@ -43,12 +47,24 @@ func (l *Local) Serve(ctx context.Context, errs io.Writer) {
 	}
 }
 
-// ServeBackground starts a detached `serve` unless a manager is already
+// LockServe takes the profile's serve lock, which a serve holds until it
+// calls release. acquired is false while another serve holds it.
+func LockServe(profileDir string) (release func(), acquired bool, err error) {
+	if err := os.MkdirAll(profileDir, 0o755); err != nil {
+		return nil, false, err
+	}
+	return tryServeLock(filepath.Join(profileDir, ServeLock))
+}
+
+// ServeBackground starts a detached `serve` unless one holds the profile's
+// lock, which it does before its first poll, or a manager is already
 // polling this profile, which already delivers what is queued here.
 func ServeBackground(profileDir string, now time.Time, start Starter) (BackgroundStart, error) {
-	if err := os.MkdirAll(profileDir, 0o755); err != nil {
+	release, acquired, err := LockServe(profileDir)
+	if err != nil || !acquired {
 		return BackgroundStart{}, err
 	}
+	release()
 	st, err := store.Open(filepath.Join(profileDir, "state.db"))
 	if err != nil {
 		return BackgroundStart{}, err

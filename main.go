@@ -171,6 +171,15 @@ func runServe(out, errs io.Writer, args []string, dir string, start app.Starter)
 		}
 		return json.NewEncoder(out).Encode(started)
 	}
+	release, acquired, err := app.LockServe(dir)
+	if err != nil {
+		return err
+	}
+	if !acquired {
+		fmt.Fprintln(out, "agent-manager serve: another serve is already running for this profile")
+		return nil
+	}
+	defer release()
 	driver, err := tmux.New()
 	if err != nil {
 		return err
