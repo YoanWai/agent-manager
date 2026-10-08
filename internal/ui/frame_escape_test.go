@@ -11,6 +11,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/diff"
 	"github.com/YoanWai/agent-manager/internal/git"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 )
 
@@ -23,7 +24,7 @@ func strayControl(frame string) string {
 	}
 	for i := 0; i < len(frame); i++ {
 		c := frame[i]
-		if c == '\n' || !isControlByte(c) {
+		if c == '\n' || !presentation.IsControlByte(c) {
 			continue
 		}
 		if n := sgrLen(frame[i:]); n > 0 {

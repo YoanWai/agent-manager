@@ -30,7 +30,7 @@ var features = map[string]string{
 	"effects":      "the ordered effect lane and its executor",
 	"focus":        "the Focus adapter and pane watch",
 	"fork":         "the fork dialog",
-	"frame":        "frame composition: dialog chrome, header, legend, IME and text layout",
+	"frame":        "frame composition: dialog chrome, header, legend, IME, text layout and control escaping",
 	"geometry":     "pane sizing, layout widths and the split ratio",
 	"group":        "the New Group form",
 	"help":         "the Help adapter",

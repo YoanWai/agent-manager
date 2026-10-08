@@ -75,11 +75,11 @@ There are 297 Go files under `internal/ui`: help (7), review (13), focus (7), ra
 - **effects** (the ordered effect lane and its executor): `effects.go`, `effects_async_test.go`, `effects_executor.go`, `effects_lifetime_test.go`.
 - **focus** (the Focus adapter and pane watch): `focus_effect.go`, `focus_effect_test.go`, `focus_keys.go`, `focus_keys_test.go`, `focus_links.go`, `focus_links_test.go`, `focus_scroll.go`, `focus_scroll_test.go`, `focus_selection.go`, `focus_selection_test.go`, `focus_state.go`, `focus_test_helpers_test.go`, `focus_view.go`, `focus_view_test.go`, `focus_watch.go`, `focus_watch_lifecycle_test.go`, `focus_watch_test.go`, `focus_watch_unix_test.go`.
 - **fork** (the fork dialog): `fork.go`, `fork_effect.go`, `fork_effect_test.go`, `fork_test.go`.
-- **frame** (frame composition: dialog chrome, header, legend, IME and text layout): `frame.go`, `frame_dialog.go`, `frame_dialog_render.go`, `frame_format.go`, `frame_header.go`, `frame_header_test.go`, `frame_ime.go`, `frame_ime_test.go`, `frame_integration_bench_test.go`, `frame_integration_test.go`, `frame_legend.go`, `frame_legend_test.go`, `frame_state_test.go`, `frame_test.go`.
+- **frame** (frame composition: dialog chrome, header, legend, IME, text layout and control escaping): `frame.go`, `frame_dialog.go`, `frame_dialog_render.go`, `frame_escape.go`, `frame_escape_test.go`, `frame_format.go`, `frame_header.go`, `frame_header_test.go`, `frame_ime.go`, `frame_ime_test.go`, `frame_integration_bench_test.go`, `frame_integration_test.go`, `frame_legend.go`, `frame_legend_test.go`, `frame_state_test.go`, `frame_test.go`.
 - **geometry** (pane sizing, layout widths and the split ratio): `geometry.go`, `geometry_effect.go`, `geometry_layout.go`, `geometry_split.go`, `geometry_split_effect.go`, `geometry_split_test.go`, `geometry_test.go`.
 - **group** (the New Group form): `group_form.go`, `group_form_test.go`, `group_form_view.go`.
 - **help** (the Help adapter): `help_adapter.go`, `help_adapter_keys_test.go`, `help_adapter_view_test.go`, `help_test_helpers_test.go`.
-- **input** (raw input forwarded to panes): `input_controlbytes.go`, `input_controlbytes_test.go`, `input_effect.go`, `input_effect_test.go`.
+- **input** (raw input forwarded to panes): `input_effect.go`, `input_effect_test.go`.
 - **launchhint** (the launch fix dialog and CLI install): `launchhint.go`, `launchhint_install_effect.go`, `launchhint_install_effect_test.go`, `launchhint_test.go`, `launchhint_unix_test.go`.
 - **model** (the root Model, its services and shared host methods): `model.go`, `model_host.go`, `model_services.go`, `model_test.go`.
 - **move** (the move dialog): `move.go`, `move_test.go`, `move_view.go`.
