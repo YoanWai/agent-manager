@@ -364,7 +364,7 @@ func (l *Lifecycle) launchExisting(sess store.Session, tool config.Tool, baseCom
 // no self-archive, and no pane termination.
 func (l *Lifecycle) SetArchivedForSession(callerID, targetID string, archived bool, words Vocabulary) (Session, error) {
 	runtime := runtime{cfg: l.runtime.Config, words: words, store: l.runtime.Store, driver: l.runtime.Driver}
-	if _, err := runtime.caller(callerID); err != nil {
+	if _, err := runtime.optionalCaller(callerID); err != nil {
 		return Session{}, err
 	}
 	target, err := runtime.agent(targetID)

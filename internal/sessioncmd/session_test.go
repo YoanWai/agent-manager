@@ -295,9 +295,6 @@ func TestSessionsWithNoCallerListAndReadButStillRefuseToMessage(t *testing.T) {
 	if _, err := h.sessions.Send("", h.caller.ID, "hello"); err == nil || !strings.Contains(err.Error(), "not inside an Agent Manager session") {
 		t.Fatalf("Send with no caller = %v, want the missing caller named", err)
 	}
-	if _, err := h.sessions.Kill("", h.caller.ID); err == nil || !strings.Contains(err.Error(), "not inside an Agent Manager session") {
-		t.Fatalf("Kill with no caller = %v, want the missing caller named", err)
-	}
 }
 
 func harnessRuntime(t *testing.T, h *sessionHarness) Runtime {

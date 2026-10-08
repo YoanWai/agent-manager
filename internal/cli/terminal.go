@@ -63,17 +63,21 @@ func runTerminalCreate(out io.Writer, terminals terminalCommands, args []string,
 	set := newFlagSet(usageTerminalCreate)
 	group := set.String("group", "", "existing group path to open it in; pass an empty string for the root group")
 	directory := set.String("directory", "", "existing directory to open; defaults to yours, or to the group's inherited path")
-	nest := set.Bool("nest", true, "hang the terminal under this session; pass --nest=false to leave it loose or to open it in another group")
+	nest := set.Bool("nest", true, "hang the terminal under this session, the default when run from one; pass --nest=false to leave it loose or to open it in another group")
 	asJSON := jsonFlag(set)
 	if _, err := parseCommand(out, set, args, 0, 0); err != nil {
 		return err
 	}
-	opts := sessioncmd.CreateTerminalOptions{Directory: *directory, Nest: nest}
-	// An omitted group inherits this session's, so only a flag the caller
-	// actually typed is passed on.
+	opts := sessioncmd.CreateTerminalOptions{Directory: *directory}
+	// An omitted group inherits this session's, and an omitted nest depends
+	// on whether there is a session to nest under, so only a flag the
+	// caller actually typed is passed on.
 	set.Visit(func(given *flag.Flag) {
-		if given.Name == "group" {
+		switch given.Name {
+		case "group":
 			opts.Group = group
+		case "nest":
+			opts.Nest = nest
 		}
 	})
 	created, err := terminals.Create(sessionID, opts)

@@ -70,7 +70,7 @@ func (s *Sessions) CreateGroup(sessionID, path, directory string) (Group, error)
 		return Group{}, err
 	}
 	defer runtime.Close()
-	if _, err := runtime.caller(sessionID); err != nil {
+	if _, err := runtime.optionalCaller(sessionID); err != nil {
 		return Group{}, err
 	}
 	existing, err := runtime.store.Groups()
@@ -128,7 +128,7 @@ func (s *Sessions) DeleteGroup(sessionID, path string) (GroupRemoval, error) {
 		return GroupRemoval{}, err
 	}
 	defer runtime.Close()
-	if _, err := runtime.caller(sessionID); err != nil {
+	if _, err := runtime.optionalCaller(sessionID); err != nil {
 		return GroupRemoval{}, err
 	}
 	removed, moved, err := runtime.store.RemoveGroup(path)

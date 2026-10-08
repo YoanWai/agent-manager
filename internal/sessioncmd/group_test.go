@@ -49,6 +49,27 @@ func TestSessionGroupsListAndCreate(t *testing.T) {
 	}
 }
 
+func TestGroupsAreCreatedAndDeletedWithNoCallingSession(t *testing.T) {
+	h := newSessionHarness(t)
+	created, err := h.sessions.CreateGroup("", "remote", "")
+	if err != nil {
+		t.Fatalf("CreateGroup with no caller: %v", err)
+	}
+	if created.Path != "remote" {
+		t.Fatalf("created group = %+v", created)
+	}
+	if _, err := h.sessions.CreateGroup("", "remote", ""); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("duplicate group with no caller = %v", err)
+	}
+	removal, err := h.sessions.DeleteGroup("", "remote")
+	if err != nil {
+		t.Fatalf("DeleteGroup with no caller: %v", err)
+	}
+	if len(removal.Removed) != 1 || removal.Removed[0] != "remote" {
+		t.Fatalf("removal = %+v", removal)
+	}
+}
+
 // A fleet that opened a group for its work has to be able to close it, and
 // the sessions still filed there are not what it asked to remove.
 func TestDeleteGroupMovesItsSessionsToTheRoot(t *testing.T) {

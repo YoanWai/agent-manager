@@ -88,6 +88,9 @@ func (r *runtime) terminal(id string) (store.Session, error) {
 }
 
 func (r *runtime) nestedTerminal(sessionID, terminalID string) (store.Session, error) {
+	if sessionID == "" {
+		return r.unnestedTerminal(terminalID)
+	}
 	caller, err := r.caller(sessionID)
 	if err != nil {
 		return store.Session{}, err
@@ -98,6 +101,19 @@ func (r *runtime) nestedTerminal(sessionID, terminalID string) (store.Session, e
 	}
 	if terminal.ParentID != caller.ID {
 		return store.Session{}, fmt.Errorf("terminal %s is not nested under this session", terminal.ID)
+	}
+	return terminal, nil
+}
+
+// unnestedTerminal serves a caller with no session, such as a manager on
+// another machine: a terminal nested under a session stays that session's.
+func (r *runtime) unnestedTerminal(terminalID string) (store.Session, error) {
+	terminal, err := r.terminal(terminalID)
+	if err != nil {
+		return store.Session{}, err
+	}
+	if terminal.ParentID != "" {
+		return store.Session{}, fmt.Errorf("terminal %s belongs to session %s; only it can drive it", terminal.ID, terminal.ParentID)
 	}
 	return terminal, nil
 }
@@ -177,14 +193,17 @@ func (t *Terminals) Create(sessionID string, opts CreateTerminalOptions) (Termin
 		return Terminal{}, err
 	}
 	defer runtime.Close()
-	caller, err := runtime.caller(sessionID)
+	caller, err := runtime.optionalCaller(sessionID)
 	if err != nil {
 		return Terminal{}, err
 	}
 	toolName, tool := runtime.cfg.ShellTool()
-	nest := true
+	nest := caller.ID != ""
 	if opts.Nest != nil {
 		nest = *opts.Nest
+	}
+	if nest && caller.ID == "" {
+		return Terminal{}, errors.New("there is no calling session to nest the terminal under; leave nest unset or false")
 	}
 	if nest && opts.Group != nil && strings.TrimSpace(*opts.Group) != caller.Group {
 		return Terminal{}, fmt.Errorf("set nest false to place in another group")
@@ -326,10 +345,12 @@ func (t *Terminals) Read(sessionID, terminalID string) (TerminalScreen, error) {
 		return TerminalScreen{}, err
 	}
 	defer runtime.Close()
-	if _, err := runtime.caller(sessionID); err != nil {
-		return TerminalScreen{}, err
+	var terminal store.Session
+	if sessionID == "" {
+		terminal, err = runtime.unnestedTerminal(terminalID)
+	} else if _, err = runtime.caller(sessionID); err == nil {
+		terminal, err = runtime.terminal(terminalID)
 	}
-	terminal, err := runtime.terminal(terminalID)
 	if err != nil {
 		return TerminalScreen{}, err
 	}

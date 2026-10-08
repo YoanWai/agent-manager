@@ -293,7 +293,7 @@ Registration is per tool. Claude gets a generated `--mcp-config` file. Codex get
 
 Pi does not include an MCP client. Its sessions reach the same workspace through the subcommands: `agent-manager --help` lists them, from `sessions`, `spawn`, `send` and `wait` to the shared task list, file reservations, terminals and the review declarations. `update` needs no caller at all, and `issue` and `feature` use only the session id the launch exported. Every other subcommand acts as the session or terminal it runs in, resolved from that environment or, for a [terminal tab](#terminal-tabs) that has none, from the tmux pane, so the same subcommands work from a shell you opened with `T`. Claude Code also gets the id in the `env` block of its generated `--settings` file, so a conversation that `/background` or the agent view moves into Claude's daemon keeps acting as its own session. A `spawn` from a terminal tab with no `--tool` runs the CLI picked in Settings.
 
-`sessions`, `groups`, `snapshot`, `spawn`, `read` and `wait` also run with no caller at all, so a script, a cron job or a CI step outside Agent Manager can open sessions that show up in your list. Such a `spawn` runs the CLI picked in Settings, in the root group and the directory the script runs in, unless `--tool`, `--group` or `--directory` says otherwise:
+`sessions`, `groups`, `snapshot`, `spawn`, `read`, `wait`, `kill`, `revive`, `archive`, `create-group` and `delete-group` also run with no caller at all, so a script, a cron job or a CI step outside Agent Manager can open sessions that show up in your list. Such a `spawn` runs the CLI picked in Settings, in the root group and the directory the script runs in, unless `--tool`, `--group` or `--directory` says otherwise:
 
 ```bash
 agent-manager spawn --tool claude --group "Sprint Manager" --worktree \
@@ -303,6 +303,8 @@ agent-manager spawn --tool claude --group "Sprint Manager" --worktree \
 `snapshot --json` prints this machine's whole list as one JSON document: every session and terminal, archived ones included, the groups, and whether a manager is running here to deliver queued messages. It is what another manager reads over an SSH connection.
 
 `send <session-id> "<message>" --from <name>` queues a message from a sender with no session on this machine, such as an agent on another machine sending over SSH. The name is up to 64 bytes with no control characters, and `--from` is refused from inside a session, which sends as itself. The delivered message names the sender as being on another machine and says a reply cannot reach it.
+
+`terminal create`, `send`, `read` and `close` run with no caller too. There a new terminal hangs under no session, in the group `--group` names or the root, and only terminals that hang under no session can be driven: a terminal nested under a session stays that session's.
 
 Queued messages, status and after-turn archives and kills move only while a manager runs. `agent-manager serve` runs one with no screen, on a machine where nobody keeps the TUI open, until it is interrupted or sent SIGTERM. `serve --background` starts that manager detached, with its output appended to `serve.log` in the profile directory, unless one is already running, and prints `{"started":true,"pid":N}` or `{"started":false}`. It runs on macOS and Linux.
 
