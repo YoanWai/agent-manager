@@ -736,20 +736,14 @@ func relTime(t time.Time) string {
 }
 
 func diskBytes(b uint64) string {
-	const unit = 1000
-	if b < unit {
-		return fmt.Sprintf("%dB", b)
-	}
-	div, exp := uint64(unit), 0
-	for n := b / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f%cB", float64(b)/float64(div), "KMGTPE"[exp])
+	return formatBytes(b, 1000)
 }
 
 func humanBytes(b uint64) string {
-	const unit = 1024
+	return formatBytes(b, 1024)
+}
+
+func formatBytes(b, unit uint64) string {
 	if b < unit {
 		return fmt.Sprintf("%dB", b)
 	}
