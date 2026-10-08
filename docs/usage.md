@@ -19,6 +19,7 @@ Tell your agent what you want to review in Agent Manager. Your agent will set up
 | `o` | Open the selected row's directory in your editor |
 | `f` | Fork the selected conversation into a named session in the same group and directory |
 | `g` | New group (name, parent, default path, worktree default, worktree base) |
+| `C` | New SSH connection: another machine's sessions in this list (see [SSH connections](#ssh-connections)) |
 | `enter` | Focus session in place (keys go to the agent, list stays) / fold group |
 | click | Focus the session (the full-screen layout selects the row) |
 | double click | Fold the group / focus the session in the full-screen layout |
@@ -360,6 +361,20 @@ Each point sent to the agent carries a stable comment id. After addressing it, a
 ![folding the tree, creating a nested group, reordering, and archiving one](demo-groups.gif)
 
 Groups are paths (`backend/api/auth`) forming a tree of unlimited depth. Sessions can live at any node, including the root. Create subgroups inline with `g`, reorder both groups and sessions with `K` / `J` (or `shift+↑↓`; the order persists), fold a subtree with `enter` on its row, fold or unfold the whole tree with `F`, hide or restore empty groups visually with `e`, and edit a group's name and default path with `r`. On a session, `r` renames it and `tab` cycles the tool. Quitting one CLI in a session's pane and starting another there moves the row onto that CLI on the next poll, with the status rules and the revive command that come with it. The move needs one answer: exactly one built-in CLI has to run the binary the pane is running, so a CLI whose process name is its runtime rather than itself (one installed as a node script, say) leaves the row where it is and `tab` sets it by hand.
+
+## SSH connections
+
+`C` adds an SSH connection: a name and a destination, `user@host` or an alias from `~/.ssh/config`. The other machine needs agent-manager on its login shell's `PATH` and a key this machine's `ssh` can use without a prompt; the manager never asks for a password and never touches your SSH config.
+
+The connection sits in the list after your own groups, in its own color with an `ssh` label, and the other machine's groups, agents and terminals nest under it. It folds like a group. Each poll refreshes every connection in the background, one call per host at a time, and a host that stops answering keeps its last rows with an `offline` note and the error in the detail pane. The first refresh starts a headless manager there (`agent-manager serve --background`) when none is running, so messages sent to its agents get delivered.
+
+On a connection's rows:
+- `enter` and `A` attach over SSH in this terminal; detaching returns to the manager. A remote pane is never embedded.
+- Quick prompt mode sends to a remote agent as `<this machine's short hostname>: you`, or starts a new agent when a connection or remote group is selected. `n` starts one there too; the directory and the worktree default are the other machine's unless you set them.
+- `T` opens a terminal there, `x` kills an agent or closes a terminal, `v` revives, `a` and `u` archive and restore.
+- On the connection row itself, `r` edits it and `d` removes it. Removing asks first; its sessions keep running on that host.
+
+Rename, move, delete, restart, fork, review, the editor, copying a reply and reordering are refused on a remote row with a message naming the gap. A failed call shows the other machine's error. Nothing from a connection is written to this machine's store. See [SSH connections](architecture/ssh-connections.md) for the protocol.
 
 ## Status
 

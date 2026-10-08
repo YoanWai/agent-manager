@@ -135,3 +135,25 @@ The headless example has a separate-process observation/shutdown regression in
 reads a JSON observation and requires clean SIGTERM shutdown. This is local
 runtime and extension-backlog evidence, not paid provider conversation discovery
 or the Linux/SSH platform matrix.
+
+## SSH connection
+
+```sh
+python3 tools/e2e/ssh_scenarios.py --binary /tmp/agent-manager-e2e
+```
+
+A fixture `ssh` first on PATH drops every argument but the remote command and
+runs it with `/bin/sh -c` under a second disposable HOME and its own short
+tmux socket directory, so the "host" is a real agent-manager with its own
+profile and no network, keys or `~/.ssh`. A copy of the binary, first on PATH
+at a path unique to the run, serves both sides. The scenario seeds an agent on
+the host through its CLI, adds the connection through the `C` dialog, waits
+for the remote row, quick-sends to it and checks the host's inbox for the
+`<short hostname>: you` sender, kills it and checks its tmux session is gone
+on the host, and requires that the local store holds the connection and no
+sessions. The first refresh starts the host's headless manager.
+
+Cleanup ends every process by PID: the binary copy's processes (the host's
+`serve` among them) and the tmux servers on the run's own sockets, listed in
+`ended-processes.json`. No `kill-server` is sent. Attach needs a terminal on
+both sides and is left to the unit tests, which check the SSH command it builds.
