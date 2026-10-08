@@ -1,9 +1,7 @@
 package remote
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"strconv"
 
@@ -14,20 +12,11 @@ import (
 // --, so neither a value nor an operand that starts with a dash, or is --
 // itself, can be read as a flag by the remote CLI.
 
-// Snapshot answers an outdated remote with what to update: one that does
-// not know snapshot falls through to its interactive manager, which fails
-// without a terminal after printing escape sequences instead of JSON.
+// Snapshot answers an outdated remote with what to update.
 func (c *Client) Snapshot(ctx context.Context, host string) (sessioncmd.Snapshot, error) {
-	out, err := c.call(ctx, host, callTimeout, "snapshot", "--json")
-	if err != nil {
-		if !Unreachable(err) && len(bytes.TrimSpace(out)) > 0 && !json.Valid(out) {
-			return sessioncmd.Snapshot{}, outdated(host)
-		}
-		return sessioncmd.Snapshot{}, err
-	}
 	var snapshot sessioncmd.Snapshot
-	if err := json.Unmarshal(out, &snapshot); err != nil {
-		return sessioncmd.Snapshot{}, outdated(host)
+	if err := c.decode(ctx, host, callTimeout, &snapshot, "snapshot", "--json"); err != nil {
+		return sessioncmd.Snapshot{}, err
 	}
 	switch {
 	case snapshot.Version < sessioncmd.SnapshotVersion:
@@ -36,10 +25,6 @@ func (c *Client) Snapshot(ctx context.Context, host string) (sessioncmd.Snapshot
 		return sessioncmd.Snapshot{}, &Error{Host: host, Err: errors.New("agent-manager there is newer than this one; update agent-manager on this machine")}
 	}
 	return cleanSnapshot(snapshot), nil
-}
-
-func outdated(host string) error {
-	return &Error{Host: host, Err: errors.New("agent-manager there is too old for SSH connections; update agent-manager on that host")}
 }
 
 // StartManager starts a headless manager on host when none is awake there.

@@ -207,7 +207,7 @@ func TestSnapshot(t *testing.T) {
 		{"no version", `{"sessions":[]}`, "", nil, tooOld},
 		{"newer", `{"version":2}`, "", nil, "gpu: agent-manager there is newer than this one; update agent-manager on this machine"},
 		{"interactive manager instead", "\x1b[?1007l\x1b]10;#ffffff\x07", "agent-manager: could not open a new TTY: open /dev/tty: device not configured\n", exitStatus(1), tooOld},
-		{"not json", "Usage: agent-manager", "", nil, tooOld},
+		{"not json", "Usage: agent-manager", "", nil, "gpu: unreadable answer to snapshot: invalid character 'U' looking for beginning of value"},
 		{"remote failure", "", "agent-manager: database is locked\n", exitStatus(1), "gpu: database is locked"},
 		{"unreachable", "", "ssh: Could not resolve hostname gpu\n", exitStatus(255), "gpu: unreachable over SSH: ssh: Could not resolve hostname gpu"},
 	}
@@ -228,5 +228,59 @@ func TestSnapshot(t *testing.T) {
 				t.Fatalf("Snapshot = %+v", snapshot)
 			}
 		})
+	}
+}
+
+func TestLoginProfileOutputIsSkipped(t *testing.T) {
+	const current = `{"version":1,"sessions":[{"id":"a1"}]}`
+	cases := []struct {
+		name   string
+		stdout string
+		stderr string
+		err    error
+		want   string
+	}{
+		{"noise before the marker", "(base) conda activated {\n" + outputMarker + current, "", nil, ""},
+		{"a marker in the noise", "echo " + outputMarker + " [\n" + outputMarker + current, "", nil, ""},
+		{"profile exited first", "(base) conda activated {\n", "", nil, "gpu: the login shell there exited before it ran agent-manager"},
+		{"profile failed first", "nvm: now using node [", "nvm: command not found\n", exitStatus(1), "gpu: nvm: command not found"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newRawTestClient(t, func(context.Context, []string) ([]byte, []byte, error) {
+				return []byte(tc.stdout), []byte(tc.stderr), tc.err
+			})
+			snapshot, err := c.Snapshot(context.Background(), "gpu")
+			got := ""
+			if err != nil {
+				got = err.Error()
+			}
+			if got != tc.want {
+				t.Fatalf("Snapshot error = %q, want %q", got, tc.want)
+			}
+			if tc.want == "" && (len(snapshot.Sessions) != 1 || snapshot.Sessions[0].ID != "a1") {
+				t.Fatalf("Snapshot = %+v", snapshot)
+			}
+		})
+	}
+}
+
+// A command an older agent-manager does not know falls through to its
+// interactive manager, which fails without a terminal after printing escape
+// sequences.
+func TestUnknownCommandIsTooOldNotUnreadable(t *testing.T) {
+	c := newTestClient(t, func(context.Context, []string) ([]byte, []byte, error) {
+		return []byte("\x1b[?1007l\x1b]10;#ffffff\x07"), []byte("agent-manager: could not open a new TTY\n"), exitStatus(1)
+	})
+	_, err := c.TerminalSend(context.Background(), Ref{Host: "gpu", ID: "a1"}, "ls", nil)
+	if err == nil || err.Error() != "gpu: agent-manager there is too old for SSH connections; update agent-manager on that host" {
+		t.Fatalf("unknown command = %v", err)
+	}
+	c = newTestClient(t, func(context.Context, []string) ([]byte, []byte, error) {
+		return []byte("closed terminal a1\n"), nil, nil
+	})
+	_, err = c.TerminalSend(context.Background(), Ref{Host: "gpu", ID: "a1"}, "ls", nil)
+	if err == nil || err.Error() != "gpu: unreadable answer to terminal: invalid character 'c' looking for beginning of value" {
+		t.Fatalf("an answer that is not JSON = %v", err)
 	}
 }

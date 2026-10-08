@@ -55,7 +55,8 @@ var awkwardArgs = []string{
 }
 
 // The login profile is what puts the fake first on PATH, the way a user's
-// profile does for the real binary.
+// profile does for the real binary, and it prints to stdout the way conda,
+// nvm or a stray echo does.
 func TestRemoteCommandRoundTripsThroughLoginShell(t *testing.T) {
 	self, err := os.Executable()
 	if err != nil {
@@ -70,7 +71,9 @@ func TestRemoteCommandRoundTripsThroughLoginShell(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(bin, "agent-manager"), []byte(fake), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	profile := []byte(`PATH="$HOME/bin:$PATH"; export PATH` + "\n")
+	profile := []byte(`PATH="$HOME/bin:$PATH"; export PATH` + "\n" +
+		`echo '(base) conda activated {"version":0}'` + "\n" +
+		`printf 'nvm: now using node ['` + "\n")
 	for _, name := range []string{".profile", ".zprofile"} {
 		if err := os.WriteFile(filepath.Join(home, name), profile, 0o644); err != nil {
 			t.Fatal(err)
@@ -87,9 +90,13 @@ func TestRemoteCommandRoundTripsThroughLoginShell(t *testing.T) {
 		t.Run(filepath.Base(shell), func(t *testing.T) {
 			cmd := exec.Command(shell, "-c", command)
 			cmd.Env = []string{"HOME=" + home, "PATH=/usr/bin:/bin", "SHELL=" + shell, fakeArgvEnv + "=1"}
-			out, err := cmd.Output()
+			stdout, err := cmd.Output()
 			if err != nil {
-				t.Fatalf("%s -c: %v\nstdout: %s", shell, err, out)
+				t.Fatalf("%s -c: %v\nstdout: %s", shell, err, stdout)
+			}
+			out, marked := answer(stdout)
+			if !marked {
+				t.Fatalf("%s printed no marker: %q", shell, stdout)
 			}
 			var got []string
 			if err := json.Unmarshal(out, &got); err != nil {
@@ -112,7 +119,7 @@ func TestQuoteKeepsBackslashesOutsideQuotes(t *testing.T) {
 
 func TestSSHArgv(t *testing.T) {
 	c := New("/profile")
-	got := c.sshArgv("me@gpu", false, []string{"agent-manager", "snapshot", "--json"})
+	got := c.sshArgv("me@gpu", false, remoteCommand([]string{"agent-manager", "snapshot", "--json"}))
 	want := []string{
 		"ssh",
 		"-o", "BatchMode=yes",
@@ -126,7 +133,8 @@ func TestSSHArgv(t *testing.T) {
 		"-o", "ControlPath=" + c.controlDir + "/%C",
 		"-T",
 		"me@gpu",
-		`exec "$SHELL" -lc ''\''agent-manager'\'' '\''snapshot'\'' '\''--json'\'''`,
+		`exec "$SHELL" -lc 'printf %s '\''` + "\x1eagent-manager\x1e" +
+			`'\''; exec '\''agent-manager'\'' '\''snapshot'\'' '\''--json'\'''`,
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("argv:\n got %q\nwant %q", got, want)

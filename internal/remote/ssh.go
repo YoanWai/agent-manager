@@ -96,7 +96,7 @@ func ensureControlDir(dir string) error {
 // sshArgv puts the destination right before the remote command. ssh reads
 // options again after the destination, but stops at the first word that is
 // not one, and the remote command always starts with exec.
-func (c *Client) sshArgv(destination string, tty bool, words []string) []string {
+func (c *Client) sshArgv(destination string, tty bool, command string) []string {
 	ttyFlag := "-T"
 	if tty {
 		ttyFlag = "-t"
@@ -114,18 +114,43 @@ func (c *Client) sshArgv(destination string, tty bool, words []string) []string 
 		"-o", "ControlPath=" + filepath.Join(c.controlDir, "%C"),
 		ttyFlag,
 		destination,
-		remoteCommand(words),
+		command,
 	}
 }
 
-// remoteCommand runs words through the user's login shell, so the PATH set
-// up there finds the binary. sshd hands the string to that same shell.
+// outputMarker is printed once the login profile has run, right before
+// agent-manager starts, so what a profile prints (conda, nvm, an echo) is
+// skipped. JSON escapes control bytes, so no answer can hold it.
+const outputMarker = "\x1eagent-manager\x1e"
+
+// remoteCommand runs words through the user's login shell after the
+// marker.
 func remoteCommand(words []string) string {
+	return loginShell("printf %s " + quote(outputMarker) + "; exec " + quoteWords(words))
+}
+
+// loginShell runs script through the user's login shell, so the PATH set up
+// there finds the binary. sshd hands the string to that same shell.
+func loginShell(script string) string {
+	return `exec "$SHELL" -lc ` + quote(script)
+}
+
+func quoteWords(words []string) string {
 	quoted := make([]string, len(words))
 	for i, word := range words {
 		quoted[i] = quote(word)
 	}
-	return `exec "$SHELL" -lc ` + quote(strings.Join(quoted, " "))
+	return strings.Join(quoted, " ")
+}
+
+// answer is what follows the last marker; marked is false when the login
+// shell never reached it.
+func answer(stdout []byte) (out []byte, marked bool) {
+	i := bytes.LastIndex(stdout, []byte(outputMarker))
+	if i < 0 {
+		return nil, false
+	}
+	return stdout[i+len(outputMarker):], true
 }
 
 // quote single-quotes a word for POSIX shells and fish alike. fish still
@@ -161,7 +186,8 @@ func (c *Client) AttachCommand(ref Ref) (*exec.Cmd, error) {
 	if err := ensureControlDir(c.controlDir); err != nil {
 		return nil, &Error{Host: ref.Host, Err: err}
 	}
-	argv := c.sshArgv(conn.Destination, true, []string{"tmux", "-u", "-L", "agentmgr", "attach-session", "-t", "am_" + ref.ID})
+	words := []string{"tmux", "-u", "-L", "agentmgr", "attach-session", "-t", "am_" + ref.ID}
+	argv := c.sshArgv(conn.Destination, true, loginShell(quoteWords(words)))
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Env = withoutTMUX(os.Environ())
 	return cmd, nil

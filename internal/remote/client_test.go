@@ -5,11 +5,11 @@ import (
 	"errors"
 	"os"
 	"strconv"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/remote/remotetest"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 )
 
@@ -23,59 +23,30 @@ func newTestClient(t *testing.T, run Runner, opts ...Option) *Client {
 	if run == nil {
 		run = func(context.Context, []string) ([]byte, []byte, error) { return nil, nil, nil }
 	}
+	marked := func(ctx context.Context, argv []string) ([]byte, []byte, error) {
+		stdout, stderr, err := run(ctx, argv)
+		return remotetest.Answer(stdout), stderr, err
+	}
+	return newRawTestClient(t, marked, opts...)
+}
+
+// newRawTestClient hands run's stdout over as the host printed it, without
+// the marker the login shell prints before agent-manager runs.
+func newRawTestClient(t *testing.T, run Runner, opts ...Option) *Client {
+	t.Helper()
 	c := New(t.TempDir(), append([]Option{WithRunner(run)}, opts...)...)
 	t.Cleanup(func() { os.RemoveAll(c.controlDir) })
 	c.SetConnections([]Connection{{Name: "gpu", Destination: "me@gpu"}, {Name: "cpu", Destination: "me@cpu"}})
 	return c
 }
 
-// remoteWords undoes remoteCommand for the argv's last element. The
-// login-shell round trip proves a real shell reads it the same way.
+// remoteWords undoes the remote command at the end of argv. The login-shell
+// round trip proves a real shell reads it the same way.
 func remoteWords(t *testing.T, argv []string) []string {
 	t.Helper()
-	inner, ok := strings.CutPrefix(argv[len(argv)-1], `exec "$SHELL" -lc `)
-	if !ok {
-		t.Fatalf("remote command %q does not go through the login shell", argv[len(argv)-1])
-	}
-	outer := shellWords(t, inner)
-	if len(outer) != 1 {
-		t.Fatalf("login shell gets %d words, want 1", len(outer))
-	}
-	return shellWords(t, outer[0])
-}
-
-// shellWords splits the subset of POSIX shell quoting quote produces.
-func shellWords(t *testing.T, line string) []string {
-	t.Helper()
-	var words []string
-	var word strings.Builder
-	inWord := false
-	for i := 0; i < len(line); i++ {
-		switch ch := line[i]; ch {
-		case ' ':
-			if inWord {
-				words = append(words, word.String())
-				word.Reset()
-				inWord = false
-			}
-		case '\'':
-			end := strings.IndexByte(line[i+1:], '\'')
-			if end < 0 {
-				t.Fatalf("unterminated quote in %q", line)
-			}
-			word.WriteString(line[i+1 : i+1+end])
-			i += end + 1
-			inWord = true
-		case '\\':
-			i++
-			word.WriteByte(line[i])
-			inWord = true
-		default:
-			t.Fatalf("unquoted %q in %q", ch, line)
-		}
-	}
-	if inWord {
-		words = append(words, word.String())
+	words, err := remotetest.Words(argv)
+	if err != nil {
+		t.Fatal(err)
 	}
 	return words
 }

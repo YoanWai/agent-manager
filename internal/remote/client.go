@@ -3,6 +3,7 @@
 package remote
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -144,12 +145,16 @@ func (c *Client) call(ctx context.Context, host string, timeout time.Duration, a
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	argv := c.sshArgv(conn.Destination, false, append([]string{"agent-manager"}, args...))
+	argv := c.sshArgv(conn.Destination, false, remoteCommand(append([]string{"agent-manager"}, args...)))
 	stdout, stderr, err := c.run(ctx, argv)
+	out, marked := answer(stdout)
 	if err != nil {
-		return stdout, classify(ctx, host, stderr, err)
+		return out, classify(ctx, host, stderr, err)
 	}
-	return stdout, nil
+	if !marked {
+		return nil, &Error{Host: host, Err: errors.New("the login shell there exited before it ran agent-manager")}
+	}
+	return out, nil
 }
 
 // Error is a failed call to one connection.
@@ -215,9 +220,19 @@ func lastLine(output []byte) string {
 func (c *Client) decode(ctx context.Context, host string, timeout time.Duration, into any, args ...string) error {
 	out, err := c.call(ctx, host, timeout, args...)
 	if err != nil {
+		// A command an older agent-manager does not know falls through to
+		// its interactive manager, which fails without a terminal after
+		// printing escape sequences instead of JSON.
+		if !Unreachable(err) && len(bytes.TrimSpace(out)) > 0 && !json.Valid(out) {
+			return outdated(host)
+		}
 		return err
 	}
 	return unreadable(host, args[0], json.Unmarshal(out, into))
+}
+
+func outdated(host string) error {
+	return &Error{Host: host, Err: errors.New("agent-manager there is too old for SSH connections; update agent-manager on that host")}
 }
 
 func unreadable(host, command string, err error) error {
