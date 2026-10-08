@@ -97,8 +97,8 @@ func (m *Model) sessionWindowProjectedLive(id string) bool {
 // unwatch stops the focus watcher before a session is killed on purpose:
 // the client going away then is the plan, not a loss to report.
 func (m *Model) unwatch(id string) {
-	if m.focusRuntime.watch != nil {
-		m.focusRuntime.watch.unwatch(id)
+	if m.focus.runtime.watch != nil {
+		m.focus.runtime.watch.unwatch(id)
 	}
 }
 
@@ -108,8 +108,8 @@ func (m *Model) unwatch(id string) {
 // shows the agent's last output once the window is gone.
 
 func (m *Model) watchedSession() string {
-	if m.focusRuntime.watch == nil {
+	if m.focus.runtime.watch == nil {
 		return ""
 	}
-	return m.focusRuntime.watch.watching()
+	return m.focus.runtime.watch.watching()
 }

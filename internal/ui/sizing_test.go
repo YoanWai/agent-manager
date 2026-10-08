@@ -38,7 +38,7 @@ func TestFirstRefreshResizesExistingSessions(t *testing.T) {
 	}
 
 	m.startup.sessionsSized = false
-	m.focusRuntime.lastPaneSizes = nil
+	m.focus.runtime.lastPaneSizes = nil
 	m.applyCmd(t, m.refreshCmd())
 	if w, _ := windowSize(t, id); w != m.previewPaneWidth() {
 		t.Fatalf("after first refresh, window width = %d, want %d", w, m.previewPaneWidth())
@@ -67,7 +67,7 @@ func TestUnchangedWindowSizeSkipsResize(t *testing.T) {
 	}
 
 	// Same size as the model: the resume case, which must not touch sessions.
-	updated, _ := m.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: m.layout.width, Height: m.layout.height})
 	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if w, h := windowSize(t, id); w != 100 || h != 30 {

@@ -70,7 +70,7 @@ func (m *Model) previewLines(width, height int, gutter string, frameOrigin ...in
 		if len(frameOrigin) > 0 {
 			originY = frameOrigin[0]
 		}
-		rendered := m.focusPane.PrepareFrame(uifocus.FrameContext{
+		rendered := m.focus.pane.PrepareFrame(uifocus.FrameContext{
 			Preview:        m.workspace.preview,
 			Width:          width,
 			Height:         height,

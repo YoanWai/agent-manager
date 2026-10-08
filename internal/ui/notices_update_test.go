@@ -6,7 +6,7 @@ import (
 
 func TestUpdateMsgSetsAndClearsBadge(t *testing.T) {
 	m := &Model{
-		width: 120,
+		layout: layoutState{width: 120},
 	}
 	m.Update(updateMsg{latest: "v0.11.1", url: "https://example/rel"})
 	if m.update.latest != "v0.11.1" || m.update.url != "https://example/rel" {
@@ -20,7 +20,7 @@ func TestUpdateMsgSetsAndClearsBadge(t *testing.T) {
 
 func TestFailedUpdateCheckKeepsBadge(t *testing.T) {
 	m := &Model{
-		width:  120,
+		layout: layoutState{width: 120},
 		update: updateInfo{latest: "v0.11.1", url: "https://example/rel"},
 	}
 	m.Update(updateMsg{failed: true})
@@ -31,7 +31,7 @@ func TestFailedUpdateCheckKeepsBadge(t *testing.T) {
 
 func TestUpdateTickReArms(t *testing.T) {
 	m := &Model{
-		width: 120,
+		layout: layoutState{width: 120},
 	}
 	if _, cmd := m.Update(updateTickMsg{}); cmd == nil {
 		t.Error("update tick should re-arm the timer and re-check")

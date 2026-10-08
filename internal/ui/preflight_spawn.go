@@ -59,10 +59,10 @@ func (m *Model) capturedAbsolutePath(raw, fallback string) string {
 		path = fallback
 	}
 	if path == "~" || strings.HasPrefix(path, "~/") {
-		path = filepath.Join(m.homeDir, strings.TrimPrefix(path, "~"))
+		path = filepath.Join(m.env.homeDir, strings.TrimPrefix(path, "~"))
 	}
 	if path != "" && !filepath.IsAbs(path) {
-		path = filepath.Join(m.workDir, path)
+		path = filepath.Join(m.env.workDir, path)
 	}
 	return filepath.Clean(path)
 }
@@ -76,8 +76,8 @@ func (m *Model) groupDirCandidates(group string) []string {
 			candidates = append(candidates, path)
 		}
 	}
-	if m.workDir != "" {
-		candidates = append(candidates, m.workDir)
+	if m.env.workDir != "" {
+		candidates = append(candidates, m.env.workDir)
 	}
 	return candidates
 }

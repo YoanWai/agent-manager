@@ -28,7 +28,7 @@ func (s effectServices) runChoiceSave(request choiceSaveRequest) (effectResult, 
 }
 
 func (m *Model) saveChoiceSetting(key, value string) {
-	m.settingsCache.applyValues([]settingValue{{key: key, value: value}})
+	m.settings.cache.applyValues([]settingValue{{key: key, value: value}})
 	m.enqueueEffect(choiceSaveRequest{key: key, value: value}, 0, false)
 }
 

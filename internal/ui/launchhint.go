@@ -100,12 +100,12 @@ func missingToolText(missing config.MissingToolError) string {
 // files until the launch runs or is given up, so the form and the quick
 // bar can be reopened meanwhile.
 func (m *Model) openLaunchHint(fix launchFix) {
-	m.dialogGen++
+	m.gens.dialog++
 	fix.images = append(fix.images, m.form.prompt.attachments...)
 	fix.images = append(fix.images, m.quick.attachments...)
 	m.form.prompt.attachments = nil
 	m.quick.attachments = nil
-	m.launchFix = fix
+	m.launchHint.fix = fix
 	m.mode = modeLaunchHint
 }
 
@@ -127,15 +127,15 @@ func (m *Model) handleLaunchHintKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+c":
 		return m.requestQuit()
 	case "c":
-		if m.launchFix.command == "" {
+		if m.launchHint.fix.command == "" {
 			return m, nil
 		}
-		command := m.launchFix.command
+		command := m.launchHint.fix.command
 		return m, func() tea.Msg {
 			return launchCommandCopiedMsg{err: copyLaunchCommand(command)}
 		}
 	case "i":
-		if m.launchFix.command == "" {
+		if m.launchHint.fix.command == "" {
 			return m, nil
 		}
 		return m.startInstall()
@@ -148,8 +148,8 @@ func (m *Model) handleLaunchHintKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // closeLaunchHint drops the dialog and the images the refused prompt was
 // holding: they stayed alive while an install could still spawn it.
 func (m *Model) closeLaunchHint() {
-	dropImages(m.launchFix.images)
-	m.launchFix = launchFix{}
+	dropImages(m.launchHint.fix.images)
+	m.launchHint.fix = launchFix{}
 	m.mode = modeList
 }
 
@@ -165,8 +165,8 @@ func (m *Model) handleLaunchCommandCopied(msg launchCommandCopiedMsg) {
 // lifecycle, and tmux work. The dialog stays in front until that job says
 // the command was typed into a durable shell row.
 func (m *Model) startInstall() (tea.Model, tea.Cmd) {
-	if m.install != nil {
-		m.errBar.text = "an install is already running in " + m.install.name
+	if m.launchHint.install != nil {
+		m.errBar.text = "an install is already running in " + m.launchHint.install.name
 		return m, nil
 	}
 	for _, job := range append([]*effectJob{m.effects.active}, m.effects.pending...) {
@@ -178,7 +178,7 @@ func (m *Model) startInstall() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	}
-	fix := m.launchFix
+	fix := m.launchHint.fix
 	toolName, _ := m.shellTool()
 	w, h := m.paneTargetSize()
 	retry := fix.effectRetry
@@ -186,9 +186,9 @@ func (m *Model) startInstall() (tea.Model, tea.Cmd) {
 		spawn.images = append([]imageAttachment(nil), fix.images...)
 		retry = spawn
 	}
-	m.launchFix.images = nil
+	m.launchHint.fix.images = nil
 	m.enqueueEffect(installStartRequest{
-		gen:         m.dialogGen,
+		gen:         m.gens.dialog,
 		id:          newID(),
 		command:     fix.command,
 		binary:      fix.binary,
@@ -218,7 +218,7 @@ func installScript(command, statusFile string) string {
 // settleInstall queues one captured status check. Polls arriving while that
 // request waits or runs do not add duplicates to the ordered effect lane.
 func (m *Model) settleInstall() {
-	install := m.install
+	install := m.launchHint.install
 	if install == nil {
 		return
 	}
@@ -239,7 +239,7 @@ func (m *Model) viewLaunchHint() string {
 	tone := lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 
 	var body strings.Builder
-	for i, paragraph := range strings.Split(m.launchFix.text, "\n\n") {
+	for i, paragraph := range strings.Split(m.launchHint.fix.text, "\n\n") {
 		style := mutedStyle
 		if i == 0 {
 			style = tone
@@ -252,7 +252,7 @@ func (m *Model) viewLaunchHint() string {
 		}
 	}
 	hint := [][2]string{{"esc", "close"}}
-	if m.launchFix.command != "" {
+	if m.launchHint.fix.command != "" {
 		hint = [][2]string{{"i", "install"}, {"c", "copy"}, {"esc", "close"}}
 	}
 	return m.cardSized(width, "◈ Session needs a setup step", strings.TrimRight(body.String(), "\n"), hint)

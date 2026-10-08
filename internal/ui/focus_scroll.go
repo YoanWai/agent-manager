@@ -44,7 +44,7 @@ const guardedMouseReplies = 2
 
 func (m *Model) sendFocusReport(report string) {
 	sess, ok := m.selected()
-	watch := m.focusRuntime.watch
+	watch := m.focus.runtime.watch
 	if !ok || watch == nil {
 		return
 	}
@@ -63,7 +63,7 @@ func (m *Model) focusRegionCmd(sessID string, offset int) tea.Cmd {
 func (m *Model) focusRegionRequestCmd(request uifocus.RegionRequest) tea.Cmd {
 	command := fmt.Sprintf(`capture-pane -p -e -t %s -S %d -E -`,
 		tmux.PaneTarget(request.SessionID), -(request.Offset + request.Rows))
-	watch := m.focusRuntime.watch
+	watch := m.focus.runtime.watch
 	return func() tea.Msg {
 		if watch == nil {
 			return focusScrollMsg{sessID: request.SessionID, offset: request.Offset, rows: request.Rows}

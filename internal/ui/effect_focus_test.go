@@ -256,7 +256,7 @@ func TestFocusFenceDropsEntryAfterDialogOpened(t *testing.T) {
 	if m.mode != modeForm {
 		t.Fatalf("a dialog opened after the probe should win, mode = %v", m.mode)
 	}
-	if m.focusPane.Pane().SessionID != "" {
+	if m.focus.pane.Pane().SessionID != "" {
 		t.Fatalf("focus entered behind the dialog")
 	}
 }

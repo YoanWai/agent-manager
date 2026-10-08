@@ -51,7 +51,7 @@ func TestZZShot(t *testing.T) {
 	switch os.Getenv("AM_SHOT_MODE") {
 	case "settings":
 		m.mode = modeSettings
-		m.settings = settingsState{
+		m.settings.dialog = settingsState{
 			toolNames: []string{"claude", "codex", "grok", "opencode"},
 			toolIndex: 0, themeIndex: 1, field: settingsFieldTheme, layoutSplit: true,
 		}
@@ -80,7 +80,7 @@ func TestFrameFitsTerminal(t *testing.T) {
 	for _, width := range []int{80, 100, 120, 160, 200} {
 		for _, height := range []int{24, 34, 50} {
 			m := shotModel()
-			m.width, m.height = width, height
+			m.layout.width, m.layout.height = width, height
 			// View clamps and pads, which would hide a frame that is a row
 			// short or a row long, so the raw frame is what gets measured.
 			raw := strings.Split(m.viewListFrame(), "\n")

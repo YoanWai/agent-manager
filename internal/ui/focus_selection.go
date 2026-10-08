@@ -15,10 +15,10 @@ func (m *Model) handleFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
-	result := m.focusPane.Mouse(msg, uifocus.MouseContext{
+	result := m.focus.pane.Mouse(msg, uifocus.MouseContext{
 		SessionID:    sess.ID,
 		Rows:         m.focusPaneRows(),
-		RuntimeReady: m.focusRuntime.watch != nil,
+		RuntimeReady: m.focus.runtime.watch != nil,
 	})
 	return m.applyFocusMouse(result)
 }
@@ -66,8 +66,8 @@ type focusCopiedMsg struct {
 // cursor is parked below its own painted composer. Focus owns crop geometry
 // after this value crosses the boundary.
 func (m *Model) paneCaretRow() int {
-	pane := m.focusPane.Pane()
-	if m.mode != modeFocus || !pane.Cursor.Visible || m.focusPane.ScrolledBack() {
+	pane := m.focus.pane.Pane()
+	if m.mode != modeFocus || !pane.Cursor.Visible || m.focus.pane.ScrolledBack() {
 		return -1
 	}
 	caret := pane.Cursor.Y

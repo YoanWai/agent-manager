@@ -16,14 +16,14 @@ func TestQuickFooterKeepsTheCaretRowOnScreen(t *testing.T) {
 		seedTwoGroups(t, m)
 		setRailCursor(m, 1)
 		m.prefs.fullLayout = full
-		m.width = 56
-		m.height = 12
+		m.layout.width = 56
+		m.layout.height = 12
 		m.openQuickMode()
 
 		painted := func() string {
 			frame := preparedView(m)
-			if rows := len(strings.Split(frame, "\n")); rows > m.height {
-				t.Fatalf("full layout %v: the frame painted %d rows into a %d row terminal", full, rows, m.height)
+			if rows := len(strings.Split(frame, "\n")); rows > m.layout.height {
+				t.Fatalf("full layout %v: the frame painted %d rows into a %d row terminal", full, rows, m.layout.height)
 			}
 			return ansi.Strip(frame)
 		}
@@ -79,37 +79,37 @@ func TestQuickFooterFillsEveryBandCell(t *testing.T) {
 			seedTwoGroups(t, m)
 			setRailCursor(m, 1)
 			m.prefs.fullLayout = full
-			m.width = width
+			m.layout.width = width
 			answered(m, claudeLike, claudeAnswer)
 			m.openQuickMode()
 			m.quick.input.SetValue("hello 界 " + strings.Repeat("wrapping ", 12))
 			frame := preparedView(m)
 			frameRows := splitLines(frame)
-			if len(frameRows) != m.height || strings.TrimSpace(strings.TrimPrefix(ansi.Strip(frameRows[len(frameRows)-1]), quickEdge)) == "" {
+			if len(frameRows) != m.layout.height || strings.TrimSpace(strings.TrimPrefix(ansi.Strip(frameRows[len(frameRows)-1]), quickEdge)) == "" {
 				t.Fatalf("full %v width %d footer must end on the last terminal row", full, width)
 			}
-			backgrounds, _ := cellColors(frame, m.width, m.height)
+			backgrounds, _ := cellColors(frame, m.layout.width, m.layout.height)
 			footerHeight := lipgloss.Height(m.viewFooter())
-			keysHeight := lipgloss.Height(legendBar([]legendSection{{title: quickModeTitle, pairs: m.quickLegend()}}, m.width-1))
-			if !strings.Contains(ansi.Strip(frameRows[m.height-footerHeight]), "new") {
+			keysHeight := lipgloss.Height(legendBar([]legendSection{{title: quickModeTitle, pairs: m.quickLegend()}}, m.layout.width-1))
+			if !strings.Contains(ansi.Strip(frameRows[m.layout.height-footerHeight]), "new") {
 				t.Fatalf("full %v width %d footer must begin with the target", full, width)
 			}
-			if m.quick.originY != m.height-footerHeight {
-				t.Fatalf("target hit row = %d, want %d", m.quick.originY, m.height-footerHeight)
+			if m.quick.originY != m.layout.height-footerHeight {
+				t.Fatalf("target hit row = %d, want %d", m.quick.originY, m.layout.height-footerHeight)
 			}
-			for y := m.height - footerHeight; y < m.height; y++ {
+			for y := m.layout.height - footerHeight; y < m.layout.height; y++ {
 				if !strings.HasPrefix(ansi.Strip(frameRows[y]), quickEdge) {
 					t.Fatalf("footer row %d must carry the accent edge", y)
 				}
-				if cells := ansi.StringWidth(frameRows[y]); cells != m.width {
-					t.Fatalf("band row %d width = %d, want %d", y, cells, m.width)
+				if cells := ansi.StringWidth(frameRows[y]); cells != m.layout.width {
+					t.Fatalf("band row %d width = %d, want %d", y, cells, m.layout.width)
 				}
-				for x := 0; x < m.width; x++ {
-					if y == m.height-keysHeight && x >= quickGutter && x < quickGutter+ansi.StringWidth(legendBadgeStyle.Render(quickModeTitle)) {
+				for x := 0; x < m.layout.width; x++ {
+					if y == m.layout.height-keysHeight && x >= quickGutter && x < quickGutter+ansi.StringWidth(legendBadgeStyle.Render(quickModeTitle)) {
 						continue
 					}
 					want := quickModeHex()
-					if y > m.height-footerHeight && y < m.height-keysHeight {
+					if y > m.layout.height-footerHeight && y < m.layout.height-keysHeight {
 						want = blockHex()
 					}
 					if !sameColor(backgrounds[y][x], hexColor(want)) {

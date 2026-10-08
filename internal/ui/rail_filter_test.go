@@ -13,7 +13,7 @@ import (
 
 func TestToggleEmptyGroupsFiltersTreeWithoutDeletingGroups(t *testing.T) {
 	m := buildModel(t)
-	m.width = 200
+	m.layout.width = 200
 	for _, group := range []string{"empty", "work", "work/leaf", "work/unused"} {
 		if err := m.services.store.CreateGroup(group, ""); err != nil {
 			t.Fatalf("create group %q: %v", group, err)
@@ -154,7 +154,7 @@ func TestStatusFilterKeyKeepsAttentionSessions(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Fatalf("attention list = %v want %v", got, want)
 	}
-	m.width, m.height = 120, 34
+	m.layout.width, m.layout.height = 120, 34
 	rail := ansi.Strip(railLinesText(m.railLines(36, m.listBodyHeight())))
 	if !strings.Contains(rail, "ATTENTION") {
 		t.Fatalf("rail missing ATTENTION badge:\n%s", rail)

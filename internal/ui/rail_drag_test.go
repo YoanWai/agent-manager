@@ -32,7 +32,7 @@ func dragOnto(t *testing.T, m *Model, from treeRow, line int) (*Model, tea.Mouse
 	if start < 0 {
 		t.Fatalf("test setup: %s is not painted", rowKey(from))
 	}
-	press := tea.MouseMsg{X: m.displayedRail.Handles[rowKey(from)], Y: y0 + start, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress}
+	press := tea.MouseMsg{X: m.layout.displayedRail.Handles[rowKey(from)], Y: y0 + start, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress}
 	updated, _ := m.handleMouse(press)
 	m.drainEffects(t)
 	m = updated.(*Model)

@@ -44,11 +44,11 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Resuming from a tmux attach re-sends the current size unchanged; only
 		// a real resize needs the per-session tmux resize calls, so an
 		// unchanged size skips them and keeps detach latency flat.
-		if msg.Width == m.width && msg.Height == m.height {
+		if msg.Width == m.layout.width && msg.Height == m.layout.height {
 			return m, nil
 		}
-		m.width = msg.Width
-		m.height = msg.Height
+		m.layout.width = msg.Width
+		m.layout.height = msg.Height
 		// Re-assert the terminal backdrop: a reattach or a fresh outer
 		// terminal delivers a size message and may carry stale colors.
 		SyncTerminalColors()
@@ -96,10 +96,10 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// A session with a control client already pushes every frame; a
 		// tick capture on top of that is work whose result is discarded.
-		if m.focusRuntime.watch != nil && m.focusRuntime.watch.serving(sess.ID) {
+		if m.focus.runtime.watch != nil && m.focus.runtime.watch.serving(sess.ID) {
 			return m, m.previewTick()
 		}
-		return m, tea.Batch(m.previewCmd(sess, m.focusPane.PreviewGeneration()), m.previewTick())
+		return m, tea.Batch(m.previewCmd(sess, m.focus.pane.PreviewGeneration()), m.previewTick())
 
 	case baseFetchedMsg:
 		return m, m.recordBaseFetch(msg)
@@ -109,9 +109,9 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// its rows out, but still carries focus consumed from a notification,
 		// the turns it saw end and its pane facts.
 		fenced := !msg.listedAt.IsZero() && !m.effects.latestObservation.IsZero() && !msg.listedAt.After(m.effects.latestObservation)
-		staleListing := fenced || (!msg.listedAt.IsZero() && msg.listedAt.Before(m.lastListedAt))
+		staleListing := fenced || (!msg.listedAt.IsZero() && msg.listedAt.Before(m.workspace.lastListedAt))
 		if !staleListing && !msg.listedAt.IsZero() {
-			m.lastListedAt = msg.listedAt
+			m.workspace.lastListedAt = msg.listedAt
 		}
 		if fenced {
 			m.requestRefresh()
@@ -164,7 +164,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Sessions left from a previous run carry that run's window size,
 		// which the cache knows nothing about; seedPaneGeom adopts their
 		// real geometry on the first pass, so nothing resets the cache here.
-		if !m.startup.sessionsSized && m.width > 0 && len(m.workspace.sessions) > 0 {
+		if !m.startup.sessionsSized && m.layout.width > 0 && len(m.workspace.sessions) > 0 {
 			m.startup.sessionsSized = true
 		}
 		m.publishPaneSize()
@@ -173,7 +173,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// badge in the header. A pane shorter than the box paints a dead
 		// band under its output, so every pass grows what falls short.
 		// The call is free when nothing moved: it diffs against paneGeom.
-		if m.startup.sessionsSized && m.width > 0 {
+		if m.startup.sessionsSized && m.layout.width > 0 {
 			m.resizeSessions()
 		}
 		m.settleInstall()
@@ -194,7 +194,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// preview; resync and fetch it directly.
 		if sess, ok := m.selected(); ok && sess.ID != msg.procFor {
 			m.syncPollInput()
-			gen := m.focusPane.MovePreview()
+			gen := m.focus.pane.MovePreview()
 			return m, tea.Batch(focusExit, m.previewCmd(sess, gen), m.diffRefreshCmd(), reviewStatuses, m.startStartupTick())
 		}
 		m.workspace.proc = msg.proc
@@ -202,7 +202,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.setPreview(msg.procFor, msg.preview)
 		// A selection that has not moved since the last pass is at rest,
 		// so this covers the startup case where no settle ever fired.
-		if m.focusPane.ObservePoll() {
+		if m.focus.pane.ObservePoll() {
 			m.watchSelection()
 		}
 		return m, tea.Batch(focusExit, m.diffRefreshCmd(), reviewStatuses, m.startStartupTick())
@@ -302,7 +302,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case previewSettleMsg:
-		if !m.focusPane.PreviewSettled(msg.gen) {
+		if !m.focus.pane.PreviewSettled(msg.gen) {
 			return m, nil
 		}
 		sess, ok := m.selected()
@@ -318,7 +318,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.mode != modeFocus {
 			return m, nil
 		}
-		m.focusPane.Blink()
+		m.focus.pane.Blink()
 		return m, m.cursorBlink()
 
 	case linkOpenErrMsg:
@@ -336,7 +336,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// The clipboard writer runs off the update loop and can take
 		// hundreds of milliseconds, long enough for a click elsewhere to
 		// drop the highlight this count belongs to.
-		if !m.focusPane.ApplyCopied(msg.gen, msg.chars) {
+		if !m.focus.pane.ApplyCopied(msg.gen, msg.chars) {
 			return m, nil
 		}
 		m.errBar.text = ""
@@ -347,7 +347,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if sess, ok := m.selected(); ok {
 			currentID = sess.ID
 		}
-		result := m.focusPane.ApplyRegion(uifocus.RegionResult{
+		result := m.focus.pane.ApplyRegion(uifocus.RegionResult{
 			SessionID: msg.sessID,
 			Offset:    msg.offset,
 			Rows:      msg.rows,
@@ -367,7 +367,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if sess, ok := m.selected(); ok {
 			currentID = sess.ID
 		}
-		result := m.focusPane.ApplyPane(uifocus.PaneUpdate{
+		result := m.focus.pane.ApplyPane(uifocus.PaneUpdate{
 			SessionID: msg.sessID,
 			Mouse:     msg.paneMouse,
 			Alt:       msg.paneAlt,
@@ -385,7 +385,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case previewMsg:
-		if !m.focusPane.AcceptPreview(msg.gen) {
+		if !m.focus.pane.AcceptPreview(msg.gen) {
 			return m, nil
 		}
 		if sess, ok := m.selected(); ok && sess.ID == msg.sessID {
@@ -456,8 +456,8 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// The attach client sized the window to the full terminal and tmux
 		// keeps that size on detach; pin it back to the current layout's
 		// box so the capture is not clipped on the right.
-		if m.focusRuntime.lastPaneSizes != nil {
-			delete(m.focusRuntime.lastPaneSizes, msg.sessID)
+		if m.focus.runtime.lastPaneSizes != nil {
+			delete(m.focus.runtime.lastPaneSizes, msg.sessID)
 		}
 		width, height := m.paneTargetSize()
 		m.queueGeometry(geometryRequest{targets: []paneResize{{id: msg.sessID, size: [2]int{width, height}}}})
@@ -469,7 +469,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Ctrl+R and F3 inside the session leave a marker before
 		// detaching; the lane reads it once and clears it, and the
 		// completion carries it out for the session just attached.
-		m.enqueueEffect(detachRequest{sessionID: msg.sessID, generation: m.foregroundGen}, 0, false)
+		m.enqueueEffect(detachRequest{sessionID: msg.sessID, generation: m.gens.foreground}, 0, false)
 		return m, nil
 
 	case editorFileCheckedMsg:
@@ -504,7 +504,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.reportDone("opened " + msg.path + " in " + msg.name)
 		}
 		if target := msg.returnTo; target.sessionID != "" && !m.effects.quitting &&
-			target.foregroundGen == m.foregroundGen && target.mode == m.mode {
+			target.foregroundGen == m.gens.foreground && target.mode == m.mode {
 			return m, tea.Batch(resume, m.reattach(target.sessionID, m.review.Generation()))
 		}
 		return m, resume
@@ -516,7 +516,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleMouse(msg)
 
 	case uirail.AutoScrollTick:
-		return m.applyRailDecision(m.rail.ApplyAutoScroll(msg, m.displayedRail, m.railMouseContext()))
+		return m.applyRailDecision(m.rail.ApplyAutoScroll(msg, m.layout.displayedRail, m.railMouseContext()))
 
 	case tea.KeyMsg:
 		model, cmd := m.handleKey(msg)

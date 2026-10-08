@@ -93,9 +93,11 @@ func TestSearchLightsTheQueryInsideAGroupName(t *testing.T) {
 
 func searchModel() *Model {
 	m := &Model{
-		width:  120,
-		height: 30,
-		rail:   railModelFromRows(nil, 0),
+		layout: layoutState{
+			width:  120,
+			height: 30,
+		},
+		rail: railModelFromRows(nil, 0),
 	}
 	m.workspace.sessions = []store.Session{
 		{ID: "1", Name: "api-server", Status: status.Idle},

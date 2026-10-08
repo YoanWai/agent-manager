@@ -720,7 +720,7 @@ func assertPaneStayedOnSpawnPath(t *testing.T, m *Model, id, want string) {
 
 func TestGroupedSessionRenameEditorIsVisible(t *testing.T) {
 	m := buildModel(t)
-	m.width, m.height = 100, 30
+	m.layout.width, m.layout.height = 100, 30
 	if err := m.services.store.CreateGroup("work/inner", ""); err != nil {
 		t.Fatal(err)
 	}

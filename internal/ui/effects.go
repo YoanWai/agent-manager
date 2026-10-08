@@ -180,8 +180,8 @@ func (m *Model) nextEffectCmd() tea.Cmd {
 }
 
 func (m *Model) requestQuit() (tea.Model, tea.Cmd) {
-	if m.install != nil {
-		m.errBar.text = "install may still be running in " + m.install.name + "; finish it, kill its terminal with the session controls, or attach and interrupt it before quitting"
+	if m.launchHint.install != nil {
+		m.errBar.text = "install may still be running in " + m.launchHint.install.name + "; finish it, kill its terminal with the session controls, or attach and interrupt it before quitting"
 		return m, nil
 	}
 	starting := func(job *effectJob) (installStartRequest, bool) {

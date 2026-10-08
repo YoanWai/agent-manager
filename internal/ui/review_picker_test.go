@@ -199,8 +199,8 @@ func TestBranchPickerSeedsCursorForSymlinkedWorktree(t *testing.T) {
 	if wantCursor == 0 {
 		t.Fatal("test setup invalid: declared worktree must not already be row 0")
 	}
-	if m.repoPick.cursor != wantCursor {
-		t.Fatalf("cursor should seed on the declared worktree row %d, got %d", wantCursor, m.repoPick.cursor)
+	if m.reviewNav.picker.cursor != wantCursor {
+		t.Fatalf("cursor should seed on the declared worktree row %d, got %d", wantCursor, m.reviewNav.picker.cursor)
 	}
 }
 
@@ -452,11 +452,11 @@ func TestRepoPickerSurvivesShrinkingRootList(t *testing.T) {
 	if m.mode != modeRepoPick {
 		t.Fatalf("r should open the repo picker, mode = %v", m.mode)
 	}
-	for m.repoPick.cursor != 1 {
+	for m.reviewNav.picker.cursor != 1 {
 		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
 		*m = *updated.(*Model)
 	}
-	onScreen := m.filteredRows()[m.repoPick.cursor].root
+	onScreen := m.filteredRows()[m.reviewNav.picker.cursor].root
 
 	// A reload lands carrying only the repos that still exist, re-ranked.
 	replaceReviewRootsForTest(m, []string{realRoots[1], realRoots[0]}, m.review.Snapshot().RepoSelected)
@@ -468,8 +468,8 @@ func TestRepoPickerSurvivesShrinkingRootList(t *testing.T) {
 	if m.mode != modeDiff {
 		t.Fatalf("enter should return to review, mode = %v", m.mode)
 	}
-	if m.repoPick.cursor >= len(m.repoPick.rows) {
-		t.Fatalf("cursor should stay inside the snapshot, got %d", m.repoPick.cursor)
+	if m.reviewNav.picker.cursor >= len(m.reviewNav.picker.rows) {
+		t.Fatalf("cursor should stay inside the snapshot, got %d", m.reviewNav.picker.cursor)
 	}
 	if m.review.Snapshot().RepoSelected != onScreen {
 		t.Fatalf("enter should load the repo on the cursor row %q, got %q", onScreen, m.review.Snapshot().RepoSelected)
@@ -478,7 +478,7 @@ func TestRepoPickerSurvivesShrinkingRootList(t *testing.T) {
 
 func TestRepoPickerFitsTerminalHeight(t *testing.T) {
 	m := buildModel(t)
-	m.width, m.height = 80, 24
+	m.layout.width, m.layout.height = 80, 24
 	roots := make([]string, 0, 20)
 	for i := 0; i < 20; i++ {
 		roots = append(roots,
@@ -489,8 +489,8 @@ func TestRepoPickerFitsTerminalHeight(t *testing.T) {
 	m.openRepoPick()
 
 	view := m.viewRepoPick()
-	if lines := len(strings.Split(view, "\n")); lines > m.height {
-		t.Fatalf("picker rendered %d lines, terminal is %d", lines, m.height)
+	if lines := len(strings.Split(view, "\n")); lines > m.layout.height {
+		t.Fatalf("picker rendered %d lines, terminal is %d", lines, m.layout.height)
 	}
 	if !strings.Contains(view, "repo-00") {
 		t.Fatal("the cursor row should be visible at the top of the list")
@@ -505,12 +505,12 @@ func TestRepoPickerFitsTerminalHeight(t *testing.T) {
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
 	*m = *updated.(*Model)
-	if m.repoPick.cursor != len(m.review.Snapshot().RepoRoots)-1 {
-		t.Fatalf("up from the top should wrap to the last repo, cursor = %d", m.repoPick.cursor)
+	if m.reviewNav.picker.cursor != len(m.review.Snapshot().RepoRoots)-1 {
+		t.Fatalf("up from the top should wrap to the last repo, cursor = %d", m.reviewNav.picker.cursor)
 	}
 	view = m.viewRepoPick()
-	if lines := len(strings.Split(view, "\n")); lines > m.height {
-		t.Fatalf("picker rendered %d lines at the list end, terminal is %d", lines, m.height)
+	if lines := len(strings.Split(view, "\n")); lines > m.layout.height {
+		t.Fatalf("picker rendered %d lines at the list end, terminal is %d", lines, m.layout.height)
 	}
 	if !strings.Contains(view, "repo-19") {
 		t.Fatal("the cursor must stay visible after moving to the end of the list")
@@ -539,7 +539,7 @@ func TestBasePickerPersistsSwitchesScopeAndClears(t *testing.T) {
 		t.Fatalf("B should open the base picker, mode = %v", m.mode)
 	}
 	labels := map[string]bool{}
-	for _, row := range m.repoPick.rows {
+	for _, row := range m.reviewNav.picker.rows {
 		labels[row.label] = true
 	}
 	if !labels["auto"] || !labels["feature"] {
@@ -633,7 +633,7 @@ func TestInvalidStoredBaseStillOpensPickerAndRecovers(t *testing.T) {
 		t.Fatalf("B must open the base picker after the load errored, mode = %v (err=%q)", m.mode, m.errBar.text)
 	}
 	labels := map[string]bool{}
-	for _, row := range m.repoPick.rows {
+	for _, row := range m.reviewNav.picker.rows {
 		labels[row.label] = true
 	}
 	if !labels["auto"] || !labels["feature"] {
@@ -661,7 +661,7 @@ func TestInvalidStoredBaseStillOpensPickerAndRecovers(t *testing.T) {
 // terminal.
 func TestRepoPickRowEscapesControlBytes(t *testing.T) {
 	m := &Model{
-		width: 120,
+		layout: layoutState{width: 120},
 	}
 	row := pickRow{label: "br\x1b]0;P\x07anch", root: "/tmp/re\x1b[2Jpo/leaf"}
 

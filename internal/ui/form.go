@@ -242,7 +242,7 @@ func (m *Model) openFormWithReader(reader settingsValueReader) tea.Cmd {
 	m.pathSugg.reset()
 	m.mode = modeForm
 	catalog := m.ensureCatalog(tools[toolIndex])
-	if m.settingsPending > 0 {
+	if m.settings.pending > 0 {
 		return tea.Batch(m.formWorktreeProbeCmd(false), catalog)
 	}
 	return tea.Batch(settingsLoadCmd(settingsLoadRequest{target: settingsLoadForm, generation: uint64(m.form.prompt.gen), extra: m.choiceSettingKeys()}, reader), catalog)
@@ -482,8 +482,8 @@ func (m *Model) handleFormModelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 
 func (m *Model) handleFormClick(x, y int) (tea.Model, tea.Cmd) {
 	// The body starts under the card's title row and the blank row after it.
-	line := y - m.cardTop - 2
-	if line < 0 || line >= len(m.form.hits) || x < m.cardLeft || x >= m.cardRight {
+	line := y - m.layout.cardTop - 2
+	if line < 0 || line >= len(m.form.hits) || x < m.layout.cardLeft || x >= m.layout.cardRight {
 		return m, nil
 	}
 	hit := m.form.hits[line]
@@ -611,7 +611,7 @@ func (m *Model) cycleTool(delta int) tea.Cmd {
 // formSpawnDir is the directory the form would launch in, resolved the
 // same way submit resolves it.
 func (m *Model) formSpawnDir() string {
-	return m.capturedAbsolutePath(m.form.dir.Value(), m.workDir)
+	return m.capturedAbsolutePath(m.form.dir.Value(), m.env.workDir)
 }
 
 // formWorktreeOn is the worktree state the form shows and spawns with: the

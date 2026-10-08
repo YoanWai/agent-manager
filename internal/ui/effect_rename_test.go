@@ -174,7 +174,7 @@ func TestRenameGroupPartialFailureReconcilesCommittedStages(t *testing.T) {
 	}
 	job := &effectJob{request: request}
 	m.mode = modeRename
-	m.dialogGen = 7
+	m.gens.dialog = 7
 	m.rename = renameTarget{isGroup: true, path: "old"}
 	m.applyRenameEffect(job, renameEffectResult{groupRenamed: true}, errRenameStageTwo)
 
@@ -331,7 +331,7 @@ func TestMoveSessionDefersPlacement(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("move dispatch returned no command")
 	}
-	got, err := m.services.store.Get(m.moveID)
+	got, err := m.services.store.Get(m.move.id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -342,7 +342,7 @@ func TestMoveSessionDefersPlacement(t *testing.T) {
 		t.Fatalf("dialog should stay open until completion, mode=%v", m.mode)
 	}
 	m.applyCmd(t, cmd)
-	got, _ = m.services.store.Get(m.moveID)
+	got, _ = m.services.store.Get(m.move.id)
 	if got.Group != "target" {
 		t.Fatalf("move not committed on completion: %+v", got)
 	}
@@ -365,11 +365,11 @@ func TestMoveWorkerRejectsChangedSourcePrecondition(t *testing.T) {
 	m.openMove()
 	pickGroup(t, m, "target")
 	_, cmd := m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
-	if err := m.services.store.PlaceSession(m.moveID, "concurrent", ""); err != nil {
+	if err := m.services.store.PlaceSession(m.move.id, "concurrent", ""); err != nil {
 		t.Fatal(err)
 	}
 	m.applyCmd(t, cmd)
-	stored, err := m.services.store.Get(m.moveID)
+	stored, err := m.services.store.Get(m.move.id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -450,7 +450,7 @@ func TestMoveCompletionDoesNotReplaceNewerDialog(t *testing.T) {
 		t.Fatalf("newer dialog selection changed: %+v", m.form.groups)
 	}
 	m.drainEffects(t)
-	got, err := m.services.store.Get(m.moveID)
+	got, err := m.services.store.Get(m.move.id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -475,7 +475,7 @@ func TestRenameCompletionDoesNotCloseResubmittedDialog(t *testing.T) {
 		t.Fatal("first dispatch returned no command")
 	}
 	// Same dialog, same name; resubmit without reopening (e.g. after
-	// cycling the tool). dialogGen advanced, so cmd1's completion is stale.
+	// cycling the tool). gens.dialog advanced, so cmd1's completion is stale.
 	m.cycleRenameTool(1)
 	_, _ = m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
 	if len(m.effects.pending) == 0 {

@@ -8,16 +8,16 @@ import (
 // splitRatio of the terminal (default 30%), floored so both sides stay
 // usable when the window is wide enough.
 func (m *Model) splitWidths() (int, int) {
-	if m.width <= 0 {
+	if m.layout.width <= 0 {
 		return 0, 0
 	}
-	ratio := m.split.ratio
+	ratio := m.layout.split.ratio
 	if ratio <= 0 || ratio >= 1 {
 		ratio = defaultSplitRatio
 	}
-	leftWidth := int(float64(m.width)*ratio + 0.5)
-	leftWidth = clampSplitLeft(leftWidth, m.width)
-	return leftWidth, m.width - leftWidth
+	leftWidth := int(float64(m.layout.width)*ratio + 0.5)
+	leftWidth = clampSplitLeft(leftWidth, m.layout.width)
+	return leftWidth, m.layout.width - leftWidth
 }
 
 // previewPaneWidth is the sidebar's inner content width: the columns the
@@ -40,7 +40,7 @@ func (m *Model) previewPaneWidth() int {
 // screen layout, which paints captures across the full width.
 func (m *Model) paneTargetSize() (int, int) {
 	if m.prefs.fullLayout {
-		return max(m.width, 1), m.restingBodyHeight()
+		return max(m.layout.width, 1), m.restingBodyHeight()
 	}
 	return m.previewPaneWidth(), m.previewPaneHeight()
 }
@@ -56,7 +56,7 @@ func (m *Model) previewPaneHeight() int {
 	if inner < 1 {
 		inner = 1
 	}
-	if m.height < 1 {
+	if m.layout.height < 1 {
 		return 1
 	}
 	avail := m.restingBodyHeight()

@@ -18,7 +18,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"maps"
 	"slices"
-	"time"
 )
 
 type mode int
@@ -45,65 +44,100 @@ const (
 )
 
 type Model struct {
-	foregroundGen uint64
-	effects       effectState
-	services      services
-	workspace     workspace
-	rail          uirail.Model
+	gens       generations
+	effects    effectState
+	services   services
+	workspace  workspace
+	rail       uirail.Model
+	focus      focusState
+	prefs      preferences
+	ledger     launchLedger
+	startup    startupState
+	notices    noticesState
+	poller     *poller
+	mode       mode
+	review     uireview.Model
+	reviewNav  reviewNavState
+	form       form
+	groupForm  groupForm
+	pathSugg   pathComplete
+	confirm    confirmTarget
+	launchHint launchHintState
+	mouse      mouseCapture
+	rename     renameTarget
+	fork       forkState
+	quick      quickState
+	settings   settingsFeature
+	env        environment
+	help       helpFeature
+	move       moveDialog
+	layout     layoutState
+	errBar     errBar
+	update     updateInfo
+}
+
+// generations fence asynchronous completions against the state that
+// requested them.
+type generations struct {
+	foreground    uint64
+	dialog        uint64
+	worktreeProbe uint64
+}
+
+type layoutState struct {
+	frame         string
+	width         int
+	height        int
+	split         splitState
 	displayedRail uirail.Frame
-	focusPane     uifocus.Model
-	focusRuntime  focusRuntimeState
-	prefs         preferences
-	ledger        launchLedger
-	startup       startupState
-	notices       noticesState
-	poller        *poller
-	mode          mode
-	review        uireview.Model
-	reviewReturn  reviewReturn
-	form          form
-	groupForm     groupForm
-	pathSugg      pathComplete
-	confirm       confirmTarget
-	launchFix     launchFix
+	// cardTop, cardLeft and cardRight place the last card painted, for clicks.
+	cardTop, cardLeft, cardRight int
+}
+
+type focusState struct {
+	pane    uifocus.Model
+	runtime focusRuntimeState
+}
+
+type reviewNavState struct {
+	ret    reviewReturn
+	picker repoPickState
+}
+
+type launchHintState struct {
+	fix launchFix
 	// install is the setup-dialog install still running in a shell tab,
 	// nil when none is.
 	install *pendingInstall
-	// mouseReleased is true while the setup dialog has handed the mouse
+}
+
+type mouseCapture struct {
+	// released is true while the setup dialog has handed the mouse
 	// back to the terminal, so a drag selects its text.
-	mouseReleased    bool
-	mouseHover       bool
-	rename           renameTarget
-	fork             forkState
-	quick            quickState
-	settings         settingsState
-	settingsCache    settingsCache
-	settingsPending  int
-	settingsGen      uint64
-	worktreeProbeGen uint64
-	dialogGen        uint64
-	workDir          string
-	homeDir          string
-	help             uihelp.State
-	helpReturnMode   mode
-	moveID           string
-	movePath         string
-	repoPick         repoPickState
-	frame            string
-	width            int
-	height           int
-	errBar           errBar
-	split            splitState
-	update           updateInfo
-	catalogs         map[string]*catalogState
-	// cardTop, cardLeft and cardRight place the last card painted, for clicks.
-	cardTop, cardLeft, cardRight int
-	// baseFetches holds the last fetch of a worktree spawn's base, per
-	// directory and base override.
-	baseFetches map[baseFetchKey]baseFetch
-	// lastListedAt is the newest listing applied; an older one still carries
-	// focus, turn ends and pane facts, but not the rows it saw.
-	lastListedAt time.Time
+	released bool
+	hover    bool
+}
+
+type settingsFeature struct {
+	dialog  settingsState
+	cache   settingsCache
+	pending int
+	gen     uint64
+}
+
+type environment struct {
+	workDir string
+	homeDir string
+}
+
+type helpFeature struct {
+	state      uihelp.State
+	returnMode mode
+}
+
+type moveDialog struct {
+	id   string
+	path string
 }
 
 func NewWithInboxOwner(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, version string, owner sessioncmd.InboxMaintenance) (*Model, error) {
@@ -183,11 +217,13 @@ func newView(deps Dependencies, version string) (*Model, error) {
 	model := &Model{
 		effects: effectState{lifetime: &effectLifetime{}},
 		poller:  &poller{runner: deps.Execution},
-		split:   splitState{ratio: loadSplitRatio(st)},
+		layout:  layoutState{split: splitState{ratio: loadSplitRatio(st)}},
 		mode:    modeList,
-		workDir: initialWorkingDir(),
-		homeDir: initialHomeDir(),
-		update:  updateInfo{version: version},
+		env: environment{
+			workDir: initialWorkingDir(),
+			homeDir: initialHomeDir(),
+		},
+		update: updateInfo{version: version},
 		services: services{
 			cfg:         cfg,
 			lifecycle:   deps.Lifecycle,
@@ -202,11 +238,11 @@ func newView(deps Dependencies, version string) (*Model, error) {
 			engine:      engine,
 			setSnapshot: st.SetSnapshot,
 		},
-		rail:          uirail.New(loadCollapsed(st)),
-		settingsCache: loadSettingsCache(st, choiceSettingKeys(slices.Sorted(maps.Keys(cfg.Tools)))),
-		focusRuntime: focusRuntimeState{
+		rail:     uirail.New(loadCollapsed(st)),
+		settings: settingsFeature{cache: loadSettingsCache(st, choiceSettingKeys(slices.Sorted(maps.Keys(cfg.Tools))))},
+		focus: focusState{runtime: focusRuntimeState{
 			imeCursor: &cursorAnchor{},
-		},
+		}},
 		prefs: preferences{
 			focusOnEnter:    storedFocusOnEnter(st),
 			arrowStep:       storedArrowStep(st),

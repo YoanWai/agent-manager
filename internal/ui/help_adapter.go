@@ -19,24 +19,24 @@ type helpLayout struct {
 }
 
 func (m *Model) openHelp() {
-	m.helpReturnMode = m.mode
+	m.help.returnMode = m.mode
 	scope := uihelp.Global
 	if m.mode == modeDiff {
 		scope = uihelp.Review
 	}
-	m.help = uihelp.New(scope)
+	m.help.state = uihelp.New(scope)
 	m.mode = modeHelp
 }
 
 func (m *Model) handleHelpKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	layout := m.helpLayout()
 	viewport := uihelp.Viewport{Rows: layout.rows, Lines: len(layout.content.Lines)}
-	switch m.help.Update(msg, viewport) {
+	switch m.help.state.Update(msg, viewport) {
 	case uihelp.Quit:
 		return m.requestQuit()
 	case uihelp.Close:
-		m.mode = m.helpReturnMode
-		m.helpReturnMode = modeList
+		m.mode = m.help.returnMode
+		m.help.returnMode = modeList
 		return m, m.startStartupTick()
 	default:
 		return m, nil
@@ -74,7 +74,7 @@ func (m *Model) helpLayout() helpLayout {
 	dialog := m.dialogRenderContext()
 	width := uihelp.CardWidth(dialog.width)
 	inner := cardInnerWidth(width)
-	content := m.help.Content(m.helpContext(inner))
+	content := m.help.state.Content(m.helpContext(inner))
 	rows := dialog.height - 5 - lipgloss.Height(legendInline(content.Hints, inner)) - len(content.Head)
 	if dialog.status != "" {
 		rows -= 2

@@ -323,8 +323,8 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 		if m.mode == modeLaunchHint {
 			// The dialog's images are the request's: the composer was emptied
 			// at dispatch, so openLaunchHint found none of its own.
-			m.launchFix.images = append(m.launchFix.images, request.images...)
-			m.launchFix.effectRetry = request
+			m.launchHint.fix.images = append(m.launchHint.fix.images, request.images...)
+			m.launchHint.fix.effectRetry = request
 			if request.kind == spawnQuick {
 				m.quick.active = false
 			}

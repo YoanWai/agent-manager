@@ -111,7 +111,7 @@ func (m *Model) focusSelected() (tea.Model, tea.Cmd) {
 	if sess.Archived {
 		return m.attachSelected()
 	}
-	m.enqueueEffect(focusRequest{sessionID: sess.ID, generation: m.foregroundGen}, 0, false)
+	m.enqueueEffect(focusRequest{sessionID: sess.ID, generation: m.gens.foreground}, 0, false)
 	return m, m.nextEffectCmd()
 }
 
@@ -136,8 +136,8 @@ func (m *Model) focusSelected() (tea.Model, tea.Cmd) {
 // painted cursor is the only thing locating that row, so tmux's position
 // stays meaningful when the application hides the terminal cursor.
 func (m *Model) caretAtInputStart(sessID, tool string) bool {
-	pane := m.focusPane.Pane()
-	if m.services.engine == nil || pane.SessionID != sessID || m.focusPane.ScrolledBack() {
+	pane := m.focus.pane.Pane()
+	if m.services.engine == nil || pane.SessionID != sessID || m.focus.pane.ScrolledBack() {
 		return false
 	}
 	_, bareInput := m.services.engine.InputPrefix(tool, "")
@@ -170,7 +170,7 @@ func (m *Model) caretAtInputStart(sessID, tool string) bool {
 // A caret cell that is not parked on a blank row is none of this path's
 // business: the marker rules decide it as usual.
 func (m *Model) caretParksAndComposerIsEmpty(tool string, rows []string) bool {
-	cursor := m.focusPane.Pane().Cursor
+	cursor := m.focus.pane.Pane().Cursor
 	// The parking spot is a blank corner cell: column zero on a row with
 	// nothing painted on it. A cursor at column zero over any other
 	// content is not the park, whatever sits above it.
@@ -217,7 +217,7 @@ func (m *Model) caretRowEndsAPromptHead(tool string, rows []string, y int) bool 
 // to the terminal here would let a wheel notch scroll the manager out of
 // view, so the list swallows the wheel instead.
 func (m *Model) leaveFocus() tea.Cmd {
-	if report := m.focusPane.Leave(); report != "" {
+	if report := m.focus.pane.Leave(); report != "" {
 		m.sendFocusReport(report)
 	}
 	return m.leaveFocusMode()
@@ -235,7 +235,7 @@ func (m *Model) leaveFocusMode() tea.Cmd {
 // focusPagesScrollback reads the Focus policy for the footer and status
 // line, which name the page keys only while they page.
 func (m *Model) focusPagesScrollback(sess store.Session) bool {
-	return m.focusPane.PagesScrollback(sess.ID)
+	return m.focus.pane.PagesScrollback(sess.ID)
 }
 
 // handleFocusKey forwards focused input to the pane except for session
@@ -246,7 +246,7 @@ func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, m.leaveFocus()
 	}
-	result := m.focusPane.Key(msg, uifocus.KeyContext{
+	result := m.focus.pane.Key(msg, uifocus.KeyContext{
 		SessionID:   sess.ID,
 		Rows:        m.focusPaneRows(),
 		Detach:      m.services.keys.Binding(keybind.Detach).Has(msg.String()),
@@ -271,7 +271,7 @@ func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case uifocus.OpenReview:
 		cmd := m.openDiff()
 		if m.mode == modeDiff {
-			m.reviewReturn = reviewReturn{kind: reviewReturnFocus, sessionID: sess.ID}
+			m.reviewNav.ret = reviewReturn{kind: reviewReturnFocus, sessionID: sess.ID}
 		}
 		return m, cmd
 	}

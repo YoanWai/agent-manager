@@ -36,8 +36,8 @@ func TestInSessionReviewRemembersOriginAndReattaches(t *testing.T) {
 	if m.mode != modeDiff {
 		t.Fatalf("marker set should enter review, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
-	if m.reviewReturn.kind != reviewReturnAttach || m.reviewReturn.sessionID != sess.ID {
-		t.Fatalf("review origin = %+v, want attach %q", m.reviewReturn, sess.ID)
+	if m.reviewNav.ret.kind != reviewReturnAttach || m.reviewNav.ret.sessionID != sess.ID {
+		t.Fatalf("review origin = %+v, want attach %q", m.reviewNav.ret, sess.ID)
 	}
 
 	// esc leaves review; the live origin session re-attaches.
@@ -46,8 +46,8 @@ func TestInSessionReviewRemembersOriginAndReattaches(t *testing.T) {
 	if m.mode != modeList {
 		t.Fatalf("esc should leave review, mode = %v", m.mode)
 	}
-	if m.reviewReturn != (reviewReturn{}) {
-		t.Fatalf("reattach origin should be consumed, got %+v", m.reviewReturn)
+	if m.reviewNav.ret != (reviewReturn{}) {
+		t.Fatalf("reattach origin should be consumed, got %+v", m.reviewNav.ret)
 	}
 	if cmd == nil {
 		t.Fatal("esc from in-session review should re-attach the session, got nil command")
@@ -68,8 +68,8 @@ func TestListReviewLeavesToListWithoutReattach(t *testing.T) {
 	if m.mode != modeDiff {
 		t.Fatalf("openDiff should enter review, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
-	if m.reviewReturn.kind != reviewReturnList || m.reviewReturn.sessionID != "" {
-		t.Fatalf("list review should return to list, got %+v", m.reviewReturn)
+	if m.reviewNav.ret.kind != reviewReturnList || m.reviewNav.ret.sessionID != "" {
+		t.Fatalf("list review should return to list, got %+v", m.reviewNav.ret)
 	}
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -185,7 +185,7 @@ func TestCtrlRFromListOpensReview(t *testing.T) {
 	if m.mode != modeDiff {
 		t.Fatalf("ctrl+r from the list should open review, mode = %v (err=%q)", m.mode, m.errBar.text)
 	}
-	if m.reviewReturn.kind != reviewReturnList || m.reviewReturn.sessionID != "" {
+	if m.reviewNav.ret.kind != reviewReturnList || m.reviewNav.ret.sessionID != "" {
 		t.Fatal("review opened from the list should return to the list, not re-attach")
 	}
 }

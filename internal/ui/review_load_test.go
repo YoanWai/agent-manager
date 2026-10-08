@@ -354,7 +354,7 @@ func TestReviewUntrackedImageShowsBinaryWithoutOpening(t *testing.T) {
 }
 
 func TestReviewShowsLoaderWhileDiffLoads(t *testing.T) {
-	m := &Model{width: 100, height: 30, mode: modeDiff}
+	m := &Model{layout: layoutState{width: 100, height: 30}, mode: modeDiff}
 	seedReviewForTest(m, uireview.Target{ID: "s"}, git.ScopeUncommitted, "/repo", diff.Set{}, false)
 	code := ansi.Strip(m.viewDiffCode(80, 20))
 	if !strings.Contains(code, "loading diff") {
@@ -378,7 +378,7 @@ func TestReviewShowsLoaderWhileDiffLoads(t *testing.T) {
 }
 
 func TestReviewShowsLoaderWhileFileLoads(t *testing.T) {
-	m := &Model{width: 100, height: 30, mode: modeDiff}
+	m := &Model{layout: layoutState{width: 100, height: 30}, mode: modeDiff}
 	seedReviewForTest(m, uireview.Target{ID: "s"}, git.ScopeUncommitted, "/repo",
 		diff.Set{Repo: git.Repo{Root: "/repo"}, Files: []diff.FileDiff{{File: git.ChangedFile{Path: "main.go"}}}}, true)
 	code := ansi.Strip(m.viewDiffCode(80, 20))

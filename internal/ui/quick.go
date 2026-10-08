@@ -40,12 +40,12 @@ func (m *Model) openQuickModeWithReader(reader settingsValueReader) tea.Cmd {
 		composer:       composer{input: input, maxRows: quickBarMaxRows, gen: m.nextComposerGen()},
 		toolNames:      names,
 		toolIndex:      index,
-		closeAfterSend: m.settingsCache.value(quickCloseSetting) == "close",
+		closeAfterSend: m.settings.cache.value(quickCloseSetting) == "close",
 		worktree:       m.cachedSpawnWorktreeDefault(m.quickTargetGroup()),
 		choice:         m.newChoice(names[index]),
 	}
 	catalog := m.ensureCatalog(names[index])
-	if m.settingsPending > 0 {
+	if m.settings.pending > 0 {
 		return tea.Batch(m.quickWorktreeProbeCmd(false), catalog)
 	}
 	return tea.Batch(settingsLoadCmd(settingsLoadRequest{target: settingsLoadQuick, generation: uint64(m.quick.gen), extra: m.choiceSettingKeys()}, reader), catalog)
@@ -56,7 +56,7 @@ func (m *Model) openQuickModeWithReader(reader settingsValueReader) tea.Cmd {
 func (m *Model) applyCachedQuickDefaults() tea.Cmd {
 	before := m.quickTool()
 	m.quick.toolNames, m.quick.toolIndex = m.cachedSpawnToolSelection()
-	m.quick.closeAfterSend = m.settingsCache.value(quickCloseSetting) == "close"
+	m.quick.closeAfterSend = m.settings.cache.value(quickCloseSetting) == "close"
 	if !m.quick.worktreeTouched {
 		m.quick.worktree = m.cachedSpawnWorktreeDefault(m.quickTargetGroup())
 	}

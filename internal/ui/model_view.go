@@ -8,10 +8,10 @@ import (
 )
 
 func (m *Model) View() string {
-	if m.frame == "" {
+	if m.layout.frame == "" {
 		return "loading..."
 	}
-	return m.frame
+	return m.layout.frame
 }
 
 func (m *Model) prepareFrame() {
@@ -20,23 +20,23 @@ func (m *Model) prepareFrame() {
 	// A colorless profile renders the backdrop as a bare reset, which would
 	// strip the bold and reverse cells it lands beside.
 	if !m.prefs.terminalBackground && lipgloss.ColorProfile() != termenv.Ascii {
-		frame = fillBackdrop(frame, m.width, current.Bg, current.Text)
+		frame = fillBackdrop(frame, m.layout.width, current.Bg, current.Text)
 	}
-	m.frame = frame
+	m.layout.frame = frame
 }
 
 func (m *Model) renderFrame() string {
 	m.notices.noticeHit = noticeHit{}
-	if m.width == 0 {
+	if m.layout.width == 0 {
 		return m.syncCursorAnchor("loading...")
 	}
 	if m.startup.booting {
 		var lines []string
-		for _, line := range ringLoader(m.width, m.height, "loading", m.startup.startupPhase) {
-			lines = append(lines, paint(line, m.width, backdropHex()))
+		for _, line := range ringLoader(m.layout.width, m.layout.height, "loading", m.startup.startupPhase) {
+			lines = append(lines, paint(line, m.layout.width, backdropHex()))
 		}
 		frame := m.overlayTopRight(strings.Join(lines, "\n"), m.statusToast(), 0)
-		return m.syncCursorAnchor(clampFrame(frame, m.height))
+		return m.syncCursorAnchor(clampFrame(frame, m.layout.height))
 	}
 	var frame string
 	switch m.mode {
@@ -65,7 +65,7 @@ func (m *Model) renderFrame() string {
 	default:
 		frame = m.overlayRowMenu(m.titleTopRowWithUpdate(m.viewListFrame()))
 	}
-	return m.syncCursorAnchor(clampFrame(frame, m.height))
+	return m.syncCursorAnchor(clampFrame(frame, m.layout.height))
 }
 
 // clampFrame pins a rendered frame to exactly height rows so the outer

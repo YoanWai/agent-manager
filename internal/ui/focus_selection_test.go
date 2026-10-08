@@ -52,7 +52,7 @@ func TestPaneBoxMatchesPaintedFrame(t *testing.T) {
 	*m = *updated.(*Model)
 	m.drainEffects(t)
 	frame := splitLines(preparedView(m))
-	box := m.focusPane.FrameBox()
+	box := m.focus.pane.FrameBox()
 	if !box.Valid {
 		t.Fatal("pane box never recorded")
 	}
@@ -74,11 +74,11 @@ func TestPushedPreviewWinsOverStalePoll(t *testing.T) {
 	m.selectSessionRow(t, "typing")
 	sess := railSelectedSession(m)
 
-	m.focusRuntime.watch = newFocusWatch(m.services.tmux, func(tea.Msg) {})
-	m.focusRuntime.watch.setFocus(sess.ID)
-	t.Cleanup(m.focusRuntime.watch.Close)
+	m.focus.runtime.watch = newFocusWatch(m.services.tmux, func(tea.Msg) {})
+	m.focus.runtime.watch.setFocus(sess.ID)
+	t.Cleanup(m.focus.runtime.watch.Close)
 	deadline := time.Now().Add(5 * time.Second)
-	for !m.focusRuntime.watch.serving(sess.ID) {
+	for !m.focus.runtime.watch.serving(sess.ID) {
 		if time.Now().After(deadline) {
 			t.Skip("control client never came up on this host")
 		}
@@ -105,9 +105,9 @@ func TestPollPreviewResumesAfterWatcherStops(t *testing.T) {
 	createSession(t, m, "released", t.TempDir(), "")
 	m.selectSessionRow(t, "released")
 	sess := railSelectedSession(m)
-	m.focusRuntime.watch = newFocusWatch(m.services.tmux, func(tea.Msg) {})
-	m.focusRuntime.watch.setFocus(sess.ID)
-	m.focusRuntime.watch.Close()
+	m.focus.runtime.watch = newFocusWatch(m.services.tmux, func(tea.Msg) {})
+	m.focus.runtime.watch.setFocus(sess.ID)
+	m.focus.runtime.watch.Close()
 
 	updated, _ := m.Update(previewMsg{sessID: sess.ID, preview: "polled"})
 	*m = *updated.(*Model)

@@ -40,6 +40,10 @@ type launchLedger struct {
 	// spawns on the keystroke itself rather than opening a form that would
 	// swallow them.
 	terminalKeyAt time.Time
+	catalogs      map[string]*catalogState
+	// baseFetches holds the last fetch of a worktree spawn's base, per
+	// directory and base override.
+	baseFetches map[baseFetchKey]baseFetch
 }
 
 type awaitedRename struct {

@@ -29,9 +29,11 @@ func typeHelpSearch(m *Model, query string, finish bool) {
 
 func TestReviewHelpOnlyShowsReviewBindingsAndSetupGuidance(t *testing.T) {
 	m := &Model{
-		width:  120,
-		height: 30,
-		mode:   modeDiff,
+		layout: layoutState{
+			width:  120,
+			height: 30,
+		},
+		mode: modeDiff,
 		services: services{
 			keys:     keybind.DefaultSession(),
 			listKeys: keybind.DefaultList(),
@@ -64,10 +66,12 @@ func TestHelpFramePaintsInsideTheTerminal(t *testing.T) {
 		for _, height := range []int{14, 24, 40} {
 			for _, query := range []string{"", "revive"} {
 				m := &Model{
-					width:  width,
-					height: height,
-					mode:   modeHelp,
-					help:   uihelp.New(uihelp.Global),
+					layout: layoutState{
+						width:  width,
+						height: height,
+					},
+					mode: modeHelp,
+					help: helpFeature{state: uihelp.New(uihelp.Global)},
 					services: services{
 						keys:     keybind.DefaultSession(),
 						listKeys: keybind.DefaultList(),
@@ -129,12 +133,12 @@ func TestHelpMatchesBaselineContentAndLayout(t *testing.T) {
 		{name: "review", model: helpModel()},
 		{name: "narrow_error", model: helpModel()},
 	}
-	tests[1].model.width, tests[1].model.height = 100, 28
-	tests[1].model.focusRuntime.imeCursor = &cursorAnchor{}
+	tests[1].model.layout.width, tests[1].model.layout.height = 100, 28
+	tests[1].model.focus.runtime.imeCursor = &cursorAnchor{}
 	typeHelpSearch(tests[1].model, "中文", false)
-	tests[2].model.help = uihelp.New(uihelp.Review)
-	tests[2].model.helpReturnMode = modeDiff
-	tests[3].model.width, tests[3].model.height = 60, 14
+	tests[2].model.help.state = uihelp.New(uihelp.Review)
+	tests[2].model.help.returnMode = modeDiff
+	tests[3].model.layout.width, tests[3].model.layout.height = 60, 14
 	tests[3].model.errBar = errBar{text: "refresh failed"}
 	typeHelpSearch(tests[3].model, "zzzz", true)
 
@@ -150,7 +154,7 @@ func TestHelpMatchesBaselineContentAndLayout(t *testing.T) {
 				t.Fatalf("help content and layout changed from 560a463:\nwant:\n%s\n\ngot:\n%s", want, got)
 			}
 			if test.assertCursor {
-				if _, _, ok := test.model.focusRuntime.imeCursor.get(); !ok {
+				if _, _, ok := test.model.focus.runtime.imeCursor.get(); !ok {
 					t.Fatal("search frame did not publish its IME cursor")
 				}
 			}

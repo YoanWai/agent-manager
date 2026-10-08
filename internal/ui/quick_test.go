@@ -753,13 +753,13 @@ func TestQuickRemembersPickOnlyAfterInstallRetrySucceeds(t *testing.T) {
 	_, cmd := m.submitQuick()
 	m.applyCmd(t, cmd)
 
-	if m.mode != modeLaunchHint || m.launchFix.effectRetry == nil {
+	if m.mode != modeLaunchHint || m.launchHint.fix.effectRetry == nil {
 		t.Fatalf("expected a refused launch with retry, mode=%v err=%q", m.mode, m.errBar.text)
 	}
 	if m.ledger.lastSpawnTool != "ready-tool" || m.ledger.lastSpawnWorktree {
 		t.Fatalf("failed launch changed the last pick: %q, %v", m.ledger.lastSpawnTool, m.ledger.lastSpawnWorktree)
 	}
-	m.launchFix.command = installCommand
+	m.launchHint.fix.command = installCommand
 	m.applyCmd(t, pressInLaunchHint(t, m, 'i'))
 	waitForInstallToSettle(t, m)
 
@@ -807,7 +807,7 @@ func TestQuickSeedsFromLastFormSpawn(t *testing.T) {
 
 func TestQuickCloseAfterSendDefaultsToStayingOpen(t *testing.T) {
 	m := buildModel(t)
-	if m.settingsCache.value(quickCloseSetting) == "close" {
+	if m.settings.cache.value(quickCloseSetting) == "close" {
 		t.Fatal("quick bar should stay open by default")
 	}
 	if err := m.services.store.SetSetting(quickCloseSetting, "close"); err != nil {
@@ -1231,13 +1231,13 @@ func TestQuickPromptModeLeadsTheFooterAndNamesTheOpenBar(t *testing.T) {
 			t.Fatalf("full layout %v: the prompt should sit in the footer:\n%s", full, ansi.Strip(frame))
 		}
 		rows := strings.Split(footer, "\n")
-		keysHeight := lipgloss.Height(legendBar([]legendSection{{title: quickModeTitle, pairs: m.quickLegend()}}, m.width-1))
+		keysHeight := lipgloss.Height(legendBar([]legendSection{{title: quickModeTitle, pairs: m.quickLegend()}}, m.layout.width-1))
 		for i, line := range rows {
 			tone := quickModeHex()
 			if i > 0 && i < len(rows)-keysHeight {
 				tone = blockHex()
 			}
-			if !strings.HasPrefix(line, bgSeq(tone)) || !strings.HasPrefix(ansi.Strip(line), quickEdge) || ansi.StringWidth(line) != m.width {
+			if !strings.HasPrefix(line, bgSeq(tone)) || !strings.HasPrefix(ansi.Strip(line), quickEdge) || ansi.StringWidth(line) != m.layout.width {
 				t.Fatalf("full layout %v: every bar row should open on the accent edge over the band, across the width: %q", full, line)
 			}
 		}

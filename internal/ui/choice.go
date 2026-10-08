@@ -47,13 +47,13 @@ func (m *Model) ensureCatalog(toolName string) tea.Cmd {
 	if tool.Catalog == "" {
 		return nil
 	}
-	if m.catalogs == nil {
-		m.catalogs = map[string]*catalogState{}
+	if m.ledger.catalogs == nil {
+		m.ledger.catalogs = map[string]*catalogState{}
 	}
-	state := m.catalogs[toolName]
+	state := m.ledger.catalogs[toolName]
 	if state == nil {
 		state = &catalogState{}
-		m.catalogs[toolName] = state
+		m.ledger.catalogs[toolName] = state
 	}
 	recheck := catalogRecheck
 	if state.err != nil {
@@ -78,7 +78,7 @@ func refreshCatalog(configDir, toolName string, tool config.Tool) tea.Msg {
 }
 
 func (m *Model) handleCatalog(msg catalogMsg) tea.Cmd {
-	state := m.catalogs[msg.tool]
+	state := m.ledger.catalogs[msg.tool]
 	if msg.err == nil {
 		state.cat = msg.cat
 	}
@@ -165,7 +165,7 @@ func (m *Model) newChoice(toolName string) choice {
 func savedChoiceKey(toolName string) string { return "choice." + toolName }
 
 func (m *Model) savedChoice(toolName string) *config.Choice {
-	raw := m.settingsCache.value(savedChoiceKey(toolName))
+	raw := m.settings.cache.value(savedChoiceKey(toolName))
 	if raw == "" {
 		return nil
 	}
@@ -227,7 +227,7 @@ func (m *Model) choiceAnswer(toolName string) (*catalogState, bool) {
 	if m.services.cfg.Tools[toolName].Catalog == "" {
 		return nil, false
 	}
-	return m.catalogs[toolName], true
+	return m.ledger.catalogs[toolName], true
 }
 
 func (m *Model) choiceProfiles(toolName string) []catalog.Profile {
@@ -407,7 +407,7 @@ func recentModelsKey(toolName string) string { return "recent_models." + toolNam
 
 func (m *Model) recentModels(toolName string) []string {
 	var keys []string
-	raw := m.settingsCache.value(recentModelsKey(toolName))
+	raw := m.settings.cache.value(recentModelsKey(toolName))
 	if raw == "" {
 		return nil
 	}

@@ -6,87 +6,87 @@ import (
 )
 
 func (m *Model) viewSettings() string {
-	if m.settings.cliPicker {
+	if m.settings.dialog.cliPicker {
 		return m.viewCLIPicker()
 	}
-	if m.settings.keyPicker {
+	if m.settings.dialog.keyPicker {
 		return m.viewKeyPicker()
 	}
 	layout := "unified"
-	if m.settings.layoutSplit {
+	if m.settings.dialog.layoutSplit {
 		layout = "split"
 	}
 	density := "compact"
-	if m.settings.comfortableRows {
+	if m.settings.dialog.comfortableRows {
 		density = "comfortable"
 	}
 	sessionLayout := "split"
-	if m.settings.fullLayout {
+	if m.settings.dialog.fullLayout {
 		sessionLayout = "full screen"
 	}
 	header := "show"
-	if m.settings.hideHeader {
+	if m.settings.dialog.hideHeader {
 		header = "hide"
 	}
 	stats := "show"
-	if m.settings.hideStats {
+	if m.settings.dialog.hideStats {
 		stats = "hide"
 	}
 	quickClose := "stay open"
-	if m.settings.quickCloseSend {
+	if m.settings.dialog.quickCloseSend {
 		quickClose = "close"
 	}
 	focusKey := "↵ focus · A attach"
-	if !m.settings.enterFocuses {
+	if !m.settings.dialog.enterFocuses {
 		focusKey = "↵ attach · A focus"
 	}
 	worktreeDefault := "off"
-	if m.settings.worktreeDefault {
+	if m.settings.dialog.worktreeDefault {
 		worktreeDefault = "on"
 	}
 	baseFetch := "off"
-	if m.settings.baseFetch {
+	if m.settings.dialog.baseFetch {
 		baseFetch = "on"
 	}
 	coordination := "on request"
-	if m.settings.proactive {
+	if m.settings.dialog.proactive {
 		coordination = "proactive"
 	}
 	arrowStep := "off"
-	if m.settings.arrowStep {
+	if m.settings.dialog.arrowStep {
 		arrowStep = "on"
 	}
 	mouseMode := "on"
-	if m.settings.mouseDisabled {
+	if m.settings.dialog.mouseDisabled {
 		mouseMode = "off"
 	}
 	// The beta tag borrows the messages modal's yellow, so the row reads as
 	// the one still under test.
 	betaTag := lipgloss.NewStyle().Foreground(lipgloss.Color("#e2c044")).Render(" beta")
 	themeAuto := "off"
-	if m.settings.themeAuto {
+	if m.settings.dialog.themeAuto {
 		themeAuto = "on"
 	}
 	background := "theme"
-	if m.settings.terminalBackground {
+	if m.settings.dialog.terminalBackground {
 		background = "terminal"
 	}
 	notifications := "off"
-	if m.settings.notifications {
+	if m.settings.dialog.notifications {
 		notifications = "on"
 	}
 	notifyFinished := "off"
-	if m.settings.notifyFinished {
+	if m.settings.dialog.notifyFinished {
 		notifyFinished = "on"
 	}
 	toolValue := ""
-	if len(m.settings.toolNames) > 0 {
-		toolValue = m.settings.toolNames[m.settings.toolIndex]
+	if len(m.settings.dialog.toolNames) > 0 {
+		toolValue = m.settings.dialog.toolNames[m.settings.dialog.toolIndex]
 	}
 	lead := func(field int, name string) string {
 		marker := "  "
 		labelStyle := valueStyle
-		if m.settings.field == field {
+		if m.settings.dialog.field == field {
 			marker = lipgloss.NewStyle().Foreground(colorAccent).Render("❯ ")
 			labelStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 		}
@@ -104,7 +104,7 @@ func (m *Model) viewSettings() string {
 	ctaLead := func(field int, name string) string {
 		marker := "  "
 		labelStyle := lipgloss.NewStyle().Foreground(colorAccent2).Bold(true)
-		if m.settings.field == field {
+		if m.settings.dialog.field == field {
 			marker = lipgloss.NewStyle().Foreground(colorAccent).Render("❯ ")
 			labelStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 		}
@@ -114,13 +114,13 @@ func (m *Model) viewSettings() string {
 		return ctaLead(field, name) + keyStyle.Render("↵") + " " +
 			lipgloss.NewStyle().Foreground(colorAccent2).Render(action)
 	}
-	editorLine := row(settingsFieldEditor, "editor", m.settings.editor.label())
-	if m.settings.editor.typing {
-		editorLine = lead(settingsFieldEditor, "editor") + textInputView(m.settings.editor.input)
+	editorLine := row(settingsFieldEditor, "editor", m.settings.dialog.editor.label())
+	if m.settings.dialog.editor.typing {
+		editorLine = lead(settingsFieldEditor, "editor") + textInputView(m.settings.dialog.editor.input)
 	}
 	body := row(settingsFieldTool, "default tool", toolValue) + "\n" +
-		row(settingsFieldTheme, "theme", themes[m.settings.themeIndex].Name) + "  " +
-		themeSwatch(themes[m.settings.themeIndex]) + "\n" +
+		row(settingsFieldTheme, "theme", themes[m.settings.dialog.themeIndex].Name) + "  " +
+		themeSwatch(themes[m.settings.dialog.themeIndex]) + "\n" +
 		row(settingsFieldThemeAuto, "theme follows OS", themeAuto) + "\n" +
 		row(settingsFieldBackground, "background", background) + "\n" +
 		row(settingsFieldDensity, "list density", density) + "\n" +
@@ -144,7 +144,7 @@ func (m *Model) viewSettings() string {
 		ctaRow(settingsFieldFeatureRequest, "suggest a change", "open the feature request form") + "\n" +
 		m.settingsVersionRow(lead, actionRow)
 	hint := [][2]string{{"↑↓", "field"}, {"←→", "change"}, {"↵/esc", "save"}}
-	switch m.settings.field {
+	switch m.settings.dialog.field {
 	case settingsFieldBugReport, settingsFieldFeatureRequest:
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "open form"}, {"esc", "save"}}
 	case settingsFieldCLIs:
@@ -153,9 +153,9 @@ func (m *Model) viewSettings() string {
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "change the keys"}, {"esc", "save"}}
 	case settingsFieldEditor:
 		switch {
-		case m.settings.editor.typing:
+		case m.settings.dialog.editor.typing:
 			hint = [][2]string{{"↵", "keep"}, {"esc", "cancel"}}
-		case m.settings.editor.custom:
+		case m.settings.dialog.editor.custom:
 			hint = [][2]string{{"↑↓", "field"}, {"←→", "change"}, {"↵", "type the command"}, {"esc", "save"}}
 		}
 	case settingsFieldUpdate:
@@ -191,15 +191,15 @@ func (m *Model) settingsVersionRow(lead func(int, string) string, actionRow func
 
 func (m *Model) viewCLIPicker() string {
 	var b strings.Builder
-	for i, name := range m.settings.cliNames {
+	for i, name := range m.settings.dialog.cliNames {
 		marker := "  "
 		labelStyle := valueStyle
-		if m.settings.cliCursor == i {
+		if m.settings.dialog.cliCursor == i {
 			marker = lipgloss.NewStyle().Foreground(colorAccent).Render("❯ ")
 			labelStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 		}
 		box := "[x]"
-		if m.settings.cliHidden[name] {
+		if m.settings.dialog.cliHidden[name] {
 			box = "[ ]"
 		}
 		b.WriteString(marker)
@@ -207,7 +207,7 @@ func (m *Model) viewCLIPicker() string {
 		b.WriteByte('\n')
 	}
 	// Request row matches other settings actions; the note below is not focusable.
-	reqFocused := m.settings.cliCursor >= len(m.settings.cliNames)
+	reqFocused := m.settings.dialog.cliCursor >= len(m.settings.dialog.cliNames)
 	reqMarker := "  "
 	reqLabel := mutedStyle.Render("request CLI support")
 	if reqFocused {

@@ -256,7 +256,7 @@ func TestMoveCompletionDoesNotCloseReopenedSameTargetDialog(t *testing.T) {
 	if m.mode != modeMove {
 		t.Fatal("older move completion closed the reopened dialog")
 	}
-	got, err := m.services.store.Get(m.moveID)
+	got, err := m.services.store.Get(m.move.id)
 	if err != nil || got.Group != "target" {
 		t.Fatalf("accepted move did not reconcile: %+v, %v", got, err)
 	}

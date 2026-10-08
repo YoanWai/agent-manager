@@ -338,7 +338,7 @@ func (m *Model) placeNoticeHit(footer string, firstRow int) {
 		}
 		x := ansi.StringWidth(line[:start])
 		y := firstRow + i
-		if x+ansi.StringWidth(label) <= m.width && y < m.height {
+		if x+ansi.StringWidth(label) <= m.layout.width && y < m.layout.height {
 			m.notices.noticeHit = noticeHit{x0: x, x1: x + ansi.StringWidth(label), y0: y, y1: y + 1, ok: true}
 		}
 		return
@@ -575,7 +575,7 @@ func (m *Model) applyNotices(apply func()) {
 }
 
 func (m *Model) listReadyForNotice() bool {
-	return !m.effects.quitting && m.mode == modeList && !m.rail.Searching() && !m.quick.active && !m.split.resizeMode &&
+	return !m.effects.quitting && m.mode == modeList && !m.rail.Searching() && !m.quick.active && !m.layout.split.resizeMode &&
 		!m.rail.Reordering() && !m.rail.MenuOpen()
 }
 
@@ -698,9 +698,9 @@ func (m *Model) handleNoticesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.notices.noticeScroll = 0
 		}
 	case "pgup", "ctrl+u":
-		m.scrollNotice(notices, -max(4, m.height/3))
+		m.scrollNotice(notices, -max(4, m.layout.height/3))
 	case "pgdown", "ctrl+d":
-		m.scrollNotice(notices, max(4, m.height/3))
+		m.scrollNotice(notices, max(4, m.layout.height/3))
 	case "home", "g":
 		m.notices.noticeScroll = 0
 	case "end", "G":
@@ -736,8 +736,8 @@ func (m *Model) noticeScrollLimit(notices []notice) int {
 	if m.notices.noticeCursor >= len(notices) {
 		return 0
 	}
-	inner := noticeInnerWidth(notices, m.width)
-	room := noticeBodyRoom(m.height, len(notices), len(m.noticeTail(notices, inner))+1)
+	inner := noticeInnerWidth(notices, m.layout.width)
+	room := noticeBodyRoom(m.layout.height, len(notices), len(m.noticeTail(notices, inner))+1)
 	body, _ := noticeBodyLayout(notices[m.notices.noticeCursor], inner, room)
 	return max(0, len(body)-room)
 }
@@ -773,7 +773,7 @@ func (m *Model) noticeTail(notices []notice, inner int) []string {
 
 func (m *Model) viewNotices() string {
 	notices := m.activeNotices()
-	inner := noticeInnerWidth(notices, m.width)
+	inner := noticeInnerWidth(notices, m.layout.width)
 	if len(notices) == 0 {
 		rows := []string{subtleStyle.Render("nothing new")}
 		rows = append(rows, m.noticeTail(notices, inner)...)
@@ -798,7 +798,7 @@ func (m *Model) viewNotices() string {
 	tail := m.noticeTail(notices, inner)
 	tail = append(tail, "")
 
-	room := noticeBodyRoom(m.height, len(notices), len(tail))
+	room := noticeBodyRoom(m.layout.height, len(notices), len(tail))
 	body, scrolls := noticeBodyLayout(selected, inner, room)
 	if scrolls {
 		body = noticeScrollWindow(body, room, m.notices.noticeScroll, inner)
@@ -856,7 +856,7 @@ func (m *Model) dismissNotice(id string) {
 	m.notices.dismissed[id] = true
 	m.enqueueEffect(noticeDismissRequest{
 		id:            id,
-		foregroundGen: m.foregroundGen,
+		foregroundGen: m.gens.foreground,
 		modal:         m.mode == modeNotices,
 	}, 0, false)
 }

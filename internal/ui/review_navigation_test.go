@@ -25,7 +25,7 @@ func TestDiffCursorStaysOnScreen(t *testing.T) {
 	}
 
 	for _, size := range []struct{ w, h int }{{80, 24}, {100, 30}, {120, 40}, {160, 50}} {
-		m.width, m.height = size.w, size.h
+		m.layout.width, m.layout.height = size.w, size.h
 		m.review.First()
 		m.moveDiffCursor(lines*2, m.diffCodeHeight())
 		m.prepareReviewLayout()
@@ -136,7 +136,7 @@ func TestDiffReviewReachesEndWithWrappedLines(t *testing.T) {
 			if m.review.Snapshot().Loading || len(m.review.Snapshot().Set.Files) == 0 {
 				t.Fatalf("diff did not load: %q", m.review.Snapshot().Error)
 			}
-			m.width, m.height = 120, 34
+			m.layout.width, m.layout.height = 120, 34
 			setReviewSideBySide(m, layout.split)
 
 			m.handleDiffKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
@@ -511,7 +511,7 @@ func TestNarrowReviewKeepsBothPanesMeasurable(t *testing.T) {
 	}
 	openReviewOn(t, m, "narrow", gitTestRepo(t))
 	for _, width := range []int{29, 24, 10, 1} {
-		m.width = width
+		m.layout.width = width
 		fileWidth, codeWidth := m.diffPaneWidths()
 		if fileWidth < 0 || codeWidth < 0 {
 			t.Fatalf("width %d gave panes %d and %d", width, fileWidth, codeWidth)

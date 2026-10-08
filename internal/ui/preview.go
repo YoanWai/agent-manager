@@ -141,7 +141,7 @@ func (m *Model) reviewNeedsLoader() bool {
 // schedulePreview arms a single capture after previewSettle. Call after
 // bumping previewGen so earlier timers and in-flight captures go stale.
 func (m *Model) schedulePreview() tea.Cmd {
-	gen := m.focusPane.PreviewGeneration()
+	gen := m.focus.pane.PreviewGeneration()
 	return tea.Tick(previewSettle, func(time.Time) tea.Msg {
 		return previewSettleMsg{gen: gen}
 	})
@@ -178,14 +178,14 @@ func (m *Model) previewCmd(sess store.Session, gen uint64) tea.Cmd {
 // different times, and a capture taken a second ago repainting over a
 // pushed one is what makes typed characters blink in and out.
 func (m *Model) setPreview(sessID, preview string) {
-	if sessID != "" && m.focusRuntime.watch != nil && m.focusRuntime.watch.serving(sessID) {
+	if sessID != "" && m.focus.runtime.watch != nil && m.focus.runtime.watch.serving(sessID) {
 		return
 	}
 	// A scrolled-back pane holds still on this path too: without a control
 	// client the poll is the only source of frames, and a live bottom
 	// landing mid-read is the same yank the pushed frames are held back
 	// from.
-	if m.focusPane.ScrolledBack() {
+	if m.focus.pane.ScrolledBack() {
 		return
 	}
 	m.workspace.preview = preview

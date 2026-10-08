@@ -39,7 +39,7 @@ func (m *Model) captureEffect(request effectRequest) func() (effectResult, error
 		tool.Rules = append([]config.Rule(nil), tool.Rules...)
 		cfg.Tools[name] = tool
 	}
-	services := effectServices{cfg: cfg, store: m.services.store, driver: m.services.tmux, watch: m.focusRuntime.watch, gitDrv: m.services.gitDrv}
+	services := effectServices{cfg: cfg, store: m.services.store, driver: m.services.tmux, watch: m.focus.runtime.watch, gitDrv: m.services.gitDrv}
 	services.engine = m.services.engine
 	services.hooks = m.services.hooks
 	services.installHomeDir = installHomeDir

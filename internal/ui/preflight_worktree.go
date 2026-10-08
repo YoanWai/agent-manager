@@ -42,9 +42,9 @@ func (m *Model) cachedWorktreeCapability(dir string) (bool, bool) {
 }
 
 func (m *Model) requestWorktreeProbe(target worktreeProbeTarget, generation int, dir string, toggle bool, from bool) tea.Cmd {
-	m.worktreeProbeGen++
+	m.gens.worktreeProbe++
 	request := worktreeProbeRequest{
-		target: target, generation: generation, sequence: m.worktreeProbeGen,
+		target: target, generation: generation, sequence: m.gens.worktreeProbe,
 		dir: dir, toggle: toggle, from: from,
 	}
 	return worktreeProbeCmd(request, systemDirectoryPreflight{git: m.services.gitDrv})
@@ -60,7 +60,7 @@ func (m *Model) quickWorktreeProbeCmd(toggleOn bool) tea.Cmd {
 
 func (m *Model) handleWorktreeProbe(msg worktreeProbeMsg) (tea.Model, tea.Cmd) {
 	request := msg.request
-	if request.sequence != m.worktreeProbeGen {
+	if request.sequence != m.gens.worktreeProbe {
 		return m, nil
 	}
 	switch request.target {

@@ -17,7 +17,7 @@ func (m *Model) viewFooter() string {
 	if m.quick.active {
 		return m.quickFooter()
 	}
-	if m.split.resizeMode || m.split.dragging {
+	if m.layout.split.resizeMode || m.layout.split.dragging {
 		return m.transientFooter(legendSection{title: "Resize", pairs: [][2]string{
 			{"←→", "nudge"}, {"drag", "divider"}, {strings.TrimPrefix(m.listGlyph(keybind.Resize)+" / release", " / "), "commit"}, {"esc", "cancel"},
 		}})
@@ -62,7 +62,7 @@ func (m *Model) viewFooter() string {
 		if pagesScrollback {
 			pairs = append(pairs, [2]string{"pgup/pgdn", "scroll"})
 		}
-		if m.focusPane.Pane().Mouse {
+		if m.focus.pane.Pane().Mouse {
 			pairs = append(pairs, [2]string{"click / alt+drag", "agent UI"})
 		}
 		return m.transientFooter(legendSection{title: "Focused", pairs: pairs})
@@ -71,7 +71,7 @@ func (m *Model) viewFooter() string {
 }
 
 func (m *Model) listFooter() string {
-	return legendBar([]legendSection{m.rowLegend(), m.viewLegend()}, m.width)
+	return legendBar([]legendSection{m.rowLegend(), m.viewLegend()}, m.layout.width)
 }
 
 // transientFooter renders one tier at the list footer's height: the footer
@@ -80,7 +80,7 @@ func (m *Model) listFooter() string {
 // The full screen layout has no preview box to hold still, so a tier there
 // takes the one row it needs and hands the rest to the body.
 func (m *Model) transientFooter(section legendSection) string {
-	bar := legendBar([]legendSection{section}, m.width)
+	bar := legendBar([]legendSection{section}, m.layout.width)
 	if m.prefs.fullLayout {
 		return bar
 	}

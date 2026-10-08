@@ -137,7 +137,7 @@ const blankCapture = "\n\n\n\n\n\n\n\n\n\n"
 
 func previewModel(sessionStatus, preview string) *Model {
 	session := store.Session{ID: "boot", Name: "boot", Status: sessionStatus}
-	return &Model{width: 120, height: 40, mode: modeList, workspace: workspace{preview: preview, sessions: []store.Session{session}}, rail: railModelFromRows([]treeRow{{sess: session}}, 0)}
+	return &Model{layout: layoutState{width: 120, height: 40}, mode: modeList, workspace: workspace{preview: preview, sessions: []store.Session{session}}, rail: railModelFromRows([]treeRow{{sess: session}}, 0)}
 }
 
 func previewText(m *Model) string {
@@ -151,13 +151,13 @@ func previewText(m *Model) string {
 func TestPreviewBottomAlignsCompactPane(t *testing.T) {
 	m := previewModel(status.Finished, "todo\ncomposer"+strings.Repeat("\n", 10))
 	m.mode = modeFocus
-	m.focusPane.Enter(uifocus.EnterContext{SessionID: "boot"})
+	m.focus.pane.Enter(uifocus.EnterContext{SessionID: "boot"})
 	lines := strings.Split(previewText(m), "\n")
 	if strings.TrimSpace(lines[10]) != "todo" || strings.TrimSpace(lines[11]) != "composer" {
 		t.Fatalf("compact pane was not bottom aligned: %q", lines)
 	}
 	wantY := m.listChromeRows() + 10
-	box := m.focusPane.FrameBox()
+	box := m.focus.pane.FrameBox()
 	if !box.Valid || box.Y != wantY || box.Height != 2 {
 		t.Fatalf("pane box = %+v, want two rows starting at %d", box, wantY)
 	}
@@ -263,10 +263,10 @@ func TestPreviewLeavesTheFocusedPaneAlone(t *testing.T) {
 
 	m := previewModel(status.Starting, blankCapture)
 	m.mode = modeFocus
-	m.focusPane.Enter(uifocus.EnterContext{SessionID: "boot"})
+	m.focus.pane.Enter(uifocus.EnterContext{SessionID: "boot"})
 	setFocusCursor(m, paneCursor{ok: true})
 	lines := m.previewLines(80, 12, "  ")
-	first := lines[m.focusPane.FrameBox().Y-m.listChromeRows()].text
+	first := lines[m.focus.pane.FrameBox().Y-m.listChromeRows()].text
 	if strings.Contains(ansi.Strip(first), "starting up") {
 		t.Fatalf("the loader took the focused pane's first row: %q", first)
 	}

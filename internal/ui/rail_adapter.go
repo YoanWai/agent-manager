@@ -88,7 +88,7 @@ func (m *Model) applyRailDecision(decision uirail.Decision) (tea.Model, tea.Cmd)
 		m.workspace.procFor = ""
 		_, selectedSession := m.selected()
 		if decision.SelectionEffect == uirail.SelectionEffectFilter || selectedSession {
-			m.focusPane.MovePreview()
+			m.focus.pane.MovePreview()
 		}
 		if decision.SelectionEffect == uirail.SelectionEffectFilter && m.poller != nil {
 			m.syncPollInput()

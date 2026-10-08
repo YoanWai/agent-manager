@@ -52,7 +52,7 @@ func TestSpawnWorkerDefersFilesystemReadAndCapturesDraft(t *testing.T) {
 	<-reader.started
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 151, Height: 45})
 	m = updated.(*Model)
-	if m.width != 151 {
+	if m.layout.width != 151 {
 		t.Fatal("blocked preflight blocked an unrelated update")
 	}
 	close(reader.release)
@@ -603,7 +603,7 @@ func TestSpawnRetryRetainsManagerAndConversationIdentity(t *testing.T) {
 	first := m.effects.active.request.(spawnRequest)
 	msg := command().(effectCompletedMsg)
 	m.applyTestMsg(t, msg)
-	retry, ok := m.launchFix.effectRetry.(spawnRequest)
+	retry, ok := m.launchHint.fix.effectRetry.(spawnRequest)
 	if !ok || retry.id != first.id || retry.plan == nil || retry.plan.AgentSessionID == "" {
 		t.Fatalf("retry lost its captured identity: %+v", retry)
 	}

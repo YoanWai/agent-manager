@@ -51,7 +51,7 @@ func bannerWidth() int {
 // showBanner reports whether the terminal leaves the tracked-out wordmark
 // room beside the fleet readings; a narrow one gets the name set plainly.
 func (m *Model) showBanner() bool {
-	return m.width >= bannerWidth()+railGutter+40
+	return m.layout.width >= bannerWidth()+railGutter+40
 }
 
 // headerRows is how many rows the header occupies, which the body height

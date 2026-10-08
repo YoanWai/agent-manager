@@ -121,7 +121,7 @@ func TestReviewPreferencesFinishBehindPickerWithoutLeavingLoadingStuck(t *testin
 	if m.mode != modeRepoPick || load == nil {
 		t.Fatal("picker stranded the sole review load")
 	}
-	if m.reviewPickerSourceCurrent(m.repoPick.source) {
+	if m.reviewPickerSourceCurrent(m.reviewNav.picker.source) {
 		t.Fatal("old picker survived review preparation")
 	}
 }
@@ -135,7 +135,7 @@ func TestReviewFocusReturnKeepsItsCapturedSession(t *testing.T) {
 	m.selectSessionRow(t, b.Name)
 	m.review.Open(reviewTarget(a), git.ScopeUncommitted, "")
 	m.mode = modeDiff
-	m.reviewReturn = reviewReturn{kind: reviewReturnFocus, sessionID: a.ID}
+	m.reviewNav.ret = reviewReturn{kind: reviewReturnFocus, sessionID: a.ID}
 	m.closeDiff()
 	if m.effects.active == nil || m.effects.active.request.(focusRequest).sessionID != a.ID {
 		t.Fatal("review returned into a different session")

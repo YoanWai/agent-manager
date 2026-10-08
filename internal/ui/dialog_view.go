@@ -7,8 +7,8 @@ import (
 
 func (m *Model) cardWidth() int {
 	width := 64
-	if m.width >= 28 && width > m.width-4 {
-		width = m.width - 4
+	if m.layout.width >= 28 && width > m.layout.width-4 {
+		width = m.layout.width - 4
 	}
 	return width
 }
@@ -57,8 +57,8 @@ func (m *Model) flexCardWidth(title, body string, hint [][2]string) int {
 	if m.errBar.text != "" {
 		measure(m.statusMessage("⚠", "●", "▲"))
 	}
-	if m.width >= 28 && need > m.width-4 {
-		need = m.width - 4
+	if m.layout.width >= 28 && need > m.layout.width-4 {
+		need = m.layout.width - 4
 	}
 	return need
 }
@@ -90,7 +90,7 @@ func cardTitleRow(width int, title string, border lipgloss.Style) string {
 // the app frame, filling the rest with the backdrop.
 func (m *Model) centerOnBackdrop(box []string) string {
 	ctx := m.dialogRenderContext()
-	m.cardTop, m.cardLeft, m.cardRight = dialogPlacement(ctx, box)
+	m.layout.cardTop, m.layout.cardLeft, m.layout.cardRight = dialogPlacement(ctx, box)
 	return centerDialog(ctx, box)
 }
 
@@ -109,5 +109,5 @@ func (m *Model) dialogRenderContext() dialogRenderContext {
 	if m.errBar.text != "" {
 		status = m.statusMessage("⚠", "●", "▲")
 	}
-	return dialogRenderContext{width: m.width, height: m.height, status: status}
+	return dialogRenderContext{width: m.layout.width, height: m.layout.height, status: status}
 }

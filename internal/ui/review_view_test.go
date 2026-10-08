@@ -159,7 +159,7 @@ func TestHighlightFileHunkModel(t *testing.T) {
 // whole-file model still reaches the screen.
 func TestReviewRendersHunksForBigFile(t *testing.T) {
 	fd := bigEditedFile(t)
-	m := &Model{width: 100, height: 30, mode: modeDiff}
+	m := &Model{layout: layoutState{width: 100, height: 30}, mode: modeDiff}
 	seedReviewForTest(m, uireview.Target{ID: "s"}, git.ScopeUncommitted, "/repo",
 		diff.Set{Repo: git.Repo{Root: "/repo"}, Files: []diff.FileDiff{fd}}, true)
 	for _, split := range []bool{false, true} {
@@ -366,7 +366,7 @@ func TestDiffFrameFitsTerminal(t *testing.T) {
 	for _, split := range []bool{false, true} {
 		for _, annotating := range []bool{false, true} {
 			for _, size := range sizes {
-				m.width, m.height = size.w, size.h
+				m.layout.width, m.layout.height = size.w, size.h
 				setReviewSideBySide(m, split)
 				if m.review.Snapshot().Annotating {
 					m.review.AnnotationKey(tea.KeyMsg{Type: tea.KeyEsc})
@@ -433,7 +433,7 @@ func TestHeaderMarksUncountedFile(t *testing.T) {
 
 func TestDiffHeaderKeepsCountsWhenNarrow(t *testing.T) {
 	m := buildModel(t)
-	m.width, m.height = 52, 24
+	m.layout.width, m.layout.height = 52, 24
 	openReviewOn(t, m, "very-long-session-name", gitTestRepo(t))
 	got := ansi.Strip(m.viewDiffHeader("very-long-session-name"))
 	if !strings.Contains(got, "+") || !strings.Contains(got, "−") {
@@ -474,7 +474,7 @@ func TestDiffFileListCursorAlwaysPainted(t *testing.T) {
 
 	last := len(m.review.Snapshot().Set.Files) - 1
 	for _, size := range []struct{ w, h int }{{80, 20}, {100, 30}, {140, 44}} {
-		m.width, m.height = size.w, size.h
+		m.layout.width, m.layout.height = size.w, size.h
 		m.drainCmds(t, selectReviewFile(m, last))
 		view := ansi.Strip(m.viewDiffFull())
 		name := m.review.Snapshot().Set.Files[last].File.Path

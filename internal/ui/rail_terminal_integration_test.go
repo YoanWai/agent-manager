@@ -131,7 +131,7 @@ func TestCursorOnShellStaysPainted(t *testing.T) {
 			t.Fatalf("selected() = %+v %v, want %s", sess, ok, shell)
 		}
 		for _, height := range []int{16, 24, 30, 44} {
-			m.height = height
+			m.layout.height = height
 			if rail := m.railFrame(); railRow(rail, shell) < 0 {
 				t.Fatalf("selected shell %s is unpainted at height %d:\n%s", shell, height, rail)
 			}

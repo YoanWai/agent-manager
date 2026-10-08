@@ -24,7 +24,7 @@ func TestSyncMouseCaptureDefaultsOn(t *testing.T) {
 	if cmd := m.syncMouseCapture(); cmd != nil {
 		t.Fatal("default state should not re-announce mouse capture")
 	}
-	if m.mouseReleased {
+	if m.mouse.released {
 		t.Fatal("mouse should stay captured by default")
 	}
 }
@@ -36,14 +36,14 @@ func TestSyncMouseCaptureRespectsMouseDisabled(t *testing.T) {
 	if cmd := m.syncMouseCapture(); cmd == nil {
 		t.Fatal("turning the setting off should release the mouse")
 	}
-	if !m.mouseReleased {
+	if !m.mouse.released {
 		t.Fatal("mouseReleased should follow the setting in list mode")
 	}
 	m.mode = modeFocus
 	if cmd := m.syncMouseCapture(); cmd == nil {
 		t.Fatal("entering focus mode should re-capture regardless of the setting")
 	}
-	if m.mouseReleased {
+	if m.mouse.released {
 		t.Fatal("focus mode must keep the mouse captured even with the setting off")
 	}
 }
@@ -56,11 +56,13 @@ func TestDragReleasePersistsAndExits(t *testing.T) {
 	t.Cleanup(func() { st.Close() })
 
 	m := &Model{
-
-		mode:   modeList,
-		width:  100,
-		height: 40,
-		split:  splitState{ratio: defaultSplitRatio}, services: services{listKeys: keybind.DefaultList(),
+		mode: modeList,
+		layout: layoutState{
+			width:  100,
+			height: 40,
+			split:  splitState{ratio: defaultSplitRatio},
+		},
+		services: services{listKeys: keybind.DefaultList(),
 			store: st},
 	}
 	updated, _ := m.enterResizeMode()
@@ -74,7 +76,7 @@ func TestDragReleasePersistsAndExits(t *testing.T) {
 	})
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if !m.split.dragging {
+	if !m.layout.split.dragging {
 		t.Fatal("press on divider should start drag")
 	}
 
@@ -92,7 +94,7 @@ func TestDragReleasePersistsAndExits(t *testing.T) {
 	})
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.split.dragging || m.split.resizeMode {
+	if m.layout.split.dragging || m.layout.split.resizeMode {
 		t.Fatal("release should end drag and exit resize mode")
 	}
 	if cmd != nil {
@@ -117,7 +119,7 @@ func TestDragResizesTmuxOnlyOnRelease(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "split-drag", t.TempDir(), "")
 	id := m.sessionRows()[0].ID
-	m.split.ratio = defaultSplitRatio
+	m.layout.split.ratio = defaultSplitRatio
 	m.resizeSessions()
 	m.drainEffects(t)
 	before := windowWidth(t, id)
@@ -169,10 +171,13 @@ func TestDragResizesTmuxOnlyOnRelease(t *testing.T) {
 
 func TestPressOutsideBodyDoesNotDrag(t *testing.T) {
 	m := &Model{
-		mode:   modeList,
-		width:  100,
-		height: 40,
-		split:  splitState{ratio: 0.34, resizeMode: true}, services: services{listKeys: keybind.DefaultList()},
+		mode: modeList,
+		layout: layoutState{
+			width:  100,
+			height: 40,
+			split:  splitState{ratio: 0.34, resizeMode: true},
+		},
+		services: services{listKeys: keybind.DefaultList()},
 	}
 	div := m.dividerX()
 	updated, _ := m.handleMouse(tea.MouseMsg{
@@ -180,7 +185,7 @@ func TestPressOutsideBodyDoesNotDrag(t *testing.T) {
 	})
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.split.dragging {
+	if m.layout.split.dragging {
 		t.Fatal("press on header row must not start drag")
 	}
 	y0, y1 := m.bodyYRange()
@@ -192,17 +197,20 @@ func TestPressOutsideBodyDoesNotDrag(t *testing.T) {
 	})
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.split.dragging {
+	if m.layout.split.dragging {
 		t.Fatal("press on exclusive body end must not start drag")
 	}
 }
 
 func TestDragCancelRestoresRatio(t *testing.T) {
 	m := &Model{
-		mode:   modeList,
-		width:  100,
-		height: 40,
-		split:  splitState{ratio: 0.34}, services: services{listKeys: keybind.DefaultList()},
+		mode: modeList,
+		layout: layoutState{
+			width:  100,
+			height: 40,
+			split:  splitState{ratio: 0.34},
+		},
+		services: services{listKeys: keybind.DefaultList()},
 	}
 	updated, _ := m.enterResizeMode()
 	m = updated.(*Model)
@@ -225,7 +233,7 @@ func TestDragCancelRestoresRatio(t *testing.T) {
 	updated, _ = m.exitResizeMode(false)
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.split.resizeMode || m.split.dragging {
+	if m.layout.split.resizeMode || m.layout.split.dragging {
 		t.Fatal("cancel should clear resize state")
 	}
 	if left, _ := m.splitWidths(); left != 34 {
@@ -235,17 +243,20 @@ func TestDragCancelRestoresRatio(t *testing.T) {
 
 func TestPressOffDividerDoesNotDrag(t *testing.T) {
 	m := &Model{
-		mode:   modeList,
-		width:  100,
-		height: 40,
-		split:  splitState{ratio: 0.34, resizeMode: true}, services: services{listKeys: keybind.DefaultList()},
+		mode: modeList,
+		layout: layoutState{
+			width:  100,
+			height: 40,
+			split:  splitState{ratio: 0.34, resizeMode: true},
+		},
+		services: services{listKeys: keybind.DefaultList()},
 	}
 	updated, _ := m.handleMouse(tea.MouseMsg{
 		X: 5, Y: 5, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.split.dragging {
+	if m.layout.split.dragging {
 		t.Fatal("press far from divider should not start drag")
 	}
 }
@@ -388,7 +399,7 @@ func TestClickInFocusedPaneStaysFocused(t *testing.T) {
 	// Empty cat panes have no rendered hit box; give this click test visible content.
 	m.workspace.preview = "focused pane"
 	preparedView(m)
-	box := m.focusPane.FrameBox()
+	box := m.focus.pane.FrameBox()
 	if !box.Valid {
 		t.Fatal("test setup: focused pane has no box")
 	}
@@ -608,7 +619,7 @@ func TestSlowSecondClickDoesNotFocus(t *testing.T) {
 	press := tea.MouseMsg{X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft}
 	ctx := m.railMouseContext()
 	ctx.Now = time.Now().Add(-time.Second)
-	m.applyRailDecision(m.rail.Mouse(press, m.displayedRail, ctx))
+	m.applyRailDecision(m.rail.Mouse(press, m.layout.displayedRail, ctx))
 	m.drainEffects(t)
 	updated, _ := m.handleMouse(press)
 	m.drainEffects(t)
@@ -679,7 +690,7 @@ func TestClickOnRailLastColumnSelectsRow(t *testing.T) {
 	})
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.split.dragging || m.split.resizeMode {
+	if m.layout.split.dragging || m.layout.split.resizeMode {
 		t.Fatal("the rail's own last column must not grab the divider")
 	}
 	if sess, ok := m.selected(); !ok || sess.Name != "alpha" {
@@ -713,12 +724,15 @@ func TestClickInContentColumnDoesNotSelect(t *testing.T) {
 // keyboard's own gate — off, and it moves nothing until the pointer does.
 func TestDividerPressArmsDragWithoutResizeMode(t *testing.T) {
 	m := &Model{
-		mode:   modeList,
-		width:  100,
-		height: 40,
-		split:  splitState{ratio: defaultSplitRatio}, services: services{listKeys: keybind.DefaultList()},
+		mode: modeList,
+		layout: layoutState{
+			width:  100,
+			height: 40,
+			split:  splitState{ratio: defaultSplitRatio},
+		},
+		services: services{listKeys: keybind.DefaultList()},
 	}
-	if m.split.resizeMode {
+	if m.layout.split.resizeMode {
 		t.Fatal("test setup: resize mode should start off")
 	}
 	div := m.dividerX()
@@ -728,10 +742,10 @@ func TestDividerPressArmsDragWithoutResizeMode(t *testing.T) {
 	})
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if !m.split.dragging {
+	if !m.layout.split.dragging {
 		t.Fatal("a press on the divider should arm the drag on its own")
 	}
-	if m.split.resizeMode {
+	if m.layout.split.resizeMode {
 		t.Fatal("a mouse drag must not take the keyboard with it")
 	}
 	if left, _ := m.splitWidths(); left != div {
@@ -750,7 +764,7 @@ func TestDividerPressArmsDragWithoutResizeMode(t *testing.T) {
 	})
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.split.dragging || m.split.resizeMode {
+	if m.layout.split.dragging || m.layout.split.resizeMode {
 		t.Fatal("release should end the drag it started without the keyboard")
 	}
 }
@@ -766,11 +780,13 @@ func TestDividerClickWithoutMotionCommitsNothing(t *testing.T) {
 	t.Cleanup(func() { st.Close() })
 
 	m := &Model{
-
-		mode:   modeList,
-		width:  100,
-		height: 40,
-		split:  splitState{ratio: defaultSplitRatio}, services: services{listKeys: keybind.DefaultList(),
+		mode: modeList,
+		layout: layoutState{
+			width:  100,
+			height: 40,
+			split:  splitState{ratio: defaultSplitRatio},
+		},
+		services: services{listKeys: keybind.DefaultList(),
 			store: st},
 	}
 	div := m.dividerX()
@@ -782,11 +798,11 @@ func TestDividerClickWithoutMotionCommitsNothing(t *testing.T) {
 		m = updated.(*Model)
 		m.drainEffects(t)
 	}
-	if m.split.dragging || m.split.resizeMode {
+	if m.layout.split.dragging || m.layout.split.resizeMode {
 		t.Fatal("the click should have ended the drag it armed")
 	}
-	if m.split.ratio != defaultSplitRatio {
-		t.Fatalf("ratio = %v want it untouched at %v", m.split.ratio, defaultSplitRatio)
+	if m.layout.split.ratio != defaultSplitRatio {
+		t.Fatalf("ratio = %v want it untouched at %v", m.layout.split.ratio, defaultSplitRatio)
 	}
 	if raw, err := st.Setting(splitRatioSetting); err != nil || raw != "" {
 		t.Fatalf("a click with no drag persisted %q (err %v)", raw, err)
@@ -807,14 +823,14 @@ func TestKeyEndsADragWhoseReleaseNeverLands(t *testing.T) {
 	})
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if !m.split.dragging {
+	if !m.layout.split.dragging {
 		t.Fatal("test setup: the press should have armed the drag")
 	}
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyDown})
 	m.drainEffects(t)
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.split.dragging || m.split.resizeMode {
+	if m.layout.split.dragging || m.layout.split.resizeMode {
 		t.Fatal("a key should end a drag left open by a lost release")
 	}
 	if sess, ok := m.selected(); !ok || sess.Name != "beta" {
@@ -843,10 +859,10 @@ func TestRowClickAfterALostReleaseLeavesTheDividerAlone(t *testing.T) {
 	})
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if !m.split.dragging || !m.split.moved {
+	if !m.layout.split.dragging || !m.layout.split.moved {
 		t.Fatal("test setup: the press and motion should have armed a live drag")
 	}
-	dragged := m.split.ratio
+	dragged := m.layout.split.ratio
 
 	// The release never arrives. The next thing the mouse does is an
 	// ordinary click on a row, well left of the divider.
@@ -862,11 +878,11 @@ func TestRowClickAfterALostReleaseLeavesTheDividerAlone(t *testing.T) {
 	m = updated.(*Model)
 	m.drainEffects(t)
 
-	if m.split.dragging || m.split.moved {
+	if m.layout.split.dragging || m.layout.split.moved {
 		t.Fatal("the press should have ended the drag the lost release left open")
 	}
-	if m.split.ratio != dragged {
-		t.Fatalf("ratio = %v, the click moved the divider off %v", m.split.ratio, dragged)
+	if m.layout.split.ratio != dragged {
+		t.Fatalf("ratio = %v, the click moved the divider off %v", m.layout.split.ratio, dragged)
 	}
 	if sess, ok := m.selected(); !ok || sess.Name != "beta" {
 		t.Fatalf("the click should have selected the row under it, got %q ok=%v", sess.Name, ok)
@@ -896,7 +912,7 @@ func TestPressOffDividerWhileArmedDoesNotSelectRow(t *testing.T) {
 	if m.rail.Cursor() != before {
 		t.Fatal("a miss while resize mode is armed should not select a row")
 	}
-	if !m.split.resizeMode {
+	if !m.layout.split.resizeMode {
 		t.Fatal("resize mode should stay armed, waiting for the divider")
 	}
 }
@@ -914,7 +930,7 @@ func TestClickSelectsRowInFullLayout(t *testing.T) {
 	line := paintedRailLines(t, m, "alpha")[0]
 	y0, _ := m.bodyYRange()
 	updated, cmd := m.handleMouse(tea.MouseMsg{
-		X: m.width - 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
+		X: m.layout.width - 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
 	m.drainEffects(t)
@@ -944,7 +960,7 @@ func TestClickAtDividerXInFullLayoutSelectsRow(t *testing.T) {
 	})
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.split.resizeMode || m.split.dragging {
+	if m.layout.split.resizeMode || m.layout.split.dragging {
 		t.Fatal("full layout has no divider to drag")
 	}
 	if sess, ok := m.selected(); !ok || sess.Name != "alpha" {
@@ -993,7 +1009,7 @@ func TestClickOnMoreCounterSelectsTheRowItHides(t *testing.T) {
 	m.selectSessionRow(t, "one")
 	// A rail too short for seven sessions, so the window has to keep a
 	// counter for the ones it is leaving out.
-	m.height = 12
+	m.layout.height = 12
 	frame := splitLines(preparedView(m))
 
 	y0, _ := m.bodyYRange()
@@ -1032,12 +1048,12 @@ func TestMoreCounterOnlyScrolls(t *testing.T) {
 	for _, name := range []string{"one", "two", "three", "four", "five", "six", "seven"} {
 		createSession(t, m, name, t.TempDir(), "")
 	}
-	m.height = 12
+	m.layout.height = 12
 	preparedView(m)
-	if m.displayedRail.Width == 0 {
+	if m.layout.displayedRail.Width == 0 {
 		t.Fatal("test setup: the frame should record the rail width")
 	}
-	for _, x := range []int{2, 4, m.displayedRail.Width} {
+	for _, x := range []int{2, 4, m.layout.displayedRail.Width} {
 		m.selectSessionRow(t, "one")
 		frame := splitLines(preparedView(m))
 		y0, _ := m.bodyYRange()
@@ -1105,8 +1121,10 @@ func TestClickOnRailChromeDoesNotSelect(t *testing.T) {
 func TestWheelMovesListCursor(t *testing.T) {
 	m := &Model{
 		mode: modeList,
-
-		width: 80, height: 24,
+		layout: layoutState{
+			width:  80,
+			height: 24,
+		},
 		services:  services{listKeys: keybind.DefaultList()},
 		workspace: workspace{sessions: []store.Session{{ID: "fixture-b", Name: "fixture"}}},
 		rail:      railModelCount(2, 0, false),
@@ -1138,8 +1156,8 @@ func TestWheelMovesListCursor(t *testing.T) {
 // the way its own footer advertises.
 func TestWheelMovesCursorWhileSearchingOrPrompting(t *testing.T) {
 	for name, m := range map[string]*Model{
-		"searching": {mode: modeList, width: 80, height: 24, rail: railModelCount(2, 0, true)},
-		"quick bar": {mode: modeList, quick: quickState{active: true}, width: 80, height: 24, rail: railModelCount(2, 0, false)},
+		"searching": {mode: modeList, layout: layoutState{width: 80, height: 24}, rail: railModelCount(2, 0, true)},
+		"quick bar": {mode: modeList, quick: quickState{active: true}, layout: layoutState{width: 80, height: 24}, rail: railModelCount(2, 0, false)},
 	} {
 		t.Run(name, func(t *testing.T) {
 			updated, _ := m.handleMouse(tea.MouseMsg{
@@ -1280,15 +1298,15 @@ func TestDividerPressWhileSearchingOrPrompting(t *testing.T) {
 		m    *Model
 		drag bool
 	}{
-		"searching": {&Model{mode: modeList, width: 100, height: 40, split: splitState{ratio: defaultSplitRatio}, services: services{listKeys: keybind.DefaultList()}, rail: railModelCount(0, 0, true)}, false},
-		"quick bar": {&Model{mode: modeList, quick: quickState{active: true, composer: composer{input: textarea.New()}}, width: 100, height: 40, split: splitState{ratio: defaultSplitRatio}, services: services{listKeys: keybind.DefaultList()}}, true},
+		"searching": {&Model{mode: modeList, layout: layoutState{width: 100, height: 40, split: splitState{ratio: defaultSplitRatio}}, services: services{listKeys: keybind.DefaultList()}, rail: railModelCount(0, 0, true)}, false},
+		"quick bar": {&Model{mode: modeList, quick: quickState{active: true, composer: composer{input: textarea.New()}}, layout: layoutState{width: 100, height: 40, split: splitState{ratio: defaultSplitRatio}}, services: services{listKeys: keybind.DefaultList()}}, true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			y0, _ := tc.m.bodyYRange()
 			updated, _ := tc.m.handleMouse(tea.MouseMsg{
 				X: tc.m.dividerX(), Y: y0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 			})
-			if got := updated.(*Model).split.dragging; got != tc.drag {
+			if got := updated.(*Model).layout.split.dragging; got != tc.drag {
 				t.Fatalf("divider dragging = %v, want %v", got, tc.drag)
 			}
 		})
@@ -1299,7 +1317,7 @@ func TestDividerPressWhileSearchingOrPrompting(t *testing.T) {
 // keyboard wraps: going off the end must not fling the selection to the
 // far one and aim every key after it somewhere the user never looked.
 func TestWheelClampsAtBothEnds(t *testing.T) {
-	m := &Model{mode: modeList, width: 80, height: 24, services: services{listKeys: keybind.DefaultList()}, rail: railModelCount(3, 2, false)}
+	m := &Model{mode: modeList, layout: layoutState{width: 80, height: 24}, services: services{listKeys: keybind.DefaultList()}, rail: railModelCount(3, 2, false)}
 	for i := 0; i < 3; i++ {
 		updated, _ := m.handleMouse(tea.MouseMsg{
 			Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress,
@@ -1330,11 +1348,14 @@ func TestWheelClampsAtBothEnds(t *testing.T) {
 
 func TestWheelSwallowedInResizeMode(t *testing.T) {
 	m := &Model{
-		mode:  modeList,
-		split: splitState{resizeMode: true},
-
-		width:  80,
-		height: 24, services: services{listKeys: keybind.DefaultList()}, rail: railModelCount(2, 0, false),
+		mode: modeList,
+		layout: layoutState{
+			split:  splitState{resizeMode: true},
+			width:  80,
+			height: 24,
+		},
+		services: services{listKeys: keybind.DefaultList()},
+		rail:     railModelCount(2, 0, false),
 	}
 	updated, _ := m.handleMouse(tea.MouseMsg{
 		Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress,
@@ -1369,7 +1390,7 @@ func leftPress(m *Model, x, y int) *Model {
 
 func TestClickOnMessagesCardOpensNotices(t *testing.T) {
 	m := buildModel(t)
-	m.width, m.height = 120, 34
+	m.layout.width, m.layout.height = 120, 34
 	x, y := messagesCell(t, m)
 	if m = leftPress(m, x, y); m.mode != modeNotices {
 		t.Fatalf("click on the card should open messages, mode = %v", m.mode)
@@ -1378,7 +1399,7 @@ func TestClickOnMessagesCardOpensNotices(t *testing.T) {
 
 func TestClickOnMetersBesideTheCardDoesNothing(t *testing.T) {
 	m := buildModel(t)
-	m.width, m.height = 120, 34
+	m.layout.width, m.layout.height = 120, 34
 	_, y := messagesCell(t, m)
 	if m = leftPress(m, 2, y); m.mode != modeList {
 		t.Fatalf("click on the meters should stay on the list, mode = %v", m.mode)
@@ -1387,7 +1408,7 @@ func TestClickOnMetersBesideTheCardDoesNothing(t *testing.T) {
 
 func TestClickOnFullScreenBadgeOpensNotices(t *testing.T) {
 	m := buildModel(t)
-	m.width, m.height = 120, 34
+	m.layout.width, m.layout.height = 120, 34
 	m.prefs.fullLayout = true
 	x, y := messagesCell(t, m)
 	if m = leftPress(m, x, y); m.mode != modeNotices {
@@ -1401,7 +1422,7 @@ func TestClickOnFullScreenBadgeOpensNotices(t *testing.T) {
 
 func TestClickOnMessagesCardWhileSearchingKeepsTheField(t *testing.T) {
 	m := buildModel(t)
-	m.width, m.height = 120, 34
+	m.layout.width, m.layout.height = 120, 34
 	m.rail.SetSearch(m.rail.Search(), true)
 	x, y := messagesCell(t, m)
 	if m = leftPress(m, x, y); m.mode != modeList || !m.rail.Searching() {
@@ -1411,7 +1432,7 @@ func TestClickOnMessagesCardWhileSearchingKeepsTheField(t *testing.T) {
 
 func TestClickOnMessagesCardWhileFocusedIsLeftToFocus(t *testing.T) {
 	m := buildModel(t)
-	m.width, m.height = 200, 34
+	m.layout.width, m.layout.height = 200, 34
 	createSession(t, m, "alpha", t.TempDir(), "")
 	x, y := messagesCell(t, m)
 	m.selectSessionRow(t, "alpha")
@@ -1536,7 +1557,7 @@ func TestClicksWorkWhileTheQuickBarIsOpen(t *testing.T) {
 	y0, _ := m.bodyYRange()
 	beta := y0 + paintedRailLines(t, m, "beta")[0]
 
-	updated, _ := m.handleMouse(tea.MouseMsg{X: m.displayedRail.Width, Y: beta, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	updated, _ := m.handleMouse(tea.MouseMsg{X: m.layout.displayedRail.Width, Y: beta, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
 	m.drainEffects(t)
 	m = updated.(*Model)
 	m.drainEffects(t)

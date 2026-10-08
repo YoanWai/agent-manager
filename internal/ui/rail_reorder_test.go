@@ -217,7 +217,7 @@ func liftByHandle(t *testing.T, m *Model, name string) *Model {
 	t.Helper()
 	y0, _ := m.bodyYRange()
 	line := paintedRailLines(t, m, name)[0]
-	updated, _ := m.handleMouse(tea.MouseMsg{X: m.displayedRail.Handles[rowKey(railRows(m)[railHitRows(m)[line]])], Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	updated, _ := m.handleMouse(tea.MouseMsg{X: m.layout.displayedRail.Handles[rowKey(railRows(m)[railHitRows(m)[line]])], Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
 	m.drainEffects(t)
 	m = updated.(*Model)
 	if !m.rail.Reordering() {
@@ -317,7 +317,7 @@ func TestAPressOnALiftedRowsLabelPutsItDownAndClicks(t *testing.T) {
 	m = liftByHandle(t, m, "alpha")
 	m = railMouse(t, m, "alpha", tea.MouseActionRelease, tea.MouseButtonLeft)
 	y0, _ := m.bodyYRange()
-	at := tea.MouseMsg{X: m.displayedRail.Handles["s:"+sessionRow(t, m, "alpha").sess.ID] + 4, Y: y0 + paintedRailLines(t, m, "alpha")[0], Button: tea.MouseButtonLeft}
+	at := tea.MouseMsg{X: m.layout.displayedRail.Handles["s:"+sessionRow(t, m, "alpha").sess.ID] + 4, Y: y0 + paintedRailLines(t, m, "alpha")[0], Button: tea.MouseButtonLeft}
 	at.Action = tea.MouseActionPress
 	updated, _ := m.handleMouse(at)
 	m.drainEffects(t)
@@ -341,7 +341,7 @@ func TestLiftingARowFetchesItsPreview(t *testing.T) {
 	preparedView(m)
 	y0, _ := m.bodyYRange()
 	line := paintedRailLines(t, m, "beta")[0]
-	_, cmd := m.handleMouse(tea.MouseMsg{X: m.displayedRail.Handles["s:"+sessionRow(t, m, "beta").sess.ID], Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	_, cmd := m.handleMouse(tea.MouseMsg{X: m.layout.displayedRail.Handles["s:"+sessionRow(t, m, "beta").sess.ID], Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
 	m.drainEffects(t)
 	if !m.rail.Reordering() || cmd == nil {
 		t.Fatalf("lifting beta should schedule its preview, reorder = %v cmd = %v", m.rail.Reordering(), cmd != nil)
@@ -360,7 +360,7 @@ func TestHandleColumnBelowTheFirstLineIsTheLabel(t *testing.T) {
 	if len(lines) < 2 {
 		t.Fatalf("test setup: a comfortable row paints more than one line, got %v", lines)
 	}
-	at := tea.MouseMsg{X: m.displayedRail.Handles[rowKey(sessionRow(t, m, "alpha"))], Y: y0 + lines[1], Button: tea.MouseButtonLeft, Action: tea.MouseActionPress}
+	at := tea.MouseMsg{X: m.layout.displayedRail.Handles[rowKey(sessionRow(t, m, "alpha"))], Y: y0 + lines[1], Button: tea.MouseButtonLeft, Action: tea.MouseActionPress}
 	updated, _ := m.handleMouse(at)
 	m.drainEffects(t)
 	m = updated.(*Model)

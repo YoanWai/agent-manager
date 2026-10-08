@@ -144,7 +144,7 @@ func (m *Model) captureTerminalDirectory(target terminalDirectoryTarget) (termin
 	if !ok {
 		return terminalDirectoryRequest{}, false
 	}
-	request := terminalDirectoryRequest{target: target, foregroundGen: m.foregroundGen, rowKey: rowKey(entry), mode: m.mode}
+	request := terminalDirectoryRequest{target: target, foregroundGen: m.gens.foreground, rowKey: rowKey(entry), mode: m.mode}
 	if entry.isGroup {
 		request.rawDir = m.workspace.groupPaths[entry.group]
 		request.fallbacks = m.groupDirectoryFallbacks(entry.group)
@@ -162,13 +162,13 @@ func (m *Model) groupDirectoryFallbacks(group string) []string {
 			fallbacks = append(fallbacks, dir)
 		}
 	}
-	return append(fallbacks, m.workDir)
+	return append(fallbacks, m.env.workDir)
 }
 
 func (m *Model) handleTerminalDirectory(msg terminalDirectoryMsg) (tea.Model, tea.Cmd) {
 	if msg.request.target == terminalDirectoryEditor {
 		entry, selected := m.selectedRow()
-		if m.effects.quitting || msg.request.foregroundGen != m.foregroundGen || m.mode != msg.request.mode || !selected || rowKey(entry) != msg.request.rowKey {
+		if m.effects.quitting || msg.request.foregroundGen != m.gens.foreground || m.mode != msg.request.mode || !selected || rowKey(entry) != msg.request.rowKey {
 			return m, nil
 		}
 	}

@@ -139,8 +139,8 @@ func buildModelWithStorePath(t *testing.T, dbPath string) *Model {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	m.width = 120
-	m.height = 40
+	m.layout.width = 120
+	m.layout.height = 40
 	m.startup.booting = false
 	t.Cleanup(func() {
 		for _, s := range m.workspace.sessions {
@@ -461,7 +461,7 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 	}
 	services := effectServices{
 		store: m.services.store, driver: m.services.tmux, gitDrv: m.services.gitDrv, cfg: m.services.cfg,
-		watch: m.focusRuntime.watch,
+		watch: m.focus.runtime.watch,
 	}
 	if m.poller != nil {
 		services.runner = m.poller.runner
@@ -599,10 +599,12 @@ func shotModel() *Model {
 		{depth: 2, sess: sessions[5]},
 	}
 	m := &Model{
-		width:  120,
-		height: 34,
-		mode:   modeList,
-		split:  splitState{ratio: defaultSplitRatio},
+		layout: layoutState{
+			width:  120,
+			height: 34,
+			split:  splitState{ratio: defaultSplitRatio},
+		},
+		mode: modeList,
 		services: services{
 			keys:     keybind.DefaultSession(),
 			listKeys: keybind.DefaultList(),

@@ -111,11 +111,11 @@ func (m *Model) openDiffFile() (tea.Model, tea.Cmd) {
 	if request == nil {
 		return m, nil
 	}
-	return m, reviewFileCheckCmd(*request, m.captureEditorResolution(), m.foregroundGen)
+	return m, reviewFileCheckCmd(*request, m.captureEditorResolution(), m.gens.foreground)
 }
 
 func (m *Model) handleDiffFileChecked(msg editorFileCheckedMsg) (tea.Model, tea.Cmd) {
-	if m.effects.quitting || m.mode != modeDiff || msg.foregroundGen != m.foregroundGen {
+	if m.effects.quitting || m.mode != modeDiff || msg.foregroundGen != m.gens.foreground {
 		return m, nil
 	}
 	path, accepted := m.review.ApplyFileCheck(msg.result)

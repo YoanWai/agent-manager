@@ -331,7 +331,7 @@ func TestOlderChangesBehindHighlightsDoNotWidenTheModal(t *testing.T) {
 func scrollModel(t *testing.T, lines int) *Model {
 	t.Helper()
 	m := modalModel(t)
-	m.width, m.height = 70, 14
+	m.layout.width, m.layout.height = 70, 14
 	var body []string
 	for index := 0; index < lines; index++ {
 		body = append(body, fmt.Sprintf("change line %02d", index))
@@ -446,7 +446,7 @@ func TestGrowingTheTerminalKeepsTheLastPageInView(t *testing.T) {
 	m := scrollModel(t, 30)
 	m.handleNoticesKey(key("end"))
 	bottom := m.notices.noticeScroll
-	m.height = 20
+	m.layout.height = 20
 	frame := ansi.Strip(preparedView(m))
 	if !strings.Contains(frame, "change line 29") || !strings.Contains(frame, "╰") {
 		t.Fatalf("an offset past the new last page shows that last page inside the frame:\n%s", frame)
@@ -465,11 +465,11 @@ func TestHintNamesHomeAndEndWhenItFits(t *testing.T) {
 	m := modalModel(t)
 	m.notices.feedMessages = []feed.Message{{ID: "feed-wide", Banner: "wide", Title: "Wide", Body: []string{strings.Repeat("wide words ", 12)}}}
 	m.openNotices("feed-wide")
-	m.width = 180
+	m.layout.width = 180
 	if frame := ansi.Strip(preparedView(m)); !strings.Contains(frame, "pgup/pgdn/home/end scroll") {
 		t.Fatalf("a wide frame names home and end:\n%s", frame)
 	}
-	m.width = 80
+	m.layout.width = 80
 	frame := ansi.Strip(preparedView(m))
 	for _, want := range []string{"x dismiss", "esc"} {
 		if !strings.Contains(frame, want) {

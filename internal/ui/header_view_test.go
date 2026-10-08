@@ -8,7 +8,7 @@ import (
 
 func TestHeaderShowsUpdateBadgeBesideWordmark(t *testing.T) {
 	m := &Model{
-		width:  120,
+		layout: layoutState{width: 120},
 		update: updateInfo{latest: "v0.9.0"},
 	}
 	header := ansi.Strip(m.viewHeaderRows()[0])

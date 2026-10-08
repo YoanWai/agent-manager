@@ -462,7 +462,7 @@ func TestDiffSendConfirmIgnoresMotionKeys(t *testing.T) {
 }
 
 func TestDiffCommentBoxGrowsWithText(t *testing.T) {
-	m := &Model{width: 100, height: 30, mode: modeDiff}
+	m := &Model{layout: layoutState{width: 100, height: 30}, mode: modeDiff}
 	seedReviewForTest(m, uireview.Target{ID: "s1"}, git.ScopeUncommitted, "/repo",
 		diff.Set{Repo: git.Repo{Root: "/repo"}, Files: []diff.FileDiff{diff.BuildFile(nil, []byte("line\n"), git.ChangedFile{Path: "main.go"}, git.FileStat{})}}, true)
 	m.openAnnotate()

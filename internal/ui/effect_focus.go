@@ -45,7 +45,7 @@ func (m *Model) applyFocusEffect(request focusRequest, result focusEffectResult,
 		m.errBar.text = err.Error()
 		return nil
 	}
-	if m.effects.quitting || request.generation != m.foregroundGen {
+	if m.effects.quitting || request.generation != m.gens.foreground {
 		return nil
 	}
 	if m.mode != modeList {
@@ -68,14 +68,14 @@ func (m *Model) enterFocus(sess store.Session) tea.Cmd {
 	if m.prefs.fullLayout {
 		m.pinFullFocusPane(sess.ID)
 	}
-	if m.focusRuntime.watch != nil {
-		m.focusRuntime.watch.retryNow()
+	if m.focus.runtime.watch != nil {
+		m.focus.runtime.watch.retryNow()
 	}
 	m.watchSelection()
-	pane := m.focusPane.Pane()
-	keepPaneFacts := m.focusRuntime.watch != nil &&
-		m.focusRuntime.watch.serving(sess.ID) && pane.SessionID == sess.ID
-	m.focusPane.Enter(uifocus.EnterContext{SessionID: sess.ID, KeepPaneFacts: keepPaneFacts})
+	pane := m.focus.pane.Pane()
+	keepPaneFacts := m.focus.runtime.watch != nil &&
+		m.focus.runtime.watch.serving(sess.ID) && pane.SessionID == sess.ID
+	m.focus.pane.Enter(uifocus.EnterContext{SessionID: sess.ID, KeepPaneFacts: keepPaneFacts})
 	return tea.Batch(tea.EnableMouseCellMotion, m.cursorBlink())
 }
 
@@ -143,7 +143,7 @@ func (m *Model) applyDetachEffect(request detachRequest, result detachEffectResu
 		m.requestRefresh()
 		return nil
 	}
-	if m.effects.quitting || request.generation != m.foregroundGen || m.mode != modeList {
+	if m.effects.quitting || request.generation != m.gens.foreground || m.mode != modeList {
 		return nil
 	}
 	if result.request == "" {
@@ -161,7 +161,7 @@ func (m *Model) applyDetachEffect(request detachRequest, result detachEffectResu
 	case tmux.RequestReview:
 		cmd := m.openDiff()
 		if m.mode == modeDiff {
-			m.reviewReturn = reviewReturn{kind: reviewReturnAttach, sessionID: sess.ID}
+			m.reviewNav.ret = reviewReturn{kind: reviewReturnAttach, sessionID: sess.ID}
 		}
 		return cmd
 	case tmux.RequestEditor:

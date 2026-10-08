@@ -40,12 +40,12 @@ func (m *Model) acknowledgeSelected() (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) attachCmd(id string) tea.Cmd {
-	m.enqueueEffect(attachRequest{id: id, foregroundGen: m.foregroundGen, mode: m.mode}, 0, false)
+	m.enqueueEffect(attachRequest{id: id, foregroundGen: m.gens.foreground, mode: m.mode}, 0, false)
 	return m.nextEffectCmd()
 }
 
 func (m *Model) reattach(id string, diffGen int) tea.Cmd {
-	m.enqueueEffect(attachRequest{id: id, reattach: true, generation: diffGen, foregroundGen: m.foregroundGen, mode: m.mode}, 0, false)
+	m.enqueueEffect(attachRequest{id: id, reattach: true, generation: diffGen, foregroundGen: m.gens.foreground, mode: m.mode}, 0, false)
 	return m.nextEffectCmd()
 }
 

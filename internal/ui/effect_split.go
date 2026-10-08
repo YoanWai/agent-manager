@@ -23,16 +23,16 @@ func (s effectServices) runSplitSave(request splitSaveRequest) (effectResult, er
 }
 
 func (m *Model) applySplitSave(job *effectJob, err error) {
-	if job.id != m.split.saveID {
+	if job.id != m.layout.split.saveID {
 		return
 	}
 	if err == nil {
-		if m.errBar.text == m.split.saveError {
+		if m.errBar.text == m.layout.split.saveError {
 			m.errBar.text = ""
 		}
-		m.split.saveError = ""
+		m.layout.split.saveError = ""
 		return
 	}
-	m.split.saveError = err.Error()
-	m.errBar.text = m.split.saveError
+	m.layout.split.saveError = err.Error()
+	m.errBar.text = m.layout.split.saveError
 }

@@ -57,16 +57,16 @@ func (a *cursorAnchor) get() (col, row int, ok bool) {
 // uses its recorded pane box as a fallback because its caret is painted over
 // captured terminal output rather than by a Bubbles input widget.
 func (m *Model) syncCursorAnchor(frame string) string {
-	if m.focusRuntime.imeCursor == nil {
+	if m.focus.runtime.imeCursor == nil {
 		return strings.ReplaceAll(frame, cursorAnchorMarker, "")
 	}
 	if m.mode == modeFocus {
 		col, row, ok := m.focusCursorAnchor()
-		m.focusRuntime.imeCursor.set(col, row, ok)
+		m.focus.runtime.imeCursor.set(col, row, ok)
 		return strings.ReplaceAll(frame, cursorAnchorMarker, "")
 	}
 	frame, col, row, ok := cursorMarkerPosition(frame)
-	m.focusRuntime.imeCursor.set(col, row, ok)
+	m.focus.runtime.imeCursor.set(col, row, ok)
 	return frame
 }
 
@@ -167,7 +167,7 @@ func (m *Model) focusCursorAnchor() (col, row int, ok bool) {
 	if !selected {
 		return 0, 0, false
 	}
-	return m.focusPane.CursorAnchor(sess.ID)
+	return m.focus.pane.CursorAnchor(sess.ID)
 }
 
 // cursorOutputWriter appends the active input position after each Bubble Tea
@@ -256,14 +256,14 @@ func (w *cursorTTYOutput) WriteString(s string) (int, error) {
 // CursorOutput keeps native TTY detection and terminal sizing while placing
 // the host cursor at the active input caret after each rendered frame.
 func (m *Model) CursorOutput(output *os.File) io.Writer {
-	if m.focusRuntime.imeCursor == nil {
-		m.focusRuntime.imeCursor = &cursorAnchor{}
+	if m.focus.runtime.imeCursor == nil {
+		m.focus.runtime.imeCursor = &cursorAnchor{}
 	}
 	return &cursorTTYOutput{
 		File: output,
 		writer: &cursorOutputWriter{
 			out:    output,
-			anchor: m.focusRuntime.imeCursor,
+			anchor: m.focus.runtime.imeCursor,
 		},
 	}
 }

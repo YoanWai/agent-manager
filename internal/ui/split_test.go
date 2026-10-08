@@ -53,13 +53,13 @@ func TestClampSplitLeft(t *testing.T) {
 }
 
 func TestSplitWidthsUsesRatio(t *testing.T) {
-	m := &Model{width: 100, split: splitState{ratio: 0.4}, services: services{listKeys: keybind.DefaultList()}}
+	m := &Model{layout: layoutState{width: 100, split: splitState{ratio: 0.4}}, services: services{listKeys: keybind.DefaultList()}}
 	left, right := m.splitWidths()
 	if left != 40 || right != 60 {
 		t.Fatalf("splitWidths = %d,%d want 40,60", left, right)
 	}
 	// Default ratio when unset, floored by the minimum side.
-	m.split.ratio = 0
+	m.layout.split.ratio = 0
 	left, right = m.splitWidths()
 	ratio := defaultSplitRatio
 	wantLeft := clampSplitLeft(int(ratio*100), 100)
@@ -69,10 +69,10 @@ func TestSplitWidthsUsesRatio(t *testing.T) {
 }
 
 func TestSetSplitFromXClampsAndUpdatesRatio(t *testing.T) {
-	m := &Model{width: 100, split: splitState{ratio: defaultSplitRatio}, services: services{listKeys: keybind.DefaultList()}}
+	m := &Model{layout: layoutState{width: 100, split: splitState{ratio: defaultSplitRatio}}, services: services{listKeys: keybind.DefaultList()}}
 	m.setSplitFromX(50)
-	if m.split.ratio != 0.5 {
-		t.Fatalf("ratio = %v want 0.5", m.split.ratio)
+	if m.layout.split.ratio != 0.5 {
+		t.Fatalf("ratio = %v want 0.5", m.layout.split.ratio)
 	}
 	left, _ := m.splitWidths()
 	if left != 50 {
@@ -86,11 +86,11 @@ func TestSetSplitFromXClampsAndUpdatesRatio(t *testing.T) {
 }
 
 func TestResizeModeKeyArmsDrag(t *testing.T) {
-	m := &Model{mode: modeList, split: splitState{ratio: defaultSplitRatio}, width: 120, height: 40, services: services{listKeys: keybind.DefaultList()}}
+	m := &Model{mode: modeList, layout: layoutState{split: splitState{ratio: defaultSplitRatio}, width: 120, height: 40}, services: services{listKeys: keybind.DefaultList()}}
 	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'|'}})
 	m.drainEffects(t)
 	m = updated.(*Model)
-	if !m.split.resizeMode {
+	if !m.layout.split.resizeMode {
 		t.Fatal("| should enter resize mode")
 	}
 	if cmd != nil {
@@ -101,7 +101,7 @@ func TestResizeModeKeyArmsDrag(t *testing.T) {
 	updated, cmd = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
 	m.drainEffects(t)
 	m = updated.(*Model)
-	if m.mode != modeList || !m.split.resizeMode {
+	if m.mode != modeList || !m.layout.split.resizeMode {
 		t.Fatal("resize mode should swallow n")
 	}
 	if cmd != nil {
@@ -111,7 +111,7 @@ func TestResizeModeKeyArmsDrag(t *testing.T) {
 	updated, cmd = m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
 	m.drainEffects(t)
 	m = updated.(*Model)
-	if m.split.resizeMode {
+	if m.layout.split.resizeMode {
 		t.Fatal("esc should leave resize mode")
 	}
 	if cmd != nil {
@@ -122,7 +122,7 @@ func TestResizeModeKeyArmsDrag(t *testing.T) {
 func TestArrowNudgeAndPipeCommits(t *testing.T) {
 	m := buildModel(t)
 	st := m.services.store
-	m.width, m.height, m.split.ratio = 100, 40, 0.34
+	m.layout.width, m.layout.height, m.layout.split.ratio = 100, 40, 0.34
 	updated, _ := m.enterResizeMode()
 	m = updated.(*Model)
 	before, _ := m.splitWidths()
@@ -145,7 +145,7 @@ func TestArrowNudgeAndPipeCommits(t *testing.T) {
 	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'|'}})
 	m.drainEffects(t)
 	m = updated.(*Model)
-	if m.split.resizeMode {
+	if m.layout.split.resizeMode {
 		t.Fatal("| should commit and exit resize mode")
 	}
 	if cmd != nil {
@@ -163,7 +163,7 @@ func TestArrowNudgeAndPipeCommits(t *testing.T) {
 func TestEnterCommitsResize(t *testing.T) {
 	m := buildModel(t)
 	st := m.services.store
-	m.width, m.height, m.split.ratio = 100, 40, 0.34
+	m.layout.width, m.layout.height, m.layout.split.ratio = 100, 40, 0.34
 	updated, _ := m.enterResizeMode()
 	m = updated.(*Model)
 	m.nudgeSplit(8)
@@ -171,7 +171,7 @@ func TestEnterCommitsResize(t *testing.T) {
 	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m.drainEffects(t)
 	m = updated.(*Model)
-	if m.split.resizeMode || m.split.dragging {
+	if m.layout.split.resizeMode || m.layout.split.dragging {
 		t.Fatal("enter should commit and leave resize mode")
 	}
 	if cmd != nil {
@@ -183,7 +183,7 @@ func TestEnterCommitsResize(t *testing.T) {
 }
 
 func TestArrowCancelRestoresRatio(t *testing.T) {
-	m := &Model{mode: modeList, width: 100, height: 40, split: splitState{ratio: 0.34}, services: services{listKeys: keybind.DefaultList()}}
+	m := &Model{mode: modeList, layout: layoutState{width: 100, height: 40, split: splitState{ratio: 0.34}}, services: services{listKeys: keybind.DefaultList()}}
 	updated, _ := m.enterResizeMode()
 	m = updated.(*Model)
 	m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
@@ -193,7 +193,7 @@ func TestArrowCancelRestoresRatio(t *testing.T) {
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
 	m.drainEffects(t)
 	m = updated.(*Model)
-	if m.split.resizeMode {
+	if m.layout.split.resizeMode {
 		t.Fatal("esc should exit")
 	}
 	if left, _ := m.splitWidths(); left != 34 {
@@ -204,14 +204,14 @@ func TestArrowCancelRestoresRatio(t *testing.T) {
 func TestQuitFromResizePersistsRatio(t *testing.T) {
 	m := buildModel(t)
 	st := m.services.store
-	m.width, m.height, m.split.ratio = 100, 40, 0.34
+	m.layout.width, m.layout.height, m.layout.split.ratio = 100, 40, 0.34
 	updated, _ := m.enterResizeMode()
 	m = updated.(*Model)
 	m.nudgeSplit(8)
 
 	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
 	m = updated.(*Model)
-	if m.split.resizeMode || m.split.dragging {
+	if m.layout.split.resizeMode || m.layout.split.dragging {
 		t.Fatal("quit should clear resize state")
 	}
 	if cmd == nil {
@@ -231,14 +231,14 @@ func TestQuitFromResizePersistsRatio(t *testing.T) {
 func TestCtrlCFromResizePersistsRatioAfterAcceptedQuit(t *testing.T) {
 	m := buildModel(t)
 	st := m.services.store
-	m.width, m.height, m.split.ratio = 100, 40, 0.34
+	m.layout.width, m.layout.height, m.layout.split.ratio = 100, 40, 0.34
 	updated, _ := m.enterResizeMode()
 	m = updated.(*Model)
 	m.nudgeSplit(8)
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	m = updated.(*Model)
-	if m.split.resizeMode || m.split.dragging || m.split.moved {
+	if m.layout.split.resizeMode || m.layout.split.dragging || m.layout.split.moved {
 		t.Fatal("accepted ctrl+c quit left resize interaction armed")
 	}
 	if !m.effects.quitting || cmd == nil {
@@ -252,19 +252,19 @@ func TestCtrlCFromResizePersistsRatioAfterAcceptedQuit(t *testing.T) {
 
 func TestInstallerRefusedQuitKeepsResizeInteraction(t *testing.T) {
 	m := buildModel(t)
-	m.width, m.height, m.split.ratio = 100, 40, 0.34
+	m.layout.width, m.layout.height, m.layout.split.ratio = 100, 40, 0.34
 	updated, _ := m.enterResizeMode()
 	m = updated.(*Model)
 	m.nudgeSplit(8)
-	m.install = &pendingInstall{name: "install-test"}
+	m.launchHint.install = &pendingInstall{name: "install-test"}
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	m = updated.(*Model)
 	if cmd != nil || m.effects.quitting {
 		t.Fatal("installer gate accepted quit")
 	}
-	if !m.split.resizeMode || m.split.ratio != 0.42 {
-		t.Fatalf("refused quit changed resize interaction: mode=%v ratio=%v", m.split.resizeMode, m.split.ratio)
+	if !m.layout.split.resizeMode || m.layout.split.ratio != 0.42 {
+		t.Fatalf("refused quit changed resize interaction: mode=%v ratio=%v", m.layout.split.resizeMode, m.layout.split.ratio)
 	}
 	if raw, err := m.services.store.Setting(splitRatioSetting); err != nil || raw != "" {
 		t.Fatalf("refused quit persisted ratio %q (err %v)", raw, err)
@@ -273,18 +273,18 @@ func TestInstallerRefusedQuitKeepsResizeInteraction(t *testing.T) {
 
 func TestInstallerRefusedQuitKeepsMouseDrag(t *testing.T) {
 	m := buildModel(t)
-	m.width, m.height, m.split.ratio = 100, 40, 0.42
-	m.split.dragging = true
-	m.split.moved = true
-	m.install = &pendingInstall{name: "install-test"}
+	m.layout.width, m.layout.height, m.layout.split.ratio = 100, 40, 0.42
+	m.layout.split.dragging = true
+	m.layout.split.moved = true
+	m.launchHint.install = &pendingInstall{name: "install-test"}
 
 	updated, cmd := m.handleKey(key("q"))
 	m = updated.(*Model)
 	if cmd != nil || m.effects.quitting {
 		t.Fatal("installer gate accepted quit")
 	}
-	if !m.split.dragging || !m.split.moved || m.split.ratio != 0.42 {
-		t.Fatalf("refused quit changed mouse drag: dragging=%v moved=%v ratio=%v", m.split.dragging, m.split.moved, m.split.ratio)
+	if !m.layout.split.dragging || !m.layout.split.moved || m.layout.split.ratio != 0.42 {
+		t.Fatalf("refused quit changed mouse drag: dragging=%v moved=%v ratio=%v", m.layout.split.dragging, m.layout.split.moved, m.layout.split.ratio)
 	}
 	if raw, err := m.services.store.Setting(splitRatioSetting); err != nil || raw != "" {
 		t.Fatalf("refused quit persisted ratio %q (err %v)", raw, err)
@@ -295,9 +295,9 @@ func TestSplitPersistenceIsDeferredAndOrdered(t *testing.T) {
 	m := buildModel(t)
 	st := m.services.store
 
-	m.split.ratio = 0.41
+	m.layout.split.ratio = 0.41
 	m.persistSplitRatio()
-	m.split.ratio = 0.52
+	m.layout.split.ratio = 0.52
 	m.persistSplitRatio()
 	if raw, err := st.Setting(splitRatioSetting); err != nil || raw != "" {
 		t.Fatalf("Update path wrote split ratio before the worker ran: %q, %v", raw, err)
@@ -318,20 +318,20 @@ func TestSplitPersistenceIsDeferredAndOrdered(t *testing.T) {
 }
 
 func TestNewerSplitSaveSuccessClearsOnlySplitFailure(t *testing.T) {
-	m := &Model{split: splitState{saveID: 1}}
+	m := &Model{layout: layoutState{split: splitState{saveID: 1}}}
 	m.applySplitSave(&effectJob{id: 1}, errors.New("save split ratio: database is locked"))
 	if m.errBar.text == "" {
 		t.Fatal("latest failed save did not surface its error")
 	}
 
-	m.split.saveID = 2
+	m.layout.split.saveID = 2
 	m.applySplitSave(&effectJob{id: 2}, nil)
-	if m.errBar.text != "" || m.split.saveError != "" {
+	if m.errBar.text != "" || m.layout.split.saveError != "" {
 		t.Fatalf("newer successful save left stale warning %q", m.errBar.text)
 	}
 
 	m.errBar.text = "another operation failed"
-	m.split.saveID = 4
+	m.layout.split.saveID = 4
 	m.applySplitSave(&effectJob{id: 3}, errors.New("older split failure"))
 	m.applySplitSave(&effectJob{id: 4}, nil)
 	if m.errBar.text != "another operation failed" {
@@ -340,29 +340,29 @@ func TestNewerSplitSaveSuccessClearsOnlySplitFailure(t *testing.T) {
 }
 
 func TestEnterResizeBlockedWhenSearchingOrQuick(t *testing.T) {
-	m := &Model{mode: modeList, width: 100, height: 40, split: splitState{ratio: defaultSplitRatio}, services: services{listKeys: keybind.DefaultList()}, rail: railModelSearching(nil, 0, "")}
+	m := &Model{mode: modeList, layout: layoutState{width: 100, height: 40, split: splitState{ratio: defaultSplitRatio}}, services: services{listKeys: keybind.DefaultList()}, rail: railModelSearching(nil, 0, "")}
 	updated, cmd := m.enterResizeMode()
 	m = updated.(*Model)
-	if m.split.resizeMode || cmd != nil {
+	if m.layout.split.resizeMode || cmd != nil {
 		t.Fatal("searching should block resize mode")
 	}
 	m.rail.SetSearch(m.rail.Search(), false)
 	m.quick.active = true
 	updated, cmd = m.enterResizeMode()
 	m = updated.(*Model)
-	if m.split.resizeMode || cmd != nil {
+	if m.layout.split.resizeMode || cmd != nil {
 		t.Fatal("quick prompt should block resize mode")
 	}
 }
 
 func TestBodyYRangeMatchesListChrome(t *testing.T) {
-	m := &Model{width: 120, height: 40, split: splitState{ratio: defaultSplitRatio}, mode: modeList, services: services{listKeys: keybind.DefaultList()}}
+	m := &Model{layout: layoutState{width: 120, height: 40, split: splitState{ratio: defaultSplitRatio}}, mode: modeList, services: services{listKeys: keybind.DefaultList()}}
 	start, end := m.bodyYRange()
 	if start != m.listChromeRows() {
 		t.Fatalf("start = %d want listChromeRows=%d", start, m.listChromeRows())
 	}
 	// No transient status is showing, so its row is not reserved.
-	wantH := m.height - m.listChromeRows() - 1 - lipgloss.Height(m.viewFooter())
+	wantH := m.layout.height - m.listChromeRows() - 1 - lipgloss.Height(m.viewFooter())
 	if wantH < 3 {
 		wantH = 3
 	}
@@ -380,7 +380,7 @@ func TestNewLoadsPersistedSplitRatio(t *testing.T) {
 		t.Fatalf("set setting: %v", err)
 	}
 	loaded := reloadModel(t, m)
-	if loaded.split.ratio != 0.45 {
-		t.Fatalf("New splitRatio = %v want 0.45", loaded.split.ratio)
+	if loaded.layout.split.ratio != 0.45 {
+		t.Fatalf("New splitRatio = %v want 0.45", loaded.layout.split.ratio)
 	}
 }

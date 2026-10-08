@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"time"
+
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	"github.com/YoanWai/agent-manager/internal/tmux"
@@ -37,4 +39,7 @@ type workspace struct {
 	// off the UI loop alongside its liveness listing.
 	panes map[string]tmux.Pane
 	net   netStats
+	// lastListedAt is the newest listing applied; an older one still carries
+	// focus, turn ends and pane facts, but not the rows it saw.
+	lastListedAt time.Time
 }

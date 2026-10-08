@@ -4,12 +4,12 @@ import "testing"
 
 func TestViewDoesNotPublishCursorState(t *testing.T) {
 	m := &Model{}
-	m.focusRuntime.imeCursor = &cursorAnchor{}
-	m.focusRuntime.imeCursor.set(8, 4, true)
+	m.focus.runtime.imeCursor = &cursorAnchor{}
+	m.focus.runtime.imeCursor.set(8, 4, true)
 	if got := m.View(); got != "loading..." {
 		t.Fatalf("initial view = %q", got)
 	}
-	col, row, ok := m.focusRuntime.imeCursor.get()
+	col, row, ok := m.focus.runtime.imeCursor.get()
 	if col != 8 || row != 4 || !ok {
 		t.Fatalf("View changed published cursor to (%d, %d, %t)", col, row, ok)
 	}

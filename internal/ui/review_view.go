@@ -530,7 +530,7 @@ func numCell(num, width int) string {
 func (m *Model) viewDiffFull() string {
 	sess, _ := m.diffSession()
 	footer := m.viewDiffFooter()
-	bodyHeight := m.height - 4 - lipgloss.Height(footer)
+	bodyHeight := m.layout.height - 4 - lipgloss.Height(footer)
 	if bodyHeight < 5 {
 		bodyHeight = 5
 	}
@@ -550,8 +550,8 @@ func (m *Model) viewDiffFull() string {
 	// The column seam tees into the rules that open and close the body,
 	// same as the list view, so the two screens share one frame language.
 	frame := []string{
-		paint(m.viewDiffHeader(sess.Name), m.width, backdropHex()),
-		m.boundedRuleRow(fileWidth+1, m.width, "▀"),
+		paint(m.viewDiffHeader(sess.Name), m.layout.width, backdropHex()),
+		m.boundedRuleRow(fileWidth+1, m.layout.width, "▀"),
 	}
 	edge := make([]string, bodyHeight)
 	for i := range edge {
@@ -565,11 +565,11 @@ func (m *Model) viewDiffFull() string {
 		paintRows(codeLines, codeWidth, bodyHeight, backdropHex()),
 	)...)
 	frame = append(frame,
-		m.boundedRuleRow(fileWidth+1, m.width, "▄"),
-		paint(m.viewDiffStatus(), m.width, backdropHex()),
+		m.boundedRuleRow(fileWidth+1, m.layout.width, "▄"),
+		paint(m.viewDiffStatus(), m.layout.width, backdropHex()),
 	)
 	for _, line := range splitLines(footer) {
-		frame = append(frame, paint(line, m.width, backdropHex()))
+		frame = append(frame, paint(line, m.layout.width, backdropHex()))
 	}
 	return strings.Join(frame, "\n")
 }
@@ -644,11 +644,11 @@ func (m *Model) viewDiffHeader(sessName string) string {
 	}
 	right += " "
 
-	gap := m.width - ansi.StringWidth(left) - ansi.StringWidth(right)
+	gap := m.layout.width - ansi.StringWidth(left) - ansi.StringWidth(right)
 	if gap < 1 {
-		budget := m.width - ansi.StringWidth(right)
+		budget := m.layout.width - ansi.StringWidth(right)
 		if budget < 1 {
-			return padRight(right, m.width)
+			return padRight(right, m.layout.width)
 		}
 		return padRight(left, budget) + right
 	}
@@ -929,15 +929,15 @@ func (m *Model) renderSideCell(fd *diff.FileDiff, hl *fileHL, index, width int, 
 func (m *Model) viewDiffStatus() string {
 	state := m.review.Snapshot()
 	if m.errBar.text != "" {
-		return padRight(m.statusMessage(" ✖", " ✔", " ▲"), m.width)
+		return padRight(m.statusMessage(" ✖", " ✔", " ▲"), m.layout.width)
 	}
 	if state.Notice != "" {
-		return padRight(doneStyle.Render(" ✔ "+escapeControlsInline(state.Notice)), m.width)
+		return padRight(doneStyle.Render(" ✔ "+escapeControlsInline(state.Notice)), m.layout.width)
 	}
 	if state.SendConfirm {
 		count := m.review.DraftCount()
 		return padRight(errStyle.Render(fmt.Sprintf(" ¶ send %d %s to the agent?", count, uireview.CommentNoun(count)))+
-			subtleStyle.Render("  ↵/y send · esc cancel"), m.width)
+			subtleStyle.Render("  ↵/y send · esc cancel"), m.layout.width)
 	}
 	return ""
 }
@@ -947,7 +947,7 @@ func (m *Model) viewDiffFooter() string {
 	if state.Annotating {
 		return legendBar([]legendSection{{title: "Comment", pairs: [][2]string{
 			{"↵", "save"}, {"esc", "cancel"},
-		}}}, m.width)
+		}}}, m.layout.width)
 	}
 	repo := "repo"
 	if len(state.RepoRoots) > 0 {
@@ -972,7 +972,7 @@ func (m *Model) viewDiffFooter() string {
 			{"u", "layout"}, {"f", filter}, {"o/f3", "open file"}, {"?", "keys"},
 			{"esc/q", "close"}, {"ctrl+c", "quit"},
 		}},
-	}, m.width)
+	}, m.layout.width)
 }
 
 // ---- rendering ----

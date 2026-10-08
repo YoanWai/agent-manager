@@ -31,7 +31,7 @@ func (m *Model) viewHeaderRows() []string {
 		scope,
 		"",
 	} {
-		gap := m.width - railGutter - ansi.StringWidth(left) - ansi.StringWidth(right)
+		gap := m.layout.width - railGutter - ansi.StringWidth(left) - ansi.StringWidth(right)
 		if right == "" || gap < 2 {
 			continue
 		}
@@ -55,7 +55,7 @@ func (m *Model) titleTopRowWithUpdate(frame string) string {
 		return frame
 	}
 	title := paint(" "+tag+" ", ansi.StringWidth(tag)+2, backdropHex())
-	left := m.width - ansi.StringWidth(title) - railGutter
+	left := m.layout.width - ansi.StringWidth(title) - railGutter
 	if left < railGutter {
 		return frame
 	}

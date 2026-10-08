@@ -77,14 +77,14 @@ func TestSettingsTogglesListDensity(t *testing.T) {
 	}
 
 	m.openSettings()
-	if m.settings.comfortableRows {
+	if m.settings.dialog.comfortableRows {
 		t.Fatal("settings should open on compact by default")
 	}
 	for i := 0; i < settingsFieldDensity; i++ {
 		m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
 	}
-	if m.settings.field != settingsFieldDensity {
-		t.Fatalf("stepping down should reach the density field, got %d", m.settings.field)
+	if m.settings.dialog.field != settingsFieldDensity {
+		t.Fatalf("stepping down should reach the density field, got %d", m.settings.dialog.field)
 	}
 	if card := ansi.Strip(m.viewSettings()); !strings.Contains(card, "list density") {
 		t.Fatalf("settings card has no density row:\n%s", card)
@@ -271,9 +271,14 @@ func TestRailCursorAlwaysPainted(t *testing.T) {
 	for _, size := range []struct{ w, h int }{{80, 16}, {100, 24}, {120, 30}, {160, 44}} {
 		for _, cursor := range []int{0, 1, len(rows) / 2, len(rows) - 2, len(rows) - 1} {
 			m := &Model{
-				width: size.w, height: size.h, mode: modeList,
-
-				split: splitState{ratio: defaultSplitRatio}, workspace: workspace{sessions: sessions}, rail: railModelFromRows(rows, cursor),
+				layout: layoutState{
+					width:  size.w,
+					height: size.h,
+					split:  splitState{ratio: defaultSplitRatio},
+				},
+				mode:      modeList,
+				workspace: workspace{sessions: sessions},
+				rail:      railModelFromRows(rows, cursor),
 			}
 			view := ansi.Strip(preparedView(m))
 			if !strings.Contains(view, sessions[cursor].Name) {
@@ -286,7 +291,7 @@ func TestRailCursorAlwaysPainted(t *testing.T) {
 
 func TestFilterBadgesStackOverTheList(t *testing.T) {
 	m := shotModel()
-	m.width, m.height = 120, 40
+	m.layout.width, m.layout.height = 120, 40
 	m.rail.SetArchived(true)
 	m.rail.SetHideEmptyGroups(true)
 	m.rail.SetFilteringAttention(true)
@@ -323,7 +328,7 @@ func TestFilterBadgesStackOverTheList(t *testing.T) {
 
 func TestHideEmptyBadgeBelongsToTheActiveRail(t *testing.T) {
 	m := shotModel()
-	m.width, m.height = 120, 40
+	m.layout.width, m.layout.height = 120, 40
 	m.rail.SetHideEmptyGroups(true)
 	for _, tc := range []struct {
 		archived bool
@@ -357,15 +362,15 @@ func TestRailTopCarriesBetweenFrames(t *testing.T) {
 	const height = 20
 	tops := make([]int, len(railRows(m)))
 	for i := range railRows(m) {
-		prev, prevEnd := m.displayedRail.Window.Start, m.displayedRail.Window.End
+		prev, prevEnd := m.layout.displayedRail.Window.Start, m.layout.displayedRail.Window.End
 		setRailCursor(m, i)
-		m.entryLines(railRows(m), 0, m.width-1, height)
-		tops[i] = m.displayedRail.Window.Start
-		if m.displayedRail.Window.Start > i {
-			t.Fatalf("cursor %d: rail starts below it at %d", i, m.displayedRail.Window.Start)
+		m.entryLines(railRows(m), 0, m.layout.width-1, height)
+		tops[i] = m.layout.displayedRail.Window.Start
+		if m.layout.displayedRail.Window.Start > i {
+			t.Fatalf("cursor %d: rail starts below it at %d", i, m.layout.displayedRail.Window.Start)
 		}
-		if i >= prev && i < prevEnd && m.displayedRail.Window.Start != prev {
-			t.Fatalf("cursor %d already sat in [%d,%d) and the rail scrolled to %d", i, prev, prevEnd, m.displayedRail.Window.Start)
+		if i >= prev && i < prevEnd && m.layout.displayedRail.Window.Start != prev {
+			t.Fatalf("cursor %d already sat in [%d,%d) and the rail scrolled to %d", i, prev, prevEnd, m.layout.displayedRail.Window.Start)
 		}
 	}
 	if tops[0] != 0 || tops[1] != 0 {
@@ -377,20 +382,20 @@ func TestRailTopCarriesBetweenFrames(t *testing.T) {
 
 	for i := len(railRows(m)) - 1; i >= 0; i-- {
 		setRailCursor(m, i)
-		m.entryLines(railRows(m), 0, m.width-1, height)
-		if m.displayedRail.Window.Start > i {
-			t.Fatalf("cursor %d: rail starts below it at %d", i, m.displayedRail.Window.Start)
+		m.entryLines(railRows(m), 0, m.layout.width-1, height)
+		if m.layout.displayedRail.Window.Start > i {
+			t.Fatalf("cursor %d: rail starts below it at %d", i, m.layout.displayedRail.Window.Start)
 		}
 	}
-	if m.displayedRail.Window.Start != 0 {
-		t.Fatalf("stepping back to the first entry left the rail at %d", m.displayedRail.Window.Start)
+	if m.layout.displayedRail.Window.Start != 0 {
+		t.Fatalf("stepping back to the first entry left the rail at %d", m.layout.displayedRail.Window.Start)
 	}
 }
 
 func TestHiddenStatsReturnRowsToSessions(t *testing.T) {
 	for _, full := range []bool{false, true} {
 		m := footModel(t)
-		m.width, m.height, m.prefs.fullLayout = 120, 34, full
+		m.layout.width, m.layout.height, m.prefs.fullLayout = 120, 34, full
 		for i := 0; i < 50; i++ {
 			name := fmt.Sprintf("session-%02d", i)
 			m.workspace.sessions = append(m.workspace.sessions, store.Session{ID: name, Name: name, Tool: "claude", Status: status.Idle})
@@ -400,7 +405,7 @@ func TestHiddenStatsReturnRowsToSessions(t *testing.T) {
 		visibleRows := func() int {
 			m.railLines(70, height)
 			count := 0
-			for _, line := range m.displayedRail.Lines {
+			for _, line := range m.layout.displayedRail.Lines {
 				if line.HitOK && line.Hit.Kind == uirail.SessionRow {
 					count++
 				}
@@ -449,7 +454,7 @@ func TestRailBannersSurviveShortTerminals(t *testing.T) {
 			for _, searching := range []bool{false, true} {
 				for _, archived := range []bool{false, true} {
 					m := shotModel()
-					m.width, m.height = width, height
+					m.layout.width, m.layout.height = width, height
 					m.rail.SetSearch(m.rail.Search(), searching)
 					m.rail.SetArchived(archived)
 					m.errBar.text = "worktree kept (has work): /Users/someone/dev/api"
@@ -467,7 +472,7 @@ func TestRailBannersSurviveShortTerminals(t *testing.T) {
 // A rail with room for its banners still lists entries under them.
 func TestRailBannersLeaveRoomForEntries(t *testing.T) {
 	m := shotModel()
-	m.width, m.height = 120, 34
+	m.layout.width, m.layout.height = 120, 34
 	m.rail.SetSearch("rate", true)
 	rail := railLinesText(m.railLines(36, m.listBodyHeight()))
 	if !strings.Contains(rail, "⌕ rate") {
@@ -483,7 +488,7 @@ func TestRailBannersLeaveRoomForEntries(t *testing.T) {
 func TestFilterBadgesSurviveShortRails(t *testing.T) {
 	for _, height := range []int{10, 14, 20} {
 		m := shotModel()
-		m.width, m.height = 120, height
+		m.layout.width, m.layout.height = 120, height
 		m.rail.SetArchived(true)
 		rail := ansi.Strip(railLinesText(m.railLines(36, m.listBodyHeight())))
 		if !strings.Contains(rail, "ARCHIVED") {
@@ -506,7 +511,7 @@ func railLinesText(lines []contentLine) string {
 func TestSearchFieldSurvivesTightRails(t *testing.T) {
 	for _, height := range []int{14, 20, 34} {
 		m := shotModel()
-		m.width, m.height = 120, height
+		m.layout.width, m.layout.height = 120, height
 		m.rail.SetSearch("add-rate-limiting-in-the-public-api-handler", true)
 		rail := railLinesText(m.railLines(36, m.listBodyHeight()))
 		if !strings.Contains(rail, "⌕") {

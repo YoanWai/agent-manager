@@ -30,11 +30,11 @@ func TestReportLaunchErrorOpensInstallHintForHermes(t *testing.T) {
 	if m.mode != modeLaunchHint {
 		t.Fatalf("mode = %v, want modeLaunchHint", m.mode)
 	}
-	if m.launchFix.command != want {
-		t.Fatalf("command = %q, want %q", m.launchFix.command, want)
+	if m.launchHint.fix.command != want {
+		t.Fatalf("command = %q, want %q", m.launchHint.fix.command, want)
 	}
-	if !strings.Contains(m.launchFix.text, want) {
-		t.Fatalf("hint %q should name the install command", m.launchFix.text)
+	if !strings.Contains(m.launchHint.fix.text, want) {
+		t.Fatalf("hint %q should name the install command", m.launchHint.fix.text)
 	}
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
 	m.drainEffects(t)
@@ -42,8 +42,8 @@ func TestReportLaunchErrorOpensInstallHintForHermes(t *testing.T) {
 	if m.mode != modeList {
 		t.Fatalf("after esc, mode = %v, want modeList", m.mode)
 	}
-	if m.launchFix.text != "" {
-		t.Fatalf("dismiss should clear the hint, got %q", m.launchFix.text)
+	if m.launchHint.fix.text != "" {
+		t.Fatalf("dismiss should clear the hint, got %q", m.launchHint.fix.text)
 	}
 }
 
@@ -55,17 +55,17 @@ func TestReportLaunchErrorLeavesHermesHintReadOnlyWithoutAnInterpreter(t *testin
 	if m.mode != modeLaunchHint {
 		t.Fatalf("mode = %v, want modeLaunchHint", m.mode)
 	}
-	if m.launchFix.command != "" {
-		t.Fatalf("command = %q, want none when the interpreter cannot be resolved", m.launchFix.command)
+	if m.launchHint.fix.command != "" {
+		t.Fatalf("command = %q, want none when the interpreter cannot be resolved", m.launchHint.fix.command)
 	}
-	if !strings.Contains(m.launchFix.text, "mcp package") {
-		t.Fatalf("hint %q should still name what has to be installed", m.launchFix.text)
+	if !strings.Contains(m.launchHint.fix.text, "mcp package") {
+		t.Fatalf("hint %q should still name what has to be installed", m.launchHint.fix.text)
 	}
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
 	m.drainEffects(t)
 	m = updated.(*Model)
-	if m.install != nil || m.mode != modeLaunchHint {
-		t.Fatalf("a read-only dialog should run nothing on i: install = %v, mode = %v", m.install, m.mode)
+	if m.launchHint.install != nil || m.mode != modeLaunchHint {
+		t.Fatalf("a read-only dialog should run nothing on i: install = %v, mode = %v", m.launchHint.install, m.mode)
 	}
 }
 
@@ -77,11 +77,11 @@ func TestReportLaunchErrorOpensInstallHintForMissingCLI(t *testing.T) {
 	if m.mode != modeLaunchHint {
 		t.Fatalf("mode = %v, want modeLaunchHint", m.mode)
 	}
-	if !strings.Contains(m.launchFix.text, "claude.ai/install.sh") {
-		t.Fatalf("hint %q should name the install command", m.launchFix.text)
+	if !strings.Contains(m.launchHint.fix.text, "claude.ai/install.sh") {
+		t.Fatalf("hint %q should name the install command", m.launchHint.fix.text)
 	}
-	if !strings.Contains(m.launchFix.text, "claude") {
-		t.Fatalf("hint %q should name the missing CLI", m.launchFix.text)
+	if !strings.Contains(m.launchHint.fix.text, "claude") {
+		t.Fatalf("hint %q should name the missing CLI", m.launchHint.fix.text)
 	}
 	frame := ansi.Strip(m.viewLaunchHint())
 	if !strings.Contains(frame, "claude.ai/install.sh") {
@@ -97,11 +97,11 @@ func TestReportLaunchErrorOpensHintForUnknownMissingCLI(t *testing.T) {
 	if m.mode != modeLaunchHint {
 		t.Fatalf("mode = %v, want modeLaunchHint", m.mode)
 	}
-	if !strings.Contains(m.launchFix.text, "acme") {
-		t.Fatalf("hint %q should name the missing CLI", m.launchFix.text)
+	if !strings.Contains(m.launchHint.fix.text, "acme") {
+		t.Fatalf("hint %q should name the missing CLI", m.launchHint.fix.text)
 	}
-	if !strings.Contains(m.launchFix.text, "install") {
-		t.Fatalf("hint %q should name how to install", m.launchFix.text)
+	if !strings.Contains(m.launchHint.fix.text, "install") {
+		t.Fatalf("hint %q should name how to install", m.launchHint.fix.text)
 	}
 }
 
@@ -129,8 +129,8 @@ func TestSpawnMissingCLIPromptsInstall(t *testing.T) {
 	if m.mode != modeLaunchHint {
 		t.Fatalf("mode = %v, err = %q, want modeLaunchHint", m.mode, m.errBar.text)
 	}
-	if !strings.Contains(m.launchFix.text, "am-missing-cli-xyz") {
-		t.Fatalf("hint %q should name the missing binary", m.launchFix.text)
+	if !strings.Contains(m.launchHint.fix.text, "am-missing-cli-xyz") {
+		t.Fatalf("hint %q should name the missing binary", m.launchHint.fix.text)
 	}
 	if len(m.sessionRows()) != 0 {
 		t.Fatalf("no session may spawn without the CLI, got %v", sessionNames(m))
@@ -158,8 +158,8 @@ func TestReviveMissingCLIPromptsInstall(t *testing.T) {
 	if m.mode != modeLaunchHint {
 		t.Fatalf("mode = %v, err = %q, want modeLaunchHint", m.mode, m.errBar.text)
 	}
-	if !strings.Contains(m.launchFix.text, "am-missing-cli-xyz") {
-		t.Fatalf("hint %q should name the revive binary", m.launchFix.text)
+	if !strings.Contains(m.launchHint.fix.text, "am-missing-cli-xyz") {
+		t.Fatalf("hint %q should name the revive binary", m.launchHint.fix.text)
 	}
 }
 
@@ -277,8 +277,8 @@ func TestFormSpawnRefusedByTheHintReleasesItsImages(t *testing.T) {
 	if len(m.form.prompt.attachments) != 0 {
 		t.Fatalf("attachments = %+v, want the form's images handed to the dialog", m.form.prompt.attachments)
 	}
-	if len(m.launchFix.images) != 1 {
-		t.Fatalf("dialog images = %+v, want the refused prompt's image", m.launchFix.images)
+	if len(m.launchHint.fix.images) != 1 {
+		t.Fatalf("dialog images = %+v, want the refused prompt's image", m.launchHint.fix.images)
 	}
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("the image file must outlive the refusal, stat err = %v", err)
@@ -453,8 +453,8 @@ func TestLaunchHintWithoutARecipeOffersOnlyClose(t *testing.T) {
 	}
 	// The first key settles the mouse hand-off; the keys under test come after.
 	pressInLaunchHint(t, m, 'x')
-	if cmd := pressInLaunchHint(t, m, 'i'); cmd != nil || m.mode != modeLaunchHint || m.install != nil {
-		t.Fatalf("i must do nothing without a recipe: mode = %v, install = %+v", m.mode, m.install)
+	if cmd := pressInLaunchHint(t, m, 'i'); cmd != nil || m.mode != modeLaunchHint || m.launchHint.install != nil {
+		t.Fatalf("i must do nothing without a recipe: mode = %v, install = %+v", m.mode, m.launchHint.install)
 	}
 	if cmd := pressInLaunchHint(t, m, 'c'); cmd != nil {
 		t.Fatal("c must do nothing without a recipe")
@@ -561,7 +561,7 @@ func fakeInstallCommand(t *testing.T) string {
 func waitForInstallToSettle(t *testing.T, m *Model) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
-	for m.install != nil {
+	for m.launchHint.install != nil {
 		if time.Now().After(deadline) {
 			t.Fatalf("install never settled, status = %q", m.errBar.text)
 		}
@@ -576,8 +576,8 @@ func TestLaunchHintInstallRunsTheCommandAndRetriesTheLaunch(t *testing.T) {
 
 	cmd := pressInLaunchHint(t, m, 'i')
 
-	if m.mode != modeLaunchHint || m.install != nil {
-		t.Fatalf("install ran on Update: mode=%v pending=%+v", m.mode, m.install)
+	if m.mode != modeLaunchHint || m.launchHint.install != nil {
+		t.Fatalf("install ran on Update: mode=%v pending=%+v", m.mode, m.launchHint.install)
 	}
 	m.applyCmd(t, cmd)
 	if m.mode != modeList {
@@ -687,11 +687,11 @@ func TestLaunchHintNamesAWindowsOnlyInstall(t *testing.T) {
 	}
 	// The path wraps in the card, so the dialog is checked for it before
 	// the frame folds the line.
-	if !strings.Contains(m.launchFix.text, windowsPath) {
-		t.Fatalf("dialog text %q should name the Windows copy", m.launchFix.text)
+	if !strings.Contains(m.launchHint.fix.text, windowsPath) {
+		t.Fatalf("dialog text %q should name the Windows copy", m.launchHint.fix.text)
 	}
-	if m.launchFix.command != deps.Command("claude") {
-		t.Fatalf("command = %q, want the Linux installer", m.launchFix.command)
+	if m.launchHint.fix.command != deps.Command("claude") {
+		t.Fatalf("command = %q, want the Linux installer", m.launchHint.fix.command)
 	}
 }
 
@@ -706,8 +706,8 @@ func TestLaunchHintRefusesASecondInstall(t *testing.T) {
 	installFixture(t, m, "sleep 30")
 	pressInLaunchHint(t, m, 'i')
 
-	if m.install == nil || m.install.sessionID != running.ID {
-		t.Fatalf("install = %+v, want the first one kept", m.install)
+	if m.launchHint.install == nil || m.launchHint.install.sessionID != running.ID {
+		t.Fatalf("install = %+v, want the first one kept", m.launchHint.install)
 	}
 	if !strings.Contains(m.errBar.text, running.Name) {
 		t.Fatalf("status = %q, want the running install named", m.errBar.text)
@@ -764,8 +764,8 @@ func TestLaunchHintRetryThatStopsAgainKeepsTheImages(t *testing.T) {
 	if m.mode != modeLaunchHint {
 		t.Fatalf("mode = %v, err = %q, want the dialog on the next missing tool", m.mode, m.errBar.text)
 	}
-	if len(m.launchFix.images) != 1 {
-		t.Fatalf("dialog images = %+v, want the prompt's image still held", m.launchFix.images)
+	if len(m.launchHint.fix.images) != 1 {
+		t.Fatalf("dialog images = %+v, want the prompt's image still held", m.launchHint.fix.images)
 	}
 	if !imageExists(t, image) {
 		t.Fatal("a prompt the dialog can still spawn keeps its image")
@@ -786,8 +786,8 @@ func TestLaunchHintRetryThatStopsAgainKeepsAPastedImage(t *testing.T) {
 	m.applyCmd(t, pressInLaunchHint(t, m, 'i'))
 	waitForInstallToSettle(t, m)
 
-	if len(m.launchFix.images) != 2 {
-		t.Fatalf("dialog images = %+v, want the refused prompt's image and the pasted one", m.launchFix.images)
+	if len(m.launchHint.fix.images) != 2 {
+		t.Fatalf("dialog images = %+v, want the refused prompt's image and the pasted one", m.launchHint.fix.images)
 	}
 	if !imageExists(t, image) || !imageExists(t, pasted) {
 		t.Fatal("both images stay for a prompt the dialog can still spawn")
@@ -829,8 +829,8 @@ func TestLaunchHintInstallRunsFromAScriptAndCleansUp(t *testing.T) {
 	m.applyCmd(t, cmd)
 	// Read the script before the refresh runs: a command this short can
 	// have settled by then, and settling removes the file.
-	script := m.install.script
-	statusFile := m.install.statusFile
+	script := m.launchHint.install.script
+	statusFile := m.launchHint.install.statusFile
 	body, err := os.ReadFile(script)
 	if err != nil {
 		t.Fatal(err)
@@ -876,10 +876,10 @@ func TestInstallFinishesARefusedRestore(t *testing.T) {
 	// What the install unblocks has to be the whole restore, not the
 	// revive alone, so the retry is run here with a working CLI.
 	m.services.cfg.Tools["claude"] = config.Tool{Command: "cat", DefaultStatus: status.Idle}
-	if m.launchFix.effectRetry == nil {
+	if m.launchHint.fix.effectRetry == nil {
 		t.Fatal("missing captured restore retry")
 	}
-	m.enqueueEffect(m.launchFix.effectRetry, 0, false)
+	m.enqueueEffect(m.launchHint.fix.effectRetry, 0, false)
 	m.drainEffects(t)
 
 	restored, err := m.services.store.Get(sess.ID)

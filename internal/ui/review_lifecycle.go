@@ -33,8 +33,8 @@ func (m *Model) diffSession() (store.Session, bool) {
 }
 
 func (m *Model) closeDiff() tea.Cmd {
-	ret := m.reviewReturn
-	m.reviewReturn = reviewReturn{}
+	ret := m.reviewNav.ret
+	m.reviewNav.ret = reviewReturn{}
 	gen := m.review.Close()
 	m.mode = modeList
 	switch ret.kind {
@@ -78,7 +78,7 @@ func (m *Model) openDiffWithReader(reader reviewPreferencesReader) tea.Cmd {
 		return nil
 	}
 	preferred, picked := m.ledger.pickedRepos[sess.ID]
-	m.reviewReturn = reviewReturn{kind: reviewReturnList}
+	m.reviewNav.ret = reviewReturn{kind: reviewReturnList}
 	m.mode = modeDiff
 	m.errBar.text = ""
 	target := reviewTarget(sess)

@@ -7,13 +7,13 @@ import (
 )
 
 func (m *Model) viewKeyPicker() string {
-	tables := m.settings.tables
-	if m.settings.keyReset {
+	tables := m.settings.dialog.tables
+	if m.settings.dialog.keyReset {
 		return m.confirmCard("↺ Reset keys", "Reset every key to its default?",
 			strings.Join(keyResetChanges(tables...), "\n"), true, "reset")
 	}
 	rows := keyRowsOf(tables)
-	first, last := pickerWindow(len(rows), m.settings.keyCursor, m.height-14)
+	first, last := pickerWindow(len(rows), m.settings.dialog.keyCursor, m.layout.height-14)
 	var b strings.Builder
 	if first > 0 {
 		b.WriteString(subtleStyle.Render(fmt.Sprintf("  ↑ %d more", first)) + "\n")
@@ -30,7 +30,7 @@ func (m *Model) viewKeyPicker() string {
 		}
 		marker := "  "
 		labelStyle := valueStyle
-		if m.settings.keyCursor == i {
+		if m.settings.dialog.keyCursor == i {
 			marker = lipgloss.NewStyle().Foreground(colorAccent).Render("❯ ")
 			labelStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 		}
@@ -39,9 +39,9 @@ func (m *Model) viewKeyPicker() string {
 		if value == "" {
 			valueRender = subtleStyle.Render(section.offLabel(row.action.Name))
 		}
-		if m.settings.keyCapture && m.settings.keyCursor == i {
+		if m.settings.dialog.keyCapture && m.settings.dialog.keyCursor == i {
 			word := "press a key"
-			if m.settings.keyAppend {
+			if m.settings.dialog.keyAppend {
 				word = "press a key to add"
 			}
 			valueRender = lipgloss.NewStyle().Foreground(colorAccent).Render(word + "…")
@@ -56,7 +56,7 @@ func (m *Model) viewKeyPicker() string {
 		b.WriteString(subtleStyle.Render(fmt.Sprintf("  ↓ %d more", len(rows)-last)) + "\n")
 	}
 	hint := [][2]string{{"↑↓", "move"}, {"↵", "set a key"}, {"a", "add one"}, {"d", "off"}, {"r", "defaults"}, {"esc", "back"}}
-	if m.settings.keyCapture {
+	if m.settings.dialog.keyCapture {
 		hint = [][2]string{{"any key", "bind it"}, {"esc", "cancel"}}
 	}
 	return m.cardFlex("⚙ Keybindings", strings.TrimRight(b.String(), "\n"), hint)

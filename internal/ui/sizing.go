@@ -15,8 +15,8 @@ func (m *Model) resizeSessions() {
 	if width <= 0 || height <= 0 {
 		return
 	}
-	if m.focusRuntime.lastPaneSizes == nil {
-		m.focusRuntime.lastPaneSizes = map[string][2]int{}
+	if m.focus.runtime.lastPaneSizes == nil {
+		m.focus.runtime.lastPaneSizes = map[string][2]int{}
 	}
 	m.markReplacedPanesFresh()
 	m.seedPaneGeom()
@@ -39,7 +39,7 @@ func (m *Model) resizeSessions() {
 			continue
 		}
 		wanted := height
-		if last, ok := m.focusRuntime.lastPaneSizes[sess.ID]; ok {
+		if last, ok := m.focus.runtime.lastPaneSizes[sess.ID]; ok {
 			fitsHeight := m.workspace.panes[sess.ID].AltScreen || m.services.cfg.Tools[sess.Tool].FitsHeight
 			keepsHeight := last[1] > height && !fitsHeight
 			if last[0] == width && (last[1] == height || keepsHeight) {
@@ -70,14 +70,14 @@ func (m *Model) resizeSessions() {
 // shrinking it back would cost a Codex agent its scrollback (#369), and
 // paneWindow already crops a taller pane from its bottom.
 func (m *Model) pinFullFocusPane(id string) {
-	width, height := m.width, m.listBodyHeight()
+	width, height := m.layout.width, m.listBodyHeight()
 	if width <= 0 || height <= 0 {
 		return
 	}
-	if m.focusRuntime.lastPaneSizes == nil {
-		m.focusRuntime.lastPaneSizes = map[string][2]int{}
+	if m.focus.runtime.lastPaneSizes == nil {
+		m.focus.runtime.lastPaneSizes = map[string][2]int{}
 	}
-	if last, ok := m.focusRuntime.lastPaneSizes[id]; ok && last[0] == width && last[1] >= height {
+	if last, ok := m.focus.runtime.lastPaneSizes[id]; ok && last[0] == width && last[1] >= height {
 		return
 	}
 	m.queueGeometry(geometryRequest{targets: []paneResize{{id: id, size: [2]int{width, height}}}})
@@ -88,21 +88,21 @@ func (m *Model) pinFullFocusPane(id string) {
 // with nothing in its scrollback yet the one re-pin is free, unlike the
 // panes adopted from a previous run, which seedPaneGeom protects.
 func (m *Model) markFreshPane(id string) {
-	if m.focusRuntime.lastPaneSizes == nil {
-		m.focusRuntime.lastPaneSizes = map[string][2]int{}
+	if m.focus.runtime.lastPaneSizes == nil {
+		m.focus.runtime.lastPaneSizes = map[string][2]int{}
 	}
-	m.focusRuntime.lastPaneSizes[id] = [2]int{0, 0}
+	m.focus.runtime.lastPaneSizes[id] = [2]int{0, 0}
 }
 
 // publishPaneSize records the box for the launch paths that run without a
 // manager: the CLI and the MCP server open a pane with nothing to ask for
 // the preview geometry, and tmux gives an unsized detached session 80x24.
 func (m *Model) publishPaneSize() {
-	if m.width <= 0 {
+	if m.layout.width <= 0 {
 		return
 	}
 	width, height := m.paneTargetSize()
-	if width <= 0 || height <= 0 || m.focusRuntime.lastPublishedSize == [2]int{width, height} {
+	if width <= 0 || height <= 0 || m.focus.runtime.lastPublishedSize == [2]int{width, height} {
 		return
 	}
 	m.queueGeometry(geometryRequest{publish: [2]int{width, height}})
@@ -117,12 +117,12 @@ func (m *Model) publishPaneSize() {
 // exact pin rather than the adopted-pane treatment that keeps a taller
 // height.
 func (m *Model) markReplacedPanesFresh() {
-	if m.focusRuntime.lastPanePIDs == nil {
-		m.focusRuntime.lastPanePIDs = map[string]int{}
+	if m.focus.runtime.lastPanePIDs == nil {
+		m.focus.runtime.lastPanePIDs = map[string]int{}
 	}
 	for id, pane := range m.workspace.panes {
-		last := m.focusRuntime.lastPanePIDs[id]
-		m.focusRuntime.lastPanePIDs[id] = pane.PID
+		last := m.focus.runtime.lastPanePIDs[id]
+		m.focus.runtime.lastPanePIDs[id] = pane.PID
 		if last != 0 && last != pane.PID {
 			m.markFreshPane(id)
 		}
@@ -139,7 +139,7 @@ func (m *Model) markReplacedPanesFresh() {
 // someone resized from another client is left where they put it.
 func (m *Model) seedPaneGeom() {
 	for id, geom := range m.workspace.panes {
-		last, sized := m.focusRuntime.lastPaneSizes[id]
+		last, sized := m.focus.runtime.lastPaneSizes[id]
 		// markFreshPane's pin is still owed: a session created this run
 		// carries its pre-selection launch size, not the box.
 		if sized && last == [2]int{0, 0} {
@@ -148,6 +148,6 @@ func (m *Model) seedPaneGeom() {
 		if sized && geom.Panes < 2 {
 			continue
 		}
-		m.focusRuntime.lastPaneSizes[id] = [2]int{geom.Width, geom.Height}
+		m.focus.runtime.lastPaneSizes[id] = [2]int{geom.Width, geom.Height}
 	}
 }

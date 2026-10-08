@@ -313,8 +313,8 @@ func TestOpenTerminalDefersDirectoryReadAndLaunch(t *testing.T) {
 	go func() { completed <- cmd() }()
 	<-reader.started
 	m.Update(tea.WindowSizeMsg{Width: 141, Height: 43})
-	if m.width != 141 || m.height != 43 {
-		t.Fatalf("window update was lost while directory read blocked: %dx%d", m.width, m.height)
+	if m.layout.width != 141 || m.layout.height != 43 {
+		t.Fatalf("window update was lost while directory read blocked: %dx%d", m.layout.width, m.layout.height)
 	}
 	if got := shellCount(m); got != 0 {
 		t.Fatalf("terminal launched before the directory result: %d", got)

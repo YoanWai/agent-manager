@@ -528,8 +528,8 @@ func TestAttachDoneOpensEditorAndReturnsToTheSession(t *testing.T) {
 	if !isDone || done.err != nil {
 		t.Fatalf("editor launch reported %#v", done)
 	}
-	if done.returnTo.sessionID != sess.ID || done.returnTo.foregroundGen != m.foregroundGen || done.returnTo.mode != m.mode {
-		t.Fatalf("return target = %+v, want session %q at generation %d mode %v", done.returnTo, sess.ID, m.foregroundGen, m.mode)
+	if done.returnTo.sessionID != sess.ID || done.returnTo.foregroundGen != m.gens.foreground || done.returnTo.mode != m.mode {
+		t.Fatalf("return target = %+v, want session %q at generation %d mode %v", done.returnTo, sess.ID, m.gens.foreground, m.mode)
 	}
 	if want := []string{"code", resolved(t, dir)}; !slices.Equal(*launched, want) {
 		t.Fatalf("launched %v, want %v", *launched, want)
@@ -610,7 +610,7 @@ func TestEditorFailureKeepsTheListAndItsReason(t *testing.T) {
 	captureEditor(t, "code")
 	createSession(t, m, "editme", t.TempDir(), "")
 	m.selectSessionRow(t, "editme")
-	returnTo := editorReturnTarget{sessionID: m.sessionRows()[0].ID, foregroundGen: m.foregroundGen, mode: m.mode}
+	returnTo := editorReturnTarget{sessionID: m.sessionRows()[0].ID, foregroundGen: m.gens.foreground, mode: m.mode}
 
 	updated, cmd := m.Update(editorDoneMsg{err: errors.New("exec: \"code\": file does not exist"), returnTo: returnTo})
 	*m = *updated.(*Model)
@@ -704,8 +704,8 @@ func TestEditorReturnCompletionCannotCrossHelpOrQuit(t *testing.T) {
 
 func TestEditorReturnCompletionsKeepTheirOwnSessions(t *testing.T) {
 	m := buildModel(t)
-	first := editorReturnTarget{sessionID: "first", foregroundGen: m.foregroundGen, mode: m.mode}
-	second := editorReturnTarget{sessionID: "second", foregroundGen: m.foregroundGen, mode: m.mode}
+	first := editorReturnTarget{sessionID: "first", foregroundGen: m.gens.foreground, mode: m.mode}
+	second := editorReturnTarget{sessionID: "second", foregroundGen: m.gens.foreground, mode: m.mode}
 
 	updated, _ := m.Update(editorDoneMsg{returnTo: first})
 	*m = *updated.(*Model)

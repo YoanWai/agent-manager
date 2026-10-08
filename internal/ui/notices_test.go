@@ -192,7 +192,7 @@ func TestPostUpdateNoticeUsesPersistedStartingVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := noticeModel(st, "v0.5.0")
-	m.width, m.height = 100, 34
+	m.layout.width, m.layout.height = 100, 34
 	m.update.checked = true
 	m.update.releases = []update.Release{
 		uiRelease("v0.5.0", "Groups: Create immediately"),
@@ -451,14 +451,14 @@ func key(s string) tea.KeyMsg {
 func modalModel(t *testing.T) *Model {
 	t.Helper()
 	m := footModel(t)
-	m.width, m.height = 100, 34
+	m.layout.width, m.layout.height = 100, 34
 	m.mode = modeNotices
 	return m
 }
 
 func TestOpenNoticesFromList(t *testing.T) {
 	m := footModel(t)
-	m.width, m.height = 100, 34
+	m.layout.width, m.layout.height = 100, 34
 	m.mode = modeList
 	m.handleKey(key("M"))
 	if m.mode != modeNotices {
@@ -476,7 +476,7 @@ func TestNoticesViewListsAndDetails(t *testing.T) {
 	}
 
 	for _, terminal := range []int{100, 40} {
-		m.width = terminal
+		m.layout.width = terminal
 		frame := ansi.Strip(preparedView(m))
 		var widths []int
 		for _, line := range strings.Split(frame, "\n") {
@@ -523,7 +523,7 @@ func TestNoticesLongBodyWrapsFully(t *testing.T) {
 		}
 	}
 	for _, line := range strings.Split(frame, "\n") {
-		if got := lipgloss.Width(line); got > m.width {
+		if got := lipgloss.Width(line); got > m.layout.width {
 			t.Fatalf("line overflows terminal at %d: %q", got, line)
 		}
 	}
@@ -531,7 +531,7 @@ func TestNoticesLongBodyWrapsFully(t *testing.T) {
 
 func TestNoticesShortTerminalKeepsFrameAndHint(t *testing.T) {
 	m := modalModel(t)
-	m.width, m.height = 30, 12
+	m.layout.width, m.layout.height = 30, 12
 	m.notices.feedMessages = []feed.Message{{
 		ID:     "feed-long",
 		Banner: "long banner",
@@ -542,8 +542,8 @@ func TestNoticesShortTerminalKeepsFrameAndHint(t *testing.T) {
 	}}
 	m.openNotices("feed-long")
 	lines := strings.Split(ansi.Strip(preparedView(m)), "\n")
-	if len(lines) > m.height {
-		t.Fatalf("frame must fit %d rows, got %d", m.height, len(lines))
+	if len(lines) > m.layout.height {
+		t.Fatalf("frame must fit %d rows, got %d", m.layout.height, len(lines))
 	}
 	joined := strings.Join(lines, "\n")
 	if !strings.Contains(joined, "╰") {
@@ -559,7 +559,7 @@ func TestNoticesShortTerminalKeepsFrameAndHint(t *testing.T) {
 
 func TestNoticesBodyScrollIsBoundedAndVisible(t *testing.T) {
 	m := modalModel(t)
-	m.width, m.height = 70, 14
+	m.layout.width, m.layout.height = 70, 14
 	var body []string
 	for i := 0; i < 30; i++ {
 		body = append(body, fmt.Sprintf("change line %02d", i))
@@ -979,7 +979,7 @@ func TestFeedDuringFocusOpensOnLeave(t *testing.T) {
 
 func TestFeedDuringSettingsOpensOnClose(t *testing.T) {
 	m := footModel(t)
-	m.width, m.height = 100, 34
+	m.layout.width, m.layout.height = 100, 34
 	m.mode = modeSettings
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
 	if m.mode != modeSettings {
@@ -1009,7 +1009,7 @@ func TestExpiredPendingNoticeDoesNotOpen(t *testing.T) {
 
 func TestNewFeedWaitsForSearchToClose(t *testing.T) {
 	m := footModel(t)
-	m.width, m.height = 100, 34
+	m.layout.width, m.layout.height = 100, 34
 	m.mode = modeList
 	m.rail.SetSearch(m.rail.Search(), true)
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
@@ -1029,7 +1029,7 @@ func TestNewFeedWaitsForSearchToClose(t *testing.T) {
 
 func TestNewFeedWaitsForQuickBar(t *testing.T) {
 	m := footModel(t)
-	m.width, m.height = 100, 34
+	m.layout.width, m.layout.height = 100, 34
 	m.mode = modeList
 	m.quick.active = true
 	m.quick.input = textarea.New()
@@ -1050,15 +1050,15 @@ func TestNewFeedWaitsForQuickBar(t *testing.T) {
 
 func TestNewFeedWaitsForResize(t *testing.T) {
 	m := footModel(t)
-	m.width, m.height = 100, 34
+	m.layout.width, m.layout.height = 100, 34
 	m.mode = modeList
-	m.split.resizeMode = true
+	m.layout.split.resizeMode = true
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
-	if m.mode != modeList || !m.split.resizeMode {
-		t.Fatalf("resize should keep the modal closed, mode=%v resize=%v", m.mode, m.split.resizeMode)
+	if m.mode != modeList || !m.layout.split.resizeMode {
+		t.Fatalf("resize should keep the modal closed, mode=%v resize=%v", m.mode, m.layout.split.resizeMode)
 	}
 
-	m.split.resizeMode = false
+	m.layout.split.resizeMode = false
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 34})
 	if m.mode != modeNotices {
 		t.Fatalf("leaving resize should open the new message, mode=%v", m.mode)
@@ -1112,7 +1112,7 @@ func TestNewerReleaseOpensNoticesModal(t *testing.T) {
 
 func TestFeedArrivingDuringWelcomeStaysOnWelcome(t *testing.T) {
 	m := footModel(t)
-	m.width, m.height = 100, 34
+	m.layout.width, m.layout.height = 100, 34
 	m.openStartupNotice()
 	if m.mode != modeNotices {
 		t.Fatal("first launch should open welcome")
@@ -1132,7 +1132,7 @@ func TestFeedArrivingDuringWelcomeStaysOnWelcome(t *testing.T) {
 
 func TestAutoOpenFeedAndUpdateFrames(t *testing.T) {
 	feedModel := footModel(t)
-	feedModel.width, feedModel.height = 100, 34
+	feedModel.layout.width, feedModel.layout.height = 100, 34
 	feedModel.mode = modeList
 	feedModel.Update(feedMsg{messages: []feed.Message{{
 		ID:     "feed-holdoff",
@@ -1149,7 +1149,7 @@ func TestAutoOpenFeedAndUpdateFrames(t *testing.T) {
 	}
 
 	upd := footModel(t)
-	upd.width, upd.height = 100, 34
+	upd.layout.width, upd.layout.height = 100, 34
 	upd.mode = modeList
 	upd.Update(updateMsg{
 		latest:   "v0.3.0",
@@ -1325,7 +1325,7 @@ func TestUOutsideUpdateNoticeDoesNothing(t *testing.T) {
 func TestNoticesTinyTerminalStaysInside(t *testing.T) {
 	m := modalModel(t)
 	for _, width := range []int{5, 12, 30} {
-		m.width, m.height = width, 10
+		m.layout.width, m.layout.height = width, 10
 		for _, line := range strings.Split(ansi.Strip(preparedView(m)), "\n") {
 			if got := lipgloss.Width(line); got > width {
 				t.Fatalf("width %d: line overflows at %d: %q", width, got, line)
@@ -1438,7 +1438,7 @@ func TestArrowStepNoticeListedUntilDismissed(t *testing.T) {
 func TestFullLayoutFootLine(t *testing.T) {
 	m := shotModel()
 	m.prefs.fullLayout = true
-	foot := ansi.Strip(strings.Join(m.railFootLines(m.width-1), "\n"))
+	foot := ansi.Strip(strings.Join(m.railFootLines(m.layout.width-1), "\n"))
 	for _, want := range []string{"cpu 22%", "mem 75%", "net"} {
 		if !strings.Contains(foot, want) {
 			t.Errorf("condensed foot line misses %q:\n%s", want, foot)
@@ -1447,7 +1447,7 @@ func TestFullLayoutFootLine(t *testing.T) {
 	if strings.Contains(foot, "messages") {
 		t.Fatalf("no notices should mean no messages count:\n%s", foot)
 	}
-	if lines := m.railFootLines(m.width - 1); len(lines) != 1 {
+	if lines := m.railFootLines(m.layout.width - 1); len(lines) != 1 {
 		t.Fatalf("full screen foot should be one line, got %d", len(lines))
 	}
 }
@@ -1463,7 +1463,7 @@ func TestLayoutsCanHideStats(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := footModel(t)
-			m.width, m.height = 120, 34
+			m.layout.width, m.layout.height = 120, 34
 			m.prefs.fullLayout = tc.full
 			m.prefs.hideStats = true
 			if foot := m.railFootLines(tc.width); len(foot) > 0 {
@@ -1552,7 +1552,7 @@ func TestReleaseSummaryFallsBackToTheGeneratedList(t *testing.T) {
 
 func TestEmptyNoticesPanelStillOpensAndOffersRefresh(t *testing.T) {
 	m := footModel(t)
-	m.width, m.height = 100, 34
+	m.layout.width, m.layout.height = 100, 34
 	m.mode = modeList
 	for _, n := range m.activeNotices() {
 		persistNoticeDismissal(t, m, n.id)
@@ -1655,7 +1655,7 @@ func TestNoticesWaitForADragOrTheRowMenu(t *testing.T) {
 		t.Fatal("test setup: a plain list takes a notice")
 	}
 	selection, _ := m.rail.Selected()
-	handle := m.displayedRail.Handles[selectionKeyForTest(selection)]
+	handle := m.layout.displayedRail.Handles[selectionKeyForTest(selection)]
 	line := paintedRailLines(t, m, "alpha")[0]
 	y0, _ := m.bodyYRange()
 	m.handleMouse(tea.MouseMsg{X: handle, Y: y0 + line, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})

@@ -10,24 +10,24 @@ import (
 func (m *Model) quickFooter() string {
 	edge := keyStyle.Render(quickEdge)
 	gutter := strings.Repeat(" ", quickGutter-1)
-	keys := splitLines(legendBar([]legendSection{{title: quickModeTitle, pairs: m.quickLegend()}}, max(m.width-1, 1)))
+	keys := splitLines(legendBar([]legendSection{{title: quickModeTitle, pairs: m.quickLegend()}}, max(m.layout.width-1, 1)))
 	rows := quickBarMaxRows + 1
 	if m.quick.picking != pickNone {
-		rows = max(m.height/2, rows)
+		rows = max(m.layout.height/2, rows)
 	}
 	const minBody = 3
-	room := m.height - m.listChromeRows() - 1 - minBody - len(keys)
+	room := m.layout.height - m.listChromeRows() - 1 - minBody - len(keys)
 	rows = max(min(rows, room), 2)
 	var lines []string
-	for i, line := range splitLines(m.viewQuickBar(max(m.width-2*quickGutter, 1), rows)) {
+	for i, line := range splitLines(m.viewQuickBar(max(m.layout.width-2*quickGutter, 1), rows)) {
 		tone := quickModeHex()
 		if i > 0 && m.quick.picking == pickNone {
 			tone = blockHex()
 		}
-		lines = append(lines, paint(edge+gutter+line, m.width, tone))
+		lines = append(lines, paint(edge+gutter+line, m.layout.width, tone))
 	}
 	for _, line := range keys {
-		lines = append(lines, paint(edge+line, m.width, quickModeHex()))
+		lines = append(lines, paint(edge+line, m.layout.width, quickModeHex()))
 	}
 	m.quick.originX = quickGutter
 	return strings.Join(lines, "\n")

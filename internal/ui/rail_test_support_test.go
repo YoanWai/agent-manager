@@ -73,8 +73,8 @@ type testingT interface {
 
 func railHitRows(m *Model) []int {
 	rows := m.rail.Rows()
-	hits := make([]int, len(m.displayedRail.Lines))
-	for lineIndex, line := range m.displayedRail.Lines {
+	hits := make([]int, len(m.layout.displayedRail.Lines))
+	for lineIndex, line := range m.layout.displayedRail.Lines {
 		hits[lineIndex] = -1
 		if !line.HitOK {
 			continue
@@ -104,7 +104,7 @@ func clearRailInventory(m *Model) {
 
 func resetRailModel(m *Model) {
 	m.rail = uirail.New(nil)
-	m.displayedRail = uirail.Frame{}
+	m.layout.displayedRail = uirail.Frame{}
 }
 
 func railModelFromRows(rows []treeRow, cursor int) uirail.Model {
@@ -165,7 +165,7 @@ func railModelCount(count, cursor int, searching bool) uirail.Model {
 
 func (m *Model) searchFieldLine(width int) string {
 	frame := m.rail.Render(uirail.RenderContext{
-		Width: width, Height: 8, TerminalWidth: max(m.width, width), TerminalHeight: max(m.height, 8),
+		Width: width, Height: 8, TerminalWidth: max(m.layout.width, width), TerminalHeight: max(m.layout.height, 8),
 		Theme: m.railTheme(), ListKeys: m.services.listKeys, CursorMarker: cursorAnchorMarker,
 	}, uirail.Frame{})
 	for _, line := range frame.Lines {
@@ -218,7 +218,7 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width, _ int, _ stri
 		model.Focus(uirail.Selection{Kind: uirail.GroupRow})
 	}
 	frame := model.Render(uirail.RenderContext{
-		Width: width, Height: 20, TerminalWidth: max(m.width, width), TerminalHeight: max(m.height, 20),
+		Width: width, Height: 20, TerminalWidth: max(m.layout.width, width), TerminalHeight: max(m.layout.height, 20),
 		Theme: m.railTheme(), ListKeys: m.services.listKeys, ComfortableRows: m.prefs.comfortableRows,
 		MouseDisabled: m.prefs.mouseDisabled, Focused: m.mode == modeFocus,
 		EnterFocuses: m.enterFocuses(), StartupPhase: m.startup.startupPhase, CursorMarker: cursorAnchorMarker,
@@ -245,12 +245,12 @@ func (m *Model) entryHeight(entry treeRow) int {
 func (m *Model) entryLines(_ []treeRow, _ int, width, height int) []contentLine {
 	m.rebuildRows()
 	frame := m.rail.Render(uirail.RenderContext{
-		Width: width, Height: height, TerminalWidth: max(m.width, width), TerminalHeight: max(m.height, height),
+		Width: width, Height: height, TerminalWidth: max(m.layout.width, width), TerminalHeight: max(m.layout.height, height),
 		Theme: m.railTheme(), ListKeys: m.services.listKeys, ComfortableRows: m.prefs.comfortableRows,
 		MouseDisabled: m.prefs.mouseDisabled, Focused: m.mode == modeFocus,
 		EnterFocuses: m.enterFocuses(), StartupPhase: m.startup.startupPhase, CursorMarker: cursorAnchorMarker,
-	}, m.displayedRail)
-	m.displayedRail = frame
+	}, m.layout.displayedRail)
+	m.layout.displayedRail = frame
 	return railContentLines(frame.Lines)
 }
 
@@ -263,7 +263,7 @@ func (m *Model) reorderSelected(delta int) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	return m.applyRailDecision(m.rail.Key(msg, m.displayedRail, m.railKeyContext()))
+	return m.applyRailDecision(m.rail.Key(msg, m.layout.displayedRail, m.railKeyContext()))
 }
 
 func setRailSessionTool(m *Model, id, tool string) {

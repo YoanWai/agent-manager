@@ -50,7 +50,7 @@ func (r editorResolution) probe() editorsProbedMsg {
 }
 
 func (m *Model) probeEditorsCmd() tea.Cmd {
-	resolution, generation := detectedEditors(), m.settingsGen
+	resolution, generation := detectedEditors(), m.settings.gen
 	return func() tea.Msg {
 		msg := resolution.probe()
 		msg.generation = generation
@@ -61,16 +61,16 @@ func (m *Model) probeEditorsCmd() tea.Cmd {
 // applyEditorsProbe keeps the answer for the rows later loads rebuild, and
 // fills the row of the visit that asked.
 func (m *Model) applyEditorsProbe(msg editorsProbedMsg) {
-	m.settingsCache.editors = &msg
-	if m.mode == modeSettings && msg.generation == m.settingsGen {
-		m.settings.editor.applyProbe(msg)
+	m.settings.cache.editors = &msg
+	if m.mode == modeSettings && msg.generation == m.settings.gen {
+		m.settings.dialog.editor.applyProbe(msg)
 	}
 }
 
 func (m *Model) cachedEditorRow() editorRow {
-	row := newEditorRow(m.settingsCache.value(editorSetting))
-	if m.settingsCache.editors != nil {
-		row.applyProbe(*m.settingsCache.editors)
+	row := newEditorRow(m.settings.cache.value(editorSetting))
+	if m.settings.cache.editors != nil {
+		row.applyProbe(*m.settings.cache.editors)
 	}
 	return row
 }
@@ -127,19 +127,19 @@ func (r editorRow) label() string {
 func (m *Model) openEditorTyping() {
 	input := textField("a command, such as code -n", 400)
 	input.Prompt = ""
-	input.SetValue(m.settings.editor.typed)
+	input.SetValue(m.settings.dialog.editor.typed)
 	input.Focus()
-	m.settings.editor.input = input
-	m.settings.editor.typing = true
+	m.settings.dialog.editor.input = input
+	m.settings.dialog.editor.typing = true
 }
 
 func (m *Model) handleEditorTypingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	row := &m.settings.editor
+	row := &m.settings.dialog.editor
 	switch msg.String() {
 	case "enter":
 		row.typed = strings.TrimSpace(row.input.Value())
 		row.typing = false
-		m.settings.dirty = true
+		m.settings.dialog.dirty = true
 		return m, nil
 	case "esc":
 		row.typing = false

@@ -18,19 +18,19 @@ func (m *Model) viewFullFocusFrame() string {
 	bodyHeight := m.listBodyHeight()
 	// This frame paints no rail, so a click lands on no row: the list
 	// frame's hits would otherwise select a row nobody pointed at.
-	m.displayedRail = uirail.Frame{}
+	m.layout.displayedRail = uirail.Frame{}
 	frame := []string{}
 	for _, line := range m.viewHeaderRows() {
-		frame = append(frame, paint(line, m.width, backdropHex()))
+		frame = append(frame, paint(line, m.layout.width, backdropHex()))
 	}
-	frame = append(frame, paint(hrule(m.width), m.width, backdropHex()))
-	frame = append(frame, paint(m.focusFactsLine(m.width), m.width, backdropHex()))
-	frame = append(frame, paint(m.focusEdge(m.width), m.width, backdropHex()))
-	paneRows := m.previewLines(m.width, bodyHeight, strings.Repeat(" ", contentGutter))
-	frame = append(frame, paintContent(paneRows, m.width, bodyHeight, backdropHex())...)
-	frame = append(frame, paint(m.focusEdge(m.width), m.width, backdropHex()))
+	frame = append(frame, paint(hrule(m.layout.width), m.layout.width, backdropHex()))
+	frame = append(frame, paint(m.focusFactsLine(m.layout.width), m.layout.width, backdropHex()))
+	frame = append(frame, paint(m.focusEdge(m.layout.width), m.layout.width, backdropHex()))
+	paneRows := m.previewLines(m.layout.width, bodyHeight, strings.Repeat(" ", contentGutter))
+	frame = append(frame, paintContent(paneRows, m.layout.width, bodyHeight, backdropHex())...)
+	frame = append(frame, paint(m.focusEdge(m.layout.width), m.layout.width, backdropHex()))
 	for _, line := range splitLines(footer) {
-		frame = append(frame, paint(line, m.width, backdropHex()))
+		frame = append(frame, paint(line, m.layout.width, backdropHex()))
 	}
 	return m.overlayTopRight(strings.Join(frame, "\n"), m.statusToast(), m.listChromeRows()+1)
 }
@@ -53,7 +53,7 @@ func (m *Model) focusFactsLine(width int) string {
 	// The facts give way one at a time as the terminal narrows, the least
 	// telling first, so a tight line still carries what it has room for
 	// rather than dropping the lot.
-	facts := []focusFact{{text: valueStyle.Render(truncateTail(shortHome(m.sessionDir(sess), m.homeDir), focusFactsDirCap)), spare: 3}}
+	facts := []focusFact{{text: valueStyle.Render(truncateTail(shortHome(m.sessionDir(sess), m.env.homeDir), focusFactsDirCap)), spare: 3}}
 	if sess.WorktreeBranch != "" {
 		facts = append(facts, focusFact{text: subtleStyle.Render("⑂ ") + valueStyle.Render(sess.WorktreeBranch), spare: 2})
 	}
@@ -109,7 +109,7 @@ func dropSparest(facts []focusFact) []focusFact {
 // focusEdge is the hairline holding the full screen pane off what sits
 // above and below it, in the pane's own tone once it has a box to trace.
 func (m *Model) focusEdge(width int) string {
-	if m.focusPane.FrameBox().Valid {
+	if m.focus.pane.FrameBox().Valid {
 		return focusEdgeStyle.Render(strings.Repeat("─", max(width, 0)))
 	}
 	return hrule(width)

@@ -245,28 +245,28 @@ func (m *Model) handleSettingsLoaded(msg settingsLoadedMsg) (tea.Model, tea.Cmd)
 	var follow tea.Cmd
 	switch msg.request.target {
 	case settingsLoadDialog:
-		if msg.request.generation != m.settingsGen || m.mode != modeSettings ||
-			m.settings.dirty || m.settings.cliPicker || m.settings.keyPicker || m.settingsPending > 0 {
+		if msg.request.generation != m.settings.gen || m.mode != modeSettings ||
+			m.settings.dialog.dirty || m.settings.dialog.cliPicker || m.settings.dialog.keyPicker || m.settings.pending > 0 {
 			return m, nil
 		}
-		m.settingsCache.applyReadback(msg.result.values, msg.result.hiddenRaw, msg.result.hiddenErr)
-		field := m.settings.field
-		m.settings = m.settingsStateFromCache()
-		m.settings.field = field
+		m.settings.cache.applyReadback(msg.result.values, msg.result.hiddenRaw, msg.result.hiddenErr)
+		field := m.settings.dialog.field
+		m.settings.dialog = m.settingsStateFromCache()
+		m.settings.dialog.field = field
 	case settingsLoadForm:
 		if m.mode != modeForm || uint64(m.form.prompt.gen) != msg.request.generation ||
-			m.form.defaultsTouched || m.settingsPending > 0 {
+			m.form.defaultsTouched || m.settings.pending > 0 {
 			return m, nil
 		}
-		m.settingsCache.applyReadback(msg.result.values, msg.result.hiddenRaw, msg.result.hiddenErr)
+		m.settings.cache.applyReadback(msg.result.values, msg.result.hiddenRaw, msg.result.hiddenErr)
 		m.refreshChoicePrefs(m.formTool(), &m.form.choice)
 		follow = tea.Batch(m.applyCachedFormDefaults(), m.formWorktreeProbeCmd(false))
 	case settingsLoadQuick:
 		if !m.quick.active || uint64(m.quick.gen) != msg.request.generation ||
-			m.quick.defaultsTouched || m.settingsPending > 0 {
+			m.quick.defaultsTouched || m.settings.pending > 0 {
 			return m, nil
 		}
-		m.settingsCache.applyReadback(msg.result.values, msg.result.hiddenRaw, msg.result.hiddenErr)
+		m.settings.cache.applyReadback(msg.result.values, msg.result.hiddenRaw, msg.result.hiddenErr)
 		m.refreshChoicePrefs(m.quickTool(), &m.quick.choice)
 		follow = tea.Batch(m.applyCachedQuickDefaults(), m.quickWorktreeProbeCmd(false))
 	default:
@@ -291,14 +291,14 @@ func (m *Model) handleSettingsLoaded(msg settingsLoadedMsg) (tea.Model, tea.Cmd)
 // accepted save, so a newer dialog is never replaced.
 func (m *Model) applySettingsEffect(job *effectJob, result settingsEffectResult, err error) tea.Cmd {
 	request := job.request.(settingsRequest)
-	if m.settingsPending > 0 {
-		m.settingsPending--
+	if m.settings.pending > 0 {
+		m.settings.pending--
 	}
-	stale := m.settingsGen != request.generation
+	stale := m.settings.gen != request.generation
 	if err != nil {
 		m.errBar.text = err.Error()
 		if result.restored != nil {
-			m.settingsCache.applyReadback(result.restored, result.restoredHidden, result.hiddenErr)
+			m.settings.cache.applyReadback(result.restored, result.restoredHidden, result.hiddenErr)
 			if note := m.reconcileSettingsPrefs(result.restored); note != "" {
 				m.errBar.text += "; " + note
 			}
@@ -308,9 +308,9 @@ func (m *Model) applySettingsEffect(job *effectJob, result settingsEffectResult,
 		}
 	}
 	if err == nil {
-		m.settingsCache.applyValues(request.values)
+		m.settings.cache.applyValues(request.values)
 		if request.hidden != nil {
-			m.settingsCache.applyHidden(request.hidden)
+			m.settings.cache.applyHidden(request.hidden)
 		}
 		committed := make([]restoredValue, 0, len(request.values))
 		for _, value := range request.values {
@@ -372,59 +372,59 @@ func (m *Model) restoreSettingsDialog(restored []restoredValue, hiddenRaw string
 		}
 		switch value.key {
 		case "default_tool":
-			for i, name := range m.settings.toolNames {
+			for i, name := range m.settings.dialog.toolNames {
 				if name == value.value {
-					m.settings.toolIndex = i
+					m.settings.dialog.toolIndex = i
 					break
 				}
 			}
 		case themeSetting:
-			m.settings.themeIndex = themeIndex(value.value)
-			if !m.settings.themeAuto {
-				m.settings.manualTheme = value.value
+			m.settings.dialog.themeIndex = themeIndex(value.value)
+			if !m.settings.dialog.themeAuto {
+				m.settings.dialog.manualTheme = value.value
 			}
 		case themeAutoSetting:
-			m.settings.themeAuto = value.value == "on"
+			m.settings.dialog.themeAuto = value.value == "on"
 		case diffLayoutSetting:
-			m.settings.layoutSplit = value.value == "split"
+			m.settings.dialog.layoutSplit = value.value == "split"
 		case quickCloseSetting:
-			m.settings.quickCloseSend = value.value == "close"
+			m.settings.dialog.quickCloseSend = value.value == "close"
 		case focusKeySetting:
-			m.settings.enterFocuses = value.value == "focus"
+			m.settings.dialog.enterFocuses = value.value == "focus"
 		case arrowStepSetting:
-			m.settings.arrowStep = value.value == "on"
+			m.settings.dialog.arrowStep = value.value == "on"
 		case listDensitySetting:
-			m.settings.comfortableRows = value.value == "comfortable"
+			m.settings.dialog.comfortableRows = value.value == "comfortable"
 		case sessionLayoutSetting:
-			m.settings.fullLayout = value.value == sessionLayoutValue(true)
+			m.settings.dialog.fullLayout = value.value == sessionLayoutValue(true)
 		case hideHeaderSetting:
-			m.settings.hideHeader = value.value == "on"
+			m.settings.dialog.hideHeader = value.value == "on"
 		case hideStatsSetting:
-			m.settings.hideStats = value.value == "on"
+			m.settings.dialog.hideStats = value.value == "on"
 		case mouseSetting:
-			m.settings.mouseDisabled = value.value == "off"
+			m.settings.dialog.mouseDisabled = value.value == "off"
 		case worktreeSetting:
-			m.settings.worktreeDefault = value.value == "on"
+			m.settings.dialog.worktreeDefault = value.value == "on"
 		case notificationsSetting:
-			m.settings.notifications = value.value == "on"
+			m.settings.dialog.notifications = value.value == "on"
 		case notifyFinishedSetting:
-			m.settings.notifyFinished = value.value == "on"
+			m.settings.dialog.notifyFinished = value.value == "on"
 		case "coordination":
-			m.settings.proactive = value.value == "on"
+			m.settings.dialog.proactive = value.value == "on"
 		case backgroundSetting:
-			m.settings.terminalBackground = value.value == "terminal"
+			m.settings.dialog.terminalBackground = value.value == "terminal"
 		case baseFetchSetting:
-			m.settings.baseFetch = value.value != "off"
+			m.settings.dialog.baseFetch = value.value != "off"
 		case editorSetting:
-			m.settings.editor = m.cachedEditorRow()
+			m.settings.dialog.editor = m.cachedEditorRow()
 		}
 	}
 	// An empty committed hidden state is a real state: it clears the
 	// dialog's map. Only a failed read leaves the old map in place.
 	if hiddenErr == nil {
-		m.settings.cliHidden = parseHiddenTools(hiddenRaw)
-		if m.settings.cliHidden == nil {
-			m.settings.cliHidden = map[string]bool{}
+		m.settings.dialog.cliHidden = parseHiddenTools(hiddenRaw)
+		if m.settings.dialog.cliHidden == nil {
+			m.settings.dialog.cliHidden = map[string]bool{}
 		}
 	}
 }

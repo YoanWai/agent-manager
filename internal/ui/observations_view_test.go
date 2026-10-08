@@ -30,7 +30,7 @@ func TestComputerLinesTemperatures(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			m := &Model{width: 120, height: 34, workspace: workspace{snap: tc.snap}}
+			m := &Model{layout: layoutState{width: 120, height: 34}, workspace: workspace{snap: tc.snap}}
 			var temp string
 			for _, line := range m.computerLines(40) {
 				plain := strings.TrimSpace(ansi.Strip(line))
@@ -74,7 +74,7 @@ func TestComputerLinesBattery(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			m := &Model{width: 120, height: 34, workspace: workspace{snap: tc.snap}}
+			m := &Model{layout: layoutState{width: 120, height: 34}, workspace: workspace{snap: tc.snap}}
 			var batt string
 			for _, line := range m.computerLines(40) {
 				plain := strings.TrimSpace(ansi.Strip(line))

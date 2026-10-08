@@ -60,7 +60,7 @@ func (m *Model) applyAttachEffect(request attachRequest, result attachEffectResu
 	if request.reattach && (request.generation != m.review.Generation() || m.review.Active()) {
 		return nil
 	}
-	if m.effects.quitting || request.foregroundGen != m.foregroundGen || request.mode != m.mode {
+	if m.effects.quitting || request.foregroundGen != m.gens.foreground || request.mode != m.mode {
 		return nil
 	}
 	if result.warning != nil {

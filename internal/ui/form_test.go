@@ -191,13 +191,13 @@ func TestFormRemembersPickOnlyAfterInstallRetrySucceeds(t *testing.T) {
 	_, cmd := m.submitForm()
 	m.applyCmd(t, cmd)
 
-	if m.mode != modeLaunchHint || m.launchFix.effectRetry == nil {
+	if m.mode != modeLaunchHint || m.launchHint.fix.effectRetry == nil {
 		t.Fatalf("expected a refused launch with retry, mode=%v err=%q", m.mode, m.errBar.text)
 	}
 	if m.ledger.lastSpawnTool != "ready-tool" || m.ledger.lastSpawnWorktree {
 		t.Fatalf("failed launch changed the last pick: %q, %v", m.ledger.lastSpawnTool, m.ledger.lastSpawnWorktree)
 	}
-	m.launchFix.command = installCommand
+	m.launchHint.fix.command = installCommand
 	m.applyCmd(t, pressInLaunchHint(t, m, 'i'))
 	waitForInstallToSettle(t, m)
 
@@ -285,7 +285,7 @@ func TestSettingsDefaultIgnoresLastSpawn(t *testing.T) {
 	submitFormSession(t, m, "first")
 
 	m.openSettings()
-	if got := m.settings.toolNames[m.settings.toolIndex]; got != "claude" {
+	if got := m.settings.dialog.toolNames[m.settings.dialog.toolIndex]; got != "claude" {
 		t.Fatalf("settings default tool = %q, want stored default", got)
 	}
 }
@@ -465,7 +465,7 @@ func TestGroupFormFieldsTrackCardWidth(t *testing.T) {
 		t.Fatalf("initial widths = name %d path %d, want %d", m.groupForm.name.Width, m.groupForm.path.Width, want)
 	}
 
-	m.Update(tea.WindowSizeMsg{Width: 72, Height: m.height})
+	m.Update(tea.WindowSizeMsg{Width: 72, Height: m.layout.height})
 	want = m.formValueWidth() - 3
 	if m.groupForm.name.Width != want || m.groupForm.path.Width != want {
 		t.Fatalf("resized widths = name %d path %d, want %d", m.groupForm.name.Width, m.groupForm.path.Width, want)
@@ -1118,10 +1118,10 @@ func TestWorktreeProbeDefersGitAndRejectsReopenedForm(t *testing.T) {
 	reader := &blockedRepoPreflight{
 		started: make(chan struct{}), release: make(chan struct{}), capable: true,
 	}
-	m.worktreeProbeGen++
+	m.gens.worktreeProbe++
 	request := worktreeProbeRequest{
 		target: worktreeProbeForm, generation: m.form.prompt.gen,
-		sequence: m.worktreeProbeGen, dir: m.formSpawnDir(), toggle: true, from: m.form.worktree,
+		sequence: m.gens.worktreeProbe, dir: m.formSpawnDir(), toggle: true, from: m.form.worktree,
 	}
 	cmd := worktreeProbeCmd(request, reader)
 	select {
@@ -1428,7 +1428,7 @@ func TestSettingsFetchOnSpawnTurnsTheFetchOff(t *testing.T) {
 	cached := gitOutput(t, clone, "rev-parse", "origin/main")
 
 	m.openSettings()
-	for m.settings.field != settingsFieldBaseFetch {
+	for m.settings.dialog.field != settingsFieldBaseFetch {
 		m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
 	}
 	if !strings.Contains(ansi.Strip(m.viewSettings()), "fetch on spawn") {

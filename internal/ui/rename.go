@@ -22,7 +22,7 @@ type renameTarget struct {
 }
 
 func (m *Model) openRename() {
-	m.dialogGen++
+	m.gens.dialog++
 	entry, ok := m.selectedRow()
 	if !ok {
 		return
@@ -169,7 +169,7 @@ func (m *Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.rename.isGroup && m.rename.focus == 3 {
 			var cmd tea.Cmd
-			m.rename.base, cmd = m.stepGroupBase(groupBaseRename, m.dialogGen, m.renameGroupDir(), m.rename.base, delta)
+			m.rename.base, cmd = m.stepGroupBase(groupBaseRename, m.gens.dialog, m.renameGroupDir(), m.rename.base, delta)
 			return m, cmd
 		}
 	case "enter":
@@ -223,7 +223,7 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 		if parent != "" {
 			newPath = parent + "/" + name
 		}
-		m.dialogGen++
+		m.gens.dialog++
 		m.enqueueEffect(renameRequest{
 			kind:         renameGroup,
 			oldGroup:     m.rename.path,
@@ -234,7 +234,7 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 			worktree:     groupWorktreeValue(m.rename.worktreeIndex),
 			base:         m.rename.base,
 			name:         name,
-			gen:          m.dialogGen,
+			gen:          m.gens.dialog,
 		}, 0, false)
 		return m, m.nextEffectCmd()
 	}
@@ -253,7 +253,7 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 		sess = m.workspace.sessions[index]
 	}
 	toolChanged := tool != "" && tool != prevTool
-	m.dialogGen++
+	m.gens.dialog++
 	m.enqueueEffect(renameRequest{
 		kind:            renameSession,
 		sessID:          m.rename.sessID,
@@ -261,7 +261,7 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 		name:            name,
 		tool:            tool,
 		checkNoChildren: toolChanged && m.isShell(tool),
-		gen:             m.dialogGen,
+		gen:             m.gens.dialog,
 	}, 0, false)
 	return m, m.nextEffectCmd()
 }

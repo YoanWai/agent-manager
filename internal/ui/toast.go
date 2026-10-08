@@ -26,7 +26,7 @@ func (m *Model) statusToast() []string {
 	// reaches back over the seam into the sessions rail.
 	leftWidth, _ := m.splitWidths()
 	width := ansi.StringWidth(text) + toastChromeX
-	for _, limit := range []int{toastMaxWidth, m.width - leftWidth - 2 - toastMargin} {
+	for _, limit := range []int{toastMaxWidth, m.layout.width - leftWidth - 2 - toastMargin} {
 		if width > limit {
 			width = limit
 		}
@@ -51,7 +51,7 @@ func (m *Model) overlayTopRight(frame string, box []string, top int) string {
 	if len(box) == 0 {
 		return frame
 	}
-	left := m.width - maxLineWidth(box) - toastMargin
+	left := m.layout.width - maxLineWidth(box) - toastMargin
 	if left < 0 {
 		left = 0
 	}

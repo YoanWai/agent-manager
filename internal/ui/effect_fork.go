@@ -204,7 +204,7 @@ func (m *Model) applyForkEffect(request forkRequest, result forkEffectResult, er
 	}
 	m.reportLaunchError(err)
 	if m.mode == modeLaunchHint {
-		m.launchFix.effectRetry = request
+		m.launchHint.fix.effectRetry = request
 	}
 	return nil
 }

@@ -293,7 +293,7 @@ func (m *Model) reviewCommands(requests uireview.Requests) tea.Cmd {
 		cmds = append(cmds, m.reviewSendCmd(*requests.Send))
 	}
 	if requests.FileCheck != nil {
-		cmds = append(cmds, reviewFileCheckCmd(*requests.FileCheck, m.captureEditorResolution(), m.foregroundGen))
+		cmds = append(cmds, reviewFileCheckCmd(*requests.FileCheck, m.captureEditorResolution(), m.gens.foreground))
 	}
 	if requests.WidgetCmd != nil {
 		cmds = append(cmds, requests.WidgetCmd)

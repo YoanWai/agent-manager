@@ -32,16 +32,16 @@ func TestHelpAdapterRestoresReviewBeforeRestartingLoader(t *testing.T) {
 	m.mode = modeDiff
 	seedReviewForTest(m, uireview.Target{ID: "review"}, git.ScopeUncommitted, "/repo", diff.Set{}, false)
 	m.openHelp()
-	if m.helpReturnMode != modeDiff {
-		t.Fatalf("opened review help with return mode %v", m.helpReturnMode)
+	if m.help.returnMode != modeDiff {
+		t.Fatalf("opened review help with return mode %v", m.help.returnMode)
 	}
-	if title := m.help.Content(m.helpContext(84)).Title; title != "? Review keys" {
+	if title := m.help.state.Content(m.helpContext(84)).Title; title != "? Review keys" {
 		t.Fatalf("opened review help title = %q", title)
 	}
 
 	_, cmd := m.handleHelpKey(namedKey(tea.KeyEsc))
-	if m.mode != modeDiff || m.helpReturnMode != modeList {
-		t.Fatalf("close left mode %v and return mode %v", m.mode, m.helpReturnMode)
+	if m.mode != modeDiff || m.help.returnMode != modeList {
+		t.Fatalf("close left mode %v and return mode %v", m.mode, m.help.returnMode)
 	}
 	if cmd == nil || !m.startup.startupAnimating {
 		t.Fatal("review mode was not restored before its loader restart")
@@ -70,7 +70,7 @@ func TestHelpAdapterReopensWithCleanFeatureState(t *testing.T) {
 
 func TestHelpAdapterRecomputesRowsWithoutMutatingScroll(t *testing.T) {
 	m := helpModel()
-	m.height = 18
+	m.layout.height = 18
 	m.handleHelpKey(runeKey("G"))
 	clean := m.helpLayout()
 	if clean.content.Offset == 0 {
@@ -133,9 +133,9 @@ func TestHelpAdapterUsesFreshThemeStyles(t *testing.T) {
 	m := helpModel()
 
 	applyTheme(themes[themeIndex("classic")])
-	classic := m.help.Content(m.helpContext(84))
+	classic := m.help.state.Content(m.helpContext(84))
 	applyTheme(themes[themeIndex("solarized light")])
-	light := m.help.Content(m.helpContext(84))
+	light := m.help.state.Content(m.helpContext(84))
 	if strings.Join(classic.Lines, "\n") == strings.Join(light.Lines, "\n") {
 		t.Fatal("theme switch left help styles unchanged")
 	}
@@ -146,8 +146,8 @@ func TestHelpAdapterUsesFreshThemeStyles(t *testing.T) {
 
 func TestHelpAdapterScopeUsesOnlyCopiedValues(t *testing.T) {
 	m := helpModel()
-	m.help = uihelp.New(uihelp.Review)
-	content := m.help.Content(m.helpContext(84))
+	m.help.state = uihelp.New(uihelp.Review)
+	content := m.help.state.Content(m.helpContext(84))
 	if content.Title != "? Review keys" || len(content.Lines) == 0 {
 		t.Fatalf("review content = %+v", content)
 	}
@@ -168,7 +168,7 @@ func TestHelpModeOwnsKeysBeforeListOverlays(t *testing.T) {
 
 func TestHelpContextForwardsCustomSessionAndListTablesThroughView(t *testing.T) {
 	m := helpModel()
-	m.height = 160
+	m.layout.height = 160
 	m.services.listKeys = m.services.listKeys.With(keybind.NewSession, bindingOf(t, "N"))
 	m.services.keys = sessionOf(t, []string{"f9"}, []string{"ctrl+g"}, []string{"alt+e"})
 	frame := ansi.Strip(preparedView(m))

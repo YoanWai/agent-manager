@@ -30,7 +30,7 @@ func answered(m *Model, tool config.Tool, cat catalog.Catalog) {
 	base.Catalog, base.CatalogCommand = tool.Catalog, tool.CatalogCommand
 	base.ModelArgs, base.EffortArgs, base.ProfileArgs = tool.ModelArgs, tool.EffortArgs, tool.ProfileArgs
 	m.services.cfg.Tools["claude"] = base
-	m.catalogs = map[string]*catalogState{"claude": {cat: cat, loaded: true}}
+	m.ledger.catalogs = map[string]*catalogState{"claude": {cat: cat, loaded: true}}
 }
 
 var claudeLike = config.Tool{Catalog: "claude", CatalogCommand: "claude", ModelArgs: "--model {model}", EffortArgs: "--effort {effort}"}
@@ -338,7 +338,7 @@ func TestCatalogIsReadFromTheKeptAnswer(t *testing.T) {
 func TestFormLaunchesOnDefaultsWhenTheCLIFailsToAnswer(t *testing.T) {
 	m := buildModel(t)
 	answered(m, claudeLike, catalog.Catalog{})
-	m.catalogs["claude"].err = errors.New("app-server exited (status 1)")
+	m.ledger.catalogs["claude"].err = errors.New("app-server exited (status 1)")
 	openFormOnClaude(t, m)
 	if body := formBody(m); !strings.Contains(body, "couldn't read models from claude: app-server") || !strings.Contains(body, "exited (status 1)") {
 		t.Fatalf("form:\n%s", body)
@@ -357,7 +357,7 @@ func TestFormLaunchesOnDefaultsWhenTheCLIFailsToAnswer(t *testing.T) {
 func TestAFailedCatalogIsRetriedAfterAWait(t *testing.T) {
 	m := buildModel(t)
 	answered(m, claudeLike, catalog.Catalog{})
-	state := m.catalogs["claude"]
+	state := m.ledger.catalogs["claude"]
 	state.err, state.checkedAt = errors.New("not logged in"), time.Now()
 	if m.ensureCatalog("claude") != nil {
 		t.Fatal("a failure just now was asked again")
@@ -444,7 +444,7 @@ func TestQuickModelSheetFitsTheColumn(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.applyCmd(t, m.refreshCmd())
-	m.width, m.height = 80, 20
+	m.layout.width, m.layout.height = 80, 20
 	m.selectGroupRow(t, "work")
 	m.openQuickMode()
 	m.quick.toolIndex = slices.Index(m.quick.toolNames, "claude")
@@ -706,7 +706,7 @@ func TestChoiceIsKeptPerCLI(t *testing.T) {
 	t.Run("answer arrives after the prompt opens", func(t *testing.T) {
 		m := buildModel(t)
 		answered(m, claudeLike, catalog.Catalog{})
-		m.catalogs["claude"] = &catalogState{loading: true}
+		m.ledger.catalogs["claude"] = &catalogState{loading: true}
 		keepSetting(t, m, savedChoiceKey("claude"), `{"Model":"opus","Effort":"medium"}`)
 		openFormOnClaude(t, m)
 		if m.form.choice.model != "" {
@@ -747,5 +747,5 @@ func keepSetting(t *testing.T, m *Model, key, value string) {
 	if err := m.services.store.SetSetting(key, value); err != nil {
 		t.Fatal(err)
 	}
-	m.settingsCache.applyValues([]settingValue{{key: key, value: value}})
+	m.settings.cache.applyValues([]settingValue{{key: key, value: value}})
 }

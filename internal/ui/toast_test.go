@@ -13,12 +13,12 @@ func TestStatusToastKeepsLayoutStill(t *testing.T) {
 	for _, width := range []int{80, 120, 200} {
 		for _, height := range []int{24, 34, 50} {
 			quiet := shotModel()
-			quiet.width, quiet.height = width, height
+			quiet.layout.width, quiet.layout.height = width, height
 			quietRows := strings.Split(quiet.viewListFrame(), "\n")
 			quietBody := quiet.listBodyHeight()
 
 			noticed := shotModel()
-			noticed.width, noticed.height = width, height
+			noticed.layout.width, noticed.layout.height = width, height
 			noticed.errBar.text = "worktree kept (has work): /Users/someone/projects/agent-manager"
 			noticedRows := strings.Split(noticed.viewListFrame(), "\n")
 
@@ -45,7 +45,7 @@ func TestStatusToastKeepsLayoutStill(t *testing.T) {
 // The card sits at the top right, under the header, not over the rail.
 func TestStatusToastSitsTopRight(t *testing.T) {
 	m := shotModel()
-	m.width, m.height = 120, 34
+	m.layout.width, m.layout.height = 120, 34
 	m.errBar.text = "already up to date"
 	rows := strings.Split(ansi.Strip(m.viewListFrame()), "\n")
 	row := m.listChromeRows() + 2
@@ -120,7 +120,7 @@ func TestFailureAfterAnOutcomeReadsAsAFailure(t *testing.T) {
 // The review footer marks the same two states in its own glyphs.
 func TestReviewFooterMarksAnOutcome(t *testing.T) {
 	m := shotModel()
-	m.width = 80
+	m.layout.width = 80
 	m.reportDone("opened /tmp/project in code")
 	if got := ansi.Strip(m.viewDiffStatus()); !strings.HasPrefix(got, " ✔ ") {
 		t.Fatalf("review footer reads %q, want the outcome glyph", got)
@@ -147,7 +147,7 @@ func TestSpliceAtColumnKeepsWidth(t *testing.T) {
 // floats away from the entries.
 func TestSearchFieldSitsInTheRail(t *testing.T) {
 	m := shotModel()
-	m.width, m.height = 120, 34
+	m.layout.width, m.layout.height = 120, 34
 	m.rail.SetSearch(m.rail.Search(), true)
 	m.rail.SetSearch("rate", m.rail.Searching())
 

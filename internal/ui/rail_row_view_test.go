@@ -517,11 +517,16 @@ func TestRowMarksSessionsOnAnotherServer(t *testing.T) {
 				CreatedAt: now, LastStatusAt: now, TmuxSocket: tc.socket,
 			}
 			m := &Model{
-				width: 120, height: 40, mode: modeList,
+				layout: layoutState{
+					width:  120,
+					height: 40,
+					split:  splitState{ratio: defaultSplitRatio},
+				},
+				mode: modeList,
+				workspace: workspace{sessions: []store.Session{sess},
 
-				split: splitState{ratio: defaultSplitRatio}, workspace: workspace{sessions: []store.Session{sess},
-
-					tmuxSocket: here, leadingManager: tc.leading}, rail: railModelFromRows([]treeRow{{sess: sess}}, 0),
+					tmuxSocket: here, leadingManager: tc.leading},
+				rail: railModelFromRows([]treeRow{{sess: sess}}, 0),
 			}
 			view := ansi.Strip(preparedView(m))
 			if strings.Contains(view, "elsewhere") != tc.elsewise {
@@ -540,9 +545,14 @@ func TestRowsAreUnmarkedBeforeTheFirstPoll(t *testing.T) {
 		CreatedAt: now, LastStatusAt: now, TmuxSocket: "/tmp/another-manager/agentmgr",
 	}
 	m := &Model{
-		width: 120, height: 40, mode: modeList,
-
-		split: splitState{ratio: defaultSplitRatio}, workspace: workspace{sessions: []store.Session{sess}}, rail: railModelFromRows([]treeRow{{sess: sess}}, 0),
+		layout: layoutState{
+			width:  120,
+			height: 40,
+			split:  splitState{ratio: defaultSplitRatio},
+		},
+		mode:      modeList,
+		workspace: workspace{sessions: []store.Session{sess}},
+		rail:      railModelFromRows([]treeRow{{sess: sess}}, 0),
 	}
 	if view := ansi.Strip(preparedView(m)); strings.Contains(view, "elsewhere") {
 		t.Fatalf("nothing to compare against should mark nothing:\n%s", view)
@@ -568,7 +578,7 @@ func TestRowHeightsFollowDensity(t *testing.T) {
 	if got := m.entryHeight(groupRow(t, m, "backend")); got != 1 {
 		t.Fatalf("group entry height = %d, want 1", got)
 	}
-	lines := splitLines(m.renderTreeRow(row, false, m.width-1, 4, panelHex()))
+	lines := splitLines(m.renderTreeRow(row, false, m.layout.width-1, 4, panelHex()))
 	if len(lines) != 1 {
 		t.Fatalf("compact row painted %d lines, want 1", len(lines))
 	}
@@ -586,7 +596,7 @@ func TestRowHeightsFollowDensity(t *testing.T) {
 	if got := m.entryHeight(row); got != 3 {
 		t.Fatalf("comfortable session entry height = %d, want 3", got)
 	}
-	lines = splitLines(m.renderTreeRow(row, false, m.width-1, 4, panelHex()))
+	lines = splitLines(m.renderTreeRow(row, false, m.layout.width-1, 4, panelHex()))
 	if len(lines) != 3 {
 		t.Fatalf("comfortable row painted %d lines, want 3", len(lines))
 	}
@@ -628,7 +638,7 @@ func TestRowWaitingReplyWearsTheStateColor(t *testing.T) {
 	m.prefs.comfortableRows = true
 	question := "Allow edits to router.go?"
 	m.workspace.paneLines = map[string]string{"db-migrations": question}
-	lines := splitLines(m.renderTreeRow(sessionRow(t, m, "db-migrations"), false, m.width-1, 0, panelHex()))
+	lines := splitLines(m.renderTreeRow(sessionRow(t, m, "db-migrations"), false, m.layout.width-1, 0, panelHex()))
 	if len(lines) != 3 {
 		t.Fatalf("waiting row painted %d lines, want 3", len(lines))
 	}
@@ -644,12 +654,12 @@ func TestRowQuotesEveryStateAndDashesWhenSilent(t *testing.T) {
 	m.prefs.fullLayout = true
 	m.prefs.comfortableRows = true
 	m.workspace.paneLines = map[string]string{"notes": "All quiet, nothing queued."}
-	lines := splitLines(m.renderTreeRow(sessionRow(t, m, "notes"), false, m.width-1, 1, panelHex()))
+	lines := splitLines(m.renderTreeRow(sessionRow(t, m, "notes"), false, m.layout.width-1, 1, panelHex()))
 	if reply := strings.TrimSpace(ansi.Strip(lines[2])); reply != "↳ All quiet, nothing queued." {
 		t.Fatalf("idle reply line = %q, want the last message", reply)
 	}
 	m.workspace.paneLines = nil
-	lines = splitLines(m.renderTreeRow(sessionRow(t, m, "notes"), false, m.width-1, 1, panelHex()))
+	lines = splitLines(m.renderTreeRow(sessionRow(t, m, "notes"), false, m.layout.width-1, 1, panelHex()))
 	if reply := strings.TrimSpace(ansi.Strip(lines[2])); reply != "-" {
 		t.Fatalf("silent idle reply line = %q, want a dash", reply)
 	}
@@ -691,7 +701,7 @@ func TestCompactCellIsStatePicked(t *testing.T) {
 	}
 	idle := sessionRow(t, m, "notes")
 	idle.sess.LastPrompt = "verify the staging deploy is healthy"
-	line := ansi.Strip(m.renderTreeRow(idle, false, m.width-1, 1, panelHex()))
+	line := ansi.Strip(m.renderTreeRow(idle, false, m.layout.width-1, 1, panelHex()))
 	if !strings.Contains(line, "↳ All quiet, nothing queued.") {
 		t.Fatalf("an idle session that has spoken should quote its reply:\n%s", line)
 	}
@@ -700,12 +710,12 @@ func TestCompactCellIsStatePicked(t *testing.T) {
 	}
 
 	m.workspace.paneLines = map[string]string{"db-migrations": "Allow edits to router.go?"}
-	line = ansi.Strip(m.renderTreeRow(idle, false, m.width-1, 1, panelHex()))
+	line = ansi.Strip(m.renderTreeRow(idle, false, m.layout.width-1, 1, panelHex()))
 	if !strings.Contains(line, "❯ verify the staging deploy is healthy") {
 		t.Fatalf("a silent idle session should name its task:\n%s", line)
 	}
 
-	line = ansi.Strip(m.renderTreeRow(sessionRow(t, m, "db-migrations"), false, m.width-1, 0, panelHex()))
+	line = ansi.Strip(m.renderTreeRow(sessionRow(t, m, "db-migrations"), false, m.layout.width-1, 0, panelHex()))
 	if !strings.Contains(line, "↳ Allow edits to router.go?") {
 		t.Fatalf("waiting compact row should quote its question:\n%s", line)
 	}
@@ -718,7 +728,7 @@ func TestArchivedRowReadsDead(t *testing.T) {
 	m.prefs.fullLayout = true
 	row := sessionRow(t, m, "add-rate-limiting")
 	row.sess.Archived = true
-	line := ansi.Strip(m.renderTreeRow(row, false, m.width-1, 4, panelHex()))
+	line := ansi.Strip(m.renderTreeRow(row, false, m.layout.width-1, 4, panelHex()))
 	if !strings.Contains(line, statusLabel(status.Dead)) {
 		t.Fatalf("archived row should read dead:\n%s", line)
 	}
@@ -740,7 +750,7 @@ func TestShellRowSkipsThePromptLine(t *testing.T) {
 	if got := m.entryHeight(shell); got != 2 {
 		t.Fatalf("comfortable shell entry height = %d, want 2", got)
 	}
-	lines := splitLines(m.renderTreeRow(shell, false, m.width-1, 4, panelHex()))
+	lines := splitLines(m.renderTreeRow(shell, false, m.layout.width-1, 4, panelHex()))
 	if len(lines) != 2 {
 		t.Fatalf("comfortable shell row painted %d lines, want 2:\n%s", len(lines), strings.Join(lines, "\n"))
 	}
@@ -756,7 +766,7 @@ func TestShellRowSkipsThePromptLine(t *testing.T) {
 	if got := m.entryHeight(agent); got != 3 {
 		t.Fatalf("comfortable agent entry height = %d, want 3", got)
 	}
-	if got := len(splitLines(m.renderTreeRow(agent, false, m.width-1, 4, panelHex()))); got != 3 {
+	if got := len(splitLines(m.renderTreeRow(agent, false, m.layout.width-1, 4, panelHex()))); got != 3 {
 		t.Fatalf("comfortable agent row painted %d lines, want 3", got)
 	}
 

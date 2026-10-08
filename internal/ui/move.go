@@ -17,19 +17,19 @@ func (m *Model) openMove() {
 		return
 	}
 	if row.isGroup {
-		m.moveID = ""
-		m.movePath = row.group
+		m.move.id = ""
+		m.move.path = row.group
 		m.rebuildGroupOptions(parentGroup(row.group))
 		m.pruneMoveTargets(row.group)
 	} else {
-		m.moveID = row.sess.ID
-		m.movePath = ""
+		m.move.id = row.sess.ID
+		m.move.path = ""
 		m.rebuildGroupOptions(row.sess.Group)
 		if m.isShell(row.sess.Tool) {
 			m.appendAgentMoveTargets()
 		}
 	}
-	m.dialogGen++
+	m.gens.dialog++
 	m.mode = modeMove
 	m.errBar.text = ""
 }
@@ -92,17 +92,17 @@ func (m *Model) handleMoveKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "down":
 		return m, m.moveGroupCursor(1)
 	case "enter":
-		if m.movePath != "" {
+		if m.move.path != "" {
 			return m.moveGroupTo(m.selectedGroupPath())
 		}
 		opt := m.form.groups[m.form.groupIndex]
-		return m, m.enqueueMove(uirail.Mutation{Kind: uirail.PlaceSession, SessionID: m.moveID, Group: opt.path, ParentID: opt.sessID}, moveDialogClose{sessID: m.moveID, optPath: opt.path, optSessID: opt.sessID})
+		return m, m.enqueueMove(uirail.Mutation{Kind: uirail.PlaceSession, SessionID: m.move.id, Group: opt.path, ParentID: opt.sessID}, moveDialogClose{sessID: m.move.id, optPath: opt.path, optSessID: opt.sessID})
 	}
 	return m, nil
 }
 
 func (m *Model) moveGroupTo(parent string) (tea.Model, tea.Cmd) {
-	path := m.movePath
+	path := m.move.path
 	newPath := baseName(path)
 	if parent != "" {
 		newPath = parent + "/" + newPath

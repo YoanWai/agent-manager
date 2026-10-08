@@ -68,7 +68,7 @@ func TestPagingHintFitsFullFocusFooter(t *testing.T) {
 	}
 	m.rebuildRows()
 	m.prefs.fullLayout = true
-	m.width = 110
+	m.layout.width = 110
 	footer := ansi.Strip(m.viewFooter())
 	if !strings.Contains(footer, "pgup/pgdn scroll") {
 		t.Fatalf("full focus footer omits paging: %q", footer)
@@ -84,7 +84,7 @@ func TestScrolledStatusNamesPgDnWhileItPages(t *testing.T) {
 	m, sessID := focusedWithHistory(t, "scrolled-status")
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyPgUp})
 	m = updated.(*Model)
-	if !m.focusPane.ScrolledBack() {
+	if !m.focus.pane.ScrolledBack() {
 		t.Fatal("test setup: PgUp did not scroll the pane back")
 	}
 	if got := ansi.Strip(m.statusLine()); !strings.Contains(got, "lines back · wheel down, pgdn or type to catch up") {
@@ -136,7 +136,7 @@ func TestTransientFootersKeepListHeight(t *testing.T) {
 		name string
 		open func()
 	}{
-		{"resize", func() { m.split.resizeMode = true }},
+		{"resize", func() { m.layout.split.resizeMode = true }},
 		{"rename", func() { m.mode = modeRename }},
 		{"focus", func() { m.mode = modeFocus }},
 	} {
@@ -144,7 +144,7 @@ func TestTransientFootersKeepListHeight(t *testing.T) {
 		if got := lipgloss.Height(m.viewFooter()); got != listed {
 			t.Errorf("%s footer = %d rows, want %d", tier.name, got, listed)
 		}
-		m.quick.active, m.split.resizeMode, m.mode = false, false, modeList
+		m.quick.active, m.layout.split.resizeMode, m.mode = false, false, modeList
 	}
 }
 
@@ -197,7 +197,7 @@ func TestFooterTierFollowsTheCursor(t *testing.T) {
 func TestFooterTogglesNameTheNextAction(t *testing.T) {
 	m := buildModel(t)
 	// Wide enough that the row budget keeps every app-wide binding.
-	m.width = 260
+	m.layout.width = 260
 	dir := t.TempDir()
 	if err := m.services.store.AddGroup("work", dir, "off", ""); err != nil {
 		t.Fatalf("seed group: %v", err)

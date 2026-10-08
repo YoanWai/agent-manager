@@ -165,13 +165,13 @@ func TestCursorBlinks(t *testing.T) {
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	*m = *updated.(*Model)
 	m.drainEffects(t)
-	if !m.focusPane.CursorOn() {
+	if !m.focus.pane.CursorOn() {
 		t.Fatal("caret starts hidden")
 	}
 
 	updated, cmd := m.Update(cursorBlinkMsg{})
 	*m = *updated.(*Model)
-	if m.focusPane.CursorOn() {
+	if m.focus.pane.CursorOn() {
 		t.Fatal("caret did not blink off")
 	}
 	if cmd == nil {
@@ -182,7 +182,7 @@ func TestCursorBlinks(t *testing.T) {
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
 	m.drainEffects(t)
 	*m = *updated.(*Model)
-	if !m.focusPane.CursorOn() {
+	if !m.focus.pane.CursorOn() {
 		t.Fatal("typing left the caret hidden")
 	}
 
@@ -198,7 +198,7 @@ func TestCursorBlinks(t *testing.T) {
 func TestSettingsSwapsFocusKey(t *testing.T) {
 	m := buildModel(t)
 	m.openSettings()
-	if !m.settings.enterFocuses {
+	if !m.settings.dialog.enterFocuses {
 		t.Fatal("settings should open with enter focusing")
 	}
 	card := ansi.Strip(m.viewSettings())
@@ -208,8 +208,8 @@ func TestSettingsSwapsFocusKey(t *testing.T) {
 	for i := 0; i < settingsFieldFocusKey; i++ {
 		m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
 	}
-	if m.settings.field != settingsFieldFocusKey {
-		t.Fatalf("stepping down should reach the session keys field, got %d", m.settings.field)
+	if m.settings.dialog.field != settingsFieldFocusKey {
+		t.Fatalf("stepping down should reach the session keys field, got %d", m.settings.dialog.field)
 	}
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
 	if !strings.Contains(ansi.Strip(m.viewSettings()), "attach") {
@@ -240,7 +240,7 @@ func TestSwappedKeysRouteActions(t *testing.T) {
 
 	// Swap through the settings screen, the same path a user takes.
 	m.openSettings()
-	m.settings.field = settingsFieldFocusKey
+	m.settings.dialog.field = settingsFieldFocusKey
 	m.cycleSetting(1)
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m.drainEffects(t)
@@ -312,8 +312,8 @@ func TestFocusModeForwardsArrowKeys(t *testing.T) {
 	m.selectSessionRow(t, "focus-arrows")
 	sess := railSelectedSession(m)
 	quitAgent(t, m, sess.ID)
-	m.focusRuntime.watch = newFocusWatch(m.services.tmux, func(tea.Msg) {})
-	t.Cleanup(m.focusRuntime.watch.Close)
+	m.focus.runtime.watch = newFocusWatch(m.services.tmux, func(tea.Msg) {})
+	t.Cleanup(m.focus.runtime.watch.Close)
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	*m = *updated.(*Model)
@@ -322,7 +322,7 @@ func TestFocusModeForwardsArrowKeys(t *testing.T) {
 		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 	deadline := time.Now().Add(5 * time.Second)
-	for !m.focusRuntime.watch.serving(sess.ID) {
+	for !m.focus.runtime.watch.serving(sess.ID) {
 		if time.Now().After(deadline) {
 			t.Fatal("focus control client never became ready")
 		}
@@ -389,13 +389,13 @@ func TestFocusPageKeysReachOtherAgents(t *testing.T) {
 			m.selectSessionRow(t, "page-key-pass-through")
 			sess := railSelectedSession(m)
 			waitForPaneChild(t, m, sess.ID, "cat")
-			m.focusRuntime.watch = newFocusWatch(m.services.tmux, func(tea.Msg) {})
-			t.Cleanup(m.focusRuntime.watch.Close)
+			m.focus.runtime.watch = newFocusWatch(m.services.tmux, func(tea.Msg) {})
+			t.Cleanup(m.focus.runtime.watch.Close)
 			updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 			m = updated.(*Model)
 			m.drainEffects(t)
 			mirrorPaneScreen(t, m, sess.ID, tc.alt)
-			history := m.focusPane.Pane().History
+			history := m.focus.pane.Pane().History
 			if tc.alt && history == 0 {
 				t.Fatal("test setup: the alternate-screen pane kept no history")
 			}
@@ -467,7 +467,7 @@ func TestFocusPageKeysScrollHistory(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m, _ := focusedWithHistory(t, tc.name)
-			pane := m.focusPane.Pane()
+			pane := m.focus.pane.Pane()
 			if pane.Mouse {
 				t.Fatal("test setup: expected a pane whose scrollback belongs to tmux")
 			}
@@ -477,8 +477,8 @@ func TestFocusPageKeysScrollHistory(t *testing.T) {
 			}
 			if !tc.scrollUp {
 				// Start more than a page back without depending on Page Up.
-				for m.focusPane.Status().ScrollOffset < 2*rows {
-					box := m.focusPane.FrameBox()
+				for m.focus.pane.Status().ScrollOffset < 2*rows {
+					box := m.focus.pane.FrameBox()
 					cmd := m.wheelFocus(true, box.X+2, box.Y+1)
 					if cmd == nil {
 						t.Fatal("test setup: wheel did not request a history capture")
@@ -486,13 +486,13 @@ func TestFocusPageKeysScrollHistory(t *testing.T) {
 					m.applyCmd(t, cmd)
 				}
 			}
-			beforeOffset, beforePreview := m.focusPane.Status().ScrollOffset, m.workspace.preview
+			beforeOffset, beforePreview := m.focus.pane.Status().ScrollOffset, m.workspace.preview
 			updated, cmd := m.handleKey(tea.KeyMsg{Type: tc.key})
 			m = updated.(*Model)
 			if m.errBar.text != "" {
 				t.Fatalf("page key: %s", m.errBar.text)
 			}
-			offset := m.focusPane.Status().ScrollOffset
+			offset := m.focus.pane.Status().ScrollOffset
 			moved := beforeOffset - offset
 			if tc.scrollUp {
 				moved = -moved
@@ -552,16 +552,16 @@ func TestFocusPagingAndFooterFollowTheSamePolicy(t *testing.T) {
 						m.workspace.sessions[i].Tool = tool
 					}
 				}
-				m.focusPane.Enter(uifocus.EnterContext{SessionID: sessID, KeepPaneFacts: true})
+				m.focus.pane.Enter(uifocus.EnterContext{SessionID: sessID, KeepPaneFacts: true})
 				hint := strings.Contains(ansi.Strip(m.viewFooter()), "pgup/pgdn scroll")
 				if hint != tc.wantHint {
 					t.Fatalf("%s: paging footer visible=%v, want %v", tool, hint, tc.wantHint)
 				}
 				_, cmd := m.handleKey(tc.key)
-				scrolled := m.focusPane.Status().ScrollOffset > 0
+				scrolled := m.focus.pane.Status().ScrollOffset > 0
 				if scrolled != tc.wantScroll || (tc.wantScroll && cmd == nil) || focusInputQueued(m) == tc.wantScroll {
 					t.Fatalf("%s: PgUp capture=%v, offset=%d, forwarded=%v; want scroll=%v",
-						tool, cmd != nil, m.focusPane.Status().ScrollOffset, focusInputQueued(m), tc.wantScroll)
+						tool, cmd != nil, m.focus.pane.Status().ScrollOffset, focusInputQueued(m), tc.wantScroll)
 				}
 				m.drainEffects(t)
 			}
@@ -1199,7 +1199,7 @@ func TestArrowStepSettingDisablesThePair(t *testing.T) {
 	m.selectSessionRow(t, "optout")
 
 	m.openSettings()
-	m.settings.field = settingsFieldArrowStep
+	m.settings.dialog.field = settingsFieldArrowStep
 	m.cycleSetting(1)
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m.drainEffects(t)
@@ -1279,7 +1279,7 @@ func TestFocusLeftUnfocusesOnPiBlankComposerRow(t *testing.T) {
 			cursorX: x, cursorY: 1, paneStateOK: true,
 		})
 		*m = *updated.(*Model)
-		cursor := m.focusPane.Pane().Cursor
+		cursor := m.focus.pane.Pane().Cursor
 		if cursor.Visible || !cursor.PositionKnown {
 			t.Fatalf("hidden pi cursor state = %+v, want known position without a visible cursor", cursor)
 		}
@@ -1471,7 +1471,7 @@ func TestFocusLeftUnfocusesOnCommandCodesParkedCaret(t *testing.T) {
 	updated, _ = m.Update(hidden)
 	m.drainEffects(t)
 	*m = *updated.(*Model)
-	cursor := m.focusPane.Pane().Cursor
+	cursor := m.focus.pane.Pane().Cursor
 	if cursor.Visible || !cursor.PositionKnown {
 		t.Fatalf("hidden cursor state = %+v, want known position without a visible caret", cursor)
 	}
@@ -1644,13 +1644,13 @@ func TestFocusKeyRetriesADeadWatcher(t *testing.T) {
 	}
 	sess := railSelectedSession(m)
 
-	m.focusRuntime.watch = newFocusWatch(m.services.tmux, func(tea.Msg) {})
-	t.Cleanup(m.focusRuntime.watch.Close)
-	m.focusRuntime.watch.mu.Lock()
-	m.focusRuntime.watch.failedID, m.focusRuntime.watch.failedAt = sess.ID, time.Now()
-	m.focusRuntime.watch.mu.Unlock()
-	m.focusRuntime.watch.setFocus(sess.ID)
-	if m.focusRuntime.watch.watching() != "" {
+	m.focus.runtime.watch = newFocusWatch(m.services.tmux, func(tea.Msg) {})
+	t.Cleanup(m.focus.runtime.watch.Close)
+	m.focus.runtime.watch.mu.Lock()
+	m.focus.runtime.watch.failedID, m.focus.runtime.watch.failedAt = sess.ID, time.Now()
+	m.focus.runtime.watch.mu.Unlock()
+	m.focus.runtime.watch.setFocus(sess.ID)
+	if m.focus.runtime.watch.watching() != "" {
 		t.Fatal("backoff did not hold before the keystroke")
 	}
 
@@ -1660,8 +1660,8 @@ func TestFocusKeyRetriesADeadWatcher(t *testing.T) {
 	if m.errBar.text != "" {
 		t.Fatalf("forwarding set err: %q", m.errBar.text)
 	}
-	if m.focusRuntime.watch.watching() != sess.ID {
-		t.Fatalf("keystroke left the watcher on %q, want %q", m.focusRuntime.watch.watching(), sess.ID)
+	if m.focus.runtime.watch.watching() != sess.ID {
+		t.Fatalf("keystroke left the watcher on %q, want %q", m.focus.runtime.watch.watching(), sess.ID)
 	}
 }
 
@@ -1675,8 +1675,8 @@ func TestKillingTheFocusedSessionReportsNoLoss(t *testing.T) {
 	sess := railSelectedSession(m)
 
 	msgs := make(chan tea.Msg, 64)
-	m.focusRuntime.watch = newFocusWatch(m.services.tmux, func(msg tea.Msg) { msgs <- msg })
-	t.Cleanup(m.focusRuntime.watch.Close)
+	m.focus.runtime.watch = newFocusWatch(m.services.tmux, func(msg tea.Msg) { msgs <- msg })
+	t.Cleanup(m.focus.runtime.watch.Close)
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	*m = *updated.(*Model)
 	m.drainEffects(t)

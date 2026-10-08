@@ -26,10 +26,10 @@ func TestSessionLayoutDefaultsToSplit(t *testing.T) {
 func TestSettingsTogglesSessionLayout(t *testing.T) {
 	m := buildModel(t)
 	m.openSettings()
-	if m.settings.fullLayout {
+	if m.settings.dialog.fullLayout {
 		t.Fatal("settings should open on split by default")
 	}
-	for m.settings.field != settingsFieldSessionLayout {
+	for m.settings.dialog.field != settingsFieldSessionLayout {
 		m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
 	}
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
@@ -56,7 +56,7 @@ func TestSettingsToggleChromeIndependently(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m := buildModel(t)
 			m.openSettings()
-			if m.settings.hideHeader || m.settings.hideStats {
+			if m.settings.dialog.hideHeader || m.settings.dialog.hideStats {
 				t.Fatal("header and stats should show by default")
 			}
 			settings := ansi.Strip(m.viewSettings())
@@ -66,7 +66,7 @@ func TestSettingsToggleChromeIndependently(t *testing.T) {
 				}
 			}
 
-			for m.settings.field != tc.field {
+			for m.settings.dialog.field != tc.field {
 				m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
 			}
 			m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
@@ -140,8 +140,8 @@ func TestLayoutsCanHideHeader(t *testing.T) {
 			if got := m.listBodyHeight(); got != shownBody+1 {
 				t.Fatalf("hidden header body = %d rows, want %d", got, shownBody+1)
 			}
-			if rows := strings.Split(preparedView(m), "\n"); len(rows) != m.height {
-				t.Fatalf("headerless frame = %d rows, terminal is %d", len(rows), m.height)
+			if rows := strings.Split(preparedView(m), "\n"); len(rows) != m.layout.height {
+				t.Fatalf("headerless frame = %d rows, terminal is %d", len(rows), m.layout.height)
 			}
 		})
 	}
@@ -171,14 +171,14 @@ func TestHiddenHeaderTitlesTopEdgeWithUpdate(t *testing.T) {
 
 			m.prefs.hideHeader = true
 			rows := strings.Split(ansi.Strip(preparedView(m)), "\n")
-			if len(rows) != m.height {
-				t.Fatalf("titled frame = %d rows, terminal is %d", len(rows), m.height)
+			if len(rows) != m.layout.height {
+				t.Fatalf("titled frame = %d rows, terminal is %d", len(rows), m.layout.height)
 			}
-			if got := ansi.StringWidth(rows[0]); got != m.width {
-				t.Fatalf("titled top row is %d cells wide, terminal is %d", got, m.width)
+			if got := ansi.StringWidth(rows[0]); got != m.layout.width {
+				t.Fatalf("titled top row is %d cells wide, terminal is %d", got, m.layout.width)
 			}
 			at := strings.Index(rows[0], tag)
-			if at < 0 || ansi.StringWidth(rows[0][:at]) < m.width/2 {
+			if at < 0 || ansi.StringWidth(rows[0][:at]) < m.layout.width/2 {
 				t.Fatalf("hidden header leaves the top edge untitled:\n%s", rows[0])
 			}
 			if footer := ansi.Strip(m.viewFooter()); strings.Contains(footer, tag) {
@@ -210,12 +210,12 @@ func TestFullLayoutFrameHasNoPreviewColumn(t *testing.T) {
 		t.Fatalf("full screen frame lost the session tree:\n%s", full)
 	}
 	rows := strings.Split(preparedView(m), "\n")
-	if len(rows) != m.height {
-		t.Fatalf("full screen frame is %d rows, terminal is %d", len(rows), m.height)
+	if len(rows) != m.layout.height {
+		t.Fatalf("full screen frame is %d rows, terminal is %d", len(rows), m.layout.height)
 	}
 	for _, row := range rows {
-		if got := ansi.StringWidth(row); got > m.width {
-			t.Fatalf("full screen frame row is %d wide, terminal is %d", got, m.width)
+		if got := ansi.StringWidth(row); got > m.layout.width {
+			t.Fatalf("full screen frame row is %d wide, terminal is %d", got, m.layout.width)
 		}
 	}
 }
@@ -246,8 +246,8 @@ func TestFullLayoutRightOpensFullWidthFocus(t *testing.T) {
 		t.Fatalf("right did not focus, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 	sess := railSelectedSession(m)
-	want := [2]int{m.width, m.listBodyHeight()}
-	if got := m.focusRuntime.lastPaneSizes[sess.ID]; got != want {
+	want := [2]int{m.layout.width, m.listBodyHeight()}
+	if got := m.focus.runtime.lastPaneSizes[sess.ID]; got != want {
 		t.Fatalf("focused pane pinned to %v, want %v", got, want)
 	}
 	panes, err := m.services.tmux.Panes()
@@ -260,14 +260,14 @@ func TestFullLayoutRightOpensFullWidthFocus(t *testing.T) {
 
 	m.workspace.preview = "❯ hello from the pane\n"
 	frame := ansi.Strip(preparedView(m))
-	if rule := ansi.Strip(m.focusFactsLine(m.width)); !strings.Contains(frame, rule) {
+	if rule := ansi.Strip(m.focusFactsLine(m.layout.width)); !strings.Contains(frame, rule) {
 		t.Fatalf("full width focus frame misses the focus rule %q:\n%s", rule, frame)
 	}
 	if !strings.Contains(frame, sess.Name) {
 		t.Fatalf("the focus rule should name the session %q:\n%s", sess.Name, frame)
 	}
-	box := m.focusPane.FrameBox()
-	if !box.Valid || box.X != 0 || box.Width != m.width {
+	box := m.focus.pane.FrameBox()
+	if !box.Valid || box.X != 0 || box.Width != m.layout.width {
 		t.Fatalf("pane box = %+v, want the whole width at column 0", box)
 	}
 	wantPaneY := m.listChromeRows() + m.listBodyHeight() - 1
@@ -300,7 +300,7 @@ func TestFullFocusLeftReturnsAtPromptHead(t *testing.T) {
 		t.Fatalf("right did not focus, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 	sess := railSelectedSession(m)
-	pinned := m.focusRuntime.lastPaneSizes[sess.ID]
+	pinned := m.focus.runtime.lastPaneSizes[sess.ID]
 	setRailSessionTool(m, sess.ID, "claude-hooked")
 	setFocusPaneID(m, sess.ID)
 	setFocusCursor(m, paneCursor{x: 4, y: 0, ok: true})
@@ -323,7 +323,7 @@ func TestFullFocusLeftReturnsAtPromptHead(t *testing.T) {
 	if !m.fullRows() {
 		t.Fatal("returning should land on the full screen list")
 	}
-	if got := m.focusRuntime.lastPaneSizes[sess.ID]; got != pinned {
+	if got := m.focus.runtime.lastPaneSizes[sess.ID]; got != pinned {
 		t.Fatalf("returning resized the pane to %v, want %v kept", got, pinned)
 	}
 }
@@ -355,7 +355,7 @@ func TestFullRowWorkingWithoutPaneLineAnimatesLoader(t *testing.T) {
 	m.prefs.comfortableRows = true
 	m.workspace.paneLines = nil
 	row := sessionRow(t, m, "add-rate-limiting")
-	lines := splitLines(m.renderTreeRow(row, false, m.width-1, 4, panelHex()))
+	lines := splitLines(m.renderTreeRow(row, false, m.layout.width-1, 4, panelHex()))
 	if len(lines) != 3 {
 		t.Fatalf("comfortable row painted %d lines, want 3", len(lines))
 	}
@@ -384,8 +384,8 @@ func TestPaneTargetSizeFollowsLayout(t *testing.T) {
 	}
 	m.prefs.fullLayout = true
 	fullW, fullH := m.paneTargetSize()
-	if fullW != m.width {
-		t.Fatalf("full layout target width = %d, want the terminal's %d", fullW, m.width)
+	if fullW != m.layout.width {
+		t.Fatalf("full layout target width = %d, want the terminal's %d", fullW, m.layout.width)
 	}
 	if fullH != m.listBodyHeight() {
 		t.Fatalf("full layout target height = %d, want the body's %d", fullH, m.listBodyHeight())
@@ -405,7 +405,7 @@ func TestSplitRepinKeepsTallerPaneHeight(t *testing.T) {
 
 	m.prefs.fullLayout = true
 	m.startup.sessionsSized = false
-	m.focusRuntime.lastPaneSizes = nil
+	m.focus.runtime.lastPaneSizes = nil
 	m.applyCmd(t, m.refreshCmd())
 	fullW, fullH := m.paneTargetSize()
 	if w, h := windowSize(t, id); w != fullW || h < fullH {
@@ -470,7 +470,7 @@ func TestFullFocusRuleNamesTheSession(t *testing.T) {
 	if wide := ansi.Strip(m.focusFactsLine(200)); !strings.Contains(wide, "started ") {
 		t.Errorf("a wide focus line should carry every reading:\n%s", wide)
 	}
-	facts := ansi.Strip(m.focusFactsLine(m.width))
+	facts := ansi.Strip(m.focusFactsLine(m.layout.width))
 	if strings.Contains(facts, "started ") {
 		t.Errorf("the sparest reading should go first as the line narrows:\n%s", facts)
 	}
@@ -486,10 +486,10 @@ func TestFullFocusRuleNamesTheSession(t *testing.T) {
 	if strings.Contains(facts, "─") {
 		t.Errorf("no rule should run through the facts:\n%s", facts)
 	}
-	if got := ansi.StringWidth(facts); got != m.width {
-		t.Fatalf("facts line is %d wide, terminal is %d", got, m.width)
+	if got := ansi.StringWidth(facts); got != m.layout.width {
+		t.Fatalf("facts line is %d wide, terminal is %d", got, m.layout.width)
 	}
-	if got := len(splitLines(m.focusFactsLine(m.width))); got != 1 {
+	if got := len(splitLines(m.focusFactsLine(m.layout.width))); got != 1 {
 		t.Fatalf("facts painted %d lines, want 1", got)
 	}
 
@@ -519,7 +519,7 @@ func TestFullFocusRuleNamesTheSession(t *testing.T) {
 
 	// The split's own rule still names the keys: its detail head above the
 	// pane already says which session this is.
-	if split := ansi.Strip(focusTopRule(m.width, m.services.keys)); !strings.Contains(split, `ctrl+q / ctrl+\ back`) {
+	if split := ansi.Strip(focusTopRule(m.layout.width, m.services.keys)); !strings.Contains(split, `ctrl+q / ctrl+\ back`) {
 		t.Fatalf("split focus rule lost its keys:\n%s", split)
 	}
 }
@@ -530,7 +530,7 @@ func TestFocusFactsWriteHomeAsTilde(t *testing.T) {
 		t.Skip("no home directory to shorten")
 	}
 	m := shotModel()
-	m.homeDir = home
+	m.env.homeDir = home
 	m.prefs.fullLayout = true
 	m.mode = modeFocus
 	setRailSessionCwd(m, railSelectedSession(m).ID, filepath.Join(home, "dev", "api"))
@@ -547,17 +547,17 @@ func TestFullFootShowsBattery(t *testing.T) {
 	m := shotModel()
 	m.prefs.fullLayout = true
 	m.workspace.snap.BatteryOK, m.workspace.snap.BatteryPercent = true, 33
-	foot := ansi.Strip(strings.Join(m.fullFootLine(m.width), "\n"))
+	foot := ansi.Strip(strings.Join(m.fullFootLine(m.layout.width), "\n"))
 	if !strings.Contains(foot, "batt 33%") || strings.Contains(foot, "charging") {
 		t.Fatalf("foot lacks the battery reading:\n%s", foot)
 	}
 	m.workspace.snap.BatteryCharging = true
-	foot = ansi.Strip(strings.Join(m.fullFootLine(m.width), "\n"))
+	foot = ansi.Strip(strings.Join(m.fullFootLine(m.layout.width), "\n"))
 	if !strings.Contains(foot, "batt 33% charging") {
 		t.Fatalf("foot lacks the charging suffix:\n%s", foot)
 	}
 	m.workspace.snap.BatteryOK = false
-	if foot = ansi.Strip(strings.Join(m.fullFootLine(m.width), "\n")); strings.Contains(foot, "batt") {
+	if foot = ansi.Strip(strings.Join(m.fullFootLine(m.layout.width), "\n")); strings.Contains(foot, "batt") {
 		t.Fatalf("foot shows a battery the machine lacks:\n%s", foot)
 	}
 }

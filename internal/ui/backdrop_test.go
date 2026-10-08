@@ -123,9 +123,9 @@ func TestViewPaintsEveryCellWithTheThemeColors(t *testing.T) {
 	useTrueColor(t)
 	usePaper(t)
 	m := shotModel()
-	backgrounds, foregrounds := cellColors(preparedView(m), m.width, m.height)
-	for y := range m.height {
-		for x := range m.width {
+	backgrounds, foregrounds := cellColors(preparedView(m), m.layout.width, m.layout.height)
+	for y := range m.layout.height {
+		for x := range m.layout.width {
 			if backgrounds[y][x] == nil {
 				t.Fatalf("row %d col %d shows the terminal's own background", y, x)
 			}
@@ -134,7 +134,7 @@ func TestViewPaintsEveryCellWithTheThemeColors(t *testing.T) {
 			}
 		}
 	}
-	if corner := backgrounds[m.height-1][m.width-1]; !sameColor(corner, hexColor(current.Bg)) {
+	if corner := backgrounds[m.layout.height-1][m.layout.width-1]; !sameColor(corner, hexColor(current.Bg)) {
 		t.Errorf("bottom right cell = %v, want the backdrop %s", corner, current.Bg)
 	}
 }
@@ -182,7 +182,7 @@ func TestColorlessTerminalLeavesTheFrameAsDrawn(t *testing.T) {
 func TestBackgroundSettingAppliesLiveAndPersists(t *testing.T) {
 	m := buildModel(t)
 	m.openSettings()
-	for m.settings.field != settingsFieldBackground {
+	for m.settings.dialog.field != settingsFieldBackground {
 		m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
 	}
 	if row := settingsRow(t, m, "background"); !strings.Contains(row, "theme") {
@@ -203,7 +203,7 @@ func TestBackgroundSettingAppliesLiveAndPersists(t *testing.T) {
 	}
 
 	m.openSettings()
-	m.settings.field = settingsFieldBackground
+	m.settings.dialog.field = settingsFieldBackground
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyLeft})
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m.drainEffects(t)

@@ -2,9 +2,20 @@ package ui
 
 import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	"reflect"
 	"strings"
 	"testing"
 )
+
+// Model's fields are grouped by the feature that owns them. Later steps move
+// groups into feature types and lower this cap.
+const maxModelFields = 30
+
+func TestModelFieldCap(t *testing.T) {
+	if n := reflect.TypeFor[Model]().NumField(); n > maxModelFields {
+		t.Fatalf("Model has %d fields, cap is %d: group the new state with its owner", n, maxModelFields)
+	}
+}
 
 // New hands the stored key table to the tmux driver, so a session the
 // manager creates is bound and labelled the same way focus reads its keys.
@@ -15,7 +26,7 @@ func TestNewHandsTheKeyTableToTmux(t *testing.T) {
 		t.Fatalf("SetKeys: %v", err)
 	}
 	loaded := reloadModel(t, m)
-	loaded.width, loaded.height = 120, 40
+	loaded.layout.width, loaded.layout.height = 120, 40
 	t.Cleanup(func() { m.services.tmux.SetSessionKeys(keybind.DefaultSession()) })
 	if got := loaded.services.keys.Binding(keybind.Editor).Label(); got != "f3" {
 		t.Fatalf("an action nobody moved should keep its default, got %q", got)

@@ -190,7 +190,7 @@ func (m *Model) applyRenameEffect(job *effectJob, result renameEffectResult, err
 	}
 	if err != nil {
 		m.errBar.text = err.Error()
-	} else if m.mode == modeRename && m.dialogGen == request.gen && strings.ReplaceAll(strings.TrimSpace(m.rename.input.Value()), "/", "-") == request.name &&
+	} else if m.mode == modeRename && m.gens.dialog == request.gen && strings.ReplaceAll(strings.TrimSpace(m.rename.input.Value()), "/", "-") == request.name &&
 		(request.kind != renameGroup || m.rename.dir.Value() == request.draftDir) {
 		// Only the dialog that submitted this job closes; a reopened or
 		// resubmitted card keeps its edits.
@@ -218,8 +218,8 @@ func (m *Model) mirrorGroupRenamePartial(request renameRequest, dir string, resu
 // lane as a typed Rail mutation, with a chained follow-up that closes the
 // dialog only if the generation it was submitted with is still open.
 func (m *Model) enqueueMove(mut uirail.Mutation, close moveDialogClose) tea.Cmd {
-	m.dialogGen++
-	close.gen = m.dialogGen
+	m.gens.dialog++
+	close.gen = m.gens.dialog
 	m.effects.nextChain++
 	chain := m.effects.nextChain
 	request := railRequest{
@@ -266,7 +266,7 @@ func (m *Model) capturePlacementPrecondition(mutation uirail.Mutation) placement
 }
 
 func (m *Model) applyMoveDialogClose(request moveDialogClose) {
-	if m.mode != modeMove || m.dialogGen != request.gen {
+	if m.mode != modeMove || m.gens.dialog != request.gen {
 		return
 	}
 	m.mode = modeList

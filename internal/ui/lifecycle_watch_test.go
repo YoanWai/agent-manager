@@ -12,8 +12,8 @@ import (
 
 func seedLifecycleWatcher(t *testing.T, m *Model, id string) {
 	t.Helper()
-	m.focusRuntime.watch = &focusWatch{driver: m.services.tmux, id: id, send: func(tea.Msg) {}}
-	t.Cleanup(m.focusRuntime.watch.Close)
+	m.focus.runtime.watch = &focusWatch{driver: m.services.tmux, id: id, send: func(tea.Msg) {}}
+	t.Cleanup(m.focus.runtime.watch.Close)
 }
 
 func TestFailedArchiveRestoresSurvivingSelectionWatcher(t *testing.T) {
@@ -27,7 +27,7 @@ func TestFailedArchiveRestoresSurvivingSelectionWatcher(t *testing.T) {
 	if err := m.archiveConfirmed(); err == nil {
 		t.Fatal("expected snapshot failure")
 	}
-	if got := m.focusRuntime.watch.watching(); got != sess.ID {
+	if got := m.focus.runtime.watch.watching(); got != sess.ID {
 		t.Fatalf("watching=%q, want surviving %q", got, sess.ID)
 	}
 }
@@ -50,7 +50,7 @@ func TestFailedChildDeleteRestoresSurvivingParentWatcher(t *testing.T) {
 	if _, err := m.deleteConfirmed(); err == nil {
 		t.Fatal("expected child cleanup failure")
 	}
-	if got := m.focusRuntime.watch.watching(); got != parent.ID {
+	if got := m.focus.runtime.watch.watching(); got != parent.ID {
 		t.Fatalf("watching=%q, want surviving %q", got, parent.ID)
 	}
 }

@@ -35,7 +35,7 @@ func (m *Model) diffRowCount(fd *diff.FileDiff) int {
 func (m *Model) cursorDiffLine() int { return m.review.CursorDiffLine() }
 
 func (m *Model) diffCodeHeight() int {
-	height := m.height - 6 - lipgloss.Height(m.viewDiffFooter())
+	height := m.layout.height - 6 - lipgloss.Height(m.viewDiffFooter())
 	if m.review.Snapshot().Annotating {
 		height -= m.diffAnnBarRows() + 1
 	}
@@ -72,16 +72,16 @@ func (m *Model) annotationInputHeight(width int) int {
 }
 
 func (m *Model) diffPaneWidths() (fileWidth, codeWidth int) {
-	fileWidth = max(m.width*24/100, diffFileRailWidth)
-	if m.width-fileWidth-diffPaneSeam < diffCodeMinWidth {
-		fileWidth = max(m.width-diffPaneSeam-diffCodeMinWidth, 0)
+	fileWidth = max(m.layout.width*24/100, diffFileRailWidth)
+	if m.layout.width-fileWidth-diffPaneSeam < diffCodeMinWidth {
+		fileWidth = max(m.layout.width-diffPaneSeam-diffCodeMinWidth, 0)
 	}
-	return fileWidth, max(m.width-fileWidth-diffPaneSeam, 0)
+	return fileWidth, max(m.layout.width-fileWidth-diffPaneSeam, 0)
 }
 
 // prepareReviewLayout performs the only Review layout mutations before View.
 func (m *Model) prepareReviewLayout() {
-	if m.mode != modeDiff || m.width <= 0 || m.height <= 0 {
+	if m.mode != modeDiff || m.layout.width <= 0 || m.layout.height <= 0 {
 		return
 	}
 	fd := m.currentFileDiff()
@@ -89,7 +89,7 @@ func (m *Model) prepareReviewLayout() {
 		return
 	}
 	footer := m.viewDiffFooter()
-	bodyHeight := m.height - 4 - lipgloss.Height(footer)
+	bodyHeight := m.layout.height - 4 - lipgloss.Height(footer)
 	if bodyHeight < 5 {
 		bodyHeight = 5
 	}

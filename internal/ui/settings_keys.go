@@ -74,47 +74,47 @@ func labelOrOff(binding keybind.Binding) string {
 }
 
 func (m *Model) openKeyPicker() {
-	m.settings.keyPicker = true
-	m.settings.tables = []keybind.Table{m.services.keys, m.services.listKeys}
-	m.settings.keyCursor = 0
-	m.settings.keyCapture = false
-	m.settings.keyAppend = false
-	m.settings.keyReset = false
+	m.settings.dialog.keyPicker = true
+	m.settings.dialog.tables = []keybind.Table{m.services.keys, m.services.listKeys}
+	m.settings.dialog.keyCursor = 0
+	m.settings.dialog.keyCapture = false
+	m.settings.dialog.keyAppend = false
+	m.settings.dialog.keyReset = false
 	m.errBar.text = ""
 }
 
 func (m *Model) pickedRow() keyRow {
-	return keyRowsOf(m.settings.tables)[m.settings.keyCursor]
+	return keyRowsOf(m.settings.dialog.tables)[m.settings.dialog.keyCursor]
 }
 
 func (m *Model) pickedTable() keybind.Table {
-	return m.settings.tables[m.pickedRow().table]
+	return m.settings.dialog.tables[m.pickedRow().table]
 }
 
 func (m *Model) handleKeyPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.settings.keyCapture {
+	if m.settings.dialog.keyCapture {
 		return m.captureKey(msg)
 	}
-	if m.settings.keyReset {
+	if m.settings.dialog.keyReset {
 		return m.answerKeyReset(msg)
 	}
-	count := len(keyRowsOf(m.settings.tables))
+	count := len(keyRowsOf(m.settings.dialog.tables))
 	switch msg.String() {
 	case "up", "k":
-		m.settings.keyCursor = (m.settings.keyCursor + count - 1) % count
+		m.settings.dialog.keyCursor = (m.settings.dialog.keyCursor + count - 1) % count
 	case "down", "j":
-		m.settings.keyCursor = (m.settings.keyCursor + 1) % count
+		m.settings.dialog.keyCursor = (m.settings.dialog.keyCursor + 1) % count
 	case "enter", "a":
-		m.settings.keyCapture = true
-		m.settings.keyAppend = msg.String() == "a"
+		m.settings.dialog.keyCapture = true
+		m.settings.dialog.keyAppend = msg.String() == "a"
 		m.errBar.text = ""
 	case "d":
 		return m, m.setBinding(keybind.Keys())
 	case "r":
-		m.settings.keyReset = len(keyResetChanges(m.settings.tables...)) > 0
+		m.settings.dialog.keyReset = len(keyResetChanges(m.settings.dialog.tables...)) > 0
 		m.errBar.text = ""
 	case "esc":
-		m.settings.keyPicker = false
+		m.settings.dialog.keyPicker = false
 		return m, m.saveKeys()
 	}
 	return m, nil
@@ -123,7 +123,7 @@ func (m *Model) handleKeyPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // Every key reaches here, so esc leaves rather than binds; Parse would
 // refuse it anyway.
 func (m *Model) captureKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	m.settings.keyCapture = false
+	m.settings.dialog.keyCapture = false
 	if msg.String() == "esc" {
 		m.errBar.text = ""
 		return m, nil
@@ -134,7 +134,7 @@ func (m *Model) captureKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	binding := keybind.Keys(key)
-	if m.settings.keyAppend {
+	if m.settings.dialog.keyAppend {
 		existing := m.pickedTable().Binding(m.pickedRow().action.Name)
 		if existing.Has(key.Tea()) {
 			m.errBar.text = fmt.Sprintf("%s already answers to %s", m.pickedRow().action.Name, key)
@@ -148,12 +148,12 @@ func (m *Model) captureKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) answerKeyReset(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "y", "enter":
-		for i, keys := range m.settings.tables {
-			m.settings.tables[i] = keys.Defaults()
+		for i, keys := range m.settings.dialog.tables {
+			m.settings.dialog.tables[i] = keys.Defaults()
 		}
-		m.settings.keyReset = false
+		m.settings.dialog.keyReset = false
 	case "n", "esc":
-		m.settings.keyReset = false
+		m.settings.dialog.keyReset = false
 	}
 	return m, nil
 }
@@ -177,12 +177,12 @@ func keyResetChanges(tables ...keybind.Table) []string {
 // always loads back.
 func (m *Model) setBinding(binding keybind.Binding) tea.Cmd {
 	row := m.pickedRow()
-	candidate := m.settings.tables[row.table].With(row.action.Name, binding)
+	candidate := m.settings.dialog.tables[row.table].With(row.action.Name, binding)
 	if err := candidate.Validate(); err != nil {
 		m.errBar.text = err.Error()
 		return nil
 	}
-	m.settings.tables[row.table] = candidate
+	m.settings.dialog.tables[row.table] = candidate
 	m.errBar.text = ""
 	return nil
 }
@@ -193,7 +193,7 @@ func (m *Model) setBinding(binding keybind.Binding) tea.Cmd {
 // captured tables to the effect lane; the store writes happen off the
 // update path and a partial commit reconciles the runtime to the store.
 func (m *Model) saveKeys() tea.Cmd {
-	session, list := m.settings.tables[0], m.settings.tables[1]
+	session, list := m.settings.dialog.tables[0], m.settings.dialog.tables[1]
 	expectedList, expectedSession := m.services.listKeys, m.services.keys
 	for _, job := range append([]*effectJob{m.effects.active}, m.effects.pending...) {
 		if job == nil {

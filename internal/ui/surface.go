@@ -132,7 +132,7 @@ func (m *Model) bleedColumn(height int) []string {
 	// Focus mode lights this column beside the pane rows alone, so the edge
 	// traces the agent's terminal rather than the whole content panel. The
 	// top corner sits on the rule row just above the capture.
-	box := m.focusPane.FrameBox()
+	box := m.focus.pane.FrameBox()
 	if m.mode == modeFocus && box.Valid {
 		edge := paint(focusEdgeStyle.Render("│"), 1, panelHex())
 		corner := paint(focusEdgeStyle.Render("╭"), 1, panelHex())
@@ -169,9 +169,9 @@ func (m *Model) focusBottomRule(paneWidth, width int) string {
 // reads as the content's separator running into the sessions list.
 func (m *Model) seamCell(railRule bool) string {
 	// While the divider is being moved the seam becomes the grip.
-	if m.split.dragging || m.split.resizeMode {
+	if m.layout.split.dragging || m.layout.split.resizeMode {
 		color := colorAccent
-		if m.split.dragging {
+		if m.layout.split.dragging {
 			color = colorAccent2
 		}
 		return paint(lipgloss.NewStyle().Foreground(color).Render("║"), 1, panelHex())

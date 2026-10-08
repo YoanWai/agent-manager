@@ -59,9 +59,9 @@ func (m *Model) persistSplitRatio() {
 		return
 	}
 	previousID := m.effects.nextID
-	m.enqueueEffect(splitSaveRequest{value: strconv.FormatFloat(m.split.ratio, 'f', 4, 64)}, 0, false)
+	m.enqueueEffect(splitSaveRequest{value: strconv.FormatFloat(m.layout.split.ratio, 'f', 4, 64)}, 0, false)
 	if m.effects.nextID != previousID {
-		m.split.saveID = m.effects.nextID
+		m.layout.split.saveID = m.effects.nextID
 	}
 }
 
@@ -69,13 +69,13 @@ func (m *Model) persistSplitRatio() {
 // It runs only after requestQuit has passed the installer refusal gates, so a
 // refused quit leaves the active resize interaction untouched.
 func (m *Model) prepareSplitForQuit() {
-	if !m.split.resizeMode && !m.split.dragging {
+	if !m.layout.split.resizeMode && !m.layout.split.dragging {
 		return
 	}
 	m.persistSplitRatio()
-	m.split.resizeMode = false
-	m.split.dragging = false
-	m.split.moved = false
+	m.layout.split.resizeMode = false
+	m.layout.split.dragging = false
+	m.layout.split.moved = false
 }
 
 // clampSplitLeft keeps both panels above minSplitSide when the terminal
@@ -109,11 +109,11 @@ func clampSplitLeft(left, width int) int {
 // updates the stored ratio. Live during a drag; consumers re-read via
 // splitWidths on the next View.
 func (m *Model) setSplitFromX(x int) {
-	if m.width <= 0 {
+	if m.layout.width <= 0 {
 		return
 	}
-	left := clampSplitLeft(x, m.width)
-	m.split.ratio = float64(left) / float64(m.width)
+	left := clampSplitLeft(x, m.layout.width)
+	m.layout.split.ratio = float64(left) / float64(m.layout.width)
 }
 
 // enterResizeMode arms divider dragging, which the arrow keys drive. The
@@ -122,9 +122,9 @@ func (m *Model) enterResizeMode() (tea.Model, tea.Cmd) {
 	if m.mode != modeList || m.rail.Searching() || m.quick.active {
 		return m, nil
 	}
-	m.split.resizeMode = true
-	m.split.dragging = false
-	m.split.ratioBefore = m.split.ratio
+	m.layout.split.resizeMode = true
+	m.layout.split.dragging = false
+	m.layout.split.ratioBefore = m.layout.split.ratio
 	m.errBar.text = ""
 	return m, nil
 }
@@ -133,17 +133,17 @@ func (m *Model) enterResizeMode() (tea.Model, tea.Cmd) {
 // ratio is persisted; cancel restores the pre-mode ratio. Either path ends
 // with a pane resize so the preview stays 1:1 with the panel.
 func (m *Model) exitResizeMode(commit bool) (tea.Model, tea.Cmd) {
-	if !m.split.resizeMode && !m.split.dragging {
+	if !m.layout.split.resizeMode && !m.layout.split.dragging {
 		return m, nil
 	}
 	if !commit {
-		m.split.ratio = m.split.ratioBefore
+		m.layout.split.ratio = m.layout.split.ratioBefore
 	} else {
 		m.persistSplitRatio()
 	}
-	m.split.dragging = false
-	m.split.moved = false
-	m.split.resizeMode = false
+	m.layout.split.dragging = false
+	m.layout.split.moved = false
+	m.layout.split.resizeMode = false
 	m.resizeSessions()
 	return m, nil
 }
@@ -152,7 +152,7 @@ func (m *Model) exitResizeMode(commit bool) (tea.Model, tea.Cmd) {
 // UI reflows instantly; tmux reflow is deferred to commit (| / mouse up)
 // so holding an arrow does not spawn a resize-window per keystroke.
 func (m *Model) nudgeSplit(delta int) {
-	if m.width <= 0 || delta == 0 {
+	if m.layout.width <= 0 || delta == 0 {
 		return
 	}
 	left, _ := m.splitWidths()
@@ -175,7 +175,7 @@ func (m *Model) listChromeRows() int {
 // Matches View: height - (header, seam, footer). Notices float over the body
 // instead of taking a row, so the budget is the same with one up.
 func (m *Model) listBodyHeight() int {
-	bodyHeight := m.height - m.listChromeRows() - 1 - lipgloss.Height(m.viewFooter())
+	bodyHeight := m.layout.height - m.listChromeRows() - 1 - lipgloss.Height(m.viewFooter())
 	if bodyHeight < 3 {
 		bodyHeight = 3
 	}
@@ -187,7 +187,7 @@ func (m *Model) restingBodyHeight() int {
 	if !m.quick.active {
 		return m.listBodyHeight()
 	}
-	return max(m.height-m.listChromeRows()-1-lipgloss.Height(m.listFooter()), 3)
+	return max(m.layout.height-m.listChromeRows()-1-lipgloss.Height(m.listFooter()), 3)
 }
 
 // bodyYRange is the inclusive-start exclusive-end row range of the main

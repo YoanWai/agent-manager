@@ -107,14 +107,14 @@ func (s effectServices) runGeometry(request geometryRequest) (effectResult, erro
 	return result, err
 }
 func (m *Model) applyGeometryEffect(result geometryEffectResult, err error) {
-	if m.focusRuntime.lastPaneSizes == nil {
-		m.focusRuntime.lastPaneSizes = map[string][2]int{}
+	if m.focus.runtime.lastPaneSizes == nil {
+		m.focus.runtime.lastPaneSizes = map[string][2]int{}
 	}
 	for _, target := range result.resized {
-		m.focusRuntime.lastPaneSizes[target.id] = target.size
+		m.focus.runtime.lastPaneSizes[target.id] = target.size
 	}
 	if result.publish != [2]int{} {
-		m.focusRuntime.lastPublishedSize = result.publish
+		m.focus.runtime.lastPublishedSize = result.publish
 	}
 	if err != nil {
 		m.errBar.text = err.Error()

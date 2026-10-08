@@ -23,10 +23,10 @@ func keyPickerModel(t *testing.T) *Model {
 		}
 	})
 	m.openSettings()
-	m.settings.field = settingsFieldKeybindings
+	m.settings.dialog.field = settingsFieldKeybindings
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	*m = *updated.(*Model)
-	if !m.settings.keyPicker {
+	if !m.settings.dialog.keyPicker {
 		t.Fatalf("enter on the keys row should open the picker, err = %q", m.errBar.text)
 	}
 	return m
@@ -65,16 +65,16 @@ func storedKeyRow(t *testing.T, m *Model, scope string) string {
 func TestKeyPickerBindsCapturedKeyAndSavesIt(t *testing.T) {
 	m := keyPickerModel(t)
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
-	if !m.settings.keyCapture {
+	if !m.settings.dialog.keyCapture {
 		t.Fatal("enter on an action should wait for a key")
 	}
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyF9})
-	if got := m.settings.tables[0].Binding(keybind.Detach).Label(); got != "f9" {
+	if got := m.settings.dialog.tables[0].Binding(keybind.Detach).Label(); got != "f9" {
 		t.Fatalf("detach = %q, want f9", got)
 	}
 
 	cmd := m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
-	if m.settings.keyPicker {
+	if m.settings.dialog.keyPicker {
 		t.Fatal("esc should leave the picker")
 	}
 	if m.errBar.text != "" {
@@ -126,7 +126,7 @@ func TestKeyPickerRefusesAKeyTheAgentNeeds(t *testing.T) {
 	if !strings.Contains(m.errBar.text, "plain key, which reaches the agent") {
 		t.Fatalf("err = %q, want the plain-key reason", m.errBar.text)
 	}
-	if got := m.settings.tables[0].Binding(keybind.Detach).Label(); got != `ctrl+q / ctrl+\` {
+	if got := m.settings.dialog.tables[0].Binding(keybind.Detach).Label(); got != `ctrl+q / ctrl+\` {
 		t.Fatalf("detach should be untouched, got %q", got)
 	}
 }
@@ -135,13 +135,13 @@ func TestKeyPickerRefusesAKeyTheAgentNeeds(t *testing.T) {
 // refused rather than leaving two actions on it.
 func TestKeyPickerRefusesAKeyAnotherActionOwns(t *testing.T) {
 	m := keyPickerModel(t)
-	m.settings.keyCursor = 1
+	m.settings.dialog.keyCursor = 1
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyF3})
 	if !strings.Contains(m.errBar.text, "bound to both") {
 		t.Fatalf("err = %q, want the shared-key reason", m.errBar.text)
 	}
-	if got := m.settings.tables[0].Binding(keybind.Review).Label(); got != "ctrl+r" {
+	if got := m.settings.dialog.tables[0].Binding(keybind.Review).Label(); got != "ctrl+r" {
 		t.Fatalf("review should be untouched, got %q", got)
 	}
 }
@@ -150,22 +150,22 @@ func TestKeyPickerRefusesAKeyAnotherActionOwns(t *testing.T) {
 // which is the way back from a focused session.
 func TestKeyPickerTurnsAnActionOffButKeepsAWayBack(t *testing.T) {
 	m := keyPickerModel(t)
-	m.settings.keyCursor = 2
+	m.settings.dialog.keyCursor = 2
 	m.pressInPicker(t, runeKey("d"))
-	if got := m.settings.tables[0].Binding(keybind.Editor).Label(); got != "" {
+	if got := m.settings.dialog.tables[0].Binding(keybind.Editor).Label(); got != "" {
 		t.Fatalf("editor should be off, got %q", got)
 	}
 
-	m.settings.keyCursor = 0
+	m.settings.dialog.keyCursor = 0
 	m.pressInPicker(t, runeKey("d"))
 	if !strings.Contains(m.errBar.text, "detach needs at least one key") {
 		t.Fatalf("err = %q, want the detach rule", m.errBar.text)
 	}
-	if got := m.settings.tables[0].Binding(keybind.Detach).Label(); got != `ctrl+q / ctrl+\` {
+	if got := m.settings.dialog.tables[0].Binding(keybind.Detach).Label(); got != `ctrl+q / ctrl+\` {
 		t.Fatalf("detach should be untouched, got %q", got)
 	}
 
-	m.settings.keyCursor = 2
+	m.settings.dialog.keyCursor = 2
 	cmd := m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
 	m.applyCmd(t, cmd)
 	if got := storedSessionKeys(t, m).Binding(keybind.Editor).Label(); got != "" {
@@ -176,10 +176,10 @@ func TestKeyPickerTurnsAnActionOffButKeepsAWayBack(t *testing.T) {
 // a adds a second key to an action rather than replacing what it answers to.
 func TestKeyPickerAddsASecondKey(t *testing.T) {
 	m := keyPickerModel(t)
-	m.settings.keyCursor = 1
+	m.settings.dialog.keyCursor = 1
 	m.pressInPicker(t, runeKey("a"))
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyF9})
-	if got := m.settings.tables[0].Binding(keybind.Review).Label(); got != "ctrl+r / f9" {
+	if got := m.settings.dialog.tables[0].Binding(keybind.Review).Label(); got != "ctrl+r / f9" {
 		t.Fatalf("review = %q, want both keys", got)
 	}
 	m.pressInPicker(t, runeKey("a"))
@@ -196,10 +196,10 @@ func TestKeyPickerResetsEveryActionToItsDefaultAfterAsking(t *testing.T) {
 	customList := keybind.DefaultList().With(keybind.NewSession, bindingOf(t, "N"))
 	m.services.keys, m.services.listKeys = custom, customList
 	m.services.tmux.SetSessionKeys(custom)
-	m.settings.tables[0], m.settings.tables[1] = custom, customList
+	m.settings.dialog.tables[0], m.settings.dialog.tables[1] = custom, customList
 
 	m.pressInPicker(t, runeKey("r"))
-	if !m.settings.keyReset {
+	if !m.settings.dialog.keyReset {
 		t.Fatal("r should ask before resetting")
 	}
 	ask := ansi.Strip(m.viewKeyPicker())
@@ -209,14 +209,14 @@ func TestKeyPickerResetsEveryActionToItsDefaultAfterAsking(t *testing.T) {
 		}
 	}
 	m.pressInPicker(t, runeKey("n"))
-	if m.settings.keyReset || !m.settings.tables[0].Equal(custom) {
-		t.Fatalf("n should keep the keys, got %s", m.settings.tables[0].Binding(keybind.Detach).Label())
+	if m.settings.dialog.keyReset || !m.settings.dialog.tables[0].Equal(custom) {
+		t.Fatalf("n should keep the keys, got %s", m.settings.dialog.tables[0].Binding(keybind.Detach).Label())
 	}
 
 	m.pressInPicker(t, runeKey("r"))
 	m.pressInPicker(t, runeKey("y"))
-	if m.settings.keyReset || !m.settings.tables[0].Equal(keybind.DefaultSession()) || !m.settings.tables[1].Equal(keybind.DefaultList()) {
-		t.Fatalf("y should restore both tables, got %s and new_session %s", m.settings.tables[0].Binding(keybind.Detach).Label(), m.settings.tables[1].Binding(keybind.NewSession).Label())
+	if m.settings.dialog.keyReset || !m.settings.dialog.tables[0].Equal(keybind.DefaultSession()) || !m.settings.dialog.tables[1].Equal(keybind.DefaultList()) {
+		t.Fatalf("y should restore both tables, got %s and new_session %s", m.settings.dialog.tables[0].Binding(keybind.Detach).Label(), m.settings.dialog.tables[1].Binding(keybind.NewSession).Label())
 	}
 
 	cmd := m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
@@ -239,7 +239,7 @@ func TestKeyPickerResetsEveryActionToItsDefaultAfterAsking(t *testing.T) {
 func TestKeyPickerResetOnDefaultsAsksNothing(t *testing.T) {
 	m := keyPickerModel(t)
 	m.pressInPicker(t, runeKey("r"))
-	if m.settings.keyReset {
+	if m.settings.dialog.keyReset {
 		t.Fatal("r on the defaults should not open the question")
 	}
 }
@@ -248,13 +248,13 @@ func TestKeyPickerEscapeCancelsCapture(t *testing.T) {
 	m := keyPickerModel(t)
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
-	if m.settings.keyCapture {
+	if m.settings.dialog.keyCapture {
 		t.Fatal("esc should end the capture")
 	}
-	if !m.settings.keyPicker {
+	if !m.settings.dialog.keyPicker {
 		t.Fatal("cancelling a capture should stay in the picker")
 	}
-	if got := m.settings.tables[0].Binding(keybind.Detach).Label(); got != `ctrl+q / ctrl+\` {
+	if got := m.settings.dialog.tables[0].Binding(keybind.Detach).Label(); got != `ctrl+q / ctrl+\` {
 		t.Fatalf("detach should be untouched, got %q", got)
 	}
 }
@@ -287,7 +287,7 @@ func TestKeyPickerViewNamesTheKeysAndTheCapture(t *testing.T) {
 		t.Fatalf("a waiting row should say so:\n%s", capture)
 	}
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
-	m.settings.keyCursor = 2
+	m.settings.dialog.keyCursor = 2
 	m.pressInPicker(t, runeKey("d"))
 	if off := ansi.Strip(m.viewKeyPicker()); !strings.Contains(off, "off, the agent gets it") {
 		t.Fatalf("a disabled action should say where its key goes:\n%s", off)
@@ -300,7 +300,7 @@ func TestSettingsRowCountsTheMovedKeys(t *testing.T) {
 	m := buildModel(t)
 	m.services.keys = keybind.DefaultSession()
 	m.openSettings()
-	m.settings.field = settingsFieldKeybindings
+	m.settings.dialog.field = settingsFieldKeybindings
 	view := ansi.Strip(m.viewSettings())
 	if !strings.Contains(view, "keybindings") || !strings.Contains(view, "defaults") {
 		t.Fatalf("settings should carry the row on its defaults:\n%s", view)
@@ -327,10 +327,10 @@ func TestListPickerMovesAKeyAndTheListFollows(t *testing.T) {
 			t.Fatalf("list picker is missing %q:\n%s", want, view)
 		}
 	}
-	m.settings.keyCursor = listRow(t, m, keybind.NewSession)
+	m.settings.dialog.keyCursor = listRow(t, m, keybind.NewSession)
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
 	m.pressInPicker(t, runeKey("N"))
-	if got := m.settings.tables[1].Binding(keybind.NewSession).Label(); got != "N" {
+	if got := m.settings.dialog.tables[1].Binding(keybind.NewSession).Label(); got != "N" {
 		t.Fatalf("new_session = %q, want N", got)
 	}
 	cmd := m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
@@ -371,12 +371,12 @@ func TestListPickerMovesAKeyAndTheListFollows(t *testing.T) {
 
 func TestListPickerRefusesWhatWouldStrandTheUser(t *testing.T) {
 	m := keyPickerModel(t)
-	m.settings.keyCursor = listRow(t, m, keybind.Settings)
+	m.settings.dialog.keyCursor = listRow(t, m, keybind.Settings)
 	m.pressInPicker(t, runeKey("d"))
 	if !strings.Contains(m.errBar.text, "settings needs at least one key") {
 		t.Fatalf("err = %q, want the settings rule", m.errBar.text)
 	}
-	m.settings.keyCursor = listRow(t, m, keybind.Kill)
+	m.settings.dialog.keyCursor = listRow(t, m, keybind.Kill)
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
 	m.pressInPicker(t, runeKey("n"))
 	if !strings.Contains(m.errBar.text, "n is bound to both new_session and kill") {
@@ -384,7 +384,7 @@ func TestListPickerRefusesWhatWouldStrandTheUser(t *testing.T) {
 	}
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
-	if !m.settings.tables[1].Equal(keybind.DefaultList()) {
+	if !m.settings.dialog.tables[1].Equal(keybind.DefaultList()) {
 		t.Fatal("a refused or cancelled capture should leave the table alone")
 	}
 }
@@ -393,13 +393,13 @@ func TestListPickerRefusesWhatWouldStrandTheUser(t *testing.T) {
 // around the cursor and says how many rows lie beyond it.
 func TestListPickerScrollsAroundTheCursor(t *testing.T) {
 	m := keyPickerModel(t)
-	m.height = 20
+	m.layout.height = 20
 	below, above := regexp.MustCompile(`↓ \d+ more`), regexp.MustCompile(`↑ \d+ more`)
 	top := ansi.Strip(m.viewKeyPicker())
 	if !below.MatchString(top) || above.MatchString(top) {
 		t.Fatalf("at the top only the rows below should be counted:\n%s", top)
 	}
-	m.settings.keyCursor = len(keyRowsOf(m.settings.tables)) - 1
+	m.settings.dialog.keyCursor = len(keyRowsOf(m.settings.dialog.tables)) - 1
 	bottom := ansi.Strip(m.viewKeyPicker())
 	if !strings.Contains(bottom, "quit") || !above.MatchString(bottom) || below.MatchString(bottom) {
 		t.Fatalf("at the bottom the last row shows and only the rows above are counted:\n%s", bottom)
@@ -408,7 +408,7 @@ func TestListPickerScrollsAroundTheCursor(t *testing.T) {
 
 func listRow(t *testing.T, m *Model, name string) int {
 	t.Helper()
-	for i, row := range keyRowsOf(m.settings.tables) {
+	for i, row := range keyRowsOf(m.settings.dialog.tables) {
 		if row.table == 1 && row.action.Name == name {
 			return i
 		}
@@ -420,7 +420,7 @@ func listRow(t *testing.T, m *Model, name string) int {
 // The picker sets tmux_prefix like a session key and refuses a third prefix key.
 func TestKeyPickerSetsTheTmuxPrefix(t *testing.T) {
 	m := keyPickerModel(t)
-	m.settings.keyCursor = 3
+	m.settings.dialog.keyCursor = 3
 	if row := m.pickedRow(); row.action.Name != keybind.TmuxPrefix {
 		t.Fatalf("row 3 = %q, want tmux_prefix", row.action.Name)
 	}
@@ -437,7 +437,7 @@ func TestKeyPickerSetsTheTmuxPrefix(t *testing.T) {
 	if !strings.Contains(m.errBar.text, "takes one key or two") {
 		t.Fatalf("err = %q, want the two-key rule", m.errBar.text)
 	}
-	if got := m.settings.tables[0].Binding(keybind.TmuxPrefix).Label(); got != "ctrl+b / f12" {
+	if got := m.settings.dialog.tables[0].Binding(keybind.TmuxPrefix).Label(); got != "ctrl+b / f12" {
 		t.Fatalf("tmux_prefix = %q, want both keys", got)
 	}
 
@@ -468,7 +468,7 @@ func TestKeyPickerSetsTheTmuxPrefix(t *testing.T) {
 // Reset puts tmux_prefix back to off, and the question says so in words.
 func TestKeyPickerResetNamesTheTmuxPrefixGoingOff(t *testing.T) {
 	m := keyPickerModel(t)
-	m.settings.tables[0] = m.settings.tables[0].With(keybind.TmuxPrefix, bindingOf(t, "ctrl+b"))
+	m.settings.dialog.tables[0] = m.settings.dialog.tables[0].With(keybind.TmuxPrefix, bindingOf(t, "ctrl+b"))
 	m.pressInPicker(t, runeKey("r"))
 	if ask := ansi.Strip(m.viewKeyPicker()); !strings.Contains(ask, "tmux_prefix: ctrl+b back to off") {
 		t.Fatalf("the question should name tmux_prefix going off:\n%s", ask)

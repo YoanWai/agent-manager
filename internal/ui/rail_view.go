@@ -15,7 +15,7 @@ const (
 
 func (m *Model) viewListFrame() string {
 	if m.fullFocus() {
-		m.displayedRail = uirail.Frame{}
+		m.layout.displayedRail = uirail.Frame{}
 		return m.viewFullFocusFrame()
 	}
 	if m.fullRows() {
@@ -28,12 +28,12 @@ func (m *Model) viewListFrame() string {
 
 	frame := []string{}
 	for _, line := range m.viewHeaderRows() {
-		frame = append(frame, paint(line, m.width, backdropHex()))
+		frame = append(frame, paint(line, m.layout.width, backdropHex()))
 	}
 	bleedWidth := contentWidth - 1
 	railWidth := leftWidth - 1
 	m.prepareRailFrame(railWidth, bodyHeight)
-	railRows := railContentLines(m.displayedRail.Lines)
+	railRows := railContentLines(m.layout.displayedRail.Lines)
 	contentRows := m.contentLines(bleedWidth, bodyHeight)
 	seam := make([]string, bodyHeight)
 	edge := make([]string, bodyHeight)
@@ -45,7 +45,7 @@ func (m *Model) viewListFrame() string {
 		}
 		edge[i] = railEdgeCell(tone)
 	}
-	frame = append(frame, m.railTopRow(leftWidth+1, m.width))
+	frame = append(frame, m.railTopRow(leftWidth+1, m.layout.width))
 	frame = append(frame, joinColumns(
 		edge,
 		paintContent(railRows, railWidth, bodyHeight, panelHex()),
@@ -53,15 +53,15 @@ func (m *Model) viewListFrame() string {
 		m.bleedColumn(bodyHeight),
 		paintContent(contentRows, bleedWidth, bodyHeight, backdropHex()),
 	)...)
-	bottom := m.boundedRuleRow(leftWidth+1, m.width, "▄")
-	if m.mode == modeFocus && m.focusPane.FrameBox().Valid {
-		bottom = m.focusBottomRule(leftWidth+1, m.width)
+	bottom := m.boundedRuleRow(leftWidth+1, m.layout.width, "▄")
+	if m.mode == modeFocus && m.focus.pane.FrameBox().Valid {
+		bottom = m.focusBottomRule(leftWidth+1, m.layout.width)
 	}
 	frame = append(frame, bottom)
 	m.placeNoticeHit(footer, len(frame))
 	m.quick.originY = len(frame)
 	for _, line := range splitLines(footer) {
-		frame = append(frame, paint(line, m.width, backdropHex()))
+		frame = append(frame, paint(line, m.layout.width, backdropHex()))
 	}
 	return m.overlayTopRight(strings.Join(frame, "\n"), m.statusToast(), m.listChromeRows()+1)
 }
@@ -71,14 +71,14 @@ func (m *Model) fullRows() bool { return m.prefs.fullLayout && m.mode != modeFoc
 func (m *Model) viewFullListFrame() string {
 	footer := m.viewFooter()
 	bodyHeight := m.listBodyHeight()
-	railWidth := m.width - 1
+	railWidth := m.layout.width - 1
 
 	frame := []string{}
 	for _, line := range m.viewHeaderRows() {
-		frame = append(frame, paint(line, m.width, backdropHex()))
+		frame = append(frame, paint(line, m.layout.width, backdropHex()))
 	}
 	m.prepareRailFrame(railWidth, bodyHeight)
-	railRows := railContentLines(m.displayedRail.Lines)
+	railRows := railContentLines(m.layout.displayedRail.Lines)
 	edge := make([]string, bodyHeight)
 	for i := range edge {
 		tone := panelHex()
@@ -87,13 +87,13 @@ func (m *Model) viewFullListFrame() string {
 		}
 		edge[i] = railEdgeCell(tone)
 	}
-	frame = append(frame, m.railTopRow(railWidth, m.width))
+	frame = append(frame, m.railTopRow(railWidth, m.layout.width))
 	frame = append(frame, joinColumns(edge, paintContent(railRows, railWidth, bodyHeight, panelHex()))...)
-	frame = append(frame, m.boundedRuleRow(railWidth, m.width, "▄"))
+	frame = append(frame, m.boundedRuleRow(railWidth, m.layout.width, "▄"))
 	m.placeNoticeHit(footer, len(frame))
 	m.quick.originY = len(frame)
 	for _, line := range splitLines(footer) {
-		frame = append(frame, paint(line, m.width, backdropHex()))
+		frame = append(frame, paint(line, m.layout.width, backdropHex()))
 	}
 	return m.overlayTopRight(strings.Join(frame, "\n"), m.statusToast(), m.listChromeRows()+1)
 }
@@ -129,8 +129,8 @@ func (m *Model) prepareRailFrame(width, height int) {
 	ctx := uirail.RenderContext{
 		Width:           width,
 		Height:          max(height, 0),
-		TerminalWidth:   m.width,
-		TerminalHeight:  m.height,
+		TerminalWidth:   m.layout.width,
+		TerminalHeight:  m.layout.height,
 		BodyOriginY:     m.listChromeRows(),
 		Theme:           m.railTheme(),
 		ListKeys:        m.services.listKeys,
@@ -143,7 +143,7 @@ func (m *Model) prepareRailFrame(width, height int) {
 		Rename:          rename,
 		Foot:            foot,
 	}
-	m.displayedRail = m.rail.Render(ctx, m.displayedRail)
+	m.layout.displayedRail = m.rail.Render(ctx, m.layout.displayedRail)
 }
 
 func (m *Model) railTheme() uirail.Theme {
@@ -164,9 +164,9 @@ func railContentLines(lines []uirail.Line) []contentLine {
 	return out
 }
 
-func (m *Model) overlayRowMenu(frame string) string { return m.displayedRail.Overlay(frame) }
+func (m *Model) overlayRowMenu(frame string) string { return m.layout.displayedRail.Overlay(frame) }
 
 func (m *Model) railLines(width, height int) []contentLine {
 	m.prepareRailFrame(width, height)
-	return railContentLines(m.displayedRail.Lines)
+	return railContentLines(m.layout.displayedRail.Lines)
 }

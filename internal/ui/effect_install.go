@@ -228,12 +228,12 @@ func (m *Model) applyInstallStart(request installStartRequest, result installSta
 		}
 		m.rebuildRows()
 	}
-	stillOpen := m.mode == modeLaunchHint && m.dialogGen == request.gen
+	stillOpen := m.mode == modeLaunchHint && m.gens.dialog == request.gen
 	if err != nil {
 		if result.install != nil {
-			m.install = result.install
+			m.launchHint.install = result.install
 			if stillOpen {
-				m.launchFix = launchFix{}
+				m.launchHint.fix = launchFix{}
 				m.mode = modeList
 				m.rail.ClearStatusFilter()
 				m.focusSession(result.session.ID)
@@ -243,16 +243,16 @@ func (m *Model) applyInstallStart(request installStartRequest, result installSta
 		}
 		var cleanup tea.Cmd
 		if stillOpen {
-			m.launchFix.images = append(request.images, m.launchFix.images...)
+			m.launchHint.fix.images = append(request.images, m.launchHint.fix.images...)
 		} else {
 			cleanup = installImageCleanupCmd(request.images)
 		}
 		m.errBar.text = err.Error()
 		return cleanup
 	}
-	m.install = result.install
+	m.launchHint.install = result.install
 	if stillOpen {
-		m.launchFix = launchFix{}
+		m.launchHint.fix = launchFix{}
 		m.mode = modeList
 		m.rail.ClearStatusFilter()
 		m.focusSession(result.session.ID)
@@ -262,7 +262,7 @@ func (m *Model) applyInstallStart(request installStartRequest, result installSta
 }
 
 func (m *Model) applyInstallSettle(request installSettleRequest, result installSettleResult, err error) tea.Cmd {
-	if m.install == nil || m.install.sessionID != result.sessionID {
+	if m.launchHint.install == nil || m.launchHint.install.sessionID != result.sessionID {
 		return nil
 	}
 	if result.state == installStillRunning {
@@ -271,7 +271,7 @@ func (m *Model) applyInstallSettle(request installSettleRequest, result installS
 		}
 		return nil
 	}
-	m.install = nil
+	m.launchHint.install = nil
 	install := request.install
 	if err != nil {
 		m.errBar.text = err.Error()

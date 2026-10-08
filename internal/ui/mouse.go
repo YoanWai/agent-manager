@@ -19,11 +19,11 @@ import (
 func (m *Model) syncMouseCapture() tea.Cmd {
 	release := m.mode == modeLaunchHint || (m.prefs.mouseDisabled && m.mode != modeFocus)
 	hover := !release && m.mode == modeList && m.rail.MenuOpen()
-	if release == m.mouseReleased && hover == m.mouseHover {
+	if release == m.mouse.released && hover == m.mouse.hover {
 		return nil
 	}
-	leavingHover := m.mouseHover && !hover
-	m.mouseReleased, m.mouseHover = release, hover
+	leavingHover := m.mouse.hover && !hover
+	m.mouse.released, m.mouse.hover = release, hover
 	switch {
 	case release:
 		return tea.DisableMouse
@@ -38,7 +38,7 @@ func (m *Model) syncMouseCapture() tea.Cmd {
 
 func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if msg.Action == tea.MouseActionPress {
-		m.foregroundGen++
+		m.gens.foreground++
 	}
 	model, command := m.handleMouseEvent(msg)
 	m.closeQuickOffTheList()
@@ -68,10 +68,10 @@ func (m *Model) handleMouseEvent(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		railPress := msg.Action == tea.MouseActionPress &&
 			(msg.Button == tea.MouseButtonLeft || msg.Button == tea.MouseButtonRight)
 		if railPress {
-			if hit, ok := m.rail.Hit(m.displayedRail, msg, ctx); ok {
+			if hit, ok := m.rail.Hit(m.layout.displayedRail, msg, ctx); ok {
 				focused, _ := m.rail.Selected()
 				left := m.leaveFocus()
-				decision := m.rail.Mouse(msg, m.displayedRail, ctx)
+				decision := m.rail.Mouse(msg, m.layout.displayedRail, ctx)
 				if hit == focused {
 					m.rail.CancelClickFocus()
 				}
@@ -83,7 +83,7 @@ func (m *Model) handleMouseEvent(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if m.mode == modeList && (m.rail.Reordering() || m.rail.MenuOpen()) {
-		return m.applyRailDecision(m.rail.Mouse(msg, m.displayedRail, ctx))
+		return m.applyRailDecision(m.rail.Mouse(msg, m.layout.displayedRail, ctx))
 	}
 	if tea.MouseEvent(msg).IsWheel() {
 		return m.handleMouseWheel(msg)
@@ -93,25 +93,25 @@ func (m *Model) handleMouseEvent(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	case tea.MouseActionPress:
 		return m.handleMousePress(msg, ctx)
 	case tea.MouseActionMotion:
-		if m.split.dragging {
-			m.split.moved = true
+		if m.layout.split.dragging {
+			m.layout.split.moved = true
 			m.setSplitFromX(msg.X)
 			return m, nil
 		}
 		if m.mode == modeList {
-			return m.applyRailDecision(m.rail.Mouse(msg, m.displayedRail, ctx))
+			return m.applyRailDecision(m.rail.Mouse(msg, m.layout.displayedRail, ctx))
 		}
 	case tea.MouseActionRelease:
-		if m.split.dragging {
-			if !m.split.moved {
-				m.split.dragging = false
+		if m.layout.split.dragging {
+			if !m.layout.split.moved {
+				m.layout.split.dragging = false
 				return m, nil
 			}
 			m.setSplitFromX(msg.X)
 			return m.exitResizeMode(true)
 		}
 		if m.mode == modeList {
-			return m.applyRailDecision(m.rail.Mouse(msg, m.displayedRail, ctx))
+			return m.applyRailDecision(m.rail.Mouse(msg, m.layout.displayedRail, ctx))
 		}
 	}
 	return m, nil
@@ -121,24 +121,24 @@ func (m *Model) handleMousePress(msg tea.MouseMsg, ctx uirail.MouseContext) (tea
 	if msg.Button != tea.MouseButtonLeft && msg.Button != tea.MouseButtonRight {
 		return m, nil
 	}
-	if m.split.dragging && !m.split.resizeMode {
-		m.exitResizeMode(m.split.moved)
+	if m.layout.split.dragging && !m.layout.split.resizeMode {
+		m.exitResizeMode(m.layout.split.moved)
 	}
 	y0, y1 := m.bodyYRange()
 	onDivider := msg.Button == tea.MouseButtonLeft && m.mode == modeList && !m.prefs.fullLayout && !m.rail.Searching() &&
 		msg.Y >= y0 && msg.Y < y1 && m.onDivider(msg.X)
 	if onDivider {
-		m.split.dragging = true
-		m.split.moved = false
-		if !m.split.resizeMode {
-			m.split.ratioBefore = m.split.ratio
+		m.layout.split.dragging = true
+		m.layout.split.moved = false
+		if !m.layout.split.resizeMode {
+			m.layout.split.ratioBefore = m.layout.split.ratio
 		}
 		return m, nil
 	}
 	if m.mode == modeForm {
 		return m.handleFormClick(msg.X, msg.Y)
 	}
-	if m.split.resizeMode || m.mode != modeList {
+	if m.layout.split.resizeMode || m.mode != modeList {
 		return m, nil
 	}
 	if m.notices.noticeHit.contains(msg.X, msg.Y) && !m.rail.Searching() {
@@ -148,16 +148,16 @@ func (m *Model) handleMousePress(msg tea.MouseMsg, ctx uirail.MouseContext) (tea
 	if hit, ok := m.quickHitAt(msg.X, msg.Y); ok {
 		return m, m.handleQuickClick(hit)
 	}
-	return m.applyRailDecision(m.rail.Mouse(msg, m.displayedRail, ctx))
+	return m.applyRailDecision(m.rail.Mouse(msg, m.layout.displayedRail, ctx))
 }
 
 func (m *Model) handleMouseWheel(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	if m.split.resizeMode || m.split.dragging {
+	if m.layout.split.resizeMode || m.layout.split.dragging {
 		return m, nil
 	}
 	switch m.mode {
 	case modeList:
-		return m.applyRailDecision(m.rail.Mouse(msg, m.displayedRail, m.railMouseContext()))
+		return m.applyRailDecision(m.rail.Mouse(msg, m.layout.displayedRail, m.railMouseContext()))
 	case modeDiff:
 		state := m.review.Snapshot()
 		if state.Annotating || state.SendConfirm {

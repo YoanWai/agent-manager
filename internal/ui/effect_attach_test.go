@@ -35,7 +35,7 @@ func TestPreparedAttachDoesNotReplaceNewerHelp(t *testing.T) {
 			if err != nil || !got.Acked {
 				t.Fatalf("accepted acknowledgement was lost: %+v %v", got, err)
 			}
-			m.foregroundGen++
+			m.gens.foreground++
 			m.openHelp()
 			if next := m.applyAttachEffect(request, result.result.(attachEffectResult), result.err); next != nil {
 				t.Fatal("prepared attach replaced newer Help")

@@ -8,15 +8,15 @@ import (
 // errors. It floats in a card over the frame rather than taking a row, so the
 // body keeps its height whether or not a notice is up.
 func (m *Model) statusLine() string {
-	focusStatus := m.focusPane.Status()
+	focusStatus := m.focus.pane.Status()
 	switch {
 	// Errors outrank the focus notices: a scrolled or focused pane must
 	// not hide a failure report.
 	case m.mode == modeFocus && m.errBar.text != "":
 		return m.statusMessage("✕", "●", "▲")
-	case m.focusPane.ScrolledBack():
+	case m.focus.pane.ScrolledBack():
 		catchUp := "wheel down or type"
-		if sess, ok := m.selected(); ok && m.focusPane.PagesScrollback(sess.ID) {
+		if sess, ok := m.selected(); ok && m.focus.pane.PagesScrollback(sess.ID) {
 			catchUp = "wheel down, pgdn or type"
 		}
 		return keyStyle.Render("scrolled ") +
@@ -24,9 +24,9 @@ func (m *Model) statusLine() string {
 	case m.mode == modeFocus && focusStatus.CopiedChars > 0:
 		return keyStyle.Render("copied ") +
 			subtleStyle.Render(fmt.Sprintf("%d chars to clipboard", focusStatus.CopiedChars))
-	case m.split.resizeMode || m.split.dragging:
+	case m.layout.split.resizeMode || m.layout.split.dragging:
 		hint := "←→ resize · drag divider · enter set · esc cancel"
-		if m.split.dragging {
+		if m.layout.split.dragging {
 			hint = "release to set · esc cancels"
 		}
 		return keyStyle.Render("resize ") + subtleStyle.Render(hint)

@@ -143,7 +143,7 @@ func TestSessionNameCannotDriveTheTerminal(t *testing.T) {
 		t.Skip("git not installed")
 	}
 	openReviewOn(t, m, "named", gitRepoWithTwoChangedFiles(t))
-	m.width, m.height = 120, 40
+	m.layout.width, m.layout.height = 120, 40
 	for i := range m.workspace.sessions {
 		if m.workspace.sessions[i].ID == m.review.Snapshot().SessionID {
 			m.workspace.sessions[i].Name = "rev\x1b]0;PWNED\x07iew"
@@ -198,7 +198,7 @@ func TestReviewedFileCannotDriveTheTerminal(t *testing.T) {
 	payload := "const banner = \"\x1b]0;PWNED\x07\x1b[2J\x1b[31mgotcha\"\n"
 	dir := gitRepoWithPayload(t, "payload.go", payload)
 	openReviewOn(t, m, "escape", dir)
-	m.width, m.height = 120, 40
+	m.layout.width, m.layout.height = 120, 40
 
 	for _, layout := range []string{"unified", "split"} {
 		frame := m.viewDiffFull()
@@ -220,7 +220,7 @@ func TestCleanReviewFrameCarriesOnlySGR(t *testing.T) {
 		t.Skip("git not installed")
 	}
 	openReviewOn(t, m, "clean", gitRepoWithTwoChangedFiles(t))
-	m.width, m.height = 120, 40
+	m.layout.width, m.layout.height = 120, 40
 	if stray := strayControl(m.viewDiffFull()); stray != "" {
 		t.Fatalf("a clean review frame should be SGR only, found %q", stray)
 	}
@@ -239,7 +239,7 @@ func TestReviewedPathCannotDriveTheTerminal(t *testing.T) {
 		t.Skipf("filesystem rejects control bytes in a name: %v", err)
 	}
 	openReviewOn(t, m, "path", dir)
-	m.width, m.height = 120, 40
+	m.layout.width, m.layout.height = 120, 40
 
 	frame := m.viewDiffFull()
 	if !strings.Contains(frame, "w^[]0;P^G.go") {

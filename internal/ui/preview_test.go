@@ -10,9 +10,9 @@ import (
 )
 
 func TestPreviewSettleDropsStaleGen(t *testing.T) {
-	m := &Model{mode: modeList, width: 120, height: 40}
+	m := &Model{mode: modeList, layout: layoutState{width: 120, height: 40}}
 	for range 3 {
-		m.focusPane.MovePreview()
+		m.focus.pane.MovePreview()
 	}
 	updated, cmd := m.Update(previewSettleMsg{gen: 2})
 	m = updated.(*Model)
@@ -52,9 +52,12 @@ func TestPreviewCadenceIsIndependentFromStartupAnimation(t *testing.T) {
 
 func TestMoveCursorDebouncesPreview(t *testing.T) {
 	m := &Model{
-		mode:   modeList,
-		width:  120,
-		height: 40, rail: railModelFromRows([]treeRow{
+		mode: modeList,
+		layout: layoutState{
+			width:  120,
+			height: 40,
+		},
+		rail: railModelFromRows([]treeRow{
 			{sess: store.Session{ID: "a", Name: "a"}},
 			{sess: store.Session{ID: "b", Name: "b"}},
 		}, 0),
@@ -64,7 +67,7 @@ func TestMoveCursorDebouncesPreview(t *testing.T) {
 	if selected, ok := m.rail.SelectedSession(); !ok || selected != "b" {
 		t.Fatalf("selected = %q, %v want b", selected, ok)
 	}
-	if got := m.focusPane.PreviewGeneration(); got != 1 {
+	if got := m.focus.pane.PreviewGeneration(); got != 1 {
 		t.Fatalf("previewGen = %d want 1", got)
 	}
 	if cmd == nil {
@@ -74,7 +77,7 @@ func TestMoveCursorDebouncesPreview(t *testing.T) {
 	msg := previewSettleMsg{gen: 1}
 	// A second move bumps gen; the first settle is now stale.
 	m.moveCursor(-1)
-	if got := m.focusPane.PreviewGeneration(); got != 2 {
+	if got := m.focus.pane.PreviewGeneration(); got != 2 {
 		t.Fatalf("previewGen = %d want 2", got)
 	}
 	updated, next := m.Update(msg)
@@ -83,7 +86,7 @@ func TestMoveCursorDebouncesPreview(t *testing.T) {
 		t.Fatal("stale settle after second move must not capture")
 	}
 	// Fresh settle for the current gen with a session should schedule previewCmd.
-	_, next = m.Update(previewSettleMsg{gen: m.focusPane.PreviewGeneration()})
+	_, next = m.Update(previewSettleMsg{gen: m.focus.pane.PreviewGeneration()})
 	if next == nil {
 		t.Fatal("current settle should schedule a capture")
 	}

@@ -25,7 +25,7 @@ func paneAt(t *testing.T, lines ...string) *Model {
 	preview := strings.Join(lines, "\n") + "\n"
 	m := &Model{mode: modeFocus}
 	m.workspace.preview = preview
-	m.focusPane.Enter(uifocus.EnterContext{SessionID: "s1"})
+	m.focus.pane.Enter(uifocus.EnterContext{SessionID: "s1"})
 	setFocusPaneID(m, "s1")
 	prepareFocusFrame(m, preview, 40, len(lines), 10, 5, -1)
 	return m
@@ -36,7 +36,7 @@ func setFocusPaneID(m *Model, id string) {
 }
 
 func setFocusCursor(m *Model, cursor paneCursor) {
-	id := m.focusPane.Pane().SessionID
+	id := m.focus.pane.Pane().SessionID
 	if id == "" {
 		if sess, ok := m.selected(); ok {
 			id = sess.ID
@@ -66,7 +66,7 @@ func setFocusPaneFacts(m *Model, id string, mouse, motion, sgr bool, history int
 }
 
 func updateFocusPane(m *Model, id string, change func(*uifocus.PaneUpdate)) {
-	pane := m.focusPane.Pane()
+	pane := m.focus.pane.Pane()
 	update := uifocus.PaneUpdate{
 		SessionID: id,
 		Mouse:     pane.Mouse,
@@ -77,11 +77,11 @@ func updateFocusPane(m *Model, id string, change func(*uifocus.PaneUpdate)) {
 		Cursor:    pane.Cursor,
 	}
 	change(&update)
-	m.focusPane.ApplyPane(update, id)
+	m.focus.pane.ApplyPane(update, id)
 }
 
 func prepareFocusFrame(m *Model, preview string, width, height, x, y, caretRow int) uifocus.FrameContent {
-	return m.focusPane.PrepareFrame(uifocus.FrameContext{
+	return m.focus.pane.PrepareFrame(uifocus.FrameContext{
 		Preview:        preview,
 		Width:          width,
 		Height:         height,
@@ -96,11 +96,11 @@ func prepareFocusFrame(m *Model, preview string, width, height, x, y, caretRow i
 func setFocusScrollOffset(t *testing.T, m *Model, id string, offset, rows int) {
 	t.Helper()
 	updateFocusPane(m, id, func(update *uifocus.PaneUpdate) { update.History = offset })
-	for m.focusPane.Status().ScrollOffset < offset {
-		m.focusPane.Scroll(-1, id, rows)
+	for m.focus.pane.Status().ScrollOffset < offset {
+		m.focus.pane.Scroll(-1, id, rows)
 	}
-	status := m.focusPane.Status()
-	m.focusPane.ApplyRegion(uifocus.RegionResult{
+	status := m.focus.pane.Status()
+	m.focus.pane.ApplyRegion(uifocus.RegionResult{
 		SessionID: id,
 		Offset:    status.ScrollOffset,
 		Rows:      rows,
@@ -113,7 +113,7 @@ func (m *Model) scrollFocus(delta int) tea.Cmd {
 	if !ok || m.mode != modeFocus {
 		return nil
 	}
-	request := m.focusPane.Scroll(delta, sess.ID, m.focusPaneRows())
+	request := m.focus.pane.Scroll(delta, sess.ID, m.focusPaneRows())
 	if request == nil {
 		return nil
 	}
@@ -125,27 +125,27 @@ func (m *Model) wheelFocus(up bool, x, y int) tea.Cmd {
 	if !ok {
 		return nil
 	}
-	result := m.focusPane.Mouse(tea.MouseMsg{
+	result := m.focus.pane.Mouse(tea.MouseMsg{
 		X: x, Y: y, Action: tea.MouseActionPress,
 		Button: map[bool]tea.MouseButton{true: tea.MouseButtonWheelUp, false: tea.MouseButtonWheelDown}[up],
 	}, uifocus.MouseContext{
-		SessionID: sess.ID, Rows: m.focusPaneRows(), RuntimeReady: m.focusRuntime.watch != nil,
+		SessionID: sess.ID, Rows: m.focusPaneRows(), RuntimeReady: m.focus.runtime.watch != nil,
 	})
 	_, cmd := m.applyFocusMouse(result)
 	return cmd
 }
 
-func (m *Model) scrolledBack() bool { return m.focusPane.ScrolledBack() }
+func (m *Model) scrolledBack() bool { return m.focus.pane.ScrolledBack() }
 
 func (m *Model) cursorCell(int) (row, col int, ok bool) {
 	sess, selected := m.selected()
 	if !selected {
-		sess.ID = m.focusPane.Pane().SessionID
+		sess.ID = m.focus.pane.Pane().SessionID
 	}
-	column, screenRow, ok := m.focusPane.CursorAnchor(sess.ID)
+	column, screenRow, ok := m.focus.pane.CursorAnchor(sess.ID)
 	if !ok {
 		return 0, 0, false
 	}
-	box := m.focusPane.FrameBox()
+	box := m.focus.pane.FrameBox()
 	return screenRow - box.Y - 1, column - box.X - 1, true
 }

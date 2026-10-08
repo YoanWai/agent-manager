@@ -14,10 +14,12 @@ func namedKey(t tea.KeyType) tea.KeyMsg { return tea.KeyMsg{Type: t} }
 
 func helpModel() *Model {
 	return &Model{
-		width:  120,
-		height: 30,
-		mode:   modeHelp,
-		help:   uihelp.New(uihelp.Global),
+		layout: layoutState{
+			width:  120,
+			height: 30,
+		},
+		mode: modeHelp,
+		help: helpFeature{state: uihelp.New(uihelp.Global)},
 		services: services{
 			keys:     keybind.DefaultSession(),
 			listKeys: keybind.DefaultList(),

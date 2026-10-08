@@ -39,7 +39,7 @@ func TestKeySavePersistsCapturedTablesNotLaterEdits(t *testing.T) {
 	if m.effects.active == nil {
 		t.Fatal("the save should be accepted before a later edit")
 	}
-	m.settings.keyCursor = 1 // review
+	m.settings.dialog.keyCursor = 1 // review
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
 	m.pressInPicker(t, runeKey("t")) // ctrl+t, while the save is pending
 	m.applyCmd(t, cmd)
@@ -60,10 +60,10 @@ func TestKeySavePersistsCapturedTablesNotLaterEdits(t *testing.T) {
 
 func TestKeySavePartialFailureCommitsListOnly(t *testing.T) {
 	m := keyPickerModel(t)
-	m.settings.keyCursor = listRow(t, m, keybind.NewSession)
+	m.settings.dialog.keyCursor = listRow(t, m, keybind.NewSession)
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
 	m.pressInPicker(t, runeKey("N"))
-	m.settings.keyCursor = 0
+	m.settings.dialog.keyCursor = 0
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyF9})
 	original := m.services.store.SetKeys
@@ -94,12 +94,12 @@ func TestKeySavePartialFailureCommitsListOnly(t *testing.T) {
 	if m.errBar.text == "" {
 		t.Fatal("the failed write should report its reason")
 	}
-	if got := m.settings.tables[0].Binding(keybind.Detach).Label(); got != "f9" {
+	if got := m.settings.dialog.tables[0].Binding(keybind.Detach).Label(); got != "f9" {
 		t.Fatalf("the picker should keep the uncommitted table: %q", got)
 	}
-	m.settings.field = settingsFieldKeybindings
+	m.settings.dialog.field = settingsFieldKeybindings
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
-	if !m.settings.keyPicker {
+	if !m.settings.dialog.keyPicker {
 		t.Fatalf("reopening the picker failed: %q", m.errBar.text)
 	}
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
@@ -153,8 +153,8 @@ func TestBlockedKeySaveLeavesNavigationAndResizeRunning(t *testing.T) {
 	if saved := savedKeys(t, m); !strings.Contains(saved, `"detach":["f9"]`) {
 		t.Fatalf("the store should carry the new key once the writer unblocks:\n%s", saved)
 	}
-	if m.width != 150 || m.height != 45 {
-		t.Fatalf("resize lost behind the blocked save: %dx%d", m.width, m.height)
+	if m.layout.width != 150 || m.layout.height != 45 {
+		t.Fatalf("resize lost behind the blocked save: %dx%d", m.layout.width, m.layout.height)
 	}
 }
 
@@ -185,9 +185,9 @@ func TestKeySaveCapturesTheInstanceWriter(t *testing.T) {
 func TestKeySaveCanRestoreOriginalBindingBehindPendingSave(t *testing.T) {
 	m := keyPickerModel(t)
 	original := m.services.keys
-	m.settings.tables[0] = original.With(keybind.Detach, bindingOf(t, "f9"))
+	m.settings.dialog.tables[0] = original.With(keybind.Detach, bindingOf(t, "f9"))
 	m.saveKeys()
-	m.settings.tables[0] = original
+	m.settings.dialog.tables[0] = original
 	m.saveKeys()
 	m.drainEffects(t)
 	if !m.services.keys.Equal(original) {
