@@ -232,6 +232,46 @@ func TestUnknownConnection(t *testing.T) {
 	}
 }
 
+// A destination edited into state.db by hand never reaches ssh as an
+// option; the connection reports why instead.
+func TestInvalidStoredConnectionsNeverRunSSH(t *testing.T) {
+	c := newTestClient(t, func(_ context.Context, argv []string) ([]byte, []byte, error) {
+		if argv[len(argv)-2] != "me@cpu" {
+			t.Fatalf("ssh ran %q", argv)
+		}
+		return []byte(`{"version":1,"id":"a1"}`), nil, nil
+	})
+	c.SetConnections([]Connection{
+		{Name: "gpu", Destination: "-oProxyCommand=touch /tmp/pwned"},
+		{Name: "cpu", Destination: "me@cpu"},
+		{Name: "a::b", Destination: "me@ab"},
+	})
+	const want = "gpu: an SSH destination holds only letters, digits and _ . @ : -, and starts with a letter, digit or _"
+	ctx := context.Background()
+	ref := Ref{Host: "gpu", ID: "a1"}
+	_, snapshotErr := c.Snapshot(ctx, "gpu")
+	_, killErr := c.Kill(ctx, ref)
+	_, attachErr := c.AttachCommand(ref)
+	refreshed := c.Refresh(ctx, "gpu")
+	for name, err := range map[string]error{
+		"Snapshot": snapshotErr, "Kill": killErr, "AttachCommand": attachErr,
+		"Refresh": refreshed.Err, "State": c.State("gpu").Err,
+	} {
+		if err == nil || err.Error() != want {
+			t.Errorf("%s = %v, want %s", name, err, want)
+		}
+	}
+	if state := c.State("a::b"); state.Err == nil || state.Err.Error() != `a::b: a connection name cannot contain "::"` {
+		t.Errorf("State of an invalid name = %+v", state)
+	}
+	if state := c.Refresh(ctx, "cpu"); !state.OK || c.State("cpu").Err != nil {
+		t.Fatalf("a valid connection beside invalid ones = %+v", state)
+	}
+	if got := c.Connections(); len(got) != 3 {
+		t.Fatalf("Connections = %+v, want every stored one listed", got)
+	}
+}
+
 func TestConnectionsAreCopied(t *testing.T) {
 	c := newTestClient(t, nil)
 	listed := c.Connections()

@@ -2,6 +2,7 @@ package remote
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
@@ -55,10 +56,14 @@ func (c *Client) Refresh(ctx context.Context, host string) HostState {
 	return c.record(conn, state)
 }
 
-// State returns the cached outcome of host's refreshes without any I/O.
+// State returns the cached outcome of host's refreshes without any I/O, or
+// why the stored connection is invalid.
 func (c *Client) State(host string) HostState {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if _, err := c.find(host); err != nil && !errors.Is(err, errUnknownConnection) {
+		return HostState{Err: err}
+	}
 	return c.states[host].state
 }
 

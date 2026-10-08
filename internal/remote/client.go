@@ -33,6 +33,7 @@ type Client struct {
 
 	mu          sync.Mutex
 	connections []Connection
+	invalid     []error
 	hostSlots   map[string]chan struct{}
 	states      map[string]hostRecord
 	starts      map[string]time.Time
@@ -68,11 +69,18 @@ func New(profileDir string, opts ...Option) *Client {
 }
 
 // SetConnections replaces the connection list. A connection that is gone,
-// or now points at another destination, loses its cached state.
+// or now points at another destination, loses its cached state. Each one is
+// validated again, since the store can be edited by hand: one that fails
+// stays listed but every call to it fails with the reason, before ssh
+// could read its destination as an option.
 func (c *Client) SetConnections(connections []Connection) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.connections = slices.Clone(connections)
+	c.invalid = make([]error, len(connections))
+	for i, conn := range c.connections {
+		c.invalid[i] = ValidateConnection(conn, c.connections[:i])
+	}
 	for name, record := range c.states {
 		if !c.unchanged(name, record.destination) {
 			delete(c.states, name)
@@ -90,13 +98,24 @@ func (c *Client) Connections() []Connection {
 func (c *Client) connection(host string) (Connection, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	for _, conn := range c.connections {
-		if conn.Name == host {
-			return conn, nil
-		}
-	}
-	return Connection{}, &Error{Host: host, Err: errors.New("no connection has that name")}
+	return c.find(host)
 }
+
+// find looks host up; c.mu is held.
+func (c *Client) find(host string) (Connection, error) {
+	for i, conn := range c.connections {
+		if conn.Name != host {
+			continue
+		}
+		if err := c.invalid[i]; err != nil {
+			return Connection{}, &Error{Host: host, Err: err}
+		}
+		return conn, nil
+	}
+	return Connection{}, &Error{Host: host, Err: errUnknownConnection}
+}
+
+var errUnknownConnection = errors.New("no connection has that name")
 
 // unchanged reports whether host still names destination; c.mu is held.
 func (c *Client) unchanged(host, destination string) bool {
