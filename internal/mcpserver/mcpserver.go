@@ -285,7 +285,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		taskListWhen = "list reads it: call it before starting work so two agents do not build the same thing, and before reporting progress on a fleet. "
 	}
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "rename",
 		Description: "Rename this session to a short 2-4 word kebab-case name for the broad feature it is about. " +
 			"Call once at the start only when the session still has a placeholder name (e.g. claude-a1b2). " +
@@ -296,7 +296,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		return textResult(mailbox.Rename(ctx, sessionID, args.Name))
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "review",
 		Description: "Declare what the user's review screen shows for this session; set any of repo, base and mode together. " +
 			"repo is the git repo or worktree you are working in, so review opens there: declare it when you start in a repo or switch to another. " +
@@ -339,7 +339,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		return textContent(strings.Join(done, "; ")), nil, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "review_comment",
 		Description: "Mark one sent review comment handled after addressing it, using the stable comment_id from the review prompt. " +
 			"The comment stays visible in its original review round. Pass handled false only to reopen it.",
@@ -354,7 +354,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		return textResult(mailbox.ReviewComment(sessionID, args.CommentID, handled))
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "list_sessions",
 		Description: "Call first whenever the work involves another agent: before delegating, before reporting what the fleet is doing, and to find the id of a session to read, prompt, revive, kill or archive. " +
 			"Lists every agent session Agent Manager knows with ids, names, CLIs, groups, directories, worktree branches, statuses (starting, working, waiting, finished, idle, errored, dead) and which row is this session. " +
@@ -364,9 +364,6 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 			"Sessions on the user's SSH connections follow this machine's, with host set and ids written host::id, which read_session, send_session, kill_session, revive_session and archive_session take as they are.",
 		Annotations: toolAnnotations(true, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listSessionsArgs) (*mcp.CallToolResult, listSessionsOutput, error) {
-		if noCaller != nil {
-			return nil, listSessionsOutput{}, noCaller
-		}
 		listed, err := sessions.List(sessionID)
 		if err != nil {
 			return nil, listSessionsOutput{}, err
@@ -378,7 +375,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		return textContent(text), output, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "create_session",
 		Description: "Start another agent CLI in its own Agent Manager session and hand it a task, so independent work runs beside this conversation instead of queued behind it. " +
 			"The new session is a full CLI process of its own on the user's machine, which the user can watch and type into, and it can run a different CLI than this one. " +
@@ -387,9 +384,6 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 			"Follow it with read_session and send_session; use create_terminal instead for a plain shell.",
 		Annotations: toolAnnotations(false, false, true),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args createSessionArgs) (*mcp.CallToolResult, sessioncmd.Session, error) {
-		if noCaller != nil {
-			return nil, sessioncmd.Session{}, noCaller
-		}
 		opts := sessioncmd.CreateSessionOptions{
 			Tool:      args.Tool,
 			Name:      args.Name,
@@ -412,16 +406,13 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		return textContent("created " + sessioncmd.FormatSession(created)), created, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "read_session",
 		Description: "Read what another agent's screen currently shows: call it after create_session to confirm the agent started on the task, and again to check progress, read an answer, or see why a session is waiting. " +
 			"Returns the plain text visible in that session's pane, which is the current screen rather than its full history. " +
 			"A stopped session returns the last screen Agent Manager captured.",
 		Annotations: toolAnnotations(true, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args sessionTargetArgs) (*mcp.CallToolResult, sessioncmd.SessionScreen, error) {
-		if noCaller != nil {
-			return nil, sessioncmd.SessionScreen{}, noCaller
-		}
 		read := func() (sessioncmd.SessionScreen, error) { return sessions.Read(sessionID, args.SessionID) }
 		if ref, ok := remote.ParseRef(args.SessionID); ok {
 			read = func() (sessioncmd.SessionScreen, error) { return remotes.readSession(ctx, ref) }
@@ -433,7 +424,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		return textContent(sessioncmd.FormatSessionScreen(screen)), screen, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "send_session",
 		Description: "Queue a message for another agent, to give a session you spawned its next task, answer a question read_session surfaced, or redirect work going the wrong way. " +
 			"The other agent has no view of this conversation, so send a self-contained instruction. " +
@@ -458,7 +449,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		return textContent(sessioncmd.FormatSendResult(result, args.SessionID)), result, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "message_status",
 		Description: "Check what happened to a message send_session queued: still queued, held, delivered into the agent's prompt, dropped, or answered. " +
 			"Call it when you need to know a handoff landed before you build on it, instead of reading the other agent's screen. " +
@@ -473,7 +464,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		return textContent(sessioncmd.FormatMessageState(state)), state, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "wait_for_session",
 		Description: "Park until another session stops working, instead of calling read_session in a loop. " +
 			"Call it after handing an agent a task when your next step depends on its result. " +
@@ -483,9 +474,6 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 			"Follow it with read_session to see what the agent produced.",
 		Annotations: toolAnnotations(true, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args waitSessionArgs) (*mcp.CallToolResult, sessioncmd.WaitResult, error) {
-		if noCaller != nil {
-			return nil, sessioncmd.WaitResult{}, noCaller
-		}
 		if err := localOnly("wait_for_session", args.SessionID); err != nil {
 			return nil, sessioncmd.WaitResult{}, err
 		}
@@ -496,7 +484,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		return textContent(sessioncmd.FormatWaitResult(result)), result, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "revive_session",
 		Description: "Bring a dead session back on its old row, resuming the conversation it held where its CLI supports that. " +
 			"An agent that quit while its window stayed open comes back inside that same pane. " +
@@ -514,7 +502,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		return textContent("revived " + sessioncmd.FormatSession(revived)), revived, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "kill_session",
 		Description: "Stop another agent's process, ending whatever it is doing. The row stays with its last screen and can be brought back with revive_session. " +
 			"Reserve it for a session whose work is finished or has gone wrong, and prefer send_session to redirect an agent that is still useful. " +
@@ -532,7 +520,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		return textContent("killed " + sessioncmd.FormatSession(killed)), killed, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "archive_session",
 		Description: "File a finished session out of the active list, or restore an archived one with archived false. " +
 			"Use it to keep the user's list readable once a session's work is done; the row and its last screen are kept, and a running pane keeps running. " +
@@ -570,7 +558,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		}
 	}
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "archive_self",
 		Description: "Archive this session once the turn making this call ends: Agent Manager stops its agent, keeps the last screen, and files the row out of the active list, the way the user's archive key does. " +
 			"Call it when the user asks you to archive yourself once the work is done, then finish your reply. Whatever the turn ends on, finished, a question to the user or an error, the archive follows it. " +
@@ -578,7 +566,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		Annotations: toolAnnotations(false, true, false),
 	}, endSelf(store.AfterTurnArchive))
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "kill_self",
 		Description: "Stop this session's agent once the turn making this call ends, keeping its row and last screen in the list so revive_session can bring it back, the way the user's kill key does. " +
 			"Call it when the user asks you to kill or stop yourself once the work is done, then finish your reply. Whatever the turn ends on, finished, a question to the user or an error, the kill follows it. " +
@@ -586,7 +574,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		Annotations: toolAnnotations(false, true, true),
 	}, endSelf(store.AfterTurnKill))
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "task",
 		Description: "The shared work list every session in this manager claims from; action picks the operation. " +
 			taskListWhen +
@@ -640,7 +628,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		}
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "reserve_files",
 		Description: "Declare the files you are about to edit, so another agent working the same repo finds out before both of you change them. " +
 			"Call it when several sessions share one checkout and you are starting on a set of files; a session in its own worktree does not need it. " +
@@ -655,7 +643,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		return textContent(sessioncmd.FormatReserveResult(result)), result, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "release_files",
 		Description: "Give back the leases you took with reserve_files once the edits are made, so another agent can take those paths. " +
 			"Omit paths to release everything this session holds.",
@@ -668,7 +656,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		return textContent(sessioncmd.FormatReleased(released)), releaseFilesOutput{Released: released}, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "list_reservations",
 		Description: "See which files the other sessions are working on right now. " +
 			"Call it before editing shared code, or when planning who takes which part of a change.",
@@ -681,16 +669,13 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		return textContent(sessioncmd.FormatReservations(listed)), listReservationsOutput{Reservations: listed}, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "list_groups",
 		Description: "List the groups sessions and terminals are filed under, with each group's default directory, worktree default and session count. " +
 			"Call before passing a group to create_session or create_terminal, since a group must already exist. " +
 			"Groups on the user's SSH connections follow this machine's with host set; pass that host beside the path.",
 		Annotations: toolAnnotations(true, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listGroupsArgs) (*mcp.CallToolResult, listGroupsOutput, error) {
-		if noCaller != nil {
-			return nil, listGroupsOutput{}, noCaller
-		}
 		listed, err := sessions.Groups(sessionID)
 		if err != nil {
 			return nil, listGroupsOutput{}, err
@@ -702,7 +687,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		return textContent(text), output, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "create_group",
 		Description: "Create a group to file related sessions under, so a fleet you spawn stays together in the user's list. " +
 			"Call before create_session when the work deserves its own heading and list_groups shows no fitting group. " +
@@ -723,7 +708,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		return textContent("created group " + created.Path), created, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "delete_group",
 		Description: "Delete a group once the work filed under it is done, so a fleet does not leave a heading behind in the user's list. " +
 			"Groups nested under it go too. Any session still filed there moves to the root group rather than being stopped, " +
@@ -744,7 +729,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		return textContent(sessioncmd.FormatGroupRemoval(removal)), removal, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "list_terminals",
 		Description: "Call before opening a terminal for human-visible work, to find one you can reuse. " +
 			"Lists active managed terminals with ids, names, groups, current directories, statuses, whether their tmux panes are running, and the session each one is nested under. " +
@@ -763,7 +748,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		return textContent(text), output, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "create_terminal",
 		Description: "Create a managed terminal for human-visible work such as SSH, not for one-shot local commands or other internal work. " +
 			"It nests under this session unless nest is false, which a group other than this session's needs; a terminal created from a terminal joins it as a sibling under the same agent. The group supplies the inherited directory, and directory set explicitly wins. " +
@@ -786,7 +771,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		return textContent("created " + sessioncmd.FormatTerminal(created)), created, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "send_terminal",
 		Description: "Call after list_terminals or create_terminal to run or control work in a managed terminal, keeping it visible and separate from the conversation. Provide exactly one of command or keys. " +
 			"A command is pasted and submitted with Enter, so it executes on the user's machine. " +
@@ -808,7 +793,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		return textContent(sessioncmd.FormatTerminalInput(sent)), sent, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "read_terminal",
 		Description: "Call immediately after send_terminal to inspect the result, and call again as needed to monitor ongoing work. " +
 			"Returns the plain-text content currently visible in the managed terminal pane. This is the current screen, not the pane's full scrollback history.",
@@ -825,7 +810,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		return textContent(sessioncmd.FormatTerminalScreen(screen)), screen, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "close_terminal",
 		Description: "Delete a terminal nested under this session once its job is finished: kills the pane and removes the row. " +
 			"Leave it running when you opened it for the user (for example an SSH session they may attach to). " +
@@ -842,7 +827,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		return textContent("closed terminal " + args.TerminalID), nil, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "report_issue",
 		Description: "File a bug report or a feature request on Agent Manager's public GitHub repo for the user. " +
 			"Offer it when the user hits a bug in the manager itself (a wrong status, a lost message, a tool refusing what it should allow) or asks for something the manager cannot do; it is not for bugs in the user's own project. " +
@@ -867,6 +852,19 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 	})
 
 	return server
+}
+
+// addTool registers a tool that refuses outright when the server has no
+// calling session, so no tool, present or future, opens the workspace to a
+// CLI running outside Agent Manager.
+func addTool[In, Out any](server *mcp.Server, noCaller error, tool *mcp.Tool, handler mcp.ToolHandlerFor[In, Out]) {
+	mcp.AddTool(server, tool, func(ctx context.Context, req *mcp.CallToolRequest, args In) (*mcp.CallToolResult, Out, error) {
+		if noCaller != nil {
+			var none Out
+			return nil, none, noCaller
+		}
+		return handler(ctx, req, args)
+	})
 }
 
 func toolAnnotations(readOnly, destructive, openWorld bool) *mcp.ToolAnnotations {
