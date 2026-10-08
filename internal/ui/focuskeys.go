@@ -317,17 +317,17 @@ func (m *Model) leaveFocus() tea.Cmd {
 	return nil
 }
 
-// focusPagesHistory is the one policy decision shared by input and its
-// footer: Muse's normal-screen transcript lives in tmux history. The pane
-// guards leave alternate-screen and mouse-tracking programs their keys.
-func (m *Model) focusPagesHistory(sess store.Session) bool {
-	return sess.Tool == "muse" && m.pane.forID == sess.ID &&
+// focusPagesScrollback is the one policy decision shared by input, footer
+// and status line: a normal-screen pane's transcript lives in tmux history,
+// while alternate-screen and mouse-tracking programs keep their keys.
+func (m *Model) focusPagesScrollback(sess store.Session) bool {
+	return m.pane.forID == sess.ID &&
 		!m.pane.alt && !m.pane.mouse && m.pane.history > 0
 }
 
 // handleFocusKey forwards focused input to the pane except for session
-// actions and Muse's normal-screen paging. Every plain character, q
-// included, still reaches the agent.
+// actions and paging a normal-screen pane's history. Every plain
+// character, q included, still reaches the agent.
 func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.keys.Binding(keybind.Detach).Has(msg.String()) {
 		return m, m.leaveFocus()
@@ -336,10 +336,10 @@ func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, m.leaveFocus()
 	}
-	// Muse paints its transcript on the normal screen and leaves scrolling
-	// to terminal history. Route page keys through the same path as the wheel
-	// while that history exists; an app-owned screen keeps its own keys.
-	if !msg.Alt && m.focusPagesHistory(sess) {
+	// A normal-screen pane leaves scrolling to tmux history. Route page keys
+	// through the same path as the wheel while that history exists; an
+	// app-owned screen keeps its own keys.
+	if !msg.Alt && m.focusPagesScrollback(sess) {
 		switch msg.Type {
 		case tea.KeyPgUp:
 			return m, m.scrollFocusLines(-m.focusPaneRows())

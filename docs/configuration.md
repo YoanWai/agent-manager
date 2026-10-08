@@ -48,7 +48,7 @@ Only a key you moved is stored. An action at its shipped default follows that de
 
 Inside a session, attached or focused, the manager keeps a few keys for itself and hands every other key to the agent. The actions are `detach` (default `ctrl+q` and `ctrl+\`, back to the manager), `review` (default `ctrl+r`, the session's diff review), `editor` (default `f3`, its directory in your editor) and `tmux_prefix` (off by default). Moving one frees a key that collides with a key your agent uses, and turning one off hands its key to the agent like any other.
 
-In a focused Muse session, PgUp/PgDn page through tmux history directly when the pane uses the normal screen and has not claimed mouse input. Other agents retain their page keys; Muse panes also pass them through when an alternate-screen or mouse-tracking program takes over, or when no tmux history is available.
+In a focused session, PgUp/PgDn scroll the pane's tmux history when the pane is on its normal screen, has not claimed mouse input, and has history to show. Otherwise the agent gets them, and alt+PgUp/alt+PgDn always reach the agent. Hermes recalls earlier prompts with Up/Down.
 
 A session key is `ctrl+<letter>` (the symbols `@ \ ] ^ _` too), `alt+<letter or digit>`, or `f1` to `f12`. A key with no modifier is refused here, since it would take a character away from the agent, as are `ctrl+i`, `ctrl+m` and `ctrl+[`, which the terminal sends as tab, enter and escape. Bubble Tea, the framework the manager is built on, cannot read `ctrl+shift` combinations yet, so those are out for now. `detach` always keeps at least one key: it is the way back from a focused session.
 

@@ -9,11 +9,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	"github.com/charmbracelet/bubbles/textarea"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
@@ -334,7 +336,7 @@ func shotModel() *Model {
 			CPUOK: true, CPUPercent: 22,
 			MemOK: true, MemPercent: 75, MemUsed: 12_100_000_000, MemTotal: 16_000_000_000,
 			SwapOK: true, SwapPercent: 43, SwapUsed: 4_500_000_000, SwapTotal: 8_000_000_000,
-			DiskOK: true, DiskPercent: 88, DiskUsed: 400_000_000_000, DiskFree: 100_000_000_000, DiskTotal: 500_000_000_000,
+			DiskOK: true, DiskPercent: 88, DiskUsed: 400_000_000_000, DiskAvailable: 100_000_000_000, DiskTotal: 500_000_000_000,
 			CPUTempOK: true, CPUTemp: 61, GPUTempOK: true, GPUTemp: 55,
 		},
 		preview: previewSample,
@@ -502,7 +504,7 @@ func TestFooterInFocusMode(t *testing.T) {
 	if !strings.Contains(footer, "Focused") {
 		t.Fatalf("the tier should name the mode it describes:\n%s", footer)
 	}
-	if !strings.Contains(footer, "ctrl+q / ctrl+\\") || !strings.Contains(footer, "click its row") || !strings.Contains(footer, "mouse back") || !strings.Contains(footer, "typing to agent") {
+	if !strings.Contains(footer, "ctrl+q / ctrl+\\") || !strings.Contains(footer, "click its row") || !strings.Contains(footer, "mouse back") {
 		t.Fatalf("focus footer should carry the reserved keys and mouse leave:\n%s", footer)
 	}
 	listH := lipgloss.Height(m.listFooter())
@@ -526,9 +528,6 @@ func TestFooterInFocusMode(t *testing.T) {
 	if !strings.Contains(full, "mouse back") {
 		t.Fatalf("the button still leaves a full screen session:\n%s", full)
 	}
-	if !strings.Contains(full, "typing to agent") {
-		t.Fatalf("full screen focus still sends typing to the agent:\n%s", full)
-	}
 
 	m.pane.mouse = true
 	if footer := ansi.Strip(m.viewFooter()); !strings.Contains(footer, "click / alt+drag") || !strings.Contains(footer, "agent UI") {
@@ -536,18 +535,42 @@ func TestFooterInFocusMode(t *testing.T) {
 	}
 }
 
-func TestMusePagingHintFitsFullFocusFooter(t *testing.T) {
-	m, sessID := focusedWithHistory(t, "muse-footer")
-	m.rows[m.cursor].sess.Tool = "muse"
+func TestPagingHintFitsFullFocusFooter(t *testing.T) {
+	shipped, err := config.Default()
+	if err != nil {
+		t.Fatalf("default config: %v", err)
+	}
+	m, sessID := focusedWithHistory(t, "paging-footer")
+	m.cfg.Tools["gemini"] = shipped.Tools["gemini"]
+	m.rows[m.cursor].sess.Tool = "gemini"
 	m.pane.forID = sessID
 	m.fullLayout = true
 	m.width = 110
 	footer := ansi.Strip(m.viewFooter())
-	if !strings.Contains(footer, "pgup/pgdn history") {
-		t.Fatalf("full focus footer omits Muse paging: %q", footer)
+	if !strings.Contains(footer, "pgup/pgdn scroll") {
+		t.Fatalf("full focus footer omits paging: %q", footer)
 	}
 	if got := lipgloss.Height(m.viewFooter()); got != 1 {
 		t.Fatalf("full focus footer spans %d rows, want one: %q", got, footer)
+	}
+}
+
+// The scrolled notice names PgDn only while PgDn is what walks the pane
+// back down.
+func TestScrolledStatusNamesPgDnWhileItPages(t *testing.T) {
+	m, sessID := focusedWithHistory(t, "scrolled-status")
+	m.pane.forID = sessID
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyPgUp})
+	m = updated.(*Model)
+	if !m.scrolledBack() {
+		t.Fatal("test setup: PgUp did not scroll the pane back")
+	}
+	if got := ansi.Strip(m.statusLine()); !strings.Contains(got, "lines back · wheel down, pgdn or type to catch up") {
+		t.Fatalf("paging pane's scrolled notice = %q", got)
+	}
+	m.pane.mouse = true
+	if got := ansi.Strip(m.statusLine()); !strings.Contains(got, "lines back · wheel down or type to catch up") {
+		t.Fatalf("mouse-tracking pane's scrolled notice = %q", got)
 	}
 }
 
@@ -926,5 +949,23 @@ func TestQuickPromptFooterKeys(t *testing.T) {
 	}
 	if !strings.Contains(footerTwo, "ctrl+t worktree") {
 		t.Errorf("missing ctrl+t worktree pair: %q", footerTwo)
+	}
+}
+
+func TestDiskBytes(t *testing.T) {
+	for _, tc := range []struct {
+		bytes uint64
+		want  string
+	}{
+		{0, "0B"},
+		{999, "999B"},
+		{1000, "1.0KB"},
+		{1_000_000, "1.0MB"},
+		{169_850_000_000, "169.8GB"},
+		{1_000_000_000_000, "1.0TB"},
+	} {
+		if got := diskBytes(tc.bytes); got != tc.want {
+			t.Errorf("diskBytes(%d) = %q, want %q", tc.bytes, got, tc.want)
+		}
 	}
 }
