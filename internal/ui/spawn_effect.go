@@ -7,7 +7,6 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
-	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -181,22 +180,11 @@ func (s effectServices) runSpawn(request spawnRequest) (effectResult, error) {
 	if id == "" {
 		id = newID()
 	}
-	worktreeRepo, worktreeBranch := "", ""
+	var worktree *sessioncmd.WorktreeRequest
 	if request.worktree {
-		if s.gitDrv == nil {
-			return result, errors.New("worktree sessions need git installed")
-		}
-		root, err := s.gitDrv.RepoRoot(dir)
-		if err != nil {
-			return result, err
-		}
-		path, branch, err := s.gitDrv.AddWorktree(root, request.name, request.base)
-		if err != nil {
-			return result, err
-		}
-		dir, worktreeRepo, worktreeBranch = path, root, branch
+		worktree = &sessioncmd.WorktreeRequest{Base: request.base}
 	}
-	launched, err := s.lifecycle.Launch(sessioncmd.LaunchRequest{
+	launched, err := s.lifecycle.Spawn(sessioncmd.SpawnRequest{
 		Session: store.Session{
 			ID:       id,
 			Name:     request.name,
@@ -204,20 +192,12 @@ func (s effectServices) runSpawn(request spawnRequest) (effectResult, error) {
 			Cwd:      dir,
 			Group:    request.group,
 			ParentID: request.parentID,
-			// Starting until the agent first draws to its pane, so the row
-			// shows a launch state immediately; the poller flips it.
-			Status:         status.Starting,
-			AgentSessionID: plan.AgentSessionID,
-			WorktreeRepo:   worktreeRepo,
-			WorktreeBranch: worktreeBranch,
-			PendingInputs:  plan.PendingInputs,
-			LaunchPrompt:   plan.LaunchPrompt,
-			Choice:         request.choice,
+			Choice:   request.choice,
 		},
-		Tool:             tool,
-		BaseCommand:      plan.Command,
-		Pane:             request.pane,
-		RollbackWorktree: worktreeRepo != "",
+		Tool:     tool,
+		Plan:     plan,
+		Pane:     request.pane,
+		Worktree: worktree,
 	})
 	if err != nil {
 		return result, err

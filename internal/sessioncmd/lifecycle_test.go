@@ -4,11 +4,14 @@ import (
 	"database/sql"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/git"
+	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 )
@@ -419,5 +422,44 @@ func TestLifecycleEndAfterTurnKillsAndKeepsTheRow(t *testing.T) {
 	}
 	if h.driver.Exists(created.ID) || got.Status != status.Dead || got.Archived || got.AfterTurn != "" {
 		t.Fatalf("after its turn: running=%v status=%q archived=%v pending=%q", h.driver.Exists(created.ID), got.Status, got.Archived, got.AfterTurn)
+	}
+}
+
+func TestLifecycleSpawnHandsBackTheWorktreeWhenLaunchFails(t *testing.T) {
+	h := newSessionHarness(t)
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	repo := newTestGitRepo(t, t.TempDir())
+	runtime := harnessRuntime(t, h)
+	driver, err := git.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime.Git = driver
+	lifecycle, err := NewLifecycle(runtime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	taken := store.Session{ID: "taken", Name: "taken", Tool: "echoer", Cwd: t.TempDir(), Status: status.Starting}
+	if err := h.store.CreateSession(taken); err != nil {
+		t.Fatal(err)
+	}
+	_, err = lifecycle.Spawn(SpawnRequest{
+		Session:  store.Session{ID: taken.ID, Name: "spawned", Tool: "echoer", Cwd: repo.root},
+		Tool:     runtime.Config.Tools["echoer"],
+		Plan:     launch.Plan{Command: "sleep 30"},
+		Pane:     PaneSize{Width: 80, Height: 24},
+		Worktree: &WorktreeRequest{Base: repo.baseRef},
+	})
+	if err == nil {
+		t.Fatal("spawn onto a taken id succeeded")
+	}
+	worktrees, err := exec.Command("git", "-C", repo.root, "worktree", "list", "--porcelain").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(worktrees), "worktree ") != 1 {
+		t.Fatalf("failed spawn left its worktree:\n%s", worktrees)
 	}
 }

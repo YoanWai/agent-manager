@@ -109,6 +109,59 @@ func (l *Lifecycle) discardWorktree(sess store.Session) {
 	_, _ = l.runtime.Git.RemoveWorktreeIfClean(sess.WorktreeRepo, sess.Cwd, sess.WorktreeBranch, base)
 }
 
+// WorktreeRequest asks Spawn for the session's own checkout of the
+// repository its Cwd is in.
+type WorktreeRequest struct {
+	Base  string
+	Fetch bool
+}
+
+type SpawnRequest struct {
+	Session  store.Session
+	Tool     config.Tool
+	Plan     launch.Plan
+	Pane     PaneSize
+	Worktree *WorktreeRequest
+}
+
+// Spawn is the one path a new session takes, from the manager and from the
+// CLI: it opens the worktree the request asks for, fills the row from the
+// launch plan, and launches it, handing the worktree back if that fails.
+func (l *Lifecycle) Spawn(request SpawnRequest) (LaunchResult, error) {
+	sess := request.Session
+	if request.Worktree != nil {
+		if l.runtime.Git == nil {
+			return LaunchResult{}, errors.New("worktree sessions need git installed")
+		}
+		root, err := l.runtime.Git.RepoRoot(sess.Cwd)
+		if err != nil {
+			return LaunchResult{}, err
+		}
+		if request.Worktree.Fetch {
+			// Offline or refused, the worktree branches from the last fetch instead.
+			_ = l.runtime.Git.FetchBase(root, request.Worktree.Base)
+		}
+		path, branch, err := l.runtime.Git.AddWorktree(root, sess.Name, request.Worktree.Base)
+		if err != nil {
+			return LaunchResult{}, err
+		}
+		sess.Cwd, sess.WorktreeRepo, sess.WorktreeBranch = path, root, branch
+	}
+	// Starting until the agent first draws to its pane, so the row shows a
+	// launch state immediately; the poller flips it.
+	sess.Status = status.Starting
+	sess.AgentSessionID = request.Plan.AgentSessionID
+	sess.PendingInputs = request.Plan.PendingInputs
+	sess.LaunchPrompt = request.Plan.LaunchPrompt
+	return l.Launch(LaunchRequest{
+		Session:          sess,
+		Tool:             request.Tool,
+		BaseCommand:      request.Plan.Command,
+		Pane:             request.Pane,
+		RollbackWorktree: sess.WorktreeRepo != "",
+	})
+}
+
 // Launch creates the pane before its row and rolls the pane back if the row
 // cannot be persisted. A label failure is returned separately because the UI
 // reports it while agent commands historically treat it as cosmetic.

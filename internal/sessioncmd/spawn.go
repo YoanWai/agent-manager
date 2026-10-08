@@ -8,7 +8,6 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/launch"
-	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/google/uuid"
 )
@@ -96,55 +95,23 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 	if err != nil {
 		return Session{}, err
 	}
-	dir, worktree, err := s.prepareWorktree(dir, name, base, fetchSetting != "off", wantWorktree, opts.Worktree != nil)
+	worktreeGit, err := s.worktreeGit(dir, wantWorktree, opts.Worktree != nil)
 	if err != nil {
 		return Session{}, err
 	}
-	// Every failure from here on has to hand back the worktree it just
-	// made: AddWorktree refuses a path that already exists, so a leaked
-	// one turns the caller's retry into a name collision it cannot explain.
-	discard := func() {
-		if worktree.repo == "" {
-			return
-		}
-		if driver, err := s.newGit(); err == nil {
-			_, _ = driver.RemoveWorktreeIfClean(worktree.repo, dir, worktree.branch, base)
-		}
-	}
-
-	plan := launch.Assemble(toolName, tool.WithChoice(choice), prompt, autoNamed, proactive)
-	var lifecycleGit *git.Driver
-	if worktree.repo != "" {
-		lifecycleGit, err = s.newGit()
-		if err != nil {
-			discard()
-			return Session{}, err
-		}
-	}
-	lifecycle, err := s.lifecycle(runtime, lifecycleGit)
+	lifecycle, err := s.lifecycle(runtime, worktreeGit)
 	if err != nil {
-		discard()
 		return Session{}, err
 	}
-	sess := store.Session{
-		ID:             id,
-		Name:           name,
-		Tool:           toolName,
-		Cwd:            dir,
-		Group:          group,
-		Status:         status.Starting,
-		AgentSessionID: plan.AgentSessionID,
-		WorktreeRepo:   worktree.repo,
-		WorktreeBranch: worktree.branch,
-		PendingInputs:  plan.PendingInputs,
-		LaunchPrompt:   plan.LaunchPrompt,
-		Choice:         choice,
+	var worktree *WorktreeRequest
+	if worktreeGit != nil {
+		worktree = &WorktreeRequest{Base: base, Fetch: fetchSetting != "off"}
 	}
-	launched, err := lifecycle.Launch(LaunchRequest{
-		Session:          sess,
-		Tool:             tool,
-		BaseCommand:      plan.Command,
-		RollbackWorktree: worktree.repo != "",
+	launched, err := lifecycle.Spawn(SpawnRequest{
+		Session:  store.Session{ID: id, Name: name, Tool: toolName, Cwd: dir, Group: group, Choice: choice},
+		Tool:     tool,
+		Plan:     launch.Assemble(toolName, tool.WithChoice(choice), prompt, autoNamed, proactive),
+		Worktree: worktree,
 	})
 	if err != nil {
 		return Session{}, err
@@ -176,42 +143,29 @@ func (r *runtime) settingsTool() (string, error) {
 	return "", fmt.Errorf("every agent CLI is turned off for new sessions in settings; name one with %s (configured tools are %s)", r.words.SpawnTool, strings.Join(r.cfg.AgentToolNames(), ", "))
 }
 
-type worktreeTarget struct {
-	repo   string
-	branch string
-}
-
-// prepareWorktree opens the session's own checkout when one is wanted.
-// A directory that cannot host one is only an error when the caller asked
-// for a worktree by name; an inherited default degrades to a plain spawn,
-// which is what the New Session form does rather than refusing to launch.
-func (s *Sessions) prepareWorktree(dir, name, base string, fetch, wanted, explicit bool) (string, worktreeTarget, error) {
+// worktreeGit is the driver that opens the session's own checkout, or nil
+// for a plain spawn. A directory that cannot host one is only an error when
+// the caller asked for a worktree by name; an inherited default degrades to
+// a plain spawn, which is what the New Session form does rather than
+// refusing to launch.
+func (s *Sessions) worktreeGit(dir string, wanted, explicit bool) (*git.Driver, error) {
 	if !wanted {
-		return dir, worktreeTarget{}, nil
+		return nil, nil
 	}
 	driver, err := s.newGit()
 	if err != nil {
 		if explicit {
-			return "", worktreeTarget{}, fmt.Errorf("worktree sessions need git installed: %w", err)
+			return nil, fmt.Errorf("worktree sessions need git installed: %w", err)
 		}
-		return dir, worktreeTarget{}, nil
+		return nil, nil
 	}
-	root, err := driver.RepoRoot(dir)
-	if err != nil {
+	if _, err := driver.RepoRoot(dir); err != nil {
 		if explicit {
-			return "", worktreeTarget{}, fmt.Errorf("%s cannot host a worktree: %w; pass worktree false to spawn there anyway", dir, err)
+			return nil, fmt.Errorf("%s cannot host a worktree: %w; pass worktree false to spawn there anyway", dir, err)
 		}
-		return dir, worktreeTarget{}, nil
+		return nil, nil
 	}
-	if fetch {
-		// Offline or refused, the worktree branches from the last fetch instead.
-		_ = driver.FetchBase(root, base)
-	}
-	path, branch, err := driver.AddWorktree(root, name, base)
-	if err != nil {
-		return "", worktreeTarget{}, err
-	}
-	return path, worktreeTarget{repo: root, branch: branch}, nil
+	return driver, nil
 }
 
 // worktreeWanted resolves whether a spawn opens its own worktree: an
