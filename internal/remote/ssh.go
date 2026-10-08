@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // Runner runs one ssh argv and returns what it printed. A failure that
@@ -20,6 +21,7 @@ type Runner func(ctx context.Context, argv []string) (stdout, stderr []byte, err
 const (
 	maxStdout = 8 << 20
 	maxStderr = 64 << 10
+	waitDelay = 2 * time.Second
 )
 
 var errOverflow = errors.New("output past its cap")
@@ -28,12 +30,18 @@ func runSSH(ctx context.Context, argv []string) ([]byte, []byte, error) {
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	stdout, stderr := &cappedBuffer{max: maxStdout}, &cappedBuffer{max: maxStderr}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
+	cmd.WaitDelay = waitDelay
+	killGroup(cmd)
 	err := cmd.Run()
 	switch {
 	case stdout.over:
 		err = fmt.Errorf("answered with more than %d MiB", maxStdout>>20)
 	case stderr.over:
 		err = fmt.Errorf("printed more than %d KiB of errors", maxStderr>>10)
+	// ssh exited cleanly and its answer is whole; only a helper outside its
+	// group, such as a ProxyCommand that detached, kept the pipe open.
+	case errors.Is(err, exec.ErrWaitDelay):
+		err = nil
 	}
 	return stdout.buf.Bytes(), stderr.buf.Bytes(), err
 }
