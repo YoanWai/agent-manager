@@ -57,6 +57,7 @@ func (d *connectionDialog) open(h connectionDialogHost, editing remote.Connectio
 }
 
 func (d *connectionDialog) handleKey(h connectionDialogHost, msg tea.KeyMsg) (tea.Cmd, *connectionRequest) {
+	msg = typedText(msg)
 	switch msg.String() {
 	case "esc":
 		h.clearErr()

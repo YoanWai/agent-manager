@@ -54,6 +54,16 @@ func TestConnectionDialogAddsAValidConnection(t *testing.T) {
 	}
 }
 
+func TestConnectionDialogTypesANameThatSpellsAKey(t *testing.T) {
+	h := &fakeConnectionHost{mode: modeList}
+	var d connectionDialog
+	d.open(h, remote.Connection{})
+	d.handleKey(h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("down")})
+	if d.focus != cfName || d.name.Value() != "down" {
+		t.Fatalf("focus %v, name %q: a fast-typed name moved the focus", d.focus, d.name.Value())
+	}
+}
+
 func TestConnectionDialogRefusesWhatValidationRefuses(t *testing.T) {
 	h := &fakeConnectionHost{list: []remote.Connection{{Name: "box", Destination: "me@box"}}}
 	for _, tc := range []struct{ name, destination string }{
