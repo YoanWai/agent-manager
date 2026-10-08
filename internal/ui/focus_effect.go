@@ -2,11 +2,13 @@ package ui
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
+	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -55,7 +57,6 @@ func (m *Model) applyFocusEffect(request focusRequest, result focusEffectResult,
 	if !ok || sess.ID != request.sessionID {
 		return nil
 	}
-	m.clearErr()
 	return m.enterFocus(sess)
 }
 
@@ -106,8 +107,7 @@ func (m *Model) applyAckEffect(job *effectJob, result ackEffectResult, err error
 }
 
 type detachRequest struct {
-	generation uint64
-	sessionID  string
+	sessionID string
 }
 
 func (detachRequest) effectRequest() {}
@@ -143,10 +143,22 @@ func (m *Model) applyDetachEffect(request detachRequest, result detachEffectResu
 		m.requestRefresh()
 		return nil
 	}
-	if m.effects.quitting || request.generation != m.gens.foreground || m.mode != modeList {
+	if m.effects.quitting {
 		return nil
 	}
 	if result.request == "" {
+		m.requestRefresh()
+		return nil
+	}
+	// The marker is already cleared, so a request the user moved past
+	// stays on the status bar instead of vanishing; moving the cursor is
+	// not moving past it.
+	if m.foregroundTakenSinceDetach() {
+		name := request.sessionID
+		if sess, ok := m.sessionByID(request.sessionID); ok {
+			name = sess.Name
+		}
+		m.reportWarn(fmt.Sprintf("the %s asked for in %s did not open: something else took the screen first; ask again", result.request, name))
 		m.requestRefresh()
 		return nil
 	}
@@ -173,4 +185,19 @@ func (m *Model) applyDetachEffect(request detachRequest, result detachEffectResu
 	}
 	m.requestRefresh()
 	return nil
+}
+
+// foregroundTakenSinceDetach reports whether, since the detach, the user
+// opened a view, a rail prompt or a resize, or asked to enter a session.
+func (m *Model) foregroundTakenSinceDetach() bool {
+	if m.mode != modeList || m.rail.InputMode() != uirail.BrowseMode || m.quick.active || m.layout.split.resizeMode || m.layout.split.dragging {
+		return true
+	}
+	for _, job := range m.effects.main.pending {
+		switch job.request.(type) {
+		case focusRequest, attachRequest:
+			return true
+		}
+	}
+	return false
 }

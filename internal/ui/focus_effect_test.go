@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -334,6 +335,69 @@ func TestDetachCompletionDoesNotOpenReviewDuringQuit(t *testing.T) {
 	m.applyDetachEffect(detachRequest{sessionID: sess.ID}, detachEffectResult{request: tmux.RequestReview}, nil)
 	if m.mode != modeList {
 		t.Fatal("detach completion opened review during quit")
+	}
+}
+
+// detachWithReviewRequest leaves the marker Ctrl+R inside alpha leaves and
+// detaches, so the probe waits on the lane behind the reflow.
+func detachWithReviewRequest(t *testing.T, m *Model) {
+	t.Helper()
+	createSession(t, m, "alpha", t.TempDir(), "")
+	createSession(t, m, "beta", t.TempDir(), "")
+	m.selectSessionRow(t, "alpha")
+	sess, _ := m.selected()
+	clearRequestOnCleanup(t, m)
+	if _, err := tmuxCmd("set-option", "-g", "@am_request", tmux.RequestReview).CombinedOutput(); err != nil {
+		t.Fatalf("set marker: %v", err)
+	}
+	updated, _ := m.Update(attachDoneMsg{sessID: sess.ID})
+	*m = *updated.(*Model)
+}
+
+func TestDetachRequestSurvivesListNavigation(t *testing.T) {
+	m := buildModel(t)
+	if m.services.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	detachWithReviewRequest(t, m)
+	m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	if sess, _ := m.selected(); sess.Name != "beta" {
+		t.Fatalf("j should move the cursor first, selected %q", sess.Name)
+	}
+	m.drainEffects(t)
+	if m.mode != modeDiff {
+		t.Fatalf("a review asked for inside the session was lost to list navigation, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+	if sess, _ := m.selected(); sess.Name != "alpha" {
+		t.Fatalf("review should open for the session that asked, selected %q", sess.Name)
+	}
+}
+
+func TestDetachRequestDroppedForNewerDialogIsReported(t *testing.T) {
+	m := buildModel(t)
+	detachWithReviewRequest(t, m)
+	m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m.openForm()
+	m.drainEffects(t)
+	if m.mode != modeForm {
+		t.Fatalf("the newer dialog should keep the foreground, mode = %v", m.mode)
+	}
+	if !m.errBar.warned() || !strings.Contains(m.errBar.text, "review") || !strings.Contains(m.errBar.text, "alpha") {
+		t.Fatalf("a dropped review should say so, status = %q", m.errBar.text)
+	}
+}
+
+func TestDetachRequestYieldsToQueuedFocus(t *testing.T) {
+	m := buildModel(t)
+	detachWithReviewRequest(t, m)
+	m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m.focusSelected()
+	m.drainEffects(t)
+	if sess, _ := m.selected(); m.mode != modeFocus || sess.Name != "beta" {
+		t.Fatalf("the focus asked for after detaching should win, mode = %v, selected %q", m.mode, sess.Name)
+	}
+	if !m.errBar.warned() || !strings.Contains(m.errBar.text, "review") {
+		t.Fatalf("a dropped review should say so, status = %q", m.errBar.text)
 	}
 }
 

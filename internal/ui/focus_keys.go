@@ -111,6 +111,9 @@ func (m *Model) focusSelected() (tea.Model, tea.Cmd) {
 	if sess.Archived {
 		return m.attachSelected()
 	}
+	// Cleared on the press, as attach does, so a notice the lane posts
+	// before entry, such as a dropped detach request, stays up.
+	m.clearErr()
 	m.enqueueEffect(focusRequest{sessionID: sess.ID, generation: m.gens.foreground}, 0, false)
 	return m, m.nextEffectCmd()
 }

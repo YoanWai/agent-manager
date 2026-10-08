@@ -149,7 +149,7 @@ func (m *Model) routeSessionMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		// Ctrl+R and F3 inside the session leave a marker before
 		// detaching; the lane reads it once and clears it, and the
 		// completion carries it out for the session just attached.
-		m.enqueueEffect(detachRequest{sessionID: msg.sessID, generation: m.gens.foreground}, 0, false)
+		m.enqueueEffect(detachRequest{sessionID: msg.sessID}, 0, false)
 		return routed(m, nil)
 	}
 	return nil, nil, false
