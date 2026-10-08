@@ -161,6 +161,12 @@ CREATE TABLE IF NOT EXISTS settings (
 		`ALTER TABLE groups ADD COLUMN base TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN after_turn TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN after_turn_at INTEGER NOT NULL DEFAULT 0`,
+		`CREATE TABLE IF NOT EXISTS connections (
+			name        TEXT PRIMARY KEY,
+			destination TEXT NOT NULL,
+			position    INTEGER NOT NULL,
+			created_at  INTEGER NOT NULL
+		)`,
 	}
 	for _, migration := range migrations {
 		if _, err := s.db.Exec(migration); err != nil {
