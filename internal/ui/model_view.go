@@ -55,13 +55,13 @@ func (m *Model) renderFrame() string {
 	case modeMove:
 		frame = m.viewMove()
 	case modeRepoPick:
-		frame = m.viewRepoPick()
+		frame = m.reviewNav.picker.view(m)
 	case modeGroupForm:
 		frame = m.viewGroupForm()
 	case modeDiff:
 		frame = m.viewDiffFull()
 	case modeNotices:
-		frame = m.viewNotices()
+		frame = m.centerOnBackdrop(m.notices.view(m))
 	default:
 		frame = m.overlayRowMenu(m.titleTopRowWithUpdate(m.viewListFrame()))
 	}

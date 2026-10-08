@@ -152,7 +152,7 @@ func TestReviewPickerEnterRejectsStaleSource(t *testing.T) {
 				m.reviewNav.picker.source.repoRoot = "/other"
 			}
 			generation := m.review.Generation()
-			_, cmd := m.handleRepoPickKey(tea.KeyMsg{Type: tea.KeyEnter})
+			cmd := m.reviewNav.picker.handleKey(m, tea.KeyMsg{Type: tea.KeyEnter})
 			if cmd != nil || m.review.Generation() != generation {
 				t.Fatal("stale picker selection started a review load")
 			}
@@ -177,7 +177,7 @@ func TestReviewBaseSavePersistsButDoesNotReloadStaleOrQuittingReview(t *testing.
 			sess := reviewSessionByName(t, m, "base-save-"+tc.name)
 			seedReviewPickerModel(t, m, sess.ID, "/raw/repo")
 			state := m.review.Snapshot()
-			m.reviewNav.picker = repoPickState{
+			m.reviewNav.picker.repoPickState = repoPickState{
 				kind: pickBase, source: reviewPickerSource{
 					generation: state.Generation, targetID: state.SessionID, repoRoot: state.RepoSelected,
 				},
@@ -213,7 +213,7 @@ func TestReviewBaseSaveAllowsOnlyOnePendingRequest(t *testing.T) {
 	sess := reviewSessionByName(t, m, "base-one")
 	seedReviewPickerModel(t, m, sess.ID, "/raw/repo")
 	state := m.review.Snapshot()
-	m.reviewNav.picker = repoPickState{
+	m.reviewNav.picker.repoPickState = repoPickState{
 		kind: pickBase, source: reviewPickerSource{
 			generation: state.Generation, targetID: state.SessionID, repoRoot: state.RepoSelected,
 		},

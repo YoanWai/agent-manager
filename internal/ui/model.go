@@ -53,7 +53,7 @@ type Model struct {
 	prefs      preferences
 	ledger     launchLedger
 	startup    startupState
-	notices    noticesState
+	notices    noticesPanel
 	poller     *poller
 	mode       mode
 	review     uireview.Model
@@ -101,7 +101,7 @@ type focusState struct {
 
 type reviewNavState struct {
 	ret    reviewReturn
-	picker repoPickState
+	picker repoPicker
 }
 
 type launchHintState struct {
@@ -256,12 +256,12 @@ func newView(deps Dependencies, version string) (*Model, error) {
 		startup: startupState{
 			booting: true,
 		},
-		notices: noticesState{
+		notices: noticesPanel{noticesState{
 			dismissed:           loadDismissed(st),
 			whatsNewVersion:     loadWhatsNewVersion(st),
 			whatsNewFromVersion: loadWhatsNewFromVersion(st),
 			configImportError:   configImportError,
-		},
+		}},
 	}
 	if deps.ProfileDir != "" {
 		cached := update.Cached(deps.ProfileDir, version)

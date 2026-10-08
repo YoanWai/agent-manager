@@ -153,7 +153,7 @@ func (m *Model) routeNoticesMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	case updateAppliedMsg:
 		m.update.applying = false
 		if len(msg.result.Releases) > 0 {
-			m.keepNoticeSelection(func() {
+			m.notices.keepSelection(m, func() {
 				m.update.latest = msg.result.Latest
 				m.update.url = msg.result.URL
 				m.update.releases = msg.result.Releases
@@ -166,7 +166,7 @@ func (m *Model) routeNoticesMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			return routed(m, nil)
 		}
 		if msg.upToDate {
-			m.keepNoticeSelection(func() {
+			m.notices.keepSelection(m, func() {
 				m.update.latest = ""
 				m.update.url = ""
 				if len(msg.result.Releases) == 0 {

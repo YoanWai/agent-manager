@@ -37,6 +37,29 @@ type repoPickState struct {
 	storeRoot string
 }
 
+// repoPicker is the review's repo, branch and base picker: the rows
+// snapshotted at open, the filter and the cursor. Reading the rows and acting
+// on a choice are root adapters (Git, SQLite, the effect lane), reached
+// through repoPickerHost.
+type repoPicker struct{ repoPickState }
+
+type repoPickerHost interface {
+	setMode(mode)
+	clearErr()
+	reportErr(string)
+	requestQuit() (tea.Model, tea.Cmd)
+	reviewPickerSourceCurrent(reviewPickerSource) bool
+	selectRepo(root string) tea.Cmd
+	selectBase(ref string) tea.Cmd
+}
+
+// repoPickerViewHost is the dialog chrome the picker paints into.
+type repoPickerViewHost interface {
+	size() (width, height int)
+	cardWidth() int
+	card(title, body string, hint [][2]string) string
+}
+
 func (m *Model) openRepoPick() {
 	state := m.review.Snapshot()
 	if len(state.RepoRoots) == 0 {
@@ -46,7 +69,7 @@ func (m *Model) openRepoPick() {
 	for i, root := range state.RepoRoots {
 		rows[i] = pickRow{label: filepath.Base(root), root: root}
 	}
-	m.openPick(rows, "⌥ Review repo", pickRepo, state.RepoSelected, reviewPickerSource{
+	m.reviewNav.picker.open(m, rows, "⌥ Review repo", pickRepo, state.RepoSelected, reviewPickerSource{
 		generation: state.Generation, targetID: state.SessionID, repoRoot: state.RepoSelected,
 	}, "")
 }
@@ -118,23 +141,23 @@ func (m *Model) handleReviewPickerLoaded(msg reviewPickerLoadedMsg) tea.Cmd {
 	}
 	switch msg.request.kind {
 	case reviewPickerLoadBranches:
-		m.openPick(msg.rows, "⌥ Review branch", pickRepo, msg.current, msg.request.source, "")
+		m.reviewNav.picker.open(m, msg.rows, "⌥ Review branch", pickRepo, msg.current, msg.request.source, "")
 	case reviewPickerLoadBases:
-		m.openPick(msg.rows, "⌥ Diff base", pickBase, msg.current, msg.request.source, msg.storeRoot)
+		m.reviewNav.picker.open(m, msg.rows, "⌥ Diff base", pickBase, msg.current, msg.request.source, msg.storeRoot)
 	}
 	return nil
 }
 
-func (m *Model) openPick(rows []pickRow, title string, kind pickKind, current string, source reviewPickerSource, storeRoot string) {
-	m.reviewNav.picker = repoPickState{rows: rows, title: title, kind: kind, source: source, storeRoot: storeRoot}
+func (p *repoPicker) open(h repoPickerHost, rows []pickRow, title string, kind pickKind, current string, source reviewPickerSource, storeRoot string) {
+	p.repoPickState = repoPickState{rows: rows, title: title, kind: kind, source: source, storeRoot: storeRoot}
 	for i, row := range rows {
 		if row.root == current {
-			m.reviewNav.picker.cursor = i
+			p.cursor = i
 			break
 		}
 	}
-	m.mode = modeRepoPick
-	m.clearErr()
+	h.setMode(modeRepoPick)
+	h.clearErr()
 }
 
 func resolveSymlinksOrSelf(path string) string {
@@ -145,13 +168,13 @@ func resolveSymlinksOrSelf(path string) string {
 	return resolved
 }
 
-func (m *Model) filteredRows() []pickRow {
-	if m.reviewNav.picker.filter == "" {
-		return m.reviewNav.picker.rows
+func (p *repoPicker) filteredRows() []pickRow {
+	if p.filter == "" {
+		return p.rows
 	}
-	needle := strings.ToLower(m.reviewNav.picker.filter)
+	needle := strings.ToLower(p.filter)
 	var out []pickRow
-	for _, row := range m.reviewNav.picker.rows {
+	for _, row := range p.rows {
 		if strings.Contains(strings.ToLower(row.label), needle) ||
 			strings.Contains(strings.ToLower(row.root), needle) {
 			out = append(out, row)
@@ -160,55 +183,56 @@ func (m *Model) filteredRows() []pickRow {
 	return out
 }
 
-func (m *Model) handleRepoPickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	rows := m.filteredRows()
+func (p *repoPicker) handleKey(h repoPickerHost, msg tea.KeyMsg) tea.Cmd {
+	rows := p.filteredRows()
 	switch msg.Type {
 	case tea.KeyCtrlC:
-		return m.requestQuit()
+		_, cmd := h.requestQuit()
+		return cmd
 	case tea.KeyEsc:
-		m.mode = modeDiff
-		return m, nil
+		h.setMode(modeDiff)
+		return nil
 	case tea.KeyUp:
-		m.moveRepoPickCursor(-1, len(rows))
-		return m, nil
+		p.moveCursor(-1, len(rows))
+		return nil
 	case tea.KeyDown:
-		m.moveRepoPickCursor(1, len(rows))
-		return m, nil
+		p.moveCursor(1, len(rows))
+		return nil
 	case tea.KeyBackspace:
-		if m.reviewNav.picker.filter != "" {
-			m.reviewNav.picker.filter = m.reviewNav.picker.filter[:len(m.reviewNav.picker.filter)-1]
-			m.reviewNav.picker.cursor = 0
+		if p.filter != "" {
+			p.filter = p.filter[:len(p.filter)-1]
+			p.cursor = 0
 		}
-		return m, nil
+		return nil
 	case tea.KeyEnter:
 		if len(rows) == 0 {
-			return m, nil
+			return nil
 		}
-		if !m.reviewPickerSourceCurrent(m.reviewNav.picker.source) {
-			m.mode = modeDiff
-			m.reportErr("review changed; reopen the picker")
-			return m, nil
+		if !h.reviewPickerSourceCurrent(p.source) {
+			h.setMode(modeDiff)
+			h.reportErr("review changed; reopen the picker")
+			return nil
 		}
-		m.mode = modeDiff
-		row := rows[m.reviewNav.picker.cursor]
-		if m.reviewNav.picker.kind == pickBase {
-			return m, m.selectBase(row.root)
+		h.setMode(modeDiff)
+		row := rows[p.cursor]
+		if p.kind == pickBase {
+			return h.selectBase(row.root)
 		}
-		return m, m.selectRepo(row.root)
+		return h.selectRepo(row.root)
 	case tea.KeyRunes:
-		m.reviewNav.picker.filter += string(msg.Runes)
-		m.reviewNav.picker.cursor = 0
-		return m, nil
+		p.filter += string(msg.Runes)
+		p.cursor = 0
+		return nil
 	}
-	return m, nil
+	return nil
 }
 
-func (m *Model) moveRepoPickCursor(delta, count int) {
+func (p *repoPicker) moveCursor(delta, count int) {
 	if count == 0 {
-		m.reviewNav.picker.cursor = 0
+		p.cursor = 0
 		return
 	}
-	m.reviewNav.picker.cursor = (m.reviewNav.picker.cursor + delta + count) % count
+	p.cursor = (p.cursor + delta + count) % count
 }
 
 func (m *Model) selectRepo(root string) tea.Cmd {
@@ -298,12 +322,13 @@ func (m *Model) applyReviewBase(result reviewBaseResult) tea.Cmd {
 	return m.reviewLoadCmd(request)
 }
 
-func (m *Model) repoPickWindow(count int) (start, end int) {
-	visible := max(3, m.layout.height-repoPickChrome)
+func (p *repoPicker) window(h repoPickerViewHost, count int) (start, end int) {
+	_, height := h.size()
+	visible := max(3, height-repoPickChrome)
 	if count <= visible {
 		return 0, count
 	}
-	start = m.reviewNav.picker.cursor - visible/2
+	start = p.cursor - visible/2
 	if start < 0 {
 		start = 0
 	}
@@ -316,14 +341,14 @@ func (m *Model) repoPickWindow(count int) (start, end int) {
 // Card lines around the rows: border, padding, title, spacers, error, hint, "+N more".
 const repoPickChrome = 12
 
-func (m *Model) repoPickRow(row pickRow, selected bool) string {
+func (p *repoPicker) row(h repoPickerViewHost, row pickRow, selected bool) string {
 	marker := "  "
 	nameStyle := lipgloss.NewStyle()
 	if selected {
 		marker = lipgloss.NewStyle().Foreground(colorAccent).Render("❯ ")
 		nameStyle = nameStyle.Foreground(colorAccent).Bold(true)
 	}
-	inner := m.cardWidth() - 2*cardPaddingX
+	inner := h.cardWidth() - 2*cardPaddingX
 	name := truncateTail(escapeControlsInline(row.label), inner-lipgloss.Width(marker))
 	budget := inner - lipgloss.Width(marker) - lipgloss.Width(name) - 2
 	dir := ""
@@ -333,19 +358,19 @@ func (m *Model) repoPickRow(row pickRow, selected bool) string {
 	return marker + nameStyle.Render(name) + dir
 }
 
-func (m *Model) viewRepoPick() string {
-	rows := m.filteredRows()
+func (p *repoPicker) view(h repoPickerViewHost) string {
+	rows := p.filteredRows()
 	var body strings.Builder
-	body.WriteString(mutedStyle.Render("filter: ") + m.reviewNav.picker.filter + "\n\n")
+	body.WriteString(mutedStyle.Render("filter: ") + p.filter + "\n\n")
 	if len(rows) == 0 {
 		body.WriteString(subtleStyle.Render("no match"))
 	}
-	start, end := m.repoPickWindow(len(rows))
+	start, end := p.window(h, len(rows))
 	for i := start; i < end; i++ {
-		body.WriteString(m.repoPickRow(rows[i], i == m.reviewNav.picker.cursor) + "\n")
+		body.WriteString(p.row(h, rows[i], i == p.cursor) + "\n")
 	}
 	if hidden := len(rows) - (end - start); hidden > 0 {
 		body.WriteString(subtleStyle.Render(fmt.Sprintf("+%d more", hidden)) + "\n")
 	}
-	return m.card(m.reviewNav.picker.title, strings.TrimRight(body.String(), "\n"), [][2]string{{"type", "filter"}, {"↑↓", "pick"}, {"↵", "select"}, {"esc", "cancel"}})
+	return h.card(p.title, strings.TrimRight(body.String(), "\n"), [][2]string{{"type", "filter"}, {"↑↓", "pick"}, {"↵", "select"}, {"esc", "cancel"}})
 }

@@ -54,6 +54,6 @@ func (m *Model) applyNoticeDismiss(job *effectJob, err error) {
 	delete(m.notices.dismissed, request.id)
 	m.reportErr(err.Error())
 	if request.modal && !m.effects.quitting && request.foregroundGen == m.gens.foreground && (m.mode == modeList || m.mode == modeNotices) {
-		m.openNotices(request.id)
+		m.notices.open(m, request.id)
 	}
 }

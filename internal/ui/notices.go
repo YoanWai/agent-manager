@@ -81,23 +81,24 @@ func releaseCountLabel(releaseRange update.ReleaseRange) string {
 	return count
 }
 
-func (m *Model) activeNotices() []notice {
-	if m.services.store == nil {
+func (p *noticesPanel) active(h noticesHost) []notice {
+	src := h.noticeSources()
+	if !src.store {
 		return nil
 	}
 	var notices []notice
-	if m.update.latest != "" {
-		releaseRange := m.update.available
-		title := m.update.latest + " available"
+	if src.update.latest != "" {
+		releaseRange := src.update.available
+		title := src.update.latest + " available"
 		if len(releaseRange.Releases) > 1 {
-			title = releaseCountLabel(releaseRange) + " releases available · " + m.update.latest
+			title = releaseCountLabel(releaseRange) + " releases available · " + src.update.latest
 		}
-		body := []string{"You are on " + m.update.version + ". Here is everything released since then:"}
+		body := []string{"You are on " + src.update.version + ". Here is everything released since then:"}
 		if len(releaseRange.Releases) == 0 {
 			body = append(body, "The generated change summary is not available yet; r refreshes it now.")
 		}
 		notices = append(notices, notice{
-			id:            "update-" + m.update.latest,
+			id:            "update-" + src.update.latest,
 			glyph:         "↑",
 			tint:          colorAccent,
 			title:         title,
@@ -107,26 +108,26 @@ func (m *Model) activeNotices() []notice {
 			releases:      releaseRange.Releases,
 			rangeComplete: releaseRange.Complete,
 			after: []string{
-				"u updates once to " + m.update.latest + " and restarts; every release above is included.",
+				"u updates once to " + src.update.latest + " and restarts; every release above is included.",
 				"Enter opens the full release notes.",
 			},
-			url: m.update.url,
+			url: src.update.url,
 		})
 	}
-	if m.notices.whatsNewVersion == m.update.version {
-		releaseRange := m.update.installed
-		title := "Updated to " + m.update.version
+	if p.whatsNewVersion == src.update.version {
+		releaseRange := src.update.installed
+		title := "Updated to " + src.update.version
 		if len(releaseRange.Releases) > 1 {
-			title = "Updated across " + releaseCountLabel(releaseRange) + " releases · " + m.update.version
+			title = "Updated across " + releaseCountLabel(releaseRange) + " releases · " + src.update.version
 		}
-		body := []string{"Updated from " + m.notices.whatsNewFromVersion + " to " + m.update.version + "."}
-		if len(releaseRange.Releases) == 0 && !m.update.checked {
+		body := []string{"Updated from " + p.whatsNewFromVersion + " to " + src.update.version + "."}
+		if len(releaseRange.Releases) == 0 && !src.update.checked {
 			body = append(body, "Loading the change summary from GitHub…")
 		} else if len(releaseRange.Releases) == 0 {
 			body = append(body, "No generated change summary was found; r refreshes GitHub now.")
 		}
 		notices = append(notices, notice{
-			id:           "whatsnew-" + m.update.version,
+			id:           "whatsnew-" + src.update.version,
 			glyph:        "✦",
 			tint:         colorAccent2,
 			title:        title,
@@ -138,10 +139,10 @@ func (m *Model) activeNotices() []notice {
 				"Enter opens the full release notes.",
 			},
 			rangeComplete: releaseRange.Complete,
-			url:           repoURL + "/releases/tag/v" + strings.TrimPrefix(m.update.version, "v"),
+			url:           repoURL + "/releases/tag/v" + strings.TrimPrefix(src.update.version, "v"),
 		})
 	}
-	for _, msg := range m.notices.feedMessages {
+	for _, msg := range p.feedMessages {
 		notices = append(notices, notice{
 			id:       msg.ID,
 			glyph:    "◆",
@@ -153,7 +154,7 @@ func (m *Model) activeNotices() []notice {
 			url:      msg.URL,
 		})
 	}
-	if m.notices.configImportError != "" {
+	if p.configImportError != "" {
 		notices = append(notices, notice{
 			id:    noticeConfigNotImported,
 			glyph: "⚙",
@@ -163,7 +164,7 @@ func (m *Model) activeNotices() []notice {
 				"The keys and the editor live in Settings now. A config.toml that",
 				"names them is read once to carry them over, and yours was refused:",
 				"",
-				m.notices.configImportError,
+				p.configImportError,
 				"",
 				"The keys are the defaults and the editor is picked for you until",
 				"you set them in Settings. The file is not read again, and is yours",
@@ -181,7 +182,7 @@ func (m *Model) activeNotices() []notice {
 			glyph: "✳",
 			tint:  colorAccent2,
 			title: "Welcome to agent-manager",
-			body:  m.welcomeBody(),
+			body:  src.welcomeBody(),
 			url:   repoURL + "#readme",
 		},
 		notice{
@@ -200,13 +201,13 @@ func (m *Model) activeNotices() []notice {
 				"Enter here opens a prefilled report, and Settings (s) has a",
 				"\"←→ step in/out\" row that turns the pair off.",
 			},
-			url: arrowStepFeedbackURL(m.update.version),
+			url: arrowStepFeedbackURL(src.update.version),
 		},
 	)
 
 	kept := notices[:0]
 	for _, n := range notices {
-		if !m.notices.dismissed[n.id] {
+		if !p.dismissed[n.id] {
 			kept = append(kept, n)
 		}
 	}
@@ -324,8 +325,7 @@ func (h noticeHit) contains(x, y int) bool {
 	return h.ok && x >= h.x0 && x < h.x1 && y >= h.y0 && y < h.y1
 }
 
-func (m *Model) placeNoticeHit(footer string, firstRow int) {
-	binding := m.listGlyph(keybind.Messages)
+func (p *noticesPanel) placeHit(h noticesHost, binding, footer string, firstRow int) {
 	if binding == "" {
 		return
 	}
@@ -338,8 +338,8 @@ func (m *Model) placeNoticeHit(footer string, firstRow int) {
 		}
 		x := ansi.StringWidth(line[:start])
 		y := firstRow + i
-		if x+ansi.StringWidth(label) <= m.layout.width && y < m.layout.height {
-			m.notices.noticeHit = noticeHit{x0: x, x1: x + ansi.StringWidth(label), y0: y, y1: y + 1, ok: true}
+		if width, height := h.size(); x+ansi.StringWidth(label) <= width && y < height {
+			p.noticeHit = noticeHit{x0: x, x1: x + ansi.StringWidth(label), y0: y, y1: y + 1, ok: true}
 		}
 		return
 	}
@@ -499,17 +499,17 @@ func (m *Model) handleBrowserOpen(msg browserOpenMsg) {
 // openNotices shows the panel even with nothing in it: a fresh install and
 // the first run after an update both retire every message, and that is
 // exactly when someone reaches for r to look again.
-func (m *Model) openNotices(selectID string) {
-	notices := m.activeNotices()
-	m.notices.noticeCursor = 0
-	m.notices.noticeScroll = 0
+func (p *noticesPanel) open(h noticesHost, selectID string) {
+	notices := p.active(h)
+	p.noticeCursor = 0
+	p.noticeScroll = 0
 	for i, n := range notices {
 		if n.id == selectID {
-			m.notices.noticeCursor = i
+			p.noticeCursor = i
 			break
 		}
 	}
-	m.mode = modeNotices
+	h.setMode(modeNotices)
 }
 
 // openStartupNotice greets the launch when there is something to say:
@@ -521,28 +521,28 @@ func (m *Model) openStartupNotice() {
 		return
 	}
 	if id := m.startupNotice(); id != "" {
-		m.openNotices(id)
+		m.notices.open(m, id)
 	}
 }
 
-// keepNoticeSelection applies a mutation that may add or remove notices
+// keepSelection applies a mutation that may add or remove notices
 // and re-points the cursor at the notice that was selected before, by id.
 // Index arithmetic cannot do this: whether the list actually changed
 // depends on dismissals and on what the mutation replaced.
-func (m *Model) keepNoticeSelection(apply func()) {
-	if m.mode != modeNotices {
+func (p *noticesPanel) keepSelection(h noticesHost, apply func()) {
+	if h.currentMode() != modeNotices {
 		apply()
 		return
 	}
 	selected := ""
-	if notices := m.activeNotices(); m.notices.noticeCursor < len(notices) {
-		selected = notices[m.notices.noticeCursor].id
+	if notices := p.active(h); p.noticeCursor < len(notices) {
+		selected = notices[p.noticeCursor].id
 	}
 	apply()
-	m.notices.noticeCursor = 0
-	for i, n := range m.activeNotices() {
+	p.noticeCursor = 0
+	for i, n := range p.active(h) {
 		if n.id == selected {
-			m.notices.noticeCursor = i
+			p.noticeCursor = i
 			break
 		}
 	}
@@ -550,12 +550,12 @@ func (m *Model) keepNoticeSelection(apply func()) {
 
 func (m *Model) applyNotices(apply func()) {
 	before := map[string]bool{}
-	for _, n := range m.activeNotices() {
+	for _, n := range m.notices.active(m) {
 		before[n.id] = true
 	}
-	m.keepNoticeSelection(apply)
+	m.notices.keepSelection(m, apply)
 	var added string
-	for _, n := range m.activeNotices() {
+	for _, n := range m.notices.active(m) {
 		if !before[n.id] {
 			added = n.id
 			break
@@ -568,7 +568,7 @@ func (m *Model) applyNotices(apply func()) {
 		return
 	}
 	if m.listReadyForNotice() {
-		m.openNotices(added)
+		m.notices.open(m, added)
 		return
 	}
 	m.notices.pendingNotice = added
@@ -585,9 +585,9 @@ func (m *Model) flushPendingNotice() {
 	}
 	id := m.notices.pendingNotice
 	m.notices.pendingNotice = ""
-	for _, n := range m.activeNotices() {
+	for _, n := range m.notices.active(m) {
 		if n.id == id {
-			m.openNotices(id)
+			m.notices.open(m, id)
 			return
 		}
 	}
@@ -667,62 +667,52 @@ func delegatedUpdateResult(manager update.Manager, execPath string, err error) u
 	return updateAppliedMsg{path: update.RestartTarget(execPath)}
 }
 
-func (m *Model) handleNoticesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	notices := m.activeNotices()
+func (p *noticesPanel) handleKey(h noticesHost, msg tea.KeyMsg) tea.Cmd {
+	notices := p.active(h)
+	_, height := h.size()
 	switch msg.String() {
 	case "r":
-		if m.update.refreshing {
-			return m, nil
-		}
-		m.update.refreshing = true
-		m.update.refreshPending = 2
-		m.clearErr()
-		return m, tea.Batch(m.refreshUpdates, m.refreshFeed)
+		return h.refreshNotices()
 	case "u":
-		if m.update.applying {
-			return m, nil
-		}
-		if m.notices.noticeCursor < len(notices) && isUpdateNotice(notices[m.notices.noticeCursor]) {
-			m.update.applying = true
-			m.clearErr()
-			return m, m.applyUpdateCmd()
+		if p.noticeCursor < len(notices) && isUpdateNotice(notices[p.noticeCursor]) {
+			return h.startUpdate()
 		}
 	case "up", "k":
-		if m.notices.noticeCursor > 0 {
-			m.notices.noticeCursor--
-			m.notices.noticeScroll = 0
+		if p.noticeCursor > 0 {
+			p.noticeCursor--
+			p.noticeScroll = 0
 		}
 	case "down", "j":
-		if m.notices.noticeCursor < len(notices)-1 {
-			m.notices.noticeCursor++
-			m.notices.noticeScroll = 0
+		if p.noticeCursor < len(notices)-1 {
+			p.noticeCursor++
+			p.noticeScroll = 0
 		}
 	case "pgup", "ctrl+u":
-		m.scrollNotice(notices, -max(4, m.layout.height/3))
+		p.scroll(h, notices, -max(4, height/3))
 	case "pgdown", "ctrl+d":
-		m.scrollNotice(notices, max(4, m.layout.height/3))
+		p.scroll(h, notices, max(4, height/3))
 	case "home", "g":
-		m.notices.noticeScroll = 0
+		p.noticeScroll = 0
 	case "end", "G":
-		m.notices.noticeScroll = m.noticeScrollLimit(notices)
+		p.noticeScroll = p.scrollLimit(h, notices)
 	case "enter":
-		if m.notices.noticeCursor < len(notices) && notices[m.notices.noticeCursor].url != "" {
-			return m, openLink(notices[m.notices.noticeCursor].url)
+		if p.noticeCursor < len(notices) && notices[p.noticeCursor].url != "" {
+			return openLink(notices[p.noticeCursor].url)
 		}
 	case "x", "d":
-		if m.notices.noticeCursor < len(notices) {
-			m.dismissNotice(notices[m.notices.noticeCursor].id)
+		if p.noticeCursor < len(notices) {
+			h.dismissNotice(notices[p.noticeCursor].id)
 		}
 		if len(notices) <= 1 {
-			m.mode = modeList
-			return m, nil
+			h.setMode(modeList)
+			return nil
 		}
-		m.notices.noticeCursor = min(m.notices.noticeCursor, len(notices)-2)
-		m.notices.noticeScroll = 0
+		p.noticeCursor = min(p.noticeCursor, len(notices)-2)
+		p.noticeScroll = 0
 	case "esc", "q", "M":
-		m.mode = modeList
+		h.setMode(modeList)
 	}
-	return m, nil
+	return nil
 }
 
 func (m *Model) finishNoticeRefresh() {
@@ -732,76 +722,79 @@ func (m *Model) finishNoticeRefresh() {
 	m.update.refreshing = m.update.refreshPending > 0
 }
 
-func (m *Model) noticeScrollLimit(notices []notice) int {
-	if m.notices.noticeCursor >= len(notices) {
+func (p *noticesPanel) scrollLimit(h noticesHost, notices []notice) int {
+	if p.noticeCursor >= len(notices) {
 		return 0
 	}
-	inner := noticeInnerWidth(notices, m.layout.width)
-	room := noticeBodyRoom(m.layout.height, len(notices), len(m.noticeTail(notices, inner))+1)
-	body, _ := noticeBodyLayout(notices[m.notices.noticeCursor], inner, room)
+	width, height := h.size()
+	inner := noticeInnerWidth(notices, width)
+	room := noticeBodyRoom(height, len(notices), len(p.tail(h, notices, inner))+1)
+	body, _ := noticeBodyLayout(notices[p.noticeCursor], inner, room)
 	return max(0, len(body)-room)
 }
 
 // scrollNotice steps from the page on screen, since a resize can leave the saved offset past the last page.
-func (m *Model) scrollNotice(notices []notice, rows int) {
-	limit := m.noticeScrollLimit(notices)
-	m.notices.noticeScroll = min(max(min(m.notices.noticeScroll, limit)+rows, 0), limit)
+func (p *noticesPanel) scroll(h noticesHost, notices []notice, rows int) {
+	limit := p.scrollLimit(h, notices)
+	p.noticeScroll = min(max(min(p.noticeScroll, limit)+rows, 0), limit)
 }
 
 func noticeBodyRoom(height, noticeCount, tailRows int) int {
 	return max(1, height-2-(noticeCount+2)-tailRows)
 }
 
-func (m *Model) noticeTail(notices []notice, inner int) []string {
+func (p *noticesPanel) tail(h noticesHost, notices []notice, inner int) []string {
 	var tail []string
-	if m.notices.noticeCursor < len(notices) {
-		if url := notices[m.notices.noticeCursor].url; url != "" {
+	if p.noticeCursor < len(notices) {
+		if url := notices[p.noticeCursor].url; url != "" {
 			tail = append(tail, subtleStyle.Render("↗ "+truncateTail(strings.TrimPrefix(url, "https://"), inner-2)))
 		}
 	}
-	if m.update.refreshing {
+	release := h.noticeSources().update
+	if release.refreshing {
 		tail = append(tail, lipgloss.NewStyle().Foreground(colorAccent2).Render("↻ refreshing releases and messages…"))
 	}
-	if m.update.applying {
-		tail = append(tail, lipgloss.NewStyle().Foreground(colorAccent).Render("↓ downloading "+m.update.latest+"…"))
+	if release.applying {
+		tail = append(tail, lipgloss.NewStyle().Foreground(colorAccent).Render("↓ downloading "+release.latest+"…"))
 	}
-	if m.errBar.text != "" {
-		tail = append(tail, m.statusMessage("✕", "●", "▲"))
+	if status := h.statusRow(); status != "" {
+		tail = append(tail, status)
 	}
 	return tail
 }
 
-func (m *Model) viewNotices() string {
-	notices := m.activeNotices()
-	inner := noticeInnerWidth(notices, m.layout.width)
+func (p *noticesPanel) view(h noticesHost) []string {
+	notices := p.active(h)
+	width, height := h.size()
+	inner := noticeInnerWidth(notices, width)
 	if len(notices) == 0 {
 		rows := []string{subtleStyle.Render("nothing new")}
-		rows = append(rows, m.noticeTail(notices, inner)...)
+		rows = append(rows, p.tail(h, notices, inner)...)
 		frame := noticeFrame(rows, inner, noticeLegend(),
 			mutedStyle.Render("r refresh · esc "))
-		return m.centerOnBackdrop(frame)
+		return frame
 	}
 	var rows []string
 	rows = append(rows, "")
 	for i, n := range notices {
 		marker := "  "
 		title := valueStyle.Render(n.title)
-		if i == m.notices.noticeCursor {
+		if i == p.noticeCursor {
 			marker = lipgloss.NewStyle().Foreground(colorAccent).Render("▸ ")
 			title = lipgloss.NewStyle().Foreground(colorBright).Bold(true).Render(n.title)
 		}
 		rows = append(rows, marker+n.mark()+" "+title)
 	}
-	selected := notices[m.notices.noticeCursor]
+	selected := notices[p.noticeCursor]
 	rows = append(rows, noticeBorderStyle().Render(strings.Repeat("┄", inner)))
 
-	tail := m.noticeTail(notices, inner)
+	tail := p.tail(h, notices, inner)
 	tail = append(tail, "")
 
-	room := noticeBodyRoom(m.layout.height, len(notices), len(tail))
+	room := noticeBodyRoom(height, len(notices), len(tail))
 	body, scrolls := noticeBodyLayout(selected, inner, room)
 	if scrolls {
-		body = noticeScrollWindow(body, room, m.notices.noticeScroll, inner)
+		body = noticeScrollWindow(body, room, p.noticeScroll, inner)
 	}
 	rows = append(rows, body...)
 	rows = append(rows, tail...)
@@ -809,7 +802,7 @@ func (m *Model) viewNotices() string {
 	frame := noticeFrame(rows, inner,
 		noticeLegend(),
 		mutedStyle.Render(noticeHint(selected, inner)))
-	return m.centerOnBackdrop(frame)
+	return frame
 }
 
 func noticeHint(selected notice, inner int) string {
@@ -863,15 +856,15 @@ func (m *Model) dismissNotice(id string) {
 
 // The welcome names the keys as the tables bind them on this run: the first
 // key of each action, and nothing for an action turned off.
-func (m *Model) welcomeBody() []string {
-	prompt, help, search, settings := m.firstListKey(keybind.Prompt), m.firstListKey(keybind.Help), m.firstListKey(keybind.Search), m.firstListKey(keybind.Settings)
+func (src noticeSources) welcomeBody() []string {
+	prompt, help, search, settings := src.firstListKey(keybind.Prompt), src.firstListKey(keybind.Help), src.firstListKey(keybind.Search), src.firstListKey(keybind.Settings)
 	body := []string{
 		"Every row on the left is a live agent session.",
 		"",
-		welcomeRow(m.firstListKey(keybind.NewSession), "new session", prompt, "quick prompt mode"),
-		welcomeRow(m.firstListKey(keybind.Open), "focus it", m.firstListKey(keybind.Attach), "attach it full screen"),
-		m.welcomeSessionKeysLine(),
-		welcomeRow(m.firstListKeys(keybind.Kill, keybind.Revive), "kill / revive", settings, "settings"),
+		welcomeRow(src.firstListKey(keybind.NewSession), "new session", prompt, "quick prompt mode"),
+		welcomeRow(src.firstListKey(keybind.Open), "focus it", src.firstListKey(keybind.Attach), "attach it full screen"),
+		src.welcomeSessionKeysLine(),
+		welcomeRow(src.firstListKeys(keybind.Kill, keybind.Revive), "kill / revive", settings, "settings"),
 		"",
 	}
 	if prompt != "" {
@@ -891,18 +884,18 @@ func (m *Model) welcomeBody() []string {
 	)
 }
 
-func (m *Model) firstListKey(action string) string {
-	keys := m.services.listKeys.Binding(action).Keys()
+func (src noticeSources) firstListKey(action string) string {
+	keys := src.listKeys.Binding(action).Keys()
 	if len(keys) == 0 {
 		return ""
 	}
 	return keys[0].Glyph()
 }
 
-func (m *Model) firstListKeys(actions ...string) string {
+func (src noticeSources) firstListKeys(actions ...string) string {
 	var glyphs []string
 	for _, action := range actions {
-		if glyph := m.firstListKey(action); glyph != "" {
+		if glyph := src.firstListKey(action); glyph != "" {
 			glyphs = append(glyphs, glyph)
 		}
 	}
@@ -921,9 +914,9 @@ func welcomeRow(leftKey, leftDoes, rightKey, rightDoes string) string {
 }
 
 // The widths are the columns of the welcome rows around this line.
-func (m *Model) welcomeSessionKeysLine() string {
+func (src noticeSources) welcomeSessionKeysLine() string {
 	first := func(action string) string {
-		keys := m.services.keys.Binding(action).Keys()
+		keys := src.sessionKeys.Binding(action).Keys()
 		if len(keys) == 0 {
 			return ""
 		}

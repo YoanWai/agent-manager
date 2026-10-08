@@ -801,3 +801,30 @@ func TestReviewDoesNotOpenTheFileTheCursorLeft(t *testing.T) {
 		t.Fatalf("editor launched for the file the cursor left: %v", *launched)
 	}
 }
+
+// The launch and return policy is decided on captured values, with no model.
+func TestEditorLaunchAndReturnPolicy(t *testing.T) {
+	if (editorLaunch{name: "code"}).takesScreen() || !(editorLaunch{name: "vim"}).takesScreen() {
+		t.Fatal("a windowed editor took the screen, or a terminal one did not")
+	}
+	target := editorReturnTarget{sessionID: "s1", foregroundGen: 4, mode: modeFocus}
+	cases := []struct {
+		name     string
+		target   editorReturnTarget
+		gen      uint64
+		current  mode
+		quitting bool
+		want     bool
+	}{
+		{"unchanged", target, 4, modeFocus, false, true},
+		{"no session", editorReturnTarget{foregroundGen: 4, mode: modeFocus}, 4, modeFocus, false, false},
+		{"user moved on", target, 5, modeFocus, false, false},
+		{"mode changed", target, 4, modeList, false, false},
+		{"quitting", target, 4, modeFocus, true, false},
+	}
+	for _, tc := range cases {
+		if got := tc.target.resumes(tc.gen, tc.current, tc.quitting); got != tc.want {
+			t.Errorf("%s: resumes = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}

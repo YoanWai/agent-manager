@@ -337,7 +337,7 @@ func scrollModel(t *testing.T, lines int) *Model {
 		body = append(body, fmt.Sprintf("change line %02d", index))
 	}
 	m.notices.feedMessages = []feed.Message{{ID: "feed-scroll", Banner: "scroll", Title: "Scrollable summary", Body: body}}
-	m.openNotices("feed-scroll")
+	m.notices.open(m, "feed-scroll")
 	return m
 }
 
@@ -403,7 +403,7 @@ func TestWheelScrollsTheMessageBody(t *testing.T) {
 	for i := 0; i < 40; i++ {
 		m.handleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
 	}
-	limit := m.noticeScrollLimit(m.activeNotices())
+	limit := m.notices.scrollLimit(m, m.notices.active(m))
 	if m.notices.noticeScroll != limit {
 		t.Fatalf("wheel scrolled to %d, want it bounded at %d", m.notices.noticeScroll, limit)
 	}
@@ -422,20 +422,20 @@ func TestWheelScrollsTheMessageBody(t *testing.T) {
 
 func TestHomeAndEndJumpTheMessageBody(t *testing.T) {
 	m := scrollModel(t, 30)
-	limit := m.noticeScrollLimit(m.activeNotices())
+	limit := m.notices.scrollLimit(m, m.notices.active(m))
 	if limit <= 0 {
 		t.Fatalf("the body should scroll, limit %d", limit)
 	}
 	for _, jump := range []string{"end", "G"} {
 		m.notices.noticeScroll = 0
-		m.handleNoticesKey(key(jump))
+		m.notices.handleKey(m, key(jump))
 		if m.notices.noticeScroll != limit {
 			t.Fatalf("%s moved to %d, want the bottom at %d", jump, m.notices.noticeScroll, limit)
 		}
 	}
 	for _, jump := range []string{"home", "g"} {
 		m.notices.noticeScroll = limit
-		m.handleNoticesKey(key(jump))
+		m.notices.handleKey(m, key(jump))
 		if m.notices.noticeScroll != 0 {
 			t.Fatalf("%s moved to %d, want the top", jump, m.notices.noticeScroll)
 		}
@@ -444,14 +444,14 @@ func TestHomeAndEndJumpTheMessageBody(t *testing.T) {
 
 func TestGrowingTheTerminalKeepsTheLastPageInView(t *testing.T) {
 	m := scrollModel(t, 30)
-	m.handleNoticesKey(key("end"))
+	m.notices.handleKey(m, key("end"))
 	bottom := m.notices.noticeScroll
 	m.layout.height = 20
 	frame := ansi.Strip(preparedView(m))
 	if !strings.Contains(frame, "change line 29") || !strings.Contains(frame, "╰") {
 		t.Fatalf("an offset past the new last page shows that last page inside the frame:\n%s", frame)
 	}
-	limit := m.noticeScrollLimit(m.activeNotices())
+	limit := m.notices.scrollLimit(m, m.notices.active(m))
 	if limit >= bottom {
 		t.Fatalf("the taller terminal should have fewer pages: limit %d, saved offset %d", limit, bottom)
 	}
@@ -464,7 +464,7 @@ func TestGrowingTheTerminalKeepsTheLastPageInView(t *testing.T) {
 func TestHintNamesHomeAndEndWhenItFits(t *testing.T) {
 	m := modalModel(t)
 	m.notices.feedMessages = []feed.Message{{ID: "feed-wide", Banner: "wide", Title: "Wide", Body: []string{strings.Repeat("wide words ", 12)}}}
-	m.openNotices("feed-wide")
+	m.notices.open(m, "feed-wide")
 	m.layout.width = 180
 	if frame := ansi.Strip(preparedView(m)); !strings.Contains(frame, "pgup/pgdn/home/end scroll") {
 		t.Fatalf("a wide frame names home and end:\n%s", frame)

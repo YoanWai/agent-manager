@@ -142,7 +142,7 @@ func (m *Model) handleMousePress(msg tea.MouseMsg, ctx uirail.MouseContext) (tea
 		return m, nil
 	}
 	if m.notices.noticeHit.contains(msg.X, msg.Y) && !m.rail.Searching() {
-		m.openNotices("")
+		m.notices.open(m, "")
 		return m, nil
 	}
 	if hit, ok := m.quickHitAt(msg.X, msg.Y); ok {
@@ -172,9 +172,9 @@ func (m *Model) handleMouseWheel(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	case modeNotices:
 		switch msg.Button {
 		case tea.MouseButtonWheelUp:
-			m.scrollNotice(m.activeNotices(), -noticeWheelRows)
+			m.notices.scroll(m, m.notices.active(m), -noticeWheelRows)
 		case tea.MouseButtonWheelDown:
-			m.scrollNotice(m.activeNotices(), noticeWheelRows)
+			m.notices.scroll(m, m.notices.active(m), noticeWheelRows)
 		}
 	}
 	return m, nil

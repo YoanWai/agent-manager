@@ -237,7 +237,7 @@ func (m *Model) viewLegend() legendSection {
 		emptyGroupsKey = ""
 	}
 	var pairs [][2]string
-	if len(m.activeNotices()) > 0 {
+	if len(m.notices.active(m)) > 0 {
 		pairs = append(pairs, [2]string{k(keybind.Messages), "messages"})
 	}
 	pairs = append(pairs, [][2]string{

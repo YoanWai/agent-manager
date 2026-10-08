@@ -116,7 +116,7 @@ func TestReviewPreferencesFinishBehindPickerWithoutLeavingLoadingStuck(t *testin
 	m.ledger.pickedRepos = map[string]string{s.ID: s.Cwd}
 	cmd := m.openDiffWithReader(&reviewReadProbe{})
 	state := m.review.Snapshot()
-	m.openPick([]pickRow{{label: "branch", root: s.Cwd}}, "branches", pickRepo, s.Cwd, reviewPickerSource{generation: state.Generation, targetID: s.ID, repoRoot: s.Cwd}, "")
+	m.reviewNav.picker.open(m, []pickRow{{label: "branch", root: s.Cwd}}, "branches", pickRepo, s.Cwd, reviewPickerSource{generation: state.Generation, targetID: s.ID, repoRoot: s.Cwd}, "")
 	_, load := m.handleReviewPreferences(cmd().(reviewPreferencesMsg))
 	if m.mode != modeRepoPick || load == nil {
 		t.Fatal("picker stranded the sole review load")

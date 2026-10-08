@@ -418,7 +418,7 @@ func TestHiddenStatsReturnRowsToSessions(t *testing.T) {
 		if got := visibleRows(); got != shown+footRows {
 			t.Fatalf("full=%v: hidden stats expose %d sessions, want %d", full, got, shown+footRows)
 		}
-		if len(m.activeNotices()) == 0 {
+		if len(m.notices.active(m)) == 0 {
 			t.Fatal("hiding stats must retain unread notices")
 		}
 	}

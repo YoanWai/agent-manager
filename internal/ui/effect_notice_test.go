@@ -28,10 +28,10 @@ func TestDismissNoticeFailureRestoresNotice(t *testing.T) {
 		t.Fatalf("seed malformed setting: %v", err)
 	}
 	m := noticeModel(st, "v0.2.0")
-	m.openNotices(noticeWelcome)
+	m.notices.open(m, noticeWelcome)
 
-	_, _ = m.handleNoticesKey(key("x"))
-	if contains(noticeIDs(m.activeNotices()), noticeWelcome) {
+	_ = m.notices.handleKey(m, key("x"))
+	if contains(noticeIDs(m.notices.active(m)), noticeWelcome) {
 		t.Fatal("accepted dismissal stayed visible while its write was pending")
 	}
 	cmd := m.nextEffectCmd()
@@ -40,10 +40,10 @@ func TestDismissNoticeFailureRestoresNotice(t *testing.T) {
 	}
 	m.applyCmd(t, cmd)
 
-	if !contains(noticeIDs(m.activeNotices()), noticeWelcome) {
+	if !contains(noticeIDs(m.notices.active(m)), noticeWelcome) {
 		t.Fatal("failed persistence did not restore the notice")
 	}
-	if m.mode != modeNotices || m.activeNotices()[m.notices.noticeCursor].id != noticeWelcome {
+	if m.mode != modeNotices || m.notices.active(m)[m.notices.noticeCursor].id != noticeWelcome {
 		t.Fatalf("failed dismissal did not restore its modal selection: mode=%v cursor=%d", m.mode, m.notices.noticeCursor)
 	}
 	if !strings.Contains(m.errBar.text, "decode setting") {
@@ -57,8 +57,8 @@ func TestDismissNoticeFailureDoesNotReopenAfterNewerInput(t *testing.T) {
 		t.Fatalf("seed malformed setting: %v", err)
 	}
 	m := noticeModel(st, "v0.2.0")
-	m.openNotices(noticeWelcome)
-	_, _ = m.handleNoticesKey(key("x"))
+	m.notices.open(m, noticeWelcome)
+	_ = m.notices.handleKey(m, key("x"))
 	cmd := m.nextEffectCmd()
 
 	updated, _ := m.handleKey(key("esc"))
@@ -68,7 +68,7 @@ func TestDismissNoticeFailureDoesNotReopenAfterNewerInput(t *testing.T) {
 	if m.mode != modeList {
 		t.Fatalf("failed old dismissal stole focus from newer input: mode=%v", m.mode)
 	}
-	if !contains(noticeIDs(m.activeNotices()), noticeWelcome) {
+	if !contains(noticeIDs(m.notices.active(m)), noticeWelcome) {
 		t.Fatal("failed old dismissal did not restore the notice card")
 	}
 }
@@ -81,15 +81,14 @@ func TestDismissNoticeFailureDuringQuitRestoresWithoutReopening(t *testing.T) {
 	m := noticeModel(st, "v0.2.0")
 	// Leave one visible card so accepting its dismissal closes the modal.
 	m.notices.dismissed[noticeArrowStep] = true
-	m.openNotices(noticeWelcome)
+	m.notices.open(m, noticeWelcome)
 
-	updated, _ := m.handleNoticesKey(key("x"))
-	m = updated.(*Model)
+	_ = m.notices.handleKey(m, key("x"))
 	cmd := m.nextEffectCmd()
 	if cmd == nil || m.mode != modeList {
 		t.Fatalf("last dismissal was not accepted: cmd=%v mode=%v", cmd != nil, m.mode)
 	}
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	m = updated.(*Model)
 	if !m.effects.quitting {
 		t.Fatal("ctrl+c did not start draining the accepted dismissal")
@@ -99,7 +98,7 @@ func TestDismissNoticeFailureDuringQuitRestoresWithoutReopening(t *testing.T) {
 	if m.mode != modeList {
 		t.Fatalf("failed dismissal reopened over quit: mode=%v", m.mode)
 	}
-	if !contains(noticeIDs(m.activeNotices()), noticeWelcome) {
+	if !contains(noticeIDs(m.notices.active(m)), noticeWelcome) {
 		t.Fatal("failed dismissal did not restore the notice data")
 	}
 	if !strings.Contains(m.errBar.text, "decode setting") {

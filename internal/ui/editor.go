@@ -59,6 +59,12 @@ type editorReturnTarget struct {
 	mode          mode
 }
 
+// resumes reports whether a returning editor goes back into the session it
+// was opened from: nothing the user did since may have moved the screen on.
+func (t editorReturnTarget) resumes(foregroundGen uint64, current mode, quitting bool) bool {
+	return t.sessionID != "" && !quitting && t.foregroundGen == foregroundGen && t.mode == current
+}
+
 // editorResolution captures every input to executable discovery before a
 // command leaves Update. resolve may touch PATH, so only a tea.Cmd calls it.
 type editorResolution struct {
@@ -84,6 +90,10 @@ type editorLaunch struct {
 	name    string
 	path    string
 }
+
+// takesScreen reports whether the editor runs in the terminal, which the
+// manager then hands over, rather than in a window of its own.
+func (e editorLaunch) takesScreen() bool { return !detachedEditors[e.name] }
 
 func (m *Model) openEditor() (tea.Model, tea.Cmd) {
 	return m.openEditorWithReaderForReturn(systemTerminalDirectoryReader{
@@ -135,7 +145,7 @@ func (m *Model) launchEditor(editor editorLaunch, returnTo editorReturnTarget) (
 		return m, nil
 	}
 	m.clearErr()
-	if !detachedEditors[editor.name] {
+	if editor.takesScreen() {
 		return m, execTerminalProcess(editor.command, func(err error) tea.Msg {
 			return editorDoneMsg{err: err, tookScreen: true, returnTo: returnTo}
 		})
@@ -291,8 +301,7 @@ func (m *Model) routeEditorMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		if msg.name != "" {
 			m.reportDone("opened " + msg.path + " in " + msg.name)
 		}
-		if target := msg.returnTo; target.sessionID != "" && !m.effects.quitting &&
-			target.foregroundGen == m.gens.foreground && target.mode == m.mode {
+		if target := msg.returnTo; target.resumes(m.gens.foreground, m.mode, m.effects.quitting) {
 			return routed(m, tea.Batch(resume, m.reattach(target.sessionID, m.review.Generation())))
 		}
 		return routed(m, resume)
