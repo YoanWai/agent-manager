@@ -53,6 +53,31 @@ func TestTerminalsWithNoCallingSessionDriveOnlyLooseTerminals(t *testing.T) {
 		t.Fatalf("the parent reading its own terminal: %v", err)
 	}
 
+	// A loose terminal a session or the user opened is not one a caller
+	// with no session may drive: dropping the session's environment must
+	// not reach it.
+	unnest := false
+	opened, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{Nest: &unnest})
+	if err != nil {
+		t.Fatalf("Create un-nested from a session: %v", err)
+	}
+	if opened.ParentID != "" {
+		t.Fatalf("un-nested terminal = %+v", opened)
+	}
+	want = "terminal " + opened.ID + " was opened in Agent Manager, not by a caller with no session; only Agent Manager and its sessions can drive it"
+	if _, err := h.terminals.Send("", opened.ID, "echo hi", nil); err == nil || err.Error() != want {
+		t.Fatalf("Send to a terminal opened in Agent Manager with no caller = %v", err)
+	}
+	if _, err := h.terminals.Read("", opened.ID); err == nil || err.Error() != want {
+		t.Fatalf("Read of a terminal opened in Agent Manager with no caller = %v", err)
+	}
+	if err := h.terminals.Close("", opened.ID); err == nil || err.Error() != want {
+		t.Fatalf("Close of a terminal opened in Agent Manager with no caller = %v", err)
+	}
+	if _, err := h.terminals.Read(h.caller.ID, opened.ID); err != nil {
+		t.Fatalf("a session reading a loose terminal: %v", err)
+	}
+
 	if err := h.terminals.Close("", loose.ID); err != nil {
 		t.Fatalf("Close with no caller: %v", err)
 	}

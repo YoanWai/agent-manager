@@ -309,7 +309,9 @@ agent-manager spawn --tool claude --group "Sprint Manager" --worktree \
 
 `send <session-id> "<message>" --from <name>` queues a message from a sender with no session on this machine, such as an agent on another machine sending over SSH. The name is up to 64 bytes with no control characters, and `--from` is refused from inside a session, which sends as itself. The delivered message names the sender as being on another machine and says a reply cannot reach it.
 
-`terminal create`, `send`, `read` and `close` run with no caller too. There a new terminal hangs under no session, in the group `--group` names or the root, and only terminals that hang under no session can be driven: a terminal nested under a session stays that session's.
+`terminal create`, `send`, `read` and `close` run with no caller too. There a new terminal hangs under no session, in the group `--group` names or the root, and only terminals opened that way can be driven: a terminal nested under a session stays that session's, and one you opened in the manager or a session opened stays out of reach.
+
+The commands that run with no caller are a convenience for a manager reaching this machine over SSH and for scripts, not an isolation boundary. Anything running as your user can call them, and an agent that drops its session environment is treated as a caller with no session. What they keep is a guardrail: such a caller cannot drive a terminal it did not open, and every `send --from` counts against one shared set of message limits, whatever name it gives.
 
 Queued messages, status and after-turn archives and kills move only while a manager runs. `agent-manager serve` runs one with no screen, on a machine where nobody keeps the TUI open, until it is interrupted or sent SIGTERM. `serve --background` starts that manager detached, with its output appended to `serve.log` in the profile directory, unless one is already running, and prints `{"started":true,"pid":N}` or `{"started":false}`. It runs on macOS and Linux.
 

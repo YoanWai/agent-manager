@@ -442,6 +442,50 @@ func TestChoiceRoundTrip(t *testing.T) {
 	}
 }
 
+// Reopening runs every migration again, which must leave the column and
+// what it holds alone.
+func TestOpenedWithoutSessionSurvivesAReopen(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, sess := range []Session{
+		{ID: "loose", Name: "shell-1ff0", Tool: "shell", Cwd: "/tmp", OpenedWithoutSession: true},
+		{ID: "mine", Name: "shell-2ee1", Tool: "shell", Cwd: "/tmp"},
+	} {
+		if err := s.CreateSession(sess); err != nil {
+			t.Fatalf("create %s: %v", sess.ID, err)
+		}
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = Open(path)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	t.Cleanup(func() { s.Close() })
+	for id, want := range map[string]bool{"loose": true, "mine": false} {
+		got, err := s.Get(id)
+		if err != nil {
+			t.Fatalf("get %s: %v", id, err)
+		}
+		if got.OpenedWithoutSession != want {
+			t.Fatalf("%s opened without a session = %v, want %v", id, got.OpenedWithoutSession, want)
+		}
+	}
+	list, err := s.ListSessions(true)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	for _, sess := range list {
+		if sess.OpenedWithoutSession != (sess.ID == "loose") {
+			t.Fatalf("list read %s as opened without a session = %v", sess.ID, sess.OpenedWithoutSession)
+		}
+	}
+}
+
 func TestRenameSessionWorktreeBranch(t *testing.T) {
 	s := newTestStore(t)
 	sess := Session{

@@ -167,6 +167,7 @@ CREATE TABLE IF NOT EXISTS settings (
 			position    INTEGER NOT NULL,
 			created_at  INTEGER NOT NULL
 		)`,
+		`ALTER TABLE sessions ADD COLUMN opened_without_session INTEGER NOT NULL DEFAULT 0`,
 	}
 	for _, migration := range migrations {
 		if _, err := s.db.Exec(migration); err != nil {

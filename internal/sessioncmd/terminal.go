@@ -106,7 +106,9 @@ func (r *runtime) nestedTerminal(sessionID, terminalID string) (store.Session, e
 }
 
 // unnestedTerminal serves a caller with no session, such as a manager on
-// another machine: a terminal nested under a session stays that session's.
+// another machine. It reaches only the terminals such a caller opened: a
+// nested one stays its session's, and one the user or a session opened
+// stays out of reach of an agent that merely lost its session environment.
 func (r *runtime) unnestedTerminal(terminalID string) (store.Session, error) {
 	terminal, err := r.terminal(terminalID)
 	if err != nil {
@@ -114,6 +116,9 @@ func (r *runtime) unnestedTerminal(terminalID string) (store.Session, error) {
 	}
 	if terminal.ParentID != "" {
 		return store.Session{}, fmt.Errorf("terminal %s belongs to session %s; only it can drive it", terminal.ID, terminal.ParentID)
+	}
+	if !terminal.OpenedWithoutSession {
+		return store.Session{}, fmt.Errorf("terminal %s was opened in Agent Manager, not by a caller with no session; only Agent Manager and its sessions can drive it", terminal.ID)
 	}
 	return terminal, nil
 }
@@ -227,13 +232,14 @@ func (t *Terminals) Create(sessionID string, opts CreateTerminalOptions) (Termin
 		return Terminal{}, err
 	}
 	sess := store.Session{
-		ID:       uuid.NewString()[:8],
-		Name:     name,
-		Tool:     toolName,
-		Cwd:      dir,
-		Group:    group,
-		Status:   status.Starting,
-		ParentID: parentID,
+		ID:                   uuid.NewString()[:8],
+		Name:                 name,
+		Tool:                 toolName,
+		Cwd:                  dir,
+		Group:                group,
+		Status:               status.Starting,
+		ParentID:             parentID,
+		OpenedWithoutSession: caller.ID == "",
 	}
 	lifecycle, err := t.lifecycle(runtime, nil)
 	if err != nil {
