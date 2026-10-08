@@ -226,3 +226,5 @@ with `gh release edit <tag> --notes-file notes.md`.
   in `listview_test.go`, or `listview_<aspect>_test.go` when it splits.
   `tools/architecture/check-file-names` fails on any other name; shared
   fixtures go in `*_helpers_test.go`.
+- A Go source file stays under 1,000 lines;
+  `tools/architecture/check-file-sizes` fails on one that reaches it.

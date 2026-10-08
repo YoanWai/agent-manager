@@ -74,6 +74,8 @@ jobs:
         run: go run ./tools/architecture/check-ui-boundaries
       - name: File names
         run: go run ./tools/architecture/check-file-names
+      - name: File sizes
+        run: go run ./tools/architecture/check-file-sizes
       - name: Build terminal test binary
         run: go build -o "$RUNNER_TEMP/am-e2e-binary" .
       - name: Real terminal smoke

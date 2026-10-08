@@ -60,7 +60,7 @@ The [UI concern map](ui-file-map.md) records implemented file families and adjac
 | `status` | Engine, matching, activity region, input, and turn state |
 | `tmux` and `config` | Driver, launch, chrome, input, attach, pane queries; built-in config separate from loading |
 
-The sessioncmd split now follows the [implemented file map](sessioncmd-file-map.md). The other package splits remain proposed.
+The sessioncmd split follows the [implemented file map](sessioncmd-file-map.md). The store, status, tmux and config splits above are implemented too; built-in tool definitions live in `config/builtin.go`.
 
 Use mechanical declaration moves and compare declaration inventories before and after. Keep behavior changes in a separate commit. Keep tests beside sources and retain explicit exceptions for shared helpers and cross-package integration tests.
 
