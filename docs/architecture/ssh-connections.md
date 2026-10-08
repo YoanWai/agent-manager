@@ -21,8 +21,11 @@ this manager's list. This is the shape agreed on #552.
   On a remote host the MCP server sees and drives that host's sessions only.
 - **The remote manager keeps running.** Queued messages, status and
   notifications need a manager running on the remote host. When a connection
-  finds none awake, it starts `agent-manager serve --background` there. That
-  headless manager runs the same poller as the TUI.
+  finds none awake, it starts `agent-manager serve --background` there, at
+  most once a minute. That headless manager runs the same poller as the TUI,
+  delivering queued messages and ending sessions after their turn. It logs to
+  `serve.log` in the profile directory. Two managers on one host share the
+  work the way two TUIs do.
 
 ## Identity
 
@@ -41,7 +44,7 @@ The protocol is the remote host's own CLI, run over SSH as
 | Inventory | `snapshot --json`: sessions, terminals, groups, and whether a manager is awake |
 | Start the manager | `serve --background` |
 | Read a screen | `read <id> --json`, `terminal read <id> --json` |
-| Message an agent | `send <id> <text> --from <sender> --json` |
+| Message an agent | `send --from=<sender> --json -- <id> <text>` |
 | Spawn | `spawn --json ...`, `terminal create --json ...` |
 | Lifecycle | `kill`, `revive`, `archive [--restore]`, `terminal close` |
 | Groups | `create-group`, `delete-group` |
@@ -51,9 +54,21 @@ The snapshot envelope carries `version`. A remote that answers with an
 unknown version, or does not know `snapshot`, is shown offline with the
 message to update agent-manager on that host.
 
-`send --from` is for a caller with no session on that host, such as an agent
-or the user on the local machine. The delivered message names the sender and
-says replies cannot reach it, the way a message from a terminal does.
+Flags are written as `--flag=value` and operands follow a bare `--`, so a
+message that looks like a flag stays a message.
+
+An SSH call has no calling session on the remote host. The commands it uses
+run without one:
+- `kill`, `revive`, `archive`, `create-group` and `delete-group` act as the
+  user would.
+- `terminal create` opens a terminal that belongs to no session.
+  `terminal send`, `read` and `close` drive only such terminals. A terminal
+  nested under a session stays that session's.
+- `send --from` names the sender, at most 64 bytes. The delivered message says
+  it came from another of the user's machines and that a reply cannot reach
+  it. Every `--from` sender shares one rate limit per target.
+
+Tasks, file reservations, rename and review still need a calling session.
 
 ### SSH invocation
 
