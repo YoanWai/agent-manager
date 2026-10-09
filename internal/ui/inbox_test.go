@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/mcpreg"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -557,6 +559,55 @@ func TestInboxRecordsAMessageItCouldNotTypeAsDropped(t *testing.T) {
 	}
 	if queued, _ := m.store.QueuedCount(sess.ID); queued != 0 {
 		t.Fatal("a dropped message was left to be retried")
+	}
+}
+
+// A tool that draws a multi-line paste as a placeholder never shows the
+// message's opening line, and one busy enough can swallow the Enter after
+// it. The composer filling is the echo and the composer emptying is the
+// submit, so a swallowed Enter is pressed again.
+func TestInboxPressesEnterAgainWhileThePasteSitsInTheComposer(t *testing.T) {
+	m := buildModel(t)
+	sess := spawnedSession(t, m, "collapsing-tool")
+	id := queueMessage(t, m, sess.ID, "rebase on main\nthen run the suite")
+	pane := settledPane(t, m, sess.ID, "❯")
+
+	if _, err := m.poller.maybeDeliverInbox(sess, pane, status.Idle, true); err != nil {
+		t.Fatalf("maybeDeliverInbox: %v", err)
+	}
+	state, err := m.store.Message(id, "sender01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.DeliveredAt.IsZero() || !state.DroppedAt.IsZero() {
+		t.Fatalf("a message the second Enter submitted was recorded as %+v", state)
+	}
+	if after, err := m.tmux.CapturePane(sess.ID); err != nil || !strings.HasSuffix(strings.TrimRight(after, "\n "), "❯") {
+		t.Fatalf("the composer still holds the paste (%v):\n%s", err, after)
+	}
+}
+
+// A paste no Enter submits never reached the agent. Recording it as
+// delivered leaves its sender waiting on a reply that cannot come.
+func TestInboxRecordsAPasteNoEnterSubmittedAsDropped(t *testing.T) {
+	m := buildModel(t)
+	sess := spawnedSession(t, m, "stuck-tool")
+	id := queueMessage(t, m, sess.ID, "rebase on main\nthen run the suite")
+	pane := settledPane(t, m, sess.ID, "❯")
+
+	_, err := m.poller.maybeDeliverInbox(sess, pane, status.Idle, true)
+	if !errors.Is(err, tmux.ErrUnsubmitted) {
+		t.Fatalf("an unsubmitted paste reported %v", err)
+	}
+	state, err := m.store.Message(id, "sender01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.DroppedAt.IsZero() {
+		t.Fatalf("an unsubmitted paste was recorded as %+v", state)
+	}
+	if queued, _ := m.store.QueuedCount(sess.ID); queued != 0 {
+		t.Fatal("an unsubmitted paste was left to be typed again")
 	}
 }
 

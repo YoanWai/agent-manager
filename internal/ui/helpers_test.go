@@ -93,6 +93,26 @@ func buildModel(t *testing.T) *Model {
 				DefaultStatus:  status.Idle,
 				ActivityCutoff: "(?m)^❯",
 			},
+			// Collapses a paste into a placeholder the way Claude Code does
+			// and takes a second Enter to submit it, so the first one is
+			// swallowed the way a busy composer swallows it. tmux writes a
+			// paste a line at a time, so only a carriage return read after
+			// the closing bracket counts as an Enter.
+			"collapsing-tool": {
+				Command: `sh -c 'stty raw -echo; printf "\033[?2004h❯ "; p=0; n=0; ` +
+					`while :; do c=$(dd bs=65536 count=1 2>/dev/null | od -An -v -c | tr -d " \n"); ` +
+					`case "$c" in *201~*) p=1; printf "[Pasted text #1 +6 lines]";; "\\r") [ $p = 1 ] && n=$((n+1));; esac; ` +
+					`[ $n = 2 ] && { printf "\r\n❯ "; p=0; n=0; }; done'`,
+				DefaultStatus:  status.Idle,
+				ActivityCutoff: "(?m)^❯",
+			},
+			// Collapses a paste into a placeholder and never submits it.
+			"stuck-tool": {
+				Command: `sh -c 'stty raw -echo; printf "❯ "; dd bs=65536 count=1 >/dev/null 2>&1; ` +
+					`printf "[Pasted text #1 +6 lines]"; cat >/dev/null'`,
+				DefaultStatus:  status.Idle,
+				ActivityCutoff: "(?m)^❯",
+			},
 			// Draws its input line at once and takes the prompt it launched
 			// with half a second later, the way an agent finishes booting.
 			"slow-take-tool": {
