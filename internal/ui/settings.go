@@ -402,6 +402,9 @@ func (m *Model) openSettings() tea.Cmd {
 }
 
 func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.presets.open {
+		return m.handleSessionPresetsKey(msg)
+	}
 	if m.settings.cliPicker {
 		return m.handleCLIPickerKey(msg)
 	}
@@ -422,6 +425,8 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.cycleSetting(1)
 	case "enter":
 		switch m.settings.field {
+		case settingsFieldPresets:
+			return m, m.openSessionPresets()
 		case settingsFieldDocs:
 			return m, openLink(docsURL)
 		case settingsFieldBugReport:
@@ -460,10 +465,17 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) handleSettingsClick(x, y int) (tea.Model, tea.Cmd) {
+	if m.presets.open {
+		return m.handleSessionPresetsClick(x, y)
+	}
 	if m.settings.cliPicker || m.settings.keyPicker || m.settings.editor.typing {
 		return m, nil
 	}
-	line := y - m.cardTop - 2
+	line := y - m.cardTop - 2 + m.settings.visibleStart
+	if line == settingsFieldPresets && x >= m.cardLeft && x < m.cardRight {
+		m.settings.field = settingsFieldPresets
+		return m, m.openSessionPresets()
+	}
 	if line != settingsFieldDocs || x < m.cardLeft || x >= m.cardRight {
 		return m, nil
 	}

@@ -207,6 +207,7 @@ func (m *Model) viewForm() string {
 	}
 	// Chips are tokens inside the typed text, so they wrap and reflow with
 	// the words around them; painting happens on the rendered prompt.
+	m.viewFormSessionPresets(add, field)
 	field("prompt", m.form.prompt.view(), fieldPrompt)
 	field("group", groupBadge(displayGroup(m.form.groups[m.form.groupIndex].path)), fieldGroup)
 
@@ -219,6 +220,8 @@ func (m *Model) viewForm() string {
 
 	hint := [][2]string{{"tab/↑↓", "move"}, {"←→", "change"}, {"↵", "create"}, {"esc", "cancel"}}
 	switch {
+	case m.form.focus == fieldPreset:
+		hint = [][2]string{{"←→", "preset"}, {"tab/↑↓", "move"}, {"↵", "create"}, {"esc", "cancel"}}
 	case m.form.focus == fieldPrompt:
 		hint = [][2]string{{"ctrl+v", "paste an image"}, {"tab", "move"}, {"↑↓", "caret or move"}, {"↵", "create"}, {"esc", "cancel"}}
 	case m.form.focus == fieldGroup:
@@ -325,6 +328,9 @@ func (m *Model) viewGroupForm() string {
 }
 
 func (m *Model) viewSettings() string {
+	if m.presets.open {
+		return m.viewSessionPresets()
+	}
 	if m.settings.cliPicker {
 		return m.viewCLIPicker()
 	}
@@ -459,6 +465,7 @@ func (m *Model) viewSettings() string {
 		editorLine + "\n" +
 		actionRow(settingsFieldKeybindings, "keybindings", keybindingsSummary(m.keys, m.listKeys)) + "\n" +
 		actionRow(settingsFieldCLIs, "CLIs", "show or hide for new sessions") + "\n" +
+		actionRow(settingsFieldPresets, "session presets", "manage named instructions") + "\n" +
 		ctaRow(settingsFieldDocs, "docs", "open the docs") + "\n" +
 		ctaRow(settingsFieldBugReport, "report a bug", "open the bug report form") + "\n" +
 		ctaRow(settingsFieldFeatureRequest, "suggest a change", "open the feature request form") + "\n" +
@@ -469,6 +476,8 @@ func (m *Model) viewSettings() string {
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "open the docs"}, {"esc", "save"}}
 	case settingsFieldBugReport, settingsFieldFeatureRequest:
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "open form"}, {"esc", "save"}}
+	case settingsFieldPresets:
+		hint = [][2]string{{"↑↓", "field"}, {"↵", "manage presets"}, {"esc", "save"}}
 	case settingsFieldCLIs:
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "manage CLIs"}, {"esc", "save"}}
 	case settingsFieldKeybindings:
@@ -488,6 +497,21 @@ func (m *Model) viewSettings() string {
 			hint = [][2]string{{"↑↓", "field"}, {"↵", "update"}, {"esc", "save"}}
 		default:
 			hint = [][2]string{{"↑↓", "field"}, {"↵/esc", "save"}}
+		}
+	}
+	m.settings.visibleStart = 0
+	if m.height > 0 {
+		width := m.flexCardWidth("⚙ Settings", body, hint)
+		legendRows := strings.Count(legendInline(hint, cardInnerWidth(width)), "\n") + 1
+		room := max(1, m.height-5-legendRows)
+		if m.errBar.text != "" {
+			room = max(1, room-2)
+		}
+		lines := strings.Split(body, "\n")
+		if len(lines) > room {
+			first, last := sessionPresetWindow(len(lines), m.settings.field, room)
+			m.settings.visibleStart = first
+			body = strings.Join(lines[first:last], "\n")
 		}
 	}
 	return m.cardFlex("⚙ Settings", body, hint)

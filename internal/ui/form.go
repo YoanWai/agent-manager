@@ -26,6 +26,7 @@ const (
 	fieldDir
 	fieldWorktree
 	fieldPrompt
+	fieldPreset
 	fieldGroup
 	// fieldBase labels the read-only base line, which never takes focus.
 	fieldBase
@@ -88,7 +89,11 @@ type form struct {
 	focus        int
 	choice       choice
 	// hits maps each painted body line to what a click there does.
-	hits []formHit
+	hits           []formHit
+	presets        []store.SessionPreset
+	presetIndex    int
+	presetsLoading bool
+	presetsError   string
 }
 
 type groupForm struct {
@@ -261,7 +266,8 @@ func (m *Model) openForm() tea.Cmd {
 	m.form.worktreeAuto = true
 	m.pathSugg.reset()
 	m.mode = modeForm
-	return m.ensureCatalog(tools[toolIndex])
+	m.form.presetsLoading = true
+	return tea.Batch(m.ensureCatalog(tools[toolIndex]), m.loadSessionPresets(m.form.prompt.gen, true))
 }
 
 func (m *Model) formTool() string {
@@ -373,6 +379,10 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.form.focus == fieldTool {
 			return m, m.cycleTool(-1)
 		}
+		if m.form.focus == fieldPreset {
+			m.stepSessionPreset(-1)
+			return m, nil
+		}
 		if m.stepFormChoice(-1) {
 			return m, nil
 		}
@@ -387,6 +397,10 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "right":
 		if m.form.focus == fieldTool {
 			return m, m.cycleTool(1)
+		}
+		if m.form.focus == fieldPreset {
+			m.stepSessionPreset(1)
+			return m, nil
 		}
 		if m.stepFormChoice(1) {
 			return m, nil
@@ -494,6 +508,10 @@ func (m *Model) handleFormClick(x, y int) (tea.Model, tea.Cmd) {
 	hit := m.form.hits[line]
 	toolName, ch := m.formTool(), &m.form.choice
 	switch {
+	case hit.field == fieldPreset && hit.entry >= 0:
+		m.form.presetIndex = hit.entry
+		m.focusFormField(fieldPreset)
+		return m, nil
 	case hit.field == fieldModel && hit.entry >= 0:
 		if list := m.modelSuggestions(toolName, ch, ch.query()); hit.entry < len(list) {
 			m.pickModel(toolName, ch, list[hit.entry].model.Key())
@@ -509,6 +527,8 @@ func (m *Model) handleFormClick(x, y int) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch hit.field {
+	case fieldPreset:
+		m.stepSessionPreset(1)
 	case fieldTool:
 		return m, m.cycleTool(1)
 	case fieldWorktree:
@@ -545,7 +565,11 @@ func (m *Model) formFields() []int {
 	if _, shown, active := m.effortRow(toolName, ch); shown && active {
 		fields = append(fields, fieldEffort)
 	}
-	return append(fields, fieldDir, fieldWorktree, fieldPrompt, fieldGroup)
+	fields = append(fields, fieldDir, fieldWorktree)
+	if len(m.form.presets) > 0 {
+		fields = append(fields, fieldPreset)
+	}
+	return append(fields, fieldPrompt, fieldGroup)
 }
 
 // moveGroupCursor moves within the expanded group picker, wrapping at the
@@ -662,8 +686,8 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 	group := m.selectedGroupPath()
 	// Chips become the paths of the images they stand for, so a first task
 	// reaches the agent with its screenshot named where it was pasted.
-	prompt := m.form.prompt.message()
-	if strings.HasPrefix(prompt, "-") {
+	prompt := m.formInitialPrompt()
+	if m.form.presetIndex == 0 && strings.HasPrefix(prompt, "-") {
 		m.errBar.text = `prompt cannot start with "-": the tool would read it as a flag`
 		return m, nil
 	}

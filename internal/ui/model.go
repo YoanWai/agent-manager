@@ -264,6 +264,7 @@ type Model struct {
 	// composerSeq numbers the prompt boxes this run has opened.
 	composerSeq int
 	settings    settingsState
+	presets     sessionPresetPanel
 	help        helpState
 	moveID      string
 	movePath    string
@@ -537,17 +538,18 @@ type settingsState struct {
 	// to it.
 	manualTheme string
 	// cliPicker is the sub-panel for which CLIs appear when creating sessions.
-	cliPicker  bool
-	cliNames   []string
-	cliHidden  map[string]bool
-	cliCursor  int
-	keyPicker  bool
-	tables     []keybind.Table
-	keyCursor  int
-	keyCapture bool
-	keyAppend  bool
-	keyReset   bool
-	editor     editorRow
+	cliPicker    bool
+	cliNames     []string
+	cliHidden    map[string]bool
+	cliCursor    int
+	keyPicker    bool
+	tables       []keybind.Table
+	keyCursor    int
+	keyCapture   bool
+	keyAppend    bool
+	keyReset     bool
+	editor       editorRow
+	visibleStart int
 }
 
 const (
@@ -572,6 +574,7 @@ const (
 	settingsFieldEditor
 	settingsFieldKeybindings
 	settingsFieldCLIs
+	settingsFieldPresets
 	settingsFieldDocs
 	settingsFieldBugReport
 	settingsFieldFeatureRequest
@@ -1565,6 +1568,10 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(m.previewCmd(sess, m.previewGen), m.previewTick())
 
+	case sessionPresetPasteMsg:
+		return m, m.recordSessionPresetPaste(msg)
+	case sessionPresetsLoadedMsg:
+		return m, m.recordSessionPresets(msg)
 	case baseFetchedMsg:
 		return m, m.recordBaseFetch(msg)
 
