@@ -206,6 +206,38 @@ func TestSettingsShowsVersion(t *testing.T) {
 	}
 }
 
+func TestSettingsDocsRowOpensDocs(t *testing.T) {
+	m := footModel(t)
+	m.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
+	m.openSettings()
+
+	var opened string
+	openBrowser = func(url string) error {
+		opened = url
+		return nil
+	}
+	t.Cleanup(func() { openBrowser = defaultOpenBrowser })
+
+	m.settings.field = settingsFieldDocs
+	_, cmd := m.handleSettingsKey(key("enter"))
+	m.applyCmd(t, cmd)
+	if opened != docsURL {
+		t.Fatalf("enter should open the docs, got %q", opened)
+	}
+	if m.mode != modeSettings {
+		t.Fatal("the docs row must not close settings")
+	}
+
+	opened = ""
+	m.width, m.height = 120, 60
+	m.View()
+	_, cmd = m.handleSettingsClick(m.cardLeft+4, m.cardTop+2+settingsFieldDocs)
+	m.applyCmd(t, cmd)
+	if opened != docsURL {
+		t.Fatalf("click should open the docs, got %q", opened)
+	}
+}
+
 func TestSettingsBugReportRowOpensIssue(t *testing.T) {
 	m := footModel(t)
 	m.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}

@@ -26,6 +26,7 @@ func (m *Model) View() string {
 
 func (m *Model) view() string {
 	m.noticeHit = noticeHit{}
+	m.docsHit = noticeHit{}
 	if m.width == 0 {
 		return m.syncCursorAnchor("loading...")
 	}

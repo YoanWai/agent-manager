@@ -459,11 +459,14 @@ func (m *Model) viewSettings() string {
 		editorLine + "\n" +
 		actionRow(settingsFieldKeybindings, "keybindings", keybindingsSummary(m.keys, m.listKeys)) + "\n" +
 		actionRow(settingsFieldCLIs, "CLIs", "show or hide for new sessions") + "\n" +
+		ctaRow(settingsFieldDocs, "docs", "open the docs") + "\n" +
 		ctaRow(settingsFieldBugReport, "report a bug", "open the bug report form") + "\n" +
 		ctaRow(settingsFieldFeatureRequest, "suggest a change", "open the feature request form") + "\n" +
 		m.settingsVersionRow(lead, actionRow)
 	hint := [][2]string{{"↑↓", "field"}, {"←→", "change"}, {"↵/esc", "save"}}
 	switch m.settings.field {
+	case settingsFieldDocs:
+		hint = [][2]string{{"↑↓", "field"}, {"↵", "open the docs"}, {"esc", "save"}}
 	case settingsFieldBugReport, settingsFieldFeatureRequest:
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "open form"}, {"esc", "save"}}
 	case settingsFieldCLIs:

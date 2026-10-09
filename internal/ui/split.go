@@ -312,6 +312,15 @@ func (m *Model) handleMousePress(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.mode == modeForm {
 		return m.handleFormClick(msg.X, msg.Y)
 	}
+	if m.mode == modeHelp {
+		if m.docsHit.contains(msg.X, msg.Y) {
+			return m, openLink(docsURL)
+		}
+		return m, nil
+	}
+	if m.mode == modeSettings {
+		return m.handleSettingsClick(msg.X, msg.Y)
+	}
 	if m.split.resizeMode || m.mode != modeList {
 		return m, nil
 	}

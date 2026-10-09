@@ -232,6 +232,50 @@ func helpModel() *Model {
 	return &Model{width: 120, height: 30, mode: modeHelp, arrowStep: true, keys: keybind.DefaultSession(), listKeys: keybind.DefaultList()}
 }
 
+func TestHelpOpensDocs(t *testing.T) {
+	m := helpModel()
+	var opened string
+	openBrowser = func(url string) error {
+		opened = url
+		return nil
+	}
+	t.Cleanup(func() { openBrowser = defaultOpenBrowser })
+
+	frame := m.View()
+	if !strings.Contains(ansi.Strip(frame), "o docs") {
+		t.Fatal("the key map footer should offer the docs")
+	}
+	_, cmd := m.handleHelpKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")})
+	m.applyCmd(t, cmd)
+	if opened != docsURL {
+		t.Fatalf("o should open the docs, got %q", opened)
+	}
+	if m.mode != modeHelp {
+		t.Fatal("opening the docs should leave the key map up")
+	}
+
+	opened = ""
+	plain := ansi.Strip(frame)
+	lineIndex := -1
+	var line string
+	for i, row := range strings.Split(plain, "\n") {
+		if strings.Contains(row, "o docs") {
+			lineIndex = i
+			line = row
+			break
+		}
+	}
+	if lineIndex < 0 {
+		t.Fatal("painted frame has no docs hit")
+	}
+	x := ansi.StringWidth(line[:strings.Index(line, "o docs")]) + 1
+	_, cmd = m.handleMousePress(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: x, Y: lineIndex})
+	m.applyCmd(t, cmd)
+	if opened != docsURL {
+		t.Fatalf("clicking the footer should open the docs, got %q", opened)
+	}
+}
+
 func TestHelpScrollClampsToContent(t *testing.T) {
 	m := helpModel()
 	m.scrollHelp(-5)

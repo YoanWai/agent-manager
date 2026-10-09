@@ -207,7 +207,7 @@ func helpSections(session, list keybind.Table, arrowStep bool) []helpSection {
 		{title: titledWith("settings", list, keybind.Settings), rows: [][2]string{
 			{"↑↓", "pick a field"},
 			{"←→", "change the value"},
-			{"↵", "run the field's action (keybindings, CLIs, report, update)"},
+			{"↵", "run the field's action (docs, keybindings, CLIs, report, update)"},
 			{"esc", "save and close"},
 		}},
 		{title: titledWith("dialogs", list, keybind.NewSession, keybind.NewGroup, keybind.Rename, keybind.Fork, keybind.Move), rows: [][2]string{
@@ -438,7 +438,9 @@ func (m *Model) viewHelp() string {
 	if m.help.returnMode == modeDiff {
 		title = "? Review keys"
 	}
-	return m.cardSized(width, title, strings.Join(lines, "\n"), m.helpHint())
+	frame := m.cardSized(width, title, strings.Join(lines, "\n"), m.helpHint())
+	m.placeDocsHit(frame)
+	return frame
 }
 
 // helpSearchLine is the search's own row: what was typed, and how much of
@@ -460,12 +462,27 @@ func (m *Model) helpHint() [][2]string {
 	if m.help.searching {
 		return [][2]string{{"type", "search"}, {"↵", "done"}, {"↑↓", "scroll"}, {"esc", "clear"}}
 	}
+	docs := [2]string{"o", "docs"}
 	if m.help.query != "" {
-		return [][2]string{{"↑↓/jk", "scroll"}, {"/", "search"}, {"esc", "clear search"}, {"q", "close"}}
+		return [][2]string{{"↑↓/jk", "scroll"}, {"/", "search"}, docs, {"esc", "clear search"}, {"q", "close"}}
 	}
 	return [][2]string{
 		{"↑↓/jk", "scroll"}, {"pgup/pgdn", "page"}, {"g/G", "top/bottom"},
-		{"/", "search"}, {"esc/q", "close"},
+		{"/", "search"}, docs, {"esc/q", "close"},
+	}
+}
+
+func (m *Model) placeDocsHit(frame string) {
+	label := ansi.Strip(keyCap("o", "docs"))
+	for i, line := range strings.Split(frame, "\n") {
+		plain := ansi.Strip(line)
+		start := strings.Index(plain, label)
+		if start < 0 {
+			continue
+		}
+		x := ansi.StringWidth(plain[:start])
+		m.docsHit = noticeHit{x0: x, x1: x + ansi.StringWidth(label), y0: i, y1: i + 1, ok: true}
+		return
 	}
 }
 
@@ -507,6 +524,8 @@ func (m *Model) handleHelpKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q", "?", "enter":
 		m.closeHelp()
 		return m, m.startStartupTick()
+	case "o":
+		return m, openLink(docsURL)
 	case "/":
 		m.help.searching = true
 	case "up", "k":
