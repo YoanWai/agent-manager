@@ -232,6 +232,78 @@ func helpModel() *Model {
 	return &Model{width: 120, height: 30, mode: modeHelp, arrowStep: true, keys: keybind.DefaultSession(), listKeys: keybind.DefaultList()}
 }
 
+func TestHelpOpensDocs(t *testing.T) {
+	m := helpModel()
+	var opened string
+	openBrowser = func(url string) error {
+		opened = url
+		return nil
+	}
+	t.Cleanup(func() { openBrowser = defaultOpenBrowser })
+
+	frame := m.View()
+	if !strings.Contains(frame, hintCap("o", "docs")) {
+		t.Fatal("the docs shortcut should wear the footer badge")
+	}
+	_, cmd := m.handleHelpKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")})
+	m.applyCmd(t, cmd)
+	if opened != docsURL {
+		t.Fatalf("o should open the docs, got %q", opened)
+	}
+	if m.mode != modeHelp {
+		t.Fatal("opening the docs should leave the key map up")
+	}
+
+	opened = ""
+	plain := ansi.Strip(frame)
+	lineIndex := -1
+	var line string
+	for i, row := range strings.Split(plain, "\n") {
+		if strings.Contains(row, "o docs") {
+			lineIndex = i
+			line = row
+			break
+		}
+	}
+	if lineIndex < 0 {
+		t.Fatal("painted frame has no docs hit")
+	}
+	x := ansi.StringWidth(line[:strings.Index(line, "o docs")]) + 1
+	_, cmd = m.handleMousePress(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: x, Y: lineIndex})
+	m.applyCmd(t, cmd)
+	if opened != docsURL {
+		t.Fatalf("clicking the footer should open the docs, got %q", opened)
+	}
+}
+
+func TestHelpDocsHitIgnoresTheSearchRow(t *testing.T) {
+	m := helpModel()
+	m.help.query = "o docs"
+	frame := m.View()
+	plain := strings.Split(ansi.Strip(frame), "\n")
+	searchLine := -1
+	for i, line := range plain {
+		if strings.Contains(line, "search o docs") {
+			searchLine = i
+		}
+	}
+	if searchLine < 0 {
+		t.Fatal("the search row should show the query")
+	}
+	if !m.docsHit.ok || m.docsHit.y0 <= searchLine {
+		t.Fatalf("the docs hit should sit on the footer below the search row, hit %d search %d", m.docsHit.y0, searchLine)
+	}
+	if !strings.Contains(plain[m.docsHit.y0], "o docs") {
+		t.Fatalf("the docs hit missed the footer: %q", plain[m.docsHit.y0])
+	}
+
+	m.help.searching = true
+	m.View()
+	if m.docsHit.ok {
+		t.Fatal("typing a search should not leave a docs hit")
+	}
+}
+
 func TestHelpScrollClampsToContent(t *testing.T) {
 	m := helpModel()
 	m.scrollHelp(-5)

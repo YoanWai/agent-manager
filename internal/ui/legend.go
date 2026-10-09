@@ -127,7 +127,7 @@ func legendInline(pairs [][2]string, width int) string {
 	var parts []string
 	lineWidth := 0
 	for _, pair := range pairs {
-		part := keyCap(pair[0], pair[1])
+		part := hintCap(pair[0], pair[1])
 		partWidth := ansi.StringWidth(part)
 		if len(parts) > 0 && lineWidth+legendGap+partWidth > width {
 			lines = append(lines, strings.Join(parts, gap))

@@ -36,6 +36,7 @@ const (
 	whatsNewFromSetting     = "whats_new_from_version"
 
 	repoURL = "https://github.com/YoanWai/agent-manager"
+	docsURL = "https://agent-manager.dev/docs/"
 )
 
 type notice struct {

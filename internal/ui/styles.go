@@ -288,6 +288,14 @@ func keyCap(key, label string) string {
 	return keyStyle.Render(key) + " " + legendLabelStyle.Render(label)
 }
 
+// The docs launch wears the Focused badge so it reads ahead of the keys beside it.
+func hintCap(key, label string) string {
+	if (key == "o" && label == "docs") || label == "open the docs" {
+		return legendBadgeStyle.Render(key + " " + label)
+	}
+	return keyCap(key, label)
+}
+
 func keyCapLead(key, label string) string {
 	return legendLeadKey.Render(key) + legendLeadLabel.Render(label)
 }
