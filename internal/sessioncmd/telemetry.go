@@ -69,19 +69,15 @@ func followTelemetry(st *store.Store, row, file string, launch int64, agent int,
 	reader := &conversation.Reader{}
 	for {
 		running := alive(agent)
-		id, done, err := reader.Current("gemini", conversation.Agent{PID: agent}, file)
+		err := reader.FollowTelemetry(file, agent, func(id string) (bool, error) {
+			if !agentsession.ValidSessionID(id) {
+				return true, nil
+			}
+			err := reportConversation(st, row, "gemini", id, launch, reportWait)
+			return err == nil, err
+		})
 		if err != nil {
 			return err
-		}
-		if agentsession.ValidSessionID(id) {
-			if err := reportConversation(st, row, "gemini", id, launch, reportWait); err != nil {
-				return err
-			}
-		}
-		if done != nil {
-			if err := done(); err != nil {
-				return err
-			}
 		}
 		if !running {
 			return nil

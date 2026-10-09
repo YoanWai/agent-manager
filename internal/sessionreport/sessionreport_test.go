@@ -89,6 +89,63 @@ func TestOpencodeLoadsATUIPluginThroughItsEnvironment(t *testing.T) {
 	}
 }
 
+func TestOpencodePluginReportsSwitchesAndRetriesFailedReports(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is not installed")
+	}
+	t.Setenv("OPENCODE_TUI_CONFIG", "")
+	target := testTarget(t)
+	reports := filepath.Join(target.HooksDir, "reports")
+	retry := filepath.Join(target.HooksDir, "retry")
+	target.Exe = filepath.Join(target.HooksDir, "report.sh")
+	script := "#!/bin/sh\nif [ \"$5\" = second ] && [ ! -e " + tmux.ShellQuote(retry) + " ]; then touch " + tmux.ShellQuote(retry) + "; exit 1; fi\nprintf '%s\\n' \"$5\" >> " + tmux.ShellQuote(reports) + "\n"
+	writeFile(t, target.Exe, script, 0o755)
+	if _, err := Apply("opencode", target, "opencode", map[string]string{}); err != nil {
+		t.Fatal(err)
+	}
+	plugin := readFile(t, filepath.Join(target.HooksDir, "track-opencode.ts"))
+	writeFile(t, filepath.Join(target.HooksDir, "plugin.mjs"), strings.ReplaceAll(plugin, "api: any", "api"), 0o644)
+	reportsJSON, _ := json.Marshal(reports)
+	check := `import plugin from './plugin.mjs';
+import { readFileSync } from 'node:fs';
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+let dispose;
+let route = { name: 'session', params: { sessionID: 'first' } };
+plugin.tui({
+  route: { get current() { return route; } },
+  state: { session: { get: id => ({ parentID: id === 'child' ? 'first' : undefined }) } },
+  lifecycle: { onDispose: fn => { dispose = fn; } },
+});
+const reports = () => readFileSync(REPORTS, 'utf8').trim().split('\n');
+const waitFor = async expected => {
+  const deadline = Date.now() + 3000;
+  while (JSON.stringify(reports()) !== JSON.stringify(expected)) {
+    if (Date.now() > deadline) throw new Error(JSON.stringify(reports()));
+    await sleep(50);
+  }
+};
+await waitFor(['first']);
+route = { name: 'session', params: { sessionID: 'second' } };
+await waitFor(['first', 'second']);
+route = { name: 'session', params: { sessionID: 'child' } };
+await sleep(300);
+route = { name: 'session', params: { sessionID: 'third' } };
+await waitFor(['first', 'second', 'third']);
+dispose();
+route = { name: 'session', params: { sessionID: 'fourth' } };
+await sleep(300);
+if (JSON.stringify(reports()) !== JSON.stringify(['first', 'second', 'third'])) {
+  throw new Error(JSON.stringify(reports()));
+}
+`
+	path := filepath.Join(target.HooksDir, "check.mjs")
+	writeFile(t, path, strings.ReplaceAll(check, "REPORTS", string(reportsJSON)), 0o644)
+	if out, err := exec.Command(node, path).CombinedOutput(); err != nil {
+		t.Fatalf("plugin failed: %v\n%s", err, out)
+	}
+}
+
 func TestCommandCodeLoadsAModForTheSession(t *testing.T) {
 	target := testTarget(t)
 	command, err := Apply("command-code", target, "cmd --session abc --mod mine.ts", map[string]string{})

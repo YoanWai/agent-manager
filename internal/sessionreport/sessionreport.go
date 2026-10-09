@@ -161,7 +161,7 @@ func codexHooks(exe string) string {
 
 const opencodePluginTemplate = `import { execFileSync } from "node:child_process";
 
-const tui = async (api: any) => {
+const tui = (api: any) => {
   let last = "";
   const check = () => {
     const route = api.route.current;
@@ -169,13 +169,14 @@ const tui = async (api: any) => {
     if (!sessionID || sessionID === last) return;
     const info = api.state.session.get(sessionID);
     if (!info || info.parentID) return;
-    last = sessionID;
-    execFileSync(%s, ["track-conversation", "--tool", "opencode", "--id", sessionID], { stdio: ["ignore", "ignore", "pipe"] });
+    try {
+      execFileSync(%s, ["track-conversation", "--tool", "opencode", "--id", sessionID], { stdio: ["ignore", "ignore", "pipe"] });
+      last = sessionID;
+    } catch {}
   };
-  const solid = await import("solid-js");
-  solid.createRoot(() => solid.createEffect(check));
   const timer = setInterval(check, 250);
   api.lifecycle.onDispose(() => clearInterval(timer));
+  check();
 };
 
 export default { id: "agent-manager.track-conversation", tui };

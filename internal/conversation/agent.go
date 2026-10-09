@@ -76,12 +76,12 @@ func ReadAgent(path string) (Agent, bool, error) {
 	if len(fields) != 3 || len(lines) > 2 || (len(lines) == 2 && lines[1] != endedLine) {
 		return Agent{}, false, fmt.Errorf("%s: not an agent record", path)
 	}
-	pid, pidErr := strconv.Atoi(fields[0])
+	pid, pidErr := strconv.ParseInt(fields[0], 10, 32)
 	launch, launchErr := strconv.ParseInt(fields[1], 10, 64)
 	if pidErr != nil || launchErr != nil || pid <= 0 {
 		return Agent{}, false, fmt.Errorf("%s: not an agent record", path)
 	}
-	return Agent{PID: pid, Launch: launch, TTY: fields[2], Ended: len(lines) == 2, Recorded: info.ModTime()}, true, nil
+	return Agent{PID: int(pid), Launch: launch, TTY: fields[2], Ended: len(lines) == 2, Recorded: info.ModTime()}, true, nil
 }
 
 // startSlack covers how coarsely a process's start time is known: Linux

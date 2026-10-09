@@ -37,22 +37,22 @@ func TestHeldConversationNamesTheOneFileTheAgentHolds(t *testing.T) {
 	holdOpen(t, filepath.Join(root, "antigravity-cli", "conversations", "70b8e342.db"))
 	var reader Reader
 	for style, want := range map[string]string{"muse": "01a1183b-cbc5", "antigravity": "93f26d7d-480a"} {
-		id, done, err := reader.Current(style, recordedNow(), "")
-		if err != nil || id != want || done != nil {
+		id, err := reader.Current(style, recordedNow(), time.Time{})
+		if err != nil || id != want {
 			t.Fatalf("%s = %q, %v; want %q", style, id, err, want)
 		}
 	}
 
 	second := holdOpen(t, filepath.Join(root, "muse", "sessions", "01a1183b-4d90.json"))
-	if id, _, err := reader.Current("muse", recordedNow(), ""); err != nil || id != "" {
+	if id, err := reader.Current("muse", recordedNow(), time.Time{}); err != nil || id != "" {
 		t.Fatalf("two held sessions = %q, %v; want none named", id, err)
 	}
 	second.Close()
-	if id, _, err := reader.Current("muse", recordedNow(), ""); err != nil || id != "01a1183b-cbc5" {
+	if id, err := reader.Current("muse", recordedNow(), time.Time{}); err != nil || id != "01a1183b-cbc5" {
 		t.Fatalf("after closing one = %q, %v", id, err)
 	}
 	holdOpen(t, filepath.Join(root, "share", "muse", "sessions", "2026", "10", "08", "01a1183b-cbc5", ".session.lock"))
-	if id, _, err := reader.Current("muse", recordedNow(), ""); err != nil || id != "01a1183b-cbc5" {
+	if id, err := reader.Current("muse", recordedNow(), time.Time{}); err != nil || id != "01a1183b-cbc5" {
 		t.Fatalf("registry entry and session lock of one session = %q, %v", id, err)
 	}
 }
@@ -60,7 +60,7 @@ func TestHeldConversationNamesTheOneFileTheAgentHolds(t *testing.T) {
 func TestHeldConversationReadsMusesSessionLock(t *testing.T) {
 	holdOpen(t, filepath.Join(t.TempDir(), "muse", "sessions", "2026", "10", "08", "01a11886-aac3", ".session.lock"))
 	var reader Reader
-	if id, _, err := reader.Current("muse", recordedNow(), ""); err != nil || id != "01a11886-aac3" {
+	if id, err := reader.Current("muse", recordedNow(), time.Time{}); err != nil || id != "01a11886-aac3" {
 		t.Fatalf("session lock = %q, %v", id, err)
 	}
 }
@@ -71,7 +71,7 @@ func TestHeldConversationOfAProcessThatIsGone(t *testing.T) {
 		t.Fatal(err)
 	}
 	var reader Reader
-	if id, _, err := reader.Current("muse", Agent{PID: gone.Process.Pid}, ""); err != nil || id != "" {
+	if id, err := reader.Current("muse", Agent{PID: gone.Process.Pid}, time.Time{}); err != nil || id != "" {
 		t.Fatalf("gone process = %q, %v; want nothing", id, err)
 	}
 }
@@ -82,7 +82,7 @@ func TestHeldConversationOfAPIDReusedSinceTheRecord(t *testing.T) {
 	holdOpen(t, filepath.Join(t.TempDir(), "muse", "sessions", "01a1183b-cbc5.json"))
 	reused := Agent{PID: os.Getpid(), Recorded: time.Now().Add(-time.Hour)}
 	var reader Reader
-	if id, _, err := reader.Current("muse", reused, ""); err != nil || id != "" {
+	if id, err := reader.Current("muse", reused, time.Time{}); err != nil || id != "" {
 		t.Fatalf("reused pid = %q, %v; want nothing", id, err)
 	}
 }

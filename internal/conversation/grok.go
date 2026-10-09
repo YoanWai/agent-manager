@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // grokLog follows grok's unified log, where every line a session writes
@@ -19,7 +20,7 @@ type grokLog struct {
 	path   string
 	file   os.FileInfo
 	offset int64
-	last   map[int]string
+	last   string
 }
 
 func grokLogPath() (string, error) {
@@ -34,7 +35,13 @@ func grokLogPath() (string, error) {
 	return filepath.Join(home, "logs", "unified.jsonl"), nil
 }
 
-func (g *grokLog) conversation(pid int) (string, error) {
+func (g *grokLog) conversation(agent Agent, since time.Time) (string, error) {
+	if !agent.Ended && Alive(agent.PID) {
+		running, err := agent.Running()
+		if err != nil || !running {
+			return "", err
+		}
+	}
 	path, err := grokLogPath()
 	if err != nil {
 		return "", err
@@ -52,7 +59,7 @@ func (g *grokLog) conversation(pid int) (string, error) {
 		return "", err
 	}
 	if path != g.path || g.file == nil || !os.SameFile(g.file, info) || info.Size() < g.offset {
-		*g = grokLog{path: path, last: map[int]string{}}
+		*g = grokLog{path: path}
 	}
 	g.file = info
 	if _, err := file.Seek(g.offset, io.SeekStart); err != nil {
@@ -67,12 +74,17 @@ func (g *grokLog) conversation(pid int) (string, error) {
 	g.offset += int64(complete)
 	for line := range bytes.SplitSeq(unread[:complete], []byte("\n")) {
 		var entry struct {
-			PID int    `json:"pid"`
-			SID string `json:"sid"`
+			Time time.Time `json:"ts"`
+			PID  int       `json:"pid"`
+			SID  string    `json:"sid"`
 		}
-		if json.Unmarshal(line, &entry) == nil && entry.PID > 0 && entry.SID != "" {
-			g.last[entry.PID] = entry.SID
+		if json.Unmarshal(line, &entry) != nil || entry.PID != agent.PID || entry.SID == "" || entry.Time.IsZero() || entry.Time.Before(since) {
+			continue
 		}
+		if agent.Ended && entry.Time.After(agent.Recorded) {
+			continue
+		}
+		g.last = entry.SID
 	}
-	return g.last[pid], nil
+	return g.last, nil
 }

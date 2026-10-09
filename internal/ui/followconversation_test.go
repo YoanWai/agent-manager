@@ -116,7 +116,8 @@ func TestPollerFollowsADeadAgentsSwitchFromGroksLog(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(grokHome, "logs"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	log := fmt.Sprintf("{\"pid\":%d,\"sid\":\"019a1c2d-0000-7000-8000-000000000001\"}\n{\"pid\":%d,\"sid\":\"019a1c2d-0000-7000-8000-000000000002\"}\n", quitPID, quitPID)
+	loggedAt := time.Now().Format(time.RFC3339Nano)
+	log := fmt.Sprintf("{\"ts\":%q,\"pid\":%d,\"sid\":\"019a1c2d-0000-7000-8000-000000000001\"}\n{\"ts\":%q,\"pid\":%d,\"sid\":\"019a1c2d-0000-7000-8000-000000000002\"}\n", loggedAt, quitPID, loggedAt, quitPID)
 	if err := os.WriteFile(filepath.Join(grokHome, "logs", "unified.jsonl"), []byte(log), 0o644); err != nil {
 		t.Fatal(err)
 	}

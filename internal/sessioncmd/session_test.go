@@ -544,7 +544,14 @@ default_status = "idle"
 	if err != nil || !found {
 		t.Fatalf("agent record = %v, %v", found, err)
 	}
-	logLine := fmt.Sprintf(`{"pid":%d,"sid":"conv-logged","msg":"session.create.done"}`+"\n", agent.PID)
+	stored, err := h.store.Get(created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stored.CreatedAt.Before(agent.Recorded) {
+		t.Fatal("the launch ended before its row's creation time")
+	}
+	logLine := fmt.Sprintf(`{"ts":%q,"pid":%d,"sid":"conv-logged","msg":"session.create.done"}`+"\n", agent.Recorded.Add(-time.Millisecond).Format(time.RFC3339Nano), agent.PID)
 	if err := os.MkdirAll(filepath.Join(grokHome, "logs"), 0o755); err != nil {
 		t.Fatal(err)
 	}

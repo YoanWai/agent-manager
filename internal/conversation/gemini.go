@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"os"
+	"syscall"
 )
 
 // telemetryRecord is the part of a gemini telemetry record that names a
@@ -33,24 +35,47 @@ func (record telemetryRecord) pid() int {
 	return 0
 }
 
-// geminiConversation reads the newest conversation the agent's own processes
-// logged to its telemetry file. The slash command record that switches
-// conversation is skipped: gemini deletes a conversation left with no message
-// when it exits, so a cleared one counts from the first record after it,
-// which is where a resumed one first shows too. A gemini run from shell mode
-// inherits the file and runs in a process group of its own, so its records
-// are skipped. The file holds one pretty-printed JSON object per record, each
-// opening with a "{" line of its own.
-func (r *Reader) geminiConversation(path string, agentPID int) (string, func() error, error) {
-	data, err := os.ReadFile(path)
+// FollowTelemetry holds the file lock through reporting and cleanup, across manager processes.
+func (r *Reader) FollowTelemetry(path string, agentPID int, report func(string) (bool, error)) error {
+	file, err := os.OpenFile(path, os.O_RDWR, 0)
 	if errors.Is(err, fs.ErrNotExist) {
-		return "", nil, nil
+		return nil
 	}
 	if err != nil {
-		return "", nil, err
+		return err
 	}
+	defer file.Close()
+	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX); err != nil {
+		return err
+	}
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return err
+	}
+	id, whole, err := r.geminiConversation(data, agentPID)
+	if err != nil {
+		return err
+	}
+	if id != "" {
+		consumed, err := report(id)
+		if err != nil || !consumed {
+			return err
+		}
+	}
+	if !whole {
+		return nil
+	}
+	info, err := file.Stat()
+	if err != nil || info.Size() != int64(len(data)) {
+		return err
+	}
+	return file.Truncate(0)
+}
+
+// A cleared conversation counts after its first message because Gemini deletes empty ones on exit.
+func (r *Reader) geminiConversation(data []byte, agentPID int) (string, bool, error) {
 	if len(data) == 0 {
-		return "", nil, nil
+		return "", false, nil
 	}
 	id, lastWhole := "", false
 	for chunk := range bytes.SplitSeq(data, []byte("\n{\n")) {
@@ -67,29 +92,11 @@ func (r *Reader) geminiConversation(path string, agentPID int) (string, func() e
 		}
 		ours, err := r.fromAgent(agentPID, record.pid())
 		if err != nil {
-			return "", nil, err
+			return "", false, err
 		}
 		if ours {
 			id = record.Attributes.SessionID
 		}
 	}
-	if !lastWhole {
-		// A record still being written is read whole on a later poll. A
-		// broken one before it is skipped for good.
-		return id, nil, nil
-	}
-	return id, func() error { return truncateUnchanged(path, int64(len(data))) }, nil
-}
-
-// truncateUnchanged empties a file gemini appends to, unless it wrote more
-// since it was read, which a later poll then reads.
-func truncateUnchanged(path string, size int64) error {
-	info, err := os.Stat(path)
-	if errors.Is(err, fs.ErrNotExist) || (err == nil && info.Size() != size) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	return os.Truncate(path, 0)
+	return id, lastWhole, nil
 }

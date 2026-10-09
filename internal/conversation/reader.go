@@ -3,6 +3,7 @@ package conversation
 import (
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // Polled reports whether a session_report style is read by Reader while the
@@ -19,28 +20,28 @@ func Polled(style string) bool {
 // part of grok's log it has read and the processes it has placed, so a poll
 // reads only what is new.
 type Reader struct {
-	grok      grokLog
+	grok      map[[2]int64]*grokLog
 	processes map[[2]int]bool
 }
 
-// Current names the conversation agent is on for a Polled style, or "" when
-// its CLI's state names none. Grok's log outlives the agent, so it still
-// names the conversation an agent that has quit was on. done, when not nil,
-// consumes what was read once the caller has recorded the answer: gemini's
-// telemetry file, which the manager owns, is emptied so it never grows past
-// a poll's worth.
-func (r *Reader) Current(style string, agent Agent, telemetryFile string) (id string, done func() error, err error) {
+// Current reads the conversation belonging to this agent's launch.
+func (r *Reader) Current(style string, agent Agent, since time.Time) (id string, err error) {
 	switch style {
 	case "muse":
 		id, err = heldConversation(agent, museConversation)
 	case "antigravity":
 		id, err = heldConversation(agent, antigravityConversation)
 	case "grok":
-		id, err = r.grok.conversation(agent.PID)
-	case "gemini":
-		return r.geminiConversation(telemetryFile, agent.PID)
+		key := [2]int64{int64(agent.PID), since.UnixNano()}
+		if r.grok == nil {
+			r.grok = map[[2]int64]*grokLog{}
+		}
+		if r.grok[key] == nil {
+			r.grok[key] = &grokLog{}
+		}
+		id, err = r.grok[key].conversation(agent, since)
 	}
-	return id, nil, err
+	return id, err
 }
 
 // heldConversation names the one conversation the agent holds a file open

@@ -132,26 +132,31 @@ func FollowConversation(st *store.Store, hookManager *hooks.Manager, reader *con
 	if err != nil || !found || agent.Launch != store.LaunchStamp(sess.AgentLaunchedAt) {
 		return sess, err
 	}
-	id, done, err := reader.Current(style, agent, hookManager.TelemetryFile(sess.ID))
-	if err != nil {
-		return sess, err
-	}
-	if id != "" && id != sess.AgentSessionID && agentsession.ValidSessionID(id) {
+	report := func(id string) (bool, error) {
+		if id == "" || !agentsession.ValidSessionID(id) {
+			return true, nil
+		}
 		result, err := st.ReportAgentSessionID(sess.ID, sess.Tool, id, agent.Launch)
 		if err != nil {
-			return sess, err
+			return false, err
 		}
 		switch result {
 		case store.ReportStale, store.ReportEarly:
-			return sess, nil
-		case store.ReportAdopted:
+			return false, nil
+		case store.ReportAdopted, store.ReportUnchanged:
 			sess.AgentSessionID = id
 		}
+		return true, nil
 	}
-	if done == nil {
-		return sess, nil
+	if style == "gemini" {
+		err = reader.FollowTelemetry(hookManager.TelemetryFile(sess.ID), agent.PID, report)
+		return sess, err
 	}
-	return sess, done()
+	id, err := reader.Current(style, agent, sess.LaunchTime())
+	if err == nil {
+		_, err = report(id)
+	}
+	return sess, err
 }
 
 // closingAgentWait is how long a revive gives an agent still closing, which

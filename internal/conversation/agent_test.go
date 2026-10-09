@@ -53,6 +53,18 @@ func TestReadAgentWithoutARecord(t *testing.T) {
 	}
 }
 
+func TestReadAgentRejectsPIDsOutsideTheProcessIDRange(t *testing.T) {
+	for _, pid := range []string{"0", "-1", "2147483648", "4294967297"} {
+		path := filepath.Join(t.TempDir(), "row.agent")
+		if err := os.WriteFile(path, []byte(pid+" 1 /dev/ttys001\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, found, err := ReadAgent(path); err == nil || found {
+			t.Errorf("pid %s accepted: %v, %v", pid, found, err)
+		}
+	}
+}
+
 // The shell that ran the launch line marks the record once the agent has
 // quit.
 func TestReadAgentSeesTheEndedMark(t *testing.T) {
