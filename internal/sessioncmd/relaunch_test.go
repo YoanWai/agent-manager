@@ -1,6 +1,7 @@
 package sessioncmd
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,6 +9,8 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/hooks"
+	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/google/uuid"
@@ -184,4 +187,41 @@ func waitForAgentGone(t *testing.T, driver *tmux.Driver, sessID string) {
 		time.Sleep(25 * time.Millisecond)
 	}
 	t.Fatalf("session %s never came back to its shell", sessID)
+}
+
+// The caller's copy of the row can predate a switch the agent reported
+// before it quit, so the relaunch reads the row itself.
+func TestRelaunchInPaneResumesTheStoredConversationUnderItsStampedLaunch(t *testing.T) {
+	h := newSessionHarness(t)
+	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "switcher", Tool: "reporter"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, "launched launch=0")
+	waitForAgentGone(t, h.driver, created.ID)
+	if result, err := h.store.ReportAgentSessionID(created.ID, "reporter", "conv-switched", 0); err != nil || result != store.ReportAdopted {
+		t.Fatalf("report: %v %v", result, err)
+	}
+	tool := testConfigTool(t, "reporter")
+	relaunched, err := RelaunchInPane(h.driver, h.store, hooks.NewManager(t.TempDir()), created.ID, tool)
+	if err != nil {
+		t.Fatalf("RelaunchInPane: %v", err)
+	}
+	stored, err := h.store.Get(created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if relaunched.AgentSessionID != "conv-switched" || !relaunched.AgentLaunchedAt.Equal(stored.AgentLaunchedAt) || stored.AgentLaunchedAt.IsZero() {
+		t.Fatalf("relaunched %+v, stored %+v", relaunched, stored)
+	}
+	waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, fmt.Sprintf("resumed conv-switched launch=%d", store.LaunchStamp(stored.AgentLaunchedAt)))
+}
+
+func testConfigTool(t *testing.T, name string) config.Tool {
+	t.Helper()
+	cfg, err := testConfigLoader(t, sessionConfig)()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cfg.Tools[name]
 }

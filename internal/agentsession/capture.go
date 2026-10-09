@@ -606,6 +606,12 @@ var opencodeIDPattern = regexp.MustCompile(`ses_[A-Za-z0-9]+`)
 // one shaped like anything else is left where it was found.
 var sessionIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 
+// ValidSessionID reports whether an id an agent reported has the shape a
+// conversation id is allowed to take before it reaches a command line.
+func ValidSessionID(id string) bool {
+	return sessionIDPattern.MatchString(id)
+}
+
 // opencodeListIDs returns session ids newest-first from `opencode session
 // list` run in cwd. A package variable so tests substitute canned output.
 var opencodeListIDs = func(cwd string) ([]string, bool) {

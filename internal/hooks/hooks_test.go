@@ -15,7 +15,7 @@ import (
 
 func TestWriteSettingsWritesValidHookJSON(t *testing.T) {
 	manager := NewManager(t.TempDir())
-	path, err := manager.WriteSettings("abcd1234")
+	path, err := manager.WriteSettings("abcd1234", "0", "")
 	if err != nil {
 		t.Fatalf("WriteSettings: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestWriteSettingsWritesValidHookJSON(t *testing.T) {
 func TestWriteSettingsCarriesTheSessionIdentity(t *testing.T) {
 	manager := NewManager(t.TempDir())
 	for _, id := range []string{"aaaa1111", "bbbb2222"} {
-		path, err := manager.WriteSettings(id)
+		path, err := manager.WriteSettings(id, "1700000000000000000", "")
 		if err != nil {
 			t.Fatalf("WriteSettings %s: %v", id, err)
 		}
@@ -108,16 +108,46 @@ func TestWriteSettingsCarriesTheSessionIdentity(t *testing.T) {
 		if err := json.Unmarshal(raw, &parsed); err != nil {
 			t.Fatalf("settings is not valid JSON: %v", err)
 		}
-		want := map[string]string{EnvSessionID: id, EnvStatusFile: manager.StatusFile(id)}
-		if len(parsed.Env) != len(want) || parsed.Env[EnvSessionID] != want[EnvSessionID] || parsed.Env[EnvStatusFile] != want[EnvStatusFile] {
+		want := map[string]string{EnvSessionID: id, EnvLaunch: "1700000000000000000", EnvStatusFile: manager.StatusFile(id)}
+		if len(parsed.Env) != len(want) || parsed.Env[EnvSessionID] != want[EnvSessionID] ||
+			parsed.Env[EnvLaunch] != want[EnvLaunch] || parsed.Env[EnvStatusFile] != want[EnvStatusFile] {
 			t.Fatalf("settings env for %s = %v, want %v", id, parsed.Env, want)
 		}
 	}
 }
 
+// Every way a conversation starts reports it, /branch and /resume included,
+// while the status write keeps its narrower matcher.
+func TestWriteSettingsReportsEveryConversationStart(t *testing.T) {
+	manager := NewManager(t.TempDir())
+	path, err := manager.WriteSettings("abcd1234", "0", "'/bin/am' track-conversation --tool claude --key session_id")
+	if err != nil {
+		t.Fatalf("WriteSettings: %v", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read settings: %v", err)
+	}
+	var parsed settingsFile
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		t.Fatalf("settings is not valid JSON: %v", err)
+	}
+	starts := parsed.Hooks["SessionStart"]
+	if len(starts) != 2 {
+		t.Fatalf("SessionStart entries = %+v, want the status write and the report", starts)
+	}
+	if starts[0].Matcher != "startup|resume|clear" || starts[0].Hooks[0].Command != statusCommand(status.Idle) {
+		t.Fatalf("status entry = %+v", starts[0])
+	}
+	report := starts[1]
+	if report.Matcher != "" || len(report.Hooks) != 1 || report.Hooks[0].Command != "'/bin/am' track-conversation --tool claude --key session_id" {
+		t.Fatalf("report entry = %+v, want the track command with no matcher", report)
+	}
+}
+
 func TestWriteSettingsIdempotent(t *testing.T) {
 	manager := NewManager(t.TempDir())
-	first, err := manager.WriteSettings("abcd1234")
+	first, err := manager.WriteSettings("abcd1234", "0", "track")
 	if err != nil {
 		t.Fatalf("first WriteSettings: %v", err)
 	}
@@ -125,7 +155,7 @@ func TestWriteSettingsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat: %v", err)
 	}
-	second, err := manager.WriteSettings("abcd1234")
+	second, err := manager.WriteSettings("abcd1234", "0", "track")
 	if err != nil {
 		t.Fatalf("second WriteSettings: %v", err)
 	}
@@ -349,6 +379,28 @@ func TestRemoveIdempotent(t *testing.T) {
 	}
 	if err := manager.Remove("x"); err != nil {
 		t.Fatalf("second Remove should be a no-op: %v", err)
+	}
+}
+
+func TestRemoveAgentFilesDropsWhatLaunchesRecorded(t *testing.T) {
+	manager := NewManager(t.TempDir())
+	if err := os.MkdirAll(manager.Dir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{manager.AgentFile("x"), manager.TelemetryFile("x"), manager.AgentFile("y")} {
+		if err := os.WriteFile(path, []byte("1 0 /dev/ttys001\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for range 2 {
+		if err := manager.RemoveAgentFiles("x"); err != nil {
+			t.Fatalf("RemoveAgentFiles: %v", err)
+		}
+	}
+	for path, want := range map[string]bool{manager.AgentFile("x"): false, manager.TelemetryFile("x"): false, manager.AgentFile("y"): true} {
+		if _, err := os.Stat(path); (err == nil) != want {
+			t.Fatalf("%s present = %v, want %v", path, err == nil, want)
+		}
 	}
 }
 

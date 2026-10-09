@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/launch"
@@ -771,8 +772,8 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 	return nil
 }
 
-func (m *Model) buildLaunch(toolName string, tool config.Tool, baseCommand, id string) (string, map[string]string, error) {
-	return launch.Environment(m.hooks, toolName, tool, baseCommand, id)
+func (m *Model) buildLaunch(toolName string, tool config.Tool, baseCommand, id, cwd string, launchedAt time.Time) (string, map[string]string, error) {
+	return launch.Environment(m.hooks, toolName, tool, baseCommand, id, cwd, launchedAt)
 }
 
 func (m *Model) openGroupForm() {

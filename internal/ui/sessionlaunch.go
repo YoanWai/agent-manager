@@ -23,7 +23,7 @@ func (m *Model) launchNewSession(sess store.Session, tool config.Tool, baseComma
 			m.discardWorktree(sess.WorktreeRepo, sess.Cwd, sess.WorktreeBranch, m.groupBase(sess.Group))
 		}
 	}
-	command, env, err := m.buildLaunch(sess.Tool, tool, baseCommand, sess.ID)
+	command, env, err := m.buildLaunch(sess.Tool, tool, baseCommand, sess.ID, sess.Cwd, time.Time{})
 	if err != nil {
 		discardWorktree()
 		return err

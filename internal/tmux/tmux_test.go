@@ -1215,11 +1215,64 @@ func TestPanesOnAServerWithNoSessionsIsEmpty(t *testing.T) {
 	}
 }
 
+// A relaunch line typed whole is dropped by a shell without line editing
+// once it passes 1024 bytes, and a Codex relaunch with its hooks comes
+// close on its own.
+func TestRunInPaneDeliversALongCommandToAShellWithoutLineEditing(t *testing.T) {
+	driver := requireTmux(t)
+	id := "rerun" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", "exec /bin/dash", nil, 0, 0); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+	marker := filepath.Join(t.TempDir(), "ran")
+	payload := strings.Repeat("x", 1500)
+	if err := driver.RunInPane(id, map[string]string{"AGENT_MANAGER_SESSION_ID": "abc123"}, "printf '%s %s' \"$AGENT_MANAGER_SESSION_ID\" '"+payload+"' > "+ShellQuote(marker+".part")+" && mv "+ShellQuote(marker+".part")+" "+ShellQuote(marker)); err != nil {
+		t.Fatalf("RunInPane: %v", err)
+	}
+	if got := waitForFile(t, driver, id, marker); got != "abc123 "+payload {
+		t.Fatalf("the pane ran %d bytes, want the session env and the %d-byte payload", len(got), len(payload))
+	}
+}
+
+// A relaunched agent is the pane's foreground command, as a launched one is,
+// and its script leaves nothing behind in the shared temp dir to be planted
+// or reused.
+func TestRunInPaneLeavesTheAgentInFrontAndNoScript(t *testing.T) {
+	driver := requireTmux(t)
+	id := "front" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", "exec /bin/dash", nil, 0, 0); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+	if err := driver.RunInPane(id, nil, "sleep 30"); err != nil {
+		t.Fatalf("RunInPane: %v", err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		out, err := tmuxCmd("display-message", "-p", "-t", "am_"+id+":.0", "#{pane_current_command}").Output()
+		if err == nil && strings.TrimSpace(string(out)) == "sleep" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("pane command = %q, want the relaunched agent", strings.TrimSpace(string(out)))
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	left, err := filepath.Glob(filepath.Join(os.TempDir(), "am-relaunch-"+id+"*"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(left) != 0 {
+		t.Fatalf("relaunch scripts left behind: %v", left)
+	}
+}
+
 func TestExportEnvPrefixesTheCommand(t *testing.T) {
 	env := map[string]string{"B": "second", "A": "fir st"}
 	want := `export A='fir st'; export B='second'; claude --resume 7`
-	if got := ExportEnv(env, "claude --resume 7"); got != want {
-		t.Fatalf("ExportEnv = %q, want %q", got, want)
+	if got := exportEnv(env, "claude --resume 7"); got != want {
+		t.Fatalf("exportEnv = %q, want %q", got, want)
 	}
 }
 
@@ -1737,6 +1790,50 @@ func TestSessionOfProcessWalksUpToAManagedPane(t *testing.T) {
 	if got, err := driver.SessionOfProcess(os.Getpid()); err != nil || got != "" {
 		t.Fatalf("SessionOfProcess(test process) = %q, %v; want no session", got, err)
 	}
+}
+
+// tmux hands the launch to its default-shell with -c, and Debian's dash or
+// fish stays on above a command it was not told to exec. A default-shell that
+// always waits on its command stands in for them on every platform. The launch
+// script has to be the pane's process, so the agent it starts is the pane's
+// only child.
+func TestCreateRunsTheLaunchScriptAsThePaneProcess(t *testing.T) {
+	driver := requireTmux(t)
+	waitingShell := t.TempDir() + "/waiting-sh"
+	if err := os.WriteFile(waitingShell, []byte("#!/bin/sh\neval \"$2\"\nexit $?\n"), 0o700); err != nil {
+		t.Fatalf("waiting shell: %v", err)
+	}
+	stamp := strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create("hold"+stamp, "/tmp", "", nil, 80, 24); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill("hold" + stamp) })
+	out, err := tmuxCmd("show-options", "-gv", "default-shell").CombinedOutput()
+	if err != nil {
+		t.Fatalf("default-shell: %v: %s", err, out)
+	}
+	previous := strings.TrimSpace(string(out))
+	if out, err := tmuxCmd("set-option", "-g", "default-shell", waitingShell).CombinedOutput(); err != nil {
+		t.Fatalf("set default-shell: %v: %s", err, out)
+	}
+	t.Cleanup(func() { tmuxCmd("set-option", "-g", "default-shell", previous).Run() })
+
+	id := "launch" + stamp
+	if err := driver.Create(id, "/tmp", "sleep 61", nil, 80, 24); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+	panePID, err := driver.PanePID(id)
+	if err != nil {
+		t.Fatalf("PanePID: %v", err)
+	}
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+		if exec.Command("pgrep", "-P", strconv.Itoa(panePID), "sleep").Run() == nil {
+			return
+		}
+	}
+	tree, _ := exec.Command("ps", "-A", "-o", "pid=,ppid=,args=").Output()
+	t.Fatalf("no sleep directly under pane pid %d:\n%s", panePID, tree)
 }
 
 // A session outside the am_ namespace is one the user started on this
