@@ -33,14 +33,12 @@ type focusPreviewMsg struct {
 	historySize int
 }
 
-// focusDebounce is how long the watcher lets a paint burst settle before
-// capturing, so a stream of tmux output events becomes a few captures.
-// It is also the preview's frame budget: every capture repaints the
-// preview in the outer terminal, and a scrolling agent captured at 25ms
-// drove forty full-frame repaints a second through it, which is what
-// made the terminal fall behind the keyboard. At 80ms a typed key still
-// echoes within a frame while a stream costs the terminal a third.
-const focusDebounce = 80 * time.Millisecond
+// focusFrameBudget spaces captures that change the preview, so a stream
+// cannot repaint the outer terminal faster than it keeps up with.
+const focusFrameBudget = 80 * time.Millisecond
+
+// focusCaptureGap spaces every other capture by one 60Hz display frame.
+const focusCaptureGap = 16 * time.Millisecond
 
 // focusWatch keeps one tmux control-mode client on the selected session.
 // tmux pushes an event the moment the pane paints and the capture rides
@@ -53,6 +51,7 @@ type focusWatch struct {
 	mu      sync.Mutex
 	id      string
 	stop    chan struct{}
+	input   chan struct{}
 	control *tmux.Control
 	// failedID/failedAt back off reopening a session whose client just
 	// died. Selection sync retries every poll pass, and without the pause
@@ -93,9 +92,23 @@ func (w *focusWatch) setFocus(id string) {
 		return
 	}
 	stop := make(chan struct{})
+	input := make(chan struct{}, 1)
 	w.stop = stop
+	w.input = input
 	w.mu.Unlock()
-	go w.watch(id, stop)
+	go w.watch(id, stop, input)
+}
+
+func (w *focusWatch) inputSent(id string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.id != id {
+		return
+	}
+	select {
+	case w.input <- struct{}{}:
+	default:
+	}
 }
 
 // Close stops the current watcher; its control client detaches on its
@@ -182,6 +195,7 @@ func (w *focusWatch) stopLocked() {
 		close(w.stop)
 		w.stop = nil
 	}
+	w.input = nil
 	// The stopped watcher's client is not ours to report or use anymore.
 	// Left in place until its goroutine unwound, serving() would claim a
 	// session nothing streams yet and freeze its preview on the old frame.
@@ -211,7 +225,7 @@ func (w *focusWatch) retryNow() {
 	w.mu.Unlock()
 }
 
-func (w *focusWatch) watch(id string, stop chan struct{}) {
+func (w *focusWatch) watch(id string, stop, input chan struct{}) {
 	if !w.driver.Exists(id) {
 		w.clearIfCurrent(id, stop)
 		return
@@ -237,11 +251,11 @@ func (w *focusWatch) watch(id string, stop chan struct{}) {
 		w.mu.Unlock()
 	}()
 	target := tmux.PaneTarget(id)
-	capture := func() bool {
+	capture := func() (string, bool) {
 		pane, err := control.Command("capture-pane -p -e -t " + target)
 		if err != nil {
 			w.report(stop, fmt.Errorf("preview client for %s: %w", id, err))
-			return false
+			return "", false
 		}
 		msg := focusPreviewMsg{sessID: id, preview: matchExecShape(pane)}
 		// The capture carries no cursor, and a terminal without a visible
@@ -260,16 +274,22 @@ func (w *focusWatch) watch(id string, stop chan struct{}) {
 		// a frame, and its result is already stale.
 		select {
 		case <-stop:
-			return false
+			return "", false
 		default:
 		}
 		w.send(msg)
-		return true
+		return pane, true
 	}
-	if !capture() {
+	previous, ok := capture()
+	if !ok {
 		w.clearIfCurrent(id, stop)
 		return
 	}
+	lastCapture := time.Now()
+	nextCapture := lastCapture.Add(focusCaptureGap)
+	var inputUntil time.Time
+	timer := time.NewTimer(0)
+	defer timer.Stop()
 	for {
 		select {
 		case <-stop:
@@ -283,10 +303,27 @@ func (w *focusWatch) watch(id string, stop chan struct{}) {
 			w.report(stop, lost)
 			return
 		case <-control.Events():
+		case <-input:
+			inputUntil = time.Now().Add(focusFrameBudget)
+			continue
 		}
-		// Let the paint burst settle, then fold everything queued since
-		// into this one capture.
-		time.Sleep(focusDebounce)
+		captureAt := nextCapture
+		// Echo may arrive after a streaming paint or a cursor-only update.
+		if time.Now().Before(inputUntil) {
+			captureAt = lastCapture.Add(focusCaptureGap)
+		}
+		for wait := time.Until(captureAt); wait > 0; wait = time.Until(captureAt) {
+			timer.Reset(wait)
+			select {
+			case <-stop:
+				return
+			case <-input:
+				inputUntil = time.Now().Add(focusFrameBudget)
+				captureAt = lastCapture.Add(focusCaptureGap)
+			case <-timer.C:
+			}
+			timer.Stop()
+		}
 		for {
 			select {
 			case <-control.Events():
@@ -295,10 +332,20 @@ func (w *focusWatch) watch(id string, stop chan struct{}) {
 			}
 			break
 		}
-		if !capture() {
+		pane, ok := capture()
+		if !ok {
 			w.clearIfCurrent(id, stop)
 			return
 		}
+		// A write that leaves the text unchanged, like the cursor move some
+		// TUIs send ahead of an echo, must not hold back that echo.
+		gap := focusCaptureGap
+		if pane != previous {
+			gap = focusFrameBudget
+		}
+		previous = pane
+		lastCapture = time.Now()
+		nextCapture = lastCapture.Add(gap)
 	}
 }
 
