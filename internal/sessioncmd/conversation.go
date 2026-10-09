@@ -149,7 +149,7 @@ func FollowConversation(st *store.Store, hookManager *hooks.Manager, reader *con
 		return true, nil
 	}
 	if style == "gemini" {
-		err = reader.FollowTelemetry(hookManager.TelemetryFile(sess.ID), agent.PID, report)
+		err = reader.FollowTelemetry(hookManager.TelemetryFile(sess.ID, agent.Launch), agent.PID, report)
 		return sess, err
 	}
 	id, err := reader.Current(style, agent, sess.LaunchTime())

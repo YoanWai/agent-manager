@@ -211,7 +211,7 @@ func Environment(manager *hooks.Manager, toolName string, tool config.Tool, base
 	if err != nil {
 		return "", nil, err
 	}
-	target := sessionreport.Target{Exe: Executable(), HooksDir: manager.Dir(), TelemetryFile: manager.TelemetryFile(id), Cwd: cwd}
+	target := sessionreport.Target{Exe: Executable(), HooksDir: manager.Dir(), TelemetryFile: manager.TelemetryFile(id, stamp), Cwd: cwd}
 	command, err = sessionreport.Apply(tool.SessionReport, target, command, env)
 	if err != nil {
 		return "", nil, err

@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -157,10 +158,9 @@ func (m *Manager) AgentFile(id string) string {
 	return filepath.Join(m.dir, id+".agent")
 }
 
-// TelemetryFile is where a gemini session logs the telemetry that names the
-// conversation it is on.
-func (m *Manager) TelemetryFile(id string) string {
-	return filepath.Join(m.dir, id+".otel")
+// Each launch has its own path so an older follower cannot consume a relaunch's records.
+func (m *Manager) TelemetryFile(id string, launch int64) string {
+	return filepath.Join(m.dir, fmt.Sprintf("%s.%d.otel", id, launch))
 }
 
 // RemoveAgentFiles drops what a session's launches recorded about its agent.
@@ -168,7 +168,22 @@ func (m *Manager) RemoveAgentFiles(id string) error {
 	if err := removeIfExists(m.AgentFile(id)); err != nil {
 		return err
 	}
-	return removeIfExists(m.TelemetryFile(id))
+	files, err := os.ReadDir(m.dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, file := range files {
+		if !strings.HasPrefix(file.Name(), id+".") || !strings.HasSuffix(file.Name(), ".otel") {
+			continue
+		}
+		if err := removeIfExists(filepath.Join(m.dir, file.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // InstallStatusFile is the mailbox an install started from the setup

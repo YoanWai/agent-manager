@@ -383,11 +383,11 @@ func TestRemoveIdempotent(t *testing.T) {
 }
 
 func TestRemoveAgentFilesDropsWhatLaunchesRecorded(t *testing.T) {
-	manager := NewManager(t.TempDir())
+	manager := NewManager(filepath.Join(t.TempDir(), "[config]"))
 	if err := os.MkdirAll(manager.Dir(), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{manager.AgentFile("x"), manager.TelemetryFile("x"), manager.AgentFile("y")} {
+	for _, path := range []string{manager.AgentFile("x"), manager.TelemetryFile("x", 0), manager.TelemetryFile("x", 42), manager.AgentFile("y"), manager.TelemetryFile("y", 0)} {
 		if err := os.WriteFile(path, []byte("1 0 /dev/ttys001\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -397,7 +397,7 @@ func TestRemoveAgentFilesDropsWhatLaunchesRecorded(t *testing.T) {
 			t.Fatalf("RemoveAgentFiles: %v", err)
 		}
 	}
-	for path, want := range map[string]bool{manager.AgentFile("x"): false, manager.TelemetryFile("x"): false, manager.AgentFile("y"): true} {
+	for path, want := range map[string]bool{manager.AgentFile("x"): false, manager.TelemetryFile("x", 0): false, manager.TelemetryFile("x", 42): false, manager.AgentFile("y"): true, manager.TelemetryFile("y", 0): true} {
 		if _, err := os.Stat(path); (err == nil) != want {
 			t.Fatalf("%s present = %v, want %v", path, err == nil, want)
 		}

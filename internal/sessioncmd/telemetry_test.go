@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 )
@@ -61,6 +62,47 @@ func TestFollowTelemetryRecordsAndEmptiesUntilTheAgentQuits(t *testing.T) {
 	}
 	if got := storedConversation(t, st, "gem12345"); got != "cleared-two" {
 		t.Fatalf("after the agent quit the row is on %q, want the last logged conversation", got)
+	}
+}
+
+func TestAnOlderTelemetryFollowerLeavesTheRelaunchFileAlone(t *testing.T) {
+	_, st := conversationStore(t)
+	const row = "gem12345"
+	if err := st.CreateSession(store.Session{ID: row, Name: "gemini", Tool: "gemini", Cwd: t.TempDir(), Status: status.Idle}); err != nil {
+		t.Fatal(err)
+	}
+	launchedAt := time.Now()
+	if err := st.SetAgentLaunchedAt(row, launchedAt); err != nil {
+		t.Fatal(err)
+	}
+	manager := hooks.NewManager(t.TempDir())
+	if err := os.MkdirAll(manager.Dir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldFile := manager.TelemetryFile(row, 0)
+	newFile := manager.TelemetryFile(row, store.LaunchStamp(launchedAt))
+	newRecord := geminiRecord(os.Getpid(), "new-conversation")
+	if err := os.WriteFile(oldFile, []byte(geminiRecord(os.Getpid(), "old-conversation")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(newFile, []byte(newRecord), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ended := func(int) bool { return false }
+	if err := followTelemetry(st, row, oldFile, 0, os.Getpid(), time.Millisecond, ended); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(newFile); err != nil || string(data) != newRecord {
+		t.Fatalf("old follower consumed the relaunch's telemetry: %q, %v", data, err)
+	}
+	if got := storedConversation(t, st, row); got != "" {
+		t.Fatalf("old follower moved the relaunched row to %q", got)
+	}
+	if err := followTelemetry(st, row, newFile, store.LaunchStamp(launchedAt), os.Getpid(), time.Millisecond, ended); err != nil {
+		t.Fatal(err)
+	}
+	if got := storedConversation(t, st, row); got != "new-conversation" {
+		t.Fatalf("new follower reported %q", got)
 	}
 }
 
