@@ -326,21 +326,21 @@ func (h noticeHit) contains(x, y int) bool {
 }
 
 func (m *Model) placeNoticeHit(footer string, firstRow int) {
-	binding := m.listGlyph(keybind.Messages)
-	if binding == "" {
+	glyph, label := m.messagesAlert()
+	if glyph == "" {
 		return
 	}
-	label := ansi.Strip(keyCapQuiet(binding, "messages"))
+	painted := ansi.Strip(keyCapAlert(glyph, label))
 	for i, line := range splitLines(footer) {
 		line = ansi.Strip(line)
-		start := strings.Index(line, label)
+		start := strings.Index(line, painted)
 		if start < 0 {
 			continue
 		}
 		x := ansi.StringWidth(line[:start])
 		y := firstRow + i
-		if x+ansi.StringWidth(label) <= m.width && y < m.height {
-			m.noticeHit = noticeHit{x0: x, x1: x + ansi.StringWidth(label), y0: y, y1: y + 1, ok: true}
+		if x+ansi.StringWidth(painted) <= m.width && y < m.height {
+			m.noticeHit = noticeHit{x0: x, x1: x + ansi.StringWidth(painted), y0: y, y1: y + 1, ok: true}
 		}
 		return
 	}

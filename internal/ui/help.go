@@ -193,7 +193,7 @@ func helpSections(session, list keybind.Table, arrowStep bool) []helpSection {
 		})},
 		reviewHelpSection(list),
 		{title: titledWith("messages", list, keybind.Messages), rows: [][2]string{
-			{"click messages", "in the key legend, shown while any remain"},
+			{"click unread", "in the key legend, shown while any remain"},
 			{"↑↓", "pick a message"},
 			{"pgup / pgdn", "scroll its body"},
 			{"wheel", "scroll its body"},
