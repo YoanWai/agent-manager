@@ -437,6 +437,10 @@ func (m *Model) viewSettings() string {
 	if m.settings.editor.typing {
 		editorLine = lead(settingsFieldEditor, "editor") + textInputView(m.settings.editor.input)
 	}
+	notifyCommandLine := actionRow(settingsFieldNotifyCommand, "notify command", m.settings.notifyCommand.label())
+	if m.settings.notifyCommand.typing {
+		notifyCommandLine = lead(settingsFieldNotifyCommand, "notify command") + textInputView(m.settings.notifyCommand.input)
+	}
 	body := row(settingsFieldTool, "default tool", toolValue) + "\n" +
 		row(settingsFieldTheme, "theme", themes[m.settings.themeIndex].Name) + "  " +
 		themeSwatch(themes[m.settings.themeIndex]) + "\n" +
@@ -456,6 +460,7 @@ func (m *Model) viewSettings() string {
 		row(settingsFieldCoordination, "coordination", coordination) + "\n" +
 		row(settingsFieldNotify, "notifications", notifications) + "\n" +
 		row(settingsFieldNotifyFinish, "notify on finish", notifyFinished) + "\n" +
+		notifyCommandLine + "\n" +
 		editorLine + "\n" +
 		actionRow(settingsFieldKeybindings, "keybindings", keybindingsSummary(m.keys, m.listKeys)) + "\n" +
 		actionRow(settingsFieldCLIs, "CLIs", "show or hide for new sessions") + "\n" +
@@ -470,6 +475,11 @@ func (m *Model) viewSettings() string {
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "manage CLIs"}, {"esc", "save"}}
 	case settingsFieldKeybindings:
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "change the keys"}, {"esc", "save"}}
+	case settingsFieldNotifyCommand:
+		hint = [][2]string{{"↑↓", "field"}, {"↵", "type the command"}, {"esc", "save"}}
+		if m.settings.notifyCommand.typing {
+			hint = [][2]string{{"↵", "keep"}, {"esc", "cancel"}}
+		}
 	case settingsFieldEditor:
 		switch {
 		case m.settings.editor.typing:

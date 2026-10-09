@@ -561,6 +561,10 @@ const notificationsSetting = "notifications"
 
 const notifyFinishedSetting = "notify_finished"
 
+// notifyCommandSetting is a shell command run on every notification, with
+// the event in AM_* variables. Empty runs nothing.
+const notifyCommandSetting = "notify_command"
+
 func (m *Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "enter":

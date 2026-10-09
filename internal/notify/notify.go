@@ -113,6 +113,8 @@ type Event struct {
 	Session string
 	Tool    string
 	Kind    Kind
+	Dir     string
+	Branch  string
 }
 
 type presentation struct {
@@ -170,13 +172,7 @@ func Notify(event Event) {
 	if !ok {
 		return
 	}
-	session := sanitize(event.Session)
-	tool := sanitize(event.Tool)
-	subtitle := session
-	if tool != "" {
-		subtitle += " · " + tool
-	}
-	body := detail.body
+	subtitle, body := content(event, detail)
 	terminalBody := body + " — " + subtitle
 	// A terminal that understands OSC 777 turns it into a native
 	// notification wherever the terminal actually is — including at the
@@ -213,6 +209,16 @@ func Notify(event Event) {
 		}
 	}
 	_ = emitSeq("\a")
+}
+
+// content is the title and text every channel shows for an event, the
+// native banner and the user's command alike.
+func content(event Event, detail presentation) (title, body string) {
+	title = sanitize(event.Session)
+	if tool := sanitize(event.Tool); tool != "" {
+		title += " · " + tool
+	}
+	return title, detail.body
 }
 
 // notifySend keeps the call open for the banner's lifetime when the

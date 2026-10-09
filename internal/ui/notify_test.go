@@ -59,7 +59,129 @@ func newNotifyTestPoller(t *testing.T) (*poller, store.Session, *notifyRecorder)
 	p, sess := newTestPollerWithSession(t)
 	rec := &notifyRecorder{}
 	p.notifyFn = rec.fn()
+	p.commandFn = func(notify.Event, string, error) {}
 	return p, sess, rec
+}
+
+type commandCall struct {
+	command string
+	event   notify.Event
+	readErr error
+}
+
+type commandRecorder struct {
+	mu    sync.Mutex
+	calls []commandCall
+}
+
+func (r *commandRecorder) fn() func(notify.Event, string, error) {
+	return func(event notify.Event, command string, readErr error) {
+		r.mu.Lock()
+		r.calls = append(r.calls, commandCall{command, event, readErr})
+		r.mu.Unlock()
+	}
+}
+
+func (r *commandRecorder) all() []commandCall {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]commandCall(nil), r.calls...)
+}
+
+func waitForCommands(t *testing.T, rec *commandRecorder, n int) []commandCall {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		calls := rec.all()
+		if len(calls) >= n {
+			return calls
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("want %d commands, got %v", n, calls)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func newCommandTestPoller(t *testing.T, command string) (*poller, store.Session, *notifyRecorder, *commandRecorder) {
+	t.Helper()
+	p, sess, rec := newNotifyTestPoller(t)
+	commands := &commandRecorder{}
+	p.commandFn = commands.fn()
+	if err := p.store.SetSetting(notifyCommandSetting, command); err != nil {
+		t.Fatal(err)
+	}
+	return p, sess, rec, commands
+}
+
+// The command is additive: the native banner still goes up, and the
+// command gets the same event with the session's directory and branch.
+func TestNotifyTransitionRunsTheCommandBesideTheBanner(t *testing.T) {
+	p, sess, rec, commands := newCommandTestPoller(t, ` curl -d "$AM_BODY" ntfy.sh/topic `)
+	sess.WorktreeBranch = "am/fix-login"
+	p.notifyTransition(sess, status.Waiting)
+	want := notify.Event{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: notify.Waiting, Dir: sess.Cwd, Branch: "am/fix-login"}
+	if calls := waitForCalls(t, rec, 1); calls[0] != want {
+		t.Fatalf("banner got %+v, want %+v", calls[0], want)
+	}
+	calls := waitForCommands(t, commands, 1)
+	if calls[0].command != `curl -d "$AM_BODY" ntfy.sh/topic` || calls[0].event != want || calls[0].readErr != nil {
+		t.Fatalf("command got %+v, want the trimmed command with %+v", calls[0], want)
+	}
+}
+
+func TestNotifyTransitionWithoutACommandRunsNone(t *testing.T) {
+	p, sess, rec, commands := newCommandTestPoller(t, "")
+	p.notifyTransition(sess, status.Waiting)
+	waitForCalls(t, rec, 1)
+	settle()
+	if calls := commands.all(); len(calls) != 0 {
+		t.Fatalf("no command is set, got %v", calls)
+	}
+}
+
+// A command the store cannot hand back is not taken for an unset one: the
+// banner still goes up, and the read failure goes where command failures
+// are logged.
+func TestNotifyTransitionReportsAnUnreadableCommand(t *testing.T) {
+	p, sess, rec, commands := newCommandTestPoller(t, "true")
+	if err := p.store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	p.notifyTransition(sess, status.Waiting)
+	waitForCalls(t, rec, 1)
+	calls := waitForCommands(t, commands, 1)
+	if calls[0].readErr == nil || calls[0].command != "" || calls[0].event.Kind != notify.Waiting {
+		t.Fatalf("want the read error handed on for the waiting event, got %+v", calls[0])
+	}
+}
+
+// The command follows the same toggles as the banner: off silences both,
+// and finished needs the opt-in.
+func TestNotifyCommandFollowsTheNotificationToggles(t *testing.T) {
+	p, sess, _, commands := newCommandTestPoller(t, "true")
+	p.notifyTransition(sess, status.Finished)
+	settle()
+	if calls := commands.all(); len(calls) != 0 {
+		t.Fatalf("finished without the opt-in ran %v", calls)
+	}
+	if err := p.store.SetSetting(notifyFinishedSetting, "on"); err != nil {
+		t.Fatal(err)
+	}
+	p.notifyTransition(sess, status.Finished)
+	if calls := waitForCommands(t, commands, 1); calls[0].event.Kind != notify.Finished {
+		t.Fatalf("want a finished command after the opt-in, got %v", calls)
+	}
+	if err := p.store.SetSetting(notificationsSetting, "off"); err != nil {
+		t.Fatal(err)
+	}
+	for _, st := range []string{status.Waiting, status.Errored, status.Finished} {
+		p.notifyTransition(sess, st)
+	}
+	settle()
+	if calls := commands.all(); len(calls) != 1 {
+		t.Fatalf("notifications off should silence the command too, got %v", calls)
+	}
 }
 
 func TestNotifyTransitionFiresOnWaitingAndErrored(t *testing.T) {
@@ -68,8 +190,8 @@ func TestNotifyTransitionFiresOnWaitingAndErrored(t *testing.T) {
 	p.notifyTransition(sess, status.Errored)
 	calls := waitForCalls(t, rec, 2)
 	want := map[notify.Event]bool{
-		{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: notify.Waiting}: true,
-		{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: notify.Errored}: true,
+		{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: notify.Waiting, Dir: sess.Cwd}: true,
+		{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: notify.Errored, Dir: sess.Cwd}: true,
 	}
 	for _, call := range calls {
 		delete(want, call)
@@ -84,7 +206,7 @@ func TestNotifyTransitionCarriesCustomToolName(t *testing.T) {
 	sess.Tool = "my-custom-agent"
 	p.notifyTransition(sess, status.Waiting)
 	calls := waitForCalls(t, rec, 1)
-	if calls[0] != (notify.Event{ID: sess.ID, Session: sess.Name, Tool: "my-custom-agent", Kind: notify.Waiting}) {
+	if calls[0] != (notify.Event{ID: sess.ID, Session: sess.Name, Tool: "my-custom-agent", Kind: notify.Waiting, Dir: sess.Cwd}) {
 		t.Fatalf("configured tool identity should reach the backend, got %v", calls)
 	}
 }
@@ -114,7 +236,7 @@ func TestNotifyTransitionFinishedOptIn(t *testing.T) {
 	}
 	p.notifyTransition(sess, status.Finished)
 	calls := waitForCalls(t, rec, 1)
-	if calls[0] != (notify.Event{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: notify.Finished}) {
+	if calls[0] != (notify.Event{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: notify.Finished, Dir: sess.Cwd}) {
 		t.Fatalf("want one finished notification after opt-in, got %v", calls)
 	}
 }
@@ -175,7 +297,7 @@ func TestRefreshNotifiesWaitingTransitionOnce(t *testing.T) {
 
 	m.applyCmd(t, m.refreshCmd())
 	calls := waitForCalls(t, rec, 1)
-	if calls[0] != (notify.Event{ID: sess.ID, Session: "needy", Tool: "claude-hooked", Kind: notify.Waiting}) {
+	if calls[0] != (notify.Event{ID: sess.ID, Session: "needy", Tool: "claude-hooked", Kind: notify.Waiting, Dir: sess.Cwd}) {
 		t.Fatalf("want one waiting notification titled with the session name, got %v", calls)
 	}
 
@@ -183,6 +305,48 @@ func TestRefreshNotifiesWaitingTransitionOnce(t *testing.T) {
 	settle()
 	if calls := rec.all(); len(calls) != 1 {
 		t.Fatalf("a steady waiting status should not re-fire, got %v", calls)
+	}
+}
+
+// Every manager on the server derives the same transition from the same
+// pane. The command runs from the notification, behind the same check on
+// whether this manager's write moved the stored status, so a second
+// manager polling the same pane runs nothing. The race where both read
+// the old status is the store's to settle, and its tests cover it.
+func TestNotifyCommandRunsOnceAcrossManagers(t *testing.T) {
+	m := buildModel(t)
+	hooked := m.cfg.Tools["claude-hooked"]
+	hooked.Command = `sh -c 'exec cat' --`
+	m.cfg.Tools["claude-hooked"] = hooked
+	createSessionOn(t, m, "needy", "claude-hooked", t.TempDir())
+	sess := m.sessionRows()[0]
+	waitForPane(t, m, sess.ID, "boot-marker")
+	if err := m.store.UpdateStatus(sess.ID, status.Idle); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.store.SetSetting(notifyCommandSetting, "true"); err != nil {
+		t.Fatal(err)
+	}
+	second := newPoller(m.store, m.tmux, m.poller.engine, m.poller.hooks, m.poller.gitDrv, m.poller.statusSources,
+		m.poller.sessionStores, m.poller.mcpStyles, m.poller.shellTools, m.poller.binaries, m.poller.interval)
+	commands := &commandRecorder{}
+	for _, p := range []*poller{m.poller, second} {
+		p.notifyFn = func(notify.Event) {}
+		p.commandFn = commands.fn()
+	}
+	statusFile := m.poller.hooks.StatusFile(sess.ID)
+	if err := os.MkdirAll(filepath.Dir(statusFile), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(statusFile, []byte(status.Waiting), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m.poller.refreshOnce()
+	second.refreshOnce()
+	waitForCommands(t, commands, 1)
+	settle()
+	if calls := commands.all(); len(calls) != 1 {
+		t.Fatalf("two managers ran the command %d times: %v", len(calls), calls)
 	}
 }
 
