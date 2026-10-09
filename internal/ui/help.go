@@ -473,9 +473,14 @@ func (m *Model) helpHint() [][2]string {
 }
 
 func (m *Model) placeDocsHit(frame string) {
+	// A search for these words paints an earlier copy, and typing hides the key.
+	if m.help.searching {
+		return
+	}
 	label := ansi.Strip(hintCap("o", "docs"))
-	for i, line := range strings.Split(frame, "\n") {
-		plain := ansi.Strip(line)
+	lines := strings.Split(frame, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		plain := ansi.Strip(lines[i])
 		start := strings.Index(plain, label)
 		if start < 0 {
 			continue
