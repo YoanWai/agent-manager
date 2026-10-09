@@ -23,6 +23,7 @@ type sessionPresetHit struct {
 type sessionPresetPanel struct {
 	open, editing, confirm, loading, busy, pasting bool
 	gen, cursor, focus                             int
+	refreshFailed                                  bool
 	rows                                           []store.SessionPreset
 	previous                                       string
 	name                                           textinput.Model
@@ -32,6 +33,7 @@ type sessionPresetPanel struct {
 type sessionPresetsLoadedMsg struct {
 	gen            int
 	form, mutation bool
+	committed      bool
 	rows           []store.SessionPreset
 	err            error
 	selected       string
@@ -69,8 +71,20 @@ func (m *Model) recordSessionPresets(msg sessionPresetsLoadedMsg) tea.Cmd {
 	p.loading, p.busy = false, false
 	if msg.err != nil {
 		m.errBar.text = msg.err.Error()
+		if msg.committed {
+			p.editing, p.confirm = false, false
+			p.previous = msg.selected
+			p.rows = nil
+			p.refreshFailed = true
+			m.errBar.text = "Changes saved; refresh failed: " + msg.err.Error()
+		} else if !msg.mutation {
+			p.rows = nil
+			p.refreshFailed = true
+			m.errBar.text = "Reading presets: " + msg.err.Error()
+		}
 		return nil
 	}
+	p.refreshFailed = false
 	p.rows = msg.rows
 	p.cursor = min(p.cursor, max(0, len(p.rows)-1))
 	for i, preset := range p.rows {
@@ -88,7 +102,7 @@ func (m *Model) recordSessionPresets(msg sessionPresetsLoadedMsg) tea.Cmd {
 func (m *Model) editSessionPreset(new bool) tea.Cmd {
 	p := &m.presets
 	p.gen = m.nextComposerGen()
-	p.loading = false
+	p.loading, p.pasting = false, false
 	p.editing, p.confirm = true, false
 	p.previous = ""
 	p.name = textField("name", 60)
@@ -132,15 +146,16 @@ func (m *Model) mutateSessionPreset(deleting bool) tea.Cmd {
 		} else {
 			err = st.SaveSessionPreset(previous, preset)
 		}
+		committed := err == nil
 		var rows []store.SessionPreset
-		if err == nil {
+		if committed {
 			rows, err = st.SessionPresets()
 		}
 		selected := ""
 		if !deleting {
 			selected = strings.TrimSpace(preset.Name)
 		}
-		return sessionPresetsLoadedMsg{gen: gen, mutation: true, rows: rows, err: err, selected: selected}
+		return sessionPresetsLoadedMsg{gen: gen, mutation: true, committed: committed, rows: rows, err: err, selected: selected}
 	}
 }
 func (m *Model) handleSessionPresetsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -214,6 +229,10 @@ func (m *Model) handleSessionPresetsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.errBar.text = ""
 	case "n":
 		return m, m.editSessionPreset(true)
+	case "r":
+		if p.refreshFailed && !p.loading {
+			return m, m.reloadSessionPresets()
+		}
 	case "up", "k":
 		p.cursor = max(0, p.cursor-1)
 	case "down", "j":
@@ -234,6 +253,7 @@ func (m *Model) reloadSessionPresets() tea.Cmd {
 	p := &m.presets
 	p.gen = m.nextComposerGen()
 	p.loading = true
+	p.pasting = false
 	m.errBar.text = ""
 	return m.loadSessionPresets(p.gen, false)
 }
@@ -261,6 +281,8 @@ func (m *Model) handleSessionPresetsClick(x, y int) (tea.Model, tea.Cmd) {
 		return m, m.handleSessionPresetAction("esc")
 	case "new":
 		return m, m.handleSessionPresetAction("n")
+	case "refresh":
+		return m, m.handleSessionPresetAction("r")
 	case "edit":
 		return m, m.handleSessionPresetAction("e")
 	case "delete":
@@ -340,6 +362,8 @@ func (m *Model) viewSessionPresets() string {
 		first, last := sessionPresetWindow(len(p.rows), p.cursor, room)
 		if p.loading {
 			add("Loading presets…", "", 0)
+		} else if p.refreshFailed {
+			add("Catalog unavailable; refresh to load.", "", 0)
 		} else if len(p.rows) == 0 {
 			add("No presets. Create named instructions here.", "", 0)
 		}
@@ -353,6 +377,10 @@ func (m *Model) viewSessionPresets() string {
 			add(fmt.Sprintf("↓ %d more", len(p.rows)-last), "", 0)
 		}
 		add("[ New ]", "new", 0)
+		if p.refreshFailed && !p.loading {
+			add("[ Refresh ]", "refresh", 0)
+			hint = [][2]string{{"n", "new"}, {"r", "refresh"}, {"esc", "back"}}
+		}
 		if len(p.rows) > 0 && !p.loading {
 			add("[ Edit ]", "edit", 0)
 			add("[ Delete ]", "delete", 0)
@@ -502,14 +530,24 @@ func (in sessionPresetInstructions) UpdateLiteral(msg tea.KeyMsg) (sessionPreset
 	}
 	if msg.Type == tea.KeyRunes {
 		raw := string(msg.Runes)
+		if len(in.raw)+len(raw) > 64*1024 {
+			return in, nil, errors.New("Insertion refused: instructions must fit in 64 KiB")
+		}
 		if reason := instructionEditorLimit(raw); reason != "" {
 			return in, nil, errors.New("Paste refused: " + reason)
 		}
 		if strings.Count(in.raw, "\n")+strings.Count(raw, "\n") >= 10000 {
 			return in, nil, errors.New("Paste refused: at most 10,000 logical lines in the editor")
 		}
-		msg.Runes = []rune(encodePresetInstructions(raw))
+		encoded := []rune(encodePresetInstructions(raw))
+		if in.CharLimit > 0 && in.Length()+len(encoded) > in.CharLimit {
+			return in, nil, errors.New("Insertion refused: text cannot fit in the editor in full")
+		}
+		msg.Runes = encoded
 		msg.Paste = true
+	}
+	if msg.Type == tea.KeyEnter && len(in.raw) >= 64*1024 {
+		return in, nil, errors.New("Insertion refused: instructions must fit in 64 KiB")
 	}
 	if msg.Type == tea.KeyEnter && strings.Count(in.raw, "\n") >= 9999 {
 		return in, nil, errors.New("At most 10,000 logical lines in the editor")

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/launch"
@@ -660,5 +661,187 @@ func TestSessionPresetsEditorLiteralMarkersDeleteAsCharacters(t *testing.T) {
 		if got := m.presets.instructions.Value(); got != want {
 			t.Fatalf("backspace=%q want %q", got, want)
 		}
+	}
+}
+
+func TestSessionPresetsOversizedInsertionRejectedWithoutTextLoss(t *testing.T) {
+	cases := []struct {
+		name, before, input string
+		accept              bool
+	}{
+		{"ascii_overflow", "before", strings.Repeat("a", 64*1024), false},
+		{"ascii_boundary", "before", strings.Repeat("a", 64*1024-len("before")), true},
+		{"ascii_boundary_plus_one", "before", strings.Repeat("a", 64*1024-len("before")+1), false},
+		{"multibyte_overflow", "before", strings.Repeat("界", (64*1024-len("before"))/3+1), false},
+		{"multibyte_boundary", "before", strings.Repeat("界", (64*1024-len("before"))/3) + "a", true},
+		{"marker_overflow", "before", strings.Repeat("⇥", (64*1024-len("before"))/3+1), false},
+		{"marker_boundary", "before", strings.Repeat("⇥", (64*1024-len("before"))/3) + "a", true},
+		{"tab_boundary", "before", strings.Repeat("\t", 64*1024-len("before")), true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := buildModel(t)
+			m.openSettings()
+			runPresetCommands(m, m.openSessionPresets())
+			m.handleSessionPresetAction("n")
+			m.presets.name.SetValue("Bounded")
+			m.presets.instructions.SetValue(tc.before)
+			m.presets.focus = 1
+			beforeDisplay := m.presets.instructions.Model.Value()
+			m.handleSessionPresetsKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(tc.input), Paste: true})
+			want := tc.before
+			if tc.accept {
+				want += tc.input
+				if m.errBar.text != "" {
+					t.Fatalf("valid insertion refused: %s", m.errBar.text)
+				}
+			} else {
+				if m.errBar.text == "" || m.presets.instructions.Model.Value() != beforeDisplay {
+					t.Fatal("oversize input silently truncated or changed display buffer")
+				}
+			}
+			if got := m.presets.instructions.Value(); got != want {
+				t.Fatalf("instruction bytes changed: got length %d want %d", len(got), len(want))
+			}
+			_, cmd := m.handleSessionPresetsKey(namedKey(tea.KeyCtrlS))
+			runPresetCommands(m, cmd)
+			rows, err := m.store.SessionPresets()
+			if err != nil || len(rows) != 1 || rows[0].Instructions != want {
+				t.Fatal("saved a changed/truncated instruction payload")
+			}
+		})
+	}
+}
+
+func TestSessionPresetsOversizedNewlineRejected(t *testing.T) {
+	m := buildModel(t)
+	m.openSettings()
+	runPresetCommands(m, m.openSessionPresets())
+	m.handleSessionPresetAction("n")
+	before := strings.Repeat("a", 64*1024)
+	m.presets.instructions.SetValue(before)
+	m.presets.focus = 1
+	m.handleSessionPresetsKey(namedKey(tea.KeyEnter))
+	if m.errBar.text == "" || m.presets.instructions.Value() != before || m.presets.instructions.Model.Value() != before {
+		t.Fatal("newline exceeded byte boundary")
+	}
+}
+
+func TestSessionPresetsCancelPendingClipboardSuccessorCanPasteAndSave(t *testing.T) {
+	oldReader := readSessionPresetClipboard
+	t.Cleanup(func() { readSessionPresetClipboard = oldReader })
+	readSessionPresetClipboard = func() (string, error) { return " stale", nil }
+	m := buildModel(t)
+	m.openSettings()
+	runPresetCommands(m, m.openSessionPresets())
+	m.handleSessionPresetAction("n")
+	m.presets.focus = 1
+	_, late := m.handleSessionPresetsKey(namedKey(tea.KeyCtrlV))
+	lateMsg := late()
+	_, cancel := m.handleSessionPresetsKey(namedKey(tea.KeyEsc))
+	runPresetCommands(m, cancel)
+	m.handleSessionPresetAction("n")
+	m.presets.name.SetValue("Successor")
+	m.presets.instructions.SetValue("new editor")
+	m.presets.focus = 1
+	m.Update(lateMsg)
+	if m.presets.instructions.Value() != "new editor" {
+		t.Fatal("stale clipboard result entered successor")
+	}
+	readSessionPresetClipboard = func() (string, error) { return " new paste", nil }
+	_, paste := m.handleSessionPresetsKey(namedKey(tea.KeyCtrlV))
+	if paste == nil {
+		t.Fatal("successor cannot paste after cancelled read")
+	}
+	runPresetCommands(m, paste)
+	_, save := m.handleSessionPresetsKey(namedKey(tea.KeyCtrlS))
+	if save == nil {
+		t.Fatalf("successor cannot save: %s", m.errBar.text)
+	}
+	runPresetCommands(m, save)
+	rows, err := m.store.SessionPresets()
+	if err != nil || len(rows) != 1 || rows[0].Instructions != "new editor new paste" {
+		t.Fatal("successor clipboard/save did not complete")
+	}
+}
+
+func TestSessionPresetsCommittedMutationRefreshFailureRecovers(t *testing.T) {
+	m := buildModel(t)
+	m.store.SaveSessionPreset("", store.SessionPreset{Name: "Before", Instructions: "literal"})
+	m.openSettings()
+	runPresetCommands(m, m.openSessionPresets())
+	m.handleSessionPresetAction("e")
+	m.presets.name.SetValue("After")
+	_, save := m.handleSessionPresetsKey(namedKey(tea.KeyCtrlS))
+	msg := save().(sessionPresetsLoadedMsg)
+	// The real write succeeded. Simulate only the catalog-read response failure.
+	msg.rows = nil
+	msg.err = errors.New("catalog read unavailable")
+	m.Update(msg)
+	rows, err := m.store.SessionPresets()
+	if err != nil || len(rows) != 1 || rows[0].Name != "After" {
+		t.Fatal("real rename did not commit")
+	}
+	if m.presets.editing || m.presets.busy || m.errBar.text == "" || !strings.Contains(m.viewSessionPresets(), "[ Refresh ]") {
+		t.Fatal("committed rename remained in write-error editor with no recovery")
+	}
+	clickPresetAction(t, m, "refresh")
+	if len(m.presets.rows) != 1 || m.presets.rows[0].Name != "After" || m.errBar.text != "" {
+		t.Fatal("refresh did not recover committed rename")
+	}
+	m.handleSessionPresetAction("d")
+	_, del := m.handleSessionPresetsKey(namedKey(tea.KeyEnter))
+	msg = del().(sessionPresetsLoadedMsg)
+	msg.rows = nil
+	msg.err = errors.New("catalog read unavailable")
+	m.Update(msg)
+	if m.presets.confirm || !strings.Contains(m.viewSessionPresets(), "[ Refresh ]") {
+		t.Fatal("committed deletion remained in confirmation")
+	}
+	clickPresetAction(t, m, "refresh")
+	if len(m.presets.rows) != 0 {
+		t.Fatal("refresh retained deleted entry")
+	}
+}
+
+func TestSessionPresetsLargeStoredEscapesOpenAndSaveWithoutTruncation(t *testing.T) {
+	for _, tc := range []struct{ name, raw string }{
+		{"tabs", strings.Repeat("\t", 64*1024-4) + "abcd"},
+		{"returns", strings.Repeat("\r", 64*1024-4) + "abcd"},
+		{"markers", strings.Repeat("⇥␍␛", 7281) + "abcd"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := buildModel(t)
+			if err := m.store.SaveSessionPreset("", store.SessionPreset{Name: "Existing", Instructions: tc.raw}); err != nil {
+				t.Fatal(err)
+			}
+			m.openSettings()
+			runPresetCommands(m, m.openSessionPresets())
+			m.handleSessionPresetAction("e")
+			decoded, err := decodePresetInstructions(m.presets.instructions.Model.Value())
+			if err != nil || decoded != tc.raw {
+				t.Fatal("opening stored literal text truncated the editable buffer")
+			}
+			_, noop := m.handleSessionPresetsKey(namedKey(tea.KeyCtrlS))
+			runPresetCommands(m, noop)
+			rows, err := m.store.SessionPresets()
+			if err != nil || len(rows) != 1 || rows[0].Instructions != tc.raw {
+				t.Fatal("no-op save changed existing escape bytes")
+			}
+			m.handleSessionPresetAction("e")
+			m.presets.name.SetValue("Renamed")
+			_, rename := m.handleSessionPresetsKey(namedKey(tea.KeyCtrlS))
+			runPresetCommands(m, rename)
+			rows, err = m.store.SessionPresets()
+			if err != nil || len(rows) != 1 || rows[0].Name != "Renamed" || rows[0].Instructions != tc.raw {
+				t.Fatal("name-only save changed escape bytes")
+			}
+			m.handleSessionPresetAction("e")
+			m.presets.focus = 1
+			m.handleSessionPresetsKey(namedKey(tea.KeyBackspace))
+			if m.presets.instructions.Value() != strings.TrimSuffix(tc.raw, "d") {
+				t.Fatal("first edit decoded a truncated stored buffer")
+			}
+		})
 	}
 }

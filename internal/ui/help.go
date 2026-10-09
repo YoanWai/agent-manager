@@ -215,6 +215,7 @@ func helpSections(session, list keybind.Table, arrowStep bool) []helpSection {
 			{"↑↓ / click", "select a preset; Edit opens its name and instructions"},
 			{"↵ / e", "edit the selected preset"},
 			{"d", "delete with confirmation"},
+			{"r", "retry a failed preset catalog refresh"},
 			{"tab", "in the editor, move between fields, Save and Cancel"},
 			{"ctrl+s", "save; dispatched saves and deletes must finish"},
 			{"ctrl+v", "in instructions, paste literal text"},
