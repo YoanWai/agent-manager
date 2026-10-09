@@ -230,7 +230,10 @@ func TestSettingsDocsRowOpensDocs(t *testing.T) {
 
 	opened = ""
 	m.width, m.height = 120, 60
-	m.View()
+	frame := m.View()
+	if !strings.Contains(frame, hintCap("↵", "open the docs")) {
+		t.Fatal("the docs shortcut should wear the footer badge")
+	}
 	_, cmd = m.handleSettingsClick(m.cardLeft+4, m.cardTop+2+settingsFieldDocs)
 	m.applyCmd(t, cmd)
 	if opened != docsURL {

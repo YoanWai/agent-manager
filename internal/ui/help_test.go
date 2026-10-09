@@ -242,8 +242,8 @@ func TestHelpOpensDocs(t *testing.T) {
 	t.Cleanup(func() { openBrowser = defaultOpenBrowser })
 
 	frame := m.View()
-	if !strings.Contains(ansi.Strip(frame), "o docs") {
-		t.Fatal("the key map footer should offer the docs")
+	if !strings.Contains(frame, hintCap("o", "docs")) {
+		t.Fatal("the docs shortcut should wear the footer badge")
 	}
 	_, cmd := m.handleHelpKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")})
 	m.applyCmd(t, cmd)

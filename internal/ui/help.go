@@ -473,7 +473,7 @@ func (m *Model) helpHint() [][2]string {
 }
 
 func (m *Model) placeDocsHit(frame string) {
-	label := ansi.Strip(keyCap("o", "docs"))
+	label := ansi.Strip(hintCap("o", "docs"))
 	for i, line := range strings.Split(frame, "\n") {
 		plain := ansi.Strip(line)
 		start := strings.Index(plain, label)
