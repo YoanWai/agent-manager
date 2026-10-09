@@ -1491,7 +1491,7 @@ func TestWheelSwallowedInResizeMode(t *testing.T) {
 func messagesCell(t *testing.T, m *Model) (x, y int) {
 	t.Helper()
 	for row, line := range strings.Split(ansi.Strip(m.View()), "\n") {
-		if col := strings.Index(line, "messages"); col >= 0 {
+		if col := strings.Index(line, "unread"); col >= 0 {
 			return ansi.StringWidth(line[:col]), row
 		}
 	}
@@ -1535,7 +1535,7 @@ func TestMessagesLegendOpensNoticesByMouseAndKey(t *testing.T) {
 					m.dismissNotice(n.id)
 				}
 				m.View()
-				if footer := ansi.Strip(m.viewFooter()); strings.Contains(footer, "messages") {
+				if footer := ansi.Strip(m.viewFooter()); strings.Contains(footer, "unread") {
 					t.Fatalf("with nothing unread the legend must give its room back:\n%s", footer)
 				}
 				if m = leftPress(m, x, y); m.mode != modeList {

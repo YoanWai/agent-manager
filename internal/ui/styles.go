@@ -58,6 +58,7 @@ var (
 
 	legendTitleStyle lipgloss.Style
 	legendBadgeStyle lipgloss.Style
+	legendAlertStyle lipgloss.Style
 	legendLabelStyle lipgloss.Style
 	legendLeadKey    lipgloss.Style
 	legendLeadLabel  lipgloss.Style
@@ -100,6 +101,8 @@ func rebuildStyles() {
 	legendTitleStyle = lipgloss.NewStyle().Foreground(colorSubtle).Bold(true)
 	legendBadgeStyle = lipgloss.NewStyle().
 		Foreground(colorBg).Background(colorAccent).Bold(true).Padding(0, 1)
+	legendAlertStyle = lipgloss.NewStyle().
+		Foreground(colorBg).Background(colorWorking).Bold(true).Padding(0, 1)
 	legendLabelStyle = lipgloss.NewStyle().Foreground(colorText)
 	lead := lipgloss.Color(mix(current.Bg, current.Accent, 0.28))
 	legendLeadKey = lipgloss.NewStyle().Foreground(colorAccent).Background(lead).Bold(true).PaddingLeft(1)
@@ -287,6 +290,10 @@ func keyCap(key, label string) string {
 
 func keyCapLead(key, label string) string {
 	return legendLeadKey.Render(key) + legendLeadLabel.Render(label)
+}
+
+func keyCapAlert(key, label string) string {
+	return legendAlertStyle.Render(key + " " + label)
 }
 
 // keyCapQuiet is keyCap for a secondary tier: the label drops to the dim
