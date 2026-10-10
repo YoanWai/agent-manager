@@ -9,6 +9,7 @@ import (
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type helpLayout struct {
@@ -34,6 +35,8 @@ func (m *Model) handleHelpKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.help.state.Update(msg, viewport) {
 	case uihelp.Quit:
 		return m.requestQuit()
+	case uihelp.OpenDocs:
+		return m, openLink(docsURL)
 	case uihelp.Close:
 		m.mode = m.help.returnMode
 		m.help.returnMode = modeList
@@ -96,11 +99,33 @@ func (m *Model) viewHelp() string {
 		layout.content.Offset,
 		subtleStyle,
 	)...)
-	return renderDialog(
+	frame := renderDialog(
 		layout.dialog,
 		layout.width,
 		layout.content.Title,
 		strings.Join(lines, "\n"),
 		layout.content.Hints,
 	)
+	m.placeDocsHit(frame)
+	return frame
+}
+
+func (m *Model) placeDocsHit(frame string) {
+	m.help.docsHit = noticeHit{}
+	// A search for these words paints an earlier copy, and typing hides the key.
+	if m.help.state.Searching() {
+		return
+	}
+	label := ansi.Strip(hintCap("o", "docs"))
+	lines := strings.Split(frame, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		plain := ansi.Strip(lines[i])
+		start := strings.Index(plain, label)
+		if start < 0 {
+			continue
+		}
+		x := ansi.StringWidth(plain[:start])
+		m.help.docsHit = noticeHit{x0: x, x1: x + ansi.StringWidth(label), y0: i, y1: i + 1, ok: true}
+		return
+	}
 }

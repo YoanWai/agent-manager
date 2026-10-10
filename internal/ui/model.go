@@ -125,6 +125,8 @@ type environment struct {
 type helpFeature struct {
 	state      uihelp.State
 	returnMode mode
+	// docsHit follows the docs key in the painted footer, for clicks.
+	docsHit noticeHit
 }
 
 func NewWithInboxOwner(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, version string, owner sessioncmd.InboxMaintenance) (*Model, error) {

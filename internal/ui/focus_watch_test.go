@@ -1,9 +1,11 @@
 package ui
 
 import (
+	"fmt"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -79,6 +81,101 @@ func TestFocusWatchForwardDistinguishesUnavailableFromAdmitted(t *testing.T) {
 	}
 }
 
+// The pane writes an invisible update before each echo, as Codex, Muse and
+// Oh My Pi do.
+func TestFocusWatchEchoesAQuietPaneAtOnce(t *testing.T) {
+	driver, id, arrivals, _ := startFocusArrivalWatch(t)
+	echo := `bash -c 'echo $((6*7))ready; while IFS= read -rsn1 key; do printf "\033[?25h"; sleep 0.01; printf "<%s>" "$key"; done'`
+	if err := driver.SendText(id, echo); err != nil {
+		t.Fatalf("SendText: %v", err)
+	}
+
+	waitFocusArrival(t, arrivals, "42ready")
+
+	// Use the fastest attempt to tolerate scheduler delays on busy hosts.
+	fastest := time.Hour
+	for attempt := range 5 {
+		time.Sleep(2 * focusFrameBudget)
+		for len(arrivals) > 0 {
+			<-arrivals
+		}
+		key := string(rune('a' + attempt))
+		token := "<" + key + ">"
+		if err := driver.SendRaw("send-keys -t " + tmux.PaneTarget(id) + " -l " + key); err != nil {
+			t.Fatalf("send-keys: %v", err)
+		}
+		sent := time.Now()
+		got := waitFocusArrival(t, arrivals, token)
+		fastest = min(fastest, got.at.Sub(sent))
+	}
+	if fastest >= focusFrameBudget/2 {
+		t.Fatalf("fastest echo took %v, want under %v", fastest, focusFrameBudget/2)
+	}
+}
+
+func TestFocusWatchSpacesAStreamByTheFrameBudget(t *testing.T) {
+	driver, id, sends, _ := startFocusArrivalWatch(t)
+
+	waitFocusArrival(t, sends, "")
+
+	if err := driver.SendText(id, "for i in $(seq 1 300); do echo line$i; sleep 0.005; done"); err != nil {
+		t.Fatalf("SendText: %v", err)
+	}
+	waitFocusArrival(t, sends, "line1")
+	var changes []time.Time
+	shown := ""
+	collect := time.After(time.Second)
+	for collecting := true; collecting; {
+		select {
+		case got := <-sends:
+			if got.preview != shown {
+				shown = got.preview
+				changes = append(changes, got.at)
+			}
+		case <-collect:
+			collecting = false
+		}
+	}
+	if len(changes) < 5 {
+		t.Fatalf("stream changed the preview %d times in a second, want at least 5", len(changes))
+	}
+	for index := 1; index < len(changes); index++ {
+		if gap := changes[index].Sub(changes[index-1]); gap < focusFrameBudget {
+			t.Fatalf("previews %d and %d came %v apart, want at least %v", index-1, index, gap, focusFrameBudget)
+		}
+	}
+}
+
+func TestFocusWatchSpacesUnchangedWritesByADisplayFrame(t *testing.T) {
+	driver, id, sends, _ := startFocusArrivalWatch(t)
+
+	waitFocusArrival(t, sends, "")
+
+	spam := `clear; echo $((6*7))spam; bash -c 'for i in $(seq 1 1500); do printf "\033[?25h"; sleep 0.001; done'`
+	if err := driver.SendText(id, spam); err != nil {
+		t.Fatalf("SendText: %v", err)
+	}
+	waitFocusArrival(t, sends, "42spam")
+	var stamps []time.Time
+	collect := time.After(time.Second)
+	for collecting := true; collecting; {
+		select {
+		case got := <-sends:
+			stamps = append(stamps, got.at)
+		case <-collect:
+			collecting = false
+		}
+	}
+	if len(stamps) < 5 {
+		t.Fatalf("writing pane produced %d previews in a second, want at least 5", len(stamps))
+	}
+	for index := 1; index < len(stamps); index++ {
+		if gap := stamps[index].Sub(stamps[index-1]); gap < focusCaptureGap {
+			t.Fatalf("previews %d and %d came %v apart, want at least %v", index-1, index, gap, focusCaptureGap)
+		}
+	}
+}
+
 // Refocusing another session stops the old watcher and serves the new one.
 func TestFocusWatchRefocus(t *testing.T) {
 	driver := requireFocusDriver(t)
@@ -130,6 +227,151 @@ func waitFocusPreview(t *testing.T, msgs <-chan tea.Msg, id, contains string) {
 			}
 		case <-deadline:
 			t.Fatalf("no focusPreviewMsg containing %q", contains)
+		}
+	}
+}
+
+type focusArrival struct {
+	at      time.Time
+	preview string
+}
+
+func startFocusArrivalWatch(t *testing.T) (*tmux.Driver, string, <-chan focusArrival, *focusWatch) {
+	t.Helper()
+	driver := requireFocusDriver(t)
+	id := "timing" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", "", nil, 80, 24); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+
+	arrivals := make(chan focusArrival, 1024)
+	watch := newFocusWatch(driver, func(msg tea.Msg) {
+		if preview, ok := msg.(focusPreviewMsg); ok && preview.sessID == id {
+			arrivals <- focusArrival{time.Now(), preview.preview}
+		}
+	})
+	t.Cleanup(watch.Close)
+	watch.setFocus(id)
+	return driver, id, arrivals, watch
+}
+
+func TestFocusWatchEchoesRepeatedInputBeforeTheFrameBudget(t *testing.T) {
+	for _, stream := range []bool{false, true} {
+		t.Run(fmt.Sprintf("stream=%v", stream), func(t *testing.T) {
+			driver, id, arrivals, watch := startFocusArrivalWatch(t)
+			background := ""
+			if stream {
+				background = `while :; do printf "\033[s\033[1;1H%05d\033[u" "$((++i))"; sleep 0.004; done & `
+			}
+			echo := `bash -c '` + background + `echo $((6*7))ready; while IFS= read -rsn1 key; do printf "\033[?25h"; sleep 0.025; printf "<%s>" "$key"; done'`
+			if err := driver.SendText(id, echo); err != nil {
+				t.Fatal(err)
+			}
+			waitFocusArrival(t, arrivals, "42ready")
+			var echoes []time.Duration
+			for attempt := range 12 {
+				key := string(rune('a' + attempt))
+				watch.inputSent(id)
+				if available, err := watch.forward("send-keys -t " + tmux.PaneTarget(id) + " -l " + key); !available || err != nil {
+					t.Fatal("control client did not accept input")
+				}
+				sent := time.Now()
+				got := waitFocusArrival(t, arrivals, "<"+key+">")
+				echoes = append(echoes, got.at.Sub(sent))
+			}
+			slices.Sort(echoes)
+			if median := echoes[len(echoes)/2]; median >= 3*focusFrameBudget/4 {
+				t.Fatalf("median echo took %v, want under %v", median, 3*focusFrameBudget/4)
+			}
+		})
+	}
+}
+
+func TestFocusWatchWaitsForPaneOutputAfterInput(t *testing.T) {
+	driver, id, arrivals, watch := startFocusArrivalWatch(t)
+	if err := driver.SendText(id, `stty -echo; echo $((6*7))ready; exec sleep 10`); err != nil {
+		t.Fatal(err)
+	}
+	waitFocusArrival(t, arrivals, "42ready")
+	time.Sleep(2 * focusFrameBudget)
+	for len(arrivals) > 0 {
+		<-arrivals
+	}
+	if available, err := watch.forward("send-keys -t " + tmux.PaneTarget(id) + " -l a"); !available || err != nil {
+		t.Fatal("control client did not accept input")
+	}
+	watch.inputSent(id)
+	select {
+	case got := <-arrivals:
+		t.Fatalf("input without pane output produced a preview: %q", got.preview)
+	case <-time.After(2 * focusFrameBudget):
+	}
+}
+
+func TestFocusWatchBoundsInputCapturesAndRestoresTheStreamBudget(t *testing.T) {
+	driver, id, arrivals, watch := startFocusArrivalWatch(t)
+	if err := driver.SendText(id, "for i in $(seq 1 800); do echo line$i; sleep 0.004; done"); err != nil {
+		t.Fatal(err)
+	}
+	waitFocusArrival(t, arrivals, "line1")
+	inputDone := make(chan struct{})
+	go func() {
+		defer close(inputDone)
+		ticker := time.NewTicker(time.Millisecond)
+		defer ticker.Stop()
+		until := time.After(500 * time.Millisecond)
+		for {
+			select {
+			case <-ticker.C:
+				watch.inputSent(id)
+			case <-until:
+				return
+			}
+		}
+	}()
+	var stamps []time.Time
+	for collecting := true; collecting; {
+		select {
+		case got := <-arrivals:
+			stamps = append(stamps, got.at)
+		case <-inputDone:
+			collecting = false
+		}
+	}
+	if len(stamps) < 10 {
+		t.Fatalf("input produced %d previews, want at least 10", len(stamps))
+	}
+	for i := 1; i < len(stamps); i++ {
+		if gap := stamps[i].Sub(stamps[i-1]); gap < focusCaptureGap {
+			t.Fatalf("input captures came %v apart, want at least %v", gap, focusCaptureGap)
+		}
+	}
+	time.Sleep(3 * focusFrameBudget)
+	for len(arrivals) > 0 {
+		<-arrivals
+	}
+	previous := waitFocusArrival(t, arrivals, "line")
+	for range 5 {
+		got := waitFocusArrival(t, arrivals, "line")
+		if gap := got.at.Sub(previous.at); gap < focusFrameBudget {
+			t.Fatalf("stream captures after input came %v apart, want at least %v", gap, focusFrameBudget)
+		}
+		previous = got
+	}
+}
+
+func waitFocusArrival(t *testing.T, arrivals <-chan focusArrival, contains string) focusArrival {
+	t.Helper()
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case got := <-arrivals:
+			if strings.Contains(got.preview, contains) {
+				return got
+			}
+		case <-deadline:
+			t.Fatalf("no preview containing %q", contains)
 		}
 	}
 }

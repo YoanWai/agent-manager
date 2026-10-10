@@ -221,7 +221,7 @@ func (m *Model) caretRowEndsAPromptHead(tool string, rows []string, y int) bool 
 // view, so the list swallows the wheel instead.
 func (m *Model) leaveFocus() tea.Cmd {
 	if report := m.focus.pane.Leave(); report != "" {
-		m.sendFocusReport(report)
+		m.sendFocusReport(report, false)
 	}
 	return m.leaveFocusMode()
 }
@@ -261,7 +261,7 @@ func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch result.Action {
 	case uifocus.LeaveFocus:
 		if result.SendReport != "" {
-			m.sendFocusReport(result.SendReport)
+			m.sendFocusReport(result.SendReport, false)
 		}
 		return m, m.leaveFocusMode()
 	case uifocus.ScrollPane:
@@ -283,14 +283,14 @@ func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		resume = m.focusRegionRequestCmd(*result.Region)
 	}
 	if msg.Paste {
-		m.dispatchInput(inputRequest{kind: inputPaste, session: sess, text: string(msg.Runes)})
+		m.dispatchInput(inputRequest{kind: inputPaste, session: sess, text: string(msg.Runes), echo: true})
 		return m, tea.Batch(resume, m.nextEffectCmd())
 	}
 	command, ok := focusKeyCommand(tmux.PaneTarget(sess.ID), msg)
 	if !ok {
 		return m, resume
 	}
-	m.dispatchInput(inputRequest{kind: inputKeys, session: sess, command: command, submit: result.Submit})
+	m.dispatchInput(inputRequest{kind: inputKeys, session: sess, command: command, submit: result.Submit, echo: true})
 
 	return m, tea.Batch(resume, m.nextEffectCmd())
 }

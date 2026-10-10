@@ -75,8 +75,11 @@ type MouseResult struct {
 	Leave      bool
 	OpenURL    string
 	SendReport string
-	Copy       *CopyRequest
-	Region     *RegionRequest
+	// Input marks a report that is the user's own input to the pane, so its
+	// echo is captured promptly; motion and the wheel are not.
+	Input  bool
+	Copy   *CopyRequest
+	Region *RegionRequest
 }
 
 func (m *Model) Mouse(msg tea.MouseMsg, ctx MouseContext) MouseResult {
@@ -218,7 +221,7 @@ func (m *Model) forwardMouse(msg tea.MouseMsg) MouseResult {
 	if !ok {
 		return MouseResult{}
 	}
-	return MouseResult{SendReport: report}
+	return MouseResult{SendReport: report, Input: msg.Action != tea.MouseActionMotion}
 }
 
 func (m *Model) forwardedCell(msg tea.MouseMsg) (row, col int, ok bool) {

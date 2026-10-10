@@ -7,6 +7,6 @@
   │   ⚠ refresh failed                                   │
   │                                                      │
   ├──────────────────────────────────────────────────────┤
-  │   ↑↓/jk scroll  / search  esc clear search           │
-  │   q close                                            │
+  │   ↑↓/jk scroll  / search   o docs                    │
+  │   esc clear search  q close                          │
   ╰──────────────────────────────────────────────────────╯

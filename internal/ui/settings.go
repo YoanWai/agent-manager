@@ -591,6 +591,21 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// handleSettingsClick opens the docs from a click on their row; the body
+// starts under the card's title row and the blank row after it.
+func (m *Model) handleSettingsClick(x, y int) (tea.Model, tea.Cmd) {
+	d := &m.settings.dialog
+	if d.cliPicker || d.keyPicker || d.editor.typing {
+		return m, nil
+	}
+	line := y - m.layout.cardTop - 2
+	if line != settingsFieldDocs || x < m.layout.cardLeft || x >= m.layout.cardRight {
+		return m, nil
+	}
+	d.field = settingsFieldDocs
+	return m, openLink(docsURL)
+}
+
 func (s *settingsFeature) handleKey(h settingsHost, msg tea.KeyMsg) (tea.Cmd, settingsExit) {
 	if s.dialog.cliPicker {
 		return s.handleCLIPickerKey(h, msg), settingsStay
@@ -609,6 +624,8 @@ func (s *settingsFeature) handleKey(h settingsHost, msg tea.KeyMsg) (tea.Cmd, se
 		return s.cycleSetting(h, 1), settingsStay
 	case "enter":
 		switch s.dialog.field {
+		case settingsFieldDocs:
+			return openLink(docsURL), settingsStay
 		case settingsFieldBugReport:
 			return nil, settingsReportBug
 		case settingsFieldFeatureRequest:

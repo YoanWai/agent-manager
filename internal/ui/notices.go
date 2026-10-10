@@ -35,6 +35,7 @@ const (
 	whatsNewFromSetting     = "whats_new_from_version"
 
 	repoURL = "https://github.com/YoanWai/agent-manager"
+	docsURL = "https://agent-manager.dev/docs/"
 )
 
 type notice struct {
@@ -325,21 +326,21 @@ func (h noticeHit) contains(x, y int) bool {
 	return h.ok && x >= h.x0 && x < h.x1 && y >= h.y0 && y < h.y1
 }
 
-func (p *noticesPanel) placeHit(h noticesHost, binding, footer string, firstRow int) {
-	if binding == "" {
+func (p *noticesPanel) placeHit(h noticesHost, glyph, label, footer string, firstRow int) {
+	if glyph == "" {
 		return
 	}
-	label := ansi.Strip(keyCapQuiet(binding, "messages"))
+	painted := ansi.Strip(keyCapAlert(glyph, label))
 	for i, line := range splitLines(footer) {
 		line = ansi.Strip(line)
-		start := strings.Index(line, label)
+		start := strings.Index(line, painted)
 		if start < 0 {
 			continue
 		}
 		x := ansi.StringWidth(line[:start])
 		y := firstRow + i
-		if width, height := h.size(); x+ansi.StringWidth(label) <= width && y < height {
-			p.noticeHit = noticeHit{x0: x, x1: x + ansi.StringWidth(label), y0: y, y1: y + 1, ok: true}
+		if width, height := h.size(); x+ansi.StringWidth(painted) <= width && y < height {
+			p.noticeHit = noticeHit{x0: x, x1: x + ansi.StringWidth(painted), y0: y, y1: y + 1, ok: true}
 		}
 		return
 	}

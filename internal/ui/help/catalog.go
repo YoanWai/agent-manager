@@ -154,7 +154,7 @@ func helpSections(ctx Context) []helpSection {
 		})},
 		reviewHelpSection(list),
 		{title: titledWith("messages", list, keybind.Messages), rows: [][2]string{
-			{"click messages", "in the key legend, shown while any remain"},
+			{"click unread", "in the key legend, shown while any remain"},
 			{"↑↓", "pick a message"},
 			{"pgup / pgdn", "scroll its body"},
 			{"wheel", "scroll its body"},
@@ -168,7 +168,7 @@ func helpSections(ctx Context) []helpSection {
 		{title: titledWith("settings", list, keybind.Settings), rows: [][2]string{
 			{"↑↓", "pick a field"},
 			{"←→", "change the value"},
-			{"↵", "run the field's action (keybindings, CLIs, report, update)"},
+			{"↵", "run the field's action (docs, keybindings, CLIs, report, update)"},
 			{"esc", "save and close"},
 		}},
 		{title: titledWith("dialogs", list, keybind.NewSession, keybind.NewGroup, keybind.Rename, keybind.Fork, keybind.Move), rows: [][2]string{

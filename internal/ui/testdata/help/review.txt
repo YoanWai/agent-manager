@@ -23,5 +23,5 @@
               │   esc / q          close the review                                                      │
               │                                                                                          │
               ├──────────────────────────────────────────────────────────────────────────────────────────┤
-              │   ↑↓/jk scroll  pgup/pgdn page  g/G top/bottom  / search  esc/q close                    │
+              │   ↑↓/jk scroll  pgup/pgdn page  g/G top/bottom  / search   o docs   esc/q close          │
               ╰──────────────────────────────────────────────────────────────────────────────────────────╯

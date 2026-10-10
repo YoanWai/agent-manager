@@ -22,11 +22,12 @@ const (
 // legendSection is one tier: its title, its bindings, and whether it is a
 // secondary tier that recedes behind the tier above it.
 type legendSection struct {
-	title string
-	leads [][2]string
-	hint  string
-	pairs [][2]string
-	quiet bool
+	title  string
+	leads  [][2]string
+	alerts [][2]string
+	hint   string
+	pairs  [][2]string
+	quiet  bool
 }
 
 func (s legendSection) parts() []string {
@@ -34,6 +35,11 @@ func (s legendSection) parts() []string {
 	for _, lead := range s.leads {
 		if lead[0] != "" {
 			parts = append(parts, keyCapLead(lead[0], lead[1]))
+		}
+	}
+	for _, alert := range s.alerts {
+		if alert[0] != "" {
+			parts = append(parts, keyCapAlert(alert[0], alert[1]))
 		}
 	}
 	if s.hint != "" {
@@ -121,7 +127,7 @@ func legendInline(pairs [][2]string, width int) string {
 	var parts []string
 	lineWidth := 0
 	for _, pair := range pairs {
-		part := keyCap(pair[0], pair[1])
+		part := hintCap(pair[0], pair[1])
 		partWidth := ansi.StringWidth(part)
 		if len(parts) > 0 && lineWidth+legendGap+partWidth > width {
 			lines = append(lines, strings.Join(parts, gap))

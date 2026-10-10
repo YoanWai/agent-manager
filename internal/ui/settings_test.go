@@ -210,6 +210,41 @@ func TestSettingsShowsVersion(t *testing.T) {
 	}
 }
 
+func TestSettingsDocsRowOpensDocs(t *testing.T) {
+	m := footModel(t)
+	m.services.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
+	m.openSettings()
+
+	var opened string
+	openBrowser = func(url string) error {
+		opened = url
+		return nil
+	}
+	t.Cleanup(func() { openBrowser = defaultOpenBrowser })
+
+	m.settings.dialog.field = settingsFieldDocs
+	_, cmd := m.handleSettingsKey(key("enter"))
+	m.applyCmd(t, cmd)
+	if opened != docsURL {
+		t.Fatalf("enter should open the docs, got %q", opened)
+	}
+	if m.mode != modeSettings {
+		t.Fatal("the docs row must not close settings")
+	}
+
+	opened = ""
+	m.layout.width, m.layout.height = 120, 60
+	frame := preparedView(m)
+	if !strings.Contains(frame, hintCap("↵", "open the docs")) {
+		t.Fatal("the docs shortcut should wear the footer badge")
+	}
+	_, cmd = m.handleSettingsClick(m.layout.cardLeft+4, m.layout.cardTop+2+settingsFieldDocs)
+	m.applyCmd(t, cmd)
+	if opened != docsURL {
+		t.Fatalf("click should open the docs, got %q", opened)
+	}
+}
+
 func TestSettingsBugReportRowOpensIssue(t *testing.T) {
 	m := footModel(t)
 	m.services.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}

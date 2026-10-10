@@ -180,11 +180,12 @@ func (s State) hints() [][2]string {
 	if s.searching {
 		return [][2]string{{"type", "search"}, {"↵", "done"}, {"↑↓", "scroll"}, {"esc", "clear"}}
 	}
+	docs := [2]string{"o", "docs"}
 	if s.query != "" {
-		return [][2]string{{"↑↓/jk", "scroll"}, {"/", "search"}, {"esc", "clear search"}, {"q", "close"}}
+		return [][2]string{{"↑↓/jk", "scroll"}, {"/", "search"}, docs, {"esc", "clear search"}, {"q", "close"}}
 	}
 	return [][2]string{
 		{"↑↓/jk", "scroll"}, {"pgup/pgdn", "page"}, {"g/G", "top/bottom"},
-		{"/", "search"}, {"esc/q", "close"},
+		{"/", "search"}, docs, {"esc/q", "close"},
 	}
 }
