@@ -422,6 +422,8 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.cycleSetting(1)
 	case "enter":
 		switch m.settings.field {
+		case settingsFieldDocs:
+			return m, openLink(docsURL)
 		case settingsFieldBugReport:
 			return m, openLink(bugReportURL(m.update.version))
 		case settingsFieldFeatureRequest:
@@ -455,6 +457,18 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.saveAndCloseSettings()
 	}
 	return m, nil
+}
+
+func (m *Model) handleSettingsClick(x, y int) (tea.Model, tea.Cmd) {
+	if m.settings.cliPicker || m.settings.keyPicker || m.settings.editor.typing {
+		return m, nil
+	}
+	line := y - m.cardTop - 2
+	if line != settingsFieldDocs || x < m.cardLeft || x >= m.cardRight {
+		return m, nil
+	}
+	m.settings.field = settingsFieldDocs
+	return m, openLink(docsURL)
 }
 
 func (m *Model) saveAndCloseSettings() (tea.Model, tea.Cmd) {

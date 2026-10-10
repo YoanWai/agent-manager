@@ -231,6 +231,7 @@ type Model struct {
 	// from it.
 	railHits        []int
 	noticeHit       noticeHit
+	docsHit         noticeHit
 	mode            mode
 	showArchived    bool
 	hideEmptyGroups bool
@@ -571,6 +572,7 @@ const (
 	settingsFieldEditor
 	settingsFieldKeybindings
 	settingsFieldCLIs
+	settingsFieldDocs
 	settingsFieldBugReport
 	settingsFieldFeatureRequest
 	settingsFieldUpdate
