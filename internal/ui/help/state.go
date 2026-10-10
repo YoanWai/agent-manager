@@ -23,6 +23,7 @@ const (
 	Stay Action = iota
 	Close
 	Quit
+	OpenDocs
 )
 
 // Viewport is the catalog window currently available inside the dialog.
@@ -46,6 +47,9 @@ func (s State) scrollLimit(viewport Viewport) int {
 func (s *State) scrollBy(delta int, viewport Viewport) {
 	s.scroll = min(max(s.scroll+delta, 0), s.scrollLimit(viewport))
 }
+
+// Searching reports whether typed keys go to the search.
+func (s State) Searching() bool { return s.searching }
 
 func (s State) page(viewport Viewport) int {
 	return max(viewport.Rows-1, 1)
@@ -73,6 +77,8 @@ func (s *State) Update(msg tea.KeyMsg, viewport Viewport) Action {
 		return Close
 	case "/":
 		s.searching = true
+	case "o":
+		return OpenDocs
 	case "up", "k":
 		s.scrollBy(-1, viewport)
 	case "down", "j":

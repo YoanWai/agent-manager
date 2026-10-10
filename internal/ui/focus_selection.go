@@ -25,7 +25,7 @@ func (m *Model) handleFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 func (m *Model) applyFocusMouse(result uifocus.MouseResult) (tea.Model, tea.Cmd) {
 	if result.SendReport != "" {
-		m.sendFocusReport(result.SendReport)
+		m.sendFocusReport(result.SendReport, result.Input)
 	}
 	if result.Leave {
 		return m, m.leaveFocusMode()

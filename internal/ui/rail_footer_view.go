@@ -236,18 +236,29 @@ func (m *Model) viewLegend() legendSection {
 	if m.rail.ShowArchived() {
 		emptyGroupsKey = ""
 	}
-	var pairs [][2]string
-	if len(m.notices.active(m)) > 0 {
-		pairs = append(pairs, [2]string{k(keybind.Messages), "messages"})
+	var alerts [][2]string
+	if glyph, label := m.messagesAlert(); glyph != "" {
+		alerts = append(alerts, [2]string{glyph, label})
 	}
-	pairs = append(pairs, [][2]string{
+	pairs := [][2]string{
 		{strings.TrimSpace(k(keybind.Up) + " " + k(keybind.Down)), "navigate"},
 		{k(keybind.NewSession), "new"}, {k(keybind.Terminal), "terminal"}, {k(keybind.NewGroup), "group"}, {k(keybind.Search), "search"},
 		{k(keybind.Archived), archivedAction}, {k(keybind.Filter), statusFilterAction}, {emptyGroupsKey, emptyGroupsAction},
 		{k(keybind.Help), "keys"}, {k(keybind.Quit), "quit"}, {k(keybind.NewConnection), "connection"},
 		{k(keybind.ReorderUp, keybind.ReorderDown), "reorder"}, {k(keybind.FoldAll), foldAllAction}, {k(keybind.Resize), "resize"}, {k(keybind.Settings), "settings"},
-	}...)
-	return legendSection{title: "View", quiet: true, pairs: legendPairsBound(pairs)}
+	}
+	return legendSection{title: "View", quiet: true, alerts: alerts, pairs: legendPairsBound(pairs)}
+}
+
+func (m *Model) messagesAlert() (glyph, label string) {
+	if len(m.notices.active(m)) == 0 {
+		return "", ""
+	}
+	glyph = m.listGlyph(keybind.Messages)
+	if glyph == "" {
+		return "", ""
+	}
+	return glyph, "unread"
 }
 
 func (m *Model) reorderFooter() string {

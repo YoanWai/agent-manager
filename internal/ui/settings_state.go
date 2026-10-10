@@ -134,6 +134,7 @@ const (
 	settingsFieldEditor
 	settingsFieldKeybindings
 	settingsFieldCLIs
+	settingsFieldDocs
 	settingsFieldBugReport
 	settingsFieldFeatureRequest
 	settingsFieldUpdate

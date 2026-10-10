@@ -26,6 +26,9 @@ type inputRequest struct {
 	args    []string
 	text    string
 	submit  bool
+	// echo asks the focus watcher for a prompt capture once the input lands,
+	// so the pane's echo of it shows without waiting out the frame budget.
+	echo bool
 }
 
 func (inputRequest) effectRequest() {}
@@ -89,6 +92,9 @@ func (s effectServices) runInput(request inputRequest) (effectResult, error) {
 		}
 	case inputPaste:
 		err = s.pasteInput(s.driver, current.ID, request.text)
+	}
+	if request.echo && err == nil && s.watch != nil {
+		s.watch.inputSent(current.ID)
 	}
 	return result, err
 }

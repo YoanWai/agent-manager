@@ -1367,14 +1367,14 @@ func TestWheelSwallowedInResizeMode(t *testing.T) {
 	}
 }
 
-// messagesCell finds the column and screen row the word "messages" was
+// messagesCell finds the column and screen row the word "unread" was
 // painted on in the last frame: the card's legend in the split, the badge
 // in full screen.
 func messagesCell(t *testing.T, m *Model) (x, y int) {
 	t.Helper()
 	for row, line := range strings.Split(ansi.Strip(preparedView(m)), "\n") {
-		if col := strings.Index(line, "messages"); col >= 0 {
-			return col, row
+		if col := strings.Index(line, "unread"); col >= 0 {
+			return ansi.StringWidth(line[:col]), row
 		}
 	}
 	t.Fatal("test setup: the frame painted no messages card or badge")

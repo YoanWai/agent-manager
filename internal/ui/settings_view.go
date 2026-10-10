@@ -145,11 +145,14 @@ func (s *settingsFeature) view(h settingsViewHost) string {
 		editorLine + "\n" +
 		actionRow(settingsFieldKeybindings, "keybindings", keybindingsSummary(h.keyTables())) + "\n" +
 		actionRow(settingsFieldCLIs, "CLIs", "show or hide for new sessions") + "\n" +
+		ctaRow(settingsFieldDocs, "docs", "open the docs") + "\n" +
 		ctaRow(settingsFieldBugReport, "report a bug", "open the bug report form") + "\n" +
 		ctaRow(settingsFieldFeatureRequest, "suggest a change", "open the feature request form") + "\n" +
 		s.settingsVersionRow(h, lead, actionRow)
 	hint := [][2]string{{"↑↓", "field"}, {"←→", "change"}, {"↵/esc", "save"}}
 	switch s.dialog.field {
+	case settingsFieldDocs:
+		hint = [][2]string{{"↑↓", "field"}, {"↵", "open the docs"}, {"esc", "save"}}
 	case settingsFieldBugReport, settingsFieldFeatureRequest:
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "open form"}, {"esc", "save"}}
 	case settingsFieldCLIs:

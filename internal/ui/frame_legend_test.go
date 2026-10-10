@@ -1,9 +1,12 @@
 package ui
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -69,5 +72,30 @@ func TestLegendBarReservesRowForNextTier(t *testing.T) {
 		if w := ansi.StringWidth(line); w > 30 {
 			t.Fatalf("legend row is %d columns wide, budget is 30: %q", w, line)
 		}
+	}
+}
+
+func TestViewLegendPaintsWaitingMessagesWarm(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	waiting := &Model{
+		services: services{store: st, keys: keybind.DefaultSession(), listKeys: keybind.DefaultList()},
+		update:   updateInfo{latest: "v0.41.0", version: "0.40.0"},
+	}
+	bar := legendBar([]legendSection{waiting.viewLegend()}, 160)
+	if !strings.Contains(bar, legendAlertStyle.Render("M unread")) {
+		t.Fatalf("waiting messages should use the working color:\n%s", bar)
+	}
+	idle := &Model{
+		services: services{store: st, keys: keybind.DefaultSession(), listKeys: keybind.DefaultList()},
+		update:   updateInfo{version: "0.40.0"},
+		notices:  noticesPanel{noticesState{dismissed: map[string]bool{noticeWelcome: true, noticeArrowStep: true}}},
+	}
+	idleBar := ansi.Strip(legendBar([]legendSection{idle.viewLegend()}, 160))
+	if strings.Contains(idleBar, "unread") {
+		t.Fatalf("an empty panel should leave the messages key off:\n%s", idleBar)
 	}
 }

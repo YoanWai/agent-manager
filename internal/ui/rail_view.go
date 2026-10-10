@@ -3,7 +3,6 @@ package ui
 import (
 	"strings"
 
-	"github.com/YoanWai/agent-manager/internal/keybind"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 )
 
@@ -59,7 +58,8 @@ func (m *Model) viewListFrame() string {
 		bottom = m.focusBottomRule(leftWidth+1, m.layout.width)
 	}
 	frame = append(frame, bottom)
-	m.notices.placeHit(m, m.listGlyph(keybind.Messages), footer, len(frame))
+	glyph, label := m.messagesAlert()
+	m.notices.placeHit(m, glyph, label, footer, len(frame))
 	m.quick.originY = len(frame)
 	for _, line := range splitLines(footer) {
 		frame = append(frame, paint(line, m.layout.width, backdropHex()))
@@ -91,7 +91,8 @@ func (m *Model) viewFullListFrame() string {
 	frame = append(frame, m.railTopRow(railWidth, m.layout.width))
 	frame = append(frame, joinColumns(edge, paintContent(railRows, railWidth, bodyHeight, panelHex()))...)
 	frame = append(frame, m.boundedRuleRow(railWidth, m.layout.width, "▄"))
-	m.notices.placeHit(m, m.listGlyph(keybind.Messages), footer, len(frame))
+	glyph, label := m.messagesAlert()
+	m.notices.placeHit(m, glyph, label, footer, len(frame))
 	m.quick.originY = len(frame)
 	for _, line := range splitLines(footer) {
 		frame = append(frame, paint(line, m.layout.width, backdropHex()))

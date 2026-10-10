@@ -42,14 +42,14 @@ func guardedMouseCommand(sessID, report string) (string, []string) {
 // control pipe: one for if-shell, one for the branch it ran.
 const guardedMouseReplies = 2
 
-func (m *Model) sendFocusReport(report string) {
+func (m *Model) sendFocusReport(report string, echo bool) {
 	sess, ok := m.selected()
 	watch := m.focus.runtime.watch
 	if !ok || watch == nil {
 		return
 	}
 	command, args := guardedMouseCommand(sess.ID, report)
-	m.dispatchInput(inputRequest{kind: inputMouse, session: sess, command: command, args: args})
+	m.dispatchInput(inputRequest{kind: inputMouse, session: sess, command: command, args: args, echo: echo})
 }
 
 func (m *Model) focusRegionCmd(sessID string, offset int) tea.Cmd {
