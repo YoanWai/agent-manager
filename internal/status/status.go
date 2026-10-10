@@ -1,6 +1,7 @@
 package status
 
 import (
+	"fmt"
 	"regexp"
 	"slices"
 	"strings"
@@ -110,6 +111,9 @@ func NewEngine(cfg config.Config) (*Engine, error) {
 				return nil, err
 			}
 			*opt.target = re
+		}
+		if tr.dialogAsks != nil && tr.dialogAsks.NumSubexp() == 0 {
+			return nil, fmt.Errorf("tool %s: dialog_question needs a group for the question", name)
 		}
 		engine.tools[name] = tr
 	}
@@ -444,12 +448,16 @@ func (e *Engine) LastMessage(tool, pane string) (line string, anchored, ok bool)
 	}
 	region, ok := tr.activityRegion(pane)
 	if !ok {
-		return "", false, false
-	}
-	if tr.dialogAsks != nil {
-		if q := tr.askedQuestion(pane[len(region):]); q != "" {
+		// A dialog drawn before the first composer, such as a trust
+		// prompt, leaves no cutoff at all; its question is still the
+		// newest thing said.
+		if q := tr.askedQuestion(pane); q != "" {
 			return q, true, true
 		}
+		return "", false, false
+	}
+	if q := tr.askedQuestion(pane[len(region):]); q != "" {
+		return q, true, true
 	}
 	lines := strings.Split(region, "\n")
 	inBlock := tr.chromeBlockRows(lines)
@@ -500,6 +508,9 @@ func (e *Engine) LastMessage(tool, pane string) (line string, anchored, ok bool)
 // question. A question wider than the pane wraps; the rows above it that the
 // next row's first word would not have fitted on are its start.
 func (tr toolRules) askedQuestion(tail string) string {
+	if tr.dialogAsks == nil {
+		return ""
+	}
 	rows := strings.Split(tail, "\n")
 	end := len(rows)
 	for i, row := range rows {
@@ -517,16 +528,9 @@ func (tr toolRules) askedQuestion(tail string) string {
 	if q == -1 {
 		return ""
 	}
-	text := func(i int) string {
-		m := boxedText.FindStringSubmatch(rows[i])
-		if m == nil {
-			return ""
-		}
-		return strings.TrimSpace(m[1])
-	}
-	question := text(q)
+	question := strings.TrimSpace(tr.dialogAsks.FindStringSubmatch(rows[q])[1])
 	for i := q - 1; i >= 0; i-- {
-		above := text(i)
+		above := boxedRowText(rows[i])
 		if above == "" || strings.HasPrefix(above, "- ") || strings.ContainsAny(string([]rune(above)[:1]), "╭╰│─") {
 			break
 		}
@@ -540,9 +544,19 @@ func (tr toolRules) askedQuestion(tail string) string {
 }
 
 var (
-	selectedOption = regexp.MustCompile(`^[\s│]*●\s*\d+\.`)
+	selectedOption = regexp.MustCompile(`^[\s│]*[●❯]\s*\d+\.`)
 	boxedText      = regexp.MustCompile(`^│ ([^│]*?)\s*│\s*$`)
 )
+
+// boxedRowText is the text of a row drawn inside a dialog box, where a
+// wrapped question continues over the rows above it.
+func boxedRowText(row string) string {
+	m := boxedText.FindStringSubmatch(row)
+	if m == nil {
+		return ""
+	}
+	return strings.TrimSpace(m[1])
+}
 
 func (tr toolRules) dialogOpen(cutoffTail string) bool {
 	footer, ok := footerBelow(cutoffTail)

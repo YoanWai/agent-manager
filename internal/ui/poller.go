@@ -644,7 +644,7 @@ func (p *poller) refreshOnce() tea.Msg {
 			if written && newStatus != sess.Status {
 				sessions[i].Status = newStatus
 				if changed {
-					p.notifyTransition(sess, newStatus)
+					p.notifyTransition(sess, newStatus, panePrompts[sess.ID], paneLastLines[sess.ID])
 				}
 			}
 		}
@@ -1484,22 +1484,24 @@ func (p *poller) applyHookStatus(sess store.Session, text, hookStatus string) st
 // finished stays quiet unless opted in, since most turn ends are routine.
 // There is no focus gate: the poll cannot tell whether the user is looking
 // at the manager, and the session they are watching is precisely the one
-// whose ping they must not miss.
-func (p *poller) notifyTransition(sess store.Session, newStatus string) {
+// whose ping they must not miss. The banner quotes what the row shows:
+// a waiting session's question, a finished session's prompt.
+func (p *poller) notifyTransition(sess store.Session, newStatus, prompt, quote string) {
 	if p.notifyFn == nil {
 		return
 	}
 	var kind notify.Kind
+	var text string
 	switch newStatus {
 	case status.Waiting:
-		kind = notify.Waiting
+		kind, text = notify.Waiting, quote
 	case status.Errored:
 		kind = notify.Errored
 	case status.Finished:
 		if !p.notifyFinished() {
 			return
 		}
-		kind = notify.Finished
+		kind, text = notify.Finished, sessionPrompt(sess, prompt)
 	default:
 		return
 	}
@@ -1508,7 +1510,7 @@ func (p *poller) notifyTransition(sess store.Session, newStatus string) {
 	}
 	// Delivery can wait on an external process (osascript, notify-send),
 	// so it must never run inside refreshOnce, which holds runMu.
-	go p.notifyFn(notify.Event{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: kind})
+	go p.notifyFn(notify.Event{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: kind, Text: text})
 }
 
 func (p *poller) notificationsOn() bool {
