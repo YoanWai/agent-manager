@@ -33,6 +33,7 @@ func TestParseSpellsEachSideOfTheKey(t *testing.T) {
 		{"shift+up", "shift+up", ""},
 		{"shift+tab", "shift+tab", ""},
 		{"pgdn", "pgdn", ""},
+		{"pgdown", "pgdn", ""},
 		{"f", "f", ""},
 	} {
 		key, err := Parse(tc.spec)
@@ -224,6 +225,25 @@ func TestDefaultListAnswersToTodaysKeys(t *testing.T) {
 	}
 	if got, _ := list.ActionFor(Normalize(" ")); got != Prompt {
 		t.Errorf("the space bar should normalize onto space, got %q", got)
+	}
+}
+
+// A binding typed as "pgdn" (the table's spelling) must still fire when
+// Bubble Tea reports the key it pressed as "pgdown".
+func TestPgDownNormalizesOntoTheStoredPgDn(t *testing.T) {
+	file, err := decode(t, `
+[list]
+fork = "pgdn"
+`)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	list, err := ListTable(file.List)
+	if err != nil {
+		t.Fatalf("ListTable: %v", err)
+	}
+	if got, bound := list.ActionFor(Normalize("pgdown")); !bound || got != Fork {
+		t.Errorf("ActionFor(Normalize(%q)) = %q %v, want %q", "pgdown", got, bound, Fork)
 	}
 }
 
