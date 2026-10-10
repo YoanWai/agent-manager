@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -65,6 +66,79 @@ func TestPaneBoxMatchesPaintedFrame(t *testing.T) {
 	}
 	if got := string(row[box.X : box.X+len(marker)]); got != marker {
 		t.Fatalf("row %d at column %d = %q, want %q", box.Y, box.X, got, marker)
+	}
+}
+
+// A triple click on a painted pane row copies that row and nothing from
+// the rail beside it.
+func TestTripleClickOnRealFrameTakesPaneRowOnly(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "railmate", t.TempDir(), "")
+	m.selectSessionRow(t, "railmate")
+	m.workspace.preview = "pane row one\npane row two\n"
+
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	m.drainEffects(t)
+	preparedView(m)
+
+	box := m.focus.pane.FrameBox()
+	if !box.Valid {
+		t.Fatal("pane box never recorded")
+	}
+	x, y := box.X+3, box.Y+1
+	for i := 0; i < 3; i++ {
+		m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: x, Y: y})
+	}
+	result := m.focus.pane.Mouse(
+		tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: x, Y: y},
+		uifocus.MouseContext{SessionID: railSelectedSession(m).ID, Rows: m.focusPaneRows()},
+	)
+	got := ""
+	if result.Copy != nil {
+		got = result.Copy.Text
+	}
+	if got != "pane row two" {
+		t.Fatalf("triple click copied %q, want the pane row alone", got)
+	}
+	if strings.Contains(got, "railmate") {
+		t.Fatalf("selection leaked rail content: %q", got)
+	}
+}
+
+// The clipboard writer runs off the update loop, so its confirmation can
+// land after a click elsewhere has already dropped the highlight it counted.
+// Re-arming the banner there would put "copied N chars" under no selection.
+func TestLateCopyConfirmationIsDroppedAfterTheSelectionGoes(t *testing.T) {
+	dragAlph := func(m *Model, id string) uifocus.CopyRequest {
+		t.Helper()
+		m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 10, Y: 5})
+		m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionMotion, Button: tea.MouseButtonLeft, X: 14, Y: 5})
+		result := m.focus.pane.Mouse(
+			tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 14, Y: 5},
+			uifocus.MouseContext{SessionID: id},
+		)
+		if result.Copy == nil || result.Copy.Text != "alph" {
+			t.Fatalf("test setup: drag copy = %+v, want alph", result.Copy)
+		}
+		return *result.Copy
+	}
+
+	m, id := focusedShotPane(t, 40, 10, 5, "alpha beta", "gamma delta")
+	request := dragAlph(m, id)
+	inFlight := focusCopiedMsg{chars: 4, gen: request.Generation}
+	m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 12, Y: 6})
+	m.Update(inFlight)
+	if got := m.focus.pane.Status().CopiedChars; got != 0 {
+		t.Fatalf("a write that landed after the click re-armed the count: %d", got)
+	}
+
+	// The same confirmation still counts while its own selection stands.
+	m2, id2 := focusedShotPane(t, 40, 10, 5, "alpha beta", "gamma delta")
+	request = dragAlph(m2, id2)
+	m2.Update(focusCopiedMsg{chars: 4, gen: request.Generation})
+	if got := m2.focus.pane.Status().CopiedChars; got != 4 {
+		t.Fatalf("the write for the standing selection was dropped: %d", got)
 	}
 }
 
