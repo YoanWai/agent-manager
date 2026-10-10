@@ -1508,9 +1508,15 @@ func (p *poller) notifyTransition(sess store.Session, newStatus, prompt, quote s
 	if !p.notificationsOn() {
 		return
 	}
+	// A worktree the manager made is named after the session, so the
+	// repository it was cut from is the directory worth naming.
+	dir := sess.Cwd
+	if sess.WorktreeRepo != "" {
+		dir = sess.WorktreeRepo
+	}
 	// Delivery can wait on an external process (osascript, notify-send),
 	// so it must never run inside refreshOnce, which holds runMu.
-	go p.notifyFn(notify.Event{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: kind, Text: text})
+	go p.notifyFn(notify.Event{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: kind, Dir: dir, Branch: sess.WorktreeBranch, Text: text})
 }
 
 func (p *poller) notificationsOn() bool {

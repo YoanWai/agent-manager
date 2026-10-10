@@ -69,8 +69,8 @@ func TestNotifyTransitionFiresOnWaitingAndErrored(t *testing.T) {
 	p.notifyTransition(sess, status.Errored, "", "")
 	calls := waitForCalls(t, rec, 2)
 	want := map[notify.Event]bool{
-		{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: notify.Waiting}: true,
-		{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: notify.Errored}: true,
+		{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Dir: sess.Cwd, Kind: notify.Waiting}: true,
+		{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Dir: sess.Cwd, Kind: notify.Errored}: true,
 	}
 	for _, call := range calls {
 		delete(want, call)
@@ -85,7 +85,7 @@ func TestNotifyTransitionCarriesCustomToolName(t *testing.T) {
 	sess.Tool = "my-custom-agent"
 	p.notifyTransition(sess, status.Waiting, "", "")
 	calls := waitForCalls(t, rec, 1)
-	if calls[0] != (notify.Event{ID: sess.ID, Session: sess.Name, Tool: "my-custom-agent", Kind: notify.Waiting}) {
+	if calls[0] != (notify.Event{ID: sess.ID, Session: sess.Name, Tool: "my-custom-agent", Dir: sess.Cwd, Kind: notify.Waiting}) {
 		t.Fatalf("configured tool identity should reach the backend, got %v", calls)
 	}
 }
@@ -108,17 +108,31 @@ func TestNotifyTransitionCarriesTheRowsLine(t *testing.T) {
 	p.notifyTransition(sess, status.Errored, "write a haiku", "boom")
 	calls := waitForCalls(t, rec, 5)
 	want := map[notify.Event]bool{
-		{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: notify.Waiting, Text: "Do you want to proceed?"}:   true,
-		{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: notify.Finished, Text: "write a haiku"}:            true,
-		{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: notify.Finished, Text: "sent through the manager"}: true,
-		{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: notify.Finished, Text: "the launch prompt"}:        true,
-		{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: notify.Errored}:                                    true,
+		{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Dir: sess.Cwd, Kind: notify.Waiting, Text: "Do you want to proceed?"}:   true,
+		{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Dir: sess.Cwd, Kind: notify.Finished, Text: "write a haiku"}:            true,
+		{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Dir: sess.Cwd, Kind: notify.Finished, Text: "sent through the manager"}: true,
+		{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Dir: sess.Cwd, Kind: notify.Finished, Text: "the launch prompt"}:        true,
+		{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Dir: sess.Cwd, Kind: notify.Errored}:                                    true,
 	}
 	for _, call := range calls {
 		delete(want, call)
 	}
 	if len(want) != 0 {
 		t.Fatalf("missing notifications %v, got %v", want, calls)
+	}
+}
+
+// A worktree session names the repository it was cut from and its branch;
+// the worktree directory itself carries the session's own name.
+func TestNotifyTransitionNamesTheRepoOfAWorktreeSession(t *testing.T) {
+	p, sess, rec := newNotifyTestPoller(t)
+	sess.Cwd = "/src/api-worktrees/deploy"
+	sess.WorktreeRepo = "/src/api"
+	sess.WorktreeBranch = "am/deploy"
+	p.notifyTransition(sess, status.Waiting, "", "")
+	calls := waitForCalls(t, rec, 1)
+	if calls[0] != (notify.Event{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: notify.Waiting, Dir: "/src/api", Branch: "am/deploy"}) {
+		t.Fatalf("want the repository and branch on the event, got %v", calls)
 	}
 }
 
@@ -147,7 +161,7 @@ func TestNotifyTransitionFinishedOptIn(t *testing.T) {
 	}
 	p.notifyTransition(sess, status.Finished, "", "")
 	calls := waitForCalls(t, rec, 1)
-	if calls[0] != (notify.Event{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: notify.Finished}) {
+	if calls[0] != (notify.Event{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Dir: sess.Cwd, Kind: notify.Finished}) {
 		t.Fatalf("want one finished notification after opt-in, got %v", calls)
 	}
 }
@@ -208,7 +222,7 @@ func TestRefreshNotifiesWaitingTransitionOnce(t *testing.T) {
 
 	m.applyCmd(t, m.refreshCmd())
 	calls := waitForCalls(t, rec, 1)
-	if calls[0] != (notify.Event{ID: sess.ID, Session: "needy", Tool: "claude-hooked", Kind: notify.Waiting, Text: "boot-marker"}) {
+	if calls[0] != (notify.Event{ID: sess.ID, Session: "needy", Tool: "claude-hooked", Kind: notify.Waiting, Dir: sess.Cwd, Text: "boot-marker"}) {
 		t.Fatalf("want one waiting notification titled with the session name and quoting the pane, got %v", calls)
 	}
 

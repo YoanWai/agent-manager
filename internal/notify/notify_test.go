@@ -200,6 +200,39 @@ func TestNotifyBodyCarriesTheRowsLine(t *testing.T) {
 	}
 }
 
+// The title says where the session runs: its directory's name and, for a
+// worktree the manager made, the branch, so sessions sharing a name read
+// apart. A session with no directory keeps the plain name and tool.
+func TestNotifyTitleNamesTheDirectoryAndBranch(t *testing.T) {
+	tests := []struct {
+		name  string
+		event Event
+		title string
+	}{
+		{"dir and branch", Event{Session: "deploy", Tool: "codex", Dir: "/home/me/src/api", Branch: "am/fix-login"}, "deploy · api · am/fix-login · codex"},
+		{"dir only", Event{Session: "deploy", Tool: "codex", Dir: "/home/me/src/api"}, "deploy · api · codex"},
+		{"no dir", Event{Session: "deploy", Tool: "codex"}, "deploy · codex"},
+		{"root dir", Event{Session: "deploy", Tool: "codex", Dir: "/"}, "deploy · / · codex"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			defer restore()()
+			plainMac(t)
+			var posted []string
+			macPost = func(sessionID, subtitle, body, sound string) error {
+				posted = []string{sessionID, subtitle, body, sound}
+				return nil
+			}
+			emitSeq = func(string) error { return nil }
+			test.event.Kind = Finished
+			Notify(test.event)
+			if len(posted) != 4 || posted[1] != test.title {
+				t.Fatalf("title = %q, want %q", posted, test.title)
+			}
+		})
+	}
+}
+
 func TestNotifyDarwinHelperFailureFallsBackToAppleScript(t *testing.T) {
 	defer restore()()
 	rec := plainMac(t)

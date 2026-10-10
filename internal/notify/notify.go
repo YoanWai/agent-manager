@@ -22,6 +22,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -107,13 +108,17 @@ const (
 
 // Event is one session transition worth telling the user about. ID is the
 // session's store id, which a click hands back so the manager can select
-// that row. Text is what that row quotes for the state: the question a
-// waiting session asks, the prompt a finished one was given.
+// that row. Dir is the session's directory and Branch the worktree
+// branch the manager made for it, so two sessions of one name read apart
+// on the banner. Text is what that row quotes for the state: the question
+// a waiting session asks, the prompt a finished one was given.
 type Event struct {
 	ID      string
 	Session string
 	Tool    string
 	Kind    Kind
+	Dir     string
+	Branch  string
 	Text    string
 }
 
@@ -176,12 +181,7 @@ func Notify(event Event) {
 	if !ok {
 		return
 	}
-	session := sanitize(event.Session)
-	tool := sanitize(event.Tool)
-	subtitle := session
-	if tool != "" {
-		subtitle += " · " + tool
-	}
+	subtitle := titleLine(event)
 	body := bodyLine(event.Kind, detail.body, event.Text)
 	terminalBody := body + " — " + subtitle
 	// A terminal that understands OSC 777 turns it into a native
@@ -219,6 +219,21 @@ func Notify(event Event) {
 		}
 	}
 	_ = emitSeq("\a")
+}
+
+// titleLine names the session, then where it runs, then its tool:
+// "deploy · api · am/fix-login · codex".
+func titleLine(event Event) string {
+	parts := []string{sanitize(event.Session)}
+	if dir := sanitize(filepath.Base(event.Dir)); event.Dir != "" && dir != "" {
+		parts = append(parts, dir)
+	}
+	for _, part := range []string{sanitize(event.Branch), sanitize(event.Tool)} {
+		if part != "" {
+			parts = append(parts, part)
+		}
+	}
+	return strings.Join(parts, " · ")
 }
 
 // bodyLine puts the row's line behind the state glyph, "◆ Waiting: <the
