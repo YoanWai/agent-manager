@@ -14,7 +14,7 @@ Tell your agent what you want to review in Agent Manager. Your agent will set up
 
 | Key | Action |
 |-----|--------|
-| `n` | New session (name, tool, the model, effort and profile the tool offers, directory, worktree toggle and the base it starts from, optional starting prompt, group picker) |
+| `n` | New session (name, tool, the model, effort and profile the tool offers, directory, worktree toggle and the base it starts from, optional instruction preset and starting prompt, group picker) |
 | `T` | New terminal tab: a shell under the selected agent, or in the selected group |
 | `o` | Open the selected row's directory in your editor |
 | `f` | Fork the selected conversation into a named session in the same group and directory |
@@ -47,7 +47,7 @@ Tell your agent what you want to review in Agent Manager. Your agent will set up
 | `space` | Quick prompt mode: answer the selected session, or spawn an agent in the selected group |
 | `ctrl+r` | Review the selected session's changes: full-screen whole-file diffs, with `c` to comment a line and `C` to send the comments to the agent |
 | `F` | Fold / unfold every group |
-| `s` | Settings (default tool, theme, theme follows OS, background, list density, sessions layout, header and computer stats visibility, review layout, after quick send, session keys, ←→ step in/out, mouse, spawn in worktree, fetch on spawn, coordination, notifications, notify on finish, editor, keybindings, CLIs, docs, report a bug, suggest a change, and the version row that updates in place) |
+| `s` | Settings (default tool, theme, theme follows OS, background, list density, sessions layout, header and computer stats visibility, review layout, after quick send, session keys, ←→ step in/out, mouse, spawn in worktree, fetch on spawn, coordination, notifications, notify on finish, editor, keybindings, CLIs, session presets, docs, report a bug, suggest a change, and the version row that updates in place) |
 | `\|` | Resize the split: `←→` nudge the divider, `enter` commits, `esc` cancels |
 | `t` | Toggle archived view |
 | `w` | Filter to sessions that need attention (`waiting`, `finished`, `errored`); press again to show all |
@@ -95,6 +95,22 @@ Opening a session (`enter`, or `→`) takes the whole body too, through the same
 ## Which CLIs you get offered
 
 Every configured tool is offered when you create a session, which is more than most people run. Settings (`s`) has a `CLIs` row: `enter` opens a checklist, `space` or `enter` unchecks the tool under the cursor, `esc` saves, and the ones left checked are what the `n` form's `tool` picker and quick prompt mode's `tab` cycle through. The last checked tool cannot be unchecked, since a picker with nothing in it could not create a session. It only narrows the pickers, so a session already on an unchecked tool keeps running and revives on that same tool. The last row, `request CLI support`, opens an issue for a CLI we do not ship rules for yet.
+
+## Session presets
+
+Save reusable instructions in Settings (`s`) → **session presets**. Use `n` / **New** to create one, `enter` or `e` / **Edit** to edit the selected entry, and `d` / **Delete** to remove it with confirmation. The editor has a name and multiline instructions; `tab` moves between the fields and buttons, `ctrl+s` / **Save** saves, `ctrl+v` in instructions or **Paste** reads literal clipboard text, and `esc` / **Cancel** discards changes. See [Configuration](configuration.md#session-presets) for names and editor limits.
+
+The New Session form (`n`) offers a **preset** selector when entries exist. Focus it and use `←→`, or click an entry, to select saved instructions; **none** keeps the ordinary prompt. The selected instructions are placed before the task, separated by two newlines when the task is nonempty. An empty task sends just the saved instructions. Instruction whitespace and Unicode are preserved literally. Presets do not choose a CLI, model, effort, profile, group, directory or worktree; those controls and their defaults work as before.
+
+The form uses the definitions it displayed when it opened. A CLI spawn or MCP creation resolves the saved name freshly when creating the session:
+
+```bash
+agent-manager spawn --preset "project/reviewer" --prompt "Review the parser changes"
+```
+
+Pass the same name as the optional `preset` field of `create_session`. Native CLI/MCP task text keeps its existing trimming of outer whitespace before the literal instructions are prepended. A missing preset or unreadable catalog refuses creation before a worktree or session pane is made. Omit the option to create without a preset.
+
+Presets apply only to the initial prompt. Editing or deleting one does not change an existing conversation or instructions already queued for a CLI that receives its prompt after launch. Revive, restart and fork keep their existing conversation behavior and do not read the preset catalog again.
 
 ## Model, effort and profile
 

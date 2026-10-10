@@ -472,6 +472,13 @@ func (m *Model) handleMouseWheel(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.split.resizeMode || m.split.dragging {
 		return m, nil
 	}
+	if m.mode == modeSettings && (m.presets.open || (!m.settings.cliPicker && !m.settings.keyPicker && !m.settings.editor.typing)) {
+		key := tea.KeyDown
+		if msg.Button == tea.MouseButtonWheelUp {
+			key = tea.KeyUp
+		}
+		return m.handleSettingsKey(tea.KeyMsg{Type: key})
+	}
 	switch m.mode {
 	case modeList:
 		switch msg.Button {

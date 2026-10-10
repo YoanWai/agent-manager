@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -1317,5 +1318,65 @@ func TestOnRequestServerWaitsForTheUserBeforeReachingOtherSessions(t *testing.T)
 	}
 	if !strings.Contains(waiting["create_session"], "only when the user asks") {
 		t.Errorf("on-request create_session does not say when to call it: %s", waiting["create_session"])
+	}
+}
+
+func TestCreateSessionPresetSchemaIsOptional(t *testing.T) {
+	session := connectServer(t, newServer(t.TempDir(), "abc123", "test", true, &fakeTerminalCommands{}, &fakeSessionCommands{}, &fakeReporter{}))
+	listed, err := session.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range listed.Tools {
+		if tool.Name != "create_session" {
+			continue
+		}
+		schema, err := json.Marshal(tool.InputSchema)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var decoded struct {
+			Properties map[string]json.RawMessage
+			Required   []string
+		}
+		if err := json.Unmarshal(schema, &decoded); err != nil {
+			t.Fatal(err)
+		}
+		rawPreset, ok := decoded.Properties["preset"]
+		var preset struct {
+			Type        string
+			Description string
+		}
+		if ok {
+			if err := json.Unmarshal(rawPreset, &preset); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if !ok || preset.Type != "string" || !strings.Contains(preset.Description, "Settings") {
+			t.Fatalf("preset schema missing or incomplete: %s", schema)
+		}
+		for _, required := range decoded.Required {
+			if required == "preset" {
+				t.Fatal("preset must remain optional")
+			}
+		}
+		return
+	}
+	t.Fatal("create_session missing")
+}
+
+func TestCreateSessionForwardsSessionPreset(t *testing.T) {
+	fake := &fakeSessionCommands{}
+	session := connectServer(t, newServer(t.TempDir(), "abc123", "test", true, &fakeTerminalCommands{}, fake, &fakeReporter{}))
+	result := callTool(t, session, "create_session", map[string]any{"preset": "project/reviewer", "prompt": " task "})
+	if result.IsError {
+		t.Fatalf("create_session: %+v", result)
+	}
+	if fake.createdOpts.Preset != "project/reviewer" || fake.createdOpts.Prompt != " task " || fake.createdOpts.Group != nil || fake.createdOpts.Worktree != nil {
+		t.Fatalf("preset options changed: %+v", fake.createdOpts)
+	}
+	result = callTool(t, session, "create_session", map[string]any{})
+	if result.IsError || fake.createdOpts.Preset != "" {
+		t.Fatalf("omitted preset: %+v %+v", result, fake.createdOpts)
 	}
 }

@@ -64,6 +64,7 @@ type CreateSessionOptions struct {
 	Group     *string
 	Directory string
 	Prompt    string
+	Preset    string
 	// Nil inherits the group's spawn-in-worktree choice, then the global
 	// setting.
 	Worktree *bool
@@ -340,7 +341,16 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 		return Session{}, err
 	}
 	prompt := strings.TrimSpace(opts.Prompt)
-	if strings.HasPrefix(prompt, "-") && tool.PromptFlag == "" {
+	if opts.Preset != "" {
+		preset, found, err := runtime.store.SessionPreset(opts.Preset)
+		if err != nil {
+			return Session{}, fmt.Errorf("reading session presets: %w", err)
+		}
+		if !found {
+			return Session{}, fmt.Errorf("session preset %q does not exist; manage presets in Settings", opts.Preset)
+		}
+		prompt = launch.WithInstructions(preset.Instructions, prompt)
+	} else if strings.HasPrefix(prompt, "-") && tool.PromptFlag == "" {
 		return Session{}, fmt.Errorf(`prompt cannot start with "-" for %s, which takes its prompt as a bare argument and would read it as a flag`, toolName)
 	}
 	name := strings.TrimSpace(opts.Name)

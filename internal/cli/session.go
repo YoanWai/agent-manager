@@ -15,7 +15,7 @@ import (
 
 const (
 	usageSessions      = "sessions [--json]"
-	usageSpawn         = "spawn [--name <name>] [--prompt <text>] [--tool <cli>] [--model <model>] [--effort <level>] [--profile <name>] [--group <path>] [--directory <path>] [--worktree] [--json]"
+	usageSpawn         = "spawn [--name <name>] [--prompt <text>] [--preset <name>] [--tool <cli>] [--model <model>] [--effort <level>] [--profile <name>] [--group <path>] [--directory <path>] [--worktree] [--json]"
 	usageSend          = `send <session-id> "<message>" [--json]`
 	usageRead          = "read <session-id> [--json]"
 	usageWait          = "wait <session-id> [--until <state>] [--timeout <duration>] [--json]"
@@ -90,6 +90,7 @@ func runSpawn(out io.Writer, sessions sessionCommands, args []string, sessionID 
 	set := newFlagSet(usageSpawn)
 	name := set.String("name", "", "kebab-case name naming the work it will do; the new agent names itself when this is empty")
 	prompt := set.String("prompt", "", "first task to hand it, written as a full instruction, since it cannot see your conversation")
+	preset := set.String("preset", "", "named instructions from Settings to prepend to the first task; resolved when creating the session")
 	tool := set.String("tool", "", "agent CLI to run; defaults to the caller's CLI, or to the one picked in settings from a terminal or with no caller")
 	model := set.String("model", "", "model to run it on, one the CLI lists; defaults to the CLI's own, and a restart, revive or fork keeps it")
 	effort := set.String("effort", "", "reasoning effort, one the model takes; defaults to the CLI's own")
@@ -106,6 +107,7 @@ func runSpawn(out io.Writer, sessions sessionCommands, args []string, sessionID 
 		Name:      *name,
 		Directory: *directory,
 		Prompt:    *prompt,
+		Preset:    *preset,
 		Model:     *model,
 		Effort:    *effort,
 		Profile:   *profile,

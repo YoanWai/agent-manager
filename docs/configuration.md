@@ -10,6 +10,14 @@ Earlier releases read a `config.toml` in that directory. The first start after u
 
 The poll interval is fixed at two seconds, so a `poll_interval` line in that file has no effect. `[tools.<name>]` blocks have none either: every CLI's commands and status rules are built into the binary, which is how a fix for a CLI's new screen reaches you on upgrade.
 
+## Session presets
+
+The **session presets** row in Settings manages named instructions in the same `state.db` the manager, native CLI and MCP server read. This is one global catalog for that config directory, shared across projects and tools. Use project-qualified names such as `project/reviewer` to keep project-specific instructions distinct. Names are unique and contain 1–60 characters after trimming outer whitespace, without control characters. Instructions must be non-whitespace valid UTF-8 through 64 KiB; their literal bytes are retained.
+
+The multiline editor displays tabs as `⇥` and carriage returns as `␍`, with reversible escapes for those glyphs when they occur literally. Existing definitions with other control characters, U+FFFD replacement characters, or more than 10,000 logical lines have read-only instructions; they can still be renamed or deleted without changing their instruction bytes. A paste or insertion that exceeds the supported editing shape or byte limit is refused with a visible reason. An existing name containing U+FFFD is shown literally and retained until its name field is edited; typing or pasting that rune into the name field is refused unchanged.
+
+Choose a preset in the New Session form (`n`), through `agent-manager spawn --preset <name>`, or through `create_session`'s optional `preset` field. The form uses its displayed snapshot; CLI/MCP creation reads the latest saved definition. These are initial instructions, with no new lifecycle behavior or changes to CLI choices and defaults. See [Session presets](usage.md#session-presets) for task composition and controls.
+
 ## Agent CLIs
 
 Agent Manager supports Claude Code, OpenCode, Codex, Grok Build, Gemini CLI, Antigravity CLI, Pi, Command Code, Hermes Agent, Muse Code, and Oh My Pi, plus the shell `T` opens. Each one's launch command, revive and fork commands, MCP registration, status rules, and the flags a session's model, effort and profile launch with are built into the binary, so an upgrade brings the current version of all of them. The models, efforts and profiles themselves are read from each CLI when you create a session (see [Model, effort and profile](usage.md#model-effort-and-profile)). Hermes, Antigravity and Oh My Pi have no fork, and Pi and Oh My Pi get no MCP registration. Settings (`s`) has a `CLIs` row that picks which of them the session pickers offer (see [Which CLIs you get offered](usage.md#which-clis-you-get-offered)).
