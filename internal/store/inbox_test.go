@@ -46,18 +46,18 @@ func TestEnqueueDeliverAndAck(t *testing.T) {
 		t.Fatalf("a fresh message must not read as claimed: %+v", head)
 	}
 
-	claimed, err := st.ClaimMessage(id, now)
-	if err != nil || !claimed {
-		t.Fatalf("ClaimMessage: %v, claimed=%v", err, claimed)
-	}
-	// A second claim is what a racing manager would attempt; only one may win.
-	again, err := st.ClaimMessage(id, now)
-	if err != nil || again {
-		t.Fatalf("second claim = %v, err %v", again, err)
-	}
-	if err := st.MarkDelivered(id, now); err != nil {
-		t.Fatalf("MarkDelivered: %v", err)
-	}
+	withDeliveryGuard(t, st, func(guard *DeliveryGuard) error {
+		claim, claimed, err := guard.ClaimMessage(id, now)
+		if err != nil || !claimed {
+			t.Fatalf("ClaimMessage: %v, claimed=%v", err, claimed)
+		}
+		// A second claim is what a racing manager would attempt; only one may win.
+		_, again, err := guard.ClaimMessage(id, now)
+		if err != nil || again {
+			t.Fatalf("second claim = %v, err %v", again, err)
+		}
+		return guard.FinishMessage(id, claim, DeliveryConfirmed, now)
+	})
 	if _, ok, err := st.HeadMessage("target01"); err != nil || ok {
 		t.Fatalf("a delivered message is still queued: ok=%v err=%v", ok, err)
 	}
@@ -165,9 +165,7 @@ func TestInboxIsScopedPerRecipientAndSweptWhenDelivered(t *testing.T) {
 		t.Fatalf("counts = %v", counts)
 	}
 
-	if err := st.MarkDelivered(first, now); err != nil {
-		t.Fatalf("MarkDelivered: %v", err)
-	}
+	finishMessageForTest(t, st, first, DeliveryConfirmed, now)
 	if err := st.PruneInbox(now.Add(time.Hour)); err != nil {
 		t.Fatalf("PruneInbox: %v", err)
 	}
@@ -195,9 +193,7 @@ func TestPruneMeasuresRetentionFromDeliveryRatherThanFromSending(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Enqueue: %v", err)
 	}
-	if err := st.MarkDelivered(id, now); err != nil {
-		t.Fatalf("MarkDelivered: %v", err)
-	}
+	finishMessageForTest(t, st, id, DeliveryConfirmed, now)
 	if err := st.PruneInbox(now.Add(-24 * time.Hour)); err != nil {
 		t.Fatalf("PruneInbox: %v", err)
 	}
@@ -265,9 +261,7 @@ func TestMarkDroppedRetiresTheMessageForGood(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Enqueue: %v", err)
 	}
-	if err := st.MarkDropped(id, now); err != nil {
-		t.Fatalf("MarkDropped: %v", err)
-	}
+	finishMessageForTest(t, st, id, DeliveryRefused, now)
 	if _, ok, err := st.HeadMessage("target01"); err != nil || ok {
 		t.Fatalf("a dropped message is still queued: ok=%v err=%v", ok, err)
 	}

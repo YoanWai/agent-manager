@@ -9,11 +9,8 @@ import (
 )
 
 func TestReservationsSurfaceOverlapWithoutBlockingIt(t *testing.T) {
-	h := newSessionHarness(t)
-	rival, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "rival"})
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
+	h := newStoreSessionHarness(t)
+	rivalID := h.addSessionRow(t, "rival")
 	held, err := h.sessions.Reserve(h.caller.ID, []string{"internal/store/*.go"}, "", "adding the inbox table", 0)
 	if err != nil {
 		t.Fatalf("Reserve: %v", err)
@@ -26,7 +23,7 @@ func TestReservationsSurfaceOverlapWithoutBlockingIt(t *testing.T) {
 	}
 
 	// A literal path under a reserved glob is the collision worktrees miss.
-	clash, err := h.sessions.Reserve(rival.ID, []string{"internal/store/store.go"}, "", "", 0)
+	clash, err := h.sessions.Reserve(rivalID, []string{"internal/store/store.go"}, "", "", 0)
 	if err != nil {
 		t.Fatalf("Reserve rival: %v", err)
 	}
@@ -51,22 +48,19 @@ func TestReservationsSurfaceOverlapWithoutBlockingIt(t *testing.T) {
 }
 
 func TestSharedLeasesOnlyClashWithExclusiveOnes(t *testing.T) {
-	h := newSessionHarness(t)
-	rival, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "rival"})
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
+	h := newStoreSessionHarness(t)
+	rivalID := h.addSessionRow(t, "rival")
 	if _, err := h.sessions.Reserve(h.caller.ID, []string{"docs/usage.md"}, "shared", "", 0); err != nil {
 		t.Fatalf("Reserve shared: %v", err)
 	}
-	quiet, err := h.sessions.Reserve(rival.ID, []string{"docs/usage.md"}, "shared", "", 0)
+	quiet, err := h.sessions.Reserve(rivalID, []string{"docs/usage.md"}, "shared", "", 0)
 	if err != nil {
 		t.Fatalf("Reserve second shared: %v", err)
 	}
 	if len(quiet.Conflicts) != 0 {
 		t.Fatalf("two shared leases should not clash: %+v", quiet.Conflicts)
 	}
-	loud, err := h.sessions.Reserve(rival.ID, []string{"docs/usage.md"}, "exclusive", "", 0)
+	loud, err := h.sessions.Reserve(rivalID, []string{"docs/usage.md"}, "exclusive", "", 0)
 	if err != nil {
 		t.Fatalf("Reserve exclusive: %v", err)
 	}
@@ -89,17 +83,14 @@ func TestSharedLeasesOnlyClashWithExclusiveOnes(t *testing.T) {
 }
 
 func TestALapsedLeaseStopsBlockingAndReleaseClearsTheRest(t *testing.T) {
-	h := newSessionHarness(t)
-	rival, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "rival"})
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
+	h := newStoreSessionHarness(t)
+	rivalID := h.addSessionRow(t, "rival")
 	// A lease whose expiry is already behind us stands in for an agent that
 	// died holding one, which is the case the whole advisory design rests on.
 	lapsed := time.Now().Add(-time.Minute)
 	if _, err := h.store.Reserve([]store.Reservation{{
 		ID:         "lapsed01",
-		SessionID:  rival.ID,
+		SessionID:  rivalID,
 		Pattern:    "internal/ui/*.go",
 		Mode:       store.ReservationExclusive,
 		AcquiredAt: lapsed.Add(-time.Hour),
@@ -136,7 +127,7 @@ func TestALapsedLeaseStopsBlockingAndReleaseClearsTheRest(t *testing.T) {
 }
 
 func TestReleasingBlankPathsDoesNotDropEveryLease(t *testing.T) {
-	h := newSessionHarness(t)
+	h := newStoreSessionHarness(t)
 	if _, err := h.sessions.Reserve(h.caller.ID, []string{"a.go", "b.go"}, "", "", 0); err != nil {
 		t.Fatalf("Reserve: %v", err)
 	}

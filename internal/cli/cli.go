@@ -13,6 +13,8 @@ import (
 	"os"
 	"slices"
 	"strings"
+
+	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 )
 
 // Command takes its caller as a function so a command that acts as no
@@ -53,12 +55,43 @@ func sections(version string) []section {
 }
 
 func Commands(version string) map[string]Command {
+	return commandTable(sections(version))
+}
+
+func commandTable(groups []section) map[string]Command {
 	table := map[string]Command{}
-	for _, section := range sections(version) {
+	for _, section := range groups {
 		for _, command := range section.commands {
 			table[command.name] = command.run
 		}
 	}
+	return table
+}
+
+func CommandsWithBackend(version string, backend *sessioncmd.Backend) map[string]Command {
+	if backend == nil {
+		panic("command backend is required")
+	}
+	sessions := sessioncmd.NewSessionsWithBackend(backend, sessioncmd.CLIVocabulary())
+	terminals := sessioncmd.NewTerminalsWithBackend(backend, sessioncmd.CLIVocabulary())
+	return commandTable([]section{
+		sessionSectionWith(func(string) sessionCommands { return sessions }),
+		groupSection("Shared task list", "task", "the work list every session in this manager claims from", taskVerbsWith(func(string) taskCommands { return sessions })),
+		fileSectionWith(func(string) fileCommands { return sessions }),
+		groupSection("Managed terminals", "terminal", "shells the user watches beside the agents, for work they should be able to watch, attach to or take over", terminalVerbsWith(func(string) terminalCommands { return terminals })),
+		reviewSectionWith(func(string) mailboxCommands { return backend }), reportSection(version), updateSection(version),
+	})
+}
+
+func CommandsWithArchiveOwner(version string, owner sessioncmd.ArchiveOwner) map[string]Command {
+	if owner == nil {
+		panic("archive owner is required for explicit composition")
+	}
+	table := Commands(version)
+	factory := func(configDir string) sessionCommands {
+		return sessioncmd.NewSessionsWithArchiveOwner(configDir, sessioncmd.CLIVocabulary(), owner)
+	}
+	table["archive"] = bind(factory, runArchive)
 	return table
 }
 

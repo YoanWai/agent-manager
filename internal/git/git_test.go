@@ -1898,3 +1898,26 @@ func TestRemoveWorktreeMissingDirKeeps(t *testing.T) {
 		t.Fatalf("missing dir: removed=%v err=%v", removed, err)
 	}
 }
+
+func TestRunCannotPromptOnTheManagersTerminal(t *testing.T) {
+	dir := t.TempDir()
+	fake := filepath.Join(dir, "git")
+	script := "#!/bin/sh\nprintf '%s %s ' \"$GIT_TERMINAL_PROMPT\" \"$SSH_ASKPASS_REQUIRE\"\n(: </dev/tty) 2>/dev/null && echo tty || echo notty\n"
+	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out, err := (&Driver{bin: fake}).run(dir, "status")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(out, "0 never ") {
+		t.Fatalf("git ran with %q, want terminal and askpass prompts off", out)
+	}
+	// Only a test that has a terminal itself can tell whether git lost it.
+	if tty, err := os.Open("/dev/tty"); err == nil {
+		tty.Close()
+		if !strings.HasSuffix(out, " notty") {
+			t.Fatalf("git ran with %q, want no controlling terminal", out)
+		}
+	}
+}

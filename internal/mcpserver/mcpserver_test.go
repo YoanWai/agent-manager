@@ -16,6 +16,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/report"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -798,8 +799,6 @@ func TestServerInstructionsSurviveTheClientLimit(t *testing.T) {
 		if len(instructions) >= claudeCodeLimit {
 			t.Fatalf("proactive %v: server instructions are %d characters; Claude Code truncates at %d, dropping the tail", proactive, len(instructions), claudeCodeLimit)
 		}
-		// The safety paragraph is the tail, and the one thing no tool
-		// description repeats.
 		if !strings.Contains(instructions, "acts on the user's machine") {
 			t.Fatalf("proactive %v: the instructions no longer say these tools act on the user's machine:\n%s", proactive, instructions)
 		}
@@ -1272,9 +1271,6 @@ func TestServerTeachesWhenToOfferAReport(t *testing.T) {
 	}
 }
 
-// On request is the default: the session still gets every tool, so "spawn
-// an agent for this" works, but nothing it reads before the user asks
-// invites it to reach for the other sessions on its own.
 func TestOnRequestServerWaitsForTheUserBeforeReachingOtherSessions(t *testing.T) {
 	onRequest := connectServer(t, NewServer(t.TempDir(), "abc123", "test", false))
 	proactive := connect(t, t.TempDir(), "abc123")
@@ -1317,5 +1313,153 @@ func TestOnRequestServerWaitsForTheUserBeforeReachingOtherSessions(t *testing.T)
 	}
 	if !strings.Contains(waiting["create_session"], "only when the user asks") {
 		t.Errorf("on-request create_session does not say when to call it: %s", waiting["create_session"])
+	}
+}
+
+func TestBoundMailboxToolsRejectClosedBackend(t *testing.T) {
+	backend := sessioncmd.OpenBackend(t.TempDir())
+	if err := backend.Close(); err != nil {
+		t.Fatal(err)
+	}
+	session := connectServer(t, NewServerWithBackend(t.TempDir(), "cafe", "test", false, backend))
+	for _, tc := range []struct {
+		name string
+		args map[string]any
+	}{
+		{"rename", map[string]any{"name": "worker"}},
+		{"review", map[string]any{"repo": "."}},
+		{"review", map[string]any{"base": "auto"}},
+		{"review", map[string]any{"mode": "staged"}},
+		{"review_comment", map[string]any{"comment_id": "0123456789abcdef"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			text, failed := callText(t, session, tc.name, tc.args)
+			if !failed || !strings.Contains(text, "backend is closed") {
+				t.Fatalf("text=%q failed=%v, want closed backend", text, failed)
+			}
+		})
+	}
+}
+
+func TestBoundMailboxToolsIgnoreAlternateProfile(t *testing.T) {
+	dir, alternate := t.TempDir(), t.TempDir()
+	st, err := store.Open(filepath.Join(dir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	backend, err := sessioncmd.BorrowBackend(sessioncmd.Runtime{Store: st, Driver: new(tmux.Driver), Hooks: hooks.NewManager(dir), Snapshot: st.SetSnapshot})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const comment = "0123456789abcdef"
+	if err := st.SetReviewState("cafe", "/repo", store.ReviewState{Comments: []store.ReviewComment{{ID: comment, Round: 1, Point: 1, Text: "fix"}}}); err != nil {
+		t.Fatal(err)
+	}
+	session := connectServer(t, NewServerWithBackend(alternate, "cafe", "test", false, backend))
+	for _, tc := range []struct {
+		name string
+		args map[string]any
+	}{
+		{"rename", map[string]any{"name": "worker"}},
+		{"review", map[string]any{"repo": ".", "base": "auto", "mode": "staged"}},
+		{"review_comment", map[string]any{"comment_id": comment}},
+	} {
+		if text, failed := callText(t, session, tc.name, tc.args); failed {
+			t.Fatalf("%s: %s", tc.name, text)
+		}
+	}
+	mailbox := hooks.NewManager(dir)
+	for _, path := range []string{mailbox.NameFile("cafe"), mailbox.ReviewRepoFile("cafe"), mailbox.ReviewBaseFile("cafe"), mailbox.ReviewScopeFile("cafe")} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("bound mailbox %s: %v", path, err)
+		}
+	}
+	state, err := st.ReviewState("cafe", "/repo")
+	if err != nil || len(state.Comments) != 1 || !state.Comments[0].Resolved {
+		t.Fatalf("bound comment=%+v err=%v", state, err)
+	}
+	entries, err := os.ReadDir(alternate)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("alternate profile touched: %v %v", entries, err)
+	}
+}
+
+type recordingArchiveOwner struct {
+	request sessioncmd.ArchiveRequest
+}
+
+func (o *recordingArchiveOwner) Archive(request sessioncmd.ArchiveRequest) (sessioncmd.Session, error) {
+	o.request = request
+	return sessioncmd.Session{ID: request.TargetID, Name: "worker", Archived: request.Archived}, nil
+}
+
+func TestArchiveOwnerServerKeepsTheExplicitDurableOwner(t *testing.T) {
+	owner := &recordingArchiveOwner{}
+	session := connectServer(t, NewServerWithArchiveOwner(t.TempDir(), "cafe", "test", false, owner))
+	text, isError := callText(t, session, "archive_session", map[string]any{"session_id": "beef"})
+	if isError || !strings.Contains(text, "archived") {
+		t.Fatalf("archive = %q, isError=%v", text, isError)
+	}
+	if owner.request.CallerID != "cafe" || owner.request.TargetID != "beef" || !owner.request.Archived {
+		t.Fatalf("owner request = %+v", owner.request)
+	}
+	if instructions := session.InitializeResult().Instructions; !strings.Contains(instructions, "when the user asks") {
+		t.Fatalf("archive-owner server lost on-request mode:\n%s", instructions)
+	}
+}
+
+func TestBackendServerKeepsTheExplicitCoordinationMode(t *testing.T) {
+	configDir := t.TempDir()
+	st, err := store.Open(filepath.Join(configDir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	backend, err := sessioncmd.BorrowBackend(sessioncmd.Runtime{
+		Store: st, Driver: new(tmux.Driver), Hooks: hooks.NewManager(configDir),
+		Snapshot: func(string, string) error { return nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := connectServer(t, NewServerWithBackend(configDir, "cafe", "test", false, backend))
+	if instructions := session.InitializeResult().Instructions; !strings.Contains(instructions, "when the user asks") {
+		t.Fatalf("backend server lost on-request mode:\n%s", instructions)
+	}
+}
+
+func TestServerRunnersReturnCoordinationModeReadErrors(t *testing.T) {
+	configDir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(configDir, "state.db"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	owner := &recordingArchiveOwner{}
+	plainErr := Run(configDir, "cafe", "test")
+	ownerErr := RunWithArchiveOwner(configDir, "cafe", "test", owner)
+	if plainErr == nil || ownerErr == nil {
+		t.Fatalf("coordination errors: plain=%v archive-owner=%v", plainErr, ownerErr)
+	}
+	if plainErr.Error() != ownerErr.Error() {
+		t.Fatalf("coordination errors differ: plain=%q archive-owner=%q", plainErr, ownerErr)
+	}
+
+	backendDir := t.TempDir()
+	st, err := store.Open(filepath.Join(backendDir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend, err := sessioncmd.BorrowBackend(sessioncmd.Runtime{
+		Store: st, Driver: new(tmux.Driver), Hooks: hooks.NewManager(backendDir),
+		Snapshot: func(string, string) error { return nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := RunWithBackend(backendDir, "cafe", "test", backend); err == nil {
+		t.Fatal("backend runner swallowed a coordination mode read error")
 	}
 }

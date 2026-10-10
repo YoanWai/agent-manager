@@ -45,7 +45,11 @@ jobs:
       - name: Vet
         run: go vet ./...
       - name: Test
-        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+        run: |
+          fixture_root=$(mktemp -d /tmp/am-ci-race.XXXXXX)
+          mkdir -p "$fixture_root/zsh"
+          env -u TMUX -u TMUX_PANE TMUX_TMPDIR="$fixture_root" ZDOTDIR="$fixture_root/zsh" SHELL=/bin/sh \
+            go test -race -timeout 20m -coverprofile=coverage.out -covermode=atomic ./...
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
@@ -55,3 +59,46 @@ jobs:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
       - name: Build
         run: go build ./...
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Install tmux
+        run: sudo apt-get update && sudo apt-get install -y tmux
+      - name: Harness contracts
+        run: python3 -m unittest discover -s tools/e2e -p 'test_*.py'
+      - name: Feature dependencies
+        run: go run ./tools/architecture/check-ui-boundaries
+      - name: File names
+        run: go run ./tools/architecture/check-file-names
+      - name: File sizes
+        run: go run ./tools/architecture/check-file-sizes
+      - name: Build terminal test binary
+        run: go build -o "$RUNNER_TEMP/am-e2e-binary" .
+      - name: Real terminal smoke
+        run: python3 tools/e2e/smoke.py --binary "$RUNNER_TEMP/am-e2e-binary" --artifacts "$RUNNER_TEMP/am-e2e-evidence"
+      - name: Dialog and quit-drain scenarios
+        run: python3 tools/e2e/scenarios.py --binary "$RUNNER_TEMP/am-e2e-binary" --artifacts "$RUNNER_TEMP/am-scenario-evidence"
+      - name: Partial writes and installation scenarios
+        run: python3 tools/e2e/failure_scenarios.py --binary "$RUNNER_TEMP/am-e2e-binary" --artifacts "$RUNNER_TEMP/am-failure-evidence"
+      - name: Blocked dialog and focus scenarios
+        run: python3 tools/e2e/blocked_scenarios.py --binary "$RUNNER_TEMP/am-e2e-binary" --artifacts "$RUNNER_TEMP/am-blocked-evidence"
+      - name: Compatibility fixture safety
+        run: python3 -m unittest discover -s tools/compatibility -p 'test_*.py'
+      - name: Retain smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-evidence
+          path: |
+            ${{ runner.temp }}/am-e2e-evidence
+            ${{ runner.temp }}/am-scenario-evidence
+            ${{ runner.temp }}/am-failure-evidence
+            ${{ runner.temp }}/am-blocked-evidence
+          include-hidden-files: true
+          retention-days: 7
+          if-no-files-found: ignore

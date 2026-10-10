@@ -73,8 +73,6 @@ func TestInjectPickerKeysStopsOnInvalidInputAndPaneDisappearance(t *testing.T) {
 	}
 }
 
-// startPickerPane runs a stand-in for a TUI whose picker lives behind a
-// composer command, and returns the pane's id.
 func startPickerPane(t *testing.T, h *sessionHarness, script string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "tui.sh")
@@ -107,9 +105,6 @@ func waitForPaneText(t *testing.T, driver *tmux.Driver, id, text string) string 
 	return ""
 }
 
-// agy leaves its composer on screen after it exits, so a revive into that
-// pane must wait for the caret, not the marker, and its picker opens on the
-// first Enter, where a second one would resume its top row.
 func TestInjectPickerKeysWaitsForTheCaretAndStopsOnceThePickerOpens(t *testing.T) {
 	h := newSessionHarness(t)
 	id := startPickerPane(t, h, `printf '>\n----\n'

@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/deps"
+	"github.com/YoanWai/agent-manager/internal/git/value"
 )
 
 var ErrNotARepo = errors.New("not a git repository")
@@ -43,6 +44,11 @@ func New() (*Driver, error) {
 func (d *Driver) run(dir string, args ...string) (string, error) {
 	cmd := exec.Command(d.bin, append([]string{"-c", "core.quotepath=false"}, args...)...)
 	cmd.Dir = dir
+	// The manager's UI owns the terminal, so a credential, askpass or ssh
+	// prompt from a hook or LFS filter would hang unseen; off its terminal
+	// and with prompts disabled, git fails instead.
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "SSH_ASKPASS_REQUIRE=never")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	out, err := cmd.CombinedOutput()
 	text := strings.TrimRight(string(out), "\n")
 	if err != nil {
@@ -54,38 +60,16 @@ func (d *Driver) run(dir string, args ...string) (string, error) {
 	return text, nil
 }
 
-type Scope int
+type Scope = value.Scope
 
 const (
-	ScopeUncommitted Scope = iota
-	ScopeBranch
-	ScopeLastCommit
-	ScopeStaged
-	scopeCount
+	ScopeUncommitted = value.ScopeUncommitted
+	ScopeBranch      = value.ScopeBranch
+	ScopeLastCommit  = value.ScopeLastCommit
+	ScopeStaged      = value.ScopeStaged
 )
 
-func (s Scope) Next() Scope { return (s + 1) % scopeCount }
-
-func (s Scope) String() string {
-	switch s {
-	case ScopeBranch:
-		return "vs target"
-	case ScopeLastCommit:
-		return "last commit"
-	case ScopeStaged:
-		return "staged"
-	default:
-		return "uncommitted"
-	}
-}
-
-type Repo struct {
-	Root     string
-	Branch   string
-	Head     string
-	Unborn   bool
-	Detached bool
-}
+type Repo = value.Repo
 
 func (d *Driver) OpenRepo(dir string) (Repo, error) {
 	root, err := d.run(dir, "rev-parse", "--show-toplevel")
@@ -375,23 +359,19 @@ func (d *Driver) ResolveRef(root, ref string) error {
 	return nil
 }
 
-type Status byte
+type Status = value.Status
 
 const (
-	Added     Status = 'A'
-	Modified  Status = 'M'
-	Deleted   Status = 'D'
-	Renamed   Status = 'R'
-	Copied    Status = 'C'
-	Untracked Status = '?'
-	Unmerged  Status = 'U'
+	Added     = value.Added
+	Modified  = value.Modified
+	Deleted   = value.Deleted
+	Renamed   = value.Renamed
+	Copied    = value.Copied
+	Untracked = value.Untracked
+	Unmerged  = value.Unmerged
 )
 
-type ChangedFile struct {
-	Path    string
-	OldPath string
-	Status  Status
-}
+type ChangedFile = value.ChangedFile
 
 // LastCommitParent returns HEAD's parent ref, or git's empty-tree object
 // when HEAD is a root commit.
@@ -482,10 +462,7 @@ func splitNUL(out string) []string {
 	return parts
 }
 
-type FileStat struct {
-	Adds, Dels int
-	Binary     bool
-}
+type FileStat = value.FileStat
 
 func (d *Driver) NumStat(root string, scope Scope, baseRef string) (map[string]FileStat, error) {
 	_, rangeArgs, err := d.diffRange(root, scope, baseRef)
@@ -648,10 +625,7 @@ func IsBinary(content []byte) bool {
 	return bytes.IndexByte(content[:limit], 0) >= 0
 }
 
-type Worktree struct {
-	Root   string
-	Branch string
-}
+type Worktree = value.Worktree
 
 func (d *Driver) Worktrees(root string) ([]Worktree, error) {
 	out, err := d.run(root, "worktree", "list", "--porcelain")

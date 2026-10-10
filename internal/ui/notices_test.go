@@ -17,6 +17,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	"github.com/YoanWai/agent-manager/internal/update"
+	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -34,13 +35,17 @@ func noticeStore(t *testing.T) *store.Store {
 
 func noticeModel(st *store.Store, version string) *Model {
 	return &Model{
-		store:               st,
-		keys:                keybind.DefaultSession(),
-		listKeys:            keybind.DefaultList(),
-		update:              updateInfo{version: version},
-		dismissed:           loadDismissed(st),
-		whatsNewVersion:     loadWhatsNewVersion(st),
-		whatsNewFromVersion: loadWhatsNewFromVersion(st),
+		update: updateInfo{version: version},
+		services: services{
+			store:    st,
+			keys:     keybind.DefaultSession(),
+			listKeys: keybind.DefaultList(),
+		},
+		notices: noticesPanel{noticesState{
+			dismissed:           loadDismissed(st),
+			whatsNewVersion:     loadWhatsNewVersion(st),
+			whatsNewFromVersion: loadWhatsNewFromVersion(st),
+		}},
 	}
 }
 
@@ -52,14 +57,20 @@ func noticeIDs(notices []notice) []string {
 	return ids
 }
 
+func persistNoticeDismissal(t *testing.T, m *Model, id string) {
+	t.Helper()
+	m.dismissNotice(id)
+	m.drainEffects(t)
+}
+
 func TestActiveNoticesPinnedByDefault(t *testing.T) {
 	m := noticeModel(noticeStore(t), "v0.2.0")
-	ids := noticeIDs(m.activeNotices())
+	ids := noticeIDs(m.notices.active(m))
 	if !contains(ids, noticeWelcome) {
 		t.Fatalf("want %s among %v", noticeWelcome, ids)
 	}
 	var welcome notice
-	for _, n := range m.activeNotices() {
+	for _, n := range m.notices.active(m) {
 		if n.id == noticeWelcome {
 			welcome = n
 		}
@@ -68,7 +79,7 @@ func TestActiveNoticesPinnedByDefault(t *testing.T) {
 	if !strings.Contains(joined, "Settings (s)") || !strings.Contains(joined, "A bug or an idea?") {
 		t.Fatalf("welcome should point at Settings for a bug or an idea: %q", joined)
 	}
-	for _, n := range m.activeNotices() {
+	for _, n := range m.notices.active(m) {
 		if n.id != noticeWelcome && n.url == bugReportURL(m.update.version) {
 			t.Fatalf("standalone bug-report notice still active: %q", n.id)
 		}
@@ -78,13 +89,13 @@ func TestActiveNoticesPinnedByDefault(t *testing.T) {
 func TestDismissPersistsAcrossRestart(t *testing.T) {
 	st := noticeStore(t)
 	m := noticeModel(st, "v0.2.0")
-	m.dismissNotice(noticeWelcome)
-	if contains(noticeIDs(m.activeNotices()), noticeWelcome) {
+	persistNoticeDismissal(t, m, noticeWelcome)
+	if contains(noticeIDs(m.notices.active(m)), noticeWelcome) {
 		t.Fatal("dismissed notice still active")
 	}
 
 	reopened := noticeModel(st, "v0.2.0")
-	if contains(noticeIDs(reopened.activeNotices()), noticeWelcome) {
+	if contains(noticeIDs(reopened.notices.active(reopened)), noticeWelcome) {
 		t.Fatal("dismissal did not survive restart")
 	}
 }
@@ -92,26 +103,26 @@ func TestDismissPersistsAcrossRestart(t *testing.T) {
 func TestConfigNotImportedNoticeCarriesTheReason(t *testing.T) {
 	st := noticeStore(t)
 	m := noticeModel(st, "v0.2.0")
-	if contains(noticeIDs(m.activeNotices()), noticeConfigNotImported) {
+	if contains(noticeIDs(m.notices.active(m)), noticeConfigNotImported) {
 		t.Fatal("an import that went through has nothing to report")
 	}
-	m.configImportError = "config.toml: keybindings.session.detach needs at least one key"
+	m.notices.configImportError = "config.toml: keybindings.session.detach needs at least one key"
 	var refused notice
-	for _, n := range m.activeNotices() {
+	for _, n := range m.notices.active(m) {
 		if n.id == noticeConfigNotImported {
 			refused = n
 		}
 	}
 	if refused.id == "" {
-		t.Fatalf("want %s among %v", noticeConfigNotImported, noticeIDs(m.activeNotices()))
+		t.Fatalf("want %s among %v", noticeConfigNotImported, noticeIDs(m.notices.active(m)))
 	}
-	if !contains(refused.body, m.configImportError) {
+	if !contains(refused.body, m.notices.configImportError) {
 		t.Fatalf("the notice should carry the reason: %q", refused.body)
 	}
-	m.dismissNotice(noticeConfigNotImported)
+	persistNoticeDismissal(t, m, noticeConfigNotImported)
 	reopened := noticeModel(st, "v0.2.0")
-	reopened.configImportError = m.configImportError
-	if contains(noticeIDs(reopened.activeNotices()), noticeConfigNotImported) {
+	reopened.notices.configImportError = m.notices.configImportError
+	if contains(noticeIDs(reopened.notices.active(reopened)), noticeConfigNotImported) {
 		t.Fatal("dismissal did not survive restart")
 	}
 }
@@ -122,18 +133,18 @@ func TestUpdateNoticePerRelease(t *testing.T) {
 	m.update.latest = "v0.3.0"
 	m.update.url = "https://example.com/v0.3.0"
 
-	ids := noticeIDs(m.activeNotices())
+	ids := noticeIDs(m.notices.active(m))
 	if !contains(ids, "update-v0.3.0") {
 		t.Fatalf("want update notice, got %v", ids)
 	}
 
-	m.dismissNotice("update-v0.3.0")
-	if contains(noticeIDs(m.activeNotices()), "update-v0.3.0") {
+	persistNoticeDismissal(t, m, "update-v0.3.0")
+	if contains(noticeIDs(m.notices.active(m)), "update-v0.3.0") {
 		t.Fatal("dismissed update notice still active")
 	}
 
 	m.update.latest = "v0.4.0"
-	if !contains(noticeIDs(m.activeNotices()), "update-v0.4.0") {
+	if !contains(noticeIDs(m.notices.active(m)), "update-v0.4.0") {
 		t.Fatal("a newer release must surface its own notice")
 	}
 }
@@ -152,16 +163,16 @@ func TestUpdateNoticeSummarizesEverySkippedRelease(t *testing.T) {
 		url:      "https://github.com/YoanWai/agent-manager/releases/tag/v0.6.0",
 		releases: releases,
 	})
-	m.openNotices("update-v0.6.0")
+	m.notices.open(m, "update-v0.6.0")
 
-	n := m.activeNotices()[m.noticeCursor]
+	n := m.notices.active(m)[m.notices.noticeCursor]
 	if n.title != "4 releases available · v0.6.0" {
 		t.Fatalf("title = %q", n.title)
 	}
 	if len(n.releases) != 4 {
 		t.Fatalf("summary has %d releases, want 4", len(n.releases))
 	}
-	frame := ansi.Strip(m.View())
+	frame := ansi.Strip(preparedView(m))
 	for _, want := range []string{
 		"4 releases available · v0.6.0",
 		"v0.3.0",
@@ -181,7 +192,7 @@ func TestPostUpdateNoticeUsesPersistedStartingVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := noticeModel(st, "v0.5.0")
-	m.width, m.height = 100, 34
+	m.layout.width, m.layout.height = 100, 34
 	m.update.checked = true
 	m.update.releases = []update.Release{
 		uiRelease("v0.5.0", "Groups: Create immediately"),
@@ -193,12 +204,12 @@ func TestPostUpdateNoticeUsesPersistedStartingVersion(t *testing.T) {
 	if got := m.startupNotice(); got != "whatsnew-v0.5.0" {
 		t.Fatalf("startup notice = %q", got)
 	}
-	m.openNotices("whatsnew-v0.5.0")
+	m.notices.open(m, "whatsnew-v0.5.0")
 
 	if from, _ := st.Setting(whatsNewFromSetting); from != "v0.1.0" {
 		t.Fatalf("persisted starting version = %q", from)
 	}
-	frame := ansi.Strip(m.View())
+	frame := ansi.Strip(preparedView(m))
 	for _, want := range []string{
 		"Updated across 4 releases · v0.5.0",
 		"Updated from v0.1.0 to v0.5.0.",
@@ -220,7 +231,7 @@ func TestVersionDowngradeDoesNotClaimAnUpdate(t *testing.T) {
 	if got := m.startupNotice(); got != "" {
 		t.Fatalf("downgrade should not open what's new, got %q", got)
 	}
-	if m.whatsNewVersion == "v0.4.0" {
+	if m.notices.whatsNewVersion == "v0.4.0" {
 		t.Fatal("downgrade was recorded as an upgrade")
 	}
 	if version, _ := st.Setting(whatsNewVersionSetting); version != "" {
@@ -260,7 +271,7 @@ func TestStartupNoticeVersionChange(t *testing.T) {
 	if got != "whatsnew-v0.2.0" {
 		t.Fatalf("version change should open what's new, got %q", got)
 	}
-	if !contains(noticeIDs(m.activeNotices()), "whatsnew-v0.2.0") {
+	if !contains(noticeIDs(m.notices.active(m)), "whatsnew-v0.2.0") {
 		t.Fatal("what's new notice must be listed until dismissed")
 	}
 	if seen, _ := st.Setting(lastSeenVersionSetting); seen != "v0.2.0" {
@@ -282,11 +293,11 @@ func TestWhatsNewSurvivesRestartUntilDismissed(t *testing.T) {
 	if reopened.startupNotice() != "" {
 		t.Fatal("startup notice must fire once per version")
 	}
-	if !contains(noticeIDs(reopened.activeNotices()), "whatsnew-v0.2.0") {
+	if !contains(noticeIDs(reopened.notices.active(reopened)), "whatsnew-v0.2.0") {
 		t.Fatal("undismissed what's new should stay listed")
 	}
-	reopened.dismissNotice("whatsnew-v0.2.0")
-	if contains(noticeIDs(reopened.activeNotices()), "whatsnew-v0.2.0") {
+	persistNoticeDismissal(t, reopened, "whatsnew-v0.2.0")
+	if contains(noticeIDs(reopened.notices.active(reopened)), "whatsnew-v0.2.0") {
 		t.Fatal("dismissed what's new still listed")
 	}
 }
@@ -297,9 +308,9 @@ func TestFreshInstallNeverShowsWhatsNew(t *testing.T) {
 	if got := m.startupNotice(); got != noticeWelcome {
 		t.Fatalf("want welcome, got %q", got)
 	}
-	for _, id := range noticeIDs(m.activeNotices()) {
+	for _, id := range noticeIDs(m.notices.active(m)) {
 		if strings.HasPrefix(id, "whatsnew-") {
-			t.Fatalf("fresh install must not list what's new, got %v", noticeIDs(m.activeNotices()))
+			t.Fatalf("fresh install must not list what's new, got %v", noticeIDs(m.notices.active(m)))
 		}
 	}
 }
@@ -307,7 +318,7 @@ func TestFreshInstallNeverShowsWhatsNew(t *testing.T) {
 func TestFeedMessagesBecomeNotices(t *testing.T) {
 	st := noticeStore(t)
 	m := noticeModel(st, "v0.2.0")
-	m.feedMessages = []feed.Message{{
+	m.notices.feedMessages = []feed.Message{{
 		ID:     "feed-holdoff",
 		Banner: "known issue in v0.2.0",
 		Title:  "Hold off",
@@ -315,34 +326,34 @@ func TestFeedMessagesBecomeNotices(t *testing.T) {
 		URL:    "https://example.com",
 	}}
 
-	ids := noticeIDs(m.activeNotices())
+	ids := noticeIDs(m.notices.active(m))
 	if !contains(ids, "feed-holdoff") {
 		t.Fatalf("feed message should be a notice, got %v", ids)
 	}
 
-	m.dismissNotice("feed-holdoff")
-	if contains(noticeIDs(m.activeNotices()), "feed-holdoff") {
+	persistNoticeDismissal(t, m, "feed-holdoff")
+	if contains(noticeIDs(m.notices.active(m)), "feed-holdoff") {
 		t.Fatal("dismissed feed notice still active")
 	}
 	reopened := noticeModel(st, "v0.2.0")
-	reopened.feedMessages = m.feedMessages
-	if contains(noticeIDs(reopened.activeNotices()), "feed-holdoff") {
+	reopened.notices.feedMessages = m.notices.feedMessages
+	if contains(noticeIDs(reopened.notices.active(reopened)), "feed-holdoff") {
 		t.Fatal("feed dismissal must survive restart")
 	}
 }
 
 func TestFeedUsesCanonicalTitleInModal(t *testing.T) {
 	m := modalModel(t)
-	m.feedMessages = []feed.Message{{
+	m.notices.feedMessages = []feed.Message{{
 		ID:     "feed-canonical",
 		Banner: "legacy compact copy",
 		Title:  "One title everywhere",
 		Body:   []string{"details"},
 	}}
-	m.dismissNotice(noticeWelcome)
+	persistNoticeDismissal(t, m, noticeWelcome)
 
-	m.openNotices("feed-canonical")
-	modal := ansi.Strip(m.View())
+	m.notices.open(m, "feed-canonical")
+	modal := ansi.Strip(preparedView(m))
 	if !strings.Contains(modal, "One title everywhere") || strings.Contains(modal, "legacy compact copy") {
 		t.Fatalf("modal did not use the canonical title:\n%s", modal)
 	}
@@ -383,7 +394,7 @@ func contains(list []string, want string) bool {
 func footModel(t *testing.T) *Model {
 	t.Helper()
 	m := noticeModel(noticeStore(t), "v0.2.0")
-	m.snap = sysstat.Snapshot{
+	m.workspace.snap = sysstat.Snapshot{
 		CPUPercent: 42, CPUOK: true,
 		MemPercent: 63, MemOK: true, MemUsed: 10 << 30, MemTotal: 16 << 30,
 		DiskPercent: 71, DiskOK: true, DiskAvailable: 120 << 30,
@@ -395,12 +406,12 @@ func TestRailFootOnlyShowsComputerStats(t *testing.T) {
 	for _, full := range []bool{false, true} {
 		for _, width := range []int{34, 70, 120} {
 			m := footModel(t)
-			m.fullLayout = full
+			m.prefs.fullLayout = full
 			foot := strings.Join(m.railFootLines(width), "\n")
 			if !strings.Contains(ansi.Strip(foot), "cpu") || strings.Contains(ansi.Strip(foot), "messages") {
 				t.Fatalf("full=%v width=%d: stats foot contains messages or loses readings:\n%s", full, width, ansi.Strip(foot))
 			}
-			for _, n := range m.activeNotices() {
+			for _, n := range m.notices.active(m) {
 				m.dismissNotice(n.id)
 			}
 			if got := strings.Join(m.railFootLines(width), "\n"); got != foot {
@@ -440,14 +451,14 @@ func key(s string) tea.KeyMsg {
 func modalModel(t *testing.T) *Model {
 	t.Helper()
 	m := footModel(t)
-	m.width, m.height = 100, 34
+	m.layout.width, m.layout.height = 100, 34
 	m.mode = modeNotices
 	return m
 }
 
 func TestOpenNoticesFromList(t *testing.T) {
 	m := footModel(t)
-	m.width, m.height = 100, 34
+	m.layout.width, m.layout.height = 100, 34
 	m.mode = modeList
 	m.handleKey(key("M"))
 	if m.mode != modeNotices {
@@ -457,7 +468,7 @@ func TestOpenNoticesFromList(t *testing.T) {
 
 func TestNoticesViewListsAndDetails(t *testing.T) {
 	m := modalModel(t)
-	frame := ansi.Strip(m.View())
+	frame := ansi.Strip(preparedView(m))
 	for _, want := range []string{"messages", "Welcome to agent-manager", "Settings (s)", "A bug or an idea?", "dismiss"} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("modal missing %q:\n%s", want, frame)
@@ -465,8 +476,8 @@ func TestNoticesViewListsAndDetails(t *testing.T) {
 	}
 
 	for _, terminal := range []int{100, 40} {
-		m.width = terminal
-		frame := ansi.Strip(m.View())
+		m.layout.width = terminal
+		frame := ansi.Strip(preparedView(m))
 		var widths []int
 		for _, line := range strings.Split(frame, "\n") {
 			trimmed := strings.TrimRight(line, " ")
@@ -487,7 +498,7 @@ func TestNoticesViewListsAndDetails(t *testing.T) {
 
 func TestNoticesLongBodyWrapsFully(t *testing.T) {
 	m := modalModel(t)
-	m.feedMessages = []feed.Message{{
+	m.notices.feedMessages = []feed.Message{{
 		ID:     "feed-long",
 		Banner: "long banner",
 		Title:  "Long body message",
@@ -495,8 +506,8 @@ func TestNoticesLongBodyWrapsFully(t *testing.T) {
 			"Each group can choose inherit, on, or off for spawning sessions into their own git worktree, set when creating a group or editing it later; children inherit from their parents, and the global setting stays the root fallback.",
 		},
 	}}
-	m.openNotices("feed-long")
-	frame := ansi.Strip(m.View())
+	m.notices.open(m, "feed-long")
+	frame := ansi.Strip(preparedView(m))
 	for _, line := range strings.Split(frame, "\n") {
 		if !strings.Contains(line, "╭") {
 			continue
@@ -512,7 +523,7 @@ func TestNoticesLongBodyWrapsFully(t *testing.T) {
 		}
 	}
 	for _, line := range strings.Split(frame, "\n") {
-		if got := lipgloss.Width(line); got > m.width {
+		if got := lipgloss.Width(line); got > m.layout.width {
 			t.Fatalf("line overflows terminal at %d: %q", got, line)
 		}
 	}
@@ -520,8 +531,8 @@ func TestNoticesLongBodyWrapsFully(t *testing.T) {
 
 func TestNoticesShortTerminalKeepsFrameAndHint(t *testing.T) {
 	m := modalModel(t)
-	m.width, m.height = 30, 12
-	m.feedMessages = []feed.Message{{
+	m.layout.width, m.layout.height = 30, 12
+	m.notices.feedMessages = []feed.Message{{
 		ID:     "feed-long",
 		Banner: "long banner",
 		Title:  "Long body message",
@@ -529,10 +540,10 @@ func TestNoticesShortTerminalKeepsFrameAndHint(t *testing.T) {
 			"Each group can choose inherit, on, or off for spawning sessions into their own git worktree, set when creating a group or editing it later.",
 		},
 	}}
-	m.openNotices("feed-long")
-	lines := strings.Split(ansi.Strip(m.View()), "\n")
-	if len(lines) > m.height {
-		t.Fatalf("frame must fit %d rows, got %d", m.height, len(lines))
+	m.notices.open(m, "feed-long")
+	lines := strings.Split(ansi.Strip(preparedView(m)), "\n")
+	if len(lines) > m.layout.height {
+		t.Fatalf("frame must fit %d rows, got %d", m.layout.height, len(lines))
 	}
 	joined := strings.Join(lines, "\n")
 	if !strings.Contains(joined, "╰") {
@@ -548,28 +559,28 @@ func TestNoticesShortTerminalKeepsFrameAndHint(t *testing.T) {
 
 func TestNoticesBodyScrollIsBoundedAndVisible(t *testing.T) {
 	m := modalModel(t)
-	m.width, m.height = 70, 14
+	m.layout.width, m.layout.height = 70, 14
 	var body []string
 	for i := 0; i < 30; i++ {
 		body = append(body, fmt.Sprintf("change line %02d", i))
 	}
-	m.feedMessages = []feed.Message{{ID: "feed-scroll", Banner: "scroll", Title: "Scrollable summary", Body: body}}
-	m.openNotices("feed-scroll")
+	m.notices.feedMessages = []feed.Message{{ID: "feed-scroll", Banner: "scroll", Title: "Scrollable summary", Body: body}}
+	m.notices.open(m, "feed-scroll")
 
-	before := ansi.Strip(m.View())
+	before := ansi.Strip(preparedView(m))
 	if !strings.Contains(before, "┃") {
 		t.Fatalf("a clipped body shows its scrollbar:\n%s", before)
 	}
-	m.handleNoticesKey(key("pgdown"))
-	if m.noticeScroll == 0 {
-		t.Fatalf("page down did not move the summary:\n%s", ansi.Strip(m.View()))
+	m.notices.handleKey(m, key("pgdown"))
+	if m.notices.noticeScroll == 0 {
+		t.Fatalf("page down did not move the summary:\n%s", ansi.Strip(preparedView(m)))
 	}
-	limit := m.noticeScrollLimit(m.activeNotices())
+	limit := m.notices.scrollLimit(m, m.notices.active(m))
 	for i := 0; i < 20; i++ {
-		m.handleNoticesKey(key("pgdown"))
+		m.notices.handleKey(m, key("pgdown"))
 	}
-	if m.noticeScroll != limit {
-		t.Fatalf("scroll offset = %d, want bounded limit %d", m.noticeScroll, limit)
+	if m.notices.noticeScroll != limit {
+		t.Fatalf("scroll offset = %d, want bounded limit %d", m.notices.noticeScroll, limit)
 	}
 }
 
@@ -588,7 +599,7 @@ func TestReleaseSummaryMarksOmittedChangesAndPartialRange(t *testing.T) {
 
 func TestNoticesManualRefreshWaitsForBothSources(t *testing.T) {
 	m := modalModel(t)
-	_, cmd := m.handleNoticesKey(key("r"))
+	cmd := m.notices.handleKey(m, key("r"))
 	if cmd == nil || !m.update.refreshing || m.update.refreshPending != 2 {
 		t.Fatalf("refresh did not start both sources: refreshing=%v pending=%d", m.update.refreshing, m.update.refreshPending)
 	}
@@ -604,14 +615,14 @@ func TestNoticesManualRefreshWaitsForBothSources(t *testing.T) {
 
 func TestNoticesDismissAdvancesAndCloses(t *testing.T) {
 	m := modalModel(t)
-	total := len(m.activeNotices())
+	total := len(m.notices.active(m))
 	for i := 0; i < total; i++ {
-		m.handleNoticesKey(key("x"))
+		m.notices.handleKey(m, key("x"))
 	}
 	if m.mode != modeList {
 		t.Fatal("dismissing the last notice should close the modal")
 	}
-	if len(m.activeNotices()) != 0 {
+	if len(m.notices.active(m)) != 0 {
 		t.Fatal("all notices should be gone")
 	}
 }
@@ -625,11 +636,11 @@ func TestNoticesEnterOpensURL(t *testing.T) {
 	}
 	t.Cleanup(func() { openBrowser = defaultOpenBrowser })
 
-	want := m.activeNotices()[m.noticeCursor].url
+	want := m.notices.active(m)[m.notices.noticeCursor].url
 	if want == "" {
 		t.Fatal("selected notice needs a url for this test")
 	}
-	_, cmd := m.handleNoticesKey(key("enter"))
+	cmd := m.notices.handleKey(m, key("enter"))
 	if opened != "" {
 		t.Fatal("browser started during Update")
 	}
@@ -790,11 +801,11 @@ func TestOpenBrowserAndCopyFailureNamesURL(t *testing.T) {
 
 func TestNoticesEscCloses(t *testing.T) {
 	m := modalModel(t)
-	m.handleNoticesKey(key("esc"))
+	m.notices.handleKey(m, key("esc"))
 	if m.mode != modeList {
 		t.Fatal("esc should close the modal")
 	}
-	if len(m.activeNotices()) == 0 {
+	if len(m.notices.active(m)) == 0 {
 		t.Fatal("esc must not dismiss anything")
 	}
 }
@@ -818,7 +829,7 @@ func TestStartupOpensNoticesModalOncePerVersion(t *testing.T) {
 	if m.mode != modeNotices {
 		t.Fatalf("first launch should open the notices modal, mode=%v", m.mode)
 	}
-	if selected := m.activeNotices()[m.noticeCursor]; selected.id != noticeWelcome {
+	if selected := m.notices.active(m)[m.notices.noticeCursor]; selected.id != noticeWelcome {
 		t.Fatalf("welcome should be selected, got %q", selected.id)
 	}
 
@@ -831,36 +842,36 @@ func TestStartupOpensNoticesModalOncePerVersion(t *testing.T) {
 
 func TestLateReleaseKeepsModalSelection(t *testing.T) {
 	m := modalModel(t)
-	m.handleNoticesKey(key("down"))
-	selected := m.activeNotices()[m.noticeCursor].id
+	m.notices.handleKey(m, key("down"))
+	selected := m.notices.active(m)[m.notices.noticeCursor].id
 
 	m.Update(updateMsg{latest: "v9.9.9", url: "https://example.com"})
-	if got := m.activeNotices()[m.noticeCursor].id; got != selected {
+	if got := m.notices.active(m)[m.notices.noticeCursor].id; got != selected {
 		t.Fatalf("selection moved from %q to %q when the release arrived", selected, got)
 	}
 }
 
 func TestLateDismissedReleaseKeepsModalSelection(t *testing.T) {
 	m := modalModel(t)
-	m.dismissNotice("update-v9.9.9")
-	selected := m.activeNotices()[m.noticeCursor].id
+	persistNoticeDismissal(t, m, "update-v9.9.9")
+	selected := m.notices.active(m)[m.notices.noticeCursor].id
 
 	m.Update(updateMsg{latest: "v9.9.9", url: "https://example.com"})
-	if got := m.activeNotices()[m.noticeCursor].id; got != selected {
+	if got := m.notices.active(m)[m.notices.noticeCursor].id; got != selected {
 		t.Fatalf("a dismissed release must not move the selection, went from %q to %q", selected, got)
 	}
 }
 
 func TestLateFeedKeepsModalSelection(t *testing.T) {
 	m := modalModel(t)
-	m.handleNoticesKey(key("down"))
-	selected := m.activeNotices()[m.noticeCursor].id
+	m.notices.handleKey(m, key("down"))
+	selected := m.notices.active(m)[m.notices.noticeCursor].id
 
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-late", Banner: "late", Title: "Late"}}})
-	if !contains(noticeIDs(m.activeNotices()), "feed-late") {
+	if !contains(noticeIDs(m.notices.active(m)), "feed-late") {
 		t.Fatal("feed message should have landed")
 	}
-	if got := m.activeNotices()[m.noticeCursor].id; got != selected {
+	if got := m.notices.active(m)[m.notices.noticeCursor].id; got != selected {
 		t.Fatalf("selection moved from %q to %q when the feed arrived", selected, got)
 	}
 }
@@ -869,12 +880,12 @@ func TestNewFeedOpensNoticesModal(t *testing.T) {
 	for _, hidden := range []bool{false, true} {
 		m := footModel(t)
 		m.mode = modeList
-		m.hideStats = hidden
+		m.prefs.hideStats = hidden
 		m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
 		if m.mode != modeNotices {
 			t.Fatalf("hidden=%v: a new feed message should open the modal, mode=%v", hidden, m.mode)
 		}
-		if got := m.activeNotices()[m.noticeCursor].id; got != "feed-new" {
+		if got := m.notices.active(m)[m.notices.noticeCursor].id; got != "feed-new" {
 			t.Fatalf("new message should be selected, got %q", got)
 		}
 	}
@@ -884,7 +895,7 @@ func TestSameFeedDoesNotReopenNoticesModal(t *testing.T) {
 	m := footModel(t)
 	m.mode = modeList
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
-	m.handleNoticesKey(key("esc"))
+	m.notices.handleKey(m, key("esc"))
 	if m.mode != modeList {
 		t.Fatal("esc should close the modal")
 	}
@@ -898,7 +909,7 @@ func TestSameFeedDoesNotReopenNoticesModal(t *testing.T) {
 func TestDismissedFeedDoesNotOpenNoticesModal(t *testing.T) {
 	m := footModel(t)
 	m.mode = modeList
-	m.dismissNotice("feed-new")
+	persistNoticeDismissal(t, m, "feed-new")
 
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
 	if m.mode != modeList {
@@ -916,10 +927,26 @@ func TestNewFeedDoesNotStealFocus(t *testing.T) {
 	}
 }
 
+func TestPendingFeedDoesNotOpenDuringQuit(t *testing.T) {
+	m := footModel(t)
+	m.mode = modeFocus
+	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
+	if m.notices.pendingNotice != "feed-new" {
+		t.Fatalf("pending notice = %q, want feed-new", m.notices.pendingNotice)
+	}
+
+	m.mode = modeList
+	m.effects.quitting = true
+	m.flushPendingNotice()
+	if m.mode != modeList {
+		t.Fatalf("pending feed opened while quitting: mode=%v", m.mode)
+	}
+}
+
 func TestAdditionalFeedIdOpensNoticesModal(t *testing.T) {
 	m := footModel(t)
 	m.mode = modeList
-	m.feedMessages = []feed.Message{{ID: "feed-old", Banner: "old", Title: "Old"}}
+	m.notices.feedMessages = []feed.Message{{ID: "feed-old", Banner: "old", Title: "Old"}}
 
 	m.Update(feedMsg{messages: []feed.Message{
 		{ID: "feed-old", Banner: "old", Title: "Old"},
@@ -928,7 +955,7 @@ func TestAdditionalFeedIdOpensNoticesModal(t *testing.T) {
 	if m.mode != modeNotices {
 		t.Fatalf("a new id should open the modal, mode=%v", m.mode)
 	}
-	if got := m.activeNotices()[m.noticeCursor].id; got != "feed-new" {
+	if got := m.notices.active(m)[m.notices.noticeCursor].id; got != "feed-new" {
 		t.Fatalf("new message should be selected, got %q", got)
 	}
 }
@@ -945,14 +972,14 @@ func TestFeedDuringFocusOpensOnLeave(t *testing.T) {
 	if m.mode != modeNotices {
 		t.Fatalf("returning to the list should open the new message, mode=%v", m.mode)
 	}
-	if got := m.activeNotices()[m.noticeCursor].id; got != "feed-new" {
+	if got := m.notices.active(m)[m.notices.noticeCursor].id; got != "feed-new" {
 		t.Fatalf("new message should be selected, got %q", got)
 	}
 }
 
 func TestFeedDuringSettingsOpensOnClose(t *testing.T) {
 	m := footModel(t)
-	m.width, m.height = 100, 34
+	m.layout.width, m.layout.height = 100, 34
 	m.mode = modeSettings
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
 	if m.mode != modeSettings {
@@ -964,7 +991,7 @@ func TestFeedDuringSettingsOpensOnClose(t *testing.T) {
 	if m.mode != modeNotices {
 		t.Fatalf("closing settings should open the new message, mode=%v", m.mode)
 	}
-	if got := m.activeNotices()[m.noticeCursor].id; got != "feed-new" {
+	if got := m.notices.active(m)[m.notices.noticeCursor].id; got != "feed-new" {
 		t.Fatalf("new message should be selected, got %q", got)
 	}
 }
@@ -982,29 +1009,30 @@ func TestExpiredPendingNoticeDoesNotOpen(t *testing.T) {
 
 func TestNewFeedWaitsForSearchToClose(t *testing.T) {
 	m := footModel(t)
-	m.width, m.height = 100, 34
+	m.layout.width, m.layout.height = 100, 34
 	m.mode = modeList
-	m.searching = true
+	m.rail.SetSearch(m.rail.Search(), true)
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
-	if m.mode != modeList || !m.searching {
-		t.Fatalf("search should keep the modal closed, mode=%v searching=%v", m.mode, m.searching)
+	if m.mode != modeList || !m.rail.Searching() {
+		t.Fatalf("search should keep the modal closed, mode=%v searching=%v", m.mode, m.rail.Searching())
 	}
 
-	m.searching = false
+	m.rail.SetSearch(m.rail.Search(), false)
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 34})
 	if m.mode != modeNotices {
 		t.Fatalf("closing search should open the new message, mode=%v", m.mode)
 	}
-	if got := m.activeNotices()[m.noticeCursor].id; got != "feed-new" {
+	if got := m.notices.active(m)[m.notices.noticeCursor].id; got != "feed-new" {
 		t.Fatalf("new message should be selected, got %q", got)
 	}
 }
 
 func TestNewFeedWaitsForQuickBar(t *testing.T) {
 	m := footModel(t)
-	m.width, m.height = 100, 34
+	m.layout.width, m.layout.height = 100, 34
 	m.mode = modeList
 	m.quick.active = true
+	m.quick.input = textarea.New()
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
 	if m.mode != modeList || !m.quick.active {
 		t.Fatalf("quick bar should keep the modal closed, mode=%v quick=%v", m.mode, m.quick.active)
@@ -1015,27 +1043,27 @@ func TestNewFeedWaitsForQuickBar(t *testing.T) {
 	if m.mode != modeNotices {
 		t.Fatalf("closing the quick bar should open the new message, mode=%v", m.mode)
 	}
-	if got := m.activeNotices()[m.noticeCursor].id; got != "feed-new" {
+	if got := m.notices.active(m)[m.notices.noticeCursor].id; got != "feed-new" {
 		t.Fatalf("new message should be selected, got %q", got)
 	}
 }
 
 func TestNewFeedWaitsForResize(t *testing.T) {
 	m := footModel(t)
-	m.width, m.height = 100, 34
+	m.layout.width, m.layout.height = 100, 34
 	m.mode = modeList
-	m.split.resizeMode = true
+	m.layout.split.resizeMode = true
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
-	if m.mode != modeList || !m.split.resizeMode {
-		t.Fatalf("resize should keep the modal closed, mode=%v resize=%v", m.mode, m.split.resizeMode)
+	if m.mode != modeList || !m.layout.split.resizeMode {
+		t.Fatalf("resize should keep the modal closed, mode=%v resize=%v", m.mode, m.layout.split.resizeMode)
 	}
 
-	m.split.resizeMode = false
+	m.layout.split.resizeMode = false
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 34})
 	if m.mode != modeNotices {
 		t.Fatalf("leaving resize should open the new message, mode=%v", m.mode)
 	}
-	if got := m.activeNotices()[m.noticeCursor].id; got != "feed-new" {
+	if got := m.notices.active(m)[m.notices.noticeCursor].id; got != "feed-new" {
 		t.Fatalf("new message should be selected, got %q", got)
 	}
 }
@@ -1048,7 +1076,7 @@ func TestNewUpdateOpensNoticesModal(t *testing.T) {
 	if m.mode != modeNotices {
 		t.Fatalf("a new update notice should open the modal, mode=%v", m.mode)
 	}
-	if got := m.activeNotices()[m.noticeCursor].id; got != "update-v0.3.0" {
+	if got := m.notices.active(m)[m.notices.noticeCursor].id; got != "update-v0.3.0" {
 		t.Fatalf("update notice should be selected, got %q", got)
 	}
 }
@@ -1077,14 +1105,14 @@ func TestNewerReleaseOpensNoticesModal(t *testing.T) {
 	if m.mode != modeNotices {
 		t.Fatalf("a newer tag should open the modal, mode=%v", m.mode)
 	}
-	if got := m.activeNotices()[m.noticeCursor].id; got != "update-v0.4.0" {
+	if got := m.notices.active(m)[m.notices.noticeCursor].id; got != "update-v0.4.0" {
 		t.Fatalf("new release should be selected, got %q", got)
 	}
 }
 
 func TestFeedArrivingDuringWelcomeStaysOnWelcome(t *testing.T) {
 	m := footModel(t)
-	m.width, m.height = 100, 34
+	m.layout.width, m.layout.height = 100, 34
 	m.openStartupNotice()
 	if m.mode != modeNotices {
 		t.Fatal("first launch should open welcome")
@@ -1094,17 +1122,17 @@ func TestFeedArrivingDuringWelcomeStaysOnWelcome(t *testing.T) {
 	if m.mode != modeNotices {
 		t.Fatalf("mode=%v, want notices", m.mode)
 	}
-	if got := m.activeNotices()[m.noticeCursor].id; got != noticeWelcome {
+	if got := m.notices.active(m)[m.notices.noticeCursor].id; got != noticeWelcome {
 		t.Fatalf("welcome should stay selected, got %q", got)
 	}
-	if !contains(noticeIDs(m.activeNotices()), "feed-new") {
+	if !contains(noticeIDs(m.notices.active(m)), "feed-new") {
 		t.Fatal("feed should still be listed")
 	}
 }
 
 func TestAutoOpenFeedAndUpdateFrames(t *testing.T) {
 	feedModel := footModel(t)
-	feedModel.width, feedModel.height = 100, 34
+	feedModel.layout.width, feedModel.layout.height = 100, 34
 	feedModel.mode = modeList
 	feedModel.Update(feedMsg{messages: []feed.Message{{
 		ID:     "feed-holdoff",
@@ -1113,7 +1141,7 @@ func TestAutoOpenFeedAndUpdateFrames(t *testing.T) {
 		Body:   []string{"Sessions may drop.", "Stay on v0.35 until the fix."},
 		URL:    "https://github.com/YoanWai/agent-manager/issues/1",
 	}}})
-	feedFrame := ansi.Strip(feedModel.View())
+	feedFrame := ansi.Strip(preparedView(feedModel))
 	for _, want := range []string{"messages", "Hold off on v0.36", "Sessions may drop", "Stay on v0.35", "esc"} {
 		if !strings.Contains(feedFrame, want) {
 			t.Fatalf("feed modal missing %q:\n%s", want, feedFrame)
@@ -1121,14 +1149,14 @@ func TestAutoOpenFeedAndUpdateFrames(t *testing.T) {
 	}
 
 	upd := footModel(t)
-	upd.width, upd.height = 100, 34
+	upd.layout.width, upd.layout.height = 100, 34
 	upd.mode = modeList
 	upd.Update(updateMsg{
 		latest:   "v0.3.0",
 		url:      "https://github.com/YoanWai/agent-manager/releases/tag/v0.3.0",
 		releases: []update.Release{uiRelease("v0.3.0", "Notices: Open the modal on a new message")},
 	})
-	updFrame := ansi.Strip(upd.View())
+	updFrame := ansi.Strip(preparedView(upd))
 	for _, want := range []string{"messages", "v0.3.0 available", "You are on v0.2.0", "u update", "x dismiss"} {
 		if !strings.Contains(updFrame, want) {
 			t.Fatalf("update modal missing %q:\n%s", want, updFrame)
@@ -1139,9 +1167,9 @@ func TestAutoOpenFeedAndUpdateFrames(t *testing.T) {
 func TestUpdateNoticeAppliesOnU(t *testing.T) {
 	m := noticeModel(noticeStore(t), "v0.2.0")
 	m.update.latest = "v0.3.0"
-	m.openNotices("update-v0.3.0")
-	if m.mode != modeNotices || m.noticeCursor != 0 {
-		t.Fatalf("update notice should open selected, mode=%v cursor=%d", m.mode, m.noticeCursor)
+	m.notices.open(m, "update-v0.3.0")
+	if m.mode != modeNotices || m.notices.noticeCursor != 0 {
+		t.Fatalf("update notice should open selected, mode=%v cursor=%d", m.mode, m.notices.noticeCursor)
 	}
 
 	applied := ""
@@ -1164,7 +1192,7 @@ func TestUpdateNoticeAppliesOnU(t *testing.T) {
 		return nil
 	}
 
-	_, cmd := m.handleNoticesKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	cmd := m.notices.handleKey(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
 	if cmd == nil {
 		t.Fatal("u on the update notice should start the update")
 	}
@@ -1197,7 +1225,7 @@ func TestUpdateNoticeAppliesOnU(t *testing.T) {
 func TestUpdateNoticeApplyFailureSurfaces(t *testing.T) {
 	m := noticeModel(noticeStore(t), "v0.2.0")
 	m.update.latest = "v0.3.0"
-	m.openNotices("update-v0.3.0")
+	m.notices.open(m, "update-v0.3.0")
 
 	orig := applyUpdate
 	defer func() { applyUpdate = orig }()
@@ -1213,7 +1241,7 @@ func TestUpdateNoticeApplyFailureSurfaces(t *testing.T) {
 	applyUpdate = func(_ context.Context, _, _ string) error {
 		return errors.New("permission denied")
 	}
-	_, cmd := m.handleNoticesKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	cmd := m.notices.handleKey(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
 	updated, _ := m.Update(cmd().(updateAppliedMsg))
 	m = updated.(*Model)
 	if m.update.applying {
@@ -1230,7 +1258,7 @@ func TestUpdateNoticeApplyFailureSurfaces(t *testing.T) {
 func TestUpdateRefreshFailureDoesNotInstallCachedTag(t *testing.T) {
 	m := noticeModel(noticeStore(t), "v0.2.0")
 	m.update.latest = "v0.3.0"
-	m.openNotices("update-v0.3.0")
+	m.notices.open(m, "update-v0.3.0")
 
 	origRefresh := refreshUpdatesForApply
 	defer func() { refreshUpdatesForApply = origRefresh }()
@@ -1245,7 +1273,7 @@ func TestUpdateRefreshFailureDoesNotInstallCachedTag(t *testing.T) {
 		return nil
 	}
 
-	_, cmd := m.handleNoticesKey(key("u"))
+	cmd := m.notices.handleKey(m, key("u"))
 	updated, _ := m.Update(cmd().(updateAppliedMsg))
 	m = updated.(*Model)
 	if called || m.RestartPath() != "" {
@@ -1259,7 +1287,7 @@ func TestUpdateRefreshFailureDoesNotInstallCachedTag(t *testing.T) {
 func TestUpdateActionClearsStaleNoticeWhenAlreadyCurrent(t *testing.T) {
 	m := noticeModel(noticeStore(t), "v0.3.0")
 	m.update.latest = "v0.4.0"
-	m.openNotices("update-v0.4.0")
+	m.notices.open(m, "update-v0.4.0")
 
 	origRefresh := refreshUpdatesForApply
 	defer func() { refreshUpdatesForApply = origRefresh }()
@@ -1274,7 +1302,7 @@ func TestUpdateActionClearsStaleNoticeWhenAlreadyCurrent(t *testing.T) {
 		return nil
 	}
 
-	_, cmd := m.handleNoticesKey(key("u"))
+	cmd := m.notices.handleKey(m, key("u"))
 	updated, quit := m.Update(cmd().(updateAppliedMsg))
 	m = updated.(*Model)
 	if called || quit != nil || m.update.latest != "" || m.RestartPath() != "" {
@@ -1287,8 +1315,8 @@ func TestUpdateActionClearsStaleNoticeWhenAlreadyCurrent(t *testing.T) {
 
 func TestUOutsideUpdateNoticeDoesNothing(t *testing.T) {
 	m := noticeModel(noticeStore(t), "v0.2.0")
-	m.openNotices(noticeWelcome)
-	_, cmd := m.handleNoticesKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	m.notices.open(m, noticeWelcome)
+	cmd := m.notices.handleKey(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
 	if cmd != nil || m.update.applying {
 		t.Fatal("u on a plain notice must not start an update")
 	}
@@ -1297,8 +1325,8 @@ func TestUOutsideUpdateNoticeDoesNothing(t *testing.T) {
 func TestNoticesTinyTerminalStaysInside(t *testing.T) {
 	m := modalModel(t)
 	for _, width := range []int{5, 12, 30} {
-		m.width, m.height = width, 10
-		for _, line := range strings.Split(ansi.Strip(m.View()), "\n") {
+		m.layout.width, m.layout.height = width, 10
+		for _, line := range strings.Split(ansi.Strip(preparedView(m)), "\n") {
 			if got := lipgloss.Width(line); got > width {
 				t.Fatalf("width %d: line overflows at %d: %q", width, got, line)
 			}
@@ -1325,7 +1353,7 @@ func uiReleaseWithTotal(version string, total int, changes ...string) update.Rel
 func TestUpdateDelegatesToPackageManager(t *testing.T) {
 	m := noticeModel(noticeStore(t), "v0.2.0")
 	m.update.latest = "v0.3.0"
-	m.openNotices("update-v0.3.0")
+	m.notices.open(m, "update-v0.3.0")
 
 	origDetect := detectManager
 	defer func() { detectManager = origDetect }()
@@ -1333,7 +1361,7 @@ func TestUpdateDelegatesToPackageManager(t *testing.T) {
 		return update.Manager{Name: "Homebrew", Command: []string{"brew", "upgrade", "--cask", "yoanwai/tap/agent-manager"}}
 	}
 
-	_, cmd := m.handleNoticesKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	cmd := m.notices.handleKey(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
 	if cmd == nil {
 		t.Fatal("u on a package-manager install should start the delegated upgrade")
 	}
@@ -1368,7 +1396,7 @@ func TestDelegatedUpdateResult(t *testing.T) {
 func TestUpdateWithoutRunnableManagerSurfacesAdvice(t *testing.T) {
 	m := noticeModel(noticeStore(t), "v0.2.0")
 	m.update.latest = "v0.3.0"
-	m.openNotices("update-v0.3.0")
+	m.notices.open(m, "update-v0.3.0")
 
 	origDetect := detectManager
 	defer func() { detectManager = origDetect }()
@@ -1377,7 +1405,7 @@ func TestUpdateWithoutRunnableManagerSurfacesAdvice(t *testing.T) {
 		return update.Manager{Name: "pacman", Advice: advice}
 	}
 
-	_, cmd := m.handleNoticesKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	cmd := m.notices.handleKey(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
 	if cmd == nil {
 		t.Fatal("u should still answer with the advice")
 	}
@@ -1390,7 +1418,7 @@ func TestUpdateWithoutRunnableManagerSurfacesAdvice(t *testing.T) {
 func TestArrowStepNoticeListedUntilDismissed(t *testing.T) {
 	m := noticeModel(noticeStore(t), "v0.2.0")
 	found := false
-	for _, n := range m.activeNotices() {
+	for _, n := range m.notices.active(m) {
 		if n.id == noticeArrowStep {
 			found = true
 		}
@@ -1398,8 +1426,8 @@ func TestArrowStepNoticeListedUntilDismissed(t *testing.T) {
 	if !found {
 		t.Fatal("arrow-step beta notice missing from active notices")
 	}
-	m.dismissNotice(noticeArrowStep)
-	for _, n := range m.activeNotices() {
+	persistNoticeDismissal(t, m, noticeArrowStep)
+	for _, n := range m.notices.active(m) {
 		if n.id == noticeArrowStep {
 			t.Fatal("dismissed notice still listed")
 		}
@@ -1409,8 +1437,8 @@ func TestArrowStepNoticeListedUntilDismissed(t *testing.T) {
 // Full screen condenses the machine readings to one line.
 func TestFullLayoutFootLine(t *testing.T) {
 	m := shotModel()
-	m.fullLayout = true
-	foot := ansi.Strip(strings.Join(m.railFootLines(m.width-1), "\n"))
+	m.prefs.fullLayout = true
+	foot := ansi.Strip(strings.Join(m.railFootLines(m.layout.width-1), "\n"))
 	for _, want := range []string{"cpu 22%", "mem 75%", "net"} {
 		if !strings.Contains(foot, want) {
 			t.Errorf("condensed foot line misses %q:\n%s", want, foot)
@@ -1419,7 +1447,7 @@ func TestFullLayoutFootLine(t *testing.T) {
 	if strings.Contains(foot, "messages") {
 		t.Fatalf("no notices should mean no messages count:\n%s", foot)
 	}
-	if lines := m.railFootLines(m.width - 1); len(lines) != 1 {
+	if lines := m.railFootLines(m.layout.width - 1); len(lines) != 1 {
 		t.Fatalf("full screen foot should be one line, got %d", len(lines))
 	}
 }
@@ -1435,9 +1463,9 @@ func TestLayoutsCanHideStats(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := footModel(t)
-			m.width, m.height = 120, 34
-			m.fullLayout = tc.full
-			m.hideStats = true
+			m.layout.width, m.layout.height = 120, 34
+			m.prefs.fullLayout = tc.full
+			m.prefs.hideStats = true
 			if foot := m.railFootLines(tc.width); len(foot) > 0 {
 				t.Fatalf("hidden stats still paint %d lines:\n%s", len(foot), ansi.Strip(strings.Join(foot, "\n")))
 			}
@@ -1524,12 +1552,12 @@ func TestReleaseSummaryFallsBackToTheGeneratedList(t *testing.T) {
 
 func TestEmptyNoticesPanelStillOpensAndOffersRefresh(t *testing.T) {
 	m := footModel(t)
-	m.width, m.height = 100, 34
+	m.layout.width, m.layout.height = 100, 34
 	m.mode = modeList
-	for _, n := range m.activeNotices() {
-		m.dismissNotice(n.id)
+	for _, n := range m.notices.active(m) {
+		persistNoticeDismissal(t, m, n.id)
 	}
-	if len(m.activeNotices()) != 0 {
+	if len(m.notices.active(m)) != 0 {
 		t.Fatal("test needs an empty panel")
 	}
 
@@ -1537,50 +1565,72 @@ func TestEmptyNoticesPanelStillOpensAndOffersRefresh(t *testing.T) {
 	if m.mode != modeNotices {
 		t.Fatalf("M should open an empty panel, mode=%v", m.mode)
 	}
-	frame := ansi.Strip(m.View())
+	frame := ansi.Strip(preparedView(m))
 	for _, want := range []string{"nothing new", "r refresh"} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("empty panel missing %q:\n%s", want, frame)
 		}
 	}
 
-	if _, cmd := m.handleNoticesKey(key("r")); cmd == nil || !m.update.refreshing {
+	if cmd := m.notices.handleKey(m, key("r")); cmd == nil || !m.update.refreshing {
 		t.Fatalf("r unreachable on an empty panel: refreshing=%v", m.update.refreshing)
 	}
-	if !strings.Contains(ansi.Strip(m.View()), "refreshing releases and messages") {
-		t.Fatalf("empty panel hides the refresh it started:\n%s", ansi.Strip(m.View()))
+	if !strings.Contains(ansi.Strip(preparedView(m)), "refreshing releases and messages") {
+		t.Fatalf("empty panel hides the refresh it started:\n%s", ansi.Strip(preparedView(m)))
 	}
 }
 
 // The welcome card's session-key row is laid out on the card's columns and
 // follows the table, so a first run under a remapped config reads right.
 func TestWelcomeSessionKeysLineFollowsTheKeyTable(t *testing.T) {
-	m := &Model{keys: keybind.DefaultSession()}
-	if got := m.welcomeSessionKeysLine(); got != "ctrl+q back to the manager   ctrl+r review its diff" {
+	m := &Model{
+		services: services{
+			keys: keybind.DefaultSession(),
+		},
+	}
+	if got := m.noticeSources().welcomeSessionKeysLine(); got != "ctrl+q back to the manager   ctrl+r review its diff" {
 		t.Errorf("default line = %q", got)
 	}
-	m.keys = sessionOf(t, []string{"f9"}, nil, []string{"f3"})
-	if got := m.welcomeSessionKeysLine(); got != "f9     back to the manager" {
+	m.services.keys = sessionOf(t, []string{"f9"}, nil, []string{"f3"})
+	if got := m.noticeSources().welcomeSessionKeysLine(); got != "f9     back to the manager" {
 		t.Errorf("review off line = %q", got)
+	}
+}
+
+func TestWelcomeSessionKeysLineOmitsDisabledActions(t *testing.T) {
+	m := &Model{services: services{keys: sessionOf(t, nil, []string{"ctrl+r"}, nil)}}
+	got := m.noticeSources().welcomeSessionKeysLine()
+	if strings.Contains(got, "back to the manager") || !strings.Contains(got, "ctrl+r review its diff") {
+		t.Fatalf("detach off line = %q", got)
+	}
+
+	m.services.keys = sessionOf(t, nil, nil, nil)
+	if got := m.noticeSources().welcomeSessionKeysLine(); got != "" {
+		t.Fatalf("all session actions off line = %q", got)
 	}
 }
 
 // The welcome's list keys follow the list table the same way: a moved key
 // is named where it moved to, and an action turned off is left out.
 func TestWelcomeBodyFollowsTheListTable(t *testing.T) {
-	m := &Model{keys: keybind.DefaultSession(), listKeys: keybind.DefaultList()}
-	body := strings.Join(m.welcomeBody(), "\n")
+	m := &Model{
+		services: services{
+			keys:     keybind.DefaultSession(),
+			listKeys: keybind.DefaultList(),
+		},
+	}
+	body := strings.Join(m.noticeSources().welcomeBody(), "\n")
 	for _, want := range []string{"n      new session           space  quick prompt mode", "↵      focus it              A      attach it full screen", "x / v  kill / revive         s      settings", "space on a group row", "Press ? for every key: the map scrolls, and / searches it.", "Settings (s)"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("default welcome is missing %q:\n%s", want, body)
 		}
 	}
-	m.listKeys = m.listKeys.
+	m.services.listKeys = m.services.listKeys.
 		With(keybind.NewSession, bindingOf(t, "N")).
 		With(keybind.Prompt, bindingOf(t)).
 		With(keybind.Search, bindingOf(t)).
 		With(keybind.Settings, bindingOf(t, "S"))
-	body = strings.Join(m.welcomeBody(), "\n")
+	body = strings.Join(m.noticeSources().welcomeBody(), "\n")
 	for _, want := range []string{"N      new session", "Press ? for every key: the map scrolls.", "Settings (S)", "x / v  kill / revive         S      settings"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("remapped welcome is missing %q:\n%s", want, body)
@@ -1596,24 +1646,33 @@ func TestWelcomeBodyFollowsTheListTable(t *testing.T) {
 // A notice opening mid-drag would swallow the release and strand the
 // lifted row, and one over the row menu would bury it, so both wait.
 func TestNoticesWaitForADragOrTheRowMenu(t *testing.T) {
-	m := &Model{mode: modeList}
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	createSession(t, m, "beta", t.TempDir(), "")
+	m.selectSessionRow(t, "alpha")
+	preparedView(m)
 	if !m.listReadyForNotice() {
 		t.Fatal("test setup: a plain list takes a notice")
 	}
-	m.reorder.active = true
+	selection, _ := m.rail.Selected()
+	handle := m.layout.displayedRail.Handles[selectionKeyForTest(selection)]
+	line := paintedRailLines(t, m, "alpha")[0]
+	y0, _ := m.bodyYRange()
+	m.handleMouse(tea.MouseMsg{X: handle, Y: y0 + line, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
 	if m.listReadyForNotice() {
 		t.Fatal("a lifted row should hold notices back")
 	}
-	m.reorder.active, m.menu.active = false, true
+	m.handleMouse(tea.MouseMsg{X: handle, Y: y0 + line, Button: tea.MouseButtonLeft, Action: tea.MouseActionRelease})
+	m.handleMouse(tea.MouseMsg{X: 2, Y: y0 + line, Button: tea.MouseButtonRight, Action: tea.MouseActionPress})
 	if m.listReadyForNotice() {
 		t.Fatal("an open row menu should hold notices back")
 	}
 }
 
 func TestFullFootDiskAvailable(t *testing.T) {
-	m := &Model{snap: sysstat.Snapshot{
+	m := &Model{workspace: workspace{snap: sysstat.Snapshot{
 		DiskOK: true, DiskPercent: 66, DiskAvailable: 167_950_000_000,
-	}}
+	}}}
 	line := ansi.Strip(strings.Join(m.fullFootLine(200), "\n"))
 	if !strings.Contains(line, "disk 66% 167.9GB available") {
 		t.Fatalf("disk reading = %q", line)

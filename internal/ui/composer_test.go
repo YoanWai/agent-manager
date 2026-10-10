@@ -335,14 +335,14 @@ func TestComposerNoImageFallsThroughToABlurredFormPrompt(t *testing.T) {
 	m := buildModel(t)
 	m.openForm()
 	m.form.focus = fieldPrompt
-	m.formFocus(0)
+	m.form.focusStep(m, 0)
 	m.form.prompt.input.SetValue("see ")
 	m.form.prompt.input.CursorEnd()
 	m.form.prompt.attachments = []imageAttachment{{id: 1}}
 	m.form.prompt.input.InsertString(imageToken(1))
 
 	gen := m.form.prompt.gen
-	m.formFocus(1)
+	m.form.focusStep(m, 1)
 	if m.form.prompt.input.Focused() {
 		t.Fatal("tabbing on to the next field blurs the prompt")
 	}
@@ -508,5 +508,39 @@ func TestComposerDisplayRowsMatchTheTextarea(t *testing.T) {
 				t.Errorf("width %d value %q: caret at end on row %d of %d", width, value, prev, total)
 			}
 		}
+	}
+}
+
+type fakeComposerHost struct {
+	errs    []string
+	cleared int
+}
+
+func (h *fakeComposerHost) reportErr(text string) { h.errs = append(h.errs, text) }
+
+func (h *fakeComposerHost) clearErr() { h.cleared++ }
+
+// A clipboard result lands through the composer's host alone: a path fills
+// its chip, and a failed read reports and takes the chip back out.
+func TestComposerAcceptsImagesThroughAFakeHost(t *testing.T) {
+	h := &fakeComposerHost{}
+	c := newComposer("look ")
+	c.input.CursorEnd()
+	c.gen = 3
+	if _, handled := c.handleChipKey(h, composerQuick, tea.KeyMsg{Type: tea.KeyCtrlV}); !handled || len(c.attachments) != 1 {
+		t.Fatalf("ctrl+v did not reserve a chip: %+v", c.attachments)
+	}
+	first, shot := c.attachments[0].id, t.TempDir()+"/shot.png"
+	c.acceptImage(h, pasteImageMsg{target: composerQuick, gen: 3, id: first, path: shot}, true)
+	if c.attachments[0].path != shot || h.cleared != 2 {
+		t.Fatalf("path = %q cleared = %d", c.attachments[0].path, h.cleared)
+	}
+	if _, handled := c.handleChipKey(h, composerQuick, tea.KeyMsg{Type: tea.KeyCtrlV}); !handled {
+		t.Fatal("second paste not handled")
+	}
+	second := c.attachments[1].id
+	c.acceptImage(h, pasteImageMsg{target: composerQuick, gen: 3, id: second, err: os.ErrPermission}, true)
+	if len(c.attachments) != 1 || len(h.errs) != 1 {
+		t.Fatalf("a failed read should drop its chip and report: %+v %v", c.attachments, h.errs)
 	}
 }
