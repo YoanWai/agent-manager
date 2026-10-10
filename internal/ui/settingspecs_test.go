@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"maps"
 	"slices"
 	"testing"
 
@@ -115,7 +114,7 @@ func TestOpenSettingsReadsWhatTheShellChanged(t *testing.T) {
 		backgroundSetting:    "terminal",
 		themeSetting:         "nord",
 	}
-	for key, value := range maps.All(changed) {
+	for key, value := range changed {
 		if err := m.store.SetSetting(key, value); err != nil {
 			t.Fatal(err)
 		}

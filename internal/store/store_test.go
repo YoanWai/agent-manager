@@ -2259,3 +2259,19 @@ func TestReportAgentSessionIDReplacesACapturedGuess(t *testing.T) {
 		t.Fatalf("row = %+v, want the reported conversation", got)
 	}
 }
+
+func TestSettingsListsEveryStoredRow(t *testing.T) {
+	st := newTestStore(t)
+	for key, value := range map[string]string{"theme": "nord", "notifications": "off"} {
+		if err := st.SetSetting(key, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows, err := st.Settings()
+	if err != nil {
+		t.Fatalf("Settings: %v", err)
+	}
+	if rows["theme"] != "nord" || rows["notifications"] != "off" {
+		t.Fatalf("Settings = %v", rows)
+	}
+}

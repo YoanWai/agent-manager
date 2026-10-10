@@ -64,19 +64,19 @@ func runSettingsList(out io.Writer, specs settingSpecs, args []string, configDir
 	if err != nil {
 		return err
 	}
+	records := make([]settingRecord, 0, len(all))
+	for _, spec := range all {
+		records = append(records, settingRecord{
+			Key: spec.Key, Value: effective(spec, stored[spec.Key]), Default: spec.Default,
+			Values: spec.Values, List: spec.List, Row: spec.Row,
+		})
+	}
 	if *asJSON {
-		records := make([]settingRecord, 0, len(all))
-		for _, spec := range all {
-			records = append(records, settingRecord{
-				Key: spec.Key, Value: effective(spec, stored[spec.Key]), Default: spec.Default,
-				Values: spec.Values, List: spec.List, Row: spec.Row,
-			})
-		}
 		return writeJSON(out, records)
 	}
 	table := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	for _, spec := range all {
-		fmt.Fprintf(table, "%s\t%s\t%s\t%s\n", spec.Key, effective(spec, stored[spec.Key]), spec.Row, takes(spec))
+	for _, record := range records {
+		fmt.Fprintf(table, "%s\t%s\t%s\t%s\n", record.Key, record.Value, record.Row, record.takes())
 	}
 	return table.Flush()
 }
@@ -164,13 +164,13 @@ func effective(spec store.SettingSpec, stored string) string {
 	return stored
 }
 
-func takes(spec store.SettingSpec) string {
+func (r settingRecord) takes() string {
 	switch {
-	case len(spec.Values) == 0:
+	case len(r.Values) == 0:
 		return "any text"
-	case spec.List:
-		return "any of " + strings.Join(spec.Values, ", ")
+	case r.List:
+		return "any of " + strings.Join(r.Values, ", ")
 	default:
-		return "one of " + strings.Join(spec.Values, ", ")
+		return "one of " + strings.Join(r.Values, ", ")
 	}
 }
