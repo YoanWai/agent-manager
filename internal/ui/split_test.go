@@ -1219,6 +1219,46 @@ func TestMoreCounterOnlyScrolls(t *testing.T) {
 	}
 }
 
+// A trackpad flick that is still arriving when ctrl+q leaves focus must not
+// walk the list selection; once it has settled, a deliberate scroll still
+// works normally. See issue #727.
+func TestLeavingFocusSwallowsTheFlickStillArriving(t *testing.T) {
+	m := buildModel(t)
+	for _, name := range []string{"one", "two", "three"} {
+		createSession(t, m, name, t.TempDir(), "")
+	}
+	m.selectSessionRow(t, "two")
+
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("enter did not focus, mode = %v", m.mode)
+	}
+
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlQ})
+	m = updated.(*Model)
+	if m.mode != modeList {
+		t.Fatalf("ctrl+q did not leave focus, mode = %v", m.mode)
+	}
+	before := m.cursor
+
+	wheel := tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress}
+	for i := 0; i < 2; i++ {
+		updated, _ = m.handleMouse(wheel)
+		m = updated.(*Model)
+	}
+	if m.cursor != before {
+		t.Fatalf("a scroll event right after leaving focus moved the cursor from %d to %d", before, m.cursor)
+	}
+
+	time.Sleep(wheelSuppressGap + 20*time.Millisecond)
+	updated, _ = m.handleMouse(wheel)
+	m = updated.(*Model)
+	if m.cursor != before+1 {
+		t.Fatalf("a deliberate scroll once the flick has settled should move the cursor, got %d want %d", m.cursor, before+1)
+	}
+}
+
 // Chrome the rail paints for its own sake carries no row, so a click there
 // picks nothing rather than misattributing to whichever row happens to sit
 // at that index.

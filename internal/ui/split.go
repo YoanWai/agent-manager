@@ -461,6 +461,12 @@ func (m *Model) clickRow(x, y int) (int, bool) {
 	return row, true
 }
 
+// wheelSuppressGap is how long a gap between wheel events has to be before
+// a trackpad flick that started in a focused session is treated as over.
+// The observed gap between its trailing events is 30-40ms; this leaves
+// margin without reaching into a deliberate next scroll's own cadence.
+const wheelSuppressGap = 100 * time.Millisecond
+
 // handleMouseWheel keeps the wheel inside the app so the outer terminal
 // cannot scroll the manager away: it moves the session cursor in the list,
 // same as an arrow key, and the diff cursor in review. The search field
@@ -474,6 +480,15 @@ func (m *Model) handleMouseWheel(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	switch m.mode {
 	case modeList:
+		if m.suppressListWheel {
+			now := time.Now()
+			if now.Sub(m.lastListWheelEvent) > wheelSuppressGap {
+				m.suppressListWheel = false
+			} else {
+				m.lastListWheelEvent = now
+				return m, nil
+			}
+		}
 		switch msg.Button {
 		case tea.MouseButtonWheelUp:
 			return m, m.scrollCursor(-1)

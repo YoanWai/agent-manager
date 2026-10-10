@@ -314,6 +314,10 @@ func (m *Model) leaveFocus() tea.Cmd {
 	m.listClickAt = time.Time{}
 	m.endForwardedGesture()
 	m.flushPendingNotice()
+	// A trackpad flick keeps sending scroll events after the fingers lift;
+	// those still belong to the session just left, not to the list.
+	m.suppressListWheel = true
+	m.lastListWheelEvent = time.Now()
 	return nil
 }
 
