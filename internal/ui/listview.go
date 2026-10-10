@@ -865,8 +865,12 @@ func rowPromptStyle() lipgloss.Style {
 // wherever; else the last one delivered through the manager, else the one
 // the session launched with, stripped of the notes launch prepends.
 func (m *Model) rowPrompt(sess store.Session) string {
-	if prompt := m.panePrompts[sess.ID]; prompt != "" {
-		return prompt
+	return sessionPrompt(sess, m.panePrompts[sess.ID])
+}
+
+func sessionPrompt(sess store.Session, echoed string) string {
+	if echoed != "" {
+		return echoed
 	}
 	if sess.LastPrompt != "" {
 		return sess.LastPrompt

@@ -22,6 +22,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -107,13 +108,23 @@ const (
 
 // Event is one session transition worth telling the user about. ID is the
 // session's store id, which a click hands back so the manager can select
-// that row.
+// that row. Dir is the session's directory and Branch the worktree
+// branch the manager made for it, so two sessions of one name read apart
+// on the banner. Text is what that row quotes for the state: the question
+// a waiting session asks, the prompt a finished one was given.
 type Event struct {
 	ID      string
 	Session string
 	Tool    string
 	Kind    Kind
+	Dir     string
+	Branch  string
+	Text    string
 }
+
+// bodyTextCap bounds the row's line on a banner, which shows about two
+// lines before cutting it off itself.
+const bodyTextCap = 120
 
 type presentation struct {
 	body          string
@@ -170,13 +181,8 @@ func Notify(event Event) {
 	if !ok {
 		return
 	}
-	session := sanitize(event.Session)
-	tool := sanitize(event.Tool)
-	subtitle := session
-	if tool != "" {
-		subtitle += " · " + tool
-	}
-	body := detail.body
+	subtitle := titleLine(event)
+	body := bodyLine(event.Kind, detail.body, event.Text)
 	terminalBody := body + " — " + subtitle
 	// A terminal that understands OSC 777 turns it into a native
 	// notification wherever the terminal actually is — including at the
@@ -215,6 +221,38 @@ func Notify(event Event) {
 	_ = emitSeq("\a")
 }
 
+// titleLine names the session, then where it runs, then its tool:
+// "deploy · api · am/fix-login · codex".
+func titleLine(event Event) string {
+	parts := []string{sanitize(event.Session)}
+	if dir := sanitize(filepath.Base(event.Dir)); event.Dir != "" && dir != "" {
+		parts = append(parts, dir)
+	}
+	for _, part := range []string{sanitize(event.Branch), sanitize(event.Tool)} {
+		if part != "" {
+			parts = append(parts, part)
+		}
+	}
+	return strings.Join(parts, " · ")
+}
+
+// bodyLine puts the row's line behind the state glyph, "◆ Waiting: <the
+// question>", so the banner alone says what the session needs. Errored
+// keeps its state word: the row's line there is the turn that failed, not
+// something to act on.
+func bodyLine(kind Kind, state, text string) string {
+	text = sanitize(text)
+	if text == "" || kind == Errored {
+		return state
+	}
+	words := strings.Fields(state)
+	glyph, word := words[0], words[1]
+	if runes := []rune(text); len(runes) > bodyTextCap {
+		text = string(runes[:bodyTextCap-1]) + "…"
+	}
+	return glyph + " " + word + ": " + text
+}
+
 // notifySend keeps the call open for the banner's lifetime when the
 // installed notify-send can report actions, since that reply is the only
 // way the click reaches the manager.
@@ -226,6 +264,9 @@ func notifySend(sessionID, body string, detail presentation) error {
 		"--icon=" + detail.linuxIcon,
 		"--hint=string:sound-name:" + detail.linuxSound,
 	}
+	// Desktop daemons read the body as markup, so a < or & the agent
+	// wrote has to arrive as text.
+	body = markupEscaper.Replace(body)
 	if !notifySendReportsActions() {
 		return runCmd("notify-send", append(args, "--", "agent-manager", body)...)
 	}
@@ -328,12 +369,14 @@ func osc777(title, body string) string {
 		strings.ReplaceAll(body, ";", ",") + "\a"
 }
 
+var markupEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
+
 // sanitize squashes a title or body to one line with no control
-// characters, so neither escapes nor external commands can be fed
-// anything that breaks out of its payload.
+// characters, C1 included, so neither escapes nor external commands can
+// be fed anything that breaks out of its payload.
 func sanitize(s string) string {
 	mapped := strings.Map(func(r rune) rune {
-		if r < 0x20 || r == 0x7f {
+		if r < 0x20 || (r >= 0x7f && r <= 0x9f) {
 			return ' '
 		}
 		return r
