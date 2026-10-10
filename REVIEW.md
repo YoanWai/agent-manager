@@ -21,8 +21,10 @@ Opening the pull request first and settling that in review is the right order.
 The same holds for input and configuration. An action reachable by key is
 reachable by mouse, and the reverse. A value that varies by tool, version, or
 user is discovered at runtime rather than listed in code. A user-facing
-setting is a Settings row the manager stores, never a file, block, or
-environment variable the user edits. Report a change that breaks one of
+setting is stored by the manager in `state.db`, named in `ui.SettingSpecs`,
+and changed from a Settings row or from `agent-manager settings`, never
+from a file, block, or environment variable the user edits. A command, a
+token or a URL stays off the modal. Report a change that breaks one of
 those.
 
 For integrations, apply the [Thin Wrapper Principle](PRODUCT.md#thin-wrapper-principle).

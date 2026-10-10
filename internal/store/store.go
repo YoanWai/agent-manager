@@ -272,6 +272,24 @@ func (s *Store) Setting(key string) (string, error) {
 	return value, err
 }
 
+// Settings is every stored row, keyed by name.
+func (s *Store) Settings() (map[string]string, error) {
+	rows, err := s.db.Query(`SELECT key, value FROM settings`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	settings := map[string]string{}
+	for rows.Next() {
+		var key, value string
+		if err := rows.Scan(&key, &value); err != nil {
+			return nil, err
+		}
+		settings[key] = value
+	}
+	return settings, rows.Err()
+}
+
 func (s *Store) SetReviewRepo(sessionID, repoRoot string) error {
 	if repoRoot == "" {
 		_, err := s.db.Exec(`DELETE FROM review_targets WHERE session_id = ?`, sessionID)
@@ -377,17 +395,17 @@ func (s *Store) PaneSize() (int, int, error) {
 	return width, height, nil
 }
 
-// coordinationSetting says how sessions treat each other. The manager, the
+// CoordinationSetting says how sessions treat each other. The manager, the
 // CLI and the MCP server each launch or brief sessions, so all of them read
 // it here.
-const coordinationSetting = "coordination"
+const CoordinationSetting = "coordination"
 
 const coordinationProactive = "proactive"
 
 // ProactiveCoordination reports whether agents delegate and coordinate on
 // their own. The default waits for the user to ask.
 func (s *Store) ProactiveCoordination() (bool, error) {
-	value, err := s.Setting(coordinationSetting)
+	value, err := s.Setting(CoordinationSetting)
 	return value == coordinationProactive, err
 }
 
@@ -396,28 +414,28 @@ func (s *Store) SetProactiveCoordination(proactive bool) error {
 	if proactive {
 		value = coordinationProactive
 	}
-	return s.SetSetting(coordinationSetting, value)
+	return s.SetSetting(CoordinationSetting, value)
 }
 
 // The New Session form and a spawn with no caller both take their CLI from
 // these, so the manager and the CLI read them here.
 const (
-	defaultToolSetting = "default_tool"
-	hiddenToolsSetting = "hidden_tools"
+	DefaultToolSetting = "default_tool"
+	HiddenToolsSetting = "hidden_tools"
 )
 
 // DefaultTool is the CLI picked in Settings for new sessions, empty when none was.
 func (s *Store) DefaultTool() (string, error) {
-	return s.Setting(defaultToolSetting)
+	return s.Setting(DefaultToolSetting)
 }
 
 func (s *Store) SetDefaultTool(name string) error {
-	return s.SetSetting(defaultToolSetting, name)
+	return s.SetSetting(DefaultToolSetting, name)
 }
 
 // HiddenTools is the set of CLIs turned off for new sessions in Settings.
 func (s *Store) HiddenTools() (map[string]bool, error) {
-	raw, err := s.Setting(hiddenToolsSetting)
+	raw, err := s.Setting(HiddenToolsSetting)
 	if err != nil {
 		return nil, err
 	}
@@ -438,7 +456,7 @@ func (s *Store) SetHiddenTools(hidden map[string]bool) error {
 		}
 	}
 	slices.Sort(names)
-	return s.SetSetting(hiddenToolsSetting, strings.Join(names, ","))
+	return s.SetSetting(HiddenToolsSetting, strings.Join(names, ","))
 }
 
 func (s *Store) SetSetting(key, value string) error {

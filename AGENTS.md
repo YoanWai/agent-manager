@@ -38,9 +38,14 @@ that.
   change lives in Settings (`s`), is stored by the manager, and takes effect
   from the picker, the way the keybindings and editor rows do. The value
   lives in `state.db`, where the manager, the CLI and the MCP server all
-  read it. A new per-user file, environment variable, or hand-edited block
-  is the wrong shape; put the choice on a Settings row or pick a default in
-  code.
+  read it, and `agent-manager settings` reads and writes it from a shell.
+  Every key is named in `ui.SettingSpecs` with the values it takes, so the
+  shell refuses what the modal would never write. A value that is a
+  command, a token or a URL stays off the modal and is set from the shell
+  alone, so the modal does not grow a row per knob. A new per-user file,
+  environment variable, or hand-edited block is the wrong shape; put the
+  choice on a Settings row, behind `agent-manager settings`, or pick a
+  default in code.
 - **Every tool.** A field, status rule, or command added to one `[tools.*]`
   block is added to every tool it applies to, in the same PR.
 - **Every platform.** A `runtime.GOOS` branch, a platform-only command, or
