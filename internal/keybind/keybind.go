@@ -43,11 +43,14 @@ func (k Key) Glyph() string {
 var namedKeys = []string{"space", "enter", "tab", "backspace", "delete", "up", "down", "left", "right", "home", "end", "pgup", "pgdn"}
 
 // Normalize folds the spellings a terminal has for one key into the one a
-// table stores: a shifted letter is its capital, and the space bar is
-// named rather than typed.
+// table stores: a shifted letter is its capital, the space bar is named
+// rather than typed, and Bubble Tea's "pgdown" becomes the table's "pgdn".
 func Normalize(tea string) string {
 	if tea == " " {
 		return "space"
+	}
+	if tea == "pgdown" {
+		return "pgdn"
 	}
 	if rest, shifted := strings.CutPrefix(tea, "shift+"); shifted && len(rest) == 1 && rest[0] >= 'a' && rest[0] <= 'z' {
 		return strings.ToUpper(rest)
