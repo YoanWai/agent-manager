@@ -3,6 +3,7 @@ package ui
 import (
 	"maps"
 	"slices"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/execution"
@@ -121,6 +122,15 @@ type mouseCapture struct {
 	// pressed is what the last left press landed on, which its release
 	// clicks when it comes back up over the same one.
 	pressed clickTarget
+	// suppressListWheel swallows list wheel events right after leaveFocus:
+	// a trackpad flick keeps sending scroll events for a moment after the
+	// fingers lift, and those belong to the session the flick started in,
+	// not to the list it just landed on. The train of leftover events is
+	// closely spaced, so swallowing stops at the first gap wider than
+	// wheelSuppressGap instead of after a fixed duration: that covers a
+	// flick of any length without also eating the next deliberate scroll.
+	suppressListWheel  bool
+	lastListWheelEvent time.Time
 }
 
 type settingsFeature struct {

@@ -347,12 +347,27 @@ func (m *Model) listMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	return m.applyRailDecision(m.rail.Mouse(msg, m.layout.displayedRail, ctx))
 }
 
+// wheelSuppressGap is how long a gap between wheel events has to be before
+// a trackpad flick that started in a focused session is treated as over.
+// The observed gap between its trailing events is 30-40ms; this leaves
+// margin without reaching into a deliberate next scroll's own cadence.
+const wheelSuppressGap = 100 * time.Millisecond
+
 // listWheel scrolls the rail, or the list open over the quick bar's
 // prompt, which owns the wheel the way it owns ↑↓. A resize keeps both
 // still.
 func (m *Model) listWheel(msg tea.MouseMsg, ctx uirail.MouseContext) (tea.Model, tea.Cmd) {
 	if m.layout.split.resizeMode || m.layout.split.dragging {
 		return m, nil
+	}
+	if m.mouse.suppressListWheel {
+		now := time.Now()
+		if now.Sub(m.mouse.lastListWheelEvent) > wheelSuppressGap {
+			m.mouse.suppressListWheel = false
+		} else {
+			m.mouse.lastListWheelEvent = now
+			return m, nil
+		}
 	}
 	if !m.quickPicking() {
 		return m.applyRailDecision(m.rail.Mouse(msg, m.layout.displayedRail, ctx))
