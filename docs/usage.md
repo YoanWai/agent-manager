@@ -417,7 +417,7 @@ Seventeen palettes ship. Ten dark: `classic`, `solarized dark`, `catppuccin moch
 
 ## Settings from a shell
 
-`agent-manager settings` reads and changes the same settings the modal does, without opening the manager, for a setup script, a dotfiles repo, or a manager on a remote box. `settings list` prints every key with its current value, the Settings row it belongs to, and the values it takes. `settings get <key>` prints one value, the default when none is stored, and `settings set <key> <value>` writes one. A value is checked against the choices that row steps through (`on` or `off`, a theme name, a CLI name), and a key the manager does not know, or a value outside its choices, is refused with the choices named. The keybinding tables keep their picker. `--json` prints records instead of lines.
+`agent-manager settings` reads and changes the same settings the modal does, without opening the manager, for a setup script, a dotfiles repo, or a manager on a remote box. `settings list` prints every key with its current value, the Settings row it belongs to, and the values it takes. `settings get <key>` prints one value, the default when none is stored, and `settings set <key> <value>` writes one. A value is checked against the choices that row steps through (`on` or `off`, a theme name, a CLI name), and a key the manager does not know, or a value outside its choices, is refused with the choices named. An empty `default_tool` means the first CLI the picker offers, and an empty `editor` means the editor found on PATH or in `$VISUAL` and `$EDITOR`. The keybinding tables keep their picker. `--json` prints records instead of lines.
 
 ```sh
 agent-manager settings set theme "tokyo night"
