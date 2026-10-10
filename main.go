@@ -127,7 +127,7 @@ func subcommands() map[string]func(args []string) error {
 			return sessioncmd.FollowTelemetry(configDir, args)
 		}),
 	}
-	for name, command := range cli.Commands(version) {
+	for name, command := range cli.Commands(version, ui.SettingSpecs) {
 		table[name] = withConfigDir(command)
 	}
 	return table

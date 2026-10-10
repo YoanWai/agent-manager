@@ -2050,10 +2050,10 @@ func TestSettingsCLIChoicesRoundTrip(t *testing.T) {
 	if err := st.SetHiddenTools(map[string]bool{"grok": true, "codex": true, "pi": false}); err != nil {
 		t.Fatalf("SetHiddenTools: %v", err)
 	}
-	if raw, err := st.Setting(hiddenToolsSetting); err != nil || raw != "codex,grok" {
+	if raw, err := st.Setting(HiddenToolsSetting); err != nil || raw != "codex,grok" {
 		t.Fatalf("stored hidden tools = %q, %v; want the sorted names that are on", raw, err)
 	}
-	if err := st.SetSetting(hiddenToolsSetting, "codex, grok"); err != nil {
+	if err := st.SetSetting(HiddenToolsSetting, "codex, grok"); err != nil {
 		t.Fatalf("SetSetting: %v", err)
 	}
 	hidden, err := st.HiddenTools()

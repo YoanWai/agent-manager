@@ -140,6 +140,7 @@ func TestMainDispatchesNonInteractiveCommands(t *testing.T) {
 	}{
 		{"version", []string{"--version"}, "agent-manager dev"},
 		{"subcommand help", []string{"sessions", "-h"}, "usage: agent-manager sessions"},
+		{"settings verb help", []string{"settings", "set", "-h"}, "usage: agent-manager settings set"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

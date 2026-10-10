@@ -372,33 +372,54 @@ func (m *Model) openSettings() tea.Cmd {
 	}
 	m.errBar.text = ""
 	names, index := m.defaultToolSelection()
+	// Every row reads the store, not what the model cached at startup: a
+	// value the shell changed meanwhile shows here, and esc keeps it.
+	themeAuto := themeAutoEnabled(m.store)
+	manualTheme := themes[themeIndex(storedTheme(m.store))].Name
+	paletteIndex := themeIndex(current.Name)
+	var paletteCmd tea.Cmd
+	if !themeAuto && current.Name != manualTheme {
+		paletteIndex = themeIndex(manualTheme)
+		applyTheme(themes[paletteIndex])
+		SyncTerminalColors()
+		paletteCmd = m.syncPaneTheme()
+	}
 	m.settings = settingsState{
 		toolNames:      names,
 		toolIndex:      index,
-		themeIndex:     themeIndex(current.Name),
+		themeIndex:     paletteIndex,
 		layoutSplit:    m.defaultSplitLayout(),
 		quickCloseSend: m.quickCloseAfterSend(),
-		enterFocuses:   m.enterFocuses(),
-		arrowStep:      m.arrowStep,
+		enterFocuses:   storedFocusOnEnter(m.store),
+		arrowStep:      storedArrowStep(m.store),
 
-		comfortableRows: m.comfortableRows,
-		fullLayout:      m.fullLayout,
-		hideHeader:      m.hideHeader,
-		hideStats:       m.hideStats,
-		mouseDisabled:   m.mouseDisabled,
+		comfortableRows: storedComfortableRows(m.store),
+		fullLayout:      storedFullLayout(m.store),
+		hideHeader:      storedHideHeader(m.store),
+		hideStats:       storedHideStats(m.store),
+		mouseDisabled:   storedMouseDisabled(m.store),
 		worktreeDefault: m.defaultWorktree(),
-		baseFetch:       !m.baseFetchOff,
+		baseFetch:       !storedBaseFetchOff(m.store),
 		proactive:       m.proactiveCoordination(),
 		notifications:   storedNotifications(m.store),
 		notifyFinished:  storedNotifyFinished(m.store),
-		themeAuto:       themeAutoEnabled(m.store),
-		manualTheme:     themes[themeIndex(storedTheme(m.store))].Name,
-		editor:          newEditorRow(m.editor),
+		themeAuto:       themeAuto,
+		manualTheme:     manualTheme,
+		editor:          newEditorRow(m.storedEditor()),
 
-		terminalBackground: m.terminalBackground,
+		terminalBackground: m.storedTerminalBackground(),
 	}
 	m.mode = modeSettings
-	return probeEditors
+	return tea.Batch(probeEditors, paletteCmd)
+}
+
+func (m *Model) storedEditor() string {
+	line, err := m.store.Editor()
+	if err != nil {
+		m.errBar.text = "reading editor setting: " + err.Error()
+		return m.editor
+	}
+	return line
 }
 
 func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -609,6 +630,7 @@ func (m *Model) persistSettings() {
 	m.hideStats = m.settings.hideStats
 	m.mouseDisabled = m.settings.mouseDisabled
 	m.baseFetchOff = !m.settings.baseFetch
+	m.terminalBackground = m.settings.terminalBackground
 }
 
 func (m *Model) openCLIPicker() {

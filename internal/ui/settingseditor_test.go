@@ -156,7 +156,9 @@ func TestSettingsEditorCustomLineIsTyped(t *testing.T) {
 // PATH decide again.
 func TestSettingsEditorRowReturnsToAuto(t *testing.T) {
 	m := buildModel(t)
-	m.editor = "code -n"
+	if err := m.store.SetEditor("code -n"); err != nil {
+		t.Fatal(err)
+	}
 	editorSettings(t, m, "zed")
 	if got := m.settings.editor.label(); got != "custom · code -n" {
 		t.Fatalf("label = %q", got)
