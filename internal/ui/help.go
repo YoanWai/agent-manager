@@ -218,7 +218,7 @@ func helpSections(session, list keybind.Table, arrowStep bool) []helpSection {
 			{"r", "retry a failed preset catalog refresh"},
 			{"tab", "in the editor, move between fields, Save and Cancel"},
 			{"ctrl+s", "save; dispatched saves and deletes must finish"},
-			{"ctrl+v", "in instructions, paste literal text"},
+			{"ctrl+v / Paste", "in instructions, paste literal text"},
 			{"⇥ / ␍ / ␛", "tab, return, literal marker; other controls or >10k lines read-only"},
 			{"esc", "discard unsaved edits, cancel confirmation, or go back"},
 			{"←→ / click", "in New Session, choose instructions separately from the task"},

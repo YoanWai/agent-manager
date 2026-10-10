@@ -139,3 +139,65 @@ func TestSessionPresetsValidation(t *testing.T) {
 		assertSessionPresets(t, st, []SessionPreset{p})
 	})
 }
+
+func TestSessionPresetLookupIsExactLiteralAndFresh(t *testing.T) {
+	st := newTestStore(t)
+	original := SessionPreset{Name: "Role�", Instructions: "\t literal\r\n界 ⇥␍␛"}
+	if err := st.SaveSessionPreset("", original); err != nil {
+		t.Fatal(err)
+	}
+	got, found, err := st.SessionPreset(original.Name)
+	if err != nil || !found || got != original {
+		t.Fatalf("literal lookup: %+v %v %v", got, found, err)
+	}
+	for _, name := range []string{"missing", " Role�", "Role� ", "Role"} {
+		got, found, err := st.SessionPreset(name)
+		if err != nil || found || got != (SessionPreset{}) {
+			t.Fatalf("missing/exact lookup %q: %+v %v %v", name, got, found, err)
+		}
+	}
+	changed := SessionPreset{Name: "Renamed", Instructions: "updated\n\t"}
+	if err := st.SaveSessionPreset(original.Name, changed); err != nil {
+		t.Fatal(err)
+	}
+	if _, found, err := st.SessionPreset(original.Name); err != nil || found {
+		t.Fatalf("stale rename lookup: %v %v", found, err)
+	}
+	if got, found, err := st.SessionPreset(changed.Name); err != nil || !found || got != changed {
+		t.Fatalf("fresh lookup: %+v %v %v", got, found, err)
+	}
+	if _, err := st.DeleteSessionPreset(changed.Name); err != nil {
+		t.Fatal(err)
+	}
+	if _, found, err := st.SessionPreset(changed.Name); err != nil || found {
+		t.Fatalf("stale delete lookup: %v %v", found, err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, found, err := st.SessionPreset(changed.Name); err == nil || found {
+		t.Fatal("database failure became missing lookup")
+	}
+}
+func TestSessionPresetLookupDoesNotReadUnrelatedRows(t *testing.T) {
+	st := newTestStore(t)
+	for _, query := range []string{
+		"DROP TABLE session_presets",
+		"CREATE TABLE session_presets (name TEXT PRIMARY KEY, instructions TEXT)",
+		"INSERT INTO session_presets VALUES ('selected','literal')",
+		"INSERT INTO session_presets VALUES ('unrelated',NULL)",
+	} {
+		if _, err := st.db.Exec(query); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := st.SessionPresets(); err == nil {
+		t.Fatal("fixture must fail catalog-wide decoding")
+	}
+	if got, found, err := st.SessionPreset("selected"); err != nil || !found || got.Instructions != "literal" {
+		t.Fatalf("unrelated body affected lookup: %+v %v %v", got, found, err)
+	}
+	if _, found, err := st.SessionPreset("unrelated"); err == nil || found {
+		t.Fatal("selected decoding error concealed")
+	}
+}

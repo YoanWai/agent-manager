@@ -210,3 +210,35 @@ func TestSessionsCreateWithoutPresetKeepsTaskNormalization(t *testing.T) {
 		t.Fatal("no-preset leading dash lost its rejection")
 	}
 }
+
+func TestSessionsCreatePresetIgnoresUnrelatedInstructionBodies(t *testing.T) {
+	h := newSessionHarness(t)
+	raw := "\t literal\r\n界"
+	if err := h.store.SaveSessionPreset("", store.SessionPreset{Name: "selected", Instructions: raw}); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", filepath.Join(h.sessions.configDir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	// An unrelated row that a catalog scan cannot decode must not affect single-name resolution.
+	for _, query := range []string{
+		"ALTER TABLE session_presets RENAME TO old_session_presets",
+		"CREATE TABLE session_presets (name TEXT PRIMARY KEY, instructions TEXT)",
+		"INSERT INTO session_presets SELECT name, instructions FROM old_session_presets",
+		"INSERT INTO session_presets (name, instructions) VALUES ('unrelated',NULL)",
+	} {
+		if _, err := db.Exec(query); err != nil {
+			t.Fatal(err)
+		}
+	}
+	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "selected-only", Preset: "selected", Prompt: " task "})
+	if err != nil {
+		t.Fatalf("selected lookup read unrelated body: %v", err)
+	}
+	stored, err := h.store.Get(created.ID)
+	if err != nil || !strings.HasSuffix(stored.LaunchPrompt, raw+"\n\ntask") {
+		t.Fatalf("selected literal changed: %+v %v", stored, err)
+	}
+}

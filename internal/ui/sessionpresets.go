@@ -26,7 +26,7 @@ type sessionPresetPanel struct {
 	refreshFailed                                  bool
 	rows                                           []store.SessionPreset
 	previous                                       string
-	name                                           textinput.Model
+	name                                           sessionPresetName
 	instructions                                   sessionPresetInstructions
 	hits                                           []sessionPresetHit
 }
@@ -105,7 +105,7 @@ func (m *Model) editSessionPreset(new bool) tea.Cmd {
 	p.loading, p.pasting = false, false
 	p.editing, p.confirm = true, false
 	p.previous = ""
-	p.name = textField("name", 60)
+	p.name = sessionPresetName{Model: textField("name", 60)}
 	p.instructions = sessionPresetInstructions{Model: textarea.New()}
 	p.instructions.MaxHeight = 0
 	p.instructions.CharLimit = 64 * 1024
@@ -182,13 +182,8 @@ func (m *Model) handleSessionPresetsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "ctrl+s":
 			return m, m.mutateSessionPreset(false)
 		case "ctrl+v":
-			if p.focus == 1 && !p.instructions.readOnly && !p.pasting {
-				gen := p.gen
-				p.pasting = true
-				return m, func() tea.Msg {
-					value, err := readSessionPresetClipboard()
-					return sessionPresetPasteMsg{gen: gen, text: value, err: err}
-				}
+			if p.focus == 1 {
+				return m, m.pasteSessionPresetInstructions()
 			}
 			return m, nil
 		case "tab", "shift+tab":
@@ -212,6 +207,10 @@ func (m *Model) handleSessionPresetsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch p.focus {
 		case 0:
 			p.name.Focus()
+			if msg.Type == tea.KeyRunes && strings.ContainsRune(string(msg.Runes), utf8.RuneError) {
+				m.errBar.text = "Name input contains an unsupported replacement rune; unchanged"
+				return m, nil
+			}
 			p.name, cmd = p.name.Update(msg)
 		case 1:
 			p.instructions.Focus()
@@ -275,6 +274,8 @@ func (m *Model) handleSessionPresetsClick(x, y int) (tea.Model, tea.Cmd) {
 		p.focus = 1
 		p.name.Blur()
 		return m, p.instructions.Focus()
+	case "paste":
+		return m, m.pasteSessionPresetInstructions()
 	case "save":
 		return m, m.mutateSessionPreset(false)
 	case "cancel":
@@ -325,19 +326,24 @@ func (m *Model) viewSessionPresets() string {
 		p.name.SetCursor(p.name.Position())
 		p.instructions.SetWidth(inner)
 		p.instructions.SetHeight(max(1, min(6, m.height-16)))
-		add("Name", "", 0)
-		add(textInputView(p.name), "name", 0)
-		if p.instructions.readOnly {
+		label := "Name"
+		if p.name.literal != "" {
+			label += ": " + p.name.literal + " (kept until edited)"
+		}
+		add(label, "", 0)
+		add(textInputView(p.name.Model), "name", 0)
+		if p.instructions.ReadOnly() {
 			add("Read-only instructions", "", 0)
-			add(p.instructions.reason, "", 0)
-			add(safePresetPreview(p.instructions.Value()), "", 0)
+			add("[ Paste unavailable ] "+p.instructions.reason, "paste", 0)
+			add(safePresetPreview(p.instructions.Value(), inner), "", 0)
 		} else {
 			add("Instructions", "", 0)
-			add("⇥ tab · ␍ return · ␛ literal marker", "", 0)
-			add(textAreaView(p.instructions.Model), "instructions", 0)
+			paste := "[ Paste ]"
 			if p.pasting {
-				add("Reading clipboard…", "", 0)
+				paste = "[ Paste: reading clipboard… ]"
 			}
+			add(paste+" ⇥ tab · ␍ return · ␛ literal marker", "paste", 0)
+			add(textAreaView(p.instructions.Model), "instructions", 0)
 		}
 		if p.busy {
 			add("Saving…", "", 0)
@@ -345,7 +351,7 @@ func (m *Model) viewSessionPresets() string {
 		} else {
 			add(presetAction("[ Save ]", p.focus == 2), "save", 0)
 			add(presetAction("[ Cancel ]", p.focus == 3), "cancel", 0)
-			hint = [][2]string{{"tab", "field"}, {"ctrl+s", "save"}, {"esc", "discard"}}
+			hint = [][2]string{{"tab", "field"}, {"ctrl+s", "save"}, {"ctrl+v", "paste"}, {"esc", "discard"}}
 		}
 	case p.confirm:
 		add("Delete "+p.rows[p.cursor].Name+"?", "", 0)
@@ -406,7 +412,7 @@ func (m *Model) formInitialPrompt() string {
 	}
 	return launch.WithInstructions(instructions, m.form.prompt.message())
 }
-func (m *Model) viewFormSessionPresets(add func(string, formHit), field func(string, string, int)) {
+func (m *Model) viewFormSessionPresets(field func(string, string, int)) {
 	f := &m.form
 	if f.presetsLoading {
 		field("preset", "loading… (optional)", fieldPreset)
@@ -424,9 +430,19 @@ func (m *Model) viewFormSessionPresets(add func(string, formHit), field func(str
 		name = f.presets[f.presetIndex-1].Name
 	}
 	field("preset", subtleStyle.Render("◂ ")+valueStyle.Render(name)+subtleStyle.Render(" ▸"), fieldPreset)
-	if f.focus == fieldPreset {
+}
+func (m *Model) viewFormSessionPresetDetails(add func(string, formHit), room int) {
+	f := &m.form
+	if room <= 0 || len(f.presets) == 0 {
+		return
+	}
+	previewRows := 0
+	if f.presetIndex > 0 {
+		previewRows = 1
+	}
+	if f.focus == fieldPreset && room > previewRows {
 		count := len(f.presets) + 1
-		first, last := sessionPresetWindow(count, f.presetIndex, min(4, max(1, m.height-22)))
+		first, last := sessionPresetWindow(count, f.presetIndex, min(4, room-previewRows))
 		for i := first; i < last; i++ {
 			label := "none"
 			if i > 0 {
@@ -435,8 +451,8 @@ func (m *Model) viewFormSessionPresets(add func(string, formHit), field func(str
 			add(strings.Repeat(" ", formLabelColumn)+ansi.Truncate(presetAction(label, i == f.presetIndex), max(1, m.formValueWidth()), "…")+"\n", formHit{field: fieldPreset, entry: i})
 		}
 	}
-	if f.presetIndex > 0 {
-		preview := safePresetPreview(f.presets[f.presetIndex-1].Instructions)
+	if previewRows > 0 {
+		preview := safePresetPreview(f.presets[f.presetIndex-1].Instructions, max(0, m.formValueWidth()-ansi.StringWidth("Instructions: ")))
 		add(strings.Repeat(" ", formLabelColumn)+subtleStyle.Render(ansi.Truncate("Instructions: "+preview, max(1, m.formValueWidth()), "…"))+"\n", formHit{field: fieldPreset, entry: -1})
 	}
 }
@@ -447,24 +463,52 @@ func sessionPresetWindow(count, cursor, room int) (int, int) {
 	return first, first + visible
 }
 
+// Keep an accepted name until its display is actually edited; textinput drops U+FFFD.
+type sessionPresetName struct {
+	textinput.Model
+	literal string
+}
+
+func (n *sessionPresetName) SetValue(value string) {
+	n.Model.SetValue(value)
+	n.literal = ""
+	if n.Model.Value() != value {
+		n.literal = value
+	}
+}
+func (n sessionPresetName) Value() string {
+	if n.literal != "" {
+		return n.literal
+	}
+	return n.Model.Value()
+}
+func (n sessionPresetName) Update(msg tea.Msg) (sessionPresetName, tea.Cmd) {
+	before := n.Model.Value()
+	var cmd tea.Cmd
+	n.Model, cmd = n.Model.Update(msg)
+	if n.Model.Value() != before {
+		n.literal = ""
+	}
+	return n, cmd
+}
+
 // The textarea sanitizes controls. Display escapes keep its editing behavior
 // without changing the instruction bytes, including literal escape glyphs.
 type sessionPresetInstructions struct {
 	textarea.Model
-	raw      string
-	readOnly bool
-	reason   string
+	raw    string
+	reason string
 }
 
 func (in *sessionPresetInstructions) SetValue(raw string) {
 	in.raw = raw
 	in.reason = instructionEditorLimit(raw)
-	in.readOnly = in.reason != ""
-	if !in.readOnly {
+	if !in.ReadOnly() {
 		in.Model.SetValue(encodePresetInstructions(raw))
 	}
 }
-func (in sessionPresetInstructions) Value() string { return in.raw }
+func (in sessionPresetInstructions) Value() string  { return in.raw }
+func (in sessionPresetInstructions) ReadOnly() bool { return in.reason != "" }
 func instructionEditorLimit(raw string) string {
 	if strings.Count(raw, "\n") >= 10000 {
 		return "More than 10,000 lines; rename or delete."
@@ -525,7 +569,7 @@ func decodePresetInstructions(encoded string) (string, error) {
 	return b.String(), nil
 }
 func (in sessionPresetInstructions) UpdateLiteral(msg tea.KeyMsg) (sessionPresetInstructions, tea.Cmd, error) {
-	if in.readOnly {
+	if in.ReadOnly() {
 		return in, nil, errors.New(in.reason)
 	}
 	if msg.Type == tea.KeyRunes {
@@ -556,24 +600,27 @@ func (in sessionPresetInstructions) UpdateLiteral(msg tea.KeyMsg) (sessionPreset
 	line, col := in.Line(), in.LineInfo().StartColumn+in.LineInfo().ColumnOffset
 	var cmd tea.Cmd
 	repeats := 1
-	for _, span := range literalPresetMarkerSpans(strings.Split(before, "\n")[line]) {
-		if msg.Type == tea.KeyBackspace && col > span[0] && col <= span[1] {
-			in.Model.SetCursor(span[1])
-			repeats = 2
-			break
-		}
-		if msg.Type == tea.KeyDelete && col >= span[0] && col < span[1] {
-			in.Model.SetCursor(span[0])
-			repeats = 2
-			break
+	if msg.Type == tea.KeyBackspace || msg.Type == tea.KeyDelete {
+		for _, span := range literalPresetMarkerSpans(strings.Split(before, "\n")[line]) {
+			if msg.Type == tea.KeyBackspace && col > span[0] && col <= span[1] {
+				in.Model.SetCursor(span[1])
+				repeats = 2
+				break
+			}
+			if msg.Type == tea.KeyDelete && col >= span[0] && col < span[1] {
+				in.Model.SetCursor(span[0])
+				repeats = 2
+				break
+			}
 		}
 	}
 	for range repeats {
 		in.Model, cmd = in.Model.Update(msg)
 	}
+	after := in.Model.Value()
 	info := in.Model.LineInfo()
 	position := info.StartColumn + info.ColumnOffset
-	for _, span := range literalPresetMarkerSpans(strings.Split(in.Model.Value(), "\n")[in.Model.Line()]) {
+	for _, span := range literalPresetMarkerSpans(strings.Split(after, "\n")[in.Model.Line()]) {
 		if position > span[0] && position < span[1] {
 			if strings.Contains(msg.String(), "left") {
 				in.Model.SetCursor(span[0])
@@ -583,7 +630,10 @@ func (in sessionPresetInstructions) UpdateLiteral(msg tea.KeyMsg) (sessionPreset
 			break
 		}
 	}
-	raw, err := decodePresetInstructions(in.Model.Value())
+	if after == before {
+		return in, cmd, nil
+	}
+	raw, err := decodePresetInstructions(after)
 	if err != nil {
 		in.Model.SetValue(before)
 		for in.Model.Line() > line {
@@ -595,17 +645,36 @@ func (in sessionPresetInstructions) UpdateLiteral(msg tea.KeyMsg) (sessionPreset
 	in.raw = raw
 	return in, cmd, nil
 }
-func safePresetPreview(raw string) string {
-	raw = strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) {
+func safePresetPreview(raw string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	var b strings.Builder
+	space := false
+	// Scan only enough complete graphemes to fill the visible preview. Controls
+	// become printable before width measurement, so launch bytes never reach ANSI.
+	for len(raw) > 0 {
+		cluster, _ := ansi.FirstGraphemeCluster(raw, ansi.GraphemeWidth)
+		raw = raw[len(cluster):]
+		for _, r := range cluster {
 			if unicode.IsSpace(r) {
-				return ' '
+				space = b.Len() > 0
+				continue
 			}
-			return '�'
+			if space {
+				b.WriteByte(' ')
+				space = false
+			}
+			if unicode.IsControl(r) {
+				r = '�'
+			}
+			b.WriteRune(r)
 		}
-		return r
-	}, raw)
-	return strings.Join(strings.Fields(raw), " ")
+		if ansi.StringWidth(b.String()) > width {
+			return ansi.Truncate(b.String(), width, "…")
+		}
+	}
+	return b.String()
 }
 
 var readSessionPresetClipboard = clipboard.ReadAll
@@ -616,9 +685,27 @@ type sessionPresetPasteMsg struct {
 	err  error
 }
 
+func (m *Model) pasteSessionPresetInstructions() tea.Cmd {
+	p := &m.presets
+	if p.busy || p.pasting {
+		return nil
+	}
+	if p.instructions.ReadOnly() {
+		m.errBar.text = p.instructions.reason
+		return nil
+	}
+	gen := p.gen
+	p.pasting = true
+	m.errBar.text = ""
+	return func() tea.Msg {
+		value, err := readSessionPresetClipboard()
+		return sessionPresetPasteMsg{gen: gen, text: value, err: err}
+	}
+}
+
 func (m *Model) recordSessionPresetPaste(msg sessionPresetPasteMsg) tea.Cmd {
 	p := &m.presets
-	if m.mode != modeSettings || !p.open || !p.editing || p.busy || p.gen != msg.gen || p.instructions.readOnly {
+	if m.mode != modeSettings || !p.open || !p.editing || p.busy || p.gen != msg.gen || p.instructions.ReadOnly() {
 		return nil
 	}
 	p.pasting = false

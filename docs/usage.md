@@ -98,7 +98,7 @@ Every configured tool is offered when you create a session, which is more than m
 
 ## Session presets
 
-Save reusable instructions in Settings (`s`) → **session presets**. Use `n` / **New** to create one, `enter` or `e` / **Edit** to edit the selected entry, and `d` / **Delete** to remove it with confirmation. The editor has a name and multiline instructions; `tab` moves between the fields and buttons, `ctrl+s` / **Save** saves, and `esc` / **Cancel** discards changes. See [Configuration](configuration.md#session-presets) for names and editor limits.
+Save reusable instructions in Settings (`s`) → **session presets**. Use `n` / **New** to create one, `enter` or `e` / **Edit** to edit the selected entry, and `d` / **Delete** to remove it with confirmation. The editor has a name and multiline instructions; `tab` moves between the fields and buttons, `ctrl+s` / **Save** saves, `ctrl+v` in instructions or **Paste** reads literal clipboard text, and `esc` / **Cancel** discards changes. See [Configuration](configuration.md#session-presets) for names and editor limits.
 
 The New Session form (`n`) offers a **preset** selector when entries exist. Focus it and use `←→`, or click an entry, to select saved instructions; **none** keeps the ordinary prompt. The selected instructions are placed before the task, separated by two newlines when the task is nonempty. An empty task sends just the saved instructions. Instruction whitespace and Unicode are preserved literally. Presets do not choose a CLI, model, effort, profile, group, directory or worktree; those controls and their defaults work as before.
 

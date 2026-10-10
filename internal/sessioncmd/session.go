@@ -341,21 +341,14 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 	}
 	prompt := strings.TrimSpace(opts.Prompt)
 	if opts.Preset != "" {
-		presets, err := runtime.store.SessionPresets()
+		preset, found, err := runtime.store.SessionPreset(opts.Preset)
 		if err != nil {
 			return Session{}, fmt.Errorf("reading session presets: %w", err)
-		}
-		found := false
-		for _, preset := range presets {
-			if preset.Name == opts.Preset {
-				prompt = launch.WithInstructions(preset.Instructions, prompt)
-				found = true
-				break
-			}
 		}
 		if !found {
 			return Session{}, fmt.Errorf("session preset %q does not exist; manage presets in Settings", opts.Preset)
 		}
+		prompt = launch.WithInstructions(preset.Instructions, prompt)
 	} else if strings.HasPrefix(prompt, "-") && tool.PromptFlag == "" {
 		return Session{}, fmt.Errorf(`prompt cannot start with "-" for %s, which takes its prompt as a bare argument and would read it as a flag`, toolName)
 	}

@@ -207,7 +207,8 @@ func (m *Model) viewForm() string {
 	}
 	// Chips are tokens inside the typed text, so they wrap and reflow with
 	// the words around them; painting happens on the rendered prompt.
-	m.viewFormSessionPresets(add, field)
+	m.viewFormSessionPresets(field)
+	presetAt, presetHitAt := b.Len(), len(m.form.hits)
 	field("prompt", m.form.prompt.view(), fieldPrompt)
 	field("group", groupBadge(displayGroup(m.form.groups[m.form.groupIndex].path)), fieldGroup)
 
@@ -237,7 +238,29 @@ func (m *Model) viewForm() string {
 	case m.form.focus == fieldEffort:
 		hint = [][2]string{{"←→", "level"}, {"tab/↑↓", "move"}, {"↵", "create"}, {"esc", "cancel"}}
 	}
-	return m.card("◆ New Session", strings.TrimRight(b.String(), "\n"), hint)
+	// Budget optional preset details against the completed body and the actual footer.
+	body := strings.TrimRight(b.String(), "\n")
+	bodyRows := strings.Count(body, "\n") + 1
+	footerRows := strings.Count(legendInline(hint, cardInnerWidth(m.cardWidth())), "\n") + 1
+	rows := bodyRows + footerRows + 5
+	if m.errBar.text != "" {
+		rows += 2
+	}
+	var details strings.Builder
+	var detailHits []formHit
+	m.viewFormSessionPresetDetails(func(text string, hit formHit) {
+		details.WriteString(text)
+		for range strings.Count(text, "\n") {
+			detailHits = append(detailHits, hit)
+		}
+	}, max(0, m.height-rows))
+	if details.Len() > 0 {
+		body = body[:presetAt] + details.String() + body[presetAt:]
+		hits := append([]formHit(nil), m.form.hits[:presetHitAt]...)
+		hits = append(hits, detailHits...)
+		m.form.hits = append(hits, m.form.hits[presetHitAt:]...)
+	}
+	return m.card("◆ New Session", body, hint)
 }
 
 // groupBaseChoice renders a group's base picker: its own ref, or auto and

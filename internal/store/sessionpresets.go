@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -28,6 +29,18 @@ func (s *Store) SessionPresets() ([]SessionPreset, error) {
 		presets = append(presets, preset)
 	}
 	return presets, rows.Err()
+}
+
+func (s *Store) SessionPreset(name string) (SessionPreset, bool, error) {
+	preset := SessionPreset{Name: name}
+	err := s.db.QueryRow(`SELECT instructions FROM session_presets WHERE name = ?`, name).Scan(&preset.Instructions)
+	if errors.Is(err, sql.ErrNoRows) {
+		return SessionPreset{}, false, nil
+	}
+	if err != nil {
+		return SessionPreset{}, false, err
+	}
+	return preset, true, nil
 }
 
 func (s *Store) SaveSessionPreset(previousName string, preset SessionPreset) error {
