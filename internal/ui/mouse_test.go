@@ -1441,6 +1441,35 @@ func TestMessagesLegendOpensNoticesByMouseAndKey(t *testing.T) {
 	}
 }
 
+func TestMessagesLegendClickOnlyOpensFromTheList(t *testing.T) {
+	for _, change := range []struct {
+		name  string
+		apply func(*Model)
+		ready func(*Model) bool
+	}{
+		{"search", func(m *Model) { m.rail.SetSearch(m.rail.Search(), true) }, func(m *Model) bool { return m.rail.Searching() }},
+		{"quick prompt", func(m *Model) { m.openQuickMode() }, func(m *Model) bool { return m.quick.active }},
+		{"resize", func(m *Model) { m.layout.split.resizeMode = true }, func(m *Model) bool { return m.layout.split.resizeMode }},
+		{"messages key off", func(m *Model) { m.services.listKeys = m.services.listKeys.With(keybind.Messages, bindingOf(t)) }, func(*Model) bool { return true }},
+		{"settings", func(m *Model) { m.openSettings() }, func(m *Model) bool { return m.mode == modeSettings }},
+		{"short terminal", func(m *Model) { m.layout.height = 2 }, func(*Model) bool { return true }},
+	} {
+		t.Run(change.name, func(t *testing.T) {
+			m := buildModel(t)
+			m.layout.width, m.layout.height = 120, 34
+			x, y := messagesCell(t, m)
+			change.apply(m)
+			if !change.ready(m) {
+				t.Fatalf("test setup: %s did not take, mode = %v err = %q", change.name, m.mode, m.errBar.text)
+			}
+			preparedView(m)
+			if m = leftPress(m, x, y); m.mode == modeNotices {
+				t.Fatal("a click where messages was painted opened notices")
+			}
+		})
+	}
+}
+
 func TestClickOnMetersBesideTheCardDoesNothing(t *testing.T) {
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 120, 34
