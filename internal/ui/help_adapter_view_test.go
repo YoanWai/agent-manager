@@ -61,6 +61,40 @@ func TestGlobalHelpShowsAgentManagementGuidance(t *testing.T) {
 	}
 }
 
+// The arrow-step rows reach the map from the Model's own preference, not
+// only from a context a test builds by hand.
+func TestHelpArrowStepRowsFollowSetting(t *testing.T) {
+	hasRow := func(lines []string, title, key string) bool {
+		inSection := false
+		for _, line := range lines {
+			plain := ansi.Strip(line)
+			if heading, ok := strings.CutPrefix(plain, "▍"); ok {
+				inSection = strings.HasPrefix(heading, title+" ")
+				continue
+			}
+			if inSection && strings.HasPrefix(plain, key+" ") {
+				return true
+			}
+		}
+		return false
+	}
+
+	for _, enabled := range []bool{true, false} {
+		m := helpModel()
+		m.prefs.arrowStep = enabled
+		lines := m.help.state.Content(m.helpContext(84)).Lines
+		for _, row := range []struct{ title, key string }{
+			{"list", "→"},
+			{"list", "←"},
+			{"inside a session (attached or focused)", "←"},
+		} {
+			if got := hasRow(lines, row.title, row.key); got != enabled {
+				t.Errorf("arrow step enabled = %v: %q in %q = %v", enabled, row.key, row.title, got)
+			}
+		}
+	}
+}
+
 func TestHelpFramePaintsInsideTheTerminal(t *testing.T) {
 	for _, width := range []int{60, 80, 120, 200} {
 		for _, height := range []int{14, 24, 40} {

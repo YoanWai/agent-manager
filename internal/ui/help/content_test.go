@@ -101,9 +101,16 @@ func TestDefaultDescriptionsFitTheDefaultCard(t *testing.T) {
 }
 
 func TestHighlightHandlesUnicodeCaseFoldingWithoutPanicking(t *testing.T) {
-	styles := testContext(60).Styles
+	// Folding "İ" lengthens it, which is the case that would slice out of
+	// range if the run were measured by the raw query.
+	ctx := testContext(60)
 	for _, query := range []string{"İ", "ẞ", "", "  ", "the", "THE"} {
-		highlightMatch("Tell your agent what to review", query, 60, styles)
+		highlightMatch("Tell your agent what to review", query, 60, ctx.Styles)
+		for _, section := range helpSections(ctx) {
+			for _, row := range section.rows {
+				highlightMatch(row[1], query, 60, ctx.Styles)
+			}
+		}
 	}
 }
 
