@@ -1,0 +1,1617 @@
+package ui
+
+import (
+	"context"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/hooks"
+	"github.com/YoanWai/agent-manager/internal/launch"
+	"github.com/YoanWai/agent-manager/internal/store"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
+)
+
+func TestNewSessionFormUsesSettingsDefaultTool(t *testing.T) {
+	m := buildModel(t)
+	if err := m.services.store.SetDefaultTool("ready-tool"); err != nil {
+		t.Fatal(err)
+	}
+	m.applyTestMsg(t, m.openForm()())
+	if got := m.form.toolNames[m.form.toolIndex]; got != "ready-tool" {
+		t.Fatalf("new session tool = %q, want settings default", got)
+	}
+}
+
+func TestOpenFormDefersSettingsReadAndAcceptsPristineDefaults(t *testing.T) {
+	m := buildModel(t)
+	reader := &blockedSettingReader{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+		values:  map[string]string{"default_tool": "ready-tool", worktreeSetting: "on"},
+	}
+
+	cmd := m.openFormWithReader(reader)
+	if cmd == nil {
+		t.Fatal("opening the form did not return a deferred settings refresh")
+	}
+	select {
+	case <-reader.started:
+		t.Fatal("opening the form read settings before its Bubble Tea command")
+	default:
+	}
+
+	completed := make(chan tea.Msg, 1)
+	go func() { completed <- cmd() }()
+	<-reader.started
+	if got := m.form.toolNames[m.form.toolIndex]; got != "claude" {
+		t.Fatalf("cached tool = %q, want claude before refresh", got)
+	}
+	close(reader.release)
+	m.applyTestMsg(t, <-completed)
+	if got := m.form.toolNames[m.form.toolIndex]; got != "ready-tool" {
+		t.Fatalf("refreshed tool = %q, want ready-tool", got)
+	}
+	if !m.form.worktree {
+		t.Fatal("pristine form did not accept the refreshed worktree default")
+	}
+}
+
+func TestFormSettingsLoadRefusesLocalChoiceAndReopenedForm(t *testing.T) {
+	t.Run("local choice", func(t *testing.T) {
+		m := buildModel(t)
+		cmd := m.openForm()
+		m.runFormRequest(m.form.cycleTool(m, 1), nil)
+		chosen := m.form.toolNames[m.form.toolIndex]
+		if err := m.services.store.SetSetting("default_tool", "ready-tool"); err != nil {
+			t.Fatal(err)
+		}
+		m.applyTestMsg(t, cmd())
+		if got := m.form.toolNames[m.form.toolIndex]; got != chosen {
+			t.Fatalf("async defaults replaced local tool choice: got %q want %q", got, chosen)
+		}
+	})
+
+	t.Run("reopened form", func(t *testing.T) {
+		m := buildModel(t)
+		cmd := m.openForm()
+		generation := m.form.prompt.gen
+		if err := m.services.store.SetSetting("default_tool", "ready-tool"); err != nil {
+			t.Fatal(err)
+		}
+		loaded := cmd()
+		m.openForm()
+		if m.form.prompt.gen == generation {
+			t.Fatal("reopened form reused its generation")
+		}
+		m.applyTestMsg(t, loaded)
+		if got := m.form.toolNames[m.form.toolIndex]; got == "ready-tool" {
+			t.Fatal("old defaults replaced the reopened form")
+		}
+	})
+}
+
+func TestFormSettingsLoadAppliesSuccessfulReadsOnPartialFailure(t *testing.T) {
+	m := buildModel(t)
+	reader := &settingsScriptWriter{
+		failGetOn: quickCloseSetting,
+		values: map[string]string{
+			"default_tool":  "ready-tool",
+			worktreeSetting: "on",
+		},
+	}
+	cmd := m.openFormWithReader(reader)
+	m.applyTestMsg(t, cmd())
+	if got := m.form.toolNames[m.form.toolIndex]; got != "ready-tool" || !m.form.worktree {
+		t.Fatalf("successful reads were lost: tool=%q worktree=%t", got, m.form.worktree)
+	}
+	if !strings.Contains(m.errBar.text, "settings load: 1 reads failed") {
+		t.Fatalf("partial failure not surfaced: %q", m.errBar.text)
+	}
+}
+
+func pickFormTool(t *testing.T, m *Model, name string) {
+	t.Helper()
+	for i, candidate := range m.form.toolNames {
+		if candidate == name {
+			m.form.toolIndex = i
+			return
+		}
+	}
+	t.Fatalf("form missing tool %q: %v", name, m.form.toolNames)
+}
+
+func submitFormSession(t *testing.T, m *Model, name string) {
+	t.Helper()
+	m.form.name.SetValue(name)
+	m.form.dir.SetValue(t.TempDir())
+	_, cmd := m.submitForm()
+	m.applyCmd(t, cmd)
+	if m.mode != modeList {
+		t.Fatalf("submit: mode=%v err=%q", m.mode, m.errBar.text)
+	}
+}
+
+func TestFormRemembersLastSpawnTool(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	pickFormTool(t, m, "ready-tool")
+	submitFormSession(t, m, "first")
+
+	m.openForm()
+	if got := m.form.toolNames[m.form.toolIndex]; got != "ready-tool" {
+		t.Fatalf("next form tool = %q, want last spawn", got)
+	}
+}
+
+func TestFormCancelDoesNotRememberLastPick(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	pickFormTool(t, m, "ready-tool")
+	m.form.worktree = true
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyEsc})
+
+	m.applyTestMsg(t, m.openForm()())
+	if got := m.form.toolNames[m.form.toolIndex]; got != "claude" {
+		t.Fatalf("cancelled pick must not seed the next form, got %q", got)
+	}
+	if m.form.worktree {
+		t.Fatal("cancelled worktree pick must not seed the next form")
+	}
+}
+
+func TestFormRemembersPickOnlyAfterInstallRetrySucceeds(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	pickFormTool(t, m, "ready-tool")
+	submitFormSession(t, m, "first")
+
+	installCommand := fakeInstallCommand(t)
+	tool := m.services.cfg.Tools["claude"]
+	tool.Command = "am-fake-cli"
+	m.services.cfg.Tools["claude"] = tool
+	dir := t.TempDir()
+	initGitRepo(t, dir)
+	m.openForm()
+	pickFormTool(t, m, "claude")
+	m.form.name.SetValue("after-install")
+	m.form.dir.SetValue(dir)
+	if probe := m.toggleFormWorktree(); probe != nil {
+		m.applyTestMsg(t, probe())
+	}
+	_, cmd := m.submitForm()
+	m.applyCmd(t, cmd)
+
+	if m.mode != modeLaunchHint || m.launchHint.fix.effectRetry == nil {
+		t.Fatalf("expected a refused launch with retry, mode=%v err=%q", m.mode, m.errBar.text)
+	}
+	if m.ledger.lastSpawnTool != "ready-tool" || m.ledger.lastSpawnWorktree {
+		t.Fatalf("failed launch changed the last pick: %q, %v", m.ledger.lastSpawnTool, m.ledger.lastSpawnWorktree)
+	}
+	m.launchHint.fix.command = installCommand
+	m.applyCmd(t, pressInLaunchHint(t, m, 'i'))
+	waitForInstallToSettle(t, m)
+
+	if m.ledger.lastSpawnTool != "claude" || !m.ledger.lastSpawnWorktree {
+		t.Fatalf("successful retry did not remember the pick: %q, %v; err=%q", m.ledger.lastSpawnTool, m.ledger.lastSpawnWorktree, m.errBar.text)
+	}
+	m.applyTestMsg(t, m.openForm()())
+	if m.form.toolNames[m.form.toolIndex] != "claude" || !m.form.worktree {
+		t.Fatal("next form should use the successful retry's tool and worktree")
+	}
+}
+
+func TestFormRemembersLastSpawnWorktree(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	m.form.worktree = true
+	submitFormSession(t, m, "first")
+
+	m.applyTestMsg(t, m.openForm()())
+	if !m.form.worktree {
+		t.Fatal("next form should seed worktree from the last spawn")
+	}
+}
+
+func TestFormLastWorktreeYieldsToGroupDefault(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	m.form.worktree = true
+	submitFormSession(t, m, "first")
+
+	if err := m.services.store.CreateGroup("grp", t.TempDir()); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	if err := m.services.store.SetGroupWorktree("grp", "off"); err != nil {
+		t.Fatalf("set worktree: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "grp")
+	m.openForm()
+	if m.form.worktree {
+		t.Fatal("a group's explicit worktree default must not follow the last pick")
+	}
+
+	if err := m.services.store.CreateGroup("grp/child", t.TempDir()); err != nil {
+		t.Fatalf("child group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "grp/child")
+	m.openForm()
+	if m.form.worktree {
+		t.Fatal("a child of an explicit-off group must not follow the last pick")
+	}
+
+	m.mode = modeList
+	m.selectSessionRow(t, "first")
+	m.openForm()
+	if !m.form.worktree {
+		t.Fatal("an inheriting group should still follow the last pick")
+	}
+}
+
+func TestFormHiddenLastToolFallsBackToSettings(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	pickFormTool(t, m, "ready-tool")
+	m.form.worktree = true
+	submitFormSession(t, m, "first")
+	if err := m.services.store.SetHiddenTools(map[string]bool{"ready-tool": true}); err != nil {
+		t.Fatal(err)
+	}
+
+	m.applyTestMsg(t, m.openForm()())
+	if got := m.form.toolNames[m.form.toolIndex]; got != "claude" {
+		t.Fatalf("hidden last tool should fall back to settings, got %q", got)
+	}
+	if m.form.worktree {
+		t.Fatal("hidden last tool should fall back to the settings worktree default")
+	}
+}
+
+func TestSettingsDefaultIgnoresLastSpawn(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	pickFormTool(t, m, "ready-tool")
+	submitFormSession(t, m, "first")
+
+	m.openSettings()
+	if got := m.settings.dialog.toolNames[m.settings.dialog.toolIndex]; got != "claude" {
+		t.Fatalf("settings default tool = %q, want stored default", got)
+	}
+}
+
+func TestNewSessionPreselectsContextGroup(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.services.store.CreateGroup("alpha/beta", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "seed", dir, "alpha/beta")
+
+	// cursor on the session inside alpha/beta
+	m.selectSessionRow(t, "seed")
+	m.openForm()
+	if got := m.form.groups[m.form.groupIndex].path; got != "alpha/beta" {
+		t.Fatalf("form should preselect session's group, got %q", got)
+	}
+	m.mode = modeList
+
+	// cursor on a group row
+	for i, r := range railRows(m) {
+		if r.isGroup && r.group == "alpha" {
+			setRailCursor(m, i)
+		}
+	}
+	m.openForm()
+	if got := m.form.groups[m.form.groupIndex].path; got != "alpha" {
+		t.Fatalf("form should preselect the highlighted group, got %q", got)
+	}
+}
+
+func TestGroupFormCreatesUnderParent(t *testing.T) {
+	m := buildModel(t)
+	if err := m.services.store.CreateGroup("projects", ""); err != nil {
+		t.Fatalf("seed group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+
+	m.openGroupForm()
+	pickGroup(t, m, "projects")
+	m.groupForm.name.SetValue("sub/one")
+	m.groupForm.path.SetValue(t.TempDir())
+	_, cmd := m.submitGroupForm()
+	m.applyCmd(t, cmd)
+	if m.mode != modeList {
+		t.Fatalf("group form should close, err=%q", m.errBar.text)
+	}
+
+	groups, _ := m.services.store.Groups()
+	found := ""
+	for _, g := range groups {
+		if strings.HasSuffix(g.Name, "sub-one") {
+			found = g.Name
+		}
+	}
+	if found != "projects/sub-one" {
+		t.Fatalf("slash should be sanitized and nested under parent, got %q", found)
+	}
+}
+
+func TestGroupFormShowsNewEmptyGroupWithWorktreeOff(t *testing.T) {
+	m := buildModel(t)
+	m.rail.SetHideEmptyGroups(true)
+	m.rail.SetSearch("does-not-match", m.rail.Searching())
+	m.rail.SetArchived(true)
+	m.rail.SetFilteringAttention(true)
+	m.openGroupForm()
+	m.groupForm.name.SetValue("manual")
+	m.groupForm.path.SetValue(t.TempDir())
+	m.groupForm.worktreeIndex = groupWorktreeIndex("off")
+
+	_, cmd := m.submitGroupForm()
+	m.applyCmd(t, cmd)
+	if m.rail.HideEmptyGroups() {
+		t.Fatal("creating a group should reveal it when empty groups were hidden")
+	}
+	if m.rail.Search() != "" || m.rail.ShowArchived() || m.rail.FilteringAttention() {
+		t.Fatalf("creation left list filters active: search=%q archived=%v statusFilter=%v",
+			m.rail.Search(), m.rail.ShowArchived(), m.rail.FilteringAttention())
+	}
+	if got := m.groupRowPaths(); !reflect.DeepEqual(got, []string{"manual"}) {
+		t.Fatalf("group rows after completion = %v, want [manual]", got)
+	}
+	if row, ok := m.selectedRow(); !ok || !row.isGroup || row.group != "manual" {
+		t.Fatalf("new group is not selected: %+v", row)
+	}
+	if got := m.workspace.groupWorktrees["manual"]; got != "off" {
+		t.Fatalf("local worktree choice = %q, want off", got)
+	}
+}
+
+func TestGroupFormExpandsParentToShowNewChild(t *testing.T) {
+	m := buildModel(t)
+	if err := m.services.store.CreateGroup("projects", t.TempDir()); err != nil {
+		t.Fatalf("seed group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "projects")
+	m.rail.SetCollapsed("projects", true)
+	m.openGroupForm()
+	m.groupForm.name.SetValue("api")
+
+	_, cmd := m.submitGroupForm()
+	m.applyCmd(t, cmd)
+	if m.rail.IsCollapsed("projects") {
+		t.Fatal("parent remained collapsed after creating a child")
+	}
+	if got := m.groupRowPaths(); !reflect.DeepEqual(got, []string{"projects", "projects/api"}) {
+		t.Fatalf("group rows = %v, want parent and child", got)
+	}
+	if row, ok := m.selectedRow(); !ok || row.group != "projects/api" {
+		t.Fatalf("new child is not selected: %+v", row)
+	}
+}
+
+func TestGroupFormRejectsDuplicateWithoutChangingIt(t *testing.T) {
+	m := buildModel(t)
+	first := t.TempDir()
+	second := t.TempDir()
+	if err := m.services.store.AddGroup("backend", first, "on", ""); err != nil {
+		t.Fatalf("seed group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+
+	m.openGroupForm()
+	pickGroup(t, m, "")
+	m.groupForm.name.SetValue("backend")
+	m.groupForm.path.SetValue(second)
+	m.groupForm.worktreeIndex = groupWorktreeIndex("off")
+	_, cmd := m.submitGroupForm()
+	m.applyCmd(t, cmd)
+	if m.mode != modeGroupForm || !strings.Contains(m.errBar.text, "already exists") {
+		t.Fatalf("duplicate submission succeeded: mode=%v err=%q", m.mode, m.errBar.text)
+	}
+	if got := m.groupRowPaths(); !reflect.DeepEqual(got, []string{"backend"}) {
+		t.Fatalf("duplicate submission changed the rows: %v", got)
+	}
+
+	groups, err := m.services.store.Groups()
+	if err != nil {
+		t.Fatalf("groups: %v", err)
+	}
+	if len(groups) != 1 || groups[0].Path != first || groups[0].Worktree != "on" {
+		t.Fatalf("duplicate submission changed group: %+v", groups)
+	}
+}
+
+func TestGroupParentPickerExcludesArchivedGroups(t *testing.T) {
+	m := buildModel(t)
+	for _, group := range []string{"active", "archived", "archived/child"} {
+		if err := m.services.store.CreateGroup(group, t.TempDir()); err != nil {
+			t.Fatalf("create %s: %v", group, err)
+		}
+	}
+	if err := m.services.store.SetGroupArchived("archived", true); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+
+	m.openGroupForm()
+	var options []string
+	for _, option := range m.form.groups {
+		options = append(options, option.path)
+	}
+	if !reflect.DeepEqual(options, []string{"", "active"}) {
+		t.Fatalf("parent options = %v, want root and active", options)
+	}
+}
+
+func TestGroupFormFieldsTrackCardWidth(t *testing.T) {
+	m := buildModel(t)
+	m.openGroupForm()
+	want := m.formValueWidth() - 3
+	if m.groupForm.name.Width != want || m.groupForm.path.Width != want {
+		t.Fatalf("initial widths = name %d path %d, want %d", m.groupForm.name.Width, m.groupForm.path.Width, want)
+	}
+
+	m.Update(tea.WindowSizeMsg{Width: 72, Height: m.layout.height})
+	want = m.formValueWidth() - 3
+	if m.groupForm.name.Width != want || m.groupForm.path.Width != want {
+		t.Fatalf("resized widths = name %d path %d, want %d", m.groupForm.name.Width, m.groupForm.path.Width, want)
+	}
+}
+
+func TestGroupDefaultPathFillsSessionDir(t *testing.T) {
+	m := buildModel(t)
+	groupDir := t.TempDir()
+	if err := m.services.store.CreateGroup("workspace", groupDir); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+
+	m.openForm()
+	pickGroup(t, m, "workspace")
+	m.moveGroupCursor(0) // re-resolve dir for the selected group
+	if got := m.form.dir.Value(); got != groupDir {
+		t.Fatalf("session dir should default to the group path %q, got %q", groupDir, got)
+	}
+}
+
+func TestFormPromptComposesWithSettings(t *testing.T) {
+	m := buildModel(t)
+	tool := m.services.cfg.Tools["claude-hooked"]
+	tool.Command = "cat"
+
+	command, _, err := m.buildLaunch("claude", tool, launch.WithPrompt(tool, tool.Command, "fix the bug"), "prompt01")
+	if err != nil {
+		t.Fatalf("buildLaunch: %v", err)
+	}
+	if !strings.HasPrefix(command, "cat 'fix the bug' --mcp-config '") || !strings.Contains(command, "--settings '") {
+		t.Fatalf("command = %q", command)
+	}
+}
+
+func TestFormLongDirKeepsCursorEndVisible(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	m.form.focusStep(m, 2) // name -> tool -> dir
+	m.form.dir.SetValue("/very/long/" + strings.Repeat("a", 80) + "/tail-end")
+	m.form.dir.CursorEnd()
+	view := ansi.Strip(m.viewForm())
+	if !strings.Contains(view, "tail-end") {
+		t.Fatal("dir field should scroll so the end of a long value stays visible")
+	}
+}
+
+// focusFormPrompt moves the form's focus to the prompt field, where the
+// image keys apply.
+func focusFormPrompt(t *testing.T, m *Model) {
+	t.Helper()
+	m.form.focusStep(m, -2) // name -> group -> prompt
+	if m.form.focus != fieldPrompt {
+		t.Fatalf("focus = %v, want fieldPrompt", m.form.focus)
+	}
+}
+
+// pasteFormImage runs a full ctrl+v against a fake clipboard that yields
+// the given file, and returns the id of the chip it left behind.
+func pasteFormImage(t *testing.T, m *Model, path string) int {
+	t.Helper()
+	orig := captureClipboardImage
+	defer func() { captureClipboardImage = orig }()
+	captureClipboardImage = func() (string, error) { return path, nil }
+
+	_, cmd := m.handleFormKey(tea.KeyMsg{Type: tea.KeyCtrlV})
+	if cmd == nil {
+		t.Fatal("ctrl+v should start an async clipboard read")
+	}
+	id := m.form.prompt.lastImageID
+	msg, ok := cmd().(pasteImageMsg)
+	if !ok {
+		t.Fatalf("clipboard cmd returned %T", cmd())
+	}
+	updated, _ := m.Update(msg)
+	*m = *updated.(*Model)
+	if m.errBar.text != "" {
+		t.Fatalf("paste: %q", m.errBar.text)
+	}
+	return id
+}
+
+func TestFormPasteSendsTheImagePathWithTheFirstTask(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	focusFormPrompt(t, m)
+	for _, r := range "match this" {
+		m.handleFormKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+
+	path := tempImage(t, "mock.png")
+	id := pasteFormImage(t, m, path)
+
+	if got, want := m.form.prompt.input.Value(), "match this "+imageToken(id)+" "; got != want {
+		t.Fatalf("chip should land at the caret: got %q, want %q", got, want)
+	}
+	if got, want := m.form.prompt.message(), "match this "+path; got != want {
+		t.Fatalf("first task = %q, want %q", got, want)
+	}
+}
+
+func TestFormPasteChipDeletesAsOneAndReleasesItsImage(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	focusFormPrompt(t, m)
+
+	path := tempImage(t, "mock.png")
+	pasteFormImage(t, m, path)
+
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyLeft})
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyBackspace})
+	if got := m.form.prompt.input.Value(); got != "" {
+		t.Fatalf("backspace next to a chip should take the whole chip: %q", got)
+	}
+	if len(m.form.prompt.attachments) != 0 {
+		t.Fatalf("attachment should be released: %+v", m.form.prompt.attachments)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("the image file should be gone, stat err = %v", err)
+	}
+}
+
+func TestFormCancelReleasesPastedImages(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	focusFormPrompt(t, m)
+
+	path := tempImage(t, "mock.png")
+	pasteFormImage(t, m, path)
+
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyEsc})
+	if m.mode != modeList {
+		t.Fatalf("esc should close the form, mode = %v", m.mode)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("an abandoned form should release its images, stat err = %v", err)
+	}
+}
+
+// The rule that keeps submitForm from releasing: the agent opens the path
+// after it launches, so a created session's images have to outlive the
+// form that named them. The sweep is what takes them, days later.
+func TestFormSubmitKeepsThePastedImage(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	focusFormPrompt(t, m)
+	m.form.name.SetValue("with-a-picture")
+	m.form.dir.SetValue(t.TempDir())
+
+	path := tempImage(t, "mock.png")
+	pasteFormImage(t, m, path)
+
+	_, cmd := m.submitForm()
+	if m.errBar.text != "" {
+		t.Fatalf("submit: %q", m.errBar.text)
+	}
+	m.applyCmd(t, cmd)
+	if m.mode != modeList {
+		t.Fatalf("a created session should close the form, mode = %v", m.mode)
+	}
+	if len(m.sessionRows()) != 1 {
+		t.Fatalf("want one session, got %v", sessionNames(m))
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("the agent still has to open this file: %v", err)
+	}
+	// And the path is what the session launched with, not the chip's text.
+	if !strings.Contains(m.workspace.sessions[0].LaunchPrompt, path) {
+		t.Fatalf("launch prompt should name the image path: %q", m.workspace.sessions[0].LaunchPrompt)
+	}
+}
+
+func TestFormChipRendersInTheCard(t *testing.T) {
+	prev := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
+
+	m := buildModel(t)
+	m.openForm()
+	focusFormPrompt(t, m)
+	m.form.prompt.attachments = []imageAttachment{{id: 1, path: "/tmp/agent-manager-pastes/paste-123.png"}}
+	m.form.prompt.input.SetValue("match " + imageToken(1))
+
+	view := m.viewForm()
+	plain := ansi.Strip(view)
+	if !strings.Contains(plain, "match "+imageToken(1)) {
+		t.Fatalf("chip should read inline with the first task, got %q", plain)
+	}
+	if strings.Contains(plain, "paste-123") {
+		t.Fatalf("the card should not show the temp path, got %q", plain)
+	}
+	if !strings.Contains(view, imageChip(imageToken(1))) {
+		t.Fatal("chip should be styled in the rendered card")
+	}
+	if !strings.Contains(plain, "paste an image") {
+		t.Fatalf("the focused prompt should say how to attach one, got %q", plain)
+	}
+}
+
+func TestFormSubmitWaitsForAPasteStillReading(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	focusFormPrompt(t, m)
+	m.form.name.SetValue("half-pasted")
+	m.form.dir.SetValue(t.TempDir())
+	// The chip a paste reserves before its clipboard read lands.
+	m.form.prompt.attachments = []imageAttachment{{id: 1}}
+	m.form.prompt.input.SetValue(imageToken(1))
+
+	if _, _ = m.submitForm(); m.errBar.text == "" {
+		t.Fatal("a submit with a chip still reading should be refused")
+	}
+	if m.mode != modeForm {
+		t.Fatalf("form should stay open, mode = %v", m.mode)
+	}
+	if len(m.sessionRows()) != 0 {
+		t.Fatalf("no session should be created, got %d", len(m.sessionRows()))
+	}
+}
+
+func TestFormLongPromptWrapsAcrossRows(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	m.form.focusStep(m, -2) // name -> group -> prompt
+	m.form.prompt.input.SetValue(strings.Repeat("word ", 25) + "finale")
+	view := ansi.Strip(m.viewForm())
+	if !strings.Contains(view, "finale") {
+		t.Fatal("long prompt should wrap onto more rows instead of being clipped")
+	}
+}
+
+func TestFormTypesWordsNamedLikeKeys(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	for i, word := range []string{"enter", "tab", "esc"} {
+		if i > 0 {
+			m = applyMsg(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'-'}})
+		}
+		m = applyMsg(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(word)})
+	}
+	if m.mode != modeForm || m.form.name.Value() != "enter-tab-esc" {
+		t.Fatalf("mode %v, name %q; want the form open with the words typed", m.mode, m.form.name.Value())
+	}
+}
+
+func TestComposerRowsCountAnExactFillAsAWrap(t *testing.T) {
+	prompt := promptField()
+	prompt.input.SetWidth(12) // content width 10
+	prompt.input.Focus()
+	prompt.input.SetValue("1234567890\nx")
+	if _, total := prompt.displayRows(); total != 3 {
+		t.Fatalf("a line filling its row exactly adds a wrap row: want 3, got %d", total)
+	}
+}
+
+func TestFormGroupArrowsMoveFocusNotSelection(t *testing.T) {
+	m := buildModel(t)
+	if err := m.services.store.CreateGroup("alpha", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.openForm()
+	m.form.focusStep(m, -1) // wrap from name to group
+	if m.form.focus != fieldGroup {
+		t.Fatalf("focus = %v, want fieldGroup", m.form.focus)
+	}
+
+	initial := m.form.groupIndex
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyDown})
+	if m.form.groupIndex != initial {
+		t.Fatalf("down must not change the group selection, index = %d, want %d", m.form.groupIndex, initial)
+	}
+	if m.form.focus == fieldGroup {
+		t.Fatal("down should move focus off the group field")
+	}
+
+	m.form.focus = fieldGroup
+	m.form.groupIndex = 0
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
+	if m.form.groupIndex != 1 {
+		t.Fatalf("right should cycle the group selection, index = %d", m.form.groupIndex)
+	}
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyLeft})
+	if m.form.groupIndex != 0 {
+		t.Fatalf("left should cycle back, index = %d", m.form.groupIndex)
+	}
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyLeft})
+	if m.form.groupIndex != len(m.form.groups)-1 {
+		t.Fatalf("left at the first group should wrap to the last, index = %d", m.form.groupIndex)
+	}
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
+	if m.form.groupIndex != 0 {
+		t.Fatalf("right at the last group should wrap to the first, index = %d", m.form.groupIndex)
+	}
+}
+
+func TestGroupFormParentArrowsMoveFocusNotSelection(t *testing.T) {
+	m := buildModel(t)
+	if err := m.services.store.CreateGroup("alpha", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.openGroupForm()
+	m.groupForm.focus = gfParent
+
+	initial := m.form.groupIndex
+	m.handleGroupFormKey(tea.KeyMsg{Type: tea.KeyDown})
+	if m.form.groupIndex != initial {
+		t.Fatalf("down must not change the parent selection, index = %d, want %d", m.form.groupIndex, initial)
+	}
+	if m.groupForm.focus == gfParent {
+		t.Fatal("down should move focus off the parent field")
+	}
+
+	m.groupForm.focus = gfParent
+	m.form.groupIndex = 0
+	m.handleGroupFormKey(tea.KeyMsg{Type: tea.KeyRight})
+	if m.form.groupIndex != 1 {
+		t.Fatalf("right should cycle the parent selection, index = %d", m.form.groupIndex)
+	}
+}
+
+func TestFormRejectsDashLeadingPrompt(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	m.form.name.SetValue("flagged")
+	m.form.dir.SetValue(t.TempDir())
+	m.form.toolIndex = 0
+	m.form.prompt.input.SetValue("--version")
+
+	if _, _ = m.submitForm(); m.errBar.text == "" {
+		t.Fatal("dash-leading prompt should be rejected")
+	}
+	if m.mode != modeForm {
+		t.Fatalf("form should stay open, mode = %v", m.mode)
+	}
+	if len(m.sessionRows()) != 0 {
+		t.Fatalf("no session should be created, got %d", len(m.sessionRows()))
+	}
+}
+
+// Only a spawn that hands over the rename directive has a name to wait for;
+// one the user named itself is already at its final name.
+func TestSpawnAwaitsARenameOnlyWhenItAsksForOne(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+
+	if err := m.spawnSession("claude", "claude-aaaa", dir, "", "do things", true, false, config.Choice{}); err != nil {
+		t.Fatalf("auto-named spawn: %v", err)
+	}
+	if err := m.spawnSession("claude", "custom", dir, "", "do things", false, false, config.Choice{}); err != nil {
+		t.Fatalf("custom spawn: %v", err)
+	}
+	for _, sess := range m.workspace.sessions {
+		awaiting := m.awaitingRename(sess)
+		if sess.Name == "claude-aaaa" && !awaiting {
+			t.Fatal("an auto-named spawn should wait for the name its agent picks")
+		}
+		if sess.Name == "custom" && awaiting {
+			t.Fatal("a custom-named spawn was never asked to rename")
+		}
+	}
+}
+
+func TestSpawnMarksDeferredDirective(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+
+	if err := m.spawnSession("claude", "claude-aaaa", dir, "", "/compact", true, false, config.Choice{}); err != nil {
+		t.Fatalf("slash spawn: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	slashID := m.sessionRows()[0].ID
+	if !sessionHasPendingInput(t, m, slashID, launch.DeferredRenameDirective) {
+		t.Fatal("slash-prompt spawn should defer the directive")
+	}
+
+	if err := m.spawnSession("claude", "claude-bbbb", dir, "", "do things", true, false, config.Choice{}); err != nil {
+		t.Fatalf("plain spawn: %v", err)
+	}
+	if err := m.spawnSession("claude", "custom", dir, "", "/compact", false, false, config.Choice{}); err != nil {
+		t.Fatalf("custom spawn: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	for _, sess := range m.sessionRows() {
+		if sess.ID == slashID {
+			continue
+		}
+		if sessionHasPendingInput(t, m, sess.ID, launch.DeferredRenameDirective) {
+			t.Fatalf("session %q should not defer a directive", sess.Name)
+		}
+	}
+}
+
+func TestDeferredDirectiveSentWhenPaneReady(t *testing.T) {
+	m := buildModel(t)
+	if err := m.spawnSession("ready-tool", "ready-tool-abcd", t.TempDir(), "", "", true, false, config.Choice{}); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	sess := m.sessionRows()[0]
+	// Launch scripts boot the tool immediately, so the first refresh may
+	// already deliver the deferred directive. Either still-pending or
+	// already present in the pane is success; a missing mark before any
+	// send is not possible after spawnSession.
+	deadline := time.Now().Add(5 * time.Second)
+	for sessionHasPendingInput(t, m, sess.ID, launch.DeferredRenameDirective) {
+		if time.Now().After(deadline) {
+			pane, _ := m.services.tmux.CapturePane(sess.ID)
+			t.Fatalf("directive never sent; pane:\n%s", pane)
+		}
+		time.Sleep(100 * time.Millisecond)
+		m.applyCmd(t, m.refreshCmd())
+	}
+	pane, err := m.services.tmux.CapturePane(sess.ID)
+	if err != nil {
+		t.Fatalf("capture: %v", err)
+	}
+	if !strings.Contains(pane, "agent-manager rename") {
+		t.Fatalf("pane should hold the directive, got:\n%s", pane)
+	}
+}
+
+func TestSendModePromptSurvivesPollerRestart(t *testing.T) {
+	m := buildModel(t)
+	if err := m.spawnSession("send-tool", "custom", t.TempDir(), "", "do the work", false, false, config.Choice{}); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	sess := m.sessionRows()[0]
+	if !sessionHasPendingInput(t, m, sess.ID, "do the work") {
+		t.Fatal("launch prompt was not persisted before delivery")
+	}
+	old := m.poller
+	m.poller = newPoller(m.services.store, m.services.tmux, m.services.engine, m.services.hooks, m.services.gitDrv,
+		old.options.StatusSources, old.options.SessionStores, old.options.MCPStyles, old.options.ShellTools, old.options.Binaries, old.options.Interval)
+	m.applyCmd(t, m.refreshCmd())
+	deadline := time.Now().Add(5 * time.Second)
+	for len(sessionPendingInputs(t, m, sess.ID)) > 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("startup prompt stayed queued after a poller restart and the input box appeared")
+		}
+		time.Sleep(100 * time.Millisecond)
+		m.applyCmd(t, m.refreshCmd())
+	}
+	pane, err := m.services.tmux.CapturePane(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(pane, "do the work") || !strings.Contains(pane, "This session is already named") {
+		t.Fatalf("pane did not receive the launch prompt:\n%s", pane)
+	}
+}
+
+func TestSendModeReconcilesUncertainPriorDeliveryWithoutResending(t *testing.T) {
+	m := buildModel(t)
+	if err := m.spawnSession("send-tool", "custom", t.TempDir(), "", "do not resend", false, false, config.Choice{}); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	sess := m.sessionRows()[0]
+	input := sessionPendingInputs(t, m, sess.ID)[0]
+	var claimed bool
+	acquired, err := m.services.store.WithDeliveryGuard(context.Background(), func(guard *store.DeliveryGuard) error {
+		_, ok, claimErr := guard.ClaimPendingInput(sess.ID, input, time.Now())
+		claimed = ok
+		return claimErr
+	})
+	if err != nil || !acquired || !claimed {
+		t.Fatalf("claim pending input = acquired %v, claimed %v, err %v", acquired, claimed, err)
+	}
+	old := m.poller
+	m.poller = newPoller(m.services.store, m.services.tmux, m.services.engine, m.services.hooks, m.services.gitDrv,
+		old.options.StatusSources, old.options.SessionStores, old.options.MCPStyles, old.options.ShellTools, old.options.Binaries, old.options.Interval)
+	msg := m.poller.refreshOnce()
+	gotErr, ok := msg.(errMsg)
+	if !ok || !strings.Contains(gotErr.err.Error(), "uncertain prior transport outcome") {
+		t.Fatalf("refresh result = %v, want uncertain-delivery error", msg)
+	}
+	if inputs := sessionPendingInputs(t, m, sess.ID); len(inputs) != 0 {
+		t.Fatalf("ambiguous input was not reconciled: %q", inputs)
+	}
+	pane, err := m.services.tmux.CapturePane(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(pane, "do not resend") {
+		t.Fatalf("ambiguous input was resent:\n%s", pane)
+	}
+}
+
+func sessionPendingInputs(t *testing.T, m *Model, id string) []string {
+	t.Helper()
+	sess, err := m.services.store.Get(id)
+	if err != nil {
+		t.Fatalf("get session %s: %v", id, err)
+	}
+	return sess.PendingInputs
+}
+
+func sessionHasPendingInput(t *testing.T, m *Model, id, want string) bool {
+	t.Helper()
+	for _, input := range sessionPendingInputs(t, m, id) {
+		if input == want || strings.Contains(input, want) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestBuildLaunchCarriesSessionID(t *testing.T) {
+	m := buildModel(t)
+	plain := m.services.cfg.Tools["claude"]
+	_, env, err := m.buildLaunch("plain", plain, plain.Command, "abcd1234")
+	if err != nil {
+		t.Fatalf("buildLaunch: %v", err)
+	}
+	if env[hooks.EnvSessionID] != "abcd1234" {
+		t.Fatalf("plain tool env = %v, want session id", env)
+	}
+
+	hooked := m.services.cfg.Tools["claude-hooked"]
+	_, env, err = m.buildLaunch("hooked", hooked, hooked.Command, "abcd1234")
+	if err != nil {
+		t.Fatalf("buildLaunch hooked: %v", err)
+	}
+	if env[hooks.EnvSessionID] != "abcd1234" || env[hooks.EnvStatusFile] == "" {
+		t.Fatalf("hooked tool env = %v, want session id and status file", env)
+	}
+}
+
+func initGitRepo(t *testing.T, dir string) {
+	t.Helper()
+	for _, args := range [][]string{
+		{"init", "-b", "main"},
+		{"config", "user.email", "test@test"},
+		{"config", "user.name", "test"},
+		{"commit", "--allow-empty", "-m", "seed"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+}
+
+func TestFormWorktreeToggleSeedsFromSetting(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	if m.form.worktree {
+		t.Fatal("worktree should default off with no setting")
+	}
+	m.mode = modeList
+	if err := m.services.store.SetSetting(worktreeSetting, "on"); err != nil {
+		t.Fatalf("set setting: %v", err)
+	}
+	m.applyTestMsg(t, m.openForm()())
+	if !m.form.worktree {
+		t.Fatal("worktree should seed on from setting")
+	}
+}
+
+func TestFormWorktreeGatedInNonRepoDir(t *testing.T) {
+	m := buildModel(t)
+	plain := t.TempDir()
+	if err := m.services.store.SetSetting(worktreeSetting, "on"); err != nil {
+		t.Fatalf("set setting: %v", err)
+	}
+	m.openForm()
+	m.form.dir.SetValue(plain)
+	if m.formWorktreeOn() {
+		t.Fatal("a non-repo dir cannot host a worktree, even with the setting on")
+	}
+	if view := m.viewForm(); !strings.Contains(view, worktreeUnavailable) {
+		t.Fatalf("form should mark worktree unavailable, got %q", view)
+	}
+	m.form.focus = fieldWorktree
+	_, probe := m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
+	if probe != nil {
+		m.applyTestMsg(t, probe())
+	}
+	if m.formWorktreeOn() {
+		t.Fatal("toggling must not turn worktree on for a non-repo dir")
+	}
+	if !strings.Contains(m.errBar.text, "need a git repository") {
+		t.Fatalf("refused toggle should say why, got %q", m.errBar.text)
+	}
+	_, spawn := m.submitForm()
+	m.applyCmd(t, spawn)
+	sessions, err := m.services.store.ListSessions(true)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("gated form should still launch a plain session, got %d", len(sessions))
+	}
+	if sessions[0].WorktreeRepo != "" {
+		t.Fatalf("gated spawn must not record a worktree: %q", sessions[0].WorktreeRepo)
+	}
+}
+
+func TestWorktreeCapabilityExpiresSoAFreshRepoIsSeen(t *testing.T) {
+	m := buildModel(t)
+	dir := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m.openForm()
+	m.form.dir.SetValue(dir)
+	m.applyTestMsg(t, m.formWorktreeProbeCmd(false)())
+	if capable, known := m.cachedWorktreeCapability(dir); !known || capable {
+		t.Fatalf("plain directory cache = capable %t known %t", capable, known)
+	}
+	initGitRepo(t, dir)
+	if capable, known := m.cachedWorktreeCapability(dir); !known || capable {
+		t.Fatalf("fresh cache changed without a probe: capable %t known %t", capable, known)
+	}
+	answer := m.ledger.worktreeRepos[dir]
+	answer.at = answer.at.Add(-worktreeLookupTTL)
+	m.ledger.worktreeRepos[dir] = answer
+	if _, known := m.cachedWorktreeCapability(dir); known {
+		t.Fatal("expired capability still appeared current")
+	}
+	m.applyTestMsg(t, m.formWorktreeProbeCmd(false)())
+	if capable, known := m.cachedWorktreeCapability(dir); !known || !capable {
+		t.Fatalf("fresh probe cache = capable %t known %t", capable, known)
+	}
+}
+
+type blockedRepoPreflight struct {
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+	capable bool
+}
+
+func (r *blockedRepoPreflight) resolve(string, []string) (string, bool) { return "", false }
+
+func (r *blockedRepoPreflight) repoCapable(string) bool {
+	r.once.Do(func() { close(r.started) })
+	<-r.release
+	return r.capable
+}
+
+func TestWorktreeProbeDefersGitAndRejectsReopenedForm(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	dir := t.TempDir()
+	m.form.dir.SetValue(dir)
+	reader := &blockedRepoPreflight{
+		started: make(chan struct{}), release: make(chan struct{}), capable: true,
+	}
+	m.gens.worktreeProbe++
+	request := worktreeProbeRequest{
+		target: worktreeProbeForm, generation: m.form.prompt.gen,
+		sequence: m.gens.worktreeProbe, dir: m.formSpawnDir(), toggle: true, from: m.form.worktree,
+	}
+	cmd := worktreeProbeCmd(request, reader)
+	select {
+	case <-reader.started:
+		t.Fatal("repo probe ran on the update path")
+	default:
+	}
+	completed := make(chan worktreeProbeMsg, 1)
+	go func() { completed <- cmd().(worktreeProbeMsg) }()
+	<-reader.started
+	m.openForm()
+	close(reader.release)
+	m.handleWorktreeProbe(<-completed)
+	if m.form.worktree {
+		t.Fatal("old repo probe toggled the reopened form")
+	}
+	if _, known := m.cachedWorktreeCapability(dir); known {
+		t.Fatal("stale repo probe populated rendering facts")
+	}
+}
+
+func TestPrepareFrameConsumesCapturedWorktreeFacts(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	m.ledger.worktreeRepos = nil
+	m.prepareFrame()
+	if m.ledger.worktreeRepos != nil {
+		t.Fatal("rendering performed a repository lookup")
+	}
+}
+
+func TestFormWorktreeStaysOnInRepoDir(t *testing.T) {
+	m := buildModel(t)
+	repo := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initGitRepo(t, repo)
+	if err := m.services.store.SetSetting(worktreeSetting, "on"); err != nil {
+		t.Fatalf("set setting: %v", err)
+	}
+	m.applyTestMsg(t, m.openForm()())
+	m.form.dir.SetValue(repo)
+	m.applyTestMsg(t, m.formWorktreeProbeCmd(false)())
+	if !m.formWorktreeOn() {
+		t.Fatal("a repo dir should keep the worktree default on")
+	}
+	m.form.focus = fieldWorktree
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
+	if m.formWorktreeOn() {
+		t.Fatal("toggle should turn worktree off in a repo dir")
+	}
+}
+
+func TestSpawnWorktreeSessionCreatesWorktree(t *testing.T) {
+	m := buildModel(t)
+	repo := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initGitRepo(t, repo)
+
+	if err := m.spawnSession("claude", "wt-feat", repo, "", "", false, true, config.Choice{}); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	sessions, err := m.services.store.ListSessions(true)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	sess := sessions[0]
+	wantCwd := filepath.Join(filepath.Dir(sess.WorktreeRepo), filepath.Base(sess.WorktreeRepo)+"-worktrees", "wt-feat")
+	if sess.Cwd != wantCwd {
+		t.Fatalf("cwd = %q, want %q", sess.Cwd, wantCwd)
+	}
+	if sess.WorktreeBranch != "am/wt-feat" {
+		t.Fatalf("branch = %q", sess.WorktreeBranch)
+	}
+	if _, err := os.Stat(sess.Cwd); err != nil {
+		t.Fatalf("worktree dir missing: %v", err)
+	}
+}
+
+func TestSpawnWorktreeInNonRepoBlocks(t *testing.T) {
+	m := buildModel(t)
+	plain := t.TempDir()
+	err := m.spawnSession("claude", "wt-fail", plain, "", "", false, true, config.Choice{})
+	if err == nil {
+		t.Fatal("non-repo dir must block the spawn")
+	}
+	sessions, listErr := m.services.store.ListSessions(true)
+	if listErr != nil {
+		t.Fatalf("list: %v", listErr)
+	}
+	if len(sessions) != 0 {
+		t.Fatal("no session row should exist after a blocked spawn")
+	}
+}
+
+func TestSpawnWorktreeRollsBackWhenLaunchBuildFails(t *testing.T) {
+	m := buildModel(t)
+	repo := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initGitRepo(t, repo)
+	hooksDir := m.services.hooks.Dir()
+	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(hooksDir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(hooksDir, 0o755) })
+
+	err := m.spawnSession("claude", "wt-launchfail", repo, "", "", false, true, config.Choice{})
+	if err == nil {
+		t.Fatal("launch-build failure must block the spawn")
+	}
+	worktreePath := filepath.Join(filepath.Dir(repo), filepath.Base(repo)+"-worktrees", "wt-launchfail")
+	if _, statErr := os.Stat(worktreePath); !os.IsNotExist(statErr) {
+		t.Fatal("worktree must be rolled back when the launch command cannot be built")
+	}
+}
+
+func TestFormWorktreeSeedsFromGroupDefault(t *testing.T) {
+	m := buildModel(t)
+	if err := m.services.store.CreateGroup("grp", t.TempDir()); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	if err := m.services.store.SetGroupWorktree("grp", "on"); err != nil {
+		t.Fatalf("set worktree: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "grp")
+	m.openForm()
+	if !m.form.worktree {
+		t.Fatal("form should seed worktree on from the group default")
+	}
+	pickGroup(t, m, "")
+	m.moveGroupCursor(0)
+	if m.form.worktree {
+		t.Fatal("moving to root should follow its default off")
+	}
+}
+
+func TestGroupFormStoresWorktreeChoice(t *testing.T) {
+	m := buildModel(t)
+	m.openGroupForm()
+	m.groupForm.name.SetValue("wtgrp")
+	m.groupForm.path.SetValue(t.TempDir())
+	m.groupForm.focus = gfWorktree
+	m.handleGroupFormKey(tea.KeyMsg{Type: tea.KeyRight})
+	_, cmd := m.handleGroupFormKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
+	groups, err := m.services.store.Groups()
+	if err != nil {
+		t.Fatalf("groups: %v", err)
+	}
+	if len(groups) != 1 || groups[0].Worktree != "on" {
+		t.Fatalf("group form should store the worktree choice, got %+v", groups)
+	}
+}
+
+// repoWithDevelop is a committed repo whose develop branch sits one commit
+// past main.
+func repoWithDevelop(t *testing.T) string {
+	t.Helper()
+	repo := seedRepo(t)
+	runGit(t, repo, "checkout", "-q", "-b", "develop")
+	runGit(t, repo, "commit", "-q", "--allow-empty", "-m", "develop work")
+	runGit(t, repo, "checkout", "-q", "main")
+	return repo
+}
+
+func TestGroupFormStepsBaseThroughTheRepoBranches(t *testing.T) {
+	m := buildModel(t)
+	repo := repoWithDevelop(t)
+	m.openGroupForm()
+	m.groupForm.name.SetValue("based")
+	m.groupForm.path.SetValue(repo)
+	m.groupForm.focus = gfBase
+	_, step := m.handleGroupFormKey(tea.KeyMsg{Type: tea.KeyRight})
+	m.applyTestMsg(t, step())
+	if m.groupForm.base != "develop" {
+		t.Fatalf("first step past auto = %q, want develop", m.groupForm.base)
+	}
+	if view := m.viewGroupForm(); !strings.Contains(view, "◂ develop ▸") {
+		t.Fatalf("base row should show the pick, got %q", view)
+	}
+	m.handleGroupFormKey(tea.KeyMsg{Type: tea.KeyLeft})
+	if m.groupForm.base != "" {
+		t.Fatalf("stepping back = %q, want auto", m.groupForm.base)
+	}
+	m.handleGroupFormKey(tea.KeyMsg{Type: tea.KeyRight})
+	_, cmd := m.handleGroupFormKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
+	groups, err := m.services.store.Groups()
+	if err != nil {
+		t.Fatalf("groups: %v", err)
+	}
+	if len(groups) != 1 || groups[0].Base != "develop" {
+		t.Fatalf("group form should store the base, got %+v", groups)
+	}
+}
+
+func TestGroupFormShowsTheBaseAutoInherits(t *testing.T) {
+	m := buildModel(t)
+	if err := m.services.store.CreateGroup("parent", t.TempDir()); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	if err := m.services.store.SetGroupBase("parent", "develop"); err != nil {
+		t.Fatalf("set base: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "parent")
+	m.openGroupForm()
+	if view := m.viewGroupForm(); !strings.Contains(view, "◂ auto ▸  develop from parent") {
+		t.Fatalf("auto under a parent with a base should name it, got %q", view)
+	}
+}
+
+func TestGroupFormBaseNeedsARepository(t *testing.T) {
+	m := buildModel(t)
+	m.openGroupForm()
+	m.groupForm.path.SetValue(t.TempDir())
+	m.groupForm.focus = gfBase
+	_, step := m.handleGroupFormKey(tea.KeyMsg{Type: tea.KeyRight})
+	m.applyTestMsg(t, step())
+	if m.groupForm.base != "" {
+		t.Fatalf("a directory with no branches has nothing to pick, got %q", m.groupForm.base)
+	}
+	if !strings.Contains(m.errBar.text, "group base") {
+		t.Fatalf("refused step should say why, got %q", m.errBar.text)
+	}
+}
+
+func TestSpawnWorktreeBranchesFromTheGroupBase(t *testing.T) {
+	m := buildModel(t)
+	repo := repoWithDevelop(t)
+	if err := m.services.store.CreateGroup("parent", repo); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	if err := m.services.store.CreateGroup("parent/child", ""); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	if err := m.services.store.SetGroupBase("parent", "develop"); err != nil {
+		t.Fatalf("set base: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+
+	if err := m.spawnSession("claude", "on-develop", repo, "parent/child", "", false, true, config.Choice{}); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	sessions, err := m.services.store.ListSessions(true)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if got, want := gitOutput(t, sessions[0].Cwd, "rev-parse", "HEAD"), gitOutput(t, repo, "rev-parse", "develop"); got != want {
+		t.Fatalf("worktree starts at %s, want the inherited base develop at %s", got, want)
+	}
+}
+
+func TestFormShowsAndFetchesTheWorktreeBase(t *testing.T) {
+	m := buildModel(t)
+	remote := seedRepo(t)
+	clone := filepath.Join(t.TempDir(), "clone")
+	runGit(t, remote, "clone", "-q", remote, clone)
+	runGit(t, remote, "commit", "-q", "--allow-empty", "-m", "after the clone")
+	if err := m.services.store.SetSetting(worktreeSetting, "on"); err != nil {
+		t.Fatalf("set setting: %v", err)
+	}
+	m.applyTestMsg(t, m.openForm()())
+	m.form.dir.SetValue(clone)
+	// Routed past Update, whose own refresh would take the fetch this test
+	// steps by hand.
+	m.handleMsg(m.formWorktreeProbeCmd(false)())
+
+	cmd := m.refreshSpawnBase()
+	if cmd == nil {
+		t.Fatal("an open form spawning a worktree should refresh its base")
+	}
+	next := m.recordBaseFetch(cmd().(baseFetchedMsg))
+	if view := m.viewForm(); !strings.Contains(view, "origin/main (auto) · fetching") {
+		t.Fatalf("form should name the base while it fetches, got %q", view)
+	}
+	m.recordBaseFetch(next().(baseFetchedMsg))
+	if got, want := gitOutput(t, clone, "rev-parse", "origin/main"), gitOutput(t, remote, "rev-parse", "HEAD"); got != want {
+		t.Fatalf("origin/main = %s after the fetch, want %s", got, want)
+	}
+	if view := m.viewForm(); !strings.Contains(view, "origin/main (auto)") || strings.Contains(view, "fetching") {
+		t.Fatalf("a finished fetch leaves the base alone on its row, got %q", view)
+	}
+	if m.refreshSpawnBase() != nil {
+		t.Fatal("a base fetched a moment ago should not be fetched again")
+	}
+}
+
+func TestSettingsFetchOnSpawnTurnsTheFetchOff(t *testing.T) {
+	m := buildModel(t)
+	remote := seedRepo(t)
+	clone := filepath.Join(t.TempDir(), "clone")
+	runGit(t, remote, "clone", "-q", remote, clone)
+	runGit(t, remote, "commit", "-q", "--allow-empty", "-m", "after the clone")
+	cached := gitOutput(t, clone, "rev-parse", "origin/main")
+
+	m.openSettings()
+	for m.settings.dialog.field != settingsFieldBaseFetch {
+		m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
+	}
+	if !strings.Contains(ansi.Strip(m.viewSettings()), "fetch on spawn") {
+		t.Fatalf("settings do not show the fetch row:\n%s", ansi.Strip(m.viewSettings()))
+	}
+	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
+	_, cmd := m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
+	if chosen, err := m.services.store.Setting(baseFetchSetting); err != nil || chosen != "off" {
+		t.Fatalf("want stored off, got %q err %v", chosen, err)
+	}
+
+	if err := m.services.store.SetSetting(worktreeSetting, "on"); err != nil {
+		t.Fatalf("set setting: %v", err)
+	}
+	m.applyTestMsg(t, m.openForm()())
+	m.form.dir.SetValue(clone)
+	// Routed past Update, whose own refresh would take the fetch this test
+	// steps by hand.
+	m.handleMsg(m.formWorktreeProbeCmd(false)())
+	if next := m.recordBaseFetch(m.refreshSpawnBase()().(baseFetchedMsg)); next != nil {
+		t.Fatal("with the fetch turned off, resolving the base should be the last step")
+	}
+	if view := m.viewForm(); !strings.Contains(view, "origin/main (auto)") || strings.Contains(view, "fetch") {
+		t.Fatalf("the base row should name the base alone, got %q", view)
+	}
+	if got := gitOutput(t, clone, "rev-parse", "origin/main"); got != cached {
+		t.Fatalf("origin/main moved to %s with the fetch off, want %s", got, cached)
+	}
+}
+
+func TestFormMarksAFailedBaseFetch(t *testing.T) {
+	m := buildModel(t)
+	remote := seedRepo(t)
+	clone := filepath.Join(t.TempDir(), "clone")
+	runGit(t, remote, "clone", "-q", remote, clone)
+	runGit(t, clone, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "gone"))
+	if err := m.services.store.SetSetting(worktreeSetting, "on"); err != nil {
+		t.Fatalf("set setting: %v", err)
+	}
+	m.applyTestMsg(t, m.openForm()())
+	m.form.dir.SetValue(clone)
+	// Routed past Update, whose own refresh would take the fetch this test
+	// steps by hand.
+	m.handleMsg(m.formWorktreeProbeCmd(false)())
+	next := m.recordBaseFetch(m.refreshSpawnBase()().(baseFetchedMsg))
+	m.recordBaseFetch(next().(baseFetchedMsg))
+	if view := m.viewForm(); !strings.Contains(view, "origin/main (auto) · fetch failed") {
+		t.Fatalf("form should say the base was not refreshed, got %q", view)
+	}
+}
+
+// The poller waits for a prompt the agent has to pick up on its own, so only
+// a command-line prompt is stored; a tool typed into gets its prompt as the
+// first pending input instead. Read before the first poll, which delivers it.
+func TestSpawnStoresOnlyACommandLinePrompt(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+
+	if err := m.spawnSession("ready-tool", "ready-tool-abcd", dir, "", "/compact", true, false, config.Choice{}); err != nil {
+		t.Fatalf("command-line spawn: %v", err)
+	}
+	if err := m.spawnSession("send-tool", "send-tool-abcd", dir, "", "/compact", true, false, config.Choice{}); err != nil {
+		t.Fatalf("send spawn: %v", err)
+	}
+
+	sessions, err := m.services.store.ListSessions(true)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	for _, sess := range sessions {
+		switch sess.Tool {
+		case "ready-tool":
+			if sess.LaunchPrompt != "/compact" {
+				t.Fatalf("command-line launch prompt = %q, want /compact", sess.LaunchPrompt)
+			}
+		case "send-tool":
+			if sess.LaunchPrompt != "" {
+				t.Fatalf("typed prompt stored as a launch prompt: %q", sess.LaunchPrompt)
+			}
+			if len(sess.PendingInputs) == 0 || sess.PendingInputs[0] != "/compact" {
+				t.Fatalf("typed prompt is not the first pending input: %q", sess.PendingInputs)
+			}
+		}
+	}
+}
+
+func TestFormUpDownMoveTheCaretBetweenPromptRows(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	focusFormPrompt(t, m)
+	m.form.prompt.input.SetWidth(40)
+	m.form.prompt.input.SetHeight(formPromptMaxRows)
+	m.form.prompt.input.SetValue("first\nsecond\nthird")
+
+	_, _ = m.handleFormKey(tea.KeyMsg{Type: tea.KeyUp})
+	if m.form.focus != fieldPrompt || m.form.prompt.input.Line() != 1 {
+		t.Fatalf("up from the last row: focus %v, caret line %d; want the prompt, line 1", m.form.focus, m.form.prompt.input.Line())
+	}
+	_, _ = m.handleFormKey(tea.KeyMsg{Type: tea.KeyUp})
+	_, _ = m.handleFormKey(tea.KeyMsg{Type: tea.KeyUp})
+	if m.form.focus == fieldPrompt {
+		t.Fatal("up from the first row should leave the prompt field")
+	}
+
+	m.form.focusStep(m, 1)
+	if m.form.focus != fieldPrompt {
+		t.Fatalf("focus = %v, want fieldPrompt", m.form.focus)
+	}
+	m.form.prompt.input.SetCursor(0)
+	_, _ = m.handleFormKey(tea.KeyMsg{Type: tea.KeyDown})
+	if m.form.focus != fieldPrompt || m.form.prompt.input.Line() != 1 {
+		t.Fatalf("down from the first row: focus %v, caret line %d; want the prompt, line 1", m.form.focus, m.form.prompt.input.Line())
+	}
+	_, _ = m.handleFormKey(tea.KeyMsg{Type: tea.KeyDown})
+	_, _ = m.handleFormKey(tea.KeyMsg{Type: tea.KeyDown})
+	if m.form.focus == fieldPrompt {
+		t.Fatal("down from the last row should leave the prompt field")
+	}
+}
+
+// fakeFormHost drives the New Session form without a root model.
+type fakeFormHost struct {
+	*fakeChoiceHost
+	defaults spawnDefaults
+}
+
+func (h *fakeFormHost) spawnDefaults(string) spawnDefaults { return h.defaults }
+
+func fakeHostForm(h *fakeFormHost) *formDialog {
+	name := textField("my-session", 60)
+	name.Focus()
+	return &formDialog{form{
+		name:      name,
+		dir:       textField("", 400),
+		prompt:    promptField(),
+		dirAuto:   true,
+		toolNames: []string{"claude", "plain"},
+		groups:    []groupOption{{path: ""}, {path: "backend", depth: 1}},
+		focus:     fieldName,
+		choice:    newChoice(h, "claude"),
+	}}
+}
+
+// The form's keys update its own fields and hand the root a request for
+// the rest: a new CLI's catalog, a worktree probe, closing, or the spawn.
+func TestFormDialogThroughAFakeHost(t *testing.T) {
+	h := &fakeFormHost{
+		fakeChoiceHost: newFakeChoiceHost(),
+		defaults:       spawnDefaults{base: "develop", fallbacks: []string{"/work/backend"}},
+	}
+	d := fakeHostForm(h)
+	for _, r := range "fix" {
+		d.handleKey(h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	d.focusField(h, fieldTool)
+	if _, request := d.handleKey(h, tea.KeyMsg{Type: tea.KeyRight}); request.catalog != "plain" || d.tool() != "plain" {
+		t.Fatalf("right on the tool row asked for %+v on %q", request, d.tool())
+	}
+	d.focusField(h, fieldGroup)
+	if _, request := d.handleKey(h, tea.KeyMsg{Type: tea.KeyRight}); request.group != 1 {
+		t.Fatalf("right on the group row asked for %+v", request)
+	}
+	d.groupIndex = 1
+	d.focusField(h, fieldDir)
+	cmd, request := d.handleKey(h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	if !request.probe || cmd == nil || d.dirAuto || d.paths.generation == 0 {
+		t.Fatalf("typing a path should read suggestions and probe: %+v", request)
+	}
+	_, request = d.handleKey(h, tea.KeyMsg{Type: tea.KeyEnter})
+	if request.spawn == nil {
+		t.Fatalf("enter built no spawn: %v", h.errs)
+	}
+	spawn := request.spawn
+	if spawn.kind != spawnForm || spawn.name != "fix" || spawn.group != "backend" || spawn.toolName != "plain" ||
+		spawn.base != "develop" || spawn.rawDir != "/" || !reflect.DeepEqual(spawn.dirFallbacks, []string{"/work/backend"}) {
+		t.Fatalf("spawn = %+v", spawn)
+	}
+	d.prompt.input.SetValue("-rf")
+	if request = d.submit(h); request.spawn != nil || len(h.errs) == 0 {
+		t.Fatal("a prompt that reads as a flag spawned")
+	}
+	if _, request = d.handleKey(h, tea.KeyMsg{Type: tea.KeyEsc}); !request.close {
+		t.Fatalf("esc asked for %+v", request)
+	}
+}

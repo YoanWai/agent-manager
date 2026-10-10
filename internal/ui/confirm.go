@@ -1,23 +1,44 @@
 package ui
 
 import (
-	"strings"
-
+	"github.com/YoanWai/agent-manager/internal/store"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"strings"
 )
 
 // A destructive answer is worth a dialog rather than a line of status text:
 // the question sits in the middle of the frame, its target is spelled out,
 // and the safe answer is the one already under the cursor.
 
-// confirmTitle names the dialog after the act it is about to commit.
-func (m *Model) confirmTitle() string {
+// confirmDialog asks before a captured lifecycle request runs. It owns the
+// pending target, the y/n keys and the card's wording. The lifecycle
+// adapters fill its target and open it; the root switches modes and runs
+// the confirmed request on the effect lane.
+type confirmDialog struct{ confirmTarget }
+
+// confirmHost is what the confirm dialog reaches on the root: the shared
+// confirm card, quitting, mode changes and the lifecycle effect lane.
+type confirmHost interface {
+	confirmCard(title, question, consequence string, destructive bool, answer string) string
+	quit() tea.Cmd
+	setMode(next mode)
+	queueLifecycle(target confirmTarget, allowLive bool, emptyNotice string)
+	removeConnection(name string)
+	runRemote(request remoteRequest) tea.Cmd
+	nextEffectCmd() tea.Cmd
+}
+
+var _ confirmHost = (*Model)(nil)
+
+// title names the dialog after the act it is about to commit.
+func (d *confirmDialog) title() string {
 	subject := "session"
-	if m.confirm.isGroup {
+	if d.isGroup {
 		subject = "group"
 	}
-	switch m.confirm.action {
+	switch d.action {
 	case actionKill:
 		return "✕ Kill " + subject
 	case actionArchive:
@@ -28,22 +49,24 @@ func (m *Model) confirmTitle() string {
 		return "↻ Restart " + subject
 	case actionRevive:
 		return "◆ Revive " + subject
+	case actionRemoveConnection:
+		return "⚠ Remove connection"
 	default:
 		return "⚠ Delete " + subject
 	}
 }
 
-// confirmDestructive reports whether the pending answer takes something
+// destructive reports whether the pending answer takes something
 // away, which decides whether the dialog reads as an alarm or as a move.
-func (m *Model) confirmDestructive() bool {
-	return m.confirm.action == actionKill || m.confirm.action == actionDelete ||
-		m.confirm.action == actionRestart || m.confirm.action == actionArchive
+func (d *confirmDialog) destructive() bool {
+	return d.action == actionKill || d.action == actionDelete ||
+		d.action == actionRestart || d.action == actionArchive || d.action == actionRemoveConnection
 }
 
-func (m *Model) viewConfirm() string {
-	question, consequence := splitConfirmLabel(m.confirm.label)
+func (d *confirmDialog) view(h confirmHost) string {
+	question, consequence := splitConfirmLabel(d.label)
 	answer := "delete"
-	switch m.confirm.action {
+	switch d.action {
 	case actionKill:
 		answer = "kill"
 	case actionArchive:
@@ -54,8 +77,10 @@ func (m *Model) viewConfirm() string {
 		answer = "restart"
 	case actionRevive:
 		answer = "revive"
+	case actionRemoveConnection:
+		answer = "remove"
 	}
-	return m.confirmCard(m.confirmTitle(), question, consequence, m.confirmDestructive(), answer)
+	return h.confirmCard(d.title(), question, consequence, d.destructive(), answer)
 }
 
 func (m *Model) confirmCard(title, question, consequence string, destructive bool, answer string) string {
@@ -88,4 +113,47 @@ func splitConfirmLabel(label string) (string, string) {
 		return label[:mark+1], strings.TrimSpace(label[mark+2:])
 	}
 	return label, ""
+}
+
+// confirmTarget.action values; the zero value means delete.
+const (
+	actionDelete  = ""
+	actionArchive = "archive"
+	actionRestore = "restore"
+	actionKill    = "kill"
+	actionRestart = "restart"
+	actionRevive  = "revive"
+	// actionRemoveConnection takes an SSH connection off the list; the
+	// target names it and holds no sessions.
+	actionRemoveConnection = "remove connection"
+)
+
+type confirmTarget struct {
+	isGroup bool
+	// archivedOnly marks a group delete issued from the archived view,
+	// which clears the group's archive instead of the group itself.
+	archivedOnly bool
+	path         string
+	label        string
+	sessions     []store.Session
+	action       string
+	batch        bool
+	selection    lifecycleSelection
+	connection   string
+	// remote is a call on an SSH row, run on the host once confirmed.
+	remote *remoteRequest
+}
+
+type lifecycleSelectionKind uint8
+
+const (
+	lifecycleSelectionNone lifecycleSelectionKind = iota
+	lifecycleSelectionSession
+	lifecycleSelectionGroup
+)
+
+type lifecycleSelection struct {
+	kind         lifecycleSelectionKind
+	rootID       string
+	archivedOnly bool
 }

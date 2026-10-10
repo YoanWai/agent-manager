@@ -3,33 +3,69 @@ package ui
 import (
 	"strings"
 
+	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+type moveTarget struct {
+	id   string
+	path string
+}
+
+// moveDialog picks a new parent for the selected session or group. It owns
+// the captured row, the picker keys and the Rail mutation it submits. Its
+// target list is the spawn form's group picker, which the root rebuilds and
+// shapes when the dialog opens; the root runs the mutation on the effect
+// lane and closes the dialog from its fenced follow-up.
+type moveDialog struct{ moveTarget }
+
+// moveHost is what the move dialog reaches on the root: the borrowed group
+// picker, mode changes, the effect lane and the card chrome.
+type moveHost interface {
+	setMode(next mode)
+	moveGroupCursor(delta int) tea.Cmd
+	pickedGroupOption() groupOption
+	selectedGroupPath() string
+	enqueueMove(mut uirail.Mutation, close moveDialogClose) tea.Cmd
+	card(title, body string, hint [][2]string) string
+	viewGroupPicker() string
+}
+
+var _ moveHost = (*Model)(nil)
+
+// pickedGroupOption is the group picker's highlighted row.
+func (m *Model) pickedGroupOption() groupOption {
+	return m.form.groups[m.form.groupIndex]
+}
+
+// openMove captures the selected row and shapes the spawn form's group
+// picker into the targets it may land in. It stays on the root because it
+// rebuilds that borrowed picker from the workspace inventory.
 func (m *Model) openMove() {
 	row, ok := m.selectedRow()
 	if !ok {
 		return
 	}
 	if row.isRoot() {
-		m.errBar.text = "root is the top level, not a group to move"
+		m.reportErr("root is the top level, not a group to move")
 		return
 	}
 	if row.isGroup {
-		m.moveID = ""
-		m.movePath = row.group
+		m.move.id = ""
+		m.move.path = row.group
 		m.rebuildGroupOptions(parentGroup(row.group))
 		m.pruneMoveTargets(row.group)
 	} else {
-		m.moveID = row.sess.ID
-		m.movePath = ""
+		m.move.id = row.sess.ID
+		m.move.path = ""
 		m.rebuildGroupOptions(row.sess.Group)
 		if m.isShell(row.sess.Tool) {
 			m.appendAgentMoveTargets()
 		}
 	}
+	m.gens.dialog++
 	m.mode = modeMove
-	m.errBar.text = ""
+	m.clearErr()
 }
 
 func (m *Model) appendAgentMoveTargets() {
@@ -37,7 +73,7 @@ func (m *Model) appendAgentMoveTargets() {
 	var options []groupOption
 	for _, opt := range m.form.groups {
 		options = append(options, opt)
-		for _, sess := range m.sessions {
+		for _, sess := range m.workspace.sessions {
 			if sess.Archived || m.isShell(sess.Tool) || sess.Group != opt.path {
 				continue
 			}
@@ -80,77 +116,34 @@ func (m *Model) pruneMoveTargets(subtree string) {
 	}
 }
 
-func (m *Model) handleMoveKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (d *moveDialog) handleKey(h moveHost, msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "esc":
-		m.mode = modeList
-		return m, nil
+		h.setMode(modeList)
+		return nil
 	case "up":
-		m.moveGroupCursor(-1)
-		return m, nil
+		return h.moveGroupCursor(-1)
 	case "down":
-		m.moveGroupCursor(1)
-		return m, nil
+		return h.moveGroupCursor(1)
 	case "enter":
-		if m.movePath != "" {
-			return m.moveGroupTo(m.selectedGroupPath())
+		if d.path != "" {
+			return d.moveGroupTo(h, h.selectedGroupPath())
 		}
-		opt := m.form.groups[m.form.groupIndex]
-		sess, err := m.store.Get(m.moveID)
-		if err != nil {
-			m.errBar.text = err.Error()
-			return m, nil
-		}
-		// A picked session is re-read before the shortcut below closes the
-		// dialog, so re-picking the parent of a terminal whose agent has
-		// since gone reports that instead of a move that never happened.
-		if opt.sessID != "" {
-			if _, err := m.store.Get(opt.sessID); err != nil {
-				m.errBar.text = err.Error()
-				return m, nil
-			}
-		}
-		if sess.ParentID == opt.sessID && sess.Group == opt.path {
-			m.mode = modeList
-			return m, nil
-		}
-		if err := m.store.PlaceSession(m.moveID, opt.path, opt.sessID); err != nil {
-			m.errBar.text = err.Error()
-			return m, nil
-		}
-		m.relabelSession(m.moveID)
-		m.mode = modeList
-		m.requestRefresh()
-		return m, nil
+		opt := h.pickedGroupOption()
+		return h.enqueueMove(uirail.Mutation{Kind: uirail.PlaceSession, SessionID: d.id, Group: opt.path, ParentID: opt.sessID}, moveDialogClose{sessID: d.id, optPath: opt.path, optSessID: opt.sessID})
 	}
-	return m, nil
+	return nil
 }
 
-func (m *Model) moveGroupTo(parent string) (tea.Model, tea.Cmd) {
-	if err := m.moveGroupUnder(m.movePath, parent); err != nil {
-		m.errBar.text = err.Error()
-		return m, nil
-	}
-	m.mode = modeList
-	return m, nil
-}
-
-// moveGroupUnder moves a group, with its whole subtree, under parent and
-// mirrors the new paths locally so the list redraws before the next poll.
-func (m *Model) moveGroupUnder(path, parent string) error {
+func (d *moveDialog) moveGroupTo(h moveHost, parent string) tea.Cmd {
+	path := d.path
 	newPath := baseName(path)
 	if parent != "" {
 		newPath = parent + "/" + newPath
 	}
 	if newPath == path {
+		h.setMode(modeList)
 		return nil
 	}
-	if err := m.store.MoveGroup(path, parent); err != nil {
-		return err
-	}
-	m.renameGroupLocally(path, newPath, m.groupPaths[path], m.groupWorktrees[path], m.groupBases[path])
-	m.relabelSubtree(newPath)
-	m.rebuildRows()
-	m.requestRefresh()
-	return nil
+	return h.enqueueMove(uirail.Mutation{Kind: uirail.MoveGroup, Path: path, Group: parent}, moveDialogClose{isGroup: true, group: path, parent: parent})
 }

@@ -26,12 +26,16 @@ func newFiles(configDir string) fileCommands {
 }
 
 func fileSection() section {
+	return fileSectionWith(newFiles)
+}
+
+func fileSectionWith(open func(string) fileCommands) section {
 	return section{
 		title: "File reservations",
 		commands: []command{
-			{name: "reserve", usage: usageReserve, about: "declare the files you are about to edit, so another agent in the same checkout finds out before both of you change them", run: bind(newFiles, runReserve)},
-			{name: "release-files", usage: usageReleaseFiles, about: "give the leases back once the edits are made; name no path to release everything you hold", run: bind(newFiles, runReleaseFiles)},
-			{name: "reservations", usage: usageReservations, about: "see which files the other sessions are working on right now", run: bind(newFiles, runReservations)},
+			{name: "reserve", usage: usageReserve, about: "declare the files you are about to edit, so another agent in the same checkout finds out before both of you change them", run: bind(open, runReserve)},
+			{name: "release-files", usage: usageReleaseFiles, about: "give the leases back once the edits are made; name no path to release everything you hold", run: bind(open, runReleaseFiles)},
+			{name: "reservations", usage: usageReservations, about: "see which files the other sessions are working on right now", run: bind(open, runReservations)},
 		},
 	}
 }

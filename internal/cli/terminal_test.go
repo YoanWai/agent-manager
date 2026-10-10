@@ -61,6 +61,24 @@ func TestTerminalVerbsDispatch(t *testing.T) {
 	}
 }
 
+// Whether an omitted --nest nests depends on there being a calling session,
+// which only the layer knows, so the flag goes on only when it was typed.
+func TestTerminalCreatePassesNestOnlyWhenGiven(t *testing.T) {
+	fake := &fakeTerminals{}
+	if err := runTerminalCreate(&bytes.Buffer{}, fake, nil, ""); err != nil {
+		t.Fatalf("terminal create: %v", err)
+	}
+	if fake.opts.Nest != nil {
+		t.Fatalf("an omitted --nest reached the layer as %v", *fake.opts.Nest)
+	}
+	if err := runTerminalCreate(&bytes.Buffer{}, fake, []string{"--nest=false"}, ""); err != nil {
+		t.Fatalf("terminal create --nest=false: %v", err)
+	}
+	if fake.opts.Nest == nil || *fake.opts.Nest {
+		t.Fatalf("--nest=false reached the layer as %v", fake.opts.Nest)
+	}
+}
+
 // The contract the session commands already keep: an id the caller left out
 // is answered with the usage line, never sent to the layer as an empty one.
 func TestMissingTerminalIDIsAUsageError(t *testing.T) {

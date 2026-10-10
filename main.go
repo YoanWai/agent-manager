@@ -1,17 +1,22 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
+	"os/signal"
 	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
+	"github.com/YoanWai/agent-manager/internal/app"
 	"github.com/YoanWai/agent-manager/internal/catalog"
 	"github.com/YoanWai/agent-manager/internal/cli"
 	"github.com/YoanWai/agent-manager/internal/config"
@@ -19,8 +24,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/mcpserver"
 	"github.com/YoanWai/agent-manager/internal/notify"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
-	"github.com/YoanWai/agent-manager/internal/status"
-	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/YoanWai/agent-manager/internal/ui"
 	"github.com/YoanWai/agent-manager/internal/update"
@@ -118,13 +121,83 @@ func printHelp(w io.Writer, configDir string) error {
 func subcommands() map[string]func(args []string) error {
 	table := map[string]func(args []string) error{
 		"mcp": withConfigDir(func(args []string, caller func() string, configDir string) error {
-			return mcpserver.Run(configDir, caller(), version)
+			return withBackend(configDir, func(backend *sessioncmd.Backend) error {
+				return mcpserver.RunWithBackend(configDir, caller(), version, backend)
+			})
 		}),
+		"serve": func(args []string) error {
+			dir, err := config.Dir()
+			if err != nil {
+				return err
+			}
+			return runServe(os.Stdout, os.Stderr, args, dir, app.StartDetached)
+		},
 	}
-	for name, command := range cli.Commands(version) {
-		table[name] = withConfigDir(command)
+	for name := range cli.Commands(version) {
+		table[name] = withConfigDir(func(args []string, caller func() string, configDir string) error {
+			return withBackend(configDir, func(backend *sessioncmd.Backend) error {
+				return cli.CommandsWithBackend(version, backend)[name](args, caller, configDir)
+			})
+		})
 	}
 	return table
+}
+
+const usageServe = "serve [--background]"
+
+// runServe runs a manager with no TUI, for a host reached over SSH where
+// nobody keeps one open: it delivers queued messages, tracks status and
+// carries out after-turn archives and kills.
+func runServe(out, errs io.Writer, args []string, dir string, start app.Starter) error {
+	set := flag.NewFlagSet(usageServe, flag.ContinueOnError)
+	set.SetOutput(io.Discard)
+	background := set.Bool("background", false, "start a detached manager unless one is already running, print {\"started\":bool,\"pid\":N} and return at once")
+	if err := set.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			fmt.Fprintln(out, "usage: agent-manager "+usageServe)
+			set.SetOutput(out)
+			set.PrintDefaults()
+			return cli.ErrUsageShown
+		}
+		return fmt.Errorf("%w; usage: agent-manager %s", err, usageServe)
+	}
+	if set.NArg() != 0 {
+		return fmt.Errorf("usage: agent-manager %s", usageServe)
+	}
+	if *background {
+		started, err := app.ServeBackground(dir, time.Now(), start)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(out).Encode(started)
+	}
+	release, acquired, err := app.LockServe(dir)
+	if err != nil {
+		return err
+	}
+	if !acquired {
+		fmt.Fprintln(out, "agent-manager serve: another serve is already running for this profile")
+		return nil
+	}
+	defer release()
+	driver, err := tmux.New()
+	if err != nil {
+		return err
+	}
+	local, err := app.OpenLocal(dir, driver)
+	if err != nil {
+		return err
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	local.Serve(ctx, errs)
+	return local.Close()
+}
+
+func withBackend(configDir string, command func(*sessioncmd.Backend) error) (err error) {
+	backend := sessioncmd.OpenBackend(configDir)
+	defer func() { err = errors.Join(err, backend.Close()) }()
+	return command(backend)
 }
 
 func withConfigDir(command cli.Command) func([]string) error {
@@ -192,39 +265,29 @@ func sessionFromAncestry() string {
 	return id
 }
 
-func run() error {
-	cfg, err := config.Default()
-	if err != nil {
-		return err
-	}
-
-	driver, err := tmux.New()
-	if err != nil {
-		return err
-	}
-
-	engine, err := status.NewEngine(cfg)
-	if err != nil {
-		return err
-	}
-
+func run() (resultErr error) {
 	dir, err := config.Dir()
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	st, err := store.Open(filepath.Join(dir, "state.db"))
+	driver, err := tmux.New()
 	if err != nil {
 		return err
 	}
-	defer st.Close()
+	local, err := app.OpenLocal(dir, driver)
+	if err != nil {
+		return err
+	}
+	defer func() { resultErr = errors.Join(resultErr, local.Close()) }()
+	rt := local.Runtime
+	model, err := ui.NewWithServices(ui.Dependencies{
+		Config: rt.Config, Store: rt.Store, TMux: rt.Driver, Engine: local.Engine, Hooks: rt.Hooks,
+		Git: rt.Git, Lifecycle: local.Lifecycle, Execution: local.Execution, ProfileDir: dir,
+	}, version)
+	if err != nil {
+		return err
+	}
 
-	model, err := ui.New(cfg, st, driver, engine, hooks.NewManager(dir), version)
-	if err != nil {
-		return err
-	}
 	// Mouse reporting claims the wheel for the app, so a notch neither
 	// scrolls the host's scrollback out from under the manager nor arrives
 	// as an arrow key that walks the session cursor. Alternate scroll is
@@ -244,15 +307,27 @@ func run() error {
 	// hosting us.
 	ui.EnableTerminalPassthrough()
 	ui.SyncTerminalColors()
-	model.StartPoller(program.Send)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := model.StartPoller(ctx, program.Send)
+	var stopOnce sync.Once
+	stopRuntime := func() { stopOnce.Do(func() { model.StopEffects(); cancel(); <-done }) }
+	defer stopRuntime()
 	final, runErr := program.Run()
 	catalog.StopAll()
 	ui.ResetTerminalColors()
+	stopRuntime()
+	if abandoned := model.AbandonedEffects(); len(abandoned) > 0 && runErr == nil {
+		runErr = fmt.Errorf("quit before these finished, so check their result: %s", strings.Join(abandoned, "; "))
+	}
 	if runErr == nil {
 		if finished, ok := final.(*ui.Model); ok && finished.RestartPath() != "" {
 			// A self-update swapped the binary on disk; exec replaces this
 			// process with the new build so the manager comes back updated
 			// without touching the tmux sessions it manages.
+			stopRuntime()
+			if err := local.Close(); err != nil {
+				return err
+			}
 			return syscall.Exec(finished.RestartPath(), os.Args, os.Environ())
 		}
 	}

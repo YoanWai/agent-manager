@@ -1,0 +1,30 @@
+              ╭── ? Keys ────────────────────────────────────────────────────────────────────────────────╮
+              │                                                                                          │
+              │   ▍list ──────────────────────────────────────────────────────────────────────────────   │
+              │                    Tell your agent to manage sessions and terminals in Agent Manager.    │
+              │   ↑ / k            move the cursor up                                                    │
+              │   ↓ / j            move the cursor down                                                  │
+              │   click            focus a session in the split, select any other row                    │
+              │   double click     fold or unfold a group, focus a session full screen                   │
+              │   […]              the row's actions, or right click                                     │
+              │   drag ⠿           move the row, into another group too, or click it for ↑↓              │
+              │   →                step in: focus the session, open the group                            │
+              │   ←                step out: close the group                                             │
+              │   shift+↑ / K      reorder the row up among its siblings                                 │
+              │   shift+↓ / J      reorder the row down among its siblings                               │
+              │   n                new session                                                           │
+              │   T                new terminal tab: a shell under the selected agent, or in the group   │
+              │   g                new group (name, parent, default path, worktree)                      │
+              │   C                new SSH connection: another machine's sessions in this list           │
+              │   /                search the list by name                                               │
+              │   w                filter to what needs attention (waiting, finished, errored)           │
+              │   t                archived view                                                         │
+              │   e                hide / show empty groups                                              │
+              │   F                fold / unfold every group                                             │
+              │   |                resize the split (←→ or hl, or drag; ↵ commits, esc cancels)          │
+              │   s                settings                                                              │
+              │   ↓ more below…                                                                          │
+              │                                                                                          │
+              ├──────────────────────────────────────────────────────────────────────────────────────────┤
+              │   ↑↓/jk scroll  pgup/pgdn page  g/G top/bottom  / search   o docs   esc/q close          │
+              ╰──────────────────────────────────────────────────────────────────────────────────────────╯

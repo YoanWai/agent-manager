@@ -1,41 +1,38 @@
 package ui
 
 import (
-	"fmt"
-
-	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/keybind"
-	"github.com/YoanWai/agent-manager/internal/sysstat"
-	"github.com/YoanWai/agent-manager/internal/tmux"
+	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	m.gens.foreground++
 	// A drag armed by the mouse alone leaves the keyboard live, so a press
 	// whose release never lands cannot strand the list: the next key ends
 	// that drag where it stands, esc cancelling it exactly as the footer
 	// says, and anything else is then handled normally.
-	if m.split.dragging && !m.split.resizeMode {
-		if keybind.Normalize(msg.String()) == "esc" {
+	if m.layout.split.dragging && !m.layout.split.resizeMode {
+		key := keybind.Normalize(msg.String())
+		if key == "esc" {
 			return m.exitResizeMode(false)
 		}
-		m.exitResizeMode(m.split.moved)
+		if key == "ctrl+c" || m.services.listKeys.Binding(keybind.Quit).Has(key) {
+			return m.requestQuit()
+		}
+		m.exitResizeMode(m.layout.split.moved)
 	}
 	// Resize mode owns the keyboard until the drag commits or the user
 	// cancels: other bindings would fight the mouse-gated session.
-	if m.split.resizeMode {
+	if m.layout.split.resizeMode {
 		key := keybind.Normalize(msg.String())
 		switch {
-		case key == "enter" || m.listKeys.Binding(keybind.Resize).Has(key):
+		case key == "enter" || m.services.listKeys.Binding(keybind.Resize).Has(key):
 			return m.exitResizeMode(true)
 		case key == "esc":
 			return m.exitResizeMode(false)
-		case key == "ctrl+c" || m.listKeys.Binding(keybind.Quit).Has(key):
-			m.persistSplitRatio()
-			m.split.resizeMode = false
-			m.split.dragging = false
-			m.split.moved = false
-			return m, tea.Quit
+		case key == "ctrl+c" || m.services.listKeys.Binding(keybind.Quit).Has(key):
+			return m.requestQuit()
 		case key == "left" || key == "h":
 			m.nudgeSplit(-1)
 			return m, nil
@@ -51,549 +48,42 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case modeForm:
 		return m.handleFormKey(msg)
 	case modeConfirmDelete:
-		return m.handleConfirmKey(msg)
+		return m, m.confirm.handleKey(m, msg)
 	case modeLaunchHint:
-		return m.handleLaunchHintKey(msg)
+		return m, m.launchHint.handleKey(m, msg)
 	case modeRename:
-		return m.handleRenameKey(msg)
+		return m, m.rename.handleKey(m, msg)
 	case modeFork:
-		return m.handleForkKey(msg)
+		return m, m.fork.handleKey(m, msg)
 	case modeSettings:
 		return m.handleSettingsKey(msg)
 	case modeMove:
-		return m.handleMoveKey(msg)
+		return m, m.move.handleKey(m, msg)
 	case modeRepoPick:
-		return m.handleRepoPickKey(msg)
+		return m, m.reviewNav.picker.handleKey(m, msg)
 	case modeGroupForm:
 		return m.handleGroupFormKey(msg)
+	case modeConnection:
+		return m.handleConnectionKey(msg)
 	case modeDiff:
 		return m.handleDiffKey(msg)
 	case modeFocus:
 		return m.handleFocusKey(msg)
 	case modeNotices:
-		return m.handleNoticesKey(msg)
+		return m, m.notices.handleKey(m, msg)
 	case modeHelp:
 		return m.handleHelpKey(msg)
 	}
 
-	// A lifted row and an open menu sit on top of the quick bar, so they
-	// take the keys first.
-	if m.reorder.active {
-		return m.handleReorderKey(msg)
-	}
-	if m.menu.active {
-		model, cmd := m.handleMenuKey(msg)
-		m.closeQuickOffTheList()
-		return model, cmd
-	}
-	if m.searching {
-		return m.handleSearchKey(msg)
+	if m.rail.InputMode() != uirail.BrowseMode {
+		return m.applyRailDecision(m.rail.Key(msg, m.layout.displayedRail, m.railKeyContext()))
 	}
 	if m.quick.active {
 		return m.handleQuickKey(msg)
 	}
-
-	switch msg.String() {
-	case "ctrl+c":
-		return m, tea.Quit
-	case "esc":
-		return m, m.clearSearch()
-	}
-	action, _ := m.listKeys.ActionFor(keybind.Normalize(msg.String()))
-	return m.runListAction(action)
+	return m.applyRailDecision(m.rail.Key(msg, m.layout.displayedRail, m.railKeyContext()))
 }
 
-// runListAction does what a list key bound to action does, so the row
-// menu runs exactly what the key would.
-func (m *Model) runListAction(action string) (tea.Model, tea.Cmd) {
-	switch action {
-	case keybind.Quit:
-		return m, tea.Quit
-	case keybind.Up:
-		return m, m.moveCursor(-1)
-	case keybind.Down:
-		return m, m.moveCursor(1)
-	case keybind.ReorderUp:
-		return m.reorderSelected(-1)
-	case keybind.ReorderDown:
-		return m.reorderSelected(1)
-	case keybind.Open:
-		if entry, ok := m.selectedRow(); ok && entry.isGroup {
-			m.toggleCollapse()
-			return m, nil
-		}
-		if m.enterFocuses() {
-			return m.focusSelected()
-		}
-		return m.attachSelected()
-	case keybind.StepIn:
-		if !m.arrowStep {
-			return m, nil
-		}
-		if entry, ok := m.selectedRow(); ok && entry.isGroup {
-			if m.collapsed[entry.group] {
-				m.toggleCollapse()
-			}
-			return m, nil
-		}
-		return m.focusSelected()
-	case keybind.StepOut:
-		if !m.arrowStep {
-			return m, nil
-		}
-		if entry, ok := m.selectedRow(); ok && entry.isGroup && !m.collapsed[entry.group] {
-			m.toggleCollapse()
-		}
-		return m, nil
-	case keybind.Attach:
-		if m.enterFocuses() {
-			return m.attachSelected()
-		}
-		return m.focusSelected()
-	case keybind.NewSession:
-		return m, m.openForm()
-	case keybind.NewGroup:
-		m.openGroupForm()
-	case keybind.Fork:
-		m.openFork()
-	case keybind.Revive:
-		return m.reviveSelected()
-	case keybind.MarkIdle:
-		return m.acknowledgeSelected()
-	case keybind.ReviveAll:
-		return m.reviveAllDead()
-	case keybind.Restart:
-		return m.restartSelected()
-	case keybind.Kill:
-		return m.killSelected()
-	case keybind.KillAll:
-		return m.killAllLive()
-	case keybind.Archive:
-		return m.archiveSelected()
-	case keybind.CancelEnd:
-		return m.cancelEndSelected()
-	case keybind.Restore:
-		return m.restoreSelected()
-	case keybind.Delete:
-		m.prepareDelete()
-	case keybind.Prompt:
-		return m, m.openQuickMode()
-	case keybind.CopyReply:
-		return m.copyReplySelected()
-	case keybind.FoldAll:
-		m.toggleCollapseAll()
-	case keybind.Filter:
-		return m, m.cycleStatusFilter()
-	case keybind.Settings:
-		return m, m.openSettings()
-	case keybind.Resize:
-		return m.enterResizeMode()
-	case keybind.Archived:
-		m.showArchived = !m.showArchived
-		m.requestRefresh()
-	case keybind.Terminal:
-		return m.terminalKey()
-	case keybind.Editor:
-		return m.openEditor()
-	case keybind.EmptyGroups:
-		return m, m.toggleEmptyGroups()
-	case keybind.Search:
-		m.searching = true
-		m.errBar.text = ""
-	case keybind.Rename:
-		m.openRename()
-	case keybind.Move:
-		m.openMove()
-	case keybind.Messages:
-		m.openNotices("")
-	case keybind.Help:
-		m.openHelp()
-	case keybind.Review:
-		return m, m.openDiff()
-	}
-	return m, nil
-}
-
-// moveCursor shifts the selection by delta, wrapping at either end, and
-// schedules a debounced preview fetch. Key-repeat only bumps the gen; a
-// single capture runs after the cursor settles so holding j/k cannot pile
-// up tmux work.
-func (m *Model) moveCursor(delta int) tea.Cmd {
-	if len(m.rows) == 0 {
-		return nil
-	}
-	next := m.cursor + delta
-	if next < 0 {
-		next = len(m.rows) - 1
-	}
-	if next >= len(m.rows) {
-		next = 0
-	}
-	return m.selectRow(next)
-}
-
-// scrollCursor moves the cursor like moveCursor but stops at either end.
-// The keyboard wraps on purpose; one flick of the wheel is several notches,
-// so wrapping there would fling the selection to the far end mid-gesture
-// and aim every key after it somewhere the user never looked.
-func (m *Model) scrollCursor(delta int) tea.Cmd {
-	if len(m.rows) == 0 {
-		return nil
-	}
-	return m.selectRow(min(max(m.cursor+delta, 0), len(m.rows)-1))
-}
-
-// selectRow moves the cursor straight to index, the shared tail moveCursor
-// and a row click both need: reset the stale preview and schedule a fresh
-// one. A click on the row already selected is a no-op, same as a wheel
-// notch that would not move the cursor.
-func (m *Model) selectRow(index int) tea.Cmd {
-	if index < 0 || index >= len(m.rows) || index == m.cursor {
-		return nil
-	}
-	m.cursor = index
-	m.preview = ""
-	m.proc = sysstat.ProcStat{}
-	m.procFor = ""
-	if _, ok := m.selected(); !ok {
-		return nil
-	}
-	m.previewGen++
-	return m.schedulePreview()
-}
-
-// selectRowByKey moves the cursor to the row with this identity, reporting
-// false once a rebuild has dropped it from the list.
-func (m *Model) selectRowByKey(key string) bool {
-	index := m.rowIndexByKey(key)
-	if index < 0 {
-		return false
-	}
-	m.selectRow(index)
-	return true
-}
-
-// reorderSelected moves the selected session among its group siblings,
-// or the selected group among the groups sharing its parent.
-func (m *Model) reorderSelected(delta int) (tea.Model, tea.Cmd) {
-	entry, ok := m.selectedRow()
-	if !ok {
-		return m, nil
-	}
-	if entry.isRoot() {
-		m.errBar.text = "root stays at the top of the list"
-		return m, nil
-	}
-	target, ok := m.visibleReorderTarget(entry, delta)
-	if !ok {
-		edge := "top"
-		if delta > 0 {
-			edge = "bottom"
-		}
-		what := "group"
-		if !entry.isGroup {
-			what = "session"
-		}
-		m.errBar.text = fmt.Sprintf("%s already at the %s of its level", what, edge)
-		return m, nil
-	}
-	if err := m.swapRows(entry, target); err != nil {
-		m.errBar.text = err.Error()
-		return m, nil
-	}
-	m.errBar.text = ""
-	return m, nil
-}
-
-// swapRows trades places between a row and a visible sibling, in the store
-// and in memory.
-func (m *Model) swapRows(entry, target treeRow) error {
-	var err error
-	var groupSiblings []string
-	if entry.isGroup {
-		groupSiblings = m.knownGroupSiblings(parentGroup(entry.group))
-		err = m.store.SwapGroupOrder(entry.group, target.group, groupSiblings...)
-	} else {
-		err = m.store.SwapSessionOrder(entry.sess.ID, target.sess.ID)
-	}
-	if err != nil {
-		return err
-	}
-	// Mirror the swap in memory so the list redraws instantly; the next
-	// poll re-reads the authoritative order from the store.
-	if entry.isGroup {
-		m.materializeGroupsLocal(groupSiblings)
-		m.swapGroupLocal(entry.group, target.group)
-	} else {
-		m.swapSessionLocal(entry.sess.ID, target.sess.ID)
-	}
-	m.markReorder(entry, target)
-	m.rebuildRows()
-	m.requestRefresh()
-	return nil
-}
-
-// visibleReorderTarget finds the next rendered sibling. Filters and archive
-// scope therefore cannot turn a successful reorder into an invisible swap.
-func (m *Model) visibleReorderTarget(entry treeRow, delta int) (treeRow, bool) {
-	step := 1
-	if delta < 0 {
-		step = -1
-	}
-	for i := m.cursor + step; i >= 0 && i < len(m.rows); i += step {
-		candidate := m.rows[i]
-		if candidate.isRoot() {
-			// parentGroup("") is "" too, so root would match a top-level
-			// group as its own sibling.
-			continue
-		}
-		if entry.isGroup {
-			if candidate.isGroup && parentGroup(candidate.group) == parentGroup(entry.group) {
-				return candidate, true
-			}
-			continue
-		}
-		if !candidate.isGroup && candidate.sess.Group == entry.sess.Group && candidate.sess.ParentID == entry.sess.ParentID {
-			return candidate, true
-		}
-	}
-	return treeRow{}, false
-}
-
-func (m *Model) knownGroupSiblings(parent string) []string {
-	paths := groupClosure(m.groups, m.sessions)
-	return childIndex(paths, m.groups)[parent]
-}
-
-func (m *Model) materializeGroupsLocal(paths []string) {
-	known := make(map[string]bool, len(m.groups))
-	for _, group := range m.groups {
-		known[group] = true
-	}
-	for _, path := range paths {
-		if !known[path] {
-			m.groups = append(m.groups, path)
-			known[path] = true
-		}
-	}
-}
-
-func (m *Model) swapSessionLocal(id, targetID string) {
-	current, target := -1, -1
-	for i, sess := range m.sessions {
-		switch sess.ID {
-		case id:
-			current = i
-		case targetID:
-			target = i
-		}
-	}
-	if current >= 0 && target >= 0 {
-		m.sessions[current], m.sessions[target] = m.sessions[target], m.sessions[current]
-	}
-}
-
-func (m *Model) swapGroupLocal(path, targetPath string) {
-	current, target := -1, -1
-	for i, name := range m.groups {
-		switch name {
-		case path:
-			current = i
-		case targetPath:
-			target = i
-		}
-	}
-	if current >= 0 && target >= 0 {
-		m.groups[current], m.groups[target] = m.groups[target], m.groups[current]
-	}
-}
-
-func (m *Model) toggleCollapse() {
-	entry, ok := m.selectedRow()
-	if !ok {
-		return
-	}
-	path := entry.group
-	if !entry.isGroup {
-		path = entry.sess.Group
-	}
-	if path == "" {
-		return
-	}
-	m.collapsed[path] = !m.collapsed[path]
-	m.persistCollapsed()
-	m.rebuildRows()
-}
-
-// toggleCollapseAll folds every group when any is open, and unfolds all
-// when they are already collapsed, so one key flips the whole tree.
-func (m *Model) toggleCollapseAll() {
-	groups := groupClosure(m.groups, m.sessions)
-	collapse := !m.allGroupsCollapsed()
-	for group := range groups {
-		m.collapsed[group] = collapse
-	}
-	m.persistCollapsed()
-	m.rebuildRows()
-}
-
-// allGroupsCollapsed reports whether the whole tree is folded, which is
-// what decides the direction F takes and the label the footer offers. A
-// tree with no groups is not folded: there is nothing to unfold, and the
-// label must not offer it.
-func (m *Model) allGroupsCollapsed() bool {
-	any := false
-	for group := range groupClosure(m.groups, m.sessions) {
-		if !m.collapsed[group] {
-			return false
-		}
-		any = true
-	}
-	return any
-}
-
-// pasteFocused is the seam tests swap to observe pastes into the pane.
-var pasteFocused = func(driver *tmux.Driver, id, text string) error {
-	return driver.Paste(id, text)
-}
-
-// cycleStatusFilter advances the list status filter (all → attention → …).
-// Modes live in statusFilterCycle so new ones only need a const and a
-// matches case; this handler stays the same.
-func (m *Model) cycleStatusFilter() tea.Cmd {
-	previousKey := ""
-	if entry, ok := m.selectedRow(); ok {
-		previousKey = rowKey(entry)
-	}
-	m.statusFilter = m.statusFilter.next()
-	m.rebuildRows()
-	return m.afterListFilter(previousKey)
-}
-
-// toggleEmptyGroups hides or restores group rows whose subtree has no
-// sessions in the active list. It never changes the store, and the archived
-// view ignores the filter, so the key is refused there rather than flipping
-// a setting nothing on screen reports.
-func (m *Model) toggleEmptyGroups() tea.Cmd {
-	if m.showArchived {
-		return nil
-	}
-	previousKey := ""
-	if entry, ok := m.selectedRow(); ok {
-		previousKey = rowKey(entry)
-	}
-	m.hideEmptyGroups = !m.hideEmptyGroups
-	m.rebuildRows()
-	return m.afterListFilter(previousKey)
-}
-
-// afterListFilter keeps the preview tied to the selection when a filter
-// change leaves the cursor on the same row, and refreshes it when not.
-func (m *Model) afterListFilter(previousKey string) tea.Cmd {
-	currentKey := ""
-	if entry, ok := m.selectedRow(); ok {
-		currentKey = rowKey(entry)
-	}
-	if currentKey == previousKey {
-		return nil
-	}
-
-	m.preview = ""
-	m.proc = sysstat.ProcStat{}
-	m.procFor = ""
-	m.previewGen++
-	m.syncPollInput()
-	if _, ok := m.selected(); ok {
-		return m.schedulePreview()
-	}
-	return nil
-}
-
-// warn carries a PrepareAttach failure: shown to the user, but the attach
-// still proceeds, unlike err which cancels it.
-type reattachPreparedMsg struct {
-	sessID  string
-	diffGen int
-	err     error
-	warn    string
-}
-
-// captureClipboardImage is the seam the quick bar uses to save a pasted
-// image to a temp file; tests swap it for a fake.
-var captureClipboardImage = clipboard.SaveImage
-
-const diffLayoutSetting = "diff_layout"
-
-// sessionLayoutSetting is the list's shape: "full" gives the rail the whole
-// width, anything else keeps the split with the preview beside it.
-const sessionLayoutSetting = "layout"
-
-const listDensitySetting = "list_density"
-
-const hideHeaderSetting = "hide_header"
-
-const hideStatsSetting = "hide_stats"
-
-// backgroundSetting is what fills the backdrop's cells: "terminal" leaves
-// the terminal's own colors, anything else paints the theme's.
-const backgroundSetting = "background"
-
-const focusKeySetting = "focus_key"
-
-// arrowStepSetting is the beta ←→ pair: "off" turns it off, anything else
-// leaves it on.
-const arrowStepSetting = "arrow_step_keys"
-
-// mouseSetting is app-wide mouse reporting: "off" gives the rail and
-// content column back to the terminal's own click-drag text selection,
-// anything else leaves it on (the default).
-const mouseSetting = "mouse_mode"
-
-const quickCloseSetting = "quick_prompt_close"
-
-const worktreeSetting = "worktree_default"
-
-// baseFetchSetting is the fetch ahead of a worktree spawn: "off" skips it,
-// anything else fetches (the default).
-const baseFetchSetting = "worktree_fetch"
-
-const notificationsSetting = "notifications"
-
-const notifyFinishedSetting = "notify_finished"
-
-func (m *Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "enter":
-		m.searching = false
-	case "esc":
-		m.searching = false
-		return m, m.clearSearch()
-	case "backspace":
-		if len(m.search) > 0 {
-			m.search = m.search[:len(m.search)-1]
-		}
-		m.rebuildRows()
-	default:
-		if len(msg.String()) == 1 {
-			m.search += msg.String()
-			m.rebuildRows()
-		}
-	}
-	return m, nil
-}
-
-// clearSearch drops the query and re-lists. A query that outlives its field
-// with no way back is what makes filtered-away sessions read as sessions
-// that are gone, so esc answers from the list as well as from the field.
-func (m *Model) clearSearch() tea.Cmd {
-	if m.search == "" {
-		return nil
-	}
-	previousKey := ""
-	if entry, ok := m.selectedRow(); ok {
-		previousKey = rowKey(entry)
-	}
-	m.search = ""
-	m.rebuildRows()
-	return m.afterListFilter(previousKey)
+func (m *Model) railKeyContext() uirail.KeyContext {
+	return uirail.KeyContext{ListKeys: m.services.listKeys, ArrowStep: m.prefs.arrowStep, EnterFocuses: m.enterFocuses()}
 }

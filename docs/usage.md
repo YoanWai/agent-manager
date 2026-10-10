@@ -19,6 +19,7 @@ Tell your agent what you want to review in Agent Manager. Your agent will set up
 | `o` | Open the selected row's directory in your editor |
 | `f` | Fork the selected conversation into a named session in the same group and directory |
 | `g` | New group (name, parent, default path, worktree default, worktree base) |
+| `C` | New SSH connection: another machine's sessions in this list (see [SSH connections](#ssh-connections)) |
 | `enter` | Focus session in place (keys go to the agent, list stays) / fold group |
 | click | Focus the session (the full-screen layout selects the row) |
 | double click | Fold the group / focus the session in the full-screen layout |
@@ -245,6 +246,10 @@ Every session of an MCP-capable tool carries the agent-manager MCP server on spa
 | `read_terminal` | Read the plain-text content currently visible in a terminal |
 | `close_terminal` | Close a finished terminal nested under the caller: kill the pane and delete the row |
 
+### SSH connections in MCP
+
+When you have added SSH connections, `list_sessions`, `list_terminals` and `list_groups` refresh every connection at once and list its rows after this machine's, each with `host` set to the connection's name and its id written `host::id`. A host that cannot be refreshed never fails the list: its last rows come back with `stale: true`, and `connection_errors` says what went wrong. `read_session`, `send_session`, `kill_session`, `revive_session`, `archive_session`, `read_terminal`, `send_terminal` and `close_terminal` take a `host::id` and run on that host. A message sent there comes from `<session name> on <this machine's hostname>`, and `message_status` cannot follow it, so read the agent's screen instead. `create_session`, `create_terminal`, `create_group` and `delete_group` take a `host` argument; a session or terminal created there inherits nothing from the caller, so it lands in the root group and the remote user's home directory unless the call says otherwise, and the terminal hangs under no session. `wait_for_session`, `task` and `review_comment` refuse a `host::id`, since that state stays on each host. A connection added in the manager while an agent runs reaches its MCP server on the next call.
+
 ### Coordination
 
 The `coordination` row in Settings (`s`) sets how far agents go with the other sessions on their own. `on request`, the default, tells each new session that the others exist and that it lists, messages, spawns or waits on them, and creates or claims shared tasks, only when you ask. "Spawn an agent for this" and "wait for the api session, then deploy" keep working, since every tool stays registered. `proactive` has agents delegate a parallel workstream to a new session and check the shared task list before starting work, without waiting to be asked. The mode reaches an MCP client through the server's initialization instructions and the `create_session` and `task` descriptions, and Pi through a note on its first prompt and the `agent-manager help` text. A session is briefed when it starts, so the ones already running keep the mode they started with.
@@ -293,14 +298,24 @@ Registration is per tool. Claude gets a generated `--mcp-config` file. Codex get
 
 Pi does not include an MCP client. Its sessions reach the same workspace through the subcommands: `agent-manager --help` lists them, from `sessions`, `spawn`, `send` and `wait` to the shared task list, file reservations, terminals and the review declarations. `update` needs no caller at all, and `issue` and `feature` use only the session id the launch exported. Every other subcommand acts as the session or terminal it runs in, resolved from that environment or, for a [terminal tab](#terminal-tabs) that has none, from the tmux pane, so the same subcommands work from a shell you opened with `T`. Claude Code also gets the id in the `env` block of its generated `--settings` file, so a conversation that `/background` or the agent view moves into Claude's daemon keeps acting as its own session. A `spawn` from a terminal tab with no `--tool` runs the CLI picked in Settings.
 
-`sessions`, `groups`, `spawn`, `read` and `wait` also run with no caller at all, so a script, a cron job or a CI step outside Agent Manager can open sessions that show up in your list. Such a `spawn` runs the CLI picked in Settings, in the root group and the directory the script runs in, unless `--tool`, `--group` or `--directory` says otherwise:
+`sessions`, `groups`, `snapshot`, `spawn`, `read`, `wait`, `kill`, `revive`, `archive`, `create-group` and `delete-group` also run with no caller at all, so a script, a cron job or a CI step outside Agent Manager can open sessions that show up in your list. Such a `spawn` runs the CLI picked in Settings, in the root group and the directory the script runs in, unless `--tool`, `--group` or `--directory` says otherwise:
 
 ```bash
 agent-manager spawn --tool claude --group "Sprint Manager" --worktree \
   --name ticket-123 --prompt "Fix TICKET-123 and open a pull request" --json
 ```
 
-The MCP tools always act as the session that runs them, since several CLIs keep the server registered for their runs outside Agent Manager too.
+`snapshot --json` prints this machine's whole list as one JSON document: every session and terminal, archived ones included, the groups, and whether a manager is running here to deliver queued messages. It is what another manager reads over an SSH connection.
+
+`send <session-id> "<message>" --from <name>` queues a message from a sender with no session on this machine, such as an agent on another machine sending over SSH. The name is up to 64 bytes with no control characters, and `--from` is refused from inside a session, which sends as itself. The delivered message names the sender as being on another machine and says a reply cannot reach it.
+
+`terminal create`, `send`, `read` and `close` run with no caller too. There a new terminal hangs under no session, in the group `--group` names or the root, and only terminals opened that way can be driven: a terminal nested under a session stays that session's, and one you opened in the manager or a session opened stays out of reach.
+
+The commands that run with no caller are a convenience for a manager reaching this machine over SSH and for scripts, not an isolation boundary. Anything running as your user can call them, and an agent that drops its session environment is treated as a caller with no session. What they keep is a guardrail: such a caller cannot drive a terminal it did not open, and every `send --from` counts against one shared set of message limits, whatever name it gives.
+
+Queued messages, status and after-turn archives and kills move only while a manager runs. `agent-manager serve` runs one with no screen, on a machine where nobody keeps the TUI open, until it is interrupted or sent SIGTERM. `serve --background` starts that manager detached, with its output appended to `serve.log` in the profile directory, unless one is already running, and prints `{"started":true,"pid":N}` or `{"started":false}`. A serve holds a lock on `serve.lock` in the profile directory while it runs, so a second `serve` exits at once with a note that one is already running, and `serve --background` answers `{"started":false}` even before the first one has polled. It runs on macOS and Linux.
+
+The MCP tools always act as the session that runs them, and refuse every call, `report_issue` and `host::id` targets included, from a server with no session, since several CLIs keep the server registered for their runs outside Agent Manager too.
 
 ### Bugs and ideas
 
@@ -348,6 +363,20 @@ Each point sent to the agent carries a stable comment id. After addressing it, a
 ![folding the tree, creating a nested group, reordering, and archiving one](demo-groups.gif)
 
 Groups are paths (`backend/api/auth`) forming a tree of unlimited depth. Sessions can live at any node, including the root. Create subgroups inline with `g`, reorder both groups and sessions with `K` / `J` (or `shift+↑↓`; the order persists), fold a subtree with `enter` on its row, fold or unfold the whole tree with `F`, hide or restore empty groups visually with `e`, and edit a group's name and default path with `r`. On a session, `r` renames it and `tab` cycles the tool. Quitting one CLI in a session's pane and starting another there moves the row onto that CLI on the next poll, with the status rules and the revive command that come with it. The move needs one answer: exactly one built-in CLI has to run the binary the pane is running, so a CLI whose process name is its runtime rather than itself (one installed as a node script, say) leaves the row where it is and `tab` sets it by hand.
+
+## SSH connections
+
+`C` adds an SSH connection: a name and a destination, `user@host` or an alias from `~/.ssh/config`. The other machine needs agent-manager on its login shell's `PATH` and a key this machine's `ssh` can use without a prompt; the manager never asks for a password and never touches your SSH config.
+
+The connection sits in the list after your own groups, in its own color with an `ssh` label, and the other machine's groups, agents and terminals nest under it. It folds like a group. Each poll refreshes every connection in the background, one call per host at a time, and a host that stops answering keeps its last rows with an `offline` note and the error in the detail pane. The first refresh starts a headless manager there (`agent-manager serve --background`) when none is running, so messages sent to its agents get delivered.
+
+On a connection's rows:
+- `enter` and `A` attach over SSH in this terminal; detaching returns to the manager. A remote pane is never embedded.
+- Quick prompt mode sends to a remote agent as `<this machine's short hostname>: you`, or starts a new agent when a connection or remote group is selected. `n` starts one there too; the directory and the worktree default are the other machine's unless you set them.
+- `T` opens a terminal there, `x` kills an agent or closes a terminal, `v` revives, `a` and `u` archive and restore.
+- On the connection row itself, `r` edits it and `d` removes it. Removing asks first; its sessions keep running on that host.
+
+Rename, move, delete, restart, fork, review, the editor, copying a reply and reordering are refused on a remote row with a message naming the gap. A failed call shows the other machine's error. Nothing from a connection is written to this machine's store. See [SSH connections](architecture/ssh-connections.md) for the protocol.
 
 ## Status
 

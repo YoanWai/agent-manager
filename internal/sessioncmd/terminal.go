@@ -4,8 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/config"
@@ -25,6 +23,7 @@ type Terminal struct {
 	Running    bool   `json:"running" jsonschema:"whether the terminal currently has a live tmux pane"`
 	ParentID   string `json:"parent_id" jsonschema:"id of the parent session when nested; empty when un-nested"`
 	ParentName string `json:"parent_name" jsonschema:"name of the parent session when nested; empty when un-nested"`
+	Archived   bool   `json:"archived,omitempty" jsonschema:"whether the terminal is archived out of the active list"`
 }
 
 type TerminalScreen struct {
@@ -56,89 +55,15 @@ func NewTerminals(configDir string, words Vocabulary) *Terminals {
 	return newTerminals(configDir, words, tmux.New)
 }
 
+func NewTerminalsWithBackend(backend *Backend, words Vocabulary) *Terminals {
+	if backend == nil {
+		panic("session command backend is required")
+	}
+	return &Terminals{commands: commands{words: words, backend: backend}}
+}
+
 func newTerminals(configDir string, words Vocabulary, newDriver func() (*tmux.Driver, error)) *Terminals {
 	return &Terminals{commands: commands{configDir: configDir, words: words, newDriver: newDriver, loadConfig: config.Default}}
-}
-
-// commands is the shared plumbing of every managed-pane command: the
-// manager's config directory, the words the calling front speaks, and the
-// tmux driver behind its socket.
-type commands struct {
-	configDir string
-	words     Vocabulary
-	newDriver func() (*tmux.Driver, error)
-	// loadConfig is config.Default outside the tests, which inject fake CLIs.
-	loadConfig func() (config.Config, error)
-}
-
-type runtime struct {
-	cfg    config.Config
-	words  Vocabulary
-	store  *store.Store
-	driver *tmux.Driver
-}
-
-// createPane opens a session's pane at the box the running manager pins
-// its panes to. Nothing here can measure the preview, and tmux hands an
-// unsized detached session 80x24, which is narrower than any manager
-// layout and holds until something resizes it.
-func (r *runtime) createPane(id, cwd, command string, env map[string]string) error {
-	width, height, err := r.store.PaneSize()
-	if err != nil {
-		return err
-	}
-	return r.driver.Create(id, cwd, command, env, width, height)
-}
-
-// openStore makes the config directory first: a command can be the first
-// thing to run here, before any manager made it.
-func openStore(configDir string) (*store.Store, error) {
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
-		return nil, err
-	}
-	return store.Open(filepath.Join(configDir, "state.db"))
-}
-
-func (c *commands) open() (*runtime, error) {
-	cfg, err := c.loadConfig()
-	if err != nil {
-		return nil, err
-	}
-	driver, err := c.newDriver()
-	if err != nil {
-		return nil, err
-	}
-	st, err := openStore(c.configDir)
-	if err != nil {
-		return nil, err
-	}
-	keys, err := st.SessionKeys()
-	if err != nil {
-		st.Close()
-		return nil, err
-	}
-	driver.SetSessionKeys(keys)
-	return &runtime{cfg: cfg, words: c.words, store: st, driver: driver}, nil
-}
-
-func (r *runtime) caller(sessionID string) (store.Session, error) {
-	if err := validSession(sessionID); err != nil {
-		return store.Session{}, err
-	}
-	sess, err := r.store.Get(sessionID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return store.Session{}, fmt.Errorf("calling session %s no longer exists", sessionID)
-	}
-	return sess, err
-}
-
-// optionalCaller serves commands that never act on the caller's own row, which
-// a script outside Agent Manager may run with no session at all.
-func (r *runtime) optionalCaller(sessionID string) (store.Session, error) {
-	if sessionID == "" {
-		return store.Session{}, nil
-	}
-	return r.caller(sessionID)
 }
 
 func (r *runtime) terminal(id string) (store.Session, error) {
@@ -163,6 +88,9 @@ func (r *runtime) terminal(id string) (store.Session, error) {
 }
 
 func (r *runtime) nestedTerminal(sessionID, terminalID string) (store.Session, error) {
+	if sessionID == "" {
+		return r.unnestedTerminal(terminalID)
+	}
 	caller, err := r.caller(sessionID)
 	if err != nil {
 		return store.Session{}, err
@@ -177,13 +105,25 @@ func (r *runtime) nestedTerminal(sessionID, terminalID string) (store.Session, e
 	return terminal, nil
 }
 
-func (r *runtime) info(sess store.Session, running bool) (Terminal, error) {
-	dir := sess.Cwd
-	if running {
-		if current, err := r.driver.PaneCurrentPath(sess.ID); err == nil {
-			dir = current
-		}
+// unnestedTerminal serves a caller with no session, such as a manager on
+// another machine. It reaches only the terminals such a caller opened: a
+// nested one stays its session's, and one the user or a session opened
+// stays out of reach of an agent that merely lost its session environment.
+func (r *runtime) unnestedTerminal(terminalID string) (store.Session, error) {
+	terminal, err := r.terminal(terminalID)
+	if err != nil {
+		return store.Session{}, err
 	}
+	if terminal.ParentID != "" {
+		return store.Session{}, fmt.Errorf("terminal %s belongs to session %s; only it can drive it", terminal.ID, terminal.ParentID)
+	}
+	if !terminal.OpenedWithoutSession {
+		return store.Session{}, fmt.Errorf("terminal %s was opened in Agent Manager, not by a caller with no session; only Agent Manager and its sessions can drive it", terminal.ID)
+	}
+	return terminal, nil
+}
+
+func (r *runtime) info(sess store.Session, running bool) (Terminal, error) {
 	parentName := ""
 	if sess.ParentID != "" {
 		// A parent row that is gone leaves the terminal orphaned, which the
@@ -197,6 +137,16 @@ func (r *runtime) info(sess store.Session, running bool) (Terminal, error) {
 			parentName = parent.Name
 		}
 	}
+	return r.terminalInfo(sess, running, parentName), nil
+}
+
+func (r *runtime) terminalInfo(sess store.Session, running bool, parentName string) Terminal {
+	dir := sess.Cwd
+	if running {
+		if current, err := r.driver.PaneCurrentPath(sess.ID); err == nil {
+			dir = current
+		}
+	}
 	return Terminal{
 		ID:         sess.ID,
 		Name:       sess.Name,
@@ -206,7 +156,8 @@ func (r *runtime) info(sess store.Session, running bool) (Terminal, error) {
 		Running:    running,
 		ParentID:   sess.ParentID,
 		ParentName: parentName,
-	}, nil
+		Archived:   sess.Archived,
+	}
 }
 
 func (t *Terminals) List(sessionID string) ([]Terminal, error) {
@@ -214,7 +165,7 @@ func (t *Terminals) List(sessionID string) ([]Terminal, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer runtime.store.Close()
+	defer runtime.Close()
 	if _, err := runtime.caller(sessionID); err != nil {
 		return nil, err
 	}
@@ -246,15 +197,18 @@ func (t *Terminals) Create(sessionID string, opts CreateTerminalOptions) (Termin
 	if err != nil {
 		return Terminal{}, err
 	}
-	defer runtime.store.Close()
-	caller, err := runtime.caller(sessionID)
+	defer runtime.Close()
+	caller, err := runtime.optionalCaller(sessionID)
 	if err != nil {
 		return Terminal{}, err
 	}
 	toolName, tool := runtime.cfg.ShellTool()
-	nest := true
+	nest := caller.ID != ""
 	if opts.Nest != nil {
 		nest = *opts.Nest
+	}
+	if nest && caller.ID == "" {
+		return Terminal{}, errors.New("there is no calling session to nest the terminal under; leave nest unset or false")
 	}
 	if nest && opts.Group != nil && strings.TrimSpace(*opts.Group) != caller.Group {
 		return Terminal{}, fmt.Errorf("set nest false to place in another group")
@@ -278,45 +232,33 @@ func (t *Terminals) Create(sessionID string, opts CreateTerminalOptions) (Termin
 		return Terminal{}, err
 	}
 	sess := store.Session{
-		ID:     uuid.NewString()[:8],
-		Name:   name,
-		Tool:   toolName,
-		Cwd:    dir,
-		Group:  group,
-		Status: status.Starting,
+		ID:                   uuid.NewString()[:8],
+		Name:                 name,
+		Tool:                 toolName,
+		Cwd:                  dir,
+		Group:                group,
+		Status:               status.Starting,
+		ParentID:             parentID,
+		OpenedWithoutSession: caller.ID == "",
 	}
-	if err := runtime.createPane(sess.ID, sess.Cwd, tool.Command, nil); err != nil {
+	lifecycle, err := t.lifecycle(runtime, nil)
+	if err != nil {
 		return Terminal{}, err
 	}
-	sess.TmuxSocket = runtime.driver.SocketPath()
-	create := runtime.store.CreateSession
-	if nest {
-		if callerIsShell {
-			create = func(row store.Session) error {
-				return runtime.store.CreateSessionBeside(row, caller.ID)
-			}
-		} else {
-			create = func(row store.Session) error {
-				row.ParentID = caller.ID
-				return runtime.store.CreateSession(row)
-			}
-		}
+	besideID := ""
+	if nest && callerIsShell {
+		besideID = caller.ID
 	}
-	if err := create(sess); err != nil {
-		if killErr := runtime.driver.Kill(sess.ID); killErr != nil {
-			return Terminal{}, fmt.Errorf("%w; its pane %s is still running and has no row: %w", err, sess.ID, killErr)
-		}
+	launched, err := lifecycle.Launch(LaunchRequest{
+		Session:         sess,
+		Tool:            tool,
+		BaseCommand:     tool.Command,
+		BesideSessionID: besideID,
+	})
+	if err != nil {
 		return Terminal{}, err
 	}
-	if nest {
-		stored, err := runtime.store.Get(sess.ID)
-		if err != nil {
-			return Terminal{}, err
-		}
-		sess = stored
-	}
-	_ = runtime.driver.SetLabel(sess.ID, sessionLabel(sess.Group, sess.Name))
-	return runtime.info(sess, true)
+	return runtime.info(launched.Session, true)
 }
 
 func (t *Terminals) Close(sessionID, terminalID string) error {
@@ -324,7 +266,7 @@ func (t *Terminals) Close(sessionID, terminalID string) error {
 	if err != nil {
 		return err
 	}
-	defer runtime.store.Close()
+	defer runtime.Close()
 	sess, err := runtime.nestedTerminal(sessionID, terminalID)
 	if err != nil {
 		return err
@@ -368,105 +310,6 @@ func ShellName(toolName, parentID, fallbackSuffix string, sessions []store.Sessi
 	return name
 }
 
-// createTarget resolves the group and directory a new pane opens in.
-// A nil requested group inherits the caller's; an explicit one must
-// already exist. An explicit directory wins outright; a caller that named
-// a group falls back to that group's nearest inherited default path; a
-// caller that named none opens beside itself.
-func (r *runtime) createTarget(caller store.Session, requestedGroup *string, directory string) (string, string, error) {
-	group := caller.Group
-	groups, err := r.store.Groups()
-	if err != nil {
-		return "", "", err
-	}
-	byName := make(map[string]store.Group, len(groups))
-	archived := make(map[string]bool, len(groups))
-	for _, candidate := range groups {
-		byName[candidate.Name] = candidate
-		archived[candidate.Name] = candidate.Archived
-	}
-	if requestedGroup != nil {
-		group = strings.TrimSpace(*requestedGroup)
-		if group != "" {
-			if _, ok := byName[group]; !ok {
-				return "", "", fmt.Errorf("group %q does not exist; call %s for the existing ones or %s to add it", group, r.words.ListGroups, r.words.CreateGroup)
-			}
-		}
-	}
-	if group != "" && store.EffectivelyArchived(archived, group) {
-		return "", "", fmt.Errorf("group %q is archived; restore it in Agent Manager first", group)
-	}
-	if strings.TrimSpace(directory) != "" {
-		dir, err := resolveTerminalDirectory(directory)
-		return group, dir, err
-	}
-	if requestedGroup != nil {
-		for current := group; current != ""; current = parentGroup(current) {
-			if candidate := byName[current].Path; candidate != "" {
-				if dir, err := resolveTerminalDirectory(candidate); err == nil {
-					return group, dir, nil
-				}
-			}
-		}
-	}
-	dir := caller.Cwd
-	if caller.ID == "" {
-		// There is no pane to ask. tmux would read the empty id's target am_
-		// as a prefix and answer with another session's directory.
-		if dir, err = os.Getwd(); err != nil {
-			return "", "", err
-		}
-	} else if current, err := r.driver.PaneCurrentPath(caller.ID); err == nil {
-		dir = current
-	}
-	resolved, err := resolveTerminalDirectory(dir)
-	if err != nil {
-		return "", "", fmt.Errorf("no usable directory for terminal: %w", err)
-	}
-	return group, resolved, nil
-}
-
-func resolveTerminalDirectory(raw string) (string, error) {
-	dir := strings.TrimSpace(raw)
-	if dir == "~" || strings.HasPrefix(dir, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
-		if dir == "~" {
-			dir = home
-		} else {
-			dir = filepath.Join(home, strings.TrimPrefix(dir, "~/"))
-		}
-	}
-	abs, err := filepath.Abs(dir)
-	if err != nil {
-		return "", err
-	}
-	info, err := os.Stat(abs)
-	if err != nil {
-		return "", fmt.Errorf("directory %s: %w", abs, err)
-	}
-	if !info.IsDir() {
-		return "", fmt.Errorf("%s is not a directory", abs)
-	}
-	return abs, nil
-}
-
-func parentGroup(group string) string {
-	if index := strings.LastIndex(group, "/"); index >= 0 {
-		return group[:index]
-	}
-	return ""
-}
-
-func sessionLabel(group, name string) string {
-	if group == "" {
-		return name
-	}
-	return group + " · " + name
-}
-
 func (t *Terminals) Send(sessionID, terminalID, command string, keys []string) (TerminalInput, error) {
 	hasCommand := strings.TrimSpace(command) != ""
 	hasKeys := len(keys) > 0
@@ -482,7 +325,7 @@ func (t *Terminals) Send(sessionID, terminalID, command string, keys []string) (
 	if err != nil {
 		return TerminalInput{}, err
 	}
-	defer runtime.store.Close()
+	defer runtime.Close()
 	terminal, err := runtime.nestedTerminal(sessionID, terminalID)
 	if err != nil {
 		return TerminalInput{}, err
@@ -507,11 +350,13 @@ func (t *Terminals) Read(sessionID, terminalID string) (TerminalScreen, error) {
 	if err != nil {
 		return TerminalScreen{}, err
 	}
-	defer runtime.store.Close()
-	if _, err := runtime.caller(sessionID); err != nil {
-		return TerminalScreen{}, err
+	defer runtime.Close()
+	var terminal store.Session
+	if sessionID == "" {
+		terminal, err = runtime.unnestedTerminal(terminalID)
+	} else if _, err = runtime.caller(sessionID); err == nil {
+		terminal, err = runtime.terminal(terminalID)
 	}
-	terminal, err := runtime.terminal(terminalID)
 	if err != nil {
 		return TerminalScreen{}, err
 	}

@@ -1,6 +1,6 @@
 # Configuration
 
-Everything you can change lives in Settings (`s` by default): the keys, the editor `o` opens, the theme, and the rest of its rows (see [Keys](usage.md#keys)). The manager stores each choice in `state.db` (SQLite) in your OS user config dir, `~/Library/Application Support/agent-manager/` on macOS and `~/.config/agent-manager/` on Linux, with `XDG_CONFIG_HOME` honored when set. Changes are saved as you leave Settings and take effect then, with no restart.
+Everything you can change lives in Settings (`s` by default): the keys, the editor `o` opens, the theme, and the rest of its rows (see [Keys](usage.md#keys)). The manager stores each choice in `state.db` (SQLite) in your OS user config dir, `~/Library/Application Support/agent-manager/` on macOS and `~/.config/agent-manager/` on Linux, with `XDG_CONFIG_HOME` honored when set. Changes are saved as you leave Settings and take effect then, with no restart. Only the rows you changed are written, so a change another manager or the CLI made in the meantime is kept.
 
 The **editor** row picks the command `o` opens a directory in (see [Opening the editor](usage.md#opening-the-editor)), and the **keybindings** row opens the [key picker](#key-bindings). Panes are polled every two seconds for status, preview, and stats.
 

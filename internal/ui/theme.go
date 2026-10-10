@@ -35,6 +35,7 @@ type Theme struct {
 	// Brand.
 	Accent  string // primary: focus, keys, brand
 	Accent2 string // secondary: groups, scopes
+	Remote  string // SSH connections, beside the groups they hold
 
 	// Agent states.
 	Working  string
@@ -64,6 +65,7 @@ var themes = []Theme{
 		Subtle:  "#646c78",
 		Accent:  "#6cb6a4",
 		Accent2: "#6daaba",
+		Remote:  "#c48fb4",
 
 		Working:  "#d08442",
 		Waiting:  "#a78bd0",
@@ -83,6 +85,7 @@ var themes = []Theme{
 		Subtle:  "#586e75",
 		Accent:  "#268bd2",
 		Accent2: "#2aa198",
+		Remote:  "#d33682",
 
 		Working:  "#268bd2",
 		Waiting:  "#b58900",
@@ -104,6 +107,7 @@ var themes = []Theme{
 		Subtle:  "#6c7086",
 		Accent:  "#cba6f7",
 		Accent2: "#94e2d5",
+		Remote:  "#89b4fa",
 
 		Working:  "#fab387",
 		Waiting:  "#f5c2e7",
@@ -125,6 +129,7 @@ var themes = []Theme{
 		Subtle:  "#565f89",
 		Accent:  "#7aa2f7",
 		Accent2: "#7dcfff",
+		Remote:  "#ff9e64",
 
 		Working:  "#e0af68",
 		Waiting:  "#bb9af7",
@@ -146,6 +151,7 @@ var themes = []Theme{
 		Subtle:  "#928374",
 		Accent:  "#83a598",
 		Accent2: "#8ec07c",
+		Remote:  "#fe8019",
 
 		Working:  "#fabd2f",
 		Waiting:  "#d3869b",
@@ -167,6 +173,7 @@ var themes = []Theme{
 		Subtle:  "#616e88",
 		Accent:  "#88c0d0",
 		Accent2: "#8fbcbb",
+		Remote:  "#d08770",
 
 		Working:  "#ebcb8b",
 		Waiting:  "#b48ead",
@@ -186,6 +193,7 @@ var themes = []Theme{
 		Subtle:  "#6272a4",
 		Accent:  "#bd93f9",
 		Accent2: "#8be9fd",
+		Remote:  "#f1fa8c",
 
 		Working:  "#ffb86c",
 		Waiting:  "#ff79c6",
@@ -205,6 +213,7 @@ var themes = []Theme{
 		Subtle:  "#6e6a86",
 		Accent:  "#c4a7e7",
 		Accent2: "#9ccfd8",
+		Remote:  "#ea9a97",
 
 		Working:  "#f6c177",
 		Waiting:  "#ebbcba",
@@ -226,6 +235,7 @@ var themes = []Theme{
 		Subtle:  "#63636d",
 		Accent:  "#d8d8e0",
 		Accent2: "#a8a8b4",
+		Remote:  "#bcbcc8",
 
 		Working:  "#e8e8ef",
 		Waiting:  "#c8c8d2",
@@ -245,6 +255,7 @@ var themes = []Theme{
 		Subtle:  "#727169",
 		Accent:  "#7e9cd8",
 		Accent2: "#7aa89f",
+		Remote:  "#d27e99",
 
 		Working:  "#ff9e3b",
 		Waiting:  "#957fb8",
@@ -266,6 +277,7 @@ var themes = []Theme{
 		Subtle:  "#93a1a1",
 		Accent:  "#268bd2",
 		Accent2: "#218a80",
+		Remote:  "#d33682",
 
 		Working:  "#268bd2",
 		Waiting:  "#b58900",
@@ -287,6 +299,7 @@ var themes = []Theme{
 		Subtle:  "#9ca0b0",
 		Accent:  "#8839ef",
 		Accent2: "#179299",
+		Remote:  "#1e66f5",
 
 		Working:  "#fe640b",
 		Waiting:  "#ea76cb",
@@ -308,6 +321,7 @@ var themes = []Theme{
 		Subtle:  "#848cb5",
 		Accent:  "#2e7de9",
 		Accent2: "#007197",
+		Remote:  "#b15c00",
 
 		Working:  "#8c6c3e",
 		Waiting:  "#9854f1",
@@ -329,6 +343,7 @@ var themes = []Theme{
 		Subtle:  "#928374",
 		Accent:  "#076678",
 		Accent2: "#427b58",
+		Remote:  "#af3a03",
 
 		Working:  "#b57614",
 		Waiting:  "#8f3f71",
@@ -350,6 +365,7 @@ var themes = []Theme{
 		Subtle:  "#9893a5",
 		Accent:  "#907aa9",
 		Accent2: "#56949f",
+		Remote:  "#b4637a",
 
 		Working:  "#ea9d34",
 		Waiting:  "#d7827e",
@@ -371,6 +387,7 @@ var themes = []Theme{
 		Subtle:  "#9a9aa0",
 		Accent:  "#2f2f38",
 		Accent2: "#6a6a74",
+		Remote:  "#4a4a54",
 
 		Working:  "#1c1c22",
 		Waiting:  "#4a4a54",
@@ -390,6 +407,7 @@ var themes = []Theme{
 		Subtle:  "#8a8980",
 		Accent:  "#4d699b",
 		Accent2: "#597b75",
+		Remote:  "#b35b79",
 
 		Working:  "#e98a00",
 		Waiting:  "#624c83",
@@ -431,6 +449,7 @@ func applyTheme(t Theme) {
 	colorSubtle = lipgloss.Color(t.Subtle)
 	colorAccent = lipgloss.Color(t.Accent)
 	colorAccent2 = lipgloss.Color(t.Accent2)
+	colorRemote = lipgloss.Color(t.Remote)
 	colorSelBg = colorSurface
 
 	colorWorking = lipgloss.Color(t.Working)
@@ -481,9 +500,9 @@ func SyncTerminalColors() {
 // still opens on it; the push to a running server shells out to tmux, so it
 // runs as a command off the update path and surfaces a failure through errMsg.
 func (m *Model) syncPaneTheme() tea.Cmd {
-	m.tmux.PublishPaneTheme(agentPaneTheme())
+	m.services.tmux.PublishPaneTheme(agentPaneTheme())
 	return func() tea.Msg {
-		if err := m.tmux.PushPaneTheme(); err != nil {
+		if err := m.services.tmux.PushPaneTheme(); err != nil {
 			return errMsg{err}
 		}
 		return nil

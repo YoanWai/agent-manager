@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/remote"
 	"github.com/YoanWai/agent-manager/internal/report"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -39,6 +40,7 @@ type createTerminalArgs struct {
 	Group     *string `json:"group,omitempty" jsonschema:"existing group path for the new terminal; pass an empty string for the root group; defaults to this agent's group"`
 	Directory string  `json:"directory,omitempty" jsonschema:"existing directory to open; defaults to the selected group's inherited path, then this agent's current directory"`
 	Nest      *bool   `json:"nest,omitempty" jsonschema:"when true or omitted, nest under this session, or beside it under the same parent when this session is itself a terminal; false places an un-nested terminal in group"`
+	Host      string  `json:"host,omitempty" jsonschema:"SSH connection to open the terminal on, the host list_terminals reports; omit for this machine. There it is un-nested, group defaults to the root and directory to the remote user's home"`
 }
 
 type sendTerminalArgs struct {
@@ -63,6 +65,7 @@ type createSessionArgs struct {
 	Model     string  `json:"model,omitempty" jsonschema:"model to run the CLI on, one it lists; omit to keep the CLI's own default, which is what the user set up; a wrong name is refused with the models the CLI lists"`
 	Effort    string  `json:"effort,omitempty" jsonschema:"reasoning effort, one the chosen model takes; omit to keep the CLI's own"`
 	Profile   string  `json:"profile,omitempty" jsonschema:"profile to launch the CLI under, for a CLI that has them (hermes); omit for the CLI's active one"`
+	Host      string  `json:"host,omitempty" jsonschema:"SSH connection to start the session on, the host list_sessions reports; omit for this machine. There nothing is inherited from this agent: group defaults to the root, directory to the remote user's home and tool to the one picked in that host's settings"`
 }
 
 type sessionTargetArgs struct {
@@ -109,10 +112,12 @@ type listGroupsArgs struct{}
 type createGroupArgs struct {
 	Path      string `json:"path" jsonschema:"full group path, slash separated for nesting (e.g. work/payments); every parent except the last segment must already exist"`
 	Directory string `json:"directory,omitempty" jsonschema:"default working directory sessions created in this group inherit"`
+	Host      string `json:"host,omitempty" jsonschema:"SSH connection to create the group on, the host list_groups reports; omit for this machine"`
 }
 
 type deleteGroupArgs struct {
 	Path string `json:"path" jsonschema:"full group path to delete, slash separated; groups nested under it go too"`
+	Host string `json:"host,omitempty" jsonschema:"SSH connection the group is on, the host list_groups reports; omit for this machine"`
 }
 
 type closeTerminalArgs struct {
@@ -120,11 +125,13 @@ type closeTerminalArgs struct {
 }
 
 type listTerminalsOutput struct {
-	Terminals []sessioncmd.Terminal `json:"terminals"`
+	Terminals        []terminalRow     `json:"terminals"`
+	ConnectionErrors []connectionError `json:"connection_errors,omitempty" jsonschema:"SSH connections that could not be refreshed for this list; it is never refused for them"`
 }
 
 type listSessionsOutput struct {
-	Sessions []sessioncmd.Session `json:"sessions"`
+	Sessions         []sessionRow      `json:"sessions"`
+	ConnectionErrors []connectionError `json:"connection_errors,omitempty" jsonschema:"SSH connections that could not be refreshed for this list; it is never refused for them"`
 }
 
 type taskOutput struct {
@@ -137,7 +144,8 @@ type listReservationsOutput struct {
 }
 
 type listGroupsOutput struct {
-	Groups []sessioncmd.Group `json:"groups"`
+	Groups           []groupRow        `json:"groups"`
+	ConnectionErrors []connectionError `json:"connection_errors,omitempty" jsonschema:"SSH connections that could not be refreshed for this list; it is never refused for them"`
 }
 
 type releaseFilesOutput struct {
@@ -200,12 +208,6 @@ type sessionCommands interface {
 	DeleteGroup(sessionID, path string) (sessioncmd.GroupRemoval, error)
 }
 
-// The instructions are the block a client shows its model before any tool
-// is called, and they are what makes an agent reach for these tools at all:
-// with them emptied, a model offered the same tools delegates to its own
-// subagents instead. Claude Code truncates the block at 2048 characters, so
-// each mode stays under that; what individual tool descriptions already
-// carry (the review targets, the queueing rules) is left to them.
 const instructionsIntro = `Agent Manager runs this conversation in one of the user's managed tmux sessions. The others are separate CLI processes with contexts of their own, running any CLI the user chose (Claude Code, Codex, Gemini), never subagents of this conversation. These tools operate that workspace.`
 
 const instructionsTail = `Shell work the user should see. Open a terminal when the user should watch, attach or take over, as with SSH into a host. Keep one-shot local commands in your normal tools. Call list_terminals first and reuse a running terminal when possible. create_terminal nests under this session unless nest is false, which another group needs. Use send_terminal and read_terminal, and close_terminal when that job is done unless it is left for the user.
@@ -240,7 +242,34 @@ func NewServer(configDir, sessionID, version string, proactive bool) *mcp.Server
 	return newServer(configDir, sessionID, version, proactive, sessioncmd.NewTerminals(configDir, words), sessioncmd.NewSessions(configDir, words), report.New(configDir, version))
 }
 
+func NewServerWithBackend(configDir, sessionID, version string, proactive bool, backend *sessioncmd.Backend) *mcp.Server {
+	if backend == nil {
+		panic("command backend is required")
+	}
+	words := sessioncmd.MCPVocabulary()
+	hosts := remoteSource{client: remote.New(configDir), connections: backend.Connections}
+	return newServerWithMailbox(sessionID, version, proactive, sessioncmd.NewTerminalsWithBackend(backend, words), sessioncmd.NewSessionsWithBackend(backend, words), report.New(configDir, version), backend, hosts)
+}
+
+func NewServerWithArchiveOwner(configDir, sessionID, version string, proactive bool, owner sessioncmd.ArchiveOwner) *mcp.Server {
+	words := sessioncmd.MCPVocabulary()
+	return newServer(configDir, sessionID, version, proactive, sessioncmd.NewTerminals(configDir, words), sessioncmd.NewSessionsWithArchiveOwner(configDir, words, owner), report.New(configDir, version))
+}
+
+type mailboxCommands interface {
+	Rename(context.Context, string, string) (string, error)
+	ReviewRepo(string, string) (string, error)
+	ReviewBase(string, string, string) (string, error)
+	ReviewScope(string, string) (string, error)
+	ReviewComment(string, string, bool) (string, error)
+}
+
 func newServer(configDir, sessionID, version string, proactive bool, terminals terminalCommands, sessions sessionCommands, reporter issueReporter) *mcp.Server {
+	hosts := remoteSource{client: remote.New(configDir), connections: storeConnections(configDir)}
+	return newServerWithMailbox(sessionID, version, proactive, terminals, sessions, reporter, sessioncmd.NewMailbox(configDir), hosts)
+}
+
+func newServerWithMailbox(sessionID, version string, proactive bool, terminals terminalCommands, sessions sessionCommands, reporter issueReporter, mailbox mailboxCommands, hosts remoteSource) *mcp.Server {
 	server := mcp.NewServer(
 		&mcp.Implementation{Name: "agent-manager", Version: version},
 		&mcp.ServerOptions{Instructions: serverInstructions(proactive)},
@@ -248,6 +277,7 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 	// Several CLIs register this server at user scope, so one with no caller is
 	// that CLI running outside Agent Manager, and the workspace stays closed to it.
 	noCaller := sessioncmd.RequireCaller(sessionID)
+	remotes := &remoteHosts{remoteSource: hosts, sessionID: sessionID, noCaller: noCaller, sessions: sessions, terminals: terminals}
 	spawnWhen := "Call it only when the user asks for parallel work, another agent or an independent opinion. "
 	taskListWhen := "list reads it: call it when the user asks about shared work, and before reporting progress on a fleet. "
 	if proactive {
@@ -255,7 +285,7 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 		taskListWhen = "list reads it: call it before starting work so two agents do not build the same thing, and before reporting progress on a fleet. "
 	}
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "rename",
 		Description: "Rename this session to a short 2-4 word kebab-case name for the broad feature it is about. " +
 			"Call once at the start only when the session still has a placeholder name (e.g. claude-a1b2). " +
@@ -263,10 +293,10 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 			"Prefer a broad feature name over a single subtask. " +
 			"The result reports the name Agent Manager applied, or why the session keeps its current one.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args renameArgs) (*mcp.CallToolResult, any, error) {
-		return textResult(sessioncmd.Rename(ctx, configDir, sessionID, args.Name))
+		return textResult(mailbox.Rename(ctx, sessionID, args.Name))
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "review",
 		Description: "Declare what the user's review screen shows for this session; set any of repo, base and mode together. " +
 			"repo is the git repo or worktree you are working in, so review opens there: declare it when you start in a repo or switch to another. " +
@@ -275,7 +305,7 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args reviewArgs) (*mcp.CallToolResult, any, error) {
 		var done []string
 		if args.Repo != "" {
-			message, err := sessioncmd.ReviewRepo(configDir, sessionID, args.Repo)
+			message, err := mailbox.ReviewRepo(sessionID, args.Repo)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -290,14 +320,14 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 			if ref == "auto" {
 				ref = ""
 			}
-			message, err := sessioncmd.ReviewBase(configDir, sessionID, cwd, ref)
+			message, err := mailbox.ReviewBase(sessionID, cwd, ref)
 			if err != nil {
 				return nil, nil, applyFailure(err, done)
 			}
 			done = append(done, message)
 		}
 		if args.Mode != "" {
-			message, err := sessioncmd.ReviewScope(configDir, sessionID, args.Mode)
+			message, err := mailbox.ReviewScope(sessionID, args.Mode)
 			if err != nil {
 				return nil, nil, applyFailure(err, done)
 			}
@@ -309,38 +339,43 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 		return textContent(strings.Join(done, "; ")), nil, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "review_comment",
 		Description: "Mark one sent review comment handled after addressing it, using the stable comment_id from the review prompt. " +
 			"The comment stays visible in its original review round. Pass handled false only to reopen it.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args reviewCommentArgs) (*mcp.CallToolResult, any, error) {
+		if err := localOnly("review_comment", args.CommentID); err != nil {
+			return nil, nil, err
+		}
 		handled := true
 		if args.Handled != nil {
 			handled = *args.Handled
 		}
-		return textResult(sessioncmd.ReviewComment(configDir, sessionID, args.CommentID, handled))
+		return textResult(mailbox.ReviewComment(sessionID, args.CommentID, handled))
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "list_sessions",
 		Description: "Call first whenever the work involves another agent: before delegating, before reporting what the fleet is doing, and to find the id of a session to read, prompt, revive, kill or archive. " +
 			"Lists every agent session Agent Manager knows with ids, names, CLIs, groups, directories, worktree branches, statuses (starting, working, waiting, finished, idle, errored, dead) and which row is this session. " +
 			"These are separate CLI processes running on the user's machine, each with its own context and its own conversation, and any CLI the user configured: Claude Code, Codex, Gemini and others, not only Claude. " +
 			"They are not this conversation's subagents, they outlive this conversation, and the user watches them all in one list; nothing else this session can call reports them. " +
-			"Reuse a relevant idle session instead of creating another; otherwise call create_session.",
+			"Reuse a relevant idle session instead of creating another; otherwise call create_session. " +
+			"Sessions on the user's SSH connections follow this machine's, with host set and ids written host::id, which read_session, send_session, kill_session, revive_session and archive_session take as they are.",
 		Annotations: toolAnnotations(true, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listSessionsArgs) (*mcp.CallToolResult, listSessionsOutput, error) {
-		if noCaller != nil {
-			return nil, listSessionsOutput{}, noCaller
-		}
 		listed, err := sessions.List(sessionID)
 		if err != nil {
 			return nil, listSessionsOutput{}, err
 		}
-		return textContent(sessioncmd.FormatSessionList(listed)), listSessionsOutput{Sessions: listed}, nil
+		text, output, err := remotes.listSessions(ctx, listed)
+		if err != nil {
+			return nil, listSessionsOutput{}, err
+		}
+		return textContent(text), output, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "create_session",
 		Description: "Start another agent CLI in its own Agent Manager session and hand it a task, so independent work runs beside this conversation instead of queued behind it. " +
 			"The new session is a full CLI process of its own on the user's machine, which the user can watch and type into, and it can run a different CLI than this one. " +
@@ -349,10 +384,7 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 			"Follow it with read_session and send_session; use create_terminal instead for a plain shell.",
 		Annotations: toolAnnotations(false, false, true),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args createSessionArgs) (*mcp.CallToolResult, sessioncmd.Session, error) {
-		if noCaller != nil {
-			return nil, sessioncmd.Session{}, noCaller
-		}
-		created, err := sessions.Create(sessionID, sessioncmd.CreateSessionOptions{
+		opts := sessioncmd.CreateSessionOptions{
 			Tool:      args.Tool,
 			Name:      args.Name,
 			Group:     args.Group,
@@ -362,31 +394,37 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 			Model:     args.Model,
 			Effort:    args.Effort,
 			Profile:   args.Profile,
-		})
+		}
+		create := func() (sessioncmd.Session, error) { return sessions.Create(sessionID, opts) }
+		if args.Host != "" {
+			create = func() (sessioncmd.Session, error) { return remotes.spawn(ctx, args.Host, opts) }
+		}
+		created, err := create()
 		if err != nil {
 			return nil, sessioncmd.Session{}, err
 		}
 		return textContent("created " + sessioncmd.FormatSession(created)), created, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "read_session",
 		Description: "Read what another agent's screen currently shows: call it after create_session to confirm the agent started on the task, and again to check progress, read an answer, or see why a session is waiting. " +
 			"Returns the plain text visible in that session's pane, which is the current screen rather than its full history. " +
 			"A stopped session returns the last screen Agent Manager captured.",
 		Annotations: toolAnnotations(true, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args sessionTargetArgs) (*mcp.CallToolResult, sessioncmd.SessionScreen, error) {
-		if noCaller != nil {
-			return nil, sessioncmd.SessionScreen{}, noCaller
+		read := func() (sessioncmd.SessionScreen, error) { return sessions.Read(sessionID, args.SessionID) }
+		if ref, ok := remote.ParseRef(args.SessionID); ok {
+			read = func() (sessioncmd.SessionScreen, error) { return remotes.readSession(ctx, ref) }
 		}
-		screen, err := sessions.Read(sessionID, args.SessionID)
+		screen, err := read()
 		if err != nil {
 			return nil, sessioncmd.SessionScreen{}, err
 		}
 		return textContent(sessioncmd.FormatSessionScreen(screen)), screen, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "send_session",
 		Description: "Queue a message for another agent, to give a session you spawned its next task, answer a question read_session surfaced, or redirect work going the wrong way. " +
 			"The other agent has no view of this conversation, so send a self-contained instruction. " +
@@ -397,6 +435,13 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 			"After a refusal, call message_status on the earlier message rather than sending again.",
 		Annotations: toolAnnotations(false, false, true),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args sendSessionArgs) (*mcp.CallToolResult, sessioncmd.SendResult, error) {
+		if ref, ok := remote.ParseRef(args.SessionID); ok {
+			text, result, err := remotes.send(ctx, ref, args.Message)
+			if err != nil {
+				return nil, sessioncmd.SendResult{}, err
+			}
+			return textContent(text), result, nil
+		}
 		result, err := sessions.Send(sessionID, args.SessionID, args.Message)
 		if err != nil {
 			return nil, sessioncmd.SendResult{}, err
@@ -404,7 +449,7 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 		return textContent(sessioncmd.FormatSendResult(result, args.SessionID)), result, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "message_status",
 		Description: "Check what happened to a message send_session queued: still queued, held, delivered into the agent's prompt, dropped, or answered. " +
 			"Call it when you need to know a handoff landed before you build on it, instead of reading the other agent's screen. " +
@@ -419,7 +464,7 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 		return textContent(sessioncmd.FormatMessageState(state)), state, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "wait_for_session",
 		Description: "Park until another session stops working, instead of calling read_session in a loop. " +
 			"Call it after handing an agent a task when your next step depends on its result. " +
@@ -429,8 +474,8 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 			"Follow it with read_session to see what the agent produced.",
 		Annotations: toolAnnotations(true, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args waitSessionArgs) (*mcp.CallToolResult, sessioncmd.WaitResult, error) {
-		if noCaller != nil {
-			return nil, sessioncmd.WaitResult{}, noCaller
+		if err := localOnly("wait_for_session", args.SessionID); err != nil {
+			return nil, sessioncmd.WaitResult{}, err
 		}
 		result, err := sessions.Wait(ctx, sessionID, args.SessionID, args.Until, time.Duration(args.TimeoutS)*time.Second)
 		if err != nil {
@@ -439,35 +484,43 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 		return textContent(sessioncmd.FormatWaitResult(result)), result, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "revive_session",
 		Description: "Bring a dead session back on its old row, resuming the conversation it held where its CLI supports that. " +
 			"An agent that quit while its window stayed open comes back inside that same pane. " +
 			"Call when list_sessions or send_session reports a session is not running and its work should continue.",
 		Annotations: toolAnnotations(false, false, true),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args sessionTargetArgs) (*mcp.CallToolResult, sessioncmd.Session, error) {
-		revived, err := sessions.Revive(sessionID, args.SessionID)
+		revive := func() (sessioncmd.Session, error) { return sessions.Revive(sessionID, args.SessionID) }
+		if ref, ok := remote.ParseRef(args.SessionID); ok {
+			revive = func() (sessioncmd.Session, error) { return remotes.revive(ctx, ref) }
+		}
+		revived, err := revive()
 		if err != nil {
 			return nil, sessioncmd.Session{}, err
 		}
 		return textContent("revived " + sessioncmd.FormatSession(revived)), revived, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "kill_session",
 		Description: "Stop another agent's process, ending whatever it is doing. The row stays with its last screen and can be brought back with revive_session. " +
 			"Reserve it for a session whose work is finished or has gone wrong, and prefer send_session to redirect an agent that is still useful. " +
 			"Killing interrupts work in progress on the user's machine, so ask first unless the user asked for it. To stop yourself, call kill_self.",
 		Annotations: toolAnnotations(false, true, true),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args sessionTargetArgs) (*mcp.CallToolResult, sessioncmd.Session, error) {
-		killed, err := sessions.Kill(sessionID, args.SessionID)
+		kill := func() (sessioncmd.Session, error) { return sessions.Kill(sessionID, args.SessionID) }
+		if ref, ok := remote.ParseRef(args.SessionID); ok {
+			kill = func() (sessioncmd.Session, error) { return remotes.kill(ctx, ref) }
+		}
+		killed, err := kill()
 		if err != nil {
 			return nil, sessioncmd.Session{}, err
 		}
 		return textContent("killed " + sessioncmd.FormatSession(killed)), killed, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "archive_session",
 		Description: "File a finished session out of the active list, or restore an archived one with archived false. " +
 			"Use it to keep the user's list readable once a session's work is done; the row and its last screen are kept, and a running pane keeps running. " +
@@ -478,7 +531,11 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 		if args.Archived != nil {
 			archived = *args.Archived
 		}
-		updated, err := sessions.Archive(sessionID, args.SessionID, archived)
+		archive := func() (sessioncmd.Session, error) { return sessions.Archive(sessionID, args.SessionID, archived) }
+		if ref, ok := remote.ParseRef(args.SessionID); ok {
+			archive = func() (sessioncmd.Session, error) { return remotes.archive(ctx, ref, archived) }
+		}
+		updated, err := archive()
 		if err != nil {
 			return nil, sessioncmd.Session{}, err
 		}
@@ -501,7 +558,7 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 		}
 	}
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "archive_self",
 		Description: "Archive this session once the turn making this call ends: Agent Manager stops its agent, keeps the last screen, and files the row out of the active list, the way the user's archive key does. " +
 			"Call it when the user asks you to archive yourself once the work is done, then finish your reply. Whatever the turn ends on, finished, a question to the user or an error, the archive follows it. " +
@@ -509,7 +566,7 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 		Annotations: toolAnnotations(false, true, false),
 	}, endSelf(store.AfterTurnArchive))
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "kill_self",
 		Description: "Stop this session's agent once the turn making this call ends, keeping its row and last screen in the list so revive_session can bring it back, the way the user's kill key does. " +
 			"Call it when the user asks you to kill or stop yourself once the work is done, then finish your reply. Whatever the turn ends on, finished, a question to the user or an error, the kill follows it. " +
@@ -517,7 +574,7 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 		Annotations: toolAnnotations(false, true, true),
 	}, endSelf(store.AfterTurnKill))
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "task",
 		Description: "The shared work list every session in this manager claims from; action picks the operation. " +
 			taskListWhen +
@@ -527,6 +584,9 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 			"release hands a claimed task back for another session. delete removes work that turned out not to be needed.",
 		Annotations: toolAnnotations(false, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args taskArgs) (*mcp.CallToolResult, taskOutput, error) {
+		if err := localOnly("task", append([]string{args.TaskID}, args.DependsOn...)...); err != nil {
+			return nil, taskOutput{}, err
+		}
 		switch args.Action {
 		case "list":
 			listed, err := sessions.Tasks(sessionID)
@@ -568,7 +628,7 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 		}
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "reserve_files",
 		Description: "Declare the files you are about to edit, so another agent working the same repo finds out before both of you change them. " +
 			"Call it when several sessions share one checkout and you are starting on a set of files; a session in its own worktree does not need it. " +
@@ -583,7 +643,7 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 		return textContent(sessioncmd.FormatReserveResult(result)), result, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "release_files",
 		Description: "Give back the leases you took with reserve_files once the edits are made, so another agent can take those paths. " +
 			"Omit paths to release everything this session holds.",
@@ -596,7 +656,7 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 		return textContent(sessioncmd.FormatReleased(released)), releaseFilesOutput{Released: released}, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "list_reservations",
 		Description: "See which files the other sessions are working on right now. " +
 			"Call it before editing shared code, or when planning who takes which part of a change.",
@@ -609,29 +669,38 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 		return textContent(sessioncmd.FormatReservations(listed)), listReservationsOutput{Reservations: listed}, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "list_groups",
 		Description: "List the groups sessions and terminals are filed under, with each group's default directory, worktree default and session count. " +
-			"Call before passing a group to create_session or create_terminal, since a group must already exist.",
+			"Call before passing a group to create_session or create_terminal, since a group must already exist. " +
+			"Groups on the user's SSH connections follow this machine's with host set; pass that host beside the path.",
 		Annotations: toolAnnotations(true, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listGroupsArgs) (*mcp.CallToolResult, listGroupsOutput, error) {
-		if noCaller != nil {
-			return nil, listGroupsOutput{}, noCaller
-		}
 		listed, err := sessions.Groups(sessionID)
 		if err != nil {
 			return nil, listGroupsOutput{}, err
 		}
-		return textContent(sessioncmd.FormatGroupList(listed)), listGroupsOutput{Groups: listed}, nil
+		text, output, err := remotes.listGroups(ctx, listed)
+		if err != nil {
+			return nil, listGroupsOutput{}, err
+		}
+		return textContent(text), output, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "create_group",
 		Description: "Create a group to file related sessions under, so a fleet you spawn stays together in the user's list. " +
 			"Call before create_session when the work deserves its own heading and list_groups shows no fitting group. " +
 			"Nest with a slash path such as work/payments, whose parent must already exist.",
 		Annotations: toolAnnotations(false, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args createGroupArgs) (*mcp.CallToolResult, sessioncmd.Group, error) {
+		if args.Host != "" {
+			created, err := remotes.createGroup(ctx, args.Host, args.Path, args.Directory)
+			if err != nil {
+				return nil, sessioncmd.Group{}, err
+			}
+			return textContent("created group " + created.Path + " on " + args.Host), created, nil
+		}
 		created, err := sessions.CreateGroup(sessionID, args.Path, args.Directory)
 		if err != nil {
 			return nil, sessioncmd.Group{}, err
@@ -639,13 +708,20 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 		return textContent("created group " + created.Path), created, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "delete_group",
 		Description: "Delete a group once the work filed under it is done, so a fleet does not leave a heading behind in the user's list. " +
 			"Groups nested under it go too. Any session still filed there moves to the root group rather than being stopped, " +
 			"so this never ends an agent: kill_session or archive_session those first if that is what you mean.",
 		Annotations: toolAnnotations(false, true, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args deleteGroupArgs) (*mcp.CallToolResult, sessioncmd.GroupRemoval, error) {
+		if args.Host != "" {
+			removal, err := remotes.deleteGroup(ctx, args.Host, args.Path)
+			if err != nil {
+				return nil, sessioncmd.GroupRemoval{}, err
+			}
+			return textContent(sessioncmd.FormatGroupRemoval(removal) + " on " + args.Host), removal, nil
+		}
 		removal, err := sessions.DeleteGroup(sessionID, args.Path)
 		if err != nil {
 			return nil, sessioncmd.GroupRemoval{}, err
@@ -653,79 +729,106 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 		return textContent(sessioncmd.FormatGroupRemoval(removal)), removal, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "list_terminals",
 		Description: "Call before opening a terminal for human-visible work, to find one you can reuse. " +
 			"Lists active managed terminals with ids, names, groups, current directories, statuses, whether their tmux panes are running, and the session each one is nested under. " +
-			"Reuse a relevant running terminal when possible; otherwise call create_terminal. Use the returned id with send_terminal and read_terminal.",
+			"Reuse a relevant running terminal when possible; otherwise call create_terminal. Use the returned id with send_terminal and read_terminal. " +
+			"Terminals on the user's SSH connections follow this machine's, with host set and ids written host::id.",
 		Annotations: toolAnnotations(true, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listTerminalsArgs) (*mcp.CallToolResult, listTerminalsOutput, error) {
 		listed, err := terminals.List(sessionID)
 		if err != nil {
 			return nil, listTerminalsOutput{}, err
 		}
-		output := listTerminalsOutput{Terminals: listed}
-		return textContent(sessioncmd.FormatTerminalList(listed)), output, nil
+		text, output, err := remotes.listTerminals(ctx, listed)
+		if err != nil {
+			return nil, listTerminalsOutput{}, err
+		}
+		return textContent(text), output, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "create_terminal",
 		Description: "Create a managed terminal for human-visible work such as SSH, not for one-shot local commands or other internal work. " +
 			"It nests under this session unless nest is false, which a group other than this session's needs; a terminal created from a terminal joins it as a sibling under the same agent. The group supplies the inherited directory, and directory set explicitly wins. " +
 			"Then call send_terminal with the returned id; use create_session instead for another agent CLI. Call close_terminal when the job is finished and the terminal is not being left for the user.",
 		Annotations: toolAnnotations(false, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args createTerminalArgs) (*mcp.CallToolResult, sessioncmd.Terminal, error) {
-		created, err := terminals.Create(sessionID, sessioncmd.CreateTerminalOptions{
+		opts := sessioncmd.CreateTerminalOptions{
 			Group:     args.Group,
 			Directory: args.Directory,
 			Nest:      args.Nest,
-		})
+		}
+		create := func() (sessioncmd.Terminal, error) { return terminals.Create(sessionID, opts) }
+		if args.Host != "" {
+			create = func() (sessioncmd.Terminal, error) { return remotes.createTerminal(ctx, args.Host, opts) }
+		}
+		created, err := create()
 		if err != nil {
 			return nil, sessioncmd.Terminal{}, err
 		}
 		return textContent("created " + sessioncmd.FormatTerminal(created)), created, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "send_terminal",
 		Description: "Call after list_terminals or create_terminal to run or control work in a managed terminal, keeping it visible and separate from the conversation. Provide exactly one of command or keys. " +
 			"A command is pasted and submitted with Enter, so it executes on the user's machine. " +
 			"Keys sends exact tmux key names for interactive control, such as [\"C-c\"] or [\"Up\", \"Enter\"]. Call read_terminal after sending to inspect the result.",
 		Annotations: toolAnnotations(false, true, true),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args sendTerminalArgs) (*mcp.CallToolResult, sessioncmd.TerminalInput, error) {
-		sent, err := terminals.Send(sessionID, args.TerminalID, args.Command, args.Keys)
+		send := func() (sessioncmd.TerminalInput, error) {
+			return terminals.Send(sessionID, args.TerminalID, args.Command, args.Keys)
+		}
+		if ref, ok := remote.ParseRef(args.TerminalID); ok {
+			send = func() (sessioncmd.TerminalInput, error) {
+				return remotes.sendTerminal(ctx, ref, args.Command, args.Keys)
+			}
+		}
+		sent, err := send()
 		if err != nil {
 			return nil, sessioncmd.TerminalInput{}, err
 		}
 		return textContent(sessioncmd.FormatTerminalInput(sent)), sent, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "read_terminal",
 		Description: "Call immediately after send_terminal to inspect the result, and call again as needed to monitor ongoing work. " +
 			"Returns the plain-text content currently visible in the managed terminal pane. This is the current screen, not the pane's full scrollback history.",
 		Annotations: toolAnnotations(true, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args readTerminalArgs) (*mcp.CallToolResult, sessioncmd.TerminalScreen, error) {
-		screen, err := terminals.Read(sessionID, args.TerminalID)
+		read := func() (sessioncmd.TerminalScreen, error) { return terminals.Read(sessionID, args.TerminalID) }
+		if ref, ok := remote.ParseRef(args.TerminalID); ok {
+			read = func() (sessioncmd.TerminalScreen, error) { return remotes.readTerminal(ctx, ref) }
+		}
+		screen, err := read()
 		if err != nil {
 			return nil, sessioncmd.TerminalScreen{}, err
 		}
 		return textContent(sessioncmd.FormatTerminalScreen(screen)), screen, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
+	addTool(server, noCaller, &mcp.Tool{
 		Name: "close_terminal",
 		Description: "Delete a terminal nested under this session once its job is finished: kills the pane and removes the row. " +
 			"Leave it running when you opened it for the user (for example an SSH session they may attach to). " +
 			"Refuses agent sessions, un-nested terminals, and terminals under another session.",
 		Annotations: toolAnnotations(false, true, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args closeTerminalArgs) (*mcp.CallToolResult, any, error) {
-		if err := terminals.Close(sessionID, args.TerminalID); err != nil {
+		closeTerminal := func() error { return terminals.Close(sessionID, args.TerminalID) }
+		if ref, ok := remote.ParseRef(args.TerminalID); ok {
+			closeTerminal = func() error { return remotes.closeTerminal(ctx, ref) }
+		}
+		if err := closeTerminal(); err != nil {
 			return nil, nil, err
 		}
 		return textContent("closed terminal " + args.TerminalID), nil, nil
 	})
 
+	// Filing an issue touches no session, so a CLI outside Agent Manager may
+	// still report a bug in the manager itself.
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "report_issue",
 		Description: "File a bug report or a feature request on Agent Manager's public GitHub repo for the user. " +
@@ -751,6 +854,19 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 	})
 
 	return server
+}
+
+// addTool registers a tool that refuses outright when the server has no
+// calling session, so no tool, present or future, opens the workspace to a
+// CLI running outside Agent Manager.
+func addTool[In, Out any](server *mcp.Server, noCaller error, tool *mcp.Tool, handler mcp.ToolHandlerFor[In, Out]) {
+	mcp.AddTool(server, tool, func(ctx context.Context, req *mcp.CallToolRequest, args In) (*mcp.CallToolResult, Out, error) {
+		if noCaller != nil {
+			var none Out
+			return nil, none, noCaller
+		}
+		return handler(ctx, req, args)
+	})
 }
 
 func toolAnnotations(readOnly, destructive, openWorld bool) *mcp.ToolAnnotations {
@@ -796,7 +912,30 @@ func Run(configDir, sessionID, version string) error {
 	if err != nil {
 		return err
 	}
-	err = NewServer(configDir, sessionID, version, proactive).Run(context.Background(), &mcp.StdioTransport{})
+	return runServer(NewServer(configDir, sessionID, version, proactive))
+}
+
+func RunWithBackend(configDir, sessionID, version string, backend *sessioncmd.Backend) error {
+	if backend == nil {
+		panic("command backend is required")
+	}
+	proactive, err := backend.ProactiveCoordination()
+	if err != nil {
+		return err
+	}
+	return runServer(NewServerWithBackend(configDir, sessionID, version, proactive, backend))
+}
+
+func RunWithArchiveOwner(configDir, sessionID, version string, owner sessioncmd.ArchiveOwner) error {
+	proactive, err := sessioncmd.ProactiveCoordination(configDir)
+	if err != nil {
+		return err
+	}
+	return runServer(NewServerWithArchiveOwner(configDir, sessionID, version, proactive, owner))
+}
+
+func runServer(server *mcp.Server) error {
+	err := server.Run(context.Background(), &mcp.StdioTransport{})
 	// The SDK reports an abrupt pipe close as an internal "server is
 	// closing" wire error that wraps EOF without errors.Is support.
 	if err != nil && (errors.Is(err, io.EOF) || strings.Contains(err.Error(), "server is closing")) {

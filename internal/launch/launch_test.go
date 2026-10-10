@@ -113,9 +113,6 @@ func TestAssembleNotesCoordinationOnlyForToolsWithoutMCP(t *testing.T) {
 			t.Fatalf("command-code registers MCP on spawn, so it must not get the subcommand note, got %q", commandCode.Command)
 		}
 
-		// A slash command carries neither, so both queue, and the order is what
-		// the agent reads: the directive ends on "Then continue.", and the note
-		// is what it continues into.
 		deferred := Assemble("pi", noClient, "/compact the notes", true, mode.proactive)
 		if len(deferred.PendingInputs) != 2 ||
 			deferred.PendingInputs[0] != DeferredRenameDirective || deferred.PendingInputs[1] != mode.note {

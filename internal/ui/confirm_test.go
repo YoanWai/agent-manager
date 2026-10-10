@@ -13,13 +13,13 @@ import (
 func TestConfirmRendersAsADialog(t *testing.T) {
 	m := buildModel(t)
 	m.mode = modeConfirmDelete
-	m.confirm = confirmTarget{
+	m.confirm.confirmTarget = confirmTarget{
 		action:   actionKill,
 		sessions: []store.Session{{ID: "one", Name: "builder"}},
 		label:    "kill builder? frees its RAM, v revives it.",
 	}
 
-	out := ansi.Strip(m.View())
+	out := ansi.Strip(preparedView(m))
 	for _, want := range []string{"Kill session", "kill builder?", "frees its RAM", "cancel"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("confirm dialog missing %q:\n%s", want, out)
@@ -44,8 +44,8 @@ func TestConfirmTitleNamesTheAct(t *testing.T) {
 		{actionRestore, false, "Restore session"},
 	}
 	for _, tc := range cases {
-		m.confirm = confirmTarget{action: tc.action, isGroup: tc.isGroup}
-		if got := m.confirmTitle(); !strings.Contains(got, tc.want) {
+		m.confirm.confirmTarget = confirmTarget{action: tc.action, isGroup: tc.isGroup}
+		if got := m.confirm.title(); !strings.Contains(got, tc.want) {
 			t.Errorf("action %q group=%v titled %q, want it to name %q", tc.action, tc.isGroup, got, tc.want)
 		}
 	}

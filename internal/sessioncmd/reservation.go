@@ -81,7 +81,7 @@ func (s *Sessions) Reserve(sessionID string, patterns []string, mode, note strin
 	if err != nil {
 		return ReserveResult{}, err
 	}
-	defer runtime.store.Close()
+	defer runtime.Close()
 	caller, err := runtime.caller(sessionID)
 	if err != nil {
 		return ReserveResult{}, err
@@ -125,7 +125,7 @@ func (s *Sessions) ReleaseFiles(sessionID string, patterns []string) (int, error
 	if err != nil {
 		return 0, err
 	}
-	defer runtime.store.Close()
+	defer runtime.Close()
 	caller, err := runtime.caller(sessionID)
 	if err != nil {
 		return 0, err
@@ -163,7 +163,7 @@ func (s *Sessions) Reservations(sessionID string) ([]Reservation, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer runtime.store.Close()
+	defer runtime.Close()
 	caller, err := runtime.caller(sessionID)
 	if err != nil {
 		return nil, err

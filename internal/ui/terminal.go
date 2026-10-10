@@ -1,12 +1,14 @@
 package ui
 
 import (
+	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
-	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -18,98 +20,183 @@ import (
 const terminalKeyWindow = 250 * time.Millisecond
 
 func (m *Model) shellTool() (string, config.Tool) {
-	return m.cfg.ShellTool()
+	return m.services.cfg.ShellTool()
 }
 
 // isShell reports whether a session's tool opens a shell rather than an
 // agent. A tool the binary no longer ships answers false: a name we cannot
 // resolve is not something we can claim runs a shell.
 func (m *Model) isShell(toolName string) bool {
-	return m.cfg.Tools[toolName].Shell
+	return m.services.cfg.Tools[toolName].Shell
 }
 
 // terminalKey spawns a shell unless T arrived inside the burst a held key
-// sends. The window is measured from the end of the previous T's work, not
-// from its arrival: the spawn runs on the update path, so the keystroke a
-// burst queued behind it is only read once it finishes, and an interval
-// measured from arrival would be the spawn's own duration rather than the
-// gap the keyboard produced. Each keystroke pushes the window out, so
-// holding T spawns one shell however long it is held. The other keys that
-// create something open a form first, which absorbs a burst on its own.
+// sends. Each keystroke pushes the window out, and the async spawn completion
+// starts it again, so a burst queued while tmux creates the pane still makes
+// one shell.
 func (m *Model) terminalKey() (tea.Model, tea.Cmd) {
-	if time.Since(m.terminalKeyAt) < terminalKeyWindow {
-		m.terminalKeyAt = time.Now()
+	if time.Since(m.ledger.terminalKeyAt) < terminalKeyWindow {
+		m.ledger.terminalKeyAt = time.Now()
 		return m, nil
 	}
 	model, cmd := m.openTerminal()
-	m.terminalKeyAt = time.Now()
+	m.ledger.terminalKeyAt = time.Now()
 	return model, cmd
 }
 
-// openTerminal spawns a shell tab in the group under the cursor. The block
-// carries no command, and tmux.Create leaves such a pane on the user's
-// shell, so no prompt, rename directive or MCP registration applies to a
-// session there is no agent to send them to.
 func (m *Model) openTerminal() (tea.Model, tea.Cmd) {
-	toolName, tool := m.shellTool()
-	dir, ok := m.rowDir()
-	if !ok {
-		m.errBar.text = "no directory to open a terminal in: " + dir
-		return m, nil
-	}
-	sess := store.Session{
-		ID:     newID(),
-		Tool:   toolName,
-		Cwd:    dir,
-		Group:  m.contextGroup(),
-		Status: status.Starting,
-	}
-	if entry, ok := m.selectedRow(); ok && !entry.isGroup {
-		if m.isShell(entry.sess.Tool) {
-			sess.ParentID = entry.sess.ParentID
-		} else {
-			sess.ParentID = entry.sess.ID
-		}
-		sess.Group = entry.sess.Group
-	}
-	sess.Name = sessioncmd.ShellName(toolName, sess.ParentID, newID()[:4], m.sessions)
-	if err := m.launchNewSession(sess, tool, tool.Command, launchOptions{}); err != nil {
-		m.errBar.text = err.Error()
-		return m, nil
-	}
-	// Starting sits outside the attention set, so the row the key just made
-	// would be filtered off screen.
-	m.statusFilter = statusFilterAll
-	m.errBar.text = ""
-	m.focusSession(sess.ID)
-	return m, m.refreshCmd()
+	return m.openTerminalWithReader(systemTerminalDirectoryReader{
+		tmux: m.services.tmux,
+		dirs: systemDirectoryPreflight{git: m.services.gitDrv},
+	})
 }
 
-// sessionDir is where the session's agent sits now, which follows a /cd or
-// a worktree the agent entered, falling back to its launch directory once
-// the pane is gone.
+type terminalDirectoryRequest struct {
+	target        terminalDirectoryTarget
+	paneID        string
+	rawDir        string
+	fallbacks     []string
+	foregroundGen uint64
+	rowKey        string
+	returnID      string
+	mode          mode
+	editor        editorResolution
+}
+
+type terminalDirectoryTarget uint8
+
+const (
+	terminalDirectorySpawn terminalDirectoryTarget = iota
+	terminalDirectoryEditor
+)
+
+type terminalDirectoryMsg struct {
+	request terminalDirectoryRequest
+	dir     string
+	ok      bool
+	editor  editorLaunch
+}
+
+type terminalDirectoryReader interface {
+	resolve(terminalDirectoryRequest) (string, bool)
+}
+
+type systemTerminalDirectoryReader struct {
+	tmux *tmux.Driver
+	dirs directoryPreflight
+}
+
+func (r systemTerminalDirectoryReader) resolve(request terminalDirectoryRequest) (string, bool) {
+	if request.paneID != "" {
+		if path, err := r.tmux.PaneCurrentPath(request.paneID); err == nil && isDir(path) {
+			if resolved, resolveErr := filepath.EvalSymlinks(path); resolveErr == nil {
+				path = resolved
+			}
+			return path, true
+		}
+	}
+	return r.dirs.resolve(request.rawDir, request.fallbacks)
+}
+
+func terminalDirectoryCmd(request terminalDirectoryRequest, reader terminalDirectoryReader) tea.Cmd {
+	request.fallbacks = slices.Clone(request.fallbacks)
+	return func() tea.Msg {
+		dir, ok := reader.resolve(request)
+		var editor editorLaunch
+		if ok && request.target == terminalDirectoryEditor {
+			editor = request.editor.prepare(dir)
+		}
+		return terminalDirectoryMsg{request: request, dir: dir, ok: ok, editor: editor}
+	}
+}
+
+func (m *Model) openTerminalWithReader(reader terminalDirectoryReader) (tea.Model, tea.Cmd) {
+	request, ok := m.captureTerminalDirectory(terminalDirectorySpawn)
+	if !ok {
+		m.reportErr("no directory to open a terminal in")
+		return m, nil
+	}
+	toolName, _ := m.shellTool()
+	w, h := m.paneTargetSize()
+	spawn := spawnRequest{
+		kind: spawnShell, toolName: toolName,
+		pane:         sessioncmd.PaneSize{Width: w, Height: h},
+		terminalDir:  request,
+		terminalRead: reader,
+	}
+	entry, _ := m.selectedRow()
+	spawn.group = entry.group
+	if !entry.isGroup {
+		spawn.group = entry.sess.Group
+		if m.isShell(entry.sess.Tool) {
+			spawn.parentID = entry.sess.ParentID
+		} else {
+			spawn.parentID = entry.sess.ID
+		}
+	}
+	spawn.name = sessioncmd.ShellName(toolName, spawn.parentID, newID()[:4], m.workspace.sessions)
+	m.dispatchSpawn(spawn)
+	return m, m.nextEffectCmd()
+}
+
+func (m *Model) captureTerminalDirectory(target terminalDirectoryTarget) (terminalDirectoryRequest, bool) {
+	entry, ok := m.selectedRow()
+	if !ok {
+		return terminalDirectoryRequest{}, false
+	}
+	request := terminalDirectoryRequest{target: target, foregroundGen: m.gens.foreground, rowKey: rowKey(entry), mode: m.mode}
+	if entry.isGroup {
+		request.rawDir = m.workspace.groupPaths[entry.group]
+		request.fallbacks = m.groupDirectoryFallbacks(entry.group)
+	} else {
+		request.paneID = entry.sess.ID
+		request.fallbacks = []string{entry.sess.Cwd}
+	}
+	return request, true
+}
+
+func (m *Model) groupDirectoryFallbacks(group string) []string {
+	var fallbacks []string
+	for path := parentGroup(group); path != ""; path = parentGroup(path) {
+		if dir := m.workspace.groupPaths[path]; dir != "" {
+			fallbacks = append(fallbacks, dir)
+		}
+	}
+	return append(fallbacks, m.env.workDir)
+}
+
+func (m *Model) handleTerminalDirectory(msg terminalDirectoryMsg) (tea.Model, tea.Cmd) {
+	if msg.request.target == terminalDirectoryEditor {
+		entry, selected := m.selectedRow()
+		if m.effects.quitting || msg.request.foregroundGen != m.gens.foreground || m.mode != msg.request.mode || !selected || rowKey(entry) != msg.request.rowKey {
+			return m, nil
+		}
+	}
+	if !msg.ok {
+		if msg.request.target == terminalDirectoryEditor {
+			m.reportErr("directory no longer exists: " + msg.dir)
+		} else {
+			m.reportErr("no directory to open a terminal in")
+		}
+		return m, nil
+	}
+	if msg.request.target == terminalDirectoryEditor {
+		returnTo := editorReturnTarget{}
+		if msg.request.returnID != "" {
+			returnTo = editorReturnTarget{
+				sessionID:     msg.request.returnID,
+				foregroundGen: msg.request.foregroundGen,
+				mode:          msg.request.mode,
+			}
+		}
+		return m.launchEditor(msg.editor, returnTo)
+	}
+	return m, nil
+}
+
 func (m *Model) sessionDir(sess store.Session) string {
-	if path := m.panes[sess.ID].Path; path != "" {
+	if path := m.workspace.panes[sess.ID].Path; path != "" {
 		return path
 	}
 	return sess.Cwd
-}
-
-// rowDir is the directory the cursor points at: a live session's pane
-// directory, which follows wherever its shell or agent moved, falling back
-// to the directory it was created in; for a group, its default path. Both
-// paths are checked, so a directory removed under a running session cannot
-// hand back somewhere that is no longer there.
-func (m *Model) rowDir() (string, bool) {
-	entry, ok := m.selectedRow()
-	if !ok {
-		return "", false
-	}
-	if entry.isGroup {
-		return resolveExistingDir(m.groupPaths[entry.group], m.groupDefaultDir(entry.group))
-	}
-	if path, err := m.tmux.PaneCurrentPath(entry.sess.ID); err == nil && isDir(path) {
-		return path, true
-	}
-	return entry.sess.Cwd, isDir(entry.sess.Cwd)
 }

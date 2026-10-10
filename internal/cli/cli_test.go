@@ -6,12 +6,16 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/YoanWai/agent-manager/internal/update"
 )
 
@@ -21,6 +25,7 @@ type fakeSessions struct {
 	callerID  string
 	targetID  string
 	message   string
+	from      *string
 	opts      sessioncmd.CreateSessionOptions
 	until     []string
 	timeout   time.Duration
@@ -55,6 +60,12 @@ func (f *fakeSessions) List(sessionID string) ([]sessioncmd.Session, error) {
 	return []sessioncmd.Session{f.session}, f.failWith
 }
 
+func (f *fakeSessions) Snapshot(sessionID string) (sessioncmd.Snapshot, error) {
+	f.callerID = sessionID
+	f.callCount++
+	return sessioncmd.Snapshot{Version: sessioncmd.SnapshotVersion, ManagerAwake: true, Sessions: []sessioncmd.Session{f.session}}, f.failWith
+}
+
 func (f *fakeSessions) Create(sessionID string, opts sessioncmd.CreateSessionOptions) (sessioncmd.Session, error) {
 	f.callerID, f.opts = sessionID, opts
 	return f.session, f.failWith
@@ -63,6 +74,11 @@ func (f *fakeSessions) Create(sessionID string, opts sessioncmd.CreateSessionOpt
 func (f *fakeSessions) Send(sessionID, targetID, message string) (sessioncmd.SendResult, error) {
 	f.callerID, f.targetID, f.message = sessionID, targetID, message
 	return sessioncmd.SendResult{MessageID: 7, QueuePosition: 1, ManagerAwake: true}, f.failWith
+}
+
+func (f *fakeSessions) SendFrom(sessionID, senderName, targetID, message string) (sessioncmd.SendResult, error) {
+	f.callerID, f.from, f.targetID, f.message = sessionID, &senderName, targetID, message
+	return sessioncmd.SendResult{MessageID: 8, QueuePosition: 2}, f.failWith
 }
 
 func (f *fakeSessions) Read(sessionID, targetID string) (sessioncmd.SessionScreen, error) {
@@ -230,8 +246,10 @@ func TestALayerFailureReachesTheCaller(t *testing.T) {
 		run  func(io.Writer, []string) error
 	}{
 		{"sessions", nil, func(out io.Writer, args []string) error { return runSessions(out, sessions, args, "cafe0001") }},
+		{"snapshot", []string{"--json"}, func(out io.Writer, args []string) error { return runSnapshot(out, sessions, args, "cafe0001") }},
 		{"spawn", nil, func(out io.Writer, args []string) error { return runSpawn(out, sessions, args, "cafe0001") }},
 		{"send", []string{"beef1234", "ship it"}, func(out io.Writer, args []string) error { return runSend(out, sessions, args, "cafe0001") }},
+		{"send --from", []string{"beef1234", "ship it", "--from", "laptop-agent"}, func(out io.Writer, args []string) error { return runSend(out, sessions, args, "") }},
 		{"read", []string{"beef1234"}, func(out io.Writer, args []string) error { return runRead(out, sessions, args, "cafe0001") }},
 		{"wait", []string{"beef1234"}, func(out io.Writer, args []string) error { return runWait(out, sessions, args, "cafe0001") }},
 		{"message-status", []string{"7"}, func(out io.Writer, args []string) error { return runMessageStatus(out, sessions, args, "cafe0001") }},
@@ -499,7 +517,7 @@ func TestCommandsThatActAsNoSessionNeverResolveACaller(t *testing.T) {
 func TestCommandsAndHelpCoverEverySection(t *testing.T) {
 	table := Commands("dev")
 	registered := []string{
-		"sessions", "spawn", "send", "read", "wait", "message-status", "kill", "revive", "archive", "archive-self", "kill-self",
+		"sessions", "snapshot", "spawn", "send", "read", "wait", "message-status", "kill", "revive", "archive", "archive-self", "kill-self",
 		"groups", "create-group", "delete-group", "task", "reserve", "release-files", "reservations", "terminal",
 		"rename", "review-repo", "review-base", "review-mode", "review-comment", "issue", "feature", "update",
 	}
@@ -520,9 +538,6 @@ func TestCommandsAndHelpCoverEverySection(t *testing.T) {
 	}
 }
 
-// An agent without an MCP client learns the commands from help, so help
-// carries the user's coordination mode: on request asks it to wait for the
-// user, and proactive leaves the commands to be used on the agent's own.
 func TestHelpCarriesTheCoordinationMode(t *testing.T) {
 	const waitForTheUser = "only when the user asks"
 	if help := Help("dev", false); !strings.Contains(help, waitForTheUser) {
@@ -530,5 +545,78 @@ func TestHelpCarriesTheCoordinationMode(t *testing.T) {
 	}
 	if help := Help("dev", true); strings.Contains(help, waitForTheUser) {
 		t.Fatalf("proactive help still holds the agent back:\n%s", help)
+	}
+}
+
+func TestBoundReviewCommandsRejectClosedBackend(t *testing.T) {
+	backend := sessioncmd.OpenBackend(t.TempDir())
+	if err := backend.Close(); err != nil {
+		t.Fatal(err)
+	}
+	commands := CommandsWithBackend("test", backend)
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"rename", []string{"worker"}}, {"review-repo", []string{"."}},
+		{"review-base", []string{"--clear"}}, {"review-mode", []string{"staged"}},
+		{"review-comment", []string{"0123456789abcdef"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			err := commands[tc.name](tc.args, func() string { return "cafe" }, dir)
+			if err == nil || !strings.Contains(err.Error(), "backend is closed") {
+				t.Fatalf("error = %v, want closed backend", err)
+			}
+			if _, err := os.Stat(hooks.NewManager(dir).ReviewScopeFile("cafe")); !os.IsNotExist(err) {
+				t.Fatalf("alternate mailbox touched: %v", err)
+			}
+		})
+	}
+}
+
+func TestBoundMailboxCommandsIgnoreAlternateProfile(t *testing.T) {
+	dir, alternate := t.TempDir(), t.TempDir()
+	st, err := store.Open(filepath.Join(dir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	backend, err := sessioncmd.BorrowBackend(sessioncmd.Runtime{Store: st, Driver: new(tmux.Driver), Hooks: hooks.NewManager(dir), Snapshot: st.SetSnapshot})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const comment = "0123456789abcdef"
+	if err := st.SetReviewState("cafe", "/repo", store.ReviewState{Comments: []store.ReviewComment{{ID: comment, Round: 1, Point: 1, Text: "fix"}}}); err != nil {
+		t.Fatal(err)
+	}
+	repo := initRepo(t)
+	t.Chdir(repo)
+	commands := CommandsWithBackend("test", backend)
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"rename", []string{"worker"}}, {"review-repo", []string{repo}},
+		{"review-base", []string{"--clear"}}, {"review-mode", []string{"staged"}},
+		{"review-comment", []string{comment}},
+	} {
+		if err := commands[tc.name](tc.args, func() string { return "cafe" }, alternate); err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+	}
+	mailbox := hooks.NewManager(dir)
+	for _, path := range []string{mailbox.NameFile("cafe"), mailbox.ReviewRepoFile("cafe"), mailbox.ReviewBaseFile("cafe"), mailbox.ReviewScopeFile("cafe")} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("bound mailbox %s: %v", path, err)
+		}
+	}
+	state, err := st.ReviewState("cafe", "/repo")
+	if err != nil || len(state.Comments) != 1 || !state.Comments[0].Resolved {
+		t.Fatalf("bound comment=%+v err=%v", state, err)
+	}
+	entries, err := os.ReadDir(alternate)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("alternate profile touched: %v %v", entries, err)
 	}
 }

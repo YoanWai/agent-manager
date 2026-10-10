@@ -111,7 +111,7 @@ func TestThemeTextContrast(t *testing.T) {
 		}
 		// Badges paint Bg as bold ink on an accent fill, so both accents
 		// have to clear the large-text floor against the backdrop tone.
-		for token, accent := range map[string]string{"Accent": theme.Accent, "Accent2": theme.Accent2} {
+		for token, accent := range map[string]string{"Accent": theme.Accent, "Accent2": theme.Accent2, "Remote": theme.Remote} {
 			if ratio := contrastRatio(theme.Bg, accent); ratio < 3.0 {
 				t.Errorf("%s: Bg %s on %s fill %s contrast %.2f, want >= 3.0",
 					theme.Name, theme.Bg, token, accent, ratio)
@@ -162,18 +162,18 @@ func TestThemeSwitchPushesPaneBackground(t *testing.T) {
 	t.Cleanup(func() { applyTheme(themes[0]) })
 	// Global options only stick while a server is up, and a server with no
 	// sessions exits at once, so one session holds it open.
-	if err := m.tmux.Create("panebg", "/tmp", "", nil, 0, 0); err != nil {
+	if err := m.services.tmux.Create("panebg", "/tmp", "", nil, 0, 0); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	t.Cleanup(func() { m.tmux.Kill("panebg") })
+	t.Cleanup(func() { m.services.tmux.Kill("panebg") })
 	t.Cleanup(func() { tmuxCmd("set-option", "-gu", "window-style").Run() })
 
 	m.openSettings()
-	m.settings.field = settingsFieldTheme
+	m.settings.dialog.field = settingsFieldTheme
 
 	light := themes[themeIndex("solarized light")]
-	m.settings.themeIndex = themeIndex("solarized light") - 1
-	if cmd := m.cycleSetting(1); cmd != nil {
+	m.settings.dialog.themeIndex = themeIndex("solarized light") - 1
+	if cmd := m.settings.cycleSetting(m, 1); cmd != nil {
 		if msg := cmd(); msg != nil {
 			m.Update(msg)
 		}
@@ -185,8 +185,8 @@ func TestThemeSwitchPushesPaneBackground(t *testing.T) {
 		t.Errorf("light theme pushed window-style %q, want its own backdrop %q", got, want)
 	}
 
-	m.settings.themeIndex = themeIndex("nord") - 1
-	if cmd := m.cycleSetting(1); cmd != nil {
+	m.settings.dialog.themeIndex = themeIndex("nord") - 1
+	if cmd := m.settings.cycleSetting(m, 1); cmd != nil {
 		if msg := cmd(); msg != nil {
 			m.Update(msg)
 		}

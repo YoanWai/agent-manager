@@ -2,6 +2,7 @@ package tmux
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +15,52 @@ import (
 	"testing"
 	"time"
 )
+
+type blockingWriteCloser struct {
+	started chan struct{}
+	closed  chan struct{}
+	once    sync.Once
+}
+
+type countingWriteCloser struct {
+	mu     sync.Mutex
+	closes int
+}
+
+func (w *countingWriteCloser) Write(data []byte) (int, error) { return len(data), nil }
+
+func (w *countingWriteCloser) Close() error {
+	w.mu.Lock()
+	w.closes++
+	w.mu.Unlock()
+	return nil
+}
+
+func (w *countingWriteCloser) closeCount() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.closes
+}
+
+func newBlockingWriteCloser() *blockingWriteCloser {
+	return &blockingWriteCloser{started: make(chan struct{}), closed: make(chan struct{})}
+}
+
+func (w *blockingWriteCloser) Write([]byte) (int, error) {
+	w.once.Do(func() { close(w.started) })
+	<-w.closed
+	return 0, io.ErrClosedPipe
+}
+
+func (w *blockingWriteCloser) Close() error {
+	w.once.Do(func() { close(w.started) })
+	select {
+	case <-w.closed:
+	default:
+		close(w.closed)
+	}
+	return nil
+}
 
 // fakeServer feeds scripted control-mode output to a Control and records
 // what the client writes, standing in for a tmux server.
@@ -114,9 +161,13 @@ func TestControlSendBlocksClaimsEveryReplyBlock(t *testing.T) {
 	server := newFakeServer()
 	server.send("%begin 1 0 0", "%end 1 0 0")
 
-	if err := server.control.SendBlocks("if-shell -F 1 'send-keys x' 'display-message -p'", 2); err != nil {
-		t.Fatalf("SendBlocks: %v", err)
-	}
+	// Send waits for its acknowledgement here, so both commands are queued
+	// before any reply arrives, the way they are on a busy server.
+	sent := make(chan error, 1)
+	go func() {
+		sent <- server.control.SendBlocks("if-shell -F 1 'send-keys x' 'display-message -p'", 2)
+	}()
+	waitWritten(t, server, "display-message -p'\n")
 	got := make(chan string, 1)
 	go func() {
 		text, _ := server.control.Command("capture-pane -p")
@@ -126,6 +177,14 @@ func TestControlSendBlocksClaimsEveryReplyBlock(t *testing.T) {
 
 	server.send("%begin 2 1 1", "%end 2 1 1", "%begin 2 2 1", "%end 2 2 1",
 		"%begin 2 3 1", "pane row", "%end 2 3 1")
+	select {
+	case err := <-sent:
+		if err != nil {
+			t.Fatalf("SendBlocks: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("SendBlocks never resolved")
+	}
 	select {
 	case text := <-got:
 		if text != "pane row" {
@@ -213,6 +272,39 @@ func TestControlCommandTimesOut(t *testing.T) {
 	}
 	if waited := time.Since(start); waited > commandTimeout+time.Second {
 		t.Fatalf("timeout took %v", waited)
+	}
+}
+
+func TestControlCommandContextCancelsABlockedPipeWrite(t *testing.T) {
+	stdin := newBlockingWriteCloser()
+	stdoutRead, stdoutWrite := io.Pipe()
+	control := newControl(stdin, stdoutRead)
+	t.Cleanup(func() { _ = stdoutWrite.Close() })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := control.CommandContext(ctx, "capture-pane -p")
+		done <- err
+	}()
+	select {
+	case <-stdin.started:
+	case <-time.After(time.Second):
+		t.Fatal("control write never started")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("CommandContext error = %v, want context.Canceled", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("canceled pipe write did not return")
+	}
+	select {
+	case <-control.Done():
+	case <-time.After(time.Second):
+		t.Fatal("canceled write left the unusable control client open")
 	}
 }
 
@@ -522,6 +614,148 @@ func TestAttachGateOrdersCallsAroundControlClients(t *testing.T) {
 	}
 }
 
+func TestControlCloseTimeoutDoesNotBypassAnActiveHandshake(t *testing.T) {
+	driver, _, release := stubTmux(t)
+	release("greet")
+	control, err := driver.OpenControl("first")
+	if err != nil {
+		t.Fatalf("OpenControl: %v", err)
+	}
+
+	// Stand in for another process whose new control client is between attach
+	// and greeting. Closing the first client here would notify that handshake
+	// and can crash tmux before 3.7.
+	releaseHandshake, err := enterGateContext(context.Background(), driver.socket, true)
+	if err != nil {
+		t.Fatalf("hold handshake gate: %v", err)
+	}
+	held := true
+	t.Cleanup(func() {
+		if held {
+			releaseHandshake()
+		}
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	closed := make(chan error, 1)
+	go func() { closed <- control.CloseContext(ctx) }()
+	select {
+	case err := <-closed:
+		t.Fatalf("CloseContext bypassed the active handshake after its deadline: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	releaseHandshake()
+	held = false
+	select {
+	case err := <-closed:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("CloseContext error = %v, want context deadline", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("CloseContext did not clean up after the handshake finished")
+	}
+}
+
+func TestControlCommandWaitsForAnotherProcessHandshake(t *testing.T) {
+	driver := requireTmux(t)
+	id := "gatecommand" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", "cat >/dev/null", nil, 80, 24); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+	control, err := driver.OpenControl(id)
+	if err != nil {
+		t.Fatalf("OpenControl: %v", err)
+	}
+	t.Cleanup(func() { _ = control.Close() })
+
+	held, releaseHandshake := holdGateInOtherProcess(t, driver)
+	select {
+	case err := <-held:
+		if err != nil {
+			t.Fatalf("other process handshake gate: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("other process did not acquire the handshake gate")
+	}
+
+	commanded := make(chan error, 1)
+	go func() {
+		_, err := control.Command("display-message -p ready")
+		commanded <- err
+	}()
+	requireHeld(t, commanded, "control command bypassed another process's handshake gate")
+	releaseHandshake()
+	select {
+	case err := <-commanded:
+		if err != nil {
+			t.Fatalf("Command after handshake: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("control command did not resume after the handshake gate released")
+	}
+}
+
+func TestRepeatedControlCloseWaitsForAnotherProcessHandshake(t *testing.T) {
+	stdin := &countingWriteCloser{}
+	reaped := make(chan struct{})
+	control := &Control{
+		cmd:           &exec.Cmd{},
+		socket:        testSocket,
+		stdin:         stdin,
+		done:          make(chan struct{}),
+		reaped:        reaped,
+		cancelProcess: func() {},
+	}
+
+	// Model a subprocess that does not reap within the first close's cleanup
+	// budget. The client is marked closed, but a later close still has work to
+	// do and must reacquire the gate before closing or aborting it again.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	err := control.CloseContext(ctx)
+	cancel()
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("first CloseContext error = %v, want context deadline", err)
+	}
+	before := stdin.closeCount()
+
+	held, releaseHandshake := holdGateInOtherProcess(t, &Driver{bin: "unused", socket: testSocket})
+	select {
+	case err := <-held:
+		if err != nil {
+			t.Fatalf("other process handshake gate: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("other process did not acquire the handshake gate")
+	}
+
+	ctx, cancel = context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	closed := make(chan error, 1)
+	go func() { closed <- control.CloseContext(ctx) }()
+	select {
+	case err := <-closed:
+		t.Fatalf("repeated CloseContext bypassed the active handshake: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if got := stdin.closeCount(); got != before {
+		t.Fatalf("repeated CloseContext touched stdin behind the gate: closes=%d, want %d", got, before)
+	}
+
+	close(reaped)
+	releaseHandshake()
+	select {
+	case err := <-closed:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("repeated CloseContext error = %v, want context deadline", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("repeated CloseContext did not finish after the handshake released")
+	}
+}
+
 func TestAttachGateHoldsAnotherProcess(t *testing.T) {
 	driver, calls, release := stubTmux(t)
 
@@ -687,10 +921,67 @@ func startOtherProcess(t *testing.T, driver *Driver, action, id string) <-chan e
 	return first
 }
 
+// holdGateInOtherProcess stands in for a second manager whose control client
+// is between attach and greeting. The returned channel closes that process's
+// stdin, releasing its exclusive cross-process gate.
+func holdGateInOtherProcess(t *testing.T, driver *Driver) (<-chan error, func()) {
+	t.Helper()
+	other := exec.Command(os.Args[0], driver.bin, "unused")
+	other.Env = append(os.Environ(), otherProcessEnv+"=gate")
+	stdin, err := other.StdinPipe()
+	if err != nil {
+		t.Fatalf("gate process stdin: %v", err)
+	}
+	stdout, err := other.StdoutPipe()
+	if err != nil {
+		t.Fatalf("gate process stdout: %v", err)
+	}
+	var stderr strings.Builder
+	other.Stderr = &stderr
+	if err := other.Start(); err != nil {
+		t.Fatalf("start gate process: %v", err)
+	}
+	lines := bufio.NewScanner(stdout)
+	if !lines.Scan() || lines.Text() != "starting" {
+		t.Fatalf("gate process exited before starting: %s", stderr.String())
+	}
+	held := make(chan error, 1)
+	go func() {
+		if lines.Scan() && lines.Text() == "done" {
+			held <- nil
+			return
+		}
+		held <- errors.New("exited before acquiring the handshake gate")
+	}()
+	var releaseOnce sync.Once
+	release := func() {
+		releaseOnce.Do(func() {
+			_ = stdin.Close()
+			if err := other.Wait(); err != nil {
+				t.Errorf("gate process: %v: %s", err, stderr.String())
+			}
+		})
+	}
+	t.Cleanup(release)
+	return held, release
+}
+
 // repeatUntilStdinCloses is the process startOtherProcess runs. It pastes
 // the way an agent's send_terminal call does, or attaches the way a second
 // manager's preview does.
 func repeatUntilStdinCloses(driver *Driver, action, id string) int {
+	if action == "gate" {
+		fmt.Println("starting")
+		release, err := enterGateContext(context.Background(), driver.socket, true)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		fmt.Println("done")
+		_, _ = io.Copy(io.Discard, os.Stdin)
+		release()
+		return 0
+	}
 	act := func() error { return driver.Paste(id, "x") }
 	if action == "attach" {
 		act = func() error {
