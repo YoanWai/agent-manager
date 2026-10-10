@@ -146,7 +146,7 @@ func TestReviveMissingCLIPromptsInstall(t *testing.T) {
 		DefaultStatus: status.Idle,
 	}
 
-	err := m.reviveSession(sess)
+	_, err := m.reviveSession(sess)
 	if err == nil {
 		t.Fatal("revive of a missing CLI should fail")
 	}

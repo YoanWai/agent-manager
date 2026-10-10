@@ -17,6 +17,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/agentsession"
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/conversation"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/mcpreg"
@@ -44,6 +45,7 @@ type poller struct {
 	sessionStores map[string]string
 	claudeTails   map[string]claudeTailCache
 	mcpStyles     map[string]string
+	reportStyles  map[string]string
 	shellTools    map[string]bool
 	binaries      toolBinaries
 	interval      time.Duration
@@ -69,6 +71,12 @@ type poller struct {
 	// and one-off refresh commands
 	runMu      sync.Mutex
 	paneHashes map[string]uint64
+	// conversations reads which conversation a running agent is on for the
+	// CLIs that report no switch themselves.
+	conversations conversation.Reader
+	// followFailed is the last failure following each session's
+	// conversation, so a failure that keeps happening is reported once.
+	followFailed map[string]string
 	// quietSince is when each session's activity region last stopped
 	// changing while the pane read as working; used to debounce both
 	// marker-less turn ends and spinner rows that never resolve. The stuck
@@ -285,7 +293,7 @@ func lastMeaningfulPaneLine(pane string) string {
 
 var postNotification = notify.Notify
 
-func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, gitDriver *git.Driver, statusSources, sessionStores, mcpStyles map[string]string, shellTools map[string]bool, binaries toolBinaries, interval time.Duration) *poller {
+func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, gitDriver *git.Driver, statusSources, sessionStores, mcpStyles, reportStyles map[string]string, shellTools map[string]bool, binaries toolBinaries, interval time.Duration) *poller {
 	return &poller{
 		store:         st,
 		tmux:          driver,
@@ -295,6 +303,7 @@ func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hook
 		statusSources: statusSources,
 		sessionStores: sessionStores,
 		mcpStyles:     mcpStyles,
+		reportStyles:  reportStyles,
 		shellTools:    shellTools,
 		binaries:      binaries,
 		interval:      interval,
@@ -475,6 +484,7 @@ func (p *poller) refreshOnce() tea.Msg {
 	paneHashes := make(map[string]uint64, len(sessions))
 	paneLastLines := make(map[string]string, len(sessions))
 	panePrompts := make(map[string]string, len(sessions))
+	followFailures := make(map[string]error, len(sessions))
 	var turnsEnded []string
 	for i, sess := range sessions {
 		if sess.Archived {
@@ -519,6 +529,9 @@ func (p *poller) refreshOnce() tea.Msg {
 			return errMsg{err}
 		}
 		newStatus := status.Dead
+		if !live {
+			followFailures[sess.ID] = p.followConversation(&sessions[i], false, true)
+		}
 		if pid := panes[sess.ID].PID; pid > 0 {
 			stat := trees[pid]
 			if stat.OK {
@@ -557,6 +570,7 @@ func (p *poller) refreshOnce() tea.Msg {
 			// tree of one process means the agent is gone. A failed ps
 			// sample proves nothing, so it counts as alive.
 			agentAlive := !stat.OK || stat.Procs > 1
+			followFailures[sess.ID] = p.followConversation(&sessions[i], agentAlive, false)
 			if pane, err := p.tmux.CapturePane(sess.ID); err == nil {
 				paneLastLines[sess.ID], panePrompts[sess.ID] = p.rowLines(sess, pane, panes[sess.ID].Path)
 				derived, err := p.derivePaneStatus(sess, pane, agentAlive, paneHashes)
@@ -658,6 +672,7 @@ func (p *poller) refreshOnce() tea.Msg {
 	}
 	p.startCaptureIfIdle(sessions, panes)
 	p.paneHashes = paneHashes
+	followWarning := p.newFollowFailure(sessions, followFailures)
 
 	groups, err := p.store.Groups()
 	if err != nil {
@@ -718,6 +733,7 @@ func (p *poller) refreshOnce() tea.Msg {
 		panePrompts:    panePrompts,
 		panes:          panes,
 		turnsEnded:     turnsEnded,
+		followWarning:  followWarning,
 	}
 	if p.takeFocus != nil {
 		if id, ok := p.takeFocus(); ok {

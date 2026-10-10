@@ -11,6 +11,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/catalog"
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/conversation"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/launch"
@@ -383,7 +384,7 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 
 	plan := launch.Assemble(toolName, tool.WithChoice(choice), prompt, autoNamed, proactive)
 	manager := hooks.NewManager(s.configDir)
-	command, env, err := launch.Environment(manager, toolName, tool, plan.Command, id)
+	command, env, err := launch.Environment(manager, toolName, tool, plan.Command, id, dir, time.Time{})
 	if err != nil {
 		discard()
 		return Session{}, err
@@ -395,6 +396,7 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 		Cwd:            dir,
 		Group:          group,
 		Status:         status.Starting,
+		CreatedAt:      time.Now(),
 		AgentSessionID: plan.AgentSessionID,
 		WorktreeRepo:   worktree.repo,
 		WorktreeBranch: worktree.branch,
@@ -762,11 +764,18 @@ func (s *Sessions) Kill(sessionID, targetID string) (Session, error) {
 	if target.ID == sessionID {
 		return Session{}, fmt.Errorf("a session kills itself with %s, which waits for this turn to end", runtime.words.KillSelf)
 	}
+	hookManager := hooks.NewManager(s.configDir)
+	var followErr error
 	if runtime.driver.Exists(target.ID) {
 		if pane, err := runtime.driver.CapturePane(target.ID); err == nil && pane != "" {
 			if err := runtime.store.SetSnapshot(target.ID, pane); err != nil {
 				return Session{}, err
 			}
+		}
+		// Some CLIs keep the conversation they are on only while they run,
+		// and no manager screen may be open to have followed it.
+		if tool, known := runtime.cfg.Tools[target.Tool]; known {
+			target, followErr = FollowConversation(runtime.store, hookManager, &conversation.Reader{}, target, tool.SessionReport)
 		}
 		if err := runtime.driver.Kill(target.ID); err != nil {
 			return Session{}, err
@@ -774,13 +783,16 @@ func (s *Sessions) Kill(sessionID, targetID string) (Session, error) {
 	}
 	// The agent dies without running its session-end hook, so a leftover
 	// status file would otherwise decide what a revived session reads as.
-	if err := hooks.NewManager(s.configDir).Remove(target.ID); err != nil {
+	if err := hookManager.Remove(target.ID); err != nil {
 		return Session{}, err
 	}
 	if err := runtime.store.UpdateStatus(target.ID, status.Dead); err != nil {
 		return Session{}, err
 	}
 	target.Status = status.Dead
+	if followErr != nil {
+		return Session{}, fmt.Errorf("killed %s, but could not read which conversation it was on: %w", target.Name, followErr)
+	}
 	return runtime.sessionInfo(target, false, false), nil
 }
 
@@ -810,27 +822,31 @@ func (s *Sessions) Revive(sessionID, targetID string) (Session, error) {
 	// Reviving inside the surviving pane keeps the scrollback its last life
 	// left there.
 	if runtime.driver.Exists(target.ID) {
-		if _, err := RelaunchInPane(runtime.driver, runtime.store, hooks.NewManager(s.configDir), target, tool); err != nil {
+		relaunched, err := RelaunchInPane(runtime.driver, runtime.store, hooks.NewManager(s.configDir), target.ID, tool)
+		if err != nil {
 			return Session{}, err
 		}
-		if target.AgentSessionID == "" && tool.ResumePickerKeys != "" {
-			InjectPickerKeys(runtime.driver, target.ID, tool)
+		if relaunched.AgentSessionID == "" && tool.ResumePickerKeys != "" {
+			InjectPickerKeys(runtime.driver, relaunched.ID, tool)
 		}
-		target.Status = status.Starting
-		return runtime.sessionInfo(target, true, false), nil
+		return runtime.sessionInfo(relaunched, true, false), nil
+	}
+	target, err = settleBeforeRevive(runtime.store, hooks.NewManager(s.configDir), target, tool.SessionReport, true)
+	if err != nil {
+		return Session{}, err
 	}
 	if err := SnapshotRelaunch(runtime.store, target, tool, target.AgentSessionID); err != nil {
 		return Session{}, err
 	}
 	base := launch.ReviveCommand(tool.WithChoice(target.Choice), target.AgentSessionID)
-	command, env, err := launch.Environment(hooks.NewManager(s.configDir), target.Tool, tool, base, target.ID)
+	launchedAt := time.Now()
+	command, env, err := launch.Environment(hooks.NewManager(s.configDir), target.Tool, tool, base, target.ID, target.Cwd, launchedAt)
 	if err != nil {
 		return Session{}, err
 	}
 	if err := runtime.createPane(target.ID, target.Cwd, command, env); err != nil {
 		return Session{}, err
 	}
-	launchedAt := time.Now()
 	if err := runtime.store.SetAgentLaunchedAt(target.ID, launchedAt); err != nil {
 		_ = runtime.driver.Kill(target.ID)
 		return Session{}, err

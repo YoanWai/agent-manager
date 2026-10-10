@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -26,6 +27,15 @@ const EnvStatusFile = "AGENT_MANAGER_STATUS_FILE"
 // EnvSessionID identifies the managed session to the rename subcommand;
 // every session gets it regardless of tool.
 const EnvSessionID = "AGENT_MANAGER_SESSION_ID"
+
+// EnvLaunch names the launch an agent process belongs to, so a conversation
+// it reports late cannot land on a launch that replaced it.
+const EnvLaunch = "AGENT_MANAGER_LAUNCH"
+
+// EnvAgentPID is the pid of the agent a launch started. The launch's own
+// shell exports its pid and execs the agent in its place, so only the agent
+// runs under it, while its children and teammates inherit the value.
+const EnvAgentPID = "AGENT_MANAGER_AGENT_PID"
 
 // StatusSourceClaude is the status_source config value that enables this
 // package for a tool.
@@ -75,13 +85,13 @@ const blockingNotifications = "permission_prompt|elicitation_dialog"
 // the hook write covers the turn before the banner is visible.
 const limitStopFailures = "rate_limit"
 
-func settingsContent(sessionID, statusFile string) ([]byte, error) {
+func settingsContent(sessionID, launch, statusFile, trackCommand string) ([]byte, error) {
 	report := func(matcher, state string) []hookMatcher {
 		return []hookMatcher{{Matcher: matcher, Hooks: []hookCommand{{Type: "command", Command: statusCommand(state)}}}}
 	}
 	content := settingsFile{
 		// /background and the agent view rerun the conversation in Claude Code's daemon, under another session's environment.
-		Env: map[string]string{EnvSessionID: sessionID, EnvStatusFile: statusFile},
+		Env: map[string]string{EnvSessionID: sessionID, EnvLaunch: launch, EnvStatusFile: statusFile},
 		Hooks: map[string][]hookMatcher{
 			"UserPromptSubmit": report("", status.Working),
 			"PreToolUse":       report("*", status.Working),
@@ -97,16 +107,22 @@ func settingsContent(sessionID, statusFile string) ([]byte, error) {
 			}}}},
 		},
 	}
+	if trackCommand != "" {
+		content.Hooks["SessionStart"] = append(content.Hooks["SessionStart"],
+			hookMatcher{Hooks: []hookCommand{{Type: "command", Command: trackCommand}}})
+	}
 	return json.MarshalIndent(content, "", "  ")
 }
 
 // WriteSettings writes a session's hook settings file, refreshing it when
-// the wanted content changed (e.g. after an upgrade), and returns its path.
-func (m *Manager) WriteSettings(id string) (string, error) {
+// the wanted content changed (e.g. after an upgrade or a relaunch), and
+// returns its path. A trackCommand runs on every SessionStart to report the
+// conversation the session moved to.
+func (m *Manager) WriteSettings(id, launch, trackCommand string) (string, error) {
 	if err := os.MkdirAll(m.dir, 0o755); err != nil {
 		return "", err
 	}
-	wanted, err := settingsContent(id, m.StatusFile(id))
+	wanted, err := settingsContent(id, launch, m.StatusFile(id), trackCommand)
 	if err != nil {
 		return "", err
 	}
@@ -134,6 +150,40 @@ func (m *Manager) RemoveSettings(id string) error {
 
 func (m *Manager) StatusFile(id string) string {
 	return filepath.Join(m.dir, id+".status")
+}
+
+// AgentFile is where a launch records the agent it started: its pid, the
+// launch and its terminal.
+func (m *Manager) AgentFile(id string) string {
+	return filepath.Join(m.dir, id+".agent")
+}
+
+// Each launch has its own path so an older follower cannot consume a relaunch's records.
+func (m *Manager) TelemetryFile(id string, launch int64) string {
+	return filepath.Join(m.dir, fmt.Sprintf("%s.%d.otel", id, launch))
+}
+
+// RemoveAgentFiles drops what a session's launches recorded about its agent.
+func (m *Manager) RemoveAgentFiles(id string) error {
+	if err := removeIfExists(m.AgentFile(id)); err != nil {
+		return err
+	}
+	files, err := os.ReadDir(m.dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, file := range files {
+		if !strings.HasPrefix(file.Name(), id+".") || !strings.HasSuffix(file.Name(), ".otel") {
+			continue
+		}
+		if err := removeIfExists(filepath.Join(m.dir, file.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // InstallStatusFile is the mailbox an install started from the setup

@@ -623,6 +623,9 @@ type refreshMsg struct {
 	// turnsEnded are the sessions whose turn this pass saw end after they
 	// asked to be archived or killed once it did.
 	turnsEnded []string
+	// followWarning reports a session whose conversation the pass could not
+	// follow, the first time it fails that way.
+	followWarning string
 }
 
 type previewMsg struct {
@@ -822,12 +825,14 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 	statusSources := make(map[string]string, len(cfg.Tools))
 	sessionStores := make(map[string]string, len(cfg.Tools))
 	mcpStyles := make(map[string]string, len(cfg.Tools))
+	reportStyles := make(map[string]string, len(cfg.Tools))
 	shellTools := make(map[string]bool, len(cfg.Tools))
 	for name, tool := range cfg.Tools {
 		shellTools[name] = tool.Shell
 		statusSources[name] = tool.StatusSource
 		sessionStores[name] = tool.SessionStore
 		mcpStyles[name] = mcpreg.Style(name, tool.MCP)
+		reportStyles[name] = tool.SessionReport
 	}
 	// A missing git binary only disables the diff view; everything else
 	// works without it, so the error surfaces on first use instead.
@@ -846,7 +851,7 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		gitDrv:              gitDriver,
 		engine:              engine,
 		setSnapshot:         st.SetSnapshot,
-		poller:              newPoller(st, driver, engine, hookManager, gitDriver, statusSources, sessionStores, mcpStyles, shellTools, newToolBinaries(cfg), config.PollInterval),
+		poller:              newPoller(st, driver, engine, hookManager, gitDriver, statusSources, sessionStores, mcpStyles, reportStyles, shellTools, newToolBinaries(cfg), config.PollInterval),
 		collapsed:           loadCollapsed(st),
 		split:               splitState{ratio: loadSplitRatio(st)},
 		focusOnEnter:        storedFocusOnEnter(st),
@@ -1576,6 +1581,9 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.booting = false
 		m.ageError()
+		if msg.followWarning != "" {
+			m.reportWarn(msg.followWarning)
+		}
 		var focusExit tea.Cmd
 		if !staleListing {
 			// The focused session can die or vanish under us; fall back to the
@@ -2029,7 +2037,8 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.reportLaunchError(msg.err, nil)
 			return m, nil
 		}
-		m.bindReviveLocally(msg.sessID, msg.launchedAt)
+		m.bindReviveLocally(msg.sess.ID, msg.sess.AgentLaunchedAt)
+		m.errBar.text = m.degradedResumeNotice(msg.sess)
 		m.rebuildRows()
 		m.requestRefresh()
 		return m, nil

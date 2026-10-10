@@ -884,6 +884,61 @@ func (s *Store) BindAgentSessionID(id, agentSessionID string, launchedAt time.Ti
 	return affected > 0, nil
 }
 
+// ConversationReport is what became of a running agent's report of the
+// conversation it is on.
+type ConversationReport int
+
+const (
+	ReportAdopted ConversationReport = iota
+	ReportUnchanged
+	// ReportStale answers a launch a relaunch has since replaced, or a CLI
+	// the pane no longer runs.
+	ReportStale
+	// ReportEarly answers a launch whose row or stamp has not landed yet.
+	ReportEarly
+)
+
+// ReportAgentSessionID moves a session onto the conversation its agent says
+// it switched to, but only for the launch now in the pane. launch is the
+// LaunchStamp the agent was started with. A report overrides a captured id,
+// and ends a picker recapture by clearing its snapshot.
+func (s *Store) ReportAgentSessionID(id, tool, agentSessionID string, launch int64) (ConversationReport, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	var storedTool, storedID string
+	var storedLaunch int64
+	err = tx.QueryRow(`SELECT tool, agent_launched_at, agent_session_id FROM sessions WHERE id = ?`, id).
+		Scan(&storedTool, &storedLaunch, &storedID)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return ReportEarly, nil
+	case err != nil:
+		return 0, err
+	case storedLaunch < launch:
+		return ReportEarly, nil
+	case storedLaunch > launch || storedTool != tool:
+		return ReportStale, nil
+	case storedID == agentSessionID:
+		return ReportUnchanged, nil
+	}
+	if _, err := tx.Exec(
+		`UPDATE sessions SET agent_session_id = ?, relaunch_snapshot = ''
+		 WHERE id = ? AND tool = ? AND agent_launched_at = ?`,
+		agentSessionID, id, tool, launch); err != nil {
+		return 0, err
+	}
+	return ReportAdopted, tx.Commit()
+}
+
+// LaunchStamp is how a launch is named to the agent it starts: the stored
+// form of agent_launched_at, which stays 0 until a session first relaunches.
+func LaunchStamp(launchedAt time.Time) int64 {
+	return encodeTime(launchedAt)
+}
+
 // RestartAgent rebinds a session to a fresh agent run: the conversation it
 // was resuming is retired, the new one (empty until capture for tools that
 // mint their own id) takes its place, and the launch clock moves to now.

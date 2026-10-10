@@ -425,7 +425,8 @@ func nextField(line string) (string, string) {
 // process and all of its descendants, from one ps pass over the machine
 // and a second limited to the roots' own children. tmux pane pids are
 // shells whose real work happens in child processes, so a tree sum is the
-// only honest number.
+// only honest number. A zombie, a child that exited and was never reaped,
+// runs nothing and is left out.
 //
 // CPUSeconds is cumulative CPU time for interval host-share math. PCPU is
 // the raw ps %cpu sum (fallback). Callers convert to host % via
@@ -435,7 +436,7 @@ func Trees(rootPIDs []int) map[int]ProcStat {
 	if len(rootPIDs) == 0 {
 		return stats
 	}
-	out, err := exec.Command("ps", "-axo", "pid=,ppid=,pcpu=,rss=,time=").Output()
+	out, err := exec.Command("ps", "-axo", "pid=,ppid=,pcpu=,rss=,time=,stat=").Output()
 	if err != nil {
 		return stats
 	}
@@ -449,7 +450,7 @@ func Trees(rootPIDs []int) map[int]ProcStat {
 	children := map[int][]int{}
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		fields := strings.Fields(line)
-		if len(fields) != 5 {
+		if len(fields) != 6 || strings.HasPrefix(fields[5], "Z") {
 			continue
 		}
 		pid, err1 := strconv.Atoi(fields[0])

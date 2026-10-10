@@ -108,39 +108,50 @@ func caretRow(driver *tmux.Driver, sessID string) (string, bool) {
 // RelaunchInPane starts a session's tool again inside the shell its pane
 // already holds, so the pane keeps everything its last life left there. The
 // session environment rides along inline because a pane opened by an older
-// manager holds a shell that was never given it.
-func RelaunchInPane(driver *tmux.Driver, st *store.Store, hookManager *hooks.Manager, sess store.Session, tool config.Tool) (time.Time, error) {
+// manager holds a shell that was never given it. It returns the row it
+// relaunched, read after the agent quit, since that agent may have reported
+// a switch the caller's copy predates.
+func RelaunchInPane(driver *tmux.Driver, st *store.Store, hookManager *hooks.Manager, sessID string, tool config.Tool) (store.Session, error) {
+	sess, err := st.Get(sessID)
+	if err != nil {
+		return store.Session{}, err
+	}
 	running, err := AgentRunning(driver, sess.ID)
 	if err != nil {
-		return time.Time{}, err
+		return store.Session{}, err
 	}
 	if running {
-		return time.Time{}, fmt.Errorf("session %s is still running; revive brings back an agent that exited", sess.Name)
+		return store.Session{}, fmt.Errorf("session %s is still running; revive brings back an agent that exited", sess.Name)
+	}
+	if sess, err = settleBeforeRevive(st, hookManager, sess, tool.SessionReport, false); err != nil {
+		return store.Session{}, err
 	}
 	if err := SnapshotRelaunch(st, sess, tool, sess.AgentSessionID); err != nil {
-		return time.Time{}, err
+		return store.Session{}, err
 	}
 	base := launch.ReviveCommand(tool.WithChoice(sess.Choice), sess.AgentSessionID)
-	command, env, err := launch.Environment(hookManager, sess.Tool, tool, base, sess.ID)
-	if err != nil {
-		return time.Time{}, err
-	}
-	if err := driver.SendKeys(sess.ID, tmux.ExportEnv(env, command), "Enter"); err != nil {
-		return time.Time{}, err
-	}
 	launchedAt := time.Now()
+	command, env, err := launch.Environment(hookManager, sess.Tool, tool, base, sess.ID, sess.Cwd, launchedAt)
+	if err != nil {
+		return store.Session{}, err
+	}
+	if err := driver.RunInPane(sess.ID, env, command); err != nil {
+		return store.Session{}, err
+	}
 	if err := st.SetAgentLaunchedAt(sess.ID, launchedAt); err != nil {
-		return time.Time{}, err
+		return store.Session{}, err
 	}
 	if err := st.UpdateStatus(sess.ID, status.Starting); err != nil {
-		return time.Time{}, err
+		return store.Session{}, err
 	}
 	// A leftover ack from the agent that exited must not swallow the first
 	// finished alert of the one taking its place.
 	if err := st.SetAcked(sess.ID, false); err != nil {
-		return time.Time{}, err
+		return store.Session{}, err
 	}
-	return launchedAt, nil
+	sess.AgentLaunchedAt = launchedAt
+	sess.Status = status.Starting
+	return sess, nil
 }
 
 // paneSettle is how long a busy pane is given to come back empty. A shell

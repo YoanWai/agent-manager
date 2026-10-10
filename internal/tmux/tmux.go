@@ -272,6 +272,8 @@ func (d *Driver) Create(id, cwd, command string, env map[string]string, width, h
 	// with send-keys truncates around 1024 bytes, which breaks long first
 	// prompts mid-path. A script has no practical length limit, and exec'ing
 	// the user shell afterwards matches "type into a shell" (pane stays up).
+	// tmux runs the line through its default-shell's -c, and the exec keeps
+	// dash or fish from staying on as the pane's process above the script.
 	var scriptPath string
 	if command != "" {
 		var err error
@@ -280,7 +282,7 @@ func (d *Driver) Create(id, cwd, command string, env map[string]string, width, h
 			d.paneThemePush.Unlock()
 			return err
 		}
-		args = append(args, "sh "+ShellQuote(scriptPath))
+		args = append(args, "exec sh "+ShellQuote(scriptPath))
 	}
 	_, runErr := d.run(args...)
 	d.paneThemePush.Unlock()
@@ -303,18 +305,47 @@ func ShellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// ExportEnv prefixes a command with exports of the session environment, for
+// exportEnv prefixes a command with exports of the session environment, for
 // a command typed into a pane whose shell does not carry it: a session
 // launched before the manager started exporting these values still holds a
 // shell that never received them, and it keeps them once this agent exits
 // too.
-func ExportEnv(env map[string]string, command string) string {
+func exportEnv(env map[string]string, command string) string {
 	var line strings.Builder
 	for _, key := range sortedKeys(env) {
 		line.WriteString("export " + key + "=" + ShellQuote(env[key]) + "; ")
 	}
 	line.WriteString(command)
 	return line.String()
+}
+
+// RunInPane types a command into the shell a pane already holds, with the
+// session environment exported into that shell first. The command runs
+// from a script, as Create's does: send-keys stops around 1024 bytes, and a
+// shell without line editing, such as dash, drops a longer line whole. The
+// script gets a fresh name no other user can claim first in a shared temp
+// dir, and removes itself once the shell has opened it. set -m gives the
+// agent its own process group, so tmux reports the agent rather than the
+// script as the pane's command and directory.
+func (d *Driver) RunInPane(id string, env map[string]string, command string) error {
+	script, err := os.CreateTemp("", "am-relaunch-"+id+"-*.sh")
+	if err != nil {
+		return fmt.Errorf("relaunch script: %w", err)
+	}
+	path := script.Name()
+	_, err = script.WriteString("rm -f -- \"$0\"\nset -m\n" + command + "\n")
+	if closeErr := script.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		os.Remove(path)
+		return fmt.Errorf("relaunch script: %w", err)
+	}
+	if err := d.SendKeys(id, exportEnv(env, "sh "+ShellQuote(path)), "Enter"); err != nil {
+		os.Remove(path)
+		return err
+	}
+	return nil
 }
 
 // exportLines exports the session environment into the pane's shell, so it
@@ -796,12 +827,16 @@ func (d *Driver) AttachCommand(id string) *exec.Cmd {
 
 func (d *Driver) Kill(id string) error {
 	if !d.Exists(id) {
-		os.Remove(launchScriptPath(id))
+		removeScripts(id)
 		return nil
 	}
 	_, err := d.run("kill-session", "-t", sessionName(id))
-	os.Remove(launchScriptPath(id))
+	removeScripts(id)
 	return err
+}
+
+func removeScripts(id string) {
+	os.Remove(launchScriptPath(id))
 }
 
 func (d *Driver) Exists(id string) bool {

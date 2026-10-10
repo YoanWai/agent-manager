@@ -4,13 +4,16 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/conversation"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/mcpreg"
+	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 )
 
@@ -225,7 +228,7 @@ func TestEnvironmentCarriesSessionIDAndHooks(t *testing.T) {
 	manager := hooks.NewManager(t.TempDir())
 
 	plain := config.Tool{Command: "cat"}
-	command, env, err := Environment(manager, "plain", plain, plain.Command, "abcd1234")
+	command, env, err := Environment(manager, "plain", plain, plain.Command, "abcd1234", t.TempDir(), time.Time{})
 	if err != nil {
 		t.Fatalf("Environment: %v", err)
 	}
@@ -235,20 +238,143 @@ func TestEnvironmentCarriesSessionIDAndHooks(t *testing.T) {
 	if env[hooks.EnvStatusFile] != "" {
 		t.Fatalf("a tool without claude hooks must not get a status file, got %q", env[hooks.EnvStatusFile])
 	}
-	if command != plain.Command {
+	if command != agentLaunch(manager, plain.Command) {
 		t.Fatalf("a tool with no MCP style should launch untouched, got %q", command)
 	}
 
 	hooked := config.Tool{Command: "cat", StatusSource: hooks.StatusSourceClaude, MCP: "claude"}
-	command, env, err = Environment(manager, "hooked", hooked, hooked.Command, "abcd1234")
+	command, env, err = Environment(manager, "hooked", hooked, hooked.Command, "abcd1234", t.TempDir(), time.Time{})
 	if err != nil {
 		t.Fatalf("Environment hooked: %v", err)
 	}
 	if env[hooks.EnvSessionID] != "abcd1234" || env[hooks.EnvStatusFile] == "" {
 		t.Fatalf("hooked tool env = %v, want session id and status file", env)
 	}
-	if !strings.Contains(command, "--mcp-config '") || !strings.Contains(command, "--settings "+tmux.ShellQuote(manager.SettingsFile("abcd1234"))) {
+	want := agentLaunch(manager, "cat --mcp-config "+tmux.ShellQuote(filepath.Join(manager.Dir(), "mcp-claude.json"))+" --settings "+tmux.ShellQuote(manager.SettingsFile("abcd1234")))
+	if command != want {
 		t.Fatalf("hooked command = %q, want this session's own settings", command)
+	}
+}
+
+// agentLaunch is the line a row's first launch runs its agent with.
+func agentLaunch(manager *hooks.Manager, command string) string {
+	agentFile := manager.AgentFile("abcd1234")
+	return "sh -c " + tmux.ShellQuote("export "+hooks.EnvAgentPID+"=$$; "+conversation.RecordCommand(agentFile, 0)+"; exec "+command) + "; " + conversation.EndedCommand(agentFile)
+}
+
+// The agent replaces the shell that exported and recorded the pid, so it
+// runs under that pid whatever shell the line is typed into, the shell the
+// line ran in marks the record once the agent has quit, and a shell-only
+// launch stays a plain shell.
+func TestEnvironmentRunsTheAgentUnderThePIDItExports(t *testing.T) {
+	manager := hooks.NewManager(t.TempDir())
+	probe := config.Tool{Command: "sh -c 'echo $$ $" + hooks.EnvAgentPID + "'", MCP: mcpreg.StyleNone}
+	command, _, err := Environment(manager, "probe", probe, probe.Command, "abcd1234", t.TempDir(), time.Time{})
+	if err != nil {
+		t.Fatalf("Environment: %v", err)
+	}
+	out, err := exec.Command("bash", "-c", "bash -c "+tmux.ShellQuote(command)).Output()
+	if err != nil {
+		t.Fatalf("run %q: %v", command, err)
+	}
+	pids := strings.Fields(string(out))
+	if len(pids) != 2 || pids[0] != pids[1] {
+		t.Fatalf("agent pid and exported pid = %q, want one pid twice", out)
+	}
+	if agent, found, err := conversation.ReadAgent(manager.AgentFile("abcd1234")); err != nil || !found || strconv.Itoa(agent.PID) != pids[0] || agent.Launch != 0 || !agent.Ended {
+		t.Fatalf("recorded agent = %+v %v %v, want pid %s of launch 0, ended", agent, found, err, pids[0])
+	}
+
+	prompt := "it's \"quoted\" $HOME `date` \\n\nsecond line"
+	echo := config.Tool{Command: `sh -c 'printf "%s" "$1"' sh`, MCP: mcpreg.StyleNone}
+	command, _, err = Environment(manager, "echo", echo, WithPrompt(echo, echo.Command, prompt), "abcd1234", t.TempDir(), time.Time{})
+	if err != nil {
+		t.Fatalf("Environment: %v", err)
+	}
+	if out, err := exec.Command("bash", "-c", command).Output(); err != nil || string(out) != prompt {
+		t.Fatalf("the agent got prompt %q, %v; want %q", out, err, prompt)
+	}
+
+	shell := config.Tool{Command: "", MCP: mcpreg.StyleNone}
+	if command, env, err := Environment(manager, "terminal", shell, shell.Command, "abcd1234", t.TempDir(), time.Time{}); err != nil || command != "" || env[hooks.EnvSessionID] != "abcd1234" {
+		t.Fatalf("shell launch = %q, %v, %v; want no command and the session env", command, env, err)
+	}
+}
+
+// The launch the agent is told it belongs to is the one its row is stamped
+// with: 0 for a row's first launch, which leaves agent_launched_at unset.
+func TestEnvironmentNamesTheLaunch(t *testing.T) {
+	manager := hooks.NewManager(t.TempDir())
+	plain := config.Tool{Command: "cat"}
+	_, env, err := Environment(manager, "plain", plain, plain.Command, "abcd1234", t.TempDir(), time.Time{})
+	if err != nil {
+		t.Fatalf("Environment: %v", err)
+	}
+	if env[hooks.EnvLaunch] != "0" {
+		t.Fatalf("first launch env = %v, want launch 0", env)
+	}
+	launchedAt := time.Unix(1700000000, 123456789)
+	_, env, err = Environment(manager, "plain", plain, plain.Command, "abcd1234", t.TempDir(), launchedAt)
+	if err != nil {
+		t.Fatalf("Environment: %v", err)
+	}
+	if want := strconv.FormatInt(store.LaunchStamp(launchedAt), 10); env[hooks.EnvLaunch] != want {
+		t.Fatalf("relaunch env = %v, want launch %s", env, want)
+	}
+}
+
+func TestEnvironmentWiresTheSessionReport(t *testing.T) {
+	t.Setenv("OPENCODE_TUI_CONFIG", "")
+	manager := hooks.NewManager(t.TempDir())
+
+	pi := config.Tool{Command: "cat", ModelArgs: "--model {model}", SessionReport: "pi", MCP: mcpreg.StyleNone}.WithChoice(config.Choice{Model: "big"})
+	command, _, err := Environment(manager, "pi", pi, pi.Command+" --session-id abc", "abcd1234", t.TempDir(), time.Time{})
+	if err != nil {
+		t.Fatalf("Environment pi: %v", err)
+	}
+	if want := agentLaunch(manager, "cat --model 'big' --session-id abc -e "+tmux.ShellQuote(filepath.Join(manager.Dir(), "track-pi.ts"))); command != want {
+		t.Fatalf("pi command = %q, want %q", command, want)
+	}
+
+	opencode := config.Tool{Command: "cat", SessionReport: "opencode", MCP: mcpreg.StyleNone}
+	command, env, err := Environment(manager, "opencode", opencode, opencode.Command, "abcd1234", t.TempDir(), time.Time{})
+	if err != nil {
+		t.Fatalf("Environment opencode: %v", err)
+	}
+	if command != agentLaunch(manager, "cat") || env["OPENCODE_TUI_CONFIG"] != filepath.Join(manager.Dir(), "track-opencode-tui.json") {
+		t.Fatalf("opencode launch = %q %v, want the TUI config in the environment", command, env)
+	}
+
+	t.Setenv("OPENCODE_TUI_CONFIG", "/users/own/tui.json")
+	_, env, err = Environment(manager, "opencode", opencode, opencode.Command, "abcd1234", t.TempDir(), time.Time{})
+	if err != nil {
+		t.Fatalf("Environment opencode: %v", err)
+	}
+	if _, set := env["OPENCODE_TUI_CONFIG"]; set {
+		t.Fatalf("a user's own OPENCODE_TUI_CONFIG must stay theirs, got %v", env)
+	}
+}
+
+func TestEnvironmentReportsClaudeConversationsThroughItsSettings(t *testing.T) {
+	manager := hooks.NewManager(t.TempDir())
+	for _, tc := range []struct {
+		report string
+		want   bool
+	}{{"claude", true}, {"none", false}} {
+		tool := config.Tool{Command: "cat", StatusSource: hooks.StatusSourceClaude, MCP: mcpreg.StyleNone, SessionReport: tc.report}
+		if _, _, err := Environment(manager, "claude", tool, tool.Command, "abcd1234", t.TempDir(), time.Unix(5, 0)); err != nil {
+			t.Fatalf("Environment: %v", err)
+		}
+		raw, err := os.ReadFile(manager.SettingsFile("abcd1234"))
+		if err != nil {
+			t.Fatalf("read settings: %v", err)
+		}
+		if got := strings.Contains(string(raw), " track-conversation --tool claude --key session_id"); got != tc.want {
+			t.Fatalf("session_report %q: settings report the conversation = %v, want %v:\n%s", tc.report, got, tc.want, raw)
+		}
+		if !strings.Contains(string(raw), `"`+hooks.EnvLaunch+`": "5000000000"`) {
+			t.Fatalf("settings do not carry the launch:\n%s", raw)
+		}
 	}
 }
 
@@ -264,7 +390,7 @@ func TestEnvironmentSetsGrokTerminalTheme(t *testing.T) {
 				t.Setenv("GROK_HOME", dir)
 			}
 			grok := config.Tool{Command: "cat", MCP: mcpreg.StyleNone}
-			if _, _, err := Environment(hooks.NewManager(t.TempDir()), "grok", grok, grok.Command, "abcd1234"); err != nil {
+			if _, _, err := Environment(hooks.NewManager(t.TempDir()), "grok", grok, grok.Command, "abcd1234", t.TempDir(), time.Time{}); err != nil {
 				t.Fatalf("Environment grok: %v", err)
 			}
 			written, err := os.ReadFile(filepath.Join(dir, "config.toml"))
@@ -282,11 +408,12 @@ func TestEnvironmentKeepsGrokOffTheSharedLeader(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("GROK_HOME", "")
 	grok := config.Tool{Command: "cat", MCP: mcpreg.StyleNone}
-	command, _, err := Environment(hooks.NewManager(t.TempDir()), "grok", grok, "cat --resume abc", "abcd1234")
+	manager := hooks.NewManager(t.TempDir())
+	command, _, err := Environment(manager, "grok", grok, "cat --resume abc", "abcd1234", t.TempDir(), time.Time{})
 	if err != nil {
 		t.Fatalf("Environment grok: %v", err)
 	}
-	if command != "cat --resume abc --no-leader" {
+	if command != agentLaunch(manager, "cat --resume abc --no-leader") {
 		t.Fatalf("grok command = %q, want every launch line to force a local agent", command)
 	}
 }
