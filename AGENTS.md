@@ -23,8 +23,8 @@ matrix is every CLI in `builtinTools` (`internal/config/config.go`), every
 platform `.goreleaser.yaml` builds plus WSL2, every terminal that reaches
 the manager, local or over SSH, and both input methods. A change that
 covers a subset names what it leaves out in the PR description and what
-covering the rest would take; [REVIEW.md](REVIEW.md) says how a review treats
-that.
+covering the rest would take. Disclosure alone does not approve partial tool
+coverage. [REVIEW.md](REVIEW.md#tool-coverage) defines the allowed exceptions.
 
 - **Keyboard and mouse.** Every action a key performs is reachable with the
   mouse, and every clickable surface has a key. A new row, panel, button,
@@ -46,8 +46,17 @@ that.
   environment variable, or hand-edited block is the wrong shape; put the
   choice on a Settings row, behind `agent-manager settings`, or pick a
   default in code.
-- **Every tool.** A field, status rule, or command added to one `[tools.*]`
-  block is added to every tool it applies to, in the same PR.
+- **Every tool.** New shared behavior covers every applicable tool in the
+  same PR. A field, status rule, or command added to one `[tools.*]` block
+  is added to every tool it applies to. A fix to one tool's adapter or support
+  for a new CLI can stay narrow. Any other partial feature needs evidence
+  and an explicit maintainer decision before merge. Reuse shared paths first.
+  A working first adapter or an unchanged fallback for other tools is not
+  coverage of the new behavior. If the contributor cannot or does not plan to
+  cover the other applicable tools, start with an issue. An optional draft PR
+  can provide a reference implementation linked to that issue. Mark it as
+  reference only with its missing coverage. Keep it in draft until coverage
+  is complete or the maintainer accepts an exception.
 - **Every platform.** A `runtime.GOOS` branch, a platform-only command, or
   a path built from one platform's layout needs its counterpart, or the
   description names the platform it skips. WSL2 is a platform of its own:

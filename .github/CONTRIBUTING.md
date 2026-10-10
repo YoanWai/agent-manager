@@ -17,13 +17,33 @@ If an issue is unassigned, it's free to take. Comment that you're on it and I'll
 
 Send it. Typos, broken links, a one-line fix, a status rule for a tool you use: straight to a pull request is fine, and a rough patch that works is worth more than a perfect one you never open.
 
-For a large change (new UI, new keybinding, reworked status detection), an issue first gets you a read on the approach so the work lands the first time. Optional, and worth it.
+For a large change (new UI, new keybinding, reworked status detection), an issue first gets you a read on the approach so the work lands the first time. This is optional except for the partial feature proposals described below.
 
 Follow the [Thin Wrapper Principle](../PRODUCT.md#thin-wrapper-principle): preserve
 each agent TUI's defaults and user configuration, keep shared features generic,
 and avoid integrations that need updates whenever an upstream tool changes.
 For example, a model picker needs reliable dynamic discovery across supported
 tools; a maintained list of model names does not belong in agent-manager.
+
+New shared features must work for every applicable CLI in the same PR.
+Notifications, copying replies, and session controls are shared workspace
+features even when the first implementation is easiest for one tool. Reuse
+the existing shared paths before building a separate provider integration.
+Keeping the old behavior for the other tools does not cover the new feature.
+
+A bug fix specific to one tool or support for a new CLI can stay narrow.
+Other partial features need evidence that the scope makes sense and an explicit
+maintainer decision before merge. A documented upstream capability may justify
+an exception. Listing exclusions or promising follow-up PRs does not.
+See [tool coverage](../REVIEW.md#tool-coverage) for the evidence required.
+
+If you want a feature for one tool but cannot or do not plan to build it for
+the other applicable tools, [open a feature request](https://github.com/YoanWai/agent-manager/issues/new?template=feature_request.yml)
+first. You may also open a draft PR linked to that issue as a reference
+implementation. Mark it as reference only and name the missing tool coverage.
+Keep it in draft until the coverage is complete or the maintainer accepts an
+exception. The example helps discuss the idea without presenting it as ready
+to merge or committing anyone to finish it.
 
 A change is done when it holds on the whole matrix: every supported CLI, every
 platform we build plus WSL2, every terminal including over SSH, keyboard and
@@ -82,9 +102,13 @@ publishing paths.
 In the pull request description, say what changed and why, and how you verified
 it. Fill the Scope section: what the change has to do and why this shape. A typo
 or a one-line fix answers both in a sentence, and a review reads them to tell
-the change you meant from the change you made. Say there too when the change
-reaches only some of the agent CLIs or platforms we support, and what covering
-the rest would take. If the change grew out of a Discussion, or you opened one
+the change you meant from the change you made. For a shared feature, account
+for every CLI in `builtinTools` with its behavior and verification, or evidence
+that the feature does not apply. For a tool-specific fix, name the affected
+tools and why the others are unaffected. For any partial feature exception,
+link the maintainer decision or state it explicitly when you are the maintainer.
+Name excluded platforms and what covering them would take too. If the change
+grew out of a Discussion, or you opened one
 about it, link it there.
 Complete the Visual evidence section for every pull request. Include before
 and after screenshots whenever the change can be shown visually; use a short
