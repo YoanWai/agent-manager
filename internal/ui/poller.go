@@ -1082,8 +1082,10 @@ func (p *poller) maybeDeliverInbox(sess store.Session, pane, derived string, age
 	}
 	// The claim already keeps this message from being typed again, so
 	// recording the drop is the only thing that stops its sender being told
-	// it arrived.
-	if err := p.tmux.SendText(sess.ID, inboxEnvelope(msg, p.mcpStyles[sess.Tool], p.senderIsShell(msg.SenderID))); err != nil {
+	// it arrived. A paste left in the composer is not retyped either: the
+	// recipient would read it twice once someone presses Enter there.
+	envelope := inboxEnvelope(msg, p.mcpStyles[sess.Tool], p.senderIsShell(msg.SenderID))
+	if err := p.tmux.SubmitText(sess.ID, envelope, p.composerDrafted(sess)); err != nil {
 		return false, errors.Join(
 			fmt.Errorf("dropped a message to %s from %s: %w", sess.Name, msg.SenderName, err),
 			p.store.MarkDropped(msg.ID, time.Now()))
@@ -1116,6 +1118,19 @@ func (p *poller) promptCarriesTypedText(sess store.Session, clean string) (bool,
 		return false, nil
 	}
 	return draftBeforeCaret(p.engine, sess.Tool, rows, caretX, caretY), nil
+}
+
+// composerDrafted reads the session's composer afresh on every call, for a
+// send that has to see its paste land and then leave.
+func (p *poller) composerDrafted(sess store.Session) func() bool {
+	return func() bool {
+		pane, err := p.tmux.CapturePane(sess.ID)
+		if err != nil {
+			return false
+		}
+		typed, err := p.promptCarriesTypedText(sess, ansi.Strip(pane))
+		return err == nil && typed
+	}
 }
 
 // inboxEnvelope wraps the body so the receiving agent knows the text came
