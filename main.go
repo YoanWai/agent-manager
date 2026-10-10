@@ -252,6 +252,7 @@ func run() error {
 	ui.SyncTerminalColors()
 	model.StartPoller(program.Send)
 	final, runErr := program.Run()
+	model.StopFocusEndpoint()
 	catalog.StopAll()
 	ui.ResetTerminalColors()
 	if runErr == nil {

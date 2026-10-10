@@ -181,6 +181,7 @@ type sessionCommands interface {
 	Wait(ctx context.Context, sessionID, targetID string, until []string, timeout time.Duration) (sessioncmd.WaitResult, error)
 	MessageStatus(sessionID string, messageID int64) (sessioncmd.MessageState, error)
 	Read(sessionID, targetID string) (sessioncmd.SessionScreen, error)
+	Focus(targetID string, enter bool) (sessioncmd.Session, error)
 	Revive(sessionID, targetID string) (sessioncmd.Session, error)
 	Kill(sessionID, targetID string) (sessioncmd.Session, error)
 	Archive(sessionID, targetID string, archived bool) (sessioncmd.Session, error)
@@ -384,6 +385,19 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 			return nil, sessioncmd.SessionScreen{}, err
 		}
 		return textContent(sessioncmd.FormatSessionScreen(screen)), screen, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "focus_session",
+		Description: "Open a session in the user's Agent Manager window the way the enter key does, so the user lands on it: the groups above the session unfold, and a dialog the user is typing into stays open with the cursor moved under it. " +
+			"It changes what the user is looking at, so call it only when the user asked to be taken to a session, such as one you handed their question to.",
+		Annotations: toolAnnotations(false, true, false),
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args sessionTargetArgs) (*mcp.CallToolResult, sessioncmd.Session, error) {
+		focused, err := sessions.Focus(args.SessionID, true)
+		if err != nil {
+			return nil, sessioncmd.Session{}, err
+		}
+		return textContent("focused " + sessioncmd.FormatSession(focused)), focused, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{

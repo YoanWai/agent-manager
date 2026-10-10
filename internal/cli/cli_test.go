@@ -26,6 +26,7 @@ type fakeSessions struct {
 	timeout   time.Duration
 	messageID int64
 	archived  bool
+	entered   bool
 	action    string
 	canceled  bool
 	groupPath string
@@ -78,6 +79,11 @@ func (f *fakeSessions) Wait(ctx context.Context, sessionID, targetID string, unt
 func (f *fakeSessions) MessageStatus(sessionID string, messageID int64) (sessioncmd.MessageState, error) {
 	f.callerID, f.messageID = sessionID, messageID
 	return sessioncmd.MessageState{MessageID: messageID, SessionID: "beef", State: "delivered"}, f.failWith
+}
+
+func (f *fakeSessions) Focus(targetID string, enter bool) (sessioncmd.Session, error) {
+	f.targetID, f.entered = targetID, enter
+	return f.session, f.failWith
 }
 
 func (f *fakeSessions) Kill(sessionID, targetID string) (sessioncmd.Session, error) {
@@ -233,6 +239,8 @@ func TestALayerFailureReachesTheCaller(t *testing.T) {
 		{"spawn", nil, func(out io.Writer, args []string) error { return runSpawn(out, sessions, args, "cafe0001") }},
 		{"send", []string{"beef1234", "ship it"}, func(out io.Writer, args []string) error { return runSend(out, sessions, args, "cafe0001") }},
 		{"read", []string{"beef1234"}, func(out io.Writer, args []string) error { return runRead(out, sessions, args, "cafe0001") }},
+		{"focus", []string{"beef1234"}, func(out io.Writer, args []string) error { return runFocus(out, sessions, args, "") }},
+		{"select", []string{"beef1234"}, func(out io.Writer, args []string) error { return runSelect(out, sessions, args, "") }},
 		{"wait", []string{"beef1234"}, func(out io.Writer, args []string) error { return runWait(out, sessions, args, "cafe0001") }},
 		{"message-status", []string{"7"}, func(out io.Writer, args []string) error { return runMessageStatus(out, sessions, args, "cafe0001") }},
 		{"kill", []string{"beef1234"}, func(out io.Writer, args []string) error { return runKill(out, sessions, args, "cafe0001") }},
@@ -272,6 +280,23 @@ func TestALayerFailureReachesTheCaller(t *testing.T) {
 	}
 }
 
+// A script asking for JSON reads stdout, so a refused focus says why there
+// as well as failing.
+func TestFocusJSONReportsARefusalAsAnObject(t *testing.T) {
+	failure := errors.New("no Agent Manager is running to bring the session forward")
+	out := &bytes.Buffer{}
+	err := runFocus(out, &fakeSessions{failWith: failure}, []string{"beef1234", "--json"}, "")
+	if !errors.Is(err, failure) {
+		t.Fatalf("error = %v, want the layer's own", err)
+	}
+	var reported struct {
+		Error string `json:"error"`
+	}
+	if jsonErr := json.Unmarshal(out.Bytes(), &reported); jsonErr != nil || reported.Error != failure.Error() {
+		t.Fatalf("focus --json printed %q (%v), want the refusal as an object", out.String(), jsonErr)
+	}
+}
+
 func TestJSONFlagPrintsTheRecord(t *testing.T) {
 	out := &bytes.Buffer{}
 	fake := &fakeSessions{session: sampleSession()}
@@ -306,6 +331,12 @@ func TestMissingSessionIDIsAUsageError(t *testing.T) {
 		},
 		"kill": func(out *bytes.Buffer, f *fakeSessions, args []string) error {
 			return runKill(out, f, args, "cafe0001")
+		},
+		"focus": func(out *bytes.Buffer, f *fakeSessions, args []string) error {
+			return runFocus(out, f, args, "")
+		},
+		"select": func(out *bytes.Buffer, f *fakeSessions, args []string) error {
+			return runSelect(out, f, args, "")
 		},
 		"revive": func(out *bytes.Buffer, f *fakeSessions, args []string) error {
 			return runRevive(out, f, args, "cafe0001")
@@ -499,7 +530,7 @@ func TestCommandsThatActAsNoSessionNeverResolveACaller(t *testing.T) {
 func TestCommandsAndHelpCoverEverySection(t *testing.T) {
 	table := Commands("dev")
 	registered := []string{
-		"sessions", "spawn", "send", "read", "wait", "message-status", "kill", "revive", "archive", "archive-self", "kill-self",
+		"sessions", "spawn", "send", "read", "focus", "select", "wait", "message-status", "kill", "revive", "archive", "archive-self", "kill-self",
 		"groups", "create-group", "delete-group", "task", "reserve", "release-files", "reservations", "terminal",
 		"rename", "review-repo", "review-base", "review-mode", "review-comment", "issue", "feature", "update",
 	}
