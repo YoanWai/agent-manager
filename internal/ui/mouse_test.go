@@ -1397,6 +1397,50 @@ func TestClickOnMessagesCardOpensNotices(t *testing.T) {
 	}
 }
 
+func TestMessagesLegendOpensNoticesByMouseAndKey(t *testing.T) {
+	for _, full := range []bool{false, true} {
+		for _, width := range []int{30, 60, 120} {
+			for _, binding := range []string{"M", "alt+m"} {
+				m := buildModel(t)
+				m.layout.width, m.layout.height, m.prefs.fullLayout = width, 34, full
+				m.prefs.hideStats = true
+				m.services.listKeys = m.services.listKeys.With(keybind.Messages, bindingOf(t, binding))
+				x, y := messagesCell(t, m)
+				if !m.notices.noticeHit.contains(x, y) {
+					t.Fatalf("full=%v width=%d binding=%s: painted messages entry misses its hit box %+v", full, width, binding, m.notices.noticeHit)
+				}
+				if m = leftPress(m, x, y); m.mode != modeNotices {
+					t.Fatalf("click on messages should open notices, mode=%v", m.mode)
+				}
+				m.notices.handleKey(m, key("esc"))
+				msg := key(binding)
+				if binding == "alt+m" {
+					msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}, Alt: true}
+				}
+				m.handleKey(msg)
+				if m.mode != modeNotices {
+					t.Fatalf("%s should open notices, mode=%v", binding, m.mode)
+				}
+				m.notices.handleKey(m, key("esc"))
+				for _, n := range m.notices.active(m) {
+					m.dismissNotice(n.id)
+				}
+				preparedView(m)
+				if footer := ansi.Strip(m.viewFooter()); strings.Contains(footer, "unread") {
+					t.Fatalf("with nothing unread the legend must give its room back:\n%s", footer)
+				}
+				if m = leftPress(m, x, y); m.mode != modeList {
+					t.Fatalf("a click where the entry was must not open Messages, mode=%v", m.mode)
+				}
+				m.handleKey(msg)
+				if m.mode != modeNotices {
+					t.Fatalf("%s should still open an empty Messages, mode=%v", binding, m.mode)
+				}
+			}
+		}
+	}
+}
+
 func TestClickOnMetersBesideTheCardDoesNothing(t *testing.T) {
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 120, 34
