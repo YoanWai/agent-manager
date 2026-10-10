@@ -196,6 +196,12 @@ func TestCatalogSessionRowsFollowCustomBindings(t *testing.T) {
 	if desc, ok := rowFor(defaults, "ctrl+q"); !ok || desc != `back to the manager (ctrl+\ too)` {
 		t.Errorf("default detach row = %q, %v", desc, ok)
 	}
+	if _, ok := rowFor(defaults, "ctrl+r"); !ok {
+		t.Error("default review row missing")
+	}
+	if _, ok := rowFor(defaults, "f3"); !ok {
+		t.Error("default editor row missing")
+	}
 	custom := sessionOf(t, []string{"f9"}, nil, []string{"alt+e"})
 	if desc, ok := rowFor(custom, "f9"); !ok || desc != "back to the manager" {
 		t.Errorf("custom detach row = %q, %v", desc, ok)

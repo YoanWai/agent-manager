@@ -56,6 +56,11 @@ func TestStaleAutoscrollTickCannotSteerANewerLift(t *testing.T) {
 	if !decision.Consumed || !model.reorder.autoscroll.running || model.reorder.autoscroll.anchored {
 		t.Fatalf("stale tick changed scroll = %+v decision = %+v", model.reorder.autoscroll, decision)
 	}
+	// The newer lift already runs its own tick; a second would scroll it
+	// twice as fast.
+	if decision.AutoScroll != nil {
+		t.Fatalf("stale tick scheduled another tick: %+v", decision.AutoScroll)
+	}
 }
 
 func TestDragEdgeSchedulesTypedAutoscroll(t *testing.T) {

@@ -682,6 +682,56 @@ func TestAltClickReleaseOutsidePaneReachesMouseTrackingApp(t *testing.T) {
 	}
 }
 
+// X10 reports a release as MouseButtonNone, so the button held by an
+// Alt-forwarded press must supply the release that reaches the app.
+func TestAltMouseForwardingKeepsTheRelease(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		button tea.MouseButton
+		want   int
+	}{
+		{name: "middle", button: tea.MouseButtonMiddle, want: 1},
+		{name: "right", button: tea.MouseButtonRight, want: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m, sess := focusedMouseApp(t, "mouse-tool", "release-"+tc.name)
+			box := m.focus.pane.FrameBox()
+			x, y := box.X+2, box.Y+1
+			m.handleFocusMouse(tea.MouseMsg{
+				Action: tea.MouseActionPress, Button: tc.button, Alt: true, X: x, Y: y,
+			})
+			m.handleFocusMouse(tea.MouseMsg{
+				Action: tea.MouseActionRelease, Button: tea.MouseButtonNone, X: x, Y: y,
+			})
+			m.drainEffects(t)
+
+			deadline := time.Now().Add(5 * time.Second)
+			for {
+				pane, err := m.services.tmux.CapturePane(sess.ID)
+				if err != nil {
+					t.Fatalf("capture: %v", err)
+				}
+				// A press report (terminator M) and its matching release (m),
+				// both carrying the button that was pressed.
+				if sgrMouseReportRe(tc.want, false).MatchString(pane) &&
+					sgrMouseReportRe(tc.want, true).MatchString(pane) {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatalf("release report never reached the pane: %q", pane)
+				}
+				time.Sleep(50 * time.Millisecond)
+			}
+		})
+	}
+}
+
+func TestHexBytesSpellsEveryReportByte(t *testing.T) {
+	if got, want := hexBytes("\x1b[<64;1;1M"), "1b 5b 3c 36 34 3b 31 3b 31 4d"; got != want {
+		t.Errorf("hexBytes = %q, want %q", got, want)
+	}
+}
+
 // An application that turns on mouse tracking owns the wheel: agent CLIs
 // run on the alternate screen, where tmux keeps no scrollback at all, and
 // scroll themselves when they receive the event.

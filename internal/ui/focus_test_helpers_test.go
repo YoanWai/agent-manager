@@ -31,6 +31,25 @@ func paneAt(t *testing.T, lines ...string) *Model {
 	return m
 }
 
+// focusedShotPane focuses the selected session of a model built without
+// tmux, painting rows at a known box so the root mouse path can be driven
+// in terminal coordinates.
+func focusedShotPane(t *testing.T, width, x, y int, rows ...string) (*Model, string) {
+	t.Helper()
+	m := shotModel()
+	m.mode = modeFocus
+	sess, ok := m.selected()
+	if !ok {
+		t.Fatal("test setup: no selected session")
+	}
+	preview := strings.Join(rows, "\n") + "\n"
+	m.workspace.preview = preview
+	m.focus.pane.Enter(uifocus.EnterContext{SessionID: sess.ID})
+	setFocusPaneID(m, sess.ID)
+	prepareFocusFrame(m, preview, width, len(rows), x, y, -1)
+	return m, sess.ID
+}
+
 func setFocusPaneID(m *Model, id string) {
 	updateFocusPane(m, id, func(*uifocus.PaneUpdate) {})
 }

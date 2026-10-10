@@ -245,8 +245,14 @@ func TestMouseReportEncodingsAndFrameRowOffset(t *testing.T) {
 	if got, want := sgrMouse(motionButton, 0, 0), "\x1b[<35;1;1M"; got != want {
 		t.Fatalf("motion report = %q, want %q", got, want)
 	}
+	if got, want := sgrMouse(wheelDownButton, 11, 4), "\x1b[<65;12;5M"; got != want {
+		t.Fatalf("wheel down report = %q, want %q", got, want)
+	}
 	if got, ok := x10Mouse(wheelUpButton, 0, 0); !ok || got != "\x1b[M`!!" {
 		t.Fatalf("X10 wheel = %q ok=%v", got, ok)
+	}
+	if got, ok := x10Mouse(motionButton, 11, 4); !ok || got != "\x1b[MC,%" {
+		t.Fatalf("X10 motion = %q ok=%v, want %q", got, ok, "\x1b[MC,%")
 	}
 	if _, ok := x10Mouse(wheelUpButton, x10Limit, 4); ok {
 		t.Fatal("X10 encoded a column outside its range")
@@ -298,6 +304,47 @@ func TestTallPaneCropKeepsCaretOnPaintedRow(t *testing.T) {
 	row, col, ok := model.cursorCell()
 	if !ok || row != 9 || col != 0 {
 		t.Fatalf("cropped caret = (%d,%d,%v), want painted row 9", row, col, ok)
+	}
+}
+
+func TestLinkAtFindsTheLinkUnderTheClick(t *testing.T) {
+	model := mouseModel(t, []string{
+		"read https://example.com/docs, then reply",
+		"no link on this row",
+	}, 80, PaneUpdate{})
+	if got := model.linkAt(0, 2); got != "" {
+		t.Fatalf("click before the link = %q, want none", got)
+	}
+}
+
+// X10 reports a release as MouseButtonNone, so the stored pressed button
+// must supply the SGR release code that reaches the app.
+func TestAltMouseForwardingKeepsTheRelease(t *testing.T) {
+	model := mouseModel(t, []string{"alpha beta"}, 40, PaneUpdate{Mouse: true, SGR: true})
+	ctx := mouseContext(time.Unix(150, 0), 1)
+	press := model.Mouse(tea.MouseMsg{
+		Action: tea.MouseActionPress, Button: tea.MouseButtonRight, Alt: true,
+		X: testOriginX + 2, Y: testOriginY,
+	}, ctx)
+	if !model.forward.active || model.selection.active {
+		t.Fatalf("Alt press did not start forwarding: forwarding=%v selection=%v", model.forward.active, model.selection.active)
+	}
+	if model.forward.button != rightButton {
+		t.Fatalf("forwarded button = %d, want %d", model.forward.button, rightButton)
+	}
+	if press.SendReport != "\x1b[<2;3;1M" {
+		t.Fatalf("forwarded press = %q, want the right-button press", press.SendReport)
+	}
+
+	release := model.Mouse(tea.MouseMsg{
+		Action: tea.MouseActionRelease, Button: tea.MouseButtonNone,
+		X: testOriginX + 2, Y: testOriginY,
+	}, ctx)
+	if release.SendReport != "\x1b[<2;3;1m" {
+		t.Fatalf("forwarded release = %q, want the right-button release", release.SendReport)
+	}
+	if model.forward.active || model.forward.button != leftButton {
+		t.Fatalf("release did not clear forwarding state: active=%v button=%d", model.forward.active, model.forward.button)
 	}
 }
 
