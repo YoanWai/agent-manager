@@ -262,3 +262,17 @@ func TestMessageStatusRefusesANonNumericID(t *testing.T) {
 		t.Fatalf("error = %v, want it to say where the id comes from", err)
 	}
 }
+
+func TestSpawnAcceptsSessionPreset(t *testing.T) {
+	out := &bytes.Buffer{}
+	fake := &fakeSessions{session: sampleSession()}
+	if err := runSpawn(out, fake, []string{"--preset", "project/reviewer", "--prompt", " task "}, "cafe0001"); err != nil {
+		t.Fatalf("spawn with preset: %v", err)
+	}
+	if fake.opts.Preset != "project/reviewer" || fake.opts.Prompt != " task " || fake.opts.Group != nil || fake.opts.Worktree != nil {
+		t.Fatalf("preset options changed: %+v", fake.opts)
+	}
+	if !strings.Contains(usageSpawn, "[--preset <name>]") || !strings.Contains(Help("test", false), "[--preset <name>]") {
+		t.Fatalf("spawn usage omits preset: %s", usageSpawn)
+	}
+}

@@ -55,7 +55,8 @@ type listSessionsArgs struct{}
 
 type createSessionArgs struct {
 	Name      string  `json:"name,omitempty" jsonschema:"kebab-case name for the new session, 2-4 words naming the work it will do (e.g. payments-retry-fix); leave empty only when the task is unknown, and the new agent will name itself"`
-	Prompt    string  `json:"prompt,omitempty" jsonschema:"first task to hand the new agent, written as a full instruction; it starts idle when empty"`
+	Prompt    string  `json:"prompt,omitempty" jsonschema:"first task to hand the new agent, written as a full instruction; an empty task sends only preset instructions when selected, otherwise it starts idle"`
+	Preset    string  `json:"preset,omitempty" jsonschema:"name of saved instructions from Settings; resolved freshly at creation and prepended literally to the first task; omit for no preset; a missing name refuses creation"`
 	Tool      string  `json:"tool,omitempty" jsonschema:"agent CLI to run, such as claude, codex, opencode, gemini or grok; defaults to the caller's CLI, or to the one picked in settings when the caller is a terminal; call list_sessions to see which are in use"`
 	Group     *string `json:"group,omitempty" jsonschema:"existing group path to file the session under; pass an empty string for the root group; defaults to this agent's group; call list_groups for the existing ones"`
 	Directory string  `json:"directory,omitempty" jsonschema:"existing directory the session works in; defaults to this agent's own directory, or to the selected group's inherited path when group is set"`
@@ -358,6 +359,7 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 			Group:     args.Group,
 			Directory: args.Directory,
 			Prompt:    args.Prompt,
+			Preset:    args.Preset,
 			Worktree:  args.Worktree,
 			Model:     args.Model,
 			Effort:    args.Effort,
