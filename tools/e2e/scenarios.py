@@ -20,14 +20,8 @@ from pathlib import Path
 
 from smoke import Sandbox
 
-BUILTIN_TOOLS = ('antigravity', 'claude', 'command-code', 'codex', 'gemini',
-                 'grok', 'hermes', 'muse', 'opencode', 'pi', 'terminal')
 FAKE_CLI = 'command-code'
 FAKE_BIN = 'cmd'
-# [tools.*] blocks in config.toml only ignore builtins, so the fixture swap
-# must live on PATH, not in the file; hidden_tools keeps the pickers to the
-# two fixture tools.
-HIDDEN_TOOLS = [name for name in BUILTIN_TOOLS if name != FAKE_CLI]
 READY_MARKER = 'fixture-cli ready'
 SESSION_NAME = 'fixagent'
 
@@ -48,11 +42,6 @@ def fake_cli_script(marker, delay=0):
     return '\n'.join(lines) + '\n'
 
 
-def config_fixture_text():
-    # poll_interval shortens the poller so readiness observations stay fast.
-    return 'poll_interval = "1s"\n'
-
-
 def profile_dir(sandbox):
     # os.UserConfigDir: Library/Application Support on macOS, XDG_CONFIG_HOME elsewhere.
     if sys.platform == 'darwin':
@@ -66,9 +55,6 @@ def write_fixture(sandbox, slow_seconds=0):
     fake = bin_dir / FAKE_BIN
     fake.write_text(fake_cli_script(READY_MARKER, slow_seconds))
     fake.chmod(0o755)
-    config_dir = profile_dir(sandbox)
-    config_dir.mkdir(parents=True)
-    (config_dir / 'config.toml').write_text(config_fixture_text())
     sandbox.env['PATH'] = str(bin_dir) + ':' + sandbox.env.get('PATH', '')
 
 
@@ -85,17 +71,11 @@ def ensure_binary(root, artifacts, given):
 
 
 def seed_store(sandbox):
-    """Seed picker settings once the manager has created its store.
-
-    hidden_tools lives in the store, not config.toml, so the fixture seeds
-    the table a second connection writes to while the manager runs.
-    """
+    """Make the fixture CLI the form's default tool once the manager has created its store."""
     db = profile_dir(sandbox) / 'state.db'
     sandbox.wait('state-db', lambda: str(db) if db.exists() else '', lambda value: value != '')
     conn = sqlite3.connect(str(db), timeout=5)
     try:
-        conn.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('hidden_tools', ?)",
-                     (','.join(HIDDEN_TOOLS),))
         conn.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('default_tool', ?)", (FAKE_CLI,))
         conn.commit()
     finally:

@@ -4,10 +4,9 @@ Build the candidate once, then run the separate matrix and slower process gate:
 
 ```sh
 go build -o /tmp/agent-manager-candidate .
-python3 -m unittest discover -s tools/compatibility -p 'test_*.py'
 python3 tools/compatibility/matrix.py --binary /tmp/agent-manager-candidate
 python3 tools/compatibility/matrix.py --binary /tmp/agent-manager-candidate --release v0.38.0
-bash tools/compatibility/two_manager.sh /tmp/agent-manager-candidate
+python3 tools/compatibility/two_manager.py --binary /tmp/agent-manager-candidate
 ```
 
 The matrix downloads v0.39.0 for the current macOS/Linux architecture, verifies

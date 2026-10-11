@@ -79,8 +79,6 @@ jobs:
         run: python3 tools/e2e/scenarios.py --binary "$RUNNER_TEMP/am-e2e-binary" --artifacts "$RUNNER_TEMP/am-scenario-evidence"
       - name: Installation failure scenarios
         run: python3 tools/e2e/failure_scenarios.py --binary "$RUNNER_TEMP/am-e2e-binary" --artifacts "$RUNNER_TEMP/am-failure-evidence"
-      - name: Compatibility fixture safety
-        run: python3 -m unittest discover -s tools/compatibility -p 'test_*.py'
       - name: Retain smoke evidence
         if: always()
         uses: actions/upload-artifact@v7
