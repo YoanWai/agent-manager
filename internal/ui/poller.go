@@ -264,10 +264,18 @@ func (p *poller) transcriptTail(sess store.Session, dir string) (prompt, reply s
 	if !ok {
 		return "", ""
 	}
-	prompt = oneLine(tailPrompt)
-	reply = oneLine(tailReply)
+	prompt = transcriptLine(tailPrompt)
+	reply = transcriptLine(tailReply)
 	p.transcripts[sess.ID] = transcriptTailCache{path: path, size: info.Size(), modTime: info.ModTime(), prompt: prompt, reply: reply}
 	return prompt, reply
+}
+
+// transcriptLine flattens transcript text to one row. A pane reaches the
+// row through capture-pane, which drops escapes and controls on the way;
+// a file holds whatever was typed or pasted into it, so the row strips
+// them itself.
+func transcriptLine(text string) string {
+	return oneLine(sanitizeBody(ansi.Strip(text)))
 }
 
 func capRunes(text string, limit int) string {
