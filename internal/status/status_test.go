@@ -925,6 +925,21 @@ func TestNewEngineBadPattern(t *testing.T) {
 	}
 }
 
+func TestNewEngineRejectsDialogQuestionWithoutAGroup(t *testing.T) {
+	cfg := config.Config{
+		Tools: map[string]config.Tool{
+			"bad": {DialogQuestion: `Do you want to .*\?`},
+		},
+	}
+	_, err := NewEngine(cfg)
+	if err == nil {
+		t.Fatal("expected error for dialog_question without a capture group")
+	}
+	if !strings.Contains(err.Error(), "tool bad") || !strings.Contains(err.Error(), "group") {
+		t.Fatalf("error = %q, want the tool and the missing group named", err)
+	}
+}
+
 func TestLongTurnAndMidLineQuestion(t *testing.T) {
 	engine := defaultEngine(t)
 	cases := []struct {
@@ -1580,6 +1595,90 @@ func TestLastMessageQuotesAnOpenDialogsQuestion(t *testing.T) {
 	}
 }
 
+// A permission ask replaces the composer, and its selected option sits one
+// column in, so the prompt echo above is the newest cutoff and the question
+// is below it. Frame from a live Claude Code session on 2026-10-10.
+func TestLastMessageQuotesAPermissionAsk(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := "⏺ Ran. Exit clean, no output (headers discarded to /dev/null as requested).\n" +
+		"\n" +
+		"✻ Crunched for 8s · done 23:37\n" +
+		"\n" +
+		"❯ Use the Write tool to create the file /etc/amhk-probe.txt containing hi. Use no other tool.\n" +
+		"\n" +
+		"  Writing /etc/amhk-probe.txt\n" +
+		"────────────\n" +
+		" Create file\n" +
+		" ../../../../../../../../etc/amhk-probe.txt\n" +
+		"╌╌╌╌╌╌╌╌╌╌╌╌\n" +
+		"  1 hi\n" +
+		"╌╌╌╌╌╌╌╌╌╌╌╌\n" +
+		"\n" +
+		" Do you want to create amhk-probe.txt?\n" +
+		" ❯ 1. Yes\n" +
+		"   2. Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session\n" +
+		"   3. No\n" +
+		"\n" +
+		" Esc to cancel · Tab to amend\n"
+	quote, anchored, ok := engine.LastMessage("claude", pane)
+	if !ok || !anchored || quote != "Do you want to create amhk-probe.txt?" {
+		t.Fatalf("quote = %q anchored=%v ok=%v, want the permission ask", quote, anchored, ok)
+	}
+}
+
+// The trust dialog opens before any composer exists, so there is no
+// cutoff to read a region from; the question still has to be the quote.
+// Frame from a live Claude Code session on 2026-10-10.
+func TestLastMessageQuotesTheTrustDialogsQuestion(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := "────────────\n" +
+		" Accessing workspace:\n" +
+		" /private/tmp/amnb1/work\n" +
+		" Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source project, or work from\n" +
+		" your team). If not, take a moment to review what's in this folder first.\n" +
+		" Claude Code'll be able to read, edit, and execute files here.\n" +
+		" Security guide\n" +
+		" ❯ No, exit\n" +
+		"   Yes, I trust this folder\n" +
+		" Enter to confirm · Esc to cancel\n"
+	quote, anchored, ok := engine.LastMessage("claude", pane)
+	if !ok || !anchored || quote != "Is this a project you created or one you trust?" {
+		t.Fatalf("quote = %q anchored=%v ok=%v, want the trust question", quote, anchored, ok)
+	}
+}
+
+// command-code's approval dialog draws its selected option on the
+// composer row, so the question sits at the end of the region above it.
+// Frame from a live Command Code v1.79.2 session on 2026-10-11.
+func TestLastMessageQuotesACommandCodeApproval(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := "⠶ total 0\n" +
+		"    drwxr-xr-x@  3 yoan  wheel   96 Oct 11 00:05 .\n" +
+		"  The /tmp/amnb2/work directory exists and contains a single .commandcode\n" +
+		"  subdirectory.\n" +
+		"\n" +
+		"❯ Use your file write tool to create probe.txt in the current directory\n" +
+		"  containing the word hi. Use no other tool.\n" +
+		"\n" +
+		"────────────\n" +
+		"Create File\n" +
+		"\n" +
+		"Do you want to create probe.txt?\n" +
+		"\n" +
+		"❯ 1. Yes\n" +
+		"  2. Yes, allow all edits this session [shift+tab]\n" +
+		"  3. No, tell Command Code what to do differently\n" +
+		"\n" +
+		"↑/↓ navigate · enter select · Run cmd --yolo to bypass all permissions (Docs ↗)\n"
+	quote, anchored, ok := engine.LastMessage("command-code", pane)
+	if !ok || !anchored || quote != "Do you want to create probe.txt?" {
+		t.Fatalf("quote = %q anchored=%v ok=%v, want the approval question", quote, anchored, ok)
+	}
+	if state, _ := engine.Match("command-code", pane); state != Waiting {
+		t.Fatalf("state = %q, want waiting", state)
+	}
+}
+
 // Echo shapes verified live on 2026-08-23: codex v0.56 (trust dialog and
 // composer share the › marker), gemini v0.53 (> echo, ✦ reply), opencode
 // v1.18.21 (┃ gutter echo above the reply, composer block on the cutoff).
@@ -1695,6 +1794,37 @@ func TestGrokCapturedQueue(t *testing.T) {
 				if strings.Contains(text, chrome) {
 					t.Errorf("copy includes %q: %q", chrome, text)
 				}
+			}
+		})
+	}
+}
+
+// grok 1.0.50 echoes a sent prompt behind ❯: indented with a clock at the
+// row's right edge under fullscreen, flush-left under --minimal. The clock
+// reads the same under a German locale. The rows a long prompt wrapped
+// onto stay out of the copied reply.
+func TestGrokEchoesItsPrompt(t *testing.T) {
+	engine := defaultEngine(t)
+	for _, tc := range []struct{ capture, prompt, reply string }{
+		{"finished-wrapped-prompt", "Reply with exactly the word OK and nothing else. This sentence is only padding", "     OK"},
+		{"finished-de-locale", "Reply with exactly the word OK.", "     OK"},
+		{"minimal-two-prompts", "Now reply with exactly the word YES.", "YES"},
+	} {
+		t.Run(tc.capture, func(t *testing.T) {
+			data, err := os.ReadFile("testdata/grok/1.0.50/" + tc.capture + ".txt")
+			if err != nil {
+				t.Fatal(err)
+			}
+			pane := engine.Plain("grok", string(data))
+			if echoed, ok := engine.LastUserEcho("grok", pane); !ok || echoed != tc.prompt {
+				t.Fatalf("echo = %q ok=%v, want %q", echoed, ok, tc.prompt)
+			}
+			text, bounded, ok := engine.FullTurnText("grok", pane)
+			if !ok || !bounded || !strings.HasPrefix(text, tc.reply) {
+				t.Fatalf("copy = %q bounded=%v ok=%v, want it to open on %q", text, bounded, ok, tc.reply)
+			}
+			if strings.Contains(text, "wraps onto") {
+				t.Fatalf("copy kept the prompt's wrapped row: %q", text)
 			}
 		})
 	}
@@ -1849,8 +1979,8 @@ func TestGrokLastMessageSkipsChrome(t *testing.T) {
 		t.Fatalf("minimal grok quote = %q, want the reply", line)
 	}
 
-	if echoed, ok := engine.LastUserEcho("grok", fullscreen); ok {
-		t.Fatalf("grok has no user_echo, LastUserEcho ok=%v echo=%q", ok, echoed)
+	if echoed, ok := engine.LastUserEcho("grok", fullscreen); !ok || echoed != "" {
+		t.Fatalf("a pane with no prompt row echoes nothing, LastUserEcho ok=%v echo=%q", ok, echoed)
 	}
 }
 
@@ -2095,9 +2225,9 @@ func TestFullTurnTextKeepsTableRows(t *testing.T) {
 // tool draws behind its own composer marker cannot pass for one: opencode
 // spells its model footer in the ┃ gutter its echoes use, and codex draws
 // an open dialog's options behind ›. Row shapes as verified live in
-// TestLastUserEchoPerTool. Tools that echo nothing (grok, hermes) take the
-// composer row itself as the bound, and a reply body that renders indented
-// (opencode) is content, not a wrapped prompt's tail.
+// TestLastUserEchoPerTool. grok's prompt owns the deeper-indented rows it
+// wrapped onto, and a reply body that renders indented (opencode) is
+// content, not a wrapped prompt's tail.
 func TestFullTurnTextPerTool(t *testing.T) {
 	engine := defaultEngine(t)
 	cases := []struct {
@@ -2159,17 +2289,19 @@ func TestFullTurnTextPerTool(t *testing.T) {
 			want: "⠶ CMD ECHO TEST DONE.\n  And a second line of the reply.",
 		},
 		{
-			name: "grok bounds on its composer row, not its turn summary",
+			name: "grok bounds on its prompt, not its turn summary",
 			tool: "grok",
-			pane: "│ ❯ first prompt\n" +
-				"Grok answer paragraph one.\n" +
-				"Grok answer paragraph two.\n" +
-				"  Worked for 3s. Press ctrl+c to stop\n" +
-				"│ ❯ ",
-			want: "Grok answer paragraph one.\nGrok answer paragraph two.",
+			pane: "     ❯ first prompt, long enough to wrap onto    3:46 PM\n" +
+				"       a second row\n" +
+				"\n" +
+				"     Grok answer paragraph one.\n" +
+				"     Grok answer paragraph two.\n" +
+				"     Worked for 3s. Press ctrl+c to stop\n" +
+				"  │ ❯ ",
+			want: "     Grok answer paragraph one.\n     Grok answer paragraph two.",
 		},
 		{
-			name: "grok keeps no prompt, so its previous turn summary bounds",
+			name: "grok's prompt scrolled off, so its previous turn summary bounds",
 			tool: "grok",
 			pane: "Grok answer to the first question.\n" +
 				"  Worked for 3s. Press ctrl+c to stop\n" +
@@ -2292,14 +2424,14 @@ func TestFullTurnTextPerTool(t *testing.T) {
 	}
 }
 
-// Where nothing in the pane says the turn began - grok keeps no prompt in
-// its transcript, and its summary can sit above the capture - the text is
-// the whole region, and the caller is told so. pi draws no readable region
+// Where nothing in the pane says the turn began - grok's prompt scrolled
+// off, and its summary can sit above the capture - the text is the whole
+// region, and the caller is told so. pi draws no readable region
 // at all, so no reply can be read from it.
 func TestFullTurnTextReportsAnUnboundedCopy(t *testing.T) {
 	engine := defaultEngine(t)
-	bounded := "│ ❯ a prompt\nGrok answered it.\n│ ❯ "
-	if text, isBounded, ok := engine.FullTurnText("grok", bounded); !ok || !isBounded || text != "Grok answered it." {
+	bounded := "     ❯ a prompt\n     Grok answered it.\n  │ ❯ "
+	if text, isBounded, ok := engine.FullTurnText("grok", bounded); !ok || !isBounded || text != "     Grok answered it." {
 		t.Fatalf("bounded grok turn = %q bounded=%v ok=%v", text, isBounded, ok)
 	}
 	unbounded := "Grok answered something older.\nGrok answered this too.\n│ ❯ "

@@ -43,7 +43,7 @@ type poller struct {
 	gitDrv        *git.Driver
 	statusSources map[string]string
 	sessionStores map[string]string
-	claudeTails   map[string]claudeTailCache
+	transcripts   map[string]transcriptTailCache
 	mcpStyles     map[string]string
 	reportStyles  map[string]string
 	shellTools    map[string]bool
@@ -173,7 +173,9 @@ func isManagerEcho(line string) bool {
 // prompt sent to it. The visible pane is the first source; when an
 // anchor scrolled off it, the recovery is the tool's own transcript for
 // Claude Code (which repaints in place, so tmux holds no history for
-// it), and a deeper pane capture for everything else.
+// it), and a deeper pane capture for everything else. pi and omp draw a
+// prompt with no marker at all, so theirs is read from their session file
+// every time.
 func (p *poller) rowLines(sess store.Session, pane, dir string) (quote, prompt string) {
 	clean := p.engine.Plain(sess.Tool, pane)
 	quote, anchored, ok := p.engine.LastMessage(sess.Tool, clean)
@@ -186,12 +188,13 @@ func (p *poller) rowLines(sess store.Session, pane, dir string) (quote, prompt s
 	}
 	quoteAdrift := ok && !anchored && p.engine.HasMessageStart(sess.Tool)
 	promptAdrift := echoOK && prompt == ""
-	if (quoteAdrift || promptAdrift) && p.mcpStyles[sess.Tool] == "claude" && sess.AgentSessionID != "" {
-		tailPrompt, tailReply := p.claudeTail(sess, dir)
+	promptUnreadable := !echoOK
+	if (quoteAdrift || promptAdrift || promptUnreadable) && agentsession.KeepsTranscript(p.reportStyles[sess.Tool]) && sess.AgentSessionID != "" {
+		tailPrompt, tailReply := p.transcriptTail(sess, dir)
 		if quoteAdrift && tailReply != "" {
 			quote = tailReply
 		}
-		if promptAdrift && tailPrompt != "" {
+		if (promptAdrift || promptUnreadable) && tailPrompt != "" {
 			prompt = tailPrompt
 		}
 	} else if quoteAdrift || promptAdrift {
@@ -208,9 +211,9 @@ func (p *poller) rowLines(sess store.Session, pane, dir string) (quote, prompt s
 	return capRunes(quote, rowQuoteCap), capRunes(prompt, rowQuoteCap)
 }
 
-// claudeTailCache keeps one transcript's extraction keyed to its file
+// transcriptTailCache keeps one transcript's extraction keyed to its file
 // stats, so an unchanged transcript is not re-read every tick.
-type claudeTailCache struct {
+type transcriptTailCache struct {
 	path    string
 	size    int64
 	modTime time.Time
@@ -218,24 +221,24 @@ type claudeTailCache struct {
 	reply   string
 }
 
-// claudeTail is the newest prompt and reply in a Claude Code session's
-// own transcript, flattened to single lines. Claude moves the transcript
-// with a session that changes directory, so dir, where the agent sits now,
-// is tried before the launch directory.
-func (p *poller) claudeTail(sess store.Session, dir string) (prompt, reply string) {
+// transcriptTail is the newest prompt and reply in a session's own
+// transcript, flattened to single lines. Claude moves the transcript with
+// a session that changes directory, so dir, where the agent sits now, is
+// tried before the launch directory.
+func (p *poller) transcriptTail(sess store.Session, dir string) (prompt, reply string) {
+	style := p.reportStyles[sess.Tool]
 	var info os.FileInfo
 	var path string
 	for _, candidate := range []string{dir, sess.Cwd} {
 		if candidate == "" {
 			continue
 		}
-		candidatePath, err := agentsession.ClaudeTranscriptPath(candidate, sess.AgentSessionID)
-		if err != nil {
-			return "", ""
-		}
-		info, err = os.Stat(candidatePath)
+		candidatePath, err := agentsession.TranscriptPath(style, candidate, sess.AgentSessionID)
 		if err == nil {
-			dir, path = candidate, candidatePath
+			info, err = os.Stat(candidatePath)
+		}
+		if err == nil {
+			path = candidatePath
 			break
 		}
 		// A launch directory copy is only the transcript when the live one
@@ -247,7 +250,7 @@ func (p *poller) claudeTail(sess store.Session, dir string) (prompt, reply strin
 	if path == "" {
 		return "", ""
 	}
-	if cached, ok := p.claudeTails[sess.ID]; ok && cached.path == path && cached.size == info.Size() && cached.modTime.Equal(info.ModTime()) {
+	if cached, ok := p.transcripts[sess.ID]; ok && cached.path == path && cached.size == info.Size() && cached.modTime.Equal(info.ModTime()) {
 		return cached.prompt, cached.reply
 	}
 	cleanUser := func(text string) string {
@@ -257,14 +260,22 @@ func (p *poller) claudeTail(sess store.Session, dir string) (prompt, reply strin
 		}
 		return cleaned
 	}
-	tailPrompt, tailReply, ok := agentsession.ClaudeTranscriptTail(dir, sess.AgentSessionID, cleanUser)
+	tailPrompt, tailReply, ok := agentsession.TranscriptTail(style, path, cleanUser)
 	if !ok {
 		return "", ""
 	}
-	prompt = oneLine(tailPrompt)
-	reply = oneLine(tailReply)
-	p.claudeTails[sess.ID] = claudeTailCache{path: path, size: info.Size(), modTime: info.ModTime(), prompt: prompt, reply: reply}
+	prompt = transcriptLine(tailPrompt)
+	reply = transcriptLine(tailReply)
+	p.transcripts[sess.ID] = transcriptTailCache{path: path, size: info.Size(), modTime: info.ModTime(), prompt: prompt, reply: reply}
 	return prompt, reply
+}
+
+// transcriptLine flattens transcript text to one row. A pane reaches the
+// row through capture-pane, which drops escapes and controls on the way;
+// a file holds whatever was typed or pasted into it, so the row strips
+// them itself.
+func transcriptLine(text string) string {
+	return oneLine(sanitizeBody(ansi.Strip(text)))
 }
 
 func capRunes(text string, limit int) string {
@@ -309,7 +320,7 @@ func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hook
 		interval:      interval,
 		poke:          make(chan struct{}, 1),
 		paneHashes:    map[string]uint64{},
-		claudeTails:   map[string]claudeTailCache{},
+		transcripts:   map[string]transcriptTailCache{},
 		quietSince:    map[string]quietTimer{},
 		recaptureSeen: map[string]recaptureSighting{},
 		notifyFn:      postNotification,
@@ -644,7 +655,7 @@ func (p *poller) refreshOnce() tea.Msg {
 			if written && newStatus != sess.Status {
 				sessions[i].Status = newStatus
 				if changed {
-					p.notifyTransition(sess, newStatus)
+					p.notifyTransition(sess, newStatus, panePrompts[sess.ID], paneLastLines[sess.ID])
 				}
 			}
 		}
@@ -1150,16 +1161,17 @@ func inboxEnvelope(msg store.InboxMessage, mcpStyle string, fromShell bool) stri
 		reply)
 }
 
-// sanitizeBody drops the control bytes that would move the cursor or open
-// an escape sequence when the message is pasted into a live pane. Newlines
-// and tabs are the message's own shape, and bracketed paste already keeps a
-// newline from submitting the recipient's prompt.
+// sanitizeBody drops the control characters that would move the cursor or
+// open an escape sequence when the message is pasted into a live pane, the
+// C1 range included, since a terminal in UTF-8 mode reads U+009B as a CSI.
+// Newlines and tabs are the message's own shape, and bracketed paste
+// already keeps a newline from submitting the recipient's prompt.
 func sanitizeBody(body string) string {
 	return strings.Map(func(r rune) rune {
 		if r == '\n' || r == '\t' {
 			return r
 		}
-		if r < 0x20 || r == 0x7f {
+		if r < 0x20 || (r >= 0x7f && r <= 0x9f) {
 			return -1
 		}
 		return r
@@ -1484,31 +1496,39 @@ func (p *poller) applyHookStatus(sess store.Session, text, hookStatus string) st
 // finished stays quiet unless opted in, since most turn ends are routine.
 // There is no focus gate: the poll cannot tell whether the user is looking
 // at the manager, and the session they are watching is precisely the one
-// whose ping they must not miss.
-func (p *poller) notifyTransition(sess store.Session, newStatus string) {
+// whose ping they must not miss. The banner quotes what the row shows:
+// a waiting session's question, a finished session's prompt.
+func (p *poller) notifyTransition(sess store.Session, newStatus, prompt, quote string) {
 	if p.notifyFn == nil {
 		return
 	}
 	var kind notify.Kind
+	var text string
 	switch newStatus {
 	case status.Waiting:
-		kind = notify.Waiting
+		kind, text = notify.Waiting, quote
 	case status.Errored:
 		kind = notify.Errored
 	case status.Finished:
 		if !p.notifyFinished() {
 			return
 		}
-		kind = notify.Finished
+		kind, text = notify.Finished, sessionPrompt(sess, prompt)
 	default:
 		return
 	}
 	if !p.notificationsOn() {
 		return
 	}
+	// A worktree the manager made is named after the session, so the
+	// repository it was cut from is the directory worth naming.
+	dir := sess.Cwd
+	if sess.WorktreeRepo != "" {
+		dir = sess.WorktreeRepo
+	}
 	// Delivery can wait on an external process (osascript, notify-send),
 	// so it must never run inside refreshOnce, which holds runMu.
-	go p.notifyFn(notify.Event{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: kind})
+	go p.notifyFn(notify.Event{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: kind, Dir: dir, Branch: sess.WorktreeBranch, Text: text})
 }
 
 func (p *poller) notificationsOn() bool {
