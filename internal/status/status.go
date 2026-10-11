@@ -686,8 +686,8 @@ func (tr toolRules) isStructural(line string) bool {
 //
 // bounded says a prompt echo or a turn summary marked where the turn
 // began. Where neither is in frame the text is the whole region, which
-// can hold several turns: grok keeps no prompt in its transcript, and
-// any tool's summary can sit above the capture.
+// can hold several turns: a prompt can scroll off, and any tool's summary
+// can sit above the capture.
 //
 // ok is false where no reply can be read at all: the tool declares no
 // activity_cutoff, the pane holds none, or its region is frame only, as
@@ -712,17 +712,17 @@ func (e *Engine) FullTurnText(tool, pane string) (text string, bounded, ok bool)
 			return "", false, false
 		}
 	}
-	body, afterEcho, bounded := tr.newestTurn(lines)
+	body, opening, afterEcho := tr.newestTurn(lines)
 	text = tr.turnProse(body, afterEcho)
 	// A prompt sent while the last turn was still being read leaves the
 	// newest turn empty, and the answer the user is looking at is the one
 	// above it. Cut the prompt row itself with it, or the same empty turn
 	// comes back.
-	if start := len(lines) - len(body); text == "" && start > 0 {
-		body, afterEcho, bounded = tr.newestTurn(lines[:start-1])
+	if text == "" && opening >= 0 {
+		body, opening, afterEcho = tr.newestTurn(lines[:opening])
 		text = tr.turnProse(body, afterEcho)
 	}
-	return text, bounded && !fromPane, true
+	return text, opening >= 0 && !fromPane, true
 }
 
 // paneAboveComposer is the pane without the composer its tool draws at the
@@ -811,37 +811,49 @@ func (tr toolRules) contentRows(body []string, trimPrompt bool) []string {
 	return out
 }
 
-// newestTurn is the region past its newest prompt: the row after the
+// newestTurn is the region past its newest prompt: the rows after the
 // prompt the tool echoed, or after the last composer row for a tool that
-// echoes nothing (grok, hermes), whose cutoff draws every prompt it kept
-// on screen. With no prompt in frame either way, the summary that closed
-// the previous turn bounds it instead. afterEcho reports that a prompt
-// was found, so the rows under it can still be its wrapped tail.
-func (tr toolRules) newestTurn(lines []string) (body []string, afterEcho, bounded bool) {
+// echoes nothing, whose cutoff draws every prompt it kept on screen.
+// With no prompt in frame either way, the summary that closed the
+// previous turn bounds it instead. opening is the row that bounds the
+// turn, -1 when nothing does. afterEcho reports that a prompt was found,
+// so the rows under it can still be its wrapped tail.
+func (tr toolRules) newestTurn(lines []string) (body []string, opening int, afterEcho bool) {
 	if tr.userEcho != nil {
 		if i := tr.lastEchoIndex(lines); i >= 0 {
-			return lines[i+1:], true, true
+			return lines[tr.echoEnd(lines, i):], i, true
 		}
 	} else {
 		for i := len(lines) - 1; i >= 0; i-- {
 			line := strings.TrimRight(lines[i], " \t")
 			if tr.inputRow(line) && !tr.matchesAnyRule(line) {
-				return lines[i+1:], true, true
+				return lines[i+1:], i, true
 			}
 		}
 	}
 	if i := tr.previousTurnEndIndex(lines); i >= 0 {
-		return lines[i+1:], false, true
+		return lines[i+1:], i, false
 	}
-	return lines, false, false
+	return lines, -1, false
+}
+
+// echoEnd is the first row past the echo at i. Where replies open on no
+// marker (grok), indentation is all that ends a wrapped prompt, and a
+// chrome_block that claims the echo reads it that way; turnProse trims a
+// marked tool's wrapped prompt itself.
+func (tr toolRules) echoEnd(lines []string, i int) int {
+	if tr.messageStart == nil && tr.chromeBlockRows(lines[i : i+1])[0] {
+		return tr.chromeBlockEnd(lines, i)
+	}
+	return i + 1
 }
 
 // previousTurnEndIndex is the turn summary that closed the turn before
 // the newest one, the bound left when no prompt is in frame: a tool that
-// keeps none (grok), or a prompt the capture cut off or a status rule
-// claimed. A running turn has drawn no summary of its own yet, so the
-// last one is that boundary; once it ends, the last summary is its own
-// and the one above it opens the turn. -1 when neither is in frame.
+// keeps none, or a prompt the capture cut off or a status rule claimed.
+// A running turn has drawn no summary of its own yet, so the last one is
+// that boundary; once it ends, the last summary is its own and the one
+// above it opens the turn. -1 when neither is in frame.
 func (tr toolRules) previousTurnEndIndex(lines []string) int {
 	if tr.turnEnd == nil {
 		return -1
@@ -925,9 +937,8 @@ func (e *Engine) LastUserEcho(tool, pane string) (string, bool) {
 	if i < 0 {
 		return "", true
 	}
-	line := strings.TrimRight(lines[i], " \t")
-	loc := tr.userEcho.FindStringIndex(line)
-	return strings.TrimSpace(line[loc[1]:]), true
+	echoed, _ := tr.echoText(strings.TrimRight(lines[i], " \t"))
+	return echoed, true
 }
 
 // lastEchoIndex is the row carrying the newest prompt the tool echoed, or
@@ -952,8 +963,8 @@ func (tr toolRules) lastEchoIndex(lines []string) int {
 	}
 	for i := end - 1; i >= 0; i-- {
 		line := strings.TrimRight(lines[i], " \t")
-		loc := tr.userEcho.FindStringIndex(line)
-		if loc == nil {
+		echoed, ok := tr.echoText(line)
+		if !ok {
 			continue
 		}
 		// A dialog draws its option rows behind the same marker the
@@ -962,7 +973,6 @@ func (tr toolRules) lastEchoIndex(lines []string) int {
 		if tr.matchesAnyRule(line) {
 			continue
 		}
-		echoed := strings.TrimSpace(line[loc[1]:])
 		if echoed == "" {
 			continue
 		}
@@ -972,6 +982,20 @@ func (tr toolRules) lastEchoIndex(lines []string) int {
 		return i
 	}
 	return -1
+}
+
+// echoText is the prompt on an echo row: the user_echo group when the
+// pattern has one, so a tool can leave out what it draws beside the prompt,
+// otherwise everything past the marker.
+func (tr toolRules) echoText(line string) (string, bool) {
+	match := tr.userEcho.FindStringSubmatchIndex(line)
+	if match == nil {
+		return "", false
+	}
+	if tr.userEcho.NumSubexp() > 0 {
+		return strings.TrimSpace(line[match[2]:match[3]]), true
+	}
+	return strings.TrimSpace(line[match[1]:]), true
 }
 
 func (tr toolRules) matchesAnyRule(line string) bool {

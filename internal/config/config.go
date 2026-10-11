@@ -108,7 +108,8 @@ type Tool struct {
 	InputPlaceholder string `toml:"input_placeholder"`
 	// UserEcho marks a line where the tool echoes a submitted prompt into
 	// its transcript, which is how the last thing sent to a session is
-	// read back regardless of who typed it or from where.
+	// read back regardless of who typed it or from where. A group, when
+	// the pattern has one, is the prompt itself.
 	UserEcho string `toml:"user_echo"`
 	// DialogFooter is a line the tool draws under its input marker while a
 	// dialog owns the input box. It tells a dialog that reuses that marker
@@ -524,6 +525,9 @@ turn_end = "(?m)^\\s*Worked for [\\dhms. ]+s\\.?(?:\\s|$).*\\bstop\\b"
 chrome_line = "^\\s*[┃❙│─━╭╮╰╯█▴▾]*\\s*$|^.* │ \\[Dashboard\\]$|^\\s*⎇ |^\\s*Help improve Grok\\b|^\\s*Off by default\\. Opt-in|^\\s*Read Terms and Privacy Policy|^\\s*minimal ·|^\\s*Grok \\d|^\\s*◆ (?:user_prompt_submit|session_start)\\b|^\\s*✓ |^\\s*Shift\\+Tab:"
 # the duration line sits under the reply; LastMessage steps over it so the row quotes the reply
 trailing_note = "^Worked for "
+# a sent prompt: indented under fullscreen with a clock at the row's right
+# edge, which the group leaves out, and flush-left under --minimal
+user_echo = "^\\s*❯ (.*?)(?:\\s{2,}\\d{1,2}:\\d{2} [AP]M)?$"
 # Transcript prompts and their wrapped rows are not Grok replies.
 chrome_block = "^\\s+❯ |^\\s*Help improve Grok\\b|^\\s*[▾▸] Queued \\d+"
 limit_line = "(?i)You've hit the rate limit|You hit your free usage limit|You've reached your free Grok Build usage limit|usage limit reached|out of credits"
