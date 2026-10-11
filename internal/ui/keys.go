@@ -565,6 +565,10 @@ const notifyFinishedSetting = "notify_finished"
 // the event in AM_* variables. Empty runs nothing.
 const notifyCommandSetting = "notify_command"
 
+// notifyCommandShownSetting is the last notify command a banner showed the
+// user, so a new one is announced once, before its first run.
+const notifyCommandShownSetting = "notify_command_shown"
+
 func (m *Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "enter":

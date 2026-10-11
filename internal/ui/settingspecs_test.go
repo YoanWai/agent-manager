@@ -52,6 +52,9 @@ func TestSettingSpecsCoverEveryKeySettingsWrites(t *testing.T) {
 			t.Errorf("Settings writes %s, which SettingSpecs does not name", key)
 			continue
 		}
+		if spec.Row == "" {
+			t.Errorf("Settings writes %s, which SettingSpecs names with no row", key)
+		}
 		if err := spec.Check(value); err != nil {
 			t.Errorf("Settings wrote %s=%q: %v", key, value, err)
 		}
@@ -60,11 +63,8 @@ func TestSettingSpecsCoverEveryKeySettingsWrites(t *testing.T) {
 		t.Fatal("closing Settings wrote nothing, so the test checked nothing")
 	}
 	for key, spec := range specs {
-		if _, present := after[key]; !present {
+		if _, present := after[key]; !present && spec.Row != "" {
 			t.Errorf("SettingSpecs names %s (%s), which closing Settings never writes", key, spec.Row)
-		}
-		if spec.Row == "" {
-			t.Errorf("%s has no Settings row named", key)
 		}
 	}
 }

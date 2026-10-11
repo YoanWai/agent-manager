@@ -121,6 +121,30 @@ func RunCommand(command, configDir string, event Event) {
 	LogCommandFailure(configDir, event, fmt.Errorf("%w: %s", err, sanitize(output)))
 }
 
+// commandBannerRunes keeps a long command, a curl with headers and a URL,
+// to about what a banner shows before cutting it off itself.
+const commandBannerRunes = 120
+
+var newCommandPresentation = presentation{
+	macSound:      "Glass",
+	windowsSound:  "ms-winsoundevent:Notification.Default",
+	linuxSound:    "dialog-warning",
+	linuxUrgency:  "normal",
+	linuxIcon:     "dialog-warning",
+	linuxCategory: "x-agent-manager.notify-command",
+}
+
+// ShowCommand shows the user a notify command about to run for the first
+// time. It is set from a shell and no screen lists it, so this banner is
+// where one set without their knowing comes to light.
+func ShowCommand(command string) {
+	text := sanitize(command)
+	if runes := []rune(text); len(runes) > commandBannerRunes {
+		text = string(runes[:commandBannerRunes-1]) + "…"
+	}
+	deliver("", "New notify command", text, newCommandPresentation)
+}
+
 // LogCommandFailure records a notify command that did not run as asked,
 // whether it failed or could not be read from the store.
 func LogCommandFailure(configDir string, event Event, failure error) {

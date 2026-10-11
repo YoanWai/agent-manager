@@ -3,6 +3,7 @@ package ui
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -60,6 +61,7 @@ func newNotifyTestPoller(t *testing.T) (*poller, store.Session, *notifyRecorder)
 	rec := &notifyRecorder{}
 	p.notifyFn = rec.fn()
 	p.commandFn = func(notify.Event, string, error) {}
+	p.showCommandFn = func(string) {}
 	return p, sess, rec
 }
 
@@ -181,6 +183,102 @@ func TestNotifyCommandFollowsTheNotificationToggles(t *testing.T) {
 	settle()
 	if calls := commands.all(); len(calls) != 1 {
 		t.Fatalf("notifications off should silence the command too, got %v", calls)
+	}
+}
+
+type deliveryLog struct {
+	mu    sync.Mutex
+	steps []string
+}
+
+func (l *deliveryLog) add(step string) {
+	l.mu.Lock()
+	l.steps = append(l.steps, step)
+	l.mu.Unlock()
+}
+
+func (l *deliveryLog) wait(t *testing.T, n int) []string {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		l.mu.Lock()
+		steps := slices.Clone(l.steps)
+		l.mu.Unlock()
+		if len(steps) >= n {
+			return steps
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("want %d delivery steps, got %v", n, steps)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func loggedCommandPoller(t *testing.T, command string) (*poller, store.Session, *deliveryLog) {
+	t.Helper()
+	p, sess, _, _ := newCommandTestPoller(t, command)
+	log := &deliveryLog{}
+	p.notifyFn = func(notify.Event) { log.add("banner") }
+	p.showCommandFn = func(command string) { log.add("shown " + command) }
+	p.commandFn = func(_ notify.Event, command string, _ error) { log.add("ran " + command) }
+	return p, sess, log
+}
+
+// Nothing on screen lists the notify command, so a new one shows itself
+// on a banner before its first run, and only then.
+func TestANewNotifyCommandIsShownOnceBeforeItRuns(t *testing.T) {
+	p, sess, log := loggedCommandPoller(t, " say done ")
+	p.notifyTransition(sess, status.Waiting)
+	log.wait(t, 3)
+	p.notifyTransition(sess, status.Errored)
+	want := []string{"banner", "shown say done", "ran say done", "banner", "ran say done"}
+	if got := log.wait(t, 5); !slices.Equal(got, want) {
+		t.Fatalf("deliveries = %v, want %v", got, want)
+	}
+}
+
+// The banner follows the last command it showed, so a command swapped in
+// and back again is shown each time it changes.
+func TestAChangedNotifyCommandIsShownAgain(t *testing.T) {
+	p, sess, log := loggedCommandPoller(t, "say one")
+	steps := 0
+	for _, command := range []string{"say one", "say two", "say one"} {
+		if err := p.store.SetSetting(notifyCommandSetting, command); err != nil {
+			t.Fatal(err)
+		}
+		p.notifyTransition(sess, status.Waiting)
+		steps += 3
+		log.wait(t, steps)
+	}
+	got := log.wait(t, steps)
+	want := []string{
+		"banner", "shown say one", "ran say one",
+		"banner", "shown say two", "ran say two",
+		"banner", "shown say one", "ran say one",
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("deliveries = %v, want %v", got, want)
+	}
+}
+
+// The shown command is stored, so another manager on the same store, or
+// this one after a restart, does not show it again.
+func TestAShownNotifyCommandStaysShownAcrossManagers(t *testing.T) {
+	p, sess, log := loggedCommandPoller(t, "say done")
+	p.notifyTransition(sess, status.Waiting)
+	log.wait(t, 3)
+	if (&poller{store: p.store}).claimUnshownCommand("say done") {
+		t.Fatal("a second manager would show a command the first already showed")
+	}
+}
+
+func TestNoNotifyCommandShowsNoBanner(t *testing.T) {
+	p, sess, log := loggedCommandPoller(t, "")
+	p.notifyTransition(sess, status.Waiting)
+	log.wait(t, 1)
+	settle()
+	if got := log.wait(t, 1); !slices.Equal(got, []string{"banner"}) {
+		t.Fatalf("deliveries = %v, want the session banner alone", got)
 	}
 }
 

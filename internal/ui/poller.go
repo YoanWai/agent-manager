@@ -66,6 +66,9 @@ type poller struct {
 	// commandFn runs the user's notify command for the same event, or logs
 	// why it could not; tests swap in a recorder.
 	commandFn func(event notify.Event, command string, readErr error)
+	// showCommandFn posts the banner that shows a new notify command;
+	// tests swap in a recorder.
+	showCommandFn func(command string)
 	// takeFocus collects the session a clicked notification named; tests
 	// swap in a stub.
 	takeFocus func() (string, bool)
@@ -296,6 +299,8 @@ func lastMeaningfulPaneLine(pane string) string {
 
 var postNotification = notify.Notify
 
+var showCommand = notify.ShowCommand
+
 func runNotifyCommand(event notify.Event, command string, readErr error) {
 	dir, err := config.Dir()
 	if err != nil {
@@ -329,6 +334,7 @@ func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hook
 		recaptureSeen: map[string]recaptureSighting{},
 		notifyFn:      postNotification,
 		commandFn:     runNotifyCommand,
+		showCommandFn: showCommand,
 		takeFocus:     takeNotifyFocus,
 	}
 }
@@ -1500,9 +1506,9 @@ func (p *poller) applyHookStatus(sess store.Session, text, hookStatus string) st
 // finished stays quiet unless opted in, since most turn ends are routine.
 // There is no focus gate: the poll cannot tell whether the user is looking
 // at the manager, and the session they are watching is precisely the one
-// whose ping they must not miss. The notify command from Settings runs
-// for the same transitions, after the native banner and never instead of
-// it.
+// whose ping they must not miss. The notify command set with
+// agent-manager settings runs for the same transitions, after the native
+// banner and never instead of it.
 func (p *poller) notifyTransition(sess store.Session, newStatus string) {
 	if p.notifyFn == nil {
 		return
@@ -1525,16 +1531,38 @@ func (p *poller) notifyTransition(sess store.Session, newStatus string) {
 		return
 	}
 	event := notify.Event{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: kind, Dir: sess.Cwd, Branch: sess.WorktreeBranch}
-	command, readErr := storedNotifyCommand(p.store)
+	command, readErr := p.notifyCommand()
+	unshown := command != "" && p.claimUnshownCommand(command)
 	// Delivery can wait on an external process (osascript, notify-send,
 	// the user's command), so it must never run inside refreshOnce, which
 	// holds runMu.
 	go func() {
 		p.notifyFn(event)
+		if unshown {
+			p.showCommandFn(command)
+		}
 		if command != "" || readErr != nil {
 			p.commandFn(event, command, readErr)
 		}
 	}()
+}
+
+func (p *poller) notifyCommand() (string, error) {
+	command, err := p.store.Setting(notifyCommandSetting)
+	return strings.TrimSpace(command), err
+}
+
+// claimUnshownCommand reports whether command differs from the last one a
+// banner showed, and records it as shown. A store that cannot answer
+// counts as unshown, so a failure repeats the banner rather than hiding a
+// command.
+func (p *poller) claimUnshownCommand(command string) bool {
+	shown, err := p.store.Setting(notifyCommandShownSetting)
+	if err == nil && shown == command {
+		return false
+	}
+	_ = p.store.SetSetting(notifyCommandShownSetting, command)
+	return true
 }
 
 func (p *poller) notificationsOn() bool {

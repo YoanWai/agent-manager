@@ -7,7 +7,7 @@ import (
 
 // SettingSpecs is every key Settings writes and the values each takes, so
 // the shell checks a value against the same choices the modal steps
-// through.
+// through. A key with no row is one the shell alone sets.
 func SettingSpecs() ([]store.SettingSpec, error) {
 	cfg, err := config.Default()
 	if err != nil {
@@ -38,7 +38,7 @@ func SettingSpecs() ([]store.SettingSpec, error) {
 		{Key: store.CoordinationSetting, Values: []string{"on-request", "proactive"}, Default: "on-request", Row: "coordination"},
 		{Key: notificationsSetting, Values: onOff, Default: "on", Row: "notifications"},
 		{Key: notifyFinishedSetting, Values: onOff, Default: "off", Row: "notify on finish"},
-		{Key: notifyCommandSetting, Row: "notify command"},
+		{Key: notifyCommandSetting},
 		{Key: store.EditorSetting, Row: "editor"},
 		{Key: store.HiddenToolsSetting, Values: tools, List: true, Row: "CLIs"},
 	}, nil

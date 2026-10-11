@@ -41,6 +41,7 @@ func TestMain(m *testing.M) {
 	}
 	// A real banner on macOS builds that helper from this binary.
 	postNotification = func(notify.Event) {}
+	showCommand = func(string) {}
 	code := m.Run()
 	tmuxCmd("kill-server").Run()
 	os.Exit(code)

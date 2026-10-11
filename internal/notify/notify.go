@@ -173,6 +173,10 @@ func Notify(event Event) {
 		return
 	}
 	subtitle, body := content(event, detail)
+	deliver(event.ID, subtitle, body, detail)
+}
+
+func deliver(sessionID, subtitle, body string, detail presentation) {
 	terminalBody := body + " — " + subtitle
 	// A terminal that understands OSC 777 turns it into a native
 	// notification wherever the terminal actually is — including at the
@@ -183,7 +187,7 @@ func Notify(event Event) {
 	}
 	switch goos {
 	case "darwin":
-		err := macPost(event.ID, subtitle, body, detail.macSound)
+		err := macPost(sessionID, subtitle, body, detail.macSound)
 		if err == nil {
 			return
 		}
@@ -204,7 +208,7 @@ func Notify(event Event) {
 			}
 			break
 		}
-		if _, err := lookPath("notify-send"); err == nil && notifySend(event.ID, terminalBody, detail) == nil {
+		if _, err := lookPath("notify-send"); err == nil && notifySend(sessionID, terminalBody, detail) == nil {
 			return
 		}
 	}
