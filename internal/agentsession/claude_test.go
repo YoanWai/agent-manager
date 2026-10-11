@@ -43,7 +43,7 @@ func TestClaudeTranscriptTail(t *testing.T) {
 		}
 		return text
 	}
-	prompt, reply, ok := ClaudeTranscriptTail(cwd, "abc", keep)
+	prompt, reply, ok := claudeTranscriptTail(path, keep)
 	if !ok {
 		t.Fatal("transcript should be readable")
 	}
@@ -53,7 +53,7 @@ func TestClaudeTranscriptTail(t *testing.T) {
 	if reply != "Second reply.\nIt spans lines." {
 		t.Fatalf("reply = %q, want the newest text block", reply)
 	}
-	if _, _, ok := ClaudeTranscriptTail(cwd, "missing", keep); ok {
+	if _, _, ok := claudeTranscriptTail(filepath.Join(dir, "missing.jsonl"), keep); ok {
 		t.Fatal("missing transcript should not read ok")
 	}
 }

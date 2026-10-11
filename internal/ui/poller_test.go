@@ -2054,15 +2054,15 @@ func TestClaudeTailFollowsTheLiveTranscript(t *testing.T) {
 		}
 		return path
 	}
-	sess := store.Session{ID: "s", Cwd: launchDir, AgentSessionID: "abc"}
-	p := &poller{claudeTails: map[string]claudeTailCache{}}
+	sess := store.Session{ID: "s", Tool: "claude", Cwd: launchDir, AgentSessionID: "abc"}
+	p := &poller{transcripts: map[string]transcriptTailCache{}, reportStyles: map[string]string{"claude": "claude"}}
 
 	write(launchDir, "launch reply")
-	if _, reply := p.claudeTail(sess, liveDir); reply != "launch reply" {
+	if _, reply := p.transcriptTail(sess, liveDir); reply != "launch reply" {
 		t.Fatalf("reply = %q, want the launch transcript while the live one is absent", reply)
 	}
 	livePath := write(liveDir, "moved reply!")
-	if _, reply := p.claudeTail(sess, liveDir); reply != "moved reply!" {
+	if _, reply := p.transcriptTail(sess, liveDir); reply != "moved reply!" {
 		t.Fatalf("reply = %q, want the live transcript over a cached one of the same size and time", reply)
 	}
 
@@ -2071,8 +2071,43 @@ func TestClaudeTailFollowsTheLiveTranscript(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.Chmod(liveProject, 0o755) })
-	if _, reply := p.claudeTail(sess, liveDir); reply != "" {
+	if _, reply := p.transcriptTail(sess, liveDir); reply != "" {
 		t.Fatalf("reply = %q, want nothing while the live transcript cannot be read", reply)
+	}
+}
+
+// pi and omp echo no prompt the pane can tell from a reply, so the row's
+// prompt comes from their session file, filed under the resolved working
+// directory with its separators turned to dashes.
+func TestTranscriptTailReadsPiAndOmpSessionFiles(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := t.TempDir()
+	t.Setenv("PI_CODING_AGENT_SESSION_DIR", root)
+	cwd, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(root, "--"+strings.ReplaceAll(strings.Trim(cwd, "/"), "/", "-")+"--")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	lines := `{"type":"session","version":3,"id":"abc","cwd":"` + cwd + `"}
+{"type":"message","message":{"role":"user","content":[{"type":"text","text":"` + launch.RenameDirective + `\n\nfirst task"}]}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"done with the first"}]}}
+{"type":"message","message":{"role":"user","content":[{"type":"text","text":"typed straight into the pane"}]}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"thinking","thinking":"hm"},{"type":"text","text":"the second\nreply"}]}}
+`
+	if err := os.WriteFile(filepath.Join(dir, "2026-10-11T13-29-11-397Z_abc.jsonl"), []byte(lines), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p := &poller{transcripts: map[string]transcriptTailCache{}, reportStyles: map[string]string{"pi": "pi"}}
+	sess := store.Session{ID: "s", Tool: "pi", Cwd: cwd, AgentSessionID: "abc"}
+	prompt, reply := p.transcriptTail(sess, cwd)
+	if prompt != "typed straight into the pane" || reply != "the second reply" {
+		t.Fatalf("tail = %q / %q", prompt, reply)
+	}
+	if prompt, _ := p.transcriptTail(store.Session{ID: "o", Tool: "pi", Cwd: cwd, AgentSessionID: "zzz"}, cwd); prompt != "" {
+		t.Fatalf("a session with no file yet read %q", prompt)
 	}
 }
 

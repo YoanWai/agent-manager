@@ -43,7 +43,7 @@ type poller struct {
 	gitDrv        *git.Driver
 	statusSources map[string]string
 	sessionStores map[string]string
-	claudeTails   map[string]claudeTailCache
+	transcripts   map[string]transcriptTailCache
 	mcpStyles     map[string]string
 	reportStyles  map[string]string
 	shellTools    map[string]bool
@@ -173,7 +173,9 @@ func isManagerEcho(line string) bool {
 // prompt sent to it. The visible pane is the first source; when an
 // anchor scrolled off it, the recovery is the tool's own transcript for
 // Claude Code (which repaints in place, so tmux holds no history for
-// it), and a deeper pane capture for everything else.
+// it), and a deeper pane capture for everything else. pi and omp draw a
+// prompt with no marker at all, so theirs is read from their session file
+// every time.
 func (p *poller) rowLines(sess store.Session, pane, dir string) (quote, prompt string) {
 	clean := p.engine.Plain(sess.Tool, pane)
 	quote, anchored, ok := p.engine.LastMessage(sess.Tool, clean)
@@ -186,12 +188,13 @@ func (p *poller) rowLines(sess store.Session, pane, dir string) (quote, prompt s
 	}
 	quoteAdrift := ok && !anchored && p.engine.HasMessageStart(sess.Tool)
 	promptAdrift := echoOK && prompt == ""
-	if (quoteAdrift || promptAdrift) && p.mcpStyles[sess.Tool] == "claude" && sess.AgentSessionID != "" {
-		tailPrompt, tailReply := p.claudeTail(sess, dir)
+	promptUnreadable := !echoOK
+	if (quoteAdrift || promptAdrift || promptUnreadable) && agentsession.KeepsTranscript(p.reportStyles[sess.Tool]) && sess.AgentSessionID != "" {
+		tailPrompt, tailReply := p.transcriptTail(sess, dir)
 		if quoteAdrift && tailReply != "" {
 			quote = tailReply
 		}
-		if promptAdrift && tailPrompt != "" {
+		if (promptAdrift || promptUnreadable) && tailPrompt != "" {
 			prompt = tailPrompt
 		}
 	} else if quoteAdrift || promptAdrift {
@@ -208,9 +211,9 @@ func (p *poller) rowLines(sess store.Session, pane, dir string) (quote, prompt s
 	return capRunes(quote, rowQuoteCap), capRunes(prompt, rowQuoteCap)
 }
 
-// claudeTailCache keeps one transcript's extraction keyed to its file
+// transcriptTailCache keeps one transcript's extraction keyed to its file
 // stats, so an unchanged transcript is not re-read every tick.
-type claudeTailCache struct {
+type transcriptTailCache struct {
 	path    string
 	size    int64
 	modTime time.Time
@@ -218,24 +221,24 @@ type claudeTailCache struct {
 	reply   string
 }
 
-// claudeTail is the newest prompt and reply in a Claude Code session's
-// own transcript, flattened to single lines. Claude moves the transcript
-// with a session that changes directory, so dir, where the agent sits now,
-// is tried before the launch directory.
-func (p *poller) claudeTail(sess store.Session, dir string) (prompt, reply string) {
+// transcriptTail is the newest prompt and reply in a session's own
+// transcript, flattened to single lines. Claude moves the transcript with
+// a session that changes directory, so dir, where the agent sits now, is
+// tried before the launch directory.
+func (p *poller) transcriptTail(sess store.Session, dir string) (prompt, reply string) {
+	style := p.reportStyles[sess.Tool]
 	var info os.FileInfo
 	var path string
 	for _, candidate := range []string{dir, sess.Cwd} {
 		if candidate == "" {
 			continue
 		}
-		candidatePath, err := agentsession.ClaudeTranscriptPath(candidate, sess.AgentSessionID)
-		if err != nil {
-			return "", ""
-		}
-		info, err = os.Stat(candidatePath)
+		candidatePath, err := agentsession.TranscriptPath(style, candidate, sess.AgentSessionID)
 		if err == nil {
-			dir, path = candidate, candidatePath
+			info, err = os.Stat(candidatePath)
+		}
+		if err == nil {
+			path = candidatePath
 			break
 		}
 		// A launch directory copy is only the transcript when the live one
@@ -247,7 +250,7 @@ func (p *poller) claudeTail(sess store.Session, dir string) (prompt, reply strin
 	if path == "" {
 		return "", ""
 	}
-	if cached, ok := p.claudeTails[sess.ID]; ok && cached.path == path && cached.size == info.Size() && cached.modTime.Equal(info.ModTime()) {
+	if cached, ok := p.transcripts[sess.ID]; ok && cached.path == path && cached.size == info.Size() && cached.modTime.Equal(info.ModTime()) {
 		return cached.prompt, cached.reply
 	}
 	cleanUser := func(text string) string {
@@ -257,13 +260,13 @@ func (p *poller) claudeTail(sess store.Session, dir string) (prompt, reply strin
 		}
 		return cleaned
 	}
-	tailPrompt, tailReply, ok := agentsession.ClaudeTranscriptTail(dir, sess.AgentSessionID, cleanUser)
+	tailPrompt, tailReply, ok := agentsession.TranscriptTail(style, path, cleanUser)
 	if !ok {
 		return "", ""
 	}
 	prompt = oneLine(tailPrompt)
 	reply = oneLine(tailReply)
-	p.claudeTails[sess.ID] = claudeTailCache{path: path, size: info.Size(), modTime: info.ModTime(), prompt: prompt, reply: reply}
+	p.transcripts[sess.ID] = transcriptTailCache{path: path, size: info.Size(), modTime: info.ModTime(), prompt: prompt, reply: reply}
 	return prompt, reply
 }
 
@@ -309,7 +312,7 @@ func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hook
 		interval:      interval,
 		poke:          make(chan struct{}, 1),
 		paneHashes:    map[string]uint64{},
-		claudeTails:   map[string]claudeTailCache{},
+		transcripts:   map[string]transcriptTailCache{},
 		quietSince:    map[string]quietTimer{},
 		recaptureSeen: map[string]recaptureSighting{},
 		notifyFn:      postNotification,

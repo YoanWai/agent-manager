@@ -7,10 +7,10 @@ import (
 	"strings"
 )
 
-// claudeTailBytes is how much of a transcript's tail is read for the
+// transcriptTailBytes is how much of a transcript's tail is read for the
 // newest prompt and reply; a longer reply than this is quoted from
 // wherever the window starts.
-const claudeTailBytes = 256 * 1024
+const transcriptTailBytes = 256 * 1024
 
 // ClaudeTranscriptPath is the session transcript Claude Code keeps for
 // one conversation: unlike the pane, which Claude repaints in place and
@@ -46,45 +46,21 @@ type claudeEntry struct {
 	} `json:"message"`
 }
 
-type claudeContentItem struct {
+type contentItem struct {
 	Type string `json:"type"`
 	Text string `json:"text"`
 }
 
-// ClaudeTranscriptTail reads the newest prompt and reply from a session
+// claudeTranscriptTail reads the newest prompt and reply from a session
 // transcript: the last user text cleanUser keeps (it returns the text to
 // use, or "" to step past that entry) and the last assistant text block.
 // ok is false when the transcript cannot be read at all.
-func ClaudeTranscriptTail(cwd, sessionID string, cleanUser func(string) string) (prompt, reply string, ok bool) {
-	path, err := ClaudeTranscriptPath(cwd, sessionID)
-	if err != nil {
+func claudeTranscriptTail(path string, cleanUser func(string) string) (prompt, reply string, ok bool) {
+	lines, ok := transcriptTailLines(path)
+	if !ok {
 		return "", "", false
-	}
-	file, err := os.Open(path)
-	if err != nil {
-		return "", "", false
-	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil {
-		return "", "", false
-	}
-	offset := int64(0)
-	if info.Size() > claudeTailBytes {
-		offset = info.Size() - claudeTailBytes
-	}
-	raw := make([]byte, info.Size()-offset)
-	if _, err := file.ReadAt(raw, offset); err != nil {
-		return "", "", false
-	}
-	lines := strings.Split(string(raw), "\n")
-	if offset > 0 && len(lines) > 0 {
-		lines = lines[1:]
 	}
 	for _, line := range lines {
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
 		var entry claudeEntry
 		if err := json.Unmarshal([]byte(line), &entry); err != nil {
 			continue
@@ -92,7 +68,7 @@ func ClaudeTranscriptTail(cwd, sessionID string, cleanUser func(string) string) 
 		if entry.IsSidechain || entry.IsMeta {
 			continue
 		}
-		text := entryText(entry)
+		text := contentText(entry.Message.Content)
 		if text == "" {
 			continue
 		}
@@ -108,11 +84,44 @@ func ClaudeTranscriptTail(cwd, sessionID string, cleanUser func(string) string) 
 	return prompt, reply, true
 }
 
-// entryText is the first plain-text block of an entry's content: a bare
-// string for typed prompts, a text item for replies. Tool results and
+// transcriptTailLines is the newest transcriptTailBytes of a JSONL file as
+// whole lines, the partial first one dropped. ok is false when the file
+// cannot be read.
+func transcriptTailLines(path string) ([]string, bool) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, false
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, false
+	}
+	offset := int64(0)
+	if info.Size() > transcriptTailBytes {
+		offset = info.Size() - transcriptTailBytes
+	}
+	raw := make([]byte, info.Size()-offset)
+	if _, err := file.ReadAt(raw, offset); err != nil {
+		return nil, false
+	}
+	lines := strings.Split(string(raw), "\n")
+	if offset > 0 && len(lines) > 0 {
+		lines = lines[1:]
+	}
+	kept := lines[:0]
+	for _, line := range lines {
+		if strings.TrimSpace(line) != "" {
+			kept = append(kept, line)
+		}
+	}
+	return kept, true
+}
+
+// contentText is the first plain-text block of a message's content: a
+// bare string for typed prompts, a text item for replies. Tool results and
 // tool calls carry no text block and yield nothing.
-func entryText(entry claudeEntry) string {
-	content := entry.Message.Content
+func contentText(content json.RawMessage) string {
 	if len(content) == 0 {
 		return ""
 	}
@@ -120,7 +129,7 @@ func entryText(entry claudeEntry) string {
 	if err := json.Unmarshal(content, &direct); err == nil {
 		return strings.TrimSpace(direct)
 	}
-	var items []claudeContentItem
+	var items []contentItem
 	if err := json.Unmarshal(content, &items); err != nil {
 		return ""
 	}
