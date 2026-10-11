@@ -127,6 +127,8 @@ type Event struct {
 const bodyTextCap = 120
 
 type presentation struct {
+	glyph         string
+	word          string
 	body          string
 	macSound      string
 	windowsSound  string
@@ -140,6 +142,8 @@ func describe(kind Kind) (presentation, bool) {
 	switch kind {
 	case Waiting:
 		return presentation{
+			glyph:         "◆",
+			word:          "Waiting",
 			body:          "◆ Waiting for your input",
 			macSound:      "Funk",
 			windowsSound:  "ms-winsoundevent:Notification.Reminder",
@@ -150,6 +154,8 @@ func describe(kind Kind) (presentation, bool) {
 		}, true
 	case Finished:
 		return presentation{
+			glyph:         "●",
+			word:          "Finished",
 			body:          "● Finished",
 			macSound:      "Hero",
 			windowsSound:  "ms-winsoundevent:Notification.Default",
@@ -160,6 +166,8 @@ func describe(kind Kind) (presentation, bool) {
 		}, true
 	case Errored:
 		return presentation{
+			glyph:         "✕",
+			word:          "Errored",
 			body:          "✕ Errored",
 			macSound:      "Basso",
 			windowsSound:  "ms-winsoundevent:Notification.IM",
@@ -182,7 +190,7 @@ func Notify(event Event) {
 		return
 	}
 	subtitle := titleLine(event)
-	body := bodyLine(event.Kind, detail.body, event.Text)
+	body := bodyLine(event.Kind, detail, event.Text)
 	terminalBody := body + " — " + subtitle
 	// A terminal that understands OSC 777 turns it into a native
 	// notification wherever the terminal actually is — including at the
@@ -240,17 +248,15 @@ func titleLine(event Event) string {
 // question>", so the banner alone says what the session needs. Errored
 // keeps its state word: the row's line there is the turn that failed, not
 // something to act on.
-func bodyLine(kind Kind, state, text string) string {
+func bodyLine(kind Kind, detail presentation, text string) string {
 	text = sanitize(text)
 	if text == "" || kind == Errored {
-		return state
+		return detail.body
 	}
-	words := strings.Fields(state)
-	glyph, word := words[0], words[1]
 	if runes := []rune(text); len(runes) > bodyTextCap {
 		text = string(runes[:bodyTextCap-1]) + "…"
 	}
-	return glyph + " " + word + ": " + text
+	return detail.glyph + " " + detail.word + ": " + text
 }
 
 // notifySend keeps the call open for the banner's lifetime when the
