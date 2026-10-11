@@ -66,8 +66,7 @@ type poller struct {
 	// commandFn runs the user's notify command for the same event, or logs
 	// why it could not; tests swap in a recorder.
 	commandFn func(event notify.Event, command string, readErr error)
-	// showCommandFn posts the banner that shows a new notify command;
-	// tests swap in a recorder.
+	// showCommandFn shows a new notify command; tests swap in a recorder.
 	showCommandFn func(command string)
 	// takeFocus collects the session a clicked notification named; tests
 	// swap in a stub.
@@ -1552,11 +1551,9 @@ func (p *poller) notifyCommand() (string, error) {
 	return strings.TrimSpace(command), err
 }
 
-// claimUnshownCommand reports whether command differs from the last one a
-// banner showed, and records it as shown, in one store write so two
-// managers sharing the store show it once between them. A store that
-// cannot answer counts as unshown, so a failure repeats the banner rather
-// than hiding a command.
+// claimUnshownCommand records command as shown and reports whether it was
+// new, in one write so managers sharing the store show it once between
+// them. A store that cannot answer counts as unshown, never as hidden.
 func (p *poller) claimUnshownCommand(command string) bool {
 	changed, err := p.store.SetSettingIfChanged(notifyCommandShownSetting, command)
 	return changed || err != nil
