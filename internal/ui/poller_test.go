@@ -2095,7 +2095,7 @@ func TestTranscriptTailReadsPiAndOmpSessionFiles(t *testing.T) {
 	lines := `{"type":"session","version":3,"id":"abc","cwd":"` + cwd + `"}
 {"type":"message","message":{"role":"user","content":[{"type":"text","text":"` + launch.RenameDirective + `\n\nfirst task"}]}}
 {"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"done with the first"}]}}
-{"type":"message","message":{"role":"user","content":[{"type":"text","text":"typed \u001b[31mstraight\u001b[0m into\u0007 the pane"}]}}
+{"type":"message","message":{"role":"user","content":[{"type":"text","text":"typed \u001b[31mstraight\u001b[0m into\u0007 the\u009b pane"}]}}
 {"type":"message","message":{"role":"assistant","content":[{"type":"thinking","thinking":"hm"},{"type":"text","text":"the second\u001b]0;x\u0007\nreply"}]}}
 `
 	if err := os.WriteFile(filepath.Join(dir, "2026-10-11T13-29-11-397Z_abc.jsonl"), []byte(lines), 0o644); err != nil {
