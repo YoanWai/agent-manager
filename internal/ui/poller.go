@@ -1553,16 +1553,13 @@ func (p *poller) notifyCommand() (string, error) {
 }
 
 // claimUnshownCommand reports whether command differs from the last one a
-// banner showed, and records it as shown. A store that cannot answer
-// counts as unshown, so a failure repeats the banner rather than hiding a
-// command.
+// banner showed, and records it as shown, in one store write so two
+// managers sharing the store show it once between them. A store that
+// cannot answer counts as unshown, so a failure repeats the banner rather
+// than hiding a command.
 func (p *poller) claimUnshownCommand(command string) bool {
-	shown, err := p.store.Setting(notifyCommandShownSetting)
-	if err == nil && shown == command {
-		return false
-	}
-	_ = p.store.SetSetting(notifyCommandShownSetting, command)
-	return true
+	changed, err := p.store.SetSettingIfChanged(notifyCommandShownSetting, command)
+	return changed || err != nil
 }
 
 func (p *poller) notificationsOn() bool {

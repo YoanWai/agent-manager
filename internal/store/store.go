@@ -466,6 +466,21 @@ func (s *Store) SetSetting(key, value string) error {
 	return err
 }
 
+// SetSettingIfChanged writes value and reports whether the stored one
+// differed, in one statement, so of several processes writing the same
+// value exactly one learns it was new.
+func (s *Store) SetSettingIfChanged(key, value string) (changed bool, err error) {
+	res, err := s.db.Exec(
+		`INSERT INTO settings (key, value) VALUES (?, ?)
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value
+		 WHERE value IS NOT excluded.value`, key, value)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
 func (s *Store) CreateSession(sess Session) error {
 	return s.createSession(sess, "")
 }

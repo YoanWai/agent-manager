@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -2273,5 +2274,62 @@ func TestSettingsListsEveryStoredRow(t *testing.T) {
 	}
 	if rows["theme"] != "nord" || rows["notifications"] != "off" {
 		t.Fatalf("Settings = %v", rows)
+	}
+}
+
+func TestSetSettingIfChangedReportsOnlyANewValue(t *testing.T) {
+	st := newTestStore(t)
+	for i, step := range []struct {
+		value string
+		want  bool
+	}{{"a", true}, {"a", false}, {"b", true}, {"b", false}} {
+		changed, err := st.SetSettingIfChanged("k", step.value)
+		if err != nil || changed != step.want {
+			t.Fatalf("step %d: SetSettingIfChanged(%q) = %v, %v; want %v", i, step.value, changed, err, step.want)
+		}
+		if got, _ := st.Setting("k"); got != step.value {
+			t.Fatalf("step %d: stored %q, want %q", i, got, step.value)
+		}
+	}
+}
+
+// Processes sharing one database and writing the same value at once see
+// exactly one of them told the value was new.
+func TestSetSettingIfChangedTellsOneOfManyWriters(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "shared.db")
+	const writers = 8
+	stores := make([]*Store, writers)
+	for i := range stores {
+		st, err := Open(path)
+		if err != nil {
+			t.Fatalf("Open: %v", err)
+		}
+		t.Cleanup(func() { st.Close() })
+		stores[i] = st
+	}
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var told int
+	start := make(chan struct{})
+	for _, st := range stores {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			changed, err := st.SetSettingIfChanged("k", "v")
+			if err != nil {
+				t.Errorf("SetSettingIfChanged: %v", err)
+			}
+			if changed {
+				mu.Lock()
+				told++
+				mu.Unlock()
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	if told != 1 {
+		t.Fatalf("%d writers were told the value was new, want 1", told)
 	}
 }
