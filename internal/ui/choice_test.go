@@ -423,6 +423,48 @@ func TestModelListShrinkingUnderTheHighlight(t *testing.T) {
 	})
 }
 
+// One arrow moves the highlighted model. The sheet opens with a row already
+// highlighted, and a typed filter starts over on its first match.
+func TestQuickModelListMovesOnOneArrow(t *testing.T) {
+	m := buildModel(t)
+	answered(m, claudeLike, claudeAnswer)
+	if err := m.store.CreateGroup("work", t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "work")
+	m.openQuickMode()
+	m.quick.toolIndex = slices.Index(m.quick.toolNames, "claude")
+	m.quick.choice = m.newChoice("claude")
+	down := tea.KeyMsg{Type: tea.KeyDown}
+	up := tea.KeyMsg{Type: tea.KeyUp}
+	sheet := func() string { return ansi.Strip(m.viewQuickBar(120, 20)) }
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlL})
+	if !strings.Contains(sheet(), "❯ default") {
+		t.Fatalf("sheet should open on the first model:\n%s", sheet())
+	}
+	m.handleQuickKey(down)
+	if !strings.Contains(sheet(), "❯ opus") {
+		t.Fatalf("one down should highlight opus:\n%s", sheet())
+	}
+	m.handleQuickKey(up)
+	if !strings.Contains(sheet(), "❯ default") {
+		t.Fatalf("one up should highlight default:\n%s", sheet())
+	}
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	m.handleQuickKey(down)
+	if !strings.Contains(sheet(), "❯ haiku") {
+		t.Fatalf("one down in the filter should highlight haiku:\n%s", sheet())
+	}
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m.quick.choice.model = "opus"
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlL})
+	m.handleQuickKey(down)
+	if !strings.Contains(sheet(), "❯ haiku") {
+		t.Fatalf("one down from the picked model should highlight haiku:\n%s", sheet())
+	}
+}
+
 // The model sheet takes the rows the bar had and the column can spare, so a
 // small split still shows its title, its filter and its choices.
 func TestQuickModelSheetFitsTheColumn(t *testing.T) {
