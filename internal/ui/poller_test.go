@@ -2082,14 +2082,11 @@ func TestClaudeTailFollowsTheLiveTranscript(t *testing.T) {
 // was pasted into it, escapes included, and none of that reaches the row.
 func TestTranscriptTailReadsPiAndOmpSessionFiles(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	root := t.TempDir()
-	t.Setenv("PI_CODING_AGENT_SESSION_DIR", root)
+	piRoot, ompAgentDir := t.TempDir(), t.TempDir()
+	t.Setenv("PI_CODING_AGENT_SESSION_DIR", piRoot)
+	t.Setenv("PI_CODING_AGENT_DIR", ompAgentDir)
 	cwd, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
-		t.Fatal(err)
-	}
-	dir := filepath.Join(root, "--"+strings.ReplaceAll(strings.Trim(cwd, "/"), "/", "-")+"--")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	lines := `{"type":"session","version":3,"id":"abc","cwd":"` + cwd + `"}
@@ -2098,17 +2095,28 @@ func TestTranscriptTailReadsPiAndOmpSessionFiles(t *testing.T) {
 {"type":"message","message":{"role":"user","content":[{"type":"text","text":"typed \u001b[31mstraight\u001b[0m into\u0007 the\u009b pane"}]}}
 {"type":"message","message":{"role":"assistant","content":[{"type":"thinking","thinking":"hm"},{"type":"text","text":"the second\u001b]0;x\u0007\nreply"}]}}
 `
-	if err := os.WriteFile(filepath.Join(dir, "2026-10-11T13-29-11-397Z_abc.jsonl"), []byte(lines), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	p := &poller{transcripts: map[string]transcriptTailCache{}, reportStyles: map[string]string{"pi": "pi"}}
-	sess := store.Session{ID: "s", Tool: "pi", Cwd: cwd, AgentSessionID: "abc"}
-	prompt, reply := p.transcriptTail(sess, cwd)
-	if prompt != "typed straight into the pane" || reply != "the second reply" {
-		t.Fatalf("tail = %q / %q", prompt, reply)
-	}
-	if prompt, _ := p.transcriptTail(store.Session{ID: "o", Tool: "pi", Cwd: cwd, AgentSessionID: "zzz"}, cwd); prompt != "" {
-		t.Fatalf("a session with no file yet read %q", prompt)
+	p := &poller{transcripts: map[string]transcriptTailCache{}, reportStyles: map[string]string{"pi": "pi", "omp": "omp"}}
+	for _, tc := range []struct{ tool, root string }{
+		{"pi", piRoot},
+		{"omp", filepath.Join(ompAgentDir, "sessions")},
+	} {
+		t.Run(tc.tool, func(t *testing.T) {
+			dir := filepath.Join(tc.root, "--"+strings.ReplaceAll(strings.Trim(cwd, "/"), "/", "-")+"--")
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "2026-10-11T13-29-11-397Z_abc.jsonl"), []byte(lines), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			sess := store.Session{ID: tc.tool, Tool: tc.tool, Cwd: cwd, AgentSessionID: "abc"}
+			prompt, reply := p.transcriptTail(sess, cwd)
+			if prompt != "typed straight into the pane" || reply != "the second reply" {
+				t.Fatalf("tail = %q / %q", prompt, reply)
+			}
+			if prompt, _ := p.transcriptTail(store.Session{ID: tc.tool + "-new", Tool: tc.tool, Cwd: cwd, AgentSessionID: "zzz"}, cwd); prompt != "" {
+				t.Fatalf("a session with no file yet read %q", prompt)
+			}
+		})
 	}
 }
 
