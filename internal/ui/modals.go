@@ -59,7 +59,7 @@ func (m *Model) flexCardWidth(title, body string, hint [][2]string) int {
 	measure(cardTitle(title))
 	measure(legendInline(hint, 1<<30))
 	if m.errBar.text != "" {
-		measure(m.statusMessage("⚠", "●", "▲"))
+		measure(m.statusMessage("⚠", m.glyphs().finishedGlyph, "▲"))
 	}
 	if m.width >= 28 && need > m.width-4 {
 		need = m.width - 4
@@ -91,7 +91,7 @@ func (m *Model) cardSized(width int, title, body string, hint [][2]string) strin
 		lines = append(lines, row(line))
 	}
 	if m.errBar.text != "" {
-		lines = append(lines, row(""), row(m.statusMessage("⚠", "●", "▲")))
+		lines = append(lines, row(""), row(m.statusMessage("⚠", m.glyphs().finishedGlyph, "▲")))
 	}
 	lines = append(lines, row(""))
 	if len(hint) > 0 {
@@ -437,11 +437,20 @@ func (m *Model) viewSettings() string {
 	if m.settings.editor.typing {
 		editorLine = lead(settingsFieldEditor, "editor") + textInputView(m.settings.editor.input)
 	}
+	symbolsRow := row(settingsFieldGlyphs, "symbols", m.glyphModeLabel()) + "  " + m.glyphs().workingGlyph + " " + m.glyphs().waitingGlyph + " " + m.glyphs().reorderGrip + " " + m.glyphs().branchGlyph
+	if cardInnerWidth(m.cardWidth()) < 36 {
+		style := valueStyle
+		if m.settings.field == settingsFieldGlyphs {
+			style = keyStyle
+		}
+		symbolsRow = style.Render("symbols <" + m.glyphModeLabel() + ">")
+	}
 	body := row(settingsFieldTool, "default tool", toolValue) + "\n" +
 		row(settingsFieldTheme, "theme", themes[m.settings.themeIndex].Name) + "  " +
 		themeSwatch(themes[m.settings.themeIndex]) + "\n" +
 		row(settingsFieldThemeAuto, "theme follows OS", themeAuto) + "\n" +
 		row(settingsFieldBackground, "background", background) + "\n" +
+		symbolsRow + "\n" +
 		row(settingsFieldDensity, "list density", density) + "\n" +
 		row(settingsFieldSessionLayout, "sessions layout", sessionLayout) + "\n" +
 		row(settingsFieldHeader, "header", header) + "\n" +
@@ -490,6 +499,37 @@ func (m *Model) viewSettings() string {
 			hint = [][2]string{{"↑↓", "field"}, {"↵/esc", "save"}}
 		}
 	}
+	if m.settings.field == settingsFieldGlyphs {
+		hint = [][2]string{{"↑↓", "field"}, {"←→/click", "symbols"}, {"↵/esc", "save"}}
+	}
+	lines := strings.Split(body, "\n")
+	save := keyStyle.Render("[ Save and close ]")
+	if m.settings.glyphModeSaving {
+		save = mutedStyle.Render("Saving symbols…")
+		hint = nil
+	}
+	width := m.flexCardWidth("⚙ Settings", save+"\n"+body, hint)
+	hintRows := strings.Count(legendInline(hint, cardInnerWidth(width)), "\n") + 1
+	room := max(m.height-5-hintRows-1, 1)
+	if m.errBar.text != "" {
+		room = max(room-2, 1)
+	}
+	first := 0
+	if len(lines) > room {
+		first = min(max(m.settings.field-room+1, 0), len(lines)-room)
+		lines = lines[first : first+room]
+	}
+	m.settings.docsRow = -1
+	if settingsFieldDocs >= first && settingsFieldDocs < first+len(lines) {
+		m.settings.docsRow = settingsFieldDocs - first + 1
+	}
+	m.settings.glyphRow = -1
+	if settingsFieldGlyphs >= first && settingsFieldGlyphs < first+len(lines) {
+		m.settings.glyphRow = settingsFieldGlyphs - first + 1
+		m.settings.glyphRowWidth = ansi.StringWidth(lines[settingsFieldGlyphs-first])
+	}
+	m.settings.saveRow, m.settings.saveRowWidth = 0, ansi.StringWidth(save)
+	body = save + "\n" + strings.Join(lines, "\n")
 	return m.cardFlex("⚙ Settings", body, hint)
 }
 

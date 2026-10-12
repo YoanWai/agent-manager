@@ -48,7 +48,7 @@ func TestRestingShellUsesCaretGlyph(t *testing.T) {
 		}
 	}
 
-	if rail := m.rail(); !strings.Contains(rail, shellGlyph) {
+	if rail := m.rail(); !strings.Contains(rail, m.glyphs().shellGlyph) {
 		t.Fatalf("a resting shell should carry the caret:\n%s", rail)
 	}
 }
@@ -59,16 +59,16 @@ func TestDeadInlineShellKeepsItsStatusGlyph(t *testing.T) {
 	shell := spawnTerminal(t, m)
 	shell.Status = status.Idle
 
-	if glyph := ansi.Strip(m.sessionGlyph(shell)); glyph != shellGlyph {
+	if glyph := ansi.Strip(m.sessionGlyph(shell)); glyph != m.glyphs().shellGlyph {
 		t.Fatalf("a resting shell wears the caret, got %q", glyph)
 	}
 	for _, gone := range []string{status.Dead, status.Errored} {
 		shell.Status = gone
 		glyph := ansi.Strip(m.sessionGlyph(shell))
-		if glyph == shellGlyph {
+		if glyph == m.glyphs().shellGlyph {
 			t.Fatalf("a %s shell must not read as resting", gone)
 		}
-		if glyph != statusGlyph(gone) {
+		if glyph != m.glyphs().statusGlyph(gone) {
 			t.Fatalf("a %s shell should wear its own glyph, got %q", gone, glyph)
 		}
 	}

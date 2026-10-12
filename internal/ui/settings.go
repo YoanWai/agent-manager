@@ -410,7 +410,7 @@ func (m *Model) openSettings() tea.Cmd {
 		terminalBackground: m.storedTerminalBackground(),
 	}
 	m.mode = modeSettings
-	return tea.Batch(probeEditors, paletteCmd)
+	return tea.Batch(probeEditors, paletteCmd, m.loadGlyphMode())
 }
 
 func (m *Model) storedEditor() string {
@@ -423,6 +423,9 @@ func (m *Model) storedEditor() string {
 }
 
 func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.settings.glyphModeSaving {
+		return m, nil
+	}
 	if m.settings.cliPicker {
 		return m.handleCLIPickerKey(msg)
 	}
@@ -468,8 +471,11 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				// A successful swap quits to exec the new build, so
 				// everything staged this visit must land first.
 				m.persistSettings()
-				m.update.applying = true
 				m.errBar.text = ""
+				if cmd := m.saveGlyphMode(true); cmd != nil {
+					return m, cmd
+				}
+				m.update.applying = true
 				return m, m.applyUpdateCmd()
 			}
 		}
@@ -480,21 +486,13 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *Model) handleSettingsClick(x, y int) (tea.Model, tea.Cmd) {
-	if m.settings.cliPicker || m.settings.keyPicker || m.settings.editor.typing {
-		return m, nil
-	}
-	line := y - m.cardTop - 2
-	if line != settingsFieldDocs || x < m.cardLeft || x >= m.cardRight {
-		return m, nil
-	}
-	m.settings.field = settingsFieldDocs
-	return m, openLink(docsURL)
-}
-
 func (m *Model) saveAndCloseSettings() (tea.Model, tea.Cmd) {
+	m.errBar.text = ""
 	m.persistSettings()
 	m.rebuildRows()
+	if cmd := m.saveGlyphMode(false); cmd != nil {
+		return m, cmd
+	}
 	m.mode = modeList
 	return m, nil
 }
@@ -751,6 +749,14 @@ func (m *Model) cycleSetting(step int) tea.Cmd {
 	case settingsFieldBackground:
 		m.settings.terminalBackground = !m.settings.terminalBackground
 		m.terminalBackground = m.settings.terminalBackground
+	case settingsFieldGlyphs:
+		if m.glyphMode.effective() == glyphModeAdvanced {
+			m.glyphMode = glyphModeBasic
+		} else {
+			m.glyphMode = glyphModeAdvanced
+		}
+		m.glyphModeGen++
+		m.settings.glyphModeChanged = true
 	case settingsFieldDensity:
 		m.settings.comfortableRows = !m.settings.comfortableRows
 	case settingsFieldSessionLayout:
@@ -783,4 +789,28 @@ func (m *Model) cycleSetting(step int) tea.Cmd {
 		m.settings.editor.cycle(step)
 	}
 	return nil
+}
+
+func (m *Model) handleSettingsClick(x, y int) (tea.Model, tea.Cmd) {
+	if m.settings.glyphModeSaving || m.settings.cliPicker || m.settings.keyPicker || m.settings.editor.typing {
+		return m, nil
+	}
+	left := m.cardLeft + 1 + cardPaddingX
+	inner := m.cardRight - m.cardLeft - cardChromeX - 2*cardPaddingX
+	row := y - m.cardTop - 2
+	if x < left || x >= left+inner {
+		return m, nil
+	}
+	if m.settings.glyphRow >= 0 && row == m.settings.glyphRow && x < left+m.settings.glyphRowWidth {
+		m.settings.field = settingsFieldGlyphs
+		return m, m.cycleSetting(1)
+	}
+	if row == m.settings.docsRow {
+		m.settings.field = settingsFieldDocs
+		return m, openLink(docsURL)
+	}
+	if row == m.settings.saveRow && x < left+m.settings.saveRowWidth {
+		return m.saveAndCloseSettings()
+	}
+	return m, nil
 }

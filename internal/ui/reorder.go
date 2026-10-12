@@ -6,9 +6,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// reorderGrip is the drag handle every movable row carries beside its name.
-const reorderGrip = "⠿"
-
 // reorderState is a row lifted by its handle. Steps among its siblings are
 // stored as they happen, so offset is what esc walks back. A move to
 // another level waits in drop until the release.
@@ -44,11 +41,11 @@ func (m *Model) rowHandle(entry treeRow, selected bool) string {
 func (m *Model) handleGlyph(entry treeRow, selected bool) string {
 	switch {
 	case m.liftedRow(entry):
-		return lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render(reorderGrip)
+		return lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render(m.glyphs().reorderGrip)
 	case selected:
-		return lipgloss.NewStyle().Foreground(colorDim).Render(reorderGrip)
+		return lipgloss.NewStyle().Foreground(colorDim).Render(m.glyphs().reorderGrip)
 	}
-	return lipgloss.NewStyle().Foreground(lipgloss.Color(restingMarkHex())).Render(reorderGrip)
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(restingMarkHex())).Render(m.glyphs().reorderGrip)
 }
 
 func (m *Model) liftedRow(entry treeRow) bool {

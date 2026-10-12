@@ -26,8 +26,6 @@ const (
 	railInset = railGutter - 1
 )
 
-const shellGlyph = "❯"
-
 // viewListFrame is the sessions rail beside the session content, both
 // painted surfaces rather than drawn panels.
 func (m *Model) viewListFrame() string {
@@ -585,8 +583,7 @@ func (m *Model) slotContinues(index, slot int) bool {
 // entryRowLines paints one entry, its lines tagged with the row a click on
 // them selects and ended by the entry's menu button. With the mouse off
 // nothing on the row answers a click, so it keeps those cells for itself.
-// The handle's column is read off the painted head, where the row's tree
-// depth put it. The rail starts one column in, past its edge cell.
+// The rail starts one column in, past its edge cell.
 func (m *Model) entryRowLines(entry treeRow, index, width int, tone string) []contentLine {
 	selected := index == m.cursor
 	button := !m.renamingRow(entry) && !m.mouseDisabled
@@ -594,13 +591,12 @@ func (m *Model) entryRowLines(entry treeRow, index, width int, tone string) []co
 	if button {
 		rowWidth -= menuButtonWidth
 	}
+	row := m.renderTreeRow(entry, selected, rowWidth, index, tone)
+	if row.handleX >= 0 {
+		m.handleX[rowKey(entry)] = 1 + row.handleX
+	}
 	var lines []contentLine
-	for n, line := range splitLines(m.renderTreeRow(entry, selected, rowWidth, index, tone)) {
-		if n == 0 {
-			if plain := ansi.Strip(line); strings.Contains(plain, reorderGrip) {
-				m.handleX[rowKey(entry)] = 1 + ansi.StringWidth(plain[:strings.Index(plain, reorderGrip)])
-			}
-		}
+	for n, line := range splitLines(row.text) {
 		switch {
 		case button && n == 0:
 			line += menuButton(selected, tone)
@@ -615,7 +611,7 @@ func (m *Model) entryRowLines(entry treeRow, index, width int, tone string) []co
 // renderTreeRow paints one entry: a status dot, the name, and what the
 // entry is doing set against the row's far edge. The selected entry lifts
 // onto its own band instead of wearing a marker.
-func (m *Model) renderTreeRow(entry treeRow, selected bool, width, index int, bg string) string {
+func (m *Model) renderTreeRow(entry treeRow, selected bool, width, index int, bg string) renderedTreeRow {
 	pad := strings.Repeat(" ", railInset)
 	guides := m.treeGuidesAt(index)
 	trail := m.treeGuideTrail(index)
@@ -626,7 +622,7 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width, index int, bg
 		for held := m.entryHeight(entry); held > 1; held-- {
 			row += "\n" + paint(pad+trail, width, selectedHex())
 		}
-		return row
+		return renderedTreeRow{text: row, handleX: -1}
 	}
 
 	if entry.isGroup {
@@ -635,18 +631,38 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width, index int, bg
 	return m.renderSessionEntry(entry, selected, width, pad, guides, trail, bg)
 }
 
+type renderedTreeRow struct {
+	text    string
+	handleX int
+}
+
+func withRowHandle(text, lead, handle string) renderedTreeRow {
+	row := renderedTreeRow{text: text, handleX: -1}
+	if handle != "" {
+		x := ansi.StringWidth(lead)
+		head, _, _ := strings.Cut(text, "\n")
+		// Measure the prefix we painted, not a matching character in a
+		// name. A narrow row may have clipped the handle off entirely.
+		grip := strings.TrimSpace(ansi.Strip(handle))
+		if ansi.Strip(ansi.Cut(head, x, x+ansi.StringWidth(grip))) == grip {
+			row.handleX = x
+		}
+	}
+	return row
+}
+
 // A shell takes a caret rather than an idle dot it would never leave, but
 // a pane that has gone still has to say so.
 func (m *Model) sessionGlyph(sess store.Session) string {
 	if sess.Status == status.Starting {
 		return lipgloss.NewStyle().Foreground(statusColor(status.Starting)).
-			Render(startupFrames[m.startupPhase%len(startupFrames)])
+			Render(m.glyphs().startupFrame(m.startupPhase))
 	}
 	resting := sess.Status != status.Dead && sess.Status != status.Errored
 	if resting && m.isShell(sess.Tool) {
-		return subtleStyle.Render(shellGlyph)
+		return subtleStyle.Render(m.glyphs().shellGlyph)
 	}
-	return lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusGlyph(sess.Status))
+	return lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(m.glyphs().statusGlyph(sess.Status))
 }
 
 // namePlaceholder stands in for the name a spawn generated while the agent
@@ -718,7 +734,7 @@ func promptPreview(prompt string) string {
 	return ansi.Truncate(strings.Join(words, " "), placeholderPromptWidth, "…")
 }
 
-func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad, guides, trail, bg string) string {
+func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad, guides, trail, bg string) renderedTreeRow {
 	sess := entry.sess
 	// An archived session's pane was killed on its way in; a status frozen
 	// by an older build (a "working" from before the kill recorded dead)
@@ -738,7 +754,7 @@ func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad,
 		focus = " " + focusBadgeStyle.Render(" FOCUS ")
 	}
 	if queued := m.queuedMessages[sess.ID]; queued > 0 {
-		badges = " " + inboxBadge(queued)
+		badges = " " + m.glyphs().inboxBadge(queued)
 	}
 	if sess.AfterTurn != "" {
 		badges += " " + afterTurnBadge(sess.AfterTurn)
@@ -774,9 +790,9 @@ func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad,
 
 	if m.comfortableRows {
 		indent := metaIndent(pad, trail) + strings.Repeat(" ", ansi.StringWidth(handle))
-		return m.tallRow(sess, head, meta, indent, selected, width, bg)
+		return withRowHandle(m.tallRow(sess, head, meta, indent, selected, width, bg), lead, handle)
 	}
-	return m.compactRow(sess, head, meta, selected, width, bg)
+	return withRowHandle(m.compactRow(sess, head, meta, selected, width, bg), lead, handle)
 }
 
 // rowPromptFloor is the narrowest slot worth printing a prompt into: any
@@ -901,7 +917,7 @@ func typedPrompt(text string) string {
 func (m *Model) replyCell(sess store.Session, quiet lipgloss.Style, room int) string {
 	line := m.paneLines[sess.ID]
 	if sess.Status == status.Working && line == "" {
-		frame := startupFrames[m.startupPhase%len(startupFrames)]
+		frame := m.glyphs().startupFrame(m.startupPhase)
 		return lipgloss.NewStyle().Foreground(statusColor(status.Working)).Render(frame + " working")
 	}
 	if line == "" {
@@ -917,25 +933,22 @@ func metaIndent(pad, trail string) string {
 	return pad + trail + "  "
 }
 
-func (m *Model) renderGroupEntry(entry treeRow, selected bool, width int, pad, guides, trail, bg string) string {
-	marker := "▾"
-	if m.collapsed[entry.group] {
-		marker = "▸"
-	}
+func (m *Model) renderGroupEntry(entry treeRow, selected bool, width int, pad, guides, trail, bg string) renderedTreeRow {
+	marker := m.groupGlyph(entry)
 	nameStyle := lipgloss.NewStyle().Foreground(colorAccent2).Bold(true)
 	if selected {
 		nameStyle = nameStyle.Foreground(colorBright)
 	}
 	name := baseName(entry.group)
 	if entry.isRoot() {
-		// Nothing nests under root, so the marker is a blank that holds the column.
-		marker, name = " ", "root"
+		name = "root"
 		if !selected {
 			nameStyle = nameStyle.Foreground(lipgloss.Color(mix(current.Accent2, current.Subtle, 0.5)))
 		}
 	}
 	lead := pad + guides + subtleStyle.Render(marker) + " "
-	head := lead + m.rowHandle(entry, selected) + m.highlightQuery(name, nameStyle)
+	handle := m.rowHandle(entry, selected)
+	head := lead + handle + m.highlightQuery(name, nameStyle)
 
 	// What the group is doing rides on the same line as its name, so a
 	// folded group still reports its subtree without being opened. It is
@@ -945,7 +958,7 @@ func (m *Model) renderGroupEntry(entry treeRow, selected bool, width int, pad, g
 		meta = subtleStyle.Render("no agents yet")
 	}
 
-	return paint(rowColumns(head, meta, width-railGutter), width, bg)
+	return withRowHandle(paint(rowColumns(head, meta, width-railGutter), width, bg), lead, handle)
 }
 
 // computerLines is the machine block docked at the rail's foot: a label
@@ -1086,7 +1099,7 @@ func (m *Model) focusFactsLine(width int) string {
 	// rather than dropping the lot.
 	facts := []focusFact{{text: valueStyle.Render(truncateTail(shortHome(m.sessionDir(sess)), focusFactsDirCap)), spare: 3}}
 	if sess.WorktreeBranch != "" {
-		facts = append(facts, focusFact{text: subtleStyle.Render("⑂ ") + valueStyle.Render(sess.WorktreeBranch), spare: 2})
+		facts = append(facts, focusFact{text: subtleStyle.Render(m.glyphs().branchGlyph+" ") + valueStyle.Render(sess.WorktreeBranch), spare: 2})
 	}
 	if m.procFor == sess.ID && m.proc.OK {
 		facts = append(facts,
@@ -1181,8 +1194,6 @@ func focusTopRule(width int, keys keybind.Table) string {
 	return rule
 }
 
-var startupFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-
 const startupRingPoints = 12
 
 func (m *Model) startupLoader(width, height int) []string {
@@ -1190,21 +1201,21 @@ func (m *Model) startupLoader(width, height int) []string {
 	if !ok || m.mode == modeFocus || sess.Status != status.Starting || paneBooted(m.preview) {
 		return nil
 	}
-	return ringLoader(width, height, "starting up", m.startupPhase)
+	return m.glyphs().ringLoader(width, height, "starting up", m.startupPhase)
 }
 
-func ringLoader(width, height int, label string, phase int) []string {
+func (g glyphSet) ringLoader(width, height int, label string, phase int) []string {
 	accent := lipgloss.NewStyle().Foreground(statusColor(status.Starting)).Bold(true)
 	glow := lipgloss.NewStyle().Foreground(statusColor(status.Starting))
 	phase = phase % startupRingPoints
 	dot := func(position int) string {
 		switch position {
 		case phase:
-			return accent.Render("●")
+			return accent.Render(g.loaderHead)
 		case (phase + startupRingPoints - 1) % startupRingPoints:
-			return glow.Render("•")
+			return glow.Render(g.loaderTail)
 		default:
-			return subtleStyle.Render("·")
+			return subtleStyle.Render(g.loaderRest)
 		}
 	}
 
@@ -1344,7 +1355,7 @@ func (m *Model) viewDetail(width int) string {
 	}
 
 	state := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).
-		Render(statusGlyph(sess.Status)+" "+statusLabel(sess.Status)) +
+		Render(m.glyphs().statusGlyph(sess.Status)+" "+statusLabel(sess.Status)) +
 		subtleStyle.Render(" · "+relSince(lastActivity(sess))+m.elsewhereNote(sess))
 	if sess.AfterTurn != "" {
 		state += subtleStyle.Render(" · ") + afterTurnBadge(sess.AfterTurn) + subtleStyle.Render(" "+afterTurnNote[sess.AfterTurn])
@@ -1357,12 +1368,12 @@ func (m *Model) viewDetail(width int) string {
 	// rail still shows the name, while a trimmed badge leaves no trace that
 	// anything is waiting.
 	if queued := m.queuedMessages[sess.ID]; queued > 0 {
-		name = inboxBadge(queued) + " " + name
+		name = m.glyphs().inboxBadge(queued) + " " + name
 	}
 	withTool := name + "  " + chipStyle.Render(tool)
 	heads := []string{withTool, name}
 	if sess.WorktreeBranch != "" {
-		heads = append([]string{withTool + " " + chipStyle.Render("⑂ "+sess.WorktreeBranch)}, heads...)
+		heads = append([]string{withTool + " " + chipStyle.Render(m.glyphs().branchGlyph+" "+sess.WorktreeBranch)}, heads...)
 	}
 
 	usage := ""
@@ -1474,7 +1485,7 @@ func (m *Model) viewGroupAgents(group string, width, height int) string {
 		}
 		tint := lipgloss.NewStyle().Foreground(statusColor(sess.Status))
 		rows = append(rows, rosterRow{
-			name:  tint.Render(statusGlyph(sess.Status)) + " " + valueStyle.Render(m.displayName(sess)),
+			name:  tint.Render(m.glyphs().statusGlyph(sess.Status)) + " " + valueStyle.Render(m.displayName(sess)),
 			tool:  subtleStyle.Render(sess.Tool),
 			state: tint.Render(statusLabel(sess.Status)) + subtleStyle.Render(" · "+relSince(lastActivity(sess))),
 		})
@@ -1599,7 +1610,7 @@ func (m *Model) viewQuickBar(width, maxRows int) string {
 		} else {
 			sess := entry.sess
 			state := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).
-				Render(statusGlyph(sess.Status) + " " + statusLabel(sess.Status))
+				Render(m.glyphs().statusGlyph(sess.Status) + " " + statusLabel(sess.Status))
 			target = fitColumns(
 				[]string{label("answer") + lipgloss.NewStyle().Foreground(colorBright).Bold(true).Render(m.displayName(sess))},
 				[]string{state + " " + chipStyle.Render(sess.Tool), state, ""}, width)
@@ -1835,7 +1846,7 @@ func (m *Model) viewStatusCounts(compact bool) string {
 		if counts[st] == 0 {
 			continue
 		}
-		dot := lipgloss.NewStyle().Foreground(statusColor(st)).Render(statusGlyph(st))
+		dot := lipgloss.NewStyle().Foreground(statusColor(st)).Render(m.glyphs().statusGlyph(st))
 		label := fmt.Sprintf(" %d %s", counts[st], st)
 		if compact {
 			label = fmt.Sprintf(" %d", counts[st])

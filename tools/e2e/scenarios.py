@@ -107,6 +107,24 @@ def frame(sandbox, name, present, absent=''):
                         lambda value: present in value and (not absent or absent not in value))
 
 
+def select_setting(sandbox, label):
+    def selected():
+        match = re.search(r'❯ ([^\n]+)', capture(sandbox))
+        return match.group(1).strip() if match else ''
+
+    step = 'settings-' + label.replace(' ', '-')
+    current = sandbox.wait(step + '-start', selected, bool)
+    seen = set()
+    while current not in seen:
+        if current.startswith(label + ' '):
+            return
+        seen.add(current)
+        key(sandbox, 'Down')
+        current = sandbox.wait(f'{step}-{len(seen)}', selected,
+                               lambda value: value and value != current)
+    raise AssertionError(f'Settings field {label!r} was not found')
+
+
 def preview_of(frame):
     return '\n'.join(line[35:] for line in frame.splitlines())
 
@@ -223,9 +241,7 @@ def scenario(sandbox, binary):
     assert renamed and renamed[0]['group'] == 'scen-group', f'rename not persisted in group: {renamed}'
     key(sandbox, 's')
     frame(sandbox, 'settings-open', 'compact')
-    # default tool, theme, theme follows OS and background sit above density.
-    for _ in range(4):
-        key(sandbox, 'Down')
+    select_setting(sandbox, 'list density')
     key(sandbox, 'Right')
     sandbox.wait('settings-density-cycled', lambda: capture(sandbox), lambda value: 'comfortable' in value)
     key(sandbox, 'Escape')

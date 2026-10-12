@@ -32,10 +32,13 @@ func TestSettingSpecsCoverEveryKeySettingsWrites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m.openSettings()
+	m.runBatch(t, m.openSettings())
 	m.openCLIPicker()
 	m.handleCLIPickerKey(tea.KeyMsg{Type: tea.KeyEsc})
-	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m.settings.field = settingsFieldGlyphs
+	m.cycleSetting(1)
+	_, cmd := m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m.handleMsg(cmd())
 	after, err := m.store.Settings()
 	if err != nil {
 		t.Fatal(err)
@@ -103,6 +106,7 @@ func TestSettingSpecsDefaultsAreValues(t *testing.T) {
 func TestOpenSettingsReadsWhatTheShellChanged(t *testing.T) {
 	m := buildModel(t)
 	changed := map[string]string{
+		glyphModeSetting:     "basic",
 		listDensitySetting:   "comfortable",
 		sessionLayoutSetting: "full",
 		hideHeaderSetting:    "on",
@@ -122,9 +126,12 @@ func TestOpenSettingsReadsWhatTheShellChanged(t *testing.T) {
 	if err := m.store.SetEditor("code -n"); err != nil {
 		t.Fatal(err)
 	}
-	m.openSettings()
+	m.runBatch(t, m.openSettings())
 	if themes[m.settings.themeIndex].Name != "nord" {
 		t.Fatalf("Settings opened on %q, want the shell's nord", themes[m.settings.themeIndex].Name)
+	}
+	if m.glyphMode != glyphModeBasic {
+		t.Fatalf("symbols opened on %q, want basic", m.glyphMode)
 	}
 	if current.Name != "nord" {
 		t.Fatalf("the palette stayed %q after Settings read nord", current.Name)

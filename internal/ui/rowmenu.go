@@ -88,7 +88,7 @@ func (m *Model) rowMenuItems(entry treeRow) []menuItem {
 	kill := menuItem{label: "Kill", action: keybind.Kill, danger: true}
 	remove := menuItem{label: "Delete", action: keybind.Delete, danger: true}
 	if entry.isRoot() {
-		return append(create, editor)
+		return append(create, editor, menuItem{label: "Settings", action: keybind.Settings})
 	}
 	if entry.isGroup {
 		live, dead := m.groupLiveAndDead(entry.group)

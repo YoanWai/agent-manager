@@ -19,6 +19,82 @@ import (
 
 type memSettings map[string]string
 
+func TestSettingsWheelReachesSymbolsAndDocsInShortWindows(t *testing.T) {
+	for _, size := range [][2]int{{34, 12}, {80, 11}} {
+		t.Run(fmt.Sprintf("%dx%d", size[0], size[1]), func(t *testing.T) {
+			m := buildModel(t)
+			m.width, m.height = size[0], size[1]
+			m.runBatch(t, m.openSettings())
+			m.viewSettings()
+			if m.settings.glyphRow >= 0 {
+				t.Fatal("symbols should start below this viewport")
+			}
+			wheel := func(button tea.MouseButton) {
+				m.handleMouse(tea.MouseMsg{Button: button, Action: tea.MouseActionPress})
+				m.viewSettings()
+			}
+			for range settingsFieldGlyphs {
+				wheel(tea.MouseButtonWheelDown)
+			}
+			if m.settings.field != settingsFieldGlyphs || m.settings.glyphRow < 0 {
+				t.Fatal("wheel did not reveal symbols")
+			}
+			x := m.cardLeft + 1 + cardPaddingX
+			m.handleMouse(tea.MouseMsg{X: x, Y: m.cardTop + 2 + m.settings.glyphRow,
+				Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+			if m.glyphMode != glyphModeBasic {
+				t.Fatal("revealed symbols row was not clickable")
+			}
+			for range settingsFieldDocs - settingsFieldGlyphs {
+				wheel(tea.MouseButtonWheelDown)
+			}
+			if m.settings.field != settingsFieldDocs || m.settings.docsRow < 0 {
+				t.Fatal("wheel did not reveal docs")
+			}
+			var opened string
+			openBrowser = func(url string) error { opened = url; return nil }
+			t.Cleanup(func() { openBrowser = defaultOpenBrowser })
+			_, docs := m.handleMouse(tea.MouseMsg{
+				X: m.cardLeft + 1 + cardPaddingX, Y: m.cardTop + 2 + m.settings.docsRow,
+				Button: tea.MouseButtonLeft, Action: tea.MouseActionPress,
+			})
+			m.runBatch(t, docs)
+			if opened != docsURL {
+				t.Fatal("docs click did not follow the scrolled row")
+			}
+			for range settingsFieldDocs - settingsFieldGlyphs {
+				wheel(tea.MouseButtonWheelUp)
+			}
+			if m.settings.field != settingsFieldGlyphs || m.settings.glyphRow < 0 {
+				t.Fatal("wheel up did not return to symbols")
+			}
+		})
+	}
+}
+
+func TestSettingsWheelLeavesSubpanelsAlone(t *testing.T) {
+	for _, panel := range []string{"CLIs", "keys", "editor"} {
+		t.Run(panel, func(t *testing.T) {
+			m := buildModel(t)
+			m.runBatch(t, m.openSettings())
+			switch panel {
+			case "CLIs":
+				m.openCLIPicker()
+			case "keys":
+				m.openKeyPicker()
+			case "editor":
+				m.openEditorTyping()
+			}
+			for _, button := range []tea.MouseButton{tea.MouseButtonWheelDown, tea.MouseButtonWheelUp} {
+				m.handleMouse(tea.MouseMsg{Button: button, Action: tea.MouseActionPress})
+				if m.settings.field != settingsFieldTool {
+					t.Fatal("wheel in a subpanel moved the parent Settings field")
+				}
+			}
+		})
+	}
+}
+
 func (m memSettings) Setting(key string) (string, error) {
 	return m[key], nil
 }

@@ -23,6 +23,7 @@ func SettingSpecs() ([]store.SettingSpec, error) {
 		{Key: store.DefaultToolSetting, Values: tools, Row: "default tool"},
 		{Key: themeSetting, Values: palettes, Default: themes[0].Name, Row: "theme"},
 		{Key: themeAutoSetting, Values: onOff, Default: "off", Row: "theme follows OS"},
+		{Key: glyphModeSetting, Values: []string{string(glyphModeBasic), string(glyphModeAdvanced)}, Default: string(defaultGlyphMode), Row: "symbols"},
 		{Key: backgroundSetting, Values: []string{"theme", "terminal"}, Default: "theme", Row: "background"},
 		{Key: listDensitySetting, Values: []string{"compact", "comfortable"}, Default: "compact", Row: "list density"},
 		{Key: sessionLayoutSetting, Values: []string{"split", "full"}, Default: "split", Row: "sessions layout"},

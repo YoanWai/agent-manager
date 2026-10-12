@@ -37,9 +37,9 @@ type helpSection struct {
 // added later cannot render clipped against its own description, and always
 // over the whole catalog rather than a search's hits, so narrowing the map
 // does not shift the column under the reader.
-func helpKeyColumn(session, list keybind.Table, arrowStep bool) int {
+func (g glyphSet) helpKeyColumn(session, list keybind.Table, arrowStep bool) int {
 	width := 0
-	for _, section := range helpSections(session, list, arrowStep) {
+	for _, section := range g.helpSections(session, list, arrowStep) {
 		for _, row := range section.rows {
 			if w := ansi.StringWidth(row[0]); w > width {
 				width = w
@@ -74,7 +74,7 @@ func (h *helpRows) fixed(key, does string) {
 	h.rows = append(h.rows, [2]string{key, does})
 }
 
-func listHelpRows(list keybind.Table, arrowStep bool) [][2]string {
+func (g glyphSet) listHelpRows(list keybind.Table, arrowStep bool) [][2]string {
 	h := helpRows{list: list}
 	h.fixed("", "Tell your agent to manage sessions and terminals in Agent Manager.")
 	h.action("move the cursor up", keybind.Up)
@@ -82,7 +82,7 @@ func listHelpRows(list keybind.Table, arrowStep bool) [][2]string {
 	h.fixed("click", "focus a session in the split, select any other row")
 	h.fixed("double click", "fold or unfold a group, focus a session full screen")
 	h.fixed(rowMenuGlyph, "the row's actions, or right click")
-	h.fixed("drag "+reorderGrip, "move the row, into another group too, or click it for ↑↓")
+	h.fixed("drag "+g.reorderGrip, "move the row, into another group too, or click it for ↑↓")
 	if arrowStep {
 		h.action("step in: focus the session, open the group", keybind.StepIn)
 		h.action("step out: close the group", keybind.StepOut)
@@ -98,7 +98,7 @@ func listHelpRows(list keybind.Table, arrowStep bool) [][2]string {
 	h.action("hide / show empty groups", keybind.EmptyGroups)
 	h.action("fold / unfold every group", keybind.FoldAll)
 	h.action("resize the split (←→ or hl, or drag; ↵ commits, esc cancels)", keybind.Resize)
-	h.action("settings", keybind.Settings)
+	h.action("settings (also in the root row menu)", keybind.Settings)
 	h.action("messages", keybind.Messages)
 	h.action("this key map", keybind.Help)
 	h.action("quit (sessions keep running)", keybind.Quit)
@@ -128,15 +128,18 @@ func sessionRowHelpRows(list keybind.Table) [][2]string {
 	return h.rows
 }
 
-func markHelpRows(list keybind.Table) [][2]string {
+func (g glyphSet) markHelpRows(list keybind.Table) [][2]string {
 	rows := [][2]string{
-		{"◐ working", "the agent is busy on a turn"},
-		{"◆ waiting", "blocked on you: a dialog, a permission ask, a question"},
-		{"● finished", "the turn ended; entering the session clears it to idle"},
-		{"○ idle", "nothing running"},
-		{"✕ errored", "the tool reported an error, or the session is dead"},
-		{"◌ starting", "the pane is still launching"},
-		{"✉N", "messages from another agent, held until this one is at rest"},
+		{g.workingGlyph + " working", "the agent is busy on a turn"},
+		{g.waitingGlyph + " waiting", "blocked on you: a dialog, a permission ask, a question"},
+		{g.finishedGlyph + " finished", "the turn ended; entering the session clears it to idle"},
+		{g.idleGlyph + " idle", "nothing running"},
+		{g.erroredGlyph + " errored", "the tool reported an error, or the session is dead"},
+		{g.startingGlyph + " starting", "the pane is still launching; its row mark spins"},
+		{g.inboxGlyph + "N", "messages from another agent, held until this one is at rest"},
+		{g.reorderGrip, "drag handle; click, then use arrows to move, enter to drop"},
+		{g.branchGlyph, "worktree branch or conversation fork"},
+		{g.groupClosedGlyph + " / " + g.groupOpenGlyph, "collapsed / expanded group"},
 		{afterTurnGlyphs[store.AfterTurnArchive] + " / " + afterTurnGlyphs[store.AfterTurnKill], "the agent asked to be archived / killed once this turn ends"},
 	}
 	if filter := list.Binding(keybind.Filter).Glyph(" / "); filter != "" {
@@ -161,11 +164,11 @@ func groupRowHelpRows(list keybind.Table) [][2]string {
 
 // helpSections is the catalog for one setting of the arrow-step pair: off,
 // the rows that pair would answer are left out rather than named as dead.
-func helpSections(session, list keybind.Table, arrowStep bool) []helpSection {
+func (g glyphSet) helpSections(session, list keybind.Table, arrowStep bool) []helpSection {
 	return []helpSection{
-		{title: "list", rows: listHelpRows(list, arrowStep)},
+		{title: "list", rows: g.listHelpRows(list, arrowStep)},
 		{title: "session under the cursor", rows: sessionRowHelpRows(list)},
-		{title: "the mark on a session row", rows: markHelpRows(list)},
+		{title: "the mark on a session row", rows: g.markHelpRows(list)},
 		{title: "group under the cursor", rows: groupRowHelpRows(list)},
 		{title: titledWith("quick prompt mode", list, keybind.Prompt), rows: [][2]string{
 			{"↵", "send"},
@@ -205,8 +208,9 @@ func helpSections(session, list keybind.Table, arrowStep bool) []helpSection {
 			{"esc", "close"},
 		}},
 		{title: titledWith("settings", list, keybind.Settings), rows: [][2]string{
-			{"↑↓", "pick a field"},
-			{"←→", "change the value"},
+			{"↑↓ / wheel", "pick a field"},
+			{"←→", "change the value, including Compatible / Advanced symbols"},
+			{"click", "change symbols, or save and close"},
 			{"↵", "run the field's action (docs, keybindings, CLIs, report, update)"},
 			{"esc", "save and close"},
 		}},
@@ -289,7 +293,7 @@ func (m *Model) visibleHelpSections() []helpSection {
 	if m.help.returnMode == modeDiff {
 		return []helpSection{reviewHelpSection(m.listKeys)}
 	}
-	return helpSections(m.keys, m.listKeys, m.arrowStep)
+	return m.glyphs().helpSections(m.keys, m.listKeys, m.arrowStep)
 }
 
 // matchHelp narrows the catalog to the rows whose key or description
@@ -335,8 +339,8 @@ func helpRowCount(sections []helpSection) int {
 
 // helpBodyLines lays the catalog out as one scrollable column: a titled rule
 // per section, then its bindings in two aligned columns.
-func helpBodyLines(sections []helpSection, session, list keybind.Table, arrowStep bool, width int, query string) []string {
-	keyColumn := helpKeyColumn(session, list, arrowStep)
+func (g glyphSet) helpBodyLines(sections []helpSection, session, list keybind.Table, arrowStep bool, width int, query string) []string {
+	keyColumn := g.helpKeyColumn(session, list, arrowStep)
 	if room := width / 3; keyColumn > room {
 		keyColumn = max(room, 4)
 	}
@@ -414,7 +418,7 @@ func (m *Model) helpSearchActive() bool {
 
 func (m *Model) helpScrollLimit() int {
 	sections := matchHelp(m.visibleHelpSections(), m.help.query)
-	body := helpBodyLines(sections, m.keys, m.listKeys, m.arrowStep, cardInnerWidth(helpCardWidth(m.width)), m.help.query)
+	body := m.glyphs().helpBodyLines(sections, m.keys, m.listKeys, m.arrowStep, cardInnerWidth(helpCardWidth(m.width)), m.help.query)
 	return max(0, len(body)-m.helpBodyRoom())
 }
 
@@ -428,7 +432,7 @@ func (m *Model) viewHelp() string {
 		head = append(head, m.helpSearchLine(sections), "")
 	}
 
-	body := helpBodyLines(sections, m.keys, m.listKeys, m.arrowStep, inner, m.help.query)
+	body := m.glyphs().helpBodyLines(sections, m.keys, m.listKeys, m.arrowStep, inner, m.help.query)
 	if len(body) == 0 {
 		body = []string{subtleStyle.Render("no key matches that")}
 	}

@@ -473,6 +473,16 @@ func (m *Model) handleMouseWheel(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch m.mode {
+	case modeSettings:
+		if m.settings.cliPicker || m.settings.keyPicker || m.settings.editor.typing {
+			return m, nil
+		}
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			return m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyUp})
+		case tea.MouseButtonWheelDown:
+			return m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
+		}
 	case modeList:
 		switch msg.Button {
 		case tea.MouseButtonWheelUp:

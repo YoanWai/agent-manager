@@ -415,11 +415,11 @@ func (m *Model) annotationRows(fd *diff.FileDiff, lineIdx, width int) []string {
 }
 
 func (m *Model) reviewRing(label string, width, height int) string {
-	return strings.Join(ringLoader(width, height, label, m.startupPhase), "\n")
+	return strings.Join(m.glyphs().ringLoader(width, height, label, m.startupPhase), "\n")
 }
 
 func (m *Model) reviewSpinnerLine(label string) string {
-	frame := startupFrames[m.startupPhase%len(startupFrames)]
+	frame := m.glyphs().startupFrame(m.startupPhase)
 	return mutedStyle.Render(frame + " " + label)
 }
 

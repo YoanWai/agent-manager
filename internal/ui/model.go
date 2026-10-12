@@ -262,12 +262,14 @@ type Model struct {
 	// cardTop, cardLeft and cardRight place the last card painted, for clicks.
 	cardTop, cardLeft, cardRight int
 	// composerSeq numbers the prompt boxes this run has opened.
-	composerSeq int
-	settings    settingsState
-	help        helpState
-	moveID      string
-	movePath    string
-	repoPick    repoPickState
+	composerSeq  int
+	glyphMode    glyphMode
+	glyphModeGen int
+	settings     settingsState
+	help         helpState
+	moveID       string
+	movePath     string
+	repoPick     repoPickState
 	// editorReturnID is the session an editor request detached from, so the
 	// attach it cost can be resumed once the editor is up.
 	editorReturnID string
@@ -510,25 +512,32 @@ type repoAnswer struct {
 }
 
 type settingsState struct {
-	toolNames       []string
-	toolIndex       int
-	themeIndex      int
-	field           int
-	layoutSplit     bool
-	quickCloseSend  bool
-	enterFocuses    bool
-	arrowStep       bool
-	comfortableRows bool
-	fullLayout      bool
-	hideHeader      bool
-	hideStats       bool
-	mouseDisabled   bool
-	worktreeDefault bool
-	baseFetch       bool
-	proactive       bool
-	notifications   bool
-	notifyFinished  bool
-	themeAuto       bool
+	docsRow          int
+	glyphModeChanged bool
+	glyphModeSaving  bool
+	glyphRow         int
+	glyphRowWidth    int
+	saveRow          int
+	saveRowWidth     int
+	toolNames        []string
+	toolIndex        int
+	themeIndex       int
+	field            int
+	layoutSplit      bool
+	quickCloseSend   bool
+	enterFocuses     bool
+	arrowStep        bool
+	comfortableRows  bool
+	fullLayout       bool
+	hideHeader       bool
+	hideStats        bool
+	mouseDisabled    bool
+	worktreeDefault  bool
+	baseFetch        bool
+	proactive        bool
+	notifications    bool
+	notifyFinished   bool
+	themeAuto        bool
 	// terminalBackground is the background row's choice, applied to the
 	// model as it is stepped so the frame previews it.
 	terminalBackground bool
@@ -555,6 +564,7 @@ const (
 	settingsFieldTheme
 	settingsFieldThemeAuto
 	settingsFieldBackground
+	settingsFieldGlyphs
 	settingsFieldDensity
 	settingsFieldSessionLayout
 	settingsFieldHeader
@@ -879,6 +889,7 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		model.update.checked = len(cached.Releases) > 0
 	}
 	model.terminalBackground = model.storedTerminalBackground()
+	model.setGlyphMode(st.Setting(glyphModeSetting))
 	model.openStartupNotice()
 	model.indexReleaseRanges()
 	return model, nil
@@ -1509,6 +1520,24 @@ func (m *Model) syncMouseCapture() tea.Cmd {
 
 func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case glyphModeLoadedMsg:
+		if msg.gen == m.glyphModeGen {
+			m.setGlyphMode(msg.value, msg.err)
+		}
+		return m, nil
+	case glyphModeSavedMsg:
+		m.settings.glyphModeSaving = false
+		if msg.err != nil {
+			m.errBar.text = "saving symbols setting: " + msg.err.Error()
+			return m, nil
+		}
+		m.settings.glyphModeChanged = false
+		if msg.update {
+			m.update.applying = true
+			return m, m.applyUpdateCmd()
+		}
+		m.mode = modeList
+		return m, nil
 	case tea.WindowSizeMsg:
 		// Resuming from a tmux attach re-sends the current size unchanged; only
 		// a real resize needs the per-session tmux resize calls, so an

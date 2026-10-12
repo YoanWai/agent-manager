@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -178,6 +179,7 @@ func TestSettingsMouseTogglePersists(t *testing.T) {
 
 func TestSettingsShowsVersion(t *testing.T) {
 	m := &Model{
+		width: 120, height: 40,
 		update:   updateInfo{version: "v0.9.0"},
 		settings: settingsState{toolNames: []string{"claude"}},
 	}
@@ -234,7 +236,7 @@ func TestSettingsDocsRowOpensDocs(t *testing.T) {
 	if !strings.Contains(frame, hintCap("↵", "open the docs")) {
 		t.Fatal("the docs shortcut should wear the footer badge")
 	}
-	_, cmd = m.handleSettingsClick(m.cardLeft+4, m.cardTop+2+settingsFieldDocs)
+	_, cmd = m.handleSettingsClick(m.cardLeft+4, m.cardTop+2+m.settings.docsRow)
 	m.applyCmd(t, cmd)
 	if opened != docsURL {
 		t.Fatalf("click should open the docs, got %q", opened)
@@ -306,6 +308,7 @@ func TestSettingsFeatureRequestRowOpensForm(t *testing.T) {
 
 func TestSettingsBugReportRowIsHighlighted(t *testing.T) {
 	m := footModel(t)
+	m.width, m.height = 120, 40
 	m.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
 	m.openSettings()
 	// Keep focus off the CTA rows so the accent2 unfocused styling is what paints.
@@ -616,5 +619,212 @@ func TestSettingsHasNoTerminalRows(t *testing.T) {
 	m.openSettings()
 	if strings.Contains(ansi.Strip(m.viewSettings()), "terminal rows") {
 		t.Fatal("terminal rows setting must be gone")
+	}
+}
+
+func TestGlyphPreferenceOnlyPersistsAfterExplicitSelection(t *testing.T) {
+	m := buildModel(t)
+	if m.glyphMode != "" || m.glyphModeLabel() != "Advanced" {
+		t.Fatal("unset preference should inherit the advanced default")
+	}
+	m.openSettings()
+	_, cmd := m.saveAndCloseSettings()
+	if cmd != nil {
+		t.Fatal("untouched symbols should not schedule a write")
+	}
+	if raw, err := m.store.Setting(glyphModeSetting); err != nil || raw != "" {
+		t.Fatalf("untouched Settings pinned the default: %q %v", raw, err)
+	}
+	for _, mode := range []glyphMode{glyphModeBasic, glyphModeAdvanced} {
+		m.openSettings()
+		m.settings.field = settingsFieldGlyphs
+		m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
+		if m.glyphMode != mode {
+			t.Fatalf("choice did not take effect immediately: %q", m.glyphMode)
+		}
+		_, cmd := m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEsc})
+		if cmd == nil {
+			t.Fatal("explicit choice must schedule persistence")
+		}
+		m.handleMsg(cmd())
+		restored := reloadModel(t, m)
+		if restored.glyphMode != mode {
+			t.Fatalf("saved mode = %q want %q", restored.glyphMode, mode)
+		}
+	}
+	m.openSettings()
+	m.settings.field = settingsFieldGlyphs
+	m.cycleSetting(1)
+	m.cycleSetting(-1)
+	_, cmd = m.saveAndCloseSettings()
+	if cmd == nil {
+		t.Fatal("cycling back to the default must remain an explicit choice")
+	}
+	m.handleMsg(cmd())
+	if raw, _ := m.store.Setting(glyphModeSetting); raw != string(glyphModeAdvanced) {
+		t.Fatalf("explicit advanced choice = %q", raw)
+	}
+}
+
+func TestSymbolsMouseControlsFollowPaintedCard(t *testing.T) {
+	for _, width := range []int{34, 80, 160} {
+		t.Run(fmt.Sprint(width), func(t *testing.T) {
+			m := buildModel(t)
+			m.width, m.height = width, 24
+			m.openSettings()
+			m.viewSettings()
+			x := m.cardLeft + 1 + cardPaddingX
+			y := m.cardTop + 2 + m.settings.glyphRow
+			m.handleMousePress(tea.MouseMsg{X: x - 1, Y: y, Button: tea.MouseButtonLeft})
+			if m.glyphMode != "" {
+				t.Fatal("card padding changed symbols")
+			}
+			m.handleMousePress(tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonLeft})
+			if m.glyphMode != glyphModeBasic || m.settings.field != settingsFieldGlyphs {
+				t.Fatal("click did not select compatible mode")
+			}
+			view := ansi.Strip(m.viewSettings())
+			if !strings.Contains(view, "Compatible") {
+				t.Fatal("picker did not update")
+			}
+			y = m.cardTop + 2 + m.settings.saveRow
+			_, cmd := m.handleMousePress(tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonLeft})
+			if m.mode != modeSettings || cmd == nil {
+				t.Fatal("mouse save must wait for persistence")
+			}
+			m.handleMsg(cmd())
+			if m.mode != modeList {
+				t.Fatal("successful mouse save did not close")
+			}
+			if raw, _ := m.store.Setting(glyphModeSetting); raw != string(glyphModeBasic) {
+				t.Fatalf("mouse mode not saved: %q", raw)
+			}
+		})
+	}
+}
+
+func TestSettingsSymbolsSaveWaitsBeforeReopen(t *testing.T) {
+	m := buildModel(t)
+	m.runBatch(t, m.openSettings())
+	m.settings.field = settingsFieldGlyphs
+	m.handleKey(key("right"))
+	_, save := m.handleKey(key("esc"))
+	if save == nil || m.mode != modeSettings || !m.settings.glyphModeSaving {
+		t.Fatal("Settings must wait for the write before closing")
+	}
+	if !strings.Contains(ansi.Strip(m.viewSettings()), "Saving symbols") {
+		t.Fatal("pending save has no visible feedback")
+	}
+	for _, pressed := range []string{"s", "esc", "right"} {
+		if _, cmd := m.handleKey(key(pressed)); cmd != nil {
+			t.Fatalf("%s started another action during the save", pressed)
+		}
+	}
+	x := m.cardLeft + 1 + cardPaddingX
+	m.handleMouse(tea.MouseMsg{X: x, Y: m.cardTop + 2 + m.settings.glyphRow, Button: tea.MouseButtonLeft})
+	m.handleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelDown})
+	if m.glyphMode != glyphModeBasic || m.settings.field != settingsFieldGlyphs || m.mode != modeSettings {
+		t.Fatal("input changed or reopened Settings before the write finished")
+	}
+	m.handleMsg(save())
+	if m.mode != modeList || m.settings.glyphModeSaving || m.settings.glyphModeChanged {
+		t.Fatal("successful save did not finish")
+	}
+	_, reopen := m.handleKey(key("s"))
+	m.runBatch(t, reopen)
+	if m.glyphMode != glyphModeBasic {
+		t.Fatal("reopening lost the saved selection")
+	}
+}
+
+func TestSettingsSymbolsSaveFailureCanRetry(t *testing.T) {
+	m := buildModel(t)
+	m.runBatch(t, m.openSettings())
+	m.settings.field = settingsFieldGlyphs
+	m.handleKey(key("right"))
+	_, save := m.handleKey(key("esc"))
+	if save == nil {
+		t.Fatal("no save command")
+	}
+	m.handleMsg(glyphModeSavedMsg{err: errors.New("disk full")})
+	if m.mode != modeSettings || m.settings.glyphModeSaving || !m.settings.glyphModeChanged || m.glyphMode != glyphModeBasic {
+		t.Fatal("failed save must keep the explicit choice available for retry")
+	}
+	if !strings.Contains(m.errBar.text, "saving symbols setting: disk full") {
+		t.Fatalf("save failure was lost: %q", m.errBar.text)
+	}
+	_, retry := m.handleKey(key("esc"))
+	if retry == nil {
+		t.Fatal("retry dropped the pending choice")
+	}
+	m.handleMsg(retry())
+	if raw, _ := m.store.Setting(glyphModeSetting); raw != string(glyphModeBasic) || m.mode != modeList || m.errBar.text != "" {
+		t.Fatalf("retry did not save and close cleanly: saved=%q mode=%d error=%q", raw, m.mode, m.errBar.text)
+	}
+}
+
+func settingsGlyphRead(t *testing.T, cmd tea.Cmd) glyphModeLoadedMsg {
+	t.Helper()
+	for _, part := range cmd().(tea.BatchMsg) {
+		if msg, ok := part().(glyphModeLoadedMsg); ok {
+			return msg
+		}
+	}
+	t.Fatal("opening Settings did not schedule a symbols read")
+	return glyphModeLoadedMsg{}
+}
+
+func TestSettingsSymbolsIgnoreStaleReads(t *testing.T) {
+	m := buildModel(t)
+	first := settingsGlyphRead(t, m.openSettings())
+	m.settings.field = settingsFieldGlyphs
+	m.handleKey(key("right"))
+	m.handleMsg(first)
+	if m.glyphMode != glyphModeBasic {
+		t.Fatal("a pending read replaced the local choice")
+	}
+	_, save := m.handleKey(key("esc"))
+	m.handleMsg(save())
+	second := settingsGlyphRead(t, m.openSettings())
+	m.handleKey(key("esc"))
+	if err := m.store.SetSetting(glyphModeSetting, string(glyphModeAdvanced)); err != nil {
+		t.Fatal(err)
+	}
+	m.runBatch(t, m.openSettings())
+	m.handleMsg(second)
+	if m.glyphMode != glyphModeAdvanced {
+		t.Fatal("a read from the previous visit replaced the shell's newer choice")
+	}
+}
+
+func TestSettingsUpdateWaitsForSymbolsSave(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		t.Run(fmt.Sprint(fail), func(t *testing.T) {
+			m := buildModel(t)
+			m.runBatch(t, m.openSettings())
+			m.update.latest = "v0.3.0"
+			m.settings.field = settingsFieldGlyphs
+			m.handleKey(key("right"))
+			m.settings.field = settingsFieldUpdate
+			_, save := m.handleKey(key("enter"))
+			if save == nil || m.update.applying || !m.settings.glyphModeSaving {
+				t.Fatal("update must wait for the symbols write")
+			}
+			msg := glyphModeSavedMsg{update: true, err: errors.New("disk full")}
+			if !fail {
+				msg = save().(glyphModeSavedMsg)
+				if msg.err != nil {
+					t.Fatal(msg.err)
+				}
+			}
+			_, apply := m.handleMsg(msg)
+			if fail {
+				if apply != nil || m.update.applying || !m.settings.glyphModeChanged || m.errBar.text == "" {
+					t.Fatal("failed symbols save must prevent the update and retain the choice")
+				}
+			} else if apply == nil || !m.update.applying || m.settings.glyphModeChanged {
+				t.Fatal("successful symbols save did not start the update")
+			}
+		})
 	}
 }
