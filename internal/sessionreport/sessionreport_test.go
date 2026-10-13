@@ -46,7 +46,7 @@ func TestPiAndOmpLoadAnExtensionBesideTheUsers(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			path := filepath.Join(target.HooksDir, "track-"+tc.style+".ts")
+			path := filepath.Join(target.HooksDir, "agent-manager-"+tc.style+".ts")
 			if want := "pi --session 'abc' -e mine.ts -e " + tmux.ShellQuote(path); command != want {
 				t.Fatalf("command = %q, want %q", command, want)
 			}
@@ -79,7 +79,7 @@ func TestOpencodeLoadsATUIPluginThroughItsEnvironment(t *testing.T) {
 	if err := json.Unmarshal([]byte(readFile(t, env["OPENCODE_TUI_CONFIG"])), &tuiConfig); err != nil {
 		t.Fatal(err)
 	}
-	plugin := filepath.Join(target.HooksDir, "track-opencode.ts")
+	plugin := filepath.Join(target.HooksDir, "agent-manager-opencode.ts")
 	if !slices.Equal(tuiConfig.Plugin, []string{plugin}) {
 		t.Fatalf("tui config plugins = %v, want %s", tuiConfig.Plugin, plugin)
 	}
@@ -104,7 +104,7 @@ func TestOpencodePluginReportsSwitchesAndRetriesFailedReports(t *testing.T) {
 	if _, err := Apply("opencode", target, "opencode", map[string]string{}); err != nil {
 		t.Fatal(err)
 	}
-	plugin := readFile(t, filepath.Join(target.HooksDir, "track-opencode.ts"))
+	plugin := readFile(t, filepath.Join(target.HooksDir, "agent-manager-opencode.ts"))
 	writeFile(t, filepath.Join(target.HooksDir, "plugin.mjs"), strings.ReplaceAll(plugin, "api: any", "api"), 0o644)
 	reportsJSON, _ := json.Marshal(reports)
 	check := `import plugin from './plugin.mjs';
@@ -152,7 +152,7 @@ func TestCommandCodeLoadsAModForTheSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(target.HooksDir, "track-cmd.ts")
+	path := filepath.Join(target.HooksDir, "agent-manager-command-code.ts")
 	if want := "cmd --session abc --mod mine.ts --mod " + tmux.ShellQuote(path); command != want {
 		t.Fatalf("command = %q, want %q", command, want)
 	}
