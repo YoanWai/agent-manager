@@ -463,9 +463,9 @@ func (m *Model) clickRow(x, y int) (int, bool) {
 
 // wheelSuppressGap is how long a gap between wheel events has to be before
 // a trackpad flick that started in a focused session is treated as over.
-// The observed gap between its trailing events is 30-40ms; this leaves
-// margin without reaching into a deliberate next scroll's own cadence.
-const wheelSuppressGap = 100 * time.Millisecond
+// A real flick slows down at the end: in iTerm2 debug logs its last gaps
+// run about 180-220ms, so this covers that tail with some margin.
+const wheelSuppressGap = 300 * time.Millisecond
 
 // handleMouseWheel keeps the wheel inside the app so the outer terminal
 // cannot scroll the manager away: it moves the session cursor in the list,
