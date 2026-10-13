@@ -618,10 +618,11 @@ var ErrUnsubmitted = errors.New("the pasted text is still in the composer after 
 
 // SubmitText is SendText for a caller that can read the session's composer:
 // drafted reports whether it holds text, and must report false before the
-// paste. A tool may draw the paste as a collapsed placeholder rather than
+// paste. A composer it cannot read proves no submit, so its error is
+// returned rather than taken for an empty composer. A tool may draw the paste as a collapsed placeholder rather than
 // its text, and may swallow the Enter after it, so the composer filling is
 // taken as the echo and the composer emptying as the submit.
-func (d *Driver) SubmitText(id, text string, drafted func() bool) error {
+func (d *Driver) SubmitText(id, text string, drafted func() (bool, error)) error {
 	return d.pasteAndEnter(PaneTarget(id), text, drafted)
 }
 
@@ -661,7 +662,7 @@ const (
 // writes reach one pty, and a pane too busy to read between them takes the
 // carriage return as part of the bracketed paste rather than as a submit,
 // stranding the message in the composer.
-func (d *Driver) pasteAndEnter(target, text string, drafted func() bool) error {
+func (d *Driver) pasteAndEnter(target, text string, drafted func() (bool, error)) error {
 	before, baseline := d.capturePlain(target)
 	if err := d.paste(target, text); err != nil {
 		return err
@@ -684,10 +685,11 @@ func (d *Driver) pasteAndEnter(target, text string, drafted func() bool) error {
 
 // confirmSubmit presses Enter again while the composer still holds the
 // paste, a bounded number of times, and reports a paste no Enter submitted.
-func (d *Driver) confirmSubmit(target string, drafted func() bool) error {
+func (d *Driver) confirmSubmit(target string, drafted func() (bool, error)) error {
 	for try := 1; ; try++ {
-		if composerCleared(drafted) {
-			return nil
+		cleared, err := composerCleared(drafted)
+		if err != nil || cleared {
+			return err
 		}
 		if try == submitTries {
 			return ErrUnsubmitted
@@ -698,14 +700,18 @@ func (d *Driver) confirmSubmit(target string, drafted func() bool) error {
 	}
 }
 
-func composerCleared(drafted func() bool) bool {
+func composerCleared(drafted func() (bool, error)) (bool, error) {
 	deadline := time.Now().Add(submitWait)
 	for {
-		if !drafted() {
-			return true
+		typed, err := drafted()
+		if err != nil {
+			return false, err
+		}
+		if !typed {
+			return true, nil
 		}
 		if time.Now().After(deadline) {
-			return false
+			return false, nil
 		}
 		time.Sleep(echoPoll)
 	}
@@ -713,8 +719,9 @@ func composerCleared(drafted func() bool) bool {
 
 // A pane that draws the paste some other way, as a collapsed placeholder or
 // not at all, is released at the cap and submits the way it did before,
-// unless the caller can see its composer fill.
-func (d *Driver) awaitPasteEcho(target, before, text string, drafted func() bool) {
+// unless the caller can see its composer fill. A composer read that fails
+// here only costs the early release; confirmSubmit is what reports it.
+func (d *Driver) awaitPasteEcho(target, before, text string, drafted func() (bool, error)) {
 	opening := MessageOpening(text)
 	if opening == "" {
 		return
@@ -725,8 +732,10 @@ func (d *Driver) awaitPasteEcho(target, before, text string, drafted func() bool
 		if pane, err := d.capturePlain(target); err == nil && strings.Count(pane, opening) > was {
 			return
 		}
-		if drafted != nil && drafted() {
-			return
+		if drafted != nil {
+			if typed, err := drafted(); err == nil && typed {
+				return
+			}
 		}
 		if time.Now().After(deadline) {
 			return

@@ -1106,14 +1106,13 @@ func (p *poller) promptCarriesTypedText(sess store.Session, clean string) (bool,
 
 // composerDrafted reads the session's composer afresh on every call, for a
 // send that has to see its paste land and then leave.
-func (p *poller) composerDrafted(sess store.Session) func() bool {
-	return func() bool {
+func (p *poller) composerDrafted(sess store.Session) func() (bool, error) {
+	return func() (bool, error) {
 		pane, err := p.tmux.CapturePane(sess.ID)
 		if err != nil {
-			return false
+			return false, err
 		}
-		typed, err := p.promptCarriesTypedText(sess, ansi.Strip(pane))
-		return err == nil && typed
+		return p.promptCarriesTypedText(sess, ansi.Strip(pane))
 	}
 }
 
