@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -821,6 +822,9 @@ func waitForFile(t *testing.T, driver *Driver, id, path string) string {
 // pane carries explicit colors of its own, which is what the pane theme sets.
 func TestCreateAnswersColorQueries(t *testing.T) {
 	driver := requireTmux(t)
+	// tmux below 3.2 answers no colour query; the pane's COLORFGBG carries
+	// the same pair there (TestCreateExportsColorFgBg).
+	requireTmuxAtLeast(t, 3, 2)
 	t.Cleanup(func() { clearPaneTheme(t) })
 	driver.PublishPaneTheme(PaneTheme{Foreground: "#cdd6f4", Background: "#1e1e2e", ColorFgBg: "15;0"})
 
@@ -836,10 +840,32 @@ func TestCreateAnswersColorQueries(t *testing.T) {
 	t.Cleanup(func() { driver.Kill(id) })
 
 	got := waitForFile(t, driver, id, reply)
-	for _, want := range []string{"]10;rgb:cdcd/d6d6/f4f4", "]11;rgb:1e1e/1e1e/2e2e"} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("OSC 10/11 replies = %q, want one carrying %q", got, want)
+	// tmux 3.2 answers with 8-bit channels, 3.3 and later with 16-bit ones.
+	for _, want := range []*regexp.Regexp{
+		regexp.MustCompile(`\]10;rgb:(cd|cdcd)/(d6|d6d6)/(f4|f4f4)`),
+		regexp.MustCompile(`\]11;rgb:(1e|1e1e)/(1e|1e1e)/(2e|2e2e)`),
+	} {
+		if !want.MatchString(got) {
+			t.Fatalf("OSC 10/11 replies = %q, want one matching %s", got, want)
 		}
+	}
+}
+
+// requireTmuxAtLeast skips a test below the tmux version its feature needs.
+func requireTmuxAtLeast(t *testing.T, major, minor int) {
+	t.Helper()
+	out, err := exec.Command("tmux", "-V").Output()
+	if err != nil {
+		t.Fatalf("tmux -V: %v", err)
+	}
+	match := regexp.MustCompile(`(\d+)\.(\d+)`).FindStringSubmatch(string(out))
+	if match == nil {
+		t.Fatalf("tmux -V = %q, want a version", strings.TrimSpace(string(out)))
+	}
+	gotMajor, _ := strconv.Atoi(match[1])
+	gotMinor, _ := strconv.Atoi(match[2])
+	if gotMajor < major || (gotMajor == major && gotMinor < minor) {
+		t.Skipf("%s is below tmux %d.%d", strings.TrimSpace(string(out)), major, minor)
 	}
 }
 
