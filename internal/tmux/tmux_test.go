@@ -1951,3 +1951,47 @@ func paneID(t *testing.T, id string) string {
 	}
 	return strings.TrimSpace(string(out))
 }
+
+// Ctrl-C reaches the agent alone, and the script must outlive it to print
+// the hint. dash and Linux bash exit when a foreground child dies of
+// SIGINT, so on Linux the pane closed instead.
+func TestLaunchScriptNamesTheWayBackWhenCtrlCKillsTheAgent(t *testing.T) {
+	driver := requireTmux(t)
+	for _, shell := range []string{"dash", "bash"} {
+		t.Run(shell, func(t *testing.T) {
+			if _, err := exec.LookPath(shell); err != nil {
+				t.Skip(shell + " not installed")
+			}
+			id := "sigint" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+			path, err := writeLaunchScript(id, nil, "sleep 1000", "")
+			if err != nil {
+				t.Fatalf("writeLaunchScript: %v", err)
+			}
+			t.Cleanup(func() { os.Remove(path) })
+			if out, err := tmuxCmd("new-session", "-d", "-s", "am_"+id, shell+" "+ShellQuote(path)).CombinedOutput(); err != nil {
+				t.Fatalf("new-session: %v: %s", err, out)
+			}
+			t.Cleanup(func() { driver.Kill(id) })
+			waitForForegroundCommand(t, id, "sleep")
+			if out, err := tmuxCmd("send-keys", "-t", "am_"+id, "C-c").CombinedOutput(); err != nil {
+				t.Fatalf("send-keys: %v: %s", err, out)
+			}
+			waitForPane(t, driver, id, relaunchHint)
+		})
+	}
+}
+
+func waitForForegroundCommand(t *testing.T, id, want string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	var got string
+	for time.Now().Before(deadline) {
+		out, _ := tmuxCmd("display-message", "-p", "-t", "am_"+id, "#{pane_current_command}").Output()
+		got = strings.TrimSpace(string(out))
+		if got == want {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("pane foreground command = %q, want %q", got, want)
+}

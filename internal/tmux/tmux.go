@@ -394,8 +394,9 @@ func writeLaunchScript(id string, env map[string]string, command, colorFgBg stri
 	}
 	// set -m puts the agent in its own process group, so tmux reports the
 	// agent's cwd as pane_current_path rather than this script's, which
-	// never moves.
-	body := "#!/bin/sh\nset -m\n" + header + exportLines(env) + command + "\n" +
+	// never moves. The INT trap keeps dash and Linux bash from exiting
+	// when the agent dies of SIGINT, which would skip the hint and shell.
+	body := "#!/bin/sh\ntrap : INT\nset -m\n" + header + exportLines(env) + command + "\n" +
 		"printf '%s\\n' " + ShellQuote(relaunchHint) + "\n" +
 		"exec " + ShellQuote(shell) + "\n"
 	if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
