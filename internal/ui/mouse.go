@@ -349,9 +349,9 @@ func (m *Model) listMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 // wheelSuppressGap is how long a gap between wheel events has to be before
 // a trackpad flick that started in a focused session is treated as over.
-// The observed gap between its trailing events is 30-40ms; this leaves
-// margin without reaching into a deliberate next scroll's own cadence.
-const wheelSuppressGap = 100 * time.Millisecond
+// A real flick slows down at the end: in iTerm2 debug logs its last gaps
+// run about 180-220ms, so this covers that tail with some margin.
+const wheelSuppressGap = 300 * time.Millisecond
 
 // listWheel scrolls the rail, or the list open over the quick bar's
 // prompt, which owns the wheel the way it owns ↑↓. A resize keeps both

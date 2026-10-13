@@ -1143,6 +1143,13 @@ func TestLeavingFocusSwallowsTheFlickStillArriving(t *testing.T) {
 		t.Fatalf("a scroll event right after leaving focus moved the cursor from %d to %d", before, m.rail.Cursor())
 	}
 
+	time.Sleep(220 * time.Millisecond)
+	updated, _ = m.handleMouse(wheel)
+	m = updated.(*Model)
+	if m.rail.Cursor() != before {
+		t.Fatalf("the slow last event of a flick moved the cursor from %d to %d", before, m.rail.Cursor())
+	}
+
 	time.Sleep(wheelSuppressGap + 20*time.Millisecond)
 	updated, _ = m.handleMouse(wheel)
 	m = updated.(*Model)
