@@ -1020,11 +1020,13 @@ type Pane struct {
 
 // Panes returns every managed session's agent pane in a single tmux call,
 // which doubles as a liveness check: a session absent from the map is gone.
-// The filter keeps the agent's own pane, the one PaneTarget addresses, so a
-// session whose agent split the window reports the agent's own process and
-// the size the preview draws, never a teammate's.
+// Only pane 0 counts, the one PaneTarget addresses, so a session whose
+// agent split the window reports the agent's own process and the size the
+// preview draws, never a teammate's.
 func (d *Driver) Panes() (map[string]Pane, error) {
-	out, err := exec.Command(d.bin, d.args("list-panes", "-a", "-f", "#{==:#{pane_index},0}", "-F", "#{session_name} #{pane_pid} #{pane_width} #{pane_height} #{window_panes} #{alternate_on} #{pane_tty} #{pane_current_path}")...).CombinedOutput()
+	// The agent pane is index 0, picked out here rather than with -f, which
+	// list-panes only grew in tmux 3.2.
+	out, err := exec.Command(d.bin, d.args("list-panes", "-a", "-F", "#{pane_index} #{session_name} #{pane_pid} #{pane_width} #{pane_height} #{window_panes} #{alternate_on} #{pane_tty} #{pane_current_path}")...).CombinedOutput()
 	if err != nil {
 		// A server with no session in it, as the startup list-keys leaves
 		// for a moment, answers "no current target".
@@ -1037,6 +1039,10 @@ func (d *Driver) Panes() (map[string]Pane, error) {
 	// Only the final line break is trimmed: the last line may end in a
 	// space that is its path, or the separator before an empty one.
 	for _, line := range strings.Split(strings.TrimSuffix(string(out), "\n"), "\n") {
+		index, line, ok := strings.Cut(line, " ")
+		if !ok || index != "0" {
+			continue
+		}
 		name, geometry, ok := strings.Cut(line, " ")
 		if !ok || !strings.HasPrefix(name, prefix) {
 			continue

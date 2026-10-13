@@ -1431,17 +1431,20 @@ func TestResizeReportsUnreadableGeometry(t *testing.T) {
 
 func teammateSize(t *testing.T, id string) [2]int {
 	t.Helper()
-	out, err := tmuxCmd("list-panes", "-t", "am_"+id, "-f", "#{==:#{pane_index},1}", "-F", "#{pane_width} #{pane_height}").CombinedOutput()
+	out, err := tmuxCmd("list-panes", "-t", "am_"+id, "-F", "#{pane_index} #{pane_width} #{pane_height}").CombinedOutput()
 	if err != nil {
 		t.Fatalf("list-panes: %v: %s", err, out)
 	}
-	fields := strings.Fields(string(out))
-	if len(fields) != 2 {
-		t.Fatalf("teammate pane geometry = %q", out)
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 3 && fields[0] == "1" {
+			width, _ := strconv.Atoi(fields[1])
+			height, _ := strconv.Atoi(fields[2])
+			return [2]int{width, height}
+		}
 	}
-	width, _ := strconv.Atoi(fields[0])
-	height, _ := strconv.Atoi(fields[1])
-	return [2]int{width, height}
+	t.Fatalf("no teammate pane in %q", out)
+	return [2]int{}
 }
 
 // A window someone opened inside a session becomes that session's current
