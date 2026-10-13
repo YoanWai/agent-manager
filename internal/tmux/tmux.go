@@ -462,14 +462,24 @@ func (d *Driver) resolvedOption(name, option string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if value = strings.TrimSpace(value); value != "" {
+	if value = keyOption(value); value != "" {
 		return value, nil
 	}
 	global, err := d.run("show-options", "-g", "-v", option)
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(global), nil
+	return keyOption(global), nil
+}
+
+// keyOption reads a key option as tmux printed it. tmux 3.1 prints a prefix
+// set to None as Invalid# and a hex code, which later versions print as None.
+func keyOption(printed string) string {
+	printed = strings.TrimSpace(printed)
+	if strings.HasPrefix(printed, "Invalid#") {
+		return "None"
+	}
+	return printed
 }
 
 // styleStatusBar sets a session's status bar chrome, leaving status-left (the

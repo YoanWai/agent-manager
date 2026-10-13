@@ -754,7 +754,7 @@ func TestTmuxPrefixFreesTheServersPrefixForASessionKey(t *testing.T) {
 		if err != nil {
 			t.Fatalf("show-options %s: %v: %s", option, err, out)
 		}
-		return strings.TrimSpace(string(out))
+		return keyOption(string(out))
 	}
 	footer := func() string {
 		t.Helper()
