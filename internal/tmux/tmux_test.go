@@ -854,7 +854,7 @@ func TestCreateAnswersColorQueries(t *testing.T) {
 // requireTmuxAtLeast skips a test below the tmux version its feature needs.
 func requireTmuxAtLeast(t *testing.T, major, minor int) {
 	t.Helper()
-	out, err := exec.Command("tmux", "-V").Output()
+	out, err := tmuxCmd("-V").Output()
 	if err != nil {
 		t.Fatalf("tmux -V: %v", err)
 	}
