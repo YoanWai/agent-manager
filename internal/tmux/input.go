@@ -146,9 +146,12 @@ const (
 )
 
 // An agent clears its composer within a frame of reading the Enter; one that
-// still holds the paste a second later dropped it, and gets it again.
+// still holds the paste after a second of a still pane dropped it, and gets
+// it again. A pane that keeps redrawing is still taking the Enter, so it is
+// waited on up to submitCap before the next one.
 const (
 	submitWait  = time.Second
+	submitCap   = 5 * time.Second
 	submitTries = 3
 )
 
@@ -198,7 +201,7 @@ func (d *Driver) pasteAndEnterContext(ctx context.Context, id, text string, draf
 // paste, a bounded number of times, and reports a paste no Enter submitted.
 func (d *Driver) confirmSubmit(ctx context.Context, target string, drafted func() (bool, error)) error {
 	for try := 1; ; try++ {
-		cleared, err := composerCleared(ctx, drafted)
+		cleared, err := d.composerCleared(ctx, target, drafted)
 		if err != nil || cleared {
 			return err
 		}
@@ -211,8 +214,14 @@ func (d *Driver) confirmSubmit(ctx context.Context, target string, drafted func(
 	}
 }
 
-func composerCleared(ctx context.Context, drafted func() (bool, error)) (bool, error) {
-	deadline := time.Now().Add(submitWait)
+// composerCleared waits for the composer to empty. Every redraw restarts
+// the wait: an agent that took the Enter can draw its turn starting before
+// it clears the composer, and an Enter pressed then lands on the empty
+// prompt that follows.
+func (d *Driver) composerCleared(ctx context.Context, target string, drafted func() (bool, error)) (bool, error) {
+	now := time.Now()
+	deadline, last := now.Add(submitWait), now.Add(submitCap)
+	pane, _ := d.capturePlainContext(ctx, target)
 	for {
 		typed, err := drafted()
 		if err != nil {
@@ -221,7 +230,8 @@ func composerCleared(ctx context.Context, drafted func() (bool, error)) (bool, e
 		if !typed {
 			return true, nil
 		}
-		if time.Now().After(deadline) {
+		now = time.Now()
+		if now.After(deadline) || now.After(last) {
 			return false, nil
 		}
 		timer := time.NewTimer(echoPoll)
@@ -230,6 +240,9 @@ func composerCleared(ctx context.Context, drafted func() (bool, error)) (bool, e
 			timer.Stop()
 			return false, ctx.Err()
 		case <-timer.C:
+		}
+		if next, err := d.capturePlainContext(ctx, target); err == nil && next != pane {
+			pane, deadline = next, time.Now().Add(submitWait)
 		}
 	}
 }
