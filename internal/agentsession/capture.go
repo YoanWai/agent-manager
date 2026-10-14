@@ -492,11 +492,11 @@ func hermesStateDB() string {
 		return filepath.Join(root, "state.db")
 	}
 	if root == "" {
-		home, err := os.UserHomeDir()
+		home, err := hermesDefaultHome()
 		if err != nil {
 			return ""
 		}
-		root = filepath.Join(home, ".hermes")
+		root = home
 	}
 	if data, err := os.ReadFile(filepath.Join(root, "active_profile")); err == nil {
 		profile := strings.TrimSpace(string(data))

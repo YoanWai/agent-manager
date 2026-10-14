@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"path/filepath"
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/config"
@@ -39,7 +38,7 @@ func toolBinary(tool config.Tool) string {
 	if len(fields) == 0 {
 		return ""
 	}
-	binary := filepath.Base(fields[0])
+	binary := executableName(fields[0])
 	if interpreters[binary] {
 		return ""
 	}
@@ -62,7 +61,7 @@ func detectRelaunchedTool(current string, children []string, binaries toolBinari
 	}
 	detected := ""
 	for _, child := range children {
-		running := filepath.Base(child)
+		running := executableName(child)
 		if running == currentBinary {
 			return ""
 		}

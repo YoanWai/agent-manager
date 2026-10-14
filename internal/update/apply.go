@@ -93,8 +93,7 @@ func Apply(ctx context.Context, tag, execPath string) error {
 	if err := extractBinary(archive, staged); err != nil {
 		return err
 	}
-	if err := os.Rename(staged, target); err != nil {
-		os.Remove(staged)
+	if err := swapBinary(staged, target); err != nil {
 		return err
 	}
 	return nil

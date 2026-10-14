@@ -7,7 +7,6 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"syscall"
 )
 
 // telemetryRecord is the part of a gemini telemetry record that names a
@@ -45,7 +44,7 @@ func (r *Reader) FollowTelemetry(path string, agentPID int, report func(string) 
 		return err
 	}
 	defer file.Close()
-	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX); err != nil {
+	if err := lockFile(file); err != nil {
 		return err
 	}
 	data, err := io.ReadAll(file)

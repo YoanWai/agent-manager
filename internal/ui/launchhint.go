@@ -13,7 +13,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/mcpreg"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
-	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -196,12 +195,18 @@ func (m *Model) startInstall() (tea.Model, tea.Cmd) {
 		m.errBar.text = err.Error()
 		return m, nil
 	}
+	line, err := installLine(script)
+	if err != nil {
+		removeInstallFiles(statusFile, script)
+		m.errBar.text = err.Error()
+		return m, nil
+	}
 	if err := m.launchNewSession(sess, tool, tool.Command, launchOptions{}); err != nil {
 		removeInstallFiles(statusFile, script)
 		m.errBar.text = err.Error()
 		return m, nil
 	}
-	if err := m.tmux.SendText(sess.ID, "sh "+tmux.ShellQuote(script)); err != nil {
+	if err := m.tmux.SendText(sess.ID, line); err != nil {
 		// The shell is left open: it is a tab like any other, and the
 		// command it never ran is still on the dialog to copy.
 		removeInstallFiles(statusFile, script)
@@ -223,20 +228,6 @@ func (m *Model) startInstall() (tea.Model, tea.Cmd) {
 	m.focusSession(sess.ID)
 	m.reportDone("installing " + fix.binary)
 	return m, m.refreshCmd()
-}
-
-// installScript shows the command, runs it, and records how it ended. The
-// command runs in a subshell so an installer that exits cannot skip the
-// status write, and the whole thing is a file so the pane's shell is typed
-// one short line: an installer's own quoting then reaches sh unchanged
-// whatever shell the user runs.
-func installScript(command, statusFile string) string {
-	interrupted := "printf %s 130 > " + tmux.ShellQuote(statusFile) + "; exit 130"
-	return "#!/bin/sh\n" +
-		"trap " + tmux.ShellQuote(interrupted) + " INT TERM\n" +
-		"printf '%s\\n' " + tmux.ShellQuote("$ "+command) + "\n" +
-		"(" + command + ")\n" +
-		`printf %s "$?" > ` + tmux.ShellQuote(statusFile) + "\n"
 }
 
 // settleInstall runs on every poll while an install is pending: once the

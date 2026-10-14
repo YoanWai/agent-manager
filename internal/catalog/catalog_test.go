@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -172,7 +171,7 @@ func TestStopAllEndsACLIMidAnswer(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Fetch still waits on a stopped CLI")
 	}
-	if err := syscall.Kill(pid, 0); err == nil {
+	if processAlive(pid) {
 		t.Fatalf("process %d outlived StopAll", pid)
 	}
 }

@@ -6,11 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -38,19 +36,21 @@ var runShell = runBoundedShell
 func runBoundedShell(env []string, command string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "sh", "-c", command)
+	cmd, err := shellCommand(ctx, command)
+	if err != nil {
+		return "", err
+	}
 	cmd.Env = append(os.Environ(), env...)
 	output := &cappedBuffer{limit: commandOutputLimit}
 	cmd.Stdout = output
 	cmd.Stderr = output
 	// The timeout ends the whole command, not only sh: a curl or a
 	// backgrounded job would otherwise outlive it, one per notification.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	killTreeOnCancel(cmd)
 	// A child that outlives sh keeps the output pipe open; this stops
 	// waiting for it once sh is gone.
 	cmd.WaitDelay = time.Second
-	err := cmd.Run()
+	err = cmd.Run()
 	return output.String(), err
 }
 

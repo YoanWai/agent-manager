@@ -13,7 +13,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/tmux"
@@ -103,10 +102,4 @@ func (agent Agent) Running() (bool, error) {
 		return false, fmt.Errorf("start time of process %d: %w", agent.PID, err)
 	}
 	return !time.UnixMilli(started).After(agent.Recorded.Add(startSlack)), nil
-}
-
-// Alive reports whether a process runs under pid.
-func Alive(pid int) bool {
-	err := syscall.Kill(pid, 0)
-	return err == nil || errors.Is(err, syscall.EPERM)
 }
