@@ -256,6 +256,25 @@ func TestCreateRunsTheLaunchScriptAsThePaneProcess(t *testing.T) {
 	t.Fatalf("no sleep directly under pane pid %d:\n%s", panePID, tree)
 }
 
+// An agent asks for extended keys as it starts, so they must be on before it runs.
+func TestCreateDeliversShiftEnterToAnAgentThatAsksForExtendedKeys(t *testing.T) {
+	driver := requireTmux(t)
+	requireTmuxAtLeast(t, 3, 2)
+	id := "xkeys" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	received := filepath.Join(t.TempDir(), "keys")
+	if err := driver.Create(id, "/tmp", `printf '\033[>4;2m'; exec head -n 1 > `+ShellQuote(received), nil, 80, 24); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+	waitForForegroundCommand(t, id, "head")
+	if out, err := tmuxCmd("send-keys", "-t", "am_"+id, "S-Enter", "Enter").CombinedOutput(); err != nil {
+		t.Fatalf("send-keys: %v: %s", err, out)
+	}
+	if got := strings.TrimSpace(waitForFile(t, driver, id, received)); got != "\x1b[13;2u" {
+		t.Fatalf("Shift+Enter reached the agent as %q, want CSI 13;2u", got)
+	}
+}
+
 // A session outside the am_ namespace is one the user started on this
 // server themselves, not a managed session the CLI may act as.
 func TestSessionOfPaneIgnoresAnUnmanagedSession(t *testing.T) {

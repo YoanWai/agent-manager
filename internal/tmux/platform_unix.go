@@ -61,11 +61,18 @@ func socketPathFromEnv(socket string) string {
 // startSession creates the detached session, running the launch script when
 // there is one, in a single command list.
 func (d *Driver) startSession(id, cwd string, width, height int, scriptPath string, theme *PaneTheme) error {
-	var args []string
 	// Ahead of new-session in the same command list, so the options are in
-	// place before the pane process exists and can query its background.
+	// place before the pane process exists: tmux drops an extended keys request
+	// made while they are off, and an agent queries its background as it starts.
+	// CSI u is the form pi asks for and tmux 3.2 to 3.4 always send. -q skips
+	// what an older tmux lacks: 3.1 has neither option, 3.4 has no format.
+	args := []string{
+		"set-option", "-q", "-s", "extended-keys", "on", ";",
+		"set-option", "-q", "-s", "extended-keys-format", "csi-u", ";",
+	}
 	if theme != nil {
-		args = append(paneThemeArgs(*theme), ";")
+		args = append(args, paneThemeArgs(*theme)...)
+		args = append(args, ";")
 	}
 	args = append(args, "new-session", "-d", "-s", sessionName(id), "-c", cwd)
 	// A detached session sizes to tmux's 80x24 default and holds it until a
