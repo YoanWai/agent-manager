@@ -217,11 +217,15 @@ func (d *Driver) confirmSubmit(ctx context.Context, target string, drafted func(
 // composerCleared waits for the composer to empty. Every redraw restarts
 // the wait: an agent that took the Enter can draw its turn starting before
 // it clears the composer, and an Enter pressed then lands on the empty
-// prompt that follows.
+// prompt that follows. A pane it cannot capture could be redrawing, so its
+// error is returned rather than taken for a still pane.
 func (d *Driver) composerCleared(ctx context.Context, target string, drafted func() (bool, error)) (bool, error) {
 	now := time.Now()
 	deadline, last := now.Add(submitWait), now.Add(submitCap)
-	pane, _ := d.capturePlainContext(ctx, target)
+	pane, err := d.capturePlainContext(ctx, target)
+	if err != nil {
+		return false, err
+	}
 	for {
 		typed, err := drafted()
 		if err != nil {
@@ -241,7 +245,11 @@ func (d *Driver) composerCleared(ctx context.Context, target string, drafted fun
 			return false, ctx.Err()
 		case <-timer.C:
 		}
-		if next, err := d.capturePlainContext(ctx, target); err == nil && next != pane {
+		next, err := d.capturePlainContext(ctx, target)
+		if err != nil {
+			return false, err
+		}
+		if next != pane {
 			pane, deadline = next, time.Now().Add(submitWait)
 		}
 	}

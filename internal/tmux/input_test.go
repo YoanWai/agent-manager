@@ -60,6 +60,40 @@ func TestSubmitTextReturnsAComposerItCouldNotRead(t *testing.T) {
 	}
 }
 
+// A pane that cannot be captured after the Enter could be redrawing, so the
+// wait stops on the error rather than timing it out as a still pane and
+// pressing Enter again.
+func TestSubmitTextReturnsAPaneItCouldNotCapture(t *testing.T) {
+	driver := requireTmux(t)
+	id := "uncaptured" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", "cat", nil, 0, 0); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+
+	calls, afterKill := 0, 0
+	_, err := driver.SubmitTextContext(context.Background(), id, "hello world", func() (bool, error) {
+		calls++
+		switch {
+		case calls == 2:
+			// The first read after the Enter: the pane goes away under it.
+			if err := driver.Kill(id); err != nil {
+				t.Errorf("Kill: %v", err)
+			}
+			afterKill++
+		case calls > 2:
+			afterKill++
+		}
+		return true, nil
+	})
+	if err == nil || errors.Is(err, ErrUnsubmitted) {
+		t.Fatalf("SubmitTextContext = %v, want the failed capture", err)
+	}
+	if afterKill != 1 {
+		t.Fatalf("the composer was read %d times after the pane went away, want the wait to stop at the first failed capture", afterKill)
+	}
+}
+
 // pasteReady follows the paste-mode request, so a pane showing it has bracketed paste on.
 const pasteReady = "paste-ready"
 
