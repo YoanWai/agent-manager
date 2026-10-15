@@ -34,6 +34,11 @@ var darwinManagers = []manager{
 	{"brew", "brew install "},
 }
 
+var windowsManagers = []manager{
+	{"scoop", "scoop install "},
+	{"choco", "choco install -y "},
+}
+
 // official is the vendor installer for a built-in agent CLI. It is the same
 // command on macOS, Linux, and WSL, and it wins over a package manager
 // that would guess `brew install claude`.
@@ -51,6 +56,28 @@ var official = map[string]string{
 	"pi":       "npm install -g @mariozechner/pi-coding-agent",
 }
 
+// windowsOfficial replaces official on native Windows, where the curl
+// installers do not run. A tool missing here has no Windows recipe.
+var windowsOfficial = map[string]string{
+	"claude":   "irm https://claude.ai/install.ps1 | iex",
+	"cmd":      "npm install -g command-code",
+	"codex":    "npm install -g @openai/codex",
+	"gemini":   "npm install -g @google/gemini-cli",
+	"grok":     "irm https://x.ai/cli/install.ps1 | iex",
+	"hermes":   "& ([scriptblock]::Create((irm https://hermes-agent.nousresearch.com/install.ps1))) -NonInteractive -Branch main",
+	"muse":     "irm https://dev.meta.ai/install.ps1 | iex",
+	"opencode": "npm install -g opencode-ai",
+	"pi":       "npm install -g --ignore-scripts @earendil-works/pi-coding-agent",
+	"psmux":    "winget install psmux",
+}
+
+func installers(goos string) map[string]string {
+	if goos == "windows" {
+		return windowsOfficial
+	}
+	return official
+}
+
 func Hint(tool string) string {
 	return hint(runtime.GOOS, tool)
 }
@@ -61,11 +88,11 @@ func Hint(tool string) string {
 // own command name, so for a custom tool it would install whatever
 // package happens to share that name. Those stay a suggestion to read.
 func Command(tool string) string {
-	return official[tool]
+	return installers(runtime.GOOS)[tool]
 }
 
 func hint(goos, tool string) string {
-	if command := official[tool]; command != "" {
+	if command := installers(goos)[tool]; command != "" {
 		return "install it with: " + command
 	}
 	if command := installCommand(goos, tool); command != "" {
@@ -76,8 +103,11 @@ func hint(goos, tool string) string {
 
 func installCommand(goos, tool string) string {
 	candidates := linuxManagers
-	if goos == "darwin" {
+	switch goos {
+	case "darwin":
 		candidates = darwinManagers
+	case "windows":
+		candidates = windowsManagers
 	}
 	for _, candidate := range candidates {
 		if _, err := lookPath(candidate.bin); err != nil {

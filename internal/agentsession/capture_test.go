@@ -3,8 +3,10 @@ package agentsession
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -96,9 +98,24 @@ func writeFile(t *testing.T, path, content string, modTime time.Time) {
 	}
 }
 
+// setHome points os.UserHomeDir at dir: it reads HOME on Unix and
+// USERPROFILE on Windows.
+func setHome(t *testing.T, dir string) {
+	t.Helper()
+	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
+}
+
+// jsonString encodes s as a JSON string literal, so a Windows cwd's
+// backslashes survive in a hand-built record.
+func jsonString(s string) string {
+	data, _ := json.Marshal(s)
+	return string(data)
+}
+
 func codexRollout(sessionID, cwd string) string {
 	return `{"timestamp":"2026-07-18T14:36:08.127Z","type":"session_meta","payload":{"session_id":"` +
-		sessionID + `","cwd":"` + cwd + `"}}` + "\n" +
+		sessionID + `","cwd":` + jsonString(cwd) + `}}` + "\n" +
 		`{"timestamp":"2026-07-18T14:36:09Z","type":"event_msg","payload":{}}` + "\n"
 }
 
@@ -148,8 +165,8 @@ func TestCaptureCodexNoMatch(t *testing.T) {
 }
 
 func commandCodeSession(sessionID, cwd string) string {
-	return `{"type":"session","id":"` + sessionID + `","cwd":"` + cwd +
-		`","timestamp":"2026-08-22T19:22:37.338Z","version":3}` + "\n" +
+	return `{"type":"session","id":"` + sessionID + `","cwd":` + jsonString(cwd) +
+		`,"timestamp":"2026-08-22T19:22:37.338Z","version":3}` + "\n" +
 		`{"role":"user","content":[{"type":"text","text":"hi"}]}` + "\n"
 }
 
@@ -587,6 +604,9 @@ func TestFileStoresRefuseAnUnreadableConversation(t *testing.T) {
 			if snapshot, ok := store.snapshot(root, cwd); !ok || len(snapshot) != 2 {
 				t.Fatalf("readable snapshot = %v, %v; want both conversations", snapshot, ok)
 			}
+			if runtime.GOOS == "windows" {
+				t.Skip("chmod cannot deny reads on Windows")
+			}
 			if err := os.Chmod(unreadable, 0); err != nil {
 				t.Fatal(err)
 			}
@@ -635,7 +655,7 @@ func TestRecaptureBindsAfterAnEmptySnapshot(t *testing.T) {
 
 func TestRecaptureCommandCodeBindsOnlyWhatOutranTheSnapshot(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setHome(t, home)
 	root := commandCodeRoot()
 	base := time.Now().Add(-time.Hour)
 	writeFile(t, filepath.Join(root, "old-project", "old.jsonl"),
@@ -658,7 +678,7 @@ func TestRecaptureCommandCodeBindsOnlyWhatOutranTheSnapshot(t *testing.T) {
 
 func TestRecaptureCommandCodeRefusesTwoThatOutranTheSnapshot(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setHome(t, home)
 	root := commandCodeRoot()
 	base := time.Now().Add(-time.Hour)
 	writeFile(t, filepath.Join(root, "a", "1.jsonl"),
@@ -681,7 +701,7 @@ func TestRecaptureCommandCodeRefusesTwoThatOutranTheSnapshot(t *testing.T) {
 
 func TestRecaptureGeminiBindsOnlyWhatOutranTheSnapshot(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setHome(t, home)
 	root := geminiRoot()
 	base := time.Now().Add(-time.Hour)
 	oursHash := geminiProjectHash("/repo")
@@ -707,7 +727,7 @@ func TestRecaptureGeminiBindsOnlyWhatOutranTheSnapshot(t *testing.T) {
 
 func TestRecaptureGeminiRefusesTwoThatOutranTheSnapshot(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setHome(t, home)
 	root := geminiRoot()
 	base := time.Now().Add(-time.Hour)
 	hash := geminiProjectHash("/repo")

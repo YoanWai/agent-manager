@@ -183,6 +183,11 @@ func (m *Model) caretAtInputStart(sessID, tool string) bool {
 	if m.engine == nil || m.pane.forID != sessID || m.scrolledBack() {
 		return false
 	}
+	// A frame taken before keys still on their way shows the caret where
+	// typing was, not where it is.
+	if m.focus != nil && !m.focus.caughtUp(m.pane.writes) {
+		return false
+	}
 	_, bareInput := m.engine.InputPrefix(tool, "")
 	caretCellKnown := m.pane.cursor.ok ||
 		(m.pane.cursor.positionOK && (m.engine.ParksItsCaret(tool) || bareInput))
@@ -380,33 +385,58 @@ func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		resume = m.requestFocusRegion(sess.ID)
 	}
 	if msg.Paste {
-		if err := pasteFocused(m.tmux, sess.ID, string(msg.Runes)); err != nil {
-			m.errBar.text = err.Error()
-		} else if m.focus != nil {
-			m.focus.inputSent(sess.ID)
-		}
+		driver, paste, text := m.tmux, pasteFocused, string(msg.Runes)
+		m.writeFocused(sess.ID, func() tea.Msg {
+			return writeFailure(paste(driver, sess.ID, text))
+		})
 		return m, resume
 	}
 	command, ok := focusKeyCommand(tmux.PaneTarget(sess.ID), msg)
 	if !ok {
 		return m, resume
 	}
-	if m.focus == nil || !m.focus.attempt(command) {
-		// Nothing went over the pipe; one forked send-keys keeps the key
-		// from being swallowed.
-		if err := m.tmux.SendRaw(command); err != nil {
-			m.errBar.text = err.Error()
-		}
-		// Without the client the echo only shows on the poll cadence, a
-		// second or more after each key. Typing is as deliberate as
-		// focusing, so it lifts the failure backoff and reopens now.
-		if m.focus != nil {
-			m.focus.retryNow()
-			m.watchSelection()
-		}
-	}
-	if m.focus != nil {
+	if m.focus != nil && m.focus.attempt(command) {
 		m.focus.inputSent(sess.ID)
+		return m, resume
+	}
+	// Nothing went over the pipe; one forked send-keys keeps the key from
+	// being swallowed.
+	driver := m.tmux
+	m.writeFocused(sess.ID, func() tea.Msg {
+		return writeFailure(driver.SendRaw(command))
+	})
+	// A control client in failure backoff leaves the echo to the poll
+	// cadence, a second or more after each key. Typing is as deliberate as
+	// focusing, so it lifts the backoff and reopens now.
+	if m.focus != nil {
+		m.focus.retryNow()
+		m.watchSelection()
 	}
 	return m, resume
+}
+
+// writeFocused runs one forked write to a focused pane, and has the watcher
+// look for its echo once it lands. A polling watcher queues it, so Update
+// never waits on the fork and writes land in the order they were made;
+// otherwise it runs here.
+func (m *Model) writeFocused(id string, write tea.Cmd) {
+	if m.focus != nil && m.focus.queue(id, write) {
+		return
+	}
+	if failed, ok := write().(errMsg); ok {
+		m.errBar.text = failed.err.Error()
+		return
+	}
+	if m.focus != nil {
+		m.focus.inputSent(id)
+	}
+}
+
+// writeFailure is a forked write's message for the UI loop: its error, or
+// nothing once it landed.
+func writeFailure(err error) tea.Msg {
+	if err != nil {
+		return errMsg{err}
+	}
+	return nil
 }

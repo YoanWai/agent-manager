@@ -59,9 +59,9 @@ type Target struct {
 func Apply(style string, target Target, command string, env map[string]string) (string, error) {
 	switch style {
 	case "pi":
-		return withExtension(target.HooksDir, "track-pi.ts", extensionSource(target.Exe, []string{"--tool", style, spawnedFlag}, "session_start"), command)
+		return withExtension(target.HooksDir, "agent-manager-pi.ts", extensionSource(target.Exe, []string{"--tool", style, spawnedFlag}, "session_start"), command)
 	case "omp":
-		return withExtension(target.HooksDir, "track-omp.ts", extensionSource(target.Exe, []string{"--tool", style}, "session_start", "session_switch", "session_branch"), command)
+		return withExtension(target.HooksDir, "agent-manager-omp.ts", extensionSource(target.Exe, []string{"--tool", style}, "session_start", "session_switch", "session_branch"), command)
 	case "opencode":
 		return command, wireOpencode(target.Exe, target.HooksDir, env)
 	case "command-code":
@@ -136,7 +136,7 @@ export default function (cmd: any) {
 // /resume, with the conversation now current. A mod runs in the CLI's own
 // process, which /reload respawns as a child in the same process group.
 func withMod(hooksDir string, source []byte, command string) (string, error) {
-	path := filepath.Join(hooksDir, "track-cmd.ts")
+	path := filepath.Join(hooksDir, "agent-manager-command-code.ts")
 	if err := atomicfile.WriteIfChanged(path, source, 0o644); err != nil {
 		return "", err
 	}
@@ -190,7 +190,7 @@ func wireOpencode(exe, hooksDir string, env map[string]string) error {
 	if os.Getenv("OPENCODE_TUI_CONFIG") != "" {
 		return nil
 	}
-	plugin := filepath.Join(hooksDir, "track-opencode.ts")
+	plugin := filepath.Join(hooksDir, "agent-manager-opencode.ts")
 	if err := atomicfile.WriteIfChanged(plugin, fmt.Appendf(nil, opencodePluginTemplate, jsString(exe)), 0o644); err != nil {
 		return err
 	}
@@ -198,7 +198,7 @@ func wireOpencode(exe, hooksDir string, env map[string]string) error {
 	if err != nil {
 		return err
 	}
-	path := filepath.Join(hooksDir, "track-opencode-tui.json")
+	path := filepath.Join(hooksDir, "agent-manager-opencode-tui.json")
 	if err := atomicfile.WriteIfChanged(path, config, 0o644); err != nil {
 		return err
 	}

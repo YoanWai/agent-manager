@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/YoanWai/agent-manager/internal/testenv"
 )
 
 func swap(tmux bool) (*strings.Builder, func()) {
@@ -47,6 +49,7 @@ func TestEmitWrapsOnlyUnderTmux(t *testing.T) {
 }
 
 func TestEnablePassthroughOnlyRunsUnderTmux(t *testing.T) {
+	testenv.SkipPOSIXShell(t)
 	binDir := t.TempDir()
 	argsFile := filepath.Join(t.TempDir(), "args")
 	t.Setenv("TERMSEQ_TMUX_ARGS", argsFile)

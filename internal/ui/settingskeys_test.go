@@ -64,6 +64,13 @@ func storedKeyRow(t *testing.T, m *Model, scope string) string {
 // session answers to the new key.
 func TestKeyPickerBindsCapturedKeyAndSavesIt(t *testing.T) {
 	m := keyPickerModel(t)
+	// A live session, bound with the old keys before the change: psmux
+	// keeps bindings per session server, so the rebind is checked there.
+	live := newID()
+	if err := m.tmux.Create(live, t.TempDir(), "", nil, 80, 24); err != nil {
+		t.Fatalf("create live session: %v", err)
+	}
+	t.Cleanup(func() { _ = m.tmux.Kill(live) })
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
 	if !m.settings.keyCapture {
 		t.Fatal("enter on an action should wait for a key")
@@ -91,7 +98,7 @@ func TestKeyPickerBindsCapturedKeyAndSavesIt(t *testing.T) {
 	}
 	cmd()
 
-	bound, err := tmuxCmd("list-keys", "-T", "root").CombinedOutput()
+	bound, err := sessionTmuxCmd(live, "list-keys", "-T", "root").CombinedOutput()
 	if err != nil {
 		t.Fatalf("list root keys: %v: %s", err, bound)
 	}

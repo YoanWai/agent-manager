@@ -314,6 +314,9 @@ exit 0
 }
 
 func TestPythonFromVersionReadsInstallDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture is a POSIX install layout")
+	}
 	version := "Hermes Agent v0.20.0 (2026.8.3)\n" +
 		"Install directory: /opt/homebrew/Cellar/hermes-agent/2026.8.3_1/libexec/lib/python3.14/site-packages\n" +
 		"Python: 3.14.7\n" +
@@ -360,7 +363,7 @@ func TestHermesPipCommandNamesTheInterpreterThatHasPip(t *testing.T) {
 		t.Skip("fake Hermes executable is a shell script")
 	}
 	python := fakeHermesEnvironment(t, 0)
-	if got, want := hermesPipCommand(), tmux.ShellQuote(python)+" -m pip install mcp"; got != want {
+	if got, want := hermesPipCommand(), tmux.ShellInvoke(python)+" -m pip install mcp"; got != want {
 		t.Fatalf("hermesPipCommand = %q, want %q", got, want)
 	}
 }
@@ -566,6 +569,10 @@ func TestApplyMuseAddsServerAndKeepsSettings(t *testing.T) {
 	}
 	if fmt.Sprint(servers["agent-manager"]) != fmt.Sprint(wantMuseEntry) {
 		t.Fatalf("agent-manager server = %v, want %v", servers["agent-manager"], wantMuseEntry)
+	}
+	// Windows has no POSIX permission bits to keep.
+	if runtime.GOOS == "windows" {
+		return
 	}
 	info, err := os.Stat(path)
 	if err != nil || info.Mode().Perm() != 0o600 {

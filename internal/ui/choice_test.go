@@ -768,10 +768,10 @@ func TestQuickStatusRowLeavesOutWhatACLICannotPick(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "work")
 	m.openQuickMode()
-	m.quick.toolIndex = slices.Index(m.quick.toolNames, "command-code")
-	m.quick.choice = m.newChoice("command-code")
+	m.quick.toolIndex = slices.Index(m.quick.toolNames, "quietchat")
+	m.quick.choice = m.newChoice("quietchat")
 	target := strings.Split(ansi.Strip(m.viewQuickBar(120, quickBarMaxRows)), "\n")[0]
-	if !strings.HasSuffix(strings.TrimRight(target, " "), "command-code · ⎇ no repo") || strings.Contains(target, "not supported") {
+	if !strings.HasSuffix(strings.TrimRight(target, " "), "quietchat · ⎇ no repo") || strings.Contains(target, "not supported") {
 		t.Fatalf("target row: %s", target)
 	}
 	if footer := ansi.Strip(m.viewFooter()); strings.Contains(footer, quickModelKey) || strings.Contains(footer, quickEffortKey) {

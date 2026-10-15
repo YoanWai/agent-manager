@@ -1,6 +1,8 @@
 package config
 
 import (
+	"errors"
+	"runtime"
 	"slices"
 	"sort"
 )
@@ -11,11 +13,12 @@ import (
 var toolDisplayOrder = []string{"claude", "opencode", "codex", "grok", "gemini", "pi"}
 
 // AgentToolNames is every configured agent CLI in picker order. The shell
-// tool is not a CLI to spawn agents with, so it is left out.
+// tool is not a CLI to spawn agents with, so it is left out, as is a CLI
+// this OS cannot run.
 func (c Config) AgentToolNames() []string {
 	names := make([]string, 0, len(c.Tools))
 	for _, name := range c.ToolNames() {
-		if !c.Tools[name].Shell {
+		if !c.Tools[name].Shell && checkSupported(runtime.GOOS, name) == nil {
 			names = append(names, name)
 		}
 	}
@@ -35,6 +38,18 @@ func (c Config) AgentToolNames() []string {
 		return names[i] < names[j]
 	})
 	return names
+}
+
+// CheckSupported refuses a tool this OS cannot run.
+func CheckSupported(name string) error {
+	return checkSupported(runtime.GOOS, name)
+}
+
+func checkSupported(goos, name string) error {
+	if goos == "windows" && name == "command-code" {
+		return errors.New("command-code is not supported on Windows: its binary is named cmd, which Windows resolves to cmd.exe")
+	}
+	return nil
 }
 
 // EnabledAgentTools is the create-session picker: configured tools minus any

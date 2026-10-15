@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -403,7 +404,13 @@ func TestFormPromptComposesWithSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildLaunch: %v", err)
 	}
-	if !strings.HasPrefix(command, "sh -c 'export "+hooks.EnvAgentPID+"=$$; ") || !strings.Contains(command, "; exec cat '\\''fix the bug'\\'' --mcp-config '") || !strings.Contains(command, "--settings '") {
+	// A Windows launch runs the agent straight from the pane's PowerShell;
+	// elsewhere a shell of its own records the agent's pid and execs it.
+	agentLine := strings.HasPrefix(command, "sh -c 'export "+hooks.EnvAgentPID+"=$$; ") && strings.Contains(command, "; exec "+tool.Command+" '\\''fix the bug'\\'' --mcp-config '")
+	if runtime.GOOS == "windows" {
+		agentLine = strings.HasPrefix(command, tool.Command+" 'fix the bug' --mcp-config '")
+	}
+	if !agentLine || !strings.Contains(command, "--settings '") {
 		t.Fatalf("command = %q", command)
 	}
 }
@@ -1082,6 +1089,9 @@ func TestSpawnWorktreeInNonRepoBlocks(t *testing.T) {
 }
 
 func TestSpawnWorktreeRollsBackWhenLaunchBuildFails(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod cannot deny writes on Windows")
+	}
 	m := buildModel(t)
 	repo := filepath.Join(t.TempDir(), "repo")
 	if err := os.MkdirAll(repo, 0o755); err != nil {

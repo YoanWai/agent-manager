@@ -6,8 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -172,8 +172,70 @@ func TestStopAllEndsACLIMidAnswer(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Fetch still waits on a stopped CLI")
 	}
-	if err := syscall.Kill(pid, 0); err == nil {
+	if processAlive(pid) {
 		t.Fatalf("process %d outlived StopAll", pid)
+	}
+}
+
+// A server that ignores the polite stop, and a child it forked that ignores
+// it too, both end within the grace period: stop kills the whole tree, not
+// only the process it started.
+func TestStopAllKillsAChildThatIgnoresTheStop(t *testing.T) {
+	pidFile := filepath.Join(t.TempDir(), "child.pid")
+	t.Setenv("CATALOG_FAKE", "stubborn")
+	t.Setenv("CATALOG_CHILD_PID", pidFile)
+	done := make(chan error, 1)
+	go func() {
+		_, err := Fetch(context.Background(), "codex", os.Args[0], t.TempDir())
+		done <- err
+	}()
+	child := waitPid(t, pidFile)
+	StopAll()
+	<-done
+	for deadline := time.Now().Add(2 * time.Second); processAlive(child); {
+		if time.Now().After(deadline) {
+			t.Fatalf("child %d outlived StopAll", child)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// A server that ends at the stop can leave behind a child that ignores it
+// and holds none of its pipes; the server going first does not spare it.
+func TestStopAllKillsAChildItsServerLeftBehind(t *testing.T) {
+	pidFile := filepath.Join(t.TempDir(), "child.pid")
+	t.Setenv("CATALOG_FAKE", "orphaning")
+	t.Setenv("CATALOG_CHILD_PID", pidFile)
+	done := make(chan error, 1)
+	go func() {
+		_, err := Fetch(context.Background(), "codex", os.Args[0], t.TempDir())
+		done <- err
+	}()
+	child := waitPid(t, pidFile)
+	StopAll()
+	<-done
+	for deadline := time.Now().Add(2 * time.Second); processAlive(child); {
+		if time.Now().After(deadline) {
+			t.Fatalf("child %d outlived StopAll", child)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// waitPid reads the pid a fake publishes at path once it is there.
+func waitPid(t *testing.T, path string) int {
+	t.Helper()
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		if raw, err := os.ReadFile(path); err == nil {
+			pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			return pid
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no pid at %s", path)
+		}
 	}
 }
 

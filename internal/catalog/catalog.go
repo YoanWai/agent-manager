@@ -15,7 +15,6 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -122,6 +121,7 @@ func Fetch(ctx context.Context, kind, command, dir string) (Catalog, error) {
 // starts leave with it.
 type process struct {
 	cmd      *exec.Cmd
+	tree     tree
 	stdin    io.WriteCloser
 	lines    chan []byte
 	quit     chan struct{}
@@ -155,10 +155,15 @@ func start(command, dir string, server bool, env ...string) (*process, error) {
 	if len(fields) == 0 {
 		return nil, errors.New("empty catalog command")
 	}
-	cmd := exec.Command(fields[0], fields[1:]...)
+	return startArgs(fields[0], fields[1:], dir, server, env...)
+}
+
+// startArgs is start for a program path that may itself hold a space.
+func startArgs(name string, args []string, dir string, server bool, env ...string) (*process, error) {
+	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), env...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	prepareTree(cmd)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err
@@ -173,7 +178,13 @@ func start(command, dir string, server bool, env ...string) (*process, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	proc := &process{cmd: cmd, stdin: stdin, lines: make(chan []byte, 64), quit: make(chan struct{}), exited: make(chan struct{})}
+	tree, err := adoptTree(cmd)
+	if err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return nil, err
+	}
+	proc := &process{cmd: cmd, tree: tree, stdin: stdin, lines: make(chan []byte, 64), quit: make(chan struct{}), exited: make(chan struct{})}
 	running.Lock()
 	running.procs[proc] = struct{}{}
 	running.Unlock()
@@ -223,13 +234,14 @@ func (p *process) stop() {
 	p.stopOnce.Do(func() {
 		close(p.quit)
 		_ = p.stdin.Close()
-		group := -p.cmd.Process.Pid
-		_ = syscall.Kill(group, syscall.SIGTERM)
+		p.tree.term()
 		select {
 		case <-p.exited:
 		case <-time.After(2 * time.Second):
-			_ = syscall.Kill(group, syscall.SIGKILL)
 		}
+		// Whether or not the server went, a child it left can still be
+		// running, so the whole tree ends here.
+		p.tree.close()
 		running.Lock()
 		delete(running.procs, p)
 		running.Unlock()

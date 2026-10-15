@@ -4,6 +4,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/YoanWai/agent-manager/internal/pwsh"
 )
 
 // WSL has no notification daemon of its own; the banner is a Windows toast
@@ -25,7 +27,7 @@ func TestNotifyWSLPostsWindowsToast(t *testing.T) {
 	if !slices.Equal(call[1:4], []string{"-NoProfile", "-NonInteractive", "-EncodedCommand"}) || len(call) != 5 {
 		t.Fatalf("unexpected powershell invocation %v", call)
 	}
-	if call[4] != encodedCommand(toastScript) {
+	if call[4] != pwsh.EncodedCommand(toastScript) {
 		t.Fatal("the encoded command should be the toast script")
 	}
 	env := rec.environments()[0]
@@ -54,13 +56,5 @@ func TestNotifyWSLWithoutPowerShellOnPathUsesTheWindowsCopy(t *testing.T) {
 	Notify(Event{Session: "deploy", Tool: "claude", Kind: Waiting})
 	if len(rec.calls()) != 1 || rec.calls()[0][0] != powershellFallback {
 		t.Fatalf("want the System32 powershell, got %v", rec.calls())
-	}
-}
-
-// PowerShell reads -EncodedCommand as base64 over UTF-16LE.
-func TestEncodedCommandIsUTF16LEBase64(t *testing.T) {
-	got := encodedCommand("Ab€")
-	if got != "QQBiAKwg" {
-		t.Fatalf("encodedCommand = %q, want QQBiAKwg", got)
 	}
 }

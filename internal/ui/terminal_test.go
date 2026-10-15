@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -14,6 +15,8 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/testenv"
+	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -37,10 +40,15 @@ func pressTerminalKey(t *testing.T, m *Model) {
 // shellToolName is the block buildModel ships with shell = true.
 const shellToolName = "terminal"
 
-// resolved is a path as tmux reports it back: symlinks followed, which on
-// macOS is what the /var temp directories sit behind.
+// resolved is a path as the multiplexer reports it back. tmux follows
+// symlinks, which on macOS is what the /var temp directories sit behind;
+// psmux answers with the path the pane was given, so a runner's 8.3
+// temp directory (C:\Users\RUNNER~1) comes back unexpanded.
 func resolved(t *testing.T, dir string) string {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		return dir
+	}
 	real, err := filepath.EvalSymlinks(dir)
 	if err != nil {
 		t.Fatalf("resolve %q: %v", dir, err)
@@ -261,6 +269,9 @@ func TestTerminalKeyOnUnnestedShellStaysUnnested(t *testing.T) {
 // it, so the row checks both the pane path and the recorded cwd rather than
 // handing back somewhere that is no longer there.
 func TestRowDirRefusesADirectoryThatIsGone(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows refuses to delete a directory that is a live pane's working directory")
+	}
 	m := buildModel(t)
 	gone := t.TempDir()
 	createSession(t, m, "agent", gone, "")
@@ -329,9 +340,10 @@ func TestShellToolIsFoundByItsFlag(t *testing.T) {
 // machine does.
 func slowSpawn(t *testing.T, delay time.Duration) {
 	t.Helper()
-	realTmux, err := exec.LookPath("tmux")
+	testenv.SkipPOSIXShell(t)
+	realTmux, err := exec.LookPath(tmux.Binary)
 	if err != nil {
-		t.Skip("tmux not installed")
+		t.Skip(tmux.Binary + " not installed")
 	}
 	dir := t.TempDir()
 	script := fmt.Sprintf("#!/bin/sh\ncase \" $* \" in *' new-session '*) sleep %.3f ;; esac\nexec %s \"$@\"\n", delay.Seconds(), realTmux)

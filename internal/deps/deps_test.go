@@ -2,6 +2,7 @@ package deps
 
 import (
 	"errors"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -122,8 +123,41 @@ func TestOfficialInstallIsPortable(t *testing.T) {
 }
 
 func TestCommandIsTheVendorInstaller(t *testing.T) {
-	if got := Command("claude"); got != official["claude"] {
+	if got := Command("claude"); got != installers(runtime.GOOS)["claude"] {
 		t.Fatalf("Command = %q, want the official installer", got)
+	}
+}
+
+// The curl | bash installers do not run on native Windows, so a hint there
+// names the PowerShell installer, a Windows package manager, or nothing.
+func TestHintOnWindowsAvoidsUnixInstallers(t *testing.T) {
+	stubPath(t, "scoop", "brew", "apt-get")
+	if got := hint("windows", "claude"); !strings.Contains(got, "claude.ai/install.ps1") {
+		t.Fatalf("hint = %q, want the PowerShell installer", got)
+	}
+	if got, want := hint("windows", "git"), "install it with: scoop install git"; got != want {
+		t.Fatalf("hint = %q, want %q", got, want)
+	}
+	for _, tool := range []string{"claude", "codex", "gemini", "grok", "hermes", "muse", "opencode", "pi"} {
+		if got := hint("windows", tool); strings.Contains(got, "curl") {
+			t.Fatalf("hint for %s = %q, want no Unix installer", tool, got)
+		}
+	}
+}
+
+// Every agent CLI the manager ships has a runnable Windows install, so a
+// spawn finding a missing one can offer the fix on any platform. psmux and
+// the plain-shell rows are not agent CLIs; cmd is documented as unsupported
+// on native Windows.
+func TestEveryBuiltinAgentHasAWindowsInstall(t *testing.T) {
+	agents := []string{"claude", "codex", "gemini", "grok", "hermes", "muse", "opencode", "pi"}
+	for _, tool := range agents {
+		if got := installers("windows")[tool]; got == "" {
+			t.Errorf("%s has no Windows install", tool)
+		}
+	}
+	if got := installers("windows")["cmd"]; got == "" {
+		t.Error("cmd lost its npm install, which does run on Windows")
 	}
 }
 

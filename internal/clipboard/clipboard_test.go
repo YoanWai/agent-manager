@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/YoanWai/agent-manager/internal/testenv"
 )
 
 // restore saves the seams for the returned func to put back, and starts the
@@ -31,6 +33,15 @@ func headlessLinux() {
 	goos = "linux"
 	wslProbe = func() bool { return false }
 	getenv = func(string) string { return "" }
+}
+
+// isolateTempDir points os.TempDir, and so pastesDir, at a fresh directory:
+// Unix reads TMPDIR, Windows reads TMP.
+func isolateTempDir(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("TMPDIR", dir)
+	t.Setenv("TMP", dir)
 }
 
 func requirePastesDirEmpty(t *testing.T) {
@@ -204,7 +215,7 @@ func TestSaveImageLinuxNoTool(t *testing.T) {
 
 func TestSaveImageLinuxPrefersNative(t *testing.T) {
 	defer restore()()
-	t.Setenv("TMPDIR", t.TempDir())
+	isolateTempDir(t)
 	goos = "linux"
 	wslProbe = func() bool { return false }
 	want := []byte("native-linux-png")
@@ -229,7 +240,7 @@ func TestSaveImageLinuxPrefersNative(t *testing.T) {
 
 func TestSaveImageLinuxReportsNoImageAfterToolsFail(t *testing.T) {
 	defer restore()()
-	t.Setenv("TMPDIR", t.TempDir())
+	isolateTempDir(t)
 	goos = "linux"
 	wslProbe = func() bool { return false }
 	readNativeImage = nil
@@ -256,7 +267,7 @@ func TestSaveImageLinuxReportsNoImageAfterToolsFail(t *testing.T) {
 
 func TestSaveImageLinuxRejectsEmptyToolOutput(t *testing.T) {
 	defer restore()()
-	t.Setenv("TMPDIR", t.TempDir())
+	isolateTempDir(t)
 	goos = "linux"
 	wslProbe = func() bool { return false }
 	readNativeImage = nil
@@ -276,7 +287,7 @@ func TestSaveImageLinuxRejectsEmptyToolOutput(t *testing.T) {
 
 func TestSaveImageWSLUsesWindowsClipboard(t *testing.T) {
 	defer restore()()
-	t.Setenv("TMPDIR", t.TempDir())
+	isolateTempDir(t)
 	goos = "linux"
 	wslProbe = func() bool { return true }
 	readNativeImage = nil
@@ -339,7 +350,7 @@ func TestSaveImageWSLUsesWindowsClipboard(t *testing.T) {
 
 func TestSaveImageWSLFallsBackWhenNativeMisses(t *testing.T) {
 	defer restore()()
-	t.Setenv("TMPDIR", t.TempDir())
+	isolateTempDir(t)
 	goos = "linux"
 	wslProbe = func() bool { return true }
 	readNativeImage = nil
@@ -389,7 +400,7 @@ func TestSaveImageWSLFallsBackWhenNativeMisses(t *testing.T) {
 
 func TestSaveImageWSLRequiresPowerShell(t *testing.T) {
 	defer restore()()
-	t.Setenv("TMPDIR", t.TempDir())
+	isolateTempDir(t)
 	goos = "linux"
 	wslProbe = func() bool { return true }
 	readNativeImage = nil
@@ -403,7 +414,7 @@ func TestSaveImageWSLRequiresPowerShell(t *testing.T) {
 
 func TestSaveImageWSLReportsAnEmptyWindowsClipboard(t *testing.T) {
 	defer restore()()
-	t.Setenv("TMPDIR", t.TempDir())
+	isolateTempDir(t)
 	goos = "linux"
 	wslProbe = func() bool { return true }
 	readNativeImage = nil
@@ -432,7 +443,7 @@ func TestSaveImageWSLReportsAnEmptyWindowsClipboard(t *testing.T) {
 
 func TestSaveImageWSLReportsPathConversionFailure(t *testing.T) {
 	defer restore()()
-	t.Setenv("TMPDIR", t.TempDir())
+	isolateTempDir(t)
 	goos = "linux"
 	wslProbe = func() bool { return true }
 	readNativeImage = nil
@@ -458,7 +469,7 @@ func TestSaveImageWSLReportsPathConversionFailure(t *testing.T) {
 
 func TestSaveImageDarwinRejectsEmptyJXAOutput(t *testing.T) {
 	defer restore()()
-	t.Setenv("TMPDIR", t.TempDir())
+	isolateTempDir(t)
 	goos = "darwin"
 	readNativeImage = nil
 	runCmd = func(string, ...string) ([]byte, error) { return nil, nil }
@@ -478,7 +489,7 @@ func TestSaveImageRejectsUnsupportedPlatform(t *testing.T) {
 }
 
 func TestIsPastePath(t *testing.T) {
-	t.Setenv("TMPDIR", t.TempDir())
+	isolateTempDir(t)
 	if !IsPastePath(filepath.Join(pastesDir(), "paste-image.png")) {
 		t.Fatal("paste path was not recognized")
 	}
@@ -488,6 +499,7 @@ func TestIsPastePath(t *testing.T) {
 }
 
 func TestCommandSeams(t *testing.T) {
+	testenv.SkipPOSIXShell(t)
 	sh, err := exec.LookPath("sh")
 	if err != nil {
 		t.Fatal("sh is required on supported platforms")
@@ -551,7 +563,7 @@ func writePaste(t *testing.T, name string, age time.Duration) string {
 }
 
 func TestSweepStaleRemovesOldPastesOnly(t *testing.T) {
-	t.Setenv("TMPDIR", t.TempDir())
+	isolateTempDir(t)
 	old := writePaste(t, "paste-old.png", 8*24*time.Hour)
 	fresh := writePaste(t, "paste-fresh.png", time.Hour)
 
@@ -567,7 +579,7 @@ func TestSweepStaleRemovesOldPastesOnly(t *testing.T) {
 }
 
 func TestSweepStaleLeavesForeignEntries(t *testing.T) {
-	t.Setenv("TMPDIR", t.TempDir())
+	isolateTempDir(t)
 	other := writePaste(t, "notes.txt", 30*24*time.Hour)
 	sub := filepath.Join(pastesDir(), "paste-dir")
 	if err := os.Mkdir(sub, 0o755); err != nil {
@@ -590,10 +602,13 @@ func TestSweepStaleLeavesForeignEntries(t *testing.T) {
 }
 
 func TestSweepStaleReportsRemovalFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod cannot deny reads on Windows")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("root ignores directory permissions")
 	}
-	t.Setenv("TMPDIR", t.TempDir())
+	isolateTempDir(t)
 	stale := writePaste(t, "paste-old.png", 8*24*time.Hour)
 	if err := os.Chmod(pastesDir(), 0o500); err != nil {
 		t.Fatal(err)
@@ -613,7 +628,7 @@ func TestSweepStaleReportsRemovalFailure(t *testing.T) {
 }
 
 func TestSweepStaleWithoutDirectory(t *testing.T) {
-	t.Setenv("TMPDIR", t.TempDir())
+	isolateTempDir(t)
 	if err := SweepStale(7 * 24 * time.Hour); err != nil {
 		t.Fatalf("missing pastes dir is not an error: %v", err)
 	}
@@ -637,6 +652,7 @@ func TestWriteTextHeadlessUsesOSC52(t *testing.T) {
 }
 
 func TestWriteTextSendsExactTextToPlatformWriter(t *testing.T) {
+	testenv.SkipPOSIXShell(t)
 	defer restore()()
 	goos = "darwin"
 	sh, err := exec.LookPath("sh")
@@ -713,15 +729,20 @@ func TestCopyCommandPlatformWriters(t *testing.T) {
 	}
 }
 
-func TestClipboardTextEncodesWSLClipAsUTF16LE(t *testing.T) {
+func TestClipboardTextEncodesClipAsUTF16LE(t *testing.T) {
 	defer restore()()
+	want := []byte{0x41, 0x00, 0x00, 0x25, 0x3d, 0xd8, 0x00, 0xde}
+
 	goos = "linux"
 	wslProbe = func() bool { return true }
-
-	got := clipboardText("clip.exe", "A─😀")
-	want := []byte{0x41, 0x00, 0x00, 0x25, 0x3d, 0xd8, 0x00, 0xde}
-	if !bytes.Equal(got, want) {
+	if got := clipboardText("clip.exe", "A─😀"); !bytes.Equal(got, want) {
 		t.Fatalf("WSL clipboard bytes = %x, want %x", got, want)
+	}
+
+	goos = "windows"
+	wslProbe = func() bool { return false }
+	if got := clipboardText("clip", "A─😀"); !bytes.Equal(got, want) {
+		t.Fatalf("Windows clipboard bytes = %x, want %x", got, want)
 	}
 }
 
@@ -812,9 +833,7 @@ func TestWriteTextOSC52SizeBoundary(t *testing.T) {
 // A stale SSH DISPLAY selects xclip, which then dies with "Can't open
 // display"; the copy must still land through OSC 52.
 func TestWriteTextNativeFailureFallsBackToOSC52(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("needs a unix shell script as the fake writer")
-	}
+	testenv.SkipPOSIXShell(t)
 	defer restore()()
 	headlessLinux()
 	getenv = func(name string) string {

@@ -151,7 +151,7 @@ func (m *Model) wheelFocus(up bool, x, y int) tea.Cmd {
 			return nil
 		}
 		command, args := guardedMouseCommand(sess.ID, report)
-		m.sendGuardedMouse(command, args)
+		m.sendGuardedMouse(sess.ID, command, args)
 		return nil
 	}
 	delta := 1
@@ -195,16 +195,17 @@ func (m *Model) sendFocusReport(report string) {
 		return
 	}
 	command, args := guardedMouseCommand(sess.ID, report)
-	m.sendGuardedMouse(command, args)
+	m.sendGuardedMouse(sess.ID, command, args)
 }
 
-func (m *Model) sendGuardedMouse(command string, args []string) {
+func (m *Model) sendGuardedMouse(id, command string, args []string) {
 	if m.focus.attemptBlocks(command, guardedMouseReplies) {
 		return
 	}
-	if err := m.tmux.SendCommand(args...); err != nil {
-		m.errBar.text = err.Error()
-	}
+	driver := m.tmux
+	m.writeFocused(id, func() tea.Msg {
+		return writeFailure(driver.SendCommand(args...))
+	})
 }
 
 // forwardedMouseCell uses the current cell while the pointer is in the pane.
@@ -301,8 +302,17 @@ func (m *Model) focusRegionCmd(sessID string, offset int) tea.Cmd {
 			return focusScrollMsg{sessID: sessID, offset: offset, rows: rows}
 		}
 		out, ok := watch.query(command)
+		if ok {
+			out = matchExecShape(out)
+		} else {
+			// No control client: a forked capture of the same rows comes
+			// back in the exec shape already.
+			var err error
+			out, err = watch.driver.CapturePaneHistory(sessID, offset+rows)
+			ok = err == nil
+		}
 		return focusScrollMsg{sessID: sessID, offset: offset, rows: rows,
-			preview: bottomWindow(matchExecShape(out), rows, offset), ok: ok}
+			preview: bottomWindow(out, rows, offset), ok: ok}
 	}
 }
 

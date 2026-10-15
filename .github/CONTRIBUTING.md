@@ -76,6 +76,12 @@ go build ./...
 
 The test suite includes end-to-end tests against a real tmux server on its own socket. Install tmux to run those tests locally; tmux-dependent tests are skipped when tmux is unavailable. `env -u TMUX` is required when your shell is already inside tmux, or the tests land on that server.
 
+On Windows the suite needs psmux 3.4.0 or newer, PowerShell 7.3 or newer, and `cat`, `echo`, `printf` and `true` from Git for Windows (`C:\Program Files\Git\usr\bin`) on `PATH`. The `ui` package outruns go test's default timeout, and `-race` needs cgo:
+
+```powershell
+go test -timeout 40m ./...
+```
+
 ## Code style
 
 - Match the surrounding code. Names describe intent; comments explain a non-obvious *why* and stay rare.

@@ -3,6 +3,7 @@ package config
 import (
 	"reflect"
 	"regexp"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -412,7 +413,12 @@ func TestWithChoiceFlagsEveryLaunchLine(t *testing.T) {
 	}
 	base := cfg.Tools["pi"]
 	chosen := base.WithChoice(Choice{Model: "openai-codex/gpt-6-sol", Effort: "it's high"})
+	// The pane shell is PowerShell on Windows, which doubles a quote inside
+	// a single-quoted string.
 	suffix := ` --model 'openai-codex/gpt-6-sol' --thinking 'it'\''s high'`
+	if runtime.GOOS == "windows" {
+		suffix = ` --model 'openai-codex/gpt-6-sol' --thinking 'it''s high'`
+	}
 	for _, tc := range []struct{ field, base, got string }{
 		{"command", base.Command, chosen.Command},
 		{"revive_command", base.ReviveCommand, chosen.ReviveCommand},

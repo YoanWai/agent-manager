@@ -389,6 +389,35 @@ For Claude Code, built-in status detection reads [hook events](https://docs.anth
 
 When a session's status flips to `waiting` or `errored`, the manager fires one notification with the session name, tool, and state — once per transition, never per poll — so you can look away from the list without missing an agent that needs you. This is tool-neutral: every configured CLI reaches the same notification path after the manager classifies its status. Clicking a notification puts the cursor on the session it named, and brings the terminal running the manager to the front on macOS and on Linux under X11. On macOS the banner is the manager's own: the first time one fires, macOS asks whether Agent Manager may send notifications, and from then on every banner carries the manager's name and icon, with waiting, finished, and errored getting the Funk, Hero, and Basso sounds. The manager keeps a small app bundle of itself under `~/Library/Application Support/agent-manager` for this and refreshes it after an upgrade. Should that bundle ever fail to build, the older AppleScript notification still fires so the ping is not lost; macOS attributes that one to Script Editor, and clicking it opens Script Editor. Linux sends matching standard sound, icon, category, and urgency hints through `notify-send`; the desktop notification server uses the capabilities it supports and safely ignores the rest. Acting on a click needs a `notify-send` new enough to report actions, which is libnotify 0.7.9 and later; with an older one the banner still appears and the click does nothing. Where it is supported, the click raises the terminal window on X11 (through `xdotool` or `wmctrl` when installed) while Wayland compositors leave the window where it is. Under WSL the banner is a native Windows toast posted through PowerShell, which replaces the bell there; Windows attributes a toast to whoever posted it, so that click does not reach the manager and carrying it across is left for a follow-up. Inside Ghostty or cmux the state travels as an OSC 777 escape to the drawing terminal, which owns its presentation and sound and attributes it to the right window and workspace. Because that escape rides the terminal connection, it also reaches you when the manager runs on a remote host over SSH. A headless box without a desktop falls back to the terminal bell. Settings (`s`) has a `notifications` row that silences them (on by default) and a `notify on finish` row that adds `finished` transitions (off by default).
 
+To send notifications somewhere else as well, such as your phone, a chat, or a script, set a shell command with `agent-manager settings set notify_command '<command>'`, and clear it with `agent-manager settings set notify_command ''`. It has no row in Settings, so `agent-manager settings get notify_command` is where to read it back. A running manager uses the new value from its next notification. The manager runs it through `sh -c` for every notification it fires, after the native banner and in addition to it. The `notifications` and `notify on finish` rows gate it the same way, and with several managers open it runs once per transition, from the manager that posts the banner. The command gets the event in its environment:
+
+| Variable | Value |
+|----------|-------|
+| `AM_NOTIFY_KIND` | `waiting`, `finished`, or `errored` |
+| `AM_SESSION_ID` | the session's id |
+| `AM_SESSION_NAME` | the session's name |
+| `AM_TOOL` | the CLI it runs |
+| `AM_CWD` | its working directory |
+| `AM_BRANCH` | its branch, when the manager made it a worktree; empty otherwise |
+| `AM_TITLE` | the banner's title |
+| `AM_BODY` | the banner's text |
+
+The values come from the session and the agent, so quote them (`"$AM_BODY"`) and they stay data. Single quotes around the whole command keep your shell from expanding the variables when you set it. For example, to get a push notification through [ntfy](https://ntfy.sh):
+
+```sh
+agent-manager settings set notify_command 'curl -fsS -H "Title: $AM_TITLE" -H "Tags: $AM_NOTIFY_KIND" -d "$AM_BODY" https://ntfy.sh/your-private-topic'
+```
+
+On Windows the manager runs the command through PowerShell instead, the shell its panes run, so the variables read as `$env:AM_BODY` and the command is PowerShell. Set it from PowerShell 7.3 or later: Windows PowerShell 5.1 drops the inner double quotes before `agent-manager` receives them.
+
+```powershell
+agent-manager settings set notify_command 'curl.exe -fsS -H "Title: $env:AM_TITLE" -H "Tags: $env:AM_NOTIFY_KIND" -d "$env:AM_BODY" https://ntfy.sh/your-private-topic'
+```
+
+A command that runs past 15 seconds is stopped. When one fails, exits non-zero, or is stopped, the time, the session, the error, and the start of what it printed go to `notify-command.log` in the manager's config directory (`~/Library/Application Support/agent-manager` on macOS, `~/.config/agent-manager` on Linux, `%AppData%\agent-manager` on Windows), a file only you can read, and nothing interrupts the manager.
+
+The command runs as you, with everything your account can reach, so give it the same trust as your shell rc file. Nothing on screen lists it, so before the manager runs a command it has not shown you, it posts a `New notify command` banner with the command itself. That happens once for each new command, the first one you set included, and a command that changed without your knowing shows up there.
+
 ## Stats
 
 The header shows a fleet summary: per-status session counts, plus `agents total usage: cpu N% · ram M% · X GB` for every live agent's full process tree (shell, agent, and children). CPU is that tree's CPU time over the last poll as a share of total machine capacity (same 0–100% unit as the computer gauge). RAM is resident set as a share of installed memory, with absolute size beside it. The selected session's detail line uses the same scale for that session alone.
@@ -417,7 +446,7 @@ An installation without an explicit symbols choice follows the release’s defau
 
 Seventeen palettes ship. Ten dark: `classic`, `solarized dark`, `catppuccin mocha`, `tokyo night`, `gruvbox dark`, `nord`, `dracula`, `rosé pine`, `monochrome`, and `kanagawa wave`. Seven light: `solarized light`, `catppuccin latte`, `tokyo night day`, `gruvbox light`, `rosé pine dawn`, `paper`, and `kanagawa lotus`. The swatch strip beside the name previews the palette, and the theme applies as you step through it, so the picker is a live preview of the whole UI. The manager also sets the terminal's own text and background colors to the palette's, so the window has no seam against it and an agent's plain text reads on it, and restores the terminal's colors on exit. Your pick is saved with the rest of the state and restored on the next run.
 
-**theme follows OS** resolves the palette at startup from the environment's light/dark preference: the OS setting on macOS and Linux desktops, and the terminal's own background elsewhere, including over SSH. A theme already on the detected side stays; only a mismatch switches. A palette that ships in both a dark and a light variant switches to its other half: `solarized dark` and `solarized light`, `catppuccin mocha` and `catppuccin latte`, `tokyo night` and `tokyo night day`, `gruvbox dark` and `gruvbox light`, `rosé pine` and `rosé pine dawn`, `kanagawa wave` and `kanagawa lotus`. Any other palette switches to `classic` or `solarized light`. Your manual pick is kept separately, so turning the toggle off returns to it, and stepping the theme picker by hand turns the toggle off. Agent panes render on the theme's own backdrop and text color, and the pane declares both to the agent inside it, so an agent that auto-detects its palette resolves to the same side the manager is drawing. A session already running keeps the palette it resolved at launch until it is restarted.
+**theme follows OS** resolves the palette at startup from the environment's light/dark preference: the OS setting on macOS and Linux desktops, and the terminal's own background elsewhere, including over SSH. A theme already on the detected side stays; only a mismatch switches. A palette that ships in both a dark and a light variant switches to its other half: `solarized dark` and `solarized light`, `catppuccin mocha` and `catppuccin latte`, `tokyo night` and `tokyo night day`, `gruvbox dark` and `gruvbox light`, `rosé pine` and `rosé pine dawn`, `kanagawa wave` and `kanagawa lotus`. Any other palette switches to `classic` or `solarized light`. Your manual pick is kept separately, so turning the toggle off returns to it, and stepping the theme picker by hand turns the toggle off. Agent panes render on the theme's own backdrop and text color, and the pane declares both to the agent inside it, so an agent that auto-detects its palette resolves to the same side the manager is drawing. An agent that asks the terminal for its colors gets them from tmux 3.2 on, and every version hands it the same pair in `COLORFGBG`. A session already running keeps the palette it resolved at launch until it is restarted.
 
 **background** picks what fills the cells behind the UI. `theme`, the default, gives every cell that would otherwise show the terminal's own colors the palette's background and text color, so the colors hold even on a terminal that ignores the color request. Cells with colors of their own, agent output included, keep them. `terminal` leaves those cells on the terminal's own colors, for a translucent or blurred window, where painted cells would read as a solid block inside the see-through padding. The row applies as you step it.
 
@@ -431,7 +460,7 @@ agent-manager settings set notifications off
 agent-manager settings get list_density
 ```
 
-A running manager shows the change the next time Settings (`s`) is opened and uses it from then on, or from its next start. Keys it reads each time it uses them, such as `notifications` and `coordination`, apply at once.
+A running manager shows the change the next time Settings (`s`) is opened and uses it from then on, or from its next start. Keys it reads each time it uses them, such as `notifications`, `coordination` and `notify_command`, apply at once. `notify_command` is the one key with no Settings row. A command does not fit a one-line field, so it is set from the shell alone (see [Notifications](#notifications)).
 
 ## Updates
 

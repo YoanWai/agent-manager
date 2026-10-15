@@ -2,6 +2,7 @@ package update
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -20,13 +21,33 @@ import (
 
 func releaseArchive(t *testing.T, binary []byte) []byte {
 	t.Helper()
+	return archiveWith(t, binaryName, 0o755, binary)
+}
+
+// archiveWith builds a one-entry release archive in this platform's format.
+func archiveWith(t *testing.T, name string, mode int64, body []byte) []byte {
+	t.Helper()
 	var buf bytes.Buffer
+	if archiveExt == ".zip" {
+		archive := zip.NewWriter(&buf)
+		entry, err := archive.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := entry.Write(body); err != nil {
+			t.Fatal(err)
+		}
+		if err := archive.Close(); err != nil {
+			t.Fatal(err)
+		}
+		return buf.Bytes()
+	}
 	zipper := gzip.NewWriter(&buf)
 	archive := tar.NewWriter(zipper)
-	if err := archive.WriteHeader(&tar.Header{Name: "agent-manager", Mode: 0o755, Size: int64(len(binary)), Typeflag: tar.TypeReg}); err != nil {
+	if err := archive.WriteHeader(&tar.Header{Name: name, Mode: mode, Size: int64(len(body)), Typeflag: tar.TypeReg}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := archive.Write(binary); err != nil {
+	if _, err := archive.Write(body); err != nil {
 		t.Fatal(err)
 	}
 	if err := archive.Close(); err != nil {
@@ -40,7 +61,7 @@ func releaseArchive(t *testing.T, binary []byte) []byte {
 
 func serveRelease(t *testing.T, tag string, archive []byte, sum string) {
 	t.Helper()
-	asset := fmt.Sprintf("agent-manager_%s_%s_%s.tar.gz", strings.TrimPrefix(tag, "v"), runtime.GOOS, runtime.GOARCH)
+	asset := fmt.Sprintf("agent-manager_%s_%s_%s%s", strings.TrimPrefix(tag, "v"), runtime.GOOS, runtime.GOARCH, archiveExt)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/" + tag + "/checksums.txt":
@@ -170,6 +191,9 @@ func TestApplySwapsBinary(t *testing.T) {
 	if !bytes.Equal(swapped, newBinary) {
 		t.Fatalf("binary not swapped, got %q", swapped)
 	}
+	if runtime.GOOS == "windows" {
+		return
+	}
 	info, err := os.Stat(target)
 	if err != nil {
 		t.Fatal(err)
@@ -232,19 +256,9 @@ func TestApplyRejectsChecksumMismatch(t *testing.T) {
 }
 
 func TestApplyRejectsArchiveWithoutBinary(t *testing.T) {
-	var buf bytes.Buffer
-	zipper := gzip.NewWriter(&buf)
-	archive := tar.NewWriter(zipper)
-	if err := archive.WriteHeader(&tar.Header{Name: "README.md", Mode: 0o644, Size: 2, Typeflag: tar.TypeReg}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := archive.Write([]byte("hi")); err != nil {
-		t.Fatal(err)
-	}
-	archive.Close()
-	zipper.Close()
-	digest := sha256.Sum256(buf.Bytes())
-	serveRelease(t, "v9.9.9", buf.Bytes(), hex.EncodeToString(digest[:]))
+	archive := archiveWith(t, "README.md", 0o644, []byte("hi"))
+	digest := sha256.Sum256(archive)
+	serveRelease(t, "v9.9.9", archive, hex.EncodeToString(digest[:]))
 
 	target := filepath.Join(t.TempDir(), "agent-manager")
 	if err := os.WriteFile(target, []byte("old build"), 0o755); err != nil {

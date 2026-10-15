@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -38,6 +39,9 @@ func followingPoller(t *testing.T, launch int64) (*poller, store.Session) {
 }
 
 func TestPollerFollowsTheConversationTheAgentHolds(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows lists no process's open files")
+	}
 	p, sess := followingPoller(t, 0)
 	if err := p.followConversation(&sess, true, false); err != nil {
 		t.Fatal(err)

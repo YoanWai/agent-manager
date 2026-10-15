@@ -11,6 +11,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/testenv"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/google/uuid"
@@ -80,6 +81,7 @@ func TestInjectPickerKeysStopsOnInvalidInputAndPaneDisappearance(t *testing.T) {
 // composer command, and returns the pane's id.
 func startPickerPane(t *testing.T, h *sessionHarness, script string) string {
 	t.Helper()
+	testenv.SkipPOSIXShell(t)
 	path := filepath.Join(t.TempDir(), "tui.sh")
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
@@ -192,6 +194,7 @@ func waitForAgentGone(t *testing.T, driver *tmux.Driver, sessID string) {
 // The caller's copy of the row can predate a switch the agent reported
 // before it quit, so the relaunch reads the row itself.
 func TestRelaunchInPaneResumesTheStoredConversationUnderItsStampedLaunch(t *testing.T) {
+	testenv.SkipPOSIXShell(t)
 	h := newSessionHarness(t)
 	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "switcher", Tool: "reporter"})
 	if err != nil {

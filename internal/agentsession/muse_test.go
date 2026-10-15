@@ -97,7 +97,7 @@ func TestMuseMissingAndMalformedStore(t *testing.T) {
 
 func TestMuseRoot(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setHome(t, home)
 	t.Setenv("XDG_DATA_HOME", "")
 	if got := museRoot(); got != filepath.Join(home, ".local", "share", "muse", "sessions") {
 		t.Fatal(got)

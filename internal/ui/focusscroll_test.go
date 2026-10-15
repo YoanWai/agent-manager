@@ -30,6 +30,7 @@ func sgrMouseReportRe(button int, release bool) *regexp.Regexp {
 // fits on screen, so scrolling has somewhere to go.
 func focusedWithHistory(t *testing.T, name string) (*Model, string) {
 	t.Helper()
+	skipControlMode(t)
 	m := buildModel(t)
 	createSession(t, m, name, t.TempDir(), "")
 	m.selectSessionRow(t, name)
@@ -454,8 +455,11 @@ func TestAltScreenPaneShrinksWithTheBox(t *testing.T) {
 	pinned := windowHeight(t, sess.ID)
 
 	// cat writes the enter sequence back to the pane, which tmux applies.
+	// The bytes go as hex: psmux turns a literal newline in send-keys -l
+	// into the two characters \n.
 	waitForPaneChild(t, m, sess.ID, "cat")
-	if out, err := tmuxCmd("send-keys", "-t", "am_"+sess.ID, "-l", "\x1b[?1049h\n").CombinedOutput(); err != nil {
+	if out, err := tmuxCmd("send-keys", "-t", "am_"+sess.ID, "-H",
+		"1b", "5b", "3f", "31", "30", "34", "39", "68", "0a").CombinedOutput(); err != nil {
 		t.Fatalf("send-keys: %v: %s", err, out)
 	}
 	deadline := time.Now().Add(5 * time.Second)
@@ -560,6 +564,7 @@ func TestFocusKeepsPaneHeight(t *testing.T) {
 // the pane-state cache the wheel routes on is populated.
 func focusedMouseApp(t *testing.T, tool, name string) (*Model, store.Session) {
 	t.Helper()
+	skipControlMode(t)
 	m := buildModel(t)
 	if err := m.spawnSession(tool, name, t.TempDir(), "", "", true, false, config.Choice{}); err != nil {
 		t.Fatalf("spawn: %v", err)

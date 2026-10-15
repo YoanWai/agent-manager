@@ -36,6 +36,7 @@ body:
         - macOS
         - Linux
         - Windows (WSL2)
+        - Windows
 
   - type: input
     id: tmux-version

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"errors"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -635,6 +636,9 @@ func TestSearchMatchingArchivedChildDoesNotHoistLiveParent(t *testing.T) {
 // the geometry cache to follow. A later refresh has to notice and pin that
 // pane back to the box.
 func TestRefreshRepinsAnAgentSplitPane(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("psmux resize-pane on a detached window scales against the last client area; the manager does not pin split panes there")
+	}
 	for _, split := range []struct {
 		axis string
 		flag string
@@ -751,5 +755,59 @@ func TestStartupErrorStaysVisibleUntilFirstRefresh(t *testing.T) {
 	m.Update(refreshMsg{listedAt: time.Now()})
 	if m.booting {
 		t.Fatal("the first successful refresh must finish boot")
+	}
+}
+
+func TestTypedPromptsAreHeldPerSession(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "typed-a", t.TempDir(), "")
+	createSession(t, m, "typed-b", t.TempDir(), "")
+	index := func(name string) int {
+		for i, s := range m.sessions {
+			if s.Name == name {
+				return i
+			}
+		}
+		t.Fatalf("no session named %q", name)
+		return -1
+	}
+	a, b := index("typed-a"), index("typed-b")
+	aID, bID := m.sessions[a].ID, m.sessions[b].ID
+	lastPrompt := func(id string) string {
+		got, err := m.store.Get(id)
+		if err != nil {
+			t.Fatalf("get: %v", err)
+		}
+		return got.LastPrompt
+	}
+
+	// A's capture lands after B's: both drafts are still waiting on their
+	// sessions to turn working.
+	m.Update(typedPromptMsg{typedPromptCandidate{id: aID, text: "prompt for a", at: time.Now()}})
+	m.Update(typedPromptMsg{typedPromptCandidate{id: bID, text: "prompt for b", at: time.Now()}})
+	m.sessions[a].Status = status.Working
+	m.sessions[b].Status = status.Working
+	m.commitTypedPrompt()
+	if got := lastPrompt(aID); got != "prompt for a" {
+		t.Fatalf("a's last prompt = %q, want %q", got, "prompt for a")
+	}
+	if got := lastPrompt(bID); got != "prompt for b" {
+		t.Fatalf("b's last prompt = %q, want %q", got, "prompt for b")
+	}
+
+	m.Update(typedPromptMsg{typedPromptCandidate{id: aID, text: "stale for a", at: time.Now().Add(-2 * typedPromptGrace)}})
+	m.Update(typedPromptMsg{typedPromptCandidate{id: bID, text: "fresh for b", at: time.Now()}})
+	m.sessions[b].Status = status.Idle
+	m.commitTypedPrompt()
+	if got := lastPrompt(aID); got != "prompt for a" {
+		t.Fatalf("an expired draft overwrote a's last prompt with %q", got)
+	}
+	if got := lastPrompt(bID); got != "prompt for b" {
+		t.Fatalf("b's draft committed before b turned working: %q", got)
+	}
+	m.sessions[b].Status = status.Working
+	m.commitTypedPrompt()
+	if got := lastPrompt(bID); got != "fresh for b" {
+		t.Fatalf("b's last prompt = %q, want the draft that waited for working", got)
 	}
 }
