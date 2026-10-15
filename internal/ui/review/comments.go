@@ -457,7 +457,7 @@ func scopePhrase(scope git.Scope) string {
 	switch scope {
 	case git.ScopeBranch:
 		return "the branch changes"
-	case git.ScopeLastCommit:
+	case git.ScopeCommit:
 		return "the last commit"
 	case git.ScopeStaged:
 		return "the staged changes"

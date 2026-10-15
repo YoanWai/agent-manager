@@ -15,7 +15,7 @@ func TestReviewSubjectNamesTheCheckout(t *testing.T) {
 		want  string
 	}{
 		{git.ScopeBranch, "the branch changes on `stack-2` (`" + head + "`) vs `stack-1` (merge-base `" + mergeBase + "`) in `" + dir + "`"},
-		{git.ScopeLastCommit, "the last commit on `stack-2` (`" + head + "`) in `" + dir + "`"},
+		{git.ScopeCommit, "the last commit on `stack-2` (`" + head + "`) in `" + dir + "`"},
 		{git.ScopeStaged, "the staged changes on `stack-2` (`" + head + "`) in `" + dir + "`"},
 		{git.ScopeUncommitted, "the uncommitted changes on `stack-2` (`" + head + "`) in `" + dir + "`"},
 	} {

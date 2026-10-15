@@ -5,7 +5,7 @@ type Scope int
 const (
 	ScopeUncommitted Scope = iota
 	ScopeBranch
-	ScopeLastCommit
+	ScopeCommit
 	ScopeStaged
 	scopeCount
 )
@@ -16,7 +16,7 @@ func (s Scope) String() string {
 	switch s {
 	case ScopeBranch:
 		return "vs target"
-	case ScopeLastCommit:
+	case ScopeCommit:
 		return "last commit"
 	case ScopeStaged:
 		return "staged"
@@ -31,6 +31,15 @@ type Repo struct {
 	Head     string
 	Unborn   bool
 	Detached bool
+}
+
+// Commit is one commit the commit scope can review, with the paths its diff
+// against its first parent changes.
+type Commit struct {
+	SHA     string
+	Short   string
+	Subject string
+	Files   []string
 }
 
 type Status byte
