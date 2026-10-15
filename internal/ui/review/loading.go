@@ -13,7 +13,7 @@ func StoredScope(stored string) git.Scope {
 	case "branch":
 		return git.ScopeBranch
 	case "last_commit":
-		return git.ScopeLastCommit
+		return git.ScopeCommit
 	case "staged":
 		return git.ScopeStaged
 	default:
