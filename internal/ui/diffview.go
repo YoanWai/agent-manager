@@ -136,6 +136,13 @@ type diffState struct {
 	// markAll is set while A waits on file loads to mark every shown file
 	// reviewed.
 	markAll bool
+
+	// Where the last frame painted what a click acts on: the header pills,
+	// and the rail rows naming a commit or a file, keyed by screen row.
+	pills      []pillHit
+	railWidth  int
+	commitRows map[int]int
+	fileRows   map[int]int
 }
 
 type diffLoadedMsg struct {
@@ -681,6 +688,35 @@ func (m *Model) reloadDiffScope(sess store.Session) tea.Cmd {
 		return tea.Batch(m.diffRebaseCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, m.diff.repoRoots), m.startStartupTick())
 	}
 	return tea.Batch(m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false), m.startStartupTick())
+}
+
+// handleDiffClick acts on a left press in review: a header pill presses its
+// key, and a rail row shows its commit or file.
+func (m *Model) handleDiffClick(x, y int) (tea.Model, tea.Cmd) {
+	if m.diff.annotating || m.diff.sendConfirm {
+		return m, nil
+	}
+	if y == 0 {
+		for _, pill := range m.diff.pills {
+			if x >= pill.x0 && x < pill.x1 {
+				return m.handleDiffKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(pill.key)})
+			}
+		}
+		return m, nil
+	}
+	if x >= m.diff.railWidth {
+		return m, nil
+	}
+	if i, ok := m.diff.commitRows[y]; ok {
+		if i == commitIndex(m.diff.commits, m.viewedCommit()) {
+			return m, nil
+		}
+		return m, m.showCommit(i)
+	}
+	if i, ok := m.diff.fileRows[y]; ok && i != m.diff.fileIdx {
+		return m, m.switchDiffFile(i - m.diff.fileIdx)
+	}
+	return m, nil
 }
 
 // resetCommitScope forgets the commit scope's commit and list, for a review

@@ -4004,6 +4004,60 @@ func TestCommitScopeEndsSayWhatIsLeft(t *testing.T) {
 	}
 }
 
+// clickText left-presses the first painted cell of text in the frame.
+func (m *Model) clickText(t *testing.T, text string) {
+	t.Helper()
+	for y, line := range strings.Split(ansi.Strip(m.View()), "\n") {
+		if at := strings.Index(line, text); at >= 0 {
+			_, cmd := m.handleMousePress(tea.MouseMsg{X: ansi.StringWidth(line[:at]), Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+			m.drainCmds(t, cmd)
+			return
+		}
+	}
+	t.Fatalf("%q is not on screen:\n%s", text, ansi.Strip(m.View()))
+}
+
+// The rail's commit and file rows and the header pills answer a click the
+// way their keys do.
+func TestReviewClicksRailAndPills(t *testing.T) {
+	m := buildModel(t)
+	dir := gitRepoWithCommitStack(t)
+	openCommitScope(t, m, dir)
+
+	m.clickText(t, m.diff.commits[1].Short+" two")
+	if want := (commitPin{sha: gitRev(t, dir, "HEAD~1"), index: 1}); m.diff.commitPin != want {
+		t.Fatalf("pin = %+v, want %+v", m.diff.commitPin, want)
+	}
+	m.clickText(t, "b.go")
+	if fd := m.currentFileDiff(); fd == nil || fd.File.Path != "b.go" {
+		t.Fatalf("clicking b.go should show it, files = %v index = %d", m.diffPaths(), m.diff.fileIdx)
+	}
+
+	m.clickText(t, "L  2/3")
+	if m.mode != modeRepoPick || m.repoPick.kind != pickCommit {
+		t.Fatalf("clicking the commit pill should open the commit picker, mode = %v", m.mode)
+	}
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	*m = *updated.(*Model)
+	m.clickText(t, "u  ")
+	if m.diff.sideBySide {
+		t.Fatal("clicking the layout pill should toggle the layout")
+	}
+	m.clickText(t, "s  commit")
+	if m.diff.scope != git.ScopeStaged {
+		t.Fatalf("clicking the scope pill should cycle the scope, got %v", m.diff.scope)
+	}
+}
+
+func TestPlaceRailRowsMapsMoreCounters(t *testing.T) {
+	rows := map[int]int{}
+	placeRailRows(rows, 10, 2, 4, 6, func(pos int) int { return pos * 10 })
+	want := map[int]int{10: 10, 11: 20, 12: 30, 13: 40}
+	if !maps.Equal(rows, want) {
+		t.Fatalf("rows = %v, want %v", rows, want)
+	}
+}
+
 // A step names the commit it is loading while the load runs, so the counter,
 // the rail and the header's pills move straight to it rather than through 0
 // or a blank header.
