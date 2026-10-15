@@ -245,7 +245,7 @@ func (m *Model) diffLoadCmd(sess store.Session, scope git.Scope, gen int, repoWa
 func finishDiffMsg(driver *git.Driver, scope git.Scope, gen int, gitRoot, override string, repoRoots []string, msg *diffLoadedMsg) {
 	msg.repoRoots = repoRoots
 	msg.repoRoot = gitRoot
-	msg.set, msg.err = diff.BuildSet(driver, gitRoot, scope, override)
+	msg.set, msg.err = diff.BuildSet(driver, gitRoot, scope, override, "")
 	if msg.err == nil {
 		baseRef := msg.set.BaseRef
 		if scope == git.ScopeBranch && baseRef == "" {

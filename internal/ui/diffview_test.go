@@ -255,7 +255,7 @@ func TestReviewSubjectNamesTheCheckout(t *testing.T) {
 		{git.ScopeStaged, "the staged changes on `stack-2` (`" + head + "`) in `" + dir + "`"},
 		{git.ScopeUncommitted, "the uncommitted changes on `stack-2` (`" + head + "`) in `" + dir + "`"},
 	} {
-		set, err := diff.BuildSet(driver, dir, tc.scope, "stack-1")
+		set, err := diff.BuildSet(driver, dir, tc.scope, "stack-1", "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -265,7 +265,7 @@ func TestReviewSubjectNamesTheCheckout(t *testing.T) {
 	}
 
 	runGit(t, dir, "checkout", "-q", "--detach")
-	set, err := diff.BuildSet(driver, dir, git.ScopeUncommitted, "")
+	set, err := diff.BuildSet(driver, dir, git.ScopeUncommitted, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2137,7 +2137,7 @@ func TestHeaderMarksUncountedFile(t *testing.T) {
 	}
 	t.Cleanup(func() { os.Chmod(locked, 0o644) })
 
-	set, err := diff.BuildSet(m.gitDrv, dir, git.ScopeUncommitted, "")
+	set, err := diff.BuildSet(m.gitDrv, dir, git.ScopeUncommitted, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
