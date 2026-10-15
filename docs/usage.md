@@ -323,11 +323,15 @@ The footer offers `ctrl+r review mode` on every agent row, filled like quick pro
 | `J` / `K` (or `tab` / `shift+tab`) | Next / previous file |
 | `n` / `N` | Jump between changes |
 | `u` | Toggle unified and side-by-side |
-| `s` | Cycle the scope: uncommitted, vs target, last commit, staged |
+| `s` | Cycle the scope: uncommitted, vs target, commit, staged |
+| `[` / `]` | In the commit scope, step to the older / newer commit |
+| `{` / `}` | In the commit scope, jump to the oldest commit / HEAD |
+| `L` | In the commit scope, pick the commit to review (type to filter) |
 | `r` | Pick the repo when the session's directory holds several (type to filter) |
 | `b` | Switch review to another of the repo's worktrees, listed by branch |
-| `B` | Pick the target (merge-into branch) the "vs target" scope compares against |
+| `B` | Pick the target (merge-into branch) the "vs target" scope compares against, and that bounds the commit scope's commits |
 | `space` | Mark a file reviewed in the current scope |
+| `A` | Mark every listed file reviewed, or clear them all when each already is |
 | `f` | Show code files only, hiding images, compiled assets and lock files from the list; press again to show them |
 | `c` / `d` | Write or drop a draft; mark feedback from a sent round handled or open |
 | `C` | Send the current drafts to the agent as one review prompt (`enter` or `y` confirms, `esc` cancels) |
@@ -335,7 +339,9 @@ The footer offers `ctrl+r review mode` on every agent row, filled like quick pro
 | `?` | Review bindings only; `esc` returns to the review |
 | `esc` / `q` | Close the review |
 
-Each changeable value in the header wears its own key, so the scope, layout, repo, and target pills read as `s`, `u`, `r`, `B` legends at a glance.
+Each changeable value in the header wears its own key, so the scope, layout, repo, target, and commit pills read as `s`, `u`, `r`, `B`, `L` legends at a glance.
+
+The commit scope reviews one commit at a time, from those on the branch since the target. The rail lists them oldest first above the files, with a check on each commit whose files are all reviewed, and the header pill numbers the one in view. It opens on the oldest commit not fully reviewed, or on HEAD once all are, and HEAD follows new commits. An agent that asks for the commit scope opens it on HEAD. A reviewed mark or comment taken in the commit scope belongs to its commit, so a new commit starts clean. When a rebase or amend rewrites commits, the pinned commit and the marks and comments on rewritten commits follow to the replacement with the same patch, or else the same subject. A dropped commit leaves review on the commit now at its place, with a notice naming both.
 
 ![review, side by side, with the changed lines tinted in full file context](screenshot-review.png)
 

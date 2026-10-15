@@ -3,10 +3,12 @@ package ui
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -226,8 +228,8 @@ func TestReviewSubjectNamesTheCheckout(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	shortSHA := func(rev string) string {
-		out, err := exec.Command("git", "-C", dir, "rev-parse", "--short", rev).Output()
+	shortSHA := func(args ...string) string {
+		out, err := exec.Command("git", append([]string{"-C", dir, "rev-parse", "--short"}, args...)...).Output()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -242,6 +244,7 @@ func TestReviewSubjectNamesTheCheckout(t *testing.T) {
 	write("a.go", "package a\n\nfunc A() {}\n")
 	runGit(t, dir, "commit", "-am", "stack 2")
 	head := shortSHA("HEAD")
+	commit := shortSHA("--short=12", "HEAD")
 	write("a.go", "package a\n\nfunc A() int { return 1 }\n")
 	runGit(t, dir, "add", ".")
 	write("a.go", "package a\n\nfunc A() int { return 2 }\n")
@@ -251,7 +254,7 @@ func TestReviewSubjectNamesTheCheckout(t *testing.T) {
 		want  string
 	}{
 		{git.ScopeBranch, "the branch changes on `stack-2` (`" + head + "`) vs `stack-1` (merge-base `" + mergeBase + "`) in `" + dir + "`"},
-		{git.ScopeCommit, "the last commit on `stack-2` (`" + head + "`) in `" + dir + "`"},
+		{git.ScopeCommit, "commit `" + commit + "` on `stack-2` (`" + head + "`) in `" + dir + "`"},
 		{git.ScopeStaged, "the staged changes on `stack-2` (`" + head + "`) in `" + dir + "`"},
 		{git.ScopeUncommitted, "the uncommitted changes on `stack-2` (`" + head + "`) in `" + dir + "`"},
 	} {
@@ -3554,5 +3557,474 @@ func TestAnnotateSkipsHunkGaps(t *testing.T) {
 			t.Fatalf("split=%v: real context line should accept comments", split)
 		}
 		m.diff.annotating = false
+	}
+}
+
+// gitRepoWithCommitStack builds main with one commit and a feature branch of
+// three: one starts a.go, two extends it and adds b.go, three adds c.go.
+func gitRepoWithCommitStack(t *testing.T) string {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	dir := t.TempDir()
+	runGit(t, dir, "init", "-b", "main")
+	runGit(t, dir, "config", "user.email", "t@t")
+	runGit(t, dir, "config", "user.name", "t")
+	writeRepoFile(t, dir, "base.go", "package a\n")
+	runGit(t, dir, "add", "-A")
+	runGit(t, dir, "commit", "-m", "base")
+	runGit(t, dir, "checkout", "-q", "-b", "feature")
+	for _, step := range []struct {
+		subject string
+		files   map[string]string
+	}{
+		{"one", map[string]string{"a.go": "package a\n\nfunc One() {}\n"}},
+		{"two", map[string]string{"a.go": "package a\n\nfunc One() {}\n\nfunc Two() {}\n", "b.go": "package a\n"}},
+		{"three", map[string]string{"c.go": "package a\n"}},
+	} {
+		for name, content := range step.files {
+			writeRepoFile(t, dir, name, content)
+		}
+		runGit(t, dir, "add", "-A")
+		runGit(t, dir, "commit", "-m", step.subject)
+	}
+	return dir
+}
+
+func gitRev(t *testing.T, dir, rev string) string {
+	t.Helper()
+	out, err := exec.Command("git", "-C", dir, "rev-parse", rev).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func (m *Model) diffPaths() []string {
+	var paths []string
+	for _, fd := range m.diff.set.Files {
+		paths = append(paths, fd.File.Path)
+	}
+	return paths
+}
+
+func (m *Model) commitSubjects() []string {
+	var subjects []string
+	for _, c := range m.diff.commits {
+		subjects = append(subjects, c.Subject)
+	}
+	return subjects
+}
+
+func openCommitScope(t *testing.T, m *Model, dir string) {
+	t.Helper()
+	openReviewOn(t, m, "stack", dir)
+	for m.diff.scope != git.ScopeCommit {
+		m.pressDiffKey(t, 's')
+	}
+	if m.diff.errText != "" {
+		t.Fatalf("commit scope load failed: %s", m.diff.errText)
+	}
+	m.pressDiffKey(t, '}')
+}
+
+// The commit scope opens on the oldest commit with a file left unreviewed,
+// and on HEAD once every commit is done.
+func TestCommitScopeStartsOnOldestUnreviewed(t *testing.T) {
+	m := buildModel(t)
+	dir := gitRepoWithCommitStack(t)
+	openReviewOn(t, m, "stack", dir)
+	enter := func() {
+		t.Helper()
+		for m.diff.scope != git.ScopeCommit {
+			m.pressDiffKey(t, 's')
+		}
+	}
+	enter()
+	if want := (commitPin{sha: gitRev(t, dir, "HEAD~2"), index: 2}); m.diff.commitPin != want {
+		t.Fatalf("pin = %+v, want the oldest %+v", m.diff.commitPin, want)
+	}
+	if at, total := m.commitPosition(); at != 1 || total != 3 {
+		t.Fatalf("position = %d/%d, want 1/3", at, total)
+	}
+	m.applyCmd(t, m.toggleReviewed())
+
+	m.pressDiffKey(t, 's')
+	enter()
+	if want := (commitPin{sha: gitRev(t, dir, "HEAD~1"), index: 1}); m.diff.commitPin != want {
+		t.Fatalf("pin = %+v, want two %+v once one is reviewed", m.diff.commitPin, want)
+	}
+	for i := range m.diff.set.Files {
+		m.diff.fileIdx = i
+		m.drainCmds(t, m.loadCurrentDiffFile())
+		m.drainCmds(t, m.toggleReviewed())
+	}
+	if !m.commitIsReviewed(m.diff.commits[1]) {
+		t.Fatalf("two should read reviewed, marks = %v", m.diff.reviewed[m.reviewKey()])
+	}
+
+	m.pressDiffKey(t, 's')
+	enter()
+	if m.diff.commitPin != (commitPin{}) {
+		t.Fatalf("pin = %+v, want HEAD once the older commits are reviewed", m.diff.commitPin)
+	}
+	rail := ansi.Strip(m.viewDiffFull())
+	for _, want := range []string{"commits  3/3", "✔ " + m.diff.commits[2].Short + " one", "✔ " + m.diff.commits[1].Short + " two", "○ " + m.diff.commits[0].Short + " three"} {
+		if !strings.Contains(rail, want) {
+			t.Fatalf("rail missing %q:\n%s", want, rail)
+		}
+	}
+}
+
+// commentOn leaves a draft on the first line of path holding text.
+func (m *Model) commentOn(t *testing.T, path, text, comment string) {
+	t.Helper()
+	for i, fd := range m.diff.set.Files {
+		if fd.File.Path == path {
+			m.diff.fileIdx = i
+		}
+	}
+	m.drainCmds(t, m.loadCurrentDiffFile())
+	fd := m.currentFileDiff()
+	if fd == nil || fd.File.Path != path {
+		t.Fatalf("%s is not in the set: %v", path, m.diffPaths())
+	}
+	m.diff.cursorLine = slices.IndexFunc(fd.Lines, func(line diff.Line) bool { return line.Text == text })
+	if m.diff.cursorLine < 0 {
+		t.Fatalf("no line %q in %s", text, path)
+	}
+	m.openAnnotate()
+	m.diff.annInput.SetValue(comment)
+	m.applyCmd(t, m.saveAnnotation())
+}
+
+func (m *Model) commentsShownOn(path string) []string {
+	fd := m.fileDiffByPath(path)
+	if fd == nil {
+		return nil
+	}
+	var shown []string
+	for _, line := range fd.Lines {
+		for _, note := range m.annotationsAt(path, line) {
+			shown = append(shown, note.text)
+		}
+	}
+	return shown
+}
+
+func TestCommitScopeStepsAndPicks(t *testing.T) {
+	m := buildModel(t)
+	dir := gitRepoWithCommitStack(t)
+	openCommitScope(t, m, dir)
+
+	if got, want := m.commitSubjects(), []string{"three", "two", "one"}; !slices.Equal(got, want) {
+		t.Fatalf("commits = %v, want %v", got, want)
+	}
+	if m.diff.commitPin != (commitPin{}) || m.diff.set.Commit != gitRev(t, dir, "HEAD") {
+		t.Fatalf("commit scope should open following HEAD, pin = %+v commit = %s", m.diff.commitPin, m.diff.set.Commit)
+	}
+	if header := ansi.Strip(m.viewDiffHeader("stack")); !strings.Contains(header, "L  3/3 "+m.diff.commits[0].Short+" three") || !strings.Contains(header, "main → feature") {
+		t.Fatalf("header should name the commit and target: %q", header)
+	}
+
+	m.pressDiffKey(t, '[')
+	if want := (commitPin{sha: gitRev(t, dir, "HEAD~1"), index: 1}); m.diff.commitPin != want {
+		t.Fatalf("pin = %+v, want %+v", m.diff.commitPin, want)
+	}
+	if got, want := m.diffPaths(), []string{"a.go", "b.go"}; !slices.Equal(got, want) {
+		t.Fatalf("files = %v, want %v", got, want)
+	}
+	m.pressDiffKey(t, '[')
+	m.pressDiffKey(t, '[')
+	if got, want := m.diffPaths(), []string{"a.go"}; !slices.Equal(got, want) || m.diff.commitPin.index != 2 {
+		t.Fatalf("stepping past the oldest should stop there, files = %v pin = %+v", got, m.diff.commitPin)
+	}
+	m.pressDiffKey(t, ']')
+	m.pressDiffKey(t, ']')
+	if m.diff.commitPin != (commitPin{}) {
+		t.Fatalf("reaching the newest should follow HEAD again, pin = %+v", m.diff.commitPin)
+	}
+
+	m.pressDiffKey(t, 'L')
+	if m.mode != modeRepoPick {
+		t.Fatalf("L should open the commit picker, mode = %v", m.mode)
+	}
+	m.typeAndEnter(t, "two")
+	if want := (commitPin{sha: gitRev(t, dir, "HEAD~1"), index: 1}); m.diff.commitPin != want {
+		t.Fatalf("picked pin = %+v, want %+v", m.diff.commitPin, want)
+	}
+}
+
+// A comment taken on one commit shows on that commit only, though the same
+// line sits in the same file of its neighbour.
+func TestCommitScopeKeepsCommentsOnTheirCommit(t *testing.T) {
+	m := buildModel(t)
+	dir := gitRepoWithCommitStack(t)
+	openCommitScope(t, m, dir)
+	m.pressDiffKey(t, '[')
+	m.commentOn(t, "a.go", "func One() {}", "on two")
+
+	m.pressDiffKey(t, '[')
+	m.drainCmds(t, m.loadCurrentDiffFile())
+	if got := m.commentsShownOn("a.go"); len(got) != 0 {
+		t.Fatalf("commit one shows %v, want none", got)
+	}
+	m.pressDiffKey(t, ']')
+	m.drainCmds(t, m.loadCurrentDiffFile())
+	if got, want := m.commentsShownOn("a.go"), []string{"on two"}; !slices.Equal(got, want) {
+		t.Fatalf("commit two shows %v, want %v", got, want)
+	}
+}
+
+// Following HEAD, a new commit starts clean: the previous HEAD's marks and
+// comments stay with it rather than reading as the new commit's.
+func TestCommitScopeNewCommitStartsClean(t *testing.T) {
+	m := buildModel(t)
+	dir := gitRepoWithCommitStack(t)
+	openCommitScope(t, m, dir)
+	m.commentOn(t, "c.go", "package a", "on three")
+	m.applyCmd(t, m.toggleReviewed())
+	if !m.fileReviewed("c.go") {
+		t.Fatal("precondition: c.go should be marked reviewed")
+	}
+
+	writeRepoFile(t, dir, "c.go", "package a\n\nfunc C() {}\n")
+	runGit(t, dir, "commit", "-am", "four")
+	m.refreshDiff(t)
+	m.drainCmds(t, m.loadCurrentDiffFile())
+	if m.diff.set.Commit != gitRev(t, dir, "HEAD") || m.fileReviewed("c.go") {
+		t.Fatalf("new HEAD should show unreviewed, commit = %s reviewed = %v", m.diff.set.Commit, m.fileReviewed("c.go"))
+	}
+	if got := m.commentsShownOn("c.go"); len(got) != 0 {
+		t.Fatalf("new HEAD shows %v, want none", got)
+	}
+
+	m.pressDiffKey(t, '[')
+	m.drainCmds(t, m.loadCurrentDiffFile())
+	if !m.fileReviewed("c.go") {
+		t.Fatal("the previous commit should keep its reviewed mark")
+	}
+	if got, want := m.commentsShownOn("c.go"), []string{"on three"}; !slices.Equal(got, want) {
+		t.Fatalf("previous commit shows %v, want %v", got, want)
+	}
+}
+
+// A rebase rewrites every commit; the pinned commit and the review state
+// taken on it follow to the replacement.
+func TestCommitScopeFollowsRebase(t *testing.T) {
+	m := buildModel(t)
+	dir := gitRepoWithCommitStack(t)
+	openCommitScope(t, m, dir)
+	m.pressDiffKey(t, '[')
+	old := m.diff.set.Commit
+	m.commentOn(t, "b.go", "package a", "on two")
+	m.applyCmd(t, m.toggleReviewed())
+
+	runGit(t, dir, "checkout", "-q", "main")
+	writeRepoFile(t, dir, "up.go", "package a\n")
+	runGit(t, dir, "add", "-A")
+	runGit(t, dir, "commit", "-m", "upstream")
+	runGit(t, dir, "checkout", "-q", "feature")
+	runGit(t, dir, "rebase", "-q", "main")
+	m.refreshDiff(t)
+	m.drainCmds(t, m.loadCurrentDiffFile())
+
+	rebased := gitRev(t, dir, "HEAD~1")
+	if want := (commitPin{sha: rebased, index: 1}); m.diff.commitPin != want {
+		t.Fatalf("pin = %+v, want %+v", m.diff.commitPin, want)
+	}
+	if want := "commit " + shortSHA(old) + " was rewritten as " + shortSHA(rebased); m.diff.notice != want {
+		t.Fatalf("notice = %q, want %q", m.diff.notice, want)
+	}
+	if !m.fileReviewed("b.go") {
+		t.Fatal("the reviewed mark should follow the rebased commit")
+	}
+	if got, want := m.commentsShownOn("b.go"), []string{"on two"}; !slices.Equal(got, want) {
+		t.Fatalf("rebased commit shows %v, want %v", got, want)
+	}
+	state, err := m.store.ReviewState(m.diff.sessID, m.diff.repoSel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Comments) != 1 || state.Comments[0].Scope != commitScopePrefix+rebased {
+		t.Fatalf("persisted comments = %+v, want one on %s", state.Comments, rebased)
+	}
+}
+
+// A dropped commit leaves nothing to match; review shows the commit now at
+// its place and says so.
+func TestCommitScopeFallsBackWhenCommitIsDropped(t *testing.T) {
+	m := buildModel(t)
+	dir := gitRepoWithCommitStack(t)
+	openCommitScope(t, m, dir)
+	m.pressDiffKey(t, '[')
+	old := m.diff.set.Commit
+
+	runGit(t, dir, "rebase", "-q", "--onto", "HEAD~2", "HEAD~1")
+	m.refreshDiff(t)
+
+	if got, want := m.commitSubjects(), []string{"three", "one"}; !slices.Equal(got, want) {
+		t.Fatalf("commits = %v, want %v", got, want)
+	}
+	if want := (commitPin{sha: gitRev(t, dir, "HEAD~1"), index: 1}); m.diff.commitPin != want {
+		t.Fatalf("pin = %+v, want %+v", m.diff.commitPin, want)
+	}
+	if want := "commit " + shortSHA(old) + " is no longer on the branch, showing " + m.diff.commits[1].Short; m.diff.notice != want {
+		t.Fatalf("notice = %q, want %q", m.diff.notice, want)
+	}
+}
+
+// Picking a target in the commit scope keeps the scope and bounds its list.
+func TestCommitScopeTargetBoundsTheList(t *testing.T) {
+	m := buildModel(t)
+	dir := gitRepoWithCommitStack(t)
+	runGit(t, dir, "branch", "partway", "HEAD~1")
+	openCommitScope(t, m, dir)
+
+	m.pressDiffKey(t, 'B')
+	m.typeAndEnter(t, "partway")
+	if m.diff.scope != git.ScopeCommit {
+		t.Fatalf("scope = %v, want commit", m.diff.scope)
+	}
+	if got, want := m.commitSubjects(), []string{"three"}; !slices.Equal(got, want) {
+		t.Fatalf("commits = %v, want %v", got, want)
+	}
+}
+
+func TestCommitScopeProbeAgreesWithLoad(t *testing.T) {
+	m := buildModel(t)
+	dir := gitRepoWithCommitStack(t)
+	openCommitScope(t, m, dir)
+	m.pressDiffKey(t, '[')
+	sess, _ := m.diffSession()
+	msg, ok := m.diffProbeCmd(sess, m.diff.scope)().(diffProbeMsg)
+	if !ok || msg.fp != m.diff.fingerprint {
+		t.Fatalf("probe fingerprint %d must match the load's %d", msg.fp, m.diff.fingerprint)
+	}
+}
+
+// A marks every listed file reviewed, loading the ones not opened yet, and
+// a second press clears them.
+func TestMarkAllReviewed(t *testing.T) {
+	m := buildModel(t)
+	dir := gitRepoWithCommitStack(t)
+	openCommitScope(t, m, dir)
+	m.pressDiffKey(t, '[')
+	if m.diff.set.Files[1].Loaded() {
+		t.Fatal("precondition: b.go should not be loaded before A")
+	}
+
+	m.pressDiffKey(t, 'A')
+	if !m.commitIsReviewed(m.diff.commits[1]) || m.diff.notice != "marked 2 files reviewed" {
+		t.Fatalf("A should mark the commit reviewed, marks = %v notice = %q", m.diff.reviewed[m.reviewKey()], m.diff.notice)
+	}
+	state, err := m.store.ReviewState(m.diff.sessID, m.diff.repoSel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !maps.Equal(state.Reviewed, m.diff.reviewed[m.reviewKey()]) {
+		t.Fatalf("persisted marks = %v, want %v", state.Reviewed, m.diff.reviewed[m.reviewKey()])
+	}
+
+	m.pressDiffKey(t, 'A')
+	if len(m.diff.reviewed[m.reviewKey()]) != 0 || m.diff.notice != "cleared 2 reviewed files" {
+		t.Fatalf("second A should clear, marks = %v notice = %q", m.diff.reviewed[m.reviewKey()], m.diff.notice)
+	}
+}
+
+// Clearing with A schedules no loads, so a file it passes over unloaded is
+// still loadable afterwards rather than stuck as loading.
+func TestMarkAllClearLeavesUnloadedFilesLoadable(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	openReviewOn(t, m, "two", gitRepoWithTwoChangedFiles(t))
+	m.pressDiffKey(t, 'A')
+	// A load that is no refresh brings back only the file under the cursor.
+	sess, _ := m.diffSession()
+	m.diff.gen++
+	m.drainCmds(t, m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false))
+	other := 1 - m.diff.fileIdx
+	path := m.diff.set.Files[other].File.Path
+	if m.diff.set.Files[other].Loaded() || !m.fileReviewed(path) {
+		t.Fatalf("precondition: %s should be marked reviewed but not loaded", path)
+	}
+
+	m.applyCmd(t, m.markAllReviewed())
+	if m.fileReviewed(path) || m.diff.fileLoading[other] {
+		t.Fatalf("clear should unmark %s without leaving it loading, fileLoading = %v", path, m.diff.fileLoading)
+	}
+	if m.loadDiffFile(other) == nil {
+		t.Fatalf("%s should still load after the clear", path)
+	}
+}
+
+func TestCommitPickerNeedsTheCommitScopeAndCommits(t *testing.T) {
+	m := buildModel(t)
+	openReviewOn(t, m, "stack", gitRepoWithCommitStack(t))
+	m.pressDiffKey(t, 'L')
+	if m.mode != modeDiff || m.errBar.text != "s to the commit scope first" {
+		t.Fatalf("L outside the commit scope: mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+
+	unborn := t.TempDir()
+	runGit(t, unborn, "init", "-q", "-b", "main")
+	openReviewOn(t, m, "empty", unborn)
+	for m.diff.scope != git.ScopeCommit {
+		m.pressDiffKey(t, 's')
+	}
+	m.pressDiffKey(t, 'L')
+	if m.mode != modeDiff || m.errBar.text != "no commits to review" {
+		t.Fatalf("L with no commits: mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+}
+
+// Stepping past either end says what is left rather than doing nothing.
+func TestCommitScopeEndsSayWhatIsLeft(t *testing.T) {
+	m := buildModel(t)
+	dir := gitRepoWithCommitStack(t)
+	openCommitScope(t, m, dir)
+	m.pressDiffKey(t, ']')
+	if want := "HEAD is the newest commit, 3 of 3 not fully reviewed"; m.diff.notice != want {
+		t.Fatalf("notice = %q, want %q", m.diff.notice, want)
+	}
+	m.pressDiffKey(t, '{')
+	m.pressDiffKey(t, '[')
+	if want := "oldest commit, 3 of 3 not fully reviewed"; m.diff.notice != want {
+		t.Fatalf("notice = %q, want %q", m.diff.notice, want)
+	}
+	for range m.diff.commits {
+		m.pressDiffKey(t, 'A')
+		m.pressDiffKey(t, ']')
+	}
+	if want := "all 3 commits reviewed"; m.diff.notice != want {
+		t.Fatalf("notice = %q, want %q", m.diff.notice, want)
+	}
+}
+
+// A step names the commit it is loading while the load runs, so the counter,
+// the rail and the header's pills move straight to it rather than through 0
+// or a blank header.
+func TestCommitStepHoldsPositionWhileLoading(t *testing.T) {
+	m := buildModel(t)
+	dir := gitRepoWithCommitStack(t)
+	openCommitScope(t, m, dir)
+	m.pressDiffKey(t, '{')
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
+	*m = *updated.(*Model)
+	if at, total := m.commitPosition(); at != 2 || total != 3 {
+		t.Fatalf("position while loading = %d/%d, want 2/3", at, total)
+	}
+	if rail := ansi.Strip(m.viewDiffFull()); !strings.Contains(rail, "commits  2/3") {
+		t.Fatalf("rail while loading should read 2/3:\n%s", rail)
+	}
+	if header := ansi.Strip(m.viewDiffHeader("stack")); !strings.Contains(header, "L  2/3 "+m.diff.commits[1].Short+" two") || !strings.Contains(header, "B  main → feature") {
+		t.Fatalf("header while loading = %q, want the target and the commit being loaded", header)
+	}
+	m.drainCmds(t, cmd)
+	if at, _ := m.commitPosition(); at != 2 {
+		t.Fatalf("position after load = %d, want 2", at)
 	}
 }

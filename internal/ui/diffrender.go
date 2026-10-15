@@ -21,6 +21,13 @@ const (
 	maxHighlightBytes = 256 << 10
 	highlightCacheCap = 8
 
+	// commitPillSubject caps the subject in the header's commit pill, which
+	// shares the line with the scope, repo and target pills.
+	commitPillSubject = 40
+	// maxRailCommits caps the rail's commit rows so the file list keeps
+	// most of the height.
+	maxRailCommits = 5
+
 	bgAdd     = "\x1b[48;2;22;42;22m"
 	bgDel     = "\x1b[48;2;48;24;24m"
 	bgAddSpan = "\x1b[48;2;38;74;38m"
@@ -581,8 +588,16 @@ func (m *Model) viewDiffFull() string {
 	// Files sit on the rail surface, the code on the backdrop: the same
 	// two-surface split the session list uses, so review reads as the same
 	// application rather than a second one.
-	fileLines := append([]string{"", strings.Repeat(" ", railInset) + subtleStyle.Render("files")},
-		indentLines(splitLines(m.viewDiffFileList(fileWidth-2*railGutter, bodyHeight-2)), railInset)...)
+	var fileLines []string
+	listHeight := bodyHeight - 2
+	if rows := m.viewDiffCommitRail(fileWidth-2*railGutter, listHeight/3); rows != "" {
+		at, total := m.commitPosition()
+		fileLines = append([]string{"", strings.Repeat(" ", railInset) + subtleStyle.Render("commits") + "  " + mutedStyle.Render(fmt.Sprintf("%d/%d", at, total))},
+			indentLines(splitLines(rows), railInset)...)
+		listHeight -= len(fileLines)
+	}
+	fileLines = append(fileLines, "", strings.Repeat(" ", railInset)+subtleStyle.Render("files"))
+	fileLines = append(fileLines, indentLines(splitLines(m.viewDiffFileList(fileWidth-2*railGutter, listHeight)), railInset)...)
 	codeLines := append([]string{"", "  " + subtleStyle.Render(escapeControlsInline(m.diffCodeTitle()))},
 		indentLines(splitLines(m.viewDiffCode(codeWidth-2*contentGutter, bodyHeight-2)), contentGutter)...)
 
@@ -646,15 +661,29 @@ func (m *Model) viewDiffHeader(sessName string) string {
 		}
 		left += "  " + keyPill("r", name, colorAccent)
 		branch := escapeControlsInline(m.diff.set.Repo.Branch)
-		if m.diff.scope == git.ScopeBranch && m.diff.set.BaseDesc != "" && branch != "" {
-			target := escapeControlsInline(stripBaseHash(m.diff.set.BaseDesc))
-			summary := target + " → " + branch
+		target := ""
+		switch m.diff.scope {
+		case git.ScopeBranch:
+			target = m.diff.set.BaseDesc
+		case git.ScopeCommit:
+			target = m.diff.commitTarget
+		}
+		if target != "" && branch != "" {
+			summary := escapeControlsInline(stripBaseHash(target)) + " → " + branch
 			if m.diff.set.BaseOverride == "" {
 				summary += " " + subtleStyle.Render("(auto)")
 			}
 			left += "  " + keyPill("B", summary, colorAccent)
 		} else if branch != "" {
 			left += "  " + subtleStyle.Render(branch)
+		}
+		if c, ok := m.shownCommit(); ok && m.diff.scope == git.ScopeCommit {
+			at, total := m.commitPosition()
+			label := fmt.Sprintf("%d/%d %s %s", at, total, c.Short, truncateTail(escapeControlsInline(c.Subject), commitPillSubject))
+			if m.diff.commitPin.sha == "" {
+				label += " " + subtleStyle.Render("(HEAD)")
+			}
+			left += "  " + keyPill("L", label, colorAccent)
 		}
 	}
 
@@ -686,7 +715,7 @@ func (m *Model) viewDiffHeader(sessName string) string {
 	if round := m.diff.rounds[m.reviewKey()]; round.Number > 0 {
 		label := fmt.Sprintf("Review round %d", round.Number)
 		if !m.diff.loading && round.Fingerprint != 0 &&
-			(round.Scope != m.diff.scope.String() || round.Fingerprint != m.diff.fingerprint) {
+			(round.Scope != m.scopeKey() || round.Fingerprint != m.diff.fingerprint) {
 			label += " · changed"
 		}
 		right += subtleStyle.Render(" · ") + annotationStyle.Render(label)
@@ -743,7 +772,7 @@ func (m *Model) viewDiffFileList(width, height int) string {
 	}
 	notes := map[string]int{}
 	for _, note := range m.diff.annotations[m.reviewKey()] {
-		if !note.handled {
+		if !note.handled && m.noteShown(&note) {
 			notes[note.file]++
 		}
 	}
@@ -787,6 +816,54 @@ func (m *Model) viewDiffFileList(width, height int) string {
 	}
 	if end < len(shown) {
 		b.WriteString(subtleStyle.Render(fmt.Sprintf("  ↓ %d more", len(shown)-end)))
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// viewDiffCommitRail lists the commit scope's commits oldest first, the one
+// in view marked, each with whether every file in it is reviewed. It shows
+// a window of at most maxRailCommits rows around the commit in view.
+func (m *Model) viewDiffCommitRail(width, height int) string {
+	commits := m.diff.commits
+	if m.diff.scope != git.ScopeCommit || len(commits) == 0 {
+		return ""
+	}
+	current := commitIndex(commits, m.viewedCommit())
+	cursor := 0
+	if current >= 0 {
+		cursor = len(commits) - 1 - current
+	}
+	start, end := scrollWindow(len(commits), cursor, max(min(height, maxRailCommits), 3))
+	var b strings.Builder
+	if start > 0 {
+		b.WriteString(subtleStyle.Render(fmt.Sprintf("  ↑ %d more", start)) + "\n")
+	}
+	for pos := start; pos < end; pos++ {
+		i := len(commits) - 1 - pos
+		c := commits[i]
+		glyph := subtleStyle.Render("○")
+		if m.commitIsReviewed(c) {
+			glyph = lipgloss.NewStyle().Foreground(colorFinished).Render("✔")
+		}
+		bar, subject := " ", valueStyle
+		if i == current {
+			bar = lipgloss.NewStyle().Foreground(colorAccent).Render("▎")
+			subject = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
+		}
+		tag := ""
+		if i == 0 {
+			tag = subtleStyle.Render("HEAD")
+		}
+		left := bar + glyph + " " + mutedStyle.Render(c.Short) + " "
+		budget := max(width-ansi.StringWidth(left)-ansi.StringWidth(tag)-1, 4)
+		row := left + subject.Render(truncateTail(escapeControlsInline(c.Subject), budget))
+		if tag != "" {
+			row += strings.Repeat(" ", max(width-ansi.StringWidth(row)-ansi.StringWidth(tag), 1)) + tag
+		}
+		b.WriteString(row + "\n")
+	}
+	if end < len(commits) {
+		b.WriteString(subtleStyle.Render(fmt.Sprintf("  ↓ %d more", len(commits)-end)))
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
@@ -1038,11 +1115,15 @@ func (m *Model) viewDiffFooter() string {
 	if m.diff.codeOnly {
 		filter = "all files"
 	}
+	review := [][2]string{
+		{"c", "comment"}, {"d", "remove/handle"}, {"C", send}, {"space", "reviewed"}, {"A", "all reviewed"},
+		{"s", "scope: " + m.diff.scope.String()}, {"r", repo}, {"b", "branch"}, {"B", "target"},
+	}
+	if m.diff.scope == git.ScopeCommit {
+		review = append(review, [2]string{"L", "commit"}, [2]string{"[ ]", "older/newer"}, [2]string{"{ }", "oldest/newest"})
+	}
 	return legendBar([]legendSection{
-		{title: "Review", pairs: [][2]string{
-			{"c", "comment"}, {"d", "remove/handle"}, {"C", send}, {"space", "reviewed"},
-			{"s", "scope: " + m.diff.scope.String()}, {"r", repo}, {"b", "branch"}, {"B", "target"},
-		}},
+		{title: "Review", pairs: review},
 		{title: "Move", quiet: true, pairs: [][2]string{
 			{"↑↓/jk", "scroll line"}, {"ctrl+d/ctrl+u", "half page"}, {"pgup/pgdn", "page"},
 			{"g/G", "top/bottom"}, {"tab/J K/shift+tab", "file"}, {"n/N", "change"},
