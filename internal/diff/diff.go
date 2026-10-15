@@ -105,7 +105,7 @@ func BuildSet(driver *git.Driver, cwd string, scope git.Scope, baseOverride stri
 		set.BaseRef = baseRef
 	case git.ScopeStaged, git.ScopeUncommitted:
 		set.BaseDesc = "HEAD"
-	case git.ScopeLastCommit:
+	case git.ScopeCommit:
 		set.BaseDesc = "HEAD~1"
 	}
 	if repo.Unborn && scope != git.ScopeUncommitted && scope != git.ScopeStaged {
@@ -259,10 +259,10 @@ func fileSides(driver *git.Driver, root string, scope git.Scope, baseRef string,
 		oldRef = "HEAD"
 	case git.ScopeStaged:
 		oldRef, newRef = "HEAD", ":0"
-	case git.ScopeLastCommit:
+	case git.ScopeCommit:
 		oldRef, newRef = baseRef, "HEAD"
 		if oldRef == "" {
-			oldRef = driver.LastCommitParent(root)
+			oldRef = driver.CommitParent(root, "HEAD")
 		}
 	case git.ScopeBranch:
 		oldRef, newRef = baseRef, "HEAD"

@@ -397,7 +397,7 @@ func (m *Model) applyStoredScope(sessionID string) {
 	case "branch":
 		m.diff.scope = git.ScopeBranch
 	case "last_commit":
-		m.diff.scope = git.ScopeLastCommit
+		m.diff.scope = git.ScopeCommit
 	case "staged":
 		m.diff.scope = git.ScopeStaged
 	case "uncommitted":
@@ -1853,7 +1853,7 @@ func scopePhrase(scope git.Scope) string {
 	switch scope {
 	case git.ScopeBranch:
 		return "the branch changes"
-	case git.ScopeLastCommit:
+	case git.ScopeCommit:
 		return "the last commit"
 	case git.ScopeStaged:
 		return "the staged changes"
