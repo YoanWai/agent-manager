@@ -1493,7 +1493,7 @@ func TestHeaderMarksUncountedFile(t *testing.T) {
 	}
 	t.Cleanup(func() { os.Chmod(locked, 0o644) })
 
-	set, err := diff.BuildSet(m.services.gitDrv, dir, git.ScopeUncommitted, "")
+	set, err := diff.BuildSet(m.services.gitDrv, dir, git.ScopeUncommitted, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -39,7 +39,7 @@ func (g SystemGit) Fingerprint(root string, scope git.Scope, baseRef string) (ui
 func (g SystemGit) Worktrees(root string) ([]git.Worktree, error) { return g.Driver.Worktrees(root) }
 
 func (g SystemGit) BuildSet(root string, scope git.Scope, baseOverride string) (diff.Set, error) {
-	return diff.BuildSet(g.Driver, root, scope, baseOverride)
+	return diff.BuildSet(g.Driver, root, scope, baseOverride, "")
 }
 
 func (g SystemGit) LoadFile(set diff.Set, index int) diff.FileDiff {
