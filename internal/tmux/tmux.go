@@ -585,9 +585,12 @@ const (
 )
 
 // An agent clears its composer within a frame of reading the Enter; one that
-// still holds the paste a second later dropped it, and gets it again.
+// still holds the paste after a second of a still pane dropped it, and gets
+// it again. A pane that keeps redrawing is still taking the Enter, so it is
+// waited on up to submitCap before the next one.
 const (
 	submitWait  = time.Second
+	submitCap   = 5 * time.Second
 	submitTries = 3
 )
 
@@ -621,7 +624,7 @@ func (d *Driver) pasteAndEnter(id, text string, drafted func() (bool, error)) er
 // paste, a bounded number of times, and reports a paste no Enter submitted.
 func (d *Driver) confirmSubmit(target string, drafted func() (bool, error)) error {
 	for try := 1; ; try++ {
-		cleared, err := composerCleared(drafted)
+		cleared, err := d.composerCleared(target, drafted)
 		if err != nil || cleared {
 			return err
 		}
@@ -634,8 +637,18 @@ func (d *Driver) confirmSubmit(target string, drafted func() (bool, error)) erro
 	}
 }
 
-func composerCleared(drafted func() (bool, error)) (bool, error) {
-	deadline := time.Now().Add(submitWait)
+// composerCleared waits for the composer to empty. Every redraw restarts
+// the wait: an agent that took the Enter can draw its turn starting before
+// it clears the composer, and an Enter pressed then lands on the empty
+// prompt that follows. A pane it cannot capture could be redrawing, so its
+// error is returned rather than taken for a still pane.
+func (d *Driver) composerCleared(target string, drafted func() (bool, error)) (bool, error) {
+	now := time.Now()
+	deadline, last := now.Add(submitWait), now.Add(submitCap)
+	pane, err := d.capturePlain(target)
+	if err != nil {
+		return false, err
+	}
 	for {
 		typed, err := drafted()
 		if err != nil {
@@ -644,10 +657,18 @@ func composerCleared(drafted func() (bool, error)) (bool, error) {
 		if !typed {
 			return true, nil
 		}
-		if time.Now().After(deadline) {
+		now = time.Now()
+		if now.After(deadline) || now.After(last) {
 			return false, nil
 		}
 		time.Sleep(echoPoll)
+		next, err := d.capturePlain(target)
+		if err != nil {
+			return false, err
+		}
+		if next != pane {
+			pane, deadline = next, time.Now().Add(submitWait)
+		}
 	}
 }
 
