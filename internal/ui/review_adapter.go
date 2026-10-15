@@ -109,7 +109,7 @@ func (m *Model) reviewLoadCmd(req uireview.LoadRequest) tea.Cmd {
 			}
 		}
 		override = cmp.Or(override, groupBase)
-		set, err := diff.BuildSet(driver, root, req.Scope, override)
+		set, err := diff.BuildSet(driver, root, req.Scope, override, "")
 		result.Set, result.Err = set, err
 		if err != nil {
 			return reviewLoadMsg{result: result}
