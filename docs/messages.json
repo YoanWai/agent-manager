@@ -1,5 +1,17 @@
 [
   {
+    "id": "v0420-windows-native",
+    "banner": "Windows runs natively",
+    "title": "v0.42.0: Windows runs natively",
+    "body": [
+      "Agent Manager now runs on Windows itself, on psmux 3.4 or newer with PowerShell 7.3 or newer.",
+      "On native Windows, Command Code stays on WSL2.",
+      "Press Enter for the full v0.42.0 release notes."
+    ],
+    "url": "https://github.com/YoanWai/agent-manager/releases/tag/v0.42.0",
+    "max_version": "0.42.0"
+  },
+  {
     "id": "v0400-model-reasoning-pickers",
     "banner": "Model + reasoning pickers are here!",
     "title": "v0.40.0: model and reasoning pickers are here!",
