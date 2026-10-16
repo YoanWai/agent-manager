@@ -4,6 +4,8 @@ import (
 	"errors"
 	"os/exec"
 	"testing"
+
+	"github.com/YoanWai/agent-manager/internal/testenv"
 )
 
 func fakeRun(outputs map[string]string, errs map[string]error) runner {
@@ -25,6 +27,7 @@ func fakeRun(outputs map[string]string, errs map[string]error) runner {
 const darwinKey = "defaults read -g AppleInterfaceStyle"
 
 func TestTimedRun(t *testing.T) {
+	testenv.SkipPOSIXShell(t)
 	out, err := timedRun("sh", "-c", `printf '%s' "$1"`, "sh", "hello")
 	if err != nil {
 		t.Fatalf("timedRun() error = %v", err)

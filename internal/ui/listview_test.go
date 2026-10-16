@@ -319,7 +319,7 @@ func TestComfortableGroupRowStacks(t *testing.T) {
 
 	lines := railText(t, m)
 	head := lineWith(t, lines, "fleet")
-	if !strings.Contains(lines[head], "●") && !strings.Contains(lines[head], "○") && !strings.Contains(lines[head], "◐") {
+	if !strings.ContainsAny(lines[head], "●○◐◌") {
 		t.Fatalf("group row should carry its dots inline: %q", lines[head])
 	}
 }
@@ -1907,5 +1907,16 @@ func TestComputerDiskAvailable(t *testing.T) {
 				t.Fatalf("disk line width %d exceeds %d: %q", got, width, plain)
 			}
 		}
+	}
+}
+
+// A group whose only agent is still starting is not empty: psmux's
+// PowerShell takes a second or two to draw, and the row read "no agents
+// yet" all that time.
+func TestGroupRollupCountsAStartingSession(t *testing.T) {
+	m := &Model{cfg: config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}}
+	m.sessions = []store.Session{{ID: "s1", Name: "beta", Tool: "claude", Group: "fleet", Status: status.Starting}}
+	if got := ansi.Strip(m.groupStatusGlyphs("fleet")); got != "◌ 1" {
+		t.Fatalf("group rollup = %q, want the starting session counted", got)
 	}
 }

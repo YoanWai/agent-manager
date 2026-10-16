@@ -1,11 +1,13 @@
 package ui
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -17,6 +19,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/testenv"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -201,6 +204,7 @@ func TestPendingRenameKeepsTheWorktreeDirectory(t *testing.T) {
 }
 
 func TestPendingRenameLetsAgentKeepWorking(t *testing.T) {
+	testenv.SkipPOSIXShell(t)
 	m := buildModel(t)
 	repo := seedRepo(t)
 	spawned := createWorktreeSession(t, m, "claude-7a72", repo)
@@ -1084,7 +1088,12 @@ func writeCodexRollout(t *testing.T, path, sessionID, cwd string, modTime time.T
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	line := `{"type":"session_meta","payload":{"session_id":"` + sessionID + `","cwd":"` + cwd + `"}}` + "\n"
+	// Marshalled, not spliced: a Windows path's backslashes are JSON escapes.
+	quotedCwd, err := json.Marshal(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := `{"type":"session_meta","payload":{"session_id":"` + sessionID + `","cwd":` + string(quotedCwd) + `}}` + "\n"
 	if err := os.WriteFile(path, []byte(line), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -1709,6 +1718,9 @@ func TestPendingInputWaitsForBetweenTurn(t *testing.T) {
 			m := buildModel(t)
 			tool := m.cfg.Tools["ready-tool"]
 			tool.Command = `sh -c 'printf "\033[2J\033[H❯ /compact\n⠋ working\n❯ "; IFS= read -r line; printf "\033[2J\033[H❯ /compact\n❯ "; while IFS= read -r line; do printf "\n❯ "; done'`
+			if runtime.GOOS == "windows" {
+				tool.Command = fixtureModeCommand(`prompt-loop --first '\033[2J\033[H❯ /compact\n⠋ working\n❯ ' --then '\033[2J\033[H❯ /compact\n❯ '`)
+			}
 			if signal == "rule" {
 				tool.Rules = []config.Rule{{State: status.Working, Pattern: "⠋ working"}}
 			} else {
@@ -1800,6 +1812,9 @@ func TestPendingInputLandsOnAnErroredPane(t *testing.T) {
 	m := buildModel(t)
 	tool := m.cfg.Tools["ready-tool"]
 	tool.Command = `sh -c 'printf "error: boom\n❯ "; while IFS= read -r line; do printf "\n❯ "; done'`
+	if runtime.GOOS == "windows" {
+		tool.Command = fixtureModeCommand(`prompt-loop --first 'error: boom\n❯ '`)
+	}
 	tool.Rules = []config.Rule{{State: status.Errored, Pattern: "error: boom"}}
 	m.cfg.Tools["ready-tool"] = tool
 	engine, err := status.NewEngine(m.cfg)
@@ -2066,6 +2081,9 @@ func TestClaudeTailFollowsTheLiveTranscript(t *testing.T) {
 		t.Fatalf("reply = %q, want the live transcript over a cached one of the same size and time", reply)
 	}
 
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod cannot deny reads on Windows")
+	}
 	liveProject := filepath.Dir(livePath)
 	if err := os.Chmod(liveProject, 0o000); err != nil {
 		t.Fatal(err)
@@ -2097,5 +2115,43 @@ func TestAnEndAfterTheTurnWaitsForTheSessionToRest(t *testing.T) {
 	}
 	if got, _ := p.store.Get(sess.ID); got.AfterTurn != store.AfterTurnKill {
 		t.Fatalf("reporting the end cleared the request before the manager acted: %q", got.AfterTurn)
+	}
+}
+
+// A manager restarting into an update waits on Windows as the new one's
+// parent, so the poll it ran has to end before the hand-over.
+func TestStopPollerEndsThePoll(t *testing.T) {
+	m := buildModel(t)
+	sent := make(chan tea.Msg, 16)
+	m.poller.interval = 10 * time.Millisecond
+	go m.poller.run(func(msg tea.Msg) {
+		select {
+		case sent <- msg:
+		default:
+		}
+	})
+	select {
+	case <-sent:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the poll never ran")
+	}
+	stopped := make(chan struct{})
+	go func() {
+		m.StopPoller()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+	case <-time.After(10 * time.Second):
+		t.Fatal("StopPoller did not return")
+	}
+	// The last result can still be on its way to the UI.
+	time.Sleep(100 * time.Millisecond)
+	for len(sent) > 0 {
+		<-sent
+	}
+	time.Sleep(200 * time.Millisecond)
+	if len(sent) != 0 {
+		t.Fatal("the poll kept running after StopPoller")
 	}
 }

@@ -1,12 +1,16 @@
 package ui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 )
 
 func runeKey(s string) tea.KeyMsg {
@@ -506,4 +510,77 @@ func TestHelpSessionRowsFollowTheKeyTable(t *testing.T) {
 	if desc, ok := rowFor(pinned, "ctrl+b"); !ok || desc != "attached: tmux's prefix, in place of yours" {
 		t.Errorf("tmux_prefix row = %q, %v", desc, ok)
 	}
+}
+
+func typeHelpSearch(m *Model, query string, finish bool) {
+	m.handleHelpKey(runeKey("/"))
+	for _, r := range query {
+		m.handleHelpKey(runeKey(string(r)))
+	}
+	if finish {
+		m.handleHelpKey(namedKey(tea.KeyEnter))
+	}
+}
+
+// The help screens are pinned byte for byte so a restructure of the help
+// code has to leave what the user sees unchanged.
+func TestHelpMatchesBaselineContentAndLayout(t *testing.T) {
+	previousProfile := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(previousProfile) })
+	previousTheme := current
+	applyTheme(themes[0])
+	t.Cleanup(func() { applyTheme(previousTheme) })
+
+	review := &Model{width: 120, height: 30, mode: modeDiff, diff: diffState{active: true}, arrowStep: true, keys: keybind.DefaultSession(), listKeys: keybind.DefaultList()}
+	review.openHelp()
+	tests := []struct {
+		name         string
+		model        *Model
+		assertCursor bool
+	}{
+		{name: "global", model: helpModel()},
+		{name: "search_ime", model: helpModel(), assertCursor: true},
+		{name: "review", model: review},
+		{name: "narrow_error", model: helpModel()},
+	}
+	tests[1].model.width, tests[1].model.height = 100, 28
+	tests[1].model.imeCursor = &cursorAnchor{}
+	typeHelpSearch(tests[1].model, "中文", false)
+	tests[3].model.width, tests[3].model.height = 60, 14
+	tests[3].model.errBar = errBar{text: "refresh failed"}
+	typeHelpSearch(tests[3].model, "zzzz", true)
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			golden, err := os.ReadFile(filepath.Join("testdata", "help", test.name+".txt"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := readableHelpFrame(test.model.View())
+			want := strings.TrimSuffix(string(golden), "\n")
+			if got != want {
+				t.Fatalf("help content and layout changed:\nwant:\n%s\n\ngot:\n%s", want, got)
+			}
+			if test.assertCursor {
+				if _, _, ok := test.model.imeCursor.get(); !ok {
+					t.Fatal("search frame did not publish its IME cursor")
+				}
+			}
+		})
+	}
+}
+
+func readableHelpFrame(frame string) string {
+	lines := strings.Split(ansi.Strip(frame), "\n")
+	for i := range lines {
+		lines[i] = strings.TrimRight(lines[i], " ")
+	}
+	for len(lines) > 0 && lines[0] == "" {
+		lines = lines[1:]
+	}
+	for len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return strings.Join(lines, "\n")
 }

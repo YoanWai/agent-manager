@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 
 	"github.com/YoanWai/agent-manager/internal/catalog"
 	"github.com/YoanWai/agent-manager/internal/cli"
@@ -120,8 +119,14 @@ func subcommands() map[string]func(args []string) error {
 		"mcp": withConfigDir(func(args []string, caller func() string, configDir string) error {
 			return mcpserver.Run(configDir, caller(), version)
 		}),
+		"track-conversation": withConfigDir(func(args []string, _ func() string, configDir string) error {
+			return sessioncmd.TrackConversation(configDir, args, os.Stdin)
+		}),
+		"follow-telemetry": withConfigDir(func(args []string, _ func() string, configDir string) error {
+			return sessioncmd.FollowTelemetry(configDir, args)
+		}),
 	}
-	for name, command := range cli.Commands(version) {
+	for name, command := range cli.Commands(version, ui.SettingSpecs) {
 		table[name] = withConfigDir(command)
 	}
 	return table
@@ -250,10 +255,12 @@ func run() error {
 	ui.ResetTerminalColors()
 	if runErr == nil {
 		if finished, ok := final.(*ui.Model); ok && finished.RestartPath() != "" {
-			// A self-update swapped the binary on disk; exec replaces this
-			// process with the new build so the manager comes back updated
-			// without touching the tmux sessions it manages.
-			return syscall.Exec(finished.RestartPath(), os.Args, os.Environ())
+			// A self-update swapped the binary on disk; restart hands over
+			// to the new build so the manager comes back updated without
+			// touching the tmux sessions it manages. On Windows this process
+			// waits as the new one's parent, so its poll stops first.
+			finished.StopPoller()
+			return restart(finished.RestartPath())
 		}
 	}
 	return runErr

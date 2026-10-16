@@ -18,13 +18,24 @@ agent-manager manages the workspace around agent TUIs. Each TUI owns its models,
 
 This is a project sustainability constraint. Provider-specific features multiply the maintenance burden across features, providers, and upstream releases. A growing collection of individually useful integrations can become impossible to keep working. Supporting a TUI means making it usable in the workspace; it does not commit agent-manager to exposing every feature that provider offers.
 
-- Prefer workspace features that work across tools with little or no provider-specific code. Evaluate the ongoing cost across all supported providers before adding an integration; ease of implementing the first provider is not enough.
+- Prefer workspace features that work across tools with little or no provider-specific code. New shared behavior covers every applicable tool in the same PR. Evaluate the ongoing cost across all supported providers before adding an integration. Ease of implementing the first provider is not enough.
 - Preserve each tool's defaults and the user's configuration. Add launch flags or configuration only when required for session management or explicitly requested by the user; do not choose a model on their behalf.
 - Do not hardcode model names, model catalogs, or other values that change with upstream releases. Leave those choices in the underlying TUI unless a documented, stable interface can discover them dynamically.
 - Design shared controls for all supported TUIs. Dynamic discovery for one tool alone does not justify a shared model selector: establish reliable discovery across the supported tools and how unavailable capabilities are handled before adding the control.
 - Prefer stable, documented interfaces. Avoid version checks, private configuration formats, and parsing human-facing output to recreate upstream settings. If a feature needs those mechanisms, keep it in the underlying TUI.
 - Status detection already carries an ongoing maintenance cost. Keep necessary tool-specific detection isolated; it is not a precedent for adding more coupling. Missing discovery or an unrecognized status must leave ordinary launch and interaction usable.
 - Judge every integration by what happens when an upstream tool updates, across all supported TUIs. Verify the interface and failure behavior; prefer a smaller dependable feature over one that needs recurring fixes for individual tools or versions.
+
+Tool-specific fixes and support for a new CLI can be narrow. A new feature for
+only some tools needs an explicit maintainer decision under the
+[tool coverage policy](REVIEW.md#tool-coverage). A documented upstream capability
+can justify an exception, but first show why the feature belongs in the manager,
+why an existing shared path cannot meet the need, and what it costs to maintain.
+Listing exclusions or promising the other tools later does not justify merging.
+Contributors who cannot or do not plan to cover the other applicable tools
+start with an issue and may offer a draft PR as a reference implementation.
+The [tool coverage policy](REVIEW.md#tool-coverage) defines when it can be
+considered for merge.
 
 ## Brand Personality
 

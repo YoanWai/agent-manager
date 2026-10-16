@@ -314,7 +314,13 @@ func openReadOnly(path string) (*sql.DB, error) {
 	if _, err := os.Stat(path); err != nil {
 		return nil, err
 	}
-	dsn := url.URL{Scheme: "file", Path: filepath.ToSlash(path)}
+	// A Windows path (C:/...) needs a leading slash, or SQLite reads the drive
+	// as the URI authority (file://C:/...) and refuses to open it.
+	dbPath := filepath.ToSlash(path)
+	if filepath.VolumeName(path) != "" && !strings.HasPrefix(dbPath, "/") {
+		dbPath = "/" + dbPath
+	}
+	dsn := url.URL{Scheme: "file", Path: dbPath}
 	query := dsn.Query()
 	query.Set("mode", "ro")
 	dsn.RawQuery = query.Encode()
@@ -492,11 +498,11 @@ func hermesStateDB() string {
 		return filepath.Join(root, "state.db")
 	}
 	if root == "" {
-		home, err := os.UserHomeDir()
+		home, err := hermesDefaultHome()
 		if err != nil {
 			return ""
 		}
-		root = filepath.Join(home, ".hermes")
+		root = home
 	}
 	if data, err := os.ReadFile(filepath.Join(root, "active_profile")); err == nil {
 		profile := strings.TrimSpace(string(data))
@@ -605,6 +611,12 @@ var opencodeIDPattern = regexp.MustCompile(`ses_[A-Za-z0-9]+`)
 // from us, and it goes on to name a session and reach a command line, so
 // one shaped like anything else is left where it was found.
 var sessionIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
+
+// ValidSessionID reports whether an id an agent reported has the shape a
+// conversation id is allowed to take before it reaches a command line.
+func ValidSessionID(id string) bool {
+	return sessionIDPattern.MatchString(id)
+}
 
 // opencodeListIDs returns session ids newest-first from `opencode session
 // list` run in cwd. A package variable so tests substitute canned output.

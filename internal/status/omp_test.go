@@ -13,7 +13,9 @@ func ompFrame(t *testing.T, name string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return string(data)
+	// A Windows checkout with core.autocrlf holds the fixtures with CRLF
+	// endings; the panes the engine matches use LF.
+	return strings.ReplaceAll(string(data), "\r\n", "\n")
 }
 
 // omp 18.2.11 fixtures are captures of the real TUI in its default band

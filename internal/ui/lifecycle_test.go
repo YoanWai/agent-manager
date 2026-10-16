@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
@@ -386,9 +388,9 @@ func TestAttachDoneOpensReviewWhenMarkerSet(t *testing.T) {
 	createSession(t, m, "reviewme", t.TempDir(), "")
 	m.selectSessionRow(t, "reviewme")
 	sess := m.sessionRows()[0]
-	clearRequestOnCleanup(t, m)
+	clearRequestOnCleanup(t, m, sess.ID)
 
-	if _, err := tmuxCmd("set-option", "-g", "@am_request", tmux.RequestReview).CombinedOutput(); err != nil {
+	if _, err := sessionTmuxCmd(sess.ID, "set-option", "-g", "@am_request", tmux.RequestReview).CombinedOutput(); err != nil {
 		t.Fatalf("set marker: %v", err)
 	}
 	updated, _ := m.Update(attachDoneMsg{sessID: sess.ID})
@@ -397,7 +399,7 @@ func TestAttachDoneOpensReviewWhenMarkerSet(t *testing.T) {
 		t.Fatalf("marker set should enter review, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 
-	request, err := m.tmux.PendingRequest()
+	request, err := m.tmux.PendingRequest(sess.ID)
 	if err != nil {
 		t.Fatalf("PendingRequest: %v", err)
 	}
@@ -410,7 +412,7 @@ func TestAttachDoneStaysInListWithoutMarker(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "plainexit", t.TempDir(), "")
 	m.selectSessionRow(t, "plainexit")
-	if err := m.tmux.ClearRequest(); err != nil {
+	if err := m.tmux.ClearRequest(m.sessionRows()[0].ID); err != nil {
 		t.Fatalf("clear marker: %v", err)
 	}
 
@@ -671,7 +673,7 @@ func TestReviveRecreatesDeadSession(t *testing.T) {
 	}
 }
 
-func TestReviveKillsNewPaneWhenLaunchTimeCannotPersist(t *testing.T) {
+func TestReviveOfADeletedRowLeavesNoPane(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "phoenix", t.TempDir(), "")
 
@@ -683,12 +685,39 @@ func TestReviveKillsNewPaneWhenLaunchTimeCannotPersist(t *testing.T) {
 		t.Fatalf("delete: %v", err)
 	}
 
-	err := m.reviveSession(sess)
+	_, err := m.reviveSession(sess)
 	if !errors.Is(err, store.ErrSessionGone) {
 		t.Fatalf("revive error = %v, want ErrSessionGone", err)
 	}
 	if m.tmux.Exists(sess.ID) {
-		t.Fatal("failed revive must kill the newly created tmux session")
+		t.Fatal("a failed revive must leave no tmux session behind")
+	}
+}
+
+// The pane is told its launch before it starts, so a stamp the row cannot
+// take leaves an agent whose every report would wait on a launch the row
+// never records. The new pane goes again.
+func TestRelaunchKillsTheNewPaneWhenItsLaunchCannotPersist(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "phoenix", t.TempDir(), "")
+	sess := m.sessionRows()[0]
+	if err := m.tmux.Kill(sess.ID); err != nil {
+		t.Fatalf("kill: %v", err)
+	}
+	tool := m.cfg.Tools[sess.Tool]
+	bind := func(launchedAt time.Time) error {
+		if err := m.store.Delete(sess.ID); err != nil {
+			return err
+		}
+		return m.store.SetAgentLaunchedAt(sess.ID, launchedAt)
+	}
+
+	err := m.relaunchSession(sess, tool, tool.Command, status.Starting, bind)
+	if !errors.Is(err, store.ErrSessionGone) {
+		t.Fatalf("relaunch error = %v, want ErrSessionGone", err)
+	}
+	if m.tmux.Exists(sess.ID) {
+		t.Fatal("the pane started for a launch the row never recorded is still running")
 	}
 }
 
@@ -748,8 +777,78 @@ func TestDegradedResumeNoticeWarnsOnlyForBlindFallbacks(t *testing.T) {
 // manager appended to it and then holds the pane open, so a test can prove
 // which flags a launch carried.
 func argCaptureCommand(argsFile string) string {
+	if runtime.GOOS == "windows" {
+		return fixtureModeCommand("capture-args") + " " + tmux.ShellQuote(argsFile)
+	}
 	script := `printf '%s\n' "$@" > ` + tmux.ShellQuote(argsFile) + `; cat`
 	return "sh -c " + tmux.ShellQuote(script) + " sh"
+}
+
+// launchCaptureCommand records the launch the agent was told it belongs to,
+// then its arguments, one per line.
+func launchCaptureCommand(argsFile string) string {
+	if runtime.GOOS == "windows" {
+		return argCaptureCommand(argsFile) + " $env:" + hooks.EnvLaunch
+	}
+	script := `printf '%s\n' "$` + hooks.EnvLaunch + `" "$@" > ` + tmux.ShellQuote(argsFile) + `; cat`
+	return "sh -c " + tmux.ShellQuote(script) + " sh"
+}
+
+// The listed row is a poll old, and the agent reported a switch since: the
+// revive resumes the conversation the store holds, under the launch the new
+// pane was told it is.
+func TestReviveResumesTheStoredConversationOverAStaleListedRow(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "phoenix", t.TempDir(), "")
+	listed := m.sessionRows()[0]
+	argsFile := filepath.Join(t.TempDir(), "launch-args")
+	tool := m.cfg.Tools[listed.Tool]
+	tool.ResumeByIDCommand = launchCaptureCommand(argsFile) + " --resume {id}"
+	m.cfg.Tools[listed.Tool] = tool
+	if err := m.tmux.Kill(listed.ID); err != nil {
+		t.Fatalf("kill: %v", err)
+	}
+	if result, err := m.store.ReportAgentSessionID(listed.ID, listed.Tool, "switched", 0); err != nil || result != store.ReportAdopted {
+		t.Fatalf("report: %v %v", result, err)
+	}
+
+	revived, err := m.reviveSession(listed)
+	if err != nil {
+		t.Fatalf("revive: %v", err)
+	}
+	stored, err := m.store.Get(listed.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if revived.AgentSessionID != "switched" || stored.AgentSessionID != "switched" {
+		t.Fatalf("revived %q, stored %q, want switched", revived.AgentSessionID, stored.AgentSessionID)
+	}
+	want := fmt.Sprintf("%d\n--resume\nswitched\n", store.LaunchStamp(stored.AgentLaunchedAt))
+	if args := readWhenWritten(t, argsFile); !strings.HasPrefix(args, want) || stored.AgentLaunchedAt.IsZero() {
+		t.Fatalf("launch = %q, want it to open with %q", args, want)
+	}
+}
+
+func TestRestartStampsTheLaunchItExported(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "phoenix", t.TempDir(), "")
+	sess := m.sessionRows()[0]
+	argsFile := filepath.Join(t.TempDir(), "launch-args")
+	tool := m.cfg.Tools[sess.Tool]
+	tool.Command = launchCaptureCommand(argsFile)
+	tool.SessionIDFlag = "--session-id"
+	m.cfg.Tools[sess.Tool] = tool
+	if err := m.restartSession(sess); err != nil {
+		t.Fatalf("restart: %v", err)
+	}
+	stored, err := m.store.Get(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf("%d\n--session-id\n%s\n", store.LaunchStamp(stored.AgentLaunchedAt), stored.AgentSessionID)
+	if args := readWhenWritten(t, argsFile); !strings.HasPrefix(args, want) || stored.AgentLaunchedAt.IsZero() {
+		t.Fatalf("launch = %q, want it to open with %q", args, want)
+	}
 }
 
 // readWhenWritten waits for content, not merely for the file: the launching
@@ -1111,6 +1210,8 @@ func TestArchiveAbortsWhenSnapshotFails(t *testing.T) {
 	}
 
 	m.selectSessionRow(t, "alpha")
+	// Archive snapshots only a pane that has drawn.
+	waitForPreview(t, m)
 	m.archiveSelected()
 	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.applyCmd(t, cmd)
@@ -1301,7 +1402,7 @@ func waitForPane(t *testing.T, m *Model, id, marker string) {
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		pane, err := m.tmux.CapturePane(id)
-		if err == nil && strings.Contains(pane, marker) {
+		if err == nil && strings.Contains(ansi.Strip(pane), marker) {
 			return
 		}
 		if time.Now().After(deadline) {
@@ -1527,7 +1628,7 @@ func TestReviveBatchSkipsASessionBackBeforeTheAnswer(t *testing.T) {
 		t.Fatalf("mode = %v, want the revive card (err %q)", m.mode, m.errBar.text)
 	}
 	alpha := sessionRow(t, m, "alpha").sess
-	if err := m.reviveSession(alpha); err != nil {
+	if _, err := m.reviveSession(alpha); err != nil {
 		t.Fatalf("revive alpha while the card is open: %v", err)
 	}
 	m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
@@ -2090,6 +2191,11 @@ func TestReviveStartsTheAgentAgainInALivePane(t *testing.T) {
 	// survives the settings flag a hooked tool launches with.
 	hooked := m.cfg.Tools[sess.Tool]
 	hooked.Command = "sh -c 'cat'"
+	assignment := func(key, value string) string { return key + "='" + value + "'" }
+	if runtime.GOOS == "windows" {
+		hooked.Command = fixtureModeCommand("cat-stdin")
+		assignment = func(key, value string) string { return "$env:" + key + " = '" + value + "'" }
+	}
 	hooked.StatusSource = "claude-hooks"
 	m.cfg.Tools[sess.Tool] = hooked
 	quitAgent(t, m, sess.ID)
@@ -2113,11 +2219,11 @@ func TestReviveStartsTheAgentAgainInALivePane(t *testing.T) {
 		t.Fatalf("capture: %v", err)
 	}
 	// The pane wraps the line it was sent at its own width.
-	typed := strings.ReplaceAll(pane, "\n", "")
-	if !strings.Contains(typed, "AGENT_MANAGER_SESSION_ID='"+sess.ID+"'") {
+	typed := strings.ReplaceAll(ansi.Strip(pane), "\n", "")
+	if !strings.Contains(typed, assignment("AGENT_MANAGER_SESSION_ID", sess.ID)) {
 		t.Fatalf("relaunch did not carry the session identity; pane:\n%s", pane)
 	}
-	if !strings.Contains(typed, "AGENT_MANAGER_STATUS_FILE='"+m.hooks.StatusFile(sess.ID)+"'") {
+	if !strings.Contains(typed, assignment("AGENT_MANAGER_STATUS_FILE", m.hooks.StatusFile(sess.ID))) {
 		t.Fatalf("relaunch did not carry the hook status file; pane:\n%s", pane)
 	}
 	got, err := m.store.Get(sess.ID)
@@ -2139,6 +2245,10 @@ func TestReviveStartsTheAgentAgainInALivePane(t *testing.T) {
 	waitForAgent(t, m, sess.ID, false)
 	marker := filepath.Join(t.TempDir(), "env")
 	report := `printf '%s %s\n' "$AGENT_MANAGER_SESSION_ID" "$AGENT_MANAGER_STATUS_FILE" > ` + marker + `.part && mv ` + marker + `.part ` + marker
+	if runtime.GOOS == "windows" {
+		report = `Set-Content -LiteralPath ` + tmux.ShellQuote(marker+".part") + ` -Value "$env:AGENT_MANAGER_SESSION_ID $env:AGENT_MANAGER_STATUS_FILE"; ` +
+			`Move-Item -LiteralPath ` + tmux.ShellQuote(marker+".part") + ` -Destination ` + tmux.ShellQuote(marker)
+	}
 	if err := m.tmux.SendKeys(sess.ID, report, "Enter"); err != nil {
 		t.Fatalf("read the shell environment: %v", err)
 	}
@@ -2531,7 +2641,7 @@ func TestASessionAskingToBeArchivedGoesOnceItsTurnEnds(t *testing.T) {
 	if got.AfterTurn != "" {
 		t.Fatalf("the request outlived its archive: %q", got.AfterTurn)
 	}
-	if snapshot, _ := m.store.Snapshot(sess.ID); !strings.Contains(snapshot, "last words") {
+	if snapshot, _ := m.store.Snapshot(sess.ID); !strings.Contains(ansi.Strip(snapshot), "last words") {
 		t.Fatalf("the archived row lost its last screen: %q", snapshot)
 	}
 	if len(m.sessionRows()) != 0 {

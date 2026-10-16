@@ -3,6 +3,7 @@
 package atomicfile
 
 import (
+	"bytes"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -12,6 +13,15 @@ import (
 // path. The destination directory is created when needed.
 func WriteFile(path string, data []byte, perm fs.FileMode) error {
 	return writeFile(path, data, perm, os.CreateTemp)
+}
+
+// WriteIfChanged writes a generated file only when its content changed, so
+// concurrent launches reading the same path never see it rewritten.
+func WriteIfChanged(path string, data []byte, perm fs.FileMode) error {
+	if existing, err := os.ReadFile(path); err == nil && bytes.Equal(existing, data) {
+		return nil
+	}
+	return WriteFile(path, data, perm)
 }
 
 func writeFile(path string, data []byte, perm fs.FileMode, createTemp func(string, string) (*os.File, error)) error {

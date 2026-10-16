@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/mcpreg"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -186,6 +188,7 @@ func TestInboxAsksForAReplyOnlyFromAnAgent(t *testing.T) {
 		t.Run(testCase.senderTool, func(t *testing.T) {
 			m := buildModel(t)
 			sess := spawnedSession(t, m, "claude-hooked")
+			waitForPaneChild(t, m, sess.ID, hookedCatProcess())
 			if err := m.store.CreateSession(store.Session{
 				ID: "sender01", Name: "payments-fix", Tool: testCase.senderTool,
 				Cwd: t.TempDir(), Status: status.Idle,
@@ -198,7 +201,7 @@ func TestInboxAsksForAReplyOnlyFromAnAgent(t *testing.T) {
 				t.Fatalf("maybeDeliverInbox: %v", err)
 			}
 			pane := settledPane(t, m, sess.ID, "rebase on main", "wait for them.", testCase.marker)
-			if got := strings.Contains(strings.ReplaceAll(pane, "\n", ""), "agent-manager send sender01"); got == testCase.fromShell {
+			if got := strings.Contains(strings.ReplaceAll(ansi.Strip(pane), "\n", ""), "agent-manager send sender01"); got == testCase.fromShell {
 				t.Fatalf("reply line present = %v for a sender from a shell = %v:\n%s", got, testCase.fromShell, pane)
 			}
 
@@ -519,7 +522,7 @@ func TestInboxHoldsAMessageWhileSomeoneIsTypingAtThePrompt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(strings.ReplaceAll(after, "\n", ""), "rebase on main") {
+	if strings.Contains(strings.ReplaceAll(ansi.Strip(after), "\n", ""), "rebase on main") {
 		t.Fatalf("the message reached a pane someone was typing in:\n%s", after)
 	}
 	// The hold is the typed line, not the session: once it is gone the same
@@ -557,6 +560,55 @@ func TestInboxRecordsAMessageItCouldNotTypeAsDropped(t *testing.T) {
 	}
 	if queued, _ := m.store.QueuedCount(sess.ID); queued != 0 {
 		t.Fatal("a dropped message was left to be retried")
+	}
+}
+
+// A tool that draws a multi-line paste as a placeholder never shows the
+// message's opening line, and one busy enough can swallow the Enter after
+// it. The composer filling is the echo and the composer emptying is the
+// submit, so a swallowed Enter is pressed again.
+func TestInboxPressesEnterAgainWhileThePasteSitsInTheComposer(t *testing.T) {
+	m := buildModel(t)
+	sess := spawnedSession(t, m, "collapsing-tool")
+	id := queueMessage(t, m, sess.ID, "rebase on main\nthen run the suite")
+	pane := settledPane(t, m, sess.ID, "❯")
+
+	if _, err := m.poller.maybeDeliverInbox(sess, pane, status.Idle, true); err != nil {
+		t.Fatalf("maybeDeliverInbox: %v", err)
+	}
+	state, err := m.store.Message(id, "sender01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.DeliveredAt.IsZero() || !state.DroppedAt.IsZero() {
+		t.Fatalf("a message the second Enter submitted was recorded as %+v", state)
+	}
+	if after, err := m.tmux.CapturePane(sess.ID); err != nil || !strings.HasSuffix(strings.TrimRight(ansi.Strip(after), "\n "), "❯") {
+		t.Fatalf("the composer still holds the paste (%v):\n%s", err, after)
+	}
+}
+
+// A paste no Enter submits never reached the agent. Recording it as
+// delivered leaves its sender waiting on a reply that cannot come.
+func TestInboxRecordsAPasteNoEnterSubmittedAsDropped(t *testing.T) {
+	m := buildModel(t)
+	sess := spawnedSession(t, m, "stuck-tool")
+	id := queueMessage(t, m, sess.ID, "rebase on main\nthen run the suite")
+	pane := settledPane(t, m, sess.ID, "❯")
+
+	_, err := m.poller.maybeDeliverInbox(sess, pane, status.Idle, true)
+	if !errors.Is(err, tmux.ErrUnsubmitted) {
+		t.Fatalf("an unsubmitted paste reported %v", err)
+	}
+	state, err := m.store.Message(id, "sender01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.DroppedAt.IsZero() {
+		t.Fatalf("an unsubmitted paste was recorded as %+v", state)
+	}
+	if queued, _ := m.store.QueuedCount(sess.ID); queued != 0 {
+		t.Fatal("an unsubmitted paste was left to be typed again")
 	}
 }
 
@@ -763,9 +815,10 @@ func settledPane(t *testing.T, m *Model, sessionID string, markers ...string) st
 }
 
 // The envelope wraps at the pane width, and tmux wraps without inserting
-// anything, so the unwrapped text is the joined rows.
+// anything, so the unwrapped text is the joined rows. The escapes go first:
+// psmux closes every captured row with an SGR reset.
 func containsAll(pane string, markers []string) bool {
-	flat := strings.ReplaceAll(pane, "\n", "")
+	flat := strings.ReplaceAll(ansi.Strip(pane), "\n", "")
 	for _, marker := range markers {
 		if !strings.Contains(flat, marker) {
 			return false

@@ -98,23 +98,39 @@ reviews:
       - name: "Tool and platform coverage"
         mode: warning
         instructions: >-
-          This project supports every agent CLI in builtinTools
-          (internal/config/config.go), every platform .goreleaser.yaml
-          builds plus WSL2 (internal/wsl), and every terminal the manager
-          runs in, locally or over SSH, on tmux 3.1 and later. Fail when new
-          behavior reaches only some of them: a runtime.GOOS branch or a
-          command that exists on one platform, a Linux branch that assumes a
-          desktop WSL2 lacks, a path built from one platform's separator or
-          home layout, a feature that talks to the terminal (clipboard,
-          links, notifications, theme, mouse) and works only when
-          TERM_PROGRAM, TERM, or SSH_CONNECTION matches, a tmux feature gated
-          on a version newer than 3.1 with no fallback, a switch or lookup
-          keyed on tool name that handles a subset of the tools it affects,
-          or a field or status rule added to one [tools.*] block that the
-          others need too. A PR description that names the excluded
-          values and what supporting them would take passes. Adding support
-          for a new tool is itself coverage, so pass it. Return Inconclusive
-          when the diff carries no evidence either way.
+          Evaluate tool coverage and platform/terminal coverage independently.
+          Pass overall only when both pass. A failure on either fails the
+          check. Otherwise return Inconclusive when evidence is insufficient.
+          For tool coverage, apply REVIEW.md#tool-coverage. New shared behavior
+          must reach every applicable tool in builtinTools
+          (internal/config/config.go) in the same PR. An unchanged fallback
+          is not coverage of the new behavior. Naming exclusions or promising
+          follow-ups does not pass tool coverage. A fix confined to a
+          demonstrated tool-specific defect, support for a new CLI, or a change
+          with no tool-dependent behavior passes tool coverage when unrelated
+          tools are unaffected. Other partial features pass tool coverage only
+          with evidence for exclusions, why the feature belongs in the manager,
+          consideration of a shared alternative, maintenance cost, unsupported
+          behavior, and an explicit maintainer decision accepting the exception.
+          Accept that decision in a maintainer's own PR description or an issue
+          comment, PR comment, or review linked from Scope. Verify who made it.
+          A contributor's claim of approval or automated approval does not count.
+          Fail confirmed missing applicable tool coverage without an accepted
+          exception. Return Inconclusive if applicability or claimed approval
+          cannot be verified. Contributors unable or unwilling to cover other
+          applicable tools must open an issue first. They may link a draft PR
+          marked as a reference implementation with its missing coverage.
+          Treat a reference draft as a proposal, not a merge candidate. It stays
+          in draft until coverage is complete or an exception is accepted.
+          For platform/terminal coverage, check every platform .goreleaser.yaml
+          builds plus WSL2 (internal/wsl), and every terminal locally or over
+          SSH on tmux 3.1 and later. Check runtime.GOOS branches, platform-only
+          commands and paths, Linux assumptions about desktops absent in WSL2,
+          terminal features dependent on TERM_PROGRAM, TERM, or SSH_CONNECTION,
+          and tmux features requiring a newer version without a fallback.
+          Documented platform/terminal exclusions and what support would take
+          pass only the platform/terminal portion, leaving that decision to
+          the maintainer. They never excuse missing tool coverage.
       - name: "Input and configuration surface"
         mode: warning
         instructions: >-

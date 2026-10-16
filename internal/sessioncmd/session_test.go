@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -16,11 +17,14 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/catalog"
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/conversation"
 	"github.com/YoanWai/agent-manager/internal/git"
+	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/testenv"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/google/uuid"
 )
@@ -58,27 +62,27 @@ default_status = "idle"
 # Stands in for a CLI sitting on an approval dialog: the input line is drawn
 # under it, and only the rule tells that apart from a resting prompt.
 [tools.dialog]
-command = "printf 'Do you want to proceed?\\n  1. Yes\\n  2. No\\nEnter to confirm\\n❯ ' && cat"
+command = "sh -c \"printf 'Do you want to proceed?\\n  1. Yes\\n  2. No\\nEnter to confirm\\n❯ ' && exec cat\""
 default_status = "idle"
 activity_cutoff = "(?m)^❯"
 rules = [{ state = "waiting", pattern = "Enter to confirm" }]
 
 # Stands in for a dialog that replaces the composer's input line.
 [tools.dialog-hidden-composer]
-command = "printf 'Do you want to proceed?\\n  1. Yes\\n  2. No\\nEnter to confirm\\n' && cat"
+command = "sh -c \"printf 'Do you want to proceed?\\n  1. Yes\\n  2. No\\nEnter to confirm\\n' && exec cat\""
 default_status = "idle"
 activity_cutoff = "(?m)^❯"
 rules = [{ state = "waiting", pattern = "Enter to confirm" }]
 
 [tools.resting]
-command = "printf '❯ ' && cat"
+command = "sh -c \"printf '❯ ' && exec cat\""
 default_status = "idle"
 activity_cutoff = "(?m)^❯"
 
 [tools.picker]
-command = "printf 'COMPOSER ' && cat"
+command = "sh -c \"printf 'COMPOSER ' && exec cat\""
 session_store = "codex"
-resume_picker_command = "printf 'COMPOSER ' && cat"
+resume_picker_command = "sh -c \"printf 'COMPOSER ' && exec cat\""
 resume_picker_keys = "/sessions"
 input_prefix = "COMPOSER"
 default_status = "idle"
@@ -86,10 +90,17 @@ default_status = "idle"
 [tools.picker-exit]
 command = "echo initial"
 session_store = "codex"
-resume_picker_command = "printf 'COMPOSER ' && cat"
+resume_picker_command = "sh -c \"printf 'COMPOSER ' && exec cat\""
 resume_picker_keys = "/sessions"
 input_prefix = "COMPOSER"
 default_status = "idle"
+
+# Prints the conversation it resumes and the launch it was told it is.
+[tools.reporter]
+command = "echo launched launch=$AGENT_MANAGER_LAUNCH"
+resume_by_id_command = "echo resumed {id} launch=$AGENT_MANAGER_LAUNCH"
+default_status = "idle"
+activity_cutoff = "(?m)^\u276f"
 
 [tools.terminal]
 command = ""
@@ -101,6 +112,9 @@ default_status = "idle"
 // CLIs, so a test gets a pane it can predict.
 func testConfigLoader(t *testing.T, doc string) func() (config.Config, error) {
 	t.Helper()
+	if goruntime.GOOS == "windows" {
+		doc = unwrapExecFixtures.Replace(doc)
+	}
 	var declared struct {
 		Tools map[string]config.Tool `toml:"tools"`
 	}
@@ -112,10 +126,15 @@ func testConfigLoader(t *testing.T, doc string) func() (config.Config, error) {
 	}
 }
 
+// unwrapExecFixtures drops the sh -c wrapper a POSIX launch needs to exec a
+// two-command fixture whole. A Windows launch types the line into the pane's
+// PowerShell without exec, which runs both commands as written.
+var unwrapExecFixtures = strings.NewReplacer(`sh -c \"`, "", `&& exec cat\"`, "&& cat")
+
 func newSessionHarness(t *testing.T) *sessionHarness {
 	t.Helper()
-	if _, err := exec.LookPath("tmux"); err != nil {
-		t.Skip("tmux not installed")
+	if _, err := exec.LookPath(tmux.Binary); err != nil {
+		t.Skip(tmux.Binary + " not installed")
 	}
 	configDir := t.TempDir()
 	driver, err := tmux.NewWithSocket("amsesstest-" + uuid.NewString()[:8])
@@ -214,6 +233,7 @@ func TestSessionsCreateCarriesNamePromptAndTargetWithRealTmux(t *testing.T) {
 // a revive carries them again on either pane path, since the row keeps the
 // choice.
 func TestSessionsCreateCarriesItsChoiceThroughRevive(t *testing.T) {
+	testenv.SkipPOSIXShell(t)
 	for _, tc := range []struct {
 		name string
 		kill bool
@@ -453,6 +473,109 @@ func TestSessionsKillKeepsTheScreenAndReviveBringsItBack(t *testing.T) {
 	if _, err := h.sessions.Kill(h.caller.ID, h.caller.ID); err == nil || !strings.Contains(err.Error(), "kill_self") {
 		t.Fatalf("killing itself = %v, want kill_self named", err)
 	}
+}
+
+// The agent switched conversation after it launched; revive brings back the
+// one it reported, and tells the new agent the launch its row is stamped with.
+func TestReviveResumesTheConversationTheAgentReported(t *testing.T) {
+	testenv.SkipPOSIXShell(t)
+	h := newSessionHarness(t)
+	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "switcher", Tool: "reporter"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, "launched launch=0")
+	if result, err := h.store.ReportAgentSessionID(created.ID, "reporter", "conv-switched", 0); err != nil || result != store.ReportAdopted {
+		t.Fatalf("report: %v %v", result, err)
+	}
+	if _, err := h.sessions.Kill(h.caller.ID, created.ID); err != nil {
+		t.Fatalf("Kill: %v", err)
+	}
+	if _, err := h.sessions.Revive(h.caller.ID, created.ID); err != nil {
+		t.Fatalf("Revive: %v", err)
+	}
+	stored, err := h.store.Get(created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, fmt.Sprintf("resumed conv-switched launch=%d", store.LaunchStamp(stored.AgentLaunchedAt)))
+}
+
+// Muse names its conversation only in a file it holds open while it runs,
+// and no manager screen may be open to have read it before the kill.
+func TestKillFollowsTheConversationTheAgentHolds(t *testing.T) {
+	testenv.SkipPOSIXShell(t)
+	h := newSessionHarness(t)
+	held := filepath.Join(t.TempDir(), "muse", "sessions", "conv-held.json")
+	if err := os.MkdirAll(filepath.Dir(held), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	h.sessions.loadConfig = testConfigLoader(t, sessionConfig+`
+[tools.holder]
+command = "sh -c 'exec 3>`+held+`; echo holding; exec cat'"
+resume_by_id_command = "echo resumed {id}"
+session_report = "muse"
+default_status = "idle"
+`)
+	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "holder", Tool: "holder"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, "holding")
+	if _, err := h.sessions.Kill(h.caller.ID, created.ID); err != nil {
+		t.Fatalf("Kill: %v", err)
+	}
+	if got := storedConversation(t, h.store, created.ID); got != "conv-held" {
+		t.Fatalf("after the kill the row is on %q, want conv-held", got)
+	}
+	if _, err := h.sessions.Revive(h.caller.ID, created.ID); err != nil {
+		t.Fatalf("Revive: %v", err)
+	}
+	waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, "resumed conv-held")
+}
+
+// Grok's log keeps the last conversation each process was on after it has
+// quit, which a revive reads when no manager screen followed the switch.
+func TestReviveReadsTheConversationAQuitAgentLogged(t *testing.T) {
+	skipUntracked(t)
+	h := newSessionHarness(t)
+	grokHome := t.TempDir()
+	t.Setenv("GROK_HOME", grokHome)
+	h.sessions.loadConfig = testConfigLoader(t, sessionConfig+`
+[tools.grokker]
+command = "echo started"
+resume_by_id_command = "echo resumed {id}"
+session_report = "grok"
+default_status = "idle"
+`)
+	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "grokker", Tool: "grokker"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, "started")
+	waitForAgentGone(t, h.driver, created.ID)
+	agent, found, err := conversation.ReadAgent(hooks.NewManager(h.sessions.configDir).AgentFile(created.ID))
+	if err != nil || !found {
+		t.Fatalf("agent record = %v, %v", found, err)
+	}
+	stored, err := h.store.Get(created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stored.CreatedAt.Before(agent.Recorded) {
+		t.Fatal("the launch ended before its row's creation time")
+	}
+	logLine := fmt.Sprintf(`{"ts":%q,"pid":%d,"sid":"conv-logged","msg":"session.create.done"}`+"\n", agent.Recorded.Add(-time.Millisecond).Format(time.RFC3339Nano), agent.PID)
+	if err := os.MkdirAll(filepath.Join(grokHome, "logs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(grokHome, "logs", "unified.jsonl"), []byte(logLine), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.sessions.Revive(h.caller.ID, created.ID); err != nil {
+		t.Fatalf("Revive: %v", err)
+	}
+	waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, "resumed conv-logged")
 }
 
 func TestSessionsArchiveHidesAndRestores(t *testing.T) {
@@ -1155,6 +1278,7 @@ func TestReviveRestartsTheAgentInsideItsLivePane(t *testing.T) {
 }
 
 func TestRevivePickerRecoveryCoversBothPanePaths(t *testing.T) {
+	testenv.SkipPOSIXShell(t)
 	tests := []struct {
 		name string
 		tool string
@@ -1203,6 +1327,10 @@ func TestRevivePickerRecoveryCoversBothPanePaths(t *testing.T) {
 }
 
 func TestReviveRefusesWhileTheAgentIsStillRunning(t *testing.T) {
+	// The resting tool's agent is printf followed by cat: under PowerShell
+	// printf does not exist and cat is an in-process cmdlet, so the pane
+	// shell never gains the child process that marks a running agent.
+	testenv.SkipPOSIXShell(t)
 	h := newSessionHarness(t)
 	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "chatty", Tool: "resting"})
 	if err != nil {
@@ -1316,7 +1444,7 @@ func TestSessionHarnessCleanupRemovesSocket(t *testing.T) {
 		socket = newSessionHarness(t).driver.SocketPath()
 	})
 	if socket == "" {
-		t.Skip("tmux not installed")
+		t.Skip(tmux.Binary + " not installed")
 	}
 	if _, err := os.Stat(socket); !os.IsNotExist(err) {
 		t.Fatalf("socket %q survived harness cleanup: %v", socket, err)

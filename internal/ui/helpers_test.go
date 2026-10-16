@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -20,10 +21,13 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// skipPOSIXShell skips a test whose fixture only a POSIX shell runs: a
+// `#!/bin/sh` stub, an `sh -c` line, POSIX syntax typed into a pane, or the
+// cat the test tools launch, which PowerShell reads as Get-Content.
 func buildModel(t *testing.T) *Model {
 	t.Helper()
-	if _, err := exec.LookPath("tmux"); err != nil {
-		t.Skip("tmux not installed")
+	if _, err := exec.LookPath(tmux.Binary); err != nil {
+		t.Skip(tmux.Binary + " not installed")
 	}
 	cfg := config.Config{
 		Tools: map[string]config.Tool{
@@ -38,7 +42,7 @@ func buildModel(t *testing.T) *Model {
 				ComposerPlaceholder: "Ask your question...",
 			},
 			"claude-hooked": {
-				Command:        "cat",
+				Command:        `sh -c 'exec cat' --`,
 				StatusSource:   "claude-hooks",
 				DefaultStatus:  status.Idle,
 				ActivityCutoff: "(?m)^❯",
@@ -55,7 +59,7 @@ func buildModel(t *testing.T) *Model {
 			"terminal": {
 				Shell:         true,
 				DefaultStatus: status.Idle,
-				InputPrefix:   `(?m)^\s*(?:\S+\s+){0,3}[❯>$#›»→%➜]\s`,
+				InputPrefix:   `(?m)^\s*(?:(?:\S+\s+){0,3}[❯>$#›»→%➜]|PS [^\n>]*>)\s`,
 			},
 			// Shows every control character it is sent as ^X, with the tty
 			// flow and line-editing keys turned off so ctrl+q and ctrl+r
@@ -93,27 +97,56 @@ func buildModel(t *testing.T) *Model {
 				DefaultStatus:  status.Idle,
 				ActivityCutoff: "(?m)^❯",
 			},
+			// Collapses a paste into a placeholder the way Claude Code does
+			// and takes a second Enter to submit it, so the first one is
+			// swallowed the way a busy composer swallows it. tmux writes a
+			// paste a line at a time, so only a carriage return read after
+			// the closing bracket counts as an Enter.
+			"collapsing-tool": {
+				Command: `sh -c 'stty raw -echo; printf "\033[?2004h❯ "; p=0; n=0; ` +
+					`while :; do c=$(dd bs=65536 count=1 2>/dev/null | od -An -v -c | tr -d " \n"); ` +
+					`case "$c" in *201~*) p=1; printf "[Pasted text #1 +6 lines]";; "\\r") [ $p = 1 ] && n=$((n+1));; esac; ` +
+					`[ $n = 2 ] && { printf "\r\n❯ "; p=0; n=0; }; done'`,
+				DefaultStatus:  status.Idle,
+				ActivityCutoff: "(?m)^❯",
+			},
+			// Collapses a paste into a placeholder and never submits it.
+			"stuck-tool": {
+				Command: `sh -c 'stty raw -echo; printf "❯ "; dd bs=65536 count=1 >/dev/null 2>&1; ` +
+					`printf "[Pasted text #1 +6 lines]"; cat >/dev/null'`,
+				DefaultStatus:  status.Idle,
+				ActivityCutoff: "(?m)^❯",
+			},
 			// Draws its input line at once and takes the prompt it launched
-			// with half a second later, the way an agent finishes booting.
+			// with a couple of seconds later, the way an agent finishes
+			// booting; the take has to outlast a whole poll pass.
 			"slow-take-tool": {
-				Command:        `sh -c 'printf "❯ "; sleep 0.5; printf "\n❯ %s\n❯ " "$0"; cat'`,
+				Command:        `sh -c 'printf "❯ "; sleep 2; printf "\n❯ %s\n❯ " "$0"; cat'`,
 				DefaultStatus:  status.Idle,
 				ActivityCutoff: "(?m)^❯",
 			},
 			// Stands in for the agent CLIs, which turn on mouse tracking and
 			// scroll themselves instead of leaving history for tmux.
 			"mouse-tool": {
-				Command:       `printf '\033[?1003h\033[?1006h' && cat`,
+				Command:       `sh -c 'printf "\033[?1003h\033[?1006h" && exec cat'`,
 				DefaultStatus: status.Idle,
 			},
 			// Same claim on the mouse without asking for SGR, which is the
 			// one case the reports have to fall back to the original
 			// encoding.
 			"x10-tool": {
-				Command:       `printf '\033[?1003h' && cat`,
+				Command:       `sh -c 'printf "\033[?1003h" && exec cat'`,
 				DefaultStatus: status.Idle,
 			},
 		},
+	}
+	// Windows has no cat or sh: the tools run the test binary's stand-ins.
+	if runtime.GOOS == "windows" {
+		for name := range windowsFixtureCommands {
+			tool := cfg.Tools[name]
+			tool.Command = fixtureCommand(name)
+			cfg.Tools[name] = tool
+		}
 	}
 	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
@@ -137,9 +170,16 @@ func buildModel(t *testing.T) *Model {
 	m.width = 120
 	m.height = 40
 	m.booting = false
+	// Every managed session on the test server goes, including one whose
+	// row the test deleted: Windows will not remove a temp dir that is a
+	// live pane's working directory, and tests never run in parallel.
 	t.Cleanup(func() {
 		for _, s := range m.sessions {
 			driver.Kill(s.ID)
+		}
+		panes, _ := driver.Panes()
+		for id := range panes {
+			driver.Kill(id)
 		}
 	})
 	return m
@@ -176,12 +216,13 @@ func (m *Model) stepCmd(t *testing.T, cmd tea.Cmd) tea.Cmd {
 	return next
 }
 
-// clearRequestOnCleanup drops the server-global detach marker when the test
-// ends: one left behind reaches every later test that reads it.
-func clearRequestOnCleanup(t *testing.T, m *Model) {
+// clearRequestOnCleanup drops the detach marker left on the server hosting
+// session id when the test ends: one left behind reaches every later test
+// that reads it.
+func clearRequestOnCleanup(t *testing.T, m *Model, id string) {
 	t.Helper()
 	t.Cleanup(func() {
-		if err := m.tmux.ClearRequest(); err != nil {
+		if err := m.tmux.ClearRequest(id); err != nil {
 			t.Errorf("ClearRequest: %v", err)
 		}
 	})
@@ -406,6 +447,21 @@ func createSessionOn(t *testing.T, m *Model, name, tool, dir string) {
 		t.Fatalf("after submit, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 	m.applyCmd(t, cmd)
+}
+
+// waitForPreview refreshes until the selected session's pane has drawn:
+// psmux's PowerShell takes a moment to start, and a blank pane paints no
+// box to click.
+func waitForPreview(t *testing.T, m *Model) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for !paneBooted(m.preview) {
+		if time.Now().After(deadline) {
+			t.Fatal("the selected pane never drew")
+		}
+		time.Sleep(50 * time.Millisecond)
+		m.applyCmd(t, m.refreshCmd())
+	}
 }
 
 // waitForPaneChild waits for a pane to run a named program, which is a

@@ -50,3 +50,17 @@ func TestDefaultAgentToolKeepsAnEnabledChoiceElseTakesTheFirstEnabled(t *testing
 		}
 	}
 }
+
+// Command Code's binary is cmd, which Windows resolves to cmd.exe, so it is
+// refused there and left out of the picker.
+func TestCommandCodeIsUnsupportedOnlyOnWindows(t *testing.T) {
+	for _, goos := range []string{"darwin", "linux", "windows"} {
+		err := checkSupported(goos, "command-code")
+		if (err != nil) != (goos == "windows") {
+			t.Errorf("%s: checkSupported(command-code) = %v", goos, err)
+		}
+		if err := checkSupported(goos, "claude"); err != nil {
+			t.Errorf("%s: checkSupported(claude) = %v", goos, err)
+		}
+	}
+}

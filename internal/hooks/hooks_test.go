@@ -1,21 +1,55 @@
 package hooks
 
 import (
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf16"
 
 	"github.com/YoanWai/agent-manager/internal/status"
 )
 
+// hookScript is the script a hook command runs: the command itself, or on
+// Windows the PowerShell its -EncodedCommand carries.
+func hookScript(t *testing.T, command string) string {
+	t.Helper()
+	if runtime.GOOS != "windows" {
+		return command
+	}
+	encoded, ok := strings.CutPrefix(command, "powershell.exe -NoProfile -NonInteractive -EncodedCommand ")
+	if !ok {
+		t.Fatalf("hook command %q does not run an encoded PowerShell script", command)
+	}
+	raw, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil || len(raw)%2 != 0 {
+		t.Fatalf("hook command %q carries no UTF-16LE base64: %v", command, err)
+	}
+	units := make([]uint16, len(raw)/2)
+	for i := range units {
+		units[i] = binary.LittleEndian.Uint16(raw[2*i:])
+	}
+	return string(utf16.Decode(units))
+}
+
+// stateWrite is the part of a hook script that writes state.
+func stateWrite(state string) string {
+	if runtime.GOOS == "windows" {
+		return "'" + state + "')"
+	}
+	return "printf " + state
+}
+
 func TestWriteSettingsWritesValidHookJSON(t *testing.T) {
 	manager := NewManager(t.TempDir())
-	path, err := manager.WriteSettings("abcd1234")
+	path, err := manager.WriteSettings("abcd1234", "0", "")
 	if err != nil {
 		t.Fatalf("WriteSettings: %v", err)
 	}
@@ -40,6 +74,9 @@ func TestWriteSettingsWritesValidHookJSON(t *testing.T) {
 		t.Fatalf("hooks has %d events, want %d: %v", len(parsed.Hooks), len(events), parsed.Hooks)
 	}
 	target := `"$` + EnvStatusFile + `"`
+	if runtime.GOOS == "windows" {
+		target = `$env:` + EnvStatusFile
+	}
 	for _, event := range events {
 		matchers, ok := parsed.Hooks[event]
 		if !ok {
@@ -50,7 +87,7 @@ func TestWriteSettingsWritesValidHookJSON(t *testing.T) {
 				if hook.Type != "command" {
 					t.Fatalf("event %s hook type = %q, want command", event, hook.Type)
 				}
-				if !strings.Contains(hook.Command, target) {
+				if !strings.Contains(hookScript(t, hook.Command), target) {
 					t.Fatalf("event %s command does not write the status file: %q", event, hook.Command)
 				}
 			}
@@ -72,7 +109,7 @@ func TestWriteSettingsWritesValidHookJSON(t *testing.T) {
 			t.Fatalf("Notification matcher %q subscribes to %s", notification.Matcher, unwanted)
 		}
 	}
-	if command := notification.Hooks[0].Command; !strings.Contains(command, "printf "+status.Waiting) || strings.Contains(command, "grep") {
+	if command := hookScript(t, notification.Hooks[0].Command); !strings.Contains(command, stateWrite(status.Waiting)) || strings.Contains(command, "grep") {
 		t.Fatalf("Notification command = %q, want a plain %s write", command, status.Waiting)
 	}
 	if got := parsed.Hooks["SessionStart"][0].Matcher; got != "startup|resume|clear" {
@@ -82,7 +119,7 @@ func TestWriteSettingsWritesValidHookJSON(t *testing.T) {
 	if stopFailure.Matcher != limitStopFailures {
 		t.Fatalf("StopFailure matcher = %q, want %q", stopFailure.Matcher, limitStopFailures)
 	}
-	if command := stopFailure.Hooks[0].Command; !strings.Contains(command, "printf "+status.Errored) {
+	if command := hookScript(t, stopFailure.Hooks[0].Command); !strings.Contains(command, stateWrite(status.Errored)) {
 		t.Fatalf("StopFailure command = %q, want a plain %s write", command, status.Errored)
 	}
 }
@@ -91,7 +128,7 @@ func TestWriteSettingsWritesValidHookJSON(t *testing.T) {
 func TestWriteSettingsCarriesTheSessionIdentity(t *testing.T) {
 	manager := NewManager(t.TempDir())
 	for _, id := range []string{"aaaa1111", "bbbb2222"} {
-		path, err := manager.WriteSettings(id)
+		path, err := manager.WriteSettings(id, "1700000000000000000", "")
 		if err != nil {
 			t.Fatalf("WriteSettings %s: %v", id, err)
 		}
@@ -108,16 +145,46 @@ func TestWriteSettingsCarriesTheSessionIdentity(t *testing.T) {
 		if err := json.Unmarshal(raw, &parsed); err != nil {
 			t.Fatalf("settings is not valid JSON: %v", err)
 		}
-		want := map[string]string{EnvSessionID: id, EnvStatusFile: manager.StatusFile(id)}
-		if len(parsed.Env) != len(want) || parsed.Env[EnvSessionID] != want[EnvSessionID] || parsed.Env[EnvStatusFile] != want[EnvStatusFile] {
+		want := map[string]string{EnvSessionID: id, EnvLaunch: "1700000000000000000", EnvStatusFile: manager.StatusFile(id)}
+		if len(parsed.Env) != len(want) || parsed.Env[EnvSessionID] != want[EnvSessionID] ||
+			parsed.Env[EnvLaunch] != want[EnvLaunch] || parsed.Env[EnvStatusFile] != want[EnvStatusFile] {
 			t.Fatalf("settings env for %s = %v, want %v", id, parsed.Env, want)
 		}
 	}
 }
 
+// Every way a conversation starts reports it, /branch and /resume included,
+// while the status write keeps its narrower matcher.
+func TestWriteSettingsReportsEveryConversationStart(t *testing.T) {
+	manager := NewManager(t.TempDir())
+	path, err := manager.WriteSettings("abcd1234", "0", "'/bin/am' track-conversation --tool claude --key session_id")
+	if err != nil {
+		t.Fatalf("WriteSettings: %v", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read settings: %v", err)
+	}
+	var parsed settingsFile
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		t.Fatalf("settings is not valid JSON: %v", err)
+	}
+	starts := parsed.Hooks["SessionStart"]
+	if len(starts) != 2 {
+		t.Fatalf("SessionStart entries = %+v, want the status write and the report", starts)
+	}
+	if starts[0].Matcher != "startup|resume|clear" || starts[0].Hooks[0].Command != statusCommand(status.Idle) {
+		t.Fatalf("status entry = %+v", starts[0])
+	}
+	report := starts[1]
+	if report.Matcher != "" || len(report.Hooks) != 1 || report.Hooks[0].Command != "'/bin/am' track-conversation --tool claude --key session_id" {
+		t.Fatalf("report entry = %+v, want the track command with no matcher", report)
+	}
+}
+
 func TestWriteSettingsIdempotent(t *testing.T) {
 	manager := NewManager(t.TempDir())
-	first, err := manager.WriteSettings("abcd1234")
+	first, err := manager.WriteSettings("abcd1234", "0", "track")
 	if err != nil {
 		t.Fatalf("first WriteSettings: %v", err)
 	}
@@ -125,7 +192,7 @@ func TestWriteSettingsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat: %v", err)
 	}
-	second, err := manager.WriteSettings("abcd1234")
+	second, err := manager.WriteSettings("abcd1234", "0", "track")
 	if err != nil {
 		t.Fatalf("second WriteSettings: %v", err)
 	}
@@ -158,15 +225,23 @@ func TestWriteInstallScriptCreatesAnExecutableScript(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WriteInstallScript: %v", err)
 	}
-	if want := filepath.Join(manager.Dir(), "abcd1234.install.sh"); path != want {
+	if want := filepath.Join(manager.Dir(), "abcd1234"+installScriptExt); path != want {
 		t.Fatalf("path = %q, want %q", path, want)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read script: %v", err)
 	}
-	if string(data) != body {
-		t.Fatalf("script = %q, want %q", data, body)
+	want := body
+	if runtime.GOOS == "windows" {
+		// a BOM, so Windows PowerShell 5.1 reads the script as UTF-8
+		want = "\ufeff" + body
+	}
+	if string(data) != want {
+		t.Fatalf("script = %q, want %q", data, want)
+	}
+	if runtime.GOOS == "windows" {
+		return // Windows file modes carry no execute or group bits
 	}
 	info, err := os.Stat(path)
 	if err != nil {
@@ -349,6 +424,28 @@ func TestRemoveIdempotent(t *testing.T) {
 	}
 	if err := manager.Remove("x"); err != nil {
 		t.Fatalf("second Remove should be a no-op: %v", err)
+	}
+}
+
+func TestRemoveAgentFilesDropsWhatLaunchesRecorded(t *testing.T) {
+	manager := NewManager(filepath.Join(t.TempDir(), "[config]"))
+	if err := os.MkdirAll(manager.Dir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{manager.AgentFile("x"), manager.TelemetryFile("x", 0), manager.TelemetryFile("x", 42), manager.AgentFile("y"), manager.TelemetryFile("y", 0)} {
+		if err := os.WriteFile(path, []byte("1 0 /dev/ttys001\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for range 2 {
+		if err := manager.RemoveAgentFiles("x"); err != nil {
+			t.Fatalf("RemoveAgentFiles: %v", err)
+		}
+	}
+	for path, want := range map[string]bool{manager.AgentFile("x"): false, manager.TelemetryFile("x", 0): false, manager.TelemetryFile("x", 42): false, manager.AgentFile("y"): true, manager.TelemetryFile("y", 0): true} {
+		if _, err := os.Stat(path); (err == nil) != want {
+			t.Fatalf("%s present = %v, want %v", path, err == nil, want)
+		}
 	}
 }
 
@@ -569,7 +666,7 @@ func TestWriteWholeSurvivesConcurrentWriters(t *testing.T) {
 					t.Errorf("WriteWhole(%q): %v", content, err)
 					return
 				}
-				raw, err := os.ReadFile(path)
+				raw, err := readMailbox(path)
 				if err != nil {
 					t.Errorf("read: %v", err)
 					return

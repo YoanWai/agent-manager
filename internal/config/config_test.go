@@ -3,9 +3,13 @@ package config
 import (
 	"reflect"
 	"regexp"
+	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/YoanWai/agent-manager/internal/sessionreport"
 )
 
 func TestDefaultDefinesEveryShippedTool(t *testing.T) {
@@ -168,6 +172,42 @@ func TestEveryAgentToolMarksItsInputBox(t *testing.T) {
 		}
 		if tool.ActivityCutoff == "" {
 			t.Errorf("tool %q declares no activity_cutoff", name)
+		}
+	}
+}
+
+// A report names the session's tool by its reporter, so a reporting tool's
+// style is its own name. Every agent says how it reports, or that it cannot.
+func TestEveryAgentToolDeclaresHowItReportsItsConversation(t *testing.T) {
+	cfg, err := Default()
+	if err != nil {
+		t.Fatalf("Default: %v", err)
+	}
+	for name, tool := range cfg.Tools {
+		switch {
+		case tool.Shell && tool.SessionReport != "":
+			t.Errorf("shell tool %q declares session_report %q", name, tool.SessionReport)
+		case tool.Shell:
+		case !slices.Contains(sessionreport.Styles, tool.SessionReport):
+			t.Errorf("tool %q declares session_report %q, not one of %v", name, tool.SessionReport, sessionreport.Styles)
+		case tool.SessionReport != sessionreport.StyleNone && tool.SessionReport != name:
+			t.Errorf("tool %q reports as %q", name, tool.SessionReport)
+		}
+	}
+}
+
+// A launch execs its line so the agent runs under the pid the launch
+// exports, which holds only for a line that is one command.
+func TestEveryLaunchLineIsOneCommand(t *testing.T) {
+	cfg, err := Default()
+	if err != nil {
+		t.Fatalf("Default: %v", err)
+	}
+	for name, tool := range cfg.Tools {
+		for _, line := range []string{tool.Command, tool.ReviveCommand, tool.ResumeByIDCommand, tool.ResumePickerCommand, tool.ForkCommand} {
+			if strings.ContainsAny(line, ";&|\n`$()<>") {
+				t.Errorf("tool %q launches with %q, which is not one command", name, line)
+			}
 		}
 	}
 }
@@ -373,7 +413,12 @@ func TestWithChoiceFlagsEveryLaunchLine(t *testing.T) {
 	}
 	base := cfg.Tools["pi"]
 	chosen := base.WithChoice(Choice{Model: "openai-codex/gpt-6-sol", Effort: "it's high"})
+	// The pane shell is PowerShell on Windows, which doubles a quote inside
+	// a single-quoted string.
 	suffix := ` --model 'openai-codex/gpt-6-sol' --thinking 'it'\''s high'`
+	if runtime.GOOS == "windows" {
+		suffix = ` --model 'openai-codex/gpt-6-sol' --thinking 'it''s high'`
+	}
 	for _, tc := range []struct{ field, base, got string }{
 		{"command", base.Command, chosen.Command},
 		{"revive_command", base.ReviveCommand, chosen.ReviveCommand},

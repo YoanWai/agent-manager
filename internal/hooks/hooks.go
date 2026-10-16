@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -26,6 +27,15 @@ const EnvStatusFile = "AGENT_MANAGER_STATUS_FILE"
 // EnvSessionID identifies the managed session to the rename subcommand;
 // every session gets it regardless of tool.
 const EnvSessionID = "AGENT_MANAGER_SESSION_ID"
+
+// EnvLaunch names the launch an agent process belongs to, so a conversation
+// it reports late cannot land on a launch that replaced it.
+const EnvLaunch = "AGENT_MANAGER_LAUNCH"
+
+// EnvAgentPID is the pid of the agent a launch started. The launch's own
+// shell exports its pid and execs the agent in its place, so only the agent
+// runs under it, while its children and teammates inherit the value.
+const EnvAgentPID = "AGENT_MANAGER_AGENT_PID"
 
 // StatusSourceClaude is the status_source config value that enables this
 // package for a tool.
@@ -60,10 +70,6 @@ type settingsFile struct {
 	Hooks map[string][]hookMatcher `json:"hooks"`
 }
 
-func statusCommand(state string) string {
-	return `printf ` + state + ` > "$` + EnvStatusFile + `"`
-}
-
 // blockingNotifications are the Notification types that leave the turn
 // stuck on the user. The event also fires for the idle reminder, for
 // authentication and for background agents finishing, none of which
@@ -75,13 +81,13 @@ const blockingNotifications = "permission_prompt|elicitation_dialog"
 // the hook write covers the turn before the banner is visible.
 const limitStopFailures = "rate_limit"
 
-func settingsContent(sessionID, statusFile string) ([]byte, error) {
+func settingsContent(sessionID, launch, statusFile, trackCommand string) ([]byte, error) {
 	report := func(matcher, state string) []hookMatcher {
 		return []hookMatcher{{Matcher: matcher, Hooks: []hookCommand{{Type: "command", Command: statusCommand(state)}}}}
 	}
 	content := settingsFile{
 		// /background and the agent view rerun the conversation in Claude Code's daemon, under another session's environment.
-		Env: map[string]string{EnvSessionID: sessionID, EnvStatusFile: statusFile},
+		Env: map[string]string{EnvSessionID: sessionID, EnvLaunch: launch, EnvStatusFile: statusFile},
 		Hooks: map[string][]hookMatcher{
 			"UserPromptSubmit": report("", status.Working),
 			"PreToolUse":       report("*", status.Working),
@@ -91,22 +97,25 @@ func settingsContent(sessionID, statusFile string) ([]byte, error) {
 			"StopFailure":      report(limitStopFailures, status.Errored),
 			// compact fires SessionStart in the middle of an active turn
 			"SessionStart": report("startup|resume|clear", status.Idle),
-			"SessionEnd": {{Hooks: []hookCommand{{
-				Type:    "command",
-				Command: `rm -f "$` + EnvStatusFile + `"`,
-			}}}},
+			"SessionEnd":   {{Hooks: []hookCommand{{Type: "command", Command: sessionEndCommand()}}}},
 		},
+	}
+	if trackCommand != "" {
+		content.Hooks["SessionStart"] = append(content.Hooks["SessionStart"],
+			hookMatcher{Hooks: []hookCommand{{Type: "command", Command: trackCommand}}})
 	}
 	return json.MarshalIndent(content, "", "  ")
 }
 
 // WriteSettings writes a session's hook settings file, refreshing it when
-// the wanted content changed (e.g. after an upgrade), and returns its path.
-func (m *Manager) WriteSettings(id string) (string, error) {
+// the wanted content changed (e.g. after an upgrade or a relaunch), and
+// returns its path. A trackCommand runs on every SessionStart to report the
+// conversation the session moved to.
+func (m *Manager) WriteSettings(id, launch, trackCommand string) (string, error) {
 	if err := os.MkdirAll(m.dir, 0o755); err != nil {
 		return "", err
 	}
-	wanted, err := settingsContent(id, m.StatusFile(id))
+	wanted, err := settingsContent(id, launch, m.StatusFile(id), trackCommand)
 	if err != nil {
 		return "", err
 	}
@@ -136,6 +145,40 @@ func (m *Manager) StatusFile(id string) string {
 	return filepath.Join(m.dir, id+".status")
 }
 
+// AgentFile is where a launch records the agent it started: its pid, the
+// launch and its terminal.
+func (m *Manager) AgentFile(id string) string {
+	return filepath.Join(m.dir, id+".agent")
+}
+
+// Each launch has its own path so an older follower cannot consume a relaunch's records.
+func (m *Manager) TelemetryFile(id string, launch int64) string {
+	return filepath.Join(m.dir, fmt.Sprintf("%s.%d.otel", id, launch))
+}
+
+// RemoveAgentFiles drops what a session's launches recorded about its agent.
+func (m *Manager) RemoveAgentFiles(id string) error {
+	if err := removeIfExists(m.AgentFile(id)); err != nil {
+		return err
+	}
+	files, err := os.ReadDir(m.dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, file := range files {
+		if !strings.HasPrefix(file.Name(), id+".") || !strings.HasSuffix(file.Name(), ".otel") {
+			continue
+		}
+		if err := removeIfExists(filepath.Join(m.dir, file.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // InstallStatusFile is the mailbox an install started from the setup
 // dialog writes the command's exit status to.
 func (m *Manager) InstallStatusFile(id string) string {
@@ -149,8 +192,8 @@ func (m *Manager) WriteInstallScript(id, body string) (string, error) {
 	if err := os.MkdirAll(m.dir, 0o755); err != nil {
 		return "", err
 	}
-	path := filepath.Join(m.dir, id+".install.sh")
-	if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
+	path := filepath.Join(m.dir, id+installScriptExt)
+	if err := os.WriteFile(path, installScriptContent(body), 0o700); err != nil {
 		return "", err
 	}
 	return path, nil
@@ -206,7 +249,7 @@ const maxNameLength = 80
 // so the caller can consume it even when the content normalizes to
 // nothing.
 func (m *Manager) ReadName(id string) (request, name string, found bool) {
-	raw, err := os.ReadFile(m.NameFile(id))
+	raw, err := readMailbox(m.NameFile(id))
 	if err != nil {
 		return "", "", false
 	}
@@ -288,15 +331,15 @@ func (m *Manager) claimedNameFile(id string) string {
 // is picked up again ahead of anything newer. ReleaseName ends the claim.
 func (m *Manager) ClaimName(id string) (request, name string, found bool, err error) {
 	claimed := m.claimedNameFile(id)
-	raw, err := os.ReadFile(claimed)
+	raw, err := readMailbox(claimed)
 	if errors.Is(err, fs.ErrNotExist) {
-		if err := os.Rename(m.NameFile(id), claimed); err != nil {
+		if err := moveMailbox(m.NameFile(id), claimed); err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
 				return "", "", false, nil
 			}
 			return "", "", false, err
 		}
-		raw, err = os.ReadFile(claimed)
+		raw, err = readMailbox(claimed)
 	}
 	if err != nil {
 		return "", "", false, err
@@ -309,7 +352,7 @@ func (m *Manager) ClaimName(id string) (request, name string, found bool, err er
 // caller can tell its request being worked on from one a later rename
 // replaced in the mailbox before it was ever claimed.
 func (m *Manager) ClaimedRequest(id string) (request string, found bool, err error) {
-	raw, err := os.ReadFile(m.claimedNameFile(id))
+	raw, err := readMailbox(m.claimedNameFile(id))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return "", false, nil
@@ -361,7 +404,7 @@ type NameVerdict struct {
 // package writes is no answer at all, while a mailbox that cannot be read
 // is an error rather than silence, since silence reads as "not yet".
 func (m *Manager) ReadNameResult(id, request string) (verdict NameVerdict, found bool, err error) {
-	raw, err := os.ReadFile(m.NameResultFile(id, request))
+	raw, err := readMailbox(m.NameResultFile(id, request))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return NameVerdict{}, false, nil
@@ -393,7 +436,7 @@ func (m *Manager) ReviewRepoFile(id string) string {
 }
 
 func (m *Manager) ReadReviewRepo(id string) (root string, found bool) {
-	raw, err := os.ReadFile(m.ReviewRepoFile(id))
+	raw, err := readMailbox(m.ReviewRepoFile(id))
 	if err != nil {
 		return "", false
 	}
@@ -412,7 +455,7 @@ func (m *Manager) ReviewBaseFile(id string) string {
 }
 
 func (m *Manager) ReadReviewBase(id string) (root, ref string, found bool) {
-	raw, err := os.ReadFile(m.ReviewBaseFile(id))
+	raw, err := readMailbox(m.ReviewBaseFile(id))
 	if err != nil {
 		return "", "", false
 	}
@@ -435,7 +478,7 @@ func (m *Manager) ReviewScopeFile(id string) string {
 }
 
 func (m *Manager) ReadReviewScope(id string) (scope string, found bool) {
-	raw, err := os.ReadFile(m.ReviewScopeFile(id))
+	raw, err := readMailbox(m.ReviewScopeFile(id))
 	if err != nil {
 		return "", false
 	}
@@ -471,7 +514,7 @@ func WriteWhole(path, content string) (err error) {
 	if err := os.Chmod(staging.Name(), 0o644); err != nil {
 		return err
 	}
-	return os.Rename(staging.Name(), path)
+	return moveMailbox(staging.Name(), path)
 }
 
 func removeIfExists(path string) error {

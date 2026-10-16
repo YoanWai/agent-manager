@@ -17,6 +17,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/agentsession"
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/conversation"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/mcpreg"
@@ -44,10 +45,13 @@ type poller struct {
 	sessionStores map[string]string
 	claudeTails   map[string]claudeTailCache
 	mcpStyles     map[string]string
+	reportStyles  map[string]string
 	shellTools    map[string]bool
 	binaries      toolBinaries
 	interval      time.Duration
 	poke          chan struct{}
+	stop          chan struct{}
+	stopped       chan struct{}
 
 	mu              sync.Mutex
 	includeArchived bool
@@ -61,6 +65,11 @@ type poller struct {
 
 	// notifyFn delivers one desktop notification; tests swap in a recorder.
 	notifyFn func(notify.Event)
+	// commandFn runs the user's notify command for the same event, or logs
+	// why it could not; tests swap in a recorder.
+	commandFn func(event notify.Event, command string, readErr error)
+	// showCommandFn shows a new notify command; tests swap in a recorder.
+	showCommandFn func(command string)
 	// takeFocus collects the session a clicked notification named; tests
 	// swap in a stub.
 	takeFocus func() (string, bool)
@@ -69,6 +78,12 @@ type poller struct {
 	// and one-off refresh commands
 	runMu      sync.Mutex
 	paneHashes map[string]uint64
+	// conversations reads which conversation a running agent is on for the
+	// CLIs that report no switch themselves.
+	conversations conversation.Reader
+	// followFailed is the last failure following each session's
+	// conversation, so a failure that keeps happening is reported once.
+	followFailed map[string]string
 	// quietSince is when each session's activity region last stopped
 	// changing while the pane read as working; used to debounce both
 	// marker-less turn ends and spinner rows that never resolve. The stuck
@@ -285,7 +300,21 @@ func lastMeaningfulPaneLine(pane string) string {
 
 var postNotification = notify.Notify
 
-func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, gitDriver *git.Driver, statusSources, sessionStores, mcpStyles map[string]string, shellTools map[string]bool, binaries toolBinaries, interval time.Duration) *poller {
+var showCommand = notify.ShowCommand
+
+func runNotifyCommand(event notify.Event, command string, readErr error) {
+	dir, err := config.Dir()
+	if err != nil {
+		return
+	}
+	if readErr != nil {
+		notify.LogCommandFailure(dir, event, fmt.Errorf("reading the notify command: %w", readErr))
+		return
+	}
+	notify.RunCommand(command, dir, event)
+}
+
+func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, gitDriver *git.Driver, statusSources, sessionStores, mcpStyles, reportStyles map[string]string, shellTools map[string]bool, binaries toolBinaries, interval time.Duration) *poller {
 	return &poller{
 		store:         st,
 		tmux:          driver,
@@ -295,15 +324,20 @@ func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hook
 		statusSources: statusSources,
 		sessionStores: sessionStores,
 		mcpStyles:     mcpStyles,
+		reportStyles:  reportStyles,
 		shellTools:    shellTools,
 		binaries:      binaries,
 		interval:      interval,
 		poke:          make(chan struct{}, 1),
+		stop:          make(chan struct{}),
+		stopped:       make(chan struct{}),
 		paneHashes:    map[string]uint64{},
 		claudeTails:   map[string]claudeTailCache{},
 		quietSince:    map[string]quietTimer{},
 		recaptureSeen: map[string]recaptureSighting{},
 		notifyFn:      postNotification,
+		commandFn:     runNotifyCommand,
+		showCommandFn: showCommand,
 		takeFocus:     takeNotifyFocus,
 	}
 }
@@ -330,14 +364,16 @@ func (p *poller) requestRefresh() {
 	}
 }
 
-// run polls until the program exits, pushing each result into the UI.
+// run polls until halt, pushing each result into the UI.
 // Sends run on their own goroutine because the UI stops receiving while
 // suspended inside a tmux attach; the store writes in refreshOnce must
 // never wait on the UI.
 func (p *poller) run(send func(tea.Msg)) {
+	defer close(p.stopped)
 	ticker := time.NewTicker(p.interval)
 	defer ticker.Stop()
 	pending := make(chan tea.Msg, 1)
+	defer close(pending)
 	go func() {
 		for msg := range pending {
 			send(msg)
@@ -358,8 +394,16 @@ func (p *poller) run(send func(tea.Msg)) {
 		select {
 		case <-ticker.C:
 		case <-p.poke:
+		case <-p.stop:
+			return
 		}
 	}
+}
+
+// halt ends run and waits out the pass in flight.
+func (p *poller) halt() {
+	close(p.stop)
+	<-p.stopped
 }
 
 // ignoreDeletedSession drops the error a store write returns when the
@@ -475,6 +519,7 @@ func (p *poller) refreshOnce() tea.Msg {
 	paneHashes := make(map[string]uint64, len(sessions))
 	paneLastLines := make(map[string]string, len(sessions))
 	panePrompts := make(map[string]string, len(sessions))
+	followFailures := make(map[string]error, len(sessions))
 	var turnsEnded []string
 	for i, sess := range sessions {
 		if sess.Archived {
@@ -519,6 +564,9 @@ func (p *poller) refreshOnce() tea.Msg {
 			return errMsg{err}
 		}
 		newStatus := status.Dead
+		if !live {
+			followFailures[sess.ID] = p.followConversation(&sessions[i], false, true)
+		}
 		if pid := panes[sess.ID].PID; pid > 0 {
 			stat := trees[pid]
 			if stat.OK {
@@ -557,6 +605,7 @@ func (p *poller) refreshOnce() tea.Msg {
 			// tree of one process means the agent is gone. A failed ps
 			// sample proves nothing, so it counts as alive.
 			agentAlive := !stat.OK || stat.Procs > 1
+			followFailures[sess.ID] = p.followConversation(&sessions[i], agentAlive, false)
 			if pane, err := p.tmux.CapturePane(sess.ID); err == nil {
 				paneLastLines[sess.ID], panePrompts[sess.ID] = p.rowLines(sess, pane, panes[sess.ID].Path)
 				derived, err := p.derivePaneStatus(sess, pane, agentAlive, paneHashes)
@@ -658,6 +707,7 @@ func (p *poller) refreshOnce() tea.Msg {
 	}
 	p.startCaptureIfIdle(sessions, panes)
 	p.paneHashes = paneHashes
+	followWarning := p.newFollowFailure(sessions, followFailures)
 
 	groups, err := p.store.Groups()
 	if err != nil {
@@ -718,6 +768,7 @@ func (p *poller) refreshOnce() tea.Msg {
 		panePrompts:    panePrompts,
 		panes:          panes,
 		turnsEnded:     turnsEnded,
+		followWarning:  followWarning,
 	}
 	if p.takeFocus != nil {
 		if id, ok := p.takeFocus(); ok {
@@ -1066,8 +1117,10 @@ func (p *poller) maybeDeliverInbox(sess store.Session, pane, derived string, age
 	}
 	// The claim already keeps this message from being typed again, so
 	// recording the drop is the only thing that stops its sender being told
-	// it arrived.
-	if err := p.tmux.SendText(sess.ID, inboxEnvelope(msg, p.mcpStyles[sess.Tool], p.senderIsShell(msg.SenderID))); err != nil {
+	// it arrived. A paste left in the composer is not retyped either: the
+	// recipient would read it twice once someone presses Enter there.
+	envelope := inboxEnvelope(msg, p.mcpStyles[sess.Tool], p.senderIsShell(msg.SenderID))
+	if err := p.tmux.SubmitText(sess.ID, envelope, p.composerDrafted(sess)); err != nil {
 		return false, errors.Join(
 			fmt.Errorf("dropped a message to %s from %s: %w", sess.Name, msg.SenderName, err),
 			p.store.MarkDropped(msg.ID, time.Now()))
@@ -1100,6 +1153,18 @@ func (p *poller) promptCarriesTypedText(sess store.Session, clean string) (bool,
 		return false, nil
 	}
 	return draftBeforeCaret(p.engine, sess.Tool, rows, caretX, caretY), nil
+}
+
+// composerDrafted reads the session's composer afresh on every call, for a
+// send that has to see its paste land and then leave.
+func (p *poller) composerDrafted(sess store.Session) func() (bool, error) {
+	return func() (bool, error) {
+		pane, err := p.tmux.CapturePane(sess.ID)
+		if err != nil {
+			return false, err
+		}
+		return p.promptCarriesTypedText(sess, ansi.Strip(pane))
+	}
 }
 
 // inboxEnvelope wraps the body so the receiving agent knows the text came
@@ -1468,7 +1533,9 @@ func (p *poller) applyHookStatus(sess store.Session, text, hookStatus string) st
 // finished stays quiet unless opted in, since most turn ends are routine.
 // There is no focus gate: the poll cannot tell whether the user is looking
 // at the manager, and the session they are watching is precisely the one
-// whose ping they must not miss.
+// whose ping they must not miss. The notify command set with
+// agent-manager settings runs for the same transitions, after the native
+// banner and never instead of it.
 func (p *poller) notifyTransition(sess store.Session, newStatus string) {
 	if p.notifyFn == nil {
 		return
@@ -1490,9 +1557,34 @@ func (p *poller) notifyTransition(sess store.Session, newStatus string) {
 	if !p.notificationsOn() {
 		return
 	}
-	// Delivery can wait on an external process (osascript, notify-send),
-	// so it must never run inside refreshOnce, which holds runMu.
-	go p.notifyFn(notify.Event{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: kind})
+	event := notify.Event{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: kind, Dir: sess.Cwd, Branch: sess.WorktreeBranch}
+	command, readErr := p.notifyCommand()
+	unshown := command != "" && p.claimUnshownCommand(command)
+	// Delivery can wait on an external process (osascript, notify-send,
+	// the user's command), so it must never run inside refreshOnce, which
+	// holds runMu.
+	go func() {
+		p.notifyFn(event)
+		if unshown {
+			p.showCommandFn(command)
+		}
+		if command != "" || readErr != nil {
+			p.commandFn(event, command, readErr)
+		}
+	}()
+}
+
+func (p *poller) notifyCommand() (string, error) {
+	command, err := p.store.Setting(notifyCommandSetting)
+	return strings.TrimSpace(command), err
+}
+
+// claimUnshownCommand records command as shown and reports whether it was
+// new, in one write so managers sharing the store show it once between
+// them. A store that cannot answer counts as unshown, never as hidden.
+func (p *poller) claimUnshownCommand(command string) bool {
+	changed, err := p.store.SetSettingIfChanged(notifyCommandShownSetting, command)
+	return changed || err != nil
 }
 
 func (p *poller) notificationsOn() bool {

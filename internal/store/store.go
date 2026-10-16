@@ -276,6 +276,24 @@ func (s *Store) Setting(key string) (string, error) {
 	return value, err
 }
 
+// Settings is every stored row, keyed by name.
+func (s *Store) Settings() (map[string]string, error) {
+	rows, err := s.db.Query(`SELECT key, value FROM settings`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	settings := map[string]string{}
+	for rows.Next() {
+		var key, value string
+		if err := rows.Scan(&key, &value); err != nil {
+			return nil, err
+		}
+		settings[key] = value
+	}
+	return settings, rows.Err()
+}
+
 func (s *Store) SetReviewRepo(sessionID, repoRoot string) error {
 	if repoRoot == "" {
 		_, err := s.db.Exec(`DELETE FROM review_targets WHERE session_id = ?`, sessionID)
@@ -381,17 +399,17 @@ func (s *Store) PaneSize() (int, int, error) {
 	return width, height, nil
 }
 
-// coordinationSetting says how sessions treat each other. The manager, the
+// CoordinationSetting says how sessions treat each other. The manager, the
 // CLI and the MCP server each launch or brief sessions, so all of them read
 // it here.
-const coordinationSetting = "coordination"
+const CoordinationSetting = "coordination"
 
 const coordinationProactive = "proactive"
 
 // ProactiveCoordination reports whether agents delegate and coordinate on
 // their own. The default waits for the user to ask.
 func (s *Store) ProactiveCoordination() (bool, error) {
-	value, err := s.Setting(coordinationSetting)
+	value, err := s.Setting(CoordinationSetting)
 	return value == coordinationProactive, err
 }
 
@@ -400,28 +418,28 @@ func (s *Store) SetProactiveCoordination(proactive bool) error {
 	if proactive {
 		value = coordinationProactive
 	}
-	return s.SetSetting(coordinationSetting, value)
+	return s.SetSetting(CoordinationSetting, value)
 }
 
 // The New Session form and a spawn with no caller both take their CLI from
 // these, so the manager and the CLI read them here.
 const (
-	defaultToolSetting = "default_tool"
-	hiddenToolsSetting = "hidden_tools"
+	DefaultToolSetting = "default_tool"
+	HiddenToolsSetting = "hidden_tools"
 )
 
 // DefaultTool is the CLI picked in Settings for new sessions, empty when none was.
 func (s *Store) DefaultTool() (string, error) {
-	return s.Setting(defaultToolSetting)
+	return s.Setting(DefaultToolSetting)
 }
 
 func (s *Store) SetDefaultTool(name string) error {
-	return s.SetSetting(defaultToolSetting, name)
+	return s.SetSetting(DefaultToolSetting, name)
 }
 
 // HiddenTools is the set of CLIs turned off for new sessions in Settings.
 func (s *Store) HiddenTools() (map[string]bool, error) {
-	raw, err := s.Setting(hiddenToolsSetting)
+	raw, err := s.Setting(HiddenToolsSetting)
 	if err != nil {
 		return nil, err
 	}
@@ -442,7 +460,7 @@ func (s *Store) SetHiddenTools(hidden map[string]bool) error {
 		}
 	}
 	slices.Sort(names)
-	return s.SetSetting(hiddenToolsSetting, strings.Join(names, ","))
+	return s.SetSetting(HiddenToolsSetting, strings.Join(names, ","))
 }
 
 func (s *Store) SetSetting(key, value string) error {
@@ -450,6 +468,21 @@ func (s *Store) SetSetting(key, value string) error {
 		`INSERT INTO settings (key, value) VALUES (?, ?)
 		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, value)
 	return err
+}
+
+// SetSettingIfChanged writes value and reports whether the stored one
+// differed, in one statement, so of several processes writing the same
+// value exactly one learns it was new.
+func (s *Store) SetSettingIfChanged(key, value string) (changed bool, err error) {
+	res, err := s.db.Exec(
+		`INSERT INTO settings (key, value) VALUES (?, ?)
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value
+		 WHERE value IS NOT excluded.value`, key, value)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
 }
 
 func (s *Store) CreateSession(sess Session) error {
@@ -886,6 +919,61 @@ func (s *Store) BindAgentSessionID(id, agentSessionID string, launchedAt time.Ti
 		return false, err
 	}
 	return affected > 0, nil
+}
+
+// ConversationReport is what became of a running agent's report of the
+// conversation it is on.
+type ConversationReport int
+
+const (
+	ReportAdopted ConversationReport = iota
+	ReportUnchanged
+	// ReportStale answers a launch a relaunch has since replaced, or a CLI
+	// the pane no longer runs.
+	ReportStale
+	// ReportEarly answers a launch whose row or stamp has not landed yet.
+	ReportEarly
+)
+
+// ReportAgentSessionID moves a session onto the conversation its agent says
+// it switched to, but only for the launch now in the pane. launch is the
+// LaunchStamp the agent was started with. A report overrides a captured id,
+// and ends a picker recapture by clearing its snapshot.
+func (s *Store) ReportAgentSessionID(id, tool, agentSessionID string, launch int64) (ConversationReport, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	var storedTool, storedID string
+	var storedLaunch int64
+	err = tx.QueryRow(`SELECT tool, agent_launched_at, agent_session_id FROM sessions WHERE id = ?`, id).
+		Scan(&storedTool, &storedLaunch, &storedID)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return ReportEarly, nil
+	case err != nil:
+		return 0, err
+	case storedLaunch < launch:
+		return ReportEarly, nil
+	case storedLaunch > launch || storedTool != tool:
+		return ReportStale, nil
+	case storedID == agentSessionID:
+		return ReportUnchanged, nil
+	}
+	if _, err := tx.Exec(
+		`UPDATE sessions SET agent_session_id = ?, relaunch_snapshot = ''
+		 WHERE id = ? AND tool = ? AND agent_launched_at = ?`,
+		agentSessionID, id, tool, launch); err != nil {
+		return 0, err
+	}
+	return ReportAdopted, tx.Commit()
+}
+
+// LaunchStamp is how a launch is named to the agent it starts: the stored
+// form of agent_launched_at, which stays 0 until a session first relaunches.
+func LaunchStamp(launchedAt time.Time) int64 {
+	return encodeTime(launchedAt)
 }
 
 // RestartAgent rebinds a session to a fresh agent run: the conversation it

@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -2050,10 +2051,10 @@ func TestSettingsCLIChoicesRoundTrip(t *testing.T) {
 	if err := st.SetHiddenTools(map[string]bool{"grok": true, "codex": true, "pi": false}); err != nil {
 		t.Fatalf("SetHiddenTools: %v", err)
 	}
-	if raw, err := st.Setting(hiddenToolsSetting); err != nil || raw != "codex,grok" {
+	if raw, err := st.Setting(HiddenToolsSetting); err != nil || raw != "codex,grok" {
 		t.Fatalf("stored hidden tools = %q, %v; want the sorted names that are on", raw, err)
 	}
-	if err := st.SetSetting(hiddenToolsSetting, "codex, grok"); err != nil {
+	if err := st.SetSetting(HiddenToolsSetting, "codex, grok"); err != nil {
 		t.Fatalf("SetSetting: %v", err)
 	}
 	hidden, err := st.HiddenTools()
@@ -2140,5 +2141,195 @@ func TestPlaceSessionBeforeRefusedMovesNothing(t *testing.T) {
 	got, err := st.Get("agent")
 	if err != nil || got.Group != "g1" || got.ParentID != "" {
 		t.Fatalf("agent moved anyway: %+v err %v", got, err)
+	}
+}
+
+func reportedConversation(t *testing.T, st *Store, id string) Session {
+	t.Helper()
+	got, err := st.Get(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return got
+}
+
+func TestReportAgentSessionIDFollowsTheLaunchInThePane(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateSession(sample("a", "g")); err != nil {
+		t.Fatal(err)
+	}
+	report := func(conversation string, launch int64) ConversationReport {
+		t.Helper()
+		result, err := st.ReportAgentSessionID("a", "claude", conversation, launch)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+
+	if got := report("first", LaunchStamp(time.Time{})); got != ReportAdopted {
+		t.Fatalf("a row's first launch reports as 0: got %v, want adopted", got)
+	}
+	if got := report("first", 0); got != ReportUnchanged {
+		t.Fatalf("the same conversation again: got %v, want unchanged", got)
+	}
+	if got := report("switched", 0); got != ReportAdopted || reportedConversation(t, st, "a").AgentSessionID != "switched" {
+		t.Fatalf("a switch: got %v, row %+v", got, reportedConversation(t, st, "a"))
+	}
+
+	revived := time.Unix(1_800_000_000, 5)
+	if got := report("early", LaunchStamp(revived)); got != ReportEarly {
+		t.Fatalf("a launch not stamped yet: got %v, want early", got)
+	}
+	if err := st.SetAgentLaunchedAt("a", revived); err != nil {
+		t.Fatal(err)
+	}
+	if got := report("late", 0); got != ReportStale || reportedConversation(t, st, "a").AgentSessionID != "switched" {
+		t.Fatalf("a report from the launch before the revive: got %v, row %+v", got, reportedConversation(t, st, "a"))
+	}
+	if got := report("revived", LaunchStamp(revived)); got != ReportAdopted {
+		t.Fatalf("the revived launch: got %v, want adopted", got)
+	}
+
+	restarted := revived.Add(time.Minute)
+	if err := st.RestartAgent("a", "", restarted); err != nil {
+		t.Fatal(err)
+	}
+	if got := report("finalized", LaunchStamp(revived)); got != ReportStale {
+		t.Fatalf("a shutdown report after a restart: got %v, want stale", got)
+	}
+
+	if err := st.UpdateTool("a", "grok"); err != nil {
+		t.Fatal(err)
+	}
+	if got := report("quit", LaunchStamp(restarted)); got != ReportStale || reportedConversation(t, st, "a").AgentSessionID != "" {
+		t.Fatalf("a report from the CLI the pane no longer runs: got %v, row %+v", got, reportedConversation(t, st, "a"))
+	}
+
+	result, err := st.ReportAgentSessionID("missing", "claude", "x", 0)
+	if err != nil || result != ReportEarly {
+		t.Fatalf("a row not created yet: got %v %v, want early", result, err)
+	}
+}
+
+func TestReportAgentSessionIDOutranksCaptureAndEndsRecapture(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateSession(sample("a", "g")); err != nil {
+		t.Fatal(err)
+	}
+	launch := time.Now()
+	if err := st.SetAgentLaunchedAt("a", launch); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetRelaunchSnapshot("a", map[string]int64{"old": 1}); err != nil {
+		t.Fatal(err)
+	}
+	if result, err := st.ReportAgentSessionID("a", "claude", "picked", LaunchStamp(launch)); err != nil || result != ReportAdopted {
+		t.Fatalf("report: %v %v", result, err)
+	}
+	if got := reportedConversation(t, st, "a"); got.AgentSessionID != "picked" || got.RelaunchSnapshot != nil {
+		t.Fatalf("after the report: %+v, want picked and no snapshot", got)
+	}
+	bound, err := st.BindAgentSessionID("a", "guessed", launch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bound || reportedConversation(t, st, "a").AgentSessionID != "picked" {
+		t.Fatalf("a capture overwrote the reported conversation")
+	}
+}
+
+func TestLaunchStampOfAFirstLaunchIsZero(t *testing.T) {
+	if got := LaunchStamp(time.Time{}); got != 0 {
+		t.Fatalf("LaunchStamp(zero) = %d, want 0", got)
+	}
+}
+
+func TestReportAgentSessionIDReplacesACapturedGuess(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateSession(sample("a", "g")); err != nil {
+		t.Fatal(err)
+	}
+	if bound, err := st.BindAgentSessionID("a", "guessed", time.Time{}); err != nil || !bound {
+		t.Fatalf("capture: %v %v", bound, err)
+	}
+	if result, err := st.ReportAgentSessionID("a", "claude", "reported", 0); err != nil || result != ReportAdopted {
+		t.Fatalf("report: %v %v", result, err)
+	}
+	if got := reportedConversation(t, st, "a"); got.AgentSessionID != "reported" {
+		t.Fatalf("row = %+v, want the reported conversation", got)
+	}
+}
+
+func TestSettingsListsEveryStoredRow(t *testing.T) {
+	st := newTestStore(t)
+	for key, value := range map[string]string{"theme": "nord", "notifications": "off"} {
+		if err := st.SetSetting(key, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows, err := st.Settings()
+	if err != nil {
+		t.Fatalf("Settings: %v", err)
+	}
+	if rows["theme"] != "nord" || rows["notifications"] != "off" {
+		t.Fatalf("Settings = %v", rows)
+	}
+}
+
+func TestSetSettingIfChangedReportsOnlyANewValue(t *testing.T) {
+	st := newTestStore(t)
+	for i, step := range []struct {
+		value string
+		want  bool
+	}{{"a", true}, {"a", false}, {"b", true}, {"b", false}} {
+		changed, err := st.SetSettingIfChanged("k", step.value)
+		if err != nil || changed != step.want {
+			t.Fatalf("step %d: SetSettingIfChanged(%q) = %v, %v; want %v", i, step.value, changed, err, step.want)
+		}
+		if got, _ := st.Setting("k"); got != step.value {
+			t.Fatalf("step %d: stored %q, want %q", i, got, step.value)
+		}
+	}
+}
+
+// Processes sharing one database and writing the same value at once see
+// exactly one of them told the value was new.
+func TestSetSettingIfChangedTellsOneOfManyWriters(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "shared.db")
+	const writers = 8
+	stores := make([]*Store, writers)
+	for i := range stores {
+		st, err := Open(path)
+		if err != nil {
+			t.Fatalf("Open: %v", err)
+		}
+		t.Cleanup(func() { st.Close() })
+		stores[i] = st
+	}
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var told int
+	start := make(chan struct{})
+	for _, st := range stores {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			changed, err := st.SetSettingIfChanged("k", "v")
+			if err != nil {
+				t.Errorf("SetSettingIfChanged: %v", err)
+			}
+			if changed {
+				mu.Lock()
+				told++
+				mu.Unlock()
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	if told != 1 {
+		t.Fatalf("%d writers were told the value was new, want 1", told)
 	}
 }

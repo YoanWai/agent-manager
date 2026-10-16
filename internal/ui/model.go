@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -318,7 +319,7 @@ type Model struct {
 	startupPhase     int
 	startupAnimating bool
 	booting          bool
-	pendingTyped     *typedPromptCandidate
+	pendingTyped     map[string]typedPromptCandidate
 
 	update updateInfo
 
@@ -369,6 +370,9 @@ type paneMirror struct {
 	columnX int
 	cursor  paneCursor
 	geom    map[string][2]int
+	// writes is how many queued writes the pushed capture shows; see
+	// focusWatch.caughtUp.
+	writes uint64
 	// pids is the pane process each geom entry was measured on, so a pane
 	// replaced by a relaunch can be told from the one the manager sized.
 	pids map[string]int
@@ -626,6 +630,9 @@ type refreshMsg struct {
 	// turnsEnded are the sessions whose turn this pass saw end after they
 	// asked to be archived or killed once it did.
 	turnsEnded []string
+	// followWarning reports a session whose conversation the pass could not
+	// follow, the first time it fails that way.
+	followWarning string
 }
 
 type previewMsg struct {
@@ -719,49 +726,71 @@ type typedPromptCandidate struct {
 // working before it is judged a menu enter and dropped.
 const typedPromptGrace = 5 * time.Second
 
+// typedPromptMsg carries a draft read as enter went into the focused pane
+// from behind the watcher's write queue.
+type typedPromptMsg struct{ candidate typedPromptCandidate }
+
+// holdTypedPrompt keeps cand as its session's candidate, replacing only
+// an earlier one for the same session.
+func (m *Model) holdTypedPrompt(cand typedPromptCandidate) {
+	if m.pendingTyped == nil {
+		m.pendingTyped = make(map[string]typedPromptCandidate)
+	}
+	m.pendingTyped[cand.id] = cand
+}
+
 // stashTypedPrompt snapshots the composer draft as enter goes into the
 // focused pane, from a fresh capture so the newest keystrokes are in it.
+// Behind a polling watcher the capture queues after the keystrokes still
+// in flight, which is the only way it reads them.
 func (m *Model) stashTypedPrompt(sess store.Session) {
 	if m.engine == nil || m.tmux == nil {
 		return
 	}
-	pane, err := m.tmux.CapturePane(sess.ID)
-	if err != nil {
+	driver, engine := m.tmux, m.engine
+	read := func() tea.Msg {
+		pane, err := driver.CapturePane(sess.ID)
+		if err != nil {
+			return nil
+		}
+		draft, ok := engine.InputDraft(sess.Tool, ansi.Strip(pane))
+		if !ok {
+			return nil
+		}
+		return typedPromptMsg{typedPromptCandidate{id: sess.ID, text: draft, at: time.Now()}}
+	}
+	if m.focus != nil && m.focus.queue(sess.ID, read) {
 		return
 	}
-	if draft, ok := m.engine.InputDraft(sess.Tool, ansi.Strip(pane)); ok {
-		m.pendingTyped = &typedPromptCandidate{id: sess.ID, text: draft, at: time.Now()}
+	if typed, ok := read().(typedPromptMsg); ok {
+		m.holdTypedPrompt(typed.candidate)
 	}
 }
 
-// commitTypedPrompt records a stashed draft as the session's last prompt
-// once the session runs with it: an enter that opened a menu or answered
-// a dialog never turns the session working while its draft is fresh, so
-// that candidate just expires.
+// commitTypedPrompt records each stashed draft as its session's last
+// prompt once that session runs with it: an enter that opened a menu or
+// answered a dialog never turns the session working while its draft is
+// fresh, so that candidate just expires.
 func (m *Model) commitTypedPrompt() {
-	cand := m.pendingTyped
-	if cand == nil {
-		return
-	}
-	if time.Since(cand.at) > typedPromptGrace {
-		m.pendingTyped = nil
-		return
-	}
-	for i := range m.sessions {
-		if m.sessions[i].ID != cand.id {
+	for id, cand := range m.pendingTyped {
+		if time.Since(cand.at) > typedPromptGrace {
+			delete(m.pendingTyped, id)
+			continue
+		}
+		i := slices.IndexFunc(m.sessions, func(s store.Session) bool { return s.ID == id })
+		if i < 0 {
+			delete(m.pendingTyped, id)
 			continue
 		}
 		if m.sessions[i].Status != status.Working {
-			return
+			continue
 		}
-		if err := ignoreDeletedSession(m.store.SetLastPrompt(cand.id, cand.text)); err != nil {
+		if err := ignoreDeletedSession(m.store.SetLastPrompt(id, cand.text)); err != nil {
 			m.errBar.text = err.Error()
 		}
 		m.sessions[i].LastPrompt = cand.text
-		m.pendingTyped = nil
-		return
+		delete(m.pendingTyped, id)
 	}
-	m.pendingTyped = nil
 }
 
 // hasWorkingLoaderRow reports whether a row is animating the working
@@ -825,12 +854,14 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 	statusSources := make(map[string]string, len(cfg.Tools))
 	sessionStores := make(map[string]string, len(cfg.Tools))
 	mcpStyles := make(map[string]string, len(cfg.Tools))
+	reportStyles := make(map[string]string, len(cfg.Tools))
 	shellTools := make(map[string]bool, len(cfg.Tools))
 	for name, tool := range cfg.Tools {
 		shellTools[name] = tool.Shell
 		statusSources[name] = tool.StatusSource
 		sessionStores[name] = tool.SessionStore
 		mcpStyles[name] = mcpreg.Style(name, tool.MCP)
+		reportStyles[name] = tool.SessionReport
 	}
 	// A missing git binary only disables the diff view; everything else
 	// works without it, so the error surfaces on first use instead.
@@ -849,7 +880,7 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		gitDrv:              gitDriver,
 		engine:              engine,
 		setSnapshot:         st.SetSnapshot,
-		poller:              newPoller(st, driver, engine, hookManager, gitDriver, statusSources, sessionStores, mcpStyles, shellTools, newToolBinaries(cfg), config.PollInterval),
+		poller:              newPoller(st, driver, engine, hookManager, gitDriver, statusSources, sessionStores, mcpStyles, reportStyles, shellTools, newToolBinaries(cfg), config.PollInterval),
 		collapsed:           loadCollapsed(st),
 		split:               splitState{ratio: loadSplitRatio(st)},
 		focusOnEnter:        storedFocusOnEnter(st),
@@ -979,6 +1010,12 @@ func (m *Model) StartPoller(send func(tea.Msg)) {
 	go m.poller.run(send)
 }
 
+// StopPoller ends the background poll StartPoller began and waits out a
+// pass in flight, so this process acts on no session once it returns.
+func (m *Model) StopPoller() {
+	m.poller.halt()
+}
+
 func (m *Model) syncPollInput() {
 	selectedID := ""
 	focusID := ""
@@ -1022,7 +1059,17 @@ func (m *Model) requestRefresh() {
 
 func (m *Model) Init() tea.Cmd {
 	m.syncPollInput()
-	return tea.Batch(m.syncPaneTheme(), m.refreshExistingSessionUX, m.checkForUpdate, m.checkFeed, m.updateTick(), m.bannerTick(), m.previewTick(), m.startStartupTick(), m.sweepPastes, m.pasteSweepTick())
+	return tea.Batch(m.syncPaneTheme(), m.refreshExistingSessionUX, m.checkForUpdate, m.checkFeed, m.updateTick(), m.bannerTick(), m.previewTick(), m.startStartupTick(), m.sweepPastes, m.pasteSweepTick(), checkPaneShell)
+}
+
+// paneShellMsg carries a warning about the pane shell, empty when it has
+// none.
+type paneShellMsg struct{ warning string }
+
+// checkPaneShell runs the pane shell's version probe off the update path:
+// it starts a PowerShell.
+func checkPaneShell() tea.Msg {
+	return paneShellMsg{warning: paneShellWarning()}
 }
 
 // updateMsg carries the result of a GitHub release check. A failed check may
@@ -1583,6 +1630,9 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.booting = false
 		m.ageError()
+		if msg.followWarning != "" {
+			m.reportWarn(msg.followWarning)
+		}
 		var focusExit tea.Cmd
 		if !staleListing {
 			// The focused session can die or vanish under us; fall back to the
@@ -1751,6 +1801,12 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pasteSweepTickMsg:
 		return m, tea.Batch(m.sweepPastes, m.pasteSweepTick())
 
+	case paneShellMsg:
+		if msg.warning != "" {
+			m.reportWarn(msg.warning)
+		}
+		return m, nil
+
 	case replyCopiedMsg:
 		if msg.unreadable {
 			m.reportWarn(fmt.Sprintf("no reply to read in %s: a %s pane is not read that way", msg.name, msg.tool))
@@ -1828,6 +1884,10 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case typedPromptMsg:
+		m.holdTypedPrompt(msg.candidate)
+		return m, nil
+
 	case focusPreviewMsg:
 		sess, ok := m.selected()
 		if !ok || sess.ID != msg.sessID {
@@ -1857,6 +1917,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			x: msg.cursorX, y: msg.cursorY,
 			ok: msg.cursorOK, positionOK: msg.paneStateOK,
 		}
+		m.pane.writes = msg.writes
 		return m, nil
 
 	case previewMsg:
@@ -1948,7 +2009,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Ctrl+R and F3 inside the session leave a marker before
 		// detaching; consume it here and carry it out for the session just
 		// attached.
-		request, err := m.tmux.PendingRequest()
+		request, err := m.tmux.PendingRequest(msg.sessID)
 		if err != nil {
 			m.errBar.text = err.Error()
 		} else if request != "" {
@@ -1956,7 +2017,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// request on every later detach, so surface it and stay in the
 			// list rather than letting the request reset m.errBar.text and
 			// hide it.
-			if clearErr := m.tmux.ClearRequest(); clearErr != nil {
+			if clearErr := m.tmux.ClearRequest(msg.sessID); clearErr != nil {
 				m.errBar.text = clearErr.Error()
 				m.requestRefresh()
 				return m, nil
@@ -2036,7 +2097,8 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.reportLaunchError(msg.err, nil)
 			return m, nil
 		}
-		m.bindReviveLocally(msg.sessID, msg.launchedAt)
+		m.bindReviveLocally(msg.sess.ID, msg.sess.AgentLaunchedAt)
+		m.errBar.text = m.degradedResumeNotice(msg.sess)
 		m.rebuildRows()
 		m.requestRefresh()
 		return m, nil

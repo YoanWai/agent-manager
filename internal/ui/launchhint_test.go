@@ -16,6 +16,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/mcpreg"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/testenv"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -74,14 +75,18 @@ func TestReportLaunchErrorOpensInstallHintForMissingCLI(t *testing.T) {
 	if m.mode != modeLaunchHint {
 		t.Fatalf("mode = %v, want modeLaunchHint", m.mode)
 	}
-	if !strings.Contains(m.launchFix.text, "claude.ai/install.sh") {
+	installer := "claude.ai/install.sh"
+	if runtime.GOOS == "windows" {
+		installer = "claude.ai/install.ps1"
+	}
+	if !strings.Contains(m.launchFix.text, installer) {
 		t.Fatalf("hint %q should name the install command", m.launchFix.text)
 	}
 	if !strings.Contains(m.launchFix.text, "claude") {
 		t.Fatalf("hint %q should name the missing CLI", m.launchFix.text)
 	}
 	frame := ansi.Strip(m.viewLaunchHint())
-	if !strings.Contains(frame, "claude.ai/install.sh") {
+	if !strings.Contains(frame, installer) {
 		t.Fatalf("dialog should show the install command:\n%s", frame)
 	}
 }
@@ -146,7 +151,7 @@ func TestReviveMissingCLIPromptsInstall(t *testing.T) {
 		DefaultStatus: status.Idle,
 	}
 
-	err := m.reviveSession(sess)
+	_, err := m.reviveSession(sess)
 	if err == nil {
 		t.Fatal("revive of a missing CLI should fail")
 	}
@@ -302,7 +307,13 @@ func TestFormSpawnErrorInTheBarKeepsItsImages(t *testing.T) {
 	// AddWorktree checks out into <repo>-worktrees/<session>, and refuses a
 	// path that is already there. Taking the name it would pick is what
 	// fails this spawn, on the far side of every field the form validates.
-	taken := filepath.Join(filepath.Dir(dir), filepath.Base(dir)+"-worktrees", "agent")
+	// The path is built from git's repo root, which has symlinks followed
+	// and Windows short names expanded.
+	root, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	taken := filepath.Join(filepath.Dir(root), filepath.Base(root)+"-worktrees", "agent")
 	if err := os.MkdirAll(taken, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -521,6 +532,7 @@ func imageExists(t *testing.T, path string) bool {
 
 func fakeInstallCommand(t *testing.T) string {
 	t.Helper()
+	testenv.SkipPOSIXShell(t)
 	bin := t.TempDir()
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	target := filepath.Join(bin, "am-fake-cli")
@@ -636,6 +648,9 @@ func TestLaunchHintInstallShellKilledDropsThePendingLaunch(t *testing.T) {
 // A CLI on the interop PATH but not in the distro is a different problem
 // from one nobody installed, and the dialog has to say so.
 func TestLaunchHintNamesAWindowsOnlyInstall(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a Windows copy reached through interop only exists under WSL")
+	}
 	m := buildModel(t)
 	windowsPath := `/mnt/c/npm-global/claude`
 
@@ -830,7 +845,7 @@ func TestInstallFinishesARefusedRestore(t *testing.T) {
 
 	// What the install unblocks has to be the whole restore, not the
 	// revive alone, so the retry is run here with a working CLI.
-	m.cfg.Tools["claude"] = config.Tool{Command: "cat", DefaultStatus: status.Idle}
+	m.cfg.Tools["claude"] = config.Tool{Command: catCommand(), DefaultStatus: status.Idle}
 	if err := m.launchFix.retry(); err != nil {
 		t.Fatal(err)
 	}

@@ -122,6 +122,8 @@ func SaveImage() (string, error) {
 		return saveDarwinImage()
 	case "linux":
 		return saveLinuxImage()
+	case "windows":
+		return saveWindowsImage()
 	default:
 		return "", fmt.Errorf("clipboard image paste is not supported on %s", goos)
 	}
@@ -276,7 +278,30 @@ func saveWSLWindowsImage() (string, error) {
 		_ = os.Remove(path)
 		return "", fmt.Errorf("wslpath: %w", err)
 	}
-	winPath := strings.TrimSpace(string(winOut))
+	return savePowerShellImage(ps, path, strings.TrimSpace(string(winOut)))
+}
+
+// saveWindowsImage reads the clipboard image through PowerShell, which
+// on Windows itself sees the pastes path as is.
+func saveWindowsImage() (string, error) {
+	ps, err := lookPath("powershell.exe")
+	if err != nil {
+		ps, err = lookPath("pwsh.exe")
+		if err != nil {
+			return "", errors.New("image paste needs powershell.exe")
+		}
+	}
+	path, err := newPasteFile("png")
+	if err != nil {
+		return "", err
+	}
+	return savePowerShellImage(ps, path, path)
+}
+
+// savePowerShellImage has PowerShell write the clipboard image to winPath,
+// the Windows name of path, and owns path from then on: anything short of
+// a non-empty PNG removes it and reports ErrNoImage.
+func savePowerShellImage(ps, path, winPath string) (string, error) {
 	winPath = strings.ReplaceAll(winPath, "'", "''")
 	script := "Add-Type -AssemblyName System.Windows.Forms,System.Drawing; " +
 		"$img = [System.Windows.Forms.Clipboard]::GetImage(); " +
@@ -369,8 +394,11 @@ func WriteText(text string) error {
 	return nil
 }
 
+// clip, natively or through WSL interop, reads its input as UTF-16LE.
 func clipboardText(name, text string) []byte {
-	if goos != "linux" || !wslProbe() || !strings.EqualFold(filepath.Base(name), "clip.exe") {
+	clip := strings.EqualFold(filepath.Base(name), "clip.exe") || strings.EqualFold(name, "clip")
+	windowsOrWSL := goos == "windows" || (goos == "linux" && wslProbe())
+	if !clip || !windowsOrWSL {
 		return []byte(text)
 	}
 	units := utf16.Encode([]rune(text))

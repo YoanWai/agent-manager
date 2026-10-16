@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -397,12 +398,19 @@ func TestGroupDefaultPathFillsSessionDir(t *testing.T) {
 func TestFormPromptComposesWithSettings(t *testing.T) {
 	m := buildModel(t)
 	tool := m.cfg.Tools["claude-hooked"]
+	tool.Command = "cat"
 
-	command, _, err := m.buildLaunch("claude", tool, launch.WithPrompt(tool, tool.Command, "fix the bug"), "prompt01")
+	command, _, err := m.buildLaunch("claude", tool, launch.WithPrompt(tool, tool.Command, "fix the bug"), "prompt01", t.TempDir(), time.Time{})
 	if err != nil {
 		t.Fatalf("buildLaunch: %v", err)
 	}
-	if !strings.HasPrefix(command, "cat 'fix the bug' --mcp-config '") || !strings.Contains(command, "--settings '") {
+	// A Windows launch runs the agent straight from the pane's PowerShell;
+	// elsewhere a shell of its own records the agent's pid and execs it.
+	agentLine := strings.HasPrefix(command, "sh -c 'export "+hooks.EnvAgentPID+"=$$; ") && strings.Contains(command, "; exec "+tool.Command+" '\\''fix the bug'\\'' --mcp-config '")
+	if runtime.GOOS == "windows" {
+		agentLine = strings.HasPrefix(command, tool.Command+" 'fix the bug' --mcp-config '")
+	}
+	if !agentLine || !strings.Contains(command, "--settings '") {
 		t.Fatalf("command = %q", command)
 	}
 }
@@ -804,7 +812,7 @@ func TestSendModePromptSurvivesPollerRestart(t *testing.T) {
 	}
 	old := m.poller
 	m.poller = newPoller(m.store, m.tmux, m.engine, m.hooks, m.gitDrv,
-		old.statusSources, old.sessionStores, old.mcpStyles, old.shellTools, old.binaries, old.interval)
+		old.statusSources, old.sessionStores, old.mcpStyles, old.reportStyles, old.shellTools, old.binaries, old.interval)
 	m.applyCmd(t, m.refreshCmd())
 	deadline := time.Now().Add(5 * time.Second)
 	for len(sessionPendingInputs(t, m, sess.ID)) > 0 {
@@ -836,7 +844,7 @@ func TestSendModeReconcilesAmbiguousDeliveryWithoutResending(t *testing.T) {
 	}
 	old := m.poller
 	m.poller = newPoller(m.store, m.tmux, m.engine, m.hooks, m.gitDrv,
-		old.statusSources, old.sessionStores, old.mcpStyles, old.shellTools, old.binaries, old.interval)
+		old.statusSources, old.sessionStores, old.mcpStyles, old.reportStyles, old.shellTools, old.binaries, old.interval)
 	msg := m.poller.refreshOnce()
 	gotErr, ok := msg.(errMsg)
 	if !ok || !strings.Contains(gotErr.err.Error(), "ambiguous pending input") {
@@ -908,7 +916,7 @@ func sessionHasPendingInput(t *testing.T, m *Model, id, want string) bool {
 func TestBuildLaunchCarriesSessionID(t *testing.T) {
 	m := buildModel(t)
 	plain := m.cfg.Tools["claude"]
-	_, env, err := m.buildLaunch("plain", plain, plain.Command, "abcd1234")
+	_, env, err := m.buildLaunch("plain", plain, plain.Command, "abcd1234", t.TempDir(), time.Time{})
 	if err != nil {
 		t.Fatalf("buildLaunch: %v", err)
 	}
@@ -917,7 +925,7 @@ func TestBuildLaunchCarriesSessionID(t *testing.T) {
 	}
 
 	hooked := m.cfg.Tools["claude-hooked"]
-	_, env, err = m.buildLaunch("hooked", hooked, hooked.Command, "abcd1234")
+	_, env, err = m.buildLaunch("hooked", hooked, hooked.Command, "abcd1234", t.TempDir(), time.Time{})
 	if err != nil {
 		t.Fatalf("buildLaunch hooked: %v", err)
 	}
@@ -1081,6 +1089,9 @@ func TestSpawnWorktreeInNonRepoBlocks(t *testing.T) {
 }
 
 func TestSpawnWorktreeRollsBackWhenLaunchBuildFails(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod cannot deny writes on Windows")
+	}
 	m := buildModel(t)
 	repo := filepath.Join(t.TempDir(), "repo")
 	if err := os.MkdirAll(repo, 0o755); err != nil {

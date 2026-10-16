@@ -60,7 +60,7 @@ func (pc *pathComplete) recompute(typed string) {
 }
 
 func expandHome(path string) string {
-	if path == "~" || strings.HasPrefix(path, "~/") {
+	if path == "~" || strings.HasPrefix(path, "~/") || strings.HasPrefix(path, "~"+string(filepath.Separator)) {
 		if home, err := os.UserHomeDir(); err == nil {
 			return filepath.Join(home, strings.TrimPrefix(path, "~"))
 		}
@@ -69,10 +69,11 @@ func expandHome(path string) string {
 }
 
 // completeDirs matches shell completion: everything after the last slash
-// is a partial name matched against directories inside its parent.
+// (or the platform's own separator) is a partial name matched against
+// directories inside its parent.
 func completeDirs(typed string) []string {
 	typed = expandHome(strings.TrimSpace(typed))
-	if typed == "" || !strings.Contains(typed, "/") {
+	if typed == "" || !strings.ContainsAny(typed, "/"+string(filepath.Separator)) {
 		return nil
 	}
 	parent, partial := filepath.Split(typed)
@@ -114,7 +115,7 @@ func isDirEntry(parent string, entry os.DirEntry) bool {
 }
 
 func (m *Model) applyPathSuggestion() {
-	path := m.pathSugg.selected() + "/"
+	path := m.pathSugg.selected() + string(filepath.Separator)
 	switch m.mode {
 	case modeForm:
 		m.form.dir.SetValue(path)

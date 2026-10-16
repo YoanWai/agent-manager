@@ -16,7 +16,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/deps"
@@ -40,18 +39,31 @@ func New() (*Driver, error) {
 	return &Driver{bin: bin}, nil
 }
 
+// run returns git's stdout. Stderr only joins the error text: git writes
+// warnings there on success (Git for Windows' default core.autocrlf=true warns
+// about every LF file), and they must not corrupt parsed output.
 func (d *Driver) run(dir string, args ...string) (string, error) {
 	cmd := exec.Command(d.bin, append([]string{"-c", "core.quotepath=false"}, args...)...)
 	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	text := strings.TrimRight(string(out), "\n")
-	if err != nil {
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		text := strings.TrimRight(stdout.String()+stderr.String(), "\n")
 		if strings.Contains(text, "not a git repository") {
 			return "", ErrNotARepo
 		}
 		return "", fmt.Errorf("git %s: %w: %s", args[0], err, text)
 	}
-	return text, nil
+	return strings.TrimRight(stdout.String(), "\n"), nil
+}
+
+// toplevel returns the root of the repo holding dir as a native path: git
+// prints forward slashes on Windows ("C:/Users/..."), which would not match
+// paths built with filepath.
+func (d *Driver) toplevel(dir string) (string, error) {
+	top, err := d.run(dir, "rev-parse", "--show-toplevel")
+	return filepath.FromSlash(top), err
 }
 
 type Scope int
@@ -88,7 +100,7 @@ type Repo struct {
 }
 
 func (d *Driver) OpenRepo(dir string) (Repo, error) {
-	root, err := d.run(dir, "rev-parse", "--show-toplevel")
+	root, err := d.toplevel(dir)
 	if err != nil {
 		return Repo{}, err
 	}
@@ -133,7 +145,7 @@ var skipDirs = map[string]bool{
 // ranked with dirty working trees before clean ones, then by most recent
 // commit, so review lands on the repo the agent is most likely editing.
 func (d *Driver) ResolveRepos(cwd string) ([]string, error) {
-	root, err := d.run(cwd, "rev-parse", "--show-toplevel")
+	root, err := d.toplevel(cwd)
 	if err == nil {
 		return d.expandWorktrees([]string{root}), nil
 	}
@@ -663,7 +675,7 @@ func (d *Driver) Worktrees(root string) ([]Worktree, error) {
 	for _, line := range strings.Split(out, "\n") {
 		switch {
 		case strings.HasPrefix(line, "worktree "):
-			current = Worktree{Root: strings.TrimPrefix(line, "worktree ")}
+			current = Worktree{Root: filepath.FromSlash(strings.TrimPrefix(line, "worktree "))}
 		case strings.HasPrefix(line, "HEAD "):
 			sha := strings.TrimPrefix(line, "HEAD ")
 			if len(sha) > 7 {
@@ -686,7 +698,7 @@ func (d *Driver) Worktrees(root string) ([]Worktree, error) {
 }
 
 func (d *Driver) RepoRoot(dir string) (string, error) {
-	top, err := d.run(dir, "rev-parse", "--show-toplevel")
+	top, err := d.toplevel(dir)
 	if err != nil {
 		return "", fmt.Errorf("not inside a git repository: %s", dir)
 	}
@@ -740,8 +752,7 @@ func (d *Driver) FetchBase(dir, override string) error {
 	cmd.Dir = dir
 	// Nobody can answer a background fetch, so git's, askpass's and ssh's tty prompts are all shut off.
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "SSH_ASKPASS_REQUIRE=never")
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	killFetchTree(cmd)
 	cmd.WaitDelay = time.Second
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("git fetch %s %s: %w: %s", remote, branch, err, strings.TrimSpace(string(out)))
@@ -1007,7 +1018,7 @@ func (d *Driver) mergedInto(root, base, tip string) (bool, error) {
 }
 
 func (d *Driver) IsRepoRoot(dir string) bool {
-	top, err := d.run(dir, "rev-parse", "--show-toplevel")
+	top, err := d.toplevel(dir)
 	if err != nil {
 		return false
 	}

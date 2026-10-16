@@ -24,8 +24,8 @@ type terminalHarness struct {
 
 func newTerminalHarness(t *testing.T) *terminalHarness {
 	t.Helper()
-	if _, err := exec.LookPath("tmux"); err != nil {
-		t.Skip("tmux not installed")
+	if _, err := exec.LookPath(tmux.Binary); err != nil {
+		t.Skip(tmux.Binary + " not installed")
 	}
 	configDir := t.TempDir()
 	driver, err := tmux.NewWithSocket("amtermtest-" + uuid.NewString()[:8])
@@ -569,7 +569,7 @@ func TestTerminalHarnessCleanupRemovesSocket(t *testing.T) {
 		socket = newTerminalHarness(t).driver.SocketPath()
 	})
 	if socket == "" {
-		t.Skip("tmux not installed")
+		t.Skip(tmux.Binary + " not installed")
 	}
 	if _, err := os.Stat(socket); !os.IsNotExist(err) {
 		t.Fatalf("socket %q survived harness cleanup: %v", socket, err)

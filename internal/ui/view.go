@@ -304,12 +304,17 @@ func parentGroup(group string) string {
 	return ""
 }
 
+// rollupStates orders the states a group rollup counts. A session still
+// starting is counted too: until its agent draws, the group would read as
+// empty.
+var rollupStates = []string{status.Working, status.Starting, status.Waiting, status.Finished, status.Errored, status.Idle, status.Dead}
+
 // groupStatusBreakdown renders "2 working · 1 waiting" for the subtree,
 // each count tinted in its status color, skipping zero statuses.
 func (m *Model) groupStatusBreakdown(group string) string {
 	counts := m.groupStatusCounts(group)
 	var parts []string
-	for _, st := range []string{status.Working, status.Waiting, status.Finished, status.Errored, status.Idle, status.Dead} {
+	for _, st := range rollupStates {
 		if counts[st] > 0 {
 			// The count carries the state's color, the word stays quiet: a
 			// rollup line should read as one texture, not as six labels
@@ -338,7 +343,7 @@ func (m *Model) groupStatusCounts(group string) map[string]int {
 func (m *Model) groupStatusGlyphs(group string) string {
 	counts := m.groupStatusCounts(group)
 	var parts []string
-	for _, st := range []string{status.Working, status.Waiting, status.Finished, status.Errored, status.Idle, status.Dead} {
+	for _, st := range rollupStates {
 		if counts[st] == 0 {
 			continue
 		}

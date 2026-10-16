@@ -77,8 +77,8 @@ func Style(toolName, explicit string) string {
 func Apply(style, exe, hooksDir, command string, env map[string]string) (string, error) {
 	switch style {
 	case "claude":
-		path, err := writeConfig(hooksDir, "mcp-claude.json", claudeConfig(exe))
-		if err != nil {
+		path := filepath.Join(hooksDir, "mcp-claude.json")
+		if err := atomicfile.WriteIfChanged(path, claudeConfig(exe), 0o644); err != nil {
 			return "", err
 		}
 		return command + " --mcp-config " + tmux.ShellQuote(path), nil
@@ -93,8 +93,8 @@ func Apply(style, exe, hooksDir, command string, env map[string]string) (string,
 		}
 		return command, nil
 	case "opencode":
-		path, err := writeConfig(hooksDir, "mcp-opencode.json", opencodeConfig(exe))
-		if err != nil {
+		path := filepath.Join(hooksDir, "mcp-opencode.json")
+		if err := atomicfile.WriteIfChanged(path, opencodeConfig(exe), 0o644); err != nil {
 			return "", err
 		}
 		env["OPENCODE_CONFIG"] = path
@@ -166,22 +166,6 @@ func opencodeConfig(exe string) []byte {
 	}
 	data, _ := json.MarshalIndent(config, "", "  ")
 	return data
-}
-
-// writeConfig writes content only when it changed, so concurrent spawns
-// reading the same path never observe a partial rewrite of identical bytes.
-func writeConfig(dir, name string, content []byte) (string, error) {
-	path := filepath.Join(dir, name)
-	if existing, err := os.ReadFile(path); err == nil && string(existing) == string(content) {
-		return path, nil
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", err
-	}
-	if err := os.WriteFile(path, content, 0o644); err != nil {
-		return "", err
-	}
-	return path, nil
 }
 
 type museServer struct {
@@ -385,25 +369,7 @@ func hermesPipCommand() string {
 	if python == "" || exec.Command(python, "-m", "pip", "--version").Run() != nil {
 		return ""
 	}
-	return tmux.ShellQuote(python) + " -m pip install mcp"
-}
-
-// The install directory Hermes reports is its site-packages, so the
-// interpreter sits three levels above it.
-func pythonFromVersion(version string) string {
-	for _, line := range strings.Split(version, "\n") {
-		dir, found := strings.CutPrefix(strings.TrimSpace(line), "Install directory:")
-		if !found {
-			continue
-		}
-		dir = strings.TrimSpace(dir)
-		if filepath.Base(dir) != "site-packages" {
-			return ""
-		}
-		root := filepath.Dir(filepath.Dir(filepath.Dir(dir)))
-		return filepath.Join(root, "bin", "python3")
-	}
-	return ""
+	return tmux.ShellInvoke(python) + " -m pip install mcp"
 }
 
 // ensureRegisteredOnce runs a tool's own mcp-add command once per binary

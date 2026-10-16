@@ -4,11 +4,16 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"regexp"
+	"strconv"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -75,6 +80,14 @@ func serveLines(reply func(fakeRequest) any) error {
 	return in.Err()
 }
 
+// writePid publishes pid at path whole, so a reader never sees half of it.
+func writePid(path string, pid int) error {
+	if err := os.WriteFile(path+".tmp", []byte(strconv.Itoa(pid)), 0o600); err != nil {
+		return err
+	}
+	return os.Rename(path+".tmp", path)
+}
+
 func result(request fakeRequest, value any) map[string]any {
 	return map[string]any{"jsonrpc": "2.0", "id": request.ID, "result": value}
 }
@@ -85,6 +98,43 @@ func runFake(name string) error {
 		os.Exit(3)
 	case "silent":
 		// A bare select{} trips the runtime's deadlock check and exits.
+		time.Sleep(time.Hour)
+	case "stubborn":
+		signal.Ignore(syscall.SIGTERM)
+		child := exec.Command(os.Args[0])
+		child.Env = append(os.Environ(), "CATALOG_FAKE=stubborn-child")
+		if err := child.Start(); err != nil {
+			return err
+		}
+		if err := writePid(os.Getenv("CATALOG_CHILD_PID"), child.Process.Pid); err != nil {
+			return err
+		}
+		time.Sleep(time.Hour)
+	case "stubborn-child":
+		signal.Ignore(syscall.SIGTERM)
+		time.Sleep(time.Hour)
+	case "orphaning":
+		// Leaves a child that ignores the stop and holds none of the
+		// server's pipes, then ends at the stop itself.
+		child := exec.Command(os.Args[0])
+		child.Env = append(os.Environ(), "CATALOG_FAKE=stubborn-child")
+		if err := child.Start(); err != nil {
+			return err
+		}
+		if err := writePid(os.Getenv("CATALOG_CHILD_PID"), child.Process.Pid); err != nil {
+			return err
+		}
+		_, _ = io.Copy(io.Discard, os.Stdin)
+		return nil
+	case "catalog-host":
+		// Stands in for a manager that dies without stopping its servers.
+		proc, err := startArgs(os.Args[0], nil, os.TempDir(), true, "CATALOG_FAKE=stubborn")
+		if err != nil {
+			return err
+		}
+		if err := writePid(os.Getenv("CATALOG_SERVER_PID"), proc.cmd.Process.Pid); err != nil {
+			return err
+		}
 		time.Sleep(time.Hour)
 	case "claude":
 		parts := fixture("claude_initialize.json")
