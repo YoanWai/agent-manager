@@ -219,11 +219,28 @@ func TestSessionOfProcessWalksUpToAManagedPane(t *testing.T) {
 		t.Fatalf("no sleep process under pane pid %s", panePID)
 	}
 
-	if got, err := driver.SessionOfProcess(child); err != nil || got != id {
-		t.Fatalf("SessionOfProcess(pane child) = %q, %v; want %q", got, err, id)
+	parent, _ := strconv.Atoi(panePID)
+	if got, seen, err := driver.SessionOfProcess(child, parent); err != nil || !seen || got != id {
+		t.Fatalf("SessionOfProcess(pane child) = %q, %v, %v; want %q, seen", got, seen, err, id)
 	}
-	if got, err := driver.SessionOfProcess(os.Getpid()); err != nil || got != "" {
-		t.Fatalf("SessionOfProcess(test process) = %q, %v; want no session", got, err)
+	if got, seen, err := driver.SessionOfProcess(os.Getpid(), os.Getppid()); err != nil || !seen || got != "" {
+		t.Fatalf("SessionOfProcess(test process) = %q, %v, %v; want no session, seen", got, seen, err)
+	}
+}
+
+// Inside a PID namespace the process reads its own pid, which the table it
+// lists names with another parent, if at all. Such a walk would start from a
+// stranger, so it reports that it saw nothing.
+func TestSessionOfProcessDistrustsATableThatDisagreesWithTheCaller(t *testing.T) {
+	driver := requireTmux(t)
+	id := "proc" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", "sleep 60", nil, 80, 24); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+
+	if got, seen, err := driver.SessionOfProcess(os.Getpid(), os.Getppid()+1); err != nil || seen || got != "" {
+		t.Fatalf("SessionOfProcess with a wrong parent = %q, %v, %v; want not seen", got, seen, err)
 	}
 }
 

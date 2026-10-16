@@ -217,25 +217,30 @@ func withConfigDir(command cli.Command) func([]string) error {
 }
 
 // callerSession identifies the session a subcommand speaks for. The
-// environment variable stays authoritative: an MCP server launched under
-// Codex is handed that variable and nothing else of the pane's
-// environment, so a pane lookup could not stand in for it.
+// process ancestry decides whenever it can see the tmux server: the
+// environment is inherited by whatever a pane starts, and a process that
+// outlives its pane carries it on. Claude Code's daemon, started from one
+// session, serves every other session's conversations with that session's
+// id and pane. A process no managed pane started is no session's caller,
+// whatever its environment says. The ancestry also names the caller of an
+// MCP server Muse or Cursor starts with none of the pane's environment.
 //
-// Falling back to the pane is what makes a terminal a caller. A terminal
-// opens on the user's shell with no launch command, so tmux gets no launch
-// script to export the id from, and the shell would otherwise have no way
-// to say which session it is.
+// Inside a sandbox's PID namespace the ancestry is out of sight, and the
+// environment variable answers: an MCP server launched under Codex is handed
+// that variable and nothing else of the pane's environment.
 //
-// The process ancestry is the last resort, for an MCP server Muse or Cursor
-// starts with none of the pane's environment.
+// Falling back to the pane is what makes a terminal a caller there. A
+// terminal opens on the user's shell with no launch command, so tmux gets
+// no launch script to export the id from, and the shell would otherwise
+// have no way to say which session it is.
 func callerSession() string {
+	if id, seen := sessionFromAncestry(); seen {
+		return id
+	}
 	if id := os.Getenv(hooks.EnvSessionID); id != "" {
 		return id
 	}
-	if id := sessionFromPane(); id != "" {
-		return id
-	}
-	return sessionFromAncestry()
+	return sessionFromPane()
 }
 
 // sessionFromPane asks the manager's tmux server which session owns the
@@ -258,17 +263,19 @@ func sessionFromPane() string {
 	return id
 }
 
-// Like sessionFromPane, every failure answers empty.
-func sessionFromAncestry() string {
+// sessionFromAncestry names the session whose pane started this process.
+// seen is false when the ancestry cannot be read, including every failure,
+// so the other ways to identify the caller still get their turn.
+func sessionFromAncestry() (id string, seen bool) {
 	driver, err := tmux.New()
 	if err != nil {
-		return ""
+		return "", false
 	}
-	id, err := driver.SessionOfProcess(os.Getpid())
+	id, seen, err = driver.SessionOfProcess(os.Getpid(), os.Getppid())
 	if err != nil {
-		return ""
+		return "", false
 	}
-	return id
+	return id, seen
 }
 
 func run() (resultErr error) {
