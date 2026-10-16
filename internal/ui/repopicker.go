@@ -19,11 +19,13 @@ type pickKind int
 const (
 	pickRepo pickKind = iota
 	pickBase
+	pickCommit
 )
 
 // pickRow is one selectable target: label is what the user reads (a repo base
-// name, a worktree's branch, or a base ref), root carries the path selectRepo
-// retargets to, or the ref selectBase persists ("" for auto).
+// name, a worktree's branch, a base ref, or a commit), root carries the path
+// selectRepo retargets to, the ref selectBase persists ("" for auto), or the
+// commit's SHA.
 type pickRow struct {
 	label string
 	root  string
@@ -108,6 +110,32 @@ func (m *Model) openBasePick() tea.Cmd {
 	return nil
 }
 
+// openCommitPick lists the commit scope's commits, newest first, cursor on
+// the one in view.
+func (m *Model) openCommitPick() {
+	if m.diff.scope != git.ScopeCommit {
+		m.errBar.text = "s to the commit scope first"
+		return
+	}
+	if len(m.diff.commits) == 0 {
+		m.errBar.text = "no commits to review"
+		return
+	}
+	rows := make([]pickRow, len(m.diff.commits))
+	for i, c := range m.diff.commits {
+		glyph := "○ "
+		if m.commitIsReviewed(c) {
+			glyph = "✔ "
+		}
+		label := glyph + c.Short + " " + c.Subject
+		if i == 0 {
+			label += " (HEAD)"
+		}
+		rows[i] = pickRow{label: label, root: c.SHA}
+	}
+	m.openPick(rows, "⌥ Review commit", pickCommit, m.viewedCommit())
+}
+
 func (m *Model) openPick(rows []pickRow, title string, kind pickKind, current string) {
 	m.repoPick = repoPickState{rows: rows, title: title, kind: kind}
 	selResolved := resolveSymlinksOrSelf(current)
@@ -170,8 +198,11 @@ func (m *Model) handleRepoPickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.mode = modeDiff
 		row := rows[m.repoPick.cursor]
-		if m.repoPick.kind == pickBase {
+		switch m.repoPick.kind {
+		case pickBase:
 			return m, m.selectBase(row.root)
+		case pickCommit:
+			return m, m.showCommit(commitIndex(m.diff.commits, row.root))
 		}
 		return m, m.selectRepo(row.root)
 	case tea.KeyRunes:
@@ -180,6 +211,22 @@ func (m *Model) handleRepoPickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	return m, nil
+}
+
+// repoPickFirstRow is how far below the card's top its first row paints: the
+// title edge, a blank row, the filter, and another blank row.
+const repoPickFirstRow = 4
+
+// handleRepoPickClick picks the row a click lands on, the way enter does.
+func (m *Model) handleRepoPickClick(x, y int) (tea.Model, tea.Cmd) {
+	rows := m.filteredRows()
+	start, end := m.repoPickWindow(len(rows))
+	i := start + y - m.cardTop - repoPickFirstRow
+	if x < m.cardLeft || x >= m.cardRight || i < start || i >= end {
+		return m, nil
+	}
+	m.repoPick.cursor = i
+	return m.handleRepoPickKey(tea.KeyMsg{Type: tea.KeyEnter})
 }
 
 func (m *Model) moveRepoPickCursor(delta, count int) {
@@ -201,6 +248,7 @@ func (m *Model) selectRepo(root string) tea.Cmd {
 		m.pickedRepos = map[string]string{}
 	}
 	m.pickedRepos[sess.ID] = root
+	m.resetCommitScope()
 	m.diff.gen++
 	m.diff.loading = true
 	m.diff.errText = ""
@@ -215,7 +263,8 @@ func (m *Model) selectRepo(root string) tea.Cmd {
 
 // selectBase persists the chosen base for the current repo ("" clears to auto)
 // then reloads. It forces the branch scope so the freshly picked base is what
-// the review actually shows.
+// the review actually shows, unless the commit scope is in view, whose
+// commit list the base bounds.
 func (m *Model) selectBase(ref string) tea.Cmd {
 	sess, ok := m.diffSession()
 	if !ok {
@@ -227,7 +276,9 @@ func (m *Model) selectBase(ref string) tea.Cmd {
 		m.errBar.text = err.Error()
 		return nil
 	}
-	m.diff.scope = git.ScopeBranch
+	if m.diff.scope != git.ScopeCommit {
+		m.diff.scope = git.ScopeBranch
+	}
 	m.diff.gen++
 	m.diff.loading = true
 	m.diff.errText = ""
@@ -272,7 +323,7 @@ func (m *Model) repoPickRow(row pickRow, selected bool) string {
 	name := truncateTail(escapeControlsInline(row.label), inner-lipgloss.Width(marker))
 	budget := inner - lipgloss.Width(marker) - lipgloss.Width(name) - 2
 	dir := ""
-	if budget > 1 {
+	if budget > 1 && m.repoPick.kind != pickCommit {
 		dir = subtleStyle.Render("  " + truncateTail(escapeControlsInline(filepath.Dir(row.root)), budget))
 	}
 	return marker + nameStyle.Render(name) + dir

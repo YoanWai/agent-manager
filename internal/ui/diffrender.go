@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"path/filepath"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -20,6 +21,13 @@ import (
 const (
 	maxHighlightBytes = 256 << 10
 	highlightCacheCap = 8
+
+	// commitPillSubject caps the subject in the header's commit pill, which
+	// shares the line with the scope, repo and target pills.
+	commitPillSubject = 40
+	// maxRailCommits caps the rail's commit rows so the file list keeps
+	// most of the height.
+	maxRailCommits = 5
 
 	bgAdd     = "\x1b[48;2;22;42;22m"
 	bgDel     = "\x1b[48;2;48;24;24m"
@@ -526,23 +534,38 @@ func (m *Model) unifiedRows(fd *diff.FileDiff, hl *fileHL, width, height int) []
 	}
 
 	var rows []string
+	var owners []int
 	if scroll > 0 {
 		rows = append(rows, subtleStyle.Render(fmt.Sprintf("  ↑ %d more", scroll)))
+		owners = append(owners, scroll-1)
 	}
 	i := scroll
 	for ; i < total && len(rows) < height; i++ {
 		rows = append(rows, m.renderDiffRow(fd, hl, i, width, i == m.diff.cursorLine)...)
 		rows = append(rows, m.annotationRows(fd, i, width)...)
+		owners = ownRows(owners, len(rows), i)
 	}
 	if i < total {
 		if len(rows) >= height {
-			rows = rows[:height-1]
+			rows, owners = rows[:height-1], owners[:height-1]
 		}
 		rows = append(rows, subtleStyle.Render(fmt.Sprintf("  ↓ %d more", total-i)))
+		owners = append(owners, i)
 	} else if len(rows) > height {
-		rows = rows[:height]
+		rows, owners = rows[:height], owners[:height]
 	}
+	m.diff.codeRows = owners
 	return rows
+}
+
+// ownRows extends owners to count entries, each naming the cursor row
+// owner, so a click on any painted row of a wrapped line or its comments
+// lands on that line.
+func ownRows(owners []int, count, owner int) []int {
+	for len(owners) < count {
+		owners = append(owners, owner)
+	}
+	return owners
 }
 
 func numWidth(fd *diff.FileDiff) int {
@@ -564,6 +587,28 @@ func numCell(num, width int) string {
 	return fmt.Sprintf("%*d ", width-1, num)
 }
 
+// diffBodyTop is the screen row the review body starts on, below the header
+// and its rule.
+const diffBodyTop = 2
+
+// placeRailRows maps the screen rows of a windowed rail list, starting at y,
+// to what each names: a row in the window names its own entry, and a "more"
+// counter the entry just past it, the way the list steps onto the row a
+// counter hides.
+func placeRailRows(rows map[int]int, y, start, end, total int, entry func(pos int) int) {
+	if start > 0 {
+		rows[y] = entry(start - 1)
+		y++
+	}
+	for pos := start; pos < end; pos++ {
+		rows[y] = entry(pos)
+		y++
+	}
+	if end < total {
+		rows[y] = entry(end)
+	}
+}
+
 // viewDiffFull is the full-screen review mode: file list on the left,
 // whole-file code on the right, annotation bar docked when typing.
 func (m *Model) viewDiffFull() string {
@@ -581,8 +626,37 @@ func (m *Model) viewDiffFull() string {
 	// Files sit on the rail surface, the code on the backdrop: the same
 	// two-surface split the session list uses, so review reads as the same
 	// application rather than a second one.
-	fileLines := append([]string{"", strings.Repeat(" ", railInset) + subtleStyle.Render("files")},
-		indentLines(splitLines(m.viewDiffFileList(fileWidth-2*railGutter, bodyHeight-2)), railInset)...)
+	var fileLines []string
+	listHeight := bodyHeight - 2
+	m.diff.railWidth = fileWidth
+	m.diff.commitRows, m.diff.fileRows = map[int]int{}, map[int]int{}
+	m.diff.codeRows = nil
+	railHeight := listHeight / 3
+	if rows := m.viewDiffCommitRail(fileWidth-2*railGutter, railHeight); rows != "" {
+		at, total := m.commitPosition()
+		fileLines = append([]string{"", strings.Repeat(" ", railInset) + subtleStyle.Render("commits") + "  " + mutedStyle.Render(fmt.Sprintf("%d/%d", at, total))},
+			indentLines(splitLines(rows), railInset)...)
+		listHeight -= len(fileLines)
+		start, end := m.commitRailWindow(railHeight)
+		last := len(m.diff.commits) - 1
+		placeRailRows(m.diff.commitRows, diffBodyTop+2, start, end, last+1, func(pos int) int { return last - pos })
+	}
+	fileLines = append(fileLines, "", strings.Repeat(" ", railInset)+subtleStyle.Render("files"))
+	if m.fileListRows() {
+		shown, start, end := m.fileListWindow(listHeight)
+		placeRailRows(m.diff.fileRows, diffBodyTop+len(fileLines), start, end, len(shown), func(pos int) int { return shown[pos] })
+	}
+	fileLines = append(fileLines, indentLines(splitLines(m.viewDiffFileList(fileWidth-2*railGutter, listHeight)), railInset)...)
+	for y := range m.diff.commitRows {
+		if y >= diffBodyTop+bodyHeight {
+			delete(m.diff.commitRows, y)
+		}
+	}
+	for y := range m.diff.fileRows {
+		if y >= diffBodyTop+bodyHeight {
+			delete(m.diff.fileRows, y)
+		}
+	}
 	codeLines := append([]string{"", "  " + subtleStyle.Render(escapeControlsInline(m.diffCodeTitle()))},
 		indentLines(splitLines(m.viewDiffCode(codeWidth-2*contentGutter, bodyHeight-2)), contentGutter)...)
 
@@ -629,11 +703,12 @@ func (m *Model) viewDiffHeader(sessName string) string {
 	if m.diff.sideBySide {
 		layout = "split"
 	}
+	m.diff.pills = m.diff.pills[:0]
 	left := "  " + lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render("review · "+escapeControlsInline(sessName)) + "  " +
-		keyPill("s", m.diff.scope.String(), colorAccent2) + "  " +
-		keyPill("u", layout, colorAccent)
+		m.reviewPill("s", m.diff.scope.String(), colorAccent2) + "  " +
+		m.reviewPill("u", layout, colorAccent)
 	if m.diff.codeOnly {
-		left += "  " + keyPill("f", "code only", colorAccent)
+		left += "  " + m.reviewPill("f", "code only", colorAccent)
 	}
 	if root := m.diff.set.Repo.Root; root != "" {
 		name := filepath.Base(m.diff.repoSel)
@@ -644,17 +719,31 @@ func (m *Model) viewDiffHeader(sessName string) string {
 		if len(m.diff.repoRoots) > 1 {
 			name = fmt.Sprintf("%s · %d repos", name, len(m.diff.repoRoots))
 		}
-		left += "  " + keyPill("r", name, colorAccent)
+		left += "  " + m.reviewPill("r", name, colorAccent)
 		branch := escapeControlsInline(m.diff.set.Repo.Branch)
-		if m.diff.scope == git.ScopeBranch && m.diff.set.BaseDesc != "" && branch != "" {
-			target := escapeControlsInline(stripBaseHash(m.diff.set.BaseDesc))
-			summary := target + " → " + branch
+		target := ""
+		switch m.diff.scope {
+		case git.ScopeBranch:
+			target = m.diff.set.BaseDesc
+		case git.ScopeCommit:
+			target = m.diff.commitTarget
+		}
+		if target != "" && branch != "" {
+			summary := escapeControlsInline(stripBaseHash(target)) + " → " + branch
 			if m.diff.set.BaseOverride == "" {
 				summary += " " + subtleStyle.Render("(auto)")
 			}
-			left += "  " + keyPill("B", summary, colorAccent)
+			left += "  " + m.reviewPill("B", summary, colorAccent)
 		} else if branch != "" {
 			left += "  " + subtleStyle.Render(branch)
+		}
+		if c, ok := m.shownCommit(); ok && m.diff.scope == git.ScopeCommit {
+			at, total := m.commitPosition()
+			label := fmt.Sprintf("%d/%d %s %s", at, total, c.Short, truncateTail(escapeControlsInline(c.Subject), commitPillSubject))
+			if m.diff.commitPin.sha == "" {
+				label += " " + subtleStyle.Render("(HEAD)")
+			}
+			left += "  " + m.reviewPill("L", label, colorAccent)
 		}
 	}
 
@@ -686,7 +775,7 @@ func (m *Model) viewDiffHeader(sessName string) string {
 	if round := m.diff.rounds[m.reviewKey()]; round.Number > 0 {
 		label := fmt.Sprintf("Review round %d", round.Number)
 		if !m.diff.loading && round.Fingerprint != 0 &&
-			(round.Scope != m.diff.scope.String() || round.Fingerprint != m.diff.fingerprint) {
+			(round.Scope != m.scopeKey() || round.Fingerprint != m.diff.fingerprint) {
 			label += " · changed"
 		}
 		right += subtleStyle.Render(" · ") + annotationStyle.Render(label)
@@ -697,11 +786,49 @@ func (m *Model) viewDiffHeader(sessName string) string {
 	if gap < 1 {
 		budget := m.width - ansi.StringWidth(right)
 		if budget < 1 {
+			m.diff.pills = m.diff.pills[:0]
 			return padRight(right, m.width)
 		}
+		m.placePills(ansi.Strip(left), budget)
 		return padRight(left, budget) + right
 	}
+	m.placePills(ansi.Strip(left), m.width)
 	return left + strings.Repeat(" ", gap) + right
+}
+
+// pillHit is a header pill a click presses the key of.
+type pillHit struct {
+	key  string
+	text string
+	x0   int
+	x1   int
+}
+
+// reviewPill paints a header pill and records it for placePills.
+func (m *Model) reviewPill(key, text string, fg lipgloss.Color) string {
+	pill := keyPill(key, text, fg)
+	m.diff.pills = append(m.diff.pills, pillHit{key: key, text: ansi.Strip(pill)})
+	return pill
+}
+
+// placePills finds each recorded pill's columns in the painted header line,
+// dropping the ones the line cut before limit.
+func (m *Model) placePills(line string, limit int) {
+	placed := m.diff.pills[:0]
+	from := 0
+	for _, pill := range m.diff.pills {
+		at := strings.Index(line[from:], pill.text)
+		if at < 0 {
+			continue
+		}
+		pill.x0 = ansi.StringWidth(line[:from+at])
+		pill.x1 = pill.x0 + ansi.StringWidth(pill.text)
+		from += at + len(pill.text)
+		if pill.x1 <= limit {
+			placed = append(placed, pill)
+		}
+	}
+	m.diff.pills = placed
 }
 
 func (m *Model) diffCodeTitle() string {
@@ -712,6 +839,26 @@ func (m *Model) diffCodeTitle() string {
 	return fd.File.Path
 }
 
+// fileListWindow is the files the list shows, by index into the set, and
+// the window of them that fits height.
+func (m *Model) fileListWindow(height int) (shown []int, start, end int) {
+	files := m.diff.set.Files
+	for i := range files {
+		if !m.diffFileHidden(&files[i]) {
+			shown = append(shown, i)
+		}
+	}
+	cursor := max(slices.Index(shown, m.diff.fileIdx), 0)
+	start, end = scrollWindow(len(shown), cursor, height)
+	return shown, start, end
+}
+
+// fileListRows reports whether the list paints file rows rather than a
+// loading or empty note.
+func (m *Model) fileListRows() bool {
+	return (!m.diff.loading || len(m.diff.set.Files) > 0) && m.diffEmptyText() == ""
+}
+
 func (m *Model) viewDiffFileList(width, height int) string {
 	if m.diff.loading && len(m.diff.set.Files) == 0 {
 		return m.reviewSpinnerLine("loading diff")
@@ -720,30 +867,17 @@ func (m *Model) viewDiffFileList(width, height int) string {
 		return empty
 	}
 	files := m.diff.set.Files
-	shown := make([]int, 0, len(files))
-	for i := range files {
-		if !m.diffFileHidden(&files[i]) {
-			shown = append(shown, i)
-		}
-	}
+	shown, start, end := m.fileListWindow(height)
 	if len(shown) == 0 {
 		return diffAllHiddenNote()
 	}
-	cursor := 0
-	for pos, i := range shown {
-		if i == m.diff.fileIdx {
-			cursor = pos
-			break
-		}
-	}
-	start, end := scrollWindow(len(shown), cursor, height)
 	var b strings.Builder
 	if start > 0 {
 		b.WriteString(subtleStyle.Render(fmt.Sprintf("  ↑ %d more", start)) + "\n")
 	}
 	notes := map[string]int{}
 	for _, note := range m.diff.annotations[m.reviewKey()] {
-		if !note.handled {
+		if !note.handled && m.noteShown(&note) {
 			notes[note.file]++
 		}
 	}
@@ -787,6 +921,61 @@ func (m *Model) viewDiffFileList(width, height int) string {
 	}
 	if end < len(shown) {
 		b.WriteString(subtleStyle.Render(fmt.Sprintf("  ↓ %d more", len(shown)-end)))
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// commitRailWindow is the window of rail positions, oldest first, that fits
+// height around the commit in view; position pos holds commit
+// len(commits)-1-pos.
+func (m *Model) commitRailWindow(height int) (start, end int) {
+	cursor := 0
+	if current := commitIndex(m.diff.commits, m.viewedCommit()); current >= 0 {
+		cursor = len(m.diff.commits) - 1 - current
+	}
+	return scrollWindow(len(m.diff.commits), cursor, max(min(height, maxRailCommits), 3))
+}
+
+// viewDiffCommitRail lists the commit scope's commits oldest first, the one
+// in view marked, each with whether every file in it is reviewed. It shows
+// a window of at most maxRailCommits rows around the commit in view.
+func (m *Model) viewDiffCommitRail(width, height int) string {
+	commits := m.diff.commits
+	if m.diff.scope != git.ScopeCommit || len(commits) == 0 {
+		return ""
+	}
+	current := commitIndex(commits, m.viewedCommit())
+	start, end := m.commitRailWindow(height)
+	var b strings.Builder
+	if start > 0 {
+		b.WriteString(subtleStyle.Render(fmt.Sprintf("  ↑ %d more", start)) + "\n")
+	}
+	for pos := start; pos < end; pos++ {
+		i := len(commits) - 1 - pos
+		c := commits[i]
+		glyph := subtleStyle.Render("○")
+		if m.commitIsReviewed(c) {
+			glyph = lipgloss.NewStyle().Foreground(colorFinished).Render("✔")
+		}
+		bar, subject := " ", valueStyle
+		if i == current {
+			bar = lipgloss.NewStyle().Foreground(colorAccent).Render("▎")
+			subject = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
+		}
+		tag := ""
+		if i == 0 {
+			tag = subtleStyle.Render("HEAD")
+		}
+		left := bar + glyph + " " + mutedStyle.Render(c.Short) + " "
+		budget := max(width-ansi.StringWidth(left)-ansi.StringWidth(tag)-1, 4)
+		row := left + subject.Render(truncateTail(escapeControlsInline(c.Subject), budget))
+		if tag != "" {
+			row += strings.Repeat(" ", max(width-ansi.StringWidth(row)-ansi.StringWidth(tag), 1)) + tag
+		}
+		b.WriteString(row + "\n")
+	}
+	if end < len(commits) {
+		b.WriteString(subtleStyle.Render(fmt.Sprintf("  ↓ %d more", len(commits)-end)))
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
@@ -916,8 +1105,10 @@ func (m *Model) renderSideBySide(b *strings.Builder, fd *diff.FileDiff, hl *file
 		scroll = 0
 	}
 	var out []string
+	var owners []int
 	if scroll > 0 {
 		out = append(out, subtleStyle.Render(fmt.Sprintf("  ↑ %d more", scroll)))
+		owners = append(owners, scroll-1)
 	}
 	i := scroll
 	for ; i < len(rows) && len(out) < height; i++ {
@@ -950,15 +1141,18 @@ func (m *Model) renderSideBySide(b *strings.Builder, fd *diff.FileDiff, hl *file
 		if row.Right >= 0 && row.Right != row.Left {
 			out = append(out, m.annotationRows(fd, row.Right, width)...)
 		}
+		owners = ownRows(owners, len(out), i)
 	}
 	if i < len(rows) {
 		if len(out) >= height {
-			out = out[:height-1]
+			out, owners = out[:height-1], owners[:height-1]
 		}
 		out = append(out, subtleStyle.Render(fmt.Sprintf("  ↓ %d more", len(rows)-i)))
+		owners = append(owners, i)
 	} else if len(out) > height {
-		out = out[:height]
+		out, owners = out[:height], owners[:height]
 	}
+	m.diff.codeRows = owners
 	b.WriteString(strings.Join(out, "\n"))
 }
 
@@ -1038,11 +1232,15 @@ func (m *Model) viewDiffFooter() string {
 	if m.diff.codeOnly {
 		filter = "all files"
 	}
+	review := [][2]string{
+		{"c", "comment"}, {"d", "remove/handle"}, {"C", send}, {"space", "reviewed"}, {"A", "all reviewed"},
+		{"s", "scope: " + m.diff.scope.String()}, {"r", repo}, {"b", "branch"}, {"B", "target"},
+	}
+	if m.diff.scope == git.ScopeCommit {
+		review = append(review, [2]string{"L", "commit"}, [2]string{"[ ]", "older/newer"}, [2]string{"{ }", "oldest/newest"})
+	}
 	return legendBar([]legendSection{
-		{title: "Review", pairs: [][2]string{
-			{"c", "comment"}, {"d", "remove/handle"}, {"C", send}, {"space", "reviewed"},
-			{"s", "scope: " + m.diff.scope.String()}, {"r", repo}, {"b", "branch"}, {"B", "target"},
-		}},
+		{title: "Review", pairs: review},
 		{title: "Move", quiet: true, pairs: [][2]string{
 			{"↑↓/jk", "scroll line"}, {"ctrl+d/ctrl+u", "half page"}, {"pgup/pgdn", "page"},
 			{"g/G", "top/bottom"}, {"tab/J K/shift+tab", "file"}, {"n/N", "change"},

@@ -656,7 +656,7 @@ func TestReviewModeWritesMailbox(t *testing.T) {
 	configDir := t.TempDir()
 	session := connect(t, configDir, "abc123")
 
-	for _, scope := range []string{"uncommitted", "branch", "last_commit", "staged"} {
+	for _, scope := range []string{"uncommitted", "branch", "commit", "last_commit", "staged"} {
 		text, isError := callText(t, session, "review", map[string]any{"mode": scope})
 		if isError {
 			t.Fatalf("review mode %q error: %q", scope, text)

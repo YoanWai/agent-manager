@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"maps"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	"github.com/YoanWai/agent-manager/internal/deps"
@@ -40,6 +42,32 @@ type annotation struct {
 	handled  bool
 	outdated bool
 }
+
+// commitPin is the commit the commit scope shows; an empty sha follows HEAD.
+// index is where the pinned commit stood in the list, the place to fall back
+// to once a rewrite leaves nothing to match it by. unreviewed asks the next
+// load for the oldest commit not fully reviewed, falling back to HEAD.
+type commitPin struct {
+	sha        string
+	index      int
+	unreviewed bool
+}
+
+// commitLoad is what a load takes to pick the commit scope's commit: the
+// pin, the commits review state is keyed by so a rewrite can carry it, the
+// HEAD that state was last carried at, and the reviewed marks and filter
+// that decide which commits are done.
+type commitLoad struct {
+	pin      commitPin
+	keyed    []string
+	head     string
+	marks    map[string]uint64
+	codeOnly bool
+}
+
+// commitScopePrefix keys review state taken in the commit scope by the
+// commit it was taken on, since the same path renders differently in each.
+const commitScopePrefix = "commit@"
 
 // diffState drives the diff panel and the full-screen review mode. The
 // panel follows the tree cursor like the pane preview; fullscreen pins
@@ -97,6 +125,35 @@ type diffState struct {
 
 	// Set when review opened from focus mode; leaving focuses again.
 	refocus bool
+
+	// commits lists what the commit scope steps through, newest first, since
+	// the target commitTarget names. rewriteHead is the HEAD review state was
+	// last carried across rewrites at.
+	commitPin    commitPin
+	commits      []git.Commit
+	commitTarget string
+	rewriteHead  string
+
+	// markAll is set while A waits on file loads to mark every shown file
+	// reviewed. markOnLoad asks the next load for the same, for a click on
+	// another commit's glyph; markFileOnLoad names a file whose glyph was
+	// clicked before it had loaded.
+	markAll        bool
+	markOnLoad     bool
+	markFileOnLoad string
+
+	// Where the last frame painted what a click acts on: the header pills,
+	// and the rail rows naming a commit or a file, keyed by screen row.
+	pills      []pillHit
+	railWidth  int
+	commitRows map[int]int
+	fileRows   map[int]int
+	// codeRows names the cursor row each painted code row belongs to, from
+	// the first row under the code title; lineClickAt and lineClickRow
+	// pair two presses on one line into a double click.
+	codeRows     []int
+	lineClickAt  time.Time
+	lineClickRow int
 }
 
 type diffLoadedMsg struct {
@@ -121,6 +178,17 @@ type diffLoadedMsg struct {
 	// edited the file under review), the only case where saved comments
 	// re-anchor. Scope cycles and session switches load a different file set.
 	refresh bool
+	// The commit scope's list and the commit it resolved, and what a rewrite
+	// since the last load moved: rewrites maps old SHAs to their replacements.
+	commits      []git.Commit
+	commitTarget string
+	head         string
+	rewrites     map[string]string
+	rewriteErr   error
+	commitNotice string
+	// pinned reports the resolved commit pins the scope rather than
+	// following HEAD.
+	pinned bool
 }
 
 type diffHLMsg struct {
@@ -204,6 +272,7 @@ func (m *Model) diffLoadCmd(sess store.Session, scope git.Scope, gen int, repoWa
 	// state discarded reads nothing and cannot migrate over a chained write.
 	restored := maps.Clone(m.diff.stateLoaded)
 	cwd := m.sessionDir(sess)
+	load := m.commitLoad()
 	return func() tea.Msg {
 		msg := diffLoadedMsg{sessID: sess.ID, scope: scope, gen: gen, refresh: refresh}
 		roots, err := driver.ResolveRepos(cwd)
@@ -237,25 +306,34 @@ func (m *Model) diffLoadCmd(sess store.Session, scope git.Scope, gen int, repoWa
 			msg.err = err
 			return msg
 		}
-		finishDiffMsg(driver, scope, gen, roots[repoIdx], cmp.Or(override, groupBase), roots, &msg)
+		finishDiffMsg(driver, scope, gen, roots[repoIdx], cmp.Or(override, groupBase), roots, load, &msg)
 		return msg
 	}
 }
 
-func finishDiffMsg(driver *git.Driver, scope git.Scope, gen int, gitRoot, override string, repoRoots []string, msg *diffLoadedMsg) {
+func finishDiffMsg(driver *git.Driver, scope git.Scope, gen int, gitRoot, override string, repoRoots []string, load commitLoad, msg *diffLoadedMsg) {
 	msg.repoRoots = repoRoots
 	msg.repoRoot = gitRoot
-	msg.set, msg.err = diff.BuildSet(driver, gitRoot, scope, override)
+	commit := ""
+	if scope == git.ScopeCommit {
+		if commit, msg.err = chooseCommit(driver, gitRoot, override, load, msg); msg.err != nil {
+			return
+		}
+	}
+	msg.set, msg.err = diff.BuildSet(driver, gitRoot, scope, override, commit)
 	if msg.err == nil {
-		baseRef := msg.set.BaseRef
-		if scope == git.ScopeBranch && baseRef == "" {
-			baseRef, _, _ = driver.BranchBase(msg.set.Repo.Root, override)
+		ref := msg.set.BaseRef
+		switch {
+		case scope == git.ScopeCommit:
+			ref = msg.set.Commit
+		case scope == git.ScopeBranch && ref == "":
+			ref, _, _ = driver.BranchBase(msg.set.Repo.Root, override)
 		}
 		var wg sync.WaitGroup
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			msg.fp, _ = driver.Fingerprint(msg.set.Repo.Root, scope, baseRef)
+			msg.fp, _ = driver.Fingerprint(msg.set.Repo.Root, scope, ref)
 		}()
 		go func() {
 			defer wg.Done()
@@ -267,9 +345,10 @@ func finishDiffMsg(driver *git.Driver, scope git.Scope, gen int, gitRoot, overri
 
 func (m *Model) diffReloadCmd(sess store.Session, scope git.Scope, gen int, gitRoot, override string, repoRoots []string) tea.Cmd {
 	driver := m.gitDrv
+	load := m.commitLoad()
 	return func() tea.Msg {
 		msg := diffLoadedMsg{sessID: sess.ID, scope: scope, gen: gen}
-		finishDiffMsg(driver, scope, gen, gitRoot, override, repoRoots, &msg)
+		finishDiffMsg(driver, scope, gen, gitRoot, override, repoRoots, load, &msg)
 		return msg
 	}
 }
@@ -280,6 +359,7 @@ func (m *Model) diffReloadCmd(sess store.Session, scope git.Scope, gen int, gitR
 func (m *Model) diffRebaseCmd(sess store.Session, scope git.Scope, gen int, gitRoot string, repoRoots []string) tea.Cmd {
 	driver, stor := m.gitDrv, m.store
 	groupBase := m.groupBase(sess.Group)
+	load := m.commitLoad()
 	return func() tea.Msg {
 		msg := diffLoadedMsg{sessID: sess.ID, scope: scope, gen: gen, repoRoots: repoRoots, repoRoot: gitRoot}
 		override, err := stor.ReviewBase(sess.ID, resolveSymlinksOrSelf(gitRoot))
@@ -287,9 +367,183 @@ func (m *Model) diffRebaseCmd(sess store.Session, scope git.Scope, gen int, gitR
 			msg.err = err
 			return msg
 		}
-		finishDiffMsg(driver, scope, gen, gitRoot, cmp.Or(override, groupBase), repoRoots, &msg)
+		finishDiffMsg(driver, scope, gen, gitRoot, cmp.Or(override, groupBase), repoRoots, load, &msg)
 		return msg
 	}
+}
+
+// chooseCommit lists the commit scope's commits into msg and returns the one
+// to show: the pinned commit, its replacement after a rewrite, or the commit
+// now at its place in the list. "" follows HEAD. Review state keyed by a
+// commit HEAD no longer reaches is mapped to its replacement in msg.rewrites.
+func chooseCommit(driver *git.Driver, root, override string, load commitLoad, msg *diffLoadedMsg) (string, error) {
+	commits, target, err := driver.Commits(root, override)
+	if err != nil {
+		return "", err
+	}
+	msg.commits, msg.commitTarget = commits, target
+	if len(commits) == 0 {
+		return "", nil
+	}
+	msg.head = commits[0].SHA
+	if msg.head != load.head {
+		keyed := load.keyed
+		if msg.reviewStateLoaded {
+			keyed = append(keyed, keyedCommits(msg.reviewState)...)
+		}
+		if load.pin.sha != "" {
+			keyed = append(keyed, load.pin.sha)
+		}
+		slices.Sort(keyed)
+		msg.rewrites, msg.rewriteErr = driver.Rewrites(root, slices.Compact(keyed), commits)
+	}
+	if load.pin.unreviewed {
+		marks := map[string]uint64{}
+		maps.Copy(marks, load.marks)
+		if msg.reviewStateLoaded {
+			maps.Copy(marks, msg.reviewState.Reviewed)
+		}
+		marks = carriedMarks(marks, msg.rewrites)
+		for i := len(commits) - 1; i > 0; i-- {
+			if !commitReviewed(commits[i], marks, load.codeOnly) {
+				msg.pinned = true
+				return commits[i].SHA, nil
+			}
+		}
+		return "", nil
+	}
+	sha := load.pin.sha
+	if sha == "" {
+		return "", nil
+	}
+	msg.pinned = true
+	if commitIndex(commits, sha) >= 0 {
+		return sha, nil
+	}
+	if moved, ok := msg.rewrites[sha]; ok {
+		msg.commitNotice = fmt.Sprintf("commit %s was rewritten as %s", shortSHA(sha), shortSHA(moved))
+		return moved, nil
+	}
+	at := commits[min(load.pin.index, len(commits)-1)]
+	msg.commitNotice = fmt.Sprintf("commit %s is no longer on the branch, showing %s", shortSHA(sha), at.Short)
+	return at.SHA, nil
+}
+
+// commitReviewed reports whether every path c changes carries a reviewed
+// mark taken on c. The code-only filter leaves out the paths it hides, and a
+// commit changing nothing has nothing left to review.
+func commitReviewed(c git.Commit, marks map[string]uint64, codeOnly bool) bool {
+	for _, path := range c.Files {
+		if codeOnly && nonCodePath(path) {
+			continue
+		}
+		if marks[commitScopePrefix+c.SHA+"\x00"+path] == 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func (m *Model) commitIsReviewed(c git.Commit) bool {
+	return commitReviewed(c, m.diff.reviewed[m.reviewKey()], m.diff.codeOnly)
+}
+
+// carriedScope is scope with the commit it names replaced by the one a
+// rewrite moved it to.
+func carriedScope(scope string, moved map[string]string) (string, bool) {
+	sha, ok := strings.CutPrefix(scope, commitScopePrefix)
+	if to, found := moved[sha]; ok && found {
+		return commitScopePrefix + to, true
+	}
+	return scope, false
+}
+
+// carriedMarks rekeys marks onto the commits a rewrite moved them to. A mark
+// already on the replacement wins over one carried onto it.
+func carriedMarks(marks map[string]uint64, moved map[string]string) map[string]uint64 {
+	carried := make(map[string]uint64, len(marks))
+	for markKey, hash := range marks {
+		scope, path, _ := strings.Cut(markKey, "\x00")
+		if to, ok := carriedScope(scope, moved); ok {
+			if _, taken := marks[to+"\x00"+path]; !taken {
+				carried[to+"\x00"+path] = hash
+			}
+			continue
+		}
+		carried[markKey] = hash
+	}
+	return carried
+}
+
+func (m *Model) commitLoad() commitLoad {
+	state := m.reviewStateSnapshot(m.reviewKey())
+	return commitLoad{
+		pin:      m.diff.commitPin,
+		keyed:    keyedCommits(state),
+		head:     m.diff.rewriteHead,
+		marks:    state.Reviewed,
+		codeOnly: m.diff.codeOnly,
+	}
+}
+
+// keyedCommits lists the commits review state was taken on.
+func keyedCommits(state store.ReviewState) []string {
+	var shas []string
+	add := func(scope string) {
+		if sha, ok := strings.CutPrefix(scope, commitScopePrefix); ok && sha != "" {
+			shas = append(shas, sha)
+		}
+	}
+	for markKey := range state.Reviewed {
+		scope, _, _ := strings.Cut(markKey, "\x00")
+		add(scope)
+	}
+	for _, note := range state.Comments {
+		add(note.Scope)
+	}
+	add(state.Round.Scope)
+	return shas
+}
+
+func commitIndex(commits []git.Commit, sha string) int {
+	return slices.IndexFunc(commits, func(c git.Commit) bool { return c.SHA == sha })
+}
+
+// shortSHA abbreviates a commit for text an agent reads, long enough to stay
+// unambiguous where git's own short form is not at hand.
+func shortSHA(sha string) string {
+	return sha[:min(len(sha), 12)]
+}
+
+// carryRewrites moves review state taken on commits a rebase or amend
+// replaced onto their replacements. The reload's content hashes then judge
+// whether each mark and comment still holds there.
+func (m *Model) carryRewrites(moved map[string]string) bool {
+	if len(moved) == 0 {
+		return false
+	}
+	key := m.reviewKey()
+	changed := false
+	if marks := m.diff.reviewed[key]; marks != nil {
+		carried := carriedMarks(marks, moved)
+		changed = !maps.Equal(carried, marks)
+		m.diff.reviewed[key] = carried
+	}
+	notes := m.diff.annotations[key]
+	for i := range notes {
+		if to, ok := carriedScope(notes[i].scope, moved); ok {
+			notes[i].scope = to
+			changed = true
+		}
+	}
+	if round, ok := m.diff.rounds[key]; ok {
+		if to, carried := carriedScope(round.Scope, moved); carried {
+			round.Scope = to
+			m.diff.rounds[key] = round
+			changed = true
+		}
+	}
+	return changed
 }
 
 func (m *Model) diffHLCmd(fd diff.FileDiff, key hlKey) tea.Cmd {
@@ -340,6 +594,7 @@ func (m *Model) diffProbeCmd(sess store.Session, scope git.Scope) tea.Cmd {
 	gitRoot := m.diff.set.Repo.Root
 	stor := m.store
 	groupBase := m.groupBase(sess.Group)
+	commit := m.diff.set.Commit
 	return func() tea.Msg {
 		// Resolve symlinks so the key matches both the CLI writer and the load
 		// closure, keeping probe and load fingerprints identical.
@@ -347,11 +602,14 @@ func (m *Model) diffProbeCmd(sess store.Session, scope git.Scope) tea.Cmd {
 		if err != nil {
 			return diffProbeMsg{sessID: sess.ID, scope: scope, repoRoot: repoSel, fp: 0}
 		}
-		baseRef := ""
-		if scope == git.ScopeBranch {
-			baseRef, _, _ = driver.BranchBase(gitRoot, cmp.Or(override, groupBase))
+		ref := ""
+		switch scope {
+		case git.ScopeBranch:
+			ref, _, _ = driver.BranchBase(gitRoot, cmp.Or(override, groupBase))
+		case git.ScopeCommit:
+			ref = commit
 		}
-		fp, err := driver.Fingerprint(gitRoot, scope, baseRef)
+		fp, err := driver.Fingerprint(gitRoot, scope, ref)
 		if err != nil {
 			return diffProbeMsg{sessID: sess.ID, scope: scope, repoRoot: repoSel, fp: 0}
 		}
@@ -396,8 +654,10 @@ func (m *Model) applyStoredScope(sessionID string) {
 	switch stored {
 	case "branch":
 		m.diff.scope = git.ScopeBranch
-	case "last_commit":
-		m.diff.scope = git.ScopeLastCommit
+	case "last_commit", "commit":
+		// An agent asking for the commit scope means the one it just made.
+		m.diff.scope = git.ScopeCommit
+		m.diff.commitPin = commitPin{}
 	case "staged":
 		m.diff.scope = git.ScopeStaged
 	case "uncommitted":
@@ -414,10 +674,23 @@ func (m *Model) cycleDiffScope() tea.Cmd {
 		return nil
 	}
 	m.diff.scope = m.diff.scope.Next()
+	if m.diff.scope == git.ScopeCommit {
+		m.diff.commitPin = commitPin{unreviewed: true}
+	}
+	return m.reloadDiffScope(sess)
+}
+
+// reloadDiffScope loads the diff afresh after the scope or the commit in
+// view changed, dropping the place kept in the old one.
+func (m *Model) reloadDiffScope(sess store.Session) tea.Cmd {
 	m.diff.gen++
 	m.diff.loading = true
+	m.diff.markOnLoad = false
 	m.diff.errText = ""
-	m.diff.set = diff.Set{}
+	// The repo stays: the reload reads the same one, and the header's repo,
+	// target and commit pills hold still instead of blinking out with the
+	// files.
+	m.diff.set = diff.Set{Repo: m.diff.set.Repo, BaseOverride: m.diff.set.BaseOverride}
 	m.diff.fileIdx = 0
 	m.diff.scroll = 0
 	m.diff.cursorLine = 0
@@ -427,6 +700,197 @@ func (m *Model) cycleDiffScope() tea.Cmd {
 		return tea.Batch(m.diffRebaseCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, m.diff.repoRoots), m.startStartupTick())
 	}
 	return tea.Batch(m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false), m.startStartupTick())
+}
+
+// handleDiffClick acts on a left press in review: a header pill presses its
+// key, and a rail row shows its commit or file.
+func (m *Model) handleDiffClick(x, y int) (tea.Model, tea.Cmd) {
+	if m.diff.annotating || m.diff.sendConfirm {
+		return m, nil
+	}
+	if y == 0 {
+		for _, pill := range m.diff.pills {
+			if x >= pill.x0 && x < pill.x1 {
+				return m.handleDiffKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(pill.key)})
+			}
+		}
+		return m, nil
+	}
+	if x >= m.diff.railWidth+diffPaneSeam {
+		return m.clickDiffLine(y - diffBodyTop - 2)
+	}
+	if x >= m.diff.railWidth {
+		return m, nil
+	}
+	glyph := x == railGlyphX || x == railGlyphX+1
+	if i, ok := m.diff.commitRows[y]; ok {
+		current := i == commitIndex(m.diff.commits, m.viewedCommit())
+		switch {
+		case glyph && current:
+			return m, m.markAllReviewed()
+		case current:
+			return m, nil
+		}
+		cmd := m.showCommit(i)
+		m.diff.markOnLoad = glyph
+		return m, cmd
+	}
+	if i, ok := m.diff.fileRows[y]; ok {
+		if glyph {
+			return m, m.clickFileGlyph(i)
+		}
+		if i != m.diff.fileIdx {
+			return m, m.switchDiffFile(i - m.diff.fileIdx)
+		}
+	}
+	return m, nil
+}
+
+// railGlyphX is the screen column of a rail row's reviewed glyph: the rail's
+// edge cell, its inset, then the cursor bar.
+const railGlyphX = 1 + railInset + 1
+
+// clickDiffLine moves the cursor to the code row a press landed on, and a
+// second press on the same line inside the double-click window opens a
+// comment there.
+func (m *Model) clickDiffLine(row int) (tea.Model, tea.Cmd) {
+	if row < 0 || row >= len(m.diff.codeRows) {
+		return m, nil
+	}
+	target := m.diff.codeRows[row]
+	double := !m.diff.lineClickAt.IsZero() && m.diff.lineClickRow == target && time.Since(m.diff.lineClickAt) < multiClickWindow
+	m.diff.lineClickAt, m.diff.lineClickRow = time.Now(), target
+	m.diff.cursorLine = target
+	m.clampDiffCursor()
+	if double {
+		m.diff.lineClickAt = time.Time{}
+		m.openAnnotate()
+	}
+	return m, nil
+}
+
+// resetCommitScope forgets the commit scope's commit and list, for a review
+// moving to another session or repo, which starts on its oldest commit not
+// fully reviewed.
+func (m *Model) resetCommitScope() {
+	m.diff.commitPin = commitPin{unreviewed: true}
+	m.diff.commits = nil
+	m.diff.commitTarget = ""
+	m.diff.rewriteHead = ""
+}
+
+// stepCommit moves the commit scope delta commits older, or newer when
+// negative. Reaching the newest follows HEAD again.
+func (m *Model) stepCommit(delta int) tea.Cmd {
+	if !m.diff.active || m.diff.scope != git.ScopeCommit || len(m.diff.commits) == 0 {
+		return nil
+	}
+	at := max(commitIndex(m.diff.commits, m.viewedCommit()), 0)
+	next := min(max(at+delta, 0), len(m.diff.commits)-1)
+	if next == at {
+		m.diff.notice = m.commitEndNotice(delta < 0)
+		return nil
+	}
+	return m.showCommit(next)
+}
+
+// commitEndNotice answers a step past either end of the commit list, saying
+// what is left to review there.
+func (m *Model) commitEndNotice(newest bool) string {
+	left := 0
+	for _, c := range m.diff.commits {
+		if !m.commitIsReviewed(c) {
+			left++
+		}
+	}
+	total := len(m.diff.commits)
+	switch {
+	case left == 0:
+		return fmt.Sprintf("all %d %s reviewed", total, commitNoun(total))
+	case newest:
+		return fmt.Sprintf("HEAD is the newest commit, %d of %d not fully reviewed", left, total)
+	default:
+		return fmt.Sprintf("oldest commit, %d of %d not fully reviewed", left, total)
+	}
+}
+
+func commitNoun(count int) string {
+	if count == 1 {
+		return "commit"
+	}
+	return "commits"
+}
+
+// showCommit pins the commit scope to the commit at index, or follows HEAD
+// for the newest.
+func (m *Model) showCommit(index int) tea.Cmd {
+	sess, ok := m.diffSession()
+	if !ok || index < 0 || index >= len(m.diff.commits) {
+		return nil
+	}
+	m.diff.commitPin = commitPin{}
+	if index > 0 {
+		m.diff.commitPin = commitPin{sha: m.diff.commits[index].SHA, index: index}
+	}
+	return m.reloadDiffScope(sess)
+}
+
+// viewedCommit is the commit in view, or while a step or pick loads, the one
+// it is bringing in, so the counter, rail and pill move straight to it.
+func (m *Model) viewedCommit() string {
+	switch {
+	case m.diff.set.Commit != "":
+		return m.diff.set.Commit
+	case m.diff.commitPin.sha != "":
+		return m.diff.commitPin.sha
+	case !m.diff.commitPin.unreviewed && len(m.diff.commits) > 0:
+		return m.diff.commits[0].SHA
+	}
+	return ""
+}
+
+// commitPosition numbers the commit in view from the oldest, 1, to HEAD,
+// total; at is 0 when the list does not hold it.
+func (m *Model) commitPosition() (at, total int) {
+	total = len(m.diff.commits)
+	if i := commitIndex(m.diff.commits, m.viewedCommit()); i >= 0 {
+		at = total - i
+	}
+	return at, total
+}
+
+// shownCommit is the commit list's entry for the commit in view.
+func (m *Model) shownCommit() (git.Commit, bool) {
+	at := commitIndex(m.diff.commits, m.viewedCommit())
+	if at < 0 {
+		return git.Commit{}, false
+	}
+	return m.diff.commits[at], true
+}
+
+// scopeKey names the rendering review state is taken against: a scope, or
+// in the commit scope the commit in view.
+func (m *Model) scopeKey() string {
+	if m.diff.scope == git.ScopeCommit {
+		return commitScopePrefix + m.diff.set.Commit
+	}
+	return m.diff.scope.String()
+}
+
+// inScope reports whether a comment's scope is the rendering in view. One
+// with no scope predates scoped comments and matches any scope but a commit,
+// which no comment reached before commits had a scope of their own.
+func (m *Model) inScope(scope string) bool {
+	if scope == "" {
+		return m.diff.scope != git.ScopeCommit
+	}
+	return scope == m.scopeKey()
+}
+
+// noteShown reports whether a comment belongs on the rendering in view. One
+// taken on a commit shows only there, where its line numbers mean something.
+func (m *Model) noteShown(note *annotation) bool {
+	return !strings.HasPrefix(note.scope, commitScopePrefix) || note.scope == m.scopeKey()
 }
 
 // reviewKey scopes a session's comments and reviewed marks to the repo under
@@ -439,7 +903,7 @@ func (m *Model) reviewKey() string {
 // the same file renders different lines - and so a different content hash -
 // under each scope, so only its own scope can read or judge the mark.
 func (m *Model) reviewedMarkKey(path string) string {
-	return m.diff.scope.String() + "\x00" + path
+	return m.scopeKey() + "\x00" + path
 }
 
 func readReviewState(stor *store.Store, sessID, repoRoot string) (store.ReviewState, error) {
@@ -726,6 +1190,9 @@ func (m *Model) handleDiffLoaded(msg diffLoadedMsg) tea.Cmd {
 	}
 	m.diff.loading = false
 	m.diff.fingerprint = msg.fp
+	if msg.scope == git.ScopeCommit {
+		m.diff.commits, m.diff.commitTarget = msg.commits, msg.commitTarget
+	}
 	if msg.err != nil {
 		m.diff.errText = msg.err.Error()
 		m.diff.set = diff.Set{}
@@ -758,17 +1225,33 @@ func (m *Model) handleDiffLoaded(msg diffLoadedMsg) tea.Cmd {
 		previousPath = fd.File.Path
 	}
 	m.diff.set = msg.set
+	// A pending A belongs to the set it was pressed on: a silent refresh of
+	// that set carries it, any other load drops it.
+	resumeMarkAll := (m.diff.markAll && msg.refresh) || m.diff.markOnLoad
+	if m.diff.markAll {
+		m.diff.markAll = false
+		m.diff.notice = ""
+	}
+	m.diff.markOnLoad = false
+	m.diff.markFileOnLoad = ""
+	carried := false
+	if msg.scope == git.ScopeCommit {
+		carried = m.settleCommit(msg)
+	}
 	// Every accepted load re-judges the arriving scope's comments: a scope
 	// cycle is neither a refresh nor a restore, but the file list it brings
 	// in still decides which of its own comments read outdated.
-	stateChanged := clearStaleReviewedMarks(m)
+	stateChanged := clearStaleReviewedMarks(m) || carried
 	stateChanged = m.markMissingRoundCommentsOutdated() || stateChanged
 	// Re-anchor only on a silent same-scope refresh. A scope cycle or session
 	// switch loads a different file set, where matching a comment by excerpt
-	// would rewrite its line against content it was never made against.
+	// would rewrite its line against content it was never made against. The
+	// commit scope keys comments by commit, so each re-anchors only against
+	// its own commit, or the one a rewrite carried it to.
 	m.diff.fileLoading = map[int]bool{}
 	m.diff.reanchor = nil
-	if msg.refresh || restoredState {
+	reanchor := msg.refresh || restoredState || msg.scope == git.ScopeCommit
+	if reanchor {
 		m.diff.reanchor = map[string]bool{}
 		for _, note := range m.diff.annotations[m.reviewKey()] {
 			m.diff.reanchor[note.file] = true
@@ -786,11 +1269,11 @@ func (m *Model) handleDiffLoaded(msg diffLoadedMsg) tea.Cmd {
 	m.clampDiffCursor()
 	currentLoad := m.loadCurrentDiffFile()
 	var statefulLoads []tea.Cmd
-	if msg.refresh || restoredState {
+	if reanchor {
 		stateful := map[string]bool{}
 		for markKey, hash := range m.diff.reviewed[m.reviewKey()] {
 			scope, path, _ := strings.Cut(markKey, "\x00")
-			if hash != 0 && scope == m.diff.scope.String() {
+			if hash != 0 && scope == m.scopeKey() {
 				stateful[path] = true
 			}
 		}
@@ -812,7 +1295,28 @@ func (m *Model) handleDiffLoaded(msg diffLoadedMsg) tea.Cmd {
 	// The selected file gets its own command so it becomes usable immediately.
 	// Less urgent review-state files load serially in one background command,
 	// avoiding an unbounded git/process fan-out after a large review refresh.
-	return tea.Batch(currentLoad, diffFilesLoadCmd(statefulLoads), stateSave, m.startStartupTick())
+	var markAll tea.Cmd
+	if resumeMarkAll {
+		markAll = m.markAllReviewed()
+	}
+	return tea.Batch(currentLoad, diffFilesLoadCmd(statefulLoads), stateSave, markAll, m.startStartupTick())
+}
+
+// settleCommit records the commit a commit scope load resolved and carries
+// review state across the rewrites it found, reporting whether state moved.
+func (m *Model) settleCommit(msg diffLoadedMsg) bool {
+	m.diff.rewriteHead = msg.head
+	m.diff.commitPin = commitPin{}
+	if msg.pinned {
+		m.diff.commitPin = commitPin{sha: msg.set.Commit, index: max(commitIndex(msg.commits, msg.set.Commit), 0)}
+	}
+	if msg.commitNotice != "" {
+		m.diff.notice = msg.commitNotice
+	}
+	if msg.rewriteErr != nil {
+		m.errBar.text = "following rewritten commits: " + msg.rewriteErr.Error()
+	}
+	return m.carryRewrites(msg.rewrites)
 }
 
 func (m *Model) loadCurrentDiffFile() tea.Cmd {
@@ -865,6 +1369,13 @@ func (m *Model) handleDiffFileLoaded(msg diffFileLoadedMsg) tea.Cmd {
 	var stateSave tea.Cmd
 	if stateChanged {
 		stateSave = m.saveReviewStateCmd()
+	}
+	if marked := m.finishMarkAll(); marked != nil {
+		stateSave = tea.Batch(stateSave, marked)
+	}
+	if m.diff.markFileOnLoad == msg.path {
+		m.diff.markFileOnLoad = ""
+		stateSave = tea.Batch(stateSave, m.toggleFileMark(&m.diff.set.Files[msg.index]))
 	}
 	if msg.index != m.diff.fileIdx {
 		return stateSave
@@ -962,7 +1473,7 @@ func (m *Model) currentHL() *fileHL {
 // scrollKey scopes a file's saved scroll to the session, repo, and scope it
 // was taken in, so positions never leak across sessions, repos, or diff scopes.
 func (m *Model) scrollKey(path string) string {
-	return m.reviewKey() + "\x00" + m.diff.scope.String() + "\x00" + path
+	return m.reviewKey() + "\x00" + m.scopeKey() + "\x00" + path
 }
 
 // nonCodeExts and nonCodeNames name the files a review takes in whole rather
@@ -1283,6 +1794,16 @@ func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.openBranchPick()
 	case "B":
 		return m, m.openBasePick()
+	case "L":
+		m.openCommitPick()
+	case "[":
+		return m, m.stepCommit(1)
+	case "]":
+		return m, m.stepCommit(-1)
+	case "{":
+		return m, m.stepCommit(len(m.diff.commits))
+	case "}":
+		return m, m.stepCommit(-len(m.diff.commits))
 	case "u":
 		lineIdx := m.cursorDiffLine()
 		m.diff.sideBySide = !m.diff.sideBySide
@@ -1291,6 +1812,8 @@ func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.toggleCodeOnly()
 	case " ", "space":
 		return m, m.toggleReviewed()
+	case "A":
+		return m, m.markAllReviewed()
 	case "c":
 		m.openAnnotate()
 	case "d":
@@ -1347,6 +1870,110 @@ func (m *Model) toggleReviewed() tea.Cmd {
 	if fd == nil || !fd.Loaded() || m.diffFileHidden(fd) {
 		return nil
 	}
+	if m.fileReviewed(fd.File.Path) {
+		return m.toggleFileMark(fd)
+	}
+	stateSave := m.toggleFileMark(fd)
+	if !m.fileReviewed(fd.File.Path) {
+		return stateSave
+	}
+	marks := m.diff.reviewed[m.reviewKey()]
+	// Advance to the next unreviewed file, review-queue style. The switch
+	// returns the highlight command for the newly shown file; dropping it
+	// would leave that file unhighlighted.
+	for step := 1; step < len(m.diff.set.Files); step++ {
+		next := (m.diff.fileIdx + step) % len(m.diff.set.Files)
+		if marks[m.reviewedMarkKey(m.diff.set.Files[next].File.Path)] == 0 && !m.diffFileHidden(&m.diff.set.Files[next]) {
+			return tea.Batch(stateSave, m.switchDiffFile(next-m.diff.fileIdx))
+		}
+	}
+	return stateSave
+}
+
+// markAllReviewed marks every file the list shows reviewed, or clears them
+// all when each already is. A mark hashes the file's rendering, so files not
+// loaded yet load first and the marks land once the last one arrives.
+func (m *Model) markAllReviewed() tea.Cmd {
+	if m.store == nil {
+		m.errBar.text = "review state is unavailable"
+		return nil
+	}
+	shown, marked := 0, 0
+	for i := range m.diff.set.Files {
+		fd := &m.diff.set.Files[i]
+		if m.diffFileHidden(fd) {
+			continue
+		}
+		shown++
+		if m.fileReviewed(fd.File.Path) {
+			marked++
+		}
+	}
+	if shown == 0 {
+		return nil
+	}
+	if marked == shown {
+		marks := m.diff.reviewed[m.reviewKey()]
+		for i := range m.diff.set.Files {
+			if fd := &m.diff.set.Files[i]; !m.diffFileHidden(fd) {
+				delete(marks, m.reviewedMarkKey(fd.File.Path))
+			}
+		}
+		m.diff.notice = fmt.Sprintf("cleared %d reviewed %s", shown, fileNoun(shown))
+		return m.saveReviewStateCmd()
+	}
+	m.diff.markAll = true
+	if done := m.finishMarkAll(); done != nil {
+		return done
+	}
+	var unloaded []tea.Cmd
+	for i := range m.diff.set.Files {
+		if fd := &m.diff.set.Files[i]; !fd.Loaded() && !m.diffFileHidden(fd) {
+			if cmd := m.loadDiffFile(i); cmd != nil {
+				unloaded = append(unloaded, cmd)
+			}
+		}
+	}
+	m.diff.notice = fmt.Sprintf("loading %d %s to mark reviewed", len(unloaded), fileNoun(len(unloaded)))
+	return diffFilesLoadCmd(unloaded)
+}
+
+// finishMarkAll lands a pending A once every shown file has loaded.
+func (m *Model) finishMarkAll() tea.Cmd {
+	if !m.diff.markAll {
+		return nil
+	}
+	for i := range m.diff.set.Files {
+		if fd := &m.diff.set.Files[i]; !fd.Loaded() && !m.diffFileHidden(fd) {
+			return nil
+		}
+	}
+	m.diff.markAll = false
+	marks := m.diff.reviewed[m.reviewKey()]
+	if marks == nil {
+		marks = map[string]uint64{}
+		m.diff.reviewed[m.reviewKey()] = marks
+	}
+	count := 0
+	for i := range m.diff.set.Files {
+		if fd := &m.diff.set.Files[i]; !m.diffFileHidden(fd) {
+			marks[m.reviewedMarkKey(fd.File.Path)] = contentHash(fd)
+			count++
+		}
+	}
+	m.diff.notice = fmt.Sprintf("marked %d %s reviewed", count, fileNoun(count))
+	return m.saveReviewStateCmd()
+}
+
+func fileNoun(count int) string {
+	if count == 1 {
+		return "file"
+	}
+	return "files"
+}
+
+// toggleFileMark marks a loaded file reviewed, or clears its mark.
+func (m *Model) toggleFileMark(fd *diff.FileDiff) tea.Cmd {
 	if m.store == nil {
 		m.errBar.text = "review state is unavailable"
 		return nil
@@ -1359,20 +1986,25 @@ func (m *Model) toggleReviewed() tea.Cmd {
 	markKey := m.reviewedMarkKey(fd.File.Path)
 	if marks[markKey] != 0 {
 		delete(marks, markKey)
-		return m.saveReviewStateCmd()
+	} else {
+		marks[markKey] = contentHash(fd)
 	}
-	marks[markKey] = contentHash(fd)
-	stateSave := m.saveReviewStateCmd()
-	// Advance to the next unreviewed file, review-queue style. The switch
-	// returns the highlight command for the newly shown file; dropping it
-	// would leave that file unhighlighted.
-	for step := 1; step < len(m.diff.set.Files); step++ {
-		next := (m.diff.fileIdx + step) % len(m.diff.set.Files)
-		if marks[m.reviewedMarkKey(m.diff.set.Files[next].File.Path)] == 0 && !m.diffFileHidden(&m.diff.set.Files[next]) {
-			return tea.Batch(stateSave, m.switchDiffFile(next-m.diff.fileIdx))
-		}
+	return m.saveReviewStateCmd()
+}
+
+// clickFileGlyph toggles the reviewed mark of the file whose rail glyph was
+// clicked, leaving the file in view where it is. A file not loaded yet loads
+// first, since its mark hashes the rendering.
+func (m *Model) clickFileGlyph(index int) tea.Cmd {
+	fd := &m.diff.set.Files[index]
+	if m.diffFileHidden(fd) {
+		return nil
 	}
-	return stateSave
+	if fd.Loaded() {
+		return m.toggleFileMark(fd)
+	}
+	m.diff.markFileOnLoad = fd.File.Path
+	return m.loadDiffFile(index)
 }
 
 func (m *Model) fileReviewed(path string) bool {
@@ -1393,7 +2025,7 @@ func clearStaleReviewedMarks(m *Model) bool {
 		// that scope can judge it stale. A scope that does not list the file
 		// says nothing about it either, and the mark outlives the scope.
 		scope, path, _ := strings.Cut(markKey, "\x00")
-		if scope != m.diff.scope.String() {
+		if scope != m.scopeKey() {
 			continue
 		}
 		fd := m.fileDiffByPath(path)
@@ -1424,7 +2056,6 @@ func clearStaleReviewedMark(m *Model, path string) bool {
 // list says nothing about whether those comments still sit on their code.
 // Each comment is judged against the scope its own round was sent in.
 func (m *Model) markMissingRoundCommentsOutdated() bool {
-	current := m.diff.scope.String()
 	// Comments saved before they carried a scope fall back to the latest
 	// round's scope, the only one recorded then.
 	fallback := m.diff.rounds[m.reviewKey()].Scope
@@ -1442,7 +2073,7 @@ func (m *Model) markMissingRoundCommentsOutdated() bool {
 		if scope == "" {
 			scope = fallback
 		}
-		if scope != "" && scope != current {
+		if !m.inScope(scope) {
 			continue
 		}
 		notes[i].outdated = true
@@ -1491,7 +2122,7 @@ func (m *Model) annotationAt(path string, line diff.Line) *annotation {
 	num, deleted := annotationLine(line)
 	notes := m.diff.annotations[m.reviewKey()]
 	for i := range notes {
-		if notes[i].round == 0 && notes[i].file == path && notes[i].line == num && notes[i].deleted == deleted {
+		if notes[i].round == 0 && notes[i].file == path && notes[i].line == num && notes[i].deleted == deleted && m.noteShown(&notes[i]) {
 			return &notes[i]
 		}
 	}
@@ -1503,7 +2134,7 @@ func (m *Model) annotationsAt(path string, line diff.Line) []*annotation {
 	notes := m.diff.annotations[m.reviewKey()]
 	var matched []*annotation
 	for i := range notes {
-		if notes[i].file == path && notes[i].line == num && notes[i].deleted == deleted {
+		if notes[i].file == path && notes[i].line == num && notes[i].deleted == deleted && m.noteShown(&notes[i]) {
 			matched = append(matched, &notes[i])
 		}
 	}
@@ -1540,7 +2171,7 @@ func (m *Model) reanchorAnnotationsFor(path string) bool {
 		if scope == "" && note.round > 0 {
 			scope = m.diff.rounds[m.reviewKey()].Scope
 		}
-		if scope != "" && scope != m.diff.scope.String() {
+		if !m.inScope(scope) {
 			continue
 		}
 		fd := m.fileDiffByPath(note.file)
@@ -1649,7 +2280,7 @@ func (m *Model) saveAnnotation() tea.Cmd {
 		}
 		existing.text = text
 		existing.hash = contentHash(fd)
-		existing.scope = m.diff.scope.String()
+		existing.scope = m.scopeKey()
 		return m.saveReviewStateCmd()
 	}
 	if text == "" {
@@ -1663,7 +2294,7 @@ func (m *Model) saveAnnotation() tea.Cmd {
 		excerpt: excerptOf(line.Text),
 		text:    text,
 		hash:    contentHash(fd),
-		scope:   m.diff.scope.String(),
+		scope:   m.scopeKey(),
 	})
 	return m.saveReviewStateCmd()
 }
@@ -1680,7 +2311,7 @@ func (m *Model) discardOrToggleAnnotation() tea.Cmd {
 	num, deleted := annotationLine(fd.Lines[lineIdx])
 	notes := m.diff.annotations[m.reviewKey()]
 	for i := range notes {
-		if notes[i].round == 0 && notes[i].file == fd.File.Path && notes[i].line == num && notes[i].deleted == deleted {
+		if notes[i].round == 0 && notes[i].file == fd.File.Path && notes[i].line == num && notes[i].deleted == deleted && m.noteShown(&notes[i]) {
 			m.diff.annotations[m.reviewKey()] = append(notes[:i], notes[i+1:]...)
 			return m.saveReviewStateCmd()
 		}
@@ -1688,7 +2319,7 @@ func (m *Model) discardOrToggleAnnotation() tea.Cmd {
 	latestOpen := -1
 	latestHandled := -1
 	for i := range notes {
-		if notes[i].round == 0 || notes[i].file != fd.File.Path || notes[i].line != num || notes[i].deleted != deleted {
+		if notes[i].round == 0 || notes[i].file != fd.File.Path || notes[i].line != num || notes[i].deleted != deleted || !m.noteShown(&notes[i]) {
 			continue
 		}
 		if notes[i].handled {
@@ -1752,6 +2383,9 @@ func (m *Model) sendAnnotations() (tea.Model, tea.Cmd) {
 		draftIndexes = append(draftIndexes, i)
 		notes[i].point = len(parts) + 1
 		location := fmt.Sprintf("%s:%d", note.file, note.line)
+		if sha, ok := strings.CutPrefix(note.scope, commitScopePrefix); ok && note.scope != m.scopeKey() {
+			location += " in commit " + shortSHA(sha)
+		}
 		body := strings.ReplaceAll(note.text, "\n", " / ")
 		if note.deleted {
 			parts = append(parts, fmt.Sprintf("(%d) [comment %s] %s (deleted line): %s", len(parts)+1, notes[i].id, location, body))
@@ -1767,12 +2401,15 @@ func (m *Model) sendAnnotations() (tea.Model, tea.Cmd) {
 		"Code review of %s. Address each numbered point, then mark its comment handled with the review_comment tool (or `agent-manager review-comment <comment-id>`), and summarize what you changed per point: %s",
 		reviewSubject(m.diff.scope, m.diff.set, m.diff.repoSel), strings.Join(parts, "; "))
 	round.Number = nextRound
-	round.Scope = m.diff.scope.String()
+	round.Scope = m.scopeKey()
 	round.Fingerprint = m.diff.fingerprint
 	m.diff.rounds[key] = round
 	for _, i := range draftIndexes {
 		notes[i].round = round.Number
-		notes[i].scope = round.Scope
+		// A comment on another commit stays keyed by the commit it was made on.
+		if !strings.HasPrefix(notes[i].scope, commitScopePrefix) {
+			notes[i].scope = round.Scope
+		}
 		notes[i].handled = false
 		notes[i].outdated = false
 	}
@@ -1834,6 +2471,9 @@ func newReviewCommentID() string {
 // session receiving it may sit on another branch or worktree, or none at all.
 func reviewSubject(scope git.Scope, set diff.Set, repoDir string) string {
 	subject := scopePhrase(scope)
+	if scope == git.ScopeCommit && set.Commit != "" {
+		subject = fmt.Sprintf("commit `%s`", shortSHA(set.Commit))
+	}
 	if set.Repo.Detached {
 		subject += fmt.Sprintf(" on detached HEAD `%s`", set.Repo.Head)
 	} else if set.Repo.Branch != "" {
@@ -1853,8 +2493,8 @@ func scopePhrase(scope git.Scope) string {
 	switch scope {
 	case git.ScopeBranch:
 		return "the branch changes"
-	case git.ScopeLastCommit:
-		return "the last commit"
+	case git.ScopeCommit:
+		return "the commit"
 	case git.ScopeStaged:
 		return "the staged changes"
 	default:
@@ -1904,6 +2544,7 @@ func (m *Model) openDiff() tea.Cmd {
 	// Default to returning to the list; the in-session Ctrl+R path sets this
 	// afterward when review should return to the session instead.
 	m.diff.reattachID = ""
+	m.resetCommitScope()
 	m.applyStoredScope(sess.ID)
 	return tea.Batch(m.retargetDiff(sess), m.startStartupTick())
 }
