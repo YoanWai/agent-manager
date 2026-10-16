@@ -221,8 +221,10 @@ func (m *Model) viewForm() string {
 
 	hint := [][2]string{{"tab/↑↓", "move"}, {"←→", "change"}, {"↵", "create"}, {"esc", "cancel"}}
 	switch {
+	case m.savedList.where == savedInForm:
+		hint = [][2]string{{"type", "filter"}, {"↑↓", "pick"}, {"↵", "use"}, {"esc", "close"}}
 	case m.form.focus == fieldPreset:
-		hint = [][2]string{{"←→", "preset"}, {"tab/↑↓", "move"}, {"↵", "create"}, {"esc", "cancel"}}
+		hint = [][2]string{{"←→", "saved prompts"}, {"ctrl+o", "list"}, {"↵", "list"}, {"esc", "cancel"}}
 	case m.form.focus == fieldPrompt:
 		hint = [][2]string{{"ctrl+v", "paste an image"}, {"tab", "move"}, {"↑↓", "caret or move"}, {"↵", "create"}, {"esc", "cancel"}}
 	case m.form.focus == fieldGroup:
@@ -488,7 +490,7 @@ func (m *Model) viewSettings() string {
 		editorLine + "\n" +
 		actionRow(settingsFieldKeybindings, "keybindings", keybindingsSummary(m.keys, m.listKeys)) + "\n" +
 		actionRow(settingsFieldCLIs, "CLIs", "show or hide for new sessions") + "\n" +
-		actionRow(settingsFieldPresets, "session presets", "manage named instructions") + "\n" +
+		actionRow(settingsFieldPresets, "saved prompts", "manage named instructions") + "\n" +
 		ctaRow(settingsFieldDocs, "docs", "open the docs") + "\n" +
 		ctaRow(settingsFieldBugReport, "report a bug", "open the bug report form") + "\n" +
 		ctaRow(settingsFieldFeatureRequest, "suggest a change", "open the feature request form") + "\n" +
@@ -500,7 +502,7 @@ func (m *Model) viewSettings() string {
 	case settingsFieldBugReport, settingsFieldFeatureRequest:
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "open form"}, {"esc", "save"}}
 	case settingsFieldPresets:
-		hint = [][2]string{{"↑↓", "field"}, {"↵", "manage presets"}, {"esc", "save"}}
+		hint = [][2]string{{"↑↓", "field"}, {"↵", "saved prompts"}, {"esc", "save"}}
 	case settingsFieldCLIs:
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "manage CLIs"}, {"esc", "save"}}
 	case settingsFieldKeybindings:
@@ -623,7 +625,7 @@ func formField(label, value string, focused bool) string {
 	}
 	lines := strings.Split(value, "\n")
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("%s%s %s\n", marker, style.Width(9).Render(label), lines[0]))
+	b.WriteString(fmt.Sprintf("%s%s %s\n", marker, style.Width(13).Render(label), lines[0]))
 	for _, line := range lines[1:] {
 		b.WriteString(strings.Repeat(" ", formLabelColumn) + line + "\n")
 	}

@@ -1,8 +1,6 @@
 package ui
 
 import (
-	"strings"
-
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -72,6 +70,9 @@ func (m *Model) spawnToolSelection() ([]string, int) {
 // selected, and every other key is typed text.
 func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	msg = typedText(msg)
+	if m.savedList.where == savedInQuick {
+		return m.handleSavedListKey(msg)
+	}
 	if m.quick.picking != pickNone {
 		// A click can move the target off the group the list was opened for.
 		if m.quickSpawning() {
@@ -112,6 +113,8 @@ func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+t", "alt+w":
 		m.toggleQuickWorktree()
 		return m, nil
+	case "ctrl+o":
+		return m, m.openSavedList(savedInQuick)
 	case "enter":
 		return m.submitQuick()
 	}
@@ -135,7 +138,11 @@ func (m *Model) submitQuick() (tea.Model, tea.Cmd) {
 		m.errBar.text = "still reading the pasted image - try again in a moment"
 		return m, nil
 	}
-	text := m.quick.message()
+	text, err := m.expandSaved(&m.quick.composer)
+	if err != nil {
+		m.errBar.text = err.Error()
+		return m, nil
+	}
 	if text == "" {
 		m.errBar.text = "prompt cannot be empty"
 		return m, nil
@@ -171,10 +178,6 @@ func (m *Model) submitQuick() (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) quickSpawn(group, prompt string) (tea.Model, tea.Cmd) {
-	if strings.HasPrefix(prompt, "-") {
-		m.errBar.text = `prompt cannot start with "-": the tool would read it as a flag`
-		return m, nil
-	}
 	toolName := m.quickTool()
 	if toolName == "" {
 		m.errBar.text = "no tools configured"
@@ -226,6 +229,7 @@ func (m *Model) quickSpawn(group, prompt string) (tea.Model, tea.Cmd) {
 func (m *Model) clearQuickAfterSend() {
 	m.quick.input.SetValue("")
 	m.quick.attachments = nil
+	m.quick.saved = nil
 	if m.quick.closeAfterSend {
 		m.quick.active = false
 	}
@@ -350,6 +354,7 @@ func (m *Model) openQuickPick(pick int) {
 		return
 	}
 	m.errBar.text = ""
+	m.closeSavedList()
 	m.quick.picking = pick
 	switch pick {
 	case pickModel:
@@ -484,6 +489,10 @@ func (m *Model) handleQuickClick(hit quickHit) tea.Cmd {
 		m.stepQuickProfile()
 	case quickClickWorktree:
 		m.toggleQuickWorktree()
+	case quickClickSaved:
+		m.savedList.cursor = hit.entry
+		_, cmd := m.pickSaved()
+		return cmd
 	case quickClickEntry:
 		toolName, ch := m.quickTool(), &m.quick.choice
 		if list := m.modelSuggestions(toolName, ch, ch.query()); hit.entry < len(list) {
@@ -511,10 +520,14 @@ func (m *Model) quickLegend() [][2]string {
 	case pickEffort:
 		return [][2]string{{"type", "effort"}, {"↵", "done"}, {"esc", "back to the prompt"}}
 	}
+	if m.savedList.where == savedInQuick {
+		return [][2]string{{"type", "filter"}, {"↑↓", "pick"}, {"↵", "insert"}, {"esc", "back to the prompt"}}
+	}
 	pairs := [][2]string{{"↵", "send"}, {"↑↓", "target or caret"}, {"tab", "tool"}}
 	if len(m.quick.toolNames) > 1 {
 		pairs = append(pairs, [2]string{"shift+tab", "previous tool"})
 	}
+	pairs = append(pairs, [2]string{"ctrl+o", "saved prompts"})
 	if m.quickSpawning() {
 		if _, listed := m.modelRowNote(toolName); listed {
 			pairs = append(pairs, [2]string{quickModelKey, "model"})

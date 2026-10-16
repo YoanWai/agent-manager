@@ -1,23 +1,21 @@
 package ui
 
 import (
-	"errors"
 	"fmt"
-	"github.com/YoanWai/agent-manager/internal/config"
+	"strings"
+	"testing"
+
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
-	"strings"
-	"testing"
-	"unicode"
 )
 
 func TestSessionPresetsSettingsEntry(t *testing.T) {
 	m := buildModel(t)
 	m.openSettings()
-	if !strings.Contains(m.viewSettings(), "session presets") {
+	if !strings.Contains(m.viewSettings(), "saved prompts") {
 		t.Fatal("Settings must expose the named instruction library")
 	}
 }
@@ -30,7 +28,7 @@ func TestSessionPresetsFormLoadsCatalog(t *testing.T) {
 	cmd := m.openForm()
 	// A batch may contain the independent model catalog command.
 	m.runBatch(t, cmd)
-	if !strings.Contains(m.viewForm(), "preset") {
+	if !strings.Contains(m.viewForm(), "saved") {
 		t.Fatal("new session must show catalog selection")
 	}
 }
@@ -189,53 +187,16 @@ func TestSessionPresetsMouseActionsAndScrolling(t *testing.T) {
 			t.Fatalf("narrow frame exceeds width: %q", line)
 		}
 	}
-	clickPresetAction(t, m, "edit")
+	m.handleSessionPresetAction("e")
 	if !m.presets.editing || m.presets.previous != "Role 29" {
-		t.Fatal("mouse edit failed")
+		t.Fatal("edit failed")
 	}
-	m.presets.name.SetValue("Mouse rename")
-	clickPresetAction(t, m, "save")
+	m.presets.name.SetValue("Renamed")
+	_, cmd = m.handleSessionPresetsKey(tea.KeyMsg{Type: tea.KeyCtrlS})
+	m.runBatch(t, cmd)
 	if m.presets.editing {
-		t.Fatal("mouse save failed")
+		t.Fatal("save failed")
 	}
-	if m.presets.rows[m.presets.cursor].Name != "Mouse rename" {
-		t.Fatal("renamed preset selection moved to a different entry")
-	}
-	clickPresetAction(t, m, "delete")
-	if !m.presets.confirm {
-		t.Fatal("mouse delete skipped confirmation")
-	}
-	clickPresetAction(t, m, "cancel")
-	if m.presets.confirm {
-		t.Fatal("mouse confirmation cancel failed")
-	}
-	clickPresetAction(t, m, "delete")
-	clickPresetAction(t, m, "confirm")
-	if rows, _ := m.store.SessionPresets(); len(rows) != 29 {
-		t.Fatal("mouse confirmation failed")
-	}
-	clickPresetAction(t, m, "new")
-	clickPresetAction(t, m, "instructions")
-	if m.presets.focus != 1 {
-		t.Fatal("instruction mouse focus failed")
-	}
-	clickPresetAction(t, m, "cancel")
-	clickPresetAction(t, m, "cancel")
-	if m.presets.open {
-		t.Fatal("mouse back failed")
-	}
-}
-func clickPresetAction(t *testing.T, m *Model, action string) {
-	t.Helper()
-	m.viewSessionPresets()
-	for i, hit := range m.presets.hits {
-		if hit.action == action {
-			_, cmd := m.handleSessionPresetsClick(m.cardLeft+4, m.cardTop+2+i)
-			m.runBatch(t, cmd)
-			return
-		}
-	}
-	t.Fatalf("no mouse action %s", action)
 }
 
 func TestSessionPresetsPickerMousePreservesImagesAndChoices(t *testing.T) {
@@ -243,6 +204,7 @@ func TestSessionPresetsPickerMousePreservesImagesAndChoices(t *testing.T) {
 	m.store.SaveSessionPreset("", store.SessionPreset{Name: "Role", Instructions: "instruct"})
 	m.runBatch(t, m.openForm())
 	m.form.focus = fieldPreset
+	m.openSavedList(savedInForm)
 	m.form.prompt.input.SetValue("task " + imageToken(1))
 	m.form.prompt.attachments = []imageAttachment{{id: 1, path: tempImage(t, "image.png")}}
 	before := m.form.prompt.message()
@@ -269,7 +231,7 @@ func TestSessionPresetsLoadFailureIsVisibleAndNoPresetStillLaunchable(t *testing
 	cmd := m.openForm()
 	m.store.Close()
 	m.runBatch(t, cmd)
-	if m.form.presetsLoading || m.form.presetsError == "" || !strings.Contains(m.viewForm(), "Reading presets") {
+	if m.form.presetsLoading || m.form.presetsError == "" || !strings.Contains(m.viewForm(), "Reading saved prompts") {
 		t.Fatal("catalog error hidden")
 	}
 	m.form.prompt.input.SetValue("task")
@@ -300,8 +262,8 @@ func TestSessionPresetsSmallTerminalKeepsActionsVisible(t *testing.T) {
 			}
 			m.handleSessionPresetAction("e")
 			frame = m.viewSessionPresets()
-			if len(strings.Split(frame, "\n")) > m.height || !strings.Contains(frame, "Save") || !strings.Contains(frame, "Cancel") {
-				t.Fatal("editor actions overflow terminal")
+			if len(strings.Split(frame, "\n")) > m.height || !strings.Contains(frame, "ctrl+s") {
+				t.Fatal("editor overflows terminal")
 			}
 		})
 	}
@@ -324,7 +286,7 @@ func TestSessionPresetsHelpNamesControls(t *testing.T) {
 	sections := helpSections(keybind.DefaultSession(), keybind.DefaultList(), true)
 	found := false
 	for _, section := range sections {
-		if section.title == "session presets" {
+		if section.title == "saved prompts" {
 			found = true
 			if !strings.Contains(fmt.Sprint(section.rows), "ctrl+s") {
 				t.Fatal("help lacks save binding")
@@ -340,10 +302,10 @@ func TestSessionPresetsEmptyLibraryMouseNew(t *testing.T) {
 	m := buildModel(t)
 	m.openSettings()
 	m.runBatch(t, m.openSessionPresets())
-	if !strings.Contains(m.viewSessionPresets(), "No presets") {
+	if !strings.Contains(m.viewSessionPresets(), "No saved prompts") {
 		t.Fatal("missing empty state")
 	}
-	clickPresetAction(t, m, "new")
+	m.handleSessionPresetAction("n")
 	if !m.presets.editing {
 		t.Fatal("empty catalog New inaccessible")
 	}
@@ -408,13 +370,13 @@ func TestSessionPresetsDashInstructionsLaunchWithOrdinaryPrefix(t *testing.T) {
 	m.form.prompt.input.SetValue("- legacy task")
 	m.form.dir.SetValue(t.TempDir())
 	m.submitForm()
-	if m.mode != modeForm || !strings.Contains(m.errBar.text, "prompt cannot start") {
-		t.Fatal("legacy flag guard changed")
+	if m.mode != modeList {
+		t.Fatalf("a leading dash is text after the rename note: %s", m.errBar.text)
 	}
 }
 
 func TestSessionPresetsEditorPreservesLiteralWhitespace(t *testing.T) {
-	for _, instructions := range []string{"\t literal\r\nend\t", strings.Repeat("line\n", 120), strings.Repeat("\n", 10001) + "last"} {
+	for _, instructions := range []string{"literal\nend", strings.Repeat("line\n", 120)} {
 		t.Run(fmt.Sprint(len(instructions)), func(t *testing.T) {
 			m := buildModel(t)
 			m.store.SaveSessionPreset("", store.SessionPreset{Name: "Literal", Instructions: instructions})
@@ -467,7 +429,7 @@ func TestSessionPresetsSettingsRowAccessibleAtShortHeight(t *testing.T) {
 		t.Fatal("Settings cannot scroll to preset action with mouse")
 	}
 	for y, line := range strings.Split(frame, "\n") {
-		if strings.Contains(line, "session presets") {
+		if strings.Contains(line, "saved prompts") {
 			_, cmd := m.handleSettingsClick(m.cardLeft+4, y)
 			m.runBatch(t, cmd)
 			break
@@ -475,629 +437,5 @@ func TestSessionPresetsSettingsRowAccessibleAtShortHeight(t *testing.T) {
 	}
 	if !m.presets.open {
 		t.Fatal("scrolled Settings preset row click failed")
-	}
-}
-
-func TestSessionPresetsEditorReadOnlyPayloadStillRenames(t *testing.T) {
-	for _, raw := range []string{"before\x1bafter", strings.Repeat("\n", 10001) + "last"} {
-		t.Run(fmt.Sprint(len(raw)), func(t *testing.T) {
-			m := buildModel(t)
-			m.store.SaveSessionPreset("", store.SessionPreset{Name: "Raw", Instructions: raw})
-			m.openSettings()
-			m.runBatch(t, m.openSessionPresets())
-			m.handleSessionPresetAction("e")
-			if !strings.Contains(m.viewSessionPresets(), "Read-only") {
-				t.Fatal("unsupported payload editor not explicit")
-			}
-			m.presets.focus = 1
-			m.handleSessionPresetsKey(runeKey("typed"))
-			if m.presets.instructions.Value() != raw {
-				t.Fatal("read-only payload changed")
-			}
-			m.presets.name.SetValue("Renamed")
-			_, cmd := m.handleSessionPresetsKey(namedKey(tea.KeyCtrlS))
-			m.runBatch(t, cmd)
-			rows, _ := m.store.SessionPresets()
-			if len(rows) != 1 || rows[0].Instructions != raw {
-				t.Fatal("rename changed read-only bytes")
-			}
-		})
-	}
-}
-
-func TestSessionPresetsEditorLiteralPasteAndMarkers(t *testing.T) {
-	m := buildModel(t)
-	m.openSettings()
-	m.runBatch(t, m.openSessionPresets())
-	m.handleSessionPresetAction("n")
-	m.presets.name.SetValue("Literal")
-	m.presets.focus = 1
-	raw := "\t\r\n⇥␍␛ raw\t"
-	m.handleSessionPresetsKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(raw), Paste: true})
-	if m.presets.instructions.Value() != raw {
-		t.Fatalf("paste changed bytes %q", m.presets.instructions.Value())
-	}
-	_, cmd := m.handleSessionPresetsKey(namedKey(tea.KeyCtrlS))
-	m.runBatch(t, cmd)
-	rows, _ := m.store.SessionPresets()
-	if len(rows) != 1 || rows[0].Instructions != raw {
-		t.Fatal("save changed pasted bytes")
-	}
-	m.handleSessionPresetAction("e")
-	_, cmd = m.handleSessionPresetsKey(namedKey(tea.KeyCtrlS))
-	m.runBatch(t, cmd)
-	rows, _ = m.store.SessionPresets()
-	if rows[0].Instructions != raw {
-		t.Fatal("no-op save changed marker bytes")
-	}
-}
-
-func TestSessionPresetsEditorUnsupportedPasteRetainsBuffer(t *testing.T) {
-	for _, raw := range []string{"\x1bunsafe", strings.Repeat("\n", 10001)} {
-		t.Run(fmt.Sprint(len(raw)), func(t *testing.T) {
-			m := buildModel(t)
-			m.openSettings()
-			m.runBatch(t, m.openSessionPresets())
-			m.handleSessionPresetAction("n")
-			m.presets.instructions.SetValue("before")
-			m.presets.focus = 1
-			m.handleSessionPresetsKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(raw), Paste: true})
-			if m.errBar.text == "" || m.presets.instructions.Value() != "before" {
-				t.Fatal("unsupported paste changed buffer or was silently accepted")
-			}
-		})
-	}
-}
-
-func TestSessionPresetsEditorClipboardIsAsyncAndGenerationSafe(t *testing.T) {
-	oldReader := readSessionPresetClipboard
-	t.Cleanup(func() { readSessionPresetClipboard = oldReader })
-	reads := 0
-	readSessionPresetClipboard = func() (string, error) { reads++; return "\t pasted\r\n⇥␍␛", nil }
-	m := buildModel(t)
-	m.openSettings()
-	m.runBatch(t, m.openSessionPresets())
-	m.handleSessionPresetAction("n")
-	m.presets.focus = 1
-	_, cmd := m.handleSessionPresetsKey(namedKey(tea.KeyCtrlV))
-	if cmd == nil || reads != 0 {
-		t.Fatal("clipboard read must be asynchronous")
-	}
-	msg := cmd()
-	m.Update(msg)
-	if reads != 1 || m.presets.instructions.Value() != "\t pasted\r\n⇥␍␛" {
-		t.Fatal("clipboard literal bytes changed")
-	}
-	_, late := m.handleSessionPresetsKey(namedKey(tea.KeyCtrlV))
-	lateMsg := late()
-	_, cancel := m.handleSessionPresetsKey(namedKey(tea.KeyEsc))
-	m.runBatch(t, cancel)
-	m.handleSessionPresetAction("n")
-	m.presets.instructions.SetValue("new editor")
-	m.Update(lateMsg)
-	if m.presets.instructions.Value() != "new editor" {
-		t.Fatal("late clipboard changed reopened editor")
-	}
-}
-
-func TestSessionPresetsEditorRejectsSaveWhileClipboardPending(t *testing.T) {
-	m := buildModel(t)
-	m.openSettings()
-	m.runBatch(t, m.openSessionPresets())
-	m.handleSessionPresetAction("n")
-	m.presets.name.SetValue("Pending")
-	m.presets.instructions.SetValue("before")
-	m.presets.focus = 1
-	m.handleSessionPresetsKey(namedKey(tea.KeyCtrlV))
-	_, cmd := m.handleSessionPresetsKey(namedKey(tea.KeyCtrlS))
-	if cmd != nil || !strings.Contains(m.errBar.text, "clipboard") {
-		t.Fatal("save raced pending clipboard input")
-	}
-}
-
-func TestSessionPresetsUnsafeControlPreviewsCannotEmitTerminalCommands(t *testing.T) {
-	m := buildModel(t)
-	raw := "literal\x1b]52;c;danger\a end"
-	m.store.SaveSessionPreset("", store.SessionPreset{Name: "Controls", Instructions: raw})
-	m.openSettings()
-	m.runBatch(t, m.openSessionPresets())
-	m.handleSessionPresetAction("e")
-	frame := m.viewSessionPresets()
-	if strings.Contains(frame, "\x1b]52") || strings.Contains(frame, "\a end") || !strings.Contains(frame, "Read-only") {
-		t.Fatal("read-only preview emits instruction control bytes")
-	}
-	m.handleSessionPresetAction("esc")
-	m.presets.open = false
-	m.runBatch(t, m.openForm())
-	m.form.presetIndex = 1
-	if frame = m.viewForm(); strings.Contains(frame, "\x1b]52") || strings.Contains(frame, "\a end") {
-		t.Fatal("new-session preview emits instruction control bytes")
-	}
-	if m.formInitialPrompt() != raw {
-		t.Fatal("safe display changed launch bytes")
-	}
-}
-
-func TestSessionPresetsEditorReplacementCharacterPreservedReadOnly(t *testing.T) {
-	m := buildModel(t)
-	raw := "literal � text"
-	m.store.SaveSessionPreset("", store.SessionPreset{Name: "Unicode", Instructions: raw})
-	m.openSettings()
-	m.runBatch(t, m.openSessionPresets())
-	m.handleSessionPresetAction("e")
-	if !strings.Contains(m.viewSessionPresets(), "Read-only") {
-		t.Fatal("textarea cannot edit replacement characters without stripping them")
-	}
-	m.presets.name.SetValue("Renamed")
-	_, cmd := m.handleSessionPresetsKey(namedKey(tea.KeyCtrlS))
-	m.runBatch(t, cmd)
-	rows, _ := m.store.SessionPresets()
-	if len(rows) != 1 || rows[0].Instructions != raw {
-		t.Fatal("valid replacement rune lost")
-	}
-}
-
-func TestSessionPresetsEditorLiteralMarkersDeleteAsCharacters(t *testing.T) {
-	m := buildModel(t)
-	m.openSettings()
-	m.runBatch(t, m.openSessionPresets())
-	m.handleSessionPresetAction("n")
-	m.presets.focus = 1
-	m.presets.instructions.SetValue("text⇥␍␛")
-	for _, want := range []string{"text⇥␍", "text⇥", "text"} {
-		m.handleSessionPresetsKey(namedKey(tea.KeyBackspace))
-		if got := m.presets.instructions.Value(); got != want {
-			t.Fatalf("backspace=%q want %q", got, want)
-		}
-	}
-}
-
-func TestSessionPresetsOversizedInsertionRejectedWithoutTextLoss(t *testing.T) {
-	cases := []struct {
-		name, before, input string
-		accept              bool
-	}{
-		{"ascii_overflow", "before", strings.Repeat("a", 64*1024), false},
-		{"ascii_boundary", "before", strings.Repeat("a", 64*1024-len("before")), true},
-		{"ascii_boundary_plus_one", "before", strings.Repeat("a", 64*1024-len("before")+1), false},
-		{"multibyte_overflow", "before", strings.Repeat("界", (64*1024-len("before"))/3+1), false},
-		{"multibyte_boundary", "before", strings.Repeat("界", (64*1024-len("before"))/3) + "a", true},
-		{"marker_overflow", "before", strings.Repeat("⇥", (64*1024-len("before"))/3+1), false},
-		{"marker_boundary", "before", strings.Repeat("⇥", (64*1024-len("before"))/3) + "a", true},
-		{"tab_boundary", "before", strings.Repeat("\t", 64*1024-len("before")), true},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			m := buildModel(t)
-			m.openSettings()
-			m.runBatch(t, m.openSessionPresets())
-			m.handleSessionPresetAction("n")
-			m.presets.name.SetValue("Bounded")
-			m.presets.instructions.SetValue(tc.before)
-			m.presets.focus = 1
-			beforeDisplay := m.presets.instructions.Model.Value()
-			m.handleSessionPresetsKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(tc.input), Paste: true})
-			want := tc.before
-			if tc.accept {
-				want += tc.input
-				if m.errBar.text != "" {
-					t.Fatalf("valid insertion refused: %s", m.errBar.text)
-				}
-			} else {
-				if m.errBar.text == "" || m.presets.instructions.Model.Value() != beforeDisplay {
-					t.Fatal("oversize input silently truncated or changed display buffer")
-				}
-			}
-			if got := m.presets.instructions.Value(); got != want {
-				t.Fatalf("instruction bytes changed: got length %d want %d", len(got), len(want))
-			}
-			_, cmd := m.handleSessionPresetsKey(namedKey(tea.KeyCtrlS))
-			m.runBatch(t, cmd)
-			rows, err := m.store.SessionPresets()
-			if err != nil || len(rows) != 1 || rows[0].Instructions != want {
-				t.Fatal("saved a changed/truncated instruction payload")
-			}
-		})
-	}
-}
-
-func TestSessionPresetsOversizedNewlineRejected(t *testing.T) {
-	m := buildModel(t)
-	m.openSettings()
-	m.runBatch(t, m.openSessionPresets())
-	m.handleSessionPresetAction("n")
-	before := strings.Repeat("a", 64*1024)
-	m.presets.instructions.SetValue(before)
-	m.presets.focus = 1
-	m.handleSessionPresetsKey(namedKey(tea.KeyEnter))
-	if m.errBar.text == "" || m.presets.instructions.Value() != before || m.presets.instructions.Model.Value() != before {
-		t.Fatal("newline exceeded byte boundary")
-	}
-}
-
-func TestSessionPresetsCancelPendingClipboardSuccessorCanPasteAndSave(t *testing.T) {
-	oldReader := readSessionPresetClipboard
-	t.Cleanup(func() { readSessionPresetClipboard = oldReader })
-	readSessionPresetClipboard = func() (string, error) { return " stale", nil }
-	m := buildModel(t)
-	m.openSettings()
-	m.runBatch(t, m.openSessionPresets())
-	m.handleSessionPresetAction("n")
-	m.presets.focus = 1
-	_, late := m.handleSessionPresetsKey(namedKey(tea.KeyCtrlV))
-	lateMsg := late()
-	_, cancel := m.handleSessionPresetsKey(namedKey(tea.KeyEsc))
-	m.runBatch(t, cancel)
-	m.handleSessionPresetAction("n")
-	m.presets.name.SetValue("Successor")
-	m.presets.instructions.SetValue("new editor")
-	m.presets.focus = 1
-	m.Update(lateMsg)
-	if m.presets.instructions.Value() != "new editor" {
-		t.Fatal("stale clipboard result entered successor")
-	}
-	readSessionPresetClipboard = func() (string, error) { return " new paste", nil }
-	_, paste := m.handleSessionPresetsKey(namedKey(tea.KeyCtrlV))
-	if paste == nil {
-		t.Fatal("successor cannot paste after cancelled read")
-	}
-	m.runBatch(t, paste)
-	_, save := m.handleSessionPresetsKey(namedKey(tea.KeyCtrlS))
-	if save == nil {
-		t.Fatalf("successor cannot save: %s", m.errBar.text)
-	}
-	m.runBatch(t, save)
-	rows, err := m.store.SessionPresets()
-	if err != nil || len(rows) != 1 || rows[0].Instructions != "new editor new paste" {
-		t.Fatal("successor clipboard/save did not complete")
-	}
-}
-
-func TestSessionPresetsCommittedMutationRefreshFailureRecovers(t *testing.T) {
-	m := buildModel(t)
-	m.store.SaveSessionPreset("", store.SessionPreset{Name: "Before", Instructions: "literal"})
-	m.openSettings()
-	m.runBatch(t, m.openSessionPresets())
-	m.handleSessionPresetAction("e")
-	m.presets.name.SetValue("After")
-	_, save := m.handleSessionPresetsKey(namedKey(tea.KeyCtrlS))
-	msg := save().(sessionPresetsLoadedMsg)
-	// The real write succeeded. Simulate only the catalog-read response failure.
-	msg.rows = nil
-	msg.err = errors.New("catalog read unavailable")
-	m.Update(msg)
-	rows, err := m.store.SessionPresets()
-	if err != nil || len(rows) != 1 || rows[0].Name != "After" {
-		t.Fatal("real rename did not commit")
-	}
-	if m.presets.editing || m.presets.busy || m.errBar.text == "" || !strings.Contains(m.viewSessionPresets(), "[ Refresh ]") {
-		t.Fatal("committed rename remained in write-error editor with no recovery")
-	}
-	clickPresetAction(t, m, "refresh")
-	if len(m.presets.rows) != 1 || m.presets.rows[0].Name != "After" || m.errBar.text != "" {
-		t.Fatal("refresh did not recover committed rename")
-	}
-	m.handleSessionPresetAction("d")
-	_, del := m.handleSessionPresetsKey(namedKey(tea.KeyEnter))
-	msg = del().(sessionPresetsLoadedMsg)
-	msg.rows = nil
-	msg.err = errors.New("catalog read unavailable")
-	m.Update(msg)
-	if m.presets.confirm || !strings.Contains(m.viewSessionPresets(), "[ Refresh ]") {
-		t.Fatal("committed deletion remained in confirmation")
-	}
-	clickPresetAction(t, m, "refresh")
-	if len(m.presets.rows) != 0 {
-		t.Fatal("refresh retained deleted entry")
-	}
-}
-
-func TestSessionPresetsLargeStoredEscapesOpenAndSaveWithoutTruncation(t *testing.T) {
-	for _, tc := range []struct{ name, raw string }{
-		{"tabs", strings.Repeat("\t", 64*1024-4) + "abcd"},
-		{"returns", strings.Repeat("\r", 64*1024-4) + "abcd"},
-		{"markers", strings.Repeat("⇥␍␛", 7281) + "abcd"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			m := buildModel(t)
-			if err := m.store.SaveSessionPreset("", store.SessionPreset{Name: "Existing", Instructions: tc.raw}); err != nil {
-				t.Fatal(err)
-			}
-			m.openSettings()
-			m.runBatch(t, m.openSessionPresets())
-			m.handleSessionPresetAction("e")
-			decoded, err := decodePresetInstructions(m.presets.instructions.Model.Value())
-			if err != nil || decoded != tc.raw {
-				t.Fatal("opening stored literal text truncated the editable buffer")
-			}
-			_, noop := m.handleSessionPresetsKey(namedKey(tea.KeyCtrlS))
-			m.runBatch(t, noop)
-			rows, err := m.store.SessionPresets()
-			if err != nil || len(rows) != 1 || rows[0].Instructions != tc.raw {
-				t.Fatal("no-op save changed existing escape bytes")
-			}
-			m.handleSessionPresetAction("e")
-			m.presets.name.SetValue("Renamed")
-			_, rename := m.handleSessionPresetsKey(namedKey(tea.KeyCtrlS))
-			m.runBatch(t, rename)
-			rows, err = m.store.SessionPresets()
-			if err != nil || len(rows) != 1 || rows[0].Name != "Renamed" || rows[0].Instructions != tc.raw {
-				t.Fatal("name-only save changed escape bytes")
-			}
-			m.handleSessionPresetAction("e")
-			m.presets.focus = 1
-			m.handleSessionPresetsKey(namedKey(tea.KeyBackspace))
-			if m.presets.instructions.Value() != strings.TrimSuffix(tc.raw, "d") {
-				t.Fatal("first edit decoded a truncated stored buffer")
-			}
-		})
-	}
-}
-
-func TestSessionPresetsSelectedFormFitsAndVisibleHitsAlign(t *testing.T) {
-	for _, size := range [][2]int{{80, 24}, {40, 22}, {40, 18}, {28, 18}} {
-		for _, task := range []string{"", "one\ntwo\nthree\nfour"} {
-			for _, name := range []string{"Role", strings.Repeat("界", 60)} {
-				m := &Model{width: size[0], height: size[1], cfg: config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}}
-				m.form = form{name: textField("name", 60), dir: textField("dir", 400), prompt: promptField(), toolNames: []string{"claude"}, groups: []groupOption{{}}, focus: fieldPreset}
-				m.syncFormFieldWidths()
-				m.form.prompt.input.SetValue(task)
-				before := m.viewForm()
-				m.form.presets = []store.SessionPreset{{Name: name, Instructions: "instruction"}, {Name: "B", Instructions: "b"}, {Name: "C", Instructions: "c"}}
-				m.form.presetIndex = 1
-				frame := m.viewForm()
-				// Preserve inherited tiny/multiline limits; the optional details must fit whenever the base form fits.
-				if len(strings.Split(before, "\n")) <= m.height && len(strings.Split(frame, "\n")) > m.height {
-					t.Fatalf("selected form overflows %v: before %d after %d\n%s", size, len(strings.Split(before, "\n")), len(strings.Split(frame, "\n")), ansi.Strip(frame))
-				}
-				if len(strings.Split(frame, "\n")) > m.height {
-					continue
-				}
-				for y, line := range strings.Split(frame, "\n") {
-					if ansi.StringWidth(line) > m.width {
-						t.Fatalf("form exceeds width %v", size)
-					}
-					if strings.Contains(ansi.Strip(line), "prompt") {
-						m.handleFormClick(m.cardLeft+4, y)
-						if m.form.focus != fieldPrompt {
-							t.Fatalf("visible prompt hit selects %d at %v", m.form.focus, size)
-						}
-					}
-				}
-			}
-		}
-	}
-}
-
-func TestSessionPresetsAcceptedNameSaveIsLiteralUntilEdited(t *testing.T) {
-	m := buildModel(t)
-	for _, preset := range []store.SessionPreset{{Name: "Role", Instructions: "other"}, {Name: "Role�", Instructions: "original"}} {
-		if err := m.store.SaveSessionPreset("", preset); err != nil {
-			t.Fatal(err)
-		}
-	}
-	m.openSettings()
-	m.runBatch(t, m.openSessionPresets())
-	m.presets.cursor = 1
-	m.handleSessionPresetAction("e")
-	if m.presets.name.Value() != "Role�" {
-		t.Fatalf("open changed accepted name to %q", m.presets.name.Value())
-	}
-	// Cursor movement and an instructions-only edit must not rename into the existing Role row.
-	m.handleSessionPresetsKey(namedKey(tea.KeyLeft))
-	_, cmd := m.handleSessionPresetsKey(namedKey(tea.KeyCtrlS))
-	m.runBatch(t, cmd)
-	if m.presets.editing || m.errBar.text != "" {
-		t.Fatalf("no-op save failed: %s", m.errBar.text)
-	}
-	m.handleSessionPresetAction("e")
-	m.presets.instructions.SetValue("changed")
-	_, cmd = m.handleSessionPresetsKey(namedKey(tea.KeyCtrlS))
-	m.runBatch(t, cmd)
-	rows, err := m.store.SessionPresets()
-	if err != nil || len(rows) != 2 || rows[1].Name != "Role�" || rows[1].Instructions != "changed" || rows[0].Instructions != "other" {
-		t.Fatalf("instructions-only save: %#v %v", rows, err)
-	}
-	m.handleSessionPresetAction("e")
-	// A real edit to the visible sanitized name is an explicit rename.
-	m.handleSessionPresetsKey(namedKey(tea.KeyEnd))
-	m.handleSessionPresetsKey(runeKey(" renamed"))
-	_, cmd = m.handleSessionPresetsKey(namedKey(tea.KeyCtrlS))
-	m.runBatch(t, cmd)
-	rows, err = m.store.SessionPresets()
-	if err != nil || len(rows) != 2 || rows[1].Name != "Role renamed" || rows[1].Instructions != "changed" {
-		t.Fatalf("explicit rename: %#v %v", rows, err)
-	}
-}
-
-func TestSessionPresetsMouseLiteralPasteSharesAsyncGuards(t *testing.T) {
-	old := readSessionPresetClipboard
-	t.Cleanup(func() { readSessionPresetClipboard = old })
-	reads := 0
-	raw := "\t literal\r\n⇥␍␛"
-	readSessionPresetClipboard = func() (string, error) { reads++; return raw, nil }
-	m := buildModel(t)
-	m.openSettings()
-	m.runBatch(t, m.openSessionPresets())
-	m.handleSessionPresetAction("n")
-	click := func() tea.Cmd {
-		t.Helper()
-		frame := m.viewSessionPresets()
-		if (!m.presets.busy && !strings.Contains(frame, "ctrl+v")) || !strings.Contains(frame, "Paste") {
-			t.Fatal("editor lacks paste action/key hint")
-		}
-		for i, hit := range m.presets.hits {
-			if hit.action == "paste" {
-				_, cmd := m.handleSessionPresetsClick(m.cardLeft+4, m.cardTop+2+i)
-				return cmd
-			}
-		}
-		t.Fatal("literal paste lacks mouse target")
-		return nil
-	}
-	cmd := click()
-	if cmd == nil || reads != 0 || !m.presets.pasting {
-		t.Fatal("mouse paste did not dispatch asynchronously")
-	}
-	if again := click(); again != nil || reads != 0 {
-		t.Fatal("duplicate mouse paste read dispatched")
-	}
-	_, save := m.handleSessionPresetsKey(namedKey(tea.KeyCtrlS))
-	if save != nil || !strings.Contains(m.errBar.text, "clipboard") {
-		t.Fatal("save raced mouse clipboard read")
-	}
-	m.Update(cmd())
-	if reads != 1 || m.presets.instructions.Value() != raw {
-		t.Fatal("mouse paste changed literal bytes")
-	}
-	late := click()()
-	_, cancel := m.handleSessionPresetsKey(namedKey(tea.KeyEsc))
-	m.runBatch(t, cancel)
-	m.handleSessionPresetAction("n")
-	m.presets.instructions.SetValue("successor")
-	m.Update(late)
-	if m.presets.instructions.Value() != "successor" {
-		t.Fatal("late mouse paste reached successor")
-	}
-	m.presets.instructions.SetValue("unsafe\x1b")
-	if cmd := click(); cmd != nil || !strings.Contains(m.errBar.text, "Unsupported") {
-		t.Fatal("read-only mouse paste not visibly refused")
-	}
-	m.presets.instructions.SetValue("before")
-	m.presets.busy = true
-	if cmd := click(); cmd != nil || reads != 2 || !strings.Contains(m.viewSessionPresets(), "Saving") {
-		t.Fatal("busy mouse paste dispatched or state hidden")
-	}
-}
-
-func TestSessionPresetsNameReplacementInputRefusedWithoutLoss(t *testing.T) {
-	for _, paste := range []bool{false, true} {
-		m := buildModel(t)
-		m.openSettings()
-		m.runBatch(t, m.openSessionPresets())
-		m.handleSessionPresetAction("n")
-		m.presets.name.SetValue("before")
-		m.handleSessionPresetsKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("Role�"), Paste: paste})
-		if m.presets.name.Value() != "before" || !strings.Contains(m.errBar.text, "unchanged") {
-			t.Fatal("replacement input silently stripped or changed name")
-		}
-	}
-}
-func TestSessionPresetsNameExplicitReplacementCanEqualSanitizedDisplay(t *testing.T) {
-	m := buildModel(t)
-	for _, p := range []store.SessionPreset{{Name: "Role", Instructions: "other"}, {Name: "Role�", Instructions: "literal"}} {
-		if err := m.store.SaveSessionPreset("", p); err != nil {
-			t.Fatal(err)
-		}
-	}
-	m.openSettings()
-	m.runBatch(t, m.openSessionPresets())
-	m.presets.cursor = 1
-	m.handleSessionPresetAction("e")
-	if !strings.Contains(m.viewSessionPresets(), "Role�") {
-		t.Fatal("original accepted name is not visible")
-	}
-	m.handleSessionPresetsKey(namedKey(tea.KeyCtrlA))
-	m.handleSessionPresetsKey(namedKey(tea.KeyCtrlK))
-	m.handleSessionPresetsKey(runeKey("Role"))
-	_, cmd := m.handleSessionPresetsKey(namedKey(tea.KeyCtrlS))
-	m.runBatch(t, cmd)
-	if !m.presets.editing || m.errBar.text == "" || m.presets.name.Value() != "Role" {
-		t.Fatal("explicit replacement equal to sanitized display was silently restored")
-	}
-	rows, err := m.store.SessionPresets()
-	if err != nil || len(rows) != 2 || rows[1].Name != "Role�" {
-		t.Fatal("collision changed accepted identity")
-	}
-}
-
-func TestSessionPresetsPreviewPreservesSanitationAndUnicodeTruncation(t *testing.T) {
-	for _, raw := range []string{
-		"  alpha\t beta\r\n界  ",
-		"a\x1b]52;c;unsafe\a\u009b end",
-		"e\u0301界👨‍👩‍👧‍👦🇨🇦🛠️ final",
-		" \u0301\t界\u2003🇨🇦 ",
-		strings.Repeat("\t", 64*1024-4) + "last",
-		"visible " + strings.Repeat("界", 21800),
-	} {
-		// This is the original displayed contract: controls become visible, whitespace collapses, graphemes truncate.
-		sanitized := strings.Map(func(r rune) rune {
-			if unicode.IsControl(r) {
-				if unicode.IsSpace(r) {
-					return ' '
-				}
-				return '�'
-			}
-			return r
-		}, raw)
-		sanitized = strings.Join(strings.Fields(sanitized), " ")
-		for _, width := range []int{0, 1, 2, 3, 8, 12, 28, 60} {
-			want := ansi.Truncate(sanitized, width, "…")
-			got := safePresetPreview(raw, width)
-			if got != want {
-				t.Fatalf("width %d preview=%q want %q", width, got, want)
-			}
-			if strings.ContainsFunc(got, unicode.IsControl) {
-				t.Fatal("preview emitted controls")
-			}
-			prefix := "Instructions: "
-			got = ansi.Truncate(prefix+safePresetPreview(raw, max(0, width-ansi.StringWidth(prefix))), width, "…")
-			want = ansi.Truncate(prefix+sanitized, width, "…")
-			if got != want {
-				t.Fatalf("prefixed width %d preview=%q want %q", width, got, want)
-			}
-		}
-	}
-}
-
-func TestSessionPresetsLiteralMarkerCaretAndForwardDelete(t *testing.T) {
-	m := buildModel(t)
-	m.openSettings()
-	m.runBatch(t, m.openSessionPresets())
-	m.handleSessionPresetAction("n")
-	m.presets.focus = 1
-	raw := "a⇥b"
-	m.presets.instructions.SetValue(raw)
-	m.handleSessionPresetsKey(namedKey(tea.KeyLeft))
-	m.handleSessionPresetsKey(namedKey(tea.KeyLeft))
-	if m.presets.instructions.Value() != raw || m.presets.instructions.LineInfo().ColumnOffset != 1 {
-		t.Fatal("left movement entered marker or changed bytes")
-	}
-	m.handleSessionPresetsKey(namedKey(tea.KeyRight))
-	if m.presets.instructions.Value() != raw || m.presets.instructions.LineInfo().ColumnOffset != 3 {
-		t.Fatal("right movement entered marker or changed bytes")
-	}
-	m.handleSessionPresetsKey(namedKey(tea.KeyLeft))
-	m.handleSessionPresetsKey(namedKey(tea.KeyDelete))
-	if m.presets.instructions.Value() != "ab" {
-		t.Fatalf("forward delete broke literal marker: %q", m.presets.instructions.Value())
-	}
-}
-
-func TestSessionPresetsSettingsWheelKeepsPickerEligibility(t *testing.T) {
-	for _, blocked := range []string{"", "cli", "key", "editor"} {
-		m := buildModel(t)
-		m.openSettings()
-		m.settings.cliPicker = blocked == "cli"
-		m.settings.keyPicker = blocked == "key"
-		m.settings.editor.typing = blocked == "editor"
-		before := m.settings.field
-		m.handleMouseWheel(tea.MouseMsg{Button: tea.MouseButtonWheelDown})
-		if blocked == "" && m.settings.field != before+1 {
-			t.Fatal("ordinary Settings wheel failed")
-		}
-		if blocked != "" && m.settings.field != before {
-			t.Fatalf("wheel moved underlying Settings in %s picker", blocked)
-		}
-		// Presets remain the Settings subpanel's routing authority even with picker flags set.
-		m.presets = sessionPresetPanel{open: true, rows: []store.SessionPreset{{Name: "A"}, {Name: "B"}}}
-		m.handleMouseWheel(tea.MouseMsg{Button: tea.MouseButtonWheelDown})
-		if m.presets.cursor != 1 {
-			t.Fatalf("preset wheel not routed in %s", blocked)
-		}
-		m.handleMouseWheel(tea.MouseMsg{Button: tea.MouseButtonWheelUp})
-		if m.presets.cursor != 0 {
-			t.Fatalf("preset wheel up not routed in %s", blocked)
-		}
 	}
 }

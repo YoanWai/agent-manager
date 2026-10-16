@@ -266,6 +266,7 @@ type Model struct {
 	composerSeq int
 	settings    settingsState
 	presets     sessionPresetPanel
+	savedList   savedList
 	help        helpState
 	moveID      string
 	movePath    string
@@ -1615,8 +1616,6 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(m.previewCmd(sess, m.previewGen), m.previewTick())
 
-	case sessionPresetPasteMsg:
-		return m, m.recordSessionPresetPaste(msg)
 	case sessionPresetsLoadedMsg:
 		return m, m.recordSessionPresets(msg)
 	case baseFetchedMsg:

@@ -24,6 +24,15 @@ func (m *Model) View() string {
 	return fillBackdrop(frame, m.width, current.Bg, current.Text)
 }
 
+func (m *Model) overlaySavedList(string) string {
+	width := min(48, max(28, m.width-4))
+	lines := m.savedListLines(cardInnerWidth(width), 8)
+	frame := m.cardSized(width, "saved prompts", strings.Join(lines, "\n"), [][2]string{{"↵", "paste"}, {"esc", "close"}})
+	m.savedList.originX = m.cardLeft + 1 + cardPaddingX
+	m.savedList.originY = m.cardTop + 2
+	return frame
+}
+
 func (m *Model) view() string {
 	m.noticeHit = noticeHit{}
 	m.docsHit = noticeHit{}
@@ -64,6 +73,9 @@ func (m *Model) view() string {
 		frame = m.viewNotices()
 	default:
 		frame = m.overlayRowMenu(m.titleTopRowWithUpdate(m.viewListFrame()))
+		if m.savedList.where == savedInFocus {
+			frame = m.overlaySavedList(frame)
+		}
 	}
 	return m.syncCursorAnchor(clampFrame(frame, m.height))
 }
@@ -520,6 +532,11 @@ func (m *Model) viewFooter() string {
 		}
 		if label := m.keys.Binding(keybind.Editor).Label(); label != "" {
 			pairs = append(pairs, [2]string{label, "editor"})
+		}
+		if m.savedList.where == savedInFocus {
+			pairs = append([][2]string{{"type", "filter"}, {"↑↓", "pick"}, {"↵", "paste"}, {"esc", "close"}}, pairs...)
+		} else if label := m.keys.Binding(keybind.SavedPrompt).Label(); label != "" {
+			pairs = append(pairs, [2]string{label, "saved prompts"})
 		}
 		if pagesScrollback {
 			pairs = append(pairs, [2]string{"pgup/pgdn", "scroll"})

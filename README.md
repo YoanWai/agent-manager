@@ -48,7 +48,7 @@ The mouse works across the whole manager. The wheel moves the cursor, a click on
 
 The tools you use alongside agents live in the same list: `T` opens a shell under the selected agent, or in the selected group, for builds, Git, and one-off commands. An agent can spawn another, send it a message, and wait until it is done: every MCP-capable session carries those tools on launch.
 
-Save named instructions in Settings and select them in the New Session form, `spawn --preset`, or `create_session` to reuse them before an initial task. See [Session presets](docs/usage.md#session-presets).
+Save named instructions in Settings and reuse them from the New Session form, the quick prompt, a focused session, `spawn --saved`, `send --saved`, or `create_session`. See [Saved prompts](docs/usage.md#saved-prompts).
 
 Not here yet: cost tracking.
 

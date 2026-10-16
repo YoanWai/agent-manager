@@ -71,7 +71,7 @@ func TestSessionsCreatePresetRefusesBeforeSpawnSideEffects(t *testing.T) {
 			}
 			worktree := true
 			_, err = h.sessions.Create(h.caller.ID, CreateSessionOptions{Preset: name, Prompt: "task", Worktree: &worktree})
-			if err == nil || !strings.Contains(err.Error(), "preset") {
+			if err == nil || !strings.Contains(err.Error(), "saved prompt") {
 				t.Fatalf("preset refusal: %v", err)
 			}
 			rows, err := h.store.ListSessions(true)
@@ -102,7 +102,7 @@ func TestSessionsCreatePresetCatalogFailureDoesNotFallBack(t *testing.T) {
 	}
 	worktree := true
 	_, err = h.sessions.Create(h.caller.ID, CreateSessionOptions{Preset: "saved", Prompt: "task", Worktree: &worktree})
-	if err == nil || !strings.Contains(err.Error(), "preset") || !strings.Contains(err.Error(), "instructions") {
+	if err == nil || !strings.Contains(err.Error(), "saved prompt") || !strings.Contains(err.Error(), "instructions") {
 		t.Fatalf("catalog error: %v", err)
 	}
 	rows, err := h.store.ListSessions(true)
@@ -206,8 +206,13 @@ func TestSessionsCreateWithoutPresetKeepsTaskNormalization(t *testing.T) {
 	if stored.LaunchPrompt != expected {
 		t.Fatalf("no-preset prompt changed: %q", stored.LaunchPrompt)
 	}
-	if _, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Prompt: " \t - legacy flag \n"}); err == nil {
-		t.Fatal("no-preset leading dash lost its rejection")
+	dashed, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "dashed", Prompt: " \t - legacy flag \n"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err = h.store.Get(dashed.ID)
+	if err != nil || !strings.HasSuffix(stored.LaunchPrompt, "- legacy flag") || strings.HasPrefix(stored.LaunchPrompt, "-") {
+		t.Fatalf("dash prompt = %q, err %v", stored.LaunchPrompt, err)
 	}
 }
 

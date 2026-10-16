@@ -115,6 +115,17 @@ func (f *fakeSessionCommands) Send(_ string, id, message string) (sessioncmd.Sen
 	return sessioncmd.SendResult{MessageID: 7, QueuePosition: 1, ManagerAwake: true}, f.err
 }
 
+func (f *fakeSessionCommands) ExpandSaved(name, text string) (string, error) {
+	text = strings.TrimSpace(text)
+	if strings.TrimSpace(name) == "" {
+		return text, nil
+	}
+	if text == "" {
+		return "saved:" + name, nil
+	}
+	return "saved:" + name + "\n\n" + text, nil
+}
+
 func (f *fakeSessionCommands) Wait(_ context.Context, _, id string, until []string, timeout time.Duration) (sessioncmd.WaitResult, error) {
 	f.waitedID = id
 	f.waitedUntil = until
@@ -1342,7 +1353,7 @@ func TestCreateSessionPresetSchemaIsOptional(t *testing.T) {
 		if err := json.Unmarshal(schema, &decoded); err != nil {
 			t.Fatal(err)
 		}
-		rawPreset, ok := decoded.Properties["preset"]
+		rawPreset, ok := decoded.Properties["saved"]
 		var preset struct {
 			Type        string
 			Description string
@@ -1356,8 +1367,8 @@ func TestCreateSessionPresetSchemaIsOptional(t *testing.T) {
 			t.Fatalf("preset schema missing or incomplete: %s", schema)
 		}
 		for _, required := range decoded.Required {
-			if required == "preset" {
-				t.Fatal("preset must remain optional")
+			if required == "saved" {
+				t.Fatal("saved must remain optional")
 			}
 		}
 		return
@@ -1368,7 +1379,7 @@ func TestCreateSessionPresetSchemaIsOptional(t *testing.T) {
 func TestCreateSessionForwardsSessionPreset(t *testing.T) {
 	fake := &fakeSessionCommands{}
 	session := connectServer(t, newServer(t.TempDir(), "abc123", "test", true, &fakeTerminalCommands{}, fake, &fakeReporter{}))
-	result := callTool(t, session, "create_session", map[string]any{"preset": "project/reviewer", "prompt": " task "})
+	result := callTool(t, session, "create_session", map[string]any{"saved": "project/reviewer", "prompt": " task "})
 	if result.IsError {
 		t.Fatalf("create_session: %+v", result)
 	}

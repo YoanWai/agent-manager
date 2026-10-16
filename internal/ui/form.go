@@ -142,8 +142,8 @@ func textField(placeholder string, limit int) textinput.Model {
 
 const (
 	// formLabelColumn is the columns before a field value: marker (2),
-	// label (9), separator space (1).
-	formLabelColumn   = 12
+	// label (13), separator space (1). The label fits "saved prompts".
+	formLabelColumn   = 16
 	formPromptMaxRows = 4
 )
 
@@ -320,6 +320,9 @@ func (m *Model) rebuildGroupOptions(selectPath string) {
 
 func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	msg = typedText(msg)
+	if m.savedList.where == savedInForm {
+		return m.handleSavedListKey(msg)
+	}
 	if m.form.focus == fieldModel {
 		if model, cmd, handled := m.handleFormModelKey(msg); handled {
 			return model, cmd
@@ -414,10 +417,17 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.moveGroupCursor(1)
 			return m, nil
 		}
+	case "ctrl+o":
+		if m.form.focus == fieldPreset {
+			return m, m.openSavedList(savedInForm)
+		}
 	case "enter":
 		if dirSuggesting && m.pathSugg.chosen {
 			m.applyPathSuggestion()
 			return m, nil
+		}
+		if m.form.focus == fieldPreset {
+			return m, m.openSavedList(savedInForm)
 		}
 		return m.submitForm()
 	}
@@ -511,6 +521,7 @@ func (m *Model) handleFormClick(x, y int) (tea.Model, tea.Cmd) {
 	switch {
 	case hit.field == fieldPreset && hit.entry >= 0:
 		m.form.presetIndex = hit.entry
+		m.closeSavedList()
 		m.focusFormField(fieldPreset)
 		return m, nil
 	case hit.field == fieldModel && hit.entry >= 0:
@@ -687,11 +698,11 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 	group := m.selectedGroupPath()
 	// Chips become the paths of the images they stand for, so a first task
 	// reaches the agent with its screenshot named where it was pasted.
-	prompt := m.formInitialPrompt()
-	if m.form.presetIndex == 0 && strings.HasPrefix(prompt, "-") {
-		m.errBar.text = `prompt cannot start with "-": the tool would read it as a flag`
+	if _, err := m.expandSaved(&m.form.prompt); err != nil {
+		m.errBar.text = err.Error()
 		return m, nil
 	}
+	prompt := m.formInitialPrompt()
 
 	picked, err := m.launchChoice(toolName, &m.form.choice, m.form.choice.filter.Value())
 	if err != nil {

@@ -1,12 +1,8 @@
 package ui
 
 import (
-	"errors"
 	"fmt"
-	"github.com/atotto/clipboard"
 	"strings"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -16,27 +12,55 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-type sessionPresetHit struct {
-	action string
-	index  int
+const (
+	savedClosed = iota
+	savedInForm
+	savedInQuick
+	savedInFocus
+)
+
+type savedMatch struct {
+	name         string
+	instructions string
+	formIndex    int
 }
+
+// savedList is the filterable catalog, the same one the new-session row,
+// the quick prompt and a focused session open.
+type savedList struct {
+	where            int
+	filter           textinput.Model
+	cursor           int
+	rows             []store.SessionPreset
+	loading          bool
+	err              string
+	gen              int
+	originX, originY int
+	hits             []savedHit
+}
+
+type savedHit struct {
+	line  int
+	match int
+}
+
 type sessionPresetPanel struct {
-	open, editing, confirm, loading, busy, pasting bool
-	gen, cursor, focus                             int
-	refreshFailed                                  bool
-	rows                                           []store.SessionPreset
-	previous                                       string
-	name                                           sessionPresetName
-	instructions                                   sessionPresetInstructions
-	hits                                           []sessionPresetHit
+	open, editing, confirm, loading, busy bool
+	gen, cursor, focus                    int
+	refreshFailed                         bool
+	rows                                  []store.SessionPreset
+	previous                              string
+	name                                  textinput.Model
+	instructions                          textarea.Model
 }
+
 type sessionPresetsLoadedMsg struct {
-	gen            int
-	form, mutation bool
-	committed      bool
-	rows           []store.SessionPreset
-	err            error
-	selected       string
+	gen                  int
+	form, mutation, list bool
+	committed            bool
+	rows                 []store.SessionPreset
+	err                  error
+	selected             string
 }
 
 func (m *Model) loadSessionPresets(gen int, form bool) tea.Cmd {
@@ -46,22 +70,40 @@ func (m *Model) loadSessionPresets(gen int, form bool) tea.Cmd {
 		return sessionPresetsLoadedMsg{gen: gen, form: form, rows: rows, err: err}
 	}
 }
+
 func (m *Model) openSessionPresets() tea.Cmd {
 	m.presets = sessionPresetPanel{open: true, loading: true, gen: m.nextComposerGen()}
 	m.errBar.text = ""
 	return m.loadSessionPresets(m.presets.gen, false)
 }
+
 func (m *Model) recordSessionPresets(msg sessionPresetsLoadedMsg) tea.Cmd {
+	if msg.list {
+		if m.savedList.where == savedClosed || m.savedList.gen != msg.gen {
+			return nil
+		}
+		m.savedList.loading = false
+		if msg.err != nil {
+			m.savedList.err = msg.err.Error()
+			return nil
+		}
+		m.savedList.rows = msg.rows
+		m.savedList.err = ""
+		return nil
+	}
 	if msg.form {
 		if m.mode != modeForm || m.form.prompt.gen != msg.gen {
 			return nil
 		}
 		m.form.presetsLoading = false
 		if msg.err != nil {
-			m.form.presetsError = "Reading presets: " + msg.err.Error()
+			m.form.presetsError = "Reading saved prompts: " + msg.err.Error()
 			return nil
 		}
 		m.form.presets = msg.rows
+		if m.form.presetIndex > len(m.form.presets) {
+			m.form.presetIndex = 0
+		}
 		return nil
 	}
 	p := &m.presets
@@ -76,11 +118,11 @@ func (m *Model) recordSessionPresets(msg sessionPresetsLoadedMsg) tea.Cmd {
 			p.previous = msg.selected
 			p.rows = nil
 			p.refreshFailed = true
-			m.errBar.text = "Changes saved; refresh failed: " + msg.err.Error()
+			m.errBar.text = "Changes saved. Refresh failed. " + msg.err.Error()
 		} else if !msg.mutation {
 			p.rows = nil
 			p.refreshFailed = true
-			m.errBar.text = "Reading presets: " + msg.err.Error()
+			m.errBar.text = "Reading saved prompts: " + msg.err.Error()
 		}
 		return nil
 	}
@@ -99,19 +141,19 @@ func (m *Model) recordSessionPresets(msg sessionPresetsLoadedMsg) tea.Cmd {
 	m.errBar.text = ""
 	return nil
 }
+
 func (m *Model) editSessionPreset(new bool) tea.Cmd {
 	p := &m.presets
 	p.gen = m.nextComposerGen()
-	p.loading, p.pasting = false, false
+	p.loading = false
 	p.editing, p.confirm = true, false
 	p.previous = ""
-	p.name = sessionPresetName{Model: textField("name", 60)}
-	p.instructions = sessionPresetInstructions{Model: textarea.New()}
-	p.instructions.MaxHeight = 0
+	p.name = textField("name", 60)
+	p.instructions = textarea.New()
 	p.instructions.CharLimit = 64 * 1024
 	p.instructions.ShowLineNumbers = false
-	p.instructions.Placeholder = "instructions for the new session"
-	holdOpen(&p.instructions.Model)
+	p.instructions.Placeholder = "instructions"
+	holdOpen(&p.instructions)
 	if !new && p.cursor < len(p.rows) {
 		preset := p.rows[p.cursor]
 		p.previous = preset.Name
@@ -122,13 +164,10 @@ func (m *Model) editSessionPreset(new bool) tea.Cmd {
 	m.errBar.text = ""
 	return p.name.Focus()
 }
+
 func (m *Model) mutateSessionPreset(deleting bool) tea.Cmd {
 	p := &m.presets
 	if p.busy {
-		return nil
-	}
-	if p.pasting {
-		m.errBar.text = "Reading clipboard; try save again when it finishes"
 		return nil
 	}
 	p.busy = true
@@ -137,6 +176,10 @@ func (m *Model) mutateSessionPreset(deleting bool) tea.Cmd {
 	preset := store.SessionPreset{Name: p.name.Value(), Instructions: p.instructions.Value()}
 	name := ""
 	if deleting {
+		if p.cursor >= len(p.rows) {
+			p.busy = false
+			return nil
+		}
 		name = p.rows[p.cursor].Name
 	}
 	return func() tea.Msg {
@@ -158,6 +201,7 @@ func (m *Model) mutateSessionPreset(deleting bool) tea.Cmd {
 		return sessionPresetsLoadedMsg{gen: gen, mutation: true, committed: committed, rows: rows, err: err, selected: selected}
 	}
 }
+
 func (m *Model) handleSessionPresetsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	p := &m.presets
 	if p.busy {
@@ -181,46 +225,11 @@ func (m *Model) handleSessionPresetsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.reloadSessionPresets()
 		case "ctrl+s":
 			return m, m.mutateSessionPreset(false)
-		case "ctrl+v":
-			if p.focus == 1 {
-				return m, m.pasteSessionPresetInstructions()
-			}
-			return m, nil
 		case "tab", "shift+tab":
-			delta := 1
-			if key == "shift+tab" {
-				delta = -1
-			}
-			p.focus = (p.focus + delta + 4) % 4
-		case "enter":
-			if p.focus == 2 {
-				return m, m.mutateSessionPreset(false)
-			}
-			if p.focus == 3 {
-				p.editing = false
-				return m, m.reloadSessionPresets()
-			}
+			p.focus = 1 - p.focus
+			return m, m.focusPresetEditor()
 		}
-		p.name.Blur()
-		p.instructions.Blur()
-		var cmd tea.Cmd
-		switch p.focus {
-		case 0:
-			p.name.Focus()
-			if msg.Type == tea.KeyRunes && strings.ContainsRune(string(msg.Runes), utf8.RuneError) {
-				m.errBar.text = "Name input contains an unsupported replacement rune; unchanged"
-				return m, nil
-			}
-			p.name, cmd = p.name.Update(msg)
-		case 1:
-			p.instructions.Focus()
-			var err error
-			p.instructions, cmd, err = p.instructions.UpdateLiteral(msg)
-			if err != nil {
-				m.errBar.text = err.Error()
-			}
-		}
-		return m, cmd
+		return m, m.typePresetEditor(msg)
 	}
 	switch key {
 	case "esc":
@@ -248,51 +257,40 @@ func (m *Model) handleSessionPresetsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	return m, nil
 }
+
+func (m *Model) focusPresetEditor() tea.Cmd {
+	p := &m.presets
+	p.name.Blur()
+	p.instructions.Blur()
+	if p.focus == 0 {
+		return p.name.Focus()
+	}
+	return p.instructions.Focus()
+}
+
+func (m *Model) typePresetEditor(msg tea.KeyMsg) tea.Cmd {
+	p := &m.presets
+	var cmd tea.Cmd
+	if p.focus == 0 {
+		p.name, cmd = p.name.Update(msg)
+		return cmd
+	}
+	p.instructions, cmd = p.instructions.Update(msg)
+	return cmd
+}
+
 func (m *Model) reloadSessionPresets() tea.Cmd {
 	p := &m.presets
 	p.gen = m.nextComposerGen()
 	p.loading = true
-	p.pasting = false
 	m.errBar.text = ""
 	return m.loadSessionPresets(p.gen, false)
 }
+
 func (m *Model) handleSessionPresetsClick(x, y int) (tea.Model, tea.Cmd) {
-	p := &m.presets
-	line := y - m.cardTop - 2
-	if p.busy || x < m.cardLeft || x >= m.cardRight || line < 0 || line >= len(p.hits) {
-		return m, nil
-	}
-	hit := p.hits[line]
-	switch hit.action {
-	case "row":
-		p.cursor = hit.index
-	case "name":
-		p.focus = 0
-		p.instructions.Blur()
-		return m, p.name.Focus()
-	case "instructions":
-		p.focus = 1
-		p.name.Blur()
-		return m, p.instructions.Focus()
-	case "paste":
-		return m, m.pasteSessionPresetInstructions()
-	case "save":
-		return m, m.mutateSessionPreset(false)
-	case "cancel":
-		return m, m.handleSessionPresetAction("esc")
-	case "new":
-		return m, m.handleSessionPresetAction("n")
-	case "refresh":
-		return m, m.handleSessionPresetAction("r")
-	case "edit":
-		return m, m.handleSessionPresetAction("e")
-	case "delete":
-		return m, m.handleSessionPresetAction("d")
-	case "confirm":
-		return m, m.mutateSessionPreset(true)
-	}
 	return m, nil
 }
+
 func (m *Model) handleSessionPresetAction(key string) tea.Cmd {
 	typ := tea.KeyRunes
 	if key == "esc" {
@@ -301,6 +299,7 @@ func (m *Model) handleSessionPresetAction(key string) tea.Cmd {
 	_, cmd := m.handleSessionPresetsKey(tea.KeyMsg{Type: typ, Runes: []rune(key)})
 	return cmd
 }
+
 func (m *Model) viewSessionPresets() string {
 	p := &m.presets
 	width := m.cardWidth()
@@ -308,432 +307,325 @@ func (m *Model) viewSessionPresets() string {
 		width = min(width, max(12, m.width-2))
 	}
 	inner := max(1, cardInnerWidth(width))
-	p.hits = nil
 	var body []string
-	add := func(text, action string, index int) {
+	add := func(text string) {
 		for _, line := range strings.Split(text, "\n") {
 			body = append(body, ansi.Truncate(line, inner, "…"))
-			p.hits = append(p.hits, sessionPresetHit{action, index})
 		}
 	}
-	hint := [][2]string{{"↑↓", "select"}, {"n", "new"}, {"↵/e", "edit"}, {"d", "delete"}, {"esc", "back"}}
-	if inner < 30 {
-		hint = [][2]string{{"↑↓", "select"}, {"n/e/d", "actions"}, {"esc", "back"}}
-	}
+	hint := [][2]string{{"↑↓", "select"}, {"n", "new"}, {"↵", "edit"}, {"d", "delete"}, {"esc", "back"}}
 	switch {
 	case p.editing:
 		p.name.Width = max(1, inner-3)
-		p.name.SetCursor(p.name.Position())
 		p.instructions.SetWidth(inner)
-		p.instructions.SetHeight(max(1, min(6, m.height-16)))
-		label := "Name"
-		if p.name.literal != "" {
-			label += ": " + p.name.literal + " (kept until edited)"
-		}
-		add(label, "", 0)
-		add(textInputView(p.name.Model), "name", 0)
-		if p.instructions.ReadOnly() {
-			add("Read-only instructions", "", 0)
-			add("[ Paste unavailable ] "+p.instructions.reason, "paste", 0)
-			add(safePresetPreview(p.instructions.Value(), inner), "", 0)
-		} else {
-			add("Instructions", "", 0)
-			paste := "[ Paste ]"
-			if p.pasting {
-				paste = "[ Paste: reading clipboard… ]"
-			}
-			add(paste+" ⇥ tab · ␍ return · ␛ literal marker", "paste", 0)
-			add(textAreaView(p.instructions.Model), "instructions", 0)
-		}
+		p.instructions.SetHeight(max(1, min(6, m.height-14)))
+		add("name")
+		add(textInputView(p.name))
+		add("text")
+		add(textAreaView(p.instructions))
+		add("agents add these with agent-manager prompts add")
 		if p.busy {
-			add("Saving…", "", 0)
 			hint = [][2]string{{"wait", "save in progress"}}
 		} else {
-			add(presetAction("[ Save ]", p.focus == 2), "save", 0)
-			add(presetAction("[ Cancel ]", p.focus == 3), "cancel", 0)
-			hint = [][2]string{{"tab", "field"}, {"ctrl+s", "save"}, {"ctrl+v", "paste"}, {"esc", "discard"}}
+			hint = [][2]string{{"tab", "field"}, {"ctrl+s", "save"}, {"esc", "discard"}}
 		}
 	case p.confirm:
-		add("Delete "+p.rows[p.cursor].Name+"?", "", 0)
+		add("Delete " + p.rows[p.cursor].Name + "?")
 		if p.busy {
-			add("Deleting…", "", 0)
 			hint = [][2]string{{"wait", "delete in progress"}}
 		} else {
-			add("[ Delete ]", "confirm", 0)
-			add("[ Cancel ]", "cancel", 0)
 			hint = [][2]string{{"↵", "delete"}, {"esc", "cancel"}}
 		}
 	default:
-		room := max(1, m.height-17)
+		room := max(1, m.height-12)
 		first, last := sessionPresetWindow(len(p.rows), p.cursor, room)
 		if p.loading {
-			add("Loading presets…", "", 0)
+			add("Loading saved prompts…")
 		} else if p.refreshFailed {
-			add("Catalog unavailable; refresh to load.", "", 0)
+			add("Catalog unavailable. Press r to load again.")
 		} else if len(p.rows) == 0 {
-			add("No presets. Create named instructions here.", "", 0)
+			add("No saved prompts.")
 		}
 		if first > 0 {
-			add(fmt.Sprintf("↑ %d more", first), "", 0)
+			add(fmt.Sprintf("↑ %d more", first))
 		}
 		for i := first; i < last; i++ {
-			add(presetAction(p.rows[i].Name, i == p.cursor), "row", i)
+			add(presetAction(p.rows[i].Name, i == p.cursor))
 		}
 		if last < len(p.rows) {
-			add(fmt.Sprintf("↓ %d more", len(p.rows)-last), "", 0)
+			add(fmt.Sprintf("↓ %d more", len(p.rows)-last))
 		}
-		add("[ New ]", "new", 0)
+		add("agents add these with agent-manager prompts add")
 		if p.refreshFailed && !p.loading {
-			add("[ Refresh ]", "refresh", 0)
 			hint = [][2]string{{"n", "new"}, {"r", "refresh"}, {"esc", "back"}}
 		}
-		if len(p.rows) > 0 && !p.loading {
-			add("[ Edit ]", "edit", 0)
-			add("[ Delete ]", "delete", 0)
-		}
-		add("[ Back ]", "cancel", 0)
 	}
-	return m.cardSized(width, "Session presets", strings.Join(body, "\n"), hint)
+	return m.cardSized(width, "Saved prompts", strings.Join(body, "\n"), hint)
 }
+
 func presetAction(text string, selected bool) string {
 	if selected {
 		return valueStyle.Render("› " + text)
 	}
 	return subtleStyle.Render("  " + text)
 }
+
 func (m *Model) stepSessionPreset(delta int) {
 	count := len(m.form.presets) + 1
 	m.form.presetIndex = (m.form.presetIndex + delta + count) % count
 }
+
 func (m *Model) formInitialPrompt() string {
 	instructions := ""
-	if m.form.presetIndex > 0 {
+	if m.form.presetIndex > 0 && m.form.presetIndex-1 < len(m.form.presets) {
 		instructions = m.form.presets[m.form.presetIndex-1].Instructions
 	}
-	return launch.WithInstructions(instructions, m.form.prompt.message())
+	task, err := m.expandSaved(&m.form.prompt)
+	if err != nil {
+		task = m.form.prompt.message()
+	}
+	return launch.WithInstructions(instructions, task)
 }
+
 func (m *Model) viewFormSessionPresets(field func(string, string, int)) {
 	f := &m.form
 	if f.presetsLoading {
-		field("preset", "loading… (optional)", fieldPreset)
+		field("saved prompts", "loading… (optional)", fieldPreset)
 		return
 	}
 	if f.presetsError != "" {
-		field("preset", ansi.Wrap(f.presetsError, max(1, m.formValueWidth()), ""), fieldPreset)
+		field("saved prompts", ansi.Wrap(f.presetsError, max(1, m.formValueWidth()), ""), fieldPreset)
 		return
 	}
 	if len(f.presets) == 0 {
 		return
 	}
 	name := "none"
-	if f.presetIndex > 0 {
+	if f.presetIndex > 0 && f.presetIndex-1 < len(f.presets) {
 		name = f.presets[f.presetIndex-1].Name
 	}
-	field("preset", subtleStyle.Render("◂ ")+valueStyle.Render(name)+subtleStyle.Render(" ▸"), fieldPreset)
+	field("saved prompts", subtleStyle.Render("◂ ")+valueStyle.Render(name)+subtleStyle.Render(" ▸"), fieldPreset)
 }
+
 func (m *Model) viewFormSessionPresetDetails(add func(string, formHit), room int) {
-	f := &m.form
-	if room <= 0 || len(f.presets) == 0 {
+	if room <= 0 {
 		return
 	}
-	previewRows := 0
-	if f.presetIndex > 0 {
-		previewRows = 1
-	}
-	if f.focus == fieldPreset && room > previewRows {
-		count := len(f.presets) + 1
-		first, last := sessionPresetWindow(count, f.presetIndex, min(4, room-previewRows))
-		for i := first; i < last; i++ {
-			label := "none"
-			if i > 0 {
-				label = f.presets[i-1].Name
+	if m.savedList.where == savedInForm {
+		lines := m.savedListLines(m.formValueWidth(), min(6, room))
+		for i, line := range lines {
+			entry := -1
+			if i < len(m.savedList.hits) {
+				entry = m.savedList.hits[i].match
 			}
-			add(strings.Repeat(" ", formLabelColumn)+ansi.Truncate(presetAction(label, i == f.presetIndex), max(1, m.formValueWidth()), "…")+"\n", formHit{field: fieldPreset, entry: i})
+			add(strings.Repeat(" ", formLabelColumn)+line+"\n", formHit{field: fieldPreset, entry: entry})
 		}
+		return
 	}
-	if previewRows > 0 {
-		preview := safePresetPreview(f.presets[f.presetIndex-1].Instructions, max(0, m.formValueWidth()-ansi.StringWidth("Instructions: ")))
-		add(strings.Repeat(" ", formLabelColumn)+subtleStyle.Render(ansi.Truncate("Instructions: "+preview, max(1, m.formValueWidth()), "…"))+"\n", formHit{field: fieldPreset, entry: -1})
+	if m.form.presetIndex <= 0 || m.form.presetIndex-1 >= len(m.form.presets) {
+		return
 	}
+	label := "Instructions: "
+	preview := savedPreview(m.form.presets[m.form.presetIndex-1].Instructions, max(0, m.formValueWidth()-ansi.StringWidth(label)))
+	add(strings.Repeat(" ", formLabelColumn)+subtleStyle.Render(ansi.Truncate(label+preview, max(1, m.formValueWidth()), "…"))+"\n", formHit{field: fieldPreset, entry: -1})
+}
+
+func savedPreview(raw string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	return ansi.Truncate(strings.Join(strings.Fields(raw), " "), width, "…")
 }
 
 func sessionPresetWindow(count, cursor, room int) (int, int) {
+	if count == 0 {
+		return 0, 0
+	}
 	visible := min(count, max(1, room))
 	first := max(0, min(cursor-visible/2, count-visible))
 	return first, first + visible
 }
 
-// Keep an accepted name until its display is actually edited; textinput drops U+FFFD.
-type sessionPresetName struct {
-	textinput.Model
-	literal string
+func (m *Model) openSavedList(where int) tea.Cmd {
+	filter := textinput.New()
+	filter.Placeholder = "filter"
+	filter.CharLimit = 60
+	filter.Focus()
+	m.savedList = savedList{where: where, filter: filter, gen: m.nextComposerGen()}
+	if where == savedInQuick {
+		m.quick.picking = pickNone
+	}
+	if where == savedInForm {
+		m.savedList.rows = m.form.presets
+		return nil
+	}
+	m.savedList.loading = true
+	st := m.store
+	gen := m.savedList.gen
+	return func() tea.Msg {
+		rows, err := st.SessionPresets()
+		return sessionPresetsLoadedMsg{gen: gen, list: true, rows: rows, err: err}
+	}
 }
 
-func (n *sessionPresetName) SetValue(value string) {
-	n.Model.SetValue(value)
-	n.literal = ""
-	if n.Model.Value() != value {
-		n.literal = value
-	}
-}
-func (n sessionPresetName) Value() string {
-	if n.literal != "" {
-		return n.literal
-	}
-	return n.Model.Value()
-}
-func (n sessionPresetName) Update(msg tea.Msg) (sessionPresetName, tea.Cmd) {
-	before := n.Model.Value()
-	var cmd tea.Cmd
-	n.Model, cmd = n.Model.Update(msg)
-	if n.Model.Value() != before {
-		n.literal = ""
-	}
-	return n, cmd
+func (m *Model) closeSavedList() {
+	m.savedList = savedList{}
 }
 
-// The textarea sanitizes controls. Display escapes keep its editing behavior
-// without changing the instruction bytes, including literal escape glyphs.
-type sessionPresetInstructions struct {
-	textarea.Model
-	raw    string
-	reason string
-}
-
-func (in *sessionPresetInstructions) SetValue(raw string) {
-	in.raw = raw
-	in.reason = instructionEditorLimit(raw)
-	if !in.ReadOnly() {
-		in.Model.SetValue(encodePresetInstructions(raw))
+func (m *Model) savedMatches() []savedMatch {
+	rows := m.savedList.rows
+	if m.savedList.where == savedInForm {
+		rows = m.form.presets
 	}
-}
-func (in sessionPresetInstructions) Value() string  { return in.raw }
-func (in sessionPresetInstructions) ReadOnly() bool { return in.reason != "" }
-func instructionEditorLimit(raw string) string {
-	if strings.Count(raw, "\n") >= 10000 {
-		return "More than 10,000 lines; rename or delete."
+	query := strings.ToLower(strings.TrimSpace(m.savedList.filter.Value()))
+	var matches []savedMatch
+	if m.savedList.where == savedInForm && (query == "" || strings.Contains("none", query)) {
+		matches = append(matches, savedMatch{name: "none"})
 	}
-	for _, r := range raw {
-		if r == utf8.RuneError {
-			return "Unsupported replacement rune; rename or delete."
-		}
-		if unicode.IsControl(r) && r != '\t' && r != '\r' && r != '\n' {
-			return "Unsupported controls; rename or delete."
-		}
-	}
-	return ""
-}
-func encodePresetInstructions(raw string) string {
-	var b strings.Builder
-	for _, r := range raw {
-		switch r {
-		case '\t':
-			b.WriteRune('⇥')
-		case '\r':
-			b.WriteRune('␍')
-		case '⇥', '␍', '␛':
-			b.WriteRune('␛')
-			b.WriteRune(r)
-		default:
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
-}
-func decodePresetInstructions(encoded string) (string, error) {
-	var b strings.Builder
-	escaped := false
-	for _, r := range encoded {
-		if escaped {
-			if r != '⇥' && r != '␍' && r != '␛' {
-				return "", errors.New("Keep literal marker pairs together when editing")
-			}
-			b.WriteRune(r)
-			escaped = false
+	for i, row := range rows {
+		if query != "" && !strings.Contains(strings.ToLower(row.Name), query) {
 			continue
 		}
-		switch r {
-		case '␛':
-			escaped = true
-		case '⇥':
-			b.WriteRune('\t')
-		case '␍':
-			b.WriteRune('\r')
-		default:
-			b.WriteRune(r)
-		}
+		matches = append(matches, savedMatch{
+			name:         row.Name,
+			instructions: row.Instructions,
+			formIndex:    i + 1,
+		})
 	}
-	if escaped {
-		return "", errors.New("Keep literal marker pairs together when editing")
-	}
-	return b.String(), nil
+	return matches
 }
-func (in sessionPresetInstructions) UpdateLiteral(msg tea.KeyMsg) (sessionPresetInstructions, tea.Cmd, error) {
-	if in.ReadOnly() {
-		return in, nil, errors.New(in.reason)
+
+func (m *Model) savedListLines(width, visible int) []string {
+	m.savedList.hits = nil
+	if m.savedList.loading {
+		return []string{mutedStyle.Render("loading saved prompts…")}
 	}
-	if msg.Type == tea.KeyRunes {
-		raw := string(msg.Runes)
-		if len(in.raw)+len(raw) > 64*1024 {
-			return in, nil, errors.New("Insertion refused: instructions must fit in 64 KiB")
-		}
-		if reason := instructionEditorLimit(raw); reason != "" {
-			return in, nil, errors.New("Paste refused: " + reason)
-		}
-		if strings.Count(in.raw, "\n")+strings.Count(raw, "\n") >= 10000 {
-			return in, nil, errors.New("Paste refused: at most 10,000 logical lines in the editor")
-		}
-		encoded := []rune(encodePresetInstructions(raw))
-		if in.CharLimit > 0 && in.Length()+len(encoded) > in.CharLimit {
-			return in, nil, errors.New("Insertion refused: text cannot fit in the editor in full")
-		}
-		msg.Runes = encoded
-		msg.Paste = true
+	if m.savedList.err != "" {
+		return []string{mutedStyle.Render(ansi.Truncate(m.savedList.err, max(1, width), "…"))}
 	}
-	if msg.Type == tea.KeyEnter && len(in.raw) >= 64*1024 {
-		return in, nil, errors.New("Insertion refused: instructions must fit in 64 KiB")
+	matches := m.savedMatches()
+	if len(matches) == 0 {
+		return []string{mutedStyle.Render("no saved prompts match")}
 	}
-	if msg.Type == tea.KeyEnter && strings.Count(in.raw, "\n") >= 9999 {
-		return in, nil, errors.New("At most 10,000 logical lines in the editor")
+	if m.savedList.cursor >= len(matches) {
+		m.savedList.cursor = len(matches) - 1
 	}
-	before := in.Model.Value()
-	line, col := in.Line(), in.LineInfo().StartColumn+in.LineInfo().ColumnOffset
+	if m.savedList.cursor < 0 {
+		m.savedList.cursor = 0
+	}
+	filter := textInputView(m.savedList.filter)
+	lines := []string{filter}
+	m.savedList.hits = append(m.savedList.hits, savedHit{line: 0, match: -1})
+	visible = max(1, visible-1)
+	first := 0
+	if m.savedList.cursor >= visible {
+		first = m.savedList.cursor - visible + 1
+	}
+	last := min(len(matches), first+visible)
+	for i := first; i < last; i++ {
+		marker, style := "  ", mutedStyle
+		if i == m.savedList.cursor {
+			marker = lipglossAccent()
+			style = valueStyle
+		}
+		row := marker + style.Render(matches[i].name)
+		lines = append(lines, ansi.Truncate(row, max(1, width), "…"))
+		formIndex := matches[i].formIndex
+		if m.savedList.where != savedInForm {
+			formIndex = i
+		}
+		m.savedList.hits = append(m.savedList.hits, savedHit{line: len(lines) - 1, match: formIndex})
+	}
+	return lines
+}
+
+func lipglossAccent() string {
+	return valueStyle.Render("❯ ")
+}
+
+func (m *Model) handleSavedListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	msg = typedText(msg)
+	switch msg.String() {
+	case "esc", "ctrl+o":
+		m.closeSavedList()
+		return m, nil
+	case "up":
+		m.savedList.cursor = max(0, m.savedList.cursor-1)
+		return m, nil
+	case "down":
+		matches := m.savedMatches()
+		if len(matches) > 0 {
+			m.savedList.cursor = min(m.savedList.cursor+1, len(matches)-1)
+		}
+		return m, nil
+	case "enter":
+		return m.pickSaved()
+	}
 	var cmd tea.Cmd
-	repeats := 1
-	if msg.Type == tea.KeyBackspace || msg.Type == tea.KeyDelete {
-		for _, span := range literalPresetMarkerSpans(strings.Split(before, "\n")[line]) {
-			if msg.Type == tea.KeyBackspace && col > span[0] && col <= span[1] {
-				in.Model.SetCursor(span[1])
-				repeats = 2
-				break
-			}
-			if msg.Type == tea.KeyDelete && col >= span[0] && col < span[1] {
-				in.Model.SetCursor(span[0])
-				repeats = 2
-				break
-			}
-		}
-	}
-	for range repeats {
-		in.Model, cmd = in.Model.Update(msg)
-	}
-	after := in.Model.Value()
-	info := in.Model.LineInfo()
-	position := info.StartColumn + info.ColumnOffset
-	for _, span := range literalPresetMarkerSpans(strings.Split(after, "\n")[in.Model.Line()]) {
-		if position > span[0] && position < span[1] {
-			if strings.Contains(msg.String(), "left") {
-				in.Model.SetCursor(span[0])
-			} else {
-				in.Model.SetCursor(span[1])
-			}
-			break
-		}
-	}
-	if after == before {
-		return in, cmd, nil
-	}
-	raw, err := decodePresetInstructions(after)
-	if err != nil {
-		in.Model.SetValue(before)
-		for in.Model.Line() > line {
-			in.Model.CursorUp()
-		}
-		in.Model.SetCursor(col)
-		return in, nil, err
-	}
-	in.raw = raw
-	return in, cmd, nil
-}
-func safePresetPreview(raw string, width int) string {
-	if width <= 0 {
-		return ""
-	}
-	var b strings.Builder
-	space := false
-	// Scan only enough complete graphemes to fill the visible preview. Controls
-	// become printable before width measurement, so launch bytes never reach ANSI.
-	for len(raw) > 0 {
-		cluster, _ := ansi.FirstGraphemeCluster(raw, ansi.GraphemeWidth)
-		raw = raw[len(cluster):]
-		for _, r := range cluster {
-			if unicode.IsSpace(r) {
-				space = b.Len() > 0
-				continue
-			}
-			if space {
-				b.WriteByte(' ')
-				space = false
-			}
-			if unicode.IsControl(r) {
-				r = '�'
-			}
-			b.WriteRune(r)
-		}
-		if ansi.StringWidth(b.String()) > width {
-			return ansi.Truncate(b.String(), width, "…")
-		}
-	}
-	return b.String()
+	m.savedList.filter, cmd = m.savedList.filter.Update(msg)
+	m.savedList.cursor = 0
+	return m, cmd
 }
 
-var readSessionPresetClipboard = clipboard.ReadAll
-
-type sessionPresetPasteMsg struct {
-	gen  int
-	text string
-	err  error
+func (m *Model) pickSaved() (tea.Model, tea.Cmd) {
+	matches := m.savedMatches()
+	if m.savedList.loading || m.savedList.err != "" || len(matches) == 0 {
+		return m, nil
+	}
+	if m.savedList.cursor >= len(matches) {
+		m.savedList.cursor = len(matches) - 1
+	}
+	match := matches[m.savedList.cursor]
+	where := m.savedList.where
+	m.closeSavedList()
+	switch where {
+	case savedInForm:
+		m.form.presetIndex = match.formIndex
+	case savedInQuick:
+		if match.name != "" && match.name != "none" {
+			m.quick.insertSaved(match.name)
+		}
+	case savedInFocus:
+		return m.pasteSaved(match.instructions)
+	}
+	return m, nil
 }
 
-func (m *Model) pasteSessionPresetInstructions() tea.Cmd {
-	p := &m.presets
-	if p.busy || p.pasting {
-		return nil
+func (m *Model) pasteSaved(text string) (tea.Model, tea.Cmd) {
+	sess, ok := m.selected()
+	if !ok || m.mode != modeFocus {
+		return m, nil
 	}
-	if p.instructions.ReadOnly() {
-		m.errBar.text = p.instructions.reason
-		return nil
-	}
-	gen := p.gen
-	p.pasting = true
-	m.errBar.text = ""
-	return func() tea.Msg {
-		value, err := readSessionPresetClipboard()
-		return sessionPresetPasteMsg{gen: gen, text: value, err: err}
-	}
+	driver, id := m.tmux, sess.ID
+	m.writeFocused(id, func() tea.Msg {
+		return writeFailure(driver.Paste(id, text))
+	})
+	return m, nil
 }
 
-func (m *Model) recordSessionPresetPaste(msg sessionPresetPasteMsg) tea.Cmd {
-	p := &m.presets
-	if m.mode != modeSettings || !p.open || !p.editing || p.busy || p.gen != msg.gen || p.instructions.ReadOnly() {
-		return nil
+func (m *Model) clickSavedList(x, y int) (tea.Model, tea.Cmd) {
+	if m.savedList.where == savedClosed {
+		return m, nil
 	}
-	p.pasting = false
-	if msg.err != nil {
-		m.errBar.text = "Reading clipboard: " + msg.err.Error()
-		return nil
+	line := y - m.savedList.originY
+	if x < m.savedList.originX || x >= m.cardRight-1-cardPaddingX {
+		return m, nil
 	}
-	var err error
-	focused := p.instructions.Focused()
-	p.instructions.Focus()
-	p.instructions, _, err = p.instructions.UpdateLiteral(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(msg.text), Paste: true})
-	if !focused {
-		p.instructions.Blur()
-	}
-	if err != nil {
-		m.errBar.text = err.Error()
-	}
-	return nil
-}
-
-func literalPresetMarkerSpans(line string) [][2]int {
-	var spans [][2]int
-	runes := []rune(line)
-	for i := 0; i < len(runes)-1; i++ {
-		if runes[i] == '␛' {
-			spans = append(spans, [2]int{i, i + 2})
-			i++
+	for _, hit := range m.savedList.hits {
+		if hit.line != line || hit.match < 0 {
+			continue
+		}
+		matches := m.savedMatches()
+		for i, match := range matches {
+			index := match.formIndex
+			if m.savedList.where != savedInForm {
+				index = i
+			}
+			if index == hit.match {
+				m.savedList.cursor = i
+				return m.pickSaved()
+			}
 		}
 	}
-	return spans
+	return m, nil
 }

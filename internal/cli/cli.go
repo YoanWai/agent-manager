@@ -43,6 +43,7 @@ type section struct {
 func sections(version string, specs settingSpecs) []section {
 	return []section{
 		sessionSection(),
+		promptsSection(),
 		taskSection(),
 		fileSection(),
 		terminalSection(),

@@ -342,16 +342,11 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 	}
 	prompt := strings.TrimSpace(opts.Prompt)
 	if opts.Preset != "" {
-		preset, found, err := runtime.store.SessionPreset(opts.Preset)
+		text, err := savedText(runtime.store, opts.Preset, prompt)
 		if err != nil {
-			return Session{}, fmt.Errorf("reading session presets: %w", err)
+			return Session{}, err
 		}
-		if !found {
-			return Session{}, fmt.Errorf("session preset %q does not exist; manage presets in Settings", opts.Preset)
-		}
-		prompt = launch.WithInstructions(preset.Instructions, prompt)
-	} else if strings.HasPrefix(prompt, "-") && tool.PromptFlag == "" {
-		return Session{}, fmt.Errorf(`prompt cannot start with "-" for %s, which takes its prompt as a bare argument and would read it as a flag`, toolName)
+		prompt = text
 	}
 	name := strings.TrimSpace(opts.Name)
 	autoNamed := name == ""
@@ -549,6 +544,32 @@ type SendResult struct {
 // prose; the queue and rate caps count messages, and this is what keeps one
 // of them from being a file paste that fills the recipient's prompt.
 const maxMessageBytes = 8000
+
+// ExpandSaved resolves a saved prompt in front of text. An empty name
+// returns the trimmed text. A missing name refuses the send.
+func (s *Sessions) ExpandSaved(name, text string) (string, error) {
+	text = strings.TrimSpace(text)
+	if strings.TrimSpace(name) == "" {
+		return text, nil
+	}
+	runtime, err := s.open()
+	if err != nil {
+		return "", err
+	}
+	defer runtime.store.Close()
+	return savedText(runtime.store, name, text)
+}
+
+func savedText(st *store.Store, name, text string) (string, error) {
+	preset, found, err := st.SessionPreset(name)
+	if err != nil {
+		return "", fmt.Errorf("reading saved prompts: %w", err)
+	}
+	if !found {
+		return "", fmt.Errorf("saved prompt %q does not exist", name)
+	}
+	return launch.WithInstructions(preset.Instructions, text), nil
+}
 
 // Send queues a message for another agent. It is deliberately not typed
 // into the pane here: several tools keep their input line drawn under an

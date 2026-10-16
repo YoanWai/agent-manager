@@ -207,21 +207,20 @@ func helpSections(session, list keybind.Table, arrowStep bool) []helpSection {
 		{title: titledWith("settings", list, keybind.Settings), rows: [][2]string{
 			{"↑↓ / wheel", "pick a field; scroll when Settings is taller than the terminal"},
 			{"←→", "change the value"},
-			{"↵", "open the selected action, including the preset library"},
+			{"↵", "open the selected action, including saved prompts"},
 			{"esc", "save and close"},
 		}},
-		{title: "session presets", rows: [][2]string{
-			{"n", "in Settings > session presets, create named instructions"},
-			{"↑↓ / click", "select a preset; Edit opens its name and instructions"},
-			{"↵ / e", "edit the selected preset"},
+		{title: "saved prompts", rows: [][2]string{
+			{"n", "in Settings, create saved prompts"},
+			{"↑↓", "select one"},
+			{"↵", "edit the selected prompt"},
 			{"d", "delete with confirmation"},
-			{"r", "retry a failed preset catalog refresh"},
-			{"tab", "in the editor, move between fields, Save and Cancel"},
-			{"ctrl+s", "save; dispatched saves and deletes must finish"},
-			{"ctrl+v / Paste", "in instructions, paste literal text"},
-			{"⇥ / ␍ / ␛", "tab, return, literal marker; other controls or >10k lines read-only"},
+			{"tab", "in the editor, move between the name and the text"},
+			{"ctrl+s", "save"},
 			{"esc", "discard unsaved edits, cancel confirmation, or go back"},
-			{"←→ / click", "in New Session, choose instructions separately from the task"},
+			{"←→", "in New Session, cycle saved prompts"},
+			{"ctrl+o / ↵", "in New Session or the quick prompt, open the filterable list"},
+			{"f4", "in a focused session, open saved prompts and paste the pick"},
 		}},
 		{title: titledWith("dialogs", list, keybind.NewSession, keybind.NewGroup, keybind.Rename, keybind.Fork, keybind.Move), rows: [][2]string{
 			{"tab", "next field"},
@@ -252,6 +251,9 @@ func sessionHelpRows(keys keybind.Table, arrowStep bool, mouseRows [][2]string) 
 	}
 	if label := keys.Binding(keybind.Editor).Label(); label != "" {
 		rows = append(rows, [2]string{label, "open its directory in an editor"})
+	}
+	if label := keys.Binding(keybind.SavedPrompt).Label(); label != "" {
+		rows = append(rows, [2]string{label, "open saved prompts and paste the pick"})
 	}
 	if label := keys.Binding(keybind.TmuxPrefix).Label(); label != "" {
 		rows = append(rows, [2]string{label, "attached: tmux's prefix, in place of yours"})
