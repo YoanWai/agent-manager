@@ -135,8 +135,12 @@ type diffState struct {
 	rewriteHead  string
 
 	// markAll is set while A waits on file loads to mark every shown file
-	// reviewed.
-	markAll bool
+	// reviewed. markOnLoad asks the next load for the same, for a click on
+	// another commit's glyph; markFileOnLoad names a file whose glyph was
+	// clicked before it had loaded.
+	markAll        bool
+	markOnLoad     bool
+	markFileOnLoad string
 
 	// Where the last frame painted what a click acts on: the header pills,
 	// and the rail rows naming a commit or a file, keyed by screen row.
@@ -681,6 +685,7 @@ func (m *Model) cycleDiffScope() tea.Cmd {
 func (m *Model) reloadDiffScope(sess store.Session) tea.Cmd {
 	m.diff.gen++
 	m.diff.loading = true
+	m.diff.markOnLoad = false
 	m.diff.errText = ""
 	// The repo stays: the reload reads the same one, and the header's repo,
 	// target and commit pills hold still instead of blinking out with the
@@ -717,17 +722,33 @@ func (m *Model) handleDiffClick(x, y int) (tea.Model, tea.Cmd) {
 	if x >= m.diff.railWidth {
 		return m, nil
 	}
+	glyph := x == railGlyphX || x == railGlyphX+1
 	if i, ok := m.diff.commitRows[y]; ok {
-		if i == commitIndex(m.diff.commits, m.viewedCommit()) {
+		current := i == commitIndex(m.diff.commits, m.viewedCommit())
+		switch {
+		case glyph && current:
+			return m, m.markAllReviewed()
+		case current:
 			return m, nil
 		}
-		return m, m.showCommit(i)
+		cmd := m.showCommit(i)
+		m.diff.markOnLoad = glyph
+		return m, cmd
 	}
-	if i, ok := m.diff.fileRows[y]; ok && i != m.diff.fileIdx {
-		return m, m.switchDiffFile(i - m.diff.fileIdx)
+	if i, ok := m.diff.fileRows[y]; ok {
+		if glyph {
+			return m, m.clickFileGlyph(i)
+		}
+		if i != m.diff.fileIdx {
+			return m, m.switchDiffFile(i - m.diff.fileIdx)
+		}
 	}
 	return m, nil
 }
+
+// railGlyphX is the screen column of a rail row's reviewed glyph: the rail's
+// edge cell, its inset, then the cursor bar.
+const railGlyphX = 1 + railInset + 1
 
 // clickDiffLine moves the cursor to the code row a press landed on, and a
 // second press on the same line inside the double-click window opens a
@@ -1206,11 +1227,13 @@ func (m *Model) handleDiffLoaded(msg diffLoadedMsg) tea.Cmd {
 	m.diff.set = msg.set
 	// A pending A belongs to the set it was pressed on: a silent refresh of
 	// that set carries it, any other load drops it.
-	resumeMarkAll := m.diff.markAll && msg.refresh
+	resumeMarkAll := (m.diff.markAll && msg.refresh) || m.diff.markOnLoad
 	if m.diff.markAll {
 		m.diff.markAll = false
 		m.diff.notice = ""
 	}
+	m.diff.markOnLoad = false
+	m.diff.markFileOnLoad = ""
 	carried := false
 	if msg.scope == git.ScopeCommit {
 		carried = m.settleCommit(msg)
@@ -1349,6 +1372,10 @@ func (m *Model) handleDiffFileLoaded(msg diffFileLoadedMsg) tea.Cmd {
 	}
 	if marked := m.finishMarkAll(); marked != nil {
 		stateSave = tea.Batch(stateSave, marked)
+	}
+	if m.diff.markFileOnLoad == msg.path {
+		m.diff.markFileOnLoad = ""
+		stateSave = tea.Batch(stateSave, m.toggleFileMark(&m.diff.set.Files[msg.index]))
 	}
 	if msg.index != m.diff.fileIdx {
 		return stateSave
@@ -1843,22 +1870,14 @@ func (m *Model) toggleReviewed() tea.Cmd {
 	if fd == nil || !fd.Loaded() || m.diffFileHidden(fd) {
 		return nil
 	}
-	if m.store == nil {
-		m.errBar.text = "review state is unavailable"
-		return nil
+	if m.fileReviewed(fd.File.Path) {
+		return m.toggleFileMark(fd)
+	}
+	stateSave := m.toggleFileMark(fd)
+	if !m.fileReviewed(fd.File.Path) {
+		return stateSave
 	}
 	marks := m.diff.reviewed[m.reviewKey()]
-	if marks == nil {
-		marks = map[string]uint64{}
-		m.diff.reviewed[m.reviewKey()] = marks
-	}
-	markKey := m.reviewedMarkKey(fd.File.Path)
-	if marks[markKey] != 0 {
-		delete(marks, markKey)
-		return m.saveReviewStateCmd()
-	}
-	marks[markKey] = contentHash(fd)
-	stateSave := m.saveReviewStateCmd()
 	// Advance to the next unreviewed file, review-queue style. The switch
 	// returns the highlight command for the newly shown file; dropping it
 	// would leave that file unhighlighted.
@@ -1951,6 +1970,41 @@ func fileNoun(count int) string {
 		return "file"
 	}
 	return "files"
+}
+
+// toggleFileMark marks a loaded file reviewed, or clears its mark.
+func (m *Model) toggleFileMark(fd *diff.FileDiff) tea.Cmd {
+	if m.store == nil {
+		m.errBar.text = "review state is unavailable"
+		return nil
+	}
+	marks := m.diff.reviewed[m.reviewKey()]
+	if marks == nil {
+		marks = map[string]uint64{}
+		m.diff.reviewed[m.reviewKey()] = marks
+	}
+	markKey := m.reviewedMarkKey(fd.File.Path)
+	if marks[markKey] != 0 {
+		delete(marks, markKey)
+	} else {
+		marks[markKey] = contentHash(fd)
+	}
+	return m.saveReviewStateCmd()
+}
+
+// clickFileGlyph toggles the reviewed mark of the file whose rail glyph was
+// clicked, leaving the file in view where it is. A file not loaded yet loads
+// first, since its mark hashes the rendering.
+func (m *Model) clickFileGlyph(index int) tea.Cmd {
+	fd := &m.diff.set.Files[index]
+	if m.diffFileHidden(fd) {
+		return nil
+	}
+	if fd.Loaded() {
+		return m.toggleFileMark(fd)
+	}
+	m.diff.markFileOnLoad = fd.File.Path
+	return m.loadDiffFile(index)
 }
 
 func (m *Model) fileReviewed(path string) bool {

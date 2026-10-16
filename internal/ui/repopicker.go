@@ -213,6 +213,22 @@ func (m *Model) handleRepoPickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// repoPickFirstRow is how far below the card's top its first row paints: the
+// title edge, a blank row, the filter, and another blank row.
+const repoPickFirstRow = 4
+
+// handleRepoPickClick picks the row a click lands on, the way enter does.
+func (m *Model) handleRepoPickClick(x, y int) (tea.Model, tea.Cmd) {
+	rows := m.filteredRows()
+	start, end := m.repoPickWindow(len(rows))
+	i := start + y - m.cardTop - repoPickFirstRow
+	if x < m.cardLeft || x >= m.cardRight || i < start || i >= end {
+		return m, nil
+	}
+	m.repoPick.cursor = i
+	return m.handleRepoPickKey(tea.KeyMsg{Type: tea.KeyEnter})
+}
+
 func (m *Model) moveRepoPickCursor(delta, count int) {
 	if count == 0 {
 		m.repoPick.cursor = 0

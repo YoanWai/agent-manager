@@ -4110,3 +4110,59 @@ func TestCommitStepHoldsPositionWhileLoading(t *testing.T) {
 		t.Fatalf("position after load = %d, want 2", at)
 	}
 }
+
+// clickRowOf left-presses column x on the first painted row holding text.
+func (m *Model) clickRowOf(t *testing.T, text string, x int) {
+	t.Helper()
+	for y, line := range strings.Split(ansi.Strip(m.View()), "\n") {
+		if strings.Contains(line, text) {
+			_, cmd := m.handleMousePress(tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+			m.drainCmds(t, cmd)
+			return
+		}
+	}
+	t.Fatalf("%q is not on screen:\n%s", text, ansi.Strip(m.View()))
+}
+
+// A rail glyph answers a click the way its key does: a file's toggles that
+// file, loading it first and leaving the file in view alone, and a commit's
+// marks every file in it, after opening it when it is not the one in view.
+func TestReviewGlyphClicksMarkReviewed(t *testing.T) {
+	m := buildModel(t)
+	dir := gitRepoWithCommitStack(t)
+	openCommitScope(t, m, dir)
+	m.pressDiffKey(t, '[')
+	if m.diff.set.Files[1].Loaded() {
+		t.Fatal("precondition: b.go should not be loaded yet")
+	}
+
+	m.clickRowOf(t, "○ b.go", railGlyphX)
+	if !m.fileReviewed("b.go") || m.fileReviewed("a.go") || m.currentFileDiff().File.Path != "a.go" {
+		t.Fatalf("b.go glyph should mark b.go alone and keep a.go in view, marks = %v", m.diff.reviewed[m.reviewKey()])
+	}
+	m.clickRowOf(t, "✔ b.go", railGlyphX)
+	if m.fileReviewed("b.go") {
+		t.Fatal("a second click on the glyph should clear the mark")
+	}
+
+	m.clickRowOf(t, "○ "+m.diff.commits[1].Short+" two", railGlyphX)
+	if !m.commitIsReviewed(m.diff.commits[1]) {
+		t.Fatalf("the glyph of the commit in view should mark it, marks = %v", m.diff.reviewed[m.reviewKey()])
+	}
+	m.clickRowOf(t, "○ "+m.diff.commits[2].Short+" one", railGlyphX)
+	if m.diff.set.Commit != m.diff.commits[2].SHA || !m.commitIsReviewed(m.diff.commits[2]) {
+		t.Fatalf("another commit's glyph should open and mark it, in view %s", m.diff.set.Commit)
+	}
+}
+
+// A picker row answers a click the way enter does.
+func TestPickerRowClickSelects(t *testing.T) {
+	m := buildModel(t)
+	dir := gitRepoWithCommitStack(t)
+	openCommitScope(t, m, dir)
+	m.pressDiffKey(t, 'L')
+	m.clickRowOf(t, m.diff.commits[2].Short+" one", m.width/2)
+	if m.mode != modeDiff || m.diff.commitPin != (commitPin{sha: gitRev(t, dir, "HEAD~2"), index: 2}) {
+		t.Fatalf("mode = %v, pin = %+v, want the clicked commit", m.mode, m.diff.commitPin)
+	}
+}
