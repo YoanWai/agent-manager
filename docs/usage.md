@@ -339,7 +339,7 @@ The footer offers `ctrl+r review mode` on every agent row, filled like quick pro
 | `?` | Review bindings only; `esc` returns to the review |
 | `esc` / `q` | Close the review |
 
-Each changeable value in the header wears its own key, so the scope, layout, repo, target, and commit pills read as `s`, `u`, `r`, `B`, `L` legends at a glance. A click on a pill presses its key, and a click on a commit or file in the rail opens it.
+Each changeable value in the header wears its own key, so the scope, layout, repo, target, and commit pills read as `s`, `u`, `r`, `B`, `L` legends at a glance. A click on a pill presses its key, a click on a commit or file in the rail opens it, and a click on a code line moves the cursor there; a double click opens a comment on it.
 
 The commit scope reviews one commit at a time, from those on the branch since the target. The rail lists them oldest first above the files, with a check on each commit whose files are all reviewed, and the header pill numbers the one in view. It opens on the oldest commit not fully reviewed, or on HEAD once all are, and HEAD follows new commits. An agent that asks for the commit scope opens it on HEAD. A reviewed mark or comment taken in the commit scope belongs to its commit, so a new commit starts clean. When a rebase or amend rewrites commits, the pinned commit and the marks and comments on rewritten commits follow to the replacement with the same patch, or else the same subject. A dropped commit leaves review on the commit now at its place, with a notice naming both.
 

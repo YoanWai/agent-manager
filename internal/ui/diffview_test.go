@@ -4058,6 +4058,34 @@ func TestPlaceRailRowsMapsMoreCounters(t *testing.T) {
 	}
 }
 
+// A click on a code line moves the cursor there in either layout, and a
+// double click opens a comment on it.
+func TestReviewClickMovesCursorAndDoubleClickComments(t *testing.T) {
+	for _, split := range []bool{false, true} {
+		t.Run(fmt.Sprintf("split=%v", split), func(t *testing.T) {
+			m := buildModel(t)
+			dir := gitRepoWithCommitStack(t)
+			openCommitScope(t, m, dir)
+			m.pressDiffKey(t, '[')
+			m.diff.sideBySide = split
+			m.drainCmds(t, m.loadCurrentDiffFile())
+
+			m.clickText(t, "func Two() {}")
+			fd := m.currentFileDiff()
+			if got := fd.Lines[m.cursorDiffLine()].Text; got != "func Two() {}" {
+				t.Fatalf("cursor on %q, want func Two() {}", got)
+			}
+			if m.diff.annotating {
+				t.Fatal("a single click should not open a comment")
+			}
+			m.clickText(t, "func Two() {}")
+			if !m.diff.annotating {
+				t.Fatal("a double click should open a comment")
+			}
+		})
+	}
+}
+
 // A step names the commit it is loading while the load runs, so the counter,
 // the rail and the header's pills move straight to it rather than through 0
 // or a blank header.

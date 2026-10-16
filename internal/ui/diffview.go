@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	"github.com/YoanWai/agent-manager/internal/deps"
@@ -143,6 +144,12 @@ type diffState struct {
 	railWidth  int
 	commitRows map[int]int
 	fileRows   map[int]int
+	// codeRows names the cursor row each painted code row belongs to, from
+	// the first row under the code title; lineClickAt and lineClickRow
+	// pair two presses on one line into a double click.
+	codeRows     []int
+	lineClickAt  time.Time
+	lineClickRow int
 }
 
 type diffLoadedMsg struct {
@@ -704,6 +711,9 @@ func (m *Model) handleDiffClick(x, y int) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if x >= m.diff.railWidth+diffPaneSeam {
+		return m.clickDiffLine(y - diffBodyTop - 2)
+	}
 	if x >= m.diff.railWidth {
 		return m, nil
 	}
@@ -715,6 +725,25 @@ func (m *Model) handleDiffClick(x, y int) (tea.Model, tea.Cmd) {
 	}
 	if i, ok := m.diff.fileRows[y]; ok && i != m.diff.fileIdx {
 		return m, m.switchDiffFile(i - m.diff.fileIdx)
+	}
+	return m, nil
+}
+
+// clickDiffLine moves the cursor to the code row a press landed on, and a
+// second press on the same line inside the double-click window opens a
+// comment there.
+func (m *Model) clickDiffLine(row int) (tea.Model, tea.Cmd) {
+	if row < 0 || row >= len(m.diff.codeRows) {
+		return m, nil
+	}
+	target := m.diff.codeRows[row]
+	double := !m.diff.lineClickAt.IsZero() && m.diff.lineClickRow == target && time.Since(m.diff.lineClickAt) < multiClickWindow
+	m.diff.lineClickAt, m.diff.lineClickRow = time.Now(), target
+	m.diff.cursorLine = target
+	m.clampDiffCursor()
+	if double {
+		m.diff.lineClickAt = time.Time{}
+		m.openAnnotate()
 	}
 	return m, nil
 }

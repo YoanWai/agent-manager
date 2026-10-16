@@ -534,23 +534,38 @@ func (m *Model) unifiedRows(fd *diff.FileDiff, hl *fileHL, width, height int) []
 	}
 
 	var rows []string
+	var owners []int
 	if scroll > 0 {
 		rows = append(rows, subtleStyle.Render(fmt.Sprintf("  ↑ %d more", scroll)))
+		owners = append(owners, scroll-1)
 	}
 	i := scroll
 	for ; i < total && len(rows) < height; i++ {
 		rows = append(rows, m.renderDiffRow(fd, hl, i, width, i == m.diff.cursorLine)...)
 		rows = append(rows, m.annotationRows(fd, i, width)...)
+		owners = ownRows(owners, len(rows), i)
 	}
 	if i < total {
 		if len(rows) >= height {
-			rows = rows[:height-1]
+			rows, owners = rows[:height-1], owners[:height-1]
 		}
 		rows = append(rows, subtleStyle.Render(fmt.Sprintf("  ↓ %d more", total-i)))
+		owners = append(owners, i)
 	} else if len(rows) > height {
-		rows = rows[:height]
+		rows, owners = rows[:height], owners[:height]
 	}
+	m.diff.codeRows = owners
 	return rows
+}
+
+// ownRows extends owners to count entries, each naming the cursor row
+// owner, so a click on any painted row of a wrapped line or its comments
+// lands on that line.
+func ownRows(owners []int, count, owner int) []int {
+	for len(owners) < count {
+		owners = append(owners, owner)
+	}
+	return owners
 }
 
 func numWidth(fd *diff.FileDiff) int {
@@ -615,6 +630,7 @@ func (m *Model) viewDiffFull() string {
 	listHeight := bodyHeight - 2
 	m.diff.railWidth = fileWidth
 	m.diff.commitRows, m.diff.fileRows = map[int]int{}, map[int]int{}
+	m.diff.codeRows = nil
 	railHeight := listHeight / 3
 	if rows := m.viewDiffCommitRail(fileWidth-2*railGutter, railHeight); rows != "" {
 		at, total := m.commitPosition()
@@ -1089,8 +1105,10 @@ func (m *Model) renderSideBySide(b *strings.Builder, fd *diff.FileDiff, hl *file
 		scroll = 0
 	}
 	var out []string
+	var owners []int
 	if scroll > 0 {
 		out = append(out, subtleStyle.Render(fmt.Sprintf("  ↑ %d more", scroll)))
+		owners = append(owners, scroll-1)
 	}
 	i := scroll
 	for ; i < len(rows) && len(out) < height; i++ {
@@ -1123,15 +1141,18 @@ func (m *Model) renderSideBySide(b *strings.Builder, fd *diff.FileDiff, hl *file
 		if row.Right >= 0 && row.Right != row.Left {
 			out = append(out, m.annotationRows(fd, row.Right, width)...)
 		}
+		owners = ownRows(owners, len(out), i)
 	}
 	if i < len(rows) {
 		if len(out) >= height {
-			out = out[:height-1]
+			out, owners = out[:height-1], owners[:height-1]
 		}
 		out = append(out, subtleStyle.Render(fmt.Sprintf("  ↓ %d more", len(rows)-i)))
+		owners = append(owners, i)
 	} else if len(out) > height {
-		out = out[:height]
+		out, owners = out[:height], owners[:height]
 	}
+	m.diff.codeRows = owners
 	b.WriteString(strings.Join(out, "\n"))
 }
 
