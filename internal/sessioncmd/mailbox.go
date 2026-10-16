@@ -29,7 +29,7 @@ func RequireCaller(sessionID string) error {
 
 func validSession(sessionID string) error {
 	if sessionID == "" {
-		return fmt.Errorf("not inside an Agent Manager session or terminal (%s is unset and this pane is not one Agent Manager runs)", hooks.EnvSessionID)
+		return fmt.Errorf("not inside an Agent Manager session or terminal (this process does not run in a pane Agent Manager runs, and %s is unset or was inherited by a process outside one, such as a daemon)", hooks.EnvSessionID)
 	}
 	if !sessionIDPattern.MatchString(sessionID) {
 		return fmt.Errorf("invalid session id %q", sessionID)
