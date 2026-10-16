@@ -71,7 +71,7 @@ func Help(version string, proactive bool) string {
 	if !proactive {
 		help.WriteString("Work with those other agents only when the user asks: on your own, do not list, message, spawn or wait on them, or create or claim shared tasks.\n")
 	}
-	help.WriteString("update and settings need no caller, and issue and feature use only the exported session id. Every other command acts as the session or terminal it runs in, resolved from the environment or from the tmux pane, so run them from your own shell. sessions, groups, spawn, read and wait also run from a script outside Agent Manager, where spawn defaults to the CLI picked in settings, the root group and the script's directory.\n")
+	help.WriteString("update and settings need no caller, and issue and feature use only the exported session id. Every other command acts as the session or terminal whose pane started it, so run them from your own shell, not from a daemon or a process that outlived its pane. sessions, groups, spawn, read and wait also run from a script outside Agent Manager, where spawn defaults to the CLI picked in settings, the root group and the script's directory.\n")
 	for _, section := range sections(version, nil) {
 		help.WriteString("\n" + section.title + "\n")
 		help.WriteString(usageLines(section.commands))
