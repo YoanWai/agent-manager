@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/notify"
+	"github.com/YoanWai/agent-manager/internal/testenv"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 )
 
@@ -36,6 +37,12 @@ func TestMain(m *testing.M) {
 }
 
 func runTests(m *testing.M) int {
+	// An inherited GIT_DIR points the temp repos these tests build at the
+	// repo running them.
+	if err := testenv.IsolateGit(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
 	// psmux keeps its servers' registry under its data directory, which a
 	// fresh one isolates the way the private socket does for tmux.
 	if runtime.GOOS == "windows" {

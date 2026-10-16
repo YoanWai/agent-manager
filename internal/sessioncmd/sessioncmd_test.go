@@ -3,6 +3,7 @@ package sessioncmd
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,7 +15,18 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/testenv"
 )
+
+// TestMain drops an inherited GIT_DIR and its siblings, which would point
+// the temp repos these tests build at the repo running them.
+func TestMain(m *testing.M) {
+	if err := testenv.IsolateGit(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	os.Exit(m.Run())
+}
 
 const reviewTestComment = "0123456789abcdef"
 
@@ -85,34 +97,6 @@ type testGitRepo struct {
 	baseRef string
 }
 
-func isolateGitEnvironment(t *testing.T) {
-	t.Helper()
-	for _, key := range []string{
-		"GIT_DIR",
-		"GIT_WORK_TREE",
-		"GIT_COMMON_DIR",
-		"GIT_OBJECT_DIRECTORY",
-		"GIT_INDEX_FILE",
-		"GIT_ALTERNATE_OBJECT_DIRECTORIES",
-	} {
-		value, present := os.LookupEnv(key)
-		if err := os.Unsetenv(key); err != nil {
-			t.Fatalf("unset %s: %v", key, err)
-		}
-		t.Cleanup(func() {
-			if present {
-				if err := os.Setenv(key, value); err != nil {
-					t.Errorf("restore %s: %v", key, err)
-				}
-				return
-			}
-			if err := os.Unsetenv(key); err != nil {
-				t.Errorf("restore %s: %v", key, err)
-			}
-		})
-	}
-}
-
 func newTestGitRepo(t *testing.T, dir string) testGitRepo {
 	t.Helper()
 	run := func(args ...string) string {
@@ -143,7 +127,6 @@ func newTestGitRepo(t *testing.T, dir string) testGitRepo {
 }
 
 func TestReviewRepo(t *testing.T) {
-	isolateGitEnvironment(t)
 	repo := newTestGitRepo(t, t.TempDir())
 	nested := filepath.Join(repo.root, "nested")
 	if err := os.Mkdir(nested, 0o755); err != nil {
@@ -201,7 +184,6 @@ func TestReviewRepo(t *testing.T) {
 }
 
 func TestReviewBase(t *testing.T) {
-	isolateGitEnvironment(t)
 	repo := newTestGitRepo(t, t.TempDir())
 	subdir := filepath.Join(repo.root, "nested")
 	if err := os.Mkdir(subdir, 0o755); err != nil {

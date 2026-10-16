@@ -2,7 +2,12 @@
 package testenv
 
 import (
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -13,4 +18,24 @@ func SkipPOSIXShell(t testing.TB) {
 	if runtime.GOOS == "windows" {
 		t.Skip("fixture is a POSIX shell script")
 	}
+}
+
+// IsolateGit unsets the variables that bind git to one repository, as a
+// hook or `git rebase --exec` exports them. Inherited, they point every git
+// command a test runs in a temp dir at the developer's own repo instead.
+// git names the variables itself, so a release that adds one is covered.
+func IsolateGit() error {
+	out, err := exec.Command("git", "rev-parse", "--local-env-vars").Output()
+	if errors.Is(err, exec.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("git rev-parse --local-env-vars: %w", err)
+	}
+	for _, key := range strings.Fields(string(out)) {
+		if err := os.Unsetenv(key); err != nil {
+			return fmt.Errorf("unset %s: %w", key, err)
+		}
+	}
+	return nil
 }
