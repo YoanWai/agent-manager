@@ -98,15 +98,9 @@ Every configured tool is offered when you create a session, which is more than m
 
 ## Saved prompts
 
-Save reusable instructions in Settings (`s`) on the **saved prompts** row. `n` creates one, `enter` edits the selected one, and `d` deletes it after confirmation. The editor is a name and a text box. `tab` moves between them, `ctrl+s` saves, and `esc` discards. Agents create most of these with `agent-manager prompts add`. See [Configuration](configuration.md#saved-prompts).
+Settings (`s`), row **saved prompts**. `n` creates one, `enter` edits it, `d` deletes it. `tab` moves between the name and the text, `ctrl+s` saves, `esc` backs out. From a shell, `agent-manager prompts add`.
 
-The New Session form (`n`) has a **saved** row when any exist. `←→` cycles them. `ctrl+o` or `enter` on that row opens a filterable list. **none** keeps the ordinary prompt. The saved text goes before the task, with a blank line between them when the task is not empty.
-
-In the quick prompt (`space`), `ctrl+o` opens the same list above the prompt. The pick lands at the caret as a chip. On send, the chip becomes the saved text. A selected session receives it. A selected group starts a new session with it as the first prompt.
-
-In a focused session, `f4` opens the same list and pastes the pick into the agent's composer without sending it. Rebind that key with the other session keys.
-
-The form uses the text it is showing. A CLI or MCP call reads the latest saved text.
+On a new session, left and right pick one. `ctrl+o` or `enter` opens the list. The text is placed in front of the task. In the quick prompt, `ctrl+o` drops a chip that becomes that text when you send. In a session, `f4` pastes it and does not send. `f4` can be changed with the other session keys.
 
 ```bash
 agent-manager prompts add reviewer "Review the parser changes"
@@ -114,7 +108,7 @@ agent-manager spawn --saved reviewer --prompt "Start with the tests"
 agent-manager send <session-id> --saved reviewer
 ```
 
-`create_session` and `send_session` take the same name in `saved`. A missing name refuses the call before a worktree or a pane is made. Editing or deleting one does not change a conversation that already started. Revive, restart and fork do not read the catalog again.
+`create_session` and `send_session` take the same name in `saved`. A missing name is refused. Changing or deleting one leaves a session that already started alone.
 
 ## Model, effort and profile
 

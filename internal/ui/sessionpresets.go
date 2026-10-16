@@ -25,8 +25,6 @@ type savedMatch struct {
 	formIndex    int
 }
 
-// savedList is the filterable catalog, the same one the new-session row,
-// the quick prompt and a focused session open.
 type savedList struct {
 	where            int
 	filter           textinput.Model
@@ -323,7 +321,6 @@ func (m *Model) viewSessionPresets() string {
 		add(textInputView(p.name))
 		add("text")
 		add(textAreaView(p.instructions))
-		add("agents add these with agent-manager prompts add")
 		if p.busy {
 			hint = [][2]string{{"wait", "save in progress"}}
 		} else {
@@ -342,7 +339,7 @@ func (m *Model) viewSessionPresets() string {
 		if p.loading {
 			add("Loading saved prompts…")
 		} else if p.refreshFailed {
-			add("Catalog unavailable. Press r to load again.")
+			add("Could not load them. Press r.")
 		} else if len(p.rows) == 0 {
 			add("No saved prompts.")
 		}
@@ -525,7 +522,7 @@ func (m *Model) savedListLines(width, visible int) []string {
 	for i := first; i < last; i++ {
 		marker, style := "  ", mutedStyle
 		if i == m.savedList.cursor {
-			marker = lipglossAccent()
+			marker = valueStyle.Render("❯ ")
 			style = valueStyle
 		}
 		row := marker + style.Render(matches[i].name)
@@ -537,10 +534,6 @@ func (m *Model) savedListLines(width, visible int) []string {
 		m.savedList.hits = append(m.savedList.hits, savedHit{line: len(lines) - 1, match: formIndex})
 	}
 	return lines
-}
-
-func lipglossAccent() string {
-	return valueStyle.Render("❯ ")
 }
 
 func (m *Model) handleSavedListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

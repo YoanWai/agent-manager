@@ -142,7 +142,7 @@ func textField(placeholder string, limit int) textinput.Model {
 
 const (
 	// formLabelColumn is the columns before a field value: marker (2),
-	// label (13), separator space (1). The label fits "saved prompts".
+	// label (13), separator space (1).
 	formLabelColumn   = 16
 	formPromptMaxRows = 4
 )

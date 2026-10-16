@@ -12,9 +12,7 @@ The poll interval is fixed at two seconds, so a `poll_interval` line in that fil
 
 ## Saved prompts
 
-The **saved prompts** row in Settings manages named instructions in the same `state.db` the manager, the CLI and the MCP server read. This is one catalog for that config directory, shared across projects and tools. Names are unique, 1–60 characters after trimming, without control characters or brackets. The text is non-whitespace UTF-8 up to 64 KiB, kept as saved.
-
-Use one from the New Session form, the quick prompt, a focused session, `spawn --saved`, `send --saved`, or the `saved` field on `create_session` and `send_session`. `agent-manager prompts list`, `add` and `rm` manage the catalog from a shell. See [Saved prompts](usage.md#saved-prompts).
+One list in Settings, shared by the new-session form, the quick prompt, a focused session, `spawn --saved`, `send --saved`, and `saved` on `create_session` and `send_session`. Names are unique, up to 60 characters, with no brackets. The text is up to 64 KiB. `agent-manager prompts list`, `add` and `rm` edit the list from a shell. See [Saved prompts](usage.md#saved-prompts).
 
 ## Agent CLIs
 
