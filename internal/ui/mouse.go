@@ -8,17 +8,15 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// syncMouseCapture hands the mouse to the terminal while the setup dialog
-// is up, so a drag over it selects the install command, and takes it back
-// when the dialog closes. The mouse-mode setting does the same for anyone
-// who wants native click-drag selection back everywhere else, except in
-// focus mode: that pane's own mouse forwarding predates the setting and
-// stays on regardless, the way it always has.
+// syncMouseCapture hands the mouse to the terminal for anyone who turned
+// the mouse-mode setting off and wants native click-drag selection back,
+// except in focus mode: that pane's own mouse forwarding predates the
+// setting and stays on regardless, the way it always has.
 //
 // An open row menu asks for every motion, pressed or not, so hovering an
 // entry can light it up.
 func (m *Model) syncMouseCapture() tea.Cmd {
-	release := m.mode == modeLaunchHint || (m.prefs.mouseDisabled && m.mode != modeFocus)
+	release := m.prefs.mouseDisabled && m.mode != modeFocus
 	hover := !release && m.mode == modeList && m.rail.MenuOpen()
 	if release == m.mouse.released && hover == m.mouse.hover {
 		return nil
@@ -188,6 +186,9 @@ func (m *Model) handleMousePress(msg tea.MouseMsg, ctx uirail.MouseContext) (tea
 	}
 	if m.mode == modeDiff {
 		return m.handleDiffClick(msg.X, msg.Y)
+	}
+	if m.mode == modeLaunchHint {
+		return m, m.launchHint.handleClick(m, msg.Y-m.layout.cardTop-2)
 	}
 	if m.layout.split.resizeMode || m.mode != modeList {
 		return m, nil

@@ -1,6 +1,7 @@
 package dialogs
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -34,5 +35,29 @@ func TestLaunchHintViewSetsParagraphsApart(t *testing.T) {
 	}
 	if card := (LaunchHint{Text: "why"}).View(40, plain, plain); len(card.Hints) != 1 {
 		t.Fatalf("a read-only card offers %v", card.Hints)
+	}
+}
+
+// A click anywhere on the paragraph that holds the command copies it, even
+// when the card wraps the command across lines; the rest of the text reads.
+func TestLaunchHintClickCopiesTheCommandParagraph(t *testing.T) {
+	fix := LaunchHint{
+		Text:    "claude is not installed.\n\ninstall it with: curl -fsSL https://claude.ai/install.sh | bash",
+		Command: "curl -fsSL https://claude.ai/install.sh | bash",
+	}
+	for _, inner := range []int{80, 24} {
+		body := strings.Split(fix.View(inner, lipgloss.NewStyle(), lipgloss.NewStyle()).Body, "\n")
+		for line := range body {
+			want := LaunchHintStay
+			if line >= 2 {
+				want = LaunchHintCopy
+			}
+			if got := fix.Click(line, inner); got != want {
+				t.Errorf("inner %d line %d %q: click = %v, want %v", inner, line, body[line], got, want)
+			}
+		}
+	}
+	if got := (LaunchHint{Text: "x is not installed."}).Click(0, 80); got != LaunchHintStay {
+		t.Fatalf("a dialog without a recipe copies nothing, got %v", got)
 	}
 }

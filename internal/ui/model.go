@@ -112,7 +112,7 @@ type reviewNavState struct {
 }
 
 type mouseCapture struct {
-	// released is true while the setup dialog has handed the mouse
+	// released is true while the mouse-mode setting has handed the mouse
 	// back to the terminal, so a drag selects its text.
 	released bool
 	hover    bool

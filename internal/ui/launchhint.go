@@ -169,7 +169,15 @@ func (d *launchHintDialog) prompt() uidialogs.LaunchHint {
 }
 
 func (d *launchHintDialog) handleKey(h launchHintHost, msg tea.KeyMsg) tea.Cmd {
-	switch d.prompt().Key(msg) {
+	return d.run(h, d.prompt().Key(msg))
+}
+
+func (d *launchHintDialog) handleClick(h launchHintHost, line int) tea.Cmd {
+	return d.run(h, d.prompt().Click(line, cardInnerWidth(h.cardWidth())))
+}
+
+func (d *launchHintDialog) run(h launchHintHost, action uidialogs.LaunchHintAction) tea.Cmd {
+	switch action {
 	case uidialogs.LaunchHintQuit:
 		cmd := h.quit()
 		return cmd

@@ -28,6 +28,36 @@ const (
 	LaunchHintClose
 )
 
+// Click is a press on line of the card's body: the paragraph that holds the
+// command copies it, the same as c.
+func (d LaunchHint) Click(line, inner int) LaunchHintAction {
+	if d.Command == "" {
+		return LaunchHintStay
+	}
+	// Wrapping breaks at spaces and after hyphens, so the paragraph is
+	// matched with its spaces dropped.
+	command := strings.ReplaceAll(d.Command, " ", "")
+	top := 0
+	for _, lines := range d.paragraphs(inner) {
+		held := strings.Contains(strings.ReplaceAll(strings.Join(lines, ""), " ", ""), command)
+		if held && line >= top && line < top+len(lines) {
+			return LaunchHintCopy
+		}
+		top += len(lines) + 1
+	}
+	return LaunchHintStay
+}
+
+// paragraphs are the text's paragraphs wrapped to inner columns, which the
+// card sets apart by a blank line.
+func (d LaunchHint) paragraphs(inner int) [][]string {
+	var out [][]string
+	for _, paragraph := range strings.Split(d.Text, "\n\n") {
+		out = append(out, strings.Split(ansi.Wordwrap(paragraph, inner, "-"), "\n"))
+	}
+	return out
+}
+
 func (d LaunchHint) Key(msg tea.KeyMsg) LaunchHintAction {
 	switch msg.String() {
 	case "ctrl+c":
@@ -52,7 +82,7 @@ func (d LaunchHint) Key(msg tea.KeyMsg) LaunchHintAction {
 // card's inner width.
 func (d LaunchHint) View(inner int, tone, muted lipgloss.Style) Card {
 	var body strings.Builder
-	for i, paragraph := range strings.Split(d.Text, "\n\n") {
+	for i, lines := range d.paragraphs(inner) {
 		style := muted
 		if i == 0 {
 			style = tone
@@ -60,7 +90,7 @@ func (d LaunchHint) View(inner int, tone, muted lipgloss.Style) Card {
 		if i > 0 {
 			body.WriteString("\n")
 		}
-		for _, line := range strings.Split(ansi.Wordwrap(paragraph, inner, "-"), "\n") {
+		for _, line := range lines {
 			body.WriteString(style.Render(line) + "\n")
 		}
 	}

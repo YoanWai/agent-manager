@@ -531,8 +531,6 @@ func TestLaunchHintWithoutARecipeOffersOnlyClose(t *testing.T) {
 	if strings.Contains(frame, "copy") {
 		t.Fatalf("dialog should offer neither copy nor install:\n%s", frame)
 	}
-	// The first key settles the mouse hand-off; the keys under test come after.
-	pressInLaunchHint(t, m, 'x')
 	if cmd := pressInLaunchHint(t, m, 'i'); cmd != nil || m.mode != modeLaunchHint || m.launchHint.install != nil {
 		t.Fatalf("i must do nothing without a recipe: mode = %v, install = %+v", m.mode, m.launchHint.install)
 	}
@@ -541,28 +539,31 @@ func TestLaunchHintWithoutARecipeOffersOnlyClose(t *testing.T) {
 	}
 }
 
-// The dialog hands the mouse back to the terminal while it is up, so a
-// drag over the install command selects it, and takes it back on close.
-func TestLaunchHintReleasesTheMouseWhileOpen(t *testing.T) {
-	t.Parallel()
+// The dialog keeps the mouse like every other card: a click on the
+// command copies it, the same as c, and its foot keys answer a click.
+func TestLaunchHintKeepsTheMouseAndCopiesOnAClick(t *testing.T) {
 	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 34
+	var copied string
+	copyLaunchCommand = func(text string) error {
+		copied = text
+		return nil
+	}
+	t.Cleanup(func() { copyLaunchCommand = clipboard.WriteText })
 	m.reportLaunchError(config.MissingToolError{Binary: "claude"})
 
-	opened := pressInLaunchHint(t, m, 'x')
-	if opened == nil || fmt.Sprintf("%T", opened()) != fmt.Sprintf("%T", tea.DisableMouse()) {
-		t.Fatalf("opening the dialog should release the mouse, got %v", opened)
+	if opened := pressInLaunchHint(t, m, 'x'); opened != nil && fmt.Sprintf("%T", opened()) == fmt.Sprintf("%T", tea.DisableMouse()) {
+		t.Fatal("opening the dialog released the mouse")
 	}
-	if again := pressInLaunchHint(t, m, 'x'); again != nil {
-		t.Fatalf("a key inside the dialog should not toggle the mouse again, got %v", again)
-	}
-
-	updated, closed := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	x, y := paintedCell(t, m, "install it with")
+	updated, cmd := m.handleMouse(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
 	m = updated.(*Model)
-	if m.mode != modeList {
-		t.Fatalf("mode = %v, want modeList", m.mode)
+	m.runBatch(t, cmd)
+	if want := deps.Command("claude"); copied != want || m.mode != modeLaunchHint {
+		t.Fatalf("a click on the command copied %q, want %q; mode %v", copied, want, m.mode)
 	}
-	if closed == nil || fmt.Sprintf("%T", closed()) != fmt.Sprintf("%T", tea.EnableMouseCellMotion()) {
-		t.Fatalf("closing the dialog should take the mouse back, got %v", closed)
+	if m = clickLabel(t, m, "esc close"); m.mode != modeList {
+		t.Fatalf("esc in the foot should close the dialog, mode = %v", m.mode)
 	}
 }
 
@@ -820,8 +821,6 @@ func TestLaunchHintQuitsOnCtrlC(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("ctrl+c in the dialog should quit")
 	}
-	// The quit rides in a batch with the mouse hand-off the dialog does
-	// on its way up.
 	if !quits(cmd()) {
 		t.Fatalf("ctrl+c produced %T, want a quit", cmd())
 	}
