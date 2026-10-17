@@ -21,7 +21,7 @@ func (m *Model) viewListFrame() string {
 		return m.viewFullListFrame()
 	}
 	leftWidth, rightWidth := m.splitWidths()
-	footer := m.viewFooter()
+	footer := m.footer()
 	bodyHeight := m.listBodyHeight()
 	contentWidth := rightWidth - 1
 
@@ -57,10 +57,9 @@ func (m *Model) viewListFrame() string {
 		bottom = m.focusBottomRule(leftWidth+1, m.layout.width)
 	}
 	frame = append(frame, bottom)
-	glyph, label := m.messagesAlert()
-	m.placeNoticeHit(glyph, label, footer, len(frame))
 	m.quick.originY = len(frame)
-	for _, line := range splitLines(footer) {
+	m.placeKeys(footer.hits, 0, len(frame))
+	for _, line := range splitLines(footer.text) {
 		frame = append(frame, paint(line, m.layout.width, backdropHex()))
 	}
 	return m.overlayTopRight(strings.Join(frame, "\n"), m.statusToast(), m.listChromeRows()+1)
@@ -69,7 +68,7 @@ func (m *Model) viewListFrame() string {
 func (m *Model) fullRows() bool { return m.prefs.fullLayout && m.mode != modeFocus }
 
 func (m *Model) viewFullListFrame() string {
-	footer := m.viewFooter()
+	footer := m.footer()
 	bodyHeight := m.listBodyHeight()
 	railWidth := m.layout.width - 1
 
@@ -90,10 +89,9 @@ func (m *Model) viewFullListFrame() string {
 	frame = append(frame, m.railTopRow(railWidth, m.layout.width))
 	frame = append(frame, joinColumns(edge, paintContent(railRows, railWidth, bodyHeight, panelHex()))...)
 	frame = append(frame, m.boundedRuleRow(railWidth, m.layout.width, "▄"))
-	glyph, label := m.messagesAlert()
-	m.placeNoticeHit(glyph, label, footer, len(frame))
 	m.quick.originY = len(frame)
-	for _, line := range splitLines(footer) {
+	m.placeKeys(footer.hits, 0, len(frame))
+	for _, line := range splitLines(footer.text) {
 		frame = append(frame, paint(line, m.layout.width, backdropHex()))
 	}
 	return m.overlayTopRight(strings.Join(frame, "\n"), m.statusToast(), m.listChromeRows()+1)

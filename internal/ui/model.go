@@ -95,6 +95,8 @@ type layoutState struct {
 	displayedRail uirail.Frame
 	// cardTop, cardLeft and cardRight place the last card painted, for clicks.
 	cardTop, cardLeft, cardRight int
+	// keyHits are the key pairs this frame painted, for clicks.
+	keyHits keyHits
 }
 
 type focusState struct {
@@ -130,8 +132,6 @@ type environment struct {
 type helpFeature struct {
 	state      uihelp.State
 	returnMode mode
-	// docsHit follows the docs key in the painted footer, for clicks.
-	docsHit noticeHit
 }
 
 func NewWithInboxOwner(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, version string, owner sessioncmd.InboxMaintenance) (*Model, error) {

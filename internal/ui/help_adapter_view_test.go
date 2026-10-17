@@ -270,16 +270,26 @@ func TestHelpDocsHitIgnoresTheSearchRow(t *testing.T) {
 	if searchLine < 0 {
 		t.Fatal("the search row should show the query")
 	}
-	if !m.help.docsHit.ok || m.help.docsHit.y0 <= searchLine {
-		t.Fatalf("the docs hit should sit on the footer below the search row, hit %d search %d", m.help.docsHit.y0, searchLine)
+	docs, ok := docsKeyHit(m)
+	if !ok || docs.y <= searchLine {
+		t.Fatalf("the docs hit should sit on the footer below the search row, hit %+v search %d", docs, searchLine)
 	}
-	if !strings.Contains(plain[m.help.docsHit.y0], "o docs") {
-		t.Fatalf("the docs hit missed the footer: %q", plain[m.help.docsHit.y0])
+	if !strings.Contains(plain[docs.y], "o docs") {
+		t.Fatalf("the docs hit missed the footer: %q", plain[docs.y])
 	}
 
 	m.handleHelpKey(runeKey("/"))
 	preparedView(m)
-	if m.help.docsHit.ok {
+	if _, ok := docsKeyHit(m); ok {
 		t.Fatal("typing a search should not leave a docs hit")
 	}
+}
+
+func docsKeyHit(m *Model) (keyHit, bool) {
+	for _, hit := range m.layout.keyHits {
+		if hit.key.String() == "o" {
+			return hit, true
+		}
+	}
+	return keyHit{}, false
 }

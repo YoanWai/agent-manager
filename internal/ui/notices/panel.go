@@ -222,7 +222,7 @@ func (p Panel) View(notices []Notice, f Frame) []string {
 	if len(notices) == 0 {
 		rows := []string{t.Subtle.Render("nothing new")}
 		rows = append(rows, p.tail(notices, f, inner)...)
-		frame := cardFrame(rows, inner, legend(t), t.Muted.Render("r refresh · esc "), t)
+		frame := cardFrame(rows, inner, legend(t), t.Muted.Render(footText(footPairs(notices, p.cursor, inner))), t)
 		return frame
 	}
 	var rows []string
@@ -252,19 +252,67 @@ func (p Panel) View(notices []Notice, f Frame) []string {
 
 	frame := cardFrame(rows, inner,
 		legend(t),
-		t.Muted.Render(hint(selected, inner)), t)
+		t.Muted.Render(footText(footPairs(notices, p.cursor, inner))), t)
 	return frame
 }
 
-func hint(selected Notice, inner int) string {
-	updateKey := ""
-	if selected.IsUpdate() {
-		updateKey = "u update · "
+// FootKey is a key the card's bottom edge names, across columns
+// [X0, X1) of that edge.
+type FootKey struct {
+	X0, X1 int
+	Key    string
+}
+
+// footStart is the column the bottom edge's text starts at, after its
+// corner and the dash before it.
+const footStart = 2
+
+const footSep = " · "
+
+// Foot is where each key the bottom edge names was painted, the ones the
+// edge's truncation cut left out.
+func (p Panel) Foot(notices []Notice, f Frame) []FootKey {
+	inner := innerWidth(notices, f.Width)
+	var keys []FootKey
+	x := footStart
+	for i, pair := range footPairs(notices, p.cursor, inner) {
+		if i > 0 {
+			x += lipgloss.Width(footSep)
+		}
+		width := lipgloss.Width(footPart(pair))
+		if x+width > footStart+inner+1 {
+			break
+		}
+		keys = append(keys, FootKey{X0: x, X1: x + width, Key: pair[0]})
+		x += width
 	}
-	if hint := "↑↓ pick · pgup/pgdn/home/end scroll · r refresh · " + updateKey + "↵ open · x dismiss · esc "; lipgloss.Width(hint) <= inner+1 {
-		return hint
+	return keys
+}
+
+func footPairs(notices []Notice, cursor, inner int) [][2]string {
+	if len(notices) == 0 {
+		return [][2]string{{"r", "refresh"}, {"esc", ""}}
 	}
-	return "↑↓ pick · pgup/pgdn scroll · r refresh · " + updateKey + "↵ open · x dismiss · esc "
+	var update [][2]string
+	if notices[cursor].IsUpdate() {
+		update = [][2]string{{"u", "update"}}
+	}
+	tail := append(append([][2]string{{"r", "refresh"}}, update...), [][2]string{{"↵", "open"}, {"x", "dismiss"}, {"esc", ""}}...)
+	pairs := append([][2]string{{"↑↓", "pick"}, {"pgup/pgdn/home/end", "scroll"}}, tail...)
+	if lipgloss.Width(footText(pairs)) <= inner+1 {
+		return pairs
+	}
+	return append([][2]string{{"↑↓", "pick"}, {"pgup/pgdn", "scroll"}}, tail...)
+}
+
+func footPart(pair [2]string) string { return pair[0] + " " + pair[1] }
+
+func footText(pairs [][2]string) string {
+	parts := make([]string, len(pairs))
+	for i, pair := range pairs {
+		parts[i] = footPart(pair)
+	}
+	return strings.Join(parts, footSep)
 }
 
 // legend is the card's title, set into the border: lowercase, warm,

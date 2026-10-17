@@ -16,7 +16,7 @@ import (
 // it. The focus rules cap and close the pane the way they do in the
 // split, stretched to the terminal's edges.
 func (m *Model) viewFullFocusFrame() string {
-	footer := m.viewFooter()
+	footer := m.footer()
 	bodyHeight := m.listBodyHeight()
 	// This frame paints no rail, so a click lands on no row: the list
 	// frame's hits would otherwise select a row nobody pointed at.
@@ -31,7 +31,8 @@ func (m *Model) viewFullFocusFrame() string {
 	paneRows := m.previewLines(m.layout.width, bodyHeight, strings.Repeat(" ", contentGutter))
 	frame = append(frame, paintContent(paneRows, m.layout.width, bodyHeight, backdropHex())...)
 	frame = append(frame, paint(m.focusEdge(m.layout.width), m.layout.width, backdropHex()))
-	for _, line := range splitLines(footer) {
+	m.placeKeys(footer.hits, 0, len(frame))
+	for _, line := range splitLines(footer.text) {
 		frame = append(frame, paint(line, m.layout.width, backdropHex()))
 	}
 	return m.overlayTopRight(strings.Join(frame, "\n"), m.statusToast(), m.listChromeRows()+1)

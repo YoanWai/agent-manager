@@ -9,11 +9,9 @@ import (
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
 )
 
 type helpLayout struct {
-	dialog  dialogRenderContext
 	content uihelp.Content
 	width   int
 	rows    int
@@ -84,7 +82,6 @@ func (m *Model) helpLayout() helpLayout {
 		rows -= 2
 	}
 	return helpLayout{
-		dialog:  dialog,
 		content: content,
 		width:   width,
 		rows:    max(rows, 1),
@@ -100,33 +97,5 @@ func (m *Model) viewHelp() string {
 		layout.content.Offset,
 		subtleStyle(),
 	)...)
-	frame := renderDialog(
-		layout.dialog,
-		layout.width,
-		layout.content.Title,
-		strings.Join(lines, "\n"),
-		layout.content.Hints,
-	)
-	m.placeDocsHit(frame)
-	return frame
-}
-
-func (m *Model) placeDocsHit(frame string) {
-	m.help.docsHit = noticeHit{}
-	// A search for these words paints an earlier copy, and typing hides the key.
-	if m.help.state.Searching() {
-		return
-	}
-	label := ansi.Strip(hintCap("o", "docs"))
-	lines := strings.Split(frame, "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		plain := ansi.Strip(lines[i])
-		start := strings.Index(plain, label)
-		if start < 0 {
-			continue
-		}
-		x := ansi.StringWidth(plain[:start])
-		m.help.docsHit = noticeHit{x0: x, x1: x + ansi.StringWidth(label), y0: i, y1: i + 1, ok: true}
-		return
-	}
+	return m.cardSized(layout.width, layout.content.Title, strings.Join(lines, "\n"), layout.content.Hints)
 }

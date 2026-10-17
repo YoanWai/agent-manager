@@ -9,10 +9,12 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// viewFooter is the app's legend: a tier of keys for whatever the cursor is
+func (m *Model) viewFooter() string { return m.footer().text }
+
+// footer is the app's legend: a tier of keys for whatever the cursor is
 // on, then a quieter tier for the keys that always apply. A transient mode
 // (quick prompt, rename, resize) owns the legend alone while it is up.
-func (m *Model) viewFooter() string {
+func (m *Model) footer() legend {
 	if m.rail.Reordering() {
 		return m.reorderFooter()
 	}
@@ -73,16 +75,18 @@ func (m *Model) viewFooter() string {
 		}
 		// Full layout keeps a one-row footer; the key map still names this key.
 		withSaved := m.transientFooter(legendSection{title: "Focused", pairs: slices.Insert(slices.Clone(pairs), savedAt, [2]string{savedLabel, "saved prompts"})})
-		if m.prefs.fullLayout && lipgloss.Height(withSaved) > lipgloss.Height(footer) {
+		if m.prefs.fullLayout && lipgloss.Height(withSaved.text) > lipgloss.Height(footer.text) {
 			return footer
 		}
 		return withSaved
 	}
-	return m.listFooter()
+	return m.listLegend()
 }
 
-func (m *Model) listFooter() string {
-	return legendBar([]legendSection{m.rowLegend(), m.viewLegend()}, m.layout.width)
+func (m *Model) listFooter() string { return m.listLegend().text }
+
+func (m *Model) listLegend() legend {
+	return paintLegend([]legendSection{m.rowLegend(), m.viewLegend()}, m.layout.width)
 }
 
 // transientFooter renders one tier at the list footer's height: the footer
@@ -90,12 +94,12 @@ func (m *Model) listFooter() string {
 // which costs an agent drawing on the normal screen a full transcript redraw.
 // The full screen layout has no preview box to hold still, so a tier there
 // takes the one row it needs and hands the rest to the body.
-func (m *Model) transientFooter(section legendSection) string {
-	bar := legendBar([]legendSection{section}, m.layout.width)
-	if m.prefs.fullLayout {
-		return bar
+func (m *Model) transientFooter(section legendSection) legend {
+	bar := paintLegend([]legendSection{section}, m.layout.width)
+	if !m.prefs.fullLayout {
+		bar.text = presentation.PadToHeight(bar.text, lipgloss.Height(m.listFooter()))
 	}
-	return presentation.PadToHeight(bar, lipgloss.Height(m.listFooter()))
+	return bar
 }
 
 func (m *Model) listGlyph(actions ...string) string {

@@ -3,7 +3,6 @@ package ui
 import (
 	"encoding/json"
 	"net/url"
-	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/feed"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -11,7 +10,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/update"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
 )
 
 const (
@@ -27,11 +25,10 @@ const (
 // noticesPanel is the messages modal: uinotices.Panel owns the list it
 // builds, the cursor, the body scroll and the dismissed set. The root keeps
 // what the list is built from (the persisted what's-new versions, a refused
-// config import, the fetched feed), the legend hit, and the notice that waits
+// config import, the fetched feed), and the notice that waits
 // for the list to come back before it opens.
 type noticesPanel struct {
 	uinotices.Panel
-	noticeHit noticeHit
 	// whatsNewVersion mirrors the persisted whats_new_version setting so
 	// the notices list, rebuilt every frame, never reads the database.
 	whatsNewVersion     string
@@ -244,36 +241,6 @@ func loadDismissed(st *store.Store) map[string]bool {
 	return dismissed
 }
 
-// noticeHit follows the messages entry in the painted key legend.
-type noticeHit struct {
-	x0, x1, y0, y1 int
-	ok             bool
-}
-
-func (h noticeHit) contains(x, y int) bool {
-	return h.ok && x >= h.x0 && x < h.x1 && y >= h.y0 && y < h.y1
-}
-
-func (m *Model) placeNoticeHit(glyph, label, footer string, firstRow int) {
-	if glyph == "" {
-		return
-	}
-	painted := ansi.Strip(keyCapAlert(glyph, label))
-	for i, line := range splitLines(footer) {
-		line = ansi.Strip(line)
-		start := strings.Index(line, painted)
-		if start < 0 {
-			continue
-		}
-		x := ansi.StringWidth(line[:start])
-		y := firstRow + i
-		if x+ansi.StringWidth(painted) <= m.layout.width && y < m.layout.height {
-			m.notices.noticeHit = noticeHit{x0: x, x1: x + ansi.StringWidth(painted), y0: y, y1: y + 1, ok: true}
-		}
-		return
-	}
-}
-
 // openNotices shows the panel on the notice with id, or on the first.
 func (m *Model) openNotices(id string) {
 	m.notices.Open(m.activeNotices(), id)
@@ -377,6 +344,19 @@ func (m *Model) scrollNotices(rows int) {
 
 func (m *Model) viewNotices() []string {
 	return m.notices.View(m.activeNotices(), m.noticesFrame())
+}
+
+// viewNoticesCard floats the panel on the backdrop and records the keys its
+// bottom edge names.
+func (m *Model) viewNoticesCard() string {
+	card := m.viewNotices()
+	frame := m.centerOnBackdrop(card)
+	var hits keyHits
+	for _, foot := range m.notices.Foot(m.activeNotices(), m.noticesFrame()) {
+		hits = hits.add(foot.X0, foot.X1, len(card)-1, foot.Key)
+	}
+	m.placeKeys(hits, m.layout.cardLeft, m.layout.cardTop)
+	return frame
 }
 
 func (m *Model) dismissNotice(id string) {

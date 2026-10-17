@@ -279,10 +279,11 @@ func (m *Model) handleQuickClick(hit quickHit) tea.Cmd {
 
 const quickModeTitle = "Quick prompt mode"
 
-func (m *Model) quickFooter() string {
+func (m *Model) quickFooter() legend {
 	edge := keyStyle().Render(quickEdge)
 	gutter := strings.Repeat(" ", quickGutter-1)
-	keys := splitLines(legendBar([]legendSection{{title: quickModeTitle, pairs: m.quick.Legend(m.quickBarHost())}}, max(m.layout.width-1, 1)))
+	painted := paintLegend([]legendSection{{title: quickModeTitle, pairs: m.quick.Legend(m.quickBarHost())}}, max(m.layout.width-1, 1))
+	keys := splitLines(painted.text)
 	rows := quickBarMaxRows + 1
 	if m.quick.Picking() != uiquick.PickNone {
 		rows = max(m.layout.height/2, rows)
@@ -298,11 +299,12 @@ func (m *Model) quickFooter() string {
 		}
 		lines = append(lines, paint(edge+gutter+line, m.layout.width, tone))
 	}
+	hits := painted.hits.moved(lipgloss.Width(quickEdge), len(lines))
 	for _, line := range keys {
 		lines = append(lines, paint(edge+line, m.layout.width, quickModeHex()))
 	}
 	m.quick.originX = quickGutter
-	return strings.Join(lines, "\n")
+	return legend{text: strings.Join(lines, "\n"), hits: hits}
 }
 
 const (

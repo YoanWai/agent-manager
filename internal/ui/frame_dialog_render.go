@@ -1,6 +1,10 @@
 package ui
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 type dialogRenderContext struct {
 	width  int
@@ -8,12 +12,9 @@ type dialogRenderContext struct {
 	status string
 }
 
-func renderDialog(ctx dialogRenderContext, width int, title, body string, hint [][2]string) string {
-	return centerDialog(ctx, dialogBox(ctx, width, title, body, hint))
-}
-
-// dialogBox is a card's own lines, before the backdrop surrounds them.
-func dialogBox(ctx dialogRenderContext, width int, title, body string, hint [][2]string) []string {
+// dialogBox is a card's own lines, before the backdrop surrounds them, and
+// the keys its foot paints, from the card's own first row and column.
+func dialogBox(ctx dialogRenderContext, width int, title, body string, hint [][2]string) ([]string, keyHits) {
 	inner := cardInnerWidth(width)
 	border := cardBorderStyle()
 	pad := strings.Repeat(" ", cardPaddingX)
@@ -34,14 +35,17 @@ func dialogBox(ctx dialogRenderContext, width int, title, body string, hint [][2
 		lines = append(lines, row(""), row(ctx.status))
 	}
 	lines = append(lines, row(""))
+	var hits keyHits
 	if len(hint) > 0 {
 		lines = append(lines, rule("├", "┤"))
-		for _, line := range strings.Split(legendInline(hint, inner), "\n") {
+		foot := paintInline(hint, inner)
+		hits = foot.hits.moved(lipgloss.Width(edge)+cardPaddingX, len(lines))
+		for _, line := range strings.Split(foot.text, "\n") {
 			lines = append(lines, row(line))
 		}
 	}
 	lines = append(lines, rule("╰", "╯"))
-	return lines
+	return lines, hits
 }
 
 // dialogPlacement is where centerDialog puts box: its first row, and the

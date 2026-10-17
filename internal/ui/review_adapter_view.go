@@ -89,8 +89,8 @@ func (m *Model) reviewSpinnerLine(label string) string {
 // whole-file code on the right, annotation bar docked when typing.
 func (m *Model) viewDiffFull() string {
 	sess, _ := m.diffSession()
-	footer := m.viewDiffFooter()
-	bodyHeight := m.layout.height - 4 - lipgloss.Height(footer)
+	footer := m.diffFooter()
+	bodyHeight := m.layout.height - 4 - lipgloss.Height(footer.text)
 	if bodyHeight < 5 {
 		bodyHeight = 5
 	}
@@ -128,7 +128,8 @@ func (m *Model) viewDiffFull() string {
 		m.boundedRuleRow(fileWidth+1, m.layout.width, "▄"),
 		paint(m.viewDiffStatus(), m.layout.width, backdropHex()),
 	)
-	for _, line := range splitLines(footer) {
+	m.placeKeys(footer.hits, 0, len(frame))
+	for _, line := range splitLines(footer.text) {
 		frame = append(frame, paint(line, m.layout.width, backdropHex()))
 	}
 	return strings.Join(frame, "\n")
@@ -161,10 +162,12 @@ func (m *Model) viewDiffStatus() string {
 	return m.review.Status(m.reviewRenderContext(), m.layout.width)
 }
 
-func (m *Model) viewDiffFooter() string {
+func (m *Model) viewDiffFooter() string { return m.diffFooter().text }
+
+func (m *Model) diffFooter() legend {
 	var sections []legendSection
 	for _, section := range m.review.Legend() {
 		sections = append(sections, legendSection{title: section.Title, quiet: section.Quiet, pairs: section.Pairs})
 	}
-	return legendBar(sections, m.layout.width)
+	return paintLegend(sections, m.layout.width)
 }

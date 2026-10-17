@@ -1437,8 +1437,8 @@ func TestMessagesLegendOpensNoticesByMouseAndKey(t *testing.T) {
 				m.prefs.hideStats = true
 				m.services.listKeys = m.services.listKeys.With(keybind.Messages, bindingOf(t, binding))
 				x, y := messagesCell(t, m)
-				if !m.notices.noticeHit.contains(x, y) {
-					t.Fatalf("full=%v width=%d binding=%s: painted messages entry misses its hit box %+v", full, width, binding, m.notices.noticeHit)
+				if _, ok := m.layout.keyHits.at(x, y); !ok {
+					t.Fatalf("full=%v width=%d binding=%s: painted messages entry misses its hit box %+v", full, width, binding, m.layout.keyHits)
 				}
 				if m = leftPress(m, x, y); m.mode != modeNotices {
 					t.Fatalf("click on messages should open notices, mode=%v", m.mode)

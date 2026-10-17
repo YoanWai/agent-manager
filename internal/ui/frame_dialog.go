@@ -82,8 +82,10 @@ func cardTitle(title string) string {
 // cardSized is card at an explicit width, for the key map, whose lines are
 // too long to read inside the default column.
 func (m *Model) cardSized(width int, title, body string, hint [][2]string) string {
-	ctx := m.dialogRenderContext()
-	return m.centerOnBackdrop(dialogBox(ctx, width, title, body, hint))
+	box, hits := dialogBox(m.dialogRenderContext(), width, title, body, hint)
+	frame := m.centerOnBackdrop(box)
+	m.placeKeys(hits, m.layout.cardLeft, m.layout.cardTop)
+	return frame
 }
 
 // cardTitleRow sets the title into the top edge, so the frame names the

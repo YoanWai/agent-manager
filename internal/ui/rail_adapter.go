@@ -324,7 +324,7 @@ func (m *Model) viewLegend() legendSection {
 	return legendOf(m.rail.ViewLegend(ctx))
 }
 
-func (m *Model) reorderFooter() string {
+func (m *Model) reorderFooter() legend {
 	return m.transientFooter(legendOf(m.rail.ReorderLegend()))
 }
 

@@ -64,6 +64,9 @@ func (m *Model) railMouseContext() uirail.MouseContext {
 }
 
 func (m *Model) handleMouseEvent(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if key, ok := m.paintedKeyAt(msg); ok {
+		return m.handleKey(key)
+	}
 	ctx := m.railMouseContext()
 	if m.mode == modeFocus && m.focus.saved.list.Open() {
 		if msg.Action == tea.MouseActionPress && !tea.MouseEvent(msg).IsWheel() {
@@ -124,6 +127,19 @@ func (m *Model) handleMouseEvent(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// paintedKeyAt is the painted key pair a left press landed on, which the
+// press runs as if typed. The search field and the row menu keep the press:
+// typing owns the keys the list footer names, and the menu floats above it.
+func (m *Model) paintedKeyAt(msg tea.MouseMsg) (tea.KeyMsg, bool) {
+	if msg.Action != tea.MouseActionPress || msg.Button != tea.MouseButtonLeft {
+		return tea.KeyMsg{}, false
+	}
+	if m.mode == modeList && (m.rail.Searching() || m.rail.MenuOpen()) {
+		return tea.KeyMsg{}, false
+	}
+	return m.layout.keyHits.at(msg.X, msg.Y)
+}
+
 func (m *Model) handleMousePress(msg tea.MouseMsg, ctx uirail.MouseContext) (tea.Model, tea.Cmd) {
 	if msg.Button != tea.MouseButtonLeft && msg.Button != tea.MouseButtonRight {
 		return m, nil
@@ -145,20 +161,10 @@ func (m *Model) handleMousePress(msg tea.MouseMsg, ctx uirail.MouseContext) (tea
 	if m.mode == modeForm {
 		return m.handleFormClick(msg.X, msg.Y)
 	}
-	if m.mode == modeHelp {
-		if m.help.docsHit.contains(msg.X, msg.Y) {
-			return m, openLink(docsURL)
-		}
-		return m, nil
-	}
 	if m.mode == modeSettings {
 		return m.handleSettingsClick(msg.X, msg.Y)
 	}
 	if m.layout.split.resizeMode || m.mode != modeList {
-		return m, nil
-	}
-	if m.notices.noticeHit.contains(msg.X, msg.Y) && !m.rail.Searching() {
-		m.openNotices("")
 		return m, nil
 	}
 	if hit, ok := m.quick.hitAt(msg.X, msg.Y); ok {

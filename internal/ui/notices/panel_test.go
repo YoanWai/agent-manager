@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func testSources(latest string) Sources {
@@ -108,5 +109,33 @@ func TestPanelWithoutAStoreListsNothing(t *testing.T) {
 	src.Store = false
 	if notices := NewPanel(map[string]bool{}).Active(src); notices != nil {
 		t.Fatalf("notices = %v", ids(notices))
+	}
+}
+
+// Each key the bottom edge names sits on the columns that paint it, for
+// every width the edge's text takes, including the cut that drops keys.
+func TestPanelFootKeysSitOnTheirLabels(t *testing.T) {
+	for _, width := range []int{120, 60, 44} {
+		for _, update := range []string{"", "v0.3.0"} {
+			p := NewPanel(map[string]bool{})
+			notices := p.Active(testSources(update))
+			p.Open(notices, "")
+			frame := testFrame()
+			frame.Width = width
+			view := p.View(notices, frame)
+			edge := []rune(ansi.Strip(view[len(view)-1]))
+			feet := p.Foot(notices, frame)
+			if keys := len(feet); width == 120 && keys < 4 {
+				t.Fatalf("width %d: the edge names r, ↵, x and esc at least, got %+v", width, feet)
+			}
+			for _, foot := range feet {
+				if foot.X1 > len(edge) {
+					t.Fatalf("width %d: %+v runs past the edge %q", width, foot, string(edge))
+				}
+				if got := strings.TrimSpace(string(edge[foot.X0:foot.X1])); !strings.HasPrefix(got, foot.Key) {
+					t.Errorf("width %d: key %q sits on %q", width, foot.Key, got)
+				}
+			}
+		}
 	}
 }

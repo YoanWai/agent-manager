@@ -3,6 +3,8 @@ package ui
 import (
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/keybind"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -30,39 +32,58 @@ type legendSection struct {
 	quiet  bool
 }
 
-func (s legendSection) parts() []string {
-	var parts []string
+// legendPart is one painted binding and the key label a click on it
+// presses; label is empty for a part that only reads, like a tier's hint.
+type legendPart struct {
+	text  string
+	label string
+}
+
+func (s legendSection) parts() []legendPart {
+	var parts []legendPart
 	for _, lead := range s.leads {
 		if lead[0] != "" {
-			parts = append(parts, keyCapLead(lead[0], lead[1]))
+			parts = append(parts, legendPart{keyCapLead(lead[0], lead[1]), lead[0]})
 		}
 	}
 	for _, alert := range s.alerts {
 		if alert[0] != "" {
-			parts = append(parts, keyCapAlert(alert[0], alert[1]))
+			parts = append(parts, legendPart{keyCapAlert(alert[0], alert[1]), alert[0]})
 		}
 	}
 	if s.hint != "" {
-		parts = append(parts, mutedStyle().Render(s.hint))
+		parts = append(parts, legendPart{text: mutedStyle().Render(s.hint)})
 	}
 	for _, pair := range s.pairs {
 		if s.quiet {
-			parts = append(parts, keyCapQuiet(pair[0], pair[1]))
+			parts = append(parts, legendPart{keyCapQuiet(pair[0], pair[1]), pair[0]})
 		} else {
-			parts = append(parts, keyCap(pair[0], pair[1]))
+			parts = append(parts, legendPart{keyCap(pair[0], pair[1]), pair[0]})
 		}
 	}
 	return parts
 }
 
+// legend is a footer as painted: its text, and where each key it names
+// landed, from its own first row and column.
+type legend struct {
+	text string
+	hits keyHits
+}
+
 // legendBar renders a legend as the app's footer, one tier per line where
 // the terminal allows it and the tail marked when it does not.
 func legendBar(sections []legendSection, width int) string {
+	return paintLegend(sections, width).text
+}
+
+func paintLegend(sections []legendSection, width int) legend {
 	indent := strings.Repeat(" ", railGutter)
 	sep := subtleStyle().Render(" · ")
 	more := subtleStyle().Render("…")
 
 	var out []string
+	var hits keyHits
 	for i, section := range sections {
 		parts := section.parts()
 		if len(parts) == 0 || len(out) >= legendMaxRows {
@@ -87,44 +108,55 @@ func legendBar(sections []legendSection, width int) string {
 		if section.quiet {
 			gap = sep
 		}
+		gapWidth := ansi.StringWidth(gap)
 		for _, part := range parts {
-			partWidth := ansi.StringWidth(part) + ansi.StringWidth(gap)
+			partWidth := ansi.StringWidth(part.text)
 			// The row that cannot wrap further keeps room for the cut
 			// marker, so the marker never lands past the terminal edge.
 			avail := width
 			if len(out) >= maxRows-1 {
 				avail = width - 1 - ansi.StringWidth(more)
 			}
+			x := 0
 			switch {
 			case !started:
-				line, lineWidth, started = line+part, lineWidth+ansi.StringWidth(part), true
-			case lineWidth+partWidth <= avail:
-				line += gap + part
-				lineWidth += partWidth
+				x = lineWidth
+				line, lineWidth, started = line+part.text, lineWidth+partWidth, true
+			case lineWidth+gapWidth+partWidth <= avail:
+				x = lineWidth + gapWidth
+				line += gap + part.text
+				lineWidth += gapWidth + partWidth
 			case len(out) < maxRows-1:
 				out = append(out, line)
-				line, lineWidth = cont+part, ansi.StringWidth(cont)+ansi.StringWidth(part)
+				x = ansi.StringWidth(cont)
+				line, lineWidth = cont+part.text, x+partWidth
 			default:
 				cut = true
 			}
 			if cut {
 				break
 			}
+			hits = hits.add(x, x+partWidth, len(out), part.label)
 		}
 		if cut {
 			line += " " + more
 		}
 		out = append(out, line)
 	}
-	return strings.Join(out, "\n")
+	return legend{text: strings.Join(out, "\n"), hits: hits}
 }
 
 // legendInline renders one tier as a single untitled run, for the foot of a
 // modal card where the tier's subject is the card's own title.
 func legendInline(pairs [][2]string, width int) string {
+	return paintInline(pairs, width).text
+}
+
+func paintInline(pairs [][2]string, width int) legend {
 	gap := strings.Repeat(" ", legendGap)
 	var lines []string
 	var parts []string
+	var hits keyHits
 	lineWidth := 0
 	for _, pair := range pairs {
 		part := hintCap(pair[0], pair[1])
@@ -136,9 +168,116 @@ func legendInline(pairs [][2]string, width int) string {
 		if len(parts) > 0 {
 			lineWidth += legendGap
 		}
+		hits = hits.add(lineWidth, lineWidth+partWidth, len(lines), pair[0])
 		parts = append(parts, part)
 		lineWidth += partWidth
 	}
 	lines = append(lines, strings.Join(parts, gap))
-	return strings.Join(lines, "\n")
+	return legend{text: strings.Join(lines, "\n"), hits: hits}
 }
+
+// keyHit is a key pair as painted: a left press inside it presses key.
+type keyHit struct {
+	x0, x1, y int
+	key       tea.KeyMsg
+}
+
+type keyHits []keyHit
+
+// add records a part painted across columns [x0, x1) of row y, when its
+// label names a key a click can press.
+func (hits keyHits) add(x0, x1, y int, label string) keyHits {
+	key, ok := legendKey(label)
+	if !ok {
+		return hits
+	}
+	return append(hits, keyHit{x0: x0, x1: x1, y: y, key: key})
+}
+
+func (hits keyHits) at(x, y int) (tea.KeyMsg, bool) {
+	for _, hit := range hits {
+		if y == hit.y && x >= hit.x0 && x < hit.x1 {
+			return hit.key, true
+		}
+	}
+	return tea.KeyMsg{}, false
+}
+
+// above keeps the hits on the rows a frame clamped to height still shows.
+func (hits keyHits) above(height int) keyHits {
+	kept := hits[:0]
+	for _, hit := range hits {
+		if hit.y < height {
+			kept = append(kept, hit)
+		}
+	}
+	return kept
+}
+
+// placeKeys records a legend's keys painted with its first row at y and
+// its first column at x.
+func (m *Model) placeKeys(hits keyHits, x, y int) {
+	m.layout.keyHits = append(m.layout.keyHits, hits.moved(x, y)...)
+}
+
+// moved is hits painted with their first row at y and first column at x.
+func (hits keyHits) moved(x, y int) keyHits {
+	out := make(keyHits, len(hits))
+	for i, hit := range hits {
+		out[i] = keyHit{x0: hit.x0 + x, x1: hit.x1 + x, y: hit.y + y, key: hit.key}
+	}
+	return out
+}
+
+// legendKey is the key a click on a pair presses: the first key its label
+// names. A pair that moves a cursor or a field stays with the keyboard,
+// since the rows and the wheel answer for it, and a pair naming a gesture
+// presses nothing.
+func legendKey(label string) (tea.KeyMsg, bool) {
+	if strings.ContainsAny(label, "↑↓←→") || strings.Contains(label, "pgup") {
+		return tea.KeyMsg{}, false
+	}
+	if key, ok := pressKey(strings.TrimSpace(label)); ok {
+		return key, true
+	}
+	first, _, _ := strings.Cut(label, "/")
+	return pressKey(strings.TrimSpace(first))
+}
+
+// pressKey is the message a key named the way a legend draws it arrives
+// as when typed.
+func pressKey(name string) (tea.KeyMsg, bool) {
+	if key, drawn := legendGlyphKeys[name]; drawn {
+		name = key
+	}
+	alt := false
+	if rest, ok := strings.CutPrefix(name, "alt+"); ok && rest != "" {
+		alt, name = true, rest
+	}
+	if keyType, ok := namedKeyTypes[name]; ok {
+		key := tea.KeyMsg{Type: keyType, Alt: alt}
+		if keyType == tea.KeySpace {
+			key.Runes = []rune{' '}
+		}
+		return key, true
+	}
+	if runes := []rune(name); len(runes) == 1 {
+		return tea.KeyMsg{Type: tea.KeyRunes, Runes: runes, Alt: alt}, true
+	}
+	return tea.KeyMsg{}, false
+}
+
+// legendGlyphKeys reads back the glyphs a legend draws for named keys.
+var legendGlyphKeys = map[string]string{"↵": "enter", "⌫": "backspace"}
+
+// namedKeyTypes is every key Bubble Tea names, under the spelling a key
+// table stores.
+var namedKeyTypes = func() map[string]tea.KeyType {
+	types := map[string]tea.KeyType{}
+	for keyType := tea.KeyF20; keyType <= tea.KeyBackspace; keyType++ {
+		if name := keyType.String(); name != "" && keyType != tea.KeyRunes {
+			types[keybind.Normalize(name)] = keyType
+		}
+	}
+	return types
+}()
