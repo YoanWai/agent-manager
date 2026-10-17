@@ -64,6 +64,7 @@ type CreateSessionOptions struct {
 	Group     *string
 	Directory string
 	Prompt    string
+	Preset    string
 	// Nil inherits the group's spawn-in-worktree choice, then the global
 	// setting.
 	Worktree *bool
@@ -340,8 +341,12 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 		return Session{}, err
 	}
 	prompt := strings.TrimSpace(opts.Prompt)
-	if strings.HasPrefix(prompt, "-") && tool.PromptFlag == "" {
-		return Session{}, fmt.Errorf(`prompt cannot start with "-" for %s, which takes its prompt as a bare argument and would read it as a flag`, toolName)
+	if opts.Preset != "" {
+		text, err := savedText(runtime.store, opts.Preset, prompt)
+		if err != nil {
+			return Session{}, err
+		}
+		prompt = text
 	}
 	name := strings.TrimSpace(opts.Name)
 	autoNamed := name == ""
@@ -539,6 +544,32 @@ type SendResult struct {
 // prose; the queue and rate caps count messages, and this is what keeps one
 // of them from being a file paste that fills the recipient's prompt.
 const maxMessageBytes = 8000
+
+// ExpandSaved resolves a saved prompt in front of text. An empty name
+// returns the trimmed text. A missing name refuses the send.
+func (s *Sessions) ExpandSaved(name, text string) (string, error) {
+	text = strings.TrimSpace(text)
+	if strings.TrimSpace(name) == "" {
+		return text, nil
+	}
+	runtime, err := s.open()
+	if err != nil {
+		return "", err
+	}
+	defer runtime.store.Close()
+	return savedText(runtime.store, name, text)
+}
+
+func savedText(st *store.Store, name, text string) (string, error) {
+	preset, found, err := st.SessionPreset(name)
+	if err != nil {
+		return "", fmt.Errorf("reading saved prompts: %w", err)
+	}
+	if !found {
+		return "", fmt.Errorf("saved prompt %q does not exist", name)
+	}
+	return launch.WithInstructions(preset.Instructions, text), nil
+}
 
 // Send queues a message for another agent. It is deliberately not typed
 // into the pane here: several tools keep their input line drawn under an

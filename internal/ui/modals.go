@@ -207,6 +207,8 @@ func (m *Model) viewForm() string {
 	}
 	// Chips are tokens inside the typed text, so they wrap and reflow with
 	// the words around them; painting happens on the rendered prompt.
+	m.viewFormSessionPresets(field)
+	presetAt, presetHitAt := b.Len(), len(m.form.hits)
 	field("prompt", m.form.prompt.view(), fieldPrompt)
 	field("group", groupBadge(displayGroup(m.form.groups[m.form.groupIndex].path)), fieldGroup)
 
@@ -219,6 +221,10 @@ func (m *Model) viewForm() string {
 
 	hint := [][2]string{{"tab/↑↓", "move"}, {"←→", "change"}, {"↵", "create"}, {"esc", "cancel"}}
 	switch {
+	case m.savedList.where == savedInForm:
+		hint = [][2]string{{"type", "filter"}, {"↑↓", "pick"}, {"↵", "use"}, {"esc", "close"}}
+	case m.form.focus == fieldPreset:
+		hint = [][2]string{{"←→", "saved prompts"}, {"ctrl+o", "list"}, {"↵", "list"}, {"esc", "cancel"}}
 	case m.form.focus == fieldPrompt:
 		hint = [][2]string{{"ctrl+v", "paste an image"}, {"tab", "move"}, {"↑↓", "caret or move"}, {"↵", "create"}, {"esc", "cancel"}}
 	case m.form.focus == fieldGroup:
@@ -234,7 +240,29 @@ func (m *Model) viewForm() string {
 	case m.form.focus == fieldEffort:
 		hint = [][2]string{{"←→", "level"}, {"tab/↑↓", "move"}, {"↵", "create"}, {"esc", "cancel"}}
 	}
-	return m.card("◆ New Session", strings.TrimRight(b.String(), "\n"), hint)
+	// Budget optional preset details against the completed body and the actual footer.
+	body := strings.TrimRight(b.String(), "\n")
+	bodyRows := strings.Count(body, "\n") + 1
+	footerRows := strings.Count(legendInline(hint, cardInnerWidth(m.cardWidth())), "\n") + 1
+	rows := bodyRows + footerRows + 5
+	if m.errBar.text != "" {
+		rows += 2
+	}
+	var details strings.Builder
+	var detailHits []formHit
+	m.viewFormSessionPresetDetails(func(text string, hit formHit) {
+		details.WriteString(text)
+		for range strings.Count(text, "\n") {
+			detailHits = append(detailHits, hit)
+		}
+	}, max(0, m.height-rows))
+	if details.Len() > 0 {
+		body = body[:presetAt] + details.String() + body[presetAt:]
+		hits := append([]formHit(nil), m.form.hits[:presetHitAt]...)
+		hits = append(hits, detailHits...)
+		m.form.hits = append(hits, m.form.hits[presetHitAt:]...)
+	}
+	return m.card("◆ New Session", body, hint)
 }
 
 // groupBaseChoice renders a group's base picker: its own ref, or auto and
@@ -325,6 +353,9 @@ func (m *Model) viewGroupForm() string {
 }
 
 func (m *Model) viewSettings() string {
+	if m.presets.open {
+		return m.viewSessionPresets()
+	}
 	if m.settings.cliPicker {
 		return m.viewCLIPicker()
 	}
@@ -468,6 +499,7 @@ func (m *Model) viewSettings() string {
 		editorLine + "\n" +
 		actionRow(settingsFieldKeybindings, "keybindings", keybindingsSummary(m.keys, m.listKeys)) + "\n" +
 		actionRow(settingsFieldCLIs, "CLIs", "show or hide for new sessions") + "\n" +
+		actionRow(settingsFieldPresets, "saved prompts", "manage named instructions") + "\n" +
 		ctaRow(settingsFieldDocs, "docs", "open the docs") + "\n" +
 		ctaRow(settingsFieldBugReport, "report a bug", "open the bug report form") + "\n" +
 		ctaRow(settingsFieldFeatureRequest, "suggest a change", "open the feature request form") + "\n" +
@@ -478,6 +510,8 @@ func (m *Model) viewSettings() string {
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "open the docs"}, {"esc", "save"}}
 	case settingsFieldBugReport, settingsFieldFeatureRequest:
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "open form"}, {"esc", "save"}}
+	case settingsFieldPresets:
+		hint = [][2]string{{"↑↓", "field"}, {"↵", "saved prompts"}, {"esc", "save"}}
 	case settingsFieldCLIs:
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "manage CLIs"}, {"esc", "save"}}
 	case settingsFieldKeybindings:
@@ -518,6 +552,10 @@ func (m *Model) viewSettings() string {
 	if len(lines) > room {
 		first = min(max(m.settings.field-room+1, 0), len(lines)-room)
 		lines = lines[first : first+room]
+	}
+	m.settings.presetsRow = -1
+	if settingsFieldPresets >= first && settingsFieldPresets < first+len(lines) {
+		m.settings.presetsRow = settingsFieldPresets - first + 1
 	}
 	m.settings.docsRow = -1
 	if settingsFieldDocs >= first && settingsFieldDocs < first+len(lines) {
@@ -616,7 +654,7 @@ func formField(label, value string, focused bool) string {
 	}
 	lines := strings.Split(value, "\n")
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("%s%s %s\n", marker, style.Width(9).Render(label), lines[0]))
+	b.WriteString(fmt.Sprintf("%s%s %s\n", marker, style.Width(13).Render(label), lines[0]))
 	for _, line := range lines[1:] {
 		b.WriteString(strings.Repeat(" ", formLabelColumn) + line + "\n")
 	}

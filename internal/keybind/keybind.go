@@ -230,6 +230,7 @@ const (
 	Detach      = "detach"
 	Review      = "review"
 	Editor      = "editor"
+	SavedPrompt = "saved_prompt"
 	TmuxPrefix  = "tmux_prefix"
 	Quit        = "quit"
 	Up          = "up"
@@ -279,6 +280,7 @@ var sessionActions = []Action{
 	{Review, "open the session's diff", keys("ctrl+r")},
 	{Editor, "open its directory", keys("f3")},
 	{TmuxPrefix, "replaces your tmux prefix while attached", Binding{}},
+	{SavedPrompt, "open saved prompts", keys("f4")},
 }
 
 var listActions = []Action{

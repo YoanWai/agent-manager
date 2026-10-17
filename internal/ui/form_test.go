@@ -700,7 +700,7 @@ func TestGroupFormParentArrowsMoveFocusNotSelection(t *testing.T) {
 	}
 }
 
-func TestFormRejectsDashLeadingPrompt(t *testing.T) {
+func TestFormAcceptsDashLeadingPrompt(t *testing.T) {
 	m := buildModel(t)
 	m.openForm()
 	m.form.name.SetValue("flagged")
@@ -708,14 +708,12 @@ func TestFormRejectsDashLeadingPrompt(t *testing.T) {
 	m.form.toolIndex = 0
 	m.form.prompt.input.SetValue("--version")
 
-	if _, _ = m.submitForm(); m.errBar.text == "" {
-		t.Fatal("dash-leading prompt should be rejected")
+	if _, _ = m.submitForm(); m.mode != modeList {
+		t.Fatalf("a leading dash is text after the rename note: %s", m.errBar.text)
 	}
-	if m.mode != modeForm {
-		t.Fatalf("form should stay open, mode = %v", m.mode)
-	}
-	if len(m.sessionRows()) != 0 {
-		t.Fatalf("no session should be created, got %d", len(m.sessionRows()))
+	rows := m.sessionRows()
+	if len(rows) != 1 || strings.HasPrefix(rows[0].LaunchPrompt, "--version") || !strings.Contains(rows[0].LaunchPrompt, "--version") {
+		t.Fatalf("dash prompt = %+v", rows)
 	}
 }
 

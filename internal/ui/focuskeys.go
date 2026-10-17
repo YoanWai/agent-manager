@@ -334,6 +334,20 @@ func (m *Model) focusPagesScrollback(sess store.Session) bool {
 // actions and paging a normal-screen pane's history. Every plain
 // character, q included, still reaches the agent.
 func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.savedList.where == savedInFocus {
+		if m.keys.Binding(keybind.Detach).Has(msg.String()) {
+			m.closeSavedList()
+			return m, m.leaveFocus()
+		}
+		if m.keys.Binding(keybind.SavedPrompt).Has(msg.String()) {
+			m.closeSavedList()
+			return m, nil
+		}
+		return m.handleSavedListKey(msg)
+	}
+	if m.keys.Binding(keybind.SavedPrompt).Has(msg.String()) {
+		return m, m.openSavedList(savedInFocus)
+	}
 	if m.keys.Binding(keybind.Detach).Has(msg.String()) {
 		return m, m.leaveFocus()
 	}

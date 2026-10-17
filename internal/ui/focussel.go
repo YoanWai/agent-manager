@@ -170,6 +170,9 @@ type pendingClick struct {
 // while a drag still selects for copy; the press is held back until one of
 // the two is proven. Alt forces a whole gesture through, drags included.
 func (m *Model) handleFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if m.savedList.where == savedInFocus && msg.Action == tea.MouseActionPress && !tea.MouseEvent(msg).IsWheel() {
+		return m.clickSavedList(msg.X, msg.Y)
+	}
 	if tea.MouseEvent(msg).IsWheel() {
 		switch msg.Button {
 		case tea.MouseButtonWheelUp:

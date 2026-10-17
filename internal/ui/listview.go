@@ -1619,7 +1619,21 @@ func (m *Model) viewQuickBar(width, maxRows int) string {
 	// Count wrapped rows only after setting the width.
 	m.quick.input.SetWidth(width)
 	m.quick.maxRows = max(min(maxRows-1, quickBarMaxRows), 1)
-	return target + "\n" + m.quick.view()
+	bar := target + "\n" + m.quick.view()
+	if m.savedList.where != savedInQuick {
+		return bar
+	}
+	lines := m.savedListLines(width, 6)
+	for i := range m.quick.hits {
+		m.quick.hits[i].line += len(lines)
+	}
+	for _, hit := range m.savedList.hits {
+		if hit.match < 0 {
+			continue
+		}
+		m.quick.hits = append(m.quick.hits, quickHit{line: hit.line, x0: 0, x1: width, action: quickClickSaved, entry: hit.match})
+	}
+	return strings.Join(lines, "\n") + "\n" + bar
 }
 
 type quickHit struct {
@@ -1635,6 +1649,7 @@ const (
 	quickClickProfile
 	quickClickWorktree
 	quickClickEntry
+	quickClickSaved
 )
 
 // quickStatusRow puts what a spawn launches with against the right edge of

@@ -267,6 +267,8 @@ type Model struct {
 	glyphMode    glyphMode
 	glyphModeGen int
 	settings     settingsState
+	presets      sessionPresetPanel
+	savedList    savedList
 	help         helpState
 	moveID       string
 	movePath     string
@@ -517,6 +519,7 @@ type repoAnswer struct {
 
 type settingsState struct {
 	docsRow          int
+	presetsRow       int
 	glyphModeChanged bool
 	glyphModeSaving  bool
 	glyphRow         int
@@ -586,6 +589,7 @@ const (
 	settingsFieldEditor
 	settingsFieldKeybindings
 	settingsFieldCLIs
+	settingsFieldPresets
 	settingsFieldDocs
 	settingsFieldBugReport
 	settingsFieldFeatureRequest
@@ -1641,6 +1645,8 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(m.previewCmd(sess, m.previewGen), m.previewTick())
 
+	case sessionPresetsLoadedMsg:
+		return m, m.recordSessionPresets(msg)
 	case baseFetchedMsg:
 		return m, m.recordBaseFetch(msg)
 

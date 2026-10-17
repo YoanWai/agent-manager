@@ -426,6 +426,9 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.settings.glyphModeSaving {
 		return m, nil
 	}
+	if m.presets.open {
+		return m.handleSessionPresetsKey(msg)
+	}
 	if m.settings.cliPicker {
 		return m.handleCLIPickerKey(msg)
 	}
@@ -446,6 +449,8 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.cycleSetting(1)
 	case "enter":
 		switch m.settings.field {
+		case settingsFieldPresets:
+			return m, m.openSessionPresets()
 		case settingsFieldDocs:
 			return m, openLink(docsURL)
 		case settingsFieldBugReport:
@@ -792,6 +797,9 @@ func (m *Model) cycleSetting(step int) tea.Cmd {
 }
 
 func (m *Model) handleSettingsClick(x, y int) (tea.Model, tea.Cmd) {
+	if m.presets.open {
+		return m.handleSessionPresetsClick(x, y)
+	}
 	if m.settings.glyphModeSaving || m.settings.cliPicker || m.settings.keyPicker || m.settings.editor.typing {
 		return m, nil
 	}
@@ -804,6 +812,10 @@ func (m *Model) handleSettingsClick(x, y int) (tea.Model, tea.Cmd) {
 	if m.settings.glyphRow >= 0 && row == m.settings.glyphRow && x < left+m.settings.glyphRowWidth {
 		m.settings.field = settingsFieldGlyphs
 		return m, m.cycleSetting(1)
+	}
+	if m.settings.presetsRow >= 0 && row == m.settings.presetsRow {
+		m.settings.field = settingsFieldPresets
+		return m, m.openSessionPresets()
 	}
 	if row == m.settings.docsRow {
 		m.settings.field = settingsFieldDocs

@@ -2,12 +2,13 @@ package ui
 
 import (
 	"fmt"
-	"github.com/YoanWai/agent-manager/internal/keybind"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -22,6 +23,15 @@ func (m *Model) View() string {
 		return frame
 	}
 	return fillBackdrop(frame, m.width, current.Bg, current.Text)
+}
+
+func (m *Model) overlaySavedList(string) string {
+	width := min(48, max(28, m.width-4))
+	lines := m.savedListLines(cardInnerWidth(width), 8)
+	frame := m.cardSized(width, "saved prompts", strings.Join(lines, "\n"), [][2]string{{"↵", "paste"}, {"esc", "close"}})
+	m.savedList.originX = m.cardLeft + 1 + cardPaddingX
+	m.savedList.originY = m.cardTop + 2
+	return frame
 }
 
 func (m *Model) view() string {
@@ -64,6 +74,9 @@ func (m *Model) view() string {
 		frame = m.viewNotices()
 	default:
 		frame = m.overlayRowMenu(m.titleTopRowWithUpdate(m.viewListFrame()))
+		if m.savedList.where == savedInFocus {
+			frame = m.overlaySavedList(frame)
+		}
 	}
 	return m.syncCursorAnchor(clampFrame(frame, m.height))
 }
@@ -521,13 +534,28 @@ func (m *Model) viewFooter() string {
 		if label := m.keys.Binding(keybind.Editor).Label(); label != "" {
 			pairs = append(pairs, [2]string{label, "editor"})
 		}
+		savedLabel := m.keys.Binding(keybind.SavedPrompt).Label()
+		if m.savedList.where == savedInFocus {
+			pairs = append([][2]string{{"type", "filter"}, {"↑↓", "pick"}, {"↵", "paste"}, {"esc", "close"}}, pairs...)
+			savedLabel = ""
+		}
+		savedAt := len(pairs)
 		if pagesScrollback {
 			pairs = append(pairs, [2]string{"pgup/pgdn", "scroll"})
 		}
 		if m.pane.mouse {
 			pairs = append(pairs, [2]string{"click / alt+drag", "agent UI"})
 		}
-		return m.transientFooter(legendSection{title: "Focused", pairs: pairs})
+		footer := m.transientFooter(legendSection{title: "Focused", pairs: pairs})
+		if savedLabel == "" {
+			return footer
+		}
+		// Full layout keeps a one-row footer; the key map still names this key.
+		withSaved := m.transientFooter(legendSection{title: "Focused", pairs: slices.Insert(slices.Clone(pairs), savedAt, [2]string{savedLabel, "saved prompts"})})
+		if m.fullLayout && lipgloss.Height(withSaved) > lipgloss.Height(footer) {
+			return footer
+		}
+		return withSaved
 	}
 	return m.listFooter()
 }

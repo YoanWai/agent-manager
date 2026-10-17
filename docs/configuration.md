@@ -10,6 +10,10 @@ Earlier releases read a `config.toml` in that directory. The first start after u
 
 The poll interval is fixed at two seconds, so a `poll_interval` line in that file has no effect. `[tools.<name>]` blocks have none either: every CLI's commands and status rules are built into the binary, which is how a fix for a CLI's new screen reaches you on upgrade.
 
+## Saved prompts
+
+One list in Settings, shared by the new-session form, the quick prompt, a focused session, `spawn --saved`, `send --saved`, and `saved` on `create_session` and `send_session`. Names are unique, up to 60 characters, with no brackets. The text is up to 64 KiB. `agent-manager prompts list`, `add` and `rm` edit the list from a shell. See [Saved prompts](usage.md#saved-prompts).
+
 ## Agent CLIs
 
 Agent Manager supports Claude Code, OpenCode, Codex, Grok Build, Gemini CLI, Antigravity CLI, Pi, Command Code, Hermes Agent, Muse Code, and Oh My Pi, plus the shell `T` opens. Each one's launch command, revive and fork commands, MCP registration, status rules, and the flags a session's model, effort and profile launch with are built into the binary, so an upgrade brings the current version of all of them. The models, efforts and profiles themselves are read from each CLI when you create a session (see [Model, effort and profile](usage.md#model-effort-and-profile)). Hermes, Antigravity and Oh My Pi have no fork, and Pi and Oh My Pi get no MCP registration. Settings (`s`) has a `CLIs` row that picks which of them the session pickers offer (see [Which CLIs you get offered](usage.md#which-clis-you-get-offered)).

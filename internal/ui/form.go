@@ -27,6 +27,7 @@ const (
 	fieldDir
 	fieldWorktree
 	fieldPrompt
+	fieldPreset
 	fieldGroup
 	// fieldBase labels the read-only base line, which never takes focus.
 	fieldBase
@@ -89,7 +90,11 @@ type form struct {
 	focus        int
 	choice       choice
 	// hits maps each painted body line to what a click there does.
-	hits []formHit
+	hits           []formHit
+	presets        []store.SessionPreset
+	presetIndex    int
+	presetsLoading bool
+	presetsError   string
 }
 
 type groupForm struct {
@@ -137,8 +142,8 @@ func textField(placeholder string, limit int) textinput.Model {
 
 const (
 	// formLabelColumn is the columns before a field value: marker (2),
-	// label (9), separator space (1).
-	formLabelColumn   = 12
+	// label (13), separator space (1).
+	formLabelColumn   = 16
 	formPromptMaxRows = 4
 )
 
@@ -262,7 +267,8 @@ func (m *Model) openForm() tea.Cmd {
 	m.form.worktreeAuto = true
 	m.pathSugg.reset()
 	m.mode = modeForm
-	return m.ensureCatalog(tools[toolIndex])
+	m.form.presetsLoading = true
+	return tea.Batch(m.ensureCatalog(tools[toolIndex]), m.loadSessionPresets(m.form.prompt.gen, true))
 }
 
 func (m *Model) formTool() string {
@@ -314,6 +320,9 @@ func (m *Model) rebuildGroupOptions(selectPath string) {
 
 func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	msg = typedText(msg)
+	if m.savedList.where == savedInForm {
+		return m.handleSavedListKey(msg)
+	}
 	if m.form.focus == fieldModel {
 		if model, cmd, handled := m.handleFormModelKey(msg); handled {
 			return model, cmd
@@ -374,6 +383,10 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.form.focus == fieldTool {
 			return m, m.cycleTool(-1)
 		}
+		if m.form.focus == fieldPreset {
+			m.stepSessionPreset(-1)
+			return m, nil
+		}
 		if m.stepFormChoice(-1) {
 			return m, nil
 		}
@@ -389,6 +402,10 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.form.focus == fieldTool {
 			return m, m.cycleTool(1)
 		}
+		if m.form.focus == fieldPreset {
+			m.stepSessionPreset(1)
+			return m, nil
+		}
 		if m.stepFormChoice(1) {
 			return m, nil
 		}
@@ -400,10 +417,17 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.moveGroupCursor(1)
 			return m, nil
 		}
+	case "ctrl+o":
+		if m.form.focus == fieldPreset {
+			return m, m.openSavedList(savedInForm)
+		}
 	case "enter":
 		if dirSuggesting && m.pathSugg.chosen {
 			m.applyPathSuggestion()
 			return m, nil
+		}
+		if m.form.focus == fieldPreset {
+			return m, m.openSavedList(savedInForm)
 		}
 		return m.submitForm()
 	}
@@ -495,6 +519,11 @@ func (m *Model) handleFormClick(x, y int) (tea.Model, tea.Cmd) {
 	hit := m.form.hits[line]
 	toolName, ch := m.formTool(), &m.form.choice
 	switch {
+	case hit.field == fieldPreset && hit.entry >= 0:
+		m.form.presetIndex = hit.entry
+		m.closeSavedList()
+		m.focusFormField(fieldPreset)
+		return m, nil
 	case hit.field == fieldModel && hit.entry >= 0:
 		if list := m.modelSuggestions(toolName, ch, ch.query()); hit.entry < len(list) {
 			m.pickModel(toolName, ch, list[hit.entry].model.Key())
@@ -510,6 +539,8 @@ func (m *Model) handleFormClick(x, y int) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch hit.field {
+	case fieldPreset:
+		m.stepSessionPreset(1)
 	case fieldTool:
 		return m, m.cycleTool(1)
 	case fieldWorktree:
@@ -546,7 +577,11 @@ func (m *Model) formFields() []int {
 	if _, shown, active := m.effortRow(toolName, ch); shown && active {
 		fields = append(fields, fieldEffort)
 	}
-	return append(fields, fieldDir, fieldWorktree, fieldPrompt, fieldGroup)
+	fields = append(fields, fieldDir, fieldWorktree)
+	if len(m.form.presets) > 0 {
+		fields = append(fields, fieldPreset)
+	}
+	return append(fields, fieldPrompt, fieldGroup)
 }
 
 // moveGroupCursor moves within the expanded group picker, wrapping at the
@@ -663,11 +698,11 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 	group := m.selectedGroupPath()
 	// Chips become the paths of the images they stand for, so a first task
 	// reaches the agent with its screenshot named where it was pasted.
-	prompt := m.form.prompt.message()
-	if strings.HasPrefix(prompt, "-") {
-		m.errBar.text = `prompt cannot start with "-": the tool would read it as a flag`
+	if _, err := m.expandSaved(&m.form.prompt); err != nil {
+		m.errBar.text = err.Error()
 		return m, nil
 	}
+	prompt := m.formInitialPrompt()
 
 	picked, err := m.launchChoice(toolName, &m.form.choice, m.form.choice.filter.Value())
 	if err != nil {

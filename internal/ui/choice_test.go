@@ -72,7 +72,7 @@ func TestFormEffortFollowsTheModel(t *testing.T) {
 	if m.form.choice.model != "haiku" || m.form.choice.filter.Value() != "haiku" {
 		t.Fatalf("tab filled in %q / %q", m.form.choice.model, m.form.choice.filter.Value())
 	}
-	if slices.Contains(m.formFields(), fieldEffort) || strings.Contains(formBody(m), "effort    ") {
+	if slices.Contains(m.formFields(), fieldEffort) || strings.Contains(formBody(m), "effort        ") {
 		t.Fatalf("haiku takes no effort, the row should go:\n%s", formBody(m))
 	}
 	m.form.choice.filter.SetValue("")
@@ -83,7 +83,7 @@ func TestFormEffortFollowsTheModel(t *testing.T) {
 	if got := m.choiceEffort("claude", &m.form.choice); got != "medium" {
 		t.Fatalf("effort = %q, want medium", got)
 	}
-	if body := formBody(m); !strings.Contains(body, "effort    ◂ medium ▸ ") {
+	if body := formBody(m); !strings.Contains(body, "effort        ◂ medium ▸ ") {
 		t.Fatalf("effort row:\n%s", body)
 	}
 }
@@ -131,7 +131,7 @@ func TestFormSaysWhatACLIDoesNotSupport(t *testing.T) {
 	m := buildModel(t)
 	openFormOnClaude(t, m)
 	body := formBody(m)
-	if !strings.Contains(body, "model     not supported by claude") || !strings.Contains(body, "effort    not supported by claude") {
+	if !strings.Contains(body, "model         not supported by claude") || !strings.Contains(body, "effort        not supported by claude") {
 		t.Fatalf("form:\n%s", body)
 	}
 	if fields := m.formFields(); slices.Contains(fields, fieldModel) || slices.Contains(fields, fieldEffort) {
@@ -155,7 +155,7 @@ func TestFormProfileScopesModelsAndTypedEffort(t *testing.T) {
 	}
 	m.focusFormField(fieldProfile)
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
-	if body := formBody(m); !strings.Contains(body, "profile   ◂ work  grok-4.6 · xai-oauth ▸") {
+	if body := formBody(m); !strings.Contains(body, "profile       ◂ work  grok-4.6 · xai-oauth ▸") {
 		t.Fatalf("profile row:\n%s", body)
 	}
 	m.focusFormField(fieldModel)
@@ -333,7 +333,7 @@ func TestFormLaunchesOnDefaultsWhenTheCLIFailsToAnswer(t *testing.T) {
 	answered(m, claudeLike, catalog.Catalog{})
 	m.catalogs["claude"].err = errors.New("app-server exited (status 1)")
 	openFormOnClaude(t, m)
-	if body := formBody(m); !strings.Contains(body, "couldn't read models from claude: app-server") || !strings.Contains(body, "exited (status 1)") {
+	if body := formBody(m); !strings.Contains(body, "couldn't read models from claude: app-") || !strings.Contains(body, "exited (status 1)") {
 		t.Fatalf("form:\n%s", body)
 	}
 	if slices.Contains(m.formFields(), fieldModel) {
