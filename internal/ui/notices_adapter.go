@@ -358,11 +358,7 @@ func (m *Model) viewNotices() []string {
 func (m *Model) viewNoticesCard() string {
 	card := m.viewNotices()
 	frame := m.centerOnBackdrop(card)
-	var hits keyHits
-	for _, foot := range m.notices.Foot(m.activeNotices(), m.noticesFrame()) {
-		hits = hits.add(foot.X0, foot.X1, len(card)-1, foot.Key)
-	}
-	m.placeKeys(hits, m.layout.cardLeft, m.layout.cardTop)
+	m.placePainted(m.notices.Foot(m.activeNotices(), m.noticesFrame()), m.layout.cardLeft, m.layout.cardTop+len(card)-1)
 	return frame
 }
 

@@ -275,13 +275,6 @@ func (p Panel) View(notices []Notice, f Frame) []string {
 	return frame
 }
 
-// FootKey is a key the card's bottom edge names, across columns
-// [X0, X1) of that edge.
-type FootKey struct {
-	X0, X1 int
-	Key    string
-}
-
 // footStart is the column the bottom edge's text starts at, after its
 // corner and the dash before it.
 const footStart = 2
@@ -290,9 +283,9 @@ const footSep = " · "
 
 // Foot is where each key the bottom edge names was painted, the ones the
 // edge's truncation cut left out.
-func (p Panel) Foot(notices []Notice, f Frame) []FootKey {
+func (p Panel) Foot(notices []Notice, f Frame) []presentation.PaintedKey {
 	inner := innerWidth(notices, f.Width)
-	var keys []FootKey
+	var keys []presentation.PaintedKey
 	x := footStart
 	for i, pair := range footPairs(notices, p.cursor, inner) {
 		if i > 0 {
@@ -302,7 +295,7 @@ func (p Panel) Foot(notices []Notice, f Frame) []FootKey {
 		if x+width > footStart+inner+1 {
 			break
 		}
-		keys = append(keys, FootKey{X0: x, X1: x + width, Key: pair[0]})
+		keys = append(keys, presentation.PaintedKey{X0: x, X1: x + width, Label: pair[0]})
 		x += width
 	}
 	return keys

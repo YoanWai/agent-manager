@@ -59,6 +59,27 @@ func (m *Model) SwitchFile(delta int) Requests {
 	if m.fileHidden(&m.set.Files[target]) {
 		return Requests{}
 	}
+	return m.openFile(target)
+}
+
+// ClickFile opens the file painted on row line of the file list, a "more"
+// row opening the file it hides.
+func (m *Model) ClickFile(line int) Requests {
+	if line < 0 || line >= len(m.fileRows) || m.fileRows[line] == m.fileIdx {
+		return Requests{}
+	}
+	return m.openFile(m.fileRows[line])
+}
+
+// ClickCode moves the cursor to the line painted on row line of the code
+// pane, in a pane height rows tall.
+func (m *Model) ClickCode(line, height int) {
+	if line >= 0 && line < len(m.codeRows) {
+		m.MoveCursor(m.codeRows[line]-m.cursorLine, height)
+	}
+}
+
+func (m *Model) openFile(target int) Requests {
 	if fd := m.currentFile(); fd != nil {
 		m.scrollByFile[m.scrollKey(fd.File.Path)] = m.scroll
 	}

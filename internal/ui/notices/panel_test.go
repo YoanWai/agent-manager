@@ -132,8 +132,8 @@ func TestPanelFootKeysSitOnTheirLabels(t *testing.T) {
 				if foot.X1 > len(edge) {
 					t.Fatalf("width %d: %+v runs past the edge %q", width, foot, string(edge))
 				}
-				if got := strings.TrimSpace(string(edge[foot.X0:foot.X1])); !strings.HasPrefix(got, foot.Key) {
-					t.Errorf("width %d: key %q sits on %q", width, foot.Key, got)
+				if got := strings.TrimSpace(string(edge[foot.X0:foot.X1])); !strings.HasPrefix(got, foot.Label) {
+					t.Errorf("width %d: key %q sits on %q", width, foot.Label, got)
 				}
 			}
 		}

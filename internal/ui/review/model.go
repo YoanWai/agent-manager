@@ -11,6 +11,7 @@ import (
 
 	diff "github.com/YoanWai/agent-manager/internal/diff/model"
 	git "github.com/YoanWai/agent-manager/internal/git/value"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/bubbles/textarea"
 )
 
@@ -71,6 +72,14 @@ type Model struct {
 	repoRoots []string
 	repoSel   string
 	worktrees []Worktree
+
+	// fileRows and codeRows are the file and the cursor line each painted
+	// row of the two panes shows; headerKeys and statusKeys are the keys
+	// the header and the status line painted. All are for clicks.
+	fileRows   []int
+	codeRows   []int
+	headerKeys []presentation.PaintedKey
+	statusKeys []presentation.PaintedKey
 }
 
 func New(defaultSideBySide bool) Model {

@@ -183,6 +183,9 @@ func (m *Model) handleMousePress(msg tea.MouseMsg, ctx uirail.MouseContext) (tea
 	if m.mode == modeRepoPick {
 		return m, m.handleRepoPickClick(msg.Y)
 	}
+	if m.mode == modeDiff {
+		return m.handleDiffClick(msg.X, msg.Y)
+	}
 	if m.layout.split.resizeMode || m.mode != modeList {
 		return m, nil
 	}

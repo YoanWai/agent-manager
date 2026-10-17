@@ -164,11 +164,18 @@ func (m *Model) Header(ctx RenderContext, sessName string, width int) string {
 	if state.SideBySide {
 		layout = "split"
 	}
-	left := "  " + lipgloss.NewStyle().Foreground(s.Accent).Bold(true).Render("review · "+presentation.EscapeControlsInline(sessName)) + "  " +
-		s.keyPill("s", state.Scope.String(), s.Accent2) + "  " +
-		s.keyPill("u", layout, s.Accent)
+	left := "  " + lipgloss.NewStyle().Foreground(s.Accent).Bold(true).Render("review · "+presentation.EscapeControlsInline(sessName))
+	var keys []presentation.PaintedKey
+	pill := func(key, text string, fg lipgloss.Color) {
+		left += "  "
+		x := ansi.StringWidth(left)
+		left += s.keyPill(key, text, fg)
+		keys = append(keys, presentation.PaintedKey{X0: x, X1: ansi.StringWidth(left), Label: key})
+	}
+	pill("s", state.Scope.String(), s.Accent2)
+	pill("u", layout, s.Accent)
 	if state.CodeOnly {
-		left += "  " + s.keyPill("f", "code only", s.Accent)
+		pill("f", "code only", s.Accent)
 	}
 	if root := state.Set.Repo.Root; root != "" {
 		name := filepath.Base(state.RepoSelected)
@@ -179,7 +186,7 @@ func (m *Model) Header(ctx RenderContext, sessName string, width int) string {
 		if len(state.RepoRoots) > 1 {
 			name = fmt.Sprintf("%s · %d repos", name, len(state.RepoRoots))
 		}
-		left += "  " + s.keyPill("r", name, s.Accent)
+		pill("r", name, s.Accent)
 		branch := presentation.EscapeControlsInline(state.Set.Repo.Branch)
 		if state.Scope == git.ScopeBranch && state.Set.BaseDesc != "" && branch != "" {
 			target := presentation.EscapeControlsInline(StripBaseHash(state.Set.BaseDesc))
@@ -187,7 +194,7 @@ func (m *Model) Header(ctx RenderContext, sessName string, width int) string {
 			if state.Set.BaseOverride == "" {
 				summary += " " + s.Subtle.Render("(auto)")
 			}
-			left += "  " + s.keyPill("B", summary, s.Accent)
+			pill("B", summary, s.Accent)
 		} else if branch != "" {
 			left += "  " + s.Subtle.Render(branch)
 		}
@@ -228,15 +235,38 @@ func (m *Model) Header(ctx RenderContext, sessName string, width int) string {
 	}
 	right += " "
 
+	// A comment being typed or a send being asked owns the keys, so the
+	// pills are not click targets then.
+	m.headerKeys = nil
+	if !m.annotationOpen && !m.sendConfirm {
+		m.headerKeys = keys
+	}
 	gap := width - ansi.StringWidth(left) - ansi.StringWidth(right)
 	if gap < 1 {
 		budget := width - ansi.StringWidth(right)
+		m.headerKeys = keptWithin(m.headerKeys, budget)
 		if budget < 1 {
 			return presentation.PadRight(right, width)
 		}
 		return presentation.PadRight(left, budget) + right
 	}
 	return left + strings.Repeat(" ", gap) + right
+}
+
+// HeaderKeys are the header's key pills as last painted.
+func (m *Model) HeaderKeys() []presentation.PaintedKey { return m.headerKeys }
+
+// StatusKeys are the keys the status line last painted.
+func (m *Model) StatusKeys() []presentation.PaintedKey { return m.statusKeys }
+
+func keptWithin(keys []presentation.PaintedKey, width int) []presentation.PaintedKey {
+	var kept []presentation.PaintedKey
+	for _, key := range keys {
+		if key.X1 <= width {
+			kept = append(kept, key)
+		}
+	}
+	return kept
 }
 
 func (m *Model) CodeTitle() string {
@@ -251,6 +281,7 @@ func (m *Model) FileList(ctx RenderContext, width, height int) Pane {
 	r := m.renderer(ctx)
 	s := r.s
 	state := m.Snapshot()
+	m.fileRows = nil
 	if state.Loading && len(state.Set.Files) == 0 {
 		return Pane{Loading: "loading diff"}
 	}
@@ -278,6 +309,7 @@ func (m *Model) FileList(ctx RenderContext, width, height int) Pane {
 	var b strings.Builder
 	if start > 0 {
 		b.WriteString(s.Subtle.Render(fmt.Sprintf("  ↑ %d more", start)) + "\n")
+		m.fileRows = append(m.fileRows, shown[start-1])
 	}
 	notes := map[string]int{}
 	for _, note := range m.Annotations() {
@@ -322,9 +354,11 @@ func (m *Model) FileList(ctx RenderContext, width, height int) Pane {
 			row = s.selectRow(row)
 		}
 		b.WriteString(row + "\n")
+		m.fileRows = append(m.fileRows, i)
 	}
 	if end < len(shown) {
 		b.WriteString(s.Subtle.Render(fmt.Sprintf("  ↓ %d more", len(shown)-end)))
+		m.fileRows = append(m.fileRows, shown[end])
 	}
 	return Pane{Text: strings.TrimRight(b.String(), "\n")}
 }
@@ -333,13 +367,20 @@ func (m *Model) FileList(ctx RenderContext, width, height int) Pane {
 // Root shows its error bar ahead of it.
 func (m *Model) Status(ctx RenderContext, width int) string {
 	s := ctx.Styles
+	m.statusKeys = nil
 	if m.notice != "" {
 		return presentation.PadRight(s.Done.Render(" ✔ "+presentation.EscapeControlsInline(m.notice)), width)
 	}
 	if m.sendConfirm {
 		count := m.DraftCount()
-		return presentation.PadRight(s.Err.Render(fmt.Sprintf(" ¶ send %d %s to the agent?", count, CommentNoun(count)))+
-			s.Subtle.Render("  ↵/y send · esc cancel"), width)
+		question := s.Err.Render(fmt.Sprintf(" ¶ send %d %s to the agent?", count, CommentNoun(count)))
+		send := ansi.StringWidth(question) + 2
+		cancel := send + ansi.StringWidth("↵/y send · ")
+		m.statusKeys = keptWithin([]presentation.PaintedKey{
+			{X0: send, X1: send + ansi.StringWidth("↵/y send"), Label: "↵/y"},
+			{X0: cancel, X1: cancel + ansi.StringWidth("esc cancel"), Label: "esc"},
+		}, width)
+		return presentation.PadRight(question+s.Subtle.Render("  ↵/y send · esc cancel"), width)
 	}
 	return ""
 }

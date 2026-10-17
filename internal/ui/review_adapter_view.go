@@ -5,6 +5,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/diff"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -113,6 +114,7 @@ func (m *Model) viewDiffFull() string {
 		paint(m.viewDiffHeader(sess.Name), m.layout.width, backdropHex()),
 		m.boundedRuleRow(fileWidth+1, m.layout.width, "▀"),
 	}
+	m.placePainted(m.review.HeaderKeys(), 0, 0)
 	edge := make([]string, bodyHeight)
 	for i := range edge {
 		edge[i] = railEdgeCell(panelHex())
@@ -124,15 +126,38 @@ func (m *Model) viewDiffFull() string {
 		m.bleedColumn(bodyHeight),
 		paintRows(codeLines, codeWidth, bodyHeight, backdropHex()),
 	)...)
-	frame = append(frame,
-		m.boundedRuleRow(fileWidth+1, m.layout.width, "▄"),
-		paint(m.viewDiffStatus(), m.layout.width, backdropHex()),
-	)
+	frame = append(frame, m.boundedRuleRow(fileWidth+1, m.layout.width, "▄"))
+	status := m.viewDiffStatus()
+	if m.errBar.text == "" {
+		m.placePainted(m.review.StatusKeys(), 0, len(frame))
+	}
+	frame = append(frame, paint(status, m.layout.width, backdropHex()))
 	m.placeKeys(footer.hits, 0, len(frame))
 	for _, line := range splitLines(footer.text) {
 		frame = append(frame, paint(line, m.layout.width, backdropHex()))
 	}
 	return strings.Join(frame, "\n")
+}
+
+// diffPaneTop is the frame row of each pane's first list row, under the
+// header, its rule, and the pane's blank and title rows.
+const diffPaneTop = 4
+
+// handleDiffClick opens the file a click lands on in the file list, and
+// moves the cursor to the code line it lands on. A comment being typed or
+// a send being asked keeps the panes still.
+func (m *Model) handleDiffClick(x, y int) (tea.Model, tea.Cmd) {
+	if state := m.review.Snapshot(); state.Annotating || state.SendConfirm {
+		return m, nil
+	}
+	fileWidth, _ := m.diffPaneWidths()
+	switch {
+	case x >= 1 && x < fileWidth:
+		return m, m.reviewCommands(m.review.ClickFile(y - diffPaneTop))
+	case x > fileWidth+1:
+		m.review.ClickCode(y-diffPaneTop, m.diffCodeHeight())
+	}
+	return m, nil
 }
 
 func (m *Model) viewDiffHeader(sessName string) string {
