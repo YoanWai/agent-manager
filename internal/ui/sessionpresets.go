@@ -50,14 +50,6 @@ type sessionPresetPanel struct {
 	previous                              string
 	name                                  textinput.Model
 	instructions                          textarea.Model
-	hits                                  []presetHit
-}
-
-// presetHit is a clickable span of one body line, in columns from the
-// card's inner left edge.
-type presetHit struct {
-	line, from, to int
-	press          func() tea.Cmd
 }
 
 type sessionPresetsLoadedMsg struct {
@@ -294,29 +286,15 @@ func (m *Model) reloadSessionPresets() tea.Cmd {
 }
 
 func (m *Model) handleSessionPresetsClick(x, y int) (tea.Model, tea.Cmd) {
-	if m.presets.busy {
-		return m, nil
-	}
-	line, col := y-m.cardTop-2, x-m.cardLeft-1-cardPaddingX
-	for _, hit := range m.presets.hits {
-		if hit.line == line && col >= hit.from && col < hit.to {
-			return m, hit.press()
-		}
-	}
 	return m, nil
 }
 
 func (m *Model) handleSessionPresetAction(key string) tea.Cmd {
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)}
-	switch key {
-	case "esc":
-		msg = tea.KeyMsg{Type: tea.KeyEsc}
-	case "enter":
-		msg = tea.KeyMsg{Type: tea.KeyEnter}
-	case "ctrl+s":
-		msg = tea.KeyMsg{Type: tea.KeyCtrlS}
+	typ := tea.KeyRunes
+	if key == "esc" {
+		typ = tea.KeyEsc
 	}
-	_, cmd := m.handleSessionPresetsKey(msg)
+	_, cmd := m.handleSessionPresetsKey(tea.KeyMsg{Type: typ, Runes: []rune(key)})
 	return cmd
 }
 
@@ -328,54 +306,24 @@ func (m *Model) viewSessionPresets() string {
 	}
 	inner := max(1, cardInnerWidth(width))
 	var body []string
-	p.hits = nil
-	addHit := func(text string, press func() tea.Cmd) {
+	add := func(text string) {
 		for _, line := range strings.Split(text, "\n") {
-			if press != nil {
-				p.hits = append(p.hits, presetHit{line: len(body), to: inner, press: press})
-			}
 			body = append(body, ansi.Truncate(line, inner, "…"))
 		}
-	}
-	add := func(text string) { addHit(text, nil) }
-	type button struct {
-		label string
-		press func() tea.Cmd
-	}
-	buttons := func(row ...button) {
-		var labels []string
-		col := 0
-		for _, b := range row {
-			text := "[ " + b.label + " ]"
-			p.hits = append(p.hits, presetHit{line: len(body), from: col, to: col + ansi.StringWidth(text), press: b.press})
-			labels = append(labels, keyStyle.Render(text))
-			col += ansi.StringWidth(text) + 2
-		}
-		add(strings.Join(labels, "  "))
-	}
-	focusField := func(field int) func() tea.Cmd {
-		return func() tea.Cmd {
-			p.focus = field
-			return m.focusPresetEditor()
-		}
-	}
-	press := func(key string) func() tea.Cmd {
-		return func() tea.Cmd { return m.handleSessionPresetAction(key) }
 	}
 	hint := [][2]string{{"↑↓", "select"}, {"n", "new"}, {"↵", "edit"}, {"d", "delete"}, {"esc", "back"}}
 	switch {
 	case p.editing:
 		p.name.Width = max(1, inner-3)
 		p.instructions.SetWidth(inner)
-		p.instructions.SetHeight(max(1, min(6, m.height-15)))
+		p.instructions.SetHeight(max(1, min(6, m.height-14)))
 		add("name")
-		addHit(textInputView(p.name), focusField(0))
+		add(textInputView(p.name))
 		add("text")
-		addHit(textAreaView(p.instructions), focusField(1))
+		add(textAreaView(p.instructions))
 		if p.busy {
 			hint = [][2]string{{"wait", "save in progress"}}
 		} else {
-			buttons(button{"Save", press("ctrl+s")}, button{"Cancel", press("esc")})
 			hint = [][2]string{{"tab", "field"}, {"ctrl+s", "save"}, {"esc", "discard"}}
 		}
 	case p.confirm:
@@ -383,11 +331,10 @@ func (m *Model) viewSessionPresets() string {
 		if p.busy {
 			hint = [][2]string{{"wait", "delete in progress"}}
 		} else {
-			buttons(button{"Delete", press("enter")}, button{"Cancel", press("esc")})
 			hint = [][2]string{{"↵", "delete"}, {"esc", "cancel"}}
 		}
 	default:
-		room := max(1, m.height-13)
+		room := max(1, m.height-12)
 		first, last := sessionPresetWindow(len(p.rows), p.cursor, room)
 		if p.loading {
 			add("Loading saved prompts…")
@@ -400,24 +347,15 @@ func (m *Model) viewSessionPresets() string {
 			add(fmt.Sprintf("↑ %d more", first))
 		}
 		for i := first; i < last; i++ {
-			addHit(presetAction(p.rows[i].Name, i == p.cursor), func() tea.Cmd {
-				p.cursor = i
-				return nil
-			})
+			add(presetAction(p.rows[i].Name, i == p.cursor))
 		}
 		if last < len(p.rows) {
 			add(fmt.Sprintf("↓ %d more", len(p.rows)-last))
 		}
 		add("agents add these with agent-manager prompts add")
-		row := []button{{"New", press("n")}}
-		if !p.loading && len(p.rows) > 0 {
-			row = append(row, button{"Edit", press("e")}, button{"Delete", press("d")})
-		}
 		if p.refreshFailed && !p.loading {
-			row = append(row, button{"Refresh", press("r")})
 			hint = [][2]string{{"n", "new"}, {"r", "refresh"}, {"esc", "back"}}
 		}
-		buttons(append(row, button{"Back", press("esc")})...)
 	}
 	return m.cardSized(width, "Saved prompts", strings.Join(body, "\n"), hint)
 }
