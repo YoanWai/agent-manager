@@ -4,9 +4,10 @@ Build the candidate once, then run the separate matrix and slower process gate:
 
 ```sh
 go build -o /tmp/agent-manager-candidate .
+python3 -m unittest discover -s tools/compatibility -p 'test_*.py'
 python3 tools/compatibility/matrix.py --binary /tmp/agent-manager-candidate
 python3 tools/compatibility/matrix.py --binary /tmp/agent-manager-candidate --release v0.38.0
-python3 tools/compatibility/two_manager.py --binary /tmp/agent-manager-candidate
+bash tools/compatibility/two_manager.sh /tmp/agent-manager-candidate
 ```
 
 The matrix downloads v0.39.0 for the current macOS/Linux architecture, verifies
@@ -34,3 +35,9 @@ To compare an explicitly selected development build, pass
 instead of claiming a released archive checksum. Copy the executable first if
 its installed path could be replaced during the run; all profile state remains
 inside the artifact directory.
+
+Automatic delivery uses the profile guard and token receipts
+(`Store.WithDeliveryGuard` in `internal/store/delivery.go`).
+The task matrix does not authorize old delivery writers/readers to coexist after
+migration. Offline cutover must stop their already-admitted transport first;
+legacy automatic claim SQL is refused after the new schema fences install.

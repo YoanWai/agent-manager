@@ -5,24 +5,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
-
-	"github.com/YoanWai/agent-manager/internal/status"
-	"github.com/YoanWai/agent-manager/internal/store"
-	"github.com/google/uuid"
 )
-
-// A claimant needs a row to call as, not a pane: the task list never
-// touches tmux, so a race can run many more agents than panes.
-func (h *sessionHarness) addSessionRow(t *testing.T, name string) string {
-	t.Helper()
-	id := uuid.NewString()[:8]
-	if err := h.store.CreateSession(store.Session{
-		ID: id, Name: name, Tool: h.caller.Tool, Cwd: h.caller.Cwd, Status: status.Idle,
-	}); err != nil {
-		t.Fatalf("create session row: %v", err)
-	}
-	return id
-}
 
 func racers(t *testing.T, h *sessionHarness, count int) []string {
 	t.Helper()
@@ -34,11 +17,8 @@ func racers(t *testing.T, h *sessionHarness, count int) []string {
 }
 
 func TestTasksAreClaimedByExactlyOneSession(t *testing.T) {
-	h := newSessionHarness(t)
-	rival, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "rival"})
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
+	h := newStoreSessionHarness(t)
+	rivalID := h.addSessionRow(t, "rival")
 	created, err := h.sessions.CreateTask(h.caller.ID, "fix the retry backoff", "see internal/retry", nil)
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
@@ -55,13 +35,13 @@ func TestTasksAreClaimedByExactlyOneSession(t *testing.T) {
 		t.Fatalf("claimed task = %+v", claimed)
 	}
 	// The second agent must be told, not silently allowed to duplicate work.
-	if _, err := h.sessions.ClaimTask(rival.ID, created.ID); err == nil ||
+	if _, err := h.sessions.ClaimTask(rivalID, created.ID); err == nil ||
 		!strings.Contains(err.Error(), "already claimed by calling-agent") {
 		t.Fatalf("rival claim error = %v", err)
 	}
 	// Naming the holder is what makes the refusal actionable: the reader's
 	// next move is to message that session.
-	if _, err := h.sessions.FinishTask(rival.ID, created.ID); err == nil ||
+	if _, err := h.sessions.FinishTask(rivalID, created.ID); err == nil ||
 		!strings.Contains(err.Error(), "not yours to settle; calling-agent holds it") {
 		t.Fatalf("rival finish error = %v", err)
 	}
@@ -86,7 +66,7 @@ func TestTasksAreClaimedByExactlyOneSession(t *testing.T) {
 		{created.ID, "is done, not in progress"},
 		{pending.ID, "is pending, not in progress"},
 	} {
-		if _, err := h.sessions.FinishTask(rival.ID, settled.id); err == nil ||
+		if _, err := h.sessions.FinishTask(rivalID, settled.id); err == nil ||
 			!strings.Contains(err.Error(), settled.want) {
 			t.Fatalf("settling %s = %v, want %q", settled.id, err, settled.want)
 		}
@@ -94,7 +74,7 @@ func TestTasksAreClaimedByExactlyOneSession(t *testing.T) {
 }
 
 func TestDependenciesGateAClaimUntilTheyAreDone(t *testing.T) {
-	h := newSessionHarness(t)
+	h := newStoreSessionHarness(t)
 	first, err := h.sessions.CreateTask(h.caller.ID, "add the column", "", nil)
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
@@ -142,7 +122,7 @@ func TestDependenciesGateAClaimUntilTheyAreDone(t *testing.T) {
 // one that still blocks sends the reader after work that is already
 // finished and listed as done two lines above.
 func TestOnlyUnfinishedDependenciesAreNamedAsBlocking(t *testing.T) {
-	h := newSessionHarness(t)
+	h := newStoreSessionHarness(t)
 	first, err := h.sessions.CreateTask(h.caller.ID, "add the column", "", nil)
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
@@ -189,7 +169,7 @@ func TestOnlyUnfinishedDependenciesAreNamedAsBlocking(t *testing.T) {
 }
 
 func TestReleasedAndDeletedTasksLeaveTheList(t *testing.T) {
-	h := newSessionHarness(t)
+	h := newStoreSessionHarness(t)
 	created, err := h.sessions.CreateTask(h.caller.ID, "spike the cache", "", nil)
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
@@ -220,19 +200,16 @@ func TestReleasedAndDeletedTasksLeaveTheList(t *testing.T) {
 }
 
 func TestDeletingASessionHandsItsClaimsBack(t *testing.T) {
-	h := newSessionHarness(t)
-	worker, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "worker"})
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
+	h := newStoreSessionHarness(t)
+	workerID := h.addSessionRow(t, "worker")
 	created, err := h.sessions.CreateTask(h.caller.ID, "migrate the table", "", nil)
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
-	if _, err := h.sessions.ClaimTask(worker.ID, created.ID); err != nil {
+	if _, err := h.sessions.ClaimTask(workerID, created.ID); err != nil {
 		t.Fatalf("ClaimTask: %v", err)
 	}
-	if err := h.store.Delete(worker.ID); err != nil {
+	if err := h.store.Delete(workerID); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 	tasks, err := h.sessions.Tasks(h.caller.ID)
@@ -247,7 +224,7 @@ func TestDeletingASessionHandsItsClaimsBack(t *testing.T) {
 // The sequential claims above never reach the guard the atomic claim
 // exists for: several agents reaching for the same task in one instant.
 func TestRacingClaimsOnOneTaskLeaveASingleWinner(t *testing.T) {
-	h := newSessionHarness(t)
+	h := newStoreSessionHarness(t)
 	created, err := h.sessions.CreateTask(h.caller.ID, "fix the retry backoff", "", nil)
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
@@ -297,7 +274,7 @@ func TestRacingClaimsOnOneTaskLeaveASingleWinner(t *testing.T) {
 // Claiming without an id is how a worker agent finds its own next job, so
 // a fleet doing it at once must still split the list, never share a piece.
 func TestRacingSessionsSplitTheListWithoutSharingATask(t *testing.T) {
-	h := newSessionHarness(t)
+	h := newStoreSessionHarness(t)
 	const taskCount = 5
 	for i := range taskCount {
 		if _, err := h.sessions.CreateTask(h.caller.ID, fmt.Sprintf("piece %d", i), "", nil); err != nil {
