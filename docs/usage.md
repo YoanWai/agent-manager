@@ -98,7 +98,7 @@ Every configured tool is offered when you create a session, which is more than m
 
 ## Saved prompts
 
-Settings (`s`), row **saved prompts**. `n` creates one, `enter` edits it, `d` deletes it. `tab` moves between the name and the text, `ctrl+s` saves, `esc` backs out. From a shell, `agent-manager prompts add`.
+Settings (`s`), row **saved prompts**. `n` creates one, `enter` edits it, `d` deletes it. `tab` moves between the name and the text, `ctrl+s` saves, `esc` backs out. Each key has a button under the list or the editor, and a click on a row selects it. From a shell, `agent-manager prompts add`.
 
 On a new session, left and right pick one. `ctrl+o` or `enter` opens the list. The text is placed in front of the task. In the quick prompt, `ctrl+o` drops a chip that becomes that text when you send. In a session, `f4` pastes it and does not send. `f4` can be changed with the other session keys.
 

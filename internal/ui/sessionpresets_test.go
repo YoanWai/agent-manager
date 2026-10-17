@@ -440,3 +440,59 @@ func TestSessionPresetsSettingsRowAccessibleAtShortHeight(t *testing.T) {
 		t.Fatal("scrolled Settings preset row click failed")
 	}
 }
+
+func clickSavedPromptsText(t *testing.T, m *Model, text string) {
+	t.Helper()
+	for y, line := range strings.Split(ansi.Strip(m.viewSettings()), "\n") {
+		if i := strings.Index(line, text); i >= 0 {
+			_, cmd := m.handleSettingsClick(ansi.StringWidth(line[:i]), y)
+			m.runBatch(t, cmd)
+			return
+		}
+	}
+	t.Fatalf("%q is not on screen", text)
+}
+
+func TestSavedPromptsPanelWorksByMouse(t *testing.T) {
+	m := buildModel(t)
+	m.width, m.height = 100, 30
+	for _, name := range []string{"Alpha", "Beta"} {
+		m.store.SaveSessionPreset("", store.SessionPreset{Name: name, Instructions: "text"})
+	}
+	m.openSettings()
+	m.runBatch(t, m.openSessionPresets())
+
+	clickSavedPromptsText(t, m, "Beta")
+	if m.presets.cursor != 1 {
+		t.Fatalf("row click selected %d, want Beta", m.presets.cursor)
+	}
+	clickSavedPromptsText(t, m, "[ Edit ]")
+	if !m.presets.editing || m.presets.previous != "Beta" {
+		t.Fatal("Edit button did not open Beta")
+	}
+	clickSavedPromptsText(t, m, "[ Cancel ]")
+	if m.presets.editing {
+		t.Fatal("Cancel button left the editor open")
+	}
+	clickSavedPromptsText(t, m, "[ New ]")
+	clickSavedPromptsText(t, m, "instructions")
+	if m.presets.focus != 1 {
+		t.Fatal("clicking the text field did not focus it")
+	}
+	m.presets.name.SetValue("Gamma")
+	m.presets.instructions.SetValue("more text")
+	clickSavedPromptsText(t, m, "[ Save ]")
+	if m.presets.editing || len(m.presets.rows) != 3 {
+		t.Fatalf("Save button did not add Gamma: %+v", m.presets.rows)
+	}
+	clickSavedPromptsText(t, m, "Alpha")
+	clickSavedPromptsText(t, m, "[ Delete ]")
+	clickSavedPromptsText(t, m, "[ Delete ]")
+	if len(m.presets.rows) != 2 || m.presets.rows[0].Name == "Alpha" {
+		t.Fatalf("Delete buttons did not remove Alpha: %+v", m.presets.rows)
+	}
+	clickSavedPromptsText(t, m, "[ Back ]")
+	if m.presets.open {
+		t.Fatal("Back button left the panel open")
+	}
+}
