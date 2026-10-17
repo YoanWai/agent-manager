@@ -8,6 +8,7 @@ package mcpreg
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/atomicfile"
 	"github.com/YoanWai/agent-manager/internal/hooks"
@@ -25,6 +27,18 @@ import (
 const serverName = "agent-manager"
 
 const StyleNone = "none"
+
+// registrationTimeout bounds each command a registration runs. Registration
+// happens on the spawn path, inside the manager's Update, so a CLI that
+// stops answering (a network or auth wait) would otherwise freeze the
+// manager for as long as it hangs.
+var registrationTimeout = 20 * time.Second
+
+// registrationWaitDelay is how long a command's output pipes may stay open
+// after it exits: a CLI that leaves a background child holding stdout has
+// finished, and waiting for the pipe to close would freeze the manager on
+// the child instead.
+const registrationWaitDelay = time.Second
 
 // HermesMCPUnavailableError reports a Hermes whose optional MCP SDK is not
 // installed, so no registration can succeed until the package is added to
@@ -256,20 +270,20 @@ func ensureMuseRegistered(exe string) error {
 
 // Command Code overlays stored env onto process.env without expanding ${VAR}.
 func ensureCommandCodeRegistered(exe, hooksDir string) error {
-	cmd := exec.Command("cmd", "mcp", "add",
+	add := command{name: "cmd", args: []string{"mcp", "add",
 		"--scope", "user",
-		serverName, "--", exe, "mcp")
-	return ensureRegisteredOnce("command-code", exe, hooksDir, cmd)
+		serverName, "--", exe, "mcp"}}
+	return ensureRegisteredOnce("command-code", exe, hooksDir, add)
 }
 
 // ensureGrokRegistered adds the server to grok's user-scope config once
 // per binary path, via grok's own config writer.
 func ensureGrokRegistered(exe, hooksDir string) error {
-	cmd := exec.Command("grok", "mcp", "add",
+	add := command{name: "grok", args: []string{"mcp", "add",
 		"--scope", "user",
-		"-e", hooks.EnvSessionID+"=${"+hooks.EnvSessionID+"}",
-		serverName, "--", exe, "mcp")
-	return ensureRegisteredOnce("grok", exe, hooksDir, cmd)
+		"-e", hooks.EnvSessionID + "=${" + hooks.EnvSessionID + "}",
+		serverName, "--", exe, "mcp"}}
+	return ensureRegisteredOnce("grok", exe, hooksDir, add)
 }
 
 // ensureGeminiRegistered adds the server to gemini's user-scope
@@ -277,18 +291,18 @@ func ensureGrokRegistered(exe, hooksDir string) error {
 // Gemini expands ${VAR} in a server's env block at launch, so the entry
 // forwards the per-session id env var.
 func ensureGeminiRegistered(exe, hooksDir string) error {
-	cmd := exec.Command("gemini", "mcp", "add",
+	add := command{name: "gemini", args: []string{"mcp", "add",
 		"--scope", "user",
-		"-e", hooks.EnvSessionID+"=${"+hooks.EnvSessionID+"}",
-		serverName, exe, "mcp")
-	return ensureRegisteredOnce("gemini", exe, hooksDir, cmd)
+		"-e", hooks.EnvSessionID + "=${" + hooks.EnvSessionID + "}",
+		serverName, exe, "mcp"}}
+	return ensureRegisteredOnce("gemini", exe, hooksDir, add)
 }
 
 // Antigravity passes a server its own environment and leaves ${VAR} in an
 // env entry unexpanded, so the session id reaches the server by inheritance.
 func ensureAntigravityRegistered(exe, hooksDir string) error {
-	cmd := exec.Command("agy", "mcp", "add", serverName, "--", exe, "mcp")
-	return ensureRegisteredOnce("antigravity", exe, hooksDir, cmd)
+	add := command{name: "agy", args: []string{"mcp", "add", serverName, "--", exe, "mcp"}}
+	return ensureRegisteredOnce("antigravity", exe, hooksDir, add)
 }
 
 type hermesMCPEntry struct {
@@ -299,13 +313,13 @@ type hermesMCPEntry struct {
 }
 
 func readHermesMCPEntry() (hermesMCPEntry, bool) {
-	cmd := exec.Command("hermes", "config", "get", "mcp_servers."+serverName, "--json")
+	get := command{name: "hermes", args: []string{"config", "get", "mcp_servers." + serverName, "--json"}}
 	for _, item := range os.Environ() {
 		if !strings.HasPrefix(item, hooks.EnvSessionID+"=") {
-			cmd.Env = append(cmd.Env, item)
+			get.env = append(get.env, item)
 		}
 	}
-	out, err := cmd.Output()
+	out, err := get.output()
 	if err != nil {
 		return hermesMCPEntry{}, false
 	}
@@ -330,16 +344,16 @@ func ensureHermesRegistered(exe, hooksDir string) error {
 		return nil
 	}
 	_, existed := readHermesMCPEntry()
-	cmd := exec.Command("hermes", "mcp", "add", serverName,
+	add := command{name: "hermes", args: []string{"mcp", "add", serverName,
 		"--command", exe,
-		"--env", hooks.EnvSessionID+"=${"+hooks.EnvSessionID+"}",
-		"--args", "mcp")
+		"--env", hooks.EnvSessionID + "=${" + hooks.EnvSessionID + "}",
+		"--args", "mcp"}}
 	if existed {
-		cmd.Stdin = strings.NewReader("y\n\n")
+		add.stdin = "y\n\n"
 	} else {
-		cmd.Stdin = strings.NewReader("\n")
+		add.stdin = "\n"
 	}
-	out, err := cmd.CombinedOutput()
+	out, err := add.combinedOutput()
 	// Hermes without its optional SDK refuses to connect but still exits 0
 	// after the save-anyway prompt, so the message is the only signal.
 	if strings.Contains(string(out), "requires the 'mcp' Python SDK") {
@@ -361,12 +375,15 @@ func ensureHermesRegistered(exe, hooksDir string) error {
 // pipx and uv build their environments without a pip module, so the line
 // is only offered where the interpreter has one.
 func hermesPipCommand() string {
-	out, err := exec.Command("hermes", "--version").Output()
+	out, err := command{name: "hermes", args: []string{"--version"}}.output()
 	if err != nil {
 		return ""
 	}
 	python := pythonFromVersion(string(out))
-	if python == "" || exec.Command(python, "-m", "pip", "--version").Run() != nil {
+	if python == "" {
+		return ""
+	}
+	if _, err := (command{name: python, args: []string{"-m", "pip", "--version"}}).output(); err != nil {
 		return ""
 	}
 	return tmux.ShellInvoke(python) + " -m pip install mcp"
@@ -377,16 +394,54 @@ func hermesPipCommand() string {
 // the binary re-register. The check-then-add window is benign: the add
 // commands update in place, so two racing managers just write the same
 // entry twice.
-func ensureRegisteredOnce(tool, exe, hooksDir string, cmd *exec.Cmd) error {
+func ensureRegisteredOnce(tool, exe, hooksDir string, add command) error {
 	marker := filepath.Join(hooksDir, "mcp-"+tool+"-registered")
 	if content, err := os.ReadFile(marker); err == nil && string(content) == exe {
 		return nil
 	}
-	if out, err := cmd.CombinedOutput(); err != nil {
+	if out, err := add.combinedOutput(); err != nil {
 		return fmt.Errorf("%s mcp add: %v: %s", tool, err, out)
 	}
 	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
 		return err
 	}
 	return os.WriteFile(marker, []byte(exe), 0o644)
+}
+
+// command is one external command a registration runs, bounded by
+// registrationTimeout and registrationWaitDelay.
+type command struct {
+	name  string
+	args  []string
+	stdin string
+	// env replaces the inherited environment when set.
+	env []string
+}
+
+func (c command) output() ([]byte, error) {
+	return c.run((*exec.Cmd).Output)
+}
+
+func (c command) combinedOutput() ([]byte, error) {
+	return c.run((*exec.Cmd).CombinedOutput)
+}
+
+func (c command) run(collect func(*exec.Cmd) ([]byte, error)) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), registrationTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, c.name, c.args...)
+	cmd.Env = c.env
+	if c.stdin != "" {
+		cmd.Stdin = strings.NewReader(c.stdin)
+	}
+	cmd.WaitDelay = registrationWaitDelay
+	out, err := collect(cmd)
+	switch {
+	case errors.Is(err, exec.ErrWaitDelay):
+		// It exited 0; only a child it left behind still holds the pipe.
+		err = nil
+	case err != nil && ctx.Err() != nil:
+		err = fmt.Errorf("did not finish within %s", registrationTimeout)
+	}
+	return out, err
 }
