@@ -45,6 +45,7 @@ type section struct {
 func sections(version string, specs settingSpecs) []section {
 	return []section{
 		sessionSection(),
+		promptsSection(),
 		taskSection(),
 		fileSection(),
 		terminalSection(),
@@ -77,6 +78,7 @@ func CommandsWithBackend(version string, specs settingSpecs, backend *sessioncmd
 	terminals := sessioncmd.NewTerminalsWithBackend(backend, sessioncmd.CLIVocabulary())
 	return commandTable([]section{
 		sessionSectionWith(func(string) sessionCommands { return sessions }),
+		promptsSection(),
 		groupSection("Shared task list", "task", "the work list every session in this manager claims from", taskVerbsWith(func(string) taskCommands { return sessions })),
 		fileSectionWith(func(string) fileCommands { return sessions }),
 		groupSection("Managed terminals", "terminal", "shells the user watches beside the agents, for work they should be able to watch, attach to or take over", terminalVerbsWith(func(string) terminalCommands { return terminals })),

@@ -90,9 +90,13 @@ func TestSessionsCreateRejectsShellsUnknownToolsAndFlagPrompts(t *testing.T) {
 		!strings.Contains(err.Error(), "not configured") {
 		t.Fatalf("unknown tool error = %v", err)
 	}
-	if _, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Prompt: "--help"}); err == nil ||
-		!strings.Contains(err.Error(), "read it as a flag") {
-		t.Fatalf("flag-like prompt error = %v", err)
+	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "dash-task", Prompt: "--help"})
+	if err != nil {
+		t.Fatalf("a leading dash is text after the rename note: %v", err)
+	}
+	stored, err := h.store.Get(created.ID)
+	if err != nil || !strings.Contains(stored.LaunchPrompt, "--help") || strings.HasPrefix(stored.LaunchPrompt, "--help") {
+		t.Fatalf("dash prompt = %q, err %v", stored.LaunchPrompt, err)
 	}
 	// A tool that takes its prompt behind a flag can carry one safely, and a
 	// bullet list is an ordinary way to write a task.

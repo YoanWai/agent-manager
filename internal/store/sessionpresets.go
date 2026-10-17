@@ -45,14 +45,17 @@ func (s *Store) SessionPreset(name string) (SessionPreset, bool, error) {
 
 func (s *Store) SaveSessionPreset(previousName string, preset SessionPreset) error {
 	if !utf8.ValidString(preset.Name) || strings.ContainsFunc(preset.Name, unicode.IsControl) {
-		return errors.New("session preset name must be valid UTF-8 without control characters")
+		return errors.New("that name cannot be saved")
 	}
 	preset.Name = strings.TrimSpace(preset.Name)
 	if preset.Name == "" || utf8.RuneCountInString(preset.Name) > 60 {
-		return errors.New("session preset name must contain 1 to 60 characters")
+		return errors.New("name needs 1 to 60 characters")
+	}
+	if strings.ContainsAny(preset.Name, "[]") {
+		return errors.New("name cannot contain brackets")
 	}
 	if !utf8.ValidString(preset.Instructions) || len(preset.Instructions) > 64*1024 || strings.TrimSpace(preset.Instructions) == "" {
-		return errors.New("session preset instructions must contain non-whitespace text in valid UTF-8, at most 64 KiB")
+		return errors.New("text is empty or too long")
 	}
 	if previousName == "" {
 		_, err := s.db.Exec(`INSERT INTO session_presets (name, instructions) VALUES (?, ?)`, preset.Name, preset.Instructions)
@@ -67,7 +70,7 @@ func (s *Store) SaveSessionPreset(previousName string, preset SessionPreset) err
 		return err
 	}
 	if affected == 0 {
-		return fmt.Errorf("session preset %q no longer exists", previousName)
+		return fmt.Errorf("saved prompt %q no longer exists", previousName)
 	}
 	return nil
 }
