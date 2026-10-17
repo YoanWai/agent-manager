@@ -40,10 +40,11 @@ func listHelpRows(list keybind.Table, arrowStep bool, glyphs Glyphs) [][2]string
 	h.fixed("", "Tell your agent to manage sessions and terminals in Agent Manager.")
 	h.action("move the cursor up", keybind.Up)
 	h.action("move the cursor down", keybind.Down)
-	h.fixed("click", "focus a session in the split, select any other row")
+	h.fixed("click", "focus from a row or the preview in the split, select otherwise")
 	h.fixed("double click", "fold or unfold a group, focus a session full screen")
 	h.fixed(glyphs.RowMenu, "the row's actions, or right click")
 	h.fixed("drag "+glyphs.Reorder, "move the row, into another group too, or click it for ↑↓")
+	h.fixed("click a key", "in a footer or a card's foot, run it as if typed")
 	if arrowStep {
 		h.action("step in: focus the session, open the group", keybind.StepIn)
 		h.action("step out: close the group", keybind.StepOut)
@@ -160,6 +161,7 @@ func helpSections(ctx Context) []helpSection {
 		reviewHelpSection(list),
 		{title: titledWith("messages", list, keybind.Messages), rows: [][2]string{
 			{"click unread", "in the key legend, shown while any remain"},
+			{"click", "select a title, click it again to open its link"},
 			{"↑↓", "pick a message"},
 			{"pgup / pgdn", "scroll its body"},
 			{"wheel", "scroll its body"},
@@ -173,7 +175,7 @@ func helpSections(ctx Context) []helpSection {
 		{title: titledWith("settings", list, keybind.Settings), rows: [][2]string{
 			{"↑↓ / wheel", "pick a field"},
 			{"←→", "change the value, including Compatible / Advanced symbols"},
-			{"click", "change symbols, or save and close"},
+			{"click", "pick a field, click it again to change or run it"},
 			{"↵", "run the field's action, like saved prompts or the docs"},
 			{"esc", "save and close"},
 		}},
@@ -190,6 +192,7 @@ func helpSections(ctx Context) []helpSection {
 			{"←→", "change a picker's value"},
 			{"type", "in the model field, filter what the tool lists; tab fills one in"},
 			{"click", "focus a field, click it again to change it, or pick a listed entry"},
+			{"click outside", "close the card as esc does, unless it holds a draft"},
 			{"↵", "confirm"},
 			{"esc", "cancel"},
 		}},
@@ -239,6 +242,7 @@ func titledWith(name string, list keybind.Table, actions ...string) string {
 func reviewHelpSection(list keybind.Table) helpSection {
 	return helpSection{title: titledWith("review", list, keybind.Review), rows: [][2]string{
 		{"", "Tell your agent what to review in Agent Manager; they set it up."},
+		{"click", "open a file, move to a code line, or run a header key"},
 		{"c", "comment on the line"},
 		{"d", "remove a draft, or mark sent feedback handled / open"},
 		{"C", "send drafts to the agent as the next review round"},

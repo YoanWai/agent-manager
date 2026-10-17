@@ -4,10 +4,11 @@
               │                    Tell your agent to manage sessions and terminals in Agent Manager.    │
               │   ↑ / k            move the cursor up                                                    │
               │   ↓ / j            move the cursor down                                                  │
-              │   click            focus a session in the split, select any other row                    │
+              │   click            focus from a row or the preview in the split, select otherwise        │
               │   double click     fold or unfold a group, focus a session full screen                   │
               │   […]              the row's actions, or right click                                     │
               │   drag ⠿           move the row, into another group too, or click it for ↑↓              │
+              │   click a key      in a footer or a card's foot, run it as if typed                      │
               │   →                step in: focus the session, open the group                            │
               │   ←                step out: close the group                                             │
               │   shift+↑ / K      reorder the row up among its siblings                                 │
@@ -22,7 +23,6 @@
               │   F                fold / unfold every group                                             │
               │   |                resize the split (←→ or hl, or drag; ↵ commits, esc cancels)          │
               │   s                settings (also in the root row menu)                                  │
-              │   M                messages                                                              │
               │   ↓ more below…                                                                          │
               │                                                                                          │
               ├──────────────────────────────────────────────────────────────────────────────────────────┤
