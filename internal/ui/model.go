@@ -93,8 +93,9 @@ type layoutState struct {
 	height        int
 	split         splitState
 	displayedRail uirail.Frame
-	// cardTop, cardLeft and cardRight place the last card painted, for clicks.
-	cardTop, cardLeft, cardRight int
+	// cardTop, cardLeft, cardRight and cardBottom place the last card
+	// painted, for clicks.
+	cardTop, cardLeft, cardRight, cardBottom int
 	// keyHits are the key pairs this frame painted, for clicks.
 	keyHits keyHits
 }

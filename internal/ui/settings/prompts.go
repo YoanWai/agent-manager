@@ -55,6 +55,9 @@ func (p *Prompts) Open() bool { return p.open }
 // Gen is the generation a read or write the panel asks for carries.
 func (p *Prompts) Gen() uint64 { return p.gen }
 
+// Editing says the panel's editor holds a prompt being typed.
+func (p *Prompts) Editing() bool { return p.open && p.editing }
+
 // Listing says the panel shows its list, which the wheel scrolls.
 func (p *Prompts) Listing() bool { return p.open && !p.editing && !p.confirm }
 

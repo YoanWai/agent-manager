@@ -105,6 +105,7 @@ func cardTitleRow(width int, title string, border lipgloss.Style) string {
 func (m *Model) centerOnBackdrop(box []string) string {
 	ctx := m.dialogRenderContext()
 	m.layout.cardTop, m.layout.cardLeft, m.layout.cardRight = dialogPlacement(ctx, box)
+	m.layout.cardBottom = m.layout.cardTop + len(box)
 	return centerDialog(ctx, box)
 }
 

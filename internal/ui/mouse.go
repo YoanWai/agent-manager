@@ -158,6 +158,9 @@ func (m *Model) handleMousePress(msg tea.MouseMsg, ctx uirail.MouseContext) (tea
 		}
 		return m, nil
 	}
+	if msg.Button == tea.MouseButtonLeft && m.closesOnBackdrop() && !m.onCard(msg.X, msg.Y) {
+		return m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	}
 	if m.mode == modeForm {
 		return m.handleFormClick(msg.X, msg.Y)
 	}
@@ -171,6 +174,23 @@ func (m *Model) handleMousePress(msg tea.MouseMsg, ctx uirail.MouseContext) (tea
 		return m, m.handleQuickClick(hit)
 	}
 	return m.applyRailDecision(m.rail.Mouse(msg, m.layout.displayedRail, ctx))
+}
+
+// closesOnBackdrop reports whether a click off the open card closes it the
+// way esc does. A card holding typed input keeps its draft through a stray
+// click.
+func (m *Model) closesOnBackdrop() bool {
+	switch m.mode {
+	case modeHelp, modeNotices, modeMove, modeRepoPick, modeConfirmDelete, modeLaunchHint:
+		return true
+	case modeSettings:
+		return !m.settings.dialog.Editor.Typing() && !m.settings.dialog.Prompts.Editing()
+	}
+	return false
+}
+
+func (m *Model) onCard(x, y int) bool {
+	return x >= m.layout.cardLeft && x < m.layout.cardRight && y >= m.layout.cardTop && y < m.layout.cardBottom
 }
 
 func (m *Model) handleMouseWheel(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
