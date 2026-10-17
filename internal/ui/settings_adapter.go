@@ -319,6 +319,8 @@ func (m *Model) viewSettings() string {
 		return m.confirmCard(frame.Title, frame.Question, frame.Consequence, frame.Destructive, frame.Answer)
 	case uisettings.Fixed:
 		return m.card(frame.Title, frame.Body, frame.Hints)
+	case uisettings.Flex:
+		return m.cardFlex(frame.Title, frame.Body, frame.Hints)
 	}
 	d := &m.settings.dialog
 	lines := strings.Split(frame.Body, "\n")

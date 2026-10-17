@@ -35,3 +35,23 @@ func TestSettingsViewportKeepsFocusedFieldAndSaveVisible(t *testing.T) {
 		}
 	}
 }
+
+// The save button and the field scroll belong to the main rows; the key
+// picker scrolls its own list and saves on esc.
+func TestKeyPickerCardCarriesNoSaveButton(t *testing.T) {
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 40
+	m.openSettings()
+	m.settings.dialog.Field = uisettings.FieldKeybindings
+	m.handleSettingsKey(key("enter"))
+	if !m.settings.dialog.KeyPicker {
+		t.Fatal("test setup: enter on keybindings opens the picker")
+	}
+	view := ansi.Strip(m.viewSettings())
+	if strings.Contains(view, "Save and close") {
+		t.Fatalf("the key picker painted the main dialog's save button:\n%s", view)
+	}
+	if !strings.Contains(view, "detach") {
+		t.Fatalf("the key picker lost its first row:\n%s", view)
+	}
+}

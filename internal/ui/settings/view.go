@@ -38,9 +38,11 @@ type ViewContext struct {
 type Card uint8
 
 const (
-	// Flex grows with its rows; Fixed keeps the default width; Confirm asks
-	// the Question with Consequence under it.
-	Flex Card = iota
+	// Rows is the main dialog: its rows under a save button, scrolled to
+	// keep the focused one on screen. Flex grows with its rows; Fixed keeps
+	// the default width; Confirm asks the Question with Consequence under it.
+	Rows Card = iota
+	Flex
 	Fixed
 	Confirm
 )
@@ -191,7 +193,7 @@ func (s *State) View(ctx ViewContext) Frame {
 			hint = [][2]string{{"↑↓", "field"}, {"↵/esc", "save"}}
 		}
 	}
-	return Frame{Card: Flex, Title: "⚙ Settings", Body: body, Hints: hint}
+	return Frame{Card: Rows, Title: "⚙ Settings", Body: body, Hints: hint}
 }
 
 // versionRow is the focusable version line: when a newer release is known

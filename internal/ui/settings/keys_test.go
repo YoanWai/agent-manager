@@ -173,7 +173,7 @@ func TestViewReadsReleaseFacts(t *testing.T) {
 	ctx := viewContext()
 	ctx.Latest = "v2.0.0"
 	frame := s.View(ctx)
-	if frame.Card != Flex || !strings.Contains(frame.Body, "version v1.0.0") || !strings.Contains(frame.Body, "update to v2.0.0") {
+	if frame.Card != Rows || !strings.Contains(frame.Body, "version v1.0.0") || !strings.Contains(frame.Body, "update to v2.0.0") {
 		t.Fatalf("version row did not read the release:\n%s", frame.Body)
 	}
 	if !strings.Contains(frame.Body, "keybindings") || !strings.Contains(frame.Body, "defaults") {
