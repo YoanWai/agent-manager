@@ -5,7 +5,6 @@ package sysstat
 import (
 	"os/exec"
 
-	"github.com/shirou/gopsutil/v4/mem"
 	"golang.org/x/sys/unix"
 )
 
@@ -17,12 +16,12 @@ import (
 func sampleMemory(snap *Snapshot) {
 	total, err := unix.SysctlUint64("hw.memsize")
 	if err != nil || total == 0 {
-		sampleMemoryFallback(snap)
+		sampleAvailableMemory(snap)
 		return
 	}
 	used, ok := memoryUsedFromVMStat(total)
 	if !ok {
-		sampleMemoryFallback(snap)
+		sampleAvailableMemory(snap)
 		return
 	}
 	if used > total {
@@ -31,21 +30,6 @@ func sampleMemory(snap *Snapshot) {
 	snap.MemTotal = total
 	snap.MemUsed = used
 	snap.MemPercent = usedPercent(used, total)
-	snap.MemOK = true
-}
-
-func sampleMemoryFallback(snap *Snapshot) {
-	vm, err := mem.VirtualMemory()
-	if err != nil {
-		return
-	}
-	snap.MemTotal = vm.Total
-	if vm.Total >= vm.Available {
-		snap.MemUsed = vm.Total - vm.Available
-	} else {
-		snap.MemUsed = vm.Used
-	}
-	snap.MemPercent = usedPercent(snap.MemUsed, snap.MemTotal)
 	snap.MemOK = true
 }
 

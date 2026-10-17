@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Disposable terminal checks for install failure and retry."""
+"""Disposable terminal checks for partial settings writes and install failure/retry."""
 import argparse
 import json
 import sqlite3
@@ -10,9 +10,9 @@ from pathlib import Path
 
 from smoke import Sandbox
 from scenarios import (READY_MARKER,
-                       agent_panes, ensure_binary,
+                       agent_panes, config_fixture_text, ensure_binary,
                        fake_cli_script, capture, key, last_frame, pane_text, profile_dir,
-                       seed_store, start_manager, store_sessions)
+                       seed_store, start_manager, store_sessions, write_fixture)
 
 
 def write_install_fixture(sandbox):
@@ -38,6 +38,9 @@ def write_install_fixture(sandbox):
                    'esac\n'
                    'exit 0\n')
     npm.chmod(0o755)
+    config_dir = profile_dir(sandbox)
+    config_dir.mkdir(parents=True)
+    (config_dir / 'config.toml').write_text(config_fixture_text())
     # Only runtime helpers are discoverable before the fixture installs cmd.
     for name in ('tmux', 'git', 'sh', 'bash', 'env', 'mkdir', 'cat', 'chmod',
                  'dirname', 'basename', 'sed', 'tr', 'awk', 'grep', 'sleep',
@@ -81,6 +84,48 @@ def spawn_form_refused(sandbox, name):
     sandbox.tmux('send-keys', '-l', '-t', 'scen:0.0', name)
     frame(sandbox, 'form-prompt-typed', name)
     key(sandbox, 'Enter')
+
+
+def settings_partial_save(sandbox, binary):
+    write_fixture(sandbox)
+    start_manager(sandbox, binary)
+    seed_store(sandbox)
+    db = profile_dir(sandbox) / 'state.db'
+    with sqlite3.connect(db) as conn:
+        conn.execute("CREATE TRIGGER fail_layout BEFORE INSERT ON settings WHEN NEW.key='layout' BEGIN SELECT RAISE(ABORT, 'fixture layout failure'); END")
+    key(sandbox, 's')
+    frame(sandbox, 'settings-open', 'compact')
+    # default tool, theme, theme follows OS, background and symbols sit above density.
+    for _ in range(5):
+        key(sandbox, 'Down')
+    key(sandbox, 'Right')
+    frame(sandbox, 'settings-density-cycled', 'comfortable')
+    key(sandbox, 'Down')
+    key(sandbox, 'Right')
+    for _ in range(5):
+        key(sandbox, 'Down')
+    key(sandbox, 'Right')
+    key(sandbox, 'Enter')
+    frame(sandbox, 'save-failed', 'committed 2 of 3')
+    assert setting_value(sandbox, 'list_density') == 'comfortable', 'earlier density write was lost'
+    assert setting_value(sandbox, 'focus_key') == 'attach', 'earlier focus preference was lost'
+    assert setting_value(sandbox, 'layout') == '', 'failed layout write unexpectedly committed'
+    key(sandbox, 's')
+    restored = frame(sandbox, 'settings-reopened', 'comfortable')
+    layout_line = next(line for line in restored.splitlines() if 'sessions layout' in line)
+    focus_line = next(line for line in restored.splitlines() if 'session keys' in line)
+    assert 'split' in layout_line, 'failed optimistic layout was not restored'
+    assert '↵ attach' in focus_line, 'committed focus preference was not reconciled'
+    with sqlite3.connect(db) as conn:
+        conn.execute('DROP TRIGGER fail_layout')
+    # A save writes only the rows changed in the dialog, so the retry makes
+    # the layout change again.
+    for _ in range(6):
+        key(sandbox, 'Down')
+    key(sandbox, 'Right')
+    frame(sandbox, 'settings-layout-retried', 'full')
+    key(sandbox, 'Enter')
+    sandbox.wait('settings-retry', lambda: setting_value(sandbox, 'layout'), lambda value: value == 'full')
 
 
 def install_script_write_failure(sandbox, binary):
@@ -132,13 +177,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--binary', type=Path, help='existing binary; otherwise build once before isolating HOME')
     parser.add_argument('--artifacts', type=Path, help='new output directory (always retained)')
-    parser.add_argument('--scenario', choices=('install-script-write-failure', 'install-retry'))
+    parser.add_argument('--scenario', choices=('settings-partial-save', 'install-script-write-failure', 'install-retry'))
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
     artifacts = (args.artifacts or Path('/tmp') / f'am-failures-{time.time_ns()}').resolve()
     started = time.monotonic()
     results = {}
-    for name, run in [('install-script-write-failure', install_script_write_failure),
+    for name, run in [('settings-partial-save', settings_partial_save),
+                      ('install-script-write-failure', install_script_write_failure),
                       ('install-retry', install_retry_creates_one_session)]:
         if args.scenario and args.scenario != name:
             continue

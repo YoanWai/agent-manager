@@ -4,6 +4,7 @@ package tmux
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -57,6 +58,8 @@ func probePsmuxVersion(bin string) error {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, "-V")
 	cmd.Env = commandEnv()
+	configureBoundedCommand(cmd)
+	cmd.WaitDelay = commandTimeout
 	out, err := cmd.Output()
 	if err != nil {
 		return err
@@ -132,6 +135,14 @@ const pinsSplitPane = false
 // attached. Previews poll capture-pane instead.
 func controlUnavailable() error {
 	return fmt.Errorf("%w: its client panics on wide pane lines", ErrControlUnavailable)
+}
+
+// sessionMissingExit reports has-session's answer for a session that is
+// gone. psmux runs a server per session, so it finds none to ask and exits
+// 1 without saying why.
+func sessionMissingExit(err error) bool {
+	var exit *exec.ExitError
+	return errors.As(err, &exit) && exit.ExitCode() == 1
 }
 
 // ReportsCursorFlag is off: psmux answers #{cursor_flag} with a constant 0

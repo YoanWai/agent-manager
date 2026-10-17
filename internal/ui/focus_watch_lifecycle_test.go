@@ -1,0 +1,62 @@
+package ui
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/YoanWai/agent-manager/internal/store"
+	tea "github.com/charmbracelet/bubbletea"
+)
+
+func seedLifecycleWatcher(t *testing.T, m *Model, id string) {
+	t.Helper()
+	m.focus.runtime.watch = newFocusWatch(m.services.tmux, func(tea.Msg) {})
+	t.Cleanup(m.focus.runtime.watch.Close)
+	m.focus.runtime.watch.SetFocus(id)
+}
+
+func TestFailedArchiveRestoresSurvivingSelectionWatcher(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	m.selectSessionRow(t, "alpha")
+	// Archive snapshots only a pane that has drawn; a fresh psmux pane can
+	// still be blank, and then no write fails.
+	waitForPreview(t, m)
+	sess := railSelectedSession(m)
+	seedLifecycleWatcher(t, m, sess.ID)
+	m.services.setSnapshot = func(string, string) error { return errors.New("disk full") }
+	m.archiveSelected()
+	if err := m.archiveConfirmed(); err == nil {
+		t.Fatal("expected snapshot failure")
+	}
+	if got := m.focus.runtime.watch.Watching(); got != sess.ID {
+		t.Fatalf("watching=%q, want surviving %q", got, sess.ID)
+	}
+}
+
+func TestFailedChildDeleteRestoresSurvivingParentWatcher(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "parent", t.TempDir(), "")
+	m.selectSessionRow(t, "parent")
+	parent := railSelectedSession(m)
+	seedLifecycleWatcher(t, m, parent.ID)
+	child := store.Session{ID: "cafe", ParentID: parent.ID}
+	path := m.services.hooks.StatusFile(child.ID)
+	if err := os.MkdirAll(path, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "block"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	m.confirm.confirmTarget = confirmTarget{sessions: []store.Session{parent, child}, action: actionDelete}
+	if _, err := m.deleteConfirmed(); err == nil {
+		t.Fatal("expected child cleanup failure")
+	}
+	if got := m.focus.runtime.watch.Watching(); got != parent.ID {
+		t.Fatalf("watching=%q, want surviving %q", got, parent.ID)
+	}
+}

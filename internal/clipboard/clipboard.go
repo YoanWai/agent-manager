@@ -52,7 +52,7 @@ var (
 	// emitSeq writes a control sequence to the terminal drawing the app.
 	emitSeq = termseq.Emit
 	remote  = termseq.Remote
-	// readNativeImage is set by platform files (darwin/linux) to an
+	// readNativeImage is set by native.go (darwin/linux) to an
 	// in-process pasteboard reader. Nil means "use the shell-tool path".
 	// Prefer native: spawning osascript/wl-paste is tens of ms each paste.
 	readNativeImage func() ([]byte, error)
