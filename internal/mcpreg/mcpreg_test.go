@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
@@ -506,12 +507,69 @@ exit 1
 
 func TestEnsureRegisteredOnceNamesFailedCommand(t *testing.T) {
 	err := ensureRegisteredOnce("gemini", "/opt/bin/agent-manager", t.TempDir(),
-		exec.Command("agent-manager-no-such-binary"))
+		command{name: "agent-manager-no-such-binary"})
 	if err == nil {
 		t.Fatal("expected an error when the add command cannot run")
 	}
 	if !strings.HasPrefix(err.Error(), "gemini mcp add: ") {
 		t.Fatalf("error = %q, want it to name the tool's add command", err)
+	}
+}
+
+// fakeGrok puts a grok on PATH that runs script for every invocation.
+func fakeGrok(t *testing.T, script string) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("fake grok executable is a shell script")
+	}
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "bin")
+	if err := os.Mkdir(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bin, "grok"), []byte("#!/bin/sh\n"+script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return dir
+}
+
+// Registration runs inside the manager's Update, so an add that never
+// returns has to become an error rather than a frozen manager.
+func TestApplyGivesUpOnAnAddThatNeverReturns(t *testing.T) {
+	dir := fakeGrok(t, "exec sleep 30\n")
+	saved := registrationTimeout
+	registrationTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { registrationTimeout = saved })
+
+	start := time.Now()
+	_, err := Apply("grok", "/opt/bin/agent-manager", dir, "grok", map[string]string{})
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Fatalf("Apply waited %s on a hung add", elapsed)
+	}
+	if err == nil || !strings.Contains(err.Error(), "did not finish within") {
+		t.Fatalf("err = %v, want the add named as timed out", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "mcp-grok-registered")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a timed-out add left a marker: %v", err)
+	}
+}
+
+// An add that exits 0 but leaves a child holding its stdout has
+// registered; waiting for the pipe would hang on the child instead.
+func TestApplyDoesNotWaitOnAChildHoldingTheAddsOutput(t *testing.T) {
+	dir := fakeGrok(t, "sleep 30 &\nexit 0\n")
+
+	start := time.Now()
+	if _, err := Apply("grok", "/opt/bin/agent-manager", dir, "grok", map[string]string{}); err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(start); elapsed > registrationWaitDelay+5*time.Second {
+		t.Fatalf("Apply waited %s on the add's leftover child", elapsed)
+	}
+	marker, err := os.ReadFile(filepath.Join(dir, "mcp-grok-registered"))
+	if err != nil || string(marker) != "/opt/bin/agent-manager" {
+		t.Fatalf("marker = %q err=%v", marker, err)
 	}
 }
 
