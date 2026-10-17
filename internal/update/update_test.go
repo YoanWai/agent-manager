@@ -14,6 +14,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/YoanWai/agent-manager/internal/atomicfile"
 )
 
 func TestParseVersion(t *testing.T) {
@@ -282,7 +284,7 @@ func TestStaleCatalogUsesConditionalRequest(t *testing.T) {
 	if err != nil || calls.Load() != 1 || len(result.Releases) != 1 {
 		t.Fatalf("result=%+v err=%v calls=%d", result, err, calls.Load())
 	}
-	written, ok := readCache(filepath.Join(dir, cacheFile))
+	written, ok := atomicfile.ReadJSON[cache](filepath.Join(dir, cacheFile))
 	if !ok || !written.CheckedAt.After(oldCheckedAt) || written.ETag != `"catalog-1"` || written.Parser != catalogParser {
 		t.Fatalf("conditional refresh did not advance cache: %+v", written)
 	}
@@ -308,7 +310,7 @@ func TestFetchFailureReturnsStaleCatalogWithoutOverwritingIt(t *testing.T) {
 	if err == nil || result.Latest != "v0.9.0" {
 		t.Fatalf("stale result should survive: %+v, %v", result, err)
 	}
-	kept, ok := readCache(filepath.Join(dir, cacheFile))
+	kept, ok := atomicfile.ReadJSON[cache](filepath.Join(dir, cacheFile))
 	if !ok || !kept.CheckedAt.Equal(seed.CheckedAt) {
 		t.Fatalf("failed fetch overwrote stale cache: %+v", kept)
 	}
@@ -324,7 +326,7 @@ func TestCatalogIsWrittenToItsOwnFile(t *testing.T) {
 	if _, err := Check(context.Background(), dir, "v0.39.0"); err != nil {
 		t.Fatal(err)
 	}
-	written, ok := readCache(filepath.Join(dir, "release-catalog.json"))
+	written, ok := atomicfile.ReadJSON[cache](filepath.Join(dir, "release-catalog.json"))
 	if !ok || written.Parser != catalogParser || len(written.Releases) != 1 {
 		t.Fatalf("catalog not written with its parser: %+v", written)
 	}

@@ -1,0 +1,3 @@
+# Doc prose in two PR 735 commits that the generic-api-key rule misreads; the file no longer exists.
+014973ab371f280ea7f555fa282b02def38427ed:docs/architecture/ui-effects.md:generic-api-key:60
+463cd892f09fd71ed5cbfd998e61a84344a5f280:docs/architecture/ui-effects.md:generic-api-key:61

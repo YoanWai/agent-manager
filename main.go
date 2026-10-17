@@ -1,16 +1,17 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
 
+	"github.com/YoanWai/agent-manager/internal/app"
 	"github.com/YoanWai/agent-manager/internal/catalog"
 	"github.com/YoanWai/agent-manager/internal/cli"
 	"github.com/YoanWai/agent-manager/internal/config"
@@ -18,8 +19,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/mcpserver"
 	"github.com/YoanWai/agent-manager/internal/notify"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
-	"github.com/YoanWai/agent-manager/internal/status"
-	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/YoanWai/agent-manager/internal/ui"
 	"github.com/YoanWai/agent-manager/internal/update"
@@ -117,7 +116,9 @@ func printHelp(w io.Writer, configDir string) error {
 func subcommands() map[string]func(args []string) error {
 	table := map[string]func(args []string) error{
 		"mcp": withConfigDir(func(args []string, caller func() string, configDir string) error {
-			return mcpserver.Run(configDir, caller(), version)
+			return withBackend(configDir, func(backend *sessioncmd.Backend) error {
+				return mcpserver.RunWithBackend(configDir, caller(), version, backend)
+			})
 		}),
 		"track-conversation": withConfigDir(func(args []string, _ func() string, configDir string) error {
 			return sessioncmd.TrackConversation(configDir, args, os.Stdin)
@@ -126,10 +127,20 @@ func subcommands() map[string]func(args []string) error {
 			return sessioncmd.FollowTelemetry(configDir, args)
 		}),
 	}
-	for name, command := range cli.Commands(version, ui.SettingSpecs) {
-		table[name] = withConfigDir(command)
+	for name := range cli.Commands(version, ui.SettingSpecs) {
+		table[name] = withConfigDir(func(args []string, caller func() string, configDir string) error {
+			return withBackend(configDir, func(backend *sessioncmd.Backend) error {
+				return cli.CommandsWithBackend(version, ui.SettingSpecs, backend)[name](args, caller, configDir)
+			})
+		})
 	}
 	return table
+}
+
+func withBackend(configDir string, command func(*sessioncmd.Backend) error) (err error) {
+	backend := sessioncmd.OpenBackend(configDir)
+	defer func() { err = errors.Join(err, backend.Close()) }()
+	return command(backend)
 }
 
 func withConfigDir(command cli.Command) func([]string) error {
@@ -197,39 +208,34 @@ func sessionFromAncestry() string {
 	return id
 }
 
-func run() error {
-	cfg, err := config.Default()
-	if err != nil {
-		return err
-	}
-
-	driver, err := tmux.New()
-	if err != nil {
-		return err
-	}
-
-	engine, err := status.NewEngine(cfg)
-	if err != nil {
-		return err
-	}
-
+func run() (resultErr error) {
 	dir, err := config.Dir()
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	st, err := store.Open(filepath.Join(dir, "state.db"))
+	driver, err := tmux.New()
 	if err != nil {
 		return err
 	}
-	defer st.Close()
+	local, err := app.OpenLocal(dir, driver)
+	if err != nil {
+		return err
+	}
+	closeLocal := true
+	defer func() {
+		if closeLocal {
+			resultErr = errors.Join(resultErr, local.Close())
+		}
+	}()
+	rt := local.Runtime
+	model, err := ui.NewWithServices(ui.Dependencies{
+		Config: rt.Config, Store: rt.Store, TMux: rt.Driver, Engine: local.Engine, Hooks: rt.Hooks,
+		Git: rt.Git, Lifecycle: local.Lifecycle, Execution: local.Execution, ProfileDir: dir,
+	}, version)
+	if err != nil {
+		return err
+	}
 
-	model, err := ui.New(cfg, st, driver, engine, hooks.NewManager(dir), version)
-	if err != nil {
-		return err
-	}
 	// Mouse reporting claims the wheel for the app, so a notch neither
 	// scrolls the host's scrollback out from under the manager nor arrives
 	// as an arrow key that walks the session cursor. Alternate scroll is
@@ -249,17 +255,39 @@ func run() error {
 	// hosting us.
 	ui.EnableTerminalPassthrough()
 	ui.SyncTerminalColors()
-	model.StartPoller(program.Send)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := model.StartPoller(ctx, program.Send)
+	var stopOnce sync.Once
+	stopRuntime := func() {
+		stopOnce.Do(func() {
+			model.StopEffects()
+			cancel()
+			if len(model.AbandonedEffects()) > 0 {
+				// Abandoned workers keep their resources until the process exits.
+				closeLocal = false
+				return
+			}
+			<-done
+		})
+	}
+	defer stopRuntime()
 	final, runErr := program.Run()
 	catalog.StopAll()
 	ui.ResetTerminalColors()
+	stopRuntime()
+	if abandoned := model.AbandonedEffects(); len(abandoned) > 0 && runErr == nil {
+		runErr = fmt.Errorf("quit before these finished, so check their result: %s", strings.Join(abandoned, "; "))
+	}
 	if runErr == nil {
 		if finished, ok := final.(*ui.Model); ok && finished.RestartPath() != "" {
 			// A self-update swapped the binary on disk; restart hands over
 			// to the new build so the manager comes back updated without
 			// touching the tmux sessions it manages. On Windows this process
 			// waits as the new one's parent, so its poll stops first.
-			finished.StopPoller()
+			stopRuntime()
+			if err := local.Close(); err != nil {
+				return err
+			}
 			return restart(finished.RestartPath())
 		}
 	}
