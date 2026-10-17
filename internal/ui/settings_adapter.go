@@ -179,7 +179,7 @@ func (m *Model) handleSettingsClick(x, y int) (tea.Model, tea.Cmd) {
 		d.Field = uisettings.FieldDocs
 		return m, openLink(docsURL)
 	}
-	if row == d.PromptsRow {
+	if d.PromptsRow >= 0 && row == d.PromptsRow {
 		return m, m.runSettingsResult(d.OpenPrompts())
 	}
 	if row == d.SaveRow && x < left+d.SaveRowWidth {

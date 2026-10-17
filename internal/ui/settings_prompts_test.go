@@ -194,3 +194,27 @@ func TestSavedPromptsPanelByMouseInASmallTerminal(t *testing.T) {
 		t.Fatal("the editor does not fit the terminal")
 	}
 }
+
+// A click on the blank line under the title opens nothing while the saved
+// prompts row is scrolled out of view above the docs row.
+func TestSettingsClickAboveTheBodyLeavesSavedPromptsClosed(t *testing.T) {
+	m := buildModel(t)
+	openBrowser = func(url string) error { t.Fatalf("opened %s", url); return nil }
+	t.Cleanup(func() { openBrowser = defaultOpenBrowser })
+	m.runBatch(t, m.openSettings())
+	d := &m.settings.dialog
+	d.Field = uisettings.FieldCount - 1
+	for m.layout.width, m.layout.height = 40, 30; m.layout.height > 8; m.layout.height-- {
+		if m.viewSettings(); d.PromptsRow == -1 && d.DocsRow >= 0 {
+			break
+		}
+	}
+	if d.PromptsRow != -1 || d.DocsRow < 0 {
+		t.Fatalf("no height hides saved prompts and shows docs: prompts %d docs %d", d.PromptsRow, d.DocsRow)
+	}
+	_, cmd := m.handleSettingsClick(m.layout.cardLeft+4, m.layout.cardTop+1)
+	m.runBatch(t, cmd)
+	if d.Prompts.Open() {
+		t.Fatal("a click above the body opened saved prompts")
+	}
+}
