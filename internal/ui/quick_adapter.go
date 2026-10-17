@@ -266,6 +266,12 @@ func (m *Model) quickTool() string { return m.quick.Tool() }
 
 func (m *Model) quickSpawning() bool { return m.quick.Spawning(m.quickBarHost()) }
 
+// quickPicking reports a list open over the quick bar's prompt, which owns
+// the wheel the way it owns ↑↓.
+func (m *Model) quickPicking() bool {
+	return m.quick.active && m.quick.Picking() != uiquick.PickNone
+}
+
 func (q *quickBar) hitAt(x, y int) (quickHit, bool) {
 	if !q.active {
 		return quickHit{}, false

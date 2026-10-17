@@ -94,6 +94,9 @@ type Request struct {
 type FormRequest struct {
 	Close     bool
 	ApplyPath bool
+	// PickPath completes the path suggestion at PathEntry.
+	PickPath  bool
+	PathEntry int
 	// Group steps the group picker, which the group form and the move
 	// dialog share; PickGroup moves it to GroupEntry.
 	Group      int
@@ -492,6 +495,8 @@ func (d *Form) Click(h FormHost, line int) FormRequest {
 		return FormRequest{}
 	case hit.field == FieldGroup && hit.entry >= 0:
 		return FormRequest{PickGroup: true, GroupEntry: hit.entry}
+	case hit.field == FieldDir && hit.entry >= 0:
+		return FormRequest{PickPath: true, PathEntry: hit.entry}
 	case hit.field != d.focus:
 		if slices.Contains(d.Fields(h), hit.field) {
 			d.FocusField(h, hit.field)
@@ -507,6 +512,19 @@ func (d *Form) Click(h FormHost, line int) FormRequest {
 		return FormRequest{Toggle: true}
 	default:
 		d.stepChoice(h, 1)
+	}
+	return FormRequest{}
+}
+
+// Wheel scrolls the list open under the focused field, the model list or
+// the group picker, by step rows.
+func (d *Form) Wheel(h FormHost, step int) FormRequest {
+	toolName, ch := d.Tool(), &d.choice
+	switch {
+	case d.focus == FieldGroup:
+		return FormRequest{Group: step}
+	case d.focus == FieldModel && ch.sugg.open:
+		ch.sugg.move(len(ch.suggestions(h, toolName, ch.query())), step)
 	}
 	return FormRequest{}
 }

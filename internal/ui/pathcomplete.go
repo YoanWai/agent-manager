@@ -55,6 +55,16 @@ func (pc *pathComplete) move(delta int) bool {
 	return true
 }
 
+// pick highlights suggestion i, read off the painted list, and reports
+// false when a newer read has since shortened the list past it.
+func (pc *pathComplete) pick(i int) bool {
+	if i < 0 || i >= len(pc.suggestions) {
+		return false
+	}
+	pc.index, pc.chosen = i, true
+	return true
+}
+
 func (pc *pathComplete) selected() string {
 	if !pc.active() {
 		return ""

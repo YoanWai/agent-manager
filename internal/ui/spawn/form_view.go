@@ -86,7 +86,9 @@ func (d *Form) View(h FormHost, facts FormFacts) (string, [][2]string) {
 	field("dir", st.Input(d.dir), FieldDir)
 	paths := h.Paths()
 	if d.focus == FieldDir && paths.Active() {
-		add(paths.View()+"\n", hit{field: FieldDir, entry: -1})
+		for i, line := range strings.Split(paths.View(), "\n") {
+			add(line+"\n", hit{field: FieldDir, entry: i})
+		}
 	}
 	worktreeField := st.Subtle.Render(facts.NoRepo)
 	if facts.WorktreeKnown && facts.WorktreeCapable {

@@ -271,6 +271,10 @@ func (m *Model) runFormRequest(request spawn.FormRequest, reader directoryPrefli
 		m.mode = modeList
 	case request.ApplyPath:
 		return m.applyPathSuggestion()
+	case request.PickPath:
+		if m.form.paths.pick(request.PathEntry) {
+			return m.applyPathSuggestion()
+		}
 	case request.Group != 0:
 		return m.moveGroupCursor(request.Group)
 	case request.PickGroup:
@@ -292,6 +296,10 @@ func (m *Model) runFormRequest(request spawn.FormRequest, reader directoryPrefli
 		return m.nextEffectCmd()
 	}
 	return nil
+}
+
+func (m *Model) handleFormWheel(step int) (tea.Model, tea.Cmd) {
+	return m, m.runFormRequest(m.form.Wheel(m.spawnHost(), step), nil)
 }
 
 func (m *Model) handleFormClick(x, y int) (tea.Model, tea.Cmd) {

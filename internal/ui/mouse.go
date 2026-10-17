@@ -164,6 +164,9 @@ func (m *Model) handleMousePress(msg tea.MouseMsg, ctx uirail.MouseContext) (tea
 	if m.mode == modeForm {
 		return m.handleFormClick(msg.X, msg.Y)
 	}
+	if m.mode == modeGroupForm {
+		return m.handleGroupFormClick(msg.X, msg.Y)
+	}
 	if m.mode == modeSettings {
 		return m.handleSettingsClick(msg.X, msg.Y)
 	}
@@ -210,7 +213,7 @@ func (m *Model) handleMouseWheel(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.layout.split.resizeMode || m.layout.split.dragging {
 		return m, nil
 	}
-	if m.mode == modeList {
+	if m.mode == modeList && !m.quickPicking() {
 		return m.applyRailDecision(m.rail.Mouse(msg, m.layout.displayedRail, m.railMouseContext()))
 	}
 	step := 0
@@ -227,6 +230,8 @@ func (m *Model) handleMouseWheel(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		arrow.Type = tea.KeyUp
 	}
 	switch m.mode {
+	case modeList:
+		return m.handleQuickKey(arrow)
 	case modeSettings:
 		if d := m.settings.dialog; d.Editor.Typing() || d.KeyCapture || d.KeyReset || (d.Prompts.Open() && !d.Prompts.Listing()) {
 			return m, nil
@@ -246,6 +251,10 @@ func (m *Model) handleMouseWheel(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m.handleMoveKey(arrow)
 	case modeRepoPick:
 		return m, m.handleRepoPickKey(arrow)
+	case modeForm:
+		return m.handleFormWheel(step)
+	case modeGroupForm:
+		return m, m.runGroupFormKey(m.groupForm.Wheel(step), nil)
 	}
 	return m, nil
 }

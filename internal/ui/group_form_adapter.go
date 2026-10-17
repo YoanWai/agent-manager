@@ -69,6 +69,12 @@ func (m *Model) runGroupFormKey(key uidialogs.GroupFormKey, reader directoryPref
 		return m.applyPathSuggestion()
 	case uidialogs.GroupFormStepParent:
 		return m.moveGroupCursor(key.Delta)
+	case uidialogs.GroupFormPickParent:
+		return m.moveGroupCursor(key.Entry - m.form.groupIndex)
+	case uidialogs.GroupFormPickPath:
+		if m.groupForm.paths.pick(key.Entry) {
+			return m.applyPathSuggestion()
+		}
 	case uidialogs.GroupFormStepBase:
 		var cmd tea.Cmd
 		m.groupForm.base, cmd = m.stepGroupBase(groupBaseForm, uint64(m.groupForm.Gen()), m.groupFormDir(), m.groupForm.base, key.Delta)
@@ -94,6 +100,14 @@ func (m *Model) runGroupFormKey(key uidialogs.GroupFormKey, reader directoryPref
 // the way the group worker resolves it.
 func (m *Model) groupFormDir() string {
 	return m.capturedAbsolutePath(m.groupForm.Dir(), m.capturedGroupDefaultDir(m.selectedGroupPath()))
+}
+
+func (m *Model) handleGroupFormClick(x, y int) (tea.Model, tea.Cmd) {
+	if !m.onCard(x, y) {
+		return m, nil
+	}
+	line := y - m.layout.cardTop - 2
+	return m, m.runGroupFormKey(m.groupForm.Click(line, dialogPaths{&m.groupForm.paths}, len(groupWorktreeOptions)), nil)
 }
 
 func (m *Model) submitGroupForm() (tea.Model, tea.Cmd) {
