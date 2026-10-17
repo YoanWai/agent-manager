@@ -8,7 +8,6 @@ package agentsession
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -16,7 +15,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/url"
 	"os"
 	"os/exec"
@@ -40,13 +38,6 @@ const opencodeScanLimit = 40
 // opencodeCLITimeout bounds each opencode subprocess so a hung CLI cannot
 // stall the poll loop.
 const opencodeCLITimeout = 15 * time.Second
-
-// opencodeExportHeadBytes is how much of `opencode export` output to read.
-// The payload leads with the session's info block, then streams the entire
-// conversation, which for a long session takes far longer than the metadata
-// is worth waiting for. Reading a bounded prefix captures the info block and
-// lets us stop before the transcript.
-const opencodeExportHeadBytes = 64 * 1024
 
 var hermesProfilePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 
@@ -579,32 +570,6 @@ func runOpencode(cwd string, args ...string) ([]byte, error) {
 	return cmd.Output()
 }
 
-// runOpencodeHead runs an opencode subcommand from cwd and returns at most
-// opencodeExportHeadBytes of stdout, killing the process once it has that
-// much. `opencode export` on a long session would otherwise stream the whole
-// transcript and blow past the timeout before the leading info block is even
-// consumed.
-func runOpencodeHead(cwd string, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), opencodeCLITimeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "opencode", args...)
-	cmd.Dir = cwd
-	pipe, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, err
-	}
-	if err := cmd.Start(); err != nil {
-		return nil, err
-	}
-	buf := make([]byte, opencodeExportHeadBytes)
-	n, _ := io.ReadFull(pipe, buf)
-	cancel()
-	_ = cmd.Wait()
-	return buf[:n], nil
-}
-
-var opencodeIDPattern = regexp.MustCompile(`ses_[A-Za-z0-9]+`)
-
 // sessionIDPattern is the shape a conversation id has in every store we
 // read: a UUID from codex, gemini and hermes, and opencode's ses_ token.
 // The id arrives from a file or database the agent CLI owns rather than
@@ -618,23 +583,16 @@ func ValidSessionID(id string) bool {
 	return sessionIDPattern.MatchString(id)
 }
 
-// opencodeListIDs returns session ids newest-first from `opencode session
-// list` run in cwd. A package variable so tests substitute canned output.
-var opencodeListIDs = func(cwd string) ([]string, bool) {
-	out, err := runOpencode(cwd, "session", "list")
-	if err != nil {
-		return nil, false
-	}
-	return dedupeOrdered(opencodeIDPattern.FindAllString(string(out), -1)), true
-}
-
 // opencodeListEntry is one row of `opencode session list --format json`,
-// which carries the update time snapshot and recapture compare against in
-// one subprocess, where the table output keeps only the id. Updated is a
-// Unix timestamp in milliseconds, verified against the real CLI.
+// newest first, which carries every field capture, snapshot and recapture
+// read in one subprocess. The rows are the same from OpenCode 1.0 through
+// 2.x, where `export` moved under `session` and its info block changed
+// shape. Created and Updated are Unix timestamps in milliseconds, verified
+// against the real CLI.
 type opencodeListEntry struct {
 	ID        string `json:"id"`
 	Directory string `json:"directory"`
+	Created   int64  `json:"created"`
 	Updated   int64  `json:"updated"`
 }
 
@@ -649,92 +607,6 @@ var opencodeSessionListJSON = func(cwd string) ([]opencodeListEntry, bool) {
 		return nil, false
 	}
 	return entries, true
-}
-
-// A package variable so tests substitute canned output.
-var opencodeSessionMeta = func(cwd, id string) (directory string, created, updated time.Time, ok bool) {
-	out, err := runOpencodeHead(cwd, "export", id)
-	if err != nil {
-		return "", time.Time{}, time.Time{}, false
-	}
-	return parseOpencodeExport(out)
-}
-
-// dedupeOrdered removes duplicates while keeping first-seen order.
-func dedupeOrdered(items []string) []string {
-	seen := make(map[string]bool, len(items))
-	out := items[:0]
-	for _, item := range items {
-		if seen[item] {
-			continue
-		}
-		seen[item] = true
-		out = append(out, item)
-	}
-	return out
-}
-
-// The export leads with a human preamble and is read only as a prefix, so
-// the info object is extracted by brace matching rather than decoding the
-// whole (possibly truncated) document.
-func parseOpencodeExport(out []byte) (directory string, created, updated time.Time, ok bool) {
-	obj, found := extractInfoObject(out)
-	if !found {
-		return "", time.Time{}, time.Time{}, false
-	}
-	var info struct {
-		Directory string `json:"directory"`
-		Time      struct {
-			Created int64 `json:"created"`
-			Updated int64 `json:"updated"`
-		} `json:"time"`
-	}
-	if err := json.Unmarshal(obj, &info); err != nil || info.Directory == "" {
-		return "", time.Time{}, time.Time{}, false
-	}
-	return info.Directory, time.UnixMilli(info.Time.Created), time.UnixMilli(info.Time.Updated), true
-}
-
-// extractInfoObject returns the JSON object that follows the "info" key,
-// balancing braces so a truncated export prefix still yields a complete info
-// object as long as that block was fully read.
-func extractInfoObject(out []byte) ([]byte, bool) {
-	key := bytes.Index(out, []byte(`"info"`))
-	if key < 0 {
-		return nil, false
-	}
-	open := bytes.IndexByte(out[key:], '{')
-	if open < 0 {
-		return nil, false
-	}
-	start := key + open
-	depth, inString, escaped := 0, false, false
-	for i := start; i < len(out); i++ {
-		c := out[i]
-		if inString {
-			switch {
-			case escaped:
-				escaped = false
-			case c == '\\':
-				escaped = true
-			case c == '"':
-				inString = false
-			}
-			continue
-		}
-		switch c {
-		case '"':
-			inString = true
-		case '{':
-			depth++
-		case '}':
-			depth--
-			if depth == 0 {
-				return out[start : i+1], true
-			}
-		}
-	}
-	return nil, false
 }
 
 // candidate is a store entry that could be the session's conversation,
@@ -857,25 +729,22 @@ func codexMeta(path string) (id, cwd string, err error) {
 // keeps those whose directory matches and that were created at or after
 // launch, and returns the earliest such conversation not already claimed.
 func captureOpencode(cwd string, launchedAt time.Time, claimed map[string]bool) (string, bool) {
-	ids, ok := opencodeListIDs(cwd)
+	entries, ok := opencodeSessionListJSON(cwd)
 	if !ok {
 		return "", false
 	}
 	cutoff := launchedAt.Add(-clockSlack)
 	wantCwd := resolvePath(cwd)
 	var cands []candidate
-	for i, id := range ids {
+	for i, e := range entries {
 		if i >= opencodeScanLimit {
 			break
 		}
-		if claimed[id] {
+		created := time.UnixMilli(e.Created)
+		if !ValidSessionID(e.ID) || claimed[e.ID] || resolvePath(e.Directory) != wantCwd || created.Before(cutoff) {
 			continue
 		}
-		dir, created, _, ok := opencodeSessionMeta(cwd, id)
-		if !ok || resolvePath(dir) != wantCwd || created.Before(cutoff) {
-			continue
-		}
-		cands = append(cands, candidate{id: id, modTime: created})
+		cands = append(cands, candidate{id: e.ID, modTime: created})
 	}
 	return pickEarliest(cands)
 }
