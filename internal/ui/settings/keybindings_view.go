@@ -21,10 +21,13 @@ func (s *State) viewKeyPicker(ctx ViewContext) Frame {
 		}
 	}
 	rows := KeyRows(tables)
-	first, last := pickerWindow(len(rows), s.KeyCursor, ctx.Height-14)
+	first, last := pickerWindow(s.keyFirst, len(rows), s.KeyCursor, ctx.Height-14)
+	s.keyFirst = first
 	var b strings.Builder
+	s.keyLines = s.keyLines[:0]
 	if first > 0 {
 		b.WriteString(st.Subtle.Render(fmt.Sprintf("  ↑ %d more", first)) + "\n")
+		s.keyLines = append(s.keyLines, first-1)
 	}
 	for i := first; i < last; i++ {
 		row := rows[i]
@@ -33,8 +36,10 @@ func (s *State) viewKeyPicker(ctx ViewContext) Frame {
 		if i == first || rows[i-1].Table != row.Table {
 			if i > first {
 				b.WriteByte('\n')
+				s.keyLines = append(s.keyLines, -1)
 			}
 			b.WriteString(st.Annotation.Render("  "+section.title) + "\n")
+			s.keyLines = append(s.keyLines, -1)
 		}
 		marker := "  "
 		labelStyle := st.Value
@@ -59,9 +64,11 @@ func (s *State) viewKeyPicker(ctx ViewContext) Frame {
 		b.WriteString(presentation.PadRight(valueRender, 26))
 		b.WriteString(st.Muted.Render(row.Action.Does))
 		b.WriteByte('\n')
+		s.keyLines = append(s.keyLines, i)
 	}
 	if last < len(rows) {
 		b.WriteString(st.Subtle.Render(fmt.Sprintf("  ↓ %d more", len(rows)-last)) + "\n")
+		s.keyLines = append(s.keyLines, last)
 	}
 	hint := [][2]string{{"↑↓", "move"}, {"↵", "set a key"}, {"a", "add one"}, {"d", "off"}, {"r", "defaults"}, {"esc", "back"}}
 	if s.KeyCapture {
@@ -70,17 +77,8 @@ func (s *State) viewKeyPicker(ctx ViewContext) Frame {
 	return Frame{Card: Flex, Title: "⚙ Keybindings", Body: strings.TrimRight(b.String(), "\n"), Hints: hint}
 }
 
-func pickerWindow(count, cursor, room int) (first, last int) {
-	visible := max(min(count, room), 5)
-	if visible >= count {
-		return 0, count
-	}
-	first = cursor - visible/2
-	if first < 0 {
-		first = 0
-	}
-	if first+visible > count {
-		first = count - visible
-	}
+func pickerWindow(first, count, cursor, room int) (int, int) {
+	visible := min(max(min(count, room), 5), count)
+	first = presentation.Follow(first, cursor, count, visible)
 	return first, first + visible
 }

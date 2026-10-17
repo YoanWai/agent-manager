@@ -45,8 +45,12 @@ type Prompts struct {
 	cursor, focus                         int
 	rows                                  []Prompt
 	previous                              string
-	name                                  textinput.Model
-	text                                  textarea.Model
+	// first is the list row the window starts at; lines is what each
+	// painted body line holds, a list row or, in the editor, the field.
+	first int
+	lines []int
+	name  textinput.Model
+	text  textarea.Model
 }
 
 // Open says the panel covers the Settings rows.

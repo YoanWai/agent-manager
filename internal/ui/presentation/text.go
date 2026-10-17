@@ -62,6 +62,23 @@ func Window(lines []string, rows, offset int, overflow lipgloss.Style) []string 
 	return window
 }
 
+// Follow is the first row of a window visible rows tall over count rows
+// that keeps cursor on screen. It holds at first while the cursor stays
+// inside and scrolls just far enough when it leaves, so the row under the
+// pointer holds still between two clicks.
+func Follow(first, cursor, count, visible int) int {
+	if visible >= count {
+		return 0
+	}
+	switch {
+	case cursor < first:
+		first = cursor
+	case cursor >= first+visible:
+		first = cursor - visible + 1
+	}
+	return min(max(first, 0), count-visible)
+}
+
 // TruncateTail keeps the end of the string, best for paths and URLs.
 func TruncateTail(s string, max int) string {
 	runes := []rune(s)

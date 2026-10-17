@@ -90,3 +90,22 @@ func TestTruncatePathCutsAtSeparator(t *testing.T) {
 		t.Fatalf("limit 0 = %q, want empty", got)
 	}
 }
+
+func TestFollowHoldsTheWindowWhileTheCursorIsInside(t *testing.T) {
+	for _, tc := range []struct {
+		first, cursor, count, visible, want int
+	}{
+		{0, 3, 10, 10, 0},
+		{2, 4, 20, 5, 2},
+		{2, 6, 20, 5, 2},
+		{2, 7, 20, 5, 3},
+		{2, 1, 20, 5, 1},
+		{2, 19, 20, 5, 15},
+		{18, 0, 20, 5, 0},
+		{19, 17, 20, 5, 15},
+	} {
+		if got := Follow(tc.first, tc.cursor, tc.count, tc.visible); got != tc.want {
+			t.Errorf("Follow(%d, %d, %d, %d) = %d, want %d", tc.first, tc.cursor, tc.count, tc.visible, got, tc.want)
+		}
+	}
+}

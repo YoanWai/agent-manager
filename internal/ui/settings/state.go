@@ -89,25 +89,28 @@ const (
 type State struct {
 	GlyphMode                                                           presentation.GlyphMode
 	DocsRow, PromptsRow, GlyphRow, GlyphRowWidth, SaveRow, SaveRowWidth int
-	ToolNames                                                           []string
-	ToolIndex                                                           int
-	ThemeIndex                                                          int
-	Field                                                               int
-	LayoutSplit                                                         bool
-	QuickCloseSend                                                      bool
-	EnterFocuses                                                        bool
-	ArrowStep                                                           bool
-	ComfortableRows                                                     bool
-	FullLayout                                                          bool
-	HideHeader                                                          bool
-	HideStats                                                           bool
-	MouseDisabled                                                       bool
-	WorktreeDefault                                                     bool
-	BaseFetch                                                           bool
-	Proactive                                                           bool
-	Notifications                                                       bool
-	NotifyFinished                                                      bool
-	ThemeAuto                                                           bool
+	// FieldFirst and FieldEnd are the fields the root painted, in order
+	// from the row under the save button.
+	FieldFirst, FieldEnd int
+	ToolNames            []string
+	ToolIndex            int
+	ThemeIndex           int
+	Field                int
+	LayoutSplit          bool
+	QuickCloseSend       bool
+	EnterFocuses         bool
+	ArrowStep            bool
+	ComfortableRows      bool
+	FullLayout           bool
+	HideHeader           bool
+	HideStats            bool
+	MouseDisabled        bool
+	WorktreeDefault      bool
+	BaseFetch            bool
+	Proactive            bool
+	Notifications        bool
+	NotifyFinished       bool
+	ThemeAuto            bool
 	// TerminalBackground is the background row's choice, applied to the
 	// model as it is stepped so the frame previews it.
 	TerminalBackground bool
@@ -126,7 +129,11 @@ type State struct {
 	KeyCapture bool
 	KeyAppend  bool
 	KeyReset   bool
-	Editor     EditorRow
+	// keyLines is the key picker row each painted body line shows, -1 for
+	// a heading or a gap; keyFirst is the first row its window paints.
+	keyLines []int
+	keyFirst int
+	Editor   EditorRow
 	// Prompts is the saved prompts panel, open over the rows.
 	Prompts Prompts
 	Dirty   bool
@@ -217,9 +224,4 @@ func FromSnapshot(s Snapshot) State {
 // unsaved steps or a sub-picker open.
 func (s State) Busy() bool {
 	return s.Dirty || s.CLIPicker || s.KeyPicker || s.Prompts.open
-}
-
-// InSubpanel reports a sub-picker or a typed line covering the rows.
-func (s State) InSubpanel() bool {
-	return s.CLIPicker || s.KeyPicker || s.Editor.Typing() || s.Prompts.open
 }

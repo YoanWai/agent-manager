@@ -199,7 +199,7 @@ func (m *Model) handleMouseWheel(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	switch m.mode {
 	case modeSettings:
-		if m.settings.dialog.InSubpanel() && !m.settings.dialog.Prompts.Listing() {
+		if d := m.settings.dialog; d.Editor.Typing() || d.KeyCapture || d.KeyReset || (d.Prompts.Open() && !d.Prompts.Listing()) {
 			return m, nil
 		}
 		switch msg.Button {

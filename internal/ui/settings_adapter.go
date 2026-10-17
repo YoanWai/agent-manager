@@ -9,6 +9,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/systheme"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -68,6 +69,7 @@ func (m *Model) settingsContext() uisettings.Context {
 		DefaultTool: m.settings.cache.value(uisettings.DefaultToolSetting),
 		Session:     session,
 		List:        list,
+		UpdateReady: m.update.latest != "",
 	}
 }
 
@@ -99,7 +101,10 @@ func (m *Model) openSettingsWithReader(reader settingsValueReader) tea.Cmd {
 // links, the palette repaint, the saves, and the exits that close the
 // dialog or start the in-place update.
 func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	result := m.settings.dialog.Key(msg, m.settingsContext())
+	return m.applySettingsResult(m.settings.dialog.Key(msg, m.settingsContext()))
+}
+
+func (m *Model) applySettingsResult(result uisettings.Result) (tea.Model, tea.Cmd) {
 	cmd := m.runSettingsResult(result)
 	switch result.Exit {
 	case uisettings.OpenDocs:
@@ -162,14 +167,21 @@ func (m *Model) runSettingsResult(result uisettings.Result) tea.Cmd {
 
 func (m *Model) handleSettingsClick(x, y int) (tea.Model, tea.Cmd) {
 	d := &m.settings.dialog
-	if d.InSubpanel() {
-		return m, nil
-	}
 	left := m.layout.cardLeft + 1 + cardPaddingX
 	inner := m.layout.cardRight - m.layout.cardLeft - cardChromeX - 2*cardPaddingX
 	row := y - m.layout.cardTop - 2
 	if x < left || x >= left+inner {
 		return m, nil
+	}
+	switch {
+	case d.Editor.Typing():
+		return m, nil
+	case d.Prompts.Open():
+		return m.applySettingsResult(d.ClickPrompts(row))
+	case d.CLIPicker:
+		return m.applySettingsResult(d.ClickCLI(row, m.settingsContext()))
+	case d.KeyPicker:
+		return m.applySettingsResult(d.ClickKey(row))
 	}
 	if d.GlyphRow >= 0 && row == d.GlyphRow && x < left+d.GlyphRowWidth {
 		d.Field = uisettings.FieldGlyphs
@@ -184,6 +196,9 @@ func (m *Model) handleSettingsClick(x, y int) (tea.Model, tea.Cmd) {
 	}
 	if row == d.SaveRow && x < left+d.SaveRowWidth {
 		return m.saveAndCloseSettings()
+	}
+	if field := d.FieldFirst + row - 1; row >= 1 && field < d.FieldEnd {
+		return m.applySettingsResult(d.Click(field, m.settingsContext()))
 	}
 	return m, nil
 }
@@ -333,7 +348,7 @@ func (m *Model) viewSettings() string {
 	}
 	first := 0
 	if len(lines) > room {
-		first = min(max(d.Field-room+1, 0), len(lines)-room)
+		first = presentation.Follow(d.FieldFirst, d.Field, len(lines), room)
 		lines = lines[first : first+room]
 	}
 	d.DocsRow = -1
@@ -350,6 +365,7 @@ func (m *Model) viewSettings() string {
 		d.GlyphRowWidth = ansi.StringWidth(lines[uisettings.FieldGlyphs-first])
 	}
 	d.SaveRow, d.SaveRowWidth = 0, ansi.StringWidth(save)
+	d.FieldFirst, d.FieldEnd = first, first+len(lines)
 	return m.cardFlex(frame.Title, save+"\n"+strings.Join(lines, "\n"), frame.Hints)
 }
 
