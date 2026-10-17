@@ -219,7 +219,6 @@ func (g glyphSet) helpSections(session, list keybind.Table, arrowStep bool) []he
 			{"ctrl+s", "save"},
 			{"←→", "on a new session, pick one"},
 			{"ctrl+o", "open the list"},
-			{"f4", "in a session, paste one without sending"},
 		}},
 		{title: titledWith("dialogs", list, keybind.NewSession, keybind.NewGroup, keybind.Rename, keybind.Fork, keybind.Move), rows: [][2]string{
 			{"tab", "next field"},
