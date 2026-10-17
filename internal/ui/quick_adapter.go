@@ -142,6 +142,10 @@ func (m *Model) runQuickRequest(request uiquick.Request) tea.Cmd {
 		return m.nextEffectCmd()
 	case request.Spawn != nil:
 		return m.dispatchQuickSpawn(m.quickSpawnRequest(*request.Spawn), systemDirectoryPreflight{git: m.services.gitDrv})
+	case request.LoadSaved:
+		return savedPromptsLoadCmd(m.services.store, savedForQuick, uint64(m.quick.gen), 0)
+	case request.InsertSaved != nil:
+		m.quick.insertSaved(*request.InsertSaved)
 	}
 	return nil
 }
@@ -204,6 +208,7 @@ func (m *Model) quickSpawnRequest(request spawn.Request) spawnRequest {
 func (q *quickBar) clearAfterSend() {
 	q.input.SetValue("")
 	q.attachments = nil
+	q.saved = nil
 	if q.closeAfterSend {
 		q.active = false
 	}

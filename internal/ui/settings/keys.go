@@ -54,12 +54,20 @@ type Result struct {
 	// SaveHidden is the CLI picker closing; SaveKeys the key picker.
 	SaveHidden bool
 	SaveKeys   bool
+	// LoadPrompts asks for the saved prompts catalog; SavePrompt and
+	// DeletePrompt write it. Each carries the panel's Gen.
+	LoadPrompts  bool
+	SavePrompt   *PromptSave
+	DeletePrompt string
 	// Cmd is the typed editor line's own command.
 	Cmd tea.Cmd
 }
 
 // Key runs one key on the open dialog.
 func (s *State) Key(msg tea.KeyMsg, ctx Context) Result {
+	if s.Prompts.open {
+		return s.promptsKey(msg)
+	}
 	if s.KeyPicker && !s.CLIPicker {
 		return s.keyPickerKey(msg)
 	}
@@ -89,6 +97,8 @@ func (s *State) Key(msg tea.KeyMsg, ctx Context) Result {
 		case FieldCLIs:
 			s.openCLIPicker(ctx)
 			return Result{}
+		case FieldPrompts:
+			return s.openPrompts()
 		case FieldKeybindings:
 			s.openKeyPicker(ctx)
 			return Result{Notice: clearNotice()}
@@ -155,6 +165,12 @@ func (s *State) Cycle(step int) Result {
 	}
 	s.Dirty = true
 	return Result{}
+}
+
+// OpenPrompts opens the saved prompts panel from its row.
+func (s *State) OpenPrompts() Result {
+	s.Field = FieldPrompts
+	return s.openPrompts()
 }
 
 // ShowTheme points the theme row at the palette auto-detect resolved.

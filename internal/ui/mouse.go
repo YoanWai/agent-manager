@@ -65,6 +65,12 @@ func (m *Model) railMouseContext() uirail.MouseContext {
 
 func (m *Model) handleMouseEvent(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	ctx := m.railMouseContext()
+	if m.mode == modeFocus && m.focus.saved.list.Open() {
+		if msg.Action == tea.MouseActionPress && !tea.MouseEvent(msg).IsWheel() {
+			return m, m.clickFocusSaved(msg.X, msg.Y)
+		}
+		return m, nil
+	}
 	if m.mode == modeFocus {
 		railPress := msg.Action == tea.MouseActionPress &&
 			(msg.Button == tea.MouseButtonLeft || msg.Button == tea.MouseButtonRight)
@@ -167,7 +173,7 @@ func (m *Model) handleMouseWheel(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	switch m.mode {
 	case modeSettings:
-		if m.settings.dialog.InSubpanel() {
+		if m.settings.dialog.InSubpanel() && !m.settings.dialog.Prompts.Listing() {
 			return m, nil
 		}
 		switch msg.Button {

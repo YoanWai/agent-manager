@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 )
@@ -23,7 +24,7 @@ func (m *Model) formSpawnRequest(request spawn.Request) spawnRequest {
 		toolName:     request.Tool,
 		name:         name,
 		group:        group,
-		prompt:       request.Prompt,
+		prompt:       launch.WithInstructions(request.Saved, request.Prompt),
 		autoNamed:    autoNamed,
 		pickWorktree: request.Worktree,
 		choice:       config.Choice(request.Pick),

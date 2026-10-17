@@ -1,10 +1,12 @@
 package ui
 
 import (
+	"slices"
+	"strings"
+
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/lipgloss"
-	"strings"
 )
 
 // viewFooter is the app's legend: a tier of keys for whatever the cursor is
@@ -53,13 +55,28 @@ func (m *Model) viewFooter() string {
 		if label := m.services.keys.Binding(keybind.Editor).Label(); label != "" {
 			pairs = append(pairs, [2]string{label, "editor"})
 		}
+		savedLabel := m.services.keys.Binding(keybind.SavedPrompt).Label()
+		if m.focus.saved.list.Open() {
+			pairs = append(m.focus.saved.list.Hint("paste", "close"), pairs...)
+			savedLabel = ""
+		}
+		savedAt := len(pairs)
 		if pagesScrollback {
 			pairs = append(pairs, [2]string{"pgup/pgdn", "scroll"})
 		}
 		if m.focus.pane.Pane().Mouse {
 			pairs = append(pairs, [2]string{"click / alt+drag", "agent UI"})
 		}
-		return m.transientFooter(legendSection{title: "Focused", pairs: pairs})
+		footer := m.transientFooter(legendSection{title: "Focused", pairs: pairs})
+		if savedLabel == "" {
+			return footer
+		}
+		// Full layout keeps a one-row footer; the key map still names this key.
+		withSaved := m.transientFooter(legendSection{title: "Focused", pairs: slices.Insert(slices.Clone(pairs), savedAt, [2]string{savedLabel, "saved prompts"})})
+		if m.prefs.fullLayout && lipgloss.Height(withSaved) > lipgloss.Height(footer) {
+			return footer
+		}
+		return withSaved
 	}
 	return m.listFooter()
 }

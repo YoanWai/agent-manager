@@ -91,8 +91,8 @@ func TestFormDialogThroughAFakeHost(t *testing.T) {
 		t.Fatalf("spawn = %+v, want %+v", got, want)
 	}
 	h.prompt.text = "-rf"
-	if request = d.Submit(h); request.Spawn != nil || len(h.errs) == 0 {
-		t.Fatal("a prompt that reads as a flag spawned")
+	if request = d.Submit(h); request.Spawn == nil || request.Spawn.Prompt != "-rf" {
+		t.Fatalf("a leading dash is text after the rename note: %+v %v", request, h.errs)
 	}
 	if _, request = d.HandleKey(h, tea.KeyMsg{Type: tea.KeyEsc}); !request.Close || !h.prompt.released {
 		t.Fatalf("esc asked for %+v", request)
@@ -105,7 +105,7 @@ func TestFormClicksThroughAFakeHost(t *testing.T) {
 	h := newFakeFormHost()
 	d := NewForm(h, []string{"claude"}, 0)
 	d.FocusField(h, FieldGroup)
-	body, _ := d.View(h, FormFacts{Width: 40, Group: "root", GroupPicker: []string{"root", "backend"}, Styles: Styles{Input: func(in textinput.Model) string { return in.View() }}})
+	body, _ := d.View(h, FormFacts{Width: 40, Group: "root", GroupPicker: []string{"root", "backend"}, Styles: Styles{Input: func(in textinput.Model) string { return in.View() }}, Height: 40, Chrome: func([][2]string) int { return 6 }})
 	lines := strings.Split(body, "\n")
 	if request := d.Click(h, len(lines)-1); !request.PickGroup || request.GroupEntry != 1 {
 		t.Fatalf("a click on the second picker row asked for %+v", request)

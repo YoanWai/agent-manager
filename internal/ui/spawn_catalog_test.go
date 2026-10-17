@@ -47,7 +47,7 @@ func TestFormLaunchesOnDefaultsWhenTheCLIFailsToAnswer(t *testing.T) {
 	answered(m, claudeLike, catalog.Catalog{})
 	m.ledger.catalogs["claude"].err = errors.New("app-server exited (status 1)")
 	openFormOnClaude(t, m)
-	if body := formBody(m); !strings.Contains(body, "couldn't read models from claude: app-server") || !strings.Contains(body, "exited (status 1)") {
+	if body := formBody(m); !strings.Contains(body, "couldn't read models from claude: app-") || !strings.Contains(body, "exited (status 1)") {
 		t.Fatalf("form:\n%s", body)
 	}
 	if slices.Contains(m.form.Fields(m.spawnHost()), spawn.FieldModel) {

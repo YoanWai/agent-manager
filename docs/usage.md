@@ -14,7 +14,7 @@ Tell your agent what you want to review in Agent Manager. Your agent will set up
 
 | Key | Action |
 |-----|--------|
-| `n` | New session (name, tool, the model, effort and profile the tool offers, directory, worktree toggle and the base it starts from, optional starting prompt, group picker) |
+| `n` | New session (name, tool, the model, effort and profile the tool offers, directory, worktree toggle and the base it starts from, optional saved prompts and starting prompt, group picker) |
 | `T` | New terminal tab: a shell under the selected agent, or in the selected group |
 | `o` | Open the selected row's directory in your editor |
 | `f` | Fork the selected conversation into a named session in the same group and directory |
@@ -47,7 +47,7 @@ Tell your agent what you want to review in Agent Manager. Your agent will set up
 | `space` | Quick prompt mode: answer the selected session, or spawn an agent in the selected group |
 | `ctrl+r` | Review the selected session's changes: full-screen whole-file diffs, with `c` to comment a line and `C` to send the comments to the agent |
 | `F` | Fold / unfold every group |
-| `s` | Settings (default tool, theme, theme follows OS, background, list density, sessions layout, header and computer stats visibility, review layout, after quick send, session keys, ←→ step in/out, mouse, spawn in worktree, fetch on spawn, coordination, notifications, notify on finish, editor, keybindings, CLIs, docs, report a bug, suggest a change, and the version row that updates in place) |
+| `s` | Settings (default tool, theme, theme follows OS, background, list density, sessions layout, header and computer stats visibility, review layout, after quick send, session keys, ←→ step in/out, mouse, spawn in worktree, fetch on spawn, coordination, notifications, notify on finish, editor, keybindings, CLIs, saved prompts, docs, report a bug, suggest a change, and the version row that updates in place) |
 | `\|` | Resize the split: `←→` nudge the divider, `enter` commits, `esc` cancels |
 | `t` | Toggle archived view |
 | `w` | Filter to sessions that need attention (`waiting`, `finished`, `errored`); press again to show all |
@@ -95,6 +95,20 @@ Opening a session (`enter`, or `→`) takes the whole body too, through the same
 ## Which CLIs you get offered
 
 Every configured tool is offered when you create a session, which is more than most people run. Settings (`s`) has a `CLIs` row: `enter` opens a checklist, `space` or `enter` unchecks the tool under the cursor, `esc` saves, and the ones left checked are what the `n` form's `tool` picker and quick prompt mode's `tab` cycle through. The last checked tool cannot be unchecked, since a picker with nothing in it could not create a session. It only narrows the pickers, so a session already on an unchecked tool keeps running and revives on that same tool. The last row, `request CLI support`, opens an issue for a CLI we do not ship rules for yet.
+
+## Saved prompts
+
+Settings (`s`), row **saved prompts**. `n` creates one, `enter` edits it, `d` deletes it. `tab` moves between the name and the text, `ctrl+s` saves, `esc` backs out. From a shell, `agent-manager prompts add`.
+
+On a new session, left and right pick one. `ctrl+o` or `enter` opens the list. The text is placed in front of the task. In the quick prompt, `ctrl+o` drops a chip that becomes that text when you send. In a session, `f4` pastes it and does not send. `f4` can be changed with the other session keys.
+
+```bash
+agent-manager prompts add reviewer "Review the parser changes"
+agent-manager spawn --saved reviewer --prompt "Start with the tests"
+agent-manager send <session-id> --saved reviewer
+```
+
+`create_session` and `send_session` take the same name in `saved`. A missing name is refused. Changing or deleting one leaves a session that already started alone.
 
 ## Model, effort and profile
 

@@ -5,8 +5,6 @@
 package quick
 
 import (
-	"strings"
-
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -43,6 +41,10 @@ type Request struct {
 	Text string
 	// Spawn starts a session in the selected group.
 	Spawn *spawn.Request
+	// LoadSaved asks for the catalog the saved prompts list opened on;
+	// InsertSaved puts the picked one at the caret as a chip.
+	LoadSaved   bool
+	InsertSaved *spawn.Saved
 }
 
 // The list open above the prompt, if any.
@@ -76,6 +78,8 @@ type Bar struct {
 	choice          spawn.Choice
 	// picking is the list open above the prompt, which takes the typing.
 	picking int
+	// savedList is the saved prompts list ctrl+o opens above the prompt.
+	savedList spawn.SavedList
 	// hits are relative to the bar's first painted line.
 	hits []Hit
 }
@@ -146,6 +150,10 @@ func (q *Bar) Picking() int { return q.picking }
 // selected, and every other key is typed text. The root has made a
 // pasted key typed text already.
 func (q *Bar) HandleKey(h Host, msg tea.KeyMsg) (tea.Cmd, Request) {
+	if q.savedList.Open() {
+		cmd, pick := q.savedList.Key(msg)
+		return cmd, savedRequest(pick)
+	}
 	if q.picking != PickNone {
 		// A click can move the target off the group the list was opened for.
 		if q.Spawning(h) {
@@ -185,6 +193,9 @@ func (q *Bar) HandleKey(h Host, msg tea.KeyMsg) (tea.Cmd, Request) {
 		return nil, Request{}
 	case "ctrl+t", "alt+w":
 		return nil, Request{Toggle: true}
+	case "ctrl+o":
+		q.savedList = spawn.OpenSavedList(nil, true, false)
+		return nil, Request{LoadSaved: true}
 	case "enter":
 		return nil, q.Submit(h)
 	}
@@ -192,6 +203,24 @@ func (q *Bar) HandleKey(h Host, msg tea.KeyMsg) (tea.Cmd, Request) {
 		return cmd, Request{}
 	}
 	return prompt.Type(msg), Request{}
+}
+
+// LoadSaved fills the saved prompts list with the catalog read.
+func (q *Bar) LoadSaved(rows []spawn.Saved, err error) {
+	if q.savedList.Open() {
+		q.savedList.Load(rows, err)
+	}
+}
+
+// SavedOpen says the saved prompts list is showing, which a catalog read
+// that answers late finds closed.
+func (q *Bar) SavedOpen() bool { return q.savedList.Open() }
+
+func savedRequest(pick spawn.SavedPick) Request {
+	if !pick.Picked {
+		return Request{}
+	}
+	return Request{InsertSaved: &pick.Saved}
 }
 
 // Submit answers the selected session, or spawns a new session with the
@@ -226,10 +255,6 @@ func (q *Bar) Submit(h Host) Request {
 // root names the session, fills in the group's launch inputs and checks
 // the directory on the effect lane.
 func (q *Bar) SpawnRequest(h spawn.ChoiceHost, group, prompt string) (spawn.Request, bool) {
-	if strings.HasPrefix(prompt, "-") {
-		h.ReportErr(`prompt cannot start with "-": the tool would read it as a flag`)
-		return spawn.Request{}, false
-	}
 	toolName := q.Tool()
 	if toolName == "" {
 		h.ReportErr("no tools configured")
@@ -292,6 +317,7 @@ func (q *Bar) openPick(h Host, pick int) {
 		return
 	}
 	h.ClearErr()
+	q.savedList.Close()
 	q.picking = pick
 	switch pick {
 	case PickModel:
@@ -393,6 +419,8 @@ const (
 	ClickProfile
 	ClickWorktree
 	ClickEntry
+	// ClickSaved picks the saved prompt on list line Entry.
+	ClickSaved
 )
 
 // Hits are the bar's clickable stretches as last painted.
@@ -429,6 +457,8 @@ func (q *Bar) Click(h Host, hit Hit) Request {
 	case ClickEntry:
 		q.choice.PickEntry(h, q.Tool(), hit.Entry)
 		q.closePick(h)
+	case ClickSaved:
+		return savedRequest(q.savedList.Click(hit.Entry))
 	}
 	return Request{}
 }
@@ -451,10 +481,14 @@ func (q *Bar) Legend(h Host) [][2]string {
 	case PickEffort:
 		return [][2]string{{"type", "effort"}, {"↵", "done"}, {"esc", "back to the prompt"}}
 	}
+	if q.savedList.Open() {
+		return q.savedList.Hint("insert", "back to the prompt")
+	}
 	pairs := [][2]string{{"↵", "send"}, {"↑↓", "target or caret"}, {"tab", "tool"}}
 	if len(q.toolNames) > 1 {
 		pairs = append(pairs, [2]string{"shift+tab", "previous tool"})
 	}
+	pairs = append(pairs, [2]string{"ctrl+o", "saved prompts"})
 	if q.Spawning(h) {
 		if spawn.ModelListed(h, toolName) {
 			pairs = append(pairs, [2]string{ModelKey, "model"})

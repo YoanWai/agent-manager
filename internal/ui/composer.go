@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/YoanWai/agent-manager/internal/clipboard"
+	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -23,6 +25,9 @@ import (
 type composer struct {
 	input       textarea.Model
 	attachments []imageAttachment
+	// saved are the saved prompt chips, each with the text it was picked
+	// with, which takes the chip's place on send.
+	saved       []spawn.Saved
 	lastImageID int
 	maxRows     int
 	top         int
@@ -98,12 +103,21 @@ func pasteTextCmd(target composerID, gen int) tea.Cmd {
 // the prompt value. The token carries the id, so a chip keeps its identity
 // wherever the text around it moves.
 var imageTokenPattern = regexp.MustCompile(`\[Image #(\d+)\]`)
+var savedTokenPattern = regexp.MustCompile(`\[saved prompt:([^\[\]]+)\]`)
 
-func imageToken(id int) string { return fmt.Sprintf("[Image #%d]", id) }
+func imageToken(id int) string      { return fmt.Sprintf("[Image #%d]", id) }
+func savedToken(name string) string { return "[saved prompt:" + name + "]" }
+
+const (
+	tokenImage = iota
+	tokenSaved
+)
 
 // tokenSpan is one chip's place in the prompt value, in rune offsets.
 type tokenSpan struct {
+	kind  int
 	id    int
+	name  string
 	start int
 	end   int
 }
@@ -121,12 +135,55 @@ func (c *composer) tokenSpans() []tokenSpan {
 			continue
 		}
 		spans = append(spans, tokenSpan{
+			kind:  tokenImage,
 			id:    id,
 			start: utf8.RuneCountInString(value[:match[0]]),
 			end:   utf8.RuneCountInString(value[:match[1]]),
 		})
 	}
+	for _, match := range savedTokenPattern.FindAllStringSubmatchIndex(value, -1) {
+		name := value[match[2]:match[3]]
+		if c.savedChip(name) == nil {
+			continue
+		}
+		spans = append(spans, tokenSpan{
+			kind:  tokenSaved,
+			name:  name,
+			start: utf8.RuneCountInString(value[:match[0]]),
+			end:   utf8.RuneCountInString(value[:match[1]]),
+		})
+	}
+	slices.SortFunc(spans, func(a, b tokenSpan) int { return a.start - b.start })
 	return spans
+}
+
+func (c *composer) savedChip(name string) *spawn.Saved {
+	for i := range c.saved {
+		if c.saved[i].Name == name {
+			return &c.saved[i]
+		}
+	}
+	return nil
+}
+
+// insertSaved drops a saved prompt chip in at the caret. Picking a name
+// already in the prompt takes the newer text for both.
+func (c *composer) insertSaved(saved spawn.Saved) {
+	if chip := c.savedChip(saved.Name); chip != nil {
+		chip.Text = saved.Text
+	} else {
+		c.saved = append(c.saved, saved)
+	}
+	runes := []rune(c.input.Value())
+	cursor := c.cursorOffset()
+	token := savedToken(saved.Name)
+	if cursor > 0 && !isSpaceRune(runes[cursor-1]) {
+		token = " " + token
+	}
+	if cursor >= len(runes) || !isSpaceRune(runes[cursor]) {
+		token += " "
+	}
+	c.input.InsertString(token)
 }
 
 func (c *composer) attachment(id int) *imageAttachment {
@@ -168,15 +225,15 @@ func (c *composer) drop(id int) {
 // catch-all for deletions that do not go through the chip-aware keys
 // (ctrl+u, word delete, a fresh SetValue).
 func (c *composer) prune() {
-	if len(c.attachments) == 0 {
-		return
-	}
 	value := c.input.Value()
 	for _, att := range append([]imageAttachment(nil), c.attachments...) {
 		if !strings.Contains(value, imageToken(att.id)) {
 			c.drop(att.id)
 		}
 	}
+	c.saved = slices.DeleteFunc(c.saved, func(saved spawn.Saved) bool {
+		return !strings.Contains(value, savedToken(saved.Name))
+	})
 }
 
 // roomForToken guards the paste against the prompt's char limit:
@@ -197,6 +254,7 @@ func (c *composer) release() {
 	for _, att := range append([]imageAttachment(nil), c.attachments...) {
 		c.drop(att.id)
 	}
+	c.saved = nil
 }
 
 // cursorOffset is the caret's rune offset into the whole prompt value.
@@ -292,7 +350,11 @@ func (c *composer) removeToken(span tokenSpan) tea.Cmd {
 		cursor = span.start
 	}
 	cmd := c.setValue(string(runes[:span.start])+string(runes[span.end:]), cursor)
-	c.drop(span.id)
+	if span.kind == tokenImage {
+		c.drop(span.id)
+	} else {
+		c.prune()
+	}
 	return cmd
 }
 
@@ -310,6 +372,9 @@ func (c *composer) removeImage(id int) tea.Cmd {
 // withPadding grows a span over the spacing the paste itself added, so
 // removing a chip leaves the words around it as they were.
 func (c *composer) withPadding(span tokenSpan, runes []rune) tokenSpan {
+	if span.kind != tokenImage {
+		return span
+	}
 	att := c.attachment(span.id)
 	if att.leadPad && span.start > 0 && runes[span.start-1] == ' ' {
 		span.start--
@@ -387,7 +452,13 @@ func (c *composer) message() string {
 		}
 		return att.path
 	})
-	return strings.TrimSpace(value)
+	// A saved prompt's text goes in as written, so it is put in after the
+	// trim.
+	value = strings.TrimSpace(value)
+	for _, saved := range c.saved {
+		value = strings.ReplaceAll(value, savedToken(saved.Name), saved.Text)
+	}
+	return value
 }
 
 // Keep the textarea viewport at row zero so view owns scrolling.
@@ -443,6 +514,10 @@ func (c *composer) renderChips(view string) string {
 			view = strings.ReplaceAll(view, token, imageChipPasting(token))
 			continue
 		}
+		view = strings.ReplaceAll(view, token, imageChip(token))
+	}
+	for _, saved := range c.saved {
+		token := savedToken(saved.Name)
 		view = strings.ReplaceAll(view, token, imageChip(token))
 	}
 	return view
