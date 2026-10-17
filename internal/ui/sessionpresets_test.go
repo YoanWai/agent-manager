@@ -169,8 +169,9 @@ func TestSessionPresetsMouseActionsAndScrolling(t *testing.T) {
 		m.store.SaveSessionPreset("", store.SessionPreset{Name: fmt.Sprintf("Role %02d", i), Instructions: "text"})
 	}
 	m.openSettings()
+	m.settings.field = settingsFieldPresets
 	m.viewSettings()
-	_, cmd := m.handleSettingsClick(m.cardLeft+4, m.cardTop+2+settingsFieldPresets)
+	_, cmd := m.handleSettingsClick(m.cardLeft+4, m.cardTop+2+m.settings.presetsRow)
 	m.runBatch(t, cmd)
 	if !m.presets.open {
 		t.Fatal("Settings row click did not open library")
@@ -283,7 +284,7 @@ func TestSessionPresetsLateLibraryReadCannotReplaceReopenedLibrary(t *testing.T)
 }
 
 func TestSessionPresetsHelpNamesControls(t *testing.T) {
-	sections := helpSections(keybind.DefaultSession(), keybind.DefaultList(), true)
+	sections := glyphsFor(glyphModeBasic).helpSections(keybind.DefaultSession(), keybind.DefaultList(), true)
 	found := false
 	for _, section := range sections {
 		if section.title == "saved prompts" {

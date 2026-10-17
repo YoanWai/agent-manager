@@ -347,11 +347,11 @@ func TestFullRowWorkingWithoutPaneLineAnimatesLoader(t *testing.T) {
 	m.comfortableRows = true
 	m.paneLines = nil
 	row := m.rows[4]
-	lines := splitLines(m.renderTreeRow(row, false, m.width-1, 4, panelHex()))
+	lines := splitLines(m.renderTreeRow(row, false, m.width-1, 4, panelHex()).text)
 	if len(lines) != 3 {
 		t.Fatalf("comfortable row painted %d lines, want 3", len(lines))
 	}
-	frame := startupFrames[m.startupPhase%len(startupFrames)]
+	frame := m.glyphs().startupFrame(m.startupPhase)
 	state := ansi.Strip(lines[2])
 	if !strings.Contains(state, frame+" working") {
 		t.Fatalf("working row without a pane line should animate a loader, got %q", state)

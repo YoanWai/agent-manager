@@ -23,7 +23,7 @@ func namedKey(t tea.KeyType) tea.KeyMsg { return tea.KeyMsg{Type: t} }
 // that separates alternatives inside one row.
 func helpKeyTokens() map[string]bool {
 	tokens := map[string]bool{}
-	for _, section := range helpSections(keybind.DefaultSession(), keybind.DefaultList(), true) {
+	for _, section := range glyphsFor(glyphModeBasic).helpSections(keybind.DefaultSession(), keybind.DefaultList(), true) {
 		for _, row := range section.rows {
 			for _, token := range strings.Split(row[0], " / ") {
 				if token = strings.TrimSpace(token); token != "" {
@@ -59,7 +59,7 @@ func TestHelpListRowsFollowTheKeyTable(t *testing.T) {
 		With(keybind.Kill, bindingOf(t)).
 		With(keybind.Quit, bindingOf(t))
 	rows := map[string]string{}
-	for _, section := range helpSections(keybind.DefaultSession(), list, true) {
+	for _, section := range glyphsFor(glyphModeBasic).helpSections(keybind.DefaultSession(), list, true) {
 		for _, row := range section.rows {
 			rows[section.title+"/"+row[0]] = row[1]
 		}
@@ -79,7 +79,7 @@ func TestHelpListRowsFollowTheKeyTable(t *testing.T) {
 }
 
 func TestHelpSectionListsAKeyOnce(t *testing.T) {
-	for _, section := range helpSections(keybind.DefaultSession(), keybind.DefaultList(), true) {
+	for _, section := range glyphsFor(glyphModeBasic).helpSections(keybind.DefaultSession(), keybind.DefaultList(), true) {
 		seen := map[string]bool{}
 		for _, row := range section.rows {
 			if row[0] == "" {
@@ -94,12 +94,12 @@ func TestHelpSectionListsAKeyOnce(t *testing.T) {
 }
 
 func TestHelpNamesTheInboxBadgeOnASessionRow(t *testing.T) {
-	for _, section := range helpSections(keybind.DefaultSession(), keybind.DefaultList(), true) {
+	for _, section := range glyphsFor(glyphModeBasic).helpSections(keybind.DefaultSession(), keybind.DefaultList(), true) {
 		if section.title != "the mark on a session row" {
 			continue
 		}
 		for _, row := range section.rows {
-			if strings.Contains(row[0], "✉") && strings.Contains(row[1], "another agent") {
+			if strings.Contains(row[0], inboxGlyph) && strings.Contains(row[1], "another agent") {
 				return
 			}
 		}
@@ -109,7 +109,7 @@ func TestHelpNamesTheInboxBadgeOnASessionRow(t *testing.T) {
 }
 
 func TestHelpEveryRowHasADescription(t *testing.T) {
-	for _, section := range helpSections(keybind.DefaultSession(), keybind.DefaultList(), true) {
+	for _, section := range glyphsFor(glyphModeBasic).helpSections(keybind.DefaultSession(), keybind.DefaultList(), true) {
 		if len(section.rows) == 0 {
 			t.Errorf("section %q has no rows", section.title)
 		}
@@ -122,7 +122,7 @@ func TestHelpEveryRowHasADescription(t *testing.T) {
 }
 
 func TestHelpSearchNarrowsToMatchingRows(t *testing.T) {
-	all := helpSections(keybind.DefaultSession(), keybind.DefaultList(), true)
+	all := glyphsFor(glyphModeBasic).helpSections(keybind.DefaultSession(), keybind.DefaultList(), true)
 	if got := matchHelp(all, ""); len(got) != len(all) {
 		t.Fatalf("empty query dropped sections: %d of %d", len(got), len(all))
 	}
@@ -145,8 +145,8 @@ func TestHelpSearchNarrowsToMatchingRows(t *testing.T) {
 }
 
 func TestHelpSearchIsCaseInsensitive(t *testing.T) {
-	lower := helpRowCount(matchHelp(helpSections(keybind.DefaultSession(), keybind.DefaultList(), true), "revive"))
-	upper := helpRowCount(matchHelp(helpSections(keybind.DefaultSession(), keybind.DefaultList(), true), "REVIVE"))
+	lower := helpRowCount(matchHelp(glyphsFor(glyphModeBasic).helpSections(keybind.DefaultSession(), keybind.DefaultList(), true), "revive"))
+	upper := helpRowCount(matchHelp(glyphsFor(glyphModeBasic).helpSections(keybind.DefaultSession(), keybind.DefaultList(), true), "REVIVE"))
 	if lower == 0 || lower != upper {
 		t.Fatalf("case changed the hits: %d lower, %d upper", lower, upper)
 	}
@@ -156,7 +156,7 @@ func TestHelpSearchIsCaseInsensitive(t *testing.T) {
 // should hand back the review screen, not the two rows spelling the word.
 func TestHelpSearchOnASectionTitleKeepsItsRows(t *testing.T) {
 	var review helpSection
-	for _, section := range helpSections(keybind.DefaultSession(), keybind.DefaultList(), true) {
+	for _, section := range glyphsFor(glyphModeBasic).helpSections(keybind.DefaultSession(), keybind.DefaultList(), true) {
 		if strings.HasPrefix(section.title, "review") {
 			review = section
 		}
@@ -164,7 +164,7 @@ func TestHelpSearchOnASectionTitleKeepsItsRows(t *testing.T) {
 	if len(review.rows) == 0 {
 		t.Fatal("no review section in the catalog")
 	}
-	for _, section := range matchHelp(helpSections(keybind.DefaultSession(), keybind.DefaultList(), true), "review") {
+	for _, section := range matchHelp(glyphsFor(glyphModeBasic).helpSections(keybind.DefaultSession(), keybind.DefaultList(), true), "review") {
 		if section.title != review.title {
 			continue
 		}
@@ -432,8 +432,8 @@ func TestHelpReportsWhenNothingMatches(t *testing.T) {
 // The column is measured from the catalog, so a key can never render clipped
 // against its own description. This is what catches a long binding added later.
 func TestHelpKeyColumnFitsEveryKey(t *testing.T) {
-	column := helpKeyColumn(keybind.DefaultSession(), keybind.DefaultList(), true)
-	for _, section := range helpSections(keybind.DefaultSession(), keybind.DefaultList(), true) {
+	column := glyphsFor(glyphModeBasic).helpKeyColumn(keybind.DefaultSession(), keybind.DefaultList(), true)
+	for _, section := range glyphsFor(glyphModeBasic).helpSections(keybind.DefaultSession(), keybind.DefaultList(), true) {
 		for _, row := range section.rows {
 			if w := ansi.StringWidth(row[0]); w >= column {
 				t.Errorf("key %q is %d wide, the column is %d", row[0], w, column)
@@ -445,8 +445,8 @@ func TestHelpKeyColumnFitsEveryKey(t *testing.T) {
 // Descriptions have to survive the default card too: a row wider than the
 // column leaves it renders with an ellipsis instead of its own words.
 func TestHelpDescriptionsFitTheDefaultCard(t *testing.T) {
-	room := cardInnerWidth(helpCardWidth(120)) - helpKeyColumn(keybind.DefaultSession(), keybind.DefaultList(), true)
-	for _, section := range helpSections(keybind.DefaultSession(), keybind.DefaultList(), true) {
+	room := cardInnerWidth(helpCardWidth(120)) - glyphsFor(glyphModeBasic).helpKeyColumn(keybind.DefaultSession(), keybind.DefaultList(), true)
+	for _, section := range glyphsFor(glyphModeBasic).helpSections(keybind.DefaultSession(), keybind.DefaultList(), true) {
 		for _, row := range section.rows {
 			if w := ansi.StringWidth(row[1]); w > room {
 				t.Errorf("section %q: %q is %d wide, only %d is left beside the key column",
@@ -460,7 +460,7 @@ func TestHelpHighlightSurvivesAnAwkwardQuery(t *testing.T) {
 	// Folding "İ" lengthens it, which is the case that would slice out of
 	// range if the run were measured by the raw query.
 	for _, query := range []string{"İ", "ẞ", "", "  ", "the", "THE"} {
-		for _, section := range helpSections(keybind.DefaultSession(), keybind.DefaultList(), true) {
+		for _, section := range glyphsFor(glyphModeBasic).helpSections(keybind.DefaultSession(), keybind.DefaultList(), true) {
 			for _, row := range section.rows {
 				highlightMatch(row[1], query, 60)
 			}
@@ -470,7 +470,7 @@ func TestHelpHighlightSurvivesAnAwkwardQuery(t *testing.T) {
 
 func TestHelpSessionRowsFollowTheKeyTable(t *testing.T) {
 	rowFor := func(keys keybind.Table, key string) (string, bool) {
-		for _, section := range helpSections(keys, keybind.DefaultList(), true) {
+		for _, section := range glyphsFor(glyphModeBasic).helpSections(keys, keybind.DefaultList(), true) {
 			if section.title != "inside a session (attached or focused)" {
 				continue
 			}

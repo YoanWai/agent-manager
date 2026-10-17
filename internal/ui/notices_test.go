@@ -1570,7 +1570,7 @@ func TestWelcomeSessionKeysLineFollowsTheKeyTable(t *testing.T) {
 func TestWelcomeBodyFollowsTheListTable(t *testing.T) {
 	m := &Model{keys: keybind.DefaultSession(), listKeys: keybind.DefaultList()}
 	body := strings.Join(m.welcomeBody(), "\n")
-	for _, want := range []string{"n      new session           space  quick prompt mode", "↵      focus it              A      attach it full screen", "x / v  kill / revive         s      settings", "space on a group row", "Press ? for every key: the map scrolls, and / searches it.", "Settings (s)"} {
+	for _, want := range []string{"n      new session           space  quick prompt mode", "↵      focus it              A      attach it full screen", "x / v  kill / revive         s      settings", "space on a group row", "Press ? for every key: the map scrolls, and / searches it.", "Settings (s)", "Marks missing? Settings (s), symbols, Compatible."} {
 		if !strings.Contains(body, want) {
 			t.Errorf("default welcome is missing %q:\n%s", want, body)
 		}
@@ -1581,7 +1581,7 @@ func TestWelcomeBodyFollowsTheListTable(t *testing.T) {
 		With(keybind.Search, bindingOf(t)).
 		With(keybind.Settings, bindingOf(t, "S"))
 	body = strings.Join(m.welcomeBody(), "\n")
-	for _, want := range []string{"N      new session", "Press ? for every key: the map scrolls.", "Settings (S)", "x / v  kill / revive         S      settings"} {
+	for _, want := range []string{"N      new session", "Press ? for every key: the map scrolls.", "Settings (S)", "x / v  kill / revive         S      settings", "Marks missing? Settings (S), symbols, Compatible."} {
 		if !strings.Contains(body, want) {
 			t.Errorf("remapped welcome is missing %q:\n%s", want, body)
 		}

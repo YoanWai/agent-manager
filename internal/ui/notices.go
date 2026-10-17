@@ -771,7 +771,7 @@ func (m *Model) noticeTail(notices []notice, inner int) []string {
 		tail = append(tail, lipgloss.NewStyle().Foreground(colorAccent).Render("↓ downloading "+m.update.latest+"…"))
 	}
 	if m.errBar.text != "" {
-		tail = append(tail, m.statusMessage("✕", "●", "▲"))
+		tail = append(tail, m.statusMessage(m.glyphs().erroredGlyph, m.glyphs().finishedGlyph, "▲"))
 	}
 	return tail
 }
@@ -914,7 +914,11 @@ func (m *Model) welcomeBody() []string {
 	if prompt != "" {
 		body = append(body, prompt+" on a group row opens quick prompt mode to start a new agent there.")
 	}
-	body = append(body, "Each row's mark is its state: ◐ working, ◆ waiting, ● finished, ○ idle.", "")
+	body = append(body,
+		"Each row's mark is its state: "+m.glyphs().workingGlyph+" working, "+m.glyphs().waitingGlyph+" waiting, "+m.glyphs().finishedGlyph+" finished, "+m.glyphs().idleGlyph+" idle.",
+		"Marks missing? Settings ("+settings+"), symbols, Compatible.",
+		"",
+	)
 	if help != "" {
 		keyMap := "Press " + help + " for every key: the map scrolls"
 		if search != "" {

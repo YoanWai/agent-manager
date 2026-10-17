@@ -41,7 +41,7 @@ func (m *Model) view() string {
 	}
 	if m.booting {
 		var lines []string
-		for _, line := range ringLoader(m.width, m.height, "loading", m.startupPhase) {
+		for _, line := range m.glyphs().ringLoader(m.width, m.height, "loading", m.startupPhase) {
 			lines = append(lines, paint(line, m.width, backdropHex()))
 		}
 		frame := m.overlayTopRight(strings.Join(lines, "\n"), m.statusToast(), 0)
@@ -191,7 +191,7 @@ func (m *Model) statusLine() string {
 	// Errors outrank the focus notices: a scrolled or focused pane must
 	// not hide a failure report.
 	case m.mode == modeFocus && m.errBar.text != "":
-		return m.statusMessage("✕", "●", "▲")
+		return m.statusMessage(m.glyphs().erroredGlyph, m.glyphs().finishedGlyph, "▲")
 	case m.scrolledBack():
 		catchUp := "wheel down or type"
 		if sess, ok := m.selected(); ok && m.focusPagesScrollback(sess) {
@@ -209,9 +209,9 @@ func (m *Model) statusLine() string {
 		}
 		return keyStyle.Render("resize ") + subtleStyle.Render(hint)
 	case m.errBar.text != "":
-		return m.statusMessage("✕", "●", "▲")
+		return m.statusMessage(m.glyphs().erroredGlyph, m.glyphs().finishedGlyph, "▲")
 	case m.diff.notice != "":
-		return doneStyle.Render("● " + escapeControlsInline(m.diff.notice))
+		return doneStyle.Render(m.glyphs().finishedGlyph + " " + escapeControlsInline(m.diff.notice))
 	default:
 		return ""
 	}
@@ -279,7 +279,7 @@ func (m *Model) renamingRow(entry treeRow) bool {
 // renameRowInput renders the inline name editor in place of the row's
 // label, keeping the row's glyph so the edit reads in context.
 func (m *Model) renameRowInput(entry treeRow, width int) string {
-	lead := subtleStyle.Render("▾")
+	lead := subtleStyle.Render(m.groupGlyph(entry))
 	if !entry.isGroup {
 		lead = m.sessionGlyph(entry.sess)
 	}
@@ -360,7 +360,7 @@ func (m *Model) groupStatusGlyphs(group string) string {
 			continue
 		}
 		parts = append(parts, lipgloss.NewStyle().Foreground(statusColor(st)).
-			Render(fmt.Sprintf("%s %d", statusGlyph(st), counts[st])))
+			Render(fmt.Sprintf("%s %d", m.glyphs().statusGlyph(st), counts[st])))
 	}
 	return strings.Join(parts, subtleStyle.Render("  "))
 }

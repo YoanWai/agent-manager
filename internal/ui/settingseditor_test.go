@@ -13,7 +13,7 @@ import (
 func editorSettings(t *testing.T, m *Model, installed ...string) {
 	t.Helper()
 	captureEditor(t, installed...)
-	m.applyCmd(t, m.openSettings())
+	m.runBatch(t, m.openSettings())
 	m.settings.field = settingsFieldEditor
 }
 

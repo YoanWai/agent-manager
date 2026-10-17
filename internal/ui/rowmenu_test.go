@@ -22,6 +22,22 @@ func menuEntry(t *testing.T, m *Model, label string) int {
 	return -1
 }
 
+func TestRootMenuOpensSettings(t *testing.T) {
+	m := buildModel(t)
+	m.rebuildRows()
+	m.openRowMenu(0, 2, 2)
+	m.View()
+	settings := menuEntry(t, m, "Settings")
+	_, cmd := m.handleMouse(tea.MouseMsg{
+		X: m.menu.left + 2, Y: m.menu.top + 1 + settings,
+		Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
+	})
+	m.runBatch(t, cmd)
+	if m.menu.active || m.mode != modeSettings {
+		t.Fatal("root menu must open Settings even in an empty workspace")
+	}
+}
+
 func TestMenuStaysOpenAfterTheDotsRelease(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "alpha", t.TempDir(), "")
