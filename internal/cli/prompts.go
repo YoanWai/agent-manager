@@ -72,7 +72,7 @@ func runPromptsAdd(out io.Writer, args []string, configDir string) error {
 		return err
 	}
 	defer st.Close()
-	name := operands[0]
+	name := strings.TrimSpace(operands[0])
 	previous := ""
 	if _, found, err := st.SessionPreset(name); err != nil {
 		return err
@@ -83,7 +83,7 @@ func runPromptsAdd(out io.Writer, args []string, configDir string) error {
 	if err := st.SaveSessionPreset(previous, preset); err != nil {
 		return err
 	}
-	return emit(out, *asJSON, savedPromptRecord{Name: strings.TrimSpace(name), Text: operands[1]}, "saved "+strings.TrimSpace(name))
+	return emit(out, *asJSON, savedPromptRecord{Name: name, Text: operands[1]}, "saved "+name)
 }
 
 func runPromptsRm(out io.Writer, args []string, configDir string) error {
