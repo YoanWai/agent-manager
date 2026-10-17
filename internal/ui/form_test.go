@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1337,6 +1338,23 @@ func TestFormMarksAFailedBaseFetch(t *testing.T) {
 	m.recordBaseFetch(next().(baseFetchedMsg))
 	if view := m.viewForm(); !strings.Contains(view, "origin/main (auto) · fetch failed") {
 		t.Fatalf("form should say the base was not refreshed, got %q", view)
+	}
+}
+
+// A base lookup that fails reads as a failure in the preview, not as the
+// HEAD a repo with no default branch falls back to.
+func TestSpawnBasePreviewNamesAFailedLookup(t *testing.T) {
+	m := buildModel(t)
+	m.baseFetchOff = true
+	key := baseFetchKey{dir: t.TempDir()}
+	m.baseFetches = map[baseFetchKey]baseFetch{key: {}}
+	m.recordBaseFetch(baseFetchedMsg{key: key, lookupErr: errors.New("bad config line")})
+	if got := ansi.Strip(m.spawnBaseLabel(key.dir, "")); got != "base lookup failed" {
+		t.Fatalf("label = %q, want base lookup failed", got)
+	}
+	m.recordBaseFetch(baseFetchedMsg{key: key})
+	if got := ansi.Strip(m.spawnBaseLabel(key.dir, "")); got != "HEAD (auto)" {
+		t.Fatalf("label = %q, want HEAD (auto) when the repo names no default", got)
 	}
 }
 
