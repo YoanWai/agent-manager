@@ -174,6 +174,12 @@ func (m *Model) handleMousePress(msg tea.MouseMsg, ctx uirail.MouseContext) (tea
 	if m.mode == modeNotices {
 		return m.handleNoticesClick(msg.Y)
 	}
+	if m.mode == modeMove {
+		return m.handleMoveClick(msg.Y)
+	}
+	if m.mode == modeRepoPick {
+		return m, m.handleRepoPickClick(msg.Y)
+	}
 	if m.layout.split.resizeMode || m.mode != modeList {
 		return m, nil
 	}
@@ -204,45 +210,42 @@ func (m *Model) handleMouseWheel(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.layout.split.resizeMode || m.layout.split.dragging {
 		return m, nil
 	}
+	if m.mode == modeList {
+		return m.applyRailDecision(m.rail.Mouse(msg, m.layout.displayedRail, m.railMouseContext()))
+	}
+	step := 0
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		step = -1
+	case tea.MouseButtonWheelDown:
+		step = 1
+	default:
+		return m, nil
+	}
+	arrow := tea.KeyMsg{Type: tea.KeyDown}
+	if step < 0 {
+		arrow.Type = tea.KeyUp
+	}
 	switch m.mode {
 	case modeSettings:
 		if d := m.settings.dialog; d.Editor.Typing() || d.KeyCapture || d.KeyReset || (d.Prompts.Open() && !d.Prompts.Listing()) {
 			return m, nil
 		}
-		switch msg.Button {
-		case tea.MouseButtonWheelUp:
-			return m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyUp})
-		case tea.MouseButtonWheelDown:
-			return m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
-		}
-
-	case modeList:
-		return m.applyRailDecision(m.rail.Mouse(msg, m.layout.displayedRail, m.railMouseContext()))
+		return m.handleSettingsKey(arrow)
 	case modeDiff:
 		state := m.review.Snapshot()
 		if state.Annotating || state.SendConfirm {
 			return m, nil
 		}
-		switch msg.Button {
-		case tea.MouseButtonWheelUp:
-			m.review.Wheel(-1, m.diffCodeHeight())
-		case tea.MouseButtonWheelDown:
-			m.review.Wheel(1, m.diffCodeHeight())
-		}
+		m.review.Wheel(step, m.diffCodeHeight())
 	case modeNotices:
-		switch msg.Button {
-		case tea.MouseButtonWheelUp:
-			m.scrollNotices(-uinotices.WheelRows)
-		case tea.MouseButtonWheelDown:
-			m.scrollNotices(uinotices.WheelRows)
-		}
+		m.scrollNotices(step * uinotices.WheelRows)
 	case modeHelp:
-		switch msg.Button {
-		case tea.MouseButtonWheelUp:
-			return m.handleHelpKey(tea.KeyMsg{Type: tea.KeyUp})
-		case tea.MouseButtonWheelDown:
-			return m.handleHelpKey(tea.KeyMsg{Type: tea.KeyDown})
-		}
+		return m.handleHelpKey(arrow)
+	case modeMove:
+		return m.handleMoveKey(arrow)
+	case modeRepoPick:
+		return m, m.handleRepoPickKey(arrow)
 	}
 	return m, nil
 }

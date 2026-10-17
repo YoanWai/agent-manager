@@ -203,7 +203,15 @@ func (m *Model) handleReviewPickerLoaded(msg reviewPickerLoadedMsg) tea.Cmd {
 
 func (m *Model) handleRepoPickKey(msg tea.KeyMsg) tea.Cmd {
 	picker := &m.reviewNav.picker
-	result := picker.Key(msg, m.review.PickerSourceCurrent(picker.Source()))
+	return m.applyRepoPick(picker.Key(msg, m.review.PickerSourceCurrent(picker.Source())))
+}
+
+func (m *Model) handleRepoPickClick(y int) tea.Cmd {
+	picker := &m.reviewNav.picker
+	return m.applyRepoPick(picker.Click(y-m.layout.cardTop-2, m.review.PickerSourceCurrent(picker.Source())))
+}
+
+func (m *Model) applyRepoPick(result uireview.PickerResult) tea.Cmd {
 	if result.Quit {
 		return m.quit()
 	}
@@ -224,7 +232,7 @@ func (m *Model) handleRepoPickKey(msg tea.KeyMsg) tea.Cmd {
 }
 
 func (m *Model) viewRepoPick() string {
-	picker := m.reviewNav.picker
+	picker := &m.reviewNav.picker
 	body := picker.Body(m.reviewRenderContext(), m.cardWidth()-2*cardPaddingX, m.layout.height)
 	return m.card(picker.Title(), body, picker.Hints())
 }

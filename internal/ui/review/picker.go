@@ -50,6 +50,8 @@ type Picker struct {
 	kind      PickerKind
 	source    PickerSource
 	storeRoot string
+	// first and end are the rows the window painted.
+	first, end int
 }
 
 // PickerChoice is the row Enter picked, for root to retarget or persist.
@@ -153,19 +155,30 @@ func (p *Picker) moveCursor(delta, count int) {
 	p.cursor = (p.cursor + delta + count) % count
 }
 
-func (p Picker) window(height, count int) (start, end int) {
-	visible := max(3, height-pickerChrome)
-	if count <= visible {
-		return 0, count
+func (p *Picker) window(height, count int) (start, end int) {
+	visible := min(max(3, height-pickerChrome), count)
+	p.first = presentation.Follow(p.first, p.cursor, count, visible)
+	p.end = p.first + visible
+	return p.first, p.end
+}
+
+// pickerRowsTop is the body line of the first row, under the filter line
+// and the blank below it.
+const pickerRowsTop = 2
+
+// Click is a press on line of the card's body. The first click on a row
+// moves the cursor there; one on the row under the cursor picks it, the way
+// ↵ does.
+func (p *Picker) Click(line int, sourceCurrent bool) PickerResult {
+	row := p.first + line - pickerRowsTop
+	switch {
+	case row < p.first || row >= p.end:
+		return PickerResult{}
+	case row != p.cursor:
+		p.cursor = row
+		return PickerResult{}
 	}
-	start = p.cursor - visible/2
-	if start < 0 {
-		start = 0
-	}
-	if start+visible > count {
-		start = count - visible
-	}
-	return start, start + visible
+	return p.Key(tea.KeyMsg{Type: tea.KeyEnter}, sourceCurrent)
 }
 
 // row renders one picker row inside a card of inner width.
@@ -187,7 +200,7 @@ func (p Picker) row(s Styles, inner int, row PickerRow, selected bool) string {
 
 // Body is the card content for a terminal height rows tall and a card whose
 // rows are inner columns wide; root wraps it in the shared card chrome.
-func (p Picker) Body(ctx RenderContext, inner, height int) string {
+func (p *Picker) Body(ctx RenderContext, inner, height int) string {
 	s := ctx.Styles
 	rows := p.filteredRows()
 	var body strings.Builder
