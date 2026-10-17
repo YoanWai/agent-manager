@@ -13,7 +13,7 @@ func (s *State) viewKeyPicker(ctx ViewContext) Frame {
 	if s.KeyReset {
 		return Frame{
 			Card:        Confirm,
-			Title:       "↺ Reset keys",
+			Title:       presentation.GlyphsFor(ctx.GlyphMode).ResetGlyph + " Reset keys",
 			Question:    "Reset every key to its default?",
 			Consequence: strings.Join(keyResetChanges(tables...), "\n"),
 			Destructive: true,
@@ -48,7 +48,7 @@ func (s *State) viewKeyPicker(ctx ViewContext) Frame {
 		marker := "  "
 		labelStyle := st.Value
 		if s.KeyCursor == i {
-			marker = st.Marker.Render("❯ ")
+			marker = st.Marker.Render(presentation.GlyphsFor(ctx.GlyphMode).SelectionGlyph + " ")
 			labelStyle = st.Focused
 		}
 		value := keys.Binding(row.Action.Name).Label()
@@ -74,7 +74,7 @@ func (s *State) viewKeyPicker(ctx ViewContext) Frame {
 		b.WriteString(st.Subtle.Render(fmt.Sprintf("  ↓ %d more", len(rows)-last)) + "\n")
 		s.lines.Show(last, 1)
 	}
-	return Frame{Card: Flex, Title: "⚙ Keybindings", Body: strings.TrimRight(b.String(), "\n"), Hints: hint}
+	return Frame{Card: Flex, Title: presentation.GlyphsFor(ctx.GlyphMode).SettingsGlyph + " Keybindings", Body: strings.TrimRight(b.String(), "\n"), Hints: hint}
 }
 
 // keyWindow is the rows [first, last) whose lines, headings and "more"

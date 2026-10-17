@@ -98,12 +98,12 @@ func (q *Bar) statusRow(h Host, facts Facts, left string, width, line int) strin
 	if spawn.HasProfiles(h, toolName) {
 		segments = append(segments, segment{orDefault(ch.ProfileName(h, toolName), "default profile"), ClickProfile})
 	}
-	worktree := st.Subtle.Render("⎇ off")
+	worktree := st.Subtle.Render(presentation.GlyphsFor(st.GlyphMode).WorktreeGlyph + " off")
 	switch {
 	case !facts.WorktreeKnown || !facts.WorktreeCapable:
-		worktree = st.Subtle.Render("⎇ no repo")
+		worktree = st.Subtle.Render(presentation.GlyphsFor(st.GlyphMode).WorktreeGlyph + " no repo")
 	case facts.WorktreeOn:
-		worktree = lipgloss.NewStyle().Foreground(st.Accent2).Render("⎇ on")
+		worktree = lipgloss.NewStyle().Foreground(st.Accent2).Render(presentation.GlyphsFor(st.GlyphMode).WorktreeGlyph + " on")
 	}
 	segments = append(segments, segment{worktree, ClickWorktree})
 

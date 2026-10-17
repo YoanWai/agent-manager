@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -29,11 +30,11 @@ func TestLaunchHintKeysNeedACommand(t *testing.T) {
 
 func TestLaunchHintViewSetsParagraphsApart(t *testing.T) {
 	plain := lipgloss.NewStyle()
-	card := LaunchHint{Text: "why\n\nhow", Command: "run"}.View(40, plain, plain)
+	card := LaunchHint{Text: "why\n\nhow", Command: "run"}.View(40, plain, plain, presentation.GlyphsFor(""))
 	if card.Body != "why\n\nhow" || len(card.Hints) != 3 {
 		t.Fatalf("card = %+v", card)
 	}
-	if card := (LaunchHint{Text: "why"}).View(40, plain, plain); len(card.Hints) != 1 {
+	if card := (LaunchHint{Text: "why"}).View(40, plain, plain, presentation.GlyphsFor("")); len(card.Hints) != 1 {
 		t.Fatalf("a read-only card offers %v", card.Hints)
 	}
 }
@@ -46,7 +47,7 @@ func TestLaunchHintClickCopiesTheCommandParagraph(t *testing.T) {
 		Command: "curl -fsSL https://claude.ai/install.sh | bash",
 	}
 	for _, inner := range []int{80, 24} {
-		body := strings.Split(fix.View(inner, lipgloss.NewStyle(), lipgloss.NewStyle()).Body, "\n")
+		body := strings.Split(fix.View(inner, lipgloss.NewStyle(), lipgloss.NewStyle(), presentation.GlyphsFor("")).Body, "\n")
 		for line := range body {
 			want := LaunchHintStay
 			if line >= 2 {

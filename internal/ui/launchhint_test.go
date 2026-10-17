@@ -19,6 +19,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/testenv"
 	"github.com/YoanWai/agent-manager/internal/testfixture"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -59,7 +60,7 @@ func TestLaunchHintDialogWithFakeHost(t *testing.T) {
 	if h.mode != modeLaunchHint || h.gens != 1 || len(d.fix.images) != 1 || h.images != nil {
 		t.Fatalf("open: mode %v gens %d fix %+v, want the composer images taken", h.mode, h.gens, d.fix)
 	}
-	if got := d.view(h); !strings.Contains(got, "Session needs a setup step") || !strings.Contains(got, "Run the installer.") {
+	if got := d.view(h, presentation.GlyphsFor("")); !strings.Contains(got, "Session needs a setup step") || !strings.Contains(got, "Run the installer.") {
 		t.Fatalf("view = %q", got)
 	}
 
@@ -153,7 +154,7 @@ func TestReportLaunchErrorOpensInstallHintForMissingCLI(t *testing.T) {
 	if !strings.Contains(m.launchHint.fix.text, "claude") {
 		t.Fatalf("hint %q should name the missing CLI", m.launchHint.fix.text)
 	}
-	frame := ansi.Strip(m.launchHint.view(m))
+	frame := ansi.Strip(m.launchHint.view(m, m.glyphs()))
 	if !strings.Contains(frame, installer) {
 		t.Fatalf("dialog should show the install command:\n%s", frame)
 	}
@@ -527,7 +528,7 @@ func TestLaunchHintWithoutARecipeOffersOnlyClose(t *testing.T) {
 	m := buildModel(t)
 	m.reportLaunchError(config.MissingToolError{Binary: "acme"})
 
-	frame := ansi.Strip(m.launchHint.view(m))
+	frame := ansi.Strip(m.launchHint.view(m, m.glyphs()))
 	if strings.Contains(frame, "copy") {
 		t.Fatalf("dialog should offer neither copy nor install:\n%s", frame)
 	}
@@ -769,7 +770,7 @@ func TestLaunchHintNamesAWindowsOnlyInstall(t *testing.T) {
 
 	m.reportLaunchError(config.MissingToolError{Binary: "claude", WindowsPath: windowsPath})
 
-	frame := ansi.Strip(m.launchHint.view(m))
+	frame := ansi.Strip(m.launchHint.view(m, m.glyphs()))
 	for _, want := range []string{"installed on Windows", "WSL distro", "claude.ai/install.sh"} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("dialog is missing %q:\n%s", want, frame)

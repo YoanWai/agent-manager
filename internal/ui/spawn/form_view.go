@@ -199,7 +199,7 @@ func FormField(st Styles, label, value string, focused bool) string {
 	marker := "  "
 	style := st.Label
 	if focused {
-		marker = lipgloss.NewStyle().Foreground(st.Accent).Render("❯ ")
+		marker = lipgloss.NewStyle().Foreground(st.Accent).Render(presentation.GlyphsFor(st.GlyphMode).SelectionGlyph + " ")
 		style = lipgloss.NewStyle().Foreground(st.Accent).Bold(true)
 	}
 	lines := strings.Split(value, "\n")

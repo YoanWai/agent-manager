@@ -81,6 +81,7 @@ func (m *Model) activeNotices() []uinotices.Notice {
 // bar as the panel's tail shows them.
 func (m *Model) noticesFrame() uinotices.Frame {
 	return uinotices.Frame{
+		GlyphMode:  m.prefs.glyphMode,
 		Width:      m.layout.width,
 		Height:     m.layout.height,
 		Refreshing: m.update.refreshing,
@@ -400,5 +401,5 @@ func (m *Model) statusRow() string {
 	if m.errBar.text == "" {
 		return ""
 	}
-	return m.statusMessage(m.glyphs().ErroredGlyph, m.glyphs().FinishedGlyph, "▲")
+	return m.statusMessage(m.glyphs().ErroredGlyph, m.glyphs().FinishedGlyph, m.glyphs().WarningGlyph)
 }

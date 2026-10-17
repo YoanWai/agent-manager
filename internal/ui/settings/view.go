@@ -26,6 +26,7 @@ type Styles struct {
 // the root's text-field renderer, which marks the IME cursor. Chrome is the
 // rows the card spends around a body with this hint.
 type ViewContext struct {
+	GlyphMode       presentation.GlyphMode
 	Session, List   keybind.Table
 	Version, Latest string
 	Applying        bool
@@ -83,7 +84,7 @@ func (s *State) View(ctx ViewContext) Frame {
 		marker := "  "
 		labelStyle := st.Value
 		if s.Field == field {
-			marker = st.Marker.Render("❯ ")
+			marker = st.Marker.Render(presentation.GlyphsFor(ctx.GlyphMode).SelectionGlyph + " ")
 			labelStyle = st.Focused
 		}
 		return marker + presentation.PadRight(labelStyle.Render(name), 18)
@@ -101,7 +102,7 @@ func (s *State) View(ctx ViewContext) Frame {
 		marker := "  "
 		labelStyle := st.Action
 		if s.Field == field {
-			marker = st.Marker.Render("❯ ")
+			marker = st.Marker.Render(presentation.GlyphsFor(ctx.GlyphMode).SelectionGlyph + " ")
 			labelStyle = st.Focused
 		}
 		return marker + presentation.PadRight(labelStyle.Render(name), 18)
@@ -193,7 +194,7 @@ func (s *State) View(ctx ViewContext) Frame {
 			hint = [][2]string{{"↑↓", "field"}, {"↵/esc", "save"}}
 		}
 	}
-	return Frame{Card: Flex, Title: "⚙ Settings", Body: s.fitRows(ctx, lines, hint), Hints: hint}
+	return Frame{Card: Flex, Title: presentation.GlyphsFor(ctx.GlyphMode).SettingsGlyph + " Settings", Body: s.fitRows(ctx, lines, hint), Hints: hint}
 }
 
 // fitRows puts the save button over the rows that fit the terminal, held
@@ -243,7 +244,7 @@ func (s *State) viewCLIPicker(ctx ViewContext) Frame {
 		marker := "  "
 		labelStyle := st.Value
 		if s.CLICursor == i {
-			marker = st.Marker.Render("❯ ")
+			marker = st.Marker.Render(presentation.GlyphsFor(ctx.GlyphMode).SelectionGlyph + " ")
 			labelStyle = st.Focused
 		}
 		box := "[x]"
@@ -260,7 +261,7 @@ func (s *State) viewCLIPicker(ctx ViewContext) Frame {
 	reqMarker := "  "
 	reqLabel := st.Muted.Render("request CLI support")
 	if reqFocused {
-		reqMarker = st.Marker.Render("❯ ")
+		reqMarker = st.Marker.Render(presentation.GlyphsFor(ctx.GlyphMode).SelectionGlyph + " ")
 		reqLabel = st.Focused.Render("request CLI support")
 	}
 	b.WriteByte('\n')
@@ -278,7 +279,7 @@ func (s *State) viewCLIPicker(ctx ViewContext) Frame {
 		hint = [][2]string{{"↑↓", "move"}, {"↵", "open request issue"}, {"esc", "back"}}
 	}
 	// Fixed card width: short checkbox rows must not stretch a wide empty panel.
-	return Frame{Card: Fixed, Title: "⚙ CLIs", Body: strings.TrimRight(b.String(), "\n"), Hints: hint}
+	return Frame{Card: Fixed, Title: presentation.GlyphsFor(ctx.GlyphMode).SettingsGlyph + " CLIs", Body: strings.TrimRight(b.String(), "\n"), Hints: hint}
 }
 
 // themeSwatch previews a palette as a run of blocks, so a theme can be

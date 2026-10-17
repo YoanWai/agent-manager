@@ -128,7 +128,7 @@ func (m *Model) openRepoPick() {
 	for i, root := range state.RepoRoots {
 		rows[i] = uireview.PickerRow{Label: filepath.Base(root), Root: root}
 	}
-	m.openReviewPicker(rows, "⌥ Review repo", uireview.PickRepo, state.RepoSelected, m.reviewPickerSource(), "")
+	m.openReviewPicker(rows, "Review repo", uireview.PickRepo, state.RepoSelected, m.reviewPickerSource(), "")
 }
 
 // openBranchPick lists the currently selected repo's worktrees, one branch per
@@ -194,9 +194,9 @@ func (m *Model) handleReviewPickerLoaded(msg reviewPickerLoadedMsg) tea.Cmd {
 	}
 	switch msg.request.kind {
 	case reviewPickerLoadBranches:
-		m.openReviewPicker(msg.rows, "⌥ Review branch", uireview.PickRepo, msg.current, msg.request.source, "")
+		m.openReviewPicker(msg.rows, "Review branch", uireview.PickRepo, msg.current, msg.request.source, "")
 	case reviewPickerLoadBases:
-		m.openReviewPicker(msg.rows, "⌥ Diff base", uireview.PickBase, msg.current, msg.request.source, msg.storeRoot)
+		m.openReviewPicker(msg.rows, "Diff base", uireview.PickBase, msg.current, msg.request.source, msg.storeRoot)
 	}
 	return nil
 }
@@ -234,7 +234,7 @@ func (m *Model) applyRepoPick(result uireview.PickerResult) tea.Cmd {
 func (m *Model) viewRepoPick() string {
 	picker := &m.reviewNav.picker
 	body := picker.Body(m.reviewRenderContext(), m.cardWidth()-2*cardPaddingX, m.layout.height)
-	return m.card(picker.Title(), body, picker.Hints())
+	return m.card(m.glyphs().ReviewGlyph+" "+picker.Title(), body, picker.Hints())
 }
 
 func (m *Model) selectRepo(root string) tea.Cmd {

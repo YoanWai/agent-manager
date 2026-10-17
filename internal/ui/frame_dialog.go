@@ -78,7 +78,7 @@ func (m *Model) flexCardWidth(title, body string, hint [][2]string) int {
 	measure(cardTitle(title))
 	measure(legendInline(hint, 1<<30))
 	if m.errBar.text != "" {
-		measure(m.statusMessage("⚠", m.glyphs().FinishedGlyph, "▲"))
+		measure(m.statusMessage(m.glyphs().CardErrorGlyph, m.glyphs().FinishedGlyph, m.glyphs().WarningGlyph))
 	}
 	if m.layout.width >= 28 && need > m.layout.width-4 {
 		need = m.layout.width - 4
@@ -162,7 +162,7 @@ func maxLineWidth(lines []string) int {
 func (m *Model) dialogRenderContext() dialogRenderContext {
 	status := ""
 	if m.errBar.text != "" {
-		status = m.statusMessage("⚠", m.glyphs().FinishedGlyph, "▲")
+		status = m.statusMessage(m.glyphs().CardErrorGlyph, m.glyphs().FinishedGlyph, m.glyphs().WarningGlyph)
 	}
 	return dialogRenderContext{width: m.layout.width, height: m.layout.height, status: status}
 }

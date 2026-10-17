@@ -13,6 +13,7 @@ import (
 // with. It is built per render so a theme change reaches the next frame.
 func (m *Model) reviewRenderContext() uireview.RenderContext {
 	return uireview.RenderContext{
+		GlyphMode: m.prefs.glyphMode,
 		Styles: uireview.Styles{
 			Muted: mutedStyle(), Subtle: subtleStyle(), Value: valueStyle(), Err: errStyle(), Done: doneStyle(),
 			Annotation: annotationStyle(), Section: sectionStyle(), Rule: lipgloss.NewStyle().Foreground(colorBorder()),
@@ -178,7 +179,7 @@ func (m *Model) viewDiffCode(width, height int) string {
 
 func (m *Model) viewDiffStatus() string {
 	if m.errBar.text != "" {
-		return padRight(m.statusMessage(" ✖", " ✔", " ▲"), m.layout.width)
+		return padRight(m.statusMessage(" "+m.glyphs().DiffErrorGlyph, " "+m.glyphs().DiffDoneGlyph, " "+m.glyphs().WarningGlyph), m.layout.width)
 	}
 	return m.review.Status(m.reviewRenderContext(), m.layout.width)
 }

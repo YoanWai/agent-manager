@@ -73,7 +73,7 @@ func (m *Model) openQuickModeWithReader(reader settingsValueReader) tea.Cmd {
 	input.ShowLineNumbers = false
 	input.SetPromptFunc(2, func(lineIndex int) string {
 		if lineIndex == 0 {
-			return keyStyle().Render("❯ ")
+			return keyStyle().Render(m.glyphs().PromptGlyph + " ")
 		}
 		return "  "
 	})
@@ -319,7 +319,7 @@ const (
 )
 
 func (m *Model) viewQuickBar(width, maxRows int) string {
-	facts := uiquick.Facts{WorktreeOn: m.quickWorktreeOn(), LabelWidth: detailLabelWidth, Styles: spawnStyles()}
+	facts := uiquick.Facts{WorktreeOn: m.quickWorktreeOn(), LabelWidth: detailLabelWidth, Styles: m.spawnStyles()}
 	facts.WorktreeCapable, facts.WorktreeKnown = m.cachedWorktreeCapability(m.quickTargetDir())
 	if entry, ok := m.selectedRow(); ok {
 		if entry.isGroup {

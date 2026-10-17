@@ -127,9 +127,9 @@ def frame(sandbox, name, present, absent=''):
                         lambda value: present in value and (not absent or absent not in value))
 
 
-def select_setting(sandbox, label):
+def select_setting(sandbox, label, marker):
     def selected():
-        match = re.search(r'❯ ([^\n]+)', capture(sandbox))
+        match = re.search(r'│\s+' + re.escape(marker) + r' ([^│\n]+)', capture(sandbox))
         return match.group(1).strip() if match else ''
 
     step = 'settings-' + label.replace(' ', '-')
@@ -195,10 +195,10 @@ def store_sessions(sandbox):
     return [dict(id=i, name=n, tool=t, group=g) for i, n, t, g in rows]
 
 
-def spawn_form(sandbox, prompt):
+def spawn_form(sandbox, prompt, new_mark='◆'):
     """The n form; the prompt token becomes the row's displayed name."""
     key(sandbox, 'n')
-    frame(sandbox, 'form-open', '◆ New Session')
+    frame(sandbox, 'form-open', new_mark + ' New Session')
     sandbox.tmux('send-keys','-l','-t','scen:0.0',prompt)
     for _ in range(4):  # name → tool → dir → worktree → prompt
         key(sandbox, 'Tab')
@@ -210,11 +210,13 @@ def spawn_form(sandbox, prompt):
     return prompt
 
 
-def scenario(sandbox, binary):
+def scenario(sandbox, binary, glyph_mode='advanced'):
+    marker, new_mark, move_mark = ('>', '+', 'M') if glyph_mode == 'basic' else ('❯', '◆', '⇄')
     write_fixture(sandbox)
+    sandbox.run([str(binary), 'settings', 'set', 'glyph_mode', glyph_mode])
     start_manager(sandbox, binary)
     seed_store(sandbox)
-    name = spawn_form(sandbox, SESSION_NAME)
+    name = spawn_form(sandbox, SESSION_NAME, new_mark)
     with sqlite3.connect(profile_dir(sandbox) / 'state.db') as conn:
         conn.execute('UPDATE sessions SET agent_session_id=? WHERE name=?', (str(uuid.uuid4()), name))
     pane = agent_pane(sandbox, 'sleep')
@@ -242,10 +244,10 @@ def scenario(sandbox, binary):
     frame(sandbox, 'group-created', 'scen-group', 'New Group')
     select_row(sandbox, name, 'moving')
     key(sandbox, 'm')
-    frame(sandbox, 'move-open', '⇄ Move')
+    frame(sandbox, 'move-open', move_mark + ' Move')
     key(sandbox, 'Down')
     sandbox.wait('move-group-selected', lambda: capture(sandbox),
-                 lambda value: re.search(r'❯\s+scen-group', value) is not None)
+                 lambda value: re.search(re.escape(marker) + r'\s+scen-group', value) is not None)
     key(sandbox, 'Enter')
     sandbox.wait('move-committed', lambda: json.dumps([row for row in store_sessions(sandbox) if row['name'] == name]),
                  lambda rows: json.loads(rows) and json.loads(rows)[0]['group'] == 'scen-group')
@@ -261,7 +263,7 @@ def scenario(sandbox, binary):
     assert renamed and renamed[0]['group'] == 'scen-group', f'rename not persisted in group: {renamed}'
     key(sandbox, 's')
     frame(sandbox, 'settings-open', 'compact')
-    select_setting(sandbox, 'list density')
+    select_setting(sandbox, 'list density', marker)
     key(sandbox, 'Right')
     sandbox.wait('settings-density-cycled', lambda: capture(sandbox), lambda value: 'comfortable' in value)
     key(sandbox, 'Escape')
@@ -379,6 +381,8 @@ def quit_abandon_lifecycle(sandbox, binary):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--glyph-mode', choices=('basic', 'advanced'), default='advanced',
+                        help='symbols mode to exercise (default: advanced)')
     parser.add_argument('--binary', type=Path, help='existing binary; otherwise build once before isolating HOME')
     parser.add_argument('--artifacts', type=Path, help='new output directory (always retained)')
     args = parser.parse_args()
@@ -388,7 +392,7 @@ def main():
     sandbox = Sandbox(artifacts)
     try:
         binary = ensure_binary(root, artifacts, args.binary)
-        scenario(sandbox, binary)
+        scenario(sandbox, binary, args.glyph_mode)
         cleanup_errors = sandbox.close()
         if cleanup_errors:
             raise RuntimeError(str(cleanup_errors))

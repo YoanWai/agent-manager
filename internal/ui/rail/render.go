@@ -89,7 +89,7 @@ func (r *renderer) railLines() []Line {
 
 func (r renderer) searchFieldLine() string {
 	indent := strings.Repeat(" ", railInset)
-	glyph := r.palette.key.Render("⌕ ")
+	glyph := r.palette.key.Render(r.glyphs().SearchGlyph + " ")
 	caret := r.ctx.CursorMarker + lipgloss.NewStyle().Foreground(lipgloss.Color(r.ctx.Theme.Accent)).Render("▏")
 	hint := r.palette.keyCap("esc", "close")
 	if !r.model.searching {
@@ -511,7 +511,7 @@ func (r renderer) compactCell(session Session, quiet lipgloss.Style, room int) s
 		return r.replyCell(session, quiet, room)
 	}
 	if prompt := oneLine(session.Prompt); prompt != "" {
-		return lipgloss.NewStyle().Foreground(lipgloss.Color(r.ctx.Theme.Accent)).Render("❯ ") +
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(r.ctx.Theme.Accent)).Render(r.glyphs().PromptGlyph+" ") +
 			lipgloss.NewStyle().Foreground(lipgloss.Color(mix(r.ctx.Theme.Accent, r.ctx.Theme.Dim, 0.5))).
 				Render(ansi.Truncate(prompt, max(room-2, 1), "…"))
 	}
@@ -529,7 +529,7 @@ func (r renderer) tallRow(session Session, head, meta, indent string, selected b
 	if !session.IsShell {
 		promptLine := indent + quiet.Render("-")
 		if prompt := oneLine(session.Prompt); prompt != "" && room >= 8 {
-			promptLine = indent + lipgloss.NewStyle().Foreground(lipgloss.Color(r.ctx.Theme.Accent)).Render("❯ ") +
+			promptLine = indent + lipgloss.NewStyle().Foreground(lipgloss.Color(r.ctx.Theme.Accent)).Render(r.glyphs().PromptGlyph+" ") +
 				lipgloss.NewStyle().Foreground(lipgloss.Color(mix(r.ctx.Theme.Accent, r.ctx.Theme.Dim, 0.5))).Render(ansi.Truncate(prompt, room, "…"))
 		}
 		lines = append(lines, paint(promptLine, width, background))
@@ -551,7 +551,7 @@ func (r renderer) replyCell(session Session, quiet lipgloss.Style, room int) str
 	if session.Status == "waiting" {
 		style = lipgloss.NewStyle().Foreground(r.palette.statusColor(session.Status))
 	}
-	return r.palette.subtle.Render("↳ ") + style.Render(line)
+	return r.palette.subtle.Render(r.glyphs().ReplyGlyph+" ") + style.Render(line)
 }
 
 func (r renderer) renderGroup(row treeRow, selected bool, width int, pad, guides, background string) renderedTreeRow {

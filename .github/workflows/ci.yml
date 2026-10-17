@@ -87,7 +87,10 @@ jobs:
       - name: Real terminal smoke
         run: python3 tools/e2e/smoke.py --binary "$RUNNER_TEMP/am-e2e-binary" --artifacts "$RUNNER_TEMP/am-e2e-evidence"
       - name: Dialog and quit-drain scenarios
-        run: python3 tools/e2e/scenarios.py --binary "$RUNNER_TEMP/am-e2e-binary" --artifacts "$RUNNER_TEMP/am-scenario-evidence"
+        run: |
+          for mode in advanced basic; do
+            python3 tools/e2e/scenarios.py --binary "$RUNNER_TEMP/am-e2e-binary" --glyph-mode "$mode" --artifacts "$RUNNER_TEMP/am-scenario-evidence/$mode"
+          done
       - name: Partial writes and installation scenarios
         run: python3 tools/e2e/failure_scenarios.py --binary "$RUNNER_TEMP/am-e2e-binary" --artifacts "$RUNNER_TEMP/am-failure-evidence"
       - name: Blocked dialog and focus scenarios

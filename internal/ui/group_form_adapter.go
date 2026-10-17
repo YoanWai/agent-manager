@@ -125,7 +125,8 @@ func (m *Model) dispatchGroup(request groupRequest) {
 func (m *Model) viewGroupForm() string {
 	parent := m.selectedGroupPath()
 	view := uidialogs.GroupFormView{
-		Field:     formField,
+		GlyphMode: m.prefs.glyphMode,
+		Field:     m.formField,
 		Input:     textInputView,
 		Badge:     groupBadge,
 		Parent:    parent,
@@ -136,7 +137,7 @@ func (m *Model) viewGroupForm() string {
 		Base:      groupBaseChoice(m.groupForm.base, m.groupBase(parent)),
 	}
 	if m.groupForm.paths.active() {
-		view.Suggestions = m.groupForm.paths.view
+		view.Suggestions = func() string { return m.groupForm.paths.view(m.prefs.glyphMode) }
 		view.SuggestHints = pathSuggestHint(m.groupForm.paths.chosen)
 	}
 	return m.drawCard(m.groupForm.View(view))

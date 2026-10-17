@@ -3,6 +3,7 @@ package dialogs
 import (
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -80,7 +81,7 @@ func (d LaunchHint) Key(msg tea.KeyMsg) LaunchHintAction {
 
 // View sets the first paragraph in tone and the rest muted, wrapped to the
 // card's inner width.
-func (d LaunchHint) View(inner int, tone, muted lipgloss.Style) Card {
+func (d LaunchHint) View(inner int, tone, muted lipgloss.Style, glyphs presentation.GlyphSet) Card {
 	var body strings.Builder
 	for i, lines := range d.paragraphs(inner) {
 		style := muted
@@ -98,5 +99,5 @@ func (d LaunchHint) View(inner int, tone, muted lipgloss.Style) Card {
 	if d.Command != "" {
 		hint = [][2]string{{"i", "install"}, {"c", "copy"}, {"esc", "close"}}
 	}
-	return Card{Title: "◈ Session needs a setup step", Body: strings.TrimRight(body.String(), "\n"), Hints: hint}
+	return Card{Title: glyphs.SetupGlyph + " Session needs a setup step", Body: strings.TrimRight(body.String(), "\n"), Hints: hint}
 }

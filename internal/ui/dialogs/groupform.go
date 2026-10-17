@@ -277,6 +277,7 @@ func (d GroupForm) Submit(parent string) GroupFormKey {
 // parent row, the open path suggestions and their hints, the worktree
 // choice labels and the rendered base choice.
 type GroupFormView struct {
+	GlyphMode    presentation.GlyphMode
 	Field        func(label, value string, focused bool) string
 	Input        func(textinput.Model) string
 	Badge        func(string) string
@@ -329,5 +330,5 @@ func (d *GroupForm) View(view GroupFormView) Card {
 	case d.focus == GroupFormWorktreeField || d.focus == GroupFormBaseField:
 		hints = [][2]string{{"tab/↑↓", "move"}, {"←→", "change"}, {"↵", "create"}, {"esc", "cancel"}}
 	}
-	return Card{Title: "✦ New Group", Body: strings.TrimRight(body.String(), "\n"), Hints: hints}
+	return Card{Title: presentation.GlyphsFor(view.GlyphMode).NewGlyph + " New Group", Body: strings.TrimRight(body.String(), "\n"), Hints: hints}
 }

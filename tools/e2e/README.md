@@ -50,8 +50,11 @@ clients, and real SSH remain separate acceptance work.
 ```sh
 go build -o /tmp/agent-manager-e2e .
 python3 tools/e2e/scenarios.py --binary /tmp/agent-manager-e2e
+python3 tools/e2e/scenarios.py --binary /tmp/agent-manager-e2e --glyph-mode basic
 ```
 
+CI runs the scenario gate in both Advanced and Compatible modes. Settings
+navigation follows the selected field label and the chosen mode’s marker.
 The separate scenario gate shares one binary across two disposable profiles.
 It covers form spawn, selected-session quick input reaching a real pane with matching durable metadata, terminal/group creation, move, rename, settings persistence
 and reopening, fork launch, and zero-exit shutdown. A fixture CLI runs a real

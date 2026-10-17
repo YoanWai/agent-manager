@@ -47,7 +47,7 @@ func (m *Model) renderFrame() string {
 	case modeConfirmDelete:
 		frame = m.viewConfirm()
 	case modeLaunchHint:
-		frame = m.launchHint.view(m)
+		frame = m.launchHint.view(m, m.glyphs())
 	case modeSettings:
 		frame = m.viewSettings()
 	case modeFork:

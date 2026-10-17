@@ -13,7 +13,7 @@ func (m *Model) statusLine() string {
 	// Errors outrank the focus notices: a scrolled or focused pane must
 	// not hide a failure report.
 	case m.mode == modeFocus && m.errBar.text != "":
-		return m.statusMessage(m.glyphs().ErroredGlyph, m.glyphs().FinishedGlyph, "▲")
+		return m.statusMessage(m.glyphs().ErroredGlyph, m.glyphs().FinishedGlyph, m.glyphs().WarningGlyph)
 	case m.focus.pane.ScrolledBack():
 		catchUp := "wheel down or type"
 		if sess, ok := m.selected(); ok && m.focus.pane.PagesScrollback(sess.ID) {
@@ -31,7 +31,7 @@ func (m *Model) statusLine() string {
 		}
 		return keyStyle().Render("resize ") + subtleStyle().Render(hint)
 	case m.errBar.text != "":
-		return m.statusMessage(m.glyphs().ErroredGlyph, m.glyphs().FinishedGlyph, "▲")
+		return m.statusMessage(m.glyphs().ErroredGlyph, m.glyphs().FinishedGlyph, m.glyphs().WarningGlyph)
 	case m.review.Snapshot().Notice != "":
 		return doneStyle().Render(m.glyphs().FinishedGlyph + " " + escapeControlsInline(m.review.Snapshot().Notice))
 	default:

@@ -89,7 +89,7 @@ func (m *Model) railSnapshot() uirail.Snapshot {
 			IsShell:        m.isShell(session.Tool),
 			Elsewhere:      m.elsewhereNote(session) != "",
 			AfterTurn:      session.AfterTurn,
-			AfterTurnGlyph: afterTurnGlyphs[session.AfterTurn],
+			AfterTurnGlyph: m.afterTurnGlyph(session.AfterTurn),
 		})
 	}
 	return snapshot

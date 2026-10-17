@@ -278,6 +278,7 @@ func (m *Model) applySettingsPrefs() {
 // viewSettings frames the dialog in the root's card chrome.
 func (m *Model) viewSettings() string {
 	frame := m.settings.dialog.View(uisettings.ViewContext{
+		GlyphMode:  m.prefs.glyphMode,
 		Session:    m.services.keys,
 		List:       m.services.listKeys,
 		Version:    m.update.version,

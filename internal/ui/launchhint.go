@@ -9,6 +9,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/deps"
 	"github.com/YoanWai/agent-manager/internal/mcpreg"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -254,9 +255,9 @@ func (m *Model) settleInstall() {
 	m.enqueueEffect(installSettleRequest{install: *install}, 0, false)
 }
 
-func (d *launchHintDialog) view(h launchHintHost) string {
+func (d *launchHintDialog) view(h launchHintHost, glyphs presentation.GlyphSet) string {
 	width := h.cardWidth()
 	tone := lipgloss.NewStyle().Foreground(colorAccent()).Bold(true)
-	card := d.prompt().View(cardInnerWidth(width), tone, mutedStyle())
+	card := d.prompt().View(cardInnerWidth(width), tone, mutedStyle(), glyphs)
 	return h.cardSized(width, card.Title, card.Body, card.Hints)
 }

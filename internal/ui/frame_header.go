@@ -45,7 +45,7 @@ func (m *Model) updateTag() string {
 	if m.update.latest == "" {
 		return ""
 	}
-	return lipgloss.NewStyle().Foreground(colorAccent()).Render("↑ " + m.update.latest + " available")
+	return lipgloss.NewStyle().Foreground(colorAccent()).Render(m.glyphs().UpdateGlyph + " " + m.update.latest + " available")
 }
 
 // titleTopRowWithUpdate keeps the update tag on the top edge when the header
