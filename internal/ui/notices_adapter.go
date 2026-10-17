@@ -318,7 +318,14 @@ func (m *Model) flushPendingNotice() {
 }
 
 func (m *Model) handleNoticesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	out := m.notices.Key(msg, m.activeNotices(), m.noticesFrame())
+	return m.applyNoticesOutcome(m.notices.Key(msg, m.activeNotices(), m.noticesFrame()))
+}
+
+func (m *Model) handleNoticesClick(y int) (tea.Model, tea.Cmd) {
+	return m.applyNoticesOutcome(m.notices.Click(y-m.layout.cardTop, m.activeNotices(), m.noticesFrame()))
+}
+
+func (m *Model) applyNoticesOutcome(out uinotices.Outcome) (tea.Model, tea.Cmd) {
 	switch out.Action {
 	case uinotices.Refresh:
 		return m, m.refreshNotices()

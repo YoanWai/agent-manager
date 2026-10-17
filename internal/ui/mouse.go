@@ -167,6 +167,13 @@ func (m *Model) handleMousePress(msg tea.MouseMsg, ctx uirail.MouseContext) (tea
 	if m.mode == modeSettings {
 		return m.handleSettingsClick(msg.X, msg.Y)
 	}
+	if m.mode == modeHelp {
+		m.help.state.Click(msg.Y - m.layout.cardTop - 2)
+		return m, nil
+	}
+	if m.mode == modeNotices {
+		return m.handleNoticesClick(msg.Y)
+	}
 	if m.layout.split.resizeMode || m.mode != modeList {
 		return m, nil
 	}
@@ -228,6 +235,13 @@ func (m *Model) handleMouseWheel(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			m.scrollNotices(-uinotices.WheelRows)
 		case tea.MouseButtonWheelDown:
 			m.scrollNotices(uinotices.WheelRows)
+		}
+	case modeHelp:
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			return m.handleHelpKey(tea.KeyMsg{Type: tea.KeyUp})
+		case tea.MouseButtonWheelDown:
+			return m.handleHelpKey(tea.KeyMsg{Type: tea.KeyDown})
 		}
 	}
 	return m, nil

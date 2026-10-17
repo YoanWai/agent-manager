@@ -54,6 +54,14 @@ func (s *State) scrollBy(delta int, viewport Viewport) {
 // Searching reports whether typed keys go to the search.
 func (s State) Searching() bool { return s.searching }
 
+// Click is a press on line of the card's body. The search line takes the
+// search back up, the way / does.
+func (s *State) Click(line int) {
+	if line == 0 && s.searchActive() {
+		s.searching = true
+	}
+}
+
 func (s State) page(viewport Viewport) int {
 	return max(viewport.Rows-1, 1)
 }

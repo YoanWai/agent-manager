@@ -176,6 +176,25 @@ func (p *Panel) Key(msg tea.KeyMsg, notices []Notice, f Frame) Outcome {
 	return Outcome{}
 }
 
+// titleRow is the card row of the first title, under the top edge and the
+// blank row above the list.
+const titleRow = 2
+
+// Click is a press on row line of the card, counted from its top edge. The
+// first click on a title selects it; one on the title already selected
+// opens its link, the way ↵ does.
+func (p *Panel) Click(line int, notices []Notice, f Frame) Outcome {
+	i := line - titleRow
+	if i < 0 || i >= len(notices) {
+		return Outcome{}
+	}
+	if i != p.cursor {
+		p.cursor, p.scroll = i, 0
+		return Outcome{}
+	}
+	return p.Key(tea.KeyMsg{Type: tea.KeyEnter}, notices, f)
+}
+
 func (p Panel) ScrollLimit(notices []Notice, f Frame) int {
 	if p.cursor >= len(notices) {
 		return 0

@@ -139,3 +139,27 @@ func TestPanelFootKeysSitOnTheirLabels(t *testing.T) {
 		}
 	}
 }
+
+// The first click on a title selects it; a second on the selected title
+// opens its link, the way ↵ does.
+func TestPanelClickSelectsThenOpensATitle(t *testing.T) {
+	p := NewPanel(map[string]bool{})
+	notices := p.Active(testSources("v0.3.0"))
+	p.Open(notices, "")
+	if len(notices) < 2 {
+		t.Fatalf("test setup: need two notices, have %v", ids(notices))
+	}
+	if out := p.Click(titleRow+1, notices, testFrame()); out.Action != Stay || p.Cursor() != 1 {
+		t.Fatalf("first click = %+v, cursor %d", out, p.Cursor())
+	}
+	out := p.Click(titleRow+1, notices, testFrame())
+	if notices[1].URL == "" {
+		t.Fatalf("test setup: %q has no link", notices[1].ID)
+	}
+	if out.Action != OpenLink || out.URL != notices[1].URL {
+		t.Fatalf("second click = %+v, want its link", out)
+	}
+	if out := p.Click(titleRow+len(notices), notices, testFrame()); out.Action != Stay || p.Cursor() != 1 {
+		t.Fatalf("a click under the titles = %+v, cursor %d", out, p.Cursor())
+	}
+}
