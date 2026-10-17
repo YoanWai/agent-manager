@@ -40,55 +40,86 @@ func (p *Runner) maybeSendPendingInput(sess store.Session, pane string, agentAli
 	if len(sess.PendingInputs) == 0 {
 		return false, nil
 	}
-	input := sess.PendingInputs[0]
-	if sess.PendingInputClaimed {
-		consumed, err := p.store.ConsumeClaimedPendingInput(sess.ID, input)
-		if err != nil {
-			return false, fmt.Errorf("reconcile pending input for %s: %w", sess.Name, err)
-		}
-		if consumed {
-			return true, fmt.Errorf("skipped ambiguous pending input for %s to avoid duplicate delivery", sess.Name)
-		}
-		return false, nil
-	}
-	if !agentAlive {
-		return false, nil
-	}
-	clean := ansi.Strip(pane)
-	if p.engine.TypingHold(sess.Tool, clean) != "" {
-		return false, nil
-	}
-	typing, err := p.promptCarriesTypedText(sess, clean)
-	if err != nil || typing {
-		return false, err
-	}
-	region, ready := p.engine.ActivityRegion(sess.Tool, clean)
-	if !ready || !launchPromptTaken(sess, region) {
-		return false, nil
-	}
-	claimed, err := p.store.ClaimPendingInput(sess.ID, input)
-	if err != nil {
-		return false, fmt.Errorf("claim pending input for %s: %w", sess.Name, err)
-	}
-	if !claimed {
-		return false, nil
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), automaticDeliveryTimeout)
 	defer cancel()
-	if _, err := p.tmux.SendTextContext(ctx, sess.ID, input); err != nil {
-		return false, fmt.Errorf("send pending input to %s: %w", sess.Name, err)
-	}
-	consumed, err := p.store.ConsumeClaimedPendingInput(sess.ID, input)
+	delivered := false
+	acquired, err := p.store.WithDeliveryGuard(ctx, func(guard *store.DeliveryGuard) error {
+		current, err := p.store.Get(sess.ID)
+		if err != nil || len(current.PendingInputs) == 0 {
+			return err
+		}
+		input := current.PendingInputs[0]
+		if current.PendingInputClaimed {
+			if err := guard.RecoverPendingInput(current.ID, input, time.Now()); err != nil {
+				return fmt.Errorf("record uncertain pending input for %s: %w", current.Name, err)
+			}
+			return fmt.Errorf("pending input for %s has an uncertain prior transport outcome and will not be replayed", current.Name)
+		}
+		if !agentAlive {
+			return nil
+		}
+		clean := ansi.Strip(pane)
+		if p.engine.TypingHold(current.Tool, clean) != "" {
+			return nil
+		}
+		typing, err := p.promptCarriesTypedText(current, clean)
+		if err != nil || typing {
+			return err
+		}
+		region, ready := p.engine.ActivityRegion(current.Tool, clean)
+		if !ready || !launchPromptTaken(current, region) {
+			return nil
+		}
+		claim, claimed, err := guard.ClaimPendingInput(current.ID, input, time.Now())
+		if err != nil {
+			return fmt.Errorf("claim pending input for %s: %w", current.Name, err)
+		}
+		if !claimed {
+			return nil
+		}
+		result, sendErr := p.tmux.SendTextContext(ctx, current.ID, input)
+		outcome := classifyDelivery(result, sendErr)
+		receiptErr := guard.FinishPendingInput(current.ID, input, claim, outcome, time.Now())
+		if sendErr != nil {
+			return errors.Join(
+				fmt.Errorf("pending input transport to %s is %s: %w", current.Name, outcome, sendErr),
+				receiptErr,
+			)
+		}
+		if receiptErr != nil {
+			return fmt.Errorf("record pending input delivery for %s: %w", current.Name, receiptErr)
+		}
+		delivered = true
+		return nil
+	})
 	if err != nil {
-		return false, fmt.Errorf("record pending input delivery for %s: %w", sess.Name, err)
+		return false, err
 	}
-	return consumed, nil
+	if !acquired {
+		return false, nil
+	}
+	return delivered, nil
 }
 
-// automaticDeliveryTimeout bounds one automatic delivery: the paste and the
-// submit check. A variable so tests on a loaded psmux runner can give the
-// transport room; nothing else changes it.
+// automaticDeliveryTimeout bounds one automatic delivery: the guard, the
+// paste and the submit check. A variable so tests on a loaded psmux runner
+// can give the transport room; nothing else changes it.
 var automaticDeliveryTimeout = 5 * time.Second
+
+func classifyDelivery(result tmux.SendResult, sendErr error) store.DeliveryOutcome {
+	if sendErr == nil {
+		return store.DeliveryConfirmed
+	}
+	// The composer still holding the paste after every Enter shows it was
+	// never submitted, so the agent cannot have read it.
+	if errors.Is(sendErr, tmux.ErrUnsubmitted) {
+		return store.DeliveryRefused
+	}
+	if result.PasteMayHaveStarted() {
+		return store.DeliveryUncertain
+	}
+	return store.DeliveryRefused
+}
 
 // typeForkKeys types a tool's fork keys under the gate a queued message waits
 // for, and refuses rather than waits: the user is watching for the fork now.
@@ -152,46 +183,56 @@ func (p *Runner) maybeDeliverInbox(sess store.Session, pane, derived string, age
 	if p.engine.TypingHold(sess.Tool, clean) != "" {
 		return false, nil
 	}
-	msg, queued, err := p.store.HeadMessage(sess.ID)
-	if err != nil || !queued {
-		return false, err
-	}
-	// A claim this old with no delivery means the manager died between the
-	// claim and the send. Whether it reached the pane is unknowable, so it
-	// is retired rather than risking the same instruction twice.
-	if !msg.ClaimedAt.IsZero() {
-		if time.Since(msg.ClaimedAt) < inboxClaimGrace {
-			return false, nil
-		}
-		if err := p.store.MarkDropped(msg.ID, time.Now()); err != nil {
-			return false, err
-		}
-		return false, fmt.Errorf("dropped an unconfirmed message to %s from %s to avoid delivering it twice", sess.Name, msg.SenderName)
-	}
-	typing, err := p.promptCarriesTypedText(sess, clean)
-	if err != nil || typing {
-		return false, err
-	}
-	claimed, err := p.store.ClaimMessage(msg.ID, time.Now())
-	if err != nil || !claimed {
-		return false, err
-	}
-	// The claim already keeps this message from being typed again, so
-	// recording the drop is the only thing that stops its sender being told
-	// it arrived. A paste left in the composer is not retyped either: the
-	// recipient would read it twice once someone presses Enter there.
 	ctx, cancel := context.WithTimeout(context.Background(), automaticDeliveryTimeout)
 	defer cancel()
-	envelope := inboxEnvelope(msg, p.mcpStyles[sess.Tool], p.senderIsShell(msg.SenderID))
-	if _, err := p.tmux.SubmitTextContext(ctx, sess.ID, envelope, p.composerDrafted(sess)); err != nil {
-		return false, errors.Join(
-			fmt.Errorf("dropped a message to %s from %s: %w", sess.Name, msg.SenderName, err),
-			p.store.MarkDropped(msg.ID, time.Now()))
+	delivered := false
+	acquired, err := p.store.WithDeliveryGuard(ctx, func(guard *store.DeliveryGuard) error {
+		msg, queued, err := guard.HeadMessage(sess.ID)
+		if err != nil || !queued {
+			return err
+		}
+		// Acquiring the guard proves no cooperating owner can still be using
+		// this claim. An admitted message therefore becomes uncertain now,
+		// without a grace period or replay.
+		if !msg.ClaimedAt.IsZero() {
+			if err := guard.RecoverMessage(msg.ID, time.Now()); err != nil {
+				return err
+			}
+			return fmt.Errorf("message to %s from %s has an uncertain prior transport outcome and will not be replayed", sess.Name, msg.SenderName)
+		}
+		typing, err := p.promptCarriesTypedText(sess, clean)
+		if err != nil || typing {
+			return err
+		}
+		claim, claimed, err := guard.ClaimMessage(msg.ID, time.Now())
+		if err != nil || !claimed {
+			return err
+		}
+		// A paste left in the composer is not retyped: the recipient would
+		// read it twice once someone presses Enter there.
+		envelope := inboxEnvelope(msg, p.mcpStyles[sess.Tool], p.senderIsShell(msg.SenderID))
+		result, sendErr := p.tmux.SubmitTextContext(ctx, sess.ID, envelope, p.composerDrafted(sess))
+		outcome := classifyDelivery(result, sendErr)
+		receiptErr := guard.FinishMessage(msg.ID, claim, outcome, time.Now())
+		if sendErr != nil {
+			return errors.Join(
+				fmt.Errorf("message transport to %s from %s is %s: %w", sess.Name, msg.SenderName, outcome, sendErr),
+				receiptErr,
+			)
+		}
+		if receiptErr != nil {
+			return fmt.Errorf("record message delivery to %s from %s: %w", sess.Name, msg.SenderName, receiptErr)
+		}
+		delivered = true
+		return ignoreDeletedSession(p.store.SetLastPrompt(sess.ID, msg.Body))
+	})
+	if err != nil {
+		return delivered, err
 	}
-	if err := ignoreDeletedSession(p.store.SetLastPrompt(sess.ID, msg.Body)); err != nil {
-		return false, err
+	if !acquired {
+		return false, nil
 	}
-	return true, p.store.MarkDelivered(msg.ID, time.Now())
+	return delivered, nil
 }
 
 // promptCarriesTypedText reports whether someone has a line part way

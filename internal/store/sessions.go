@@ -52,7 +52,12 @@ type Session struct {
 	WorktreeBranch      string
 	PendingInputs       []string
 	PendingInputClaimed bool
-	ParentID            string
+	// PendingInputOutcome records the durable result of the most recent
+	// automatic pending-input delivery. A claimed row is never replayed after
+	// its owning process disappears: the next owner records uncertain.
+	PendingInputOutcome   DeliveryOutcome
+	PendingInputClaimedAt time.Time
+	ParentID              string
 	// LaunchPrompt is the prompt handed to the agent on its command line.
 	// Pending input waits for it to show in the pane, because an agent
 	// taking it clears the composer and anything pasted there.
@@ -161,7 +166,7 @@ func (s *Store) createSession(sess Session, anchorID string) error {
 }
 
 func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
-	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, relaunch_snapshot, pending_inputs, pending_claimed, parent_id, launch_prompt, last_prompt, tmux_socket, model_provider, model, effort, profile, after_turn, after_turn_at
+	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, relaunch_snapshot, pending_inputs, pending_claimed, pending_delivery_outcome, pending_claimed_at, parent_id, launch_prompt, last_prompt, tmux_socket, model_provider, model, effort, profile, after_turn, after_turn_at
 	          FROM sessions`
 	if !includeArchived {
 		query += ` WHERE archived = 0`
@@ -177,12 +182,13 @@ func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
 	for rows.Next() {
 		var sess Session
 		var archived, acked, pendingClaimed int
-		var created, lastStatus, agentLaunched, afterTurnAt int64
+		var created, lastStatus, agentLaunched, pendingClaimedAt, afterTurnAt int64
 		var pendingInputs, relaunchSnapshot string
 		if err := rows.Scan(&sess.ID, &sess.Name, &sess.Tool, &sess.Cwd,
 			&sess.Group, &sess.Status, &archived, &acked, &created, &lastStatus,
 			&sess.AgentSessionID, &sess.WorktreeRepo, &sess.WorktreeBranch,
 			&agentLaunched, &sess.RetiredAgentSessionID, &relaunchSnapshot, &pendingInputs, &pendingClaimed,
+			&sess.PendingInputOutcome, &pendingClaimedAt,
 			&sess.ParentID, &sess.LaunchPrompt, &sess.LastPrompt, &sess.TmuxSocket,
 			&sess.Choice.Provider, &sess.Choice.Model, &sess.Choice.Effort, &sess.Choice.Profile, &sess.AfterTurn, &afterTurnAt); err != nil {
 			return nil, err
@@ -196,6 +202,7 @@ func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
 		sess.Archived = archived != 0
 		sess.Acked = acked != 0
 		sess.PendingInputClaimed = pendingClaimed != 0
+		sess.PendingInputClaimedAt = decodeTime(pendingClaimedAt)
 		sess.CreatedAt = decodeTime(created)
 		sess.LastStatusAt = decodeTime(lastStatus)
 		sess.AgentLaunchedAt = decodeTime(agentLaunched)
@@ -208,14 +215,15 @@ func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
 func (s *Store) Get(id string) (Session, error) {
 	var sess Session
 	var archived, acked, pendingClaimed int
-	var created, lastStatus, agentLaunched, afterTurnAt int64
+	var created, lastStatus, agentLaunched, pendingClaimedAt, afterTurnAt int64
 	var pendingInputs, relaunchSnapshot string
 	err := s.db.QueryRow(
-		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, relaunch_snapshot, pending_inputs, pending_claimed, parent_id, launch_prompt, last_prompt, tmux_socket, model_provider, model, effort, profile, after_turn, after_turn_at
+		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, relaunch_snapshot, pending_inputs, pending_claimed, pending_delivery_outcome, pending_claimed_at, parent_id, launch_prompt, last_prompt, tmux_socket, model_provider, model, effort, profile, after_turn, after_turn_at
 		 FROM sessions WHERE id = ?`, id,
 	).Scan(&sess.ID, &sess.Name, &sess.Tool, &sess.Cwd, &sess.Group,
 		&sess.Status, &archived, &acked, &created, &lastStatus, &sess.AgentSessionID,
 		&sess.WorktreeRepo, &sess.WorktreeBranch, &agentLaunched, &sess.RetiredAgentSessionID, &relaunchSnapshot, &pendingInputs, &pendingClaimed,
+		&sess.PendingInputOutcome, &pendingClaimedAt,
 		&sess.ParentID, &sess.LaunchPrompt, &sess.LastPrompt, &sess.TmuxSocket,
 		&sess.Choice.Provider, &sess.Choice.Model, &sess.Choice.Effort, &sess.Choice.Profile, &sess.AfterTurn, &afterTurnAt)
 	if err != nil {
@@ -230,6 +238,7 @@ func (s *Store) Get(id string) (Session, error) {
 	sess.Archived = archived != 0
 	sess.Acked = acked != 0
 	sess.PendingInputClaimed = pendingClaimed != 0
+	sess.PendingInputClaimedAt = decodeTime(pendingClaimedAt)
 	sess.CreatedAt = decodeTime(created)
 	sess.LastStatusAt = decodeTime(lastStatus)
 	sess.AgentLaunchedAt = decodeTime(agentLaunched)

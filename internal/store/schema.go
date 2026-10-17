@@ -115,6 +115,45 @@ CREATE TABLE IF NOT EXISTS settings (
 		`ALTER TABLE sessions ADD COLUMN tmux_socket TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN last_prompt TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN relaunch_snapshot TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE session_inbox ADD COLUMN attempt_token TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE session_inbox ADD COLUMN receipt_token TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE session_inbox ADD COLUMN delivery_outcome TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN pending_attempt_token TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN pending_receipt_token TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN pending_delivery_outcome TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN pending_claimed_at INTEGER NOT NULL DEFAULT 0`,
+		`UPDATE session_inbox
+		    SET attempt_token = 'legacy-' || id,
+		        receipt_token = 'legacy-' || id,
+		        delivery_outcome = CASE WHEN dropped_at = 0 AND delivered_at != 0 THEN 'confirmed' ELSE 'uncertain' END,
+		        delivered_at = CASE WHEN delivered_at = 0 THEN claimed_at ELSE delivered_at END
+		  WHERE delivery_outcome = '' AND (delivered_at != 0 OR claimed_at != 0)`,
+		`UPDATE sessions
+		    SET pending_attempt_token = 'legacy-' || id,
+		        pending_delivery_outcome = 'uncertain'
+		  WHERE pending_claimed != 0 AND pending_attempt_token = ''`,
+		`CREATE TRIGGER IF NOT EXISTS session_inbox_delivery_claim_fence
+		 BEFORE UPDATE OF claimed_at ON session_inbox
+		 WHEN OLD.claimed_at = 0 AND NEW.claimed_at != 0
+		  AND (NEW.attempt_token = '' OR NEW.delivery_outcome != 'in_flight')
+		 BEGIN SELECT RAISE(ABORT, 'delivery claim requires an attempt token'); END`,
+		`CREATE TRIGGER IF NOT EXISTS session_inbox_delivery_receipt_fence
+		 BEFORE UPDATE OF delivered_at, dropped_at ON session_inbox
+		 WHEN OLD.delivered_at = 0 AND NEW.delivered_at != 0
+		  AND (NEW.receipt_token = '' OR NEW.receipt_token != OLD.attempt_token
+		       OR NEW.delivery_outcome NOT IN ('confirmed', 'refused', 'uncertain'))
+		 BEGIN SELECT RAISE(ABORT, 'delivery receipt requires the admitted attempt token'); END`,
+		`CREATE TRIGGER IF NOT EXISTS session_pending_delivery_claim_fence
+		 BEFORE UPDATE OF pending_claimed ON sessions
+		 WHEN OLD.pending_claimed = 0 AND NEW.pending_claimed != 0
+		  AND (NEW.pending_attempt_token = '' OR NEW.pending_delivery_outcome != 'in_flight')
+		 BEGIN SELECT RAISE(ABORT, 'pending delivery claim requires an attempt token'); END`,
+		`CREATE TRIGGER IF NOT EXISTS session_pending_delivery_receipt_fence
+		 BEFORE UPDATE OF pending_claimed ON sessions
+		 WHEN OLD.pending_claimed != 0 AND NEW.pending_claimed = 0
+		  AND (NEW.pending_receipt_token = '' OR NEW.pending_receipt_token != OLD.pending_attempt_token
+		       OR NEW.pending_delivery_outcome NOT IN ('confirmed', 'refused', 'uncertain'))
+		 BEGIN SELECT RAISE(ABORT, 'pending delivery receipt requires the admitted attempt token'); END`,
 		`ALTER TABLE sessions ADD COLUMN model_provider TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN model TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN effort TEXT NOT NULL DEFAULT ''`,

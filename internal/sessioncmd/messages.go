@@ -135,6 +135,12 @@ func (s *Sessions) MessageStatus(sessionID string, messageID int64) (MessageStat
 		Body:      msg.Body,
 	}
 	switch {
+	case msg.Outcome == store.DeliveryUncertain:
+		state.State = "uncertain"
+		state.Reason = "Delivery may have reached the pane. Agent Manager will not retry automatically; inspect the recipient before deciding whether to resend."
+	case msg.Outcome == store.DeliveryInFlight:
+		state.State = "in_flight"
+		state.Reason = "A delivery attempt is in progress; wait for its receipt before resending."
 	// A drop stamps the delivery column as well, so that a message nothing
 	// will ever type leaves the queue, and is read first for that reason.
 	case !msg.DroppedAt.IsZero():
@@ -203,7 +209,7 @@ type MessageState struct {
 	MessageID   int64  `json:"message_id"`
 	SessionID   string `json:"session_id" jsonschema:"session the message was addressed to"`
 	Body        string `json:"body"`
-	State       string `json:"state" jsonschema:"queued (waiting for the agent to be at rest), held (nothing will type it in as things stand: the recipient is sitting on a dialog, archived or not running, and reason says which), delivered (typed into its prompt), dropped (it never reached the prompt and is not retried), or answered (it has since messaged back)"`
+	State       string `json:"state" jsonschema:"queued (waiting for the agent to be at rest), held (nothing will type it in as things stand: the recipient is sitting on a dialog, archived or not running, and reason says which), delivered (typed into its prompt), dropped (refused before typing and not retried), in_flight (an attempt is in progress), uncertain (it may have arrived and is not automatically retried), or answered (it has since messaged back)"`
 	DeliveredAt string `json:"delivered_at,omitempty" jsonschema:"RFC3339 time the message reached the prompt"`
 	Reason      string `json:"reason,omitempty" jsonschema:"why the message is in that state, and what to do about it"`
 }

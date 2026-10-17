@@ -93,10 +93,10 @@ func TestInboxOwnerUsesDeliveryTimeAndPreservesQueuedMessages(t *testing.T) {
 		}
 		ids[i] = id
 	}
-	if err := h.store.MarkDelivered(ids[0], old); err != nil {
+	if err := finishMessageFixture(h.store, store.DeliveryConfirmed, ids[0], old); err != nil {
 		t.Fatal(err)
 	}
-	if err := h.store.MarkDelivered(ids[1], recent); err != nil {
+	if err := finishMessageFixture(h.store, store.DeliveryConfirmed, ids[1], recent); err != nil {
 		t.Fatal(err)
 	}
 	owner := NewInboxOwner(h.store)

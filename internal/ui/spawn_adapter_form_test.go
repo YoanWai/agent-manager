@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/launch"
+	"github.com/YoanWai/agent-manager/internal/store"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
@@ -804,7 +806,7 @@ func TestSendModePromptSurvivesPollerRestart(t *testing.T) {
 	}
 }
 
-func TestSendModeReconcilesAmbiguousDeliveryWithoutResending(t *testing.T) {
+func TestSendModeReconcilesUncertainPriorDeliveryWithoutResending(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	if err := m.spawnSession("send-tool", "custom", t.TempDir(), "", "do not resend", false, false, config.Choice{}); err != nil {
@@ -812,17 +814,22 @@ func TestSendModeReconcilesAmbiguousDeliveryWithoutResending(t *testing.T) {
 	}
 	sess := m.sessionRows()[0]
 	input := sessionPendingInputs(t, m, sess.ID)[0]
-	claimed, err := m.services.store.ClaimPendingInput(sess.ID, input)
-	if err != nil || !claimed {
-		t.Fatalf("claim pending input = %v, %v", claimed, err)
+	var claimed bool
+	acquired, err := m.services.store.WithDeliveryGuard(context.Background(), func(guard *store.DeliveryGuard) error {
+		_, ok, claimErr := guard.ClaimPendingInput(sess.ID, input, time.Now())
+		claimed = ok
+		return claimErr
+	})
+	if err != nil || !acquired || !claimed {
+		t.Fatalf("claim pending input = acquired %v, claimed %v, err %v", acquired, claimed, err)
 	}
 	old := m.poller
 	m.poller = newPoller(m.services.store, m.services.tmux, m.services.engine, m.services.hooks, m.services.gitDrv,
 		old.options.StatusSources, old.options.SessionStores, old.options.MCPStyles, old.options.ReportStyles, old.options.ShellTools, old.options.Binaries, old.options.Interval)
 	msg := m.poller.refreshOnce()
 	gotErr, ok := msg.(errMsg)
-	if !ok || !strings.Contains(gotErr.err.Error(), "ambiguous pending input") {
-		t.Fatalf("refresh result = %#v, want ambiguous-delivery error", msg)
+	if !ok || !strings.Contains(gotErr.err.Error(), "uncertain prior transport outcome") {
+		t.Fatalf("refresh result = %v, want uncertain-delivery error", msg)
 	}
 	if inputs := sessionPendingInputs(t, m, sess.ID); len(inputs) != 0 {
 		t.Fatalf("ambiguous input was not reconciled: %q", inputs)

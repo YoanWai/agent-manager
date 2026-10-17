@@ -26,6 +26,17 @@ import (
 	"github.com/google/uuid"
 )
 
+// goneSessionOutcome is how a send to a killed session ends. tmux keeps its
+// server, so the buffer loads and only the paste fails, which may have
+// landed. psmux runs a server per session, so the load already finds none
+// and nothing can have reached a pane.
+func goneSessionOutcome() store.DeliveryOutcome {
+	if runtime.GOOS == "windows" {
+		return store.DeliveryRefused
+	}
+	return store.DeliveryUncertain
+}
+
 const testSocket = "amexectest"
 
 func tmuxCmd(args ...string) *exec.Cmd {
@@ -53,8 +64,8 @@ func runTests(m *testing.M) int {
 	}
 	defer cleanup()
 	// psmux under a loaded CI runner can take longer than the production
-	// budget to paste and confirm a submit; a run out of time fails the
-	// send, which is not what the delivery tests check.
+	// budget to paste and confirm a submit; a run out of time reports the
+	// transport uncertain, which is not what the delivery tests check.
 	if runtime.GOOS == "windows" {
 		automaticDeliveryTimeout = 20 * time.Second
 	}

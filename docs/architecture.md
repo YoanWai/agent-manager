@@ -19,7 +19,7 @@ Under `internal/`:
 - `ui/focus/watch`: the focused pane's watcher: control-mode client, polled fallback, pushed frames.
 - `ui/theme`: the built-in palettes and color math, a leaf any UI package may import.
 - `ui/presentation`: pure text helpers shared by `ui` and its feature packages.
-- `store`: SQLite state: sessions, groups, settings, inbox, tasks, reservations.
+- `store`: SQLite state: sessions, groups, settings, inbox, tasks, reservations, delivery guard.
 - `tmux`: the `Driver` on the dedicated socket, the control-mode client, bindings, attach.
 - `status`: classifies pane output into agent states.
 - `config`: built-in tool definitions and CLI install.
@@ -132,10 +132,16 @@ waiting, drops the jobs that never started, and the manager exits non-zero
 naming each as "never started" or "was still running". Shutdown then waits at
 most five seconds (`effectStopWait`) for begun effects and reports the same way.
 
-**Automatic delivery is at most once.** The poller's inbox and pending-input
-delivery (`internal/execution/polldelivery.go`) claims a row with a
-compare-and-set before the paste and records it delivered or dropped after. A
-claim left behind by a manager that died between the two is retired, never
-typed again: a message once its claim is older than `inboxClaimGrace`, a
-pending input on the next poll. The schema is unchanged from `main`, so older
-and newer binaries can share a profile.
+**Automatic delivery has one owner per profile.** The poller's inbox and
+pending-input delivery runs inside `Store.WithDeliveryGuard`, an exclusive
+non-blocking lock on `<state.db>.delivery.lock`; a competing manager skips the
+tick. A claim is committed with a random attempt token before the paste, and the
+receipt must carry the same token. A claim with no live owner becomes
+`uncertain` and is never typed again. SQLite triggers refuse a claim or receipt
+without a token, so a binary older than the guard cannot deliver on a profile a
+newer one has opened. Moving a profile across is therefore offline:
+
+1. Stop every older manager, CLI and MCP process on the profile, and check they exited.
+2. Back up `state.db` with its `-wal` and `-shm` files.
+3. Open the profile once with the new binary, which installs the columns and triggers.
+4. Start only new binaries from then on. Going back means restoring the backup.
