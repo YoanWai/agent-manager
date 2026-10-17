@@ -33,12 +33,11 @@ func (m *Model) footer() legend {
 	// title, carries the few keys the manager keeps, and drops the app-wide
 	// tier, which would name keys the agent receives.
 	if m.mode == modeFocus {
-		// Clicking the session's own row only leaves focus where the list
-		// is painted, so the full screen layout names the button and the
-		// key alone.
+		// A click on the list only leaves focus where the list is painted,
+		// so the full screen layout names the button and the key alone.
 		back := m.services.keys.Binding(keybind.Detach).Label()
 		if !m.prefs.fullLayout {
-			back += " / click its row"
+			back += " / click the list"
 		}
 		back += " / mouse back"
 		sess, selected := m.selected()

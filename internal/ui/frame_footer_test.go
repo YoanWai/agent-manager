@@ -24,7 +24,7 @@ func TestFooterInFocusMode(t *testing.T) {
 	if !strings.Contains(footer, "Focused") {
 		t.Fatalf("the tier should name the mode it describes:\n%s", footer)
 	}
-	if !strings.Contains(footer, "ctrl+q / ctrl+\\") || !strings.Contains(footer, "click its row") || !strings.Contains(footer, "mouse back") {
+	if !strings.Contains(footer, "ctrl+q / ctrl+\\") || !strings.Contains(footer, "click the list") || !strings.Contains(footer, "mouse back") {
 		t.Fatalf("focus footer should carry the reserved keys and mouse leave:\n%s", footer)
 	}
 	listH := lipgloss.Height(m.listFooter())
@@ -42,7 +42,7 @@ func TestFooterInFocusMode(t *testing.T) {
 	// Full screen focus paints no list, so the gesture that needs one goes.
 	m.prefs.fullLayout = true
 	full := ansi.Strip(m.viewFooter())
-	if strings.Contains(full, "click its row") {
+	if strings.Contains(full, "click the list") {
 		t.Fatalf("full screen focus has no list to click:\n%s", full)
 	}
 	if !strings.Contains(full, "mouse back") {
@@ -274,7 +274,7 @@ func TestFooterInFocusModeNamesTheKeyTable(t *testing.T) {
 	useSessionKeys(t, m, []string{"f9"}, nil, []string{"alt+e"})
 	m.mode = modeFocus
 	footer := ansi.Strip(m.viewFooter())
-	if !strings.Contains(footer, "f9 / click its row / mouse back") || !strings.Contains(footer, "alt+e editor") {
+	if !strings.Contains(footer, "f9 / click the list / mouse back") || !strings.Contains(footer, "alt+e editor") {
 		t.Fatalf("focus footer should name the configured keys:\n%s", footer)
 	}
 	if strings.Contains(footer, "review") || strings.Contains(footer, "ctrl+q") {

@@ -88,6 +88,9 @@ func (m *Model) handleMouseEvent(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 				model, command := m.applyRailDecision(decision)
 				return model, tea.Batch(left, command)
 			}
+			if msg.Button == tea.MouseButtonLeft && m.onRailColumn(msg.X, msg.Y) {
+				return m, m.leaveFocus()
+			}
 		}
 		return m.handleFocusMouse(msg)
 	}
@@ -192,7 +195,33 @@ func (m *Model) handleMousePress(msg tea.MouseMsg, ctx uirail.MouseContext) (tea
 	if hit, ok := m.quick.hitAt(msg.X, msg.Y); ok {
 		return m, m.handleQuickClick(hit)
 	}
+	if msg.Button == tea.MouseButtonLeft && m.onContentColumn(msg.X, msg.Y) {
+		return m.focusFromPreview()
+	}
 	return m.applyRailDecision(m.rail.Mouse(msg, m.layout.displayedRail, ctx))
+}
+
+// onRailColumn and onContentColumn place a point in the split's body on
+// either side of the divider, which belongs to neither.
+func (m *Model) onRailColumn(x, y int) bool {
+	y0, y1 := m.bodyYRange()
+	return !m.prefs.fullLayout && x < m.dividerX() && y >= y0 && y < y1
+}
+
+func (m *Model) onContentColumn(x, y int) bool {
+	y0, y1 := m.bodyYRange()
+	return !m.prefs.fullLayout && x > m.dividerX()+splitHitSlop && y >= y0 && y < y1
+}
+
+// focusFromPreview focuses the session under the cursor from a press on the
+// preview beside it. The press only focuses: it never reaches the agent.
+// A group, an archived session, the search field and the quick bar keep it.
+func (m *Model) focusFromPreview() (tea.Model, tea.Cmd) {
+	row, ok := m.selectedRow()
+	if !ok || row.isGroup || row.sess.Archived || m.rail.Searching() || m.quick.active {
+		return m, nil
+	}
+	return m.focusSelected()
 }
 
 // closesOnBackdrop reports whether a click off the open card closes it the

@@ -715,7 +715,7 @@ func TestClickOnRailLastColumnSelectsRow(t *testing.T) {
 
 // A click past the divider, in the content column, must not steal the
 // selection: the rail is what click-to-select owns.
-func TestClickInContentColumnDoesNotSelect(t *testing.T) {
+func TestClickInContentColumnFocusesTheSelectedSession(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	createSession(t, m, "alpha", t.TempDir(), "")
@@ -725,13 +725,16 @@ func TestClickInContentColumnDoesNotSelect(t *testing.T) {
 
 	preparedView(m)
 	y0, _ := m.bodyYRange()
-	updated, cmd := m.handleMouse(tea.MouseMsg{
+	updated, _ := m.handleMouse(tea.MouseMsg{
 		X: m.dividerX() + 5, Y: y0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.rail.Cursor() != before || cmd != nil {
+	if m.rail.Cursor() != before {
 		t.Fatal("a click in the content column should not move the cursor")
+	}
+	if sess, ok := m.selected(); m.mode != modeFocus || !ok || sess.Name != "beta" {
+		t.Fatalf("a click in the content column should focus beta, mode = %v", m.mode)
 	}
 }
 

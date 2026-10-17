@@ -103,22 +103,22 @@ func TestViewLegendPaintsWaitingMessagesWarm(t *testing.T) {
 
 func TestLegendKeyPressesTheFirstKeyItNames(t *testing.T) {
 	for label, want := range map[string]string{
-		"n":                                   "n",
-		"↵":                                   "enter",
-		"y/↵":                                 "y",
-		"n/esc":                               "n",
-		"esc/q":                               "esc",
-		"↵/tab":                               "enter",
-		"space/↵":                             " ",
-		"/":                                   "/",
-		"x/X":                                 "x",
-		"g/G":                                 "g",
-		"o/f3":                                "o",
-		"ctrl+t":                              "ctrl+t",
-		"alt+m":                               "alt+m",
-		"tab":                                 "tab",
-		`ctrl+\ / click its row / mouse back`: `ctrl+\`,
-		"r / release":                         "r",
+		"n":                                    "n",
+		"↵":                                    "enter",
+		"y/↵":                                  "y",
+		"n/esc":                                "n",
+		"esc/q":                                "esc",
+		"↵/tab":                                "enter",
+		"space/↵":                              " ",
+		"/":                                    "/",
+		"x/X":                                  "x",
+		"g/G":                                  "g",
+		"o/f3":                                 "o",
+		"ctrl+t":                               "ctrl+t",
+		"alt+m":                                "alt+m",
+		"tab":                                  "tab",
+		`ctrl+\ / click the list / mouse back`: `ctrl+\`,
+		"r / release":                          "r",
 	} {
 		key, ok := legendKey(label)
 		if !ok || key.String() != want {
