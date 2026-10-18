@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"path/filepath"
 	"slices"
 	"testing"
 
@@ -19,7 +20,7 @@ func TestClickOnAPathSuggestionCompletesIt(t *testing.T) {
 	x, y := paintedCell(t, m, "/work/beta")
 	updated, cmd := m.handleMouse(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
 	m = updated.(*Model)
-	if m.form.Dir() != "/work/beta/" || cmd == nil {
+	if m.form.Dir() != "/work/beta"+string(filepath.Separator) || cmd == nil {
 		t.Fatalf("a click on beta should complete it and read its children, dir %q", m.form.Dir())
 	}
 }
