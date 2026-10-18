@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	diff "github.com/YoanWai/agent-manager/internal/diff/model"
+	git "github.com/YoanWai/agent-manager/internal/git/value"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -22,6 +23,9 @@ func (m *Model) ApplyLoad(result LoadResult) ApplyResult {
 	}
 	m.loading = false
 	m.fingerprint = result.Fingerprint
+	if result.Scope == git.ScopeCommit {
+		m.commits, m.commitTarget = result.Commits, result.CommitTarget
+	}
 	if result.Err != nil {
 		m.errText = result.Err.Error()
 		m.set = diff.Set{}
@@ -51,11 +55,25 @@ func (m *Model) ApplyLoad(result LoadResult) ApplyResult {
 		previousPath = fd.File.Path
 	}
 	m.set = result.Set.Clone()
-	stateChanged := m.clearStaleMarks()
+	// A pending A belongs to the set it was pressed on: a silent refresh of
+	// that set carries it, any other load drops it.
+	resumeMarkAll := m.markAll && result.Refresh
+	if m.markAll {
+		m.markAll = false
+		m.notice = ""
+	}
+	carried := false
+	if result.Scope == git.ScopeCommit {
+		carried = m.settleCommit(result, &accepted)
+	}
+	stateChanged := m.clearStaleMarks() || carried
 	stateChanged = m.markMissingCommentsOutdated() || stateChanged
 	m.fileLoading = make(map[int]bool)
 	m.reanchor = nil
-	if result.Refresh || restored {
+	// The commit scope keys comments by commit, so each re-anchors only
+	// against its own commit, or the one a rewrite carried it to.
+	reanchor := result.Refresh || restored || result.Scope == git.ScopeCommit
+	if reanchor {
 		m.reanchor = make(map[string]bool)
 		for _, note := range m.annotations[m.reviewKey()] {
 			m.reanchor[note.file] = true
@@ -75,11 +93,11 @@ func (m *Model) ApplyLoad(result LoadResult) ApplyResult {
 	} else if request, ok := m.requestHighlight(); ok {
 		accepted.Requests.Highlight = &request
 	}
-	if result.Refresh || restored {
+	if reanchor {
 		stateful := make(map[string]bool)
 		for markKey, hash := range m.reviewed[m.reviewKey()] {
 			scope, path, _ := strings.Cut(markKey, "\x00")
-			if hash != 0 && scope == m.scope.String() {
+			if hash != 0 && scope == m.scopeKey() {
 				stateful[path] = true
 			}
 		}
@@ -96,6 +114,9 @@ func (m *Model) ApplyLoad(result LoadResult) ApplyResult {
 	}
 	if stateChanged {
 		accepted.Requests.Save = m.saveRequest()
+	}
+	if resumeMarkAll {
+		accepted.Requests = mergeRequests(accepted.Requests, m.MarkAll())
 	}
 	accepted.Requests.StartupTick = true
 	return accepted
@@ -119,6 +140,9 @@ func (m *Model) ApplyFile(result FileResult) ApplyResult {
 	accepted := ApplyResult{Accepted: true}
 	if stateChanged {
 		accepted.Requests.Save = m.saveRequest()
+	}
+	if marked, ok := m.finishMarkAll(); ok {
+		accepted.Requests = mergeRequests(accepted.Requests, marked)
 	}
 	if result.Index != m.fileIdx {
 		return accepted
@@ -307,6 +331,8 @@ type PickDecision struct {
 	Refused string
 	Repo    string
 	Base    *BaseSave
+	// Commit is the SHA a commit pick shows.
+	Commit string
 }
 
 type BaseSave struct {
@@ -323,7 +349,8 @@ func (m Model) DecidePick(msg PickedMsg) PickDecision {
 	if !m.PickerSourceCurrent(msg.Source) {
 		return PickDecision{Refused: "review changed; reopen the picker"}
 	}
-	if msg.Choice.Kind == PickBase {
+	switch msg.Choice.Kind {
+	case PickBase:
 		if msg.StoreRoot == "" {
 			return PickDecision{Refused: "review repository is gone"}
 		}
@@ -331,6 +358,8 @@ func (m Model) DecidePick(msg PickedMsg) PickDecision {
 			Ref: msg.Choice.Value, TargetID: msg.Source.TargetID,
 			StoreRoot: msg.StoreRoot, Source: msg.Source,
 		}}
+	case PickCommit:
+		return PickDecision{Commit: msg.Choice.Value}
 	}
 	return PickDecision{Repo: msg.Choice.Value}
 }

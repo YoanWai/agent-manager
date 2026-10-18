@@ -82,6 +82,9 @@ type layoutState struct {
 	card cardRect
 	// keyHits are the key pairs this frame painted, for clicks.
 	keyHits keyHits
+	// reviewFilesTop is the frame row Review's file list first painted on,
+	// under the commit rail when the commit scope shows one, for clicks.
+	reviewFilesTop int
 }
 
 type focusState struct {

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	git "github.com/YoanWai/agent-manager/internal/git/value"
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 )
@@ -19,10 +20,16 @@ const (
 	actDiscard
 	actSend
 	actReviewed
+	actMarkAll
 	actScope
 	actRepo
 	actBranch
 	actTarget
+	actCommitPicker
+	actOlderCommit
+	actNewerCommit
+	actOldestCommit
+	actNewestCommit
 	actLineUp
 	actLineDown
 	actHalfDown
@@ -55,6 +62,8 @@ type binding struct {
 	Help string
 	// Footer is the pair's footer label, computed from the review's state.
 	// Nil leaves the binding out of the footer: its pair is a neighbour's.
+	// "" leaves it out of this frame's footer, for a key the scope in view
+	// does not answer.
 	Footer func(*Model) string
 	// Long is the ? map's description. Empty leaves it out of the map.
 	Long string
@@ -71,11 +80,17 @@ var keymap = []binding{
 	{Keys: []string{"d"}, Action: actDiscard, Footer: label("remove/handle"), Long: "remove a draft, or mark sent feedback handled / open"},
 	{Keys: []string{"C"}, Action: actSend, Footer: sendLabel, Long: "send drafts to the agent as the next review round"},
 	{Keys: []string{"space", " "}, Action: actReviewed, Legend: "space", Footer: label("reviewed"), Long: "mark the file reviewed"},
+	{Keys: []string{"A"}, Action: actMarkAll, Footer: label("all reviewed"), Long: "mark every listed file reviewed, or clear them all"},
 	{Keys: []string{"s"}, Action: actScope, Footer: func(m *Model) string { return "scope: " + m.scope.String() },
-		Long: "cycle the scope (uncommitted / vs target / last commit / staged)"},
+		Long: "cycle the scope (uncommitted / vs target / commit / staged)"},
 	{Keys: []string{"r"}, Action: actRepo, Footer: repoLabel, Long: "pick the repo when the session dir holds several"},
 	{Keys: []string{"b"}, Action: actBranch, Footer: label("branch"), Long: "switch to another worktree, listed by branch"},
-	{Keys: []string{"B"}, Action: actTarget, Footer: label("target"), Long: "pick the target branch the branch diff compares against"},
+	{Keys: []string{"B"}, Action: actTarget, Footer: label("target"), Long: "pick the target branch, bounding the branch diff and commit list"},
+	{Keys: []string{"L"}, Action: actCommitPicker, Footer: commitScopeLabel("commit"), Long: "pick the commit the commit scope shows"},
+	{Keys: []string{"["}, Action: actOlderCommit, Legend: "[/]", Footer: commitScopeLabel("older/newer"), Long: "older / newer commit"},
+	{Keys: []string{"]"}, Action: actNewerCommit},
+	{Keys: []string{"{"}, Action: actOldestCommit, Legend: "{/}", Footer: commitScopeLabel("oldest/newest"), Long: "oldest / newest commit"},
+	{Keys: []string{"}"}, Action: actNewestCommit},
 	{Keys: []string{"up", "k"}, Action: actLineUp, Legend: "↑↓/jk", Help: "↑↓ / jk", Move: true, Footer: label("scroll line"), Long: "move a line"},
 	{Keys: []string{"down", "j"}, Action: actLineDown},
 	{Keys: []string{"ctrl+d"}, Action: actHalfDown, Legend: "ctrl+d/ctrl+u", Move: true, Footer: label("half page"), Long: "half a page"},
@@ -112,6 +127,17 @@ func repoLabel(m *Model) string {
 		return "repo: " + presentation.EscapeControlsInline(filepath.Base(m.repoSel))
 	}
 	return "repo"
+}
+
+// commitScopeLabel shows text while the commit scope is in view, the only
+// scope the commit keys act in.
+func commitScopeLabel(text string) func(*Model) string {
+	return func(m *Model) string {
+		if m.scope != git.ScopeCommit {
+			return ""
+		}
+		return text
+	}
 }
 
 func filterLabel(m *Model) string {

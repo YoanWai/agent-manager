@@ -100,6 +100,16 @@ func (m *Model) run(act action, ctx KeyContext, height int) KeyResult {
 		result.Navigation = NavigationBranchPicker
 	case actTarget:
 		result.Navigation = NavigationBasePicker
+	case actCommitPicker:
+		result.Navigation = NavigationCommitPicker
+	case actOlderCommit:
+		result.Requests = m.stepCommit(1)
+	case actNewerCommit:
+		result.Requests = m.stepCommit(-1)
+	case actOldestCommit:
+		result.Requests = m.stepCommit(len(m.commits))
+	case actNewestCommit:
+		result.Requests = m.stepCommit(-len(m.commits))
 	case actLayout:
 		m.ToggleSideBySide(height)
 	case actCodeOnly:
@@ -109,6 +119,12 @@ func (m *Model) run(act action, ctx KeyContext, height int) KeyResult {
 			result.Error = "review state is unavailable"
 		} else {
 			result.Requests = m.ToggleReviewed()
+		}
+	case actMarkAll:
+		if !ctx.PersistenceAvailable {
+			result.Error = "review state is unavailable"
+		} else {
+			result.Requests = m.MarkAll()
 		}
 	case actComment:
 		m.OpenAnnotation()
@@ -146,4 +162,12 @@ func (m *Model) ApplyFileCheck(result FileCheckResult) (string, bool) {
 		return "", false
 	}
 	return req.Path, true
+}
+
+func (m *Model) stepCommit(delta int) Requests {
+	request, ok := m.StepCommit(delta)
+	if !ok {
+		return Requests{}
+	}
+	return Requests{Load: &request, StartupTick: true}
 }

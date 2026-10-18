@@ -150,7 +150,7 @@ func (m *Model) saveAnnotation() Requests {
 		}
 		existing.text = text
 		existing.hash = ContentHash(fd)
-		existing.scope = m.scope.String()
+		existing.scope = m.scopeKey()
 		return Requests{Save: m.saveRequest()}
 	}
 	if text == "" {
@@ -159,7 +159,7 @@ func (m *Model) saveAnnotation() Requests {
 	key := m.reviewKey()
 	m.annotations[key] = append(m.annotations[key], annotation{
 		id: newCommentID(), file: fd.File.Path, line: num, deleted: deleted,
-		excerpt: excerptOf(line.Text), text: text, hash: ContentHash(fd), scope: m.scope.String(),
+		excerpt: excerptOf(line.Text), text: text, hash: ContentHash(fd), scope: m.scopeKey(),
 	})
 	return Requests{Save: m.saveRequest()}
 }
@@ -168,7 +168,7 @@ func (m Model) annotationAt(path string, line diff.Line) *annotation {
 	num, deleted := annotationLine(line)
 	notes := m.annotations[m.reviewKey()]
 	for i := range notes {
-		if notes[i].round == 0 && notes[i].file == path && notes[i].line == num && notes[i].deleted == deleted {
+		if notes[i].round == 0 && notes[i].file == path && notes[i].line == num && notes[i].deleted == deleted && m.noteShown(&notes[i]) {
 			return &notes[i]
 		}
 	}
@@ -179,7 +179,7 @@ func (m Model) AnnotationsAt(path string, line diff.Line) []Comment {
 	num, deleted := annotationLine(line)
 	var out []Comment
 	for _, note := range m.annotations[m.reviewKey()] {
-		if note.file == path && note.line == num && note.deleted == deleted {
+		if note.file == path && note.line == num && note.deleted == deleted && m.noteShown(&note) {
 			out = append(out, commentValue(note))
 		}
 	}
@@ -227,14 +227,14 @@ func (m *Model) DiscardOrToggle(persistenceAvailable bool) (Requests, string) {
 	key := m.reviewKey()
 	notes := m.annotations[key]
 	for i := range notes {
-		if notes[i].round == 0 && notes[i].file == fd.File.Path && notes[i].line == num && notes[i].deleted == deleted {
+		if notes[i].round == 0 && notes[i].file == fd.File.Path && notes[i].line == num && notes[i].deleted == deleted && m.noteShown(&notes[i]) {
 			m.annotations[key] = append(notes[:i], notes[i+1:]...)
 			return Requests{Save: m.saveRequest()}, ""
 		}
 	}
 	latestOpen, latestHandled := -1, -1
 	for i := range notes {
-		if notes[i].round == 0 || notes[i].file != fd.File.Path || notes[i].line != num || notes[i].deleted != deleted {
+		if notes[i].round == 0 || notes[i].file != fd.File.Path || notes[i].line != num || notes[i].deleted != deleted || !m.noteShown(&notes[i]) {
 			continue
 		}
 		if notes[i].handled {
@@ -309,6 +309,9 @@ func (m *Model) BeginSend() ApplyResult {
 		indexes = append(indexes, i)
 		notes[i].point = len(parts) + 1
 		location := fmt.Sprintf("%s:%d", note.file, note.line)
+		if sha, ok := strings.CutPrefix(note.scope, commitScopePrefix); ok && note.scope != m.scopeKey() {
+			location += " in commit " + shortSHA(sha)
+		}
 		body := strings.ReplaceAll(note.text, "\n", " / ")
 		if note.deleted {
 			parts = append(parts, fmt.Sprintf("(%d) [comment %s] %s (deleted line): %s", len(parts)+1, notes[i].id, location, body))
@@ -321,13 +324,16 @@ func (m *Model) BeginSend() ApplyResult {
 	}
 	prompt := fmt.Sprintf("Code review of %s. Address each numbered point, then mark its comment handled with the review_comment tool (or `agent-manager review-comment <comment-id>`), and summarize what you changed per point: %s", reviewSubject(m.scope, m.set, m.repoSel), strings.Join(parts, "; "))
 	round.Number = nextRound
-	round.Scope = m.scope.String()
+	round.Scope = m.scopeKey()
 	round.Fingerprint = m.fingerprint
 	m.rounds[key] = round
 	ids := make([]string, 0, len(indexes))
 	for _, i := range indexes {
 		notes[i].round = round.Number
-		notes[i].scope = round.Scope
+		// A comment on another commit stays keyed by the commit it was made on.
+		if !strings.HasPrefix(notes[i].scope, commitScopePrefix) {
+			notes[i].scope = round.Scope
+		}
 		notes[i].handled = false
 		notes[i].outdated = false
 		ids = append(ids, notes[i].id)
@@ -438,6 +444,9 @@ func NormalizeSavedState(state SavedState) (SavedState, bool) {
 // session receiving it may sit on another branch or worktree, or none at all.
 func reviewSubject(scope git.Scope, set diff.Set, repoDir string) string {
 	subject := scopePhrase(scope)
+	if scope == git.ScopeCommit && set.Commit != "" {
+		subject = fmt.Sprintf("commit `%s`", shortSHA(set.Commit))
+	}
 	if set.Repo.Detached {
 		subject += fmt.Sprintf(" on detached HEAD `%s`", set.Repo.Head)
 	} else if set.Repo.Branch != "" {
@@ -458,7 +467,7 @@ func scopePhrase(scope git.Scope) string {
 	case git.ScopeBranch:
 		return "the branch changes"
 	case git.ScopeCommit:
-		return "the last commit"
+		return "the commit"
 	case git.ScopeStaged:
 		return "the staged changes"
 	default:

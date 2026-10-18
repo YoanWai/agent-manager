@@ -192,15 +192,29 @@ func (m *Model) Header(ctx RenderContext, sessName string, width int) string {
 		}
 		pill("r", name, s.Accent)
 		branch := presentation.EscapeControlsInline(state.Set.Repo.Branch)
-		if state.Scope == git.ScopeBranch && state.Set.BaseDesc != "" && branch != "" {
-			target := presentation.EscapeControlsInline(StripBaseHash(state.Set.BaseDesc))
-			summary := target + " → " + branch
+		target := ""
+		switch state.Scope {
+		case git.ScopeBranch:
+			target = state.Set.BaseDesc
+		case git.ScopeCommit:
+			target = m.commitTarget
+		}
+		if target != "" && branch != "" {
+			summary := presentation.EscapeControlsInline(StripBaseHash(target)) + " → " + branch
 			if state.Set.BaseOverride == "" {
 				summary += " " + s.Subtle.Render("(auto)")
 			}
 			pill("B", summary, s.Accent)
 		} else if branch != "" {
 			left += "  " + s.Subtle.Render(branch)
+		}
+		if c, ok := m.shownCommit(); ok && state.Scope == git.ScopeCommit {
+			at, total := m.CommitPosition()
+			label := fmt.Sprintf("%d/%d %s %s", at, total, c.Short, presentation.TruncateTail(presentation.EscapeControlsInline(c.Subject), commitPillSubject))
+			if m.commitPin.SHA == "" {
+				label += " " + s.Subtle.Render("(HEAD)")
+			}
+			pill("L", label, s.Accent)
 		}
 	}
 
@@ -232,7 +246,7 @@ func (m *Model) Header(ctx RenderContext, sessName string, width int) string {
 	if round := m.Round(); round.Number > 0 {
 		label := fmt.Sprintf("Review round %d", round.Number)
 		if !state.Loading && round.Fingerprint != 0 &&
-			(round.Scope != state.Scope.String() || round.Fingerprint != state.Fingerprint) {
+			(round.Scope != m.scopeKey() || round.Fingerprint != state.Fingerprint) {
 			label += " · changed"
 		}
 		right += s.Subtle.Render(" · ") + s.Annotation.Render(label)
@@ -314,9 +328,9 @@ func (m *Model) FileList(ctx RenderContext, width, height int) Pane {
 		m.fileRows.Show(shown[start-1], 1)
 	}
 	notes := map[string]int{}
-	for _, note := range m.Annotations() {
-		if !note.Resolved {
-			notes[note.File]++
+	for _, note := range m.annotations[m.reviewKey()] {
+		if !note.handled && m.noteShown(&note) {
+			notes[note.file]++
 		}
 	}
 	for pos := start; pos < end; pos++ {
@@ -406,7 +420,11 @@ func (m *Model) Legend(helpKey keybind.Binding) []LegendSection {
 				continue
 			}
 		}
-		pair := [2]string{key, b.Footer(m)}
+		text := b.Footer(m)
+		if text == "" {
+			continue
+		}
+		pair := [2]string{key, text}
 		if b.Move {
 			move.Pairs = append(move.Pairs, pair)
 		} else {

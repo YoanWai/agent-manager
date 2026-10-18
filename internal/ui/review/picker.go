@@ -18,11 +18,13 @@ type PickerKind int
 const (
 	PickRepo PickerKind = iota
 	PickBase
+	PickCommit
 )
 
 // PickerRow is one selectable target: Label is what the user reads (a repo base
-// name, a worktree's branch, or a base ref), Root carries the path a repo pick
-// retargets to, or the ref a base pick persists ("" for auto).
+// name, a worktree's branch, a base ref, or a commit), Root carries the path a
+// repo pick retargets to, the ref a base pick persists ("" for auto), or the
+// commit's SHA.
 type PickerRow struct {
 	Label string
 	Root  string
@@ -184,7 +186,7 @@ func (p Picker) row(ctx RenderContext, inner int, row PickerRow, selected bool) 
 	name := presentation.TruncateTail(presentation.EscapeControlsInline(row.Label), inner-lipgloss.Width(marker))
 	budget := inner - lipgloss.Width(marker) - lipgloss.Width(name) - 2
 	dir := ""
-	if budget > 1 {
+	if budget > 1 && p.kind != PickCommit {
 		dir = s.Subtle.Render("  " + presentation.TruncateTail(presentation.EscapeControlsInline(filepath.Dir(row.Root)), budget))
 	}
 	return marker + nameStyle.Render(name) + dir

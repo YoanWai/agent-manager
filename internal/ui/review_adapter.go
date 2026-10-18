@@ -310,6 +310,8 @@ func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		navigation = m.openBranchPick()
 	case uireview.NavigationBasePicker:
 		navigation = m.openBasePick()
+	case uireview.NavigationCommitPicker:
+		m.openCommitPick()
 	}
 	return m, tea.Batch(navigation, m.reviewCommands(result.Requests))
 }
@@ -467,6 +469,25 @@ func (m *Model) openRepoPick() {
 	m.openReviewPicker(rows, "Review repo", uireview.PickRepo, state.RepoSelected, m.reviewPickerSource(), "")
 }
 
+// openCommitPick lists the commit scope's commits, newest first, cursor on
+// the one in view.
+func (m *Model) openCommitPick() {
+	rows, current, err := m.review.CommitPickerRows()
+	if err != "" {
+		m.reportErr(err)
+		return
+	}
+	m.openReviewPicker(rows, "Review commit", uireview.PickCommit, current, m.reviewPickerSource(), "")
+}
+
+func (m *Model) showReviewCommit(sha string) tea.Cmd {
+	request, ok := m.review.ShowCommit(sha)
+	if !ok {
+		return nil
+	}
+	return tea.Batch(m.reviewLoadCmd(request), m.startStartupTick())
+}
+
 // openBranchPick lists the currently selected repo's worktrees, one branch per
 // row, so the user can retarget review to another worktree.
 func (m *Model) openBranchPick() tea.Cmd {
@@ -549,6 +570,9 @@ func (m *Model) applyReviewPick(msg uireview.PickedMsg) tea.Cmd {
 	}
 	if decision.Base != nil {
 		return m.selectBase(*decision.Base)
+	}
+	if decision.Commit != "" {
+		return m.showReviewCommit(decision.Commit)
 	}
 	return m.selectRepo(decision.Repo)
 }
