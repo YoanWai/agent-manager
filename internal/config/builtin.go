@@ -184,7 +184,10 @@ rules = [
   { state = "waiting", pattern = "(?m)^\\s*›\\s+\\d+\\." },
   { state = "waiting", pattern = "(?m)Press enter to (confirm|continue)\\b" },
   { state = "waiting", pattern = "(?m)enter to submit answer\\b" },
-  { state = "waiting", pattern = "(?m)^\\s*enter select · esc back\\b" },
+  # the shared picker's footer names its accept and cancel keys, each with a
+  # label of the view's own ("enter select · esc back" on the model picker,
+  # "enter confirm · esc skip" on the startup hook review)
+  { state = "waiting", pattern = "(?m)^\\s*enter [a-z]+ · esc [a-z]" },
   # active status row is the final row above the input box; anchoring its full
   # shape keeps an answer that quotes "esc to interrupt" from looking active
   { state = "working", pattern = "(?m)^[ \\t]*(?:• )?[^\\n]*\\([\\dhms. ]+ [•·] esc to interrupt\\)(?: · [^\\n]*)?[ \\t]*\\n(?:[ \\t]+└[^\\n]*\\n(?:[ \\t]{4}[^\\n]*\\n)*)?(?:[ \\t]*\\n|[ \\t]+(?:⚠|↓|Tip: |Copied )[^\\n]*\\n)*[ \\t\\n]*\\z" },

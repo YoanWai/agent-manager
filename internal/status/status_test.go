@@ -467,6 +467,20 @@ func TestCodexRealPanes(t *testing.T) {
 				"› 1. Switch to gpt-6-luna                   Fast and affordable model for easier tasks.\n" +
 				"  2. Keep current model\n  3. Keep current model (never show again)  Hide future rate limit reminders about switching models\n" +
 				"  enter select · esc back", Waiting},
+		{"codex startup hook review (0.163 real capture)", "codex",
+			"  >_ OpenAI Codex (v0.163.0)\n     ~/proj\n\n" +
+				"  Hooks need review\n  2 hooks are new or changed.\n  Hooks can run outside the sandbox after you trust them.\n\n" +
+				"› 1. Review hooks\n  2. Trust all and continue\n  3. Continue without trusting (hooks won't run)\n\n" +
+				"  enter confirm · esc skip", Waiting},
+		{"codex startup update prompt (0.163 source snapshot)", "codex",
+			"  Update available · 0.0.0 → 9.9.9\n  Release notes: https://github.com/openai/codex/releases/latest\n\n" +
+				"› 1. Update now (runs `npm install -g @openai/codex`)                           \n" +
+				"  2. Skip\n  3. Skip until next version\n\n  enter continue · esc skip", Waiting},
+		{"codex resume folder prompt (0.163 source snapshot)", "codex",
+			"  Working directory · resume\n  Session = latest cwd recorded in the resumed session\n  Current = your current working directory\n\n" +
+				"› 1. Use session directory (/home/dev/session)\n  2. Use current directory (/home/dev/current)\n" +
+				"  3. Always use session directory\n  4. Always use current directory\n\n" +
+				"  enter continue · esc use session · ⌃c quit", Waiting},
 		{"codex finished on a label with runtime metrics", "codex",
 			"• Final response.\n  02:41 · Local tools: 2 calls (1.2s) • Inference: 1 call (3.4s)\n\n› Ask Codex to do anything\n  gpt-5.1-codex default · /private/tmp/am586/work", Finished},
 		{"codex question on a worked-for label with runtime metrics", "codex",
