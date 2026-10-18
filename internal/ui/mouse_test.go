@@ -1426,6 +1426,13 @@ func wheel(m *Model, button tea.MouseButton, x, y int) *Model {
 	return updated.(*Model)
 }
 
+// wheelOnCard turns the wheel one notch over the middle of the open card.
+func wheelOnCard(m *Model, button tea.MouseButton) *Model {
+	preparedView(m)
+	card := m.layout.card
+	return wheel(m, button, (card.left+card.right)/2, (card.top+card.bottom)/2)
+}
+
 // paintedAt is where text starts on the frame row that paints it, the
 // lowest such row when fromBottom.
 func paintedAt(m *Model, text string, fromBottom bool) (x, y int, ok bool) {

@@ -19,7 +19,7 @@ func TestSettingsWheelReachesSymbolsAndDocsInShortWindows(t *testing.T) {
 				t.Fatal("symbols should start below this viewport")
 			}
 			for range uisettings.FieldGlyphs {
-				m = wheel(m, tea.MouseButtonWheelDown, 0, 0)
+				m = wheelOnCard(m, tea.MouseButtonWheelDown)
 			}
 			if m.settings.dialog.Field != uisettings.FieldGlyphs || !paints(m, "symbols") {
 				t.Fatal("wheel did not reveal symbols")
@@ -28,7 +28,7 @@ func TestSettingsWheelReachesSymbolsAndDocsInShortWindows(t *testing.T) {
 				t.Fatal("revealed symbols row was not clickable")
 			}
 			for range uisettings.FieldDocs - uisettings.FieldGlyphs {
-				m = wheel(m, tea.MouseButtonWheelDown, 0, 0)
+				m = wheelOnCard(m, tea.MouseButtonWheelDown)
 			}
 			if m.settings.dialog.Field != uisettings.FieldDocs || !paints(m, "docs") {
 				t.Fatal("wheel did not reveal docs")
@@ -42,7 +42,7 @@ func TestSettingsWheelReachesSymbolsAndDocsInShortWindows(t *testing.T) {
 				t.Fatal("docs click did not follow the scrolled row")
 			}
 			for range uisettings.FieldDocs - uisettings.FieldGlyphs {
-				m = wheel(m, tea.MouseButtonWheelUp, 0, 0)
+				m = wheelOnCard(m, tea.MouseButtonWheelUp)
 			}
 			if m.settings.dialog.Field != uisettings.FieldGlyphs || !paints(m, "symbols") {
 				t.Fatal("wheel up did not return to symbols")
@@ -70,7 +70,7 @@ func TestSettingsWheelLeavesSubpanelsAlone(t *testing.T) {
 			}
 			field := m.settings.dialog.Field
 			for _, button := range []tea.MouseButton{tea.MouseButtonWheelDown, tea.MouseButtonWheelUp} {
-				if m = wheel(m, button, 0, 0); m.settings.dialog.Field != field {
+				if m = wheelOnCard(m, button); m.settings.dialog.Field != field {
 					t.Fatal("wheel in a subpanel moved the parent Settings field")
 				}
 			}

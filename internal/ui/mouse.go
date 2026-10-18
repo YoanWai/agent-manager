@@ -109,17 +109,21 @@ func (m *Model) cardOpen() bool {
 	return true
 }
 
-// cardMouse runs the wheel and a left press on the open card. A press on
-// its body acts on what the body painted there, and one off the card
-// closes it the way esc does.
+// cardMouse runs the wheel and a left press on the open card. The wheel
+// turns the card under the pointer and nothing off it. A press on the
+// body acts on what the body painted there, and one off the card closes
+// it the way esc does.
 func (m *Model) cardMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	card := m.layout.card
 	if tea.MouseEvent(msg).IsWheel() {
+		if !card.holds(msg.X, msg.Y) {
+			return m, nil
+		}
 		return m.wheelCard(msg)
 	}
 	if !isLeftPress(msg) {
 		return m, nil
 	}
-	card := m.layout.card
 	if !card.holds(msg.X, msg.Y) {
 		if m.closesOnBackdrop() {
 			return m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})

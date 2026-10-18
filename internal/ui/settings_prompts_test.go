@@ -155,7 +155,7 @@ func TestSavedPromptsPanelByMouseInASmallTerminal(t *testing.T) {
 	}
 	m.runBatch(t, m.openSettings())
 	for range uisettings.FieldPrompts {
-		m = wheel(m, tea.MouseButtonWheelDown, 0, 0)
+		m = wheelOnCard(m, tea.MouseButtonWheelDown)
 	}
 	frame := m.viewSettings()
 	if m.settings.dialog.Field != uisettings.FieldPrompts || len(strings.Split(frame, "\n")) > m.layout.height {
@@ -166,7 +166,7 @@ func TestSavedPromptsPanelByMouseInASmallTerminal(t *testing.T) {
 		t.Fatal("a click on the saved prompts row did not open them")
 	}
 	for range 29 {
-		m = wheel(m, tea.MouseButtonWheelDown, 0, 0)
+		m = wheelOnCard(m, tea.MouseButtonWheelDown)
 	}
 	frame = m.viewSettings()
 	if !strings.Contains(frame, "Role 29") {
