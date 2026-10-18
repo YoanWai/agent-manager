@@ -306,7 +306,7 @@ func (p *Runner) step(ctx context.Context) Result {
 	// long as the manager is open; its readers allow the stamp to age instead.
 	if time.Since(p.heartbeatAt) >= store.PollerHeartbeatPeriod {
 		claimed := time.Now()
-		claim, err := p.store.ClaimPoller(socket, claimed, p.interval)
+		claim, err := p.store.ClaimPoller(socket, claimed)
 		if err != nil {
 			return Result{Err: err}
 		}

@@ -193,7 +193,7 @@ func TestClaimMessageIsSingleWinnerUnderConcurrentClaims(t *testing.T) {
 func TestManagerAwakeAgesWithTheNewestStamp(t *testing.T) {
 	st := openTwoManagerStore(t)
 	now := time.Now()
-	if _, err := st.ClaimPoller("/tmp/a/agentmgr", now, 2*time.Second); err != nil {
+	if _, err := st.ClaimPoller("/tmp/a/agentmgr", now); err != nil {
 		t.Fatal(err)
 	}
 	awake, err := st.ManagerAwake(now.Add(1 * time.Second))
@@ -205,7 +205,7 @@ func TestManagerAwakeAgesWithTheNewestStamp(t *testing.T) {
 	if err != nil || awake {
 		t.Fatalf("aged stamp awake = %v, %v; want the manager reading as closed", awake, err)
 	}
-	if _, err := st.ClaimPoller("/tmp/b/agentmgr", now.Add(40*time.Second), 2*time.Second); err != nil {
+	if _, err := st.ClaimPoller("/tmp/b/agentmgr", now.Add(40*time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	awake, err = st.ManagerAwake(now.Add(41 * time.Second))
@@ -234,7 +234,7 @@ func TestClaimPollerLeavesDeliveryToAnOlderManagerUntilItStops(t *testing.T) {
 	now := time.Now()
 
 	olderClaimPoller(t, st, socket, now)
-	claim, err := st.ClaimPoller(socket, now.Add(2*time.Second), 2*time.Second)
+	claim, err := st.ClaimPoller(socket, now.Add(2*time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,20 +250,20 @@ func TestClaimPollerLeavesDeliveryToAnOlderManagerUntilItStops(t *testing.T) {
 	// its stamps is overwritten by the next guarded claim, which is the
 	// one read that must notice it.
 	olderClaimPoller(t, st, socket, now.Add(8*time.Second))
-	claim, err = st.ClaimPoller(socket, now.Add(12*time.Second), 2*time.Second)
+	claim, err = st.ClaimPoller(socket, now.Add(12*time.Second))
 	if err != nil || !claim.OlderManager {
 		t.Fatalf("claim after the older restamp = %+v, %v", claim, err)
 	}
-	claim, err = st.ClaimPoller(socket, now.Add(22*time.Second), 2*time.Second)
+	claim, err = st.ClaimPoller(socket, now.Add(22*time.Second))
 	if err != nil || !claim.OlderManager {
 		t.Fatalf("claim with only this manager's own stamps since = %+v, %v; the older one is within its window", claim, err)
 	}
 
-	claim, err = st.ClaimPoller(socket, now.Add(8*time.Second+PollerHeartbeatStale), 2*time.Second)
+	claim, err = st.ClaimPoller(socket, now.Add(8*time.Second+PollerHeartbeatStale))
 	if err != nil || claim.OlderManager {
 		t.Fatalf("claim once the older stamp aged = %+v, %v", claim, err)
 	}
-	claim, err = st.ClaimPoller(socket, now.Add(60*time.Second), 2*time.Second)
+	claim, err = st.ClaimPoller(socket, now.Add(60*time.Second))
 	if err != nil || claim.OlderManager || claim.Holder != socket {
 		t.Fatalf("claim with no older manager = %+v, %v", claim, err)
 	}
@@ -273,87 +273,20 @@ func TestClaimPollerSharesTheOlderStampBetweenGuardedManagers(t *testing.T) {
 	st := openTwoManagerStore(t)
 	socket := "/tmp/manager-a/tmux-501/agentmgr"
 	now := time.Now()
-	if _, err := st.ClaimPoller(socket, now, 2*time.Second); err != nil {
+	if _, err := st.ClaimPoller(socket, now); err != nil {
 		t.Fatal(err)
 	}
 	olderClaimPoller(t, st, socket, now.Add(3*time.Second))
 	// A second guarded manager on the socket overwrites the older stamp.
-	claim, err := st.ClaimPoller(socket, now.Add(5*time.Second), 2*time.Second)
+	claim, err := st.ClaimPoller(socket, now.Add(5*time.Second))
 	if err != nil || !claim.OlderManager {
 		t.Fatalf("second manager's claim = %+v, %v", claim, err)
 	}
 	// The first reads its own peer's stamp in the heartbeat and still
 	// learns of the older manager from the row the peer left.
-	claim, err = st.ClaimPoller(socket, now.Add(10*time.Second), 2*time.Second)
+	claim, err = st.ClaimPoller(socket, now.Add(10*time.Second))
 	if err != nil || !claim.OlderManager {
 		t.Fatalf("first manager's claim behind its peer = %+v, %v", claim, err)
-	}
-}
-
-// A release before the guard stamps once per poll once PollerHeartbeatPeriod
-// has passed, so a long poll interval spaces its stamps that far apart, and
-// it reads its own holder as home for max(3*interval, 30s). Reading its
-// stamp as stale after 30s would take delivery over for a slice of each of
-// its cycles.
-func TestClaimPollerHoldsForTheOlderManagersPollInterval(t *testing.T) {
-	st := openTwoManagerStore(t)
-	socket := "/tmp/manager-a/tmux-501/agentmgr"
-	now := time.Now()
-	interval := 40 * time.Second
-
-	olderClaimPoller(t, st, socket, now)
-	claim, err := st.ClaimPoller(socket, now.Add(35*time.Second), interval)
-	if err != nil || !claim.OlderManager {
-		t.Fatalf("claim 35s into a 40s cycle = %+v, %v; want delivery left to the older manager", claim, err)
-	}
-	claim, err = st.ClaimPoller(socket, now.Add(3*interval-time.Second), interval)
-	if err != nil || !claim.OlderManager {
-		t.Fatalf("claim within three of its cycles = %+v, %v", claim, err)
-	}
-	claim, err = st.ClaimPoller(socket, now.Add(3*interval+time.Second), interval)
-	if err != nil || claim.OlderManager {
-		t.Fatalf("claim after three missed cycles = %+v, %v", claim, err)
-	}
-}
-
-// The config may have changed between the two runs, so the gap seen
-// between the older manager's own stamps bounds the window as well.
-func TestClaimPollerLearnsTheOlderManagersCadenceFromItsStamps(t *testing.T) {
-	st := openTwoManagerStore(t)
-	socket := "/tmp/manager-a/tmux-501/agentmgr"
-	now := time.Now()
-	interval := 2 * time.Second
-
-	olderClaimPoller(t, st, socket, now)
-	if _, err := st.ClaimPoller(socket, now.Add(5*time.Second), interval); err != nil {
-		t.Fatal(err)
-	}
-	olderClaimPoller(t, st, socket, now.Add(40*time.Second))
-	claim, err := st.ClaimPoller(socket, now.Add(45*time.Second), interval)
-	if err != nil || !claim.OlderManager {
-		t.Fatalf("claim after the second older stamp = %+v, %v", claim, err)
-	}
-	claim, err = st.ClaimPoller(socket, now.Add(40*time.Second+PollerHeartbeatStale+5*time.Second), interval)
-	if err != nil || !claim.OlderManager {
-		t.Fatalf("claim 35s after a stamp of a 40s cadence = %+v, %v; want delivery still left to it", claim, err)
-	}
-	claim, err = st.ClaimPoller(socket, now.Add(40*time.Second+3*40*time.Second+time.Second), interval)
-	if err != nil || claim.OlderManager {
-		t.Fatalf("claim after three missed 40s cycles = %+v, %v", claim, err)
-	}
-	// A shorter gap seen later replaces it: claims can miss stamps, never
-	// see stamps the manager did not write.
-	olderClaimPoller(t, st, socket, now.Add(170*time.Second))
-	if _, err := st.ClaimPoller(socket, now.Add(171*time.Second), interval); err != nil {
-		t.Fatal(err)
-	}
-	olderClaimPoller(t, st, socket, now.Add(180*time.Second))
-	if _, err := st.ClaimPoller(socket, now.Add(181*time.Second), interval); err != nil {
-		t.Fatal(err)
-	}
-	claim, err = st.ClaimPoller(socket, now.Add(180*time.Second+PollerHeartbeatStale+time.Second), interval)
-	if err != nil || claim.OlderManager {
-		t.Fatalf("claim with a 10s cadence learnt = %+v, %v; want the 30s window back", claim, err)
 	}
 }
 
@@ -365,7 +298,7 @@ func TestClaimPollerIgnoresAnOlderManagerOnAnotherServer(t *testing.T) {
 	socketB := "/tmp/manager-b/tmux-501/agentmgr"
 	now := time.Now()
 	olderClaimPoller(t, st, socketA, now)
-	claim, err := st.ClaimPoller(socketB, now.Add(2*time.Second), 2*time.Second)
+	claim, err := st.ClaimPoller(socketB, now.Add(2*time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}

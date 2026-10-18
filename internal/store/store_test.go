@@ -60,6 +60,6 @@ func sample(id, group string) Session {
 }
 
 func pollerHolder(st *Store, socket string, now time.Time) (string, error) {
-	claim, err := st.ClaimPoller(socket, now, 2*time.Second)
+	claim, err := st.ClaimPoller(socket, now)
 	return claim.Holder, err
 }

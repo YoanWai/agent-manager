@@ -40,25 +40,14 @@ def fixture_cli():
             'while IFS= read -r line; do printf "\\n\\342\\235\\257 "; done\n')
 
 
-def seconds(interval):
-    units = {'ms': 0.001, 's': 1, 'm': 60}
-    unit = next(suffix for suffix in ('ms', 's', 'm') if interval.endswith(suffix))
-    return float(interval[:-len(unit)]) * units[unit]
-
-
 class Gate:
-    def __init__(self, work, candidate, release, poll_interval='1s', takeover=True):
+    def __init__(self, work, candidate, release):
         self.work = work
         self.sandbox = Sandbox(work / 'artifacts')
         self.binaries = dict(candidate=candidate, released=release)
         self.managers = {}
         self.checks = []
         self.bodies = []
-        # Both binaries read the profile's config, so a long poll interval
-        # slows them both: every wait gets three of its cycles.
-        self.poll_interval = poll_interval
-        self.timeout = max(20, 3 * seconds(poll_interval) + 10)
-        self.takeover = takeover
         bin_dir = self.sandbox.home / 'bin'
         bin_dir.mkdir()
         fake = bin_dir / 'cmd'
@@ -67,7 +56,7 @@ class Gate:
         self.sandbox.env['PATH'] = str(bin_dir) + os.pathsep + self.sandbox.env['PATH']
         config = profile_dir(self.sandbox)
         config.mkdir(parents=True)
-        (config / 'config.toml').write_text(f'poll_interval = "{poll_interval}"\n')
+        (config / 'config.toml').write_text(config_fixture_text())
         self.db = config / 'state.db'
 
     def cli(self, which, *args, caller=CALLER):
@@ -97,8 +86,8 @@ class Gate:
             return '', ''
         return self.sql(f'SELECT {token_column}, {outcome_column} FROM {table} WHERE id = ?', row_id)[0]
 
-    def wait(self, name, observe, predicate, timeout=None):
-        return self.sandbox.wait(name, observe, predicate, timeout or self.timeout)
+    def wait(self, name, observe, predicate, timeout=20):
+        return self.sandbox.wait(name, observe, predicate, timeout)
 
     def start_manager(self, which):
         binary = self.binaries[which]
@@ -163,7 +152,7 @@ class Gate:
         self.bodies.append(body)
         return sent['message_id']
 
-    def wait_delivered(self, which, message_id, body, session_id, step, timeout=None):
+    def wait_delivered(self, which, message_id, body, session_id, step, timeout=30):
         def status():
             return json.loads(self.cli(which, 'message-status', str(message_id), '--json'))['state']
         self.wait(f'{step}-delivered', status, lambda state: state == 'delivered', timeout=timeout)
@@ -174,7 +163,7 @@ class Gate:
         self.sql('UPDATE sessions SET pending_inputs = ? WHERE id = ?', json.dumps([text]), session_id)
         self.bodies.append(text)
 
-    def wait_pending_typed(self, session_id, text, step, timeout=None):
+    def wait_pending_typed(self, session_id, text, step, timeout=30):
         self.wait(f'{step}-consumed', lambda: self.sql('SELECT pending_inputs FROM sessions WHERE id = ?', session_id)[0][0],
                   lambda value: value == '[]', timeout=timeout)
         self.wait(f'{step}-in-pane', lambda: self.pane(session_id), lambda value: text in value)
@@ -232,38 +221,15 @@ class Gate:
         self.assert_once(worker, 'both-running')
         self.checks.append('released manager keeps delivering while the candidate runs')
 
-        if not self.takeover:
-            # A long poll interval spaces the released manager's stamps that
-            # far apart. One more cycle spans at least two of them, so the
-            # candidate has seen its cadence, and still delivers nothing.
-            fourth = self.send('candidate', worker, 'mixed-four slow cycle')
-            token, outcome = self.wait_delivered('candidate', fourth, 'mixed-four slow cycle', worker, 'fourth')
-            if token or outcome:
-                raise AssertionError(f'candidate delivered inside the released manager\'s cycle: {token!r} {outcome!r}')
-            self.seed_pending(worker, 'mixed-pending slow cycle')
-            token, outcome = self.wait_pending_typed(worker, 'mixed-pending slow cycle', 'fourth-pending')
-            if token or outcome:
-                raise AssertionError(f'candidate typed pending input inside the released manager\'s cycle: {token!r} {outcome!r}')
-            self.assert_once(worker, 'slow-cycle')
-            period = self.setting('legacy_poller_period')
-            if not period or int(period) < 10 * 10**9:
-                raise AssertionError(f'candidate did not learn the released manager\'s cadence: {period!r}')
-            self.checks.append('candidate holds for the released manager\'s poll interval')
-            self.quit_manager('released')
-            self.quit_manager('candidate')
-            return dict(status='passed', checks=self.checks,
-                        gaps=['takeover after the released manager quits (the default-interval leg covers it)',
-                              'a released manager started beside a running candidate', 'real SSH'])
-
         # The released manager's last stamp ages past PollerHeartbeatStale
         # (30s), and the candidate reads that on its next claim (10s).
         self.quit_manager('released')
         third = self.send('released', worker, 'mixed-three candidate alone')
-        token, outcome = self.wait_delivered('released', third, 'mixed-three candidate alone', worker, 'third', timeout=90)
+        token, outcome = self.wait_delivered('released', third, 'mixed-three candidate alone', worker, 'third', timeout=75)
         if not token or outcome != 'confirmed':
             raise AssertionError(f'candidate takeover left no confirmed receipt: {token!r} {outcome!r}')
         self.seed_pending(worker, 'mixed-pending candidate alone')
-        token, outcome = self.wait_pending_typed(worker, 'mixed-pending candidate alone', 'third-pending', timeout=90)
+        token, outcome = self.wait_pending_typed(worker, 'mixed-pending candidate alone', 'third-pending', timeout=75)
         # A finished pending attempt clears its token; the outcome is the receipt.
         if token or outcome != 'confirmed':
             raise AssertionError(f'candidate pending takeover left no confirmed receipt: {token!r} {outcome!r}')
@@ -284,12 +250,12 @@ class Gate:
         self.sandbox.close()
 
 
-def run(candidate, work, tag, peer=None, poll_interval='1s', takeover=True):
+def run(candidate, work, tag, peer=None):
     if peer:
         release = peer.resolve()
     else:
         release, _ = released_binary(work, tag)
-    gate = Gate(work, candidate, release, poll_interval, takeover)
+    gate = Gate(work, candidate, release)
     try:
         return gate.run()
     finally:
@@ -301,17 +267,13 @@ if __name__ == '__main__':
     parser.add_argument('--binary', type=Path, required=True)
     parser.add_argument('--release', default='v0.42.0')
     parser.add_argument('--peer-binary', type=Path, help='run an explicitly selected older binary instead of downloading a release')
-    parser.add_argument('--poll-interval', default='1s', help='poll_interval both managers run at')
-    parser.add_argument('--skip-takeover', action='store_true',
-                        help='stop after the co-run checks; a long poll interval makes the takeover wait minutes')
     parser.add_argument('--artifacts', type=Path)
     args = parser.parse_args()
     work = args.artifacts or Path(tempfile.mkdtemp(prefix='am-mixed-'))
     work.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
     try:
-        result = run(args.binary.resolve(), work.resolve(), args.release, args.peer_binary,
-                     args.poll_interval, not args.skip_takeover)
+        result = run(args.binary.resolve(), work.resolve(), args.release, args.peer_binary)
     except Exception as error:
         result = dict(status='failed', error=f'{type(error).__name__}: {error}')
     result['seconds'] = round(time.monotonic() - started, 2)

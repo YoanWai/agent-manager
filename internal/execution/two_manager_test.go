@@ -141,7 +141,7 @@ func TestSecondManagerTakesOverOnlyWhenTheFirstAges(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now()
-	claim, err := p.store.ClaimPoller(p.driver.SocketPath(), now, 2*time.Second)
+	claim, err := p.store.ClaimPoller(p.driver.SocketPath(), now)
 	if err != nil || claim.Holder != p.driver.SocketPath() {
 		t.Fatalf("pre-stamp = %q, %v", claim.Holder, err)
 	}

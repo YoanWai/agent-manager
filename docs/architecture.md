@@ -146,16 +146,18 @@ additive and nothing refuses the plain claim and mark statements a release
 before the guard runs, so an upgrade needs no cutover: both binaries open the
 same profile and the older one keeps working. A guarded manager mirrors each
 heartbeat it stamps into `delivery_heartbeat`; a heartbeat the mirror does not
-match was stamped by an older manager, and `ClaimPoller` records it along with
-the shortest gap seen between two of its stamps. While that record is younger
-than `max(PollerHeartbeatStale, 3 × poll_interval, 3 × gap)` (a release before
-the guard stamps once per poll and reads its own holder as home for that long)
-and names this manager's tmux server, `Runner.ownsDelivery` is false and the
-poller neither claims, types nor retires anything. That claim runs once per
-`PollerHeartbeatPeriod`, and an older manager that starts or wakes in between
-types on its first step, so every delivery reads the heartbeat again under the
-guard (`DeliveryGuard.OlderManagerStamped`) and defers on a stamp the mirror
-does not match. The older manager holds no lock while it pastes, so a claim
+match was stamped by an older manager, and `ClaimPoller` records it. While that
+record is younger than `PollerHeartbeatStale` and names this manager's tmux
+server, `Runner.ownsDelivery` is false and the poller neither claims, types nor
+retires anything. That claim runs once per `PollerHeartbeatPeriod`, and an
+older manager that starts or wakes in between types on its first step, so every
+delivery reads the heartbeat again under the guard
+(`DeliveryGuard.OlderManagerStamped`) and defers on a stamp the mirror does not
+match. This covers managers from v0.40 on, which read a stamp as stale after
+the same fixed 30 seconds; v0.38 and v0.39 judge staleness from
+`poll_interval`, so one of those running with a `poll_interval` above about
+25 seconds beside this build on one profile is not supported and should be
+stopped before upgrading. The older manager holds no lock while it pastes, so a claim
 without a token found afterwards gets `inboxClaimGrace` before it is retired,
 and is never retyped; a claimed pending input is retired on sight, as that
 manager would. Read-only commands on the newer binary only add columns and

@@ -101,7 +101,7 @@ func TestDeliveryGuardSeesAnOlderStampBetweenClaims(t *testing.T) {
 	socket := "/tmp/manager-a/tmux-501/agentmgr"
 	other := "/tmp/manager-b/tmux-501/agentmgr"
 	now := time.Now()
-	if _, err := st.ClaimPoller(socket, now, 2*time.Second); err != nil {
+	if _, err := st.ClaimPoller(socket, now); err != nil {
 		t.Fatal(err)
 	}
 	stamped := func() bool {
@@ -124,7 +124,7 @@ func TestDeliveryGuardSeesAnOlderStampBetweenClaims(t *testing.T) {
 	if !stamped() {
 		t.Fatal("older stamp between claims not seen under the guard")
 	}
-	if _, err := st.ClaimPoller(socket, now.Add(10*time.Second), 2*time.Second); err != nil {
+	if _, err := st.ClaimPoller(socket, now.Add(10*time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	if stamped() {

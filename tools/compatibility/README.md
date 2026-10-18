@@ -40,7 +40,7 @@ inside the artifact directory.
 
 ```sh
 python3 tools/compatibility/mixed_delivery.py --binary /tmp/agent-manager-candidate
-python3 tools/compatibility/mixed_delivery.py --binary /tmp/agent-manager-candidate --release v0.39.0 --poll-interval 40s --skip-takeover
+python3 tools/compatibility/mixed_delivery.py --binary /tmp/agent-manager-candidate --release v0.39.0
 ```
 
 Downloads the release the way the matrix does (default v0.42.0, the newest
@@ -56,11 +56,3 @@ receipts. Every body is counted in the worker's scrollback exactly once, both
 binaries' `sessions --json` and `message-status` keep working on the shared
 profile throughout, and the fence triggers never appear. It takes about 90
 seconds; results and logs stay at the printed artifact directory on failure.
-
-`--poll-interval` sets the shared profile's `poll_interval`, which both
-managers run at. A release before the guard stamps its heartbeat once per poll,
-so a long interval spaces its stamps past the 30-second window; the slow leg
-(v0.39.0 at 40s, which CI also runs) checks that the candidate holds for that
-cadence through one more cycle instead of taking a slice of each cycle over.
-`--skip-takeover` ends it there, since the takeover wait would then run to
-minutes; the default-interval leg covers the takeover.
