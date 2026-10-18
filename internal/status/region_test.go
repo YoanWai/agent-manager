@@ -391,6 +391,28 @@ func TestLastMessageQuotesGeminiApprovalQuestion(t *testing.T) {
 	}
 }
 
+// codex 0.159 joins the turn label's parts with "•" and reads a sub-second
+// turn as "<1s" (real 0.159.2 and 0.163.0 captures); a background terminal's
+// row below the label belongs to no reply.
+func TestLastMessageSkipsCodexBulletedTurnLabel(t *testing.T) {
+	engine := defaultEngine(t)
+	composer := "› Ask Codex to do anything\n  mock-model default · ~/proj\n  ? for shortcuts"
+	for _, label := range []string{
+		"  Worked for <1s • 19:23",
+		"  Worked for 3s • 19:24",
+		"  Worked for 1m 5s • 02:41 • Local tools: 2 calls (1.2s) • Inference: 1 call (3.4s)",
+		"  Worked for 10s • 20:58\n  1 background terminal running · /ps to view · /stop to close",
+	} {
+		pane := "› say hello\n• finished, and hello.\n" + label + "\n" + composer
+		if line, _, ok := engine.LastMessage("codex", pane); !ok || line != "finished, and hello." {
+			t.Errorf("label %q: quote = %q ok=%v, want the reply alone", label, line, ok)
+		}
+		if got, _ := engine.Match("codex", pane); got != Finished {
+			t.Errorf("label %q: Match = %q want %q", label, got, Finished)
+		}
+	}
+}
+
 // a message sent with Enter during a turn is drawn under the running step as
 // "Messages to be submitted ..." until the tool call ends, and a rejected
 // steer re-appears under an end-of-turn heading; the heading wraps on a
