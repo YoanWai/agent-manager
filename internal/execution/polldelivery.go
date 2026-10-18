@@ -46,6 +46,9 @@ func (p *Runner) maybeSendPendingInput(sess store.Session, pane string, agentAli
 	defer cancel()
 	delivered := false
 	acquired, err := p.store.WithDeliveryGuard(ctx, func(guard *store.DeliveryGuard) error {
+		if deferred, err := p.deferToOlderManager(guard); err != nil || deferred {
+			return err
+		}
 		current, err := p.store.Get(sess.ID)
 		if err != nil || len(current.PendingInputs) == 0 {
 			return err
@@ -104,6 +107,20 @@ func (p *Runner) maybeSendPendingInput(sess store.Session, pane string, agentAli
 		return false, nil
 	}
 	return delivered, nil
+}
+
+// deferToOlderManager reads the heartbeat again under the guard. The claim
+// that decides ownsDelivery runs once per PollerHeartbeatPeriod, and an
+// older manager that starts or wakes between two of them types on its
+// first step; a stamp the mirror does not match is its, and the next claim
+// records it for the whole window.
+func (p *Runner) deferToOlderManager(guard *store.DeliveryGuard) (bool, error) {
+	stamped, err := guard.OlderManagerStamped(p.tmux.SocketPath())
+	if err != nil || !stamped {
+		return false, err
+	}
+	p.ownsDelivery = false
+	return true, nil
 }
 
 // automaticDeliveryTimeout bounds one automatic delivery: the guard, the
@@ -192,6 +209,9 @@ func (p *Runner) maybeDeliverInbox(sess store.Session, pane, derived string, age
 	defer cancel()
 	delivered := false
 	acquired, err := p.store.WithDeliveryGuard(ctx, func(guard *store.DeliveryGuard) error {
+		if deferred, err := p.deferToOlderManager(guard); err != nil || deferred {
+			return err
+		}
 		msg, queued, err := guard.HeadMessage(sess.ID)
 		if err != nil || !queued {
 			return err

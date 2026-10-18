@@ -93,6 +93,49 @@ func TestDeliveryGuardExcludesAnotherProcessWithoutWaiting(t *testing.T) {
 // store (v0.42.0 internal/store/inbox.go and store.go). They know nothing
 // of the receipt columns and must keep succeeding on a profile a newer
 // binary has opened, since that manager keeps delivering beside it.
+// Claims run once per PollerHeartbeatPeriod; a delivery reads the
+// heartbeat again under the guard so an older manager that stamped since
+// is seen before anything is claimed.
+func TestDeliveryGuardSeesAnOlderStampBetweenClaims(t *testing.T) {
+	st := openTwoManagerStore(t)
+	socket := "/tmp/manager-a/tmux-501/agentmgr"
+	other := "/tmp/manager-b/tmux-501/agentmgr"
+	now := time.Now()
+	if _, err := st.ClaimPoller(socket, now, 2*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	stamped := func() bool {
+		t.Helper()
+		var seen bool
+		acquired, err := st.WithDeliveryGuard(context.Background(), func(g *DeliveryGuard) error {
+			var err error
+			seen, err = g.OlderManagerStamped(socket)
+			return err
+		})
+		if err != nil || !acquired {
+			t.Fatalf("guard: acquired=%v err=%v", acquired, err)
+		}
+		return seen
+	}
+	if stamped() {
+		t.Fatal("own stamp read as an older manager's")
+	}
+	olderClaimPoller(t, st, socket, now.Add(3*time.Second))
+	if !stamped() {
+		t.Fatal("older stamp between claims not seen under the guard")
+	}
+	if _, err := st.ClaimPoller(socket, now.Add(10*time.Second), 2*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if stamped() {
+		t.Fatal("mirrored stamp read as an older manager's")
+	}
+	olderClaimPoller(t, st, other, now.Add(12*time.Second))
+	if stamped() {
+		t.Fatal("older manager on another server read as delivering here")
+	}
+}
+
 func olderClaimMessage(st *Store, id int64, at time.Time) (bool, error) {
 	res, err := st.db.Exec(
 		`UPDATE session_inbox SET claimed_at = ? WHERE id = ? AND claimed_at = 0 AND delivered_at = 0`,
@@ -409,6 +452,43 @@ func TestReceiptIsRefusedOnceAnOlderManagerRetiredTheClaim(t *testing.T) {
 	if err != nil || state.Outcome != DeliveryInFlight || state.DroppedAt.IsZero() {
 		t.Fatalf("row after the older drop = %+v, %v", state, err)
 	}
+}
+
+// An older manager claims pending input with no token and consumes a claim
+// it finds without a receipt, so a reader shows no outcome for its claim
+// and reads a guarded attempt it consumed as uncertain, never as in flight.
+func TestPendingOutcomeReadsAnOlderManagersClaimsCoherently(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateSession(Session{ID: "pending", Name: "pending", Tool: "claude", Cwd: "/tmp", PendingInputs: []string{"first", "second"}}); err != nil {
+		t.Fatal(err)
+	}
+	outcome := func(want DeliveryOutcome, when string) {
+		t.Helper()
+		sess, err := st.Get("pending")
+		if err != nil || sess.PendingInputOutcome != want {
+			t.Fatalf("outcome %s = %q, %v; want %q", when, sess.PendingInputOutcome, err, want)
+		}
+	}
+	withDeliveryGuard(t, st, func(guard *DeliveryGuard) error {
+		_, claimed, err := guard.ClaimPendingInput("pending", "first")
+		if err == nil && !claimed {
+			err = errors.New("pending claim lost")
+		}
+		return err
+	})
+	outcome(DeliveryInFlight, "under a guarded claim")
+	if ok, err := olderConsumeClaimedPendingInput(st, "pending", `["second"]`, `["first","second"]`); err != nil || !ok {
+		t.Fatalf("older consume = %v, %v", ok, err)
+	}
+	outcome(DeliveryUncertain, "after an older manager consumed the guarded claim")
+	if ok, err := olderClaimPendingInput(st, "pending", `["second"]`); err != nil || !ok {
+		t.Fatalf("older claim = %v, %v", ok, err)
+	}
+	outcome("", "under an older manager's claim")
+	if ok, err := olderConsumeClaimedPendingInput(st, "pending", `[]`, `["second"]`); err != nil || !ok {
+		t.Fatalf("older consume = %v, %v", ok, err)
+	}
+	outcome(DeliveryUncertain, "after an older manager consumed its own claim")
 }
 
 func TestPendingClaimRetirementConsumesOnlyTheUncertainHead(t *testing.T) {

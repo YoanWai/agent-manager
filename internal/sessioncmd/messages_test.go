@@ -509,6 +509,37 @@ func TestMessageStatusReadsAnAttemptAnOlderManagerRetiredAsUncertain(t *testing.
 	}
 }
 
+// An interim build wrote an outcome beside every settled row. A drop it
+// marked as uncertain is still a drop: nothing typed the message.
+func TestMessageStatusReadsADropWithABackfilledOutcomeAsDropped(t *testing.T) {
+	h := newSessionHarness(t)
+	worker, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "worker"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sent, err := h.sessions.Send(h.caller.ID, worker.ID, "check delivery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", filepath.Join(h.sessions.configDir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	stamp := time.Now().UnixNano()
+	if _, err := db.Exec(`UPDATE session_inbox SET claimed_at = ?, delivered_at = ?, dropped_at = ?, delivery_outcome = 'uncertain' WHERE id = ?`,
+		stamp, stamp, stamp, sent.MessageID); err != nil {
+		t.Fatal(err)
+	}
+	state, err := h.sessions.MessageStatus(h.caller.ID, sent.MessageID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.State != "dropped" {
+		t.Fatalf("backfilled drop reads as %+v", state)
+	}
+}
+
 // A reply from the recipient proves an uncertain delivery reached it.
 func TestMessageStatusCallsAnAnsweredUncertainDeliveryAnswered(t *testing.T) {
 	h := newSessionHarness(t)

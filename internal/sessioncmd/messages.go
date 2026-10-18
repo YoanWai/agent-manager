@@ -162,20 +162,21 @@ func (s *Sessions) MessageStatus(sessionID string, messageID int64) (MessageStat
 		Body:      msg.Body,
 	}
 	switch {
-	case msg.Outcome == store.DeliveryInFlight && msg.DeliveredAt.IsZero():
+	// A drop stamps the delivery column as well, so that a message nothing
+	// will ever type leaves the queue, and is read first for that reason,
+	// whatever outcome an interim build wrote beside it. The exception is
+	// an attempt still in flight when a manager older than the guard
+	// retired it: that drop mark proves nothing about whether the paste
+	// had landed.
+	case !msg.DroppedAt.IsZero() && msg.Outcome != store.DeliveryInFlight:
+		state.State = "dropped"
+		state.Reason = "Agent Manager could not type it into the pane, and never retries a message; send it again"
+	case msg.Outcome == store.DeliveryInFlight && msg.DeliveredAt.IsZero() && msg.DroppedAt.IsZero():
 		state.State = "in_flight"
 		state.Reason = "Agent Manager is typing it in now; wait for its receipt before resending"
-	// An attempt still in flight when a manager older than the guard
-	// retired it has no receipt, and that manager's drop mark proves
-	// nothing about whether the paste had landed.
 	case msg.Outcome == store.DeliveryInFlight, msg.Outcome == store.DeliveryUncertain && msg.ReadAt.IsZero():
 		state.State = "uncertain"
 		state.Reason = "It may have reached the prompt, and Agent Manager never retries a message; read the recipient before resending"
-	// A drop stamps the delivery column as well, so that a message nothing
-	// will ever type leaves the queue, and is read first for that reason.
-	case !msg.DroppedAt.IsZero():
-		state.State = "dropped"
-		state.Reason = "Agent Manager could not type it into the pane, and never retries a message; send it again"
 	case !msg.ReadAt.IsZero():
 		state.State = "answered"
 		state.DeliveredAt = msg.DeliveredAt.Format(time.RFC3339)

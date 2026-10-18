@@ -54,7 +54,9 @@ type Session struct {
 	PendingInputClaimed bool
 	// PendingInputOutcome is the receipt of the latest automatic
 	// pending-input delivery; uncertain means the claim lost its owner and
-	// the input was retired rather than typed again.
+	// the input was retired rather than typed again. It is empty while a
+	// manager older than the guard holds the claim: that manager leaves no
+	// receipt.
 	PendingInputOutcome DeliveryOutcome
 	ParentID            string
 	// LaunchPrompt is the prompt handed to the agent on its command line.
@@ -164,8 +166,25 @@ func (s *Store) createSession(sess Session, anchorID string) error {
 	return tx.Commit()
 }
 
+// shownPendingOutcome is the receipt a reader can trust. A manager older
+// than the guard claims with no token and consumes a claim it finds
+// without finishing it, and it never clears the token or the outcome a
+// guarded claim left. So a claim whose token was not issued for the queue
+// as it stands now is that manager's, with no receipt yet, and an attempt
+// no longer claimed while still in flight was consumed by it: its outcome
+// is uncertain, as a retired message's is.
+func shownPendingOutcome(claimed bool, token, encoded string, stored DeliveryOutcome) DeliveryOutcome {
+	switch {
+	case claimed && !pendingTokenIssuedFor(token, encoded):
+		return ""
+	case !claimed && stored == DeliveryInFlight:
+		return DeliveryUncertain
+	}
+	return stored
+}
+
 func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
-	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, relaunch_snapshot, pending_inputs, pending_claimed, pending_delivery_outcome, parent_id, launch_prompt, last_prompt, tmux_socket, model_provider, model, effort, profile, after_turn, after_turn_at
+	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, relaunch_snapshot, pending_inputs, pending_claimed, pending_attempt_token, pending_delivery_outcome, parent_id, launch_prompt, last_prompt, tmux_socket, model_provider, model, effort, profile, after_turn, after_turn_at
 	          FROM sessions`
 	if !includeArchived {
 		query += ` WHERE archived = 0`
@@ -182,11 +201,11 @@ func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
 		var sess Session
 		var archived, acked, pendingClaimed int
 		var created, lastStatus, agentLaunched, afterTurnAt int64
-		var pendingInputs, relaunchSnapshot string
+		var pendingInputs, relaunchSnapshot, pendingToken string
 		if err := rows.Scan(&sess.ID, &sess.Name, &sess.Tool, &sess.Cwd,
 			&sess.Group, &sess.Status, &archived, &acked, &created, &lastStatus,
 			&sess.AgentSessionID, &sess.WorktreeRepo, &sess.WorktreeBranch,
-			&agentLaunched, &sess.RetiredAgentSessionID, &relaunchSnapshot, &pendingInputs, &pendingClaimed,
+			&agentLaunched, &sess.RetiredAgentSessionID, &relaunchSnapshot, &pendingInputs, &pendingClaimed, &pendingToken,
 			&sess.PendingInputOutcome,
 			&sess.ParentID, &sess.LaunchPrompt, &sess.LastPrompt, &sess.TmuxSocket,
 			&sess.Choice.Provider, &sess.Choice.Model, &sess.Choice.Effort, &sess.Choice.Profile, &sess.AfterTurn, &afterTurnAt); err != nil {
@@ -201,6 +220,7 @@ func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
 		sess.Archived = archived != 0
 		sess.Acked = acked != 0
 		sess.PendingInputClaimed = pendingClaimed != 0
+		sess.PendingInputOutcome = shownPendingOutcome(sess.PendingInputClaimed, pendingToken, pendingInputs, sess.PendingInputOutcome)
 		sess.CreatedAt = decodeTime(created)
 		sess.LastStatusAt = decodeTime(lastStatus)
 		sess.AgentLaunchedAt = decodeTime(agentLaunched)
@@ -214,13 +234,13 @@ func (s *Store) Get(id string) (Session, error) {
 	var sess Session
 	var archived, acked, pendingClaimed int
 	var created, lastStatus, agentLaunched, afterTurnAt int64
-	var pendingInputs, relaunchSnapshot string
+	var pendingInputs, relaunchSnapshot, pendingToken string
 	err := s.db.QueryRow(
-		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, relaunch_snapshot, pending_inputs, pending_claimed, pending_delivery_outcome, parent_id, launch_prompt, last_prompt, tmux_socket, model_provider, model, effort, profile, after_turn, after_turn_at
+		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, relaunch_snapshot, pending_inputs, pending_claimed, pending_attempt_token, pending_delivery_outcome, parent_id, launch_prompt, last_prompt, tmux_socket, model_provider, model, effort, profile, after_turn, after_turn_at
 		 FROM sessions WHERE id = ?`, id,
 	).Scan(&sess.ID, &sess.Name, &sess.Tool, &sess.Cwd, &sess.Group,
 		&sess.Status, &archived, &acked, &created, &lastStatus, &sess.AgentSessionID,
-		&sess.WorktreeRepo, &sess.WorktreeBranch, &agentLaunched, &sess.RetiredAgentSessionID, &relaunchSnapshot, &pendingInputs, &pendingClaimed,
+		&sess.WorktreeRepo, &sess.WorktreeBranch, &agentLaunched, &sess.RetiredAgentSessionID, &relaunchSnapshot, &pendingInputs, &pendingClaimed, &pendingToken,
 		&sess.PendingInputOutcome,
 		&sess.ParentID, &sess.LaunchPrompt, &sess.LastPrompt, &sess.TmuxSocket,
 		&sess.Choice.Provider, &sess.Choice.Model, &sess.Choice.Effort, &sess.Choice.Profile, &sess.AfterTurn, &afterTurnAt)
@@ -236,6 +256,7 @@ func (s *Store) Get(id string) (Session, error) {
 	sess.Archived = archived != 0
 	sess.Acked = acked != 0
 	sess.PendingInputClaimed = pendingClaimed != 0
+	sess.PendingInputOutcome = shownPendingOutcome(sess.PendingInputClaimed, pendingToken, pendingInputs, sess.PendingInputOutcome)
 	sess.CreatedAt = decodeTime(created)
 	sess.LastStatusAt = decodeTime(lastStatus)
 	sess.AgentLaunchedAt = decodeTime(agentLaunched)

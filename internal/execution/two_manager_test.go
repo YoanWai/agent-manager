@@ -141,7 +141,7 @@ func TestSecondManagerTakesOverOnlyWhenTheFirstAges(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now()
-	claim, err := p.store.ClaimPoller(p.driver.SocketPath(), now)
+	claim, err := p.store.ClaimPoller(p.driver.SocketPath(), now, 2*time.Second)
 	if err != nil || claim.Holder != p.driver.SocketPath() {
 		t.Fatalf("pre-stamp = %q, %v", claim.Holder, err)
 	}
@@ -439,6 +439,53 @@ func TestNewerManagerDefersDeliveryWhileAnOlderManagerStamps(t *testing.T) {
 	}
 	if strings.Count(pane, body) != 1 {
 		t.Fatalf("message typed %d times:\n%s", strings.Count(pane, body), pane)
+	}
+}
+
+// The claim that reads ownership runs once per PollerHeartbeatPeriod. An
+// older manager that starts or wakes between two claims stamps and types
+// on its first step, so a delivery reads the heartbeat again under the
+// guard rather than trusting a snapshot up to a period old.
+func TestNewerManagerDefersWhenAnOlderManagerWakesBetweenClaims(t *testing.T) {
+	p := pair(t, true)
+	sess := p.spawnReady(t)
+	if res := p.runnerA.Step(); res.Err != nil {
+		t.Fatal(res.Err)
+	}
+	if !p.runnerA.ownsDelivery {
+		t.Fatal("manager alone did not own delivery")
+	}
+	body := "typed by whoever is awake"
+	id, err := p.store.Enqueue(store.InboxMessage{
+		SessionID: sess.ID, SenderID: "sender01", SenderName: "payments-fix",
+		Body: body, Fingerprint: body, SentAt: time.Now(),
+	}, store.DefaultInboxLimits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The older manager stamps while this manager's next claim is not due.
+	p.olderHeartbeat(t, p.driver.SocketPath(), time.Now())
+	p.runnerA.heartbeatAt = time.Now()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if res := p.runnerA.Step(); res.Err != nil {
+			t.Fatalf("step after the older manager woke: %v", res.Err)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if p.runnerA.ownsDelivery {
+		t.Fatal("manager kept delivery on a snapshot older than the stamp")
+	}
+	state, err := p.store.Message(id, "sender01")
+	if err != nil || !state.ClaimedAt.IsZero() || !state.DeliveredAt.IsZero() {
+		t.Fatalf("message touched on a stale ownership snapshot: %+v, %v", state, err)
+	}
+	pane, err := p.driver.CapturePane(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(pane, body) {
+		t.Fatalf("manager typed on a stale ownership snapshot:\n%s", pane)
 	}
 }
 

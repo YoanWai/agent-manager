@@ -146,10 +146,16 @@ additive and nothing refuses the plain claim and mark statements a release
 before the guard runs, so an upgrade needs no cutover: both binaries open the
 same profile and the older one keeps working. A guarded manager mirrors each
 heartbeat it stamps into `delivery_heartbeat`; a heartbeat the mirror does not
-match was stamped by an older manager, and `ClaimPoller` records it. While that
-record is younger than `PollerHeartbeatStale` and names this manager's tmux
-server, `Runner.ownsDelivery` is false and the poller neither claims, types nor
-retires anything. The older manager holds no lock while it pastes, so a claim
+match was stamped by an older manager, and `ClaimPoller` records it along with
+the shortest gap seen between two of its stamps. While that record is younger
+than `max(PollerHeartbeatStale, 3 × poll_interval, 3 × gap)` (a release before
+the guard stamps once per poll and reads its own holder as home for that long)
+and names this manager's tmux server, `Runner.ownsDelivery` is false and the
+poller neither claims, types nor retires anything. That claim runs once per
+`PollerHeartbeatPeriod`, and an older manager that starts or wakes in between
+types on its first step, so every delivery reads the heartbeat again under the
+guard (`DeliveryGuard.OlderManagerStamped`) and defers on a stamp the mirror
+does not match. The older manager holds no lock while it pastes, so a claim
 without a token found afterwards gets `inboxClaimGrace` before it is retired,
 and is never retyped; a claimed pending input is retired on sight, as that
 manager would. Read-only commands on the newer binary only add columns and

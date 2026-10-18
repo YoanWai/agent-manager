@@ -78,7 +78,22 @@ const (
 	guardHeartbeatKey = "delivery_heartbeat"
 	olderHeartbeatKey = "legacy_poller_heartbeat"
 	olderSocketKey    = "legacy_poller_socket"
+	// olderPeriodKey is the shortest gap seen between two of the older
+	// manager's stamps, in nanoseconds: how often it is known to restamp.
+	olderPeriodKey = "legacy_poller_period"
 )
+
+// olderManagerWindow is how long after its last stamp an older manager is
+// still read as delivering. A release before the guard stamps once per
+// poll once PollerHeartbeatPeriod has passed, so its stamps are a poll
+// interval apart when that interval is long, and v0.39+ keeps reading its
+// own holder as home for max(3*pollInterval, PollerHeartbeatStale). Both
+// binaries read the same config, so the same bound is applied here; the
+// gap actually observed between its stamps covers a config that changed
+// between the two runs.
+func olderManagerWindow(pollInterval, observedPeriod time.Duration) time.Duration {
+	return max(PollerHeartbeatStale, 3*pollInterval, 3*observedPeriod)
+}
 
 // PollerClaim is what a claim leaves this manager knowing.
 type PollerClaim struct {
@@ -98,39 +113,45 @@ type PollerClaim struct {
 // together would otherwise both read an empty holder and both speak for
 // the sessions no server has claimed, and an older manager's stamp would
 // be overwritten unseen.
-func (s *Store) ClaimPoller(socket string, now time.Time) (PollerClaim, error) {
+func (s *Store) ClaimPoller(socket string, now time.Time, pollInterval time.Duration) (PollerClaim, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return PollerClaim{}, err
 	}
 	defer tx.Rollback()
-	rows, err := tx.Query(`SELECT key, value FROM settings WHERE key IN (?, ?, ?, ?, ?)`,
-		PollerSocketKey, PollerHeartbeatKey, guardHeartbeatKey, olderHeartbeatKey, olderSocketKey)
+	values, err := readSettings(tx, PollerSocketKey, PollerHeartbeatKey, guardHeartbeatKey,
+		olderHeartbeatKey, olderSocketKey, olderPeriodKey)
 	if err != nil {
-		return PollerClaim{}, err
-	}
-	values := map[string]string{}
-	for rows.Next() {
-		var key, value string
-		if err := rows.Scan(&key, &value); err != nil {
-			rows.Close()
-			return PollerClaim{}, err
-		}
-		values[key] = value
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
 		return PollerClaim{}, err
 	}
 	holder, stamp := values[PollerSocketKey], values[PollerHeartbeatKey]
 	olderStamp, olderSocket := values[olderHeartbeatKey], values[olderSocketKey]
-	if stamp != "" && stamp != values[guardHeartbeatKey] {
-		olderStamp, olderSocket = stamp, holder
-		if err := upsertSettings(tx, olderHeartbeatKey, olderStamp, olderSocketKey, olderSocket); err != nil {
+	olderPeriod, err := parseStampGap(values[olderPeriodKey])
+	if err != nil {
+		return PollerClaim{}, err
+	}
+	if stamp != "" && stamp != values[guardHeartbeatKey] && stamp != olderStamp {
+		// A second stamp from the same older manager shows how often it
+		// restamps; the shortest gap seen is nearest its true period, as
+		// claims here can only miss stamps, never see extra ones.
+		period := time.Duration(0)
+		if olderSocket == holder && olderStamp != "" {
+			gap, err := stampGap(olderStamp, stamp)
+			if err != nil {
+				return PollerClaim{}, err
+			}
+			period = olderPeriod
+			if gap > 0 && (period == 0 || gap < period) {
+				period = gap
+			}
+		}
+		olderStamp, olderSocket, olderPeriod = stamp, holder, period
+		if err := upsertSettings(tx, olderHeartbeatKey, olderStamp, olderSocketKey, olderSocket,
+			olderPeriodKey, strconv.FormatInt(int64(period), 10)); err != nil {
 			return PollerClaim{}, err
 		}
 	}
-	olderAwake, err := stampAwake(olderStamp, now)
+	olderAwake, err := stampWithin(olderStamp, now, olderManagerWindow(pollInterval, olderPeriod))
 	if err != nil {
 		return PollerClaim{}, err
 	}
@@ -150,6 +171,32 @@ func (s *Store) ClaimPoller(socket string, now time.Time) (PollerClaim, error) {
 	}
 	claim.Holder = socket
 	return claim, tx.Commit()
+}
+
+type settingsReader interface {
+	Query(query string, args ...any) (*sql.Rows, error)
+}
+
+func readSettings(q settingsReader, keys ...string) (map[string]string, error) {
+	placeholders := strings.Repeat(", ?", len(keys))[2:]
+	args := make([]any, len(keys))
+	for i, key := range keys {
+		args[i] = key
+	}
+	rows, err := q.Query(`SELECT key, value FROM settings WHERE key IN (`+placeholders+`)`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	values := map[string]string{}
+	for rows.Next() {
+		var key, value string
+		if err := rows.Scan(&key, &value); err != nil {
+			return nil, err
+		}
+		values[key] = value
+	}
+	return values, rows.Err()
 }
 
 func upsertSettings(tx *sql.Tx, pairs ...string) error {
@@ -178,14 +225,50 @@ func (s *Store) ManagerAwake(now time.Time) (bool, error) {
 }
 
 func stampAwake(raw string, now time.Time) (bool, error) {
+	return stampWithin(raw, now, PollerHeartbeatStale)
+}
+
+func stampWithin(raw string, now time.Time, window time.Duration) (bool, error) {
 	if raw == "" {
 		return false, nil
 	}
+	stamp, err := parseStamp(raw)
+	if err != nil {
+		return false, err
+	}
+	return now.Sub(stamp) < window, nil
+}
+
+func parseStamp(raw string) (time.Time, error) {
 	stamp, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil {
-		return false, fmt.Errorf("poller heartbeat %q is not a timestamp: %w", raw, err)
+		return time.Time{}, fmt.Errorf("poller heartbeat %q is not a timestamp: %w", raw, err)
 	}
-	return now.Sub(time.Unix(0, stamp)) < PollerHeartbeatStale, nil
+	return time.Unix(0, stamp), nil
+}
+
+// stampGap is how long after the earlier stamp the later one was written.
+func stampGap(earlier, later string) (time.Duration, error) {
+	from, err := parseStamp(earlier)
+	if err != nil {
+		return 0, err
+	}
+	to, err := parseStamp(later)
+	if err != nil {
+		return 0, err
+	}
+	return to.Sub(from), nil
+}
+
+func parseStampGap(raw string) (time.Duration, error) {
+	if raw == "" {
+		return 0, nil
+	}
+	gap, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("poller period %q is not a duration: %w", raw, err)
+	}
+	return time.Duration(gap), nil
 }
 
 var (

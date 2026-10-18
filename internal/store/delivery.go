@@ -3,9 +3,11 @@ package store
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -86,6 +88,28 @@ func newDeliveryToken() (string, error) {
 		return "", fmt.Errorf("create delivery attempt token: %w", err)
 	}
 	return hex.EncodeToString(raw[:]), nil
+}
+
+// pendingClaimToken names the queue the claim was issued against as well.
+// A manager older than the guard consumes a claimed head and claims the
+// next without touching the token, so a reader tells its claim from a
+// guarded one by whether the token still fits the queue.
+func pendingClaimToken(encoded string) (string, error) {
+	token, err := newDeliveryToken()
+	if err != nil {
+		return "", err
+	}
+	return token + "@" + queueFingerprint(encoded), nil
+}
+
+func pendingTokenIssuedFor(token, encoded string) bool {
+	_, fingerprint, found := strings.Cut(token, "@")
+	return found && fingerprint == queueFingerprint(encoded)
+}
+
+func queueFingerprint(encoded string) string {
+	sum := sha256.Sum256([]byte(encoded))
+	return hex.EncodeToString(sum[:6])
 }
 
 func terminalDeliveryOutcome(outcome DeliveryOutcome) bool {
@@ -184,7 +208,7 @@ func (g *DeliveryGuard) ClaimPendingInput(id, expected string) (DeliveryClaim, b
 	if claimed || len(inputs) == 0 || inputs[0] != expected {
 		return DeliveryClaim{}, false, nil
 	}
-	token, err := newDeliveryToken()
+	token, err := pendingClaimToken(encoded)
 	if err != nil {
 		return DeliveryClaim{}, false, err
 	}
@@ -223,7 +247,7 @@ func (g *DeliveryGuard) FinishPendingInput(id, expected string, claim DeliveryCl
 	}
 	res, err := g.store.db.Exec(`
 UPDATE sessions
-   SET pending_inputs = ?, pending_claimed = 0, pending_delivery_outcome = ?
+   SET pending_inputs = ?, pending_claimed = 0, pending_attempt_token = '', pending_delivery_outcome = ?
  WHERE id = ? AND pending_inputs = ? AND pending_claimed = 1 AND pending_attempt_token = ?`,
 		remaining, outcome, id, encoded, claim.AttemptToken)
 	if err != nil {
@@ -258,8 +282,26 @@ func (g *DeliveryGuard) RetirePendingInput(id, expected string) error {
 	}
 	_, err = g.store.db.Exec(`
 UPDATE sessions
-   SET pending_inputs = ?, pending_claimed = 0, pending_delivery_outcome = ?
+   SET pending_inputs = ?, pending_claimed = 0, pending_attempt_token = '', pending_delivery_outcome = ?
  WHERE id = ? AND pending_inputs = ? AND pending_claimed = 1`,
 		remaining, DeliveryUncertain, id, encoded)
 	return err
+}
+
+// OlderManagerStamped reports whether a manager older than the guard has
+// stamped the heartbeat for this socket since a guarded claim last
+// mirrored it. Claims read that once per PollerHeartbeatPeriod, and an
+// older manager that starts or wakes between two of them delivers on its
+// first step, so a delivery reads it again under the guard before it
+// claims anything.
+func (g *DeliveryGuard) OlderManagerStamped(socket string) (bool, error) {
+	if err := g.requireActive(); err != nil {
+		return false, err
+	}
+	values, err := readSettings(g.store.db, PollerSocketKey, PollerHeartbeatKey, guardHeartbeatKey)
+	if err != nil {
+		return false, err
+	}
+	stamp := values[PollerHeartbeatKey]
+	return stamp != "" && stamp != values[guardHeartbeatKey] && values[PollerSocketKey] == socket, nil
 }
