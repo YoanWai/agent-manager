@@ -8,10 +8,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/YoanWai/agent-manager/internal/update"
 )
 
 const (
@@ -27,7 +30,8 @@ const (
 
 type Client struct {
 	controlDir string
-	run        Runner
+	run        InputRunner
+	fetch      Fetcher
 	now        func() time.Time
 	inFlight   chan struct{}
 
@@ -43,7 +47,20 @@ type Option func(*Client)
 
 // WithRunner replaces ssh, so a test sees the exact argv.
 func WithRunner(run Runner) Option {
+	return func(c *Client) {
+		c.run = func(ctx context.Context, argv []string, _ io.Reader) ([]byte, []byte, error) { return run(ctx, argv) }
+	}
+}
+
+// WithInputRunner replaces ssh for a test that reads what a call sends the
+// host on stdin.
+func WithInputRunner(run InputRunner) Option {
 	return func(c *Client) { c.run = run }
+}
+
+// WithFetcher replaces the release download an install streams to a host.
+func WithFetcher(fetch Fetcher) Option {
+	return func(c *Client) { c.fetch = fetch }
 }
 
 func WithClock(now func() time.Time) Option {
@@ -56,6 +73,7 @@ func New(profileDir string, opts ...Option) *Client {
 	c := &Client{
 		controlDir: ControlDir(profileDir),
 		run:        runSSH,
+		fetch:      update.FetchRelease,
 		now:        time.Now,
 		inFlight:   make(chan struct{}, maxInFlight),
 		hostSlots:  map[string]chan struct{}{},
@@ -142,6 +160,12 @@ func (c *Client) hostSlot(host string) chan struct{} {
 // before the global one, so a call queued behind its own host never holds
 // a slot another host could use. stdout comes back on failure too.
 func (c *Client) call(ctx context.Context, host string, timeout time.Duration, args ...string) ([]byte, error) {
+	return c.exec(ctx, host, timeout, nil, append([]string{"agent-manager"}, args...))
+}
+
+// exec runs words through host's login shell, with stdin on the remote
+// command's input when it is not nil.
+func (c *Client) exec(ctx context.Context, host string, timeout time.Duration, stdin io.Reader, words []string) ([]byte, error) {
 	conn, err := c.connection(host)
 	if err != nil {
 		return nil, err
@@ -164,14 +188,14 @@ func (c *Client) call(ctx context.Context, host string, timeout time.Duration, a
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	argv := c.sshArgv(conn.Destination, false, remoteCommand(append([]string{"agent-manager"}, args...)))
-	stdout, stderr, err := c.run(ctx, argv)
+	argv := c.sshArgv(conn.Destination, false, remoteCommand(words))
+	stdout, stderr, err := c.run(ctx, argv, stdin)
 	out, marked := answer(stdout)
 	if err != nil {
 		return out, classify(ctx, host, stderr, err)
 	}
 	if !marked {
-		return nil, &Error{Host: host, Err: errors.New("the login shell there exited before it ran agent-manager")}
+		return nil, &Error{Host: host, Err: fmt.Errorf("the login shell there exited before it ran %s", words[0])}
 	}
 	return out, nil
 }
@@ -221,7 +245,7 @@ func classify(ctx context.Context, host string, stderr []byte, err error) error 
 		}
 		return &Error{Host: host, Err: errors.New("unreachable over SSH: " + text), sshFailed: true}
 	case exitNotFound:
-		return &Error{Host: host, Err: errors.New("agent-manager is not on the login shell's PATH there; install it or add it to PATH in the login profile")}
+		return &Error{Host: host, Err: errNotInstalled}
 	}
 	if text == "" {
 		return &Error{Host: host, Err: err}
@@ -250,8 +274,20 @@ func (c *Client) decode(ctx context.Context, host string, timeout time.Duration,
 	return unreadable(host, args[0], json.Unmarshal(out, into))
 }
 
+var (
+	errOutdated     = errors.New("agent-manager there is too old for SSH connections; update agent-manager on that host")
+	errNotInstalled = errors.New("agent-manager is not on the login shell's PATH there; install it or add it to PATH in the login profile")
+)
+
 func outdated(host string) error {
-	return &Error{Host: host, Err: errors.New("agent-manager there is too old for SSH connections; update agent-manager on that host")}
+	return &Error{Host: host, Err: errOutdated}
+}
+
+// Installable reports a host that answered but has no agent-manager this
+// one can drive: none on its login PATH, or one too old to know the
+// snapshot. Installing this build's release there fixes either.
+func Installable(err error) bool {
+	return errors.Is(err, errOutdated) || errors.Is(err, errNotInstalled)
 }
 
 func unreadable(host, command string, err error) error {

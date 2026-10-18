@@ -54,6 +54,30 @@ The snapshot envelope carries `version`. A remote that answers with an
 unknown version, or does not know `snapshot`, is shown offline with the
 message to update agent-manager on that host.
 
+### Installing on the host
+
+A host with no agent-manager on its login `PATH`, or one too old to know
+`snapshot`, can be given this build's release. `u` (the restore key) on the connection row,
+or Install agent-manager in its menu, asks first; so does
+`agent-manager update --connection=<name>` from a shell. Either way:
+
+1. `uname -sm` in the login shell names the OS and architecture. A
+   Windows host, or one with no POSIX login shell, is refused.
+2. This machine downloads the release of its own version, not the newest,
+   from the source `agent-manager update` uses, and checks it against the
+   release's `checksums.txt`. A dev build has no release and is refused.
+3. The binary streams over the same SSH connection, so the host needs no
+   network of its own. The host writes it beside `~/.local/bin/agent-manager`,
+   the install script's default, checks its SHA-256 and that it runs, and
+   only then renames it into place. Nothing runs with sudo.
+4. The connection refreshes. When the login shell finds no copy, or
+   another copy first, the result names what to add to `PATH` in the login
+   profile; no profile is edited.
+
+A host newer than this build is left alone. A manager already running on
+the host keeps its old build until it restarts. The MCP server has no
+install tool.
+
 Flags are written as `--flag=value` and operands follow a bare `--`, so a
 message that looks like a flag stays a message.
 
@@ -98,6 +122,7 @@ stays down.
 | Snapshot and `send --from` | `internal/sessioncmd`, `internal/cli` | The envelope type, `snapshot --json`, sending from outside the host |
 | Headless manager | `internal/app`, `main.go` (`serve`) | Running the poller and after-turn work without a TUI; `--background` detaches one when none is awake |
 | SSH client | `internal/remote` | Refs, validation, the SSH command, snapshot, routed operations, starting the remote manager |
+| Install | `internal/remote/install.go`, `internal/update` (`FetchRelease`), `internal/cli` (`update --connection`) | Detecting the host's platform, the verified download, the upload |
 | UI | `internal/ui/connection_*.go` | The connection dialog, connection rows, remote rows, routing actions to `internal/remote` on the effect lane |
 | MCP | `internal/mcpserver/remote*.go` | Listing every connection with qualified ids, routing qualified ids |
 

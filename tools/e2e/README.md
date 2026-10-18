@@ -151,7 +151,10 @@ the host through its CLI, adds the connection through the `C` dialog, waits
 for the remote row, quick-sends to it and checks the host's inbox for the
 `<short hostname>: you` sender, kills it and checks its tmux session is gone
 on the host, and requires that the local store holds the connection and no
-sessions. The first refresh starts the host's headless manager.
+sessions. The first refresh starts the host's headless manager. A third
+connection reaches a host whose only agent-manager answers snapshot version 0:
+its row offers the install on `u`, and the dev build refuses it without writing
+under that host's `~/.local`.
 
 Cleanup ends every process by PID: the binary copy's processes (the host's
 `serve` among them) and the tmux servers on the run's own sockets, listed in

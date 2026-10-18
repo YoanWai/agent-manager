@@ -63,6 +63,11 @@ func (m *Model) connectionIntent(intent uirail.Intent) (tea.Cmd, bool) {
 		case uirail.Delete:
 			m.confirmRemoveConnection(row.host)
 			return nil, true
+		case uirail.Restore:
+			if m.ssh.installable(row.host) {
+				m.confirmInstall(row.host)
+				return nil, true
+			}
 		}
 	}
 	if intent.Kind == uirail.NewGroup {
@@ -143,7 +148,12 @@ func (m *Model) confirmRemote(request remoteRequest) tea.Cmd {
 }
 
 // runRemote is the confirmed remote call.
-func (m *Model) runRemote(request remoteRequest) tea.Cmd { return m.queueRemote(request) }
+func (m *Model) runRemote(request remoteRequest) tea.Cmd {
+	if request.op == remoteInstall {
+		return m.queueInstall(request)
+	}
+	return m.queueRemote(request)
+}
 
 // queueRemote puts a call on the remote lane, unless the host's last
 // refresh could not reach it.

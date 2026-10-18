@@ -16,9 +16,14 @@ const (
 // Host is one SSH connection's copied inventory, in the remote host's own
 // order. Its rows nest under the connection's row.
 type Host struct {
-	Name           string
-	State          HostState
-	Err            string
+	Name  string
+	State HostState
+	Err   string
+	// Installable marks a host whose agent-manager is missing or too old,
+	// which this build's release can replace; Installing, one it is being
+	// replaced on.
+	Installable    bool
+	Installing     bool
 	Groups         []string
 	ArchivedGroups map[string]bool
 	Sessions       []Session
@@ -100,10 +105,12 @@ func (r renderer) renderConnection(row treeRow, selected bool, width int, pad, b
 	head := pad + r.palette.subtle.Render(marker) + " " + r.palette.highlight(row.host, r.model.search, nameStyle) + " " + label
 	host, _ := r.model.host(row.host)
 	var meta string
-	switch host.State {
-	case HostConnecting:
+	switch {
+	case host.Installing:
+		meta = r.palette.subtle.Render("installing…")
+	case host.State == HostConnecting:
 		meta = r.palette.subtle.Render("connecting…")
-	case HostOffline:
+	case host.State == HostOffline:
 		meta = r.palette.muted.Render("offline")
 	default:
 		meta = r.groupStatusGlyphs(row.host, "", true)

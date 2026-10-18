@@ -25,8 +25,12 @@ type connectionsFeature struct {
 	gen     uint64
 	hosts   map[string]remote.HostState
 	polling map[string]bool
-	preview remotePreview
-	dialog  connectionDialog
+	// installing names the hosts an install of agent-manager is running
+	// on, and installFailed why the last one on a host failed.
+	installing    map[string]bool
+	installFailed map[string]string
+	preview       remotePreview
+	dialog        connectionDialog
 	// from names the user on this machine to the agent a remote send
 	// reaches.
 	from string
@@ -37,7 +41,7 @@ const maxSenderBytes = 64
 
 func newConnections(client *remote.Client, stored []store.Connection) connectionsFeature {
 	hostname, _ := os.Hostname()
-	c := connectionsFeature{client: client, from: senderName(hostname)}
+	c := connectionsFeature{client: client, from: senderName(hostname), installing: map[string]bool{}, installFailed: map[string]string{}}
 	c.setList(stored)
 	return c
 }
@@ -106,6 +110,8 @@ func (c *connectionsFeature) railHosts() []uirail.Host {
 		if state.Err != nil {
 			host.Err = state.Err.Error()
 		}
+		host.Installable = c.installable(conn.Name)
+		host.Installing = c.installing[conn.Name]
 		for _, group := range state.Snapshot.Groups {
 			host.Groups = append(host.Groups, group.Path)
 			if group.Archived {
@@ -193,4 +199,11 @@ func (c *connectionsFeature) offline(host string) (string, bool) {
 		return "", false
 	}
 	return host + " is offline: " + state.Err.Error(), true
+}
+
+// installable reports a host that answered without an agent-manager this
+// one can drive, which installing this build's release there fixes.
+func (c *connectionsFeature) installable(host string) bool {
+	state, seen := c.hosts[host]
+	return seen && !state.OK && remote.Installable(state.Err)
 }

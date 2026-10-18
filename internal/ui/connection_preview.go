@@ -158,6 +158,9 @@ func (m *Model) connectionDetail(host string, width int) []string {
 			lines = append(lines, labelStyle().Render(padRight("error", detailLabelWidth))+errStyle().Render(line))
 		}
 	}
+	if fact, ok := m.installFact(host); ok {
+		lines = append(lines, factRow("install", trimmedValue(mutedStyle().Render(fact)), "", width))
+	}
 	return lines
 }
 
@@ -227,6 +230,7 @@ func (m *Model) remoteRowLegend() legendSection {
 	}
 	return legendOf(m.rail.RemoteLegend(m.railLegendContext(), uirail.RemoteRow{
 		Kind: row.kind, Host: row.host, Terminal: row.terminal, Dead: row.status == "dead",
+		Installable: row.kind == uirail.ConnectionRow && m.ssh.installable(row.host) && !m.ssh.installing[row.host],
 	}, m.rail.SelectionCollapsed(selection)))
 }
 

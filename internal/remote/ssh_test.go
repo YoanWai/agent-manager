@@ -144,7 +144,7 @@ func TestRealSSHRoundTrip(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), callTimeout)
 	defer cancel()
 	words := append([]string{"printf", `%s\0`}, awkwardArgs...)
-	stdout, stderr, err := runSSH(ctx, c.sshArgv(destination, false, remoteCommand(words)))
+	stdout, stderr, err := runSSH(ctx, c.sshArgv(destination, false, remoteCommand(words)), nil)
 	if err != nil {
 		t.Fatalf("ssh: %v\nstderr: %s", err, stderr)
 	}
@@ -239,7 +239,7 @@ func TestRunSSHCapsWhatAHostPrints(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			stdout, stderr, err := runSSH(context.Background(), []string{"sh", "-c", tc.script})
+			stdout, stderr, err := runSSH(context.Background(), []string{"sh", "-c", tc.script}, nil)
 			if err == nil || err.Error() != tc.want {
 				t.Fatalf("error = %v, want %s", err, tc.want)
 			}
@@ -248,7 +248,7 @@ func TestRunSSHCapsWhatAHostPrints(t *testing.T) {
 			}
 		})
 	}
-	stdout, _, err := runSSH(context.Background(), []string{"sh", "-c", "head -c 8388608 /dev/zero"})
+	stdout, _, err := runSSH(context.Background(), []string{"sh", "-c", "head -c 8388608 /dev/zero"}, nil)
 	if err != nil || len(stdout) != 8<<20 {
 		t.Fatalf("an answer of exactly the cap = %d bytes, %v", len(stdout), err)
 	}
