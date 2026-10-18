@@ -24,6 +24,7 @@ const (
 	FieldDir
 	FieldWorktree
 	FieldPrompt
+	FieldSaved
 	FieldGroup
 	// fieldBase labels the read-only base line, which never takes focus.
 	fieldBase
@@ -76,7 +77,9 @@ type Request struct {
 	Name   string
 	Group  string
 	Prompt string
-	Pick   Pick
+	// Saved is the saved prompt's text, which goes in front of Prompt.
+	Saved string
+	Pick  Pick
 	// Dir is the directory the form names; the quick bar leaves it to
 	// the group.
 	Dir string
@@ -122,6 +125,13 @@ type Form struct {
 	choice          Choice
 	// hits maps each painted body line to what a click there does.
 	hits []hit
+	// saved is the catalog as the form read it, savedIndex the pick in it
+	// (0 for none), and savedList the list ctrl+o opens on it.
+	saved        []Saved
+	savedIndex   int
+	savedLoading bool
+	savedErr     string
+	savedList    SavedList
 }
 
 // TextField is a one-line input with a placeholder and a length cap.
@@ -144,7 +154,47 @@ func NewForm(h ChoiceHost, tools []string, toolIndex int) Form {
 		toolIndex: toolIndex,
 		focus:     FieldName,
 		choice:    NewChoice(h, tools[toolIndex]),
+		// The root reads the catalog as the form opens.
+		savedLoading: true,
 	}
+}
+
+// SetSaved takes the catalog read, or why it failed.
+func (d *Form) SetSaved(rows []Saved, err error) {
+	d.savedLoading = false
+	if err != nil {
+		d.savedErr = "Reading saved prompts: " + err.Error()
+		return
+	}
+	d.saved = rows
+	if d.savedIndex > len(d.saved) {
+		d.savedIndex = 0
+	}
+}
+
+// SavedText is the picked saved prompt's text, empty for none.
+func (d *Form) SavedText() string {
+	if d.savedIndex <= 0 || d.savedIndex > len(d.saved) {
+		return ""
+	}
+	return d.saved[d.savedIndex-1].Text
+}
+
+func (d *Form) stepSaved(delta int) {
+	count := len(d.saved) + 1
+	d.savedIndex = (d.savedIndex + delta + count) % count
+}
+
+func (d *Form) openSavedList() {
+	d.savedList = OpenSavedList(d.saved, false, true)
+}
+
+func (d *Form) savedKey(msg tea.KeyMsg) tea.Cmd {
+	cmd, pick := d.savedList.Key(msg)
+	if pick.Picked {
+		d.savedIndex = pick.Index + 1
+	}
+	return cmd
 }
 
 // SyncWidths fits the field widgets to the card so long values scroll
@@ -241,6 +291,9 @@ func (d *Form) Focused() Field { return d.focus }
 
 // HandleKey takes a key the root has made typed text where it was pasted.
 func (d *Form) HandleKey(h FormHost, msg tea.KeyMsg) (tea.Cmd, FormRequest) {
+	if d.savedList.Open() {
+		return d.savedKey(msg), FormRequest{}
+	}
 	if d.focus == FieldModel {
 		if cmd, handled := d.handleModelKey(h, msg); handled {
 			return cmd, FormRequest{}
@@ -300,6 +353,10 @@ func (d *Form) HandleKey(h FormHost, msg tea.KeyMsg) (tea.Cmd, FormRequest) {
 		if d.focus == FieldTool {
 			return nil, d.cycleTool(h, -1)
 		}
+		if d.focus == FieldSaved {
+			d.stepSaved(-1)
+			return nil, FormRequest{}
+		}
 		if d.stepChoice(h, -1) {
 			return nil, FormRequest{}
 		}
@@ -313,6 +370,10 @@ func (d *Form) HandleKey(h FormHost, msg tea.KeyMsg) (tea.Cmd, FormRequest) {
 		if d.focus == FieldTool {
 			return nil, d.cycleTool(h, 1)
 		}
+		if d.focus == FieldSaved {
+			d.stepSaved(1)
+			return nil, FormRequest{}
+		}
 		if d.stepChoice(h, 1) {
 			return nil, FormRequest{}
 		}
@@ -322,9 +383,18 @@ func (d *Form) HandleKey(h FormHost, msg tea.KeyMsg) (tea.Cmd, FormRequest) {
 		if d.focus == FieldGroup {
 			return nil, FormRequest{Group: 1}
 		}
+	case "ctrl+o":
+		if d.focus == FieldSaved {
+			d.openSavedList()
+			return nil, FormRequest{}
+		}
 	case "enter":
 		if dirSuggesting && paths.Chosen() {
 			return nil, FormRequest{ApplyPath: true}
+		}
+		if d.focus == FieldSaved {
+			d.openSavedList()
+			return nil, FormRequest{}
 		}
 		return nil, d.Submit(h)
 	}
@@ -411,6 +481,12 @@ func (d *Form) Click(h FormHost, line int) FormRequest {
 	hit := d.hits[line]
 	toolName, ch := d.Tool(), &d.choice
 	switch {
+	case hit.field == FieldSaved && hit.entry >= 0:
+		if pick := d.savedList.Click(hit.entry); pick.Picked {
+			d.savedIndex = pick.Index + 1
+		}
+		d.FocusField(h, FieldSaved)
+		return FormRequest{}
 	case hit.field == FieldModel && hit.entry >= 0:
 		ch.PickEntry(h, toolName, hit.entry)
 		return FormRequest{}
@@ -423,6 +499,8 @@ func (d *Form) Click(h FormHost, line int) FormRequest {
 		return FormRequest{}
 	}
 	switch hit.field {
+	case FieldSaved:
+		d.stepSaved(1)
 	case FieldTool:
 		return d.cycleTool(h, 1)
 	case FieldWorktree:
@@ -459,7 +537,11 @@ func (d *Form) Fields(h ChoiceHost) []Field {
 	if shown, active := ch.EffortShown(h, toolName); shown && active {
 		fields = append(fields, FieldEffort)
 	}
-	return append(fields, FieldDir, FieldWorktree, FieldPrompt, FieldGroup)
+	fields = append(fields, FieldDir, FieldWorktree)
+	if len(d.saved) > 0 {
+		fields = append(fields, FieldSaved)
+	}
+	return append(fields, FieldPrompt, FieldGroup)
 }
 
 // FocusStep moves focus delta fields along, wrapping at the ends.
@@ -472,6 +554,9 @@ func (d *Form) FocusStep(h FormHost, delta int) {
 // FocusField puts focus on field.
 func (d *Form) FocusField(h FormHost, field Field) {
 	h.Paths().Reset()
+	if field != FieldSaved {
+		d.savedList.Close()
+	}
 	d.focus = field
 	d.name.Blur()
 	d.dir.Blur()
@@ -524,10 +609,6 @@ func (d *Form) Submit(h FormHost) FormRequest {
 	// Chips become the paths of the images they stand for, so a first task
 	// reaches the agent with its screenshot named where it was pasted.
 	message := prompt.Message()
-	if strings.HasPrefix(message, "-") {
-		h.ReportErr(`prompt cannot start with "-": the tool would read it as a flag`)
-		return FormRequest{}
-	}
 	picked, err := d.choice.Launch(h, toolName, d.choice.filter.Value())
 	if err != nil {
 		h.ReportErr(err.Error())
@@ -537,6 +618,7 @@ func (d *Form) Submit(h FormHost) FormRequest {
 		Tool:        toolName,
 		Name:        name,
 		Prompt:      message,
+		Saved:       d.SavedText(),
 		Pick:        picked,
 		Dir:         d.dir.Value(),
 		Worktree:    d.worktree,

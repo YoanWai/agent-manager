@@ -224,10 +224,11 @@ func (m *Model) openFormWithReader(reader settingsValueReader) tea.Cmd {
 	m.form.SeedWorktree(m.cachedSpawnWorktreeDefault(m.selectedGroupPath()))
 	m.mode = modeForm
 	catalog := m.ensureCatalog(tools[toolIndex])
+	saved := savedPromptsLoadCmd(m.services.store, savedForForm, uint64(m.form.prompt.gen), 0)
 	if m.settings.pending > 0 {
-		return tea.Batch(m.formWorktreeProbeCmd(false), catalog)
+		return tea.Batch(m.formWorktreeProbeCmd(false), catalog, saved)
 	}
-	return tea.Batch(settingsLoadCmd(settingsLoadRequest{target: settingsLoadForm, generation: uint64(m.form.prompt.gen), extra: m.choiceSettingKeys()}, reader), catalog)
+	return tea.Batch(settingsLoadCmd(settingsLoadRequest{target: settingsLoadForm, generation: uint64(m.form.prompt.gen), extra: m.choiceSettingKeys()}, reader), catalog, saved)
 }
 
 // applyCachedFormDefaults takes the loaded tool and worktree defaults. A
@@ -339,6 +340,8 @@ func (m *Model) viewForm() string {
 		NoRepo: worktreeUnavailable,
 		Group:  displayGroup(m.form.groups[m.form.groupIndex].path),
 		Styles: spawnStyles(),
+		Height: m.layout.height,
+		Chrome: m.cardChromeRows,
 	}
 	if m.form.Focused() == spawn.FieldGroup {
 		facts.GroupPicker = strings.Split(m.form.viewGroupPicker(), "\n")

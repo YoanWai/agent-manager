@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/charmbracelet/x/ansi"
@@ -51,6 +52,32 @@ type SendResult struct {
 // prose; the queue and rate caps count messages, and this is what keeps one
 // of them from being a file paste that fills the recipient's prompt.
 const maxMessageBytes = 8000
+
+// ExpandSaved resolves a saved prompt in front of text. An empty name
+// returns the trimmed text. A missing name refuses the send.
+func (s *Sessions) ExpandSaved(name, text string) (string, error) {
+	text = strings.TrimSpace(text)
+	if strings.TrimSpace(name) == "" {
+		return text, nil
+	}
+	runtime, err := s.open()
+	if err != nil {
+		return "", err
+	}
+	defer runtime.Close()
+	return savedText(runtime.store, name, text)
+}
+
+func savedText(st *store.Store, name, text string) (string, error) {
+	preset, found, err := st.SessionPreset(name)
+	if err != nil {
+		return "", fmt.Errorf("reading saved prompts: %w", err)
+	}
+	if !found {
+		return "", fmt.Errorf("saved prompt %q does not exist", name)
+	}
+	return launch.WithInstructions(preset.Instructions, text), nil
+}
 
 // Send queues a message for another agent. It is deliberately not typed
 // into the pane here: several tools keep their input line drawn under an

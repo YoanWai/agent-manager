@@ -49,8 +49,22 @@ func (q *Bar) View(h Host, facts Facts, width, maxRows int) string {
 	// Count wrapped rows only after setting the width.
 	prompt := h.Prompt()
 	prompt.Fit(width, max(min(maxRows-1, BarMaxRows), 1))
-	return target + "\n" + prompt.View()
+	bar := target + "\n" + prompt.View()
+	if !q.savedList.Open() {
+		return bar
+	}
+	lines := q.savedList.Lines(width, savedListRows, st)
+	for i := range q.hits {
+		q.hits[i].Line += len(lines)
+	}
+	for i := range lines {
+		q.hits = append(q.hits, Hit{Line: i, X0: 0, X1: width, Action: ClickSaved, Entry: i})
+	}
+	return strings.Join(lines, "\n") + "\n" + bar
 }
+
+// savedListRows caps the saved prompts list above the prompt.
+const savedListRows = 6
 
 // statusRow puts what a spawn launches with against the right edge of
 // the row: the CLI, model, effort, profile and worktree, each a stretch a

@@ -100,6 +100,7 @@ type layoutState struct {
 type focusState struct {
 	pane    uifocus.Model
 	runtime focusRuntimeState
+	saved   focusSaved
 }
 
 type reviewNavState struct {

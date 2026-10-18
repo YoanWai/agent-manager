@@ -76,6 +76,7 @@ const (
 	FieldEditor
 	FieldKeybindings
 	FieldCLIs
+	FieldPrompts
 	FieldDocs
 	FieldBugReport
 	FieldFeatureRequest
@@ -86,27 +87,27 @@ const (
 // State is the open dialog: the choice on every row, the sub-pickers, and
 // the baseline a save compares against.
 type State struct {
-	GlyphMode                                               presentation.GlyphMode
-	DocsRow, GlyphRow, GlyphRowWidth, SaveRow, SaveRowWidth int
-	ToolNames                                               []string
-	ToolIndex                                               int
-	ThemeIndex                                              int
-	Field                                                   int
-	LayoutSplit                                             bool
-	QuickCloseSend                                          bool
-	EnterFocuses                                            bool
-	ArrowStep                                               bool
-	ComfortableRows                                         bool
-	FullLayout                                              bool
-	HideHeader                                              bool
-	HideStats                                               bool
-	MouseDisabled                                           bool
-	WorktreeDefault                                         bool
-	BaseFetch                                               bool
-	Proactive                                               bool
-	Notifications                                           bool
-	NotifyFinished                                          bool
-	ThemeAuto                                               bool
+	GlyphMode                                                           presentation.GlyphMode
+	DocsRow, PromptsRow, GlyphRow, GlyphRowWidth, SaveRow, SaveRowWidth int
+	ToolNames                                                           []string
+	ToolIndex                                                           int
+	ThemeIndex                                                          int
+	Field                                                               int
+	LayoutSplit                                                         bool
+	QuickCloseSend                                                      bool
+	EnterFocuses                                                        bool
+	ArrowStep                                                           bool
+	ComfortableRows                                                     bool
+	FullLayout                                                          bool
+	HideHeader                                                          bool
+	HideStats                                                           bool
+	MouseDisabled                                                       bool
+	WorktreeDefault                                                     bool
+	BaseFetch                                                           bool
+	Proactive                                                           bool
+	Notifications                                                       bool
+	NotifyFinished                                                      bool
+	ThemeAuto                                                           bool
 	// TerminalBackground is the background row's choice, applied to the
 	// model as it is stepped so the frame previews it.
 	TerminalBackground bool
@@ -126,7 +127,9 @@ type State struct {
 	KeyAppend  bool
 	KeyReset   bool
 	Editor     EditorRow
-	Dirty      bool
+	// Prompts is the saved prompts panel, open over the rows.
+	Prompts Prompts
+	Dirty   bool
 	// Baseline is what the dialog started from, by key: a save writes
 	// only keys that differ, so it never puts this process's stale cache
 	// over another writer's value. A missing key is always written.
@@ -213,10 +216,10 @@ func FromSnapshot(s Snapshot) State {
 // Busy reports a dialog a fresh store read must not rebuild: one with
 // unsaved steps or a sub-picker open.
 func (s State) Busy() bool {
-	return s.Dirty || s.CLIPicker || s.KeyPicker
+	return s.Dirty || s.CLIPicker || s.KeyPicker || s.Prompts.open
 }
 
 // InSubpanel reports a sub-picker or a typed line covering the rows.
 func (s State) InSubpanel() bool {
-	return s.CLIPicker || s.KeyPicker || s.Editor.Typing()
+	return s.CLIPicker || s.KeyPicker || s.Editor.Typing() || s.Prompts.open
 }

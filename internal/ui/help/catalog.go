@@ -174,8 +174,14 @@ func helpSections(ctx Context) []helpSection {
 			{"↑↓ / wheel", "pick a field"},
 			{"←→", "change the value, including Compatible / Advanced symbols"},
 			{"click", "change symbols, or save and close"},
-			{"↵", "run the field's action (docs, keybindings, CLIs, report, update)"},
+			{"↵", "run the field's action, like saved prompts or the docs"},
 			{"esc", "save and close"},
+		}},
+		{title: "saved prompts", rows: [][2]string{
+			{"n / ↵ / d", "new, edit, delete"},
+			{"ctrl+s", "save"},
+			{"←→", "on a new session, pick one"},
+			{"ctrl+o", "open the list"},
 		}},
 		{title: titledWith("dialogs", list, keybind.NewSession, keybind.NewGroup, keybind.Rename, keybind.Fork, keybind.Move), rows: [][2]string{
 			{"tab", "next field"},
@@ -206,6 +212,9 @@ func sessionHelpRows(keys keybind.Table, arrowStep bool, mouseRows [][2]string) 
 	}
 	if label := keys.Binding(keybind.Editor).Label(); label != "" {
 		rows = append(rows, [2]string{label, "open its directory in an editor"})
+	}
+	if label := keys.Binding(keybind.SavedPrompt).Label(); label != "" {
+		rows = append(rows, [2]string{label, "open saved prompts and paste the pick"})
 	}
 	if label := keys.Binding(keybind.TmuxPrefix).Label(); label != "" {
 		rows = append(rows, [2]string{label, "attached: tmux's prefix, in place of yours"})

@@ -104,6 +104,8 @@ func (m *Model) captureEffect(request effectRequest) func() (effectResult, error
 			return moveDialogCloseResult{}, nil
 		case settingsRequest:
 			return services.runSettings(request)
+		case savedPromptRequest:
+			return services.runSavedPrompt(request)
 		case reviewEffectRequest:
 			return services.runReview(request)
 		case keysRequest:

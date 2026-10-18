@@ -64,6 +64,9 @@ func (m *Model) renderFrame() string {
 		frame = m.centerOnBackdrop(m.viewNotices())
 	default:
 		frame = m.overlayRowMenu(m.titleTopRowWithUpdate(m.viewListFrame()))
+		if m.mode == modeFocus && m.focus.saved.list.Open() {
+			frame = m.viewFocusSaved()
+		}
 	}
 	return m.syncCursorAnchor(clampFrame(frame, m.layout.height))
 }

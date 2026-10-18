@@ -230,3 +230,22 @@ func TestCatalogSessionRowsFollowCustomBindings(t *testing.T) {
 		t.Errorf("tmux_prefix row = %q, %v", desc, ok)
 	}
 }
+
+// The saved prompts panel's keys are in the map, and the focused session's
+// row names whatever the saved prompt key is bound to.
+func TestCatalogNamesTheSavedPromptKeys(t *testing.T) {
+	ctx := testContext(84)
+	ctx.SessionKeys = ctx.SessionKeys.With(keybind.SavedPrompt, bindingOf(t, "f6"))
+	rows := map[string]string{}
+	for _, section := range helpSections(ctx) {
+		for _, row := range section.rows {
+			rows[section.title+"/"+row[0]] = row[1]
+		}
+	}
+	if rows["saved prompts/ctrl+s"] != "save" || rows["saved prompts/ctrl+o"] != "open the list" {
+		t.Fatalf("saved prompts section = %v", rows)
+	}
+	if rows["inside a session (attached or focused)/f6"] != "open saved prompts and paste the pick" {
+		t.Fatal("the session section does not follow the saved prompt binding")
+	}
+}

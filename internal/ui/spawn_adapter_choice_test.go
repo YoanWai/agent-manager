@@ -70,7 +70,7 @@ func TestFormEffortFollowsTheModel(t *testing.T) {
 	if m.form.Choice().Model() != "haiku" || m.form.Choice().FilterValue() != "haiku" {
 		t.Fatalf("tab filled in %q / %q", m.form.Choice().Model(), m.form.Choice().FilterValue())
 	}
-	if slices.Contains(m.form.Fields(m.spawnHost()), spawn.FieldEffort) || strings.Contains(formBody(m), "effort    ") {
+	if slices.Contains(m.form.Fields(m.spawnHost()), spawn.FieldEffort) || strings.Contains(formBody(m), "effort        ") {
 		t.Fatalf("haiku takes no effort, the row should go:\n%s", formBody(m))
 	}
 	m.form.Choice().SetFilter("")
@@ -81,7 +81,7 @@ func TestFormEffortFollowsTheModel(t *testing.T) {
 	if got := m.form.Choice().EffortLevel(m.spawnHost(), "claude"); got != "medium" {
 		t.Fatalf("effort = %q, want medium", got)
 	}
-	if body := formBody(m); !strings.Contains(body, "effort    ◂ medium ▸ ") {
+	if body := formBody(m); !strings.Contains(body, "effort        ◂ medium ▸ ") {
 		t.Fatalf("effort row:\n%s", body)
 	}
 }
@@ -132,7 +132,7 @@ func TestFormSaysWhatACLIDoesNotSupport(t *testing.T) {
 	m := buildModel(t)
 	openFormOnClaude(t, m)
 	body := formBody(m)
-	if !strings.Contains(body, "model     not supported by claude") || !strings.Contains(body, "effort    not supported by claude") {
+	if !strings.Contains(body, "model         not supported by claude") || !strings.Contains(body, "effort        not supported by claude") {
 		t.Fatalf("form:\n%s", body)
 	}
 	if fields := m.form.Fields(m.spawnHost()); slices.Contains(fields, spawn.FieldModel) || slices.Contains(fields, spawn.FieldEffort) {
@@ -156,7 +156,7 @@ func TestFormProfileScopesModelsAndTypedEffort(t *testing.T) {
 	}
 	m.form.FocusField(m.spawnHost(), spawn.FieldProfile)
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
-	if body := formBody(m); !strings.Contains(body, "profile   ◂ work  grok-4.6 · xai-oauth ▸") {
+	if body := formBody(m); !strings.Contains(body, "profile       ◂ work  grok-4.6 · xai-oauth ▸") {
 		t.Fatalf("profile row:\n%s", body)
 	}
 	m.form.FocusField(m.spawnHost(), spawn.FieldModel)

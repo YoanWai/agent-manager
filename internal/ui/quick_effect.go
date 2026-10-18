@@ -136,6 +136,7 @@ func (q *quickBar) clearAccepted(request quickSendRequest) {
 		return
 	}
 	q.input.SetValue("")
+	q.saved = nil
 	if request.closeAfterSend {
 		q.active = false
 	}

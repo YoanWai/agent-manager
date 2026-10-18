@@ -14,9 +14,12 @@ type hit struct {
 	entry int
 }
 
-// LabelColumn is the columns before a field value: marker (2), label (9),
+// LabelColumn is the columns before a field value: marker (2), label (13),
 // separator space (1).
-const LabelColumn = 12
+const LabelColumn = 16
+
+// savedListRows caps the saved prompts list under its row.
+const savedListRows = 6
 
 // FormFacts are the root facts the form paints: the width a value has,
 // what the chosen directory allows, and the group picker the root holds.
@@ -33,18 +36,23 @@ type FormFacts struct {
 	Group       string
 	GroupPicker []string
 	Styles      Styles
+	// Height is the terminal's, and Chrome the rows the card spends around
+	// a body with this hint, which together budget the saved prompt lines.
+	Height int
+	Chrome func(hint [][2]string) int
 }
 
 // View paints the form's body and its key hint, and records the line each
 // field takes for clicks.
 func (d *Form) View(h FormHost, facts FormFacts) (string, [][2]string) {
 	st := facts.Styles
-	var b strings.Builder
-	d.hits = d.hits[:0]
+	var head, tail strings.Builder
+	var headHits, tailHits []hit
+	b, hits := &head, &headHits
 	add := func(text string, at hit) {
 		b.WriteString(text)
 		for range strings.Count(text, "\n") {
-			d.hits = append(d.hits, at)
+			*hits = append(*hits, at)
 		}
 	}
 	field := func(label, value string, id Field) {
@@ -92,6 +100,10 @@ func (d *Form) View(h FormHost, facts FormFacts) (string, [][2]string) {
 	if d.worktree && facts.WorktreeKnown && facts.WorktreeCapable {
 		field("base", facts.Base, fieldBase)
 	}
+	if value, shown := d.savedRow(facts); shown {
+		field("saved prompts", value, FieldSaved)
+	}
+	b, hits = &tail, &tailHits
 	// Chips are tokens inside the typed text, so they wrap and reflow with
 	// the words around them; painting happens on the rendered prompt.
 	field("prompt", h.Prompt().View(), FieldPrompt)
@@ -106,6 +118,10 @@ func (d *Form) View(h FormHost, facts FormFacts) (string, [][2]string) {
 
 	hint := [][2]string{{"tab/↑↓", "move"}, {"←→", "change"}, {"↵", "create"}, {"esc", "cancel"}}
 	switch {
+	case d.savedList.Open():
+		hint = d.savedList.Hint("use", "close")
+	case d.focus == FieldSaved:
+		hint = [][2]string{{"←→", "saved prompts"}, {"ctrl+o", "list"}, {"↵", "list"}, {"esc", "cancel"}}
 	case d.focus == FieldPrompt:
 		hint = [][2]string{{"ctrl+v", "paste an image"}, {"tab", "move"}, {"↑↓", "caret or move"}, {"↵", "create"}, {"esc", "cancel"}}
 	case d.focus == FieldGroup:
@@ -121,7 +137,56 @@ func (d *Form) View(h FormHost, facts FormFacts) (string, [][2]string) {
 	case d.focus == FieldEffort:
 		hint = [][2]string{{"←→", "level"}, {"tab/↑↓", "move"}, {"↵", "create"}, {"esc", "cancel"}}
 	}
-	return strings.TrimRight(b.String(), "\n"), hint
+	body := head.String() + tail.String()
+	room := facts.Height - strings.Count(strings.TrimRight(body, "\n"), "\n") - 1 - facts.Chrome(hint)
+	details, detailHits := d.savedDetails(facts, room)
+	d.hits = append(append(append(d.hits[:0], headHits...), detailHits...), tailHits...)
+	return strings.TrimRight(head.String()+details+tail.String(), "\n"), hint
+}
+
+// savedRow is the saved prompts row's value, and whether it shows: the
+// read, its failure, or the pick once there is something to pick.
+func (d *Form) savedRow(facts FormFacts) (string, bool) {
+	st := facts.Styles
+	switch {
+	case d.savedLoading:
+		return "loading… (optional)", true
+	case d.savedErr != "":
+		return ansi.Wrap(d.savedErr, max(1, facts.Width), ""), true
+	case len(d.saved) == 0:
+		return "", false
+	}
+	name := "none"
+	if d.savedIndex > 0 && d.savedIndex <= len(d.saved) {
+		name = d.saved[d.savedIndex-1].Name
+	}
+	return st.Subtle.Render("◂ ") + st.Value.Render(name) + st.Subtle.Render(" ▸"), true
+}
+
+// savedDetails are the lines under the saved prompts row, within room: the
+// open list, or the picked prompt's text on one line.
+func (d *Form) savedDetails(facts FormFacts, room int) (string, []hit) {
+	if room <= 0 {
+		return "", nil
+	}
+	indent := strings.Repeat(" ", LabelColumn)
+	if d.savedList.Open() {
+		var b strings.Builder
+		var hits []hit
+		for i, line := range d.savedList.Lines(facts.Width, min(savedListRows, room), facts.Styles) {
+			b.WriteString(indent + line + "\n")
+			hits = append(hits, hit{field: FieldSaved, entry: i})
+		}
+		return b.String(), hits
+	}
+	text := d.SavedText()
+	if text == "" {
+		return "", nil
+	}
+	label := "Instructions: "
+	preview := SavedPreview(text, facts.Width-ansi.StringWidth(label))
+	line := facts.Styles.Subtle.Render(ansi.Truncate(label+preview, max(1, facts.Width), "…"))
+	return indent + line + "\n", []hit{{field: FieldSaved, entry: -1}}
 }
 
 // FormField paints one labelled row of a form card.
@@ -134,7 +199,7 @@ func FormField(st Styles, label, value string, focused bool) string {
 	}
 	lines := strings.Split(value, "\n")
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("%s%s %s\n", marker, style.Width(9).Render(label), lines[0]))
+	b.WriteString(fmt.Sprintf("%s%s %s\n", marker, style.Width(LabelColumn-3).Render(label), lines[0]))
 	for _, line := range lines[1:] {
 		b.WriteString(strings.Repeat(" ", LabelColumn) + line + "\n")
 	}

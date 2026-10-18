@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -59,6 +60,7 @@ func viewContext() ViewContext {
 		Version:   "v1.0.0",
 		Height:    40,
 		TextInput: func(input textinput.Model) string { return input.View() },
+		TextArea:  func(input textarea.Model) string { return input.View() },
 	}
 }
 

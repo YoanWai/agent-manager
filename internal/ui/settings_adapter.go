@@ -135,11 +135,7 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // returns a command rather than blocking the update path.
 func (m *Model) runSettingsResult(result uisettings.Result) tea.Cmd {
 	if result.Notice.Changed {
-		if result.Notice.Text == "" {
-			m.clearErr()
-		} else {
-			m.reportErr(result.Notice.Text)
-		}
+		m.setNotice(result.Notice)
 	}
 	d := &m.settings.dialog
 	switch {
@@ -158,6 +154,8 @@ func (m *Model) runSettingsResult(result uisettings.Result) tea.Cmd {
 		return m.captureHiddenSave()
 	case result.SaveKeys:
 		return m.saveSettingsKeys()
+	case result.LoadPrompts, result.SavePrompt != nil, result.DeletePrompt != "":
+		return m.runPromptsResult(result)
 	}
 	return result.Cmd
 }
@@ -180,6 +178,9 @@ func (m *Model) handleSettingsClick(x, y int) (tea.Model, tea.Cmd) {
 	if row == d.DocsRow {
 		d.Field = uisettings.FieldDocs
 		return m, openLink(docsURL)
+	}
+	if d.PromptsRow >= 0 && row == d.PromptsRow {
+		return m, m.runSettingsResult(d.OpenPrompts())
 	}
 	if row == d.SaveRow && x < left+d.SaveRowWidth {
 		return m.saveAndCloseSettings()
@@ -311,6 +312,7 @@ func (m *Model) viewSettings() string {
 		InnerWidth: cardInnerWidth(m.cardWidth()),
 		Styles:     settingsStyles(),
 		TextInput:  textInputView,
+		TextArea:   textAreaView,
 	})
 	switch frame.Card {
 	case uisettings.Confirm:
@@ -335,6 +337,10 @@ func (m *Model) viewSettings() string {
 	d.DocsRow = -1
 	if uisettings.FieldDocs >= first && uisettings.FieldDocs < first+len(lines) {
 		d.DocsRow = uisettings.FieldDocs - first + 1
+	}
+	d.PromptsRow = -1
+	if uisettings.FieldPrompts >= first && uisettings.FieldPrompts < first+len(lines) {
+		d.PromptsRow = uisettings.FieldPrompts - first + 1
 	}
 	d.GlyphRow = -1
 	if uisettings.FieldGlyphs >= first && uisettings.FieldGlyphs < first+len(lines) {
@@ -416,6 +422,10 @@ func (m *Model) routeSettingsMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 
 	case editorsProbedMsg:
 		m.settings.applyEditorsProbe(msg, m.mode == modeSettings)
+		return routed(m, nil)
+
+	case savedPromptsLoadedMsg:
+		m.handleSavedPromptsLoaded(msg)
 		return routed(m, nil)
 
 	case groupBaseStepMsg:

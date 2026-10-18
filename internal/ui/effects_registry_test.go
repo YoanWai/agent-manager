@@ -34,6 +34,7 @@ var effectPairs = []effectPair{
 	{renameRequest{}, renameEffectResult{}},
 	{moveDialogClose{}, moveDialogCloseResult{}},
 	{settingsRequest{}, settingsEffectResult{}},
+	{savedPromptRequest{}, savedPromptResult{}},
 	{reviewEffectRequest{}, reviewEffectResult{}},
 	{keysRequest{}, keysEffectResult{}},
 	{focusRequest{}, focusEffectResult{}},

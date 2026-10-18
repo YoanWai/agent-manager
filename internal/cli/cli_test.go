@@ -69,6 +69,17 @@ func (f *fakeSessions) Send(sessionID, targetID, message string) (sessioncmd.Sen
 	return sessioncmd.SendResult{MessageID: 7, QueuePosition: 1, ManagerAwake: true}, f.failWith
 }
 
+func (f *fakeSessions) ExpandSaved(name, text string) (string, error) {
+	text = strings.TrimSpace(text)
+	if strings.TrimSpace(name) == "" {
+		return text, nil
+	}
+	if text == "" {
+		return "saved:" + name, nil
+	}
+	return "saved:" + name + "\n\n" + text, nil
+}
+
 func (f *fakeSessions) Read(sessionID, targetID string) (sessioncmd.SessionScreen, error) {
 	f.callerID, f.targetID = sessionID, targetID
 	return sessioncmd.SessionScreen{Session: f.session, Output: "screen text"}, f.failWith
@@ -493,7 +504,7 @@ func TestCommandsThatActAsNoSessionNeverResolveACaller(t *testing.T) {
 		t.Fatal("the caller was resolved")
 		return ""
 	}
-	for _, name := range []string{"update", "issue", "feature", "settings"} {
+	for _, name := range []string{"update", "issue", "feature", "settings", "prompts"} {
 		if err := table[name]([]string{"-h"}, resolve, t.TempDir()); !errors.Is(err, ErrUsageShown) {
 			t.Fatalf("%s -h: %v", name, err)
 		}
@@ -503,7 +514,7 @@ func TestCommandsThatActAsNoSessionNeverResolveACaller(t *testing.T) {
 func TestCommandsAndHelpCoverEverySection(t *testing.T) {
 	table := Commands("dev", sampleSpecs)
 	registered := []string{
-		"sessions", "spawn", "send", "read", "wait", "message-status", "kill", "revive", "archive", "archive-self", "kill-self",
+		"sessions", "spawn", "send", "read", "wait", "message-status", "kill", "revive", "archive", "archive-self", "kill-self", "prompts",
 		"groups", "create-group", "delete-group", "task", "reserve", "release-files", "reservations", "terminal",
 		"rename", "review-repo", "review-base", "review-mode", "review-comment", "issue", "feature", "settings", "update",
 	}
@@ -517,7 +528,7 @@ func TestCommandsAndHelpCoverEverySection(t *testing.T) {
 	}
 
 	help := Help("dev", false)
-	for _, line := range []string{usageSessions, usageReserve, usageTerminalSend, usageRename, usageReviewComment, usageIssue, usageFeature, usageUpdate, usageSettingsSet, "task <list|create|claim|finish|release|delete>", "settings <list|get|set>"} {
+	for _, line := range []string{usageSessions, usageReserve, usageTerminalSend, usageRename, usageReviewComment, usageIssue, usageFeature, usageUpdate, usageSettingsSet, usagePromptsAdd, "task <list|create|claim|finish|release|delete>", "settings <list|get|set>", "prompts <list|add|rm>"} {
 		if !strings.Contains(help, line) {
 			t.Fatalf("help is missing %q:\n%s", line, help)
 		}
@@ -604,5 +615,18 @@ func TestBoundMailboxCommandsIgnoreAlternateProfile(t *testing.T) {
 	entries, err := os.ReadDir(alternate)
 	if err != nil || len(entries) != 0 {
 		t.Fatalf("alternate profile touched: %v %v", entries, err)
+	}
+}
+
+// The binary runs commands from the backend table, so it serves every
+// command the help names.
+func TestCommandsWithBackendServeEveryCommand(t *testing.T) {
+	backend := sessioncmd.OpenBackend(t.TempDir())
+	t.Cleanup(func() { _ = backend.Close() })
+	bound := CommandsWithBackend("test", sampleSpecs, backend)
+	for name := range Commands("test", sampleSpecs) {
+		if bound[name] == nil {
+			t.Errorf("%s is in the help but not in the backend table", name)
+		}
 	}
 }

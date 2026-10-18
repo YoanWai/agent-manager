@@ -6,6 +6,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -30,6 +31,7 @@ type ViewContext struct {
 	InnerWidth      int
 	Styles          Styles
 	TextInput       func(textinput.Model) string
+	TextArea        func(textarea.Model) string
 }
 
 // Card is how the root frames the dialog.
@@ -57,6 +59,9 @@ type Frame struct {
 
 // View paints the open dialog.
 func (s *State) View(ctx ViewContext) Frame {
+	if s.Prompts.open {
+		return s.Prompts.view(ctx)
+	}
 	if s.CLIPicker {
 		return s.viewCLIPicker(ctx)
 	}
@@ -135,6 +140,8 @@ func (s *State) View(ctx ViewContext) Frame {
 			lines = append(lines, actionRow(FieldKeybindings, "keybindings", keybindingsSummary(ctx.Session, ctx.List)))
 		case FieldCLIs:
 			lines = append(lines, actionRow(FieldCLIs, label(FieldCLIs), "show or hide for new sessions"))
+		case FieldPrompts:
+			lines = append(lines, actionRow(FieldPrompts, "saved prompts", "manage named instructions"))
 		case FieldDocs:
 			lines = append(lines, ctaRow(FieldDocs, "docs", "open the docs"))
 		case FieldBugReport:
@@ -163,6 +170,8 @@ func (s *State) View(ctx ViewContext) Frame {
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "open form"}, {"esc", "save"}}
 	case FieldCLIs:
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "manage CLIs"}, {"esc", "save"}}
+	case FieldPrompts:
+		hint = [][2]string{{"↑↓", "field"}, {"↵", "saved prompts"}, {"esc", "save"}}
 	case FieldKeybindings:
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "change the keys"}, {"esc", "save"}}
 	case FieldEditor:

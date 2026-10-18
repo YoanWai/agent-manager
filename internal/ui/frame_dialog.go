@@ -41,6 +41,17 @@ func (m *Model) cardFlex(title, body string, hint [][2]string) string {
 
 func cardInnerWidth(width int) int { return width - cardChromeX - 2*cardPaddingX }
 
+// cardChromeRows are the rows a default-width card spends around its body:
+// the title edge and the blank under it, the status, the blank above the
+// hint, the hint's rule and rows, and the bottom edge.
+func (m *Model) cardChromeRows(hint [][2]string) int {
+	rows := 5 + strings.Count(legendInline(hint, cardInnerWidth(m.cardWidth())), "\n") + 1
+	if m.errBar.text != "" {
+		rows += 2
+	}
+	return rows
+}
+
 // flexCardWidth picks a width that fits every content line, never under the
 // default card width and never past the terminal edge.
 func (m *Model) flexCardWidth(title, body string, hint [][2]string) int {
