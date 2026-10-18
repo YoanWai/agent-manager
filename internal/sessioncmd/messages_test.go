@@ -2,8 +2,10 @@ package sessioncmd
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -462,5 +464,79 @@ func TestMessageStatusSeparatesUncertainAndInFlightDelivery(t *testing.T) {
 				t.Fatalf("unsafe delivery state: %+v", state)
 			}
 		})
+	}
+}
+
+// A manager older than the guard retires a claim it reads as abandoned
+// with its own drop mark. The attempt never got its receipt, so the drop
+// says nothing about the paste: the sender is told uncertain, not dropped.
+func TestMessageStatusReadsAnAttemptAnOlderManagerRetiredAsUncertain(t *testing.T) {
+	h := newSessionHarness(t)
+	worker, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "worker"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sent, err := h.sessions.Send(h.caller.ID, worker.ID, "check delivery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	acquired, err := h.store.WithDeliveryGuard(context.Background(), func(g *store.DeliveryGuard) error {
+		_, claimed, err := g.ClaimMessage(sent.MessageID, time.Now())
+		if err == nil && !claimed {
+			err = errors.New("claim refused")
+		}
+		return err
+	})
+	if err != nil || !acquired {
+		t.Fatalf("claim: acquired=%v err=%v", acquired, err)
+	}
+	db, err := sql.Open("sqlite", filepath.Join(h.sessions.configDir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	stamp := time.Now().UnixNano()
+	if _, err := db.Exec(`UPDATE session_inbox SET delivered_at = ?, dropped_at = ? WHERE id = ? AND delivered_at = 0`,
+		stamp, stamp, sent.MessageID); err != nil {
+		t.Fatal(err)
+	}
+	state, err := h.sessions.MessageStatus(h.caller.ID, sent.MessageID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.State != "uncertain" || strings.Contains(state.Reason, "send it again") {
+		t.Fatalf("retired attempt reads as %+v", state)
+	}
+}
+
+// A reply from the recipient proves an uncertain delivery reached it.
+func TestMessageStatusCallsAnAnsweredUncertainDeliveryAnswered(t *testing.T) {
+	h := newSessionHarness(t)
+	worker, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "worker"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sent, err := h.sessions.Send(h.caller.ID, worker.ID, "check delivery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	acquired, err := h.store.WithDeliveryGuard(context.Background(), func(g *store.DeliveryGuard) error {
+		if _, claimed, err := g.ClaimMessage(sent.MessageID, time.Now()); err != nil || !claimed {
+			return fmt.Errorf("claim refused: %v", err)
+		}
+		return g.RetireMessage(sent.MessageID, time.Now())
+	})
+	if err != nil || !acquired {
+		t.Fatalf("retire: acquired=%v err=%v", acquired, err)
+	}
+	if _, err := h.sessions.Send(worker.ID, h.caller.ID, "done"); err != nil {
+		t.Fatal(err)
+	}
+	state, err := h.sessions.MessageStatus(h.caller.ID, sent.MessageID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.State != "answered" {
+		t.Fatalf("answered uncertain delivery reads as %+v", state)
 	}
 }

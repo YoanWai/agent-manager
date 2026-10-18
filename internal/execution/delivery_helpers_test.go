@@ -48,13 +48,13 @@ func finishInboxForTest(t *testing.T, st *store.Store, id int64, outcome store.D
 func finishPendingForTest(t *testing.T, st *store.Store, id, input string, at time.Time) {
 	t.Helper()
 	withStoreDeliveryGuard(t, st, func(guard *store.DeliveryGuard) error {
-		claim, claimed, err := guard.ClaimPendingInput(id, input, at)
+		claim, claimed, err := guard.ClaimPendingInput(id, input)
 		if err != nil {
 			return err
 		}
 		if !claimed {
 			t.Fatalf("pending input %q was not claimed", input)
 		}
-		return guard.FinishPendingInput(id, input, claim, store.DeliveryConfirmed, at)
+		return guard.FinishPendingInput(id, input, claim, store.DeliveryConfirmed)
 	})
 }

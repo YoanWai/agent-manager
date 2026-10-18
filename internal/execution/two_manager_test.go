@@ -141,9 +141,9 @@ func TestSecondManagerTakesOverOnlyWhenTheFirstAges(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now()
-	holder, err := p.store.ClaimPoller(p.driver.SocketPath(), now)
-	if err != nil || holder != p.driver.SocketPath() {
-		t.Fatalf("pre-stamp = %q, %v", holder, err)
+	claim, err := p.store.ClaimPoller(p.driver.SocketPath(), now)
+	if err != nil || claim.Holder != p.driver.SocketPath() {
+		t.Fatalf("pre-stamp = %q, %v", claim.Holder, err)
 	}
 	p.runnerA.heartbeatAt = now
 
@@ -356,5 +356,151 @@ func TestDeliveryGuardKeepsPeerFromRetiringAnInFlightSend(t *testing.T) {
 	}
 	if !strings.Contains(after, body) || !result.sent || result.err != nil {
 		t.Fatalf("delivery result: pasted=%v sent=%v err=%v", strings.Contains(after, body), result.sent, result.err)
+	}
+}
+
+// olderHeartbeat stamps the store the way a manager older than the
+// delivery guard does (v0.42.0 internal/store/inbox.go): the socket and
+// the heartbeat alone, which is how this binary tells it is there.
+func (p *twoManagers) olderHeartbeat(t *testing.T, socket string, at time.Time) {
+	t.Helper()
+	rawSQL(t, p.dbPath, fmt.Sprintf(
+		"INSERT INTO settings (key, value) VALUES ('poller_socket', '%s'), ('poller_heartbeat', '%d') ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
+		socket, at.UnixNano()))
+}
+
+// An older manager claims with no token and retires any claim it reads as
+// abandoned, so two deliverers on one server would type twice or tell a
+// sender its message dropped mid-paste. While one stamps the heartbeat,
+// the queue is its; once it stops, this manager takes the queue over.
+func TestNewerManagerDefersDeliveryWhileAnOlderManagerStamps(t *testing.T) {
+	p := pair(t, true)
+	sess := p.spawnReady(t)
+	body := "wait for the older manager"
+	id, err := p.store.Enqueue(store.InboxMessage{
+		SessionID: sess.ID, SenderID: "sender01", SenderName: "payments-fix",
+		Body: body, Fingerprint: body, SentAt: time.Now(),
+	}, store.DefaultInboxLimits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.olderHeartbeat(t, p.driver.SocketPath(), time.Now())
+
+	deadline := time.Now().Add(4 * time.Second)
+	for time.Now().Before(deadline) {
+		if res := p.runnerA.Step(); res.Err != nil {
+			t.Fatalf("step beside an older manager: %v", res.Err)
+		}
+		if p.runnerA.ownsDelivery {
+			t.Fatal("manager read delivery as its own beside a fresh older stamp")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	state, err := p.store.Message(id, "sender01")
+	if err != nil || !state.ClaimedAt.IsZero() || !state.DeliveredAt.IsZero() {
+		t.Fatalf("message touched while deferring: %+v, %v", state, err)
+	}
+	pane, err := p.driver.CapturePane(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(pane, body) {
+		t.Fatalf("deferring manager typed the message:\n%s", pane)
+	}
+
+	// The older manager stops: its last stamp ages past the window.
+	rawSQL(t, p.dbPath, fmt.Sprintf("UPDATE settings SET value = '%d' WHERE key = 'legacy_poller_heartbeat';",
+		time.Now().Add(-store.PollerHeartbeatStale-time.Second).UnixNano()))
+	p.runnerA.heartbeatAt = time.Time{}
+	deadline = time.Now().Add(10 * time.Second)
+	for {
+		res := p.runnerA.Step()
+		if res.Err != nil {
+			t.Fatalf("step after the older manager stopped: %v", res.Err)
+		}
+		state, err = p.store.Message(id, "sender01")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !state.DeliveredAt.IsZero() || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !p.runnerA.ownsDelivery {
+		t.Fatal("manager never took delivery over")
+	}
+	if state.Outcome != store.DeliveryConfirmed || state.AttemptToken == "" || !state.DroppedAt.IsZero() {
+		t.Fatalf("delivery after takeover = %+v, want a confirmed, tokened receipt", state)
+	}
+	pane, err = p.driver.CapturePane(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(pane, body) != 1 {
+		t.Fatalf("message typed %d times:\n%s", strings.Count(pane, body), pane)
+	}
+}
+
+// A claim with no token is an older manager's, and that manager holds no
+// lock while it pastes. The claim gets the grace its own peers give it,
+// then retires as uncertain; the text is never typed by this manager.
+func TestOlderManagerClaimGetsItsGraceThenRetiresUncertain(t *testing.T) {
+	p := pair(t, true)
+	sess := p.spawnReady(t)
+	pane := settledReadyPane(t, p, sess.ID)
+	body := "older manager mid-paste"
+	id, err := p.store.Enqueue(store.InboxMessage{
+		SessionID: sess.ID, SenderID: "sender01", SenderName: "payments-fix",
+		Body: body, Fingerprint: body, SentAt: time.Now(),
+	}, store.DefaultInboxLimits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rawSQL(t, p.dbPath, fmt.Sprintf("UPDATE session_inbox SET claimed_at = %d WHERE id = %d AND claimed_at = 0 AND delivered_at = 0;",
+		time.Now().UnixNano(), id))
+
+	if sent, err := p.runnerA.maybeDeliverInbox(sess, pane, status.Idle, true); sent || err != nil {
+		t.Fatalf("fresh older claim: sent=%v err=%v, want it left alone", sent, err)
+	}
+	state, err := p.store.Message(id, "sender01")
+	if err != nil || !state.DeliveredAt.IsZero() || state.AttemptToken != "" {
+		t.Fatalf("fresh older claim touched: %+v, %v", state, err)
+	}
+
+	rawSQL(t, p.dbPath, fmt.Sprintf("UPDATE session_inbox SET claimed_at = %d WHERE id = %d;",
+		time.Now().Add(-inboxClaimGrace-time.Second).UnixNano(), id))
+	_, err = p.runnerA.maybeDeliverInbox(sess, pane, status.Idle, true)
+	if err == nil || !strings.Contains(err.Error(), "uncertain prior transport") {
+		t.Fatalf("aged older claim = %v, want it retired as uncertain", err)
+	}
+	state, err = p.store.Message(id, "sender01")
+	if err != nil || state.Outcome != store.DeliveryUncertain || state.DeliveredAt.IsZero() || !state.DroppedAt.IsZero() {
+		t.Fatalf("retired older claim = %+v, %v", state, err)
+	}
+	if sent, err := p.runnerA.maybeDeliverInbox(sess, pane, status.Idle, true); sent || err != nil {
+		t.Fatalf("retired claim revisited: sent=%v err=%v", sent, err)
+	}
+	after, err := p.driver.CapturePane(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(after, body) {
+		t.Fatalf("older manager's claim was retyped:\n%s", after)
+	}
+}
+
+func settledReadyPane(t *testing.T, p *twoManagers, id string) string {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		pane, err := p.driver.CapturePane(id)
+		if err == nil && strings.Contains(pane, "❯") {
+			return pane
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("fixture prompt not ready: %q, %v", pane, err)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

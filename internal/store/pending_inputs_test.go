@@ -4,7 +4,6 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
-	"time"
 )
 
 func TestPendingInputsPersistAndConsumeInOrder(t *testing.T) {
@@ -36,12 +35,12 @@ func TestPendingInputsPersistAndConsumeInOrder(t *testing.T) {
 	}
 	var claim DeliveryClaim
 	withDeliveryGuard(t, st, func(guard *DeliveryGuard) error {
-		_, claimed, err := guard.ClaimPendingInput("a", "second", time.Now())
+		_, claimed, err := guard.ClaimPendingInput("a", "second")
 		if err != nil || claimed {
 			t.Fatalf("claim out of order = %v, %v", claimed, err)
 		}
 		var ok bool
-		claim, ok, err = guard.ClaimPendingInput("a", "first", time.Now())
+		claim, ok, err = guard.ClaimPendingInput("a", "first")
 		if err != nil || !ok {
 			t.Fatalf("claim first = %v, %v", ok, err)
 		}
@@ -63,7 +62,7 @@ func TestPendingInputsPersistAndConsumeInOrder(t *testing.T) {
 		t.Fatal("pending delivery claim did not survive reopen")
 	}
 	withDeliveryGuard(t, st, func(guard *DeliveryGuard) error {
-		return guard.FinishPendingInput("a", "first", claim, DeliveryConfirmed, time.Now())
+		return guard.FinishPendingInput("a", "first", claim, DeliveryConfirmed)
 	})
 	got, err = st.Get("a")
 	if err != nil {

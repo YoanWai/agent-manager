@@ -25,9 +25,11 @@ func pendingDeliverable(derived string) bool {
 	return inboxDeliverable(derived) || derived == status.Errored
 }
 
-// Claimed rows bypass the rest gate so crash recovery also runs during a live turn.
+// Claimed rows bypass the rest gate so crash recovery also runs during a
+// live turn. Neither runs while an older manager owns delivery: it would
+// read the retirement as its own claim going missing.
 func (p *Runner) maybeSendPendingInputWhenReady(sess store.Session, pane, derived string, agentAlive bool) (bool, error) {
-	if !sess.PendingInputClaimed && !pendingDeliverable(derived) {
+	if !p.ownsDelivery || (!sess.PendingInputClaimed && !pendingDeliverable(derived)) {
 		return false, nil
 	}
 	return p.maybeSendPendingInput(sess, pane, agentAlive)
@@ -49,8 +51,11 @@ func (p *Runner) maybeSendPendingInput(sess store.Session, pane string, agentAli
 			return err
 		}
 		input := current.PendingInputs[0]
+		// Holding the guard proves no guarded owner is still pasting this
+		// claim, and an older manager gives its own peers' claims no grace
+		// either: a claimed input it finds is skipped on the spot.
 		if current.PendingInputClaimed {
-			if err := guard.RecoverPendingInput(current.ID, input, time.Now()); err != nil {
+			if err := guard.RetirePendingInput(current.ID, input); err != nil {
 				return fmt.Errorf("record uncertain pending input for %s: %w", current.Name, err)
 			}
 			return fmt.Errorf("pending input for %s has an uncertain prior transport outcome and will not be replayed", current.Name)
@@ -70,7 +75,7 @@ func (p *Runner) maybeSendPendingInput(sess store.Session, pane string, agentAli
 		if !ready || !launchPromptTaken(current, region) {
 			return nil
 		}
-		claim, claimed, err := guard.ClaimPendingInput(current.ID, input, time.Now())
+		claim, claimed, err := guard.ClaimPendingInput(current.ID, input)
 		if err != nil {
 			return fmt.Errorf("claim pending input for %s: %w", current.Name, err)
 		}
@@ -79,7 +84,7 @@ func (p *Runner) maybeSendPendingInput(sess store.Session, pane string, agentAli
 		}
 		result, sendErr := p.tmux.SendTextContext(ctx, current.ID, input)
 		outcome := classifyDelivery(result, sendErr)
-		receiptErr := guard.FinishPendingInput(current.ID, input, claim, outcome, time.Now())
+		receiptErr := guard.FinishPendingInput(current.ID, input, claim, outcome)
 		if sendErr != nil {
 			return errors.Join(
 				fmt.Errorf("pending input transport to %s is %s: %w", current.Name, outcome, sendErr),
@@ -191,11 +196,16 @@ func (p *Runner) maybeDeliverInbox(sess store.Session, pane, derived string, age
 		if err != nil || !queued {
 			return err
 		}
-		// Acquiring the guard proves no cooperating owner can still be using
-		// this claim. An admitted message therefore becomes uncertain now,
-		// without a grace period or replay.
+		// Holding the guard proves no guarded owner is still pasting this
+		// claim, so a tokened one is retired now. A claim without a token
+		// came from an older manager that pastes under no lock, and nothing
+		// here can see whether it is mid-paste: it gets the grace that
+		// manager's own peers give it, then retires rather than retypes.
 		if !msg.ClaimedAt.IsZero() {
-			if err := guard.RecoverMessage(msg.ID, time.Now()); err != nil {
+			if msg.AttemptToken == "" && time.Since(msg.ClaimedAt) < inboxClaimGrace {
+				return nil
+			}
+			if err := guard.RetireMessage(msg.ID, time.Now()); err != nil {
 				return err
 			}
 			return fmt.Errorf("message to %s from %s has an uncertain prior transport outcome and will not be replayed", sess.Name, msg.SenderName)

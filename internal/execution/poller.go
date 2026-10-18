@@ -91,7 +91,13 @@ type Runner struct {
 	// leading records whether the last claim left this manager holding the
 	// store, which decides who speaks for sessions no socket has claimed.
 	leading bool
-	tick    int
+	// ownsDelivery records whether the last claim left queued input this
+	// manager's to type. A manager older than the delivery guard on the
+	// same tmux server keeps it: it claims on its own terms and retires a
+	// guarded claim it reads as abandoned, so one process delivers at a
+	// time and the older one goes first until it stops.
+	ownsDelivery bool
+	tick         int
 	// prevTreeCPU / prevTreeAt drive interval agent CPU: cumulative
 	// CPU-seconds per pane root from the last poll, so host share uses
 	// the same "over this window" idea as the computer gauge.
@@ -300,11 +306,12 @@ func (p *Runner) step(ctx context.Context) Result {
 	// long as the manager is open; its readers allow the stamp to age instead.
 	if time.Since(p.heartbeatAt) >= store.PollerHeartbeatPeriod {
 		claimed := time.Now()
-		holder, err := p.store.ClaimPoller(socket, claimed)
+		claim, err := p.store.ClaimPoller(socket, claimed)
 		if err != nil {
 			return Result{Err: err}
 		}
-		p.leading = holder == socket
+		p.leading = claim.Holder == socket
+		p.ownsDelivery = !claim.OlderManager
 		p.heartbeatAt = claimed
 	}
 	leading := p.leading
@@ -477,7 +484,7 @@ func (p *Runner) step(ctx context.Context) Result {
 				// describing the moment before it was typed, so the message
 				// waits for the next capture rather than landing on a pane
 				// that is already starting a turn.
-				if !sent && len(sessions[i].PendingInputs) == 0 {
+				if !sent && len(sessions[i].PendingInputs) == 0 && p.ownsDelivery {
 					delivered, err = p.maybeDeliverInbox(sess, pane, derived, agentAlive)
 					if err != nil {
 						return Result{Err: err}
@@ -638,6 +645,11 @@ const (
 	// inboxPruneEvery keeps the delivered-message sweep off the hot path;
 	// at the default 2s interval this is roughly every ten minutes.
 	inboxPruneEvery = 300
+	// inboxClaimGrace is how long a claim by a manager older than the
+	// delivery guard may sit undelivered before it counts as abandoned.
+	// That manager holds no lock while it pastes, so a claim milliseconds
+	// old belongs to a paste in flight; its own peers give it this long.
+	inboxClaimGrace = 30 * time.Second
 )
 
 // launchPromptGrace releases pending input for a session whose prompt

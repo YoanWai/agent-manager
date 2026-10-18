@@ -7,14 +7,6 @@ import (
 	"fmt"
 )
 
-func (s *Store) ClaimPendingInput(id, expected string) (bool, error) {
-	return false, ErrDeliveryGuardRequired
-}
-
-func (s *Store) ConsumeClaimedPendingInput(id, expected string) (bool, error) {
-	return false, ErrDeliveryGuardRequired
-}
-
 func (s *Store) pendingInputState(id string) (string, []string, bool, error) {
 	var encoded string
 	var claimed int

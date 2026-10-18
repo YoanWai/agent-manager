@@ -58,3 +58,8 @@ func newTestStore(t *testing.T) *Store {
 func sample(id, group string) Session {
 	return Session{ID: id, Name: "n-" + id, Tool: "claude", Cwd: "/tmp", Group: group, Status: "idle"}
 }
+
+func pollerHolder(st *Store, socket string, now time.Time) (string, error) {
+	claim, err := st.ClaimPoller(socket, now)
+	return claim.Holder, err
+}

@@ -61,7 +61,7 @@ func TestPendingDeliverySkipsWhileAnotherOwnerHoldsTheGuard(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		_, err := m.store.WithDeliveryGuard(context.Background(), func(guard *store.DeliveryGuard) error {
-			if _, claimed, err := guard.ClaimPendingInput(sess.ID, sess.PendingInputs[0], time.Now()); err != nil || !claimed {
+			if _, claimed, err := guard.ClaimPendingInput(sess.ID, sess.PendingInputs[0]); err != nil || !claimed {
 				return fmt.Errorf("claim pending input: claimed=%v err=%w", claimed, err)
 			}
 			close(ready)

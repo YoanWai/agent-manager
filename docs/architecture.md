@@ -137,11 +137,20 @@ pending-input delivery runs inside `Store.WithDeliveryGuard`, an exclusive
 non-blocking lock on `<state.db>.delivery.lock`; a competing manager skips the
 tick. A claim is committed with a random attempt token before the paste, and the
 receipt must carry the same token. A claim with no live owner becomes
-`uncertain` and is never typed again. SQLite triggers refuse a claim or receipt
-without a token, so a binary older than the guard cannot deliver on a profile a
-newer one has opened. Moving a profile across is therefore offline:
+`uncertain` and is never typed again: it leaves the queue with `delivered_at`
+stamped and no drop mark, so a sender is never told to resend what the agent
+may already be doing.
 
-1. Stop every older manager, CLI and MCP process on the profile, and check they exited.
-2. Back up `state.db` with its `-wal` and `-shm` files.
-3. Open the profile once with the new binary, which installs the columns and triggers.
-4. Start only new binaries from then on. Going back means restoring the backup.
+**An older manager keeps delivering until it stops.** The receipt columns are
+additive and nothing refuses the plain claim and mark statements a release
+before the guard runs, so an upgrade needs no cutover: both binaries open the
+same profile and the older one keeps working. A guarded manager mirrors each
+heartbeat it stamps into `delivery_heartbeat`; a heartbeat the mirror does not
+match was stamped by an older manager, and `ClaimPoller` records it. While that
+record is younger than `PollerHeartbeatStale` and names this manager's tmux
+server, `Runner.ownsDelivery` is false and the poller neither claims, types nor
+retires anything. The older manager holds no lock while it pastes, so a claim
+without a token found afterwards gets `inboxClaimGrace` before it is retired,
+and is never retyped; a claimed pending input is retired on sight, as that
+manager would. Read-only commands on the newer binary only add columns and
+drop the fence triggers an interim `main` build installed.

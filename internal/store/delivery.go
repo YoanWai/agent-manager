@@ -10,12 +10,19 @@ import (
 	"time"
 )
 
+// DeliveryOutcome is the receipt an automatic delivery leaves on its row. A
+// manager older than the guard writes none, so an empty outcome beside a
+// delivered_at stamp is that manager's delivered or dropped.
 type DeliveryOutcome string
 
 const (
 	DeliveryInFlight  DeliveryOutcome = "in_flight"
 	DeliveryConfirmed DeliveryOutcome = "confirmed"
 	DeliveryRefused   DeliveryOutcome = "refused"
+	// DeliveryUncertain retires a claim whose owner is gone. The paste may
+	// have landed, so the row leaves the queue with delivered_at stamped and
+	// no drop mark: an older reader shows it delivered, and a sender told
+	// "dropped" would resend what the agent may already be doing.
 	DeliveryUncertain DeliveryOutcome = "uncertain"
 )
 
@@ -24,9 +31,9 @@ var (
 	ErrDeliveryReceiptRejected = errors.New("delivery receipt does not match the admitted attempt")
 )
 
+// DeliveryClaim is the token a claim mints; the receipt must carry it back.
 type DeliveryClaim struct {
 	AttemptToken string
-	ClaimedAt    time.Time
 }
 
 // DeliveryGuard is a callback-scoped capability. It is backed by a
@@ -92,6 +99,9 @@ func (g *DeliveryGuard) HeadMessage(sessionID string) (InboxMessage, bool, error
 	return g.store.HeadMessage(sessionID)
 }
 
+// ClaimMessage takes a queued message before it is typed. The same
+// compare-and-set an older manager runs keeps the two from claiming one
+// row; the token is what tells this claim from that manager's afterwards.
 func (g *DeliveryGuard) ClaimMessage(id int64, at time.Time) (DeliveryClaim, bool, error) {
 	if err := g.requireActive(); err != nil {
 		return DeliveryClaim{}, false, err
@@ -102,7 +112,7 @@ func (g *DeliveryGuard) ClaimMessage(id int64, at time.Time) (DeliveryClaim, boo
 	}
 	res, err := g.store.db.Exec(`
 UPDATE session_inbox
-   SET claimed_at = ?, attempt_token = ?, receipt_token = '', delivery_outcome = ?
+   SET claimed_at = ?, attempt_token = ?, delivery_outcome = ?
  WHERE id = ? AND claimed_at = 0 AND delivered_at = 0`,
 		encodeTime(at), token, DeliveryInFlight, id)
 	if err != nil {
@@ -112,9 +122,12 @@ UPDATE session_inbox
 	if err != nil || affected != 1 {
 		return DeliveryClaim{}, false, err
 	}
-	return DeliveryClaim{AttemptToken: token, ClaimedAt: at}, true, nil
+	return DeliveryClaim{AttemptToken: token}, true, nil
 }
 
+// FinishMessage records the outcome of the attempt the claim admitted. A
+// row another process resolved meanwhile refuses the receipt rather than
+// overwrite what it wrote.
 func (g *DeliveryGuard) FinishMessage(id int64, claim DeliveryClaim, outcome DeliveryOutcome, at time.Time) error {
 	if err := g.requireActive(); err != nil {
 		return err
@@ -129,9 +142,9 @@ func (g *DeliveryGuard) FinishMessage(id int64, claim DeliveryClaim, outcome Del
 	}
 	res, err := g.store.db.Exec(`
 UPDATE session_inbox
-   SET delivered_at = ?, dropped_at = ?, receipt_token = ?, delivery_outcome = ?
+   SET delivered_at = ?, dropped_at = ?, delivery_outcome = ?
  WHERE id = ? AND delivered_at = 0 AND attempt_token = ? AND delivery_outcome = ?`,
-		stamp, droppedAt, claim.AttemptToken, outcome, id, claim.AttemptToken, DeliveryInFlight)
+		stamp, droppedAt, outcome, id, claim.AttemptToken, DeliveryInFlight)
 	if err != nil {
 		return err
 	}
@@ -145,25 +158,22 @@ UPDATE session_inbox
 	return nil
 }
 
-func (g *DeliveryGuard) RecoverMessage(id int64, at time.Time) error {
+// RetireMessage resolves a claim whose owner is gone as uncertain, so it is
+// never typed again. It takes a guarded claim and an older manager's
+// tokenless one alike; a row something else resolved first is left as is.
+func (g *DeliveryGuard) RetireMessage(id int64, at time.Time) error {
 	if err := g.requireActive(); err != nil {
 		return err
 	}
-	var token string
-	var outcome DeliveryOutcome
-	var deliveredAt int64
-	if err := g.store.db.QueryRow(
-		`SELECT attempt_token, delivery_outcome, delivered_at FROM session_inbox WHERE id = ?`, id,
-	).Scan(&token, &outcome, &deliveredAt); err != nil {
-		return err
-	}
-	if deliveredAt != 0 || token == "" || outcome != DeliveryInFlight {
-		return ErrDeliveryReceiptRejected
-	}
-	return g.FinishMessage(id, DeliveryClaim{AttemptToken: token}, DeliveryUncertain, at)
+	_, err := g.store.db.Exec(`
+UPDATE session_inbox
+   SET delivered_at = ?, delivery_outcome = ?
+ WHERE id = ? AND delivered_at = 0 AND claimed_at != 0`,
+		encodeTime(at), DeliveryUncertain, id)
+	return err
 }
 
-func (g *DeliveryGuard) ClaimPendingInput(id, expected string, at time.Time) (DeliveryClaim, bool, error) {
+func (g *DeliveryGuard) ClaimPendingInput(id, expected string) (DeliveryClaim, bool, error) {
 	if err := g.requireActive(); err != nil {
 		return DeliveryClaim{}, false, err
 	}
@@ -180,10 +190,9 @@ func (g *DeliveryGuard) ClaimPendingInput(id, expected string, at time.Time) (De
 	}
 	res, err := g.store.db.Exec(`
 UPDATE sessions
-   SET pending_claimed = 1, pending_claimed_at = ?, pending_attempt_token = ?,
-       pending_receipt_token = '', pending_delivery_outcome = ?
+   SET pending_claimed = 1, pending_attempt_token = ?, pending_delivery_outcome = ?
  WHERE id = ? AND pending_inputs = ? AND pending_claimed = 0`,
-		encodeTime(at), token, DeliveryInFlight, id, encoded)
+		token, DeliveryInFlight, id, encoded)
 	if err != nil {
 		return DeliveryClaim{}, false, err
 	}
@@ -191,10 +200,10 @@ UPDATE sessions
 	if err != nil || affected != 1 {
 		return DeliveryClaim{}, false, err
 	}
-	return DeliveryClaim{AttemptToken: token, ClaimedAt: at}, true, nil
+	return DeliveryClaim{AttemptToken: token}, true, nil
 }
 
-func (g *DeliveryGuard) FinishPendingInput(id, expected string, claim DeliveryClaim, outcome DeliveryOutcome, at time.Time) error {
+func (g *DeliveryGuard) FinishPendingInput(id, expected string, claim DeliveryClaim, outcome DeliveryOutcome) error {
 	if err := g.requireActive(); err != nil {
 		return err
 	}
@@ -214,10 +223,9 @@ func (g *DeliveryGuard) FinishPendingInput(id, expected string, claim DeliveryCl
 	}
 	res, err := g.store.db.Exec(`
 UPDATE sessions
-   SET pending_inputs = ?, pending_claimed = 0, pending_receipt_token = ?,
-       pending_delivery_outcome = ?
+   SET pending_inputs = ?, pending_claimed = 0, pending_delivery_outcome = ?
  WHERE id = ? AND pending_inputs = ? AND pending_claimed = 1 AND pending_attempt_token = ?`,
-		remaining, claim.AttemptToken, outcome, id, encoded, claim.AttemptToken)
+		remaining, outcome, id, encoded, claim.AttemptToken)
 	if err != nil {
 		return err
 	}
@@ -231,19 +239,27 @@ UPDATE sessions
 	return nil
 }
 
-func (g *DeliveryGuard) RecoverPendingInput(id, expected string, at time.Time) error {
+// RetirePendingInput drops the claimed head input as uncertain, whichever
+// manager claimed it, and leaves the rest of the queue to go next.
+func (g *DeliveryGuard) RetirePendingInput(id, expected string) error {
 	if err := g.requireActive(); err != nil {
 		return err
 	}
-	var token string
-	var claimed int
-	if err := g.store.db.QueryRow(
-		`SELECT pending_attempt_token, pending_claimed FROM sessions WHERE id = ?`, id,
-	).Scan(&token, &claimed); err != nil {
+	encoded, inputs, claimed, err := g.store.pendingInputState(id)
+	if err != nil {
 		return err
 	}
-	if claimed == 0 || token == "" {
+	if !claimed || len(inputs) == 0 || inputs[0] != expected {
 		return ErrDeliveryReceiptRejected
 	}
-	return g.FinishPendingInput(id, expected, DeliveryClaim{AttemptToken: token}, DeliveryUncertain, at)
+	remaining, err := encodePendingInputs(inputs[1:])
+	if err != nil {
+		return err
+	}
+	_, err = g.store.db.Exec(`
+UPDATE sessions
+   SET pending_inputs = ?, pending_claimed = 0, pending_delivery_outcome = ?
+ WHERE id = ? AND pending_inputs = ? AND pending_claimed = 1`,
+		remaining, DeliveryUncertain, id, encoded)
+	return err
 }

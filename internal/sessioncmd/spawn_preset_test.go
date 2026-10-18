@@ -9,7 +9,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/launch"
@@ -174,11 +173,11 @@ func TestSessionsCreatePresetReadsFreshWithoutRewritingQueuedPrompt(t *testing.T
 	}
 	// The actual pending-delivery store path receives the already composed bytes.
 	acquired, err := h.store.WithDeliveryGuard(context.Background(), func(guard *store.DeliveryGuard) error {
-		claim, claimed, err := guard.ClaimPendingInput(old.ID, expectedOld, time.Now())
+		claim, claimed, err := guard.ClaimPendingInput(old.ID, expectedOld)
 		if err != nil || !claimed {
 			return fmt.Errorf("claim composed prompt: %v %v", claimed, err)
 		}
-		return guard.FinishPendingInput(old.ID, expectedOld, claim, store.DeliveryConfirmed, time.Now())
+		return guard.FinishPendingInput(old.ID, expectedOld, claim, store.DeliveryConfirmed)
 	})
 	if err != nil || !acquired {
 		t.Fatalf("deliver composed prompt: acquired %v, err %v", acquired, err)

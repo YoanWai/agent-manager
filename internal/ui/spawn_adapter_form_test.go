@@ -826,7 +826,7 @@ func TestSendModeReconcilesUncertainPriorDeliveryWithoutResending(t *testing.T) 
 	input := sessionPendingInputs(t, m, sess.ID)[0]
 	var claimed bool
 	acquired, err := m.services.store.WithDeliveryGuard(context.Background(), func(guard *store.DeliveryGuard) error {
-		_, ok, claimErr := guard.ClaimPendingInput(sess.ID, input, time.Now())
+		_, ok, claimErr := guard.ClaimPendingInput(sess.ID, input)
 		claimed = ok
 		return claimErr
 	})

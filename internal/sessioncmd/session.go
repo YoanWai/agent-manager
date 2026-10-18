@@ -15,7 +15,6 @@ import (
 )
 
 type Session struct {
-	PendingInputOutcome string `json:"pending_input_outcome,omitempty" jsonschema:"most recent queued-input delivery receipt: in_flight, confirmed, refused or uncertain; uncertain input is never automatically retried"`
 	ID                  string `json:"id" jsonschema:"agent session id"`
 	Name                string `json:"name" jsonschema:"session name shown in Agent Manager"`
 	Tool                string `json:"tool" jsonschema:"agent CLI the session runs"`
@@ -26,6 +25,7 @@ type Session struct {
 	Archived            bool   `json:"archived" jsonschema:"whether the session is archived out of the active list"`
 	Branch              string `json:"branch,omitempty" jsonschema:"branch of the worktree Agent Manager created for this session, when it has one"`
 	Self                bool   `json:"self" jsonschema:"whether this row is the calling session itself"`
+	PendingInputOutcome string `json:"pending_input_outcome,omitempty" jsonschema:"receipt of the latest queued-input delivery: in_flight, confirmed, refused or uncertain; uncertain input is never automatically retried"`
 }
 
 type SessionScreen struct {
@@ -92,7 +92,6 @@ func (r *runtime) sessionInfo(sess store.Session, running, self bool) Session {
 		}
 	}
 	return Session{
-		PendingInputOutcome: string(sess.PendingInputOutcome),
 		ID:                  sess.ID,
 		Name:                sess.Name,
 		Tool:                sess.Tool,
@@ -103,6 +102,7 @@ func (r *runtime) sessionInfo(sess store.Session, running, self bool) Session {
 		Archived:            sess.Archived,
 		Branch:              sess.WorktreeBranch,
 		Self:                self,
+		PendingInputOutcome: string(sess.PendingInputOutcome),
 	}
 }
 
