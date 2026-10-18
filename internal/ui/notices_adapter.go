@@ -321,8 +321,8 @@ func (m *Model) handleNoticesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m.applyNoticesOutcome(m.notices.Key(msg, m.activeNotices(), m.noticesFrame()))
 }
 
-func (m *Model) handleNoticesClick(y int) (tea.Model, tea.Cmd) {
-	return m.applyNoticesOutcome(m.notices.Click(y-m.layout.cardTop, m.activeNotices(), m.noticesFrame()))
+func (m *Model) handleNoticesClick(line int) (tea.Model, tea.Cmd) {
+	return m.applyNoticesOutcome(m.notices.Click(line, m.activeNotices(), m.noticesFrame()))
 }
 
 func (m *Model) applyNoticesOutcome(out uinotices.Outcome) (tea.Model, tea.Cmd) {
@@ -344,21 +344,19 @@ func (m *Model) applyNoticesOutcome(out uinotices.Outcome) (tea.Model, tea.Cmd) 
 	return m, nil
 }
 
-// scrollNotices moves the open notice's body by rows.
-func (m *Model) scrollNotices(rows int) {
-	m.notices.ScrollBy(m.activeNotices(), rows, m.noticesFrame())
-}
-
 func (m *Model) viewNotices() []string {
 	return m.notices.View(m.activeNotices(), m.noticesFrame())
 }
 
-// viewNoticesCard floats the panel on the backdrop and records the keys its
+// viewNoticesCard floats the panel on the backdrop and records its body,
+// the rows between the edges and a column in from each, and the keys its
 // bottom edge names.
 func (m *Model) viewNoticesCard() string {
 	card := m.viewNotices()
 	frame := m.centerOnBackdrop(card)
-	m.placePainted(m.notices.Foot(m.activeNotices(), m.noticesFrame()), m.layout.cardLeft, m.layout.cardTop+len(card)-1)
+	rect := &m.layout.card
+	rect.bodyTop, rect.bodyLeft, rect.bodyWidth = rect.top+1, rect.left+2, rect.right-rect.left-4
+	m.placePainted(m.notices.Foot(m.activeNotices(), m.noticesFrame()), rect.left, rect.bottom-1)
 	return frame
 }
 

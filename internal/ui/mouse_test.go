@@ -1420,6 +1420,72 @@ func leftPress(m *Model, x, y int) *Model {
 	return updated.(*Model)
 }
 
+// wheel turns the wheel one notch over x, y.
+func wheel(m *Model, button tea.MouseButton, x, y int) *Model {
+	updated, _ := m.handleMouse(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionPress, Button: button})
+	return updated.(*Model)
+}
+
+// paintedAt is where text starts on the frame row that paints it, the
+// lowest such row when fromBottom.
+func paintedAt(m *Model, text string, fromBottom bool) (x, y int, ok bool) {
+	rows := strings.Split(ansi.Strip(preparedView(m)), "\n")
+	for i := range rows {
+		row := i
+		if fromBottom {
+			row = len(rows) - 1 - i
+		}
+		if col := strings.Index(rows[row], text); col >= 0 {
+			return ansi.StringWidth(rows[row][:col]), row, true
+		}
+	}
+	return 0, 0, false
+}
+
+// paintedCell is where label starts on the lowest frame row that paints
+// it, which is a footer or a card's foot before any body row.
+func paintedCell(t *testing.T, m *Model, label string) (x, y int) {
+	t.Helper()
+	x, y, ok := paintedAt(m, label, true)
+	if !ok {
+		t.Fatalf("test setup: the frame painted no %q:\n%s", label, ansi.Strip(m.View()))
+	}
+	return x, y
+}
+
+// bodyCell is where text starts on the highest frame row that paints it,
+// which is a card's body before its foot.
+func bodyCell(t *testing.T, m *Model, text string) (x, y int) {
+	t.Helper()
+	x, y, ok := paintedAt(m, text, false)
+	if !ok {
+		t.Fatalf("test setup: the frame painted no %q:\n%s", text, ansi.Strip(m.View()))
+	}
+	return x, y
+}
+
+func paints(m *Model, text string) bool {
+	_, _, ok := paintedAt(m, text, false)
+	return ok
+}
+
+// clickLabel clicks a key a footer or a card's foot painted.
+func clickLabel(t *testing.T, m *Model, label string) *Model {
+	t.Helper()
+	x, y := paintedCell(t, m, label)
+	m = leftPress(m, x, y)
+	m.drainEffects(t)
+	return m
+}
+
+// clickBody clicks where a card's body painted text.
+func clickBody(t *testing.T, m *Model, text string) (*Model, tea.Cmd) {
+	t.Helper()
+	x, y := bodyCell(t, m, text)
+	updated, cmd := m.handleMouse(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	return updated.(*Model), cmd
+}
+
 func TestClickOnMessagesCardOpensNotices(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)

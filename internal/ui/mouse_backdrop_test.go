@@ -10,8 +10,8 @@ import (
 func pressBackdrop(t *testing.T, m *Model) *Model {
 	t.Helper()
 	preparedView(m)
-	if m.onCard(0, 0) {
-		t.Fatalf("test setup: the card covers the corner, top %d left %d", m.layout.cardTop, m.layout.cardLeft)
+	if m.layout.card.holds(0, 0) {
+		t.Fatalf("test setup: the card covers the corner: %+v", m.layout.card)
 	}
 	m = leftPress(m, 0, 0)
 	m.drainEffects(t)
@@ -96,7 +96,7 @@ func TestClickOnACardsOwnBlankStaysOpen(t *testing.T) {
 	m.layout.width, m.layout.height = 120, 34
 	m.openHelp()
 	preparedView(m)
-	if m = leftPress(m, m.layout.cardLeft+1, m.layout.cardTop+1); m.mode != modeHelp {
+	if m = leftPress(m, m.layout.card.left+1, m.layout.card.top+1); m.mode != modeHelp {
 		t.Fatalf("a click on the card's own edge should leave it open, mode = %v", m.mode)
 	}
 }

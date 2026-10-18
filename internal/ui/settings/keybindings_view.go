@@ -24,10 +24,10 @@ func (s *State) viewKeyPicker(ctx ViewContext) Frame {
 	first, last := pickerWindow(s.keyFirst, len(rows), s.KeyCursor, ctx.Height-14)
 	s.keyFirst = first
 	var b strings.Builder
-	s.keyLines = s.keyLines[:0]
+	s.lines.Reset()
 	if first > 0 {
 		b.WriteString(st.Subtle.Render(fmt.Sprintf("  ↑ %d more", first)) + "\n")
-		s.keyLines = append(s.keyLines, first-1)
+		s.lines.Show(first-1, 1)
 	}
 	for i := first; i < last; i++ {
 		row := rows[i]
@@ -36,10 +36,10 @@ func (s *State) viewKeyPicker(ctx ViewContext) Frame {
 		if i == first || rows[i-1].Table != row.Table {
 			if i > first {
 				b.WriteByte('\n')
-				s.keyLines = append(s.keyLines, -1)
+				s.lines.Skip(1)
 			}
 			b.WriteString(st.Annotation.Render("  "+section.title) + "\n")
-			s.keyLines = append(s.keyLines, -1)
+			s.lines.Skip(1)
 		}
 		marker := "  "
 		labelStyle := st.Value
@@ -64,11 +64,11 @@ func (s *State) viewKeyPicker(ctx ViewContext) Frame {
 		b.WriteString(presentation.PadRight(valueRender, 26))
 		b.WriteString(st.Muted.Render(row.Action.Does))
 		b.WriteByte('\n')
-		s.keyLines = append(s.keyLines, i)
+		s.lines.Show(i, 1)
 	}
 	if last < len(rows) {
 		b.WriteString(st.Subtle.Render(fmt.Sprintf("  ↓ %d more", len(rows)-last)) + "\n")
-		s.keyLines = append(s.keyLines, last)
+		s.lines.Show(last, 1)
 	}
 	hint := [][2]string{{"↑↓", "move"}, {"↵", "set a key"}, {"a", "add one"}, {"d", "off"}, {"r", "defaults"}, {"esc", "back"}}
 	if s.KeyCapture {

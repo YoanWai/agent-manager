@@ -281,7 +281,7 @@ func (m *Model) FileList(ctx RenderContext, width, height int) Pane {
 	r := m.renderer(ctx)
 	s := r.s
 	state := m.Snapshot()
-	m.fileRows = nil
+	m.fileRows.Reset()
 	if state.Loading && len(state.Set.Files) == 0 {
 		return Pane{Loading: "loading diff"}
 	}
@@ -309,7 +309,7 @@ func (m *Model) FileList(ctx RenderContext, width, height int) Pane {
 	var b strings.Builder
 	if start > 0 {
 		b.WriteString(s.Subtle.Render(fmt.Sprintf("  ↑ %d more", start)) + "\n")
-		m.fileRows = append(m.fileRows, shown[start-1])
+		m.fileRows.Show(shown[start-1], 1)
 	}
 	notes := map[string]int{}
 	for _, note := range m.Annotations() {
@@ -354,11 +354,11 @@ func (m *Model) FileList(ctx RenderContext, width, height int) Pane {
 			row = s.selectRow(row)
 		}
 		b.WriteString(row + "\n")
-		m.fileRows = append(m.fileRows, i)
+		m.fileRows.Show(i, 1)
 	}
 	if end < len(shown) {
 		b.WriteString(s.Subtle.Render(fmt.Sprintf("  ↓ %d more", len(shown)-end)))
-		m.fileRows = append(m.fileRows, shown[end])
+		m.fileRows.Show(shown[end], 1)
 	}
 	return Pane{Text: strings.TrimRight(b.String(), "\n")}
 }

@@ -26,8 +26,8 @@ func TestSettingsViewportKeepsFocusedFieldAndSaveVisible(t *testing.T) {
 					t.Fatalf("Settings %dx%d lost %q:\n%s", m.layout.width, m.layout.height, text, view)
 				}
 			}
-			if field != uisettings.FieldGlyphs && m.settings.dialog.GlyphRow < 0 {
-				m.handleSettingsClick(m.layout.cardLeft+1+cardPaddingX, m.layout.cardTop+1)
+			if field != uisettings.FieldGlyphs && !strings.Contains(view, "symbols") {
+				m = leftPress(m, m.layout.card.bodyLeft, m.layout.card.bodyTop-1)
 				if m.prefs.glyphMode != "" {
 					t.Fatal("hidden symbols row became a click target")
 				}

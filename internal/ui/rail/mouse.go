@@ -3,6 +3,7 @@ package rail
 import (
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -23,14 +24,10 @@ func (m *Model) Mouse(msg tea.MouseMsg, frame Frame, ctx MouseContext) Decision 
 		return m.menuMouse(msg, frame, ctx)
 	}
 	if tea.MouseEvent(msg).IsWheel() {
-		switch msg.Button {
-		case tea.MouseButtonWheelUp:
-			return m.Move(-1, false)
-		case tea.MouseButtonWheelDown:
-			return m.Move(1, false)
-		default:
-			return Decision{Consumed: true}
+		if step := presentation.WheelStep(msg); step != 0 {
+			return m.Move(step, false)
 		}
+		return Decision{Consumed: true}
 	}
 	switch msg.Action {
 	case tea.MouseActionPress:
@@ -172,11 +169,9 @@ func (m Model) onMenuButton(x, localY int, selection Selection, frame Frame) boo
 
 func (m *Model) menuMouse(msg tea.MouseMsg, frame Frame, ctx MouseContext) Decision {
 	if tea.MouseEvent(msg).IsWheel() {
-		step := 1
-		if msg.Button == tea.MouseButtonWheelUp {
-			step = -1
+		if step := presentation.WheelStep(msg); step != 0 {
+			m.menu.index = m.menu.nextItem(m.menu.index, step)
 		}
-		m.menu.index = m.menu.nextItem(m.menu.index, step)
 		return Decision{Consumed: true}
 	}
 	index, onItem := m.menuItemAt(msg.X, msg.Y, frame)
@@ -220,11 +215,8 @@ func (m Model) menuItemAt(x, y int, frame Frame) (int, bool) {
 
 func (m *Model) reorderMouse(msg tea.MouseMsg, frame Frame, ctx MouseContext) Decision {
 	if tea.MouseEvent(msg).IsWheel() {
-		switch msg.Button {
-		case tea.MouseButtonWheelUp:
-			return m.stepLifted(-1)
-		case tea.MouseButtonWheelDown:
-			return m.stepLifted(1)
+		if step := presentation.WheelStep(msg); step != 0 {
+			return m.stepLifted(step)
 		}
 		return Decision{Consumed: true}
 	}

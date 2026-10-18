@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -126,8 +127,8 @@ type Form struct {
 	defaultsTouched bool
 	focus           Field
 	choice          Choice
-	// hits maps each painted body line to what a click there does.
-	hits []hit
+	// lines is what a click on each painted body line acts on.
+	lines presentation.Lines[fieldLine]
 	// saved is the catalog as the form read it, savedIndex the pick in it
 	// (0 for none), and savedList the list ctrl+o opens on it.
 	saved        []Saved
@@ -478,32 +479,32 @@ func (d *Form) handleModelKey(h FormHost, msg tea.KeyMsg) (tea.Cmd, bool) {
 
 // Click acts on the painted body line a click landed on.
 func (d *Form) Click(h FormHost, line int) FormRequest {
-	if line < 0 || line >= len(d.hits) {
+	at, ok := d.lines.At(line)
+	if !ok {
 		return FormRequest{}
 	}
-	hit := d.hits[line]
 	toolName, ch := d.Tool(), &d.choice
 	switch {
-	case hit.field == FieldSaved && hit.entry >= 0:
-		if pick := d.savedList.Click(hit.entry); pick.Picked {
+	case at.field == FieldSaved && at.entry >= 0:
+		if pick := d.savedList.Click(at.entry); pick.Picked {
 			d.savedIndex = pick.Index + 1
 		}
 		d.FocusField(h, FieldSaved)
 		return FormRequest{}
-	case hit.field == FieldModel && hit.entry >= 0:
-		ch.PickEntry(h, toolName, hit.entry)
+	case at.field == FieldModel && at.entry >= 0:
+		ch.PickEntry(h, toolName, at.entry)
 		return FormRequest{}
-	case hit.field == FieldGroup && hit.entry >= 0:
-		return FormRequest{PickGroup: true, GroupEntry: hit.entry}
-	case hit.field == FieldDir && hit.entry >= 0:
-		return FormRequest{PickPath: true, PathEntry: hit.entry}
-	case hit.field != d.focus:
-		if slices.Contains(d.Fields(h), hit.field) {
-			d.FocusField(h, hit.field)
+	case at.field == FieldGroup && at.entry >= 0:
+		return FormRequest{PickGroup: true, GroupEntry: at.entry}
+	case at.field == FieldDir && at.entry >= 0:
+		return FormRequest{PickPath: true, PathEntry: at.entry}
+	case at.field != d.focus:
+		if slices.Contains(d.Fields(h), at.field) {
+			d.FocusField(h, at.field)
 		}
 		return FormRequest{}
 	}
-	switch hit.field {
+	switch at.field {
 	case FieldSaved:
 		d.stepSaved(1)
 	case FieldTool:

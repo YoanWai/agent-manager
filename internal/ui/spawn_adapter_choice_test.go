@@ -183,19 +183,10 @@ func TestFormClicks(t *testing.T) {
 	m := buildModel(t)
 	answered(m, claudeLike, claudeAnswer)
 	openFormOnClaude(t, m)
-	click := func(x, y int) {
-		m.handleMouseEvent(tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
-	}
+	click := func(x, y int) { m = leftPress(m, x, y) }
 	at := func(text string) (int, int) {
 		t.Helper()
-		frame := ansi.Strip(preparedView(m))
-		for y, line := range strings.Split(frame, "\n") {
-			if col := strings.Index(line, text); col >= 0 {
-				return ansi.StringWidth(line[:col]), y
-			}
-		}
-		t.Fatalf("no %q in the frame:\n%s", text, frame)
-		return 0, 0
+		return bodyCell(t, m, text)
 	}
 	x, y := at("model ")
 	click(0, y)
@@ -291,7 +282,7 @@ func TestQuickPromptClicks(t *testing.T) {
 		preparedView(m)
 		for _, hit := range m.quick.Hits() {
 			if hit.Action == action && (entry < 0 || hit.Entry == entry) {
-				m.handleMouseEvent(tea.MouseMsg{X: m.quick.originX + hit.X0, Y: m.quick.originY + hit.Line, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+				m = leftPress(m, m.quick.originX+hit.X0, m.quick.originY+hit.Line)
 				return
 			}
 		}
@@ -451,7 +442,7 @@ func TestQuickModelSheetFitsTheColumn(t *testing.T) {
 		}
 	}
 	want := m.quick.Choice().Suggestions(m.spawnHost(), "claude")[last.Entry]
-	m.handleMouseEvent(tea.MouseMsg{X: m.quick.originX + last.X0, Y: m.quick.originY + last.Line, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	m = leftPress(m, m.quick.originX+last.X0, m.quick.originY+last.Line)
 	if m.quick.Choice().Model() != want {
 		t.Fatalf("a click on the list's last entry picked %q, want %q", m.quick.Choice().Model(), want)
 	}

@@ -144,20 +144,16 @@ func (m *Model) viewDiffFull() string {
 const diffPaneTop = 4
 
 // handleDiffClick opens the file a click lands on in the file list, and
-// moves the cursor to the code line it lands on. A comment being typed or
-// a send being asked keeps the panes still.
-func (m *Model) handleDiffClick(x, y int) (tea.Model, tea.Cmd) {
-	if state := m.review.Snapshot(); state.Annotating || state.SendConfirm {
-		return m, nil
-	}
+// moves the cursor to the code line it lands on.
+func (m *Model) handleDiffClick(x, y int) tea.Cmd {
 	fileWidth, _ := m.diffPaneWidths()
 	switch {
 	case x >= 1 && x < fileWidth:
-		return m, m.reviewCommands(m.review.ClickFile(y - diffPaneTop))
+		return m.reviewCommands(m.review.ClickFile(y - diffPaneTop))
 	case x > fileWidth+1:
 		m.review.ClickCode(y-diffPaneTop, m.diffCodeHeight())
 	}
-	return m, nil
+	return nil
 }
 
 func (m *Model) viewDiffHeader(sessName string) string {

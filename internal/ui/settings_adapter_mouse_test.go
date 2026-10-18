@@ -15,11 +15,6 @@ func settingsModel(t *testing.T) *Model {
 	return m
 }
 
-func wheel(m *Model, button tea.MouseButton, x, y int) *Model {
-	updated, _ := m.handleMouse(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionPress, Button: button})
-	return updated.(*Model)
-}
-
 func TestClickOnASettingsRowMovesThenSteps(t *testing.T) {
 	m := settingsModel(t)
 	x, y := paintedCell(t, m, "background")

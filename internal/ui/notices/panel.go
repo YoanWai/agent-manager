@@ -15,6 +15,9 @@ import (
 type Panel struct {
 	cursor int
 	scroll int
+	// lines is the notice each painted row inside the frame shows, for
+	// clicks.
+	lines presentation.Lines[int]
 	// dismissed holds the notice ids the user closed for good; the set
 	// persists in settings so a dismissed message never comes back.
 	dismissed map[string]bool
@@ -150,9 +153,9 @@ func (p *Panel) Key(msg tea.KeyMsg, notices []Notice, f Frame) Outcome {
 			p.scroll = 0
 		}
 	case "pgup", "ctrl+u":
-		p.ScrollBy(notices, -max(4, f.Height/3), f)
+		p.scrollBy(notices, -max(4, f.Height/3), f)
 	case "pgdown", "ctrl+d":
-		p.ScrollBy(notices, max(4, f.Height/3), f)
+		p.scrollBy(notices, max(4, f.Height/3), f)
 	case "home", "g":
 		p.scroll = 0
 	case "end", "G":
@@ -176,20 +179,16 @@ func (p *Panel) Key(msg tea.KeyMsg, notices []Notice, f Frame) Outcome {
 	return Outcome{}
 }
 
-// titleRow is the card row of the first title, under the top edge and the
-// blank row above the list.
-const titleRow = 2
-
-// Click is a press on row line of the card, counted from its top edge. The
-// first click on a title selects it; one on the title already selected
-// opens its link, the way ↵ does.
+// Click is a press on row line inside the frame. The first click on a
+// title selects it; one on the title already selected opens its link, the
+// way ↵ does.
 func (p *Panel) Click(line int, notices []Notice, f Frame) Outcome {
-	i := line - titleRow
-	if i < 0 || i >= len(notices) {
+	i, ok := p.lines.At(line)
+	switch {
+	case !ok:
 		return Outcome{}
-	}
-	if i != p.cursor {
-		p.cursor, p.scroll = i, 0
+	case !presentation.ClickRow(&p.cursor, i):
+		p.scroll = 0
 		return Outcome{}
 	}
 	return p.Key(tea.KeyMsg{Type: tea.KeyEnter}, notices, f)
@@ -205,9 +204,14 @@ func (p Panel) ScrollLimit(notices []Notice, f Frame) int {
 	return max(0, len(body)-room)
 }
 
-// ScrollBy steps from the page on screen, since a resize can leave the
+// Wheel scrolls the body by step notches of the wheel.
+func (p *Panel) Wheel(step int, notices []Notice, f Frame) {
+	p.scrollBy(notices, step*WheelRows, f)
+}
+
+// scrollBy steps from the page on screen, since a resize can leave the
 // saved offset past the last page.
-func (p *Panel) ScrollBy(notices []Notice, rows int, f Frame) {
+func (p *Panel) scrollBy(notices []Notice, rows int, f Frame) {
 	limit := p.ScrollLimit(notices, f)
 	p.scroll = min(max(min(p.scroll, limit)+rows, 0), limit)
 }
@@ -235,9 +239,10 @@ func (p Panel) tail(notices []Notice, f Frame, inner int) []string {
 	return tail
 }
 
-func (p Panel) View(notices []Notice, f Frame) []string {
+func (p *Panel) View(notices []Notice, f Frame) []string {
 	t := f.Theme
 	inner := innerWidth(notices, f.Width)
+	p.lines.Reset()
 	if len(notices) == 0 {
 		rows := []string{t.Subtle.Render("nothing new")}
 		rows = append(rows, p.tail(notices, f, inner)...)
@@ -246,6 +251,7 @@ func (p Panel) View(notices []Notice, f Frame) []string {
 	}
 	var rows []string
 	rows = append(rows, "")
+	p.lines.Skip(1)
 	for i, n := range notices {
 		marker := "  "
 		title := t.Value.Render(n.Title)
@@ -254,6 +260,7 @@ func (p Panel) View(notices []Notice, f Frame) []string {
 			title = lipgloss.NewStyle().Foreground(t.Bright).Bold(true).Render(n.Title)
 		}
 		rows = append(rows, marker+n.mark(t)+" "+title)
+		p.lines.Show(i, 1)
 	}
 	selected := notices[p.cursor]
 	rows = append(rows, t.Border.Render(strings.Repeat("┄", inner)))

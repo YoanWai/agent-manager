@@ -2,8 +2,6 @@ package ui
 
 import (
 	"testing"
-
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 func focusedModel(t *testing.T) *Model {
@@ -18,11 +16,6 @@ func focusedModel(t *testing.T) *Model {
 		t.Fatalf("test setup: focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 	return m
-}
-
-func press(m *Model, x, y int) *Model {
-	updated, _ := m.handleMouse(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
-	return updated.(*Model)
 }
 
 // A press anywhere in the rail column leaves focus on the press, the blank
@@ -42,7 +35,7 @@ func TestPressOnTheRailsBlankLeavesFocus(t *testing.T) {
 	if blank < 0 {
 		t.Fatal("test setup: the rail paints no line without a row")
 	}
-	if m = press(m, 2, blank); m.mode != modeList {
+	if m = leftPress(m, 2, blank); m.mode != modeList {
 		t.Fatalf("a press on the rail's blank should leave focus, mode = %v", m.mode)
 	}
 	if sess, ok := m.selected(); !ok || sess.Name != "alpha" {
@@ -56,7 +49,7 @@ func TestPressOnTheDividerKeepsFocus(t *testing.T) {
 	preparedView(m)
 	y0, _ := m.bodyYRange()
 	for _, x := range []int{m.dividerX(), m.dividerX() + splitHitSlop} {
-		if m = press(m, x, y0+1); m.mode != modeFocus {
+		if m = leftPress(m, x, y0+1); m.mode != modeFocus {
 			t.Fatalf("a press on the divider at %d left focus", x)
 		}
 	}
@@ -86,7 +79,7 @@ func TestPreviewPressFocusesOnlyALiveSession(t *testing.T) {
 		tc.setup(m)
 		preparedView(m)
 		y0, _ := m.bodyYRange()
-		if m = press(m, m.layout.width-3, y0+1); m.mode == modeFocus {
+		if m = leftPress(m, m.layout.width-3, y0+1); m.mode == modeFocus {
 			t.Errorf("%s: a press on the preview focused", tc.name)
 		}
 	}

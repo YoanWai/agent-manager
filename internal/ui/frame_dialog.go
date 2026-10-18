@@ -84,8 +84,35 @@ func cardTitle(title string) string {
 func (m *Model) cardSized(width int, title, body string, hint [][2]string) string {
 	box, hits := dialogBox(m.dialogRenderContext(), width, title, body, hint)
 	frame := m.centerOnBackdrop(box)
-	m.placeKeys(hits, m.layout.cardLeft, m.layout.cardTop)
+	card := &m.layout.card
+	card.bodyTop, card.bodyLeft, card.bodyWidth = card.top+cardBodyRow, card.left+cardBodyColumn, cardInnerWidth(width)
+	m.placeKeys(hits, card.left, card.top)
 	return frame
+}
+
+// cardBodyRow and cardBodyColumn place a card's body inside it: under the
+// title edge and the blank row after it, past the left edge and the padding.
+const (
+	cardBodyRow    = 2
+	cardBodyColumn = 1 + cardPaddingX
+)
+
+// cardRect is a painted card's cells, and its body's: the first body line,
+// the column it starts at and how many columns it spans.
+type cardRect struct {
+	top, left, right, bottom     int
+	bodyTop, bodyLeft, bodyWidth int
+}
+
+func (r cardRect) holds(x, y int) bool {
+	return x >= r.left && x < r.right && y >= r.top && y < r.bottom
+}
+
+// bodyAt is the body line and column a point lands on, when it lands on
+// the body's columns.
+func (r cardRect) bodyAt(x, y int) (col, line int, ok bool) {
+	col, line = x-r.bodyLeft, y-r.bodyTop
+	return col, line, r.holds(x, y) && col >= 0 && col < r.bodyWidth && line >= 0
 }
 
 // cardTitleRow sets the title into the top edge, so the frame names the
@@ -104,8 +131,8 @@ func cardTitleRow(width int, title string, border lipgloss.Style) string {
 // the app frame, filling the rest with the backdrop.
 func (m *Model) centerOnBackdrop(box []string) string {
 	ctx := m.dialogRenderContext()
-	m.layout.cardTop, m.layout.cardLeft, m.layout.cardRight = dialogPlacement(ctx, box)
-	m.layout.cardBottom = m.layout.cardTop + len(box)
+	top, left, right := dialogPlacement(ctx, box)
+	m.layout.card = cardRect{top: top, left: left, right: right, bottom: top + len(box)}
 	return centerDialog(ctx, box)
 }
 

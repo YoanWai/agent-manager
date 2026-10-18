@@ -2,8 +2,6 @@ package ui
 
 import (
 	"strings"
-
-	"github.com/charmbracelet/lipgloss"
 )
 
 type dialogRenderContext struct {
@@ -39,7 +37,7 @@ func dialogBox(ctx dialogRenderContext, width int, title, body string, hint [][2
 	if len(hint) > 0 {
 		lines = append(lines, rule("├", "┤"))
 		foot := paintInline(hint, inner)
-		hits = foot.hits.moved(lipgloss.Width(edge)+cardPaddingX, len(lines))
+		hits = foot.hits.moved(cardBodyColumn, len(lines))
 		for _, line := range strings.Split(foot.text, "\n") {
 			lines = append(lines, row(line))
 		}

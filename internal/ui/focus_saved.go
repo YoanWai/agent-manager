@@ -13,8 +13,6 @@ import (
 type focusSaved struct {
 	list spawn.SavedList
 	gen  uint64
-	// originX and originY place the list's first painted line, for clicks.
-	originX, originY int
 }
 
 func (m *Model) openFocusSaved() tea.Cmd {
@@ -46,12 +44,8 @@ func (m *Model) handleFocusSavedKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmd, m.pasteFocusSaved(pick))
 }
 
-func (m *Model) clickFocusSaved(x, y int) tea.Cmd {
-	saved := &m.focus.saved
-	if x < saved.originX || x >= m.layout.cardRight-1-cardPaddingX {
-		return nil
-	}
-	return m.pasteFocusSaved(saved.list.Click(y - saved.originY))
+func (m *Model) handleFocusSavedClick(line int) tea.Cmd {
+	return m.pasteFocusSaved(m.focus.saved.list.Click(line))
 }
 
 func (m *Model) pasteFocusSaved(pick spawn.SavedPick) tea.Cmd {
@@ -67,8 +61,5 @@ func (m *Model) pasteFocusSaved(pick spawn.SavedPick) tea.Cmd {
 func (m *Model) viewFocusSaved() string {
 	width := min(48, max(28, m.layout.width-4))
 	lines := m.focus.saved.list.Lines(cardInnerWidth(width), 8, spawnStyles())
-	frame := m.cardSized(width, "saved prompts", strings.Join(lines, "\n"), [][2]string{{"↵", "paste"}, {"esc", "close"}})
-	m.focus.saved.originX = m.layout.cardLeft + 1 + cardPaddingX
-	m.focus.saved.originY = m.layout.cardTop + 2
-	return frame
+	return m.cardSized(width, "saved prompts", strings.Join(lines, "\n"), [][2]string{{"↵", "paste"}, {"esc", "close"}})
 }

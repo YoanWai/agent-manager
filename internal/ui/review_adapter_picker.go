@@ -206,9 +206,9 @@ func (m *Model) handleRepoPickKey(msg tea.KeyMsg) tea.Cmd {
 	return m.applyRepoPick(picker.Key(msg, m.review.PickerSourceCurrent(picker.Source())))
 }
 
-func (m *Model) handleRepoPickClick(y int) tea.Cmd {
+func (m *Model) handleRepoPickClick(line int) tea.Cmd {
 	picker := &m.reviewNav.picker
-	return m.applyRepoPick(picker.Click(y-m.layout.cardTop-2, m.review.PickerSourceCurrent(picker.Source())))
+	return m.applyRepoPick(picker.Click(line, m.review.PickerSourceCurrent(picker.Source())))
 }
 
 func (m *Model) applyRepoPick(result uireview.PickerResult) tea.Cmd {

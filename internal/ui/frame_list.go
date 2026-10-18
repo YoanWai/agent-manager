@@ -57,8 +57,7 @@ func (m *Model) viewListFrame() string {
 		bottom = m.focusBottomRule(leftWidth+1, m.layout.width)
 	}
 	frame = append(frame, bottom)
-	m.quick.originY = len(frame)
-	m.placeKeys(footer.hits, 0, len(frame))
+	m.placeListFooter(footer, len(frame))
 	for _, line := range splitLines(footer.text) {
 		frame = append(frame, paint(line, m.layout.width, backdropHex()))
 	}
@@ -89,10 +88,16 @@ func (m *Model) viewFullListFrame() string {
 	frame = append(frame, m.railTopRow(railWidth, m.layout.width))
 	frame = append(frame, joinColumns(edge, paintContent(railRows, railWidth, bodyHeight, panelHex()))...)
 	frame = append(frame, m.boundedRuleRow(railWidth, m.layout.width, "▄"))
-	m.quick.originY = len(frame)
-	m.placeKeys(footer.hits, 0, len(frame))
+	m.placeListFooter(footer, len(frame))
 	for _, line := range splitLines(footer.text) {
 		frame = append(frame, paint(line, m.layout.width, backdropHex()))
 	}
 	return m.overlayTopRight(strings.Join(frame, "\n"), m.statusToast(), m.listChromeRows()+1)
+}
+
+// placeListFooter records where the list footer's keys and the quick bar
+// it holds landed, with its first row at y.
+func (m *Model) placeListFooter(footer legend, y int) {
+	m.placeKeys(footer.hits, 0, y)
+	m.quick.originY = y
 }

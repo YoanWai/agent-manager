@@ -3,6 +3,7 @@ package spawn
 import (
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -24,8 +25,8 @@ type SavedList struct {
 	rows    []Saved
 	loading bool
 	err     string
-	// hits maps each painted line to the match a click there picks, or -1.
-	hits []int
+	// lines is the match each painted line shows, for clicks.
+	lines presentation.Lines[int]
 }
 
 // SavedPick is what a list key or click did. Index is the picked row in
@@ -121,19 +122,20 @@ func (l *SavedList) pick() SavedPick {
 
 // Click picks the entry on a painted line.
 func (l *SavedList) Click(line int) SavedPick {
-	if line < 0 || line >= len(l.hits) || l.hits[line] < 0 {
+	match, ok := l.lines.At(line)
+	if !ok {
 		return SavedPick{}
 	}
-	l.cursor = l.hits[line]
+	l.cursor = match
 	return l.pick()
 }
 
 // Lines paints the filter and up to visible-1 entries around the cursor,
 // or the state the read is in.
 func (l *SavedList) Lines(width, visible int, st Styles) []string {
-	l.hits = l.hits[:0]
+	l.lines.Reset()
 	note := func(text string) []string {
-		l.hits = append(l.hits, -1)
+		l.lines.Skip(1)
 		return []string{st.Muted.Render(ansi.Truncate(text, max(1, width), "…"))}
 	}
 	switch {
@@ -148,7 +150,7 @@ func (l *SavedList) Lines(width, visible int, st Styles) []string {
 	}
 	l.cursor = max(0, min(l.cursor, len(matches)-1))
 	lines := []string{st.Input(l.filter)}
-	l.hits = append(l.hits, -1)
+	l.lines.Skip(1)
 	visible = max(1, visible-1)
 	first := max(0, l.cursor-visible+1)
 	for i := first; i < min(len(matches), first+visible); i++ {
@@ -157,7 +159,7 @@ func (l *SavedList) Lines(width, visible int, st Styles) []string {
 			marker, style = st.Value.Render("❯ "), st.Value
 		}
 		lines = append(lines, ansi.Truncate(marker+style.Render(matches[i].saved.Name), max(1, width), "…"))
-		l.hits = append(l.hits, i)
+		l.lines.Show(i, 1)
 	}
 	return lines
 }

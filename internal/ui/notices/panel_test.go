@@ -149,17 +149,25 @@ func TestPanelClickSelectsThenOpensATitle(t *testing.T) {
 	if len(notices) < 2 {
 		t.Fatalf("test setup: need two notices, have %v", ids(notices))
 	}
-	if out := p.Click(titleRow+1, notices, testFrame()); out.Action != Stay || p.Cursor() != 1 {
+	// The frame's top edge is card row 0; a click counts rows inside it.
+	second := -1
+	for row, line := range p.View(notices, testFrame()) {
+		if strings.Contains(ansi.Strip(line), notices[1].Title) {
+			second = row - 1
+			break
+		}
+	}
+	if out := p.Click(second, notices, testFrame()); out.Action != Stay || p.Cursor() != 1 {
 		t.Fatalf("first click = %+v, cursor %d", out, p.Cursor())
 	}
-	out := p.Click(titleRow+1, notices, testFrame())
+	out := p.Click(second, notices, testFrame())
 	if notices[1].URL == "" {
 		t.Fatalf("test setup: %q has no link", notices[1].ID)
 	}
 	if out.Action != OpenLink || out.URL != notices[1].URL {
 		t.Fatalf("second click = %+v, want its link", out)
 	}
-	if out := p.Click(titleRow+len(notices), notices, testFrame()); out.Action != Stay || p.Cursor() != 1 {
+	if out := p.Click(second+len(notices), notices, testFrame()); out.Action != Stay || p.Cursor() != 1 {
 		t.Fatalf("a click under the titles = %+v, cursor %d", out, p.Cursor())
 	}
 }

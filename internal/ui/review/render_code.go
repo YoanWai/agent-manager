@@ -14,7 +14,7 @@ const diffGutterSign = 2
 
 func (m *Model) Code(ctx RenderContext, width, height int) Pane {
 	r := m.renderer(ctx)
-	m.codeRows = nil
+	m.codeRows.Reset()
 	if m.loading && len(m.set.Files) == 0 {
 		return Pane{Loading: "loading diff"}
 	}
@@ -241,17 +241,18 @@ func (r renderer) unifiedRows(fd *diff.FileDiff, hl *Highlight, width, height in
 // paintedRows are a code pane's rows and the cursor line each one shows.
 type paintedRows struct {
 	text  []string
-	lines []int
+	lines presentation.Lines[int]
 }
 
 func (p *paintedRows) add(line int, rows ...string) {
 	p.text = append(p.text, rows...)
-	for range rows {
-		p.lines = append(p.lines, line)
-	}
+	p.lines.Show(line, len(rows))
 }
 
-func (p *paintedRows) cut(n int) { p.text, p.lines = p.text[:n], p.lines[:n] }
+func (p *paintedRows) cut(n int) {
+	p.text = p.text[:n]
+	p.lines.Cut(n)
+}
 
 func numWidth(fd *diff.FileDiff) int {
 	largest := fd.NewTotal

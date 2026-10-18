@@ -3,6 +3,7 @@ package dialogs
 import (
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -22,13 +23,13 @@ type GroupForm struct {
 	// gen tells this group form from the one that stood in the same place
 	// before it, so a completion cannot close a form the user since reopened.
 	gen int
-	// hits is the field each painted body line belongs to, for clicks.
-	hits []groupFormHit
+	// lines is the field each painted body line belongs to, for clicks.
+	lines presentation.Lines[fieldLine]
 }
 
-// groupFormHit is a body line's field, and its entry or -1: a path
+// fieldLine is a body line's field, and its entry or -1: a path
 // suggestion under the path field, a parent in the picker under its field.
-type groupFormHit struct {
+type fieldLine struct {
 	field int
 	entry int
 }
@@ -202,20 +203,20 @@ func (d *GroupForm) Key(msg tea.KeyMsg, paths PathSuggestions, parent string, wo
 // focus, a second click on the worktree or base row steps it, and a parent
 // or a path suggestion is picked.
 func (d *GroupForm) Click(line int, paths PathSuggestions, worktrees int) GroupFormKey {
-	if line < 0 || line >= len(d.hits) {
+	at, ok := d.lines.At(line)
+	if !ok {
 		return GroupFormKey{}
 	}
-	hit := d.hits[line]
 	switch {
-	case hit.field == GroupFormParentField && hit.entry >= 0:
-		return GroupFormKey{Action: GroupFormPickParent, Entry: hit.entry}
-	case hit.field == GroupFormPathField && hit.entry >= 0:
-		return GroupFormKey{Action: GroupFormPickPath, Entry: hit.entry}
-	case hit.field != d.focus:
-		d.focusOn(paths, hit.field)
-	case hit.field == GroupFormWorktreeField:
+	case at.field == GroupFormParentField && at.entry >= 0:
+		return GroupFormKey{Action: GroupFormPickParent, Entry: at.entry}
+	case at.field == GroupFormPathField && at.entry >= 0:
+		return GroupFormKey{Action: GroupFormPickPath, Entry: at.entry}
+	case at.field != d.focus:
+		d.focusOn(paths, at.field)
+	case at.field == GroupFormWorktreeField:
 		d.worktreeIndex = (d.worktreeIndex + 1) % worktrees
-	case hit.field == GroupFormBaseField:
+	case at.field == GroupFormBaseField:
 		return GroupFormKey{Action: GroupFormStepBase, Delta: 1}
 	}
 	return GroupFormKey{}
@@ -289,12 +290,10 @@ type GroupFormView struct {
 // clicks.
 func (d *GroupForm) View(view GroupFormView) Card {
 	var body strings.Builder
-	d.hits = d.hits[:0]
+	d.lines.Reset()
 	add := func(text string, field, entry int) {
 		body.WriteString(text)
-		for range strings.Count(text, "\n") {
-			d.hits = append(d.hits, groupFormHit{field: field, entry: entry})
-		}
+		d.lines.Show(fieldLine{field: field, entry: entry}, strings.Count(text, "\n"))
 	}
 	field := func(label, value string, id int) {
 		add(view.Field(label, value, d.focus == id), id, -1)

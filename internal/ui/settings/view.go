@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // Styles are the root's live styles the dialog paints with.
@@ -22,13 +23,15 @@ type Styles struct {
 
 // ViewContext is what painting reads from the root: the live key tables,
 // the release facts, the room the key picker scrolls in, the styles, and
-// the root's text-field renderer, which marks the IME cursor.
+// the root's text-field renderer, which marks the IME cursor. Chrome is the
+// rows the card spends around a body with this hint.
 type ViewContext struct {
 	Session, List   keybind.Table
 	Version, Latest string
 	Applying        bool
 	Height          int
 	InnerWidth      int
+	Chrome          func(hint [][2]string) int
 	Styles          Styles
 	TextInput       func(textinput.Model) string
 	TextArea        func(textarea.Model) string
@@ -38,11 +41,9 @@ type ViewContext struct {
 type Card uint8
 
 const (
-	// Rows is the main dialog: its rows under a save button, scrolled to
-	// keep the focused one on screen. Flex grows with its rows; Fixed keeps
-	// the default width; Confirm asks the Question with Consequence under it.
-	Rows Card = iota
-	Flex
+	// Flex grows with its rows; Fixed keeps the default width; Confirm asks
+	// the Question with Consequence under it.
+	Flex Card = iota
 	Fixed
 	Confirm
 )
@@ -161,7 +162,6 @@ func (s *State) View(ctx ViewContext) Frame {
 			lines = append(lines, line)
 		}
 	}
-	body := strings.Join(lines, "\n")
 	hint := [][2]string{{"↑↓", "field"}, {"←→", "change"}, {"↵/esc", "save"}}
 	switch s.Field {
 	case FieldGlyphs:
@@ -193,7 +193,29 @@ func (s *State) View(ctx ViewContext) Frame {
 			hint = [][2]string{{"↑↓", "field"}, {"↵/esc", "save"}}
 		}
 	}
-	return Frame{Card: Rows, Title: "⚙ Settings", Body: body, Hints: hint}
+	return Frame{Card: Flex, Title: "⚙ Settings", Body: s.fitRows(ctx, lines, hint), Hints: hint}
+}
+
+// fitRows puts the save button over the rows that fit the terminal, held
+// still while the focused row stays on screen, and records what each
+// painted line shows.
+func (s *State) fitRows(ctx ViewContext, rows []string, hint [][2]string) string {
+	save := ctx.Styles.Key.Render("[ Save and close ]")
+	room := max(ctx.Height-ctx.Chrome(hint)-1, 1)
+	s.first = presentation.Follow(s.first, s.Field, len(rows), min(room, len(rows)))
+	rows = rows[s.first:min(s.first+room, len(rows))]
+	s.saveWidth = ansi.StringWidth(save)
+	s.glyphWidth = 0
+	s.lines.Reset()
+	s.lines.Skip(1)
+	for i, row := range rows {
+		field := s.first + i
+		s.lines.Show(field, 1)
+		if field == FieldGlyphs {
+			s.glyphWidth = ansi.StringWidth(row)
+		}
+	}
+	return save + "\n" + strings.Join(rows, "\n")
 }
 
 // versionRow is the focusable version line: when a newer release is known
@@ -216,6 +238,7 @@ func versionRow(ctx ViewContext, lead func(int, string) string, actionRow func(i
 func (s *State) viewCLIPicker(ctx ViewContext) Frame {
 	st := ctx.Styles
 	var b strings.Builder
+	s.lines.Reset()
 	for i, name := range s.CLINames {
 		marker := "  "
 		labelStyle := st.Value
@@ -230,6 +253,7 @@ func (s *State) viewCLIPicker(ctx ViewContext) Frame {
 		b.WriteString(marker)
 		b.WriteString(labelStyle.Render(box + " " + name))
 		b.WriteByte('\n')
+		s.lines.Show(i, 1)
 	}
 	// Request row matches other settings actions; the note below is not focusable.
 	reqFocused := s.CLICursor >= len(s.CLINames)
@@ -247,6 +271,8 @@ func (s *State) viewCLIPicker(ctx ViewContext) Frame {
 	b.WriteString(st.Muted.Render("  open a GitHub issue"))
 	b.WriteByte('\n')
 	b.WriteString(st.Subtle.Render("  * more will be supported soon!"))
+	s.lines.Skip(1)
+	s.lines.Show(len(s.CLINames), 1)
 	hint := [][2]string{{"↑↓", "move"}, {"space/↵", "toggle"}, {"esc", "back"}}
 	if reqFocused {
 		hint = [][2]string{{"↑↓", "move"}, {"↵", "open request issue"}, {"esc", "back"}}

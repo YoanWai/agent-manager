@@ -7,8 +7,6 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/x/ansi"
 )
 
 func TestSymbolsExplicitChoiceAndPendingReopen(t *testing.T) {
@@ -56,20 +54,18 @@ func TestSymbolsMouseSaveUsesPaintedRows(t *testing.T) {
 		m := buildModel(t)
 		m.layout.width, m.layout.height = width, 24
 		m.applyCmd(t, m.openSettings())
-		m.viewSettings()
-		x, y := m.layout.cardLeft+1+cardPaddingX, m.layout.cardTop+2+m.settings.dialog.GlyphRow
-		m.handleMouse(tea.MouseMsg{X: x - 1, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+		preparedView(m)
+		m = leftPress(m, m.layout.card.bodyLeft-1, m.layout.card.bodyTop)
 		if m.prefs.glyphMode != "" {
 			t.Fatal("padding changed symbols")
 		}
-		m.handleMouse(tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
-		if m.prefs.glyphMode != presentation.GlyphModeBasic {
+		if m, _ = clickBody(t, m, "symbols"); m.prefs.glyphMode != presentation.GlyphModeBasic {
 			t.Fatal("symbols click missed")
 		}
-		if !strings.Contains(ansi.Strip(m.viewSettings()), "Compatible") {
+		if !paints(m, "Compatible") {
 			t.Fatal("symbols label did not update")
 		}
-		_, save := m.handleMouse(tea.MouseMsg{X: x, Y: m.layout.cardTop + 2 + m.settings.dialog.SaveRow, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+		m, save := clickBody(t, m, "Save and close")
 		m.applyCmd(t, save)
 		if raw, _ := m.services.store.Setting(uisettings.GlyphModeSetting); raw != "basic" || m.mode != modeList {
 			t.Fatal("mouse save did not persist and close")

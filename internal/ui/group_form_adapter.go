@@ -102,11 +102,7 @@ func (m *Model) groupFormDir() string {
 	return m.capturedAbsolutePath(m.groupForm.Dir(), m.capturedGroupDefaultDir(m.selectedGroupPath()))
 }
 
-func (m *Model) handleGroupFormClick(x, y int) (tea.Model, tea.Cmd) {
-	if !m.onCard(x, y) {
-		return m, nil
-	}
-	line := y - m.layout.cardTop - 2
+func (m *Model) handleGroupFormClick(line int) (tea.Model, tea.Cmd) {
 	return m, m.runGroupFormKey(m.groupForm.Click(line, dialogPaths{&m.groupForm.paths}, len(groupWorktreeOptions)), nil)
 }
 

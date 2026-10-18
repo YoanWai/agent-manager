@@ -155,26 +155,18 @@ func TestSavedPromptsPanelByMouseInASmallTerminal(t *testing.T) {
 	}
 	m.runBatch(t, m.openSettings())
 	for range uisettings.FieldPrompts {
-		m.handleMouseWheel(tea.MouseMsg{Button: tea.MouseButtonWheelDown})
+		m = wheel(m, tea.MouseButtonWheelDown, 0, 0)
 	}
 	frame := m.viewSettings()
 	if m.settings.dialog.Field != uisettings.FieldPrompts || len(strings.Split(frame, "\n")) > m.layout.height {
 		t.Fatalf("the wheel stopped on field %d", m.settings.dialog.Field)
 	}
-	clicked := false
-	for y, line := range strings.Split(ansi.Strip(frame), "\n") {
-		if strings.Contains(line, "saved prompts") {
-			_, cmd := m.handleSettingsClick(m.layout.cardLeft+4, y)
-			m.runBatch(t, cmd)
-			clicked = true
-			break
-		}
-	}
-	if !clicked || !m.settings.dialog.Prompts.Open() {
+	m, cmd := clickBody(t, m, "saved prompts")
+	if m.runBatch(t, cmd); !m.settings.dialog.Prompts.Open() {
 		t.Fatal("a click on the saved prompts row did not open them")
 	}
 	for range 29 {
-		m.handleMouseWheel(tea.MouseMsg{Button: tea.MouseButtonWheelDown})
+		m = wheel(m, tea.MouseButtonWheelDown, 0, 0)
 	}
 	frame = m.viewSettings()
 	if !strings.Contains(frame, "Role 29") {
@@ -204,15 +196,15 @@ func TestSettingsClickAboveTheBodyLeavesSavedPromptsClosed(t *testing.T) {
 	m.runBatch(t, m.openSettings())
 	d := &m.settings.dialog
 	d.Field = uisettings.FieldCount - 1
-	for m.layout.width, m.layout.height = 40, 30; m.layout.height > 8; m.layout.height-- {
-		if m.viewSettings(); d.PromptsRow == -1 && d.DocsRow >= 0 {
-			break
-		}
+	hidden := func() bool { return !paints(m, "saved prompts") && paints(m, "docs") }
+	m.layout.width, m.layout.height = 40, 30
+	for m.layout.height > 8 && !hidden() {
+		m.layout.height--
 	}
-	if d.PromptsRow != -1 || d.DocsRow < 0 {
-		t.Fatalf("no height hides saved prompts and shows docs: prompts %d docs %d", d.PromptsRow, d.DocsRow)
+	if !hidden() {
+		t.Fatal("no height hides saved prompts and shows docs")
 	}
-	_, cmd := m.handleSettingsClick(m.layout.cardLeft+4, m.layout.cardTop+1)
+	_, cmd := m.handleMouse(tea.MouseMsg{X: m.layout.card.bodyLeft, Y: m.layout.card.bodyTop - 1, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
 	m.runBatch(t, cmd)
 	if d.Prompts.Open() {
 		t.Fatal("a click above the body opened saved prompts")

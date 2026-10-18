@@ -4,12 +4,13 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
 
-// hit is a body line's field, and its list entry or -1.
-type hit struct {
+// fieldLine is a body line's field, and its list entry or -1.
+type fieldLine struct {
 	field Field
 	entry int
 }
@@ -47,16 +48,14 @@ type FormFacts struct {
 func (d *Form) View(h FormHost, facts FormFacts) (string, [][2]string) {
 	st := facts.Styles
 	var head, tail strings.Builder
-	var headHits, tailHits []hit
-	b, hits := &head, &headHits
-	add := func(text string, at hit) {
+	var headLines, tailLines presentation.Lines[fieldLine]
+	b, lines := &head, &headLines
+	add := func(text string, at fieldLine) {
 		b.WriteString(text)
-		for range strings.Count(text, "\n") {
-			*hits = append(*hits, at)
-		}
+		lines.Show(at, strings.Count(text, "\n"))
 	}
 	field := func(label, value string, id Field) {
-		add(FormField(st, label, value, d.focus == id), hit{field: id, entry: -1})
+		add(FormField(st, label, value, d.focus == id), fieldLine{field: id, entry: -1})
 	}
 	field("name", st.Input(d.name), FieldName)
 
@@ -76,7 +75,7 @@ func (d *Form) View(h FormHost, facts FormFacts) (string, [][2]string) {
 		if d.focus == FieldModel && ch.sugg.open {
 			lines, entries := ch.ViewSuggestions(h, toolName, LabelColumn, facts.Width, ModelListRows, st)
 			for i, line := range lines {
-				add(line+"\n", hit{field: FieldModel, entry: entries[i]})
+				add(line+"\n", fieldLine{field: FieldModel, entry: entries[i]})
 			}
 		}
 	}
@@ -87,7 +86,7 @@ func (d *Form) View(h FormHost, facts FormFacts) (string, [][2]string) {
 	paths := h.Paths()
 	if d.focus == FieldDir && paths.Active() {
 		for i, line := range strings.Split(paths.View(), "\n") {
-			add(line+"\n", hit{field: FieldDir, entry: i})
+			add(line+"\n", fieldLine{field: FieldDir, entry: i})
 		}
 	}
 	worktreeField := st.Subtle.Render(facts.NoRepo)
@@ -105,16 +104,16 @@ func (d *Form) View(h FormHost, facts FormFacts) (string, [][2]string) {
 	if value, shown := d.savedRow(facts); shown {
 		field("saved prompts", value, FieldSaved)
 	}
-	b, hits = &tail, &tailHits
+	b, lines = &tail, &tailLines
 	// Chips are tokens inside the typed text, so they wrap and reflow with
 	// the words around them; painting happens on the rendered prompt.
 	field("prompt", h.Prompt().View(), FieldPrompt)
 	field("group", lipgloss.NewStyle().Foreground(st.Accent2).Render(facts.Group), FieldGroup)
 
 	if d.focus == FieldGroup {
-		add("\n", hit{field: FieldGroup, entry: -1})
+		add("\n", fieldLine{field: FieldGroup, entry: -1})
 		for i, line := range facts.GroupPicker {
-			add(line+"\n", hit{field: FieldGroup, entry: i})
+			add(line+"\n", fieldLine{field: FieldGroup, entry: i})
 		}
 	}
 
@@ -141,8 +140,11 @@ func (d *Form) View(h FormHost, facts FormFacts) (string, [][2]string) {
 	}
 	body := head.String() + tail.String()
 	room := facts.Height - strings.Count(strings.TrimRight(body, "\n"), "\n") - 1 - facts.Chrome(hint)
-	details, detailHits := d.savedDetails(facts, room)
-	d.hits = append(append(append(d.hits[:0], headHits...), detailHits...), tailHits...)
+	details, detailLines := d.savedDetails(facts, room)
+	d.lines.Reset()
+	d.lines.Append(headLines)
+	d.lines.Append(detailLines)
+	d.lines.Append(tailLines)
 	return strings.TrimRight(head.String()+details+tail.String(), "\n"), hint
 }
 
@@ -167,28 +169,29 @@ func (d *Form) savedRow(facts FormFacts) (string, bool) {
 
 // savedDetails are the lines under the saved prompts row, within room: the
 // open list, or the picked prompt's text on one line.
-func (d *Form) savedDetails(facts FormFacts, room int) (string, []hit) {
+func (d *Form) savedDetails(facts FormFacts, room int) (string, presentation.Lines[fieldLine]) {
+	var lines presentation.Lines[fieldLine]
 	if room <= 0 {
-		return "", nil
+		return "", lines
 	}
 	indent := strings.Repeat(" ", LabelColumn)
 	if d.savedList.Open() {
 		var b strings.Builder
-		var hits []hit
 		for i, line := range d.savedList.Lines(facts.Width, min(savedListRows, room), facts.Styles) {
 			b.WriteString(indent + line + "\n")
-			hits = append(hits, hit{field: FieldSaved, entry: i})
+			lines.Show(fieldLine{field: FieldSaved, entry: i}, 1)
 		}
-		return b.String(), hits
+		return b.String(), lines
 	}
 	text := d.SavedText()
 	if text == "" {
-		return "", nil
+		return "", lines
 	}
 	label := "Instructions: "
 	preview := SavedPreview(text, facts.Width-ansi.StringWidth(label))
 	line := facts.Styles.Subtle.Render(ansi.Truncate(label+preview, max(1, facts.Width), "…"))
-	return indent + line + "\n", []hit{{field: FieldSaved, entry: -1}}
+	lines.Show(fieldLine{field: FieldSaved, entry: -1}, 1)
+	return indent + line + "\n", lines
 }
 
 // FormField paints one labelled row of a form card.

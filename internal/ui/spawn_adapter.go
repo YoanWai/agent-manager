@@ -298,16 +298,7 @@ func (m *Model) runFormRequest(request spawn.FormRequest, reader directoryPrefli
 	return nil
 }
 
-func (m *Model) handleFormWheel(step int) (tea.Model, tea.Cmd) {
-	return m, m.runFormRequest(m.form.Wheel(m.spawnHost(), step), nil)
-}
-
-func (m *Model) handleFormClick(x, y int) (tea.Model, tea.Cmd) {
-	// The body starts under the card's title row and the blank row after it.
-	line := y - m.layout.cardTop - 2
-	if x < m.layout.cardLeft || x >= m.layout.cardRight {
-		return m, nil
-	}
+func (m *Model) handleFormClick(line int) (tea.Model, tea.Cmd) {
 	return m, m.runFormRequest(m.form.Click(m.spawnHost(), line), nil)
 }
 

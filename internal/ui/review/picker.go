@@ -50,8 +50,10 @@ type Picker struct {
 	kind      PickerKind
 	source    PickerSource
 	storeRoot string
-	// first and end are the rows the window painted.
-	first, end int
+	// first is the row the window starts at; lines is the row each
+	// painted body line shows, for clicks.
+	first int
+	lines presentation.Lines[int]
 }
 
 // PickerChoice is the row Enter picked, for root to retarget or persist.
@@ -158,24 +160,15 @@ func (p *Picker) moveCursor(delta, count int) {
 func (p *Picker) window(height, count int) (start, end int) {
 	visible := min(max(3, height-pickerChrome), count)
 	p.first = presentation.Follow(p.first, p.cursor, count, visible)
-	p.end = p.first + visible
-	return p.first, p.end
+	return p.first, p.first + visible
 }
-
-// pickerRowsTop is the body line of the first row, under the filter line
-// and the blank below it.
-const pickerRowsTop = 2
 
 // Click is a press on line of the card's body. The first click on a row
 // moves the cursor there; one on the row under the cursor picks it, the way
 // ↵ does.
 func (p *Picker) Click(line int, sourceCurrent bool) PickerResult {
-	row := p.first + line - pickerRowsTop
-	switch {
-	case row < p.first || row >= p.end:
-		return PickerResult{}
-	case row != p.cursor:
-		p.cursor = row
+	row, ok := p.lines.At(line)
+	if !ok || !presentation.ClickRow(&p.cursor, row) {
 		return PickerResult{}
 	}
 	return p.Key(tea.KeyMsg{Type: tea.KeyEnter}, sourceCurrent)
@@ -205,12 +198,15 @@ func (p *Picker) Body(ctx RenderContext, inner, height int) string {
 	rows := p.filteredRows()
 	var body strings.Builder
 	body.WriteString(s.Muted.Render("filter: ") + p.filter + "\n\n")
+	p.lines.Reset()
+	p.lines.Skip(2)
 	if len(rows) == 0 {
 		body.WriteString(s.Subtle.Render("no match"))
 	}
 	start, end := p.window(height, len(rows))
 	for i := start; i < end; i++ {
 		body.WriteString(p.row(s, inner, rows[i], i == p.cursor) + "\n")
+		p.lines.Show(i, 1)
 	}
 	if hidden := len(rows) - (end - start); hidden > 0 {
 		body.WriteString(s.Subtle.Render(fmt.Sprintf("+%d more", hidden)) + "\n")

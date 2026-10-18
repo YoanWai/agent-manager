@@ -15,47 +15,36 @@ func TestSettingsWheelReachesSymbolsAndDocsInShortWindows(t *testing.T) {
 			m := buildModel(t)
 			m.layout.width, m.layout.height = size[0], size[1]
 			m.runBatch(t, m.openSettings())
-			m.viewSettings()
-			if m.settings.dialog.GlyphRow >= 0 {
+			if paints(m, "symbols") {
 				t.Fatal("symbols should start below this viewport")
 			}
-			wheel := func(button tea.MouseButton) {
-				m.handleMouse(tea.MouseMsg{Button: button, Action: tea.MouseActionPress})
-				m.viewSettings()
-			}
 			for range uisettings.FieldGlyphs {
-				wheel(tea.MouseButtonWheelDown)
+				m = wheel(m, tea.MouseButtonWheelDown, 0, 0)
 			}
-			if m.settings.dialog.Field != uisettings.FieldGlyphs || m.settings.dialog.GlyphRow < 0 {
+			if m.settings.dialog.Field != uisettings.FieldGlyphs || !paints(m, "symbols") {
 				t.Fatal("wheel did not reveal symbols")
 			}
-			x := m.layout.cardLeft + 1 + cardPaddingX
-			m.handleMouse(tea.MouseMsg{X: x, Y: m.layout.cardTop + 2 + m.settings.dialog.GlyphRow,
-				Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
-			if m.prefs.glyphMode != presentation.GlyphModeBasic {
+			if m, _ = clickBody(t, m, "symbols"); m.prefs.glyphMode != presentation.GlyphModeBasic {
 				t.Fatal("revealed symbols row was not clickable")
 			}
 			for range uisettings.FieldDocs - uisettings.FieldGlyphs {
-				wheel(tea.MouseButtonWheelDown)
+				m = wheel(m, tea.MouseButtonWheelDown, 0, 0)
 			}
-			if m.settings.dialog.Field != uisettings.FieldDocs || m.settings.dialog.DocsRow < 0 {
+			if m.settings.dialog.Field != uisettings.FieldDocs || !paints(m, "docs") {
 				t.Fatal("wheel did not reveal docs")
 			}
 			var opened string
 			openBrowser = func(url string) error { opened = url; return nil }
 			t.Cleanup(func() { openBrowser = defaultOpenBrowser })
-			_, docs := m.handleMouse(tea.MouseMsg{
-				X: m.layout.cardLeft + 1 + cardPaddingX, Y: m.layout.cardTop + 2 + m.settings.dialog.DocsRow,
-				Button: tea.MouseButtonLeft, Action: tea.MouseActionPress,
-			})
+			m, docs := clickBody(t, m, "docs")
 			m.runBatch(t, docs)
 			if opened != docsURL {
 				t.Fatal("docs click did not follow the scrolled row")
 			}
 			for range uisettings.FieldDocs - uisettings.FieldGlyphs {
-				wheel(tea.MouseButtonWheelUp)
+				m = wheel(m, tea.MouseButtonWheelUp, 0, 0)
 			}
-			if m.settings.dialog.Field != uisettings.FieldGlyphs || m.settings.dialog.GlyphRow < 0 {
+			if m.settings.dialog.Field != uisettings.FieldGlyphs || !paints(m, "symbols") {
 				t.Fatal("wheel up did not return to symbols")
 			}
 		})
@@ -81,8 +70,7 @@ func TestSettingsWheelLeavesSubpanelsAlone(t *testing.T) {
 			}
 			field := m.settings.dialog.Field
 			for _, button := range []tea.MouseButton{tea.MouseButtonWheelDown, tea.MouseButtonWheelUp} {
-				m.handleMouse(tea.MouseMsg{Button: button, Action: tea.MouseActionPress})
-				if m.settings.dialog.Field != field {
+				if m = wheel(m, button, 0, 0); m.settings.dialog.Field != field {
 					t.Fatal("wheel in a subpanel moved the parent Settings field")
 				}
 			}

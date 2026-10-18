@@ -3,6 +3,7 @@ package settings
 import (
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -48,7 +49,7 @@ type Prompts struct {
 	// first is the list row the window starts at; lines is what each
 	// painted body line holds, a list row or, in the editor, the field.
 	first int
-	lines []int
+	lines presentation.Lines[int]
 	name  textinput.Model
 	text  textarea.Model
 }
