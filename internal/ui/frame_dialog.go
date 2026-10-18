@@ -128,11 +128,13 @@ func cardTitleRow(width int, title string, border lipgloss.Style) string {
 }
 
 // centerOnBackdrop floats a block of pre-painted lines in the middle of
-// the app frame, filling the rest with the backdrop.
+// the app frame, filling the rest with the backdrop. The backdrop covers
+// any key painted before it, so those keys stop answering clicks.
 func (m *Model) centerOnBackdrop(box []string) string {
 	ctx := m.dialogRenderContext()
 	top, left, right := dialogPlacement(ctx, box)
 	m.layout.card = cardRect{top: top, left: left, right: right, bottom: top + len(box)}
+	m.layout.keyHits = nil
 	return centerDialog(ctx, box)
 }
 

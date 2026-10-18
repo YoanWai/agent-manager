@@ -73,7 +73,7 @@ func TestClickOnMessagesFootRunsItsKeys(t *testing.T) {
 			t.Fatalf("%q moves the cursor; the rows and the wheel answer for it", key)
 		}
 	}
-	if m = clickLabel(t, m, "esc "); m.mode != modeList {
+	if m = clickLabel(t, m, "esc"); m.mode != modeList {
 		t.Fatalf("esc in the foot should close messages, mode = %v", m.mode)
 	}
 }

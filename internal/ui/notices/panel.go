@@ -316,15 +316,26 @@ func footPairs(notices []Notice, cursor, inner int) [][2]string {
 	if notices[cursor].IsUpdate() {
 		update = [][2]string{{"u", "update"}}
 	}
-	tail := append(append([][2]string{{"r", "refresh"}}, update...), [][2]string{{"↵", "open"}, {"x", "dismiss"}, {"esc", ""}}...)
-	pairs := append([][2]string{{"↑↓", "pick"}, {"pgup/pgdn/home/end", "scroll"}}, tail...)
-	if lipgloss.Width(footText(pairs)) <= inner+1 {
-		return pairs
+	actions := append(append([][2]string{{"r", "refresh"}}, update...), [][2]string{{"↵", "open"}, {"x", "dismiss"}, {"esc", ""}}...)
+	// Navigation shrinks, then drops, then the actions lose their words, so
+	// every key a click can run stays on the edge.
+	bare := [][2]string{{"↑↓", ""}}
+	for _, action := range actions {
+		bare = append(bare, [2]string{action[0], ""})
 	}
-	return append([][2]string{{"↑↓", "pick"}, {"pgup/pgdn", "scroll"}}, tail...)
+	for _, pairs := range [][][2]string{
+		append([][2]string{{"↑↓", "pick"}, {"pgup/pgdn/home/end", "scroll"}}, actions...),
+		append([][2]string{{"↑↓", "pick"}, {"pgup/pgdn", "scroll"}}, actions...),
+		actions,
+	} {
+		if lipgloss.Width(footText(pairs)) <= inner+1 {
+			return pairs
+		}
+	}
+	return bare
 }
 
-func footPart(pair [2]string) string { return pair[0] + " " + pair[1] }
+func footPart(pair [2]string) string { return strings.TrimSpace(pair[0] + " " + pair[1]) }
 
 func footText(pairs [][2]string) string {
 	parts := make([]string, len(pairs))

@@ -206,3 +206,20 @@ func TestWheelStepsTheListThatIsUp(t *testing.T) {
 		t.Fatalf("a key capture keeps the wheel out, cursor %d capture %v", s.KeyCursor, s.KeyCapture)
 	}
 }
+
+// The key picker paints no more lines than the card has room for, down to
+// a single row in a short terminal.
+func TestKeyPickerFitsAShortTerminal(t *testing.T) {
+	ctx, view := testContext(), viewContext()
+	s := openState(ctx)
+	s.Field = FieldKeybindings
+	press(&s, ctx, "enter")
+	for height := 30; height >= 8; height-- {
+		view.Height = height
+		room := height - view.Chrome(nil)
+		lines := strings.Split(s.View(view).Body, "\n")
+		if len(lines) > max(room, 3) {
+			t.Fatalf("height %d: %d body lines for %d rows of room", height, len(lines), room)
+		}
+	}
+}

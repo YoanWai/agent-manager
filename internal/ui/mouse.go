@@ -53,7 +53,8 @@ func (m *Model) closeQuickOffTheList() {
 
 // routeMouse hands an event to the surface it belongs to: a card floating
 // over the frame, the focused pane, Review, or the list. A painted key runs
-// as if typed wherever it shows.
+// as if typed wherever it shows. A rename typed into its row holds the
+// list still.
 func (m *Model) routeMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if key, ok := m.paintedKeyAt(msg); ok {
 		return m.handleKey(key)
@@ -65,6 +66,8 @@ func (m *Model) routeMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m.focusMouse(msg)
 	case m.mode == modeDiff:
 		return m.reviewMouse(msg)
+	case m.mode == modeRename:
+		return m, nil
 	}
 	return m.listMouse(msg)
 }
@@ -101,7 +104,7 @@ func wheelArrow(msg tea.MouseMsg) (tea.KeyMsg, bool) {
 // cardOpen reports a card floating over the frame, which takes the mouse.
 func (m *Model) cardOpen() bool {
 	switch m.mode {
-	case modeList, modeDiff:
+	case modeList, modeDiff, modeRename:
 		return false
 	case modeFocus:
 		return m.focus.saved.list.Open()

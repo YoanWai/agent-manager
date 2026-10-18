@@ -176,6 +176,7 @@ func helpSections(ctx Context) []helpSection {
 			{"↑↓ / wheel", "pick a field"},
 			{"←→", "change the value, including Compatible / Advanced symbols"},
 			{"click", "pick a field, click it again to change or run it"},
+			{"click once", "save and close, the docs, saved prompts and the symbols preview"},
 			{"↵", "run the field's action, like saved prompts or the docs"},
 			{"esc", "save and close"},
 		}},

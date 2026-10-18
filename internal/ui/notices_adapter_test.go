@@ -514,7 +514,7 @@ func TestNoticesShortTerminalKeepsFrameAndHint(t *testing.T) {
 	if !strings.Contains(joined, "╰") {
 		t.Fatalf("short terminal ate the modal's bottom border:\n%s", joined)
 	}
-	if !strings.Contains(joined, "↑↓ pick") {
+	if !strings.Contains(joined, "↑↓ · r · ↵ · x · esc") {
 		t.Fatalf("short terminal ate the key hint:\n%s", joined)
 	}
 	if !strings.Contains(joined, "┃") {

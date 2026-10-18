@@ -20,8 +20,12 @@ func (s *State) viewKeyPicker(ctx ViewContext) Frame {
 			Answer:      "reset",
 		}
 	}
+	hint := [][2]string{{"↑↓", "move"}, {"↵", "set a key"}, {"a", "add one"}, {"d", "off"}, {"r", "defaults"}, {"esc", "back"}}
+	if s.KeyCapture {
+		hint = [][2]string{{"any key", "bind it"}, {"esc", "cancel"}}
+	}
 	rows := KeyRows(tables)
-	first, last := pickerWindow(s.keyFirst, len(rows), s.KeyCursor, ctx.Height-14)
+	first, last := s.keyWindow(rows, ctx.Height-ctx.Chrome(hint))
 	s.keyFirst = first
 	var b strings.Builder
 	s.lines.Reset()
@@ -70,15 +74,40 @@ func (s *State) viewKeyPicker(ctx ViewContext) Frame {
 		b.WriteString(st.Subtle.Render(fmt.Sprintf("  ↓ %d more", len(rows)-last)) + "\n")
 		s.lines.Show(last, 1)
 	}
-	hint := [][2]string{{"↑↓", "move"}, {"↵", "set a key"}, {"a", "add one"}, {"d", "off"}, {"r", "defaults"}, {"esc", "back"}}
-	if s.KeyCapture {
-		hint = [][2]string{{"any key", "bind it"}, {"esc", "cancel"}}
-	}
 	return Frame{Card: Flex, Title: "⚙ Keybindings", Body: strings.TrimRight(b.String(), "\n"), Hints: hint}
 }
 
-func pickerWindow(first, count, cursor, room int) (int, int) {
-	visible := min(max(min(count, room), 5), count)
-	first = presentation.Follow(first, cursor, count, visible)
-	return first, first + visible
+// keyWindow is the rows [first, last) whose lines, headings and "more"
+// counters included, fit room, held still while the cursor stays inside.
+// The cursor's row always shows.
+func (s *State) keyWindow(rows []KeyRow, room int) (first, last int) {
+	for visible := min(len(rows), max(room, 1)); ; visible-- {
+		first = presentation.Follow(s.keyFirst, s.KeyCursor, len(rows), visible)
+		last = first + visible
+		if visible <= 1 || keyLineCount(rows, first, last) <= room {
+			return first, last
+		}
+	}
+}
+
+// keyLineCount is the body lines rows [first, last) paint: each row, a
+// heading where its table starts with a blank line above all but the
+// first, and a counter for the rows above and below the window.
+func keyLineCount(rows []KeyRow, first, last int) int {
+	lines := last - first
+	for i := first; i < last; i++ {
+		if i == first || rows[i-1].Table != rows[i].Table {
+			lines++
+			if i > first {
+				lines++
+			}
+		}
+	}
+	if first > 0 {
+		lines++
+	}
+	if last < len(rows) {
+		lines++
+	}
+	return lines
 }

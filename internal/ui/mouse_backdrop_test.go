@@ -114,3 +114,35 @@ func TestBackdropClickKeepsASavedPromptDraft(t *testing.T) {
 		t.Fatalf("a stray click should keep the prompt being typed, mode = %v", m.mode)
 	}
 }
+
+// The saved prompts card over a focused session covers the focus footer,
+// so only the card's own keys answer a click.
+func TestSavedPromptsOverFocusHideTheFooterKeys(t *testing.T) {
+	m := focusedModel(t)
+	m.openFocusSaved()
+	preparedView(m)
+	if len(m.layout.keyHits) == 0 {
+		t.Fatal("test setup: the card paints its own keys")
+	}
+	for _, hit := range m.layout.keyHits {
+		if !m.layout.card.holds(hit.x0, hit.y) {
+			t.Fatalf("a key at %d,%d answers outside the card %+v", hit.x0, hit.y, m.layout.card)
+		}
+	}
+}
+
+// A rename typed into its row holds the list still under the mouse.
+func TestRenameHoldsTheListUnderTheMouse(t *testing.T) {
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 34
+	createSession(t, m, "alpha", t.TempDir(), "")
+	createSession(t, m, "beta", t.TempDir(), "")
+	m.selectSessionRow(t, "alpha")
+	m.openRename()
+	x, y := bodyCell(t, m, "beta")
+	m = leftPress(m, x, y)
+	m = wheel(m, tea.MouseButtonWheelDown, x, y)
+	if row, ok := m.selectedRow(); m.mode != modeRename || !ok || row.sess.Name != "alpha" {
+		t.Fatalf("the mouse moved the list under a rename: mode %v row %+v", m.mode, row.sess.Name)
+	}
+}

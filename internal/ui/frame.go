@@ -26,7 +26,7 @@ func (m *Model) prepareFrame() {
 }
 
 func (m *Model) renderFrame() string {
-	m.layout.keyHits = nil
+	m.layout.keyHits, m.layout.card = nil, cardRect{}
 	if m.layout.width == 0 {
 		return m.syncCursorAnchor("loading...")
 	}

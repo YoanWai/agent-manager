@@ -452,7 +452,7 @@ On Windows under WSL2, agent-manager runs inside the Linux guest, whose `/proc` 
 
 ## Themes
 
-`s` opens Settings, where `↑↓` or the mouse wheel move between fields and `←→` change the focused one. Short windows scroll to keep the focused field and key hints visible. With the mouse, click `settings` in the footer, or open the root row’s menu (`[…]`) and choose **Settings**. A click on a row moves to it, and a second click changes it or runs it.
+`s` opens Settings, where `↑↓` or the mouse wheel move between fields and `←→` change the focused one. Short windows scroll to keep the focused field and key hints visible. With the mouse, click `settings` in the footer, or open the root row’s menu (`[…]`) and choose **Settings**. A click on a row moves to it, and a second click changes it or runs it. **Save and close**, **docs**, **saved prompts** and the symbols preview act on the first click.
 
 **symbols** switches between **Advanced** (the default) and **Compatible**. Compatible uses ASCII marks for session status, loading, inbox, drag handles, group folds, terminal rows, and worktree or fork indicators. Advanced uses geometric symbols and a Braille spinner. The row previews the selected marks; change it with `←→` or a click, then press `↵`/`esc` or click **Save and close**. The choice takes effect immediately and is restored on the next run. Fonts are not detected automatically. Borders, other UI typography, and agent output are unaffected.
 
