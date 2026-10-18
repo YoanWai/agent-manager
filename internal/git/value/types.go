@@ -17,7 +17,7 @@ func (s Scope) String() string {
 	case ScopeBranch:
 		return "vs target"
 	case ScopeCommit:
-		return "last commit"
+		return "commit"
 	case ScopeStaged:
 		return "staged"
 	default:

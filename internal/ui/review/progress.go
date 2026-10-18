@@ -45,7 +45,7 @@ func (m *Model) clearStaleMarks() bool {
 			continue
 		}
 		scope, path, _ := strings.Cut(markKey, "\x00")
-		if scope != m.scope.String() {
+		if scope != m.scopeKey() {
 			continue
 		}
 		fd := m.fileByPath(path)
@@ -73,7 +73,6 @@ func (m *Model) clearStaleMark(path string) bool {
 }
 
 func (m *Model) markMissingCommentsOutdated() bool {
-	current := m.scope.String()
 	fallback := m.rounds[m.reviewKey()].Scope
 	paths := make(map[string]bool, len(m.set.Files))
 	for i := range m.set.Files {
@@ -89,7 +88,7 @@ func (m *Model) markMissingCommentsOutdated() bool {
 		if scope == "" {
 			scope = fallback
 		}
-		if scope != "" && scope != current {
+		if !m.inScope(scope) {
 			continue
 		}
 		notes[i].outdated = true
@@ -110,7 +109,7 @@ func (m *Model) reanchorAnnotations(path string) bool {
 		if scope == "" && note.round > 0 {
 			scope = m.rounds[m.reviewKey()].Scope
 		}
-		if scope != "" && scope != m.scope.String() {
+		if !m.inScope(scope) {
 			continue
 		}
 		fd := m.fileByPath(note.file)

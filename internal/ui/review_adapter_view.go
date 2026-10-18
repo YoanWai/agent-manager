@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/diff"
@@ -103,8 +104,17 @@ func (m *Model) viewDiffFull() string {
 	// Files sit on the rail surface, the code on the backdrop: the same
 	// two-surface split the session list uses, so review reads as the same
 	// application rather than a second one.
-	fileLines := append([]string{"", strings.Repeat(" ", railInset) + subtleStyle().Render("files")},
-		indentLines(splitLines(m.viewDiffFileList(fileWidth-2*railGutter, bodyHeight-2)), railInset)...)
+	var fileLines []string
+	listHeight := bodyHeight - 2
+	if rows := m.review.CommitRail(m.reviewRenderContext(), fileWidth-2*railGutter, listHeight/3); rows != "" {
+		at, total := m.review.CommitPosition()
+		fileLines = append([]string{"", strings.Repeat(" ", railInset) + subtleStyle().Render("commits") + "  " + mutedStyle().Render(fmt.Sprintf("%d/%d", at, total))},
+			indentLines(splitLines(rows), railInset)...)
+		listHeight -= len(fileLines)
+	}
+	fileLines = append(fileLines, "", strings.Repeat(" ", railInset)+subtleStyle().Render("files"))
+	m.reviewNav.filesTop = diffBodyTop + len(fileLines)
+	fileLines = append(fileLines, indentLines(splitLines(m.viewDiffFileList(fileWidth-2*railGutter, listHeight)), railInset)...)
 	codeLines := append([]string{"", "  " + subtleStyle().Render(escapeControlsInline(m.review.CodeTitle()))},
 		indentLines(splitLines(m.viewDiffCode(codeWidth-2*contentGutter, bodyHeight-2)), contentGutter)...)
 
@@ -139,17 +149,27 @@ func (m *Model) viewDiffFull() string {
 	return strings.Join(frame, "\n")
 }
 
-// diffPaneTop is the frame row of each pane's first list row, under the
-// header, its rule, and the pane's blank and title rows.
-const diffPaneTop = 4
+const (
+	// diffBodyTop is the frame row the panes start on, under the header and
+	// its rule.
+	diffBodyTop = 2
+	// diffPaneTop is the frame row of the code pane's and the commit rail's
+	// first row, under their blank and title rows.
+	diffPaneTop = diffBodyTop + 2
+)
 
-// handleDiffClick opens the file a click lands on in the file list, and
-// moves the cursor to the code line it lands on.
+// handleDiffClick shows the commit or opens the file a click lands on in
+// the commit rail or the file list under it, and moves the cursor to the
+// code line it lands on.
 func (m *Model) handleDiffClick(x, y int) tea.Cmd {
 	fileWidth, _ := m.diffPaneWidths()
 	switch {
+	case x >= 1 && x < fileWidth && y < m.reviewNav.filesTop:
+		if sha, ok := m.review.ClickCommit(y - diffPaneTop); ok {
+			return m.showReviewCommit(sha)
+		}
 	case x >= 1 && x < fileWidth:
-		return m.reviewCommands(m.review.ClickFile(y - diffPaneTop))
+		return m.reviewCommands(m.review.ClickFile(y - m.reviewNav.filesTop))
 	case x > fileWidth+1:
 		m.review.ClickCode(y-diffPaneTop, m.diffCodeHeight())
 	}

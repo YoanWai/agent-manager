@@ -109,19 +109,30 @@ func (m *Model) reviewLoadCmd(req uireview.LoadRequest) tea.Cmd {
 			}
 		}
 		override = cmp.Or(override, groupBase)
-		set, err := diff.BuildSet(driver, root, req.Scope, override, "")
+		commit := ""
+		if req.Scope == git.ScopeCommit {
+			var err error
+			if commit, err = chooseReviewCommit(driver, root, override, req.Commit, &result); err != nil {
+				result.Err = err
+				return reviewLoadMsg{result: result}
+			}
+		}
+		set, err := diff.BuildSet(driver, root, req.Scope, override, commit)
 		result.Set, result.Err = set, err
 		if err != nil {
 			return reviewLoadMsg{result: result}
 		}
-		baseRef := set.BaseRef
-		if req.Scope == git.ScopeBranch && baseRef == "" {
-			baseRef, _, _ = driver.BranchBase(set.Repo.Root, override)
+		ref := set.BaseRef
+		switch {
+		case req.Scope == git.ScopeCommit:
+			ref = set.Commit
+		case req.Scope == git.ScopeBranch && ref == "":
+			ref, _, _ = driver.BranchBase(set.Repo.Root, override)
 		}
 		var worktrees []git.Worktree
 		var wg sync.WaitGroup
 		wg.Add(2)
-		go func() { defer wg.Done(); result.Fingerprint, _ = driver.Fingerprint(set.Repo.Root, req.Scope, baseRef) }()
+		go func() { defer wg.Done(); result.Fingerprint, _ = driver.Fingerprint(set.Repo.Root, req.Scope, ref) }()
 		go func() { defer wg.Done(); worktrees, _ = driver.Worktrees(set.Repo.Root) }()
 		wg.Wait()
 		result.Worktrees = make([]uireview.Worktree, len(worktrees))
@@ -133,6 +144,39 @@ func (m *Model) reviewLoadCmd(req uireview.LoadRequest) tea.Cmd {
 		}
 		return reviewLoadMsg{result: result}
 	}
+}
+
+// chooseReviewCommit lists the commit scope's commits into result and
+// returns the one to show; "" follows HEAD. Review state keyed by a commit
+// HEAD no longer reaches is mapped to its replacement in result.Rewrites.
+func chooseReviewCommit(driver *git.Driver, root, override string, load uireview.CommitLoad, result *uireview.LoadResult) (string, error) {
+	commits, target, history, err := driver.Commits(root, override)
+	if err != nil {
+		return "", err
+	}
+	result.Commits, result.CommitTarget = commits, target
+	if len(commits) == 0 {
+		return "", nil
+	}
+	var saved *uireview.SavedState
+	if result.SavedLoaded {
+		saved = &result.Saved
+	}
+	if pin, ok := load.Resume[result.TargetID+"\x00"+root]; ok {
+		load.Pin = pin
+	}
+	// Recent history on the target holds no commit the branch made, so
+	// nothing there waits on review.
+	if history && load.Pin.Unreviewed {
+		load.Pin = uireview.CommitPin{}
+	}
+	result.Head = commits[0].SHA
+	if result.Head != load.Head {
+		result.Rewrites, result.RewriteErr = driver.Rewrites(root, load.RewriteCandidates(saved), commits)
+	}
+	sha, pinned, notice := uireview.ChooseCommit(commits, result.Rewrites, load, saved)
+	result.Pinned, result.CommitNotice = pinned, notice
+	return sha, nil
 }
 
 func (m *Model) reviewFileCmd(req uireview.FileRequest) tea.Cmd {
@@ -175,11 +219,14 @@ func (m *Model) reviewProbeCmd(req uireview.ProbeRequest) tea.Cmd {
 		if err != nil {
 			return result
 		}
-		baseRef := ""
-		if req.Scope == git.ScopeBranch {
-			baseRef, _, _ = driver.BranchBase(req.GitRoot, cmp.Or(override, groupBase))
+		ref := ""
+		switch req.Scope {
+		case git.ScopeBranch:
+			ref, _, _ = driver.BranchBase(req.GitRoot, cmp.Or(override, groupBase))
+		case git.ScopeCommit:
+			ref = req.Commit
 		}
-		result.Fingerprint, _ = driver.Fingerprint(req.GitRoot, req.Scope, baseRef)
+		result.Fingerprint, _ = driver.Fingerprint(req.GitRoot, req.Scope, ref)
 		return result
 	}
 }
@@ -510,6 +557,8 @@ func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		navigation = m.openBranchPick()
 	case uireview.NavigationBasePicker:
 		navigation = m.openBasePick()
+	case uireview.NavigationCommitPicker:
+		m.openCommitPick()
 	}
 	return m, tea.Batch(navigation, m.reviewCommands(result.Requests))
 }

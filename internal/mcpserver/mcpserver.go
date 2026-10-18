@@ -25,7 +25,7 @@ type renameArgs struct {
 type reviewArgs struct {
 	Repo string `json:"repo,omitempty" jsonschema:"path inside the git repo or worktree being worked on, so review opens there"`
 	Base string `json:"base,omitempty" jsonschema:"git ref the branch scope diffs against (e.g. origin/develop); \"auto\" returns to auto-detection"`
-	Mode string `json:"mode,omitempty" jsonschema:"diff scope review opens with: uncommitted, branch, last_commit or staged"`
+	Mode string `json:"mode,omitempty" jsonschema:"diff scope review opens with: uncommitted, branch, commit or staged"`
 }
 
 type reviewCommentArgs struct {
@@ -293,7 +293,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		Description: "Declare what the user's review screen shows for this session; set any of repo, base and mode together. " +
 			"repo is the git repo or worktree you are working in, so review opens there: declare it when you start in a repo or switch to another. " +
 			"base is the git ref your work will merge into (e.g. origin/develop), which the branch scope diffs against; \"auto\" returns to auto-detection. " +
-			"mode is the diff scope review opens with: uncommitted (working dir), branch (vs base), last_commit or staged, e.g. staged before committing.",
+			"mode is the diff scope review opens with: uncommitted (working dir), branch (vs base), commit (HEAD, the user steps to others) or staged, e.g. staged before committing.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args reviewArgs) (*mcp.CallToolResult, any, error) {
 		var done []string
 		if args.Repo != "" {

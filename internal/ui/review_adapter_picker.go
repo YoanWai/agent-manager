@@ -131,6 +131,17 @@ func (m *Model) openRepoPick() {
 	m.openReviewPicker(rows, "⌥ Review repo", uireview.PickRepo, state.RepoSelected, m.reviewPickerSource(), "")
 }
 
+// openCommitPick lists the commit scope's commits, newest first, cursor on
+// the one in view.
+func (m *Model) openCommitPick() {
+	rows, current, err := m.review.CommitPickerRows()
+	if err != "" {
+		m.reportErr(err)
+		return
+	}
+	m.openReviewPicker(rows, "⌥ Review commit", uireview.PickCommit, current, m.reviewPickerSource(), "")
+}
+
 // openBranchPick lists the currently selected repo's worktrees, one branch per
 // row, so the user can retarget review to another worktree.
 func (m *Model) openBranchPick() tea.Cmd {
@@ -225,8 +236,11 @@ func (m *Model) applyRepoPick(result uireview.PickerResult) tea.Cmd {
 	if result.Choice == nil {
 		return nil
 	}
-	if result.Choice.Kind == uireview.PickBase {
+	switch result.Choice.Kind {
+	case uireview.PickBase:
 		return m.selectBase(result.Choice.Value)
+	case uireview.PickCommit:
+		return m.showReviewCommit(result.Choice.Value)
 	}
 	return m.selectRepo(result.Choice.Value)
 }
@@ -254,9 +268,18 @@ func (m *Model) selectRepo(root string) tea.Cmd {
 	return m.reviewLoadCmd(request)
 }
 
+func (m *Model) showReviewCommit(sha string) tea.Cmd {
+	request, ok := m.review.ShowCommit(sha)
+	if !ok {
+		return nil
+	}
+	return tea.Batch(m.reviewLoadCmd(request), m.startStartupTick())
+}
+
 // selectBase persists the chosen base for the current repo ("" clears to auto)
 // then reloads. It forces the branch scope so the freshly picked base is what
-// the review actually shows.
+// the review actually shows, unless the commit scope is in view, whose
+// commit list the base bounds.
 func (m *Model) selectBase(ref string) tea.Cmd {
 	if m.reviewBaseSavePending() {
 		m.reportErr("diff base is still saving")
