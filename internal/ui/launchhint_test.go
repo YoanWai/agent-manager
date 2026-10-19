@@ -556,8 +556,7 @@ func TestLaunchHintKeepsTheMouseAndCopiesOnAClick(t *testing.T) {
 		t.Fatal("opening the dialog released the mouse")
 	}
 	x, y := paintedCell(t, m, "install it with")
-	updated, cmd := m.handleMouse(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
-	m = updated.(*Model)
+	m, cmd := leftClickCmd(m, x, y)
 	m.runBatch(t, cmd)
 	if want := deps.Command("claude"); copied != want || m.mode != modeLaunchHint {
 		t.Fatalf("a click on the command copied %q, want %q; mode %v", copied, want, m.mode)

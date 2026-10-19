@@ -115,6 +115,9 @@ type mouseCapture struct {
 	// back to the terminal, so a drag selects its text.
 	released bool
 	hover    bool
+	// pressed is what the last left press landed on, which its release
+	// clicks when it comes back up over the same one.
+	pressed clickTarget
 }
 
 type settingsFeature struct {

@@ -7,13 +7,13 @@ import (
 )
 
 // A corner of the terminal is backdrop under every centered card.
-func pressBackdrop(t *testing.T, m *Model) *Model {
+func clickBackdrop(t *testing.T, m *Model) *Model {
 	t.Helper()
 	preparedView(m)
 	if m.layout.card.holds(0, 0) {
 		t.Fatalf("test setup: the card covers the corner: %+v", m.layout.card)
 	}
-	m = leftPress(m, 0, 0)
+	m = leftClick(m, 0, 0)
 	m.drainEffects(t)
 	return m
 }
@@ -41,7 +41,7 @@ func TestBackdropClickClosesACardTheWayEscDoes(t *testing.T) {
 		if m.mode == modeList {
 			t.Fatalf("%s: test setup did not open the card, err %q", tc.name, m.errBar.text)
 		}
-		if m = pressBackdrop(t, m); m.mode != modeList {
+		if m = clickBackdrop(t, m); m.mode != modeList {
 			t.Errorf("%s: a backdrop click should close the card, mode = %v", tc.name, m.mode)
 		}
 		if m.confirm.label != "" {
@@ -69,7 +69,7 @@ func TestBackdropClickKeepsATypedDraft(t *testing.T) {
 		if m.mode != tc.want {
 			t.Fatalf("%s: test setup mode = %v err %q", tc.name, m.mode, m.errBar.text)
 		}
-		if m = pressBackdrop(t, m); m.mode != tc.want {
+		if m = clickBackdrop(t, m); m.mode != tc.want {
 			t.Errorf("%s: a stray click closed the draft, mode = %v", tc.name, m.mode)
 		}
 	}
@@ -84,7 +84,7 @@ func TestBackdropClickKeepsTheSettingsEditorField(t *testing.T) {
 	if !m.settings.dialog.Editor.Typing() {
 		t.Fatal("test setup: enter on custom opens the field")
 	}
-	if m = pressBackdrop(t, m); m.mode != modeSettings || !m.settings.dialog.Editor.Typing() {
+	if m = clickBackdrop(t, m); m.mode != modeSettings || !m.settings.dialog.Editor.Typing() {
 		t.Fatalf("a stray click should keep the typed line open, mode = %v typing = %v", m.mode, m.settings.dialog.Editor.Typing())
 	}
 }
@@ -96,7 +96,7 @@ func TestClickOnACardsOwnBlankStaysOpen(t *testing.T) {
 	m.layout.width, m.layout.height = 120, 34
 	m.openHelp()
 	preparedView(m)
-	if m = leftPress(m, m.layout.card.left+1, m.layout.card.top+1); m.mode != modeHelp {
+	if m = leftClick(m, m.layout.card.left+1, m.layout.card.top+1); m.mode != modeHelp {
 		t.Fatalf("a click on the card's own edge should leave it open, mode = %v", m.mode)
 	}
 }
@@ -110,7 +110,7 @@ func TestBackdropClickKeepsASavedPromptDraft(t *testing.T) {
 	if !m.settings.dialog.Prompts.Editing() {
 		t.Fatal("test setup: n opens the prompt editor")
 	}
-	if m = pressBackdrop(t, m); m.mode != modeSettings || !m.settings.dialog.Prompts.Editing() {
+	if m = clickBackdrop(t, m); m.mode != modeSettings || !m.settings.dialog.Prompts.Editing() {
 		t.Fatalf("a stray click should keep the prompt being typed, mode = %v", m.mode)
 	}
 }
@@ -140,9 +140,30 @@ func TestRenameHoldsTheListUnderTheMouse(t *testing.T) {
 	m.selectSessionRow(t, "alpha")
 	m.openRename()
 	x, y := bodyCell(t, m, "beta")
-	m = leftPress(m, x, y)
+	m = leftClick(m, x, y)
 	m = wheel(m, tea.MouseButtonWheelDown, x, y)
 	if row, ok := m.selectedRow(); m.mode != modeRename || !ok || row.sess.Name != "alpha" {
 		t.Fatalf("the mouse moved the list under a rename: mode %v row %+v", m.mode, row.sess.Name)
+	}
+}
+
+// A card answers a click when the button comes back up over the spot the
+// press landed on, so a press on the backdrop released over the card
+// closes nothing.
+func TestACardClickRunsOnTheRelease(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 34
+	m.openHelp()
+	preparedView(m)
+	card := m.layout.card
+	if m = leftPress(m, 0, 0); m.mode != modeHelp {
+		t.Fatalf("the press alone closed the card, mode = %v", m.mode)
+	}
+	if m = leftRelease(m, card.left+1, card.top+1); m.mode != modeHelp {
+		t.Fatalf("a release over the card closed it, mode = %v", m.mode)
+	}
+	if m = leftClick(m, 0, 0); m.mode != modeList {
+		t.Fatalf("a click on the backdrop should close the card, mode = %v", m.mode)
 	}
 }

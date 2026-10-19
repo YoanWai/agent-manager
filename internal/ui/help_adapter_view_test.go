@@ -247,7 +247,7 @@ func TestHelpOpensDocs(t *testing.T) {
 		t.Fatal("painted frame has no docs hit")
 	}
 	x := ansi.StringWidth(line[:strings.Index(line, "o docs")]) + 1
-	_, cmd = m.handleMouse(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: x, Y: lineIndex})
+	m, cmd = leftClickCmd(m, x, lineIndex)
 	m.applyCmd(t, cmd)
 	if opened != docsURL {
 		t.Fatalf("clicking the footer should open the docs, got %q", opened)

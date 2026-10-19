@@ -190,8 +190,10 @@ func (m *Model) menuMouse(msg tea.MouseMsg, frame Frame, ctx MouseContext) Decis
 		return Decision{Consumed: true}
 	}
 	if onItem {
+		// The entry runs on the release, so an attach or an editor it
+		// starts never receives the button coming back up.
 		if msg.Button == tea.MouseButtonLeft {
-			return m.runMenuItem(index)
+			m.menu.index, m.menu.held = index, true
 		}
 		return Decision{Consumed: true}
 	}

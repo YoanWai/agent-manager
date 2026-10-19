@@ -18,8 +18,7 @@ func TestClickOnAPathSuggestionCompletesIt(t *testing.T) {
 	m.form.FocusField(m.spawnHost(), spawn.FieldDir)
 	m.form.paths.suggestions = []string{"/work/alpha", "/work/beta"}
 	x, y := paintedCell(t, m, "/work/beta")
-	updated, cmd := m.handleMouse(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
-	m = updated.(*Model)
+	m, cmd := leftClickCmd(m, x, y)
 	if m.form.Dir() != "/work/beta"+string(filepath.Separator) || cmd == nil {
 		t.Fatalf("a click on beta should complete it and read its children, dir %q", m.form.Dir())
 	}
@@ -31,8 +30,8 @@ func TestWheelScrollsTheFormsModelList(t *testing.T) {
 	answered(m, claudeLike, claudeAnswer)
 	openFormOnClaude(t, m)
 	x, y := paintedCell(t, m, "model ")
-	m = leftPress(m, x, y)
-	m = leftPress(m, x, y)
+	m = leftClick(m, x, y)
+	m = leftClick(m, x, y)
 	if !m.form.Choice().ListOpen() {
 		t.Fatal("test setup: two clicks on the model row open its list")
 	}

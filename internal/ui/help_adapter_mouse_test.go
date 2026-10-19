@@ -29,7 +29,7 @@ func TestClickOnHelpsSearchLineResumesTheSearch(t *testing.T) {
 		m.handleHelpKey(msg)
 	}
 	x, y := paintedCell(t, m, "search fork")
-	if m = leftPress(m, x, y); !m.help.state.Searching() || m.mode != modeHelp {
+	if m = leftClick(m, x, y); !m.help.state.Searching() || m.mode != modeHelp {
 		t.Fatalf("a click on the search line should resume typing, searching %v mode %v", m.help.state.Searching(), m.mode)
 	}
 }

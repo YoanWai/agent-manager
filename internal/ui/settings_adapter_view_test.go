@@ -27,7 +27,7 @@ func TestSettingsViewportKeepsFocusedFieldAndSaveVisible(t *testing.T) {
 				}
 			}
 			if field != uisettings.FieldGlyphs && !strings.Contains(view, "symbols") {
-				m = leftPress(m, m.layout.card.bodyLeft, m.layout.card.bodyTop-1)
+				m = leftClick(m, m.layout.card.bodyLeft, m.layout.card.bodyTop-1)
 				if m.prefs.glyphMode != "" {
 					t.Fatal("hidden symbols row became a click target")
 				}

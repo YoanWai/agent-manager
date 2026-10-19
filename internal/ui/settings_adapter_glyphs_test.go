@@ -55,7 +55,7 @@ func TestSymbolsMouseSaveUsesPaintedRows(t *testing.T) {
 		m.layout.width, m.layout.height = width, 24
 		m.applyCmd(t, m.openSettings())
 		preparedView(m)
-		m = leftPress(m, m.layout.card.bodyLeft-1, m.layout.card.bodyTop)
+		m = leftClick(m, m.layout.card.bodyLeft-1, m.layout.card.bodyTop)
 		if m.prefs.glyphMode != "" {
 			t.Fatal("padding changed symbols")
 		}

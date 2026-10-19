@@ -21,15 +21,14 @@ func TestClickOnAMoveTargetPicksThenMoves(t *testing.T) {
 	m.selectSessionRow(t, "wanderer")
 	m.openMove()
 	x, y := paintedCell(t, m, "target")
-	if m = leftPress(m, x, y); m.mode != modeMove || m.selectedGroupPath() != "target" {
+	if m = leftClick(m, x, y); m.mode != modeMove || m.selectedGroupPath() != "target" {
 		t.Fatalf("first click should pick the target, mode %v picked %q", m.mode, m.selectedGroupPath())
 	}
 	if m = wheel(m, tea.MouseButtonWheelUp, x, y); m.selectedGroupPath() != "" {
 		t.Fatalf("the wheel should move the cursor back to root, picked %q", m.selectedGroupPath())
 	}
-	m = leftPress(m, x, y)
-	updated, cmd := m.handleMouse(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
-	m = updated.(*Model)
+	m = leftClick(m, x, y)
+	m, cmd := leftClickCmd(m, x, y)
 	m.applyCmd(t, cmd)
 	m.drainEffects(t)
 	if sessions := m.sessionRows(); len(sessions) != 1 || sessions[0].Group != "target" {
@@ -44,7 +43,7 @@ func TestClickAndWheelMoveTheReviewPickersCursor(t *testing.T) {
 	rows := []uireview.PickerRow{{Label: "alpha", Root: "/w/alpha"}, {Label: "beta", Root: "/w/beta"}, {Label: "gamma", Root: "/w/gamma"}}
 	m.openReviewPicker(rows, "⌥ Review branch", uireview.PickRepo, "/w/alpha", uireview.PickerSource{}, "")
 	x, y := paintedCell(t, m, "beta")
-	if m = leftPress(m, x, y); m.reviewNav.picker.Cursor() != 1 || m.mode != modeRepoPick {
+	if m = leftClick(m, x, y); m.reviewNav.picker.Cursor() != 1 || m.mode != modeRepoPick {
 		t.Fatalf("a click on beta should move the cursor there, cursor %d mode %v", m.reviewNav.picker.Cursor(), m.mode)
 	}
 	if m = wheel(m, tea.MouseButtonWheelDown, x, y); m.reviewNav.picker.Cursor() != 2 {

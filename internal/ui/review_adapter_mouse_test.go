@@ -66,7 +66,7 @@ func TestClickOnAReviewHeaderPillRunsItsKey(t *testing.T) {
 	if col < 0 {
 		t.Fatalf("test setup: no layout pill in %q", header)
 	}
-	if m = leftPress(m, ansi.StringWidth(header[:col]), 0); m.review.Snapshot().SideBySide == side {
+	if m = leftClick(m, ansi.StringWidth(header[:col]), 0); m.review.Snapshot().SideBySide == side {
 		t.Fatal("a click on the layout pill should switch the layout")
 	}
 }

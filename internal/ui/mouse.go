@@ -38,6 +38,7 @@ func (m *Model) syncMouseCapture() tea.Cmd {
 func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if msg.Action == tea.MouseActionPress {
 		m.gens.foreground++
+		m.mouse.pressed = clickTarget{}
 	}
 	model, command := m.routeMouse(msg)
 	m.closeQuickOffTheList()
@@ -55,9 +56,20 @@ func (m *Model) closeQuickOffTheList() {
 // over the frame, the focused pane, Review, or the list. A painted key runs
 // as if typed wherever it shows. A rename typed into its row holds the
 // list still.
+//
+// A key or a card answers a click when the button comes back up over what
+// the press landed on, so a link page or an editor the click opens starts
+// after the release and never receives it.
 func (m *Model) routeMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	if key, ok := m.paintedKeyAt(msg); ok {
-		return m.handleKey(key)
+	if target, ok := m.clickTargetAt(msg); ok {
+		switch {
+		case msg.Action == tea.MouseActionPress:
+			m.mouse.pressed = target
+			return m, nil
+		case target == m.mouse.pressed:
+			m.mouse.pressed = clickTarget{}
+			return m.click(msg, target)
+		}
 	}
 	switch {
 	case m.cardOpen():
@@ -72,17 +84,72 @@ func (m *Model) routeMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	return m.listMouse(msg)
 }
 
-// paintedKeyAt is the painted key pair a left press landed on, which the
-// press runs as if typed. The search field and the row menu keep the press:
-// typing owns the keys the list footer names, and the menu floats above it.
-func (m *Model) paintedKeyAt(msg tea.MouseMsg) (tea.KeyMsg, bool) {
-	if !isLeftPress(msg) {
-		return tea.KeyMsg{}, false
+// clickTarget is what a left press or release landed on: a painted key,
+// by where it starts, the open card's body line, its edge, or the backdrop.
+type clickTarget struct {
+	kind    targetKind
+	x, line int
+}
+
+type targetKind uint8
+
+const (
+	targetNone targetKind = iota
+	targetKey
+	targetBody
+	targetEdge
+	targetBackdrop
+)
+
+// clickTargetAt is the target of a left press or release that lands on a
+// painted key or anywhere while a card is open.
+func (m *Model) clickTargetAt(msg tea.MouseMsg) (clickTarget, bool) {
+	if !isLeftPress(msg) && msg.Action != tea.MouseActionRelease {
+		return clickTarget{}, false
 	}
+	if hit, ok := m.paintedKeyAt(msg.X, msg.Y); ok {
+		return clickTarget{kind: targetKey, x: hit.x0, line: hit.y}, true
+	}
+	if !m.cardOpen() {
+		return clickTarget{}, false
+	}
+	card := m.layout.card
+	if _, line, ok := card.bodyAt(msg.X, msg.Y); ok {
+		return clickTarget{kind: targetBody, line: line}, true
+	}
+	if card.holds(msg.X, msg.Y) {
+		return clickTarget{kind: targetEdge}, true
+	}
+	return clickTarget{kind: targetBackdrop}, true
+}
+
+// click runs a click on target: a key as if typed, a card body line by what
+// it painted at the release's column, and the backdrop as esc where the
+// card closes on it.
+func (m *Model) click(msg tea.MouseMsg, target clickTarget) (tea.Model, tea.Cmd) {
+	switch target.kind {
+	case targetKey:
+		hit, _ := m.paintedKeyAt(msg.X, msg.Y)
+		return m.handleKey(hit.key)
+	case targetBody:
+		col, line, _ := m.layout.card.bodyAt(msg.X, msg.Y)
+		return m.clickCard(col, line)
+	case targetBackdrop:
+		if m.closesOnBackdrop() {
+			return m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
+		}
+	}
+	return m, nil
+}
+
+// paintedKeyAt is the painted key pair at x, y. The search field and the
+// row menu keep the mouse: typing owns the keys the list footer names, and
+// the menu floats above it.
+func (m *Model) paintedKeyAt(x, y int) (keyHit, bool) {
 	if m.mode == modeList && (m.rail.Searching() || m.rail.MenuOpen()) {
-		return tea.KeyMsg{}, false
+		return keyHit{}, false
 	}
-	return m.layout.keyHits.at(msg.X, msg.Y)
+	return m.layout.keyHits.at(x, y)
 }
 
 func isLeftPress(msg tea.MouseMsg) bool {
@@ -112,29 +179,11 @@ func (m *Model) cardOpen() bool {
 	return true
 }
 
-// cardMouse runs the wheel and a left press on the open card. The wheel
-// turns the card under the pointer and nothing off it. A press on the
-// body acts on what the body painted there, and one off the card closes
-// it the way esc does.
+// cardMouse turns the wheel on the open card, which turns the card under
+// the pointer and nothing off it.
 func (m *Model) cardMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	card := m.layout.card
-	if tea.MouseEvent(msg).IsWheel() {
-		if !card.holds(msg.X, msg.Y) {
-			return m, nil
-		}
+	if tea.MouseEvent(msg).IsWheel() && m.layout.card.holds(msg.X, msg.Y) {
 		return m.wheelCard(msg)
-	}
-	if !isLeftPress(msg) {
-		return m, nil
-	}
-	if !card.holds(msg.X, msg.Y) {
-		if m.closesOnBackdrop() {
-			return m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
-		}
-		return m, nil
-	}
-	if col, line, ok := card.bodyAt(msg.X, msg.Y); ok {
-		return m.clickCard(col, line)
 	}
 	return m, nil
 }

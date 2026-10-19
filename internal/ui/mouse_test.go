@@ -1420,6 +1420,27 @@ func leftPress(m *Model, x, y int) *Model {
 	return updated.(*Model)
 }
 
+func leftRelease(m *Model, x, y int) *Model {
+	m, _ = leftReleaseCmd(m, x, y)
+	return m
+}
+
+func leftReleaseCmd(m *Model, x, y int) (*Model, tea.Cmd) {
+	updated, cmd := m.handleMouse(tea.MouseMsg{
+		X: x, Y: y, Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft,
+	})
+	return updated.(*Model), cmd
+}
+
+// leftClick presses and releases the left button over x, y.
+func leftClick(m *Model, x, y int) *Model {
+	return leftRelease(leftPress(m, x, y), x, y)
+}
+
+func leftClickCmd(m *Model, x, y int) (*Model, tea.Cmd) {
+	return leftReleaseCmd(leftPress(m, x, y), x, y)
+}
+
 // wheel turns the wheel one notch over x, y.
 func wheel(m *Model, button tea.MouseButton, x, y int) *Model {
 	updated, _ := m.handleMouse(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionPress, Button: button})
@@ -1480,7 +1501,7 @@ func paints(m *Model, text string) bool {
 func clickLabel(t *testing.T, m *Model, label string) *Model {
 	t.Helper()
 	x, y := paintedCell(t, m, label)
-	m = leftPress(m, x, y)
+	m = leftClick(m, x, y)
 	m.drainEffects(t)
 	return m
 }
@@ -1489,8 +1510,7 @@ func clickLabel(t *testing.T, m *Model, label string) *Model {
 func clickBody(t *testing.T, m *Model, text string) (*Model, tea.Cmd) {
 	t.Helper()
 	x, y := bodyCell(t, m, text)
-	updated, cmd := m.handleMouse(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
-	return updated.(*Model), cmd
+	return leftClickCmd(m, x, y)
 }
 
 func TestClickOnMessagesCardOpensNotices(t *testing.T) {
@@ -1498,7 +1518,7 @@ func TestClickOnMessagesCardOpensNotices(t *testing.T) {
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 120, 34
 	x, y := messagesCell(t, m)
-	if m = leftPress(m, x, y); m.mode != modeNotices {
+	if m = leftClick(m, x, y); m.mode != modeNotices {
 		t.Fatalf("click on the card should open messages, mode = %v", m.mode)
 	}
 }
@@ -1516,7 +1536,7 @@ func TestMessagesLegendOpensNoticesByMouseAndKey(t *testing.T) {
 				if _, ok := m.layout.keyHits.at(x, y); !ok {
 					t.Fatalf("full=%v width=%d binding=%s: painted messages entry misses its hit box %+v", full, width, binding, m.layout.keyHits)
 				}
-				if m = leftPress(m, x, y); m.mode != modeNotices {
+				if m = leftClick(m, x, y); m.mode != modeNotices {
 					t.Fatalf("click on messages should open notices, mode=%v", m.mode)
 				}
 				m.handleNoticesKey(key("esc"))
@@ -1536,7 +1556,7 @@ func TestMessagesLegendOpensNoticesByMouseAndKey(t *testing.T) {
 				if footer := ansi.Strip(m.viewFooter()); strings.Contains(footer, "unread") {
 					t.Fatalf("with nothing unread the legend must give its room back:\n%s", footer)
 				}
-				if m = leftPress(m, x, y); m.mode != modeList {
+				if m = leftClick(m, x, y); m.mode != modeList {
 					t.Fatalf("a click where the entry was must not open Messages, mode=%v", m.mode)
 				}
 				m.handleKey(msg)
@@ -1570,7 +1590,7 @@ func TestMessagesLegendClickOnlyOpensFromTheList(t *testing.T) {
 				t.Fatalf("test setup: %s did not take, mode = %v err = %q", change.name, m.mode, m.errBar.text)
 			}
 			preparedView(m)
-			if m = leftPress(m, x, y); m.mode == modeNotices {
+			if m = leftClick(m, x, y); m.mode == modeNotices {
 				t.Fatal("a click where messages was painted opened notices")
 			}
 		})
@@ -1582,7 +1602,7 @@ func TestClickOnMetersBesideTheCardDoesNothing(t *testing.T) {
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 120, 34
 	_, y := messagesCell(t, m)
-	if m = leftPress(m, 2, y); m.mode != modeList {
+	if m = leftClick(m, 2, y); m.mode != modeList {
 		t.Fatalf("click on the meters should stay on the list, mode = %v", m.mode)
 	}
 }
@@ -1593,11 +1613,11 @@ func TestClickOnFullScreenBadgeOpensNotices(t *testing.T) {
 	m.layout.width, m.layout.height = 120, 34
 	m.prefs.fullLayout = true
 	x, y := messagesCell(t, m)
-	if m = leftPress(m, x, y); m.mode != modeNotices {
+	if m = leftClick(m, x, y); m.mode != modeNotices {
 		t.Fatalf("click on the badge should open messages, mode = %v", m.mode)
 	}
 	m.mode = modeList
-	if m = leftPress(m, 2, y); m.mode != modeList {
+	if m = leftClick(m, 2, y); m.mode != modeList {
 		t.Fatalf("click on the readings should stay on the list, mode = %v", m.mode)
 	}
 }
@@ -1608,7 +1628,7 @@ func TestClickOnMessagesCardWhileSearchingKeepsTheField(t *testing.T) {
 	m.layout.width, m.layout.height = 120, 34
 	m.rail.SetSearch(m.rail.Search(), true)
 	x, y := messagesCell(t, m)
-	if m = leftPress(m, x, y); m.mode != modeList || !m.rail.Searching() {
+	if m = leftClick(m, x, y); m.mode != modeList || !m.rail.Searching() {
 		t.Fatalf("search owns the click, mode = %v searching = %v", m.mode, m.rail.Searching())
 	}
 }
@@ -1627,7 +1647,7 @@ func TestClickOnMessagesCardWhileFocusedIsLeftToFocus(t *testing.T) {
 		t.Fatalf("test setup: focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 	preparedView(m)
-	if m = leftPress(m, x, y); m.mode == modeNotices {
+	if m = leftClick(m, x, y); m.mode == modeNotices {
 		t.Fatal("a click while focused must not open messages")
 	}
 }

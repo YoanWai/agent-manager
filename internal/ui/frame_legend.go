@@ -191,13 +191,13 @@ func (hits keyHits) add(x0, x1, y int, label string) keyHits {
 	return append(hits, keyHit{x0: x0, x1: x1, y: y, key: key})
 }
 
-func (hits keyHits) at(x, y int) (tea.KeyMsg, bool) {
+func (hits keyHits) at(x, y int) (keyHit, bool) {
 	for _, hit := range hits {
 		if y == hit.y && x >= hit.x0 && x < hit.x1 {
-			return hit.key, true
+			return hit, true
 		}
 	}
-	return tea.KeyMsg{}, false
+	return keyHit{}, false
 }
 
 // above keeps the hits on the rows a frame clamped to height still shows.

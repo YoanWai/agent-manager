@@ -18,12 +18,12 @@ func settingsModel(t *testing.T) *Model {
 func TestClickOnASettingsRowMovesThenSteps(t *testing.T) {
 	m := settingsModel(t)
 	x, y := paintedCell(t, m, "background")
-	m = leftPress(m, x, y)
+	m = leftClick(m, x, y)
 	d := &m.settings.dialog
 	if d.Field != uisettings.FieldBackground || d.TerminalBackground {
 		t.Fatalf("first click should only focus the row, field %d background %v", d.Field, d.TerminalBackground)
 	}
-	m = leftPress(m, x, y)
+	m = leftClick(m, x, y)
 	if !m.settings.dialog.TerminalBackground || !m.prefs.terminalBackground {
 		t.Fatal("second click should step the row and preview it")
 	}
@@ -36,8 +36,8 @@ func TestClickOnASettingsRowMovesThenSteps(t *testing.T) {
 func TestClickOnTheCLIsRowManagesThem(t *testing.T) {
 	m := settingsModel(t)
 	x, y := paintedCell(t, m, "CLIs")
-	m = leftPress(m, x, y)
-	m = leftPress(m, x, y)
+	m = leftClick(m, x, y)
+	m = leftClick(m, x, y)
 	if !m.settings.dialog.CLIPicker {
 		t.Fatal("two clicks on CLIs should open the picker")
 	}
@@ -46,7 +46,7 @@ func TestClickOnTheCLIsRowManagesThem(t *testing.T) {
 		t.Fatalf("test setup: the picker needs two CLIs, has %v", names)
 	}
 	x, y = paintedCell(t, m, "] "+names[1])
-	if m = leftPress(m, x, y); !m.settings.dialog.CLIHidden[names[1]] {
+	if m = leftClick(m, x, y); !m.settings.dialog.CLIHidden[names[1]] {
 		t.Fatalf("one click on %s's checkbox should toggle it", names[1])
 	}
 	if m = wheel(m, tea.MouseButtonWheelDown, x, y); m.settings.dialog.CLICursor != 2 {
@@ -57,8 +57,8 @@ func TestClickOnTheCLIsRowManagesThem(t *testing.T) {
 func TestClickOnTheKeyPickerSetsAKey(t *testing.T) {
 	m := settingsModel(t)
 	x, y := paintedCell(t, m, "keybindings")
-	m = leftPress(m, x, y)
-	m = leftPress(m, x, y)
+	m = leftClick(m, x, y)
+	m = leftClick(m, x, y)
 	if !m.settings.dialog.KeyPicker {
 		t.Fatal("two clicks on keybindings should open the picker")
 	}
@@ -66,11 +66,11 @@ func TestClickOnTheKeyPickerSetsAKey(t *testing.T) {
 		t.Fatalf("the wheel should move the picker cursor, at %d", m.settings.dialog.KeyCursor)
 	}
 	x, y = paintedCell(t, m, "editor  ")
-	m = leftPress(m, x, y)
+	m = leftClick(m, x, y)
 	if row := m.settings.dialog.PickedRow(); row.Action.Name != "editor" || m.settings.dialog.KeyCapture {
 		t.Fatalf("first click should move to editor, at %q capture %v", row.Action.Name, m.settings.dialog.KeyCapture)
 	}
-	if m = leftPress(m, x, y); !m.settings.dialog.KeyCapture {
+	if m = leftClick(m, x, y); !m.settings.dialog.KeyCapture {
 		t.Fatal("a click on the row under the cursor should start capture")
 	}
 	if m = wheel(m, tea.MouseButtonWheelDown, x, y); m.settings.dialog.PickedRow().Action.Name != "editor" {

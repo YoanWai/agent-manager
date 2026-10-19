@@ -183,7 +183,7 @@ func TestFormClicks(t *testing.T) {
 	m := buildModel(t)
 	answered(m, claudeLike, claudeAnswer)
 	openFormOnClaude(t, m)
-	click := func(x, y int) { m = leftPress(m, x, y) }
+	click := func(x, y int) { m = leftClick(m, x, y) }
 	at := func(text string) (int, int) {
 		t.Helper()
 		return bodyCell(t, m, text)
