@@ -18,7 +18,7 @@ func (m *Model) openMenu(selection Selection, x, y int, held bool) Decision {
 		title = sessionName(row.sess)
 	}
 	m.menu = rowMenu{
-		active: true, held: held, key: row.key(), title: title,
+		active: true, held: held, pressed: -1, key: row.key(), title: title,
 		items: m.rowMenuItems(row), anchorX: x, anchorY: y,
 	}
 	m.menu.index = m.menu.nextItem(-1, 1)

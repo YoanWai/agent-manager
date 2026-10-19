@@ -38,7 +38,6 @@ func (m *Model) syncMouseCapture() tea.Cmd {
 func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if msg.Action == tea.MouseActionPress {
 		m.gens.foreground++
-		m.mouse.pressed = clickTarget{}
 	}
 	model, command := m.routeMouse(msg)
 	m.closeQuickOffTheList()
@@ -61,15 +60,16 @@ func (m *Model) closeQuickOffTheList() {
 // the press landed on, so a link page or an editor the click opens starts
 // after the release and never receives it.
 func (m *Model) routeMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	if target, ok := m.clickTargetAt(msg); ok {
-		switch {
-		case msg.Action == tea.MouseActionPress:
-			m.mouse.pressed = target
+	target, onTarget := m.clickTargetAt(msg)
+	switch {
+	case msg.Action == tea.MouseActionPress:
+		m.mouse.pressed = target
+		if onTarget {
 			return m, nil
-		case target == m.mouse.pressed:
-			m.mouse.pressed = clickTarget{}
-			return m.click(msg, target)
 		}
+	case onTarget && target == m.mouse.pressed:
+		m.mouse.pressed = clickTarget{}
+		return m.click(msg, target)
 	}
 	switch {
 	case m.cardOpen():

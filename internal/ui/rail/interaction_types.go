@@ -48,8 +48,12 @@ type menuItem struct {
 }
 
 type rowMenu struct {
-	active           bool
+	active bool
+	// held is the press that opened the menu, still down, which runs the
+	// entry it is let go over. pressed is the entry a later press landed
+	// on, or -1, which runs only if the release lands on it too.
 	held             bool
+	pressed          int
 	key              string
 	title            string
 	items            []menuItem

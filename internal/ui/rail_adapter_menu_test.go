@@ -40,8 +40,8 @@ func TestRootMenuOpensSettings(t *testing.T) {
 	}
 }
 
-// An entry runs on the release, so an attach or an editor it starts never
-// receives the button coming back up.
+// An entry runs on the release over the entry it was pressed on, so an
+// attach or an editor it starts never receives the button coming back up.
 func TestAMenuEntryRunsOnTheRelease(t *testing.T) {
 	m := buildModel(t)
 	m.rebuildRows()
@@ -49,12 +49,16 @@ func TestAMenuEntryRunsOnTheRelease(t *testing.T) {
 	y0, _ := m.bodyYRange()
 	m.handleMouse(tea.MouseMsg{X: 2, Y: y0, Action: tea.MouseActionPress, Button: tea.MouseButtonRight})
 	m.View()
-	settings := menuEntry(t, m, "Settings")
+	settings, other := menuEntry(t, m, "Settings"), menuEntry(t, m, "New session")
 	menu := m.layout.displayedRail.MenuRect
 	x, y := menu.Left+2, menu.Top+1+settings
 	if m = leftPress(m, x, y); !m.rail.MenuOpen() || m.mode != modeList {
 		t.Fatalf("the press alone ran the entry, menu %v mode %v", m.rail.MenuOpen(), m.mode)
 	}
+	if m = leftRelease(m, x, menu.Top+1+other); !m.rail.MenuOpen() || m.mode != modeList {
+		t.Fatalf("a press slid onto another entry ran it, menu %v mode %v", m.rail.MenuOpen(), m.mode)
+	}
+	m = leftPress(m, x, y)
 	m, cmd := leftReleaseCmd(m, x, y)
 	m.runBatch(t, cmd)
 	if m.rail.MenuOpen() || m.mode != modeSettings {
