@@ -67,9 +67,12 @@ func (m *Model) routeMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		if onTarget {
 			return m, nil
 		}
-	case onTarget && target == m.mouse.pressed:
+	case msg.Action == tea.MouseActionRelease:
+		pressed := m.mouse.pressed
 		m.mouse.pressed = clickTarget{}
-		return m.click(msg, target)
+		if onTarget && target == pressed {
+			return m.click(msg, target)
+		}
 	}
 	switch {
 	case m.cardOpen():

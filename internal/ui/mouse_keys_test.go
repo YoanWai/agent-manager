@@ -110,6 +110,9 @@ func TestAKeyRunsOnTheRelease(t *testing.T) {
 	if m = leftRelease(m, 0, y); m.mode != modeList {
 		t.Fatalf("a release off the key ran it, mode = %v", m.mode)
 	}
+	if m = leftRelease(m, x, y); m.mode != modeList {
+		t.Fatalf("a second release with no press ran the key, mode = %v", m.mode)
+	}
 	if m = leftClick(m, x, y); m.mode != modeHelp {
 		t.Fatalf("a click on the key should run it, mode = %v", m.mode)
 	}
