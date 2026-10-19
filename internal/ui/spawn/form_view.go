@@ -143,7 +143,7 @@ func (d *Form) View(h FormHost, facts FormFacts) (string, [][2]string) {
 	case d.focus == FieldModel && ch.sugg.open:
 		hint = [][2]string{{"type", "filter"}, {"↑↓", "pick"}, {"tab", "fill in"}, {"↵", "create"}, {"esc", "close"}}
 	case d.focus == FieldModel:
-		hint = [][2]string{{"type", "filter"}, {"tab/↑↓", "move"}, {"↵", "create"}, {"esc", "cancel"}}
+		hint = [][2]string{{"type", "filter"}, {"ctrl+o", "list"}, {"tab/↑↓", "move"}, {"↵", "create"}, {"esc", "cancel"}}
 	case d.focus == FieldEffort && ch.effortTyped(h, toolName):
 		hint = [][2]string{{"type", "level"}, {"tab/↑↓", "move"}, {"↵", "create"}, {"esc", "cancel"}}
 	case d.focus == FieldEffort:
