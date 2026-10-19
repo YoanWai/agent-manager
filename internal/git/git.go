@@ -298,15 +298,22 @@ func (d *Driver) DefaultBase(dir string) (string, error) {
 	if name == "" {
 		return "", nil
 	}
+	candidates := make([]string, 0, len(remotes)+1)
 	for _, remote := range remotes {
-		if d.ResolveRef(dir, "refs/remotes/"+remote+"/"+name) == nil {
-			return remote + "/" + name, nil
+		candidates = append(candidates, "refs/remotes/"+remote+"/"+name)
+	}
+	for _, full := range append(candidates, "refs/heads/"+name) {
+		if d.ResolveRef(dir, full) == nil {
+			return d.shortRef(dir, full)
 		}
 	}
-	if d.ResolveRef(dir, "refs/heads/"+name) == nil {
-		return name, nil
-	}
 	return "", nil
+}
+
+// shortRef names full the shortest way git resolves back to it, so a local
+// branch or tag sharing the short name cannot stand in for it.
+func (d *Driver) shortRef(dir, full string) (string, error) {
+	return d.run(dir, "rev-parse", "--abbrev-ref", full)
 }
 
 // baseRemotes lists the repo's remotes in the order a base is looked for on
