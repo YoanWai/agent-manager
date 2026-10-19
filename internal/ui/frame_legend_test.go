@@ -12,10 +12,10 @@ import (
 )
 
 func TestLegendBarKeepsTierTitles(t *testing.T) {
-	out := ansi.Strip(legendBar([]legendSection{
+	out := ansi.Strip(paintLegend([]legendSection{
 		{title: "Session", pairs: [][2]string{{"↵", "attach"}}},
 		{title: "View", quiet: true, pairs: [][2]string{{"q", "quit"}}},
-	}, 200))
+	}, 200).text)
 	lines := strings.Split(out, "\n")
 	if len(lines) != 2 {
 		t.Fatalf("one line per tier, got %d:\n%s", len(lines), out)
@@ -35,7 +35,7 @@ func TestLegendBarCapsRowsAndMarksTheCut(t *testing.T) {
 	for i := 0; i < 40; i++ {
 		pairs = append(pairs, [2]string{"k", "an action"})
 	}
-	out := legendBar([]legendSection{{title: "Session", pairs: pairs}}, 40)
+	out := paintLegend([]legendSection{{title: "Session", pairs: pairs}}, 40).text
 	lines := strings.Split(out, "\n")
 	if len(lines) > legendMaxRows {
 		t.Fatalf("legend took %d rows, want at most %d", len(lines), legendMaxRows)
@@ -55,10 +55,10 @@ func TestLegendBarReservesRowForNextTier(t *testing.T) {
 	for i := 0; i < 40; i++ {
 		pairs = append(pairs, [2]string{"k", "an action"})
 	}
-	out := ansi.Strip(legendBar([]legendSection{
+	out := ansi.Strip(paintLegend([]legendSection{
 		{title: "Session", pairs: pairs},
 		{title: "View", quiet: true, pairs: [][2]string{{"M", "messages"}}},
-	}, 30))
+	}, 30).text)
 	lines := strings.Split(out, "\n")
 	if len(lines) != legendMaxRows {
 		t.Fatalf("legend took %d rows, want %d:\n%s", len(lines), legendMaxRows, out)
@@ -86,7 +86,7 @@ func TestViewLegendPaintsWaitingMessagesWarm(t *testing.T) {
 		services: services{store: st, keys: keybind.DefaultSession(), listKeys: keybind.DefaultList()},
 		update:   updateInfo{latest: "v0.41.0", version: "0.40.0"},
 	}
-	bar := legendBar([]legendSection{waiting.viewLegend()}, 160)
+	bar := paintLegend([]legendSection{waiting.viewLegend()}, 160).text
 	if !strings.Contains(bar, legendAlertStyle().Render("M unread")) {
 		t.Fatalf("waiting messages should use the working color:\n%s", bar)
 	}
@@ -95,7 +95,7 @@ func TestViewLegendPaintsWaitingMessagesWarm(t *testing.T) {
 		update:   updateInfo{version: "0.40.0"},
 		notices:  noticesPanel{Panel: uinotices.NewPanel(map[string]bool{uinotices.Welcome: true, uinotices.ArrowStep: true})},
 	}
-	idleBar := ansi.Strip(legendBar([]legendSection{idle.viewLegend()}, 160))
+	idleBar := ansi.Strip(paintLegend([]legendSection{idle.viewLegend()}, 160).text)
 	if strings.Contains(idleBar, "unread") {
 		t.Fatalf("an empty panel should leave the messages key off:\n%s", idleBar)
 	}
@@ -119,6 +119,11 @@ func TestLegendKeyPressesTheFirstKeyItNames(t *testing.T) {
 		"tab":                                  "tab",
 		`ctrl+\ / click the list / mouse back`: `ctrl+\`,
 		"r / release":                          "r",
+		"/ / ctrl+f":                           "/",
+		"//ctrl+f":                             "/",
+		"ctrl+f / /":                           "ctrl+f",
+		"ctrl+f//":                             "ctrl+f",
+		"alt+/":                                "alt+/",
 	} {
 		key, ok := legendKey(label)
 		if !ok || key.String() != want {

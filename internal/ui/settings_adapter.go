@@ -285,7 +285,7 @@ func (m *Model) viewSettings() string {
 		Applying:   m.update.applying,
 		Height:     m.layout.height,
 		InnerWidth: cardInnerWidth(m.cardWidth()),
-		Chrome:     m.cardChromeRows,
+		Chrome:     m.flexChromeRows,
 		Styles:     settingsStyles(),
 		TextInput:  textInputView,
 		TextArea:   textAreaView,

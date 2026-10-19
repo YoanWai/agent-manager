@@ -173,7 +173,7 @@ func (d *GroupForm) Key(msg tea.KeyMsg, paths PathSuggestions, parent string, wo
 		}
 		switch d.focus {
 		case GroupFormWorktreeField:
-			d.worktreeIndex = (d.worktreeIndex + delta + worktrees) % worktrees
+			d.stepWorktree(delta, worktrees)
 			return GroupFormKey{}
 		case GroupFormBaseField:
 			return GroupFormKey{Action: GroupFormStepBase, Delta: delta}
@@ -215,7 +215,7 @@ func (d *GroupForm) Click(line int, paths PathSuggestions, worktrees int) GroupF
 	case at.field != d.focus:
 		d.focusOn(paths, at.field)
 	case at.field == GroupFormWorktreeField:
-		d.worktreeIndex = (d.worktreeIndex + 1) % worktrees
+		d.stepWorktree(1, worktrees)
 	case at.field == GroupFormBaseField:
 		return GroupFormKey{Action: GroupFormStepBase, Delta: 1}
 	}
@@ -228,6 +228,10 @@ func (d GroupForm) Wheel(step int) GroupFormKey {
 		return GroupFormKey{}
 	}
 	return GroupFormKey{Action: GroupFormStepParent, Delta: step}
+}
+
+func (d *GroupForm) stepWorktree(delta, worktrees int) {
+	d.worktreeIndex = (d.worktreeIndex + delta + worktrees) % worktrees
 }
 
 func (d *GroupForm) focusStep(paths PathSuggestions, delta int) {

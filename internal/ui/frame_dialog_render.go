@@ -1,8 +1,6 @@
 package ui
 
-import (
-	"strings"
-)
+import "strings"
 
 type dialogRenderContext struct {
 	width  int

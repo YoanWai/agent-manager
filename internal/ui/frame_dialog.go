@@ -45,7 +45,18 @@ func cardInnerWidth(width int) int { return width - cardChromeX - 2*cardPaddingX
 // the title edge and the blank under it, the status, the blank above the
 // hint, the hint's rule and rows, and the bottom edge.
 func (m *Model) cardChromeRows(hint [][2]string) int {
-	rows := 5 + strings.Count(legendInline(hint, cardInnerWidth(m.cardWidth())), "\n") + 1
+	return m.chromeRowsAt(m.cardWidth(), hint)
+}
+
+// flexChromeRows are the rows a flex card spends around its body. A flex
+// card is at least as wide as its hint on one row, so the hint wraps the
+// way it would at that width whatever the body holds.
+func (m *Model) flexChromeRows(hint [][2]string) int {
+	return m.chromeRowsAt(m.flexCardWidth("", "", hint), hint)
+}
+
+func (m *Model) chromeRowsAt(width int, hint [][2]string) int {
+	rows := 5 + strings.Count(legendInline(hint, cardInnerWidth(width)), "\n") + 1
 	if m.errBar.text != "" {
 		rows += 2
 	}

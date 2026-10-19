@@ -55,3 +55,36 @@ func TestKeyPickerCardCarriesNoSaveButton(t *testing.T) {
 		t.Fatalf("the key picker lost its first row:\n%s", view)
 	}
 }
+
+// A flex card is wider than the default, so its hint can sit on fewer rows;
+// the room left for the body is counted at the card's own width.
+func TestFlexChromeRowsMatchThePaintedCard(t *testing.T) {
+	m := buildModel(t)
+	hint := [][2]string{{"↑↓", "move"}, {"↵", "set a key"}, {"a", "add one"}, {"d", "off"}, {"r", "defaults"}, {"esc", "back"}}
+	body := strings.Repeat("a row wide enough to stretch the card past its default width\n", 5) + "last"
+	for _, width := range []int{40, 64, 90, 160} {
+		m.layout.width, m.layout.height = width, 60
+		m.cardFlex("title", body, hint)
+		painted := m.layout.card.bottom - m.layout.card.top - (strings.Count(body, "\n") + 1)
+		if got := m.flexChromeRows(hint); got != painted {
+			t.Fatalf("width %d: flexChromeRows = %d, the card painted %d", width, got, painted)
+		}
+	}
+}
+
+// The key picker spends every row the terminal has on its list, short of
+// the one a table heading can push past the window.
+func TestKeyPickerFillsTheTerminal(t *testing.T) {
+	m := buildModel(t)
+	m.layout.width = 160
+	for height := 16; height <= 40; height++ {
+		m.layout.height = height
+		m.openSettings()
+		m.settings.dialog.Field = uisettings.FieldKeybindings
+		m.handleSettingsKey(key("enter"))
+		m.viewSettings()
+		if rows := m.layout.card.bottom - m.layout.card.top; rows > height || rows < height-1 {
+			t.Fatalf("height %d: the key picker card is %d rows tall", height, rows)
+		}
+	}
+}

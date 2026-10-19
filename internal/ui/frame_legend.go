@@ -72,12 +72,8 @@ type legend struct {
 	hits keyHits
 }
 
-// legendBar renders a legend as the app's footer, one tier per line where
+// paintLegend renders a legend as the app's footer, one tier per line where
 // the terminal allows it and the tail marked when it does not.
-func legendBar(sections []legendSection, width int) string {
-	return paintLegend(sections, width).text
-}
-
 func paintLegend(sections []legendSection, width int) legend {
 	indent := strings.Repeat(" ", railGutter)
 	sep := subtleStyle().Render(" · ")
@@ -250,8 +246,18 @@ func legendKey(label string) (tea.KeyMsg, bool) {
 	if key, ok := pressKey(strings.TrimSpace(label)); ok {
 		return key, true
 	}
-	first, _, _ := strings.Cut(label, "/")
-	return pressKey(strings.TrimSpace(first))
+	return pressKey(firstKey(label))
+}
+
+// firstKey is the first of the keys a label joins with "/". A "/" that
+// opens the label is the search key itself, not a separator.
+func firstKey(label string) string {
+	if len(label) > 1 {
+		if i := strings.Index(label[1:], "/"); i >= 0 {
+			label = label[:i+1]
+		}
+	}
+	return strings.TrimSpace(label)
 }
 
 // pressKey is the message a key named the way a legend draws it arrives
