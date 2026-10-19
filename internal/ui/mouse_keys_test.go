@@ -2,6 +2,8 @@ package ui
 
 import (
 	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestClickOnListFooterKeysOpensTheirModals(t *testing.T) {
@@ -110,5 +112,27 @@ func TestAKeyRunsOnTheRelease(t *testing.T) {
 	}
 	if m = leftClick(m, x, y); m.mode != modeHelp {
 		t.Fatalf("a click on the key should run it, mode = %v", m.mode)
+	}
+}
+
+// A key repainted under a held button is not the key the press chose, so
+// the release runs nothing.
+func TestARepaintedKeyDoesNotRunOnTheRelease(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 200, 40
+	x, y := paintedCell(t, m, "? keys")
+	m = leftPress(m, x, y)
+	repainted := false
+	for i, hit := range m.layout.keyHits {
+		if hit.y == y && x >= hit.x0 && x < hit.x1 {
+			m.layout.keyHits[i].key, repainted = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")}, true
+		}
+	}
+	if !repainted {
+		t.Fatal("test setup: no key painted under the press")
+	}
+	if m = leftRelease(m, x, y); m.mode != modeList {
+		t.Fatalf("the release ran the repainted key, mode = %v", m.mode)
 	}
 }

@@ -85,10 +85,12 @@ func (m *Model) routeMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 }
 
 // clickTarget is what a left press or release landed on: a painted key,
-// by where it starts, the open card's body line, its edge, or the backdrop.
+// by where it starts and the key it presses, the open card's body line, its
+// edge, or the backdrop.
 type clickTarget struct {
 	kind    targetKind
 	x, line int
+	key     string
 }
 
 type targetKind uint8
@@ -108,7 +110,7 @@ func (m *Model) clickTargetAt(msg tea.MouseMsg) (clickTarget, bool) {
 		return clickTarget{}, false
 	}
 	if hit, ok := m.paintedKeyAt(msg.X, msg.Y); ok {
-		return clickTarget{kind: targetKey, x: hit.x0, line: hit.y}, true
+		return clickTarget{kind: targetKey, x: hit.x0, line: hit.y, key: hit.key.String()}, true
 	}
 	if !m.cardOpen() {
 		return clickTarget{}, false
