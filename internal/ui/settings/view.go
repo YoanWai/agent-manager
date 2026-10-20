@@ -182,7 +182,7 @@ func (s *State) View(ctx ViewContext) Frame {
 	case FieldPrompts:
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "saved prompts"}, {"esc", "save and close"}}
 	case FieldEnvs:
-		hint = [][2]string{{"↑↓", "field"}, {"agent-manager env", "edit in a shell"}, {"↵/esc", "save and close"}}
+		hint = [][2]string{{"↑↓", "field"}, {"↵/esc", "save and close"}}
 	case FieldKeybindings:
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "change the keys"}, {"esc", "save and close"}}
 	case FieldEditor:

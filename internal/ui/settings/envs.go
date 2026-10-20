@@ -11,8 +11,10 @@ type Env struct {
 
 func envSummary(envs []Env) string {
 	if len(envs) == 0 {
-		return "none · agent-manager env set <name> KEY=VALUE defines one"
+		return "none · defined from a shell"
 	}
+	// A profile is edited from a shell alone, so the row says so in words
+	// rather than carrying a command onto the modal.
 	parts := make([]string, len(envs))
 	for i, env := range envs {
 		parts[i] = env.Name

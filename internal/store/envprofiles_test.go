@@ -43,8 +43,8 @@ func TestEnvProfilesSetMergesUnsetAndDelete(t *testing.T) {
 	if err != nil || !deleted {
 		t.Fatalf("delete = %v, %v", deleted, err)
 	}
-	if deleted, _ := st.DeleteEnvProfile("work"); deleted {
-		t.Fatal("deleted a profile twice")
+	if deleted, err := st.DeleteEnvProfile("work"); err != nil || deleted {
+		t.Fatalf("second delete = %v, %v; want nothing deleted", deleted, err)
 	}
 	if _, found, err := st.EnvProfile("work"); found || err != nil {
 		t.Fatalf("EnvProfile after delete = %v, %v", found, err)
@@ -73,8 +73,8 @@ func TestEnvProfilesRefuseWhatCannotBeExported(t *testing.T) {
 			t.Errorf("SetEnvVars(%q, %v) = %v, want an error naming %q", tc.name, tc.vars, err, tc.want)
 		}
 	}
-	if profiles, _ := st.EnvProfiles(); len(profiles) != 0 {
-		t.Fatalf("a refused set stored %#v", profiles)
+	if profiles, err := st.EnvProfiles(); err != nil || len(profiles) != 0 {
+		t.Fatalf("a refused set stored %#v, %v", profiles, err)
 	}
 }
 
@@ -125,7 +125,9 @@ func TestSessionAndGroupKeepTheirEnvironment(t *testing.T) {
 	if err := st.RenameGroup("team", "crew"); err != nil {
 		t.Fatal(err)
 	}
-	groups, _ = st.Groups()
+	if groups, err = st.Groups(); err != nil {
+		t.Fatal(err)
+	}
 	for _, g := range groups {
 		if g.Name == "crew" && g.Environment != "work" {
 			t.Fatalf("rename dropped the environment: %#v", g)

@@ -69,7 +69,7 @@ func TestRunInPaneLeavesTheAgentInFrontAndNoScript(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
-	if err := driver.RunInPane(id, nil, "sleep 30"); err != nil {
+	if err := driver.RunInPane(id, map[string]string{"AM_SECRET": "s3cret-value"}, "sleep 30"); err != nil {
 		t.Fatalf("RunInPane: %v", err)
 	}
 	deadline := time.Now().Add(5 * time.Second)
@@ -83,12 +83,23 @@ func TestRunInPaneLeavesTheAgentInFrontAndNoScript(t *testing.T) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	left, err := filepath.Glob(filepath.Join(os.TempDir(), "am-relaunch-"+id+"*"))
+	var left []string
+	for _, pattern := range []string{"am-relaunch-" + id + "*", "am-env-" + id + "*", "am-launch-" + id + "*"} {
+		matches, err := filepath.Glob(filepath.Join(os.TempDir(), pattern))
+		if err != nil {
+			t.Fatal(err)
+		}
+		left = append(left, matches...)
+	}
+	if len(left) != 0 {
+		t.Fatalf("launch scripts left behind: %v", left)
+	}
+	screen, err := tmuxCmd("capture-pane", "-p", "-t", "am_"+id+":.0").Output()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(left) != 0 {
-		t.Fatalf("relaunch scripts left behind: %v", left)
+	if strings.Contains(string(screen), "s3cret-value") {
+		t.Fatalf("a relaunch typed an environment value into the pane:\n%s", screen)
 	}
 }
 

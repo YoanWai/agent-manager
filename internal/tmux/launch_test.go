@@ -3,6 +3,7 @@ package tmux
 import (
 	"github.com/YoanWai/agent-manager/internal/testenv"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -174,12 +175,27 @@ func TestCreateNamesTheWayBackWhenTheAgentExits(t *testing.T) {
 	waitForPane(t, driver, id, relaunchHint)
 }
 
-func TestExportEnvPrefixesTheCommand(t *testing.T) {
+// The relaunch hands its environment over in a file the shell sources, so
+// no value is typed into the pane; the file is gone once it has been read.
+func TestEnvFileExportsAndRemovesItself(t *testing.T) {
 	testenv.SkipPOSIXShell(t)
-	env := map[string]string{"B": "second", "A": "fir st"}
-	want := `export A='fir st'; export B='second'; claude --resume 7`
-	if got := exportEnv(env, "claude --resume 7"); got != want {
-		t.Fatalf("exportEnv = %q, want %q", got, want)
+	path, err := writeEnvFile("probe", map[string]string{"B": "it's second", "A": "fir st"})
+	if err != nil {
+		t.Fatalf("writeEnvFile: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("env file mode = %v, %v; want 0600", info, err)
+	}
+	out, err := exec.Command("sh", "-c", ". "+ShellQuote(path)+"; printf '%s|%s' \"$A\" \"$B\"").Output()
+	if err != nil {
+		t.Fatalf("source: %v", err)
+	}
+	if got := string(out); got != "fir st|it's second" {
+		t.Fatalf("sourced env = %q", got)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("env file left behind: %v", err)
 	}
 }
 

@@ -203,18 +203,28 @@ func ShellInvoke(path string) string {
 	return ShellQuote(path)
 }
 
-// exportEnv prefixes a command with exports of the session environment, for
-// a command typed into a pane whose shell does not carry it: a session
-// launched before the manager started exporting these values still holds a
-// shell that never received them, and it keeps them once this agent exits
-// too.
-func exportEnv(env map[string]string, command string) string {
-	var line strings.Builder
-	for _, key := range sortedKeys(env) {
-		line.WriteString("export " + key + "=" + ShellQuote(env[key]) + "; ")
+// writeEnvFile writes the session environment for a pane whose shell does
+// not carry it: a session launched before the manager started exporting
+// these values still holds a shell that never received them, and it keeps
+// them once this agent exits too. The shell sources the file, which deletes
+// itself, so a value such as a token is never typed into the pane, where it
+// would show on screen and land in the shell's history. CreateTemp makes it
+// readable by this user alone.
+func writeEnvFile(id string, env map[string]string) (string, error) {
+	file, err := os.CreateTemp("", "am-env-"+id+"-*.sh")
+	if err != nil {
+		return "", fmt.Errorf("environment file: %w", err)
 	}
-	line.WriteString(command)
-	return line.String()
+	path := file.Name()
+	_, err = file.WriteString(exportLines(env) + "rm -f -- " + ShellQuote(path) + "\n")
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		os.Remove(path)
+		return "", fmt.Errorf("environment file: %w", err)
+	}
+	return path, nil
 }
 
 // RunInPane types a command into the shell a pane already holds, with the
@@ -239,8 +249,14 @@ func (d *Driver) RunInPane(id string, env map[string]string, command string) err
 		os.Remove(path)
 		return fmt.Errorf("relaunch script: %w", err)
 	}
-	if err := d.SendKeys(id, exportEnv(env, "sh "+ShellQuote(path)), "Enter"); err != nil {
+	envPath, err := writeEnvFile(id, env)
+	if err != nil {
 		os.Remove(path)
+		return err
+	}
+	if err := d.SendKeys(id, ". "+ShellQuote(envPath)+"; sh "+ShellQuote(path), "Enter"); err != nil {
+		os.Remove(path)
+		os.Remove(envPath)
 		return err
 	}
 	return nil
@@ -281,7 +297,9 @@ func writeLaunchScript(id string, env map[string]string, command, colorFgBg stri
 	// agent's cwd as pane_current_path rather than this script's, which
 	// never moves. The INT trap keeps dash and Linux bash from exiting
 	// when the agent dies of SIGINT, which would skip the hint and shell.
-	body := "#!/bin/sh\ntrap : INT\nset -m\n" + header + exportLines(env) + command + "\n" +
+	// The script deletes itself once sh has it open, so the environment it
+	// exports, a profile's tokens among it, is not left on disk.
+	body := "#!/bin/sh\nrm -f -- \"$0\"\ntrap : INT\nset -m\n" + header + exportLines(env) + command + "\n" +
 		"printf '%s\\n' " + ShellQuote(relaunchHint) + "\n" +
 		"exec " + ShellQuote(shell) + "\n"
 	if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
