@@ -77,6 +77,7 @@ const (
 	FieldKeybindings
 	FieldCLIs
 	FieldPrompts
+	FieldEnvs
 	FieldDocs
 	FieldBugReport
 	FieldFeatureRequest

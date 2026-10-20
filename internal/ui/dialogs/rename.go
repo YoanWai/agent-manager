@@ -30,6 +30,7 @@ const (
 	RenamePathField
 	RenameWorktreeField
 	RenameBaseField
+	RenameEnvField
 )
 
 func nameField(name string) textinput.Model {
@@ -139,7 +140,7 @@ func (d *Rename) focusField(paths PathSuggestions, delta int) {
 	paths.Reset()
 	fields := 2
 	if d.group {
-		fields = 4
+		fields = 5
 	}
 	d.focus = (d.focus + delta + fields) % fields
 	d.input.Blur()
@@ -162,6 +163,8 @@ const (
 	RenameComplete
 	// RenameStepBase steps the root's group base choice by Delta.
 	RenameStepBase
+	// RenameStepEnv steps the root's group environment choice by Delta.
+	RenameStepEnv
 	// RenameInvalid carries the error the root reports.
 	RenameInvalid
 	RenameSubmit
@@ -247,6 +250,9 @@ func (d *Rename) Key(msg tea.KeyMsg, paths PathSuggestions, worktrees int) Renam
 		if d.group && d.focus == RenameBaseField {
 			return RenameKey{Action: RenameStepBase, Delta: delta}
 		}
+		if d.group && d.focus == RenameEnvField {
+			return RenameKey{Action: RenameStepEnv, Delta: delta}
+		}
 	case "enter":
 		if suggesting && paths.Chosen() {
 			return RenameKey{Action: RenameComplete}
@@ -304,7 +310,7 @@ func (d Rename) Hints() [][2]string {
 
 // GroupFieldsView is what the group edit's fields draw with: the root's
 // styles, its field renderer, the open path suggestions, the worktree
-// choice labels and the rendered base choice.
+// choice labels and the rendered base and environment choices.
 type GroupFieldsView struct {
 	GlyphMode   presentation.GlyphMode
 	Width       int
@@ -316,9 +322,10 @@ type GroupFieldsView struct {
 	Suggestions func() string
 	Worktrees   []string
 	Base        string
+	Env         string
 }
 
-// GroupFields draws the path, worktree and base rows under a group's head,
+// GroupFields draws the path, worktree, base and environment rows under a group's head,
 // the focused row's label in the accent.
 func (d *Rename) GroupFields(view GroupFieldsView) string {
 	chrome := presentation.ChromeFor(view.GlyphMode)
@@ -338,5 +345,6 @@ func (d *Rename) GroupFields(view GroupFieldsView) string {
 	out += "\n" + label(RenameWorktreeField).Width(10).Render("worktree") +
 		view.Subtle.Render(chrome.ChoiceLeftGlyph+" ") + view.Value.Render(view.Worktrees[d.worktree]) + view.Subtle.Render(" "+chrome.ChoiceRightGlyph)
 	out += "\n" + label(RenameBaseField).Width(10).Render("base") + view.Base
+	out += "\n" + label(RenameEnvField).Width(10).Render("env") + view.Env
 	return out
 }

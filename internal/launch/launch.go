@@ -179,8 +179,9 @@ func ReviveCommand(tool config.Tool, agentSessionID string) string {
 // poller can read what its CLI keeps for that pid. cwd is where the agent
 // starts. Tools backed by hooks additionally get the generated settings file
 // and their status-file path, plus a clean slate from any earlier files under
-// the same id.
-func Environment(manager *hooks.Manager, toolName string, tool config.Tool, baseCommand, id, cwd string, launchedAt time.Time) (string, map[string]string, error) {
+// the same id. profile is the session's environment profile, under the
+// manager's own variables so it cannot unhook the session.
+func Environment(manager *hooks.Manager, toolName string, tool config.Tool, baseCommand, id, cwd string, launchedAt time.Time, profile map[string]string) (string, map[string]string, error) {
 	if err := config.CheckSupported(toolName); err != nil {
 		return "", nil, err
 	}
@@ -198,7 +199,9 @@ func Environment(manager *hooks.Manager, toolName string, tool config.Tool, base
 	}
 	stamp := store.LaunchStamp(launchedAt)
 	launch := strconv.FormatInt(stamp, 10)
-	env := map[string]string{hooks.EnvSessionID: id, hooks.EnvLaunch: launch}
+	env := make(map[string]string, len(profile)+len(tool.Env)+2)
+	maps.Copy(env, profile)
+	env[hooks.EnvSessionID], env[hooks.EnvLaunch] = id, launch
 	maps.Copy(env, tool.Env)
 	if toolName == "grok" {
 		// Grok's terminal theme leaves row backgrounds unpainted, and only its config file selects it.

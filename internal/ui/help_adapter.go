@@ -57,7 +57,7 @@ func (m *Model) helpContext(width int) uihelp.Context {
 			AfterTurnArchive: m.afterTurnGlyph(store.AfterTurnArchive),
 			AfterTurnKill:    m.afterTurnGlyph(store.AfterTurnKill),
 		},
-		QuickKeys:    uihelp.QuickKeys{Model: quickModelKey, Effort: quickEffortKey, Profile: quickProfileKey},
+		QuickKeys:    uihelp.QuickKeys{Model: quickModelKey, Effort: quickEffortKey, Profile: quickProfileKey, Env: quickEnvKey},
 		CursorMarker: cursorAnchorMarker,
 		Styles: uihelp.Styles{
 			Section: sectionStyle(),

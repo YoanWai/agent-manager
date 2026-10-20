@@ -87,6 +87,9 @@ func (d *Form) View(h FormHost, facts FormFacts) (string, [][2]string) {
 	if value, shown, _ := ch.EffortRow(h, toolName, st); shown {
 		field("effort", value, FieldEffort)
 	}
+	if d.env.Shown() {
+		field("env", d.env.Label(st), FieldEnv)
+	}
 	field("dir", st.Input(d.dir), FieldDir)
 	paths := h.Paths()
 	if d.focus == FieldDir && paths.Active() {

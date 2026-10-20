@@ -22,6 +22,7 @@ const (
 	FieldProfile
 	FieldModel
 	FieldEffort
+	FieldEnv
 	FieldDir
 	FieldWorktree
 	FieldPrompt
@@ -81,6 +82,10 @@ type Request struct {
 	// Saved is the saved prompt's text, which goes in front of Prompt.
 	Saved string
 	Pick  Pick
+	// Env is the environment profile it launches under, "" for none, when
+	// EnvSet; else the group's default decides.
+	Env    string
+	EnvSet bool
 	// Dir is the directory the form names; the quick bar leaves it to
 	// the group.
 	Dir string
@@ -127,6 +132,7 @@ type Form struct {
 	defaultsTouched bool
 	focus           Field
 	choice          Choice
+	env             EnvPick
 	// lines is what a click on each painted body line acts on.
 	lines presentation.Lines[fieldLine]
 	// saved is the catalog as the form read it, savedIndex the pick in it
@@ -237,6 +243,9 @@ func (d *Form) RestartChoice(h ChoiceHost) { d.choice = NewChoice(h, d.Tool()) }
 
 // Choice is the model, effort and profile the form launches with.
 func (d *Form) Choice() *Choice { return &d.choice }
+
+// Env is the environment profile the form launches under.
+func (d *Form) Env() *EnvPick { return &d.env }
 
 // Name is the typed session name.
 func (d *Form) Name() string { return d.name.Value() }
@@ -551,6 +560,8 @@ func (d *Form) stepChoice(h ChoiceHost, delta int) bool {
 		ch.CycleProfile(h, toolName, delta)
 	case d.focus == FieldEffort && !ch.effortTyped(h, toolName):
 		ch.CycleEffort(h, toolName, delta)
+	case d.focus == FieldEnv:
+		d.env.Step(delta)
 	default:
 		return false
 	}
@@ -569,6 +580,9 @@ func (d *Form) Fields(h ChoiceHost) []Field {
 	}
 	if shown, active := ch.EffortShown(h, toolName); shown && active {
 		fields = append(fields, FieldEffort)
+	}
+	if d.env.Shown() {
+		fields = append(fields, FieldEnv)
 	}
 	fields = append(fields, FieldDir, FieldWorktree)
 	if len(d.saved) > 0 {
@@ -652,6 +666,8 @@ func (d *Form) Submit(h FormHost) FormRequest {
 		Prompt:      message,
 		Saved:       d.SavedText(),
 		Pick:        picked,
+		Env:         d.env.Name(),
+		EnvSet:      true,
 		Dir:         d.dir.Value(),
 		Worktree:    d.worktree,
 		WorktreeSet: true,

@@ -28,6 +28,9 @@ type refreshMsg struct {
 	groupPaths     map[string]string
 	groupWorktrees map[string]string
 	groupBases     map[string]string
+	groupEnvs      map[string]string
+	envProfiles    []string
+	envKeys        map[string][]string
 	archivedGroups map[string]bool
 	snap           sysstat.Snapshot
 	snapOK         bool
@@ -190,6 +193,13 @@ func (m *Model) routeRefreshMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			m.workspace.groupPaths = msg.groupPaths
 			m.workspace.groupWorktrees = msg.groupWorktrees
 			m.workspace.groupBases = msg.groupBases
+			m.workspace.groupEnvs = msg.groupEnvs
+			m.workspace.envProfiles = msg.envProfiles
+			m.workspace.envKeys = msg.envKeys
+			if !m.form.remote.on() {
+				m.form.Env().SetProfiles(msg.envProfiles)
+			}
+			m.quick.Env().SetProfiles(msg.envProfiles)
 			m.workspace.archivedGroups = msg.archivedGroups
 		}
 		m.endAfterTurns(msg.turnsEnded)

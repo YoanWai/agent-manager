@@ -26,8 +26,11 @@ type Styles struct {
 // the root's text-field renderer, which marks the IME cursor. Chrome is the
 // rows the card spends around a body with this hint.
 type ViewContext struct {
-	GlyphMode       presentation.GlyphMode
-	Session, List   keybind.Table
+	GlyphMode     presentation.GlyphMode
+	Session, List keybind.Table
+	// Envs are the environment profiles the shell defined, which the
+	// dialog lists and never edits.
+	Envs            []Env
 	Version, Latest string
 	Applying        bool
 	Height          int
@@ -147,6 +150,8 @@ func (s *State) View(ctx ViewContext) Frame {
 			lines = append(lines, actionRow(FieldCLIs, label(FieldCLIs), "show or hide for new sessions"))
 		case FieldPrompts:
 			lines = append(lines, actionRow(FieldPrompts, "saved prompts", "manage named instructions"))
+		case FieldEnvs:
+			lines = append(lines, lead(FieldEnvs, "environments")+st.Muted.Render(envSummary(ctx.Envs)))
 		case FieldDocs:
 			lines = append(lines, ctaRow(FieldDocs, "docs", "open the docs"))
 		case FieldBugReport:
@@ -176,6 +181,8 @@ func (s *State) View(ctx ViewContext) Frame {
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "manage CLIs"}, {"esc", "save and close"}}
 	case FieldPrompts:
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "saved prompts"}, {"esc", "save and close"}}
+	case FieldEnvs:
+		hint = [][2]string{{"↑↓", "field"}, {"agent-manager env", "edit in a shell"}, {"↵/esc", "save and close"}}
 	case FieldKeybindings:
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "change the keys"}, {"esc", "save and close"}}
 	case FieldEditor:

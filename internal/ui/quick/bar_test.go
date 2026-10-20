@@ -1,6 +1,7 @@
 package quick
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -95,5 +96,59 @@ func TestHostDefaultWorktreeFollowsTheGlyphMode(t *testing.T) {
 		if got := ansi.Strip(q.View(h, facts, 120, 3)); !strings.Contains(got, want) {
 			t.Fatalf("%s mode: bar %q lacks %q", mode, got, want)
 		}
+	}
+}
+
+// ctrl+g and a click step the spawn's environment from the target group's
+// default; an untouched pick leaves the default to the root.
+func TestQuickBarStepsTheEnvironmentFromTheTargetsDefault(t *testing.T) {
+	h := &fakeHost{prompt: &fakePrompt{text: "ship it"}, settings: map[string]string{}}
+	q := NewBar(h, []string{"claude"}, 0, false)
+	h.target, h.selected = Target{IsGroup: true, Group: "backend"}, true
+	q.HandleKey(h, tea.KeyMsg{Type: tea.KeyCtrlG})
+	if len(h.errs) != 1 || !strings.Contains(h.errs[0], "none is defined") {
+		t.Fatalf("ctrl+g with nothing to pick reported %v", h.errs)
+	}
+	h.target.Env = "work"
+	q.Env().SetProfiles([]string{"team", "work"})
+	_, request := q.HandleKey(h, tea.KeyMsg{Type: tea.KeyEnter})
+	if request.Spawn == nil || request.Spawn.EnvSet {
+		t.Fatalf("an untouched env was decided for the root: %+v", request.Spawn)
+	}
+	if legend := q.Legend(h); !strings.Contains(strings.Join(legendKeys(legend), " "), EnvKey) {
+		t.Fatalf("legend %v does not name %s", legend, EnvKey)
+	}
+	q.HandleKey(h, tea.KeyMsg{Type: tea.KeyCtrlG})
+	if got := q.Env().For("work"); got != "" {
+		t.Fatalf("ctrl+g from the default work = %q, want none", got)
+	}
+	q.Click(h, Hit{Action: ClickEnv})
+	_, request = q.HandleKey(h, tea.KeyMsg{Type: tea.KeyEnter})
+	if request.Spawn == nil || !request.Spawn.EnvSet || request.Spawn.Env != "team" {
+		t.Fatalf("spawn after stepping = %+v, want env team", request.Spawn)
+	}
+}
+
+func legendKeys(pairs [][2]string) []string {
+	keys := make([]string, len(pairs))
+	for i, pair := range pairs {
+		keys[i] = pair[0]
+	}
+	return keys
+}
+
+// A connection's spawn takes no profile of this machine, so the bar neither
+// shows nor steps one there.
+func TestQuickBarOffersNoEnvironmentOnAConnection(t *testing.T) {
+	h := &fakeHost{prompt: &fakePrompt{text: "ship it"}, settings: map[string]string{}}
+	q := NewBar(h, []string{"claude"}, 0, false)
+	q.Env().SetProfiles([]string{"work"})
+	h.target, h.selected = Target{IsGroup: true, Group: "backend", Remote: true}, true
+	q.HandleKey(h, tea.KeyMsg{Type: tea.KeyCtrlG})
+	if len(h.errs) != 1 || !strings.Contains(h.errs[0], "this machine") {
+		t.Fatalf("ctrl+g on a connection reported %v", h.errs)
+	}
+	if q.Env().Touched() || slices.Contains(legendKeys(q.Legend(h)), EnvKey) {
+		t.Fatal("a connection's bar stepped or offered the environment")
 	}
 }

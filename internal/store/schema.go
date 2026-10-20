@@ -140,6 +140,12 @@ CREATE TABLE IF NOT EXISTS settings (
 			session_id  TEXT NOT NULL,
 			PRIMARY KEY (host, terminal_id)
 		)`,
+		`CREATE TABLE IF NOT EXISTS env_profiles (
+			name TEXT PRIMARY KEY,
+			vars TEXT NOT NULL DEFAULT '{}'
+		)`,
+		`ALTER TABLE sessions ADD COLUMN environment TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE groups ADD COLUMN environment TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, migration := range migrations {
 		if _, err := s.db.Exec(migration); err != nil {
