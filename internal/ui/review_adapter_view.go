@@ -156,18 +156,36 @@ const (
 	// diffPaneTop is the frame row of the code pane's and the commit rail's
 	// first row, under their blank and title rows.
 	diffPaneTop = diffBodyTop + 2
+	// diffGlyphX is the frame column of a rail row's reviewed glyph: the
+	// rail's edge, its inset, then the cursor bar.
+	diffGlyphX = 1 + railInset + 1
 )
 
+// markReviewedByClick runs a glyph click's mark, which needs the store the
+// way A and space do.
+func (m *Model) markReviewedByClick(mark func(int) uireview.Requests, line int) tea.Cmd {
+	if m.services.store == nil {
+		m.reportErr("review state is unavailable")
+		return nil
+	}
+	return m.reviewCommands(mark(line))
+}
+
 // handleDiffClick shows the commit or opens the file a click lands on in
-// the commit rail or the file list under it, and moves the cursor to the
-// code line it lands on.
+// the commit rail or the file list under it, or marks it reviewed from its
+// glyph, and moves the cursor to the code line it lands on.
 func (m *Model) handleDiffClick(x, y int) tea.Cmd {
 	fileWidth, _ := m.diffPaneWidths()
 	switch {
 	case x >= 1 && x < fileWidth && y < m.reviewNav.filesTop:
+		if x == diffGlyphX {
+			return m.markReviewedByClick(m.review.ClickCommitMark, y-diffPaneTop)
+		}
 		if sha, ok := m.review.ClickCommit(y - diffPaneTop); ok {
 			return m.showReviewCommit(sha)
 		}
+	case x == diffGlyphX:
+		return m.markReviewedByClick(m.review.ClickFileMark, y-m.reviewNav.filesTop)
 	case x >= 1 && x < fileWidth:
 		return m.reviewCommands(m.review.ClickFile(y - m.reviewNav.filesTop))
 	case x > fileWidth+1:

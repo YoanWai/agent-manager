@@ -327,6 +327,25 @@ func (m *Model) ShowCommit(sha string) (LoadRequest, bool) {
 	return m.showCommit(commitIndex(m.commits, sha))
 }
 
+// ClickCommitMark marks every file of the commit whose glyph row line of the
+// commit rail painted reviewed, the way MarkAll does, opening it first when
+// another commit is in view.
+func (m *Model) ClickCommitMark(line int) Requests {
+	index, ok := m.commitMarks.At(line)
+	if !ok || m.paused() {
+		return Requests{}
+	}
+	if index == commitIndex(m.commits, m.viewedCommit()) {
+		return m.MarkAll()
+	}
+	request, ok := m.showCommit(index)
+	if !ok {
+		return Requests{}
+	}
+	m.markLoad = request.Generation
+	return Requests{Load: &request, StartupTick: true}
+}
+
 func (m *Model) showCommit(index int) (LoadRequest, bool) {
 	if m.target.ID == "" || index < 0 || index >= len(m.commits) {
 		return LoadRequest{}, false
@@ -507,6 +526,7 @@ func (m *Model) CommitRail(ctx RenderContext, width, height int) string {
 	s := ctx.Styles
 	commits := m.commits
 	m.commitRows.Reset()
+	m.commitMarks.Reset()
 	if m.scope != git.ScopeCommit || len(commits) == 0 {
 		return ""
 	}
@@ -520,10 +540,12 @@ func (m *Model) CommitRail(ctx RenderContext, width, height int) string {
 	if start > 0 {
 		b.WriteString(s.Subtle.Render(fmt.Sprintf("  ↑ %d more", start)) + "\n")
 		m.commitRows.Show(len(commits)-start, 1)
+		m.commitMarks.Skip(1)
 	}
 	for pos := start; pos < end; pos++ {
 		i := len(commits) - 1 - pos
 		m.commitRows.Show(i, 1)
+		m.commitMarks.Show(i, 1)
 		c := commits[i]
 		glyph := s.Subtle.Render("○")
 		if m.commitIsReviewed(c) {

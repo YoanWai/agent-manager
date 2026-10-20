@@ -11,6 +11,42 @@ func (m *Model) ToggleReviewed() Requests {
 	if fd == nil || !fd.Loaded() || m.fileHidden(fd) {
 		return Requests{}
 	}
+	requests := m.toggleFileMark(fd)
+	if !m.FileReviewed(fd.File.Path) {
+		return requests
+	}
+	marks := m.reviewed[m.reviewKey()]
+	for step := 1; step < len(m.set.Files); step++ {
+		next := (m.fileIdx + step) % len(m.set.Files)
+		if marks[m.markKey(m.set.Files[next].File.Path)] == 0 && !m.fileHidden(&m.set.Files[next]) {
+			return mergeRequests(requests, m.SwitchFile(next-m.fileIdx))
+		}
+	}
+	return requests
+}
+
+// ClickFileMark toggles the reviewed mark of the file whose glyph row line
+// of the file list painted, leaving the file in view where it is. A file not
+// loaded yet loads first, since its mark hashes the rendering.
+func (m *Model) ClickFileMark(line int) Requests {
+	index, ok := m.fileMarks.At(line)
+	if !ok || m.paused() {
+		return Requests{}
+	}
+	fd := &m.set.Files[index]
+	if fd.Loaded() {
+		return m.toggleFileMark(fd)
+	}
+	request, ok := m.requestFile(index)
+	if !ok {
+		return Requests{}
+	}
+	m.markFile = pendingMark{generation: m.gen, path: fd.File.Path}
+	return Requests{Files: []FileRequest{request}}
+}
+
+// toggleFileMark marks a loaded file reviewed, or clears its mark.
+func (m *Model) toggleFileMark(fd *diff.FileDiff) Requests {
 	key := m.reviewKey()
 	marks := m.reviewed[key]
 	if marks == nil {
@@ -20,17 +56,10 @@ func (m *Model) ToggleReviewed() Requests {
 	markKey := m.markKey(fd.File.Path)
 	if marks[markKey] != 0 {
 		delete(marks, markKey)
-		return Requests{Save: m.saveRequest()}
+	} else {
+		marks[markKey] = ContentHash(fd)
 	}
-	marks[markKey] = ContentHash(fd)
-	requests := Requests{Save: m.saveRequest()}
-	for step := 1; step < len(m.set.Files); step++ {
-		next := (m.fileIdx + step) % len(m.set.Files)
-		if marks[m.markKey(m.set.Files[next].File.Path)] == 0 && !m.fileHidden(&m.set.Files[next]) {
-			return mergeRequests(requests, m.SwitchFile(next-m.fileIdx))
-		}
-	}
-	return requests
+	return Requests{Save: m.saveRequest()}
 }
 
 func (m Model) FileReviewed(path string) bool {
