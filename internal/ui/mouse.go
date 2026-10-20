@@ -93,15 +93,22 @@ func (m *Model) routeMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 // detail column paints under the group's head; the rest of the list holds
 // still while a rename is typed.
 func (m *Model) renameMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	// A release comes without its button from a terminal that reports none.
-	released := msg.Action == tea.MouseActionRelease && (msg.Button == tea.MouseButtonLeft || msg.Button == tea.MouseButtonNone)
-	if !released || !m.rename.IsGroup() || m.fullRows() {
+	leftWidth, _ := m.splitWidths()
+	onFields := m.rename.IsGroup() && !m.fullRows() && msg.X > leftWidth
+	switch msg.Action {
+	case tea.MouseActionPress:
+		m.mouse.renamePress = onFields && msg.Button == tea.MouseButtonLeft
 		return m, nil
+	case tea.MouseActionRelease:
+		// X10 reporting names no button on any release, so only the press
+		// tells a left click from a right one.
+		pressed := m.mouse.renamePress
+		m.mouse.renamePress = false
+		if pressed && onFields {
+			return m.handleRenameClick(msg.Y - m.listChromeRows() - 1)
+		}
 	}
-	if leftWidth, _ := m.splitWidths(); msg.X <= leftWidth {
-		return m, nil
-	}
-	return m.handleRenameClick(msg.Y - m.listChromeRows() - 1)
+	return m, nil
 }
 
 // clickTarget is what a left press or release landed on: a painted key,

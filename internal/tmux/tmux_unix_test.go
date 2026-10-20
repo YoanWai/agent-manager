@@ -69,7 +69,8 @@ func TestRunInPaneLeavesTheAgentInFrontAndNoScript(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
-	if err := driver.RunInPane(id, map[string]string{"AM_SECRET": "s3cret-value"}, "sleep 30"); err != nil {
+	// The profile's PATH holds neither rm nor sh, which the relaunch needs.
+	if err := driver.RunInPane(id, map[string]string{"AM_SECRET": "s3cret-value", "PATH": "/nonexistent-am"}, "/bin/sleep 30"); err != nil {
 		t.Fatalf("RunInPane: %v", err)
 	}
 	deadline := time.Now().Add(5 * time.Second)
