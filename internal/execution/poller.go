@@ -298,11 +298,11 @@ func (p *Runner) step(ctx context.Context) Result {
 	// Machine gauges change slowly; sample them on wall-clock spacing so
 	// poke-driven passes do not advance the cadence. The stamp is this
 	// pass's start, so the poll grid lands on the spacing; the slack keeps
-	// wake jitter from deferring a due sample by a whole poll.
+	// wake jitter from deferring a due sample by a whole poll. It commits
+	// at the sample itself: a pass that fails earlier leaves the sample
+	// due, so the retry takes it instead of skipping a fresh one.
 	sampleStats := time.Since(p.statsSampledAt) >= statsSampleEvery-statsSampleSlack
-	if sampleStats {
-		p.statsSampledAt = time.Now()
-	}
+	sampledAt := time.Now()
 	socket := p.tmux.SocketPath()
 	// Delivering a queued message needs this process, so stamp a heartbeat
 	// the session tools can read to tell a sender whether anyone is home.
@@ -626,6 +626,7 @@ func (p *Runner) step(ctx context.Context) Result {
 		}
 	}
 	if sampleStats {
+		p.statsSampledAt = sampledAt
 		msg.Snap = sysstat.Sample("/")
 		msg.SnapOK = true
 	}

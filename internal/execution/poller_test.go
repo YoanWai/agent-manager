@@ -2091,6 +2091,33 @@ func TestPollerKeepsStatsSamplingOnWallClock(t *testing.T) {
 	if withinSpacing.Snapshot.SnapOK {
 		t.Fatal("the pass after a sample must not resample")
 	}
+	// A pass that fails after deciding to sample - ClaimPoller is the first
+	// store call - must leave the sample due, so the retrying pass takes it
+	// instead of skipping a fresh one.
+	m.poller.statsSampledAt = time.Now().Add(-statsSampleEvery)
+	m.poller.heartbeatAt = time.Now().Add(-store.PollerHeartbeatPeriod - time.Second)
+	if err := m.store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if failed := m.poller.Step(); failed.Err == nil {
+		t.Fatal("a closed store should fail the pass")
+	}
+	if !m.poller.statsSampledAt.Before(time.Now().Add(-statsSampleEvery + statsSampleSlack + time.Second)) {
+		t.Fatal("a failed pass consumed the due sample")
+	}
+	fresh, err := store.Open(m.dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fresh.Close()
+	m.poller.store = fresh
+	retry := m.poller.Step()
+	if retry.Err != nil {
+		t.Fatal(retry.Err)
+	}
+	if !retry.Snapshot.SnapOK {
+		t.Fatal("the pass after a failed one should take the still-due sample")
+	}
 }
 
 func TestEmptyReflowStillExecutesGroupWork(t *testing.T) {

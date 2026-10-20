@@ -73,6 +73,7 @@ func runTests(m *testing.M) int {
 type harness struct {
 	cfg            config.Config
 	store          *store.Store
+	dbPath         string
 	tmux           *tmux.Driver
 	hooks          *hooks.Manager
 	gitDrv         *git.Driver
@@ -216,7 +217,8 @@ func buildModel(t *testing.T) *harness {
 			cfg.Tools[name] = tool
 		}
 	}
-	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	dbPath := filepath.Join(t.TempDir(), "state.db")
+	st, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +232,7 @@ func buildModel(t *testing.T) *harness {
 	}
 	hooks := hooks.NewManager(t.TempDir())
 	gitDriver, _ := git.New()
-	h := &harness{cfg: cfg, store: st, tmux: driver, hooks: hooks, gitDrv: gitDriver}
+	h := &harness{cfg: cfg, store: st, dbPath: dbPath, tmux: driver, hooks: hooks, gitDrv: gitDriver}
 	h.poller = New(Dependencies{Store: st, TMux: driver, Engine: engine, Hooks: hooks, Git: gitDriver}, OptionsFromConfig(cfg))
 	// Every managed session on the test server goes, including one whose
 	// row the test deleted: Windows will not remove a temp dir that is a
