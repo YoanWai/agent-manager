@@ -211,13 +211,13 @@ func ShellInvoke(path string) string {
 // would show on screen and land in the shell's history. CreateTemp makes it
 // readable by this user alone. The file is gone before the first export,
 // since a profile's PATH may hold no rm.
-func writeEnvFile(id string, env map[string]string) (string, error) {
+func writeEnvFile(id, rm string, env map[string]string) (string, error) {
 	file, err := os.CreateTemp("", "am-env-"+id+"-*.sh")
 	if err != nil {
 		return "", fmt.Errorf("environment file: %w", err)
 	}
 	path := file.Name()
-	_, err = file.WriteString(ShellQuote(hostTool("rm")) + " -f -- " + ShellQuote(path) + "\n" + exportLines(env))
+	_, err = file.WriteString(ShellQuote(rm) + " -f -- " + ShellQuote(path) + "\n" + exportLines(env))
 	if closeErr := file.Close(); err == nil {
 		err = closeErr
 	}
@@ -228,14 +228,18 @@ func writeEnvFile(id string, env map[string]string) (string, error) {
 	return path, nil
 }
 
-// hostTool is name as the manager's own PATH resolves it. The relaunch runs
-// it after the session environment is in the shell, and a profile that sets
-// PATH for its agent must not hide the tools the relaunch itself needs.
-func hostTool(name string) string {
-	if path, err := exec.LookPath(name); err == nil {
-		return path
+// relaunchTools are rm and sh as the manager's own PATH resolves them. The
+// relaunch runs them after the session environment is in the shell, and a
+// profile that sets PATH for its agent must not hide what the relaunch
+// itself needs.
+func relaunchTools() (rm, sh string, err error) {
+	if rm, err = exec.LookPath("rm"); err != nil {
+		return "", "", fmt.Errorf("relaunch: %w", err)
 	}
-	return name
+	if sh, err = exec.LookPath("sh"); err != nil {
+		return "", "", fmt.Errorf("relaunch: %w", err)
+	}
+	return rm, sh, nil
 }
 
 // RunInPane types a command into the shell a pane already holds, with the
@@ -247,12 +251,16 @@ func hostTool(name string) string {
 // agent its own process group, so tmux reports the agent rather than the
 // script as the pane's command and directory.
 func (d *Driver) RunInPane(id string, env map[string]string, command string) error {
+	rm, sh, err := relaunchTools()
+	if err != nil {
+		return err
+	}
 	script, err := os.CreateTemp("", "am-relaunch-"+id+"-*.sh")
 	if err != nil {
 		return fmt.Errorf("relaunch script: %w", err)
 	}
 	path := script.Name()
-	_, err = script.WriteString(ShellQuote(hostTool("rm")) + " -f -- \"$0\"\nset -m\n" + command + "\n")
+	_, err = script.WriteString(ShellQuote(rm) + " -f -- \"$0\"\nset -m\n" + command + "\n")
 	if closeErr := script.Close(); err == nil {
 		err = closeErr
 	}
@@ -260,12 +268,12 @@ func (d *Driver) RunInPane(id string, env map[string]string, command string) err
 		os.Remove(path)
 		return fmt.Errorf("relaunch script: %w", err)
 	}
-	envPath, err := writeEnvFile(id, env)
+	envPath, err := writeEnvFile(id, rm, env)
 	if err != nil {
 		os.Remove(path)
 		return err
 	}
-	if err := d.SendKeys(id, ". "+ShellQuote(envPath)+"; "+ShellQuote(hostTool("sh"))+" "+ShellQuote(path), "Enter"); err != nil {
+	if err := d.SendKeys(id, ". "+ShellQuote(envPath)+"; "+ShellQuote(sh)+" "+ShellQuote(path), "Enter"); err != nil {
 		os.Remove(path)
 		os.Remove(envPath)
 		return err

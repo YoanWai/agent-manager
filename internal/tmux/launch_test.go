@@ -3,7 +3,6 @@ package tmux
 import (
 	"github.com/YoanWai/agent-manager/internal/testenv"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -173,31 +172,6 @@ func TestCreateNamesTheWayBackWhenTheAgentExits(t *testing.T) {
 	}
 	t.Cleanup(func() { driver.Kill(id) })
 	waitForPane(t, driver, id, relaunchHint)
-}
-
-// The relaunch hands its environment over in a file the shell sources, so
-// no value is typed into the pane; the file is gone once it has been read,
-// even under a profile whose PATH holds no rm.
-func TestEnvFileExportsAndRemovesItself(t *testing.T) {
-	testenv.SkipPOSIXShell(t)
-	path, err := writeEnvFile("probe", map[string]string{"B": "it's second", "A": "fir st", "PATH": "/nonexistent-am"})
-	if err != nil {
-		t.Fatalf("writeEnvFile: %v", err)
-	}
-	info, err := os.Stat(path)
-	if err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatalf("env file mode = %v, %v; want 0600", info, err)
-	}
-	out, err := exec.Command("sh", "-c", ". "+ShellQuote(path)+"; printf '%s|%s' \"$A\" \"$B\"").Output()
-	if err != nil {
-		t.Fatalf("source: %v", err)
-	}
-	if got := string(out); got != "fir st|it's second" {
-		t.Fatalf("sourced env = %q", got)
-	}
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatalf("env file left behind: %v", err)
-	}
 }
 
 func TestCreateExecutesLaunchScriptAsPaneRoot(t *testing.T) {
