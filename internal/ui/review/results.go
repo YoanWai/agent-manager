@@ -57,7 +57,8 @@ func (m *Model) ApplyLoad(result LoadResult) ApplyResult {
 	m.set = result.Set.Clone()
 	// A pending A belongs to the set it was pressed on: a silent refresh of
 	// that set carries it, any other load drops it.
-	resumeMarkAll := m.markAll && result.Refresh
+	resumeMarkAll := (m.markAll && result.Refresh) || m.markLoad == result.Generation
+	m.markLoad = 0
 	if m.markAll {
 		m.markAll = false
 		m.notice = ""
@@ -143,6 +144,10 @@ func (m *Model) ApplyFile(result FileResult) ApplyResult {
 	}
 	if marked, ok := m.finishMarkAll(); ok {
 		accepted.Requests = mergeRequests(accepted.Requests, marked)
+	}
+	if m.markFile == (pendingMark{generation: m.gen, path: result.Path}) {
+		m.markFile = pendingMark{}
+		accepted.Requests = mergeRequests(accepted.Requests, m.toggleFileMark(&m.set.Files[result.Index]))
 	}
 	if result.Index != m.fileIdx {
 		return accepted

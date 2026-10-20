@@ -576,3 +576,44 @@ func TestCommitScopeClicksReachEveryControl(t *testing.T) {
 		t.Fatal("a click on the commit pill should open the commit picker")
 	}
 }
+
+// pressGlyph left-presses the reviewed glyph of the rail row painting text.
+func (m *Model) pressGlyph(t *testing.T, text string) {
+	t.Helper()
+	_, y := paintedCell(t, m, text)
+	updated, cmd := m.handleMouse(tea.MouseMsg{X: diffGlyphX, Y: y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	*m = *updated.(*Model)
+	m.drainCmds(t, cmd)
+}
+
+// A rail glyph answers a click the way its key does: a file's toggles that
+// file, loading it first and leaving the file in view alone, and a commit's
+// marks every file in it, after opening it when it is not the one in view.
+func TestReviewGlyphClicksMarkReviewed(t *testing.T) {
+	m := buildModel(t)
+	dir := gitRepoWithCommitStack(t)
+	openCommitScope(t, m, dir)
+	m.pressDiffKey(t, '[')
+	if m.review.Snapshot().Set.Files[1].IsLoaded {
+		t.Fatal("test setup: b.go should not be loaded yet")
+	}
+
+	m.pressGlyph(t, "○ b.go")
+	if !m.fileReviewed("b.go") || m.fileReviewed("a.go") || m.currentFileDiff().File.Path != "a.go" {
+		t.Fatalf("b.go glyph should mark b.go alone and keep a.go in view, files = %v index = %d", m.diffPaths(), m.review.Snapshot().FileIndex)
+	}
+	m.pressGlyph(t, "✔ b.go")
+	if m.fileReviewed("b.go") {
+		t.Fatal("a second click on the glyph should clear the mark")
+	}
+
+	commits := m.review.Snapshot().Commits
+	m.pressGlyph(t, "○ "+commits[1].Short+" two")
+	if !m.review.CommitReviewed(commits[1]) {
+		t.Fatal("the glyph of the commit in view should mark it")
+	}
+	m.pressGlyph(t, "○ "+commits[2].Short+" one")
+	if state := m.review.Snapshot(); state.Set.Commit != commits[2].SHA || !m.review.CommitReviewed(commits[2]) {
+		t.Fatalf("another commit's glyph should open and mark it, in view %s", state.Set.Commit)
+	}
+}

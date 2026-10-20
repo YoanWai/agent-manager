@@ -75,13 +75,16 @@ type Model struct {
 
 	// fileRows, codeRows and commitRows are the file, the cursor line and
 	// the commit each painted row of the panes and the commit rail shows;
-	// headerKeys and statusKeys are the keys the header and the status line
-	// painted. All are for clicks.
-	fileRows   presentation.Lines[int]
-	codeRows   presentation.Lines[int]
-	commitRows presentation.Lines[int]
-	headerKeys []presentation.PaintedKey
-	statusKeys []presentation.PaintedKey
+	// fileMarks and commitMarks keep those rows that paint a reviewed
+	// glyph. headerKeys and statusKeys are the keys the header and the
+	// status line painted. All are for clicks.
+	fileRows    presentation.Lines[int]
+	codeRows    presentation.Lines[int]
+	commitRows  presentation.Lines[int]
+	fileMarks   presentation.Lines[int]
+	commitMarks presentation.Lines[int]
+	headerKeys  []presentation.PaintedKey
+	statusKeys  []presentation.PaintedKey
 
 	// commits lists what the commit scope steps through, newest first, since
 	// the target commitTarget names. rewriteHead is the HEAD review state was
@@ -95,8 +98,18 @@ type Model struct {
 	lastPins map[string]CommitPin
 
 	// markAll is set while A waits on file loads to mark every shown file
-	// reviewed.
-	markAll bool
+	// reviewed. markLoad is the generation of a load a click on another
+	// commit's glyph started, to mark every file once it lands; markFile is
+	// a file whose glyph was clicked before it had loaded.
+	markAll  bool
+	markLoad int
+	markFile pendingMark
+}
+
+// pendingMark is a file to mark once it loads in the set of generation.
+type pendingMark struct {
+	generation int
+	path       string
 }
 
 func New(defaultSideBySide bool) Model {
