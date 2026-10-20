@@ -108,8 +108,24 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+  # internal/ui takes over ten minutes on Windows, so its tests split by
+  # name across two runners and the other packages run on a third.
   test-windows:
+    name: test-windows (${{ matrix.shard }})
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: ui A-L
+            suite: ui
+            tests: '^Test[A-L]'
+          - shard: ui M-Z
+            suite: ui
+            tests: '^Test[^A-L]'
+          - shard: other packages
+            suite: rest
+            tests: '.'
     steps:
       - uses: actions/checkout@v7
         with:
@@ -127,10 +143,17 @@ jobs:
           Expand-Archive $zip "$env:RUNNER_TEMP\psmux"
           "$env:RUNNER_TEMP\psmux" >> $env:GITHUB_PATH
       - name: Vet
+        if: matrix.suite == 'rest'
         run: go vet ./...
       # -race needs cgo on Windows. Each psmux session is its own server and
-      # each pane a PowerShell, so the ui suite runs past go test's default
-      # ten minutes. -p 2 keeps the parallel ui tests from starving the
-      # timing-sensitive packages that would otherwise run beside them.
+      # each pane a PowerShell, so a shard can run past go test's default
+      # ten minutes. -p 2 keeps the heavy packages from starving the
+      # timing-sensitive ones that would otherwise run beside them.
       - name: Test
-        run: go test -p 2 -timeout 60m ./...
+        env:
+          SUITE: ${{ matrix.suite }}
+          TESTS: ${{ matrix.tests }}
+        run: |
+          $ui = 'github.com/YoanWai/agent-manager/internal/ui'
+          $packages = if ($env:SUITE -eq 'ui') { $ui } else { go list ./... | Where-Object { $_ -ne $ui } }
+          go test -p 2 -timeout 60m -run $env:TESTS $packages
