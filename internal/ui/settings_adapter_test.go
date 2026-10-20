@@ -410,7 +410,7 @@ func TestSettingsCLIRequestSupportOpensIssue(t *testing.T) {
 		t.Fatal("browser started during Update")
 	}
 	m.applyCmd(t, cmd)
-	if !strings.Contains(opened, "issues/new") || !strings.Contains(opened, "labels=type:feature") {
+	if !strings.Contains(opened, "issues/new") || !strings.Contains(opened, "support+another+coding+CLI") {
 		t.Fatalf("request row should open a feature-request issue, got %q", opened)
 	}
 	if !m.settings.dialog.CLIPicker {

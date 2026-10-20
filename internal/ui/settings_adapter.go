@@ -357,7 +357,7 @@ func requestCLISupportURL() string {
 		"**What you have in mind**\n\n" +
 		"CLI name:\nHow to launch it:\nResume / session flags (if any):\n\n" +
 		"**Area**\nConfig and tool support\n"
-	return repoURL + "/issues/new?labels=type:feature&body=" + url.QueryEscape(body)
+	return repoURL + "/issues/new?body=" + url.QueryEscape(body)
 }
 
 func (m *Model) routeSettingsMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {

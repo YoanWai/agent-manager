@@ -53,7 +53,7 @@ func loggedIn() *fakeCommands {
 		answers: map[string]string{
 			"claude --version":        "2.4.1 (Claude Code)\nextra line",
 			"gh api user --jq .login": "yoan",
-			"gh issue create --repo " + repo + " --title Space lands in the wrong pane --body " + bugBody() + " --label type:bug": "https://github.com/" + repo + "/issues/512",
+			"gh issue create --repo " + repo + " --title Space lands in the wrong pane --body " + bugBody(): "https://github.com/" + repo + "/issues/512",
 		},
 		failing: map[string]error{},
 	}
@@ -103,8 +103,8 @@ func TestPreviewComposesTheBugFormAndPostsNothing(t *testing.T) {
 	if preview.Route != RouteGH || preview.Account != "yoan" || preview.Reason != "" {
 		t.Fatalf("route = %q as %q (%q)", preview.Route, preview.Account, preview.Reason)
 	}
-	if preview.Labels[0] != "type:bug" || preview.Title != "Space lands in the wrong pane" {
-		t.Fatalf("labels %v title %q", preview.Labels, preview.Title)
+	if preview.Title != "Space lands in the wrong pane" {
+		t.Fatalf("title %q", preview.Title)
 	}
 	want := Context{Version: "0.31.0", OS: "macOS", Tmux: "tmux 3.5a", Tool: "Claude Code", ToolVersion: "2.4.1 (Claude Code)"}
 	if preview.Context != want {
@@ -157,7 +157,13 @@ func TestFilingTheSameApprovalTwicePostsOnce(t *testing.T) {
 	if again != first {
 		t.Fatalf("second filing = %+v, want the first %+v", again, first)
 	}
-	if created := issueCreates(fake); created != 1 {
+	created := 0
+	for _, ran := range fake.ran {
+		if ran[0] == "gh" && ran[1] == "issue" && ran[2] == "create" {
+			created++
+		}
+	}
+	if created != 1 {
 		t.Fatalf("gh issue create ran %d times: %v", created, fake.ran)
 	}
 }
@@ -253,64 +259,6 @@ func TestFileReportsAGHFailure(t *testing.T) {
 	_, err = reporter.File(sessionID, bugDraft(), preview.ID)
 	if err == nil || !strings.Contains(err.Error(), "gh issue create: ") || !strings.Contains(err.Error(), "Resource not accessible") {
 		t.Fatalf("File with a failing gh = %v", err)
-	}
-	if created := issueCreates(fake); created != 1 {
-		t.Fatalf("gh issue create ran %d times after a failure that is not a missing label", created)
-	}
-}
-
-func TestARenamedLabelStillFilesTheIssueAndSaysSo(t *testing.T) {
-	fake := loggedIn()
-	labelled := "gh issue create --repo " + repo + " --title Space lands in the wrong pane --body " + bugBody() + " --label type:bug"
-	delete(fake.answers, labelled)
-	fake.failing[labelled] = errors.New("exit status 1: could not add label: 'type:bug' not found")
-	fake.answers[strings.TrimSuffix(labelled, " --label type:bug")] = "https://github.com/" + repo + "/issues/513"
-	swapSeams(t, fake)
-	configDir, sessionID := workspace(t)
-
-	reporter := New(configDir, "0.31.0")
-	preview, err := reporter.Preview(sessionID, bugDraft())
-	if err != nil {
-		t.Fatalf("Preview: %v", err)
-	}
-	filed, err := reporter.File(sessionID, bugDraft(), preview.ID)
-	if err != nil {
-		t.Fatalf("File: %v", err)
-	}
-	if filed.URL != "https://github.com/"+repo+"/issues/513" {
-		t.Fatalf("filed = %+v", filed)
-	}
-	for _, want := range []string{"without labeling it type:bug", "'type:bug' not found"} {
-		if !strings.Contains(filed.Warning, want) {
-			t.Fatalf("warning %q lacks %q", filed.Warning, want)
-		}
-	}
-	if created := issueCreates(fake); created != 2 {
-		t.Fatalf("gh issue create ran %d times: %v", created, fake.ran)
-	}
-}
-
-func issueCreates(fake *fakeCommands) int {
-	created := 0
-	for _, ran := range fake.ran {
-		if ran[0] == "gh" && ran[1] == "issue" && ran[2] == "create" {
-			created++
-		}
-	}
-	return created
-}
-
-// The forms label what the browser route files, so they must name gh's labels.
-func TestTheIssueFormsApplyTheLabelsGHFilesWith(t *testing.T) {
-	for kind, form := range map[Kind]string{Bug: "bug_report.yml", Feature: "feature_request.yml"} {
-		content, err := os.ReadFile(filepath.Join("..", "..", ".github", "ISSUE_TEMPLATE", form))
-		if err != nil {
-			t.Fatal(err)
-		}
-		want := `labels: ["` + strings.Join(labels(kind), `", "`) + `"]` + "\n"
-		if !strings.Contains(strings.ReplaceAll(string(content), "\r\n", "\n"), want) {
-			t.Errorf("%s does not say %s", form, want)
-		}
 	}
 }
 
@@ -537,12 +485,11 @@ func TestToolLabelsMatchTheFormDropdown(t *testing.T) {
 }
 
 func TestFormatPreviewSaysWhatFilingWouldDoAndHowToConfirm(t *testing.T) {
-	preview := Preview{ID: "3f2a91c4", Kind: Bug, Title: "t", Body: "### What happened\n\nb\n", Labels: []string{"type:bug"}, Route: RouteGH, Account: "yoan"}
+	preview := Preview{ID: "3f2a91c4", Kind: Bug, Title: "t", Body: "### What happened\n\nb\n", Route: RouteGH, Account: "yoan"}
 	text := FormatPreview(preview, "call again with preview_id 3f2a91c4")
 	for _, want := range []string{
 		"bug report for " + repo + ", not filed yet",
 		"title: t",
-		"labels: type:bug",
 		"preview id: 3f2a91c4",
 		"### What happened",
 		"through gh as yoan",
@@ -567,9 +514,5 @@ func TestFormatPreviewSaysWhatFilingWouldDoAndHowToConfirm(t *testing.T) {
 	}
 	if got := FormatFiled(Filed{Route: RouteBrowser, URL: "https://example.test/new"}); got != "nothing was posted; open this prefilled form to file it: https://example.test/new" {
 		t.Fatalf("FormatFiled browser = %q", got)
-	}
-	unlabelled := Filed{Route: RouteGH, URL: "https://github.com/x/1", Warning: "filed without labeling it type:bug"}
-	if got := FormatFiled(unlabelled); got != "filed https://github.com/x/1\nwarning: filed without labeling it type:bug" {
-		t.Fatalf("FormatFiled with a warning = %q", got)
 	}
 }
