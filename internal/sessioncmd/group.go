@@ -9,11 +9,12 @@ import (
 )
 
 type Group struct {
-	Path      string `json:"path" jsonschema:"full group path, slash separated; pass this value as a group argument"`
-	Directory string `json:"directory,omitempty" jsonschema:"group's default working directory, inherited by sessions created in it"`
-	Worktree  string `json:"worktree,omitempty" jsonschema:"group's spawn-in-worktree choice: on, off, or empty to inherit"`
-	Archived  bool   `json:"archived" jsonschema:"whether the group is archived"`
-	Sessions  int    `json:"sessions" jsonschema:"number of active agent sessions directly in this group"`
+	Path        string `json:"path" jsonschema:"full group path, slash separated; pass this value as a group argument"`
+	Directory   string `json:"directory,omitempty" jsonschema:"group's default working directory, inherited by sessions created in it"`
+	Worktree    string `json:"worktree,omitempty" jsonschema:"group's spawn-in-worktree choice: on, off, or empty to inherit"`
+	Environment string `json:"environment,omitempty" jsonschema:"environment profile sessions created in this group launch under, or empty to inherit"`
+	Archived    bool   `json:"archived" jsonschema:"whether the group is archived"`
+	Sessions    int    `json:"sessions" jsonschema:"number of active agent sessions directly in this group"`
 }
 
 func (s *Sessions) Groups(sessionID string) ([]Group, error) {
@@ -47,11 +48,12 @@ func (r *runtime) groupRows(stored []store.Group, sessions []store.Session) []Gr
 	groups := make([]Group, 0, len(stored))
 	for _, group := range stored {
 		groups = append(groups, Group{
-			Path:      group.Name,
-			Directory: group.Path,
-			Worktree:  group.Worktree,
-			Archived:  group.Archived,
-			Sessions:  counts[group.Name],
+			Path:        group.Name,
+			Directory:   group.Path,
+			Worktree:    group.Worktree,
+			Environment: group.Environment,
+			Archived:    group.Archived,
+			Sessions:    counts[group.Name],
 		})
 	}
 	return groups

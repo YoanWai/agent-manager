@@ -30,6 +30,7 @@ type renameRequest struct {
 	draftDir        string
 	worktree        string
 	base            string
+	env             string
 	sessID          string
 	sess            store.Session
 	name            string
@@ -47,6 +48,7 @@ type renameEffectResult struct {
 	pathSet      bool
 	worktreeSet  bool
 	baseSet      bool
+	envSet       bool
 	nameRenamed  bool
 	toolChanged  bool
 	branch       string
@@ -138,6 +140,10 @@ func (s effectServices) runRename(request renameRequest) (effectResult, error) {
 			return result, err
 		}
 		result.baseSet = true
+		if err = s.store.SetGroupEnvironment(request.newGroup, request.env); err != nil {
+			return result, err
+		}
+		result.envSet = true
 		sessions, err := s.store.SessionsInSubtree(request.newGroup)
 		if err != nil {
 			return result, err
@@ -204,8 +210,8 @@ func (m *Model) applyRenameEffect(job *effectJob, result renameEffectResult, err
 			dir = result.dir
 		}
 		if result.groupRenamed {
-			if result.pathSet && result.worktreeSet && result.baseSet {
-				m.renameGroupLocally(request.oldGroup, request.newGroup, dir, request.worktree, request.base)
+			if result.pathSet && result.worktreeSet && result.baseSet && result.envSet {
+				m.renameGroupLocally(request.oldGroup, request.newGroup, dir, request.worktree, request.base, request.env)
 			} else {
 				m.mirrorGroupRenamePartial(request, dir, result)
 			}
@@ -269,6 +275,7 @@ func (m *Model) enqueueMove(mut uirail.Mutation, close moveDialogClose) tea.Cmd 
 		dir:      m.workspace.groupPaths[mut.Path],
 		worktree: m.workspace.groupWorktrees[mut.Path],
 		base:     m.workspace.groupBases[mut.Path],
+		env:      m.workspace.groupEnvs[mut.Path],
 	}
 	if mut.Kind == uirail.PlaceSession {
 		request.placement = m.capturePlacementPrecondition(mut)
@@ -333,11 +340,12 @@ func (s effectServices) relabelSessions(sessions []store.Session) error {
 // renameGroupLocally rewrites the in-memory tree right away, so the
 // frames between saving and the poller's next refresh already show the
 // new name and path instead of flashing the stale ones.
-func (m *Model) renameGroupLocally(old, newPath, dir, worktree, base string) {
+func (m *Model) renameGroupLocally(old, newPath, dir, worktree, base, env string) {
 	m.renameGroupInventory(old, newPath)
 	m.workspace.groupPaths[newPath] = dir
 	m.workspace.groupWorktrees = setGroupChoice(m.workspace.groupWorktrees, newPath, worktree)
 	m.workspace.groupBases = setGroupChoice(m.workspace.groupBases, newPath, base)
+	m.workspace.groupEnvs = setGroupChoice(m.workspace.groupEnvs, newPath, env)
 	m.applyRailStateDecision(m.rail.RenameGroup(old, newPath))
 }
 
@@ -365,6 +373,7 @@ func (m *Model) renameGroupInventory(old, newPath string) {
 	m.workspace.groupPaths = groupPaths
 	m.workspace.groupWorktrees = movedChoices(m.workspace.groupWorktrees, moved)
 	m.workspace.groupBases = movedChoices(m.workspace.groupBases, moved)
+	m.workspace.groupEnvs = movedChoices(m.workspace.groupEnvs, moved)
 }
 
 // movedChoices rekeys a per-group choice map for a renamed subtree.

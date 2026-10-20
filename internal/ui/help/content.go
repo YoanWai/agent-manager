@@ -25,6 +25,7 @@ type QuickKeys struct {
 	Model   string
 	Effort  string
 	Profile string
+	Env     string
 }
 
 // Styles is a snapshot of the root UI's active presentation values. State

@@ -9,6 +9,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -306,12 +307,14 @@ func (m *Model) viewFork() string {
 }
 
 // renameDialog keeps what the root shares with the rename: the path
-// completion under its path field and the group base choice, which the
-// root probes. The fields, focus and keys are uidialogs.Rename.
+// completion under its path field, the group base choice, which the
+// root probes, and the environment choice. The fields, focus and keys are
+// uidialogs.Rename.
 type renameDialog struct {
 	uidialogs.Rename
 	paths pathComplete
 	base  string
+	env   string
 }
 
 // dialogPaths hands the rename and the group form the root's path completion.
@@ -349,6 +352,7 @@ func (m *Model) openRename() {
 			Rename: uidialogs.RenameGroup(entry.group, dir, groupWorktreeIndex(m.workspace.groupWorktrees[entry.group])),
 			paths:  m.rename.paths.fresh(),
 			base:   m.workspace.groupBases[entry.group],
+			env:    m.workspace.groupEnvs[entry.group],
 		}
 	} else {
 		tools := m.services.cfg.AgentToolNames()
@@ -381,6 +385,9 @@ func (m *Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.rename.base, cmd = m.stepRenameBase(m.rename.base, key.Delta)
 		return m, cmd
+	case uidialogs.RenameStepEnv:
+		m.rename.env = spawn.StepEnv(m.workspace.envProfiles, m.rename.env, key.Delta)
+		return m, nil
 	case uidialogs.RenameInvalid:
 		m.reportErr(key.Err)
 		return m, nil
@@ -395,6 +402,7 @@ func (m *Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				draftDir: request.Dir,
 				worktree: groupWorktreeValue(request.Worktree),
 				base:     m.rename.base,
+				env:      m.rename.env,
 				name:     request.Name,
 			})
 		}
@@ -429,6 +437,7 @@ func (m *Model) viewRenameGroupFields(group string, width int) string {
 		Input:     textInputView,
 		Worktrees: groupWorktreeOptions,
 		Base:      groupBaseChoice(m.rename.base, m.groupBase(parentGroup(group))),
+		Env:       groupEnvChoice(m.rename.env, m.groupEnv(parentGroup(group)), len(m.workspace.envProfiles) > 0),
 	}
 	if m.rename.paths.active() {
 		view.Suggestions = m.viewPathSuggestions

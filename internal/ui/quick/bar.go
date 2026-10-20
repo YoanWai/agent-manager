@@ -14,7 +14,15 @@ import (
 type Target struct {
 	Group   string
 	IsGroup bool
+	// Env is the environment profile a spawn into Group preselects.
+	Env string
+	// Remote says Group is on a connection, whose spawns take no profile
+	// from this machine.
+	Remote bool
 }
+
+// envShown says the target takes an environment and there is one to show.
+func (q *Bar) envShown(target Target) bool { return !target.Remote && q.env.ShownFor(target.Env) }
 
 // Host is what the bar reads from the root: the choice facts, the status
 // bar, the prompt box it owns, and the selected row.
@@ -60,6 +68,7 @@ const (
 	ModelKey   = "ctrl+l"
 	EffortKey  = "ctrl+x"
 	ProfileKey = "ctrl+y"
+	EnvKey     = "ctrl+g"
 )
 
 // Bar is the quick bar: active across cursor moves, so the target follows
@@ -76,6 +85,7 @@ type Bar struct {
 	// external settings refresh queued when this quick bar opened.
 	defaultsTouched bool
 	choice          spawn.Choice
+	env             spawn.EnvPick
 	// picking is the list open above the prompt, which takes the typing.
 	picking int
 	// savedList is the saved prompts list ctrl+o opens above the prompt.
@@ -116,6 +126,9 @@ func (q *Bar) RestartChoice(h spawn.ChoiceHost) { q.choice = spawn.NewChoice(h, 
 
 // Choice is the model, effort and profile a spawn launches with.
 func (q *Bar) Choice() *spawn.Choice { return &q.choice }
+
+// Env is the environment profile a spawn launches under.
+func (q *Bar) Env() *spawn.EnvPick { return &q.env }
 
 // Worktree is the worktree toggle.
 func (q *Bar) Worktree() bool { return q.worktree }
@@ -190,6 +203,9 @@ func (q *Bar) HandleKey(h Host, msg tea.KeyMsg) (tea.Cmd, Request) {
 		return nil, Request{}
 	case ProfileKey:
 		q.stepProfile(h)
+		return nil, Request{}
+	case EnvKey:
+		q.stepEnv(h)
 		return nil, Request{}
 	case "ctrl+t", "alt+w":
 		return nil, Request{Toggle: true}
@@ -270,6 +286,8 @@ func (q *Bar) SpawnRequest(h spawn.ChoiceHost, group, prompt string) (spawn.Requ
 		Group:       group,
 		Prompt:      prompt,
 		Pick:        picked,
+		Env:         q.env.Name(),
+		EnvSet:      q.env.Touched(),
 		Worktree:    q.worktree,
 		WorktreeSet: q.worktreeTouched,
 	}, true
@@ -297,7 +315,7 @@ func (q *Bar) Spawning(h Host) bool {
 }
 
 // ChoiceHint is what a choice key says while a session is the target.
-const ChoiceHint = "model, effort and profile apply to a new agent: select a group to spawn one"
+const ChoiceHint = "model, effort, profile and env apply to a new agent: select a group to spawn one"
 
 func (q *Bar) requireSpawn(h Host) bool {
 	if q.Spawning(h) {
@@ -368,6 +386,23 @@ func (q *Bar) stepProfile(h Host) {
 	q.choice.CycleProfile(h, toolName, 1)
 }
 
+func (q *Bar) stepEnv(h Host) {
+	if !q.requireSpawn(h) {
+		return
+	}
+	target, _ := h.Target()
+	if target.Remote {
+		h.ReportErr("env: profiles apply to sessions on this machine")
+		return
+	}
+	if !q.envShown(target) {
+		h.ReportErr("env: none is defined; agent-manager env set defines one")
+		return
+	}
+	h.ClearErr()
+	q.env.StepFor(target.Env, 1)
+}
+
 func (q *Bar) handlePickKey(h Host, msg tea.KeyMsg) tea.Cmd {
 	toolName, ch := q.Tool(), &q.choice
 	if q.picking == PickEffort {
@@ -387,6 +422,9 @@ func (q *Bar) handlePickKey(h Host, msg tea.KeyMsg) tea.Cmd {
 		return nil
 	case ProfileKey:
 		q.stepProfile(h)
+		return nil
+	case EnvKey:
+		q.stepEnv(h)
 		return nil
 	case "enter", "tab":
 		ch.PickHighlighted(h, toolName)
@@ -421,6 +459,7 @@ const (
 	ClickEntry
 	// ClickSaved picks the saved prompt on list line Entry.
 	ClickSaved
+	ClickEnv
 )
 
 // Hits are the bar's clickable stretches as last painted.
@@ -452,6 +491,8 @@ func (q *Bar) Click(h Host, hit Hit) Request {
 		q.stepEffort(h)
 	case ClickProfile:
 		q.stepProfile(h)
+	case ClickEnv:
+		q.stepEnv(h)
 	case ClickWorktree:
 		return Request{Toggle: true}
 	case ClickEntry:
@@ -466,6 +507,8 @@ func (q *Bar) Click(h Host, hit Hit) Request {
 // Legend is the bar's key hint.
 func (q *Bar) Legend(h Host) [][2]string {
 	toolName, ch := q.Tool(), &q.choice
+	target, _ := h.Target()
+	envShown := q.envShown(target)
 	_, effortActive := ch.EffortShown(h, toolName)
 	hasProfiles := spawn.HasProfiles(h, toolName)
 	switch q.picking {
@@ -476,6 +519,9 @@ func (q *Bar) Legend(h Host) [][2]string {
 		}
 		if hasProfiles {
 			pairs = append(pairs, [2]string{ProfileKey, "profile"})
+		}
+		if envShown {
+			pairs = append(pairs, [2]string{EnvKey, "env"})
 		}
 		return append(pairs, [2]string{"esc", "back to the prompt"})
 	case PickEffort:
@@ -498,6 +544,9 @@ func (q *Bar) Legend(h Host) [][2]string {
 		}
 		if hasProfiles {
 			pairs = append(pairs, [2]string{ProfileKey, "profile"})
+		}
+		if envShown {
+			pairs = append(pairs, [2]string{EnvKey, "env"})
 		}
 	}
 	return append(pairs, [2]string{"ctrl+t", "worktree"}, [2]string{"esc", "close"})

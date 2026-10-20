@@ -63,12 +63,19 @@ func TestRenameGroupWalksItsFields(t *testing.T) {
 	if got := d.Key(tea.KeyMsg{Type: tea.KeyLeft}, paths, 3); got.Action != RenameStepBase || got.Delta != -1 {
 		t.Fatalf("left on base = %+v, want the root asked to step it", got)
 	}
+	d.Key(tea.KeyMsg{Type: tea.KeyDown}, paths, 3)
+	if got := d.Key(tea.KeyMsg{Type: tea.KeyRight}, paths, 3); got.Action != RenameStepEnv || got.Delta != 1 {
+		t.Fatalf("right on env = %+v, want the root asked to step it", got)
+	}
+	if d.Key(tea.KeyMsg{Type: tea.KeyDown}, paths, 3); d.Focus() != RenameNameField {
+		t.Fatalf("down past env focused %d, want the name again", d.Focus())
+	}
 	got := d.Key(tea.KeyMsg{Type: tea.KeyEnter}, paths, 3)
 	want := RenameRequest{Group: true, OldGroup: "work/old", NewGroup: "work/new", Dir: "/", Worktree: 1, Name: "new"}
 	if got.Action != RenameSubmit || got.Request != want {
 		t.Fatalf("enter = %+v, want %+v", got.Request, want)
 	}
-	if paths.resets != 3 {
+	if paths.resets != 5 {
 		t.Fatalf("resets = %d, want one per focus change", paths.resets)
 	}
 	if got := d.Key(tea.KeyMsg{Type: tea.KeyEsc}, paths, 3); got.Action != RenameCancel {

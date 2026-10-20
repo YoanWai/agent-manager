@@ -56,6 +56,7 @@ type spawnRequest struct {
 	images       []imageAttachment
 	choice       config.Choice
 	base         string
+	environment  string
 }
 
 func (spawnRequest) effectRequest() {}
@@ -86,6 +87,7 @@ type groupRequest struct {
 	dir       string
 	worktree  string
 	base      string
+	env       string
 	gen       int
 	rawDir    string
 	fallbacks []string
@@ -192,13 +194,14 @@ func (s effectServices) runSpawn(request spawnRequest) (effectResult, error) {
 	}
 	launched, err := s.lifecycle.Spawn(sessioncmd.SpawnRequest{
 		Session: store.Session{
-			ID:       id,
-			Name:     request.name,
-			Tool:     request.toolName,
-			Cwd:      dir,
-			Group:    request.group,
-			ParentID: request.parentID,
-			Choice:   request.choice,
+			ID:          id,
+			Name:        request.name,
+			Tool:        request.toolName,
+			Cwd:         dir,
+			Group:       request.group,
+			ParentID:    request.parentID,
+			Choice:      request.choice,
+			Environment: request.environment,
 		},
 		Tool:     tool,
 		Plan:     plan,
@@ -226,7 +229,7 @@ func (s effectServices) runGroup(request groupRequest) (effectResult, error) {
 			return groupEffectResult{}, errors.New("default path does not exist: " + dir)
 		}
 	}
-	if err := s.store.AddGroup(request.path, dir, request.worktree, request.base); err != nil {
+	if err := s.store.AddGroup(request.path, dir, request.worktree, request.base, request.env); err != nil {
 		return groupEffectResult{}, err
 	}
 	return groupEffectResult{path: request.path, dir: dir, worktree: request.worktree}, nil
@@ -359,6 +362,7 @@ func (m *Model) applyGroupEffect(request groupRequest, result groupEffectResult,
 	m.workspace.groupPaths[result.path] = result.dir
 	m.workspace.groupWorktrees = setGroupChoice(m.workspace.groupWorktrees, result.path, result.worktree)
 	m.workspace.groupBases = setGroupChoice(m.workspace.groupBases, result.path, request.base)
+	m.workspace.groupEnvs = setGroupChoice(m.workspace.groupEnvs, result.path, request.env)
 	m.rebuildRows()
 	// Presentation (closing the form, revealing and selecting the new group)
 	// lands only when the dispatching group form is still the dialog on
