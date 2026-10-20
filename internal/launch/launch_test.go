@@ -322,6 +322,20 @@ func TestEnvironmentRunsTheAgentUnderThePIDItExports(t *testing.T) {
 	}
 }
 
+// A model a CLI reads from its environment rides on the launch's own
+// environment, beside the session's.
+func TestEnvironmentCarriesTheChoicesEnvironment(t *testing.T) {
+	manager := hooks.NewManager(t.TempDir())
+	tool := config.Tool{Command: "cat", ModelEnv: `PICKED={"model":{model}}`, MCP: mcpreg.StyleNone}.WithChoice(config.Choice{Model: "big"})
+	command, env, err := Environment(manager, "plain", tool, tool.Command, "abcd1234", t.TempDir(), time.Time{})
+	if err != nil {
+		t.Fatalf("Environment: %v", err)
+	}
+	if env["PICKED"] != `{"model":"big"}` || env[hooks.EnvSessionID] != "abcd1234" || command != agentLaunch(manager, "cat") {
+		t.Fatalf("launch = %q %v, want cat with the model in the environment", command, env)
+	}
+}
+
 // The launch the agent is told it belongs to is the one its row is stamped
 // with: 0 for a row's first launch, which leaves agent_launched_at unset.
 func TestEnvironmentNamesTheLaunch(t *testing.T) {

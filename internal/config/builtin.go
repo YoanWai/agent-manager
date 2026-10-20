@@ -87,22 +87,28 @@ rules = [
 ]
 
 [tools.opencode]
-command = "opencode"
+# OpenCode 2's shared background server never sees a launch's environment,
+# so the model, the MCP config and the session id reach it only through a
+# private server
+command = "opencode --standalone"
 session_report = "opencode"
 # opencode mints its own session id; capture it after launch and resume it
 session_store = "opencode"
-resume_by_id_command = "opencode --session {id}"
-fork_command = "opencode --session {id} --fork"
+resume_by_id_command = "opencode --standalone --session {id}"
+# the interactive command cannot fork; the session store makes the copy
+# through opencode's API and the launch opens it
+fork_command = "opencode --standalone --session {new_id}"
 # opencode's session picker exists only inside the running TUI: /sessions.
 # Passing it via the prompt flag would submit it to the model, so revive
 # launches bare opencode and the manager types the shortcut at its composer.
-resume_picker_command = "opencode"
+resume_picker_command = "opencode --standalone"
 resume_picker_keys = "/sessions"
-revive_command = "opencode --continue"
+revive_command = "opencode --standalone --continue"
 # its ACP server would leave a session in the global session list
 catalog = "opencode"
-catalog_command = "opencode serve --port 0"
-model_args = "-m {model}"
+catalog_command = "opencode models --standalone"
+# the interactive command takes no model flag
+model_env = 'OPENCODE_CONFIG_CONTENT={"model":{model}}'
 # opencode's positional argument is the project path, so the optional
 # session prompt travels behind this flag
 prompt_flag = "--prompt"

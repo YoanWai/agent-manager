@@ -2,52 +2,56 @@ package catalog
 
 import (
 	"context"
-	"net/http"
+	"fmt"
 	"regexp"
-	"sort"
+	"strings"
 )
 
-var opencodeListening = regexp.MustCompile(`listening on (http://\S+)`)
+// opencodeModel is one row of `opencode models`: provider/model, the form
+// its launch takes. A model id can hold slashes of its own.
+var opencodeModel = regexp.MustCompile(`^[^\s/]+/\S+$`)
 
-// opencode's ACP server lists models only inside a session, which then
-// stays in opencode's history, so the headless server is asked.
+// opencode's server answers the list before its plugins have settled on a
+// cold start, and says so; the next ask lands after they have.
+const opencodeSettling = "did not finish activating"
+
+const opencodeAsks = 3
+
+// `opencode models` names no default and no labels, so the picker shows ids.
 func readOpencode(ctx context.Context, command, dir string) (Catalog, error) {
-	password := secret()
-	proc, err := start(command, dir, true, "OPENCODE_SERVER_PASSWORD="+password)
+	for ask := 1; ; ask++ {
+		cat, err := askOpencode(ctx, command, dir)
+		if err == nil || ask == opencodeAsks || !strings.Contains(err.Error(), opencodeSettling) {
+			return cat, err
+		}
+	}
+}
+
+func askOpencode(ctx context.Context, command, dir string) (Catalog, error) {
+	proc, err := start(command, dir, true)
 	if err != nil {
 		return Catalog{}, err
 	}
 	defer proc.stop()
-	address, err := serverAddress(ctx, proc, opencodeListening)
-	if err != nil {
-		return Catalog{}, err
-	}
-	auth := func(request *http.Request) { request.SetBasicAuth("opencode", password) }
-	var providers struct {
-		Providers []struct {
-			ID     string `json:"id"`
-			Models map[string]struct {
-				ID   string `json:"id"`
-				Name string `json:"name"`
-			} `json:"models"`
-		} `json:"providers"`
-	}
-	if err := getJSON(ctx, address+"/config/providers", auth, &providers); err != nil {
-		return Catalog{}, err
-	}
-	var config struct {
-		Model string `json:"model"`
-	}
-	if err := getJSON(ctx, address+"/config", auth, &config); err != nil {
-		return Catalog{}, err
-	}
 	var cat Catalog
-	for _, provider := range providers.Providers {
-		for _, model := range provider.Models {
-			id := provider.ID + "/" + model.ID
-			cat.Models = append(cat.Models, Model{ID: id, Label: model.Name, Default: id == config.Model})
+	var said []string
+	for {
+		select {
+		case <-ctx.Done():
+			return Catalog{}, ctx.Err()
+		case line, ok := <-proc.lines:
+			if !ok {
+				if proc.waitErr != nil {
+					return Catalog{}, fmt.Errorf("%w: %s", proc.waitErr, strings.Join(said, " "))
+				}
+				return cat, nil
+			}
+			text := strings.TrimSpace(string(line))
+			if opencodeModel.MatchString(text) {
+				cat.Models = append(cat.Models, Model{ID: text})
+			} else if text != "" {
+				said = append(said, text)
+			}
 		}
 	}
-	sort.Slice(cat.Models, func(i, j int) bool { return cat.Models[i].ID < cat.Models[j].ID })
-	return cat, nil
 }

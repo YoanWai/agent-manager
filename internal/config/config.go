@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"sort"
@@ -50,6 +51,8 @@ type Tool struct {
 	// ForkCommand creates a new conversation from an existing one. Templates
 	// can use {id}, {session_file}, {new_id}, and {name}; Agent Manager quotes
 	// each value. {session_file} needs SessionStore to keep one ("gemini").
+	// With {new_id} and no {id}, SessionStore makes the copy and names it
+	// ("opencode"), and the command opens it.
 	ForkCommand string `toml:"fork_command"`
 	// ForkKeys forks from inside the running source, for a tool that can only
 	// fork there (muse's /fork). They are typed into the resting source, the
@@ -153,6 +156,12 @@ type Tool struct {
 	ModelArgs   string `toml:"model_args"`
 	EffortArgs  string `toml:"effort_args"`
 	ProfileArgs string `toml:"profile_args"`
+	// ModelEnv carries the model in the environment instead, as NAME=VALUE
+	// with {model} written as a JSON string, for a CLI whose releases all
+	// read it there while only some take a model flag.
+	ModelEnv string `toml:"model_env"`
+	// Env is the environment WithChoice gives every launch line.
+	Env map[string]string `toml:"-"`
 }
 
 // Choice is what a session launches its CLI on; empty keeps the CLI's default.
@@ -181,6 +190,7 @@ func Dir() (string, error) {
 // emptiness still take the same path.
 func (t Tool) WithChoice(choice Choice) Tool {
 	flags := choice.flags(t)
+	t.Env = choice.env(t)
 	t.Command = placeChoice(t.Command, flags)
 	t.ReviveCommand = placeChoice(t.ReviveCommand, flags)
 	t.ResumeByIDCommand = placeChoice(t.ResumeByIDCommand, flags)
@@ -220,6 +230,15 @@ func (c Choice) flags(t Tool) string {
 		}
 	}
 	return flags.String()
+}
+
+func (c Choice) env(t Tool) map[string]string {
+	name, value, found := strings.Cut(t.ModelEnv, "=")
+	if !found || c.Model == "" {
+		return nil
+	}
+	model, _ := json.Marshal(c.Model)
+	return map[string]string{name: strings.ReplaceAll(value, "{model}", string(model))}
 }
 
 // Default returns the built-in configuration without touching the filesystem.

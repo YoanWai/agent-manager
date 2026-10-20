@@ -51,7 +51,7 @@ var official = map[string]string{
 	"grok":     "curl -fsSL https://x.ai/cli/install.sh | bash",
 	"gemini":   "npm install -g @google/gemini-cli",
 	"agy":      "curl -fsSL https://antigravity.google/cli/install.sh | bash",
-	"opencode": "curl -fsSL https://opencode.ai/install | bash",
+	"opencode": "curl -fsSL https://opencode.ai/v2/install | bash",
 	"hermes":   "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash",
 	"pi":       "npm install -g @mariozechner/pi-coding-agent",
 }
@@ -66,7 +66,7 @@ var windowsOfficial = map[string]string{
 	"grok":     "irm https://x.ai/cli/install.ps1 | iex",
 	"hermes":   "& ([scriptblock]::Create((irm https://hermes-agent.nousresearch.com/install.ps1))) -NonInteractive -Branch main",
 	"muse":     "irm https://dev.meta.ai/install.ps1 | iex",
-	"opencode": "npm install -g opencode-ai",
+	"opencode": "npm install -g @opencode/cli",
 	"pi":       "npm install -g --ignore-scripts @earendil-works/pi-coding-agent",
 	"psmux":    "winget install psmux",
 }
