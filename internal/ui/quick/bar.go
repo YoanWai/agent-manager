@@ -396,7 +396,7 @@ func (q *Bar) stepEnv(h Host) {
 		return
 	}
 	if !q.envShown(target) {
-		h.ReportErr("env: none is defined; agent-manager env set defines one")
+		h.ReportErr("env: none is defined; define one from a shell")
 		return
 	}
 	h.ClearErr()

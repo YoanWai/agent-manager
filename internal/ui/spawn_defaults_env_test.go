@@ -21,8 +21,8 @@ func TestGroupFormStoresTheEnvironmentAndNamesTheInheritedOne(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openGroupForm()
-	if view := m.viewGroupForm(); !strings.Contains(view, "agent-manager env set defines one") {
-		t.Fatalf("with no profile the env row should name the command, got %q", view)
+	if view := m.viewGroupForm(); !strings.Contains(view, "none · define one from a shell") {
+		t.Fatalf("with no profile the env row should say where one comes from, got %q", view)
 	}
 	m.mode = modeList
 	defineEnvs(t, m, "team", "work")

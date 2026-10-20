@@ -84,9 +84,24 @@ func (m *Model) routeMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	case m.mode == modeDiff:
 		return m.reviewMouse(msg)
 	case m.mode == modeRename:
-		return m, nil
+		return m.renameMouse(msg)
 	}
 	return m.listMouse(msg)
+}
+
+// renameMouse answers a left click on the group edit's fields, which the
+// detail column paints under the group's head; the rest of the list holds
+// still while a rename is typed.
+func (m *Model) renameMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	// A release comes without its button from a terminal that reports none.
+	released := msg.Action == tea.MouseActionRelease && (msg.Button == tea.MouseButtonLeft || msg.Button == tea.MouseButtonNone)
+	if !released || !m.rename.IsGroup() || m.fullRows() {
+		return m, nil
+	}
+	if leftWidth, _ := m.splitWidths(); msg.X <= leftWidth {
+		return m, nil
+	}
+	return m.handleRenameClick(msg.Y - m.listChromeRows() - 1)
 }
 
 // clickTarget is what a left press or release landed on: a painted key,

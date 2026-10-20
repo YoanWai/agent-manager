@@ -374,13 +374,27 @@ func (m *Model) openRename() {
 }
 
 func (m *Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	key := m.rename.Key(msg, dialogPaths{&m.rename.paths}, len(groupWorktreeOptions))
+	return m.runRenameKey(m.rename.Key(msg, dialogPaths{&m.rename.paths}, len(groupWorktreeOptions)))
+}
+
+// handleRenameClick acts on a click on line of the group edit's fields.
+func (m *Model) handleRenameClick(line int) (tea.Model, tea.Cmd) {
+	return m.runRenameKey(m.rename.Click(line, dialogPaths{&m.rename.paths}, len(groupWorktreeOptions)))
+}
+
+// runRenameKey executes what a rename key or click asked of the root.
+func (m *Model) runRenameKey(key uidialogs.RenameKey) (tea.Model, tea.Cmd) {
 	switch key.Action {
 	case uidialogs.RenameCancel:
 		m.mode = modeList
 		return m, nil
 	case uidialogs.RenameComplete:
 		return m, m.applyPathSuggestion()
+	case uidialogs.RenamePickPath:
+		if m.rename.paths.pick(key.Entry) {
+			return m, m.applyPathSuggestion()
+		}
+		return m, nil
 	case uidialogs.RenameStepBase:
 		var cmd tea.Cmd
 		m.rename.base, cmd = m.stepRenameBase(m.rename.base, key.Delta)

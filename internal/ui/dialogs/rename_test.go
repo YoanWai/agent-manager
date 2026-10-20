@@ -3,6 +3,7 @@ package dialogs
 import (
 	"testing"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -115,5 +116,39 @@ func TestRenameHints(t *testing.T) {
 	}
 	if got := RenameSession("s", "n", "zsh", []string{"zsh"}).Hints(); got[0] != [2]string{"tab", "tool: zsh"} {
 		t.Fatalf("session hints = %v", got)
+	}
+}
+
+// Each painted line of the group fields answers for its row: a click
+// focuses a row, a second click steps it, and a suggestion line picks it.
+func TestRenameGroupFieldsFollowTheirClicks(t *testing.T) {
+	d := RenameGroup("work/old", "/", 0)
+	paths := &fakePaths{}
+	view := GroupFieldsView{
+		Width:     60,
+		Input:     func(textinput.Model) string { return "input" },
+		Worktrees: []string{"inherit", "on", "off"},
+		Base:      "auto",
+		Env:       "none",
+	}
+	d.GroupFields(view)
+	if got := d.Click(3, paths, 3); got.Action != RenameStay || d.Focus() != RenameEnvField {
+		t.Fatalf("first click on env = %+v, focus %d", got, d.Focus())
+	}
+	if got := d.Click(3, paths, 3); got.Action != RenameStepEnv || got.Delta != 1 {
+		t.Fatalf("second click on env = %+v", got)
+	}
+	d.Click(1, paths, 3)
+	if d.Click(1, paths, 3); d.Worktree() != 1 {
+		t.Fatalf("second click on worktree left it at %d", d.Worktree())
+	}
+	d.Click(0, paths, 3)
+	view.Suggestions = func() string { return "/a\n/b" }
+	d.GroupFields(view)
+	if got := d.Click(2, paths, 3); got.Action != RenamePickPath || got.Entry != 1 {
+		t.Fatalf("a click on the second suggestion = %+v", got)
+	}
+	if got := d.Click(9, paths, 3); got.Action != RenameStay {
+		t.Fatalf("a click past the fields = %+v", got)
 	}
 }
