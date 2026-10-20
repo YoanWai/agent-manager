@@ -5,6 +5,7 @@ import (
 	"os"
 	"slices"
 
+	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/launch"
 
 	"sync"
@@ -92,6 +93,11 @@ type Runner struct {
 	// store, which decides who speaks for sessions no socket has claimed.
 	leading bool
 	tick    int
+	// statsSampledAt is when machine gauges were last sampled. The gate is
+	// wall clock, not pass parity: RequestRefresh pokes fire extra passes,
+	// and parity would sample on nearly every poke, so the panel would
+	// repaint faster than the gauges move.
+	statsSampledAt time.Time
 	// prevTreeCPU / prevTreeAt drive interval agent CPU: cumulative
 	// CPU-seconds per pane root from the last poll, so host share uses
 	// the same "over this window" idea as the computer gauge.
@@ -289,8 +295,14 @@ func (p *Runner) step(ctx context.Context) Result {
 	if captureErr != nil {
 		return Result{Err: captureErr}
 	}
-	// Machine gauges change slowly; sample them every other poll.
-	sampleStats := p.tick%2 == 0
+	// Machine gauges change slowly; sample them on wall-clock spacing so
+	// poke-driven passes do not advance the cadence. The stamp is this
+	// pass's start, so the poll grid lands on the spacing; the slack keeps
+	// wake jitter from deferring a due sample by a whole poll.
+	sampleStats := time.Since(p.statsSampledAt) >= statsSampleEvery-statsSampleSlack
+	if sampleStats {
+		p.statsSampledAt = time.Now()
+	}
 	socket := p.tmux.SocketPath()
 	// Delivering a queued message needs this process, so stamp a heartbeat
 	// the session tools can read to tell a sender whether anyone is home.
@@ -644,6 +656,15 @@ const (
 	// that is milliseconds old belongs to a paste in flight; only one this
 	// old belongs to a manager that died between the two.
 	inboxClaimGrace = 30 * time.Second
+)
+
+// statsSampleEvery is the wall-clock spacing between machine-gauge
+// samples: twice the poll interval, matching the every-other-pass cadence
+// this replaced. statsSampleSlack is the wake jitter a due sample still
+// fires within, so pass latency cannot defer it by a whole poll.
+const (
+	statsSampleEvery = 2 * config.PollInterval
+	statsSampleSlack = 250 * time.Millisecond
 )
 
 // launchPromptGrace releases pending input for a session whose prompt
