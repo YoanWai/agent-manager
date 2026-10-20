@@ -361,7 +361,7 @@ func writeEnvFile(id string, env map[string]string) (string, error) {
 		return "", fmt.Errorf("environment file: %w", err)
 	}
 	path := file.Name()
-	_, err = file.Write(pwsh.ScriptFile(exportLines(env) + "Remove-Item -LiteralPath $PSCommandPath\n"))
+	_, err = file.Write(pwsh.ScriptFile("Remove-Item -LiteralPath $PSCommandPath\n" + exportLines(env)))
 	if closeErr := file.Close(); err == nil {
 		err = closeErr
 	}

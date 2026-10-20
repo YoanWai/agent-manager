@@ -121,6 +121,9 @@ type mouseCapture struct {
 	// pressed is what the last left press landed on, which its release
 	// clicks when it comes back up over the same one.
 	pressed clickTarget
+	// renamePress is a left press on the group edit's fields, which a
+	// release reported without its button needs before it clicks.
+	renamePress bool
 }
 
 type settingsFeature struct {

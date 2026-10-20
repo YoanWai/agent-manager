@@ -176,10 +176,11 @@ func TestCreateNamesTheWayBackWhenTheAgentExits(t *testing.T) {
 }
 
 // The relaunch hands its environment over in a file the shell sources, so
-// no value is typed into the pane; the file is gone once it has been read.
+// no value is typed into the pane; the file is gone once it has been read,
+// even under a profile whose PATH holds no rm.
 func TestEnvFileExportsAndRemovesItself(t *testing.T) {
 	testenv.SkipPOSIXShell(t)
-	path, err := writeEnvFile("probe", map[string]string{"B": "it's second", "A": "fir st"})
+	path, err := writeEnvFile("probe", map[string]string{"B": "it's second", "A": "fir st", "PATH": "/nonexistent-am"})
 	if err != nil {
 		t.Fatalf("writeEnvFile: %v", err)
 	}

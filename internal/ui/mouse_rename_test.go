@@ -61,13 +61,27 @@ func TestGroupEditFieldsAnswerClicks(t *testing.T) {
 	if m.rename.Focus() != uidialogs.RenameWorktreeField {
 		t.Fatal("a click on the rail moved the edit's focus")
 	}
+	// A right click, whose release X10 reports without its button, steps
+	// nothing.
+	m.handleMouse(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionPress, Button: tea.MouseButtonRight})
+	m.handleMouse(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionRelease, Button: tea.MouseButtonNone})
+	if m.rename.Worktree() != 1 {
+		t.Fatalf("a right click stepped the worktree to %d", m.rename.Worktree())
+	}
+	m.handleMouse(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	m.handleMouse(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionRelease, Button: tea.MouseButtonNone})
+	if m.rename.Worktree() != 2 {
+		t.Fatalf("a left click with a buttonless release left the worktree at %d", m.rename.Worktree())
+	}
+	m.handleMouse(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	m.handleMouse(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionRelease, Button: tea.MouseButtonNone})
 	_, cmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m.applyCmd(t, cmd)
 	groups, err := m.services.store.Groups()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(groups) != 1 || groups[0].Environment != "work" || groups[0].Worktree != "on" {
-		t.Fatalf("saved group = %+v, want env work and worktree on", groups)
+	if len(groups) != 1 || groups[0].Environment != "work" || groups[0].Worktree != "" {
+		t.Fatalf("saved group = %+v, want env work and worktree back to inherit", groups)
 	}
 }
