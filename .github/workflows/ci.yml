@@ -118,7 +118,14 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Install psmux
-        run: cargo install psmux --version 3.4.0
+        run: |
+          $zip = "$env:RUNNER_TEMP\psmux.zip"
+          Invoke-WebRequest https://github.com/psmux/psmux/releases/download/v3.4.0/psmux-v3.4.0-windows-x64.zip -OutFile $zip
+          if ((Get-FileHash $zip -Algorithm SHA256).Hash -ne 'a66b6be7c13c6fa0dc3660a267b9e34eaa91a4eb7f07fbd55a0468018bd0f721') {
+            throw 'psmux download does not match its release checksum'
+          }
+          Expand-Archive $zip "$env:RUNNER_TEMP\psmux"
+          "$env:RUNNER_TEMP\psmux" >> $env:GITHUB_PATH
       - name: Vet
         run: go vet ./...
       # -race needs cgo on Windows. Each psmux session is its own server and
