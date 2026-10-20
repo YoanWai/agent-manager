@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -82,8 +83,9 @@ type Preview struct {
 }
 
 type Filed struct {
-	Route string `json:"route"`
-	URL   string `json:"url" jsonschema:"the filed issue on the gh route, the prefilled form to open on the browser route"`
+	Route   string `json:"route"`
+	URL     string `json:"url" jsonschema:"the filed issue on the gh route, the prefilled form to open on the browser route"`
+	Warning string `json:"warning,omitempty" jsonschema:"what was filed differently from the preview, to tell the user"`
 }
 
 type Reporter struct {
@@ -154,17 +156,34 @@ func (r *Reporter) File(sessionID string, draft Draft, previewID string) (Filed,
 	if filed, done := r.filed[previewID]; done {
 		return filed, nil
 	}
-	args := []string{"issue", "create", "--repo", repo, "--title", preview.Title, "--body", preview.Body}
-	for _, label := range preview.Labels {
-		args = append(args, "--label", label)
+	filed, err := createIssue(preview)
+	if err != nil {
+		return Filed{}, err
 	}
-	issueURL, err := runCommand("gh", args...)
+	r.filed[previewID] = filed
+	return filed, nil
+}
+
+// gh checks label names before it creates anything, so a missing label has posted nothing and the retry files once.
+func createIssue(preview Preview) (Filed, error) {
+	args := []string{"issue", "create", "--repo", repo, "--title", preview.Title, "--body", preview.Body}
+	var labelFlags []string
+	for _, label := range preview.Labels {
+		labelFlags = append(labelFlags, "--label", label)
+	}
+	issueURL, err := runCommand("gh", slices.Concat(args, labelFlags)...)
+	if err == nil {
+		return Filed{Route: RouteGH, URL: issueURL}, nil
+	}
+	if !strings.Contains(err.Error(), "could not add label") {
+		return Filed{}, fmt.Errorf("gh issue create: %w", err)
+	}
+	warning := fmt.Sprintf("filed without labeling it %s, because gh answered: %v", strings.Join(preview.Labels, ", "), err)
+	issueURL, err = runCommand("gh", args...)
 	if err != nil {
 		return Filed{}, fmt.Errorf("gh issue create: %w", err)
 	}
-	filed := Filed{Route: RouteGH, URL: issueURL}
-	r.filed[previewID] = filed
-	return filed, nil
+	return Filed{Route: RouteGH, URL: issueURL, Warning: warning}, nil
 }
 
 func (d Draft) validate() error {
@@ -185,9 +204,9 @@ func (d Draft) validate() error {
 
 func labels(kind Kind) []string {
 	if kind == Bug {
-		return []string{"bug"}
+		return []string{"type:bug"}
 	}
-	return []string{"enhancement"}
+	return []string{"type:feature"}
 }
 
 // compose renders the body with the headings GitHub gives a form
@@ -391,8 +410,11 @@ func FormatPreview(preview Preview, confirm string) string {
 }
 
 func FormatFiled(filed Filed) string {
-	if filed.Route == RouteGH {
+	if filed.Route == RouteGH && filed.Warning == "" {
 		return "filed " + filed.URL
+	}
+	if filed.Route == RouteGH {
+		return "filed " + filed.URL + "\nwarning: " + filed.Warning
 	}
 	return "nothing was posted; open this prefilled form to file it: " + filed.URL
 }
