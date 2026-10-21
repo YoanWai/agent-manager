@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // fakeVersionCLI puts a binary named name on the lookup path that answers
@@ -188,5 +189,23 @@ func TestConcurrentVersionChecksShareTheProbe(t *testing.T) {
 	workers.Wait()
 	if *asked != 1 {
 		t.Fatalf("probed %d times, want 1", *asked)
+	}
+}
+
+func TestVersionProbeReturnsWhenAChildKeepsStdout(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the probe script needs a POSIX shell")
+	}
+	script := filepath.Join(t.TempDir(), "slow-cli")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nprintf '1.2.3\\n'\nsleep 30 &\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	out, err := readVersionOutput(script)
+	if err != nil || versionNumber.FindString(string(out)) != "1.2.3" {
+		t.Fatalf("probe = %q, %v", out, err)
+	}
+	if time.Since(start) > 5*time.Second {
+		t.Fatalf("probe waited %s on the child's stdout", time.Since(start))
 	}
 }
