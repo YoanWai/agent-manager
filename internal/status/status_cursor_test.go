@@ -59,7 +59,7 @@ func TestCursorQuotedFooterStaysIdle(t *testing.T) {
 	engine := defaultEngine(t)
 	resting := cursorFrame(t, "resting")
 	for _, quote := range []string{"ctrl+c to stop", "Run this command?"} {
-		if got, _ := engine.Match("cursor", quote+"\n"+resting); got != Idle {
+		if got, _ := engine.Match("cursor", strings.Replace(resting, "Done — pong.txt now contains pong.", quote, 1)); got != Idle {
 			t.Fatalf("quote %q = %q want idle", quote, got)
 		}
 	}

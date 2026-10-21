@@ -86,7 +86,7 @@ func readCursorMeta(path string) (cursorChatMeta, error) {
 	}
 	var meta cursorChatMeta
 	if err := json.Unmarshal(data, &meta); err != nil {
-		return cursorChatMeta{}, err
+		return cursorChatMeta{}, nil
 	}
 	return meta, nil
 }

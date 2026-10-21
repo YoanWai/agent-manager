@@ -302,6 +302,9 @@ func ensureCursorRegistered(exe string) error {
 		}
 		perm = info.Mode().Perm()
 	}
+	if settings == nil {
+		return fmt.Errorf("cursor mcp %s: expected an object", path)
+	}
 	servers := map[string]json.RawMessage{}
 	if raw, ok := settings["mcpServers"]; ok {
 		if err := json.Unmarshal(raw, &servers); err != nil {

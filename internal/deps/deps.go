@@ -60,16 +60,17 @@ var official = map[string]string{
 // windowsOfficial replaces official on native Windows, where the curl
 // installers do not run. A tool missing here has no Windows recipe.
 var windowsOfficial = map[string]string{
-	"claude":   "irm https://claude.ai/install.ps1 | iex",
-	"cmd":      "npm install -g command-code",
-	"codex":    "npm install -g @openai/codex",
-	"gemini":   "npm install -g @google/gemini-cli",
-	"grok":     "irm https://x.ai/cli/install.ps1 | iex",
-	"hermes":   "& ([scriptblock]::Create((irm https://hermes-agent.nousresearch.com/install.ps1))) -NonInteractive -Branch main",
-	"muse":     "irm https://dev.meta.ai/install.ps1 | iex",
-	"opencode": "npm install -g opencode-ai",
-	"pi":       "npm install -g --ignore-scripts @earendil-works/pi-coding-agent",
-	"psmux":    "winget install psmux",
+	"cursor-agent": "irm 'https://cursor.com/install?win32=true' | iex",
+	"claude":       "irm https://claude.ai/install.ps1 | iex",
+	"cmd":          "npm install -g command-code",
+	"codex":        "npm install -g @openai/codex",
+	"gemini":       "npm install -g @google/gemini-cli",
+	"grok":         "irm https://x.ai/cli/install.ps1 | iex",
+	"hermes":       "& ([scriptblock]::Create((irm https://hermes-agent.nousresearch.com/install.ps1))) -NonInteractive -Branch main",
+	"muse":         "irm https://dev.meta.ai/install.ps1 | iex",
+	"opencode":     "npm install -g opencode-ai",
+	"pi":           "npm install -g --ignore-scripts @earendil-works/pi-coding-agent",
+	"psmux":        "winget install psmux",
 }
 
 func installers(goos string) map[string]string {

@@ -564,9 +564,8 @@ chrome_line = "^\\s*Tip: |^\\s*Cursor Agent\\s*$|^\\s*v\\d{4}\\.\\d+\\.\\d+"
 rules = [
   { state = "waiting", pattern = "Press any key to log in" },
   { state = "waiting", pattern = "Workspace Trust Required" },
-  { state = "waiting", pattern = "(?m)Waiting for approval(?:\\n[^\\n]*){0,16}(?:\\n[ \\t]*)*\\z" },
   # The shell dialog was captured. The other titles are the ones that same dialog returns.
-  { state = "waiting", pattern = "(?m)^[ \\t]*(?:Run this command|Run this MCP tool|Write to this file|Delete this file|Read this file|Allow this web search|Allow this web fetch|Proceed with this edit)\\?(?:\\n[^\\n]*){0,12}(?:\\n[ \\t]*)*\\z" },
-  { state = "working", pattern = "(?m)(?:\\p{Braille}{2}\\s+(?:Working|Running)\\b|ctrl\\+c to stop)(?:\\n[^\\n]*){0,16}(?:\\n[ \\t]*)*\\z" },
+  { state = "waiting", pattern = "(?m)^[ \\t]*(?:Run this command|Run this MCP tool|Write to this file|Delete this file|Read this file|Allow this web search|Allow this web fetch|Proceed with this edit)\\?(?:\\n[^\\n]*){0,6}\\n[ \\t]*→ [^\\n]*\\([yn]\\)(?:\\n[^\\n]*){0,6}(?:\\n[ \\t]*)*\\z" },
+  { state = "working", pattern = "(?m)(?:^[ \\t]*\\p{Braille}{2}\\s+(?:Working|Running)\\b|^[ \\t]*→ [^\\n]*ctrl\\+c to stop)(?:\\n[^\\n]*){0,16}(?:\\n[ \\t]*)*\\z" },
 ]
 `

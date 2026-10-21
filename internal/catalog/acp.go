@@ -2,7 +2,7 @@ package catalog
 
 import (
 	"context"
-	"fmt"
+	"errors"
 )
 
 // acpOption's choices come flat or in named groups, and ACP allows both.
@@ -60,17 +60,6 @@ func readACP(ctx context.Context, command, dir string) (Catalog, error) {
 	}, &initialized); err != nil {
 		return Catalog{}, err
 	}
-	// Cursor advertises authMethods and refuses session/new until authenticate.
-	if len(initialized.AuthMethods) > 0 {
-		methodID := initialized.AuthMethods[0].ID
-		if methodID == "" {
-			return Catalog{}, fmt.Errorf("initialize: empty auth method")
-		}
-		var authenticated struct{}
-		if err := client.call(ctx, "authenticate", map[string]any{"methodId": methodID}, &authenticated); err != nil {
-			return Catalog{}, err
-		}
-	}
 	var session struct {
 		SessionID     string      `json:"sessionId"`
 		ConfigOptions []acpOption `json:"configOptions"`
@@ -82,7 +71,17 @@ func readACP(ctx context.Context, command, dir string) (Catalog, error) {
 			} `json:"availableModels"`
 		} `json:"models"`
 	}
-	if err := client.call(ctx, "session/new", map[string]any{"cwd": dir, "mcpServers": []any{}}, &session); err != nil {
+	params := map[string]any{"cwd": dir, "mcpServers": []any{}}
+	err = client.call(ctx, "session/new", params, &session)
+	var authRequired *rpcError
+	if errors.As(err, &authRequired) && authRequired.Code == -32000 && len(initialized.AuthMethods) == 1 {
+		var authenticated struct{}
+		if err := client.call(ctx, "authenticate", map[string]any{"methodId": initialized.AuthMethods[0].ID}, &authenticated); err != nil {
+			return Catalog{}, err
+		}
+		err = client.call(ctx, "session/new", params, &session)
+	}
+	if err != nil {
 		return Catalog{}, err
 	}
 	modelOption, hasModelOption := optionIn(session.ConfigOptions, "model")

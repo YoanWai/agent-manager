@@ -124,3 +124,24 @@ func TestCursorConfigDirFollowsTheEnvThenXDGThenHome(t *testing.T) {
 		t.Fatalf("config dir = %q, want %q", got, explicit)
 	}
 }
+
+func TestCaptureCursorSkipsMalformedMetadata(t *testing.T) {
+	root, cwd := t.TempDir(), t.TempDir()
+	t.Setenv("CURSOR_CONFIG_DIR", root)
+	now := time.Now()
+	good := "11111111-1111-4111-8111-111111111111"
+	bad := "22222222-2222-4222-8222-222222222222"
+	writeCursorChat(t, root, cwd, good, cwd, now.UnixMilli(), now.UnixMilli())
+	writeCursorChat(t, root, cwd, bad, cwd, now.UnixMilli(), now.UnixMilli())
+	for _, data := range []string{`{`, `{"createdAtMs":"broken"}`} {
+		if err := os.WriteFile(filepath.Join(root, "chats", cursorChatBucket(cwd), bad, "meta.json"), []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if id, ok := Capture("cursor", cwd, now, nil, ""); !ok || id != good {
+			t.Fatalf("malformed sibling blocked capture. Got %q %v", id, ok)
+		}
+		if ids, ok := Snapshot("cursor", cwd); !ok || len(ids) != 1 {
+			t.Fatalf("malformed sibling blocked snapshot. Got %v %v", ids, ok)
+		}
+	}
+}

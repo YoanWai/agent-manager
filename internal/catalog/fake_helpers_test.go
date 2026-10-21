@@ -190,7 +190,9 @@ func runFake(name string) error {
 		return serveLines(func(request fakeRequest) any {
 			switch request.Method {
 			case "initialize":
-				return result(request, map[string]any{"protocolVersion": 1})
+				return result(request, map[string]any{"protocolVersion": 1, "authMethods": []any{map[string]any{"id": "interactive"}, map[string]any{"id": "cached_token"}}})
+			case "authenticate":
+				return map[string]any{"jsonrpc": "2.0", "id": request.ID, "error": map[string]any{"code": -32602, "message": "authentication must remain unchanged"}}
 			case "session/new":
 				return result(request, parts["session_new"])
 			case "session/set_config_option":
