@@ -25,6 +25,7 @@ type launchFix struct {
 	command     string
 	binary      string
 	update      bool
+	resume      mode
 	effectRetry effectRequest
 	images      []imageAttachment
 }
@@ -233,8 +234,9 @@ func (d *launchHintDialog) run(h launchHintHost, action uidialogs.LaunchHintActi
 // holding: they stayed alive while an install could still spawn it.
 func (d *launchHintDialog) close(h launchHintHost) {
 	dropImages(d.fix.images)
+	resume := d.fix.resume
 	d.fix = launchFix{}
-	h.setMode(modeList)
+	h.setMode(resume)
 }
 
 func (m *Model) handleLaunchCommandCopied(msg launchCommandCopiedMsg) {

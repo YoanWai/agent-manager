@@ -104,6 +104,7 @@ func (m *Model) handleCatalog(msg catalogMsg) tea.Cmd {
 			command: outdatedToolCommand(outdated),
 			binary:  outdated.Binary,
 			update:  true,
+			resume:  m.mode,
 		})
 	}
 	if !msg.stale {

@@ -100,8 +100,8 @@ func TestAnOlderCLIOpensTheUpdateDialogInsteadOfListingModels(t *testing.T) {
 	if err := catalog.Keep(m.services.configDir, "pi", tool, catalog.Catalog{Models: []catalog.Model{{ID: "kept"}}}); err != nil {
 		t.Fatal(err)
 	}
+	m.openForm()
 	m.form.Form = spawn.NewForm(m.spawnHost(), []string{"pi"}, 0)
-	m.mode = modeForm
 	m.form.prompt.attachments = []imageAttachment{{id: 7}}
 
 	m.applyCmd(t, m.ensureCatalog("pi"))
@@ -140,8 +140,8 @@ func TestAnUpdatedCLIIsAskedAgainRightAway(t *testing.T) {
 	if err := catalog.Keep(m.services.configDir, "pi", tool, kept); err != nil {
 		t.Fatal(err)
 	}
+	m.openForm()
 	m.form.Form = spawn.NewForm(m.spawnHost(), []string{"pi"}, 0)
-	m.mode = modeForm
 	cmd := m.ensureCatalog("pi")
 	if cmd == nil || m.ensureCatalog("pi") != nil {
 		t.Fatal("the version probe should start once")
@@ -153,8 +153,8 @@ func TestAnUpdatedCLIIsAskedAgainRightAway(t *testing.T) {
 	if cmd := m.launchHint.handleKey(m, tea.KeyMsg{Type: tea.KeyEsc}); cmd != nil {
 		t.Fatalf("esc returned %T", cmd)
 	}
-	if m.mode != modeList {
-		t.Fatalf("esc left mode %v", m.mode)
+	if m.mode != modeForm {
+		t.Fatalf("esc left mode %v, want the form it came from", m.mode)
 	}
 
 	if err := os.WriteFile(script, []byte("#!/bin/sh\necho 0.85.0\n"), 0o755); err != nil {
@@ -245,5 +245,24 @@ func TestOutdatedCatalogDoesNotReplaceAnotherInteraction(t *testing.T) {
 		if m.mode != mode || m.ledger.catalogs["pi"].err == nil {
 			t.Fatalf("mode %v became %v or lost the catalog error", mode, m.mode)
 		}
+	}
+}
+
+func TestClosingTheUpdateDialogReturnsToTheFormDraft(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	pickFormTool(t, m, "pi-tool")
+	m.form.SetName("draft-name")
+	m.form.prompt.attachments = []imageAttachment{{id: 7}}
+	m.ledger.catalogs = map[string]*catalogState{"pi-tool": {loading: true}}
+	m.handleCatalog(catalogMsg{tool: "pi-tool", err: config.OutdatedToolError{Binary: "pi", Installed: "0.84.2", Minimum: "0.84.3"}})
+	if m.mode != modeLaunchHint {
+		t.Fatalf("mode = %v, want the update dialog", m.mode)
+	}
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	*m = *updated.(*Model)
+	m.applyCmd(t, cmd)
+	if m.mode != modeForm || m.form.Name() != "draft-name" || len(m.form.prompt.attachments) != 1 {
+		t.Fatalf("mode %v name %q attachments %d, want the form draft back", m.mode, m.form.Name(), len(m.form.prompt.attachments))
 	}
 }
