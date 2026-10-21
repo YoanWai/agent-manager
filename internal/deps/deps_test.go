@@ -316,10 +316,12 @@ dep_install_cmd "tmux notify-send"
 		t.Fatalf("apt: exit %d\n%q", code, apt)
 	}
 	zypperDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(zypperDir, "zypper"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatal(err)
+	for _, name := range []string{"zypper", "id", "sudo"} {
+		if err := os.WriteFile(filepath.Join(zypperDir, name), []byte("#!/bin/sh\nprintf '1000\\n'\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
-	zypper, code := runDash(t, body, []string{"PATH=" + zypperDir + ":/usr/bin:/bin"})
+	zypper, code := runDash(t, body, []string{"PATH=" + zypperDir})
 	if code != 0 || zypper != "sudo zypper install -y tmux libnotify-tools" {
 		t.Fatalf("zypper: exit %d\n%q", code, zypper)
 	}

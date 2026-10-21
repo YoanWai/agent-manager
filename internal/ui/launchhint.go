@@ -66,7 +66,6 @@ type launchHintHost interface {
 	startInstall(request installStartRequest) bool
 	cardWidth() int
 	cardSized(width int, title, body string, hint [][2]string) string
-	launchHintBodyLimit(hint [][2]string) int
 }
 
 var _ launchHintHost = (*Model)(nil)
@@ -270,12 +269,22 @@ func (m *Model) launchHintBodyLimit(hint [][2]string) int {
 
 func (d *launchHintDialog) view(h launchHintHost, glyphs presentation.GlyphSet) string {
 	width := h.cardWidth()
-	tone := lipgloss.NewStyle().Foreground(colorAccent()).Bold(true)
-	card := d.prompt().View(cardInnerWidth(width), tone, mutedStyle(), glyphs)
-	body := card.Body
+	title, body, hints := d.card(h, glyphs, width)
+	return h.cardSized(width, title, body, hints)
+}
+
+func (m *Model) launchHintFrame() string {
+	width := m.cardWidth()
+	title, body, hints := m.launchHint.card(m, m.glyphs(), width)
 	lines := strings.Split(body, "\n")
-	if limit := h.launchHintBodyLimit(card.Hints); len(lines) > limit {
+	if limit := m.launchHintBodyLimit(hints); len(lines) > limit {
 		body = strings.Join(lines[:limit], "\n")
 	}
-	return h.cardSized(width, card.Title, body, card.Hints)
+	return m.cardSized(width, title, body, hints)
+}
+
+func (d *launchHintDialog) card(h launchHintHost, glyphs presentation.GlyphSet, width int) (string, string, [][2]string) {
+	tone := lipgloss.NewStyle().Foreground(colorAccent()).Bold(true)
+	card := d.prompt().View(cardInnerWidth(width), tone, mutedStyle(), glyphs)
+	return card.Title, card.Body, card.Hints
 }

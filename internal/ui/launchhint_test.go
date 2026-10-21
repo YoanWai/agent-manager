@@ -52,7 +52,6 @@ func (h *fakeLaunchHintHost) cardWidth() int { return 40 }
 func (h *fakeLaunchHintHost) cardSized(width int, title, body string, hint [][2]string) string {
 	return title + "\n" + body
 }
-func (h *fakeLaunchHintHost) launchHintBodyLimit(hint [][2]string) int { return 1 << 20 }
 
 func TestLaunchHintDialogWithFakeHost(t *testing.T) {
 	h := &fakeLaunchHintHost{images: []imageAttachment{{id: 1}}}
@@ -168,7 +167,7 @@ func TestLaunchHintKeepsTheInstallLineAndTheErrorOnAShortTerminal(t *testing.T) 
 	m.reportLaunchError(config.MissingToolError{Binary: "cmd"})
 	m.reportErr("mkdir /hooks: not a directory")
 
-	frame := ansi.Strip(m.launchHint.view(m, m.glyphs()))
+	frame := ansi.Strip(m.launchHintFrame())
 	if rows := strings.Count(frame, "\n") + 1; rows > m.layout.height {
 		t.Fatalf("dialog is %d rows on a %d-row terminal\n%s", rows, m.layout.height, frame)
 	}
