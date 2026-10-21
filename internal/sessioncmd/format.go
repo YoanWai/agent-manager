@@ -48,6 +48,9 @@ func FormatSession(session Session) string {
 	if session.Branch != "" {
 		line += " on branch " + session.Branch
 	}
+	if session.Warning != "" {
+		line += "\nwarning: " + session.Warning
+	}
 	return line
 }
 

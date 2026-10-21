@@ -229,6 +229,7 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.errBar.text = m.degradedResumeNotice(revived)
+	m.keepLaunchWarning()
 	m.requestRefresh()
 	return m, nil
 }
@@ -254,7 +255,7 @@ func (m *Model) reviveAllDead() (tea.Model, tea.Cmd) {
 // can and names the first failure rather than stopping, so one broken
 // session does not block the rest.
 func (m *Model) reviveMany(sessions []store.Session, emptyNotice string) (tea.Model, tea.Cmd) {
-	revived, degraded := 0, 0
+	revived, degraded, withoutMCP := 0, 0, 0
 	var firstErr string
 	for _, sess := range deadSessions(sessions) {
 		relaunched, err := m.reviveSession(sess)
@@ -268,6 +269,9 @@ func (m *Model) reviveMany(sessions []store.Session, emptyNotice string) (tea.Mo
 		if m.degradedResumeNotice(relaunched) != "" {
 			degraded++
 		}
+		if m.launchWarning != "" {
+			withoutMCP++
+		}
 	}
 	switch {
 	case revived == 0 && firstErr == "":
@@ -276,6 +280,8 @@ func (m *Model) reviveMany(sessions []store.Session, emptyNotice string) (tea.Mo
 		m.errBar.text = fmt.Sprintf("revived %d, first error: %s", revived, firstErr)
 	case degraded > 0:
 		m.errBar.text = fmt.Sprintf("revived %d, %d without a captured id (used --continue)", revived, degraded)
+	case withoutMCP > 0:
+		m.reportWarn(fmt.Sprintf("revived %d, %d without the agent-manager tools (MCP registration timed out)", revived, withoutMCP))
 	default:
 		m.errBar.text = ""
 	}
@@ -419,8 +425,9 @@ func (m *Model) relaunchSession(sess store.Session, tool config.Tool, baseComman
 // relaunchedMsg carries the result of starting an agent in a pane that was
 // left on its shell: the row as it was relaunched.
 type relaunchedMsg struct {
-	sess store.Session
-	err  error
+	warning string
+	sess    store.Session
+	err     error
 }
 
 // relaunchInPane builds the command that starts a session's tool again
@@ -445,14 +452,14 @@ func (m *Model) relaunchInPane(sess store.Session) (tea.Cmd, error) {
 	}
 	driver, stor, hookManager := m.tmux, m.store, m.hooks
 	return func() tea.Msg {
-		relaunched, err := sessioncmd.RelaunchInPane(driver, stor, hookManager, sess.ID, tool)
+		relaunched, warning, err := sessioncmd.RelaunchInPane(driver, stor, hookManager, sess.ID, tool)
 		if err != nil {
 			return relaunchedMsg{err: err}
 		}
 		if relaunched.AgentSessionID == "" && tool.ResumePickerKeys != "" {
 			sessioncmd.InjectPickerKeys(driver, relaunched.ID, tool)
 		}
-		return relaunchedMsg{sess: relaunched}
+		return relaunchedMsg{sess: relaunched, warning: warning}
 	}, nil
 }
 
@@ -1253,6 +1260,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 			}
 			m.errBar.text = ""
+			m.keepLaunchWarning()
 			m.rebuildRows()
 		case actionRevive:
 			if m.confirm.batch {
@@ -1283,6 +1291,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 			}
 			m.errBar.text = ""
+			m.keepLaunchWarning()
 		case actionDelete:
 			for _, sess := range childrenFirst(m.confirm.sessions) {
 				m.unwatch(sess.ID)

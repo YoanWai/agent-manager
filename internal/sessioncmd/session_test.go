@@ -22,6 +22,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/launch"
+	"github.com/YoanWai/agent-manager/internal/mcpreg"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/testenv"
@@ -1620,5 +1621,55 @@ func TestSessionsWithNoCallerListAndReadButStillRefuseToMessage(t *testing.T) {
 	}
 	if _, err := h.sessions.Kill("", h.caller.ID); err == nil || !strings.Contains(err.Error(), "not inside an Agent Manager session") {
 		t.Fatalf("Kill with no caller = %v, want the missing caller named", err)
+	}
+}
+
+// A CLI that stops answering while the manager registers the MCP server must
+// not keep a spawn or a revive from starting the session: it starts without
+// the agent-manager tools and says so in the result.
+func TestSessionsStartThroughAMCPRegistrationThatTimesOut(t *testing.T) {
+	testenv.SkipPOSIXShell(t)
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "grok"), []byte("#!/bin/sh\nexec sleep 30\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	saved := mcpreg.RegistrationTimeout
+	mcpreg.RegistrationTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { mcpreg.RegistrationTimeout = saved })
+
+	h := newSessionHarness(t)
+	h.sessions.loadConfig = testConfigLoader(t, sessionConfig+`
+[tools.slowmcp]
+command = "echo started"
+revive_command = "echo restarted"
+mcp = "grok"
+default_status = "idle"
+`)
+	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "slow", Tool: "slowmcp"})
+	if err != nil {
+		t.Fatalf("Create failed on a registration timeout: %v", err)
+	}
+	if !strings.Contains(created.Warning, "grok MCP registration did not finish within 300ms") {
+		t.Fatalf("created.Warning = %q, want the timeout named", created.Warning)
+	}
+	if !strings.Contains(FormatSession(created), "warning: "+created.Warning) {
+		t.Fatalf("FormatSession = %q, want the warning shown", FormatSession(created))
+	}
+	waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, "started")
+
+	if _, err := h.sessions.Kill(h.caller.ID, created.ID); err != nil {
+		t.Fatalf("Kill: %v", err)
+	}
+	revived, err := h.sessions.Revive(h.caller.ID, created.ID)
+	if err != nil {
+		t.Fatalf("Revive failed on a registration timeout: %v", err)
+	}
+	if revived.Warning == "" {
+		t.Fatal("revived.Warning is empty, want the timeout named")
+	}
+	waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, "restarted")
+	if _, err := os.Stat(filepath.Join(hooks.NewManager(h.sessions.configDir).Dir(), "mcp-grok-registered")); !os.IsNotExist(err) {
+		t.Fatalf("a timed-out registration left a marker: %v", err)
 	}
 }

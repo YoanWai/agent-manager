@@ -41,6 +41,7 @@ type Session struct {
 	Archived  bool   `json:"archived" jsonschema:"whether the session is archived out of the active list"`
 	Branch    string `json:"branch,omitempty" jsonschema:"branch of the worktree Agent Manager created for this session, when it has one"`
 	Self      bool   `json:"self" jsonschema:"whether this row is the calling session itself"`
+	Warning   string `json:"warning,omitempty" jsonschema:"set when the session started without the agent-manager tools because registering them timed out; it registers again on the next launch"`
 }
 
 type SessionScreen struct {
@@ -384,7 +385,7 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 
 	plan := launch.Assemble(toolName, tool.WithChoice(choice), prompt, autoNamed, proactive)
 	manager := hooks.NewManager(s.configDir)
-	command, env, err := launch.Environment(manager, toolName, tool, plan.Command, id, dir, time.Time{})
+	command, env, warning, err := launch.Environment(manager, toolName, tool, plan.Command, id, dir, time.Time{})
 	if err != nil {
 		discard()
 		return Session{}, err
@@ -415,7 +416,9 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 		return Session{}, err
 	}
 	_ = runtime.driver.SetLabel(sess.ID, sessionLabel(sess.Group, sess.Name))
-	return runtime.sessionInfo(sess, true, false), nil
+	created := runtime.sessionInfo(sess, true, false)
+	created.Warning = warning
+	return created, nil
 }
 
 // toolFor is the CLI a spawn runs when it names none. A terminal or a script
@@ -822,14 +825,16 @@ func (s *Sessions) Revive(sessionID, targetID string) (Session, error) {
 	// Reviving inside the surviving pane keeps the scrollback its last life
 	// left there.
 	if runtime.driver.Exists(target.ID) {
-		relaunched, err := RelaunchInPane(runtime.driver, runtime.store, hooks.NewManager(s.configDir), target.ID, tool)
+		relaunched, warning, err := RelaunchInPane(runtime.driver, runtime.store, hooks.NewManager(s.configDir), target.ID, tool)
 		if err != nil {
 			return Session{}, err
 		}
 		if relaunched.AgentSessionID == "" && tool.ResumePickerKeys != "" {
 			InjectPickerKeys(runtime.driver, relaunched.ID, tool)
 		}
-		return runtime.sessionInfo(relaunched, true, false), nil
+		revived := runtime.sessionInfo(relaunched, true, false)
+		revived.Warning = warning
+		return revived, nil
 	}
 	target, err = settleBeforeRevive(runtime.store, hooks.NewManager(s.configDir), target, tool.SessionReport, true)
 	if err != nil {
@@ -840,7 +845,7 @@ func (s *Sessions) Revive(sessionID, targetID string) (Session, error) {
 	}
 	base := launch.ReviveCommand(tool.WithChoice(target.Choice), target.AgentSessionID)
 	launchedAt := time.Now()
-	command, env, err := launch.Environment(hooks.NewManager(s.configDir), target.Tool, tool, base, target.ID, target.Cwd, launchedAt)
+	command, env, warning, err := launch.Environment(hooks.NewManager(s.configDir), target.Tool, tool, base, target.ID, target.Cwd, launchedAt)
 	if err != nil {
 		return Session{}, err
 	}
@@ -870,7 +875,9 @@ func (s *Sessions) Revive(sessionID, targetID string) (Session, error) {
 	}
 	target.Status = status.Starting
 	target.AgentLaunchedAt = launchedAt
-	return runtime.sessionInfo(target, true, false), nil
+	revived := runtime.sessionInfo(target, true, false)
+	revived.Warning = warning
+	return revived, nil
 }
 
 // Archive parks a session out of the active list, or restores it. A live

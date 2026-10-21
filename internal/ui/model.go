@@ -336,6 +336,12 @@ type Model struct {
 	// feedMessages is the remote message feed, refreshed on the update
 	// tick and folded into the notices next to the built-in ones.
 	feedMessages []feed.Message
+	// launchWarning is what the last launch warned about: its MCP registration
+	// timed out, so the agent started without the agent-manager tools. The
+	// bar shows it as the launch finishes, and a caller that clears the bar
+	// afterwards puts it back with keepLaunchWarning.
+	launchWarning string
+
 	// pendingNotice is a new notice that arrived while the list was not
 	// showing; flushPendingNotice opens it once the list is back.
 	pendingNotice string
@@ -2121,6 +2127,9 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.bindReviveLocally(msg.sess.ID, msg.sess.AgentLaunchedAt)
 		m.errBar.text = m.degradedResumeNotice(msg.sess)
+		if msg.warning != "" {
+			m.reportWarn(joinNotices(msg.warning, m.errBar.text))
+		}
 		m.rebuildRows()
 		m.requestRefresh()
 		return m, nil

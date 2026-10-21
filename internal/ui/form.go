@@ -773,7 +773,31 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 }
 
 func (m *Model) buildLaunch(toolName string, tool config.Tool, baseCommand, id, cwd string, launchedAt time.Time) (string, map[string]string, error) {
-	return launch.Environment(m.hooks, toolName, tool, baseCommand, id, cwd, launchedAt)
+	command, env, warning, err := launch.Environment(m.hooks, toolName, tool, baseCommand, id, cwd, launchedAt)
+	m.launchWarning = warning
+	if warning != "" {
+		m.reportWarn(warning)
+	}
+	return command, env, err
+}
+
+// keepLaunchWarning puts the last launch's warning back on the bar after a
+// caller cleared or replaced it with the outcome of the action.
+func (m *Model) keepLaunchWarning() {
+	if m.launchWarning != "" {
+		m.reportWarn(joinNotices(m.launchWarning, m.errBar.text))
+	}
+}
+
+// joinNotices puts two notices on one line, either of which may be empty.
+func joinNotices(first, second string) string {
+	switch {
+	case first == "":
+		return second
+	case second == "":
+		return first
+	}
+	return first + "; " + second
 }
 
 func (m *Model) openGroupForm() {

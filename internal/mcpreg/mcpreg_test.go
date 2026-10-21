@@ -1,6 +1,7 @@
 package mcpreg
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -364,7 +365,7 @@ func TestHermesPipCommandNamesTheInterpreterThatHasPip(t *testing.T) {
 		t.Skip("fake Hermes executable is a shell script")
 	}
 	python := fakeHermesEnvironment(t, 0)
-	if got, want := hermesPipCommand(), tmux.ShellInvoke(python)+" -m pip install mcp"; got != want {
+	if got, want := hermesPipCommand(context.Background()), tmux.ShellInvoke(python)+" -m pip install mcp"; got != want {
 		t.Fatalf("hermesPipCommand = %q, want %q", got, want)
 	}
 }
@@ -374,7 +375,7 @@ func TestHermesPipCommandIsEmptyWithoutPip(t *testing.T) {
 		t.Skip("fake Hermes executable is a shell script")
 	}
 	fakeHermesEnvironment(t, 1)
-	if got := hermesPipCommand(); got != "" {
+	if got := hermesPipCommand(context.Background()); got != "" {
 		t.Fatalf("hermesPipCommand = %q, want none when the interpreter has no pip", got)
 	}
 }
@@ -395,7 +396,7 @@ exit 7
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	err := ensureHermesRegistered("/opt/bin/agent-manager", t.TempDir())
+	err := ensureHermesRegistered(context.Background(), "/opt/bin/agent-manager", t.TempDir())
 	var exitErr *exec.ExitError
 	if !errors.As(err, &exitErr) {
 		t.Fatalf("error should wrap exec.ExitError, got %v", err)
@@ -506,7 +507,7 @@ exit 1
 }
 
 func TestEnsureRegisteredOnceNamesFailedCommand(t *testing.T) {
-	err := ensureRegisteredOnce("gemini", "/opt/bin/agent-manager", t.TempDir(),
+	err := ensureRegisteredOnce(context.Background(), "gemini", "/opt/bin/agent-manager", t.TempDir(),
 		command{name: "agent-manager-no-such-binary"})
 	if err == nil {
 		t.Fatal("expected an error when the add command cannot run")
@@ -516,49 +517,111 @@ func TestEnsureRegisteredOnceNamesFailedCommand(t *testing.T) {
 	}
 }
 
-// fakeGrok puts a grok on PATH that runs script for every invocation.
-func fakeGrok(t *testing.T, script string) string {
+// fakeCLI puts an executable named name on PATH that runs script for every
+// invocation, and returns a directory to use as the hooks directory.
+func fakeCLI(t *testing.T, name, script string) string {
 	t.Helper()
 	if runtime.GOOS == "windows" {
-		t.Skip("fake grok executable is a shell script")
+		t.Skip("fake " + name + " executable is a shell script")
 	}
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "bin")
 	if err := os.Mkdir(bin, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(bin, "grok"), []byte("#!/bin/sh\n"+script), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\n"+script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return dir
 }
 
-// Registration runs inside the manager's Update, so an add that never
-// returns has to become an error rather than a frozen manager.
+func shortenRegistrationTimeout(t *testing.T, d time.Duration) {
+	t.Helper()
+	saved := RegistrationTimeout
+	RegistrationTimeout = d
+	t.Cleanup(func() { RegistrationTimeout = saved })
+}
+
+func assertNoMarker(t *testing.T, dir, tool string) {
+	t.Helper()
+	if _, err := os.Stat(filepath.Join(dir, "mcp-"+tool+"-registered")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a registration that did not finish left a marker: %v", err)
+	}
+}
+
+// Registration runs on the spawn path, where an add that never returns
+// would hold every later spawn and kill behind it, so it has to become a
+// TimeoutError the caller can start the session through.
 func TestApplyGivesUpOnAnAddThatNeverReturns(t *testing.T) {
-	dir := fakeGrok(t, "exec sleep 30\n")
-	saved := registrationTimeout
-	registrationTimeout = 300 * time.Millisecond
-	t.Cleanup(func() { registrationTimeout = saved })
+	dir := fakeCLI(t, "grok", "exec sleep 30\n")
+	shortenRegistrationTimeout(t, 300*time.Millisecond)
 
 	start := time.Now()
 	_, err := Apply("grok", "/opt/bin/agent-manager", dir, "grok", map[string]string{})
 	if elapsed := time.Since(start); elapsed > 5*time.Second {
 		t.Fatalf("Apply waited %s on a hung add", elapsed)
 	}
-	if err == nil || !strings.Contains(err.Error(), "did not finish within") {
-		t.Fatalf("err = %v, want the add named as timed out", err)
+	var timeout *TimeoutError
+	if !errors.As(err, &timeout) {
+		t.Fatalf("err = %v, want a *TimeoutError", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "mcp-grok-registered")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("a timed-out add left a marker: %v", err)
+	if timeout.Tool != "grok" {
+		t.Fatalf("timeout names %q, want grok", timeout.Tool)
+	}
+	if want := "grok MCP registration did not finish within 300ms"; err.Error() != want {
+		t.Fatalf("err = %q, want %q", err, want)
+	}
+	assertNoMarker(t, dir, "grok")
+}
+
+// Hermes runs several commands; the limit covers all of them, so three
+// commands that each finish well inside it still use the budget up together.
+func TestApplySharesOneBudgetAcrossTheCommandsOfARegistration(t *testing.T) {
+	dir := fakeCLI(t, "hermes", "sleep 0.3\nexit 0\n")
+	shortenRegistrationTimeout(t, 500*time.Millisecond)
+
+	_, err := Apply("hermes", "/opt/bin/agent-manager", dir, "hermes", map[string]string{})
+	var timeout *TimeoutError
+	if !errors.As(err, &timeout) {
+		t.Fatalf("err = %v, want the whole registration timed out", err)
+	}
+	if timeout.Tool != "hermes" {
+		t.Fatalf("timeout names %q, want hermes", timeout.Tool)
+	}
+	assertNoMarker(t, dir, "hermes")
+}
+
+// A registration that fails without printing anything must not end in a
+// dangling colon.
+func TestApplyErrorHasNoDanglingColonWhenTheCommandPrintsNothing(t *testing.T) {
+	dir := fakeCLI(t, "grok", "exit 3\n")
+
+	_, err := Apply("grok", "/opt/bin/agent-manager", dir, "grok", map[string]string{})
+	if err == nil {
+		t.Fatal("expected the failed add to be an error")
+	}
+	if timedOut(err) {
+		t.Fatalf("a failed add is not a timeout: %v", err)
+	}
+	if got := err.Error(); strings.HasSuffix(strings.TrimSpace(got), ":") {
+		t.Fatalf("err = %q, ends in a colon", got)
+	}
+}
+
+func TestApplyErrorKeepsTheOutputOfAFailedCommand(t *testing.T) {
+	dir := fakeCLI(t, "grok", "echo 'no such scope' >&2\nexit 3\n")
+
+	_, err := Apply("grok", "/opt/bin/agent-manager", dir, "grok", map[string]string{})
+	if err == nil || !strings.HasSuffix(err.Error(), ": no such scope") {
+		t.Fatalf("err = %v, want the command's output at the end", err)
 	}
 }
 
 // An add that exits 0 but leaves a child holding its stdout has
 // registered; waiting for the pipe would hang on the child instead.
 func TestApplyDoesNotWaitOnAChildHoldingTheAddsOutput(t *testing.T) {
-	dir := fakeGrok(t, "sleep 30 &\nexit 0\n")
+	dir := fakeCLI(t, "grok", "sleep 30 &\nexit 0\n")
 
 	start := time.Now()
 	if _, err := Apply("grok", "/opt/bin/agent-manager", dir, "grok", map[string]string{}); err != nil {
@@ -570,6 +633,19 @@ func TestApplyDoesNotWaitOnAChildHoldingTheAddsOutput(t *testing.T) {
 	marker, err := os.ReadFile(filepath.Join(dir, "mcp-grok-registered"))
 	if err != nil || string(marker) != "/opt/bin/agent-manager" {
 		t.Fatalf("marker = %q err=%v", marker, err)
+	}
+}
+
+func TestFormatLimit(t *testing.T) {
+	for limit, want := range map[time.Duration]string{
+		2 * time.Minute:        "2m",
+		90 * time.Second:       "90s",
+		20 * time.Second:       "20s",
+		300 * time.Millisecond: "300ms",
+	} {
+		if got := formatLimit(limit); got != want {
+			t.Errorf("formatLimit(%s) = %q, want %q", limit, got, want)
+		}
 	}
 }
 

@@ -6,6 +6,7 @@
 package launch
 
 import (
+	"errors"
 	"os"
 	"strconv"
 	"strings"
@@ -178,19 +179,21 @@ func ReviveCommand(tool config.Tool, agentSessionID string) string {
 // poller can read what its CLI keeps for that pid. cwd is where the agent
 // starts. Tools backed by hooks additionally get the generated settings file
 // and their status-file path, plus a clean slate from any earlier files under
-// the same id.
-func Environment(manager *hooks.Manager, toolName string, tool config.Tool, baseCommand, id, cwd string, launchedAt time.Time) (string, map[string]string, error) {
+// the same id. The warning is empty unless the tool's MCP registration timed
+// out; the session then starts without the agent-manager tools.
+func Environment(manager *hooks.Manager, toolName string, tool config.Tool, baseCommand, id, cwd string, launchedAt time.Time) (string, map[string]string, string, error) {
+	var warning string
 	if err := config.CheckSupported(toolName); err != nil {
-		return "", nil, err
+		return "", nil, "", err
 	}
 	if err := config.CheckInstalled(baseCommand); err != nil {
-		return "", nil, err
+		return "", nil, "", err
 	}
 	if err := manager.RemoveName(id); err != nil {
-		return "", nil, err
+		return "", nil, "", err
 	}
 	if err := manager.SweepNameResults(time.Now()); err != nil {
-		return "", nil, err
+		return "", nil, "", err
 	}
 	stamp := store.LaunchStamp(launchedAt)
 	launch := strconv.FormatInt(stamp, 10)
@@ -198,31 +201,39 @@ func Environment(manager *hooks.Manager, toolName string, tool config.Tool, base
 	if toolName == "grok" {
 		// Grok's terminal theme leaves row backgrounds unpainted, and only its config file selects it.
 		if err := ensureGrokTerminalTheme(); err != nil {
-			return "", nil, err
+			return "", nil, "", err
 		}
 		// A shared leader runs every session's shell under the environment of the session that started it.
 		baseCommand += " --no-leader"
 	}
 	if baseCommand == "" {
-		return "", env, nil
+		return "", env, "", nil
 	}
 	if err := os.MkdirAll(manager.Dir(), 0o755); err != nil {
-		return "", nil, err
+		return "", nil, "", err
 	}
 	command, err := mcpreg.Apply(mcpreg.Style(toolName, tool.MCP), Executable(), manager.Dir(), agentCommand(baseCommand), env)
+	var timedOut *mcpreg.TimeoutError
+	if errors.As(err, &timedOut) {
+		// A CLI that stops answering must not keep the session from
+		// starting. It starts without the agent-manager tools, and no marker
+		// was written, so the next launch registers again.
+		command, err = agentCommand(baseCommand), nil
+		warning = timedOut.Error() + ": started without the agent-manager tools, will try again next time"
+	}
 	if err != nil {
-		return "", nil, err
+		return "", nil, "", err
 	}
 	if tracksConversations {
 		target := sessionreport.Target{Exe: Executable(), HooksDir: manager.Dir(), TelemetryFile: manager.TelemetryFile(id, stamp), Cwd: cwd}
 		command, err = sessionreport.Apply(tool.SessionReport, target, command, env)
 		if err != nil {
-			return "", nil, err
+			return "", nil, "", err
 		}
 	}
 	agentFile := manager.AgentFile(id)
 	if tool.StatusSource != hooks.StatusSourceClaude {
-		return asAgentProcess(agentFile, stamp, command), env, nil
+		return asAgentProcess(agentFile, stamp, command), env, warning, nil
 	}
 	trackCommand := ""
 	if tracksConversations && tool.SessionReport == sessionreport.StyleClaude {
@@ -230,13 +241,13 @@ func Environment(manager *hooks.Manager, toolName string, tool config.Tool, base
 	}
 	settingsPath, err := manager.WriteSettings(id, launch, trackCommand)
 	if err != nil {
-		return "", nil, err
+		return "", nil, "", err
 	}
 	if err := manager.Remove(id); err != nil {
-		return "", nil, err
+		return "", nil, "", err
 	}
 	env[hooks.EnvStatusFile] = manager.StatusFile(id)
-	return asAgentProcess(agentFile, stamp, command+" --settings "+tmux.ShellQuote(settingsPath)), env, nil
+	return asAgentProcess(agentFile, stamp, command+" --settings "+tmux.ShellQuote(settingsPath)), env, warning, nil
 }
 
 // Executable names the binary generated MCP configs point at: the

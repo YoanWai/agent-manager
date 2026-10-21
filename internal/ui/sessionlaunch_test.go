@@ -1,14 +1,19 @@
 package ui
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/mcpreg"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/testenv"
 )
 
 func TestAStaleRefreshKeepsASessionLaunchedAfterItWasListed(t *testing.T) {
@@ -293,5 +298,49 @@ func TestAStalePollCannotBringAnArchivedGroupBackLive(t *testing.T) {
 	}
 	if got := m.visibleSessions(); len(got) != 0 {
 		t.Fatalf("archived subtree should stay out of the active view, got %v", got)
+	}
+}
+
+// A CLI that stops answering while the manager registers the MCP server must
+// not keep a session from starting: it starts without the agent-manager
+// tools and the bar says so.
+func TestALaunchWhoseMCPRegistrationTimesOutStartsWithAWarning(t *testing.T) {
+	testenv.SkipPOSIXShell(t)
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "grok"), []byte("#!/bin/sh\nexec sleep 30\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	saved := mcpreg.RegistrationTimeout
+	mcpreg.RegistrationTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { mcpreg.RegistrationTimeout = saved })
+
+	m := buildModel(t)
+	m.cfg.Tools["slow-mcp"] = config.Tool{Command: "cat", MCP: "grok", DefaultStatus: status.Idle}
+
+	if err := m.spawnSession("slow-mcp", "slow", t.TempDir(), "", "", false, false, config.Choice{}); err != nil {
+		t.Fatalf("a registration timeout failed the spawn: %v", err)
+	}
+	if len(m.sessionRows()) != 1 {
+		t.Fatalf("rows after the spawn = %d, want the session that started anyway", len(m.sessionRows()))
+	}
+	if !m.errBar.warned() || !strings.Contains(m.errBar.text, "grok MCP registration did not finish within 300ms") {
+		t.Fatalf("bar = %q (warned %v), want the timeout as a warning", m.errBar.text, m.errBar.warned())
+	}
+	if _, err := os.Stat(filepath.Join(m.hooks.Dir(), "mcp-grok-registered")); !os.IsNotExist(err) {
+		t.Fatalf("a timed-out registration left a marker: %v", err)
+	}
+}
+
+func TestJoinNotices(t *testing.T) {
+	for _, tc := range []struct{ first, second, want string }{
+		{"", "", ""},
+		{"a", "", "a"},
+		{"", "b", "b"},
+		{"a", "b", "a; b"},
+	} {
+		if got := joinNotices(tc.first, tc.second); got != tc.want {
+			t.Errorf("joinNotices(%q, %q) = %q, want %q", tc.first, tc.second, got, tc.want)
+		}
 	}
 }
