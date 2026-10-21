@@ -76,7 +76,7 @@ func (s *Store) WithDeliveryGuard(ctx context.Context, fn func(*DeliveryGuard) e
 }
 
 func (g *DeliveryGuard) requireActive() error {
-	if g == nil || !g.active || g.store == nil {
+	if !g.active {
 		return ErrDeliveryGuardRequired
 	}
 	return nil
@@ -288,20 +288,28 @@ UPDATE sessions
 	return err
 }
 
-// OlderManagerStamped reports whether a manager older than the guard has
-// stamped the heartbeat for this socket since a guarded claim last
-// mirrored it. Claims read that once per PollerHeartbeatPeriod, and an
+// OlderManagerStamped reports whether a manager older than the guard is
+// delivering for this socket: it stamped the heartbeat since a guarded
+// claim last mirrored it, or a claim recorded its stamp and that stamp is
+// still fresh. Claims read that once per PollerHeartbeatPeriod, and an
 // older manager that starts or wakes between two of them delivers on its
 // first step, so a delivery reads it again under the guard before it
-// claims anything.
-func (g *DeliveryGuard) OlderManagerStamped(socket string) (bool, error) {
+// claims anything. The recorded stamp covers a second guarded manager,
+// whose own claim the first one's has already written over.
+func (g *DeliveryGuard) OlderManagerStamped(socket string, now time.Time) (bool, error) {
 	if err := g.requireActive(); err != nil {
 		return false, err
 	}
-	values, err := readSettings(g.store.db, PollerSocketKey, PollerHeartbeatKey, guardHeartbeatKey)
+	values, err := readSettings(g.store.db, PollerSocketKey, PollerHeartbeatKey, guardHeartbeatKey, olderHeartbeatKey, olderSocketKey)
 	if err != nil {
 		return false, err
 	}
 	stamp := values[PollerHeartbeatKey]
-	return stamp != "" && stamp != values[guardHeartbeatKey] && values[PollerSocketKey] == socket, nil
+	if stamp != "" && stamp != values[guardHeartbeatKey] && values[PollerSocketKey] == socket {
+		return true, nil
+	}
+	if values[olderSocketKey] != socket {
+		return false, nil
+	}
+	return stampAwake(values[olderHeartbeatKey], now)
 }

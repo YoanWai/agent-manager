@@ -104,12 +104,12 @@ func TestDeliveryGuardSeesAnOlderStampBetweenClaims(t *testing.T) {
 	if _, err := st.ClaimPoller(socket, now); err != nil {
 		t.Fatal(err)
 	}
-	stamped := func() bool {
+	stamped := func(at time.Time) bool {
 		t.Helper()
 		var seen bool
 		acquired, err := st.WithDeliveryGuard(context.Background(), func(g *DeliveryGuard) error {
 			var err error
-			seen, err = g.OlderManagerStamped(socket)
+			seen, err = g.OlderManagerStamped(socket, at)
 			return err
 		})
 		if err != nil || !acquired {
@@ -117,21 +117,28 @@ func TestDeliveryGuardSeesAnOlderStampBetweenClaims(t *testing.T) {
 		}
 		return seen
 	}
-	if stamped() {
+	if stamped(now) {
 		t.Fatal("own stamp read as an older manager's")
 	}
-	olderClaimPoller(t, st, socket, now.Add(3*time.Second))
-	if !stamped() {
+	olderStamp := now.Add(3 * time.Second)
+	olderClaimPoller(t, st, socket, olderStamp)
+	if !stamped(olderStamp) {
 		t.Fatal("older stamp between claims not seen under the guard")
 	}
+	// The claim writes over the older stamp. A second guarded manager,
+	// whose own claim has not run yet, still sees the one it recorded.
 	if _, err := st.ClaimPoller(socket, now.Add(10*time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	if stamped() {
-		t.Fatal("mirrored stamp read as an older manager's")
+	if !stamped(now.Add(10 * time.Second)) {
+		t.Fatal("recorded older stamp not seen once a claim wrote over it")
 	}
-	olderClaimPoller(t, st, other, now.Add(12*time.Second))
-	if stamped() {
+	aged := olderStamp.Add(PollerHeartbeatStale + time.Second)
+	if stamped(aged) {
+		t.Fatal("aged older stamp read as an older manager still delivering")
+	}
+	olderClaimPoller(t, st, other, aged)
+	if stamped(aged) {
 		t.Fatal("older manager on another server read as delivering here")
 	}
 }

@@ -161,4 +161,4 @@ stopped before upgrading. The older manager holds no lock while it pastes, so a 
 without a token found afterwards gets `inboxClaimGrace` before it is retired,
 and is never retyped; a claimed pending input is retired on sight, as that
 manager would. Read-only commands on the newer binary only add columns and
-drop the fence triggers an interim `main` build installed.
+drop the fence triggers a #735 branch build installed; no `main` build or release ever had them.

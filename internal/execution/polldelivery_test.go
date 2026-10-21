@@ -97,6 +97,29 @@ func TestPendingDeliverySkipsWhileAnotherOwnerHoldsTheGuard(t *testing.T) {
 	}
 }
 
+// Another manager typed the head this step listed before this one took the
+// guard. The caller records and drops the listed head, so typing the next
+// input now would leave the snapshot showing it still queued; it waits for
+// a step that lists it.
+func TestPendingDeliveryWaitsWhenAnotherManagerTypedTheListedHead(t *testing.T) {
+	m := buildModel(t)
+	if err := m.spawnSession("send-tool", "custom", t.TempDir(), "", "second", false, false); err != nil {
+		t.Fatal(err)
+	}
+	listed, err := m.store.Get(m.sessionRows()[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed.PendingInputs = append([]string{"first"}, listed.PendingInputs...)
+	if sent, err := m.poller.maybeSendPendingInput(listed, "❯ ", true); err != nil || sent {
+		t.Fatalf("delivery from a stale list = %v, %v", sent, err)
+	}
+	state, err := m.store.Get(listed.ID)
+	if err != nil || state.PendingInputClaimed || len(state.PendingInputs) != 1 {
+		t.Fatalf("the next input was claimed from a stale list: %+v err=%v", state, err)
+	}
+}
+
 // A dialog leaves the tool's input line drawn underneath it, so the
 // activity region reports ready while typing would answer the dialog.
 // The rule pass is what tells the two apart.

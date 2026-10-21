@@ -54,6 +54,12 @@ func (p *Runner) maybeSendPendingInput(sess store.Session, pane string, agentAli
 			return err
 		}
 		input := current.PendingInputs[0]
+		// Another manager typed the listed head since this step read it.
+		// The caller records and drops the listed head, so the next input
+		// waits for a step that lists it.
+		if input != sess.PendingInputs[0] {
+			return nil
+		}
 		// Holding the guard proves no guarded owner is still pasting this
 		// claim, and an older manager gives its own peers' claims no grace
 		// either: a claimed input it finds is skipped on the spot.
@@ -115,7 +121,7 @@ func (p *Runner) maybeSendPendingInput(sess store.Session, pane string, agentAli
 // first step; a stamp the mirror does not match is its, and the next claim
 // records it for the whole window.
 func (p *Runner) deferToOlderManager(guard *store.DeliveryGuard) (bool, error) {
-	stamped, err := guard.OlderManagerStamped(p.tmux.SocketPath())
+	stamped, err := guard.OlderManagerStamped(p.tmux.SocketPath(), time.Now())
 	if err != nil || !stamped {
 		return false, err
 	}
