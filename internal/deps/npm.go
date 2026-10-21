@@ -237,9 +237,7 @@ visible_bin opencode "$saved_path" || exit 1
 `
 }
 
-// windowsNpm installs with npm, after Node when the machine has none.
-// The global prefix on Windows is the user profile, which a normal
-// account can write.
+// The Windows global prefix is the user profile, which a normal account can write.
 func windowsNpm(args string) string {
 	return `if (-not (Get-Command npm -ErrorAction SilentlyContinue)) { winget install --id OpenJS.NodeJS.LTS -e --accept-package-agreements --accept-source-agreements; $env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User') }; npm install -g ` + args
 }

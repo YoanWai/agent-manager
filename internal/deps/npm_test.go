@@ -1,7 +1,6 @@
 package deps
 
 import (
-	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -156,16 +155,5 @@ func runShell(t *testing.T, script string, env []string, args ...string) (string
 	if err := os.WriteFile(file, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command("/bin/dash", append([]string{file}, args...)...)
-	cmd.Env = env
-	out, err := cmd.CombinedOutput()
-	if err == nil {
-		return string(out), 0
-	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
-		return string(out), exitErr.ExitCode()
-	}
-	t.Fatal(err)
-	return "", 1
+	return runCommand(t, exec.Command("/bin/dash", append([]string{file}, args...)...), env)
 }

@@ -202,20 +202,17 @@ func TestInstallCommandOnWindowsUsesWingetIDs(t *testing.T) {
 }
 
 func TestWindowsRecipes(t *testing.T) {
-	if got, want := windowsOfficial["pi"], windowsNpm("--ignore-scripts @earendil-works/pi-coding-agent"); got != want {
-		t.Fatalf("pi = %q, want %q", got, want)
+	exact := map[string]string{
+		"pi":    windowsNpm("--ignore-scripts @earendil-works/pi-coding-agent"),
+		"codex": "& ([scriptblock]::Create((irm https://chatgpt.com/codex/install.ps1)))",
+		"agy":   "irm https://antigravity.google/cli/install.ps1 | iex",
+		"omp":   "irm https://omp.sh/install.ps1 | iex",
+		"psmux": "winget install --id marlocarlo.psmux -e",
 	}
-	if got, want := windowsOfficial["codex"], "& ([scriptblock]::Create((irm https://chatgpt.com/codex/install.ps1)))"; got != want {
-		t.Fatalf("codex = %q, want %q", got, want)
-	}
-	if got, want := windowsOfficial["agy"], "irm https://antigravity.google/cli/install.ps1 | iex"; got != want {
-		t.Fatalf("agy = %q, want %q", got, want)
-	}
-	if got, want := windowsOfficial["omp"], "irm https://omp.sh/install.ps1 | iex"; got != want {
-		t.Fatalf("omp = %q, want %q", got, want)
-	}
-	if got, want := windowsOfficial["psmux"], "winget install --id marlocarlo.psmux -e"; got != want {
-		t.Fatalf("psmux = %q, want %q", got, want)
+	for name, want := range exact {
+		if got := windowsOfficial[name]; got != want {
+			t.Fatalf("%s = %q, want %q", name, got, want)
+		}
 	}
 	if !strings.Contains(windowsOfficial["opencode"], "@opencode/cli") || strings.Contains(windowsOfficial["opencode"], "opencode-ai") {
 		t.Fatalf("opencode = %q, want @opencode/cli", windowsOfficial["opencode"])

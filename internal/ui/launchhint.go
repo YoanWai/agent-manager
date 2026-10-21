@@ -256,17 +256,6 @@ func (m *Model) settleInstall() {
 	m.enqueueEffect(installSettleRequest{install: *install}, 0, false)
 }
 
-func (m *Model) launchHintBodyLimit(hint [][2]string) int {
-	if m.layout.height == 0 {
-		return 1 << 20
-	}
-	limit := m.layout.height - m.cardChromeRows(hint)
-	if limit < 1 {
-		return 1
-	}
-	return limit
-}
-
 func (d *launchHintDialog) view(h launchHintHost, glyphs presentation.GlyphSet) string {
 	width := h.cardWidth()
 	title, body, hints := d.card(h, glyphs, width)
@@ -276,9 +265,15 @@ func (d *launchHintDialog) view(h launchHintHost, glyphs presentation.GlyphSet) 
 func (m *Model) launchHintFrame() string {
 	width := m.cardWidth()
 	title, body, hints := m.launchHint.card(m, m.glyphs(), width)
-	lines := strings.Split(body, "\n")
-	if limit := m.launchHintBodyLimit(hints); len(lines) > limit {
-		body = strings.Join(lines[:limit], "\n")
+	if m.layout.height > 0 {
+		lines := strings.Split(body, "\n")
+		limit := m.layout.height - m.cardChromeRows(hints)
+		if limit < 1 {
+			limit = 1
+		}
+		if len(lines) > limit {
+			body = strings.Join(lines[:limit], "\n")
+		}
 	}
 	return m.cardSized(width, title, body, hints)
 }
