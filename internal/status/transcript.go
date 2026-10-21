@@ -258,7 +258,12 @@ func (e *Engine) LastUserEcho(tool, pane string) (string, bool) {
 }
 
 // lastEchoIndex is the row carrying the newest prompt the tool echoed, or
-// -1 when the region holds none.
+// -1 when the region holds none: the lowest echo row, except for a tool
+// whose own rows share the prompt's marker (tool_row), where a prompt
+// opens its turn and the newest one is the first echo under the last
+// summary row that has one below it. A tool_row opens a block of the
+// tool's own rows (a command and then its output), which runs to the
+// next row outside the gutter.
 func (tr toolRules) lastEchoIndex(lines []string) int {
 	if tr.userEcho == nil {
 		return -1
@@ -277,28 +282,58 @@ func (tr toolRules) lastEchoIndex(lines []string) int {
 			break
 		}
 	}
-	for i := end - 1; i >= 0; i-- {
-		line := strings.TrimRight(lines[i], " \t")
-		loc := tr.userEcho.FindStringIndex(line)
-		if loc == nil {
-			continue
+	if tr.turnEnd == nil || tr.toolRow == nil {
+		for i := end - 1; i >= 0; i-- {
+			if tr.echoRow(strings.TrimRight(lines[i], " \t")) {
+				return i
+			}
 		}
-		// A dialog draws its option rows behind the same marker the
-		// composer uses (codex's "› 1. Yes, continue"), so a line any
-		// status rule recognises is the tool's frame, not an echo.
-		if tr.matchesAnyRule(line) {
-			continue
-		}
-		echoed := strings.TrimSpace(line[loc[1]:])
-		if echoed == "" {
-			continue
-		}
-		if tr.placeholder != nil && tr.placeholder.MatchString(echoed) {
-			continue
-		}
-		return i
+		return -1
 	}
-	return -1
+	found, current := -1, -1
+	toolBlock := false
+	for i := 0; i < end; i++ {
+		line := strings.TrimRight(lines[i], " \t")
+		if tr.turnEnd.MatchString(line) {
+			if current >= 0 {
+				found = current
+			}
+			current, toolBlock = -1, false
+			continue
+		}
+		switch {
+		case tr.toolRow.MatchString(line):
+			toolBlock = true
+		case strings.TrimSpace(line) != "" && !tr.inputPrefix.MatchString(line):
+			toolBlock = false
+		}
+		if current < 0 && !toolBlock && tr.echoRow(line) {
+			current = i
+		}
+	}
+	if current >= 0 {
+		return current
+	}
+	return found
+}
+
+// echoRow reports a row that carries an echoed prompt. A dialog draws its
+// option rows behind the same marker the composer uses (codex's "› 1.
+// Yes, continue"), so a line any status rule recognises is the tool's
+// frame, not an echo, and so is a tool_row.
+func (tr toolRules) echoRow(line string) bool {
+	loc := tr.userEcho.FindStringIndex(line)
+	if loc == nil || tr.matchesAnyRule(line) {
+		return false
+	}
+	if tr.toolRow != nil && tr.toolRow.MatchString(line) {
+		return false
+	}
+	echoed := strings.TrimSpace(line[loc[1]:])
+	if echoed == "" {
+		return false
+	}
+	return tr.placeholder == nil || !tr.placeholder.MatchString(echoed)
 }
 
 func (tr toolRules) matchesAnyRule(line string) bool {

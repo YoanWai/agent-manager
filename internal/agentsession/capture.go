@@ -587,7 +587,7 @@ type opencodeListEntry struct {
 
 // A package variable so tests substitute canned output.
 var opencodeSessionListJSON = func(cwd string) ([]opencodeListEntry, bool) {
-	out, err := runOpencode(cwd, "session", "list", "--format", "json")
+	out, err := runOpencode(cwd, "session", "list", "--format", "json", "--standalone")
 	if err != nil {
 		return nil, false
 	}

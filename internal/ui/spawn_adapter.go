@@ -40,7 +40,7 @@ func (h spawnHost) ChoiceCaps(toolName string) spawn.Caps {
 	return spawn.Caps{
 		Catalog:  tool.Catalog != "",
 		Profiles: tool.ProfileArgs != "",
-		Models:   tool.ModelArgs != "",
+		Models:   tool.ModelArgs != "" || tool.ModelEnv != "",
 		Efforts:  tool.EffortArgs != "",
 	}
 }

@@ -60,7 +60,7 @@ func TestOpenCodeDialogRulesDoNotReadOldTranscript(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			pane := tc.old +
-				"     ▣  Build · GLM-5.2 · 4.2s\n" +
+				"     Build · GLM-5.3 · 4.2s · 2.0 tok/s\n" +
 				"  ┃\n" +
 				"  ╹▀▀▀▀\n" +
 				"  /home/dev  ctrl+p commands"
@@ -91,7 +91,6 @@ func TestOpenCodeDialogRulesDoNotReadWorkingToolOutput(t *testing.T) {
 			pane := "  ┃  ⠼ grep dialog text\n" +
 				tc.output +
 				"  ┃\n\n" +
-				"     ▣  Build · Big Pickle\n\n" +
 				"  ┃\n" +
 				"  ┃  Build auto · Big Pickle OpenCode Zen\n" +
 				"  ╹▀▀▀▀\n" +
@@ -99,8 +98,8 @@ func TestOpenCodeDialogRulesDoNotReadWorkingToolOutput(t *testing.T) {
 			if got, matched := engine.Match("opencode", pane); got != Working || !matched {
 				t.Fatalf("Match() = (%q, %t) want (%q, true)", got, matched, Working)
 			}
-			if got, matched := engine.RuleMatch("opencode", pane); got != Working || !matched {
-				t.Fatalf("RuleMatch() = (%q, %t) want (%q, true)", got, matched, Working)
+			if got, matched := engine.RuleMatch("opencode", pane); matched {
+				t.Fatalf("RuleMatch() = (%q, %t) want no dialog rule", got, matched)
 			}
 			if hold := engine.TypingHold("opencode", pane); hold != Working {
 				t.Fatalf("TypingHold() = %q want %q", hold, Working)
@@ -115,20 +114,20 @@ func TestOpenCodeDialogsClassifyAsWaiting(t *testing.T) {
 		name string
 		pane string
 	}{
-		{"permission request", "     ▣  Build · Big Pickle\n" +
+		{"permission request", "  ┃  ⠦ ls -la .\n" +
 			"  ┃  △ Permission required\n" +
 			"  ┃    # Shell command\n" +
 			"  ┃  $ ls -la .\n" +
 			"  ┃   Allow once   Allow always   Reject          ctrl+f fullscreen  ⇆ select  enter confirm"},
-		{"always allow confirmation", "     ▣  Build · Big Pickle\n" +
+		{"always allow confirmation", "  ┃  ⠦ ls -la .\n" +
 			"  ┃  △ Always allow\n" +
 			"  ┃  This will allow bash until OpenCode is restarted.\n" +
 			"  ┃   Confirm   Cancel                         ⇆ select  enter confirm"},
-		{"permission rejection explanation", "     ▣  Build · Big Pickle\n" +
+		{"permission rejection explanation", "  ┃  ⠦ ls -la .\n" +
 			"  ┃  △ Reject permission\n" +
 			"  ┃  Tell OpenCode what to do differently\n" +
 			"  ┃                                             enter confirm  esc cancel"},
-		{"permission title clipped in a narrow pane", "     ▣  Build · Big Pickle\n" +
+		{"permission title clipped in a narrow pane", "  ┃  ⠦ ls -la .\n" +
 			"  ┃\n" +
 			"  ┃  △Permissio\n" +
 			"  ┃   n require\n" +
@@ -302,9 +301,9 @@ func TestTypingHold(t *testing.T) {
 	}
 }
 
-// A turn that died on a provider error leaves opencode's working marker on
-// screen while its footer rests; the guard must agree with Match that the
-// turn stopped, while a live retry under an animated footer still holds.
+// A turn that died on a provider error ends with its summary under the
+// error and a resting footer; the guard must agree with Match that the
+// turn stopped, while a turn under an animated footer still holds.
 func TestTypingHoldOpencodeDiedTurn(t *testing.T) {
 	engine := defaultEngine(t)
 	cases := []struct {
@@ -314,10 +313,10 @@ func TestTypingHoldOpencodeDiedTurn(t *testing.T) {
 		hold  string
 	}{
 		{"provider error at a resting prompt",
-			"  ┃  Reply with just the word hi.\n  ┃\n  ┃\n  ┃  API key not valid. Please pass a valid API key.\n  ┃\n     ▣  Build · Gemini 3.6 Flash\n  ┃\n  ┃\n  ┃\n  ┃  Build · Gemini 3.6 Flash Google\n  ╹▀▀▀▀\n   /home/dev                    tab agents  ctrl+p commands",
+			"  ┃  Say hi\n  ┃\n     Error: invalid x-api-key\n     Build · Claude Sonnet 4.5 (latest) · 467ms\n  ┃\n  ┃\n  ┃  Build · Claude Sonnet 4.5 (latest) Anthropic\n  ╹▀▀▀▀\n  /home/dev          shift+tab agents  ctrl+p commands",
 			Errored, ""},
-		{"provider retry still running",
-			"  ┃  Run the shell command ls -la and tell me what files exist.\n  ┃\n     ▣  Build · Gemini 3.6 Flash\n  ┃\n  ┃\n  ┃\n  ┃  Build · Gemini 3.6 Flash Google\n  ╹▀▀▀▀\n   ⬝⬝⬝⬝⬝■■■ This model is currently experiencing high demand. Spikes in demand are usually t… [retrying in 5s attempt #3",
+		{"model still thinking",
+			"  ┃  Write a 400 word essay about tmux.\n  ┃\n     ⠸ Thinking\n  ┃\n  ┃\n  ┃  Build · Big Pickle OpenCode\n  ╹▀▀▀▀\n   ■■■■■■⬝⬝ esc interrupt      shift+tab agents  ctrl+p commands",
 			Working, Working},
 	}
 	for _, testCase := range cases {
