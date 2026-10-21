@@ -136,6 +136,7 @@ func colorDim() lipgloss.Color      { return lipgloss.Color(current().Dim) }
 func colorSubtle() lipgloss.Color   { return lipgloss.Color(current().Subtle) }
 func colorAccent() lipgloss.Color   { return lipgloss.Color(current().Accent) }
 func colorAccent2() lipgloss.Color  { return lipgloss.Color(current().Accent2) }
+func colorRemote() lipgloss.Color   { return lipgloss.Color(current().Remote) }
 func colorSelBg() lipgloss.Color    { return colorSurface() }
 func colorWorking() lipgloss.Color  { return lipgloss.Color(current().Working) }
 func colorWaiting() lipgloss.Color  { return lipgloss.Color(current().Waiting) }

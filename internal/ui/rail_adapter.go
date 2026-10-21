@@ -17,6 +17,7 @@ import (
 
 const (
 	collapsedSetting       = "collapsed_groups"
+	hostCollapsedSetting   = "collapsed_connection_groups"
 	namePlaceholder        = "…"
 	placeholderPromptWidth = 12
 	renameGrace            = time.Minute
@@ -38,6 +39,21 @@ func rowKey(row treeRow) string {
 	return "s:" + row.sess.ID
 }
 
+// loadRail restores the folds a previous run saved, local and on
+// connections.
+func loadRail(st *store.Store) uirail.Model {
+	rail := uirail.New(loadCollapsed(st))
+	raw, err := st.Setting(hostCollapsedSetting)
+	if err != nil || raw == "" {
+		return rail
+	}
+	var folds []uirail.HostFold
+	if json.Unmarshal([]byte(raw), &folds) == nil {
+		rail.RestoreHostFolds(folds)
+	}
+	return rail
+}
+
 func loadCollapsed(st *store.Store) []string {
 	raw, err := st.Setting(collapsedSetting)
 	if err != nil || raw == "" {
@@ -55,6 +71,7 @@ func (m *Model) railSnapshot() uirail.Snapshot {
 		Sessions:       make([]uirail.Session, 0, len(m.workspace.sessions)),
 		Groups:         append([]string(nil), m.workspace.groups...),
 		ArchivedGroups: make(map[string]bool, len(m.workspace.archivedGroups)),
+		Hosts:          m.ssh.railHosts(),
 	}
 	for path, archived := range m.workspace.archivedGroups {
 		snapshot.ArchivedGroups[path] = archived
@@ -109,7 +126,7 @@ func (m *Model) selected() (store.Session, bool) {
 
 func (m *Model) selectedRow() (treeRow, bool) {
 	selection, ok := m.rail.Selected()
-	if !ok {
+	if !ok || selection.Remote() {
 		return treeRow{}, false
 	}
 	if selection.Kind == uirail.GroupRow {
@@ -313,6 +330,9 @@ func (m *Model) rowLegend() legendSection {
 			}
 		}
 	}
+	if !ctx.RowOK {
+		return m.remoteRowLegend()
+	}
 	return legendOf(m.rail.RowLegend(ctx))
 }
 
@@ -341,6 +361,9 @@ func (m *Model) applyRailDecision(decision uirail.Decision) (tea.Model, tea.Cmd)
 		m.reportErr(decision.Error)
 	}
 	if decision.SelectionEffect != uirail.SelectionEffectNone {
+		// Only a move the user made comes through here; a refresh that
+		// slides the cursor does not re-aim the quick bar.
+		m.quick.aim, _ = m.rail.Selected()
 		m.workspace.preview = ""
 		m.workspace.proc = sysstat.ProcStat{}
 		m.workspace.procFor = ""
@@ -354,6 +377,7 @@ func (m *Model) applyRailDecision(decision uirail.Decision) (tea.Model, tea.Cmd)
 		if selectedSession {
 			commands = append(commands, m.schedulePreview())
 		}
+		commands = append(commands, m.syncRemotePreview())
 	}
 	dependent := false
 	for _, mutation := range decision.Mutations {
@@ -424,6 +448,9 @@ func (m *Model) swapGroupInventory(path, targetPath string) {
 }
 
 func (m *Model) runRailIntent(intent uirail.Intent) (tea.Model, tea.Cmd) {
+	if cmd, taken := m.connectionIntent(intent); taken {
+		return m, cmd
+	}
 	switch intent.Kind {
 	case uirail.Quit:
 		return m.requestQuit()

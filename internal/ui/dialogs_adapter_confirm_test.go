@@ -139,3 +139,43 @@ func TestConfirmRendersAsADialog(t *testing.T) {
 		t.Fatalf("the question moved to the dialog, status should not repeat it: %q", status)
 	}
 }
+
+// Removing an SSH connection asks like any destructive act, and the yes
+// queues the removal instead of a lifecycle request.
+func TestConfirmRemovesAConnection(t *testing.T) {
+	m := buildModel(t)
+	m.confirmRemoveConnection("box")
+	if m.mode != modeConfirmDelete {
+		t.Fatalf("mode = %v, want the confirm card", m.mode)
+	}
+	if view := ansi.Strip(m.viewConfirm()); !strings.Contains(view, "Remove connection") ||
+		!strings.Contains(view, "remove connection box?") || !strings.Contains(view, "remove") {
+		t.Fatalf("view = %q", view)
+	}
+	if _, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")}); cmd == nil {
+		t.Fatal("confirm returned no effect command")
+	}
+	if m.mode != modeList || m.confirm.connection != "" {
+		t.Fatalf("mode %v confirm %+v, want the dialog closed", m.mode, m.confirm.confirmTarget)
+	}
+	var removed []string
+	for _, lane := range m.lanes() {
+		jobs := lane.pending
+		if lane.active != nil {
+			jobs = append([]*effectJob{lane.active}, jobs...)
+		}
+		for _, job := range jobs {
+			switch request := job.request.(type) {
+			case connectionRequest:
+				if request.op == connectionRemove {
+					removed = append(removed, request.name)
+				}
+			case lifecycleRequest:
+				t.Fatalf("queued a lifecycle request %+v", request)
+			}
+		}
+	}
+	if len(removed) != 1 || removed[0] != "box" {
+		t.Fatalf("removed %v, want box", removed)
+	}
+}

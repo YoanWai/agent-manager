@@ -3,6 +3,8 @@
 package tmux
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -437,4 +439,30 @@ func waitForForegroundCommand(t *testing.T, id, want string) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	t.Fatalf("pane foreground command = %q, want %q", got, want)
+}
+
+// The pane send lock is a file lock, so a second open of it waits the way
+// another process's send does.
+func TestPaneSendLockHoldsAcrossOpens(t *testing.T) {
+	t.Setenv("TMUX_TMPDIR", t.TempDir())
+	unlock, err := lockPaneSend(context.Background(), "amtest", "am_cafe:^.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if _, err := lockPaneSend(ctx, "amtest", "am_cafe:^.0"); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("second send took a held pane lock: %v", err)
+	}
+	other, err := lockPaneSend(context.Background(), "amtest", "am_beef:^.0")
+	if err != nil {
+		t.Fatalf("another pane waited on this one: %v", err)
+	}
+	other()
+	unlock()
+	again, err := lockPaneSend(context.Background(), "amtest", "am_cafe:^.0")
+	if err != nil {
+		t.Fatalf("released lock not taken again: %v", err)
+	}
+	again()
 }

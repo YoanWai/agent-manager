@@ -5,7 +5,9 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/config"
+	uiconnections "github.com/YoanWai/agent-manager/internal/ui/connections"
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
+	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -27,6 +29,10 @@ type quickBar struct {
 	composer
 	active         bool
 	closeAfterSend bool
+	// aim is the row the user last pointed the bar at. A refresh that
+	// drops a connection's row moves the cursor on its own, and enter must
+	// not follow it to another agent or host.
+	aim uirail.Selection
 	// originX and originY place the bar's first painted line.
 	originX, originY int
 }
@@ -50,6 +56,9 @@ func (h quickBarHost) Prompt() spawn.Prompt {
 }
 
 func (h quickBarHost) Target() (uiquick.Target, bool) {
+	if row, ok := h.m.remoteQuickTarget(); ok {
+		return uiquick.Target{Group: row.Group, IsGroup: row.Kind != uiconnections.SessionRow}, true
+	}
 	entry, ok := h.m.selectedRow()
 	if !ok {
 		return uiquick.Target{}, false
@@ -82,12 +91,16 @@ func (m *Model) openQuickModeWithReader(reader settingsValueReader) tea.Cmd {
 	input.Focus()
 	m.clearErr()
 	m.forgetWorktreeCapability()
+	aim, _ := m.rail.Selected()
 	m.quick = quickBar{
+		aim:            aim,
 		active:         true,
 		composer:       composer{input: input, maxRows: quickBarMaxRows, gen: m.nextComposerGen()},
 		closeAfterSend: m.settings.cache.value(uisettings.QuickCloseSetting) == "close",
-		Bar:            uiquick.NewBar(m.spawnHost(), names, index, m.cachedSpawnWorktreeDefault(m.quickTargetGroup())),
 	}
+	// The bar is active before its choice starts, so a bar aimed at a
+	// connection starts on the host's defaults.
+	m.quick.Bar = uiquick.NewBar(m.spawnHost(), names, index, m.cachedSpawnWorktreeDefault(m.quickTargetGroup()))
 	catalog := m.ensureCatalog(names[index])
 	if m.settings.pending > 0 {
 		return tea.Batch(m.quickWorktreeProbeCmd(false), catalog)
@@ -127,6 +140,9 @@ func (m *Model) runQuickRequest(request uiquick.Request) tea.Cmd {
 	case request.Close:
 		m.quick.active = false
 	case request.Send:
+		if cmd, taken := m.remoteQuickSend(request.Text); taken {
+			return cmd
+		}
 		entry, _ := m.selectedRow()
 		if !m.dispatchQuickSend(quickSendRequest{
 			session:        entry.sess,
@@ -141,6 +157,9 @@ func (m *Model) runQuickRequest(request uiquick.Request) tea.Cmd {
 		m.clearErr()
 		return m.nextEffectCmd()
 	case request.Spawn != nil:
+		if cmd, taken := m.remoteQuickSpawn(*request.Spawn); taken {
+			return cmd
+		}
 		return m.dispatchQuickSpawn(m.quickSpawnRequest(*request.Spawn), systemDirectoryPreflight{git: m.services.gitDrv})
 	case request.LoadSaved:
 		return savedPromptsLoadCmd(m.services.store, savedForQuick, uint64(m.quick.gen), 0)
@@ -217,6 +236,10 @@ func (q *quickBar) clearAfterSend() {
 // toggleQuickWorktree flips the worktree choice, or probes the target first
 // when its repo verdict is not cached.
 func (m *Model) toggleQuickWorktree() tea.Cmd {
+	if _, remote := m.remoteTarget(); remote {
+		m.quick.SetWorktree(!m.quick.WorktreeTouched() || !m.quick.Worktree())
+		return nil
+	}
 	dir := m.quickTargetDir()
 	capable, known := m.cachedWorktreeCapability(dir)
 	if !known {
@@ -232,6 +255,9 @@ func (m *Model) toggleQuickWorktree() tea.Cmd {
 }
 
 func (m *Model) quickWorktreeOn() bool {
+	if _, remote := m.remoteTarget(); remote {
+		return false
+	}
 	capable, known := m.cachedWorktreeCapability(m.quickTargetDir())
 	if !known || !capable {
 		return false
@@ -328,6 +354,7 @@ func (m *Model) viewQuickBar(width, maxRows int) string {
 			facts.Answer = m.quickAnswerRow(entry, m.displayName(entry.sess), width)
 		}
 	}
+	m.remoteQuickFacts(&facts)
 	return m.quick.View(m.quickBarHost(), facts, width, maxRows)
 }
 

@@ -126,6 +126,20 @@ CREATE TABLE IF NOT EXISTS settings (
 			name TEXT PRIMARY KEY,
 			instructions TEXT NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS connections (
+			name        TEXT PRIMARY KEY,
+			destination TEXT NOT NULL,
+			position    INTEGER NOT NULL,
+			created_at  INTEGER NOT NULL
+		)`,
+		`ALTER TABLE sessions ADD COLUMN opened_without_session INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE connections ADD COLUMN binary TEXT NOT NULL DEFAULT ''`,
+		`CREATE TABLE IF NOT EXISTS remote_terminals (
+			host        TEXT NOT NULL,
+			terminal_id TEXT NOT NULL,
+			session_id  TEXT NOT NULL,
+			PRIMARY KEY (host, terminal_id)
+		)`,
 	}
 	for _, migration := range migrations {
 		if _, err := s.db.Exec(migration); err != nil {

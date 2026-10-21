@@ -40,8 +40,17 @@ func TestPureReviewDataRejectsConcreteGit(t *testing.T) {
 	}
 }
 
+func TestRemoteValuesRejectSSH(t *testing.T) {
+	if err := checkBoundary(remoteBoundary); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkBoundaryDependencies(remoteBoundary, []string{module + "/internal/remote"}); err == nil {
+		t.Fatal("remote values accepted the SSH client")
+	}
+}
+
 func TestFeaturePackageGraphs(t *testing.T) {
-	for _, feature := range []boundary{reviewBoundary, focusBoundary, railBoundary, settingsBoundary, spawnBoundary, quickBoundary, dialogsBoundary, noticesBoundary} {
+	for _, feature := range []boundary{reviewBoundary, focusBoundary, railBoundary, settingsBoundary, spawnBoundary, quickBoundary, dialogsBoundary, noticesBoundary, connectionsBoundary} {
 		t.Run(feature.name, func(t *testing.T) {
 			if err := checkBoundary(feature); err != nil {
 				t.Fatal(err)
@@ -51,9 +60,9 @@ func TestFeaturePackageGraphs(t *testing.T) {
 }
 
 func TestFeaturePackagesRejectRuntimeTransitively(t *testing.T) {
-	for _, feature := range []boundary{reviewBoundary, focusBoundary, railBoundary, settingsBoundary, spawnBoundary, quickBoundary, dialogsBoundary, noticesBoundary} {
+	for _, feature := range []boundary{reviewBoundary, focusBoundary, railBoundary, settingsBoundary, spawnBoundary, quickBoundary, dialogsBoundary, noticesBoundary, connectionsBoundary} {
 		t.Run(feature.name, func(t *testing.T) {
-			for _, path := range []string{"/internal/ui", "/internal/git", "/internal/store", "/internal/tmux", "/internal/execution", "/internal/app", "/internal/status", "/internal/catalog", "/internal/config"} {
+			for _, path := range []string{"/internal/ui", "/internal/git", "/internal/store", "/internal/tmux", "/internal/execution", "/internal/app", "/internal/status", "/internal/catalog", "/internal/config", "/internal/remote", "/internal/sessioncmd"} {
 				if err := checkBoundaryDependencies(feature, []string{module + feature.path, module + path}); err == nil {
 					t.Fatalf("forbidden dependency %s was accepted", module+path)
 				}

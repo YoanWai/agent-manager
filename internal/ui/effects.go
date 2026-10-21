@@ -28,19 +28,21 @@ type effectJob struct {
 	command   tea.Cmd
 }
 
-// Effects run on two FIFO lanes. Input forwarded to a pane has its own lane
+// Effects run on three FIFO lanes. Input forwarded to a pane has its own lane
 // so a keystroke never waits behind a spawn, fork or poll-locked reflow. Each
 // input re-reads its session before it writes, but the read and the paste
 // are two steps, and a job that kills or relaunches that pane between them
 // would hand the input to the replacement agent. So an input and such a job
 // never run on one session at once, while input to any other pane goes ahead.
+// Calls to SSH connections have the third lane, so a slow host holds up only
+// its own kind of work.
 type effectState struct {
-	nextID, nextChain uint64
-	main, input       effectLane
-	lifetime          *effectLifetime
-	latestObservation time.Time
-	quitting          bool
-	abandoned         []string
+	nextID, nextChain   uint64
+	main, input, remote effectLane
+	lifetime            *effectLifetime
+	latestObservation   time.Time
+	quitting            bool
+	abandoned           []string
 }
 
 type effectLane struct {
@@ -49,10 +51,17 @@ type effectLane struct {
 }
 
 func (m *Model) laneFor(request effectRequest) *effectLane {
-	if _, ok := request.(inputRequest); ok {
+	switch request.(type) {
+	case inputRequest:
 		return &m.effects.input
+	case remoteRequest:
+		return &m.effects.remote
 	}
 	return &m.effects.main
+}
+
+func (m *Model) lanes() []*effectLane {
+	return []*effectLane{&m.effects.main, &m.effects.input, &m.effects.remote}
 }
 
 type effectLifetime struct {
@@ -106,7 +115,7 @@ func (m *Model) StopEffects() {
 		limit = 0
 	}
 	if !m.effects.lifetime.closeAndWait(limit) && len(m.effects.abandoned) == 0 {
-		for _, lane := range []*effectLane{&m.effects.main, &m.effects.input} {
+		for _, lane := range m.lanes() {
 			if lane.active != nil {
 				m.effects.abandoned = append(m.effects.abandoned, effectName(lane.active.request)+" was still running")
 			}
@@ -153,6 +162,7 @@ func (m *Model) enqueueEffect(request effectRequest, chain uint64, first bool) {
 		request = value
 	case railRequest:
 		value.mutation.Collapsed = slices.Clone(value.mutation.Collapsed)
+		value.mutation.HostCollapsed = slices.Clone(value.mutation.HostCollapsed)
 		value.mutation.GroupSiblings = slices.Clone(value.mutation.GroupSiblings)
 		request = value
 	case forkRequest:
@@ -219,10 +229,14 @@ func (m *Model) enqueueEffect(request effectRequest, chain uint64, first bool) {
 
 func (m *Model) nextEffectCmd() tea.Cmd {
 	var commands []tea.Cmd
-	main, input := &m.effects.main, &m.effects.input
+	main, input, remote := &m.effects.main, &m.effects.input, &m.effects.remote
 	if main.active == nil && len(main.pending) > 0 && !m.inputInFlightOn(main.pending[0]) {
 		main.active, main.pending = main.pending[0], main.pending[1:]
 		commands = append(commands, main.active.command)
+	}
+	if remote.active == nil && len(remote.pending) > 0 {
+		remote.active, remote.pending = remote.pending[0], remote.pending[1:]
+		commands = append(commands, remote.active.command)
 	}
 	if input.active == nil {
 		for i, job := range input.pending {
@@ -235,7 +249,7 @@ func (m *Model) nextEffectCmd() tea.Cmd {
 			break
 		}
 	}
-	if main.active == nil && input.active == nil && m.effects.quitting {
+	if main.active == nil && input.active == nil && remote.active == nil && m.effects.quitting {
 		return tea.Quit
 	}
 	return tea.Batch(commands...)
@@ -324,7 +338,7 @@ func (m *Model) requestQuit() (tea.Model, tea.Cmd) {
 // firstUnfinishedEffect is the job a quit drain waits on first: the running
 // main-lane job, then its queue, then the input lane.
 func (m *Model) firstUnfinishedEffect() (*effectJob, bool) {
-	for _, lane := range []*effectLane{&m.effects.main, &m.effects.input} {
+	for _, lane := range m.lanes() {
 		if lane.active != nil {
 			return lane.active, true
 		}
@@ -339,7 +353,7 @@ func (m *Model) firstUnfinishedEffect() (*effectJob, bool) {
 // waiting and records what may or may not have happened, rather than leaving
 // a stuck effect as the only way out being kill -9.
 func (m *Model) abandonEffects() tea.Cmd {
-	for _, lane := range []*effectLane{&m.effects.main, &m.effects.input} {
+	for _, lane := range m.lanes() {
 		if lane.active != nil {
 			m.effects.abandoned = append(m.effects.abandoned, effectName(lane.active.request)+" was still running")
 		}
@@ -353,7 +367,7 @@ func (m *Model) abandonEffects() tea.Cmd {
 
 func (m *Model) handleEffectCompleted(msg effectCompletedMsg) (tea.Model, tea.Cmd) {
 	var job *effectJob
-	for _, lane := range []*effectLane{&m.effects.main, &m.effects.input} {
+	for _, lane := range m.lanes() {
 		if lane.active != nil && lane.active.id == msg.id {
 			job, lane.active = lane.active, nil
 		}
@@ -428,6 +442,10 @@ func (m *Model) handleEffectCompleted(msg effectCompletedMsg) (tea.Model, tea.Cm
 		command = m.applyDetachEffect(job.request.(detachRequest), result, msg.err)
 	case attachEffectResult:
 		command = m.applyAttachEffect(job.request.(attachRequest), result, msg.err)
+	case connectionEffectResult:
+		command = m.applyConnectionEffect(job.request.(connectionRequest), result, msg.err)
+	case remoteEffectResult:
+		command = m.applyRemoteEffect(job.request.(remoteRequest), result, msg.err)
 	default:
 		if msg.err != nil {
 			m.reportErr(msg.err.Error())
@@ -486,6 +504,10 @@ func effectName(request effectRequest) string {
 		return "key binding save"
 	case focusRequest, ackRequest, detachRequest, attachRequest:
 		return "focus or attach"
+	case connectionRequest:
+		return "SSH connection save"
+	case remoteRequest:
+		return "call to an SSH connection"
 	}
 	return "effect"
 }

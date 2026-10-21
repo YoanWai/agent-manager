@@ -61,6 +61,24 @@ func TestTerminalVerbsDispatch(t *testing.T) {
 	}
 }
 
+// Whether an omitted --nest nests depends on there being a calling session,
+// which only the layer knows, so the flag goes on only when it was typed.
+func TestTerminalCreatePassesNestOnlyWhenGiven(t *testing.T) {
+	fake := &fakeTerminals{}
+	if err := runTerminalCreate(&bytes.Buffer{}, fake, nil, ""); err != nil {
+		t.Fatalf("terminal create: %v", err)
+	}
+	if fake.opts.Nest != nil {
+		t.Fatalf("an omitted --nest reached the layer as %v", *fake.opts.Nest)
+	}
+	if err := runTerminalCreate(&bytes.Buffer{}, fake, []string{"--nest=false"}, ""); err != nil {
+		t.Fatalf("terminal create --nest=false: %v", err)
+	}
+	if fake.opts.Nest == nil || *fake.opts.Nest {
+		t.Fatalf("--nest=false reached the layer as %v", fake.opts.Nest)
+	}
+}
+
 // The contract the session commands already keep: an id the caller left out
 // is answered with the usage line, never sent to the layer as an empty one.
 func TestMissingTerminalIDIsAUsageError(t *testing.T) {
@@ -88,5 +106,30 @@ func TestMissingTerminalIDIsAUsageError(t *testing.T) {
 				t.Fatal("the layer was called despite the missing id")
 			}
 		})
+	}
+}
+
+// --styled keeps the screen's colors for a manager reading it over SSH;
+// without it the screen is plain text.
+func TestReadStyledKeepsColors(t *testing.T) {
+	sessions := &fakeSessions{session: sampleSession()}
+	terminals := &fakeTerminals{}
+	for _, tc := range []struct {
+		name string
+		run  func(out *bytes.Buffer, args []string) error
+	}{
+		{"read", func(out *bytes.Buffer, args []string) error { return runRead(out, sessions, args, "") }},
+		{"terminal read", func(out *bytes.Buffer, args []string) error { return runTerminalRead(out, terminals, args, "") }},
+	} {
+		var plain, styled bytes.Buffer
+		if err := tc.run(&plain, []string{"--json", "--", "t1"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := tc.run(&styled, []string{"--styled", "--json", "--", "t1"}); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(plain.String(), `\u001b[32m`) || !strings.Contains(styled.String(), `\u001b[32m`) {
+			t.Fatalf("%s: plain %s styled %s", tc.name, plain.String(), styled.String())
+		}
 	}
 }

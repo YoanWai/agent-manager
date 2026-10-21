@@ -32,6 +32,15 @@ type SessionScreen struct {
 	Output  string  `json:"output" jsonschema:"plain text currently visible in the session pane"`
 }
 
+// screenOutput is a captured pane without its trailing line breaks, and
+// without its escape sequences unless styled.
+func screenOutput(pane string, styled bool) string {
+	if !styled {
+		pane = ansi.Strip(pane)
+	}
+	return strings.TrimRight(pane, "\r\n")
+}
+
 type Sessions struct {
 	commands
 	newGit       func() (*git.Driver, error)
@@ -133,6 +142,16 @@ func (s *Sessions) List(sessionID string) ([]Session, error) {
 }
 
 func (s *Sessions) Read(sessionID, targetID string) (SessionScreen, error) {
+	return s.read(sessionID, targetID, false)
+}
+
+// ReadStyled is Read with the screen's escape sequences kept, for a manager
+// painting it over SSH in its colors.
+func (s *Sessions) ReadStyled(sessionID, targetID string) (SessionScreen, error) {
+	return s.read(sessionID, targetID, true)
+}
+
+func (s *Sessions) read(sessionID, targetID string, styled bool) (SessionScreen, error) {
 	runtime, err := s.open()
 	if err != nil {
 		return SessionScreen{}, err
@@ -155,7 +174,7 @@ func (s *Sessions) Read(sessionID, targetID string) (SessionScreen, error) {
 		}
 		return SessionScreen{
 			Session: runtime.sessionInfo(target, false, target.ID == sessionID),
-			Output:  strings.TrimRight(ansi.Strip(snapshot), "\r\n"),
+			Output:  screenOutput(snapshot, styled),
 		}, nil
 	}
 	output, err := runtime.driver.CapturePane(target.ID)
@@ -164,6 +183,6 @@ func (s *Sessions) Read(sessionID, targetID string) (SessionScreen, error) {
 	}
 	return SessionScreen{
 		Session: runtime.sessionInfo(target, true, target.ID == sessionID),
-		Output:  strings.TrimRight(ansi.Strip(output), "\r\n"),
+		Output:  screenOutput(output, styled),
 	}, nil
 }

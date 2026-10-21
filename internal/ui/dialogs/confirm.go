@@ -23,6 +23,9 @@ const (
 	ConfirmKill    ConfirmAction = "kill"
 	ConfirmRestart ConfirmAction = "restart"
 	ConfirmRevive  ConfirmAction = "revive"
+	// ConfirmRemoveConnection takes an SSH connection off the list; the
+	// root's pending request names it and holds no sessions.
+	ConfirmRemoveConnection ConfirmAction = "remove connection"
 )
 
 // Confirm is the question a captured lifecycle request asks before it runs:
@@ -75,6 +78,8 @@ func (c Confirm) Title(mode presentation.GlyphMode) string {
 		return g.RestartGlyph + " Restart " + subject
 	case ConfirmRevive:
 		return g.RestoreGlyph + " Revive " + subject
+	case ConfirmRemoveConnection:
+		return g.DeleteGlyph + " Remove connection"
 	default:
 		return g.DeleteGlyph + " Delete " + subject
 	}
@@ -84,7 +89,7 @@ func (c Confirm) Title(mode presentation.GlyphMode) string {
 // away, which decides whether the dialog reads as an alarm or as a move.
 func (c Confirm) Destructive() bool {
 	return c.Action == ConfirmKill || c.Action == ConfirmDelete ||
-		c.Action == ConfirmRestart || c.Action == ConfirmArchive
+		c.Action == ConfirmRestart || c.Action == ConfirmArchive || c.Action == ConfirmRemoveConnection
 }
 
 // Answer is the word the accept key carries in the hint.
@@ -100,6 +105,8 @@ func (c Confirm) Answer() string {
 		return "restart"
 	case ConfirmRevive:
 		return "revive"
+	case ConfirmRemoveConnection:
+		return "remove"
 	}
 	return "delete"
 }
