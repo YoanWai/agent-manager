@@ -471,3 +471,18 @@ func runCommand(t *testing.T, cmd *exec.Cmd, env []string) (string, int) {
 	t.Fatal(err)
 	return "", 1
 }
+
+func TestHintShowsOneLineForScriptRecipes(t *testing.T) {
+	for _, tool := range []string{"gemini", "cmd", "opencode"} {
+		got := hint("linux", tool)
+		if strings.Contains(got, "\n") || got != "install it with: "+shown[tool] {
+			t.Fatalf("%s hint = %q, want the one line %q", tool, got, shown[tool])
+		}
+		if !strings.Contains(Command(tool), "publish_file") {
+			t.Fatalf("%s Command = %q, want the recipe", tool, Command(tool))
+		}
+	}
+	if got := hint("windows", "gemini"); got != "install it with: "+windowsOfficial["gemini"] {
+		t.Fatalf("windows gemini hint = %q", got)
+	}
+}

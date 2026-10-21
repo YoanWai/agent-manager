@@ -16,13 +16,14 @@ import (
 )
 
 // launchFix is what the setup-step dialog holds: the text it shows, the
-// command that unblocks the launch, the binary that command puts on PATH,
-// the launch to run again once it is there, and the images that launch's
-// prompt names. command is empty when the manager knows no recipe, which
-// leaves the dialog read-only.
+// command it prints and copies, the script i runs to unblock the launch,
+// the binary that script puts on PATH, the launch to run again once it is
+// there, and the images that launch's prompt names. command is empty when
+// the manager knows no recipe, which leaves the dialog read-only.
 type launchFix struct {
 	text        string
 	command     string
+	script      string
 	binary      string
 	effectRetry effectRequest
 	images      []imageAttachment
@@ -111,6 +112,7 @@ func (m *Model) reportLaunchError(err error) {
 			text: "Hermes sessions carry the agent-manager MCP tools, and this Hermes cannot load them: its MCP SDK is not installed.\n\n" +
 				step,
 			command: hermesMCP.PipCommand,
+			script:  hermesMCP.PipCommand,
 			binary:  "hermes",
 		})
 		return
@@ -119,7 +121,8 @@ func (m *Model) reportLaunchError(err error) {
 	if errors.As(err, &missing) {
 		m.launchHint.open(m, launchFix{
 			text:    missingToolText(missing),
-			command: deps.Command(missing.Binary),
+			command: deps.Shown(missing.Binary),
+			script:  deps.Command(missing.Binary),
 			binary:  missing.Binary,
 		})
 		return
@@ -229,7 +232,7 @@ func (d *launchHintDialog) startInstall(h launchHintHost) {
 		retry = spawn
 	}
 	if h.startInstall(installStartRequest{
-		command:     fix.command,
+		command:     fix.script,
 		binary:      fix.binary,
 		effectRetry: retry,
 		images:      fix.images,

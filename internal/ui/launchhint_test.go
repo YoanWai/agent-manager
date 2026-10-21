@@ -56,7 +56,7 @@ func (h *fakeLaunchHintHost) cardSized(width int, title, body string, hint [][2]
 func TestLaunchHintDialogWithFakeHost(t *testing.T) {
 	h := &fakeLaunchHintHost{images: []imageAttachment{{id: 1}}}
 	var d launchHintDialog
-	d.open(h, launchFix{text: "tool is not installed.\n\nRun the installer.", command: "install tool", binary: "tool"})
+	d.open(h, launchFix{text: "tool is not installed.\n\nRun the installer.", command: "install tool", script: "install tool", binary: "tool"})
 	if h.mode != modeLaunchHint || h.gens != 1 || len(d.fix.images) != 1 || h.images != nil {
 		t.Fatalf("open: mode %v gens %d fix %+v, want the composer images taken", h.mode, h.gens, d.fix)
 	}
@@ -180,7 +180,7 @@ func TestLaunchHintKeepsTheInstallLineAndTheErrorOnAShortTerminal(t *testing.T) 
 	if !strings.Contains(frame, "close") {
 		t.Fatalf("keys are off screen:\n%s", frame)
 	}
-	if runtime.GOOS != "windows" && !strings.Contains(m.launchHint.fix.command, "install_cli") {
+	if runtime.GOOS != "windows" && !strings.Contains(m.launchHint.fix.script, "install_cli") {
 		t.Fatal("install lost the script")
 	}
 }
@@ -633,6 +633,7 @@ func installFixture(t *testing.T, m *Model, command string) (retryName, image st
 	m.launchHint.open(m, launchFix{
 		text:        "am-fake-cli is not installed.\n\ninstall it with: " + command,
 		command:     command,
+		script:      command,
 		binary:      "am-fake-cli",
 		effectRetry: retry,
 		images:      []imageAttachment{{id: 1, path: image}},
@@ -1020,5 +1021,20 @@ func TestLaunchHintKeepsActionsAtSevenRows(t *testing.T) {
 	frame := ansi.Strip(m.launchHintFrame())
 	if strings.Count(frame, "\n")+1 > 7 || !strings.Contains(frame, "close") {
 		t.Fatalf("setup controls clipped.\n%s", frame)
+	}
+}
+
+func TestMissingNpmCLIShowsOneLineAndInstallsTheRecipe(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the Windows npm recipe is one line already")
+	}
+	m := buildModel(t)
+	m.reportLaunchError(config.MissingToolError{Binary: "gemini"})
+	fix := m.launchHint.fix
+	if fix.command != "npm install -g @google/gemini-cli" || strings.Contains(fix.text, "install_cli") {
+		t.Fatalf("dialog shows %q with text %q, want the npm line", fix.command, fix.text)
+	}
+	if fix.script != deps.Command("gemini") || !strings.Contains(fix.script, "ensure_npm") {
+		t.Fatalf("i would run %q, want the npm recipe", fix.script)
 	}
 }

@@ -173,6 +173,7 @@ func TestInstallStartCompletionDoesNotReplaceNewerDialog(t *testing.T) {
 	m.launchHint.open(m, launchFix{
 		text:    "second setup step",
 		command: "true",
+		script:  "true",
 		binary:  "second-cli",
 		images:  []imageAttachment{{id: 2, path: secondImage}},
 	})

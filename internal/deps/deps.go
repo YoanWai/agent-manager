@@ -81,6 +81,14 @@ var windowsOfficial = map[string]string{
 	"psmux":    "winget install --id marlocarlo.psmux -e",
 }
 
+// shown is the one line the setup dialog prints and copies for a recipe
+// that runs as a script, which would fill the card with shell.
+var shown = map[string]string{
+	"cmd":      "npm install -g command-code",
+	"gemini":   "npm install -g @google/gemini-cli",
+	"opencode": "curl -fsSL https://opencode.ai/v2/install | bash",
+}
+
 func installers(goos string) map[string]string {
 	if goos == "windows" {
 		return windowsOfficial
@@ -101,8 +109,21 @@ func Command(tool string) string {
 	return installers(runtime.GOOS)[tool]
 }
 
+// Shown is the install command as the dialog prints and copies it: the
+// vendor's one line, where Command may be the script that carries it out.
+func Shown(tool string) string {
+	return shownCommand(runtime.GOOS, tool)
+}
+
+func shownCommand(goos, tool string) string {
+	if goos != "windows" && shown[tool] != "" {
+		return shown[tool]
+	}
+	return installers(goos)[tool]
+}
+
 func hint(goos, tool string) string {
-	if command := installers(goos)[tool]; command != "" {
+	if command := shownCommand(goos, tool); command != "" {
 		return "install it with: " + command
 	}
 	if command := installCommand(goos, tool); command != "" {
