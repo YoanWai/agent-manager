@@ -128,7 +128,7 @@ func TestInboxDeliversToAnOpencodeTurnThatDiedOnAProviderError(t *testing.T) {
 		t.Fatalf("engine: %v", err)
 	}
 	queueMessage(t, m, sess.ID, "rebase on main")
-	pane := "  ┃  Reply with just the word hi.\n  ┃\n  ┃\n  ┃  API key not valid. Please pass a valid API key.\n  ┃\n     ▣  Build · Gemini 3.6 Flash\n  ┃\n  ┃\n  ┃\n  ┃  Build · Gemini 3.6 Flash Google\n  ╹▀▀▀▀\n   /home/dev                    tab agents  ctrl+p commands"
+	pane := "  ┃  Say hi\n  ┃\n     Error: invalid x-api-key\n     Build · Claude Sonnet 4.5 (latest) · 467ms\n  ┃\n  ┃\n  ┃  Build · Claude Sonnet 4.5 (latest) Anthropic\n  ╹▀▀▀▀\n  /home/dev          shift+tab agents  ctrl+p commands"
 
 	delivered, err := m.poller.maybeDeliverInbox(sess, pane, status.Errored, true)
 	if err != nil {

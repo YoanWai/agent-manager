@@ -689,16 +689,15 @@ func TestQuietPaneAfterIdleStaysIdle(t *testing.T) {
 	}
 }
 
-// An opencode turn that hangs with its footer still spinning leaves a bare
-// header row behind, which keeps matching the working rule forever. Once
-// the pane stops changing for the stuck grace the quiet-region path
-// settles it from the region's own last content line.
+// An opencode turn that hangs keeps its footer spinning, which reads as
+// working forever. Once the pane stops changing for the stuck grace the
+// quiet-region path settles it from the region's own last content line.
 func TestStuckOpencodeSpinnerSettlesFinished(t *testing.T) {
 	disableStuckEndGrace(t)
 	m := buildModel(t)
 	defaultEngine(t, m)
 	sess := store.Session{ID: "stuck-oc", Tool: "opencode", Status: status.Working}
-	pane := "▣  Build · Ox Alpha Free (Unlimited)\n┃\n╹▀▀▀▀\n■■■⬝⬝⬝⬝⬝  esc interrupt\n"
+	pane := "⠋ Thinking\n┃\n╹▀▀▀▀\n■■■⬝⬝⬝⬝⬝  esc interrupt\n"
 	seedRegionHash(t, m, sess, pane)
 	if got := deriveStatus(t, m, sess, pane, true); got != status.Finished {
 		t.Fatalf("stuck spinner past the grace should settle finished, got %q", got)
@@ -712,7 +711,7 @@ func TestStuckSpinnerHoldsWorkingUntilGrace(t *testing.T) {
 	m := buildModel(t)
 	defaultEngine(t, m)
 	sess := store.Session{ID: "stuck-hold", Tool: "opencode", Status: status.Working}
-	pane := "▣  Build · Ox Alpha Free (Unlimited)\n┃\n╹▀▀▀▀\n■■■⬝⬝⬝⬝⬝  esc interrupt\n"
+	pane := "⠋ Thinking\n┃\n╹▀▀▀▀\n■■■⬝⬝⬝⬝⬝  esc interrupt\n"
 	seedRegionHash(t, m, sess, pane)
 	if got := deriveStatus(t, m, sess, pane, true); got != status.Working {
 		t.Fatalf("matched spinner within the grace should stay working, got %q", got)
@@ -725,7 +724,7 @@ func TestStuckSpinnerHoldsWorkingUntilGrace(t *testing.T) {
 func TestMatchedWorkingWinsOverRestingStatus(t *testing.T) {
 	m := buildModel(t)
 	defaultEngine(t, m)
-	pane := "▣  Build · Ox Alpha Free (Unlimited)\n┃\n╹▀▀▀▀\n■■■⬝⬝⬝⬝⬝  esc interrupt\n"
+	pane := "⠋ Thinking\n┃\n╹▀▀▀▀\n■■■⬝⬝⬝⬝⬝  esc interrupt\n"
 	for i, stored := range []string{status.Finished, status.Waiting} {
 		sess := store.Session{ID: fmt.Sprintf("win-%d", i), Tool: "opencode", Status: stored}
 		seedRegionHash(t, m, sess, pane)
@@ -793,8 +792,8 @@ func TestAnimatedMatchedWorkingStaysWorking(t *testing.T) {
 	m := buildModel(t)
 	defaultEngine(t, m)
 	sess := store.Session{ID: "anim-oc", Tool: "opencode", Status: status.Working}
-	still := "⠋ listing files\n▣  Build · Ox Alpha Free (Unlimited)\n┃\n╹▀▀▀▀\n■■■⬝⬝⬝⬝⬝  esc interrupt\n"
-	moved := "⠙ listing files\n▣  Build · Ox Alpha Free (Unlimited)\n┃\n╹▀▀▀▀\n⬝■■■⬝⬝⬝⬝  esc interrupt\n"
+	still := "⠋ listing files\n┃\n╹▀▀▀▀\n■■■⬝⬝⬝⬝⬝  esc interrupt\n"
+	moved := "⠙ listing files\n┃\n╹▀▀▀▀\n⬝■■■⬝⬝⬝⬝  esc interrupt\n"
 	seedRegionHash(t, m, sess, still)
 	if got := deriveStatus(t, m, sess, moved, true); got != status.Working {
 		t.Fatalf("an animating matched-working pane should stay working, got %q", got)

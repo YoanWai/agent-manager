@@ -123,8 +123,9 @@ type Tool struct {
 	// first group is what a quote of the session's last reply shows.
 	DialogQuestion string `toml:"dialog_question"`
 	// BusyFooter is a line the tool draws under its activity cutoff only
-	// while a turn runs. A working rule that matches without it belongs to
-	// a turn that died before printing its end marker, which is errored.
+	// while a turn runs, so it reads as working on its own. A working rule
+	// that matches without it belongs to a turn that died before printing
+	// its end marker, which is errored.
 	BusyFooter string `toml:"busy_footer"`
 	// InputPrefix locates the composer's input row for the arrow-step pair
 	// (Left leaving focus at the prompt head). It replaces the reuse of
