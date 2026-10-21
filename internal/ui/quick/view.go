@@ -19,6 +19,12 @@ type Facts struct {
 	Group                          string
 	WorktreeKnown, WorktreeCapable bool
 	WorktreeOn                     bool
+	// Remote is the connection target's row, which a spawn there extends
+	// with what it launches with; WorktreeInherit leaves the worktree to
+	// the host. The root decides both and paints Remote.
+	Remote          string
+	RemoteSpawn     bool
+	WorktreeInherit bool
 	// LabelWidth is the column the target's label takes.
 	LabelWidth int
 	Styles     spawn.Styles
@@ -33,7 +39,15 @@ func (q *Bar) View(h Host, facts Facts, width, maxRows int) string {
 	}
 	target := label("target") + st.Muted.Render("no selection")
 	q.hits = q.hits[:0]
-	if selected, ok := h.Target(); ok {
+	if facts.Remote != "" {
+		target = label("answer") + facts.Remote
+		if facts.RemoteSpawn {
+			if q.picking != PickNone {
+				return q.viewSheet(h, facts, width, maxRows, facts.Remote)
+			}
+			target = q.statusRow(h, facts, label("new")+facts.Remote, width, 0)
+		}
+	} else if selected, ok := h.Target(); ok {
 		if selected.IsGroup {
 			group := lipgloss.NewStyle().Foreground(st.Accent2).Render(facts.Group)
 			if q.picking != PickNone {
@@ -100,6 +114,8 @@ func (q *Bar) statusRow(h Host, facts Facts, left string, width, line int) strin
 	}
 	worktree := st.Subtle.Render(presentation.GlyphsFor(st.GlyphMode).WorktreeGlyph + " off")
 	switch {
+	case facts.WorktreeInherit:
+		worktree = st.Subtle.Render(presentation.GlyphsFor(st.GlyphMode).WorktreeGlyph + " host default")
 	case !facts.WorktreeKnown || !facts.WorktreeCapable:
 		worktree = st.Subtle.Render(presentation.GlyphsFor(st.GlyphMode).WorktreeGlyph + " no repo")
 	case facts.WorktreeOn:

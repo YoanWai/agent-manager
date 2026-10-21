@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/launch"
@@ -84,6 +85,95 @@ func savedText(st *store.Store, name, text string) (string, error) {
 // approval dialog, so a message sent the moment it is written would answer
 // that dialog. The manager's poller types it in once the target is at rest.
 func (s *Sessions) Send(sessionID, targetID, message string) (SendResult, error) {
+	return s.send(targetID, message, func(runtime *runtime) (store.Session, error) {
+		return runtime.caller(sessionID)
+	})
+}
+
+// maxSenderNameBytes bounds a name given with SendFrom, which the envelope
+// quotes on the line that introduces the message.
+const maxSenderNameBytes = 64
+
+// SendFrom queues a message from a caller with no session on this machine,
+// such as an agent on another one, under the name it gives. Nothing here
+// can carry a reply back, and the envelope says so.
+func (s *Sessions) SendFrom(sessionID, senderName, targetID, message string) (SendResult, error) {
+	if sessionID != "" {
+		return SendResult{}, fmt.Errorf("a sender name is for a caller with no session on this machine; this runs as session %s, which is the sender", sessionID)
+	}
+	if err := validSenderName(senderName); err != nil {
+		return SendResult{}, err
+	}
+	return s.send(targetID, message, func(*runtime) (store.Session, error) {
+		return store.Session{Name: senderName}, nil
+	})
+}
+
+// Type submits a prompt in an agent's pane now, as the user, the way the
+// quick bar does: no envelope, no queue, no wait for the agent to be at
+// rest. It is the quick bar of a manager on another machine, so it serves
+// only a caller with no session here; a session sends, which waits.
+func (s *Sessions) Type(sessionID, targetID, prompt string) (Session, error) {
+	if sessionID != "" {
+		return Session{}, fmt.Errorf("typing a prompt is for the user's quick bar on another machine; session %s sends with %s, which waits until the agent is at rest", sessionID, s.words.Send)
+	}
+	prompt = strings.TrimSpace(prompt)
+	if prompt == "" {
+		return Session{}, errors.New("prompt cannot be empty")
+	}
+	runtime, err := s.open()
+	if err != nil {
+		return Session{}, err
+	}
+	defer runtime.Close()
+	target, err := runtime.agent(targetID)
+	if err != nil {
+		return Session{}, err
+	}
+	if !runtime.driver.Exists(target.ID) {
+		return Session{}, fmt.Errorf("session %s is not running; revive it with %s first", target.ID, runtime.words.Revive)
+	}
+	sent, err := runtime.driver.SendTextResult(target.ID, prompt)
+	if err != nil {
+		if sent.PasteMayHaveStarted() {
+			return Session{}, &MayHaveReachedError{fmt.Errorf("prompt may have reached %s and was not sent again: %w", target.Name, err)}
+		}
+		return Session{}, fmt.Errorf("prompt was not sent to %s: %w", target.Name, err)
+	}
+	if err := runtime.store.RecordQuickSendForLaunch(target, prompt); err != nil {
+		return Session{}, fmt.Errorf("prompt sent, but recording it for the row failed: %w", err)
+	}
+	return runtime.sessionInfo(target, true, false), nil
+}
+
+// ExitMayHaveReached is the CLI's exit status for a prompt whose paste had
+// started when the send failed, so a manager on another machine knows the
+// prompt may sit in the pane and does not offer it again.
+const ExitMayHaveReached = 3
+
+// MayHaveReachedError is a send whose paste may have reached the pane.
+type MayHaveReachedError struct{ err error }
+
+func (e *MayHaveReachedError) Error() string { return e.err.Error() }
+
+func (e *MayHaveReachedError) Unwrap() error { return e.err }
+
+func validSenderName(name string) error {
+	if strings.TrimSpace(name) == "" {
+		return errors.New("sender name is empty")
+	}
+	if len(name) > maxSenderNameBytes {
+		return fmt.Errorf("sender name is %d bytes, over the %d byte limit", len(name), maxSenderNameBytes)
+	}
+	if strings.ContainsFunc(name, unicode.IsControl) {
+		return fmt.Errorf("sender name %q holds a control character", name)
+	}
+	return nil
+}
+
+// send queues a message from the sender its caller resolves. A sender with
+// no ID has no session here to refuse as the target or to mark as answered.
+func (s *Sessions) send(targetID, message string, resolveSender func(*runtime) (store.Session, error)) (SendResult, error) {
 	message = strings.TrimSpace(message)
 	if message == "" {
 		return SendResult{}, errors.New("message is empty")
@@ -96,7 +186,7 @@ func (s *Sessions) Send(sessionID, targetID, message string) (SendResult, error)
 		return SendResult{}, err
 	}
 	defer runtime.Close()
-	caller, err := runtime.caller(sessionID)
+	sender, err := resolveSender(runtime)
 	if err != nil {
 		return SendResult{}, err
 	}
@@ -104,7 +194,7 @@ func (s *Sessions) Send(sessionID, targetID, message string) (SendResult, error)
 	if err != nil {
 		return SendResult{}, err
 	}
-	if target.ID == caller.ID {
+	if target.ID == sender.ID {
 		return SendResult{}, errors.New("a session cannot message itself")
 	}
 	if err := runtime.deliverable(target); err != nil {
@@ -113,8 +203,8 @@ func (s *Sessions) Send(sessionID, targetID, message string) (SendResult, error)
 	now := time.Now()
 	id, err := runtime.store.Enqueue(store.InboxMessage{
 		SessionID:   target.ID,
-		SenderID:    caller.ID,
-		SenderName:  caller.Name,
+		SenderID:    sender.ID,
+		SenderName:  sender.Name,
 		Body:        message,
 		Fingerprint: fingerprint(message),
 		SentAt:      now,
@@ -124,8 +214,10 @@ func (s *Sessions) Send(sessionID, targetID, message string) (SendResult, error)
 	}
 	// Answering is the acknowledgement: whatever this session was sent by
 	// the agent it is now writing to has plainly been read.
-	if err := runtime.store.MarkRead(caller.ID, target.ID, now); err != nil {
-		return SendResult{}, err
+	if sender.ID != "" {
+		if err := runtime.store.MarkRead(sender.ID, target.ID, now); err != nil {
+			return SendResult{}, err
+		}
 	}
 	queued, err := runtime.store.QueuedCount(target.ID)
 	if err != nil {

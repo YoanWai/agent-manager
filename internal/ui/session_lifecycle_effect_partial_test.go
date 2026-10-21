@@ -43,12 +43,13 @@ func TestRestoreReconcilesDurableRowsBeforeLaterFailure(t *testing.T) {
 	}
 	loadStoredRows(t, m)
 	m.confirm.confirmTarget = confirmTarget{action: actionRestore, sessions: []store.Session{first, second}}
-	if err := m.restoreConfirmed(); err == nil {
+	err := m.restoreConfirmed()
+	if err == nil {
 		t.Fatal("expected second revive failure")
 	}
 	got, _ := m.sessionByID(first.ID)
 	if got.Archived {
-		t.Fatal("completed restore remains in archived inventory")
+		t.Fatalf("completed restore remains in archived inventory; restore failed with: %v", err)
 	}
 	untouched, _ := m.sessionByID(second.ID)
 	if !untouched.Archived {

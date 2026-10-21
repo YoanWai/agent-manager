@@ -26,6 +26,16 @@ type Command func(args []string, caller func() string, configDir string) error
 // exits without an error line.
 var ErrUsageShown = errors.New("usage shown")
 
+// ExitCode is the status a failed subcommand exits with: 1, or
+// sessioncmd.ExitMayHaveReached for a prompt that may sit in the pane.
+func ExitCode(err error) int {
+	var uncertain *sessioncmd.MayHaveReachedError
+	if errors.As(err, &uncertain) {
+		return sessioncmd.ExitMayHaveReached
+	}
+	return 1
+}
+
 const anyNumber = -1
 
 type command struct {
@@ -106,7 +116,7 @@ func Help(version string, proactive bool) string {
 	if !proactive {
 		help.WriteString("Work with those other agents only when the user asks: on your own, do not list, message, spawn or wait on them, or create or claim shared tasks.\n")
 	}
-	help.WriteString("update and settings need no caller, and issue and feature use only the exported session id. Every other command acts as the session or terminal it runs in, resolved from the environment or from the tmux pane, so run them from your own shell. sessions, groups, spawn, read and wait also run from a script outside Agent Manager, where spawn defaults to the CLI picked in settings, the root group and the script's directory.\n")
+	help.WriteString("update and settings need no caller, and issue and feature use only the exported session id. Every other command acts as the session or terminal it runs in, resolved from the environment or from the tmux pane, so run them from your own shell. sessions, groups, snapshot, spawn, read, wait, kill, revive, archive, create-group and delete-group also run from a script outside Agent Manager, where spawn defaults to the CLI picked in settings, the root group and the script's directory. So do send with --from <name>, whose message says no reply can reach the sender, and terminal create, send, read and close, which there open a terminal under no session and drive only terminals under none. type runs only there: it is the user's own quick bar prompt from another machine, so an agent never uses it.\n")
 	for _, section := range sections(version, nil) {
 		help.WriteString("\n" + section.title + "\n")
 		help.WriteString(usageLines(section.commands))
@@ -189,6 +199,12 @@ func newFlagSet(usage string) *flag.FlagSet {
 
 func jsonFlag(set *flag.FlagSet) *bool {
 	return set.Bool("json", false, "print the raw result as JSON instead of a sentence")
+}
+
+// styledFlag keeps a screen's escape sequences, which another manager
+// reading it over SSH paints in its colors.
+func styledFlag(set *flag.FlagSet) *bool {
+	return set.Bool("styled", false, "keep the screen's color escape sequences")
 }
 
 func usageError(usage string) error {

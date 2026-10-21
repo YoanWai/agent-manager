@@ -2,6 +2,7 @@ package rail
 
 import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -14,11 +15,14 @@ func (m *Model) openMenu(selection Selection, x, y int, held bool) Decision {
 	m.cursor = index
 	row := m.rows[index]
 	title := groupLabel(row.group)
-	if row.kind == SessionRow {
+	switch row.kind {
+	case SessionRow:
 		title = sessionName(row.sess)
+	case ConnectionRow:
+		title = row.host
 	}
 	m.menu = rowMenu{
-		active: true, held: held, pressed: -1, key: row.key(), title: title,
+		active: true, held: held, pressed: -1, key: row.key(), title: presentation.EscapeControlsInline(title),
 		items: m.rowMenuItems(row), anchorX: x, anchorY: y,
 	}
 	m.menu.index = m.menu.nextItem(-1, 1)
@@ -36,8 +40,12 @@ func (m Model) rowMenuItems(row treeRow) []menuItem {
 	revive := menuItem{label: "Revive", action: Revive}
 	kill := menuItem{label: "Kill", action: Kill, danger: true}
 	remove := menuItem{label: "Delete", action: Delete, danger: true}
+	connection := menuItem{label: "New connection", action: NewConnection}
 	if row.isRoot() {
-		return append(create, editor, menuItem{label: "Settings", action: OpenSettings})
+		return menuSections(append(create, editor, menuItem{label: "Settings", action: OpenSettings}), []menuItem{connection})
+	}
+	if row.host != "" {
+		return remoteMenuItems(row, create, connection)
 	}
 	if row.kind == GroupRow {
 		live, dead := m.groupLiveAndDead(row.group)
@@ -75,6 +83,44 @@ func (m Model) rowMenuItems(row treeRow) []menuItem {
 		[]menuItem{{label: "Attach", action: Attach}},
 		agent, manage, keep,
 		[]menuItem{{label: "Restart", action: Restart}, m.archiveMenuItem(), kill, remove},
+	)
+}
+
+// remoteMenuItems offers on a connection's rows only what reaches the
+// remote host's CLI.
+func remoteMenuItems(row treeRow, create []menuItem, connection menuItem) []menuItem {
+	group := menuItem{label: "New group", action: NewGroup}
+	switch row.kind {
+	case ConnectionRow:
+		return menuSections(append(create, group),
+			[]menuItem{{label: "Edit connection", action: RenameAction}, connection},
+			[]menuItem{{label: "Remove connection", action: Delete, danger: true}})
+	case GroupRow:
+		return append(create, group)
+	}
+	if row.sess.Archived {
+		return []menuItem{{label: "Restore", action: Restore}}
+	}
+	kill := menuItem{label: "Kill", action: Kill, danger: true}
+	if row.sess.IsShell {
+		// The host archives and revives agents only.
+		if row.sess.Status == "dead" {
+			return []menuItem{kill}
+		}
+		return menuSections([]menuItem{{label: "Attach", action: Attach}}, []menuItem{kill})
+	}
+	archive := menuItem{label: "Archive", action: Archive}
+	if row.sess.Status == "dead" {
+		return menuSections([]menuItem{{label: "Revive", action: Revive}}, []menuItem{archive})
+	}
+	var agent []menuItem
+	if !row.sess.IsShell {
+		agent = []menuItem{{label: "Quick prompt mode", action: Prompt}, {label: "New terminal", action: NewTerminal}}
+	}
+	return menuSections(
+		[]menuItem{{label: "Attach", action: Attach}},
+		agent,
+		[]menuItem{archive, kill},
 	)
 }
 
@@ -178,6 +224,8 @@ func actionKind(action string) ActionKind {
 		return NewSession
 	case keybind.NewGroup:
 		return NewGroup
+	case keybind.NewConnection:
+		return NewConnection
 	case keybind.Fork:
 		return Fork
 	case keybind.Revive:

@@ -26,6 +26,8 @@ type formDialog struct {
 	paths      pathComplete
 	groups     []groupOption
 	groupIndex int
+	// remote is the connection a spawn goes to, when one is the target.
+	remote formRemote
 }
 
 // spawnHost is the root as the New Session form and its choice see it.
@@ -59,6 +61,19 @@ func (h spawnHost) SaveChoiceSetting(key, value string) { h.m.saveChoiceSetting(
 
 func (h spawnHost) ReportErr(text string) { h.m.reportErr(text) }
 
+func (h spawnHost) ChoiceRemoteHost() string {
+	m := h.m
+	if m.mode == modeForm {
+		return m.form.remote.host
+	}
+	if m.quick.active {
+		if target, ok := m.remoteTarget(); ok {
+			return target.host
+		}
+	}
+	return ""
+}
+
 func (h spawnHost) ClearErr() { h.m.clearErr() }
 
 func (h spawnHost) Prompt() spawn.Prompt {
@@ -66,7 +81,8 @@ func (h spawnHost) Prompt() spawn.Prompt {
 }
 
 func (h spawnHost) Paths() spawn.Paths {
-	return pathField{mode: h.m.prefs.glyphMode, pc: &h.m.form.paths, target: pathSuggestionForm}
+	// A connection's directory is the host's: nothing here completes it.
+	return pathField{mode: h.m.prefs.glyphMode, pc: &h.m.form.paths, target: pathSuggestionForm, off: h.m.form.remote.on()}
 }
 
 // promptBox lends a feature package one of the root's composers.
@@ -106,6 +122,8 @@ type pathField struct {
 	mode   presentation.GlyphMode
 	pc     *pathComplete
 	target pathSuggestionTarget
+	// off asks for no suggestions.
+	off bool
 }
 
 func (p pathField) Active() bool { return p.pc.active() }
@@ -117,6 +135,9 @@ func (p pathField) Move(delta int) bool { return p.pc.move(delta) }
 func (p pathField) Reset() { p.pc.reset() }
 
 func (p pathField) Suggest(typed string) tea.Cmd {
+	if p.off {
+		return nil
+	}
 	return p.pc.request(p.target, typed, systemPathSuggestionReader{})
 }
 
@@ -225,7 +246,13 @@ func (m *Model) openFormWithReader(reader settingsValueReader) tea.Cmd {
 	m.rebuildGroupOptions(m.contextGroup())
 	m.form.SetDir(m.capturedGroupDefaultDir(m.selectedGroupPath()))
 	m.form.SeedWorktree(m.cachedSpawnWorktreeDefault(m.selectedGroupPath()))
+	if target, ok := m.remoteTarget(); ok {
+		m.form.aimRemote(target)
+	}
 	m.mode = modeForm
+	if m.form.remote.on() {
+		m.form.RestartChoice(m.spawnHost())
+	}
 	catalog := m.ensureCatalog(tools[toolIndex])
 	saved := savedPromptsLoadCmd(m.services.store, savedForForm, uint64(m.form.prompt.gen), 0)
 	if m.settings.pending > 0 {
@@ -269,6 +296,9 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // runFormRequest executes what a form key or click asked of the root.
 func (m *Model) runFormRequest(request spawn.FormRequest, reader directoryPreflight) tea.Cmd {
+	if cmd, taken := m.remoteFormRequest(request); taken {
+		return cmd
+	}
 	switch {
 	case request.Close:
 		m.mode = modeList
@@ -340,7 +370,7 @@ func (m *Model) viewForm() string {
 	facts := spawn.FormFacts{
 		Width:  m.formValueWidth(),
 		NoRepo: worktreeUnavailable,
-		Group:  displayGroup(m.form.groups[m.form.groupIndex].path),
+		Group:  escapeControlsInline(displayGroup(m.form.groups[m.form.groupIndex].path)),
 		Styles: m.spawnStyles(),
 		Height: m.layout.height,
 		Chrome: m.cardChromeRows,
@@ -349,7 +379,10 @@ func (m *Model) viewForm() string {
 		facts.GroupPicker = strings.Split(m.form.viewGroupPicker(m.prefs.glyphMode), "\n")
 	}
 	facts.WorktreeCapable, facts.WorktreeKnown = m.cachedWorktreeCapability(m.formSpawnDir())
-	if m.formWorktreeOn() {
+	if m.form.remote.on() {
+		facts.WorktreeCapable, facts.WorktreeKnown = true, true
+		facts.Host = lipgloss.NewStyle().Foreground(colorRemote()).Render(m.form.remote.host)
+	} else if m.formWorktreeOn() {
 		facts.Base = m.spawnBaseLabel(m.formSpawnDir(), m.selectedGroupPath())
 	}
 	body, hint := m.form.View(m.spawnHost(), facts)
