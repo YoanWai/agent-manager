@@ -105,6 +105,7 @@ func TestOpencodeKeepsTheUsersOwnCLIPlugins(t *testing.T) {
 	writeFile(t, filepath.Join(home, ".config", "opencode", "cli.json"), "{\n  // theirs\n  \"plugins\": [\"opencode-acme\", {\"package\": \"./status\",},],\n  \"theme\": \"dark\",\n}", 0o644)
 	for inline, want := range map[string]string{
 		"":                  `{"plugins":["opencode-acme",{"package":"./status"},"file://DIR"]}`,
+		"null":              `{"plugins":["opencode-acme",{"package":"./status"},"file://DIR"]}`,
 		`{"theme":"light"}`: `{"plugins":["opencode-acme",{"package":"./status"},"file://DIR"],"theme":"light"}`,
 		`{"plugins":["-opencode.notifications"]}`: `{"plugins":["-opencode.notifications","file://DIR"]}`,
 	} {

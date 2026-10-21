@@ -261,8 +261,9 @@ func (e *Engine) LastUserEcho(tool, pane string) (string, bool) {
 // -1 when the region holds none: the lowest echo row, except for a tool
 // whose own rows share the prompt's marker (tool_row), where a prompt
 // opens its turn and the newest one is the first echo under the last
-// summary row that has one below it. The tool's rows follow the prompt
-// and pass for one only once it has scrolled off.
+// summary row that has one below it. A tool_row opens a block of the
+// tool's own rows (a command and then its output), which runs to the
+// next row outside the gutter.
 func (tr toolRules) lastEchoIndex(lines []string) int {
 	if tr.userEcho == nil {
 		return -1
@@ -290,16 +291,23 @@ func (tr toolRules) lastEchoIndex(lines []string) int {
 		return -1
 	}
 	found, current := -1, -1
+	toolBlock := false
 	for i := 0; i < end; i++ {
 		line := strings.TrimRight(lines[i], " \t")
 		if tr.turnEnd.MatchString(line) {
 			if current >= 0 {
 				found = current
 			}
-			current = -1
+			current, toolBlock = -1, false
 			continue
 		}
-		if current < 0 && tr.echoRow(line) {
+		switch {
+		case tr.toolRow.MatchString(line):
+			toolBlock = true
+		case strings.TrimSpace(line) != "" && !tr.inputPrefix.MatchString(line):
+			toolBlock = false
+		}
+		if current < 0 && !toolBlock && tr.echoRow(line) {
 			current = i
 		}
 	}

@@ -341,10 +341,16 @@ func TestLastUserEchoPerTool(t *testing.T) {
 	if echoed, ok := engine.LastUserEcho("opencode", running); !ok || echoed != "Create /tmp/proj/poem.txt with three short lines about rain," {
 		t.Fatalf("opencode echo while the command runs = %q ok=%v", echoed, ok)
 	}
-	// With the prompt scrolled off, the command's own rows are not it.
-	scrolled := "  ┃  $ printf 'alpha\\nbeta\\n'\n  ┃\n  ┃   1 Rain taps softly on the glass,\n  ┃\n  ┃  Build · Big Pickle OpenCode\n  ╹▀▀▀▀"
-	if echoed, ok := engine.LastUserEcho("opencode", scrolled); !ok || echoed != "" {
-		t.Fatalf("opencode echo with the prompt scrolled off = %q ok=%v", echoed, ok)
+	// With the prompt scrolled off, the command's own rows are not it,
+	// whether the pane starts on the command or on output opencode clipped
+	// at the top (real capture, 2.1.1, 20 rows).
+	for _, scrolled := range []string{
+		"  ┃  $ printf 'alpha\\nbeta\\n'\n  ┃\n  ┃   1 Rain taps softly on the glass,\n  ┃\n  ┃  Build · Big Pickle OpenCode\n  ╹▀▀▀▀",
+		"   New session                   +\n  ┃  (5 earlier lines)\n  ┃  f\n  ┃  g\n  ┃\n\n     Build · Big Pickle · 4.7s · 23.7 tok/s\n\n  ┃\n  ┃\n  ┃  Build · Big Pickle OpenCode\n  ╹▀▀▀▀",
+	} {
+		if echoed, ok := engine.LastUserEcho("opencode", scrolled); !ok || echoed != "" {
+			t.Fatalf("opencode echo with the prompt scrolled off = %q ok=%v", echoed, ok)
+		}
 	}
 }
 

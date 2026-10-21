@@ -136,8 +136,9 @@ input_placeholder = "^Ask anything\\.\\.\\."
 # trimmed before the echo is read
 user_echo = "^\\s*┃\\s{2,}"
 # a command it runs ("$ ls"), a running tool ("⠏ date"), a file it wrote
-# ("# Wrote notes.txt") and that file's numbered lines share the gutter
-tool_row = "^\\s*┃(?:\\s{2,}(?:[$#] |[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] )|\\s{3,}\\d+( |$))"
+# ("# Wrote notes.txt"), that file's numbered lines and the row standing
+# in for output clipped at the top ("(5 earlier lines)") share the gutter
+tool_row = "^\\s*┃(?:\\s{2,}(?:[$#] |[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] |\\(\\d+ earlier lines?\\)$)|\\s{3,}\\d+( |$))"
 # a provider error ends the turn with a summary row under it, so it is
 # read the way a limit banner is: above the newest summary
 limit_line = "(?i)requires more credits|(?:Usage|Free|Go) limit reached|^ *Error: "

@@ -21,6 +21,9 @@ func opencodeCLIConfig() (map[string]json.RawMessage, error) {
 		if err := json.Unmarshal([]byte(inline), &config); err != nil {
 			return nil, fmt.Errorf("%s: %w", opencodeCLIConfigVar, err)
 		}
+		if config == nil {
+			config = map[string]json.RawMessage{}
+		}
 		if _, listed := config["plugins"]; listed {
 			return config, nil
 		}
