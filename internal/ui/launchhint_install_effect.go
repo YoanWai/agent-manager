@@ -263,10 +263,7 @@ func (m *Model) applyInstallStart(request installStartRequest, result installSta
 		if result.install != nil {
 			m.launchHint.install = result.install
 			if stillOpen {
-				m.launchHint.fix = launchFix{}
-				m.mode = modeList
-				m.rail.ClearStatusFilter()
-				m.focusSession(result.session.ID)
+				m.handInstallScreenTo(result.session.ID)
 			}
 			m.reportErr(err.Error())
 			return m.refreshCmd()
@@ -282,13 +279,24 @@ func (m *Model) applyInstallStart(request installStartRequest, result installSta
 	}
 	m.launchHint.install = result.install
 	if stillOpen {
-		m.launchHint.fix = launchFix{}
-		m.mode = modeList
-		m.rail.ClearStatusFilter()
-		m.focusSession(result.session.ID)
+		m.handInstallScreenTo(result.session.ID)
 	}
 	m.reportDone("installing " + request.binary)
 	return m.refreshCmd()
+}
+
+// handInstallScreenTo closes the setup dialog onto the installer shell.
+// The bar would keep every key once the mode is the list again, and its
+// images would have nothing on screen still naming them.
+func (m *Model) handInstallScreenTo(sessionID string) {
+	m.launchHint.fix = launchFix{}
+	m.mode = modeList
+	if m.quick.active {
+		m.quick.active = false
+		m.quick.release()
+	}
+	m.rail.ClearStatusFilter()
+	m.focusSession(sessionID)
 }
 
 func (m *Model) applyInstallSettle(request installSettleRequest, result installSettleResult, err error) tea.Cmd {

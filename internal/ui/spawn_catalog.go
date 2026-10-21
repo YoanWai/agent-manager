@@ -53,12 +53,19 @@ func (m *Model) ensureCatalog(toolName string) tea.Cmd {
 		state = &catalogState{}
 		m.ledger.catalogs[toolName] = state
 	}
-	recheck := catalogRecheck
-	if state.err != nil {
-		recheck = catalogRetry
-	}
-	if state.loading || (state.loaded && time.Since(state.checkedAt) < recheck) {
+	if state.loading {
 		return nil
+	}
+	// An old CLI changes when the user updates it, so the next open asks again.
+	var outdated config.OutdatedToolError
+	if !errors.As(state.err, &outdated) {
+		recheck := catalogRecheck
+		if state.err != nil {
+			recheck = catalogRetry
+		}
+		if state.loaded && time.Since(state.checkedAt) < recheck {
+			return nil
+		}
 	}
 	state.loading = true
 	configDir := m.services.configDir

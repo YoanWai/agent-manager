@@ -41,11 +41,15 @@ var readVersionOutput = func(path string) ([]byte, error) {
 var probedVersions sync.Map
 
 // CheckVersion refuses a tool whose installed CLI is older than its
-// MinimumVersion.
+// MinimumVersion. A CLI this machine cannot run is the install error, so
+// the probe never reads a Windows copy on WSL as an old Linux build.
 func CheckVersion(tool Tool) error {
 	fields := strings.Fields(tool.Command)
 	if tool.MinimumVersion == "" || len(fields) == 0 {
 		return nil
+	}
+	if err := CheckInstalled(tool.Command); err != nil {
+		return err
 	}
 	binary := fields[0]
 	installed, err := installedVersion(binary)

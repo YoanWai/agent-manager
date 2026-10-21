@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -87,6 +88,51 @@ func TestCheckVersionAsksEachBuildOnce(t *testing.T) {
 	}
 	if *asked != 2 {
 		t.Fatalf("asked %d times after the binary changed, want 2", *asked)
+	}
+}
+
+func TestCheckVersionReportsAMissingCLIAsNotInstalled(t *testing.T) {
+	origLook, origRead := lookPath, readVersionOutput
+	lookPath = func(string) (string, error) { return "", exec.ErrNotFound }
+	asked := 0
+	readVersionOutput = func(string) ([]byte, error) {
+		asked++
+		return nil, errors.New("probed")
+	}
+	t.Cleanup(func() { lookPath, readVersionOutput = origLook, origRead })
+
+	err := CheckVersion(Tool{Command: "pi", MinimumVersion: "0.84.3"})
+	var missing MissingToolError
+	if !errors.As(err, &missing) || missing.Binary != "pi" || missing.WindowsPath != "" {
+		t.Fatalf("err = %v, want pi missing in this distro", err)
+	}
+	if asked != 0 {
+		t.Fatalf("--version ran %d times on a missing binary", asked)
+	}
+}
+
+func TestCheckVersionDoesNotReadAWindowsOnlyCLI(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("builds a Unix PATH")
+	}
+	windows, path := installBinary(t, "pi")
+	stubWSL(t, windows)
+	t.Setenv("PATH", windows)
+	origRead := readVersionOutput
+	asked := 0
+	readVersionOutput = func(string) ([]byte, error) {
+		asked++
+		return []byte("0.1.0\n"), nil
+	}
+	t.Cleanup(func() { readVersionOutput = origRead })
+
+	err := CheckVersion(Tool{Command: "pi", MinimumVersion: "0.84.3"})
+	var missing MissingToolError
+	if !errors.As(err, &missing) || missing.Binary != "pi" || missing.WindowsPath != path {
+		t.Fatalf("err = %v, want the Windows copy at %s", err, path)
+	}
+	if asked != 0 {
+		t.Fatalf("--version ran %d times on a Windows-only CLI", asked)
 	}
 }
 

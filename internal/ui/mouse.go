@@ -44,8 +44,10 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	return model, command
 }
 
+// The update dialog covers the list, and Esc returns to the same draft, so a
+// mouse event must not throw that draft away.
 func (m *Model) closeQuickOffTheList() {
-	if m.quick.active && m.mode != modeList {
+	if m.quick.active && m.mode != modeList && m.mode != modeLaunchHint {
 		m.quick.active = false
 		m.quick.release()
 	}
