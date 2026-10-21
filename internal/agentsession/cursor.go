@@ -79,6 +79,8 @@ type cursorChatMeta struct {
 	Cwd         string `json:"cwd"`
 }
 
+var errMalformedCursorMeta = errors.New("meta.json is not the object cursor-agent writes")
+
 func readCursorMeta(path string) (cursorChatMeta, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -86,7 +88,7 @@ func readCursorMeta(path string) (cursorChatMeta, error) {
 	}
 	var meta cursorChatMeta
 	if err := json.Unmarshal(data, &meta); err != nil {
-		return cursorChatMeta{}, nil
+		return cursorChatMeta{}, errMalformedCursorMeta
 	}
 	return meta, nil
 }
@@ -131,7 +133,7 @@ func cursorCandidates(cwd string, cutoff time.Time, claimed map[string]bool, byU
 				continue
 			}
 			meta, err := readCursorMeta(filepath.Join(chats, bucket, id, "meta.json"))
-			if errors.Is(err, fs.ErrNotExist) {
+			if errors.Is(err, fs.ErrNotExist) || errors.Is(err, errMalformedCursorMeta) {
 				continue
 			}
 			if err != nil {
