@@ -8,7 +8,7 @@ The two quickest routes are in the [README](../README.md#install): Homebrew and 
 | --- | --- | --- |
 | tmux 3.1+ | every agent session | Homebrew, AUR, install script |
 | git | diff review and worktree sessions | Homebrew (git runs Homebrew itself), AUR, install script |
-| wl-clipboard, xclip, or xsel | pasting images into a prompt on Linux | the install script offers wl-clipboard or xclip on a Linux desktop. xsel still works when it is already installed |
+| wl-clipboard or xclip | pasting images into a prompt on Linux | the install script offers one of them on a Linux desktop, or your package manager |
 | notify-send | desktop notifications on Linux | the install script on a Linux desktop (`libnotify-bin` with apt, `libnotify-tools` with zypper, `libnotify` with the others), or your package manager |
 
 The mise, `go install`, and prebuilt-binary routes install the binary alone, so install tmux and git with your package manager. When the manager starts without tmux, or the diff view cannot find git, it names the install command it detected, or tells you to use your package manager.

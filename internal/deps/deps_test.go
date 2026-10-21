@@ -478,8 +478,8 @@ func TestHintShowsOneLineForScriptRecipes(t *testing.T) {
 		if strings.Contains(got, "\n") || got != "install it with: "+shown[tool] {
 			t.Fatalf("%s hint = %q, want the one line %q", tool, got, shown[tool])
 		}
-		if !strings.Contains(Command(tool), "publish_file") {
-			t.Fatalf("%s Command = %q, want the recipe", tool, Command(tool))
+		if !strings.Contains(official[tool], "publish_file") {
+			t.Fatalf("%s recipe = %q, want the npm helper", tool, official[tool])
 		}
 	}
 	if got := hint("windows", "gemini"); got != "install it with: "+windowsOfficial["gemini"] {
