@@ -1,6 +1,9 @@
 package catalog
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 // acpOption's choices come flat or in named groups, and ACP allows both.
 type acpOption struct {
@@ -45,13 +48,28 @@ func readACP(ctx context.Context, command, dir string) (Catalog, error) {
 	}
 	defer proc.stop()
 	client := &rpcClient{proc: proc}
-	var initialized struct{}
+	var initialized struct {
+		AuthMethods []struct {
+			ID string `json:"id"`
+		} `json:"authMethods"`
+	}
 	if err := client.call(ctx, "initialize", map[string]any{
 		"protocolVersion":    1,
 		"clientCapabilities": map[string]any{"fs": map[string]bool{"readTextFile": false, "writeTextFile": false}, "terminal": false},
 		"clientInfo":         clientInfo,
 	}, &initialized); err != nil {
 		return Catalog{}, err
+	}
+	// Cursor advertises authMethods and refuses session/new until authenticate.
+	if len(initialized.AuthMethods) > 0 {
+		methodID := initialized.AuthMethods[0].ID
+		if methodID == "" {
+			return Catalog{}, fmt.Errorf("initialize: empty auth method")
+		}
+		var authenticated struct{}
+		if err := client.call(ctx, "authenticate", map[string]any{"methodId": methodID}, &authenticated); err != nil {
+			return Catalog{}, err
+		}
 	}
 	var session struct {
 		SessionID     string      `json:"sessionId"`

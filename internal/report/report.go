@@ -315,6 +315,7 @@ func toolLabel(toolName string) string {
 		"command-code": "Command Code",
 		"muse":         "Muse Code",
 		"omp":          "Oh My Pi",
+		"cursor":       "Cursor CLI",
 	}
 	if label, known := labels[toolName]; known {
 		return label

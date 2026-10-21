@@ -1,0 +1,19 @@
+Tip: You can start the Cursor CLI with `agent` (same as `cursor-agent`).
+
+  ╭────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │                                                                                                        │
+  │  ⚠ Workspace Trust Required                                                                            │
+  │                                                                                                        │
+  │  Cursor Agent can execute code and access files in this directory.                                     │
+  │                                                                                                        │
+  │  Do you trust the contents of this directory?                                                          │
+  │                                                                                                        │
+  │    /private/tmp/amcursor-ws2                                                                           │
+  │                                                                                                        │
+  │                                                                                                        │
+  │    [a] Trust this workspace                                                                            │
+  │    [q] Quit                                                                                            │
+  │                                                                                                        │
+  │  ⏳ Trusting workspace...                                                                              │
+  │                                                                                                        │
+  ╰────────────────────────────────────────────────────────────────────────────────────────────────────────╯

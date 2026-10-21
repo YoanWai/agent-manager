@@ -57,6 +57,10 @@ func TestReadersTakeEveryValueFromTheCLI(t *testing.T) {
 			{ID: "gemini-3.1-pro-preview", Label: "gemini-3.1-pro-preview"},
 			{ID: "gemini-3.8-flash", Label: "gemini-3.8-flash"},
 		}}},
+		{"acp", "acp-cursor", Catalog{Models: []Model{
+			{ID: "default[]", Label: "Auto", Default: true},
+			{ID: "grok-4.7[context=256k,reasoning_effort=high,fast=true]", Label: "Grok 4.7"},
+		}}},
 		{"pi", "pi", Catalog{Models: []Model{
 			{ID: "anthropic/claude-haiku-4-5", Label: "Claude Haiku 4.5 (latest)", Efforts: []string{"off", "minimal", "low", "medium", "high"}},
 			{ID: "anthropic/claude-opus-5", Label: "Claude Opus 5", Efforts: []string{"minimal", "low", "medium", "high", "xhigh", "max"}, Default: true},

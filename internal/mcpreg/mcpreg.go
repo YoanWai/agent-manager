@@ -51,6 +51,7 @@ var knownStyles = map[string]bool{
 	"command-code": true,
 	"muse":         true,
 	"antigravity":  true,
+	"cursor":       true,
 	StyleNone:      true,
 }
 
@@ -121,6 +122,11 @@ func Apply(style, exe, hooksDir, command string, env map[string]string) (string,
 		return command, nil
 	case "muse":
 		if err := ensureMuseRegistered(exe); err != nil {
+			return "", err
+		}
+		return command, nil
+	case "cursor":
+		if err := ensureCursorRegistered(exe); err != nil {
 			return "", err
 		}
 		return command, nil
@@ -252,6 +258,84 @@ func ensureMuseRegistered(exe string) error {
 		return err
 	}
 	return atomicfile.WriteFile(path, append(out, '\n'), perm)
+}
+
+type cursorServer struct {
+	Command string   `json:"command"`
+	Args    []string `json:"args"`
+}
+
+// Cursor reads MCP servers from ~/.cursor/mcp.json. CURSOR_CONFIG_DIR
+// redirects the chat store and leaves this file where it is.
+func cursorMCPPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".cursor", "mcp.json"), nil
+}
+
+func ensureCursorRegistered(exe string) error {
+	path, err := cursorMCPPath()
+	if err != nil {
+		return err
+	}
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	settings := map[string]json.RawMessage{}
+	perm := os.FileMode(0o600)
+	data, err := os.ReadFile(path)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+	case err != nil:
+		return err
+	default:
+		if err := json.Unmarshal(data, &settings); err != nil {
+			return fmt.Errorf("cursor mcp %s: %w", path, err)
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			return err
+		}
+		perm = info.Mode().Perm()
+	}
+	servers := map[string]json.RawMessage{}
+	if raw, ok := settings["mcpServers"]; ok {
+		if err := json.Unmarshal(raw, &servers); err != nil {
+			return fmt.Errorf("cursor mcp %s: mcpServers: %w", path, err)
+		}
+	}
+	entry, err := json.Marshal(cursorServer{Command: exe, Args: []string{"mcp"}})
+	if err != nil {
+		return err
+	}
+	var existing bytes.Buffer
+	if json.Compact(&existing, servers[serverName]) != nil || !bytes.Equal(existing.Bytes(), entry) {
+		servers[serverName] = entry
+		if settings["mcpServers"], err = json.Marshal(servers); err != nil {
+			return err
+		}
+		out, err := json.MarshalIndent(settings, "", "  ")
+		if err != nil {
+			return err
+		}
+		if err := atomicfile.WriteFile(path, append(out, '\n'), perm); err != nil {
+			return err
+		}
+	}
+	// Enable on every launch so a server the user turned off comes back.
+	return enableCursorServer()
+}
+
+func enableCursorServer() error {
+	out, err := exec.Command("cursor-agent", "mcp", "enable", serverName).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("cursor-agent mcp enable: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 // Command Code overlays stored env onto process.env without expanding ${VAR}.

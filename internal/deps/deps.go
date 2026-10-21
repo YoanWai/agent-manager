@@ -43,17 +43,18 @@ var windowsManagers = []manager{
 // command on macOS, Linux, and WSL, and it wins over a package manager
 // that would guess `brew install claude`.
 var official = map[string]string{
-	"claude":   "curl -fsSL https://claude.ai/install.sh | bash",
-	"cmd":      "npm install -g command-code",
-	"codex":    "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
-	"muse":     "curl -fsSL https://dev.meta.ai/install.sh | bash",
-	"omp":      "curl -fsSL https://omp.sh/install | sh",
-	"grok":     "curl -fsSL https://x.ai/cli/install.sh | bash",
-	"gemini":   "npm install -g @google/gemini-cli",
-	"agy":      "curl -fsSL https://antigravity.google/cli/install.sh | bash",
-	"opencode": "curl -fsSL https://opencode.ai/install | bash",
-	"hermes":   "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash",
-	"pi":       "npm install -g @mariozechner/pi-coding-agent",
+	"claude":       "curl -fsSL https://claude.ai/install.sh | bash",
+	"cmd":          "npm install -g command-code",
+	"codex":        "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
+	"muse":         "curl -fsSL https://dev.meta.ai/install.sh | bash",
+	"omp":          "curl -fsSL https://omp.sh/install | sh",
+	"grok":         "curl -fsSL https://x.ai/cli/install.sh | bash",
+	"gemini":       "npm install -g @google/gemini-cli",
+	"agy":          "curl -fsSL https://antigravity.google/cli/install.sh | bash",
+	"opencode":     "curl -fsSL https://opencode.ai/install | bash",
+	"hermes":       "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash",
+	"pi":           "npm install -g @mariozechner/pi-coding-agent",
+	"cursor-agent": "curl https://cursor.com/install -fsS | bash",
 }
 
 // windowsOfficial replaces official on native Windows, where the curl
