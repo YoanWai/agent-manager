@@ -3,6 +3,7 @@ package ui
 import (
 	"errors"
 	"os"
+	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/config"
@@ -65,6 +66,7 @@ type launchHintHost interface {
 	startInstall(request installStartRequest) bool
 	cardWidth() int
 	cardSized(width int, title, body string, hint [][2]string) string
+	launchHintBodyLimit(hint [][2]string) int
 }
 
 var _ launchHintHost = (*Model)(nil)
@@ -255,9 +257,25 @@ func (m *Model) settleInstall() {
 	m.enqueueEffect(installSettleRequest{install: *install}, 0, false)
 }
 
+func (m *Model) launchHintBodyLimit(hint [][2]string) int {
+	if m.layout.height == 0 {
+		return 1 << 20
+	}
+	limit := m.layout.height - m.cardChromeRows(hint)
+	if limit < 1 {
+		return 1
+	}
+	return limit
+}
+
 func (d *launchHintDialog) view(h launchHintHost, glyphs presentation.GlyphSet) string {
 	width := h.cardWidth()
 	tone := lipgloss.NewStyle().Foreground(colorAccent()).Bold(true)
 	card := d.prompt().View(cardInnerWidth(width), tone, mutedStyle(), glyphs)
-	return h.cardSized(width, card.Title, card.Body, card.Hints)
+	body := card.Body
+	lines := strings.Split(body, "\n")
+	if limit := h.launchHintBodyLimit(card.Hints); len(lines) > limit {
+		body = strings.Join(lines[:limit], "\n")
+	}
+	return h.cardSized(width, card.Title, body, card.Hints)
 }

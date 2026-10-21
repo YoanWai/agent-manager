@@ -52,6 +52,7 @@ func (h *fakeLaunchHintHost) cardWidth() int { return 40 }
 func (h *fakeLaunchHintHost) cardSized(width int, title, body string, hint [][2]string) string {
 	return title + "\n" + body
 }
+func (h *fakeLaunchHintHost) launchHintBodyLimit(hint [][2]string) int { return 1 << 20 }
 
 func TestLaunchHintDialogWithFakeHost(t *testing.T) {
 	h := &fakeLaunchHintHost{images: []imageAttachment{{id: 1}}}
@@ -157,6 +158,31 @@ func TestReportLaunchErrorOpensInstallHintForMissingCLI(t *testing.T) {
 	frame := ansi.Strip(m.launchHint.view(m, m.glyphs()))
 	if !strings.Contains(frame, installer) {
 		t.Fatalf("dialog should show the install command:\n%s", frame)
+	}
+}
+
+func TestLaunchHintKeepsTheInstallLineAndTheErrorOnAShortTerminal(t *testing.T) {
+	m := buildModel(t)
+	m.layout.width = 110
+	m.layout.height = 30
+	m.reportLaunchError(config.MissingToolError{Binary: "cmd"})
+	m.reportErr("mkdir /hooks: not a directory")
+
+	frame := ansi.Strip(m.launchHint.view(m, m.glyphs()))
+	if rows := strings.Count(frame, "\n") + 1; rows > m.layout.height {
+		t.Fatalf("dialog is %d rows on a %d-row terminal\n%s", rows, m.layout.height, frame)
+	}
+	if !strings.Contains(frame, "npm install -g command-code") {
+		t.Fatalf("install line is off screen:\n%s", frame)
+	}
+	if !strings.Contains(frame, "mkdir /hooks: not a directory") {
+		t.Fatalf("error is off screen:\n%s", frame)
+	}
+	if !strings.Contains(frame, "close") {
+		t.Fatalf("keys are off screen:\n%s", frame)
+	}
+	if runtime.GOOS != "windows" && !strings.Contains(m.launchHint.fix.command, "install_cli") {
+		t.Fatal("install lost the script")
 	}
 }
 

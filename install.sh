@@ -136,9 +136,15 @@ package_for() {
 
 map_packages() {
 	manager=$1
-	shift
+	rest=$2
 	out=
-	for tool in "$@"; do
+	while [ -n "$rest" ]; do
+		tool=${rest%% *}
+		case $rest in
+		*" "*) rest=${rest#* } ;;
+		*) rest= ;;
+		esac
+		[ -n "$tool" ] || continue
 		out="${out} $(package_for "$manager" "$tool")"
 	done
 	printf '%s' "${out# }"
@@ -158,12 +164,12 @@ set_sudo() {
 dep_install_cmd() {
 	tools=$1
 	if [ "$(detect_os)" = darwin ]; then
-		packages=$(map_packages brew $tools)
+		packages=$(map_packages brew "$tools")
 		if command -v brew >/dev/null 2>&1; then
 			printf 'brew install %s' "$packages"
 			return 0
 		fi
-		printf 'NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" && eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv)" && brew install %s' "$packages"
+		printf "NONINTERACTIVE=1 /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\" && eval \"\$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv)\" && brew install %s" "$packages"
 		return 0
 	fi
 	set_sudo
@@ -172,7 +178,7 @@ dep_install_cmd() {
 		if [ "$candidate" != brew ] && [ "$(id -u)" -ne 0 ] && [ -z "$SUDO" ]; then
 			continue
 		fi
-		packages=$(map_packages "$candidate" $tools)
+		packages=$(map_packages "$candidate" "$tools")
 		case $candidate in
 		apt-get) printf '%sapt-get update && %sapt-get install -y %s' "$SUDO" "$SUDO" "$packages" ;;
 		dnf) printf '%sdnf install -y %s' "$SUDO" "$packages" ;;

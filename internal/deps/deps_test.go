@@ -238,8 +238,10 @@ func TestUnixRecipes(t *testing.T) {
 			t.Fatalf("%s = %q, want a prefix fallback that refuses a Windows npm", name, got)
 		}
 	}
-	if !strings.Contains(official["cmd"], "command-code") {
-		t.Fatalf("cmd = %q, want command-code", official["cmd"])
+	cmd := official["cmd"]
+	head, _, _ := strings.Cut(cmd, "on_windows_path")
+	if !strings.Contains(head, "npm install -g command-code") {
+		t.Fatalf("cmd lead = %q, want npm install -g command-code", head)
 	}
 }
 
@@ -394,6 +396,14 @@ func repoFile(t *testing.T, name string) string {
 	}
 }
 
+func TestExtractFuncToleratesCRLF(t *testing.T) {
+	source := "\nhave_tty() {\r\n\treturn 1\r\n}\r\n"
+	got := extractFunc(t, source, "have_tty")
+	if !strings.Contains(got, "return 1") || strings.Contains(got, "\r") {
+		t.Fatalf("extract = %q", got)
+	}
+}
+
 func extractFunc(t *testing.T, source, name string) string {
 	t.Helper()
 	marker := "\n" + name + "() {"
@@ -407,6 +417,7 @@ func extractFunc(t *testing.T, source, name string) string {
 		if index > 0 {
 			body.WriteByte('\n')
 		}
+		line = strings.TrimRight(line, "\r")
 		body.WriteString(line)
 		if index > 0 && line == "}" {
 			return body.String()
@@ -416,13 +427,22 @@ func extractFunc(t *testing.T, source, name string) string {
 	return ""
 }
 
+func requireDash(t *testing.T) {
+	t.Helper()
+	if _, err := os.Stat("/bin/dash"); err != nil {
+		t.Skip("/bin/dash is not installed")
+	}
+}
+
 func runDash(t *testing.T, script string, env []string) (string, int) {
 	t.Helper()
+	requireDash(t)
 	return runCommand(t, exec.Command("/bin/dash", "-c", script), env)
 }
 
 func runDashNoTTY(t *testing.T, script string) (string, int) {
 	t.Helper()
+	requireDash(t)
 	python := `
 import os, sys
 pid = os.fork()

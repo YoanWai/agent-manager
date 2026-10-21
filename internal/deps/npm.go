@@ -1,6 +1,9 @@
 package deps
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // A Windows npm on PATH is the interop copy WSL appends. Installing with
 // it puts the CLI on the Windows side, and the next spawn still has no
@@ -219,7 +222,8 @@ visible_bin "$bin" "$saved_path" || exit 1
 `
 
 func unixNpm(bin, pkg string) string {
-	return shellHelpers + fmt.Sprintf("bin='%s'\npkg='%s'\n", bin, pkg) + unixNpmBody
+	body := strings.ReplaceAll(strings.TrimPrefix(unixNpmBody, "\n"), "\"$pkg\"", pkg)
+	return fmt.Sprintf("bin='%s'\ninstall_cli() {\n%s}\n", bin, body) + shellHelpers + "install_cli\n"
 }
 
 func unixOpencode() string {

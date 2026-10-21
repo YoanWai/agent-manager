@@ -151,6 +151,7 @@ func runUnixNpm(t *testing.T, home, pathDir, prefix, log string) (string, int) {
 
 func runShell(t *testing.T, script string, env []string, args ...string) (string, int) {
 	t.Helper()
+	requireDash(t)
 	file := filepath.Join(t.TempDir(), "recipe.sh")
 	if err := os.WriteFile(file, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
