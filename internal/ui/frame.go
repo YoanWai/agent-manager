@@ -58,6 +58,8 @@ func (m *Model) renderFrame() string {
 		frame = m.viewRepoPick()
 	case modeGroupForm:
 		frame = m.viewGroupForm()
+	case modeConnection:
+		frame = m.viewConnectionDialog()
 	case modeDiff:
 		frame = m.viewDiffFull()
 	case modeNotices:

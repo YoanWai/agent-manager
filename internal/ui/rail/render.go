@@ -201,7 +201,7 @@ func (r *renderer) entryLines(height int) []Line {
 }
 
 func (r renderer) entryHeight(row treeRow) int {
-	if row.kind == GroupRow || !r.ctx.ComfortableRows {
+	if row.kind != SessionRow || !r.ctx.ComfortableRows {
 		return 1
 	}
 	if row.sess.IsShell {
@@ -337,7 +337,10 @@ func (r renderer) renderTreeRow(row treeRow, selected bool, width, index int, ba
 		}
 		return renderedTreeRow{text: line, handleX: -1}
 	}
-	if row.kind == GroupRow {
+	switch row.kind {
+	case ConnectionRow:
+		return r.renderConnection(row, selected, width, pad, background)
+	case GroupRow:
 		return r.renderGroup(row, selected, width, pad, guides, background)
 	}
 	return r.renderSession(row, selected, width, pad, guides, trail, background)
@@ -397,7 +400,7 @@ func (r renderer) slotContinues(index, slot int) bool {
 }
 
 func (r renderer) rowHandle(row treeRow, selected bool) string {
-	if row.isRoot() || r.renaming(row) || r.ctx.MouseDisabled {
+	if row.isRoot() || row.host != "" || r.renaming(row) || r.ctx.MouseDisabled {
 		return ""
 	}
 	style := lipgloss.NewStyle().Foreground(lipgloss.Color(r.palette.restingMark()))
@@ -453,10 +456,8 @@ func (r renderer) renderSession(row treeRow, selected bool, width int, pad, guid
 	if session.AfterTurn != "" {
 		badges += " " + r.palette.inboxBadge.Render(session.AfterTurnGlyph)
 	}
-	name := session.DisplayName
-	if name == "" {
-		name = session.Name
-	}
+	// A connection's rows carry whatever its host sent.
+	name := presentation.EscapeControlsInline(sessionName(session))
 	room := width - railGutter - ansi.StringWidth(lead+handle+focus+badges)
 	if room <= 0 {
 		room += ansi.StringWidth(focus)
@@ -470,8 +471,8 @@ func (r renderer) renderSession(row treeRow, selected bool, width int, pad, guid
 	if selected {
 		metaStyle = r.palette.muted
 	}
-	meta := lipgloss.NewStyle().Foreground(r.palette.statusColor(session.Status)).Render(statusLabel(session.Status)) +
-		metaStyle.Render(" · "+session.Tool)
+	meta := lipgloss.NewStyle().Foreground(r.palette.statusColor(session.Status)).Render(presentation.EscapeControlsInline(statusLabel(session.Status))) +
+		metaStyle.Render(" · "+presentation.EscapeControlsInline(session.Tool))
 	if session.AgentSessionID != "" && r.ctx.ComfortableRows {
 		meta += metaStyle.Render(" · " + session.AgentSessionID)
 	}
@@ -483,7 +484,10 @@ func (r renderer) renderSession(row treeRow, selected bool, width int, pad, guid
 	if session.Elsewhere {
 		elsewhere = " · elsewhere"
 	}
-	meta += metaStyle.Render(" · " + relSince(activity) + elsewhere)
+	// A remote snapshot carries no times.
+	if !activity.IsZero() {
+		meta += metaStyle.Render(" · " + relSince(activity) + elsewhere)
+	}
 	if r.ctx.ComfortableRows {
 		indent := pad + trail + "  " + strings.Repeat(" ", ansi.StringWidth(handle))
 		return withRowHandle(r.tallRow(session, head, meta, indent, selected, width, background), lead, handle)
@@ -557,7 +561,7 @@ func (r renderer) replyCell(session Session, quiet lipgloss.Style, room int) str
 func (r renderer) renderGroup(row treeRow, selected bool, width int, pad, guides, background string) renderedTreeRow {
 	marker := r.groupGlyph(row)
 	nameStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(r.ctx.Theme.Accent2)).Bold(true)
-	name := BaseName(row.group)
+	name := presentation.EscapeControlsInline(BaseName(row.group))
 	if selected {
 		nameStyle = nameStyle.Foreground(lipgloss.Color(r.ctx.Theme.Bright))
 	}
@@ -570,17 +574,19 @@ func (r renderer) renderGroup(row treeRow, selected bool, width int, pad, guides
 	lead := pad + guides + r.palette.subtle.Render(marker) + " "
 	handle := r.rowHandle(row, selected)
 	head := lead + handle + r.palette.highlight(name, r.model.search, nameStyle)
-	meta := r.groupStatusGlyphs(row.group)
+	meta := r.groupStatusGlyphs(row.host, row.group, false)
 	if meta == "" {
 		meta = r.palette.subtle.Render("no agents yet")
 	}
 	return withRowHandle(paint(rowColumns(head, meta, width-railGutter), width, background), lead, handle)
 }
 
-func (r renderer) groupStatusGlyphs(group string) string {
+// groupStatusGlyphs counts the agents in group's subtree; a whole host
+// counts every agent on it, where the local root counts only its own.
+func (r renderer) groupStatusGlyphs(host, group string, whole bool) string {
 	counts := map[string]int{}
-	for _, session := range r.model.listedSessions() {
-		if !session.IsShell && InGroupSubtree(session.Group, group) {
+	for _, session := range r.model.listed(host, r.model.sessionsOf(host)) {
+		if !session.IsShell && (whole || InGroupSubtree(session.Group, group)) {
 			counts[session.Status]++
 		}
 	}
@@ -600,7 +606,7 @@ func (r renderer) groupGlyph(row treeRow) string {
 	if row.isRoot() {
 		return " "
 	}
-	if r.model.collapsed[row.group] {
+	if r.model.rowFolded(row) {
 		return r.glyphs().GroupClosedGlyph
 	}
 	return r.glyphs().GroupOpenGlyph

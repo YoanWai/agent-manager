@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"testing"
 )
 
@@ -24,6 +25,59 @@ func TestEveryRootUISourceStartsWithItsFeature(t *testing.T) {
 	}
 	if len(strays) > 0 {
 		t.Fatalf("root UI sources that start with no feature name; rename them <feature>_<concern>.go or add the feature: %q", strays)
+	}
+}
+
+func TestPackagedFeaturesOnlyAdaptTheirPackage(t *testing.T) {
+	unadapted, err := unadaptedSources(filepath.Join("../../..", uiRoot))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(unadapted) > 0 {
+		t.Fatalf("root UI sources of a packaged feature that are not its adapter or an effect; move the code into the package: %q", unadapted)
+	}
+}
+
+func TestUnadaptedSources(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"rail_adapter.go", "rail_adapter_view.go", "rail_effect.go", "rail_reorder_effect.go", "rail_rows.go", "spawn_catalog.go", "status_bar.go", "rail_rows_test.go"} {
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	unadapted, err := unadaptedSources(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"rail_rows.go"}; !reflect.DeepEqual(unadapted, want) {
+		t.Fatalf("unadapted = %q, want %q", unadapted, want)
+	}
+}
+
+// Each packaged feature has its package, and each extra is still there.
+func TestPackagedFeaturesAndExtrasExist(t *testing.T) {
+	for feature := range packaged {
+		if info, err := os.Stat(filepath.Join("../../..", uiRoot, feature)); err != nil || !info.IsDir() {
+			t.Errorf("packaged feature %s has no package under %s", feature, uiRoot)
+		}
+	}
+	for name := range rootExtras {
+		if _, err := os.Stat(filepath.Join("../../..", uiRoot, name)); err != nil {
+			t.Errorf("root extra %s is gone; drop it from rootExtras", name)
+		}
+	}
+}
+
+// rootOnly is closed: a new UI feature starts as a package of its own.
+func TestRootOnlyFeaturesAreClosed(t *testing.T) {
+	closed := []string{"composer", "effects", "frame", "geometry", "group", "input", "launchhint", "model", "pathcomplete", "preview", "session", "startup", "status", "terminal", "workspace"}
+	var got []string
+	for feature := range rootOnly {
+		got = append(got, feature)
+	}
+	sort.Strings(got)
+	if !reflect.DeepEqual(got, closed) {
+		t.Fatalf("root-only features = %q, want %q: a new UI feature starts as a package under %s and joins packaged", got, closed, uiRoot)
 	}
 }
 

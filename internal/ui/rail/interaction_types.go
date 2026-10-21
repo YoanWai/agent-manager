@@ -92,6 +92,7 @@ const (
 	OpenHelp
 	OpenReview
 	CancelEnd
+	NewConnection
 )
 
 type Intent struct {
@@ -122,6 +123,7 @@ type Mutation struct {
 	TargetPath    string
 	GroupSiblings []string
 	Collapsed     []string
+	HostCollapsed []HostFold
 	OffsetDelta   int
 	Refresh       bool
 	FinishReorder bool

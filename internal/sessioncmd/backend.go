@@ -150,6 +150,26 @@ func (b *Backend) ProactiveCoordination() (bool, error) {
 	return runtime.Store.ProactiveCoordination()
 }
 
+// Connections reads the SSH connections from this backend's store, for the
+// same reason as ProactiveCoordination.
+func (b *Backend) Connections() ([]store.Connection, error) {
+	runtime, err := b.resolve()
+	if err != nil {
+		return nil, err
+	}
+	return runtime.Store.Connections()
+}
+
+// WithStore runs use on this backend's store, for the same reason as
+// ProactiveCoordination.
+func (b *Backend) WithStore(use func(*store.Store) error) error {
+	runtime, err := b.resolve()
+	if err != nil {
+		return err
+	}
+	return use(runtime.Store)
+}
+
 func (b *Backend) commands(words Vocabulary) (*runtime, error) {
 	bound, err := b.resolve()
 	if err != nil {

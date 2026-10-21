@@ -30,6 +30,9 @@ const (
 	actionKill    = uidialogs.ConfirmKill
 	actionRestart = uidialogs.ConfirmRestart
 	actionRevive  = uidialogs.ConfirmRevive
+	// actionRemoveConnection takes an SSH connection off the list; the
+	// target names it and holds no sessions.
+	actionRemoveConnection = uidialogs.ConfirmRemoveConnection
 )
 
 type confirmTarget struct {
@@ -43,6 +46,9 @@ type confirmTarget struct {
 	action       uidialogs.ConfirmAction
 	batch        bool
 	selection    lifecycleSelection
+	connection   string
+	// remote is a call on an SSH row, run on the host once confirmed.
+	remote *remoteRequest
 }
 
 type lifecycleSelectionKind uint8
@@ -75,7 +81,14 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		target.sessions = append(target.sessions[:0:0], target.sessions...)
 		m.confirm.confirmTarget = confirmTarget{}
 		m.mode = modeList
-		m.queueLifecycle(target, false, "")
+		switch {
+		case target.remote != nil:
+			return m, m.runRemote(*target.remote)
+		case target.connection != "":
+			m.removeConnection(target.connection)
+		default:
+			m.queueLifecycle(target, false, "")
+		}
 		return m, m.nextEffectCmd()
 	}
 	return m, nil

@@ -144,7 +144,7 @@ func (m Model) ViewLegend(ctx LegendContext) Legend {
 		{strings.TrimSpace(k(keybind.Up) + " " + k(keybind.Down)), "navigate"},
 		{k(keybind.NewSession), "new"}, {k(keybind.Terminal), "terminal"}, {k(keybind.NewGroup), "group"}, {k(keybind.Search), "search"},
 		{k(keybind.Archived), archivedAction}, {k(keybind.Filter), statusFilterAction}, {emptyGroupsKey, emptyGroupsAction},
-		{k(keybind.Help), "keys"}, {k(keybind.Quit), "quit"},
+		{k(keybind.Help), "keys"}, {k(keybind.Quit), "quit"}, {k(keybind.NewConnection), "connection"},
 		{k(keybind.ReorderUp, keybind.ReorderDown), "reorder"}, {k(keybind.FoldAll), foldAllAction}, {k(keybind.Resize), "resize"}, {k(keybind.Settings), "settings"},
 	}
 	return Legend{Title: "View", Quiet: true, Alerts: alerts, Pairs: boundPairs(pairs)}
@@ -208,4 +208,44 @@ func (ctx LegendContext) glyph(actions ...string) string {
 		joined += glyph
 	}
 	return joined
+}
+
+// RemoteRow is what the footer needs to know about a row behind an SSH
+// connection.
+type RemoteRow struct {
+	Kind     RowKind
+	Host     string
+	Terminal bool
+	Dead     bool
+}
+
+// RemoteLegend is the tier for a connection's rows: only the keys the
+// connection carries out.
+func (m Model) RemoteLegend(ctx LegendContext, row RemoteRow, collapsed bool) Legend {
+	k := ctx.glyph
+	fold := "fold"
+	if collapsed {
+		fold = "unfold"
+	}
+	leads := [][2]string{ctx.quickModeLead()}
+	switch row.Kind {
+	case ConnectionRow:
+		return Legend{Title: "SSH connection", Leads: leads, Pairs: boundPairs([][2]string{
+			{k(keybind.Open), fold}, {k(keybind.Terminal), "terminal"}, {k(keybind.NewGroup), "group"}, {k(keybind.Rename), "edit"}, {k(keybind.Delete), "remove"},
+		})}
+	case GroupRow:
+		return Legend{Title: "Group", Leads: leads, Pairs: boundPairs([][2]string{
+			{k(keybind.Open), fold}, {k(keybind.Terminal), "terminal"}, {k(keybind.NewGroup), "group"},
+		})}
+	}
+	title, kill := "Session", "kill"
+	if row.Terminal {
+		title, kill, leads = "Shell", "close", nil
+	}
+	pairs := [][2]string{{k(keybind.Open, keybind.Attach), "attach over SSH"}, {k(keybind.Kill), kill}}
+	if row.Dead {
+		pairs = append(pairs, [2]string{k(keybind.Revive), "revive"})
+	}
+	pairs = append(pairs, m.archiveRestoreLegend(ctx))
+	return Legend{Title: title + " on " + row.Host, Leads: leads, Pairs: boundPairs(pairs)}
 }

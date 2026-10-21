@@ -1,6 +1,7 @@
 package dialogs
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -48,6 +49,37 @@ func TestGroupFormWalksItsFields(t *testing.T) {
 	}
 	if got := d.Key(tea.KeyMsg{Type: tea.KeyEsc}, paths, "backend", 3); got.Action != GroupFormCancel {
 		t.Fatalf("esc = %+v", got)
+	}
+}
+
+// Aimed at a connection, the form stops at the path: the parent is fixed
+// and the worktree rows belong to the host.
+func TestGroupFormAimedAtAHostStopsAtThePath(t *testing.T) {
+	d := NewGroupForm("", 2)
+	d.AimRemote("box")
+	paths := &fakePaths{}
+	d.Key(runes("api"), paths, "web", 3)
+	d.Key(tea.KeyMsg{Type: tea.KeyTab}, paths, "web", 3)
+	if got := d.Key(tea.KeyMsg{Type: tea.KeyRight}, paths, "web", 3); got.Action != GroupFormStay {
+		t.Fatalf("right on a fixed parent = %+v", got)
+	}
+	d.Key(tea.KeyMsg{Type: tea.KeyTab}, paths, "web", 3)
+	d.Key(tea.KeyMsg{Type: tea.KeyTab}, paths, "web", 3)
+	if d.Focus() != GroupFormNameField {
+		t.Fatalf("focus after the path = %d, want the name again, skipping the worktree rows", d.Focus())
+	}
+	got := d.Key(tea.KeyMsg{Type: tea.KeyEnter}, paths, "web", 3)
+	want := GroupFormRequest{Parent: "web", Path: "web/api", Name: "api", Gen: 2}
+	if got.Action != GroupFormSubmit || got.Request != want {
+		t.Fatalf("enter = %+v, want %+v", got.Request, want)
+	}
+	card := d.View(GroupFormView{
+		Field: func(label, value string, _ bool) string { return label + "=" + value + "\n" },
+		Input: func(textinput.Model) string { return "" }, Badge: func(s string) string { return s },
+		Picker: func() string { return "PICKER" }, Worktrees: []string{"inherit"},
+	})
+	if strings.Contains(card.Body, "worktree") || strings.Contains(card.Body, "PICKER") || !strings.Contains(card.Body, "on box") {
+		t.Fatalf("body = %q", card.Body)
 	}
 }
 

@@ -72,6 +72,9 @@ func TestConfirmAnswerAndTone(t *testing.T) {
 	if c := (Confirm{}); c.Answer() != "delete" || !c.Destructive() {
 		t.Fatalf("delete answers %q destructive=%v", c.Answer(), c.Destructive())
 	}
+	if c := (Confirm{Action: ConfirmRemoveConnection, Group: true}); c.Title("") != "⚠ Remove connection" || c.Answer() != "remove" || !c.Destructive() {
+		t.Fatalf("remove connection titled %q answers %q destructive=%v", c.Title(""), c.Answer(), c.Destructive())
+	}
 }
 
 func TestConfirmBodySetsTheConsequenceBeneath(t *testing.T) {

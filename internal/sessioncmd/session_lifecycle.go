@@ -18,7 +18,7 @@ func (s *Sessions) Kill(sessionID, targetID string) (Session, error) {
 		return Session{}, err
 	}
 	defer runtime.Close()
-	if _, err := runtime.caller(sessionID); err != nil {
+	if _, err := runtime.optionalCaller(sessionID); err != nil {
 		return Session{}, err
 	}
 	target, err := runtime.agent(targetID)
@@ -57,7 +57,7 @@ func (s *Sessions) Revive(sessionID, targetID string) (Session, error) {
 		return Session{}, err
 	}
 	defer runtime.Close()
-	if _, err := runtime.caller(sessionID); err != nil {
+	if _, err := runtime.optionalCaller(sessionID); err != nil {
 		return Session{}, err
 	}
 	target, err := runtime.agent(targetID)
