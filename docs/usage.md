@@ -56,7 +56,7 @@ Tell your agent what you want to review in Agent Manager. Your agent will set up
 | `space` | Quick prompt mode: answer the selected session, or spawn an agent in the selected group |
 | `ctrl+r` | Review the selected session's changes: full-screen whole-file diffs, with `c` to comment a line and `C` to send the comments to the agent |
 | `F` | Fold / unfold every group |
-| `s` | Settings (default tool, theme, theme follows OS, background, list density, sessions layout, header and computer stats visibility, review layout, after quick send, session keys, ←→ step in/out, mouse, spawn in worktree, fetch on spawn, coordination, notifications, notify on finish, editor, keybindings, CLIs, saved prompts, environments, first-run setup, docs, report a bug, suggest a change, and the version row that updates in place) |
+| `s` | Settings (default tool, theme, theme follows OS, background, list density, sessions layout, header and computer stats visibility, review layout, review scope, after quick send, session keys, ←→ step in/out, mouse, spawn in worktree, fetch on spawn, coordination, notifications, notify on finish, editor, keybindings, CLIs, saved prompts, environments, first-run setup, docs, report a bug, suggest a change, and the version row that updates in place) |
 | `\|` | Resize the split: `←→` nudge the divider, `enter` commits, `esc` cancels |
 | `t` | Toggle archived view |
 | `w` | Filter to sessions that need attention (`waiting`, `finished`, `errored`); press again to show all |
@@ -385,7 +385,7 @@ The footer offers `ctrl+r review mode` on every agent row, filled like quick pro
 | `J` / `K` (or `tab` / `shift+tab`) | Next / previous file |
 | `n` / `N` | Jump between changes |
 | `u` | Toggle unified and side-by-side |
-| `s` | Cycle the scope: uncommitted, vs target, commit, staged. The session's review reopens in the scope picked last, after a restart too |
+| `s` | Cycle the scope: uncommitted, vs target, commit, staged. The session's review reopens in the scope picked last, after a restart too; a session with none opens in the `review scope` picked in Settings |
 | `[` / `]` | In the commit scope, step to the older / newer commit |
 | `{` / `}` | In the commit scope, jump to the oldest commit / HEAD |
 | `L` | In the commit scope, pick the commit to review (type to filter) |

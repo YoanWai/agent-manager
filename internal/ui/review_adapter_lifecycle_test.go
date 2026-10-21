@@ -369,6 +369,7 @@ type reviewReadProbe struct {
 
 func (r *reviewReadProbe) ReviewScope(string) (string, error) { r.calls++; return "branch", r.err }
 func (r *reviewReadProbe) ReviewRepo(string) (string, error)  { r.calls++; return "", r.err }
+func (r *reviewReadProbe) Setting(string) (string, error)     { r.calls++; return "", r.err }
 
 func TestReviewOpeningDefersPreferencesAndKeepsReadErrors(t *testing.T) {
 	t.Parallel()

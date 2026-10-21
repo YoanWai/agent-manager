@@ -12,6 +12,7 @@ import (
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
 	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
+	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -270,7 +271,7 @@ func (m *Model) openDiffWithReader(reader uireviewsource.Preferences) tea.Cmd {
 	target := uireviewsource.Target(sess)
 	target.Cwd = m.sessionDir(sess)
 	request := m.review.Open(target, git.ScopeUncommitted, preferred)
-	return uireviewsource.PreferencesCmd(reader, sess, request, preferred, picked)
+	return uireviewsource.PreferencesCmd(reader, sess, request, preferred, picked, uisettings.ReviewScopeSetting)
 }
 
 func (m *Model) handleReviewPreferences(msg uireviewsource.PreferencesMsg) (tea.Model, tea.Cmd) {
