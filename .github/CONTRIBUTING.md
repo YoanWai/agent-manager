@@ -53,7 +53,7 @@ each of these with the reason behind it.
 
 ## Setup
 
-You need Go 1.27.2+ and tmux.
+You need Go 1.27.3+ and tmux.
 
 ```bash
 git clone https://github.com/YoanWai/agent-manager.git
