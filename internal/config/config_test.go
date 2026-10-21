@@ -468,9 +468,8 @@ func TestWithChoicePlacesFlagsAtTheChoiceMark(t *testing.T) {
 	}
 }
 
-// OpenCode reads the model from inline config, so its launch lines stay
-// the ones OpenCode 1 and 2 both accept, with any quote in the model kept
-// inside the JSON string.
+// OpenCode reads the model from inline config, so no launch line carries
+// it, and any quote in the model stays inside the JSON string.
 func TestWithChoicePutsOpencodesModelInTheEnvironment(t *testing.T) {
 	cfg, err := Default()
 	if err != nil {

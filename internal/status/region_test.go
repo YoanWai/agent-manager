@@ -337,7 +337,7 @@ func TestLastUserEchoPerTool(t *testing.T) {
 	if echoed, ok := engine.LastUserEcho("opencode", toolPane); !ok || echoed != "Create /tmp/proj/poem.txt with three short lines about rain," {
 		t.Fatalf("opencode echo beside tool rows = %q ok=%v", echoed, ok)
 	}
-	running := strings.Replace(toolPane[strings.Index(toolPane, "  ┃  Create"):strings.Index(toolPane, "  ┃  # Wrote")], "", "", 1) + "  ┃\n  ┃  Build · Big Pickle OpenCode\n  ╹▀▀▀▀"
+	running := toolPane[strings.Index(toolPane, "  ┃  Create"):strings.Index(toolPane, "  ┃  # Wrote")] + "  ┃\n  ┃  Build · Big Pickle OpenCode\n  ╹▀▀▀▀"
 	if echoed, ok := engine.LastUserEcho("opencode", running); !ok || echoed != "Create /tmp/proj/poem.txt with three short lines about rain," {
 		t.Fatalf("opencode echo while the command runs = %q ok=%v", echoed, ok)
 	}

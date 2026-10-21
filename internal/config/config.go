@@ -162,8 +162,8 @@ type Tool struct {
 	EffortArgs  string `toml:"effort_args"`
 	ProfileArgs string `toml:"profile_args"`
 	// ModelEnv carries the model in the environment instead, as NAME=VALUE
-	// with {model} written as a JSON string, for a CLI whose releases all
-	// read it there while only some take a model flag.
+	// with {model} written as a JSON string, for a CLI whose interactive
+	// command takes no model flag.
 	ModelEnv string `toml:"model_env"`
 	// Env is the environment WithChoice gives every launch line.
 	Env map[string]string `toml:"-"`
