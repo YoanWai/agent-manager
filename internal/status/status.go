@@ -49,6 +49,7 @@ type toolRules struct {
 	toolResult     *regexp.Regexp
 	placeholder    *regexp.Regexp
 	userEcho       *regexp.Regexp
+	toolRow        *regexp.Regexp
 	dialogFooter   *regexp.Regexp
 	dialogAsks     *regexp.Regexp
 	busyFooter     *regexp.Regexp
@@ -92,6 +93,7 @@ func NewEngine(cfg config.Config) (*Engine, error) {
 			{tool.ToolResult, &tr.toolResult},
 			{tool.InputPlaceholder, &tr.placeholder},
 			{tool.UserEcho, &tr.userEcho},
+			{tool.ToolRow, &tr.toolRow},
 			{tool.DialogFooter, &tr.dialogFooter},
 			{tool.DialogQuestion, &tr.dialogAsks},
 			{tool.BusyFooter, &tr.busyFooter},

@@ -113,6 +113,10 @@ type Tool struct {
 	// its transcript, which is how the last thing sent to a session is
 	// read back regardless of who typed it or from where.
 	UserEcho string `toml:"user_echo"`
+	// ToolRow marks a transcript row the tool draws behind the same marker
+	// as an echoed prompt (opencode's command, its output and a written
+	// file share the prompt's gutter), so it never reads as the prompt.
+	ToolRow string `toml:"tool_row"`
 	// DialogFooter is a line the tool draws under its input marker while a
 	// dialog owns the input box. It tells a dialog that reuses that marker
 	// for its selected option from a draft typed at a resting composer, so
