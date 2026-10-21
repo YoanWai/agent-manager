@@ -339,7 +339,7 @@ The footer offers `ctrl+r review mode` on every agent row, filled like quick pro
 | `J` / `K` (or `tab` / `shift+tab`) | Next / previous file |
 | `n` / `N` | Jump between changes |
 | `u` | Toggle unified and side-by-side |
-| `s` | Cycle the scope: uncommitted, vs target, commit, staged |
+| `s` | Cycle the scope: uncommitted, vs target, commit, staged. The session's review reopens in the scope picked last, after a restart too |
 | `[` / `]` | In the commit scope, step to the older / newer commit |
 | `{` / `}` | In the commit scope, jump to the oldest commit / HEAD |
 | `L` | In the commit scope, pick the commit to review (type to filter) |

@@ -337,9 +337,11 @@ func (m *Model) applyReviewBase(result reviewBaseResult) tea.Cmd {
 	if m.effects.quitting || !m.review.PickerSourceCurrent(source) {
 		return nil
 	}
+	scope := m.review.Scope()
 	request, ok := m.review.SelectBase(result.ref)
 	if !ok {
 		return nil
 	}
+	m.saveReviewScope(scope)
 	return m.reviewLoadCmd(request)
 }

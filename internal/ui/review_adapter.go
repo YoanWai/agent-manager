@@ -539,7 +539,9 @@ func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		ctx.IsShell = true
 		ctx.SendError = shellPromptHint(sess.Name)
 	}
+	scope := m.review.Scope()
 	result := m.review.Key(msg, ctx)
+	m.saveReviewScope(scope)
 	if result.Error != "" {
 		m.reportErr(result.Error)
 	}
@@ -561,6 +563,17 @@ func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.openCommitPick()
 	}
 	return m, tea.Batch(navigation, m.reviewCommands(result.Requests))
+}
+
+// saveReviewScope stores the scope review moved to from before for its
+// session, so the next review of it opens there, after a restart too.
+func (m *Model) saveReviewScope(before git.Scope) {
+	if m.services.store == nil || !m.review.Active() || m.review.Scope() == before {
+		return
+	}
+	m.enqueueEffect(reviewEffectRequest{
+		op: reviewOpSetScope, targetID: m.review.SessionID(), scope: uireview.ScopeName(m.review.Scope()),
+	}, 0, false)
 }
 
 func (m *Model) applyReviewResult(result uireview.ApplyResult) tea.Cmd {

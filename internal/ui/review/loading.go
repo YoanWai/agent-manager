@@ -21,6 +21,20 @@ func StoredScope(stored string) git.Scope {
 	}
 }
 
+// ScopeName is the name StoredScope reads scope back from.
+func ScopeName(scope git.Scope) string {
+	switch scope {
+	case git.ScopeBranch:
+		return "branch"
+	case git.ScopeCommit:
+		return "commit"
+	case git.ScopeStaged:
+		return "staged"
+	default:
+		return "uncommitted"
+	}
+}
+
 func (m *Model) CycleScope() (LoadRequest, bool) {
 	if !m.active || m.target.ID == "" {
 		return LoadRequest{}, false
