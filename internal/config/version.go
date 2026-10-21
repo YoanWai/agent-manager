@@ -16,14 +16,15 @@ import (
 )
 
 type OutdatedToolError struct {
-	Binary    string
-	Installed string
-	Minimum   string
+	Binary            string
+	Installed         string
+	Minimum           string
+	ManagedExternally bool
 }
 
 func (e OutdatedToolError) Error() string {
 	head := e.Binary + " " + e.Installed + " is older than " + e.Minimum + ", the oldest version agent-manager supports."
-	if command := deps.Command(e.Binary); command != "" {
+	if command := deps.Command(e.Binary); command != "" && !e.ManagedExternally {
 		return head + " Update it with: " + command
 	}
 	return head + " Update it the way you installed it."
@@ -38,7 +39,8 @@ var readVersionOutput = func(path string) ([]byte, error) {
 }
 
 // probedVersions maps a build on disk to the version it printed.
-var probedVersions sync.Map
+var probedVersions = map[string]string{}
+var versionProbeMu sync.Mutex
 
 // CheckVersion refuses a tool whose installed CLI is older than its
 // MinimumVersion. A CLI this machine cannot run is the install error, so
@@ -59,12 +61,17 @@ func CheckVersion(tool Tool) error {
 	if update.VersionWithin(installed, tool.MinimumVersion, "") {
 		return nil
 	}
-	return OutdatedToolError{Binary: binary, Installed: installed, Minimum: tool.MinimumVersion}
+	path, _ := lookPath(binary)
+	resolved, _ := filepath.EvalSymlinks(path)
+	return OutdatedToolError{Binary: binary, Installed: installed, Minimum: tool.MinimumVersion,
+		ManagedExternally: strings.HasPrefix(filepath.ToSlash(resolved), "/nix/store/")}
 }
 
 // installedVersion asks each build once: an upgrade replaces the file or
 // the link to it, which changes the stamp.
 func installedVersion(binary string) (string, error) {
+	versionProbeMu.Lock()
+	defer versionProbeMu.Unlock()
 	path, err := lookPath(binary)
 	if err != nil {
 		return "", err
@@ -78,8 +85,8 @@ func installedVersion(binary string) (string, error) {
 		return "", err
 	}
 	stamp := fmt.Sprintf("%s@%d@%d", resolved, info.ModTime().UnixNano(), info.Size())
-	if version, ok := probedVersions.Load(stamp); ok {
-		return version.(string), nil
+	if version, ok := probedVersions[stamp]; ok {
+		return version, nil
 	}
 	out, err := readVersionOutput(path)
 	if err != nil {
@@ -89,6 +96,6 @@ func installedVersion(binary string) (string, error) {
 	if version == "" {
 		return "", fmt.Errorf("%s --version printed %q, which names no version", binary, strings.TrimSpace(string(out)))
 	}
-	probedVersions.Store(stamp, version)
+	probedVersions[stamp] = version
 	return version, nil
 }

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -159,28 +160,6 @@ func TestVersionNumberReadsEachCLIBanner(t *testing.T) {
 	}
 }
 
-func TestCheckVersionReadsThePiOnPath(t *testing.T) {
-	if _, err := exec.LookPath("pi"); err != nil {
-		t.Skip("pi is not installed")
-	}
-	out, err := exec.Command("pi", "--version").CombinedOutput()
-	if err != nil {
-		t.Fatalf("pi --version: %v\n%s", err, out)
-	}
-	installed := versionNumber.FindString(string(out))
-	if installed == "" {
-		t.Fatalf("pi --version printed %q", out)
-	}
-	if err := CheckVersion(Tool{Command: "pi", MinimumVersion: "0.0.1"}); err != nil {
-		t.Fatal(err)
-	}
-	err = CheckVersion(Tool{Command: "pi", MinimumVersion: "99.0.0"})
-	var outdated OutdatedToolError
-	if !errors.As(err, &outdated) || outdated.Installed != installed || outdated.Minimum != "99.0.0" {
-		t.Fatalf("err = %v, want %s refused", err, installed)
-	}
-}
-
 func TestBuiltinMinimumVersionsParse(t *testing.T) {
 	cfg, err := Default()
 	if err != nil {
@@ -193,5 +172,21 @@ func TestBuiltinMinimumVersionsParse(t *testing.T) {
 	}
 	if cfg.Tools["pi"].MinimumVersion != "0.84.3" {
 		t.Fatalf("pi minimum_version = %q", cfg.Tools["pi"].MinimumVersion)
+	}
+}
+
+func TestConcurrentVersionChecksShareTheProbe(t *testing.T) {
+	_, asked := fakeVersionCLI(t, "pi", "1.0.0")
+	var workers sync.WaitGroup
+	for range 16 {
+		workers.Go(func() {
+			if err := CheckVersion(Tool{Command: "pi", MinimumVersion: "0.84.3"}); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	workers.Wait()
+	if *asked != 1 {
+		t.Fatalf("probed %d times, want 1", *asked)
 	}
 }

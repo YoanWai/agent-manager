@@ -129,7 +129,7 @@ func (m *Model) reportLaunchError(err error) {
 	if errors.As(err, &outdated) {
 		m.launchHint.open(m, launchFix{
 			text:    outdatedToolText(outdated),
-			command: deps.Command(outdated.Binary),
+			command: outdatedToolCommand(outdated),
 			binary:  outdated.Binary,
 			update:  true,
 		})
@@ -138,13 +138,17 @@ func (m *Model) reportLaunchError(err error) {
 	m.reportErr(err.Error())
 }
 
-// outdatedToolText names the release on PATH and the oldest one the
-// manager runs. A vendor installer updates in place, so its command is the
-// fix; a CLI without one is updated however it was installed.
+func outdatedToolCommand(outdated config.OutdatedToolError) string {
+	if outdated.ManagedExternally {
+		return ""
+	}
+	return deps.Command(outdated.Binary)
+}
+
 func outdatedToolText(outdated config.OutdatedToolError) string {
 	head := outdated.Binary + " " + outdated.Installed + " is older than " + outdated.Minimum +
 		", the oldest version Agent Manager supports."
-	if command := deps.Command(outdated.Binary); command != "" {
+	if command := outdatedToolCommand(outdated); command != "" {
 		return head + "\n\nUpdate it with: " + command
 	}
 	return head + "\n\nUpdate it the way you installed it, then spawn again."

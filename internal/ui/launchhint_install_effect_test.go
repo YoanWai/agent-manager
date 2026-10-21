@@ -536,7 +536,11 @@ func TestInstallStartGivesTheInstallerShellTheKeys(t *testing.T) {
 		m.quick.attachments = []imageAttachment{{id: 1, path: image}}
 		m.mode = modeLaunchHint
 		m.gens.dialog = 1
-		m.applyInstallStart(installStartRequest{gen: 1, binary: "pi"}, result, failure)
+		cmd := m.applyInstallStart(installStartRequest{gen: 1, binary: "pi"}, result, failure)
+		if !imageExists(t, image) {
+			t.Fatal("update deleted the image before the cleanup command ran")
+		}
+		m.applyCmd(t, cmd)
 		if m.mode != modeList || m.quick.active {
 			t.Fatalf("failure %v left mode %v quick %v", failure, m.mode, m.quick.active)
 		}

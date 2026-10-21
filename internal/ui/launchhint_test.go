@@ -1024,3 +1024,11 @@ func TestInstallFinishesARefusedRestore(t *testing.T) {
 		t.Fatal("the session should be running again")
 	}
 }
+
+func TestExternallyManagedOldCLIDoesNotOfferTheVendorInstaller(t *testing.T) {
+	m := buildModel(t)
+	m.reportLaunchError(config.OutdatedToolError{Binary: "pi", Installed: "0.84.2", Minimum: "0.84.3", ManagedExternally: true})
+	if m.launchHint.fix.command != "" || !strings.Contains(m.launchHint.fix.text, "the way you installed it") {
+		t.Fatalf("external install hint = %+v", m.launchHint.fix)
+	}
+}

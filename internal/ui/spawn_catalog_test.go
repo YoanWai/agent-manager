@@ -100,6 +100,8 @@ func TestAnOlderCLIOpensTheUpdateDialogInsteadOfListingModels(t *testing.T) {
 	if err := catalog.Keep(m.services.configDir, "pi", tool, catalog.Catalog{Models: []catalog.Model{{ID: "kept"}}}); err != nil {
 		t.Fatal(err)
 	}
+	m.form.Form = spawn.NewForm(m.spawnHost(), []string{"pi"}, 0)
+	m.mode = modeForm
 	m.form.prompt.attachments = []imageAttachment{{id: 7}}
 
 	m.applyCmd(t, m.ensureCatalog("pi"))
@@ -138,6 +140,8 @@ func TestAnUpdatedCLIIsAskedAgainRightAway(t *testing.T) {
 	if err := catalog.Keep(m.services.configDir, "pi", tool, kept); err != nil {
 		t.Fatal(err)
 	}
+	m.form.Form = spawn.NewForm(m.spawnHost(), []string{"pi"}, 0)
+	m.mode = modeForm
 	cmd := m.ensureCatalog("pi")
 	if cmd == nil || m.ensureCatalog("pi") != nil {
 		t.Fatal("the version probe should start once")
@@ -228,5 +232,18 @@ func TestAMissingCLIWithAFloorDoesNotOpenTheUpdateDialog(t *testing.T) {
 	var missing config.MissingToolError
 	if !errors.As(m.ledger.catalogs["pi"].err, &missing) || missing.Binary != "pi" {
 		t.Fatalf("err = %v, want pi missing", m.ledger.catalogs["pi"].err)
+	}
+}
+
+func TestOutdatedCatalogDoesNotReplaceAnotherInteraction(t *testing.T) {
+	for _, mode := range []mode{modeList, modeSettings, modeForm} {
+		m := buildModel(t)
+		m.form.Form = spawn.NewForm(m.spawnHost(), []string{"claude"}, 0)
+		m.mode = mode
+		m.ledger.catalogs = map[string]*catalogState{"pi": {loading: true}}
+		m.handleCatalog(catalogMsg{tool: "pi", err: config.OutdatedToolError{Binary: "pi", Installed: "0.84.2", Minimum: "0.84.3"}})
+		if m.mode != mode || m.ledger.catalogs["pi"].err == nil {
+			t.Fatalf("mode %v became %v or lost the catalog error", mode, m.mode)
+		}
 	}
 }
