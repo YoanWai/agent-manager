@@ -1,6 +1,6 @@
 # Configuration
 
-Everything you can change lives in Settings (`s` by default): the keys, the editor `o` opens, the theme, and the rest of its rows (see [Keys](usage.md#keys)). The manager stores each choice in `state.db` (SQLite) in your OS user config dir, `~/Library/Application Support/agent-manager/` on macOS and `~/.config/agent-manager/` on Linux, with `XDG_CONFIG_HOME` honored when set. Changes are saved as you leave Settings and take effect then, with no restart. `agent-manager settings` lists, reads and writes the same keys from a shell (see [Settings from a shell](usage.md#settings-from-a-shell)).
+Everything you can change lives in Settings (`s` by default): the keys, the editor `o` opens, the theme, and the rest of its rows (see [Keys](usage.md#keys)). The manager stores each choice in `state.db` (SQLite) in your OS user config dir, `~/Library/Application Support/agent-manager/` on macOS and `~/.config/agent-manager/` on Linux, with `XDG_CONFIG_HOME` honored when set. Changes are saved as you leave Settings and take effect then, with no restart. Only the rows you changed are written, so a change another manager or the CLI made in the meantime is kept. `agent-manager settings` lists, reads and writes the same keys from a shell (see [Settings from a shell](usage.md#settings-from-a-shell)).
 
 The **editor** row picks the command `o` opens a directory in (see [Opening the editor](usage.md#opening-the-editor)), and the **keybindings** row opens the [key picker](#key-bindings). Panes are polled every two seconds for status, preview, and stats.
 
@@ -9,6 +9,10 @@ The **editor** row picks the command `o` opens a directory in (see [Opening the 
 Earlier releases read a `config.toml` in that directory. The first start after upgrading carries its `editor` line and its `[keybindings.session]` and `[keybindings.list]` tables into Settings, so every key you moved stays where you put it. That happens once: from then on Settings is the only place the manager reads, and the file is yours to delete. A file the manager cannot read is named in Messages (`M`) with the reason, and the keys start from the defaults.
 
 The poll interval is fixed at two seconds, so a `poll_interval` line in that file has no effect. `[tools.<name>]` blocks have none either: every CLI's commands and status rules are built into the binary, which is how a fix for a CLI's new screen reaches you on upgrade.
+
+## Saved prompts
+
+One list in Settings, shared by the new-session form, the quick prompt, a focused session, `spawn --saved`, `send --saved`, and `saved` on `create_session` and `send_session`. Names are unique, up to 60 characters, with no brackets. The text is up to 64 KiB. `agent-manager prompts list`, `add` and `rm` edit the list from a shell. See [Saved prompts](usage.md#saved-prompts).
 
 ## Agent CLIs
 

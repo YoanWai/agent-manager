@@ -7,6 +7,8 @@
 
 <p align="center"><b>The fastest developer workflow for every AI coding agent.</b></p>
 
+<p align="center">the local one: a single go binary on top of tmux. no server, no account, nothing in the cloud.</p>
+
 <p align="center">
   <a href="https://peerlist.io/yoanwai/project/agent-manager" target="_blank" rel="noopener noreferrer">
     <picture>
@@ -47,6 +49,8 @@ The mouse works across the whole manager. The wheel moves the cursor, a click on
 ![Mouse demo with the geometric marks used by Advanced mode: the wheel moves the cursor, clicks focus and leave sessions, the ⠿ handle drags rows, and […] opens row actions](docs/demo-mouse.gif)
 
 The tools you use alongside agents live in the same list: `T` opens a shell under the selected agent, or in the selected group, for builds, Git, and one-off commands. An agent can spawn another, send it a message, and wait until it is done: every MCP-capable session carries those tools on launch.
+
+Save named instructions in Settings and reuse them from the New Session form, the quick prompt, a focused session, `spawn --saved`, `send --saved`, or `create_session`. See [Saved prompts](docs/usage.md#saved-prompts).
 
 Not here yet: cost tracking.
 
@@ -103,10 +107,10 @@ The full reference, every key, quick prompt mode, killing and reviving, diff rev
 | `n` | New session (name, tool, the model, effort and profile the tool reports, directory, optional starting prompt, group) |
 | `space` | Quick prompt mode: answer the selected session, or spawn an agent in the selected group |
 | `enter` | Focus the session in place; keys go to the agent while the list stays |
-| click / double click | Focus a session / fold or unfold a group. The full-screen layout selects on a click and focuses on a double click |
+| click / double click | Focus a session from its row or its preview / fold or unfold a group. The full-screen layout selects on a click and focuses on a double click |
 | drag `⠿` / `=` | Reorder a row, drop it into another group, or nest a terminal under an agent |
 | `[…]` / right click | The row's actions: attach, prompt, review, fork, rename, move, archive, kill, delete and more |
-| click its row / mouse back | Focused: back to the list. A click on another row focuses that one |
+| click the list / mouse back | Focused: back to the list. A click on another row focuses that one |
 | `→` / `←` | Step in and out: `→` focuses the session or opens the group, `←` closes the group and, at the start of a focused agent's prompt, comes back to the list. In beta, and Settings can turn the pair off |
 | `ctrl+r` | Review the session's changes as full-file diffs; `c` comments a line, `C` sends a numbered review round, and sent comments stay visible as open or handled |
 | `x` / `v` | Kill a session to free its RAM / revive it on its own conversation |

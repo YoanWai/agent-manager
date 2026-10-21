@@ -22,8 +22,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/tmux"
 )
 
-// prepareMainProcess recognizes tests re-executed by mainTestCommand and
-// replaces test flags with the agent-manager arguments following "--".
 func prepareMainProcess() bool {
 	if os.Getenv("AGENT_MANAGER_MAIN_TEST") != "1" {
 		return false

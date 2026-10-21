@@ -91,6 +91,11 @@ tmux silently falls back to the default socket. The directory must exist
 before tmux starts, for the same reason. Never run `tmux kill-server` or
 `kill-session` against the default socket; kill stray processes by PID.
 
+Panes fall back to `$SHELL` when their agent exits, and a shell whose startup
+files fork or print throws off the timing tests. `internal/ui` pins
+`SHELL=/bin/sh` in its `TestMain`; for the other packages that drive tmux, run
+with `SHELL=/bin/sh` as CI does.
+
 On Windows, see Checks in [CONTRIBUTING.md](.github/CONTRIBUTING.md) for
 what the suite needs.
 
@@ -214,8 +219,22 @@ with `gh release edit <tag> --notes-file notes.md`.
 
 - `main.go` dispatches subcommands (`rename`, `review-repo`, `sessions`,
   `spawn`, `mcp`, and the rest of the workspace CLI) and boots the TUI.
-- `internal/ui` is the Bubble Tea program: one `Model`, files grouped by
-  feature (list, diff review, focus, quick prompt mode, settings).
+- `internal/ui` is the Bubble Tea program: one `Model` that routes messages
+  and composes the frame. Help, Review, Focus, the Rail, Settings, the New
+  Session form, the quick bar, the small dialogs and the notices panel live in
+  child packages
+  (`internal/ui/{help,review,focus,rail,settings,spawn,quick,dialogs,notices}`);
+  `presentation` holds shared text helpers and `theme` the palettes. Features
+  that stay in `ui` each own their state, keys and view through a type with a
+  narrow host interface: `pathComplete`, `composer` and
+  `launchHintDialog`. Store, tmux and Git
+  work runs on the ordered effect lane (`effects.go`) through each feature's
+  `<feature>_effect.go`. Root files are named `<feature>_<concern>.go`, so
+  `ls internal/ui/settings_*` is the whole Settings adapter; only `keys.go`,
+  `mouse.go`, `updates.go` and `ids.go` route instead of owning a feature. A
+  new feature adds its name to `tools/architecture/check-file-names`. The
+  package map, the CI checks and the reasons are in
+  [docs/architecture.md](docs/architecture.md).
 - `internal/tmux` owns the dedicated tmux socket and control-mode client;
   `internal/store` is the SQLite state, Settings included; `internal/status`
   classifies pane output into agent states; `internal/config` holds the
@@ -227,4 +246,8 @@ with `gh release edit <tag> --notes-file notes.md`.
 
 - Comments are rare and explain a non-obvious why, never what the code does.
 - Tests live next to the file they cover: a test for `listview.go` belongs
-  in `listview_test.go`.
+  in `listview_test.go`, or `listview_<aspect>_test.go` when it splits.
+  `tools/architecture/check-file-names` fails on any other name; shared
+  fixtures go in `*_helpers_test.go`.
+- A Go source file stays under 1,000 lines;
+  `tools/architecture/check-file-sizes` fails on one that reaches it.

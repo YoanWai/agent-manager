@@ -52,7 +52,7 @@ jobs:
           fixture_root=$(mktemp -d /tmp/am-ci-race.XXXXXX)
           mkdir -p "$fixture_root/zsh"
           env -u TMUX -u TMUX_PANE TMUX_TMPDIR="$fixture_root" ZDOTDIR="$fixture_root/zsh" SHELL=/bin/sh \
-            go test -race -timeout 20m -coverprofile=coverage.out -covermode=atomic ./...
+            go test -race -timeout 20m -coverpkg=./... -coverprofile=coverage.out -covermode=atomic ./...
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
@@ -76,14 +76,27 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y tmux
       - name: Harness contracts
         run: python3 -m unittest discover -s tools/e2e -p 'test_*.py'
+      - name: Feature dependencies
+        run: go run ./tools/architecture/check-ui-boundaries
+      - name: File names
+        run: go run ./tools/architecture/check-file-names
+      - name: File sizes
+        run: go run ./tools/architecture/check-file-sizes
       - name: Build terminal test binary
         run: go build -o "$RUNNER_TEMP/am-e2e-binary" .
       - name: Real terminal smoke
         run: python3 tools/e2e/smoke.py --binary "$RUNNER_TEMP/am-e2e-binary" --artifacts "$RUNNER_TEMP/am-e2e-evidence"
-      - name: Dialog scenarios
-        run: python3 tools/e2e/scenarios.py --binary "$RUNNER_TEMP/am-e2e-binary" --artifacts "$RUNNER_TEMP/am-scenario-evidence"
-      - name: Installation failure scenarios
+      - name: Dialog and quit-drain scenarios
+        run: |
+          for mode in advanced basic; do
+            python3 tools/e2e/scenarios.py --binary "$RUNNER_TEMP/am-e2e-binary" --glyph-mode "$mode" --artifacts "$RUNNER_TEMP/am-scenario-evidence/$mode"
+          done
+      - name: Partial writes and installation scenarios
         run: python3 tools/e2e/failure_scenarios.py --binary "$RUNNER_TEMP/am-e2e-binary" --artifacts "$RUNNER_TEMP/am-failure-evidence"
+      - name: Blocked dialog and focus scenarios
+        run: python3 tools/e2e/blocked_scenarios.py --binary "$RUNNER_TEMP/am-e2e-binary" --artifacts "$RUNNER_TEMP/am-blocked-evidence"
+      - name: Compatibility fixture safety
+        run: python3 -m unittest discover -s tools/compatibility -p 'test_*.py'
       - name: Retain smoke evidence
         if: always()
         uses: actions/upload-artifact@v7
@@ -93,12 +106,29 @@ jobs:
             ${{ runner.temp }}/am-e2e-evidence
             ${{ runner.temp }}/am-scenario-evidence
             ${{ runner.temp }}/am-failure-evidence
+            ${{ runner.temp }}/am-blocked-evidence
           include-hidden-files: true
           retention-days: 7
           if-no-files-found: ignore
 
+  # internal/ui takes over ten minutes on Windows, so its tests split by
+  # name across two runners and the other packages run on a third.
   test-windows:
+    name: test-windows (${{ matrix.shard }})
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: ui A-L
+            suite: ui
+            tests: '^Test[A-L]'
+          - shard: ui M-Z
+            suite: ui
+            tests: '^Test[^A-L]'
+          - shard: other packages
+            suite: rest
+            tests: '.'
     steps:
       - uses: actions/checkout@v7
         with:
@@ -107,11 +137,26 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Install psmux
-        run: cargo install psmux --version 3.4.0
+        run: |
+          $zip = "$env:RUNNER_TEMP\psmux.zip"
+          Invoke-WebRequest https://github.com/psmux/psmux/releases/download/v3.4.0/psmux-v3.4.0-windows-x64.zip -OutFile $zip
+          if ((Get-FileHash $zip -Algorithm SHA256).Hash -ne 'a66b6be7c13c6fa0dc3660a267b9e34eaa91a4eb7f07fbd55a0468018bd0f721') {
+            throw 'psmux download does not match its release checksum'
+          }
+          Expand-Archive $zip "$env:RUNNER_TEMP\psmux"
+          "$env:RUNNER_TEMP\psmux" >> $env:GITHUB_PATH
       - name: Vet
+        if: matrix.suite == 'rest'
         run: go vet ./...
       # -race needs cgo on Windows. Each psmux session is its own server and
-      # each pane a PowerShell, so the ui suite runs past go test's default
-      # ten minutes.
+      # each pane a PowerShell, so a shard can run past go test's default
+      # ten minutes. -p 2 keeps the heavy packages from starving the
+      # timing-sensitive ones that would otherwise run beside them.
       - name: Test
-        run: go test -timeout 40m ./...
+        env:
+          SUITE: ${{ matrix.suite }}
+          TESTS: ${{ matrix.tests }}
+        run: |
+          $ui = 'github.com/YoanWai/agent-manager/internal/ui'
+          $packages = if ($env:SUITE -eq 'ui') { $ui } else { go list ./... | Where-Object { $_ -ne $ui } }
+          go test -p 2 -timeout 60m -run $env:TESTS $packages

@@ -69,16 +69,15 @@ type Context struct {
 }
 
 type Preview struct {
-	ID      string   `json:"id" jsonschema:"identifies this exact issue, route and account; filing takes it back and refuses once any of them has changed"`
-	Kind    Kind     `json:"kind"`
-	Title   string   `json:"title"`
-	Body    string   `json:"body" jsonschema:"issue body exactly as it will be posted, context included"`
-	Labels  []string `json:"labels"`
-	Context Context  `json:"context"`
-	Route   string   `json:"route" jsonschema:"gh posts through the gh CLI as the user's account; browser hands the user a prefilled form url instead"`
-	Account string   `json:"account,omitempty" jsonschema:"GitHub login gh would post as"`
-	Reason  string   `json:"reason,omitempty" jsonschema:"why the browser route is used instead of gh"`
-	URL     string   `json:"url" jsonschema:"prefilled new-issue form url, the browser route's answer"`
+	ID      string  `json:"id" jsonschema:"identifies this exact issue, route and account; filing takes it back and refuses once any of them has changed"`
+	Kind    Kind    `json:"kind"`
+	Title   string  `json:"title"`
+	Body    string  `json:"body" jsonschema:"issue body exactly as it will be posted, context included"`
+	Context Context `json:"context"`
+	Route   string  `json:"route" jsonschema:"gh posts through the gh CLI as the user's account; browser hands the user a prefilled form url instead"`
+	Account string  `json:"account,omitempty" jsonschema:"GitHub login gh would post as"`
+	Reason  string  `json:"reason,omitempty" jsonschema:"why the browser route is used instead of gh"`
+	URL     string  `json:"url" jsonschema:"prefilled new-issue form url, the browser route's answer"`
 }
 
 type Filed struct {
@@ -111,7 +110,6 @@ func (r *Reporter) Preview(sessionID string, draft Draft) (Preview, error) {
 		Kind:    draft.Kind,
 		Title:   strings.TrimSpace(draft.Title),
 		Body:    compose(draft, gathered),
-		Labels:  labels(draft.Kind),
 		Context: gathered,
 		URL:     formURL(draft, gathered),
 	}
@@ -124,7 +122,7 @@ func (r *Reporter) Preview(sessionID string, draft Draft) (Preview, error) {
 // itself, the route that decides whether anything is posted at all, and the
 // account it would be posted as.
 func (p Preview) fingerprint() string {
-	sum := sha256.Sum256([]byte(strings.Join([]string{p.Route, p.Account, p.Title, p.Body, strings.Join(p.Labels, ",")}, "\x00")))
+	sum := sha256.Sum256([]byte(strings.Join([]string{p.Route, p.Account, p.Title, p.Body}, "\x00")))
 	return hex.EncodeToString(sum[:])
 }
 
@@ -154,11 +152,7 @@ func (r *Reporter) File(sessionID string, draft Draft, previewID string) (Filed,
 	if filed, done := r.filed[previewID]; done {
 		return filed, nil
 	}
-	args := []string{"issue", "create", "--repo", repo, "--title", preview.Title, "--body", preview.Body}
-	for _, label := range preview.Labels {
-		args = append(args, "--label", label)
-	}
-	issueURL, err := runCommand("gh", args...)
+	issueURL, err := runCommand("gh", "issue", "create", "--repo", repo, "--title", preview.Title, "--body", preview.Body)
 	if err != nil {
 		return Filed{}, fmt.Errorf("gh issue create: %w", err)
 	}
@@ -181,13 +175,6 @@ func (d Draft) validate() error {
 		return errors.New("body is empty; say what you are trying to do and what you have in mind")
 	}
 	return nil
-}
-
-func labels(kind Kind) []string {
-	if kind == Bug {
-		return []string{"bug"}
-	}
-	return []string{"enhancement"}
 }
 
 // compose renders the body with the headings GitHub gives a form
@@ -378,7 +365,6 @@ func FormatPreview(preview Preview, confirm string) string {
 	var out strings.Builder
 	fmt.Fprintf(&out, "%s for %s, not filed yet\n", describe(preview.Kind), repo)
 	fmt.Fprintf(&out, "title: %s\n", preview.Title)
-	fmt.Fprintf(&out, "labels: %s\n", strings.Join(preview.Labels, ", "))
 	fmt.Fprintf(&out, "preview id: %s\n\n", preview.ID)
 	out.WriteString(preview.Body)
 	out.WriteString("\n")

@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/YoanWai/agent-manager/internal/clipboard"
+	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -23,6 +25,9 @@ import (
 type composer struct {
 	input       textarea.Model
 	attachments []imageAttachment
+	// saved are the saved prompt chips, each with the text it was picked
+	// with, which takes the chip's place on send.
+	saved       []spawn.Saved
 	lastImageID int
 	maxRows     int
 	top         int
@@ -98,12 +103,21 @@ func pasteTextCmd(target composerID, gen int) tea.Cmd {
 // the prompt value. The token carries the id, so a chip keeps its identity
 // wherever the text around it moves.
 var imageTokenPattern = regexp.MustCompile(`\[Image #(\d+)\]`)
+var savedTokenPattern = regexp.MustCompile(`\[saved prompt:([^\[\]]+)\]`)
 
-func imageToken(id int) string { return fmt.Sprintf("[Image #%d]", id) }
+func imageToken(id int) string      { return fmt.Sprintf("[Image #%d]", id) }
+func savedToken(name string) string { return "[saved prompt:" + name + "]" }
+
+const (
+	tokenImage = iota
+	tokenSaved
+)
 
 // tokenSpan is one chip's place in the prompt value, in rune offsets.
 type tokenSpan struct {
+	kind  int
 	id    int
+	name  string
 	start int
 	end   int
 }
@@ -121,12 +135,55 @@ func (c *composer) tokenSpans() []tokenSpan {
 			continue
 		}
 		spans = append(spans, tokenSpan{
+			kind:  tokenImage,
 			id:    id,
 			start: utf8.RuneCountInString(value[:match[0]]),
 			end:   utf8.RuneCountInString(value[:match[1]]),
 		})
 	}
+	for _, match := range savedTokenPattern.FindAllStringSubmatchIndex(value, -1) {
+		name := value[match[2]:match[3]]
+		if c.savedChip(name) == nil {
+			continue
+		}
+		spans = append(spans, tokenSpan{
+			kind:  tokenSaved,
+			name:  name,
+			start: utf8.RuneCountInString(value[:match[0]]),
+			end:   utf8.RuneCountInString(value[:match[1]]),
+		})
+	}
+	slices.SortFunc(spans, func(a, b tokenSpan) int { return a.start - b.start })
 	return spans
+}
+
+func (c *composer) savedChip(name string) *spawn.Saved {
+	for i := range c.saved {
+		if c.saved[i].Name == name {
+			return &c.saved[i]
+		}
+	}
+	return nil
+}
+
+// insertSaved drops a saved prompt chip in at the caret. Picking a name
+// already in the prompt takes the newer text for both.
+func (c *composer) insertSaved(saved spawn.Saved) {
+	if chip := c.savedChip(saved.Name); chip != nil {
+		chip.Text = saved.Text
+	} else {
+		c.saved = append(c.saved, saved)
+	}
+	runes := []rune(c.input.Value())
+	cursor := c.cursorOffset()
+	token := savedToken(saved.Name)
+	if cursor > 0 && !isSpaceRune(runes[cursor-1]) {
+		token = " " + token
+	}
+	if cursor >= len(runes) || !isSpaceRune(runes[cursor]) {
+		token += " "
+	}
+	c.input.InsertString(token)
 }
 
 func (c *composer) attachment(id int) *imageAttachment {
@@ -168,15 +225,15 @@ func (c *composer) drop(id int) {
 // catch-all for deletions that do not go through the chip-aware keys
 // (ctrl+u, word delete, a fresh SetValue).
 func (c *composer) prune() {
-	if len(c.attachments) == 0 {
-		return
-	}
 	value := c.input.Value()
 	for _, att := range append([]imageAttachment(nil), c.attachments...) {
 		if !strings.Contains(value, imageToken(att.id)) {
 			c.drop(att.id)
 		}
 	}
+	c.saved = slices.DeleteFunc(c.saved, func(saved spawn.Saved) bool {
+		return !strings.Contains(value, savedToken(saved.Name))
+	})
 }
 
 // roomForToken guards the paste against the prompt's char limit:
@@ -197,6 +254,7 @@ func (c *composer) release() {
 	for _, att := range append([]imageAttachment(nil), c.attachments...) {
 		c.drop(att.id)
 	}
+	c.saved = nil
 }
 
 // cursorOffset is the caret's rune offset into the whole prompt value.
@@ -292,7 +350,11 @@ func (c *composer) removeToken(span tokenSpan) tea.Cmd {
 		cursor = span.start
 	}
 	cmd := c.setValue(string(runes[:span.start])+string(runes[span.end:]), cursor)
-	c.drop(span.id)
+	if span.kind == tokenImage {
+		c.drop(span.id)
+	} else {
+		c.prune()
+	}
 	return cmd
 }
 
@@ -310,6 +372,9 @@ func (c *composer) removeImage(id int) tea.Cmd {
 // withPadding grows a span over the spacing the paste itself added, so
 // removing a chip leaves the words around it as they were.
 func (c *composer) withPadding(span tokenSpan, runes []rune) tokenSpan {
+	if span.kind != tokenImage {
+		return span
+	}
 	att := c.attachment(span.id)
 	if att.leadPad && span.start > 0 && runes[span.start-1] == ' ' {
 		span.start--
@@ -387,7 +452,13 @@ func (c *composer) message() string {
 		}
 		return att.path
 	})
-	return strings.TrimSpace(value)
+	// A saved prompt's text goes in as written, so it is put in after the
+	// trim.
+	value = strings.TrimSpace(value)
+	for _, saved := range c.saved {
+		value = strings.ReplaceAll(value, savedToken(saved.Name), saved.Text)
+	}
+	return value
 }
 
 // Keep the textarea viewport at row zero so view owns scrolling.
@@ -443,6 +514,10 @@ func (c *composer) renderChips(view string) string {
 			view = strings.ReplaceAll(view, token, imageChipPasting(token))
 			continue
 		}
+		view = strings.ReplaceAll(view, token, imageChip(token))
+	}
+	for _, saved := range c.saved {
+		token := savedToken(saved.Name)
 		view = strings.ReplaceAll(view, token, imageChip(token))
 	}
 	return view
@@ -517,8 +592,8 @@ func captureImageCmd(target composerID, gen, id int) tea.Cmd {
 // nextComposerGen numbers a freshly opened prompt box, so a clipboard read
 // still in flight can tell the box it was started in from its successor.
 func (m *Model) nextComposerGen() int {
-	m.composerSeq++
-	return m.composerSeq
+	m.ledger.composerSeq++
+	return m.ledger.composerSeq
 }
 
 // composerFor is the prompt box a target names, whatever screen is up.
@@ -538,11 +613,17 @@ func (m *Model) composerOpen(target composerID) bool {
 	return m.quick.active
 }
 
-// composerKey handles the keys a prompt box with chips owns: pasting an
+// composerHost is the status bar a prompt box reports its paste and chip
+// edits on.
+type composerHost interface {
+	reportErr(text string)
+	clearErr()
+}
+
+// handleChipKey handles the keys a prompt box with chips owns: pasting an
 // image, stepping over a chip, and deleting one whole. The false return is
 // every other key, which the caller types into the input itself.
-func (m *Model) composerKey(target composerID, msg tea.KeyMsg) (tea.Cmd, bool) {
-	c := m.composerFor(target)
+func (c *composer) handleChipKey(h composerHost, target composerID, msg tea.KeyMsg) (tea.Cmd, bool) {
 	switch msg.String() {
 	case "ctrl+v":
 		if c.pasting() {
@@ -550,10 +631,10 @@ func (m *Model) composerKey(target composerID, msg tea.KeyMsg) (tea.Cmd, bool) {
 		}
 		cmd, ok := c.paste(target)
 		if !ok {
-			m.errBar.text = "prompt is full - shorten it before pasting an image"
+			h.reportErr("prompt is full - shorten it before pasting an image")
 			return nil, true
 		}
-		m.errBar.text = ""
+		h.clearErr()
 		return cmd, true
 	case "left":
 		if span, ok := c.tokenEndingAt(c.cursorOffset()); ok {
@@ -568,24 +649,28 @@ func (m *Model) composerKey(target composerID, msg tea.KeyMsg) (tea.Cmd, bool) {
 	case "backspace", "ctrl+h":
 		if span, ok := c.tokenEndingAt(c.cursorOffset()); ok {
 			cmd := c.removeToken(span)
-			m.errBar.text = ""
+			h.clearErr()
 			return cmd, true
 		}
 	case "delete":
 		if span, ok := c.tokenStartingAt(c.cursorOffset()); ok {
 			cmd := c.removeToken(span)
-			m.errBar.text = ""
+			h.clearErr()
 			return cmd, true
 		}
 	}
 	return nil, false
 }
 
-// handlePasteImageMsg applies an async clipboard result to the chip the
-// paste reserved: the path fills it in, a real error surfaces and takes
-// the chip back out, and no-image falls through to a text paste.
 func (m *Model) handlePasteImageMsg(msg pasteImageMsg) (tea.Model, tea.Cmd) {
-	c := m.composerFor(msg.target)
+	return m, m.composerFor(msg.target).acceptImage(m, msg, m.composerOpen(msg.target))
+}
+
+// acceptImage applies an async clipboard result to the chip the paste
+// reserved: the path fills it in, a real error surfaces and takes the chip
+// back out, and no-image falls through to a text paste. open says the box
+// is still on screen.
+func (c *composer) acceptImage(h composerHost, msg pasteImageMsg, open bool) tea.Cmd {
 	// A read started in a box that has since been closed and replaced: the
 	// one standing there now never asked for it, and its own chips are not
 	// this message's to take away.
@@ -593,41 +678,64 @@ func (m *Model) handlePasteImageMsg(msg pasteImageMsg) (tea.Model, tea.Cmd) {
 		if msg.path != "" {
 			_ = os.Remove(msg.path)
 		}
-		return m, nil
+		return nil
 	}
 	att := c.attachment(msg.id)
-	if att == nil || !m.composerOpen(msg.target) {
+	if att == nil || !open {
 		if msg.path != "" {
 			_ = os.Remove(msg.path)
 		}
 		if att != nil {
 			c.drop(msg.id)
 		}
-		return m, nil
+		return nil
 	}
 	if msg.err != nil {
 		cmd := c.removeImage(msg.id)
-		m.errBar.text = msg.err.Error()
-		return m, cmd
+		h.reportErr(msg.err.Error())
+		return cmd
 	}
 	if msg.noImage {
 		cmd := c.removeImage(msg.id)
-		return m, tea.Batch(cmd, pasteTextCmd(msg.target, c.gen))
+		return tea.Batch(cmd, pasteTextCmd(msg.target, c.gen))
 	}
 	att.path = msg.path
-	m.errBar.text = ""
-	return m, nil
+	h.clearErr()
+	return nil
 }
 
-// handlePasteTextMsg delivers a text clipboard to the box that asked for
-// it, as though the paste had been typed there.
 func (m *Model) handlePasteTextMsg(msg pasteTextMsg) (tea.Model, tea.Cmd) {
-	c := m.composerFor(msg.target)
-	if c.gen != msg.gen || !m.composerOpen(msg.target) {
-		return m, nil
+	return m, m.composerFor(msg.target).acceptText(msg, m.composerOpen(msg.target))
+}
+
+// acceptText delivers a text clipboard to the box that asked for it, as
+// though the paste had been typed there.
+func (c *composer) acceptText(msg pasteTextMsg, open bool) tea.Cmd {
+	if c.gen != msg.gen || !open {
+		return nil
 	}
 	cmd := c.updateInput(msg.inner)
 	c.prune()
 	c.snapCursorOutOfToken(snapNearest)
-	return m, cmd
+	return cmd
+}
+
+func (m *Model) routePasteMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	switch msg := msg.(type) {
+	case pasteSweepMsg:
+		if msg.err != nil {
+			m.reportErr("clearing old pasted images: " + msg.err.Error())
+		}
+		return routed(m, nil)
+
+	case pasteSweepTickMsg:
+		return routed(m, tea.Batch(m.sweepPastes, m.pasteSweepTick()))
+
+	case pasteImageMsg:
+		return routed(m.handlePasteImageMsg(msg))
+
+	case pasteTextMsg:
+		return routed(m.handlePasteTextMsg(msg))
+	}
+	return nil, nil, false
 }

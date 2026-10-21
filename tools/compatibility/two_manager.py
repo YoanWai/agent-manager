@@ -16,7 +16,6 @@ import threading
 import sqlite3
 import subprocess
 import sys
-import tempfile
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'e2e'))
@@ -32,7 +31,10 @@ def run(binary, work):
     processes = {}
     masters = []
     observations = []
-    db = profile_dir(sandbox) / 'state.db'
+    config = profile_dir(sandbox)
+    config.mkdir(parents=True, exist_ok=True)
+    (config / 'config.toml').write_text('poll_interval = "1s"\n')
+    db = config / 'state.db'
 
     def tmux(name, *args, check=True):
         return subprocess.run([real_tmux, '-f', '/dev/null', '-S', str(sockets[name]), *args],
@@ -128,17 +130,14 @@ def run(binary, work):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--binary', type=Path, required=True)
-    parser.add_argument('--work', type=Path, help='new output directory (always retained); a fresh one under /tmp when omitted')
+    parser.add_argument('--work', type=Path, required=True)
     args = parser.parse_args()
-    work = (args.work or Path(tempfile.mkdtemp(prefix='am-two.', dir='/tmp'))).resolve()
-    if args.work:
-        work.mkdir(parents=True, exist_ok=False)
     started = time.monotonic()
     try:
-        result = run(args.binary.resolve(), work)
+        result = run(args.binary.resolve(), args.work.resolve())
     except Exception as error:
         result = dict(status='failed', error=str(error))
     result['seconds'] = round(time.monotonic() - started, 2)
-    (work / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
-    print(json.dumps(dict(result, artifacts=str(work))))
+    (args.work / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
+    print(json.dumps(dict(result, artifacts=str(args.work))))
     sys.exit(0 if result['status'] == 'passed' else 1)

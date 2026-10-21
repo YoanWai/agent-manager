@@ -15,8 +15,8 @@ import (
 
 const (
 	usageSessions      = "sessions [--json]"
-	usageSpawn         = "spawn [--name <name>] [--prompt <text>] [--tool <cli>] [--model <model>] [--effort <level>] [--profile <name>] [--group <path>] [--directory <path>] [--worktree] [--json]"
-	usageSend          = `send <session-id> "<message>" [--json]`
+	usageSpawn         = "spawn [--name <name>] [--prompt <text>] [--saved <name>] [--tool <cli>] [--model <model>] [--effort <level>] [--profile <name>] [--group <path>] [--directory <path>] [--worktree] [--json]"
+	usageSend          = `send <session-id> ["<message>"] [--saved <name>] [--json]`
 	usageRead          = "read <session-id> [--json]"
 	usageWait          = "wait <session-id> [--until <state>] [--timeout <duration>] [--json]"
 	usageMessageStatus = "message-status <message-id> [--json]"
@@ -34,6 +34,7 @@ type sessionCommands interface {
 	List(sessionID string) ([]sessioncmd.Session, error)
 	Create(sessionID string, opts sessioncmd.CreateSessionOptions) (sessioncmd.Session, error)
 	Send(sessionID, targetID, message string) (sessioncmd.SendResult, error)
+	ExpandSaved(name, text string) (string, error)
 	Read(sessionID, targetID string) (sessioncmd.SessionScreen, error)
 	Wait(ctx context.Context, sessionID, targetID string, until []string, timeout time.Duration) (sessioncmd.WaitResult, error)
 	MessageStatus(sessionID string, messageID int64) (sessioncmd.MessageState, error)
@@ -52,23 +53,27 @@ func newSessions(configDir string) sessionCommands {
 }
 
 func sessionSection() section {
+	return sessionSectionWith(newSessions)
+}
+
+func sessionSectionWith(open func(string) sessionCommands) section {
 	return section{
 		title: "Agent sessions",
 		commands: []command{
-			{name: "sessions", usage: usageSessions, about: "list every agent session with its id, CLI, group, directory and status; call it before delegating anything", run: bind(newSessions, runSessions)},
-			{name: "spawn", usage: usageSpawn, about: "start another agent CLI on a task of its own, so independent work runs beside you instead of queued behind you", run: bind(newSessions, runSpawn)},
-			{name: "send", usage: usageSend, about: "queue a message for another agent; it is typed in once that agent is at rest, so it never lands on an approval prompt", run: bind(newSessions, runSend)},
-			{name: "read", usage: usageRead, about: "read what another agent's screen currently shows", run: bind(newSessions, runRead)},
-			{name: "wait", usage: usageWait, about: "park until another session stops working, instead of reading its screen in a loop; exits non-zero when it timed out", run: bind(newSessions, runWait)},
-			{name: "message-status", usage: usageMessageStatus, about: "check whether a message you sent is queued, held, delivered, dropped or answered", run: bind(newSessions, runMessageStatus)},
-			{name: "kill", usage: usageKill, about: "stop another agent's process, ending whatever it is doing; its row keeps the last screen", run: bind(newSessions, runKill)},
-			{name: "revive", usage: usageRevive, about: "bring a dead session back on its old row, resuming the conversation it held; an agent that quit inside a live pane comes back there", run: bind(newSessions, runRevive)},
-			{name: "archive", usage: usageArchive, about: "file a finished session out of the active list, or restore it with --restore", run: bind(newSessions, runArchive)},
-			{name: "archive-self", usage: usageArchiveSelf, about: "archive this session once the current turn ends, the way the archive key does; --cancel withdraws a pending archive or kill", run: bind(newSessions, runArchiveSelf)},
-			{name: "kill-self", usage: usageKillSelf, about: "stop this session's agent once the current turn ends, keeping its row for revive; --cancel withdraws a pending archive or kill", run: bind(newSessions, runKillSelf)},
-			{name: "groups", usage: usageGroups, about: "list the groups sessions and terminals are filed under", run: bind(newSessions, runGroups)},
-			{name: "create-group", usage: usageCreateGroup, about: "create a group so a fleet you spawn stays together in the user's list", run: bind(newSessions, runCreateGroup)},
-			{name: "delete-group", usage: usageDeleteGroup, about: "remove a group whose work is done; sessions still in it move to the root rather than stopping", run: bind(newSessions, runDeleteGroup)},
+			{name: "sessions", usage: usageSessions, about: "list every agent session with its id, CLI, group, directory and status; call it before delegating anything", run: bind(open, runSessions)},
+			{name: "spawn", usage: usageSpawn, about: "start another agent CLI on a task of its own, so independent work runs beside you instead of queued behind you", run: bind(open, runSpawn)},
+			{name: "send", usage: usageSend, about: "queue a message for another agent; it is typed in once that agent is at rest, so it never lands on an approval prompt", run: bind(open, runSend)},
+			{name: "read", usage: usageRead, about: "read what another agent's screen currently shows", run: bind(open, runRead)},
+			{name: "wait", usage: usageWait, about: "park until another session stops working, instead of reading its screen in a loop; exits non-zero when it timed out", run: bind(open, runWait)},
+			{name: "message-status", usage: usageMessageStatus, about: "check whether a message you sent is queued, held, delivered, dropped or answered", run: bind(open, runMessageStatus)},
+			{name: "kill", usage: usageKill, about: "stop another agent's process, ending whatever it is doing; its row keeps the last screen", run: bind(open, runKill)},
+			{name: "revive", usage: usageRevive, about: "bring a dead session back on its old row, resuming the conversation it held; an agent that quit inside a live pane comes back there", run: bind(open, runRevive)},
+			{name: "archive", usage: usageArchive, about: "file a finished session out of the active list, or restore it with --restore", run: bind(open, runArchive)},
+			{name: "archive-self", usage: usageArchiveSelf, about: "archive this session once the current turn ends, the way the archive key does; --cancel withdraws a pending archive or kill", run: bind(open, runArchiveSelf)},
+			{name: "kill-self", usage: usageKillSelf, about: "stop this session's agent once the current turn ends, keeping its row for revive; --cancel withdraws a pending archive or kill", run: bind(open, runKillSelf)},
+			{name: "groups", usage: usageGroups, about: "list the groups sessions and terminals are filed under", run: bind(open, runGroups)},
+			{name: "create-group", usage: usageCreateGroup, about: "create a group so a fleet you spawn stays together in the user's list", run: bind(open, runCreateGroup)},
+			{name: "delete-group", usage: usageDeleteGroup, about: "remove a group whose work is done; sessions still in it move to the root rather than stopping", run: bind(open, runDeleteGroup)},
 		},
 	}
 }
@@ -90,6 +95,7 @@ func runSpawn(out io.Writer, sessions sessionCommands, args []string, sessionID 
 	set := newFlagSet(usageSpawn)
 	name := set.String("name", "", "kebab-case name naming the work it will do; the new agent names itself when this is empty")
 	prompt := set.String("prompt", "", "first task to hand it, written as a full instruction, since it cannot see your conversation")
+	saved := set.String("saved", "", "saved prompt to put in front of the first task; resolved when creating the session")
 	tool := set.String("tool", "", "agent CLI to run; defaults to the caller's CLI, or to the one picked in settings from a terminal or with no caller")
 	model := set.String("model", "", "model to run it on, one the CLI lists; defaults to the CLI's own, and a restart, revive or fork keeps it")
 	effort := set.String("effort", "", "reasoning effort, one the model takes; defaults to the CLI's own")
@@ -106,6 +112,7 @@ func runSpawn(out io.Writer, sessions sessionCommands, args []string, sessionID 
 		Name:      *name,
 		Directory: *directory,
 		Prompt:    *prompt,
+		Preset:    *saved,
 		Model:     *model,
 		Effort:    *effort,
 		Profile:   *profile,
@@ -129,12 +136,24 @@ func runSpawn(out io.Writer, sessions sessionCommands, args []string, sessionID 
 
 func runSend(out io.Writer, sessions sessionCommands, args []string, sessionID string) error {
 	set := newFlagSet(usageSend)
+	saved := set.String("saved", "", "saved prompt to put in front of the message; the message can be omitted when this is set")
 	asJSON := jsonFlag(set)
-	operands, err := parseCommand(out, set, args, 2, 2)
+	operands, err := parseCommand(out, set, args, 1, 2)
 	if err != nil {
 		return err
 	}
-	result, err := sessions.Send(sessionID, operands[0], operands[1])
+	message := ""
+	if len(operands) == 2 {
+		message = operands[1]
+	}
+	if message == "" && *saved == "" {
+		return usageError(usageSend)
+	}
+	text, err := sessions.ExpandSaved(*saved, message)
+	if err != nil {
+		return err
+	}
+	result, err := sessions.Send(sessionID, operands[0], text)
 	if err != nil {
 		return err
 	}

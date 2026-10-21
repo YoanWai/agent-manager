@@ -55,7 +55,8 @@ type listSessionsArgs struct{}
 
 type createSessionArgs struct {
 	Name      string  `json:"name,omitempty" jsonschema:"kebab-case name for the new session, 2-4 words naming the work it will do (e.g. payments-retry-fix); leave empty only when the task is unknown, and the new agent will name itself"`
-	Prompt    string  `json:"prompt,omitempty" jsonschema:"first task to hand the new agent, written as a full instruction; it starts idle when empty"`
+	Prompt    string  `json:"prompt,omitempty" jsonschema:"first task to hand the new agent, written as a full instruction; an empty task sends only the saved prompt when one is selected, otherwise it starts idle"`
+	Saved     string  `json:"saved,omitempty" jsonschema:"name of a saved prompt from Settings; resolved freshly at creation and prepended literally to the first task; omit for none; a missing name refuses creation"`
 	Tool      string  `json:"tool,omitempty" jsonschema:"agent CLI to run, such as claude, codex, opencode, gemini or grok; defaults to the caller's CLI, or to the one picked in settings when the caller is a terminal; call list_sessions to see which are in use"`
 	Group     *string `json:"group,omitempty" jsonschema:"existing group path to file the session under; pass an empty string for the root group; defaults to this agent's group; call list_groups for the existing ones"`
 	Directory string  `json:"directory,omitempty" jsonschema:"existing directory the session works in; defaults to this agent's own directory, or to the selected group's inherited path when group is set"`
@@ -71,7 +72,8 @@ type sessionTargetArgs struct {
 
 type sendSessionArgs struct {
 	SessionID string `json:"session_id" jsonschema:"session id returned by list_sessions or create_session"`
-	Message   string `json:"message" jsonschema:"message typed into that agent's prompt as its next turn; write it as a full instruction, since the other agent does not see this conversation"`
+	Message   string `json:"message,omitempty" jsonschema:"message typed into that agent's prompt as its next turn; write it as a full instruction, since the other agent does not see this conversation; omit it to send only the saved prompt"`
+	Saved     string `json:"saved,omitempty" jsonschema:"name of a saved prompt from Settings; resolved when sending and placed in front of message; omit for none; a missing name refuses the send"`
 }
 
 type archiveSessionArgs struct {
@@ -178,6 +180,7 @@ type sessionCommands interface {
 	List(sessionID string) ([]sessioncmd.Session, error)
 	Create(sessionID string, opts sessioncmd.CreateSessionOptions) (sessioncmd.Session, error)
 	Send(sessionID, targetID, message string) (sessioncmd.SendResult, error)
+	ExpandSaved(name, text string) (string, error)
 	Wait(ctx context.Context, sessionID, targetID string, until []string, timeout time.Duration) (sessioncmd.WaitResult, error)
 	MessageStatus(sessionID string, messageID int64) (sessioncmd.MessageState, error)
 	Read(sessionID, targetID string) (sessioncmd.SessionScreen, error)
@@ -200,12 +203,6 @@ type sessionCommands interface {
 	DeleteGroup(sessionID, path string) (sessioncmd.GroupRemoval, error)
 }
 
-// The instructions are the block a client shows its model before any tool
-// is called, and they are what makes an agent reach for these tools at all:
-// with them emptied, a model offered the same tools delegates to its own
-// subagents instead. Claude Code truncates the block at 2048 characters, so
-// each mode stays under that; what individual tool descriptions already
-// carry (the review targets, the queueing rules) is left to them.
 const instructionsIntro = `Agent Manager runs this conversation in one of the user's managed tmux sessions. The others are separate CLI processes with contexts of their own, running any CLI the user chose (Claude Code, Codex, Gemini), never subagents of this conversation. These tools operate that workspace.`
 
 const instructionsTail = `Shell work the user should see. Open a terminal when the user should watch, attach or take over, as with SSH into a host. Keep one-shot local commands in your normal tools. Call list_terminals first and reuse a running terminal when possible. create_terminal nests under this session unless nest is false, which another group needs. Use send_terminal and read_terminal, and close_terminal when that job is done unless it is left for the user.
@@ -240,7 +237,32 @@ func NewServer(configDir, sessionID, version string, proactive bool) *mcp.Server
 	return newServer(configDir, sessionID, version, proactive, sessioncmd.NewTerminals(configDir, words), sessioncmd.NewSessions(configDir, words), report.New(configDir, version))
 }
 
+func NewServerWithBackend(configDir, sessionID, version string, proactive bool, backend *sessioncmd.Backend) *mcp.Server {
+	if backend == nil {
+		panic("command backend is required")
+	}
+	words := sessioncmd.MCPVocabulary()
+	return newServerWithMailbox(sessionID, version, proactive, sessioncmd.NewTerminalsWithBackend(backend, words), sessioncmd.NewSessionsWithBackend(backend, words), report.New(configDir, version), backend)
+}
+
+func NewServerWithArchiveOwner(configDir, sessionID, version string, proactive bool, owner sessioncmd.ArchiveOwner) *mcp.Server {
+	words := sessioncmd.MCPVocabulary()
+	return newServer(configDir, sessionID, version, proactive, sessioncmd.NewTerminals(configDir, words), sessioncmd.NewSessionsWithArchiveOwner(configDir, words, owner), report.New(configDir, version))
+}
+
+type mailboxCommands interface {
+	Rename(context.Context, string, string) (string, error)
+	ReviewRepo(string, string) (string, error)
+	ReviewBase(string, string, string) (string, error)
+	ReviewScope(string, string) (string, error)
+	ReviewComment(string, string, bool) (string, error)
+}
+
 func newServer(configDir, sessionID, version string, proactive bool, terminals terminalCommands, sessions sessionCommands, reporter issueReporter) *mcp.Server {
+	return newServerWithMailbox(sessionID, version, proactive, terminals, sessions, reporter, sessioncmd.NewMailbox(configDir))
+}
+
+func newServerWithMailbox(sessionID, version string, proactive bool, terminals terminalCommands, sessions sessionCommands, reporter issueReporter, mailbox mailboxCommands) *mcp.Server {
 	server := mcp.NewServer(
 		&mcp.Implementation{Name: "agent-manager", Version: version},
 		&mcp.ServerOptions{Instructions: serverInstructions(proactive)},
@@ -263,7 +285,7 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 			"Prefer a broad feature name over a single subtask. " +
 			"The result reports the name Agent Manager applied, or why the session keeps its current one.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args renameArgs) (*mcp.CallToolResult, any, error) {
-		return textResult(sessioncmd.Rename(ctx, configDir, sessionID, args.Name))
+		return textResult(mailbox.Rename(ctx, sessionID, args.Name))
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -275,7 +297,7 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args reviewArgs) (*mcp.CallToolResult, any, error) {
 		var done []string
 		if args.Repo != "" {
-			message, err := sessioncmd.ReviewRepo(configDir, sessionID, args.Repo)
+			message, err := mailbox.ReviewRepo(sessionID, args.Repo)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -290,14 +312,14 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 			if ref == "auto" {
 				ref = ""
 			}
-			message, err := sessioncmd.ReviewBase(configDir, sessionID, cwd, ref)
+			message, err := mailbox.ReviewBase(sessionID, cwd, ref)
 			if err != nil {
 				return nil, nil, applyFailure(err, done)
 			}
 			done = append(done, message)
 		}
 		if args.Mode != "" {
-			message, err := sessioncmd.ReviewScope(configDir, sessionID, args.Mode)
+			message, err := mailbox.ReviewScope(sessionID, args.Mode)
 			if err != nil {
 				return nil, nil, applyFailure(err, done)
 			}
@@ -318,7 +340,7 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 		if args.Handled != nil {
 			handled = *args.Handled
 		}
-		return textResult(sessioncmd.ReviewComment(configDir, sessionID, args.CommentID, handled))
+		return textResult(mailbox.ReviewComment(sessionID, args.CommentID, handled))
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -358,6 +380,7 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 			Group:     args.Group,
 			Directory: args.Directory,
 			Prompt:    args.Prompt,
+			Preset:    args.Saved,
 			Worktree:  args.Worktree,
 			Model:     args.Model,
 			Effort:    args.Effort,
@@ -397,7 +420,11 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 			"After a refusal, call message_status on the earlier message rather than sending again.",
 		Annotations: toolAnnotations(false, false, true),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args sendSessionArgs) (*mcp.CallToolResult, sessioncmd.SendResult, error) {
-		result, err := sessions.Send(sessionID, args.SessionID, args.Message)
+		message, err := sessions.ExpandSaved(args.Saved, args.Message)
+		if err != nil {
+			return nil, sessioncmd.SendResult{}, err
+		}
+		result, err := sessions.Send(sessionID, args.SessionID, message)
 		if err != nil {
 			return nil, sessioncmd.SendResult{}, err
 		}
@@ -796,7 +823,30 @@ func Run(configDir, sessionID, version string) error {
 	if err != nil {
 		return err
 	}
-	err = NewServer(configDir, sessionID, version, proactive).Run(context.Background(), &mcp.StdioTransport{})
+	return runServer(NewServer(configDir, sessionID, version, proactive))
+}
+
+func RunWithBackend(configDir, sessionID, version string, backend *sessioncmd.Backend) error {
+	if backend == nil {
+		panic("command backend is required")
+	}
+	proactive, err := backend.ProactiveCoordination()
+	if err != nil {
+		return err
+	}
+	return runServer(NewServerWithBackend(configDir, sessionID, version, proactive, backend))
+}
+
+func RunWithArchiveOwner(configDir, sessionID, version string, owner sessioncmd.ArchiveOwner) error {
+	proactive, err := sessioncmd.ProactiveCoordination(configDir)
+	if err != nil {
+		return err
+	}
+	return runServer(NewServerWithArchiveOwner(configDir, sessionID, version, proactive, owner))
+}
+
+func runServer(server *mcp.Server) error {
+	err := server.Run(context.Background(), &mcp.StdioTransport{})
 	// The SDK reports an abrupt pipe close as an internal "server is
 	// closing" wire error that wraps EOF without errors.Is support.
 	if err != nil && (errors.Is(err, io.EOF) || strings.Contains(err.Error(), "server is closing")) {

@@ -53,7 +53,7 @@ func loggedIn() *fakeCommands {
 		answers: map[string]string{
 			"claude --version":        "2.4.1 (Claude Code)\nextra line",
 			"gh api user --jq .login": "yoan",
-			"gh issue create --repo " + repo + " --title Space lands in the wrong pane --body " + bugBody() + " --label bug": "https://github.com/" + repo + "/issues/512",
+			"gh issue create --repo " + repo + " --title Space lands in the wrong pane --body " + bugBody(): "https://github.com/" + repo + "/issues/512",
 		},
 		failing: map[string]error{},
 	}
@@ -103,8 +103,8 @@ func TestPreviewComposesTheBugFormAndPostsNothing(t *testing.T) {
 	if preview.Route != RouteGH || preview.Account != "yoan" || preview.Reason != "" {
 		t.Fatalf("route = %q as %q (%q)", preview.Route, preview.Account, preview.Reason)
 	}
-	if preview.Labels[0] != "bug" || preview.Title != "Space lands in the wrong pane" {
-		t.Fatalf("labels %v title %q", preview.Labels, preview.Title)
+	if preview.Title != "Space lands in the wrong pane" {
+		t.Fatalf("title %q", preview.Title)
 	}
 	want := Context{Version: "0.31.0", OS: "macOS", Tmux: "tmux 3.5a", Tool: "Claude Code", ToolVersion: "2.4.1 (Claude Code)"}
 	if preview.Context != want {
@@ -485,12 +485,11 @@ func TestToolLabelsMatchTheFormDropdown(t *testing.T) {
 }
 
 func TestFormatPreviewSaysWhatFilingWouldDoAndHowToConfirm(t *testing.T) {
-	preview := Preview{ID: "3f2a91c4", Kind: Bug, Title: "t", Body: "### What happened\n\nb\n", Labels: []string{"bug"}, Route: RouteGH, Account: "yoan"}
+	preview := Preview{ID: "3f2a91c4", Kind: Bug, Title: "t", Body: "### What happened\n\nb\n", Route: RouteGH, Account: "yoan"}
 	text := FormatPreview(preview, "call again with preview_id 3f2a91c4")
 	for _, want := range []string{
 		"bug report for " + repo + ", not filed yet",
 		"title: t",
-		"labels: bug",
 		"preview id: 3f2a91c4",
 		"### What happened",
 		"through gh as yoan",

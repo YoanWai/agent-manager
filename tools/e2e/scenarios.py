@@ -20,8 +20,14 @@ from pathlib import Path
 
 from smoke import Sandbox
 
+BUILTIN_TOOLS = ('antigravity', 'claude', 'command-code', 'codex', 'gemini',
+                 'grok', 'hermes', 'muse', 'opencode', 'pi', 'terminal')
 FAKE_CLI = 'command-code'
 FAKE_BIN = 'cmd'
+# [tools.*] blocks in config.toml only ignore builtins, so the fixture swap
+# must live on PATH, not in the file; hidden_tools keeps the pickers to the
+# two fixture tools.
+HIDDEN_TOOLS = [name for name in BUILTIN_TOOLS if name != FAKE_CLI]
 READY_MARKER = 'fixture-cli ready'
 SESSION_NAME = 'fixagent'
 
@@ -42,6 +48,11 @@ def fake_cli_script(marker, delay=0):
     return '\n'.join(lines) + '\n'
 
 
+def config_fixture_text():
+    # poll_interval shortens the poller so readiness observations stay fast.
+    return 'poll_interval = "1s"\n'
+
+
 def profile_dir(sandbox):
     # os.UserConfigDir: Library/Application Support on macOS, XDG_CONFIG_HOME elsewhere.
     if sys.platform == 'darwin':
@@ -55,6 +66,9 @@ def write_fixture(sandbox, slow_seconds=0):
     fake = bin_dir / FAKE_BIN
     fake.write_text(fake_cli_script(READY_MARKER, slow_seconds))
     fake.chmod(0o755)
+    config_dir = profile_dir(sandbox)
+    config_dir.mkdir(parents=True)
+    (config_dir / 'config.toml').write_text(config_fixture_text())
     sandbox.env['PATH'] = str(bin_dir) + ':' + sandbox.env.get('PATH', '')
 
 
@@ -71,11 +85,17 @@ def ensure_binary(root, artifacts, given):
 
 
 def seed_store(sandbox):
-    """Make the fixture CLI the form's default tool once the manager has created its store."""
+    """Seed picker settings once the manager has created its store.
+
+    hidden_tools lives in the store, not config.toml, so the fixture seeds
+    the table a second connection writes to while the manager runs.
+    """
     db = profile_dir(sandbox) / 'state.db'
     sandbox.wait('state-db', lambda: str(db) if db.exists() else '', lambda value: value != '')
     conn = sqlite3.connect(str(db), timeout=5)
     try:
+        conn.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('hidden_tools', ?)",
+                     (','.join(HIDDEN_TOOLS),))
         conn.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('default_tool', ?)", (FAKE_CLI,))
         conn.commit()
     finally:
@@ -107,9 +127,9 @@ def frame(sandbox, name, present, absent=''):
                         lambda value: present in value and (not absent or absent not in value))
 
 
-def select_setting(sandbox, label):
+def select_setting(sandbox, label, marker):
     def selected():
-        match = re.search(r'❯ ([^\n]+)', capture(sandbox))
+        match = re.search(r'│\s+' + re.escape(marker) + r' ([^│\n]+)', capture(sandbox))
         return match.group(1).strip() if match else ''
 
     step = 'settings-' + label.replace(' ', '-')
@@ -175,10 +195,10 @@ def store_sessions(sandbox):
     return [dict(id=i, name=n, tool=t, group=g) for i, n, t, g in rows]
 
 
-def spawn_form(sandbox, prompt):
+def spawn_form(sandbox, prompt, new_mark='◆'):
     """The n form; the prompt token becomes the row's displayed name."""
     key(sandbox, 'n')
-    frame(sandbox, 'form-open', '◆ New Session')
+    frame(sandbox, 'form-open', new_mark + ' New Session')
     sandbox.tmux('send-keys','-l','-t','scen:0.0',prompt)
     for _ in range(4):  # name → tool → dir → worktree → prompt
         key(sandbox, 'Tab')
@@ -190,11 +210,13 @@ def spawn_form(sandbox, prompt):
     return prompt
 
 
-def scenario(sandbox, binary):
+def scenario(sandbox, binary, glyph_mode='advanced'):
+    marker, new_mark, move_mark = ('>', '+', 'M') if glyph_mode == 'basic' else ('❯', '◆', '⇄')
     write_fixture(sandbox)
+    sandbox.run([str(binary), 'settings', 'set', 'glyph_mode', glyph_mode])
     start_manager(sandbox, binary)
     seed_store(sandbox)
-    name = spawn_form(sandbox, SESSION_NAME)
+    name = spawn_form(sandbox, SESSION_NAME, new_mark)
     with sqlite3.connect(profile_dir(sandbox) / 'state.db') as conn:
         conn.execute('UPDATE sessions SET agent_session_id=? WHERE name=?', (str(uuid.uuid4()), name))
     pane = agent_pane(sandbox, 'sleep')
@@ -222,10 +244,10 @@ def scenario(sandbox, binary):
     frame(sandbox, 'group-created', 'scen-group', 'New Group')
     select_row(sandbox, name, 'moving')
     key(sandbox, 'm')
-    frame(sandbox, 'move-open', '⇄ Move')
+    frame(sandbox, 'move-open', move_mark + ' Move')
     key(sandbox, 'Down')
     sandbox.wait('move-group-selected', lambda: capture(sandbox),
-                 lambda value: re.search(r'❯\s+scen-group', value) is not None)
+                 lambda value: re.search(re.escape(marker) + r'\s+scen-group', value) is not None)
     key(sandbox, 'Enter')
     sandbox.wait('move-committed', lambda: json.dumps([row for row in store_sessions(sandbox) if row['name'] == name]),
                  lambda rows: json.loads(rows) and json.loads(rows)[0]['group'] == 'scen-group')
@@ -241,7 +263,7 @@ def scenario(sandbox, binary):
     assert renamed and renamed[0]['group'] == 'scen-group', f'rename not persisted in group: {renamed}'
     key(sandbox, 's')
     frame(sandbox, 'settings-open', 'compact')
-    select_setting(sandbox, 'list density')
+    select_setting(sandbox, 'list density', marker)
     key(sandbox, 'Right')
     sandbox.wait('settings-density-cycled', lambda: capture(sandbox), lambda value: 'comfortable' in value)
     key(sandbox, 'Escape')
@@ -268,8 +290,99 @@ def scenario(sandbox, binary):
     sandbox.wait_manager_exit('scen:0.0')
 
 
+def quit_drain(sandbox, binary):
+    write_fixture(sandbox)
+    start_manager(sandbox, binary)
+    seed_store(sandbox)
+    key(sandbox, 'n')
+    frame(sandbox, 'drain-form', '◆ New Session')
+    sandbox.tmux('send-keys', '-l', '-t', 'scen:0.0', 'drained-agent')
+    frame(sandbox, 'drain-name', 'drained-agent')
+    lock = sqlite3.connect(profile_dir(sandbox) / 'state.db', timeout=1)
+    lock.execute('BEGIN IMMEDIATE')
+    try:
+        key(sandbox, 'Enter')
+        key(sandbox, 'Enter')
+        frame(sandbox, 'drain-accepted', 'already in progress')
+        key(sandbox, 'C-c')
+        state = sandbox.tmux('display-message', '-p', '-t', 'scen:0.0', '#{pane_dead}').stdout.strip()
+        if state != '0':
+            raise AssertionError('manager exited before accepted write could commit')
+    finally:
+        lock.rollback()
+        lock.close()
+    sandbox.wait('drain-committed', lambda: json.dumps(store_sessions(sandbox)),
+                 lambda value: any(row['name'] == 'drained-agent' for row in json.loads(value)))
+    sandbox.wait_manager_exit('scen:0.0', 'drain-exit')
+
+
+def quit_abandon(sandbox, binary):
+    """A second ctrl+c stops waiting on a stuck drain and names what it left."""
+    write_fixture(sandbox)
+    start_manager(sandbox, binary)
+    seed_store(sandbox)
+    key(sandbox, 'n')
+    frame(sandbox, 'abandon-form', '◆ New Session')
+    sandbox.tmux('send-keys', '-l', '-t', 'scen:0.0', 'stuck-agent')
+    frame(sandbox, 'abandon-name', 'stuck-agent')
+    lock = sqlite3.connect(profile_dir(sandbox) / 'state.db', timeout=1)
+    lock.execute('BEGIN IMMEDIATE')
+    try:
+        key(sandbox, 'Enter')
+        key(sandbox, 'Enter')
+        frame(sandbox, 'abandon-accepted', 'already in progress')
+        key(sandbox, 'C-c')
+        if sandbox.tmux('display-message', '-p', '-t', 'scen:0.0', '#{pane_dead}').stdout.strip() != '0':
+            raise AssertionError('first quit did not wait for the accepted spawn')
+        key(sandbox, 'C-c')
+        exit_file = sandbox.artifacts / 'manager-exit-code.txt'
+        sandbox.wait('abandon-exit', lambda: exit_file.read_text().strip() if exit_file.exists() else '',
+                     lambda value: value == '1')
+    finally:
+        lock.rollback()
+        lock.close()
+    stderr = (sandbox.artifacts / 'manager-stderr.txt').read_text()
+    if 'spawn was still running' not in stderr:
+        raise AssertionError(f'abandoned spawn not reported: {stderr!r}')
+
+
+def quit_abandon_lifecycle(sandbox, binary):
+    """Forced quit must not join a poller locked behind an abandoned archive."""
+    write_fixture(sandbox)
+    start_manager(sandbox, binary)
+    seed_store(sandbox)
+    name = spawn_form(sandbox, 'stuck-archive')
+    pane = agent_pane(sandbox, 'sleep')
+    sandbox.wait('archive-ready', lambda: pane_text(sandbox, pane),
+                 lambda text: READY_MARKER in text)
+    select_row(sandbox, name, 'archive-select')
+    lock = sqlite3.connect(profile_dir(sandbox) / 'state.db', timeout=1)
+    lock.execute('BEGIN IMMEDIATE')
+    try:
+        key(sandbox, 'a')
+        frame(sandbox, 'archive-confirm', 'frees its RAM')
+        key(sandbox, 'y')
+        key(sandbox, 's')
+        frame(sandbox, 'archive-settings-responsive', 'Settings')
+        key(sandbox, 'C-c')
+        if (sandbox.artifacts / 'manager-exit-code.txt').exists():
+            raise AssertionError('first quit did not wait for the archive')
+        key(sandbox, 'q')
+        exit_file = sandbox.artifacts / 'manager-exit-code.txt'
+        sandbox.wait('archive-abandon-exit', lambda: exit_file.read_text().strip() if exit_file.exists() else '',
+                     lambda value: value == '1', timeout=2)
+    finally:
+        lock.rollback()
+        lock.close()
+    stderr = (sandbox.artifacts / 'manager-stderr.txt').read_text()
+    if 'session archive was still running' not in stderr:
+        raise AssertionError(f'abandoned archive not reported: {stderr!r}')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--glyph-mode', choices=('basic', 'advanced'), default='advanced',
+                        help='symbols mode to exercise (default: advanced)')
     parser.add_argument('--binary', type=Path, help='existing binary; otherwise build once before isolating HOME')
     parser.add_argument('--artifacts', type=Path, help='new output directory (always retained)')
     args = parser.parse_args()
@@ -279,7 +392,22 @@ def main():
     sandbox = Sandbox(artifacts)
     try:
         binary = ensure_binary(root, artifacts, args.binary)
-        scenario(sandbox, binary)
+        scenario(sandbox, binary, args.glyph_mode)
+        cleanup_errors = sandbox.close()
+        if cleanup_errors:
+            raise RuntimeError(str(cleanup_errors))
+        sandbox = Sandbox(artifacts / 'quit-drain')
+        quit_drain(sandbox, binary)
+        cleanup_errors = sandbox.close()
+        if cleanup_errors:
+            raise RuntimeError(str(cleanup_errors))
+        sandbox = Sandbox(artifacts / 'quit-abandon')
+        quit_abandon(sandbox, binary)
+        cleanup_errors = sandbox.close()
+        if cleanup_errors:
+            raise RuntimeError(str(cleanup_errors))
+        sandbox = Sandbox(artifacts / 'quit-abandon-lifecycle')
+        quit_abandon_lifecycle(sandbox, binary)
         result = dict(status='passed', seconds=round(time.monotonic()-started, 2))
     except (Exception, KeyboardInterrupt) as error:
         (sandbox.artifacts / 'scenario-last-frame.txt').write_text(last_frame(sandbox))
