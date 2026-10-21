@@ -44,6 +44,11 @@ func TestUnixNpmUsesHomePrefixWhenGlobalIsNotWritable(t *testing.T) {
 }
 
 func TestUnixNpmFailsWhenNodeStaysInvisible(t *testing.T) {
+	for _, hostNode := range []string{"/usr/bin/node", "/bin/node"} {
+		if _, err := os.Stat(hostNode); err == nil {
+			t.Skipf("%s stays visible to the recipe", hostNode)
+		}
+	}
 	home, pathDir, prefix, log := npmFixture(t)
 	if err := os.Remove(filepath.Join(pathDir, "node")); err != nil {
 		t.Fatal(err)

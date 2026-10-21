@@ -251,7 +251,7 @@ else
 fi
 echo survived
 `
-	out, code := runDashNoTTY(t, script)
+	out, code := runDashNoTTY(t, script, []string{"PATH=/usr/bin:/bin:/usr/local/bin"})
 	if code != 0 || !strings.Contains(out, "no-tty") || !strings.Contains(out, "survived") {
 		t.Fatalf("have_tty without a terminal: exit %d\n%s", code, out)
 	}
@@ -271,7 +271,7 @@ func TestConfirmHonorsTheDepsFlag(t *testing.T) {
 
 func TestConfirmDeclinesWithoutATerminal(t *testing.T) {
 	script := "set -eu\n" + installFuncs(t, "have_tty", "confirm") + "confirm 'install now?' && echo yes || echo no\necho survived\n"
-	out, code := runDashNoTTY(t, script)
+	out, code := runDashNoTTY(t, script, []string{"PATH=/usr/bin:/bin:/usr/local/bin"})
 	if code != 0 || !strings.Contains(out, "no") || !strings.Contains(out, "survived") || strings.Contains(out, "yes") {
 		t.Fatalf("confirm without a terminal: exit %d\n%s", code, out)
 	}
@@ -282,7 +282,7 @@ func TestDepInstallCmdOnDarwin(t *testing.T) {
 detect_os() { echo darwin; }
 dep_install_cmd "tmux git"
 `
-	got, code := runDash(t, body, []string{"PATH=/usr/bin:/bin"})
+	got, code := runDashNoTTY(t, body, []string{"PATH=/usr/bin:/bin"})
 	if code != 0 || got != "NONINTERACTIVE=1 "+homebrewSetup+"tmux git" {
 		t.Fatalf("darwin without brew: exit %d\n%q", code, got)
 	}
@@ -440,7 +440,7 @@ func runDash(t *testing.T, script string, env []string) (string, int) {
 	return runCommand(t, exec.Command("/bin/dash", "-c", script), env)
 }
 
-func runDashNoTTY(t *testing.T, script string) (string, int) {
+func runDashNoTTY(t *testing.T, script string, env []string) (string, int) {
 	t.Helper()
 	requireDash(t)
 	python := `
@@ -454,7 +454,7 @@ if os.WIFEXITED(status):
     raise SystemExit(os.WEXITSTATUS(status))
 raise SystemExit(1)
 `
-	return runCommand(t, exec.Command("python3", "-c", python, script), []string{"PATH=/usr/bin:/bin:/usr/local/bin"})
+	return runCommand(t, exec.Command("python3", "-c", python, script), env)
 }
 
 func runCommand(t *testing.T, cmd *exec.Cmd, env []string) (string, int) {
