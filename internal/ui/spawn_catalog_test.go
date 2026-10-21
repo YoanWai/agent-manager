@@ -11,6 +11,8 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/catalog"
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/deps"
+	"github.com/YoanWai/agent-manager/internal/testenv"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 )
 
@@ -73,5 +75,41 @@ func TestAFailedCatalogIsRetriedAfterAWait(t *testing.T) {
 	state.checkedAt = time.Now().Add(-catalogRetry)
 	if m.ensureCatalog("claude") == nil {
 		t.Fatal("a failure half a minute old was not asked again")
+	}
+}
+
+// The model list stops before it reads a kept answer, and the update dialog
+// opens without taking a draft prompt's images.
+func TestAnOlderCLIOpensTheUpdateDialogInsteadOfListingModels(t *testing.T) {
+	testenv.SkipPOSIXShell(t)
+	m := buildModel(t)
+	m.services.configDir = t.TempDir()
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "pi"), []byte("#!/bin/sh\necho 0.84.2\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	tool := config.Tool{
+		Command:        "pi",
+		Catalog:        "pi",
+		CatalogCommand: "pi --mode rpc --no-session",
+		MinimumVersion: "0.84.3",
+	}
+	m.services.cfg.Tools["pi"] = tool
+	if err := catalog.Keep(m.services.configDir, "pi", tool, catalog.Catalog{Models: []catalog.Model{{ID: "kept"}}}); err != nil {
+		t.Fatal(err)
+	}
+	m.form.prompt.attachments = []imageAttachment{{id: 7}}
+
+	m.applyCmd(t, m.ensureCatalog("pi"))
+
+	if m.mode != modeLaunchHint || !m.launchHint.fix.update || m.launchHint.fix.command != deps.Command("pi") {
+		t.Fatalf("mode %v fix %+v catalog %+v", m.mode, m.launchHint.fix, m.ledger.catalogs["pi"])
+	}
+	if len(m.ledger.catalogs["pi"].cat.Models) != 0 {
+		t.Fatalf("models = %+v, want the kept answer withheld", m.ledger.catalogs["pi"].cat.Models)
+	}
+	if len(m.form.prompt.attachments) != 1 || len(m.launchHint.fix.images) != 0 {
+		t.Fatalf("draft images moved: form %v dialog %v", m.form.prompt.attachments, m.launchHint.fix.images)
 	}
 }

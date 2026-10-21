@@ -186,6 +186,9 @@ func Environment(manager *hooks.Manager, toolName string, tool config.Tool, base
 	if err := config.CheckInstalled(baseCommand); err != nil {
 		return "", nil, err
 	}
+	if err := config.CheckVersion(tool); err != nil {
+		return "", nil, err
+	}
 	if err := manager.RemoveName(id); err != nil {
 		return "", nil, err
 	}

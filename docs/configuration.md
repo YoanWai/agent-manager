@@ -18,7 +18,7 @@ One list in Settings, shared by the new-session form, the quick prompt, a focuse
 
 Agent Manager supports Claude Code, OpenCode, Codex, Grok Build, Gemini CLI, Antigravity CLI, Pi, Command Code, Hermes Agent, Muse Code, and Oh My Pi, plus the shell `T` opens. Each one's launch command, revive and fork commands, MCP registration, status rules, and the flags a session's model, effort and profile launch with are built into the binary, so an upgrade brings the current version of all of them. The models, efforts and profiles themselves are read from each CLI when you create a session (see [Model, effort and profile](usage.md#model-effort-and-profile)). Hermes, Antigravity and Oh My Pi have no fork, and Pi and Oh My Pi get no MCP registration. Settings (`s`) has a `CLIs` row that picks which of them the session pickers offer (see [Which CLIs you get offered](usage.md#which-clis-you-get-offered)).
 
-The Pi support requires Pi 0.76.0 or later, because it launches sessions with `--session-id`. Its model list needs Pi 0.84.3 or later, because earlier releases save every model they are asked about as your default.
+Agent Manager supports the current release of each CLI. A CLI can also carry the oldest release its launch, revive, fork and model list still work with. When yours is older, a spawn, a revive, or its model list opens a dialog that names your version, the one it needs, and the vendor installer that updates it. Pi needs 0.84.3 or later, because earlier releases save every model they are asked about as your default.
 
 Hermes is tested with Hermes Agent 0.20.0 and launches its classic REPL with `--cli`. This keeps the input, approval, and activity markers stable even when your Hermes preference selects its modern TUI.
 

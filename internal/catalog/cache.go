@@ -45,6 +45,9 @@ func Refresh(ctx context.Context, configDir, toolName string, tool config.Tool) 
 	if err := config.CheckInstalled(tool.CatalogCommand); err != nil {
 		return Catalog{}, err
 	}
+	if err := config.CheckVersion(tool); err != nil {
+		return Catalog{}, err
+	}
 	work := filepath.Join(cacheDir(configDir), "work")
 	if err := os.MkdirAll(work, 0o755); err != nil {
 		return Catalog{}, err
@@ -66,7 +69,11 @@ func Keep(configDir, toolName string, tool config.Tool, cat Catalog) error {
 }
 
 // Load is the fresh answer when there is one, asked again otherwise.
+// The version check comes first so a kept answer cannot skip it.
 func Load(ctx context.Context, configDir, toolName string, tool config.Tool) (Catalog, error) {
+	if err := config.CheckVersion(tool); err != nil {
+		return Catalog{}, err
+	}
 	if cat, fresh, ok := Cached(configDir, toolName, tool); ok && fresh {
 		return cat, nil
 	}

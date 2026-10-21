@@ -22,6 +22,9 @@ type Rule struct {
 
 type Tool struct {
 	Command string `toml:"command"`
+	// MinimumVersion is the oldest release of the CLI the launch, revive,
+	// fork and catalog commands still work with. Empty skips the check.
+	MinimumVersion string `toml:"minimum_version"`
 	// Shell marks the tool that opens a plain shell rather than an agent
 	// CLI: it is what T spawns, it stays out of the CLI pickers, and the
 	// keys that write into a pane refuse it, since a sentence typed at a

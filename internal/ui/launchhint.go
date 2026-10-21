@@ -18,11 +18,13 @@ import (
 // command that unblocks the launch, the binary that command puts on PATH,
 // the launch to run again once it is there, and the images that launch's
 // prompt names. command is empty when the manager knows no recipe, which
-// leaves the dialog read-only.
+// leaves the dialog read-only. update marks a CLI that is installed but
+// too old, where the same installer updates it.
 type launchFix struct {
 	text        string
 	command     string
 	binary      string
+	update      bool
 	effectRetry effectRequest
 	images      []imageAttachment
 }
@@ -123,7 +125,29 @@ func (m *Model) reportLaunchError(err error) {
 		})
 		return
 	}
+	var outdated config.OutdatedToolError
+	if errors.As(err, &outdated) {
+		m.launchHint.open(m, launchFix{
+			text:    outdatedToolText(outdated),
+			command: deps.Command(outdated.Binary),
+			binary:  outdated.Binary,
+			update:  true,
+		})
+		return
+	}
 	m.reportErr(err.Error())
+}
+
+// outdatedToolText names the release on PATH and the oldest one the
+// manager runs. A vendor installer updates in place, so its command is the
+// fix; a CLI without one is updated however it was installed.
+func outdatedToolText(outdated config.OutdatedToolError) string {
+	head := outdated.Binary + " " + outdated.Installed + " is older than " + outdated.Minimum +
+		", the oldest version Agent Manager supports."
+	if command := deps.Command(outdated.Binary); command != "" {
+		return head + "\n\nUpdate it with: " + command
+	}
+	return head + "\n\nUpdate it the way you installed it, then spawn again."
 }
 
 // missingToolText opens on why the launch stopped, then the command that
@@ -146,6 +170,11 @@ func missingToolText(missing config.MissingToolError) string {
 func (d *launchHintDialog) open(h launchHintHost, fix launchFix) {
 	h.advanceDialogGen()
 	fix.images = append(fix.images, h.takeComposerImages()...)
+	d.present(h, fix)
+}
+
+// present shows a refusal that is not a spawn, so a draft prompt keeps its images.
+func (d *launchHintDialog) present(h launchHintHost, fix launchFix) {
 	d.fix = fix
 	h.setMode(modeLaunchHint)
 }
@@ -166,7 +195,7 @@ func dropImages(images []imageAttachment) {
 // prompt is the fix as the dialog shows it; its keys and card are
 // uidialogs.LaunchHint.
 func (d *launchHintDialog) prompt() uidialogs.LaunchHint {
-	return uidialogs.LaunchHint{Text: d.fix.text, Command: d.fix.command}
+	return uidialogs.LaunchHint{Text: d.fix.text, Command: d.fix.command, Update: d.fix.update}
 }
 
 func (d *launchHintDialog) handleKey(h launchHintHost, msg tea.KeyMsg) tea.Cmd {

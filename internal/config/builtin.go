@@ -418,6 +418,9 @@ input_prefix = "(?m)^\\s*(?:(?:\\S+\\s+){0,3}[❯>$#›»→%➜]|PS [^\\n>]*>)\
 
 [tools.pi]
 command = "pi"
+# 0.84.3 is the first pi whose set_model stays in the session. Earlier
+# releases save every model the catalog asks about as the user's default.
+minimum_version = "0.84.3"
 session_report = "pi"
 session_id_flag = "--session-id"
 resume_by_id_command = "pi --session {id}"

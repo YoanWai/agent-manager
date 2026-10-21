@@ -160,6 +160,44 @@ func TestReportLaunchErrorOpensInstallHintForMissingCLI(t *testing.T) {
 	}
 }
 
+func TestReportLaunchErrorOpensHintForOutdatedCLI(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+
+	m.reportLaunchError(fmt.Errorf("spawn: %w", config.OutdatedToolError{Binary: "pi", Installed: "0.76.0", Minimum: "0.84.3"}))
+
+	if m.mode != modeLaunchHint {
+		t.Fatalf("mode = %v, want modeLaunchHint", m.mode)
+	}
+	if m.launchHint.fix.command != deps.Command("pi") || m.launchHint.fix.binary != "pi" {
+		t.Fatalf("fix = %+v, want pi's installer to rerun", m.launchHint.fix)
+	}
+	installer := "pi.dev/install.sh"
+	if runtime.GOOS == "windows" {
+		installer = "@earendil-works/pi-coding-agent"
+	}
+	frame := ansi.Strip(m.launchHint.view(m, m.glyphs()))
+	for _, want := range []string{"pi 0.76.0 is older than 0.84.3", installer, "i update"} {
+		if !strings.Contains(strings.Join(strings.Fields(frame), " "), want) {
+			t.Fatalf("dialog should show %q:\n%s", want, frame)
+		}
+	}
+	got := map[string]bool{}
+	for _, hit := range m.layout.keyHits {
+		if hit.key.Type == tea.KeyEsc {
+			got["esc"] = true
+		}
+		if len(hit.key.Runes) == 1 {
+			got[string(hit.key.Runes)] = true
+		}
+	}
+	for _, key := range []string{"i", "c", "esc"} {
+		if !got[key] {
+			t.Fatalf("dialog foot is missing %q", key)
+		}
+	}
+}
+
 func TestReportLaunchErrorOpensHintForUnknownMissingCLI(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)

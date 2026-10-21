@@ -53,7 +53,7 @@ var official = map[string]string{
 	"agy":      "curl -fsSL https://antigravity.google/cli/install.sh | bash",
 	"opencode": "curl -fsSL https://opencode.ai/install | bash",
 	"hermes":   "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash",
-	"pi":       "npm install -g @mariozechner/pi-coding-agent",
+	"pi":       "curl -fsSL https://pi.dev/install.sh | sh",
 }
 
 // windowsOfficial replaces official on native Windows, where the curl

@@ -1,6 +1,7 @@
 package launch
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -286,6 +287,22 @@ func skipUntracked(t *testing.T) {
 // runs under that pid whatever shell the line is typed into, the shell the
 // line ran in marks the record once the agent has quit, and a shell-only
 // launch stays a plain shell.
+func TestEnvironmentRefusesACLIOlderThanItsMinimum(t *testing.T) {
+	testenv.SkipPOSIXShell(t)
+	cli := filepath.Join(t.TempDir(), "old-cli")
+	if err := os.WriteFile(cli, []byte("#!/bin/sh\necho 'old-cli 0.1.0'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manager := hooks.NewManager(t.TempDir())
+	tool := config.Tool{Command: cli, MinimumVersion: "9.0.0", MCP: mcpreg.StyleNone}
+
+	_, _, err := Environment(manager, "old", tool, tool.Command, "abcd1234", t.TempDir(), time.Time{})
+	var outdated config.OutdatedToolError
+	if !errors.As(err, &outdated) || outdated.Installed != "0.1.0" || outdated.Minimum != "9.0.0" {
+		t.Fatalf("err = %v, want the launch refused for 0.1.0", err)
+	}
+}
+
 func TestEnvironmentRunsTheAgentUnderThePIDItExports(t *testing.T) {
 	testenv.SkipPOSIXShell(t)
 	manager := hooks.NewManager(t.TempDir())

@@ -2,12 +2,14 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"maps"
 	"slices"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/catalog"
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/deps"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -61,6 +63,9 @@ func (m *Model) ensureCatalog(toolName string) tea.Cmd {
 	state.loading = true
 	configDir := m.services.configDir
 	return func() tea.Msg {
+		if err := config.CheckVersion(tool); err != nil {
+			return catalogMsg{tool: toolName, err: err}
+		}
 		if cat, fresh, ok := catalog.Cached(configDir, toolName, tool); ok {
 			return catalogMsg{tool: toolName, cat: cat, stale: !fresh}
 		}
@@ -83,6 +88,16 @@ func (m *Model) handleCatalog(msg catalogMsg) tea.Cmd {
 	state.loading = msg.stale
 	state.checkedAt = time.Now()
 	m.fitChoices()
+	var outdated config.OutdatedToolError
+	if errors.As(msg.err, &outdated) && m.mode != modeLaunchHint {
+		m.advanceDialogGen()
+		m.launchHint.present(m, launchFix{
+			text:    outdatedToolText(outdated),
+			command: deps.Command(outdated.Binary),
+			binary:  outdated.Binary,
+			update:  true,
+		})
+	}
 	if !msg.stale {
 		return nil
 	}

@@ -13,9 +13,11 @@ import (
 // why the launch stopped and the command that unblocks it. Command is empty
 // when the manager knows no recipe, which leaves the dialog read-only. The
 // root holds the launch to retry, the images it names and the install.
+// Update names the i key for a CLI that is installed but too old.
 type LaunchHint struct {
 	Text    string
 	Command string
+	Update  bool
 }
 
 // LaunchHintAction is what a key asks the root to do.
@@ -97,7 +99,11 @@ func (d LaunchHint) View(inner int, tone, muted lipgloss.Style, glyphs presentat
 	}
 	hint := [][2]string{{"esc", "close"}}
 	if d.Command != "" {
-		hint = [][2]string{{"i", "install"}, {"c", "copy"}, {"esc", "close"}}
+		run := "install"
+		if d.Update {
+			run = "update"
+		}
+		hint = [][2]string{{"i", run}, {"c", "copy"}, {"esc", "close"}}
 	}
 	return Card{Title: glyphs.SetupGlyph + " Session needs a setup step", Body: strings.TrimRight(body.String(), "\n"), Hints: hint}
 }
