@@ -293,7 +293,7 @@ func ensureCursorRegistered(exe string) error {
 	case err != nil:
 		return err
 	default:
-		if err := json.Unmarshal(data, &settings); err != nil {
+		if err := json.Unmarshal(cursorJSON(data), &settings); err != nil {
 			return fmt.Errorf("cursor mcp %s: %w", path, err)
 		}
 		info, err := os.Stat(path)
@@ -306,6 +306,10 @@ func ensureCursorRegistered(exe string) error {
 	if raw, ok := settings["mcpServers"]; ok {
 		if err := json.Unmarshal(raw, &servers); err != nil {
 			return fmt.Errorf("cursor mcp %s: mcpServers: %w", path, err)
+		}
+		// JSON null unmarshals to a nil map. Cursor reads that as no servers.
+		if servers == nil {
+			servers = map[string]json.RawMessage{}
 		}
 	}
 	entry, err := json.Marshal(cursorServer{Command: exe, Args: []string{"mcp"}})
@@ -328,6 +332,83 @@ func ensureCursorRegistered(exe string) error {
 	}
 	// Enable on every launch so a server the user turned off comes back.
 	return enableCursorServer()
+}
+
+// cursorJSON accepts the comments and trailing commas in Cursor's mcp.json.
+func cursorJSON(data []byte) []byte {
+	return stripJSONTrailingCommas(stripJSONComments(data))
+}
+
+func stripJSONComments(data []byte) []byte {
+	out := make([]byte, len(data))
+	copy(out, data)
+	inString, escaped := false, false
+	for i := 0; i < len(out); i++ {
+		switch {
+		case inString:
+			switch {
+			case escaped:
+				escaped = false
+			case out[i] == '\\':
+				escaped = true
+			case out[i] == '"':
+				inString = false
+			}
+		case out[i] == '"':
+			inString = true
+		case out[i] == '/' && i+1 < len(out) && out[i+1] == '/':
+			for ; i < len(out) && out[i] != '\n'; i++ {
+				out[i] = ' '
+			}
+		case out[i] == '/' && i+1 < len(out) && out[i+1] == '*':
+			end := i + 2
+			for end+1 < len(out) && (out[end] != '*' || out[end+1] != '/') {
+				end++
+			}
+			for stop := min(end+2, len(out)); i < stop; i++ {
+				if out[i] != '\n' {
+					out[i] = ' '
+				}
+			}
+			i--
+		}
+	}
+	return out
+}
+
+func stripJSONTrailingCommas(data []byte) []byte {
+	out := make([]byte, len(data))
+	copy(out, data)
+	inString, escaped := false, false
+	for i := 0; i < len(out); i++ {
+		switch {
+		case inString:
+			switch {
+			case escaped:
+				escaped = false
+			case out[i] == '\\':
+				escaped = true
+			case out[i] == '"':
+				inString = false
+			}
+		case out[i] == '"':
+			inString = true
+		case out[i] == ',':
+			next := i + 1
+			for next < len(out) {
+				switch out[next] {
+				case ' ', '\t', '\n', '\r':
+					next++
+					continue
+				}
+				break
+			}
+			if next < len(out) && (out[next] == '}' || out[next] == ']') {
+				out[i] = ' '
+			}
+		}
+	}
+	return out
 }
 
 func enableCursorServer() error {

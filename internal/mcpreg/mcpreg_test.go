@@ -791,6 +791,65 @@ func TestApplyCursorWritesThroughASymlink(t *testing.T) {
 	}
 }
 
+func TestApplyCursorAcceptsJSONC(t *testing.T) {
+	home := cursorHome(t)
+	logPath := stubCursorAgent(t, 0)
+	path := filepath.Join(home, ".cursor", "mcp.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	original := "{\n  // user note\n  \"url\": \"http://example.com/a/*still*/b\",\n  \"mcpServers\": {\n    \"github\": {\"command\": \"npx\", \"args\": [\"mcp\",]},\n  },\n}\n"
+	if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Apply("cursor", "/opt/bin/agent-manager", t.TempDir(), "cursor-agent", map[string]string{}); err != nil {
+		t.Fatal(err)
+	}
+	settings := readCursorMCP(t, path)
+	if settings["url"] != "http://example.com/a/*still*/b" {
+		t.Fatalf("url = %v", settings["url"])
+	}
+	servers := settings["mcpServers"].(map[string]any)
+	github := servers["github"].(map[string]any)
+	if github["command"] != "npx" || fmt.Sprint(github["args"]) != fmt.Sprint([]any{"mcp"}) {
+		t.Fatalf("github = %v", github)
+	}
+	if servers["agent-manager"] == nil {
+		t.Fatal("agent-manager missing")
+	}
+	calls, err := os.ReadFile(logPath)
+	if err != nil || !strings.Contains(string(calls), "mcp enable agent-manager") {
+		t.Fatalf("enable log = %q, err = %v", calls, err)
+	}
+}
+
+func TestApplyCursorTreatsNullServersAsEmpty(t *testing.T) {
+	home := cursorHome(t)
+	logPath := stubCursorAgent(t, 0)
+	path := filepath.Join(home, ".cursor", "mcp.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("{\"other\": true, \"mcpServers\": null}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Apply("cursor", "/opt/bin/agent-manager", t.TempDir(), "cursor-agent", map[string]string{}); err != nil {
+		t.Fatal(err)
+	}
+	settings := readCursorMCP(t, path)
+	if settings["other"] != true {
+		t.Fatalf("settings = %v", settings)
+	}
+	servers := settings["mcpServers"].(map[string]any)
+	if servers["agent-manager"] == nil {
+		t.Fatal("agent-manager missing")
+	}
+	calls, err := os.ReadFile(logPath)
+	if err != nil || !strings.Contains(string(calls), "mcp enable agent-manager") {
+		t.Fatalf("enable log = %q, err = %v", calls, err)
+	}
+}
+
 func TestApplyCursorRefusesUnreadableJSON(t *testing.T) {
 	home := cursorHome(t)
 	logPath := stubCursorAgent(t, 0)
