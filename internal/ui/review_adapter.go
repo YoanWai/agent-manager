@@ -12,6 +12,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
+	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -471,6 +472,7 @@ func (m *Model) closeDiff() tea.Cmd {
 type reviewPreferencesReader interface {
 	ReviewScope(string) (string, error)
 	ReviewRepo(string) (string, error)
+	Setting(string) (string, error)
 }
 
 type reviewPreferencesMsg struct {
@@ -504,6 +506,11 @@ func (m *Model) openDiffWithReader(reader reviewPreferencesReader) tea.Cmd {
 		result := reviewPreferencesMsg{session: sess, request: request, scope: git.ScopeUncommitted, preferred: preferred}
 		if reader != nil {
 			scope, err := reader.ReviewScope(sess.ID)
+			if err == nil && scope == "" {
+				// A session with no scope of its own opens in the one
+				// Settings picks.
+				scope, err = reader.Setting(uisettings.ReviewScopeSetting)
+			}
 			result.err = err
 			if err == nil {
 				result.scope = uireview.StoredScope(scope)
