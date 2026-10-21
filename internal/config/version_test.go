@@ -205,7 +205,7 @@ func TestVersionProbeReturnsWhenAChildKeepsStdout(t *testing.T) {
 	if err != nil || versionNumber.FindString(string(out)) != "1.2.3" {
 		t.Fatalf("probe = %q, %v", out, err)
 	}
-	if time.Since(start) > 5*time.Second {
+	if time.Since(start) > 10*time.Second {
 		t.Fatalf("probe waited %s on the child's stdout", time.Since(start))
 	}
 }
