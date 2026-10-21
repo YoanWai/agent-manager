@@ -5,13 +5,7 @@ import (
 	"strings"
 )
 
-// A Windows npm on PATH is the interop copy WSL appends. Installing with
-// it puts the CLI on the Windows side, and the next spawn still has no
-// Linux binary. The shell below refuses that npm, installs a current
-// Node into the home directory when this machine has none, and links the
-// result onto a directory already on PATH. The manager and the pane both
-// inherit that PATH. A shell profile edited by an installer is not read
-// until the manager starts again.
+// Installed binaries must be visible on the manager's inherited PATH.
 const shellHelpers = `
 on_windows_path() {
   target=$1

@@ -267,10 +267,7 @@ func (m *Model) launchHintFrame() string {
 	title, body, hints := m.launchHint.card(m, m.glyphs(), width)
 	if m.layout.height > 0 {
 		lines := strings.Split(body, "\n")
-		limit := m.layout.height - m.cardChromeRows(hints)
-		if limit < 1 {
-			limit = 1
-		}
+		limit := max(0, m.layout.height-m.cardChromeRows(hints))
 		if len(lines) > limit {
 			body = strings.Join(lines[:limit], "\n")
 		}

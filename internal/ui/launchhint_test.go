@@ -1011,3 +1011,14 @@ func TestInstallFinishesARefusedRestore(t *testing.T) {
 		t.Fatal("the session should be running again")
 	}
 }
+
+func TestLaunchHintKeepsActionsAtSevenRows(t *testing.T) {
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 110, 7
+	m.reportLaunchError(config.MissingToolError{Binary: "cmd"})
+	m.reportErr("install failed")
+	frame := ansi.Strip(m.launchHintFrame())
+	if strings.Count(frame, "\n")+1 > 7 || !strings.Contains(frame, "close") {
+		t.Fatalf("setup controls clipped.\n%s", frame)
+	}
+}

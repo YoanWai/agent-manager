@@ -32,7 +32,7 @@ var linuxManagers = []manager{
 
 // homebrewSetup installs Homebrew, then the packages. A Mac without
 // Homebrew has no tmux package to offer otherwise.
-const homebrewSetup = `NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" && eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv)" && brew install `
+const homebrewSetup = `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" && eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv)" && brew install `
 
 var windowsManagers = []manager{
 	{"scoop", "scoop install "},

@@ -169,7 +169,8 @@ dep_install_cmd() {
 			printf 'brew install %s' "$packages"
 			return 0
 		fi
-		printf "NONINTERACTIVE=1 /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\" && eval \"\$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv)\" && brew install %s" "$packages"
+		have_tty || printf 'NONINTERACTIVE=1 '
+		printf "/bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\" && eval \"\$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv)\" && brew install %s" "$packages"
 		return 0
 	fi
 	set_sudo

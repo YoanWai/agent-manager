@@ -173,7 +173,7 @@
 		} elseif (-not (Test-PwshCurrent)) {
 			$actions.Add('winget upgrade --id Microsoft.PowerShell -e')
 		}
-		return $actions
+		return ,$actions
 	}
 
 	function Show-MissingDep {

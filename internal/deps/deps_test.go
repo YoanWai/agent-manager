@@ -278,12 +278,12 @@ func TestConfirmDeclinesWithoutATerminal(t *testing.T) {
 }
 
 func TestDepInstallCmdOnDarwin(t *testing.T) {
-	body := "set -eu\n" + installFuncs(t, "package_for", "map_packages", "set_sudo", "dep_install_cmd") + `
+	body := "set -eu\n" + installFuncs(t, "package_for", "map_packages", "set_sudo", "have_tty", "dep_install_cmd") + `
 detect_os() { echo darwin; }
 dep_install_cmd "tmux git"
 `
 	got, code := runDash(t, body, []string{"PATH=/usr/bin:/bin"})
-	if code != 0 || got != homebrewSetup+"tmux git" {
+	if code != 0 || got != "NONINTERACTIVE=1 "+homebrewSetup+"tmux git" {
 		t.Fatalf("darwin without brew: exit %d\n%q", code, got)
 	}
 
@@ -298,17 +298,18 @@ dep_install_cmd "tmux git"
 }
 
 func TestDepInstallCmdMapsDesktopPackages(t *testing.T) {
-	body := "set -eu\n" + installFuncs(t, "package_for", "map_packages", "set_sudo", "dep_install_cmd") + `
+	body := "set -eu\n" + installFuncs(t, "package_for", "map_packages", "set_sudo", "have_tty", "dep_install_cmd") + `
 detect_os() { echo linux; }
 dep_install_cmd "tmux notify-send"
 `
 	dir := t.TempDir()
-	for _, name := range []string{"apt-get", "zypper"} {
+	for _, name := range []string{"apt-get", "zypper", "sudo"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
-	apt, code := runDash(t, body, []string{"PATH=" + dir + ":/usr/bin:/bin"})
+	writeExe(t, filepath.Join(dir, "id"), "#!/bin/sh\nprintf '1000\\n'\n")
+	apt, code := runDash(t, body, []string{"PATH=" + dir})
 	if code != 0 || apt != "sudo apt-get update && sudo apt-get install -y tmux libnotify-bin" {
 		t.Fatalf("apt: exit %d\n%q", code, apt)
 	}
