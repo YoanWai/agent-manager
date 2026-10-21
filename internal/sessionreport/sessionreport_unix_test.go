@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -67,8 +66,11 @@ func TestPiAndOmpLoadAnExtensionBesideTheUsers(t *testing.T) {
 	}
 }
 
-func TestOpencodeLoadsATUIPluginThroughItsEnvironment(t *testing.T) {
-	t.Setenv("OPENCODE_TUI_CONFIG", "")
+func TestOpencodeLoadsACLIPluginThroughItsEnvironment(t *testing.T) {
+	t.Setenv("OPENCODE_CLI_CONFIG_CONTENT", "")
+	t.Setenv("OPENCODE_CONFIG_DIR", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("HOME", t.TempDir())
 	target := testTarget(t)
 	env := map[string]string{}
 	command, err := Apply("opencode", target, "opencode --session x", env)
@@ -78,19 +80,64 @@ func TestOpencodeLoadsATUIPluginThroughItsEnvironment(t *testing.T) {
 	if command != "opencode --session x" {
 		t.Fatalf("command = %q, want it untouched", command)
 	}
-	var tuiConfig struct {
-		Plugin []string `json:"plugin"`
-	}
-	if err := json.Unmarshal([]byte(readFile(t, env["OPENCODE_TUI_CONFIG"])), &tuiConfig); err != nil {
-		t.Fatal(err)
-	}
-	plugin := filepath.Join(target.HooksDir, "agent-manager-opencode.ts")
-	if !slices.Equal(tuiConfig.Plugin, []string{plugin}) {
-		t.Fatalf("tui config plugins = %v, want %s", tuiConfig.Plugin, plugin)
+	dir := filepath.Join(target.HooksDir, "agent-manager-opencode")
+	if got, want := env["OPENCODE_CLI_CONFIG_CONTENT"], `{"plugins":["file://`+dir+`"]}`; got != want {
+		t.Fatalf("OPENCODE_CLI_CONFIG_CONTENT = %s, want %s", got, want)
 	}
 	exe, _ := json.Marshal(oddExe)
-	if source := readFile(t, plugin); !strings.Contains(source, string(exe)) || !strings.Contains(source, "info.parentID") {
-		t.Fatalf("plugin source:\n%s", source)
+	source := readFile(t, filepath.Join(dir, "tui.ts"))
+	for _, want := range []string{string(exe), "info.parentID", `from "@opencode/plugin/tui"`, "context.ui.router.current()"} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("plugin lacks %s:\n%s", want, source)
+		}
+	}
+}
+
+// opencode takes the plugin list in the variable over the one in cli.json
+// rather than adding to it, so the user's own list rides along: from the
+// variable when they set one that lists plugins, and from the file
+// otherwise, with the rest of the variable kept.
+func TestOpencodeKeepsTheUsersOwnCLIPlugins(t *testing.T) {
+	t.Setenv("OPENCODE_CONFIG_DIR", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	writeFile(t, filepath.Join(home, ".config", "opencode", "cli.json"), "{\n  // theirs\n  \"plugins\": [\"opencode-acme\", {\"package\": \"./status\",},],\n  \"theme\": \"dark\",\n}", 0o644)
+	for inline, want := range map[string]string{
+		"":                  `{"plugins":["opencode-acme",{"package":"./status"},"file://DIR"]}`,
+		"null":              `{"plugins":["opencode-acme",{"package":"./status"},"file://DIR"]}`,
+		`{"theme":"light"}`: `{"plugins":["opencode-acme",{"package":"./status"},"file://DIR"],"theme":"light"}`,
+		`{"plugins":["-opencode.notifications"]}`: `{"plugins":["-opencode.notifications","file://DIR"]}`,
+	} {
+		t.Setenv("OPENCODE_CLI_CONFIG_CONTENT", inline)
+		target := testTarget(t)
+		env := map[string]string{}
+		if _, err := Apply("opencode", target, "opencode", env); err != nil {
+			t.Fatal(err)
+		}
+		want = strings.ReplaceAll(want, "DIR", filepath.Join(target.HooksDir, "agent-manager-opencode"))
+		if got := env["OPENCODE_CLI_CONFIG_CONTENT"]; got != want {
+			t.Errorf("with %q: OPENCODE_CLI_CONFIG_CONTENT = %s, want %s", inline, got, want)
+		}
+	}
+}
+
+func TestOpencodeSaysWhenItsSettingsCannotBeRead(t *testing.T) {
+	t.Setenv("OPENCODE_CLI_CONFIG_CONTENT", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	dir := t.TempDir()
+	t.Setenv("OPENCODE_CONFIG_DIR", dir)
+	writeFile(t, filepath.Join(dir, "cli.json"), `{"plugins": [1}`, 0o644)
+	env := map[string]string{}
+	command, err := Apply("opencode", testTarget(t), "opencode", env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, set := env["OPENCODE_CLI_CONFIG_CONTENT"]; set {
+		t.Fatalf("OPENCODE_CLI_CONFIG_CONTENT set to %s", env["OPENCODE_CLI_CONFIG_CONTENT"])
+	}
+	if !strings.Contains(command, "will not report conversation switches") || !strings.Contains(command, "cli.json") || !strings.HasSuffix(command, "; opencode") {
+		t.Fatalf("command = %q", command)
 	}
 }
 
@@ -99,7 +146,8 @@ func TestOpencodePluginReportsSwitchesAndRetriesFailedReports(t *testing.T) {
 	if err != nil {
 		t.Skip("node is not installed")
 	}
-	t.Setenv("OPENCODE_TUI_CONFIG", "")
+	t.Setenv("OPENCODE_CLI_CONFIG_CONTENT", "")
+	t.Setenv("OPENCODE_CONFIG_DIR", t.TempDir())
 	target := testTarget(t)
 	reports := filepath.Join(target.HooksDir, "reports")
 	retry := filepath.Join(target.HooksDir, "retry")
@@ -109,18 +157,17 @@ func TestOpencodePluginReportsSwitchesAndRetriesFailedReports(t *testing.T) {
 	if _, err := Apply("opencode", target, "opencode", map[string]string{}); err != nil {
 		t.Fatal(err)
 	}
-	plugin := readFile(t, filepath.Join(target.HooksDir, "agent-manager-opencode.ts"))
-	writeFile(t, filepath.Join(target.HooksDir, "plugin.mjs"), strings.ReplaceAll(plugin, "api: any", "api"), 0o644)
+	plugin := readFile(t, filepath.Join(target.HooksDir, "agent-manager-opencode", "tui.ts"))
+	plugin = strings.Replace(plugin, `import { Plugin } from "@opencode/plugin/tui";`, "const Plugin = { define: (plugin) => plugin };", 1)
+	writeFile(t, filepath.Join(target.HooksDir, "plugin.mjs"), strings.ReplaceAll(plugin, "context: any", "context"), 0o644)
 	reportsJSON, _ := json.Marshal(reports)
 	check := `import plugin from './plugin.mjs';
 import { readFileSync } from 'node:fs';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-let dispose;
-let route = { name: 'session', params: { sessionID: 'first' } };
-plugin.tui({
-  route: { get current() { return route; } },
-  state: { session: { get: id => ({ parentID: id === 'child' ? 'first' : undefined }) } },
-  lifecycle: { onDispose: fn => { dispose = fn; } },
+let route = { type: 'session', sessionID: 'first' };
+const dispose = plugin.setup({
+  ui: { router: { current: () => route } },
+  data: { session: { get: id => ({ parentID: id === 'child' ? 'first' : undefined }) } },
 });
 const reports = () => readFileSync(REPORTS, 'utf8').trim().split('\n');
 const waitFor = async expected => {
@@ -131,14 +178,14 @@ const waitFor = async expected => {
   }
 };
 await waitFor(['first']);
-route = { name: 'session', params: { sessionID: 'second' } };
+route = { type: 'session', sessionID: 'second' };
 await waitFor(['first', 'second']);
-route = { name: 'session', params: { sessionID: 'child' } };
+route = { type: 'session', sessionID: 'child' };
 await sleep(300);
-route = { name: 'session', params: { sessionID: 'third' } };
+route = { type: 'session', sessionID: 'third' };
 await waitFor(['first', 'second', 'third']);
 dispose();
-route = { name: 'session', params: { sessionID: 'fourth' } };
+route = { type: 'session', sessionID: 'fourth' };
 await sleep(300);
 if (JSON.stringify(reports()) !== JSON.stringify(['first', 'second', 'third'])) {
   throw new Error(JSON.stringify(reports()));
@@ -334,14 +381,14 @@ func TestStripJSONCommentsKeepsStrings(t *testing.T) {
 func TestNoLaunchWritesOutsideTheHooksDir(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	for _, variable := range []string{"GEMINI_CLI_HOME", "GROK_HOME", "HERMES_HOME", "OPENCODE_TUI_CONFIG", "GEMINI_CLI_SYSTEM_DEFAULTS_PATH"} {
+	for _, variable := range []string{"GEMINI_CLI_HOME", "GROK_HOME", "HERMES_HOME", "OPENCODE_CLI_CONFIG_CONTENT", "OPENCODE_CONFIG_DIR", "XDG_CONFIG_HOME", "GEMINI_CLI_SYSTEM_DEFAULTS_PATH"} {
 		t.Setenv(variable, "")
 	}
 	t.Setenv("GEMINI_CLI_SYSTEM_SETTINGS_PATH", filepath.Join(home, "system", "settings.json"))
 	cwd := filepath.Join(home, "project")
 	for _, path := range []string{
 		".gemini/settings.json", ".gemini/config/hooks.json", ".grok/config.toml", ".commandcode/settings.json",
-		".hermes/config.yaml", ".codex/config.toml", ".config/opencode/tui.json", ".pi/agent/settings.json",
+		".hermes/config.yaml", ".codex/config.toml", ".config/opencode/cli.json", ".pi/agent/settings.json",
 		".omp/agent/config.yml", ".claude/settings.json", "project/.gemini/settings.json",
 	} {
 		writeFile(t, filepath.Join(home, path), "{}", 0o644)

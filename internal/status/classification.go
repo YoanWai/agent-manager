@@ -24,7 +24,13 @@ func (e *Engine) TypingHold(tool, pane string) string {
 	if _, ready := e.ActivityRegion(tool, pane); !ready {
 		return Working
 	}
-	if !matched || (state != Working && state != Waiting) {
+	if !matched {
+		if e.tools[tool].footerBusy(pane) {
+			return Working
+		}
+		return ""
+	}
+	if state != Working && state != Waiting {
 		return ""
 	}
 	// A turn that died leaves its working marker behind; Match reads that
@@ -147,15 +153,27 @@ func wrapsAbove(row string) bool {
 // busy_footer for as long as a turn runs, and the footer has gone back to
 // its resting form while the working marker is still on screen.
 func (tr toolRules) turnDied(pane string) bool {
+	footer, ok := tr.footer(pane)
+	return ok && !tr.busyFooter.MatchString(footer)
+}
+
+// footerBusy reports a turn the tool's footer says is running.
+func (tr toolRules) footerBusy(pane string) bool {
+	footer, ok := tr.footer(pane)
+	return ok && tr.busyFooter.MatchString(footer)
+}
+
+// footer is what the tool draws below its cutoff row, for a tool whose
+// footer tells a running turn apart from a resting one.
+func (tr toolRules) footer(pane string) (string, bool) {
 	if tr.busyFooter == nil {
-		return false
+		return "", false
 	}
 	region, ok := tr.activityRegion(pane)
 	if !ok {
-		return false
+		return "", false
 	}
-	footer, ok := footerBelow(pane[len(region):])
-	return ok && !tr.busyFooter.MatchString(footer)
+	return footerBelow(pane[len(region):])
 }
 
 func footerBelow(cutoffTail string) (string, bool) {

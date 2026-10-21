@@ -275,23 +275,26 @@ func runFake(name string) error {
 			return nil
 		})
 	case "opencode":
-		parts := fixture("opencode_serve.json")
-		password := os.Getenv("OPENCODE_SERVER_PASSWORD")
-		announce := func(address string) string { return "opencode server listening on http://" + address }
-		return serveHTTP(announce, func(w http.ResponseWriter, r *http.Request) {
-			if user, pass, ok := r.BasicAuth(); !ok || user != "opencode" || pass != password {
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
-				return
+		return printFixture(os.Stdout, "opencode_models.txt")
+	case "opencode-unavailable":
+		if err := printFixture(os.Stderr, "opencode_models_unavailable.txt"); err != nil {
+			return err
+		}
+		os.Exit(1)
+	case "opencode-settling":
+		// Unavailable until the file CATALOG_SETTLED names exists, which the
+		// first ask leaves behind: the server settles between two asks.
+		settled := os.Getenv("CATALOG_SETTLED")
+		if _, err := os.Stat(settled); err != nil {
+			if err := os.WriteFile(settled, nil, 0o644); err != nil {
+				return err
 			}
-			switch r.URL.Path {
-			case "/config/providers":
-				_, _ = w.Write(parts["providers"])
-			case "/config":
-				_, _ = w.Write(parts["config"])
-			default:
-				http.NotFound(w, r)
+			if err := printFixture(os.Stderr, "opencode_models_unavailable.txt"); err != nil {
+				return err
 			}
-		})
+			os.Exit(1)
+		}
+		return printFixture(os.Stdout, "opencode_models.txt")
 	case "hermes", "hermes-work":
 		parts := fixture("hermes_serve.json")
 		if name == "hermes-work" {
@@ -344,6 +347,16 @@ func addWorkProfile(parts map[string]json.RawMessage) {
 	options["providers"], options["model"], options["provider"] = anthropic, "claude-opus-5", "anthropic"
 	parts["profiles"], _ = json.Marshal(listed)
 	parts["options:work"], _ = json.Marshal(options)
+}
+
+// printFixture copies a recorded answer to out, as the CLI printed it.
+func printFixture(out *os.File, name string) error {
+	raw, err := os.ReadFile(filepath.Join(os.Getenv("CATALOG_TESTDATA"), name))
+	if err != nil {
+		return err
+	}
+	_, err = out.Write(raw)
+	return err
 }
 
 // serveHTTP listens on a free loopback port and prints the line announce

@@ -49,6 +49,7 @@ type toolRules struct {
 	toolResult     *regexp.Regexp
 	placeholder    *regexp.Regexp
 	userEcho       *regexp.Regexp
+	toolRow        *regexp.Regexp
 	dialogFooter   *regexp.Regexp
 	dialogAsks     *regexp.Regexp
 	busyFooter     *regexp.Regexp
@@ -92,6 +93,7 @@ func NewEngine(cfg config.Config) (*Engine, error) {
 			{tool.ToolResult, &tr.toolResult},
 			{tool.InputPlaceholder, &tr.placeholder},
 			{tool.UserEcho, &tr.userEcho},
+			{tool.ToolRow, &tr.toolRow},
 			{tool.DialogFooter, &tr.dialogFooter},
 			{tool.DialogQuestion, &tr.dialogAsks},
 			{tool.BusyFooter, &tr.busyFooter},
@@ -118,7 +120,8 @@ func NewEngine(cfg config.Config) (*Engine, error) {
 // current turn. If the first matching rule is working, a matching waiting
 // rule later in the list overrides it so persisted rule order cannot mask
 // a user prompt. Every other first match returns as configured. When no
-// rule hits, the newest turn in the content region decides finished
+// rule hits, a busy footer below the cutoff means a turn is running, and
+// otherwise the newest turn in the content region decides finished
 // versus waiting.
 func (e *Engine) Match(tool, pane string) (string, bool) {
 	tr, ok := e.tools[tool]
@@ -133,6 +136,9 @@ func (e *Engine) Match(tool, pane string) (string, bool) {
 			return Errored, true
 		}
 		return state, true
+	}
+	if tr.footerBusy(pane) {
+		return Working, true
 	}
 	if tr.isBusy(pane) {
 		return Working, true
@@ -173,6 +179,19 @@ func (e *Engine) RuleMatch(tool, pane string) (string, bool) {
 	return tr.matchRules(tr.matchScope(pane))
 }
 
+// continuesBanner reports an indented line that wraps the banner above
+// it. Chrome and the summary row that closes the banner's turn end it.
+func (tr toolRules) continuesBanner(line string) bool {
+	if strings.TrimSpace(line) == "" || (line[0] != ' ' && line[0] != '\t') {
+		return false
+	}
+	trimmed := strings.TrimRight(line, " \t")
+	if tr.chromeLine != nil && tr.chromeLine.MatchString(trimmed) {
+		return false
+	}
+	return tr.turnEnd == nil || !tr.turnEnd.MatchString(trimmed)
+}
+
 // isLimit reports whether the newest turn is sitting on a usage or rate
 // limit. The banner lives above the turn-end summary, so matchScope never
 // sees it, and turnState would settle the quiet turn as finished. A limit
@@ -191,11 +210,7 @@ func (tr toolRules) isLimit(pane string) bool {
 			continue
 		}
 		end := i + 1
-		for end < len(lines) {
-			line := lines[end]
-			if strings.TrimSpace(line) == "" || (line[0] != ' ' && line[0] != '\t') {
-				break
-			}
+		for end < len(lines) && tr.continuesBanner(lines[end]) {
 			end++
 		}
 		return tr.limitIsNewest(lines[end:])
