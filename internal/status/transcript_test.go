@@ -306,7 +306,7 @@ func TestFullTurnTextPerTool(t *testing.T) {
 				"  ┃  Reply with exactly: OPENCODE ECHO TEST DONE.\n" +
 				"  ┃\n" +
 				"     OPENCODE ECHO TEST DONE.\n" +
-				"     ▣  Build · Gemini 3.6 Flash · 2.6s\n" +
+				"     Build · Gemini 3.6 Flash · 2.6s · 3.0 tok/s\n" +
 				"  ┃\n" +
 				"  ┃  Build · Gemini 3.6 Flash Google\n" +
 				"  ╹▀▀▀▀▀▀▀▀▀▀▀▀",

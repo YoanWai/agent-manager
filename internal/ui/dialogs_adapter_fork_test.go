@@ -416,8 +416,8 @@ func TestOpenForkRejectsGroup(t *testing.T) {
 }
 
 // Tools split into two fork shapes: those that mint their own conversation id
-// (opencode, codex) leave {new_id} out, so the fork starts without one until
-// the session store captures it; those that take an agent-chosen id (grok,
+// (codex) leave {new_id} out, so the fork starts without one until the
+// session store captures it; those that take an agent-chosen id (grok,
 // claude) include {new_id} and the fork launches with it already set.
 func TestForkAgentSessionIDFollowsNewIDPlaceholder(t *testing.T) {
 	t.Parallel()
@@ -427,7 +427,7 @@ func TestForkAgentSessionIDFollowsNewIDPlaceholder(t *testing.T) {
 		forkCmd   string
 		wantNewID bool
 	}{
-		{"opencode_session_store", "opencode", "true {id}; cat", false},
+		{"codex_session_store", "codex", "true {id}; cat", false},
 		{"grok_id_flag", "grok", "true {id} {new_id}; cat", true},
 		{"pi_id_flag", "pi", "true {id} {new_id}; cat", true},
 	} {
@@ -483,6 +483,54 @@ func TestForkAgentSessionIDFollowsNewIDPlaceholder(t *testing.T) {
 				t.Fatalf("forked AgentSessionID = %q, want empty until the session store captures it", forked.AgentSessionID)
 			}
 		})
+	}
+}
+
+// opencode's session store makes the fork through opencode's own API, and
+// the launch opens the id it answered with.
+func TestForkOpencodeOpensTheCopyItsStoreMade(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the opencode stand-in is a shell script")
+	}
+	bin := t.TempDir()
+	script := "#!/bin/sh\ntest \"$1\" = api || exit 2\necho '{\"data\":{\"id\":\"ses_copy\"}}'\n"
+	if err := os.WriteFile(filepath.Join(bin, "opencode"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	m := buildModel(t)
+	dir := t.TempDir()
+	source := store.Session{ID: "oc-source", Name: "source", Tool: "opencode", Cwd: dir, Status: status.Idle, AgentSessionID: "ses_source"}
+	if err := m.services.store.CreateSession(source); err != nil {
+		t.Fatal(err)
+	}
+	loadStoredRows(t, m)
+	m.selectSessionRow(t, "source")
+	argsFile := filepath.Join(t.TempDir(), "fork-args")
+	m.services.cfg.Tools["opencode"] = config.Tool{SessionStore: "opencode", ForkCommand: captureArgsCommand(argsFile, "{new_id}"), MCP: "none"}
+
+	m.openFork()
+	if m.errBar.text != "" {
+		t.Fatalf("openFork error = %q", m.errBar.text)
+	}
+	m.fork.SetName("forked")
+	updated, cmd := m.handleForkKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(*Model)
+	m.applyCmd(t, cmd)
+	if m.mode != modeList || m.errBar.text != "" {
+		t.Fatalf("after fork: mode=%v err=%q", m.mode, m.errBar.text)
+	}
+	var forked store.Session
+	for _, sess := range m.sessionRows() {
+		if sess.Name == "forked" {
+			forked = sess
+		}
+	}
+	if forked.AgentSessionID != "ses_copy" {
+		t.Fatalf("forked AgentSessionID = %q, want the id opencode answered with", forked.AgentSessionID)
+	}
+	if got := readWhenWritten(t, argsFile); strings.TrimSpace(got) != "ses_copy" {
+		t.Fatalf("fork launched with %q, want ses_copy", got)
 	}
 }
 
