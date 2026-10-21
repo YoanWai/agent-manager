@@ -330,3 +330,11 @@ func harnessRuntime(t *testing.T, h *sessionHarness) Runtime {
 		Snapshot: h.store.SetSnapshot,
 	}
 }
+
+func TestSessionInfoExposesPendingInputUncertainty(t *testing.T) {
+	r := &runtime{}
+	got := r.sessionInfo(store.Session{ID: "target", PendingInputOutcome: store.DeliveryUncertain}, false, false)
+	if got.PendingInputOutcome != "uncertain" {
+		t.Fatalf("queued-input receipt hidden: %+v", got)
+	}
+}

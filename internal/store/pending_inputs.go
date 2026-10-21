@@ -7,59 +7,6 @@ import (
 	"fmt"
 )
 
-func (s *Store) ClaimPendingInput(id, expected string) (bool, error) {
-	encoded, inputs, claimed, err := s.pendingInputState(id)
-	if err != nil {
-		return false, err
-	}
-	if claimed || len(inputs) == 0 || inputs[0] != expected {
-		return false, nil
-	}
-	res, err := s.db.Exec(
-		`UPDATE sessions SET pending_claimed = 1
-		 WHERE id = ? AND pending_inputs = ? AND pending_claimed = 0`, id, encoded)
-	if err != nil {
-		return false, err
-	}
-	affected, err := res.RowsAffected()
-	if err != nil {
-		return false, err
-	}
-	if affected == 0 {
-		return false, s.requireRowOrNoop(res, id)
-	}
-	return true, nil
-}
-
-func (s *Store) ConsumeClaimedPendingInput(id, expected string) (bool, error) {
-	encoded, inputs, claimed, err := s.pendingInputState(id)
-	if err != nil {
-		return false, err
-	}
-	if !claimed || len(inputs) == 0 || inputs[0] != expected {
-		return false, nil
-	}
-	remaining, err := encodePendingInputs(inputs[1:])
-	if err != nil {
-		return false, err
-	}
-	res, err := s.db.Exec(
-		`UPDATE sessions SET pending_inputs = ?, pending_claimed = 0
-		 WHERE id = ? AND pending_inputs = ? AND pending_claimed = 1`,
-		remaining, id, encoded)
-	if err != nil {
-		return false, err
-	}
-	affected, err := res.RowsAffected()
-	if err != nil {
-		return false, err
-	}
-	if affected == 0 {
-		return false, s.requireRowOrNoop(res, id)
-	}
-	return true, nil
-}
-
 func (s *Store) pendingInputState(id string) (string, []string, bool, error) {
 	var encoded string
 	var claimed int

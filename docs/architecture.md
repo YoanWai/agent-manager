@@ -19,7 +19,7 @@ Under `internal/`:
 - `ui/focus/watch`: the focused pane's watcher: control-mode client, polled fallback, pushed frames.
 - `ui/theme`: the built-in palettes and color math, a leaf any UI package may import.
 - `ui/presentation`: pure text helpers shared by `ui` and its feature packages.
-- `store`: SQLite state: sessions, groups, settings, inbox, tasks, reservations.
+- `store`: SQLite state: sessions, groups, settings, inbox, tasks, reservations, delivery guard.
 - `tmux`: the `Driver` on the dedicated socket, the control-mode client, bindings, attach.
 - `status`: classifies pane output into agent states.
 - `config`: built-in tool definitions and CLI install.
@@ -132,10 +132,33 @@ waiting, drops the jobs that never started, and the manager exits non-zero
 naming each as "never started" or "was still running". Shutdown then waits at
 most five seconds (`effectStopWait`) for begun effects and reports the same way.
 
-**Automatic delivery is at most once.** The poller's inbox and pending-input
-delivery (`internal/execution/polldelivery.go`) claims a row with a
-compare-and-set before the paste and records it delivered or dropped after. A
-claim left behind by a manager that died between the two is retired, never
-typed again: a message once its claim is older than `inboxClaimGrace`, a
-pending input on the next poll. The schema is unchanged from `main`, so older
-and newer binaries can share a profile.
+**Automatic delivery has one owner per profile.** The poller's inbox and
+pending-input delivery runs inside `Store.WithDeliveryGuard`, an exclusive
+non-blocking lock on `<state.db>.delivery.lock`; a competing manager skips the
+tick. A claim is committed with a random attempt token before the paste, and the
+receipt must carry the same token. A claim with no live owner becomes
+`uncertain` and is never typed again: it leaves the queue with `delivered_at`
+stamped and no drop mark, so a sender is never told to resend what the agent
+may already be doing.
+
+**An older manager keeps delivering until it stops.** The receipt columns are
+additive and nothing refuses the plain claim and mark statements a release
+before the guard runs, so an upgrade needs no cutover: both binaries open the
+same profile and the older one keeps working. A guarded manager mirrors each
+heartbeat it stamps into `delivery_heartbeat`; a heartbeat the mirror does not
+match was stamped by an older manager, and `ClaimPoller` records it. While that
+record is younger than `PollerHeartbeatStale` and names this manager's tmux
+server, `Runner.ownsDelivery` is false and the poller neither claims, types nor
+retires anything. That claim runs once per `PollerHeartbeatPeriod`, and an
+older manager that starts or wakes in between types on its first step, so every
+delivery reads the heartbeat again under the guard
+(`DeliveryGuard.OlderManagerStamped`) and defers on a stamp the mirror does not
+match. This covers managers from v0.40 on, which read a stamp as stale after
+the same fixed 30 seconds; v0.38 and v0.39 judge staleness from
+`poll_interval`, so one of those running with a `poll_interval` above about
+25 seconds beside this build on one profile is not supported and should be
+stopped before upgrading. The older manager holds no lock while it pastes, so a claim
+without a token found afterwards gets `inboxClaimGrace` before it is retired,
+and is never retyped; a claimed pending input is retired on sight, as that
+manager would. Read-only commands on the newer binary only add columns and
+drop the fence triggers a #735 branch build installed; no `main` build or release ever had them.

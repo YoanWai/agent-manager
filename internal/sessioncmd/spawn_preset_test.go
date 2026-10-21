@@ -1,8 +1,10 @@
 package sessioncmd
 
 import (
+	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -170,13 +172,15 @@ func TestSessionsCreatePresetReadsFreshWithoutRewritingQueuedPrompt(t *testing.T
 		t.Fatalf("catalog edits rewrote queued instructions: %+v %v", unchanged, err)
 	}
 	// The actual pending-delivery store path receives the already composed bytes.
-	claimed, err := h.store.ClaimPendingInput(old.ID, expectedOld)
-	if err != nil || !claimed {
-		t.Fatalf("claim composed prompt: %v %v", claimed, err)
-	}
-	consumed, err := h.store.ConsumeClaimedPendingInput(old.ID, expectedOld)
-	if err != nil || !consumed {
-		t.Fatalf("consume composed prompt: %v %v", consumed, err)
+	acquired, err := h.store.WithDeliveryGuard(context.Background(), func(guard *store.DeliveryGuard) error {
+		claim, claimed, err := guard.ClaimPendingInput(old.ID, expectedOld)
+		if err != nil || !claimed {
+			return fmt.Errorf("claim composed prompt: %v %v", claimed, err)
+		}
+		return guard.FinishPendingInput(old.ID, expectedOld, claim, store.DeliveryConfirmed)
+	})
+	if err != nil || !acquired {
+		t.Fatalf("deliver composed prompt: acquired %v, err %v", acquired, err)
 	}
 	if _, err := h.sessions.Create(h.caller.ID, opts); err == nil {
 		t.Fatal("deleted preset silently fell back")

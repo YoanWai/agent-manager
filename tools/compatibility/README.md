@@ -35,3 +35,24 @@ To compare an explicitly selected development build, pass
 instead of claiming a released archive checksum. Copy the executable first if
 its installed path could be replaced during the run; all profile state remains
 inside the artifact directory.
+
+## Mixed-version delivery
+
+```sh
+python3 tools/compatibility/mixed_delivery.py --binary /tmp/agent-manager-candidate
+python3 tools/compatibility/mixed_delivery.py --binary /tmp/agent-manager-candidate --release v0.39.0
+```
+
+Downloads the release the way the matrix does (default v0.42.0, the newest
+without the delivery guard), then runs it and the candidate as two managers on
+one disposable profile and one tmux server, each in its own outer tmux session
+on a private socket. A fixture `cmd` on PATH stands in for command-code. The
+released manager spawns the worker and delivers a message; the candidate starts
+beside it, and the next message plus a seeded pending input are still typed by
+the released manager (no attempt token on the row) while the candidate reads
+the older heartbeat and defers; the released manager quits, and within the
+heartbeat window the candidate takes delivery over with tokened, confirmed
+receipts. Every body is counted in the worker's scrollback exactly once, both
+binaries' `sessions --json` and `message-status` keep working on the shared
+profile throughout, and the fence triggers never appear. It takes about 90
+seconds; results and logs stay at the printed artifact directory on failure.

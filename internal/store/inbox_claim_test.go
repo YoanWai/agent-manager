@@ -1,8 +1,11 @@
 package store
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -32,7 +35,7 @@ func TestClaimPollerStealsOnlyStaleStamps(t *testing.T) {
 	socketB := "/tmp/manager-b/tmux-501/agentmgr"
 	now := time.Now()
 
-	holder, err := st.ClaimPoller(socketA, now)
+	holder, err := pollerHolder(st, socketA, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +43,7 @@ func TestClaimPollerStealsOnlyStaleStamps(t *testing.T) {
 		t.Fatalf("first claim = %q, want %q", holder, socketA)
 	}
 
-	holder, err = st.ClaimPoller(socketB, now.Add(2*time.Second))
+	holder, err = pollerHolder(st, socketB, now.Add(2*time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,14 +52,14 @@ func TestClaimPollerStealsOnlyStaleStamps(t *testing.T) {
 	}
 
 	backdateHeartbeat(t, st, now.Add(-40*time.Second))
-	holder, err = st.ClaimPoller(socketB, now.Add(40*time.Second))
+	holder, err = pollerHolder(st, socketB, now.Add(40*time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if holder != socketB {
 		t.Fatalf("stale-stamp claim = %q, want %q to take over", holder, socketB)
 	}
-	holder, err = st.ClaimPoller(socketA, now.Add(41*time.Second))
+	holder, err = pollerHolder(st, socketA, now.Add(41*time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +68,7 @@ func TestClaimPollerStealsOnlyStaleStamps(t *testing.T) {
 	}
 
 	backdateHeartbeat(t, st, now.Add(35*time.Second))
-	holder, err = st.ClaimPoller(socketA, now.Add(80*time.Second))
+	holder, err = pollerHolder(st, socketA, now.Add(80*time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,18 +87,15 @@ func TestStaleInflightClaimIsRetiredNotRedelivered(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	claimed, err := st.ClaimMessage(id, now)
-	if err != nil || !claimed {
-		t.Fatalf("first claim = %v, %v", claimed, err)
-	}
+	claim := claimMessageForTest(t, st, id, now)
 	if _, err := st.db.Exec(`UPDATE session_inbox SET claimed_at = ? WHERE id = ?`,
 		encodeTime(now.Add(-31*time.Second)), id); err != nil {
 		t.Fatal(err)
 	}
 	dropAt := now.Add(31 * time.Second)
-	if err := st.MarkDropped(id, dropAt); err != nil {
-		t.Fatal(err)
-	}
+	withDeliveryGuard(t, st, func(guard *DeliveryGuard) error {
+		return guard.FinishMessage(id, claim, DeliveryRefused, dropAt)
+	})
 
 	msg, err := st.Message(id, "cafebeef")
 	if err != nil {
@@ -107,13 +107,21 @@ func TestStaleInflightClaimIsRetiredNotRedelivered(t *testing.T) {
 	if msg.DroppedAt.IsZero() {
 		t.Fatal("retired message carries no drop mark, so the sender reads it as delivered")
 	}
-	if again, err := st.ClaimMessage(id, now.Add(32*time.Second)); err != nil || again {
-		t.Fatalf("claim after drop = %v, %v; want refused", again, err)
-	}
+	withDeliveryGuard(t, st, func(guard *DeliveryGuard) error {
+		_, again, err := guard.ClaimMessage(id, now.Add(32*time.Second))
+		if err != nil || again {
+			t.Fatalf("claim after drop = %v, %v; want refused", again, err)
+		}
+		return nil
+	})
 	before := msg
-	if err := st.MarkDelivered(id, now.Add(33*time.Second)); err != nil {
-		t.Fatal(err)
-	}
+	withDeliveryGuard(t, st, func(guard *DeliveryGuard) error {
+		err := guard.FinishMessage(id, claim, DeliveryConfirmed, now.Add(33*time.Second))
+		if !errors.Is(err, ErrDeliveryReceiptRejected) {
+			t.Fatalf("late receipt = %v, want ErrDeliveryReceiptRejected", err)
+		}
+		return nil
+	})
 	msg, err = st.Message(id, "cafebeef")
 	if err != nil {
 		t.Fatal(err)
@@ -153,7 +161,14 @@ func TestClaimMessageIsSingleWinnerUnderConcurrentClaims(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			claimed, err := claimers[i%len(claimers)].ClaimMessage(id, now)
+			var claimed bool
+			acquired, err := claimers[i%len(claimers)].WithDeliveryGuard(context.Background(), func(guard *DeliveryGuard) error {
+				_, claimed, err = guard.ClaimMessage(id, now)
+				return err
+			})
+			if err == nil && !acquired {
+				claimed = false
+			}
 			mu.Lock()
 			wins[i] = claimed
 			errors[i] = err
@@ -196,5 +211,98 @@ func TestManagerAwakeAgesWithTheNewestStamp(t *testing.T) {
 	awake, err = st.ManagerAwake(now.Add(41 * time.Second))
 	if err != nil || !awake {
 		t.Fatalf("competitor stamp awake = %v, %v; want the profile to stay awake", awake, err)
+	}
+}
+
+// olderClaimPoller is the stamp a manager older than the delivery guard
+// writes, verbatim from v0.42.0 internal/store/inbox.go: the socket and
+// the heartbeat, and nothing beside them.
+func olderClaimPoller(t *testing.T, st *Store, socket string, now time.Time) {
+	t.Helper()
+	if _, err := st.db.Exec(
+		`INSERT INTO settings (key, value) VALUES (?, ?), (?, ?)
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+		PollerSocketKey, socket,
+		PollerHeartbeatKey, strconv.FormatInt(now.UnixNano(), 10)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestClaimPollerLeavesDeliveryToAnOlderManagerUntilItStops(t *testing.T) {
+	st := openTwoManagerStore(t)
+	socket := "/tmp/manager-a/tmux-501/agentmgr"
+	now := time.Now()
+
+	olderClaimPoller(t, st, socket, now)
+	claim, err := st.ClaimPoller(socket, now.Add(2*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claim.Holder != socket || !claim.OlderManager {
+		t.Fatalf("claim beside a fresh older stamp = %+v, want delivery left to it", claim)
+	}
+	awake, err := st.ManagerAwake(now.Add(3 * time.Second))
+	if err != nil || !awake {
+		t.Fatalf("awake = %v, %v; the shared heartbeat must keep reading as home", awake, err)
+	}
+
+	// The older manager restamps between this manager's claims; each of
+	// its stamps is overwritten by the next guarded claim, which is the
+	// one read that must notice it.
+	olderClaimPoller(t, st, socket, now.Add(8*time.Second))
+	claim, err = st.ClaimPoller(socket, now.Add(12*time.Second))
+	if err != nil || !claim.OlderManager {
+		t.Fatalf("claim after the older restamp = %+v, %v", claim, err)
+	}
+	claim, err = st.ClaimPoller(socket, now.Add(22*time.Second))
+	if err != nil || !claim.OlderManager {
+		t.Fatalf("claim with only this manager's own stamps since = %+v, %v; the older one is within its window", claim, err)
+	}
+
+	claim, err = st.ClaimPoller(socket, now.Add(8*time.Second+PollerHeartbeatStale))
+	if err != nil || claim.OlderManager {
+		t.Fatalf("claim once the older stamp aged = %+v, %v", claim, err)
+	}
+	claim, err = st.ClaimPoller(socket, now.Add(60*time.Second))
+	if err != nil || claim.OlderManager || claim.Holder != socket {
+		t.Fatalf("claim with no older manager = %+v, %v", claim, err)
+	}
+}
+
+func TestClaimPollerSharesTheOlderStampBetweenGuardedManagers(t *testing.T) {
+	st := openTwoManagerStore(t)
+	socket := "/tmp/manager-a/tmux-501/agentmgr"
+	now := time.Now()
+	if _, err := st.ClaimPoller(socket, now); err != nil {
+		t.Fatal(err)
+	}
+	olderClaimPoller(t, st, socket, now.Add(3*time.Second))
+	// A second guarded manager on the socket overwrites the older stamp.
+	claim, err := st.ClaimPoller(socket, now.Add(5*time.Second))
+	if err != nil || !claim.OlderManager {
+		t.Fatalf("second manager's claim = %+v, %v", claim, err)
+	}
+	// The first reads its own peer's stamp in the heartbeat and still
+	// learns of the older manager from the row the peer left.
+	claim, err = st.ClaimPoller(socket, now.Add(10*time.Second))
+	if err != nil || !claim.OlderManager {
+		t.Fatalf("first manager's claim behind its peer = %+v, %v", claim, err)
+	}
+}
+
+// An older manager on another tmux server types into panes this one
+// cannot see, so its stamp holds the store but not delivery here.
+func TestClaimPollerIgnoresAnOlderManagerOnAnotherServer(t *testing.T) {
+	st := openTwoManagerStore(t)
+	socketA := "/tmp/manager-a/tmux-501/agentmgr"
+	socketB := "/tmp/manager-b/tmux-501/agentmgr"
+	now := time.Now()
+	olderClaimPoller(t, st, socketA, now)
+	claim, err := st.ClaimPoller(socketB, now.Add(2*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claim.Holder != socketA || claim.OlderManager {
+		t.Fatalf("claim from another server = %+v, want the older holder kept and delivery free", claim)
 	}
 }

@@ -126,6 +126,19 @@ CREATE TABLE IF NOT EXISTS settings (
 			name TEXT PRIMARY KEY,
 			instructions TEXT NOT NULL
 		)`,
+		// Delivery receipts are additive: a manager older than the guard
+		// claims and marks rows through the columns above and never reads
+		// these. A profile opened by a #735 branch build carries fence
+		// triggers that refuse that manager's writes; no main build or
+		// release ever installed them.
+		`ALTER TABLE session_inbox ADD COLUMN attempt_token TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE session_inbox ADD COLUMN delivery_outcome TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN pending_attempt_token TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN pending_delivery_outcome TEXT NOT NULL DEFAULT ''`,
+		`DROP TRIGGER IF EXISTS session_inbox_delivery_claim_fence`,
+		`DROP TRIGGER IF EXISTS session_inbox_delivery_receipt_fence`,
+		`DROP TRIGGER IF EXISTS session_pending_delivery_claim_fence`,
+		`DROP TRIGGER IF EXISTS session_pending_delivery_receipt_fence`,
 	}
 	for _, migration := range migrations {
 		if _, err := s.db.Exec(migration); err != nil {

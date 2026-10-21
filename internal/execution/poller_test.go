@@ -2026,12 +2026,7 @@ func TestPollerOwnerFailureDoesNotPruneLocally(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if claimed, err := m.store.ClaimMessage(id, old); err != nil || !claimed {
-		t.Fatalf("claim: %v, claimed=%v", err, claimed)
-	}
-	if err := m.store.MarkDelivered(id, old); err != nil {
-		t.Fatal(err)
-	}
+	finishInboxForTest(t, m.store, id, store.DeliveryConfirmed, old)
 	want := errors.New("owner unavailable")
 	m.poller.inboxOwner = &recordingInboxOwner{err: want}
 	msg, failed := testPollMessage(m.poller.Step()).(errMsg)

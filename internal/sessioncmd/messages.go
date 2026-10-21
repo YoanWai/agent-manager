@@ -163,10 +163,20 @@ func (s *Sessions) MessageStatus(sessionID string, messageID int64) (MessageStat
 	}
 	switch {
 	// A drop stamps the delivery column as well, so that a message nothing
-	// will ever type leaves the queue, and is read first for that reason.
-	case !msg.DroppedAt.IsZero():
+	// will ever type leaves the queue, and is read first for that reason,
+	// whatever outcome an interim build wrote beside it. The exception is
+	// an attempt still in flight when a manager older than the guard
+	// retired it: that drop mark proves nothing about whether the paste
+	// had landed.
+	case !msg.DroppedAt.IsZero() && msg.Outcome != store.DeliveryInFlight:
 		state.State = "dropped"
 		state.Reason = "Agent Manager could not type it into the pane, and never retries a message; send it again"
+	case msg.Outcome == store.DeliveryInFlight && msg.DeliveredAt.IsZero() && msg.DroppedAt.IsZero():
+		state.State = "in_flight"
+		state.Reason = "Agent Manager is typing it in now; wait for its receipt before resending"
+	case msg.Outcome == store.DeliveryInFlight, msg.Outcome == store.DeliveryUncertain && msg.ReadAt.IsZero():
+		state.State = "uncertain"
+		state.Reason = "It may have reached the prompt, and Agent Manager never retries a message; read the recipient before resending"
 	case !msg.ReadAt.IsZero():
 		state.State = "answered"
 		state.DeliveredAt = msg.DeliveredAt.Format(time.RFC3339)
@@ -230,7 +240,7 @@ type MessageState struct {
 	MessageID   int64  `json:"message_id"`
 	SessionID   string `json:"session_id" jsonschema:"session the message was addressed to"`
 	Body        string `json:"body"`
-	State       string `json:"state" jsonschema:"queued (waiting for the agent to be at rest), held (nothing will type it in as things stand: the recipient is sitting on a dialog, archived or not running, and reason says which), delivered (typed into its prompt), dropped (it never reached the prompt and is not retried), or answered (it has since messaged back)"`
+	State       string `json:"state" jsonschema:"queued (waiting for the agent to be at rest), held (nothing will type it in as things stand: the recipient is sitting on a dialog, archived or not running, and reason says which), in_flight (being typed in now), delivered (typed into its prompt), dropped (it never reached the prompt and is not retried), uncertain (it may have reached the prompt and is not retried), or answered (it has since messaged back)"`
 	DeliveredAt string `json:"delivered_at,omitempty" jsonschema:"RFC3339 time the message reached the prompt"`
 	Reason      string `json:"reason,omitempty" jsonschema:"why the message is in that state, and what to do about it"`
 }

@@ -97,6 +97,8 @@ jobs:
         run: python3 tools/e2e/blocked_scenarios.py --binary "$RUNNER_TEMP/am-e2e-binary" --artifacts "$RUNNER_TEMP/am-blocked-evidence"
       - name: Compatibility fixture safety
         run: python3 -m unittest discover -s tools/compatibility -p 'test_*.py'
+      - name: Mixed-version delivery
+        run: python3 tools/compatibility/mixed_delivery.py --binary "$RUNNER_TEMP/am-e2e-binary" --artifacts "$RUNNER_TEMP/am-mixed-evidence"
       - name: Retain smoke evidence
         if: always()
         uses: actions/upload-artifact@v7
@@ -107,6 +109,7 @@ jobs:
             ${{ runner.temp }}/am-scenario-evidence
             ${{ runner.temp }}/am-failure-evidence
             ${{ runner.temp }}/am-blocked-evidence
+            ${{ runner.temp }}/am-mixed-evidence
           include-hidden-files: true
           retention-days: 7
           if-no-files-found: ignore

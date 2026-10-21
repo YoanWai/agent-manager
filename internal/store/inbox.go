@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -25,6 +26,10 @@ type InboxMessage struct {
 	DeliveredAt time.Time
 	DroppedAt   time.Time
 	ReadAt      time.Time
+	// AttemptToken is minted by the guarded claim that took the row. A
+	// claim without one was made by a manager older than the guard.
+	AttemptToken string
+	Outcome      DeliveryOutcome
 }
 
 // InboxLimits stop two agents talking each other into an infinite loop.
@@ -64,60 +69,129 @@ const (
 	PollerHeartbeatStale = 30 * time.Second
 )
 
+// A manager that runs the delivery guard mirrors each heartbeat it writes
+// into guardHeartbeatKey. A manager older than the guard restamps the
+// heartbeat alone, so a heartbeat the mirror does not match is its; the
+// claim that reads one records the stamp and the socket it came with, and
+// every guarded manager on the profile reads those rows until they age.
+const (
+	guardHeartbeatKey = "delivery_heartbeat"
+	olderHeartbeatKey = "legacy_poller_heartbeat"
+	olderSocketKey    = "legacy_poller_socket"
+)
+
+// PollerClaim is what a claim leaves this manager knowing.
+type PollerClaim struct {
+	// Holder is the tmux server whose manager speaks for the sessions no
+	// server has claimed.
+	Holder string
+	// OlderManager reports a manager without the delivery guard stamping
+	// the heartbeat for this socket within PollerHeartbeatStale. It claims
+	// and types queued input on its own terms and reads a guarded claim as
+	// abandoned once it ages, so delivery is its until it stops.
+	OlderManager bool
+}
+
 // ClaimPoller takes the store for this manager's server while it is
 // unclaimed or its holder has stopped stamping, and reports who holds it.
 // Read and write share one immediate transaction: two managers starting
 // together would otherwise both read an empty holder and both speak for
-// the sessions no server has claimed.
-func (s *Store) ClaimPoller(socket string, now time.Time) (string, error) {
+// the sessions no server has claimed, and an older manager's stamp would
+// be overwritten unseen.
+func (s *Store) ClaimPoller(socket string, now time.Time) (PollerClaim, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
-		return "", err
+		return PollerClaim{}, err
 	}
 	defer tx.Rollback()
-	var holder string
-	err = tx.QueryRow(`SELECT value FROM settings WHERE key = ?`, PollerSocketKey).Scan(&holder)
-	if err != nil && err != sql.ErrNoRows {
-		return "", err
+	values, err := readSettings(tx, PollerSocketKey, PollerHeartbeatKey, guardHeartbeatKey, olderHeartbeatKey, olderSocketKey)
+	if err != nil {
+		return PollerClaim{}, err
 	}
+	holder, stamp := values[PollerSocketKey], values[PollerHeartbeatKey]
+	olderStamp, olderSocket := values[olderHeartbeatKey], values[olderSocketKey]
+	if stamp != "" && stamp != values[guardHeartbeatKey] {
+		olderStamp, olderSocket = stamp, holder
+		if err := upsertSettings(tx, olderHeartbeatKey, olderStamp, olderSocketKey, olderSocket); err != nil {
+			return PollerClaim{}, err
+		}
+	}
+	olderAwake, err := stampAwake(olderStamp, now)
+	if err != nil {
+		return PollerClaim{}, err
+	}
+	claim := PollerClaim{Holder: holder, OlderManager: olderAwake && olderSocket == socket}
 	if holder != "" && holder != socket {
-		awake, err := heartbeatAwake(tx, now)
+		awake, err := stampAwake(stamp, now)
 		if err != nil {
-			return "", err
+			return PollerClaim{}, err
 		}
 		if awake {
-			return holder, tx.Commit()
+			return claim, tx.Commit()
 		}
 	}
-	if _, err := tx.Exec(
-		`INSERT INTO settings (key, value) VALUES (?, ?), (?, ?)
-		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-		PollerSocketKey, socket,
-		PollerHeartbeatKey, strconv.FormatInt(now.UnixNano(), 10)); err != nil {
-		return "", err
+	stamp = strconv.FormatInt(now.UnixNano(), 10)
+	if err := upsertSettings(tx, PollerSocketKey, socket, PollerHeartbeatKey, stamp, guardHeartbeatKey, stamp); err != nil {
+		return PollerClaim{}, err
 	}
-	return socket, tx.Commit()
+	claim.Holder = socket
+	return claim, tx.Commit()
+}
+
+type settingsReader interface {
+	Query(query string, args ...any) (*sql.Rows, error)
+}
+
+func readSettings(q settingsReader, keys ...string) (map[string]string, error) {
+	placeholders := strings.Repeat(", ?", len(keys))[2:]
+	args := make([]any, len(keys))
+	for i, key := range keys {
+		args[i] = key
+	}
+	rows, err := q.Query(`SELECT key, value FROM settings WHERE key IN (`+placeholders+`)`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	values := map[string]string{}
+	for rows.Next() {
+		var key, value string
+		if err := rows.Scan(&key, &value); err != nil {
+			return nil, err
+		}
+		values[key] = value
+	}
+	return values, rows.Err()
+}
+
+func upsertSettings(tx *sql.Tx, pairs ...string) error {
+	placeholders := strings.Repeat(", (?, ?)", len(pairs)/2)[2:]
+	args := make([]any, len(pairs))
+	for i, value := range pairs {
+		args[i] = value
+	}
+	_, err := tx.Exec(`INSERT INTO settings (key, value) VALUES `+placeholders+
+		` ON CONFLICT(key) DO UPDATE SET value = excluded.value`, args...)
+	return err
 }
 
 // ManagerAwake reports whether a manager stamped the heartbeat recently
 // enough to still be polling. Queued messages only move while it runs.
 func (s *Store) ManagerAwake(now time.Time) (bool, error) {
-	return heartbeatAwake(s.db, now)
-}
-
-// rowQuerier lets the claim read the stamp inside its own transaction.
-type rowQuerier interface {
-	QueryRow(query string, args ...any) *sql.Row
-}
-
-func heartbeatAwake(q rowQuerier, now time.Time) (bool, error) {
 	var raw string
-	err := q.QueryRow(`SELECT value FROM settings WHERE key = ?`, PollerHeartbeatKey).Scan(&raw)
-	if err == sql.ErrNoRows || raw == "" {
+	err := s.db.QueryRow(`SELECT value FROM settings WHERE key = ?`, PollerHeartbeatKey).Scan(&raw)
+	if err == sql.ErrNoRows {
 		return false, nil
 	}
 	if err != nil {
 		return false, err
+	}
+	return stampAwake(raw, now)
+}
+
+func stampAwake(raw string, now time.Time) (bool, error) {
+	if raw == "" {
+		return false, nil
 	}
 	stamp, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil {
@@ -222,11 +296,11 @@ func (s *Store) HeadMessage(sessionID string) (InboxMessage, bool, error) {
 	msg := InboxMessage{SessionID: sessionID}
 	var sentAt, claimedAt int64
 	err := s.db.QueryRow(`
-SELECT id, sender_id, sender_name, body, fingerprint, sent_at, claimed_at
+SELECT id, sender_id, sender_name, body, fingerprint, sent_at, claimed_at, attempt_token, delivery_outcome
   FROM session_inbox
  WHERE session_id = ? AND delivered_at = 0
  ORDER BY id LIMIT 1`, sessionID).
-		Scan(&msg.ID, &msg.SenderID, &msg.SenderName, &msg.Body, &msg.Fingerprint, &sentAt, &claimedAt)
+		Scan(&msg.ID, &msg.SenderID, &msg.SenderName, &msg.Body, &msg.Fingerprint, &sentAt, &claimedAt, &msg.AttemptToken, &msg.Outcome)
 	if errors.Is(err, sql.ErrNoRows) {
 		return InboxMessage{}, false, nil
 	}
@@ -238,42 +312,9 @@ SELECT id, sender_id, sender_name, body, fingerprint, sent_at, claimed_at
 	return msg, true, nil
 }
 
-// ClaimMessage takes ownership of one message before it is typed. A
-// concurrent append cannot invalidate this compare-and-set the way it can
-// invalidate the pending-input one, because the guard is a single row.
-func (s *Store) ClaimMessage(id int64, at time.Time) (bool, error) {
-	res, err := s.db.Exec(
-		`UPDATE session_inbox SET claimed_at = ? WHERE id = ? AND claimed_at = 0 AND delivered_at = 0`,
-		encodeTime(at), id)
-	if err != nil {
-		return false, err
-	}
-	affected, err := res.RowsAffected()
-	return affected == 1, err
-}
-
-func (s *Store) MarkDelivered(id int64, at time.Time) error {
-	_, err := s.db.Exec(
-		`UPDATE session_inbox SET delivered_at = ? WHERE id = ? AND delivered_at = 0`,
-		encodeTime(at), id)
-	return err
-}
-
-// MarkDropped retires a message that never reached the pane. It leaves the
-// queue exactly as a delivered one does, since delivery is at most once and
-// nothing may retype it, and dropped_at is what tells its sender the
-// difference.
-func (s *Store) MarkDropped(id int64, at time.Time) error {
-	stamp := encodeTime(at)
-	_, err := s.db.Exec(
-		`UPDATE session_inbox SET delivered_at = ?, dropped_at = ? WHERE id = ? AND delivered_at = 0`,
-		stamp, stamp, id)
-	return err
-}
-
 // MarkRead acks every message a session received from one sender. A reply
-// is the ack: the recipient answering proves it read them. A dropped
-// message was never in front of it to read.
+// is the ack: the recipient answering proves it read them, an uncertain one
+// included. A dropped message was never in front of it to read.
 func (s *Store) MarkRead(sessionID, senderID string, at time.Time) error {
 	_, err := s.db.Exec(`
 UPDATE session_inbox SET read_at = ?
@@ -288,9 +329,10 @@ func (s *Store) Message(id int64, senderID string) (InboxMessage, error) {
 	msg := InboxMessage{ID: id, SenderID: senderID}
 	var sentAt, claimedAt, deliveredAt, droppedAt, readAt int64
 	err := s.db.QueryRow(`
-SELECT session_id, sender_name, body, fingerprint, sent_at, claimed_at, delivered_at, dropped_at, read_at
+SELECT session_id, sender_name, body, fingerprint, sent_at, claimed_at, delivered_at, dropped_at, read_at,
+       attempt_token, delivery_outcome
   FROM session_inbox WHERE id = ? AND sender_id = ?`, id, senderID).
-		Scan(&msg.SessionID, &msg.SenderName, &msg.Body, &msg.Fingerprint, &sentAt, &claimedAt, &deliveredAt, &droppedAt, &readAt)
+		Scan(&msg.SessionID, &msg.SenderName, &msg.Body, &msg.Fingerprint, &sentAt, &claimedAt, &deliveredAt, &droppedAt, &readAt, &msg.AttemptToken, &msg.Outcome)
 	if err != nil {
 		return InboxMessage{}, err
 	}
