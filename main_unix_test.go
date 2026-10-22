@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -40,11 +41,19 @@ func TestMainHeadlessNoArgsPrintsUsage(t *testing.T) {
 		"XDG_CONFIG_HOME", filepath.Join(root, "config"),
 		"TMUX_TMPDIR", filepath.Join(root, "tmux"),
 	)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("agent-manager with no terminal: %v\n%s", err, out)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("agent-manager with no terminal: %v\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
 	}
-	if !strings.Contains(string(out), "Usage: agent-manager [command]") {
-		t.Fatalf("agent-manager did not print usage:\n%s", out)
+	if !strings.Contains(stdout.String(), "Usage: agent-manager [command]") {
+		t.Fatalf("agent-manager did not print usage:\n%s", stdout.String())
+	}
+	if strings.Contains(stdout.String(), noTerminalNotice) {
+		t.Fatalf("stdout included the terminal notice:\n%s", stdout.String())
+	}
+	if stderr.String() != noTerminalNotice+"\n" {
+		t.Fatalf("stderr = %q, want the terminal notice", stderr.String())
 	}
 }

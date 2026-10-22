@@ -107,9 +107,10 @@ func main() {
 	// A package validator and a script start the binary with no arguments
 	// and at least one stream redirected. There is no TUI to open, and
 	// probing the multiplexer fails the process on a machine that does
-	// not have one. Print usage and succeed; a real terminal still falls
-	// through to run.
+	// not have one. Say so on stderr, print usage on stdout, and
+	// succeed; a real terminal still falls through to run.
 	if len(os.Args) == 1 && !stdioIsTerminal() {
+		fmt.Fprintln(os.Stderr, "agent-manager: no terminal attached; run it in a terminal to open the manager")
 		dir, err := config.Dir()
 		if err == nil {
 			err = printHelp(os.Stdout, dir)

@@ -107,6 +107,8 @@ func TestPrintHelpReturnsWriteError(t *testing.T) {
 	}
 }
 
+const noTerminalNotice = "agent-manager: no terminal attached; run it in a terminal to open the manager"
+
 func TestMainNonInteractiveStartDoesNotNeedMultiplexer(t *testing.T) {
 	if prepareMainProcess() {
 		main()
@@ -115,11 +117,12 @@ func TestMainNonInteractiveStartDoesNotNeedMultiplexer(t *testing.T) {
 	empty := t.TempDir()
 	home := t.TempDir()
 	cases := []struct {
-		name string
-		args []string
-		want string
+		name   string
+		args   []string
+		want   string
+		notice bool
 	}{
-		{name: "no-args", want: "Usage: agent-manager [command]"},
+		{name: "no-args", want: "Usage: agent-manager [command]", notice: true},
 		{name: "version", args: []string{"--version"}, want: "agent-manager dev"},
 		{name: "help", args: []string{"--help"}, want: "Usage: agent-manager [command]"},
 	}
@@ -147,8 +150,15 @@ func TestMainNonInteractiveStartDoesNotNeedMultiplexer(t *testing.T) {
 			if !strings.Contains(stdout.String(), tc.want) {
 				t.Fatalf("stdout missing %q:\n%s", tc.want, stdout.String())
 			}
-			if strings.Contains(stderr.String(), "not found") {
-				t.Fatalf("stderr probed a missing tool:\n%s", stderr.String())
+			if strings.Contains(stdout.String(), noTerminalNotice) {
+				t.Fatalf("stdout included the terminal notice:\n%s", stdout.String())
+			}
+			if tc.notice {
+				if stderr.String() != noTerminalNotice+"\n" {
+					t.Fatalf("stderr = %q, want the terminal notice", stderr.String())
+				}
+			} else if strings.Contains(stderr.String(), noTerminalNotice) || strings.Contains(stderr.String(), "not found") {
+				t.Fatalf("stderr = %q", stderr.String())
 			}
 		})
 	}
