@@ -891,9 +891,7 @@ func TestApplyNoneLeavesEverything(t *testing.T) {
 }
 
 func TestApplyCursorRefusesAnUnterminatedComment(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("CURSOR_CONFIG_DIR", "")
+	home := cursorHome(t)
 	path := filepath.Join(home, ".cursor", "mcp.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
