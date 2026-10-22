@@ -73,6 +73,7 @@ Differences from macOS and Linux:
 - Inside an attached session, the review and editor keys detach through a short PowerShell `run-shell`, so they take a moment longer than on tmux.
 - Command Code (`cmd`) shares its name with `cmd.exe`, so it is not supported natively: it is left out of the tool pickers, and a session asking for it is refused.
 - An agent CLI installed only as a `.cmd` or `.bat` file is refused, since cmd.exe would run a prompt holding `"` as commands. CLIs installed with npm work, because npm adds a `.ps1` beside each `.cmd`.
+- A CLI the setup dialog installs with npm lands in `%APPDATA%\npm`. When that directory was not on `Path` before the manager started, the manager keeps its old `Path`, so start it again before spawning that CLI.
 
 agent-manager also still runs inside [WSL2](https://learn.microsoft.com/windows/wsl/install), on tmux: in a WSL shell, install with the install script, with Homebrew, or grab the Linux binary from Releases. The agent CLIs then belong in the distro too. WSL appends the Windows `PATH` to the distro's, so a CLI installed on the Windows side is visible in a WSL shell, and running it there starts a Windows process or fails without a Linux runtime. A spawn finding only that copy stops on the setup dialog, which names where the Windows copy is and the command that installs the CLI in the distro. The install script skips Linux clipboard and notification packages under WSL. Paste and toasts there go through the Windows host.
 
