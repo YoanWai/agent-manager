@@ -236,21 +236,32 @@ func TestDetectScoopManagerFollowsSymlink(t *testing.T) {
 
 func TestDetectScoopCustomRootFollowsSymlink(t *testing.T) {
 	stubSourceSeams(t, nil, false)
-	root := filepath.Join(t.TempDir(), "My Tools")
-	t.Setenv("SCOOP", root)
+	base := t.TempDir()
+	real := filepath.Join(base, "My Tools")
+	rootLink := filepath.Join(base, "scoop-root")
+	if err := os.MkdirAll(real, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, rootLink); err != nil {
+		t.Fatal(err)
+	}
+	// SCOOP points at the link. The binary resolves through that link and
+	// through current, the way a Windows short path or junction does.
+	t.Setenv("SCOOP", rootLink)
 	t.Setenv("SCOOP_GLOBAL", "")
-	version := filepath.Join(root, "apps", "agent-manager", "0.43.0")
+	version := filepath.Join(real, "apps", "agent-manager", "0.43.0")
 	if err := os.MkdirAll(version, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	link := filepath.Join(root, "apps", "agent-manager", "current")
-	if err := os.Symlink(version, link); err != nil {
+	current := filepath.Join(real, "apps", "agent-manager", "current")
+	if err := os.Symlink(version, current); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(version, "agent-manager.exe"), []byte("Scoop build"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	manager := DetectManager(filepath.Join(link, "agent-manager.exe"))
+	launch := filepath.Join(rootLink, "apps", "agent-manager", "current", "agent-manager.exe")
+	manager := DetectManager(launch)
 	if manager.Name != "Scoop" || manager.Advice == "" || manager.Delegated() {
 		t.Fatalf("custom Scoop root symlink got %+v", manager)
 	}

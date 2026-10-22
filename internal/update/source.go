@@ -63,7 +63,17 @@ func scoopManaged(path string) bool {
 		return true
 	}
 	for _, key := range []string{"SCOOP", "SCOOP_GLOBAL"} {
-		root := strings.TrimRight(strings.ToLower(strings.ReplaceAll(os.Getenv(key), `\`, "/")), "/")
+		root := os.Getenv(key)
+		if root == "" {
+			continue
+		}
+		// The running binary is already resolved. A Scoop root can be a
+		// junction or a Windows short path, so resolve it the same way
+		// before comparing prefixes.
+		if resolved, err := filepath.EvalSymlinks(root); err == nil {
+			root = resolved
+		}
+		root = strings.TrimRight(strings.ToLower(strings.ReplaceAll(root, `\`, "/")), "/")
 		if root != "" && strings.HasPrefix(path, root+"/apps/agent-manager/") {
 			return true
 		}
