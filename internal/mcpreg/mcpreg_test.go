@@ -889,3 +889,25 @@ func TestApplyNoneLeavesEverything(t *testing.T) {
 		t.Fatalf("command = %q, env = %v, err = %v", command, env, err)
 	}
 }
+
+func TestApplyCursorRefusesAnUnterminatedComment(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CURSOR_CONFIG_DIR", "")
+	path := filepath.Join(home, ".cursor", "mcp.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	before := []byte("{\"mcpServers\": {}} /* unfinished")
+	if err := os.WriteFile(path, before, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := ensureCursorRegistered("/opt/agent-manager")
+	if err == nil || !strings.Contains(err.Error(), "never closes") {
+		t.Fatalf("err = %v, want the unterminated comment refused", err)
+	}
+	after, readErr := os.ReadFile(path)
+	if readErr != nil || string(after) != string(before) {
+		t.Fatalf("file changed to %q, %v", after, readErr)
+	}
+}

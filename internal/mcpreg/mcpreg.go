@@ -293,7 +293,11 @@ func ensureCursorRegistered(exe string) error {
 	case err != nil:
 		return err
 	default:
-		if err := json.Unmarshal(cursorJSON(data), &settings); err != nil {
+		plain, err := cursorJSON(data)
+		if err != nil {
+			return fmt.Errorf("cursor mcp %s: %w", path, err)
+		}
+		if err := json.Unmarshal(plain, &settings); err != nil {
 			return fmt.Errorf("cursor mcp %s: %w", path, err)
 		}
 		info, err := os.Stat(path)
@@ -338,11 +342,15 @@ func ensureCursorRegistered(exe string) error {
 }
 
 // cursorJSON accepts the comments and trailing commas in Cursor's mcp.json.
-func cursorJSON(data []byte) []byte {
-	return stripJSONTrailingCommas(stripJSONComments(data))
+func cursorJSON(data []byte) ([]byte, error) {
+	plain, err := stripJSONComments(data)
+	if err != nil {
+		return nil, err
+	}
+	return stripJSONTrailingCommas(plain), nil
 }
 
-func stripJSONComments(data []byte) []byte {
+func stripJSONComments(data []byte) ([]byte, error) {
 	out := make([]byte, len(data))
 	copy(out, data)
 	inString, escaped := false, false
@@ -368,7 +376,10 @@ func stripJSONComments(data []byte) []byte {
 			for end+1 < len(out) && (out[end] != '*' || out[end+1] != '/') {
 				end++
 			}
-			for stop := min(end+2, len(out)); i < stop; i++ {
+			if end+1 >= len(out) {
+				return nil, errors.New("a /* comment never closes")
+			}
+			for stop := end + 2; i < stop; i++ {
 				if out[i] != '\n' {
 					out[i] = ' '
 				}
@@ -376,7 +387,7 @@ func stripJSONComments(data []byte) []byte {
 			i--
 		}
 	}
-	return out
+	return out, nil
 }
 
 func stripJSONTrailingCommas(data []byte) []byte {
