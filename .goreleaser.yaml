@@ -84,6 +84,23 @@ homebrew_casks:
         end
       end
 
+# Own Scoop bucket. Skipped when SCOOP_TOKEN is unset so releases still succeed.
+scoops:
+  - name: agent-manager
+    repository:
+      owner: YoanWai
+      name: scoop-bucket
+      token: "{{ .Env.SCOOP_TOKEN }}"
+    skip_upload: '{{ if index .Env "SCOOP_TOKEN" }}false{{ else }}true{{ end }}'
+    directory: bucket
+    homepage: https://agent-manager.dev/
+    description: Run Claude Code, Codex, OpenCode and other AI coding agents in tmux
+    license: Apache-2.0
+    depends: ["main/psmux"]
+    commit_author:
+      name: Yoan Wai
+      email: 106609173+YoanWai@users.noreply.github.com
+
 # git_url resolves to an empty string without AUR_KEY in the environment, and
 # goreleaser skips the publish on an empty url, so a release without the key
 # still succeeds.
@@ -107,50 +124,3 @@ aurs:
       install -Dm755 "./agent-manager" "${pkgdir}/usr/bin/agent-manager"
       install -Dm644 "./LICENSE" "${pkgdir}/usr/share/licenses/agent-manager-bin/LICENSE"
       install -Dm644 "./NOTICE" "${pkgdir}/usr/share/licenses/agent-manager-bin/NOTICE"
-
-# Own Scoop bucket. Skipped when SCOOP_TOKEN is unset so releases still succeed.
-scoops:
-  - name: agent-manager
-    repository:
-      owner: YoanWai
-      name: scoop-bucket
-      token: "{{ .Env.SCOOP_TOKEN }}"
-    skip_upload: '{{ if index .Env "SCOOP_TOKEN" }}false{{ else }}true{{ end }}'
-    directory: bucket
-    homepage: https://agent-manager.dev/
-    description: Run Claude Code, Codex, OpenCode and other AI coding agents in tmux
-    license: Apache-2.0
-    depends: ["main/psmux"]
-    commit_author:
-      name: Yoan Wai
-      email: 106609173+YoanWai@users.noreply.github.com
-
-# Opens a PR to microsoft/winget-pkgs from YoanWai/winget-pkgs (fork).
-winget:
-  - name: AgentManager
-    publisher: YoanWai
-    package_identifier: YoanWai.AgentManager
-    short_description: Run Claude Code, Codex, OpenCode and other AI coding agents in tmux
-    description: Run every AI coding agent from one terminal, each in its own tmux/psmux session, with live status, quick prompts, worktrees and diff review. Requires psmux on Windows.
-    homepage: https://agent-manager.dev/
-    publisher_url: https://github.com/YoanWai
-    license: Apache-2.0
-    license_url: https://github.com/YoanWai/agent-manager/blob/main/LICENSE
-    release_notes_url: "https://github.com/YoanWai/agent-manager/releases/tag/v{{ .Version }}"
-    tags: [ai, agents, tmux, tui, cli, claude-code, codex]
-    commit_author:
-      name: Yoan Wai
-      email: 106609173+YoanWai@users.noreply.github.com
-    skip_upload: '{{ if index .Env "WINGET_TOKEN" }}false{{ else }}true{{ end }}'
-    repository:
-      owner: YoanWai
-      name: winget-pkgs
-      branch: "agent-manager-{{ .Version }}"
-      token: "{{ .Env.WINGET_TOKEN }}"
-      pull_request:
-        enabled: true
-        draft: false
-        base:
-          owner: microsoft
-          name: winget-pkgs
-          branch: master
