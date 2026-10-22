@@ -24,13 +24,17 @@ func dialogBox(ctx dialogRenderContext, width int, title, body string, hint [][2
 	}
 
 	lines := []string{cardTitleRow(width, title, border), row("")}
-	for _, line := range strings.Split(body, "\n") {
-		lines = append(lines, row(line))
+	if body != "" {
+		for _, line := range strings.Split(body, "\n") {
+			lines = append(lines, row(line))
+		}
 	}
 	if ctx.status != "" {
 		lines = append(lines, row(""), row(ctx.status))
 	}
-	lines = append(lines, row(""))
+	if body != "" {
+		lines = append(lines, row(""))
+	}
 	var hits keyHits
 	if len(hint) > 0 {
 		lines = append(lines, rule("├", "┤"))

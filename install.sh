@@ -91,11 +91,63 @@ tmux_new_enough() {
 	[ "$major" -eq 3 ] && [ "$minor" -ge 1 ]
 }
 
+in_wsl() {
+	[ -n "${WSL_DISTRO_NAME:-}" ] && return 0
+	[ -r /proc/version ] && grep -qi microsoft /proc/version
+}
+
+# Wayland and X11 need a clipboard tool and notify-send. WSL paste and
+# toasts go through the Windows host, so those packages are not offered there.
+desktop_deps() {
+	[ "$(detect_os)" = linux ] || return 0
+	in_wsl && return 0
+	if [ -n "${WAYLAND_DISPLAY:-}" ]; then
+		command -v wl-copy >/dev/null 2>&1 || missing="${missing} wl-clipboard"
+	elif [ -n "${DISPLAY:-}" ]; then
+		command -v xclip >/dev/null 2>&1 || missing="${missing} xclip"
+	fi
+	if [ -n "${WAYLAND_DISPLAY:-}${DISPLAY:-}" ]; then
+		command -v notify-send >/dev/null 2>&1 || missing="${missing} notify-send"
+	fi
+}
+
 missing_deps() {
 	missing=
 	tmux_new_enough || missing="${missing} tmux"
 	command -v git >/dev/null 2>&1 || missing="${missing} git"
+	desktop_deps
 	printf '%s' "${missing# }"
+}
+
+package_for() {
+	manager=$1
+	tool=$2
+	case $tool in
+	notify-send)
+		case $manager in
+		apt-get) printf 'libnotify-bin' ;;
+		zypper) printf 'libnotify-tools' ;;
+		*) printf 'libnotify' ;;
+		esac
+		;;
+	*) printf '%s' "$tool" ;;
+	esac
+}
+
+map_packages() {
+	manager=$1
+	rest=$2
+	out=
+	while [ -n "$rest" ]; do
+		tool=${rest%% *}
+		case $rest in
+		*" "*) rest=${rest#* } ;;
+		*) rest= ;;
+		esac
+		[ -n "$tool" ] || continue
+		out="${out} $(package_for "$manager" "$tool")"
+	done
+	printf '%s' "${out# }"
 }
 
 # A command substitution would strip the trailing space, so the prefix lands in
@@ -108,12 +160,17 @@ set_sudo() {
 }
 
 # Native package managers come before brew on Linux, where a Homebrew install
-# is the exception; on macOS brew is the only one of these that ships packages.
+# is the exception. On macOS, Homebrew is installed first when it is absent.
 dep_install_cmd() {
-	packages=$1
+	tools=$1
 	if [ "$(detect_os)" = darwin ]; then
-		command -v brew >/dev/null 2>&1 || return 1
-		printf 'brew install %s' "$packages"
+		packages=$(map_packages brew "$tools")
+		if command -v brew >/dev/null 2>&1; then
+			printf 'brew install %s' "$packages"
+			return 0
+		fi
+		have_tty || printf 'NONINTERACTIVE=1 '
+		printf "/bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\" && eval \"\$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv)\" && brew install %s" "$packages"
 		return 0
 	fi
 	set_sudo
@@ -122,6 +179,7 @@ dep_install_cmd() {
 		if [ "$candidate" != brew ] && [ "$(id -u)" -ne 0 ] && [ -z "$SUDO" ]; then
 			continue
 		fi
+		packages=$(map_packages "$candidate" "$tools")
 		case $candidate in
 		apt-get) printf '%sapt-get update && %sapt-get install -y %s' "$SUDO" "$SUDO" "$packages" ;;
 		dnf) printf '%sdnf install -y %s' "$SUDO" "$packages" ;;
@@ -135,10 +193,14 @@ dep_install_cmd() {
 	return 1
 }
 
-# A `test -r` passes on a /dev/tty that has no controlling terminal behind it,
-# so the probe opens the device instead.
+# Opening /dev/tty is the probe. A redirect on the : builtin aborts dash,
+# and a failing command aborts this script under set -e, so the open sits
+# in a conditional subshell.
 have_tty() {
-	{ : >/dev/tty; } 2>/dev/null
+	if ( : >/dev/tty ) 2>/dev/null; then
+		return 0
+	fi
+	return 1
 }
 
 # The script itself occupies stdin under `curl | sh`, so the prompt reads the
@@ -161,7 +223,7 @@ install_deps() {
 	missing=$(missing_deps)
 	[ -n "$missing" ] || return 0
 
-	say "${BINARY} runs its sessions in tmux and reviews diffs with git; missing: ${missing}"
+	say "${BINARY} is missing ${missing}"
 	if ! cmd=$(dep_install_cmd "$missing"); then
 		say "install ${missing} with your package manager"
 		return 0
@@ -179,6 +241,14 @@ install_deps() {
 		say "that failed, run it yourself: ${cmd}"
 		return 0
 	fi
+	# A Homebrew the command just installed is on the child shell's PATH only.
+	for brew in /opt/homebrew/bin/brew /usr/local/bin/brew; do
+		[ -x "$brew" ] || continue
+		if shellenv=$("$brew" shellenv); then
+			eval "$shellenv"
+			break
+		fi
+	done
 	remaining=$(missing_deps)
 	if [ -n "$remaining" ]; then
 		say "installed packages do not satisfy: ${remaining}"

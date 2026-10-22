@@ -102,6 +102,7 @@ func (m *Model) handleCatalog(msg catalogMsg) tea.Cmd {
 		m.launchHint.present(m, launchFix{
 			text:    outdatedToolText(outdated),
 			command: outdatedToolCommand(outdated),
+			script:  outdatedToolCommand(outdated),
 			binary:  outdated.Binary,
 			update:  true,
 			resume:  m.mode,

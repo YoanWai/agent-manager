@@ -8,8 +8,8 @@ The two quickest routes are in the [README](../README.md#install): Homebrew and 
 | --- | --- | --- |
 | tmux 3.1+ | every agent session | Homebrew, AUR, install script |
 | git | diff review and worktree sessions | Homebrew (git runs Homebrew itself), AUR, install script |
-| wl-clipboard, xclip, or xsel | pasting images into a prompt on Linux | your package manager |
-| notify-send | desktop notifications on Linux | your desktop's notification package |
+| wl-clipboard or xclip | pasting images into a prompt on Linux | the install script offers one of them on a Linux desktop, or your package manager |
+| notify-send | desktop notifications on Linux | the install script on a Linux desktop (`libnotify-bin` with apt, `libnotify-tools` with zypper, `libnotify` with the others), or your package manager |
 
 The mise, `go install`, and prebuilt-binary routes install the binary alone, so install tmux and git with your package manager. When the manager starts without tmux, or the diff view cannot find git, it names the install command it detected, or tells you to use your package manager.
 
@@ -59,13 +59,13 @@ agent-manager runs natively on Windows on [psmux](https://github.com/psmux/psmux
 irm https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.ps1 | iex
 ```
 
-The script installs `agent-manager.exe` to `%LOCALAPPDATA%\Programs\agent-manager` (or `$env:AGENT_MANAGER_INSTALL_DIR`), adds that directory to your user `Path`, and names whatever is missing of its dependencies:
+The script installs `agent-manager.exe` to `%LOCALAPPDATA%\Programs\agent-manager` (or `$env:AGENT_MANAGER_INSTALL_DIR`), adds that directory to your user `Path`, and offers to install whatever is missing of its dependencies. `AGENT_MANAGER_INSTALL_DEPS=1` answers yes. `AGENT_MANAGER_INSTALL_DEPS=0` skips the prompt. With no terminal it skips the prompt and still leaves the binary installed.
 
 | Tool | Install |
 | --- | --- |
-| psmux | `winget install psmux` (or `cargo install psmux`) — 3.4.0 or newer; older builds misbehave and the manager refuses them |
+| psmux | `winget install --id marlocarlo.psmux -e` (or `cargo install psmux`). 3.4.0 or newer. Older builds misbehave and the manager refuses them |
 | git | `winget install --id Git.Git -e` |
-| PowerShell 7.3 or newer (`pwsh`) | `winget install Microsoft.PowerShell`. The manager refuses Windows PowerShell 5.1 and PowerShell before 7.3: they split a prompt containing `"` into several arguments to the agent CLI |
+| PowerShell 7.3 or newer (`pwsh`) | `winget install --id Microsoft.PowerShell -e`. The manager refuses Windows PowerShell 5.1 and PowerShell before 7.3, because they split a prompt containing `"` into several arguments to the agent CLI |
 
 Differences from macOS and Linux:
 
@@ -73,8 +73,9 @@ Differences from macOS and Linux:
 - Inside an attached session, the review and editor keys detach through a short PowerShell `run-shell`, so they take a moment longer than on tmux.
 - Command Code (`cmd`) shares its name with `cmd.exe`, so it is not supported natively: it is left out of the tool pickers, and a session asking for it is refused.
 - An agent CLI installed only as a `.cmd` or `.bat` file is refused, since cmd.exe would run a prompt holding `"` as commands. CLIs installed with npm work, because npm adds a `.ps1` beside each `.cmd`.
+- A CLI the setup dialog installs with npm lands in `%APPDATA%\npm`. When that directory was not on `Path` before the manager started, the manager keeps its old `Path`, so start it again before spawning that CLI.
 
-agent-manager also still runs inside [WSL2](https://learn.microsoft.com/windows/wsl/install), on tmux: in a WSL shell, install with the install script, with Homebrew, or grab the Linux binary from Releases. The agent CLIs then belong in the distro too. WSL appends the Windows `PATH` to the distro's, so a CLI installed on the Windows side is visible in a WSL shell, and running it there starts a Windows process or fails without a Linux runtime. A spawn finding only that copy stops on the setup dialog, which names where the Windows copy is and the command that installs the CLI in the distro.
+agent-manager also still runs inside [WSL2](https://learn.microsoft.com/windows/wsl/install), on tmux: in a WSL shell, install with the install script, with Homebrew, or grab the Linux binary from Releases. The agent CLIs then belong in the distro too. WSL appends the Windows `PATH` to the distro's, so a CLI installed on the Windows side is visible in a WSL shell, and running it there starts a Windows process or fails without a Linux runtime. A spawn finding only that copy stops on the setup dialog, which names where the Windows copy is and the command that installs the CLI in the distro. The install script skips Linux clipboard and notification packages under WSL. Paste and toasts there go through the Windows host.
 
 ## Updating
 

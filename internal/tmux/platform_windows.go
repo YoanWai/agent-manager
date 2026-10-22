@@ -85,7 +85,7 @@ func parsePsmuxVersion(out string) error {
 	if ok && (gotMajor > wantMajor || (gotMajor == wantMajor && gotMinor >= wantMinor)) {
 		return nil
 	}
-	return fmt.Errorf("psmux %s is too old; agent-manager needs psmux %s or newer; upgrade it with: winget upgrade psmux", found, psmuxMinimum)
+	return fmt.Errorf("psmux %s is too old; agent-manager needs psmux %s or newer; upgrade it with: winget upgrade --id marlocarlo.psmux -e", found, psmuxMinimum)
 }
 
 // splitVersion reads "3.4.0" (any suffix after the first two numbers

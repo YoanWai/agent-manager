@@ -55,7 +55,7 @@ func Path() (string, error) {
 	}
 	path, err := exec.LookPath("pwsh")
 	if err != nil {
-		return "", errors.New("agent-manager needs PowerShell 7.3 or newer (pwsh), which is missing; install it with: winget install Microsoft.PowerShell")
+		return "", errors.New("agent-manager needs PowerShell 7.3 or newer (pwsh), which is missing; install it with: winget install --id Microsoft.PowerShell -e")
 	}
 	version, err := readVersion(path)
 	if err != nil {
@@ -87,12 +87,12 @@ func readVersion(shell string) (string, error) {
 func checkVersion(version string) error {
 	major, minor, ok := majorMinor(version)
 	if !ok {
-		return fmt.Errorf("could not read the PowerShell version from %s; agent-manager needs PowerShell 7.3 or newer: winget install Microsoft.PowerShell", strconv.Quote(version))
+		return fmt.Errorf("could not read the PowerShell version from %s; agent-manager needs PowerShell 7.3 or newer, install it with: winget install --id Microsoft.PowerShell -e", strconv.Quote(version))
 	}
 	if major > 7 || major == 7 && minor >= 3 {
 		return nil
 	}
-	return fmt.Errorf("PowerShell %d.%d is too old; agent-manager needs 7.3 or newer, which passes a prompt holding \" to the agent CLI whole; upgrade it with: winget upgrade Microsoft.PowerShell", major, minor)
+	return fmt.Errorf("PowerShell %d.%d is too old; agent-manager needs 7.3 or newer, which passes a prompt holding \" to the agent CLI whole; upgrade it with: winget upgrade --id Microsoft.PowerShell -e", major, minor)
 }
 
 // majorMinor reads the first two dot-separated numbers of a version.

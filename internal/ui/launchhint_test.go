@@ -56,7 +56,7 @@ func (h *fakeLaunchHintHost) cardSized(width int, title, body string, hint [][2]
 func TestLaunchHintDialogWithFakeHost(t *testing.T) {
 	h := &fakeLaunchHintHost{images: []imageAttachment{{id: 1}}}
 	var d launchHintDialog
-	d.open(h, launchFix{text: "tool is not installed.\n\nRun the installer.", command: "install tool", binary: "tool"})
+	d.open(h, launchFix{text: "tool is not installed.\n\nRun the installer.", command: "install tool", script: "install tool", binary: "tool"})
 	if h.mode != modeLaunchHint || h.gens != 1 || len(d.fix.images) != 1 || h.images != nil {
 		t.Fatalf("open: mode %v gens %d fix %+v, want the composer images taken", h.mode, h.gens, d.fix)
 	}
@@ -195,6 +195,31 @@ func TestReportLaunchErrorOpensHintForOutdatedCLI(t *testing.T) {
 		if !got[key] {
 			t.Fatalf("dialog foot is missing %q", key)
 		}
+	}
+}
+
+func TestLaunchHintKeepsTheInstallLineAndTheErrorOnAShortTerminal(t *testing.T) {
+	m := buildModel(t)
+	m.layout.width = 110
+	m.layout.height = 30
+	m.reportLaunchError(config.MissingToolError{Binary: "cmd"})
+	m.reportErr("mkdir /hooks: not a directory")
+
+	frame := ansi.Strip(m.launchHintFrame())
+	if rows := strings.Count(frame, "\n") + 1; rows > m.layout.height {
+		t.Fatalf("dialog is %d rows on a %d-row terminal\n%s", rows, m.layout.height, frame)
+	}
+	if !strings.Contains(frame, "npm install -g command-code") {
+		t.Fatalf("install line is off screen:\n%s", frame)
+	}
+	if !strings.Contains(frame, "mkdir /hooks: not a directory") {
+		t.Fatalf("error is off screen:\n%s", frame)
+	}
+	if !strings.Contains(frame, "close") {
+		t.Fatalf("keys are off screen:\n%s", frame)
+	}
+	if runtime.GOOS != "windows" && !strings.Contains(m.launchHint.fix.script, "install_cli") {
+		t.Fatal("install lost the script")
 	}
 }
 
@@ -646,6 +671,7 @@ func installFixture(t *testing.T, m *Model, command string) (retryName, image st
 	m.launchHint.open(m, launchFix{
 		text:        "am-fake-cli is not installed.\n\ninstall it with: " + command,
 		command:     command,
+		script:      command,
 		binary:      "am-fake-cli",
 		effectRetry: retry,
 		images:      []imageAttachment{{id: 1, path: image}},
@@ -1030,5 +1056,56 @@ func TestExternallyManagedOldCLIDoesNotOfferTheVendorInstaller(t *testing.T) {
 	m.reportLaunchError(config.OutdatedToolError{Binary: "pi", Installed: "0.84.2", Minimum: "0.84.3", ManagedExternally: true})
 	if m.launchHint.fix.command != "" || !strings.Contains(m.launchHint.fix.text, "the way you installed it") {
 		t.Fatalf("external install hint = %+v", m.launchHint.fix)
+	}
+}
+
+func TestLaunchHintKeepsActionsAtSevenRows(t *testing.T) {
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 110, 7
+	m.reportLaunchError(config.MissingToolError{Binary: "cmd"})
+	m.reportErr("install failed")
+	frame := ansi.Strip(m.launchHintFrame())
+	if strings.Count(frame, "\n")+1 > 7 || !strings.Contains(frame, "close") {
+		t.Fatalf("setup controls clipped.\n%s", frame)
+	}
+}
+
+func TestMissingNpmCLIShowsOneLineAndInstallsTheRecipe(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the Windows npm recipe is one line already")
+	}
+	m := buildModel(t)
+	m.reportLaunchError(config.MissingToolError{Binary: "gemini"})
+	fix := m.launchHint.fix
+	if fix.command != "npm install -g @google/gemini-cli" || strings.Contains(fix.text, "install_cli") {
+		t.Fatalf("dialog shows %q with text %q, want the npm line", fix.command, fix.text)
+	}
+	if fix.script != deps.Command("gemini") || !strings.Contains(fix.script, "ensure_npm") {
+		t.Fatalf("i would run %q, want the npm recipe", fix.script)
+	}
+}
+
+func TestLaunchHintKeepsTheInstallLineOnATenRowTerminal(t *testing.T) {
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 110, 10
+	m.reportLaunchError(config.MissingToolError{Binary: "claude", WindowsPath: `C:\\Users\\someone\\AppData\\Local\\Programs\\claude\\claude.exe`})
+	frame := ansi.Strip(m.launchHintFrame())
+	if strings.Count(frame, "\n")+1 > 10 || !strings.Contains(frame, "install it with") {
+		t.Fatalf("install line clipped away.\n%s", frame)
+	}
+}
+
+func TestLaunchHintClickCopiesTheCommandAfterClipping(t *testing.T) {
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 110, 10
+	var copied string
+	copyLaunchCommand = func(text string) error { copied = text; return nil }
+	t.Cleanup(func() { copyLaunchCommand = clipboard.WriteText })
+	m.reportLaunchError(config.MissingToolError{Binary: "claude", WindowsPath: `C:\Users\someone\AppData\Local\Programs\claude\claude.exe`})
+	x, y := paintedCell(t, m, "install it with")
+	m, cmd := leftClickCmd(m, x, y)
+	m.runBatch(t, cmd)
+	if want := deps.Shown("claude"); copied != want {
+		t.Fatalf("a click on the clipped card copied %q, want %q", copied, want)
 	}
 }

@@ -3,6 +3,7 @@ package ui
 import (
 	"errors"
 	"os"
+	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/config"
@@ -15,14 +16,16 @@ import (
 )
 
 // launchFix is what the setup-step dialog holds: the text it shows, the
-// command that unblocks the launch, the binary that command puts on PATH,
-// the launch to run again once it is there, and the images that launch's
-// prompt names. command is empty when the manager knows no recipe, which
-// leaves the dialog read-only. update marks a CLI that is installed but
-// too old, where the same installer updates it.
+// command it prints and copies, the script i runs to unblock the launch,
+// the binary that script puts on PATH, the launch to run again once it is
+// there, and the images that launch's prompt names. command is empty when
+// the manager knows no recipe, which leaves the dialog read-only. update
+// marks a CLI that is installed but too old, where the same installer
+// updates it, and resume is the mode the dialog returns to when it closes.
 type launchFix struct {
 	text        string
 	command     string
+	script      string
 	binary      string
 	update      bool
 	resume      mode
@@ -113,6 +116,7 @@ func (m *Model) reportLaunchError(err error) {
 			text: "Hermes sessions carry the agent-manager MCP tools, and this Hermes cannot load them: its MCP SDK is not installed.\n\n" +
 				step,
 			command: hermesMCP.PipCommand,
+			script:  hermesMCP.PipCommand,
 			binary:  "hermes",
 		})
 		return
@@ -121,7 +125,8 @@ func (m *Model) reportLaunchError(err error) {
 	if errors.As(err, &missing) {
 		m.launchHint.open(m, launchFix{
 			text:    missingToolText(missing),
-			command: deps.Command(missing.Binary),
+			command: deps.Shown(missing.Binary),
+			script:  deps.Command(missing.Binary),
 			binary:  missing.Binary,
 		})
 		return
@@ -131,6 +136,7 @@ func (m *Model) reportLaunchError(err error) {
 		m.launchHint.open(m, launchFix{
 			text:    outdatedToolText(outdated),
 			command: outdatedToolCommand(outdated),
+			script:  outdatedToolCommand(outdated),
 			binary:  outdated.Binary,
 			update:  true,
 		})
@@ -263,7 +269,7 @@ func (d *launchHintDialog) startInstall(h launchHintHost) {
 		retry = spawn
 	}
 	if h.startInstall(installStartRequest{
-		command:     fix.command,
+		command:     fix.script,
 		binary:      fix.binary,
 		effectRetry: retry,
 		images:      fix.images,
@@ -292,7 +298,31 @@ func (m *Model) settleInstall() {
 
 func (d *launchHintDialog) view(h launchHintHost, glyphs presentation.GlyphSet) string {
 	width := h.cardWidth()
+	title, body, hints := d.card(h, glyphs, width)
+	return h.cardSized(width, title, body, hints)
+}
+
+func (m *Model) launchHintFrame() string {
+	width := m.cardWidth()
+	title, body, hints := m.launchHint.card(m, m.glyphs(), width)
+	if dropped := m.launchHintDroppedRows(body, hints); dropped > 0 {
+		body = strings.Join(strings.Split(body, "\n")[dropped:], "\n")
+	}
+	return m.cardSized(width, title, body, hints)
+}
+
+// launchHintDroppedRows is how many leading body rows a short terminal
+// clips away, which a click's row index has to skip as well.
+func (m *Model) launchHintDroppedRows(body string, hints [][2]string) int {
+	if m.layout.height <= 0 {
+		return 0
+	}
+	limit := max(0, m.layout.height-m.cardChromeRows(hints))
+	return max(0, strings.Count(body, "\n")+1-limit)
+}
+
+func (d *launchHintDialog) card(h launchHintHost, glyphs presentation.GlyphSet, width int) (string, string, [][2]string) {
 	tone := lipgloss.NewStyle().Foreground(colorAccent()).Bold(true)
 	card := d.prompt().View(cardInnerWidth(width), tone, mutedStyle(), glyphs)
-	return h.cardSized(width, card.Title, card.Body, card.Hints)
+	return card.Title, card.Body, card.Hints
 }
