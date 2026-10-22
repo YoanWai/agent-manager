@@ -21,7 +21,7 @@ func TestCursorPanes(t *testing.T) {
 	for _, tc := range []struct{ frame, want string }{
 		{"splash", Waiting},
 		{"trust", Waiting},
-		{"trusting", Waiting},
+		{"trusting", Working},
 		{"idle", Idle},
 		{"draft", Idle},
 		{"working", Working},
@@ -61,6 +61,16 @@ func TestCursorQuotedFooterStaysIdle(t *testing.T) {
 	for _, quote := range []string{"ctrl+c to stop", "Run this command?", "Press any key to log in...", "Workspace Trust Required"} {
 		if got, _ := engine.Match("cursor", strings.Replace(resting, "Done — pong.txt now contains pong.", quote, 1)); got != Idle {
 			t.Fatalf("quote %q = %q want idle", quote, got)
+		}
+	}
+}
+
+func TestCursorQuotedTitleAtTheTailStaysIdle(t *testing.T) {
+	engine := defaultEngine(t)
+	resting := cursorFrame(t, "resting")
+	for _, tail := range []string{"  The login screen says Press any key to log in...", "  It printed ⚠ Workspace Trust Required and then [q] Quit"} {
+		if got, _ := engine.Match("cursor", resting+"\n"+tail+"\n"); got != Idle {
+			t.Fatalf("tail %q = %q want idle", tail, got)
 		}
 	}
 }
