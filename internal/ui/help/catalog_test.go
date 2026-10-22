@@ -263,7 +263,7 @@ func TestCatalogNamesTheSetupStepKeys(t *testing.T) {
 	if rows["setup step/c"] != "copy that command" || rows["setup step/esc"] != "close" {
 		t.Fatalf("setup step rows = %v", rows)
 	}
-	if !strings.Contains(rows["setup step/click command"], "c") {
+	if rows["setup step/click command"] != "copy it, the same as c" {
 		t.Fatalf("click row = %q", rows["setup step/click command"])
 	}
 }
