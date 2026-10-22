@@ -1,5 +1,17 @@
 [
   {
+    "id": "v0430-ssh-sessions",
+    "banner": "Sessions on your other machines",
+    "title": "v0.43.0: sessions on your other machines",
+    "body": [
+      "Press C and another Linux or macOS machine's sessions show up in this list.",
+      "Saved prompts and Cursor are in this release too.",
+      "Press Enter for the full v0.43.0 release notes."
+    ],
+    "url": "https://github.com/YoanWai/agent-manager/releases/tag/v0.43.0",
+    "max_version": "0.43.0"
+  },
+  {
     "id": "v0420-windows-native",
     "banner": "Windows runs natively",
     "title": "v0.42.0: Windows runs natively",
