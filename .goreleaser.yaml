@@ -76,7 +76,7 @@ release:
 
     `install.sh` is attached too. `gh attestation verify <file> --repo YoanWai/agent-manager` checks build provenance once `gh` is logged in.
 
-    The short form runs the script without a local copy: `curl -fsSL https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.sh | sh`, and in PowerShell `irm https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.ps1 | iex`.
+    The shell short form runs the script without a local copy: `curl -fsSL https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.sh | sh`.
 
     Prebuilt macOS, Linux and Windows binaries are attached below.
 

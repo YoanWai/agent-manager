@@ -1,6 +1,7 @@
 package update
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -38,6 +39,9 @@ func DetectManager(execPath string) Manager {
 	}
 	slashPath := filepath.ToSlash(path)
 	switch {
+	case scoopManaged(slashPath):
+		// Scoop refuses to update an app while its binary is running.
+		return Manager{Name: "Scoop", Advice: "installed with Scoop. Close agent-manager, then run: scoop update agent-manager. For a global install, add --global in an elevated PowerShell."}
 	case homebrewTree(slashPath) == "Caskroom":
 		return Manager{Name: "Homebrew", Command: []string{"brew", "upgrade", "--cask", "yoanwai/tap/agent-manager"}}
 	case buildSource == "Homebrew" || homebrewTree(slashPath) != "":
@@ -51,6 +55,20 @@ func DetectManager(execPath string) Manager {
 		return archManager()
 	}
 	return Manager{}
+}
+
+func scoopManaged(path string) bool {
+	path = strings.ToLower(strings.ReplaceAll(path, `\`, "/"))
+	if strings.Contains(path, "/scoop/apps/agent-manager/") {
+		return true
+	}
+	for _, key := range []string{"SCOOP", "SCOOP_GLOBAL"} {
+		root := strings.ToLower(strings.ReplaceAll(os.Getenv(key), `\`, "/"))
+		if root != "" && strings.HasPrefix(path, strings.TrimRight(root, "/")+"/apps/agent-manager/") {
+			return true
+		}
+	}
+	return false
 }
 
 // homebrewTree reports which Homebrew install tree the path sits in:

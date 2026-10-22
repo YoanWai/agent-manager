@@ -62,7 +62,7 @@ scoop bucket add yoanwai https://github.com/YoanWai/scoop-bucket
 scoop install yoanwai/agent-manager
 ```
 
-Installs the version published in [YoanWai/scoop-bucket](https://github.com/YoanWai/scoop-bucket), and Scoop installs psmux from the main bucket. The bucket is updated on its own, so it can lag the latest release. The install script installs the current release.
+Installs the version published in [YoanWai/scoop-bucket](https://github.com/YoanWai/scoop-bucket), and Scoop installs psmux from the main bucket. The bucket is updated on its own, so it can lag the latest release. The zip and install script below install the current release. Install git and PowerShell 7 with `scoop install git pwsh` if they are missing.
 
 <!--
 winget is not listed: microsoft/winget-pkgs has no YoanWai.AgentManager
@@ -71,12 +71,66 @@ When a release has published the package, add:
 winget install --id YoanWai.AgentManager -e
 -->
 
+### Download and verify the zip
+
+For a fresh install, run these commands in PowerShell on Windows from an empty working directory. They select the native architecture, download the zip and `checksums.txt` from one release, and stop if the SHA-256 does not match. The checksum checks the download against that release's published digest. The optional attestation check below also verifies its build provenance.
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$release = Invoke-RestMethod https://api.github.com/repos/YoanWai/agent-manager/releases/latest
+$tag = $release.tag_name
+$version = $tag.TrimStart('v')
+$machineArch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
+$arch = switch ($machineArch) {
+    'AMD64' { 'amd64' }
+    'ARM64' { 'arm64' }
+    default { throw "Unsupported architecture $machineArch" }
+}
+$archive = "agent-manager_${version}_windows_${arch}.zip"
+$baseUrl = "https://github.com/YoanWai/agent-manager/releases/download/$tag"
+Invoke-WebRequest "$baseUrl/$archive" -OutFile $archive -UseBasicParsing
+Invoke-WebRequest "$baseUrl/checksums.txt" -OutFile checksums.txt -UseBasicParsing
+$checksum = @(Get-Content .\checksums.txt | Where-Object {
+    $_ -match "^[0-9a-fA-F]{64}\s+$([regex]::Escape($archive))$"
+})
+if ($checksum.Count -ne 1) { throw "Expected one checksum for $archive" }
+$expected = ($checksum[0] -split '\s+')[0]
+$actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
+if ($actual -ne $expected) { throw "Checksum mismatch for $archive" }
+```
+
+Optionally verify provenance before extracting. This needs a logged-in GitHub CLI with `gh attestation` support.
+
+```powershell
+gh attestation verify $archive --repo YoanWai/agent-manager
+if ($LASTEXITCODE -ne 0) { throw 'Attestation verification failed' }
+```
+
+After verification, extract into `%LOCALAPPDATA%\Programs\agent-manager`, add it to your user `Path` and this terminal's `Path`, and install the dependencies. These winget commands install psmux, git and PowerShell 7 (`pwsh`).
+
+```powershell
+$installDir = Join-Path $env:LOCALAPPDATA 'Programs\agent-manager'
+Expand-Archive -LiteralPath $archive -DestinationPath $installDir -Force
+$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+$entries = @($userPath -split ';' | Where-Object { $_ })
+if ($installDir -notin $entries) {
+    [Environment]::SetEnvironmentVariable('Path', (($entries + $installDir) -join ';'), 'User')
+}
+$env:Path = "$installDir;$env:Path"
+winget install --id marlocarlo.psmux -e
+winget install --id Git.Git -e
+winget install --id Microsoft.PowerShell -e
+```
+
+The dependency versions and their purpose are listed below. Open a new terminal and run `agent-manager` after installation.
+
 ### Install script
 
 Download the release copy, read it, then run it. The release attaches `install.ps1` and lists it in `checksums.txt`. That asset is on the release that first attaches the scripts. Until that tag exists, the file to read is `https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.ps1`. That copy is not in `checksums.txt`.
 
 ```powershell
 irm https://github.com/YoanWai/agent-manager/releases/latest/download/install.ps1 -OutFile install.ps1
+Get-Content .\install.ps1
 Unblock-File .\install.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 ```
@@ -85,7 +139,7 @@ On a Windows client with no execution policy set, the effective policy is Restri
 
 The script installs `agent-manager.exe` to `%LOCALAPPDATA%\Programs\agent-manager` (or `$env:AGENT_MANAGER_INSTALL_DIR`), adds that directory to your user `Path`, and offers to install whatever is missing of its dependencies. `AGENT_MANAGER_INSTALL_DEPS=1` answers yes. `AGENT_MANAGER_INSTALL_DEPS=0` skips the prompt. With no terminal it skips the prompt and still leaves the binary installed.
 
-Piping into `iex` leaves nothing to read, and `iex` does not consult the execution policy:
+Short form. Piping into `iex` skips the download-and-read step and does not consult the execution policy.
 
 ```powershell
 irm https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.ps1 | iex
@@ -123,7 +177,9 @@ The install scripts run this check only when `AGENT_MANAGER_VERIFY_ATTESTATION=1
 
 ## Updating
 
-The manager checks GitHub Releases every ten minutes and shows a `↑ vX.Y.Z available` badge when a newer version is out. The badge sits in the header. With the header hidden, the same badge sits in the top edge of the frame. Press `u` on the update message (or `enter` on the version row in Settings) and what happens next follows the install. A Homebrew, mise, or AUR install hands the terminal to that package manager's own upgrade command, so its progress and any password prompt behave as they would in a shell. An install-script, `go install`, or manual download is updated in place, by downloading the release and swapping the binary. A Scoop install is not recognized, so `u` takes that in-place path; update that copy with `scoop update yoanwai/agent-manager`. Either way the manager restarts into the new build with every session still running.
+The manager checks GitHub Releases every ten minutes and shows a `↑ vX.Y.Z available` badge when a newer version is out. The badge sits in the header. With the header hidden, the same badge sits in the top edge of the frame. Press `u` on the update message (or `enter` on the version row in Settings) and what happens next follows the install. A Homebrew, mise, or AUR install hands the terminal to that package manager's own upgrade command, so its progress and any password prompt behave as they would in a shell. An install-script, `go install`, or manual download is updated in place, by downloading the release and swapping the binary. After a successful update the manager restarts into the new build with every session still running.
+
+Scoop refuses to update a running app. For a Scoop install, the manager shows instructions instead of replacing the binary or running an update that Scoop would skip. Close agent-manager, run `scoop update agent-manager`, then start it again. For a global install, use `scoop update agent-manager --global` in an elevated PowerShell. Agent sessions keep running while the manager is closed.
 
 Two cases update by hand. A pacman-owned install needs an AUR helper (`yay` or `paru`) on PATH, and without one the manager runs nothing and prints the command to use instead: `yay -S agent-manager-bin`. A Nix install lives in the read-only store, so the manager runs nothing and points you at Nix instead, such as `nix profile upgrade agent-manager` or your flake or NixOS config.
 
@@ -132,7 +188,7 @@ The same commands work from a shell:
 ```bash
 brew upgrade agent-manager                                                                # Homebrew formula
 brew upgrade --cask yoanwai/tap/agent-manager                                             # Homebrew cask
-scoop update yoanwai/agent-manager                                                        # Scoop
+scoop update agent-manager                                                               # Scoop, after closing agent-manager
 curl -fsSL -o install.sh https://github.com/YoanWai/agent-manager/releases/latest/download/install.sh && sh install.sh
 mise upgrade --bump ubi:YoanWai/agent-manager                                             # mise
 go install github.com/YoanWai/agent-manager@latest                                        # Go

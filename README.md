@@ -79,7 +79,7 @@ scoop bucket add yoanwai https://github.com/YoanWai/scoop-bucket
 scoop install yoanwai/agent-manager
 ```
 
-Installs the version published in that bucket, and Scoop installs psmux with it. The bucket is updated on its own, so it can lag the latest release. Update with `scoop update yoanwai/agent-manager`. The in-app updater does not recognize a Scoop install, so `u` would swap the binary in place. The install script below installs the current release.
+Installs the version published in that bucket, and Scoop installs psmux with it. The bucket is updated on its own, so it can lag the latest release. To update, close agent-manager and run `scoop update agent-manager`. The in-app updater shows that command instead of replacing Scoop's binary.
 
 <!--
 winget is not listed: microsoft/winget-pkgs has no YoanWai.AgentManager
@@ -111,25 +111,24 @@ Running it without a file to read first:
 curl -fsSL https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.sh | sh
 ```
 
+### Verified zip (Windows)
+
+Download the Windows zip for your architecture and `checksums.txt` from the same [release](https://github.com/YoanWai/agent-manager/releases/latest). Compare its SHA-256 with the matching line in `checksums.txt` before extracting it. The [manual Windows install](docs/install.md#download-and-verify-the-zip) gives the PowerShell commands, optional provenance verification, and dependency setup.
+
 ### Install script (Windows)
 
-Same release asset and the same attestation command, with `install.ps1`. Until that asset exists, read `https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.ps1`.
+Download the release's `install.ps1`, read it, then run it. You can verify its provenance with `gh attestation verify install.ps1 --repo YoanWai/agent-manager`. Until that asset exists, read `https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.ps1`.
 
 ```powershell
 irm https://github.com/YoanWai/agent-manager/releases/latest/download/install.ps1 -OutFile install.ps1
+Get-Content .\install.ps1
 Unblock-File .\install.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-On a Windows client with no execution policy set, the effective policy is Restricted, so every `.ps1` is refused. `-ExecutionPolicy Bypass` applies to that process only, after you have read the file. Where the policy is already RemoteSigned, `Unblock-File` then `.\install.ps1` is enough: RemoteSigned refuses an unsigned script that still has the Mark of the Web. A browser download sets that mark. `irm -OutFile` does not (Microsoft documents `Invoke-WebRequest` as not marking the Internet zone); `Unblock-File` does nothing in that case.
+On a Windows client with no execution policy set, the effective policy is Restricted, so every `.ps1` is refused. `-ExecutionPolicy Bypass` applies to that process only, after you have read the file. Where the policy is already RemoteSigned, `Unblock-File` then `.\install.ps1` is enough. RemoteSigned refuses an unsigned script that still has the Mark of the Web. A browser download sets that mark. `irm -OutFile` does not (Microsoft documents `Invoke-WebRequest` as not marking the Internet zone). `Unblock-File` does nothing in that case.
 
 Installs the latest release to `%LOCALAPPDATA%\Programs\agent-manager`, adds it to your user `Path`, and offers to install psmux, git, or PowerShell 7 when one is missing. `AGENT_MANAGER_INSTALL_DEPS=1` answers yes. `AGENT_MANAGER_INSTALL_DEPS=0` skips the prompt. With no terminal it skips the prompt and still leaves the binary installed. `AGENT_MANAGER_VERIFY_ATTESTATION` behaves as it does on the shell script.
-
-Piping into `iex` leaves nothing to read, and `iex` does not consult the execution policy:
-
-```powershell
-irm https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.ps1 | iex
-```
 
 Arch Linux, mise, `go install`, prebuilt binaries, Windows (native and WSL2), dependencies, and updating: [docs/install.md](docs/install.md).
 
