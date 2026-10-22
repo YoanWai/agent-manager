@@ -116,7 +116,7 @@ func TestCheckInstalledUnderWSLRejectsAWindowsOnlyInstall(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("builds a Unix PATH")
 	}
-	for _, tool := range []string{"claude", "codex", "opencode", "grok", "gemini", "agy", "hermes", "pi", "cmd", "muse", "omp"} {
+	for _, tool := range []string{"claude", "codex", "opencode", "grok", "gemini", "agy", "hermes", "pi", "cmd", "muse", "omp", "cursor-agent"} {
 		t.Run(tool, func(t *testing.T) {
 			windows, path := installBinary(t, tool)
 			stubWSL(t, windows)

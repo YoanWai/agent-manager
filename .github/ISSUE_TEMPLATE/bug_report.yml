@@ -61,6 +61,7 @@ body:
         - Command Code
         - Muse Code
         - Oh My Pi
+        - Cursor CLI
         - Not tool specific
 
   - type: input

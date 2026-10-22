@@ -22,6 +22,8 @@ type rpcError struct {
 	Message string `json:"message"`
 }
 
+func (e *rpcError) Error() string { return e.Message }
+
 type rpcMessage struct {
 	ID     json.RawMessage `json:"id"`
 	Method string          `json:"method"`
@@ -72,7 +74,7 @@ func (c *rpcClient) call(ctx context.Context, method string, params, out any) er
 			continue
 		}
 		if message.Error != nil {
-			return fmt.Errorf("%s: %s", method, message.Error.Message)
+			return fmt.Errorf("%s: %w", method, message.Error)
 		}
 		if err := json.Unmarshal(message.Result, out); err != nil {
 			return fmt.Errorf("%s: %w", method, err)

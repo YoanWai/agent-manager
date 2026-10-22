@@ -51,34 +51,36 @@ var windowsPackages = map[string]string{
 // command on macOS, Linux, and WSL, and it wins over a package manager
 // that would guess `brew install claude`.
 var official = map[string]string{
-	"claude":   "curl -fsSL https://claude.ai/install.sh | bash",
-	"cmd":      unixNpm("cmd", "command-code"),
-	"codex":    "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
-	"muse":     "curl -fsSL https://dev.meta.ai/install.sh | bash",
-	"omp":      "curl -fsSL https://omp.sh/install | sh",
-	"grok":     "curl -fsSL https://x.ai/cli/install.sh | bash",
-	"gemini":   unixNpm("gemini", "@google/gemini-cli"),
-	"agy":      "curl -fsSL https://antigravity.google/cli/install.sh | bash",
-	"opencode": unixOpencode(),
-	"hermes":   "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash",
-	"pi":       "curl -fsSL https://pi.dev/install.sh | sh",
+	"claude":       "curl -fsSL https://claude.ai/install.sh | bash",
+	"cmd":          unixNpm("cmd", "command-code"),
+	"codex":        "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
+	"muse":         "curl -fsSL https://dev.meta.ai/install.sh | bash",
+	"omp":          "curl -fsSL https://omp.sh/install | sh",
+	"grok":         "curl -fsSL https://x.ai/cli/install.sh | bash",
+	"gemini":       unixNpm("gemini", "@google/gemini-cli"),
+	"agy":          "curl -fsSL https://antigravity.google/cli/install.sh | bash",
+	"opencode":     unixOpencode(),
+	"cursor-agent": "curl https://cursor.com/install -fsS | bash",
+	"hermes":       "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash",
+	"pi":           "curl -fsSL https://pi.dev/install.sh | sh",
 }
 
 // windowsOfficial replaces official on native Windows, where the curl
 // installers do not run. A tool missing here has no Windows recipe.
 var windowsOfficial = map[string]string{
-	"claude":   "irm https://claude.ai/install.ps1 | iex",
-	"cmd":      windowsNpm("command-code"),
-	"codex":    "& ([scriptblock]::Create((irm https://chatgpt.com/codex/install.ps1)))",
-	"gemini":   windowsNpm("@google/gemini-cli"),
-	"agy":      "irm https://antigravity.google/cli/install.ps1 | iex",
-	"grok":     "irm https://x.ai/cli/install.ps1 | iex",
-	"hermes":   "& ([scriptblock]::Create((irm https://hermes-agent.nousresearch.com/install.ps1))) -NonInteractive -Branch main",
-	"muse":     "irm https://dev.meta.ai/install.ps1 | iex",
-	"omp":      "irm https://omp.sh/install.ps1 | iex",
-	"opencode": windowsNpm("@opencode/cli"),
-	"pi":       windowsNpm("--ignore-scripts @earendil-works/pi-coding-agent"),
-	"psmux":    "winget install --id marlocarlo.psmux -e",
+	"claude":       "irm https://claude.ai/install.ps1 | iex",
+	"cmd":          windowsNpm("command-code"),
+	"codex":        "& ([scriptblock]::Create((irm https://chatgpt.com/codex/install.ps1)))",
+	"gemini":       windowsNpm("@google/gemini-cli"),
+	"agy":          "irm https://antigravity.google/cli/install.ps1 | iex",
+	"grok":         "irm https://x.ai/cli/install.ps1 | iex",
+	"hermes":       "& ([scriptblock]::Create((irm https://hermes-agent.nousresearch.com/install.ps1))) -NonInteractive -Branch main",
+	"muse":         "irm https://dev.meta.ai/install.ps1 | iex",
+	"omp":          "irm https://omp.sh/install.ps1 | iex",
+	"opencode":     windowsNpm("@opencode/cli"),
+	"pi":           windowsNpm("--ignore-scripts @earendil-works/pi-coding-agent"),
+	"psmux":        "winget install --id marlocarlo.psmux -e",
+	"cursor-agent": "irm 'https://cursor.com/install?win32=true' | iex",
 }
 
 // shown is the one line the setup dialog prints and copies for a recipe

@@ -61,11 +61,11 @@ type Tool struct {
 	ForkKeys string `toml:"fork_keys"`
 	// SessionStore names the built-in capturer that reads back the id a tool
 	// minted itself when it has no SessionIDFlag ("codex", "opencode",
-	// "gemini", "hermes", "command-code", "muse", "antigravity" or "omp").
+	// "gemini", "hermes", "command-code", "muse", "antigravity", "omp" or "cursor").
 	SessionStore string `toml:"session_store"`
 	// MCP picks how the agent-manager MCP server is registered into this
 	// tool's sessions: "claude", "codex", "opencode", "grok", "gemini",
-	// "hermes", "command-code", "muse", "antigravity" or "none".
+	// "hermes", "command-code", "muse", "antigravity", "cursor" or "none".
 	// Empty uses the tool's config key when it names a known style.
 	MCP string `toml:"mcp"`
 	// SessionReport names how the manager learns each conversation the
