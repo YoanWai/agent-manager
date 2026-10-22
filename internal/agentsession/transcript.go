@@ -69,15 +69,25 @@ func piRoot() string {
 	return filepath.Join(agentDir, "sessions")
 }
 
+// piCwdKey is the directory pi and omp file one working directory under.
+// Pi strips one leading separator, then turns /, \ and : into dashes, so a
+// Windows drive letter does not stay a colon in the name.
+func piCwdKey(cwd string) string {
+	resolved := resolvePath(cwd)
+	resolved = strings.TrimPrefix(resolved, "/")
+	resolved = strings.TrimPrefix(resolved, `\`)
+	encoded := strings.NewReplacer("/", "-", `\`, "-", ":", "-").Replace(resolved)
+	return "--" + encoded + "--"
+}
+
 // piTranscriptPath is the session file pi or omp wrote for sessionID: under
-// root, a directory named for the resolved working directory with its
-// separators turned into dashes and a dash pair at each end
+// root, a directory named for the resolved working directory
 // ("--private-tmp-work--"), holding <timestamp>_<id>.jsonl.
 func piTranscriptPath(root, cwd, sessionID string) (string, error) {
 	if root == "" {
 		return "", os.ErrNotExist
 	}
-	dir := filepath.Join(root, "--"+strings.ReplaceAll(strings.Trim(resolvePath(cwd), "/"), "/", "-")+"--")
+	dir := filepath.Join(root, piCwdKey(cwd))
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return "", err

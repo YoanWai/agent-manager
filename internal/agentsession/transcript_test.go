@@ -22,7 +22,7 @@ func copyPiFixture(t *testing.T, tool, root, cwd string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dir := filepath.Join(root, "--"+strings.ReplaceAll(strings.Trim(resolvePath(cwd), "/"), "/", "-")+"--")
+	dir := filepath.Join(root, piCwdKey(cwd))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}

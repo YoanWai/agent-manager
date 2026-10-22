@@ -22,6 +22,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -257,7 +258,9 @@ func titleLine(event Event) string {
 	if event.Repo != "" {
 		named = event.Repo
 	}
-	if dir := sanitize(filepath.Base(named)); named != "" && dir != "" {
+	// path.Base keeps a root of "/" on every OS. filepath.Base turns that
+	// into "\" on Windows.
+	if dir := sanitize(path.Base(filepath.ToSlash(named))); named != "" && dir != "" {
 		parts = append(parts, dir)
 	}
 	for _, part := range []string{sanitize(event.Branch), sanitize(event.Tool)} {

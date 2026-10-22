@@ -1969,6 +1969,14 @@ func TestClaudeTailFollowsTheLiveTranscript(t *testing.T) {
 	}
 }
 
+// piSessionDir is the directory name pi and omp use, matching piCwdKey.
+func piSessionDir(cwd string) string {
+	resolved := strings.TrimPrefix(cwd, "/")
+	resolved = strings.TrimPrefix(resolved, `\`)
+	encoded := strings.NewReplacer("/", "-", `\`, "-", ":", "-").Replace(resolved)
+	return "--" + encoded + "--"
+}
+
 // pi and omp echo no prompt the pane can tell from a reply, so the row's
 // prompt comes from their session file, filed under the resolved working
 // directory with its separators turned to dashes. A file holds whatever
@@ -1994,7 +2002,7 @@ func TestTranscriptTailReadsPiAndOmpSessionFiles(t *testing.T) {
 		{"omp", filepath.Join(ompAgentDir, "sessions")},
 	} {
 		t.Run(tc.tool, func(t *testing.T) {
-			dir := filepath.Join(tc.root, "--"+strings.ReplaceAll(strings.Trim(cwd, "/"), "/", "-")+"--")
+			dir := filepath.Join(tc.root, piSessionDir(cwd))
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				t.Fatal(err)
 			}
