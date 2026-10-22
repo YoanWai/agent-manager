@@ -210,6 +210,12 @@ func helpSections(ctx Context) []helpSection {
 			{"↵", "confirm"},
 			{"esc", "cancel"},
 		}},
+		{title: "setup step", rows: [][2]string{
+			{"i", "run the installer, or update a CLI that is too old"},
+			{"c", "copy that command"},
+			{"click command", "copy it, the same as c"},
+			{"esc", "close"},
+		}},
 	}
 }
 

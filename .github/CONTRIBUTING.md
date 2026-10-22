@@ -45,6 +45,13 @@ Keep it in draft until the coverage is complete or the maintainer accepts an
 exception. The example helps discuss the idea without presenting it as ready
 to merge or committing anyone to finish it.
 
+Build against the current release of each agent CLI. None of them publishes a
+long-term-support line, so the latest stable release is the one we support.
+When an upstream release changes a flag, a subcommand, or a screen, move to
+the new behavior and drop the old one. Set that tool's `minimum_version` in
+`internal/config/builtin.go` to the first release with the new behavior, in
+the same pull request, so someone on an older release gets the update dialog.
+
 A change is done when it holds on the whole matrix: every supported CLI, every
 platform we build plus WSL2, every terminal including over SSH, keyboard and
 mouse. A setting a user can change lives on a Settings row that the manager

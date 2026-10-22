@@ -34,6 +34,12 @@ func TestLaunchHintViewSetsParagraphsApart(t *testing.T) {
 	if card.Body != "why\n\nhow" || len(card.Hints) != 3 {
 		t.Fatalf("card = %+v", card)
 	}
+	if card.Hints[0] != [2]string{"i", "install"} {
+		t.Fatalf("a missing CLI's i reads %v", card.Hints[0])
+	}
+	if card := (LaunchHint{Text: "why", Command: "run", Update: true}).View(40, plain, plain, presentation.GlyphsFor("")); card.Hints[0] != [2]string{"i", "update"} {
+		t.Fatalf("an outdated CLI's i reads %v", card.Hints[0])
+	}
 	if card := (LaunchHint{Text: "why"}).View(40, plain, plain, presentation.GlyphsFor("")); len(card.Hints) != 1 {
 		t.Fatalf("a read-only card offers %v", card.Hints)
 	}

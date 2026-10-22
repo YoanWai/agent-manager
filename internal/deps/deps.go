@@ -20,7 +20,7 @@ type manager struct {
 }
 
 // Native package managers come before brew on Linux, where a Homebrew install
-// is the exception; on macOS brew is the only one of these that ships packages.
+// is the exception. macOS uses Homebrew alone, and installs it when it is absent.
 var linuxManagers = []manager{
 	{"apt-get", "sudo apt-get update && sudo apt-get install -y "},
 	{"dnf", "sudo dnf install -y "},
@@ -30,45 +30,65 @@ var linuxManagers = []manager{
 	{"brew", "brew install "},
 }
 
-var darwinManagers = []manager{
-	{"brew", "brew install "},
-}
+// homebrewSetup installs Homebrew, then the packages. A Mac without
+// Homebrew has no tmux package to offer otherwise.
+const homebrewSetup = `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" && eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv)" && brew install `
 
 var windowsManagers = []manager{
 	{"scoop", "scoop install "},
 	{"choco", "choco install -y "},
 }
 
+// windowsPackages are winget ids. A bare name search stops to ask which
+// package, and winget is present on a current Windows install when scoop
+// and choco are not.
+var windowsPackages = map[string]string{
+	"git":  "winget install --id Git.Git -e",
+	"pwsh": "winget install --id Microsoft.PowerShell -e",
+}
+
 // official is the vendor installer for a built-in agent CLI. It is the same
 // command on macOS, Linux, and WSL, and it wins over a package manager
 // that would guess `brew install claude`.
 var official = map[string]string{
-	"claude":   "curl -fsSL https://claude.ai/install.sh | bash",
-	"cmd":      "npm install -g command-code",
-	"codex":    "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
-	"muse":     "curl -fsSL https://dev.meta.ai/install.sh | bash",
-	"omp":      "curl -fsSL https://omp.sh/install | sh",
-	"grok":     "curl -fsSL https://x.ai/cli/install.sh | bash",
-	"gemini":   "npm install -g @google/gemini-cli",
-	"agy":      "curl -fsSL https://antigravity.google/cli/install.sh | bash",
-	"opencode": "curl -fsSL https://opencode.ai/v2/install | bash",
-	"hermes":   "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash",
-	"pi":       "npm install -g @mariozechner/pi-coding-agent",
+	"claude":       "curl -fsSL https://claude.ai/install.sh | bash",
+	"cmd":          unixNpm("cmd", "command-code"),
+	"codex":        "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
+	"muse":         "curl -fsSL https://dev.meta.ai/install.sh | bash",
+	"omp":          "curl -fsSL https://omp.sh/install | sh",
+	"grok":         "curl -fsSL https://x.ai/cli/install.sh | bash",
+	"gemini":       unixNpm("gemini", "@google/gemini-cli"),
+	"agy":          "curl -fsSL https://antigravity.google/cli/install.sh | bash",
+	"opencode":     unixOpencode(),
+	"cursor-agent": "curl https://cursor.com/install -fsS | bash",
+	"hermes":       "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash",
+	"pi":           "curl -fsSL https://pi.dev/install.sh | sh",
 }
 
 // windowsOfficial replaces official on native Windows, where the curl
 // installers do not run. A tool missing here has no Windows recipe.
 var windowsOfficial = map[string]string{
-	"claude":   "irm https://claude.ai/install.ps1 | iex",
+	"claude":       "irm https://claude.ai/install.ps1 | iex",
+	"cmd":          windowsNpm("command-code"),
+	"codex":        "& ([scriptblock]::Create((irm https://chatgpt.com/codex/install.ps1)))",
+	"gemini":       windowsNpm("@google/gemini-cli"),
+	"agy":          "irm https://antigravity.google/cli/install.ps1 | iex",
+	"grok":         "irm https://x.ai/cli/install.ps1 | iex",
+	"hermes":       "& ([scriptblock]::Create((irm https://hermes-agent.nousresearch.com/install.ps1))) -NonInteractive -Branch main",
+	"muse":         "irm https://dev.meta.ai/install.ps1 | iex",
+	"omp":          "irm https://omp.sh/install.ps1 | iex",
+	"opencode":     windowsNpm("@opencode/cli"),
+	"pi":           windowsNpm("--ignore-scripts @earendil-works/pi-coding-agent"),
+	"psmux":        "winget install --id marlocarlo.psmux -e",
+	"cursor-agent": "irm 'https://cursor.com/install?win32=true' | iex",
+}
+
+// shown is the one line the setup dialog prints and copies for a recipe
+// that runs as a script, which would fill the card with shell.
+var shown = map[string]string{
 	"cmd":      "npm install -g command-code",
-	"codex":    "npm install -g @openai/codex",
 	"gemini":   "npm install -g @google/gemini-cli",
-	"grok":     "irm https://x.ai/cli/install.ps1 | iex",
-	"hermes":   "& ([scriptblock]::Create((irm https://hermes-agent.nousresearch.com/install.ps1))) -NonInteractive -Branch main",
-	"muse":     "irm https://dev.meta.ai/install.ps1 | iex",
-	"opencode": "npm install -g @opencode/cli",
-	"pi":       "npm install -g --ignore-scripts @earendil-works/pi-coding-agent",
-	"psmux":    "winget install psmux",
+	"opencode": "curl -fsSL https://opencode.ai/v2/install | bash",
 }
 
 func installers(goos string) map[string]string {
@@ -91,8 +111,21 @@ func Command(tool string) string {
 	return installers(runtime.GOOS)[tool]
 }
 
+// Shown is the install command as the dialog prints and copies it: the
+// vendor's one line, where Command may be the script that carries it out.
+func Shown(tool string) string {
+	return shownCommand(runtime.GOOS, tool)
+}
+
+func shownCommand(goos, tool string) string {
+	if goos != "windows" && shown[tool] != "" {
+		return shown[tool]
+	}
+	return installers(goos)[tool]
+}
+
 func hint(goos, tool string) string {
-	if command := installers(goos)[tool]; command != "" {
+	if command := shownCommand(goos, tool); command != "" {
 		return "install it with: " + command
 	}
 	if command := installCommand(goos, tool); command != "" {
@@ -102,10 +135,21 @@ func hint(goos, tool string) string {
 }
 
 func installCommand(goos, tool string) string {
+	if goos == "darwin" {
+		if _, err := lookPath("brew"); err != nil {
+			return homebrewSetup + tool
+		}
+		return "brew install " + tool
+	}
+	if goos == "windows" {
+		if command := windowsPackages[tool]; command != "" {
+			if _, err := lookPath("winget"); err == nil {
+				return command
+			}
+		}
+	}
 	candidates := linuxManagers
 	switch goos {
-	case "darwin":
-		candidates = darwinManagers
 	case "windows":
 		candidates = windowsManagers
 	}

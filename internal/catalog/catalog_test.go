@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -56,6 +57,10 @@ func TestReadersTakeEveryValueFromTheCLI(t *testing.T) {
 			{ID: "auto", Label: "Auto", Default: true},
 			{ID: "gemini-3.1-pro-preview", Label: "gemini-3.1-pro-preview"},
 			{ID: "gemini-3.8-flash", Label: "gemini-3.8-flash"},
+		}}},
+		{"acp", "acp-cursor", Catalog{Models: []Model{
+			{ID: "default[]", Label: "Auto", Default: true},
+			{ID: "grok-4.7[context=256k,reasoning_effort=high,fast=true]", Label: "Grok 4.7"},
 		}}},
 		{"pi", "pi", Catalog{Models: []Model{
 			{ID: "anthropic/claude-haiku-4-5", Label: "Claude Haiku 4.5 (latest)", Efforts: []string{"off", "minimal", "low", "medium", "high"}},
@@ -147,9 +152,6 @@ func TestAReaderThatFailsSaysWhy(t *testing.T) {
 	if _, err := fetchFake(t, "claude", "claude-refuses"); err == nil || !strings.Contains(err.Error(), "Not logged in") {
 		t.Fatalf("refusal err = %v", err)
 	}
-	if _, err := fetchFake(t, "pi", "pi-0.84.2"); err == nil || !strings.Contains(err.Error(), "needs pi 0.84.3 or later") {
-		t.Fatalf("old pi err = %v", err)
-	}
 	if _, err := fetchFake(t, "opencode", "opencode-unavailable"); err == nil || !strings.Contains(err.Error(), "Location plugins did not finish activating") {
 		t.Fatalf("unavailable opencode err = %v", err)
 	}
@@ -158,6 +160,46 @@ func TestAReaderThatFailsSaysWhy(t *testing.T) {
 	}
 	if _, err := Fetch(context.Background(), "nope", "true", t.TempDir()); err == nil {
 		t.Fatal("an unknown reader answered")
+	}
+}
+
+// A pi older than its minimum saves every model set_model asks about as
+// the user's default, so the refusal comes before the RPC starts.
+func TestRefreshRefusesACLIOlderThanItsMinimum(t *testing.T) {
+	testdata, err := filepath.Abs("testdata")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CATALOG_TESTDATA", testdata)
+	t.Setenv("CATALOG_FAKE", "pi-0.84.2")
+	tool := config.Tool{Command: os.Args[0], Catalog: "pi", CatalogCommand: os.Args[0], MinimumVersion: "0.84.3"}
+
+	_, err = Refresh(context.Background(), t.TempDir(), "pi", tool)
+	var outdated config.OutdatedToolError
+	if !errors.As(err, &outdated) || outdated.Installed != "0.84.2" {
+		t.Fatalf("err = %v, want pi 0.84.2 refused", err)
+	}
+}
+
+// A kept answer must not skip the floor. An older pi would save every model
+// the list asks about as the user's default.
+func TestLoadRefusesAnOlderCLIBeforeTheKeptAnswer(t *testing.T) {
+	testdata, err := filepath.Abs("testdata")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CATALOG_TESTDATA", testdata)
+	t.Setenv("CATALOG_FAKE", "pi-0.84.2")
+	dir := t.TempDir()
+	tool := config.Tool{Command: os.Args[0], Catalog: "pi", CatalogCommand: os.Args[0], MinimumVersion: "0.84.3"}
+	if err := Keep(dir, "pi", tool, Catalog{Models: []Model{{ID: "kept"}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = Load(context.Background(), dir, "pi", tool)
+	var outdated config.OutdatedToolError
+	if !errors.As(err, &outdated) || outdated.Installed != "0.84.2" {
+		t.Fatalf("err = %v, want the kept answer refused", err)
 	}
 }
 

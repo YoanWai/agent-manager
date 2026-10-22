@@ -101,42 +101,105 @@
 		Write-Host "added $dir to your user PATH; open a new terminal to pick it up"
 	}
 
+	function Test-PsmuxCurrent {
+		$version = $null
+		foreach ($line in (& psmux -V 2>$null)) {
+			if ($line -like 'psmux *') {
+				$version = ($line -split '\s+')[1]
+				break
+			}
+		}
+		$minimum = [version]'3.4.0'
+		$parsed = $null
+		if ($version -and -not [version]::TryParse($version, [ref]$parsed)) { $parsed = $null }
+		if ($parsed -and $parsed -ge $minimum) { return $true }
+		return $false
+	}
+
+	function Test-PwshCurrent {
+		# ToString prints the bare version; the object formats as a table.
+		# Cutting the pipeline short leaves 5.1's LASTEXITCODE at -1.
+		$text = @(& pwsh -NoProfile -NonInteractive -Command '$PSVersionTable.PSVersion.ToString()' 2>$null)[0]
+		$minimum = [version]'7.3'
+		$parsed = $null
+		if (-not $text -or -not [version]::TryParse(($text -split '-')[0], [ref]$parsed)) { $parsed = $null }
+		if ($parsed -and $parsed -ge $minimum) { return $true }
+		return $false
+	}
+
+	# irm | iex feeds this script through the pipeline, not through stdin, so a
+	# console can still answer. A redirected stdin has nobody to ask.
+	function Confirm-DepInstall([string]$Prompt) {
+		$flag = [string]$env:AGENT_MANAGER_INSTALL_DEPS
+		if ($flag -match '^(1|y|yes|true)$') { return $true }
+		if ($flag -match '^(0|n|no|false)$') { return $false }
+		$redirected = $false
+		try { $redirected = [Console]::IsInputRedirected } catch { $redirected = $false }
+		if ($redirected) { return $false }
+		Write-Host "$Prompt [Y/n] " -NoNewline
+		try { $reply = Read-Host } catch { return $false }
+		return [string]::IsNullOrWhiteSpace($reply) -or $reply -match '^(y|Y|yes|Yes)$'
+	}
+
+	function Invoke-DepInstall([string]$Command) {
+		$run = $Command
+		if ($run -like 'winget *' -and $run -notlike '*--accept-package-agreements*') {
+			$run = "$run --accept-package-agreements --accept-source-agreements"
+		}
+		Write-Host "running: $run"
+		try {
+			Invoke-Expression $run
+		} catch {
+			Write-Host "that failed, run it yourself: $Command" -ForegroundColor Yellow
+			return
+		}
+		if ($LASTEXITCODE) {
+			Write-Host "that failed, run it yourself: $Command" -ForegroundColor Yellow
+		}
+	}
+
+	function Get-MissingDep {
+		$actions = New-Object System.Collections.Generic.List[string]
+		if (-not (Get-Command psmux -ErrorAction SilentlyContinue)) {
+			$actions.Add('winget install --id marlocarlo.psmux -e')
+		} elseif (-not (Test-PsmuxCurrent)) {
+			$actions.Add('winget upgrade --id marlocarlo.psmux -e')
+		}
+		if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+			$actions.Add('winget install --id Git.Git -e')
+		}
+		if (-not (Get-Command pwsh -ErrorAction SilentlyContinue)) {
+			$actions.Add('winget install --id Microsoft.PowerShell -e')
+		} elseif (-not (Test-PwshCurrent)) {
+			$actions.Add('winget upgrade --id Microsoft.PowerShell -e')
+		}
+		return ,$actions
+	}
+
 	function Show-MissingDep {
-		$deps = @(
-			@{ Command = 'psmux'; Reason = 'runs its sessions in psmux'; Install = 'winget install psmux' },
-			@{ Command = 'git'; Reason = 'reviews diffs with git'; Install = 'winget install --id Git.Git -e' },
-			@{ Command = 'pwsh'; Reason = 'scripts its sessions with PowerShell 7.3+'; Install = 'winget install Microsoft.PowerShell' }
-		)
-		foreach ($dep in $deps) {
-			if (-not (Get-Command $dep.Command -ErrorAction SilentlyContinue)) {
-				Write-Host "agent-manager $($dep.Reason), which is missing; install it with: $($dep.Install)" -ForegroundColor Yellow
+		try {
+			$missing = Get-MissingDep
+			if ($missing.Count -eq 0) { return }
+			$listed = [string]::Join(', ', $missing.ToArray())
+			Write-Host "agent-manager is missing a dependency: $listed" -ForegroundColor Yellow
+			if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+				Write-Host "install them with your package manager" -ForegroundColor Yellow
+				return
 			}
-		}
-		if (Get-Command psmux -ErrorAction SilentlyContinue) {
-			$version = $null
-			foreach ($line in (& psmux -V 2>$null)) {
-				if ($line -like 'psmux *') {
-					$version = ($line -split '\s+')[1]
-					break
-				}
+			if (-not (Confirm-DepInstall "install them now?")) {
+				Write-Host "install them yourself: $listed"
+				return
 			}
-			$minimum = [version]'3.4.0'
-			$parsed = $null
-			if ($version -and -not [version]::TryParse($version, [ref]$parsed)) { $parsed = $null }
-			if (-not $parsed -or $parsed -lt $minimum) {
-				Write-Host "agent-manager needs psmux $minimum or newer; upgrade it with: winget upgrade psmux" -ForegroundColor Yellow
+			foreach ($action in $missing) {
+				Invoke-DepInstall $action
 			}
-		}
-		if (Get-Command pwsh -ErrorAction SilentlyContinue) {
-			# ToString prints the bare version; the object formats as a table.
-			# Cutting the pipeline short leaves 5.1's LASTEXITCODE at -1.
-			$text = @(& pwsh -NoProfile -NonInteractive -Command '$PSVersionTable.PSVersion.ToString()' 2>$null)[0]
-			$minimum = [version]'7.3'
-			$parsed = $null
-			if (-not $text -or -not [version]::TryParse(($text -split '-')[0], [ref]$parsed)) { $parsed = $null }
-			if (-not $parsed -or $parsed -lt $minimum) {
-				Write-Host "agent-manager needs PowerShell 7.3 or newer and refuses older ones; upgrade it with: winget upgrade Microsoft.PowerShell" -ForegroundColor Yellow
+			$env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
+			$left = Get-MissingDep
+			if ($left.Count -gt 0) {
+				Write-Host "installed packages do not satisfy: $([string]::Join(', ', $left.ToArray()))" -ForegroundColor Yellow
 			}
+		} catch {
+			Write-Host "could not install dependencies: $($_.Exception.Message)" -ForegroundColor Yellow
 		}
 	}
 

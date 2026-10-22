@@ -44,8 +44,10 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	return model, command
 }
 
+// The update dialog covers the list, and Esc returns to the same draft, so a
+// mouse event must not throw that draft away.
 func (m *Model) closeQuickOffTheList() {
-	if m.quick.active && m.mode != modeList {
+	if m.quick.active && m.mode != modeList && m.mode != modeLaunchHint {
 		m.quick.active = false
 		m.quick.release()
 	}
@@ -226,7 +228,8 @@ func (m *Model) clickCard(col, line int) (tea.Model, tea.Cmd) {
 	case modeRepoPick:
 		return m, m.handleRepoPickClick(line)
 	case modeLaunchHint:
-		return m, m.launchHint.handleClick(m, line)
+		_, body, hints := m.launchHint.card(m, m.glyphs(), m.cardWidth())
+		return m, m.launchHint.handleClick(m, line+m.launchHintDroppedRows(body, hints))
 	case modeFocus:
 		return m, m.handleFocusSavedClick(line)
 	}

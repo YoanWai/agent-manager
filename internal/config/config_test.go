@@ -311,7 +311,7 @@ func TestDefaultResumeByIDFields(t *testing.T) {
 		t.Fatalf("pi resume_by_id_command = %q want \"pi --session {id}\"", got)
 	}
 	// Tools that mint their own id declare a store to capture it from.
-	for _, name := range []string{"codex", "opencode", "hermes", "command-code", "antigravity", "omp"} {
+	for _, name := range []string{"codex", "opencode", "hermes", "command-code", "antigravity", "omp", "cursor"} {
 		tool := cfg.Tools[name]
 		if tool.SessionStore != name {
 			t.Fatalf("%s session_store = %q want %q", name, tool.SessionStore, name)
@@ -334,6 +334,7 @@ func TestDefaultResumeByIDFields(t *testing.T) {
 		{"hermes", "hermes --cli {choice} sessions browse"},
 		{"pi", "pi --resume"},
 		{"omp", "omp --resume"},
+		{"cursor", "cursor-agent ls"},
 	} {
 		if got := cfg.Tools[tc.name].ResumePickerCommand; got != tc.want {
 			t.Fatalf("%s resume_picker_command = %q want %q", tc.name, got, tc.want)
@@ -355,7 +356,7 @@ func TestDefaultResumeByIDFields(t *testing.T) {
 	if got := cfg.Tools["antigravity"].ResumePickerKeys; got != "/resume" {
 		t.Fatalf("antigravity resume_picker_keys = %q want \"/resume\"", got)
 	}
-	for _, name := range []string{"claude", "codex", "command-code", "grok", "gemini", "hermes", "pi", "omp"} {
+	for _, name := range []string{"claude", "codex", "command-code", "grok", "gemini", "hermes", "pi", "omp", "cursor"} {
 		if got := cfg.Tools[name].ResumePickerKeys; got != "" {
 			t.Fatalf("%s resume_picker_keys = %q want empty", name, got)
 		}
@@ -551,5 +552,28 @@ func TestOmpDefaults(t *testing.T) {
 	}
 	if tool.MCP != "" || tool.DefaultStatus != "finished" || tool.InputPrefix == "" {
 		t.Fatalf("omp status defaults = %+v", tool)
+	}
+}
+
+func TestCursorDefaults(t *testing.T) {
+	cfg, err := Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool, ok := cfg.Tools["cursor"]
+	if !ok || tool.Command != "cursor-agent" || tool.SessionStore != "cursor" || tool.SessionReport != "none" {
+		t.Fatalf("cursor defaults = %+v", tool)
+	}
+	if tool.ResumeByIDCommand != "cursor-agent --resume {id}" || tool.ResumePickerCommand != "cursor-agent ls" || tool.ReviveCommand != "cursor-agent --continue" {
+		t.Fatalf("cursor revive = %+v", tool)
+	}
+	if tool.Catalog != "acp" || tool.CatalogCommand != "cursor-agent acp" || tool.ModelArgs != "--model {model}" || tool.EffortArgs != "" {
+		t.Fatalf("cursor catalog = %+v", tool)
+	}
+	if tool.SessionIDFlag != "" || tool.PromptFlag != "" || tool.ForkCommand != "" || tool.ForkKeys != "" || tool.MCP != "" || tool.ResumePickerKeys != "" {
+		t.Fatalf("unsupported cursor flags: %+v", tool)
+	}
+	if tool.DefaultStatus != "idle" || tool.TurnEnd != "" || tool.ActivityCutoff == "" {
+		t.Fatalf("cursor status defaults = %+v", tool)
 	}
 }
