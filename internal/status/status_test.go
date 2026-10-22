@@ -481,6 +481,17 @@ func TestCodexRealPanes(t *testing.T) {
 				"› 1. Use session directory (/home/dev/session)\n  2. Use current directory (/home/dev/current)\n" +
 				"  3. Always use session directory\n  4. Always use current directory\n\n" +
 				"  enter continue · esc use session · ⌃c quit", Waiting},
+		{"codex first-run folder trust with a multi-word label (0.163 source snapshot)", "codex",
+			"  Folder access\n  /workspace/project\n\n" +
+				"  Trust this folder? Codex can read, edit, and run files here,\n  subject to your permission settings.\n\n" +
+				"› 1. Trust and continue\n  2. Quit\n\n  enter continue and create sandbox · esc quit\n\n", Waiting},
+		{"codex daemon confirmation above the app status row (0.163 source snapshot)", "codex",
+			"      Restart background server?\n      Active or queued work in other chats may be interrupted.\n\n" +
+				"    › 1. Cancel\n      2. Restart\n\n      enter select · esc back\n\n\n\n" +
+				"  Service v0.153.0 < Codex CLI v0.154.0 · /daemon", Waiting},
+		{"codex turn whose output prints a picker footer is still working", "codex",
+			"› run the installer\n• Ran ./install.sh\n  └ Choose an option.\n    enter continue · esc skip\n\n" +
+				"• Working (4s • esc to interrupt)\n\n› Ask Codex to do anything\n  gpt-5.1-codex default · /home/dev", Working},
 		{"codex finished on a label with runtime metrics", "codex",
 			"• Final response.\n  02:41 · Local tools: 2 calls (1.2s) • Inference: 1 call (3.4s)\n\n› Ask Codex to do anything\n  gpt-5.1-codex default · /private/tmp/am586/work", Finished},
 		{"codex question on a worked-for label with runtime metrics", "codex",
