@@ -447,6 +447,36 @@ func TestCallerSessionIgnoresWhatAProcessOutsideThePanesInherited(t *testing.T) 
 	}
 }
 
+// The ancestry decides whenever it can be read, and only a hidden ancestry,
+// as inside a sandbox's PID namespace, leaves the caller to the variable.
+// There a stale variable still wins: the sandbox shows nothing to check it
+// against, and refusing would leave every sandboxed agent without a caller.
+func TestCallerSessionFallsBackToTheVariableOnlyWhenTheAncestryIsHidden(t *testing.T) {
+	isolateTmux(t)
+	t.Setenv("TMUX", "")
+	t.Setenv("TMUX_PANE", "")
+	t.Setenv(hooks.EnvSessionID, "deadbeef")
+	for _, tc := range []struct {
+		name     string
+		ancestry string
+		seen     bool
+		want     string
+	}{
+		{"pane above the process", "ca11ab1e", true, "ca11ab1e"},
+		{"no pane above the process", "", true, ""},
+		{"ancestry hidden", "", false, "deadbeef"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			saved := callerAncestry
+			t.Cleanup(func() { callerAncestry = saved })
+			callerAncestry = func() (string, bool) { return tc.ancestry, tc.seen }
+			if got := callerSession(); got != tc.want {
+				t.Fatalf("callerSession = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 // A subcommand run outside tmux, or on a machine without it, has no pane to
 // ask, and says which of the two ways to identify a caller failed.
 func TestCallerSessionOutsideTmuxLeavesTheCommandToExplainIt(t *testing.T) {

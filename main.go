@@ -258,7 +258,7 @@ func withConfigDir(command cli.Command) func([]string) error {
 // no launch script to export the id from, and the shell would otherwise
 // have no way to say which session it is.
 func callerSession() string {
-	if id, seen := sessionFromAncestry(); seen {
+	if id, seen := callerAncestry(); seen {
 		return id
 	}
 	if id := os.Getenv(hooks.EnvSessionID); id != "" {
@@ -286,6 +286,10 @@ func sessionFromPane() string {
 	}
 	return id
 }
+
+// callerAncestry is sessionFromAncestry, swapped out by the tests that need
+// the ancestry hidden the way a PID namespace hides it.
+var callerAncestry = sessionFromAncestry
 
 // sessionFromAncestry names the session whose pane started this process.
 // seen is false when the ancestry cannot be read, including every failure,
