@@ -282,8 +282,15 @@ func (m *Model) applyLifecycleEffect(request lifecycleRequest, result lifecycleE
 	}
 	if err != nil {
 		if target.batch {
-			if result.notice == "" {
-				m.reportErr(err.Error())
+			switch {
+			case result.notice == "":
+				message := err.Error()
+				if result.warning != nil {
+					message += "; " + result.warning.Error()
+				}
+				m.reportErr(message)
+			case result.warning != nil:
+				m.reportErr(result.notice + "; " + result.warning.Error())
 			}
 			return nil
 		}

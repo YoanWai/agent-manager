@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -354,5 +355,36 @@ func TestALaunchWhoseMCPRegistrationTimesOutStartsWithAWarning(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(m.services.hooks.Dir(), "mcp-grok-registered")); !os.IsNotExist(err) {
 		t.Fatalf("a timed-out registration left a marker: %v", err)
+	}
+}
+
+// A fork whose child started without the agent-manager tools went through:
+// the dialog must not stay open offering a retry that would fork again.
+func TestAForkThatStartedWithoutMCPToolsReportsAWarningNotAFailure(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	m.mode = modeFork
+
+	m.applyForkEffect(forkRequest{}, forkEffectResult{warning: errors.New("grok MCP registration did not finish")}, nil)
+
+	if m.mode == modeLaunchHint {
+		t.Fatal("a fork that went through opened the retry dialog")
+	}
+	if !m.errBar.warned() || !strings.Contains(m.errBar.text, "MCP registration") {
+		t.Fatalf("bar = %q (warned=%v), want the caveat as a warning", m.errBar.text, m.errBar.warned())
+	}
+}
+
+// A batch that fails partway still tells the user about the relaunch that
+// started without the agent-manager tools.
+func TestABatchFailureKeepsTheMCPWarningOfAnEarlierRelaunch(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	request := lifecycleRequest{target: confirmTarget{action: actionRevive, batch: true}}
+
+	m.applyLifecycleEffect(request, lifecycleEffectResult{warning: errors.New("MCP registration timed out")}, errors.New("second one failed"))
+
+	if got := m.errBar.text; !strings.Contains(got, "second one failed") || !strings.Contains(got, "MCP registration timed out") {
+		t.Fatalf("bar = %q, want both the failure and the warning", got)
 	}
 }

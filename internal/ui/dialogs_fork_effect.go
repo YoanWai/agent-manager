@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -49,6 +50,10 @@ type forkEffectResult struct {
 	childID        string
 	launched       store.Session
 	recordedForkID string
+	// warning is a caveat on a fork that went through: the child started
+	// without the agent-manager tools. It is not a launch failure, so it
+	// must not open the retry dialog.
+	warning error
 }
 
 func (forkEffectResult) effectResult() {}
@@ -186,7 +191,10 @@ func (s effectServices) runFork(request forkRequest) (effectResult, error) {
 		return result, err
 	}
 	result.launched = launched.Session
-	return result, launched.Caveat()
+	if launched.Warning != "" {
+		result.warning = errors.New(launched.Warning)
+	}
+	return result, launched.LabelError
 }
 
 func (m *Model) applyForkEffect(request forkRequest, result forkEffectResult, err error) tea.Cmd {
@@ -212,6 +220,9 @@ func (m *Model) applyForkEffect(request forkRequest, result forkEffectResult, er
 			m.mode = modeList
 			m.clearErr()
 			m.focusSession(launched.ID)
+		}
+		if result.warning != nil {
+			m.reportWarn(result.warning.Error())
 		}
 		return m.refreshCmd()
 	}

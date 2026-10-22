@@ -280,7 +280,7 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 			m.focusSession(sess.ID)
 		}
 		if result.label != nil {
-			m.reportErr(result.label.Error())
+			m.reportWarn(result.label.Error())
 		}
 		return m.refreshCmd()
 	}
