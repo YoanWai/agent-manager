@@ -157,7 +157,7 @@ func TestAnUpdatedCLIIsAskedAgainRightAway(t *testing.T) {
 		t.Fatalf("esc left mode %v, want the form it came from", m.mode)
 	}
 
-	if err := os.WriteFile(script, []byte("#!/bin/sh\necho 0.85.0\n"), 0o755); err != nil {
+	if err := os.WriteFile(script, []byte("#!/bin/sh\necho 0.85.0 updated\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := catalog.Keep(m.services.configDir, "pi", tool, kept); err != nil {
