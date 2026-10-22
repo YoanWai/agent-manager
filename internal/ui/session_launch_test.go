@@ -363,12 +363,18 @@ func TestALaunchWhoseMCPRegistrationTimesOutStartsWithAWarning(t *testing.T) {
 func TestAForkThatStartedWithoutMCPToolsReportsAWarningNotAFailure(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
+	m.fork.Open("source", "")
+	m.fork.SetName("child")
 	m.mode = modeFork
+	request := forkRequest{source: store.Session{ID: "source"}, name: "child", gen: m.fork.Gen()}
 
-	m.applyForkEffect(forkRequest{}, forkEffectResult{warning: errors.New("grok MCP registration did not finish")}, nil)
+	m.applyForkEffect(request, forkEffectResult{
+		launched: store.Session{ID: "child"},
+		warning:  errors.New("grok MCP registration did not finish"),
+	}, nil)
 
-	if m.mode == modeLaunchHint {
-		t.Fatal("a fork that went through opened the retry dialog")
+	if m.mode != modeList {
+		t.Fatalf("mode = %v, want the fork dialog closed back to the list", m.mode)
 	}
 	if !m.errBar.warned() || !strings.Contains(m.errBar.text, "MCP registration") {
 		t.Fatalf("bar = %q (warned=%v), want the caveat as a warning", m.errBar.text, m.errBar.warned())
