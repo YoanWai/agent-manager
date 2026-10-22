@@ -492,6 +492,59 @@ func runCommand(t *testing.T, cmd *exec.Cmd, env []string) (string, int) {
 	return "", 1
 }
 
+func TestVerifyAttestationMatchesPowerShellCase(t *testing.T) {
+	dir := t.TempDir()
+	log := filepath.Join(dir, "gh.log")
+	writeExe(t, filepath.Join(dir, "gh"), "#!/bin/sh\nprintf 'prompt=%s\\n' \"${GH_PROMPT_DISABLED-unset}\" >> \"$GH_LOG\"\nprintf '%s\\n' \"$*\" >> \"$GH_LOG\"\nexit \"${GH_EXIT:-0}\"\n")
+	body := "set -eu\nREPO=YoanWai/agent-manager\n" + installFuncs(t, "err", "verify_attestation") + "verify_attestation /tmp/archive.tar.gz\nprintf 'done\\n'\n"
+	path := "PATH=" + dir
+	base := []string{path, "GH_LOG=" + log}
+
+	out, code := runDash(t, body, base)
+	if code != 0 || !strings.Contains(out, "done") || fileExists(log) {
+		t.Fatalf("unset flag called gh: exit %d\n%s", code, out)
+	}
+
+	for _, flag := range []string{"1", "y", "Y", "yes", "YES", "Yes", "true", "TRUE", "True"} {
+		if err := os.Remove(log); err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		out, code = runDash(t, body, append(append([]string{}, base...), "AGENT_MANAGER_VERIFY_ATTESTATION="+flag, "GH_EXIT=0"))
+		got := readLog(t, log)
+		if code != 0 || !strings.Contains(out, "done") || !strings.Contains(got, "prompt=1\nattestation verify /tmp/archive.tar.gz --repo YoanWai/agent-manager\n") {
+			t.Fatalf("flag %s: exit %d\n%s\nlog %q", flag, code, out, got)
+		}
+	}
+
+	for _, flag := range []string{"", "0", "no", "yesterday", "truth"} {
+		if err := os.Remove(log); err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		out, code = runDash(t, body, append(append([]string{}, base...), "AGENT_MANAGER_VERIFY_ATTESTATION="+flag, "GH_EXIT=1"))
+		if code != 0 || !strings.Contains(out, "done") || fileExists(log) {
+			t.Fatalf("flag %q must skip gh: exit %d\n%s", flag, code, out)
+		}
+	}
+
+	if err := os.Remove(log); err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	out, code = runDash(t, body, append(append([]string{}, base...), "AGENT_MANAGER_VERIFY_ATTESTATION=1", "GH_EXIT=1"))
+	if code != 1 || !strings.Contains(out, "error: attestation verification failed for /tmp/archive.tar.gz") {
+		t.Fatalf("rejected attestation: exit %d\n%s", code, out)
+	}
+
+	out, code = runDash(t, body, []string{"PATH=" + t.TempDir(), "AGENT_MANAGER_VERIFY_ATTESTATION=yes"})
+	if code != 1 || !strings.Contains(out, "error: AGENT_MANAGER_VERIFY_ATTESTATION is set but gh is not installed") {
+		t.Fatalf("missing gh: exit %d\n%s", code, out)
+	}
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
 func TestHintShowsOneLineForScriptRecipes(t *testing.T) {
 	for _, tool := range []string{"gemini", "cmd", "opencode"} {
 		got := hint("linux", tool)

@@ -72,10 +72,12 @@ verify_checksum() {
 # Opt-in. gh uses one exit status for a rejected attestation, a missing
 # login, and a network error. Unset, the install does not need gh.
 # GH_PROMPT_DISABLED keeps a missing login from waiting on a prompt.
+# Any case, so this agrees with install.ps1: its -match folds case, and a
+# set flag must not skip the check on only one of the scripts.
 verify_attestation() {
 	file=$1
 	case ${AGENT_MANAGER_VERIFY_ATTESTATION:-} in
-	1 | y | yes | true) ;;
+	1 | [yY] | [yY][eE][sS] | [tT][rR][uU][eE]) ;;
 	*) return 0 ;;
 	esac
 	command -v gh >/dev/null 2>&1 || err "AGENT_MANAGER_VERIFY_ATTESTATION is set but gh is not installed"

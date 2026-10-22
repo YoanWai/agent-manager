@@ -186,7 +186,9 @@ func TestDetectScoopManager(t *testing.T) {
 		{label: "other package", path: `C:\Users\Jane\scoop\apps\another-app\current\agent-manager.exe`},
 		{label: "package prefix", path: `C:\Users\Jane\scoop\apps\agent-manager-copy\current\agent-manager.exe`},
 		{label: "root prefix", key: "SCOOP", root: `D:\Tools`, path: `D:\Tools-copy\apps\agent-manager\current\agent-manager.exe`},
+		{label: "directory suffix", path: `C:\Users\Jane\not-scoop\apps\agent-manager\current\agent-manager.exe`},
 		{label: "manual install", path: `C:\Users\Jane\AppData\Local\Programs\agent-manager\agent-manager.exe`},
+		{label: "manual install beside a custom root", key: "SCOOP", root: `D:\Tools`, path: `C:\Users\Jane\AppData\Local\Programs\agent-manager\agent-manager.exe`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.label, func(t *testing.T) {
@@ -229,6 +231,28 @@ func TestDetectScoopManagerFollowsSymlink(t *testing.T) {
 	manager := DetectManager(filepath.Join(link, "agent-manager.exe"))
 	if manager.Name != "Scoop" || manager.Advice == "" || manager.Delegated() {
 		t.Fatalf("symlink into Scoop got %+v", manager)
+	}
+}
+
+func TestDetectScoopCustomRootFollowsSymlink(t *testing.T) {
+	stubSourceSeams(t, nil, false)
+	root := filepath.Join(t.TempDir(), "My Tools")
+	t.Setenv("SCOOP", root)
+	t.Setenv("SCOOP_GLOBAL", "")
+	version := filepath.Join(root, "apps", "agent-manager", "0.43.0")
+	if err := os.MkdirAll(version, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "apps", "agent-manager", "current")
+	if err := os.Symlink(version, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(version, "agent-manager.exe"), []byte("Scoop build"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manager := DetectManager(filepath.Join(link, "agent-manager.exe"))
+	if manager.Name != "Scoop" || manager.Advice == "" || manager.Delegated() {
+		t.Fatalf("custom Scoop root symlink got %+v", manager)
 	}
 }
 

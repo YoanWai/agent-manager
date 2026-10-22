@@ -173,7 +173,7 @@ gh attestation verify <archive> --repo YoanWai/agent-manager
 
 `<archive>` is the file you downloaded, such as `agent-manager_0.43.0_linux_amd64.tar.gz`. The same command checks `install.ps1` or `install.sh` once that release attaches them.
 
-The install scripts run this check only when `AGENT_MANAGER_VERIFY_ATTESTATION=1` (also `y`, `yes`, or `true`). They stop if the command fails, and they skip it when the variable is unset, including on a machine with no `gh`. `gh` uses one exit status for a rejected attestation, a missing login, and a network error. The script treats any failure as fatal when the variable is set, because guessing from the error text would be wrong. The check can be queried once the release workflow's attest step has finished.
+The install scripts run this check only when `AGENT_MANAGER_VERIFY_ATTESTATION=1` (also `y`, `yes`, or `true`, in any case). They stop if the command fails, and they skip it when the variable is unset, including on a machine with no `gh`. `gh` uses one exit status for a rejected attestation, a missing login, and a network error. The script treats any failure as fatal when the variable is set, because guessing from the error text would be wrong. The check can be queried once the release workflow's attest step has finished.
 
 ## Updating
 
@@ -193,5 +193,7 @@ curl -fsSL -o install.sh https://github.com/YoanWai/agent-manager/releases/lates
 mise upgrade --bump ubi:YoanWai/agent-manager                                             # mise
 go install github.com/YoanWai/agent-manager@latest                                        # Go
 ```
+
+The install script line downloads the release's `install.sh`. That asset is on the release that first attaches the scripts. Until that tag exists, the file to read is `https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.sh`.
 
 Later, `agent-manager update` brings the binary to the newest release without re-running any of these: it hands the update to the package manager that installed it, or downloads and swaps the binary itself.

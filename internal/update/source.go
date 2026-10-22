@@ -59,12 +59,26 @@ func DetectManager(execPath string) Manager {
 
 func scoopManaged(path string) bool {
 	path = strings.ToLower(strings.ReplaceAll(path, `\`, "/"))
-	if strings.Contains(path, "/scoop/apps/agent-manager/") {
+	if scoopLayout(path) {
 		return true
 	}
 	for _, key := range []string{"SCOOP", "SCOOP_GLOBAL"} {
-		root := strings.ToLower(strings.ReplaceAll(os.Getenv(key), `\`, "/"))
-		if root != "" && strings.HasPrefix(path, strings.TrimRight(root, "/")+"/apps/agent-manager/") {
+		root := strings.TrimRight(strings.ToLower(strings.ReplaceAll(os.Getenv(key), `\`, "/")), "/")
+		if root != "" && strings.HasPrefix(path, root+"/apps/agent-manager/") {
+			return true
+		}
+	}
+	return false
+}
+
+// scoopLayout matches Scoop's default tree: a directory named scoop, then
+// apps, then agent-manager. The name has to be the whole segment. A
+// directory such as not-scoop is a normal install, and the in-place
+// updater still replaces that binary.
+func scoopLayout(path string) bool {
+	parts := strings.Split(path, "/")
+	for i := 0; i+3 < len(parts); i++ {
+		if parts[i] == "scoop" && parts[i+1] == "apps" && parts[i+2] == "agent-manager" {
 			return true
 		}
 	}
