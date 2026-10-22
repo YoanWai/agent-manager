@@ -1,5 +1,29 @@
 [
   {
+    "id": "v0430-ssh-sessions",
+    "banner": "Sessions on your other machines",
+    "title": "v0.43.0: sessions on your other machines",
+    "body": [
+      "Press C and another Linux or macOS machine's sessions show up in this list.",
+      "Saved prompts and Cursor are in this release too.",
+      "Press Enter for the full v0.43.0 release notes."
+    ],
+    "url": "https://github.com/YoanWai/agent-manager/releases/tag/v0.43.0",
+    "max_version": "0.43.0"
+  },
+  {
+    "id": "v0420-windows-native",
+    "banner": "Windows runs natively",
+    "title": "v0.42.0: Windows runs natively",
+    "body": [
+      "Agent Manager now runs on Windows itself, on psmux 3.4 or newer with PowerShell 7.3 or newer.",
+      "On native Windows, Command Code stays on WSL2.",
+      "Press Enter for the full v0.42.0 release notes."
+    ],
+    "url": "https://github.com/YoanWai/agent-manager/releases/tag/v0.42.0",
+    "max_version": "0.42.0"
+  },
+  {
     "id": "v0400-model-reasoning-pickers",
     "banner": "Model + reasoning pickers are here!",
     "title": "v0.40.0: model and reasoning pickers are here!",
@@ -22,22 +46,6 @@
     ],
     "url": "https://github.com/YoanWai/agent-manager/releases/tag/v0.40.0",
     "max_version": "0.40.0"
-  },
-  {
-    "id": "tip-quick-prompt-spawns-agents",
-    "banner": "Quick tip: space on a group starts a new agent",
-    "title": "Quick tip: space on a group starts a new agent",
-    "body": [
-      "I've noticed some people miss this one.",
-      "Put the cursor on root or a group, press space, type the prompt, enter.",
-      "A new agent spawns there, no form to fill, and names itself from the task. / commands work too.",
-      "tab picks the CLI, shift+tab turns its own git worktree on or off.",
-      "The bar stays open for the next prompt. Settings (s), after quick send, can close it instead."
-    ],
-    "url": "https://github.com/YoanWai/agent-manager/blob/main/docs/usage.md#quick-prompt-mode",
-    "min_version": "0.16.0",
-    "max_version": "0.39.0",
-    "expires_at": "2026-10-08T09:00:00Z"
   },
   {
     "id": "v0380-mouse-support",

@@ -6,11 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
@@ -49,8 +47,8 @@ func FollowTelemetry(configDir string, args []string) error {
 	if err != nil {
 		return fmt.Errorf("%s is not a pid", hooks.EnvAgentPID)
 	}
-	group, err := syscall.Getpgid(agent)
-	if errors.Is(err, syscall.ESRCH) {
+	alive, gone, err := agentLiveness(agent)
+	if gone {
 		return nil
 	}
 	if err != nil {
@@ -62,7 +60,7 @@ func FollowTelemetry(configDir string, args []string) error {
 		return err
 	}
 	defer st.Close()
-	return followTelemetry(st, row, *file, launch, agent, telemetryPoll, func(int) bool { return groupAlive(group) })
+	return followTelemetry(st, row, *file, launch, agent, telemetryPoll, alive)
 }
 
 func followTelemetry(st *store.Store, row, file string, launch int64, agent int, every time.Duration, alive func(int) bool) error {
@@ -84,31 +82,4 @@ func followTelemetry(st *store.Store, row, file string, launch int64, agent int,
 		}
 		time.Sleep(every)
 	}
-}
-
-// groupAlive reports whether any process but this follower is left in the
-// agent's process group. Gemini logs from a child it relaunches itself in,
-// which outlives the agent's own pid when that is killed alone.
-func groupAlive(group int) bool {
-	ps := exec.Command("ps", "-axo", "pid=,pgid=,stat=")
-	// ps would otherwise count itself, started in this follower's group.
-	ps.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	out, err := ps.Output()
-	if err != nil {
-		// Following on is harmless; stopping would leave the file to grow.
-		return true
-	}
-	self := os.Getpid()
-	for line := range strings.SplitSeq(string(out), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) != 3 || strings.HasPrefix(fields[2], "Z") {
-			continue
-		}
-		pid, pidErr := strconv.Atoi(fields[0])
-		pgid, pgidErr := strconv.Atoi(fields[1])
-		if pidErr == nil && pgidErr == nil && pgid == group && pid != self {
-			return true
-		}
-	}
-	return false
 }

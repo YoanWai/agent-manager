@@ -22,7 +22,7 @@ type fakeCommands struct {
 
 func swapSeams(t *testing.T, fake *fakeCommands) {
 	t.Helper()
-	oldLookPath, oldRun, oldGoos, oldProc := lookPath, runCommand, goos, procVersion
+	oldLookPath, oldRun, oldGoos, oldProc, oldMux := lookPath, runCommand, goos, procVersion, muxVersion
 	lookPath = func(string) (string, error) { return "/usr/bin/gh", fake.ghPath }
 	runCommand = func(name string, args ...string) (string, error) {
 		line := strings.Join(append([]string{name}, args...), " ")
@@ -35,18 +35,25 @@ func swapSeams(t *testing.T, fake *fakeCommands) {
 		}
 		return "", errors.New("no such command: " + line)
 	}
+	muxVersion = func() (string, error) {
+		if err, failed := fake.failing["mux version"]; failed {
+			return "", err
+		}
+		return "tmux 3.5a", nil
+	}
 	goos = "darwin"
 	procVersion = filepath.Join(t.TempDir(), "absent")
-	t.Cleanup(func() { lookPath, runCommand, goos, procVersion = oldLookPath, oldRun, oldGoos, oldProc })
+	t.Cleanup(func() {
+		lookPath, runCommand, goos, procVersion, muxVersion = oldLookPath, oldRun, oldGoos, oldProc, oldMux
+	})
 }
 
 func loggedIn() *fakeCommands {
 	return &fakeCommands{
 		answers: map[string]string{
-			"tmux -V":                 "tmux 3.5a",
 			"claude --version":        "2.4.1 (Claude Code)\nextra line",
 			"gh api user --jq .login": "yoan",
-			"gh issue create --repo " + repo + " --title Space lands in the wrong pane --body " + bugBody() + " --label bug": "https://github.com/" + repo + "/issues/512",
+			"gh issue create --repo " + repo + " --title Space lands in the wrong pane --body " + bugBody(): "https://github.com/" + repo + "/issues/512",
 		},
 		failing: map[string]error{},
 	}
@@ -96,8 +103,8 @@ func TestPreviewComposesTheBugFormAndPostsNothing(t *testing.T) {
 	if preview.Route != RouteGH || preview.Account != "yoan" || preview.Reason != "" {
 		t.Fatalf("route = %q as %q (%q)", preview.Route, preview.Account, preview.Reason)
 	}
-	if preview.Labels[0] != "bug" || preview.Title != "Space lands in the wrong pane" {
-		t.Fatalf("labels %v title %q", preview.Labels, preview.Title)
+	if preview.Title != "Space lands in the wrong pane" {
+		t.Fatalf("title %q", preview.Title)
 	}
 	want := Context{Version: "0.31.0", OS: "macOS", Tmux: "tmux 3.5a", Tool: "Claude Code", ToolVersion: "2.4.1 (Claude Code)"}
 	if preview.Context != want {
@@ -444,6 +451,7 @@ func TestTheOperatingSystemIsSpelledLikeTheFormDropdown(t *testing.T) {
 		{"linux", "", "Linux"},
 		{"linux", wsl, "Windows (WSL2)"},
 		{"freebsd", "", "freebsd"},
+		{"windows", "", "Windows"},
 	} {
 		goos, procVersion = platform.goos, platform.proc
 		if got := operatingSystem(); got != platform.want {
@@ -457,6 +465,7 @@ func TestToolLabelsMatchTheFormDropdown(t *testing.T) {
 		"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode", "grok": "Grok Build",
 		"gemini": "Gemini CLI", "antigravity": "Antigravity CLI", "pi": "Pi", "hermes": "Hermes Agent", "command-code": "Command Code", "muse": "Muse Code",
 		"omp":      "Oh My Pi",
+		"cursor":   "Cursor CLI",
 		"my-agent": "Not tool specific",
 	} {
 		if got := toolLabel(tool); got != want {
@@ -467,20 +476,21 @@ func TestToolLabelsMatchTheFormDropdown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, label := range []string{"Claude Code", "Codex", "OpenCode", "Grok Build", "Gemini CLI", "Antigravity CLI", "Pi", "Hermes Agent", "Command Code", "Not tool specific"} {
-		if !strings.Contains(string(form), "- "+label+"\n") {
+	// A Windows checkout with core.autocrlf holds the form with CRLF endings.
+	options := strings.ReplaceAll(string(form), "\r\n", "\n")
+	for _, label := range []string{"Claude Code", "Codex", "OpenCode", "Grok Build", "Gemini CLI", "Antigravity CLI", "Pi", "Hermes Agent", "Command Code", "Cursor CLI", "Not tool specific"} {
+		if !strings.Contains(options, "- "+label+"\n") {
 			t.Errorf("the bug form's dropdown has no %q option", label)
 		}
 	}
 }
 
 func TestFormatPreviewSaysWhatFilingWouldDoAndHowToConfirm(t *testing.T) {
-	preview := Preview{ID: "3f2a91c4", Kind: Bug, Title: "t", Body: "### What happened\n\nb\n", Labels: []string{"bug"}, Route: RouteGH, Account: "yoan"}
+	preview := Preview{ID: "3f2a91c4", Kind: Bug, Title: "t", Body: "### What happened\n\nb\n", Route: RouteGH, Account: "yoan"}
 	text := FormatPreview(preview, "call again with preview_id 3f2a91c4")
 	for _, want := range []string{
 		"bug report for " + repo + ", not filed yet",
 		"title: t",
-		"labels: bug",
 		"preview id: 3f2a91c4",
 		"### What happened",
 		"through gh as yoan",

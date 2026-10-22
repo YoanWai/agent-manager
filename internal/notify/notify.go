@@ -108,10 +108,12 @@ const (
 
 // Event is one session transition worth telling the user about. ID is the
 // session's store id, which a click hands back so the manager can select
-// that row. Dir is the session's directory and Branch the worktree
-// branch the manager made for it, so two sessions of one name read apart
-// on the banner. Text is what that row quotes for the state: the question
-// a waiting session asks, the prompt a finished one was given.
+// that row. Dir is the session's working directory and Branch the worktree
+// branch the manager made for it. Repo, when set, is the repository that
+// worktree was cut from, which the title names in Dir's place so two
+// sessions of one name read apart. Text is what the row quotes for the
+// state: the question a waiting session asks, the prompt a finished one
+// was given.
 type Event struct {
 	ID      string
 	Session string
@@ -119,7 +121,11 @@ type Event struct {
 	Kind    Kind
 	Dir     string
 	Branch  string
-	Text    string
+	// Repo is the repository a worktree session was cut from. The title
+	// names it in place of Dir, whose folder is the session's own name.
+	// Dir stays the working directory the notify command receives.
+	Repo string
+	Text string
 }
 
 // bodyTextCap bounds the row's line on a banner, which shows about two
@@ -189,8 +195,11 @@ func Notify(event Event) {
 	if !ok {
 		return
 	}
-	subtitle := titleLine(event)
-	body := bodyLine(event.Kind, detail, event.Text)
+	subtitle, body := content(event, detail)
+	deliver(event.ID, subtitle, body, detail)
+}
+
+func deliver(sessionID, subtitle, body string, detail presentation) {
 	terminalBody := body + " — " + subtitle
 	// A terminal that understands OSC 777 turns it into a native
 	// notification wherever the terminal actually is — including at the
@@ -201,7 +210,7 @@ func Notify(event Event) {
 	}
 	switch goos {
 	case "darwin":
-		err := macPost(event.ID, subtitle, body, detail.macSound)
+		err := macPost(sessionID, subtitle, body, detail.macSound)
 		if err == nil {
 			return
 		}
@@ -222,18 +231,33 @@ func Notify(event Event) {
 			}
 			break
 		}
-		if _, err := lookPath("notify-send"); err == nil && notifySend(event.ID, terminalBody, detail) == nil {
+		if _, err := lookPath("notify-send"); err == nil && notifySend(sessionID, terminalBody, detail) == nil {
+			return
+		}
+	case "windows":
+		if windowsToast(subtitle, body, detail.windowsSound) == nil {
 			return
 		}
 	}
 	_ = emitSeq("\a")
 }
 
+// content is the title and text every channel shows for an event, the
+// native banner and the user's command alike.
+func content(event Event, detail presentation) (title, body string) {
+	return titleLine(event), bodyLine(event.Kind, detail, event.Text)
+}
+
 // titleLine names the session, then where it runs, then its tool:
-// "deploy · api · am/fix-login · codex".
+// "deploy · api · am/fix-login · codex". A worktree names the repository
+// it was cut from; the worktree directory itself is the session's name.
 func titleLine(event Event) string {
 	parts := []string{sanitize(event.Session)}
-	if dir := sanitize(filepath.Base(event.Dir)); event.Dir != "" && dir != "" {
+	named := event.Dir
+	if event.Repo != "" {
+		named = event.Repo
+	}
+	if dir := sanitize(filepath.Base(named)); named != "" && dir != "" {
 		parts = append(parts, dir)
 	}
 	for _, part := range []string{sanitize(event.Branch), sanitize(event.Tool)} {

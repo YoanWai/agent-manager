@@ -4,17 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"os/exec"
 	"strconv"
-	"strings"
-
-	"github.com/YoanWai/agent-manager/internal/update"
 )
-
-// piKeepsDefaults is the first pi whose set_model stays in the session.
-// Earlier releases save every model they are set to as the user's default.
-const piKeepsDefaults = "0.84.3"
 
 type piModel struct {
 	ID       string `json:"id"`
@@ -60,19 +51,6 @@ func (c *piClient) call(ctx context.Context, command map[string]any, out any) er
 	}
 }
 
-func readPi(ctx context.Context, command, dir string) (Catalog, error) {
-	if err := checkPiVersion(ctx, command, dir); err != nil {
-		return Catalog{}, err
-	}
-	return readPiRPC(ctx, command, dir)
-}
-
-// readOmp skips pi's version check, which cannot read omp's "omp/18.4.8";
-// omp's set_model already stays in the session.
-func readOmp(ctx context.Context, command, dir string) (Catalog, error) {
-	return readPiRPC(ctx, command, dir)
-}
-
 // readPiRPC sets each model in turn to read its thinking levels.
 func readPiRPC(ctx context.Context, command, dir string) (Catalog, error) {
 	proc, err := start(command, dir, false)
@@ -114,22 +92,4 @@ func readPiRPC(ctx context.Context, command, dir string) (Catalog, error) {
 		})
 	}
 	return cat, nil
-}
-
-func checkPiVersion(ctx context.Context, command, dir string) error {
-	fields := strings.Fields(command)
-	if len(fields) == 0 {
-		return errors.New("empty catalog command")
-	}
-	cmd := exec.CommandContext(ctx, fields[0], "--version")
-	cmd.Dir = dir
-	out, err := cmd.Output()
-	if err != nil {
-		return fmt.Errorf("pi --version: %w", err)
-	}
-	version := strings.TrimSpace(string(out))
-	if !update.VersionWithin(version, piKeepsDefaults, "") {
-		return fmt.Errorf("pi %s saves each model it lists as your default, the list needs pi %s or later", version, piKeepsDefaults)
-	}
-	return nil
 }

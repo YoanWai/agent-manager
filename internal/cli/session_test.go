@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -260,5 +261,103 @@ func TestMessageStatusRefusesANonNumericID(t *testing.T) {
 	err := runMessageStatus(&bytes.Buffer{}, &fakeSessions{}, []string{"seven"}, "cafe0001")
 	if err == nil || !strings.Contains(err.Error(), "agent-manager send prints the id it queued") {
 		t.Fatalf("error = %v, want it to say where the id comes from", err)
+	}
+}
+
+func TestSendFromReachesTheLayerOnlyWhenGiven(t *testing.T) {
+	plain := &fakeSessions{}
+	if err := runSend(&bytes.Buffer{}, plain, []string{"beef1234", "ship it"}, "cafe0001"); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	if plain.from != nil {
+		t.Fatalf("a send without --from went out as %q", *plain.from)
+	}
+
+	out := &bytes.Buffer{}
+	remote := &fakeSessions{}
+	if err := runSend(out, remote, []string{"beef1234", "ship it", "--from", "laptop-agent", "--json"}, ""); err != nil {
+		t.Fatalf("send --from: %v", err)
+	}
+	if remote.from == nil || *remote.from != "laptop-agent" || remote.callerID != "" || remote.targetID != "beef1234" || remote.message != "ship it" {
+		t.Fatalf("send --from reached the layer as from=%v caller=%q target=%q message=%q", remote.from, remote.callerID, remote.targetID, remote.message)
+	}
+	var result sessioncmd.SendResult
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil || result.MessageID != 8 {
+		t.Fatalf("send --from --json = %q (%v)", out.String(), err)
+	}
+
+	// The SSH client puts every flag first and the operands after a bare --,
+	// so a message that starts with a dash stays the message.
+	routed := &fakeSessions{}
+	if err := runSend(&bytes.Buffer{}, routed, []string{"--from=laptop-agent", "--json", "--", "beef1234", "--force it"}, ""); err != nil {
+		t.Fatalf("send --from=X --json -- id text: %v", err)
+	}
+	if routed.from == nil || *routed.from != "laptop-agent" || routed.targetID != "beef1234" || routed.message != "--force it" {
+		t.Fatalf("routed send reached the layer as from=%v target=%q message=%q", routed.from, routed.targetID, routed.message)
+	}
+
+	// An empty name is the layer's to refuse, not a flag to drop silently.
+	blank := &fakeSessions{}
+	if err := runSend(&bytes.Buffer{}, blank, []string{"beef1234", "ship it", "--from="}, ""); err != nil {
+		t.Fatalf("send --from=: %v", err)
+	}
+	if blank.from == nil || *blank.from != "" {
+		t.Fatalf("an empty --from did not reach the layer: %v", blank.from)
+	}
+}
+
+// The SSH client's form: flags first, then the id and the prompt after a
+// bare --, so a prompt that starts with a dash stays the prompt.
+func TestTypeReachesTheLayerWithItsPrompt(t *testing.T) {
+	out := &bytes.Buffer{}
+	fake := &fakeSessions{session: sampleSession()}
+	if err := runType(out, fake, []string{"--json", "--", "beef1234", "--yes"}, ""); err != nil {
+		t.Fatalf("type --json -- id prompt: %v", err)
+	}
+	if fake.callerID != "" || fake.targetID != "beef1234" || fake.message != "--yes" {
+		t.Fatalf("type reached the layer as caller=%q target=%q prompt=%q", fake.callerID, fake.targetID, fake.message)
+	}
+	var typed sessioncmd.Session
+	if err := json.Unmarshal(out.Bytes(), &typed); err != nil || typed.ID != "beef1234" {
+		t.Fatalf("type --json = %q (%v)", out.String(), err)
+	}
+	if err := runType(&bytes.Buffer{}, &fakeSessions{}, []string{"beef1234"}, ""); err == nil {
+		t.Fatal("type without a prompt should print its usage")
+	}
+}
+
+func TestSnapshotPrintsOnlyJSON(t *testing.T) {
+	fake := &fakeSessions{session: sampleSession()}
+	err := runSnapshot(&bytes.Buffer{}, fake, nil, "")
+	if err == nil || err.Error() != "usage: agent-manager "+usageSnapshot {
+		t.Fatalf("snapshot without --json = %v, want the usage", err)
+	}
+	if fake.callCount != 0 {
+		t.Fatal("a refused snapshot should not reach the layer")
+	}
+	out := &bytes.Buffer{}
+	if err := runSnapshot(out, fake, []string{"--json"}, ""); err != nil {
+		t.Fatalf("snapshot --json: %v", err)
+	}
+	var snapshot sessioncmd.Snapshot
+	if err := json.Unmarshal(out.Bytes(), &snapshot); err != nil {
+		t.Fatalf("snapshot --json is not JSON: %v (%q)", err, out.String())
+	}
+	if snapshot.Version != sessioncmd.SnapshotVersion || !snapshot.ManagerAwake || len(snapshot.Sessions) != 1 || fake.callerID != "" {
+		t.Fatalf("snapshot = %+v, caller %q", snapshot, fake.callerID)
+	}
+}
+
+func TestSpawnAcceptsSessionPreset(t *testing.T) {
+	out := &bytes.Buffer{}
+	fake := &fakeSessions{session: sampleSession()}
+	if err := runSpawn(out, fake, []string{"--saved", "project/reviewer", "--prompt", " task "}, "cafe0001"); err != nil {
+		t.Fatalf("spawn with preset: %v", err)
+	}
+	if fake.opts.Preset != "project/reviewer" || fake.opts.Prompt != " task " || fake.opts.Group != nil || fake.opts.Worktree != nil {
+		t.Fatalf("preset options changed: %+v", fake.opts)
+	}
+	if !strings.Contains(usageSpawn, "[--saved <name>]") || !strings.Contains(Help("test", false), "[--saved <name>]") {
+		t.Fatalf("spawn usage omits preset: %s", usageSpawn)
 	}
 }

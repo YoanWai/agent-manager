@@ -24,8 +24,8 @@ type terminalHarness struct {
 
 func newTerminalHarness(t *testing.T) *terminalHarness {
 	t.Helper()
-	if _, err := exec.LookPath("tmux"); err != nil {
-		t.Skip("tmux not installed")
+	if _, err := exec.LookPath(tmux.Binary); err != nil {
+		t.Skip(tmux.Binary + " not installed")
 	}
 	configDir := t.TempDir()
 	driver, err := tmux.NewWithSocket("amtermtest-" + uuid.NewString()[:8])
@@ -86,7 +86,9 @@ func tearDownHarness(t *testing.T, driver *tmux.Driver, st *store.Store) {
 
 func waitForTerminalOutput(t *testing.T, terminals *Terminals, callerID, terminalID, marker string) TerminalScreen {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
+	// A PowerShell pane on a loaded runner can take seconds to echo and run
+	// a line; the marker ends the wait as soon as it shows.
+	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
 		screen, err := terminals.Read(callerID, terminalID)
 		if err == nil && strings.Contains(screen.Output, marker) {
@@ -569,7 +571,7 @@ func TestTerminalHarnessCleanupRemovesSocket(t *testing.T) {
 		socket = newTerminalHarness(t).driver.SocketPath()
 	})
 	if socket == "" {
-		t.Skip("tmux not installed")
+		t.Skip(tmux.Binary + " not installed")
 	}
 	if _, err := os.Stat(socket); !os.IsNotExist(err) {
 		t.Fatalf("socket %q survived harness cleanup: %v", socket, err)

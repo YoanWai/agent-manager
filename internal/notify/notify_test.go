@@ -210,6 +210,7 @@ func TestNotifyTitleNamesTheDirectoryAndBranch(t *testing.T) {
 		title string
 	}{
 		{"dir and branch", Event{Session: "deploy", Tool: "codex", Dir: "/home/me/src/api", Branch: "am/fix-login"}, "deploy · api · am/fix-login · codex"},
+		{"worktree names the repo", Event{Session: "deploy", Tool: "codex", Dir: "/src/api-worktrees/deploy", Repo: "/src/api", Branch: "am/deploy"}, "deploy · api · am/deploy · codex"},
 		{"dir only", Event{Session: "deploy", Tool: "codex", Dir: "/home/me/src/api"}, "deploy · api · codex"},
 		{"no dir", Event{Session: "deploy", Tool: "codex"}, "deploy · codex"},
 		{"root dir", Event{Session: "deploy", Tool: "codex", Dir: "/"}, "deploy · / · codex"},

@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	editorSetting = "editor"
+	EditorSetting = "editor"
 	// configImportSetting marks that dir's config.toml was looked at, so
 	// the file is read once and a key changed since is never overwritten.
 	configImportSetting      = "config_import"
@@ -121,11 +121,11 @@ func keySpecs(binding keybind.Binding) []string {
 // Editor is the command the editor key opens a directory in. Empty leaves
 // the choice to the environment and what is on PATH.
 func (s *Store) Editor() (string, error) {
-	return s.Setting(editorSetting)
+	return s.Setting(EditorSetting)
 }
 
 func (s *Store) SetEditor(line string) error {
-	return s.SetSetting(editorSetting, line)
+	return s.SetSetting(EditorSetting, line)
 }
 
 // ConfigImportError is why the config.toml beside the store could not be
@@ -185,7 +185,7 @@ func legacyRows(dir string) (map[string]string, error) {
 		return rows, nil
 	}
 	if editor := strings.TrimSpace(file.Editor); editor != "" {
-		rows[editorSetting] = editor
+		rows[EditorSetting] = editor
 	}
 	for _, table := range []struct {
 		defaults keybind.Table

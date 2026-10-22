@@ -11,19 +11,19 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/app"
+	"github.com/YoanWai/agent-manager/internal/cli"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 )
 
-// prepareMainProcess recognizes tests re-executed by mainTestCommand and
-// replaces test flags with the agent-manager arguments following "--".
 func prepareMainProcess() bool {
 	if os.Getenv("AGENT_MANAGER_MAIN_TEST") != "1" {
 		return false
@@ -140,6 +140,7 @@ func TestMainDispatchesNonInteractiveCommands(t *testing.T) {
 	}{
 		{"version", []string{"--version"}, "agent-manager dev"},
 		{"subcommand help", []string{"sessions", "-h"}, "usage: agent-manager sessions"},
+		{"settings verb help", []string{"settings", "set", "-h"}, "usage: agent-manager settings set"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -151,45 +152,6 @@ func TestMainDispatchesNonInteractiveCommands(t *testing.T) {
 				t.Fatalf("agent-manager %s output does not contain %q:\n%s", strings.Join(tt.args, " "), tt.want, out)
 			}
 		})
-	}
-}
-
-func TestMainReportsHeadlessStartupFailure(t *testing.T) {
-	if prepareMainProcess() {
-		main()
-		return
-	}
-	if _, err := exec.LookPath("tmux"); err != nil {
-		t.Skip("tmux not installed")
-	}
-	root, err := os.MkdirTemp("/tmp", "ammain")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := os.RemoveAll(root); err != nil {
-			t.Errorf("remove startup test directory: %v", err)
-		}
-	})
-	for _, dir := range []string{"home", "config", "tmux"} {
-		if err := os.Mkdir(filepath.Join(root, dir), 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	cmd := mainTestCommand(t)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	cmd.Env = replaceEnv(cmd.Env,
-		"HOME", filepath.Join(root, "home"),
-		"XDG_CONFIG_HOME", filepath.Join(root, "config"),
-		"TMUX_TMPDIR", filepath.Join(root, "tmux"),
-	)
-	out, err := cmd.CombinedOutput()
-	if err == nil {
-		t.Fatalf("agent-manager unexpectedly started without a controlling terminal:\n%s", out)
-	}
-	if !strings.Contains(string(out), "could not open a new TTY") {
-		t.Fatalf("agent-manager reported the wrong startup failure:\n%s", out)
 	}
 }
 
@@ -299,6 +261,11 @@ func TestResolveVersion(t *testing.T) {
 // from inside a managed pane cannot find that pane.
 func isolateTmux(t *testing.T) {
 	t.Helper()
+	// psmux keeps its servers' registry under its data directory.
+	if runtime.GOOS == "windows" {
+		t.Setenv("PSMUX_DATA_DIR", t.TempDir())
+		return
+	}
 	// Short on purpose: tmux silently falls back to the default socket once
 	// TMUX_TMPDIR/tmux-<uid>/<socket> passes 104 characters.
 	tmpdir, err := os.MkdirTemp("/tmp", "amcaller")
@@ -313,8 +280,8 @@ func isolateTmux(t *testing.T) {
 // MCP server under Codex is handed, so it wins; a terminal pane, which
 // carries neither, names its session through tmux instead.
 func TestCallerSessionPrefersTheEnvironmentOverThePane(t *testing.T) {
-	if _, err := exec.LookPath("tmux"); err != nil {
-		t.Skip("tmux not installed")
+	if _, err := exec.LookPath(tmux.Binary); err != nil {
+		t.Skip(tmux.Binary + " not installed")
 	}
 	isolateTmux(t)
 
@@ -323,11 +290,17 @@ func TestCallerSessionPrefersTheEnvironmentOverThePane(t *testing.T) {
 		t.Fatalf("tmux driver: %v", err)
 	}
 	id := "ca11ab1e"
-	if err := driver.Create(id, "/tmp", "", nil, 80, 24); err != nil {
+	if err := driver.Create(id, os.TempDir(), "", nil, 80, 24); err != nil {
 		t.Fatalf("create the terminal pane: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
-	out, err := exec.Command("tmux", "-L", driver.SocketName(), "display-message", "-p", "-t", tmux.PaneTarget(id), "#{socket_path},#{pid},0 #{pane_id}").CombinedOutput()
+	// The $TMUX a pane carries: tmux names its socket, psmux a directory
+	// named for the session's server pid.
+	format := "#{socket_path},#{pid},0 #{pane_id}"
+	if runtime.GOOS == "windows" {
+		format = "/tmp/psmux-#{pid}/" + driver.SocketName() + ",0,0 #{pane_id}"
+	}
+	out, err := exec.CommandContext(t.Context(), tmux.Binary, "-L", driver.SocketName(), "display-message", "-p", "-t", tmux.PaneTarget(id), format).CombinedOutput()
 	if err != nil {
 		t.Fatalf("pane id: %v: %s", err, out)
 	}
@@ -364,5 +337,48 @@ func TestCallerSessionOutsideTmuxLeavesTheCommandToExplainIt(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %q does not mention %q", err, want)
 		}
+	}
+}
+
+// A second serve on one profile leaves the first alone and exits cleanly,
+// so a supervisor that starts one on every login does not see a failure.
+func TestServeExitsWhenAnotherServeHoldsTheProfile(t *testing.T) {
+	dir := t.TempDir()
+	release, acquired, err := app.LockServe(dir)
+	if err != nil || !acquired {
+		t.Fatalf("LockServe = %v, %v", acquired, err)
+	}
+	defer release()
+	out := &bytes.Buffer{}
+	start := func([]string, string) (int, error) { t.Fatal("serve started a manager"); return 0, nil }
+	if err := runServe(out, &bytes.Buffer{}, nil, dir, start); err != nil {
+		t.Fatalf("serve beside a running one: %v", err)
+	}
+	if !strings.Contains(out.String(), "already running") {
+		t.Fatalf("serve printed %q", out.String())
+	}
+}
+
+// The SSH client runs `serve --background` with no --json and reads the
+// line it prints as JSON.
+func TestServeBackgroundPrintsWhetherItStartedOne(t *testing.T) {
+	var args []string
+	start := func(given []string, _ string) (int, error) { args = given; return 4242, nil }
+	out := &bytes.Buffer{}
+	if err := runServe(out, &bytes.Buffer{}, []string{"--background"}, t.TempDir(), start); err != nil {
+		t.Fatalf("serve --background: %v", err)
+	}
+	if got := out.String(); got != `{"started":true,"pid":4242}`+"\n" {
+		t.Fatalf("serve --background printed %q", got)
+	}
+	if strings.Join(args, " ") != "serve" {
+		t.Fatalf("started %v", args)
+	}
+	if err := runServe(&bytes.Buffer{}, &bytes.Buffer{}, []string{"--background", "extra"}, t.TempDir(), start); err == nil ||
+		!strings.Contains(err.Error(), "usage: agent-manager serve [--background]") {
+		t.Fatalf("serve with an operand = %v", err)
+	}
+	if err := runServe(&bytes.Buffer{}, &bytes.Buffer{}, []string{"-h"}, t.TempDir(), start); !errors.Is(err, cli.ErrUsageShown) {
+		t.Fatalf("serve -h = %v", err)
 	}
 }

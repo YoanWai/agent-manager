@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/YoanWai/agent-manager/internal/deps"
 )
 
 func TestCheckInstalledAcceptsPresentBinary(t *testing.T) {
@@ -52,7 +54,7 @@ func TestCheckInstalledNamesOfficialInstaller(t *testing.T) {
 	if missing.Binary != "claude" {
 		t.Fatalf("binary = %q", missing.Binary)
 	}
-	if !strings.Contains(err.Error(), "claude.ai/install.sh") {
+	if official := deps.Command("claude"); official == "" || !strings.Contains(err.Error(), official) {
 		t.Fatalf("error = %q", err)
 	}
 }
@@ -114,7 +116,7 @@ func TestCheckInstalledUnderWSLRejectsAWindowsOnlyInstall(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("builds a Unix PATH")
 	}
-	for _, tool := range []string{"claude", "codex", "opencode", "grok", "gemini", "agy", "hermes", "pi", "cmd", "muse", "omp"} {
+	for _, tool := range []string{"claude", "codex", "opencode", "grok", "gemini", "agy", "hermes", "pi", "cmd", "muse", "omp", "cursor-agent"} {
 		t.Run(tool, func(t *testing.T) {
 			windows, path := installBinary(t, tool)
 			stubWSL(t, windows)

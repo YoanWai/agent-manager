@@ -1,9 +1,11 @@
 package launch
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -14,6 +16,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/mcpreg"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/testenv"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 )
 
@@ -116,9 +119,6 @@ func TestAssembleNotesCoordinationOnlyForToolsWithoutMCP(t *testing.T) {
 			t.Fatalf("command-code registers MCP on spawn, so it must not get the subcommand note, got %q", commandCode.Command)
 		}
 
-		// A slash command carries neither, so both queue, and the order is what
-		// the agent reads: the directive ends on "Then continue.", and the note
-		// is what it continues into.
 		deferred := Assemble("pi", noClient, "/compact the notes", true, mode.proactive)
 		if len(deferred.PendingInputs) != 2 ||
 			deferred.PendingInputs[0] != DeferredRenameDirective || deferred.PendingInputs[1] != mode.note {
@@ -168,9 +168,15 @@ func TestReviveCommandResumesTheConversationItHeld(t *testing.T) {
 // semicolon ends the resume command and starts whatever follows.
 func TestReviveCommandQuotesAnIDThatSpellsAnotherCommand(t *testing.T) {
 	tool := config.Tool{ResumeByIDCommand: "codex resume {id}"}
+	// A POSIX single-quoted string escapes a quote by closing, escaping and
+	// reopening; a PowerShell one escapes it by doubling.
+	closingQuote := `codex resume 'abc'\''; touch pwned; echo '\'''`
+	if runtime.GOOS == "windows" {
+		closingQuote = `codex resume 'abc''; touch pwned; echo '''`
+	}
 	for _, tc := range []struct{ name, id, want string }{
 		{"a command after a semicolon", `abc; touch pwned`, `codex resume 'abc; touch pwned'`},
-		{"an id closing the quote itself", `abc'; touch pwned; echo '`, `codex resume 'abc'\''; touch pwned; echo '\'''`},
+		{"an id closing the quote itself", `abc'; touch pwned; echo '`, closingQuote},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := ReviveCommand(tool, tc.id); got != tc.want {
@@ -183,6 +189,9 @@ func TestReviveCommandQuotesAnIDThatSpellsAnotherCommand(t *testing.T) {
 // The quoting has to hold against a real shell, not just against a string
 // comparison: the revive command reaches one through tmux.
 func TestReviveCommandKeepsACapturedIDOutOfTheShell(t *testing.T) {
+	// The fixture leans on POSIX echo printing its arguments on one line and
+	// on touch; PowerShell's echo prints one argument per line.
+	testenv.SkipPOSIXShell(t)
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux not installed")
 	}
@@ -258,15 +267,44 @@ func TestEnvironmentCarriesSessionIDAndHooks(t *testing.T) {
 
 // agentLaunch is the line a row's first launch runs its agent with.
 func agentLaunch(manager *hooks.Manager, command string) string {
+	if !tracksConversations {
+		return command
+	}
 	agentFile := manager.AgentFile("abcd1234")
 	return "sh -c " + tmux.ShellQuote("export "+hooks.EnvAgentPID+"=$$; "+conversation.RecordCommand(agentFile, 0)+"; exec "+command) + "; " + conversation.EndedCommand(agentFile)
+}
+
+// skipUntracked skips a test of the conversation wiring a Windows launch
+// leaves out.
+func skipUntracked(t *testing.T) {
+	t.Helper()
+	if !tracksConversations {
+		t.Skip("this platform's launches wire no conversation report")
+	}
 }
 
 // The agent replaces the shell that exported and recorded the pid, so it
 // runs under that pid whatever shell the line is typed into, the shell the
 // line ran in marks the record once the agent has quit, and a shell-only
 // launch stays a plain shell.
+func TestEnvironmentRefusesACLIOlderThanItsMinimum(t *testing.T) {
+	testenv.SkipPOSIXShell(t)
+	cli := filepath.Join(t.TempDir(), "old-cli")
+	if err := os.WriteFile(cli, []byte("#!/bin/sh\necho 'old-cli 0.1.0'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manager := hooks.NewManager(t.TempDir())
+	tool := config.Tool{Command: cli, MinimumVersion: "9.0.0", MCP: mcpreg.StyleNone}
+
+	_, _, err := Environment(manager, "old", tool, tool.Command, "abcd1234", t.TempDir(), time.Time{})
+	var outdated config.OutdatedToolError
+	if !errors.As(err, &outdated) || outdated.Installed != "0.1.0" || outdated.Minimum != "9.0.0" {
+		t.Fatalf("err = %v, want the launch refused for 0.1.0", err)
+	}
+}
+
 func TestEnvironmentRunsTheAgentUnderThePIDItExports(t *testing.T) {
+	testenv.SkipPOSIXShell(t)
 	manager := hooks.NewManager(t.TempDir())
 	probe := config.Tool{Command: "sh -c 'echo $$ $" + hooks.EnvAgentPID + "'", MCP: mcpreg.StyleNone}
 	command, _, err := Environment(manager, "probe", probe, probe.Command, "abcd1234", t.TempDir(), time.Time{})
@@ -301,6 +339,20 @@ func TestEnvironmentRunsTheAgentUnderThePIDItExports(t *testing.T) {
 	}
 }
 
+// A model a CLI reads from its environment rides on the launch's own
+// environment, beside the session's.
+func TestEnvironmentCarriesTheChoicesEnvironment(t *testing.T) {
+	manager := hooks.NewManager(t.TempDir())
+	tool := config.Tool{Command: "cat", ModelEnv: `PICKED={"model":{model}}`, MCP: mcpreg.StyleNone}.WithChoice(config.Choice{Model: "big"})
+	command, env, err := Environment(manager, "plain", tool, tool.Command, "abcd1234", t.TempDir(), time.Time{})
+	if err != nil {
+		t.Fatalf("Environment: %v", err)
+	}
+	if env["PICKED"] != `{"model":"big"}` || env[hooks.EnvSessionID] != "abcd1234" || command != agentLaunch(manager, "cat") {
+		t.Fatalf("launch = %q %v, want cat with the model in the environment", command, env)
+	}
+}
+
 // The launch the agent is told it belongs to is the one its row is stamped
 // with: 0 for a row's first launch, which leaves agent_launched_at unset.
 func TestEnvironmentNamesTheLaunch(t *testing.T) {
@@ -324,7 +376,9 @@ func TestEnvironmentNamesTheLaunch(t *testing.T) {
 }
 
 func TestEnvironmentWiresTheSessionReport(t *testing.T) {
-	t.Setenv("OPENCODE_TUI_CONFIG", "")
+	skipUntracked(t)
+	t.Setenv("OPENCODE_CLI_CONFIG_CONTENT", "")
+	t.Setenv("OPENCODE_CONFIG_DIR", t.TempDir())
 	manager := hooks.NewManager(t.TempDir())
 
 	pi := config.Tool{Command: "cat", ModelArgs: "--model {model}", SessionReport: "pi", MCP: mcpreg.StyleNone}.WithChoice(config.Choice{Model: "big"})
@@ -332,7 +386,7 @@ func TestEnvironmentWiresTheSessionReport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Environment pi: %v", err)
 	}
-	if want := agentLaunch(manager, "cat --model 'big' --session-id abc -e "+tmux.ShellQuote(filepath.Join(manager.Dir(), "track-pi.ts"))); command != want {
+	if want := agentLaunch(manager, "cat --model 'big' --session-id abc -e "+tmux.ShellQuote(filepath.Join(manager.Dir(), "agent-manager-pi.ts"))); command != want {
 		t.Fatalf("pi command = %q, want %q", command, want)
 	}
 
@@ -341,17 +395,18 @@ func TestEnvironmentWiresTheSessionReport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Environment opencode: %v", err)
 	}
-	if command != agentLaunch(manager, "cat") || env["OPENCODE_TUI_CONFIG"] != filepath.Join(manager.Dir(), "track-opencode-tui.json") {
-		t.Fatalf("opencode launch = %q %v, want the TUI config in the environment", command, env)
+	plugin := `{"plugins":["file://` + filepath.ToSlash(filepath.Join(manager.Dir(), "agent-manager-opencode")) + `"]}`
+	if command != agentLaunch(manager, "cat") || env["OPENCODE_CLI_CONFIG_CONTENT"] != plugin {
+		t.Fatalf("opencode launch = %q %v, want the plugin in the environment", command, env)
 	}
 
-	t.Setenv("OPENCODE_TUI_CONFIG", "/users/own/tui.json")
+	t.Setenv("OPENCODE_CLI_CONFIG_CONTENT", `{"plugins":["theirs"]}`)
 	_, env, err = Environment(manager, "opencode", opencode, opencode.Command, "abcd1234", t.TempDir(), time.Time{})
 	if err != nil {
 		t.Fatalf("Environment opencode: %v", err)
 	}
-	if _, set := env["OPENCODE_TUI_CONFIG"]; set {
-		t.Fatalf("a user's own OPENCODE_TUI_CONFIG must stay theirs, got %v", env)
+	if want := strings.Replace(plugin, `["`, `["theirs","`, 1); env["OPENCODE_CLI_CONFIG_CONTENT"] != want {
+		t.Fatalf("a user's own plugins must ride along, got %v", env)
 	}
 }
 
@@ -369,8 +424,9 @@ func TestEnvironmentReportsClaudeConversationsThroughItsSettings(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read settings: %v", err)
 		}
-		if got := strings.Contains(string(raw), " track-conversation --tool claude --key session_id"); got != tc.want {
-			t.Fatalf("session_report %q: settings report the conversation = %v, want %v:\n%s", tc.report, got, tc.want, raw)
+		want := tc.want && tracksConversations
+		if got := strings.Contains(string(raw), " track-conversation --tool claude --key session_id"); got != want {
+			t.Fatalf("session_report %q: settings report the conversation = %v, want %v:\n%s", tc.report, got, want, raw)
 		}
 		if !strings.Contains(string(raw), `"`+hooks.EnvLaunch+`": "5000000000"`) {
 			t.Fatalf("settings do not carry the launch:\n%s", raw)
@@ -383,6 +439,8 @@ func TestEnvironmentSetsGrokTerminalTheme(t *testing.T) {
 		t.Run(source, func(t *testing.T) {
 			home := t.TempDir()
 			t.Setenv("HOME", home)
+			// os.UserHomeDir reads USERPROFILE on Windows.
+			t.Setenv("USERPROFILE", home)
 			t.Setenv("GROK_HOME", "")
 			dir := filepath.Join(home, ".grok")
 			if source == "GROK_HOME" {

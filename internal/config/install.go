@@ -44,6 +44,9 @@ func CheckInstalled(command string) error {
 		}
 		return MissingToolError{Binary: binary}
 	}
+	if err := checkBatchShim(binary, path); err != nil {
+		return err
+	}
 	// A command naming a path asked for that exact file, wherever it lives.
 	if strings.ContainsRune(binary, filepath.Separator) {
 		return nil

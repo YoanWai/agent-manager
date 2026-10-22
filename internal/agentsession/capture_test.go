@@ -3,8 +3,10 @@ package agentsession
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -96,9 +98,24 @@ func writeFile(t *testing.T, path, content string, modTime time.Time) {
 	}
 }
 
+// setHome points os.UserHomeDir at dir: it reads HOME on Unix and
+// USERPROFILE on Windows.
+func setHome(t *testing.T, dir string) {
+	t.Helper()
+	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
+}
+
+// jsonString encodes s as a JSON string literal, so a Windows cwd's
+// backslashes survive in a hand-built record.
+func jsonString(s string) string {
+	data, _ := json.Marshal(s)
+	return string(data)
+}
+
 func codexRollout(sessionID, cwd string) string {
 	return `{"timestamp":"2026-07-18T14:36:08.127Z","type":"session_meta","payload":{"session_id":"` +
-		sessionID + `","cwd":"` + cwd + `"}}` + "\n" +
+		sessionID + `","cwd":` + jsonString(cwd) + `}}` + "\n" +
 		`{"timestamp":"2026-07-18T14:36:09Z","type":"event_msg","payload":{}}` + "\n"
 }
 
@@ -148,8 +165,8 @@ func TestCaptureCodexNoMatch(t *testing.T) {
 }
 
 func commandCodeSession(sessionID, cwd string) string {
-	return `{"type":"session","id":"` + sessionID + `","cwd":"` + cwd +
-		`","timestamp":"2026-08-22T19:22:37.338Z","version":3}` + "\n" +
+	return `{"type":"session","id":"` + sessionID + `","cwd":` + jsonString(cwd) +
+		`,"timestamp":"2026-08-22T19:22:37.338Z","version":3}` + "\n" +
 		`{"role":"user","content":[{"type":"text","text":"hi"}]}` + "\n"
 }
 
@@ -238,32 +255,8 @@ func TestCaptureCommandCodeSkipsMalformedTranscripts(t *testing.T) {
 	}
 }
 
-type ocMeta struct {
-	dir     string
-	created time.Time
-	updated time.Time
-}
-
-// stubOpencode replaces the opencode CLI seams with in-memory data for the
-// duration of a test and returns a restore function.
-func stubOpencode(t *testing.T, ids []string, metas map[string]ocMeta) {
-	t.Helper()
-	listSaved, metaSaved := opencodeListIDs, opencodeSessionMeta
-	opencodeListIDs = func(string) ([]string, bool) { return ids, true }
-	opencodeSessionMeta = func(_, id string) (string, time.Time, time.Time, bool) {
-		m, ok := metas[id]
-		// A conversation never reopened keeps its creation time as its
-		// update time, so capture tests need no updated field.
-		if m.updated.IsZero() {
-			m.updated = m.created
-		}
-		return m.dir, m.created, m.updated, ok
-	}
-	t.Cleanup(func() { opencodeListIDs, opencodeSessionMeta = listSaved, metaSaved })
-}
-
 // stubOpencodeJSON substitutes the `session list --format json` output
-// snapshot and recapture read.
+// capture, snapshot and recapture read.
 func stubOpencodeJSON(t *testing.T, entries []opencodeListEntry) {
 	t.Helper()
 	saved := opencodeSessionListJSON
@@ -273,13 +266,13 @@ func stubOpencodeJSON(t *testing.T, entries []opencodeListEntry) {
 
 func TestCaptureOpencodePicksSessionAfterLaunchInCwd(t *testing.T) {
 	launch := time.Now()
-	stubOpencode(t, []string{"ses_ours", "ses_other", "ses_old"}, map[string]ocMeta{
-		// An older conversation in the same cwd predates the launch: not ours.
-		"ses_old": {dir: "/repo", created: launch.Add(-time.Hour)},
-		// A conversation in a different cwd started after launch: not ours.
-		"ses_other": {dir: "/elsewhere", created: launch.Add(time.Second)},
+	stubOpencodeJSON(t, []opencodeListEntry{
 		// Ours: same cwd, created just after launch.
-		"ses_ours": {dir: "/repo", created: launch.Add(2 * time.Second)},
+		{ID: "ses_ours", Directory: "/repo", Created: launch.Add(2 * time.Second).UnixMilli()},
+		// A conversation in a different cwd started after launch: not ours.
+		{ID: "ses_other", Directory: "/elsewhere", Created: launch.Add(time.Second).UnixMilli()},
+		// An older conversation in the same cwd predates the launch: not ours.
+		{ID: "ses_old", Directory: "/repo", Created: launch.Add(-time.Hour).UnixMilli()},
 	})
 
 	id, ok := captureOpencode("/repo", launch, map[string]bool{})
@@ -290,9 +283,9 @@ func TestCaptureOpencodePicksSessionAfterLaunchInCwd(t *testing.T) {
 
 func TestCaptureOpencodeSkipsClaimed(t *testing.T) {
 	launch := time.Now()
-	stubOpencode(t, []string{"ses_1", "ses_2"}, map[string]ocMeta{
-		"ses_1": {dir: "/repo", created: launch.Add(time.Second)},
-		"ses_2": {dir: "/repo", created: launch.Add(2 * time.Second)},
+	stubOpencodeJSON(t, []opencodeListEntry{
+		{ID: "ses_2", Directory: "/repo", Created: launch.Add(2 * time.Second).UnixMilli()},
+		{ID: "ses_1", Directory: "/repo", Created: launch.Add(time.Second).UnixMilli()},
 	})
 
 	// ses_1 already belongs to another session, so the earliest unclaimed
@@ -303,12 +296,31 @@ func TestCaptureOpencodeSkipsClaimed(t *testing.T) {
 	}
 }
 
-func TestParseOpencodeExportReadsDirectoryAndTime(t *testing.T) {
-	out := []byte("Exporting session: ses_x\n" +
-		`{"info":{"id":"ses_x","directory":"/repo","time":{"created":1784385368000,"updated":1784388968000}}}`)
-	dir, created, updated, ok := parseOpencodeExport(out)
-	if !ok || dir != "/repo" || created.UnixMilli() != 1784385368000 || updated.UnixMilli() != 1784388968000 {
-		t.Fatalf("got dir=%q created=%v updated=%v ok=%v", dir, created, updated, ok)
+// The id goes on to a command line, so a row whose id is shaped like
+// anything else is never captured.
+func TestCaptureOpencodeSkipsAMalformedID(t *testing.T) {
+	launch := time.Now()
+	stubOpencodeJSON(t, []opencodeListEntry{
+		{ID: "ses_x; rm -rf ~", Directory: "/repo", Created: launch.Add(time.Second).UnixMilli()},
+	})
+	if id, ok := captureOpencode("/repo", launch, map[string]bool{}); ok {
+		t.Fatalf("captured %q from a malformed id", id)
+	}
+}
+
+// A row as OpenCode 2.0.32 prints it, the shape 1.x prints too; 2.x moved
+// `export` under `session` and its directory under info.location, so the
+// list is the one read that both majors answer alike.
+func TestOpencodeListEntryDecodesTheCLIRow(t *testing.T) {
+	row := `[{"id":"ses_eb8192175ffea6gsra76daLse9","title":"Greeting","updated":1792207675880,` +
+		`"created":1792207675035,"projectId":"8a5b962fcf81bd76d3cda282b2b948a94f4c15be","directory":"/tmp/ocproj"}]`
+	var entries []opencodeListEntry
+	if err := json.Unmarshal([]byte(row), &entries); err != nil {
+		t.Fatal(err)
+	}
+	want := opencodeListEntry{ID: "ses_eb8192175ffea6gsra76daLse9", Directory: "/tmp/ocproj", Created: 1792207675035, Updated: 1792207675880}
+	if len(entries) != 1 || entries[0] != want {
+		t.Fatalf("decoded %+v, want %+v", entries, want)
 	}
 }
 
@@ -587,6 +599,9 @@ func TestFileStoresRefuseAnUnreadableConversation(t *testing.T) {
 			if snapshot, ok := store.snapshot(root, cwd); !ok || len(snapshot) != 2 {
 				t.Fatalf("readable snapshot = %v, %v; want both conversations", snapshot, ok)
 			}
+			if runtime.GOOS == "windows" {
+				t.Skip("chmod cannot deny reads on Windows")
+			}
 			if err := os.Chmod(unreadable, 0); err != nil {
 				t.Fatal(err)
 			}
@@ -635,7 +650,7 @@ func TestRecaptureBindsAfterAnEmptySnapshot(t *testing.T) {
 
 func TestRecaptureCommandCodeBindsOnlyWhatOutranTheSnapshot(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setHome(t, home)
 	root := commandCodeRoot()
 	base := time.Now().Add(-time.Hour)
 	writeFile(t, filepath.Join(root, "old-project", "old.jsonl"),
@@ -658,7 +673,7 @@ func TestRecaptureCommandCodeBindsOnlyWhatOutranTheSnapshot(t *testing.T) {
 
 func TestRecaptureCommandCodeRefusesTwoThatOutranTheSnapshot(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setHome(t, home)
 	root := commandCodeRoot()
 	base := time.Now().Add(-time.Hour)
 	writeFile(t, filepath.Join(root, "a", "1.jsonl"),
@@ -681,7 +696,7 @@ func TestRecaptureCommandCodeRefusesTwoThatOutranTheSnapshot(t *testing.T) {
 
 func TestRecaptureGeminiBindsOnlyWhatOutranTheSnapshot(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setHome(t, home)
 	root := geminiRoot()
 	base := time.Now().Add(-time.Hour)
 	oursHash := geminiProjectHash("/repo")
@@ -707,7 +722,7 @@ func TestRecaptureGeminiBindsOnlyWhatOutranTheSnapshot(t *testing.T) {
 
 func TestRecaptureGeminiRefusesTwoThatOutranTheSnapshot(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setHome(t, home)
 	root := geminiRoot()
 	base := time.Now().Add(-time.Hour)
 	hash := geminiProjectHash("/repo")
@@ -898,5 +913,63 @@ func TestSessionFileRefusesStoresWithoutAFile(t *testing.T) {
 	}
 	if !SupportsSessionFile("gemini") {
 		t.Error(`SupportsSessionFile("gemini") = false`)
+	}
+}
+
+func TestSessionIDPatternAcceptsTheShapesStoresUse(t *testing.T) {
+	for _, id := range []string{
+		"019a4b0e-39e1-7261-b801-e64f2d0e97bd",
+		"4b53d997-3d0b-4d89-a5d0-39573e4588f1",
+		"ses_8QbCd3Ef",
+		"ours-uuid",
+	} {
+		if !sessionIDPattern.MatchString(id) {
+			t.Errorf("a real id was refused: %q", id)
+		}
+	}
+	for _, id := range []string{
+		"",
+		"abc; touch pwned",
+		`abc'; touch pwned; echo '`,
+		"abc$(touch pwned)",
+		"abc\ntouch pwned",
+		"../../etc/passwd",
+		"-rf",
+	} {
+		if sessionIDPattern.MatchString(id) {
+			t.Errorf("an id that is not a plain token was accepted: %q", id)
+		}
+	}
+}
+
+// A rollout is a file any process can write, so an id spelling a command
+// must be left alone. The conversation we really launched still has to
+// bind, or one planted file would end id capture for that directory.
+func TestCaptureCodexLeavesAnIDThatIsNotAPlainToken(t *testing.T) {
+	root := t.TempDir()
+	launch := time.Now()
+	writeFile(t, filepath.Join(root, "2026/07/18/rollout-planted.jsonl"),
+		codexRollout(`abc; touch pwned`, "/repo"), launch.Add(time.Second))
+	writeFile(t, filepath.Join(root, "2026/07/18/rollout-ours.jsonl"),
+		codexRollout("ours-uuid", "/repo"), launch.Add(2*time.Second))
+
+	id, ok := captureCodex(root, "/repo", launch, map[string]bool{})
+	if !ok || id != "ours-uuid" {
+		t.Fatalf("got id=%q ok=%v, want ours-uuid true", id, ok)
+	}
+}
+
+func TestCaptureGeminiLeavesAnIDThatIsNotAPlainToken(t *testing.T) {
+	root := t.TempDir()
+	launch := time.Now()
+	hash := geminiProjectHash("/repo")
+	writeFile(t, filepath.Join(root, "proj/chats/session-1-planted.jsonl"),
+		geminiSessionFixture(`abc; touch pwned`, hash), launch.Add(time.Second))
+	writeFile(t, filepath.Join(root, "proj/chats/session-2-ours.jsonl"),
+		geminiSessionFixture("ours-uuid", hash), launch.Add(2*time.Second))
+
+	id, ok := captureGemini(root, "/repo", launch, map[string]bool{})
+	if !ok || id != "ours-uuid" {
+		t.Fatalf("got id=%q ok=%v, want ours-uuid true", id, ok)
 	}
 }

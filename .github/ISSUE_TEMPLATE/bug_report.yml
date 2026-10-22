@@ -1,6 +1,5 @@
 name: Bug report
 description: Something in the manager behaves differently than documented
-labels: ["bug"]
 body:
   - type: markdown
     attributes:
@@ -36,6 +35,7 @@ body:
         - macOS
         - Linux
         - Windows (WSL2)
+        - Windows
 
   - type: input
     id: tmux-version
@@ -61,6 +61,7 @@ body:
         - Command Code
         - Muse Code
         - Oh My Pi
+        - Cursor CLI
         - Not tool specific
 
   - type: input

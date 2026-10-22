@@ -75,7 +75,7 @@ func TestReviewRepoWritesMailbox(t *testing.T) {
 	if err := os.MkdirAll(sub, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	toplevel := gitOutput(t, repo, "rev-parse", "--show-toplevel")
+	toplevel := filepath.FromSlash(gitOutput(t, repo, "rev-parse", "--show-toplevel"))
 
 	configDir := t.TempDir()
 	out := &bytes.Buffer{}
@@ -203,7 +203,7 @@ func TestReviewBaseWritesMailbox(t *testing.T) {
 	repo := initRepo(t)
 	commitFile(t, repo)
 	gitOutput(t, repo, "branch", "feature")
-	toplevel := gitOutput(t, repo, "rev-parse", "--show-toplevel")
+	toplevel := filepath.FromSlash(gitOutput(t, repo, "rev-parse", "--show-toplevel"))
 
 	sub := filepath.Join(repo, "pkg")
 	if err := os.MkdirAll(sub, 0o755); err != nil {
@@ -232,7 +232,7 @@ func TestReviewBaseWritesMailbox(t *testing.T) {
 func TestReviewBaseClear(t *testing.T) {
 	repo := initRepo(t)
 	commitFile(t, repo)
-	toplevel := gitOutput(t, repo, "rev-parse", "--show-toplevel")
+	toplevel := filepath.FromSlash(gitOutput(t, repo, "rev-parse", "--show-toplevel"))
 	t.Chdir(repo)
 
 	configDir := t.TempDir()

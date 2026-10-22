@@ -43,11 +43,14 @@ func (k Key) Glyph() string {
 var namedKeys = []string{"space", "enter", "tab", "backspace", "delete", "up", "down", "left", "right", "home", "end", "pgup", "pgdn"}
 
 // Normalize folds the spellings a terminal has for one key into the one a
-// table stores: a shifted letter is its capital, and the space bar is
-// named rather than typed.
+// table stores: a shifted letter is its capital, the space bar is named
+// rather than typed, and Bubble Tea's "pgdown" becomes the table's "pgdn".
 func Normalize(tea string) string {
 	if tea == " " {
 		return "space"
+	}
+	if tea == "pgdown" {
+		return "pgdn"
 	}
 	if rest, shifted := strings.CutPrefix(tea, "shift+"); shifted && len(rest) == 1 && rest[0] >= 'a' && rest[0] <= 'z' {
 		return strings.ToUpper(rest)
@@ -227,6 +230,7 @@ const (
 	Detach      = "detach"
 	Review      = "review"
 	Editor      = "editor"
+	SavedPrompt = "saved_prompt"
 	TmuxPrefix  = "tmux_prefix"
 	Quit        = "quit"
 	Up          = "up"
@@ -266,6 +270,8 @@ const (
 	Help        = "help"
 )
 
+const NewConnection = "new_connection"
+
 const (
 	ScopeSession = "session"
 	ScopeList    = "list"
@@ -276,6 +282,7 @@ var sessionActions = []Action{
 	{Review, "open the session's diff", keys("ctrl+r")},
 	{Editor, "open its directory", keys("f3")},
 	{TmuxPrefix, "replaces your tmux prefix while attached", Binding{}},
+	{SavedPrompt, "open saved prompts", keys("f4")},
 }
 
 var listActions = []Action{
@@ -290,6 +297,7 @@ var listActions = []Action{
 	{NewSession, "new session", keys("n")},
 	{Terminal, "new terminal tab", keys("T")},
 	{NewGroup, "new group", keys("g")},
+	{NewConnection, "new SSH connection", keys("C")},
 	{Fork, "fork the session", keys("f")},
 	{Prompt, "quick prompt mode", keys("space")},
 	{CopyReply, "copy the session's newest reply to the clipboard", keys("y")},
