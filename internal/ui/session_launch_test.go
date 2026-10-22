@@ -381,6 +381,36 @@ func TestAForkThatStartedWithoutMCPToolsReportsAWarningNotAFailure(t *testing.T)
 	}
 }
 
+// A fork whose child started without the agent-manager tools and then could
+// not be labelled reports both.
+func TestAForkLabelFailureKeepsTheMCPWarning(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+
+	m.applyForkEffect(forkRequest{}, forkEffectResult{
+		launched: store.Session{ID: "child"},
+		warning:  errors.New("MCP registration timed out"),
+	}, errors.New("rename failed"))
+
+	if got := m.errBar.text; !strings.Contains(got, "rename failed") || !strings.Contains(got, "MCP registration timed out") {
+		t.Fatalf("bar = %q, want both the failure and the warning", got)
+	}
+}
+
+// A restart of several sessions that fails partway still tells the user
+// about the one that started without the agent-manager tools.
+func TestARelaunchFailureKeepsTheMCPWarningOfAnEarlierRelaunch(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	request := lifecycleRequest{target: confirmTarget{action: actionRestart}}
+
+	m.applyLifecycleEffect(request, lifecycleEffectResult{warning: errors.New("MCP registration timed out")}, errors.New("second one failed"))
+
+	if got := m.errBar.text; !strings.Contains(got, "second one failed") || !strings.Contains(got, "MCP registration timed out") {
+		t.Fatalf("bar = %q, want both the failure and the warning", got)
+	}
+}
+
 // A batch that fails partway still tells the user about the relaunch that
 // started without the agent-manager tools.
 func TestABatchFailureKeepsTheMCPWarningOfAnEarlierRelaunch(t *testing.T) {

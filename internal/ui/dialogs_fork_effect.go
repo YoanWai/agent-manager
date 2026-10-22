@@ -240,6 +240,9 @@ func (m *Model) applyForkEffect(request forkRequest, result forkEffectResult, er
 		}
 		return m.refreshCmd()
 	}
+	if result.warning != nil {
+		err = fmt.Errorf("%w; %w", err, result.warning)
+	}
 	if !stillOpen {
 		m.reportErr(err.Error())
 		return nil

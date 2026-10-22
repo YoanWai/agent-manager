@@ -294,6 +294,9 @@ func (m *Model) applyLifecycleEffect(request lifecycleRequest, result lifecycleE
 			}
 			return nil
 		}
+		if result.warning != nil {
+			err = fmt.Errorf("%w; %w", err, result.warning)
+		}
 		if target.action == actionRestart || target.action == actionRevive || target.action == actionRestore {
 			retry := request
 			if len(result.failed) > 0 {
