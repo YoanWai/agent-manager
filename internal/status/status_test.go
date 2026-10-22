@@ -471,6 +471,36 @@ func TestCodexRealPanes(t *testing.T) {
 				"› 1. Switch to gpt-6-luna                   Fast and affordable model for easier tasks.\n" +
 				"  2. Keep current model\n  3. Keep current model (never show again)  Hide future rate limit reminders about switching models\n" +
 				"  enter select · esc back", Waiting},
+		{"codex startup hook review (0.163 real capture)", "codex",
+			"  >_ OpenAI Codex (v0.163.0)\n     ~/proj\n\n" +
+				"  Hooks need review\n  2 hooks are new or changed.\n  Hooks can run outside the sandbox after you trust them.\n\n" +
+				"› 1. Review hooks\n  2. Trust all and continue\n  3. Continue without trusting (hooks won't run)\n\n" +
+				"  enter confirm · esc skip", Waiting},
+		{"codex startup update prompt (0.163 source snapshot)", "codex",
+			"  Update available · 0.0.0 → 9.9.9\n  Release notes: https://github.com/openai/codex/releases/latest\n\n" +
+				"› 1. Update now (runs `npm install -g @openai/codex`)                           \n" +
+				"  2. Skip\n  3. Skip until next version\n\n  enter continue · esc skip", Waiting},
+		{"codex resume folder prompt (0.163 real capture)", "codex",
+			"  Working directory · resume\n  Session = latest cwd recorded in the resumed session\n  Current = your current working directory\n\n" +
+				"› 1. Use session directory (/home/dev/other)\n  2. Use current directory (/home/dev/proj)\n" +
+				"  3. Always use session directory\n  4. Always use current directory\n\n" +
+				"  enter continue · esc use session · ^c quit", Waiting},
+		{"codex first-run folder trust (0.163 real capture)", "codex",
+			"  Folder access\n  /home/dev/proj\n\n" +
+				"  Trust this folder? Codex can read, edit, and run files here, subject to your permission settings. Folder settings can run code\n" +
+				"  automatically, even without a model request. Continue only if you trust these files. Your trust decision will be saved.\n\n" +
+				"› 1. Trust and continue\n  2. Quit\n\n  enter continue · esc quit", Waiting},
+		{"codex first-run folder trust with a multi-word label (0.163 source snapshot)", "codex",
+			"  Folder access\n  /workspace/project\n\n" +
+				"  Trust this folder? Codex can read, edit, and run files here,\n  subject to your permission settings.\n\n" +
+				"› 1. Trust and continue\n  2. Quit\n\n  enter continue and create sandbox · esc quit\n\n", Waiting},
+		{"codex daemon confirmation above the app status row (0.163 source snapshot)", "codex",
+			"      Restart background server?\n      Active or queued work in other chats may be interrupted.\n\n" +
+				"    › 1. Cancel\n      2. Restart\n\n      enter select · esc back\n\n\n\n" +
+				"  Service v0.153.0 < Codex CLI v0.154.0 · /daemon", Waiting},
+		{"codex turn whose output prints a picker footer is still working", "codex",
+			"› run the installer\n• Ran ./install.sh\n  └ Choose an option.\n    enter continue · esc skip\n\n" +
+				"• Working (4s • esc to interrupt)\n\n› Ask Codex to do anything\n  gpt-5.1-codex default · /home/dev", Working},
 		{"codex finished on a label with runtime metrics", "codex",
 			"• Final response.\n  02:41 · Local tools: 2 calls (1.2s) • Inference: 1 call (3.4s)\n\n› Ask Codex to do anything\n  gpt-5.1-codex default · /private/tmp/am586/work", Finished},
 		{"codex question on a worked-for label with runtime metrics", "codex",
