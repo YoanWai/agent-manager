@@ -107,6 +107,53 @@ func TestPrintHelpReturnsWriteError(t *testing.T) {
 	}
 }
 
+func TestMainNonInteractiveStartDoesNotNeedMultiplexer(t *testing.T) {
+	if prepareMainProcess() {
+		main()
+		return
+	}
+	empty := t.TempDir()
+	home := t.TempDir()
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "no-args", want: "Usage: agent-manager [command]"},
+		{name: "version", args: []string{"--version"}, want: "agent-manager dev"},
+		{name: "help", args: []string{"--help"}, want: "Usage: agent-manager [command]"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := mainTestCommand(t, tc.args...)
+			cmd.Env = replaceEnv(cmd.Env,
+				"HOME", home,
+				"XDG_CONFIG_HOME", filepath.Join(home, ".config"),
+				"PATH", empty,
+				"Path", empty,
+			)
+			devNull, err := os.Open(os.DevNull)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { devNull.Close() })
+			cmd.Stdin = devNull
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+			if err := cmd.Run(); err != nil {
+				t.Fatalf("exit: %v\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
+			}
+			if !strings.Contains(stdout.String(), tc.want) {
+				t.Fatalf("stdout missing %q:\n%s", tc.want, stdout.String())
+			}
+			if strings.Contains(stderr.String(), "not found") {
+				t.Fatalf("stderr probed a missing tool:\n%s", stderr.String())
+			}
+		})
+	}
+}
+
 func TestMainPrintsHelpWithoutStartingTUI(t *testing.T) {
 	if prepareMainProcess() {
 		main()
