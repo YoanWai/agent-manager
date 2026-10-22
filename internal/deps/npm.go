@@ -132,7 +132,7 @@ install_node() {
   ' "$tmp/SHASUMS256.txt")
   if [ -z "$file" ]; then
     rm -rf "$tmp"
-    printf 'no Node.js build for %s-%s%s\n' "$platform" "$cpu" "$libc" >&2
+    printf 'no Node.js build for %s-%s%s; install nodejs and npm with your package manager, then spawn again\n' "$platform" "$cpu" "$libc" >&2
     return 1
   fi
   curl -fsSL "$base/$file" -o "$tmp/$file" || {

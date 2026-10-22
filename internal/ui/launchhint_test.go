@@ -1038,3 +1038,13 @@ func TestMissingNpmCLIShowsOneLineAndInstallsTheRecipe(t *testing.T) {
 		t.Fatalf("i would run %q, want the npm recipe", fix.script)
 	}
 }
+
+func TestLaunchHintKeepsTheInstallLineOnATenRowTerminal(t *testing.T) {
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 110, 10
+	m.reportLaunchError(config.MissingToolError{Binary: "claude", WindowsPath: `C:\\Users\\someone\\AppData\\Local\\Programs\\claude\\claude.exe`})
+	frame := ansi.Strip(m.launchHintFrame())
+	if strings.Count(frame, "\n")+1 > 10 || !strings.Contains(frame, "install it with") {
+		t.Fatalf("install line clipped away.\n%s", frame)
+	}
+}

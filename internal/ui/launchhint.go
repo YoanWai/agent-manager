@@ -272,7 +272,7 @@ func (m *Model) launchHintFrame() string {
 		lines := strings.Split(body, "\n")
 		limit := max(0, m.layout.height-m.cardChromeRows(hints))
 		if len(lines) > limit {
-			body = strings.Join(lines[:limit], "\n")
+			body = strings.Join(lines[len(lines)-limit:], "\n")
 		}
 	}
 	return m.cardSized(width, title, body, hints)

@@ -326,6 +326,7 @@ dep_install_cmd "tmux notify-send"
 }
 
 func TestDesktopDepsFollowTheSession(t *testing.T) {
+	skipOnWSLHost(t)
 	body := "set -eu\n" + installFuncs(t, "in_wsl", "desktop_deps") + `
 detect_os() { echo linux; }
 missing=
@@ -352,6 +353,7 @@ printf '%s\n' "$missing"
 }
 
 func TestInWSLDoesNotAbort(t *testing.T) {
+	skipOnWSLHost(t)
 	body := "set -eu\n" + installFuncs(t, "in_wsl") + "in_wsl && echo wsl || echo not-wsl\necho survived\n"
 	out, code := runDash(t, body, []string{"PATH=/usr/bin:/bin"})
 	if code != 0 || !strings.Contains(out, "not-wsl") || !strings.Contains(out, "survived") {
@@ -431,6 +433,16 @@ func requireDash(t *testing.T) {
 	t.Helper()
 	if _, err := os.Stat("/bin/dash"); err != nil {
 		t.Skip("/bin/dash is not installed")
+	}
+}
+
+// skipOnWSLHost leaves out the cases whose in_wsl answer the host decides
+// through /proc/version, which no environment variable can hide.
+func skipOnWSLHost(t *testing.T) {
+	t.Helper()
+	version, err := os.ReadFile("/proc/version")
+	if err == nil && strings.Contains(strings.ToLower(string(version)), "microsoft") {
+		t.Skip("this host is WSL, so in_wsl reads it from /proc/version")
 	}
 }
 
