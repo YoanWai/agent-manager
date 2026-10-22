@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
@@ -101,9 +102,7 @@ func (s effectServices) runLifecycle(request lifecycleRequest) (effectResult, er
 					}
 					if err == nil {
 						result.launches = append(result.launches, relaunchedSession{sess.ID, launched})
-						if caveat := launched.Caveat(); caveat != nil && result.warning == nil {
-							result.warning = caveat
-						}
+						result.warning = addCaveat(result.warning, launched.Caveat())
 					}
 				}
 				if err != nil {
@@ -152,6 +151,20 @@ func (s effectServices) runLifecycle(request lifecycleRequest) (effectResult, er
 		}
 	}
 	return result, operationErr
+}
+
+// addCaveat keeps every relaunch's caveat for the one status line. Sessions
+// of one tool that time out in the same batch report the same text, once.
+func addCaveat(warning, caveat error) error {
+	switch {
+	case caveat == nil:
+		return warning
+	case warning == nil:
+		return caveat
+	case strings.Contains(warning.Error(), caveat.Error()):
+		return warning
+	}
+	return fmt.Errorf("%w; %w", warning, caveat)
 }
 
 func (s effectServices) validateLifecycleSelection(target confirmTarget) (confirmTarget, error) {

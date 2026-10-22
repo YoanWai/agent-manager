@@ -53,7 +53,10 @@ func caveat(labelErr error, warning string) error {
 	if warning == "" {
 		return labelErr
 	}
-	return errors.Join(labelErr, errors.New(warning))
+	if labelErr == nil {
+		return errors.New(warning)
+	}
+	return fmt.Errorf("%w; %s", labelErr, warning)
 }
 
 type RelaunchResult struct {

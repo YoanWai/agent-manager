@@ -381,8 +381,6 @@ func TestAForkThatStartedWithoutMCPToolsReportsAWarningNotAFailure(t *testing.T)
 	}
 }
 
-// A fork whose child started without the agent-manager tools and then could
-// not be labelled reports both.
 func TestAForkLabelFailureKeepsTheMCPWarning(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
@@ -397,8 +395,6 @@ func TestAForkLabelFailureKeepsTheMCPWarning(t *testing.T) {
 	}
 }
 
-// A restart of several sessions that fails partway still tells the user
-// about the one that started without the agent-manager tools.
 func TestARelaunchFailureKeepsTheMCPWarningOfAnEarlierRelaunch(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
@@ -411,8 +407,6 @@ func TestARelaunchFailureKeepsTheMCPWarningOfAnEarlierRelaunch(t *testing.T) {
 	}
 }
 
-// A batch that fails partway still tells the user about the relaunch that
-// started without the agent-manager tools.
 func TestABatchFailureKeepsTheMCPWarningOfAnEarlierRelaunch(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
