@@ -176,8 +176,11 @@ func TestReportLaunchErrorOpensHintForOutdatedCLI(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		installer = "@earendil-works/pi-coding-agent"
 	}
+	if !strings.Contains(m.launchHint.fix.text, installer) {
+		t.Fatalf("dialog text %q should name the installer %q", m.launchHint.fix.text, installer)
+	}
 	frame := ansi.Strip(m.launchHint.view(m, m.glyphs()))
-	for _, want := range []string{"pi 0.76.0 is older than 0.84.3", installer, "i update"} {
+	for _, want := range []string{"pi 0.76.0 is older than 0.84.3", "i update"} {
 		if !strings.Contains(strings.Join(strings.Fields(frame), " "), want) {
 			t.Fatalf("dialog should show %q:\n%s", want, frame)
 		}
