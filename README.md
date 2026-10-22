@@ -7,7 +7,7 @@
 
 <p align="center"><b>The fastest developer workflow for every AI coding agent.</b></p>
 
-<p align="center">the local one: a single go binary on top of tmux. no server, no account, nothing in the cloud.</p>
+<p align="center">agent manager is a local terminal app that connects to your existing subscriptions and tools.</p>
 
 <p align="center">
   <a href="https://peerlist.io/yoanwai/project/agent-manager" target="_blank" rel="noopener noreferrer">
