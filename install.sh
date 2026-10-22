@@ -243,7 +243,11 @@ install_deps() {
 	fi
 	# A Homebrew the command just installed is on the child shell's PATH only.
 	for brew in /opt/homebrew/bin/brew /usr/local/bin/brew; do
-		[ -x "$brew" ] && eval "$("$brew" shellenv)" && break
+		[ -x "$brew" ] || continue
+		if shellenv=$("$brew" shellenv); then
+			eval "$shellenv"
+			break
+		fi
 	done
 	remaining=$(missing_deps)
 	if [ -n "$remaining" ]; then

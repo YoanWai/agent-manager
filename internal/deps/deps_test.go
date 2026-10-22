@@ -333,6 +333,7 @@ missing=
 desktop_deps
 printf '%s\n' "$missing"
 `
+	requireDash(t)
 	bin := t.TempDir()
 	if err := os.Symlink("/usr/bin/grep", filepath.Join(bin, "grep")); err != nil {
 		t.Fatal(err)
