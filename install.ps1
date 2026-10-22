@@ -1,7 +1,11 @@
-# Installs agent-manager on Windows:
-#   irm https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.ps1 | iex
+# Installs agent-manager on Windows. Download this file, read it, then:
+#   powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
+# The release copy is:
+#   https://github.com/YoanWai/agent-manager/releases/latest/download/install.ps1
 # AGENT_MANAGER_VERSION pins a release, AGENT_MANAGER_INSTALL_DIR picks the
 # directory (default %LOCALAPPDATA%\Programs\agent-manager).
+# AGENT_MANAGER_VERIFY_ATTESTATION=1 refuses to install unless
+# `gh attestation verify` accepts the archive.
 
 # `irm | iex` runs in the caller's session, so everything lives in a script
 # block that keeps its preferences and variables out of it, and a failure
@@ -62,6 +66,26 @@
 		if (-not $expected) { throw "no checksum published for $file" }
 		$actual = (Get-FileHash -LiteralPath (Join-Path $dir $file) -Algorithm SHA256).Hash
 		if ($actual -ne $expected) { throw "checksum mismatch for $file" }
+	}
+
+	# Opt-in. gh attestation verify uses one exit status for a rejected
+	# attestation, a missing login, and a network error, so this cannot tell
+	# those apart. Unset, the install does not need gh. A prompt would hang
+	# a non-interactive run, and $env: leaks into an irm | iex session.
+	function Assert-Attestation([string]$path) {
+		$flag = [string]$env:AGENT_MANAGER_VERIFY_ATTESTATION
+		if ($flag -notmatch '^(1|y|yes|true)$') { return }
+		if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
+			throw 'AGENT_MANAGER_VERIFY_ATTESTATION is set but gh is not installed'
+		}
+		$previousPrompt = $env:GH_PROMPT_DISABLED
+		$env:GH_PROMPT_DISABLED = '1'
+		try {
+			& gh attestation verify $path --repo $Repo
+			if ($LASTEXITCODE) { throw "attestation verification failed for $path" }
+		} finally {
+			$env:GH_PROMPT_DISABLED = $previousPrompt
+		}
 	}
 
 	# A running manager locks its binary, so a reinstall moves the old one to a
@@ -142,13 +166,20 @@
 	}
 
 	function Invoke-DepInstall([string]$Command) {
-		$run = $Command
-		if ($run -like 'winget *' -and $run -notlike '*--accept-package-agreements*') {
-			$run = "$run --accept-package-agreements --accept-source-agreements"
+		# The dependency lines are fixed winget commands with no quoted spaces.
+		# The call operator passes that array; the script never evaluates a string.
+		$parts = @(-split $Command)
+		if ($parts.Count -lt 1 -or $parts[0] -ne 'winget') {
+			Write-Host "that failed, run it yourself: $Command" -ForegroundColor Yellow
+			return
 		}
-		Write-Host "running: $run"
+		$wingetArgs = @($parts | Select-Object -Skip 1)
+		if ($Command -notlike '*--accept-package-agreements*') {
+			$wingetArgs += @('--accept-package-agreements', '--accept-source-agreements')
+		}
+		Write-Host "running: winget $($wingetArgs -join ' ')"
 		try {
-			Invoke-Expression $run
+			& winget @wingetArgs
 		} catch {
 			Write-Host "that failed, run it yourself: $Command" -ForegroundColor Yellow
 			return
@@ -216,6 +247,7 @@
 		Get-Release "$baseUrl/$archive" (Join-Path $tmp $archive)
 		Get-Release "$baseUrl/checksums.txt" (Join-Path $tmp 'checksums.txt')
 		Assert-Checksum $tmp $archive
+		Assert-Attestation (Join-Path $tmp $archive)
 		$extracted = Join-Path $tmp 'extracted'
 		Expand-Archive -LiteralPath (Join-Path $tmp $archive) -DestinationPath $extracted -Force
 		$source = Join-Path $extracted $Binary

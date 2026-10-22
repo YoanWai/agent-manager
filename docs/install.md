@@ -1,6 +1,6 @@
 # Install
 
-The two quickest routes are in the [README](../README.md#install): Homebrew and the install script. Every other supported route is here.
+The quickest routes are in the [README](../README.md#install): Homebrew, Scoop, and the install script. Every other supported route is here.
 
 ## Dependencies
 
@@ -53,13 +53,45 @@ Download from [Releases](https://github.com/YoanWai/agent-manager/releases) (mac
 
 ## Windows
 
-agent-manager runs natively on Windows on [psmux](https://github.com/psmux/psmux) 3.4.0 or newer, a tmux-compatible multiplexer, with PowerShell as the pane shell. In PowerShell:
+agent-manager runs natively on Windows on [psmux](https://github.com/psmux/psmux) 3.4.0 or newer, a tmux-compatible multiplexer, with PowerShell as the pane shell.
+
+### Scoop
+
+```powershell
+scoop bucket add yoanwai https://github.com/YoanWai/scoop-bucket
+scoop install yoanwai/agent-manager
+```
+
+Installs the version published in [YoanWai/scoop-bucket](https://github.com/YoanWai/scoop-bucket), and Scoop installs psmux from the main bucket. The bucket is updated on its own, so it can lag the latest release. The install script installs the current release.
+
+<!--
+winget is not listed: microsoft/winget-pkgs has no YoanWai.AgentManager
+(manifest PR 453457 is open), and release publishing is PR #782.
+When a release has published the package, add:
+winget install --id YoanWai.AgentManager -e
+-->
+
+### Install script
+
+Download the release copy, read it, then run it. The release attaches `install.ps1` and lists it in `checksums.txt`. That asset is on the release that first attaches the scripts. Until that tag exists, the file to read is `https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.ps1`. That copy is not in `checksums.txt`.
+
+```powershell
+irm https://github.com/YoanWai/agent-manager/releases/latest/download/install.ps1 -OutFile install.ps1
+Unblock-File .\install.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+On a Windows client with no execution policy set, the effective policy is Restricted, so every `.ps1` is refused. `-ExecutionPolicy Bypass` applies to that process only. Where the policy is already RemoteSigned, `Unblock-File` then `.\install.ps1` is enough. RemoteSigned refuses an unsigned script that still has the Mark of the Web. A browser download sets that mark. `irm -OutFile` does not, because Microsoft documents `Invoke-WebRequest` as not marking the Internet zone. `Unblock-File` does nothing when the mark is absent.
+
+The script installs `agent-manager.exe` to `%LOCALAPPDATA%\Programs\agent-manager` (or `$env:AGENT_MANAGER_INSTALL_DIR`), adds that directory to your user `Path`, and offers to install whatever is missing of its dependencies. `AGENT_MANAGER_INSTALL_DEPS=1` answers yes. `AGENT_MANAGER_INSTALL_DEPS=0` skips the prompt. With no terminal it skips the prompt and still leaves the binary installed.
+
+Piping into `iex` leaves nothing to read, and `iex` does not consult the execution policy:
 
 ```powershell
 irm https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.ps1 | iex
 ```
 
-The script installs `agent-manager.exe` to `%LOCALAPPDATA%\Programs\agent-manager` (or `$env:AGENT_MANAGER_INSTALL_DIR`), adds that directory to your user `Path`, and offers to install whatever is missing of its dependencies. `AGENT_MANAGER_INSTALL_DEPS=1` answers yes. `AGENT_MANAGER_INSTALL_DEPS=0` skips the prompt. With no terminal it skips the prompt and still leaves the binary installed.
+On macOS and Linux the same choice is `curl -fsSL -o install.sh https://github.com/YoanWai/agent-manager/releases/latest/download/install.sh` and then `sh install.sh`. Until that asset exists, read `https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.sh`. The short form, with nothing saved to read, is `curl -fsSL https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.sh | sh`.
 
 | Tool | Install |
 | --- | --- |
@@ -77,9 +109,21 @@ Differences from macOS and Linux:
 
 agent-manager also still runs inside [WSL2](https://learn.microsoft.com/windows/wsl/install), on tmux: in a WSL shell, install with the install script, with Homebrew, or grab the Linux binary from Releases. The agent CLIs then belong in the distro too. WSL appends the Windows `PATH` to the distro's, so a CLI installed on the Windows side is visible in a WSL shell, and running it there starts a Windows process or fails without a Linux runtime. A spawn finding only that copy stops on the setup dialog, which names where the Windows copy is and the command that installs the CLI in the distro. The install script skips Linux clipboard and notification packages under WSL. Paste and toasts there go through the Windows host.
 
+## Checking a download
+
+The release workflow attests every digest in `checksums.txt`. That covers the archives, and, from the release that attaches them, `install.ps1` and `install.sh`. `gh` must be logged in, and it has to be a build that provides `gh attestation`. The current upstream release does. An anonymous call stops at `gh auth login`, and the attestation API is rate-limited like the rest of GitHub's API.
+
+```bash
+gh attestation verify <archive> --repo YoanWai/agent-manager
+```
+
+`<archive>` is the file you downloaded, such as `agent-manager_0.43.0_linux_amd64.tar.gz`. The same command checks `install.ps1` or `install.sh` once that release attaches them.
+
+The install scripts run this check only when `AGENT_MANAGER_VERIFY_ATTESTATION=1` (also `y`, `yes`, or `true`). They stop if the command fails, and they skip it when the variable is unset, including on a machine with no `gh`. `gh` uses one exit status for a rejected attestation, a missing login, and a network error. The script treats any failure as fatal when the variable is set, because guessing from the error text would be wrong. The check can be queried once the release workflow's attest step has finished.
+
 ## Updating
 
-The manager checks GitHub Releases every ten minutes and shows a `↑ vX.Y.Z available` badge when a newer version is out. The badge sits in the header. With the header hidden, the same badge sits in the top edge of the frame. Press `u` on the update message (or `enter` on the version row in Settings) and what happens next follows the install. A Homebrew, mise, or AUR install hands the terminal to that package manager's own upgrade command, so its progress and any password prompt behave as they would in a shell. An install-script, `go install`, or manual download is updated in place, by downloading the release and swapping the binary. Either way the manager restarts into the new build with every session still running.
+The manager checks GitHub Releases every ten minutes and shows a `↑ vX.Y.Z available` badge when a newer version is out. The badge sits in the header. With the header hidden, the same badge sits in the top edge of the frame. Press `u` on the update message (or `enter` on the version row in Settings) and what happens next follows the install. A Homebrew, mise, or AUR install hands the terminal to that package manager's own upgrade command, so its progress and any password prompt behave as they would in a shell. An install-script, `go install`, or manual download is updated in place, by downloading the release and swapping the binary. A Scoop install is not recognized, so `u` takes that in-place path; update that copy with `scoop update yoanwai/agent-manager`. Either way the manager restarts into the new build with every session still running.
 
 Two cases update by hand. A pacman-owned install needs an AUR helper (`yay` or `paru`) on PATH, and without one the manager runs nothing and prints the command to use instead: `yay -S agent-manager-bin`. A Nix install lives in the read-only store, so the manager runs nothing and points you at Nix instead, such as `nix profile upgrade agent-manager` or your flake or NixOS config.
 
@@ -88,7 +132,8 @@ The same commands work from a shell:
 ```bash
 brew upgrade agent-manager                                                                # Homebrew formula
 brew upgrade --cask yoanwai/tap/agent-manager                                             # Homebrew cask
-curl -fsSL https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.sh | sh   # Install script
+scoop update yoanwai/agent-manager                                                        # Scoop
+curl -fsSL -o install.sh https://github.com/YoanWai/agent-manager/releases/latest/download/install.sh && sh install.sh
 mise upgrade --bump ubi:YoanWai/agent-manager                                             # mise
 go install github.com/YoanWai/agent-manager@latest                                        # Go
 ```

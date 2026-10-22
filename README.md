@@ -72,21 +72,64 @@ brew install agent-manager
 
 Installs tmux with it if missing, and Homebrew runs on git, so both dependencies are covered. This is the homebrew-core formula, which builds from source. For the prebuilt binary, `brew install --cask yoanwai/tap/agent-manager`.
 
+### Scoop (Windows)
+
+```powershell
+scoop bucket add yoanwai https://github.com/YoanWai/scoop-bucket
+scoop install yoanwai/agent-manager
+```
+
+Installs the version published in that bucket, and Scoop installs psmux with it. The bucket is updated on its own, so it can lag the latest release. Update with `scoop update yoanwai/agent-manager`. The in-app updater does not recognize a Scoop install, so `u` would swap the binary in place. The install script below installs the current release.
+
+<!--
+winget is not listed: microsoft/winget-pkgs has no YoanWai.AgentManager
+(manifest PR 453457 is open), and release publishing is PR #782.
+When a release has published the package, add a winget section here with:
+winget install --id YoanWai.AgentManager -e
+-->
+
 ### Install script (macOS / Linux)
+
+Download the release copy, read it, then run it. The release attaches `install.sh` and lists it in `checksums.txt`. Logged in to `gh`:
+
+```bash
+gh attestation verify install.sh --repo YoanWai/agent-manager
+```
+
+```bash
+curl -fsSL -o install.sh https://github.com/YoanWai/agent-manager/releases/latest/download/install.sh
+sh install.sh
+```
+
+That asset is on the release that first attaches the scripts. Until that tag exists, the file to read is `https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.sh`. That copy is not in `checksums.txt`.
+
+Downloads the latest release for your platform, verifies it against the published checksums, and installs it to `~/.local/bin`. Then it checks for tmux 3.1+ and git. On macOS it offers Homebrew, and offers to install Homebrew first when that is missing. On Linux it offers apt, dnf, pacman, zypper, apk, or Homebrew, and on a desktop it also offers the clipboard and notification packages. It prints the command when you decline. A run with no terminal skips the prompt and still installs the binary. Set `AGENT_MANAGER_INSTALL_DIR` for another directory, `AGENT_MANAGER_VERSION` to pin a version, and `AGENT_MANAGER_INSTALL_DEPS=1` to answer the dependency prompt up front (`=0` to skip it). `AGENT_MANAGER_VERIFY_ATTESTATION=1` refuses the install unless `gh attestation verify` accepts the downloaded archive. Leave it unset to install on a machine without `gh`. `gh` uses one exit status for a rejected attestation, a missing login, and a network error, so the script does not try to tell those apart.
+
+Running it without a file to read first:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.sh | sh
 ```
 
-Downloads the latest release for your platform, verifies it against the published checksums, and installs it to `~/.local/bin`. Then it checks for tmux 3.1+ and git. On macOS it offers Homebrew, and offers to install Homebrew first when that is missing. On Linux it offers apt, dnf, pacman, zypper, apk, or Homebrew, and on a desktop it also offers the clipboard and notification packages. It prints the command when you decline. A run with no terminal skips the prompt and still installs the binary. Set `AGENT_MANAGER_INSTALL_DIR` for another directory, `AGENT_MANAGER_VERSION` to pin a version, and `AGENT_MANAGER_INSTALL_DEPS=1` to answer the dependency prompt up front (`=0` to skip it).
-
 ### Install script (Windows)
+
+Same release asset and the same attestation command, with `install.ps1`. Until that asset exists, read `https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.ps1`.
+
+```powershell
+irm https://github.com/YoanWai/agent-manager/releases/latest/download/install.ps1 -OutFile install.ps1
+Unblock-File .\install.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+On a Windows client with no execution policy set, the effective policy is Restricted, so every `.ps1` is refused. `-ExecutionPolicy Bypass` applies to that process only, after you have read the file. Where the policy is already RemoteSigned, `Unblock-File` then `.\install.ps1` is enough: RemoteSigned refuses an unsigned script that still has the Mark of the Web. A browser download sets that mark. `irm -OutFile` does not (Microsoft documents `Invoke-WebRequest` as not marking the Internet zone); `Unblock-File` does nothing in that case.
+
+Installs the latest release to `%LOCALAPPDATA%\Programs\agent-manager`, adds it to your user `Path`, and offers to install psmux, git, or PowerShell 7 when one is missing. `AGENT_MANAGER_INSTALL_DEPS=1` answers yes. `AGENT_MANAGER_INSTALL_DEPS=0` skips the prompt. With no terminal it skips the prompt and still leaves the binary installed. `AGENT_MANAGER_VERIFY_ATTESTATION` behaves as it does on the shell script.
+
+Piping into `iex` leaves nothing to read, and `iex` does not consult the execution policy:
 
 ```powershell
 irm https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.ps1 | iex
 ```
-
-Installs the latest release to `%LOCALAPPDATA%\Programs\agent-manager`, adds it to your user `Path`, and offers to install psmux, git, or PowerShell 7 when one is missing. `AGENT_MANAGER_INSTALL_DEPS=1` answers yes. `AGENT_MANAGER_INSTALL_DEPS=0` skips the prompt. With no terminal it skips the prompt and still leaves the binary installed.
 
 Arch Linux, mise, `go install`, prebuilt binaries, Windows (native and WSL2), dependencies, and updating: [docs/install.md](docs/install.md).
 
