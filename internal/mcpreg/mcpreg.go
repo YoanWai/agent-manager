@@ -169,7 +169,7 @@ func Apply(style, exe, hooksDir, command string, env map[string]string) (string,
 		}
 		return command, nil
 	case "cursor":
-		if err := ensureCursorRegistered(exe); err != nil {
+		if err := ensureCursorRegistered(ctx, exe); err != nil {
 			return "", err
 		}
 		return command, nil
@@ -318,7 +318,7 @@ func cursorMCPPath() (string, error) {
 	return filepath.Join(home, ".cursor", "mcp.json"), nil
 }
 
-func ensureCursorRegistered(exe string) error {
+func ensureCursorRegistered(ctx context.Context, exe string) error {
 	path, err := cursorMCPPath()
 	if err != nil {
 		return err
@@ -381,7 +381,7 @@ func ensureCursorRegistered(exe string) error {
 		}
 	}
 	// Enable on every launch so a server the user turned off comes back.
-	return enableCursorServer()
+	return enableCursorServer(ctx)
 }
 
 // cursorJSON accepts the comments and trailing commas in Cursor's mcp.json.
@@ -468,8 +468,11 @@ func stripJSONTrailingCommas(data []byte) []byte {
 	return out
 }
 
-func enableCursorServer() error {
-	out, err := exec.Command("cursor-agent", "mcp", "enable", serverName).CombinedOutput()
+func enableCursorServer(ctx context.Context) error {
+	out, err := command{name: "cursor-agent", args: []string{"mcp", "enable", serverName}}.combinedOutput(ctx)
+	if timedOut(err) {
+		return withTool(err, "cursor")
+	}
 	if err != nil {
 		return fmt.Errorf("cursor-agent mcp enable: %w: %s", err, strings.TrimSpace(string(out)))
 	}

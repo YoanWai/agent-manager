@@ -1024,6 +1024,23 @@ func TestApplyNoneLeavesEverything(t *testing.T) {
 	}
 }
 
+// Cursor's enable runs on every launch, not once, so a cursor-agent that
+// never answers would hold every Cursor spawn.
+func TestApplyGivesUpOnACursorEnableThatNeverReturns(t *testing.T) {
+	cursorHome(t)
+	fakeCLI(t, "cursor-agent", "exec sleep 30\n")
+	shortenRegistrationTimeout(t, 300*time.Millisecond)
+
+	start := time.Now()
+	_, err := Apply("cursor", "/opt/bin/agent-manager", t.TempDir(), "cursor-agent", map[string]string{})
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Fatalf("Apply waited %s on a hung enable", elapsed)
+	}
+	if want := "cursor MCP registration did not finish within 300ms"; err == nil || err.Error() != want {
+		t.Fatalf("err = %v, want %q", err, want)
+	}
+}
+
 func TestApplyCursorRefusesAnUnterminatedComment(t *testing.T) {
 	home := cursorHome(t)
 	path := filepath.Join(home, ".cursor", "mcp.json")
@@ -1034,7 +1051,7 @@ func TestApplyCursorRefusesAnUnterminatedComment(t *testing.T) {
 	if err := os.WriteFile(path, before, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	err := ensureCursorRegistered("/opt/agent-manager")
+	err := ensureCursorRegistered(context.Background(), "/opt/agent-manager")
 	if err == nil || !strings.Contains(err.Error(), "never closes") {
 		t.Fatalf("err = %v, want the unterminated comment refused", err)
 	}
