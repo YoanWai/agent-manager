@@ -1,6 +1,9 @@
 package catalog
 
-import "context"
+import (
+	"context"
+	"errors"
+)
 
 // acpOption's choices come flat or in named groups, and ACP allows both.
 type acpOption struct {
@@ -45,7 +48,11 @@ func readACP(ctx context.Context, command, dir string) (Catalog, error) {
 	}
 	defer proc.stop()
 	client := &rpcClient{proc: proc}
-	var initialized struct{}
+	var initialized struct {
+		AuthMethods []struct {
+			ID string `json:"id"`
+		} `json:"authMethods"`
+	}
 	if err := client.call(ctx, "initialize", map[string]any{
 		"protocolVersion":    1,
 		"clientCapabilities": map[string]any{"fs": map[string]bool{"readTextFile": false, "writeTextFile": false}, "terminal": false},
@@ -64,7 +71,17 @@ func readACP(ctx context.Context, command, dir string) (Catalog, error) {
 			} `json:"availableModels"`
 		} `json:"models"`
 	}
-	if err := client.call(ctx, "session/new", map[string]any{"cwd": dir, "mcpServers": []any{}}, &session); err != nil {
+	params := map[string]any{"cwd": dir, "mcpServers": []any{}}
+	err = client.call(ctx, "session/new", params, &session)
+	var authRequired *rpcError
+	if errors.As(err, &authRequired) && authRequired.Code == -32000 && len(initialized.AuthMethods) == 1 {
+		var authenticated struct{}
+		if err := client.call(ctx, "authenticate", map[string]any{"methodId": initialized.AuthMethods[0].ID}, &authenticated); err != nil {
+			return Catalog{}, err
+		}
+		err = client.call(ctx, "session/new", params, &session)
+	}
+	if err != nil {
 		return Catalog{}, err
 	}
 	modelOption, hasModelOption := optionIn(session.ConfigOptions, "model")

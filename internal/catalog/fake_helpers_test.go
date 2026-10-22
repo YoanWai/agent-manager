@@ -190,7 +190,9 @@ func runFake(name string) error {
 		return serveLines(func(request fakeRequest) any {
 			switch request.Method {
 			case "initialize":
-				return result(request, map[string]any{"protocolVersion": 1})
+				return result(request, map[string]any{"protocolVersion": 1, "authMethods": []any{map[string]any{"id": "interactive"}, map[string]any{"id": "cached_token"}}})
+			case "authenticate":
+				return map[string]any{"jsonrpc": "2.0", "id": request.ID, "error": map[string]any{"code": -32602, "message": "authentication must remain unchanged"}}
 			case "session/new":
 				return result(request, parts["session_new"])
 			case "session/set_config_option":
@@ -199,6 +201,42 @@ func runFake(name string) error {
 				}
 				_ = json.Unmarshal(request.Params, &params)
 				return result(request, sets[params.Value])
+			}
+			return nil
+		})
+	case "acp-cursor":
+		authenticated := false
+		return serveLines(func(request fakeRequest) any {
+			switch request.Method {
+			case "initialize":
+				return result(request, map[string]any{
+					"protocolVersion": 1,
+					"authMethods":     []any{map[string]any{"id": "cursor_login"}},
+				})
+			case "authenticate":
+				var params struct {
+					MethodID string `json:"methodId"`
+				}
+				_ = json.Unmarshal(request.Params, &params)
+				if params.MethodID != "cursor_login" {
+					return map[string]any{"jsonrpc": "2.0", "id": request.ID, "error": map[string]any{"code": -32602, "message": "unknown method"}}
+				}
+				authenticated = true
+				return result(request, map[string]any{})
+			case "session/new":
+				if !authenticated {
+					return map[string]any{"jsonrpc": "2.0", "id": request.ID, "error": map[string]any{"code": -32000, "message": "Authentication required"}}
+				}
+				return result(request, map[string]any{
+					"sessionId": "cursor-session",
+					"configOptions": []any{map[string]any{
+						"id": "model", "category": "model", "currentValue": "default[]",
+						"options": []any{
+							map[string]any{"value": "default[]", "name": "Auto"},
+							map[string]any{"value": "grok-4.7[context=256k,reasoning_effort=high,fast=true]", "name": "Grok 4.7"},
+						},
+					}},
+				})
 			}
 			return nil
 		})

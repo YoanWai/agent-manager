@@ -29,6 +29,7 @@ func TestStyleResolution(t *testing.T) {
 		{"command-code", "", "command-code"},
 		{"muse", "", "muse"},
 		{"antigravity", "", "antigravity"},
+		{"cursor", "", "cursor"},
 		{"pi", "", "none"},
 		{"omp", "", "none"},
 		{"aider", "", "none"},
@@ -646,10 +647,265 @@ func TestApplyMuseRefusesUnreadableSettings(t *testing.T) {
 	}
 }
 
+func cursorHome(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("CURSOR_CONFIG_DIR", t.TempDir())
+	return home
+}
+
+func stubCursorAgent(t *testing.T, exitCode int) string {
+	t.Helper()
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "calls.log")
+	t.Setenv("CURSOR_AGENT_LOG", logPath)
+	t.Setenv("CURSOR_AGENT_EXIT", fmt.Sprintf("%d", exitCode))
+	script := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$CURSOR_AGENT_LOG\"\nif [ \"$CURSOR_AGENT_EXIT\" != 0 ]; then\n  echo fail >&2\n  exit \"$CURSOR_AGENT_EXIT\"\nfi\n"
+	if err := os.WriteFile(filepath.Join(dir, "cursor-agent"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bat := "@echo off\r\necho %*>> \"%CURSOR_AGENT_LOG%\"\r\nif not \"%CURSOR_AGENT_EXIT%\"==\"0\" (\r\n  echo fail 1>&2\r\n  exit /b %CURSOR_AGENT_EXIT%\r\n)\r\n"
+	if err := os.WriteFile(filepath.Join(dir, "cursor-agent.bat"), []byte(bat), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return logPath
+}
+
+func readCursorMCP(t *testing.T, path string) map[string]any {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var settings map[string]any
+	if err := json.Unmarshal(data, &settings); err != nil {
+		t.Fatal(err)
+	}
+	return settings
+}
+
+func TestApplyCursorWritesTheUserFileAndEnables(t *testing.T) {
+	home := cursorHome(t)
+	logPath := stubCursorAgent(t, 0)
+	path := filepath.Join(home, ".cursor", "mcp.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	original := "{\n  \"other\": true,\n  \"mcpServers\": {\n    \"github\": {\"command\": \"npx\"}\n  }\n}\n"
+	if err := os.WriteFile(path, []byte(original), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{}
+	command, err := Apply("cursor", "/opt/bin/agent-manager", t.TempDir(), "cursor-agent", env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if command != "cursor-agent" || len(env) != 0 {
+		t.Fatalf("command = %q, env = %v", command, env)
+	}
+	if _, err := os.Stat(filepath.Join(os.Getenv("CURSOR_CONFIG_DIR"), "mcp.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("mcp.json under CURSOR_CONFIG_DIR: %v", err)
+	}
+	settings := readCursorMCP(t, path)
+	if settings["other"] != true {
+		t.Fatalf("settings = %v, want the other key kept", settings)
+	}
+	servers := settings["mcpServers"].(map[string]any)
+	if fmt.Sprint(servers["github"]) != fmt.Sprint(map[string]any{"command": "npx"}) {
+		t.Fatalf("github = %v", servers["github"])
+	}
+	want := map[string]any{"command": "/opt/bin/agent-manager", "args": []any{"mcp"}}
+	if fmt.Sprint(servers["agent-manager"]) != fmt.Sprint(want) {
+		t.Fatalf("agent-manager = %v, want %v", servers["agent-manager"], want)
+	}
+	calls, err := os.ReadFile(logPath)
+	if err != nil || !strings.Contains(string(calls), "mcp enable agent-manager") {
+		t.Fatalf("enable log = %q, err = %v", calls, err)
+	}
+	if runtime.GOOS == "windows" {
+		return
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != 0o640 {
+		t.Fatalf("mode = %v, err = %v, want 0640 kept", info.Mode().Perm(), err)
+	}
+}
+
+func TestApplyCursorEnablesAgainWhenTheEntryMatches(t *testing.T) {
+	home := cursorHome(t)
+	logPath := stubCursorAgent(t, 0)
+	if _, err := Apply("cursor", "/opt/bin/agent-manager", t.TempDir(), "cursor-agent", map[string]string{}); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(home, ".cursor", "mcp.json")
+	first, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Apply("cursor", "/opt/bin/agent-manager", t.TempDir(), "cursor-agent", map[string]string{}); err != nil {
+		t.Fatal(err)
+	}
+	second, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(first) != string(second) {
+		t.Fatalf("second write changed the file:\n%s\n%s", first, second)
+	}
+	calls, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(string(calls), "mcp enable agent-manager"); got != 2 {
+		t.Fatalf("enable ran %d times, want 2\n%s", got, calls)
+	}
+}
+
+func TestApplyCursorWritesThroughASymlink(t *testing.T) {
+	home := cursorHome(t)
+	stubCursorAgent(t, 0)
+	target := filepath.Join(t.TempDir(), "mcp.json")
+	if err := os.WriteFile(target, []byte("{\"theme\": \"dark\"}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(home, ".cursor", "mcp.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Apply("cursor", "/opt/bin/agent-manager", t.TempDir(), "cursor-agent", map[string]string{}); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Lstat(path); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("mode = %v, err = %v, want the symlink kept", info.Mode(), err)
+	}
+	settings := readCursorMCP(t, target)
+	servers := settings["mcpServers"].(map[string]any)
+	if settings["theme"] != "dark" || servers["agent-manager"] == nil {
+		t.Fatalf("linked settings = %v", settings)
+	}
+}
+
+func TestApplyCursorAcceptsJSONC(t *testing.T) {
+	home := cursorHome(t)
+	logPath := stubCursorAgent(t, 0)
+	path := filepath.Join(home, ".cursor", "mcp.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	original := "{\n  // user note\n  \"url\": \"http://example.com/a/*still*/b\",\n  \"mcpServers\": {\n    \"github\": {\"command\": \"npx\", \"args\": [\"mcp\",]},\n  },\n}\n"
+	if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Apply("cursor", "/opt/bin/agent-manager", t.TempDir(), "cursor-agent", map[string]string{}); err != nil {
+		t.Fatal(err)
+	}
+	settings := readCursorMCP(t, path)
+	if settings["url"] != "http://example.com/a/*still*/b" {
+		t.Fatalf("url = %v", settings["url"])
+	}
+	servers := settings["mcpServers"].(map[string]any)
+	github := servers["github"].(map[string]any)
+	if github["command"] != "npx" || fmt.Sprint(github["args"]) != fmt.Sprint([]any{"mcp"}) {
+		t.Fatalf("github = %v", github)
+	}
+	if servers["agent-manager"] == nil {
+		t.Fatal("agent-manager missing")
+	}
+	calls, err := os.ReadFile(logPath)
+	if err != nil || !strings.Contains(string(calls), "mcp enable agent-manager") {
+		t.Fatalf("enable log = %q, err = %v", calls, err)
+	}
+}
+
+func TestApplyCursorTreatsNullServersAsEmpty(t *testing.T) {
+	home := cursorHome(t)
+	logPath := stubCursorAgent(t, 0)
+	path := filepath.Join(home, ".cursor", "mcp.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("{\"other\": true, \"mcpServers\": null}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Apply("cursor", "/opt/bin/agent-manager", t.TempDir(), "cursor-agent", map[string]string{}); err != nil {
+		t.Fatal(err)
+	}
+	settings := readCursorMCP(t, path)
+	if settings["other"] != true {
+		t.Fatalf("settings = %v", settings)
+	}
+	servers := settings["mcpServers"].(map[string]any)
+	if servers["agent-manager"] == nil {
+		t.Fatal("agent-manager missing")
+	}
+	calls, err := os.ReadFile(logPath)
+	if err != nil || !strings.Contains(string(calls), "mcp enable agent-manager") {
+		t.Fatalf("enable log = %q, err = %v", calls, err)
+	}
+}
+
+func TestApplyCursorRefusesUnreadableJSON(t *testing.T) {
+	home := cursorHome(t)
+	logPath := stubCursorAgent(t, 0)
+	path := filepath.Join(home, ".cursor", "mcp.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const content = "{ not json"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Apply("cursor", "/opt/bin/agent-manager", t.TempDir(), "cursor-agent", map[string]string{}); err == nil {
+		t.Fatal("expected an error for mcp.json that does not parse")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || string(data) != content {
+		t.Fatalf("mcp.json = %q, err = %v", data, err)
+	}
+	if _, err := os.Stat(logPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("enable ran despite the bad file: %v", err)
+	}
+}
+
+func TestApplyCursorReportsEnableFailure(t *testing.T) {
+	cursorHome(t)
+	stubCursorAgent(t, 1)
+	_, err := Apply("cursor", "/opt/bin/agent-manager", t.TempDir(), "cursor-agent", map[string]string{})
+	if err == nil || !strings.Contains(err.Error(), "cursor-agent mcp enable") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestApplyNoneLeavesEverything(t *testing.T) {
 	env := map[string]string{}
 	command, err := Apply("none", "/opt/bin/agent-manager", t.TempDir(), "aider", env)
 	if err != nil || command != "aider" || len(env) != 0 {
 		t.Fatalf("command = %q, env = %v, err = %v", command, env, err)
+	}
+}
+
+func TestApplyCursorRefusesAnUnterminatedComment(t *testing.T) {
+	home := cursorHome(t)
+	path := filepath.Join(home, ".cursor", "mcp.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	before := []byte("{\"mcpServers\": {}} /* unfinished")
+	if err := os.WriteFile(path, before, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := ensureCursorRegistered("/opt/agent-manager")
+	if err == nil || !strings.Contains(err.Error(), "never closes") {
+		t.Fatalf("err = %v, want the unterminated comment refused", err)
+	}
+	after, readErr := os.ReadFile(path)
+	if readErr != nil || string(after) != string(before) {
+		t.Fatalf("file changed to %q, %v", after, readErr)
 	}
 }

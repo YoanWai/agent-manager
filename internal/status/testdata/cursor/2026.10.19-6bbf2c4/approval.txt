@@ -1,0 +1,27 @@
+  Cursor Agent
+  v2026.10.19-6bbf2c4
+  Tip: Type ? in the prompt bar to show in-app hints.
+
+
+  Reply with the single word pong. Do not use tools.
+
+
+  pong
+
+
+  Use the shell to run: printf pong > pong.txt
+
+
+  I'll write pong to pong.txt with that printf command.
+
+  $ printf pong > pong.txt Waiting for approval...
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ $  printf pong > pong.txt in .
+
+ Run this command?
+ Not in allowlist: printf
+  → Run (once) (y)
+    Add Shell(printf) to allowlist? (tab)
+    Run Everything (shift+tab)
+    Skip & tell the agent what to do instead (esc or n)

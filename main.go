@@ -226,8 +226,8 @@ func withConfigDir(command cli.Command) func([]string) error {
 // script to export the id from, and the shell would otherwise have no way
 // to say which session it is.
 //
-// The process ancestry is the last resort, for an MCP server Muse starts
-// with none of the pane's environment.
+// The process ancestry is the last resort, for an MCP server Muse or Cursor
+// starts with none of the pane's environment.
 func callerSession() string {
 	if id := os.Getenv(hooks.EnvSessionID); id != "" {
 		return id

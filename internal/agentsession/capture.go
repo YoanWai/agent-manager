@@ -1,7 +1,7 @@
 // Package agentsession reads back the conversation id an agent CLI minted
 // for a session the manager launched, for tools that do not accept a
 // chosen id at launch (codex, opencode, gemini, hermes, command-code, muse,
-// antigravity, omp).
+// antigravity, omp, cursor).
 // Revive resumes that exact id instead of the working directory's most recent
 // conversation, which is the wrong one whenever sessions share a directory.
 package agentsession
@@ -52,7 +52,7 @@ func resolvePath(p string) string {
 // Capture returns the conversation id a tool wrote for a session launched
 // in cwd at or after launchedAt. sessionStore selects the on-disk format
 // ("codex", "opencode", "gemini", "hermes", "command-code", "muse",
-// "antigravity" or "omp"). claimed holds ids already bound to other sessions,
+// "antigravity", "omp" or "cursor"). claimed holds ids already bound to other sessions,
 // so two sessions started in one directory do not capture the same
 // conversation. terminal is the tty device of the session's pane: omp
 // records which session each terminal runs, which tells sessions sharing a
@@ -77,6 +77,8 @@ func Capture(sessionStore, cwd string, launchedAt time.Time, claimed map[string]
 		return captureAntigravity(antigravityRoot(), cwd, launchedAt, claimed)
 	case "omp":
 		return captureOmp(ompRoot(), cwd, terminal, launchedAt, claimed)
+	case "cursor":
+		return captureCursor(cwd, launchedAt, claimed)
 	default:
 		return "", false
 	}
@@ -106,6 +108,8 @@ func Snapshot(sessionStore, cwd string) (map[string]int64, bool) {
 		return snapshotAntigravity(antigravityRoot(), cwd)
 	case "omp":
 		return snapshotOmp(ompRoot(), cwd)
+	case "cursor":
+		return snapshotCursor(cwd)
 	default:
 		return nil, false
 	}
@@ -140,6 +144,8 @@ func Recapture(sessionStore, cwd string, snapshot map[string]int64, claimed map[
 		cands = recaptureAntigravity(antigravityRoot(), cwd, snapshot, claimed)
 	case "omp":
 		cands = recaptureOmp(ompRoot(), cwd, snapshot, claimed)
+	case "cursor":
+		cands = recaptureCursor(cwd, snapshot, claimed)
 	default:
 		return "", false
 	}
