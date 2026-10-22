@@ -33,9 +33,13 @@ func (s *Sessions) Groups(sessionID string) ([]Group, error) {
 	if err != nil {
 		return nil, err
 	}
+	return runtime.groupRows(stored, sessions), nil
+}
+
+func (r *runtime) groupRows(stored []store.Group, sessions []store.Session) []Group {
 	counts := make(map[string]int, len(stored))
 	for _, sess := range sessions {
-		if runtime.cfg.Tools[sess.Tool].Shell || sess.Archived {
+		if r.cfg.Tools[sess.Tool].Shell || sess.Archived {
 			continue
 		}
 		counts[sess.Group]++
@@ -50,7 +54,7 @@ func (s *Sessions) Groups(sessionID string) ([]Group, error) {
 			Sessions:  counts[group.Name],
 		})
 	}
-	return groups, nil
+	return groups
 }
 
 // CreateGroup adds a group under an existing parent, so sessions spawned
@@ -66,7 +70,7 @@ func (s *Sessions) CreateGroup(sessionID, path, directory string) (Group, error)
 		return Group{}, err
 	}
 	defer runtime.Close()
-	if _, err := runtime.caller(sessionID); err != nil {
+	if _, err := runtime.optionalCaller(sessionID); err != nil {
 		return Group{}, err
 	}
 	existing, err := runtime.store.Groups()
@@ -124,7 +128,7 @@ func (s *Sessions) DeleteGroup(sessionID, path string) (GroupRemoval, error) {
 		return GroupRemoval{}, err
 	}
 	defer runtime.Close()
-	if _, err := runtime.caller(sessionID); err != nil {
+	if _, err := runtime.optionalCaller(sessionID); err != nil {
 		return GroupRemoval{}, err
 	}
 	removed, moved, err := runtime.store.RemoveGroup(path)

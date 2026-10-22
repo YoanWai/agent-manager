@@ -2,6 +2,7 @@ package ui
 
 import (
 	"cmp"
+	"strings"
 
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	tea "github.com/charmbracelet/bubbletea"
@@ -14,6 +15,9 @@ type groupFormDialog struct {
 	uidialogs.GroupForm
 	paths pathComplete
 	base  string
+	// remote is the connection and parent group the form creates under,
+	// when a connection's row opened it.
+	remote formRemote
 }
 
 // groupWorktreeOptions are the picker states for a group's spawn-in-worktree
@@ -45,18 +49,32 @@ func (m *Model) syncGroupFormFieldWidths() {
 }
 
 func (m *Model) openGroupForm() {
-	m.rebuildGroupOptions(m.contextGroup())
-	m.groupForm = groupFormDialog{
-		GroupForm: uidialogs.NewGroupForm(m.capturedGroupDefaultDir(m.selectedGroupPath()), m.nextComposerGen()),
-		paths:     m.groupForm.paths.fresh(),
+	if target, ok := m.remoteTarget(); ok {
+		m.groupForm = groupFormDialog{GroupForm: uidialogs.NewGroupForm("", m.nextComposerGen()), paths: m.groupForm.paths.fresh(), remote: target}
+		m.groupForm.AimRemote(target.host)
+	} else {
+		m.rebuildGroupOptions(m.contextGroup())
+		m.groupForm = groupFormDialog{
+			GroupForm: uidialogs.NewGroupForm(m.capturedGroupDefaultDir(m.selectedGroupPath()), m.nextComposerGen()),
+			paths:     m.groupForm.paths.fresh(),
+		}
 	}
 	m.syncGroupFormFieldWidths()
 	m.mode = modeGroupForm
 	m.clearErr()
 }
 
+// groupFormParent is the group the form creates under: the connection's
+// selected group, or the picker's.
+func (m *Model) groupFormParent() string {
+	if m.groupForm.remote.on() {
+		return m.groupForm.remote.group
+	}
+	return m.selectedGroupPath()
+}
+
 func (m *Model) handleGroupFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	key := m.groupForm.Key(msg, dialogPaths{&m.groupForm.paths}, m.selectedGroupPath(), len(groupWorktreeOptions))
+	key := m.groupForm.Key(msg, dialogPaths{&m.groupForm.paths}, m.groupFormParent(), len(groupWorktreeOptions))
 	return m, m.runGroupFormKey(key, systemDirectoryPreflight{git: m.services.gitDrv})
 }
 
@@ -84,13 +102,18 @@ func (m *Model) runGroupFormKey(key uidialogs.GroupFormKey, reader directoryPref
 	case uidialogs.GroupFormSubmit:
 		request := key.Request
 		m.clearErr()
+		if target := m.groupForm.remote; target.on() {
+			return m.queueRemote(remoteRequest{op: remoteCreateGroup, host: target.host, name: request.Path,
+				groupDir: strings.TrimSpace(request.Dir), composerGen: request.Gen})
+		}
 		m.dispatchGroup(groupRequest{
 			path: request.Path, worktree: groupWorktreeValue(request.Worktree), base: m.groupForm.base, gen: request.Gen,
 			rawDir: request.Dir, fallbacks: m.groupDirCandidates(request.Parent), dirReader: reader,
 		})
 		return m.nextEffectCmd()
 	}
-	if key.Suggest {
+	// A connection's directory is the host's: nothing here completes it.
+	if key.Suggest && !m.groupForm.remote.on() {
 		return tea.Batch(key.Cmd, m.groupForm.paths.request(pathSuggestionGroup, m.groupForm.Dir(), systemPathSuggestionReader{}))
 	}
 	return key.Cmd
@@ -111,7 +134,7 @@ func (m *Model) submitGroupForm() (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) submitGroupFormWithReader(reader directoryPreflight) (tea.Model, tea.Cmd) {
-	return m, m.runGroupFormKey(m.groupForm.Submit(m.selectedGroupPath()), reader)
+	return m, m.runGroupFormKey(m.groupForm.Submit(m.groupFormParent()), reader)
 }
 
 // dispatchGroup queues the group's store write on the effect lane; the row
@@ -123,7 +146,7 @@ func (m *Model) dispatchGroup(request groupRequest) {
 }
 
 func (m *Model) viewGroupForm() string {
-	parent := m.selectedGroupPath()
+	parent := m.groupFormParent()
 	view := uidialogs.GroupFormView{
 		GlyphMode: m.prefs.glyphMode,
 		Field:     m.formField,

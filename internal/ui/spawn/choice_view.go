@@ -29,6 +29,8 @@ func ModelNote(h ChoiceHost, toolName string, st Styles) (string, bool) {
 		return st.Subtle.Render("not supported by " + toolName), false
 	case state == nil || (!state.Loaded && state.Loading):
 		return st.Subtle.Render("reading models from " + toolName + "…"), false
+	case state.Err != nil && len(state.Cat.Models) == 0 && h.ChoiceRemoteHost() != "":
+		return st.Subtle.Render(toolName + "'s default on " + h.ChoiceRemoteHost() + "; this machine's " + toolName + " lists no models to pick from"), false
 	case state.Err != nil && len(state.Cat.Models) == 0:
 		return st.Warn.Render("couldn't read models from " + toolName + ": " + state.Err.Error()), false
 	case len(state.Cat.Models) == 0 && len(state.Cat.Profiles) == 0:

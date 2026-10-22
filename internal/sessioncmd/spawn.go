@@ -112,10 +112,11 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 	if worktreeGit != nil {
 		worktree = &WorktreeRequest{Base: base, Fetch: fetchSetting != "off"}
 	}
+	chosen := tool.WithChoice(choice)
 	launched, err := lifecycle.Spawn(SpawnRequest{
 		Session:  store.Session{ID: id, Name: name, Tool: toolName, Cwd: dir, Group: group, Choice: choice},
-		Tool:     tool,
-		Plan:     launch.Assemble(toolName, tool.WithChoice(choice), prompt, autoNamed, proactive),
+		Tool:     chosen,
+		Plan:     launch.Assemble(toolName, chosen, prompt, autoNamed, proactive),
 		Worktree: worktree,
 	})
 	if err != nil {

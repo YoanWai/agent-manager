@@ -68,6 +68,7 @@ func (m *Model) queueRail(mutations []uirail.Mutation, chain uint64, first bool)
 		}
 		mutation := mutations[index]
 		mutation.Collapsed = append([]string(nil), mutation.Collapsed...)
+		mutation.HostCollapsed = append([]uirail.HostFold(nil), mutation.HostCollapsed...)
 		mutation.GroupSiblings = append([]string(nil), mutation.GroupSiblings...)
 		m.enqueueEffect(railRequest{mutation: mutation, dir: m.workspace.groupPaths[mutation.Path], worktree: m.workspace.groupWorktrees[mutation.Path], base: m.workspace.groupBases[mutation.Path]}, chain, first)
 	}
@@ -105,6 +106,12 @@ func (s effectServices) runRail(request railRequest) (effectResult, error) {
 		raw, err = json.Marshal(mutation.Collapsed)
 		if err == nil {
 			err = s.store.SetSetting(collapsedSetting, string(raw))
+		}
+		if err == nil {
+			raw, err = json.Marshal(mutation.HostCollapsed)
+		}
+		if err == nil {
+			err = s.store.SetSetting(hostCollapsedSetting, string(raw))
 		}
 	case uirail.SwapSession:
 		err = s.store.SwapSessionOrder(mutation.SessionID, mutation.TargetID)

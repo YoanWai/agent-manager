@@ -15,9 +15,11 @@ import (
 
 const (
 	usageSessions      = "sessions [--json]"
+	usageSnapshot      = "snapshot --json"
 	usageSpawn         = "spawn [--name <name>] [--prompt <text>] [--saved <name>] [--tool <cli>] [--model <model>] [--effort <level>] [--profile <name>] [--group <path>] [--directory <path>] [--worktree] [--json]"
-	usageSend          = `send <session-id> ["<message>"] [--saved <name>] [--json]`
-	usageRead          = "read <session-id> [--json]"
+	usageSend          = `send <session-id> ["<message>"] [--saved <name>] [--from <name>] [--json]`
+	usageType          = `type <session-id> "<prompt>" [--json]`
+	usageRead          = "read <session-id> [--styled] [--json]"
 	usageWait          = "wait <session-id> [--until <state>] [--timeout <duration>] [--json]"
 	usageMessageStatus = "message-status <message-id> [--json]"
 	usageKill          = "kill <session-id> [--json]"
@@ -32,10 +34,14 @@ const (
 
 type sessionCommands interface {
 	List(sessionID string) ([]sessioncmd.Session, error)
+	Snapshot(sessionID string) (sessioncmd.Snapshot, error)
 	Create(sessionID string, opts sessioncmd.CreateSessionOptions) (sessioncmd.Session, error)
 	Send(sessionID, targetID, message string) (sessioncmd.SendResult, error)
+	SendFrom(sessionID, senderName, targetID, message string) (sessioncmd.SendResult, error)
+	Type(sessionID, targetID, prompt string) (sessioncmd.Session, error)
 	ExpandSaved(name, text string) (string, error)
 	Read(sessionID, targetID string) (sessioncmd.SessionScreen, error)
+	ReadStyled(sessionID, targetID string) (sessioncmd.SessionScreen, error)
 	Wait(ctx context.Context, sessionID, targetID string, until []string, timeout time.Duration) (sessioncmd.WaitResult, error)
 	MessageStatus(sessionID string, messageID int64) (sessioncmd.MessageState, error)
 	Kill(sessionID, targetID string) (sessioncmd.Session, error)
@@ -61,8 +67,10 @@ func sessionSectionWith(open func(string) sessionCommands) section {
 		title: "Agent sessions",
 		commands: []command{
 			{name: "sessions", usage: usageSessions, about: "list every agent session with its id, CLI, group, directory and status; call it before delegating anything", run: bind(open, runSessions)},
+			{name: "snapshot", usage: usageSnapshot, about: "print every session, terminal and group on this host, archived ones included, and whether a manager is running here, as one JSON document another manager reads over SSH", run: bind(open, runSnapshot)},
 			{name: "spawn", usage: usageSpawn, about: "start another agent CLI on a task of its own, so independent work runs beside you instead of queued behind you", run: bind(open, runSpawn)},
 			{name: "send", usage: usageSend, about: "queue a message for another agent; it is typed in once that agent is at rest, so it never lands on an approval prompt", run: bind(open, runSend)},
+			{name: "type", usage: usageType, about: "type a prompt into an agent's pane and submit it now, as the user's quick bar does; only for a caller with no session here, such as a manager on another machine over SSH", run: bind(open, runType)},
 			{name: "read", usage: usageRead, about: "read what another agent's screen currently shows", run: bind(open, runRead)},
 			{name: "wait", usage: usageWait, about: "park until another session stops working, instead of reading its screen in a loop; exits non-zero when it timed out", run: bind(open, runWait)},
 			{name: "message-status", usage: usageMessageStatus, about: "check whether a message you sent is queued, held, delivered, dropped or answered", run: bind(open, runMessageStatus)},
@@ -89,6 +97,22 @@ func runSessions(out io.Writer, sessions sessionCommands, args []string, session
 		return err
 	}
 	return emit(out, *asJSON, listed, sessioncmd.FormatSessionList(listed))
+}
+
+func runSnapshot(out io.Writer, sessions sessionCommands, args []string, sessionID string) error {
+	set := newFlagSet(usageSnapshot)
+	asJSON := jsonFlag(set)
+	if _, err := parseCommand(out, set, args, 0, 0); err != nil {
+		return err
+	}
+	if !*asJSON {
+		return usageError(usageSnapshot)
+	}
+	snapshot, err := sessions.Snapshot(sessionID)
+	if err != nil {
+		return err
+	}
+	return writeJSON(out, snapshot)
 }
 
 func runSpawn(out io.Writer, sessions sessionCommands, args []string, sessionID string) error {
@@ -137,6 +161,7 @@ func runSpawn(out io.Writer, sessions sessionCommands, args []string, sessionID 
 func runSend(out io.Writer, sessions sessionCommands, args []string, sessionID string) error {
 	set := newFlagSet(usageSend)
 	saved := set.String("saved", "", "saved prompt to put in front of the message; the message can be omitted when this is set")
+	from := set.String("from", "", "name to send as when this runs outside any session on this machine, as an agent on another machine does over SSH; the message says no reply can reach it")
 	asJSON := jsonFlag(set)
 	operands, err := parseCommand(out, set, args, 1, 2)
 	if err != nil {
@@ -153,21 +178,47 @@ func runSend(out io.Writer, sessions sessionCommands, args []string, sessionID s
 	if err != nil {
 		return err
 	}
-	result, err := sessions.Send(sessionID, operands[0], text)
+	fromGiven := false
+	set.Visit(func(given *flag.Flag) { fromGiven = fromGiven || given.Name == "from" })
+	var result sessioncmd.SendResult
+	if fromGiven {
+		result, err = sessions.SendFrom(sessionID, *from, operands[0], text)
+	} else {
+		result, err = sessions.Send(sessionID, operands[0], text)
+	}
 	if err != nil {
 		return err
 	}
 	return emit(out, *asJSON, result, sessioncmd.FormatSendResult(result, operands[0]))
 }
 
+func runType(out io.Writer, sessions sessionCommands, args []string, sessionID string) error {
+	set := newFlagSet(usageType)
+	asJSON := jsonFlag(set)
+	operands, err := parseCommand(out, set, args, 2, 2)
+	if err != nil {
+		return err
+	}
+	typed, err := sessions.Type(sessionID, operands[0], operands[1])
+	if err != nil {
+		return err
+	}
+	return emit(out, *asJSON, typed, "typed into "+sessioncmd.FormatSession(typed))
+}
+
 func runRead(out io.Writer, sessions sessionCommands, args []string, sessionID string) error {
 	set := newFlagSet(usageRead)
+	styled := styledFlag(set)
 	asJSON := jsonFlag(set)
 	operands, err := parseCommand(out, set, args, 1, 1)
 	if err != nil {
 		return err
 	}
-	screen, err := sessions.Read(sessionID, operands[0])
+	read := sessions.Read
+	if *styled {
+		read = sessions.ReadStyled
+	}
+	screen, err := read(sessionID, operands[0])
 	if err != nil {
 		return err
 	}

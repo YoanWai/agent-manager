@@ -74,9 +74,16 @@ func TestLastMessage(t *testing.T) {
 
 	// opencode has no message_start, so its newest content line is the quote.
 	line, anchored, ok = engine.LastMessage("opencode",
-		"     hey. what need?\n     ▣  Build · GLM-5.2 · 22.0s\n  ┃\n  ╹▀▀▀▀")
+		"     hey. what need?\n     Build · GLM-5.3 · 22.0s · 12.1 tok/s\n  ┃\n  ╹▀▀▀▀")
 	if !ok || anchored || line != "hey. what need?" {
 		t.Fatalf("opencode fallback quote = %q ok=%v", line, ok)
+	}
+	// A wide pane draws opencode's side panel to the right of the transcript,
+	// with rows of its own under the turn summary.
+	line, _, ok = engine.LastMessage("opencode",
+		"     Hi!\n     Build · Big Pickle · 2.6s · 5.5 tok/s\n                                                                                   ⬖ Getting started                ✕\n                                                                                     Connect from 75+ providers to\n  ┃                                                                                  Claude, GPT, Gemini etc\n  ┃\n  ╹▀▀▀▀")
+	if !ok || line != "Hi!" {
+		t.Fatalf("opencode quote beside the side panel = %q ok=%v", line, ok)
 	}
 
 	if _, _, ok = engine.LastMessage("no-such-tool", pane); ok {
@@ -287,7 +294,7 @@ func TestLastUserEchoPerTool(t *testing.T) {
 		"  ┃  Reply with exactly: OPENCODE ECHO TEST DONE.\n" +
 		"  ┃\n" +
 		"     OPENCODE ECHO TEST DONE.\n" +
-		"     ▣  Build · Gemini 3.6 Flash · 2.6s\n" +
+		"     Build · Gemini 3.6 Flash · 2.6s · 3.0 tok/s\n" +
 		"  ┃\n" +
 		"  ┃\n" +
 		"  ┃  Build · Gemini 3.6 Flash Google\n" +
@@ -297,6 +304,53 @@ func TestLastUserEchoPerTool(t *testing.T) {
 	}
 	if line, _, ok := engine.LastMessage("opencode", opencodePane); !ok || line != "OPENCODE ECHO TEST DONE." {
 		t.Fatalf("opencode reply = %q ok=%v", line, ok)
+	}
+
+	// opencode draws a command, its output and a written file in the
+	// prompt's own gutter (real capture, 2.1.1). The prompt opens the
+	// turn, so it is the first gutter text under the previous summary,
+	// and a wrapped prompt reads from its first row.
+	toolPane := "     gamma\n" +
+		"     Build · Big Pickle · 11.3s · 4.2 tok/s\n" +
+		"  ┃\n" +
+		"  ┃  Create /tmp/proj/poem.txt with three short lines about rain,\n" +
+		"  ┃  then say done\n" +
+		"  ┃\n" +
+		"     + Thought · 953ms\n" +
+		"  ┃\n" +
+		"  ┃  $ printf 'alpha\\nbeta\\n'\n" +
+		"  ┃\n" +
+		"  ┃  alpha\n" +
+		"  ┃\n" +
+		"  ┃  beta\n" +
+		"  ┃\n" +
+		"  ┃  # Wrote /tmp/proj/poem.txt\n" +
+		"  ┃\n" +
+		"  ┃   1 Rain taps softly on the glass,\n" +
+		"  ┃   2 Puddles stitch the quiet street,\n" +
+		"  ┃\n" +
+		"     done — poem.txt created.\n" +
+		"     Build · Big Pickle · 7.1s · 24.4 tok/s\n" +
+		"  ┃\n" +
+		"  ┃  Build · Big Pickle OpenCode\n" +
+		"  ╹▀▀▀▀"
+	if echoed, ok := engine.LastUserEcho("opencode", toolPane); !ok || echoed != "Create /tmp/proj/poem.txt with three short lines about rain," {
+		t.Fatalf("opencode echo beside tool rows = %q ok=%v", echoed, ok)
+	}
+	running := toolPane[strings.Index(toolPane, "  ┃  Create"):strings.Index(toolPane, "  ┃  # Wrote")] + "  ┃\n  ┃  Build · Big Pickle OpenCode\n  ╹▀▀▀▀"
+	if echoed, ok := engine.LastUserEcho("opencode", running); !ok || echoed != "Create /tmp/proj/poem.txt with three short lines about rain," {
+		t.Fatalf("opencode echo while the command runs = %q ok=%v", echoed, ok)
+	}
+	// With the prompt scrolled off, the command's own rows are not it,
+	// whether the pane starts on the command or on output opencode clipped
+	// at the top (real capture, 2.1.1, 20 rows).
+	for _, scrolled := range []string{
+		"  ┃  $ printf 'alpha\\nbeta\\n'\n  ┃\n  ┃   1 Rain taps softly on the glass,\n  ┃\n  ┃  Build · Big Pickle OpenCode\n  ╹▀▀▀▀",
+		"   New session                   +\n  ┃  (5 earlier lines)\n  ┃  f\n  ┃  g\n  ┃\n\n     Build · Big Pickle · 4.7s · 23.7 tok/s\n\n  ┃\n  ┃\n  ┃  Build · Big Pickle OpenCode\n  ╹▀▀▀▀",
+	} {
+		if echoed, ok := engine.LastUserEcho("opencode", scrolled); !ok || echoed != "" {
+			t.Fatalf("opencode echo with the prompt scrolled off = %q ok=%v", echoed, ok)
+		}
 	}
 }
 

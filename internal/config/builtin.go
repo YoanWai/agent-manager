@@ -87,22 +87,28 @@ rules = [
 ]
 
 [tools.opencode]
-command = "opencode"
+# OpenCode 2's shared background server never sees a launch's environment,
+# so the model, the MCP config and the session id reach it only through a
+# private server
+command = "opencode --standalone"
 session_report = "opencode"
 # opencode mints its own session id; capture it after launch and resume it
 session_store = "opencode"
-resume_by_id_command = "opencode --session {id}"
-fork_command = "opencode --session {id} --fork"
+resume_by_id_command = "opencode --standalone --session {id}"
+# the interactive command cannot fork; the session store makes the copy
+# through opencode's API and the launch opens it
+fork_command = "opencode --standalone --session {new_id}"
 # opencode's session picker exists only inside the running TUI: /sessions.
 # Passing it via the prompt flag would submit it to the model, so revive
 # launches bare opencode and the manager types the shortcut at its composer.
-resume_picker_command = "opencode"
+resume_picker_command = "opencode --standalone"
 resume_picker_keys = "/sessions"
-revive_command = "opencode --continue"
+revive_command = "opencode --standalone --continue"
 # its ACP server would leave a session in the global session list
 catalog = "opencode"
-catalog_command = "opencode serve --port 0"
-model_args = "-m {model}"
+catalog_command = "opencode models --standalone"
+# the interactive command takes no model flag
+model_env = 'OPENCODE_CONFIG_CONTENT={"model":{model}}'
 # opencode's positional argument is the project path, so the optional
 # session prompt travels behind this flag
 prompt_flag = "--prompt"
@@ -116,16 +122,29 @@ activity_cutoff = "(?m)^\\s*╹"
 # rows a multi-line draft adds are told apart by the row above them, which
 # carries the same bar with text past it.
 input_prefix = "(?m)^\\s*┃"
-turn_end = "^\\s*▣ +.+· [\\dhms. ]+\\s*$"
-chrome_line = "^\\s*(┃.*)?$"
+# the turn summary row: agent, model and duration, with a rate while a
+# reply streamed ("Build · GLM-5.3 · 22.0s · 43.5 tok/s"). An interrupted
+# turn adds "· interrupted" and is no end. The side panel a wide pane
+# draws can share the row past a gap.
+turn_end = "^\\s*[^┃·\\n]+ · [^·\\n]+ · \\d[\\dhms. ]*(?: · [\\d.]+ tok/s)?(?:\\s{3,}\\S.*)?$"
+# a wide pane carries a side panel (getting started, context, MCP) whose
+# rows start far to the right of any transcript text
+chrome_line = "^\\s*(┃.*)?$|^\\s{60,}\\S.*$"
 input_placeholder = "^Ask anything\\.\\.\\."
 # a submitted prompt echoes into the transcript inside the same ┃ gutter
 # the composer draws; the composer's own block hugs the cutoff and is
 # trimmed before the echo is read
 user_echo = "^\\s*┃\\s{2,}"
-limit_line = "(?i)requires more credits|(?:Usage|Free|Go) limit reached"
+# a command it runs ("$ ls"), a running tool ("⠏ date"), a file it wrote
+# ("# Wrote notes.txt"), that file's numbered lines and the row standing
+# in for output clipped at the top ("(5 earlier lines)") share the gutter
+tool_row = "^\\s*┃(?:\\s{2,}(?:[$#] |[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] |\\(\\d+ earlier lines?\\)$)|\\s{3,}\\d+( |$))"
+# a provider error ends the turn with a summary row under it, so it is
+# read the way a limit banner is: above the newest summary
+limit_line = "(?i)requires more credits|(?:Usage|Free|Go) limit reached|^ *Error: "
 # the footer swaps its path for a knight-rider spinner ("■■■⬝⬝⬝⬝⬝") only
-# while a turn runs, provider retries included
+# while a turn runs, provider retries included; the transcript itself
+# carries no working marker, so the footer is what says a turn is on
 busy_footer = "(?m)^\\s*[■⬝]+ "
 rules = [
   { state = "errored", pattern = "(?i)requires more credits" },
@@ -135,10 +154,6 @@ rules = [
   # Perm is the title prefix left before narrow panes wrap Permission mid-word.
   { state = "waiting", pattern = "(?m)^[ \\t]*┃[ \\t]+△[ \\t]*(?:Perm|Always|Reject)[^\\n]*(?:\\n[ \\t]*┃[^\\n]*)*(?:\\n[ \\t]*)*\\z" },
   { state = "waiting", pattern = "(?m)^[ \\t]*┃[^\\n]*(?:⇆|↑↓)[^\\n]*\\besc\\b[^\\n]*(?:\\n[ \\t]*┃[^\\n]*)*(?:\\n[ \\t]*)*\\z" },
-  # spinner row while running: "▣  Build · GLM-5.2" (a finished turn
-  # gains a duration: "▣  Build · GLM-5.2 · 22.0s")
-  { state = "working", pattern = "(?m)^\\s*▣ +[^·\\n]+· [^·\\n]+$" },
-  { state = "working", pattern = "esc interrupt" },
 ]
 
 [tools.codex]

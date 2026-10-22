@@ -129,8 +129,8 @@ func TestDefaultDefinesEveryShippedTool(t *testing.T) {
 	if got := cfg.Tools["codex"].ForkCommand; got != "codex fork {id}" {
 		t.Fatalf("codex fork_command = %q want \"codex fork {id}\"", got)
 	}
-	if got := cfg.Tools["opencode"].ForkCommand; got != "opencode --session {id} --fork" {
-		t.Fatalf("opencode fork_command = %q want \"opencode --session {id} --fork\"", got)
+	if got := cfg.Tools["opencode"].ForkCommand; got != "opencode --standalone --session {new_id}" {
+		t.Fatalf("opencode fork_command = %q want \"opencode --standalone --session {new_id}\"", got)
 	}
 	if got := cfg.Tools["grok"].ForkCommand; got != "grok --resume {id} --fork-session --session-id {new_id}" {
 		t.Fatalf("grok fork_command = %q want \"grok --resume {id} --fork-session --session-id {new_id}\"", got)
@@ -340,10 +340,10 @@ func TestDefaultResumeByIDFields(t *testing.T) {
 		}
 	}
 	// opencode's picker only exists inside the running TUI, so its default
-	// pairs the bare launch with the shortcut the manager types at the
+	// pairs the plain launch with the shortcut the manager types at the
 	// composer instead of a command-line picker.
-	if got := cfg.Tools["opencode"].ResumePickerCommand; got != "opencode" {
-		t.Fatalf("opencode resume_picker_command = %q want \"opencode\"", got)
+	if got := cfg.Tools["opencode"].ResumePickerCommand; got != cfg.Tools["opencode"].Command {
+		t.Fatalf("opencode resume_picker_command = %q want its launch command", got)
 	}
 	if got := cfg.Tools["opencode"].ResumePickerKeys; got != "/sessions" {
 		t.Fatalf("opencode resume_picker_keys = %q want \"/sessions\"", got)
@@ -468,6 +468,27 @@ func TestWithChoicePlacesFlagsAtTheChoiceMark(t *testing.T) {
 	}
 }
 
+// OpenCode reads the model from inline config, so no launch line carries
+// it, and any quote in the model stays inside the JSON string.
+func TestWithChoicePutsOpencodesModelInTheEnvironment(t *testing.T) {
+	cfg, err := Default()
+	if err != nil {
+		t.Fatalf("Default: %v", err)
+	}
+	base := cfg.Tools["opencode"]
+	chosen := base.WithChoice(Choice{Model: `opencode/big-pickle"x`})
+	want := map[string]string{"OPENCODE_CONFIG_CONTENT": `{"model":"opencode/big-pickle\"x"}`}
+	if !reflect.DeepEqual(chosen.Env, want) {
+		t.Fatalf("env = %v, want %v", chosen.Env, want)
+	}
+	if chosen.Command != base.Command || chosen.ResumeByIDCommand != base.ResumeByIDCommand || chosen.ForkCommand != base.ForkCommand {
+		t.Fatalf("the model reached a launch line: %+v", chosen)
+	}
+	if plain := base.WithChoice(Choice{}); plain.Env != nil {
+		t.Fatalf("no model chosen, env = %v", plain.Env)
+	}
+}
+
 // With nothing chosen every line launches as the tool ships it, the choice
 // mark gone.
 func TestWithAnEmptyChoiceLaunchesAsShipped(t *testing.T) {
@@ -497,13 +518,13 @@ func TestEveryCatalogToolTakesWhatItLists(t *testing.T) {
 	}
 	for name, tool := range cfg.Tools {
 		if tool.Catalog == "" {
-			if tool.ModelArgs != "" || tool.EffortArgs != "" || tool.ProfileArgs != "" {
+			if tool.ModelArgs != "" || tool.ModelEnv != "" || tool.EffortArgs != "" || tool.ProfileArgs != "" {
 				t.Errorf("%s takes a choice nothing can list", name)
 			}
 			continue
 		}
-		if tool.CatalogCommand == "" || !strings.Contains(tool.ModelArgs, "{model}") {
-			t.Errorf("%s catalog %q command %q model_args %q", name, tool.Catalog, tool.CatalogCommand, tool.ModelArgs)
+		if tool.CatalogCommand == "" || !strings.Contains(tool.ModelArgs+tool.ModelEnv, "{model}") {
+			t.Errorf("%s catalog %q command %q model_args %q model_env %q", name, tool.Catalog, tool.CatalogCommand, tool.ModelArgs, tool.ModelEnv)
 		}
 		if tool.EffortArgs != "" && !strings.Contains(tool.EffortArgs, "{effort}") {
 			t.Errorf("%s effort_args = %q", name, tool.EffortArgs)

@@ -36,7 +36,11 @@ type FormFacts struct {
 	// picker's lines, painted under it while it has focus.
 	Group       string
 	GroupPicker []string
-	Styles      Styles
+	// Host is the painted name of the host a spawn goes to when that is
+	// not this one: the worktree is its default until picked, and there is
+	// no base to show.
+	Host   string
+	Styles Styles
 	// Height is the terminal's, and Chrome the rows the card spends around
 	// a body with this hint, which together budget the saved prompt lines.
 	Height int
@@ -92,13 +96,16 @@ func (d *Form) View(h FormHost, facts FormFacts) (string, [][2]string) {
 	worktreeField := st.Subtle.Render(facts.NoRepo)
 	if facts.WorktreeKnown && facts.WorktreeCapable {
 		worktreeVal := "off"
-		if d.worktree {
+		switch {
+		case facts.Host != "" && d.worktreeAuto:
+			worktreeVal = "host default"
+		case d.worktree:
 			worktreeVal = "on"
 		}
 		worktreeField = st.Subtle.Render("◂ ") + st.Value.Render(worktreeVal) + st.Subtle.Render(" ▸")
 	}
 	field("worktree", worktreeField, FieldWorktree)
-	if d.worktree && facts.WorktreeKnown && facts.WorktreeCapable {
+	if d.worktree && facts.WorktreeKnown && facts.WorktreeCapable && facts.Host == "" {
 		field("base", facts.Base, fieldBase)
 	}
 	if value, shown := d.savedRow(facts); shown {
@@ -108,7 +115,11 @@ func (d *Form) View(h FormHost, facts FormFacts) (string, [][2]string) {
 	// Chips are tokens inside the typed text, so they wrap and reflow with
 	// the words around them; painting happens on the rendered prompt.
 	field("prompt", h.Prompt().View(), FieldPrompt)
-	field("group", lipgloss.NewStyle().Foreground(st.Accent2).Render(facts.Group), FieldGroup)
+	group := lipgloss.NewStyle().Foreground(st.Accent2).Render(facts.Group)
+	if facts.Host != "" {
+		group = facts.Host + st.Subtle.Render(" · ") + group
+	}
+	field("group", group, FieldGroup)
 
 	if d.focus == FieldGroup {
 		add("\n", fieldLine{field: FieldGroup, entry: -1})

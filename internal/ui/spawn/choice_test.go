@@ -1,7 +1,9 @@
 package spawn
 
 import (
+	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	catalog "github.com/YoanWai/agent-manager/internal/catalog/value"
@@ -26,6 +28,7 @@ type fakeChoiceHost struct {
 	settings map[string]string
 	errs     []string
 	cleared  int
+	remote   string
 }
 
 func newFakeChoiceHost() *fakeChoiceHost {
@@ -37,6 +40,7 @@ func newFakeChoiceHost() *fakeChoiceHost {
 }
 
 func (h *fakeChoiceHost) ChoiceCaps(toolName string) Caps { return h.caps[toolName] }
+func (h *fakeChoiceHost) ChoiceRemoteHost() string        { return h.remote }
 
 func (h *fakeChoiceHost) ChoiceAnswer(toolName string) *Answer { return h.answers[toolName] }
 
@@ -77,6 +81,23 @@ func TestChoiceThroughAFakeHost(t *testing.T) {
 	h.settings[recentModelsKey("claude")] = "{"
 	if recentModels(h, "claude") != nil || len(h.errs) != 1 {
 		t.Fatalf("an unreadable setting should report once: %v", h.errs)
+	}
+}
+
+// A failed local catalog is a warning for a session here, since the pick
+// comes from it, but on a connection the host runs the CLI, so the note
+// says its default applies there.
+func TestModelNoteNamesTheHostWhenThisMachineListsNoModels(t *testing.T) {
+	h := newFakeChoiceHost()
+	h.answers["claude"] = &Answer{Err: errors.New("claude is not installed"), Loaded: true}
+	note, listed := ModelNote(h, "claude", Styles{})
+	if listed || !strings.Contains(note, "couldn't read models from claude: claude is not installed") {
+		t.Fatalf("local note = %q, listed %v", note, listed)
+	}
+	h.remote = "gpu"
+	note, listed = ModelNote(h, "claude", Styles{})
+	if listed || note != "claude's default on gpu; this machine's claude lists no models to pick from" {
+		t.Fatalf("remote note = %q, listed %v", note, listed)
 	}
 }
 

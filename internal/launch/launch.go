@@ -7,6 +7,7 @@ package launch
 
 import (
 	"errors"
+	"maps"
 	"os"
 	"strconv"
 	"strings"
@@ -198,6 +199,7 @@ func Environment(manager *hooks.Manager, toolName string, tool config.Tool, base
 	stamp := store.LaunchStamp(launchedAt)
 	launch := strconv.FormatInt(stamp, 10)
 	env := map[string]string{hooks.EnvSessionID: id, hooks.EnvLaunch: launch}
+	maps.Copy(env, tool.Env)
 	if toolName == "grok" {
 		// Grok's terminal theme leaves row backgrounds unpainted, and only its config file selects it.
 		if err := ensureGrokTerminalTheme(); err != nil {

@@ -10,6 +10,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 )
 
@@ -103,6 +104,24 @@ func TestBorrowedBackendReadsCoordinationFromItsStore(t *testing.T) {
 	}
 	if proactive, err := backend.ProactiveCoordination(); err != nil || !proactive {
 		t.Fatalf("stored coordination = %v, %v; want proactive", proactive, err)
+	}
+}
+
+func TestBackendReadsConnectionsFromItsStore(t *testing.T) {
+	h := newSessionHarness(t)
+	backend, err := BorrowBackend(harnessRuntime(t, h))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if connections, err := backend.Connections(); err != nil || len(connections) != 0 {
+		t.Fatalf("connections = %v, %v; want none", connections, err)
+	}
+	if err := h.store.AddConnection(store.Connection{Name: "build-box", Destination: "me@build"}); err != nil {
+		t.Fatal(err)
+	}
+	connections, err := backend.Connections()
+	if err != nil || len(connections) != 1 || connections[0].Name != "build-box" {
+		t.Fatalf("connections = %v, %v; want build-box", connections, err)
 	}
 }
 

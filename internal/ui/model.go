@@ -9,6 +9,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/notify"
+	"github.com/YoanWai/agent-manager/internal/remote"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -45,6 +46,7 @@ const (
 	// modeFocus routes the keyboard into the selected session's pane while
 	// the list and live preview stay on screen.
 	modeFocus
+	modeConnection
 )
 
 type Model struct {
@@ -74,6 +76,7 @@ type Model struct {
 	env        environment
 	help       helpFeature
 	move       moveDialog
+	ssh        connectionsFeature
 	layout     layoutState
 	errBar     errBar
 	update     updateInfo
@@ -209,6 +212,10 @@ func newView(deps Dependencies, version string) (*Model, error) {
 	if err != nil {
 		return nil, err
 	}
+	connections, err := st.Connections()
+	if err != nil {
+		return nil, err
+	}
 	applyTheme(themes[themeIndex(resolveStartupTheme(st))])
 	driver.SetSessionKeys(sessionKeys)
 	model := &Model{
@@ -235,7 +242,8 @@ func newView(deps Dependencies, version string) (*Model, error) {
 			engine:      engine,
 			setSnapshot: st.SetSnapshot,
 		},
-		rail:     uirail.New(loadCollapsed(st)),
+		rail:     loadRail(st),
+		ssh:      newConnections(remote.New(deps.ProfileDir), connections),
 		settings: settingsFeature{cache: loadSettingsCache(st, choiceSettingKeys(slices.Sorted(maps.Keys(cfg.Tools))))},
 		focus: focusState{runtime: focusRuntimeState{
 			imeCursor: &cursorAnchor{},
