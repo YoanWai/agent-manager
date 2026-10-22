@@ -333,7 +333,11 @@ missing=
 desktop_deps
 printf '%s\n' "$missing"
 `
-	base := []string{"PATH=/usr/bin:/bin"}
+	bin := t.TempDir()
+	if err := os.Symlink("/usr/bin/grep", filepath.Join(bin, "grep")); err != nil {
+		t.Fatal(err)
+	}
+	base := []string{"PATH=" + bin}
 	headless, code := runDash(t, body, base)
 	if code != 0 || strings.TrimSpace(headless) != "" {
 		t.Fatalf("headless: exit %d\n%q", code, headless)
@@ -360,7 +364,7 @@ func TestInWSLDoesNotAbort(t *testing.T) {
 		t.Fatalf("not wsl: exit %d\n%s", code, out)
 	}
 	out, code = runDash(t, body, []string{"PATH=/usr/bin:/bin", "WSL_DISTRO_NAME=Ubuntu"})
-	if code != 0 || !strings.Contains(out, "wsl") || !strings.Contains(out, "survived") {
+	if code != 0 || !strings.HasPrefix(out, "wsl\n") || !strings.Contains(out, "survived") {
 		t.Fatalf("wsl: exit %d\n%s", code, out)
 	}
 }
@@ -455,6 +459,9 @@ func runDash(t *testing.T, script string, env []string) (string, int) {
 func runDashNoTTY(t *testing.T, script string, env []string) (string, int) {
 	t.Helper()
 	requireDash(t)
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 is needed to drop the controlling terminal")
+	}
 	python := `
 import os, sys
 pid = os.fork()

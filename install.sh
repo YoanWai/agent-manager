@@ -241,6 +241,10 @@ install_deps() {
 		say "that failed, run it yourself: ${cmd}"
 		return 0
 	fi
+	# A Homebrew the command just installed is on the child shell's PATH only.
+	for brew in /opt/homebrew/bin/brew /usr/local/bin/brew; do
+		[ -x "$brew" ] && eval "$("$brew" shellenv)" && break
+	done
 	remaining=$(missing_deps)
 	if [ -n "$remaining" ]; then
 		say "installed packages do not satisfy: ${remaining}"
