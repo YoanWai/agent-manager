@@ -268,14 +268,20 @@ func (d *launchHintDialog) view(h launchHintHost, glyphs presentation.GlyphSet) 
 func (m *Model) launchHintFrame() string {
 	width := m.cardWidth()
 	title, body, hints := m.launchHint.card(m, m.glyphs(), width)
-	if m.layout.height > 0 {
-		lines := strings.Split(body, "\n")
-		limit := max(0, m.layout.height-m.cardChromeRows(hints))
-		if len(lines) > limit {
-			body = strings.Join(lines[len(lines)-limit:], "\n")
-		}
+	if dropped := m.launchHintDroppedRows(body, hints); dropped > 0 {
+		body = strings.Join(strings.Split(body, "\n")[dropped:], "\n")
 	}
 	return m.cardSized(width, title, body, hints)
+}
+
+// launchHintDroppedRows is how many leading body rows a short terminal
+// clips away, which a click's row index has to skip as well.
+func (m *Model) launchHintDroppedRows(body string, hints [][2]string) int {
+	if m.layout.height <= 0 {
+		return 0
+	}
+	limit := max(0, m.layout.height-m.cardChromeRows(hints))
+	return max(0, strings.Count(body, "\n")+1-limit)
 }
 
 func (d *launchHintDialog) card(h launchHintHost, glyphs presentation.GlyphSet, width int) (string, string, [][2]string) {

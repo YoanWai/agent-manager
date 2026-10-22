@@ -1048,3 +1048,18 @@ func TestLaunchHintKeepsTheInstallLineOnATenRowTerminal(t *testing.T) {
 		t.Fatalf("install line clipped away.\n%s", frame)
 	}
 }
+
+func TestLaunchHintClickCopiesTheCommandAfterClipping(t *testing.T) {
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 110, 10
+	var copied string
+	copyLaunchCommand = func(text string) error { copied = text; return nil }
+	t.Cleanup(func() { copyLaunchCommand = clipboard.WriteText })
+	m.reportLaunchError(config.MissingToolError{Binary: "claude", WindowsPath: `C:\Users\someone\AppData\Local\Programs\claude\claude.exe`})
+	x, y := paintedCell(t, m, "install it with")
+	m, cmd := leftClickCmd(m, x, y)
+	m.runBatch(t, cmd)
+	if want := deps.Shown("claude"); copied != want {
+		t.Fatalf("a click on the clipped card copied %q, want %q", copied, want)
+	}
+}

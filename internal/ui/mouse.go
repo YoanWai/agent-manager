@@ -226,7 +226,8 @@ func (m *Model) clickCard(col, line int) (tea.Model, tea.Cmd) {
 	case modeRepoPick:
 		return m, m.handleRepoPickClick(line)
 	case modeLaunchHint:
-		return m, m.launchHint.handleClick(m, line)
+		_, body, hints := m.launchHint.card(m, m.glyphs(), m.cardWidth())
+		return m, m.launchHint.handleClick(m, line+m.launchHintDroppedRows(body, hints))
 	case modeFocus:
 		return m, m.handleFocusSavedClick(line)
 	}
