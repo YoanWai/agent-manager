@@ -8,7 +8,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/x/ansi"
 )
 
 func focusSavedRow(t *testing.T, m *Model) {
@@ -77,15 +76,7 @@ func TestFormSavedPromptClickKeepsTheTask(t *testing.T) {
 	m.form.prompt.attachments = []imageAttachment{{id: 1, path: tempImage(t, "image.png")}}
 	before := m.form.prompt.message()
 	model := m.form.Choice().Model()
-	clicked := false
-	for y, line := range strings.Split(ansi.Strip(m.viewForm()), "\n") {
-		if strings.Contains(line, "Role") {
-			m.handleFormClick(m.layout.cardLeft+4, y)
-			clicked = true
-			break
-		}
-	}
-	if !clicked || m.form.SavedText() != "instruct" {
+	if m, _ = clickBody(t, m, "Role"); m.form.SavedText() != "instruct" {
 		t.Fatalf("a click on Role picked %q", m.form.SavedText())
 	}
 	if m.form.prompt.message() != before || len(m.form.prompt.attachments) != 1 || m.form.Choice().Model() != model {

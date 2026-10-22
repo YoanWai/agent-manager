@@ -1,0 +1,6 @@
+ServiceUnavailableError: Location plugins did not finish activating
+    at k (/$bunfs/root/chunk-kjw654v0.js:13:27636)
+    at <anonymous> (/$bunfs/root/chunk-kjw654v0.js:2:1106)
+    at processTicksAndRejections (native:7:39)
+    at cli.models (/$bunfs/root/chunk-p3psrxtn.js:7:21275)
+    at cli.models (definition) (/$bunfs/root/chunk-prerq150.js:2:1044)

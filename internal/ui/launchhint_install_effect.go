@@ -259,19 +259,16 @@ func (m *Model) applyInstallStart(request installStartRequest, result installSta
 		m.rebuildRows()
 	}
 	stillOpen := m.mode == modeLaunchHint && m.gens.dialog == request.gen
+	var cleanup tea.Cmd
 	if err != nil {
 		if result.install != nil {
 			m.launchHint.install = result.install
 			if stillOpen {
-				m.launchHint.fix = launchFix{}
-				m.mode = modeList
-				m.rail.ClearStatusFilter()
-				m.focusSession(result.session.ID)
+				cleanup = m.handInstallScreenTo(result.session.ID)
 			}
 			m.reportErr(err.Error())
-			return m.refreshCmd()
+			return tea.Batch(cleanup, m.refreshCmd())
 		}
-		var cleanup tea.Cmd
 		if stillOpen {
 			m.launchHint.fix.images = append(request.images, m.launchHint.fix.images...)
 		} else {
@@ -282,13 +279,25 @@ func (m *Model) applyInstallStart(request installStartRequest, result installSta
 	}
 	m.launchHint.install = result.install
 	if stillOpen {
-		m.launchHint.fix = launchFix{}
-		m.mode = modeList
-		m.rail.ClearStatusFilter()
-		m.focusSession(result.session.ID)
+		cleanup = m.handInstallScreenTo(result.session.ID)
 	}
 	m.reportDone("installing " + request.binary)
-	return m.refreshCmd()
+	return tea.Batch(cleanup, m.refreshCmd())
+}
+
+func (m *Model) handInstallScreenTo(sessionID string) tea.Cmd {
+	var cleanup tea.Cmd
+	m.launchHint.fix = launchFix{}
+	m.mode = modeList
+	if m.quick.active {
+		m.quick.active = false
+		cleanup = installImageCleanupCmd(m.quick.attachments)
+		m.quick.attachments = nil
+		m.quick.saved = nil
+	}
+	m.rail.ClearStatusFilter()
+	m.focusSession(sessionID)
+	return cleanup
 }
 
 func (m *Model) applyInstallSettle(request installSettleRequest, result installSettleResult, err error) tea.Cmd {

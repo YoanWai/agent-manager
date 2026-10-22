@@ -142,13 +142,18 @@ func installOnConnection(out io.Writer, version, configDir, name string, asJSON 
 		return err
 	}
 	connections := make([]remote.Connection, 0, len(stored))
-	found := false
+	var target *remote.Connection
 	for _, conn := range stored {
-		connections = append(connections, remote.Connection{Name: conn.Name, Destination: conn.Destination})
-		found = found || conn.Name == name
+		connections = append(connections, remote.Connection(conn))
+		if conn.Name == name {
+			target = &connections[len(connections)-1]
+		}
 	}
-	if !found {
+	if target == nil {
 		return fmt.Errorf("update: no SSH connection is named %q", name)
+	}
+	if target.Binary != "" {
+		return fmt.Errorf("update: %s runs agent-manager at %s, which an install to ~/.local/bin would not replace; update it there by hand or clear the connection's path", name, target.Binary)
 	}
 	client := updateRemote(configDir)
 	client.SetConnections(connections)

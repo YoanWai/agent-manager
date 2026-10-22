@@ -14,6 +14,7 @@ const diffGutterSign = 2
 
 func (m *Model) Code(ctx RenderContext, width, height int) Pane {
 	r := m.renderer(ctx)
+	m.codeRows.Reset()
 	if m.loading && len(m.set.Files) == 0 {
 		return Pane{Loading: "loading diff"}
 	}
@@ -216,24 +217,41 @@ func (r renderer) unifiedRows(fd *diff.FileDiff, hl *Highlight, width, height in
 		scroll = 0
 	}
 
-	var rows []string
+	var rows paintedRows
 	if scroll > 0 {
-		rows = append(rows, r.s.Subtle.Render(fmt.Sprintf("  ↑ %d more", scroll)))
+		rows.add(scroll-1, r.s.Subtle.Render(fmt.Sprintf("  ↑ %d more", scroll)))
 	}
 	i := scroll
-	for ; i < total && len(rows) < height; i++ {
-		rows = append(rows, r.renderDiffRow(fd, hl, i, width, i == r.m.cursorLine)...)
-		rows = append(rows, r.annotationRows(fd, i, width)...)
+	for ; i < total && len(rows.text) < height; i++ {
+		rows.add(i, r.renderDiffRow(fd, hl, i, width, i == r.m.cursorLine)...)
+		rows.add(i, r.annotationRows(fd, i, width)...)
 	}
 	if i < total {
-		if len(rows) >= height {
-			rows = rows[:height-1]
+		if len(rows.text) >= height {
+			rows.cut(height - 1)
 		}
-		rows = append(rows, r.s.Subtle.Render(fmt.Sprintf("  ↓ %d more", total-i)))
-	} else if len(rows) > height {
-		rows = rows[:height]
+		rows.add(i, r.s.Subtle.Render(fmt.Sprintf("  ↓ %d more", total-i)))
+	} else if len(rows.text) > height {
+		rows.cut(height)
 	}
-	return rows
+	r.m.codeRows = rows.lines
+	return rows.text
+}
+
+// paintedRows are a code pane's rows and the cursor line each one shows.
+type paintedRows struct {
+	text  []string
+	lines presentation.Lines[int]
+}
+
+func (p *paintedRows) add(line int, rows ...string) {
+	p.text = append(p.text, rows...)
+	p.lines.Show(line, len(rows))
+}
+
+func (p *paintedRows) cut(n int) {
+	p.text = p.text[:n]
+	p.lines.Cut(n)
 }
 
 func numWidth(fd *diff.FileDiff) int {
@@ -267,12 +285,12 @@ func (r renderer) renderSideBySide(b *strings.Builder, fd *diff.FileDiff, hl *Hi
 	if scroll < 0 {
 		scroll = 0
 	}
-	var out []string
+	var out paintedRows
 	if scroll > 0 {
-		out = append(out, r.s.Subtle.Render(fmt.Sprintf("  ↑ %d more", scroll)))
+		out.add(scroll-1, r.s.Subtle.Render(fmt.Sprintf("  ↑ %d more", scroll)))
 	}
 	i := scroll
-	for ; i < len(rows) && len(out) < height; i++ {
+	for ; i < len(rows) && len(out.text) < height; i++ {
 		row := rows[i]
 		left := r.renderSideCell(fd, hl, row.Left, half, true)
 		right := r.renderSideCell(fd, hl, row.Right, width-half-1, false)
@@ -294,24 +312,25 @@ func (r renderer) renderSideBySide(b *strings.Builder, fd *diff.FileDiff, hl *Hi
 			if i == r.m.cursorLine {
 				line = r.s.selectRow(presentation.PadRight(line, width))
 			}
-			out = append(out, line)
+			out.add(i, line)
 		}
 		if row.Left >= 0 {
-			out = append(out, r.annotationRows(fd, row.Left, width)...)
+			out.add(i, r.annotationRows(fd, row.Left, width)...)
 		}
 		if row.Right >= 0 && row.Right != row.Left {
-			out = append(out, r.annotationRows(fd, row.Right, width)...)
+			out.add(i, r.annotationRows(fd, row.Right, width)...)
 		}
 	}
 	if i < len(rows) {
-		if len(out) >= height {
-			out = out[:height-1]
+		if len(out.text) >= height {
+			out.cut(height - 1)
 		}
-		out = append(out, r.s.Subtle.Render(fmt.Sprintf("  ↓ %d more", len(rows)-i)))
-	} else if len(out) > height {
-		out = out[:height]
+		out.add(i, r.s.Subtle.Render(fmt.Sprintf("  ↓ %d more", len(rows)-i)))
+	} else if len(out.text) > height {
+		out.cut(height)
 	}
-	b.WriteString(strings.Join(out, "\n"))
+	r.m.codeRows = out.lines
+	b.WriteString(strings.Join(out.text, "\n"))
 }
 
 // renderSideCell renders one half of a side-by-side row into wrapped

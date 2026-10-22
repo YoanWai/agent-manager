@@ -7,9 +7,10 @@ to a real agent-manager "host" without a network or the user's ~/.ssh. The
 scenario adds a connection through the dialog and drives every action a
 remote row offers: preview, quick send, kill, revive, archive, restore,
 attach, quick spawn and a new terminal. A second connection whose host
-refuses stays offline and is removed. A third, whose host runs an agent-manager
-too old for the snapshot, offers the install, which this dev build refuses
-without writing anything there. Every process it started is ended by PID.
+refuses shows as unreachable and is removed. A third, whose host runs an
+agent-manager too old for the snapshot, offers the install, which this dev
+build refuses without writing anything there. Every process it started is
+ended by PID.
 """
 import argparse
 import hashlib
@@ -18,7 +19,6 @@ import os
 import shlex
 import shutil
 import signal
-import socket
 import sqlite3
 import subprocess
 import tempfile
@@ -297,14 +297,14 @@ def spawn_and_terminal(sandbox, remote):
 
 
 def offline_connection(sandbox):
-    """A host ssh cannot reach shows offline with ssh's error, refuses actions, and comes out."""
+    """A host ssh cannot reach says unreachable with ssh's error, refuses actions, and comes out."""
     add_connection(sandbox, DOWN)
     select(sandbox, 'offline-row', 'ssh to fixture@' + DOWN)
     frame(sandbox, 'offline', 'Connection refused')
-    if 'offline' not in preview_of(capture(sandbox)):
-        raise AssertionError('unreachable host not marked offline')
+    if 'unreachable' not in preview_of(capture(sandbox)):
+        raise AssertionError('unreachable host not marked unreachable')
     key(sandbox, 'T')
-    frame(sandbox, 'offline-refusal', f'{DOWN} is offline')
+    frame(sandbox, 'offline-refusal', f'{DOWN}: unreachable over SSH')
     key(sandbox, 'd')
     confirm(sandbox, 'remove-connection', f'remove connection {DOWN}?', CONNECTION)
     sandbox.wait('connection-removed', lambda: str(stored_connections(sandbox)),
@@ -353,13 +353,13 @@ def scenario(sandbox, remote, binary):
     key(sandbox, 'Enter')
     sandbox.wait('quick-sent', lambda: capture(sandbox),
                  lambda value: f'sent to {REMOTE_AGENT}' in value or f'queued for {REMOTE_AGENT}' in value)
-    sandbox.wait('remote-inbox', lambda: json.dumps(remote.inbox()),
-                 lambda value: any(QUICK_TEXT in body for _, body in json.loads(value)))
-    # send --from takes 64 bytes; hostnames are ASCII.
-    sender = socket.gethostname().split('.')[0][:59] + ': you'
-    senders = [name for name, body in remote.inbox() if QUICK_TEXT in body]
-    if senders != [sender]:
-        raise AssertionError(f'senders {senders}, want [{sender!r}]')
+    # The quick bar types into the host's pane as the user, the way it does
+    # locally, rather than queueing a message from another machine.
+    pane = 'am_' + agent_id
+    sandbox.wait('remote-typed', lambda: remote.tmux(sandbox, 'capture-pane', '-p', '-t', pane).stdout,
+                 lambda text: QUICK_TEXT in text)
+    if any(QUICK_TEXT in body for _, body in remote.inbox()):
+        raise AssertionError(f'the quick bar queued a message on the host: {remote.inbox()}')
 
     key(sandbox, 'Escape')
     frame(sandbox, 'quick-closed', f'{REMOTE_AGENT}  on {CONNECTION}', 'Quick prompt mode')

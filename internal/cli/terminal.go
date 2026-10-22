@@ -12,7 +12,7 @@ const (
 	usageTerminalList   = "terminal list [--json]"
 	usageTerminalCreate = "terminal create [--group <path>] [--directory <path>] [--nest=false] [--json]"
 	usageTerminalSend   = `terminal send <terminal-id> --command "<text>" | --keys <key,key> [--json]`
-	usageTerminalRead   = "terminal read <terminal-id> [--json]"
+	usageTerminalRead   = "terminal read <terminal-id> [--styled] [--json]"
 	usageTerminalClose  = "terminal close <terminal-id>"
 )
 
@@ -21,6 +21,7 @@ type terminalCommands interface {
 	Create(sessionID string, opts sessioncmd.CreateTerminalOptions) (sessioncmd.Terminal, error)
 	Send(sessionID, terminalID, command string, keys []string) (sessioncmd.TerminalInput, error)
 	Read(sessionID, terminalID string) (sessioncmd.TerminalScreen, error)
+	ReadStyled(sessionID, terminalID string) (sessioncmd.TerminalScreen, error)
 	Close(sessionID, terminalID string) error
 }
 
@@ -106,12 +107,17 @@ func runTerminalSend(out io.Writer, terminals terminalCommands, args []string, s
 
 func runTerminalRead(out io.Writer, terminals terminalCommands, args []string, sessionID string) error {
 	set := newFlagSet(usageTerminalRead)
+	styled := styledFlag(set)
 	asJSON := jsonFlag(set)
 	operands, err := parseCommand(out, set, args, 1, 1)
 	if err != nil {
 		return err
 	}
-	screen, err := terminals.Read(sessionID, operands[0])
+	read := terminals.Read
+	if *styled {
+		read = terminals.ReadStyled
+	}
+	screen, err := read(sessionID, operands[0])
 	if err != nil {
 		return err
 	}

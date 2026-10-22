@@ -98,7 +98,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) viewConfirm() string {
 	prompt := m.confirm.prompt()
 	question, consequence := uidialogs.SplitLabel(prompt.Label)
-	return m.confirmCard(prompt.Title(), question, consequence, prompt.Destructive(), prompt.Answer())
+	return m.confirmCard(prompt.Title(m.prefs.glyphMode), question, consequence, prompt.Destructive(), prompt.Answer())
 }
 
 // confirmCard is the shared yes/no card, also drawn by Settings' reset.
@@ -228,8 +228,20 @@ func (m *Model) handleMoveKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// handleMoveClick moves the picker's cursor to the target a click landed on,
+// and moves the row there on a click on the target already under it.
+func (m *Model) handleMoveClick(line int) (tea.Model, tea.Cmd) {
+	switch {
+	case line < 0 || line >= len(m.form.groups):
+		return m, nil
+	case line != m.form.groupIndex:
+		return m, m.moveGroupCursor(line - m.form.groupIndex)
+	}
+	return m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
+}
+
 func (m *Model) viewMove() string {
-	return m.card(uidialogs.MoveTitle, m.viewGroupPicker(), uidialogs.MoveHints())
+	return m.card(uidialogs.MoveTitle(m.prefs.glyphMode), m.viewGroupPicker(), uidialogs.MoveHints())
 }
 
 // forkDialog keeps the captured source row the fork request carries; the
@@ -289,7 +301,7 @@ func (m *Model) viewFork() string {
 		BranchGlyph: m.glyphs().BranchGlyph,
 		Value:       valueStyle(),
 		Group:       lipgloss.NewStyle().Foreground(colorAccent2()),
-		Field:       formField,
+		Field:       m.formField,
 		Input:       textInputView,
 	}))
 }

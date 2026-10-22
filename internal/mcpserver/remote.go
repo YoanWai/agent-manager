@@ -19,21 +19,35 @@ import (
 // maxSenderBytes is the longest name the remote send --from takes.
 const maxSenderBytes = 64
 
-// remoteSource is where the server finds the user's SSH connections and
-// the client that reaches them.
+// remoteSource is where the server finds the user's SSH connections, the
+// client that reaches them, and the store that records which session opened
+// a terminal there.
 type remoteSource struct {
 	client      *remote.Client
 	connections func() ([]store.Connection, error)
+	withStore   func(func(*store.Store) error) error
 }
 
-func storeConnections(configDir string) func() ([]store.Connection, error) {
-	return func() ([]store.Connection, error) {
+func storeAt(configDir string) func(func(*store.Store) error) error {
+	return func(use func(*store.Store) error) error {
 		st, err := store.Open(filepath.Join(configDir, "state.db"))
 		if err != nil {
-			return nil, err
+			return err
 		}
 		defer st.Close()
-		return st.Connections()
+		return use(st)
+	}
+}
+
+func storeConnections(withStore func(func(*store.Store) error) error) func() ([]store.Connection, error) {
+	return func() ([]store.Connection, error) {
+		var connections []store.Connection
+		err := withStore(func(st *store.Store) error {
+			var err error
+			connections, err = st.Connections()
+			return err
+		})
+		return connections, err
 	}
 }
 
@@ -41,7 +55,6 @@ func storeConnections(configDir string) func() ([]store.Connection, error) {
 type remoteHosts struct {
 	remoteSource
 	sessionID string
-	noCaller  error
 	sessions  sessionCommands
 	terminals terminalCommands
 }
@@ -74,20 +87,16 @@ type hostRows struct {
 	state remote.HostState
 }
 
-// ready refuses a caller outside Agent Manager, as the local tools do, and
-// picks up a connection the user added, edited or removed in the manager
-// since the last call.
+// ready picks up a connection the user added, edited or removed in the
+// manager since the last call.
 func (h *remoteHosts) ready() ([]remote.Connection, error) {
-	if h.noCaller != nil {
-		return nil, h.noCaller
-	}
 	stored, err := h.connections()
 	if err != nil {
 		return nil, err
 	}
 	next := make([]remote.Connection, len(stored))
 	for i, conn := range stored {
-		next[i] = remote.Connection{Name: conn.Name, Destination: conn.Destination}
+		next[i] = remote.Connection(conn)
 	}
 	if !slices.Equal(next, h.client.Connections()) {
 		h.client.SetConnections(next)
@@ -96,7 +105,9 @@ func (h *remoteHosts) ready() ([]remote.Connection, error) {
 }
 
 // refresh snapshots every connection at once, so a listing waits for its
-// slowest host rather than for all of them in turn.
+// slowest host rather than for all of them in turn. A host that just failed
+// answers from its last refresh until its retry wait is over, so one that
+// is down does not add its connect timeout to every listing.
 func (h *remoteHosts) refresh(ctx context.Context) ([]hostRows, error) {
 	connections, err := h.ready()
 	if err != nil {
@@ -108,6 +119,10 @@ func (h *remoteHosts) refresh(ctx context.Context) ([]hostRows, error) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			if h.client.Resting(conn.Name) {
+				hosts[i] = hostRows{name: conn.Name, state: h.client.State(conn.Name)}
+				return
+			}
 			hosts[i] = hostRows{name: conn.Name, state: h.client.Refresh(ctx, conn.Name)}
 		}()
 	}
@@ -385,15 +400,18 @@ func (h *remoteHosts) createTerminal(ctx context.Context, host string, opts sess
 	if _, err := h.ready(); err != nil {
 		return sessioncmd.Terminal{}, err
 	}
-	created, err := h.client.CreateTerminal(ctx, host, opts)
-	return qualifyTerminal(host, created), err
+	created, err := h.remoteTerminals().Open(ctx, host, h.sessionID, opts)
+	if err != nil {
+		return sessioncmd.Terminal{}, err
+	}
+	return qualifyTerminal(host, created), nil
 }
 
 func (h *remoteHosts) sendTerminal(ctx context.Context, ref remote.Ref, command string, keys []string) (sessioncmd.TerminalInput, error) {
 	if _, err := h.ready(); err != nil {
 		return sessioncmd.TerminalInput{}, err
 	}
-	sent, err := h.client.TerminalSend(ctx, ref, command, keys)
+	sent, err := h.remoteTerminals().Send(ctx, ref, h.sessionID, command, keys)
 	sent.TerminalID = ref.String()
 	return sent, err
 }
@@ -402,7 +420,31 @@ func (h *remoteHosts) closeTerminal(ctx context.Context, ref remote.Ref) error {
 	if _, err := h.ready(); err != nil {
 		return err
 	}
-	return h.client.TerminalClose(ctx, ref)
+	return h.remoteTerminals().Close(ctx, ref, h.sessionID)
+}
+
+func (h *remoteHosts) remoteTerminals() remote.Terminals {
+	return h.client.Terminals(storeOpeners(h.withStore))
+}
+
+// storeOpeners opens the store for each record, as the server does for
+// every other call.
+type storeOpeners func(func(*store.Store) error) error
+
+func (w storeOpeners) SetRemoteTerminalOpener(host, terminalID, sessionID string) error {
+	return w(func(st *store.Store) error { return st.SetRemoteTerminalOpener(host, terminalID, sessionID) })
+}
+
+func (w storeOpeners) RemoteTerminalOpener(host, terminalID string) (opener string, err error) {
+	err = w(func(st *store.Store) error {
+		opener, err = st.RemoteTerminalOpener(host, terminalID)
+		return err
+	})
+	return opener, err
+}
+
+func (w storeOpeners) DeleteRemoteTerminal(host, terminalID string) error {
+	return w(func(st *store.Store) error { return st.DeleteRemoteTerminal(host, terminalID) })
 }
 
 func (h *remoteHosts) createGroup(ctx context.Context, host, path, directory string) (sessioncmd.Group, error) {

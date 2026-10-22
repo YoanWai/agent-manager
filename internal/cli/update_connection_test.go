@@ -119,3 +119,23 @@ func TestUpdateConnectionRefusesADevBuildAndAnUnknownName(t *testing.T) {
 		t.Fatalf("a refusal still ran %q", host.commands)
 	}
 }
+
+func TestUpdateConnectionRefusesAConnectionWithItsOwnPath(t *testing.T) {
+	host := &scriptedHost{t: t, snapshot: `{"version":0}`}
+	configDir := seedConnection(t, host)
+	st, err := store.Open(filepath.Join(configDir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AddConnection(store.Connection{Name: "lab", Destination: "me@lab", Binary: "~/bin/agent-manager"}); err != nil {
+		t.Fatal(err)
+	}
+	st.Close()
+	err = runUpdate("0.41.0")(&bytes.Buffer{}, []string{"--connection=lab"}, configDir)
+	if err == nil || !strings.Contains(err.Error(), "runs agent-manager at ~/bin/agent-manager") {
+		t.Fatalf("connection with a path = %v", err)
+	}
+	if len(host.commands) != 0 {
+		t.Fatalf("a refusal still ran %q", host.commands)
+	}
+}

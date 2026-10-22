@@ -92,7 +92,7 @@ func TestQuickFooterFillsEveryBandCell(t *testing.T) {
 			}
 			backgrounds, _ := cellColors(frame, m.layout.width, m.layout.height)
 			footerHeight := lipgloss.Height(m.viewFooter())
-			keysHeight := lipgloss.Height(legendBar([]legendSection{{title: quickModeTitle, pairs: m.quick.Legend(m.quickBarHost())}}, m.layout.width-1))
+			keysHeight := lipgloss.Height(paintLegend([]legendSection{{title: quickModeTitle, pairs: m.quick.Legend(m.quickBarHost())}}, m.layout.width-1).text)
 			if !strings.Contains(ansi.Strip(frameRows[m.layout.height-footerHeight]), "new") {
 				t.Fatalf("full %v width %d footer must begin with the target", full, width)
 			}

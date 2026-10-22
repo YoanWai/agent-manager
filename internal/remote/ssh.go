@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -31,6 +32,10 @@ const (
 
 var errOverflow = errors.New("output past its cap")
 
+// errTooLong is an answer cut at maxStdout. What arrived is not JSON, but
+// it says nothing about the host's version.
+var errTooLong = fmt.Errorf("answered with more than %d MiB", maxStdout>>20)
+
 func runSSH(ctx context.Context, argv []string, stdin io.Reader) ([]byte, []byte, error) {
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Stdin = stdin
@@ -41,7 +46,7 @@ func runSSH(ctx context.Context, argv []string, stdin io.Reader) ([]byte, []byte
 	err := cmd.Run()
 	switch {
 	case stdout.over:
-		err = fmt.Errorf("answered with more than %d MiB", maxStdout>>20)
+		err = errTooLong
 	case stderr.over:
 		err = fmt.Errorf("printed more than %d KiB of errors", maxStderr>>10)
 	// ssh exited cleanly and its answer is whole; only a helper outside its
@@ -112,6 +117,7 @@ func (c *Client) sshArgv(destination string, tty bool, command string) []string 
 		"ssh",
 		"-o", "BatchMode=yes",
 		"-o", "ForwardAgent=no",
+		"-o", "ForwardX11=no",
 		"-o", "ClearAllForwardings=yes",
 		"-o", "ConnectTimeout=5",
 		"-o", "ServerAliveInterval=15",
@@ -126,10 +132,10 @@ func (c *Client) sshArgv(destination string, tty bool, command string) []string 
 // skipped. JSON escapes control bytes, so no answer can hold it.
 const outputMarker = "\x1eagent-manager\x1e"
 
-// remoteCommand runs words through the user's login shell after the
-// marker.
-func remoteCommand(words []string) string {
-	return loginShell("printf %s " + quote(outputMarker) + "; exec " + quoteWords(words))
+// remoteCommand runs program, already quoted for the shell, with words
+// through the user's login shell after the marker.
+func remoteCommand(program string, words []string) string {
+	return loginShell("printf %s " + quote(outputMarker) + "; exec " + program + " " + quoteWords(words))
 }
 
 // loginShell runs script through the user's login shell, so the PATH set up
@@ -189,11 +195,47 @@ func (c *Client) AttachCommand(ref Ref) (*exec.Cmd, error) {
 	if err := prepareSharing(c.controlDir); err != nil {
 		return nil, &Error{Host: ref.Host, Err: err}
 	}
-	words := []string{"tmux", "-u", "-L", "agentmgr", "attach-session", "-t", "am_" + ref.ID}
-	argv := c.sshArgv(conn.Destination, true, loginShell(quoteWords(words)))
+	argv := c.sshArgv(conn.Destination, true, loginShell(attachScript(ref.ID)))
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Env = withoutTMUX(os.Environ())
 	return cmd, nil
+}
+
+// The exit statuses attachScript reports the host's review and editor keys
+// with, above any tmux itself exits with.
+const (
+	exitAttachReview = 120
+	exitAttachEditor = 121
+)
+
+// attachScript attaches to the session on the host's tmux server. The host's
+// in-session review and editor keys leave their request on that server and
+// detach, and the host's own manager would carry it out the next time one
+// of its attaches ends there, so the script takes it back and reports it in
+// its exit status instead.
+func attachScript(id string) string {
+	tmux := []string{"tmux", "-u", "-L", "agentmgr"}
+	attach := quoteWords(append(tmux, "attach-session", "-t", "am_"+id))
+	show := quoteWords(append(tmux, "show-options", "-gqv", "@am_request"))
+	unset := quoteWords(append(tmux, "set-option", "-gu", "@am_request"))
+	return attach + `; s=$?; r=$(` + show + ` 2>/dev/null); [ -n "$r" ] && ` + unset + ` 2>/dev/null; ` +
+		`case "$r" in review) exit ` + strconv.Itoa(exitAttachReview) + `;; editor) exit ` + strconv.Itoa(exitAttachEditor) + `;; esac; exit $s`
+}
+
+// AttachKey reports the host's review or editor key ending an attach, which
+// this manager cannot carry out for a session on another machine. The error
+// is nil then; otherwise it is err as it was.
+func AttachKey(err error) (string, error) {
+	var exited interface{ ExitCode() int }
+	if errors.As(err, &exited) {
+		switch exited.ExitCode() {
+		case exitAttachReview:
+			return "review", nil
+		case exitAttachEditor:
+			return "editor", nil
+		}
+	}
+	return "", err
 }
 
 func withoutTMUX(environ []string) []string {

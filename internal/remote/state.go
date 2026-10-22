@@ -5,20 +5,12 @@ import (
 	"errors"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/remote/value"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 )
 
-// RetryWait is how long a host that failed its last refreshes rests before
-// the next try: a poll apart at first, doubling to half a minute, so an
-// unreachable host is not dialled on every poll for as long as it is down.
-func RetryWait(failures int) time.Duration {
-	const longest = 30 * time.Second
-	wait := 2 * time.Second
-	for i := 1; i < failures && wait < longest; i++ {
-		wait *= 2
-	}
-	return min(wait, longest)
-}
+// RetryWait is how long a host that failed its last refreshes rests.
+var RetryWait = value.RetryWait
 
 // managerStartInterval spaces the attempts to start a manager on a host
 // that keeps reporting none awake, so a failing start is not retried on
@@ -44,8 +36,8 @@ type HostState struct {
 }
 
 type hostRecord struct {
-	state       HostState
-	destination string
+	state HostState
+	conn  Connection
 }
 
 // Refresh takes a snapshot of host and caches the outcome for State.
@@ -71,6 +63,13 @@ func (c *Client) Refresh(ctx context.Context, host string) HostState {
 	return c.record(conn, state)
 }
 
+// Resting reports whether host failed its last refresh less than
+// RetryWait ago, so a caller reads State rather than dialling it again.
+func (c *Client) Resting(host string) bool {
+	state := c.State(host)
+	return !state.OK && state.Failures > 0 && c.now().Sub(state.Attempted) < RetryWait(state.Failures)
+}
+
 // State returns the cached outcome of host's refreshes without any I/O, or
 // why the stored connection is invalid.
 func (c *Client) State(host string) HostState {
@@ -87,8 +86,8 @@ func (c *Client) State(host string) HostState {
 func (c *Client) record(conn Connection, state HostState) HostState {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.unchanged(conn.Name, conn.Destination) {
-		c.states[conn.Name] = hostRecord{state: state, destination: conn.Destination}
+	if c.unchanged(conn.Name, conn) {
+		c.states[conn.Name] = hostRecord{state: state, conn: conn}
 	}
 	return state
 }

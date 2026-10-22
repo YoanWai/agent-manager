@@ -779,6 +779,7 @@ func TestQuickRemembersPickOnlyAfterInstallRetrySucceeds(t *testing.T) {
 		t.Fatalf("failed launch changed the last pick: %q, %v", m.ledger.lastSpawnTool, m.ledger.lastSpawnWorktree)
 	}
 	m.launchHint.fix.command = installCommand
+	m.launchHint.fix.script = installCommand
 	m.applyCmd(t, pressInLaunchHint(t, m, 'i'))
 	waitForInstallToSettle(t, m)
 
@@ -1273,7 +1274,7 @@ func TestQuickPromptModeLeadsTheFooterAndNamesTheOpenBar(t *testing.T) {
 			t.Fatalf("full layout %v: the prompt should sit in the footer:\n%s", full, ansi.Strip(frame))
 		}
 		rows := strings.Split(footer, "\n")
-		keysHeight := lipgloss.Height(legendBar([]legendSection{{title: quickModeTitle, pairs: m.quick.Legend(m.quickBarHost())}}, m.layout.width-1))
+		keysHeight := lipgloss.Height(paintLegend([]legendSection{{title: quickModeTitle, pairs: m.quick.Legend(m.quickBarHost())}}, m.layout.width-1).text)
 		for i, line := range rows {
 			tone := quickModeHex()
 			if i > 0 && i < len(rows)-keysHeight {

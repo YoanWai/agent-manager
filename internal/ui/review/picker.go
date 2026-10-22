@@ -50,6 +50,10 @@ type Picker struct {
 	kind      PickerKind
 	source    PickerSource
 	storeRoot string
+	// first is the row the window starts at; lines is the row each
+	// painted body line shows, for clicks.
+	first int
+	lines presentation.Lines[int]
 }
 
 // PickerChoice is the row Enter picked, for root to retarget or persist.
@@ -153,27 +157,30 @@ func (p *Picker) moveCursor(delta, count int) {
 	p.cursor = (p.cursor + delta + count) % count
 }
 
-func (p Picker) window(height, count int) (start, end int) {
-	visible := max(3, height-pickerChrome)
-	if count <= visible {
-		return 0, count
+func (p *Picker) window(height, count int) (start, end int) {
+	visible := min(max(3, height-pickerChrome), count)
+	p.first = presentation.Follow(p.first, p.cursor, count, visible)
+	return p.first, p.first + visible
+}
+
+// Click is a press on line of the card's body. The first click on a row
+// moves the cursor there; one on the row under the cursor picks it, the way
+// ↵ does.
+func (p *Picker) Click(line int, sourceCurrent bool) PickerResult {
+	row, ok := p.lines.At(line)
+	if !ok || !presentation.ClickRow(&p.cursor, row) {
+		return PickerResult{}
 	}
-	start = p.cursor - visible/2
-	if start < 0 {
-		start = 0
-	}
-	if start+visible > count {
-		start = count - visible
-	}
-	return start, start + visible
+	return p.Key(tea.KeyMsg{Type: tea.KeyEnter}, sourceCurrent)
 }
 
 // row renders one picker row inside a card of inner width.
-func (p Picker) row(s Styles, inner int, row PickerRow, selected bool) string {
+func (p Picker) row(ctx RenderContext, inner int, row PickerRow, selected bool) string {
+	s := ctx.Styles
 	marker := "  "
 	nameStyle := lipgloss.NewStyle()
 	if selected {
-		marker = lipgloss.NewStyle().Foreground(s.Accent).Render("❯ ")
+		marker = lipgloss.NewStyle().Foreground(s.Accent).Render(presentation.GlyphsFor(ctx.GlyphMode).SelectionGlyph + " ")
 		nameStyle = nameStyle.Foreground(s.Accent).Bold(true)
 	}
 	name := presentation.TruncateTail(presentation.EscapeControlsInline(row.Label), inner-lipgloss.Width(marker))
@@ -187,17 +194,20 @@ func (p Picker) row(s Styles, inner int, row PickerRow, selected bool) string {
 
 // Body is the card content for a terminal height rows tall and a card whose
 // rows are inner columns wide; root wraps it in the shared card chrome.
-func (p Picker) Body(ctx RenderContext, inner, height int) string {
+func (p *Picker) Body(ctx RenderContext, inner, height int) string {
 	s := ctx.Styles
 	rows := p.filteredRows()
 	var body strings.Builder
 	body.WriteString(s.Muted.Render("filter: ") + p.filter + "\n\n")
+	p.lines.Reset()
+	p.lines.Skip(2)
 	if len(rows) == 0 {
 		body.WriteString(s.Subtle.Render("no match"))
 	}
 	start, end := p.window(height, len(rows))
 	for i := start; i < end; i++ {
-		body.WriteString(p.row(s, inner, rows[i], i == p.cursor) + "\n")
+		body.WriteString(p.row(ctx, inner, rows[i], i == p.cursor) + "\n")
+		p.lines.Show(i, 1)
 	}
 	if hidden := len(rows) - (end - start); hidden > 0 {
 		body.WriteString(s.Subtle.Render(fmt.Sprintf("+%d more", hidden)) + "\n")

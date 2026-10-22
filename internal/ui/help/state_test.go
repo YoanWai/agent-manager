@@ -96,3 +96,22 @@ func TestNewAlwaysStartsWithCleanStateAndRequestedScope(t *testing.T) {
 		t.Fatalf("new review state = %+v", state)
 	}
 }
+
+// The search line is shown once a query exists; a click on it takes the
+// search back up, and a click anywhere else in the body does nothing.
+func TestClickOnTheSearchLineResumesSearch(t *testing.T) {
+	state := New(Global)
+	viewport := Viewport{Rows: 4, Lines: 12}
+	if state.Click(0); state.searching {
+		t.Fatal("with no query the first line is a key row, not the search")
+	}
+	state.Update(runeKey("/"), viewport)
+	state.Update(runeKey("q"), viewport)
+	state.Update(namedKey(tea.KeyEnter), viewport)
+	if state.Click(1); state.searching {
+		t.Fatal("a click under the search line must not open it")
+	}
+	if state.Click(0); !state.searching || state.query != "q" {
+		t.Fatalf("a click on the search line should resume it, state %+v", state)
+	}
+}

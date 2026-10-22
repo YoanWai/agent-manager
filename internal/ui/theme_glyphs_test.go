@@ -2,6 +2,7 @@ package ui
 
 import (
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -40,7 +41,14 @@ func TestGlyphModesCoverEveryBuiltinTool(t *testing.T) {
 			if g.StatusGlyph(status.Dead) != g.StatusGlyph(status.Errored) {
 				t.Fatal("dead sessions lost their error mark")
 			}
-			for _, mark := range append([]string{g.ReorderGrip, g.InboxGlyph, g.BranchGlyph, g.GroupOpenGlyph, g.GroupClosedGlyph, g.ShellGlyph, g.LoaderHead, g.LoaderTail, g.LoaderRest}, g.StartupFrames...) {
+			marks := append([]string(nil), g.StartupFrames...)
+			fields := reflect.ValueOf(g)
+			for i := 0; i < fields.NumField(); i++ {
+				if field := fields.Field(i); field.Kind() == reflect.String {
+					marks = append(marks, field.String())
+				}
+			}
+			for _, mark := range marks {
 				if ansi.StringWidth(mark) != 1 {
 					t.Errorf("mark %q must occupy one cell", mark)
 				}

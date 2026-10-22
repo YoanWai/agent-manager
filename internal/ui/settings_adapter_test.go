@@ -216,7 +216,7 @@ func TestSettingsDocsRowOpensDocs(t *testing.T) {
 	if !strings.Contains(frame, hintCap("↵", "open the docs")) {
 		t.Fatal("the docs shortcut should wear the footer badge")
 	}
-	_, cmd = m.handleSettingsClick(m.layout.cardLeft+4, m.layout.cardTop+2+m.settings.dialog.DocsRow)
+	m, cmd = clickBody(t, m, "open the docs")
 	m.applyCmd(t, cmd)
 	if opened != docsURL {
 		t.Fatalf("click should open the docs, got %q", opened)
@@ -410,7 +410,7 @@ func TestSettingsCLIRequestSupportOpensIssue(t *testing.T) {
 		t.Fatal("browser started during Update")
 	}
 	m.applyCmd(t, cmd)
-	if !strings.Contains(opened, "issues/new") || !strings.Contains(opened, "enhancement") {
+	if !strings.Contains(opened, "issues/new") || !strings.Contains(opened, "support+another+coding+CLI") {
 		t.Fatalf("request row should open a feature-request issue, got %q", opened)
 	}
 	if !m.settings.dialog.CLIPicker {

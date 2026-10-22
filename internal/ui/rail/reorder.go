@@ -102,7 +102,7 @@ func (m *Model) ApplyMutation(request Mutation, mutationErr error) Decision {
 				m.finishReorder()
 			}
 			m.rebuildRows()
-			return Decision{Consumed: true, Refresh: request.Refresh, Selection: selectedOf(m), Mutations: []Mutation{{Kind: SaveCollapsed, Collapsed: m.Collapsed()}}}
+			return Decision{Consumed: true, Refresh: request.Refresh, Selection: selectedOf(m), Mutations: []Mutation{m.saveFolds()}}
 		}
 	}
 	if request.OffsetDelta != 0 && m.reorder.active {

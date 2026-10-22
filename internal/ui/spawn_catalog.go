@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"maps"
 	"slices"
 	"time"
@@ -51,16 +52,26 @@ func (m *Model) ensureCatalog(toolName string) tea.Cmd {
 		state = &catalogState{}
 		m.ledger.catalogs[toolName] = state
 	}
-	recheck := catalogRecheck
-	if state.err != nil {
-		recheck = catalogRetry
-	}
-	if state.loading || (state.loaded && time.Since(state.checkedAt) < recheck) {
+	if state.loading {
 		return nil
+	}
+	// An old CLI changes when the user updates it, so the next open asks again.
+	var outdated config.OutdatedToolError
+	if !errors.As(state.err, &outdated) {
+		recheck := catalogRecheck
+		if state.err != nil {
+			recheck = catalogRetry
+		}
+		if state.loaded && time.Since(state.checkedAt) < recheck {
+			return nil
+		}
 	}
 	state.loading = true
 	configDir := m.services.configDir
 	return func() tea.Msg {
+		if err := config.CheckVersion(tool); err != nil {
+			return catalogMsg{tool: toolName, err: err}
+		}
 		if cat, fresh, ok := catalog.Cached(configDir, toolName, tool); ok {
 			return catalogMsg{tool: toolName, cat: cat, stale: !fresh}
 		}
@@ -83,6 +94,20 @@ func (m *Model) handleCatalog(msg catalogMsg) tea.Cmd {
 	state.loading = msg.stale
 	state.checkedAt = time.Now()
 	m.fitChoices()
+	var outdated config.OutdatedToolError
+	active := (m.mode == modeForm && m.form.Tool() == msg.tool) ||
+		(m.mode == modeList && m.quick.active && m.quick.Tool() == msg.tool)
+	if errors.As(msg.err, &outdated) && active {
+		m.advanceDialogGen()
+		m.launchHint.present(m, launchFix{
+			text:    outdatedToolText(outdated),
+			command: outdatedToolCommand(outdated),
+			script:  outdatedToolCommand(outdated),
+			binary:  outdated.Binary,
+			update:  true,
+			resume:  m.mode,
+		})
+	}
 	if !msg.stale {
 		return nil
 	}

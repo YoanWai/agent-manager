@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -52,6 +53,16 @@ func (pc *pathComplete) move(delta int) bool {
 	}
 	pc.index = next
 	pc.chosen = true
+	return true
+}
+
+// pick highlights suggestion i, read off the painted list, and reports
+// false when a newer read has since shortened the list past it.
+func (pc *pathComplete) pick(i int) bool {
+	if i < 0 || i >= len(pc.suggestions) {
+		return false
+	}
+	pc.index, pc.chosen = i, true
 	return true
 }
 
@@ -161,17 +172,17 @@ func (pc *pathComplete) handle(h pathCompleteHost, msg pathSuggestionsMsg) {
 }
 
 // viewPathSuggestions is the dropdown under the rename dialog's path field.
-func (m *Model) viewPathSuggestions() string { return m.rename.paths.view() }
+func (m *Model) viewPathSuggestions() string { return m.rename.paths.view(m.prefs.glyphMode) }
 
 // view renders the directory-completion dropdown under a focused path
 // field.
-func (pc *pathComplete) view() string {
+func (pc *pathComplete) view(mode presentation.GlyphMode) string {
 	var b strings.Builder
 	for i, path := range pc.suggestions {
 		marker := "  "
 		style := mutedStyle()
 		if i == pc.index {
-			marker = lipgloss.NewStyle().Foreground(colorAccent()).Render("❯ ")
+			marker = lipgloss.NewStyle().Foreground(colorAccent()).Render(presentation.GlyphsFor(mode).SelectionGlyph + " ")
 			style = lipgloss.NewStyle().Foreground(colorAccent2()).Bold(true)
 		}
 		b.WriteString("      " + marker + style.Render(truncateTail(path, 40)) + "\n")

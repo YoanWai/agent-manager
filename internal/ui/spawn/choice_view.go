@@ -14,6 +14,7 @@ import (
 
 // Styles are the root's current presentation tokens, copied for one paint.
 type Styles struct {
+	GlyphMode                         presentation.GlyphMode
 	Subtle, Value, Muted, Warn, Label lipgloss.Style
 	SubtleColor, Accent, Accent2      lipgloss.Color
 	// Input paints a text field, marking its caret for the IME.
@@ -117,7 +118,7 @@ func (ch *Choice) ViewSuggestions(h ChoiceHost, toolName string, indent, width, 
 		}
 		marker, style := "  ", st.Muted
 		if i == ch.sugg.index {
-			marker = lipgloss.NewStyle().Foreground(st.Accent).Render("❯ ")
+			marker = lipgloss.NewStyle().Foreground(st.Accent).Render(presentation.GlyphsFor(st.GlyphMode).SelectionGlyph + " ")
 			style = lipgloss.NewStyle().Foreground(st.Accent2).Bold(true)
 			highlight = len(rows)
 		}

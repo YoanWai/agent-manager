@@ -10,7 +10,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
-	"github.com/charmbracelet/x/ansi"
 	"github.com/google/uuid"
 )
 
@@ -346,6 +345,15 @@ func (t *Terminals) Send(sessionID, terminalID, command string, keys []string) (
 }
 
 func (t *Terminals) Read(sessionID, terminalID string) (TerminalScreen, error) {
+	return t.read(sessionID, terminalID, false)
+}
+
+// ReadStyled is Read with the screen's escape sequences kept.
+func (t *Terminals) ReadStyled(sessionID, terminalID string) (TerminalScreen, error) {
+	return t.read(sessionID, terminalID, true)
+}
+
+func (t *Terminals) read(sessionID, terminalID string, styled bool) (TerminalScreen, error) {
 	runtime, err := t.open()
 	if err != nil {
 		return TerminalScreen{}, err
@@ -373,6 +381,6 @@ func (t *Terminals) Read(sessionID, terminalID string) (TerminalScreen, error) {
 	}
 	return TerminalScreen{
 		Terminal: info,
-		Output:   strings.TrimRight(ansi.Strip(output), "\r\n"),
+		Output:   screenOutput(output, styled),
 	}, nil
 }

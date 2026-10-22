@@ -81,6 +81,12 @@ func (f *fakeSessions) SendFrom(sessionID, senderName, targetID, message string)
 	return sessioncmd.SendResult{MessageID: 8, QueuePosition: 2}, f.failWith
 }
 
+func (f *fakeSessions) Type(sessionID, targetID, prompt string) (sessioncmd.Session, error) {
+	f.callerID, f.targetID, f.message = sessionID, targetID, prompt
+	f.callCount++
+	return f.session, f.failWith
+}
+
 func (f *fakeSessions) ExpandSaved(name, text string) (string, error) {
 	text = strings.TrimSpace(text)
 	if strings.TrimSpace(name) == "" {
@@ -95,6 +101,11 @@ func (f *fakeSessions) ExpandSaved(name, text string) (string, error) {
 func (f *fakeSessions) Read(sessionID, targetID string) (sessioncmd.SessionScreen, error) {
 	f.callerID, f.targetID = sessionID, targetID
 	return sessioncmd.SessionScreen{Session: f.session, Output: "screen text"}, f.failWith
+}
+
+func (f *fakeSessions) ReadStyled(sessionID, targetID string) (sessioncmd.SessionScreen, error) {
+	f.callerID, f.targetID = sessionID, targetID
+	return sessioncmd.SessionScreen{Session: f.session, Output: "\x1b[32mscreen text\x1b[0m"}, f.failWith
 }
 
 func (f *fakeSessions) Wait(ctx context.Context, sessionID, targetID string, until []string, timeout time.Duration) (sessioncmd.WaitResult, error) {
@@ -237,6 +248,11 @@ func (f *fakeTerminals) Read(sessionID, terminalID string) (sessioncmd.TerminalS
 	return sessioncmd.TerminalScreen{Output: "build passed"}, f.failWith
 }
 
+func (f *fakeTerminals) ReadStyled(sessionID, terminalID string) (sessioncmd.TerminalScreen, error) {
+	f.callerID, f.terminalID = sessionID, terminalID
+	return sessioncmd.TerminalScreen{Output: "\x1b[32mbuild passed\x1b[0m"}, f.failWith
+}
+
 func sampleSession() sessioncmd.Session {
 	return sessioncmd.Session{
 		ID: "beef1234", Name: "api-worker", Tool: "claude",
@@ -261,6 +277,7 @@ func TestALayerFailureReachesTheCaller(t *testing.T) {
 		{"spawn", nil, func(out io.Writer, args []string) error { return runSpawn(out, sessions, args, "cafe0001") }},
 		{"send", []string{"beef1234", "ship it"}, func(out io.Writer, args []string) error { return runSend(out, sessions, args, "cafe0001") }},
 		{"send --from", []string{"beef1234", "ship it", "--from", "laptop-agent"}, func(out io.Writer, args []string) error { return runSend(out, sessions, args, "") }},
+		{"type", []string{"beef1234", "ship it"}, func(out io.Writer, args []string) error { return runType(out, sessions, args, "") }},
 		{"read", []string{"beef1234"}, func(out io.Writer, args []string) error { return runRead(out, sessions, args, "cafe0001") }},
 		{"wait", []string{"beef1234"}, func(out io.Writer, args []string) error { return runWait(out, sessions, args, "cafe0001") }},
 		{"message-status", []string{"7"}, func(out io.Writer, args []string) error { return runMessageStatus(out, sessions, args, "cafe0001") }},
@@ -528,7 +545,7 @@ func TestCommandsThatActAsNoSessionNeverResolveACaller(t *testing.T) {
 func TestCommandsAndHelpCoverEverySection(t *testing.T) {
 	table := Commands("dev", sampleSpecs)
 	registered := []string{
-		"sessions", "snapshot", "spawn", "send", "read", "wait", "message-status", "kill", "revive", "archive", "archive-self", "kill-self", "prompts",
+		"sessions", "snapshot", "spawn", "send", "type", "read", "wait", "message-status", "kill", "revive", "archive", "archive-self", "kill-self", "prompts",
 		"groups", "create-group", "delete-group", "task", "reserve", "release-files", "reservations", "terminal",
 		"rename", "review-repo", "review-base", "review-mode", "review-comment", "issue", "feature", "settings", "update",
 	}
@@ -642,5 +659,15 @@ func TestCommandsWithBackendServeEveryCommand(t *testing.T) {
 		if bound[name] == nil {
 			t.Errorf("%s is in the help but not in the backend table", name)
 		}
+	}
+}
+
+func TestExitCodeTellsAPromptThatMayHaveReachedThePane(t *testing.T) {
+	uncertain := errors.Join(errors.New("type"), &sessioncmd.MayHaveReachedError{})
+	if got := ExitCode(uncertain); got != sessioncmd.ExitMayHaveReached {
+		t.Fatalf("ExitCode(may have reached) = %d", got)
+	}
+	if got := ExitCode(errors.New("prompt was not sent")); got != 1 {
+		t.Fatalf("ExitCode(refused) = %d", got)
 	}
 }

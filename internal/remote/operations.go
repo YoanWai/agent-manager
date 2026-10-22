@@ -3,6 +3,7 @@ package remote
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
@@ -22,7 +23,7 @@ func (c *Client) Snapshot(ctx context.Context, host string) (sessioncmd.Snapshot
 	case snapshot.Version < sessioncmd.SnapshotVersion:
 		return sessioncmd.Snapshot{}, outdated(host)
 	case snapshot.Version > sessioncmd.SnapshotVersion:
-		return sessioncmd.Snapshot{}, &Error{Host: host, Err: errors.New("agent-manager there is newer than this one; update agent-manager on this machine")}
+		return sessioncmd.Snapshot{}, newer(host)
 	}
 	return cleanSnapshot(snapshot), nil
 }
@@ -52,6 +53,35 @@ func (c *Client) ReadSession(ctx context.Context, ref Ref) (sessioncmd.SessionSc
 	return sessioncmd.SessionScreen{Session: session, Output: cleanScreen(screen.Output)}, nil
 }
 
+// ReadScreen is the screen of a session, or a terminal, in its colors, for
+// a preview to paint. A host built before reads took --styled answers in
+// plain text.
+func (c *Client) ReadScreen(ctx context.Context, ref Ref, terminal bool) (string, error) {
+	if err := validRef(ref); err != nil {
+		return "", err
+	}
+	command := []string{"read"}
+	if terminal {
+		command = []string{"terminal", "read"}
+	}
+	var screen struct {
+		Output string `json:"output"`
+	}
+	err := c.decode(ctx, ref.Host, callTimeout, &screen, append(command, "--styled", "--json", "--", ref.ID)...)
+	if err == nil {
+		return cleanStyledScreen(screen.Output), nil
+	}
+	if Unreachable(err) || ctx.Err() != nil {
+		return "", err
+	}
+	if terminal {
+		plain, err := c.ReadTerminal(ctx, ref)
+		return plain.Output, err
+	}
+	plain, err := c.ReadSession(ctx, ref)
+	return plain.Output, err
+}
+
 func (c *Client) ReadTerminal(ctx context.Context, ref Ref) (sessioncmd.TerminalScreen, error) {
 	var screen sessioncmd.TerminalScreen
 	if err := validRef(ref); err != nil {
@@ -76,6 +106,34 @@ func (c *Client) Send(ctx context.Context, ref Ref, text, from string) (sessionc
 	}
 	err := c.decode(ctx, ref.Host, callTimeout, &result, "send", "--from="+from, "--json", "--", ref.ID, text)
 	return result, err
+}
+
+// Type submits prompt in the pane of the agent at ref now, as the user's
+// quick bar does there.
+func (c *Client) Type(ctx context.Context, ref Ref, prompt string) (sessioncmd.Session, error) {
+	var typed sessioncmd.Session
+	if err := validRef(ref); err != nil {
+		return typed, err
+	}
+	if err := c.decode(ctx, ref.Host, callTimeout, &typed, "type", "--json", "--", ref.ID, prompt); err != nil {
+		return typed, typeLost(err)
+	}
+	typed, err := cleanSession(typed)
+	return typed, unreadable(ref.Host, "type", err)
+}
+
+// typeLost marks a type cut off after agent-manager started on the host,
+// by the deadline or a dropped connection, as one that may have reached the
+// agent: the paste may have run before the answer was lost.
+func typeLost(err error) error {
+	var failed *Error
+	if !errors.As(err, &failed) || failed.mayHaveReached || !failed.ran {
+		return err
+	}
+	if errors.Is(failed.Err, context.DeadlineExceeded) || failed.trouble == TroubleUnreachable {
+		return &Error{Host: failed.Host, Err: fmt.Errorf("prompt may have reached the agent and was not sent again: %w", failed.Err), trouble: failed.trouble, ran: true, mayHaveReached: true}
+	}
+	return err
 }
 
 func (c *Client) Spawn(ctx context.Context, host string, opts sessioncmd.CreateSessionOptions) (sessioncmd.Session, error) {

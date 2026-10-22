@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -112,15 +113,15 @@ func (m *Model) materializeGroupsLocal(paths []string) {
 	}
 }
 
-func (m *Model) viewGroupPicker() string { return m.form.viewGroupPicker() }
+func (m *Model) viewGroupPicker() string { return m.form.viewGroupPicker(m.prefs.glyphMode) }
 
-func (d *formDialog) viewGroupPicker() string {
+func (d *formDialog) viewGroupPicker(mode presentation.GlyphMode) string {
 	var b strings.Builder
 	for i, opt := range d.groups {
 		selected := i == d.groupIndex
 		marker := "  "
 		if selected {
-			marker = lipgloss.NewStyle().Foreground(colorAccent()).Render("❯ ")
+			marker = lipgloss.NewStyle().Foreground(colorAccent()).Render(presentation.GlyphsFor(mode).SelectionGlyph + " ")
 		}
 		label := displayGroup(opt.path)
 		if opt.sessID != "" {

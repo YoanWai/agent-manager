@@ -33,13 +33,36 @@ func TestRootMenuOpensSettings(t *testing.T) {
 	if line := strings.Fields(ansi.Strip(m.layout.displayedRail.Menu[settings+1])); len(line) < 3 || line[len(line)-2] != "s" {
 		t.Fatalf("the Settings entry should name its key: %q", m.layout.displayedRail.Menu[settings+1])
 	}
-	_, cmd := m.handleMouse(tea.MouseMsg{
-		X: m.layout.displayedRail.MenuRect.Left + 2, Y: m.layout.displayedRail.MenuRect.Top + 1 + settings,
-		Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
-	})
+	_, cmd := leftClickCmd(m, m.layout.displayedRail.MenuRect.Left+2, m.layout.displayedRail.MenuRect.Top+1+settings)
 	m.runBatch(t, cmd)
 	if m.rail.MenuOpen() || m.mode != modeSettings {
 		t.Fatal("root menu must open Settings even in an empty workspace")
+	}
+}
+
+// An entry runs on the release over the entry it was pressed on, so an
+// attach or an editor it starts never receives the button coming back up.
+func TestAMenuEntryRunsOnTheRelease(t *testing.T) {
+	m := buildModel(t)
+	m.rebuildRows()
+	preparedView(m)
+	y0, _ := m.bodyYRange()
+	m.handleMouse(tea.MouseMsg{X: 2, Y: y0, Action: tea.MouseActionPress, Button: tea.MouseButtonRight})
+	m.View()
+	settings, other := menuEntry(t, m, "Settings"), menuEntry(t, m, "New session")
+	menu := m.layout.displayedRail.MenuRect
+	x, y := menu.Left+2, menu.Top+1+settings
+	if m = leftPress(m, x, y); !m.rail.MenuOpen() || m.mode != modeList {
+		t.Fatalf("the press alone ran the entry, menu %v mode %v", m.rail.MenuOpen(), m.mode)
+	}
+	if m = leftRelease(m, x, menu.Top+1+other); !m.rail.MenuOpen() || m.mode != modeList {
+		t.Fatalf("a press slid onto another entry ran it, menu %v mode %v", m.rail.MenuOpen(), m.mode)
+	}
+	m = leftPress(m, x, y)
+	m, cmd := leftReleaseCmd(m, x, y)
+	m.runBatch(t, cmd)
+	if m.rail.MenuOpen() || m.mode != modeSettings {
+		t.Fatalf("the release should run the entry, menu %v mode %v", m.rail.MenuOpen(), m.mode)
 	}
 }
 
@@ -86,10 +109,7 @@ func TestRightClickOpensTheRowMenuAndRunsAnEntry(t *testing.T) {
 		}
 	}
 	rename := menuEntry(t, m, "Rename")
-	updated, _ := m.handleMouse(tea.MouseMsg{
-		X: m.layout.displayedRail.MenuRect.Left + 2, Y: m.layout.displayedRail.MenuRect.Top + 1 + rename, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
-	})
-	m = updated.(*Model)
+	m, _ = leftClickCmd(m, m.layout.displayedRail.MenuRect.Left+2, m.layout.displayedRail.MenuRect.Top+1+rename)
 	if m.rail.MenuOpen() || m.mode != modeRename {
 		t.Fatalf("clicking Rename should open rename, menu = %v mode = %v", m.rail.MenuOpen(), m.mode)
 	}
@@ -150,10 +170,7 @@ func TestGroupMenuCreatesAndNeverAttaches(t *testing.T) {
 		t.Fatalf("group menu should create and never attach:\n%s", joined)
 	}
 	quick := menuEntry(t, m, "Quick prompt mode")
-	updated, _ := m.handleMouse(tea.MouseMsg{
-		X: m.layout.displayedRail.MenuRect.Left + 2, Y: m.layout.displayedRail.MenuRect.Top + 1 + quick, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
-	})
-	m = updated.(*Model)
+	m, _ = leftClickCmd(m, m.layout.displayedRail.MenuRect.Left+2, m.layout.displayedRail.MenuRect.Top+1+quick)
 	if !m.quick.active || m.mode != modeList {
 		t.Fatalf("group menu should open quick prompt mode, active = %v mode = %v", m.quick.active, m.mode)
 	}
@@ -171,8 +188,7 @@ func TestGroupMenuReviveAsksLikeTheKey(t *testing.T) {
 	confirmKill(t, m)
 	m = railMouseAtLine(t, m, paintedGroupLines(t, m, "work")[0], tea.MouseActionPress, tea.MouseButtonRight)
 	revive := menuEntry(t, m, "Revive")
-	updated, _ := m.handleMouse(tea.MouseMsg{X: m.layout.displayedRail.MenuRect.Left + 2, Y: m.layout.displayedRail.MenuRect.Top + 1 + revive, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
-	m = updated.(*Model)
+	m, _ = leftClickCmd(m, m.layout.displayedRail.MenuRect.Left+2, m.layout.displayedRail.MenuRect.Top+1+revive)
 	if m.mode != modeConfirmDelete || !m.confirm.isGroup {
 		t.Fatalf("Revive on a group with two dead sessions should open the group card, mode = %v isGroup = %v", m.mode, m.confirm.isGroup)
 	}
@@ -274,10 +290,7 @@ func TestAPendingEndOffersItsCancelInTheMenuAndTheFooter(t *testing.T) {
 	}
 	m = railMouse(t, m, "alpha", tea.MouseActionPress, tea.MouseButtonRight)
 	cancel := menuEntry(t, m, "Cancel archive")
-	updated, _ := m.handleMouse(tea.MouseMsg{
-		X: m.layout.displayedRail.MenuRect.Left + 2, Y: m.layout.displayedRail.MenuRect.Top + 1 + cancel, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
-	})
-	m = updated.(*Model)
+	m, _ = leftClickCmd(m, m.layout.displayedRail.MenuRect.Left+2, m.layout.displayedRail.MenuRect.Top+1+cancel)
 	m.drainEffects(t)
 	sess, _ := m.selected()
 	if got, _ := m.services.store.Get(sess.ID); got.AfterTurn != "" {
@@ -301,10 +314,7 @@ func TestADeadRowWithAPendingEndOffersItsCancel(t *testing.T) {
 	loadStoredRows(t, m)
 	m = railMouse(t, m, "alpha", tea.MouseActionPress, tea.MouseButtonRight)
 	cancel := menuEntry(t, m, "Cancel kill")
-	updated, _ := m.handleMouse(tea.MouseMsg{
-		X: m.layout.displayedRail.MenuRect.Left + 2, Y: m.layout.displayedRail.MenuRect.Top + 1 + cancel, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
-	})
-	m = updated.(*Model)
+	m, _ = leftClickCmd(m, m.layout.displayedRail.MenuRect.Left+2, m.layout.displayedRail.MenuRect.Top+1+cancel)
 	m.drainEffects(t)
 	if got, _ := m.services.store.Get(sess.ID); got.AfterTurn != "" {
 		t.Fatalf("Cancel kill on the dead row left %q pending", got.AfterTurn)

@@ -170,3 +170,50 @@ func TestGroupFormViewFollowsTheFocus(t *testing.T) {
 		t.Fatalf("worktree hints = %v", card.Hints)
 	}
 }
+
+// Each painted line answers for its field: a click focuses a field, a
+// second click steps the worktree or the base, and a parent or a path
+// suggestion is picked by its own line.
+func TestGroupFormClicksFollowThePaintedLines(t *testing.T) {
+	d := NewGroupForm("", 1)
+	paths := &fakePaths{}
+	plain := lipgloss.NewStyle()
+	view := GroupFormView{
+		Field:     func(label, value string, focused bool) string { return label + "=" + value + "\n" },
+		Input:     func(textinput.Model) string { return "input" },
+		Badge:     func(group string) string { return "[" + group + "]" },
+		Picker:    func() string { return "root\nwork" },
+		Subtle:    plain,
+		Value:     plain,
+		Worktrees: []string{"inherit", "on", "off"},
+		Base:      "auto",
+	}
+	d.View(view)
+	if got := d.Click(3, paths, 3); got.Action != GroupFormStay || d.Focus() != GroupFormWorktreeField || d.Worktree() != 0 {
+		t.Fatalf("first click on worktree = %+v, focus %d worktree %d", got, d.Focus(), d.Worktree())
+	}
+	if d.Click(3, paths, 3); d.Worktree() != 1 {
+		t.Fatalf("second click on worktree should step it, at %d", d.Worktree())
+	}
+	d.Click(4, paths, 3)
+	if got := d.Click(4, paths, 3); got.Action != GroupFormStepBase || got.Delta != 1 {
+		t.Fatalf("second click on base = %+v", got)
+	}
+	d.Click(1, paths, 3)
+	d.View(view)
+	if got := d.Click(7, paths, 3); got.Action != GroupFormPickParent || got.Entry != 1 {
+		t.Fatalf("a click on the second parent = %+v", got)
+	}
+	if got := d.Wheel(-1); got.Action != GroupFormStepParent || got.Delta != -1 {
+		t.Fatalf("the wheel over the parent picker = %+v", got)
+	}
+	d.Click(2, paths, 3)
+	view.Suggestions = func() string { return "/a\n/b" }
+	d.View(view)
+	if got := d.Click(4, paths, 3); got.Action != GroupFormPickPath || got.Entry != 1 {
+		t.Fatalf("a click on the second suggestion = %+v", got)
+	}
+	if got := d.Wheel(1); got.Action != GroupFormStay {
+		t.Fatalf("the wheel off the parent field = %+v", got)
+	}
+}

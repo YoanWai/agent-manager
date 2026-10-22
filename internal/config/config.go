@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"sort"
@@ -22,6 +23,9 @@ type Rule struct {
 
 type Tool struct {
 	Command string `toml:"command"`
+	// MinimumVersion is the oldest release of the CLI the launch, revive,
+	// fork and catalog commands still work with. Empty skips the check.
+	MinimumVersion string `toml:"minimum_version"`
 	// Shell marks the tool that opens a plain shell rather than an agent
 	// CLI: it is what T spawns, it stays out of the CLI pickers, and the
 	// keys that write into a pane refuse it, since a sentence typed at a
@@ -50,6 +54,8 @@ type Tool struct {
 	// ForkCommand creates a new conversation from an existing one. Templates
 	// can use {id}, {session_file}, {new_id}, and {name}; Agent Manager quotes
 	// each value. {session_file} needs SessionStore to keep one ("gemini").
+	// With {new_id} and no {id}, SessionStore makes the copy and names it
+	// ("opencode"), and the command opens it.
 	ForkCommand string `toml:"fork_command"`
 	// ForkKeys forks from inside the running source, for a tool that can only
 	// fork there (muse's /fork). They are typed into the resting source, the
@@ -58,11 +64,11 @@ type Tool struct {
 	ForkKeys string `toml:"fork_keys"`
 	// SessionStore names the built-in capturer that reads back the id a tool
 	// minted itself when it has no SessionIDFlag ("codex", "opencode",
-	// "gemini", "hermes", "command-code", "muse", "antigravity" or "omp").
+	// "gemini", "hermes", "command-code", "muse", "antigravity", "omp" or "cursor").
 	SessionStore string `toml:"session_store"`
 	// MCP picks how the agent-manager MCP server is registered into this
 	// tool's sessions: "claude", "codex", "opencode", "grok", "gemini",
-	// "hermes", "command-code", "muse", "antigravity" or "none".
+	// "hermes", "command-code", "muse", "antigravity", "cursor" or "none".
 	// Empty uses the tool's config key when it names a known style.
 	MCP string `toml:"mcp"`
 	// SessionReport names how the manager learns each conversation the
@@ -110,6 +116,10 @@ type Tool struct {
 	// its transcript, which is how the last thing sent to a session is
 	// read back regardless of who typed it or from where.
 	UserEcho string `toml:"user_echo"`
+	// ToolRow marks a transcript row the tool draws behind the same marker
+	// as an echoed prompt (opencode's command, its output and a written
+	// file share the prompt's gutter), so it never reads as the prompt.
+	ToolRow string `toml:"tool_row"`
 	// DialogFooter is a line the tool draws under its input marker while a
 	// dialog owns the input box. It tells a dialog that reuses that marker
 	// for its selected option from a draft typed at a resting composer, so
@@ -120,8 +130,9 @@ type Tool struct {
 	// first group is what a quote of the session's last reply shows.
 	DialogQuestion string `toml:"dialog_question"`
 	// BusyFooter is a line the tool draws under its activity cutoff only
-	// while a turn runs. A working rule that matches without it belongs to
-	// a turn that died before printing its end marker, which is errored.
+	// while a turn runs, so it reads as working on its own. A working rule
+	// that matches without it belongs to a turn that died before printing
+	// its end marker, which is errored.
 	BusyFooter string `toml:"busy_footer"`
 	// InputPrefix locates the composer's input row for the arrow-step pair
 	// (Left leaving focus at the prompt head). It replaces the reuse of
@@ -153,6 +164,12 @@ type Tool struct {
 	ModelArgs   string `toml:"model_args"`
 	EffortArgs  string `toml:"effort_args"`
 	ProfileArgs string `toml:"profile_args"`
+	// ModelEnv carries the model in the environment instead, as NAME=VALUE
+	// with {model} written as a JSON string, for a CLI whose interactive
+	// command takes no model flag.
+	ModelEnv string `toml:"model_env"`
+	// Env is the environment WithChoice gives every launch line.
+	Env map[string]string `toml:"-"`
 }
 
 // Choice is what a session launches its CLI on; empty keeps the CLI's default.
@@ -181,6 +198,7 @@ func Dir() (string, error) {
 // emptiness still take the same path.
 func (t Tool) WithChoice(choice Choice) Tool {
 	flags := choice.flags(t)
+	t.Env = choice.env(t)
 	t.Command = placeChoice(t.Command, flags)
 	t.ReviveCommand = placeChoice(t.ReviveCommand, flags)
 	t.ResumeByIDCommand = placeChoice(t.ResumeByIDCommand, flags)
@@ -220,6 +238,15 @@ func (c Choice) flags(t Tool) string {
 		}
 	}
 	return flags.String()
+}
+
+func (c Choice) env(t Tool) map[string]string {
+	name, value, found := strings.Cut(t.ModelEnv, "=")
+	if !found || c.Model == "" {
+		return nil
+	}
+	model, _ := json.Marshal(c.Model)
+	return map[string]string{name: strings.ReplaceAll(value, "{model}", string(model))}
 }
 
 // Default returns the built-in configuration without touching the filesystem.

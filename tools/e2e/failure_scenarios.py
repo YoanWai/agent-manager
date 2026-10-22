@@ -30,6 +30,10 @@ def write_install_fixture(sandbox):
     npm.write_text('#!/bin/sh\n'
                    '# disposable fixture npm; simulates only the command-code install\n'
                    'case "$*" in\n'
+                   '  prefix*)\n'
+                   f"    printf '%s\\n' {shlex.quote(str(sandbox.home))}\n"
+                   '    exit 0\n'
+                   '    ;;\n'
                    '  *install*command-code*)\n'
                    f"    cat > {shlex.quote(str(bin_dir / 'cmd'))} <<'__CMD__'\n"
                    f'{cmd_script}__CMD__\n'
@@ -38,6 +42,9 @@ def write_install_fixture(sandbox):
                    'esac\n'
                    'exit 0\n')
     npm.chmod(0o755)
+    node = bin_dir / 'node'
+    node.write_text('#!/bin/sh\nexit 0\n')
+    node.chmod(0o755)
     config_dir = profile_dir(sandbox)
     config_dir.mkdir(parents=True)
     (config_dir / 'config.toml').write_text(config_fixture_text())

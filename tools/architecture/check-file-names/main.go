@@ -23,33 +23,62 @@ var allowed = map[string]string{
 // uiRoot holds the root UI package, whose files are named <feature>_<concern>.go.
 const uiRoot = "internal/ui"
 
-// features are the prefixes a root UI source may start with.
-var features = map[string]string{
+// packaged are the features with a package of their own under
+// internal/ui. Their root files only adapt it: <feature>_adapter*.go and
+// <feature>_*effect.go, besides the older ones in rootExtras.
+var packaged = map[string]string{
+	"connections": "the SSH connections adapter: the client, refreshes, remote rows, preview and routed actions, and their effects",
+	"dialogs":     "the confirm, rename, move and fork dialog adapters and their effects",
+	"focus":       "the Focus adapter, its frame view and the pane watcher it holds",
+	"help":        "the Help adapter",
+	"notices":     "the notices adapter, release and feed checks and self-update",
+	"quick":       "the quick bar adapter and its send effect",
+	"rail":        "the Rail adapter",
+	"review":      "the Review adapter",
+	"settings":    "the Settings adapter, its store lane and the stored preference readers",
+	"spawn":       "the New Session form adapter, its group picker, request, defaults, group base and fetch, catalog reads, spawn effect, preflight and worktree probe",
+	"theme":       "live styles, surfaces and the stored theme",
+}
+
+// rootExtras are root files of packaged features that are neither adapter
+// nor effect. They predate the rule; the list only shrinks.
+var rootExtras = map[string]bool{
+	"focus_saved.go":      true,
+	"focus_view.go":       true,
+	"focus_watch.go":      true,
+	"notices_update.go":   true,
+	"settings_prefs.go":   true,
+	"settings_prompts.go": true,
+	"spawn_catalog.go":    true,
+	"spawn_defaults.go":   true,
+	"spawn_groups.go":     true,
+	"spawn_request.go":    true,
+	"spawn_worktree.go":   true,
+	"theme.go":            true,
+	"theme_glyphs.go":     true,
+	"theme_prefs.go":      true,
+	"theme_styles.go":     true,
+	"theme_surface.go":    true,
+}
+
+// rootOnly are the features that live in the root package itself. The
+// list is closed: a new feature starts as a package under internal/ui and
+// joins packaged, so the root holds only its adapter and effects.
+var rootOnly = map[string]string{
 	"composer":     "prompt composers, chips and pasted images",
-	"connection":   "SSH connections: the dialog, remote rows, polling, preview and routed actions",
-	"dialogs":      "the confirm, rename, move and fork dialog adapters and their effects",
 	"effects":      "the ordered effect lane and its executor",
-	"focus":        "the Focus adapter, its frame view and the pane watcher it holds",
 	"frame":        "frame composition: dialog chrome, header, legend, IME, text layout and control escaping",
 	"geometry":     "pane sizing, layout widths and the split ratio",
 	"group":        "the New Group form adapter",
-	"help":         "the Help adapter",
 	"input":        "raw input forwarded to panes",
 	"launchhint":   "the launch fix dialog and CLI install",
 	"model":        "the root Model, its services and shared host methods",
-	"notices":      "the notices adapter, release and feed checks and self-update",
 	"pathcomplete": "directory completion for path fields",
 	"preview":      "the session preview",
-	"quick":        "the quick bar adapter and its send effect",
-	"rail":         "the Rail adapter",
-	"review":       "the Review adapter",
 	"session":      "session lifecycle: launch, attach, kill, revive, archive, delete, restart, editor",
-	"settings":     "the Settings adapter, its store lane and the stored preference readers",
-	"spawn":        "the New Session form adapter, its group picker, request, defaults, group base and fetch, catalog reads, spawn effect, preflight and worktree probe",
 	"startup":      "startup greeting and banner",
 	"status":       "the status bar and toasts",
 	"terminal":     "terminal handoff, link opening and link pages",
-	"theme":        "live styles, surfaces and the stored theme",
 	"workspace":    "polling, refresh and what the last poll returned",
 }
 
@@ -67,6 +96,15 @@ func main() {
 		fmt.Fprintf(os.Stderr, "root UI sources that start with no feature name:\n  %s\n", strings.Join(strays, "\n  "))
 		failed = true
 	}
+	unadapted, err := unadaptedSources(uiRoot)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	if len(unadapted) > 0 {
+		fmt.Fprintf(os.Stderr, "root UI sources of a packaged feature that are not its adapter or an effect; move the code into the package:\n  %s\n", strings.Join(unadapted, "\n  "))
+		failed = true
+	}
 	orphans, err := orphanTests(".")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -80,6 +118,7 @@ func main() {
 		os.Exit(1)
 	}
 	fmt.Println("PASS: every root UI source starts with its feature")
+	fmt.Println("PASS: a packaged feature's root files are its adapter and effects")
 	fmt.Println("PASS: every test file is named after its source")
 }
 
@@ -96,11 +135,39 @@ func unfiledSources(dir string) ([]string, error) {
 			continue
 		}
 		feature, _, _ := strings.Cut(strings.TrimSuffix(name, ".go"), "_")
-		if _, ok := features[feature]; !ok {
+		_, inRoot := rootOnly[feature]
+		_, inPackage := packaged[feature]
+		if !inRoot && !inPackage {
 			strays = append(strays, name)
 		}
 	}
 	return strays, nil
+}
+
+// unadaptedSources returns the root UI sources of packaged features that
+// are neither an adapter nor an effect, nor listed in rootExtras.
+func unadaptedSources(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var unadapted []string
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || rootExtras[name] {
+			continue
+		}
+		stem := strings.TrimSuffix(name, ".go")
+		feature, _, _ := strings.Cut(stem, "_")
+		if _, ok := packaged[feature]; !ok {
+			continue
+		}
+		if stem == feature+"_adapter" || strings.HasPrefix(stem, feature+"_adapter_") || strings.HasSuffix(stem, "_effect") {
+			continue
+		}
+		unadapted = append(unadapted, name)
+	}
+	return unadapted, nil
 }
 
 // orphanTests walks root and returns the test files that pair with no source.

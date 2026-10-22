@@ -77,6 +77,15 @@ func TestRemoteCommandRoundTripsThroughLoginShell(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(bin, "agent-manager"), []byte(fake), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// A connection's own path skips PATH, and may sit under ~/ or hold
+	// characters the shell would otherwise read.
+	installed := filepath.Join(home, "opt dir", "it's am")
+	if err := os.MkdirAll(filepath.Dir(installed), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(installed, []byte(fake), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	profile := []byte(`PATH="$HOME/bin:$PATH"; export PATH` + "\n" +
 		`echo '(base) conda activated {"version":0}'` + "\n" +
 		`printf 'nvm: now using node ['` + "\n")
@@ -85,7 +94,11 @@ func TestRemoteCommandRoundTripsThroughLoginShell(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	command := remoteCommand(append([]string{"agent-manager"}, awkwardArgs...))
+	programs := map[string]Connection{
+		"path":     {},
+		"home":     {Binary: "~/opt dir/it's am"},
+		"absolute": {Binary: installed},
+	}
 	shells := []string{"/bin/sh"}
 	for _, name := range []string{"bash", "zsh", "dash"} {
 		if path, err := exec.LookPath(name); err == nil {
@@ -93,25 +106,28 @@ func TestRemoteCommandRoundTripsThroughLoginShell(t *testing.T) {
 		}
 	}
 	for _, shell := range shells {
-		t.Run(filepath.Base(shell), func(t *testing.T) {
-			cmd := exec.Command(shell, "-c", command)
-			cmd.Env = []string{"HOME=" + home, "PATH=/usr/bin:/bin", "SHELL=" + shell, fakeArgvEnv + "=1"}
-			stdout, err := cmd.Output()
-			if err != nil {
-				t.Fatalf("%s -c: %v\nstdout: %s", shell, err, stdout)
-			}
-			out, marked := answer(stdout)
-			if !marked {
-				t.Fatalf("%s printed no marker: %q", shell, stdout)
-			}
-			var got []string
-			if err := json.Unmarshal(out, &got); err != nil {
-				t.Fatalf("fake agent-manager printed %q: %v", out, err)
-			}
-			if !slices.Equal(got, awkwardArgs) {
-				t.Fatalf("arguments changed on the way through %s:\n got %q\nwant %q", shell, got, awkwardArgs)
-			}
-		})
+		for label, conn := range programs {
+			t.Run(filepath.Base(shell)+"/"+label, func(t *testing.T) {
+				command := remoteCommand(program(conn), awkwardArgs)
+				cmd := exec.Command(shell, "-c", command)
+				cmd.Env = []string{"HOME=" + home, "PATH=/usr/bin:/bin", "SHELL=" + shell, fakeArgvEnv + "=1"}
+				stdout, err := cmd.Output()
+				if err != nil {
+					t.Fatalf("%s -c: %v\nstdout: %s", shell, err, stdout)
+				}
+				out, marked := answer(stdout)
+				if !marked {
+					t.Fatalf("%s printed no marker: %q", shell, stdout)
+				}
+				var got []string
+				if err := json.Unmarshal(out, &got); err != nil {
+					t.Fatalf("fake agent-manager printed %q: %v", out, err)
+				}
+				if !slices.Equal(got, awkwardArgs) {
+					t.Fatalf("arguments changed on the way through %s:\n got %q\nwant %q", shell, got, awkwardArgs)
+				}
+			})
+		}
 	}
 }
 
@@ -144,7 +160,7 @@ func TestRealSSHRoundTrip(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), callTimeout)
 	defer cancel()
 	words := append([]string{"printf", `%s\0`}, awkwardArgs...)
-	stdout, stderr, err := runSSH(ctx, c.sshArgv(destination, false, remoteCommand(words)), nil)
+	stdout, stderr, err := runSSH(ctx, c.sshArgv(destination, false, remoteCommand(quote(words[0]), words[1:])), nil)
 	if err != nil {
 		t.Fatalf("ssh: %v\nstderr: %s", err, stderr)
 	}
@@ -213,9 +229,10 @@ func TestAttachCommand(t *testing.T) {
 	if got := cmd.Args[len(cmd.Args)-2]; got != "me@gpu" {
 		t.Fatalf("attach destination %s", got)
 	}
-	want := []string{"tmux", "-u", "-L", "agentmgr", "attach-session", "-t", "am_a1b2c3d4"}
-	if got := remoteWords(t, cmd.Args); !slices.Equal(got, want) {
-		t.Fatalf("attach runs %q, want %q", got, want)
+	// TestAttachScriptTakesBackTheHostsRequest runs the script itself.
+	want := quoteWords([]string{"tmux", "-u", "-L", "agentmgr", "attach-session", "-t", "am_a1b2c3d4"}) + "; "
+	if got := cmd.Args[len(cmd.Args)-1]; got != loginShell(attachScript("a1b2c3d4")) || !strings.HasPrefix(attachScript("a1b2c3d4"), want) {
+		t.Fatalf("attach runs %q, want it to start with %q", got, want)
 	}
 	for _, entry := range cmd.Env {
 		if strings.HasPrefix(entry, "TMUX=") {

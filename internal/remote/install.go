@@ -49,7 +49,7 @@ var errWindowsHost = errors.New("Windows hosts are not supported: SSH connection
 
 // Platform asks the host's login shell what it runs on.
 func (c *Client) Platform(ctx context.Context, host string) (Platform, error) {
-	out, err := c.exec(ctx, host, callTimeout, nil, []string{"uname", "-sm"})
+	out, err := c.exec(ctx, host, callTimeout, nil, "uname", []string{"-sm"})
 	if err != nil {
 		if Unreachable(err) {
 			return Platform{}, err
@@ -185,8 +185,8 @@ func (c *Client) Install(ctx context.Context, host, version string) (Installed, 
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return Installed{}, &Error{Host: host, Err: err}
 	}
-	words := []string{"sh", "-c", uploadScript, "sh", hex.EncodeToString(hash.Sum(nil)), installDir}
-	out, err := c.exec(ctx, host, installTimeout, file, words)
+	args := []string{"-c", uploadScript, "sh", hex.EncodeToString(hash.Sum(nil)), installDir}
+	out, err := c.exec(ctx, host, installTimeout, file, "sh", args)
 	if err != nil {
 		return Installed{}, err
 	}

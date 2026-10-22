@@ -67,3 +67,28 @@ func TestPickerSourceNamesTheOpenReview(t *testing.T) {
 		t.Fatal("a closed review accepted its old source")
 	}
 }
+
+// The rows start under the filter line and the blank below it. A click on a
+// row moves the cursor there; one on the row under the cursor picks it.
+func TestPickerClickMovesThenPicks(t *testing.T) {
+	var p review.Picker
+	rows := []review.PickerRow{{Label: "alpha", Root: "/w/alpha"}, {Label: "beta", Root: "/w/beta"}, {Label: "gamma", Root: "/w/gamma"}}
+	p.Open(rows, "⌥ Review repo", review.PickRepo, "/w/alpha", review.PickerSource{TargetID: "s1"}, "")
+	body := strings.Split(p.Body(review.RenderContext{}, 54, 30), "\n")
+	if !strings.Contains(body[4], "gamma") {
+		t.Fatalf("test setup: gamma should be on body line 4:\n%s", strings.Join(body, "\n"))
+	}
+	if result := p.Click(0, true); result.Close || p.Cursor() != 0 {
+		t.Fatalf("a click on the filter line moved to %d: %+v", p.Cursor(), result)
+	}
+	if result := p.Click(4, true); result.Close || p.Cursor() != 2 {
+		t.Fatalf("first click on gamma: cursor %d, %+v", p.Cursor(), result)
+	}
+	result := p.Click(4, true)
+	if !result.Close || result.Choice == nil || result.Choice.Value != "/w/gamma" {
+		t.Fatalf("second click on gamma should pick it: %+v", result)
+	}
+	if result := p.Click(5, true); result.Close || p.Cursor() != 2 {
+		t.Fatalf("a click under the rows picked %d: %+v", p.Cursor(), result)
+	}
+}

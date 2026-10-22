@@ -13,18 +13,25 @@ func (s *State) viewKeyPicker(ctx ViewContext) Frame {
 	if s.KeyReset {
 		return Frame{
 			Card:        Confirm,
-			Title:       "↺ Reset keys",
+			Title:       presentation.GlyphsFor(ctx.GlyphMode).ResetGlyph + " Reset keys",
 			Question:    "Reset every key to its default?",
 			Consequence: strings.Join(keyResetChanges(tables...), "\n"),
 			Destructive: true,
 			Answer:      "reset",
 		}
 	}
+	hint := [][2]string{{"↑↓", "move"}, {"↵", "set a key"}, {"a", "add one"}, {"d", "off"}, {"r", "defaults"}, {"esc", "back"}}
+	if s.KeyCapture {
+		hint = [][2]string{{"any key", "bind it"}, {"esc", "cancel"}}
+	}
 	rows := KeyRows(tables)
-	first, last := pickerWindow(len(rows), s.KeyCursor, ctx.Height-14)
+	first, last := s.keyWindow(rows, ctx.Height-ctx.Chrome(hint))
+	s.keyFirst = first
 	var b strings.Builder
+	s.lines.Reset()
 	if first > 0 {
 		b.WriteString(st.Subtle.Render(fmt.Sprintf("  ↑ %d more", first)) + "\n")
+		s.lines.Show(first-1, 1)
 	}
 	for i := first; i < last; i++ {
 		row := rows[i]
@@ -33,13 +40,15 @@ func (s *State) viewKeyPicker(ctx ViewContext) Frame {
 		if i == first || rows[i-1].Table != row.Table {
 			if i > first {
 				b.WriteByte('\n')
+				s.lines.Skip(1)
 			}
 			b.WriteString(st.Annotation.Render("  "+section.title) + "\n")
+			s.lines.Skip(1)
 		}
 		marker := "  "
 		labelStyle := st.Value
 		if s.KeyCursor == i {
-			marker = st.Marker.Render("❯ ")
+			marker = st.Marker.Render(presentation.GlyphsFor(ctx.GlyphMode).SelectionGlyph + " ")
 			labelStyle = st.Focused
 		}
 		value := keys.Binding(row.Action.Name).Label()
@@ -59,28 +68,46 @@ func (s *State) viewKeyPicker(ctx ViewContext) Frame {
 		b.WriteString(presentation.PadRight(valueRender, 26))
 		b.WriteString(st.Muted.Render(row.Action.Does))
 		b.WriteByte('\n')
+		s.lines.Show(i, 1)
 	}
 	if last < len(rows) {
 		b.WriteString(st.Subtle.Render(fmt.Sprintf("  ↓ %d more", len(rows)-last)) + "\n")
+		s.lines.Show(last, 1)
 	}
-	hint := [][2]string{{"↑↓", "move"}, {"↵", "set a key"}, {"a", "add one"}, {"d", "off"}, {"r", "defaults"}, {"esc", "back"}}
-	if s.KeyCapture {
-		hint = [][2]string{{"any key", "bind it"}, {"esc", "cancel"}}
-	}
-	return Frame{Card: Flex, Title: "⚙ Keybindings", Body: strings.TrimRight(b.String(), "\n"), Hints: hint}
+	return Frame{Card: Flex, Title: presentation.GlyphsFor(ctx.GlyphMode).SettingsGlyph + " Keybindings", Body: strings.TrimRight(b.String(), "\n"), Hints: hint}
 }
 
-func pickerWindow(count, cursor, room int) (first, last int) {
-	visible := max(min(count, room), 5)
-	if visible >= count {
-		return 0, count
+// keyWindow is the rows [first, last) whose lines, headings and "more"
+// counters included, fit room, held still while the cursor stays inside.
+// The cursor's row always shows.
+func (s *State) keyWindow(rows []KeyRow, room int) (first, last int) {
+	for visible := min(len(rows), max(room, 1)); ; visible-- {
+		first = presentation.Follow(s.keyFirst, s.KeyCursor, len(rows), visible)
+		last = first + visible
+		if visible <= 1 || keyLineCount(rows, first, last) <= room {
+			return first, last
+		}
 	}
-	first = cursor - visible/2
-	if first < 0 {
-		first = 0
+}
+
+// keyLineCount is the body lines rows [first, last) paint: each row, a
+// heading where its table starts with a blank line above all but the
+// first, and a counter for the rows above and below the window.
+func keyLineCount(rows []KeyRow, first, last int) int {
+	lines := last - first
+	for i := first; i < last; i++ {
+		if i == first || rows[i-1].Table != rows[i].Table {
+			lines++
+			if i > first {
+				lines++
+			}
+		}
 	}
-	if first+visible > count {
-		first = count - visible
+	if first > 0 {
+		lines++
 	}
-	return first, first + visible
+	if last < len(rows) {
+		lines++
+	}
+	return lines
 }

@@ -34,6 +34,13 @@ coverage. [REVIEW.md](REVIEW.md#tool-coverage) defines the allowed exceptions.
   modes, capabilities, prompts, screens. A maintained list of values that an
   upstream release can change is a defect. Where discovery has no stable,
   documented interface, the feature stays in the underlying TUI.
+- **The current CLI release.** Each CLI is supported at its latest stable
+  release. None publishes a long-term-support line. When an upstream release
+  changes a flag, a subcommand, a file layout, or a screen, the adapter moves
+  to the new behavior and drops the old one, with no branch for older
+  releases. The same change sets the tool's `minimum_version` in
+  `internal/config/builtin.go` to the first release it needs, so a spawn on
+  an older CLI opens the update dialog instead of failing.
 - **Configurable in the UI, or not configurable.** A setting a user can
   change lives in Settings (`s`), is stored by the manager, and takes effect
   from the picker, the way the keybindings and editor rows do. The value

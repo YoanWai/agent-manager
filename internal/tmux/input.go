@@ -76,7 +76,9 @@ func (d *Driver) SubmitTextContext(ctx context.Context, id, text string, drafted
 // reach one pane at once. Interleaved, the second paste lands before the
 // first Enter and both texts submit as one prompt, so each pane takes one
 // whole send at a time while other panes do not wait. The gates are keyed by
-// socket and pane, so every Driver in the process shares them.
+// socket and pane, so every Driver in the process shares them, and each
+// holds a lock file too for a send from another process, such as
+// `agent-manager type` beside a host's manager.
 var paneSendGates = struct {
 	sync.Mutex
 	gates map[string]*paneSendGate
@@ -106,11 +108,17 @@ func enterPaneSendGate(ctx context.Context, socket, target string) (release func
 	}
 	select {
 	case gate.slot <- struct{}{}:
-		return func() { <-gate.slot; leave() }, nil
 	case <-ctx.Done():
 		leave()
 		return nil, ctx.Err()
 	}
+	unlock, err := lockPaneSend(ctx, socket, target)
+	if err != nil {
+		<-gate.slot
+		leave()
+		return nil, err
+	}
+	return func() { unlock(); <-gate.slot; leave() }, nil
 }
 
 // SendKeys delivers exact tmux key names to a session. Keeping each key as

@@ -44,12 +44,12 @@ func TestShortBodyHasNoScrollbar(t *testing.T) {
 func TestWheelScrollsTheMessageBody(t *testing.T) {
 	m := scrollModel(t, 30)
 	before := thumbRows(ansi.Strip(preparedView(m)))
-	m.handleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
+	m = wheelOnCard(m, tea.MouseButtonWheelDown)
 	if m.notices.Offset() != uinotices.WheelRows {
 		t.Fatalf("wheel down moved %d rows, want %d", m.notices.Offset(), uinotices.WheelRows)
 	}
 	for i := 0; i < 40; i++ {
-		m.handleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
+		m = wheelOnCard(m, tea.MouseButtonWheelDown)
 	}
 	limit := m.notices.ScrollLimit(m.activeNotices(), m.noticesFrame())
 	if m.notices.Offset() != limit {
@@ -59,7 +59,7 @@ func TestWheelScrollsTheMessageBody(t *testing.T) {
 	if len(before) == 0 || len(after) == 0 || after[0] <= before[0] {
 		t.Fatalf("the thumb should have moved down: before %v, after %v", before, after)
 	}
-	m.handleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress})
+	m = wheelOnCard(m, tea.MouseButtonWheelUp)
 	if m.notices.Offset() != limit-uinotices.WheelRows {
 		t.Fatalf("wheel up moved to %d, want %d", m.notices.Offset(), limit-uinotices.WheelRows)
 	}
@@ -103,7 +103,7 @@ func TestGrowingTheTerminalKeepsTheLastPageInView(t *testing.T) {
 	if limit >= bottom {
 		t.Fatalf("the taller terminal should have fewer pages: limit %d, saved offset %d", limit, bottom)
 	}
-	m.handleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress})
+	m = wheelOnCard(m, tea.MouseButtonWheelUp)
 	if m.notices.Offset() != limit-uinotices.WheelRows {
 		t.Fatalf("the first scroll up starts from the page on screen: offset %d, want %d", m.notices.Offset(), limit-uinotices.WheelRows)
 	}

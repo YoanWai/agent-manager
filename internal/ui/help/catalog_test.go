@@ -249,3 +249,21 @@ func TestCatalogNamesTheSavedPromptKeys(t *testing.T) {
 		t.Fatal("the session section does not follow the saved prompt binding")
 	}
 }
+
+func TestCatalogNamesTheSetupStepKeys(t *testing.T) {
+	rows := map[string]string{}
+	for _, section := range helpSections(testContext(84)) {
+		for _, row := range section.rows {
+			rows[section.title+"/"+row[0]] = row[1]
+		}
+	}
+	if rows["setup step/i"] != "run the installer, or update a CLI that is too old" {
+		t.Fatalf("i = %q", rows["setup step/i"])
+	}
+	if rows["setup step/c"] != "copy that command" || rows["setup step/esc"] != "close" {
+		t.Fatalf("setup step rows = %v", rows)
+	}
+	if rows["setup step/click command"] != "copy it, the same as c" {
+		t.Fatalf("click row = %q", rows["setup step/click command"])
+	}
+}

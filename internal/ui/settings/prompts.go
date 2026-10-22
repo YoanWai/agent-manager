@@ -3,6 +3,7 @@ package settings
 import (
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -45,8 +46,12 @@ type Prompts struct {
 	cursor, focus                         int
 	rows                                  []Prompt
 	previous                              string
-	name                                  textinput.Model
-	text                                  textarea.Model
+	// first is the list row the window starts at; lines is what each
+	// painted body line holds, a list row or, in the editor, the field.
+	first int
+	lines presentation.Lines[int]
+	name  textinput.Model
+	text  textarea.Model
 }
 
 // Open says the panel covers the Settings rows.
@@ -54,6 +59,9 @@ func (p *Prompts) Open() bool { return p.open }
 
 // Gen is the generation a read or write the panel asks for carries.
 func (p *Prompts) Gen() uint64 { return p.gen }
+
+// Editing says the panel's editor holds a prompt being typed.
+func (p *Prompts) Editing() bool { return p.open && p.editing }
 
 // Listing says the panel shows its list, which the wheel scrolls.
 func (p *Prompts) Listing() bool { return p.open && !p.editing && !p.confirm }

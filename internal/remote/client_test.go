@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -161,10 +162,16 @@ func TestErrors(t *testing.T) {
 		{"ssh failed", "Warning: Permanently added 'gpu'\nssh: connect to host gpu port 22: Connection refused\n", exitStatus(255),
 			"gpu: unreachable over SSH: ssh: connect to host gpu port 22: Connection refused", true},
 		{"ssh failed silently", "", exitStatus(255), "gpu: unreachable over SSH: exit status 255", true},
+		{"host key unknown", "No ED25519 host key is known for gpu.lan and you have requested strict checking.\nHost key verification failed.\n", exitStatus(255),
+			"gpu: unreachable over SSH: known_hosts has no key for this host yet; run ssh me@gpu once in a terminal to check and accept it", true},
+		{"host key changed", "@@@@@@@@\n@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\n@@@@@@@@\nHost key verification failed.\n", exitStatus(255),
+			"gpu: unreachable over SSH: the host's key no longer matches known_hosts; find out why before you trust it, then update known_hosts", true},
 		{"binary missing", "sh: agent-manager: not found\n", exitStatus(127),
-			"gpu: agent-manager is not on the login shell's PATH there; install it or add it to PATH in the login profile", false},
+			"gpu: agent-manager is not on the login shell's PATH there; install it, add it to PATH in the login profile, or set the connection's path", false},
 		{"remote refused", "agent-manager: session a1 is not running\n", exitStatus(1), "gpu: session a1 is not running", false},
 		{"remote silent", "", exitStatus(1), "gpu: exit status 1", false},
+		{"tcsh login shell", "Unknown option: `-lc'\nUsage: tcsh [ -bcdefilmnqstvVxX ] [ argument ... ].\n", exitStatus(1),
+			"gpu: the login shell there is csh or tcsh; SSH connections need a POSIX login shell such as sh, bash or zsh", false},
 		{"ssh not installed", "", errors.New(`exec: "ssh": executable file not found in $PATH`), `gpu: exec: "ssh": executable file not found in $PATH`, false},
 	}
 	for _, tc := range cases {
@@ -184,6 +191,27 @@ func TestErrors(t *testing.T) {
 				t.Fatalf("error %v does not name its host", err)
 			}
 		})
+	}
+}
+
+func TestConnectionPathRunsAndNamesTheBinary(t *testing.T) {
+	var argv []string
+	c := newTestClient(t, func(_ context.Context, got []string) ([]byte, []byte, error) {
+		argv = got
+		return nil, []byte("sh: /opt/am/bin/agent-manager: not found\n"), exitStatus(127)
+	})
+	c.SetConnections([]Connection{{Name: "gpu", Destination: "me@gpu", Binary: "/opt/am/bin/agent-manager"}})
+	_, err := c.Kill(context.Background(), Ref{Host: "gpu", ID: "a1"})
+	if err == nil || err.Error() != "gpu: agent-manager is not at /opt/am/bin/agent-manager there; install it there or fix the connection's path" || TroubleOf(err) != TroubleMissing {
+		t.Fatalf("error = %v", err)
+	}
+	if command := argv[len(argv)-1]; !strings.Contains(command, "exec '\\''/opt/am/bin/agent-manager'\\'' '\\''kill'\\''") {
+		t.Fatalf("remote command does not run the connection's path: %s", command)
+	}
+	c.SetConnections([]Connection{{Name: "gpu", Destination: "me@gpu", Binary: "~/bin/am"}})
+	c.Kill(context.Background(), Ref{Host: "gpu", ID: "a1"})
+	if command := argv[len(argv)-1]; !strings.Contains(command, `exec "$HOME"/'\''bin/am'\'' `) {
+		t.Fatalf("a path under ~/ does not expand against $HOME: %s", command)
 	}
 }
 

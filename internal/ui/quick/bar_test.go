@@ -4,8 +4,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // fakePrompt is a one-line prompt box holding typed text.
@@ -79,5 +81,19 @@ func TestQuickBarThroughAFakeHost(t *testing.T) {
 	}
 	if _, request = q.HandleKey(h, tea.KeyMsg{Type: tea.KeyEsc}); request != (Request{Close: true}) || !h.prompt.released {
 		t.Fatalf("esc asked for %+v", request)
+	}
+}
+
+// A remote spawn that leaves the worktree to the host names it in the
+// glyph set the user picked, as every other worktree label does.
+func TestHostDefaultWorktreeFollowsTheGlyphMode(t *testing.T) {
+	h := &fakeHost{prompt: &fakePrompt{}, settings: map[string]string{}}
+	q := NewBar(h, []string{"claude"}, 0, false)
+	for _, mode := range []presentation.GlyphMode{presentation.GlyphModeBasic, presentation.GlyphModeAdvanced} {
+		facts := Facts{Remote: "box", RemoteSpawn: true, WorktreeInherit: true, Styles: spawn.Styles{GlyphMode: mode}}
+		want := presentation.GlyphsFor(mode).WorktreeGlyph + " host default"
+		if got := ansi.Strip(q.View(h, facts, 120, 3)); !strings.Contains(got, want) {
+			t.Fatalf("%s mode: bar %q lacks %q", mode, got, want)
+		}
 	}
 }

@@ -306,6 +306,26 @@ func TestSendFromReachesTheLayerOnlyWhenGiven(t *testing.T) {
 	}
 }
 
+// The SSH client's form: flags first, then the id and the prompt after a
+// bare --, so a prompt that starts with a dash stays the prompt.
+func TestTypeReachesTheLayerWithItsPrompt(t *testing.T) {
+	out := &bytes.Buffer{}
+	fake := &fakeSessions{session: sampleSession()}
+	if err := runType(out, fake, []string{"--json", "--", "beef1234", "--yes"}, ""); err != nil {
+		t.Fatalf("type --json -- id prompt: %v", err)
+	}
+	if fake.callerID != "" || fake.targetID != "beef1234" || fake.message != "--yes" {
+		t.Fatalf("type reached the layer as caller=%q target=%q prompt=%q", fake.callerID, fake.targetID, fake.message)
+	}
+	var typed sessioncmd.Session
+	if err := json.Unmarshal(out.Bytes(), &typed); err != nil || typed.ID != "beef1234" {
+		t.Fatalf("type --json = %q (%v)", out.String(), err)
+	}
+	if err := runType(&bytes.Buffer{}, &fakeSessions{}, []string{"beef1234"}, ""); err == nil {
+		t.Fatal("type without a prompt should print its usage")
+	}
+}
+
 func TestSnapshotPrintsOnlyJSON(t *testing.T) {
 	fake := &fakeSessions{session: sampleSession()}
 	err := runSnapshot(&bytes.Buffer{}, fake, nil, "")

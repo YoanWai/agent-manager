@@ -108,3 +108,28 @@ func TestMissingTerminalIDIsAUsageError(t *testing.T) {
 		})
 	}
 }
+
+// --styled keeps the screen's colors for a manager reading it over SSH;
+// without it the screen is plain text.
+func TestReadStyledKeepsColors(t *testing.T) {
+	sessions := &fakeSessions{session: sampleSession()}
+	terminals := &fakeTerminals{}
+	for _, tc := range []struct {
+		name string
+		run  func(out *bytes.Buffer, args []string) error
+	}{
+		{"read", func(out *bytes.Buffer, args []string) error { return runRead(out, sessions, args, "") }},
+		{"terminal read", func(out *bytes.Buffer, args []string) error { return runTerminalRead(out, terminals, args, "") }},
+	} {
+		var plain, styled bytes.Buffer
+		if err := tc.run(&plain, []string{"--json", "--", "t1"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := tc.run(&styled, []string{"--styled", "--json", "--", "t1"}); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(plain.String(), `\u001b[32m`) || !strings.Contains(styled.String(), `\u001b[32m`) {
+			t.Fatalf("%s: plain %s styled %s", tc.name, plain.String(), styled.String())
+		}
+	}
+}

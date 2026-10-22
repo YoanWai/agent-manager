@@ -87,22 +87,28 @@ rules = [
 ]
 
 [tools.opencode]
-command = "opencode"
+# OpenCode 2's shared background server never sees a launch's environment,
+# so the model, the MCP config and the session id reach it only through a
+# private server
+command = "opencode --standalone"
 session_report = "opencode"
 # opencode mints its own session id; capture it after launch and resume it
 session_store = "opencode"
-resume_by_id_command = "opencode --session {id}"
-fork_command = "opencode --session {id} --fork"
+resume_by_id_command = "opencode --standalone --session {id}"
+# the interactive command cannot fork; the session store makes the copy
+# through opencode's API and the launch opens it
+fork_command = "opencode --standalone --session {new_id}"
 # opencode's session picker exists only inside the running TUI: /sessions.
 # Passing it via the prompt flag would submit it to the model, so revive
 # launches bare opencode and the manager types the shortcut at its composer.
-resume_picker_command = "opencode"
+resume_picker_command = "opencode --standalone"
 resume_picker_keys = "/sessions"
-revive_command = "opencode --continue"
+revive_command = "opencode --standalone --continue"
 # its ACP server would leave a session in the global session list
 catalog = "opencode"
-catalog_command = "opencode serve --port 0"
-model_args = "-m {model}"
+catalog_command = "opencode models --standalone"
+# the interactive command takes no model flag
+model_env = 'OPENCODE_CONFIG_CONTENT={"model":{model}}'
 # opencode's positional argument is the project path, so the optional
 # session prompt travels behind this flag
 prompt_flag = "--prompt"
@@ -116,16 +122,29 @@ activity_cutoff = "(?m)^\\s*╹"
 # rows a multi-line draft adds are told apart by the row above them, which
 # carries the same bar with text past it.
 input_prefix = "(?m)^\\s*┃"
-turn_end = "^\\s*▣ +.+· [\\dhms. ]+\\s*$"
-chrome_line = "^\\s*(┃.*)?$"
+# the turn summary row: agent, model and duration, with a rate while a
+# reply streamed ("Build · GLM-5.3 · 22.0s · 43.5 tok/s"). An interrupted
+# turn adds "· interrupted" and is no end. The side panel a wide pane
+# draws can share the row past a gap.
+turn_end = "^\\s*[^┃·\\n]+ · [^·\\n]+ · \\d[\\dhms. ]*(?: · [\\d.]+ tok/s)?(?:\\s{3,}\\S.*)?$"
+# a wide pane carries a side panel (getting started, context, MCP) whose
+# rows start far to the right of any transcript text
+chrome_line = "^\\s*(┃.*)?$|^\\s{60,}\\S.*$"
 input_placeholder = "^Ask anything\\.\\.\\."
 # a submitted prompt echoes into the transcript inside the same ┃ gutter
 # the composer draws; the composer's own block hugs the cutoff and is
 # trimmed before the echo is read
 user_echo = "^\\s*┃\\s{2,}"
-limit_line = "(?i)requires more credits|(?:Usage|Free|Go) limit reached"
+# a command it runs ("$ ls"), a running tool ("⠏ date"), a file it wrote
+# ("# Wrote notes.txt"), that file's numbered lines and the row standing
+# in for output clipped at the top ("(5 earlier lines)") share the gutter
+tool_row = "^\\s*┃(?:\\s{2,}(?:[$#] |[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] |\\(\\d+ earlier lines?\\)$)|\\s{3,}\\d+( |$))"
+# a provider error ends the turn with a summary row under it, so it is
+# read the way a limit banner is: above the newest summary
+limit_line = "(?i)requires more credits|(?:Usage|Free|Go) limit reached|^ *Error: "
 # the footer swaps its path for a knight-rider spinner ("■■■⬝⬝⬝⬝⬝") only
-# while a turn runs, provider retries included
+# while a turn runs, provider retries included; the transcript itself
+# carries no working marker, so the footer is what says a turn is on
 busy_footer = "(?m)^\\s*[■⬝]+ "
 rules = [
   { state = "errored", pattern = "(?i)requires more credits" },
@@ -135,10 +154,6 @@ rules = [
   # Perm is the title prefix left before narrow panes wrap Permission mid-word.
   { state = "waiting", pattern = "(?m)^[ \\t]*┃[ \\t]+△[ \\t]*(?:Perm|Always|Reject)[^\\n]*(?:\\n[ \\t]*┃[^\\n]*)*(?:\\n[ \\t]*)*\\z" },
   { state = "waiting", pattern = "(?m)^[ \\t]*┃[^\\n]*(?:⇆|↑↓)[^\\n]*\\besc\\b[^\\n]*(?:\\n[ \\t]*┃[^\\n]*)*(?:\\n[ \\t]*)*\\z" },
-  # spinner row while running: "▣  Build · GLM-5.2" (a finished turn
-  # gains a duration: "▣  Build · GLM-5.2 · 22.0s")
-  { state = "working", pattern = "(?m)^\\s*▣ +[^·\\n]+· [^·\\n]+$" },
-  { state = "working", pattern = "esc interrupt" },
 ]
 
 [tools.codex]
@@ -159,12 +174,14 @@ default_status = "idle"
 activity_cutoff = "(?m)^›"
 # a completed turn closes on a dim label ("  02:41", "  done 2:41 AM",
 # "  Worked for 1m 5s · 02:41", "  Sep 3 at 02:41"), with the opt-in runtime
-# metrics after it ("· Local tools: 2 calls (1.2s) • Inference: ..."); releases
+# metrics after it ("· Local tools: 2 calls (1.2s) • Inference: ..."); 0.159
+# joins those parts with "•" and reads a sub-second turn as "<1s"; releases
 # before 0.154 drew a "─ Worked for 12s ─" or bare divider instead
-turn_end = "(?m)^(?:─+ Worked for [\\dhms. ]+─+|─+|  (?:Worked for [\\dhms ]+ · )?(?:done )?(?:[A-Z][a-z]{2} \\d{1,2}(?:, \\d{4})? at )?\\d{1,2}:\\d{2}(?: [AP]M)?(?: · (?:Local tools: |Inference: |WebSocket: |Streams?: |\\d+ events received |Responses API |TTFT: |TBT: )[^\\n]*)?)$"
+turn_end = "(?m)^(?:─+ Worked for [\\dhms. ]+─+|─+|  (?:Worked for (?:<1s|[\\dhms ]+) [·•] )?(?:done )?(?:[A-Z][a-z]{2} \\d{1,2}(?:, \\d{4})? at )?\\d{1,2}:\\d{2}(?: [AP]M)?(?: [·•] (?:Local tools: |Inference: |WebSocket: |Streams?: |\\d+ events received |Responses API |TTFT: |TBT: )[^\\n]*)?)$"
 # hint rows (usage warning, tip, scroll and copy notices) sit right-aligned
-# between the transcript and the composer
-chrome_line = "^\\s*─*\\s*$|^\\s+(?:⚠|↓|Tip: |Copied )"
+# between the transcript and the composer; a background terminal still open
+# after the turn adds its own row there
+chrome_line = "^\\s*─*\\s*$|^\\s+(?:⚠|↓|Tip: |Copied |\\d+ background terminals? running · )"
 # a message queued during a turn is drawn under the running step, with its
 # edit hint, until the turn picks it up; a message sent with Enter shows under
 # "Messages to be submitted after next tool call" (or "at end of turn")
@@ -416,6 +433,9 @@ input_prefix = "(?m)^\\s*(?:(?:\\S+\\s+){0,3}[❯>$#›»→%➜]|PS [^\\n>]*>)\
 
 [tools.pi]
 command = "pi"
+# 0.84.3 is the first pi whose set_model stays in the session. Earlier
+# releases save every model the catalog asks about as the user's default.
+minimum_version = "0.84.3"
 session_report = "pi"
 session_id_flag = "--session-id"
 resume_by_id_command = "pi --session {id}"
@@ -540,5 +560,31 @@ rules = [
   # never bare digits.
   { state = "working", pattern = "(?m)^ [·○◇☆✧⌘] [^\\n]*?(?:esc to interrupt[ \\t]*•[ \\t]*[\\dhms. ]*[\\ds]| [\\dhms. ]*[\\ds])([ \\t]*•[ \\t]*[↓↑] [\\d.]+k?)?$" },
   { state = "errored", pattern = "(?im)^\\s*(?:⚠ )?Error:" },
+]
+
+[tools.cursor]
+command = "cursor-agent"
+session_report = "none"
+# Cursor mints the chat id after launch. The capturer reads meta.json.
+session_store = "cursor"
+resume_by_id_command = "cursor-agent --resume {id}"
+resume_picker_command = "cursor-agent ls"
+revive_command = "cursor-agent --continue"
+catalog = "acp"
+catalog_command = "cursor-agent acp"
+model_args = "--model {model}"
+# The spinner and "ctrl+c to stop" leave the screen when the turn ends,
+# and this version draws no turn summary, so a resting composer is idle.
+default_status = "idle"
+activity_cutoff = "(?m)^[ \\t]*→ "
+input_placeholder = "^(?:Plan, search, build anything|Add a follow-up)(?:\\s+ctrl\\+c to stop)?$"
+chrome_line = "^\\s*Tip: |^\\s*Cursor Agent\\s*$|^\\s*v\\d{4}\\.\\d+\\.\\d+"
+rules = [
+  { state = "waiting", pattern = "(?m)^[ \\t]*Press any key to log in[^\\n]*(?:\\n[^\\n]*){0,2}(?:\\n[ \\t]*)*\\z" },
+  { state = "waiting", pattern = "(?m)^[ \\t]*│[ \\t]*⚠ Workspace Trust Required[^\\n]*(?:\\n[^\\n]*){0,12}\\n[ \\t]*│[ \\t]*\\[q\\] Quit[^\\n]*(?:\\n[^\\n⏳]*){0,4}(?:\\n[ \\t]*)*\\z" },
+  # The shell dialog was captured. The other titles are the ones that same dialog returns.
+  { state = "waiting", pattern = "(?m)^[ \\t]*(?:Run this command|Run this MCP tool|Write to this file|Delete this file|Read this file|Allow this web search|Allow this web fetch|Proceed with this edit)\\?(?:\\n[^\\n]*){0,6}\\n[ \\t]*→ [^\\n]*\\([yn]\\)(?:\\n[^\\n]*){0,6}(?:\\n[ \\t]*)*\\z" },
+  { state = "working", pattern = "(?m)^[ \\t]*│[ \\t]*⏳ Trusting workspace" },
+  { state = "working", pattern = "(?m)(?:^[ \\t]*\\p{Braille}{2}\\s+(?:Working|Running)\\b|^[ \\t]*→ [^\\n]*ctrl\\+c to stop)(?:\\n[^\\n]*){0,16}(?:\\n[ \\t]*)*\\z" },
 ]
 `

@@ -5,6 +5,8 @@ package remote
 import (
 	"context"
 	"errors"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -66,11 +68,12 @@ func TestRunSSHStopsWaitingForAPipeAfterSSHExits(t *testing.T) {
 
 func TestSSHArgv(t *testing.T) {
 	c := New("/profile")
-	got := c.sshArgv("me@gpu", false, remoteCommand([]string{"agent-manager", "snapshot", "--json"}))
+	got := c.sshArgv("me@gpu", false, remoteCommand(program(Connection{}), []string{"snapshot", "--json"}))
 	want := []string{
 		"ssh",
 		"-o", "BatchMode=yes",
 		"-o", "ForwardAgent=no",
+		"-o", "ForwardX11=no",
 		"-o", "ClearAllForwardings=yes",
 		"-o", "ConnectTimeout=5",
 		"-o", "ServerAliveInterval=15",
@@ -85,5 +88,49 @@ func TestSSHArgv(t *testing.T) {
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("argv:\n got %q\nwant %q", got, want)
+	}
+}
+
+// The host's review and editor keys leave their request on its tmux server
+// and detach. The attach takes the request back, so the host's own manager
+// never carries it out, and reports it in its exit status; any other end
+// keeps tmux's own status.
+func TestAttachScriptTakesBackTheHostsRequest(t *testing.T) {
+	dir := t.TempDir()
+	unset := filepath.Join(dir, "unset")
+	fake := "#!/bin/sh\n" +
+		"case \"$*\" in\n" +
+		"*attach-session*) exit \"$ATTACH_STATUS\";;\n" +
+		"*show-options*) printf '%s\\n' \"$REQUEST\";;\n" +
+		"*set-option*) touch \"$UNSET\";;\n" +
+		"esac\n"
+	if err := os.WriteFile(filepath.Join(dir, "tmux"), []byte(fake), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		request, status string
+		key             string
+		code            int
+	}{
+		{"review", "0", "review", 0},
+		{"editor", "0", "editor", 0},
+		{"", "0", "", 0},
+		{"", "1", "", 1},
+	} {
+		os.Remove(unset)
+		cmd := exec.Command("/bin/sh", "-c", attachScript("ab12"))
+		cmd.Env = append(os.Environ(), "PATH="+dir+":/usr/bin:/bin", "REQUEST="+tc.request, "ATTACH_STATUS="+tc.status, "UNSET="+unset)
+		key, err := AttachKey(cmd.Run())
+		code := 0
+		var exited *exec.ExitError
+		if errors.As(err, &exited) {
+			code = exited.ExitCode()
+		}
+		if key != tc.key || code != tc.code {
+			t.Errorf("request %q, attach status %s: key %q, exit %d; want %q, %d", tc.request, tc.status, key, code, tc.key, tc.code)
+		}
+		if _, err := os.Stat(unset); (err == nil) != (tc.request != "") {
+			t.Errorf("request %q: unset ran = %v", tc.request, err == nil)
+		}
 	}
 }

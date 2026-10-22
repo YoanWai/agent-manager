@@ -38,6 +38,8 @@ type Context struct {
 	DefaultTool string
 	Session     keybind.Table
 	List        keybind.Table
+	// UpdateReady says the version row offers a release to update to.
+	UpdateReady bool
 }
 
 // Result is a key's outcome for the root to run.

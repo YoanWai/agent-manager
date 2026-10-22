@@ -15,6 +15,9 @@ import (
 type Panel struct {
 	cursor int
 	scroll int
+	// lines is the notice each painted row inside the frame shows, for
+	// clicks.
+	lines presentation.Lines[int]
 	// dismissed holds the notice ids the user closed for good; the set
 	// persists in settings so a dismissed message never comes back.
 	dismissed map[string]bool
@@ -95,6 +98,7 @@ type Theme struct {
 // Frame is what one paint or key of the panel sees: the terminal, the
 // refresh and download in flight, the status bar's message and the theme.
 type Frame struct {
+	GlyphMode  presentation.GlyphMode
 	Width      int
 	Height     int
 	Refreshing bool
@@ -150,9 +154,9 @@ func (p *Panel) Key(msg tea.KeyMsg, notices []Notice, f Frame) Outcome {
 			p.scroll = 0
 		}
 	case "pgup", "ctrl+u":
-		p.ScrollBy(notices, -max(4, f.Height/3), f)
+		p.scrollBy(notices, -max(4, f.Height/3), f)
 	case "pgdown", "ctrl+d":
-		p.ScrollBy(notices, max(4, f.Height/3), f)
+		p.scrollBy(notices, max(4, f.Height/3), f)
 	case "home", "g":
 		p.scroll = 0
 	case "end", "G":
@@ -176,6 +180,21 @@ func (p *Panel) Key(msg tea.KeyMsg, notices []Notice, f Frame) Outcome {
 	return Outcome{}
 }
 
+// Click is a press on row line inside the frame. The first click on a
+// title selects it; one on the title already selected opens its link, the
+// way ↵ does.
+func (p *Panel) Click(line int, notices []Notice, f Frame) Outcome {
+	i, ok := p.lines.At(line)
+	switch {
+	case !ok:
+		return Outcome{}
+	case !presentation.ClickRow(&p.cursor, i):
+		p.scroll = 0
+		return Outcome{}
+	}
+	return p.Key(tea.KeyMsg{Type: tea.KeyEnter}, notices, f)
+}
+
 func (p Panel) ScrollLimit(notices []Notice, f Frame) int {
 	if p.cursor >= len(notices) {
 		return 0
@@ -186,9 +205,14 @@ func (p Panel) ScrollLimit(notices []Notice, f Frame) int {
 	return max(0, len(body)-room)
 }
 
-// ScrollBy steps from the page on screen, since a resize can leave the
+// Wheel scrolls the body by step notches of the wheel.
+func (p *Panel) Wheel(step int, notices []Notice, f Frame) {
+	p.scrollBy(notices, step*WheelRows, f)
+}
+
+// scrollBy steps from the page on screen, since a resize can leave the
 // saved offset past the last page.
-func (p *Panel) ScrollBy(notices []Notice, rows int, f Frame) {
+func (p *Panel) scrollBy(notices []Notice, rows int, f Frame) {
 	limit := p.ScrollLimit(notices, f)
 	p.scroll = min(max(min(p.scroll, limit)+rows, 0), limit)
 }
@@ -201,14 +225,14 @@ func (p Panel) tail(notices []Notice, f Frame, inner int) []string {
 	var tail []string
 	if p.cursor < len(notices) {
 		if url := notices[p.cursor].URL; url != "" {
-			tail = append(tail, f.Theme.Subtle.Render("↗ "+presentation.TruncateTail(strings.TrimPrefix(url, "https://"), inner-2)))
+			tail = append(tail, f.Theme.Subtle.Render(presentation.GlyphsFor(f.GlyphMode).LinkGlyph+" "+presentation.TruncateTail(strings.TrimPrefix(url, "https://"), inner-2)))
 		}
 	}
 	if f.Refreshing {
-		tail = append(tail, lipgloss.NewStyle().Foreground(f.Theme.Accent2).Render("↻ refreshing releases and messages…"))
+		tail = append(tail, lipgloss.NewStyle().Foreground(f.Theme.Accent2).Render(presentation.GlyphsFor(f.GlyphMode).RefreshGlyph+" refreshing releases and messages…"))
 	}
 	if f.Applying {
-		tail = append(tail, lipgloss.NewStyle().Foreground(f.Theme.Accent).Render("↓ downloading "+f.Latest+"…"))
+		tail = append(tail, lipgloss.NewStyle().Foreground(f.Theme.Accent).Render(presentation.GlyphsFor(f.GlyphMode).DownloadGlyph+" downloading "+f.Latest+"…"))
 	}
 	if f.Status != "" {
 		tail = append(tail, f.Status)
@@ -216,25 +240,28 @@ func (p Panel) tail(notices []Notice, f Frame, inner int) []string {
 	return tail
 }
 
-func (p Panel) View(notices []Notice, f Frame) []string {
+func (p *Panel) View(notices []Notice, f Frame) []string {
 	t := f.Theme
 	inner := innerWidth(notices, f.Width)
+	p.lines.Reset()
 	if len(notices) == 0 {
 		rows := []string{t.Subtle.Render("nothing new")}
 		rows = append(rows, p.tail(notices, f, inner)...)
-		frame := cardFrame(rows, inner, legend(t), t.Muted.Render("r refresh · esc "), t)
+		frame := cardFrame(rows, inner, legend(t), t.Muted.Render(footText(footPairs(notices, p.cursor, inner))), t)
 		return frame
 	}
 	var rows []string
 	rows = append(rows, "")
+	p.lines.Skip(1)
 	for i, n := range notices {
 		marker := "  "
 		title := t.Value.Render(n.Title)
 		if i == p.cursor {
-			marker = lipgloss.NewStyle().Foreground(t.Accent).Render("▸ ")
+			marker = lipgloss.NewStyle().Foreground(t.Accent).Render(presentation.GlyphsFor(f.GlyphMode).NoticeSelectionGlyph + " ")
 			title = lipgloss.NewStyle().Foreground(t.Bright).Bold(true).Render(n.Title)
 		}
 		rows = append(rows, marker+n.mark(t)+" "+title)
+		p.lines.Show(i, 1)
 	}
 	selected := notices[p.cursor]
 	rows = append(rows, t.Border.Render(strings.Repeat("┄", inner)))
@@ -252,19 +279,71 @@ func (p Panel) View(notices []Notice, f Frame) []string {
 
 	frame := cardFrame(rows, inner,
 		legend(t),
-		t.Muted.Render(hint(selected, inner)), t)
+		t.Muted.Render(footText(footPairs(notices, p.cursor, inner))), t)
 	return frame
 }
 
-func hint(selected Notice, inner int) string {
-	updateKey := ""
-	if selected.IsUpdate() {
-		updateKey = "u update · "
+// footStart is the column the bottom edge's text starts at, after its
+// corner and the dash before it.
+const footStart = 2
+
+const footSep = " · "
+
+// Foot is where each key the bottom edge names was painted, the ones the
+// edge's truncation cut left out.
+func (p Panel) Foot(notices []Notice, f Frame) []presentation.PaintedKey {
+	inner := innerWidth(notices, f.Width)
+	var keys []presentation.PaintedKey
+	x := footStart
+	for i, pair := range footPairs(notices, p.cursor, inner) {
+		if i > 0 {
+			x += lipgloss.Width(footSep)
+		}
+		width := lipgloss.Width(footPart(pair))
+		if x+width > footStart+inner+1 {
+			break
+		}
+		keys = append(keys, presentation.PaintedKey{X0: x, X1: x + width, Label: pair[0]})
+		x += width
 	}
-	if hint := "↑↓ pick · pgup/pgdn/home/end scroll · r refresh · " + updateKey + "↵ open · x dismiss · esc "; lipgloss.Width(hint) <= inner+1 {
-		return hint
+	return keys
+}
+
+func footPairs(notices []Notice, cursor, inner int) [][2]string {
+	if len(notices) == 0 {
+		return [][2]string{{"r", "refresh"}, {"esc", ""}}
 	}
-	return "↑↓ pick · pgup/pgdn scroll · r refresh · " + updateKey + "↵ open · x dismiss · esc "
+	var update [][2]string
+	if notices[cursor].IsUpdate() {
+		update = [][2]string{{"u", "update"}}
+	}
+	actions := append(append([][2]string{{"r", "refresh"}}, update...), [][2]string{{"↵", "open"}, {"x", "dismiss"}, {"esc", ""}}...)
+	// Navigation shrinks, then drops, then the actions lose their words, so
+	// every key a click can run stays on the edge.
+	bare := [][2]string{{"↑↓", ""}}
+	for _, action := range actions {
+		bare = append(bare, [2]string{action[0], ""})
+	}
+	for _, pairs := range [][][2]string{
+		append([][2]string{{"↑↓", "pick"}, {"pgup/pgdn/home/end", "scroll"}}, actions...),
+		append([][2]string{{"↑↓", "pick"}, {"pgup/pgdn", "scroll"}}, actions...),
+		actions,
+	} {
+		if lipgloss.Width(footText(pairs)) <= inner+1 {
+			return pairs
+		}
+	}
+	return bare
+}
+
+func footPart(pair [2]string) string { return strings.TrimSpace(pair[0] + " " + pair[1]) }
+
+func footText(pairs [][2]string) string {
+	parts := make([]string, len(pairs))
+	for i, pair := range pairs {
+		parts[i] = footPart(pair)
+	}
+	return strings.Join(parts, footSep)
 }
 
 // legend is the card's title, set into the border: lowercase, warm,

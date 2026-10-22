@@ -26,7 +26,7 @@ func (m *Model) prepareFrame() {
 }
 
 func (m *Model) renderFrame() string {
-	m.notices.noticeHit = noticeHit{}
+	m.layout.keyHits, m.layout.card = nil, cardRect{}
 	if m.layout.width == 0 {
 		return m.syncCursorAnchor("loading...")
 	}
@@ -47,7 +47,7 @@ func (m *Model) renderFrame() string {
 	case modeConfirmDelete:
 		frame = m.viewConfirm()
 	case modeLaunchHint:
-		frame = m.launchHint.view(m)
+		frame = m.launchHintFrame()
 	case modeSettings:
 		frame = m.viewSettings()
 	case modeFork:
@@ -59,17 +59,18 @@ func (m *Model) renderFrame() string {
 	case modeGroupForm:
 		frame = m.viewGroupForm()
 	case modeConnection:
-		frame = m.ssh.dialog.view(m)
+		frame = m.viewConnectionDialog()
 	case modeDiff:
 		frame = m.viewDiffFull()
 	case modeNotices:
-		frame = m.centerOnBackdrop(m.viewNotices())
+		frame = m.viewNoticesCard()
 	default:
 		frame = m.overlayRowMenu(m.titleTopRowWithUpdate(m.viewListFrame()))
 		if m.mode == modeFocus && m.focus.saved.list.Open() {
 			frame = m.viewFocusSaved()
 		}
 	}
+	m.layout.keyHits = m.layout.keyHits.above(m.layout.height)
 	return m.syncCursorAnchor(clampFrame(frame, m.layout.height))
 }
 

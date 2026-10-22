@@ -105,6 +105,11 @@ func (m Model) Collapsed() []string {
 	return paths
 }
 
+// saveFolds stores every fold, local and on connections.
+func (m Model) saveFolds() Mutation {
+	return Mutation{Kind: SaveCollapsed, Collapsed: m.Collapsed(), HostCollapsed: m.HostCollapsed()}
+}
+
 func (m Model) ListedSessionIDs() []string {
 	sessions := m.listedSessions()
 	ids := make([]string, len(sessions))
@@ -187,7 +192,7 @@ func (m *Model) action(action string, ctx KeyContext) Decision {
 			return Decision{Consumed: true}
 		}
 		if row, ok := m.row(); ok && row.folds() {
-			if m.collapsed[row.foldKey()] {
+			if m.rowFolded(row) {
 				return m.toggleCollapse()
 			}
 			return Decision{Consumed: true}
@@ -197,7 +202,7 @@ func (m *Model) action(action string, ctx KeyContext) Decision {
 		if !ctx.ArrowStep {
 			return Decision{Consumed: true}
 		}
-		if row, ok := m.row(); ok && row.folds() && !m.collapsed[row.foldKey()] {
+		if row, ok := m.row(); ok && row.folds() && !m.rowFolded(row) {
 			return m.toggleCollapse()
 		}
 		return Decision{Consumed: true}
@@ -362,19 +367,18 @@ func (m *Model) toggleCollapse() Decision {
 	if !ok {
 		return Decision{Consumed: true}
 	}
-	key := row.foldKey()
-	if key == "" {
+	if row.host == "" && row.foldPath() == "" {
 		return Decision{Consumed: true}
 	}
-	m.collapsed[key] = !m.collapsed[key]
+	m.setFolded(row.host, row.foldPath(), !m.rowFolded(row))
 	m.rebuildRows()
 	return m.collapsedDecision()
 }
 
 func (m *Model) toggleCollapseAll() Decision {
 	collapse := !m.AllGroupsCollapsed()
-	for key := range m.foldable() {
-		m.collapsed[key] = collapse
+	for _, fold := range m.foldable() {
+		m.setFolded(fold.Host, fold.Path, collapse)
 	}
 	m.rebuildRows()
 	return m.collapsedDecision()
@@ -382,8 +386,8 @@ func (m *Model) toggleCollapseAll() Decision {
 
 func (m Model) AllGroupsCollapsed() bool {
 	any := false
-	for key := range m.foldable() {
-		if !m.collapsed[key] {
+	for _, fold := range m.foldable() {
+		if !m.folded(fold.Host, fold.Path) {
 			return false
 		}
 		any = true
@@ -395,7 +399,7 @@ func (m Model) collapsedDecision() Decision {
 	return Decision{
 		Consumed:  true,
 		Selection: selectedOfValue(m),
-		Mutations: []Mutation{{Kind: SaveCollapsed, Collapsed: m.Collapsed()}},
+		Mutations: []Mutation{m.saveFolds()},
 	}
 }
 
@@ -485,7 +489,7 @@ func (m *Model) RevealGroup(path string) Decision {
 		Selection:        current,
 	}
 	if collapsedChanged {
-		decision.Mutations = []Mutation{{Kind: SaveCollapsed, Collapsed: m.Collapsed()}}
+		decision.Mutations = []Mutation{m.saveFolds()}
 	}
 	return decision
 }

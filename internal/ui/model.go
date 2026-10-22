@@ -96,8 +96,10 @@ type layoutState struct {
 	height        int
 	split         splitState
 	displayedRail uirail.Frame
-	// cardTop, cardLeft and cardRight place the last card painted, for clicks.
-	cardTop, cardLeft, cardRight int
+	// card places the last card painted and its body, for clicks.
+	card cardRect
+	// keyHits are the key pairs this frame painted, for clicks.
+	keyHits keyHits
 }
 
 type focusState struct {
@@ -112,10 +114,13 @@ type reviewNavState struct {
 }
 
 type mouseCapture struct {
-	// released is true while the setup dialog has handed the mouse
+	// released is true while the mouse-mode setting has handed the mouse
 	// back to the terminal, so a drag selects its text.
 	released bool
 	hover    bool
+	// pressed is what the last left press landed on, which its release
+	// clicks when it comes back up over the same one.
+	pressed clickTarget
 }
 
 type settingsFeature struct {
@@ -133,8 +138,6 @@ type environment struct {
 type helpFeature struct {
 	state      uihelp.State
 	returnMode mode
-	// docsHit follows the docs key in the painted footer, for clicks.
-	docsHit noticeHit
 }
 
 func NewWithInboxOwner(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, version string, owner sessioncmd.InboxMaintenance) (*Model, error) {
@@ -239,7 +242,7 @@ func newView(deps Dependencies, version string) (*Model, error) {
 			engine:      engine,
 			setSnapshot: st.SetSnapshot,
 		},
-		rail:     uirail.New(loadCollapsed(st)),
+		rail:     loadRail(st),
 		ssh:      newConnections(remote.New(deps.ProfileDir), connections),
 		settings: settingsFeature{cache: loadSettingsCache(st, choiceSettingKeys(slices.Sorted(maps.Keys(cfg.Tools))))},
 		focus: focusState{runtime: focusRuntimeState{

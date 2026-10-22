@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -173,6 +174,7 @@ func TestInstallStartCompletionDoesNotReplaceNewerDialog(t *testing.T) {
 	m.launchHint.open(m, launchFix{
 		text:    "second setup step",
 		command: "true",
+		script:  "true",
 		binary:  "second-cli",
 		images:  []imageAttachment{{id: 2, path: secondImage}},
 	})
@@ -517,5 +519,48 @@ func TestInstallSettleKeepsTrackerWhenShellLivenessIsUnknown(t *testing.T) {
 	_, quit := m.requestQuit()
 	if quit != nil || m.effects.quitting {
 		t.Fatal("unknown shell liveness allowed quit to discard the tracker")
+	}
+}
+
+// The installer shell takes the screen from the quick bar. A start that
+// lands after the dialog closed leaves the bar alone.
+func TestInstallStartGivesTheInstallerShellTheKeys(t *testing.T) {
+	session := store.Session{ID: "installer", Name: "install pi"}
+	result := installStartResult{
+		session: session,
+		install: &pendingInstall{sessionID: session.ID, binary: "pi"},
+	}
+	for _, failure := range []error{nil, errors.New("send failed")} {
+		m := buildModel(t)
+		image := tempImage(t, "draft.png")
+		m.quick.active = true
+		m.quick.attachments = []imageAttachment{{id: 1, path: image}}
+		m.mode = modeLaunchHint
+		m.gens.dialog = 1
+		cmd := m.applyInstallStart(installStartRequest{gen: 1, binary: "pi"}, result, failure)
+		if !imageExists(t, image) {
+			t.Fatal("update deleted the image before the cleanup command ran")
+		}
+		m.applyCmd(t, cmd)
+		if m.mode != modeList || m.quick.active {
+			t.Fatalf("failure %v left mode %v quick %v", failure, m.mode, m.quick.active)
+		}
+		if imageExists(t, image) || len(m.quick.attachments) != 0 {
+			t.Fatal("the installer handoff left the draft image")
+		}
+	}
+
+	m := buildModel(t)
+	image := tempImage(t, "kept.png")
+	m.quick.active = true
+	m.quick.attachments = []imageAttachment{{id: 1, path: image}}
+	m.mode = modeList
+	m.gens.dialog = 2
+	m.applyInstallStart(installStartRequest{gen: 1, binary: "pi"}, result, nil)
+	if !m.quick.active || m.mode != modeList {
+		t.Fatalf("a start behind a closed dialog left mode %v quick %v", m.mode, m.quick.active)
+	}
+	if !imageExists(t, image) {
+		t.Fatal("a start behind a closed dialog deleted the draft image")
 	}
 }

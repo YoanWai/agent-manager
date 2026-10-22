@@ -95,12 +95,12 @@ func TestInstallTagIsThisBuildsRelease(t *testing.T) {
 }
 
 func TestInstallableNamesOutdatedAndMissingHostsOnly(t *testing.T) {
-	if !Installable(outdated("gpu")) || !Installable(&Error{Host: "gpu", Err: errNotInstalled}) {
+	if !Installable(outdated("gpu")) || !Installable(&Error{Host: "gpu", Err: errors.New("not on PATH"), trouble: TroubleMissing}) {
 		t.Fatal("an outdated or missing agent-manager is not installable")
 	}
 	for _, err := range []error{
-		&Error{Host: "gpu", Err: errors.New("unreachable over SSH: refused"), sshFailed: true},
-		&Error{Host: "gpu", Err: errors.New("agent-manager there is newer than this one; update agent-manager on this machine")},
+		&Error{Host: "gpu", Err: errors.New("unreachable over SSH: refused"), trouble: TroubleUnreachable},
+		newer("gpu"),
 		nil,
 	} {
 		if Installable(err) {

@@ -3,6 +3,7 @@ package rail
 import (
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -23,14 +24,10 @@ func (m *Model) Mouse(msg tea.MouseMsg, frame Frame, ctx MouseContext) Decision 
 		return m.menuMouse(msg, frame, ctx)
 	}
 	if tea.MouseEvent(msg).IsWheel() {
-		switch msg.Button {
-		case tea.MouseButtonWheelUp:
-			return m.Move(-1, false)
-		case tea.MouseButtonWheelDown:
-			return m.Move(1, false)
-		default:
-			return Decision{Consumed: true}
+		if step := presentation.WheelStep(msg); step != 0 {
+			return m.Move(step, false)
 		}
+		return Decision{Consumed: true}
 	}
 	switch msg.Action {
 	case tea.MouseActionPress:
@@ -174,11 +171,9 @@ func (m Model) onMenuButton(x, localY int, selection Selection, frame Frame) boo
 
 func (m *Model) menuMouse(msg tea.MouseMsg, frame Frame, ctx MouseContext) Decision {
 	if tea.MouseEvent(msg).IsWheel() {
-		step := 1
-		if msg.Button == tea.MouseButtonWheelUp {
-			step = -1
+		if step := presentation.WheelStep(msg); step != 0 {
+			m.menu.index = m.menu.nextItem(m.menu.index, step)
 		}
-		m.menu.index = m.menu.nextItem(m.menu.index, step)
 		return Decision{Consumed: true}
 	}
 	index, onItem := m.menuItemAt(msg.X, msg.Y, frame)
@@ -189,16 +184,18 @@ func (m *Model) menuMouse(msg tea.MouseMsg, frame Frame, ctx MouseContext) Decis
 		}
 		return Decision{Consumed: true}
 	case tea.MouseActionRelease:
-		held := m.menu.held
-		m.menu.held = false
-		if held && onItem {
+		held, pressed := m.menu.held, m.menu.pressed
+		m.menu.held, m.menu.pressed = false, -1
+		if onItem && (held || index == pressed) {
 			return m.runMenuItem(index)
 		}
 		return Decision{Consumed: true}
 	}
 	if onItem {
+		// The entry runs on the release, so an attach or an editor it
+		// starts never receives the button coming back up.
 		if msg.Button == tea.MouseButtonLeft {
-			return m.runMenuItem(index)
+			m.menu.index, m.menu.pressed = index, index
 		}
 		return Decision{Consumed: true}
 	}
@@ -222,11 +219,8 @@ func (m Model) menuItemAt(x, y int, frame Frame) (int, bool) {
 
 func (m *Model) reorderMouse(msg tea.MouseMsg, frame Frame, ctx MouseContext) Decision {
 	if tea.MouseEvent(msg).IsWheel() {
-		switch msg.Button {
-		case tea.MouseButtonWheelUp:
-			return m.stepLifted(-1)
-		case tea.MouseButtonWheelDown:
-			return m.stepLifted(1)
+		if step := presentation.WheelStep(msg); step != 0 {
+			return m.stepLifted(step)
 		}
 		return Decision{Consumed: true}
 	}

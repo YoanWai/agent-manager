@@ -1,6 +1,11 @@
 package rail
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"cmp"
+	"slices"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 // HostState is what the last look at a connection found.
 type HostState uint8
@@ -9,16 +14,18 @@ const (
 	// HostConnecting has no answer from the host yet.
 	HostConnecting HostState = iota
 	HostOnline
-	// HostOffline failed its last refresh and keeps the rows it had.
+	// HostOffline failed its last refresh and keeps the rows it had; its
+	// Trouble says why in a few words.
 	HostOffline
 )
 
 // Host is one SSH connection's copied inventory, in the remote host's own
 // order. Its rows nest under the connection's row.
 type Host struct {
-	Name  string
-	State HostState
-	Err   string
+	Name    string
+	State   HostState
+	Err     string
+	Trouble string
 	// Installable marks a host whose agent-manager is missing or too old,
 	// which this build's release can replace; Installing, one it is being
 	// replaced on.
@@ -29,25 +36,41 @@ type Host struct {
 	Sessions       []Session
 }
 
-// hostSeparator joins a connection to a remote path in keys. A connection
-// name cannot hold it, so no remote key is ever a local group path.
-const hostSeparator = "::"
+// HostFold is a folded row on a connection: the connection's own row when
+// Path is empty, otherwise one of its groups. Folds on connections are kept
+// apart from local ones, since a local group path can hold any text,
+// "box::web" included.
+type HostFold struct {
+	Host string `json:"host"`
+	Path string `json:"path"`
+}
 
-func foldKey(host, path string) string {
+// folded reports whether the group at path, on host or locally, is folded.
+func (m Model) folded(host, path string) bool {
 	if host == "" {
-		return path
+		return m.collapsed[path]
 	}
-	return host + hostSeparator + path
+	return m.hostFolds[HostFold{Host: host, Path: path}]
 }
 
-// foldKey is the row's key in the collapsed set; a session row folds the
-// group holding it.
-func (r treeRow) foldKey() string {
-	if r.kind == SessionRow {
-		return foldKey(r.host, r.sess.Group)
+func (m *Model) setFolded(host, path string, folded bool) {
+	if host == "" {
+		m.collapsed[path] = folded
+		return
 	}
-	return foldKey(r.host, r.group)
+	m.hostFolds[HostFold{Host: host, Path: path}] = folded
 }
+
+// foldPath is the group a row folds; a session row folds the group
+// holding it.
+func (r treeRow) foldPath() string {
+	if r.kind == SessionRow {
+		return r.sess.Group
+	}
+	return r.group
+}
+
+func (m Model) rowFolded(row treeRow) bool { return m.folded(row.host, row.foldPath()) }
 
 func (m Model) host(name string) (Host, bool) {
 	for _, host := range m.snapshot.Hosts {
@@ -67,22 +90,73 @@ func (m Model) sessionsOf(host string) []Session {
 	return remote.Sessions
 }
 
-// foldable lists every key the fold-all key opens or closes: each local
+// foldable lists every row the fold-all key opens or closes: each local
 // group, each connection, and each group on a connection.
-func (m Model) foldable() map[string]bool {
-	keys := groupClosure(m.snapshot.Groups, m.snapshot.Sessions)
+func (m Model) foldable() []HostFold {
+	var folds []HostFold
+	for path := range groupClosure(m.snapshot.Groups, m.snapshot.Sessions) {
+		folds = append(folds, HostFold{Path: path})
+	}
 	for _, host := range m.snapshot.Hosts {
-		keys[foldKey(host.Name, "")] = true
+		folds = append(folds, HostFold{Host: host.Name})
 		for path := range groupClosure(host.Groups, host.Sessions) {
-			keys[foldKey(host.Name, path)] = true
+			folds = append(folds, HostFold{Host: host.Name, Path: path})
 		}
 	}
-	return keys
+	return folds
+}
+
+// HostCollapsed lists the folded rows on connections, for saving beside the
+// local folds.
+func (m Model) HostCollapsed() []HostFold {
+	folds := make([]HostFold, 0, len(m.hostFolds))
+	for fold, folded := range m.hostFolds {
+		if folded {
+			folds = append(folds, fold)
+		}
+	}
+	slices.SortFunc(folds, func(a, b HostFold) int {
+		return cmp.Or(cmp.Compare(a.Host, b.Host), cmp.Compare(a.Path, b.Path))
+	})
+	return folds
+}
+
+// RenameHost carries a renamed connection's folds to its new name.
+func (m *Model) RenameHost(old, next string) Decision {
+	for fold, folded := range m.hostFolds {
+		if fold.Host == old {
+			delete(m.hostFolds, fold)
+			m.hostFolds[HostFold{Host: next, Path: fold.Path}] = folded
+		}
+	}
+	m.rebuildRows()
+	return m.collapsedDecision()
+}
+
+// ForgetHost drops a removed connection's folds, so a later connection by
+// that name starts open.
+func (m *Model) ForgetHost(name string) Decision {
+	for fold := range m.hostFolds {
+		if fold.Host == name {
+			delete(m.hostFolds, fold)
+		}
+	}
+	m.rebuildRows()
+	return m.collapsedDecision()
+}
+
+// RestoreHostFolds folds the connection rows a previous run saved.
+func (m *Model) RestoreHostFolds(folds []HostFold) {
+	for _, fold := range folds {
+		if fold.Host != "" {
+			m.hostFolds[fold] = true
+		}
+	}
 }
 
 // SelectionCollapsed reports whether a group or connection row is folded.
 func (m Model) SelectionCollapsed(selection Selection) bool {
-	return m.collapsed[foldKey(selection.Host, selection.Group)]
+	return m.folded(selection.Host, selection.Group)
 }
 
 // RemoteRefusal is the status line for an action a connection's rows do
@@ -93,7 +167,7 @@ func RemoteRefusal(action string) string {
 
 func (r renderer) renderConnection(row treeRow, selected bool, width int, pad, background string) renderedTreeRow {
 	marker := "▾"
-	if r.model.collapsed[row.foldKey()] {
+	if r.model.rowFolded(row) {
 		marker = "▸"
 	}
 	tint := lipgloss.Color(r.ctx.Theme.Remote)
@@ -111,7 +185,7 @@ func (r renderer) renderConnection(row treeRow, selected bool, width int, pad, b
 	case host.State == HostConnecting:
 		meta = r.palette.subtle.Render("connecting…")
 	case host.State == HostOffline:
-		meta = r.palette.muted.Render("offline")
+		meta = r.palette.muted.Render(cmp.Or(host.Trouble, "offline"))
 	default:
 		meta = r.groupStatusGlyphs(row.host, "", true)
 		if meta == "" {

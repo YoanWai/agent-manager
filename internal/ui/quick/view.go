@@ -42,6 +42,9 @@ func (q *Bar) View(h Host, facts Facts, width, maxRows int) string {
 	if facts.Remote != "" {
 		target = label("answer") + facts.Remote
 		if facts.RemoteSpawn {
+			if q.picking != PickNone {
+				return q.viewSheet(h, facts, width, maxRows, facts.Remote)
+			}
 			target = q.statusRow(h, facts, label("new")+facts.Remote, width, 0)
 		}
 	} else if selected, ok := h.Target(); ok {
@@ -109,14 +112,14 @@ func (q *Bar) statusRow(h Host, facts Facts, left string, width, line int) strin
 	if spawn.HasProfiles(h, toolName) {
 		segments = append(segments, segment{orDefault(ch.ProfileName(h, toolName), "default profile"), ClickProfile})
 	}
-	worktree := st.Subtle.Render("⎇ off")
+	worktree := st.Subtle.Render(presentation.GlyphsFor(st.GlyphMode).WorktreeGlyph + " off")
 	switch {
 	case facts.WorktreeInherit:
-		worktree = st.Subtle.Render("⎇ host default")
+		worktree = st.Subtle.Render(presentation.GlyphsFor(st.GlyphMode).WorktreeGlyph + " host default")
 	case !facts.WorktreeKnown || !facts.WorktreeCapable:
-		worktree = st.Subtle.Render("⎇ no repo")
+		worktree = st.Subtle.Render(presentation.GlyphsFor(st.GlyphMode).WorktreeGlyph + " no repo")
 	case facts.WorktreeOn:
-		worktree = lipgloss.NewStyle().Foreground(st.Accent2).Render("⎇ on")
+		worktree = lipgloss.NewStyle().Foreground(st.Accent2).Render(presentation.GlyphsFor(st.GlyphMode).WorktreeGlyph + " on")
 	}
 	segments = append(segments, segment{worktree, ClickWorktree})
 

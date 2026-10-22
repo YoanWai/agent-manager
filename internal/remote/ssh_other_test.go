@@ -11,11 +11,12 @@ import (
 
 func TestSSHArgv(t *testing.T) {
 	c := New("/profile")
-	got := c.sshArgv("me@gpu", false, remoteCommand([]string{"agent-manager", "snapshot", "--json"}))
+	got := c.sshArgv("me@gpu", false, remoteCommand(program(Connection{}), []string{"snapshot", "--json"}))
 	want := []string{
 		"ssh",
 		"-o", "BatchMode=yes",
 		"-o", "ForwardAgent=no",
+		"-o", "ForwardX11=no",
 		"-o", "ClearAllForwardings=yes",
 		"-o", "ConnectTimeout=5",
 		"-o", "ServerAliveInterval=15",

@@ -96,7 +96,9 @@ type modelSuggest struct {
 	offset int
 }
 
-// NewChoice starts a CLI's choice from its kept one.
+// NewChoice starts a CLI's choice from its kept one. One for a connection
+// starts on the host's defaults instead: the kept choice is this machine's,
+// and the host refuses a profile or model its own CLI does not list.
 func NewChoice(h ChoiceHost, toolName string) Choice {
 	filter := textinput.New()
 	filter.CharLimit = 200
@@ -104,7 +106,10 @@ func NewChoice(h ChoiceHost, toolName string) Choice {
 	typed := textinput.New()
 	typed.CharLimit = 40
 	typed.Placeholder = "default"
-	ch := Choice{filter: filter, typedEffort: typed, recent: recentModels(h, toolName), saved: savedChoice(h, toolName)}
+	ch := Choice{filter: filter, typedEffort: typed, recent: recentModels(h, toolName)}
+	if h.ChoiceRemoteHost() == "" {
+		ch.saved = savedChoice(h, toolName)
+	}
 	ch.restore(h, toolName)
 	return ch
 }
@@ -125,8 +130,11 @@ func savedChoice(h ChoiceHost, toolName string) *Pick {
 }
 
 // keep saves the choice as the CLI's own, so the next form or quick
-// prompt on it starts there.
+// prompt on it starts there. A choice made for a connection is not kept.
 func (ch *Choice) keep(h ChoiceHost, toolName string) {
+	if h.ChoiceRemoteHost() != "" {
+		return
+	}
 	raw, err := json.Marshal(ch.current(h, toolName))
 	if err != nil {
 		h.ReportErr("saving the choice: " + err.Error())

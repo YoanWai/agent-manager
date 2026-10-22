@@ -5,6 +5,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/config"
+	uiconnections "github.com/YoanWai/agent-manager/internal/ui/connections"
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
@@ -55,6 +56,9 @@ func (h quickBarHost) Prompt() spawn.Prompt {
 }
 
 func (h quickBarHost) Target() (uiquick.Target, bool) {
+	if row, ok := h.m.remoteQuickTarget(); ok {
+		return uiquick.Target{Group: row.Group, IsGroup: row.Kind != uiconnections.SessionRow}, true
+	}
 	entry, ok := h.m.selectedRow()
 	if !ok {
 		return uiquick.Target{}, false
@@ -78,7 +82,7 @@ func (m *Model) openQuickModeWithReader(reader settingsValueReader) tea.Cmd {
 	input.ShowLineNumbers = false
 	input.SetPromptFunc(2, func(lineIndex int) string {
 		if lineIndex == 0 {
-			return keyStyle().Render("❯ ")
+			return keyStyle().Render(m.glyphs().PromptGlyph + " ")
 		}
 		return "  "
 	})
@@ -93,8 +97,10 @@ func (m *Model) openQuickModeWithReader(reader settingsValueReader) tea.Cmd {
 		active:         true,
 		composer:       composer{input: input, maxRows: quickBarMaxRows, gen: m.nextComposerGen()},
 		closeAfterSend: m.settings.cache.value(uisettings.QuickCloseSetting) == "close",
-		Bar:            uiquick.NewBar(m.spawnHost(), names, index, m.cachedSpawnWorktreeDefault(m.quickTargetGroup())),
 	}
+	// The bar is active before its choice starts, so a bar aimed at a
+	// connection starts on the host's defaults.
+	m.quick.Bar = uiquick.NewBar(m.spawnHost(), names, index, m.cachedSpawnWorktreeDefault(m.quickTargetGroup()))
 	catalog := m.ensureCatalog(names[index])
 	if m.settings.pending > 0 {
 		return tea.Batch(m.quickWorktreeProbeCmd(false), catalog)
@@ -118,9 +124,6 @@ func (m *Model) applyCachedQuickDefaults() tea.Cmd {
 }
 
 func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if cmd, taken := m.remoteQuickKey(msg); taken {
-		return m, cmd
-	}
 	cmd, request := m.quick.HandleKey(m.quickBarHost(), typedText(msg))
 	return m, tea.Batch(cmd, m.runQuickRequest(request))
 }
@@ -137,6 +140,9 @@ func (m *Model) runQuickRequest(request uiquick.Request) tea.Cmd {
 	case request.Close:
 		m.quick.active = false
 	case request.Send:
+		if cmd, taken := m.remoteQuickSend(request.Text); taken {
+			return cmd
+		}
 		entry, _ := m.selectedRow()
 		if !m.dispatchQuickSend(quickSendRequest{
 			session:        entry.sess,
@@ -151,6 +157,9 @@ func (m *Model) runQuickRequest(request uiquick.Request) tea.Cmd {
 		m.clearErr()
 		return m.nextEffectCmd()
 	case request.Spawn != nil:
+		if cmd, taken := m.remoteQuickSpawn(*request.Spawn); taken {
+			return cmd
+		}
 		return m.dispatchQuickSpawn(m.quickSpawnRequest(*request.Spawn), systemDirectoryPreflight{git: m.services.gitDrv})
 	case request.LoadSaved:
 		return savedPromptsLoadCmd(m.services.store, savedForQuick, uint64(m.quick.gen), 0)
@@ -246,6 +255,9 @@ func (m *Model) toggleQuickWorktree() tea.Cmd {
 }
 
 func (m *Model) quickWorktreeOn() bool {
+	if _, remote := m.remoteTarget(); remote {
+		return false
+	}
 	capable, known := m.cachedWorktreeCapability(m.quickTargetDir())
 	if !known || !capable {
 		return false
@@ -280,6 +292,12 @@ func (m *Model) quickTool() string { return m.quick.Tool() }
 
 func (m *Model) quickSpawning() bool { return m.quick.Spawning(m.quickBarHost()) }
 
+// quickPicking reports a list open over the quick bar's prompt, which owns
+// the wheel the way it owns ↑↓.
+func (m *Model) quickPicking() bool {
+	return m.quick.active && m.quick.Picking() != uiquick.PickNone
+}
+
 func (q *quickBar) hitAt(x, y int) (quickHit, bool) {
 	if !q.active {
 		return quickHit{}, false
@@ -293,10 +311,11 @@ func (m *Model) handleQuickClick(hit quickHit) tea.Cmd {
 
 const quickModeTitle = "Quick prompt mode"
 
-func (m *Model) quickFooter() string {
+func (m *Model) quickFooter() legend {
 	edge := keyStyle().Render(quickEdge)
 	gutter := strings.Repeat(" ", quickGutter-1)
-	keys := splitLines(legendBar([]legendSection{{title: quickModeTitle, pairs: m.quick.Legend(m.quickBarHost())}}, max(m.layout.width-1, 1)))
+	painted := paintLegend([]legendSection{{title: quickModeTitle, pairs: m.quick.Legend(m.quickBarHost())}}, max(m.layout.width-1, 1))
+	keys := splitLines(painted.text)
 	rows := quickBarMaxRows + 1
 	if m.quick.Picking() != uiquick.PickNone {
 		rows = max(m.layout.height/2, rows)
@@ -312,11 +331,12 @@ func (m *Model) quickFooter() string {
 		}
 		lines = append(lines, paint(edge+gutter+line, m.layout.width, tone))
 	}
+	hits := painted.hits.moved(lipgloss.Width(quickEdge), len(lines))
 	for _, line := range keys {
 		lines = append(lines, paint(edge+line, m.layout.width, quickModeHex()))
 	}
 	m.quick.originX = quickGutter
-	return strings.Join(lines, "\n")
+	return legend{text: strings.Join(lines, "\n"), hits: hits}
 }
 
 const (
@@ -325,7 +345,7 @@ const (
 )
 
 func (m *Model) viewQuickBar(width, maxRows int) string {
-	facts := uiquick.Facts{WorktreeOn: m.quickWorktreeOn(), LabelWidth: detailLabelWidth, Styles: spawnStyles()}
+	facts := uiquick.Facts{WorktreeOn: m.quickWorktreeOn(), LabelWidth: detailLabelWidth, Styles: m.spawnStyles()}
 	facts.WorktreeCapable, facts.WorktreeKnown = m.cachedWorktreeCapability(m.quickTargetDir())
 	if entry, ok := m.selectedRow(); ok {
 		if entry.isGroup {

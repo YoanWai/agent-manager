@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	remote "github.com/YoanWai/agent-manager/internal/remote/value"
 )
 
 // Session is the copied subset of a workspace session that Rail uses for
@@ -78,10 +80,13 @@ func (s Selection) key() string {
 	case ConnectionRow:
 		return "c:" + s.Host
 	case GroupRow:
-		return "g:" + foldKey(s.Host, s.Group)
+		if s.Host != "" {
+			return "rg:" + remote.Ref{Host: s.Host, ID: s.Group}.String()
+		}
+		return "g:" + s.Group
 	}
 	if s.Host != "" {
-		return "s:" + s.Host + hostSeparator + s.SessionID
+		return "rs:" + remote.Ref{Host: s.Host, ID: s.SessionID}.String()
 	}
 	return "s:" + s.SessionID
 }
@@ -172,12 +177,13 @@ type Model struct {
 	hideEmptyGroups bool
 	filter          statusFilter
 	collapsed       map[string]bool
+	hostFolds       map[HostFold]bool
 	search          string
 	searching       bool
 }
 
 func New(collapsed []string) Model {
-	m := Model{collapsed: make(map[string]bool, len(collapsed))}
+	m := Model{collapsed: make(map[string]bool, len(collapsed)), hostFolds: map[HostFold]bool{}}
 	for _, path := range collapsed {
 		m.collapsed[path] = true
 	}
@@ -346,7 +352,7 @@ func (m *Model) rebuildRows() {
 	rows = append(rows, m.treeRows("", m.snapshot.Sessions, m.snapshot.Groups, m.snapshot.ArchivedGroups, 0)...)
 	for _, host := range m.snapshot.Hosts {
 		rows = append(rows, treeRow{kind: ConnectionRow, host: host.Name})
-		if m.honorFolds() && m.collapsed[foldKey(host.Name, "")] {
+		if m.honorFolds() && m.folded(host.Name, "") {
 			continue
 		}
 		rows = append(rows, m.treeRows(host.Name, host.Sessions, host.Groups, host.ArchivedGroups, 1)...)
@@ -473,7 +479,7 @@ func (m Model) treeRows(host string, all []Session, groups []string, archivedGro
 	var walk func(string, int)
 	walk = func(path string, depth int) {
 		rows = append(rows, treeRow{kind: GroupRow, group: path, depth: depth, host: host})
-		if honorFolds && m.collapsed[foldKey(host, path)] {
+		if honorFolds && m.folded(host, path) {
 			return
 		}
 		for _, session := range sessionsByGroup[path] {

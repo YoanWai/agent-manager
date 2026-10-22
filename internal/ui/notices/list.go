@@ -60,6 +60,7 @@ func (p Panel) Active(src Sources) []Notice {
 	if !src.Store {
 		return nil
 	}
+	g := presentation.GlyphsFor(src.GlyphMode)
 	var notices []Notice
 	if src.Update.Latest != "" {
 		releaseRange := src.Update.Available
@@ -73,7 +74,7 @@ func (p Panel) Active(src Sources) []Notice {
 		}
 		notices = append(notices, Notice{
 			ID:            "update-" + src.Update.Latest,
-			Glyph:         "↑",
+			Glyph:         g.UpdateGlyph,
 			Tint:          TintAccent,
 			Title:         title,
 			Headline:      newestHeadline(releaseRange.Releases),
@@ -102,7 +103,7 @@ func (p Panel) Active(src Sources) []Notice {
 		}
 		notices = append(notices, Notice{
 			ID:           "whatsnew-" + src.Update.Version,
-			Glyph:        "✦",
+			Glyph:        g.NewGlyph,
 			Tint:         TintAccent2,
 			Title:        title,
 			Headline:     newestHeadline(releaseRange.Releases),
@@ -119,7 +120,7 @@ func (p Panel) Active(src Sources) []Notice {
 	for _, msg := range src.Feed {
 		notices = append(notices, Notice{
 			ID:       msg.ID,
-			Glyph:    "◆",
+			Glyph:    g.FeedGlyph,
 			Tint:     TintAccent2,
 			Title:    msg.Title,
 			Headline: msg.Headline,
@@ -131,7 +132,7 @@ func (p Panel) Active(src Sources) []Notice {
 	if src.ConfigImportError != "" {
 		notices = append(notices, Notice{
 			ID:    ConfigNotImported,
-			Glyph: "⚙",
+			Glyph: g.SettingsGlyph,
 			Tint:  TintWarm,
 			Title: "Your config.toml was not carried into Settings",
 			Body: []string{
@@ -153,7 +154,7 @@ func (p Panel) Active(src Sources) []Notice {
 	notices = append(notices,
 		Notice{
 			ID:    Welcome,
-			Glyph: "✳",
+			Glyph: g.WelcomeGlyph,
 			Tint:  TintAccent2,
 			Title: "Welcome to agent-manager",
 			Body:  src.welcomeBody(),
@@ -161,7 +162,7 @@ func (p Panel) Active(src Sources) []Notice {
 		},
 		Notice{
 			ID:    ArrowStep,
-			Glyph: "↔",
+			Glyph: g.BetaGlyph,
 			Tint:  TintWarm,
 			Title: "New in beta: step in and out with ← →",
 			Body: []string{

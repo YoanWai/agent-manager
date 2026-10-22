@@ -162,6 +162,7 @@ func (m *Model) enqueueEffect(request effectRequest, chain uint64, first bool) {
 		request = value
 	case railRequest:
 		value.mutation.Collapsed = slices.Clone(value.mutation.Collapsed)
+		value.mutation.HostCollapsed = slices.Clone(value.mutation.HostCollapsed)
 		value.mutation.GroupSiblings = slices.Clone(value.mutation.GroupSiblings)
 		request = value
 	case forkRequest:

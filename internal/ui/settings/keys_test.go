@@ -59,6 +59,7 @@ func viewContext() ViewContext {
 		List:      ctx.List,
 		Version:   "v1.0.0",
 		Height:    40,
+		Chrome:    func([][2]string) int { return 6 },
 		TextInput: func(input textinput.Model) string { return input.View() },
 		TextArea:  func(input textarea.Model) string { return input.View() },
 	}

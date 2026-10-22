@@ -5,6 +5,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/diff"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -12,6 +13,7 @@ import (
 // with. It is built per render so a theme change reaches the next frame.
 func (m *Model) reviewRenderContext() uireview.RenderContext {
 	return uireview.RenderContext{
+		GlyphMode: m.prefs.glyphMode,
 		Styles: uireview.Styles{
 			Muted: mutedStyle(), Subtle: subtleStyle(), Value: valueStyle(), Err: errStyle(), Done: doneStyle(),
 			Annotation: annotationStyle(), Section: sectionStyle(), Rule: lipgloss.NewStyle().Foreground(colorBorder()),
@@ -89,8 +91,8 @@ func (m *Model) reviewSpinnerLine(label string) string {
 // whole-file code on the right, annotation bar docked when typing.
 func (m *Model) viewDiffFull() string {
 	sess, _ := m.diffSession()
-	footer := m.viewDiffFooter()
-	bodyHeight := m.layout.height - 4 - lipgloss.Height(footer)
+	footer := m.diffFooter()
+	bodyHeight := m.layout.height - 4 - lipgloss.Height(footer.text)
 	if bodyHeight < 5 {
 		bodyHeight = 5
 	}
@@ -113,6 +115,7 @@ func (m *Model) viewDiffFull() string {
 		paint(m.viewDiffHeader(sess.Name), m.layout.width, backdropHex()),
 		m.boundedRuleRow(fileWidth+1, m.layout.width, "▀"),
 	}
+	m.placePainted(m.review.HeaderKeys(), 0, 0)
 	edge := make([]string, bodyHeight)
 	for i := range edge {
 		edge[i] = railEdgeCell(panelHex())
@@ -124,14 +127,34 @@ func (m *Model) viewDiffFull() string {
 		m.bleedColumn(bodyHeight),
 		paintRows(codeLines, codeWidth, bodyHeight, backdropHex()),
 	)...)
-	frame = append(frame,
-		m.boundedRuleRow(fileWidth+1, m.layout.width, "▄"),
-		paint(m.viewDiffStatus(), m.layout.width, backdropHex()),
-	)
-	for _, line := range splitLines(footer) {
+	frame = append(frame, m.boundedRuleRow(fileWidth+1, m.layout.width, "▄"))
+	status := m.viewDiffStatus()
+	if m.errBar.text == "" {
+		m.placePainted(m.review.StatusKeys(), 0, len(frame))
+	}
+	frame = append(frame, paint(status, m.layout.width, backdropHex()))
+	m.placeKeys(footer.hits, 0, len(frame))
+	for _, line := range splitLines(footer.text) {
 		frame = append(frame, paint(line, m.layout.width, backdropHex()))
 	}
 	return strings.Join(frame, "\n")
+}
+
+// diffPaneTop is the frame row of each pane's first list row, under the
+// header, its rule, and the pane's blank and title rows.
+const diffPaneTop = 4
+
+// handleDiffClick opens the file a click lands on in the file list, and
+// moves the cursor to the code line it lands on.
+func (m *Model) handleDiffClick(x, y int) tea.Cmd {
+	fileWidth, _ := m.diffPaneWidths()
+	switch {
+	case x >= 1 && x < fileWidth:
+		return m.reviewCommands(m.review.ClickFile(y - diffPaneTop))
+	case x > fileWidth+1:
+		m.review.ClickCode(y-diffPaneTop, m.diffCodeHeight())
+	}
+	return nil
 }
 
 func (m *Model) viewDiffHeader(sessName string) string {
@@ -156,15 +179,17 @@ func (m *Model) viewDiffCode(width, height int) string {
 
 func (m *Model) viewDiffStatus() string {
 	if m.errBar.text != "" {
-		return padRight(m.statusMessage(" ✖", " ✔", " ▲"), m.layout.width)
+		return padRight(m.statusMessage(" "+m.glyphs().DiffErrorGlyph, " "+m.glyphs().DiffDoneGlyph, " "+m.glyphs().WarningGlyph), m.layout.width)
 	}
 	return m.review.Status(m.reviewRenderContext(), m.layout.width)
 }
 
-func (m *Model) viewDiffFooter() string {
+func (m *Model) viewDiffFooter() string { return m.diffFooter().text }
+
+func (m *Model) diffFooter() legend {
 	var sections []legendSection
 	for _, section := range m.review.Legend() {
 		sections = append(sections, legendSection{title: section.Title, quiet: section.Quiet, pairs: section.Pairs})
 	}
-	return legendBar(sections, m.layout.width)
+	return paintLegend(sections, m.layout.width)
 }

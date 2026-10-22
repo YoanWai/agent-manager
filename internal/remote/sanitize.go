@@ -1,6 +1,7 @@
 package remote
 
 import (
+	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -19,6 +20,24 @@ func cleanText(s string) string { return clean(s, false) }
 
 // cleanScreen is cleanText that keeps a pane's lines and tabs.
 func cleanScreen(s string) string { return clean(s, true) }
+
+// sgr is one Select Graphic Rendition sequence: colors and text attributes,
+// which move no cursor and reach no other terminal feature.
+var sgr = regexp.MustCompile(`\x1b\[[0-9;:]*m`)
+
+// cleanStyledScreen is cleanScreen that keeps a pane's SGR sequences, so
+// its colors paint; every other sequence and control still goes.
+func cleanStyledScreen(s string) string {
+	var out strings.Builder
+	last := 0
+	for _, at := range sgr.FindAllStringIndex(s, -1) {
+		out.WriteString(cleanScreen(s[last:at[0]]))
+		out.WriteString(s[at[0]:at[1]])
+		last = at[1]
+	}
+	out.WriteString(cleanScreen(s[last:]))
+	return out.String()
+}
 
 func clean(s string, layout bool) string {
 	return strings.Map(func(r rune) rune {

@@ -3,6 +3,7 @@ package dialogs
 import (
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -62,28 +63,29 @@ func (c Confirm) Key(msg tea.KeyMsg) ConfirmOutcome {
 }
 
 // Title names the dialog after the act it is about to commit.
-func (c Confirm) Title() string {
+func (c Confirm) Title(mode presentation.GlyphMode) string {
+	g := presentation.GlyphsFor(mode)
 	subject := "session"
 	if c.Group {
 		subject = "group"
 	}
 	switch c.Action {
 	case ConfirmKill:
-		return "✕ Kill " + subject
+		return g.ErroredGlyph + " Kill " + subject
 	case ConfirmArchive:
-		return "◇ Archive " + subject
+		return g.ArchiveGlyph + " Archive " + subject
 	case ConfirmRestore:
-		return "◆ Restore " + subject
+		return g.RestoreGlyph + " Restore " + subject
 	case ConfirmRestart:
-		return "↻ Restart " + subject
+		return g.RestartGlyph + " Restart " + subject
 	case ConfirmRevive:
-		return "◆ Revive " + subject
+		return g.RestoreGlyph + " Revive " + subject
 	case ConfirmRemoveConnection:
-		return "⚠ Remove connection"
+		return g.DeleteGlyph + " Remove connection"
 	case ConfirmInstall:
-		return "↓ Install agent-manager"
+		return g.DownloadGlyph + " Install agent-manager"
 	default:
-		return "⚠ Delete " + subject
+		return g.DeleteGlyph + " Delete " + subject
 	}
 }
 

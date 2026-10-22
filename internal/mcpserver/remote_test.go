@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"reflect"
 	"slices"
@@ -94,6 +95,8 @@ type remoteFixture struct {
 	terminals   *fakeTerminalCommands
 	connections []store.Connection
 	reads       int
+	profile     string
+	withStore   func(func(*store.Store) error) error
 }
 
 func newRemoteFixture(t *testing.T, sessionID string, answer func(destination string, words []string) ([]byte, []byte, error)) *remoteFixture {
@@ -106,17 +109,39 @@ func newRemoteFixture(t *testing.T, sessionID string, answer func(destination st
 		terminals:   &fakeTerminalCommands{listed: []sessioncmd.Terminal{{ID: "beef", Name: "local-shell", Running: true}}},
 		connections: []store.Connection{{Name: "gpu", Destination: "me@gpu"}},
 	}
-	profile := t.TempDir()
-	t.Cleanup(func() { os.RemoveAll(remote.ControlDir(profile)) })
+	f.profile = t.TempDir()
+	t.Cleanup(func() { os.RemoveAll(remote.ControlDir(f.profile)) })
+	f.withStore = storeAt(f.profile)
+	f.session = f.connect(t, sessionID)
+	return f
+}
+
+// connect serves another session from the same machine: the same store,
+// connections and hosts.
+func (f *remoteFixture) connect(t *testing.T, sessionID string) *mcp.ClientSession {
+	t.Helper()
 	source := remoteSource{
-		client: remote.New(profile, remote.WithRunner(f.hosts.run)),
+		client: remote.New(f.profile, remote.WithRunner(f.hosts.run)),
 		connections: func() ([]store.Connection, error) {
 			f.reads++
 			return slices.Clone(f.connections), nil
 		},
+		withStore: f.withStore,
 	}
-	f.session = connectServer(t, newServerWithMailbox(sessionID, "test", true, f.terminals, f.local, &fakeReporter{}, sessioncmd.NewMailbox(profile), source))
-	return f
+	return connectServer(t, newServerWithMailbox(sessionID, "test", true, f.terminals, f.local, &fakeReporter{}, sessioncmd.NewMailbox(f.profile), source))
+}
+
+func (f *remoteFixture) opener(t *testing.T, host, terminalID string) string {
+	t.Helper()
+	var opener string
+	if err := f.withStore(func(st *store.Store) error {
+		var err error
+		opener, err = st.RemoteTerminalOpener(host, terminalID)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return opener
 }
 
 func structured(t *testing.T, result *mcp.CallToolResult, into any) {
@@ -214,6 +239,15 @@ func TestAnUnreachableHostKeepsItsLastRowsMarkedStale(t *testing.T) {
 	}
 	if text := resultText(result); !strings.Contains(text, "these are the rows it last reported") {
 		t.Fatalf("text does not say the rows are old:\n%s", text)
+	}
+	f.hosts.reset()
+	result = callTool(t, f.session, "list_sessions", map[string]any{})
+	if calls := f.hosts.recorded(); len(calls) != 0 {
+		t.Fatalf("a host inside its retry wait was dialled again: %+v", calls)
+	}
+	structured(t, result, &sessions)
+	if len(sessions.Sessions) != 2 || !sessions.Sessions[1].Stale || len(sessions.ConnectionErrors) != 1 {
+		t.Fatalf("resting host listing = %+v", sessions)
 	}
 }
 
@@ -327,6 +361,8 @@ func TestQualifiedIDsRouteToTheirHost(t *testing.T) {
 		{"revive_session", map[string]any{"session_id": "gpu::r1"}, []string{"revive", "--json", "--", "r1"}, "revived remote-worker (id gpu::r1)"},
 		{"archive_session", map[string]any{"session_id": "gpu::r1"}, []string{"archive", "--json", "--", "r1"}, "(id gpu::r1)"},
 		{"archive_session", map[string]any{"session_id": "gpu::r1", "archived": false}, []string{"archive", "--restore", "--json", "--", "r1"}, "restored remote-worker (id gpu::r1)"},
+		// The terminal tools below drive the one this session opens here.
+		{"create_terminal", map[string]any{"host": "gpu", "directory": "/srv"}, []string{"terminal", "create", "--json", "--directory=/srv"}, "created shell (id gpu::t1)"},
 		{"read_terminal", map[string]any{"terminal_id": "gpu::t1"}, []string{"terminal", "read", "--json", "--", "t1"}, "$ ls"},
 		{"send_terminal", map[string]any{"terminal_id": "gpu::t1", "keys": []string{"C-c", "Up"}},
 			[]string{"terminal", "send", "--json", "--keys=C-c", "--keys=Up", "--", "t1"}, "sent keys to terminal gpu::t1"},
@@ -338,7 +374,6 @@ func TestQualifiedIDsRouteToTheirHost(t *testing.T) {
 			[]string{"spawn", "--json", "--prompt=saved:reviewer\n\nfix it"}, "created remote-worker (id gpu::r1)"},
 		{"send_session", map[string]any{"session_id": "gpu::r1", "message": "rebase on main", "saved": "reviewer"},
 			[]string{"send", "--from=lead on " + hostname, "--json", "--", "r1", "saved:reviewer\n\nrebase on main"}, "queued a message for session gpu::r1"},
-		{"create_terminal", map[string]any{"host": "gpu", "directory": "/srv"}, []string{"terminal", "create", "--json", "--directory=/srv"}, "created shell (id gpu::t1)"},
 		{"create_group", map[string]any{"host": "gpu", "path": "work", "directory": "/srv"}, []string{"create-group", "--json", "--directory=/srv", "--", "work"}, "created group work on gpu"},
 		{"delete_group", map[string]any{"host": "gpu", "path": "work"}, []string{"delete-group", "--json", "--", "work"}, "deleted work; 1 session(s) moved to the root group: gpu::r1 on gpu"},
 	} {
@@ -387,9 +422,80 @@ func TestARemoteRefusalReachesTheAgent(t *testing.T) {
 	f := newRemoteFixture(t, "cafe", func(string, []string) ([]byte, []byte, error) {
 		return nil, []byte("agent-manager: terminal t1 is nested under remote-worker; only that session drives it\n"), exitStatus(1)
 	})
+	if err := f.withStore(func(st *store.Store) error { return st.SetRemoteTerminalOpener("gpu", "t1", "cafe") }); err != nil {
+		t.Fatal(err)
+	}
 	text, isError := callText(t, f.session, "send_terminal", map[string]any{"terminal_id": "gpu::t1", "command": "ls"})
 	if !isError || text != "gpu: terminal t1 is nested under remote-worker; only that session drives it" {
 		t.Fatalf("send_terminal = %q, error %v", text, isError)
+	}
+}
+
+// The host sees every SSH call as one caller with no session, so this side
+// keeps one agent's terminal there out of another agent's reach, and the
+// user's own terminal there, opened with T on the connection row, out of
+// every agent's.
+func TestARemoteTerminalIsDrivenOnlyByTheSessionThatOpenedIt(t *testing.T) {
+	f := newRemoteFixture(t, "cafe", func(_ string, words []string) ([]byte, []byte, error) {
+		switch strings.Join(words[:2], " ") {
+		case "terminal create":
+			return mustJSON(t, sessioncmd.Terminal{ID: "t9", Name: "shell"}), nil, nil
+		case "terminal send":
+			return mustJSON(t, sessioncmd.TerminalInput{TerminalID: "t9", Sent: "command"}), nil, nil
+		case "terminal read":
+			return mustJSON(t, sessioncmd.TerminalScreen{Terminal: sessioncmd.Terminal{ID: words[len(words)-1], Name: "shell"}, Output: "$"}), nil, nil
+		case "terminal close":
+			return []byte("closed terminal t9\n"), nil, nil
+		}
+		t.Errorf("unexpected remote call %q", words)
+		return nil, nil, nil
+	})
+	other := f.connect(t, "dead")
+	if text, isError := callText(t, f.session, "create_terminal", map[string]any{"host": "gpu"}); isError {
+		t.Fatalf("create_terminal = %q", text)
+	}
+	if got := f.opener(t, "gpu", "t9"); got != "cafe" {
+		t.Fatalf("opener of gpu::t9 = %q, want cafe", got)
+	}
+
+	f.hosts.reset()
+	for _, tc := range []struct {
+		session *mcp.ClientSession
+		id      string
+	}{
+		{other, "gpu::t9"},
+		{other, "gpu::t5"},
+		{f.session, "gpu::t5"},
+	} {
+		want := "terminal " + tc.id + " was not opened by this session; a session drives only the terminals it opened on gpu with create_terminal"
+		for _, call := range []struct {
+			tool string
+			args map[string]any
+		}{
+			{"send_terminal", map[string]any{"terminal_id": tc.id, "command": "ls"}},
+			{"close_terminal", map[string]any{"terminal_id": tc.id}},
+		} {
+			if text, isError := callText(t, tc.session, call.tool, call.args); !isError || text != want {
+				t.Errorf("%s on %s = %q, error %v; want %q", call.tool, tc.id, text, isError, want)
+			}
+		}
+	}
+	if calls := f.hosts.recorded(); len(calls) != 0 {
+		t.Fatalf("a refused call reached ssh: %+v", calls)
+	}
+
+	// Reading stays open to every session, as it is for this machine's terminals.
+	if text, isError := callText(t, other, "read_terminal", map[string]any{"terminal_id": "gpu::t9"}); isError {
+		t.Fatalf("read_terminal = %q", text)
+	}
+	if text, isError := callText(t, f.session, "send_terminal", map[string]any{"terminal_id": "gpu::t9", "command": "ls"}); isError {
+		t.Fatalf("send_terminal from its opener = %q", text)
+	}
+	if text, isError := callText(t, f.session, "close_terminal", map[string]any{"terminal_id": "gpu::t9"}); isError {
+		t.Fatalf("close_terminal from its opener = %q", text)
+	}
+	if got := f.opener(t, "gpu", "t9"); got != "" {
+		t.Fatalf("closing kept the opener %q", got)
 	}
 }
 
@@ -453,5 +559,34 @@ func TestSenderNameFitsTheRemoteLimit(t *testing.T) {
 		if got != tc.want || len(got) > maxSenderBytes {
 			t.Errorf("senderName(%q, %q) = %q, want %q", tc.name, tc.host, got, tc.want)
 		}
+	}
+}
+
+// A terminal no session could drive is closed again rather than left
+// running on the host.
+func TestARemoteTerminalWhoseOpenerIsNotRecordedIsClosed(t *testing.T) {
+	f := newRemoteFixture(t, "cafe", func(_ string, words []string) ([]byte, []byte, error) {
+		switch strings.Join(words[:2], " ") {
+		case "terminal create":
+			return mustJSON(t, sessioncmd.Terminal{ID: "t9", Name: "shell"}), nil, nil
+		case "terminal close":
+			return []byte("closed terminal t9\n"), nil, nil
+		}
+		t.Errorf("unexpected remote call %q", words)
+		return nil, nil, nil
+	})
+	f.withStore = func(func(*store.Store) error) error { return errors.New("disk I/O error") }
+	session := f.connect(t, "cafe")
+	f.hosts.reset()
+	text, isError := callText(t, session, "create_terminal", map[string]any{"host": "gpu"})
+	if !isError || !strings.Contains(text, "so it was closed again: disk I/O error") {
+		t.Fatalf("create_terminal = %q", text)
+	}
+	var words []string
+	for _, call := range f.hosts.recorded() {
+		words = append(words, strings.Join(call.words[:2], " "))
+	}
+	if !slices.Equal(words, []string{"terminal create", "terminal close"}) {
+		t.Fatalf("calls = %q, want the terminal created and closed", words)
 	}
 }

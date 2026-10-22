@@ -117,3 +117,45 @@ func TestFormClicksThroughAFakeHost(t *testing.T) {
 		t.Fatalf("a click under the body asked for %+v", request)
 	}
 }
+
+// fakeSuggestions is a completer with suggestions open.
+type fakeSuggestions struct{ fakePaths }
+
+func (p *fakeSuggestions) Active() bool { return true }
+func (p *fakeSuggestions) View() string { return "      /a\n      /b" }
+
+func TestFormClickCompletesAPathAndTheWheelScrollsTheGroups(t *testing.T) {
+	h := newFakeFormHost()
+	suggestions := &fakeSuggestions{}
+	host := &suggestingHost{fakeFormHost: h, paths: suggestions}
+	d := NewForm(host, []string{"claude"}, 0)
+	d.FocusField(host, FieldDir)
+	body, _ := d.View(host, FormFacts{Width: 40, Group: "root", Styles: Styles{Input: func(in textinput.Model) string { return in.View() }}, Height: 40, Chrome: func([][2]string) int { return 6 }})
+	lines := strings.Split(body, "\n")
+	line := -1
+	for i, text := range lines {
+		if strings.TrimSpace(text) == "/b" {
+			line = i
+		}
+	}
+	if line < 0 {
+		t.Fatalf("test setup: no suggestion painted:\n%s", body)
+	}
+	if request := d.Click(host, line); !request.PickPath || request.PathEntry != 1 {
+		t.Fatalf("a click on the second suggestion asked for %+v", request)
+	}
+	if request := d.Wheel(host, 1); request.Group != 0 {
+		t.Fatalf("the wheel off the group field asked for %+v", request)
+	}
+	d.FocusField(host, FieldGroup)
+	if request := d.Wheel(host, -1); request.Group != -1 {
+		t.Fatalf("the wheel over the group picker asked for %+v", request)
+	}
+}
+
+type suggestingHost struct {
+	*fakeFormHost
+	paths *fakeSuggestions
+}
+
+func (h *suggestingHost) Paths() Paths { return h.paths }

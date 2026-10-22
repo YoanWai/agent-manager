@@ -715,7 +715,7 @@ func TestClickOnRailLastColumnSelectsRow(t *testing.T) {
 
 // A click past the divider, in the content column, must not steal the
 // selection: the rail is what click-to-select owns.
-func TestClickInContentColumnDoesNotSelect(t *testing.T) {
+func TestClickInContentColumnFocusesTheSelectedSession(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	createSession(t, m, "alpha", t.TempDir(), "")
@@ -725,13 +725,16 @@ func TestClickInContentColumnDoesNotSelect(t *testing.T) {
 
 	preparedView(m)
 	y0, _ := m.bodyYRange()
-	updated, cmd := m.handleMouse(tea.MouseMsg{
+	updated, _ := m.handleMouse(tea.MouseMsg{
 		X: m.dividerX() + 5, Y: y0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.rail.Cursor() != before || cmd != nil {
+	if m.rail.Cursor() != before {
 		t.Fatal("a click in the content column should not move the cursor")
+	}
+	if sess, ok := m.selected(); m.mode != modeFocus || !ok || sess.Name != "beta" {
+		t.Fatalf("a click in the content column should focus beta, mode = %v", m.mode)
 	}
 }
 
@@ -1417,12 +1420,105 @@ func leftPress(m *Model, x, y int) *Model {
 	return updated.(*Model)
 }
 
+func leftRelease(m *Model, x, y int) *Model {
+	m, _ = leftReleaseCmd(m, x, y)
+	return m
+}
+
+func leftReleaseCmd(m *Model, x, y int) (*Model, tea.Cmd) {
+	updated, cmd := m.handleMouse(tea.MouseMsg{
+		X: x, Y: y, Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft,
+	})
+	return updated.(*Model), cmd
+}
+
+// leftClick presses and releases the left button over x, y.
+func leftClick(m *Model, x, y int) *Model {
+	return leftRelease(leftPress(m, x, y), x, y)
+}
+
+func leftClickCmd(m *Model, x, y int) (*Model, tea.Cmd) {
+	return leftReleaseCmd(leftPress(m, x, y), x, y)
+}
+
+// wheel turns the wheel one notch over x, y.
+func wheel(m *Model, button tea.MouseButton, x, y int) *Model {
+	updated, _ := m.handleMouse(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionPress, Button: button})
+	return updated.(*Model)
+}
+
+// wheelOnCard turns the wheel one notch over the middle of the open card.
+func wheelOnCard(m *Model, button tea.MouseButton) *Model {
+	preparedView(m)
+	card := m.layout.card
+	return wheel(m, button, (card.left+card.right)/2, (card.top+card.bottom)/2)
+}
+
+// paintedAt is where text starts on the frame row that paints it, the
+// lowest such row when fromBottom.
+func paintedAt(m *Model, text string, fromBottom bool) (x, y int, ok bool) {
+	rows := strings.Split(ansi.Strip(preparedView(m)), "\n")
+	for i := range rows {
+		row := i
+		if fromBottom {
+			row = len(rows) - 1 - i
+		}
+		if col := strings.Index(rows[row], text); col >= 0 {
+			return ansi.StringWidth(rows[row][:col]), row, true
+		}
+	}
+	return 0, 0, false
+}
+
+// paintedCell is where label starts on the lowest frame row that paints
+// it, which is a footer or a card's foot before any body row.
+func paintedCell(t *testing.T, m *Model, label string) (x, y int) {
+	t.Helper()
+	x, y, ok := paintedAt(m, label, true)
+	if !ok {
+		t.Fatalf("test setup: the frame painted no %q:\n%s", label, ansi.Strip(m.View()))
+	}
+	return x, y
+}
+
+// bodyCell is where text starts on the highest frame row that paints it,
+// which is a card's body before its foot.
+func bodyCell(t *testing.T, m *Model, text string) (x, y int) {
+	t.Helper()
+	x, y, ok := paintedAt(m, text, false)
+	if !ok {
+		t.Fatalf("test setup: the frame painted no %q:\n%s", text, ansi.Strip(m.View()))
+	}
+	return x, y
+}
+
+func paints(m *Model, text string) bool {
+	_, _, ok := paintedAt(m, text, false)
+	return ok
+}
+
+// clickLabel clicks a key a footer or a card's foot painted.
+func clickLabel(t *testing.T, m *Model, label string) *Model {
+	t.Helper()
+	x, y := paintedCell(t, m, label)
+	m = leftClick(m, x, y)
+	m.drainEffects(t)
+	return m
+}
+
+// clickBody clicks where a card's body painted text.
+func clickBody(t *testing.T, m *Model, text string) (*Model, tea.Cmd) {
+	t.Helper()
+	x, y := bodyCell(t, m, text)
+	return leftClickCmd(m, x, y)
+}
+
 func TestClickOnMessagesCardOpensNotices(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 120, 34
 	x, y := messagesCell(t, m)
-	if m = leftPress(m, x, y); m.mode != modeNotices {
+	if m = leftClick(m, x, y); m.mode != modeNotices {
 		t.Fatalf("click on the card should open messages, mode = %v", m.mode)
 	}
 }
@@ -1437,10 +1533,10 @@ func TestMessagesLegendOpensNoticesByMouseAndKey(t *testing.T) {
 				m.prefs.hideStats = true
 				m.services.listKeys = m.services.listKeys.With(keybind.Messages, bindingOf(t, binding))
 				x, y := messagesCell(t, m)
-				if !m.notices.noticeHit.contains(x, y) {
-					t.Fatalf("full=%v width=%d binding=%s: painted messages entry misses its hit box %+v", full, width, binding, m.notices.noticeHit)
+				if _, ok := m.layout.keyHits.at(x, y); !ok {
+					t.Fatalf("full=%v width=%d binding=%s: painted messages entry misses its hit box %+v", full, width, binding, m.layout.keyHits)
 				}
-				if m = leftPress(m, x, y); m.mode != modeNotices {
+				if m = leftClick(m, x, y); m.mode != modeNotices {
 					t.Fatalf("click on messages should open notices, mode=%v", m.mode)
 				}
 				m.handleNoticesKey(key("esc"))
@@ -1460,7 +1556,7 @@ func TestMessagesLegendOpensNoticesByMouseAndKey(t *testing.T) {
 				if footer := ansi.Strip(m.viewFooter()); strings.Contains(footer, "unread") {
 					t.Fatalf("with nothing unread the legend must give its room back:\n%s", footer)
 				}
-				if m = leftPress(m, x, y); m.mode != modeList {
+				if m = leftClick(m, x, y); m.mode != modeList {
 					t.Fatalf("a click where the entry was must not open Messages, mode=%v", m.mode)
 				}
 				m.handleKey(msg)
@@ -1494,7 +1590,7 @@ func TestMessagesLegendClickOnlyOpensFromTheList(t *testing.T) {
 				t.Fatalf("test setup: %s did not take, mode = %v err = %q", change.name, m.mode, m.errBar.text)
 			}
 			preparedView(m)
-			if m = leftPress(m, x, y); m.mode == modeNotices {
+			if m = leftClick(m, x, y); m.mode == modeNotices {
 				t.Fatal("a click where messages was painted opened notices")
 			}
 		})
@@ -1506,7 +1602,7 @@ func TestClickOnMetersBesideTheCardDoesNothing(t *testing.T) {
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 120, 34
 	_, y := messagesCell(t, m)
-	if m = leftPress(m, 2, y); m.mode != modeList {
+	if m = leftClick(m, 2, y); m.mode != modeList {
 		t.Fatalf("click on the meters should stay on the list, mode = %v", m.mode)
 	}
 }
@@ -1517,11 +1613,11 @@ func TestClickOnFullScreenBadgeOpensNotices(t *testing.T) {
 	m.layout.width, m.layout.height = 120, 34
 	m.prefs.fullLayout = true
 	x, y := messagesCell(t, m)
-	if m = leftPress(m, x, y); m.mode != modeNotices {
+	if m = leftClick(m, x, y); m.mode != modeNotices {
 		t.Fatalf("click on the badge should open messages, mode = %v", m.mode)
 	}
 	m.mode = modeList
-	if m = leftPress(m, 2, y); m.mode != modeList {
+	if m = leftClick(m, 2, y); m.mode != modeList {
 		t.Fatalf("click on the readings should stay on the list, mode = %v", m.mode)
 	}
 }
@@ -1532,7 +1628,7 @@ func TestClickOnMessagesCardWhileSearchingKeepsTheField(t *testing.T) {
 	m.layout.width, m.layout.height = 120, 34
 	m.rail.SetSearch(m.rail.Search(), true)
 	x, y := messagesCell(t, m)
-	if m = leftPress(m, x, y); m.mode != modeList || !m.rail.Searching() {
+	if m = leftClick(m, x, y); m.mode != modeList || !m.rail.Searching() {
 		t.Fatalf("search owns the click, mode = %v searching = %v", m.mode, m.rail.Searching())
 	}
 }
@@ -1551,7 +1647,7 @@ func TestClickOnMessagesCardWhileFocusedIsLeftToFocus(t *testing.T) {
 		t.Fatalf("test setup: focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 	preparedView(m)
-	if m = leftPress(m, x, y); m.mode == modeNotices {
+	if m = leftClick(m, x, y); m.mode == modeNotices {
 		t.Fatal("a click while focused must not open messages")
 	}
 }

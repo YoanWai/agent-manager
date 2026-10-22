@@ -3,6 +3,7 @@ package dialogs
 import (
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -25,6 +26,15 @@ type GroupForm struct {
 	// gen tells this group form from the one that stood in the same place
 	// before it, so a completion cannot close a form the user since reopened.
 	gen int
+	// lines is the field each painted body line belongs to, for clicks.
+	lines presentation.Lines[fieldLine]
+}
+
+// fieldLine is a body line's field, and its entry or -1: a path
+// suggestion under the path field, a parent in the picker under its field.
+type fieldLine struct {
+	field int
+	entry int
 }
 
 // Group form fields, in focus order.
@@ -111,6 +121,10 @@ const (
 	GroupFormComplete
 	// GroupFormStepParent steps the root's parent picker by Delta.
 	GroupFormStepParent
+	// GroupFormPickParent moves the root's parent picker to Entry.
+	GroupFormPickParent
+	// GroupFormPickPath completes the path suggestion at Entry.
+	GroupFormPickPath
 	// GroupFormStepBase steps the root's group base choice by Delta.
 	GroupFormStepBase
 	// GroupFormInvalid carries the error the root reports.
@@ -135,6 +149,7 @@ type GroupFormRequest struct {
 type GroupFormKey struct {
 	Action  GroupFormAction
 	Delta   int
+	Entry   int
 	Err     string
 	Request GroupFormRequest
 	Cmd     tea.Cmd
@@ -178,7 +193,7 @@ func (d *GroupForm) Key(msg tea.KeyMsg, paths PathSuggestions, parent string, wo
 		}
 		switch d.focus {
 		case GroupFormWorktreeField:
-			d.worktreeIndex = (d.worktreeIndex + delta + worktrees) % worktrees
+			d.stepWorktree(delta, worktrees)
 			return GroupFormKey{}
 		case GroupFormBaseField:
 			return GroupFormKey{Action: GroupFormStepBase, Delta: delta}
@@ -207,9 +222,48 @@ func (d *GroupForm) Key(msg tea.KeyMsg, paths PathSuggestions, parent string, wo
 	return GroupFormKey{Cmd: cmd}
 }
 
+// Click acts on the painted body line a click landed on: a field takes the
+// focus, a second click on the worktree or base row steps it, and a parent
+// or a path suggestion is picked.
+func (d *GroupForm) Click(line int, paths PathSuggestions, worktrees int) GroupFormKey {
+	at, ok := d.lines.At(line)
+	if !ok {
+		return GroupFormKey{}
+	}
+	switch {
+	case at.field == GroupFormParentField && at.entry >= 0:
+		return GroupFormKey{Action: GroupFormPickParent, Entry: at.entry}
+	case at.field == GroupFormPathField && at.entry >= 0:
+		return GroupFormKey{Action: GroupFormPickPath, Entry: at.entry}
+	case at.field != d.focus:
+		d.focusOn(paths, at.field)
+	case at.field == GroupFormWorktreeField:
+		d.stepWorktree(1, worktrees)
+	case at.field == GroupFormBaseField:
+		return GroupFormKey{Action: GroupFormStepBase, Delta: 1}
+	}
+	return GroupFormKey{}
+}
+
+// Wheel steps the parent picker while it is open under its field.
+func (d GroupForm) Wheel(step int) GroupFormKey {
+	if d.focus != GroupFormParentField {
+		return GroupFormKey{}
+	}
+	return GroupFormKey{Action: GroupFormStepParent, Delta: step}
+}
+
+func (d *GroupForm) stepWorktree(delta, worktrees int) {
+	d.worktreeIndex = (d.worktreeIndex + delta + worktrees) % worktrees
+}
+
 func (d *GroupForm) focusStep(paths PathSuggestions, delta int) {
+	d.focusOn(paths, (d.focus+delta+d.fieldCount())%d.fieldCount())
+}
+
+func (d *GroupForm) focusOn(paths PathSuggestions, field int) {
 	paths.Reset()
-	d.focus = (d.focus + delta + d.fieldCount()) % d.fieldCount()
+	d.focus = field
 	d.name.Blur()
 	d.path.Blur()
 	switch d.focus {
@@ -246,6 +300,7 @@ func (d GroupForm) Submit(parent string) GroupFormKey {
 // parent row, the open path suggestions and their hints, the worktree
 // choice labels and the rendered base choice.
 type GroupFormView struct {
+	GlyphMode    presentation.GlyphMode
 	Field        func(label, value string, focused bool) string
 	Input        func(textinput.Model) string
 	Badge        func(string) string
@@ -259,24 +314,40 @@ type GroupFormView struct {
 	Base         string
 }
 
-func (d GroupForm) View(view GroupFormView) Card {
+// View paints the form's body and records the line each field takes, for
+// clicks.
+func (d *GroupForm) View(view GroupFormView) Card {
+	var body strings.Builder
+	d.lines.Reset()
+	add := func(text string, field, entry int) {
+		body.WriteString(text)
+		d.lines.Show(fieldLine{field: field, entry: entry}, strings.Count(text, "\n"))
+	}
+	field := func(label, value string, id int) {
+		add(view.Field(label, value, d.focus == id), id, -1)
+	}
+	field("name", view.Input(d.name), GroupFormNameField)
 	parent := view.Badge(displayGroup(view.Parent))
 	if d.remote != "" {
 		parent += view.Subtle.Render("  on " + d.remote)
 	}
-	body := view.Field("name", view.Input(d.name), d.focus == GroupFormNameField)
-	body += view.Field("parent", parent, d.focus == GroupFormParentField)
-	body += view.Field("path", view.Input(d.path), d.focus == GroupFormPathField)
+	field("parent", parent, GroupFormParentField)
+	field("path", view.Input(d.path), GroupFormPathField)
 	suggesting := d.focus == GroupFormPathField && view.Suggestions != nil
 	if suggesting {
-		body += view.Suggestions() + "\n"
+		for i, line := range strings.Split(view.Suggestions(), "\n") {
+			add(line+"\n", GroupFormPathField, i)
+		}
 	}
 	if d.remote == "" {
 		worktree := view.Subtle.Render("◂ ") + view.Value.Render(view.Worktrees[d.worktreeIndex]) + view.Subtle.Render(" ▸")
-		body += view.Field("worktree", worktree, d.focus == GroupFormWorktreeField)
-		body += view.Field("base", view.Base, d.focus == GroupFormBaseField)
+		field("worktree", worktree, GroupFormWorktreeField)
+		field("base", view.Base, GroupFormBaseField)
 		if d.focus == GroupFormParentField {
-			body += "\n" + view.Picker()
+			add("\n", GroupFormParentField, -1)
+			for i, line := range strings.Split(view.Picker(), "\n") {
+				add(line+"\n", GroupFormParentField, i)
+			}
 		}
 	}
 	hints := [][2]string{{"tab/↑↓", "move"}, {"↵", "create"}, {"esc", "cancel"}}
@@ -289,5 +360,5 @@ func (d GroupForm) View(view GroupFormView) Card {
 	case d.focus == GroupFormWorktreeField || d.focus == GroupFormBaseField:
 		hints = [][2]string{{"tab/↑↓", "move"}, {"←→", "change"}, {"↵", "create"}, {"esc", "cancel"}}
 	}
-	return Card{Title: "✦ New Group", Body: strings.TrimRight(body, "\n"), Hints: hints}
+	return Card{Title: presentation.GlyphsFor(view.GlyphMode).NewGlyph + " New Group", Body: strings.TrimRight(body.String(), "\n"), Hints: hints}
 }

@@ -42,6 +42,14 @@ func TestCleanScreenKeepsLinesAndTabs(t *testing.T) {
 	}
 }
 
+func TestCleanStyledScreenKeepsOnlyColors(t *testing.T) {
+	in := "$ ls\r\n\x1b[1;34mdir\x1b[0m\tfile\x1b]0;pwn\x07\n\x08\x0e\u009b2J\x1b[?1049h\x1b[38:2::255:0:0mend\n"
+	want := "$ ls\n\x1b[1;34mdir\x1b[0m\tfile\n2J\x1b[38:2::255:0:0mend\n"
+	if got := cleanStyledScreen(in); got != want {
+		t.Fatalf("cleanStyledScreen = %q, want %q", got, want)
+	}
+}
+
 func TestSnapshotIsCleaned(t *testing.T) {
 	c, _ := recorder(t, `{"version":1,"sessions":[
 		{"id":"a1","name":"`+hostile+`","tool":"`+hostile+`","group":"`+hostile+`","directory":"`+hostile+`",
@@ -133,6 +141,10 @@ func TestResultsAreCleaned(t *testing.T) {
 	c, _ = recorder(t, `{"session":{"id":"a1","name":"`+hostile+`"},`+screen+`}`)
 	if got, err := c.ReadSession(ctx, ref); err != nil || got.Output != "$ ls\nred\tx\n" || got.Session.Name != "xy" {
 		t.Errorf("ReadSession = %+v, %v", got, err)
+	}
+	c, _ = recorder(t, `{"session":{"id":"a1","name":"x"},`+screen+`}`)
+	if got, err := c.ReadScreen(ctx, ref, false); err != nil || got != "$ ls\n\x1b[31mred\x1b[0m\tx\n" {
+		t.Errorf("ReadScreen = %q, %v", got, err)
 	}
 	c, _ = recorder(t, `{"terminal":{"id":"a1","name":"`+hostile+`"},`+screen+`}`)
 	if got, err := c.ReadTerminal(ctx, ref); err != nil || got.Output != "$ ls\nred\tx\n" || got.Terminal.Name != "xy" {

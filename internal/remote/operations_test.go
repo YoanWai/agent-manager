@@ -4,7 +4,9 @@ import (
 	"context"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 )
@@ -49,10 +51,22 @@ func TestOperationArgv(t *testing.T) {
 			_, err := c.ReadTerminal(ctx, ref)
 			return err
 		}, []string{"terminal", "read", "--json", "--", "a1b2c3d4"}},
+		{"styled read", func(ctx context.Context, c *Client) error {
+			_, err := c.ReadScreen(ctx, ref, false)
+			return err
+		}, []string{"read", "--styled", "--json", "--", "a1b2c3d4"}},
+		{"styled terminal read", func(ctx context.Context, c *Client) error {
+			_, err := c.ReadScreen(ctx, ref, true)
+			return err
+		}, []string{"terminal", "read", "--styled", "--json", "--", "a1b2c3d4"}},
 		{"send", func(ctx context.Context, c *Client) error {
 			_, err := c.Send(ctx, ref, text, "laptop agent")
 			return err
 		}, []string{"send", "--from=laptop agent", "--json", "--", "a1b2c3d4", text}},
+		{"type", func(ctx context.Context, c *Client) error {
+			_, err := c.Type(ctx, ref, text)
+			return err
+		}, []string{"type", "--json", "--", "a1b2c3d4", text}},
 		{"spawn bare", func(ctx context.Context, c *Client) error {
 			_, err := c.Spawn(ctx, "gpu", sessioncmd.CreateSessionOptions{})
 			return err
@@ -142,6 +156,8 @@ func TestUnsafeIDsNeverReachSSH(t *testing.T) {
 	errs = append(errs, err)
 	_, err = c.Send(ctx, bad, "hi", "me")
 	errs = append(errs, err)
+	_, err = c.Type(ctx, bad, "hi")
+	errs = append(errs, err)
 	_, err = c.TerminalSend(ctx, bad, "ls", nil)
 	errs = append(errs, err)
 	errs = append(errs, c.TerminalClose(ctx, bad))
@@ -205,19 +221,22 @@ func TestOperationsDecodeTheRemoteJSON(t *testing.T) {
 func TestSnapshot(t *testing.T) {
 	const tooOld = "gpu: agent-manager there is too old for SSH connections; update agent-manager on that host"
 	cases := []struct {
-		name   string
-		stdout string
-		stderr string
-		err    error
-		want   string
+		name    string
+		stdout  string
+		stderr  string
+		err     error
+		want    string
+		trouble Trouble
 	}{
-		{"current", `{"version":1,"manager_awake":true,"sessions":[{"id":"a1","name":"fix"}],"terminals":[],"groups":[{"path":"team"}]}`, "", nil, ""},
-		{"no version", `{"sessions":[]}`, "", nil, tooOld},
-		{"newer", `{"version":2}`, "", nil, "gpu: agent-manager there is newer than this one; update agent-manager on this machine"},
-		{"interactive manager instead", "\x1b[?1007l\x1b]10;#ffffff\x07", "agent-manager: could not open a new TTY: open /dev/tty: device not configured\n", exitStatus(1), tooOld},
-		{"not json", "Usage: agent-manager", "", nil, "gpu: unreadable answer to snapshot: invalid character 'U' looking for beginning of value"},
-		{"remote failure", "", "agent-manager: database is locked\n", exitStatus(1), "gpu: database is locked"},
-		{"unreachable", "", "ssh: Could not resolve hostname gpu\n", exitStatus(255), "gpu: unreachable over SSH: ssh: Could not resolve hostname gpu"},
+		{"current", `{"version":1,"manager_awake":true,"sessions":[{"id":"a1","name":"fix"}],"terminals":[],"groups":[{"path":"team"}]}`, "", nil, "", TroubleFailed},
+		{"no version", `{"sessions":[]}`, "", nil, tooOld, TroubleOutdated},
+		{"newer", `{"version":2}`, "", nil, "gpu: agent-manager there is newer than this one; update agent-manager on this machine", TroubleNewer},
+		{"interactive manager instead", "\x1b[?1007l\x1b]10;#ffffff\x07", "agent-manager: could not open a new TTY: open /dev/tty: device not configured\n", exitStatus(1), tooOld, TroubleOutdated},
+		{"not json", "Usage: agent-manager", "", nil, "gpu: unreadable answer to snapshot: invalid character 'U' looking for beginning of value", TroubleFailed},
+		{"remote failure", "", "agent-manager: database is locked\n", exitStatus(1), "gpu: database is locked", TroubleFailed},
+		{"cut at the cap", `{"version":1,"sessions":[{"id":"a1","name":"`, "", errTooLong, "gpu: answered with more than 8 MiB", TroubleFailed},
+		{"missing", "", "sh: agent-manager: not found\n", exitStatus(127), "gpu: agent-manager is not on the login shell's PATH there; install it, add it to PATH in the login profile, or set the connection's path", TroubleMissing},
+		{"unreachable", "", "ssh: Could not resolve hostname gpu\n", exitStatus(255), "gpu: unreachable over SSH: ssh: Could not resolve hostname gpu", TroubleUnreachable},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -231,6 +250,9 @@ func TestSnapshot(t *testing.T) {
 			}
 			if got != tc.want {
 				t.Fatalf("Snapshot error = %q, want %q", got, tc.want)
+			}
+			if trouble := TroubleOf(err); err != nil && trouble != tc.trouble {
+				t.Fatalf("TroubleOf = %d, want %d", trouble, tc.trouble)
 			}
 			if tc.want == "" && (!snapshot.ManagerAwake || len(snapshot.Sessions) != 1 || snapshot.Sessions[0].ID != "a1" || snapshot.Groups[0].Path != "team") {
 				t.Fatalf("Snapshot = %+v", snapshot)
@@ -284,11 +306,71 @@ func TestUnknownCommandIsTooOldNotUnreadable(t *testing.T) {
 	if err == nil || err.Error() != "gpu: agent-manager there is too old for SSH connections; update agent-manager on that host" {
 		t.Fatalf("unknown command = %v", err)
 	}
+	if _, err := c.Type(context.Background(), Ref{Host: "gpu", ID: "a1"}, "yes"); err == nil || err.Error() != "gpu: agent-manager there is too old for SSH connections; update agent-manager on that host" {
+		t.Fatalf("type on a host that predates it = %v", err)
+	}
 	c = newTestClient(t, func(context.Context, []string) ([]byte, []byte, error) {
 		return []byte("closed terminal a1\n"), nil, nil
 	})
 	_, err = c.TerminalSend(context.Background(), Ref{Host: "gpu", ID: "a1"}, "ls", nil)
 	if err == nil || err.Error() != "gpu: unreadable answer to terminal: invalid character 'c' looking for beginning of value" {
 		t.Fatalf("an answer that is not JSON = %v", err)
+	}
+}
+
+// A type is uncertain when the host saw its paste start, or when the call
+// was cut off after agent-manager started there; a refusal, or a failure
+// before agent-manager ran, is not.
+func TestTypeThatMayHaveReachedTheAgent(t *testing.T) {
+	failing := func(code int, stderr string) Runner {
+		return func(context.Context, []string) ([]byte, []byte, error) {
+			return nil, []byte(stderr), exitStatus(code)
+		}
+	}
+	ref := Ref{Host: "gpu", ID: "a1"}
+	for _, tc := range []struct {
+		name string
+		c    *Client
+		want bool
+	}{
+		{"the host saw the paste start", newTestClient(t, failing(3, "agent-manager: prompt may have reached api and was not sent again: boom")), true},
+		{"ssh dropped after agent-manager started", newTestClient(t, failing(255, "Connection to gpu closed by remote host.")), true},
+		{"the host refused it", newTestClient(t, failing(1, "agent-manager: prompt was not sent to api: boom")), false},
+		{"ssh never reached agent-manager", newRawTestClient(t, failing(255, "ssh: connect to host gpu port 22: Connection refused")), false},
+	} {
+		_, err := tc.c.Type(context.Background(), ref, "hi")
+		if err == nil || MayHaveReached(err) != tc.want {
+			t.Errorf("%s: err %v, MayHaveReached %v, want %v", tc.name, err, MayHaveReached(err), tc.want)
+		}
+	}
+
+	slow := newTestClient(t, func(ctx context.Context, _ []string) ([]byte, []byte, error) {
+		<-ctx.Done()
+		return nil, nil, ctx.Err()
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if _, err := slow.Type(ctx, ref, "hi"); !MayHaveReached(err) || !strings.Contains(err.Error(), "prompt may have reached the agent") {
+		t.Errorf("a timed-out type = %v, want one that may have reached the agent", err)
+	}
+}
+
+// A host built before reads took --styled refuses the flag; its screen is
+// read again in plain text rather than shown as an error.
+func TestReadScreenFallsBackToPlainOnAnOlderHost(t *testing.T) {
+	var calls [][]string
+	c := newTestClient(t, func(_ context.Context, argv []string) ([]byte, []byte, error) {
+		words := remoteWords(t, argv)
+		calls = append(calls, words)
+		for _, word := range words {
+			if word == "--styled" {
+				return nil, []byte("flag provided but not defined: -styled\n"), exitStatus(2)
+			}
+		}
+		return []byte(`{"session":{"id":"a1","name":"x"},"output":"\u001b[31mred\u001b[0m"}`), nil, nil
+	})
+	got, err := c.ReadScreen(context.Background(), Ref{Host: "gpu", ID: "a1"}, false)
+	if err != nil || got != "red" || len(calls) != 2 {
+		t.Fatalf("ReadScreen = %q, %v after %d calls", got, err, len(calls))
 	}
 }

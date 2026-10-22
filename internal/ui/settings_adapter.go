@@ -12,7 +12,6 @@ import (
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
 )
 
 type (
@@ -68,6 +67,7 @@ func (m *Model) settingsContext() uisettings.Context {
 		DefaultTool: m.settings.cache.value(uisettings.DefaultToolSetting),
 		Session:     session,
 		List:        list,
+		UpdateReady: m.update.latest != "",
 	}
 }
 
@@ -99,7 +99,10 @@ func (m *Model) openSettingsWithReader(reader settingsValueReader) tea.Cmd {
 // links, the palette repaint, the saves, and the exits that close the
 // dialog or start the in-place update.
 func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	result := m.settings.dialog.Key(msg, m.settingsContext())
+	return m.applySettingsResult(m.settings.dialog.Key(msg, m.settingsContext()))
+}
+
+func (m *Model) applySettingsResult(result uisettings.Result) (tea.Model, tea.Cmd) {
 	cmd := m.runSettingsResult(result)
 	switch result.Exit {
 	case uisettings.OpenDocs:
@@ -158,34 +161,6 @@ func (m *Model) runSettingsResult(result uisettings.Result) tea.Cmd {
 		return m.runPromptsResult(result)
 	}
 	return result.Cmd
-}
-
-func (m *Model) handleSettingsClick(x, y int) (tea.Model, tea.Cmd) {
-	d := &m.settings.dialog
-	if d.InSubpanel() {
-		return m, nil
-	}
-	left := m.layout.cardLeft + 1 + cardPaddingX
-	inner := m.layout.cardRight - m.layout.cardLeft - cardChromeX - 2*cardPaddingX
-	row := y - m.layout.cardTop - 2
-	if x < left || x >= left+inner {
-		return m, nil
-	}
-	if d.GlyphRow >= 0 && row == d.GlyphRow && x < left+d.GlyphRowWidth {
-		d.Field = uisettings.FieldGlyphs
-		return m, m.runSettingsResult(d.Cycle(1))
-	}
-	if row == d.DocsRow {
-		d.Field = uisettings.FieldDocs
-		return m, openLink(docsURL)
-	}
-	if d.PromptsRow >= 0 && row == d.PromptsRow {
-		return m, m.runSettingsResult(d.OpenPrompts())
-	}
-	if row == d.SaveRow && x < left+d.SaveRowWidth {
-		return m.saveAndCloseSettings()
-	}
-	return m, nil
 }
 
 func (m *Model) saveAndCloseSettings() (tea.Model, tea.Cmd) {
@@ -303,6 +278,7 @@ func (m *Model) applySettingsPrefs() {
 // viewSettings frames the dialog in the root's card chrome.
 func (m *Model) viewSettings() string {
 	frame := m.settings.dialog.View(uisettings.ViewContext{
+		GlyphMode:  m.prefs.glyphMode,
 		Session:    m.services.keys,
 		List:       m.services.listKeys,
 		Version:    m.update.version,
@@ -310,6 +286,7 @@ func (m *Model) viewSettings() string {
 		Applying:   m.update.applying,
 		Height:     m.layout.height,
 		InnerWidth: cardInnerWidth(m.cardWidth()),
+		Chrome:     m.flexChromeRows,
 		Styles:     settingsStyles(),
 		TextInput:  textInputView,
 		TextArea:   textAreaView,
@@ -320,35 +297,7 @@ func (m *Model) viewSettings() string {
 	case uisettings.Fixed:
 		return m.card(frame.Title, frame.Body, frame.Hints)
 	}
-	d := &m.settings.dialog
-	lines := strings.Split(frame.Body, "\n")
-	save := keyStyle().Render("[ Save and close ]")
-	width := m.flexCardWidth(frame.Title, save+"\n"+frame.Body, frame.Hints)
-	hintRows := strings.Count(legendInline(frame.Hints, cardInnerWidth(width)), "\n") + 1
-	room := max(m.layout.height-5-hintRows-1, 1)
-	if m.errBar.text != "" {
-		room = max(room-2, 1)
-	}
-	first := 0
-	if len(lines) > room {
-		first = min(max(d.Field-room+1, 0), len(lines)-room)
-		lines = lines[first : first+room]
-	}
-	d.DocsRow = -1
-	if uisettings.FieldDocs >= first && uisettings.FieldDocs < first+len(lines) {
-		d.DocsRow = uisettings.FieldDocs - first + 1
-	}
-	d.PromptsRow = -1
-	if uisettings.FieldPrompts >= first && uisettings.FieldPrompts < first+len(lines) {
-		d.PromptsRow = uisettings.FieldPrompts - first + 1
-	}
-	d.GlyphRow = -1
-	if uisettings.FieldGlyphs >= first && uisettings.FieldGlyphs < first+len(lines) {
-		d.GlyphRow = uisettings.FieldGlyphs - first + 1
-		d.GlyphRowWidth = ansi.StringWidth(lines[uisettings.FieldGlyphs-first])
-	}
-	d.SaveRow, d.SaveRowWidth = 0, ansi.StringWidth(save)
-	return m.cardFlex(frame.Title, save+"\n"+strings.Join(lines, "\n"), frame.Hints)
+	return m.cardFlex(frame.Title, frame.Body, frame.Hints)
 }
 
 func settingsStyles() uisettings.Styles {
@@ -409,7 +358,7 @@ func requestCLISupportURL() string {
 		"**What you have in mind**\n\n" +
 		"CLI name:\nHow to launch it:\nResume / session flags (if any):\n\n" +
 		"**Area**\nConfig and tool support\n"
-	return repoURL + "/issues/new?labels=enhancement&body=" + url.QueryEscape(body)
+	return repoURL + "/issues/new?body=" + url.QueryEscape(body)
 }
 
 func (m *Model) routeSettingsMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {

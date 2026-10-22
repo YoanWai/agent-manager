@@ -87,6 +87,12 @@ func (m *Model) runGroupFormKey(key uidialogs.GroupFormKey, reader directoryPref
 		return m.applyPathSuggestion()
 	case uidialogs.GroupFormStepParent:
 		return m.moveGroupCursor(key.Delta)
+	case uidialogs.GroupFormPickParent:
+		return m.moveGroupCursor(key.Entry - m.form.groupIndex)
+	case uidialogs.GroupFormPickPath:
+		if m.groupForm.paths.pick(key.Entry) {
+			return m.applyPathSuggestion()
+		}
 	case uidialogs.GroupFormStepBase:
 		var cmd tea.Cmd
 		m.groupForm.base, cmd = m.stepGroupBase(groupBaseForm, uint64(m.groupForm.Gen()), m.groupFormDir(), m.groupForm.base, key.Delta)
@@ -119,6 +125,10 @@ func (m *Model) groupFormDir() string {
 	return m.capturedAbsolutePath(m.groupForm.Dir(), m.capturedGroupDefaultDir(m.selectedGroupPath()))
 }
 
+func (m *Model) handleGroupFormClick(line int) (tea.Model, tea.Cmd) {
+	return m, m.runGroupFormKey(m.groupForm.Click(line, dialogPaths{&m.groupForm.paths}, len(groupWorktreeOptions)), nil)
+}
+
 func (m *Model) submitGroupForm() (tea.Model, tea.Cmd) {
 	return m.submitGroupFormWithReader(systemDirectoryPreflight{git: m.services.gitDrv})
 }
@@ -138,7 +148,8 @@ func (m *Model) dispatchGroup(request groupRequest) {
 func (m *Model) viewGroupForm() string {
 	parent := m.groupFormParent()
 	view := uidialogs.GroupFormView{
-		Field:     formField,
+		GlyphMode: m.prefs.glyphMode,
+		Field:     m.formField,
 		Input:     textInputView,
 		Badge:     groupBadge,
 		Parent:    parent,
@@ -149,7 +160,7 @@ func (m *Model) viewGroupForm() string {
 		Base:      groupBaseChoice(m.groupForm.base, m.groupBase(parent)),
 	}
 	if m.groupForm.paths.active() {
-		view.Suggestions = m.groupForm.paths.view
+		view.Suggestions = func() string { return m.groupForm.paths.view(m.prefs.glyphMode) }
 		view.SuggestHints = pathSuggestHint(m.groupForm.paths.chosen)
 	}
 	return m.drawCard(m.groupForm.View(view))

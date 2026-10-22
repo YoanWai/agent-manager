@@ -40,7 +40,7 @@ type createTerminalArgs struct {
 	Group     *string `json:"group,omitempty" jsonschema:"existing group path for the new terminal; pass an empty string for the root group; defaults to this agent's group"`
 	Directory string  `json:"directory,omitempty" jsonschema:"existing directory to open; defaults to the selected group's inherited path, then this agent's current directory"`
 	Nest      *bool   `json:"nest,omitempty" jsonschema:"when true or omitted, nest under this session, or beside it under the same parent when this session is itself a terminal; false places an un-nested terminal in group"`
-	Host      string  `json:"host,omitempty" jsonschema:"SSH connection to open the terminal on, the host list_terminals reports; omit for this machine. There it is un-nested, group defaults to the root and directory to the remote user's home"`
+	Host      string  `json:"host,omitempty" jsonschema:"SSH connection to open the terminal on, the host list_terminals reports; omit for this machine. There it is un-nested and only this session can send to or close it; group defaults to the root and directory to the remote user's home"`
 }
 
 type sendTerminalArgs struct {
@@ -250,7 +250,7 @@ func NewServerWithBackend(configDir, sessionID, version string, proactive bool, 
 		panic("command backend is required")
 	}
 	words := sessioncmd.MCPVocabulary()
-	hosts := remoteSource{client: remote.New(configDir), connections: backend.Connections}
+	hosts := remoteSource{client: remote.New(configDir), connections: backend.Connections, withStore: backend.WithStore}
 	return newServerWithMailbox(sessionID, version, proactive, sessioncmd.NewTerminalsWithBackend(backend, words), sessioncmd.NewSessionsWithBackend(backend, words), report.New(configDir, version), backend, hosts)
 }
 
@@ -268,7 +268,8 @@ type mailboxCommands interface {
 }
 
 func newServer(configDir, sessionID, version string, proactive bool, terminals terminalCommands, sessions sessionCommands, reporter issueReporter) *mcp.Server {
-	hosts := remoteSource{client: remote.New(configDir), connections: storeConnections(configDir)}
+	withStore := storeAt(configDir)
+	hosts := remoteSource{client: remote.New(configDir), connections: storeConnections(withStore), withStore: withStore}
 	return newServerWithMailbox(sessionID, version, proactive, terminals, sessions, reporter, sessioncmd.NewMailbox(configDir), hosts)
 }
 
@@ -280,7 +281,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 	// Several CLIs register this server at user scope, so one with no caller is
 	// that CLI running outside Agent Manager, and the workspace stays closed to it.
 	noCaller := sessioncmd.RequireCaller(sessionID)
-	remotes := &remoteHosts{remoteSource: hosts, sessionID: sessionID, noCaller: noCaller, sessions: sessions, terminals: terminals}
+	remotes := &remoteHosts{remoteSource: hosts, sessionID: sessionID, sessions: sessions, terminals: terminals}
 	spawnWhen := "Call it only when the user asks for parallel work, another agent or an independent opinion. "
 	taskListWhen := "list reads it: call it when the user asks about shared work, and before reporting progress on a fleet. "
 	if proactive {

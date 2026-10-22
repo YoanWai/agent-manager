@@ -17,6 +17,7 @@ import (
 
 const (
 	collapsedSetting       = "collapsed_groups"
+	hostCollapsedSetting   = "collapsed_connection_groups"
 	namePlaceholder        = "…"
 	placeholderPromptWidth = 12
 	renameGrace            = time.Minute
@@ -36,6 +37,21 @@ func rowKey(row treeRow) string {
 		return "g:" + row.group
 	}
 	return "s:" + row.sess.ID
+}
+
+// loadRail restores the folds a previous run saved, local and on
+// connections.
+func loadRail(st *store.Store) uirail.Model {
+	rail := uirail.New(loadCollapsed(st))
+	raw, err := st.Setting(hostCollapsedSetting)
+	if err != nil || raw == "" {
+		return rail
+	}
+	var folds []uirail.HostFold
+	if json.Unmarshal([]byte(raw), &folds) == nil {
+		rail.RestoreHostFolds(folds)
+	}
+	return rail
 }
 
 func loadCollapsed(st *store.Store) []string {
@@ -90,7 +106,7 @@ func (m *Model) railSnapshot() uirail.Snapshot {
 			IsShell:        m.isShell(session.Tool),
 			Elsewhere:      m.elsewhereNote(session) != "",
 			AfterTurn:      session.AfterTurn,
-			AfterTurnGlyph: afterTurnGlyphs[session.AfterTurn],
+			AfterTurnGlyph: m.afterTurnGlyph(session.AfterTurn),
 		})
 	}
 	return snapshot
@@ -328,7 +344,7 @@ func (m *Model) viewLegend() legendSection {
 	return legendOf(m.rail.ViewLegend(ctx))
 }
 
-func (m *Model) reorderFooter() string {
+func (m *Model) reorderFooter() legend {
 	return m.transientFooter(legendOf(m.rail.ReorderLegend()))
 }
 
