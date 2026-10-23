@@ -2,7 +2,6 @@ package ui
 
 import (
 	"slices"
-	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
@@ -21,10 +20,8 @@ func (m *Model) footer() legend {
 	if m.quick.active {
 		return m.quickFooter()
 	}
-	if m.layout.split.resizeMode || m.layout.split.dragging {
-		return m.transientFooter(legendSection{title: "Resize", pairs: [][2]string{
-			{"←→", "nudge"}, {"drag", "divider"}, {strings.TrimPrefix(m.listGlyph(keybind.Resize)+" / release", " / "), "commit"}, {"esc", "cancel"},
-		}})
+	if s, ok := surfaceOf[*resizeSurface](m); ok {
+		return m.transientFooter(legendSection{title: "Resize", pairs: s.Footer()})
 	}
 	if s, ok := m.renaming(); ok {
 		return m.transientFooter(legendSection{title: "Rename", pairs: s.Footer()})

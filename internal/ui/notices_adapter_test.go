@@ -857,13 +857,13 @@ func TestNewFeedWaitsForResize(t *testing.T) {
 	m := footModel(t)
 	m.layout.width, m.layout.height = 100, 34
 	m.mode = modeList
-	m.layout.split.resizeMode = true
+	m.enterResizeMode()
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
 	if m.mode != modeList || !m.layout.split.resizeMode {
 		t.Fatalf("resize should keep the modal closed, mode=%v resize=%v", m.mode, m.layout.split.resizeMode)
 	}
 
-	m.layout.split.resizeMode = false
+	m.exitResizeMode(false)
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 34})
 	if !m.noticesOpen() {
 		t.Fatalf("leaving resize should open the new message, mode=%v", m.mode)

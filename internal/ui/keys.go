@@ -57,7 +57,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if cmd, ok := m.surfaceKey(msg); ok {
 		return m, cmd
 	}
-	if m.mode == modeList && !m.rail.Busy() && !m.quick.active && !m.layout.split.dragging && !m.layout.split.resizeMode {
+	if m.mode == modeList && !m.rail.Busy() && !m.quick.active {
 		decision := m.rail.Key(msg, m.layout.displayedRail, m.railKeyContext())
 		if decision.Consumed {
 			m.gens.foreground++
@@ -65,42 +65,6 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.applyRailDecision(decision)
 	}
 	m.gens.foreground++
-	// A drag armed by the mouse alone leaves the keyboard live, so a press
-	// whose release never lands cannot strand the list: the next key ends
-	// that drag where it stands, esc cancelling it exactly as the footer
-	// says, and anything else is then handled normally.
-	if m.layout.split.dragging && !m.layout.split.resizeMode {
-		key := keybind.Normalize(msg.String())
-		if key == "esc" {
-			return m.exitResizeMode(false)
-		}
-		if m.services.listKeys.Binding(keybind.Quit).Has(key) {
-			return m.requestQuit()
-		}
-		m.exitResizeMode(m.layout.split.moved)
-	}
-	// Resize mode owns the keyboard until the drag commits or the user
-	// cancels: other bindings would fight the mouse-gated session.
-	if m.layout.split.resizeMode {
-		key := keybind.Normalize(msg.String())
-		switch {
-		case key == "enter" || m.services.listKeys.Binding(keybind.Resize).Has(key):
-			return m.exitResizeMode(true)
-		case key == "esc":
-			return m.exitResizeMode(false)
-		case m.services.listKeys.Binding(keybind.Quit).Has(key):
-			return m.requestQuit()
-		case key == "left" || key == "h":
-			m.nudgeSplit(-1)
-			return m, nil
-		case key == "right" || key == "l":
-			m.nudgeSplit(1)
-			return m, nil
-		default:
-			return m, nil
-		}
-	}
-
 	switch m.mode {
 	case modeForm:
 		return m.handleFormKey(msg)

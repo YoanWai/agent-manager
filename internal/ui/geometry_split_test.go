@@ -282,6 +282,7 @@ func TestInstallerRefusedQuitKeepsMouseDrag(t *testing.T) {
 	m.layout.width, m.layout.height, m.layout.split.ratio = 100, 40, 0.42
 	m.layout.split.dragging = true
 	m.layout.split.moved = true
+	m.push(newResizeSurface(m.services.listKeys))
 	m.ledger.install = &pendingInstall{name: "install-test"}
 
 	updated, cmd := m.handleKey(key("q"))

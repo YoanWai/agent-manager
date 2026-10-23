@@ -1,0 +1,53 @@
+package ui
+
+import (
+	"testing"
+
+	"github.com/YoanWai/agent-manager/internal/keybind"
+	tea "github.com/charmbracelet/bubbletea"
+)
+
+func resizeOpen(m *Model) bool {
+	_, ok := surfaceOf[*resizeSurface](m)
+	return ok
+}
+
+func resizeModel() *Model {
+	return &Model{mode: modeList, layout: layoutState{split: splitState{ratio: 0.34}, width: 100, height: 40}, services: services{listKeys: keybind.DefaultList()}}
+}
+
+// The resize key pushes the gesture, esc pops it with the ratio put back,
+// and a stray click keeps it: the surface holds a gesture, not a card.
+func TestResizeIsASurface(t *testing.T) {
+	m := resizeModel()
+	m.Update(key("|"))
+	if !resizeOpen(m) || !m.layout.split.resizeMode {
+		t.Fatal("the resize key did not push the gesture")
+	}
+	if mustTop(t, m).Dismissible() {
+		t.Fatal("resize must not close on a click off a card it does not paint")
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if resizeOpen(m) || m.layout.split.resizeMode || m.layout.split.ratio != 0.34 {
+		t.Fatalf("esc left open=%t resize=%t ratio=%v", resizeOpen(m), m.layout.split.resizeMode, m.layout.split.ratio)
+	}
+}
+
+// A press on the divider pushes the gesture without the keyboard, and the
+// next key ends the drag and still reaches the list below.
+func TestDividerDragIsASurfaceAKeyEnds(t *testing.T) {
+	m := resizeModel()
+	y0, _ := m.bodyYRange()
+	m.handleMouse(tea.MouseMsg{X: m.dividerX(), Y: y0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	if !resizeOpen(m) || m.layout.split.resizeMode {
+		t.Fatalf("divider press: open=%t resize=%t, want the gesture without the keyboard", resizeOpen(m), m.layout.split.resizeMode)
+	}
+	if m.cardOpen() {
+		t.Fatal("the drag counts as a card, so the mouse would skip the divider")
+	}
+	m.Update(key("j"))
+	if resizeOpen(m) || m.layout.split.dragging {
+		t.Fatal("a key did not end the drag")
+	}
+}

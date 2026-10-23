@@ -189,7 +189,7 @@ func (m *Model) applyDetachEffect(request detachRequest, result detachEffectResu
 // foregroundTakenSinceDetach reports whether, since the detach, the user
 // opened a view, a rail prompt or a resize, or asked to enter a session.
 func (m *Model) foregroundTakenSinceDetach() bool {
-	if !m.listClear() || m.rail.Busy() || m.quick.active || m.layout.split.resizeMode || m.layout.split.dragging {
+	if !m.listClear() || m.rail.Busy() || m.quick.active {
 		return true
 	}
 	for _, job := range m.effects.main.pending {

@@ -59,6 +59,13 @@ type pathCompleting interface {
 	paths() *pathComplete
 }
 
+// mouseTaker is the optional capability of a surface that is not a card:
+// it takes every mouse event itself, and the root draws no card edge or
+// backdrop around it.
+type mouseTaker interface {
+	Mouse(h surfaceHost, msg tea.MouseMsg) tea.Cmd
+}
+
 // surfaceHost is what a surface reaches on the root. The cap and the type
 // rules of model_host_test.go apply: a surface that needs more returns a
 // command for a root adapter instead.

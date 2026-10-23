@@ -76,7 +76,10 @@ func (m *Model) routeMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return m.click(msg, target)
 		}
 	}
-	switch {
+	top, _ := m.top()
+	switch taker, takes := top.(mouseTaker); {
+	case takes:
+		return m, taker.Mouse(m, msg)
 	case m.cardOpen():
 		return m.cardMouse(msg)
 	case m.mode == modeFocus:
@@ -175,16 +178,11 @@ func wheelArrow(msg tea.MouseMsg) (tea.KeyMsg, bool) {
 
 // cardOpen reports a card floating over the frame, which takes the mouse.
 func (m *Model) cardOpen() bool {
-	if _, ok := m.top(); ok {
-		return true
+	if top, ok := m.top(); ok {
+		_, takesMouse := top.(mouseTaker)
+		return !takesMouse
 	}
-	switch m.mode {
-	case modeList, modeDiff:
-		return false
-	case modeFocus:
-		return false
-	}
-	return true
+	return m.mode == modeForm
 }
 
 // cardMouse turns the wheel on the open card, which turns the card under
@@ -310,7 +308,7 @@ func (m *Model) listMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	case tea.MouseActionRelease:
 		if split.dragging {
 			if !split.moved {
-				split.dragging = false
+				m.endDrag()
 				return m, nil
 			}
 			m.setSplitFromX(msg.X)
@@ -351,6 +349,7 @@ func (m *Model) listPress(msg tea.MouseMsg, ctx uirail.MouseContext) (tea.Model,
 		split.dragging, split.moved = true, false
 		if !split.resizeMode {
 			split.ratioBefore = split.ratio
+			m.push(newResizeSurface(m.services.listKeys))
 		}
 		return m, nil
 	}

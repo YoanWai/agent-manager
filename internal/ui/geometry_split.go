@@ -76,6 +76,7 @@ func (m *Model) prepareSplitForQuit() {
 	m.layout.split.resizeMode = false
 	m.layout.split.dragging = false
 	m.layout.split.moved = false
+	m.dropResize()
 }
 
 // clampSplitLeft keeps both panels above minSplitSide when the terminal
@@ -125,8 +126,27 @@ func (m *Model) enterResizeMode() (tea.Model, tea.Cmd) {
 	m.layout.split.resizeMode = true
 	m.layout.split.dragging = false
 	m.layout.split.ratioBefore = m.layout.split.ratio
+	m.push(newResizeSurface(m.services.listKeys))
 	m.clearErr()
 	return m, nil
+}
+
+// endDrag drops a press on the divider that moved nothing. A keyboard
+// resize stays armed; a drag alone takes its surface down.
+func (m *Model) endDrag() {
+	m.layout.split.dragging = false
+	if !m.layout.split.resizeMode {
+		m.dropResize()
+	}
+}
+
+// dropResize takes the gesture's surface off the top of the stack.
+func (m *Model) dropResize() {
+	if top, ok := m.top(); ok {
+		if _, resize := top.(*resizeSurface); resize {
+			m.pop()
+		}
+	}
 }
 
 // exitResizeMode leaves divider-drag mode. When commit is true the current
@@ -144,6 +164,7 @@ func (m *Model) exitResizeMode(commit bool) (tea.Model, tea.Cmd) {
 	m.layout.split.dragging = false
 	m.layout.split.moved = false
 	m.layout.split.resizeMode = false
+	m.dropResize()
 	m.resizeSessions()
 	return m, nil
 }
