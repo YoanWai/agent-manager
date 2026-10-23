@@ -66,3 +66,28 @@ func RuneAtColumn(line []rune, column int) int {
 	}
 	return len(line)
 }
+
+// PromptRules binds the engine's prompt rules to one tool, the shape the
+// arrow step's prompt-head check reads them in.
+type PromptRules struct {
+	Engine *Engine
+	Tool   string
+}
+
+func (r PromptRules) InputPrefix(row string) (string, bool) {
+	return r.Engine.InputPrefix(r.Tool, row)
+}
+
+func (r PromptRules) TextBeforeCaret(row string, caretX int) bool {
+	return HasTextBeforeCaret(r.Engine, r.Tool, row, caretX)
+}
+
+func (r PromptRules) ComposerIsEmpty(row string) bool {
+	return r.Engine.ComposerIsEmpty(r.Tool, row)
+}
+
+func (r PromptRules) MatchesActivityCutoff(row string) bool {
+	return r.Engine.MatchesActivityCutoff(r.Tool, row)
+}
+
+func (r PromptRules) ParksItsCaret() bool { return r.Engine.ParksItsCaret(r.Tool) }

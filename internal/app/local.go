@@ -44,12 +44,10 @@ func OpenLocal(profileDir string, driver *tmux.Driver) (*Local, error) {
 	if err != nil {
 		return nil, err
 	}
-	keys, err := st.SessionKeys()
-	if err != nil {
+	if err := sessioncmd.ApplyBindingSettings(st, driver); err != nil {
 		st.Close()
 		return nil, err
 	}
-	driver.SetSessionKeys(keys)
 	optionalGitDriver, _ := git.New()
 	runtime := sessioncmd.Runtime{
 		Config: cfg, Store: st, Driver: driver, Hooks: hooks.NewManager(profileDir),

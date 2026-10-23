@@ -43,6 +43,16 @@ func (s *Store) PaneSize() (int, int, error) {
 	return width, height, nil
 }
 
+// ArrowStepSetting is the beta ←→ pair, on unless set to "off". The
+// manager, the CLI and the MCP server all install the attach binding it
+// adds, so each reads it here.
+const ArrowStepSetting = "arrow_step_keys"
+
+func (s *Store) ArrowStep() (bool, error) {
+	value, err := s.Setting(ArrowStepSetting)
+	return value != "off", err
+}
+
 const CoordinationSetting = "coordination"
 
 const coordinationProactive = "proactive"

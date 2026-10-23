@@ -64,12 +64,10 @@ func (c *commands) open() (*runtime, error) {
 	if err != nil {
 		return nil, err
 	}
-	keys, err := st.SessionKeys()
-	if err != nil {
+	if err := ApplyBindingSettings(st, driver); err != nil {
 		st.Close()
 		return nil, err
 	}
-	driver.SetSessionKeys(keys)
 	return &runtime{cfg: cfg, words: c.words, store: st, driver: driver, close: st.Close}, nil
 }
 

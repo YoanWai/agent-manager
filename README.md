@@ -177,7 +177,7 @@ The full reference, every key, quick prompt mode, killing and reviving, diff rev
 | drag `⠿` / `=` | Reorder a row, drop it into another group, or nest a terminal under an agent |
 | `[…]` / right click | The row's actions: attach, prompt, review, fork, rename, move, archive, kill, delete and more |
 | click the list / mouse back | Focused: back to the list. A click on another row focuses that one |
-| `→` / `←` | Step in and out: `→` focuses the session or opens the group, `←` closes the group and, at the start of a focused agent's prompt, comes back to the list. In beta, and Settings can turn the pair off |
+| `→` / `←` | Step in and out: `→` focuses the session or opens the group, `←` closes the group and, at the start of a focused or attached agent's prompt, comes back to the list. In beta, and Settings can turn the pair off |
 | `ctrl+r` | Review the session's changes as full-file diffs; `c` comments a line, `C` sends a numbered review round, and sent comments stay visible as open or handled |
 | `x` / `v` | Kill a session to free its RAM / revive it on its own conversation |
 | `R` | Restart a session on an empty context: same name, group, directory and tool, fresh conversation |

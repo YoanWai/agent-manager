@@ -65,24 +65,31 @@ func (m Model) CaretAtInputStart(ctx CaretContext) bool {
 	if !ctx.CaughtUp {
 		return false
 	}
-	_, bareInput := ctx.Rules.InputPrefix("")
-	caretCellKnown := pane.Cursor.Visible ||
-		(pane.Cursor.PositionKnown && (ctx.Rules.ParksItsCaret() || bareInput))
+	return CaretAtPromptHead(pane.Cursor, ctx.Preview, ctx.Rules)
+}
+
+// CaretAtPromptHead is the prompt-head question asked of one frame: the
+// pane's text and where tmux reports its caret. An attached client asks it
+// from the tmux binding on ←, with no focused model behind it.
+func CaretAtPromptHead(cursor Cursor, preview string, rules PromptRules) bool {
+	_, bareInput := rules.InputPrefix("")
+	caretCellKnown := cursor.Visible ||
+		(cursor.PositionKnown && (rules.ParksItsCaret() || bareInput))
 	if !caretCellKnown {
 		return false
 	}
-	rows := strings.Split(strings.TrimSuffix(ctx.Preview, "\n"), "\n")
-	if pane.Cursor.Y < 0 || pane.Cursor.Y >= len(rows) {
+	rows := strings.Split(strings.TrimSuffix(preview, "\n"), "\n")
+	if cursor.Y < 0 || cursor.Y >= len(rows) {
 		return false
 	}
-	row := ansi.Strip(rows[pane.Cursor.Y])
-	prefix, ok := ctx.Rules.InputPrefix(row)
+	row := ansi.Strip(rows[cursor.Y])
+	prefix, ok := rules.InputPrefix(row)
 	if !ok {
-		return caretParksAndComposerIsEmpty(ctx.Rules, rows, pane.Cursor)
+		return caretParksAndComposerIsEmpty(rules, rows, cursor)
 	}
-	if !ctx.Rules.TextBeforeCaret(row, pane.Cursor.X) &&
-		pane.Cursor.X >= ansi.StringWidth(prefix) {
-		return caretRowEndsAPromptHead(ctx.Rules, rows, pane.Cursor.Y)
+	if !rules.TextBeforeCaret(row, cursor.X) &&
+		cursor.X >= ansi.StringWidth(prefix) {
+		return caretRowEndsAPromptHead(rules, rows, cursor.Y)
 	}
 	return false
 }
