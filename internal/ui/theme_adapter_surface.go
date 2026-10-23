@@ -1,0 +1,169 @@
+package ui
+
+import (
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+)
+
+// railTopRow opens the body a third of a cell under the wordmark. Sextants,
+// not half blocks: no half block fits the corner over the half-width bleed
+// column at the height of the run beside it, so that cell always stepped.
+func (m *Model) railTopRow(paneWidth, width int) string {
+	if paneWidth < 2 || paneWidth >= width {
+		return paint(hrule(width), width, backdropHex())
+	}
+	fill := lipgloss.NewStyle().Foreground(lipgloss.Color(panelHex()))
+	first := plain(fill.Render("🬹"), 1)
+	interior := lipgloss.NewStyle().Foreground(colorBg()).Render(strings.Repeat("🬂", paneWidth-1))
+	last := lipgloss.NewStyle().Foreground(colorBg()).Render("🬨")
+	return first + paint(interior, paneWidth-1, panelHex()) + paint(last, 1, panelHex()) +
+		paint(hrule(width-paneWidth-1), width-paneWidth-1, backdropHex())
+}
+
+// boundedRuleRow closes the body. Over the pane it draws half blocks in the
+// pane's own tone — the fill bleeding half a cell past its box — and across
+// the content it draws the thin rule, whose center line meets the half
+// blocks' edge at the same height.
+// The run's interior is drawn inverted — the cell background carries the
+// pane tone and the glyph paints the backdrop half in the theme's backdrop
+// color — but both end cells are not. The terminal extends a row's edge
+// cell background into the window margin at full cell height, so an
+// inverted first cell smears pane tone past the pane's corner; drawing it
+// as a foreground half block keeps the margin on the terminal's own
+// background. The last cell sits over the bleed column, whose fill is only
+// half a cell wide, so it takes a quadrant instead of a half block and the
+// pane tone stops at the corner instead of jutting past it.
+func (m *Model) boundedRuleRow(paneWidth, width int, edge string) string {
+	if paneWidth < 2 || paneWidth >= width {
+		return paint(hrule(width), width, backdropHex())
+	}
+	facing, corner := "▄", "▜"
+	if edge == "▄" {
+		facing, corner = "▀", "▟"
+	}
+	first := plain(lipgloss.NewStyle().Foreground(lipgloss.Color(panelHex())).Render(facing), 1)
+	interior := lipgloss.NewStyle().Foreground(colorBg()).
+		Render(strings.Repeat(edge, paneWidth-1))
+	last := lipgloss.NewStyle().Foreground(colorBg()).Render(corner)
+	return first + paint(interior, paneWidth-1, panelHex()) + paint(last, 1, panelHex()) +
+		paint(hrule(width-paneWidth-1), width-paneWidth-1, backdropHex())
+}
+
+// railEdgeCell is one row of the pane's first column, drawn as a foreground
+// block in the row's own tone rather than as cell background. The window
+// margin beside it inherits the cell's background — the terminal's own —
+// so the pane's left edge lands exactly on the cell grid.
+func railEdgeCell(tone string) string {
+	return plain(lipgloss.NewStyle().Foreground(lipgloss.Color(tone)).Render("█"), 1)
+}
+
+// vruleColumn is the seam between two painted columns. It doubles as the
+// resize grip, taking the accent while the divider is being moved.
+func (m *Model) vruleColumn(height int) []string {
+	lines := make([]string, height)
+	for i := range lines {
+		lines[i] = m.seamCell(false)
+	}
+	return lines
+}
+
+// bleedColumn finishes a pane's right edge: a half block in the pane's
+// tone on the backdrop, extending the fill half a cell past the seam.
+func (m *Model) bleedColumn(height int) []string {
+	cell := paint(lipgloss.NewStyle().Foreground(colorBg()).Render("▐"), 1, panelHex())
+	lines := make([]string, height)
+	for i := range lines {
+		lines[i] = cell
+	}
+	// Focus mode lights this column beside the pane rows alone, so the edge
+	// traces the agent's terminal rather than the whole content panel. The
+	// top corner sits on the rule row just above the capture.
+	box := m.focus.pane.FrameBox()
+	if m.focused() && box.Valid {
+		edge := paint(focusEdgeStyle().Render("│"), 1, panelHex())
+		corner := paint(focusEdgeStyle().Render("╭"), 1, panelHex())
+		top := box.Y - m.listChromeRows()
+		if top-1 >= 0 && top-1 < len(lines) {
+			lines[top-1] = corner
+		}
+		for row := top; row < top+box.Height; row++ {
+			if row >= 0 && row < len(lines) {
+				lines[row] = edge
+			}
+		}
+	}
+	return lines
+}
+
+// focusBottomRule closes the focused pane's hairline along the frame rule
+// under the body: the corner cell is the bleed column the left edge runs
+// down, so the two meet exactly.
+func (m *Model) focusBottomRule(paneWidth, width int) string {
+	tail := width - paneWidth - 1
+	if tail < 1 || paneWidth < 2 {
+		return m.boundedRuleRow(paneWidth, width, "▄")
+	}
+	first := plain(lipgloss.NewStyle().Foreground(lipgloss.Color(panelHex())).Render("▀"), 1)
+	interior := lipgloss.NewStyle().Foreground(colorBg()).Render(strings.Repeat("▄", paneWidth-1))
+	corner := focusEdgeStyle().Render("╰")
+	return first + paint(interior, paneWidth-1, panelHex()) + paint(corner, 1, panelHex()) +
+		paint(focusEdgeStyle().Render(strings.Repeat("─", tail)), tail, backdropHex())
+}
+
+// seamCell is one row of the vertical seam. The column is the pane's own
+// fill, so only the pane's rules cross it: a content rule carried across
+// reads as the content's separator running into the sessions list.
+func (m *Model) seamCell(railRule bool) string {
+	// While the divider is being moved the seam becomes the grip.
+	if m.layout.split.dragging || m.layout.split.resizeMode {
+		color := colorAccent()
+		if m.layout.split.dragging {
+			color = colorAccent2()
+		}
+		return paint(lipgloss.NewStyle().Foreground(color).Render("║"), 1, panelHex())
+	}
+	if railRule {
+		return paint(hrule(1), 1, panelHex())
+	}
+	return paint("", 1, panelHex())
+}
+
+// contentLine is one row of the content column: ours to paint, a seam that
+// spans the column edge to edge, or captured output that must stay on the
+// backdrop. Rail rows also carry the tone their fill uses, so the edge
+// column beside them can match the selected entry's band.
+type contentLine struct {
+	text string
+	raw  bool
+	rule bool
+	tone string
+	// row is the m.rows index a click on this line selects, one-based so
+	// a bare contentLine{} reads as chrome. Carrying it on the line is what
+	// keeps hit-testing in step with paint through the prepends, the
+	// truncation and the padding the rail's lines go through (#110).
+	row int
+}
+
+// paintContent paints a content column, leaving raw rows unfilled.
+func paintContent(lines []contentLine, width, height int, bg string) []string {
+	out := make([]string, height)
+	for i := 0; i < height; i++ {
+		if i >= len(lines) {
+			out[i] = paint("", width, bg)
+			continue
+		}
+		if lines[i].rule {
+			// Seams are drawn at the column's full width, not the inset the
+			// text uses, so they meet the frame's edges exactly.
+			out[i] = paint(hrule(width), width, bg)
+			continue
+		}
+		if lines[i].raw {
+			out[i] = plain(lines[i].text, width)
+			continue
+		}
+		out[i] = paint(lines[i].text, width, bg)
+	}
+	return out
+}

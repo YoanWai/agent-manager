@@ -2,7 +2,6 @@ package ui
 
 import (
 	"image/color"
-	"slices"
 	"strings"
 	"testing"
 
@@ -64,59 +63,6 @@ func usePaper(t *testing.T) {
 	t.Helper()
 	applyTheme(themes[themeIndex("paper")])
 	t.Cleanup(func() { applyTheme(themes[0]) })
-}
-
-// Every cell the frame left on the terminal's colors takes the theme's,
-// whichever way the reset was spelled, and every cell that carried a color
-// of its own keeps it.
-func TestFillBackdropPaintsOnlyDefaultCells(t *testing.T) {
-	useTrueColor(t)
-	const width = 24
-	chip := "\x1b[48;2;1;2;3m"
-	frame := strings.Join([]string{
-		"plain text",
-		lipgloss.NewStyle().Foreground(lipgloss.Color("#123456")).Render("styled") + " tail",
-		chip + "chip\x1b[49m after",
-		chip + "chip\x1b[m after",
-		chip + "chip\x1b[0;1;38;2;0;0;0m black on default\x1b[0m",
-		chip + "a\x1b[38;5;0mb\x1b[38;2;0;0;0mc stays on chip\x1b[0m",
-		chip + "A\x1b[4:0mB\x1b[4:3mC stays on chip\x1b[0m",
-		"\x1b[48:2::9:8:7mcolon\x1b[38:2::0:0:0m fg only\x1b[0m",
-		"\x1b[44mindexed\x1b[0m wide 界 cell",
-		"\x1b[31mred\x1b[39m default ink \x1b[1;91mbright\x1b[22;39m ink",
-		"",
-	}, "\n")
-	height := strings.Count(frame, "\n") + 1
-
-	beforeBg, beforeFg := cellColors(frame, width, height)
-	afterBg, afterFg := cellColors(fillBackdrop(frame, width, "#f7f7f5", "#33333a"), width, height)
-	for y := range height {
-		for x := range width {
-			if want := orTheme(beforeBg[y][x], "#f7f7f5"); !sameColor(afterBg[y][x], want) {
-				t.Errorf("row %d col %d background = %v, want %v", y, x, afterBg[y][x], want)
-			}
-			if want := orTheme(beforeFg[y][x], "#33333a"); !sameColor(afterFg[y][x], want) {
-				t.Errorf("row %d col %d foreground = %v, want %v", y, x, afterFg[y][x], want)
-			}
-		}
-	}
-}
-
-func orTheme(own color.Color, theme string) color.Color {
-	if own == nil {
-		return hexColor(theme)
-	}
-	return own
-}
-
-func TestFillBackdropKeepsText(t *testing.T) {
-	useTrueColor(t)
-	frame := "one \x1b[1mtwo\x1b[m\n\x1b[38;5;42mthree\x1b[39m"
-	got := strings.Split(ansi.Strip(fillBackdrop(frame, 8, "#f7f7f5", "#33333a")), "\n")
-	want := []string{"one two ", "three   "}
-	if !slices.Equal(got, want) {
-		t.Fatalf("filled text = %q, want %q", got, want)
-	}
 }
 
 // The frame a terminal that ignores OSC 10 and 11 shows: light chrome and

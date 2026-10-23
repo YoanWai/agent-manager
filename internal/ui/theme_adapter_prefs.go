@@ -1,39 +1,10 @@
 package ui
 
 import (
-	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/systheme"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
-	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 )
-
-// storedTheme reads the persisted theme name. A read failure falls back to
-// the default theme: the UI still paints, just not in the chosen palette.
-func storedTheme(st *store.Store) string {
-	name, err := st.Setting(uisettings.ThemeSetting)
-	if err != nil {
-		return ""
-	}
-	return name
-}
-
-func themeAutoEnabled(st *store.Store) bool {
-	value, err := st.Setting(uisettings.ThemeAutoSetting)
-	return err == nil && value == "on"
-}
-
-// resolveStartupTheme picks the boot theme: the stored choice, unless
-// auto-detect is on and the environment's scheme disagrees with that
-// choice's polarity — then its counterpart, or the default theme of the
-// detected side, takes over, and an undetectable scheme changes nothing.
-func resolveStartupTheme(st *store.Store) string {
-	stored := storedTheme(st)
-	if !themeAutoEnabled(st) {
-		return stored
-	}
-	return autoThemeName(stored, systheme.Detect())
-}
 
 // autoThemeName resolves auto-detect against the detected scheme; an
 // undetectable scheme keeps the stored choice.

@@ -1,4 +1,4 @@
-package ui
+package theme
 
 import (
 	"fmt"
@@ -12,7 +12,7 @@ func TestPaintPadsCellsLeftByWideCharacterTruncation(t *testing.T) {
 		for _, bg := range []string{"", "#112233"} {
 			for width := 0; width <= 8; width++ {
 				t.Run(fmt.Sprintf("%q/bg=%s/width=%d", text, bg, width), func(t *testing.T) {
-					got := paint(text, width, bg)
+					got := Paint(text, width, bg)
 					if cells := ansi.StringWidth(got); cells != width {
 						t.Fatalf("paint uses %d cells, want %d: %q", cells, width, got)
 					}
