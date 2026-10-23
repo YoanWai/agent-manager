@@ -1,0 +1,708 @@
+package ui
+
+import (
+	"fmt"
+	"reflect"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/YoanWai/agent-manager/internal/catalog"
+	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/keybind"
+	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
+	"github.com/YoanWai/agent-manager/internal/ui/spawn"
+	bubblekey "github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
+)
+
+var fiveLevels = []string{"low", "medium", "high", "xhigh", "max"}
+
+// answered gives the test's claude the flags a catalog CLI has and the
+// answer it would give, as if the manager had already asked.
+func answered(m *Model, tool config.Tool, cat catalog.Catalog) {
+	base := m.services.cfg.Tools["claude"]
+	base.Catalog, base.CatalogCommand = tool.Catalog, tool.CatalogCommand
+	base.ModelArgs, base.EffortArgs, base.ProfileArgs = tool.ModelArgs, tool.EffortArgs, tool.ProfileArgs
+	m.services.cfg.Tools["claude"] = base
+	m.ledger.catalogs = map[string]*catalogState{"claude": {cat: cat, loaded: true}}
+}
+
+var claudeLike = config.Tool{Catalog: "claude", CatalogCommand: "claude", ModelArgs: "--model {model}", EffortArgs: "--effort {effort}"}
+
+var claudeAnswer = catalog.Catalog{Models: []catalog.Model{
+	{ID: "default", Label: "Default (recommended)", Efforts: fiveLevels, Default: true},
+	{ID: "opus", Label: "Opus 5.5", Efforts: fiveLevels},
+	{ID: "haiku", Label: "Haiku 4.5"},
+}}
+
+func openFormOnClaude(t *testing.T, m *Model) {
+	t.Helper()
+	m.openForm()
+	setFormTool(m, slices.Index(formTools(m), "claude"))
+	m.form.RestartChoice(m.spawnHost())
+}
+
+func typeInto(m *Model, text string) {
+	for _, r := range text {
+		m.handleFormKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+}
+
+func formBody(m *Model) string { return ansi.Strip(m.viewForm()) }
+
+// The effort row lists what the model in the model row takes, the CLI's
+// default model until one is picked, and leaves the form for a model that
+// takes none.
+func TestFormEffortFollowsTheModel(t *testing.T) {
+	m := buildModel(t)
+	answered(m, claudeLike, claudeAnswer)
+	openFormOnClaude(t, m)
+	if !slices.Contains(m.form.Fields(m.spawnHost()), spawn.FieldEffort) {
+		t.Fatal("the default model's levels should show before any pick")
+	}
+	m.form.FocusField(m.spawnHost(), spawn.FieldModel)
+	typeInto(m, "hai")
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyTab})
+	if m.form.Choice().Model() != "haiku" || m.form.Choice().FilterValue() != "haiku" {
+		t.Fatalf("tab filled in %q / %q", m.form.Choice().Model(), m.form.Choice().FilterValue())
+	}
+	if slices.Contains(m.form.Fields(m.spawnHost()), spawn.FieldEffort) || strings.Contains(formBody(m), "effort        ") {
+		t.Fatalf("haiku takes no effort, the row should go:\n%s", formBody(m))
+	}
+	m.form.Choice().SetFilter("")
+	_, _ = m.form.Choice().Launch(m.spawnHost(), "claude", "opus")
+	m.form.FocusField(m.spawnHost(), spawn.FieldEffort)
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
+	if got := m.form.Choice().EffortLevel(m.spawnHost(), "claude"); got != "medium" {
+		t.Fatalf("effort = %q, want medium", got)
+	}
+	if body := formBody(m); !strings.Contains(body, "effort        ◂ medium ▸ ") {
+		t.Fatalf("effort row:\n%s", body)
+	}
+}
+
+// A spawn launches on the picked model and effort, keeps them on its row,
+// and remembers the model for the next list; a typed name the CLI does not
+// list is refused.
+func TestFormSpawnsOnTheChoice(t *testing.T) {
+	m := buildModel(t)
+	answered(m, claudeLike, claudeAnswer)
+	openFormOnClaude(t, m)
+	m.form.SetName("picked")
+	m.form.SetDir(t.TempDir())
+	m.form.Choice().SetFilter("opux")
+	if m.submitForm(); m.errBar.text == "" || m.mode != modeForm {
+		t.Fatalf("an unlisted model spawned: mode %v err %q", m.mode, m.errBar.text)
+	}
+	m.form.Choice().SetFilter("opus")
+	m.form.Choice().CycleEffort(m.spawnHost(), "claude", 3)
+	_, spawn := m.submitForm()
+	m.applyCmd(t, spawn)
+	if m.mode != modeList {
+		t.Fatalf("submit: %q", m.errBar.text)
+	}
+	stored, err := m.services.store.Get(m.sessionRows()[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (config.Choice{Model: "opus", Effort: "high"}); stored.Choice != want {
+		t.Fatalf("choice = %+v, want %+v", stored.Choice, want)
+	}
+	if recent := m.settings.cache.value("recent_models.claude"); recent != `["opus"]` {
+		t.Fatalf("recent = %v", recent)
+	}
+	m.openForm()
+	setFormTool(m, slices.Index(formTools(m), "claude"))
+	m.form.RestartChoice(m.spawnHost())
+	list := m.form.Choice().Suggestions(m.spawnHost(), "claude")
+	if len(list) == 0 || list[0] != "opus" {
+		t.Fatalf("the last pick should lead the list: %+v", list)
+	}
+}
+
+// A CLI that reports nothing keeps both rows, saying so, and takes no keys
+// on them.
+func TestFormSaysWhatACLIDoesNotSupport(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	openFormOnClaude(t, m)
+	body := formBody(m)
+	if !strings.Contains(body, "model         not supported by claude") || !strings.Contains(body, "effort        not supported by claude") {
+		t.Fatalf("form:\n%s", body)
+	}
+	if fields := m.form.Fields(m.spawnHost()); slices.Contains(fields, spawn.FieldModel) || slices.Contains(fields, spawn.FieldEffort) {
+		t.Fatalf("unsupported rows take focus: %v", fields)
+	}
+}
+
+// Hermes lists profiles with their models, says a model reasons without
+// naming levels, and routes each model through its provider.
+func TestFormProfileScopesModelsAndTypedEffort(t *testing.T) {
+	m := buildModel(t)
+	work := []catalog.Model{{ID: "grok-4.6", Provider: "xai-oauth", Label: "xAI", EffortTyped: true}}
+	answered(m, config.Tool{Catalog: "hermes", CatalogCommand: "hermes", ModelArgs: "--provider {provider} -m {model}", EffortArgs: "--reasoning {effort}", ProfileArgs: "-p {profile}"},
+		catalog.Catalog{
+			Models:   []catalog.Model{{ID: "claude-opus-5", Provider: "anthropic", Label: "Anthropic", Default: true}},
+			Profiles: []catalog.Profile{{Name: "work", Detail: "grok-4.6 · xai-oauth", Models: work}},
+		})
+	openFormOnClaude(t, m)
+	if slices.Contains(m.form.Fields(m.spawnHost()), spawn.FieldEffort) {
+		t.Fatal("the active profile's default model does not reason, so no effort row")
+	}
+	m.form.FocusField(m.spawnHost(), spawn.FieldProfile)
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
+	if body := formBody(m); !strings.Contains(body, "profile       ◂ work  grok-4.6 · xai-oauth ▸") {
+		t.Fatalf("profile row:\n%s", body)
+	}
+	m.form.FocusField(m.spawnHost(), spawn.FieldModel)
+	typeInto(m, "grok")
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyTab})
+	m.form.FocusField(m.spawnHost(), spawn.FieldEffort)
+	typeInto(m, "high")
+	if body := formBody(m); !strings.Contains(body, "typed · claude lists no levels") {
+		t.Fatalf("typed effort row:\n%s", body)
+	}
+	picked, err := m.form.Choice().Launch(m.spawnHost(), "claude", m.form.Choice().FilterValue())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (config.Choice{Provider: "xai-oauth", Model: "grok-4.6", Effort: "high", Profile: "work"}); config.Choice(picked) != want {
+		t.Fatalf("choice = %+v, want %+v", picked, want)
+	}
+}
+
+// A click focuses a row, a second click on a stepping row steps it, and a
+// click on a listed model picks it. Clicks land where the frame shows the
+// text, and a click on the backdrop beside the card does nothing.
+func TestFormClicks(t *testing.T) {
+	m := buildModel(t)
+	answered(m, claudeLike, claudeAnswer)
+	openFormOnClaude(t, m)
+	click := func(x, y int) { m = leftClick(m, x, y) }
+	at := func(text string) (int, int) {
+		t.Helper()
+		return bodyCell(t, m, text)
+	}
+	x, y := at("model ")
+	click(0, y)
+	if m.form.Focused() == spawn.FieldModel {
+		t.Fatal("a click on the backdrop focused the model row")
+	}
+	click(x, y)
+	if m.form.Focused() != spawn.FieldModel || !m.form.Choice().ListOpen() {
+		t.Fatalf("focus %d open %v", m.form.Focused(), m.form.Choice().ListOpen())
+	}
+	click(at("opus  Opus 5.5"))
+	if m.form.Choice().Model() != "opus" {
+		t.Fatalf("clicked entry picked %q", m.form.Choice().Model())
+	}
+	click(at("effort "))
+	click(at("effort "))
+	if got := m.form.Choice().EffortLevel(m.spawnHost(), "claude"); got != "low" {
+		t.Fatalf("second click stepped the effort to %q", got)
+	}
+}
+
+// The quick prompt picks the model from a list typing narrows, steps the
+// effort, and spawns on both.
+func TestQuickPromptSpawnsOnItsChoice(t *testing.T) {
+	m := buildModel(t)
+	answered(m, claudeLike, claudeAnswer)
+	dir := t.TempDir()
+	if err := m.services.store.CreateGroup("work", dir); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "work")
+	m.openQuickMode()
+	setQuickTool(m, slices.Index(quickTools(m), "claude"))
+	m.quick.RestartChoice(m.spawnHost())
+	ctrl := func(key tea.KeyType) { m.handleQuickKey(tea.KeyMsg{Type: key}) }
+	ctrl(tea.KeyCtrlL)
+	if m.quick.Picking() != uiquick.PickModel {
+		t.Fatal("ctrl+l should open the model list")
+	}
+	for _, r := range "opu" {
+		m.handleQuickKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	if m.quick.input.Value() != "" {
+		t.Fatalf("typing into the list reached the prompt: %q", m.quick.input.Value())
+	}
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.quick.Picking() != uiquick.PickNone || m.quick.Choice().Model() != "opus" {
+		t.Fatalf("picking %d model %q", m.quick.Picking(), m.quick.Choice().Model())
+	}
+	ctrl(tea.KeyCtrlX)
+	ctrl(tea.KeyCtrlX)
+	if target := strings.Split(ansi.Strip(m.viewQuickBar(120, quickBarMaxRows)), "\n")[0]; !strings.Contains(target, "claude · opus · medium") {
+		t.Fatalf("target row: %s", target)
+	}
+	m.quick.input.SetValue("do the work")
+	_, spawn := m.submitQuick()
+	if m.errBar.text != "" {
+		t.Fatalf("spawn: %q", m.errBar.text)
+	}
+	m.applyCmd(t, spawn)
+	if m.errBar.text != "" {
+		t.Fatalf("spawn: %q", m.errBar.text)
+	}
+	var spawned []config.Choice
+	for _, sess := range m.sessionRows() {
+		stored, err := m.services.store.Get(sess.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		spawned = append(spawned, stored.Choice)
+	}
+	if !slices.Contains(spawned, config.Choice{Model: "opus", Effort: "medium"}) {
+		t.Fatalf("spawned choices = %+v", spawned)
+	}
+}
+
+// A click on the bar's model stretch opens the list, and one on an entry
+// picks it.
+func TestQuickPromptClicks(t *testing.T) {
+	m := buildModel(t)
+	answered(m, claudeLike, claudeAnswer)
+	if err := m.services.store.CreateGroup("work", t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "work")
+	m.openQuickMode()
+	setQuickTool(m, slices.Index(quickTools(m), "claude"))
+	m.quick.RestartChoice(m.spawnHost())
+	click := func(action, entry int) {
+		t.Helper()
+		preparedView(m)
+		for _, hit := range m.quick.Hits() {
+			if hit.Action == action && (entry < 0 || hit.Entry == entry) {
+				m = leftPress(m, m.quick.originX+hit.X0, m.quick.originY+hit.Line)
+				return
+			}
+		}
+		t.Fatalf("no stretch for action %d entry %d in %+v", action, entry, m.quick.Hits())
+	}
+	click(uiquick.ClickModel, -1)
+	if m.quick.Picking() != uiquick.PickModel {
+		t.Fatal("the model stretch should open the list")
+	}
+	click(uiquick.ClickEntry, 1)
+	if m.quick.Picking() != uiquick.PickNone || m.quick.Choice().Model() != "opus" {
+		t.Fatalf("picking %d model %q", m.quick.Picking(), m.quick.Choice().Model())
+	}
+}
+
+// Answering a session sends no new launch, so the choice keys say so
+// rather than opening a list nothing shows.
+func TestQuickChoiceKeysNeedAGroupTarget(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	answered(m, claudeLike, claudeAnswer)
+	createSession(t, m, "worker", t.TempDir(), "")
+	m.selectSessionRow(t, "worker")
+	m.openQuickMode()
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlL})
+	if m.quick.Picking() != uiquick.PickNone || m.errBar.text != uiquick.ChoiceHint {
+		t.Fatalf("picking %d err %q", m.quick.Picking(), m.errBar.text)
+	}
+	if footer := ansi.Strip(m.viewFooter()); strings.Contains(footer, quickModelKey) {
+		t.Fatalf("footer names a key that does nothing here: %s", footer)
+	}
+}
+
+// A list that shrinks under the highlight, from a newer answer or another
+// profile, leaves enter and tab picking a model it still lists.
+func TestModelListShrinkingUnderTheHighlight(t *testing.T) {
+	down := tea.KeyMsg{Type: tea.KeyDown}
+	t.Run("form, newer answer", func(t *testing.T) {
+		m := buildModel(t)
+		answered(m, claudeLike, claudeAnswer)
+		openFormOnClaude(t, m)
+		m.form.FocusField(m.spawnHost(), spawn.FieldModel)
+		for range 3 {
+			m.handleFormKey(down)
+		}
+		m.handleCatalog(catalogMsg{tool: "claude", cat: catalog.Catalog{Models: claudeAnswer.Models[:1]}})
+		m.handleFormKey(tea.KeyMsg{Type: tea.KeyTab})
+		if m.form.Choice().Model() != "default" {
+			t.Fatalf("picked %q", m.form.Choice().Model())
+		}
+	})
+	t.Run("quick prompt, another profile", func(t *testing.T) {
+		m := buildModel(t)
+		answered(m, config.Tool{Catalog: "hermes", CatalogCommand: "hermes", ModelArgs: "-m {model}", ProfileArgs: "-p {profile}"},
+			catalog.Catalog{
+				Models:   claudeAnswer.Models,
+				Profiles: []catalog.Profile{{Name: "work", Models: []catalog.Model{{ID: "grok-4.6", Default: true}}}},
+			})
+		if err := m.services.store.CreateGroup("work", t.TempDir()); err != nil {
+			t.Fatal(err)
+		}
+		m.applyCmd(t, m.refreshCmd())
+		m.selectGroupRow(t, "work")
+		m.openQuickMode()
+		setQuickTool(m, slices.Index(quickTools(m), "claude"))
+		m.quick.RestartChoice(m.spawnHost())
+		m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlL})
+		for range 3 {
+			m.handleQuickKey(down)
+		}
+		m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlY})
+		m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter})
+		if m.quick.Choice().Model() != "grok-4.6" {
+			t.Fatalf("picked %q", m.quick.Choice().Model())
+		}
+	})
+}
+
+// One arrow moves the highlighted model. The sheet opens with a row already
+// highlighted, and a typed filter starts over on its first match.
+func TestQuickModelListMovesOnOneArrow(t *testing.T) {
+	m := buildModel(t)
+	answered(m, claudeLike, claudeAnswer)
+	if err := m.services.store.CreateGroup("work", t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "work")
+	m.openQuickMode()
+	setQuickTool(m, slices.Index(quickTools(m), "claude"))
+	m.quick.RestartChoice(m.spawnHost())
+	down := tea.KeyMsg{Type: tea.KeyDown}
+	up := tea.KeyMsg{Type: tea.KeyUp}
+	sheet := func() string { return ansi.Strip(m.viewQuickBar(120, 20)) }
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlL})
+	if !strings.Contains(sheet(), "❯ default") {
+		t.Fatalf("sheet should open on the first model:\n%s", sheet())
+	}
+	m.handleQuickKey(down)
+	if !strings.Contains(sheet(), "❯ opus") {
+		t.Fatalf("one down should highlight opus:\n%s", sheet())
+	}
+	m.handleQuickKey(up)
+	if !strings.Contains(sheet(), "❯ default") {
+		t.Fatalf("one up should highlight default:\n%s", sheet())
+	}
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	m.handleQuickKey(down)
+	if !strings.Contains(sheet(), "❯ haiku") {
+		t.Fatalf("one down in the filter should highlight haiku:\n%s", sheet())
+	}
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEsc})
+	_, _ = m.quick.Choice().Launch(m.spawnHost(), "claude", "opus")
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlL})
+	m.handleQuickKey(down)
+	if !strings.Contains(sheet(), "❯ haiku") {
+		t.Fatalf("one down from the picked model should highlight haiku:\n%s", sheet())
+	}
+}
+
+// The model sheet takes the rows the bar had and the column can spare, so a
+// small split still shows its title, its filter and its choices.
+func TestQuickModelSheetFitsTheColumn(t *testing.T) {
+	m := buildModel(t)
+	var models []catalog.Model
+	for i := range 12 {
+		models = append(models, catalog.Model{ID: fmt.Sprintf("model-%02d", i)})
+	}
+	answered(m, claudeLike, catalog.Catalog{Models: models})
+	keepSetting(t, m, "recent_models.claude", `["model-00","model-01","model-02"]`)
+	if err := m.services.store.CreateGroup("work", t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.layout.width, m.layout.height = 80, 20
+	m.selectGroupRow(t, "work")
+	m.openQuickMode()
+	setQuickTool(m, slices.Index(quickTools(m), "claude"))
+	m.quick.RestartChoice(m.spawnHost())
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlL})
+	if m.fullRows() {
+		t.Fatal("80 columns should give the split")
+	}
+	view := ansi.Strip(preparedView(m))
+	for _, want := range []string{"model for work", "claude's default", "⎇ "} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("%q fell off the column:\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "type and press enter") {
+		t.Fatalf("the sheet should stand in for the prompt:\n%s", view)
+	}
+	var last quickHit
+	for _, hit := range m.quick.Hits() {
+		if hit.Action == uiquick.ClickEntry {
+			last = hit
+		}
+	}
+	want := m.quick.Choice().Suggestions(m.spawnHost(), "claude")[last.Entry]
+	m = leftPress(m, m.quick.originX+last.X0, m.quick.originY+last.Line)
+	if m.quick.Choice().Model() != want {
+		t.Fatalf("a click on the list's last entry picked %q, want %q", m.quick.Choice().Model(), want)
+	}
+}
+
+// The arrows reach every model the CLI lists, scrolling the list under a
+// scroll bar, and a filter typed and then deleted brings them all back.
+func TestFormModelListScrollsThroughEveryModel(t *testing.T) {
+	m := buildModel(t)
+	var models []catalog.Model
+	for i := range 12 {
+		models = append(models, catalog.Model{ID: fmt.Sprintf("model-%02d", i)})
+	}
+	answered(m, claudeLike, catalog.Catalog{Models: models})
+	openFormOnClaude(t, m)
+	m.form.FocusField(m.spawnHost(), spawn.FieldModel)
+	for i := range models {
+		m.handleFormKey(tea.KeyMsg{Type: tea.KeyDown})
+		body := formBody(m)
+		if !strings.Contains(body, "❯ "+models[i].ID) {
+			t.Fatalf("down %d: the highlighted %s is off screen:\n%s", i+1, models[i].ID, body)
+		}
+		if !strings.Contains(body, "┃") {
+			t.Fatalf("down %d: no scroll bar:\n%s", i+1, body)
+		}
+	}
+	if m.form.Focused() != spawn.FieldModel {
+		t.Fatal("the last model moved focus off the list")
+	}
+	typeInto(m, "x")
+	if body := formBody(m); !strings.Contains(body, "no model matches x") {
+		t.Fatalf("filtered:\n%s", body)
+	}
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyBackspace})
+	body := formBody(m)
+	if !m.form.Choice().ListOpen() || !strings.Contains(body, "from claude · 12 models") || !strings.Contains(body, "model-00") {
+		t.Fatalf("clearing the filter should show every model again:\n%s", body)
+	}
+}
+
+// The spawn choice keys are control keys, since alt never arrives from many
+// terminals, and none of them is a key the prompt's editor, the model
+// filter, the manager's own tables, the tty or a common multiplexer takes.
+func TestQuickChoiceKeysOverlapNothing(t *testing.T) {
+	taken := map[string]string{}
+	takeKeyMap := func(owner string, keyMap any) {
+		fields := reflect.ValueOf(keyMap)
+		for i := range fields.NumField() {
+			if binding, ok := fields.Field(i).Interface().(bubblekey.Binding); ok {
+				for _, name := range binding.Keys() {
+					taken[name] = owner
+				}
+			}
+		}
+	}
+	takeKeyMap("the prompt's editor", textarea.DefaultKeyMap)
+	takeKeyMap("the model filter", textinput.DefaultKeyMap)
+	for _, table := range []keybind.Table{keybind.DefaultList(), keybind.DefaultSession()} {
+		for _, action := range table.Actions() {
+			for _, bound := range table.Binding(action.Name).Keys() {
+				taken[bound.Tea()] = table.Scope() + " " + action.Name
+			}
+		}
+	}
+	for owner, names := range map[string][]string{
+		"the manager":         {"ctrl+c", "ctrl+v", "ctrl+h", "ctrl+d", "ctrl+u", "ctrl+t", "tab", "shift+tab", "enter", "esc"},
+		"the tty":             {"ctrl+z", "ctrl+s", "ctrl+q", `ctrl+\`, "ctrl+i", "ctrl+m", "ctrl+j", "ctrl+[", "ctrl+@"},
+		"tmux or screen":      {"ctrl+b", "ctrl+a"},
+		"zellij":              {"ctrl+b", "ctrl+c", "ctrl+f", "ctrl+g", "ctrl+h", "ctrl+n", "ctrl+o", "ctrl+p", "ctrl+q", "ctrl+s", "ctrl+t"},
+		"the vscode terminal": {"ctrl+p", "ctrl+g"},
+	} {
+		for _, name := range names {
+			taken[name] = owner
+		}
+	}
+	for _, choiceKey := range []string{quickModelKey, quickEffortKey, quickProfileKey} {
+		if !strings.HasPrefix(choiceKey, "ctrl+") {
+			t.Errorf("%s is not a control key", choiceKey)
+		}
+		if owner, ok := taken[choiceKey]; ok {
+			t.Errorf("%s is already %s's", choiceKey, owner)
+		}
+	}
+}
+
+// A picked model shows in the field without narrowing the list: coming
+// back to the row lists every model again, the pick highlighted.
+func TestFormModelListOpensOnEveryModelWithThePickHighlighted(t *testing.T) {
+	m := buildModel(t)
+	answered(m, claudeLike, claudeAnswer)
+	openFormOnClaude(t, m)
+	m.form.FocusField(m.spawnHost(), spawn.FieldModel)
+	typeInto(m, "opus")
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyTab})
+	if m.form.Choice().Model() != "opus" {
+		t.Fatalf("picked %q", m.form.Choice().Model())
+	}
+	m.form.FocusField(m.spawnHost(), spawn.FieldDir)
+	m.form.FocusField(m.spawnHost(), spawn.FieldModel)
+	body := formBody(m)
+	for _, model := range claudeAnswer.Models {
+		if !strings.Contains(body, model.ID) {
+			t.Fatalf("%s missing from the reopened list:\n%s", model.ID, body)
+		}
+	}
+	if !strings.Contains(body, "❯ opus") {
+		t.Fatalf("the pick is not highlighted:\n%s", body)
+	}
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyDown})
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyDown})
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyTab})
+	if m.form.Choice().Model() != "haiku" {
+		t.Fatalf("down from the pick picked %q", m.form.Choice().Model())
+	}
+}
+
+// shift+tab steps the tool back, so the footer names it beside tab, ahead
+// of the choices the tool launches with.
+func TestQuickFooterKeepsShiftTabBesideTab(t *testing.T) {
+	m := buildModel(t)
+	answered(m, claudeLike, claudeAnswer)
+	if err := m.services.store.CreateGroup("work", t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "work")
+	m.openQuickMode()
+	setQuickTool(m, slices.Index(quickTools(m), "claude"))
+	m.quick.RestartChoice(m.spawnHost())
+	var keys []string
+	for _, pair := range m.quick.Legend(m.quickBarHost()) {
+		keys = append(keys, pair[0])
+	}
+	tab := slices.Index(keys, "tab")
+	if tab < 0 || tab+1 >= len(keys) || keys[tab+1] != "shift+tab" || slices.Index(keys, quickModelKey) < tab+1 {
+		t.Fatalf("footer keys = %v", keys)
+	}
+}
+
+// The model sheet steps the effort in place and esc hands the prompt back.
+func TestQuickSheetStepsEffortAndHandsThePromptBack(t *testing.T) {
+	m := buildModel(t)
+	answered(m, claudeLike, claudeAnswer)
+	if err := m.services.store.CreateGroup("work", t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "work")
+	m.openQuickMode()
+	setQuickTool(m, slices.Index(quickTools(m), "claude"))
+	m.quick.RestartChoice(m.spawnHost())
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlL})
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlX})
+	if m.quick.Picking() != uiquick.PickModel || m.quick.Choice().EffortLevel(m.spawnHost(), "claude") != "low" {
+		t.Fatalf("picking %d effort %q", m.quick.Picking(), m.quick.Choice().EffortLevel(m.spawnHost(), "claude"))
+	}
+	if sheet := ansi.Strip(m.viewQuickBar(120, 20)); !strings.Contains(sheet, "model for work") || !strings.HasSuffix(strings.TrimRight(sheet, " "), "low · ⎇ no repo") {
+		t.Fatalf("sheet:\n%s", sheet)
+	}
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEsc})
+	if m.quick.Picking() != uiquick.PickNone || !strings.Contains(ansi.Strip(m.viewQuickBar(120, quickBarMaxRows)), "type and press enter") {
+		t.Fatal("esc should hand the prompt back")
+	}
+}
+
+// Each CLI keeps the model, effort and profile last picked for it, so the
+// next form or quick prompt on that CLI starts there.
+func TestChoiceIsKeptPerCLI(t *testing.T) {
+	t.Run("form", func(t *testing.T) {
+		m := buildModel(t)
+		answered(m, claudeLike, claudeAnswer)
+		openFormOnClaude(t, m)
+		m.form.FocusField(m.spawnHost(), spawn.FieldModel)
+		typeInto(m, "opus")
+		m.handleFormKey(tea.KeyMsg{Type: tea.KeyTab})
+		m.form.FocusField(m.spawnHost(), spawn.FieldEffort)
+		m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
+		m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
+		m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
+		m.handleFormKey(tea.KeyMsg{Type: tea.KeyEsc})
+		openFormOnClaude(t, m)
+		if got := m.form.Choice().Current(m.spawnHost(), "claude"); config.Choice(got) != (config.Choice{Model: "opus", Effort: "high"}) {
+			t.Fatalf("reopened form choice = %+v", got)
+		}
+		if m.form.Choice().FilterValue() != "opus" {
+			t.Fatalf("model field shows %q", m.form.Choice().FilterValue())
+		}
+		if other := spawn.NewChoice(m.spawnHost(), "command-code"); other.Model() != "" || m.settings.cache.value("choice.command-code") != "" {
+			t.Fatalf("another CLI picked up claude's choice: %+v", other)
+		}
+	})
+	t.Run("quick prompt", func(t *testing.T) {
+		m := buildModel(t)
+		answered(m, claudeLike, claudeAnswer)
+		if err := m.services.store.CreateGroup("work", t.TempDir()); err != nil {
+			t.Fatal(err)
+		}
+		m.applyCmd(t, m.refreshCmd())
+		m.selectGroupRow(t, "work")
+		m.openQuickMode()
+		setQuickTool(m, slices.Index(quickTools(m), "claude"))
+		m.quick.RestartChoice(m.spawnHost())
+		m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlL})
+		for _, r := range "opus" {
+			m.handleQuickKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		}
+		m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter})
+		m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlX})
+		m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEsc})
+		m.openQuickMode()
+		setQuickTool(m, slices.Index(quickTools(m), "claude"))
+		m.quick.RestartChoice(m.spawnHost())
+		if target := strings.Split(ansi.Strip(m.viewQuickBar(120, quickBarMaxRows)), "\n")[0]; !strings.Contains(target, "claude · opus · low") {
+			t.Fatalf("reopened bar: %s", target)
+		}
+	})
+	t.Run("answer arrives after the prompt opens", func(t *testing.T) {
+		m := buildModel(t)
+		answered(m, claudeLike, catalog.Catalog{})
+		m.ledger.catalogs["claude"] = &catalogState{loading: true}
+		keepSetting(t, m, "choice.claude", `{"Model":"opus","Effort":"medium"}`)
+		openFormOnClaude(t, m)
+		if m.form.Choice().Model() != "" {
+			t.Fatal("placed a model before the CLI answered")
+		}
+		m.handleCatalog(catalogMsg{tool: "claude", cat: claudeAnswer})
+		if got := m.form.Choice().Current(m.spawnHost(), "claude"); config.Choice(got) != (config.Choice{Model: "opus", Effort: "medium"}) {
+			t.Fatalf("choice once answered = %+v", got)
+		}
+	})
+}
+
+// A CLI with no model to pick leaves the target row to its name and the
+// worktree, with no note about what it lacks.
+func TestQuickStatusRowLeavesOutWhatACLICannotPick(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	if err := m.services.store.CreateGroup("work", t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "work")
+	m.openQuickMode()
+	setQuickTool(m, slices.Index(quickTools(m), "quietchat"))
+	m.quick.RestartChoice(m.spawnHost())
+	target := strings.Split(ansi.Strip(m.viewQuickBar(120, quickBarMaxRows)), "\n")[0]
+	if !strings.HasSuffix(strings.TrimRight(target, " "), "quietchat · ⎇ no repo") || strings.Contains(target, "not supported") {
+		t.Fatalf("target row: %s", target)
+	}
+	if footer := ansi.Strip(m.viewFooter()); strings.Contains(footer, quickModelKey) || strings.Contains(footer, quickEffortKey) {
+		t.Fatalf("footer offers a choice the CLI does not have: %s", footer)
+	}
+}
+
+// keepSetting stores a value and gives the settings cache the read a
+// settings load would, since the form and quick prompt read the cache.
+func keepSetting(t *testing.T, m *Model, key, value string) {
+	t.Helper()
+	if err := m.services.store.SetSetting(key, value); err != nil {
+		t.Fatal(err)
+	}
+	m.settings.cache.applyValues([]settingValue{{Key: key, Value: value}})
+}

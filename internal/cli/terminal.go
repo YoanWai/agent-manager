@@ -12,7 +12,7 @@ const (
 	usageTerminalList   = "terminal list [--json]"
 	usageTerminalCreate = "terminal create [--group <path>] [--directory <path>] [--nest=false] [--json]"
 	usageTerminalSend   = `terminal send <terminal-id> --command "<text>" | --keys <key,key> [--json]`
-	usageTerminalRead   = "terminal read <terminal-id> [--json]"
+	usageTerminalRead   = "terminal read <terminal-id> [--styled] [--json]"
 	usageTerminalClose  = "terminal close <terminal-id>"
 )
 
@@ -21,6 +21,7 @@ type terminalCommands interface {
 	Create(sessionID string, opts sessioncmd.CreateTerminalOptions) (sessioncmd.Terminal, error)
 	Send(sessionID, terminalID, command string, keys []string) (sessioncmd.TerminalInput, error)
 	Read(sessionID, terminalID string) (sessioncmd.TerminalScreen, error)
+	ReadStyled(sessionID, terminalID string) (sessioncmd.TerminalScreen, error)
 	Close(sessionID, terminalID string) error
 }
 
@@ -29,12 +30,16 @@ func newTerminals(configDir string) terminalCommands {
 }
 
 func terminalVerbs() []command {
+	return terminalVerbsWith(newTerminals)
+}
+
+func terminalVerbsWith(open func(string) terminalCommands) []command {
 	return []command{
-		{name: "list", usage: usageTerminalList, about: "find a running terminal to reuse before opening another one", run: bind(newTerminals, runTerminalList)},
-		{name: "create", usage: usageTerminalCreate, about: "open a terminal for work the user should see, such as SSH into a host; it hangs under this session unless --nest=false", run: bind(newTerminals, runTerminalCreate)},
-		{name: "send", usage: usageTerminalSend, about: "run a command there, or send exact tmux keys such as C-c to control what is running", run: bind(newTerminals, runTerminalSend)},
-		{name: "read", usage: usageTerminalRead, about: "read what that terminal's screen currently shows", run: bind(newTerminals, runTerminalRead)},
-		{name: "close", usage: usageTerminalClose, about: "close a terminal opened under this session once its job is done, killing the pane and deleting the row", run: bind(newTerminals, runTerminalClose)},
+		{name: "list", usage: usageTerminalList, about: "find a running terminal to reuse before opening another one", run: bind(open, runTerminalList)},
+		{name: "create", usage: usageTerminalCreate, about: "open a terminal for work the user should see, such as SSH into a host; it hangs under this session unless --nest=false", run: bind(open, runTerminalCreate)},
+		{name: "send", usage: usageTerminalSend, about: "run a command there, or send exact tmux keys such as C-c to control what is running", run: bind(open, runTerminalSend)},
+		{name: "read", usage: usageTerminalRead, about: "read what that terminal's screen currently shows", run: bind(open, runTerminalRead)},
+		{name: "close", usage: usageTerminalClose, about: "close a terminal opened under this session once its job is done, killing the pane and deleting the row", run: bind(open, runTerminalClose)},
 	}
 }
 
@@ -59,17 +64,21 @@ func runTerminalCreate(out io.Writer, terminals terminalCommands, args []string,
 	set := newFlagSet(usageTerminalCreate)
 	group := set.String("group", "", "existing group path to open it in; pass an empty string for the root group")
 	directory := set.String("directory", "", "existing directory to open; defaults to yours, or to the group's inherited path")
-	nest := set.Bool("nest", true, "hang the terminal under this session; pass --nest=false to leave it loose or to open it in another group")
+	nest := set.Bool("nest", true, "hang the terminal under this session, the default when run from one; pass --nest=false to leave it loose or to open it in another group")
 	asJSON := jsonFlag(set)
 	if _, err := parseCommand(out, set, args, 0, 0); err != nil {
 		return err
 	}
-	opts := sessioncmd.CreateTerminalOptions{Directory: *directory, Nest: nest}
-	// An omitted group inherits this session's, so only a flag the caller
-	// actually typed is passed on.
+	opts := sessioncmd.CreateTerminalOptions{Directory: *directory}
+	// An omitted group inherits this session's, and an omitted nest depends
+	// on whether there is a session to nest under, so only a flag the
+	// caller actually typed is passed on.
 	set.Visit(func(given *flag.Flag) {
-		if given.Name == "group" {
+		switch given.Name {
+		case "group":
 			opts.Group = group
+		case "nest":
+			opts.Nest = nest
 		}
 	})
 	created, err := terminals.Create(sessionID, opts)
@@ -98,12 +107,17 @@ func runTerminalSend(out io.Writer, terminals terminalCommands, args []string, s
 
 func runTerminalRead(out io.Writer, terminals terminalCommands, args []string, sessionID string) error {
 	set := newFlagSet(usageTerminalRead)
+	styled := styledFlag(set)
 	asJSON := jsonFlag(set)
 	operands, err := parseCommand(out, set, args, 1, 1)
 	if err != nil {
 		return err
 	}
-	screen, err := terminals.Read(sessionID, operands[0])
+	read := terminals.Read
+	if *styled {
+		read = terminals.ReadStyled
+	}
+	screen, err := read(sessionID, operands[0])
 	if err != nil {
 		return err
 	}

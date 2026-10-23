@@ -52,7 +52,7 @@ jobs:
           fixture_root=$(mktemp -d /tmp/am-ci-race.XXXXXX)
           mkdir -p "$fixture_root/zsh"
           env -u TMUX -u TMUX_PANE TMUX_TMPDIR="$fixture_root" ZDOTDIR="$fixture_root/zsh" SHELL=/bin/sh \
-            go test -race -timeout 20m -coverprofile=coverage.out -covermode=atomic ./...
+            go test -race -timeout 20m -coverpkg=./... -coverprofile=coverage.out -covermode=atomic ./...
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
@@ -76,14 +76,29 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y tmux
       - name: Harness contracts
         run: python3 -m unittest discover -s tools/e2e -p 'test_*.py'
+      - name: Feature dependencies
+        run: go run ./tools/architecture/check-ui-boundaries
+      - name: File names
+        run: go run ./tools/architecture/check-file-names
+      - name: File sizes
+        run: go run ./tools/architecture/check-file-sizes
       - name: Build terminal test binary
         run: go build -o "$RUNNER_TEMP/am-e2e-binary" .
       - name: Real terminal smoke
         run: python3 tools/e2e/smoke.py --binary "$RUNNER_TEMP/am-e2e-binary" --artifacts "$RUNNER_TEMP/am-e2e-evidence"
-      - name: Dialog scenarios
-        run: python3 tools/e2e/scenarios.py --binary "$RUNNER_TEMP/am-e2e-binary" --artifacts "$RUNNER_TEMP/am-scenario-evidence"
-      - name: Installation failure scenarios
+      - name: Dialog and quit-drain scenarios
+        run: |
+          for mode in advanced basic; do
+            python3 tools/e2e/scenarios.py --binary "$RUNNER_TEMP/am-e2e-binary" --glyph-mode "$mode" --artifacts "$RUNNER_TEMP/am-scenario-evidence/$mode"
+          done
+      - name: Partial writes and installation scenarios
         run: python3 tools/e2e/failure_scenarios.py --binary "$RUNNER_TEMP/am-e2e-binary" --artifacts "$RUNNER_TEMP/am-failure-evidence"
+      - name: Blocked dialog and focus scenarios
+        run: python3 tools/e2e/blocked_scenarios.py --binary "$RUNNER_TEMP/am-e2e-binary" --artifacts "$RUNNER_TEMP/am-blocked-evidence"
+      - name: SSH connection scenario
+        run: python3 tools/e2e/ssh_scenarios.py --binary "$RUNNER_TEMP/am-e2e-binary" --artifacts "$RUNNER_TEMP/am-ssh-evidence"
+      - name: Compatibility fixture safety
+        run: python3 -m unittest discover -s tools/compatibility -p 'test_*.py'
       - name: Retain smoke evidence
         if: always()
         uses: actions/upload-artifact@v7
@@ -93,12 +108,30 @@ jobs:
             ${{ runner.temp }}/am-e2e-evidence
             ${{ runner.temp }}/am-scenario-evidence
             ${{ runner.temp }}/am-failure-evidence
+            ${{ runner.temp }}/am-blocked-evidence
+            ${{ runner.temp }}/am-ssh-evidence
           include-hidden-files: true
           retention-days: 7
           if-no-files-found: ignore
 
+  # internal/ui takes over ten minutes on Windows, so its tests split by
+  # name across two runners and the other packages run on a third.
   test-windows:
+    name: test-windows (${{ matrix.shard }})
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: ui A-L
+            suite: ui
+            tests: '^Test[A-L]'
+          - shard: ui M-Z
+            suite: ui
+            tests: '^Test[^A-L]'
+          - shard: other packages
+            suite: rest
+            tests: '.'
     steps:
       - uses: actions/checkout@v7
         with:
@@ -107,11 +140,106 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Install psmux
-        run: cargo install psmux --version 3.4.0
+        run: |
+          $zip = "$env:RUNNER_TEMP\psmux.zip"
+          Invoke-WebRequest https://github.com/psmux/psmux/releases/download/v3.4.0/psmux-v3.4.0-windows-x64.zip -OutFile $zip
+          if ((Get-FileHash $zip -Algorithm SHA256).Hash -ne 'a66b6be7c13c6fa0dc3660a267b9e34eaa91a4eb7f07fbd55a0468018bd0f721') {
+            throw 'psmux download does not match its release checksum'
+          }
+          Expand-Archive $zip "$env:RUNNER_TEMP\psmux"
+          "$env:RUNNER_TEMP\psmux" >> $env:GITHUB_PATH
       - name: Vet
+        if: matrix.suite == 'rest'
         run: go vet ./...
       # -race needs cgo on Windows. Each psmux session is its own server and
-      # each pane a PowerShell, so the ui suite runs past go test's default
-      # ten minutes.
+      # each pane a PowerShell, so a shard can run past go test's default
+      # ten minutes. -p 2 keeps the heavy packages from starving the
+      # timing-sensitive ones that would otherwise run beside them.
       - name: Test
-        run: go test -timeout 40m ./...
+        env:
+          SUITE: ${{ matrix.suite }}
+          TESTS: ${{ matrix.tests }}
+        run: |
+          $ui = 'github.com/YoanWai/agent-manager/internal/ui'
+          $packages = if ($env:SUITE -eq 'ui') { $ui } else { go list ./... | Where-Object { $_ -ne $ui } }
+          go test -p 2 -timeout 60m -run $env:TESTS $packages
+
+  # Windows ssh.exe as the client, driving agent-manager on a POSIX host:
+  # here an sshd in WSL. WSL 1 shares the Windows network stack, so the
+  # host reaches it on 127.0.0.1, and keeps the daemon running after the
+  # step that started it.
+  ssh-windows-client:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: Vampire/setup-wsl@d1da7f2c0322a5ee4f24975344f67fc0f5baf364 # v7.0.0
+        with:
+          distribution: Ubuntu-22.04
+          wsl-version: 1
+          wsl-shell-user: root
+          additional-packages: openssh-server tmux
+      - name: Use the ssh.exe Windows ships
+        run: |
+          Add-Content -Path $env:GITHUB_PATH -Value "$env:SystemRoot\System32\OpenSSH"
+      - name: Client key and ssh config
+        run: |
+          ssh -V
+          $dir = "$env:USERPROFILE\.ssh"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          ssh-keygen -q -t ed25519 -N '' -f "$dir\am_ci"
+          Copy-Item "$dir\am_ci.pub" "$env:RUNNER_TEMP\am_ci.pub"
+          @(
+            'Host am-wsl'
+            '  HostName 127.0.0.1'
+            '  Port 2222'
+            '  User root'
+            '  IdentityFile ~/.ssh/am_ci'
+            '  IdentitiesOnly yes'
+            '  StrictHostKeyChecking accept-new'
+          ) | Set-Content -Encoding ascii -Path "$dir\config"
+      - name: Build agent-manager for WSL
+        env:
+          GOOS: linux
+          GOARCH: amd64
+          CGO_ENABLED: '0'
+        run: go build -o "$env:RUNNER_TEMP\agent-manager-linux" .
+      - name: Start sshd in WSL
+        shell: wsl-bash {0}
+        run: |
+          tmp=$(wslpath -u '${{ runner.temp }}')
+          install -m 0755 "$tmp/agent-manager-linux" /usr/local/bin/agent-manager
+          install -d -m 0700 /root/.ssh
+          tr -d '\r' < "$tmp/am_ci.pub" > /root/.ssh/authorized_keys
+          chmod 0600 /root/.ssh/authorized_keys
+          # WSL has no audit login uid to set.
+          sed -i 's/^session\s\+required\s\+pam_loginuid\.so/session optional pam_loginuid.so/' /etc/pam.d/sshd
+          ssh-keygen -A
+          mkdir -p /run/sshd
+          /usr/sbin/sshd -p 2222 -o ListenAddress=127.0.0.1 -E /tmp/sshd.log
+      - name: Reach WSL through ssh.exe
+        run: |
+          (Get-Command ssh).Source
+          ssh -o BatchMode=yes am-wsl 'uname -a; command -v agent-manager'
+      # Evidence, not a gate: what ssh.exe does with the sharing options the
+      # Unix client passes.
+      - name: Probe connection sharing
+        continue-on-error: true
+        timeout-minutes: 2
+        run: |
+          ssh -o BatchMode=yes -o ControlMaster=auto -o ControlPersist=60 -o "ControlPath=$env:RUNNER_TEMP\am-%C" am-wsl echo shared
+          "ssh exited $LASTEXITCODE"
+          exit 0
+      - name: Round trip through ssh.exe
+        env:
+          AM_REMOTE_TEST_SSH_DESTINATION: am-wsl
+        run: go test -count=1 -v -run 'TestRealSSHRoundTrip|TestSSHArgv|TestCallsMakeNoControlDirectory' ./internal/remote/
+      - name: sshd log
+        if: failure()
+        shell: wsl-bash {0}
+        run: cat /tmp/sshd.log

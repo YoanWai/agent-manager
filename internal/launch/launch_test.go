@@ -1,6 +1,7 @@
 package launch
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -118,9 +119,6 @@ func TestAssembleNotesCoordinationOnlyForToolsWithoutMCP(t *testing.T) {
 			t.Fatalf("command-code registers MCP on spawn, so it must not get the subcommand note, got %q", commandCode.Command)
 		}
 
-		// A slash command carries neither, so both queue, and the order is what
-		// the agent reads: the directive ends on "Then continue.", and the note
-		// is what it continues into.
 		deferred := Assemble("pi", noClient, "/compact the notes", true, mode.proactive)
 		if len(deferred.PendingInputs) != 2 ||
 			deferred.PendingInputs[0] != DeferredRenameDirective || deferred.PendingInputs[1] != mode.note {
@@ -289,6 +287,22 @@ func skipUntracked(t *testing.T) {
 // runs under that pid whatever shell the line is typed into, the shell the
 // line ran in marks the record once the agent has quit, and a shell-only
 // launch stays a plain shell.
+func TestEnvironmentRefusesACLIOlderThanItsMinimum(t *testing.T) {
+	testenv.SkipPOSIXShell(t)
+	cli := filepath.Join(t.TempDir(), "old-cli")
+	if err := os.WriteFile(cli, []byte("#!/bin/sh\necho 'old-cli 0.1.0'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manager := hooks.NewManager(t.TempDir())
+	tool := config.Tool{Command: cli, MinimumVersion: "9.0.0", MCP: mcpreg.StyleNone}
+
+	_, _, err := Environment(manager, "old", tool, tool.Command, "abcd1234", t.TempDir(), time.Time{})
+	var outdated config.OutdatedToolError
+	if !errors.As(err, &outdated) || outdated.Installed != "0.1.0" || outdated.Minimum != "9.0.0" {
+		t.Fatalf("err = %v, want the launch refused for 0.1.0", err)
+	}
+}
+
 func TestEnvironmentRunsTheAgentUnderThePIDItExports(t *testing.T) {
 	testenv.SkipPOSIXShell(t)
 	manager := hooks.NewManager(t.TempDir())
@@ -325,6 +339,20 @@ func TestEnvironmentRunsTheAgentUnderThePIDItExports(t *testing.T) {
 	}
 }
 
+// A model a CLI reads from its environment rides on the launch's own
+// environment, beside the session's.
+func TestEnvironmentCarriesTheChoicesEnvironment(t *testing.T) {
+	manager := hooks.NewManager(t.TempDir())
+	tool := config.Tool{Command: "cat", ModelEnv: `PICKED={"model":{model}}`, MCP: mcpreg.StyleNone}.WithChoice(config.Choice{Model: "big"})
+	command, env, err := Environment(manager, "plain", tool, tool.Command, "abcd1234", t.TempDir(), time.Time{})
+	if err != nil {
+		t.Fatalf("Environment: %v", err)
+	}
+	if env["PICKED"] != `{"model":"big"}` || env[hooks.EnvSessionID] != "abcd1234" || command != agentLaunch(manager, "cat") {
+		t.Fatalf("launch = %q %v, want cat with the model in the environment", command, env)
+	}
+}
+
 // The launch the agent is told it belongs to is the one its row is stamped
 // with: 0 for a row's first launch, which leaves agent_launched_at unset.
 func TestEnvironmentNamesTheLaunch(t *testing.T) {
@@ -349,7 +377,8 @@ func TestEnvironmentNamesTheLaunch(t *testing.T) {
 
 func TestEnvironmentWiresTheSessionReport(t *testing.T) {
 	skipUntracked(t)
-	t.Setenv("OPENCODE_TUI_CONFIG", "")
+	t.Setenv("OPENCODE_CLI_CONFIG_CONTENT", "")
+	t.Setenv("OPENCODE_CONFIG_DIR", t.TempDir())
 	manager := hooks.NewManager(t.TempDir())
 
 	pi := config.Tool{Command: "cat", ModelArgs: "--model {model}", SessionReport: "pi", MCP: mcpreg.StyleNone}.WithChoice(config.Choice{Model: "big"})
@@ -366,17 +395,18 @@ func TestEnvironmentWiresTheSessionReport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Environment opencode: %v", err)
 	}
-	if command != agentLaunch(manager, "cat") || env["OPENCODE_TUI_CONFIG"] != filepath.Join(manager.Dir(), "agent-manager-opencode-tui.json") {
-		t.Fatalf("opencode launch = %q %v, want the TUI config in the environment", command, env)
+	plugin := `{"plugins":["file://` + filepath.ToSlash(filepath.Join(manager.Dir(), "agent-manager-opencode")) + `"]}`
+	if command != agentLaunch(manager, "cat") || env["OPENCODE_CLI_CONFIG_CONTENT"] != plugin {
+		t.Fatalf("opencode launch = %q %v, want the plugin in the environment", command, env)
 	}
 
-	t.Setenv("OPENCODE_TUI_CONFIG", "/users/own/tui.json")
+	t.Setenv("OPENCODE_CLI_CONFIG_CONTENT", `{"plugins":["theirs"]}`)
 	_, env, err = Environment(manager, "opencode", opencode, opencode.Command, "abcd1234", t.TempDir(), time.Time{})
 	if err != nil {
 		t.Fatalf("Environment opencode: %v", err)
 	}
-	if _, set := env["OPENCODE_TUI_CONFIG"]; set {
-		t.Fatalf("a user's own OPENCODE_TUI_CONFIG must stay theirs, got %v", env)
+	if want := strings.Replace(plugin, `["`, `["theirs","`, 1); env["OPENCODE_CLI_CONFIG_CONTENT"] != want {
+		t.Fatalf("a user's own plugins must ride along, got %v", env)
 	}
 }
 

@@ -30,6 +30,12 @@ func controlUnavailable() error {
 	return nil
 }
 
+// sessionMissingExit reports has-session's answer for a session that is
+// gone when it carries no message; tmux always names the missing session.
+func sessionMissingExit(error) bool {
+	return false
+}
+
 // checkVersion gates the multiplexer's own minimum; tmux needs none here.
 func checkVersion(bin string) error {
 	return nil

@@ -1,6 +1,5 @@
 name: Feature request
 description: Suggest something the manager should do
-labels: ["enhancement"]
 body:
   - type: textarea
     id: problem

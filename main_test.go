@@ -17,13 +17,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/app"
+	"github.com/YoanWai/agent-manager/internal/cli"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 )
 
-// prepareMainProcess recognizes tests re-executed by mainTestCommand and
-// replaces test flags with the agent-manager arguments following "--".
 func prepareMainProcess() bool {
 	if os.Getenv("AGENT_MANAGER_MAIN_TEST") != "1" {
 		return false
@@ -104,6 +104,63 @@ func (failingHelpWriter) Write([]byte) (int, error) {
 func TestPrintHelpReturnsWriteError(t *testing.T) {
 	if err := printHelp(failingHelpWriter{}, t.TempDir()); err == nil {
 		t.Fatal("printHelp succeeded after the writer failed")
+	}
+}
+
+const noTerminalNotice = "agent-manager: no terminal attached; run it in a terminal to open the manager"
+
+func TestMainNonInteractiveStartDoesNotNeedMultiplexer(t *testing.T) {
+	if prepareMainProcess() {
+		main()
+		return
+	}
+	empty := t.TempDir()
+	home := t.TempDir()
+	cases := []struct {
+		name   string
+		args   []string
+		want   string
+		notice bool
+	}{
+		{name: "no-args", want: "Usage: agent-manager [command]", notice: true},
+		{name: "version", args: []string{"--version"}, want: "agent-manager dev"},
+		{name: "help", args: []string{"--help"}, want: "Usage: agent-manager [command]"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := mainTestCommand(t, tc.args...)
+			cmd.Env = replaceEnv(cmd.Env,
+				"HOME", home,
+				"XDG_CONFIG_HOME", filepath.Join(home, ".config"),
+				"PATH", empty,
+				"Path", empty,
+			)
+			devNull, err := os.Open(os.DevNull)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { devNull.Close() })
+			cmd.Stdin = devNull
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+			if err := cmd.Run(); err != nil {
+				t.Fatalf("exit: %v\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
+			}
+			if !strings.Contains(stdout.String(), tc.want) {
+				t.Fatalf("stdout missing %q:\n%s", tc.want, stdout.String())
+			}
+			if strings.Contains(stdout.String(), noTerminalNotice) {
+				t.Fatalf("stdout included the terminal notice:\n%s", stdout.String())
+			}
+			if tc.notice {
+				if stderr.String() != noTerminalNotice+"\n" {
+					t.Fatalf("stderr = %q, want the terminal notice", stderr.String())
+				}
+			} else if strings.Contains(stderr.String(), noTerminalNotice) || strings.Contains(stderr.String(), "not found") {
+				t.Fatalf("stderr = %q", stderr.String())
+			}
+		})
 	}
 }
 
@@ -337,5 +394,48 @@ func TestCallerSessionOutsideTmuxLeavesTheCommandToExplainIt(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %q does not mention %q", err, want)
 		}
+	}
+}
+
+// A second serve on one profile leaves the first alone and exits cleanly,
+// so a supervisor that starts one on every login does not see a failure.
+func TestServeExitsWhenAnotherServeHoldsTheProfile(t *testing.T) {
+	dir := t.TempDir()
+	release, acquired, err := app.LockServe(dir)
+	if err != nil || !acquired {
+		t.Fatalf("LockServe = %v, %v", acquired, err)
+	}
+	defer release()
+	out := &bytes.Buffer{}
+	start := func([]string, string) (int, error) { t.Fatal("serve started a manager"); return 0, nil }
+	if err := runServe(out, &bytes.Buffer{}, nil, dir, start); err != nil {
+		t.Fatalf("serve beside a running one: %v", err)
+	}
+	if !strings.Contains(out.String(), "already running") {
+		t.Fatalf("serve printed %q", out.String())
+	}
+}
+
+// The SSH client runs `serve --background` with no --json and reads the
+// line it prints as JSON.
+func TestServeBackgroundPrintsWhetherItStartedOne(t *testing.T) {
+	var args []string
+	start := func(given []string, _ string) (int, error) { args = given; return 4242, nil }
+	out := &bytes.Buffer{}
+	if err := runServe(out, &bytes.Buffer{}, []string{"--background"}, t.TempDir(), start); err != nil {
+		t.Fatalf("serve --background: %v", err)
+	}
+	if got := out.String(); got != `{"started":true,"pid":4242}`+"\n" {
+		t.Fatalf("serve --background printed %q", got)
+	}
+	if strings.Join(args, " ") != "serve" {
+		t.Fatalf("started %v", args)
+	}
+	if err := runServe(&bytes.Buffer{}, &bytes.Buffer{}, []string{"--background", "extra"}, t.TempDir(), start); err == nil ||
+		!strings.Contains(err.Error(), "usage: agent-manager serve [--background]") {
+		t.Fatalf("serve with an operand = %v", err)
+	}
+	if err := runServe(&bytes.Buffer{}, &bytes.Buffer{}, []string{"-h"}, t.TempDir(), start); !errors.Is(err, cli.ErrUsageShown) {
+		t.Fatalf("serve -h = %v", err)
 	}
 }

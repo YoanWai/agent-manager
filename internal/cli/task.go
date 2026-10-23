@@ -30,13 +30,17 @@ func newTasks(configDir string) taskCommands {
 }
 
 func taskVerbs() []command {
+	return taskVerbsWith(newTasks)
+}
+
+func taskVerbsWith(open func(string) taskCommands) []command {
 	return []command{
-		{name: "list", usage: usageTaskList, about: "read the work list every session shares: what is pending, who holds what, and what is blocked", run: bind(newTasks, runTaskList)},
-		{name: "create", usage: usageTaskCreate, about: "put a piece of work on the shared list so any session can pick it up", run: bind(newTasks, runTaskCreate)},
-		{name: "claim", usage: usageTaskClaim, about: "take a task before you start it; omit the id to take the oldest pending task nothing is blocking", run: bind(newTasks, runTaskClaim)},
-		{name: "finish", usage: usageTaskFinish, about: "mark a task you claimed as done, which unblocks everything waiting on it", run: bind(newTasks, runTaskFinish)},
-		{name: "release", usage: usageTaskRelease, about: "hand a task you claimed back to the list for another session", run: bind(newTasks, runTaskRelease)},
-		{name: "delete", usage: usageTaskDelete, about: "remove a task nobody needs any more", run: bind(newTasks, runTaskDelete)},
+		{name: "list", usage: usageTaskList, about: "read the work list every session shares: what is pending, who holds what, and what is blocked", run: bind(open, runTaskList)},
+		{name: "create", usage: usageTaskCreate, about: "put a piece of work on the shared list so any session can pick it up", run: bind(open, runTaskCreate)},
+		{name: "claim", usage: usageTaskClaim, about: "take a task before you start it; omit the id to take the oldest pending task nothing is blocking", run: bind(open, runTaskClaim)},
+		{name: "finish", usage: usageTaskFinish, about: "mark a task you claimed as done, which unblocks everything waiting on it", run: bind(open, runTaskFinish)},
+		{name: "release", usage: usageTaskRelease, about: "hand a task you claimed back to the list for another session", run: bind(open, runTaskRelease)},
+		{name: "delete", usage: usageTaskDelete, about: "remove a task nobody needs any more", run: bind(open, runTaskDelete)},
 	}
 }
 

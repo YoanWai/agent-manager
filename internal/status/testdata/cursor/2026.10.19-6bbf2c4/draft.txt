@@ -1,0 +1,12 @@
+  Cursor Agent
+  v2026.10.19-6bbf2c4
+  Tip: Type ? in the prompt bar to show in-app hints.
+
+
+
+
+  → Reply with the single word pong. Do not use tools.
+
+
+  Auto
+  /private/tmp/amcursor-ws2

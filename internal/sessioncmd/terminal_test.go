@@ -86,7 +86,9 @@ func tearDownHarness(t *testing.T, driver *tmux.Driver, st *store.Store) {
 
 func waitForTerminalOutput(t *testing.T, terminals *Terminals, callerID, terminalID, marker string) TerminalScreen {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
+	// A PowerShell pane on a loaded runner can take seconds to echo and run
+	// a line; the marker ends the wait as soon as it shows.
+	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
 		screen, err := terminals.Read(callerID, terminalID)
 		if err == nil && strings.Contains(screen.Output, marker) {

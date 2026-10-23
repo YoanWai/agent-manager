@@ -38,7 +38,7 @@ func (f *fakeReporter) File(sessionID string, draft report.Draft, previewID stri
 
 func sampleReporter() *fakeReporter {
 	return &fakeReporter{
-		preview: report.Preview{ID: "3f2a91c4", Kind: report.Bug, Title: "Space lands in the wrong pane", Body: "### What happened\n\nsteps\n", Labels: []string{"bug"}, Route: report.RouteGH, Account: "yoan"},
+		preview: report.Preview{ID: "3f2a91c4", Kind: report.Bug, Title: "Space lands in the wrong pane", Body: "### What happened\n\nsteps\n", Route: report.RouteGH, Account: "yoan"},
 		result:  report.Filed{Route: report.RouteGH, URL: "https://github.com/YoanWai/agent-manager/issues/512"},
 	}
 }

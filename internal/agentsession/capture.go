@@ -1,22 +1,18 @@
 // Package agentsession reads back the conversation id an agent CLI minted
 // for a session the manager launched, for tools that do not accept a
 // chosen id at launch (codex, opencode, gemini, hermes, command-code, muse,
-// antigravity, omp).
+// antigravity, omp, cursor).
 // Revive resumes that exact id instead of the working directory's most recent
 // conversation, which is the wrong one whenever sessions share a directory.
 package agentsession
 
 import (
 	"bufio"
-	"bytes"
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/url"
 	"os"
 	"os/exec"
@@ -41,13 +37,6 @@ const opencodeScanLimit = 40
 // stall the poll loop.
 const opencodeCLITimeout = 15 * time.Second
 
-// opencodeExportHeadBytes is how much of `opencode export` output to read.
-// The payload leads with the session's info block, then streams the entire
-// conversation, which for a long session takes far longer than the metadata
-// is worth waiting for. Reading a bounded prefix captures the info block and
-// lets us stop before the transcript.
-const opencodeExportHeadBytes = 64 * 1024
-
 var hermesProfilePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 
 // resolvePath canonicalizes a directory so a session launched via a
@@ -63,7 +52,7 @@ func resolvePath(p string) string {
 // Capture returns the conversation id a tool wrote for a session launched
 // in cwd at or after launchedAt. sessionStore selects the on-disk format
 // ("codex", "opencode", "gemini", "hermes", "command-code", "muse",
-// "antigravity" or "omp"). claimed holds ids already bound to other sessions,
+// "antigravity", "omp" or "cursor"). claimed holds ids already bound to other sessions,
 // so two sessions started in one directory do not capture the same
 // conversation. terminal is the tty device of the session's pane: omp
 // records which session each terminal runs, which tells sessions sharing a
@@ -88,6 +77,8 @@ func Capture(sessionStore, cwd string, launchedAt time.Time, claimed map[string]
 		return captureAntigravity(antigravityRoot(), cwd, launchedAt, claimed)
 	case "omp":
 		return captureOmp(ompRoot(), cwd, terminal, launchedAt, claimed)
+	case "cursor":
+		return captureCursor(cwd, launchedAt, claimed)
 	default:
 		return "", false
 	}
@@ -117,6 +108,8 @@ func Snapshot(sessionStore, cwd string) (map[string]int64, bool) {
 		return snapshotAntigravity(antigravityRoot(), cwd)
 	case "omp":
 		return snapshotOmp(ompRoot(), cwd)
+	case "cursor":
+		return snapshotCursor(cwd)
 	default:
 		return nil, false
 	}
@@ -151,6 +144,8 @@ func Recapture(sessionStore, cwd string, snapshot map[string]int64, claimed map[
 		cands = recaptureAntigravity(antigravityRoot(), cwd, snapshot, claimed)
 	case "omp":
 		cands = recaptureOmp(ompRoot(), cwd, snapshot, claimed)
+	case "cursor":
+		cands = recaptureCursor(cwd, snapshot, claimed)
 	default:
 		return "", false
 	}
@@ -255,15 +250,6 @@ func snapshotCommandCode(root, cwd string) (map[string]int64, bool) {
 
 func recaptureCommandCode(root, cwd string, snapshot map[string]int64, claimed map[string]bool) []candidate {
 	cands, err := commandCodeCandidates(root, cwd, time.Time{}, claimed)
-	return recaptureCandidates(cands, err, snapshot)
-}
-
-func snapshotGemini(root, cwd string) (map[string]int64, bool) {
-	return snapshotCandidates(geminiCandidates(root, cwd, time.Time{}, nil))
-}
-
-func recaptureGemini(root, cwd string, snapshot map[string]int64, claimed map[string]bool) []candidate {
-	cands, err := geminiCandidates(root, cwd, time.Time{}, claimed)
 	return recaptureCandidates(cands, err, snapshot)
 }
 
@@ -579,32 +565,6 @@ func runOpencode(cwd string, args ...string) ([]byte, error) {
 	return cmd.Output()
 }
 
-// runOpencodeHead runs an opencode subcommand from cwd and returns at most
-// opencodeExportHeadBytes of stdout, killing the process once it has that
-// much. `opencode export` on a long session would otherwise stream the whole
-// transcript and blow past the timeout before the leading info block is even
-// consumed.
-func runOpencodeHead(cwd string, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), opencodeCLITimeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "opencode", args...)
-	cmd.Dir = cwd
-	pipe, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, err
-	}
-	if err := cmd.Start(); err != nil {
-		return nil, err
-	}
-	buf := make([]byte, opencodeExportHeadBytes)
-	n, _ := io.ReadFull(pipe, buf)
-	cancel()
-	_ = cmd.Wait()
-	return buf[:n], nil
-}
-
-var opencodeIDPattern = regexp.MustCompile(`ses_[A-Za-z0-9]+`)
-
 // sessionIDPattern is the shape a conversation id has in every store we
 // read: a UUID from codex, gemini and hermes, and opencode's ses_ token.
 // The id arrives from a file or database the agent CLI owns rather than
@@ -618,29 +578,22 @@ func ValidSessionID(id string) bool {
 	return sessionIDPattern.MatchString(id)
 }
 
-// opencodeListIDs returns session ids newest-first from `opencode session
-// list` run in cwd. A package variable so tests substitute canned output.
-var opencodeListIDs = func(cwd string) ([]string, bool) {
-	out, err := runOpencode(cwd, "session", "list")
-	if err != nil {
-		return nil, false
-	}
-	return dedupeOrdered(opencodeIDPattern.FindAllString(string(out), -1)), true
-}
-
 // opencodeListEntry is one row of `opencode session list --format json`,
-// which carries the update time snapshot and recapture compare against in
-// one subprocess, where the table output keeps only the id. Updated is a
-// Unix timestamp in milliseconds, verified against the real CLI.
+// newest first, which carries every field capture, snapshot and recapture
+// read in one subprocess. The rows are the same from OpenCode 1.0 through
+// 2.x, where `export` moved under `session` and its info block changed
+// shape. Created and Updated are Unix timestamps in milliseconds, verified
+// against the real CLI.
 type opencodeListEntry struct {
 	ID        string `json:"id"`
 	Directory string `json:"directory"`
+	Created   int64  `json:"created"`
 	Updated   int64  `json:"updated"`
 }
 
 // A package variable so tests substitute canned output.
 var opencodeSessionListJSON = func(cwd string) ([]opencodeListEntry, bool) {
-	out, err := runOpencode(cwd, "session", "list", "--format", "json")
+	out, err := runOpencode(cwd, "session", "list", "--format", "json", "--standalone")
 	if err != nil {
 		return nil, false
 	}
@@ -649,92 +602,6 @@ var opencodeSessionListJSON = func(cwd string) ([]opencodeListEntry, bool) {
 		return nil, false
 	}
 	return entries, true
-}
-
-// A package variable so tests substitute canned output.
-var opencodeSessionMeta = func(cwd, id string) (directory string, created, updated time.Time, ok bool) {
-	out, err := runOpencodeHead(cwd, "export", id)
-	if err != nil {
-		return "", time.Time{}, time.Time{}, false
-	}
-	return parseOpencodeExport(out)
-}
-
-// dedupeOrdered removes duplicates while keeping first-seen order.
-func dedupeOrdered(items []string) []string {
-	seen := make(map[string]bool, len(items))
-	out := items[:0]
-	for _, item := range items {
-		if seen[item] {
-			continue
-		}
-		seen[item] = true
-		out = append(out, item)
-	}
-	return out
-}
-
-// The export leads with a human preamble and is read only as a prefix, so
-// the info object is extracted by brace matching rather than decoding the
-// whole (possibly truncated) document.
-func parseOpencodeExport(out []byte) (directory string, created, updated time.Time, ok bool) {
-	obj, found := extractInfoObject(out)
-	if !found {
-		return "", time.Time{}, time.Time{}, false
-	}
-	var info struct {
-		Directory string `json:"directory"`
-		Time      struct {
-			Created int64 `json:"created"`
-			Updated int64 `json:"updated"`
-		} `json:"time"`
-	}
-	if err := json.Unmarshal(obj, &info); err != nil || info.Directory == "" {
-		return "", time.Time{}, time.Time{}, false
-	}
-	return info.Directory, time.UnixMilli(info.Time.Created), time.UnixMilli(info.Time.Updated), true
-}
-
-// extractInfoObject returns the JSON object that follows the "info" key,
-// balancing braces so a truncated export prefix still yields a complete info
-// object as long as that block was fully read.
-func extractInfoObject(out []byte) ([]byte, bool) {
-	key := bytes.Index(out, []byte(`"info"`))
-	if key < 0 {
-		return nil, false
-	}
-	open := bytes.IndexByte(out[key:], '{')
-	if open < 0 {
-		return nil, false
-	}
-	start := key + open
-	depth, inString, escaped := 0, false, false
-	for i := start; i < len(out); i++ {
-		c := out[i]
-		if inString {
-			switch {
-			case escaped:
-				escaped = false
-			case c == '\\':
-				escaped = true
-			case c == '"':
-				inString = false
-			}
-			continue
-		}
-		switch c {
-		case '"':
-			inString = true
-		case '{':
-			depth++
-		case '}':
-			depth--
-			if depth == 0 {
-				return out[start : i+1], true
-			}
-		}
-	}
-	return nil, false
 }
 
 // candidate is a store entry that could be the session's conversation,
@@ -857,106 +724,24 @@ func codexMeta(path string) (id, cwd string, err error) {
 // keeps those whose directory matches and that were created at or after
 // launch, and returns the earliest such conversation not already claimed.
 func captureOpencode(cwd string, launchedAt time.Time, claimed map[string]bool) (string, bool) {
-	ids, ok := opencodeListIDs(cwd)
+	entries, ok := opencodeSessionListJSON(cwd)
 	if !ok {
 		return "", false
 	}
 	cutoff := launchedAt.Add(-clockSlack)
 	wantCwd := resolvePath(cwd)
 	var cands []candidate
-	for i, id := range ids {
+	for i, e := range entries {
 		if i >= opencodeScanLimit {
 			break
 		}
-		if claimed[id] {
+		created := time.UnixMilli(e.Created)
+		if !ValidSessionID(e.ID) || claimed[e.ID] || resolvePath(e.Directory) != wantCwd || created.Before(cutoff) {
 			continue
 		}
-		dir, created, _, ok := opencodeSessionMeta(cwd, id)
-		if !ok || resolvePath(dir) != wantCwd || created.Before(cutoff) {
-			continue
-		}
-		cands = append(cands, candidate{id: id, modTime: created})
+		cands = append(cands, candidate{id: e.ID, modTime: created})
 	}
 	return pickEarliest(cands)
-}
-
-func geminiRoot() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(home, ".gemini", "tmp")
-}
-
-// geminiProjectHash mirrors gemini's per-project key, the hex sha256 of the
-// resolved working directory. Session files record it in their header, so a
-// conversation can be matched to its directory without relying on the
-// per-project folder name, which gemini does not derive consistently.
-func geminiProjectHash(cwd string) string {
-	sum := sha256.Sum256([]byte(resolvePath(cwd)))
-	return hex.EncodeToString(sum[:])
-}
-
-// geminiSessionMeta reads the session id and project hash from a gemini
-// session file's first line.
-func geminiSessionMeta(path string) (id, projectHash string, err error) {
-	first, err := firstLine(path)
-	if err != nil {
-		return "", "", err
-	}
-	var header struct {
-		SessionID   string `json:"sessionId"`
-		ProjectHash string `json:"projectHash"`
-	}
-	if json.Unmarshal(first, &header) != nil || !sessionIDPattern.MatchString(header.SessionID) {
-		return "", "", nil
-	}
-	return header.SessionID, header.ProjectHash, nil
-}
-
-// captureGemini finds the conversation gemini minted for a session launched
-// in cwd. A fork via `gemini --session-file` names its own id, so the file
-// is located by matching the project hash gemini records for cwd among
-// session files written at or after launch.
-func captureGemini(root, cwd string, launchedAt time.Time, claimed map[string]bool) (string, bool) {
-	return captureCandidates(geminiCandidates(root, cwd, launchedAt.Add(-clockSlack), claimed))
-}
-
-func geminiCandidates(root, cwd string, cutoff time.Time, claimed map[string]bool) ([]candidate, error) {
-	if root == "" {
-		return nil, os.ErrNotExist
-	}
-	wantHash := geminiProjectHash(cwd)
-	var cands []candidate
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		name := d.Name()
-		if !strings.HasPrefix(name, "session-") || !strings.HasSuffix(name, ".jsonl") {
-			return nil
-		}
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-		if info.ModTime().Before(cutoff) {
-			return nil
-		}
-		id, hash, err := geminiSessionMeta(path)
-		if err != nil {
-			return err
-		}
-		if id == "" || hash != wantHash || claimed[id] {
-			return nil
-		}
-		cands = append(cands, candidate{id: id, modTime: info.ModTime()})
-		return nil
-	})
-	return cands, err
 }
 
 // SupportsSessionFile reports whether a session store keeps conversations in
@@ -975,35 +760,4 @@ func SessionFile(sessionStore, id string) (string, error) {
 		return "", fmt.Errorf("session_store %q keeps no session file to fork from", sessionStore)
 	}
 	return geminiSessionFileIn(geminiRoot(), id)
-}
-
-func geminiSessionFileIn(root, id string) (string, error) {
-	if root == "" {
-		return "", fmt.Errorf("cannot resolve the gemini home directory")
-	}
-	prefix := id
-	if len(prefix) > 8 {
-		prefix = prefix[:8]
-	}
-	var found string
-	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || found != "" {
-			return nil
-		}
-		name := d.Name()
-		if !strings.HasPrefix(name, "session-") || !strings.HasSuffix(name, ".jsonl") {
-			return nil
-		}
-		if !strings.Contains(name, prefix) {
-			return nil
-		}
-		if sessionID, _, _ := geminiSessionMeta(path); sessionID == id {
-			found = path
-		}
-		return nil
-	})
-	if found == "" {
-		return "", fmt.Errorf("no gemini session file found for conversation %s", id)
-	}
-	return found, nil
 }
