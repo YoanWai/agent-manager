@@ -92,10 +92,8 @@ func (s *spawnSurface) Dismissible() bool { return false }
 // it carries.
 func (s *spawnSurface) Leave(surfaceHost) { s.prompt.Release() }
 
-func (s *spawnSurface) pathTarget() pathcomplete.Target { return pathcomplete.Form }
+func (s *spawnSurface) PathTarget() pathcomplete.Target { return pathcomplete.Form }
 
-func (s *spawnSurface) dir() (string, bool) { return s.Dir(), true }
+func (s *spawnSurface) PathValue() (string, bool) { return s.Dir(), true }
 
-func (s *spawnSurface) takePath(path string) { s.TakePath(path) }
-
-func (s *spawnSurface) paths() *pathcomplete.State { return &s.complete }
+func (s *spawnSurface) Paths() *pathcomplete.State { return &s.complete }

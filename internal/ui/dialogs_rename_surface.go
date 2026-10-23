@@ -115,11 +115,11 @@ func (s *renameSurface) Dismissible() bool { return false }
 
 func (s *renameSurface) Leave(surfaceHost) {}
 
-func (s *renameSurface) pathTarget() pathcomplete.Target { return pathcomplete.Rename }
+func (s *renameSurface) PathTarget() pathcomplete.Target { return pathcomplete.Rename }
 
-// dir is the path field of a group edit; a session rename has none.
-func (s *renameSurface) dir() (string, bool) { return s.Dir(), s.IsGroup() }
+// PathValue is the path field of a group edit; a session rename has none.
+func (s *renameSurface) PathValue() (string, bool) { return s.Dir(), s.IsGroup() }
 
-func (s *renameSurface) takePath(path string) { s.SetDir(path) }
+func (s *renameSurface) TakePath(path string) { s.SetDir(path) }
 
-func (s *renameSurface) paths() *pathcomplete.State { return &s.complete }
+func (s *renameSurface) Paths() *pathcomplete.State { return &s.complete }

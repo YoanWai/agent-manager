@@ -3,7 +3,6 @@ package ui
 import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/store"
-	"github.com/YoanWai/agent-manager/internal/ui/pathcomplete"
 	uisurface "github.com/YoanWai/agent-manager/internal/ui/surface"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -49,20 +48,6 @@ const (
 	ownerManager = uisurface.Manager
 	ownerAgent   = uisurface.Agent
 )
-
-// pathCompleting is the optional capability of a surface with a directory
-// field: tab completes a path into it. The root asks the top surface for it
-// instead of knowing which cards have one.
-type pathCompleting interface {
-	// pathTarget names the field for the shared completer and its reads.
-	pathTarget() pathcomplete.Target
-	// dir is the field's current text.
-	dir() (string, bool)
-	// takePath puts a completed directory into the field.
-	takePath(path string)
-	// paths is the surface's completer state.
-	paths() *pathcomplete.State
-}
 
 // mouseTaker is the optional capability of a surface that is not a card:
 // it takes every mouse event itself, and the root draws no card edge or

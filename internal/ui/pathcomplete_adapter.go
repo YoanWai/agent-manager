@@ -12,8 +12,8 @@ import (
 // With that dialog no longer on top, a read lands on a blank completer
 // whose generation no read carries, and is dropped.
 func (m *Model) completer(target pathcomplete.Target) *pathcomplete.State {
-	if s, ok := m.topPathCompleting(); ok && s.pathTarget() == target {
-		return s.paths()
+	if s, ok := m.topPathCompleting(); ok && s.PathTarget() == target {
+		return s.Paths()
 	}
 	return &pathcomplete.State{}
 }
@@ -27,8 +27,8 @@ func (m *Model) requestPathSuggestions(target pathcomplete.Target, typed string)
 type pathCompleter struct{ *Model }
 
 func (c pathCompleter) PathField(target pathcomplete.Target) (string, bool) {
-	if s, ok := c.topPathCompleting(); ok && s.pathTarget() == target {
-		return s.dir()
+	if s, ok := c.topPathCompleting(); ok && s.PathTarget() == target {
+		return s.PathValue()
 	}
 	return "", false
 }
@@ -44,12 +44,12 @@ func pathCompleteStyles(mode presentation.GlyphMode) pathcomplete.Styles {
 }
 
 // topPathCompleting is the top surface, when it has a directory field.
-func (m *Model) topPathCompleting() (pathCompleting, bool) {
+func (m *Model) topPathCompleting() (pathcomplete.Field, bool) {
 	top, ok := m.top()
 	if !ok {
 		return nil, false
 	}
-	s, ok := top.(pathCompleting)
+	s, ok := top.(pathcomplete.Field)
 	return s, ok
 }
 
@@ -58,10 +58,10 @@ func (m *Model) applyPathSuggestion() tea.Cmd {
 	if !ok {
 		return nil
 	}
-	path := s.paths().Selected() + string(filepath.Separator)
-	s.takePath(path)
-	completion := m.requestPathSuggestions(s.pathTarget(), path)
-	if s.pathTarget() == pathcomplete.Form {
+	path := s.Paths().Selected() + string(filepath.Separator)
+	s.TakePath(path)
+	completion := m.requestPathSuggestions(s.PathTarget(), path)
+	if s.PathTarget() == pathcomplete.Form {
 		return tea.Batch(completion, m.formWorktreeProbeCmd(false))
 	}
 	return completion

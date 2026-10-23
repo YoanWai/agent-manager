@@ -72,6 +72,21 @@ func suggestionsCmd(request Request, reader Reader) tea.Cmd {
 	}
 }
 
+// Field is a surface with a directory field: tab completes a path into it.
+// The root asks the top surface for it instead of knowing which cards have
+// one.
+type Field interface {
+	// PathTarget names the field for the shared completer and its reads.
+	PathTarget() Target
+	// PathValue is the field's current text, false when the surface shows
+	// no path field.
+	PathValue() (string, bool)
+	// TakePath puts a completed directory into the field.
+	TakePath(path string)
+	// Paths is the field's completer state.
+	Paths() *State
+}
+
 // Host reports the value of the path field a read was started from, and
 // false once that field is off screen.
 type Host interface {

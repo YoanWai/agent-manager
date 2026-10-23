@@ -203,7 +203,7 @@ func (s *groupFormSurface) Dismissible() bool { return false }
 
 func (s *groupFormSurface) Leave(surfaceHost) {}
 
-func (s *groupFormSurface) pathTarget() pathcomplete.Target { return pathcomplete.Group }
-func (s *groupFormSurface) dir() (string, bool)             { return s.form.Dir(), true }
-func (s *groupFormSurface) takePath(path string)            { s.form.TakePath(path) }
-func (s *groupFormSurface) paths() *pathcomplete.State      { return &s.pc }
+func (s *groupFormSurface) PathTarget() pathcomplete.Target { return pathcomplete.Group }
+func (s *groupFormSurface) PathValue() (string, bool)       { return s.form.Dir(), true }
+func (s *groupFormSurface) TakePath(path string)            { s.form.TakePath(path) }
+func (s *groupFormSurface) Paths() *pathcomplete.State      { return &s.pc }
