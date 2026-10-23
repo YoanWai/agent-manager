@@ -1,20 +1,19 @@
-package ui
+package frame
 
 import (
 	"fmt"
-	"github.com/YoanWai/agent-manager/internal/ui/presentation"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/charmbracelet/x/ansi"
 )
 
-// rowColumns lays a list row out as a name column and a right-aligned meta
+// RowColumns lays a list row out as a name column and a right-aligned meta
 // column, so status, tool and age line up down the list instead of ragging
 // off the end of each name. Rows too narrow to split keep meta inline and
 // let the caller's truncation decide what survives.
-func rowColumns(lead, meta string, width int) string {
+func RowColumns(lead, meta string, width int) string {
 	if meta == "" {
 		return lead
 	}
@@ -27,31 +26,20 @@ func rowColumns(lead, meta string, width int) string {
 	return lead + strings.Repeat(" ", width-leadWidth-metaWidth) + meta
 }
 
-// divider renders a labeled section rule that fills the given width: an
-// accent tick, the label, then a hairline out to the edge.
-func divider(label string, width int) string {
-	return presentation.Divider(
-		label,
-		width,
-		sectionStyle(),
-		lipgloss.NewStyle().Foreground(colorBorder()),
-	)
-}
-
-func displayGroup(path string) string {
+func DisplayGroup(path string) string {
 	if path == "" {
 		return "root"
 	}
 	return path
 }
 
-// relSince is relTime worded as a moment in the past, for columns that
+// RelSince is RelTime worded as a moment in the past, for columns that
 // answer "when did this last happen" rather than "how long has this run".
-func relSince(t time.Time) string {
-	return relTime(t) + " ago"
+func RelSince(t time.Time) string {
+	return RelTime(t) + " ago"
 }
 
-func relTime(t time.Time) string {
+func RelTime(t time.Time) string {
 	d := time.Since(t)
 	switch {
 	case d < time.Minute:
@@ -67,11 +55,11 @@ func relTime(t time.Time) string {
 	}
 }
 
-func diskBytes(b uint64) string {
+func DiskBytes(b uint64) string {
 	return formatBytes(b, 1000)
 }
 
-func humanBytes(b uint64) string {
+func HumanBytes(b uint64) string {
 	return formatBytes(b, 1024)
 }
 
@@ -87,10 +75,10 @@ func formatBytes(b, unit uint64) string {
 	return fmt.Sprintf("%.1f%cB", float64(b)/float64(div), "KMGTPE"[exp])
 }
 
-// shortHome writes a path under the home directory the way a shell prompt
+// ShortHome writes a path under the home directory the way a shell prompt
 // does, so a narrow slot spends its room on the part that tells the
 // directories apart rather than on the same prefix every session shares.
-func shortHome(path, home string) string {
+func ShortHome(path, home string) string {
 	if home == "" || path == "" {
 		return path
 	}
@@ -103,11 +91,9 @@ func shortHome(path, home string) string {
 	return path
 }
 
-func truncateTail(s string, max int) string { return presentation.TruncateTail(s, max) }
-
-// scrollWindow keeps the cursor visible inside a height-limited window of
+// ScrollWindow keeps the cursor visible inside a height-limited window of
 // single-line rows, reserving one line for each overflow indicator.
-func scrollWindow(total, cursor, height int) (int, int) {
+func ScrollWindow(total, cursor, height int) (int, int) {
 	if total <= height {
 		return 0, total
 	}

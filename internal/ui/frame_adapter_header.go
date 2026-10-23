@@ -6,6 +6,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -67,13 +68,7 @@ func (m *Model) titleTopRowWithUpdate(frame string) string {
 
 // joinHeaderPieces joins the header's non-empty readings with a separator.
 func joinHeaderPieces(sep string, pieces ...string) string {
-	kept := pieces[:0:0]
-	for _, piece := range pieces {
-		if piece != "" {
-			kept = append(kept, piece)
-		}
-	}
-	return strings.Join(kept, sep)
+	return uiframe.JoinHeaderPieces(sep, pieces...)
 }
 
 // headerScope names what the list is showing. The count is of the same

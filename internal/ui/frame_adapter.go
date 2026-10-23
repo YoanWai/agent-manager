@@ -3,6 +3,7 @@ package ui
 import (
 	"strings"
 
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 )
@@ -52,17 +53,5 @@ func (m *Model) renderFrame() string {
 // clampFrame pins a rendered frame to exactly height rows so the outer
 // terminal cannot scroll the TUI away when a layout overshoots.
 func clampFrame(frame string, height int) string {
-	if height <= 0 {
-		return frame
-	}
-	lines := strings.Split(frame, "\n")
-	if len(lines) > height {
-		lines = lines[:height]
-	}
-	for len(lines) < height {
-		// Padding rows carry the backdrop too; a bare row would show the
-		// terminal's own background through the bottom of a short frame.
-		lines = append(lines, paint("", 1, backdropHex()))
-	}
-	return strings.Join(lines, "\n")
+	return uiframe.Clamp(frame, height, func() string { return paint("", 1, backdropHex()) })
 }

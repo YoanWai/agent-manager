@@ -1,4 +1,4 @@
-package ui
+package frame
 
 import (
 	"bytes"
@@ -28,15 +28,15 @@ var (
 // Bubble Tea v2 places the cursor itself through View.Cursor, so this file
 // and the marker plumbing in the input views go away with that migration.
 //
-// cursorAnchor is the real terminal cell an input method should open beside.
+// CursorAnchor is the real terminal cell an input method should open beside.
 // Bubble Tea v1 finishes every alternate-screen render at the bottom-left,
 // while focus mode paints a pane caret elsewhere, so an IME otherwise follows
 // that renderer cursor instead of the caret the user is typing at.
-type cursorAnchor struct {
+type CursorAnchor struct {
 	packed atomic.Uint64
 }
 
-func (a *cursorAnchor) set(col, row int, ok bool) {
+func (a *CursorAnchor) Set(col, row int, ok bool) {
 	if !ok || col < 1 || row < 1 {
 		a.packed.Store(0)
 		return
@@ -44,7 +44,7 @@ func (a *cursorAnchor) set(col, row int, ok bool) {
 	a.packed.Store(cursorAnchorValid | uint64(uint32(row))<<32 | uint64(uint32(col)))
 }
 
-func (a *cursorAnchor) get() (col, row int, ok bool) {
+func (a *CursorAnchor) Get() (col, row int, ok bool) {
 	packed := a.packed.Load()
 	if packed&cursorAnchorValid == 0 {
 		return 0, 0, false
@@ -52,25 +52,17 @@ func (a *cursorAnchor) get() (col, row int, ok bool) {
 	return int(uint32(packed)), int(uint32((packed &^ cursorAnchorValid) >> 32)), true
 }
 
-// syncCursorAnchor publishes the input coordinates in a finished frame and
-// removes the private marker before Bubble Tea writes the frame. Focus mode
-// uses its recorded pane box as a fallback because its caret is painted over
-// captured terminal output rather than by a Bubbles input widget.
-func (m *Model) syncCursorAnchor(frame string) string {
-	if m.focus.runtime.imeCursor == nil {
-		return strings.ReplaceAll(frame, cursorAnchorMarker, "")
-	}
-	if m.agentOwnsKeyboard() {
-		col, row, ok := m.focusCursorAnchor()
-		m.focus.runtime.imeCursor.set(col, row, ok)
-		return strings.ReplaceAll(frame, cursorAnchorMarker, "")
-	}
-	frame, col, row, ok := cursorMarkerPosition(frame)
-	m.focus.runtime.imeCursor.set(col, row, ok)
-	return frame
+// CursorMarker is the private marker an input view paints at its caret, so a
+// finished frame can name the cell the IME belongs at.
+const CursorMarker = cursorAnchorMarker
+
+// StripCursorMarker removes the private marker before Bubble Tea writes the
+// frame.
+func StripCursorMarker(frame string) string {
+	return strings.ReplaceAll(frame, cursorAnchorMarker, "")
 }
 
-func cursorMarkerPosition(frame string) (clean string, col, row int, ok bool) {
+func CursorMarkerPosition(frame string) (clean string, col, row int, ok bool) {
 	index := strings.Index(frame, cursorAnchorMarker)
 	if index < 0 {
 		return frame, 0, 0, false
@@ -84,11 +76,11 @@ func cursorMarkerPosition(frame string) (clean string, col, row int, ok bool) {
 	return clean, ansi.StringWidth(prefix) + 1, row, true
 }
 
-// textInputView and textAreaView preserve the widgets' visual blink while
+// TextInputView and TextAreaView preserve the widgets' visual blink while
 // marking the cursor cell in both blink phases. A visible-cursor copy reveals
 // the exact rendered cell; when the real cursor is blinked off, the marker is
 // inserted at that same ANSI-aware cell in the normal view.
-func textInputView(input textinput.Model) string {
+func TextInputView(input textinput.Model) string {
 	if !input.Focused() {
 		return input.View()
 	}
@@ -102,7 +94,7 @@ func textInputView(input textinput.Model) string {
 	return insertMarkerAtCursor(input.View(), markedView)
 }
 
-func textAreaView(input textarea.Model) string {
+func TextAreaView(input textarea.Model) string {
 	if !input.Focused() {
 		return input.View()
 	}
@@ -127,7 +119,7 @@ func cursorMarkerStyle(style lipgloss.Style) lipgloss.Style {
 }
 
 func insertMarkerAtCursor(view, markedView string) string {
-	_, col, row, ok := cursorMarkerPosition(markedView)
+	_, col, row, ok := CursorMarkerPosition(markedView)
 	if !ok {
 		return view
 	}
@@ -159,29 +151,24 @@ func insertMarkerAtCursor(view, markedView string) string {
 	return view
 }
 
-func (m *Model) focusCursorAnchor() (col, row int, ok bool) {
-	if !m.focused() {
-		return 0, 0, false
-	}
-	sess, selected := m.selected()
-	if !selected {
-		return 0, 0, false
-	}
-	return m.focus.pane.CursorAnchor(sess.ID)
-}
-
-// cursorOutputWriter appends the active input position after each Bubble Tea
+// CursorOutputWriter appends the active input position after each Bubble Tea
 // render. It tracks alternate-screen lifecycle so an attached editor and the
 // restored shell receive their output untouched.
-type cursorOutputWriter struct {
+type CursorOutputWriter struct {
 	out             io.Writer
-	anchor          *cursorAnchor
+	anchor          *CursorAnchor
 	mu              sync.Mutex
 	altScreen       bool
 	altScreenPrefix []byte
 }
 
-func (w *cursorOutputWriter) Write(p []byte) (int, error) {
+// NewCursorOutputWriter reports the writer that places out's cursor at anchor
+// after every rendered frame.
+func NewCursorOutputWriter(out io.Writer, anchor *CursorAnchor) *CursorOutputWriter {
+	return &CursorOutputWriter{out: out, anchor: anchor}
+}
+
+func (w *CursorOutputWriter) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -196,7 +183,7 @@ func (w *cursorOutputWriter) Write(p []byte) (int, error) {
 	if incomplete := w.trackAltScreen(p); !w.altScreen || incomplete {
 		return n, nil
 	}
-	col, row, ok := w.anchor.get()
+	col, row, ok := w.anchor.Get()
 	if !ok {
 		return n, nil
 	}
@@ -207,12 +194,12 @@ func (w *cursorOutputWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-func (w *cursorOutputWriter) resetTerminalState() {
+func (w *CursorOutputWriter) resetTerminalState() {
 	w.altScreen = false
 	w.altScreenPrefix = nil
 }
 
-func (w *cursorOutputWriter) trackAltScreen(p []byte) bool {
+func (w *CursorOutputWriter) trackAltScreen(p []byte) bool {
 	data := p
 	if len(w.altScreenPrefix) > 0 {
 		data = slices.Concat(w.altScreenPrefix, p)
@@ -238,32 +225,23 @@ func trailingAltScreenPrefix(data, enter, exit []byte) []byte {
 	return nil
 }
 
-// cursorTTYOutput preserves stdout's terminal identity for Bubble Tea while
+// CursorTTYOutput preserves stdout's terminal identity for Bubble Tea while
 // overriding writes with the cursor anchor behavior above.
-type cursorTTYOutput struct {
+type CursorTTYOutput struct {
 	*os.File
-	writer *cursorOutputWriter
+	writer *CursorOutputWriter
 }
 
-func (w *cursorTTYOutput) Write(p []byte) (int, error) { return w.writer.Write(p) }
+// NewCursorTTYOutput wraps output so Bubble Tea keeps its terminal sizing and
+// the caret lands where the writer puts it.
+func NewCursorTTYOutput(output *os.File, anchor *CursorAnchor) *CursorTTYOutput {
+	return &CursorTTYOutput{File: output, writer: NewCursorOutputWriter(output, anchor)}
+}
+
+func (w *CursorTTYOutput) Write(p []byte) (int, error) { return w.writer.Write(p) }
 
 // *os.File's promoted WriteString would bypass Write when Bubble Tea emits
 // alternate-screen lifecycle sequences through io.WriteString.
-func (w *cursorTTYOutput) WriteString(s string) (int, error) {
+func (w *CursorTTYOutput) WriteString(s string) (int, error) {
 	return w.writer.Write([]byte(s))
-}
-
-// CursorOutput keeps native TTY detection and terminal sizing while placing
-// the host cursor at the active input caret after each rendered frame.
-func (m *Model) CursorOutput(output *os.File) io.Writer {
-	if m.focus.runtime.imeCursor == nil {
-		m.focus.runtime.imeCursor = &cursorAnchor{}
-	}
-	return &cursorTTYOutput{
-		File: output,
-		writer: &cursorOutputWriter{
-			out:    output,
-			anchor: m.focus.runtime.imeCursor,
-		},
-	}
 }

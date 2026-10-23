@@ -3,25 +3,44 @@ package ui
 import (
 	"strings"
 
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	"github.com/charmbracelet/lipgloss"
 )
 
-func (m *Model) cardWidth() int { return cardWidthFor(m.layout.width) }
+const (
+	cardPaddingX = uiframe.CardPaddingX
+	// cardChromeX is the two border columns a card spends on its frame.
+	cardChromeX = uiframe.CardChromeX
+)
 
-// cardWidthFor is the default card width on a terminal cols wide.
-func cardWidthFor(cols int) int {
-	width := 64
-	if cols >= 28 && width > cols-4 {
-		width = cols - 4
-	}
-	return width
+// cardBodyRow and cardBodyColumn place a card's body inside it: under the
+// title edge and the blank row after it, past the left edge and the padding.
+const (
+	cardBodyRow    = uiframe.CardBodyRow
+	cardBodyColumn = uiframe.CardBodyColumn
+)
+
+// cardRect is a painted card's cells, and its body's: the first body line,
+// the column it starts at and how many columns it spans.
+type cardRect struct {
+	top, left, right, bottom     int
+	bodyTop, bodyLeft, bodyWidth int
 }
 
-const (
-	cardPaddingX = 3
-	// cardChromeX is the two border columns a card spends on its frame.
-	cardChromeX = 2
-)
+func (r cardRect) holds(x, y int) bool {
+	return x >= r.left && x < r.right && y >= r.top && y < r.bottom
+}
+
+// bodyAt is the body line and column a point lands on, when it lands on
+// the body's columns.
+func (r cardRect) bodyAt(x, y int) (col, line int, ok bool) {
+	col, line = x-r.bodyLeft, y-r.bodyTop
+	return col, line, r.holds(x, y) && col >= 0 && col < r.bodyWidth && line >= 0
+}
+
+func (m *Model) cardWidth() int { return cardWidthFor(m.layout.width) }
+
+func cardWidthFor(cols int) int { return uiframe.CardWidthFor(cols) }
 
 // cardBorderStyle is the card's frame: the theme's border tone pulled toward
 // the accent, so a dialog reads as the app's own surface rather than as a
@@ -42,7 +61,7 @@ func (m *Model) cardFlex(title, body string, hint [][2]string) string {
 	return m.CardSized(m.flexCardWidth(title, body, hint), title, body, hint)
 }
 
-func cardInnerWidth(width int) int { return width - cardChromeX - 2*cardPaddingX }
+func cardInnerWidth(width int) int { return uiframe.CardInnerWidth(width) }
 
 // cardChromeRows are the rows a default-width card spends around its body:
 // the title edge and the blank under it, the status, the blank above the
@@ -59,12 +78,12 @@ func (m *Model) flexChromeRows(hint [][2]string) int {
 }
 
 func (m *Model) chromeRowsAt(width int, hint [][2]string) int {
-	rows := 5 + strings.Count(legendInline(hint, cardInnerWidth(width)), "\n") + 1
-	if m.errBar.text != "" {
-		rows += 2
-	}
-	return rows
+	// The hint's rule and rows, one row per line it wraps to.
+	return uiframe.ChromeRows(textRows(legendInline(hint, cardInnerWidth(width))), m.errBar.text != "")
 }
+
+// textRows is the line count of a block of painted text.
+func textRows(text string) int { return strings.Count(text, "\n") + 1 }
 
 // flexCardWidth picks a width that fits every content line, never under the
 // default card width and never past the terminal edge.
@@ -96,49 +115,23 @@ func cardTitle(title string) string {
 // CardSized is card at an explicit width, for the key map, whose lines are
 // too long to read inside the default column.
 func (m *Model) CardSized(width int, title, body string, hint [][2]string) string {
-	box, hits := dialogBox(m.dialogRenderContext(), width, title, body, hint)
+	box, hits := uiframe.Box(m.dialogRenderContext(), m.cardChrome(), width, title, body, hint, paint)
 	frame := m.centerOnBackdrop(box)
 	card := &m.layout.card
 	card.bodyTop, card.bodyLeft, card.bodyWidth = card.top+cardBodyRow, card.left+cardBodyColumn, cardInnerWidth(width)
-	m.placeKeys(hits, card.left, card.top)
+	m.placeKeys(rootHits(hits), card.left, card.top)
 	return frame
 }
 
-// cardBodyRow and cardBodyColumn place a card's body inside it: under the
-// title edge and the blank row after it, past the left edge and the padding.
-const (
-	cardBodyRow    = 2
-	cardBodyColumn = 1 + cardPaddingX
-)
-
-// cardRect is a painted card's cells, and its body's: the first body line,
-// the column it starts at and how many columns it spans.
-type cardRect struct {
-	top, left, right, bottom     int
-	bodyTop, bodyLeft, bodyWidth int
-}
-
-func (r cardRect) holds(x, y int) bool {
-	return x >= r.left && x < r.right && y >= r.top && y < r.bottom
-}
-
-// bodyAt is the body line and column a point lands on, when it lands on
-// the body's columns.
-func (r cardRect) bodyAt(x, y int) (col, line int, ok bool) {
-	col, line = x-r.bodyLeft, y-r.bodyTop
-	return col, line, r.holds(x, y) && col >= 0 && col < r.bodyWidth && line >= 0
-}
-
-// cardTitleRow sets the title into the top edge, so the frame names the
-// dialog instead of spending a content row on it.
-func cardTitleRow(width int, title string, border lipgloss.Style) string {
-	label := " " + cardTitle(title) + " "
-	dashes := width - 4 - lipgloss.Width(label)
-	if dashes < 0 {
-		dashes = 0
+// cardChrome is the card's live painting: its edge tone, the accent its title
+// reads in, the block fill inside it, and the caps on its foot.
+func (m *Model) cardChrome() uiframe.Chrome {
+	return uiframe.Chrome{
+		Border: cardBorderStyle(),
+		Title:  lipgloss.NewStyle().Foreground(colorAccent()).Bold(true),
+		Block:  blockHex(),
+		Cap:    frameCap(),
 	}
-	head := border.Render("╭──") + label + border.Render(strings.Repeat("─", dashes)+"╮")
-	return paint(head, width, blockHex())
 }
 
 // centerOnBackdrop floats a block of pre-painted lines in the middle of
@@ -146,26 +139,36 @@ func cardTitleRow(width int, title string, border lipgloss.Style) string {
 // any key painted before it, so those keys stop answering clicks.
 func (m *Model) centerOnBackdrop(box []string) string {
 	ctx := m.dialogRenderContext()
-	top, left, right := dialogPlacement(ctx, box)
+	top, left, right := uiframe.Placement(ctx, box)
 	m.layout.card = cardRect{top: top, left: left, right: right, bottom: top + len(box)}
 	m.layout.keyHits = nil
 	return centerDialog(ctx, box)
 }
 
-func maxLineWidth(lines []string) int {
-	width := 0
-	for _, line := range lines {
-		if w := lipgloss.Width(line); w > width {
-			width = w
+// centerDialog floats box in the middle of the frame, filling the rest with
+// the backdrop.
+func centerDialog(ctx uiframe.Context, box []string) string {
+	width := uiframe.MaxLineWidth(box)
+	height := max(ctx.Height, len(box))
+	top, left, _ := uiframe.Placement(ctx, box)
+	frameWidth := max(ctx.Width, left+width)
+	frame := make([]string, 0, height)
+	for i := 0; i < height; i++ {
+		row := ""
+		if i >= top && i-top < len(box) {
+			row = paint("", left, backdropHex()) + box[i-top]
 		}
+		frame = append(frame, paint(row, frameWidth, backdropHex()))
 	}
-	return width
+	return strings.Join(frame, "\n")
 }
 
-func (m *Model) dialogRenderContext() dialogRenderContext {
+func (m *Model) dialogRenderContext() uiframe.Context {
 	status := ""
 	if m.errBar.text != "" {
 		status = m.statusMessage(m.glyphs().CardErrorGlyph, m.glyphs().FinishedGlyph, m.glyphs().WarningGlyph)
 	}
-	return dialogRenderContext{width: m.layout.width, height: m.layout.height, status: status}
+	return uiframe.Context{Width: m.layout.width, Height: m.layout.height, Status: status}
 }
+
+func maxLineWidth(lines []string) int { return uiframe.MaxLineWidth(lines) }
