@@ -126,13 +126,28 @@ The dependency versions and their purpose are listed below. Open a new terminal 
 
 ### Install script
 
-Download the release copy, read it, then run it. The release attaches `install.ps1` and lists it in `checksums.txt`. That asset is on the release that first attaches the scripts. Until that tag exists, the file to read is `https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.ps1`. That copy is not in `checksums.txt`.
+Download the script, read it, then run it. The installer runs only after that download succeeds. Windows PowerShell 5.1 has no `&&`, so the guard is `if ($?)`. Until the release attaches `install.ps1`, the file to read is the copy on `main`. That copy is not in `checksums.txt`.
+
+```powershell
+irm https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.ps1 -OutFile install.ps1
+if ($?) {
+    Get-Content .\install.ps1
+    Unblock-File .\install.ps1
+    powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
+}
+```
+
+Once the release attaches `install.ps1` and lists it in `checksums.txt`, download that file instead. Logged in to `gh`, verify it after the download and before the installer. That release URL has no file until that tag exists.
 
 ```powershell
 irm https://github.com/YoanWai/agent-manager/releases/latest/download/install.ps1 -OutFile install.ps1
-Get-Content .\install.ps1
-Unblock-File .\install.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
+if ($?) {
+    gh attestation verify .\install.ps1 --repo YoanWai/agent-manager
+    if ($LASTEXITCODE -ne 0) { throw 'attestation verification failed' }
+    Get-Content .\install.ps1
+    Unblock-File .\install.ps1
+    powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
+}
 ```
 
 On a Windows client with no execution policy set, the effective policy is Restricted, so every `.ps1` is refused. `-ExecutionPolicy Bypass` applies to that process only. Where the policy is already RemoteSigned, `Unblock-File` then `.\install.ps1` is enough. RemoteSigned refuses an unsigned script that still has the Mark of the Web. A browser download sets that mark. `irm -OutFile` does not, because Microsoft documents `Invoke-WebRequest` as not marking the Internet zone. `Unblock-File` does nothing when the mark is absent.
@@ -145,7 +160,7 @@ Short form. Piping into `iex` skips the download-and-read step and does not cons
 irm https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.ps1 | iex
 ```
 
-On macOS and Linux the same choice is `curl -fsSL -o install.sh https://github.com/YoanWai/agent-manager/releases/latest/download/install.sh` and then `sh install.sh`. Until that asset exists, read `https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.sh`. The short form, with nothing saved to read, is `curl -fsSL https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.sh | sh`.
+On macOS and Linux the same choice, until the release attaches `install.sh`, is `curl -fsSL -o install.sh https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.sh && sh install.sh`. That copy is not in `checksums.txt`. Once the release attaches it, the checksummed file is `https://github.com/YoanWai/agent-manager/releases/latest/download/install.sh`, and `gh attestation verify install.sh --repo YoanWai/agent-manager` belongs between the download and `sh install.sh`. The short form, with nothing saved to read, is `curl -fsSL https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.sh | sh`.
 
 | Tool | Install |
 | --- | --- |
@@ -189,11 +204,11 @@ The same commands work from a shell:
 brew upgrade agent-manager                                                                # Homebrew formula
 brew upgrade --cask yoanwai/tap/agent-manager                                             # Homebrew cask
 scoop update agent-manager                                                               # Scoop, after closing agent-manager
-curl -fsSL -o install.sh https://github.com/YoanWai/agent-manager/releases/latest/download/install.sh && sh install.sh
+curl -fsSL -o install.sh https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.sh && sh install.sh
 mise upgrade --bump ubi:YoanWai/agent-manager                                             # mise
 go install github.com/YoanWai/agent-manager@latest                                        # Go
 ```
 
-The install script line downloads the release's `install.sh`. That asset is on the release that first attaches the scripts. Until that tag exists, the file to read is `https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.sh`.
+The install script line reads `install.sh` from `main`. The release that first attaches the script lists it in `checksums.txt` at `https://github.com/YoanWai/agent-manager/releases/latest/download/install.sh`. Until that tag exists, the line above is the one that works.
 
 Later, `agent-manager update` brings the binary to the newest release without re-running any of these: it hands the update to the package manager that installed it, or downloads and swaps the binary itself.

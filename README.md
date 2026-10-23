@@ -90,18 +90,22 @@ winget install --id YoanWai.AgentManager -e
 
 ### Install script (macOS / Linux)
 
-Download the release copy, read it, then run it. The release attaches `install.sh` and lists it in `checksums.txt`. Logged in to `gh`:
+Download the script, read it, then run it. `sh install.sh` runs only after that download succeeds.
 
 ```bash
-gh attestation verify install.sh --repo YoanWai/agent-manager
-```
-
-```bash
-curl -fsSL -o install.sh https://github.com/YoanWai/agent-manager/releases/latest/download/install.sh
+curl -fsSL -o install.sh https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.sh &&
 sh install.sh
 ```
 
-That asset is on the release that first attaches the scripts. Until that tag exists, the file to read is `https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.sh`. That copy is not in `checksums.txt`.
+That copy is the script on `main`. It is not in `checksums.txt`. The release that first attaches `install.sh` lists that file in `checksums.txt`. Once it does, download the attached file and, when `gh` is logged in, verify it before the script runs:
+
+```bash
+curl -fsSL -o install.sh https://github.com/YoanWai/agent-manager/releases/latest/download/install.sh &&
+gh attestation verify install.sh --repo YoanWai/agent-manager &&
+sh install.sh
+```
+
+The release URL above has no file until that tag exists, so the first command is the one that works until then.
 
 Downloads the latest release for your platform, verifies it against the published checksums, and installs it to `~/.local/bin`. Then it checks for tmux 3.1+ and git. On macOS it offers Homebrew, and offers to install Homebrew first when that is missing. On Linux it offers apt, dnf, pacman, zypper, apk, or Homebrew, and on a desktop it also offers the clipboard and notification packages. It prints the command when you decline. A run with no terminal skips the prompt and still installs the binary. Set `AGENT_MANAGER_INSTALL_DIR` for another directory, `AGENT_MANAGER_VERSION` to pin a version, and `AGENT_MANAGER_INSTALL_DEPS=1` to answer the dependency prompt up front (`=0` to skip it). `AGENT_MANAGER_VERIFY_ATTESTATION=1` refuses the install unless `gh attestation verify` accepts the downloaded archive. Leave it unset to install on a machine without `gh`. `gh` uses one exit status for a rejected attestation, a missing login, and a network error, so the script does not try to tell those apart.
 
@@ -117,13 +121,28 @@ Download the Windows zip for your architecture and `checksums.txt` from the same
 
 ### Install script (Windows)
 
-Download the release's `install.ps1`, read it, then run it. You can verify its provenance with `gh attestation verify install.ps1 --repo YoanWai/agent-manager`. Until that asset exists, read `https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.ps1`.
+Download the script, read it, then run it. The installer runs only after that download succeeds. Windows PowerShell 5.1 has no `&&`, so the guard is `if ($?)`. Until the release attaches `install.ps1`, the file to read is the copy on `main`. That copy is not in `checksums.txt`.
+
+```powershell
+irm https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.ps1 -OutFile install.ps1
+if ($?) {
+    Get-Content .\install.ps1
+    Unblock-File .\install.ps1
+    powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
+}
+```
+
+Once the release attaches `install.ps1` and lists it in `checksums.txt`, download that file instead. Logged in to `gh`, verify it after the download and before the installer. That release URL has no file until that tag exists.
 
 ```powershell
 irm https://github.com/YoanWai/agent-manager/releases/latest/download/install.ps1 -OutFile install.ps1
-Get-Content .\install.ps1
-Unblock-File .\install.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
+if ($?) {
+    gh attestation verify .\install.ps1 --repo YoanWai/agent-manager
+    if ($LASTEXITCODE -ne 0) { throw 'attestation verification failed' }
+    Get-Content .\install.ps1
+    Unblock-File .\install.ps1
+    powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
+}
 ```
 
 On a Windows client with no execution policy set, the effective policy is Restricted, so every `.ps1` is refused. `-ExecutionPolicy Bypass` applies to that process only, after you have read the file. Where the policy is already RemoteSigned, `Unblock-File` then `.\install.ps1` is enough. RemoteSigned refuses an unsigned script that still has the Mark of the Web. A browser download sets that mark. `irm -OutFile` does not (Microsoft documents `Invoke-WebRequest` as not marking the Internet zone). `Unblock-File` does nothing in that case.

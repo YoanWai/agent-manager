@@ -540,6 +540,15 @@ func TestVerifyAttestationMatchesPowerShellCase(t *testing.T) {
 	}
 }
 
+func TestDetectOSOnWindowsNamesTheReadableInstaller(t *testing.T) {
+	body := "set -eu\n" + installFuncs(t, "err", "detect_os") + "uname() { echo Windows_NT; }\ndetect_os\n"
+	out, code := runDash(t, body, []string{"PATH=/usr/bin:/bin"})
+	const want = "https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.ps1"
+	if code != 1 || !strings.Contains(out, want) || strings.Contains(out, "releases/latest/download/install.ps1") {
+		t.Fatalf("windows hint: exit %d\n%s", code, out)
+	}
+}
+
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil

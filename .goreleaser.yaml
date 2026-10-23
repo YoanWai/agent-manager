@@ -54,8 +54,7 @@ release:
     ```bash
     # macOS / Linux
     brew install agent-manager
-    curl -fsSL -o install.sh https://github.com/YoanWai/agent-manager/releases/latest/download/install.sh
-    sh install.sh
+    curl -fsSL -o install.sh https://github.com/YoanWai/agent-manager/releases/latest/download/install.sh && sh install.sh
     mise use -g ubi:YoanWai/agent-manager
     go install github.com/YoanWai/agent-manager@latest
 
@@ -68,10 +67,13 @@ release:
     scoop bucket add yoanwai https://github.com/YoanWai/scoop-bucket
     scoop install yoanwai/agent-manager
 
-    # Read install.ps1 (attached below, listed in checksums.txt), then:
+    # Read install.ps1 (attached below, listed in checksums.txt). The installer
+    # runs only after that download succeeds. Windows PowerShell 5.1 has no &&.
     irm https://github.com/YoanWai/agent-manager/releases/latest/download/install.ps1 -OutFile install.ps1
-    Unblock-File .\install.ps1
-    powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
+    if ($?) {
+      Unblock-File .\install.ps1
+      powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
+    }
     ```
 
     `install.sh` is attached too. `gh attestation verify <file> --repo YoanWai/agent-manager` checks build provenance once `gh` is logged in.
