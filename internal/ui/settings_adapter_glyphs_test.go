@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 )
@@ -105,7 +106,7 @@ func TestSymbolsSaveFailureRestoresAndCanRetry(t *testing.T) {
 	if err == nil {
 		t.Fatal("fixture write must fail")
 	}
-	m.applySettingsEffect(&effectJob{request: request}, result.(settingsEffectResult), err)
+	m.applySettingsEffect(&uieffects.Job{Request: request}, result.(settingsEffectResult), err)
 	if m.prefs.glyphMode != "" || m.errBar.text == "" {
 		t.Fatal("failed symbols save did not restore default and report failure")
 	}
@@ -126,8 +127,8 @@ func TestSettingsUpdateDoesNotStartAfterSymbolsSaveFails(t *testing.T) {
 	m.handleSettingsKey(key("right"))
 	m.settingsCard().State().Field = uisettings.FieldUpdate
 	m.handleSettingsKey(key("enter"))
-	job := m.effects.main.active
-	request := job.request.(settingsRequest)
+	job := m.effects.Main.Active
+	request := job.Request.(settingsRequest)
 	if !request.followUpdate {
 		t.Fatal("update not captured")
 	}

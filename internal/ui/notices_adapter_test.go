@@ -746,7 +746,7 @@ func TestPendingFeedDoesNotOpenDuringQuit(t *testing.T) {
 
 	m.base = baseList
 	m.clearSurfaces()
-	m.effects.quitting = true
+	m.effects.Quitting = true
 	m.flushPendingNotice()
 	if !m.onList() {
 		t.Fatalf("pending feed opened while quitting: screen = %v", m.screenID())

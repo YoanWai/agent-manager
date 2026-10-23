@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
 	"sort"
@@ -26,7 +27,7 @@ type placementPrecondition struct {
 	targetGroup    string
 }
 
-func (railRequest) effectRequest() {}
+func (railRequest) EffectRequest() {}
 
 type railEffectResult struct {
 	sessions []store.Session
@@ -34,7 +35,7 @@ type railEffectResult struct {
 	newPath  string
 }
 
-func (railEffectResult) effectResult() {}
+func (railEffectResult) EffectResult() {}
 func (m *Model) queueRail(mutations []uirail.Mutation, chain uint64, first bool) {
 	if len(mutations) == 0 {
 		return
@@ -46,20 +47,20 @@ func (m *Model) queueRail(mutations []uirail.Mutation, chain uint64, first bool)
 			if mutation.Kind != uirail.SaveCollapsed {
 				continue
 			}
-			pending := m.effects.main.pending[:0]
-			for _, job := range m.effects.main.pending {
-				if request, ok := job.request.(railRequest); ok && request.mutation.Kind == uirail.SaveCollapsed {
+			pending := m.effects.Main.Pending[:0]
+			for _, job := range m.effects.Main.Pending {
+				if request, ok := job.Request.(railRequest); ok && request.mutation.Kind == uirail.SaveCollapsed {
 					continue
 				}
 				pending = append(pending, job)
 			}
-			m.effects.main.pending = pending
+			m.effects.Main.Pending = pending
 			break
 		}
 	}
 	if chain == 0 {
-		m.effects.nextChain++
-		chain = m.effects.nextChain
+		m.effects.NextChain++
+		chain = m.effects.NextChain
 	}
 	for i := 0; i < len(mutations); i++ {
 		index := i
@@ -73,7 +74,7 @@ func (m *Model) queueRail(mutations []uirail.Mutation, chain uint64, first bool)
 		m.enqueueEffect(railRequest{mutation: mutation, dir: m.workspace.groupPaths[mutation.Path], worktree: m.workspace.groupWorktrees[mutation.Path], base: m.workspace.groupBases[mutation.Path]}, chain, first)
 	}
 }
-func (s effectServices) runRail(request railRequest) (effectResult, error) {
+func (s effectServices) runRail(request railRequest) (uieffects.Result, error) {
 	mutation := request.mutation
 	result := railEffectResult{}
 	if request.placement.verify && mutation.Kind == uirail.PlaceSession {
@@ -155,8 +156,8 @@ func (s effectServices) runRail(request railRequest) (effectResult, error) {
 	}
 	return result, nil
 }
-func (m *Model) applyRailEffect(job *effectJob, result railEffectResult, err error) tea.Cmd {
-	request := job.request.(railRequest)
+func (m *Model) applyRailEffect(job *uieffects.Job, result railEffectResult, err error) tea.Cmd {
+	request := job.Request.(railRequest)
 	mutation := request.mutation
 	if err == nil {
 		switch mutation.Kind {
@@ -177,16 +178,16 @@ func (m *Model) applyRailEffect(job *effectJob, result railEffectResult, err err
 			}
 		}
 	} else {
-		pending := m.effects.main.pending[:0]
-		for _, each := range m.effects.main.pending {
-			if each.chain != job.chain {
+		pending := m.effects.Main.Pending[:0]
+		for _, each := range m.effects.Main.Pending {
+			if each.Chain != job.Chain {
 				pending = append(pending, each)
 			}
 		}
-		m.effects.main.pending = pending
+		m.effects.Main.Pending = pending
 	}
 	follow := m.rail.ApplyMutation(mutation, err)
-	m.queueRail(follow.Mutations, job.chain, true)
+	m.queueRail(follow.Mutations, job.Chain, true)
 	follow.Mutations = nil
 	_, cmd := m.applyRailDecision(follow)
 	if result.warning != nil {
@@ -197,12 +198,12 @@ func (m *Model) applyRailEffect(job *effectJob, result railEffectResult, err err
 }
 
 func (m *Model) railMutationPending() bool {
-	jobs := append([]*effectJob(nil), m.effects.main.pending...)
-	if m.effects.main.active != nil {
-		jobs = append(jobs, m.effects.main.active)
+	jobs := append([]*uieffects.Job(nil), m.effects.Main.Pending...)
+	if m.effects.Main.Active != nil {
+		jobs = append(jobs, m.effects.Main.Active)
 	}
 	for _, job := range jobs {
-		if request, ok := job.request.(railRequest); ok && request.mutation.Kind != uirail.SaveCollapsed {
+		if request, ok := job.Request.(railRequest); ok && request.mutation.Kind != uirail.SaveCollapsed {
 			return true
 		}
 	}

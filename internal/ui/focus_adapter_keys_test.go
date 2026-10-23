@@ -326,14 +326,14 @@ func TestFocusedCtrlCReachesTheAgent(t *testing.T) {
 
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	*m = *updated.(*Model)
-	if m.effects.quitting || !m.focused() {
-		t.Fatalf("ctrl+c quit or left focus: quitting=%t screen = %v", m.effects.quitting, m.screenID())
+	if m.effects.Quitting || !m.focused() {
+		t.Fatalf("ctrl+c quit or left focus: quitting=%t screen = %v", m.effects.Quitting, m.screenID())
 	}
 	sess := railSelectedSession(m)
 	want := "send-keys -t " + tmux.PaneTarget(sess.ID) + " C-c"
 	request, ok := inputRequest{}, false
-	if job := m.effects.input.active; job != nil {
-		request, ok = job.request.(inputRequest)
+	if job := m.effects.Input.Active; job != nil {
+		request, ok = job.Request.(inputRequest)
 	}
 	if !ok || request.kind != inputKeys || request.command != want {
 		t.Fatalf("ctrl+c command = %q, want %q", request.command, want)
@@ -347,7 +347,7 @@ func TestFocusedCtrlCReachesTheAgent(t *testing.T) {
 	}
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	*m = *updated.(*Model)
-	if !m.effects.quitting {
+	if !m.effects.Quitting {
 		t.Fatal("ctrl+c on the list did not quit")
 	}
 }
@@ -640,7 +640,7 @@ func TestFocusPagingAndFooterFollowTheSamePolicy(t *testing.T) {
 // focusInputQueued reports whether a key is waiting on the effect lane to
 // reach the focused pane.
 func focusInputQueued(m *Model) bool {
-	return m.effects.input.active != nil || len(m.effects.input.pending) > 0
+	return m.effects.Input.Active != nil || len(m.effects.Input.Pending) > 0
 }
 
 // A focused session that disappears drops the UI back to the list.

@@ -7,6 +7,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -16,15 +17,15 @@ type focusRequest struct {
 	sessionID  string
 }
 
-func (focusRequest) effectRequest() {}
+func (focusRequest) EffectRequest() {}
 
 type focusEffectResult struct {
 	fatal error
 }
 
-func (focusEffectResult) effectResult() {}
+func (focusEffectResult) EffectResult() {}
 
-func (s effectServices) runFocus(request focusRequest) (effectResult, error) {
+func (s effectServices) runFocus(request focusRequest) (uieffects.Result, error) {
 	result := focusEffectResult{}
 	if !s.driver.Exists(request.sessionID) {
 		return result, errors.New(deadSessionHint)
@@ -46,7 +47,7 @@ func (m *Model) applyFocusEffect(request focusRequest, result focusEffectResult,
 		m.reportErr(err.Error())
 		return nil
 	}
-	if m.effects.quitting || request.generation != m.gens.foreground {
+	if m.effects.Quitting || request.generation != m.gens.foreground {
 		return nil
 	}
 	if !m.listClear() {
@@ -80,20 +81,20 @@ type ackRequest struct {
 	sessionID string
 }
 
-func (ackRequest) effectRequest() {}
+func (ackRequest) EffectRequest() {}
 
 type ackEffectResult struct{}
 
-func (ackEffectResult) effectResult() {}
+func (ackEffectResult) EffectResult() {}
 
-func (s effectServices) runAck(request ackRequest) (effectResult, error) {
+func (s effectServices) runAck(request ackRequest) (uieffects.Result, error) {
 	if err := s.store.AcknowledgeFinished(request.sessionID); err != nil {
 		return ackEffectResult{}, err
 	}
 	return ackEffectResult{}, nil
 }
 
-func (m *Model) applyAckEffect(job *effectJob, result ackEffectResult, err error) tea.Cmd {
+func (m *Model) applyAckEffect(job *uieffects.Job, result ackEffectResult, err error) tea.Cmd {
 	if err != nil {
 		m.reportErr(err.Error())
 		return nil
@@ -106,16 +107,16 @@ type detachRequest struct {
 	sessionID string
 }
 
-func (detachRequest) effectRequest() {}
+func (detachRequest) EffectRequest() {}
 
 type detachEffectResult struct {
 	request  string
 	clearErr error
 }
 
-func (detachEffectResult) effectResult() {}
+func (detachEffectResult) EffectResult() {}
 
-func (s effectServices) runDetach(request detachRequest) (effectResult, error) {
+func (s effectServices) runDetach(request detachRequest) (uieffects.Result, error) {
 	result := detachEffectResult{}
 	marker, err := s.driver.PendingRequest(request.sessionID)
 	if err != nil {
@@ -139,7 +140,7 @@ func (m *Model) applyDetachEffect(request detachRequest, result detachEffectResu
 		m.requestRefresh()
 		return nil
 	}
-	if m.effects.quitting {
+	if m.effects.Quitting {
 		return nil
 	}
 	if result.request == "" {
@@ -189,8 +190,8 @@ func (m *Model) foregroundTakenSinceDetach() bool {
 	if m.base != baseList || len(m.surfaces) > 0 || m.rail.Busy() {
 		return true
 	}
-	for _, job := range m.effects.main.pending {
-		switch job.request.(type) {
+	for _, job := range m.effects.Main.Pending {
+		switch job.Request.(type) {
 		case focusRequest, attachRequest:
 			return true
 		}

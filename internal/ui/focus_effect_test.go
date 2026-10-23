@@ -20,7 +20,7 @@ func TestFocusEntersOnlyAfterTheProbeRuns(t *testing.T) {
 	if m.focused() {
 		t.Fatal("focus entered on the update path before the probe")
 	}
-	if m.effects.main.active == nil {
+	if m.effects.Main.Active == nil {
 		t.Fatal("the focus probe should be accepted before the entry")
 	}
 	m.applyCmd(t, cmd)
@@ -239,7 +239,7 @@ func TestDetachProbeReadsAndClearsInOneStep(t *testing.T) {
 	}
 	updated, _ := m.Update(attachDoneMsg{sessID: sess.ID})
 	*m = *updated.(*Model)
-	if m.effects.main.active == nil {
+	if m.effects.Main.Active == nil {
 		t.Fatal("the detach probe should be accepted before the marker is read")
 	}
 	if request, err := m.services.tmux.PendingRequest(sess.ID); err != nil || request != tmux.RequestReview {

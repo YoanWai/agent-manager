@@ -7,6 +7,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uiconnections "github.com/YoanWai/agent-manager/internal/ui/connections"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -28,7 +29,7 @@ type connectionRequest struct {
 	gen  uint64
 }
 
-func (connectionRequest) effectRequest() {}
+func (connectionRequest) EffectRequest() {}
 
 // connectionEffectResult is the list as the store holds it after the
 // write, read back in the same job.
@@ -36,9 +37,9 @@ type connectionEffectResult struct {
 	connections []store.Connection
 }
 
-func (connectionEffectResult) effectResult() {}
+func (connectionEffectResult) EffectResult() {}
 
-func (s effectServices) runConnection(request connectionRequest) (effectResult, error) {
+func (s effectServices) runConnection(request connectionRequest) (uieffects.Result, error) {
 	var err error
 	switch request.op {
 	case connectionAdd:
@@ -123,15 +124,15 @@ type remoteRequest struct {
 	dead bool
 }
 
-func (remoteRequest) effectRequest() {}
+func (remoteRequest) EffectRequest() {}
 
 type remoteEffectResult struct {
 	session sessioncmd.Session
 }
 
-func (remoteEffectResult) effectResult() {}
+func (remoteEffectResult) EffectResult() {}
 
-func (s effectServices) runRemote(request remoteRequest) (effectResult, error) {
+func (s effectServices) runRemote(request remoteRequest) (uieffects.Result, error) {
 	ctx := context.Background()
 	var result remoteEffectResult
 	var err error

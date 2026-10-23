@@ -32,7 +32,7 @@ func (m *Model) routeQuit(msg tea.KeyMsg) quitRoute {
 	ctrlC := name == "ctrl+c"
 	top, onSurface := m.top()
 	switch {
-	case m.effects.quitting && (ctrlC || m.services.listKeys.Binding(keybind.Quit).Has(name)):
+	case m.effects.Quitting && (ctrlC || m.services.listKeys.Binding(keybind.Quit).Has(name)):
 		return quitNow
 	case !ctrlC:
 		return quitPass

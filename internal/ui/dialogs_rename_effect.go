@@ -6,6 +6,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
 	"strings"
@@ -39,7 +40,7 @@ type renameRequest struct {
 	gen             uint64
 }
 
-func (renameRequest) effectRequest() {}
+func (renameRequest) EffectRequest() {}
 
 // renameEffectResult reports which durable stages committed, in order, so
 // the apply side can reconcile partial failures before surfacing the error.
@@ -56,7 +57,7 @@ type renameEffectResult struct {
 	dir          string
 }
 
-func (renameEffectResult) effectResult() {}
+func (renameEffectResult) EffectResult() {}
 
 // moveDialogClose is the chained follow-up that closes a move dialog only
 // if the dialog it captured is still the open one.
@@ -70,11 +71,11 @@ type moveDialogClose struct {
 	optSessID string
 }
 
-func (moveDialogClose) effectRequest() {}
+func (moveDialogClose) EffectRequest() {}
 
 type moveDialogCloseResult struct{}
 
-func (moveDialogCloseResult) effectResult() {}
+func (moveDialogCloseResult) EffectResult() {}
 
 // queueRename completes the rename dialog's request with the inventory it
 // was captured against (the group's default-path fallbacks, or the session
@@ -108,7 +109,7 @@ func (m *Model) queueRename(request renameRequest) tea.Cmd {
 	return m.nextEffectCmd()
 }
 
-func (s effectServices) runRename(request renameRequest) (effectResult, error) {
+func (s effectServices) runRename(request renameRequest) (uieffects.Result, error) {
 	result := renameEffectResult{}
 	if request.kind == renameGroup {
 		if request.rawDir != "" || len(request.dirFallbacks) > 0 {
@@ -197,8 +198,8 @@ func (s effectServices) runRename(request renameRequest) (effectResult, error) {
 	return result, nil
 }
 
-func (m *Model) applyRenameEffect(job *effectJob, result renameEffectResult, err error) {
-	request := job.request.(renameRequest)
+func (m *Model) applyRenameEffect(job *uieffects.Job, result renameEffectResult, err error) {
+	request := job.Request.(renameRequest)
 	if request.kind == renameGroup {
 		dir := request.dir
 		if result.dir != "" {
@@ -263,8 +264,8 @@ func (m *Model) mirrorGroupRenamePartial(request renameRequest, dir string, resu
 func (m *Model) enqueueMove(mut uirail.Mutation, close moveDialogClose) tea.Cmd {
 	m.gens.dialog++
 	close.gen = m.gens.dialog
-	m.effects.nextChain++
-	chain := m.effects.nextChain
+	m.effects.NextChain++
+	chain := m.effects.NextChain
 	request := railRequest{
 		mutation: mut,
 		dir:      m.workspace.groupPaths[mut.Path],
@@ -293,12 +294,12 @@ func (m *Model) capturePlacementPrecondition(mutation uirail.Mutation) placement
 	// A newer move can be accepted while an earlier placement for the same
 	// row is still serialized ahead of it. Validate against that lane's
 	// promised destination, which is the state the worker will actually see.
-	jobs := append([]*effectJob{m.effects.main.active}, m.effects.main.pending...)
+	jobs := append([]*uieffects.Job{m.effects.Main.Active}, m.effects.Main.Pending...)
 	for _, job := range jobs {
 		if job == nil {
 			continue
 		}
-		request, ok := job.request.(railRequest)
+		request, ok := job.Request.(railRequest)
 		if !ok || request.mutation.Kind != uirail.PlaceSession || request.mutation.SessionID != mutation.SessionID {
 			continue
 		}

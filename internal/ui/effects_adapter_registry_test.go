@@ -1,6 +1,7 @@
 package ui
 
 import (
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -12,8 +13,8 @@ import (
 )
 
 type effectPair struct {
-	request effectRequest
-	result  effectResult
+	request uieffects.Request
+	result  uieffects.Result
 }
 
 var effectPairs = []effectPair{
@@ -53,17 +54,17 @@ func TestEveryEffectRequestIsKnownToAllThreeRegistries(t *testing.T) {
 	declared := parseEffectDeclarations(t)
 
 	listedRequests := typeNamesOf(effectPairs, func(pair effectPair) any { return pair.request })
-	if markers := declared.receiversOf("effectRequest"); !slices.Equal(markers, listedRequests) {
-		t.Fatalf("effectRequest markers %q differ from effectPairs %q; add the new request and its result to effectPairs", markers, listedRequests)
+	if markers := declared.receiversOf("EffectRequest"); !slices.Equal(markers, listedRequests) {
+		t.Fatalf("EffectRequest markers %q differ from effectPairs %q; add the new request and its result to effectPairs", markers, listedRequests)
 	}
 	listedResults := typeNamesOf(effectPairs, func(pair effectPair) any { return pair.result })
-	if markers := declared.receiversOf("effectResult"); !slices.Equal(markers, listedResults) {
-		t.Fatalf("effectResult markers %q differ from effectPairs %q", markers, listedResults)
+	if markers := declared.receiversOf("EffectResult"); !slices.Equal(markers, listedResults) {
+		t.Fatalf("EffectResult markers %q differ from effectPairs %q", markers, listedResults)
 	}
 
 	nameCases := declared.typeSwitchCases(t, "effectName", "request")
 	captureCases := declared.typeSwitchCases(t, "captureEffect", "request")
-	completedCases := declared.typeSwitchCases(t, "handleEffectCompleted", "msg.result")
+	completedCases := declared.typeSwitchCases(t, "handleEffectCompleted", "msg.Result")
 
 	for _, pair := range effectPairs {
 		requestName := reflect.TypeOf(pair.request).Name()

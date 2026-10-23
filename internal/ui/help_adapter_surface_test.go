@@ -45,8 +45,8 @@ func TestHelpSurfaceClosesOnEscAndBackdrop(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			m := close(helpOverList(t))
-			if helpOpen(m) || m.effects.quitting {
-				t.Fatalf("help open = %t, quitting = %t", helpOpen(m), m.effects.quitting)
+			if helpOpen(m) || m.effects.Quitting {
+				t.Fatalf("help open = %t, quitting = %t", helpOpen(m), m.effects.Quitting)
 			}
 		})
 	}

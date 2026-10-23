@@ -32,8 +32,8 @@ func TestCtrlCOnEveryBase(t *testing.T) {
 			m := buildModel(t)
 			tc.open(m)
 			m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
-			if m.effects.quitting != tc.quit {
-				t.Fatalf("ctrl+c quitting = %t, want %t", m.effects.quitting, tc.quit)
+			if m.effects.Quitting != tc.quit {
+				t.Fatalf("ctrl+c quitting = %t, want %t", m.effects.Quitting, tc.quit)
 			}
 		})
 	}
@@ -68,7 +68,7 @@ func TestCtrlCQuitsThroughEveryCardOverTheList(t *testing.T) {
 				t.Fatalf("%s: setup put nothing on the stack", name)
 			}
 			m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
-			if !m.effects.quitting {
+			if !m.effects.Quitting {
 				t.Fatalf("%s: ctrl+c over the card did not quit", name)
 			}
 		})
@@ -90,10 +90,10 @@ func TestCtrlCClosesTheSavedListOverFocus(t *testing.T) {
 	}
 	m.push(uifocus.OpenSaved(focusSavedRoot{m}, 0, m.spawnStyles()))
 	m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
-	if m.effects.quitting || !m.focused() || m.savedListOpen() {
-		t.Fatalf("quitting=%t screen = %v list open=%t", m.effects.quitting, m.screenID(), m.savedListOpen())
+	if m.effects.Quitting || !m.focused() || m.savedListOpen() {
+		t.Fatalf("quitting=%t screen = %v list open=%t", m.effects.Quitting, m.screenID(), m.savedListOpen())
 	}
-	if m.effects.input.active != nil || len(m.effects.input.pending) > 0 {
+	if m.effects.Input.Active != nil || len(m.effects.Input.Pending) > 0 {
 		t.Fatal("ctrl+c reached the agent from behind the list")
 	}
 }
@@ -104,7 +104,7 @@ func TestCtrlCAbandonsADrainFromFocus(t *testing.T) {
 	m := buildModel(t)
 	m.queueRail([]uirail.Mutation{{Kind: uirail.SaveCollapsed, Collapsed: []string{"a"}}}, 0, false)
 	m.requestQuit()
-	if !m.effects.quitting || m.effects.main.active == nil {
+	if !m.effects.Quitting || m.effects.Main.Active == nil {
 		t.Fatal("quit did not begin draining")
 	}
 	m.push(newFocusSurface(m))
@@ -130,7 +130,7 @@ func TestClickedCtrlCTakesTheRouter(t *testing.T) {
 		t.Fatalf("painted ctrl+c is not a click target: %+v", target)
 	}
 	m.click(release, target)
-	if !m.effects.quitting {
+	if !m.effects.Quitting {
 		t.Fatal("a click on ctrl+c did not quit")
 	}
 }

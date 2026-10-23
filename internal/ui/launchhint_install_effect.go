@@ -13,6 +13,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uilaunchhint "github.com/YoanWai/agent-manager/internal/ui/launchhint"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -39,11 +40,11 @@ type installStartRequest struct {
 	toolName    string
 	group       string
 	pane        sessioncmd.PaneSize
-	effectRetry effectRequest
+	effectRetry uieffects.Request
 	images      []composer.Attachment
 }
 
-func (installStartRequest) effectRequest() {}
+func (installStartRequest) EffectRequest() {}
 
 // installStartResult carries a committed shell row even when a later label
 // or send step fails. install is set only after the command was typed.
@@ -52,13 +53,13 @@ type installStartResult struct {
 	install *pendingInstall
 }
 
-func (installStartResult) effectResult() {}
+func (installStartResult) EffectResult() {}
 
 type installSettleRequest struct {
 	install pendingInstall
 }
 
-func (installSettleRequest) effectRequest() {}
+func (installSettleRequest) EffectRequest() {}
 
 type installSettleResult struct {
 	sessionID string
@@ -66,7 +67,7 @@ type installSettleResult struct {
 	code      string
 }
 
-func (installSettleResult) effectResult() {}
+func (installSettleResult) EffectResult() {}
 
 // installImageCleanupCmd owns a frozen copy of paths that no dialog or
 // retry still references. The command performs the file deletes without
@@ -84,11 +85,11 @@ func installImageCleanupCmd(images []composer.Attachment) tea.Cmd {
 // the placement group and the pane geometry. It refuses while another
 // install is still starting.
 func (m *Model) startInstall(request installStartRequest) bool {
-	for _, job := range append([]*effectJob{m.effects.main.active}, m.effects.main.pending...) {
+	for _, job := range append([]*uieffects.Job{m.effects.Main.Active}, m.effects.Main.Pending...) {
 		if job == nil {
 			continue
 		}
-		if starting, ok := job.request.(installStartRequest); ok {
+		if starting, ok := job.Request.(installStartRequest); ok {
 			m.reportErr("an install is already starting for " + starting.binary)
 			return false
 		}
@@ -104,7 +105,7 @@ func (m *Model) startInstall(request installStartRequest) bool {
 	return true
 }
 
-func (s effectServices) runInstallStart(request installStartRequest) (effectResult, error) {
+func (s effectServices) runInstallStart(request installStartRequest) (uieffects.Result, error) {
 	result := installStartResult{}
 	if s.lifecycle == nil || s.hooks == nil || s.driver == nil {
 		return result, errors.New("install requires lifecycle, hook, and tmux services")
@@ -179,7 +180,7 @@ func (s effectServices) runInstallStart(request installStartRequest) (effectResu
 	return result, nil
 }
 
-func (s effectServices) runInstallSettle(request installSettleRequest) (effectResult, error) {
+func (s effectServices) runInstallSettle(request installSettleRequest) (uieffects.Result, error) {
 	install := request.install
 	result := installSettleResult{sessionID: install.sessionID, state: uilaunchhint.Running}
 	data, err := os.ReadFile(install.statusFile)

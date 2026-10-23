@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -13,16 +14,16 @@ type keysRequest struct {
 	sessionChanged bool
 }
 
-func (keysRequest) effectRequest() {}
+func (keysRequest) EffectRequest() {}
 
 type keysEffectResult struct {
 	listCommitted    bool
 	sessionCommitted bool
 }
 
-func (keysEffectResult) effectResult() {}
+func (keysEffectResult) EffectResult() {}
 
-func (s effectServices) runKeys(request keysRequest) (effectResult, error) {
+func (s effectServices) runKeys(request keysRequest) (uieffects.Result, error) {
 	result := keysEffectResult{}
 	tot := 0
 	if request.listChanged {
@@ -48,8 +49,8 @@ func (s effectServices) runKeys(request keysRequest) (effectResult, error) {
 	return result, nil
 }
 
-func (m *Model) applyKeysEffect(job *effectJob, result keysEffectResult, err error) tea.Cmd {
-	request := job.request.(keysRequest)
+func (m *Model) applyKeysEffect(job *uieffects.Job, result keysEffectResult, err error) tea.Cmd {
+	request := job.Request.(keysRequest)
 	if result.listCommitted {
 		m.services.listKeys = request.list
 	}

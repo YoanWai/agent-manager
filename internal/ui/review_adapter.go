@@ -477,7 +477,7 @@ func (m *Model) openDiffWithReader(reader reviewPreferencesReader) tea.Cmd {
 }
 
 func (m *Model) handleReviewPreferences(msg reviewPreferencesMsg) (tea.Model, tea.Cmd) {
-	if m.effects.quitting || !m.review.Active() || m.review.Generation() != msg.request.Generation || m.review.SessionID() != msg.request.Target.ID {
+	if m.effects.Quitting || !m.review.Active() || m.review.Generation() != msg.request.Generation || m.review.SessionID() != msg.request.Target.ID {
 		return m, nil
 	}
 	current, ok := m.diffSession()

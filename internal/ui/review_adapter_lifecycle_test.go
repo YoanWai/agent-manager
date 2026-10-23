@@ -7,6 +7,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -133,8 +134,8 @@ func TestReattachAcknowledgesFinished(t *testing.T) {
 func TestStaleReattachDoesNotInterruptReopenedReview(t *testing.T) {
 	m := &Model{screen: screen{base: baseReview}}
 	seedReviewForTest(m, uireview.Target{ID: "new"}, git.ScopeUncommitted, "/repo", diff.Set{}, false)
-	m.effects.main.active = &effectJob{id: 1, request: attachRequest{id: "old", reattach: true, generation: 0}}
-	updated, cmd := m.Update(effectCompletedMsg{id: 1, result: attachEffectResult{}})
+	m.effects.Main.Active = &uieffects.Job{ID: 1, Request: attachRequest{id: "old", reattach: true, generation: 0}}
+	updated, cmd := m.Update(uieffects.Completed{ID: 1, Result: attachEffectResult{}})
 	m = updated.(*Model)
 	if cmd != nil {
 		t.Fatal("stale re-attach should not return an attach command")

@@ -40,7 +40,7 @@ func (m *Model) answerRemote(t *testing.T, fake *fakeSSH, cmd tea.Cmd, key strin
 }
 
 func (m *Model) remoteIdle() bool {
-	return m.effects.remote.active == nil && len(m.effects.remote.pending) == 0
+	return m.effects.Remote.Active == nil && len(m.effects.Remote.Pending) == 0
 }
 
 func TestRemoteActionsBuildTheirRemoteCall(t *testing.T) {
@@ -355,8 +355,8 @@ func TestQuickBarRefusesWhenARefreshDropsItsRemoteTarget(t *testing.T) {
 	if calls := fake.taken(); len(calls) != 1 || calls[0][0] != "snapshot" {
 		t.Fatalf("calls = %q, want only the refresh", calls)
 	}
-	for _, lane := range m.lanes() {
-		if lane.active != nil || len(lane.pending) != 0 {
+	for _, lane := range m.effects.Lanes() {
+		if lane.Active != nil || len(lane.Pending) != 0 {
 			t.Fatal("enter queued an effect for the row the cursor slid to")
 		}
 	}

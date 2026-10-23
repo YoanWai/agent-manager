@@ -1,5 +1,7 @@
 package ui
 
+import uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
+
 type paneResize struct {
 	id   string
 	size [2]int
@@ -9,25 +11,25 @@ type geometryRequest struct {
 	publish [2]int
 }
 
-func (geometryRequest) effectRequest() {}
+func (geometryRequest) EffectRequest() {}
 
 type geometryEffectResult struct {
 	resized []paneResize
 	publish [2]int
 }
 
-func (geometryEffectResult) effectResult() {}
+func (geometryEffectResult) EffectResult() {}
 
 func (m *Model) queueGeometry(request geometryRequest) {
 	// Ignore an already accepted identical target, while allowing a newer size.
 	desired := map[string][2]int{}
 	published := [2]int{}
-	jobs := append([]*effectJob(nil), m.effects.main.pending...)
-	if m.effects.main.active != nil {
-		jobs = append([]*effectJob{m.effects.main.active}, jobs...)
+	jobs := append([]*uieffects.Job(nil), m.effects.Main.Pending...)
+	if m.effects.Main.Active != nil {
+		jobs = append([]*uieffects.Job{m.effects.Main.Active}, jobs...)
 	}
 	for _, job := range jobs {
-		if existing, ok := job.request.(geometryRequest); ok {
+		if existing, ok := job.Request.(geometryRequest); ok {
 			for _, target := range existing.targets {
 				desired[target.id] = target.size
 			}
@@ -50,8 +52,8 @@ func (m *Model) queueGeometry(request geometryRequest) {
 		return
 	}
 	// Coalesce only the adjacent geometry job, never across an accepted mutation.
-	if n := len(m.effects.main.pending); n > 0 {
-		if previous, ok := m.effects.main.pending[n-1].request.(geometryRequest); ok {
+	if n := len(m.effects.Main.Pending); n > 0 {
+		if previous, ok := m.effects.Main.Pending[n-1].Request.(geometryRequest); ok {
 			byID := map[string]int{}
 			for i, target := range previous.targets {
 				byID[target.id] = i
@@ -67,13 +69,13 @@ func (m *Model) queueGeometry(request geometryRequest) {
 				previous.publish = request.publish
 			}
 			request = previous
-			m.effects.main.pending = m.effects.main.pending[:n-1]
+			m.effects.Main.Pending = m.effects.Main.Pending[:n-1]
 		}
 	}
 	request.targets = append([]paneResize(nil), request.targets...)
 	m.enqueueEffect(request, 0, false)
 }
-func (s effectServices) runGeometry(request geometryRequest) (effectResult, error) {
+func (s effectServices) runGeometry(request geometryRequest) (uieffects.Result, error) {
 	result := geometryEffectResult{}
 	if request.publish != [2]int{} {
 		if err := s.store.SetPaneSize(request.publish[0], request.publish[1]); err != nil {

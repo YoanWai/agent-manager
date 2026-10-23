@@ -251,7 +251,7 @@ with `gh release edit <tag> --notes-file notes.md`.
   that stay in `ui` each own their state, keys and view through a type with a
   narrow host interface: `pathComplete`, `composer` and
   `launchHintDialog`. Store, tmux and Git
-  work runs on the ordered effect lane (`effects.go`) through each feature's
+  work runs on the ordered effect lane (`ui/effects`, adapted in `effects_adapter.go`) through each feature's
   `<feature>_effect.go`. Root files are named `<feature>_<concern>.go`, so
   `ls internal/ui/settings_*` is the whole Settings adapter; only `keys.go`,
   `mouse.go`, `updates.go` and `ids.go` route instead of owning a feature. A

@@ -58,10 +58,10 @@ func (m *Model) persistSplitRatio() {
 	if m.services.store == nil {
 		return
 	}
-	previousID := m.effects.nextID
+	previousID := m.effects.NextID
 	m.enqueueEffect(splitSaveRequest{value: strconv.FormatFloat(m.layout.split.ratio, 'f', 4, 64)}, 0, false)
-	if m.effects.nextID != previousID {
-		m.layout.split.saveID = m.effects.nextID
+	if m.effects.NextID != previousID {
+		m.layout.split.saveID = m.effects.NextID
 	}
 }
 

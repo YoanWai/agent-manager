@@ -13,12 +13,12 @@ func TestDismissNoticeDeduplicatesPendingEffect(t *testing.T) {
 	m.dismissNotice(uinotices.Welcome)
 	m.dismissNotice(uinotices.Welcome)
 
-	if len(m.effects.main.pending) != 1 {
-		t.Fatalf("duplicate dismissal queued %d effects, want 1", len(m.effects.main.pending))
+	if len(m.effects.Main.Pending) != 1 {
+		t.Fatalf("duplicate dismissal queued %d effects, want 1", len(m.effects.Main.Pending))
 	}
-	request, ok := m.effects.main.pending[0].request.(noticeDismissRequest)
+	request, ok := m.effects.Main.Pending[0].Request.(noticeDismissRequest)
 	if !ok || request.id != uinotices.Welcome {
-		t.Fatalf("queued request = %#v", m.effects.main.pending[0].request)
+		t.Fatalf("queued request = %#v", m.effects.Main.Pending[0].Request)
 	}
 	m.drainEffects(t)
 }
@@ -91,7 +91,7 @@ func TestDismissNoticeFailureDuringQuitRestoresWithoutReopening(t *testing.T) {
 	}
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	m = updated.(*Model)
-	if !m.effects.quitting {
+	if !m.effects.Quitting {
 		t.Fatal("ctrl+c did not start draining the accepted dismissal")
 	}
 	m.applyCmd(t, cmd)

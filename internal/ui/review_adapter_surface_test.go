@@ -70,8 +70,8 @@ func TestReviewPickerDismisses(t *testing.T) {
 				t.Fatal("the picker should be dismissible")
 			}
 			tc.close(m)
-			if m.pickerOpen() || m.effects.quitting || m.base != baseReview {
-				t.Fatalf("%s: open=%t quitting=%t screen = %v", tc.name, m.pickerOpen(), m.effects.quitting, m.screenID())
+			if m.pickerOpen() || m.effects.Quitting || m.base != baseReview {
+				t.Fatalf("%s: open=%t quitting=%t screen = %v", tc.name, m.pickerOpen(), m.effects.Quitting, m.screenID())
 			}
 			if got := m.review.Snapshot().RepoSelected; got != "/tmp/one" {
 				t.Fatalf("closing the picker changed the repo to %q", got)

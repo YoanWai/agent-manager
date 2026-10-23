@@ -7,6 +7,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/diff"
 	"github.com/YoanWai/agent-manager/internal/git"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -118,7 +119,7 @@ func TestReviewPickerCompletionCannotStealNewerUI(t *testing.T) {
 	}{
 		{"foreground", func(m *Model) { m.gens.foreground++ }},
 		{"screen", func(m *Model) { m.base = baseList }},
-		{"quit", func(m *Model) { m.effects.quitting = true }},
+		{"quit", func(m *Model) { m.effects.Quitting = true }},
 		{"review", func(m *Model) { _, _ = m.review.SelectRepo("/other") }},
 	}
 	for _, tc := range tests {
@@ -182,7 +183,7 @@ func TestReviewBaseSavePersistsButDoesNotReloadStaleOrQuittingReview(t *testing.
 		mutate func(*Model)
 	}{
 		{"stale", func(m *Model) { _, _ = m.review.SelectRepo("/new-repo") }},
-		{"quitting", func(m *Model) { m.effects.quitting = true }},
+		{"quitting", func(m *Model) { m.effects.Quitting = true }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := buildModel(t)
@@ -193,12 +194,12 @@ func TestReviewBaseSavePersistsButDoesNotReloadStaleOrQuittingReview(t *testing.
 			source := uireview.PickerSource{Generation: state.Generation, TargetID: state.SessionID, RepoRoot: state.RepoSelected}
 
 			cmd := m.selectBase("feature", source, "/canonical/repo")
-			if cmd == nil || m.effects.main.active == nil {
+			if cmd == nil || m.effects.Main.Active == nil {
 				t.Fatal("accepted base did not enter the FIFO effect lane")
 			}
 			tc.mutate(m)
 			before := m.review.Snapshot()
-			msg := cmd().(effectCompletedMsg)
+			msg := cmd().(uieffects.Completed)
 			updated, follow := m.handleEffectCompleted(msg)
 			*m = *updated.(*Model)
 			m.drainCmds(t, follow)
@@ -231,14 +232,14 @@ func TestReviewBaseSaveAllowsOnlyOnePendingRequest(t *testing.T) {
 	if second := m.selectBase("main", source, "/canonical/repo"); second != nil {
 		t.Fatal("second base save started while the first was pending")
 	}
-	if len(m.effects.main.pending) != 0 || m.effects.main.active == nil {
-		t.Fatalf("base save jobs active=%v pending=%d, want exactly one", m.effects.main.active != nil, len(m.effects.main.pending))
+	if len(m.effects.Main.Pending) != 0 || m.effects.Main.Active == nil {
+		t.Fatalf("base save jobs active=%v pending=%d, want exactly one", m.effects.Main.Active != nil, len(m.effects.Main.Pending))
 	}
 	if m.errBar.text == "" {
 		t.Fatal("second base save was not refused clearly")
 	}
 
-	msg := cmd().(effectCompletedMsg)
+	msg := cmd().(uieffects.Completed)
 	updated, follow := m.handleEffectCompleted(msg)
 	*m = *updated.(*Model)
 	m.drainCmds(t, follow)

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/store"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -169,7 +170,7 @@ func TestSettingsSavePartialFailureIsDurableAndHonest(t *testing.T) {
 		}
 	}
 
-	m.applySettingsEffect(&effectJob{request: request}, result, err)
+	m.applySettingsEffect(&uieffects.Job{Request: request}, result, err)
 	if m.errBar.text == "" {
 		t.Fatal("partial failure should surface in the err bar")
 	}
@@ -209,7 +210,7 @@ func TestSettingsSaveReadFailureDoesNotFabricateRestoration(t *testing.T) {
 		t.Fatal("the failing read must carry its error in the result")
 	}
 
-	m.applySettingsEffect(&effectJob{request: request}, result, err)
+	m.applySettingsEffect(&uieffects.Job{Request: request}, result, err)
 	if !m.settingsCard().State().ComfortableRows {
 		t.Fatal("a failed read was fabricated into the committed value")
 	}
@@ -237,7 +238,7 @@ func TestSettingsSavePartialFailureReconcilesPrefs(t *testing.T) {
 		t.Fatal("expected the scripted write failure")
 	}
 	result := rawResult.(settingsEffectResult)
-	m.applySettingsEffect(&effectJob{request: request}, result, err)
+	m.applySettingsEffect(&uieffects.Job{Request: request}, result, err)
 	if m.prefs.comfortableRows {
 		t.Fatal("prefs kept the uncommitted density after a partial save")
 	}
@@ -266,7 +267,7 @@ func TestSettingsSaveStaleCompletionReconcilesPrefsNotDialog(t *testing.T) {
 	result := settingsEffectResult{generation: request.generation, restored: []restoredValue{
 		{Key: uisettings.ListDensitySetting, Value: "comfortable"},
 	}}
-	m.applySettingsEffect(&effectJob{request: request}, result, errors.New("partial"))
+	m.applySettingsEffect(&uieffects.Job{Request: request}, result, errors.New("partial"))
 	if !m.prefs.comfortableRows {
 		t.Fatal("stale completion must reconcile the runtime prefs to committed")
 	}
@@ -316,8 +317,8 @@ func TestFailedFullSaveReconcilesPrefsPastStaleGeneration(t *testing.T) {
 	if _, err := locker.Exec("BEGIN IMMEDIATE"); err != nil {
 		t.Fatal(err)
 	}
-	completed := make(chan effectCompletedMsg, 1)
-	go func() { completed <- command().(effectCompletedMsg) }()
+	completed := make(chan uieffects.Completed, 1)
+	go func() { completed <- command().(uieffects.Completed) }()
 
 	// While the failed save is in flight, the same dialog reopens and a
 	// hidden-only save is queued behind it.
@@ -327,7 +328,7 @@ func TestFailedFullSaveReconcilesPrefsPastStaleGeneration(t *testing.T) {
 	m.captureHiddenSave(m.settingsCard().State())
 
 	msg := <-completed
-	if msg.err == nil {
+	if msg.Err == nil {
 		t.Fatal("expected the full save to fail on the locked store")
 	}
 	updated, _ := m.Update(msg)
@@ -360,7 +361,7 @@ func TestSettingsSaveEmptyHiddenClearsDialog(t *testing.T) {
 	if result.hiddenErr != nil {
 		t.Fatalf("hidden read failed: %v", result.hiddenErr)
 	}
-	m.applySettingsEffect(&effectJob{request: request}, result, err)
+	m.applySettingsEffect(&uieffects.Job{Request: request}, result, err)
 	if len(m.settingsCard().State().CLIHidden) != 0 {
 		t.Fatalf("committed empty hidden state did not clear the dialog: %v", m.settingsCard().State().CLIHidden)
 	}
@@ -374,7 +375,7 @@ func TestSettingsSaveEmptyHiddenClearsDialog(t *testing.T) {
 		t.Fatal("expected a failed hidden read")
 	}
 	m.settingsCard().State().CLIHidden = map[string]bool{"codex": true}
-	m.applySettingsEffect(&effectJob{request: request2}, result2, err2)
+	m.applySettingsEffect(&uieffects.Job{Request: request2}, result2, err2)
 	if !m.settingsCard().State().CLIHidden["codex"] {
 		t.Fatal("failed hidden read must keep the dialog's map")
 	}
@@ -395,7 +396,7 @@ func TestSettingsSaveCompletionRefusesStaleGeneration(t *testing.T) {
 	newer := themes[m.settingsCard().State().ThemeIndex].Name
 
 	result := settingsEffectResult{generation: request.generation, restored: []restoredValue{{Key: uisettings.ThemeSetting, Value: "nord"}}}
-	m.applySettingsEffect(&effectJob{request: request}, result, errors.New("partial"))
+	m.applySettingsEffect(&uieffects.Job{Request: request}, result, errors.New("partial"))
 	if themes[m.settingsCard().State().ThemeIndex].Name != newer {
 		t.Fatal("stale completion overwrote the newer dialog")
 	}
@@ -545,7 +546,7 @@ func TestSettingsRequestCopiesMutableValues(t *testing.T) {
 	m.enqueueEffect(request, 0, false)
 	request.values[0].Value = "changed"
 	request.hidden[0] = "changed"
-	stored := m.effects.main.pending[0].request.(settingsRequest)
+	stored := m.effects.Main.Pending[0].Request.(settingsRequest)
 	if stored.values[0].Value == "changed" || stored.hidden[0] == "changed" {
 		t.Fatal("request retained mutable dialog aliases")
 	}
@@ -556,7 +557,7 @@ func TestLaterSuccessfulSettingsSaveReappliesCommittedPrefs(t *testing.T) {
 	m := buildModel(t)
 	request := settingsRequest{values: []settingValue{{Key: uisettings.ListDensitySetting, Value: "comfortable"}}}
 	m.prefs.comfortableRows = false
-	m.applySettingsEffect(&effectJob{request: request}, settingsEffectResult{}, nil)
+	m.applySettingsEffect(&uieffects.Job{Request: request}, settingsEffectResult{}, nil)
 	if !m.prefs.comfortableRows {
 		t.Fatal("successful queued save did not reconcile its committed preferences")
 	}
@@ -571,8 +572,8 @@ func TestFailedSettingsSavePreservesUnsetDefaults(t *testing.T) {
 	m.settingsCard().State().Field = uisettings.FieldDensity
 	m.cycleSetting(1)
 	_, _ = m.closeSettings()
-	job := m.effects.main.active
-	request := job.request.(settingsRequest)
+	job := m.effects.Main.Active
+	request := job.Request.(settingsRequest)
 	writer := &settingsScriptWriter{failOn: uisettings.ListDensitySetting, values: map[string]string{}}
 	result, err := runSettingsWithWriter(request, writer)
 	if err == nil {

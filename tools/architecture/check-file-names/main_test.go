@@ -70,7 +70,7 @@ func TestPackagedFeaturesAndExtrasExist(t *testing.T) {
 
 // rootOnly is closed: a new UI feature starts as a package of its own.
 func TestRootOnlyFeaturesAreClosed(t *testing.T) {
-	closed := []string{"effects", "model"}
+	closed := []string{"model"}
 	var got []string
 	for feature := range rootOnly {
 		got = append(got, feature)

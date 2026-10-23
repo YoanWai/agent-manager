@@ -37,7 +37,7 @@ func TestKeySavePersistsCapturedTablesNotLaterEdits(t *testing.T) {
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyF9})
 	cmd := m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
-	if m.effects.main.active == nil {
+	if m.effects.Main.Active == nil {
 		t.Fatal("the save should be accepted before a later edit")
 	}
 	m.settingsCard().State().KeyCursor = 1 // review
@@ -164,7 +164,7 @@ func TestKeySaveWithoutChangesQueuesNothing(t *testing.T) {
 	if cmd := m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc}); cmd != nil {
 		t.Fatal("an unchanged table should not enqueue save work")
 	}
-	if m.effects.main.active != nil || len(m.effects.main.pending) != 0 {
+	if m.effects.Main.Active != nil || len(m.effects.Main.Pending) != 0 {
 		t.Fatal("an unchanged table left a job in the lane")
 	}
 }

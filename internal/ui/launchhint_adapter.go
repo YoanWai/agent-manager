@@ -10,6 +10,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/mcpreg"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uilaunchhint "github.com/YoanWai/agent-manager/internal/ui/launchhint"
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	"github.com/charmbracelet/lipgloss"
@@ -28,7 +29,7 @@ type launchFix struct {
 	script      string
 	binary      string
 	update      bool
-	effectRetry effectRequest
+	effectRetry uieffects.Request
 	images      []composer.Attachment
 }
 
@@ -42,7 +43,7 @@ type pendingInstall struct {
 	binary      string
 	statusFile  string
 	script      string
-	effectRetry effectRequest
+	effectRetry uieffects.Request
 	images      []composer.Attachment
 }
 
@@ -220,11 +221,11 @@ func (m *Model) settleInstall() {
 	if install == nil {
 		return
 	}
-	for _, job := range append([]*effectJob{m.effects.main.active}, m.effects.main.pending...) {
+	for _, job := range append([]*uieffects.Job{m.effects.Main.Active}, m.effects.Main.Pending...) {
 		if job == nil {
 			continue
 		}
-		if request, ok := job.request.(installSettleRequest); ok && request.install.sessionID == install.sessionID {
+		if request, ok := job.Request.(installSettleRequest); ok && request.install.sessionID == install.sessionID {
 			return
 		}
 	}

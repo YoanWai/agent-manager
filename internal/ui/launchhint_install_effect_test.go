@@ -30,18 +30,18 @@ func TestInstallStartDefersWorkOffUpdate(t *testing.T) {
 	t.Cleanup(func() { installHomeDir = original })
 
 	pressInLaunchHint(t, m, 'i')
-	if m.effects.main.active == nil {
+	if m.effects.Main.Active == nil {
 		t.Fatal("install press queued no effect")
 	}
-	if _, ok := m.effects.main.active.request.(installStartRequest); !ok {
-		t.Fatalf("active effect = %T, want installStartRequest", m.effects.main.active.request)
+	if _, ok := m.effects.Main.Active.Request.(installStartRequest); !ok {
+		t.Fatalf("active effect = %T, want installStartRequest", m.effects.Main.Active.Request)
 	}
 	if m.ledger.install != nil || storeRows(t, m) != 0 {
 		t.Fatalf("install ran on Update: pending=%+v rows=%d", m.ledger.install, storeRows(t, m))
 	}
 
 	completed := make(chan tea.Msg, 1)
-	go func() { completed <- m.effects.main.active.command() }()
+	go func() { completed <- m.effects.Main.Active.Command() }()
 	<-started
 	updated := make(chan struct{})
 	go func() {
@@ -69,11 +69,11 @@ func TestInstallStartRefusesDuplicateWhileQueued(t *testing.T) {
 	installFixture(t, m, "sleep 30")
 
 	pressInLaunchHint(t, m, 'i')
-	first := m.effects.main.active
+	first := m.effects.Main.Active
 	pressInLaunchHint(t, m, 'i')
 
-	if m.effects.main.active != first || len(m.effects.main.pending) != 0 {
-		t.Fatalf("duplicate install changed the queue: active=%p first=%p pending=%d", m.effects.main.active, first, len(m.effects.main.pending))
+	if m.effects.Main.Active != first || len(m.effects.Main.Pending) != 0 {
+		t.Fatalf("duplicate install changed the queue: active=%p first=%p pending=%d", m.effects.Main.Active, first, len(m.effects.Main.Pending))
 	}
 	if !strings.Contains(m.errBar.text, "already") {
 		t.Fatalf("duplicate status = %q, want the in-progress install named", m.errBar.text)
@@ -169,7 +169,7 @@ func TestInstallStartCompletionDoesNotReplaceNewerDialog(t *testing.T) {
 	m := buildModel(t)
 	_, firstImage := installFixture(t, m, "sleep 30")
 	pressInLaunchHint(t, m, 'i')
-	first := m.effects.main.active.command
+	first := m.effects.Main.Active.Command
 
 	secondImage := tempImage(t, "second.png")
 	m.openLaunchHint(launchFix{
@@ -234,10 +234,10 @@ func TestInstallBlocksQuitUntilPendingRetrySettles(t *testing.T) {
 
 		updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 		m = updated.(*Model)
-		if cmd != nil || m.effects.quitting {
-			t.Fatalf("quit was accepted during install start: cmd=%v quitting=%t", cmd, m.effects.quitting)
+		if cmd != nil || m.effects.Quitting {
+			t.Fatalf("quit was accepted during install start: cmd=%v quitting=%t", cmd, m.effects.Quitting)
 		}
-		if m.effects.main.active == nil {
+		if m.effects.Main.Active == nil {
 			t.Fatal("refused quit discarded the accepted install start")
 		}
 		if !strings.Contains(m.errBar.text, "starting") || !strings.Contains(m.errBar.text, "wait") {
@@ -255,8 +255,8 @@ func TestInstallBlocksQuitUntilPendingRetrySettles(t *testing.T) {
 
 		updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 		m = updated.(*Model)
-		if cmd != nil || m.effects.quitting {
-			t.Fatalf("quit was accepted during pending install: cmd=%v quitting=%t", cmd, m.effects.quitting)
+		if cmd != nil || m.effects.Quitting {
+			t.Fatalf("quit was accepted during pending install: cmd=%v quitting=%t", cmd, m.effects.Quitting)
 		}
 		if !strings.Contains(m.errBar.text, "kill") || !strings.Contains(m.errBar.text, m.ledger.install.name) {
 			t.Fatalf("status = %q, want the installer shell and lifecycle guidance", m.errBar.text)
@@ -267,7 +267,7 @@ func TestInstallBlocksQuitUntilPendingRetrySettles(t *testing.T) {
 			t.Fatalf("blocked quit lost the captured retry: %v", sessionNames(m))
 		}
 		_, cmd = m.requestQuit()
-		if cmd == nil || !m.effects.quitting {
+		if cmd == nil || !m.effects.Quitting {
 			t.Fatal("quit stayed blocked after the install and retry settled")
 		}
 	})
@@ -305,18 +305,18 @@ func TestInstallSettleDefersStatusAndBinaryChecks(t *testing.T) {
 	t.Cleanup(func() { installCheckInstalled = original })
 
 	m.settleInstall()
-	if m.effects.main.active != nil {
+	if m.effects.Main.Active != nil {
 		t.Fatal("settle started its worker instead of only queuing it")
 	}
-	if len(m.effects.main.pending) != 1 {
-		t.Fatalf("settle queue = %d, want one request", len(m.effects.main.pending))
+	if len(m.effects.Main.Pending) != 1 {
+		t.Fatalf("settle queue = %d, want one request", len(m.effects.Main.Pending))
 	}
 	if _, err := os.Stat(statusFile); err != nil {
 		t.Fatalf("Update-path settle touched the status file: %v", err)
 	}
 	m.nextEffectCmd()
 	completed := make(chan tea.Msg, 1)
-	go func() { completed <- m.effects.main.active.command() }()
+	go func() { completed <- m.effects.Main.Active.Command() }()
 	<-started
 	updated := make(chan struct{})
 	go func() {
@@ -452,7 +452,7 @@ func TestInstallSettleRetriesTransientInstalledCheck(t *testing.T) {
 			t.Fatalf("transient installed check removed %s: %v", path, err)
 		}
 	}
-	if m.effects.main.active != nil || len(m.effects.main.pending) != 0 {
+	if m.effects.Main.Active != nil || len(m.effects.Main.Pending) != 0 {
 		t.Fatal("transient installed check queued the captured retry")
 	}
 	if !strings.Contains(m.errBar.text, "looking") || !strings.Contains(m.errBar.text, "PATH lookup") {
@@ -463,12 +463,12 @@ func TestInstallSettleRetriesTransientInstalledCheck(t *testing.T) {
 	if m.ledger.install != nil {
 		t.Fatalf("successful recheck kept the tracker: %+v", m.ledger.install)
 	}
-	if m.effects.main.active == nil {
+	if m.effects.Main.Active == nil {
 		t.Fatal("successful recheck did not activate the captured retry")
 	}
-	request, ok := m.effects.main.active.request.(spawnRequest)
+	request, ok := m.effects.Main.Active.Request.(spawnRequest)
 	if !ok || request.name != retryName {
-		t.Fatalf("successful recheck active effect = %#v, want captured retry %q", m.effects.main.active.request, retryName)
+		t.Fatalf("successful recheck active effect = %#v, want captured retry %q", m.effects.Main.Active.Request, retryName)
 	}
 	for _, path := range []string{statusFile, script} {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -517,7 +517,7 @@ func TestInstallSettleKeepsTrackerWhenShellLivenessIsUnknown(t *testing.T) {
 		t.Fatalf("status = %q, want the liveness failure and installer named", m.errBar.text)
 	}
 	_, quit := m.requestQuit()
-	if quit != nil || m.effects.quitting {
+	if quit != nil || m.effects.Quitting {
 		t.Fatal("unknown shell liveness allowed quit to discard the tracker")
 	}
 }

@@ -65,8 +65,8 @@ func TestLaunchHintClosesOnEscAndBackdrop(t *testing.T) {
 			t.Fatalf("%s: the hint holds no draft and must be dismissible", name)
 		}
 		m = closeIt(m)
-		if hintOpen(m) || m.effects.quitting || !m.onList() {
-			t.Errorf("%s: open=%t quitting=%t screen = %v", name, hintOpen(m), m.effects.quitting, m.screenID())
+		if hintOpen(m) || m.effects.Quitting || !m.onList() {
+			t.Errorf("%s: open=%t quitting=%t screen = %v", name, hintOpen(m), m.effects.Quitting, m.screenID())
 		}
 		if _, err := os.Stat(image); !os.IsNotExist(err) {
 			t.Errorf("%s: Leave left the refused prompt's image behind", name)
@@ -101,7 +101,7 @@ func TestInstallStartAfterTheHintClosedKeepsTheTracker(t *testing.T) {
 		t.Fatalf("install %+v hint open %t, want the tracker kept and no card revived", m.ledger.install, hintOpen(m))
 	}
 	_ = cmd
-	if _, quit := m.requestQuit(); m.effects.quitting {
+	if _, quit := m.requestQuit(); m.effects.Quitting {
 		t.Fatalf("quit accepted with an install pending: %v", quit)
 	}
 }

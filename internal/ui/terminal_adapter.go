@@ -149,7 +149,7 @@ func (m *Model) groupDirectoryFallbacks(group string) []string {
 func (m *Model) handleTerminalDirectory(msg terminalDirectoryMsg) (tea.Model, tea.Cmd) {
 	if msg.request.target == terminalDirectoryEditor {
 		entry, selected := m.selectedRow()
-		if m.effects.quitting || msg.request.foregroundGen != m.gens.foreground || m.screenID() != msg.request.screen || !selected || rowKey(entry) != msg.request.rowKey {
+		if m.effects.Quitting || msg.request.foregroundGen != m.gens.foreground || m.screenID() != msg.request.screen || !selected || rowKey(entry) != msg.request.rowKey {
 			return m, nil
 		}
 	}

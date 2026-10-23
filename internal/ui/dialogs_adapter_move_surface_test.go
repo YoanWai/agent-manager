@@ -43,8 +43,8 @@ func TestMoveClosesOnEscAndBackdrop(t *testing.T) {
 			t.Fatalf("%s: the move card holds no draft and must be dismissible", name)
 		}
 		m = close(m)
-		if moveOpen(m) || m.effects.quitting || !m.onList() {
-			t.Errorf("%s: open=%t quitting=%t screen = %v, want the card closed and the manager running", name, moveOpen(m), m.effects.quitting, m.screenID())
+		if moveOpen(m) || m.effects.Quitting || !m.onList() {
+			t.Errorf("%s: open=%t quitting=%t screen = %v, want the card closed and the manager running", name, moveOpen(m), m.effects.Quitting, m.screenID())
 		}
 	}
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -40,7 +41,7 @@ func TestSpawnWorkerDefersFilesystemReadAndCapturesDraft(t *testing.T) {
 		resolved: t.TempDir(), dirOK: true,
 	}
 	_, cmd := m.submitFormWithReader(reader)
-	if m.effects.main.active == nil {
+	if m.effects.Main.Active == nil {
 		t.Fatal("submit did not accept the spawn before directory validation")
 	}
 	select {
@@ -49,8 +50,8 @@ func TestSpawnWorkerDefersFilesystemReadAndCapturesDraft(t *testing.T) {
 	default:
 	}
 
-	completed := make(chan effectCompletedMsg, 1)
-	go func() { completed <- cmd().(effectCompletedMsg) }()
+	completed := make(chan uieffects.Completed, 1)
+	go func() { completed <- cmd().(uieffects.Completed) }()
 	<-reader.started
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 151, Height: 45})
 	m = updated.(*Model)
@@ -59,7 +60,7 @@ func TestSpawnWorkerDefersFilesystemReadAndCapturesDraft(t *testing.T) {
 	}
 	close(reader.release)
 	msg := <-completed
-	request := m.effects.main.active.request.(spawnRequest)
+	request := m.effects.Main.Active.Request.(spawnRequest)
 	if request.draftName != "captured" || request.rawDir != "/captured/raw" {
 		t.Fatalf("worker did not capture the draft: %+v", request)
 	}
@@ -79,8 +80,8 @@ func TestAcceptedSpawnSurvivesChangedDraftWithoutClosingIt(t *testing.T) {
 		resolved: t.TempDir(), dirOK: true,
 	}
 	_, cmd := m.submitFormWithReader(reader)
-	completed := make(chan effectCompletedMsg, 1)
-	go func() { completed <- cmd().(effectCompletedMsg) }()
+	completed := make(chan uieffects.Completed, 1)
+	go func() { completed <- cmd().(uieffects.Completed) }()
 	<-reader.started
 	m.form().SetName("newer")
 	close(reader.release)
@@ -113,8 +114,8 @@ func TestQuickPreflightCapturesTargetBeforeCursorMoves(t *testing.T) {
 		resolved: backend, dirOK: true,
 	}
 	_, cmd := m.quickSpawnWithReader("backend", "captured prompt", reader)
-	completed := make(chan effectCompletedMsg, 1)
-	go func() { completed <- cmd().(effectCompletedMsg) }()
+	completed := make(chan uieffects.Completed, 1)
+	go func() { completed <- cmd().(uieffects.Completed) }()
 	<-reader.started
 	m.selectGroupRow(t, "frontend")
 	close(reader.release)
@@ -137,7 +138,7 @@ func TestGroupPreflightFailureKeepsFormAndDoesNotMutate(t *testing.T) {
 	_, cmd := m.submitGroupFormWithReader(reader)
 	close(reader.release)
 	m.applyTestMsg(t, cmd())
-	if !m.groupFormOpen() || m.effects.main.active != nil || len(m.effects.main.pending) != 0 {
+	if !m.groupFormOpen() || m.effects.Main.Active != nil || len(m.effects.Main.Pending) != 0 {
 		t.Fatal("failed group validation closed the form or left a mutation queued")
 	}
 	if got := m.errBar.text; got != "default path does not exist: /missing/docs" {
@@ -155,7 +156,7 @@ func TestAcceptedGroupDrainsBlockedValidationOnQuit(t *testing.T) {
 		resolved: t.TempDir(), dirOK: true,
 	}
 	_, cmd := m.submitGroupFormWithReader(reader)
-	if m.effects.main.active == nil {
+	if m.effects.Main.Active == nil {
 		t.Fatal("group submission was not accepted before validation")
 	}
 	if _, quit := m.requestQuit(); quit != nil {
@@ -180,7 +181,7 @@ func submitFormSpawn(t *testing.T, m *Model, name, dir string) tea.Cmd {
 	m.form().SetDir(dir)
 	setFormTool(m, 0)
 	_, command := m.submitForm()
-	if m.effects.main.active == nil {
+	if m.effects.Main.Active == nil {
 		t.Fatal("submit did not queue the spawn worker")
 	}
 	return command
@@ -410,7 +411,7 @@ func TestSpawnDuplicateCompletionIsIdempotent(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	submitFormSpawn(t, m, "first", t.TempDir())
-	msg := m.effects.main.active.command()
+	msg := m.effects.Main.Active.Command()
 	m.applyTestMsg(t, msg)
 	fence := m.effects.latestObservation
 	rows := storeRows(t, m)
@@ -447,7 +448,7 @@ func TestSpawnDrainsAcceptedOnQuitAndRefusesLate(t *testing.T) {
 	setFormTool(m, 0)
 	_, late := m.submitForm()
 	m.applyTestMsg(t, late())
-	if len(m.effects.main.pending) != 0 {
+	if len(m.effects.Main.Pending) != 0 {
 		t.Fatal("quit accepted a new spawn")
 	}
 }
@@ -492,7 +493,7 @@ func TestGroupFormCompletionDoesNotReplaceNewerDialog(t *testing.T) {
 	m.groupSurface().SetName("first")
 	m.groupSurface().SetDir(t.TempDir())
 	_, cmd := m.submitGroupForm()
-	if m.effects.main.active == nil {
+	if m.effects.Main.Active == nil {
 		t.Fatal("accepted group submission did not queue the mutation")
 	}
 	// The user reopens the group form before the first one completes: a
@@ -588,7 +589,7 @@ func TestQuickSpawnCompletionPreservesEditedDraft(t *testing.T) {
 	m.quick().Input.SetValue("first task")
 	request := spawnRequest{kind: spawnQuick, composerGen: m.quick().Gen}
 	m.dispatchSpawn(request)
-	request = m.effects.main.pending[0].request.(spawnRequest)
+	request = m.effects.Main.Pending[0].Request.(spawnRequest)
 	m.quick().Input.SetValue("next task")
 	m.applySpawnEffect(request, spawnEffectResult{session: store.Session{ID: "child", Name: "child"}}, nil)
 	if m.quick().Input.Value() != "next task" {
@@ -604,8 +605,8 @@ func TestSpawnRepeatedSubmitKeepsOneAcceptedJob(t *testing.T) {
 	if repeated != nil {
 		m.applyTestMsg(t, repeated())
 	}
-	jobs := len(m.effects.main.pending)
-	if m.effects.main.active != nil {
+	jobs := len(m.effects.Main.Pending)
+	if m.effects.Main.Active != nil {
 		jobs++
 	}
 	if jobs != 1 {
@@ -621,16 +622,16 @@ func TestSpawnRetryRetainsManagerAndConversationIdentity(t *testing.T) {
 	tool.SessionIDFlag = "--session-id"
 	m.services.cfg.Tools["claude"] = tool
 	command := submitFormSpawn(t, m, "agent", t.TempDir())
-	first := m.effects.main.active.request.(spawnRequest)
-	msg := command().(effectCompletedMsg)
+	first := m.effects.Main.Active.Request.(spawnRequest)
+	msg := command().(uieffects.Completed)
 	m.applyTestMsg(t, msg)
 	retry, ok := hintFix(m).effectRetry.(spawnRequest)
 	if !ok || retry.id != first.id || retry.plan == nil || retry.plan.AgentSessionID == "" {
 		t.Fatalf("retry lost its captured identity: %+v", retry)
 	}
 	m.enqueueEffect(retry, 0, false)
-	msg = m.nextEffectCmd()().(effectCompletedMsg)
-	result := msg.result.(spawnEffectResult)
+	msg = m.nextEffectCmd()().(uieffects.Completed)
+	result := msg.Result.(spawnEffectResult)
 	if result.plan == nil || result.plan.AgentSessionID != retry.plan.AgentSessionID {
 		t.Fatal("retry regenerated the conversation identity")
 	}
@@ -642,7 +643,7 @@ func TestGroupCompletionPreservesEditedForm(t *testing.T) {
 	m.openGroupForm()
 	m.groupSurface().SetName("first")
 	m.enqueueEffect(groupRequest{path: "first", gen: m.groupSurface().Gen(), draftName: m.groupSurface().Name(), draftDir: m.groupSurface().Dir()}, 0, false)
-	request := m.effects.main.pending[0].request.(groupRequest)
+	request := m.effects.Main.Pending[0].Request.(groupRequest)
 	m.groupSurface().SetName("next")
 	m.applyGroupEffect(request, groupEffectResult{path: "first"}, nil)
 	if !m.groupFormOpen() || m.groupSurface().Name() != "next" {

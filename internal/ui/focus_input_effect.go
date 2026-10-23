@@ -8,6 +8,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -35,7 +36,7 @@ type inputRequest struct {
 	counted bool
 }
 
-func (inputRequest) effectRequest() {}
+func (inputRequest) EffectRequest() {}
 
 type inputEffectResult struct {
 	inputID   string
@@ -44,7 +45,7 @@ type inputEffectResult struct {
 	prompt    string
 }
 
-func (inputEffectResult) effectResult() {}
+func (inputEffectResult) EffectResult() {}
 
 func (m *Model) dispatchInput(request inputRequest) {
 	request.args = slices.Clone(request.args)
@@ -54,7 +55,7 @@ func (m *Model) dispatchInput(request inputRequest) {
 	m.enqueueEffect(request, 0, false)
 }
 
-func (s effectServices) runInput(request inputRequest) (effectResult, error) {
+func (s effectServices) runInput(request inputRequest) (uieffects.Result, error) {
 	if request.counted {
 		defer s.watch.WriteLanded(request.session.ID)
 	}
@@ -114,7 +115,7 @@ func (m *Model) applyInputEffect(result inputEffectResult, err error) {
 		m.reportErr(err.Error())
 		return
 	}
-	if !m.effects.quitting && result.inputID != "" && m.focused() && m.focus.runtime.watch != nil {
+	if !m.effects.Quitting && result.inputID != "" && m.focused() && m.focus.runtime.watch != nil {
 		if selected, ok := m.selected(); ok && selected.ID == result.inputID {
 			m.focus.runtime.watch.RetryNow()
 			m.watchSelection()

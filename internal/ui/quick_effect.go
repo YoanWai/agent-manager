@@ -7,6 +7,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -29,7 +30,7 @@ type quickSendRequest struct {
 	images         []composer.Attachment
 }
 
-func (quickSendRequest) effectRequest() {}
+func (quickSendRequest) EffectRequest() {}
 
 type quickSendResult struct {
 	outcome     quickSendOutcome
@@ -37,15 +38,15 @@ type quickSendResult struct {
 	metadataErr error
 }
 
-func (quickSendResult) effectResult() {}
+func (quickSendResult) EffectResult() {}
 
 func (m *Model) dispatchQuickSend(request quickSendRequest) bool {
-	jobs := append([]*effectJob{m.effects.main.active}, m.effects.main.pending...)
+	jobs := append([]*uieffects.Job{m.effects.Main.Active}, m.effects.Main.Pending...)
 	for _, job := range jobs {
 		if job == nil {
 			continue
 		}
-		pending, ok := job.request.(quickSendRequest)
+		pending, ok := job.Request.(quickSendRequest)
 		if ok && pending.composerGen == request.composerGen {
 			m.reportErr("this prompt is already being sent")
 			return false
@@ -57,7 +58,7 @@ func (m *Model) dispatchQuickSend(request quickSendRequest) bool {
 	return true
 }
 
-func (s effectServices) runQuickSend(request quickSendRequest) (effectResult, error) {
+func (s effectServices) runQuickSend(request quickSendRequest) (uieffects.Result, error) {
 	result := quickSendResult{outcome: quickSendRefused}
 	current, err := s.store.Get(request.session.ID)
 	if err != nil {

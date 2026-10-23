@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/store"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	tea "github.com/charmbracelet/bubbletea"
@@ -20,7 +21,7 @@ type settingsRequest struct {
 	generation   uint64
 }
 
-func (settingsRequest) effectRequest() {}
+func (settingsRequest) EffectRequest() {}
 
 // settingsEffectResult reports what the worker durably committed. On a
 // partial failure, restored carries the read-back of the committed keys
@@ -34,7 +35,7 @@ type settingsEffectResult struct {
 	hiddenErr      error
 }
 
-func (settingsEffectResult) effectResult() {}
+func (settingsEffectResult) EffectResult() {}
 
 type settingsLoadTarget uint8
 
@@ -136,11 +137,11 @@ func settingsLoadCmd(request settingsLoadRequest, reader settingsValueReader) te
 	}
 }
 
-func (s effectServices) runSettings(request settingsRequest) (effectResult, error) {
+func (s effectServices) runSettings(request settingsRequest) (uieffects.Result, error) {
 	return runSettingsWithWriter(request, storeSettingWriter{st: s.store})
 }
 
-func runSettingsWithWriter(request settingsRequest, writer settingWriter) (effectResult, error) {
+func runSettingsWithWriter(request settingsRequest, writer settingWriter) (uieffects.Result, error) {
 	result := settingsEffectResult{generation: request.generation}
 	result.tot = len(request.values)
 	if request.hidden != nil {
@@ -194,8 +195,8 @@ func settingsReadback(writer settingsValueReader) ([]restoredValue, string, erro
 // applied-preference mismatch is never hidden behind a generation fence.
 // Dialog fields are restored only while the request is the latest
 // accepted save, so a newer dialog is never replaced.
-func (m *Model) applySettingsEffect(job *effectJob, result settingsEffectResult, err error) tea.Cmd {
-	request := job.request.(settingsRequest)
+func (m *Model) applySettingsEffect(job *uieffects.Job, result settingsEffectResult, err error) tea.Cmd {
+	request := job.Request.(settingsRequest)
 	if m.settings.pending > 0 {
 		m.settings.pending--
 	}

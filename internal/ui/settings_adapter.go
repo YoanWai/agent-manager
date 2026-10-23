@@ -9,6 +9,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/systheme"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -308,11 +309,11 @@ func (m *Model) settingsKeyTables() (keybind.Table, keybind.Table) {
 // they commit.
 func (m *Model) queuedKeys() []keysRequest {
 	var requests []keysRequest
-	for _, job := range append([]*effectJob{m.effects.main.active}, m.effects.main.pending...) {
+	for _, job := range append([]*uieffects.Job{m.effects.Main.Active}, m.effects.Main.Pending...) {
 		if job == nil {
 			continue
 		}
-		if request, ok := job.request.(keysRequest); ok {
+		if request, ok := job.Request.(keysRequest); ok {
 			requests = append(requests, request)
 		}
 	}

@@ -14,6 +14,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	"github.com/YoanWai/agent-manager/internal/ui/pathcomplete"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
@@ -60,7 +61,7 @@ type spawnRequest struct {
 	base         string
 }
 
-func (spawnRequest) effectRequest() {}
+func (spawnRequest) EffectRequest() {}
 
 // spawnEffectResult is the durable outcome of a spawn: the persisted
 // session row, which exists only when the pane was created too, and a label
@@ -75,7 +76,7 @@ type spawnEffectResult struct {
 	repoCapable bool
 }
 
-func (spawnEffectResult) effectResult() {}
+func (spawnEffectResult) EffectResult() {}
 
 // groupRequest captures a group creation; the accepted effect validates the
 // directory before the store write.
@@ -94,7 +95,7 @@ type groupRequest struct {
 	dirReader directoryPreflight
 }
 
-func (groupRequest) effectRequest() {}
+func (groupRequest) EffectRequest() {}
 
 type groupEffectResult struct {
 	path     string
@@ -102,16 +103,16 @@ type groupEffectResult struct {
 	worktree string
 }
 
-func (groupEffectResult) effectResult() {}
+func (groupEffectResult) EffectResult() {}
 
 // dispatchSpawn takes the prompt's images out of the composer and queues
 // the spawn on the shared effect lane; completion routes the images.
 func (m *Model) dispatchSpawn(request spawnRequest) {
-	for _, job := range append([]*effectJob{m.effects.main.active}, m.effects.main.pending...) {
+	for _, job := range append([]*uieffects.Job{m.effects.Main.Active}, m.effects.Main.Pending...) {
 		if job == nil {
 			continue
 		}
-		if pending, ok := job.request.(spawnRequest); ok && pending.kind == request.kind && pending.composerGen == request.composerGen {
+		if pending, ok := job.Request.(spawnRequest); ok && pending.kind == request.kind && pending.composerGen == request.composerGen {
 			m.reportErr("this spawn is already in progress")
 			return
 		}
@@ -133,7 +134,7 @@ func (m *Model) dispatchSpawn(request spawnRequest) {
 	m.enqueueEffect(request, 0, false)
 }
 
-func (s effectServices) runSpawn(request spawnRequest) (effectResult, error) {
+func (s effectServices) runSpawn(request spawnRequest) (uieffects.Result, error) {
 	result := spawnEffectResult{}
 	if s.lifecycle == nil {
 		return result, errors.New("spawn requires the lifecycle service")
@@ -218,7 +219,7 @@ func (s effectServices) runSpawn(request spawnRequest) (effectResult, error) {
 	return result, nil
 }
 
-func (s effectServices) runGroup(request groupRequest) (effectResult, error) {
+func (s effectServices) runGroup(request groupRequest) (uieffects.Result, error) {
 	dir := request.dir
 	if dir == "" {
 		reader := request.dirReader
@@ -386,13 +387,13 @@ type choiceSaveRequest struct {
 	value string
 }
 
-func (choiceSaveRequest) effectRequest() {}
+func (choiceSaveRequest) EffectRequest() {}
 
 type choiceSaveResult struct{}
 
-func (choiceSaveResult) effectResult() {}
+func (choiceSaveResult) EffectResult() {}
 
-func (s effectServices) runChoiceSave(request choiceSaveRequest) (effectResult, error) {
+func (s effectServices) runChoiceSave(request choiceSaveRequest) (uieffects.Result, error) {
 	if err := s.store.SetSetting(request.key, request.value); err != nil {
 		return choiceSaveResult{}, fmt.Errorf("saving %s: %w", request.key, err)
 	}

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"github.com/YoanWai/agent-manager/internal/store"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -33,7 +34,7 @@ type savedPromptRequest struct {
 	remove    string
 }
 
-func (savedPromptRequest) effectRequest() {}
+func (savedPromptRequest) EffectRequest() {}
 
 // savedPromptResult is the catalog read back once the write landed.
 type savedPromptResult struct {
@@ -41,9 +42,9 @@ type savedPromptResult struct {
 	committed bool
 }
 
-func (savedPromptResult) effectResult() {}
+func (savedPromptResult) EffectResult() {}
 
-func (s effectServices) runSavedPrompt(request savedPromptRequest) (effectResult, error) {
+func (s effectServices) runSavedPrompt(request savedPromptRequest) (uieffects.Result, error) {
 	var err error
 	if request.save != nil {
 		err = s.store.SaveSessionPreset(request.save.Previous, store.SessionPreset{Name: request.save.Prompt.Name, Instructions: request.save.Prompt.Text})

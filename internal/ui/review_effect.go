@@ -7,6 +7,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -43,7 +44,7 @@ type reviewEffectRequest struct {
 	sendTarget    reviewSendTarget
 }
 
-func (reviewEffectRequest) effectRequest() {}
+func (reviewEffectRequest) EffectRequest() {}
 
 type reviewEffectResult struct {
 	op     reviewEffectOp
@@ -84,7 +85,7 @@ func sameReviewSendTarget(current store.Session, expected reviewSendTarget) bool
 		current.TmuxSocket == expected.socket
 }
 
-func (reviewEffectResult) effectResult() {}
+func (reviewEffectResult) EffectResult() {}
 
 type reviewSessionWriter interface {
 	exists(id string) (bool, error)
@@ -98,12 +99,12 @@ func (w driverReviewWriter) sendText(id, text string) (tmux.SendResult, error) {
 	return w.drv.SendTextResult(id, text)
 }
 
-func (s effectServices) runReview(request reviewEffectRequest) (effectResult, error) {
+func (s effectServices) runReview(request reviewEffectRequest) (uieffects.Result, error) {
 	writer := reviewSessionWriter(driverReviewWriter{drv: s.driver})
 	return runReviewWithWriter(request, s.store, writer)
 }
 
-func runReviewWithWriter(request reviewEffectRequest, st *store.Store, writer reviewSessionWriter) (effectResult, error) {
+func runReviewWithWriter(request reviewEffectRequest, st *store.Store, writer reviewSessionWriter) (uieffects.Result, error) {
 	switch request.op {
 	case reviewOpSave:
 		return reviewEffectResult{op: reviewOpSave, save: uireview.SaveResult{
@@ -199,7 +200,7 @@ func runReviewWithWriter(request reviewEffectRequest, st *store.Store, writer re
 	panic(fmt.Sprintf("unknown review effect op %d", request.op))
 }
 
-func (m *Model) applyReviewEffect(job *effectJob, result reviewEffectResult, err error) tea.Cmd {
+func (m *Model) applyReviewEffect(job *uieffects.Job, result reviewEffectResult, err error) tea.Cmd {
 	switch result.op {
 	case reviewOpSave:
 		return m.handleReviewSave(result.save)

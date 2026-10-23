@@ -30,6 +30,7 @@ var packaged = map[string]string{
 	"composer":     "the prompt box adapter: which box a paste lands in, its painters and the pastes sweep",
 	"connections":  "the SSH connections adapter: the client, refreshes, remote rows, preview and routed actions, and their effects",
 	"dialogs":      "the confirm, rename, move, fork and New Group dialog adapters and their effects",
+	"effects":      "the effect lane adapter: request copies, lane choice, the pane holds, the quit drain and result routing, and the executor",
 	"focus":        "the Focus adapter, its frame view, the pane watcher it holds and the raw input lane",
 	"frame":        "the frame adapter: card chrome, the header band, the legend painters, the IME cursor and the list frame",
 	"geometry":     "pane sizing, layout widths and the split ratio: the adapter, its effects and the resize surface",
@@ -59,8 +60,7 @@ var rootExtras = map[string]bool{}
 // list is closed: a new feature starts as a package under internal/ui and
 // joins packaged, so the root holds only its adapter and effects.
 var rootOnly = map[string]string{
-	"effects": "the ordered effect lane and its executor",
-	"model":   "the root Model, its services and shared host methods",
+	"model": "the root Model, its services and shared host methods",
 }
 
 // dispatch are the root files that route rather than own a feature.

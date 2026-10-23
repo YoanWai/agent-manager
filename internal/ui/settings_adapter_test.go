@@ -8,6 +8,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/launch"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	"github.com/YoanWai/agent-manager/internal/update"
 	tea "github.com/charmbracelet/bubbletea"
@@ -476,9 +477,9 @@ func TestSettingsUpdateRowAppliesOnEnter(t *testing.T) {
 	if !m.settingsOpen() {
 		t.Fatal("starting the update must keep settings open")
 	}
-	completed := cmd().(effectCompletedMsg)
-	if completed.err != nil {
-		t.Fatalf("staged settings save: %v", completed.err)
+	completed := cmd().(uieffects.Completed)
+	if completed.Err != nil {
+		t.Fatalf("staged settings save: %v", completed.Err)
 	}
 	updated, next := m.Update(completed)
 	m = updated.(*Model)
@@ -569,9 +570,9 @@ func TestSettingsUpdateRowApplyFailureSurfaces(t *testing.T) {
 	}
 
 	_, cmd := m.handleSettingsKey(key("enter"))
-	completed := cmd().(effectCompletedMsg)
-	if completed.err != nil {
-		t.Fatalf("staged settings save: %v", completed.err)
+	completed := cmd().(uieffects.Completed)
+	if completed.Err != nil {
+		t.Fatalf("staged settings save: %v", completed.Err)
 	}
 	updated, next := m.Update(completed)
 	m = updated.(*Model)

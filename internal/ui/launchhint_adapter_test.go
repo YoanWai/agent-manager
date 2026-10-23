@@ -828,7 +828,7 @@ func TestLaunchHintInstallShellKilledDropsThePendingLaunch(t *testing.T) {
 		t.Fatal("a killed install gives the prompt up, so its image goes too")
 	}
 	_, quit := m.requestQuit()
-	if quit == nil || !m.effects.quitting {
+	if quit == nil || !m.effects.Quitting {
 		t.Fatal("killing the tracked installer should make quit available again")
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -201,7 +202,7 @@ func TestCtrlCFromResizePersistsRatioAfterAcceptedQuit(t *testing.T) {
 	if m.layout.split.resizeMode || m.layout.split.dragging || m.layout.split.moved {
 		t.Fatal("accepted ctrl+c quit left resize interaction armed")
 	}
-	if !m.effects.quitting || cmd == nil {
+	if !m.effects.Quitting || cmd == nil {
 		t.Fatal("accepted ctrl+c quit did not drain the captured split save")
 	}
 	m.applyCmd(t, cmd)
@@ -221,7 +222,7 @@ func TestInstallerRefusedQuitKeepsResizeInteraction(t *testing.T) {
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	m = updated.(*Model)
-	if cmd != nil || m.effects.quitting {
+	if cmd != nil || m.effects.Quitting {
 		t.Fatal("installer gate accepted quit")
 	}
 	if !m.layout.split.resizeMode || m.layout.split.ratio != 0.42 {
@@ -243,7 +244,7 @@ func TestInstallerRefusedQuitKeepsMouseDrag(t *testing.T) {
 
 	updated, cmd := m.handleKey(key("q"))
 	m = updated.(*Model)
-	if cmd != nil || m.effects.quitting {
+	if cmd != nil || m.effects.Quitting {
 		t.Fatal("installer gate accepted quit")
 	}
 	if !m.layout.split.dragging || !m.layout.split.moved || m.layout.split.ratio != 0.42 {
@@ -266,11 +267,11 @@ func TestSplitPersistenceIsDeferredAndOrdered(t *testing.T) {
 	if raw, err := st.Setting(splitRatioSetting); err != nil || raw != "" {
 		t.Fatalf("Update path wrote split ratio before the worker ran: %q, %v", raw, err)
 	}
-	if len(m.effects.main.pending) != 2 {
-		t.Fatalf("queued saves = %d, want 2", len(m.effects.main.pending))
+	if len(m.effects.Main.Pending) != 2 {
+		t.Fatalf("queued saves = %d, want 2", len(m.effects.Main.Pending))
 	}
-	first := m.effects.main.pending[0].request.(splitSaveRequest)
-	second := m.effects.main.pending[1].request.(splitSaveRequest)
+	first := m.effects.Main.Pending[0].Request.(splitSaveRequest)
+	second := m.effects.Main.Pending[1].Request.(splitSaveRequest)
 	if first.value != "0.4100" || second.value != "0.5200" {
 		t.Fatalf("captured order = %q then %q", first.value, second.value)
 	}
@@ -283,21 +284,21 @@ func TestSplitPersistenceIsDeferredAndOrdered(t *testing.T) {
 
 func TestNewerSplitSaveSuccessClearsOnlySplitFailure(t *testing.T) {
 	m := &Model{layout: layoutState{split: splitState{saveID: 1}}}
-	m.applySplitSave(&effectJob{id: 1}, errors.New("save split ratio: database is locked"))
+	m.applySplitSave(&uieffects.Job{ID: 1}, errors.New("save split ratio: database is locked"))
 	if m.errBar.text == "" {
 		t.Fatal("latest failed save did not surface its error")
 	}
 
 	m.layout.split.saveID = 2
-	m.applySplitSave(&effectJob{id: 2}, nil)
+	m.applySplitSave(&uieffects.Job{ID: 2}, nil)
 	if m.errBar.text != "" || m.layout.split.saveError != "" {
 		t.Fatalf("newer successful save left stale warning %q", m.errBar.text)
 	}
 
 	m.errBar.text = "another operation failed"
 	m.layout.split.saveID = 4
-	m.applySplitSave(&effectJob{id: 3}, errors.New("older split failure"))
-	m.applySplitSave(&effectJob{id: 4}, nil)
+	m.applySplitSave(&uieffects.Job{ID: 3}, errors.New("older split failure"))
+	m.applySplitSave(&uieffects.Job{ID: 4}, nil)
 	if m.errBar.text != "another operation failed" {
 		t.Fatalf("split completion erased unrelated status %q", m.errBar.text)
 	}

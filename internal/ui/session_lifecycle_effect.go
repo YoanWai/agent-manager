@@ -6,6 +6,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -17,7 +18,7 @@ type lifecycleRequest struct {
 	emptyNotice string
 }
 
-func (lifecycleRequest) effectRequest() {}
+func (lifecycleRequest) EffectRequest() {}
 
 type relaunchedSession struct {
 	id     string
@@ -34,7 +35,7 @@ type lifecycleEffectResult struct {
 	warning  error
 }
 
-func (lifecycleEffectResult) effectResult() {}
+func (lifecycleEffectResult) EffectResult() {}
 
 func (m *Model) queueLifecycle(target confirmTarget, allowLive bool, emptyNotice string) {
 	target.sessions = append([]store.Session(nil), target.sessions...)
@@ -42,7 +43,7 @@ func (m *Model) queueLifecycle(target confirmTarget, allowLive bool, emptyNotice
 	m.enqueueEffect(lifecycleRequest{target: target, pane: sessioncmd.PaneSize{Width: w, Height: h}, watched: m.watchedSession(), allowLive: allowLive, emptyNotice: emptyNotice}, 0, false)
 }
 
-func (s effectServices) runLifecycle(request lifecycleRequest) (effectResult, error) {
+func (s effectServices) runLifecycle(request lifecycleRequest) (uieffects.Result, error) {
 	result := lifecycleEffectResult{}
 	target, err := s.validateLifecycleSelection(request.target)
 	if err != nil {

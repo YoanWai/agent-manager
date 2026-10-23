@@ -1,6 +1,9 @@
 package ui
 
-import "fmt"
+import (
+	"fmt"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
+)
 
 // noticeDismissRequest persists one optimistic dismissal through the shared
 // FIFO effect lane. The foreground fence reopens the failed notice only when
@@ -11,24 +14,24 @@ type noticeDismissRequest struct {
 	modal         bool
 }
 
-func (noticeDismissRequest) effectRequest() {}
+func (noticeDismissRequest) EffectRequest() {}
 
 type noticeDismissResult struct{}
 
-func (noticeDismissResult) effectResult() {}
+func (noticeDismissResult) EffectResult() {}
 
 func (m *Model) noticeDismissQueued(id string) bool {
-	queued := func(job *effectJob) bool {
+	queued := func(job *uieffects.Job) bool {
 		if job == nil {
 			return false
 		}
-		request, ok := job.request.(noticeDismissRequest)
+		request, ok := job.Request.(noticeDismissRequest)
 		return ok && request.id == id
 	}
-	if queued(m.effects.main.active) {
+	if queued(m.effects.Main.Active) {
 		return true
 	}
-	for _, job := range m.effects.main.pending {
+	for _, job := range m.effects.Main.Pending {
 		if queued(job) {
 			return true
 		}
@@ -36,7 +39,7 @@ func (m *Model) noticeDismissQueued(id string) bool {
 	return false
 }
 
-func (s effectServices) runNoticeDismiss(request noticeDismissRequest) (effectResult, error) {
+func (s effectServices) runNoticeDismiss(request noticeDismissRequest) (uieffects.Result, error) {
 	if s.store == nil {
 		return noticeDismissResult{}, fmt.Errorf("dismiss notice %q: store is unavailable", request.id)
 	}
@@ -46,14 +49,14 @@ func (s effectServices) runNoticeDismiss(request noticeDismissRequest) (effectRe
 	return noticeDismissResult{}, nil
 }
 
-func (m *Model) applyNoticeDismiss(job *effectJob, err error) {
-	request := job.request.(noticeDismissRequest)
+func (m *Model) applyNoticeDismiss(job *uieffects.Job, err error) {
+	request := job.Request.(noticeDismissRequest)
 	if err == nil {
 		return
 	}
 	m.notices.Restore(request.id)
 	m.reportErr(err.Error())
-	if request.modal && !m.effects.quitting && request.foregroundGen == m.gens.foreground && (m.noticesOpen() || m.listClear()) {
+	if request.modal && !m.effects.Quitting && request.foregroundGen == m.gens.foreground && (m.noticesOpen() || m.listClear()) {
 		m.openNotices(request.id)
 	}
 }

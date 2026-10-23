@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -58,12 +59,12 @@ func TestRenameIsARowNotACard(t *testing.T) {
 func TestRenameEscClosesAndCtrlCQuits(t *testing.T) {
 	m := openRenameFor(t)
 	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
-	if renameOpen(m) || m.effects.quitting || !m.onList() {
-		t.Fatalf("esc: open=%t quitting=%t screen = %v", renameOpen(m), m.effects.quitting, m.screenID())
+	if renameOpen(m) || m.effects.Quitting || !m.onList() {
+		t.Fatalf("esc: open=%t quitting=%t screen = %v", renameOpen(m), m.effects.Quitting, m.screenID())
 	}
 	m = openRenameFor(t)
 	m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
-	if !m.effects.quitting {
+	if !m.effects.Quitting {
 		t.Fatal("ctrl+c over the list did not quit")
 	}
 }
@@ -77,7 +78,7 @@ func TestStaleRenameCompletionIsDropped(t *testing.T) {
 	m.Pop()
 	m.openRename()
 	m.gens.dialog++
-	job := &effectJob{request: renameRequest{kind: renameSession, sessID: openRename(m).SessionID(), name: name, gen: gen}}
+	job := &uieffects.Job{Request: renameRequest{kind: renameSession, sessID: openRename(m).SessionID(), name: name, gen: gen}}
 	m.applyRenameEffect(job, renameEffectResult{}, nil)
 	if !renameOpen(m) {
 		t.Fatal("a completion from an older rename closed the newer one")

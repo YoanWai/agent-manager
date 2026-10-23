@@ -3,6 +3,7 @@ package ui
 import (
 	"testing"
 
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	tea "github.com/charmbracelet/bubbletea"
@@ -43,8 +44,8 @@ func TestNoticesSurfaceClosesOnEscAndBackdrop(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			m := closeIt(noticesOverList(t))
-			if m.noticesOpen() || m.effects.quitting {
-				t.Fatalf("modal open = %t, quitting = %t", m.noticesOpen(), m.effects.quitting)
+			if m.noticesOpen() || m.effects.Quitting {
+				t.Fatalf("modal open = %t, quitting = %t", m.noticesOpen(), m.effects.Quitting)
 			}
 		})
 	}
@@ -56,7 +57,7 @@ func TestNoticesSurfaceFencesAStaleDismissalCompletion(t *testing.T) {
 	m := noticeModel(noticeStore(t), "v0.2.0")
 	m.layout.width, m.layout.height = 120, 34
 	m.openNotices(uinotices.Welcome)
-	job := &effectJob{request: noticeDismissRequest{id: uinotices.Welcome, foregroundGen: m.gens.foreground, modal: true}}
+	job := &uieffects.Job{Request: noticeDismissRequest{id: uinotices.Welcome, foregroundGen: m.gens.foreground, modal: true}}
 
 	m.Pop()
 	m.openHelp()

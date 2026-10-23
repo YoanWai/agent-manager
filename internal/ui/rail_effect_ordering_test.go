@@ -44,14 +44,14 @@ func TestPrioritizedCollapseSaveKeepsActiveAndUnrelatedJobs(t *testing.T) {
 	m := &Model{}
 	m.queueRail([]uirail.Mutation{{Kind: uirail.SaveCollapsed}}, 0, false)
 	m.nextEffectCmd()
-	active := m.effects.main.active
+	active := m.effects.Main.Active
 	m.enqueueEffect(geometryRequest{}, 0, false)
-	geometry := m.effects.main.pending[0]
+	geometry := m.effects.Main.Pending[0]
 	m.queueRail([]uirail.Mutation{{Kind: uirail.SaveCollapsed}}, 0, false)
 	m.enqueueEffect(lifecycleRequest{}, 0, false)
-	lifecycle := m.effects.main.pending[2]
+	lifecycle := m.effects.Main.Pending[2]
 	m.queueRail([]uirail.Mutation{{Kind: uirail.SaveCollapsed, Collapsed: []string{"latest"}}}, 0, true)
-	if m.effects.main.active != active || len(m.effects.main.pending) != 3 || m.effects.main.pending[1] != geometry || m.effects.main.pending[2] != lifecycle {
+	if m.effects.Main.Active != active || len(m.effects.Main.Pending) != 3 || m.effects.Main.Pending[1] != geometry || m.effects.Main.Pending[2] != lifecycle {
 		t.Fatal("superseding snapshots changed active work or unrelated job order")
 	}
 }

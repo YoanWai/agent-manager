@@ -5,6 +5,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -184,7 +185,7 @@ func (m *Model) openBasePickWithReader(reader reviewPickerReader) tea.Cmd {
 }
 
 func (m *Model) handleReviewPickerLoaded(msg reviewPickerLoadedMsg) tea.Cmd {
-	if m.effects.quitting || m.base != baseReview || m.gens.foreground != msg.request.foregroundGen || !m.review.PickerSourceCurrent(msg.request.source) {
+	if m.effects.Quitting || m.base != baseReview || m.gens.foreground != msg.request.foregroundGen || !m.review.PickerSourceCurrent(msg.request.source) {
 		return nil
 	}
 	if msg.err != nil {
@@ -205,7 +206,7 @@ func (m *Model) handleReviewPickerLoaded(msg reviewPickerLoadedMsg) tea.Cmd {
 // the review on, so a pick for the old one is refused where the user can
 // see why, instead of retargeting whatever is showing now.
 func (m *Model) applyReviewPick(msg uireview.PickedMsg) tea.Cmd {
-	if m.effects.quitting || m.base != baseReview {
+	if m.effects.Quitting || m.base != baseReview {
 		return nil
 	}
 	if !m.review.PickerSourceCurrent(msg.Source) {
@@ -260,17 +261,17 @@ func (m *Model) selectBase(ref string, source uireview.PickerSource, storeRoot s
 }
 
 func (m *Model) reviewBaseSavePending() bool {
-	isBaseSave := func(job *effectJob) bool {
+	isBaseSave := func(job *uieffects.Job) bool {
 		if job == nil {
 			return false
 		}
-		request, ok := job.request.(reviewEffectRequest)
+		request, ok := job.Request.(reviewEffectRequest)
 		return ok && request.op == reviewOpSetBase
 	}
-	if isBaseSave(m.effects.main.active) {
+	if isBaseSave(m.effects.Main.Active) {
 		return true
 	}
-	for _, job := range m.effects.main.pending {
+	for _, job := range m.effects.Main.Pending {
 		if isBaseSave(job) {
 			return true
 		}
@@ -281,12 +282,12 @@ func (m *Model) reviewBaseSavePending() bool {
 func (m *Model) applyReviewBase(result reviewBaseResult) tea.Cmd {
 	source := uireview.PickerSource{Generation: result.generation, TargetID: result.targetID, RepoRoot: result.sourceRepo}
 	if result.err != nil {
-		if !m.effects.quitting {
+		if !m.effects.Quitting {
 			m.reportErr(result.err.Error())
 		}
 		return nil
 	}
-	if m.effects.quitting || !m.review.PickerSourceCurrent(source) {
+	if m.effects.Quitting || !m.review.PickerSourceCurrent(source) {
 		return nil
 	}
 	request, ok := m.review.SelectBase(result.ref)

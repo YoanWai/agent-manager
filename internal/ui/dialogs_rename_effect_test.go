@@ -9,6 +9,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/store"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -246,7 +247,7 @@ func TestRenameGroupPartialFailureReconcilesCommittedStages(t *testing.T) {
 		name:     "fresh",
 		gen:      7,
 	}
-	job := &effectJob{request: request}
+	job := &uieffects.Job{Request: request}
 	m.push(newRenameSurface(m, uidialogs.RenameGroup("old", "", 0), ""))
 	m.gens.dialog = 7
 	m.applyRenameEffect(job, renameEffectResult{groupRenamed: true}, errRenameStageTwo)
@@ -332,15 +333,15 @@ func TestRenameCommandExecutesOnceAndCompletionIsIdempotent(t *testing.T) {
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	first := cmd()
 	second := cmd()
-	firstMsg, ok := first.(effectCompletedMsg)
+	firstMsg, ok := first.(uieffects.Completed)
 	if !ok {
 		t.Fatalf("first run returned %+v", first)
 	}
-	secondMsg, ok := second.(effectCompletedMsg)
+	secondMsg, ok := second.(uieffects.Completed)
 	if !ok {
 		t.Fatalf("second run returned %+v", second)
 	}
-	if firstMsg.id != secondMsg.id {
+	if firstMsg.ID != secondMsg.ID {
 		t.Fatal("second run produced a different completion")
 	}
 	updated, _ := m.Update(first)
@@ -378,7 +379,7 @@ func TestQuitDrainsRenameEffects(t *testing.T) {
 		t.Fatal("group rename dispatch returned no command")
 	}
 	_, _ = m.requestQuit()
-	if !m.effects.quitting {
+	if !m.effects.Quitting {
 		t.Fatal("quit not queued")
 	}
 	m.applyCmd(t, cmd)
@@ -562,7 +563,7 @@ func TestRenameCompletionDoesNotCloseResubmittedDialog(t *testing.T) {
 	// cycling the tool). gens.dialog advanced, so cmd1's completion is stale.
 	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	if len(m.effects.main.pending) == 0 {
+	if len(m.effects.Main.Pending) == 0 {
 		t.Fatal("resubmit did not enqueue a job")
 	}
 

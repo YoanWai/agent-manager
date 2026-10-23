@@ -3,6 +3,7 @@ package ui
 import (
 	"errors"
 	"github.com/YoanWai/agent-manager/internal/status"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -14,15 +15,15 @@ type attachRequest struct {
 	screen        screenID
 }
 
-func (attachRequest) effectRequest() {}
+func (attachRequest) EffectRequest() {}
 
 type attachEffectResult struct {
 	warning error
 	fatal   error
 }
 
-func (attachEffectResult) effectResult() {}
-func (s effectServices) runAttach(request attachRequest) (effectResult, error) {
+func (attachEffectResult) EffectResult() {}
+func (s effectServices) runAttach(request attachRequest) (uieffects.Result, error) {
 	result := attachEffectResult{}
 	err := s.reflow([]string{request.id}, func() {
 		exists, probeErr := s.driver.SessionExists(request.id)
@@ -60,7 +61,7 @@ func (m *Model) applyAttachEffect(request attachRequest, result attachEffectResu
 	if request.reattach && (request.generation != m.review.Generation() || m.review.Active()) {
 		return nil
 	}
-	if m.effects.quitting || request.foregroundGen != m.gens.foreground || request.screen != m.screenID() {
+	if m.effects.Quitting || request.foregroundGen != m.gens.foreground || request.screen != m.screenID() {
 		return nil
 	}
 	if result.warning != nil {

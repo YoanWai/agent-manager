@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/store"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -98,7 +99,7 @@ func TestConfirmKeyCtrlCQuits(t *testing.T) {
 	}
 
 	m.Update(namedKey(tea.KeyCtrlC))
-	if !m.effects.quitting {
+	if !m.effects.Quitting {
 		t.Fatal("ctrl+c over the confirm card did not quit")
 	}
 	if !m.services.tmux.Exists(sess.ID) {
@@ -147,13 +148,13 @@ func TestConfirmRemovesAConnection(t *testing.T) {
 		t.Fatalf("mode %v confirm %+v, want the dialog closed", m.screenID(), pendingConfirm(m))
 	}
 	var removed []string
-	for _, lane := range m.lanes() {
-		jobs := lane.pending
-		if lane.active != nil {
-			jobs = append([]*effectJob{lane.active}, jobs...)
+	for _, lane := range m.effects.Lanes() {
+		jobs := lane.Pending
+		if lane.Active != nil {
+			jobs = append([]*uieffects.Job{lane.Active}, jobs...)
 		}
 		for _, job := range jobs {
-			switch request := job.request.(type) {
+			switch request := job.Request.(type) {
 			case connectionRequest:
 				if request.op == connectionRemove {
 					removed = append(removed, request.name)

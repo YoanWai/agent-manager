@@ -9,7 +9,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if key, ok := msg.(tea.KeyMsg); ok && m.routeQuit(key) == quitNow {
 		return m.requestQuit()
 	}
-	if m.effects.quitting {
+	if m.effects.Quitting {
 		switch msg.(type) {
 		case tea.KeyMsg, tea.MouseMsg:
 			return m, nil

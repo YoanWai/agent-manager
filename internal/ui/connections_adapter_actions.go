@@ -11,6 +11,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	uiconnections "github.com/YoanWai/agent-manager/internal/ui/connections"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
@@ -190,11 +191,11 @@ func (m *Model) remoteRepeat(request remoteRequest) (string, bool) {
 	if !guarded {
 		return "", false
 	}
-	for _, job := range append([]*effectJob{m.effects.remote.active}, m.effects.remote.pending...) {
+	for _, job := range append([]*uieffects.Job{m.effects.Remote.Active}, m.effects.Remote.Pending...) {
 		if job == nil {
 			continue
 		}
-		if pending, ok := job.request.(remoteRequest); ok && pending.op == request.op && pending.composerGen == request.composerGen {
+		if pending, ok := job.Request.(remoteRequest); ok && pending.op == request.op && pending.composerGen == request.composerGen {
 			return refusal, true
 		}
 	}

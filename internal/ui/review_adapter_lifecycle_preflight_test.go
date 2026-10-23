@@ -78,7 +78,7 @@ func TestReviewPreferencesCannotOpenDuringQuitOrAfterRelaunch(t *testing.T) {
 			cmd := m.openDiffWithReader(&reviewReadProbe{})
 			gen := m.review.Generation()
 			if quitting {
-				m.effects.quitting = true
+				m.effects.Quitting = true
 			} else {
 				m.workspace.sessions[0].AgentLaunchedAt = time.Now()
 			}
@@ -143,7 +143,7 @@ func TestReviewFocusReturnKeepsItsCapturedSession(t *testing.T) {
 	m.base = baseReview
 	m.reviewNav.ret = reviewReturn{kind: reviewReturnFocus, sessionID: a.ID}
 	m.closeDiff()
-	if m.effects.main.active == nil || m.effects.main.active.request.(focusRequest).sessionID != a.ID {
+	if m.effects.Main.Active == nil || m.effects.Main.Active.Request.(focusRequest).sessionID != a.ID {
 		t.Fatal("review returned into a different session")
 	}
 }

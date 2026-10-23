@@ -5,6 +5,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -19,7 +20,7 @@ type afterTurnRequest struct {
 	watched string
 }
 
-func (afterTurnRequest) effectRequest() {}
+func (afterTurnRequest) EffectRequest() {}
 
 type afterTurnResult struct {
 	target    confirmTarget
@@ -27,7 +28,7 @@ type afterTurnResult struct {
 	cleared   bool
 }
 
-func (afterTurnResult) effectResult() {}
+func (afterTurnResult) EffectResult() {}
 
 // endAfterTurns archives or kills each session whose turn ended after it
 // asked for that. Dispatch is enqueue-only: Update's trailing nextEffectCmd
@@ -49,7 +50,7 @@ func (m *Model) cancelEndSelected() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (s effectServices) runAfterTurn(request afterTurnRequest) (effectResult, error) {
+func (s effectServices) runAfterTurn(request afterTurnRequest) (uieffects.Result, error) {
 	result := afterTurnResult{}
 	if request.cancel {
 		err := s.store.ClearAfterTurn(request.id)

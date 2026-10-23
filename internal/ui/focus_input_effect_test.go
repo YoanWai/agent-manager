@@ -282,7 +282,7 @@ func TestBlockedInputWorkerKeepsUpdateResponsiveAndDrainsOnQuit(t *testing.T) {
 		t.Fatal("Update replaced model")
 	}
 	_, quit := m.requestQuit()
-	if quit != nil || m.effects.input.active == nil {
+	if quit != nil || m.effects.Input.Active == nil {
 		close(release)
 		t.Fatal("quit abandoned active input")
 	}
@@ -290,7 +290,7 @@ func TestBlockedInputWorkerKeepsUpdateResponsiveAndDrainsOnQuit(t *testing.T) {
 	select {
 	case result := <-completed:
 		_, quit = m.Update(result)
-		if m.effects.input.active != nil || quit == nil {
+		if m.effects.Input.Active != nil || quit == nil {
 			t.Fatal("completed input did not release quit drain")
 		}
 	case <-time.After(time.Second):

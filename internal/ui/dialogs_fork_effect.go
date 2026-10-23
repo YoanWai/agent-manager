@@ -12,6 +12,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/google/uuid"
 )
@@ -38,7 +39,7 @@ type forkRequest struct {
 	pane        sessioncmd.PaneSize
 }
 
-func (forkRequest) effectRequest() {}
+func (forkRequest) EffectRequest() {}
 
 // forkEffectResult is the durable outcome of a fork. launched is set once
 // the child session is committed, even when the launch then fails at
@@ -52,17 +53,17 @@ type forkEffectResult struct {
 	recordedForkID string
 }
 
-func (forkEffectResult) effectResult() {}
+func (forkEffectResult) EffectResult() {}
 
 // queueFork admits the fork dialog's request onto the effect lane once per
 // dialog generation, minting the child id and the pane geometry it launches
 // at.
 func (m *Model) queueFork(request forkRequest) {
-	for _, job := range append([]*effectJob{m.effects.main.active}, m.effects.main.pending...) {
+	for _, job := range append([]*uieffects.Job{m.effects.Main.Active}, m.effects.Main.Pending...) {
 		if job == nil {
 			continue
 		}
-		if pending, ok := job.request.(forkRequest); ok && pending.gen == request.gen {
+		if pending, ok := job.Request.(forkRequest); ok && pending.gen == request.gen {
 			m.reportErr("this fork is already in progress")
 			return
 		}
@@ -77,7 +78,7 @@ func (m *Model) queueFork(request forkRequest) {
 // the keys land.
 const forkInSourceWait = 10 * time.Second
 
-func (s effectServices) runFork(request forkRequest) (effectResult, error) {
+func (s effectServices) runFork(request forkRequest) (uieffects.Result, error) {
 	result := forkEffectResult{childID: request.childID}
 	if result.childID == "" {
 		result.childID = newID()

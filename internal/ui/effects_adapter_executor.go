@@ -11,6 +11,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	focuswatch "github.com/YoanWai/agent-manager/internal/ui/focus/watch"
 )
 
@@ -35,7 +36,7 @@ type effectServices struct {
 	remote                *remote.Client
 }
 
-func (m *Model) captureEffect(request effectRequest) func() (effectResult, error) {
+func (m *Model) captureEffect(request uieffects.Request) func() (uieffects.Result, error) {
 	cfg := m.services.cfg
 	cfg.Tools = make(map[string]config.Tool, len(m.services.cfg.Tools))
 	for name, tool := range m.services.cfg.Tools {
@@ -70,7 +71,7 @@ func (m *Model) captureEffect(request effectRequest) func() (effectResult, error
 	if m.services.lifecycle != nil {
 		services.lifecycle = m.services.lifecycle.Capture(cfg, m.services.setSnapshot)
 	}
-	return func() (effectResult, error) {
+	return func() (uieffects.Result, error) {
 		switch request := request.(type) {
 		case inputRequest:
 			return services.runInput(request)

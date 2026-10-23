@@ -46,7 +46,7 @@ func TestTopSurfaceOwnsTheKeyboard(t *testing.T) {
 func TestSurfaceTakesKeysBeforeThePane(t *testing.T) {
 	m := focusWithSavedList(t)
 	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("R")})
-	if m.effects.input.active != nil || len(m.effects.input.pending) > 0 {
+	if m.effects.Input.Active != nil || len(m.effects.Input.Pending) > 0 {
 		t.Fatal("a key typed over the list reached the agent")
 	}
 	if !m.savedListOpen() {

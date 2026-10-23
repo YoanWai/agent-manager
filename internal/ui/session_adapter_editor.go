@@ -80,7 +80,7 @@ func (m *Model) openDiffFile() (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) handleDiffFileChecked(msg editorFileCheckedMsg) (tea.Model, tea.Cmd) {
-	if m.effects.quitting || m.base != baseReview || msg.foregroundGen != m.gens.foreground {
+	if m.effects.Quitting || m.base != baseReview || msg.foregroundGen != m.gens.foreground {
 		return m, nil
 	}
 	path, accepted := m.review.ApplyFileCheck(msg.result)
@@ -150,7 +150,7 @@ func (m *Model) routeEditorMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		if msg.name != "" {
 			m.reportDone("opened " + msg.path + " in " + msg.name)
 		}
-		if target := msg.returnTo; target.resumes(m.gens.foreground, m.screenID(), m.effects.quitting) {
+		if target := msg.returnTo; target.resumes(m.gens.foreground, m.screenID(), m.effects.Quitting) {
 			return routed(m, tea.Batch(resume, m.reattach(target.sessionID, m.review.Generation())))
 		}
 		return routed(m, resume)

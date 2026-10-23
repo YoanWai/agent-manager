@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/store"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -78,7 +79,7 @@ func TestEffectQueueDrainsAcceptedWritesOnQuit(t *testing.T) {
 		t.Fatalf("FIFO final write=%s", raw)
 	}
 	m.queueRail([]uirail.Mutation{{Kind: uirail.SaveCollapsed, Collapsed: []string{"late"}}}, 0, false)
-	if len(m.effects.main.pending) != 0 {
+	if len(m.effects.Main.Pending) != 0 {
 		t.Fatal("quit accepted a new user write")
 	}
 	if _, ok := m.nextEffectCmd()().(tea.QuitMsg); !ok {
@@ -114,9 +115,9 @@ func TestStopEffectsRefusesUnstartedCommand(t *testing.T) {
 	m.queueRail([]uirail.Mutation{{Kind: uirail.SaveCollapsed, Collapsed: []string{"late"}}}, 0, false)
 	command := m.nextEffectCmd()
 	m.StopEffects()
-	msg := command().(effectCompletedMsg)
-	if msg.err != errEffectsStopped {
-		t.Fatalf("late command error=%v", msg.err)
+	msg := command().(uieffects.Completed)
+	if msg.Err != uieffects.ErrStopped {
+		t.Fatalf("late command error=%v", msg.Err)
 	}
 	raw, _ := m.services.store.Setting(collapsedSetting)
 	if raw != "" {
@@ -127,7 +128,7 @@ func TestStopEffectsRefusesUnstartedCommand(t *testing.T) {
 func TestDrainAdmitsCausalRailFollowup(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
-	m.effects.quitting = true
+	m.effects.Quitting = true
 	m.queueRail([]uirail.Mutation{{Kind: uirail.SaveCollapsed, Collapsed: []string{"followup"}}}, 7, true)
 	m.drainEffects(t)
 	raw, _ := m.services.store.Setting(collapsedSetting)
@@ -187,7 +188,7 @@ func TestLifecycleRequestCopiesNestedSessionValues(t *testing.T) {
 	m.enqueueEffect(lifecycleRequest{target: confirmTarget{sessions: sessions}}, 0, false)
 	sessions[0].PendingInputs[0] = "changed"
 	sessions[0].RelaunchSnapshot["conversation"] = 2
-	request := m.effects.main.pending[0].request.(lifecycleRequest)
+	request := m.effects.Main.Pending[0].Request.(lifecycleRequest)
 	if request.target.sessions[0].PendingInputs[0] != "first" || request.target.sessions[0].RelaunchSnapshot["conversation"] != 1 {
 		t.Fatal("request retained mutable session aliases")
 	}

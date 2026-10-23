@@ -65,7 +65,7 @@ locations may change; anything else fails it.
 
 **Effects run off `Update` on ordered lanes.** `Update` never blocks. A
 feature captures a value request (target, writers, configuration, pane size)
-and the root queues it on one FIFO lane (`internal/ui/effects.go`). One job
+and the root queues it on one FIFO lane (`internal/ui/effects`, routed by `internal/ui/effects_adapter.go`). One job
 runs at a time, workers never read `Model`, and a completion applies durable
 results before it reports an error, so a partial failure still shows what
 committed. Request generations reject stale replies, and quit drains accepted

@@ -4,6 +4,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/testenv"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	tea "github.com/charmbracelet/bubbletea"
 	"os"
 	"path/filepath"
@@ -28,10 +29,10 @@ func TestPreparedAttachDoesNotReplaceNewerHelp(t *testing.T) {
 			} else {
 				command = m.attachCmd(sess.ID)
 			}
-			request := m.effects.main.active.request.(attachRequest)
-			result := command().(effectCompletedMsg)
-			if result.err != nil {
-				t.Fatal(result.err)
+			request := m.effects.Main.Active.Request.(attachRequest)
+			result := command().(uieffects.Completed)
+			if result.Err != nil {
+				t.Fatal(result.Err)
 			}
 			got, err := m.services.store.Get(sess.ID)
 			if err != nil || !got.Acked {
@@ -39,7 +40,7 @@ func TestPreparedAttachDoesNotReplaceNewerHelp(t *testing.T) {
 			}
 			m.gens.foreground++
 			m.openHelp()
-			if next := m.applyAttachEffect(request, result.result.(attachEffectResult), result.err); next != nil {
+			if next := m.applyAttachEffect(request, result.Result.(attachEffectResult), result.Err); next != nil {
 				t.Fatal("prepared attach replaced newer Help")
 			}
 			if !helpOpen(m) {

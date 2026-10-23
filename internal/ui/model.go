@@ -14,6 +14,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
@@ -177,7 +178,7 @@ func newView(deps Dependencies, version string) (*Model, error) {
 	applyTheme(themes[themeIndex(resolveStartupTheme(st))])
 	driver.SetSessionKeys(sessionKeys)
 	model := &Model{
-		effects: effectState{lifetime: &effectLifetime{}},
+		effects: effectState{Queue: uieffects.Queue{Lifetime: &uieffects.Lifetime{}}},
 		poller:  &poller{runner: deps.Execution},
 		layout:  layoutState{split: splitState{ratio: loadSplitRatio(st)}},
 		env: environment{

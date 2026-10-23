@@ -1,18 +1,21 @@
 package ui
 
-import "fmt"
+import (
+	"fmt"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
+)
 
 type splitSaveRequest struct {
 	value string
 }
 
-func (splitSaveRequest) effectRequest() {}
+func (splitSaveRequest) EffectRequest() {}
 
 type splitSaveResult struct{}
 
-func (splitSaveResult) effectResult() {}
+func (splitSaveResult) EffectResult() {}
 
-func (s effectServices) runSplitSave(request splitSaveRequest) (effectResult, error) {
+func (s effectServices) runSplitSave(request splitSaveRequest) (uieffects.Result, error) {
 	if s.store == nil {
 		return splitSaveResult{}, fmt.Errorf("save split ratio: store is unavailable")
 	}
@@ -22,8 +25,8 @@ func (s effectServices) runSplitSave(request splitSaveRequest) (effectResult, er
 	return splitSaveResult{}, nil
 }
 
-func (m *Model) applySplitSave(job *effectJob, err error) {
-	if job.id != m.layout.split.saveID {
+func (m *Model) applySplitSave(job *uieffects.Job, err error) {
+	if job.ID != m.layout.split.saveID {
 		return
 	}
 	if err == nil {

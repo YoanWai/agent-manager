@@ -21,6 +21,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	"github.com/YoanWai/agent-manager/internal/testfixture"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -261,17 +262,17 @@ func (m *Model) drainEffects(t *testing.T) {
 	t.Helper()
 	for count := 0; count < 100; count++ {
 		m.nextEffectCmd()
-		job := m.effects.input.active
+		job := m.effects.Input.Active
 		if job == nil {
-			job = m.effects.main.active
+			job = m.effects.Main.Active
 		}
 		if job == nil {
-			job = m.effects.remote.active
+			job = m.effects.Remote.Active
 		}
 		if job == nil {
 			return
 		}
-		m.applyTestMsg(t, job.command())
+		m.applyTestMsg(t, job.Command())
 	}
 	t.Fatal("effect queue did not become idle")
 }
@@ -809,7 +810,7 @@ func (m *Model) foregroundTestCmd(t *testing.T, cmd tea.Cmd) tea.Cmd {
 			}
 			return
 		}
-		if _, ok := msg.(effectCompletedMsg); ok {
+		if _, ok := msg.(uieffects.Completed); ok {
 			updated, next := m.Update(msg)
 			*m = *updated.(*Model)
 			if next != nil {
