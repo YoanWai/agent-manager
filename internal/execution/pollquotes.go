@@ -154,7 +154,11 @@ func resolveTranscript(style, liveDir, launchDir, sessionID string) (transcriptS
 		}
 		path, err := agentsession.TranscriptPath(style, directory, sessionID)
 		if err != nil {
-			if errors.Is(err, os.ErrNotExist) || errors.Is(err, agentsession.ErrNoTranscript) {
+			// A missing file is tried in the other directory. A style this
+			// package does not read is not that: rowLines only calls here
+			// after KeepsTranscript, so returning the error keeps a caller
+			// that skipped the check from looking like an empty transcript.
+			if errors.Is(err, os.ErrNotExist) {
 				continue
 			}
 			return transcriptSource{}, err

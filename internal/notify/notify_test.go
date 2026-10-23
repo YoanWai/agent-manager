@@ -233,6 +233,50 @@ func TestNotifyBodyRedactsAGitHubToken(t *testing.T) {
 	}
 }
 
+// A token in the session name, the repository, or the branch is the same
+// secret the body redacts, and the title is what AM_TITLE carries.
+func TestNotifyTitleRedactsAToken(t *testing.T) {
+	token := "ghp_" + strings.Repeat("a", 36)
+	tests := []struct {
+		name  string
+		event Event
+		title string
+	}{
+		{"branch", Event{Session: "deploy", Tool: "codex", Dir: "/src/api", Branch: "am/" + token}, "deploy · api · am/[redacted] · codex"},
+		{"session", Event{Session: token, Tool: "codex", Dir: "/src/api"}, "[redacted] · api · codex"},
+		{"repo", Event{Session: "deploy", Tool: "codex", Dir: "/src/worktrees/deploy", Repo: "/src/" + token}, "deploy · [redacted] · codex"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			defer restore()()
+			plainMac(t)
+			var posted []string
+			macPost = func(sessionID, subtitle, body, sound string) error {
+				posted = []string{sessionID, subtitle, body, sound}
+				return nil
+			}
+			emitSeq = func(string) error { return nil }
+			test.event.ID = "sess-1"
+			test.event.Kind = Finished
+			Notify(test.event)
+			if len(posted) != 4 || posted[1] != test.title {
+				t.Fatalf("title = %q, want %q", posted, test.title)
+			}
+			if strings.Contains(posted[1], token) {
+				t.Fatalf("banner title leaked the token: %q", posted[1])
+			}
+			for _, env := range CommandEnv(test.event) {
+				if !strings.HasPrefix(env, "AM_TITLE=") {
+					continue
+				}
+				if env != "AM_TITLE="+test.title || strings.Contains(env, token) {
+					t.Fatalf("AM_TITLE = %q, want %q", env, "AM_TITLE="+test.title)
+				}
+			}
+		})
+	}
+}
+
 // The title says where the session runs: its directory's name and, for a
 // worktree the manager made, the branch, so sessions sharing a name read
 // apart. A session with no directory keeps the plain name and tool.

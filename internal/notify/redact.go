@@ -10,6 +10,7 @@ import (
 // keeps the original line.
 func redactSecrets(s string) string {
 	s = redactAssignments(s)
+	s = userinfoPattern.ReplaceAllString(s, "${1}${2}:[redacted]@")
 	for _, pattern := range credentialPatterns {
 		s = pattern.ReplaceAllString(s, "[redacted]")
 	}
@@ -35,9 +36,15 @@ var credentialPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`\beyJ[A-Za-z0-9_-]{10,}={0,2}\.[A-Za-z0-9_-]{10,}={0,2}\.[A-Za-z0-9_-]{10,}={0,2}`),
 }
 
+// userinfoPattern redacts the password in scheme://user:password@host.
+// The assignment scan reads the scheme as the key, so a short password
+// there never reaches a secret key, and the host stays visible.
+var userinfoPattern = regexp.MustCompile(`([A-Za-z][A-Za-z0-9+.-]*://)([^/\s:@]+):([^/\s@]+)@`)
+
 // An assignment redacts its value only. The key stays, so the banner
-// still says which setting was quoted.
-var assignmentPattern = regexp.MustCompile(`(?:^|[^A-Za-z0-9])([A-Za-z0-9]+(?:[_-][A-Za-z0-9]+)*)(\s*[=:]\s*)(\S+)`)
+// still says which setting was quoted. A quoted value includes the
+// spaces and the quotes, which an unquoted \S+ value would split.
+var assignmentPattern = regexp.MustCompile(`(?:^|[^A-Za-z0-9])([A-Za-z0-9]+(?:[_-][A-Za-z0-9]+)*)(\s*[=:]\s*)("[^"]*"|'[^']*'|\S+)`)
 
 func redactAssignments(s string) string {
 	var b strings.Builder
