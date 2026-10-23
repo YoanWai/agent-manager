@@ -23,7 +23,7 @@ func TestPickerWrapsAtTheEnds(t *testing.T) {
 		t.Fatalf("down past the last row should wrap to the first, got %q", got)
 	}
 
-	if (Picker{}).Step(1) {
+	if (&Picker{}).Step(1) {
 		t.Fatal("an empty picker takes no step")
 	}
 }

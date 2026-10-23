@@ -68,7 +68,7 @@ func TestSurfaceHandsEveryKeyToTheAgent(t *testing.T) {
 
 func TestSavedPastesAPickAndCloses(t *testing.T) {
 	root := &stubRoot{}
-	s := NewSaved(root, 4, spawn.Styles{})
+	s := OpenSaved(root, 4, spawn.Styles{})
 	host := &stubHost{}
 	s.Load([]spawn.Saved{{Name: "Role", Text: "be brief"}}, nil)
 
@@ -81,7 +81,7 @@ func TestSavedPastesAPickAndCloses(t *testing.T) {
 
 func TestSavedKeepsTheLeaveKeyAndItsOwnClose(t *testing.T) {
 	root := &stubRoot{}
-	s := NewSaved(root, 0, spawn.Styles{})
+	s := OpenSaved(root, 0, spawn.Styles{})
 	host := &stubHost{}
 
 	s.Key(host, tea.KeyMsg{Type: tea.KeyCtrlQ})
@@ -99,7 +99,7 @@ func TestSavedKeepsTheLeaveKeyAndItsOwnClose(t *testing.T) {
 
 func TestSavedClickPicksTheRowUnderThePointer(t *testing.T) {
 	root := &stubRoot{}
-	s := NewSaved(root, 0, spawn.Styles{})
+	s := OpenSaved(root, 0, spawn.Styles{})
 	host := &stubHost{}
 	s.Load([]spawn.Saved{{Name: "Role", Text: "be brief"}}, nil)
 	s.View(host, "")

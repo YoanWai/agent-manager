@@ -84,7 +84,7 @@ func groupFieldWidth(cols int) int {
 // selected is the group the picker highlights.
 func (s *groupFormSurface) selected() string {
 	if s.parent >= 0 && s.parent < len(s.parents) {
-		return s.parents[s.parent].path
+		return s.parents[s.parent].Path
 	}
 	return ""
 }
