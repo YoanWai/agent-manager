@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
@@ -14,6 +13,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
+	uilaunchhint "github.com/YoanWai/agent-manager/internal/ui/launchhint"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -60,19 +60,9 @@ type installSettleRequest struct {
 
 func (installSettleRequest) effectRequest() {}
 
-type installSettleState uint8
-
-const (
-	installStillRunning installSettleState = iota
-	installShellGone
-	installExited
-	installBinaryMissing
-	installReady
-)
-
 type installSettleResult struct {
 	sessionID string
-	state     installSettleState
+	state     uilaunchhint.SettleState
 	code      string
 }
 
@@ -191,7 +181,7 @@ func (s effectServices) runInstallStart(request installStartRequest) (effectResu
 
 func (s effectServices) runInstallSettle(request installSettleRequest) (effectResult, error) {
 	install := request.install
-	result := installSettleResult{sessionID: install.sessionID, state: installStillRunning}
+	result := installSettleResult{sessionID: install.sessionID, state: uilaunchhint.Running}
 	data, err := os.ReadFile(install.statusFile)
 	if errors.Is(err, fs.ErrNotExist) {
 		exists, existsErr := s.installSessionExists(s.driver, install.sessionID)
@@ -203,7 +193,7 @@ func (s effectServices) runInstallSettle(request installSettleRequest) (effectRe
 		}
 		removeInstallFiles(install.statusFile, install.script)
 		dropImages(install.images)
-		result.state = installShellGone
+		result.state = uilaunchhint.ShellGone
 		return result, nil
 	}
 	if err != nil {
@@ -211,14 +201,14 @@ func (s effectServices) runInstallSettle(request installSettleRequest) (effectRe
 	}
 	// The shell creates the file before printf fills it. An empty file is
 	// observed again on a later poll rather than read as a successful exit.
-	code := strings.TrimSpace(string(data))
-	if code == "" {
+	code, state := uilaunchhint.ReadStatus(data)
+	if state == uilaunchhint.Running {
 		return result, nil
 	}
-	if code != "0" {
+	if state == uilaunchhint.Exited {
 		removeInstallFiles(install.statusFile, install.script)
 		dropImages(install.images)
-		result.state = installExited
+		result.state = state
 		result.code = code
 		return result, nil
 	}
@@ -227,13 +217,13 @@ func (s effectServices) runInstallSettle(request installSettleRequest) (effectRe
 		if errors.As(err, &missing) {
 			removeInstallFiles(install.statusFile, install.script)
 			dropImages(install.images)
-			result.state = installBinaryMissing
+			result.state = uilaunchhint.BinaryMissing
 			return result, nil
 		}
 		return result, fmt.Errorf("%s installer finished, and looking for it failed: %w", install.binary, err)
 	}
 	removeInstallFiles(install.statusFile, install.script)
-	result.state = installReady
+	result.state = uilaunchhint.Ready
 	if install.effectRetry == nil {
 		dropImages(install.images)
 	}
@@ -303,7 +293,7 @@ func (m *Model) applyInstallSettle(request installSettleRequest, result installS
 	if m.ledger.install == nil || m.ledger.install.sessionID != result.sessionID {
 		return nil
 	}
-	if result.state == installStillRunning {
+	if result.state == uilaunchhint.Running {
 		if err != nil {
 			m.reportErr(err.Error())
 		}
@@ -315,20 +305,19 @@ func (m *Model) applyInstallSettle(request installSettleRequest, result installS
 		m.reportErr(err.Error())
 		return nil
 	}
-	switch result.state {
-	case installShellGone:
+	text, failed := uilaunchhint.SettleMessage(result.state, install.binary, install.name, result.code)
+	if text == "" {
 		return nil
-	case installExited:
-		m.reportErr(fmt.Sprintf("%s install exited with status %s; its output is in %s", install.binary, result.code, install.name))
-	case installBinaryMissing:
-		m.reportErr(fmt.Sprintf("%s installer finished, but %s is still not on PATH; add its directory to PATH, the installer's output names it", install.binary, install.binary))
-	case installReady:
-		if install.effectRetry != nil {
-			m.enqueueEffect(install.effectRetry, 0, false)
-			m.reportDone(install.binary + " installed; retry queued")
-			return nil
-		}
-		m.reportDone(install.binary + " installed")
 	}
+	if failed {
+		m.reportErr(text)
+		return nil
+	}
+	if install.effectRetry != nil {
+		m.enqueueEffect(install.effectRetry, 0, false)
+		m.reportDone(text + "; retry queued")
+		return nil
+	}
+	m.reportDone(text)
 	return nil
 }

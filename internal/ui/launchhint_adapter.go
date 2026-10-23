@@ -10,6 +10,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/mcpreg"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	uilaunchhint "github.com/YoanWai/agent-manager/internal/ui/launchhint"
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -31,10 +32,10 @@ type launchFix struct {
 	images      []composer.Attachment
 }
 
-// pendingInstall is an install the dialog started in a shell tab: the
-// session running it, the files its script writes and runs from, and the
-// launch to finish once the command's exit status lands. It outlives the
-// dialog, which closes once the command is typed, so the ledger holds it.
+// pendingInstall is the install still running in a shell tab: the session
+// running it, the files its script writes and runs from, the binary it puts on
+// PATH, and the launch to finish once its exit status lands. It outlives the
+// card that started it, so the ledger holds it.
 type pendingInstall struct {
 	sessionID   string
 	name        string
@@ -45,12 +46,10 @@ type pendingInstall struct {
 	images      []composer.Attachment
 }
 
-// advanceDialogGen fences completions submitted from the dialog it
-// replaces.
-// pendingInstall is the install still running in a shell tab, nil when
-// none is. It outlives the card that started it.
 func (m *Model) pendingInstall() *pendingInstall { return m.ledger.install }
 
+// advanceDialogGen fences completions submitted from the dialog it
+// replaces.
 func (m *Model) advanceDialogGen() {
 	m.gens.dialog++
 }
@@ -86,13 +85,8 @@ type launchCommandCopiedMsg struct {
 func (m *Model) reportLaunchError(err error) {
 	var hermesMCP mcpreg.HermesMCPUnavailableError
 	if errors.As(err, &hermesMCP) {
-		step := "Install the mcp package into the Python that runs Hermes, then spawn again."
-		if hermesMCP.PipCommand != "" {
-			step = "Run `" + hermesMCP.PipCommand + "` to add the mcp package to the Python that runs Hermes, then spawn again."
-		}
 		m.openLaunchHint(launchFix{
-			text: "Hermes sessions carry the agent-manager MCP tools, and this Hermes cannot load them: its MCP SDK is not installed.\n\n" +
-				step,
+			text:    uilaunchhint.HermesText(hermesMCP.PipCommand),
 			command: hermesMCP.PipCommand,
 			script:  hermesMCP.PipCommand,
 			binary:  "hermes",
@@ -102,7 +96,7 @@ func (m *Model) reportLaunchError(err error) {
 	var missing config.MissingToolError
 	if errors.As(err, &missing) {
 		m.openLaunchHint(launchFix{
-			text:    missingToolText(missing),
+			text:    uilaunchhint.MissingText(missingTool(missing), deps.Hint(missing.Binary)),
 			command: deps.Shown(missing.Binary),
 			script:  deps.Command(missing.Binary),
 			binary:  missing.Binary,
@@ -112,7 +106,7 @@ func (m *Model) reportLaunchError(err error) {
 	var outdated config.OutdatedToolError
 	if errors.As(err, &outdated) {
 		m.openLaunchHint(launchFix{
-			text:    outdatedToolText(outdated),
+			text:    uilaunchhint.OutdatedText(outdatedTool(outdated), outdatedToolCommand(outdated)),
 			command: outdatedToolCommand(outdated),
 			script:  outdatedToolCommand(outdated),
 			binary:  outdated.Binary,
@@ -123,6 +117,8 @@ func (m *Model) reportLaunchError(err error) {
 	m.reportErr(err.Error())
 }
 
+// outdatedToolCommand is the installer line a too-old CLI updates with, empty
+// when the manager ships none and the user updates the way they installed it.
 func outdatedToolCommand(outdated config.OutdatedToolError) string {
 	if outdated.ManagedExternally {
 		return ""
@@ -130,26 +126,21 @@ func outdatedToolCommand(outdated config.OutdatedToolError) string {
 	return deps.Command(outdated.Binary)
 }
 
+// outdatedToolText is the copy the spawn form shows for a too-old CLI.
 func outdatedToolText(outdated config.OutdatedToolError) string {
-	head := outdated.Binary + " " + outdated.Installed + " is older than " + outdated.Minimum +
-		", the oldest version Agent Manager supports."
-	if command := outdatedToolCommand(outdated); command != "" {
-		return head + "\n\nUpdate it with: " + command
-	}
-	return head + "\n\nUpdate it the way you installed it, then spawn again."
+	return uilaunchhint.OutdatedText(outdatedTool(outdated), outdatedToolCommand(outdated))
 }
 
-// missingToolText opens on why the launch stopped, then the command that
-// unblocks it. A CLI installed only on Windows is on this PATH through
-// WSL interop, which the distro cannot run as the agent, so the dialog
-// says where that copy is rather than claiming nothing is installed.
-func missingToolText(missing config.MissingToolError) string {
-	head := missing.Binary + " is not installed."
-	if missing.WindowsPath != "" {
-		head = missing.Binary + " is installed on Windows, not in this WSL distro.\n\n" +
-			"The Windows copy is at " + missing.WindowsPath + "."
+func missingTool(missing config.MissingToolError) uilaunchhint.Tool {
+	return uilaunchhint.Tool{Binary: missing.Binary, WindowsPath: missing.WindowsPath}
+}
+
+func outdatedTool(outdated config.OutdatedToolError) uilaunchhint.Tool {
+	return uilaunchhint.Tool{
+		Binary:    outdated.Binary,
+		Installed: outdated.Installed,
+		Minimum:   outdated.Minimum,
 	}
-	return head + "\n\n" + deps.Hint(missing.Binary)
 }
 
 // openLaunchHint shows a refusal and takes the refused prompt's images out
