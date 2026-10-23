@@ -6,6 +6,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"os"
 	"slices"
 	"sort"
 	"strings"
@@ -20,24 +21,42 @@ const maxHostMethods = 8
 // driver through its host.
 var forbiddenHostTypes = []string{"Model", "services", "effectServices", "effectRequest", "store.Store", "tmux.Driver", "git.Driver"}
 
+// The root's hosts and every feature package's Root are checked alike: a
+// surface that lives in its package reaches the root through Root, which is
+// a host by another name.
 func TestFeatureHostsStayNarrow(t *testing.T) {
-	fset := token.NewFileSet()
-	packages, err := parser.ParseDir(fset, ".", func(info fs.FileInfo) bool {
-		return !strings.HasSuffix(info.Name(), "_test.go")
-	}, 0)
+	dirs := []string{"."}
+	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)
 	}
-	var files []*ast.File
-	for _, file := range packages["ui"].Files {
-		files = append(files, file)
+	for _, entry := range entries {
+		if entry.IsDir() && !strings.HasPrefix(entry.Name(), ".") && entry.Name() != "testdata" {
+			dirs = append(dirs, entry.Name())
+		}
 	}
-	hosts, violations := hostViolations(files)
+	hosts := 0
+	for _, dir := range dirs {
+		packages, err := parser.ParseDir(token.NewFileSet(), dir, func(info fs.FileInfo) bool {
+			return !strings.HasSuffix(info.Name(), "_test.go")
+		}, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, pkg := range packages {
+			var files []*ast.File
+			for _, file := range pkg.Files {
+				files = append(files, file)
+			}
+			found, violations := hostViolations(files)
+			hosts += found
+			for _, violation := range violations {
+				t.Errorf("%s: %s", dir, violation)
+			}
+		}
+	}
 	if hosts == 0 {
 		t.Fatal("found no feature hosts")
-	}
-	for _, violation := range violations {
-		t.Error(violation)
 	}
 }
 
@@ -64,15 +83,17 @@ type fineHost interface { size() (int, int) }`
 	}
 }
 
-// hostViolations reports each *Host interface in files whose method set,
-// embedded hosts included, is over the cap or passes a forbidden type.
+// hostViolations reports each *Host or Root interface in files (one
+// package) whose method set, embedded hosts included, is over the cap or
+// passes a forbidden type.
 func hostViolations(files []*ast.File) (hosts int, violations []string) {
 	declared := map[string]*ast.InterfaceType{}
 	for _, file := range files {
 		ast.Inspect(file, func(node ast.Node) bool {
 			if spec, ok := node.(*ast.TypeSpec); ok {
-				if iface, ok := spec.Type.(*ast.InterfaceType); ok && strings.HasSuffix(spec.Name.Name, "Host") {
-					declared[spec.Name.Name] = iface
+				name := spec.Name.Name
+				if iface, ok := spec.Type.(*ast.InterfaceType); ok && (strings.HasSuffix(name, "Host") || name == "Root") {
+					declared[name] = iface
 				}
 			}
 			return true
