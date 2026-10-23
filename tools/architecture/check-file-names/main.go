@@ -27,6 +27,7 @@ const uiRoot = "internal/ui"
 // internal/ui. Their root files only adapt it: <feature>_adapter*.go and
 // <feature>_*effect.go, besides the older ones in rootExtras.
 var packaged = map[string]string{
+	"composer":     "the prompt box adapter: which box a paste lands in, its painters and the pastes sweep",
 	"connections":  "the SSH connections adapter: the client, refreshes, remote rows, preview and routed actions, and their effects",
 	"dialogs":      "the confirm, rename, move and fork dialog adapters and their effects",
 	"focus":        "the Focus adapter, its frame view and the pane watcher it holds",
@@ -65,7 +66,6 @@ var rootExtras = map[string]bool{
 // list is closed: a new feature starts as a package under internal/ui and
 // joins packaged, so the root holds only its adapter and effects.
 var rootOnly = map[string]string{
-	"composer":   "prompt composers, chips and pasted images",
 	"effects":    "the ordered effect lane and its executor",
 	"frame":      "frame composition: dialog chrome, header, legend, IME, text layout and control escaping",
 	"geometry":   "pane sizing, layout widths and the split ratio",

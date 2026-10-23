@@ -27,6 +27,7 @@ var (
 	geometryBoundary    = boundary{"Geometry", "/internal/ui/geometry", []string{"/internal/ui/geometry", "/internal/keybind", "/internal/ui/surface"}}
 	themeBoundary       = boundary{"Theme", "/internal/ui/theme", []string{"/internal/ui/theme"}}
 	spawnBoundary       = boundary{"Spawn", "/internal/ui/spawn", []string{"/internal/ui/spawn", "/internal/catalog/value", "/internal/ui/presentation"}}
+	composerBoundary    = boundary{"Composer", "/internal/ui/composer", []string{"/internal/ui/composer", "/internal/clipboard", "/internal/termseq", "/internal/wsl", "/internal/ui/spawn", "/internal/catalog/value", "/internal/ui/presentation"}}
 	pathBoundary        = boundary{"Path complete", "/internal/ui/pathcomplete", []string{"/internal/ui/pathcomplete", "/internal/ui/presentation"}}
 	quickBoundary       = boundary{"Quick", "/internal/ui/quick", []string{"/internal/ui/quick", "/internal/ui/spawn", "/internal/catalog/value", "/internal/ui/presentation"}}
 	dialogsBoundary     = boundary{"Dialogs", "/internal/ui/dialogs", []string{"/internal/ui/dialogs", "/internal/ui/presentation", "/internal/ui/surface"}}
@@ -39,7 +40,7 @@ var (
 )
 
 func main() {
-	for _, feature := range []boundary{helpBoundary, reviewBoundary, focusBoundary, watchBoundary, railBoundary, settingsBoundary, geometryBoundary, themeBoundary, spawnBoundary, quickBoundary, pathBoundary, dialogsBoundary, noticesBoundary, connectionsBoundary, surfaceBoundary, diffBoundary, valueBoundary, catalogBoundary, presentBoundary, remoteBoundary} {
+	for _, feature := range []boundary{helpBoundary, reviewBoundary, focusBoundary, watchBoundary, railBoundary, settingsBoundary, geometryBoundary, themeBoundary, spawnBoundary, quickBoundary, pathBoundary, composerBoundary, dialogsBoundary, noticesBoundary, connectionsBoundary, surfaceBoundary, diffBoundary, valueBoundary, catalogBoundary, presentBoundary, remoteBoundary} {
 		if err := checkBoundary(feature); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
