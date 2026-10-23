@@ -205,6 +205,7 @@ func helpSections(ctx Context) []helpSection {
 			{"ctrl+v", "in a prompt field, paste an image as a chip"},
 			{"←→", "change a picker's value"},
 			{"type", "in the model field, filter what the tool lists; tab fills one in"},
+			{"ctrl+o", "in the model field, open or close the whole list"},
 			{"click", "focus a field, click it again to change it, or pick a listed entry"},
 			{"click outside", "close the card as esc does, unless it holds a draft"},
 			{"↵", "confirm"},
