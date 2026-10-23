@@ -24,7 +24,7 @@ var mouseOpeners = map[string]func(t *testing.T, m *Model){
 	"moveSurface":            func(t *testing.T, m *Model) { m.openMove() },
 	"renameSurface":          func(t *testing.T, m *Model) { m.openRename() },
 	"dialogs.ForkSurface":    func(t *testing.T, m *Model) { m.push(newForkSurface(m, railSelectedSession(m), 1)) },
-	"launchHintSurface": func(t *testing.T, m *Model) {
+	"dialogs.LaunchHintSurface": func(t *testing.T, m *Model) {
 		m.openLaunchHint(launchFix{text: "tool is missing", command: "true", binary: "tool"})
 	},
 	"help.Surface":        func(t *testing.T, m *Model) { m.openHelp() },

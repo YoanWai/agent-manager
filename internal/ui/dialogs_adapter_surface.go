@@ -68,3 +68,63 @@ func (m *Model) openConfirm(target confirmTarget) {
 func newForkSurface(m *Model, source store.Session, gen int) *uidialogs.ForkSurface {
 	return uidialogs.NewForkSurface(forkRoot{m, source}, source.Name, source.Group, gen)
 }
+
+// launchHintRoot is the root as the setup-step card reaches it. The fix it
+// paints, the launch to retry and the images the refused prompt named all
+// outlive the card, so they live on the launch ledger.
+type launchHintRoot struct{ *Model }
+
+func (r launchHintRoot) StartInstall() bool {
+	if install := r.ledger.install; install != nil {
+		r.reportErr("an install is already running in " + install.name)
+		return false
+	}
+	if !r.startInstall(r.launchInstall()) {
+		return false
+	}
+	// The install owns the images once it is admitted.
+	r.ledger.launch.images = nil
+	return true
+}
+
+func (r launchHintRoot) CopyLaunchCommand() tea.Cmd {
+	command := r.ledger.launch.command
+	return func() tea.Msg {
+		return launchCommandCopiedMsg{err: copyLaunchCommand(command)}
+	}
+}
+
+func (r launchHintRoot) CardWidth() int { return r.cardWidth() }
+
+func (r launchHintRoot) CardChromeRows(hint [][2]string) int { return r.cardChromeRows(hint) }
+
+func (r launchHintRoot) ReleaseLaunchHint() { r.releaseLaunchHint() }
+
+func (m *Model) releaseLaunchHint() {
+	dropImages(m.ledger.launch.images)
+	m.ledger.launch = launchFix{}
+}
+
+// launchInstall is the install the card's fix asks for, carrying the launch to
+// retry and the images that launch's prompt named.
+func (m *Model) launchInstall() installStartRequest {
+	fix := m.ledger.launch
+	retry := fix.effectRetry
+	if spawn, ok := retry.(spawnRequest); ok && len(spawn.images) == 0 {
+		spawn.images = append([]imageAttachment(nil), fix.images...)
+		retry = spawn
+	}
+	return installStartRequest{
+		command:     fix.script,
+		binary:      fix.binary,
+		effectRetry: retry,
+		images:      fix.images,
+	}
+}
+
+// launchHintSurface is the setup-step card on the stack.
+func (m *Model) launchHintSurface() (*uidialogs.LaunchHintSurface, bool) {
+	return surfaceOf[*uidialogs.LaunchHintSurface](m)
+}
+
+var _ uidialogs.LaunchHintRoot = launchHintRoot{}

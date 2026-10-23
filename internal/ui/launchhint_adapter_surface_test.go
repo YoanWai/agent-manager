@@ -4,12 +4,22 @@ import (
 	"os"
 	"testing"
 
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 func hintOpen(m *Model) bool {
-	_, ok := surfaceOf[*launchHintSurface](m)
+	_, ok := surfaceOf[*uidialogs.LaunchHintSurface](m)
 	return ok
+}
+
+// hintCard is the setup-step card on the stack, for a test that drives it.
+func hintCard(m *Model) *uidialogs.LaunchHintSurface {
+	s, ok := surfaceOf[*uidialogs.LaunchHintSurface](m)
+	if !ok {
+		panic("no launch hint is open")
+	}
+	return s
 }
 
 // hintFix is the fix the open card holds, zero when none is open.
@@ -36,8 +46,7 @@ func hintKey(m *Model, msg tea.KeyMsg) tea.Cmd {
 }
 
 func hintStartInstall(m *Model) {
-	s, _ := surfaceOf[*launchHintSurface](m)
-	s.startInstall(m)
+	hintCard(m).Key(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")})
 }
 
 func openHintFor(t *testing.T) (*Model, string) {

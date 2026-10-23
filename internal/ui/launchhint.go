@@ -8,6 +8,8 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/deps"
 	"github.com/YoanWai/agent-manager/internal/mcpreg"
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // launchFix is what the setup-step dialog holds: the text it shows, the
@@ -156,7 +158,7 @@ func missingToolText(missing config.MissingToolError) string {
 func (m *Model) openLaunchHint(fix launchFix) {
 	m.advanceDialogGen()
 	fix.images = append(fix.images, m.takeComposerImages()...)
-	if _, open := surfaceOf[*launchHintSurface](m); !open {
+	if _, open := m.launchHintSurface(); !open {
 		// The quick bar is not a dialog: it stays under the card.
 		for top, ok := m.top(); ok; top, ok = m.top() {
 			if _, bar := top.(*quickSurface); bar {
@@ -173,11 +175,28 @@ func (m *Model) openLaunchHint(fix launchFix) {
 // came from, so a draft prompt keeps its images. A refusal already showing
 // is replaced in place.
 func (m *Model) presentLaunchHint(fix launchFix) {
-	if s, open := surfaceOf[*launchHintSurface](m); open {
-		s.fix = fix
+	m.ledger.launch = fix
+	if s, open := m.launchHintSurface(); open {
+		s.SetFix(m.launchHintCard(fix))
 		return
 	}
-	m.push(newLaunchHintSurface(fix, m.glyphs()))
+	m.push(uidialogs.NewLaunchHintSurface(launchHintRoot{m}, m.launchHintCard(fix), m.glyphs(),
+		lipgloss.NewStyle().Foreground(colorAccent()).Bold(true), mutedStyle()))
+}
+
+// launchHintCard is the copy of the fix the card paints. The launch to retry,
+// the images and the install stay on the ledger.
+func (m *Model) launchHintCard(fix launchFix) uidialogs.LaunchFix {
+	return uidialogs.LaunchFix{Text: fix.text, Command: fix.command, Update: fix.update}
+}
+
+// launchHintFix is the fix the open card holds, for a completion that attaches
+// the launch to retry to it.
+func (m *Model) launchHintFix() (*launchFix, bool) {
+	if _, ok := m.launchHintSurface(); !ok {
+		return nil, false
+	}
+	return &m.ledger.launch, true
 }
 
 func removeInstallFiles(statusFile, script string) {

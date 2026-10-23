@@ -258,7 +258,7 @@ func (m *Model) applyInstallStart(request installStartRequest, result installSta
 		}
 		m.rebuildRows()
 	}
-	hint, hintOpen := m.launchHintFix()
+	_, hintOpen := m.launchHintSurface()
 	stillOpen := hintOpen && m.gens.dialog == request.gen
 	var cleanup tea.Cmd
 	if err != nil {
@@ -271,7 +271,7 @@ func (m *Model) applyInstallStart(request installStartRequest, result installSta
 			return tea.Batch(cleanup, m.refreshCmd())
 		}
 		if stillOpen {
-			hint.images = append(request.images, hint.images...)
+			m.ledger.launch.images = append(request.images, m.ledger.launch.images...)
 		} else {
 			cleanup = installImageCleanupCmd(request.images)
 		}

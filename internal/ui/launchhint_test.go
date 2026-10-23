@@ -19,6 +19,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/testenv"
 	"github.com/YoanWai/agent-manager/internal/testfixture"
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -32,10 +33,26 @@ type hintHost struct {
 	installs []installStartRequest
 }
 
-func (h *hintHost) startInstall(request installStartRequest) bool {
-	h.installs = append(h.installs, request)
-	return h.admit
+func (h *hintHost) StartInstall() bool {
+	if install := h.ledger.install; install != nil {
+		h.reportErr("an install is already running in " + install.name)
+		return false
+	}
+	h.installs = append(h.installs, h.launchInstall())
+	if !h.admit {
+		return false
+	}
+	h.ledger.launch.images = nil
+	return true
 }
+
+func (h *hintHost) CopyLaunchCommand() tea.Cmd { return nil }
+
+func (h *hintHost) CardWidth() int { return h.cardWidth() }
+
+func (h *hintHost) CardChromeRows(hint [][2]string) int { return h.cardChromeRows(hint) }
+
+func (h *hintHost) ReleaseLaunchHint() { h.releaseLaunchHint() }
 
 func TestLaunchHintSurfaceWithFakeInstall(t *testing.T) {
 	m := buildModel(t)
@@ -43,22 +60,22 @@ func TestLaunchHintSurfaceWithFakeInstall(t *testing.T) {
 	pushQuick(m).attachments = []imageAttachment{{id: 1}}
 	h := &hintHost{Model: m}
 	m.openLaunchHint(launchFix{text: "tool is not installed.\n\nRun the installer.", command: "install tool", script: "install tool", binary: "tool"})
-	s, ok := surfaceOf[*launchHintSurface](m)
-	if !ok || m.gens.dialog != 1 || len(s.fix.images) != 1 || m.quick().attachments != nil {
-		t.Fatalf("open: surface %t gens %d fix %+v, want the composer images taken", ok, m.gens.dialog, s.fix)
+	s, ok := surfaceOf[*uidialogs.LaunchHintSurface](m)
+	if !ok || m.gens.dialog != 1 || len(m.ledger.launch.images) != 1 || m.quick().attachments != nil {
+		t.Fatalf("open: surface %t gens %d fix %+v, want the composer images taken", ok, m.gens.dialog, hintFix(m))
 	}
 	if got := ansi.Strip(s.View(h, "")); !strings.Contains(got, "Session needs a setup step") || !strings.Contains(got, "Run the installer.") {
 		t.Fatalf("view = %q", got)
 	}
 
 	s.Key(h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")})
-	if len(h.installs) != 1 || h.installs[0].command != "install tool" || len(s.fix.images) != 1 {
-		t.Fatalf("installs %+v images %d, want a refused start to keep the images", h.installs, len(s.fix.images))
+	if len(h.installs) != 1 || h.installs[0].command != "install tool" || len(m.ledger.launch.images) != 1 {
+		t.Fatalf("installs %+v images %d, want a refused start to keep the images", h.installs, len(m.ledger.launch.images))
 	}
 	h.admit = true
 	s.Key(h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")})
-	if len(h.installs) != 2 || len(h.installs[1].images) != 1 || s.fix.images != nil {
-		t.Fatalf("installs %+v images %v, want the images handed to the admitted install", h.installs, s.fix.images)
+	if len(h.installs) != 2 || len(h.installs[1].images) != 1 || m.ledger.launch.images != nil {
+		t.Fatalf("installs %+v images %v, want the images handed to the admitted install", h.installs, m.ledger.launch.images)
 	}
 	m.ledger.install = &pendingInstall{name: "install-tool"}
 	s.Key(h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")})
@@ -67,8 +84,8 @@ func TestLaunchHintSurfaceWithFakeInstall(t *testing.T) {
 	}
 
 	s.Key(h, tea.KeyMsg{Type: tea.KeyEsc})
-	if hintOpen(m) || !m.onList() || s.fix.command != "" {
-		t.Fatalf("esc: open %t mode %v fix %+v", hintOpen(m), m.screenID(), s.fix)
+	if hintOpen(m) || !m.onList() || m.ledger.launch.command != "" {
+		t.Fatalf("esc: open %t mode %v fix %+v", hintOpen(m), m.screenID(), hintFix(m))
 	}
 }
 
