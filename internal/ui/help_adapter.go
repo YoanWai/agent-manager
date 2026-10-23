@@ -7,6 +7,7 @@ import (
 	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -57,6 +58,7 @@ func (m *Model) helpContext(width int) uihelp.Context {
 		},
 		QuickKeys:    uihelp.QuickKeys{Model: quickModelKey, Effort: quickEffortKey, Profile: quickProfileKey},
 		CursorMarker: cursorAnchorMarker,
+		ReviewRows:   uireview.HelpRows(),
 		Styles: uihelp.Styles{
 			Section: sectionStyle(),
 			Rule:    lipgloss.NewStyle().Foreground(colorBorder()),

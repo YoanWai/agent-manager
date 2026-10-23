@@ -34,73 +34,12 @@ func (m *Model) Key(msg tea.KeyMsg, ctx KeyContext) KeyResult {
 	if height < 1 {
 		height = 1
 	}
-	result := KeyResult{Consumed: true}
-	switch msg.String() {
-	case "q", "esc":
-		result.Navigation = NavigationExit
-	case "?":
-		result.Navigation = NavigationHelp
-	case "up", "k":
-		m.MoveCursor(-1, height)
-	case "down", "j":
-		m.MoveCursor(1, height)
-	case "ctrl+d":
-		m.MoveCursor(height/2, height)
-	case "ctrl+u":
-		m.MoveCursor(-height/2, height)
-	case "pgup":
-		m.MoveCursor(-height, height)
-	case "pgdown", "pgdn":
-		m.MoveCursor(height, height)
-	case "g":
-		m.First()
-	case "G":
-		m.Last(height)
-	case "J", "tab":
-		result.Requests = m.SwitchFile(1)
-	case "K", "shift+tab":
-		result.Requests = m.SwitchFile(-1)
-	case "n":
-		m.JumpChange(1, height)
-	case "N", "shift+n":
-		m.JumpChange(-1, height)
-	case "s":
-		request, ok := m.CycleScope()
-		if ok {
-			result.Requests.Load = &request
-			result.Requests.StartupTick = true
-		}
-	case "r":
-		result.Navigation = NavigationRepoPicker
-	case "b":
-		result.Navigation = NavigationBranchPicker
-	case "B":
-		result.Navigation = NavigationBasePicker
-	case "u":
-		m.ToggleSideBySide(height)
-	case "f":
-		result.Requests = m.ToggleCodeOnly()
-	case " ", "space":
-		if !ctx.PersistenceAvailable {
-			result.Error = "review state is unavailable"
-		} else {
-			result.Requests = m.ToggleReviewed()
-		}
-	case "c":
-		m.OpenAnnotation()
-	case "d":
-		result.Requests, result.Error = m.DiscardOrToggle(ctx.PersistenceAvailable)
-	case "C":
-		if m.DraftCount() == 0 {
-			result.Error = "no comments to send - press c on a line first"
-		} else {
-			m.sendConfirm = true
-		}
-	case "o", "f3":
-		result.Requests.FileCheck = m.OpenFileRequest()
-	default:
-		result.Consumed = false
+	b, ok := bindingFor(msg.String())
+	if !ok {
+		return KeyResult{}
 	}
+	result := KeyResult{Consumed: true}
+	b.Run(m, ctx, height, &result)
 	return result
 }
 

@@ -395,30 +395,21 @@ func (m *Model) Legend() []LegendSection {
 			{"↵", "save"}, {"esc", "cancel"},
 		}}}
 	}
-	repo := "repo"
-	if len(m.repoRoots) > 0 {
-		repo = "repo: " + presentation.EscapeControlsInline(filepath.Base(m.repoSel))
+	review := LegendSection{Title: "Review"}
+	move := LegendSection{Title: "Move", Quiet: true}
+	for _, b := range keymap {
+		if b.Footer == nil {
+			continue
+		}
+		pair := [2]string{b.legendKey(), b.Footer(m)}
+		if b.Move {
+			move.Pairs = append(move.Pairs, pair)
+		} else {
+			review.Pairs = append(review.Pairs, pair)
+		}
 	}
-	send := "send"
-	if count := m.DraftCount(); count > 0 {
-		send = fmt.Sprintf("send %d", count)
-	}
-	filter := "code only"
-	if m.codeOnly {
-		filter = "all files"
-	}
-	return []LegendSection{
-		{Title: "Review", Pairs: [][2]string{
-			{"c", "comment"}, {"d", "remove/handle"}, {"C", send}, {"space", "reviewed"},
-			{"s", "scope: " + m.scope.String()}, {"r", repo}, {"b", "branch"}, {"B", "target"},
-		}},
-		{Title: "Move", Quiet: true, Pairs: [][2]string{
-			{"↑↓/jk", "scroll line"}, {"ctrl+d/ctrl+u", "half page"}, {"pgup/pgdn", "page"},
-			{"g/G", "top/bottom"}, {"tab/J K/shift+tab", "file"}, {"n/N", "change"},
-			{"u", "layout"}, {"f", filter}, {"o/f3", "open file"}, {"?", "keys"},
-			{"esc/q", "close"}, {"ctrl+c", "quit"},
-		}},
-	}
+	move.Pairs = append(move.Pairs, quitPair)
+	return []LegendSection{review, move}
 }
 
 // scrollWindow keeps the cursor visible inside a height-limited window of
