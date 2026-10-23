@@ -129,7 +129,8 @@ func frameCap() uiframe.Cap {
 // legendTitleStyles is a tier's name as the footer paints it: the badge for
 // the tier the cursor is on, the quieter title for a secondary tier.
 func legendTitleStyles() (badge, quiet func(string) string) {
-	return legendBadgeStyle().Render, legendTitleStyle().Render
+	badgeStyle, titleStyle := legendBadgeStyle(), legendTitleStyle()
+	return func(s string) string { return badgeStyle.Render(s) }, func(s string) string { return titleStyle.Render(s) }
 }
 
 func legendSeparator() string { return subtleStyle().Render(" · ") }
