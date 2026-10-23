@@ -29,7 +29,7 @@ var mouseOpeners = map[string]func(t *testing.T, m *Model){
 	},
 	"help.Surface":        func(t *testing.T, m *Model) { m.openHelp() },
 	"notices.Surface":     func(t *testing.T, m *Model) { m.Update(key("M")) },
-	"settingsSurface":     func(t *testing.T, m *Model) { m.applyCmd(t, m.openSettings()) },
+	"settings.Surface":    func(t *testing.T, m *Model) { m.applyCmd(t, m.openSettings()) },
 	"groupFormSurface":    func(t *testing.T, m *Model) { m.openGroupForm() },
 	"connections.Surface": func(t *testing.T, m *Model) { m.openConnectionDialog(remote.Connection{}) },
 	"quickSurface":        func(t *testing.T, m *Model) { m.applyCmd(t, m.openQuickMode()) },
