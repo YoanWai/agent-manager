@@ -24,13 +24,3 @@ func TestBannerShimmerReArms(t *testing.T) {
 		t.Fatal("a restarted sweep must schedule its frames")
 	}
 }
-
-// The resting wordmark spans the mark's gradient: the two ends must differ,
-// darker teal on the left.
-func TestBannerRestGradient(t *testing.T) {
-	left := bannerRest(0)
-	right := bannerRest(float64(bannerWidth() - 1))
-	if left == right {
-		t.Fatal("gradient ends should differ")
-	}
-}

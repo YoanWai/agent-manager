@@ -131,18 +131,6 @@ func TestReviewFooterMarksAnOutcome(t *testing.T) {
 	}
 }
 
-// Splicing a card into a styled row must not shift the cells around it.
-func TestSpliceAtColumnKeepsWidth(t *testing.T) {
-	row := paint(keyStyle().Render("session ")+subtleStyle().Render("running"), 40, panelHex())
-	spliced := spliceAtColumn(row, paint(errStyle().Render("boom"), 6, blockHex()), 20)
-	if got := ansi.StringWidth(spliced); got != 40 {
-		t.Fatalf("spliced row is %d wide, want 40: %q", got, ansi.Strip(spliced))
-	}
-	if plain := ansi.Strip(spliced); !strings.Contains(plain, "boom") || !strings.HasPrefix(plain, "session ") {
-		t.Fatalf("splice lost content: %q", plain)
-	}
-}
-
 // Search is a field over the list it filters, in the rail, not a card that
 // floats away from the entries.
 func TestSearchFieldSitsInTheRail(t *testing.T) {

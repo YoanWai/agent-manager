@@ -1,22 +1,28 @@
-package ui
+// Package preview paints one captured agent pane into the column it lands
+// in: the rows a tmux capture arrives with, made exact cells wide and held
+// still under a panel shorter or taller than the pane.
+package preview
 
 import (
-	"github.com/charmbracelet/x/ansi"
 	"regexp"
 	"strings"
+
+	"github.com/charmbracelet/x/ansi"
 )
 
-// previewDangerSeqs strips capture sequences that would scroll or clear the
-// outer manager terminal when embedded in View output: erase (K/J), scroll
-// (S/T), insert/delete lines (L/M), set scroll region (r), and the 7-bit
-// index / reverse-index / next-line controls (D/M/E).
-var previewDangerSeqs = regexp.MustCompile(
+// dangerSeqs strips capture sequences that would scroll or clear the outer
+// manager terminal when embedded in View output: erase (K/J), scroll (S/T),
+// insert/delete lines (L/M), set scroll region (r), and the 7-bit index /
+// reverse-index / next-line controls (D/M/E).
+var dangerSeqs = regexp.MustCompile(
 	`\x1b\[[0-9;]*[KJLMSTr]|\x1b[DEM]`,
 )
 
-func previewLine(line string, width int) string {
-	line = strings.ReplaceAll(line, cursorAnchorMarker, "")
-	line = previewDangerSeqs.ReplaceAllString(line, "")
+// Line paints one captured row into exactly width columns: control bytes
+// and danger sequences dropped, an open background closed before the pad,
+// and the tail filled out to the column.
+func Line(line string, width int) string {
+	line = dangerSeqs.ReplaceAllString(line, "")
 	line = strings.Map(func(r rune) rune {
 		if r < 0x20 && r != 0x1b && r != '\t' {
 			return -1
@@ -39,14 +45,14 @@ func previewLine(line string, width int) string {
 	return line
 }
 
-// expandPaneTabs writes a captured row's tabs out as the spaces the pane
+// ExpandTabs writes a captured row's tabs out as the spaces the pane
 // already painted. tmux serializes a tab as the single byte even though it
 // spans the cells up to the next eight-column stop, so a row that keeps one
 // measures narrower than it paints and overflows its column. The stops
 // count from the row's start, which is pane column zero; escape sequences
 // hold no column. A tab that would reach past the row's last cell stops on
 // it, which is where tmux leaves the cursor.
-func expandPaneTabs(line string, width int) string {
+func ExpandTabs(line string, width int) string {
 	if !strings.ContainsRune(line, '\t') {
 		return line
 	}
@@ -65,19 +71,19 @@ func expandPaneTabs(line string, width int) string {
 	return out.String()
 }
 
-// paneWindow picks the half-open row range of a capture the panel shows.
-// A pane is left taller than the panel on purpose, since shrinking it
-// costs agents like Codex their whole scrollback (#369), so the window
-// drops a blank tail instead. A completely blank, not-yet-painted pane
-// keeps its rows hit-testable, and a live caret keeps its row in view.
-func paneWindow(pane string, n, caretRow int) (lines []string, start int) {
+// Window picks the half-open row range of a capture the panel shows. A pane
+// is left taller than the panel on purpose, since shrinking it costs agents
+// like Codex their whole scrollback (#369), so the window drops a blank tail
+// instead. A completely blank, not-yet-painted pane keeps its rows
+// hit-testable, and a live caret keeps its row in view.
+func Window(pane string, n, caretRow int) (lines []string, start int) {
 	if n <= 0 || pane == "" {
 		return nil, 0
 	}
 	// capture-pane often ends with a trailing newline; drop only that.
 	lines = strings.Split(strings.TrimSuffix(pane, "\n"), "\n")
 	end := len(lines)
-	for end > 0 && blankPaneRow(lines[end-1]) {
+	for end > 0 && blankRow(lines[end-1]) {
 		end--
 	}
 	if end == 0 {
@@ -96,20 +102,20 @@ func paneWindow(pane string, n, caretRow int) (lines []string, start int) {
 	return lines[start:end], start
 }
 
-func blankPaneRow(line string) bool {
+func blankRow(line string) bool {
 	return strings.TrimSpace(ansi.Strip(line)) == ""
 }
 
-// paneExact returns up to n lines of pane text as the pane painted them,
+// Exact returns up to n lines of pane text as the pane painted them,
 // preserving blank rows so a full-screen agent TUI looks the same in the
 // preview. caretRow is the capture row the live caret sits on, or -1 when
 // none is in play. Rows arrive here before anything measures them, so this
 // is where a tab becomes the cells it covers and the frame, the caret and
 // the selection all count one set of columns.
-func paneExact(pane string, n, width, caretRow int) []string {
-	lines, _ := paneWindow(pane, n, caretRow)
+func Exact(pane string, n, width, caretRow int) []string {
+	lines, _ := Window(pane, n, caretRow)
 	for i, line := range lines {
-		lines[i] = expandPaneTabs(line, width)
+		lines[i] = ExpandTabs(line, width)
 	}
 	return lines
 }

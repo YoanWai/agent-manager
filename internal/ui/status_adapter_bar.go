@@ -1,6 +1,10 @@
 package ui
 
-import tea "github.com/charmbracelet/bubbletea"
+import (
+	tea "github.com/charmbracelet/bubbletea"
+
+	uistatusbar "github.com/YoanWai/agent-manager/internal/ui/statusbar"
+)
 
 type errBar struct {
 	text  string
@@ -20,6 +24,17 @@ func (e errBar) worked() bool { return e.text != "" && e.text == e.done }
 // a caveat the reader has to see, which reads as neither outcome nor
 // failure.
 func (e errBar) warned() bool { return e.text != "" && e.text == e.warn }
+
+// kind is how the message reads, which is the tone the bar paints it in.
+func (e errBar) kind() uistatusbar.Kind {
+	switch {
+	case e.worked():
+		return uistatusbar.Success
+	case e.warned():
+		return uistatusbar.Warning
+	}
+	return uistatusbar.Failure
+}
 
 // reportErr puts a failure on the status bar; the poll ages it out.
 func (m *Model) reportErr(text string) {

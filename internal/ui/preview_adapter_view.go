@@ -6,8 +6,10 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
+	uipreview "github.com/YoanWai/agent-manager/internal/ui/preview"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -56,6 +58,18 @@ func (m *Model) listHint(action, label string) string {
 	return keyCap(glyph, label)
 }
 
+// startupLoader is the ring a session still booting shows in place of its
+// pane, once selected and not focused: a focused pane is the screen the user
+// types on, so it keeps its own frame.
+func (m *Model) startupLoader(width, height int) []string {
+	sess, ok := m.selected()
+	if !ok {
+		return nil
+	}
+	starting := sess.Status == status.Starting && !m.focused()
+	return startingLoader(m.glyphs(), starting, m.workspace.preview, width, height, m.startup.startupPhase)
+}
+
 // previewLines is the captured pane, filling every row under the detail
 // separator. Compact content sits at the bottom, where an agent's composer
 // remains beside the manager footer instead of floating above a blank tail.
@@ -84,7 +98,7 @@ func (m *Model) previewLines(width, height int, gutter string, frameOrigin ...in
 		if !rendered.HasPane {
 			if loader != nil {
 				for _, line := range loader {
-					lines = append(lines, contentLine{text: previewLine(line, width), raw: true})
+					lines = append(lines, contentLine{text: uipreview.Line(line, width), raw: true})
 				}
 				return lines
 			}
@@ -96,7 +110,7 @@ func (m *Model) previewLines(width, height int, gutter string, frameOrigin ...in
 		for i, line := range rendered.Rows {
 			screenRow := rendered.TopPadding + i
 			if screenRow < len(loader) && loader[screenRow] != "" {
-				line = previewLine(loader[screenRow], width)
+				line = uipreview.Line(loader[screenRow], width)
 			}
 			lines = append(lines, contentLine{text: line, raw: true})
 		}
@@ -105,11 +119,11 @@ func (m *Model) previewLines(width, height int, gutter string, frameOrigin ...in
 		}
 		return lines
 	}
-	pane := paneExact(m.workspace.preview, height, width, m.paneCaretRow())
+	pane := uipreview.Exact(m.workspace.preview, height, width, m.paneCaretRow())
 	if len(pane) == 0 {
 		if loader != nil {
 			for _, line := range loader {
-				lines = append(lines, contentLine{text: previewLine(line, width), raw: true})
+				lines = append(lines, contentLine{text: uipreview.Line(line, width), raw: true})
 			}
 			return lines
 		}
@@ -122,10 +136,10 @@ func (m *Model) previewLines(width, height int, gutter string, frameOrigin ...in
 	for i, line := range pane {
 		screenRow := topPadding + i
 		if screenRow < len(loader) && loader[screenRow] != "" {
-			lines = append(lines, contentLine{text: previewLine(loader[screenRow], width), raw: true})
+			lines = append(lines, contentLine{text: uipreview.Line(loader[screenRow], width), raw: true})
 			continue
 		}
-		lines = append(lines, contentLine{text: previewLine(line, width), raw: true})
+		lines = append(lines, contentLine{text: uipreview.Line(line, width), raw: true})
 	}
 	// Rows past the capture stay raw too: a painted tail under unpainted
 	// output would read as a box drawn around the agent's last line.
