@@ -246,11 +246,11 @@ func loadDismissed(st *store.Store) map[string]bool {
 // openNotices shows the panel on the notice with id, or on the first. An
 // open panel moves to it instead of stacking a second.
 func (m *Model) openNotices(id string) {
-	if s, ok := surfaceOf[*noticesSurface](m); ok {
-		s.panel.Open(m.activeNotices(), id)
+	if s, ok := surfaceOf[*uinotices.Surface](m); ok {
+		s.Panel().Open(m.activeNotices(), id)
 		return
 	}
-	m.push(newNoticesSurface(m, m.notices.Panel, id))
+	m.push(uinotices.NewSurface(noticesRoot{m}, m.notices.Panel, id))
 }
 
 // openStartupNotice greets the launch when there is something to say:
@@ -267,21 +267,21 @@ func (m *Model) openStartupNotice() {
 }
 
 func (m *Model) noticesOpen() bool {
-	_, open := surfaceOf[*noticesSurface](m)
+	_, open := surfaceOf[*uinotices.Surface](m)
 	return open
 }
 
 // keepNoticeSelection applies a change that may add or remove notices and,
 // while the panel is open, keeps the cursor on the notice it was on.
 func (m *Model) keepNoticeSelection(apply func()) {
-	s, ok := surfaceOf[*noticesSurface](m)
+	s, ok := surfaceOf[*uinotices.Surface](m)
 	if !ok {
 		apply()
 		return
 	}
-	selected := s.panel.Selected(m.activeNotices())
+	selected := s.Panel().Selected(m.activeNotices())
 	apply()
-	s.panel.Reselect(m.activeNotices(), selected)
+	s.Panel().Reselect(m.activeNotices(), selected)
 }
 
 func (m *Model) applyNotices(apply func()) {
@@ -300,7 +300,7 @@ func (m *Model) applyNotices(apply func()) {
 	if added == "" {
 		return
 	}
-	if _, open := surfaceOf[*noticesSurface](m); open {
+	if _, open := surfaceOf[*uinotices.Surface](m); open {
 		return
 	}
 	if m.listReadyForNotice() {

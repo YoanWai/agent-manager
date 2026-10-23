@@ -164,7 +164,7 @@ func TestUpdateNoticeSummarizesEverySkippedRelease(t *testing.T) {
 	})
 	m.openNotices("update-v0.6.0")
 
-	n := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()]
+	n := m.activeNotices()[noticesSurfaceOf(m).Panel().Cursor()]
 	if n.Title != "4 releases available · v0.6.0" {
 		t.Fatalf("title = %q", n.Title)
 	}
@@ -540,15 +540,15 @@ func TestNoticesBodyScrollIsBoundedAndVisible(t *testing.T) {
 		t.Fatalf("a clipped body shows its scrollbar:\n%s", before)
 	}
 	m.handleKey(key("pgdown"))
-	if noticesSurfaceOf(m).panel.Offset() == 0 {
+	if noticesSurfaceOf(m).Panel().Offset() == 0 {
 		t.Fatalf("page down did not move the summary:\n%s", ansi.Strip(preparedView(m)))
 	}
-	limit := noticesSurfaceOf(m).panel.ScrollLimit(m.activeNotices(), m.noticesFrame())
+	limit := noticesSurfaceOf(m).Panel().ScrollLimit(m.activeNotices(), m.noticesFrame())
 	for i := 0; i < 20; i++ {
 		m.handleKey(key("pgdown"))
 	}
-	if noticesSurfaceOf(m).panel.Offset() != limit {
-		t.Fatalf("scroll offset = %d, want bounded limit %d", noticesSurfaceOf(m).panel.Offset(), limit)
+	if noticesSurfaceOf(m).Panel().Offset() != limit {
+		t.Fatalf("scroll offset = %d, want bounded limit %d", noticesSurfaceOf(m).Panel().Offset(), limit)
 	}
 }
 
@@ -591,7 +591,7 @@ func TestNoticesEnterOpensURL(t *testing.T) {
 	}
 	t.Cleanup(func() { openBrowser = defaultOpenBrowser })
 
-	want := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].URL
+	want := m.activeNotices()[noticesSurfaceOf(m).Panel().Cursor()].URL
 	if want == "" {
 		t.Fatal("selected notice needs a url for this test")
 	}
@@ -635,7 +635,7 @@ func TestStartupOpensNoticesModalOncePerVersion(t *testing.T) {
 	if !m.noticesOpen() {
 		t.Fatalf("first launch should open the notices modal, screen = %v", m.screenID())
 	}
-	if selected := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()]; selected.ID != uinotices.Welcome {
+	if selected := m.activeNotices()[noticesSurfaceOf(m).Panel().Cursor()]; selected.ID != uinotices.Welcome {
 		t.Fatalf("welcome should be selected, got %q", selected.ID)
 	}
 
@@ -649,10 +649,10 @@ func TestStartupOpensNoticesModalOncePerVersion(t *testing.T) {
 func TestLateReleaseKeepsModalSelection(t *testing.T) {
 	m := modalModel(t)
 	m.handleKey(key("down"))
-	selected := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID
+	selected := m.activeNotices()[noticesSurfaceOf(m).Panel().Cursor()].ID
 
 	m.Update(updateMsg{latest: "v9.9.9", url: "https://example.com"})
-	if got := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID; got != selected {
+	if got := m.activeNotices()[noticesSurfaceOf(m).Panel().Cursor()].ID; got != selected {
 		t.Fatalf("selection moved from %q to %q when the release arrived", selected, got)
 	}
 }
@@ -660,10 +660,10 @@ func TestLateReleaseKeepsModalSelection(t *testing.T) {
 func TestLateDismissedReleaseKeepsModalSelection(t *testing.T) {
 	m := modalModel(t)
 	persistNoticeDismissal(t, m, "update-v9.9.9")
-	selected := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID
+	selected := m.activeNotices()[noticesSurfaceOf(m).Panel().Cursor()].ID
 
 	m.Update(updateMsg{latest: "v9.9.9", url: "https://example.com"})
-	if got := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID; got != selected {
+	if got := m.activeNotices()[noticesSurfaceOf(m).Panel().Cursor()].ID; got != selected {
 		t.Fatalf("a dismissed release must not move the selection, went from %q to %q", selected, got)
 	}
 }
@@ -671,13 +671,13 @@ func TestLateDismissedReleaseKeepsModalSelection(t *testing.T) {
 func TestLateFeedKeepsModalSelection(t *testing.T) {
 	m := modalModel(t)
 	m.handleKey(key("down"))
-	selected := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID
+	selected := m.activeNotices()[noticesSurfaceOf(m).Panel().Cursor()].ID
 
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-late", Banner: "late", Title: "Late"}}})
 	if !contains(noticeIDs(m.activeNotices()), "feed-late") {
 		t.Fatal("feed message should have landed")
 	}
-	if got := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID; got != selected {
+	if got := m.activeNotices()[noticesSurfaceOf(m).Panel().Cursor()].ID; got != selected {
 		t.Fatalf("selection moved from %q to %q when the feed arrived", selected, got)
 	}
 }
@@ -692,7 +692,7 @@ func TestNewFeedOpensNoticesModal(t *testing.T) {
 		if !m.noticesOpen() {
 			t.Fatalf("hidden=%v: a new feed message should open the modal, screen = %v", hidden, m.screenID())
 		}
-		if got := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID; got != "feed-new" {
+		if got := m.activeNotices()[noticesSurfaceOf(m).Panel().Cursor()].ID; got != "feed-new" {
 			t.Fatalf("new message should be selected, got %q", got)
 		}
 	}
@@ -766,7 +766,7 @@ func TestAdditionalFeedIdOpensNoticesModal(t *testing.T) {
 	if !m.noticesOpen() {
 		t.Fatalf("a new id should open the modal, screen = %v", m.screenID())
 	}
-	if got := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID; got != "feed-new" {
+	if got := m.activeNotices()[noticesSurfaceOf(m).Panel().Cursor()].ID; got != "feed-new" {
 		t.Fatalf("new message should be selected, got %q", got)
 	}
 }
@@ -783,7 +783,7 @@ func TestFeedDuringFocusOpensOnLeave(t *testing.T) {
 	if !m.noticesOpen() {
 		t.Fatalf("returning to the list should open the new message, screen = %v", m.screenID())
 	}
-	if got := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID; got != "feed-new" {
+	if got := m.activeNotices()[noticesSurfaceOf(m).Panel().Cursor()].ID; got != "feed-new" {
 		t.Fatalf("new message should be selected, got %q", got)
 	}
 }
@@ -802,7 +802,7 @@ func TestFeedDuringSettingsOpensOnClose(t *testing.T) {
 	if !m.noticesOpen() {
 		t.Fatalf("closing settings should open the new message, screen = %v", m.screenID())
 	}
-	if got := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID; got != "feed-new" {
+	if got := m.activeNotices()[noticesSurfaceOf(m).Panel().Cursor()].ID; got != "feed-new" {
 		t.Fatalf("new message should be selected, got %q", got)
 	}
 }
@@ -834,7 +834,7 @@ func TestNewFeedWaitsForSearchToClose(t *testing.T) {
 	if !m.noticesOpen() {
 		t.Fatalf("closing search should open the new message, screen = %v", m.screenID())
 	}
-	if got := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID; got != "feed-new" {
+	if got := m.activeNotices()[noticesSurfaceOf(m).Panel().Cursor()].ID; got != "feed-new" {
 		t.Fatalf("new message should be selected, got %q", got)
 	}
 }
@@ -856,7 +856,7 @@ func TestNewFeedWaitsForQuickBar(t *testing.T) {
 	if !m.noticesOpen() {
 		t.Fatalf("closing the quick bar should open the new message, screen = %v", m.screenID())
 	}
-	if got := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID; got != "feed-new" {
+	if got := m.activeNotices()[noticesSurfaceOf(m).Panel().Cursor()].ID; got != "feed-new" {
 		t.Fatalf("new message should be selected, got %q", got)
 	}
 }
@@ -877,7 +877,7 @@ func TestNewFeedWaitsForResize(t *testing.T) {
 	if !m.noticesOpen() {
 		t.Fatalf("leaving resize should open the new message, screen = %v", m.screenID())
 	}
-	if got := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID; got != "feed-new" {
+	if got := m.activeNotices()[noticesSurfaceOf(m).Panel().Cursor()].ID; got != "feed-new" {
 		t.Fatalf("new message should be selected, got %q", got)
 	}
 }
@@ -891,7 +891,7 @@ func TestNewUpdateOpensNoticesModal(t *testing.T) {
 	if !m.noticesOpen() {
 		t.Fatalf("a new update notice should open the modal, screen = %v", m.screenID())
 	}
-	if got := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID; got != "update-v0.3.0" {
+	if got := m.activeNotices()[noticesSurfaceOf(m).Panel().Cursor()].ID; got != "update-v0.3.0" {
 		t.Fatalf("update notice should be selected, got %q", got)
 	}
 }
@@ -922,7 +922,7 @@ func TestNewerReleaseOpensNoticesModal(t *testing.T) {
 	if !m.noticesOpen() {
 		t.Fatalf("a newer tag should open the modal, screen = %v", m.screenID())
 	}
-	if got := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID; got != "update-v0.4.0" {
+	if got := m.activeNotices()[noticesSurfaceOf(m).Panel().Cursor()].ID; got != "update-v0.4.0" {
 		t.Fatalf("new release should be selected, got %q", got)
 	}
 }
@@ -939,7 +939,7 @@ func TestFeedArrivingDuringWelcomeStaysOnWelcome(t *testing.T) {
 	if !m.noticesOpen() {
 		t.Fatalf("screen = %v, want notices", m.screenID())
 	}
-	if got := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID; got != uinotices.Welcome {
+	if got := m.activeNotices()[noticesSurfaceOf(m).Panel().Cursor()].ID; got != uinotices.Welcome {
 		t.Fatalf("welcome should stay selected, got %q", got)
 	}
 	if !contains(noticeIDs(m.activeNotices()), "feed-new") {
@@ -985,8 +985,8 @@ func TestUpdateNoticeAppliesOnU(t *testing.T) {
 	m := noticeModel(noticeStore(t), "v0.2.0")
 	m.update.latest = "v0.3.0"
 	m.openNotices("update-v0.3.0")
-	if !m.noticesOpen() || noticesSurfaceOf(m).panel.Cursor() != 0 {
-		t.Fatalf("update notice should open selected, screen = %v cursor=%d", m.screenID(), noticesSurfaceOf(m).panel.Cursor())
+	if !m.noticesOpen() || noticesSurfaceOf(m).Panel().Cursor() != 0 {
+		t.Fatalf("update notice should open selected, screen = %v cursor=%d", m.screenID(), noticesSurfaceOf(m).Panel().Cursor())
 	}
 
 	applied := ""

@@ -44,8 +44,8 @@ func TestDismissNoticeFailureRestoresNotice(t *testing.T) {
 	if !contains(noticeIDs(m.activeNotices()), uinotices.Welcome) {
 		t.Fatal("failed persistence did not restore the notice")
 	}
-	if !m.noticesOpen() || m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID != uinotices.Welcome {
-		t.Fatalf("failed dismissal did not restore its modal selection: screen = %v cursor=%d", m.screenID(), noticesSurfaceOf(m).panel.Cursor())
+	if !m.noticesOpen() || m.activeNotices()[noticesSurfaceOf(m).Panel().Cursor()].ID != uinotices.Welcome {
+		t.Fatalf("failed dismissal did not restore its modal selection: screen = %v cursor=%d", m.screenID(), noticesSurfaceOf(m).Panel().Cursor())
 	}
 	if !strings.Contains(m.errBar.text, "decode setting") {
 		t.Fatalf("failure reason = %q", m.errBar.text)
