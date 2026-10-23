@@ -375,8 +375,9 @@ func TestComposerTextPasteDroppedWhenItsBoxIsClosed(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openQuickMode()
-	m.quick().input.SetValue("kept")
-	gen := m.quick().gen
+	q := m.quick()
+	q.input.SetValue("kept")
+	gen := q.gen
 	m.closeQuick()
 
 	m = applyMsg(t, m, pasteTextMsg{
@@ -384,7 +385,7 @@ func TestComposerTextPasteDroppedWhenItsBoxIsClosed(t *testing.T) {
 		gen:    gen,
 		inner:  tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("late")},
 	})
-	if got := m.quick().input.Value(); got != "kept" {
+	if got := q.input.Value(); got != "kept" {
 		t.Fatalf("value = %q, want the closed bar left alone", got)
 	}
 }
