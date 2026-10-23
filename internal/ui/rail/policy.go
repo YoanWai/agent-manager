@@ -36,7 +36,10 @@ func (m Model) Searching() bool    { return m.searching }
 func (m Model) Search() string     { return m.search }
 func (m Model) MenuOpen() bool     { return m.menu.active }
 func (m Model) Reordering() bool   { return m.reorder.active }
-func (m Model) Cursor() int        { return m.cursor }
+
+// Busy is whether search, the row menu or reorder holds the keyboard.
+func (m Model) Busy() bool  { return m.InputMode() != BrowseMode }
+func (m Model) Cursor() int { return m.cursor }
 
 type ReorderInfo struct {
 	Active    bool

@@ -383,7 +383,7 @@ func (m *Model) onContentColumn(x, y int) bool {
 // A group, an archived session, the search field and the quick bar keep it.
 func (m *Model) focusFromPreview() (tea.Model, tea.Cmd) {
 	row, ok := m.selectedRow()
-	if !ok || row.isGroup || row.sess.Archived || m.rail.Searching() || m.quick.active {
+	if !ok || row.isGroup || row.sess.Archived || m.rail.Busy() || m.quick.active {
 		return m, nil
 	}
 	return m.focusSelected()
