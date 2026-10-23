@@ -36,6 +36,8 @@ class Sandbox:
         for key in ('TMUX', 'TMUX_PANE', 'AGENT_MANAGER_PROFILE', 'AGENT_MANAGER_SESSION_ID', 'COLORFGBG',
                     'ENV', 'BASH_ENV', 'PROMPT_COMMAND'):
             self.env.pop(key, None)
+        # An inherited directory would put the feed cache outside this sandbox.
+        self.env.pop('AGENT_MANAGER_CONFIG_DIR', None)
         for key in tuple(self.env):
             if key.startswith('GIT_'):
                 self.env.pop(key)
@@ -144,15 +146,7 @@ request_budget_wait = 6
 
 
 def feed_cache(sandbox):
-    # config.Dir keeps AGENT_MANAGER_CONFIG_DIR only while this process still
-    # resolves the recorded startup directory. The sandbox HOME does not.
-    env = sandbox.env
-    override = env.get('AGENT_MANAGER_CONFIG_DIR', '')
-    if override and not env.get('AGENT_MANAGER_STARTUP_CONFIG'):
-        directory = Path(override)
-    else:
-        directory = Path(env['XDG_CONFIG_HOME']) / 'agent-manager'
-    return directory / 'feed-messages.json'
+    return Path(sandbox.env['XDG_CONFIG_HOME']) / 'agent-manager' / 'feed-messages.json'
 
 
 def notice_rows(frame):
