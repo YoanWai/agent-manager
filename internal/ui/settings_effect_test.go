@@ -89,6 +89,7 @@ func TestOpenSettingsDefersBlockedStoreRead(t *testing.T) {
 
 func TestOpenCLIPickerDoesNotReadStore(t *testing.T) {
 	m := buildModel(t)
+	m.applyCmd(t, m.openSettings())
 	if err := m.services.store.Close(); err != nil {
 		t.Fatal(err)
 	}
