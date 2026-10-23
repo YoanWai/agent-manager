@@ -99,13 +99,12 @@ func (m *Model) handleCatalog(msg catalogMsg) tea.Cmd {
 		(m.mode == modeList && m.quick.active && m.quick.Tool() == msg.tool)
 	if errors.As(msg.err, &outdated) && active {
 		m.advanceDialogGen()
-		m.launchHint.present(m, launchFix{
+		m.presentLaunchHint(launchFix{
 			text:    outdatedToolText(outdated),
 			command: outdatedToolCommand(outdated),
 			script:  outdatedToolCommand(outdated),
 			binary:  outdated.Binary,
 			update:  true,
-			resume:  m.mode,
 		})
 	}
 	if !msg.stale {

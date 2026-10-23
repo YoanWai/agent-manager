@@ -342,10 +342,10 @@ func TestForkLaunchFailureRetainsCapturedRequest(t *testing.T) {
 
 	m, cmd := submitForkDialog(t, m, "failed fork")
 	m.applyCmd(t, cmd)
-	if m.mode != modeLaunchHint {
+	if !hintOpen(m) {
 		t.Fatalf("mode = %v, want the launch hint dialog", m.mode)
 	}
-	request, ok := m.launchHint.fix.effectRetry.(forkRequest)
+	request, ok := hintFix(m).effectRetry.(forkRequest)
 	if !ok {
 		t.Fatal("launch hint holds no captured fork request to re-dispatch")
 	}
@@ -528,10 +528,10 @@ func TestForkKeysRetryDoesNotForkSourceTwice(t *testing.T) {
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(*Model)
 	m.applyCmd(t, cmd)
-	if m.mode != modeLaunchHint {
+	if !hintOpen(m) {
 		t.Fatalf("mode = %v, want the launch hint dialog for the missing binary", m.mode)
 	}
-	request, ok := m.launchHint.fix.effectRetry.(forkRequest)
+	request, ok := hintFix(m).effectRetry.(forkRequest)
 	if !ok || request.knownForkID != writeOnce {
 		t.Fatalf("captured retry = %+v, want it to reuse the recorded fork %q", request, writeOnce)
 	}

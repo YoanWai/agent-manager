@@ -303,8 +303,8 @@ func (m *Model) paneHeldFrom(job *effectJob) bool {
 }
 
 func (m *Model) requestQuit() (tea.Model, tea.Cmd) {
-	if m.launchHint.install != nil {
-		m.reportErr("install may still be running in " + m.launchHint.install.name + "; finish it, kill its terminal with the session controls, or attach and interrupt it before quitting")
+	if install := m.pendingInstall(); install != nil {
+		m.reportErr("install may still be running in " + install.name + "; finish it, kill its terminal with the session controls, or attach and interrupt it before quitting")
 		return m, nil
 	}
 	starting := func(job *effectJob) (installStartRequest, bool) {

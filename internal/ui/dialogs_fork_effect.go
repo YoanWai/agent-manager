@@ -239,8 +239,8 @@ func (m *Model) applyForkEffect(request forkRequest, result forkEffectResult, er
 		request.knownForkID = result.recordedForkID
 	}
 	m.reportLaunchError(err)
-	if m.mode == modeLaunchHint {
-		m.launchHint.fix.effectRetry = request
+	if fix, ok := m.launchHintFix(); ok {
+		fix.effectRetry = request
 	}
 	return nil
 }

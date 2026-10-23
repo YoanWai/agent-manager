@@ -36,9 +36,6 @@ const (
 	modeSettings
 	modeDiff
 	modeNotices
-	// modeLaunchHint holds a refused spawn's fix in a dialog: the launch
-	// stays blocked, and the command that unblocks it is what the user sees.
-	modeLaunchHint
 	// modeFocus routes the keyboard into the selected session's pane while
 	// the list and live preview stay on screen.
 	modeFocus
@@ -60,20 +57,19 @@ type Model struct {
 	notices   noticesPanel
 	poller    *poller
 	screen
-	review     uireview.Model
-	reviewNav  reviewNavState
-	form       formDialog
-	groupForm  groupFormDialog
-	launchHint launchHintDialog
-	mouse      mouseCapture
-	quick      quickBar
-	settings   settingsFeature
-	env        environment
-	help       helpFeature
-	ssh        connectionsFeature
-	layout     layoutState
-	errBar     errBar
-	update     updateInfo
+	review    uireview.Model
+	reviewNav reviewNavState
+	form      formDialog
+	groupForm groupFormDialog
+	mouse     mouseCapture
+	quick     quickBar
+	settings  settingsFeature
+	env       environment
+	help      helpFeature
+	ssh       connectionsFeature
+	layout    layoutState
+	errBar    errBar
+	update    updateInfo
 }
 
 // generations fence asynchronous completions against the state that

@@ -3,16 +3,11 @@ package ui
 import (
 	"errors"
 	"os"
-	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/deps"
 	"github.com/YoanWai/agent-manager/internal/mcpreg"
-	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
-	"github.com/YoanWai/agent-manager/internal/ui/presentation"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // launchFix is what the setup-step dialog holds: the text it shows, the
@@ -21,21 +16,21 @@ import (
 // there, and the images that launch's prompt names. command is empty when
 // the manager knows no recipe, which leaves the dialog read-only. update
 // marks a CLI that is installed but too old, where the same installer
-// updates it, and resume is the mode the dialog returns to when it closes.
+// updates it.
 type launchFix struct {
 	text        string
 	command     string
 	script      string
 	binary      string
 	update      bool
-	resume      mode
 	effectRetry effectRequest
 	images      []imageAttachment
 }
 
 // pendingInstall is an install the dialog started in a shell tab: the
 // session running it, the files its script writes and runs from, and the
-// launch to finish once the command's exit status lands.
+// launch to finish once the command's exit status lands. It outlives the
+// dialog, which closes once the command is typed, so the ledger holds it.
 type pendingInstall struct {
 	sessionID   string
 	name        string
@@ -46,36 +41,12 @@ type pendingInstall struct {
 	images      []imageAttachment
 }
 
-type launchHintState struct {
-	fix launchFix
-	// install is the setup-dialog install still running in a shell tab,
-	// nil when none is.
-	install *pendingInstall
-}
-
-// launchHintDialog holds a refused launch's fix: the text, the command
-// that unblocks it, the images the refused prompt named and the install it
-// started. It builds the install request; the key map and the card are
-// uidialogs.LaunchHint. The root routes launch errors into it, starts that install on the effect lane,
-// and releases the mouse while it is open (syncMouseCapture keys
-// mouse.released on modeLaunchHint) so a drag selects the command.
-type launchHintDialog struct{ launchHintState }
-
-// launchHintHost is what the setup dialog reaches on the root.
-type launchHintHost interface {
-	setMode(next mode)
-	advanceDialogGen()
-	takeComposerImages() []imageAttachment
-	reportErr(text string)
-	startInstall(request installStartRequest) bool
-	cardWidth() int
-	cardSized(width int, title, body string, hint [][2]string) string
-}
-
-var _ launchHintHost = (*Model)(nil)
-
 // advanceDialogGen fences completions submitted from the dialog it
 // replaces.
+// pendingInstall is the install still running in a shell tab, nil when
+// none is. It outlives the card that started it.
+func (m *Model) pendingInstall() *pendingInstall { return m.ledger.install }
+
 func (m *Model) advanceDialogGen() {
 	m.gens.dialog++
 }
@@ -111,7 +82,7 @@ func (m *Model) reportLaunchError(err error) {
 		if hermesMCP.PipCommand != "" {
 			step = "Run `" + hermesMCP.PipCommand + "` to add the mcp package to the Python that runs Hermes, then spawn again."
 		}
-		m.launchHint.open(m, launchFix{
+		m.openLaunchHint(launchFix{
 			text: "Hermes sessions carry the agent-manager MCP tools, and this Hermes cannot load them: its MCP SDK is not installed.\n\n" +
 				step,
 			command: hermesMCP.PipCommand,
@@ -122,7 +93,7 @@ func (m *Model) reportLaunchError(err error) {
 	}
 	var missing config.MissingToolError
 	if errors.As(err, &missing) {
-		m.launchHint.open(m, launchFix{
+		m.openLaunchHint(launchFix{
 			text:    missingToolText(missing),
 			command: deps.Shown(missing.Binary),
 			script:  deps.Command(missing.Binary),
@@ -132,7 +103,7 @@ func (m *Model) reportLaunchError(err error) {
 	}
 	var outdated config.OutdatedToolError
 	if errors.As(err, &outdated) {
-		m.launchHint.open(m, launchFix{
+		m.openLaunchHint(launchFix{
 			text:    outdatedToolText(outdated),
 			command: outdatedToolCommand(outdated),
 			script:  outdatedToolCommand(outdated),
@@ -173,20 +144,30 @@ func missingToolText(missing config.MissingToolError) string {
 	return head + "\n\n" + deps.Hint(missing.Binary)
 }
 
-// open takes the refused prompt's images out of the composers:
-// the prompt text already names their paths, and the dialog owns the
-// files until the launch runs or is given up, so the form and the quick
-// bar can be reopened meanwhile.
-func (d *launchHintDialog) open(h launchHintHost, fix launchFix) {
-	h.advanceDialogGen()
-	fix.images = append(fix.images, h.takeComposerImages()...)
-	d.present(h, fix)
+// openLaunchHint shows a refusal and takes the refused prompt's images out
+// of the composers: the prompt text already names their paths, and the
+// dialog owns the files until the launch runs or is given up, so the form
+// and the quick bar can be reopened meanwhile. A refused launch replaces
+// whatever dialog it came from.
+func (m *Model) openLaunchHint(fix launchFix) {
+	m.advanceDialogGen()
+	fix.images = append(fix.images, m.takeComposerImages()...)
+	if _, open := surfaceOf[*launchHintSurface](m); !open {
+		m.clearSurfaces()
+		m.mode = modeList
+	}
+	m.presentLaunchHint(fix)
 }
 
-// present shows a refusal that is not a spawn, so a draft prompt keeps its images.
-func (d *launchHintDialog) present(h launchHintHost, fix launchFix) {
-	d.fix = fix
-	h.setMode(modeLaunchHint)
+// presentLaunchHint shows a refusal that is not a spawn over the screen it
+// came from, so a draft prompt keeps its images. A refusal already showing
+// is replaced in place.
+func (m *Model) presentLaunchHint(fix launchFix) {
+	if s, open := surfaceOf[*launchHintSurface](m); open {
+		s.fix = fix
+		return
+	}
+	m.push(newLaunchHintSurface(fix, m.glyphs()))
 }
 
 func removeInstallFiles(statusFile, script string) {
@@ -202,45 +183,6 @@ func dropImages(images []imageAttachment) {
 	}
 }
 
-// prompt is the fix as the dialog shows it; its keys and card are
-// uidialogs.LaunchHint.
-func (d *launchHintDialog) prompt() uidialogs.LaunchHint {
-	return uidialogs.LaunchHint{Text: d.fix.text, Command: d.fix.command, Update: d.fix.update}
-}
-
-func (d *launchHintDialog) handleKey(h launchHintHost, msg tea.KeyMsg) tea.Cmd {
-	return d.run(h, d.prompt().Key(msg))
-}
-
-func (d *launchHintDialog) handleClick(h launchHintHost, line int) tea.Cmd {
-	return d.run(h, d.prompt().Click(line, cardInnerWidth(h.cardWidth())))
-}
-
-func (d *launchHintDialog) run(h launchHintHost, action uidialogs.LaunchHintAction) tea.Cmd {
-	switch action {
-	case uidialogs.LaunchHintCopy:
-		command := d.fix.command
-		return func() tea.Msg {
-			return launchCommandCopiedMsg{err: copyLaunchCommand(command)}
-		}
-	case uidialogs.LaunchHintInstall:
-		d.startInstall(h)
-		return nil
-	case uidialogs.LaunchHintClose:
-		d.close(h)
-	}
-	return nil
-}
-
-// close drops the dialog and the images the refused prompt was
-// holding: they stayed alive while an install could still spawn it.
-func (d *launchHintDialog) close(h launchHintHost) {
-	dropImages(d.fix.images)
-	resume := d.fix.resume
-	d.fix = launchFix{}
-	h.setMode(resume)
-}
-
 func (m *Model) handleLaunchCommandCopied(msg launchCommandCopiedMsg) {
 	if msg.err != nil {
 		m.reportErr("copy failed: " + msg.err.Error())
@@ -249,35 +191,10 @@ func (m *Model) handleLaunchCommandCopied(msg launchCommandCopiedMsg) {
 	m.reportDone("copied to clipboard")
 }
 
-// startInstall captures the setup dialog's install and hands it to the
-// root, which queues its filesystem, store, lifecycle, and tmux work. The
-// dialog stays in front until that job says the command was typed into a
-// durable shell row; the images move to the request once it is admitted.
-func (d *launchHintDialog) startInstall(h launchHintHost) {
-	if d.install != nil {
-		h.reportErr("an install is already running in " + d.install.name)
-		return
-	}
-	fix := d.fix
-	retry := fix.effectRetry
-	if spawn, ok := retry.(spawnRequest); ok && len(spawn.images) == 0 {
-		spawn.images = append([]imageAttachment(nil), fix.images...)
-		retry = spawn
-	}
-	if h.startInstall(installStartRequest{
-		command:     fix.script,
-		binary:      fix.binary,
-		effectRetry: retry,
-		images:      fix.images,
-	}) {
-		d.fix.images = nil
-	}
-}
-
 // settleInstall queues one captured status check. Polls arriving while that
 // request waits or runs do not add duplicates to the ordered effect lane.
 func (m *Model) settleInstall() {
-	install := m.launchHint.install
+	install := m.ledger.install
 	if install == nil {
 		return
 	}
@@ -290,35 +207,4 @@ func (m *Model) settleInstall() {
 		}
 	}
 	m.enqueueEffect(installSettleRequest{install: *install}, 0, false)
-}
-
-func (d *launchHintDialog) view(h launchHintHost, glyphs presentation.GlyphSet) string {
-	width := h.cardWidth()
-	title, body, hints := d.card(h, glyphs, width)
-	return h.cardSized(width, title, body, hints)
-}
-
-func (m *Model) launchHintFrame() string {
-	width := m.cardWidth()
-	title, body, hints := m.launchHint.card(m, m.glyphs(), width)
-	if dropped := m.launchHintDroppedRows(body, hints); dropped > 0 {
-		body = strings.Join(strings.Split(body, "\n")[dropped:], "\n")
-	}
-	return m.cardSized(width, title, body, hints)
-}
-
-// launchHintDroppedRows is how many leading body rows a short terminal
-// clips away, which a click's row index has to skip as well.
-func (m *Model) launchHintDroppedRows(body string, hints [][2]string) int {
-	if m.layout.height <= 0 {
-		return 0
-	}
-	limit := max(0, m.layout.height-m.cardChromeRows(hints))
-	return max(0, strings.Count(body, "\n")+1-limit)
-}
-
-func (d *launchHintDialog) card(h launchHintHost, glyphs presentation.GlyphSet, width int) (string, string, [][2]string) {
-	tone := lipgloss.NewStyle().Foreground(colorAccent()).Bold(true)
-	card := d.prompt().View(cardInnerWidth(width), tone, mutedStyle(), glyphs)
-	return card.Title, card.Body, card.Hints
 }

@@ -261,7 +261,7 @@ func TestInstallerRefusedQuitKeepsResizeInteraction(t *testing.T) {
 	updated, _ := m.enterResizeMode()
 	m = updated.(*Model)
 	m.nudgeSplit(8)
-	m.launchHint.install = &pendingInstall{name: "install-test"}
+	m.ledger.install = &pendingInstall{name: "install-test"}
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	m = updated.(*Model)
@@ -282,7 +282,7 @@ func TestInstallerRefusedQuitKeepsMouseDrag(t *testing.T) {
 	m.layout.width, m.layout.height, m.layout.split.ratio = 100, 40, 0.42
 	m.layout.split.dragging = true
 	m.layout.split.moved = true
-	m.launchHint.install = &pendingInstall{name: "install-test"}
+	m.ledger.install = &pendingInstall{name: "install-test"}
 
 	updated, cmd := m.handleKey(key("q"))
 	m = updated.(*Model)

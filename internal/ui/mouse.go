@@ -47,7 +47,7 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 // The update dialog covers the list, and Esc returns to the same draft, so a
 // mouse event must not throw that draft away.
 func (m *Model) closeQuickOffTheList() {
-	if m.quick.active && m.mode != modeList && m.mode != modeLaunchHint {
+	if m.quick.active && m.mode != modeList {
 		m.quick.active = false
 		m.quick.release()
 	}
@@ -204,7 +204,7 @@ func (m *Model) closesOnBackdrop() bool {
 		return top.Dismissible()
 	}
 	switch m.mode {
-	case modeHelp, modeNotices, modeRepoPick, modeLaunchHint:
+	case modeHelp, modeNotices, modeRepoPick:
 		return true
 	case modeSettings:
 		return !m.settings.dialog.Editor.Typing() && !m.settings.dialog.Prompts.Editing()
@@ -232,9 +232,6 @@ func (m *Model) clickCard(col, line int) (tea.Model, tea.Cmd) {
 		return m.handleNoticesClick(line)
 	case modeRepoPick:
 		return m, m.handleRepoPickClick(line)
-	case modeLaunchHint:
-		_, body, hints := m.launchHint.card(m, m.glyphs(), m.cardWidth())
-		return m, m.launchHint.handleClick(m, line+m.launchHintDroppedRows(body, hints))
 	}
 	return m, nil
 }
