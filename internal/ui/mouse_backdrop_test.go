@@ -58,7 +58,7 @@ func TestBackdropClickKeepsATypedDraft(t *testing.T) {
 	}{
 		{"new session", func(m *Model) { m.applyCmd(t, m.openForm()) }},
 		{"new group", func(m *Model) { m.openGroupForm() }},
-		{"fork", func(m *Model) { m.push(newForkSurface(store.Session{Name: "alpha"}, 1)) }},
+		{"fork", func(m *Model) { m.push(newForkSurface(m, store.Session{Name: "alpha"}, 1)) }},
 	} {
 		m := buildModel(t)
 		m.layout.width, m.layout.height = 120, 34

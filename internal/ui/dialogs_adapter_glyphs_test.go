@@ -27,7 +27,7 @@ func TestConfirmMarksFollowModeWithoutChangingTheAction(t *testing.T) {
 			if mode == presentation.GlyphModeAdvanced {
 				mark = tc.advanced
 			}
-			if got := mustTop(t, m).(*confirmSurface).prompt().Title(m.prefs.glyphMode); got != mark+" "+tc.label+" session" {
+			if got := mustTop(t, m).(*uidialogs.ConfirmSurface).Prompt().Title(m.prefs.glyphMode); got != mark+" "+tc.label+" session" {
 				t.Fatalf("%s/%s title = %q", mode, tc.action, got)
 			}
 			if got := ansi.Strip(preparedView(m)); !strings.Contains(got, "❯⚠界?") {

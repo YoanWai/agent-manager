@@ -20,10 +20,10 @@ import (
 // a selected session. A surface type missing here fails, so a new surface
 // is driven by the mouse on purpose.
 var mouseOpeners = map[string]func(t *testing.T, m *Model){
-	"confirmSurface": func(t *testing.T, m *Model) { m.openConfirm(confirmTarget{action: actionKill, label: "kill alpha?"}) },
-	"moveSurface":    func(t *testing.T, m *Model) { m.openMove() },
-	"renameSurface":  func(t *testing.T, m *Model) { m.openRename() },
-	"forkSurface":    func(t *testing.T, m *Model) { m.push(newForkSurface(railSelectedSession(m), 1)) },
+	"dialogs.ConfirmSurface": func(t *testing.T, m *Model) { m.openConfirm(confirmTarget{action: actionKill, label: "kill alpha?"}) },
+	"moveSurface":            func(t *testing.T, m *Model) { m.openMove() },
+	"renameSurface":          func(t *testing.T, m *Model) { m.openRename() },
+	"dialogs.ForkSurface":    func(t *testing.T, m *Model) { m.push(newForkSurface(m, railSelectedSession(m), 1)) },
 	"launchHintSurface": func(t *testing.T, m *Model) {
 		m.openLaunchHint(launchFix{text: "tool is missing", command: "true", binary: "tool"})
 	},

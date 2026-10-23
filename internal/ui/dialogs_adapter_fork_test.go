@@ -73,8 +73,8 @@ func TestForkSelectedSessionCreatesNamedSibling(t *testing.T) {
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 	m = updated.(*Model)
-	if !forkOpen(m) || openFork(m).source.ID != source.ID {
-		t.Fatalf("fork screen = %v, source = %q", m.screenID(), openFork(m).source.ID)
+	if !forkOpen(m) || openFork(m).Root().(forkRoot).source.ID != source.ID {
+		t.Fatalf("fork screen = %v, source = %q", m.screenID(), openFork(m).Root().(forkRoot).source.ID)
 	}
 	openFork(m).SetName("child fork")
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})

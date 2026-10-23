@@ -11,6 +11,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/google/uuid"
 )
@@ -220,8 +221,8 @@ func (m *Model) applyForkEffect(request forkRequest, result forkEffectResult, er
 	// A completion must not replace a newer dialog or hand its keyboard
 	// outcome to a dialog the user has since opened, including one reopened
 	// on the same source.
-	card, stillOpen := surfaceOf[*forkSurface](m)
-	stillOpen = stillOpen && card.gen == request.gen && card.Name() == request.name
+	card, stillOpen := surfaceOf[*uidialogs.ForkSurface](m)
+	stillOpen = stillOpen && card.Gen() == request.gen && card.Name() == request.name
 	if err == nil {
 		if stillOpen {
 			m.Pop()

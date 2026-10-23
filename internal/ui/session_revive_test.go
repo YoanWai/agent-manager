@@ -16,6 +16,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/testfixture"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -274,7 +275,7 @@ func TestReviveGroupBringsBackEverySessionInside(t *testing.T) {
 	if !confirmOpen(m) {
 		t.Fatalf("reviving a group of two dead sessions should ask first, screen = %v err = %q", m.screenID(), m.errBar.text)
 	}
-	if title := mustTop(t, m).(*confirmSurface).prompt().Title(m.prefs.glyphMode); title != "◆ Revive group" {
+	if title := mustTop(t, m).(*uidialogs.ConfirmSurface).Prompt().Title(m.prefs.glyphMode); title != "◆ Revive group" {
 		t.Fatalf("title = %q, want ◆ Revive group", title)
 	}
 	if want := "revive group work (2 dead sessions)? brings them back."; pendingConfirm(m).label != want {

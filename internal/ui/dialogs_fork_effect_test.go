@@ -118,20 +118,20 @@ func TestForkCompletionDoesNotStealNewerDialog(t *testing.T) {
 	m.selectSessionRow(t, "alpha")
 	alpha := railSelectedSession(m)
 	m, alphaCmd := submitForkDialog(t, m, "alpha fork")
-	if openFork(m).source.ID != alpha.ID {
-		t.Fatalf("fork submitted from %q, want alpha %q", openFork(m).source.ID, alpha.ID)
+	if openFork(m).Root().(forkRoot).source.ID != alpha.ID {
+		t.Fatalf("fork submitted from %q, want alpha %q", openFork(m).Root().(forkRoot).source.ID, alpha.ID)
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m.selectSessionRow(t, "beta")
 	beta := railSelectedSession(m)
 	m.openFork()
-	if !forkOpen(m) || openFork(m).source.ID != beta.ID {
-		t.Fatalf("newer dialog = %v / %q, want beta's fork dialog", m.screenID(), openFork(m).source.ID)
+	if !forkOpen(m) || openFork(m).Root().(forkRoot).source.ID != beta.ID {
+		t.Fatalf("newer dialog = %v / %q, want beta's fork dialog", m.screenID(), openFork(m).Root().(forkRoot).source.ID)
 	}
 
 	m.applyCmd(t, alphaCmd)
-	if !forkOpen(m) || openFork(m).source.ID != beta.ID {
-		t.Fatalf("completion replaced the newer dialog: screen = %v source=%q", m.screenID(), openFork(m).source.ID)
+	if !forkOpen(m) || openFork(m).Root().(forkRoot).source.ID != beta.ID {
+		t.Fatalf("completion replaced the newer dialog: screen = %v source=%q", m.screenID(), openFork(m).Root().(forkRoot).source.ID)
 	}
 	if got := railSelectedSession(m); got.ID != beta.ID {
 		t.Fatalf("completion moved the selection to %q, want beta kept", got.Name)
@@ -456,20 +456,20 @@ func TestForkCompletionAfterSameSourceReopenKeepsNewerDialog(t *testing.T) {
 	m.selectSessionRow(t, "source")
 
 	m, firstCmd := submitForkDialog(t, m, "first fork")
-	firstGen := openFork(m).gen
+	firstGen := openFork(m).Gen()
 	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m.selectSessionRow(t, "source")
 	m.openFork()
-	if openFork(m).gen == firstGen {
+	if openFork(m).Gen() == firstGen {
 		t.Fatal("reopen did not mint a new dialog generation")
 	}
-	if openFork(m).source.ID != source.ID {
-		t.Fatalf("reopened dialog = %q, want the same source %q", openFork(m).source.ID, source.ID)
+	if openFork(m).Root().(forkRoot).source.ID != source.ID {
+		t.Fatalf("reopened dialog = %q, want the same source %q", openFork(m).Root().(forkRoot).source.ID, source.ID)
 	}
 
 	m.applyCmd(t, firstCmd)
-	if !forkOpen(m) || openFork(m).gen == firstGen {
-		t.Fatalf("completion closed the reopened dialog: screen = %v gen=%d", m.screenID(), openFork(m).gen)
+	if !forkOpen(m) || openFork(m).Gen() == firstGen {
+		t.Fatalf("completion closed the reopened dialog: screen = %v gen=%d", m.screenID(), openFork(m).Gen())
 	}
 	if m.errBar.text != "" {
 		t.Fatalf("completion clobbered status text: %q", m.errBar.text)

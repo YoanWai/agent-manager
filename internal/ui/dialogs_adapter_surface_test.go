@@ -4,18 +4,19 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/store"
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 func confirmOpen(m *Model) bool {
-	_, ok := surfaceOf[*confirmSurface](m)
+	_, ok := surfaceOf[*uidialogs.ConfirmSurface](m)
 	return ok
 }
 
 // pendingConfirm is the request the open card holds, zero when none is open.
 func pendingConfirm(m *Model) confirmTarget {
-	if s, ok := surfaceOf[*confirmSurface](m); ok {
-		return s.confirmTarget
+	if s, ok := surfaceOf[*uidialogs.ConfirmSurface](m); ok {
+		return s.Root().(confirmRoot).target
 	}
 	return confirmTarget{}
 }

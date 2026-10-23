@@ -203,12 +203,12 @@ func (m *Model) openFork() {
 		return
 	}
 	m.gens.dialog++
-	m.push(newForkSurface(entry.sess, int(m.gens.dialog)))
+	m.push(newForkSurface(m, entry.sess, int(m.gens.dialog)))
 	m.clearErr()
 }
 
-func (m *Model) viewFork(s *forkSurface) string {
-	return m.drawCard(s.Fork.View(uidialogs.ForkStyles{
+func (m *Model) viewFork(form *uidialogs.Fork) string {
+	return m.drawCard(form.View(uidialogs.ForkStyles{
 		BranchGlyph: m.glyphs().BranchGlyph,
 		Value:       valueStyle(),
 		Group:       lipgloss.NewStyle().Foreground(colorAccent2()),

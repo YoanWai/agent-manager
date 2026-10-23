@@ -3,18 +3,19 @@ package ui
 import (
 	"testing"
 
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 func forkOpen(m *Model) bool {
-	_, ok := surfaceOf[*forkSurface](m)
+	_, ok := surfaceOf[*uidialogs.ForkSurface](m)
 	return ok
 }
 
 // openFork is the fork card on the stack; a test that edits one without
 // opening it fails here.
-func openFork(m *Model) *forkSurface {
-	s, ok := surfaceOf[*forkSurface](m)
+func openFork(m *Model) *uidialogs.ForkSurface {
+	s, ok := surfaceOf[*uidialogs.ForkSurface](m)
 	if !ok {
 		panic("no fork is open")
 	}
@@ -65,7 +66,7 @@ func TestForkKeepsItsDraftAndEscCloses(t *testing.T) {
 // anything nor focuses the new row, and the error still reaches the status.
 func TestStaleForkCompletionIsDropped(t *testing.T) {
 	m := openForkFor(t)
-	request := forkRequest{source: openFork(m).source, name: openFork(m).Name(), gen: openFork(m).gen}
+	request := forkRequest{source: openFork(m).Root().(forkRoot).source, name: openFork(m).Name(), gen: openFork(m).Gen()}
 	m.Pop()
 	m.openFork()
 	m.applyForkEffect(request, forkEffectResult{}, nil)

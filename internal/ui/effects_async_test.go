@@ -20,14 +20,14 @@ func TestConfirmDefersLifecycleAndKeepsCapturedTarget(t *testing.T) {
 	m.selectSessionRow(t, "alpha")
 	alpha := railSelectedSession(m)
 	m.archiveSelected()
-	card := mustTop(t, m).(*confirmSurface)
+	held := pendingConfirm(m).sessions
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	if !m.services.tmux.Exists(alpha.ID) {
 		t.Fatal("confirmation performed lifecycle effects before command execution")
 	}
 	m.selectSessionRow(t, "beta")
 	beta := railSelectedSession(m)
-	card.sessions = []store.Session{beta}
+	held[0] = beta
 	m.applyCmd(t, cmd)
 	if m.services.tmux.Exists(alpha.ID) || !m.services.tmux.Exists(beta.ID) {
 		t.Fatal("completion retargeted the later selection")
