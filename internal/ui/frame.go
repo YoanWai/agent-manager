@@ -42,16 +42,8 @@ func (m *Model) renderFrame() string {
 	switch m.mode {
 	case modeForm:
 		frame = m.viewForm()
-	case modeConfirmDelete:
-		frame = m.viewConfirm()
-	case modeLaunchHint:
-		frame = m.launchHintFrame()
 	case modeSettings:
 		frame = m.viewSettings()
-	case modeFork:
-		frame = m.viewFork()
-	case modeMove:
-		frame = m.viewMove()
 	case modeGroupForm:
 		frame = m.viewGroupForm()
 	case modeConnection:

@@ -220,10 +220,11 @@ func (m *Model) applyForkEffect(request forkRequest, result forkEffectResult, er
 	// A completion must not replace a newer dialog or hand its keyboard
 	// outcome to a dialog the user has since opened, including one reopened
 	// on the same source.
-	stillOpen := m.mode == modeFork && m.fork.Gen() == request.gen && m.fork.Name() == request.name
+	card, stillOpen := surfaceOf[*forkSurface](m)
+	stillOpen = stillOpen && card.gen == request.gen && card.Name() == request.name
 	if err == nil {
 		if stillOpen {
-			m.mode = modeList
+			m.pop()
 			m.clearErr()
 			m.focusSession(launched.ID)
 		}
@@ -238,8 +239,8 @@ func (m *Model) applyForkEffect(request forkRequest, result forkEffectResult, er
 		request.knownForkID = result.recordedForkID
 	}
 	m.reportLaunchError(err)
-	if m.mode == modeLaunchHint {
-		m.launchHint.fix.effectRetry = request
+	if fix, ok := m.launchHintFix(); ok {
+		fix.effectRetry = request
 	}
 	return nil
 }

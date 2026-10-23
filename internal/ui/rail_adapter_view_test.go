@@ -24,7 +24,7 @@ func TestArchivedViewShowsOnlyArchivedSessions(t *testing.T) {
 
 	m.selectSessionRow(t, "old-one")
 	m.archiveSelected()
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.applyCmd(t, cmd)
 
 	if names := sessionNames(m); len(names) != 1 || names[0] != "live-one" {

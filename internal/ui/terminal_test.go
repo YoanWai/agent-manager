@@ -455,7 +455,7 @@ func TestShellToolStaysOutOfPickers(t *testing.T) {
 
 	m.selectSessionRow(t, sess.Name)
 	m.openRename()
-	if got := m.rename.Tool(); got != shellToolName {
+	if got := openRename(m).Tool(); got != shellToolName {
 		t.Fatalf("rename tool = %q, want %q", got, shellToolName)
 	}
 }

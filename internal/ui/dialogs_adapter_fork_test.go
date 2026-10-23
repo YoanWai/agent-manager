@@ -73,11 +73,11 @@ func TestForkSelectedSessionCreatesNamedSibling(t *testing.T) {
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 	m = updated.(*Model)
-	if m.mode != modeFork || m.fork.source.ID != source.ID {
-		t.Fatalf("fork mode = %v, source = %q", m.mode, m.fork.source.ID)
+	if !forkOpen(m) || openFork(m).source.ID != source.ID {
+		t.Fatalf("fork mode = %v, source = %q", m.mode, openFork(m).source.ID)
 	}
-	m.fork.SetName("child fork")
-	updated, cmd := m.handleForkKey(tea.KeyMsg{Type: tea.KeyEnter})
+	openFork(m).SetName("child fork")
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(*Model)
 	m.applyCmd(t, cmd)
 	if m.mode != modeList || m.errBar.text != "" {
@@ -155,11 +155,11 @@ func TestForkBranchesFromTheConversationTheSourceReported(t *testing.T) {
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 	m = updated.(*Model)
-	if m.mode != modeFork {
+	if !forkOpen(m) {
 		t.Fatalf("fork mode = %v", m.mode)
 	}
-	m.fork.SetName("child")
-	updated, cmd := m.handleForkKey(tea.KeyMsg{Type: tea.KeyEnter})
+	openFork(m).SetName("child")
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(*Model)
 	m.applyCmd(t, cmd)
 	if m.errBar.text != "" {
@@ -195,8 +195,8 @@ func TestForkCarriesTheSourceChoice(t *testing.T) {
 	m.rebuildRows()
 	m.selectSessionRow(t, "source")
 	m.openFork()
-	m.fork.SetName("child")
-	updated, cmd := m.handleForkKey(tea.KeyMsg{Type: tea.KeyEnter})
+	openFork(m).SetName("child")
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(*Model)
 	m.applyCmd(t, cmd)
 	if m.errBar.text != "" {
@@ -245,8 +245,8 @@ func TestForkCopiesManagedWorktreeReference(t *testing.T) {
 	m.services.cfg.Tools[source.Tool] = tool
 
 	m.openFork()
-	m.fork.SetName("forked")
-	updated, cmd := m.handleForkKey(tea.KeyMsg{Type: tea.KeyEnter})
+	openFork(m).SetName("forked")
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(*Model)
 	m.applyCmd(t, cmd)
 
@@ -392,7 +392,7 @@ func TestOpenForkRejectsSessionFileWithoutAFileBackedStore(t *testing.T) {
 
 	m.openFork()
 
-	if m.mode == modeFork {
+	if forkOpen(m) {
 		t.Fatal("fork opened for a tool whose store keeps no session file")
 	}
 	if !strings.Contains(m.errBar.text, "{session_file}") ||
@@ -457,8 +457,8 @@ func TestForkAgentSessionIDFollowsNewIDPlaceholder(t *testing.T) {
 			if m.errBar.text != "" {
 				t.Fatalf("openFork error = %q", m.errBar.text)
 			}
-			m.fork.SetName("forked")
-			updated, cmd := m.handleForkKey(tea.KeyMsg{Type: tea.KeyEnter})
+			openFork(m).SetName("forked")
+			updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 			m = updated.(*Model)
 			m.applyCmd(t, cmd)
 			if m.mode != modeList || m.errBar.text != "" {
@@ -513,8 +513,8 @@ func TestForkOpencodeOpensTheCopyItsStoreMade(t *testing.T) {
 	if m.errBar.text != "" {
 		t.Fatalf("openFork error = %q", m.errBar.text)
 	}
-	m.fork.SetName("forked")
-	updated, cmd := m.handleForkKey(tea.KeyMsg{Type: tea.KeyEnter})
+	openFork(m).SetName("forked")
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(*Model)
 	m.applyCmd(t, cmd)
 	if m.mode != modeList || m.errBar.text != "" {
@@ -578,8 +578,8 @@ func TestForkGeminiResolvesSessionFile(t *testing.T) {
 	if m.errBar.text != "" {
 		t.Fatalf("openFork error = %q", m.errBar.text)
 	}
-	m.fork.SetName("forked")
-	updated, cmd := m.handleForkKey(tea.KeyMsg{Type: tea.KeyEnter})
+	openFork(m).SetName("forked")
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(*Model)
 	m.applyCmd(t, cmd)
 	if m.mode != modeList || m.errBar.text != "" {
@@ -650,8 +650,8 @@ func TestForkGeminiResolverFailureReportsError(t *testing.T) {
 
 	before := len(m.sessionRows())
 	m.openFork()
-	m.fork.SetName("forked")
-	updated, cmd := m.handleForkKey(tea.KeyMsg{Type: tea.KeyEnter})
+	openFork(m).SetName("forked")
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(*Model)
 	m.applyCmd(t, cmd)
 	if !strings.Contains(m.errBar.text, "no gemini session file") {
@@ -673,7 +673,7 @@ func TestForkRefusesAShellInItsOwnTerms(t *testing.T) {
 
 	m.openFork()
 
-	if m.mode == modeFork {
+	if forkOpen(m) {
 		t.Fatal("fork should not open on a shell row")
 	}
 	if !strings.Contains(m.errBar.text, "is a shell") ||
@@ -757,10 +757,10 @@ func TestForkInSourceOpensTheForkTheSourceMade(t *testing.T) {
 	recordForkWhenTyped(t, m, source, "fork-conversation")
 
 	m.openFork()
-	m.fork.SetName("child fork")
-	updated, cmd := m.handleForkKey(tea.KeyMsg{Type: tea.KeyEnter})
+	openFork(m).SetName("child fork")
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(*Model)
-	if m.mode != modeFork {
+	if !forkOpen(m) {
 		t.Fatalf("after submit: mode = %v, err = %q; the dialog stays open while the fork runs", m.mode, m.errBar.text)
 	}
 	m.applyCmd(t, cmd)
@@ -798,7 +798,7 @@ func TestForkInSourceRefusesABusySource(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.openFork()
-	updated, cmd := m.handleForkKey(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(*Model)
 	m.applyCmd(t, cmd)
 	if !strings.Contains(m.errBar.text, "fork it once it rests") {
@@ -818,7 +818,7 @@ func TestForkInSourceRefusesAnUnreadableStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.openFork()
-	updated, cmd := m.handleForkKey(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(*Model)
 	m.applyCmd(t, cmd)
 	if !strings.Contains(m.errBar.text, "cannot read the forks") {

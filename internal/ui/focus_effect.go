@@ -50,7 +50,7 @@ func (m *Model) applyFocusEffect(request focusRequest, result focusEffectResult,
 	if m.effects.quitting || request.generation != m.gens.foreground {
 		return nil
 	}
-	if m.mode != modeList {
+	if !m.listClear() {
 		return nil
 	}
 	sess, ok := m.selected()
@@ -190,7 +190,7 @@ func (m *Model) applyDetachEffect(request detachRequest, result detachEffectResu
 // foregroundTakenSinceDetach reports whether, since the detach, the user
 // opened a view, a rail prompt or a resize, or asked to enter a session.
 func (m *Model) foregroundTakenSinceDetach() bool {
-	if m.mode != modeList || m.rail.InputMode() != uirail.BrowseMode || m.quick.active || m.layout.split.resizeMode || m.layout.split.dragging {
+	if !m.listClear() || m.rail.InputMode() != uirail.BrowseMode || m.quick.active || m.layout.split.resizeMode || m.layout.split.dragging {
 		return true
 	}
 	for _, job := range m.effects.main.pending {

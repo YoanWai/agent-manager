@@ -106,14 +106,14 @@ func TestAnOlderCLIOpensTheUpdateDialogInsteadOfListingModels(t *testing.T) {
 
 	m.applyCmd(t, m.ensureCatalog("pi"))
 
-	if m.mode != modeLaunchHint || !m.launchHint.fix.update || m.launchHint.fix.command != deps.Command("pi") {
-		t.Fatalf("mode %v fix %+v catalog %+v", m.mode, m.launchHint.fix, m.ledger.catalogs["pi"])
+	if !hintOpen(m) || !hintFix(m).update || hintFix(m).command != deps.Command("pi") {
+		t.Fatalf("mode %v fix %+v catalog %+v", m.mode, hintFix(m), m.ledger.catalogs["pi"])
 	}
 	if len(m.ledger.catalogs["pi"].cat.Models) != 0 {
 		t.Fatalf("models = %+v, want the kept answer withheld", m.ledger.catalogs["pi"].cat.Models)
 	}
-	if len(m.form.prompt.attachments) != 1 || len(m.launchHint.fix.images) != 0 {
-		t.Fatalf("draft images moved: form %v dialog %v", m.form.prompt.attachments, m.launchHint.fix.images)
+	if len(m.form.prompt.attachments) != 1 || len(hintFix(m).images) != 0 {
+		t.Fatalf("draft images moved: form %v dialog %v", m.form.prompt.attachments, hintFix(m).images)
 	}
 }
 
@@ -147,10 +147,10 @@ func TestAnUpdatedCLIIsAskedAgainRightAway(t *testing.T) {
 		t.Fatal("the version probe should start once")
 	}
 	m.applyCmd(t, cmd)
-	if m.mode != modeLaunchHint {
+	if !hintOpen(m) {
 		t.Fatalf("mode %v, want the update dialog", m.mode)
 	}
-	if cmd := m.launchHint.handleKey(m, tea.KeyMsg{Type: tea.KeyEsc}); cmd != nil {
+	if cmd := hintKey(m, tea.KeyMsg{Type: tea.KeyEsc}); cmd != nil {
 		t.Fatalf("esc returned %T", cmd)
 	}
 	if m.mode != modeForm {
@@ -168,7 +168,7 @@ func TestAnUpdatedCLIIsAskedAgainRightAway(t *testing.T) {
 		t.Fatal("an old CLI was not asked again after the dialog closed")
 	}
 	m.applyCmd(t, cmd)
-	if m.mode == modeLaunchHint || m.ledger.catalogs["pi"].err != nil {
+	if hintOpen(m) || m.ledger.catalogs["pi"].err != nil {
 		t.Fatalf("mode %v err %v, want the updated CLI listed", m.mode, m.ledger.catalogs["pi"].err)
 	}
 	if len(m.ledger.catalogs["pi"].cat.Models) != 1 {
@@ -181,11 +181,11 @@ func TestTheUpdateDialogLeavesTheQuickBarUp(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.quick.active = true
-	m.launchHint.present(m, launchFix{text: "pi 0.84.2 is older", command: "true", binary: "pi", update: true})
-	if m.mode != modeLaunchHint || !m.quick.active {
+	m.presentLaunchHint(launchFix{text: "pi 0.84.2 is older", command: "true", binary: "pi", update: true})
+	if !hintOpen(m) || !m.quick.active {
 		t.Fatalf("mode %v quick %v, want the dialog over the bar", m.mode, m.quick.active)
 	}
-	if cmd := m.launchHint.handleKey(m, tea.KeyMsg{Type: tea.KeyEsc}); cmd != nil {
+	if cmd := hintKey(m, tea.KeyMsg{Type: tea.KeyEsc}); cmd != nil {
 		t.Fatalf("esc returned %T", cmd)
 	}
 	if m.mode != modeList || !m.quick.active {
@@ -201,11 +201,11 @@ func TestAMousePressLeavesTheQuickDraftUnderTheUpdateDialog(t *testing.T) {
 	image := tempImage(t, "draft.png")
 	m.quick.active = true
 	m.quick.attachments = []imageAttachment{{id: 1, path: image}}
-	m.launchHint.present(m, launchFix{text: "pi 0.84.2 is older", command: "true", binary: "pi", update: true})
+	m.presentLaunchHint(launchFix{text: "pi 0.84.2 is older", command: "true", binary: "pi", update: true})
 
 	m.handleMouse(tea.MouseMsg{X: 1, Y: 1, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
 
-	if m.mode != modeLaunchHint || !m.quick.active {
+	if !hintOpen(m) || !m.quick.active {
 		t.Fatalf("press left mode %v quick %v", m.mode, m.quick.active)
 	}
 	if !imageExists(t, image) || len(m.quick.attachments) != 1 {
@@ -226,7 +226,7 @@ func TestAMissingCLIWithAFloorDoesNotOpenTheUpdateDialog(t *testing.T) {
 
 	m.applyCmd(t, m.ensureCatalog("pi"))
 
-	if m.mode == modeLaunchHint {
+	if hintOpen(m) {
 		t.Fatal("a missing CLI opened the update dialog")
 	}
 	var missing config.MissingToolError
@@ -256,7 +256,7 @@ func TestClosingTheUpdateDialogReturnsToTheFormDraft(t *testing.T) {
 	m.form.prompt.attachments = []imageAttachment{{id: 7}}
 	m.ledger.catalogs = map[string]*catalogState{"pi-tool": {loading: true}}
 	m.handleCatalog(catalogMsg{tool: "pi-tool", err: config.OutdatedToolError{Binary: "pi", Installed: "0.84.2", Minimum: "0.84.3"}})
-	if m.mode != modeLaunchHint {
+	if !hintOpen(m) {
 		t.Fatalf("mode = %v, want the update dialog", m.mode)
 	}
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})

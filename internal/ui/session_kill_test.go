@@ -118,7 +118,7 @@ func TestKillRefusesWhenNothingIsRunning(t *testing.T) {
 	if _, _ = m.killSelected(); m.errBar.text == "" {
 		t.Fatal("killing a dead session should report it is already dead")
 	}
-	if m.mode == modeConfirmDelete {
+	if confirmOpen(m) {
 		t.Fatal("a dead session must not open the kill confirm")
 	}
 
@@ -127,7 +127,7 @@ func TestKillRefusesWhenNothingIsRunning(t *testing.T) {
 	if _, _ = m.killSelected(); m.errBar.text == "" {
 		t.Fatal("killing a group with nothing live should report it")
 	}
-	if m.mode == modeConfirmDelete {
+	if confirmOpen(m) {
 		t.Fatal("a group with nothing live must not open the kill confirm")
 	}
 }
@@ -146,11 +146,11 @@ func TestKillAgentIncludesChildren(t *testing.T) {
 	m.selectSessionRow(t, "coder")
 	_, cmd := m.killSelected()
 	m.applyCmd(t, cmd)
-	if !strings.Contains(m.confirm.label, "terminal") {
-		t.Fatalf("confirm should name terminals: %q", m.confirm.label)
+	if !strings.Contains(pendingConfirm(m).label, "terminal") {
+		t.Fatalf("confirm should name terminals: %q", pendingConfirm(m).label)
 	}
 	ids := map[string]bool{}
-	for _, sess := range m.confirm.sessions {
+	for _, sess := range pendingConfirm(m).sessions {
 		ids[sess.ID] = true
 	}
 	if !ids[shell.ID] {
@@ -171,8 +171,8 @@ func TestKillChildIsSingleSession(t *testing.T) {
 	shell := spawnTerminal(t, m)
 	m.selectSessionRow(t, shell.Name)
 	m.killSelected()
-	if len(m.confirm.sessions) != 1 || m.confirm.sessions[0].ID != shell.ID {
-		t.Fatalf("child kill = %+v", m.confirm.sessions)
+	if len(pendingConfirm(m).sessions) != 1 || pendingConfirm(m).sessions[0].ID != shell.ID {
+		t.Fatalf("child kill = %+v", pendingConfirm(m).sessions)
 	}
 }
 
@@ -194,10 +194,10 @@ func TestKillDeadAgentStillKillsItsLiveChild(t *testing.T) {
 	m.selectSessionRow(t, "coder")
 	_, cmd := m.killSelected()
 	m.applyCmd(t, cmd)
-	if m.mode != modeConfirmDelete {
+	if !confirmOpen(m) {
 		t.Fatalf("mode = %v, want the kill confirm (errBar %q)", m.mode, m.errBar.text)
 	}
-	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	if m.services.tmux.Exists(shell.ID) {
@@ -221,7 +221,7 @@ func TestKillAgentConfirmNamesExtraTerminals(t *testing.T) {
 	m.selectSessionRow(t, "coder")
 	m.killSelected()
 	want := "kill coder and 2 terminals? frees their RAM, v revives them."
-	if m.confirm.label != want {
-		t.Fatalf("label = %q, want %q", m.confirm.label, want)
+	if pendingConfirm(m).label != want {
+		t.Fatalf("label = %q, want %q", pendingConfirm(m).label, want)
 	}
 }

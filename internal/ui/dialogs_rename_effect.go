@@ -232,11 +232,11 @@ func (m *Model) applyRenameEffect(job *effectJob, result renameEffectResult, err
 	}
 	if err != nil {
 		m.reportErr(err.Error())
-	} else if m.mode == modeRename && m.gens.dialog == request.gen && m.rename.Name() == request.name &&
-		(request.kind != renameGroup || m.rename.Dir() == request.draftDir) {
+	} else if s, ok := m.renaming(); ok && m.gens.dialog == request.gen && s.Name() == request.name &&
+		(request.kind != renameGroup || s.Dir() == request.draftDir) {
 		// Only the dialog that submitted this job closes; a reopened or
 		// resubmitted card keeps its edits.
-		m.mode = modeList
+		m.pop()
 	}
 	m.rebuildRows()
 }
@@ -308,10 +308,10 @@ func (m *Model) capturePlacementPrecondition(mutation uirail.Mutation) placement
 }
 
 func (m *Model) applyMoveDialogClose(request moveDialogClose) {
-	if m.mode != modeMove || m.gens.dialog != request.gen {
+	if _, open := surfaceOf[*moveSurface](m); !open || m.gens.dialog != request.gen {
 		return
 	}
-	m.mode = modeList
+	m.pop()
 	m.rebuildRows()
 }
 

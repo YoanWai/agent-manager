@@ -193,10 +193,6 @@ func (m *Model) groupStatusBreakdown(group string) string {
 	return uirail.GroupStatusBreakdown(m.railTheme(), m.railAgents(), group)
 }
 
-func (m *Model) renamingGroup(group string) bool {
-	return m.mode == modeRename && m.rename.IsGroup() && m.rename.Path() == group
-}
-
 // Root features read group paths the way Rail does.
 func inGroupSubtree(sessionGroup, group string) bool {
 	return uirail.InGroupSubtree(sessionGroup, group)
@@ -249,12 +245,12 @@ func (m *Model) prepareRailFrame(width, height int) {
 		foot[i].Text = line
 	}
 	rename := uirail.Rename{}
-	if m.mode == modeRename {
-		if m.rename.IsGroup() {
-			rename.Target = uirail.Selection{Kind: uirail.GroupRow, Group: m.rename.Path()}
+	if s, ok := m.renaming(); ok {
+		if s.IsGroup() {
+			rename.Target = uirail.Selection{Kind: uirail.GroupRow, Group: s.Path()}
 		} else {
-			rename.Target = uirail.Selection{Kind: uirail.SessionRow, SessionID: m.rename.SessionID()}
-			if session, ok := m.sessionByID(m.rename.SessionID()); ok {
+			rename.Target = uirail.Selection{Kind: uirail.SessionRow, SessionID: s.SessionID()}
+			if session, ok := m.sessionByID(s.SessionID()); ok {
 				rename.Target.Group = session.Group
 			}
 		}
@@ -265,7 +261,7 @@ func (m *Model) prepareRailFrame(width, height int) {
 				break
 			}
 		}
-		rename.View = textInputView(m.rename.NameField(fieldWidth))
+		rename.View = textInputView(s.NameField(fieldWidth))
 	}
 	ctx := uirail.RenderContext{
 		GlyphMode:       m.prefs.glyphMode,

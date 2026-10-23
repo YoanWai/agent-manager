@@ -2,6 +2,7 @@ package ui
 
 import (
 	"github.com/YoanWai/agent-manager/internal/config"
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
@@ -140,7 +141,7 @@ func TestTransientFootersKeepListHeight(t *testing.T) {
 		open func()
 	}{
 		{"resize", func() { m.layout.split.resizeMode = true }},
-		{"rename", func() { m.mode = modeRename }},
+		{"rename", func() { m.push(newRenameSurface(uidialogs.RenameSession("s", "alpha", "claude", nil), "")) }},
 		{"focus", func() { m.mode = modeFocus }},
 	} {
 		tier.open()
@@ -148,6 +149,7 @@ func TestTransientFootersKeepListHeight(t *testing.T) {
 			t.Errorf("%s footer = %d rows, want %d", tier.name, got, listed)
 		}
 		m.quick.active, m.layout.split.resizeMode, m.mode = false, false, modeList
+		m.clearSurfaces()
 	}
 }
 

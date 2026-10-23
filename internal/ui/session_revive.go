@@ -24,7 +24,7 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 	if entry.isGroup {
 		sessions := m.sessionsInGroup(entry.group)
 		if dead := deadSessions(sessions); len(dead) > 1 {
-			m.confirm.confirmTarget = confirmTarget{
+			m.openConfirm(confirmTarget{
 				isGroup:  true,
 				path:     entry.group,
 				action:   actionRevive,
@@ -32,8 +32,7 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 				sessions: dead,
 				label: fmt.Sprintf("revive group %s (%d dead sessions)? brings them back.",
 					displayGroup(entry.group), len(dead)),
-			}
-			m.mode = modeConfirmDelete
+			})
 			return m, nil
 		}
 		return m.reviveMany(sessions, "no dead sessions to revive in "+entry.group)
@@ -47,15 +46,14 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 		}
 	}
 	if len(set) > 1 && dead {
-		m.confirm.confirmTarget = confirmTarget{
+		m.openConfirm(confirmTarget{
 			action:   actionRevive,
 			sessions: set,
 			label: followConfirmLabel("revive", entry.sess.Name, len(set)-1,
 				"brings it back.",
 				"brings them back."),
 			selection: lifecycleSelection{kind: lifecycleSelectionSession, rootID: entry.sess.ID},
-		}
-		m.mode = modeConfirmDelete
+		})
 		return m, nil
 	}
 	m.queueLifecycle(confirmTarget{action: actionRevive, sessions: []store.Session{entry.sess}}, true, "")
@@ -67,13 +65,12 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 func (m *Model) reviveAllDead() (tea.Model, tea.Cmd) {
 	sessions := m.listedSessions()
 	if dead := deadSessions(sessions); len(dead) > 1 {
-		m.confirm.confirmTarget = confirmTarget{
+		m.openConfirm(confirmTarget{
 			action:   actionRevive,
 			batch:    true,
 			sessions: dead,
 			label:    fmt.Sprintf("revive every dead session (%d)? brings them back.", len(dead)),
-		}
-		m.mode = modeConfirmDelete
+		})
 		return m, nil
 	}
 	return m.reviveMany(sessions, "no dead sessions to revive")

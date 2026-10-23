@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/YoanWai/agent-manager/internal/store"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -28,8 +29,7 @@ func TestBackdropClickClosesACardTheWayEscDoes(t *testing.T) {
 		{"messages", func(m *Model) { m.openNotices("") }},
 		{"settings", func(m *Model) { m.applyCmd(t, m.openSettings()) }},
 		{"confirm", func(m *Model) {
-			m.confirm.confirmTarget = confirmTarget{action: actionKill, label: "kill alpha? frees its RAM."}
-			m.mode = modeConfirmDelete
+			m.openConfirm(confirmTarget{action: actionKill, label: "kill alpha? frees its RAM."})
 		}},
 		{"move", func(m *Model) { m.openMove() }},
 	} {
@@ -38,14 +38,14 @@ func TestBackdropClickClosesACardTheWayEscDoes(t *testing.T) {
 		createSession(t, m, "alpha", t.TempDir(), "")
 		m.selectSessionRow(t, "alpha")
 		tc.open(m)
-		if !m.cardOpen() {
+		if m.listClear() {
 			t.Fatalf("%s: test setup did not open the card, err %q", tc.name, m.errBar.text)
 		}
-		if m = clickBackdrop(t, m); m.mode != modeList || m.cardOpen() {
+		if m = clickBackdrop(t, m); !m.listClear() {
 			t.Errorf("%s: a backdrop click should close the card, mode = %v", tc.name, m.mode)
 		}
-		if m.confirm.label != "" {
-			t.Errorf("%s: a backdrop click on a confirm is its cancel, target = %+v", tc.name, m.confirm.confirmTarget)
+		if confirmOpen(m) {
+			t.Errorf("%s: a backdrop click on a confirm is its cancel, target = %+v", tc.name, pendingConfirm(m))
 		}
 	}
 }
@@ -59,17 +59,17 @@ func TestBackdropClickKeepsATypedDraft(t *testing.T) {
 	}{
 		{"new session", func(m *Model) { m.applyCmd(t, m.openForm()) }, modeForm},
 		{"new group", func(m *Model) { m.openGroupForm() }, modeGroupForm},
-		{"fork", func(m *Model) { m.fork.Open("alpha", ""); m.mode = modeFork }, modeFork},
+		{"fork", func(m *Model) { m.push(newForkSurface(store.Session{Name: "alpha"}, 1)) }, modeList},
 	} {
 		m := buildModel(t)
 		m.layout.width, m.layout.height = 120, 34
 		createSessionOn(t, m, "alpha", "claude", t.TempDir())
 		m.selectSessionRow(t, "alpha")
 		tc.open(m)
-		if m.mode != tc.want {
+		if m.mode != tc.want || (tc.want == modeList && m.listClear()) {
 			t.Fatalf("%s: test setup mode = %v err %q", tc.name, m.mode, m.errBar.text)
 		}
-		if m = clickBackdrop(t, m); m.mode != tc.want {
+		if m = clickBackdrop(t, m); m.mode != tc.want || (tc.want == modeList && m.listClear()) {
 			t.Errorf("%s: a stray click closed the draft, mode = %v", tc.name, m.mode)
 		}
 	}
@@ -142,7 +142,7 @@ func TestRenameHoldsTheListUnderTheMouse(t *testing.T) {
 	x, y := bodyCell(t, m, "beta")
 	m = leftClick(m, x, y)
 	m = wheel(m, tea.MouseButtonWheelDown, x, y)
-	if row, ok := m.selectedRow(); m.mode != modeRename || !ok || row.sess.Name != "alpha" {
+	if row, ok := m.selectedRow(); !renameOpen(m) || !ok || row.sess.Name != "alpha" {
 		t.Fatalf("the mouse moved the list under a rename: mode %v row %+v", m.mode, row.sess.Name)
 	}
 }

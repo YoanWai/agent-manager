@@ -18,7 +18,7 @@ func loadPathSuggestions(m *Model, target pathSuggestionTarget, typed string) {
 	case pathSuggestionGroup:
 		m.groupForm.SetDir(typed)
 	case pathSuggestionRename:
-		m.rename.SetDir(typed)
+		openRename(m).SetDir(typed)
 	}
 	msg := m.requestPathSuggestions(target, typed)().(pathSuggestionsMsg)
 	m.completer(target).handle(m, msg)
@@ -205,15 +205,15 @@ func TestStandaloneGroupPickerWrapsWhenThereAreNoAdjacentFields(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.form.groups = []groupOption{{path: ""}, {path: "alpha"}, {path: "beta"}}
-	m.mode = modeMove
+	m.push(newMoveSurface(uidialogs.MoveSession("s")))
 
 	m.form.groupIndex = 0
-	m.handleMoveKey(tea.KeyMsg{Type: tea.KeyUp})
+	m.Update(tea.KeyMsg{Type: tea.KeyUp})
 	if m.form.groupIndex != 2 {
 		t.Fatalf("up past first group should wrap to last, index=%d", m.form.groupIndex)
 	}
 
-	m.handleMoveKey(tea.KeyMsg{Type: tea.KeyDown})
+	m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	if m.form.groupIndex != 0 {
 		t.Fatalf("down past last group should wrap to first, index=%d", m.form.groupIndex)
 	}
@@ -223,24 +223,23 @@ func TestRenamePathSuggestionsExitToName(t *testing.T) {
 	t.Parallel()
 	root := setupCompletionDir(t)
 	m := buildModel(t)
-	m.mode = modeRename
-	m.rename.Rename = uidialogs.RenameGroup("", "", 0)
-	m.handleRenameKey(tea.KeyMsg{Type: tea.KeyTab})
+	m.push(newRenameSurface(uidialogs.RenameGroup("", "", 0), ""))
+	m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	loadPathSuggestions(m, pathSuggestionRename, filepath.Join(root, "a"))
-	m.rename.paths.chosen = true
-	m.rename.paths.index = len(m.rename.paths.suggestions) - 1
+	openRename(m).complete.chosen = true
+	openRename(m).complete.index = len(openRename(m).complete.suggestions) - 1
 
-	m.handleRenameKey(tea.KeyMsg{Type: tea.KeyDown})
-	if m.rename.Focus() != 2 {
-		t.Fatalf("down past last suggestion should move to worktree, focus=%d", m.rename.Focus())
+	m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if openRename(m).Focus() != 2 {
+		t.Fatalf("down past last suggestion should move to worktree, focus=%d", openRename(m).Focus())
 	}
-	m.handleRenameKey(tea.KeyMsg{Type: tea.KeyDown})
-	if m.rename.Focus() != 3 {
-		t.Fatalf("down past worktree should move to base, focus=%d", m.rename.Focus())
+	m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if openRename(m).Focus() != 3 {
+		t.Fatalf("down past worktree should move to base, focus=%d", openRename(m).Focus())
 	}
-	m.handleRenameKey(tea.KeyMsg{Type: tea.KeyDown})
-	if m.rename.Focus() != 0 {
-		t.Fatalf("down past base should wrap to name, focus=%d", m.rename.Focus())
+	m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if openRename(m).Focus() != 0 {
+		t.Fatalf("down past base should wrap to name, focus=%d", openRename(m).Focus())
 	}
 }
 
@@ -368,7 +367,7 @@ func TestReopenedFormIgnoresTheLastOpeningsScan(t *testing.T) {
 	if m.form.paths.active() {
 		t.Fatalf("reopened form took the last opening's scan: %v", m.form.paths.suggestions)
 	}
-	if m.groupForm.paths.active() || m.rename.paths.active() {
+	if m.groupForm.paths.active() || openRename(m).complete.active() {
 		t.Fatal("a form scan filled another dialog's completer")
 	}
 }

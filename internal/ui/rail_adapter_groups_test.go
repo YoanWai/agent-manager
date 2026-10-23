@@ -20,7 +20,7 @@ func TestArchivedViewIgnoresFold(t *testing.T) {
 
 	m.selectSessionRow(t, "alpha")
 	m.archiveSelected()
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 
@@ -34,7 +34,7 @@ func TestArchivedViewIgnoresFold(t *testing.T) {
 
 	m.selectSessionRow(t, "alpha")
 	m.restoreSelected()
-	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 

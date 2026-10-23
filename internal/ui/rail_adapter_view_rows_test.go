@@ -265,8 +265,8 @@ func TestRootRowRefusesGroupEdits(t *testing.T) {
 			if m.mode != modeList {
 				t.Fatalf("mode changed to %v", m.mode)
 			}
-			if m.confirm.label != "" {
-				t.Fatalf("a confirmation was staged: %q", m.confirm.label)
+			if pendingConfirm(m).label != "" {
+				t.Fatalf("a confirmation was staged: %q", pendingConfirm(m).label)
 			}
 		})
 	}

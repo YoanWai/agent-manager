@@ -70,7 +70,7 @@ func TestHideEmptyGroupsDoesNotFilterTheArchivedView(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "empty")
 	m.archiveSelected()
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 
@@ -292,8 +292,8 @@ func TestBulkActionsRespectStatusFilter(t *testing.T) {
 
 	updated, _ := m.killAllLive()
 	m = updated.(*Model)
-	if len(m.confirm.sessions) != 1 || m.confirm.sessions[0].ID != "w" {
-		t.Fatalf("filtered kill-all targets = %+v, want only the listed session", m.confirm.sessions)
+	if len(pendingConfirm(m).sessions) != 1 || pendingConfirm(m).sessions[0].ID != "w" {
+		t.Fatalf("filtered kill-all targets = %+v, want only the listed session", pendingConfirm(m).sessions)
 	}
 	m.mode = modeList
 
@@ -333,8 +333,8 @@ func TestReviveAllLeavesSessionsTheFilterHides(t *testing.T) {
 	updated, _ := m.reviveAllDead()
 	m.drainEffects(t)
 	m = updated.(*Model)
-	if m.mode == modeConfirmDelete {
-		t.Fatalf("hidden sessions were counted: %q", m.confirm.label)
+	if confirmOpen(m) {
+		t.Fatalf("hidden sessions were counted: %q", pendingConfirm(m).label)
 	}
 	if !m.services.tmux.Exists("shown") {
 		t.Fatalf("the listed dead session should revive at once, err = %q", m.errBar.text)
@@ -439,8 +439,8 @@ func TestForkClearsStatusFilter(t *testing.T) {
 	m.services.cfg.Tools[source.Tool] = tool
 
 	m.openFork()
-	m.fork.SetName("fork-under-filter")
-	updated, cmd := m.handleForkKey(tea.KeyMsg{Type: tea.KeyEnter})
+	openFork(m).SetName("fork-under-filter")
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(*Model)
 	m.applyCmd(t, cmd)
 

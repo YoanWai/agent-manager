@@ -258,11 +258,12 @@ func (m *Model) applyInstallStart(request installStartRequest, result installSta
 		}
 		m.rebuildRows()
 	}
-	stillOpen := m.mode == modeLaunchHint && m.gens.dialog == request.gen
+	hint, hintOpen := m.launchHintFix()
+	stillOpen := hintOpen && m.gens.dialog == request.gen
 	var cleanup tea.Cmd
 	if err != nil {
 		if result.install != nil {
-			m.launchHint.install = result.install
+			m.ledger.install = result.install
 			if stillOpen {
 				cleanup = m.handInstallScreenTo(result.session.ID)
 			}
@@ -270,14 +271,14 @@ func (m *Model) applyInstallStart(request installStartRequest, result installSta
 			return tea.Batch(cleanup, m.refreshCmd())
 		}
 		if stillOpen {
-			m.launchHint.fix.images = append(request.images, m.launchHint.fix.images...)
+			hint.images = append(request.images, hint.images...)
 		} else {
 			cleanup = installImageCleanupCmd(request.images)
 		}
 		m.reportErr(err.Error())
 		return cleanup
 	}
-	m.launchHint.install = result.install
+	m.ledger.install = result.install
 	if stillOpen {
 		cleanup = m.handInstallScreenTo(result.session.ID)
 	}
@@ -287,8 +288,7 @@ func (m *Model) applyInstallStart(request installStartRequest, result installSta
 
 func (m *Model) handInstallScreenTo(sessionID string) tea.Cmd {
 	var cleanup tea.Cmd
-	m.launchHint.fix = launchFix{}
-	m.mode = modeList
+	m.closeLaunchHint()
 	if m.quick.active {
 		m.quick.active = false
 		cleanup = installImageCleanupCmd(m.quick.attachments)
@@ -301,7 +301,7 @@ func (m *Model) handInstallScreenTo(sessionID string) tea.Cmd {
 }
 
 func (m *Model) applyInstallSettle(request installSettleRequest, result installSettleResult, err error) tea.Cmd {
-	if m.launchHint.install == nil || m.launchHint.install.sessionID != result.sessionID {
+	if m.ledger.install == nil || m.ledger.install.sessionID != result.sessionID {
 		return nil
 	}
 	if result.state == installStillRunning {
@@ -310,7 +310,7 @@ func (m *Model) applyInstallSettle(request installSettleRequest, result installS
 		}
 		return nil
 	}
-	m.launchHint.install = nil
+	m.ledger.install = nil
 	install := request.install
 	if err != nil {
 		m.reportErr(err.Error())

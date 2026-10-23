@@ -132,7 +132,7 @@ func TestHostTextCannotDriveTheTerminal(t *testing.T) {
 
 	_, cmd := m.runRailIntent(uirail.Intent{Kind: uirail.Kill, Target: session})
 	m.runRemoteCmd(t, cmd)
-	if m.mode != modeConfirmDelete {
+	if !confirmOpen(m) {
 		t.Fatalf("mode = %v, want the kill confirm", m.mode)
 	}
 	frame("the confirm")
