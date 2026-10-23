@@ -33,7 +33,7 @@ func TestCatalogDocumentsEveryListAction(t *testing.T) {
 		}
 	}
 	if !documented["ctrl+c"] {
-		t.Error("ctrl+c quits from every mode and belongs in the map")
+		t.Error("ctrl+c belongs in the map")
 	}
 }
 

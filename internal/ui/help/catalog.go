@@ -65,7 +65,7 @@ func listHelpRows(list keybind.Table, arrowStep bool, glyphs Glyphs) [][2]string
 	h.action("messages", keybind.Messages)
 	h.action("this key map", keybind.Help)
 	h.action("quit (sessions keep running)", keybind.Quit)
-	h.fixed("ctrl+c", "quit, from anywhere")
+	h.fixed("ctrl+c", "quit, except while a session is focused")
 	return h.rows
 }
 
@@ -220,7 +220,10 @@ func helpSections(ctx Context) []helpSection {
 }
 
 func sessionHelpRows(keys keybind.Table, arrowStep bool, mouseRows [][2]string) [][2]string {
-	rows := [][2]string{{"typing", "goes straight to the agent, q included"}}
+	rows := [][2]string{
+		{"typing", "goes straight to the agent, q included"},
+		{"ctrl+c", "goes to the agent"},
+	}
 	detach := keys.Binding(keybind.Detach).Keys()
 	back := "back to the manager"
 	if len(detach) > 1 {
