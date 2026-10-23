@@ -81,7 +81,7 @@ func TestGroupFormSurfaceStepsAndSubmitsToTheRoot(t *testing.T) {
 func TestGroupFormSurfaceOnAConnectionStopsAtThePath(t *testing.T) {
 	root := &fakeRoot{width: 64}
 	opts := testOptions(root)
-	opts.Remote = Remote{Host: "box", Group: "web"}
+	opts.Remote, opts.Dir = Remote{Host: "box", Group: "web"}, ""
 	s := NewGroupFormSurface(root, opts)
 	if s.ParentPath() != "web" || s.Dir() != "" {
 		t.Fatalf("aimed at a host: parent %q dir %q", s.ParentPath(), s.Dir())
