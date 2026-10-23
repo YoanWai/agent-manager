@@ -57,7 +57,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if cmd, ok := m.surfaceKey(msg); ok {
 		return m, cmd
 	}
-	if m.mode == modeList && m.rail.InputMode() == uirail.BrowseMode && !m.quick.active && !m.layout.split.dragging && !m.layout.split.resizeMode {
+	if m.mode == modeList && !m.rail.Busy() && !m.quick.active && !m.layout.split.dragging && !m.layout.split.resizeMode {
 		decision := m.rail.Key(msg, m.layout.displayedRail, m.railKeyContext())
 		if decision.Consumed {
 			m.gens.foreground++
@@ -110,7 +110,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleFocusKey(msg)
 	}
 
-	if m.rail.InputMode() != uirail.BrowseMode {
+	if m.rail.Busy() {
 		return m.applyRailDecision(m.rail.Key(msg, m.layout.displayedRail, m.railKeyContext()))
 	}
 	if m.quick.active {

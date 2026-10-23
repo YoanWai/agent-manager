@@ -8,7 +8,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
-	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -190,7 +189,7 @@ func (m *Model) applyDetachEffect(request detachRequest, result detachEffectResu
 // foregroundTakenSinceDetach reports whether, since the detach, the user
 // opened a view, a rail prompt or a resize, or asked to enter a session.
 func (m *Model) foregroundTakenSinceDetach() bool {
-	if !m.listClear() || m.rail.InputMode() != uirail.BrowseMode || m.quick.active || m.layout.split.resizeMode || m.layout.split.dragging {
+	if !m.listClear() || m.rail.Busy() || m.quick.active || m.layout.split.resizeMode || m.layout.split.dragging {
 		return true
 	}
 	for _, job := range m.effects.main.pending {
