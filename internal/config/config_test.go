@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"runtime"
@@ -576,4 +578,75 @@ func TestCursorDefaults(t *testing.T) {
 	if tool.DefaultStatus != "idle" || tool.TurnEnd != "" || tool.ActivityCutoff == "" {
 		t.Fatalf("cursor status defaults = %+v", tool)
 	}
+}
+
+// Under go test, Dir stays in a temp directory. os.UserConfigDir ignores
+// XDG_CONFIG_HOME on macOS, and a test that resolved there would open the
+// user's state.db.
+func TestDirStaysOutOfTheUserConfigUnderTest(t *testing.T) {
+	if !testing.Testing() {
+		t.Fatal("Dir was not read from a test binary")
+	}
+	got, err := Dir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !pathInside(got, os.TempDir()) {
+		t.Fatalf("Dir() = %q, outside %q", got, os.TempDir())
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	configBase, err := os.UserConfigDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	banned := []string{
+		configBase,
+		filepath.Join(home, ".config"),
+		filepath.Join(home, "Library", "Application Support"),
+	}
+	for _, dir := range banned {
+		if pathInside(got, dir) {
+			t.Fatalf("Dir() = %q, under the real config dir %q", got, dir)
+		}
+	}
+}
+
+func TestDirHonorsOverrideThenXDGThenUserConfig(t *testing.T) {
+	override := t.TempDir()
+	xdg := t.TempDir()
+	t.Setenv("AGENT_MANAGER_CONFIG_DIR", override)
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	got, err := Dir()
+	if err != nil || got != override {
+		t.Fatalf("Dir() = %q, %v; want the override %q", got, err, override)
+	}
+
+	t.Setenv("AGENT_MANAGER_CONFIG_DIR", "")
+	got, err = Dir()
+	want := filepath.Join(xdg, "agent-manager")
+	if err != nil || got != want {
+		t.Fatalf("Dir() = %q, %v; want %q", got, err, want)
+	}
+
+	t.Setenv("XDG_CONFIG_HOME", "")
+	got, err = Dir()
+	base, berr := os.UserConfigDir()
+	if berr != nil {
+		t.Fatal(berr)
+	}
+	want = filepath.Join(base, "agent-manager")
+	if err != nil || got != want {
+		t.Fatalf("Dir() = %q, %v; want %q", got, err, want)
+	}
+}
+
+func pathInside(path, dir string) bool {
+	rel, err := filepath.Rel(dir, path)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }

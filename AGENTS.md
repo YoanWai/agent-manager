@@ -106,6 +106,19 @@ with `SHELL=/bin/sh` as CI does.
 On Windows, see Checks in [CONTRIBUTING.md](.github/CONTRIBUTING.md) for
 what the suite needs.
 
+`config.Dir` is the directory that holds `state.db`. It is
+`AGENT_MANAGER_CONFIG_DIR` when that variable is set, on every OS, and
+otherwise `$XDG_CONFIG_HOME/agent-manager` when `XDG_CONFIG_HOME` is set.
+`os.UserConfigDir` ignores `XDG_CONFIG_HOME` on macOS, so a probe that
+must not open the user's store sets the first:
+
+```bash
+AGENT_MANAGER_CONFIG_DIR=/tmp/amprobe agent-manager
+```
+
+`go test` sets `AGENT_MANAGER_CONFIG_DIR` to a temp directory before any
+test reads the store.
+
 Before finishing: `gofmt -l .` prints nothing, `go vet ./...` is clean.
 
 A change to the UI, the poller, or a tool's status rules is verified against

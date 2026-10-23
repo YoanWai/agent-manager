@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -186,7 +187,29 @@ type Config struct {
 	Tools map[string]Tool
 }
 
+// A test binary must not open the user's store. os.UserConfigDir ignores
+// XDG_CONFIG_HOME on macOS, so the override is planted here, before any
+// test reads Dir, in every package that imports this one.
+func init() {
+	if !testing.Testing() || os.Getenv("AGENT_MANAGER_CONFIG_DIR") != "" {
+		return
+	}
+	dir, err := os.MkdirTemp("", "agent-manager-test-")
+	if err != nil {
+		panic(err)
+	}
+	if err := os.Setenv("AGENT_MANAGER_CONFIG_DIR", dir); err != nil {
+		panic(err)
+	}
+}
+
 func Dir() (string, error) {
+	if dir := os.Getenv("AGENT_MANAGER_CONFIG_DIR"); dir != "" {
+		return dir, nil
+	}
+	if base := os.Getenv("XDG_CONFIG_HOME"); base != "" {
+		return filepath.Join(base, "agent-manager"), nil
+	}
 	base, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
