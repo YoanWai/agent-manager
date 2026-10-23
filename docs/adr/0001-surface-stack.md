@@ -1,6 +1,6 @@
 # ADR 0001: a surface stack decides who takes input
 
-Status: proposed, first part landed in #861
+Status: accepted, landed in #861
 
 ## Context
 
@@ -46,7 +46,7 @@ over the list that hands the keyboard to the agent.
    with the card, never reaching the agent behind it.
    The root asks the stack: `agentOwnsKeyboard`, `closesOnBackdrop`,
    `cardOpen`, the footer and the IME anchor all read it.
-5. **Lifecycle.** `pop` runs the surface's `Leave` once; leaving the mode
+5. **Lifecycle.** `pop` runs the surface's `Leave` once; leaving the screen
    under a stack pops each surface, top first. Cleanup lives in `Leave`, so
    `returnMode` and `resume` go.
 6. **Bindings are data, work is a switch.** A surface lists each key once,
@@ -58,6 +58,14 @@ over the list that hands the keyboard to the agent.
 8. **Completions find their surface by type**, with `surfaceOf[T]`, instead
    of comparing the mode: a result lands on the surface that asked or is
    dropped.
+9. **Not every overlay is a surface.** A surface is something that takes
+   the keyboard over the screen below it. Cards and the quick bar are; so
+   are focus (owner: the agent) and a resize in progress (a keyboard grab
+   that paints nothing). Rail search, the row menu and reorder are modes of
+   the rail: `rail.Model` owns them and answers `Busy()`. Drag state stays
+   with the mouse in `geometry_split.go`. A surface that is not a card takes
+   the mouse through the optional `mouseTaker`, and `cardOpen` is false for
+   it.
 
 ```go
 type surface interface {
@@ -74,7 +82,15 @@ type surface interface {
 
 One `<feature>_surface.go` per surface in the root, holding the type, its
 constructor and these methods; the child package keeps the state and view
-it has today. `check-file-names` learns the `_surface` role.
+it has today. `check-file-names` learns the `_surface` role. A surface that
+needs more of the root than `surfaceHost` offers takes a narrow host of its
+own at construction (`helpHost`, `settingsHost`, `resizeHost`, `focusHost`)
+rather than widening the shared one.
+
+The screen is `screen{base, surfaces}`: the base is the list or Review, and
+the stack sits over it. Focus is a surface over the list whose `Owner` is
+the agent, so "is the agent reading the keyboard" is one question of the
+stack and `routeQuit` needs no case for it.
 
 ## Prior art
 
@@ -96,21 +112,24 @@ a footer naming a key nothing handles, and a stale return mode.
 
 ## Migration
 
-`mode` stays the base layer while surfaces move onto the stack, one PR each,
-and each PR deletes its share of the seven `switch m.mode` statements and
-the `Model` field for the state that moved:
+Landed in #861 in this order, one commit per surface: the priority layer
+(`routeQuit`), the stack and its host, the saved prompts list over focus,
+Review's keymap as the bindings-as-data pilot; the cards in `dialogs`
+(confirm, move, rename, fork, launch hint); help and notices; Review's
+picker; the New Group form, Settings and the connection dialog; the rail's
+`Busy()`; resize; the quick bar; the New Session form; focus; then the two
+base screens, with `mode`, its constants, `setMode` and every `switch
+m.mode` deleted. Reads of `m.mode` outside tests: 156 before, 0 after.
+`Model`: 31 fields before, 20 after.
 
-1. #861: the priority layer (`routeQuit`), the stack and its host, the saved
-   prompts list over focus, and Review's keymap as the bindings-as-data pilot.
-2. The cards in `dialogs`: confirm, launch hint, move, fork, rename.
-3. Help and notices.
-4. Review's comment box, send prompt and pickers.
-5. Settings and the connection dialog.
-6. The rail's menu, search and reorder, and the quick bar.
-7. Focus becomes a surface over the list; the list and Review are the two
-   base screens; `mode` and its tests go.
+Left as it was, on purpose: Review's comment box and send prompt stay in
+the `review` package behind its keymap; the rail's menu, search and reorder
+stay in the rail (decision 9).
 
-`TestCtrlCOnEverySurface`, `TestEveryModeAnswersTheMouse`,
-`TestFeatureHostsStayNarrow` and `TestModelFieldCap` are the safety net
-throughout: each fails on a surface left undecided, a host grown wide, or
-state left on `Model`.
+The safety net is `TestCtrlCOnEveryBase` and
+`TestCtrlCQuitsThroughEveryCardOverTheList` (ctrl+c through `Update` on
+every screen), `TestCtrlCIsDecidedInKeysGo` (nothing outside `keys.go`
+compares it), `TestEverySurfaceAnswersTheMouse` (every type with a `Leave`
+method is mounted by its real opener and takes a wheel and a click),
+`TestFeatureHostsStayNarrow` and `TestModelFieldCap`. Each fails on a
+surface left undecided, a host grown wide, or state left on `Model`.
