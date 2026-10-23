@@ -100,6 +100,14 @@ func (r launchHintRoot) CardChromeRows(hint [][2]string) int { return r.cardChro
 
 func (r launchHintRoot) ReleaseLaunchHint() { r.releaseLaunchHint() }
 
+// closeLaunchHint takes the card down once its install has the screen,
+// without dropping the images the install now owns.
+func (m *Model) closeLaunchHint() {
+	m.ledger.launch = launchFix{}
+	m.clearSurfaces()
+	m.base = baseList
+}
+
 func (m *Model) releaseLaunchHint() {
 	dropImages(m.ledger.launch.images)
 	m.ledger.launch = launchFix{}
