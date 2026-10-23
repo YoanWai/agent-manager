@@ -48,11 +48,13 @@ func TestCtrlCOnEverySurface(t *testing.T) {
 // decided this for itself; the router decides it once here.
 func TestCtrlCQuitsThroughEveryCardOverTheList(t *testing.T) {
 	for name, open := range map[string]func(t *testing.T, m *Model){
-		"confirm":    func(t *testing.T, m *Model) { m.openConfirm(confirmTarget{action: actionKill, label: "kill alpha?"}) },
-		"move":       func(t *testing.T, m *Model) { m.openMove() },
-		"rename":     func(t *testing.T, m *Model) { m.openRename() },
-		"fork":       func(t *testing.T, m *Model) { m.push(newForkSurface(railSelectedSession(m), 1)) },
-		"launchhint": func(t *testing.T, m *Model) { m.openLaunchHint(launchFix{text: "tool is missing", command: "true", script: "true", binary: "tool"}) },
+		"confirm": func(t *testing.T, m *Model) { m.openConfirm(confirmTarget{action: actionKill, label: "kill alpha?"}) },
+		"move":    func(t *testing.T, m *Model) { m.openMove() },
+		"rename":  func(t *testing.T, m *Model) { m.openRename() },
+		"fork":    func(t *testing.T, m *Model) { m.push(newForkSurface(railSelectedSession(m), 1)) },
+		"launchhint": func(t *testing.T, m *Model) {
+			m.openLaunchHint(launchFix{text: "tool is missing", command: "true", script: "true", binary: "tool"})
+		},
 		"help":       func(t *testing.T, m *Model) { m.openHelp() },
 		"notices":    func(t *testing.T, m *Model) { m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("M")}) },
 		"settings":   func(t *testing.T, m *Model) { m.applyCmd(t, m.openSettings()) },
