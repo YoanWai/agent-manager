@@ -21,7 +21,7 @@ func TestClickOnAMoveTargetPicksThenMoves(t *testing.T) {
 	m.selectSessionRow(t, "wanderer")
 	m.openMove()
 	x, y := paintedCell(t, m, "target")
-	if m = leftClick(m, x, y); m.mode != modeMove || m.selectedGroupPath() != "target" {
+	if m = leftClick(m, x, y); !moveOpen(m) || m.selectedGroupPath() != "target" {
 		t.Fatalf("first click should pick the target, mode %v picked %q", m.mode, m.selectedGroupPath())
 	}
 	if m = wheel(m, tea.MouseButtonWheelUp, x, y); m.selectedGroupPath() != "" {

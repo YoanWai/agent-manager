@@ -23,7 +23,6 @@ var ctrlCQuits = map[mode]bool{
 	modeHelp:       true,
 	modeRename:     true,
 	modeFork:       true,
-	modeMove:       true,
 	modeRepoPick:   true,
 	modeGroupForm:  true,
 	modeSettings:   true,

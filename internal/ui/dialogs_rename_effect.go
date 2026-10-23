@@ -308,10 +308,10 @@ func (m *Model) capturePlacementPrecondition(mutation uirail.Mutation) placement
 }
 
 func (m *Model) applyMoveDialogClose(request moveDialogClose) {
-	if m.mode != modeMove || m.gens.dialog != request.gen {
+	if _, open := surfaceOf[*moveSurface](m); !open || m.gens.dialog != request.gen {
 		return
 	}
-	m.mode = modeList
+	m.pop()
 	m.rebuildRows()
 }
 

@@ -33,7 +33,6 @@ const (
 	modeHelp
 	modeRename
 	modeFork
-	modeMove
 	modeRepoPick
 	modeGroupForm
 	modeSettings
@@ -75,7 +74,6 @@ type Model struct {
 	settings   settingsFeature
 	env        environment
 	help       helpFeature
-	move       moveDialog
 	ssh        connectionsFeature
 	layout     layoutState
 	errBar     errBar

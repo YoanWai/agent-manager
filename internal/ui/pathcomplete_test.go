@@ -205,15 +205,15 @@ func TestStandaloneGroupPickerWrapsWhenThereAreNoAdjacentFields(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.form.groups = []groupOption{{path: ""}, {path: "alpha"}, {path: "beta"}}
-	m.mode = modeMove
+	m.push(newMoveSurface(uidialogs.MoveSession("s")))
 
 	m.form.groupIndex = 0
-	m.handleMoveKey(tea.KeyMsg{Type: tea.KeyUp})
+	m.Update(tea.KeyMsg{Type: tea.KeyUp})
 	if m.form.groupIndex != 2 {
 		t.Fatalf("up past first group should wrap to last, index=%d", m.form.groupIndex)
 	}
 
-	m.handleMoveKey(tea.KeyMsg{Type: tea.KeyDown})
+	m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	if m.form.groupIndex != 0 {
 		t.Fatalf("down past last group should wrap to first, index=%d", m.form.groupIndex)
 	}

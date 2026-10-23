@@ -89,12 +89,6 @@ func (m *Model) drawCard(card uidialogs.Card) string {
 	return m.card(card.Title, card.Body, card.Hints)
 }
 
-// moveDialog borrows the spawn form's group picker for its targets, which
-// the root rebuilds and shapes when the dialog opens; the root runs the
-// placement on the effect lane and closes the dialog from its fenced
-// follow-up.
-type moveDialog struct{ uidialogs.Move }
-
 // pickedGroupOption is the group picker's highlighted row.
 func (m *Model) pickedGroupOption() groupOption {
 	return m.form.groups[m.form.groupIndex]
@@ -111,19 +105,20 @@ func (m *Model) openMove() {
 		m.reportErr("root is the top level, not a group to move")
 		return
 	}
+	var move uidialogs.Move
 	if row.isGroup {
-		m.move.Move = uidialogs.MoveGroup(row.group)
+		move = uidialogs.MoveGroup(row.group)
 		m.rebuildGroupOptions(parentGroup(row.group))
 		m.pruneMoveTargets(row.group)
 	} else {
-		m.move.Move = uidialogs.MoveSession(row.sess.ID)
+		move = uidialogs.MoveSession(row.sess.ID)
 		m.rebuildGroupOptions(row.sess.Group)
 		if m.isShell(row.sess.Tool) {
 			m.appendAgentMoveTargets()
 		}
 	}
 	m.gens.dialog++
-	m.mode = modeMove
+	m.push(newMoveSurface(move))
 	m.clearErr()
 }
 
@@ -175,43 +170,28 @@ func (m *Model) pruneMoveTargets(subtree string) {
 	}
 }
 
-func (m *Model) handleMoveKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	key := m.move.Key(msg)
-	switch key.Action {
-	case uidialogs.MoveCancel:
-		m.mode = modeList
-	case uidialogs.MoveCursor:
-		return m, m.moveGroupCursor(key.Delta)
-	case uidialogs.MoveSubmit:
-		pick := uidialogs.MovePick{Group: m.selectedGroupPath()}
-		if !m.move.IsGroup() {
-			opt := m.pickedGroupOption()
-			pick = uidialogs.MovePick{Group: opt.path, ParentID: opt.sessID}
-		}
-		request, ok := m.move.Place(pick)
-		if !ok {
-			m.mode = modeList
-			return m, nil
-		}
-		if request.IsGroup() {
-			return m, m.enqueueMove(uirail.Mutation{Kind: uirail.MoveGroup, Path: request.GroupPath, Group: request.Group}, moveDialogClose{isGroup: true, group: request.GroupPath, parent: request.Group})
-		}
-		return m, m.enqueueMove(uirail.Mutation{Kind: uirail.PlaceSession, SessionID: request.SessionID, Group: request.Group, ParentID: request.ParentID}, moveDialogClose{sessID: request.SessionID, optPath: request.Group, optSessID: request.ParentID})
+// placeMove runs the placement the picked row asks for on the effect lane;
+// the card closes from the fenced follow-up. A move the dialog refuses
+// closes it now.
+func (m *Model) placeMove(move uidialogs.Move) tea.Cmd {
+	pick := uidialogs.MovePick{Group: m.selectedGroupPath()}
+	if !move.IsGroup() {
+		opt := m.pickedGroupOption()
+		pick = uidialogs.MovePick{Group: opt.path, ParentID: opt.sessID}
 	}
-	return m, nil
+	request, ok := move.Place(pick)
+	if !ok {
+		m.pop()
+		return nil
+	}
+	if request.IsGroup() {
+		return m.enqueueMove(uirail.Mutation{Kind: uirail.MoveGroup, Path: request.GroupPath, Group: request.Group}, moveDialogClose{isGroup: true, group: request.GroupPath, parent: request.Group})
+	}
+	return m.enqueueMove(uirail.Mutation{Kind: uirail.PlaceSession, SessionID: request.SessionID, Group: request.Group, ParentID: request.ParentID}, moveDialogClose{sessID: request.SessionID, optPath: request.Group, optSessID: request.ParentID})
 }
 
-// handleMoveClick moves the picker's cursor to the target a click landed on,
-// and moves the row there on a click on the target already under it.
-func (m *Model) handleMoveClick(line int) (tea.Model, tea.Cmd) {
-	switch {
-	case line < 0 || line >= len(m.form.groups):
-		return m, nil
-	case line != m.form.groupIndex:
-		return m, m.moveGroupCursor(line - m.form.groupIndex)
-	}
-	return m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
-}
+// movePicker is the group picker's row count and cursor, for clicks.
+func (m *Model) movePicker() (rows, cursor int) { return len(m.form.groups), m.form.groupIndex }
 
 func (m *Model) viewMove() string {
 	return m.card(uidialogs.MoveTitle(m.prefs.glyphMode), m.viewGroupPicker(), uidialogs.MoveHints())

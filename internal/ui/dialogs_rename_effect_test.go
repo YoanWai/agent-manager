@@ -404,23 +404,24 @@ func TestMoveSessionDefersPlacement(t *testing.T) {
 
 	m.selectSessionRow(t, "wanderer")
 	m.openMove()
+	moved := movingSession(m)
 	pickGroup(t, m, "target")
-	_, cmd := m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("move dispatch returned no command")
 	}
-	got, err := m.services.store.Get(m.move.SessionID())
+	got, err := m.services.store.Get(moved)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got.Group != "" {
 		t.Fatalf("session placed on the update path: %+v", got)
 	}
-	if m.mode != modeMove {
+	if !moveOpen(m) {
 		t.Fatalf("dialog should stay open until completion, mode=%v", m.mode)
 	}
 	m.applyCmd(t, cmd)
-	got, _ = m.services.store.Get(m.move.SessionID())
+	got, _ = m.services.store.Get(moved)
 	if got.Group != "target" {
 		t.Fatalf("move not committed on completion: %+v", got)
 	}
@@ -442,13 +443,14 @@ func TestMoveWorkerRejectsChangedSourcePrecondition(t *testing.T) {
 	createSession(t, m, "wanderer", dir, "")
 	m.selectSessionRow(t, "wanderer")
 	m.openMove()
+	moved := movingSession(m)
 	pickGroup(t, m, "target")
-	_, cmd := m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
-	if err := m.services.store.PlaceSession(m.move.SessionID(), "concurrent", ""); err != nil {
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if err := m.services.store.PlaceSession(moved, "concurrent", ""); err != nil {
 		t.Fatal(err)
 	}
 	m.applyCmd(t, cmd)
-	stored, err := m.services.store.Get(m.move.SessionID())
+	stored, err := m.services.store.Get(moved)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -476,7 +478,7 @@ func TestMoveGroupDefersPersistence(t *testing.T) {
 	m.selectGroupRow(t, "alpha/inner")
 	m.openMove()
 	pickGroup(t, m, "beta")
-	_, cmd := m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("move dispatch returned no command")
 	}
@@ -510,28 +512,29 @@ func TestMoveCompletionDoesNotReplaceNewerDialog(t *testing.T) {
 
 	m.selectSessionRow(t, "wanderer")
 	m.openMove()
+	moved := movingSession(m)
 	pickGroup(t, m, "target")
-	_, cmd1 := m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd1 := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd1 == nil {
 		t.Fatal("first move dispatch returned no command")
 	}
 	m.selectSessionRow(t, "wanderer")
 	m.openMove()
 	pickGroup(t, m, "other")
-	_, _ = m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
 	// The lane runs four jobs: place target, close target dialog (must not
 	// match), place other, close other dialog.
 	updated, _ := m.Update(cmd1())
 	*m = *updated.(*Model)
-	if m.mode != modeMove {
+	if !moveOpen(m) {
 		t.Fatalf("older completion closed the newer dialog, mode=%v", m.mode)
 	}
 	if m.form.groups[m.form.groupIndex].path != "other" {
 		t.Fatalf("newer dialog selection changed: %+v", m.form.groups)
 	}
 	m.drainEffects(t)
-	got, err := m.services.store.Get(m.move.SessionID())
+	got, err := m.services.store.Get(moved)
 	if err != nil {
 		t.Fatal(err)
 	}

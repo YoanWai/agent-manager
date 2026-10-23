@@ -18,11 +18,11 @@ func TestMoveSession(t *testing.T) {
 
 	m.selectSessionRow(t, "wanderer")
 	m.openMove()
-	if m.mode != modeMove {
+	if !moveOpen(m) {
 		t.Fatal("openMove should enter move mode")
 	}
 	pickGroup(t, m, "target/deep")
-	_, cmd := m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m.applyCmd(t, cmd)
 
 	sessions := m.sessionRows()
@@ -46,7 +46,7 @@ func TestMoveGroupRow(t *testing.T) {
 
 	m.selectGroupRow(t, "alpha/inner")
 	m.openMove()
-	if m.mode != modeMove {
+	if !moveOpen(m) {
 		t.Fatal("openMove on a group row should enter move mode")
 	}
 	for _, opt := range m.form.groups {
@@ -55,7 +55,7 @@ func TestMoveGroupRow(t *testing.T) {
 		}
 	}
 	pickGroup(t, m, "beta")
-	_, cmd := m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m.applyCmd(t, cmd)
 
 	sessions := m.sessionRows()
@@ -107,7 +107,7 @@ func TestMoveTerminalOntoAgentNests(t *testing.T) {
 	if m.form.groups[m.form.groupIndex].sessID != agent.ID {
 		t.Fatal("picker must list the agent")
 	}
-	_, cmd := m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m.applyCmd(t, cmd)
 	got, err := m.services.store.Get(shell.ID)
 	if err != nil || got.ParentID != agent.ID {
@@ -132,7 +132,7 @@ func TestMoveTerminalOntoGroupUnnests(t *testing.T) {
 	m.selectSessionRow(t, shell.Name)
 	m.openMove()
 	pickGroup(t, m, "other")
-	_, cmd := m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m.applyCmd(t, cmd)
 	got, _ := m.services.store.Get(shell.ID)
 	if got.ParentID != "" || got.Group != "other" {
@@ -164,12 +164,12 @@ func TestMoveReportsPlacementFailure(t *testing.T) {
 	if err := m.services.store.Delete(agent.ID); err != nil {
 		t.Fatalf("delete agent: %v", err)
 	}
-	_, cmd := m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m.applyCmd(t, cmd)
 	if m.errBar.text == "" {
 		t.Fatal("failed placement reported nothing")
 	}
-	if m.mode != modeMove {
+	if !moveOpen(m) {
 		t.Fatalf("mode = %v, want modeMove", m.mode)
 	}
 	got, err := m.services.store.Get(shell.ID)
@@ -194,12 +194,12 @@ func TestMoveReportsMissingSource(t *testing.T) {
 	if err := m.services.store.Delete(shell.ID); err != nil {
 		t.Fatalf("delete shell: %v", err)
 	}
-	_, cmd := m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m.applyCmd(t, cmd)
 	if m.errBar.text == "" {
 		t.Fatal("missing source reported nothing")
 	}
-	if m.mode != modeMove {
+	if !moveOpen(m) {
 		t.Fatalf("mode = %v, want modeMove", m.mode)
 	}
 }
@@ -255,18 +255,19 @@ func TestMoveCompletionDoesNotCloseReopenedSameTargetDialog(t *testing.T) {
 	createSession(t, m, "wanderer", t.TempDir(), "")
 	m.selectSessionRow(t, "wanderer")
 	m.openMove()
+	moved := movingSession(m)
 	pickGroup(t, m, "target")
-	_, cmd := m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("move returned no effect command")
 	}
-	_, _ = m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEsc})
+	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m.openMove()
 	m.applyCmd(t, cmd)
-	if m.mode != modeMove {
+	if !moveOpen(m) {
 		t.Fatal("older move completion closed the reopened dialog")
 	}
-	got, err := m.services.store.Get(m.move.SessionID())
+	got, err := m.services.store.Get(moved)
 	if err != nil || got.Group != "target" {
 		t.Fatalf("accepted move did not reconcile: %+v, %v", got, err)
 	}
