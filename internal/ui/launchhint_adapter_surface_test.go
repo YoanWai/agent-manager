@@ -13,15 +13,6 @@ func hintOpen(m *Model) bool {
 	return ok
 }
 
-// hintCard is the setup-step card on the stack, for a test that drives it.
-func hintCard(m *Model) *uidialogs.LaunchHintSurface {
-	s, ok := surfaceOf[*uidialogs.LaunchHintSurface](m)
-	if !ok {
-		panic("no launch hint is open")
-	}
-	return s
-}
-
 // hintFix is the fix the open card holds, zero when none is open.
 func hintFix(m *Model) launchFix {
 	if fix, ok := m.launchHintFix(); ok {
