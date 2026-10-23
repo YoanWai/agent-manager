@@ -3,6 +3,7 @@ package ui
 import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/ui/pathcomplete"
 	uisurface "github.com/YoanWai/agent-manager/internal/ui/surface"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -54,13 +55,13 @@ const (
 // instead of knowing which cards have one.
 type pathCompleting interface {
 	// pathTarget names the field for the shared completer and its reads.
-	pathTarget() pathSuggestionTarget
+	pathTarget() pathcomplete.Target
 	// dir is the field's current text.
 	dir() (string, bool)
 	// takePath puts a completed directory into the field.
 	takePath(path string)
 	// paths is the surface's completer state.
-	paths() *pathComplete
+	paths() *pathcomplete.State
 }
 
 // mouseTaker is the optional capability of a surface that is not a card:

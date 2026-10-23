@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	"github.com/YoanWai/agent-manager/internal/ui/pathcomplete"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -16,7 +17,7 @@ import (
 // as the picker's rows were.
 type groupFormSurface struct {
 	form    uidialogs.GroupForm
-	pc      pathComplete
+	pc      pathcomplete.State
 	base    string
 	remote  formRemote
 	parents []groupOption
@@ -45,7 +46,7 @@ type groupBaseAskMsg struct{ gen, delta int }
 func newGroupFormSurface(gen int, dir string, cols int, parents []groupOption, parent int, lends map[string]groupLend, remote formRemote, styles spawn.Styles) *groupFormSurface {
 	s := &groupFormSurface{
 		form:    uidialogs.NewGroupForm(dir, gen),
-		pc:      pathComplete{generation: uint64(gen) << 32},
+		pc:      pathcomplete.State{Generation: uint64(gen) << 32},
 		remote:  remote,
 		parents: parents,
 		parent:  parent,
@@ -128,7 +129,7 @@ func (s *groupFormSurface) run(h surfaceHost, key uidialogs.GroupFormKey) tea.Cm
 		s.stepParent(key.Entry - s.parent)
 		return nil
 	case uidialogs.GroupFormPickPath:
-		if s.pc.pick(key.Entry) {
+		if s.pc.Pick(key.Entry) {
 			return s.apply()
 		}
 	case uidialogs.GroupFormStepBase:
@@ -143,7 +144,7 @@ func (s *groupFormSurface) run(h surfaceHost, key uidialogs.GroupFormKey) tea.Cm
 	}
 	// A connection's directory is the host's: nothing here completes it.
 	if key.Suggest && !s.remote.on() {
-		return tea.Batch(key.Cmd, s.pc.request(pathSuggestionGroup, s.form.Dir(), systemPathSuggestionReader{}))
+		return tea.Batch(key.Cmd, s.pc.Request(pathcomplete.Group, s.form.Dir(), pathcomplete.SystemReader{}))
 	}
 	return key.Cmd
 }
@@ -161,9 +162,9 @@ func (s *groupFormSurface) stepParent(delta int) {
 }
 
 func (s *groupFormSurface) apply() tea.Cmd {
-	path := s.pc.selected() + string(filepath.Separator)
+	path := s.pc.Selected() + string(filepath.Separator)
 	s.form.TakePath(path)
-	return s.pc.request(pathSuggestionGroup, path, systemPathSuggestionReader{})
+	return s.pc.Request(pathcomplete.Group, path, pathcomplete.SystemReader{})
 }
 
 func (s *groupFormSurface) View(h surfaceHost, _ string) string {
@@ -184,9 +185,9 @@ func (s *groupFormSurface) View(h surfaceHost, _ string) string {
 		Worktrees: groupWorktreeOptions,
 		Base:      groupBaseChoice(s.base, s.lends[parent].base),
 	}
-	if s.pc.active() {
-		view.Suggestions = func() string { return s.pc.view(s.styles.GlyphMode) }
-		view.SuggestHints = pathSuggestHint(s.pc.chosen)
+	if s.pc.Active() {
+		view.Suggestions = func() string { return s.pc.View(pathCompleteStyles(s.styles.GlyphMode)) }
+		view.SuggestHints = pathSuggestHint(s.pc.Chosen)
 	}
 	card := s.form.View(view)
 	return h.CardSized(cardWidthFor(cols), card.Title, card.Body, card.Hints)
@@ -202,7 +203,7 @@ func (s *groupFormSurface) Dismissible() bool { return false }
 
 func (s *groupFormSurface) Leave(surfaceHost) {}
 
-func (s *groupFormSurface) pathTarget() pathSuggestionTarget { return pathSuggestionGroup }
-func (s *groupFormSurface) dir() (string, bool)              { return s.form.Dir(), true }
-func (s *groupFormSurface) takePath(path string)             { s.form.TakePath(path) }
-func (s *groupFormSurface) paths() *pathComplete             { return &s.pc }
+func (s *groupFormSurface) pathTarget() pathcomplete.Target { return pathcomplete.Group }
+func (s *groupFormSurface) dir() (string, bool)             { return s.form.Dir(), true }
+func (s *groupFormSurface) takePath(path string)            { s.form.TakePath(path) }
+func (s *groupFormSurface) paths() *pathcomplete.State      { return &s.pc }

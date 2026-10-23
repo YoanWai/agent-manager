@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/YoanWai/agent-manager/internal/ui/pathcomplete"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -91,10 +92,10 @@ func (s *spawnSurface) Dismissible() bool { return false }
 // it carries.
 func (s *spawnSurface) Leave(surfaceHost) { s.prompt.release() }
 
-func (s *spawnSurface) pathTarget() pathSuggestionTarget { return pathSuggestionForm }
+func (s *spawnSurface) pathTarget() pathcomplete.Target { return pathcomplete.Form }
 
 func (s *spawnSurface) dir() (string, bool) { return s.Dir(), true }
 
 func (s *spawnSurface) takePath(path string) { s.TakePath(path) }
 
-func (s *spawnSurface) paths() *pathComplete { return &s.complete }
+func (s *spawnSurface) paths() *pathcomplete.State { return &s.complete }

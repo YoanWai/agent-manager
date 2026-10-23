@@ -16,7 +16,7 @@ func TestClickOnAPathSuggestionCompletesIt(t *testing.T) {
 	answered(m, claudeLike, claudeAnswer)
 	openFormOnClaude(t, m)
 	m.form().FocusField(m.spawnHost(), spawn.FieldDir)
-	m.form().complete.suggestions = []string{"/work/alpha", "/work/beta"}
+	m.form().complete.Suggestions = []string{"/work/alpha", "/work/beta"}
 	x, y := paintedCell(t, m, "/work/beta")
 	m, cmd := leftClickCmd(m, x, y)
 	if m.form().Dir() != "/work/beta"+string(filepath.Separator) || cmd == nil {

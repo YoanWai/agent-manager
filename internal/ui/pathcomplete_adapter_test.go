@@ -7,21 +7,22 @@ import (
 	"testing"
 
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	"github.com/YoanWai/agent-manager/internal/ui/pathcomplete"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func loadPathSuggestions(m *Model, target pathSuggestionTarget, typed string) {
+func loadPathSuggestions(m *Model, target pathcomplete.Target, typed string) {
 	switch target {
-	case pathSuggestionForm:
+	case pathcomplete.Form:
 		m.form().SetDir(typed)
-	case pathSuggestionGroup:
+	case pathcomplete.Group:
 		m.groupSurface().form.SetDir(typed)
-	case pathSuggestionRename:
+	case pathcomplete.Rename:
 		openRename(m).SetDir(typed)
 	}
-	msg := m.requestPathSuggestions(target, typed)().(pathSuggestionsMsg)
-	m.completer(target).handle(m, msg)
+	msg := m.requestPathSuggestions(target, typed)().(pathcomplete.Msg)
+	m.completer(target).Handle(pathCompleter{m}, msg)
 }
 
 type blockedPathSuggestionReader struct {
@@ -31,7 +32,7 @@ type blockedPathSuggestionReader struct {
 	suggestions []string
 }
 
-func (r *blockedPathSuggestionReader) complete(string) []string {
+func (r *blockedPathSuggestionReader) Complete(string) []string {
 	r.once.Do(func() { close(r.started) })
 	<-r.release
 	return r.suggestions
@@ -46,21 +47,21 @@ func TestPathSuggestionsDeferScanAndRejectStaleInput(t *testing.T) {
 		started: make(chan struct{}), release: make(chan struct{}),
 		suggestions: []string{"/first-result"},
 	}
-	cmd := m.form().complete.request(pathSuggestionForm, m.form().Dir(), reader)
+	cmd := m.form().complete.Request(pathcomplete.Form, m.form().Dir(), reader)
 	select {
 	case <-reader.started:
 		t.Fatal("path scan ran on the update path")
 	default:
 	}
-	completed := make(chan pathSuggestionsMsg, 1)
-	go func() { completed <- cmd().(pathSuggestionsMsg) }()
+	completed := make(chan pathcomplete.Msg, 1)
+	go func() { completed <- cmd().(pathcomplete.Msg) }()
 	<-reader.started
 	m.form().SetDir("/newer")
-	m.form().complete.request(pathSuggestionForm, m.form().Dir(), systemPathSuggestionReader{})
+	m.form().complete.Request(pathcomplete.Form, m.form().Dir(), pathcomplete.SystemReader{})
 	close(reader.release)
-	m.form().complete.handle(m, <-completed)
-	if len(m.form().complete.suggestions) != 0 {
-		t.Fatalf("stale scan replaced newer input: %v", m.form().complete.suggestions)
+	m.form().complete.Handle(pathCompleter{m}, <-completed)
+	if len(m.form().complete.Suggestions) != 0 {
+		t.Fatalf("stale scan replaced newer input: %v", m.form().complete.Suggestions)
 	}
 }
 
@@ -78,56 +79,12 @@ func setupCompletionDir(t *testing.T) string {
 	return root
 }
 
-func TestCompleteDirsMatchesPrefix(t *testing.T) {
-	root := setupCompletionDir(t)
-	got := completeDirs(filepath.Join(root, "a"))
-	want := []string{filepath.Join(root, "alpha"), filepath.Join(root, "amber")}
-	if len(got) != len(want) {
-		t.Fatalf("got %v want %v", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("got %v want %v", got, want)
-		}
-	}
-}
-
-func TestCompleteDirsTrailingSlashListsChildren(t *testing.T) {
-	root := setupCompletionDir(t)
-	got := completeDirs(root + "/")
-	if len(got) != 3 {
-		t.Fatalf("expected 3 visible dirs, got %v", got)
-	}
-	for _, path := range got {
-		if filepath.Base(path) == ".hidden" || filepath.Base(path) == "afile" {
-			t.Fatalf("unexpected entry %s", path)
-		}
-	}
-}
-
-func TestCompleteDirsHiddenNeedsDotPrefix(t *testing.T) {
-	root := setupCompletionDir(t)
-	got := completeDirs(filepath.Join(root, ".h"))
-	if len(got) != 1 || filepath.Base(got[0]) != ".hidden" {
-		t.Fatalf("got %v", got)
-	}
-}
-
-func TestCompleteDirsNoSlashNoSuggestions(t *testing.T) {
-	if got := completeDirs("relative"); got != nil {
-		t.Fatalf("got %v", got)
-	}
-	if got := completeDirs(""); got != nil {
-		t.Fatalf("got %v", got)
-	}
-}
-
 func TestApplyPathSuggestionFillsDirField(t *testing.T) {
 	root := setupCompletionDir(t)
 	m := &Model{}
 	pushForm(m)
-	loadPathSuggestions(m, pathSuggestionForm, filepath.Join(root, "al"))
-	if !m.form().complete.active() {
+	loadPathSuggestions(m, pathcomplete.Form, filepath.Join(root, "al"))
+	if !m.form().complete.Active() {
 		t.Fatal("expected suggestions")
 	}
 	m.applyPathSuggestion()
@@ -146,16 +103,16 @@ func TestPathSuggestionsExitToAdjacentFormFields(t *testing.T) {
 	m := buildModel(t)
 	m.openForm()
 	m.form().FocusField(m.spawnHost(), spawn.FieldDir)
-	loadPathSuggestions(m, pathSuggestionForm, filepath.Join(root, "a"))
+	loadPathSuggestions(m, pathcomplete.Form, filepath.Join(root, "a"))
 
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyDown})
-	if !m.form().complete.chosen || m.form().complete.index != 0 {
+	if !m.form().complete.Chosen || m.form().complete.Index != 0 {
 		t.Fatalf("first down should select the first suggestion, chosen=%v index=%d",
-			m.form().complete.chosen, m.form().complete.index)
+			m.form().complete.Chosen, m.form().complete.Index)
 	}
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyDown})
-	if m.form().complete.index != 1 {
-		t.Fatalf("second down should select the second suggestion, index=%d", m.form().complete.index)
+	if m.form().complete.Index != 1 {
+		t.Fatalf("second down should select the second suggestion, index=%d", m.form().complete.Index)
 	}
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyDown})
 	if m.form().Focused() != spawn.FieldWorktree {
@@ -163,8 +120,8 @@ func TestPathSuggestionsExitToAdjacentFormFields(t *testing.T) {
 	}
 
 	m.form().FocusStep(m.spawnHost(), -1)
-	loadPathSuggestions(m, pathSuggestionForm, filepath.Join(root, "a"))
-	m.form().complete.chosen = true
+	loadPathSuggestions(m, pathcomplete.Form, filepath.Join(root, "a"))
+	m.form().complete.Chosen = true
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyUp})
 	if m.form().Focused() != spawn.FieldTool {
 		t.Fatalf("up past the first suggestion should focus tool, focus=%d", m.form().Focused())
@@ -223,9 +180,9 @@ func TestRenamePathSuggestionsExitToName(t *testing.T) {
 	m := buildModel(t)
 	m.push(newRenameSurface(uidialogs.RenameGroup("", "", 0), ""))
 	m.Update(tea.KeyMsg{Type: tea.KeyTab})
-	loadPathSuggestions(m, pathSuggestionRename, filepath.Join(root, "a"))
-	openRename(m).complete.chosen = true
-	openRename(m).complete.index = len(openRename(m).complete.suggestions) - 1
+	loadPathSuggestions(m, pathcomplete.Rename, filepath.Join(root, "a"))
+	openRename(m).complete.Chosen = true
+	openRename(m).complete.Index = len(openRename(m).complete.Suggestions) - 1
 
 	m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	if openRename(m).Focus() != 2 {
@@ -309,44 +266,6 @@ func TestRelativePathsStoredAbsolute(t *testing.T) {
 	}
 }
 
-type fakePathCompleteHost struct {
-	value string
-	open  bool
-}
-
-func (h fakePathCompleteHost) pathSuggestionField(pathSuggestionTarget) (string, bool) {
-	return h.value, h.open
-}
-
-type fixedPathSuggestionReader []string
-
-func (r fixedPathSuggestionReader) complete(string) []string { return r }
-
-// The completer takes a read's answer only for the latest request, and only
-// while its field still holds what was typed.
-func TestPathCompleteThroughAFakeHost(t *testing.T) {
-	var pc pathComplete
-	reader := fixedPathSuggestionReader{"/work/alpha", "/work/amber"}
-	stale := pc.request(pathSuggestionGroup, "/work/a", reader)().(pathSuggestionsMsg)
-	fresh := pc.request(pathSuggestionGroup, "/work/a", reader)().(pathSuggestionsMsg)
-	pc.handle(fakePathCompleteHost{value: "/work/a", open: true}, stale)
-	if pc.active() {
-		t.Fatal("a superseded read filled the list")
-	}
-	pc.handle(fakePathCompleteHost{value: "/work/a", open: false}, fresh)
-	if pc.active() {
-		t.Fatal("a read for a closed field filled the list")
-	}
-	pc.handle(fakePathCompleteHost{value: "/work/al", open: true}, fresh)
-	if pc.active() {
-		t.Fatal("a read for text since edited filled the list")
-	}
-	pc.handle(fakePathCompleteHost{value: "/work/a", open: true}, fresh)
-	if !pc.move(1) || pc.selected() != "/work/alpha" {
-		t.Fatalf("suggestions = %v", pc.suggestions)
-	}
-}
-
 // A scan the form's previous opening asked for never fills the reopened
 // form, even over the same text.
 func TestReopenedFormIgnoresTheLastOpeningsScan(t *testing.T) {
@@ -356,15 +275,15 @@ func TestReopenedFormIgnoresTheLastOpeningsScan(t *testing.T) {
 	m.openForm()
 	typed := filepath.Join(root, "a")
 	m.form().SetDir(typed)
-	stale := m.requestPathSuggestions(pathSuggestionForm, typed)().(pathSuggestionsMsg)
+	stale := m.requestPathSuggestions(pathcomplete.Form, typed)().(pathcomplete.Msg)
 	m.base = baseList
 	m.clearSurfaces()
 	m.openForm()
 	m.form().SetDir(typed)
-	m.requestPathSuggestions(pathSuggestionForm, typed)
-	m.completer(pathSuggestionForm).handle(m, stale)
-	if m.form().complete.active() {
-		t.Fatalf("reopened form took the last opening's scan: %v", m.form().complete.suggestions)
+	m.requestPathSuggestions(pathcomplete.Form, typed)
+	m.completer(pathcomplete.Form).Handle(pathCompleter{m}, stale)
+	if m.form().complete.Active() {
+		t.Fatalf("reopened form took the last opening's scan: %v", m.form().complete.Suggestions)
 	}
 	// Only the reopened form is up: a form scan that reached another dialog
 	// would have had to push it.

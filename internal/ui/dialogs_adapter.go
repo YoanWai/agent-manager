@@ -277,8 +277,8 @@ func (m *Model) viewRenameGroupFields(s *renameSurface, group string, width int)
 		Worktrees: groupWorktreeOptions,
 		Base:      groupBaseChoice(s.base, m.groupBase(parentGroup(group))),
 	}
-	if s.complete.active() {
-		view.Suggestions = func() string { return s.complete.view(m.prefs.glyphMode) }
+	if s.complete.Active() {
+		view.Suggestions = func() string { return s.complete.View(pathCompleteStyles(m.prefs.glyphMode)) }
 	}
 	return s.GroupFields(view)
 }

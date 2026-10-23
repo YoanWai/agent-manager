@@ -13,6 +13,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/ui/pathcomplete"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -442,7 +443,7 @@ func initialHomeDir() string {
 // expand ~, fall back when empty, absolutize, and require it to exist.
 // The resolved value returns either way so error messages can show it.
 func resolveExistingDir(raw, fallback string) (string, bool) {
-	dir := expandHome(strings.TrimSpace(raw))
+	dir := pathcomplete.ExpandHome(strings.TrimSpace(raw))
 	if dir == "" {
 		dir = fallback
 	}

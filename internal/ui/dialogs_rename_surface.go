@@ -2,6 +2,7 @@ package ui
 
 import (
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	"github.com/YoanWai/agent-manager/internal/ui/pathcomplete"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -12,7 +13,7 @@ import (
 // the root probes.
 type renameSurface struct {
 	uidialogs.Rename
-	complete pathComplete
+	complete pathcomplete.State
 	base     string
 }
 
@@ -43,12 +44,12 @@ func (m *Model) previewFeeds() bool {
 }
 
 // dialogPaths hands the rename and the group form the root's path completion.
-type dialogPaths struct{ *pathComplete }
+type dialogPaths struct{ *pathcomplete.State }
 
-func (p dialogPaths) Active() bool        { return p.active() }
-func (p dialogPaths) Chosen() bool        { return p.chosen }
-func (p dialogPaths) Move(delta int) bool { return p.move(delta) }
-func (p dialogPaths) Reset()              { p.reset() }
+func (p dialogPaths) Active() bool        { return p.State.Active() }
+func (p dialogPaths) Chosen() bool        { return p.State.Chosen }
+func (p dialogPaths) Move(delta int) bool { return p.State.Move(delta) }
+func (p dialogPaths) Reset()              { p.State.Reset() }
 
 func (s *renameSurface) Key(h surfaceHost, msg tea.KeyMsg) (bool, tea.Cmd) {
 	host := h.(renameHost)
@@ -88,7 +89,7 @@ func (s *renameSurface) Key(h surfaceHost, msg tea.KeyMsg) (bool, tea.Cmd) {
 		})
 	}
 	if key.Suggest {
-		return true, tea.Batch(key.Cmd, s.complete.request(pathSuggestionRename, s.Dir(), systemPathSuggestionReader{}))
+		return true, tea.Batch(key.Cmd, s.complete.Request(pathcomplete.Rename, s.Dir(), pathcomplete.SystemReader{}))
 	}
 	return true, key.Cmd
 }
@@ -114,11 +115,11 @@ func (s *renameSurface) Dismissible() bool { return false }
 
 func (s *renameSurface) Leave(surfaceHost) {}
 
-func (s *renameSurface) pathTarget() pathSuggestionTarget { return pathSuggestionRename }
+func (s *renameSurface) pathTarget() pathcomplete.Target { return pathcomplete.Rename }
 
 // dir is the path field of a group edit; a session rename has none.
 func (s *renameSurface) dir() (string, bool) { return s.Dir(), s.IsGroup() }
 
 func (s *renameSurface) takePath(path string) { s.SetDir(path) }
 
-func (s *renameSurface) paths() *pathComplete { return &s.complete }
+func (s *renameSurface) paths() *pathcomplete.State { return &s.complete }

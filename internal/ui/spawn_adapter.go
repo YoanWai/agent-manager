@@ -6,6 +6,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/launch"
+	"github.com/YoanWai/agent-manager/internal/ui/pathcomplete"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -23,7 +24,7 @@ type formDialog struct {
 	// often a screenshot, so the box has to hold pasted images the way the
 	// quick prompt does.
 	prompt   composer
-	complete pathComplete
+	complete pathcomplete.State
 	groupPicker
 	// remote is the connection a spawn goes to, when one is the target.
 	remote formRemote
@@ -82,7 +83,7 @@ func (h spawnHost) Prompt() spawn.Prompt {
 func (h spawnHost) Paths() spawn.Paths {
 	// A connection's directory is the host's: nothing here completes it.
 	f := h.m.form()
-	return pathField{mode: h.m.prefs.glyphMode, pc: &f.complete, target: pathSuggestionForm, off: f.remote.on()}
+	return pathField{mode: h.m.prefs.glyphMode, pc: &f.complete, target: pathcomplete.Form, off: f.remote.on()}
 }
 
 // promptBox lends a feature package one of the root's composers.
@@ -120,30 +121,30 @@ func (p promptBox) Message() string { return p.c.message() }
 // pathField lends the form the root's path completer.
 type pathField struct {
 	mode   presentation.GlyphMode
-	pc     *pathComplete
-	target pathSuggestionTarget
+	pc     *pathcomplete.State
+	target pathcomplete.Target
 	// off asks for no suggestions.
 	off bool
 }
 
-func (p pathField) Active() bool { return p.pc.active() }
+func (p pathField) Active() bool { return p.pc.Active() }
 
-func (p pathField) Chosen() bool { return p.pc.chosen }
+func (p pathField) Chosen() bool { return p.pc.Chosen }
 
-func (p pathField) Move(delta int) bool { return p.pc.move(delta) }
+func (p pathField) Move(delta int) bool { return p.pc.Move(delta) }
 
-func (p pathField) Reset() { p.pc.reset() }
+func (p pathField) Reset() { p.pc.Reset() }
 
 func (p pathField) Suggest(typed string) tea.Cmd {
 	if p.off {
 		return nil
 	}
-	return p.pc.request(p.target, typed, systemPathSuggestionReader{})
+	return p.pc.Request(p.target, typed, pathcomplete.SystemReader{})
 }
 
-func (p pathField) View() string { return p.pc.view(p.mode) }
+func (p pathField) View() string { return p.pc.View(pathCompleteStyles(p.mode)) }
 
-func (p pathField) Hint() [][2]string { return pathSuggestHint(p.pc.chosen) }
+func (p pathField) Hint() [][2]string { return pathSuggestHint(p.pc.Chosen) }
 
 // spawnStyles copies the active theme for one paint.
 func (m *Model) spawnStyles() spawn.Styles {
@@ -245,7 +246,7 @@ func (m *Model) openFormWithReader(reader settingsValueReader) tea.Cmd {
 		prompt: prompt,
 		// The completer starts past every read an earlier opening asked
 		// for, so a scan that comes home late lands on nothing.
-		complete:    pathComplete{generation: uint64(prompt.gen) << 32},
+		complete:    pathcomplete.State{Generation: uint64(prompt.gen) << 32},
 		groupPicker: m.groupPickerFor(m.contextGroup()),
 	})
 	m.push(f)
@@ -312,7 +313,7 @@ func (m *Model) runFormRequest(request spawn.FormRequest, reader directoryPrefli
 	case request.ApplyPath:
 		return m.applyPathSuggestion()
 	case request.PickPath:
-		if m.form().complete.pick(request.PathEntry) {
+		if m.form().complete.Pick(request.PathEntry) {
 			return m.applyPathSuggestion()
 		}
 	case request.Group != 0:
@@ -406,8 +407,8 @@ func (m *Model) routeSpawnMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	case worktreeProbeMsg:
 		return routed(m.handleWorktreeProbe(msg))
 
-	case pathSuggestionsMsg:
-		m.completer(msg.request.target).handle(m, msg)
+	case pathcomplete.Msg:
+		m.completer(msg.Request.Target).Handle(m, msg)
 		return routed(m, nil)
 
 	case terminalDirectoryMsg:
