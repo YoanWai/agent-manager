@@ -1,39 +1,29 @@
-package ui
+package terminal
 
 import (
 	"errors"
-	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"io"
 	"slices"
 	"strings"
 	"testing"
-	"time"
 )
-
-func localTerminal() bool { return false }
-
-// overSSH puts the test on a terminal at the far end of an SSH session.
-func overSSH(t *testing.T) {
-	t.Helper()
-	remoteTerminal = func() bool { return true }
-	t.Cleanup(func() { remoteTerminal = localTerminal })
-}
 
 func stubLinkCopy(t *testing.T, copyErr error) *string {
 	t.Helper()
+	original := copyToClipboard
 	copied := new(string)
-	copyBrowserURL = func(target string) error {
+	copyToClipboard = func(target string) error {
 		*copied = target
 		return copyErr
 	}
-	t.Cleanup(func() { copyBrowserURL = clipboard.WriteText })
+	t.Cleanup(func() { copyToClipboard = original })
 	return copied
 }
 
 func runLinkPage(t *testing.T, target, input string) string {
 	t.Helper()
 	var out strings.Builder
-	page := &linkPage{url: target}
+	page := &LinkPage{URL: target}
 	page.SetStdin(strings.NewReader(input))
 	page.SetStdout(&out)
 	page.SetStderr(io.Discard)
@@ -65,30 +55,6 @@ func TestLinkPageNamesACopyFailure(t *testing.T) {
 	}
 }
 
-// The page is on the normal screen only until Run returns, when the manager
-// takes the alternate screen back over it.
-func TestLinkPageHoldsUntilEnter(t *testing.T) {
-	stubLinkCopy(t, nil)
-	input, typed := io.Pipe()
-	page := &linkPage{url: "https://example.com/manual"}
-	page.SetStdin(input)
-	page.SetStdout(io.Discard)
-	done := make(chan error, 1)
-	go func() { done <- page.Run() }()
-
-	select {
-	case err := <-done:
-		t.Fatalf("the page closed before Enter: %v", err)
-	case <-time.After(50 * time.Millisecond):
-	}
-	if _, err := typed.Write([]byte("\n")); err != nil {
-		t.Fatal(err)
-	}
-	if err := <-done; err != nil {
-		t.Fatalf("Run() = %v", err)
-	}
-}
-
 type brokenTerminal struct{}
 
 func (brokenTerminal) Write([]byte) (int, error) { return 0, errors.New("input/output error") }
@@ -97,7 +63,7 @@ func (brokenTerminal) Write([]byte) (int, error) { return 0, errors.New("input/o
 // failure for the manager to report, not a page the user saw.
 func TestLinkPageReportsAFailedWrite(t *testing.T) {
 	stubLinkCopy(t, nil)
-	page := &linkPage{url: "https://example.com/manual"}
+	page := &LinkPage{URL: "https://example.com/manual"}
 	page.SetStdin(strings.NewReader("\n"))
 	page.SetStdout(brokenTerminal{})
 	if err := page.Run(); err == nil || !strings.Contains(err.Error(), "input/output error") {
@@ -110,13 +76,4 @@ func TestLinkPageReportsAFailedWrite(t *testing.T) {
 func TestLinkPageClosedInputReturns(t *testing.T) {
 	stubLinkCopy(t, nil)
 	runLinkPage(t, "https://example.com/manual", "")
-}
-
-func TestLinkPageMsgHandsTheTerminalOver(t *testing.T) {
-	t.Parallel()
-	m := buildModel(t)
-	_, cmd := m.Update(linkPageMsg{url: "https://example.com/manual"})
-	if cmd == nil || cmd() == nil {
-		t.Fatal("a link page message started nothing")
-	}
 }

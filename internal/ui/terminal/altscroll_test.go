@@ -1,4 +1,4 @@
-package ui
+package terminal
 
 import (
 	"io"
@@ -38,7 +38,7 @@ func TestDisableAlternateScrollEmitsReset(t *testing.T) {
 // Re-enabling alternate scroll anywhere puts the wheel back on the session
 // cursor, which is the bug this reset exists to keep fixed (#110).
 func TestNoAlternateScrollEnableInTree(t *testing.T) {
-	root, err := filepath.Abs("../..")
+	root, err := filepath.Abs("../../..")
 	if err != nil {
 		t.Fatalf("repo root: %v", err)
 	}
@@ -52,7 +52,7 @@ func TestNoAlternateScrollEnableInTree(t *testing.T) {
 			}
 			return nil
 		}
-		if filepath.Ext(path) != ".go" || path == filepath.Join(root, "internal", "ui", "terminal_altscroll_test.go") {
+		if filepath.Ext(path) != ".go" || path == filepath.Join(root, "internal", "ui", "terminal", "altscroll_test.go") {
 			return nil
 		}
 		source, err := os.ReadFile(path)

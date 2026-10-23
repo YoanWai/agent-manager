@@ -7,7 +7,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
-	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -78,20 +77,6 @@ type terminalDirectoryMsg struct {
 
 type terminalDirectoryReader interface {
 	resolve(terminalDirectoryRequest) (string, bool)
-}
-
-type systemTerminalDirectoryReader struct {
-	tmux *tmux.Driver
-	dirs directoryPreflight
-}
-
-func (r systemTerminalDirectoryReader) resolve(request terminalDirectoryRequest) (string, bool) {
-	if request.paneID != "" {
-		if path, err := r.tmux.PaneCurrentPath(request.paneID); err == nil && isDir(path) {
-			return path, true
-		}
-	}
-	return r.dirs.resolve(request.rawDir, request.fallbacks)
 }
 
 func terminalDirectoryCmd(request terminalDirectoryRequest, reader terminalDirectoryReader) tea.Cmd {
