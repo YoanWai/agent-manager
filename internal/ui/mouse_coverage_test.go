@@ -34,7 +34,7 @@ var mouseOpeners = map[string]func(t *testing.T, m *Model){
 	"connections.Surface": func(t *testing.T, m *Model) { m.openConnectionDialog(remote.Connection{}) },
 	"quickSurface":        func(t *testing.T, m *Model) { m.applyCmd(t, m.openQuickMode()) },
 	"spawnSurface":        func(t *testing.T, m *Model) { m.applyCmd(t, m.openForm()) },
-	"resizeSurface":       func(t *testing.T, m *Model) { m.enterResizeMode() },
+	"geometry.Surface":    func(t *testing.T, m *Model) { m.enterResizeMode() },
 	"focusSurface":        func(t *testing.T, m *Model) { m.push(&focusSurface{}) },
 	"focusSaved": func(t *testing.T, m *Model) {
 		m.push(&focusSurface{})
