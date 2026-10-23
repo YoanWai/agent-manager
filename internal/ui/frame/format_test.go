@@ -1,12 +1,14 @@
 package frame
 
 import (
+	"os"
+	"strings"
 	"testing"
 	"time"
 )
 
 func TestRowColumnsRightAlignsMeta(t *testing.T) {
-	if got := RowColumns("api", "working", 20); got != "api            working" {
+	if got := RowColumns("api", "working", 20); got != "api"+strings.Repeat(" ", 10)+"working" {
 		t.Fatalf("RowColumns = %q", got)
 	}
 	if got := RowColumns("api", "", 20); got != "api" {
@@ -64,13 +66,14 @@ func TestHumanAndDiskBytesPickTheirBase(t *testing.T) {
 }
 
 func TestShortHomeKeepsTheDistinguishingTail(t *testing.T) {
-	if got := ShortHome("/home/ana/work/api", "/home/ana"); got != "~/work/api" {
+	sep := string(os.PathSeparator)
+	if got := ShortHome("/home/ana"+sep+"work"+sep+"api", "/home/ana"); got != "~"+sep+"work"+sep+"api" {
 		t.Fatalf("shortened path = %q", got)
 	}
 	if got := ShortHome("/home/ana", "/home/ana"); got != "~" {
 		t.Fatalf("home itself = %q", got)
 	}
-	if got := ShortHome("/srv/api", "/home/ana"); got != "/srv/api" {
+	if got := ShortHome("/srv"+sep+"api", "/home/ana"); got != "/srv"+sep+"api" {
 		t.Fatalf("path outside home = %q", got)
 	}
 }

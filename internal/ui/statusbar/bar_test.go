@@ -79,9 +79,9 @@ func TestLinePaintsWhatItSays(t *testing.T) {
 		msg  Message
 		want string
 	}{
-		{Message{Report: "opened /tmp in code", Kind: Success}, tones.Done.Render("✔ opened /tmp in code")},
-		{Message{Report: "copied the pane", Kind: Warning}, tones.Warn.Render("▲ copied the pane")},
-		{Message{Report: "git not found in PATH"}, tones.Fail.Render("✖ git not found in PATH")},
+		{Message{Report: "opened /tmp in code", Kind: Success}, tones.Done.Render(testGlyphs().FinishedGlyph + " opened /tmp in code")},
+		{Message{Report: "copied the pane", Kind: Warning}, tones.Warn.Render(testGlyphs().WarningGlyph + " copied the pane")},
+		{Message{Report: "git not found in PATH"}, tones.Fail.Render(testGlyphs().ErroredGlyph + " git not found in PATH")},
 	}
 	for _, tc := range cases {
 		if got := Line(tc.msg, testGlyphs(), tones); got != tc.want {
@@ -119,7 +119,7 @@ func TestToastFitsItsColumnAndGivesUpWhenItCannot(t *testing.T) {
 			t.Fatalf("card row is %d wide, want %d", got, width)
 		}
 	}
-	if got := Toast("already up to date", 30, tones); len(got) != 0 {
+	if got := Toast("already up to date", MinWidth+Margin-1, tones); len(got) != 0 {
 		t.Fatalf("a column too narrow for a card painted %d rows", len(got))
 	}
 	if got := Toast("", 200, tones); got != nil {

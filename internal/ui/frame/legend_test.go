@@ -4,12 +4,15 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
 
 // plainCap is the test palette: no color, so painted widths are readable.
+// The lead cap keeps the live theme's padding, which is the gap between its
+// key and label.
 func plainCap() Cap {
-	return Cap{}
+	return Cap{LeadKey: lipgloss.NewStyle().PaddingLeft(1), Lead: lipgloss.NewStyle().Padding(0, 1)}
 }
 
 func plainTitle(s string) string { return s }
