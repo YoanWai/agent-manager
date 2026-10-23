@@ -57,7 +57,7 @@ func (m *Model) footer() legend {
 			pairs = append(pairs, [2]string{label, "editor"})
 		}
 		savedLabel := m.services.keys.Binding(keybind.SavedPrompt).Label()
-		if top, ok := m.topSurface(); ok {
+		if top, ok := m.top(); ok {
 			pairs = append(top.Footer(), pairs...)
 			savedLabel = ""
 		}

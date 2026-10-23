@@ -52,17 +52,17 @@ const (
 )
 
 type Model struct {
-	gens       generations
-	effects    effectState
-	services   services
-	workspace  workspace
-	rail       uirail.Model
-	focus      focusState
-	prefs      preferences
-	ledger     launchLedger
-	startup    startupState
-	notices    noticesPanel
-	poller     *poller
+	gens      generations
+	effects   effectState
+	services  services
+	workspace workspace
+	rail      uirail.Model
+	focus     focusState
+	prefs     preferences
+	ledger    launchLedger
+	startup   startupState
+	notices   noticesPanel
+	poller    *poller
 	screen
 	review     uireview.Model
 	reviewNav  reviewNavState

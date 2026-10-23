@@ -177,7 +177,7 @@ func wheelArrow(msg tea.MouseMsg) (tea.KeyMsg, bool) {
 
 // cardOpen reports a card floating over the frame, which takes the mouse.
 func (m *Model) cardOpen() bool {
-	if _, ok := m.topSurface(); ok {
+	if _, ok := m.top(); ok {
 		return true
 	}
 	switch m.mode {
@@ -202,6 +202,9 @@ func (m *Model) cardMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 // way esc does. A card holding typed input keeps its draft through a stray
 // click.
 func (m *Model) closesOnBackdrop() bool {
+	if top, ok := m.top(); ok {
+		return top.Dismissible()
+	}
 	switch m.mode {
 	case modeHelp, modeNotices, modeMove, modeRepoPick, modeConfirmDelete, modeLaunchHint:
 		return true
@@ -213,7 +216,7 @@ func (m *Model) closesOnBackdrop() bool {
 
 // clickCard acts on the open card's body at col of its painted line.
 func (m *Model) clickCard(col, line int) (tea.Model, tea.Cmd) {
-	if top, ok := m.topSurface(); ok {
+	if top, ok := m.top(); ok {
 		return m, top.Click(m, line)
 	}
 	switch m.mode {
@@ -247,7 +250,7 @@ func (m *Model) wheelCard(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
-	if top, ok := m.topSurface(); ok {
+	if top, ok := m.top(); ok {
 		return m, top.Wheel(m, arrow)
 	}
 	step := presentation.WheelStep(msg)

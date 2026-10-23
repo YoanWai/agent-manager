@@ -27,14 +27,16 @@ const (
 func (m *Model) routeQuit(msg tea.KeyMsg) quitRoute {
 	name := keybind.Normalize(msg.String())
 	ctrlC := name == "ctrl+c"
-	_, onSurface := m.topSurface()
+	top, onSurface := m.top()
 	switch {
 	case m.effects.quitting && (ctrlC || m.services.listKeys.Binding(keybind.Quit).Has(name)):
 		return quitNow
 	case !ctrlC || m.agentOwnsKeyboard():
 		return quitPass
-	case onSurface:
+	case onSurface && top.Dismissible():
 		return quitPopSurface
+	case onSurface:
+		return quitPass
 	}
 	return quitNow
 }
@@ -44,7 +46,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case quitNow:
 		return m.requestQuit()
 	case quitPopSurface:
-		m.popSurface()
+		m.pop()
 		return m, nil
 	}
 	if cmd, ok := m.surfaceKey(msg); ok {

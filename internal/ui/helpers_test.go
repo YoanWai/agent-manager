@@ -838,6 +838,6 @@ func gitOutput(t *testing.T, dir string, args ...string) string {
 
 // savedListOpen reports the saved prompts list on the surface stack.
 func (m *Model) savedListOpen() bool {
-	_, ok := m.focusSavedOpen()
+	_, ok := surfaceOf[*focusSaved](m)
 	return ok
 }

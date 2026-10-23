@@ -22,9 +22,9 @@ func focusWithSavedList(t *testing.T) *Model {
 	if m.mode != modeFocus {
 		t.Fatalf("enter did not focus, mode = %v", m.mode)
 	}
-	list := spawn.OpenSavedList(nil, true, false)
-	list.Load([]spawn.Saved{{Name: "Role", Text: "be brief"}}, nil)
-	m.pushSurface(&focusSaved{list: list})
+	s := newFocusSaved(0, m.spawnStyles())
+	s.list.Load([]spawn.Saved{{Name: "Role", Text: "be brief"}}, nil)
+	m.push(s)
 	return m
 }
 
@@ -35,7 +35,7 @@ func TestTopSurfaceOwnsTheKeyboard(t *testing.T) {
 	if m.agentOwnsKeyboard() {
 		t.Fatal("the agent owns the keyboard under an open list")
 	}
-	m.popSurface()
+	m.pop()
 	if !m.agentOwnsKeyboard() {
 		t.Fatal("focus with no surface did not hand the keyboard to the agent")
 	}
@@ -95,5 +95,51 @@ func TestIMEAnchorFollowsTheInputOwner(t *testing.T) {
 	col, row, ok := m.focus.runtime.imeCursor.get()
 	if !ok || col != 3 || row != 1 {
 		t.Fatalf("anchor = (%d, %d, %t), want the filter's caret at (3, 1)", col, row, ok)
+	}
+}
+
+// A click off a dismissible card closes it the way esc does, through the
+// same router: the surface says it is dismissible, mouse.go does not guess.
+func TestClickOffADismissibleSurfaceClosesIt(t *testing.T) {
+	m := focusWithSavedList(t)
+	m.prepareFrame()
+	press := tea.MouseMsg{X: 0, Y: 0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft}
+	release := tea.MouseMsg{X: 0, Y: 0, Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft}
+	m.Update(press)
+	m.Update(release)
+	if m.savedListOpen() || m.mode != modeFocus {
+		t.Fatalf("list open=%t mode=%v", m.savedListOpen(), m.mode)
+	}
+}
+
+// leaveSpy records whether pop ran its Leave, once, with the host.
+type leaveSpy struct {
+	focusSaved
+	left int
+}
+
+func (s *leaveSpy) Leave(h surfaceHost) {
+	if h == nil {
+		panic("Leave ran with no host")
+	}
+	s.left++
+}
+
+// pop runs a surface's Leave exactly once, and leaving the mode under a
+// stack of surfaces runs each one, top first.
+func TestPopRunsLeaveOnce(t *testing.T) {
+	m := buildModel(t)
+	spy := &leaveSpy{focusSaved: *newFocusSaved(0, m.spawnStyles())}
+	m.push(spy)
+	m.pop()
+	m.pop()
+	if spy.left != 1 {
+		t.Fatalf("Leave ran %d times, want 1", spy.left)
+	}
+	m.push(spy)
+	m.push(newFocusSaved(1, m.spawnStyles()))
+	m.clearSurfaces()
+	if spy.left != 2 || len(m.surfaces) != 0 {
+		t.Fatalf("after clearSurfaces: Leave ran %d times, %d surfaces left", spy.left, len(m.surfaces))
 	}
 }

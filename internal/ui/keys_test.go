@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
-	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -66,7 +65,7 @@ func TestCtrlCClosesTheSavedListOverFocus(t *testing.T) {
 	if m.mode != modeFocus {
 		t.Fatalf("enter did not focus, mode = %v", m.mode)
 	}
-	m.pushSurface(&focusSaved{list: spawn.OpenSavedList(nil, true, false)})
+	m.push(newFocusSaved(0, m.spawnStyles()))
 	m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	if m.effects.quitting || m.mode != modeFocus || m.savedListOpen() {
 		t.Fatalf("quitting=%t mode=%v list open=%t", m.effects.quitting, m.mode, m.savedListOpen())
