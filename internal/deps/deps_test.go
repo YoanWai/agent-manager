@@ -584,6 +584,10 @@ func missingGhPrelude() string {
 func writeGhStub(t *testing.T, exit int) string {
 	t.Helper()
 	dir := t.TempDir()
+	if runtime.GOOS == "windows" {
+		writeExe(t, filepath.Join(dir, "gh.cmd"), fmt.Sprintf("@exit /b %d\r\n", exit))
+		return dir
+	}
 	writeExe(t, filepath.Join(dir, "gh"), fmt.Sprintf("#!/bin/sh\nexit %d\n", exit))
 	return dir
 }
@@ -595,7 +599,7 @@ func powershellFence(t *testing.T, path, marker string) string {
 		t.Fatal(err)
 	}
 	const open = "```powershell\n"
-	rest := string(source)
+	rest := strings.ReplaceAll(string(source), "\r\n", "\n")
 	for {
 		start := strings.Index(rest, open)
 		if start < 0 {
@@ -618,7 +622,17 @@ func runPwsh(t *testing.T, script, pathDir string) (string, int) {
 	t.Helper()
 	cmd := exec.Command("pwsh", "-NoProfile", "-Command", script)
 	cmd.Dir = t.TempDir()
-	cmd.Env = []string{"PATH=" + pathDir}
+	env := make([]string, 0, len(os.Environ())+1)
+	for _, entry := range os.Environ() {
+		if strings.HasPrefix(strings.ToUpper(entry), "PATH=") {
+			continue
+		}
+		env = append(env, entry)
+	}
+	// A cleared environment drops SYSTEMROOT, and pwsh on Windows then
+	// fails before the script runs. Only the search path changes, so a
+	// stub gh is the one Get-Command finds.
+	cmd.Env = append(env, "PATH="+pathDir)
 	return runCommand(t, cmd, cmd.Env)
 }
 
