@@ -84,9 +84,9 @@ func TestConfirmKeyCancels(t *testing.T) {
 	}
 }
 
-// ctrl+c on the card is its cancel: the manager keeps running and the
-// session lives.
-func TestConfirmKeyCtrlCCancels(t *testing.T) {
+// ctrl+c over the list quits, card or no card: the drain starts and the
+// session the card asked about lives.
+func TestConfirmKeyCtrlCQuits(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	dir := t.TempDir()
@@ -98,8 +98,8 @@ func TestConfirmKeyCtrlCCancels(t *testing.T) {
 	}
 
 	m.Update(namedKey(tea.KeyCtrlC))
-	if confirmOpen(m) || m.effects.quitting {
-		t.Fatalf("open=%t quitting=%t, want the card closed and the manager running", confirmOpen(m), m.effects.quitting)
+	if !m.effects.quitting {
+		t.Fatal("ctrl+c over the confirm card did not quit")
 	}
 	if !m.services.tmux.Exists(sess.ID) {
 		t.Fatal("ctrl+c should not kill the session")

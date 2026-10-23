@@ -32,13 +32,12 @@ func TestHelpSurfaceOpensOnTheListKey(t *testing.T) {
 	}
 }
 
-func TestHelpSurfaceClosesOnEscCtrlCAndBackdrop(t *testing.T) {
+func TestHelpSurfaceClosesOnEscAndBackdrop(t *testing.T) {
 	if !(&helpSurface{}).Dismissible() {
 		t.Fatal("help must be dismissible")
 	}
 	for name, close := range map[string]func(*Model) *Model{
-		"esc":    func(m *Model) *Model { m.Update(namedKey(tea.KeyEsc)); return m },
-		"ctrl+c": func(m *Model) *Model { m.Update(namedKey(tea.KeyCtrlC)); return m },
+		"esc": func(m *Model) *Model { m.Update(namedKey(tea.KeyEsc)); return m },
 		"click off the card": func(m *Model) *Model {
 			preparedView(m)
 			return leftClick(m, 0, 0)

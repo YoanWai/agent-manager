@@ -30,11 +30,10 @@ func openKillConfirm(t *testing.T) *Model {
 	return m
 }
 
-func TestConfirmClosesOnEscCtrlCAndBackdrop(t *testing.T) {
+func TestConfirmClosesOnEscNAndBackdrop(t *testing.T) {
 	for name, close := range map[string]func(*Model) *Model{
 		"esc":      func(m *Model) *Model { m.Update(tea.KeyMsg{Type: tea.KeyEsc}); return m },
 		"n":        func(m *Model) *Model { m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")}); return m },
-		"ctrl+c":   func(m *Model) *Model { m.Update(tea.KeyMsg{Type: tea.KeyCtrlC}); return m },
 		"backdrop": func(m *Model) *Model { return clickBackdrop(t, m) },
 	} {
 		m := openKillConfirm(t)

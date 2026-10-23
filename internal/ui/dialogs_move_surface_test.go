@@ -32,10 +32,9 @@ func openMoveFor(t *testing.T) *Model {
 	return m
 }
 
-func TestMoveClosesOnEscCtrlCAndBackdrop(t *testing.T) {
+func TestMoveClosesOnEscAndBackdrop(t *testing.T) {
 	for name, close := range map[string]func(*Model) *Model{
 		"esc":      func(m *Model) *Model { m.Update(tea.KeyMsg{Type: tea.KeyEsc}); return m },
-		"ctrl+c":   func(m *Model) *Model { m.Update(tea.KeyMsg{Type: tea.KeyCtrlC}); return m },
 		"backdrop": func(m *Model) *Model { return clickBackdrop(t, m) },
 	} {
 		m := openMoveFor(t)

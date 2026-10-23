@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/remote"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -38,6 +39,40 @@ func TestCtrlCOnEverySurface(t *testing.T) {
 		if probe.effects.quitting != want {
 			t.Errorf("mode %d: ctrl+c quitting = %t, want %t", md, probe.effects.quitting, want)
 		}
+	}
+}
+
+// Every card the manager puts over the list leaves ctrl+c alone: the
+// manager owns the keyboard under it, so the key quits as it does with no
+// card up, whether or not the card holds a draft. #855 was a card that
+// decided this for itself; the router decides it once here.
+func TestCtrlCQuitsThroughEveryCardOverTheList(t *testing.T) {
+	for name, open := range map[string]func(t *testing.T, m *Model){
+		"confirm":    func(t *testing.T, m *Model) { m.openConfirm(confirmTarget{action: actionKill, label: "kill alpha?"}) },
+		"move":       func(t *testing.T, m *Model) { m.openMove() },
+		"rename":     func(t *testing.T, m *Model) { m.openRename() },
+		"fork":       func(t *testing.T, m *Model) { m.openFork() },
+		"launchhint": func(t *testing.T, m *Model) { m.openLaunchHint(launchFix{text: "tool is missing", command: "true", script: "true", binary: "tool"}) },
+		"help":       func(t *testing.T, m *Model) { m.openHelp() },
+		"notices":    func(t *testing.T, m *Model) { m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("M")}) },
+		"settings":   func(t *testing.T, m *Model) { m.applyCmd(t, m.openSettings()) },
+		"group form": func(t *testing.T, m *Model) { m.openGroupForm() },
+		"connection": func(t *testing.T, m *Model) { m.openConnectionDialog(remote.Connection{}) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			m := buildModel(t)
+			m.layout.width, m.layout.height = 120, 40
+			createSession(t, m, "alpha", t.TempDir(), "")
+			m.selectSessionRow(t, "alpha")
+			open(t, m)
+			if len(m.surfaces) == 0 {
+				t.Fatalf("%s: setup put nothing on the stack", name)
+			}
+			m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+			if !m.effects.quitting {
+				t.Fatalf("%s: ctrl+c over the card did not quit", name)
+			}
+		})
 	}
 }
 

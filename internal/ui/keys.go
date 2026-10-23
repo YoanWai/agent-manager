@@ -20,10 +20,13 @@ const (
 // presses, so no surface keeps its own idea of quit.
 //
 // This is the priority layer of model_surface.go's stack: it runs before
-// any surface sees the key. ctrl+c closes the surface on top, quits where
-// the manager owns the keyboard, and passes to the agent where it does not.
-// A drain already under way leaves on a second ctrl+c or quit key from
-// anywhere, since by then the agent has nothing left to cancel.
+// any surface sees the key. Where the manager owns the keyboard ctrl+c
+// quits, card or no card, as it always has. Where the agent owns it, a
+// card the manager put over the pane closes on ctrl+c when it holds no
+// draft, and otherwise keeps the key from the agent behind it; with no
+// card, ctrl+c is the agent's. A drain already under way leaves on a
+// second ctrl+c or quit key from anywhere, since by then the agent has
+// nothing left to cancel.
 func (m *Model) routeQuit(msg tea.KeyMsg) quitRoute {
 	name := keybind.Normalize(msg.String())
 	ctrlC := name == "ctrl+c"
@@ -31,11 +34,13 @@ func (m *Model) routeQuit(msg tea.KeyMsg) quitRoute {
 	switch {
 	case m.effects.quitting && (ctrlC || m.services.listKeys.Binding(keybind.Quit).Has(name)):
 		return quitNow
-	case !ctrlC || m.agentOwnsKeyboard():
+	case !ctrlC:
 		return quitPass
-	case onSurface && top.Dismissible():
+	case !onSurface && m.agentOwnsKeyboard():
+		return quitPass
+	case onSurface && m.baseOwner() == ownerAgent && top.Dismissible():
 		return quitPopSurface
-	case onSurface:
+	case onSurface && m.baseOwner() == ownerAgent:
 		return quitPass
 	}
 	return quitNow

@@ -54,7 +54,7 @@ func TestRenameIsARowNotACard(t *testing.T) {
 	}
 }
 
-func TestRenameEscClosesAndCtrlCKeepsTheDraft(t *testing.T) {
+func TestRenameEscClosesAndCtrlCQuits(t *testing.T) {
 	m := openRenameFor(t)
 	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if renameOpen(m) || m.effects.quitting || m.mode != modeList {
@@ -62,8 +62,8 @@ func TestRenameEscClosesAndCtrlCKeepsTheDraft(t *testing.T) {
 	}
 	m = openRenameFor(t)
 	m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
-	if !renameOpen(m) || m.effects.quitting {
-		t.Fatalf("ctrl+c: open=%t quitting=%t, want the draft kept and the manager running", renameOpen(m), m.effects.quitting)
+	if !m.effects.quitting {
+		t.Fatal("ctrl+c over the list did not quit")
 	}
 }
 

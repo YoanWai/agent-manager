@@ -47,8 +47,8 @@ func TestReviewPickerOpensOnItsKey(t *testing.T) {
 	}
 }
 
-// esc, ctrl+c and a click off the card each close the picker and leave
-// Review as it was: the filter is a search, not a draft.
+// esc and a click off the card each close the picker and leave Review as
+// it was: the filter is a search, not a draft.
 func TestReviewPickerDismisses(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -56,7 +56,6 @@ func TestReviewPickerDismisses(t *testing.T) {
 		close func(m *Model)
 	}{
 		{"esc", func(m *Model) { m.Update(tea.KeyMsg{Type: tea.KeyEsc}) }},
-		{"ctrl+c", func(m *Model) { m.Update(tea.KeyMsg{Type: tea.KeyCtrlC}) }},
 		{"backdrop", func(m *Model) {
 			m.prepareFrame()
 			x, y := m.layout.card.left-1, m.layout.card.top-1

@@ -74,9 +74,8 @@ func TestGroupFormEscClosesAndKeepsNothingBehind(t *testing.T) {
 	}
 }
 
-// The form holds a typed draft, so ctrl+c does not quit and a stray click
-// off the card keeps it.
-func TestGroupFormKeepsItsDraftThroughACtrlCAndAStrayClick(t *testing.T) {
+// The form holds a typed draft, so a stray click off the card keeps it.
+func TestGroupFormKeepsItsDraftThroughAStrayClick(t *testing.T) {
 	t.Parallel()
 	m := openGroupFormModel(t)
 	if m.top0().Dismissible() {
@@ -86,10 +85,6 @@ func TestGroupFormKeepsItsDraftThroughACtrlCAndAStrayClick(t *testing.T) {
 	m = clickBackdrop(t, m)
 	if !m.groupFormOpen() || m.groupSurface().form.Name() != "draft" {
 		t.Fatal("a click off the card lost the draft")
-	}
-	m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
-	if m.effects.quitting {
-		t.Fatal("ctrl+c on the form quit the manager")
 	}
 }
 

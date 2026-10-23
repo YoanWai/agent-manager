@@ -46,7 +46,7 @@ func openForkFor(t *testing.T) *Model {
 	return m
 }
 
-// The name is a draft: a click off the card and ctrl+c keep it, esc closes.
+// The name is a draft: a click off the card keeps it, esc closes.
 func TestForkKeepsItsDraftAndEscCloses(t *testing.T) {
 	m := openForkFor(t)
 	if mustTop(t, m).Dismissible() {
@@ -54,10 +54,6 @@ func TestForkKeepsItsDraftAndEscCloses(t *testing.T) {
 	}
 	if m = clickBackdrop(t, m); !forkOpen(m) {
 		t.Fatal("a backdrop click closed the draft")
-	}
-	m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
-	if !forkOpen(m) || m.effects.quitting {
-		t.Fatalf("ctrl+c: open=%t quitting=%t, want the draft kept and the manager running", forkOpen(m), m.effects.quitting)
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if forkOpen(m) || m.mode != modeList {

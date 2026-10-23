@@ -39,8 +39,11 @@ over the list that hands the keyboard to the agent.
    never `Model`, `services` or a driver. A surface that needs more returns
    a command for a root adapter, as features already do.
 4. **The top surface states its preferences.** `Owner` says who reads plain
-   keys (manager or agent); `Dismissible` says whether esc, ctrl+c and a
-   click off the card close it; `Footer` leads the legend; `View` paints.
+   keys (manager or agent); `Dismissible` says whether esc and a click off
+   the card close it; `Footer` leads the legend; `View` paints. ctrl+c is
+   the priority layer's: over a manager screen it quits, card or no card;
+   over the agent's pane it closes a dismissible card and otherwise stays
+   with the card, never reaching the agent behind it.
    The root asks the stack: `agentOwnsKeyboard`, `closesOnBackdrop`,
    `cardOpen`, the footer and the IME anchor all read it.
 5. **Lifecycle.** `pop` runs the surface's `Leave` once; leaving the mode

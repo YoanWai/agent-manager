@@ -47,7 +47,7 @@ func TestConnectionCardEscCloses(t *testing.T) {
 	}
 }
 
-// The card holds typed fields, so a stray click and ctrl+c keep the draft.
+// The card holds typed fields, so a stray click keeps the draft.
 func TestConnectionCardKeepsItsDraft(t *testing.T) {
 	m := openConnectionModel(t)
 	if top, _ := m.top(); top.Dismissible() {
@@ -57,10 +57,6 @@ func TestConnectionCardKeepsItsDraft(t *testing.T) {
 	m = clickBackdrop(t, m)
 	if !m.connectionDialogOpen() {
 		t.Fatal("a click off the card closed it")
-	}
-	m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
-	if m.effects.quitting {
-		t.Fatal("ctrl+c on the card quit the manager")
 	}
 }
 

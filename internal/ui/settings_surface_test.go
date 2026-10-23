@@ -25,11 +25,11 @@ func TestSettingsOpensFromItsKeyAndDrawsOverTheList(t *testing.T) {
 	}
 }
 
-// esc, the save button and ctrl+c all close the card the same way, and the
-// close queues the save once.
-func TestSettingsEscAndCtrlCCloseAndSaveOnce(t *testing.T) {
+// esc and the save button close the card the same way, and the close
+// queues the save once.
+func TestSettingsEscClosesAndSavesOnce(t *testing.T) {
 	t.Parallel()
-	for _, k := range []tea.KeyMsg{{Type: tea.KeyEsc}, {Type: tea.KeyCtrlC}} {
+	for _, k := range []tea.KeyMsg{{Type: tea.KeyEsc}} {
 		m := openedSettings(t)
 		m.settingsCard().state.Field = uisettings.FieldMouse
 		m.cycleSetting(1)
@@ -45,7 +45,7 @@ func TestSettingsEscAndCtrlCCloseAndSaveOnce(t *testing.T) {
 	}
 }
 
-// A command being typed is a draft: ctrl+c and a stray click keep it.
+// A command being typed is a draft: a stray click keeps it.
 func TestSettingsKeepsATypedEditorLine(t *testing.T) {
 	t.Parallel()
 	m := openedSettings(t)
@@ -58,10 +58,6 @@ func TestSettingsKeepsATypedEditorLine(t *testing.T) {
 	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyEnter})
 	if top, _ = m.top(); top.Dismissible() {
 		t.Fatal("a typed command says a stray click closes the card")
-	}
-	m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
-	if !m.settingsOpen() || m.effects.quitting {
-		t.Fatalf("ctrl+c closed or quit with a command being typed, open %v", m.settingsOpen())
 	}
 }
 

@@ -30,13 +30,12 @@ func TestNoticesSurfaceOpensOverTheList(t *testing.T) {
 	}
 }
 
-func TestNoticesSurfaceClosesOnEscCtrlCAndBackdrop(t *testing.T) {
+func TestNoticesSurfaceClosesOnEscAndBackdrop(t *testing.T) {
 	if !(&noticesSurface{}).Dismissible() {
 		t.Fatal("the messages modal must be dismissible")
 	}
 	for name, closeIt := range map[string]func(*Model) *Model{
-		"esc":    func(m *Model) *Model { m.Update(namedKey(tea.KeyEsc)); return m },
-		"ctrl+c": func(m *Model) *Model { m.Update(namedKey(tea.KeyCtrlC)); return m },
+		"esc": func(m *Model) *Model { m.Update(namedKey(tea.KeyEsc)); return m },
 		"click off the card": func(m *Model) *Model {
 			return clickBackdrop(t, m)
 		},

@@ -862,25 +862,17 @@ func TestLaunchHintRefusesASecondInstall(t *testing.T) {
 	}
 }
 
-// ctrl+c closes the dialog the way esc does, and a second one, with the
-// list showing, quits.
-func TestLaunchHintCtrlCClosesThenQuits(t *testing.T) {
+// ctrl+c over the hint quits the way it does over the list: the card
+// changes nothing about who owns the keyboard.
+func TestLaunchHintQuitsOnCtrlC(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.reportLaunchError(config.MissingToolError{Binary: "claude"})
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	m = updated.(*Model)
-	if hintOpen(m) || m.effects.quitting {
-		t.Fatalf("first ctrl+c: open=%t quitting=%t, want the dialog closed", hintOpen(m), m.effects.quitting)
-	}
-	if cmd != nil && quits(cmd()) {
-		t.Fatal("the first ctrl+c quit instead of closing the dialog")
-	}
-	updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
-	m = updated.(*Model)
 	if cmd == nil || !quits(cmd()) {
-		t.Fatal("ctrl+c over the list should quit")
+		t.Fatal("ctrl+c over the hint should quit")
 	}
 }
 

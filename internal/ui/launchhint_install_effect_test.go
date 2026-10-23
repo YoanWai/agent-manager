@@ -231,8 +231,6 @@ func TestInstallBlocksQuitUntilPendingRetrySettles(t *testing.T) {
 		installFixture(t, m, "true")
 		pressInLaunchHint(t, m, 'i')
 
-		// The first ctrl+c closes the card; the second reaches the quit gate.
-		m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 		updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 		m = updated.(*Model)
 		if cmd != nil || m.effects.quitting {

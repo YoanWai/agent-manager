@@ -52,12 +52,11 @@ func openHintFor(t *testing.T) (*Model, string) {
 	return m, image
 }
 
-// esc, ctrl+c and a click off the card all give the launch up, and Leave
-// drops the refused prompt's images exactly once.
-func TestLaunchHintClosesOnEscCtrlCAndBackdrop(t *testing.T) {
+// esc and a click off the card both give the launch up, and Leave drops
+// the refused prompt's images exactly once.
+func TestLaunchHintClosesOnEscAndBackdrop(t *testing.T) {
 	for name, closeIt := range map[string]func(*Model) *Model{
 		"esc":      func(m *Model) *Model { m.Update(tea.KeyMsg{Type: tea.KeyEsc}); return m },
-		"ctrl+c":   func(m *Model) *Model { m.Update(tea.KeyMsg{Type: tea.KeyCtrlC}); return m },
 		"backdrop": func(m *Model) *Model { return clickBackdrop(t, m) },
 	} {
 		m, image := openHintFor(t)

@@ -36,7 +36,8 @@ type surface interface {
 	Footer() [][2]string
 	// Owner is who reads plain keys while this surface is on top.
 	Owner() inputOwner
-	// Dismissible is whether esc, ctrl+c and a click off the card close it.
+	// Dismissible is whether esc and a click off the card close it, and
+	// whether ctrl+c does where the pane under the card is the agent's.
 	// A surface holding typed input says no, so a stray click keeps a draft.
 	Dismissible() bool
 	// Leave runs once when the surface comes off the stack, by pop or by
@@ -142,6 +143,11 @@ func (m *Model) inputOwner() inputOwner {
 	if top, ok := m.top(); ok {
 		return top.Owner()
 	}
+	return m.baseOwner()
+}
+
+// baseOwner is who reads plain keys on the screen under the stack.
+func (m *Model) baseOwner() inputOwner {
 	if m.mode == modeFocus {
 		return ownerAgent
 	}
