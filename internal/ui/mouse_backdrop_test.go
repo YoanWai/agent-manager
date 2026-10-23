@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/YoanWai/agent-manager/internal/store"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -58,17 +59,17 @@ func TestBackdropClickKeepsATypedDraft(t *testing.T) {
 	}{
 		{"new session", func(m *Model) { m.applyCmd(t, m.openForm()) }, modeForm},
 		{"new group", func(m *Model) { m.openGroupForm() }, modeGroupForm},
-		{"fork", func(m *Model) { m.fork.Open("alpha", ""); m.mode = modeFork }, modeFork},
+		{"fork", func(m *Model) { m.push(newForkSurface(store.Session{Name: "alpha"}, 1)) }, modeList},
 	} {
 		m := buildModel(t)
 		m.layout.width, m.layout.height = 120, 34
 		createSessionOn(t, m, "alpha", "claude", t.TempDir())
 		m.selectSessionRow(t, "alpha")
 		tc.open(m)
-		if m.mode != tc.want {
+		if m.mode != tc.want || (tc.want == modeList && m.listClear()) {
 			t.Fatalf("%s: test setup mode = %v err %q", tc.name, m.mode, m.errBar.text)
 		}
-		if m = clickBackdrop(t, m); m.mode != tc.want {
+		if m = clickBackdrop(t, m); m.mode != tc.want || (tc.want == modeList && m.listClear()) {
 			t.Errorf("%s: a stray click closed the draft, mode = %v", tc.name, m.mode)
 		}
 	}

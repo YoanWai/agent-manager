@@ -197,13 +197,6 @@ func (m *Model) viewMove() string {
 	return m.card(uidialogs.MoveTitle(m.prefs.glyphMode), m.viewGroupPicker(), uidialogs.MoveHints())
 }
 
-// forkDialog keeps the captured source row the fork request carries; the
-// name field and the dialog generation are uidialogs.Fork.
-type forkDialog struct {
-	uidialogs.Fork
-	source store.Session
-}
-
 // configuredTool looks a tool up in the loaded configuration.
 func (m *Model) configuredTool(name string) (config.Tool, bool) {
 	tool, ok := m.services.cfg.Tools[name]
@@ -228,29 +221,13 @@ func (m *Model) openFork() {
 		m.reportErr(err.Error())
 		return
 	}
-	m.fork.Open(entry.sess.Name, entry.sess.Group)
-	m.fork.source = entry.sess
+	m.gens.dialog++
+	m.push(newForkSurface(entry.sess, int(m.gens.dialog)))
 	m.clearErr()
-	m.mode = modeFork
 }
 
-func (m *Model) handleForkKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	key := m.fork.Key(msg)
-	switch key.Action {
-	case uidialogs.ForkCancel:
-		m.mode = modeList
-		m.clearErr()
-	case uidialogs.ForkInvalid:
-		m.reportErr(key.Err)
-	case uidialogs.ForkSubmit:
-		m.queueFork(forkRequest{source: m.fork.source, name: key.Name, gen: key.Gen})
-		return m, m.nextEffectCmd()
-	}
-	return m, key.Cmd
-}
-
-func (m *Model) viewFork() string {
-	return m.drawCard(m.fork.View(uidialogs.ForkStyles{
+func (m *Model) viewFork(s *forkSurface) string {
+	return m.drawCard(s.Fork.View(uidialogs.ForkStyles{
 		BranchGlyph: m.glyphs().BranchGlyph,
 		Value:       valueStyle(),
 		Group:       lipgloss.NewStyle().Foreground(colorAccent2()),

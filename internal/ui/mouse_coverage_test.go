@@ -16,13 +16,11 @@ var (
 	noCardClick = map[string]string{
 		"modeList":  "the list takes the mouse in listMouse",
 		"modeDiff":  "Review takes the mouse in reviewMouse",
-		"modeFork":  "one field, always focused: its painted keys take the clicks",
 		"modeFocus": "the pane takes the mouse in focusMouse; a card over it is a surface",
 	}
 	noCardWheel = map[string]string{
 		"modeList":       "the list takes the wheel in listMouse",
 		"modeDiff":       "Review takes the wheel in reviewMouse",
-		"modeFork":       "nothing to scroll",
 		"modeLaunchHint": "nothing to scroll",
 		"modeConnection": "three fields and nothing to scroll",
 		"modeFocus":      "the pane takes the wheel in focusMouse; a card over it is a surface",

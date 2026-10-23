@@ -101,8 +101,6 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleFormKey(msg)
 	case modeLaunchHint:
 		return m, m.launchHint.handleKey(m, msg)
-	case modeFork:
-		return m.handleForkKey(msg)
 	case modeSettings:
 		return m.handleSettingsKey(msg)
 	case modeRepoPick:

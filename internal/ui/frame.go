@@ -48,8 +48,6 @@ func (m *Model) renderFrame() string {
 		frame = m.launchHintFrame()
 	case modeSettings:
 		frame = m.viewSettings()
-	case modeFork:
-		frame = m.viewFork()
 	case modeRepoPick:
 		frame = m.viewRepoPick()
 	case modeGroupForm:

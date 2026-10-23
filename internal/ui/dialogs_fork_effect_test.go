@@ -28,11 +28,11 @@ func forkFileTool(t *testing.T, m *Model, name string) string {
 func submitForkDialog(t *testing.T, m *Model, name string) (*Model, tea.Cmd) {
 	t.Helper()
 	m.openFork()
-	if m.mode != modeFork {
+	if !forkOpen(m) {
 		t.Fatalf("fork dialog did not open: err=%q", m.errBar.text)
 	}
-	m.fork.SetName(name)
-	updated, cmd := m.handleForkKey(tea.KeyMsg{Type: tea.KeyEnter})
+	openFork(m).SetName(name)
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(*Model)
 	return m, cmd
 }
@@ -67,7 +67,7 @@ func TestForkSubmitDefersWorkOffTheUpdatePath(t *testing.T) {
 	m.selectSessionRow(t, "source")
 
 	m, cmd := submitForkDialog(t, m, "child fork")
-	if m.mode != modeFork {
+	if !forkOpen(m) {
 		t.Fatalf("after submit: mode = %v, want the dialog to stay open while work runs", m.mode)
 	}
 	if _, ok := forkRow(m, "child fork"); ok {
@@ -118,20 +118,20 @@ func TestForkCompletionDoesNotStealNewerDialog(t *testing.T) {
 	m.selectSessionRow(t, "alpha")
 	alpha := railSelectedSession(m)
 	m, alphaCmd := submitForkDialog(t, m, "alpha fork")
-	if m.fork.source.ID != alpha.ID {
-		t.Fatalf("fork submitted from %q, want alpha %q", m.fork.source.ID, alpha.ID)
+	if openFork(m).source.ID != alpha.ID {
+		t.Fatalf("fork submitted from %q, want alpha %q", openFork(m).source.ID, alpha.ID)
 	}
-	m.handleForkKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m.selectSessionRow(t, "beta")
 	beta := railSelectedSession(m)
 	m.openFork()
-	if m.mode != modeFork || m.fork.source.ID != beta.ID {
-		t.Fatalf("newer dialog = %v / %q, want beta's fork dialog", m.mode, m.fork.source.ID)
+	if !forkOpen(m) || openFork(m).source.ID != beta.ID {
+		t.Fatalf("newer dialog = %v / %q, want beta's fork dialog", m.mode, openFork(m).source.ID)
 	}
 
 	m.applyCmd(t, alphaCmd)
-	if m.mode != modeFork || m.fork.source.ID != beta.ID {
-		t.Fatalf("completion replaced the newer dialog: mode=%v source=%q", m.mode, m.fork.source.ID)
+	if !forkOpen(m) || openFork(m).source.ID != beta.ID {
+		t.Fatalf("completion replaced the newer dialog: mode=%v source=%q", m.mode, openFork(m).source.ID)
 	}
 	if got := railSelectedSession(m); got.ID != beta.ID {
 		t.Fatalf("completion moved the selection to %q, want beta kept", got.Name)
@@ -267,8 +267,8 @@ func TestForkQuitDrainsAcceptedJobAndRefusesLate(t *testing.T) {
 	m2.rebuildRows()
 	m2.selectSessionRow(t, "late")
 	m2.openFork()
-	m2.fork.SetName("late fork")
-	_, lateCommand := m2.handleForkKey(tea.KeyMsg{Type: tea.KeyEnter})
+	openFork(m2).SetName("late fork")
+	_, lateCommand := m2.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m2.StopEffects()
 	msg := lateCommand().(effectCompletedMsg)
 	if msg.err != errEffectsStopped {
@@ -426,7 +426,7 @@ func TestForkRefusesASourceThatRestartedWhileQueued(t *testing.T) {
 	if !strings.Contains(m.errBar.text, "changed while the fork was in the queue") {
 		t.Fatalf("err = %q, want the captured-identity refusal", m.errBar.text)
 	}
-	if m.mode != modeFork {
+	if !forkOpen(m) {
 		t.Fatalf("mode = %v, want the dialog left open to resubmit", m.mode)
 	}
 	if _, ok := forkRow(m, "restarted fork"); ok {
@@ -456,20 +456,20 @@ func TestForkCompletionAfterSameSourceReopenKeepsNewerDialog(t *testing.T) {
 	m.selectSessionRow(t, "source")
 
 	m, firstCmd := submitForkDialog(t, m, "first fork")
-	firstGen := m.fork.Gen()
-	m.handleForkKey(tea.KeyMsg{Type: tea.KeyEsc})
+	firstGen := openFork(m).gen
+	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m.selectSessionRow(t, "source")
 	m.openFork()
-	if m.fork.Gen() == firstGen {
+	if openFork(m).gen == firstGen {
 		t.Fatal("reopen did not mint a new dialog generation")
 	}
-	if m.fork.source.ID != source.ID {
-		t.Fatalf("reopened dialog = %q, want the same source %q", m.fork.source.ID, source.ID)
+	if openFork(m).source.ID != source.ID {
+		t.Fatalf("reopened dialog = %q, want the same source %q", openFork(m).source.ID, source.ID)
 	}
 
 	m.applyCmd(t, firstCmd)
-	if m.mode != modeFork || m.fork.Gen() == firstGen {
-		t.Fatalf("completion closed the reopened dialog: mode=%v gen=%d", m.mode, m.fork.Gen())
+	if !forkOpen(m) || openFork(m).gen == firstGen {
+		t.Fatalf("completion closed the reopened dialog: mode=%v gen=%d", m.mode, openFork(m).gen)
 	}
 	if m.errBar.text != "" {
 		t.Fatalf("completion clobbered status text: %q", m.errBar.text)
@@ -524,8 +524,8 @@ func TestForkKeysRetryDoesNotForkSourceTwice(t *testing.T) {
 	}()
 
 	m.openFork()
-	m.fork.SetName("child fork")
-	updated, cmd := m.handleForkKey(tea.KeyMsg{Type: tea.KeyEnter})
+	openFork(m).SetName("child fork")
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(*Model)
 	m.applyCmd(t, cmd)
 	if m.mode != modeLaunchHint {
@@ -595,9 +595,8 @@ func TestForkCompletionClearsStatusFilter(t *testing.T) {
 func TestForkRepeatedSubmitKeepsOneAcceptedJob(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
-	m.fork.Open("source", "")
-	m.queueFork(forkRequest{source: store.Session{ID: "source"}, name: "child", gen: m.fork.Gen()})
-	m.queueFork(forkRequest{source: store.Session{ID: "source"}, name: "child", gen: m.fork.Gen()})
+	m.queueFork(forkRequest{source: store.Session{ID: "source"}, name: "child", gen: 1})
+	m.queueFork(forkRequest{source: store.Session{ID: "source"}, name: "child", gen: 1})
 	if len(m.effects.main.pending) != 1 {
 		t.Fatal("repeat submit accepted a second fork")
 	}

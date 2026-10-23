@@ -21,7 +21,6 @@ var ctrlCQuits = map[mode]bool{
 	modeList:       true,
 	modeForm:       true,
 	modeHelp:       true,
-	modeFork:       true,
 	modeRepoPick:   true,
 	modeGroupForm:  true,
 	modeSettings:   true,
