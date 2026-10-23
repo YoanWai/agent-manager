@@ -136,9 +136,11 @@ picker; the New Group form, Settings and the connection dialog; the rail's
 `Busy()`; resize; the quick bar; the New Session form; focus; then the two
 base screens, with `mode`, its constants, `setMode` and every `switch
 m.mode` deleted. Reads of `m.mode` outside tests: 156 before, 0 after.
-`Model`: 31 fields before, 20 after. Last, the contract moved to
-`internal/ui/surface` and help's surface into `internal/ui/help`, the first
-feature whose surface is not a root file.
+`Model`: 30 fields on `main` at the merge, 21 after. Last, the contract moved to
+`internal/ui/surface`, and the surfaces of help, Review, notices, the
+connection dialog, Settings, confirm and fork moved into their packages,
+each behind a `Root` interface the root implements in a `<feature>_adapter`
+file. The host cap test reads every package's `Root`.
 
 Left as it was, on purpose: Review's comment box and send prompt stay in
 the `review` package behind its keymap; the rail's menu, search and reorder
