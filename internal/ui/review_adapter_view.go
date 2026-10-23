@@ -37,23 +37,12 @@ func (m *Model) currentFileDiff() *diff.FileDiff {
 func (m *Model) diffFileHidden(fd *diff.FileDiff) bool { return m.review.FileHidden(fd) }
 
 func (m *Model) diffCodeHeight() int {
-	height := m.layout.height - 6 - lipgloss.Height(m.viewDiffFooter())
-	if m.review.Snapshot().Annotating {
-		height -= m.diffAnnBarRows() + 1
-	}
-	height -= 2
-	if height < 1 {
-		height = 1
-	}
-	return height
+	return uireview.CodeHeight(m.layout.height, lipgloss.Height(m.viewDiffFooter()), m.diffAnnBarRows())
 }
 
 func (m *Model) diffAnnBarRows() int {
-	if !m.review.Snapshot().Annotating {
-		return 0
-	}
 	_, codeWidth := m.diffPaneWidths()
-	return 1 + m.review.AnnotationInputHeight(codeWidth-2*contentGutter)
+	return m.review.AnnotationBarRows(codeWidth - 2*contentGutter)
 }
 
 func (m *Model) diffPaneWidths() (fileWidth, codeWidth int) {
