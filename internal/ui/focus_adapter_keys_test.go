@@ -329,14 +329,14 @@ func TestFocusedCtrlCReachesTheAgent(t *testing.T) {
 	if m.effects.quitting || m.mode != modeFocus {
 		t.Fatalf("ctrl+c quit or left focus: quitting=%t mode=%v", m.effects.quitting, m.mode)
 	}
-	command := ""
+	sess := railSelectedSession(m)
+	want := "send-keys -t " + tmux.PaneTarget(sess.ID) + " C-c"
+	request, ok := inputRequest{}, false
 	if job := m.effects.input.active; job != nil {
-		if request, ok := job.request.(inputRequest); ok {
-			command = request.command
-		}
+		request, ok = job.request.(inputRequest)
 	}
-	if !strings.Contains(command, " C-c") {
-		t.Fatalf("ctrl+c command = %q", command)
+	if !ok || request.kind != inputKeys || request.command != want {
+		t.Fatalf("ctrl+c command = %q, want %q", request.command, want)
 	}
 
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlQ})
