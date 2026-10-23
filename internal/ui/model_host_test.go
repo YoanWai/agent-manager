@@ -19,7 +19,7 @@ const maxHostMethods = 8
 
 // forbiddenHostTypes would let a feature reach the whole root or a runtime
 // driver through its host.
-var forbiddenHostTypes = []string{"Model", "services", "effectServices", "uieffects.Request", "store.Store", "tmux.Driver", "git.Driver"}
+var forbiddenHostTypes = []string{"Model", "services", "effectServices", "effectRequest", "uieffects.Request", "store.Store", "tmux.Driver", "git.Driver"}
 
 // The root's hosts and every feature package's Root are checked alike: a
 // surface that lives in its package reaches the root through Root, which is

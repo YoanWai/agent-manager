@@ -19,11 +19,23 @@ type focusRequest struct {
 
 func (focusRequest) EffectRequest() {}
 
+func (request focusRequest) copied() effectRequest { return request }
+
+func (focusRequest) effectName() string { return "focus or attach" }
+
+func (request focusRequest) run(services effectServices) (uieffects.Result, error) {
+	return services.runFocus(request)
+}
+
 type focusEffectResult struct {
 	fatal error
 }
 
 func (focusEffectResult) EffectResult() {}
+
+func (result focusEffectResult) apply(m *Model, job *uieffects.Job, err error) tea.Cmd {
+	return m.applyFocusEffect(job.Request.(focusRequest), result, err)
+}
 
 func (s effectServices) runFocus(request focusRequest) (uieffects.Result, error) {
 	result := focusEffectResult{}
@@ -83,9 +95,22 @@ type ackRequest struct {
 
 func (ackRequest) EffectRequest() {}
 
+func (request ackRequest) copied() effectRequest { return request }
+
+func (ackRequest) effectName() string { return "focus or attach" }
+
+func (request ackRequest) run(services effectServices) (uieffects.Result, error) {
+	return services.runAck(request)
+}
+
 type ackEffectResult struct{}
 
 func (ackEffectResult) EffectResult() {}
+
+func (result ackEffectResult) apply(m *Model, job *uieffects.Job, err error) tea.Cmd {
+	m.applyAckEffect(job, result, err)
+	return nil
+}
 
 func (s effectServices) runAck(request ackRequest) (uieffects.Result, error) {
 	if err := s.store.AcknowledgeFinished(request.sessionID); err != nil {
@@ -109,12 +134,24 @@ type detachRequest struct {
 
 func (detachRequest) EffectRequest() {}
 
+func (request detachRequest) copied() effectRequest { return request }
+
+func (detachRequest) effectName() string { return "focus or attach" }
+
+func (request detachRequest) run(services effectServices) (uieffects.Result, error) {
+	return services.runDetach(request)
+}
+
 type detachEffectResult struct {
 	request  string
 	clearErr error
 }
 
 func (detachEffectResult) EffectResult() {}
+
+func (result detachEffectResult) apply(m *Model, job *uieffects.Job, err error) tea.Cmd {
+	return m.applyDetachEffect(job.Request.(detachRequest), result, err)
+}
 
 func (s effectServices) runDetach(request detachRequest) (uieffects.Result, error) {
 	result := detachEffectResult{}

@@ -9,6 +9,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	tea "github.com/charmbracelet/bubbletea"
+	"maps"
 )
 
 type quickSendOutcome uint8
@@ -32,6 +33,19 @@ type quickSendRequest struct {
 
 func (quickSendRequest) EffectRequest() {}
 
+func (quickSendRequest) effectName() string { return "quick send" }
+
+func (value quickSendRequest) copied() effectRequest {
+	value.session.PendingInputs = slices.Clone(value.session.PendingInputs)
+	value.session.RelaunchSnapshot = maps.Clone(value.session.RelaunchSnapshot)
+	value.images = slices.Clone(value.images)
+	return value
+}
+
+func (request quickSendRequest) run(services effectServices) (uieffects.Result, error) {
+	return services.runQuickSend(request)
+}
+
 type quickSendResult struct {
 	outcome     quickSendOutcome
 	sendErr     error
@@ -39,6 +53,10 @@ type quickSendResult struct {
 }
 
 func (quickSendResult) EffectResult() {}
+
+func (result quickSendResult) apply(m *Model, job *uieffects.Job, err error) tea.Cmd {
+	return m.applyQuickSend(job.Request.(quickSendRequest), result, err)
+}
 
 func (m *Model) dispatchQuickSend(request quickSendRequest) bool {
 	jobs := append([]*uieffects.Job{m.effects.Main.Active}, m.effects.Main.Pending...)

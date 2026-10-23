@@ -22,6 +22,14 @@ type afterTurnRequest struct {
 
 func (afterTurnRequest) EffectRequest() {}
 
+func (request afterTurnRequest) copied() effectRequest { return request }
+
+func (afterTurnRequest) effectName() string { return "after-turn archive or kill" }
+
+func (request afterTurnRequest) run(services effectServices) (uieffects.Result, error) {
+	return services.runAfterTurn(request)
+}
+
 type afterTurnResult struct {
 	target    confirmTarget
 	lifecycle lifecycleEffectResult
@@ -29,6 +37,10 @@ type afterTurnResult struct {
 }
 
 func (afterTurnResult) EffectResult() {}
+
+func (result afterTurnResult) apply(m *Model, job *uieffects.Job, err error) tea.Cmd {
+	return m.applyAfterTurn(job.Request.(afterTurnRequest), result, err)
+}
 
 // endAfterTurns archives or kills each session whose turn ended after it
 // asked for that. Dispatch is enqueue-only: Update's trailing nextEffectCmd

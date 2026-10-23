@@ -16,6 +16,7 @@ import (
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uilaunchhint "github.com/YoanWai/agent-manager/internal/ui/launchhint"
 	tea "github.com/charmbracelet/bubbletea"
+	"slices"
 )
 
 var (
@@ -40,11 +41,22 @@ type installStartRequest struct {
 	toolName    string
 	group       string
 	pane        sessioncmd.PaneSize
-	effectRetry uieffects.Request
+	effectRetry effectRequest
 	images      []composer.Attachment
 }
 
 func (installStartRequest) EffectRequest() {}
+
+func (installStartRequest) effectName() string { return "CLI install" }
+
+func (value installStartRequest) copied() effectRequest {
+	value.images = slices.Clone(value.images)
+	return value
+}
+
+func (request installStartRequest) run(services effectServices) (uieffects.Result, error) {
+	return services.runInstallStart(request)
+}
 
 // installStartResult carries a committed shell row even when a later label
 // or send step fails. install is set only after the command was typed.
@@ -55,11 +67,26 @@ type installStartResult struct {
 
 func (installStartResult) EffectResult() {}
 
+func (result installStartResult) apply(m *Model, job *uieffects.Job, err error) tea.Cmd {
+	return m.applyInstallStart(job.Request.(installStartRequest), result, err)
+}
+
 type installSettleRequest struct {
 	install pendingInstall
 }
 
 func (installSettleRequest) EffectRequest() {}
+
+func (installSettleRequest) effectName() string { return "CLI install" }
+
+func (value installSettleRequest) copied() effectRequest {
+	value.install.images = slices.Clone(value.install.images)
+	return value
+}
+
+func (request installSettleRequest) run(services effectServices) (uieffects.Result, error) {
+	return services.runInstallSettle(request)
+}
 
 type installSettleResult struct {
 	sessionID string
@@ -68,6 +95,10 @@ type installSettleResult struct {
 }
 
 func (installSettleResult) EffectResult() {}
+
+func (result installSettleResult) apply(m *Model, job *uieffects.Job, err error) tea.Cmd {
+	return m.applyInstallSettle(job.Request.(installSettleRequest), result, err)
+}
 
 // installImageCleanupCmd owns a frozen copy of paths that no dialog or
 // retry still references. The command performs the file deletes without

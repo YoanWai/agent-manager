@@ -36,6 +36,14 @@ type savedPromptRequest struct {
 
 func (savedPromptRequest) EffectRequest() {}
 
+func (request savedPromptRequest) copied() effectRequest { return request }
+
+func (savedPromptRequest) effectName() string { return "saved prompt change" }
+
+func (request savedPromptRequest) run(services effectServices) (uieffects.Result, error) {
+	return services.runSavedPrompt(request)
+}
+
 // savedPromptResult is the catalog read back once the write landed.
 type savedPromptResult struct {
 	rows      []store.SessionPreset
@@ -43,6 +51,11 @@ type savedPromptResult struct {
 }
 
 func (savedPromptResult) EffectResult() {}
+
+func (result savedPromptResult) apply(m *Model, job *uieffects.Job, err error) tea.Cmd {
+	m.applySavedPromptEffect(job.Request.(savedPromptRequest), result, err)
+	return nil
+}
 
 func (s effectServices) runSavedPrompt(request savedPromptRequest) (uieffects.Result, error) {
 	var err error

@@ -9,6 +9,8 @@ import (
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
+	"maps"
+	"slices"
 	"strings"
 )
 
@@ -42,6 +44,18 @@ type renameRequest struct {
 
 func (renameRequest) EffectRequest() {}
 
+func (renameRequest) effectName() string { return "rename" }
+
+func (value renameRequest) copied() effectRequest {
+	value.sess.PendingInputs = slices.Clone(value.sess.PendingInputs)
+	value.sess.RelaunchSnapshot = maps.Clone(value.sess.RelaunchSnapshot)
+	return value
+}
+
+func (request renameRequest) run(services effectServices) (uieffects.Result, error) {
+	return services.runRename(request)
+}
+
 // renameEffectResult reports which durable stages committed, in order, so
 // the apply side can reconcile partial failures before surfacing the error.
 type renameEffectResult struct {
@@ -59,6 +73,11 @@ type renameEffectResult struct {
 
 func (renameEffectResult) EffectResult() {}
 
+func (result renameEffectResult) apply(m *Model, job *uieffects.Job, err error) tea.Cmd {
+	m.applyRenameEffect(job, result, err)
+	return nil
+}
+
 // moveDialogClose is the chained follow-up that closes a move dialog only
 // if the dialog it captured is still the open one.
 type moveDialogClose struct {
@@ -73,9 +92,22 @@ type moveDialogClose struct {
 
 func (moveDialogClose) EffectRequest() {}
 
+func (request moveDialogClose) copied() effectRequest { return request }
+
+func (moveDialogClose) effectName() string { return "move" }
+
+func (moveDialogClose) run(effectServices) (uieffects.Result, error) {
+	return moveDialogCloseResult{}, nil
+}
+
 type moveDialogCloseResult struct{}
 
 func (moveDialogCloseResult) EffectResult() {}
+
+func (moveDialogCloseResult) apply(m *Model, job *uieffects.Job, err error) tea.Cmd {
+	m.applyMoveDialogClose(job.Request.(moveDialogClose))
+	return nil
+}
 
 // queueRename completes the rename dialog's request with the inventory it
 // was captured against (the group's default-path fallbacks, or the session

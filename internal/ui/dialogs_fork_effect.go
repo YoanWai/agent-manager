@@ -15,6 +15,8 @@ import (
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/google/uuid"
+	"maps"
+	"slices"
 )
 
 // forkSessionFileResolver resolves a source conversation's on-disk session
@@ -41,6 +43,18 @@ type forkRequest struct {
 
 func (forkRequest) EffectRequest() {}
 
+func (forkRequest) effectName() string { return "fork" }
+
+func (value forkRequest) copied() effectRequest {
+	value.source.PendingInputs = slices.Clone(value.source.PendingInputs)
+	value.source.RelaunchSnapshot = maps.Clone(value.source.RelaunchSnapshot)
+	return value
+}
+
+func (request forkRequest) run(services effectServices) (uieffects.Result, error) {
+	return services.runFork(request)
+}
+
 // forkEffectResult is the durable outcome of a fork. launched is set once
 // the child session is committed, even when the launch then fails at
 // labeling, so the row applies before the error reports. recordedForkID is
@@ -54,6 +68,10 @@ type forkEffectResult struct {
 }
 
 func (forkEffectResult) EffectResult() {}
+
+func (result forkEffectResult) apply(m *Model, job *uieffects.Job, err error) tea.Cmd {
+	return m.applyForkEffect(job.Request.(forkRequest), result, err)
+}
 
 // queueFork admits the fork dialog's request onto the effect lane once per
 // dialog generation, minting the child id and the pane geometry it launches

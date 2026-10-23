@@ -8,6 +8,8 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	tea "github.com/charmbracelet/bubbletea"
+	"maps"
+	"slices"
 )
 
 type lifecycleRequest struct {
@@ -19,6 +21,26 @@ type lifecycleRequest struct {
 }
 
 func (lifecycleRequest) EffectRequest() {}
+
+func (request lifecycleRequest) effectName() string {
+	if request.target.action == actionDelete {
+		return "session delete"
+	}
+	return "session " + string(request.target.action)
+}
+
+func (value lifecycleRequest) copied() effectRequest {
+	value.target.sessions = slices.Clone(value.target.sessions)
+	for i := range value.target.sessions {
+		value.target.sessions[i].PendingInputs = slices.Clone(value.target.sessions[i].PendingInputs)
+		value.target.sessions[i].RelaunchSnapshot = maps.Clone(value.target.sessions[i].RelaunchSnapshot)
+	}
+	return value
+}
+
+func (request lifecycleRequest) run(services effectServices) (uieffects.Result, error) {
+	return services.runLifecycle(request)
+}
 
 type relaunchedSession struct {
 	id     string
@@ -36,6 +58,10 @@ type lifecycleEffectResult struct {
 }
 
 func (lifecycleEffectResult) EffectResult() {}
+
+func (result lifecycleEffectResult) apply(m *Model, job *uieffects.Job, err error) tea.Cmd {
+	return m.applyLifecycleEffect(job.Request.(lifecycleRequest), result, err)
+}
 
 func (m *Model) queueLifecycle(target confirmTarget, allowLive bool, emptyNotice string) {
 	target.sessions = append([]store.Session(nil), target.sessions...)

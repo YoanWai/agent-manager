@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // noticeDismissRequest persists one optimistic dismissal through the shared
@@ -16,9 +17,22 @@ type noticeDismissRequest struct {
 
 func (noticeDismissRequest) EffectRequest() {}
 
+func (request noticeDismissRequest) copied() effectRequest { return request }
+
+func (noticeDismissRequest) effectName() string { return "notice dismissal" }
+
+func (request noticeDismissRequest) run(services effectServices) (uieffects.Result, error) {
+	return services.runNoticeDismiss(request)
+}
+
 type noticeDismissResult struct{}
 
 func (noticeDismissResult) EffectResult() {}
+
+func (noticeDismissResult) apply(m *Model, job *uieffects.Job, err error) tea.Cmd {
+	m.applyNoticeDismiss(job, err)
+	return nil
+}
 
 func (m *Model) noticeDismissQueued(id string) bool {
 	queued := func(job *uieffects.Job) bool {

@@ -18,6 +18,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/ui/pathcomplete"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
+	"slices"
 )
 
 type spawnKind int
@@ -63,6 +64,24 @@ type spawnRequest struct {
 
 func (spawnRequest) EffectRequest() {}
 
+func (spawnRequest) effectName() string { return "spawn" }
+
+func (value spawnRequest) copied() effectRequest {
+	value.dirFallbacks = slices.Clone(value.dirFallbacks)
+	value.terminalDir.fallbacks = slices.Clone(value.terminalDir.fallbacks)
+	if value.plan != nil {
+		plan := *value.plan
+		plan.PendingInputs = slices.Clone(plan.PendingInputs)
+		value.plan = &plan
+	}
+	value.images = slices.Clone(value.images)
+	return value
+}
+
+func (request spawnRequest) run(services effectServices) (uieffects.Result, error) {
+	return services.runSpawn(request)
+}
+
 // spawnEffectResult is the durable outcome of a spawn: the persisted
 // session row, which exists only when the pane was created too, and a label
 // failure that stays a warning after committed placement.
@@ -77,6 +96,10 @@ type spawnEffectResult struct {
 }
 
 func (spawnEffectResult) EffectResult() {}
+
+func (result spawnEffectResult) apply(m *Model, job *uieffects.Job, err error) tea.Cmd {
+	return m.applySpawnEffect(job.Request.(spawnRequest), result, err)
+}
 
 // groupRequest captures a group creation; the accepted effect validates the
 // directory before the store write.
@@ -97,6 +120,17 @@ type groupRequest struct {
 
 func (groupRequest) EffectRequest() {}
 
+func (groupRequest) effectName() string { return "group creation" }
+
+func (value groupRequest) copied() effectRequest {
+	value.fallbacks = slices.Clone(value.fallbacks)
+	return value
+}
+
+func (request groupRequest) run(services effectServices) (uieffects.Result, error) {
+	return services.runGroup(request)
+}
+
 type groupEffectResult struct {
 	path     string
 	dir      string
@@ -104,6 +138,10 @@ type groupEffectResult struct {
 }
 
 func (groupEffectResult) EffectResult() {}
+
+func (result groupEffectResult) apply(m *Model, job *uieffects.Job, err error) tea.Cmd {
+	return m.applyGroupEffect(job.Request.(groupRequest), result, err)
+}
 
 // dispatchSpawn takes the prompt's images out of the composer and queues
 // the spawn on the shared effect lane; completion routes the images.
@@ -388,6 +426,14 @@ type choiceSaveRequest struct {
 }
 
 func (choiceSaveRequest) EffectRequest() {}
+
+func (request choiceSaveRequest) copied() effectRequest { return request }
+
+func (choiceSaveRequest) effectName() string { return "model choice save" }
+
+func (request choiceSaveRequest) run(services effectServices) (uieffects.Result, error) {
+	return services.runChoiceSave(request)
+}
 
 type choiceSaveResult struct{}
 

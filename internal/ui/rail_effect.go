@@ -8,6 +8,7 @@ import (
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
+	"slices"
 	"sort"
 )
 
@@ -29,6 +30,19 @@ type placementPrecondition struct {
 
 func (railRequest) EffectRequest() {}
 
+func (railRequest) effectName() string { return "rail change" }
+
+func (value railRequest) copied() effectRequest {
+	value.mutation.Collapsed = slices.Clone(value.mutation.Collapsed)
+	value.mutation.HostCollapsed = slices.Clone(value.mutation.HostCollapsed)
+	value.mutation.GroupSiblings = slices.Clone(value.mutation.GroupSiblings)
+	return value
+}
+
+func (request railRequest) run(services effectServices) (uieffects.Result, error) {
+	return services.runRail(request)
+}
+
 type railEffectResult struct {
 	sessions []store.Session
 	warning  error
@@ -36,6 +50,10 @@ type railEffectResult struct {
 }
 
 func (railEffectResult) EffectResult() {}
+
+func (result railEffectResult) apply(m *Model, job *uieffects.Job, err error) tea.Cmd {
+	return m.applyRailEffect(job, result, err)
+}
 func (m *Model) queueRail(mutations []uirail.Mutation, chain uint64, first bool) {
 	if len(mutations) == 0 {
 		return

@@ -1,6 +1,10 @@
 package ui
 
-import uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
+import (
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
+	tea "github.com/charmbracelet/bubbletea"
+	"slices"
+)
 
 type paneResize struct {
 	id   string
@@ -13,12 +17,28 @@ type geometryRequest struct {
 
 func (geometryRequest) EffectRequest() {}
 
+func (geometryRequest) effectName() string { return "pane resize" }
+
+func (value geometryRequest) copied() effectRequest {
+	value.targets = slices.Clone(value.targets)
+	return value
+}
+
+func (request geometryRequest) run(services effectServices) (uieffects.Result, error) {
+	return services.runGeometry(request)
+}
+
 type geometryEffectResult struct {
 	resized []paneResize
 	publish [2]int
 }
 
 func (geometryEffectResult) EffectResult() {}
+
+func (result geometryEffectResult) apply(m *Model, job *uieffects.Job, err error) tea.Cmd {
+	m.applyGeometryEffect(result, err)
+	return nil
+}
 
 func (m *Model) queueGeometry(request geometryRequest) {
 	// Ignore an already accepted identical target, while allowing a newer size.

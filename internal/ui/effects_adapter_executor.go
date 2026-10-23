@@ -36,7 +36,7 @@ type effectServices struct {
 	remote                *remote.Client
 }
 
-func (m *Model) captureEffect(request uieffects.Request) func() (uieffects.Result, error) {
+func (m *Model) captureEffect(request effectRequest) func() (uieffects.Result, error) {
 	cfg := m.services.cfg
 	cfg.Tools = make(map[string]config.Tool, len(m.services.cfg.Tools))
 	for name, tool := range m.services.cfg.Tools {
@@ -71,63 +71,7 @@ func (m *Model) captureEffect(request uieffects.Request) func() (uieffects.Resul
 	if m.services.lifecycle != nil {
 		services.lifecycle = m.services.lifecycle.Capture(cfg, m.services.setSnapshot)
 	}
-	return func() (uieffects.Result, error) {
-		switch request := request.(type) {
-		case inputRequest:
-			return services.runInput(request)
-		case quickSendRequest:
-			return services.runQuickSend(request)
-		case noticeDismissRequest:
-			return services.runNoticeDismiss(request)
-		case splitSaveRequest:
-			return services.runSplitSave(request)
-		case choiceSaveRequest:
-			return services.runChoiceSave(request)
-		case installStartRequest:
-			return services.runInstallStart(request)
-		case installSettleRequest:
-			return services.runInstallSettle(request)
-		case lifecycleRequest:
-			return services.runLifecycle(request)
-		case afterTurnRequest:
-			return services.runAfterTurn(request)
-		case railRequest:
-			return services.runRail(request)
-		case forkRequest:
-			return services.runFork(request)
-		case geometryRequest:
-			return services.runGeometry(request)
-		case spawnRequest:
-			return services.runSpawn(request)
-		case groupRequest:
-			return services.runGroup(request)
-		case renameRequest:
-			return services.runRename(request)
-		case moveDialogClose:
-			return moveDialogCloseResult{}, nil
-		case settingsRequest:
-			return services.runSettings(request)
-		case savedPromptRequest:
-			return services.runSavedPrompt(request)
-		case reviewEffectRequest:
-			return services.runReview(request)
-		case keysRequest:
-			return services.runKeys(request)
-		case focusRequest:
-			return services.runFocus(request)
-		case ackRequest:
-			return services.runAck(request)
-		case detachRequest:
-			return services.runDetach(request)
-		case attachRequest:
-			return services.runAttach(request)
-		case connectionRequest:
-			return services.runConnection(request)
-		case remoteRequest:
-			return services.runRemote(request)
-		}
-		panic("unknown UI effect request")
-	}
+	return func() (uieffects.Result, error) { return request.run(services) }
 }
 
 func (s effectServices) reflow(ids []string, work func()) error {

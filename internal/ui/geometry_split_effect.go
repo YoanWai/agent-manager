@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 type splitSaveRequest struct {
@@ -11,9 +12,22 @@ type splitSaveRequest struct {
 
 func (splitSaveRequest) EffectRequest() {}
 
+func (request splitSaveRequest) copied() effectRequest { return request }
+
+func (splitSaveRequest) effectName() string { return "split ratio save" }
+
+func (request splitSaveRequest) run(services effectServices) (uieffects.Result, error) {
+	return services.runSplitSave(request)
+}
+
 type splitSaveResult struct{}
 
 func (splitSaveResult) EffectResult() {}
+
+func (splitSaveResult) apply(m *Model, job *uieffects.Job, err error) tea.Cmd {
+	m.applySplitSave(job, err)
+	return nil
+}
 
 func (s effectServices) runSplitSave(request splitSaveRequest) (uieffects.Result, error) {
 	if s.store == nil {

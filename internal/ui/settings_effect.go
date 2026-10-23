@@ -9,6 +9,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	tea "github.com/charmbracelet/bubbletea"
+	"slices"
 )
 
 // settingsRequest captures the dialog's chosen preferences and CLI
@@ -23,6 +24,18 @@ type settingsRequest struct {
 
 func (settingsRequest) EffectRequest() {}
 
+func (settingsRequest) effectName() string { return "settings save" }
+
+func (value settingsRequest) copied() effectRequest {
+	value.values = slices.Clone(value.values)
+	value.hidden = slices.Clone(value.hidden)
+	return value
+}
+
+func (request settingsRequest) run(services effectServices) (uieffects.Result, error) {
+	return services.runSettings(request)
+}
+
 // settingsEffectResult reports what the worker durably committed. On a
 // partial failure, restored carries the read-back of the committed keys
 // with a per-key read error: a failed read must not be presented as the
@@ -36,6 +49,10 @@ type settingsEffectResult struct {
 }
 
 func (settingsEffectResult) EffectResult() {}
+
+func (result settingsEffectResult) apply(m *Model, job *uieffects.Job, err error) tea.Cmd {
+	return m.applySettingsEffect(job, result, err)
+}
 
 type settingsLoadTarget uint8
 

@@ -9,7 +9,9 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
+	"maps"
 )
 
 type inputKind uint8
@@ -38,6 +40,19 @@ type inputRequest struct {
 
 func (inputRequest) EffectRequest() {}
 
+func (inputRequest) effectName() string { return "input to a session" }
+
+func (value inputRequest) copied() effectRequest {
+	value.args = slices.Clone(value.args)
+	value.session.PendingInputs = slices.Clone(value.session.PendingInputs)
+	value.session.RelaunchSnapshot = maps.Clone(value.session.RelaunchSnapshot)
+	return value
+}
+
+func (request inputRequest) run(services effectServices) (uieffects.Result, error) {
+	return services.runInput(request)
+}
+
 type inputEffectResult struct {
 	inputID   string
 	candidate *typedPromptCandidate
@@ -46,6 +61,11 @@ type inputEffectResult struct {
 }
 
 func (inputEffectResult) EffectResult() {}
+
+func (result inputEffectResult) apply(m *Model, job *uieffects.Job, err error) tea.Cmd {
+	m.applyInputEffect(result, err)
+	return nil
+}
 
 func (m *Model) dispatchInput(request inputRequest) {
 	request.args = slices.Clone(request.args)

@@ -17,12 +17,24 @@ type attachRequest struct {
 
 func (attachRequest) EffectRequest() {}
 
+func (request attachRequest) copied() effectRequest { return request }
+
+func (attachRequest) effectName() string { return "focus or attach" }
+
+func (request attachRequest) run(services effectServices) (uieffects.Result, error) {
+	return services.runAttach(request)
+}
+
 type attachEffectResult struct {
 	warning error
 	fatal   error
 }
 
 func (attachEffectResult) EffectResult() {}
+
+func (result attachEffectResult) apply(m *Model, job *uieffects.Job, err error) tea.Cmd {
+	return m.applyAttachEffect(job.Request.(attachRequest), result, err)
+}
 func (s effectServices) runAttach(request attachRequest) (uieffects.Result, error) {
 	result := attachEffectResult{}
 	err := s.reflow([]string{request.id}, func() {

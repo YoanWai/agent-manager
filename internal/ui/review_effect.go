@@ -10,6 +10,8 @@ import (
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	tea "github.com/charmbracelet/bubbletea"
+	"maps"
+	"slices"
 )
 
 type reviewEffectOp uint8
@@ -45,6 +47,21 @@ type reviewEffectRequest struct {
 }
 
 func (reviewEffectRequest) EffectRequest() {}
+
+func (reviewEffectRequest) effectName() string { return "review change" }
+
+func (value reviewEffectRequest) copied() effectRequest {
+	value.state.Reviewed = maps.Clone(value.state.Reviewed)
+	value.state.Comments = slices.Clone(value.state.Comments)
+	value.previousState.Reviewed = maps.Clone(value.previousState.Reviewed)
+	value.previousState.Comments = slices.Clone(value.previousState.Comments)
+	value.commentIDs = slices.Clone(value.commentIDs)
+	return value
+}
+
+func (request reviewEffectRequest) run(services effectServices) (uieffects.Result, error) {
+	return services.runReview(request)
+}
 
 type reviewEffectResult struct {
 	op     reviewEffectOp
@@ -86,6 +103,10 @@ func sameReviewSendTarget(current store.Session, expected reviewSendTarget) bool
 }
 
 func (reviewEffectResult) EffectResult() {}
+
+func (result reviewEffectResult) apply(m *Model, job *uieffects.Job, err error) tea.Cmd {
+	return m.applyReviewEffect(job, result, err)
+}
 
 type reviewSessionWriter interface {
 	exists(id string) (bool, error)

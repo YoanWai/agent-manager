@@ -16,12 +16,24 @@ type keysRequest struct {
 
 func (keysRequest) EffectRequest() {}
 
+func (request keysRequest) copied() effectRequest { return request }
+
+func (keysRequest) effectName() string { return "key binding save" }
+
+func (request keysRequest) run(services effectServices) (uieffects.Result, error) {
+	return services.runKeys(request)
+}
+
 type keysEffectResult struct {
 	listCommitted    bool
 	sessionCommitted bool
 }
 
 func (keysEffectResult) EffectResult() {}
+
+func (result keysEffectResult) apply(m *Model, job *uieffects.Job, err error) tea.Cmd {
+	return m.applyKeysEffect(job, result, err)
+}
 
 func (s effectServices) runKeys(request keysRequest) (uieffects.Result, error) {
 	result := keysEffectResult{}

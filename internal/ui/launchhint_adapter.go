@@ -29,7 +29,7 @@ type launchFix struct {
 	script      string
 	binary      string
 	update      bool
-	effectRetry uieffects.Request
+	effectRetry effectRequest
 	images      []composer.Attachment
 }
 
@@ -43,7 +43,7 @@ type pendingInstall struct {
 	binary      string
 	statusFile  string
 	script      string
-	effectRetry uieffects.Request
+	effectRetry effectRequest
 	images      []composer.Attachment
 }
 

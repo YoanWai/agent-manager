@@ -31,6 +31,14 @@ type connectionRequest struct {
 
 func (connectionRequest) EffectRequest() {}
 
+func (request connectionRequest) copied() effectRequest { return request }
+
+func (connectionRequest) effectName() string { return "SSH connection save" }
+
+func (request connectionRequest) run(services effectServices) (uieffects.Result, error) {
+	return services.runConnection(request)
+}
+
 // connectionEffectResult is the list as the store holds it after the
 // write, read back in the same job.
 type connectionEffectResult struct {
@@ -38,6 +46,10 @@ type connectionEffectResult struct {
 }
 
 func (connectionEffectResult) EffectResult() {}
+
+func (result connectionEffectResult) apply(m *Model, job *uieffects.Job, err error) tea.Cmd {
+	return m.applyConnectionEffect(job.Request.(connectionRequest), result, err)
+}
 
 func (s effectServices) runConnection(request connectionRequest) (uieffects.Result, error) {
 	var err error
@@ -126,11 +138,23 @@ type remoteRequest struct {
 
 func (remoteRequest) EffectRequest() {}
 
+func (request remoteRequest) copied() effectRequest { return request }
+
+func (remoteRequest) effectName() string { return "call to an SSH connection" }
+
+func (request remoteRequest) run(services effectServices) (uieffects.Result, error) {
+	return services.runRemote(request)
+}
+
 type remoteEffectResult struct {
 	session sessioncmd.Session
 }
 
 func (remoteEffectResult) EffectResult() {}
+
+func (result remoteEffectResult) apply(m *Model, job *uieffects.Job, err error) tea.Cmd {
+	return m.applyRemoteEffect(job.Request.(remoteRequest), result, err)
+}
 
 func (s effectServices) runRemote(request remoteRequest) (uieffects.Result, error) {
 	ctx := context.Background()
