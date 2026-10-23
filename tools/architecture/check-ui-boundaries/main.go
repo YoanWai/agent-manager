@@ -29,7 +29,7 @@ var (
 	spawnBoundary       = boundary{"Spawn", "/internal/ui/spawn", []string{"/internal/ui/spawn", "/internal/catalog/value", "/internal/ui/presentation"}}
 	composerBoundary    = boundary{"Composer", "/internal/ui/composer", []string{"/internal/ui/composer", "/internal/clipboard", "/internal/termseq", "/internal/wsl", "/internal/ui/spawn", "/internal/catalog/value", "/internal/ui/presentation"}}
 	pathBoundary        = boundary{"Path complete", "/internal/ui/pathcomplete", []string{"/internal/ui/pathcomplete", "/internal/ui/presentation"}}
-	quickBoundary       = boundary{"Quick", "/internal/ui/quick", []string{"/internal/ui/quick", "/internal/ui/spawn", "/internal/catalog/value", "/internal/ui/presentation"}}
+	quickBoundary       = boundary{"Quick", "/internal/ui/quick", []string{"/internal/ui/quick", "/internal/ui/spawn", "/internal/catalog/value", "/internal/ui/presentation", "/internal/ui/composer", "/internal/clipboard", "/internal/termseq", "/internal/wsl", "/internal/ui/surface"}}
 	dialogsBoundary     = boundary{"Dialogs", "/internal/ui/dialogs", []string{"/internal/ui/dialogs", "/internal/ui/presentation", "/internal/ui/surface", "/internal/ui/pathcomplete", "/internal/ui/spawn", "/internal/catalog/value"}}
 	noticesBoundary     = boundary{"Notices", "/internal/ui/notices", []string{"/internal/ui/notices", "/internal/keybind", "/internal/ui/presentation", "/internal/ui/surface"}}
 	valueBoundary       = boundary{"Git values", "/internal/git/value", []string{"/internal/git/value"}}
