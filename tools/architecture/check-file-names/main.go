@@ -44,7 +44,6 @@ var packaged = map[string]string{
 // rootExtras are root files of packaged features that are neither adapter,
 // effect nor surface. They predate the rule; the list only shrinks.
 var rootExtras = map[string]bool{
-	"focus_saved.go":      true,
 	"focus_view.go":       true,
 	"focus_watch.go":      true,
 	"notices_update.go":   true,

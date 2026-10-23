@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/remote"
+	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -35,10 +36,10 @@ var mouseOpeners = map[string]func(t *testing.T, m *Model){
 	"quickSurface":        func(t *testing.T, m *Model) { m.applyCmd(t, m.openQuickMode()) },
 	"spawnSurface":        func(t *testing.T, m *Model) { m.applyCmd(t, m.openForm()) },
 	"geometry.Surface":    func(t *testing.T, m *Model) { m.enterResizeMode() },
-	"focusSurface":        func(t *testing.T, m *Model) { m.push(&focusSurface{}) },
-	"focusSaved": func(t *testing.T, m *Model) {
-		m.push(&focusSurface{})
-		m.push(newFocusSaved(0, m.spawnStyles()))
+	"focus.Surface":       func(t *testing.T, m *Model) { m.push(newFocusSurface(m)) },
+	"focus.Saved": func(t *testing.T, m *Model) {
+		m.push(newFocusSurface(m))
+		m.push(uifocus.OpenSaved(focusSavedRoot{m}, 0, m.spawnStyles()))
 	},
 	"review.Surface": func(t *testing.T, m *Model) {
 		m.base = baseReview
