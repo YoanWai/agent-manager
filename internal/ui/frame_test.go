@@ -58,7 +58,7 @@ func TestZZShot(t *testing.T) {
 		}
 		m.update.version = "0.9.2"
 	case "help":
-		m.mode = modeHelp
+		m.openHelp()
 	}
 	if phase := os.Getenv("AM_SHOT_PHASE"); phase != "" {
 		n, err := strconv.Atoi(phase)

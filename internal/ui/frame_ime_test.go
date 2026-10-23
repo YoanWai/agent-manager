@@ -11,7 +11,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
-	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -173,31 +172,30 @@ func TestCustomSearchCursorsEmitMarkersOnlyWhileTyping(t *testing.T) {
 			width:  100,
 			height: 28,
 		},
-		mode: modeHelp,
-		help: helpFeature{state: uihelp.New(uihelp.Global)},
 		services: services{
 			keys:     keybind.DefaultSession(),
 			listKeys: keybind.DefaultList(),
 		},
 		rail: railModelSearching(nil, 0, "中文"),
 	}
-	m.handleHelpKey(runeKey("/"))
+	m.openHelp()
+	m.handleKey(runeKey("/"))
 	for _, r := range "定位" {
-		m.handleHelpKey(runeKey(string(r)))
+		m.handleKey(runeKey(string(r)))
 	}
 	if line := m.searchFieldLine(40); !strings.Contains(line, cursorAnchorMarker) {
 		t.Fatal("list search cursor has no marker")
 	}
-	if frame := m.viewHelp(); !strings.Contains(frame, cursorAnchorMarker) {
+	if frame := viewHelpOf(m); !strings.Contains(frame, cursorAnchorMarker) {
 		t.Fatal("help search cursor has no marker")
 	}
 
 	m.rail.SetSearch(m.rail.Search(), false)
-	m.handleHelpKey(namedKey(tea.KeyEnter))
+	m.handleKey(namedKey(tea.KeyEnter))
 	if line := m.searchFieldLine(40); strings.Contains(line, cursorAnchorMarker) {
 		t.Fatal("closed list search kept a cursor marker")
 	}
-	if frame := m.viewHelp(); strings.Contains(frame, cursorAnchorMarker) {
+	if frame := viewHelpOf(m); strings.Contains(frame, cursorAnchorMarker) {
 		t.Fatal("closed help search kept a cursor marker")
 	}
 }
@@ -221,17 +219,16 @@ func TestFinalHelpLayoutPublishesAndRemovesCursorMarker(t *testing.T) {
 			width:  100,
 			height: 28,
 		},
-		mode: modeHelp,
-		help: helpFeature{state: uihelp.New(uihelp.Global)},
 		services: services{
 			keys:     keybind.DefaultSession(),
 			listKeys: keybind.DefaultList(),
 		},
 		focus: focusState{runtime: focusRuntimeState{imeCursor: &cursorAnchor{}}},
 	}
-	m.handleHelpKey(runeKey("/"))
+	m.openHelp()
+	m.handleKey(runeKey("/"))
 	for _, r := range "中文" {
-		m.handleHelpKey(runeKey(string(r)))
+		m.handleKey(runeKey(string(r)))
 	}
 	frame := preparedView(m)
 	if strings.Contains(frame, cursorAnchorMarker) {

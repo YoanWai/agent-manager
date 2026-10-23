@@ -103,7 +103,7 @@ func TestReviewPreferencesFinishBehindHelpWithoutStealingIt(t *testing.T) {
 	cmd := m.openDiffWithReader(&reviewReadProbe{})
 	m.openHelp()
 	_, load := m.handleReviewPreferences(cmd().(reviewPreferencesMsg))
-	if m.mode != modeHelp || load == nil || m.review.Scope() != git.ScopeBranch {
+	if !helpOpen(m) || load == nil || m.review.Scope() != git.ScopeBranch {
 		t.Fatal("help interrupted review preparation or was replaced")
 	}
 }

@@ -42,7 +42,7 @@ func TestPreparedAttachDoesNotReplaceNewerHelp(t *testing.T) {
 			if next := m.applyAttachEffect(request, result.result.(attachEffectResult), result.err); next != nil {
 				t.Fatal("prepared attach replaced newer Help")
 			}
-			if m.mode != modeHelp {
+			if !helpOpen(m) {
 				t.Fatal("Help was replaced")
 			}
 		})

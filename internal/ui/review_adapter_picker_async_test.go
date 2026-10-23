@@ -246,7 +246,7 @@ func TestReviewBaseSaveAllowsOnlyOnePendingRequest(t *testing.T) {
 func TestReviewBaseSaveFailureSurfacesAfterNavigation(t *testing.T) {
 	m := &Model{}
 	seedReviewPickerModel(t, m, "s1", "/repo")
-	m.mode = modeHelp
+	m.openHelp()
 	_, _ = m.review.SelectRepo("/newer-review")
 
 	cmd := m.applyReviewBase(reviewBaseResult{
@@ -256,7 +256,7 @@ func TestReviewBaseSaveFailureSurfacesAfterNavigation(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("failed persistence started a review reload")
 	}
-	if m.mode != modeHelp || m.errBar.text != "persist base failed" {
+	if !helpOpen(m) || m.errBar.text != "persist base failed" {
 		t.Fatalf("accepted persistence failure was hidden or stole navigation: mode=%v err=%q", m.mode, m.errBar.text)
 	}
 }
@@ -283,12 +283,12 @@ func TestReviewBaseSaveCompletesBehindReviewHelp(t *testing.T) {
 	}
 	m.mode = modeDiff
 	m.openHelp()
-	if m.mode != modeHelp || m.help.returnMode != modeDiff {
-		t.Fatalf("review help did not open: mode=%v return=%v", m.mode, m.help.returnMode)
+	if !helpOpen(m) || m.mode != modeDiff {
+		t.Fatalf("review help did not open: mode=%v open=%t", m.mode, helpOpen(m))
 	}
 
 	m.drainCmds(t, cmd)
-	if m.mode != modeHelp {
+	if !helpOpen(m) {
 		t.Fatalf("base completion stole help: mode=%v", m.mode)
 	}
 	if m.review.Snapshot().Scope != git.ScopeBranch {

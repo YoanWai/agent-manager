@@ -2,7 +2,6 @@ package ui
 
 import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
-	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -13,13 +12,11 @@ func runeKey(s string) tea.KeyMsg {
 func namedKey(t tea.KeyType) tea.KeyMsg { return tea.KeyMsg{Type: t} }
 
 func helpModel() *Model {
-	return &Model{
+	m := &Model{
 		layout: layoutState{
 			width:  120,
 			height: 30,
 		},
-		mode: modeHelp,
-		help: helpFeature{state: uihelp.New(uihelp.Global)},
 		services: services{
 			keys:     keybind.DefaultSession(),
 			listKeys: keybind.DefaultList(),
@@ -28,4 +25,24 @@ func helpModel() *Model {
 			arrowStep: true,
 		},
 	}
+	m.openHelp()
+	return m
+}
+
+// helpSurfaceOf is the key map on the stack, which a test reads state from.
+func helpSurfaceOf(m *Model) *helpSurface {
+	s, ok := surfaceOf[*helpSurface](m)
+	if !ok {
+		panic("the key map is not open")
+	}
+	return s
+}
+
+func helpLayoutOf(m *Model) helpLayout { return helpSurfaceOf(m).layout(m) }
+
+func viewHelpOf(m *Model) string { return helpSurfaceOf(m).View(m, "") }
+
+func helpOpen(m *Model) bool {
+	_, ok := surfaceOf[*helpSurface](m)
+	return ok
 }

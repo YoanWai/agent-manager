@@ -98,7 +98,7 @@ func TestGlyphModeKeepsModelsIndependentAndAdvancedAppearance(t *testing.T) {
 		m.services.listKeys = keybind.DefaultList()
 		m.openHelp()
 		m.layout.width, m.layout.height = 120, 100
-		if !strings.Contains(ansi.Strip(m.viewHelp()), m.glyphs().StatusGlyph(status.Working)+" working") {
+		if !strings.Contains(ansi.Strip(viewHelpOf(m)), m.glyphs().StatusGlyph(status.Working)+" working") {
 			t.Fatal("help and renderer disagree")
 		}
 		ring := ansi.Strip(strings.Join(ringLoader(m.glyphs(), 40, 10, "loading", 0), "\n"))

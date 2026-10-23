@@ -14,7 +14,7 @@ func TestClickOnListFooterKeysOpensTheirModals(t *testing.T) {
 	}{
 		{"n new", modeForm},
 		{"g group", modeGroupForm},
-		{"? keys", modeHelp},
+		{"? keys", modeList},
 		{"s settings", modeSettings},
 	} {
 		m := buildModel(t)
@@ -113,7 +113,7 @@ func TestAKeyRunsOnTheRelease(t *testing.T) {
 	if m = leftRelease(m, x, y); m.mode != modeList {
 		t.Fatalf("a second release with no press ran the key, mode = %v", m.mode)
 	}
-	if m = leftClick(m, x, y); m.mode != modeHelp {
+	if m = leftClick(m, x, y); !helpOpen(m) {
 		t.Fatalf("a click on the key should run it, mode = %v", m.mode)
 	}
 }

@@ -15,7 +15,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
-	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
@@ -31,7 +30,6 @@ const (
 	modeList mode = iota
 	modeForm
 	modeConfirmDelete
-	modeHelp
 	modeRename
 	modeFork
 	modeMove
@@ -76,7 +74,6 @@ type Model struct {
 	quick      quickBar
 	settings   settingsFeature
 	env        environment
-	help       helpFeature
 	move       moveDialog
 	ssh        connectionsFeature
 	layout     layoutState
@@ -134,11 +131,6 @@ type settingsFeature struct {
 type environment struct {
 	workDir string
 	homeDir string
-}
-
-type helpFeature struct {
-	state      uihelp.State
-	returnMode mode
 }
 
 func NewWithInboxOwner(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, version string, owner sessioncmd.InboxMaintenance) (*Model, error) {

@@ -38,10 +38,10 @@ func TestBackdropClickClosesACardTheWayEscDoes(t *testing.T) {
 		createSession(t, m, "alpha", t.TempDir(), "")
 		m.selectSessionRow(t, "alpha")
 		tc.open(m)
-		if m.mode == modeList {
+		if !m.cardOpen() {
 			t.Fatalf("%s: test setup did not open the card, err %q", tc.name, m.errBar.text)
 		}
-		if m = clickBackdrop(t, m); m.mode != modeList {
+		if m = clickBackdrop(t, m); m.mode != modeList || m.cardOpen() {
 			t.Errorf("%s: a backdrop click should close the card, mode = %v", tc.name, m.mode)
 		}
 		if m.confirm.label != "" {
@@ -96,7 +96,7 @@ func TestClickOnACardsOwnBlankStaysOpen(t *testing.T) {
 	m.layout.width, m.layout.height = 120, 34
 	m.openHelp()
 	preparedView(m)
-	if m = leftClick(m, m.layout.card.left+1, m.layout.card.top+1); m.mode != modeHelp {
+	if m = leftClick(m, m.layout.card.left+1, m.layout.card.top+1); !helpOpen(m) {
 		t.Fatalf("a click on the card's own edge should leave it open, mode = %v", m.mode)
 	}
 }
@@ -157,10 +157,10 @@ func TestACardClickRunsOnTheRelease(t *testing.T) {
 	m.openHelp()
 	preparedView(m)
 	card := m.layout.card
-	if m = leftPress(m, 0, 0); m.mode != modeHelp {
+	if m = leftPress(m, 0, 0); !helpOpen(m) {
 		t.Fatalf("the press alone closed the card, mode = %v", m.mode)
 	}
-	if m = leftRelease(m, card.left+1, card.top+1); m.mode != modeHelp {
+	if m = leftRelease(m, card.left+1, card.top+1); !helpOpen(m) {
 		t.Fatalf("a release over the card closed it, mode = %v", m.mode)
 	}
 	if m = leftClick(m, 0, 0); m.mode != modeList {

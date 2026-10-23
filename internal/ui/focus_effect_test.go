@@ -454,7 +454,7 @@ func TestPendingFocusDistinguishesIgnoredAndBoundKeys(t *testing.T) {
 			_, pending := m.focusSelected()
 			m.Update(tea.KeyMsg{Type: tea.KeyF12})
 			if bound {
-				if m.mode != modeHelp {
+				if !helpOpen(m) {
 					t.Fatal("bound key did not open help")
 				}
 				m.Update(tea.KeyMsg{Type: tea.KeyEsc})

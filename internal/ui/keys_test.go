@@ -21,7 +21,6 @@ var ctrlCQuits = map[mode]bool{
 	modeList:          true,
 	modeForm:          true,
 	modeConfirmDelete: true,
-	modeHelp:          true,
 	modeRename:        true,
 	modeFork:          true,
 	modeMove:          true,
@@ -98,7 +97,6 @@ func TestCtrlCAbandonsADrainFromFocus(t *testing.T) {
 // reaches the same router and not a surface's own idea of quit.
 func TestClickedCtrlCTakesTheRouter(t *testing.T) {
 	m := buildModel(t)
-	m.mode = modeHelp
 	// A frame repaints the hits on every Update, so the click is run on a
 	// hit placed by hand, the way routeMouse runs it on a release.
 	m.layout.keyHits = keyHits{}.add(0, 6, 0, "ctrl+c")

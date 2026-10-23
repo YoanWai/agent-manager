@@ -15,55 +15,43 @@ import (
 	"github.com/muesli/termenv"
 )
 
-func TestHelpAdapterPreservesQuitCommand(t *testing.T) {
+func TestHelpAdapterKeepsReviewLoaderRunningUnderTheCard(t *testing.T) {
 	m := helpModel()
-	model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
-	if model != m || cmd == nil {
-		t.Fatalf("ctrl+c returned model %T and nil command = %v", model, cmd == nil)
-	}
-	msg := cmd()
-	if _, ok := msg.(tea.QuitMsg); !ok {
-		t.Fatalf("ctrl+c command produced %T, want tea.QuitMsg", msg)
-	}
-}
-
-func TestHelpAdapterRestoresReviewBeforeRestartingLoader(t *testing.T) {
-	m := helpModel()
+	m.clearSurfaces()
 	m.mode = modeDiff
 	seedReviewForTest(m, uireview.Target{ID: "review"}, git.ScopeUncommitted, "/repo", diff.Set{}, false)
-	m.openHelp()
-	if m.help.returnMode != modeDiff {
-		t.Fatalf("opened review help with return mode %v", m.help.returnMode)
+	if cmd := m.startStartupTick(); cmd == nil {
+		t.Fatal("loading review should start the loader")
 	}
-	if title := m.help.state.Content(m.helpContext(84)).Title; title != "? Review keys" {
+	m.openHelp()
+	if m.mode != modeDiff {
+		t.Fatalf("help over review left mode %v", m.mode)
+	}
+	if title := helpSurfaceOf(m).state.Content(m.helpContext(84)).Title; title != "? Review keys" {
 		t.Fatalf("opened review help title = %q", title)
 	}
-
-	_, cmd := m.handleHelpKey(namedKey(tea.KeyEsc))
-	if m.mode != modeDiff || m.help.returnMode != modeList {
-		t.Fatalf("close left mode %v and return mode %v", m.mode, m.help.returnMode)
+	m.Update(startupTickMsg{})
+	if !m.startup.startupAnimating {
+		t.Fatal("review is still loading under the card, so the loader keeps ticking")
 	}
-	if cmd == nil || !m.startup.startupAnimating {
-		t.Fatal("review mode was not restored before its loader restart")
-	}
-	msg := cmd()
-	if _, ok := msg.(startupTickMsg); !ok {
-		t.Fatalf("restart command produced %T, want startupTickMsg", msg)
+	m.handleKey(namedKey(tea.KeyEsc))
+	if m.mode != modeDiff || helpOpen(m) || !m.startup.startupAnimating {
+		t.Fatalf("close left mode %v, help open %t, loader %t", m.mode, helpOpen(m), m.startup.startupAnimating)
 	}
 }
 
 func TestHelpAdapterReopensWithCleanFeatureState(t *testing.T) {
 	m := helpModel()
-	m.handleHelpKey(runeKey("/"))
+	m.handleKey(runeKey("/"))
 	for _, r := range "fork" {
-		m.handleHelpKey(runeKey(string(r)))
+		m.handleKey(runeKey(string(r)))
 	}
-	if frame := ansi.Strip(m.viewHelp()); !strings.Contains(frame, "search fork") {
+	if frame := ansi.Strip(viewHelpOf(m)); !strings.Contains(frame, "search fork") {
 		t.Fatalf("test setup did not type a search:\n%s", frame)
 	}
 	m.mode = modeList
 	m.openHelp()
-	if frame := ansi.Strip(m.viewHelp()); strings.Contains(frame, "search fork") {
+	if frame := ansi.Strip(viewHelpOf(m)); strings.Contains(frame, "search fork") {
 		t.Fatalf("reopened help retained stale search:\n%s", frame)
 	}
 }
@@ -71,37 +59,37 @@ func TestHelpAdapterReopensWithCleanFeatureState(t *testing.T) {
 func TestHelpAdapterRecomputesRowsWithoutMutatingScroll(t *testing.T) {
 	m := helpModel()
 	m.layout.height = 18
-	m.handleHelpKey(runeKey("G"))
-	clean := m.helpLayout()
+	m.handleKey(runeKey("G"))
+	clean := helpLayoutOf(m)
 	if clean.content.Offset == 0 {
 		t.Fatal("test setup did not scroll the catalog")
 	}
 
-	m.handleHelpKey(runeKey("/"))
-	searching := m.helpLayout()
+	m.handleKey(runeKey("/"))
+	searching := helpLayoutOf(m)
 	if len(searching.content.Head) != 2 || searching.rows >= clean.rows {
 		t.Fatalf("searching head/rows = %d/%d, clean rows = %d", len(searching.content.Head), searching.rows, clean.rows)
 	}
 	before := searching.content.Offset
-	first := m.viewHelp()
-	second := m.viewHelp()
-	if got := m.helpLayout().content.Offset; got != before {
+	first := viewHelpOf(m)
+	second := viewHelpOf(m)
+	if got := helpLayoutOf(m).content.Offset; got != before {
 		t.Fatalf("render mutated scroll from %d to %d", before, got)
 	}
 	if first != second {
 		t.Fatal("same help state rendered different frames")
 	}
 
-	m.handleHelpKey(namedKey(tea.KeyEnter))
-	finished := m.helpLayout()
+	m.handleKey(namedKey(tea.KeyEnter))
+	finished := helpLayoutOf(m)
 	if len(finished.content.Head) != 0 || finished.rows != clean.rows || finished.content.Offset != before {
 		t.Fatalf("finished empty search = head %d rows %d offset %d; want 0/%d/%d",
 			len(finished.content.Head), finished.rows, finished.content.Offset, clean.rows, before)
 	}
 
-	m.handleHelpKey(runeKey("/"))
-	m.handleHelpKey(namedKey(tea.KeyEsc))
-	cleared := m.helpLayout()
+	m.handleKey(runeKey("/"))
+	m.handleKey(namedKey(tea.KeyEsc))
+	cleared := helpLayoutOf(m)
 	if len(cleared.content.Head) != 0 || cleared.content.Offset != 0 {
 		t.Fatalf("escape from search left head %d offset %d", len(cleared.content.Head), cleared.content.Offset)
 	}
@@ -109,17 +97,17 @@ func TestHelpAdapterRecomputesRowsWithoutMutatingScroll(t *testing.T) {
 
 func TestHelpAdapterCountsRenderedNoMatchLine(t *testing.T) {
 	m := helpModel()
-	m.handleHelpKey(runeKey("/"))
+	m.handleKey(runeKey("/"))
 	for _, r := range "zzzz" {
-		m.handleHelpKey(runeKey(string(r)))
+		m.handleKey(runeKey(string(r)))
 	}
-	m.handleHelpKey(namedKey(tea.KeyEnter))
-	layout := m.helpLayout()
+	m.handleKey(namedKey(tea.KeyEnter))
+	layout := helpLayoutOf(m)
 	if got := len(layout.content.Lines); got != 1 {
 		t.Fatalf("no-match content has %d rendered lines, want 1", got)
 	}
-	m.handleHelpKey(runeKey("G"))
-	if offset := m.helpLayout().content.Offset; offset != 0 {
+	m.handleKey(runeKey("G"))
+	if offset := helpLayoutOf(m).content.Offset; offset != 0 {
 		t.Fatalf("bottom on one rendered line moved to %d", offset)
 	}
 }
@@ -133,9 +121,9 @@ func TestHelpAdapterUsesFreshThemeStyles(t *testing.T) {
 	m := helpModel()
 
 	applyTheme(themes[themeIndex("classic")])
-	classic := m.help.state.Content(m.helpContext(84))
+	classic := helpSurfaceOf(m).state.Content(m.helpContext(84))
 	applyTheme(themes[themeIndex("solarized light")])
-	light := m.help.state.Content(m.helpContext(84))
+	light := helpSurfaceOf(m).state.Content(m.helpContext(84))
 	if strings.Join(classic.Lines, "\n") == strings.Join(light.Lines, "\n") {
 		t.Fatal("theme switch left help styles unchanged")
 	}
@@ -146,22 +134,26 @@ func TestHelpAdapterUsesFreshThemeStyles(t *testing.T) {
 
 func TestHelpAdapterScopeUsesOnlyCopiedValues(t *testing.T) {
 	m := helpModel()
-	m.help.state = uihelp.New(uihelp.Review)
-	content := m.help.state.Content(m.helpContext(84))
+	helpSurfaceOf(m).state = uihelp.New(uihelp.Review)
+	content := helpSurfaceOf(m).state.Content(m.helpContext(84))
 	if content.Title != "? Review keys" || len(content.Lines) == 0 {
 		t.Fatalf("review content = %+v", content)
 	}
 }
 
 func TestHelpModeOwnsKeysBeforeListOverlays(t *testing.T) {
-	m := helpModel()
-	m.rail.SetSearch(m.rail.Search(), true)
-	m.quick.active = true
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 34
+	m.applyCmd(t, m.openQuickMode())
+	if !m.quick.active {
+		t.Fatal("quick bar did not open")
+	}
+	m.openHelp()
 
 	m.handleKey(runeKey("/"))
 	m.handleKey(runeKey("q"))
 	frame := ansi.Strip(preparedView(m))
-	if m.mode != modeHelp || !strings.Contains(frame, "search q") {
+	if !helpOpen(m) || !strings.Contains(frame, "search q") {
 		t.Fatalf("list overlay intercepted Help input, mode = %v:\n%s", m.mode, frame)
 	}
 }

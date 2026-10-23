@@ -66,20 +66,21 @@ func TestDiffHelpReturnsToReview(t *testing.T) {
 	dir := gitTestRepo(t)
 	openReviewOn(t, m, "helper", dir)
 	m.handleDiffKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
-	if m.mode != modeHelp {
+	if !helpOpen(m) {
 		t.Fatalf("? should open the key map, mode = %v", m.mode)
 	}
 	if !m.review.Snapshot().Active {
 		t.Fatal("opening help must not close the review")
 	}
-	m.handleHelpKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
 	if m.mode != modeDiff || !m.review.Snapshot().Active {
 		t.Fatalf("esc should return to review, mode = %v active = %v", m.mode, m.review.Snapshot().Active)
 	}
 }
 
-func TestDiffHelpRestartsLoaderOnReturn(t *testing.T) {
+func TestDiffHelpKeepsLoaderRunningOnReturn(t *testing.T) {
 	m := helpModel()
+	m.clearSurfaces()
 	m.mode = modeDiff
 	seedReviewForTest(m, uireview.Target{ID: "review"}, git.ScopeUncommitted, "/repo", diff.Set{}, false)
 	if cmd := m.startStartupTick(); cmd == nil {
@@ -87,11 +88,11 @@ func TestDiffHelpRestartsLoaderOnReturn(t *testing.T) {
 	}
 	m.openHelp()
 	m.Update(startupTickMsg{})
-	if m.startup.startupAnimating {
-		t.Fatal("loader should stop while help covers the review")
+	if !m.startup.startupAnimating {
+		t.Fatal("review is still loading under help, so the loader keeps ticking")
 	}
-	_, cmd := m.handleHelpKey(tea.KeyMsg{Type: tea.KeyEsc})
-	if cmd == nil || !m.startup.startupAnimating {
-		t.Fatal("returning to a loading review should restart the loader")
+	m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	if !m.startup.startupAnimating {
+		t.Fatal("returning to a loading review should leave the loader running")
 	}
 }

@@ -18,12 +18,12 @@ import (
 )
 
 func typeHelpSearch(m *Model, query string, finish bool) {
-	m.handleHelpKey(runeKey("/"))
+	m.handleKey(runeKey("/"))
 	for _, r := range query {
-		m.handleHelpKey(runeKey(string(r)))
+		m.handleKey(runeKey(string(r)))
 	}
 	if finish {
-		m.handleHelpKey(namedKey(tea.KeyEnter))
+		m.handleKey(namedKey(tea.KeyEnter))
 	}
 }
 
@@ -82,7 +82,7 @@ func TestHelpArrowStepRowsFollowSetting(t *testing.T) {
 	for _, enabled := range []bool{true, false} {
 		m := helpModel()
 		m.prefs.arrowStep = enabled
-		lines := m.help.state.Content(m.helpContext(84)).Lines
+		lines := helpSurfaceOf(m).state.Content(m.helpContext(84)).Lines
 		for _, row := range []struct{ title, key string }{
 			{"list", "→"},
 			{"list", "←"},
@@ -104,13 +104,12 @@ func TestHelpFramePaintsInsideTheTerminal(t *testing.T) {
 						width:  width,
 						height: height,
 					},
-					mode: modeHelp,
-					help: helpFeature{state: uihelp.New(uihelp.Global)},
 					services: services{
 						keys:     keybind.DefaultSession(),
 						listKeys: keybind.DefaultList(),
 					},
 				}
+				m.openHelp()
 				if query != "" {
 					typeHelpSearch(m, query, true)
 				}
@@ -134,7 +133,7 @@ func TestHelpBodyShowsMoreMarkersWhenItOverflows(t *testing.T) {
 	if !strings.Contains(frame, "more below") {
 		t.Fatal("an overflowing map should say there is more below")
 	}
-	m.handleHelpKey(runeKey("G"))
+	m.handleKey(runeKey("G"))
 	frame = ansi.Strip(preparedView(m))
 	if !strings.Contains(frame, "more above") {
 		t.Fatal("a map scrolled to the end should say there is more above")
@@ -170,8 +169,7 @@ func TestHelpMatchesBaselineContentAndLayout(t *testing.T) {
 	tests[1].model.layout.width, tests[1].model.layout.height = 100, 28
 	tests[1].model.focus.runtime.imeCursor = &cursorAnchor{}
 	typeHelpSearch(tests[1].model, "中文", false)
-	tests[2].model.help.state = uihelp.New(uihelp.Review)
-	tests[2].model.help.returnMode = modeDiff
+	helpSurfaceOf(tests[2].model).state = uihelp.New(uihelp.Review)
 	tests[3].model.layout.width, tests[3].model.layout.height = 60, 14
 	tests[3].model.errBar = errBar{text: "refresh failed"}
 	typeHelpSearch(tests[3].model, "zzzz", true)
@@ -223,12 +221,12 @@ func TestHelpOpensDocs(t *testing.T) {
 	if !strings.Contains(frame, hintCap("o", "docs")) {
 		t.Fatal("the docs shortcut should wear the footer badge")
 	}
-	_, cmd := m.handleHelpKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")})
+	_, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")})
 	m.applyCmd(t, cmd)
 	if opened != docsURL {
 		t.Fatalf("o should open the docs, got %q", opened)
 	}
-	if m.mode != modeHelp {
+	if !helpOpen(m) {
 		t.Fatal("opening the docs should leave the key map up")
 	}
 
@@ -257,7 +255,7 @@ func TestHelpOpensDocs(t *testing.T) {
 func TestHelpDocsHitIgnoresTheSearchRow(t *testing.T) {
 	m := helpModel()
 	for _, msg := range []tea.KeyMsg{runeKey("/"), runeKey("o"), namedKey(tea.KeySpace), runeKey("docs"), namedKey(tea.KeyEnter)} {
-		m.handleHelpKey(msg)
+		m.handleKey(msg)
 	}
 	frame := preparedView(m)
 	plain := strings.Split(ansi.Strip(frame), "\n")
@@ -278,7 +276,7 @@ func TestHelpDocsHitIgnoresTheSearchRow(t *testing.T) {
 		t.Fatalf("the docs hit missed the footer: %q", plain[docs.y])
 	}
 
-	m.handleHelpKey(runeKey("/"))
+	m.handleKey(runeKey("/"))
 	preparedView(m)
 	if _, ok := docsKeyHit(m); ok {
 		t.Fatal("typing a search should not leave a docs hit")

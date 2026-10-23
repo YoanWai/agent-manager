@@ -23,7 +23,7 @@ func TestPendingActionMarksMatchHelpInBothModes(t *testing.T) {
 		found := false
 		m.openHelp()
 		m.layout.width, m.layout.height = 120, 100
-		found = strings.Contains(ansi.Strip(m.viewHelp()), tc.archive+" / "+tc.kill)
+		found = strings.Contains(ansi.Strip(viewHelpOf(m)), tc.archive+" / "+tc.kill)
 		if !found {
 			t.Fatalf("%s help has different lifecycle marks", tc.mode)
 		}

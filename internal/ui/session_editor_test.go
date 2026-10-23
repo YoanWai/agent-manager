@@ -699,7 +699,7 @@ func TestEditorReturnCompletionCannotCrossHelpOrQuit(t *testing.T) {
 					t.Fatalf("stale editor completion queued a reattach through %s", tc.name)
 				}
 			}
-			if tc.name == "help" && m.mode != modeHelp {
+			if tc.name == "help" && !helpOpen(m) {
 				t.Fatalf("stale editor completion replaced Help: mode=%v", m.mode)
 			}
 		})

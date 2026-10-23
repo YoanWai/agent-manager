@@ -19,7 +19,7 @@ func TestUpdatePublishesPreparedFrame(t *testing.T) {
 	m := shotModel()
 	m.prepareFrame()
 	before := m.View()
-	m.mode = modeHelp
+	m.openHelp()
 	if got := m.View(); got != before {
 		t.Fatal("View rendered state that had not been prepared")
 	}
