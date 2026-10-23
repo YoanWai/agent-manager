@@ -1,8 +1,10 @@
 package ui
 
 import (
+	"path/filepath"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/execution"
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -12,14 +14,24 @@ func resizeOpen(m *Model) bool {
 	return ok
 }
 
-func resizeModel() *Model {
-	return &Model{mode: modeList, layout: layoutState{split: splitState{ratio: 0.34}, width: 100, height: 40}, services: services{listKeys: keybind.DefaultList()}}
+// resizeModel drives the gesture through Update, which syncs the poller's
+// input on every message, so the fixture carries one over a scratch store.
+func resizeModel(t *testing.T) *Model {
+	t.Helper()
+	st := openTestStore(t, filepath.Join(t.TempDir(), "state.db"))
+	t.Cleanup(func() { st.Close() })
+	return &Model{
+		mode:     modeList,
+		layout:   layoutState{split: splitState{ratio: 0.34}, width: 100, height: 40},
+		poller:   &poller{runner: execution.New(execution.Dependencies{Store: st}, execution.Options{})},
+		services: services{store: st, listKeys: keybind.DefaultList()},
+	}
 }
 
 // The resize key pushes the gesture, esc pops it with the ratio put back,
 // and a stray click keeps it: the surface holds a gesture, not a card.
 func TestResizeIsASurface(t *testing.T) {
-	m := resizeModel()
+	m := resizeModel(t)
 	m.Update(key("|"))
 	if !resizeOpen(m) || !m.layout.split.resizeMode {
 		t.Fatal("the resize key did not push the gesture")
@@ -37,7 +49,7 @@ func TestResizeIsASurface(t *testing.T) {
 // A press on the divider pushes the gesture without the keyboard, and the
 // next key ends the drag and still reaches the list below.
 func TestDividerDragIsASurfaceAKeyEnds(t *testing.T) {
-	m := resizeModel()
+	m := resizeModel(t)
 	y0, _ := m.bodyYRange()
 	m.handleMouse(tea.MouseMsg{X: m.dividerX(), Y: y0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
 	if !resizeOpen(m) || m.layout.split.resizeMode {
