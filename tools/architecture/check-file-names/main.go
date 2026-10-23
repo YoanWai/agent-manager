@@ -46,13 +46,11 @@ var packaged = map[string]string{
 // rootExtras are root files of packaged features that are neither adapter,
 // effect nor surface. They predate the rule; the list only shrinks.
 var rootExtras = map[string]bool{
-	"settings_prefs.go":   true,
-	"settings_prompts.go": true,
-	"theme.go":            true,
-	"theme_glyphs.go":     true,
-	"theme_prefs.go":      true,
-	"theme_styles.go":     true,
-	"theme_surface.go":    true,
+	"theme.go":         true,
+	"theme_glyphs.go":  true,
+	"theme_prefs.go":   true,
+	"theme_styles.go":  true,
+	"theme_surface.go": true,
 }
 
 // rootOnly are the features that live in the root package itself. The

@@ -98,7 +98,7 @@ func TestGroupFormSurfaceOnAConnectionStopsAtThePath(t *testing.T) {
 		t.Fatalf("focus after the path = %d, want the name again", s.Focus())
 	}
 	s.SetName("api")
-	msg, ok := s.Key(&fakeHost{}, tea.KeyMsg{Type: tea.KeyEnter})
+	ok, msg := s.Key(&fakeHost{}, tea.KeyMsg{Type: tea.KeyEnter})
 	if !ok || msg == nil {
 		t.Fatal("enter should submit")
 	}
