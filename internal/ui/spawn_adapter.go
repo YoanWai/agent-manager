@@ -408,7 +408,7 @@ func (m *Model) routeSpawnMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		return routed(m.handleWorktreeProbe(msg))
 
 	case pathcomplete.Msg:
-		m.completer(msg.Request.Target).Handle(m, msg)
+		m.completer(msg.Request.Target).Handle(pathCompleter{m}, msg)
 		return routed(m, nil)
 
 	case terminalDirectoryMsg:

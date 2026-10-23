@@ -27,17 +27,18 @@ const uiRoot = "internal/ui"
 // internal/ui. Their root files only adapt it: <feature>_adapter*.go and
 // <feature>_*effect.go, besides the older ones in rootExtras.
 var packaged = map[string]string{
-	"connections": "the SSH connections adapter: the client, refreshes, remote rows, preview and routed actions, and their effects",
-	"dialogs":     "the confirm, rename, move and fork dialog adapters and their effects",
-	"focus":       "the Focus adapter, its frame view and the pane watcher it holds",
-	"help":        "the Help adapter: the context and root reads the key map paints from",
-	"notices":     "the notices adapter, release and feed checks and self-update",
-	"quick":       "the quick bar adapter and its send effect",
-	"rail":        "the Rail adapter",
-	"review":      "the Review adapter",
-	"settings":    "the Settings adapter, its store lane and the stored preference readers",
-	"spawn":       "the New Session form adapter, its group picker, request, defaults, group base and fetch, catalog reads, spawn effect, preflight and worktree probe",
-	"theme":       "live styles, surfaces and the stored theme",
+	"connections":  "the SSH connections adapter: the client, refreshes, remote rows, preview and routed actions, and their effects",
+	"dialogs":      "the confirm, rename, move and fork dialog adapters and their effects",
+	"focus":        "the Focus adapter, its frame view and the pane watcher it holds",
+	"help":         "the Help adapter: the context and root reads the key map paints from",
+	"notices":      "the notices adapter, release and feed checks and self-update",
+	"pathcomplete": "the directory completer's adapter: which field a read lands on",
+	"quick":        "the quick bar adapter and its send effect",
+	"rail":         "the Rail adapter",
+	"review":       "the Review adapter",
+	"settings":     "the Settings adapter, its store lane and the stored preference readers",
+	"spawn":        "the New Session form adapter, its group picker, request, defaults, group base and fetch, catalog reads, spawn effect, preflight and worktree probe",
+	"theme":        "live styles, surfaces and the stored theme",
 }
 
 // rootExtras are root files of packaged features that are neither adapter,
@@ -65,21 +66,20 @@ var rootExtras = map[string]bool{
 // list is closed: a new feature starts as a package under internal/ui and
 // joins packaged, so the root holds only its adapter and effects.
 var rootOnly = map[string]string{
-	"composer":     "prompt composers, chips and pasted images",
-	"effects":      "the ordered effect lane and its executor",
-	"frame":        "frame composition: dialog chrome, header, legend, IME, text layout and control escaping",
-	"geometry":     "pane sizing, layout widths and the split ratio",
-	"group":        "the New Group form adapter",
-	"input":        "raw input forwarded to panes",
-	"launchhint":   "the launch fix dialog and CLI install",
-	"model":        "the root Model, its services and shared host methods",
-	"pathcomplete": "directory completion for path fields",
-	"preview":      "the session preview",
-	"session":      "session lifecycle: launch, attach, kill, revive, archive, delete, restart, editor",
-	"startup":      "startup greeting and banner",
-	"status":       "the status bar and toasts",
-	"terminal":     "terminal handoff, link opening and link pages",
-	"workspace":    "polling, refresh and what the last poll returned",
+	"composer":   "prompt composers, chips and pasted images",
+	"effects":    "the ordered effect lane and its executor",
+	"frame":      "frame composition: dialog chrome, header, legend, IME, text layout and control escaping",
+	"geometry":   "pane sizing, layout widths and the split ratio",
+	"group":      "the New Group form adapter",
+	"input":      "raw input forwarded to panes",
+	"launchhint": "the launch fix dialog and CLI install",
+	"model":      "the root Model, its services and shared host methods",
+	"preview":    "the session preview",
+	"session":    "session lifecycle: launch, attach, kill, revive, archive, delete, restart, editor",
+	"startup":    "startup greeting and banner",
+	"status":     "the status bar and toasts",
+	"terminal":   "terminal handoff, link opening and link pages",
+	"workspace":  "polling, refresh and what the last poll returned",
 }
 
 // dispatch are the root files that route rather than own a feature.

@@ -68,7 +68,7 @@ func (SystemReader) Complete(typed string) []string { return completeDirs(typed)
 
 func suggestionsCmd(request Request, reader Reader) tea.Cmd {
 	return func() tea.Msg {
-		return Msg{request: request, Suggestions: reader.Complete(request.Typed)}
+		return Msg{Request: request, Suggestions: reader.Complete(request.Typed)}
 	}
 }
 
