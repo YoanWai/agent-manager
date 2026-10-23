@@ -247,7 +247,7 @@ func (p *Panel) View(notices []Notice, f Frame) []string {
 	if len(notices) == 0 {
 		rows := []string{t.Subtle.Render("nothing new")}
 		rows = append(rows, p.tail(notices, f, inner)...)
-		frame := cardFrame(rows, inner, legend(t), t.Muted.Render(footText(footPairs(notices, p.cursor, inner))), t)
+		frame := cardFrame(rows, inner, legend(t), renderFoot(footPairs(notices, p.cursor, inner), t), t)
 		return frame
 	}
 	var rows []string
@@ -279,7 +279,7 @@ func (p *Panel) View(notices []Notice, f Frame) []string {
 
 	frame := cardFrame(rows, inner,
 		legend(t),
-		t.Muted.Render(footText(footPairs(notices, p.cursor, inner))), t)
+		renderFoot(footPairs(notices, p.cursor, inner), t), t)
 	return frame
 }
 
@@ -337,6 +337,18 @@ func footPairs(notices []Notice, cursor, inner int) [][2]string {
 }
 
 func footPart(pair [2]string) string { return strings.TrimSpace(pair[0] + " " + pair[1]) }
+
+func renderFoot(pairs [][2]string, t Theme) string {
+	parts := make([]string, len(pairs))
+	for i, pair := range pairs {
+		style := t.Muted
+		if pair[0] == "u" {
+			style = t.Key
+		}
+		parts[i] = style.Render(footPart(pair))
+	}
+	return strings.Join(parts, t.Muted.Render(footSep))
+}
 
 func footText(pairs [][2]string) string {
 	parts := make([]string, len(pairs))
