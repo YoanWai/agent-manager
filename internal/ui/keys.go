@@ -7,6 +7,12 @@ import (
 )
 
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Focus owns the keyboard, ctrl+c included: the agent under the cursor
+	// receives it as its cancel key, and the list's own bindings stay out of
+	// the way until ctrl+q hands the keyboard back.
+	if m.mode == modeFocus {
+		return m.handleFocusKey(msg)
+	}
 	if m.mode == modeList && m.rail.InputMode() == uirail.BrowseMode && !m.quick.active && !m.layout.split.dragging && !m.layout.split.resizeMode {
 		decision := m.rail.Key(msg, m.layout.displayedRail, m.railKeyContext())
 		if decision.Consumed {
@@ -74,8 +80,6 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleConnectionKey(msg)
 	case modeDiff:
 		return m.handleDiffKey(msg)
-	case modeFocus:
-		return m.handleFocusKey(msg)
 	case modeNotices:
 		return m.handleNoticesKey(msg)
 	case modeHelp:

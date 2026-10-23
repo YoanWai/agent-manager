@@ -9,7 +9,11 @@ import (
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if key, ok := msg.(tea.KeyMsg); ok {
 		name := keybind.Normalize(key.String())
-		if name == "ctrl+c" || (m.effects.quitting && m.services.listKeys.Binding(keybind.Quit).Has(name)) {
+		// A focused session owns the keyboard, so ctrl+c is the agent's
+		// cancel key there; every other surface quits on it. A drain already
+		// under way keeps its second quit from any mode, since the agent has
+		// nothing left to cancel by then.
+		if (name == "ctrl+c" && m.mode != modeFocus) || (m.effects.quitting && m.services.listKeys.Binding(keybind.Quit).Has(name)) {
 			return m.requestQuit()
 		}
 	}

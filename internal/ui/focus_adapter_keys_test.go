@@ -311,8 +311,58 @@ func TestFocusModeForwardsKeys(t *testing.T) {
 	}
 }
 
+// A focused session owns the keyboard, ctrl+c included: the agent reads it
+// as its cancel key and the manager stays up. Before this, the quit check at
+// the top of Update answered every ctrl+c, so a cancel ended the manager.
+func TestFocusModeForwardsCtrlC(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "focus-ctrlc", t.TempDir(), "")
+	m.selectSessionRow(t, "focus-ctrlc")
+	sess := railSelectedSession(m)
+
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	m.drainEffects(t)
+	if m.mode != modeFocus {
+		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	*m = *updated.(*Model)
+	if cmd != nil {
+		if _, quit := cmd().(tea.QuitMsg); quit {
+			t.Fatal("ctrl+c in a focused session quit the manager")
+		}
+	}
+	if m.effects.quitting {
+		t.Fatal("ctrl+c in a focused session began a quit drain")
+	}
+	if msg, ok := m.effects.input.active.request.(inputRequest); ok {
+		if msg.kind != inputKeys || msg.command != "send-keys -t "+tmux.PaneTarget(sess.ID)+" C-c" {
+			t.Fatalf("ctrl+c forwarded as %q, want the pane's C-c", msg.command)
+		}
+	} else if m.mode != modeFocus {
+		t.Fatalf("ctrl+c left the focused session, mode = %v", m.mode)
+	}
+	m.drainEffects(t)
+	if m.mode != modeFocus {
+		t.Fatalf("ctrl+c forwarded, but focus ended: mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+
+	// ctrl+q still hands the keyboard back, and ctrl+c then quits again.
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlQ})
+	*m = *updated.(*Model)
+	if m.mode != modeList {
+		t.Fatalf("ctrl+q left mode = %v", m.mode)
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	*m = *updated.(*Model)
+	if !m.effects.quitting {
+		t.Fatal("ctrl+c in the list did not quit")
+	}
+}
+
 func TestFocusModeForwardsArrowKeys(t *testing.T) {
-	t.Parallel()
 	m := buildModel(t)
 	createSessionOn(t, m, "focus-arrows", "quietchat", t.TempDir())
 	m.selectSessionRow(t, "focus-arrows")
