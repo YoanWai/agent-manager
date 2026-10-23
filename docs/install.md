@@ -99,11 +99,14 @@ $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
 if ($actual -ne $expected) { throw "Checksum mismatch for $archive" }
 ```
 
-Optionally verify provenance before extracting. This needs a logged-in GitHub CLI with `gh attestation` support.
+Optionally verify provenance before extracting. This needs a logged-in GitHub CLI with `gh attestation` support. A missing `gh` stops the example. PowerShell would otherwise keep the previous `$LASTEXITCODE`, and a `0` from an earlier command would look like a successful verify.
 
 ```powershell
-gh attestation verify $archive --repo YoanWai/agent-manager
-if ($LASTEXITCODE -ne 0) { throw 'Attestation verification failed' }
+Get-Command gh -ErrorAction Stop | Out-Null
+if ($?) {
+    gh attestation verify $archive --repo YoanWai/agent-manager
+    if ($LASTEXITCODE -ne 0) { throw 'Attestation verification failed' }
+}
 ```
 
 After verification, extract into `%LOCALAPPDATA%\Programs\agent-manager`, add it to your user `Path` and this terminal's `Path`, and install the dependencies. These winget commands install psmux, git and PowerShell 7 (`pwsh`).
@@ -137,16 +140,21 @@ if ($?) {
 }
 ```
 
-Once the release attaches `install.ps1` and lists it in `checksums.txt`, download that file instead. Logged in to `gh`, verify it after the download and before the installer. That release URL has no file until that tag exists.
+Once the release attaches `install.ps1` and lists it in `checksums.txt`, download that file instead. Logged in to `gh`, verify it after the download and before the installer. A missing `gh` stops the example. PowerShell would otherwise keep the previous `$LASTEXITCODE`, and a `0` from an earlier command would look like a successful verify. That release URL has no file until that tag exists.
 
 ```powershell
 irm https://github.com/YoanWai/agent-manager/releases/latest/download/install.ps1 -OutFile install.ps1
 if ($?) {
-    gh attestation verify .\install.ps1 --repo YoanWai/agent-manager
-    if ($LASTEXITCODE -ne 0) { throw 'attestation verification failed' }
-    Get-Content .\install.ps1
-    Unblock-File .\install.ps1
-    powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
+    Get-Command gh -ErrorAction Stop | Out-Null
+    if ($?) {
+        gh attestation verify .\install.ps1 --repo YoanWai/agent-manager
+        if ($LASTEXITCODE -ne 0) { throw 'attestation verification failed' }
+        if ($LASTEXITCODE -eq 0) {
+            Get-Content .\install.ps1
+            Unblock-File .\install.ps1
+            powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
+        }
+    }
 }
 ```
 

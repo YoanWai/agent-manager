@@ -2,6 +2,7 @@ package deps
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -538,6 +539,87 @@ func TestVerifyAttestationMatchesPowerShellCase(t *testing.T) {
 	if code != 1 || !strings.Contains(out, "error: AGENT_MANAGER_VERIFY_ATTESTATION is set but gh is not installed") {
 		t.Fatalf("missing gh: exit %d\n%s", code, out)
 	}
+}
+
+func TestPowerShellAttestationExampleRequiresGh(t *testing.T) {
+	if _, err := exec.LookPath("pwsh"); err != nil {
+		t.Skip("pwsh is not installed")
+	}
+	for _, path := range []string{"README.md", "docs/install.md"} {
+		fence := powershellFence(t, path, "gh attestation verify .\\install.ps1")
+		if !strings.Contains(fence, "Get-Command gh -ErrorAction Stop") {
+			t.Fatalf("%s attestation example does not require gh", path)
+		}
+		out, code := runPwsh(t, missingGhPrelude()+fence, "")
+		if strings.Contains(out, "RAN") || code == 0 {
+			t.Fatalf("%s missing gh ran the installer: exit %d\n%s", path, code, out)
+		}
+	}
+	zip := powershellFence(t, "docs/install.md", "gh attestation verify $archive")
+	out, code := runPwsh(t, "$global:LASTEXITCODE = 0\n$archive = 'archive.zip'\n"+zip+"'PASSED'\n", "")
+	if strings.Contains(out, "PASSED") || code == 0 {
+		t.Fatalf("zip verify treated a missing gh as success: exit %d\n%s", code, out)
+	}
+	readme := powershellFence(t, "README.md", "gh attestation verify .\\install.ps1")
+	out, code = runPwsh(t, missingGhPrelude()+readme, writeGhStub(t, 0))
+	if code != 0 || !strings.Contains(out, "RAN") {
+		t.Fatalf("verify success should install: exit %d\n%s", code, out)
+	}
+	out, code = runPwsh(t, missingGhPrelude()+readme, writeGhStub(t, 1))
+	if strings.Contains(out, "RAN") || code == 0 {
+		t.Fatalf("verify failure should stop: exit %d\n%s", code, out)
+	}
+}
+
+func missingGhPrelude() string {
+	return "$ErrorActionPreference = 'Continue'\n" +
+		"Remove-Item Alias:\\irm -Force\n" +
+		"function irm { param($Url, $OutFile) }\n" +
+		"function Unblock-File { param($Path) }\n" +
+		"function powershell { 'RAN' }\n" +
+		"Set-Content -LiteralPath install.ps1 -Value 'ok'\n" +
+		"$global:LASTEXITCODE = 0\n"
+}
+
+func writeGhStub(t *testing.T, exit int) string {
+	t.Helper()
+	dir := t.TempDir()
+	writeExe(t, filepath.Join(dir, "gh"), fmt.Sprintf("#!/bin/sh\nexit %d\n", exit))
+	return dir
+}
+
+func powershellFence(t *testing.T, path, marker string) string {
+	t.Helper()
+	source, err := os.ReadFile(repoFile(t, path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const open = "```powershell\n"
+	rest := string(source)
+	for {
+		start := strings.Index(rest, open)
+		if start < 0 {
+			t.Fatalf("%s has no powershell fence containing %s", path, marker)
+		}
+		rest = rest[start+len(open):]
+		end := strings.Index(rest, "\n```")
+		if end < 0 {
+			t.Fatalf("%s fence never closed", path)
+		}
+		fence := rest[:end]
+		rest = rest[end:]
+		if strings.Contains(fence, marker) {
+			return fence + "\n"
+		}
+	}
+}
+
+func runPwsh(t *testing.T, script, pathDir string) (string, int) {
+	t.Helper()
+	cmd := exec.Command("pwsh", "-NoProfile", "-Command", script)
+	cmd.Dir = t.TempDir()
+	cmd.Env = []string{"PATH=" + pathDir}
+	return runCommand(t, cmd, cmd.Env)
 }
 
 func TestDetectOSOnWindowsNamesTheReadableInstaller(t *testing.T) {
