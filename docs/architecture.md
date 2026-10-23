@@ -78,7 +78,7 @@ dispatch; it changes no state.
 **Runtime resources stay with the root.** The tmux control client's mechanics
 live in `ui/focus/watch`; the root holds and closes the instance (`focus_adapter_watch.go`).
 The clipboard (`focus_adapter.go`, `composer.go`) and the IME cursor
-(`frame_ime.go`) are held and published by `internal/ui`. Feature packages
+(`frame_adapter_ime.go`) are held and published by `internal/ui`. Feature packages
 see copied pane facts and hand back typed outcomes. That keeps the child packages
 testable without tmux or a terminal, and keeps one place that closes what it
 opened on quit.

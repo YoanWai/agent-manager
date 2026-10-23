@@ -31,6 +31,7 @@ var packaged = map[string]string{
 	"connections":  "the SSH connections adapter: the client, refreshes, remote rows, preview and routed actions, and their effects",
 	"dialogs":      "the confirm, rename, move, fork and New Group dialog adapters and their effects",
 	"focus":        "the Focus adapter, its frame view, the pane watcher it holds and the raw input lane",
+	"frame":        "the frame adapter: card chrome, the header band, the legend painters, the IME cursor and the list frame",
 	"geometry":     "pane sizing, layout widths and the split ratio: the adapter, its effects and the resize surface",
 	"help":         "the Help adapter: the context and root reads the key map paints from",
 	"launchhint":   "the launch fix adapter, its copy and the CLI install effect",
@@ -59,7 +60,6 @@ var rootExtras = map[string]bool{}
 // joins packaged, so the root holds only its adapter and effects.
 var rootOnly = map[string]string{
 	"effects": "the ordered effect lane and its executor",
-	"frame":   "frame composition: dialog chrome, header, legend, IME, text layout and control escaping",
 	"model":   "the root Model, its services and shared host methods",
 }
 
