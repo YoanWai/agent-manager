@@ -91,7 +91,7 @@ would have to thread through every free render helper for no other gain.
 **Platform differences live in `*_unix.go` and `*_windows.go` files.** A
 branch on `runtime.GOOS` in shared code hides the other platform. Instead each
 package splits the difference into a file pair behind a build tag
-(`internal/ui/launchhint_install_unix.go`, `internal/tmux/platform_windows.go`,
+(`internal/ui/launchhint_install_unix_effect.go`, `internal/tmux/platform_windows.go`,
 `internal/store/delivery_guard_unix.go`), so the counterpart is a file you can
 see is missing. AGENTS.md requires the counterpart or a named skip.
 

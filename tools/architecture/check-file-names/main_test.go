@@ -40,7 +40,7 @@ func TestPackagedFeaturesOnlyAdaptTheirPackage(t *testing.T) {
 
 func TestUnadaptedSources(t *testing.T) {
 	dir := t.TempDir()
-	for _, name := range []string{"rail_adapter.go", "rail_adapter_view.go", "rail_effect.go", "rail_reorder_effect.go", "rail_rows.go", "spawn_adapter_catalog.go", "status_bar.go", "rail_rows_test.go"} {
+	for _, name := range []string{"rail_adapter.go", "rail_adapter_view.go", "rail_effect.go", "rail_reorder_effect.go", "rail_rows.go", "spawn_adapter_catalog.go", "model_bar.go", "rail_rows_test.go"} {
 		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -70,7 +70,7 @@ func TestPackagedFeaturesAndExtrasExist(t *testing.T) {
 
 // rootOnly is closed: a new UI feature starts as a package of its own.
 func TestRootOnlyFeaturesAreClosed(t *testing.T) {
-	closed := []string{"effects", "frame", "launchhint", "model", "preview", "session", "startup", "status", "workspace"}
+	closed := []string{"effects", "frame", "model"}
 	var got []string
 	for feature := range rootOnly {
 		got = append(got, feature)

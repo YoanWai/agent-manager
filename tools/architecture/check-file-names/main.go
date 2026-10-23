@@ -33,15 +33,21 @@ var packaged = map[string]string{
 	"focus":        "the Focus adapter, its frame view, the pane watcher it holds and the raw input lane",
 	"geometry":     "pane sizing, layout widths and the split ratio: the adapter, its effects and the resize surface",
 	"help":         "the Help adapter: the context and root reads the key map paints from",
+	"launchhint":   "the launch fix adapter, its copy and the CLI install effect",
 	"notices":      "the notices adapter, release and feed checks and self-update",
 	"pathcomplete": "the directory completer's adapter: which field a read lands on",
+	"preview":      "the session preview adapter, its poll and the detail view",
 	"quick":        "the quick bar adapter and its send effect",
 	"rail":         "the Rail adapter",
 	"review":       "the Review adapter",
+	"session":      "the session lifecycle adapter: after-turn, archive, attach, delete, editor, kill, launch, restart and revive, and their effects",
 	"settings":     "the Settings adapter, its store lane and the stored preference readers",
 	"spawn":        "the New Session form adapter, its group picker, request, defaults, group base and fetch, catalog reads, spawn effect, preflight and worktree probe",
+	"startup":      "the startup adapter: the greeting, the banner tick and the pane shell probe",
+	"statusbar":    "the status bar adapter: the error bar the root reports into and the toast it floats",
 	"terminal":     "the terminal adapter, the link seams it hands the package and the directory read effect",
 	"theme":        "live styles, surfaces and the stored theme",
+	"workspace":    "the workspace adapter: the loaded state, the poller, the refresh pass and the rail foot readings",
 }
 
 // rootExtras are root files of packaged features that are neither adapter,
@@ -52,15 +58,9 @@ var rootExtras = map[string]bool{}
 // list is closed: a new feature starts as a package under internal/ui and
 // joins packaged, so the root holds only its adapter and effects.
 var rootOnly = map[string]string{
-	"effects":    "the ordered effect lane and its executor",
-	"frame":      "frame composition: dialog chrome, header, legend, IME, text layout and control escaping",
-	"launchhint": "the launch fix dialog and CLI install",
-	"model":      "the root Model, its services and shared host methods",
-	"preview":    "the session preview",
-	"session":    "session lifecycle: launch, attach, kill, revive, archive, delete, restart, editor",
-	"startup":    "startup greeting and banner",
-	"status":     "the status bar and toasts",
-	"workspace":  "polling, refresh and what the last poll returned",
+	"effects": "the ordered effect lane and its executor",
+	"frame":   "frame composition: dialog chrome, header, legend, IME, text layout and control escaping",
+	"model":   "the root Model, its services and shared host methods",
 }
 
 // dispatch are the root files that route rather than own a feature.

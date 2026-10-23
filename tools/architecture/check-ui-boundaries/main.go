@@ -37,11 +37,17 @@ var (
 	catalogBoundary     = boundary{"Catalog values", "/internal/catalog/value", []string{"/internal/catalog/value"}}
 	presentBoundary     = boundary{"Presentation", "/internal/ui/presentation", []string{"/internal/ui/presentation"}}
 	connectionsBoundary = boundary{"Connections", "/internal/ui/connections", []string{"/internal/ui/connections", "/internal/remote/value", "/internal/ui/dialogs", "/internal/ui/presentation", "/internal/ui/surface", "/internal/ui/pathcomplete", "/internal/ui/spawn", "/internal/catalog/value"}}
+	launchhintBoundary  = boundary{"Launch hint", "/internal/ui/launchhint", []string{"/internal/ui/launchhint"}}
+	previewBoundary     = boundary{"Preview", "/internal/ui/preview", []string{"/internal/ui/preview"}}
+	sessionBoundary     = boundary{"Session", "/internal/ui/session", []string{"/internal/ui/session"}}
+	startupBoundary     = boundary{"Startup", "/internal/ui/startup", []string{"/internal/ui/startup", "/internal/ui/presentation", "/internal/ui/theme"}}
+	statusbarBoundary   = boundary{"Status bar", "/internal/ui/statusbar", []string{"/internal/ui/statusbar", "/internal/ui/presentation", "/internal/ui/theme"}}
+	workspaceBoundary   = boundary{"Workspace", "/internal/ui/workspace", []string{"/internal/ui/workspace"}}
 	remoteBoundary      = boundary{"Remote values", "/internal/remote/value", []string{"/internal/remote/value"}}
 )
 
 func main() {
-	for _, feature := range []boundary{helpBoundary, reviewBoundary, focusBoundary, watchBoundary, railBoundary, settingsBoundary, geometryBoundary, terminalBoundary, themeBoundary, spawnBoundary, quickBoundary, pathBoundary, composerBoundary, dialogsBoundary, noticesBoundary, connectionsBoundary, surfaceBoundary, diffBoundary, valueBoundary, catalogBoundary, presentBoundary, remoteBoundary} {
+	for _, feature := range []boundary{helpBoundary, reviewBoundary, focusBoundary, watchBoundary, railBoundary, settingsBoundary, geometryBoundary, terminalBoundary, launchhintBoundary, previewBoundary, sessionBoundary, startupBoundary, statusbarBoundary, workspaceBoundary, themeBoundary, spawnBoundary, quickBoundary, pathBoundary, composerBoundary, dialogsBoundary, noticesBoundary, connectionsBoundary, surfaceBoundary, diffBoundary, valueBoundary, catalogBoundary, presentBoundary, remoteBoundary} {
 		if err := checkBoundary(feature); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)

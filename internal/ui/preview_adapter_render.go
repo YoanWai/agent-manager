@@ -1,11 +1,19 @@
 package ui
 
-import uipreview "github.com/YoanWai/agent-manager/internal/ui/preview"
+import (
+	"strings"
+
+	uipreview "github.com/YoanWai/agent-manager/internal/ui/preview"
+)
 
 // The captured-pane row math lives in ui/preview; the root keeps the names
 // the rest of the package already calls, so a pane row is measured one way.
 
-func previewLine(line string, width int) string { return uipreview.Line(line, width) }
+// The IME marker is the root's, so the root strips it before the row is
+// measured.
+func previewLine(line string, width int) string {
+	return uipreview.Line(strings.ReplaceAll(line, cursorAnchorMarker, ""), width)
+}
 
 func expandPaneTabs(line string, width int) string { return uipreview.ExpandTabs(line, width) }
 
