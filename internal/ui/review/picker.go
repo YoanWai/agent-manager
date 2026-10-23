@@ -66,7 +66,6 @@ type PickerChoice struct {
 // Choice is set only on a close that picked a row.
 type PickerResult struct {
 	Close  bool
-	Quit   bool
 	Error  string
 	Choice *PickerChoice
 }
@@ -121,8 +120,6 @@ func (p Picker) filteredRows() []PickerRow {
 func (p *Picker) Key(msg tea.KeyMsg, sourceCurrent bool) PickerResult {
 	rows := p.filteredRows()
 	switch msg.Type {
-	case tea.KeyCtrlC:
-		return PickerResult{Quit: true}
 	case tea.KeyEsc:
 		return PickerResult{Close: true}
 	case tea.KeyUp:

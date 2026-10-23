@@ -47,6 +47,8 @@ const (
 	// the list and live preview stay on screen.
 	modeFocus
 	modeConnection
+	// modeCount follows the last mode, so a test can walk every one.
+	modeCount
 )
 
 type Model struct {

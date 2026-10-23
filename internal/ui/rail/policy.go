@@ -157,9 +157,6 @@ func (m *Model) Key(msg tea.KeyMsg, _ Frame, ctx KeyContext) Decision {
 		return m.searchKey(msg)
 	}
 	key := keybind.Normalize(msg.String())
-	if key == "ctrl+c" {
-		return m.intent(Quit)
-	}
 	if key == "esc" {
 		return m.clearSearch()
 	}

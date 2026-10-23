@@ -25,7 +25,6 @@ type Action uint8
 const (
 	Stay Action = iota
 	Close
-	Quit
 	OpenDocs
 )
 
@@ -67,9 +66,6 @@ func (s State) page(viewport Viewport) int {
 }
 
 func (s *State) Update(msg tea.KeyMsg, viewport Viewport) Action {
-	if msg.String() == "ctrl+c" {
-		return Quit
-	}
 	if s.searching {
 		s.updateSearch(msg, viewport)
 		return Stay

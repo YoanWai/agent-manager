@@ -15,8 +15,6 @@ func (m *Model) Key(msg tea.KeyMsg, ctx KeyContext) KeyResult {
 	}
 	if m.sendConfirm {
 		switch msg.String() {
-		case "ctrl+c":
-			return KeyResult{Navigation: NavigationQuit, Consumed: true}
 		case "enter", "y":
 			m.sendConfirm = false
 			if ctx.SendError != "" {
@@ -38,8 +36,6 @@ func (m *Model) Key(msg tea.KeyMsg, ctx KeyContext) KeyResult {
 	}
 	result := KeyResult{Consumed: true}
 	switch msg.String() {
-	case "ctrl+c":
-		result.Navigation = NavigationQuit
 	case "q", "esc":
 		result.Navigation = NavigationExit
 	case "?":

@@ -212,9 +212,6 @@ func (m *Model) handleRepoPickClick(line int) tea.Cmd {
 }
 
 func (m *Model) applyRepoPick(result uireview.PickerResult) tea.Cmd {
-	if result.Quit {
-		return m.quit()
-	}
 	if !result.Close {
 		return nil
 	}

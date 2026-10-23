@@ -41,9 +41,6 @@ func TestPickerKeysReturnTypedOutcomes(t *testing.T) {
 	if result := p.Key(tea.KeyMsg{Type: tea.KeyEsc}, true); !result.Close || result.Choice != nil {
 		t.Fatalf("esc: %+v", result)
 	}
-	if result := p.Key(tea.KeyMsg{Type: tea.KeyCtrlC}, true); !result.Quit {
-		t.Fatal("ctrl+c did not ask root to quit")
-	}
 }
 
 func TestPickerSourceNamesTheOpenReview(t *testing.T) {

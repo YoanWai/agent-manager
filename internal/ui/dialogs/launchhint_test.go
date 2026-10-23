@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -22,9 +21,6 @@ func TestLaunchHintKeysNeedACommand(t *testing.T) {
 		if got := fix.Key(runes(key)); got != want {
 			t.Fatalf("%s = %v, want %v", key, got, want)
 		}
-	}
-	if got := fix.Key(tea.KeyMsg{Type: tea.KeyCtrlC}); got != LaunchHintQuit {
-		t.Fatalf("ctrl+c = %v", got)
 	}
 }
 

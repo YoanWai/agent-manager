@@ -99,7 +99,7 @@ func TestConfirmKeyCtrlCQuits(t *testing.T) {
 	}
 	before := m.confirm
 
-	_, cmd := m.handleConfirmKey(namedKey(tea.KeyCtrlC))
+	_, cmd := m.Update(namedKey(tea.KeyCtrlC))
 	if cmd == nil {
 		t.Fatal("ctrl+c should return a command")
 	}

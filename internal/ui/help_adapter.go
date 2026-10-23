@@ -31,8 +31,6 @@ func (m *Model) handleHelpKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	layout := m.helpLayout()
 	viewport := uihelp.Viewport{Rows: layout.rows, Lines: len(layout.content.Lines)}
 	switch m.help.state.Update(msg, viewport) {
-	case uihelp.Quit:
-		return m.requestQuit()
 	case uihelp.OpenDocs:
 		return m, openLink(docsURL)
 	case uihelp.Close:

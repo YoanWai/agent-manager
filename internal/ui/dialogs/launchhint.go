@@ -25,7 +25,6 @@ type LaunchHintAction uint8
 
 const (
 	LaunchHintStay LaunchHintAction = iota
-	LaunchHintQuit
 	LaunchHintCopy
 	LaunchHintInstall
 	LaunchHintClose
@@ -63,8 +62,6 @@ func (d LaunchHint) paragraphs(inner int) [][]string {
 
 func (d LaunchHint) Key(msg tea.KeyMsg) LaunchHintAction {
 	switch msg.String() {
-	case "ctrl+c":
-		return LaunchHintQuit
 	case "c":
 		if d.Command == "" {
 			return LaunchHintStay

@@ -71,8 +71,6 @@ func (d *confirmDialog) prompt() uidialogs.Confirm {
 
 func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.confirm.prompt().Key(msg) {
-	case uidialogs.ConfirmQuit:
-		return m.requestQuit()
 	case uidialogs.ConfirmCancel:
 		m.confirm.confirmTarget = confirmTarget{}
 		m.mode = modeList

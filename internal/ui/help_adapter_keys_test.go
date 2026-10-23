@@ -17,7 +17,7 @@ import (
 
 func TestHelpAdapterPreservesQuitCommand(t *testing.T) {
 	m := helpModel()
-	model, cmd := m.handleHelpKey(tea.KeyMsg{Type: tea.KeyCtrlC})
+	model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	if model != m || cmd == nil {
 		t.Fatalf("ctrl+c returned model %T and nil command = %v", model, cmd == nil)
 	}

@@ -18,12 +18,12 @@ func TestReviewCtrlCQuitsFromSubmodes(t *testing.T) {
 	}
 	openReviewOn(t, m, "subquit", gitRepoWithTwoChangedFiles(t))
 	m.openAnnotate()
-	if _, cmd := m.handleDiffKey(tea.KeyMsg{Type: tea.KeyCtrlC}); cmd == nil {
+	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC}); cmd == nil {
 		t.Fatal("ctrl+c should quit while annotating")
 	}
 	m.review.AnnotationKey(tea.KeyMsg{Type: tea.KeyEsc})
 	m.review.SetSendConfirm(true)
-	if _, cmd := m.handleDiffKey(tea.KeyMsg{Type: tea.KeyCtrlC}); cmd == nil {
+	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC}); cmd == nil {
 		t.Fatal("ctrl+c should quit from the send-confirm prompt")
 	}
 	m.review.SetSendConfirm(false)
@@ -38,7 +38,7 @@ func TestReviewCtrlCQuitsFromSubmodes(t *testing.T) {
 		RepoRoot: "/tmp/one", RepoRoots: []string{"/tmp/one", "/tmp/two"}, Set: diff.Set{},
 	})
 	m.openRepoPick()
-	if cmd := m.handleRepoPickKey(tea.KeyMsg{Type: tea.KeyCtrlC}); cmd == nil {
+	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC}); cmd == nil {
 		t.Fatal("ctrl+c should quit while the repo picker is open")
 	}
 }

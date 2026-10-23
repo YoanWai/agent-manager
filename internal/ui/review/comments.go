@@ -119,8 +119,6 @@ func insertMarkerAtCursor(normal, marked, marker string) string {
 
 func (m *Model) AnnotationKey(msg tea.KeyMsg) KeyResult {
 	switch msg.String() {
-	case "ctrl+c":
-		return KeyResult{Navigation: NavigationQuit, Consumed: true}
 	case "esc":
 		m.annotationOpen = false
 		return KeyResult{Consumed: true}

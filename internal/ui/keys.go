@@ -6,7 +6,51 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// quitRoute is what a key does about quitting before any surface sees it.
+type quitRoute uint8
+
+const (
+	quitPass       quitRoute = iota // the surface under the key takes it
+	quitNow                         // the manager quits, or abandons its drain
+	quitCloseSaved                  // the saved prompts list over focus closes
+)
+
+// routeQuit is the one place that decides ctrl+c. Update asks it before a
+// drain swallows keys, and handleKey asks it again for a key a click
+// presses, so no surface keeps its own idea of quit.
+//
+// ctrl+c quits from every surface but a focused session, where the agent
+// reads it as its cancel. The saved prompts list over that session is the
+// manager's, so ctrl+c closes it rather than reach the agent behind it. A
+// drain already under way leaves on a second ctrl+c or quit key from
+// anywhere, since by then the agent has nothing left to cancel.
+func (m *Model) routeQuit(msg tea.KeyMsg) quitRoute {
+	name := keybind.Normalize(msg.String())
+	ctrlC := name == "ctrl+c"
+	switch {
+	case m.effects.quitting && (ctrlC || m.services.listKeys.Binding(keybind.Quit).Has(name)):
+		return quitNow
+	case !ctrlC || m.agentOwnsKeyboard():
+		return quitPass
+	case m.mode == modeFocus:
+		return quitCloseSaved
+	}
+	return quitNow
+}
+
+// agentOwnsKeyboard is true while keys go straight to the focused pane.
+func (m *Model) agentOwnsKeyboard() bool {
+	return m.mode == modeFocus && !m.focus.saved.list.Open()
+}
+
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch m.routeQuit(msg) {
+	case quitNow:
+		return m.requestQuit()
+	case quitCloseSaved:
+		m.closeFocusSaved()
+		return m, nil
+	}
 	if m.mode == modeList && m.rail.InputMode() == uirail.BrowseMode && !m.quick.active && !m.layout.split.dragging && !m.layout.split.resizeMode {
 		decision := m.rail.Key(msg, m.layout.displayedRail, m.railKeyContext())
 		if decision.Consumed {
@@ -24,7 +68,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if key == "esc" {
 			return m.exitResizeMode(false)
 		}
-		if key == "ctrl+c" || m.services.listKeys.Binding(keybind.Quit).Has(key) {
+		if m.services.listKeys.Binding(keybind.Quit).Has(key) {
 			return m.requestQuit()
 		}
 		m.exitResizeMode(m.layout.split.moved)
@@ -38,7 +82,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.exitResizeMode(true)
 		case key == "esc":
 			return m.exitResizeMode(false)
-		case key == "ctrl+c" || m.services.listKeys.Binding(keybind.Quit).Has(key):
+		case m.services.listKeys.Binding(keybind.Quit).Has(key):
 			return m.requestQuit()
 		case key == "left" || key == "h":
 			m.nudgeSplit(-1)
