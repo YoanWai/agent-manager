@@ -215,6 +215,9 @@ func (m *Model) closesOnBackdrop() bool {
 // clickCard acts on the open card's body at col of its painted line.
 func (m *Model) clickCard(col, line int) (tea.Model, tea.Cmd) {
 	if top, ok := m.top(); ok {
+		if cc, ok := top.(columnClicker); ok {
+			return m, cc.ClickAt(m, col, line)
+		}
 		return m, top.Click(m, line)
 	}
 	switch m.mode {

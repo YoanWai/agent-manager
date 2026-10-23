@@ -38,12 +38,23 @@ func (s *settingsSurface) Key(h surfaceHost, msg tea.KeyMsg) (bool, tea.Cmd) {
 	return true, s.apply(h, s.state.Key(msg, s.root.settingsContext()))
 }
 
-// Click is given the painted line and not the column. Column 0 stands for
-// every click, so the save button and the symbols row act on any press on
-// their line, where they used to act only over their own text.
-func (s *settingsSurface) Click(h surfaceHost, line int) tea.Cmd {
-	return s.apply(h, s.state.Click(0, line, s.root.settingsContext()))
+// columnClicker is the optional capability of a surface whose card acts on
+// where in a line a click lands: the root hands it the column too. It
+// bridges until surface.Click carries the column for every card.
+type columnClicker interface {
+	ClickAt(h surfaceHost, col, line int) tea.Cmd
 }
+
+var _ columnClicker = (*settingsSurface)(nil)
+
+// ClickAt is a press at col of the body's painted line: the save button and
+// the symbols row act over their own text.
+func (s *settingsSurface) ClickAt(h surfaceHost, col, line int) tea.Cmd {
+	return s.apply(h, s.state.Click(col, line, s.root.settingsContext()))
+}
+
+// Click is the column-less press, as column 0.
+func (s *settingsSurface) Click(h surfaceHost, line int) tea.Cmd { return s.ClickAt(h, 0, line) }
 
 func (s *settingsSurface) Wheel(h surfaceHost, arrow tea.KeyMsg) tea.Cmd {
 	step := 1
