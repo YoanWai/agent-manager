@@ -40,11 +40,11 @@ func (h *hintHost) startInstall(request installStartRequest) bool {
 func TestLaunchHintSurfaceWithFakeInstall(t *testing.T) {
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 110, 34
-	m.form().prompt.attachments = []imageAttachment{{id: 1}}
+	pushQuick(m).attachments = []imageAttachment{{id: 1}}
 	h := &hintHost{Model: m}
 	m.openLaunchHint(launchFix{text: "tool is not installed.\n\nRun the installer.", command: "install tool", script: "install tool", binary: "tool"})
 	s, ok := surfaceOf[*launchHintSurface](m)
-	if !ok || m.gens.dialog != 1 || len(s.fix.images) != 1 || m.form().prompt.attachments != nil {
+	if !ok || m.gens.dialog != 1 || len(s.fix.images) != 1 || m.quick().attachments != nil {
 		t.Fatalf("open: surface %t gens %d fix %+v, want the composer images taken", ok, m.gens.dialog, s.fix)
 	}
 	if got := ansi.Strip(s.View(h, "")); !strings.Contains(got, "Session needs a setup step") || !strings.Contains(got, "Run the installer.") {

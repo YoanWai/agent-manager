@@ -492,12 +492,13 @@ func TestQuickEscReleasesPastedImages(t *testing.T) {
 	m := buildModel(t)
 	m.openQuickMode()
 	path := tempImage(t, "abandoned.png")
-	m.quick().attachments = []imageAttachment{{id: 1, path: path}}
-	m.quick().input.SetValue("never mind " + imageToken(1))
+	q := m.quick()
+	q.attachments = []imageAttachment{{id: 1, path: path}}
+	q.input.SetValue("never mind " + imageToken(1))
 
 	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEsc})
-	if len(m.quick().attachments) != 0 {
-		t.Fatalf("closing the bar should release its images: %+v", m.quick().attachments)
+	if m.quick() != nil || len(q.attachments) != 0 {
+		t.Fatalf("closing the bar should close it and release its images: open %t, %+v", m.quick() != nil, q.attachments)
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("abandoned temp file should be removed, err=%v", err)

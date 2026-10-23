@@ -553,8 +553,6 @@ func TestInstallStartGivesTheInstallerShellTheKeys(t *testing.T) {
 	image := tempImage(t, "kept.png")
 	pushQuick(m)
 	m.quick().attachments = []imageAttachment{{id: 1, path: image}}
-	m.base = baseList
-	m.clearSurfaces()
 	m.gens.dialog = 2
 	m.applyInstallStart(installStartRequest{gen: 1, binary: "pi"}, result, nil)
 	if (m.quick() == nil) || !m.onList() {
