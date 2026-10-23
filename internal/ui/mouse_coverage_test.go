@@ -27,22 +27,22 @@ var mouseOpeners = map[string]func(t *testing.T, m *Model){
 	"launchHintSurface": func(t *testing.T, m *Model) {
 		m.openLaunchHint(launchFix{text: "tool is missing", command: "true", binary: "tool"})
 	},
-	"help.Surface":       func(t *testing.T, m *Model) { m.openHelp() },
-	"noticesSurface":     func(t *testing.T, m *Model) { m.Update(key("M")) },
-	"settingsSurface":    func(t *testing.T, m *Model) { m.applyCmd(t, m.openSettings()) },
-	"groupFormSurface":   func(t *testing.T, m *Model) { m.openGroupForm() },
-	"connectionsSurface": func(t *testing.T, m *Model) { m.openConnectionDialog(remote.Connection{}) },
-	"quickSurface":       func(t *testing.T, m *Model) { m.applyCmd(t, m.openQuickMode()) },
-	"spawnSurface":       func(t *testing.T, m *Model) { m.applyCmd(t, m.openForm()) },
-	"resizeSurface":      func(t *testing.T, m *Model) { m.enterResizeMode() },
-	"focusSurface":       func(t *testing.T, m *Model) { m.push(&focusSurface{}) },
+	"help.Surface":        func(t *testing.T, m *Model) { m.openHelp() },
+	"notices.Surface":     func(t *testing.T, m *Model) { m.Update(key("M")) },
+	"settingsSurface":     func(t *testing.T, m *Model) { m.applyCmd(t, m.openSettings()) },
+	"groupFormSurface":    func(t *testing.T, m *Model) { m.openGroupForm() },
+	"connections.Surface": func(t *testing.T, m *Model) { m.openConnectionDialog(remote.Connection{}) },
+	"quickSurface":        func(t *testing.T, m *Model) { m.applyCmd(t, m.openQuickMode()) },
+	"spawnSurface":        func(t *testing.T, m *Model) { m.applyCmd(t, m.openForm()) },
+	"resizeSurface":       func(t *testing.T, m *Model) { m.enterResizeMode() },
+	"focusSurface":        func(t *testing.T, m *Model) { m.push(&focusSurface{}) },
 	"focusSaved": func(t *testing.T, m *Model) {
 		m.push(&focusSurface{})
 		m.push(newFocusSaved(0, m.spawnStyles()))
 	},
-	"reviewPicker": func(t *testing.T, m *Model) {
+	"review.Surface": func(t *testing.T, m *Model) {
 		m.base = baseReview
-		m.push(newReviewPicker([]uireview.PickerRow{{Label: "main"}}, "branch", uireview.PickRepo, "", uireview.PickerSource{}, "", uireview.RenderContext{}, ""))
+		m.push(uireview.NewSurface(reviewRoot{m}, []uireview.PickerRow{{Label: "main"}}, "branch", uireview.PickRepo, "", uireview.PickerSource{}, "", uireview.RenderContext{}, ""))
 	},
 }
 

@@ -19,7 +19,7 @@ var (
 	helpBoundary        = boundary{"Help", "/internal/ui/help", []string{"/internal/ui/help", "/internal/keybind", "/internal/ui/presentation", "/internal/ui/surface"}}
 	surfaceBoundary     = boundary{"Surface", "/internal/ui/surface", []string{"/internal/ui/surface"}}
 	diffBoundary        = boundary{"Diff model", "/internal/diff/model", []string{"/internal/diff/model", "/internal/git/value"}}
-	reviewBoundary      = boundary{"Review", "/internal/ui/review", []string{"/internal/ui/review", "/internal/diff/model", "/internal/git/value", "/internal/ui/presentation"}}
+	reviewBoundary      = boundary{"Review", "/internal/ui/review", []string{"/internal/ui/review", "/internal/diff/model", "/internal/git/value", "/internal/ui/presentation", "/internal/ui/surface"}}
 	focusBoundary       = boundary{"Focus", "/internal/ui/focus", []string{"/internal/ui/focus"}}
 	watchBoundary       = boundary{"Focus watch", "/internal/ui/focus/watch", []string{"/internal/ui/focus/watch", "/internal/tmux", "/internal/deps", "/internal/keybind", "/internal/proctree", "/internal/pwsh"}}
 	railBoundary        = boundary{"Rail", "/internal/ui/rail", []string{"/internal/ui/rail", "/internal/keybind", "/internal/remote/value", "/internal/ui/presentation", "/internal/ui/theme"}}
@@ -28,11 +28,11 @@ var (
 	spawnBoundary       = boundary{"Spawn", "/internal/ui/spawn", []string{"/internal/ui/spawn", "/internal/catalog/value", "/internal/ui/presentation"}}
 	quickBoundary       = boundary{"Quick", "/internal/ui/quick", []string{"/internal/ui/quick", "/internal/ui/spawn", "/internal/catalog/value", "/internal/ui/presentation"}}
 	dialogsBoundary     = boundary{"Dialogs", "/internal/ui/dialogs", []string{"/internal/ui/dialogs", "/internal/ui/presentation"}}
-	noticesBoundary     = boundary{"Notices", "/internal/ui/notices", []string{"/internal/ui/notices", "/internal/keybind", "/internal/ui/presentation"}}
+	noticesBoundary     = boundary{"Notices", "/internal/ui/notices", []string{"/internal/ui/notices", "/internal/keybind", "/internal/ui/presentation", "/internal/ui/surface"}}
 	valueBoundary       = boundary{"Git values", "/internal/git/value", []string{"/internal/git/value"}}
 	catalogBoundary     = boundary{"Catalog values", "/internal/catalog/value", []string{"/internal/catalog/value"}}
 	presentBoundary     = boundary{"Presentation", "/internal/ui/presentation", []string{"/internal/ui/presentation"}}
-	connectionsBoundary = boundary{"Connections", "/internal/ui/connections", []string{"/internal/ui/connections", "/internal/remote/value", "/internal/ui/dialogs", "/internal/ui/presentation"}}
+	connectionsBoundary = boundary{"Connections", "/internal/ui/connections", []string{"/internal/ui/connections", "/internal/remote/value", "/internal/ui/dialogs", "/internal/ui/presentation", "/internal/ui/surface"}}
 	remoteBoundary      = boundary{"Remote values", "/internal/remote/value", []string{"/internal/remote/value"}}
 )
 
