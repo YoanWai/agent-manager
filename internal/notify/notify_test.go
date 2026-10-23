@@ -182,7 +182,6 @@ func TestNotifyBodyCarriesTheRowsLine(t *testing.T) {
 		{"nothing to quote", Waiting, "", "◆ Waiting for your input"},
 		{"multiline squashed", Finished, "first\nsecond\tthird", "● Finished: first second third"},
 		{"long line cut", Finished, strings.Repeat("x", 200), "● Finished: " + strings.Repeat("x", bodyTextCap-1) + "…"},
-		{"basic credential", Finished, "Authorization: Basic dXNlcjpwYXNz", "● Finished: Authorization: [redacted]"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -197,82 +196,6 @@ func TestNotifyBodyCarriesTheRowsLine(t *testing.T) {
 			Notify(Event{ID: "sess-1", Session: "deploy", Tool: "codex", Kind: test.kind, Text: test.text})
 			if len(posted) != 4 || posted[2] != test.body {
 				t.Fatalf("body = %q, want %q", posted, test.body)
-			}
-		})
-	}
-}
-
-// A row that quotes a token must not put that token on the banner or into
-// the notify command's body. The title never carries the quote.
-func TestNotifyBodyRedactsAGitHubToken(t *testing.T) {
-	token := "ghp_" + strings.Repeat("a", 36)
-	text := "export GITHUB_TOKEN=" + token
-	defer restore()()
-	plainMac(t)
-	var posted []string
-	macPost = func(sessionID, subtitle, body, sound string) error {
-		posted = []string{sessionID, subtitle, body, sound}
-		return nil
-	}
-	emitSeq = func(string) error { return nil }
-	event := Event{ID: "sess-1", Session: "deploy", Tool: "codex", Kind: Finished, Text: text}
-	Notify(event)
-	want := "● Finished: export GITHUB_TOKEN=[redacted]"
-	if len(posted) != 4 || posted[2] != want {
-		t.Fatalf("body = %q, want %q", posted, want)
-	}
-	if strings.Contains(posted[2], token) {
-		t.Fatalf("banner leaked the token: %q", posted[2])
-	}
-	for _, env := range CommandEnv(event) {
-		if strings.HasPrefix(env, "AM_BODY=") && env != "AM_BODY="+want {
-			t.Fatalf("AM_BODY = %q, want %q", env, "AM_BODY="+want)
-		}
-		if strings.Contains(env, token) {
-			t.Fatalf("command env leaked the token: %q", env)
-		}
-	}
-}
-
-// A token in the session name, the repository, or the branch is the same
-// secret the body redacts, and the title is what AM_TITLE carries.
-func TestNotifyTitleRedactsAToken(t *testing.T) {
-	token := "ghp_" + strings.Repeat("a", 36)
-	tests := []struct {
-		name  string
-		event Event
-		title string
-	}{
-		{"branch", Event{Session: "deploy", Tool: "codex", Dir: "/src/api", Branch: "am/" + token}, "deploy · api · am/[redacted] · codex"},
-		{"session", Event{Session: token, Tool: "codex", Dir: "/src/api"}, "[redacted] · api · codex"},
-		{"repo", Event{Session: "deploy", Tool: "codex", Dir: "/src/worktrees/deploy", Repo: "/src/" + token}, "deploy · [redacted] · codex"},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			defer restore()()
-			plainMac(t)
-			var posted []string
-			macPost = func(sessionID, subtitle, body, sound string) error {
-				posted = []string{sessionID, subtitle, body, sound}
-				return nil
-			}
-			emitSeq = func(string) error { return nil }
-			test.event.ID = "sess-1"
-			test.event.Kind = Finished
-			Notify(test.event)
-			if len(posted) != 4 || posted[1] != test.title {
-				t.Fatalf("title = %q, want %q", posted, test.title)
-			}
-			if strings.Contains(posted[1], token) {
-				t.Fatalf("banner title leaked the token: %q", posted[1])
-			}
-			for _, env := range CommandEnv(test.event) {
-				if !strings.HasPrefix(env, "AM_TITLE=") {
-					continue
-				}
-				if env != "AM_TITLE="+test.title || strings.Contains(env, token) {
-					t.Fatalf("AM_TITLE = %q, want %q", env, "AM_TITLE="+test.title)
-				}
 			}
 		})
 	}

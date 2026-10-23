@@ -253,28 +253,21 @@ func content(event Event, detail presentation) (title, body string) {
 // "deploy · api · am/fix-login · codex". A worktree names the repository
 // it was cut from; the worktree directory itself is the session's name.
 func titleLine(event Event) string {
-	parts := []string{titlePart(event.Session)}
+	parts := []string{sanitize(event.Session)}
 	named := event.Dir
 	if event.Repo != "" {
 		named = event.Repo
 	}
-	if dir := titlePart(titleDir(named)); named != "" && dir != "" {
+	if dir := sanitize(titleDir(named)); named != "" && dir != "" {
 		parts = append(parts, dir)
 	}
-	if branch := titlePart(event.Branch); branch != "" {
+	if branch := sanitize(event.Branch); branch != "" {
 		parts = append(parts, branch)
 	}
 	if tool := sanitize(event.Tool); tool != "" {
 		parts = append(parts, tool)
 	}
 	return strings.Join(parts, " · ")
-}
-
-// titlePart is one name the title is built from. Those names are chosen
-// by the session, so a token in a branch would otherwise leave through
-// AM_TITLE, which does not carry the row quote.
-func titlePart(s string) string {
-	return redactSecrets(sanitize(s))
 }
 
 // titleDir is the directory a banner names. A Unix root stays "/", and a
@@ -295,9 +288,7 @@ func titleDir(named string) string {
 // keeps its state word: the row's line there is the turn that failed, not
 // something to act on.
 func bodyLine(kind Kind, detail presentation, text string) string {
-	// Redact after sanitize and before the length cap, so a token is
-	// scanned whole and the command sees the same text as the banner.
-	text = redactSecrets(sanitize(text))
+	text = sanitize(text)
 	if text == "" || kind == Errored {
 		return detail.body
 	}
