@@ -1,0 +1,7 @@
+# gitleaks scans history. f4e9b03 adds private-key and jwt fixture lines in
+# a file that is gone at HEAD, so the allowlist names the commit.
+[extend]
+useDefault = true
+
+[allowlist]
+commits = ["f4e9b034969bbbc1914348b45353831fd61e7a16"]

@@ -1,8 +1,3 @@
 # Doc prose in two PR 735 commits that the generic-api-key rule misreads; the file no longer exists.
 014973ab371f280ea7f555fa282b02def38427ed:docs/architecture/ui-effects.md:generic-api-key:60
 463cd892f09fd71ed5cbfd998e61a84344a5f280:docs/architecture/ui-effects.md:generic-api-key:61
-# Fixture shapes in the notification redaction test, not credentials.
-f4e9b034969bbbc1914348b45353831fd61e7a16:internal/notify/redact_test.go:private-key:58
-f4e9b034969bbbc1914348b45353831fd61e7a16:internal/notify/redact_test.go:private-key:60
-f4e9b034969bbbc1914348b45353831fd61e7a16:internal/notify/redact_test.go:private-key:62
-f4e9b034969bbbc1914348b45353831fd61e7a16:internal/notify/redact_test.go:jwt:24
