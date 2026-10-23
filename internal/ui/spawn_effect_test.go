@@ -561,7 +561,7 @@ func TestSpawnGenericErrorReturnsImagesToForm(t *testing.T) {
 	if !formOpen(m) {
 		t.Fatalf("form should stay up; screen = %v", m.screenID())
 	}
-	if got := m.form().prompt.Attachments; len(got) != 1 || got[0].id != id {
+	if got := m.form().prompt.Attachments; len(got) != 1 || got[0].ID != id {
 		t.Fatalf("attachments = %+v, want the chip kept for the retry", got)
 	}
 	if _, err := os.Stat(path); err != nil {

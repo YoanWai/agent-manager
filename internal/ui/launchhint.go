@@ -207,8 +207,8 @@ func removeInstallFiles(statusFile, script string) {
 
 func dropImages(images []composer.Attachment) {
 	for _, att := range images {
-		if att.path != "" {
-			_ = os.Remove(att.path)
+		if att.Path != "" {
+			_ = os.Remove(att.Path)
 		}
 	}
 }

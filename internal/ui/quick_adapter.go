@@ -172,7 +172,7 @@ func (m *Model) runQuickRequest(request uiquick.Request) tea.Cmd {
 	case request.LoadSaved:
 		return savedPromptsLoadCmd(m.services.store, savedForQuick, uint64(m.quick().Gen), 0)
 	case request.InsertSaved != nil:
-		m.quick().insertSaved(*request.InsertSaved)
+		m.quick().InsertSaved(*request.InsertSaved)
 	}
 	return nil
 }
