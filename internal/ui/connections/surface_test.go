@@ -5,6 +5,7 @@ import (
 
 	remote "github.com/YoanWai/agent-manager/internal/remote/value"
 	"github.com/YoanWai/agent-manager/internal/ui/surface"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -20,10 +21,9 @@ type stubRoot struct {
 }
 
 func (r *stubRoot) Look() DialogView {
-	plain := func(s string) string { return s }
 	return DialogView{
 		Field: func(label, value string, _ bool) string { return label + " " + value },
-		Input: plain,
+		Input: func(in textinput.Model) string { return in.Value() },
 		Muted: lipgloss.NewStyle(),
 	}
 }
