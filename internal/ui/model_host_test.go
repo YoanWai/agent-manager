@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	"go/ast"
 	"go/parser"
 	"go/token"
