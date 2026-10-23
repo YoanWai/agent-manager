@@ -31,7 +31,6 @@ var ctrlCQuits = map[mode]bool{
 	modeNotices:       true,
 	modeLaunchHint:    true,
 	modeFocus:         false,
-	modeConnection:    true,
 }
 
 func TestCtrlCOnEverySurface(t *testing.T) {

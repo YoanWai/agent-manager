@@ -28,7 +28,6 @@ var (
 		"modeConfirmDelete": "nothing to scroll",
 		"modeFork":          "nothing to scroll",
 		"modeLaunchHint":    "nothing to scroll",
-		"modeConnection":    "three fields and nothing to scroll",
 		"modeFocus":         "the pane takes the wheel in focusMouse; a card over it is a surface",
 	}
 )

@@ -170,6 +170,8 @@ func (m *Model) routeConnectionMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case connectionRefreshMsg:
 		return routed(m, m.applyConnectionRefresh(msg))
+	case connectionDialogMsg:
+		return routed(m, m.handleConnectionDialog(msg))
 	case remotePreviewMsg:
 		m.ssh.Preview.Apply(msg.read, msg.text, msg.err)
 		return routed(m, nil)
@@ -190,34 +192,15 @@ func (m *Model) routeConnectionMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	return nil, nil, false
 }
 
-func (m *Model) openConnectionDialog(editing remote.Connection) {
-	m.ssh.Dialog.Open(editing)
+// handleConnectionDialog runs what the card asked: a cancel clears the
+// status line it leaves, a save queues the store write.
+func (m *Model) handleConnectionDialog(msg connectionDialogMsg) tea.Cmd {
 	m.clearErr()
-	m.mode = modeConnection
-}
-
-func (m *Model) handleConnectionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	key := m.ssh.Dialog.Key(typedText(msg), m.ssh.List())
-	switch key.Action {
-	case uiconnections.DialogCancel:
-		m.clearErr()
-		m.mode = modeList
-	case uiconnections.DialogRefused:
-		m.reportErr(key.Refusal)
-	case uiconnections.DialogSave:
-		op := connectionAdd
-		if key.Editing != "" {
-			op = connectionUpdate
-		}
-		m.clearErr()
-		m.enqueueEffect(connectionRequest{op: op, name: key.Editing, next: store.Connection(key.Next), gen: key.Gen}, 0, false)
-		return m, tea.Batch(key.Cmd, m.nextEffectCmd())
+	if msg.save == nil {
+		return nil
 	}
-	return m, key.Cmd
-}
-
-func (m *Model) viewConnectionDialog() string {
-	return m.drawCard(m.ssh.Dialog.View(uiconnections.DialogView{Field: m.formField, Input: textInputView, Muted: mutedStyle()}))
+	m.enqueueEffect(*msg.save, 0, false)
+	return m.nextEffectCmd()
 }
 
 // remotePreviewMsg is a read of the selected remote row's screen.

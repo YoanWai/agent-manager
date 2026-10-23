@@ -45,7 +45,6 @@ const (
 	// modeFocus routes the keyboard into the selected session's pane while
 	// the list and live preview stay on screen.
 	modeFocus
-	modeConnection
 	// modeCount follows the last mode, so a test can walk every one.
 	modeCount
 )

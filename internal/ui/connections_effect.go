@@ -55,16 +55,17 @@ func (s effectServices) runConnection(request connectionRequest) (effectResult, 
 }
 
 func (m *Model) applyConnectionEffect(request connectionRequest, result connectionEffectResult, err error) tea.Cmd {
-	dialogOpen := m.mode == modeConnection && m.ssh.Dialog.Gen() == request.gen
+	s, dialogOpen := surfaceOf[*connectionsSurface](m)
+	dialogOpen = dialogOpen && s.gen == request.gen
 	if err != nil {
 		if dialogOpen {
-			m.ssh.Dialog.SaveFailed(request.gen)
+			s.dialog.SaveFailed(s.dialog.Gen())
 		}
 		m.reportErr("connection not saved: " + err.Error())
 		return nil
 	}
 	if dialogOpen {
-		m.mode = modeList
+		m.pop()
 	}
 	m.ssh.setList(result.connections)
 	m.rebuildRows()
