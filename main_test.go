@@ -409,10 +409,10 @@ func isolateTmux(t *testing.T) {
 	t.Setenv("TMUX_TMPDIR", tmpdir)
 }
 
-// The environment variable is what an agent's launch exports and what an
-// MCP server under Codex is handed, so it wins; a terminal pane, which
-// carries neither, names its session through tmux instead.
-func TestCallerSessionPrefersTheEnvironmentOverThePane(t *testing.T) {
+// A process no managed pane started is no session's caller, though it
+// carries a session's variable and pane: Claude Code's daemon, started from
+// one session, hands both to the conversations it serves for every other.
+func TestCallerSessionIgnoresWhatAProcessOutsideThePanesInherited(t *testing.T) {
 	if _, err := exec.LookPath(tmux.Binary); err != nil {
 		t.Skip(tmux.Binary + " not installed")
 	}
@@ -441,14 +441,39 @@ func TestCallerSessionPrefersTheEnvironmentOverThePane(t *testing.T) {
 	t.Setenv("TMUX", tmuxEnv)
 	t.Setenv("TMUX_PANE", pane)
 
-	t.Setenv(hooks.EnvSessionID, "deadbeef")
-	if got := callerSession(); got != "deadbeef" {
-		t.Fatalf("callerSession with the variable set = %q, want deadbeef", got)
+	t.Setenv(hooks.EnvSessionID, id)
+	if got := callerSession(); got != "" {
+		t.Fatalf("callerSession outside every pane, with its variable and pane inherited = %q, want none", got)
 	}
+}
 
-	t.Setenv(hooks.EnvSessionID, "")
-	if got := callerSession(); got != id {
-		t.Fatalf("callerSession from the pane = %q, want %q", got, id)
+// The ancestry decides whenever it can be read, and only a hidden ancestry,
+// as inside a sandbox's PID namespace, leaves the caller to the variable.
+// There a stale variable still wins: the sandbox shows nothing to check it
+// against, and refusing would leave every sandboxed agent without a caller.
+func TestCallerSessionFallsBackToTheVariableOnlyWhenTheAncestryIsHidden(t *testing.T) {
+	isolateTmux(t)
+	t.Setenv("TMUX", "")
+	t.Setenv("TMUX_PANE", "")
+	t.Setenv(hooks.EnvSessionID, "deadbeef")
+	for _, tc := range []struct {
+		name     string
+		ancestry string
+		seen     bool
+		want     string
+	}{
+		{"pane above the process", "ca11ab1e", true, "ca11ab1e"},
+		{"no pane above the process", "", true, ""},
+		{"ancestry hidden", "", false, "deadbeef"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			saved := callerAncestry
+			t.Cleanup(func() { callerAncestry = saved })
+			callerAncestry = func() (string, bool) { return tc.ancestry, tc.seen }
+			if got := callerSession(); got != tc.want {
+				t.Fatalf("callerSession = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -466,7 +491,7 @@ func TestCallerSessionOutsideTmuxLeavesTheCommandToExplainIt(t *testing.T) {
 	if err == nil {
 		t.Fatal("a command with no caller succeeded")
 	}
-	for _, want := range []string{"session or terminal", "AGENT_MANAGER_SESSION_ID is unset", "not one Agent Manager runs"} {
+	for _, want := range []string{"session or terminal", "AGENT_MANAGER_SESSION_ID is unset", "pane Agent Manager runs"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %q does not mention %q", err, want)
 		}
