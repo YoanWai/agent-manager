@@ -83,8 +83,6 @@ func (m *Model) routeMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m.focusMouse(msg)
 	case m.mode == modeDiff:
 		return m.reviewMouse(msg)
-	case m.mode == modeRename:
-		return m, nil
 	}
 	return m.listMouse(msg)
 }
@@ -181,7 +179,7 @@ func (m *Model) cardOpen() bool {
 		return true
 	}
 	switch m.mode {
-	case modeList, modeDiff, modeRename:
+	case modeList, modeDiff:
 		return false
 	case modeFocus:
 		return false

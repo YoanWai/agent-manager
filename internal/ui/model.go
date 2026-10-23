@@ -31,7 +31,6 @@ const (
 	modeList mode = iota
 	modeForm
 	modeHelp
-	modeRename
 	modeFork
 	modeRepoPick
 	modeGroupForm
@@ -68,7 +67,6 @@ type Model struct {
 	groupForm  groupFormDialog
 	launchHint launchHintDialog
 	mouse      mouseCapture
-	rename     renameDialog
 	fork       forkDialog
 	quick      quickBar
 	settings   settingsFeature

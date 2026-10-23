@@ -16,7 +16,7 @@ import (
 
 // applyRename submits the open rename the way enter does.
 func (m *Model) applyRename() (tea.Model, tea.Cmd) {
-	return m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	return m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 }
 
 type refusingWorktreeBranchStore struct {
@@ -51,11 +51,11 @@ func TestRenameGroupCascades(t *testing.T) {
 	m.rail.SetCollapsed("old", true)
 	m.rebuildRows()
 	m.openRename()
-	if !m.rename.IsGroup() || m.rename.Path() != "old" {
-		t.Fatalf("rename target wrong: %+v", m.rename)
+	if !openRename(m).IsGroup() || openRename(m).Path() != "old" {
+		t.Fatalf("rename target wrong: %+v", openRename(m))
 	}
-	m.rename.SetName("fresh")
-	_, cmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	openRename(m).SetName("fresh")
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m.applyCmd(t, cmd)
 
 	kid := m.sessionRows()
@@ -89,8 +89,8 @@ func TestRenameSession(t *testing.T) {
 		t.Fatalf("set agent id: %v", err)
 	}
 	m.openRename()
-	m.rename.SetName("after")
-	_, cmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	openRename(m).SetName("after")
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m.applyCmd(t, cmd)
 	got := m.sessionRows()[0]
 	if got.Name != "after" {
@@ -116,8 +116,8 @@ func TestRenameSessionKeepsItsWorktreeDirectory(t *testing.T) {
 
 	m.selectSessionRow(t, "claude-7a72")
 	m.openRename()
-	m.rename.SetName("release the version")
-	_, cmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	openRename(m).SetName("release the version")
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m.applyCmd(t, cmd)
 	if m.errBar.text != "" {
 		t.Fatalf("rename reported: %s", m.errBar.text)
@@ -168,14 +168,14 @@ func TestRenameSessionRefusesSharedWorktree(t *testing.T) {
 
 	m.selectSessionRow(t, "owner")
 	m.openRename()
-	m.rename.SetName("renamed")
-	_, cmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	openRename(m).SetName("renamed")
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m.applyCmd(t, cmd)
 
 	if !strings.Contains(m.errBar.text, "shared with session \"forked\"") {
 		t.Fatalf("shared worktree error = %q", m.errBar.text)
 	}
-	if m.mode != modeRename {
+	if !renameOpen(m) {
 		t.Fatalf("mode = %v, want rename card", m.mode)
 	}
 	if _, err := os.Stat(spawned.Cwd); err != nil {
@@ -192,14 +192,14 @@ func TestRenameSessionRefusesAWorktreeNameAlreadyTaken(t *testing.T) {
 
 	m.selectSessionRow(t, "mover")
 	m.openRename()
-	m.rename.SetName("taken")
-	_, cmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	openRename(m).SetName("taken")
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m.applyCmd(t, cmd)
 
 	if m.errBar.text == "" {
 		t.Fatal("a taken worktree name should report why")
 	}
-	if m.mode != modeRename {
+	if !renameOpen(m) {
 		t.Fatalf("mode = %v, want the rename card still open to fix the name", m.mode)
 	}
 	stored, err := m.services.store.Get(spawned.ID)
@@ -363,8 +363,8 @@ func TestRenameDirtyWorktreeThenDeleteKeepsDirectory(t *testing.T) {
 
 	m.selectSessionRow(t, "claude-7a72")
 	m.openRename()
-	m.rename.SetName("dirty after")
-	_, cmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	openRename(m).SetName("dirty after")
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m.applyCmd(t, cmd)
 	if m.errBar.text != "" {
 		t.Fatalf("rename reported: %s", m.errBar.text)
@@ -390,8 +390,8 @@ func TestRenameThenSharedSessionKeepsSpawnPath(t *testing.T) {
 
 	m.selectSessionRow(t, "claude-7a72")
 	m.openRename()
-	m.rename.SetName("shared source")
-	_, cmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	openRename(m).SetName("shared source")
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m.applyCmd(t, cmd)
 	if m.errBar.text != "" {
 		t.Fatalf("rename reported: %s", m.errBar.text)
@@ -418,8 +418,8 @@ func TestRenameThenSharedSessionKeepsSpawnPath(t *testing.T) {
 
 	m.selectSessionRow(t, "shared source")
 	m.openRename()
-	m.rename.SetName("should fail")
-	_, retryCmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	openRename(m).SetName("should fail")
+	_, retryCmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m.applyCmd(t, retryCmd)
 	if !strings.Contains(m.errBar.text, "shared with session \"child fork\"") {
 		t.Fatalf("shared worktree error = %q", m.errBar.text)
@@ -444,8 +444,8 @@ func TestRenameThenDeleteRemovesTheSpawnWorktree(t *testing.T) {
 
 	m.selectSessionRow(t, "claude-7a72")
 	m.openRename()
-	m.rename.SetName("release the version")
-	_, cmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	openRename(m).SetName("release the version")
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m.applyCmd(t, cmd)
 	if m.errBar.text != "" {
 		t.Fatalf("rename reported: %s", m.errBar.text)
@@ -472,8 +472,8 @@ func TestRenameSessionWithoutAWorktreeIsUnchanged(t *testing.T) {
 	spawned := m.sessionRows()[0]
 
 	m.openRename()
-	m.rename.SetName("still-plain")
-	_, cmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	openRename(m).SetName("still-plain")
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m.applyCmd(t, cmd)
 
 	stored, err := m.services.store.Get(spawned.ID)
@@ -498,18 +498,18 @@ func TestRenameSessionChangesTool(t *testing.T) {
 		t.Fatalf("set agent id: %v", err)
 	}
 	m.openRename()
-	if m.rename.Tool() != "claude" {
-		t.Fatalf("rename tool start = %q want claude", m.rename.Tool())
+	if openRename(m).Tool() != "claude" {
+		t.Fatalf("rename tool start = %q want claude", openRename(m).Tool())
 	}
-	if len(m.rename.Tools()) < 2 {
-		t.Fatalf("need at least 2 tools to cycle, got %v", m.rename.Tools())
+	if len(openRename(m).Tools()) < 2 {
+		t.Fatalf("need at least 2 tools to cycle, got %v", openRename(m).Tools())
 	}
-	m.handleRenameKey(tea.KeyMsg{Type: tea.KeyTab})
-	wantTool := m.rename.Tools()[1]
-	if m.rename.Tool() != wantTool {
-		t.Fatalf("after tab tool = %q want %q", m.rename.Tool(), wantTool)
+	m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	wantTool := openRename(m).Tools()[1]
+	if openRename(m).Tool() != wantTool {
+		t.Fatalf("after tab tool = %q want %q", openRename(m).Tool(), wantTool)
 	}
-	_, cmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m.applyCmd(t, cmd)
 	got := m.sessionRows()[0]
 	if got.Tool != wantTool {
@@ -543,14 +543,14 @@ func TestEditGroupRenamesAndSetsPath(t *testing.T) {
 	}
 
 	m.openRename()
-	if m.mode != modeRename || !m.rename.IsGroup() {
+	if !renameOpen(m) || !openRename(m).IsGroup() {
 		t.Fatalf("edit group should open, mode = %v", m.mode)
 	}
-	if m.rename.Dir() != oldDir {
-		t.Fatalf("path prefill = %q want %q", m.rename.Dir(), oldDir)
+	if openRename(m).Dir() != oldDir {
+		t.Fatalf("path prefill = %q want %q", openRename(m).Dir(), oldDir)
 	}
-	m.rename.SetName("platform")
-	m.rename.SetDir(newDir)
+	openRename(m).SetName("platform")
+	openRename(m).SetDir(newDir)
 	if _, _ = m.applyRename(); m.errBar.text != "" {
 		t.Fatalf("apply: %q", m.errBar.text)
 	}
@@ -577,13 +577,13 @@ func TestEditGroupRejectsMissingPath(t *testing.T) {
 		}
 	}
 	m.openRename()
-	m.rename.SetDir("/nope/definitely/missing")
+	openRename(m).SetDir("/nope/definitely/missing")
 	_, cmd := m.applyRename()
 	m.applyCmd(t, cmd)
 	if m.errBar.text == "" {
 		t.Fatal("missing path should be rejected")
 	}
-	if m.mode != modeRename {
+	if !renameOpen(m) {
 		t.Fatal("modal should stay open on error")
 	}
 }
@@ -612,10 +612,10 @@ func TestGroupPathNeverEmpty(t *testing.T) {
 		}
 	}
 	m.openRename()
-	if m.rename.Dir() == "" {
+	if openRename(m).Dir() == "" {
 		t.Fatal("edit modal should prefill the path")
 	}
-	m.rename.SetDir("")
+	openRename(m).SetDir("")
 	if _, _ = m.applyRename(); m.errBar.text != "" {
 		t.Fatalf("apply: %q", m.errBar.text)
 	}
@@ -638,14 +638,14 @@ func TestRenameAgentToShellWithChildrenRefused(t *testing.T) {
 	spawnTerminal(t, m)
 	m.selectSessionRow(t, "coder")
 	m.openRename()
-	m.rename.SetName("renamed")
-	for range m.rename.Tools() {
-		if m.rename.Tool() == "terminal" {
+	openRename(m).SetName("renamed")
+	for range openRename(m).Tools() {
+		if openRename(m).Tool() == "terminal" {
 			break
 		}
-		m.handleRenameKey(tea.KeyMsg{Type: tea.KeyTab})
+		m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	}
-	_, cmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m.applyCmd(t, cmd)
 	if m.errBar.text == "" {
 		t.Fatal("expected refuse")
@@ -668,13 +668,13 @@ func TestGroupEditPersistsWorktreeChoice(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "grp")
 	m.openRename()
-	m.handleRenameKey(tea.KeyMsg{Type: tea.KeyDown})
-	m.handleRenameKey(tea.KeyMsg{Type: tea.KeyDown})
-	if m.rename.Focus() != 2 {
-		t.Fatalf("focus should reach the worktree field, got %d", m.rename.Focus())
+	m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if openRename(m).Focus() != 2 {
+		t.Fatalf("focus should reach the worktree field, got %d", openRename(m).Focus())
 	}
-	m.handleRenameKey(tea.KeyMsg{Type: tea.KeyRight})
-	_, cmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m.applyCmd(t, cmd)
 	groups, err := m.services.store.Groups()
 	if err != nil {
@@ -701,17 +701,17 @@ func TestGroupEditPersistsBase(t *testing.T) {
 	m.selectGroupRow(t, "grp")
 	m.openRename()
 	for range 3 {
-		m.handleRenameKey(tea.KeyMsg{Type: tea.KeyDown})
+		m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	}
-	if m.rename.Focus() != 3 {
-		t.Fatalf("focus should reach the base field, got %d", m.rename.Focus())
+	if openRename(m).Focus() != 3 {
+		t.Fatalf("focus should reach the base field, got %d", openRename(m).Focus())
 	}
-	_, step := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyRight})
+	_, step := m.Update(tea.KeyMsg{Type: tea.KeyRight})
 	m.applyTestMsg(t, step())
 	if view := m.viewGroupDetail("grp", 80); !strings.Contains(view, "◂ develop ▸") {
 		t.Fatalf("base row should show the pick, got %q", view)
 	}
-	_, cmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m.applyCmd(t, cmd)
 	groups, err := m.services.store.Groups()
 	if err != nil {
@@ -755,7 +755,7 @@ func TestGroupedSessionRenameEditorIsVisible(t *testing.T) {
 	createSession(t, m, "before", t.TempDir(), "work/inner")
 	m.selectSessionRow(t, "before")
 	m.openRename()
-	m.rename.SetName("edited-name")
+	openRename(m).SetName("edited-name")
 	if frame := preparedView(m); !strings.Contains(frame, "edited-name") {
 		t.Fatalf("grouped session editor is absent from frame:\n%s", frame)
 	}

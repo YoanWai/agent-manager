@@ -26,8 +26,8 @@ func (m *Model) footer() legend {
 			{"←→", "nudge"}, {"drag", "divider"}, {strings.TrimPrefix(m.listGlyph(keybind.Resize)+" / release", " / "), "commit"}, {"esc", "cancel"},
 		}})
 	}
-	if m.mode == modeRename {
-		return m.transientFooter(legendSection{title: "Rename", pairs: m.rename.Hints()})
+	if s, ok := m.renaming(); ok {
+		return m.transientFooter(legendSection{title: "Rename", pairs: s.Footer()})
 	}
 	// Focused, the keyboard belongs to the agent: the tier says so in its
 	// title, carries the few keys the manager keeps, and drops the app-wide

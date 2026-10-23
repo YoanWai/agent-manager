@@ -259,27 +259,10 @@ func (m *Model) viewFork() string {
 	}))
 }
 
-// renameDialog keeps what the root shares with the rename: the path
-// completion under its path field and the group base choice, which the
-// root probes. The fields, focus and keys are uidialogs.Rename.
-type renameDialog struct {
-	uidialogs.Rename
-	paths pathComplete
-	base  string
-}
-
-// dialogPaths hands the rename and the group form the root's path completion.
-type dialogPaths struct{ *pathComplete }
-
-func (p dialogPaths) Active() bool        { return p.active() }
-func (p dialogPaths) Chosen() bool        { return p.chosen }
-func (p dialogPaths) Move(delta int) bool { return p.move(delta) }
-func (p dialogPaths) Reset()              { p.reset() }
-
 // stepRenameBase steps the group base choice, probing the default path the
 // open group edit would save.
-func (m *Model) stepRenameBase(current string, delta int) (string, tea.Cmd) {
-	return m.stepGroupBase(groupBaseRename, m.gens.dialog, m.renameGroupDir(), current, delta)
+func (m *Model) stepRenameBase(s *renameSurface, delta int) (string, tea.Cmd) {
+	return m.stepGroupBase(groupBaseRename, m.gens.dialog, m.renameGroupDir(s), s.base, delta)
 }
 
 // openRename reads the selected row, the workspace's group choices and the
@@ -294,16 +277,13 @@ func (m *Model) openRename() {
 		m.reportErr("root is the top level, not a group to rename")
 		return
 	}
+	var surface *renameSurface
 	if entry.isGroup {
 		dir := m.workspace.groupPaths[entry.group]
 		if dir == "" {
 			dir = m.capturedGroupDefaultDir(entry.group)
 		}
-		m.rename = renameDialog{
-			Rename: uidialogs.RenameGroup(entry.group, dir, groupWorktreeIndex(m.workspace.groupWorktrees[entry.group])),
-			paths:  m.rename.paths.fresh(),
-			base:   m.workspace.groupBases[entry.group],
-		}
+		surface = newRenameSurface(uidialogs.RenameGroup(entry.group, dir, groupWorktreeIndex(m.workspace.groupWorktrees[entry.group])), m.workspace.groupBases[entry.group])
 	} else {
 		tools := m.services.cfg.AgentToolNames()
 		shells := []string{}
@@ -314,66 +294,21 @@ func (m *Model) openRename() {
 		}
 		sort.Strings(shells)
 		tools = append(tools, shells...)
-		m.rename = renameDialog{
-			Rename: uidialogs.RenameSession(entry.sess.ID, entry.sess.Name, entry.sess.Tool, tools),
-			paths:  m.rename.paths.fresh(),
-		}
+		surface = newRenameSurface(uidialogs.RenameSession(entry.sess.ID, entry.sess.Name, entry.sess.Tool, tools), "")
 	}
-	m.mode = modeRename
+	m.push(surface)
 	m.clearErr()
-}
-
-func (m *Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	key := m.rename.Key(msg, dialogPaths{&m.rename.paths}, len(groupWorktreeOptions))
-	switch key.Action {
-	case uidialogs.RenameCancel:
-		m.mode = modeList
-		return m, nil
-	case uidialogs.RenameComplete:
-		return m, m.applyPathSuggestion()
-	case uidialogs.RenameStepBase:
-		var cmd tea.Cmd
-		m.rename.base, cmd = m.stepRenameBase(m.rename.base, key.Delta)
-		return m, cmd
-	case uidialogs.RenameInvalid:
-		m.reportErr(key.Err)
-		return m, nil
-	case uidialogs.RenameSubmit:
-		request := key.Request
-		if request.Group {
-			return m, m.queueRename(renameRequest{
-				kind:     renameGroup,
-				oldGroup: request.OldGroup,
-				newGroup: request.NewGroup,
-				rawDir:   request.Dir,
-				draftDir: request.Dir,
-				worktree: groupWorktreeValue(request.Worktree),
-				base:     m.rename.base,
-				name:     request.Name,
-			})
-		}
-		return m, m.queueRename(renameRequest{
-			kind:   renameSession,
-			sessID: request.SessionID,
-			name:   request.Name,
-			tool:   request.Tool,
-		})
-	}
-	if key.Suggest {
-		return m, tea.Batch(key.Cmd, m.rename.paths.request(pathSuggestionRename, m.rename.Dir(), systemPathSuggestionReader{}))
-	}
-	return m, key.Cmd
 }
 
 // renameGroupDir is the default path the group edit would save, resolved
 // the way the rename worker resolves it.
-func (m *Model) renameGroupDir() string {
-	return m.capturedAbsolutePath(m.rename.Dir(), m.capturedGroupDefaultDir(parentGroup(m.rename.Path())))
+func (m *Model) renameGroupDir(s *renameSurface) string {
+	return m.capturedAbsolutePath(s.Dir(), m.capturedGroupDefaultDir(parentGroup(s.Path())))
 }
 
 // viewRenameGroupFields draws the group edit's path, worktree and base rows
 // under the group's head in the detail column.
-func (m *Model) viewRenameGroupFields(group string, width int) string {
+func (m *Model) viewRenameGroupFields(s *renameSurface, group string, width int) string {
 	view := uidialogs.GroupFieldsView{
 		Width:     width,
 		Label:     labelStyle(),
@@ -382,10 +317,10 @@ func (m *Model) viewRenameGroupFields(group string, width int) string {
 		Value:     valueStyle(),
 		Input:     textInputView,
 		Worktrees: groupWorktreeOptions,
-		Base:      groupBaseChoice(m.rename.base, m.groupBase(parentGroup(group))),
+		Base:      groupBaseChoice(s.base, m.groupBase(parentGroup(group))),
 	}
-	if m.rename.paths.active() {
-		view.Suggestions = m.viewPathSuggestions
+	if s.complete.active() {
+		view.Suggestions = func() string { return s.complete.view(m.prefs.glyphMode) }
 	}
-	return m.rename.GroupFields(view)
+	return s.GroupFields(view)
 }

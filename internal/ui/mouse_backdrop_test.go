@@ -141,7 +141,7 @@ func TestRenameHoldsTheListUnderTheMouse(t *testing.T) {
 	x, y := bodyCell(t, m, "beta")
 	m = leftClick(m, x, y)
 	m = wheel(m, tea.MouseButtonWheelDown, x, y)
-	if row, ok := m.selectedRow(); m.mode != modeRename || !ok || row.sess.Name != "alpha" {
+	if row, ok := m.selectedRow(); !renameOpen(m) || !ok || row.sess.Name != "alpha" {
 		t.Fatalf("the mouse moved the list under a rename: mode %v row %+v", m.mode, row.sess.Name)
 	}
 }

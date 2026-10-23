@@ -114,8 +114,6 @@ func (m *Model) completer(target pathSuggestionTarget) *pathComplete {
 	switch target {
 	case pathSuggestionGroup:
 		return &m.groupForm.paths
-	case pathSuggestionRename:
-		return &m.rename.paths
 	}
 	return &m.form.paths
 }
@@ -152,11 +150,6 @@ func (m *Model) pathSuggestionField(target pathSuggestionTarget) (string, bool) 
 			return "", false
 		}
 		return m.groupForm.Dir(), true
-	case pathSuggestionRename:
-		if m.mode != modeRename || !m.rename.IsGroup() {
-			return "", false
-		}
-		return m.rename.Dir(), true
 	}
 	return "", false
 }
@@ -176,9 +169,6 @@ func (pc *pathComplete) handle(h pathCompleteHost, msg pathSuggestionsMsg) {
 	pc.index = 0
 	pc.chosen = false
 }
-
-// viewPathSuggestions is the dropdown under the rename dialog's path field.
-func (m *Model) viewPathSuggestions() string { return m.rename.paths.view(m.prefs.glyphMode) }
 
 // view renders the directory-completion dropdown under a focused path
 // field.
@@ -279,10 +269,6 @@ func (m *Model) applyPathSuggestion() tea.Cmd {
 		path = m.groupForm.paths.selected() + string(filepath.Separator)
 		m.groupForm.TakePath(path)
 		target = pathSuggestionGroup
-	case modeRename:
-		path = m.rename.paths.selected() + string(filepath.Separator)
-		m.rename.SetDir(path)
-		target = pathSuggestionRename
 	}
 	completion := m.requestPathSuggestions(target, path)
 	if target == pathSuggestionForm {

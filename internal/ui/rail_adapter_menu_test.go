@@ -110,7 +110,7 @@ func TestRightClickOpensTheRowMenuAndRunsAnEntry(t *testing.T) {
 	}
 	rename := menuEntry(t, m, "Rename")
 	m, _ = leftClickCmd(m, m.layout.displayedRail.MenuRect.Left+2, m.layout.displayedRail.MenuRect.Top+1+rename)
-	if m.rail.MenuOpen() || m.mode != modeRename {
+	if m.rail.MenuOpen() || !renameOpen(m) {
 		t.Fatalf("clicking Rename should open rename, menu = %v mode = %v", m.rail.MenuOpen(), m.mode)
 	}
 }
@@ -234,7 +234,7 @@ func TestMenuPicksTheEntryAPressIsReleasedOn(t *testing.T) {
 	at.Action = tea.MouseActionRelease
 	updated, _ = m.handleMouse(at)
 	m = updated.(*Model)
-	if m.mode != modeRename {
+	if !renameOpen(m) {
 		t.Fatalf("releasing on Rename should run it, mode = %v", m.mode)
 	}
 }
