@@ -13,6 +13,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/deps"
 	"github.com/YoanWai/agent-manager/internal/testenv"
+	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -102,7 +103,7 @@ func TestAnOlderCLIOpensTheUpdateDialogInsteadOfListingModels(t *testing.T) {
 	}
 	m.openForm()
 	m.form().Form = spawn.NewForm(m.spawnHost(), []string{"pi"}, 0)
-	m.form().prompt.attachments = []imageAttachment{{id: 7}}
+	m.form().prompt.Attachments = []composer.Attachment{{ID: 7}}
 
 	m.applyCmd(t, m.ensureCatalog("pi"))
 
@@ -112,8 +113,8 @@ func TestAnOlderCLIOpensTheUpdateDialogInsteadOfListingModels(t *testing.T) {
 	if len(m.ledger.catalogs["pi"].cat.Models) != 0 {
 		t.Fatalf("models = %+v, want the kept answer withheld", m.ledger.catalogs["pi"].cat.Models)
 	}
-	if len(m.form().prompt.attachments) != 1 || len(hintFix(m).images) != 0 {
-		t.Fatalf("draft images moved: form %v dialog %v", m.form().prompt.attachments, hintFix(m).images)
+	if len(m.form().prompt.Attachments) != 1 || len(hintFix(m).images) != 0 {
+		t.Fatalf("draft images moved: form %v dialog %v", m.form().prompt.Attachments, hintFix(m).images)
 	}
 }
 
@@ -200,7 +201,7 @@ func TestAMousePressLeavesTheQuickDraftUnderTheUpdateDialog(t *testing.T) {
 	m := buildModel(t)
 	image := tempImage(t, "draft.png")
 	pushQuick(m)
-	m.quick().attachments = []imageAttachment{{id: 1, path: image}}
+	m.quick().Attachments = []composer.Attachment{{ID: 1, Path: image}}
 	m.presentLaunchHint(launchFix{text: "pi 0.84.2 is older", command: "true", binary: "pi", update: true})
 
 	m.handleMouse(tea.MouseMsg{X: 1, Y: 1, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
@@ -208,7 +209,7 @@ func TestAMousePressLeavesTheQuickDraftUnderTheUpdateDialog(t *testing.T) {
 	if !hintOpen(m) || (m.quick() == nil) {
 		t.Fatalf("press left mode %v quick %v", m.screenID(), (m.quick() != nil))
 	}
-	if !imageExists(t, image) || len(m.quick().attachments) != 1 {
+	if !imageExists(t, image) || len(m.quick().Attachments) != 1 {
 		t.Fatal("a press under the update dialog deleted the draft image")
 	}
 }
@@ -255,7 +256,7 @@ func TestClosingTheUpdateDialogReturnsToTheFormDraft(t *testing.T) {
 	m.openForm()
 	pickFormTool(t, m, "pi-tool")
 	m.form().SetName("draft-name")
-	m.form().prompt.attachments = []imageAttachment{{id: 7}}
+	m.form().prompt.Attachments = []composer.Attachment{{ID: 7}}
 	m.ledger.catalogs = map[string]*catalogState{"pi-tool": {loading: true}}
 	m.handleCatalog(catalogMsg{tool: "pi-tool", err: config.OutdatedToolError{Binary: "pi", Installed: "0.84.2", Minimum: "0.84.3"}})
 	if !hintOpen(m) {
@@ -264,7 +265,7 @@ func TestClosingTheUpdateDialogReturnsToTheFormDraft(t *testing.T) {
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	*m = *updated.(*Model)
 	m.applyCmd(t, cmd)
-	if !formOpen(m) || m.form().Name() != "draft-name" || len(m.form().prompt.attachments) != 1 {
-		t.Fatalf("mode %v name %q attachments %d, want the form draft back", m.screenID(), m.form().Name(), len(m.form().prompt.attachments))
+	if !formOpen(m) || m.form().Name() != "draft-name" || len(m.form().prompt.Attachments) != 1 {
+		t.Fatalf("mode %v name %q attachments %d, want the form draft back", m.screenID(), m.form().Name(), len(m.form().prompt.Attachments))
 	}
 }

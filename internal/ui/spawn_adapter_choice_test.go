@@ -230,8 +230,8 @@ func TestQuickPromptSpawnsOnItsChoice(t *testing.T) {
 	for _, r := range "opu" {
 		m.handleQuickKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 	}
-	if m.quick().input.Value() != "" {
-		t.Fatalf("typing into the list reached the prompt: %q", m.quick().input.Value())
+	if m.quick().Input.Value() != "" {
+		t.Fatalf("typing into the list reached the prompt: %q", m.quick().Input.Value())
 	}
 	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter})
 	if m.quick().Picking() != uiquick.PickNone || m.quick().Choice().Model() != "opus" {
@@ -242,7 +242,7 @@ func TestQuickPromptSpawnsOnItsChoice(t *testing.T) {
 	if target := strings.Split(ansi.Strip(m.viewQuickBar(120, quickBarMaxRows)), "\n")[0]; !strings.Contains(target, "claude · opus · medium") {
 		t.Fatalf("target row: %s", target)
 	}
-	m.quick().input.SetValue("do the work")
+	m.quick().Input.SetValue("do the work")
 	_, spawn := m.submitQuick()
 	if m.errBar.text != "" {
 		t.Fatalf("spawn: %q", m.errBar.text)

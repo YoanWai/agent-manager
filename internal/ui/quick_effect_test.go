@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -113,23 +114,23 @@ func TestQuickSendRefusalRestoresAcceptedImages(t *testing.T) {
 	m.selectSessionRow(t, "target")
 	m.openQuickMode()
 	path := tempImage(t, "retry.png")
-	m.quick().attachments = []imageAttachment{{id: 1, path: path}}
-	m.quick().input.SetValue(imageToken(1) + " retry this")
+	m.quick().Attachments = []composer.Attachment{{ID: 1, Path: path}}
+	m.quick().Input.SetValue(composer.Token(1) + " retry this")
 	m.services.quickSessionExists = func(*tmux.Driver, string) (bool, error) { return true, nil }
 	m.services.quickSendText = func(*tmux.Driver, string, string) (tmux.SendResult, error) {
 		return tmux.SendResult{Phase: tmux.SendPhaseLoaded}, errors.New("submit refused")
 	}
 
 	_, cmd := m.submitQuick()
-	if cmd == nil || len(m.quick().attachments) != 0 {
-		t.Fatalf("accepted send was not deferred with moved images: cmd=%v images=%v", cmd != nil, m.quick().attachments)
+	if cmd == nil || len(m.quick().Attachments) != 0 {
+		t.Fatalf("accepted send was not deferred with moved images: cmd=%v images=%v", cmd != nil, m.quick().Attachments)
 	}
 	m.applyTestMsg(t, cmd())
-	if got := m.quick().input.Value(); got != imageToken(1)+" retry this" {
+	if got := m.quick().Input.Value(); got != composer.Token(1)+" retry this" {
 		t.Fatalf("refused draft = %q", got)
 	}
-	if len(m.quick().attachments) != 1 || m.quick().attachments[0].path != path {
-		t.Fatalf("refused images = %+v", m.quick().attachments)
+	if len(m.quick().Attachments) != 1 || m.quick().Attachments[0].Path != path {
+		t.Fatalf("refused images = %+v", m.quick().Attachments)
 	}
 	if !strings.Contains(m.errBar.text, "was not sent") {
 		t.Fatalf("refusal = %q", m.errBar.text)
@@ -146,8 +147,8 @@ func TestQuickSendUncertainClearsAcceptedDraftWithoutRetry(t *testing.T) {
 	m.selectSessionRow(t, "target")
 	m.openQuickMode()
 	path := tempImage(t, "uncertain.png")
-	m.quick().attachments = []imageAttachment{{id: 1, path: path}}
-	m.quick().input.SetValue(imageToken(1) + " do this once")
+	m.quick().Attachments = []composer.Attachment{{ID: 1, Path: path}}
+	m.quick().Input.SetValue(composer.Token(1) + " do this once")
 	calls := 0
 	m.services.quickSessionExists = func(*tmux.Driver, string) (bool, error) { return true, nil }
 	m.services.quickSendText = func(*tmux.Driver, string, string) (tmux.SendResult, error) {
@@ -157,11 +158,11 @@ func TestQuickSendUncertainClearsAcceptedDraftWithoutRetry(t *testing.T) {
 
 	_, cmd := m.submitQuick()
 	m.applyTestMsg(t, cmd())
-	if calls != 1 || m.quick().input.Value() != "" {
-		t.Fatalf("uncertain send calls=%d draft=%q", calls, m.quick().input.Value())
+	if calls != 1 || m.quick().Input.Value() != "" {
+		t.Fatalf("uncertain send calls=%d draft=%q", calls, m.quick().Input.Value())
 	}
-	if len(m.quick().attachments) != 0 {
-		t.Fatalf("uncertain send returned images for a possible retry: %+v", m.quick().attachments)
+	if len(m.quick().Attachments) != 0 {
+		t.Fatalf("uncertain send returned images for a possible retry: %+v", m.quick().Attachments)
 	}
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("uncertain send removed an image the pane may still read: %v", err)
@@ -193,7 +194,7 @@ func TestQuickSendDoesNotFabricateMetadataWhenGuardLosesRace(t *testing.T) {
 	}
 	m.selectSessionRow(t, "target")
 	m.openQuickMode()
-	m.quick().input.SetValue("race with relaunch")
+	m.quick().Input.SetValue("race with relaunch")
 	m.services.quickSessionExists = func(*tmux.Driver, string) (bool, error) { return true, nil }
 	m.services.quickSendText = func(*tmux.Driver, string, string) (tmux.SendResult, error) {
 		if err := m.services.store.SetAgentLaunchedAt(captured.ID, time.Now().Add(time.Minute)); err != nil {
@@ -204,7 +205,7 @@ func TestQuickSendDoesNotFabricateMetadataWhenGuardLosesRace(t *testing.T) {
 
 	_, cmd := m.submitQuick()
 	m.applyTestMsg(t, cmd())
-	if m.quick().input.Value() != "" {
+	if m.quick().Input.Value() != "" {
 		t.Fatal("confirmed delivery left an accepted draft available to resend")
 	}
 	if !strings.Contains(m.errBar.text, "prompt sent, but recording it for the row failed") {
@@ -223,8 +224,8 @@ func TestQuickSendStaleRefusalDefersImageCleanup(t *testing.T) {
 	path := tempImage(t, "stale-refusal.png")
 	q := pushQuick(m)
 	request := quickSendRequest{
-		composerGen: q.gen + 1,
-		images:      []imageAttachment{{id: 1, path: path}},
+		composerGen: q.Gen + 1,
+		images:      []composer.Attachment{{ID: 1, Path: path}},
 	}
 	cleanup := m.returnQuickSendImages(request)
 	if cleanup == nil {
@@ -258,7 +259,7 @@ func TestBlockedQuickSendsKeepUpdateResponsiveRunFIFOAndDrainOnQuit(t *testing.T
 	}
 
 	m.openQuickMode()
-	m.quick().input.SetValue("first")
+	m.quick().Input.SetValue("first")
 	_, first := m.submitQuick()
 	if first == nil {
 		t.Fatal("first send did not activate its effect")
@@ -267,7 +268,7 @@ func TestBlockedQuickSendsKeepUpdateResponsiveRunFIFOAndDrainOnQuit(t *testing.T
 		t.Fatalf("duplicate accepted: cmd=%v err=%q", duplicate != nil, m.errBar.text)
 	}
 	m.openQuickMode()
-	m.quick().input.SetValue("second")
+	m.quick().Input.SetValue("second")
 	if _, second := m.submitQuick(); second != nil || len(m.effects.main.pending) != 1 {
 		t.Fatalf("second send did not queue behind the first: cmd=%v pending=%d", second != nil, len(m.effects.main.pending))
 	}
@@ -288,7 +289,7 @@ func TestBlockedQuickSendsKeepUpdateResponsiveRunFIFOAndDrainOnQuit(t *testing.T
 	msg := <-completed
 	updated, _ = m.Update(msg)
 	m = updated.(*Model)
-	if got := m.quick().input.Value(); got != "second" {
+	if got := m.quick().Input.Value(); got != "second" {
 		t.Fatalf("first completion replaced newer composer: %q", got)
 	}
 	if m.effects.main.active == nil {

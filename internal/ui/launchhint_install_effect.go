@@ -13,6 +13,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -39,7 +40,7 @@ type installStartRequest struct {
 	group       string
 	pane        sessioncmd.PaneSize
 	effectRetry effectRequest
-	images      []imageAttachment
+	images      []composer.Attachment
 }
 
 func (installStartRequest) effectRequest() {}
@@ -80,8 +81,8 @@ func (installSettleResult) effectResult() {}
 // installImageCleanupCmd owns a frozen copy of paths that no dialog or
 // retry still references. The command performs the file deletes without
 // retaining or reading the Model.
-func installImageCleanupCmd(images []imageAttachment) tea.Cmd {
-	owned := append([]imageAttachment(nil), images...)
+func installImageCleanupCmd(images []composer.Attachment) tea.Cmd {
+	owned := append([]composer.Attachment(nil), images...)
 	return func() tea.Msg {
 		dropImages(owned)
 		return nil
@@ -289,8 +290,8 @@ func (m *Model) applyInstallStart(request installStartRequest, result installSta
 func (m *Model) handInstallScreenTo(sessionID string) tea.Cmd {
 	var cleanup tea.Cmd
 	if q := m.quick(); q != nil {
-		cleanup = installImageCleanupCmd(q.attachments)
-		q.attachments = nil
+		cleanup = installImageCleanupCmd(q.Attachments)
+		q.Attachments = nil
 	}
 	m.closeLaunchHint()
 	m.rail.ClearStatusFilter()

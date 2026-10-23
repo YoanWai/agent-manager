@@ -31,14 +31,14 @@ func (m *Model) quick() *quickSurface {
 // completion lands on the bar that asked or is dropped.
 func (m *Model) quickFor(composerGen int) (*quickSurface, bool) {
 	q := m.quick()
-	return q, q != nil && q.gen == composerGen
+	return q, q != nil && q.Gen == composerGen
 }
 
 // quickHolds is whether the bar composerGen came from still shows draft
 // and no image: a send or spawn of exactly that prompt may clear it.
 func (m *Model) quickHolds(composerGen int, draft string) bool {
 	q, ok := m.quickFor(composerGen)
-	return ok && q.input.Value() == draft && len(q.attachments) == 0
+	return ok && q.Input.Value() == draft && len(q.Attachments) == 0
 }
 
 // closeQuick takes the bar off the stack wherever it sits: a send can
@@ -82,4 +82,4 @@ func (s *quickSurface) Dismissible() bool { return false }
 
 // Leave lets go of the images the prompt held; a send has already taken
 // the ones it carries.
-func (s *quickSurface) Leave(surfaceHost) { s.release() }
+func (s *quickSurface) Leave(surfaceHost) { s.Composer.Release() }

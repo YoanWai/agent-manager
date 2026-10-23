@@ -122,7 +122,7 @@ func TestTextInputCursorMarkerSurvivesBothBlinkPhases(t *testing.T) {
 }
 
 func TestTextAreaCursorMarkerTracksWrappedWideText(t *testing.T) {
-	input := promptField().input
+	input := promptField().Input
 	input.Placeholder = ""
 	input.SetWidth(6)
 	input.SetHeight(2)

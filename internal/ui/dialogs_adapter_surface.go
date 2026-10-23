@@ -2,6 +2,7 @@ package ui
 
 import (
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
 	tea "github.com/charmbracelet/bubbletea"
@@ -120,7 +121,7 @@ func (m *Model) launchInstall() installStartRequest {
 	fix := m.ledger.launch
 	retry := fix.effectRetry
 	if spawn, ok := retry.(spawnRequest); ok && len(spawn.images) == 0 {
-		spawn.images = append([]imageAttachment(nil), fix.images...)
+		spawn.images = append([]composer.Attachment(nil), fix.images...)
 		retry = spawn
 	}
 	return installStartRequest{

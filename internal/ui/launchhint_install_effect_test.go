@@ -10,6 +10,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -176,7 +177,7 @@ func TestInstallStartCompletionDoesNotReplaceNewerDialog(t *testing.T) {
 		command: "true",
 		script:  "true",
 		binary:  "second-cli",
-		images:  []imageAttachment{{id: 2, path: secondImage}},
+		images:  []composer.Attachment{{ID: 2, Path: secondImage}},
 	})
 	newGen := m.gens.dialog
 
@@ -205,7 +206,7 @@ func TestInstallStartStaleFailureDefersImageCleanupToCommand(t *testing.T) {
 	m.presentLaunchHint(launchFix{binary: "newer-cli"})
 
 	cmd := m.applyInstallStart(
-		installStartRequest{gen: 1, images: []imageAttachment{{id: 1, path: image}}},
+		installStartRequest{gen: 1, images: []composer.Attachment{{ID: 1, Path: image}}},
 		installStartResult{},
 		errors.New("fixture start failed"),
 	)
@@ -290,7 +291,7 @@ func TestInstallSettleDefersStatusAndBinaryChecks(t *testing.T) {
 		binary:     "am-fake-cli",
 		statusFile: statusFile,
 		script:     script,
-		images:     []imageAttachment{{id: 1, path: image}},
+		images:     []composer.Attachment{{ID: 1, Path: image}},
 	}
 
 	started := make(chan struct{})
@@ -367,7 +368,7 @@ func TestInstallSettleKeepsTrackerOnTransientStatusReadFailure(t *testing.T) {
 		binary:     "am-fake-cli",
 		statusFile: statusDir,
 		script:     script,
-		images:     []imageAttachment{{id: 1, path: image}},
+		images:     []composer.Attachment{{ID: 1, Path: image}},
 	}
 
 	m.settleInstall()
@@ -419,7 +420,7 @@ func TestInstallSettleRetriesTransientInstalledCheck(t *testing.T) {
 		statusFile:  statusFile,
 		script:      script,
 		effectRetry: hintFix(m).effectRetry,
-		images:      []imageAttachment{{id: 1, path: image}},
+		images:      []composer.Attachment{{ID: 1, Path: image}},
 	}
 	checks := 0
 	original := installCheckInstalled
@@ -493,7 +494,7 @@ func TestInstallSettleKeepsTrackerWhenShellLivenessIsUnknown(t *testing.T) {
 		binary:     "am-fake-cli",
 		statusFile: filepath.Join(dir, "missing.status"),
 		script:     script,
-		images:     []imageAttachment{{id: 1, path: image}},
+		images:     []composer.Attachment{{ID: 1, Path: image}},
 	}
 	original := installSessionExists
 	installSessionExists = func(*tmux.Driver, string) (bool, error) {
@@ -533,7 +534,7 @@ func TestInstallStartGivesTheInstallerShellTheKeys(t *testing.T) {
 		m := buildModel(t)
 		image := tempImage(t, "draft.png")
 		pushQuick(m)
-		m.quick().attachments = []imageAttachment{{id: 1, path: image}}
+		m.quick().Attachments = []composer.Attachment{{ID: 1, Path: image}}
 		m.gens.dialog = 1
 		m.presentLaunchHint(launchFix{})
 		cmd := m.applyInstallStart(installStartRequest{gen: 1, binary: "pi"}, result, failure)
@@ -552,7 +553,7 @@ func TestInstallStartGivesTheInstallerShellTheKeys(t *testing.T) {
 	m := buildModel(t)
 	image := tempImage(t, "kept.png")
 	pushQuick(m)
-	m.quick().attachments = []imageAttachment{{id: 1, path: image}}
+	m.quick().Attachments = []composer.Attachment{{ID: 1, Path: image}}
 	m.gens.dialog = 2
 	m.applyInstallStart(installStartRequest{gen: 1, binary: "pi"}, result, nil)
 	if (m.quick() == nil) || !m.onList() {

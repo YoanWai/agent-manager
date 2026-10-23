@@ -6,6 +6,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/launch"
+	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	"github.com/YoanWai/agent-manager/internal/ui/pathcomplete"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
@@ -23,7 +24,7 @@ type formDialog struct {
 	// prompt is a composer rather than a plain textarea: a first task is
 	// often a screenshot, so the box has to hold pasted images the way the
 	// quick prompt does.
-	prompt   composer
+	prompt   composer.Composer
 	complete pathcomplete.State
 	groupPicker
 	// remote is the connection a spawn goes to, when one is the target.
@@ -77,7 +78,7 @@ func (h spawnHost) ChoiceRemoteHost() string {
 func (h spawnHost) ClearErr() { h.m.clearErr() }
 
 func (h spawnHost) Prompt() spawn.Prompt {
-	return promptBox{c: &h.m.form().prompt, target: composerForm, host: h.m}
+	return promptBox{c: &h.m.form().prompt, target: composer.Form, host: h.m}
 }
 
 func (h spawnHost) Paths() spawn.Paths {
@@ -86,37 +87,37 @@ func (h spawnHost) Paths() spawn.Paths {
 	return pathField{mode: h.m.prefs.glyphMode, pc: &f.complete, target: pathcomplete.Form, off: f.remote.on()}
 }
 
-// promptBox lends a feature package one of the root's composers.
+// promptBox lends a feature package one of the root's prompt boxes.
 type promptBox struct {
-	c      *composer
-	target composerID
-	host   composerHost
+	c      *composer.Composer
+	target composer.ID
+	host   composer.Host
 }
 
-func (p promptBox) Focus() { p.c.input.Focus() }
+func (p promptBox) Focus() { p.c.Input.Focus() }
 
-func (p promptBox) Blur() { p.c.input.Blur() }
+func (p promptBox) Blur() { p.c.Input.Blur() }
 
 func (p promptBox) Fit(width, rows int) {
-	p.c.input.SetWidth(width)
-	p.c.maxRows = rows
+	p.c.Input.SetWidth(width)
+	p.c.MaxRows = rows
 }
 
-func (p promptBox) View() string { return p.c.view() }
+func (p promptBox) View() string { return p.c.View(composerPaint()) }
 
-func (p promptBox) StepRow(msg tea.KeyMsg) (tea.Cmd, bool) { return p.c.stepRow(msg) }
+func (p promptBox) StepRow(msg tea.KeyMsg) (tea.Cmd, bool) { return p.c.StepRow(msg) }
 
 func (p promptBox) ChipKey(msg tea.KeyMsg) (tea.Cmd, bool) {
-	return p.c.handleChipKey(p.host, p.target, msg)
+	return p.c.ChipKey(p.host, p.target, msg)
 }
 
-func (p promptBox) Type(msg tea.KeyMsg) tea.Cmd { return p.c.typeKey(msg) }
+func (p promptBox) Type(msg tea.KeyMsg) tea.Cmd { return p.c.TypeKey(msg) }
 
-func (p promptBox) Release() { p.c.release() }
+func (p promptBox) Release() { p.c.Release() }
 
-func (p promptBox) Pasting() bool { return p.c.pasting() }
+func (p promptBox) Pasting() bool { return p.c.Pasting() }
 
-func (p promptBox) Message() string { return p.c.message() }
+func (p promptBox) Message() string { return p.c.Message() }
 
 // pathField lends the form the root's path completer.
 type pathField struct {
@@ -168,7 +169,7 @@ func textField(placeholder string, limit int) textinput.Model {
 
 const formPromptMaxRows = 4
 
-func promptField() composer {
+func promptField() composer.Composer {
 	in := textarea.New()
 	in.CharLimit = 2000
 	in.Placeholder = "first task (optional)"
@@ -180,8 +181,8 @@ func promptField() composer {
 		return "  "
 	})
 	in.FocusedStyle.CursorLine = lipgloss.NewStyle()
-	holdOpen(&in)
-	return composer{input: in, maxRows: formPromptMaxRows}
+	composer.HoldOpen(&in)
+	return composer.Composer{Input: in, MaxRows: formPromptMaxRows}
 }
 
 func (m *Model) formField(label, value string, focused bool) string {
@@ -213,7 +214,7 @@ func (m *Model) syncFormFieldWidths() {
 	}
 	inner := m.formValueWidth()
 	f.SyncWidths(inner)
-	f.prompt.input.SetWidth(inner)
+	f.prompt.Input.SetWidth(inner)
 }
 
 // contextGroup is the group the cursor currently sits in: a highlighted
@@ -239,14 +240,14 @@ func (m *Model) openFormWithReader(reader settingsValueReader) tea.Cmd {
 		return nil
 	}
 	prompt := promptField()
-	prompt.gen = m.nextComposerGen()
+	prompt.Gen = m.nextComposerGen()
 	m.closeQuick()
 	f := newSpawnSurface(formDialog{
 		Form:   spawn.NewForm(m.spawnHost(), tools, toolIndex),
 		prompt: prompt,
 		// The completer starts past every read an earlier opening asked
 		// for, so a scan that comes home late lands on nothing.
-		complete:    pathcomplete.State{Generation: uint64(prompt.gen) << 32},
+		complete:    pathcomplete.State{Generation: uint64(prompt.Gen) << 32},
 		groupPicker: m.groupPickerFor(m.contextGroup()),
 	})
 	m.push(f)
@@ -260,11 +261,11 @@ func (m *Model) openFormWithReader(reader settingsValueReader) tea.Cmd {
 		f.RestartChoice(m.spawnHost())
 	}
 	catalog := m.ensureCatalog(tools[toolIndex])
-	saved := savedPromptsLoadCmd(m.services.store, savedForForm, uint64(f.prompt.gen), 0)
+	saved := savedPromptsLoadCmd(m.services.store, savedForForm, uint64(f.prompt.Gen), 0)
 	if m.settings.pending > 0 {
 		return tea.Batch(m.formWorktreeProbeCmd(false), catalog, saved)
 	}
-	return tea.Batch(settingsLoadCmd(settingsLoadRequest{target: settingsLoadForm, generation: uint64(f.prompt.gen), extra: m.choiceSettingKeys()}, reader), catalog, saved)
+	return tea.Batch(settingsLoadCmd(settingsLoadRequest{target: settingsLoadForm, generation: uint64(f.prompt.Gen), extra: m.choiceSettingKeys()}, reader), catalog, saved)
 }
 
 // applyCachedFormDefaults takes the loaded tool and worktree defaults. A
@@ -298,7 +299,7 @@ func (m *Model) selectedGroupPath() string {
 }
 
 func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	cmd, request := m.form().HandleKey(m.spawnHost(), typedText(msg))
+	cmd, request := m.form().HandleKey(m.spawnHost(), composer.TypedText(msg))
 	return m, tea.Batch(cmd, m.runFormRequest(request, systemDirectoryPreflight{git: m.services.gitDrv}))
 }
 

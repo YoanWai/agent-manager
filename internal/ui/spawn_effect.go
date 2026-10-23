@@ -13,6 +13,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	"github.com/YoanWai/agent-manager/internal/ui/pathcomplete"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
@@ -54,7 +55,7 @@ type spawnRequest struct {
 	terminalDir  terminalDirectoryRequest
 	terminalRead terminalDirectoryReader
 	plan         *launch.Plan
-	images       []imageAttachment
+	images       []composer.Attachment
 	choice       config.Choice
 	base         string
 }
@@ -119,14 +120,14 @@ func (m *Model) dispatchSpawn(request spawnRequest) {
 	switch request.kind {
 	case spawnForm:
 		f := m.form()
-		request.draft = f.prompt.input.Value()
+		request.draft = f.prompt.Input.Value()
 		request.draftName = f.Name()
 		request.draftDir = f.Dir()
-		f.prompt.attachments = nil
+		f.prompt.Attachments = nil
 	case spawnQuick:
 		q := m.quick()
-		request.draft = q.input.Value()
-		q.attachments = nil
+		request.draft = q.Input.Value()
+		q.Attachments = nil
 	}
 	m.enqueueEffect(request, 0, false)
 }
@@ -269,7 +270,7 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 		case spawnForm:
 			// A form opened later is a newer dialog the completion must not
 			// close; only the one that dispatched this spawn is closed.
-			if f, ok := m.formFor(request.composerGen); ok && f.prompt.input.Value() == request.draft && f.Name() == request.draftName && f.Dir() == request.draftDir && len(f.prompt.attachments) == 0 {
+			if f, ok := m.formFor(request.composerGen); ok && f.prompt.Input.Value() == request.draft && f.Name() == request.draftName && f.Dir() == request.draftDir && len(f.prompt.Attachments) == 0 {
 				m.closeForm()
 			}
 		case spawnQuick:
@@ -335,12 +336,12 @@ func (m *Model) returnSpawnImages(request spawnRequest) {
 	switch request.kind {
 	case spawnForm:
 		if f, ok := m.formFor(request.composerGen); ok {
-			f.prompt.attachments = append(request.images, f.prompt.attachments...)
+			f.prompt.Attachments = append(request.images, f.prompt.Attachments...)
 			return
 		}
 	case spawnQuick:
 		if q, ok := m.quickFor(request.composerGen); ok {
-			q.attachments = append(request.images, q.attachments...)
+			q.Attachments = append(request.images, q.Attachments...)
 			return
 		}
 	}

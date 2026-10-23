@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -25,7 +26,7 @@ type quickSendRequest struct {
 	draft          string
 	text           string
 	closeAfterSend bool
-	images         []imageAttachment
+	images         []composer.Attachment
 }
 
 func (quickSendRequest) effectRequest() {}
@@ -51,7 +52,7 @@ func (m *Model) dispatchQuickSend(request quickSendRequest) bool {
 		}
 	}
 	request.images = slices.Clone(request.images)
-	m.quick().attachments = nil
+	m.quick().Attachments = nil
 	m.enqueueEffect(request, 0, false)
 	return true
 }
@@ -136,8 +137,8 @@ func (m *Model) clearAccepted(composerGen int, draft string, closeAfterSend bool
 		return
 	}
 	q := m.quick()
-	q.input.SetValue("")
-	q.saved = nil
+	q.Input.SetValue("")
+	q.Saved = nil
 	if closeAfterSend {
 		m.closeQuick()
 	}
@@ -145,7 +146,7 @@ func (m *Model) clearAccepted(composerGen int, draft string, closeAfterSend bool
 
 func (m *Model) returnQuickSendImages(request quickSendRequest) tea.Cmd {
 	if q, ok := m.quickFor(request.composerGen); ok {
-		q.attachments = append(request.images, q.attachments...)
+		q.Attachments = append(request.images, q.Attachments...)
 		return nil
 	}
 	if len(request.images) == 0 {

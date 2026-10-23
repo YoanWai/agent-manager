@@ -369,7 +369,7 @@ func TestRowLegendDropsArchiveInArchivedView(t *testing.T) {
 func TestQuickPromptFooterKeys(t *testing.T) {
 	m := shotModel()
 	pushQuick(m)
-	m.quick().input = textarea.New()
+	m.quick().Input = textarea.New()
 	m.quick().SetTools([]string{"claude"}, 0)
 
 	footerOne := m.viewFooter()

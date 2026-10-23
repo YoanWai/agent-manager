@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -23,14 +24,14 @@ func TestQuickSavedPromptChipSendsItsText(t *testing.T) {
 		sent = text
 		return tmux.SendResult{}, nil
 	}
-	m.quick().input.SetValue("then ")
+	m.quick().Input.SetValue("then ")
 	_, load := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlO})
 	m.runBatch(t, load)
 	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter})
-	if got := m.quick().input.Value(); got != "then "+savedToken("Role")+" " {
+	if got := m.quick().Input.Value(); got != "then "+composer.SavedToken("Role")+" " {
 		t.Fatalf("chip landed as %q", got)
 	}
-	if !strings.Contains(ansi.Strip(m.quick().view()), "[saved prompt:Role]") {
+	if !strings.Contains(ansi.Strip(m.quick().Composer.View(composerPaint())), "[saved prompt:Role]") {
 		t.Fatal("the chip is not painted")
 	}
 	for _, r := range "go" {
@@ -41,7 +42,7 @@ func TestQuickSavedPromptChipSendsItsText(t *testing.T) {
 	if sent != "then  \n instruct\n go" || m.errBar.text != "" {
 		t.Fatalf("sent %q, err %q", sent, m.errBar.text)
 	}
-	if m.quick().input.Value() != "" || len(m.quick().saved) != 0 {
+	if m.quick().Input.Value() != "" || len(m.quick().Saved) != 0 {
 		t.Fatal("a confirmed send kept the chip")
 	}
 }

@@ -28,9 +28,9 @@ import (
 // buildModel gives the test a model on a tmux server and store of its own,
 // so a test that calls t.Parallel shares nothing with its neighbours but
 // process state. A test stays serial when it touches that state: it swaps a
-// package seam (lookPath, startEditor, captureClipboardImage, ...), sets the
-// environment or the lipgloss color profile, changes the theme or opens
-// Settings (the styles are package-wide), reads or writes the system
+// package seam (lookPath, startEditor, the clipboard image capture, ...),
+// sets the environment or the lipgloss color profile, changes the theme or
+// opens Settings (the styles are package-wide), reads or writes the system
 // clipboard, drives testSocket, or launches a session under a fixed id (its
 // launch script sits in the shared temp dir under that id).
 func buildModel(t *testing.T) *Model {

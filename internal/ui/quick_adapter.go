@@ -3,8 +3,8 @@ package ui
 import (
 	"strings"
 
-	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uiconnections "github.com/YoanWai/agent-manager/internal/ui/connections"
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
@@ -15,10 +15,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// captureClipboardImage is the seam the quick bar uses to save a pasted
-// image to a temp file; tests swap it for a fake.
-var captureClipboardImage = clipboard.SaveImage
-
 // quickBar is the quick bar (internal/ui/quick) with what the root holds
 // for it: its prompt box, the after-send setting, and where the frame
 // painted it. A pasted image lands at the caret as an
@@ -26,7 +22,7 @@ var captureClipboardImage = clipboard.SaveImage
 // as one unit; on submit each token becomes its path.
 type quickBar struct {
 	uiquick.Bar
-	composer
+	composer.Composer
 	closeAfterSend bool
 	// aim is the row the user last pointed the bar at. A refresh that
 	// drops a connection's row moves the cursor on its own, and enter must
@@ -51,7 +47,7 @@ type quickBarHost struct{ spawnHost }
 func (m *Model) quickBarHost() quickBarHost { return quickBarHost{spawnHost{m: m}} }
 
 func (h quickBarHost) Prompt() spawn.Prompt {
-	return promptBox{c: &h.m.quick().composer, target: composerQuick, host: h.m}
+	return promptBox{c: &h.m.quick().Composer, target: composer.Quick, host: h.m}
 }
 
 func (h quickBarHost) Target() (uiquick.Target, bool) {
@@ -86,14 +82,14 @@ func (m *Model) openQuickModeWithReader(reader settingsValueReader) tea.Cmd {
 		return "  "
 	})
 	input.FocusedStyle.CursorLine = lipgloss.NewStyle()
-	holdOpen(&input)
+	composer.HoldOpen(&input)
 	input.Focus()
 	m.clearErr()
 	m.forgetWorktreeCapability()
 	aim, _ := m.rail.Selected()
 	q := newQuickSurface(quickBar{
 		aim:            aim,
-		composer:       composer{input: input, maxRows: quickBarMaxRows, gen: m.nextComposerGen()},
+		Composer:       composer.Composer{Input: input, MaxRows: quickBarMaxRows, Gen: m.nextComposerGen()},
 		closeAfterSend: m.settings.cache.value(uisettings.QuickCloseSetting) == "close",
 	})
 	// The bar is on the stack before its choice starts, so a bar aimed at
@@ -104,7 +100,7 @@ func (m *Model) openQuickModeWithReader(reader settingsValueReader) tea.Cmd {
 	if m.settings.pending > 0 {
 		return tea.Batch(m.quickWorktreeProbeCmd(false), catalog)
 	}
-	return tea.Batch(settingsLoadCmd(settingsLoadRequest{target: settingsLoadQuick, generation: uint64(q.gen), extra: m.choiceSettingKeys()}, reader), catalog)
+	return tea.Batch(settingsLoadCmd(settingsLoadRequest{target: settingsLoadQuick, generation: uint64(q.Gen), extra: m.choiceSettingKeys()}, reader), catalog)
 }
 
 // applyCachedQuickDefaults takes the loaded defaults. A tool the load moved
@@ -124,7 +120,7 @@ func (m *Model) applyCachedQuickDefaults() tea.Cmd {
 }
 
 func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	cmd, request := m.quick().HandleKey(m.quickBarHost(), typedText(msg))
+	cmd, request := m.quick().HandleKey(m.quickBarHost(), composer.TypedText(msg))
 	return m, tea.Batch(cmd, m.runQuickRequest(request))
 }
 
@@ -158,11 +154,11 @@ func (m *Model) runQuickRequest(request uiquick.Request) tea.Cmd {
 		q := m.quick()
 		if !m.dispatchQuickSend(quickSendRequest{
 			session:        entry.sess,
-			composerGen:    q.gen,
-			draft:          q.input.Value(),
+			composerGen:    q.Gen,
+			draft:          q.Input.Value(),
 			text:           request.Text,
 			closeAfterSend: q.closeAfterSend,
-			images:         q.attachments,
+			images:         q.Attachments,
 		}) {
 			return nil
 		}
@@ -174,7 +170,7 @@ func (m *Model) runQuickRequest(request uiquick.Request) tea.Cmd {
 		}
 		return m.dispatchQuickSpawn(m.quickSpawnRequest(*request.Spawn), systemDirectoryPreflight{git: m.services.gitDrv})
 	case request.LoadSaved:
-		return savedPromptsLoadCmd(m.services.store, savedForQuick, uint64(m.quick().gen), 0)
+		return savedPromptsLoadCmd(m.services.store, savedForQuick, uint64(m.quick().Gen), 0)
 	case request.InsertSaved != nil:
 		m.quick().insertSaved(*request.InsertSaved)
 	}
@@ -226,9 +222,9 @@ func (m *Model) quickSpawnRequest(request spawn.Request) spawnRequest {
 		choice:       config.Choice(request.Pick),
 		base:         defaults.base,
 		pane:         defaults.pane,
-		composerGen:  q.gen,
-		images:       q.attachments,
-		draft:        q.input.Value(),
+		composerGen:  q.Gen,
+		images:       q.Attachments,
+		draft:        q.Input.Value(),
 		rawDir:       defaults.groupDir,
 		dirFallbacks: defaults.fallbacks,
 		wantWorktree: pickWorktree,

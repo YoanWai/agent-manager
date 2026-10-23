@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -29,30 +30,30 @@ func TestQuickFooterKeepsTheCaretRowOnScreen(t *testing.T) {
 			return ansi.Strip(frame)
 		}
 		painted()
-		m = applyMsg(t, m, pasteTextMsg{
-			target: composerQuick,
-			gen:    m.quick().gen,
-			inner: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(
+		m = applyMsg(t, m, composer.PasteTextMsg{
+			Target: composer.Quick,
+			Gen:    m.quick().Gen,
+			Inner: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(
 				"FIRSTROWMARK " + strings.Repeat("filler word ", 20) + "LASTROWMARK")},
 		})
 		painted()
 
-		for i := 0; i < 40 && !m.quick().caretOnFirstRow(); i++ {
+		for i := 0; i < 40 && !m.quick().CaretOnFirstRow(); i++ {
 			_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyUp})
 			painted()
 		}
-		if !m.quick().caretOnFirstRow() {
+		if !m.quick().CaretOnFirstRow() {
 			t.Fatal("up never reached the prompt's first row")
 		}
 		if !strings.Contains(painted(), "FIRSTROWMARK") {
 			t.Fatalf("full layout %v: the frame clipped the prompt's first row", full)
 		}
 
-		for i := 0; i < 40 && !m.quick().caretOnLastRow(); i++ {
+		for i := 0; i < 40 && !m.quick().CaretOnLastRow(); i++ {
 			_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyDown})
 			painted()
 		}
-		if !m.quick().caretOnLastRow() {
+		if !m.quick().CaretOnLastRow() {
 			t.Fatal("down never reached the prompt's last row")
 		}
 		if !strings.Contains(painted(), "LASTROWMARK") {
@@ -65,8 +66,8 @@ func TestQuickBarMeasuresRowsAtTheWidthItJustSet(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openQuickMode()
-	m.quick().input.SetWidth(80)
-	m.quick().input.SetValue("one two three four five six seven eight nine ten")
+	m.quick().Input.SetWidth(80)
+	m.quick().Input.SetValue("one two three four five six seven eight nine ten")
 	bar := m.viewQuickBar(14, quickBarMaxRows)
 	if rows := len(splitLines(bar)) - 1; rows < 2 {
 		t.Fatalf("rows = %d, want the wrap at width 14, not the previous width", rows)
@@ -84,7 +85,7 @@ func TestQuickFooterFillsEveryBandCell(t *testing.T) {
 			m.layout.width = width
 			answered(m, claudeLike, claudeAnswer)
 			m.openQuickMode()
-			m.quick().input.SetValue("hello 界 " + strings.Repeat("wrapping ", 12))
+			m.quick().Input.SetValue("hello 界 " + strings.Repeat("wrapping ", 12))
 			frame := preparedView(m)
 			frameRows := splitLines(frame)
 			if len(frameRows) != m.layout.height || strings.TrimSpace(strings.TrimPrefix(ansi.Strip(frameRows[len(frameRows)-1]), quickEdge)) == "" {
@@ -140,7 +141,7 @@ func TestQuickBarKeepsPaneHeight(t *testing.T) {
 	listed := paintedPreview(m)
 
 	m.openQuickMode()
-	m.quick().input.SetValue(strings.Repeat("filler word ", 40))
+	m.quick().Input.SetValue(strings.Repeat("filler word ", 40))
 	if got := m.previewPaneHeight(); got != pinned {
 		t.Fatalf("box height with the quick bar open = %d, want %d", got, pinned)
 	}

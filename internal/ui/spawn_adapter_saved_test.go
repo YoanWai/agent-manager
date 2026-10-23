@@ -6,6 +6,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -37,7 +38,7 @@ func TestFormSavedPromptStepsLeaveTheRestAlone(t *testing.T) {
 	savePrompt(t, m, "A", " \n a\n")
 	savePrompt(t, m, "B", "b")
 	m.runBatch(t, m.openForm())
-	m.form().prompt.input.SetValue("  task  ")
+	m.form().prompt.Input.SetValue("  task  ")
 	tools, toolIndex := m.form().Tools()
 	dir, group, worktree, model := m.form().Dir(), picker(m).GroupIndex, m.form().Worktree(), m.form().Choice().Model()
 	focusSavedRow(t, m)
@@ -57,7 +58,7 @@ func TestFormSavedPromptStepsLeaveTheRestAlone(t *testing.T) {
 		t.Fatalf("stepping past the last kept %q", got)
 	}
 	newTools, newIndex := m.form().Tools()
-	if m.form().prompt.input.Value() != "  task  " || newTools[newIndex] != tools[toolIndex] || m.form().Dir() != dir ||
+	if m.form().prompt.Input.Value() != "  task  " || newTools[newIndex] != tools[toolIndex] || m.form().Dir() != dir ||
 		picker(m).GroupIndex != group || m.form().Worktree() != worktree || m.form().Choice().Model() != model {
 		t.Fatal("stepping saved prompts changed another field")
 	}
@@ -72,14 +73,14 @@ func TestFormSavedPromptClickKeepsTheTask(t *testing.T) {
 	m.runBatch(t, m.openForm())
 	focusSavedRow(t, m)
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyCtrlO})
-	m.form().prompt.input.SetValue("task " + imageToken(1))
-	m.form().prompt.attachments = []imageAttachment{{id: 1, path: tempImage(t, "image.png")}}
-	before := m.form().prompt.message()
+	m.form().prompt.Input.SetValue("task " + composer.Token(1))
+	m.form().prompt.Attachments = []composer.Attachment{{ID: 1, Path: tempImage(t, "image.png")}}
+	before := m.form().prompt.Message()
 	model := m.form().Choice().Model()
 	if m, _ = clickBody(t, m, "Role"); m.form().SavedText() != "instruct" {
 		t.Fatalf("a click on Role picked %q", m.form().SavedText())
 	}
-	if m.form().prompt.message() != before || len(m.form().prompt.attachments) != 1 || m.form().Choice().Model() != model {
+	if m.form().prompt.Message() != before || len(m.form().prompt.Attachments) != 1 || m.form().Choice().Model() != model {
 		t.Fatal("the click changed the task or the CLI choice")
 	}
 }
@@ -110,7 +111,7 @@ func TestFormSpawnsWithTheSavedPromptItShowed(t *testing.T) {
 	pickFormTool(t, m, "ready-tool")
 	focusSavedRow(t, m)
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
-	m.form().prompt.input.SetValue("  task  ")
+	m.form().prompt.Input.SetValue("  task  ")
 	m.form().SetName("saved-launch")
 	m.form().SetDir(t.TempDir())
 	if err := m.services.store.SaveSessionPreset("Role", store.SessionPreset{Name: "Role", Instructions: "external replacement"}); err != nil {
@@ -167,7 +168,7 @@ func TestFormLaunchesBeforeTheSavedPromptsRead(t *testing.T) {
 	m := buildModel(t)
 	m.openForm()
 	pickFormTool(t, m, "ready-tool")
-	m.form().prompt.input.SetValue("task")
+	m.form().prompt.Input.SetValue("task")
 	m.form().SetName("without-saved")
 	m.form().SetDir(t.TempDir())
 	if !strings.Contains(formBody(m), "loading… (optional)") {

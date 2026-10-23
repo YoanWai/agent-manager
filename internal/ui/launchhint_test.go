@@ -19,6 +19,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/testenv"
 	"github.com/YoanWai/agent-manager/internal/testfixture"
+	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -57,11 +58,11 @@ func (h *hintHost) ReleaseLaunchHint() { h.releaseLaunchHint() }
 func TestLaunchHintSurfaceWithFakeInstall(t *testing.T) {
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 110, 34
-	pushQuick(m).attachments = []imageAttachment{{id: 1}}
+	pushQuick(m).Attachments = []composer.Attachment{{ID: 1}}
 	h := &hintHost{Model: m}
 	m.openLaunchHint(launchFix{text: "tool is not installed.\n\nRun the installer.", command: "install tool", script: "install tool", binary: "tool"})
 	_, ok := surfaceOf[*uidialogs.LaunchHintSurface](m)
-	if !ok || m.gens.dialog != 1 || len(m.ledger.launch.images) != 1 || m.quick().attachments != nil {
+	if !ok || m.gens.dialog != 1 || len(m.ledger.launch.images) != 1 || m.quick().Attachments != nil {
 		t.Fatalf("open: surface %t gens %d fix %+v, want the composer images taken", ok, m.gens.dialog, hintFix(m))
 	}
 	// The card calls the root it was built with, so the fake is that root.
@@ -409,8 +410,8 @@ func TestFormSpawnRefusedByTheHintReleasesItsImages(t *testing.T) {
 	m.form().SetTools([]string{"hermes"}, 0)
 	path := tempImage(t, "mock.png")
 	f := m.form()
-	f.prompt.attachments = []imageAttachment{{id: 1, path: path}}
-	f.prompt.input.SetValue("match " + imageToken(1))
+	f.prompt.Attachments = []composer.Attachment{{ID: 1, Path: path}}
+	f.prompt.Input.SetValue("match " + composer.Token(1))
 
 	_, cmd := m.submitForm()
 	m.applyCmd(t, cmd)
@@ -421,8 +422,8 @@ func TestFormSpawnRefusedByTheHintReleasesItsImages(t *testing.T) {
 	// The dialog can still install the CLI and spawn this prompt, so it
 	// takes the images over from the form and keeps the files until it
 	// closes.
-	if len(f.prompt.attachments) != 0 {
-		t.Fatalf("attachments = %+v, want the form's images handed to the dialog", f.prompt.attachments)
+	if len(f.prompt.Attachments) != 0 {
+		t.Fatalf("attachments = %+v, want the form's images handed to the dialog", f.prompt.Attachments)
 	}
 	if len(hintFix(m).images) != 1 {
 		t.Fatalf("dialog images = %+v, want the refused prompt's image", hintFix(m).images)
@@ -469,8 +470,8 @@ func TestFormSpawnErrorInTheBarKeepsItsImages(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := tempImage(t, "mock.png")
-	m.form().prompt.attachments = []imageAttachment{{id: 1, path: path}}
-	m.form().prompt.input.SetValue("match " + imageToken(1))
+	m.form().prompt.Attachments = []composer.Attachment{{ID: 1, Path: path}}
+	m.form().prompt.Input.SetValue("match " + composer.Token(1))
 
 	_, cmd := m.submitForm()
 	m.applyCmd(t, cmd)
@@ -486,8 +487,8 @@ func TestFormSpawnErrorInTheBarKeepsItsImages(t *testing.T) {
 	if len(m.sessionRows()) != 0 {
 		t.Fatalf("a failed spawn leaves no session, got %v", sessionNames(m))
 	}
-	if len(m.form().prompt.attachments) != 1 {
-		t.Fatalf("attachments = %+v, want the chip kept for the retry", m.form().prompt.attachments)
+	if len(m.form().prompt.Attachments) != 1 {
+		t.Fatalf("attachments = %+v, want the chip kept for the retry", m.form().prompt.Attachments)
 	}
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("the image the prompt still names must survive: %v", err)
@@ -676,7 +677,7 @@ func installFixture(t *testing.T, m *Model, command string) (retryName, image st
 		name:     retryName,
 		dir:      t.TempDir(),
 		pane:     sessioncmd.PaneSize{Width: w, Height: h},
-		images:   []imageAttachment{{id: 1, path: image}},
+		images:   []composer.Attachment{{ID: 1, Path: image}},
 	}
 	m.openLaunchHint(launchFix{
 		text:        "am-fake-cli is not installed.\n\ninstall it with: " + command,
@@ -684,7 +685,7 @@ func installFixture(t *testing.T, m *Model, command string) (retryName, image st
 		script:      command,
 		binary:      "am-fake-cli",
 		effectRetry: retry,
-		images:      []imageAttachment{{id: 1, path: image}},
+		images:      []composer.Attachment{{ID: 1, Path: image}},
 	})
 	return retryName, image
 }

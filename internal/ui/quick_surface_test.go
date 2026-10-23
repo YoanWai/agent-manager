@@ -3,6 +3,7 @@ package ui
 import (
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -10,7 +11,7 @@ import (
 // pushQuick puts a bare bar on the stack, for a test that needs one open
 // without the settings and catalog reads openQuickMode starts.
 func pushQuick(m *Model) *quickSurface {
-	q := newQuickSurface(quickBar{composer: composer{input: textarea.New()}})
+	q := newQuickSurface(quickBar{Composer: composer.Composer{Input: textarea.New()}})
 	m.push(q)
 	return q
 }
@@ -33,7 +34,7 @@ func TestQuickBarIsASurface(t *testing.T) {
 		t.Fatal("the bar sits on the list; it is no card over it")
 	}
 	image := tempImage(t, "draft.png")
-	m.quick().attachments = []imageAttachment{{id: 1, path: image}}
+	m.quick().Attachments = []composer.Attachment{{ID: 1, Path: image}}
 	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if m.quick() != nil || len(m.surfaces) != 0 {
 		t.Fatal("esc did not close the bar")
@@ -48,7 +49,7 @@ func TestQuickBarIsASurface(t *testing.T) {
 func TestStaleQuickCompletionIsDropped(t *testing.T) {
 	m := buildModel(t)
 	m.applyCmd(t, m.openQuickMode())
-	gen := m.quick().gen
+	gen := m.quick().Gen
 	m.closeQuick()
 	if _, ok := m.quickFor(gen); ok {
 		t.Fatal("a closed bar still answers its generation")

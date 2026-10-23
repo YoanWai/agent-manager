@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -106,7 +107,7 @@ func TestQuickPreflightCapturesTargetBeforeCursorMoves(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "backend")
 	m.openQuickMode()
-	m.quick().input.SetValue("captured prompt")
+	m.quick().Input.SetValue("captured prompt")
 	reader := &blockedDirectoryPreflight{
 		started: make(chan struct{}), release: make(chan struct{}),
 		resolved: backend, dirOK: true,
@@ -249,7 +250,7 @@ func TestQuickSpawnDefersCreationFromUpdate(t *testing.T) {
 		}
 	}
 	m.openQuickMode()
-	m.quick().input.SetValue("build the api")
+	m.quick().Input.SetValue("build the api")
 	_, cmd := m.submitQuick()
 	if m.errBar.text != "" {
 		t.Fatalf("quick spawn reported an error: %q", m.errBar.text)
@@ -269,7 +270,7 @@ func TestQuickSpawnDefersCreationFromUpdate(t *testing.T) {
 	if !m.services.tmux.Exists(sessions[0].ID) {
 		t.Fatal("pane missing after completion")
 	}
-	if m.quick().input.Value() != "" {
+	if m.quick().Input.Value() != "" {
 		t.Fatal("quick bar was not cleared after the spawn completed")
 	}
 }
@@ -354,7 +355,7 @@ func TestSpawnCompletesAgainstCapturedIdentity(t *testing.T) {
 		}
 	}
 	m.openQuickMode()
-	m.quick().input.SetValue("captured prompt")
+	m.quick().Input.SetValue("captured prompt")
 	_, cmd := m.submitQuick()
 	// A newer selection lands before the effect completes: it must not
 	// retarget the accepted spawn.
@@ -460,20 +461,20 @@ func TestSpawnFailureDoesNotReplaceNewerDialog(t *testing.T) {
 	cmd := submitFormSpawn(t, m, "first", t.TempDir())
 	// The user closes this form and opens a fresh one in the same slot: a
 	// newer dialog the completion must not close.
-	m.form().prompt.release()
+	m.form().prompt.Release()
 	m.base = baseList
 	m.clearSurfaces()
 	m.openForm()
 	m.form().SetName("second")
 	m.form().SetDir(t.TempDir())
 	setFormTool(m, 0)
-	newGen := m.form().prompt.gen
+	newGen := m.form().prompt.Gen
 	m.services.store.Close()
 	m.applyCmd(t, cmd)
 	if !formOpen(m) {
 		t.Fatalf("the newer form was closed; screen = %v", m.screenID())
 	}
-	if m.form().prompt.gen != newGen {
+	if m.form().prompt.Gen != newGen {
 		t.Fatal("the newer form was replaced by the completion")
 	}
 	if m.errBar.text == "" {
@@ -560,7 +561,7 @@ func TestSpawnGenericErrorReturnsImagesToForm(t *testing.T) {
 	if !formOpen(m) {
 		t.Fatalf("form should stay up; screen = %v", m.screenID())
 	}
-	if got := m.form().prompt.attachments; len(got) != 1 || got[0].id != id {
+	if got := m.form().prompt.Attachments; len(got) != 1 || got[0].id != id {
 		t.Fatalf("attachments = %+v, want the chip kept for the retry", got)
 	}
 	if _, err := os.Stat(path); err != nil {
@@ -572,10 +573,10 @@ func TestSpawnFailurePreservesNewAttachments(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openForm()
-	request := spawnRequest{kind: spawnForm, composerGen: m.form().prompt.gen, images: []imageAttachment{{path: "old"}}}
-	m.form().prompt.attachments = []imageAttachment{{path: "new"}}
+	request := spawnRequest{kind: spawnForm, composerGen: m.form().prompt.Gen, images: []composer.Attachment{{Path: "old"}}}
+	m.form().prompt.Attachments = []composer.Attachment{{Path: "new"}}
 	m.returnSpawnImages(request)
-	if len(m.form().prompt.attachments) != 2 {
+	if len(m.form().prompt.Attachments) != 2 {
 		t.Fatal("failed spawn discarded a newly pasted attachment")
 	}
 }
@@ -584,13 +585,13 @@ func TestQuickSpawnCompletionPreservesEditedDraft(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openQuickMode()
-	m.quick().input.SetValue("first task")
-	request := spawnRequest{kind: spawnQuick, composerGen: m.quick().gen}
+	m.quick().Input.SetValue("first task")
+	request := spawnRequest{kind: spawnQuick, composerGen: m.quick().Gen}
 	m.dispatchSpawn(request)
 	request = m.effects.main.pending[0].request.(spawnRequest)
-	m.quick().input.SetValue("next task")
+	m.quick().Input.SetValue("next task")
 	m.applySpawnEffect(request, spawnEffectResult{session: store.Session{ID: "child", Name: "child"}}, nil)
-	if m.quick().input.Value() != "next task" {
+	if m.quick().Input.Value() != "next task" {
 		t.Fatal("completion cleared a newer draft")
 	}
 }

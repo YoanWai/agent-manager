@@ -133,7 +133,7 @@ func TestWorktreeProbeDefersGitAndRejectsReopenedForm(t *testing.T) {
 	}
 	m.gens.worktreeProbe++
 	request := worktreeProbeRequest{
-		target: worktreeProbeForm, generation: m.form().prompt.gen,
+		target: worktreeProbeForm, generation: m.form().prompt.Gen,
 		sequence: m.gens.worktreeProbe, dir: m.formSpawnDir(), toggle: true, from: m.form().Worktree(),
 	}
 	cmd := worktreeProbeCmd(request, reader)

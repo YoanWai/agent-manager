@@ -8,6 +8,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/deps"
 	"github.com/YoanWai/agent-manager/internal/mcpreg"
+	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -26,7 +27,7 @@ type launchFix struct {
 	binary      string
 	update      bool
 	effectRetry effectRequest
-	images      []imageAttachment
+	images      []composer.Attachment
 }
 
 // pendingInstall is an install the dialog started in a shell tab: the
@@ -40,7 +41,7 @@ type pendingInstall struct {
 	statusFile  string
 	script      string
 	effectRetry effectRequest
-	images      []imageAttachment
+	images      []composer.Attachment
 }
 
 // advanceDialogGen fences completions submitted from the dialog it
@@ -55,15 +56,15 @@ func (m *Model) advanceDialogGen() {
 
 // takeComposerImages hands over the images the spawn form's prompt and the
 // quick bar hold, leaving both composers empty.
-func (m *Model) takeComposerImages() []imageAttachment {
-	var images []imageAttachment
+func (m *Model) takeComposerImages() []composer.Attachment {
+	var images []composer.Attachment
 	if f := m.form(); f != nil {
-		images = append(images, f.prompt.attachments...)
-		f.prompt.attachments = nil
+		images = append(images, f.prompt.Attachments...)
+		f.prompt.Attachments = nil
 	}
 	if q := m.quick(); q != nil {
-		images = append(images, q.attachments...)
-		q.attachments = nil
+		images = append(images, q.Attachments...)
+		q.Attachments = nil
 	}
 	return images
 }
@@ -204,7 +205,7 @@ func removeInstallFiles(statusFile, script string) {
 	_ = os.Remove(script)
 }
 
-func dropImages(images []imageAttachment) {
+func dropImages(images []composer.Attachment) {
 	for _, att := range images {
 		if att.path != "" {
 			_ = os.Remove(att.path)

@@ -4,6 +4,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -45,7 +46,7 @@ func openHintFor(t *testing.T) (*Model, string) {
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 120, 34
 	image := tempImage(t, "refused.png")
-	m.openLaunchHint(launchFix{text: "tool is missing", command: "true", script: "true", binary: "tool", images: []imageAttachment{{id: 1, path: image}}})
+	m.openLaunchHint(launchFix{text: "tool is missing", command: "true", script: "true", binary: "tool", images: []composer.Attachment{{ID: 1, Path: image}}})
 	if !hintOpen(m) {
 		t.Fatal("test setup did not open the hint")
 	}

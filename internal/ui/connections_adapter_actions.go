@@ -291,7 +291,7 @@ func (m *Model) remoteQuickRow() (row uiconnections.Row, taken, refused bool) {
 	if !ok {
 		return uiconnections.Row{}, false, false
 	}
-	if len(m.quick().attachments) > 0 {
+	if len(m.quick().Attachments) > 0 {
 		m.reportErr(uirail.RemoteRefusal("pasted images"))
 		return row, true, true
 	}
@@ -339,7 +339,7 @@ func (m *Model) remoteQuickSpawn(spawned spawn.Request) (tea.Cmd, bool) {
 
 func (m *Model) quickRemoteRequest(host, text string) remoteRequest {
 	q := m.quick()
-	return remoteRequest{host: host, text: text, draft: q.input.Value(), composerGen: q.gen, closeAfterSend: q.closeAfterSend}
+	return remoteRequest{host: host, text: text, draft: q.Input.Value(), composerGen: q.Gen, closeAfterSend: q.closeAfterSend}
 }
 
 // withRemoteChoice passes the choice as the host's spawn takes it: the

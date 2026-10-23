@@ -845,7 +845,7 @@ func TestNewFeedWaitsForQuickBar(t *testing.T) {
 	m.base = baseList
 	m.clearSurfaces()
 	pushQuick(m)
-	m.quick().input = textarea.New()
+	m.quick().Input = textarea.New()
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
 	if !m.onList() || (m.quick() == nil) {
 		t.Fatalf("quick bar should keep the modal closed, screen = %v quick=%v", m.screenID(), (m.quick() != nil))

@@ -34,14 +34,14 @@ func (m *Model) form() *spawnSurface {
 // completion lands on the form that asked or is dropped.
 func (m *Model) formFor(composerGen int) (*spawnSurface, bool) {
 	s := m.form()
-	return s, s != nil && s.prompt.gen == composerGen
+	return s, s != nil && s.prompt.Gen == composerGen
 }
 
 // formHolds is whether the form composerGen came from still shows draft
 // and no image: a spawn of exactly that prompt may take its place.
 func (m *Model) formHolds(composerGen int, draft string) bool {
 	f, ok := m.formFor(composerGen)
-	return ok && f.prompt.input.Value() == draft && len(f.prompt.attachments) == 0
+	return ok && f.prompt.Input.Value() == draft && len(f.prompt.Attachments) == 0
 }
 
 // closeForm takes the form off the stack wherever it sits: a spawn can land
@@ -90,7 +90,7 @@ func (s *spawnSurface) Dismissible() bool { return false }
 
 // Leave lets go of the prompt's images; a spawn has already taken the ones
 // it carries.
-func (s *spawnSurface) Leave(surfaceHost) { s.prompt.release() }
+func (s *spawnSurface) Leave(surfaceHost) { s.prompt.Release() }
 
 func (s *spawnSurface) pathTarget() pathcomplete.Target { return pathcomplete.Form }
 

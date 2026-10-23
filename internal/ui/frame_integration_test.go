@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	tea "github.com/charmbracelet/bubbletea"
@@ -458,8 +459,8 @@ func TestQuickFooterLeavesThePaneSizeAlone(t *testing.T) {
 		resting := m.listBodyHeight()
 
 		m.openQuickMode()
-		m = applyMsg(t, m, pasteTextMsg{target: composerQuick, gen: m.quick().gen,
-			inner: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(strings.Repeat("filler word ", 40))}})
+		m = applyMsg(t, m, composer.PasteTextMsg{Target: composer.Quick, Gen: m.quick().Gen,
+			Inner: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(strings.Repeat("filler word ", 40))}})
 		preparedView(m)
 		if w, h := m.paneTargetSize(); w != width || h != height {
 			t.Fatalf("full layout %v: pane target moved from %dx%d to %dx%d", full, width, height, w, h)

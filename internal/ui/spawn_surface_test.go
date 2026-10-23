@@ -3,6 +3,7 @@ package ui
 import (
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -42,7 +43,7 @@ func TestSpawnFormIsASurface(t *testing.T) {
 		t.Fatal("a stray click closed the form")
 	}
 	image := tempImage(t, "draft.png")
-	m.form().prompt.attachments = []imageAttachment{{id: 1, path: image}}
+	m.form().prompt.Attachments = []composer.Attachment{{ID: 1, Path: image}}
 	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if formOpen(m) || len(m.surfaces) != 0 {
 		t.Fatal("esc did not close the form")
@@ -57,7 +58,7 @@ func TestSpawnFormIsASurface(t *testing.T) {
 func TestStaleFormCompletionIsDropped(t *testing.T) {
 	m := buildModel(t)
 	m.applyCmd(t, m.openForm())
-	gen := m.form().prompt.gen
+	gen := m.form().prompt.Gen
 	m.closeForm()
 	if _, ok := m.formFor(gen); ok {
 		t.Fatal("a closed form still answers its generation")

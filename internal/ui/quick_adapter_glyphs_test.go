@@ -12,14 +12,14 @@ import (
 func TestRetainedQuickPromptReadsTheCurrentGlyphMode(t *testing.T) {
 	m := buildModel(t)
 	m.openQuickMode()
-	m.quick().input.SetWidth(70)
-	m.quick().input.SetValue("❯↳⚙ literal input")
+	m.quick().Input.SetWidth(70)
+	m.quick().Input.SetValue("❯↳⚙ literal input")
 	for _, tc := range []struct {
 		mode presentation.GlyphMode
 		mark string
 	}{{presentation.GlyphModeBasic, ">"}, {presentation.GlyphModeAdvanced, "❯"}, {presentation.GlyphModeBasic, ">"}} {
 		m.prefs.glyphMode = tc.mode
-		got := ansi.Strip(m.quick().input.View())
+		got := ansi.Strip(m.quick().Input.View())
 		if !strings.Contains(got, tc.mark+" ❯↳⚙ literal input") {
 			t.Fatalf("retained prompt in %s = %q", tc.mode, got)
 		}

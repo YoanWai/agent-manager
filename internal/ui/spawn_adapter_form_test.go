@@ -13,6 +13,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/launch"
+	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
@@ -99,13 +100,13 @@ func TestFormSettingsLoadRefusesLocalChoiceAndReopenedForm(t *testing.T) {
 	t.Run("reopened form", func(t *testing.T) {
 		m := buildModel(t)
 		cmd := m.openForm()
-		generation := m.form().prompt.gen
+		generation := m.form().prompt.Gen
 		if err := m.services.store.SetSetting("default_tool", "ready-tool"); err != nil {
 			t.Fatal(err)
 		}
 		loaded := cmd()
 		m.openForm()
-		if m.form().prompt.gen == generation {
+		if m.form().prompt.Gen == generation {
 			t.Fatal("reopened form reused its generation")
 		}
 		m.applyTestMsg(t, loaded)
@@ -413,16 +414,16 @@ func focusFormPrompt(t *testing.T, m *Model) {
 // the given file, and returns the id of the chip it left behind.
 func pasteFormImage(t *testing.T, m *Model, path string) int {
 	t.Helper()
-	orig := captureClipboardImage
-	defer func() { captureClipboardImage = orig }()
-	captureClipboardImage = func() (string, error) { return path, nil }
+	orig := composer.CaptureImage
+	defer func() { composer.CaptureImage = orig }()
+	composer.CaptureImage = func() (string, error) { return path, nil }
 
 	_, cmd := m.handleFormKey(tea.KeyMsg{Type: tea.KeyCtrlV})
 	if cmd == nil {
 		t.Fatal("ctrl+v should start an async clipboard read")
 	}
-	id := m.form().prompt.lastImageID
-	msg, ok := cmd().(pasteImageMsg)
+	id := m.form().prompt.LastImageID
+	msg, ok := cmd().(composer.PasteImageMsg)
 	if !ok {
 		t.Fatalf("clipboard cmd returned %T", cmd())
 	}
@@ -445,10 +446,10 @@ func TestFormPasteSendsTheImagePathWithTheFirstTask(t *testing.T) {
 	path := tempImage(t, "mock.png")
 	id := pasteFormImage(t, m, path)
 
-	if got, want := m.form().prompt.input.Value(), "match this "+imageToken(id)+" "; got != want {
+	if got, want := m.form().prompt.Input.Value(), "match this "+composer.Token(id)+" "; got != want {
 		t.Fatalf("chip should land at the caret: got %q, want %q", got, want)
 	}
-	if got, want := m.form().prompt.message(), "match this "+path; got != want {
+	if got, want := m.form().prompt.Message(), "match this "+path; got != want {
 		t.Fatalf("first task = %q, want %q", got, want)
 	}
 }
@@ -463,11 +464,11 @@ func TestFormPasteChipDeletesAsOneAndReleasesItsImage(t *testing.T) {
 
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyLeft})
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyBackspace})
-	if got := m.form().prompt.input.Value(); got != "" {
+	if got := m.form().prompt.Input.Value(); got != "" {
 		t.Fatalf("backspace next to a chip should take the whole chip: %q", got)
 	}
-	if len(m.form().prompt.attachments) != 0 {
-		t.Fatalf("attachment should be released: %+v", m.form().prompt.attachments)
+	if len(m.form().prompt.Attachments) != 0 {
+		t.Fatalf("attachment should be released: %+v", m.form().prompt.Attachments)
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("the image file should be gone, stat err = %v", err)
@@ -532,18 +533,18 @@ func TestFormChipRendersInTheCard(t *testing.T) {
 	m := buildModel(t)
 	m.openForm()
 	focusFormPrompt(t, m)
-	m.form().prompt.attachments = []imageAttachment{{id: 1, path: "/tmp/agent-manager-pastes/paste-123.png"}}
-	m.form().prompt.input.SetValue("match " + imageToken(1))
+	m.form().prompt.Attachments = []composer.Attachment{{ID: 1, Path: "/tmp/agent-manager-pastes/paste-123.png"}}
+	m.form().prompt.Input.SetValue("match " + composer.Token(1))
 
 	view := m.viewForm()
 	plain := ansi.Strip(view)
-	if !strings.Contains(plain, "match "+imageToken(1)) {
+	if !strings.Contains(plain, "match "+composer.Token(1)) {
 		t.Fatalf("chip should read inline with the first task, got %q", plain)
 	}
 	if strings.Contains(plain, "paste-123") {
 		t.Fatalf("the card should not show the temp path, got %q", plain)
 	}
-	if !strings.Contains(view, imageChip(imageToken(1))) {
+	if !strings.Contains(view, imageChip(composer.Token(1))) {
 		t.Fatal("chip should be styled in the rendered card")
 	}
 	if !strings.Contains(plain, "paste an image") {
@@ -559,8 +560,8 @@ func TestFormSubmitWaitsForAPasteStillReading(t *testing.T) {
 	m.form().SetName("half-pasted")
 	m.form().SetDir(t.TempDir())
 	// The chip a paste reserves before its clipboard read lands.
-	m.form().prompt.attachments = []imageAttachment{{id: 1}}
-	m.form().prompt.input.SetValue(imageToken(1))
+	m.form().prompt.Attachments = []composer.Attachment{{ID: 1}}
+	m.form().prompt.Input.SetValue(composer.Token(1))
 
 	if _, _ = m.submitForm(); m.errBar.text == "" {
 		t.Fatal("a submit with a chip still reading should be refused")
@@ -578,7 +579,7 @@ func TestFormLongPromptWrapsAcrossRows(t *testing.T) {
 	m := buildModel(t)
 	m.openForm()
 	m.form().FocusStep(m.spawnHost(), -2) // name -> group -> prompt
-	m.form().prompt.input.SetValue(strings.Repeat("word ", 25) + "finale")
+	m.form().prompt.Input.SetValue(strings.Repeat("word ", 25) + "finale")
 	view := ansi.Strip(m.viewForm())
 	if !strings.Contains(view, "finale") {
 		t.Fatal("long prompt should wrap onto more rows instead of being clipped")
@@ -602,10 +603,10 @@ func TestFormTypesWordsNamedLikeKeys(t *testing.T) {
 
 func TestComposerRowsCountAnExactFillAsAWrap(t *testing.T) {
 	prompt := promptField()
-	prompt.input.SetWidth(12) // content width 10
-	prompt.input.Focus()
-	prompt.input.SetValue("1234567890\nx")
-	if _, total := prompt.displayRows(); total != 3 {
+	prompt.Input.SetWidth(12) // content width 10
+	prompt.Input.Focus()
+	prompt.Input.SetValue("1234567890\nx")
+	if _, total := prompt.DisplayRows(); total != 3 {
 		t.Fatalf("a line filling its row exactly adds a wrap row: want 3, got %d", total)
 	}
 }
@@ -686,7 +687,7 @@ func TestFormAcceptsDashLeadingPrompt(t *testing.T) {
 	m.form().SetName("flagged")
 	m.form().SetDir(t.TempDir())
 	setFormTool(m, 0)
-	m.form().prompt.input.SetValue("--version")
+	m.form().prompt.Input.SetValue("--version")
 
 	_, cmd := m.submitForm()
 	m.applyCmd(t, cmd)
@@ -1062,13 +1063,13 @@ func TestFormUpDownMoveTheCaretBetweenPromptRows(t *testing.T) {
 	m := buildModel(t)
 	m.openForm()
 	focusFormPrompt(t, m)
-	m.form().prompt.input.SetWidth(40)
-	m.form().prompt.input.SetHeight(formPromptMaxRows)
-	m.form().prompt.input.SetValue("first\nsecond\nthird")
+	m.form().prompt.Input.SetWidth(40)
+	m.form().prompt.Input.SetHeight(formPromptMaxRows)
+	m.form().prompt.Input.SetValue("first\nsecond\nthird")
 
 	_, _ = m.handleFormKey(tea.KeyMsg{Type: tea.KeyUp})
-	if m.form().Focused() != spawn.FieldPrompt || m.form().prompt.input.Line() != 1 {
-		t.Fatalf("up from the last row: focus %v, caret line %d; want the prompt, line 1", m.form().Focused(), m.form().prompt.input.Line())
+	if m.form().Focused() != spawn.FieldPrompt || m.form().prompt.Input.Line() != 1 {
+		t.Fatalf("up from the last row: focus %v, caret line %d; want the prompt, line 1", m.form().Focused(), m.form().prompt.Input.Line())
 	}
 	_, _ = m.handleFormKey(tea.KeyMsg{Type: tea.KeyUp})
 	_, _ = m.handleFormKey(tea.KeyMsg{Type: tea.KeyUp})
@@ -1080,10 +1081,10 @@ func TestFormUpDownMoveTheCaretBetweenPromptRows(t *testing.T) {
 	if m.form().Focused() != spawn.FieldPrompt {
 		t.Fatalf("focus = %v, want spawn.FieldPrompt", m.form().Focused())
 	}
-	m.form().prompt.input.SetCursor(0)
+	m.form().prompt.Input.SetCursor(0)
 	_, _ = m.handleFormKey(tea.KeyMsg{Type: tea.KeyDown})
-	if m.form().Focused() != spawn.FieldPrompt || m.form().prompt.input.Line() != 1 {
-		t.Fatalf("down from the first row: focus %v, caret line %d; want the prompt, line 1", m.form().Focused(), m.form().prompt.input.Line())
+	if m.form().Focused() != spawn.FieldPrompt || m.form().prompt.Input.Line() != 1 {
+		t.Fatalf("down from the first row: focus %v, caret line %d; want the prompt, line 1", m.form().Focused(), m.form().prompt.Input.Line())
 	}
 	_, _ = m.handleFormKey(tea.KeyMsg{Type: tea.KeyDown})
 	_, _ = m.handleFormKey(tea.KeyMsg{Type: tea.KeyDown})
