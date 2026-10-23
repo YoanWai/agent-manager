@@ -430,7 +430,7 @@ func TestFailedDiffLoadKeepsRepoPicker(t *testing.T) {
 		t.Fatal("repo list should survive a failed load so r still works")
 	}
 	m.openRepoPick()
-	if m.mode != modeRepoPick {
+	if !m.pickerOpen() {
 		t.Fatalf("r should still open, mode = %v", m.mode)
 	}
 }

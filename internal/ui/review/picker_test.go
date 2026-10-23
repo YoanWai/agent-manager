@@ -20,25 +20,22 @@ func TestPickerKeysReturnTypedOutcomes(t *testing.T) {
 		t.Fatalf("view: title=%q\n%s", p.Title(), body)
 	}
 
-	p.Key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("mm")}, true)
+	p.Key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("mm")})
 	if got := p.FilteredRows(); len(got) != 1 || got[0].Label != "gamma" {
 		t.Fatalf("filter rows = %v", got)
 	}
-	result := p.Key(tea.KeyMsg{Type: tea.KeyEnter}, true)
+	result := p.Key(tea.KeyMsg{Type: tea.KeyEnter})
 	if !result.Close || result.Choice == nil || *result.Choice != (review.PickerChoice{Kind: review.PickRepo, Value: "/w/gamma"}) {
 		t.Fatalf("enter: %+v", result)
 	}
 
 	p.Open([]review.PickerRow{{Label: "auto"}, {Label: "main", Root: "main"}}, "⌥ Diff base", review.PickBase, "", review.PickerSource{}, "/w/alpha")
-	p.Key(tea.KeyMsg{Type: tea.KeyDown}, true)
-	if result := p.Key(tea.KeyMsg{Type: tea.KeyEnter}, false); !result.Close || result.Choice != nil || result.Error == "" {
-		t.Fatalf("stale enter: %+v", result)
-	}
-	result = p.Key(tea.KeyMsg{Type: tea.KeyEnter}, true)
+	p.Key(tea.KeyMsg{Type: tea.KeyDown})
+	result = p.Key(tea.KeyMsg{Type: tea.KeyEnter})
 	if result.Choice == nil || *result.Choice != (review.PickerChoice{Kind: review.PickBase, Value: "main"}) {
 		t.Fatalf("base enter chose %+v", result.Choice)
 	}
-	if result := p.Key(tea.KeyMsg{Type: tea.KeyEsc}, true); !result.Close || result.Choice != nil {
+	if result := p.Key(tea.KeyMsg{Type: tea.KeyEsc}); !result.Close || result.Choice != nil {
 		t.Fatalf("esc: %+v", result)
 	}
 }
@@ -75,17 +72,17 @@ func TestPickerClickMovesThenPicks(t *testing.T) {
 	if !strings.Contains(body[4], "gamma") {
 		t.Fatalf("test setup: gamma should be on body line 4:\n%s", strings.Join(body, "\n"))
 	}
-	if result := p.Click(0, true); result.Close || p.Cursor() != 0 {
+	if result := p.Click(0); result.Close || p.Cursor() != 0 {
 		t.Fatalf("a click on the filter line moved to %d: %+v", p.Cursor(), result)
 	}
-	if result := p.Click(4, true); result.Close || p.Cursor() != 2 {
+	if result := p.Click(4); result.Close || p.Cursor() != 2 {
 		t.Fatalf("first click on gamma: cursor %d, %+v", p.Cursor(), result)
 	}
-	result := p.Click(4, true)
+	result := p.Click(4)
 	if !result.Close || result.Choice == nil || result.Choice.Value != "/w/gamma" {
 		t.Fatalf("second click on gamma should pick it: %+v", result)
 	}
-	if result := p.Click(5, true); result.Close || p.Cursor() != 2 {
+	if result := p.Click(5); result.Close || p.Cursor() != 2 {
 		t.Fatalf("a click under the rows picked %d: %+v", p.Cursor(), result)
 	}
 }

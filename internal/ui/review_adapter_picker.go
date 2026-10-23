@@ -114,8 +114,7 @@ func (m *Model) reviewPickerSource() uireview.PickerSource {
 }
 
 func (m *Model) openReviewPicker(rows []uireview.PickerRow, title string, kind uireview.PickerKind, current string, source uireview.PickerSource, storeRoot string) {
-	m.reviewNav.picker.Open(rows, title, kind, current, source, storeRoot)
-	m.setMode(modeRepoPick)
+	m.push(newReviewPicker(rows, title, kind, current, source, storeRoot, m.reviewRenderContext(), m.glyphs().ReviewGlyph))
 	m.clearErr()
 }
 
@@ -201,37 +200,22 @@ func (m *Model) handleReviewPickerLoaded(msg reviewPickerLoadedMsg) tea.Cmd {
 	return nil
 }
 
-func (m *Model) handleRepoPickKey(msg tea.KeyMsg) tea.Cmd {
-	picker := &m.reviewNav.picker
-	return m.applyRepoPick(picker.Key(msg, m.review.PickerSourceCurrent(picker.Source())))
-}
-
-func (m *Model) handleRepoPickClick(line int) tea.Cmd {
-	picker := &m.reviewNav.picker
-	return m.applyRepoPick(picker.Click(line, m.review.PickerSourceCurrent(picker.Source())))
-}
-
-func (m *Model) applyRepoPick(result uireview.PickerResult) tea.Cmd {
-	if !result.Close {
+// applyReviewPick acts on a pick once its surface has closed. The picker
+// snapshotted a review; a load or a base save that landed behind it moved
+// the review on, so a pick for the old one is refused where the user can
+// see why, instead of retargeting whatever is showing now.
+func (m *Model) applyReviewPick(msg reviewPickedMsg) tea.Cmd {
+	if m.effects.quitting || m.mode != modeDiff {
 		return nil
 	}
-	m.setMode(modeDiff)
-	if result.Error != "" {
-		m.reportErr(result.Error)
-	}
-	if result.Choice == nil {
+	if !m.review.PickerSourceCurrent(msg.source) {
+		m.reportErr("review changed; reopen the picker")
 		return nil
 	}
-	if result.Choice.Kind == uireview.PickBase {
-		return m.selectBase(result.Choice.Value)
+	if msg.choice.Kind == uireview.PickBase {
+		return m.selectBase(msg.choice.Value, msg.source, msg.storeRoot)
 	}
-	return m.selectRepo(result.Choice.Value)
-}
-
-func (m *Model) viewRepoPick() string {
-	picker := &m.reviewNav.picker
-	body := picker.Body(m.reviewRenderContext(), m.cardWidth()-2*cardPaddingX, m.layout.height)
-	return m.card(m.glyphs().ReviewGlyph+" "+picker.Title(), body, picker.Hints())
+	return m.selectRepo(msg.choice.Value)
 }
 
 func (m *Model) selectRepo(root string) tea.Cmd {
@@ -254,14 +238,9 @@ func (m *Model) selectRepo(root string) tea.Cmd {
 // selectBase persists the chosen base for the current repo ("" clears to auto)
 // then reloads. It forces the branch scope so the freshly picked base is what
 // the review actually shows.
-func (m *Model) selectBase(ref string) tea.Cmd {
+func (m *Model) selectBase(ref string, source uireview.PickerSource, storeRoot string) tea.Cmd {
 	if m.reviewBaseSavePending() {
 		m.reportErr("diff base is still saving")
-		return nil
-	}
-	source := m.reviewNav.picker.Source()
-	if !m.review.PickerSourceCurrent(source) {
-		m.reportErr("review changed; reopen the picker")
 		return nil
 	}
 	sess, ok := m.diffSession()
@@ -269,7 +248,6 @@ func (m *Model) selectBase(ref string) tea.Cmd {
 		m.reportErr("session is gone")
 		return nil
 	}
-	storeRoot := m.reviewNav.picker.StoreRoot()
 	if storeRoot == "" {
 		m.reportErr("review repository is gone")
 		return nil

@@ -9,7 +9,8 @@ import (
 )
 
 // Ctrl+C quits from the comment editor and the send-confirm prompt, not just
-// the base review keymap.
+// the base review keymap. The pickers are surfaces: review_surface_test.go
+// shows ctrl+c closing the card and leaving Review as it was.
 func TestReviewCtrlCQuitsFromSubmodes(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
@@ -25,21 +26,6 @@ func TestReviewCtrlCQuitsFromSubmodes(t *testing.T) {
 	m.review.SetSendConfirm(true)
 	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC}); cmd == nil {
 		t.Fatal("ctrl+c should quit from the send-confirm prompt")
-	}
-	m.review.SetSendConfirm(false)
-	sess, ok := m.diffSession()
-	if !ok {
-		t.Fatal("review session disappeared")
-	}
-	target := reviewTarget(sess)
-	request := seedReviewForTest(m, target, m.review.Snapshot().Scope, "/tmp/one", diff.Set{}, false)
-	m.review.ApplyLoad(uireview.LoadResult{
-		TargetID: target.ID, Scope: request.Scope, Generation: request.Generation,
-		RepoRoot: "/tmp/one", RepoRoots: []string{"/tmp/one", "/tmp/two"}, Set: diff.Set{},
-	})
-	m.openRepoPick()
-	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC}); cmd == nil {
-		t.Fatal("ctrl+c should quit while the repo picker is open")
 	}
 }
 

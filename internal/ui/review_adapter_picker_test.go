@@ -61,13 +61,13 @@ func TestRepoPickerFiltersAndSelects(t *testing.T) {
 	}
 
 	m.pressDiffKey(t, 'r')
-	if m.mode != modeRepoPick {
+	if !m.pickerOpen() {
 		t.Fatalf("r should open the repo picker, mode = %v", m.mode)
 	}
 	for _, r := range "alph" {
 		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 	}
-	if got := m.reviewNav.picker.FilteredRows(); len(got) != 1 || got[0].Label != "alpha" {
+	if got := m.pickerOf(t).FilteredRows(); len(got) != 1 || got[0].Label != "alpha" {
 		t.Fatalf("filter should narrow to alpha, got %v", got)
 	}
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -120,10 +120,10 @@ func TestBranchPickerListsWorktreesAndSwitches(t *testing.T) {
 	m.drainCmds(t, m.selectRepo(alpha))
 
 	m.pressDiffKey(t, 'b')
-	if m.mode != modeRepoPick {
+	if !m.pickerOpen() {
 		t.Fatalf("b should open the branch picker, mode = %v (err=%q)", m.mode, m.errBar.text)
 	}
-	rendered := m.viewRepoPick()
+	rendered := m.viewPicker(t)
 	if !strings.Contains(rendered, "feature/pick-me") {
 		t.Fatalf("picker should show the worktree branch, got:\n%s", rendered)
 	}
@@ -186,11 +186,11 @@ func TestBranchPickerSeedsCursorForSymlinkedWorktree(t *testing.T) {
 	}
 
 	m.pressDiffKey(t, 'b')
-	if m.mode != modeRepoPick {
+	if !m.pickerOpen() {
 		t.Fatalf("b should open the branch picker, mode = %v (err=%q)", m.mode, m.errBar.text)
 	}
 	resolvedWorktree, _ := filepath.EvalSymlinks(rawWorktree)
-	rows := m.reviewNav.picker.FilteredRows()
+	rows := m.pickerOf(t).FilteredRows()
 	wantCursor := -1
 	for i, row := range rows {
 		if resolved, _ := filepath.EvalSymlinks(row.Root); resolved == resolvedWorktree {
@@ -204,8 +204,8 @@ func TestBranchPickerSeedsCursorForSymlinkedWorktree(t *testing.T) {
 	if wantCursor == 0 {
 		t.Fatal("test setup invalid: declared worktree must not already be row 0")
 	}
-	if m.reviewNav.picker.Cursor() != wantCursor {
-		t.Fatalf("cursor should seed on the declared worktree row %d, got %d", wantCursor, m.reviewNav.picker.Cursor())
+	if m.pickerOf(t).Cursor() != wantCursor {
+		t.Fatalf("cursor should seed on the declared worktree row %d, got %d", wantCursor, m.pickerOf(t).Cursor())
 	}
 }
 
@@ -412,7 +412,7 @@ func TestRepoPickerReportsMissingSession(t *testing.T) {
 	before := m.review.Snapshot().RepoSelected
 
 	m.pressDiffKey(t, 'r')
-	if m.mode != modeRepoPick {
+	if !m.pickerOpen() {
 		t.Fatalf("r should open the repo picker, mode = %v", m.mode)
 	}
 	for _, r := range "alph" {
@@ -426,7 +426,12 @@ func TestRepoPickerReportsMissingSession(t *testing.T) {
 	t.Cleanup(func() { m.workspace.sessions = sessions })
 	m.workspace.sessions = nil
 
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, pick := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	if pick == nil {
+		t.Fatal("enter did not carry the pick to the adapter")
+	}
+	updated, cmd := m.Update(pick())
 	*m = *updated.(*Model)
 	if cmd != nil {
 		t.Fatal("a missing session must not kick off a diff load")
@@ -466,14 +471,14 @@ func TestRepoPickerSurvivesShrinkingRootList(t *testing.T) {
 	replaceReviewRootsForTest(m, expanded, m.review.Snapshot().RepoSelected)
 
 	m.pressDiffKey(t, 'r')
-	if m.mode != modeRepoPick {
+	if !m.pickerOpen() {
 		t.Fatalf("r should open the repo picker, mode = %v", m.mode)
 	}
-	for m.reviewNav.picker.Cursor() != 1 {
+	for m.pickerOf(t).Cursor() != 1 {
 		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
 		*m = *updated.(*Model)
 	}
-	onScreen := m.reviewNav.picker.FilteredRows()[m.reviewNav.picker.Cursor()].Root
+	onScreen := m.pickerOf(t).FilteredRows()[m.pickerOf(t).Cursor()].Root
 
 	// A reload lands carrying only the repos that still exist, re-ranked.
 	replaceReviewRootsForTest(m, []string{realRoots[1], realRoots[0]}, m.review.Snapshot().RepoSelected)
@@ -482,11 +487,8 @@ func TestRepoPickerSurvivesShrinkingRootList(t *testing.T) {
 	*m = *updated.(*Model)
 	m.drainCmds(t, cmd)
 
-	if m.mode != modeDiff {
+	if m.mode != modeDiff || m.pickerOpen() {
 		t.Fatalf("enter should return to review, mode = %v", m.mode)
-	}
-	if m.reviewNav.picker.Cursor() >= len(m.reviewNav.picker.Rows()) {
-		t.Fatalf("cursor should stay inside the snapshot, got %d", m.reviewNav.picker.Cursor())
 	}
 	if m.review.Snapshot().RepoSelected != onScreen {
 		t.Fatalf("enter should load the repo on the cursor row %q, got %q", onScreen, m.review.Snapshot().RepoSelected)
@@ -506,7 +508,7 @@ func TestRepoPickerFitsTerminalHeight(t *testing.T) {
 	replaceReviewRootsForTest(m, roots, roots[0])
 	m.openRepoPick()
 
-	view := m.viewRepoPick()
+	view := m.viewPicker(t)
 	if lines := len(strings.Split(view, "\n")); lines > m.layout.height {
 		t.Fatalf("picker rendered %d lines, terminal is %d", lines, m.layout.height)
 	}
@@ -523,10 +525,10 @@ func TestRepoPickerFitsTerminalHeight(t *testing.T) {
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
 	*m = *updated.(*Model)
-	if m.reviewNav.picker.Cursor() != len(m.review.Snapshot().RepoRoots)-1 {
-		t.Fatalf("up from the top should wrap to the last repo, cursor = %d", m.reviewNav.picker.Cursor())
+	if m.pickerOf(t).Cursor() != len(m.review.Snapshot().RepoRoots)-1 {
+		t.Fatalf("up from the top should wrap to the last repo, cursor = %d", m.pickerOf(t).Cursor())
 	}
-	view = m.viewRepoPick()
+	view = m.viewPicker(t)
 	if lines := len(strings.Split(view, "\n")); lines > m.layout.height {
 		t.Fatalf("picker rendered %d lines at the list end, terminal is %d", lines, m.layout.height)
 	}
@@ -554,11 +556,11 @@ func TestBasePickerPersistsSwitchesScopeAndClears(t *testing.T) {
 	}
 
 	m.pressDiffKey(t, 'B')
-	if m.mode != modeRepoPick {
+	if !m.pickerOpen() {
 		t.Fatalf("B should open the base picker, mode = %v", m.mode)
 	}
 	labels := map[string]bool{}
-	for _, row := range m.reviewNav.picker.Rows() {
+	for _, row := range m.pickerOf(t).Rows() {
 		labels[row.Label] = true
 	}
 	if !labels["auto"] || !labels["feature"] {
@@ -601,7 +603,7 @@ func TestBasePickerPersistsSwitchesScopeAndClears(t *testing.T) {
 	}
 
 	m.pressDiffKey(t, 'B')
-	if m.mode != modeRepoPick {
+	if !m.pickerOpen() {
 		t.Fatalf("B should reopen the base picker, mode = %v", m.mode)
 	}
 	m.typeAndEnter(t, "auto")
@@ -649,11 +651,11 @@ func TestInvalidStoredBaseStillOpensPickerAndRecovers(t *testing.T) {
 	}
 
 	m.drainCmds(t, m.openBasePick())
-	if m.mode != modeRepoPick {
+	if !m.pickerOpen() {
 		t.Fatalf("B must open the base picker after the load errored, mode = %v (err=%q)", m.mode, m.errBar.text)
 	}
 	labels := map[string]bool{}
-	for _, row := range m.reviewNav.picker.Rows() {
+	for _, row := range m.pickerOf(t).Rows() {
 		labels[row.Label] = true
 	}
 	if !labels["auto"] || !labels["feature"] {
@@ -684,9 +686,9 @@ func TestRepoPickRowEscapesControlBytes(t *testing.T) {
 		layout: layoutState{width: 120},
 	}
 	row := uireview.PickerRow{Label: "br\x1b]0;P\x07anch", Root: filepath.FromSlash("/tmp/re\x1b[2Jpo/leaf")}
-	m.reviewNav.picker.Open([]uireview.PickerRow{row, row}, "⌥ Review branch", uireview.PickRepo, "", uireview.PickerSource{}, "")
+	m.openReviewPicker([]uireview.PickerRow{row, row}, "⌥ Review branch", uireview.PickRepo, "", uireview.PickerSource{}, "")
 
-	out := m.viewRepoPick()
+	out := m.viewPicker(t)
 	if got := strings.Count(out, "br^[]0;P^Ganch"); got != 2 {
 		t.Errorf("both labels should read as caret notation, got %d in %q", got, out)
 	}

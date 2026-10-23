@@ -52,8 +52,6 @@ func (m *Model) renderFrame() string {
 		frame = m.viewFork()
 	case modeMove:
 		frame = m.viewMove()
-	case modeRepoPick:
-		frame = m.viewRepoPick()
 	case modeGroupForm:
 		frame = m.viewGroupForm()
 	case modeConnection:

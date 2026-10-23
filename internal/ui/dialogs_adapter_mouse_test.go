@@ -43,10 +43,10 @@ func TestClickAndWheelMoveTheReviewPickersCursor(t *testing.T) {
 	rows := []uireview.PickerRow{{Label: "alpha", Root: "/w/alpha"}, {Label: "beta", Root: "/w/beta"}, {Label: "gamma", Root: "/w/gamma"}}
 	m.openReviewPicker(rows, "⌥ Review branch", uireview.PickRepo, "/w/alpha", uireview.PickerSource{}, "")
 	x, y := paintedCell(t, m, "beta")
-	if m = leftClick(m, x, y); m.reviewNav.picker.Cursor() != 1 || m.mode != modeRepoPick {
-		t.Fatalf("a click on beta should move the cursor there, cursor %d mode %v", m.reviewNav.picker.Cursor(), m.mode)
+	if m = leftClick(m, x, y); m.pickerOf(t).Cursor() != 1 || !m.pickerOpen() {
+		t.Fatalf("a click on beta should move the cursor there, cursor %d mode %v", m.pickerOf(t).Cursor(), m.mode)
 	}
-	if m = wheel(m, tea.MouseButtonWheelDown, x, y); m.reviewNav.picker.Cursor() != 2 {
-		t.Fatalf("the wheel should move the cursor on, cursor %d", m.reviewNav.picker.Cursor())
+	if m = wheel(m, tea.MouseButtonWheelDown, x, y); m.pickerOf(t).Cursor() != 2 {
+		t.Fatalf("the wheel should move the cursor on, cursor %d", m.pickerOf(t).Cursor())
 	}
 }

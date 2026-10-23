@@ -222,7 +222,7 @@ func (m *Model) pressFilterKey(t *testing.T) {
 func (m *Model) pickRepo(t *testing.T, name string) {
 	t.Helper()
 	m.pressDiffKey(t, 'r')
-	if m.mode != modeRepoPick {
+	if !m.pickerOpen() {
 		t.Fatalf("r should open the repo picker, mode = %v", m.mode)
 	}
 	for _, r := range name {

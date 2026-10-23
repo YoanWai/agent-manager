@@ -206,7 +206,7 @@ func (m *Model) closesOnBackdrop() bool {
 		return top.Dismissible()
 	}
 	switch m.mode {
-	case modeMove, modeRepoPick, modeConfirmDelete, modeLaunchHint:
+	case modeMove, modeConfirmDelete, modeLaunchHint:
 		return true
 	case modeSettings:
 		return !m.settings.dialog.Editor.Typing() && !m.settings.dialog.Prompts.Editing()
@@ -230,8 +230,6 @@ func (m *Model) clickCard(col, line int) (tea.Model, tea.Cmd) {
 		return m.applySettingsResult(m.settings.dialog.Click(col, line, m.settingsContext()))
 	case modeMove:
 		return m.handleMoveClick(line)
-	case modeRepoPick:
-		return m, m.handleRepoPickClick(line)
 	case modeLaunchHint:
 		_, body, hints := m.launchHint.card(m, m.glyphs(), m.cardWidth())
 		return m, m.launchHint.handleClick(m, line+m.launchHintDroppedRows(body, hints))
@@ -259,8 +257,6 @@ func (m *Model) wheelCard(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m.applySettingsResult(m.settings.dialog.Wheel(step, m.settingsContext()))
 	case modeMove:
 		return m.handleMoveKey(arrow)
-	case modeRepoPick:
-		return m, m.handleRepoPickKey(arrow)
 	}
 	return m, nil
 }

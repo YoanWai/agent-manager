@@ -33,7 +33,6 @@ const (
 	modeRename
 	modeFork
 	modeMove
-	modeRepoPick
 	modeGroupForm
 	modeSettings
 	modeDiff
@@ -106,8 +105,7 @@ type focusState struct {
 }
 
 type reviewNavState struct {
-	ret    reviewReturn
-	picker uireview.Picker
+	ret reviewReturn
 }
 
 type mouseCapture struct {
