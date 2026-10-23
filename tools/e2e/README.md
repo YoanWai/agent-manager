@@ -17,7 +17,7 @@ transition; a successful cached-build run should take less than 30 seconds.
 The harness creates its own HOME (the default profile therefore belongs to this
 run), XDG directories, and shell configuration directory. When the startup feed
 opens the messages panel, the smoke closes it with esc after the feed cache is
-written. It removes inherited
+written and a following key has been handled. It removes inherited
 TMUX and uses a short, unique, precreated `/tmp/ame-*` socket directory. Every
 tmux command uses an absolute `-S` socket path within the fixture. Cleanup kills only these two
 servers within that directory, including on failure. A failed cleanup still

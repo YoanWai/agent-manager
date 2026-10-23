@@ -1,4 +1,3 @@
-from datetime import datetime, timezone
 import os
 import subprocess
 import tempfile
@@ -6,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from smoke import Sandbox, dev_feed_opens
+from smoke import Sandbox, feed_cache
 
 
 class SandboxTests(unittest.TestCase):
@@ -35,22 +34,14 @@ class SandboxTests(unittest.TestCase):
             with patch.object(isolated, 'tmux', return_value=subprocess.CompletedProcess([], 0, '', '')):
                 isolated.close()
 
-    def test_dev_feed_opens_only_for_an_unbounded_entry(self):
-        now = datetime(2026, 10, 23, tzinfo=timezone.utc)
-        self.assertTrue(dev_feed_opens([
-            {'banner': 'hi', 'title': 'Hi', 'expires_at': '2026-11-22T12:00:00Z'},
-        ], now))
-        self.assertTrue(dev_feed_opens([
-            {'banner': 'hi', 'title': 'Hi', 'min_version': '', 'max_version': '',
-             'expires_at': '2026-11-22T12:00:00Z'},
-        ], now))
-        self.assertFalse(dev_feed_opens([
-            {'banner': 'old', 'title': 'Old', 'max_version': '0.43.0'},
-        ], now))
-        self.assertFalse(dev_feed_opens([
-            {'banner': 'gone', 'title': 'Gone', 'expires_at': '2020-01-01T00:00:00Z'},
-        ], now))
-        self.assertFalse(dev_feed_opens([], now))
+    def test_feed_cache_follows_the_sandbox_config_env(self):
+        home = self.sandbox.home
+        xdg = home / '.config' / 'agent-manager' / 'feed-messages.json'
+        self.assertEqual(feed_cache(self.sandbox), xdg)
+        self.sandbox.env['AGENT_MANAGER_CONFIG_DIR'] = str(home / 'override')
+        self.assertEqual(feed_cache(self.sandbox), home / 'override' / 'feed-messages.json')
+        self.sandbox.env['AGENT_MANAGER_STARTUP_CONFIG'] = '/recorded/config'
+        self.assertEqual(feed_cache(self.sandbox), xdg)
 
     def test_fixture_shell_delegates_command_execution(self):
         result = subprocess.run([self.sandbox.env['SHELL'], '-c', 'printf command-ready'],
