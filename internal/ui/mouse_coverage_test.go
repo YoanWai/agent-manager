@@ -85,15 +85,6 @@ func TestEverySurfaceAnswersTheMouse(t *testing.T) {
 	}
 }
 
-func contains(names []string, name string) bool {
-	for _, n := range names {
-		if n == name {
-			return true
-		}
-	}
-	return false
-}
-
 // declaredSurfaces lists the types in the package that declare a Leave
 // method on a pointer receiver: every surface does, and nothing else.
 func declaredSurfaces(t *testing.T) []string {
