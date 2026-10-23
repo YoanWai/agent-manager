@@ -43,8 +43,9 @@ var userinfoPattern = regexp.MustCompile(`([A-Za-z][A-Za-z0-9+.-]*://)([^/\s:@]+
 
 // An assignment redacts its value only. The key stays, so the banner
 // still says which setting was quoted. A quoted value includes the
-// spaces and the quotes, which an unquoted \S+ value would split.
-var assignmentPattern = regexp.MustCompile(`(?:^|[^A-Za-z0-9])([A-Za-z0-9]+(?:[_-][A-Za-z0-9]+)*)(\s*[=:]\s*)("[^"]*"|'[^']*'|\S+)`)
+// spaces and the quotes, which an unquoted \S+ value would split, and
+// a backslash-escaped quote stays inside that value.
+var assignmentPattern = regexp.MustCompile(`(?:^|[^A-Za-z0-9])([A-Za-z0-9]+(?:[_-][A-Za-z0-9]+)*)(\s*[=:]\s*)("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\S+)`)
 
 func redactAssignments(s string) string {
 	var b strings.Builder
