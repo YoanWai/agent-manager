@@ -40,20 +40,24 @@ var credentialPatterns = []*regexp.Regexp{
 var assignmentPattern = regexp.MustCompile(`(?:^|[^A-Za-z0-9])([A-Za-z0-9]+(?:[_-][A-Za-z0-9]+)*)(\s*[=:]\s*)(\S+)`)
 
 func redactAssignments(s string) string {
-	matches := assignmentPattern.FindAllStringSubmatchIndex(s, -1)
-	if len(matches) == 0 {
-		return s
-	}
 	var b strings.Builder
 	b.Grow(len(s))
-	last := 0
-	for _, match := range matches {
-		if !keyIsSecret(s[match[2]:match[3]]) {
+	last, pos := 0, 0
+	for pos < len(s) {
+		match := assignmentPattern.FindStringSubmatchIndex(s[pos:])
+		if match == nil {
+			break
+		}
+		valStart, valEnd := pos+match[6], pos+match[7]
+		if !keyIsSecret(s[pos+match[2] : pos+match[3]]) {
+			// A scheme such as https: consumes the rest of a URL, and
+			// the query can still carry token=.
+			pos = valStart
 			continue
 		}
-		b.WriteString(s[last:match[6]])
+		b.WriteString(s[last:valStart])
 		b.WriteString("[redacted]")
-		last = match[7]
+		last, pos = valEnd, valEnd
 	}
 	b.WriteString(s[last:])
 	return b.String()
@@ -122,7 +126,7 @@ func secretRun(s string, start, end int) bool {
 func hexRun(s string) bool {
 	for i := 0; i < len(s); i++ {
 		c := s[i]
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
 			return false
 		}
 	}

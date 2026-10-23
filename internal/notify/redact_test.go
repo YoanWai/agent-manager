@@ -72,6 +72,8 @@ func TestRedactSecrets(t *testing.T) {
 		{"apikey assignment", "apikey=abc", "apikey=[redacted]"},
 		{"auth assignment", "auth=letmein", "auth=[redacted]"},
 		{"export github token", "export GITHUB_TOKEN=" + ghp, "export GITHUB_TOKEN=[redacted]"},
+		{"token inside a url", "see https://x.test/p?token=abc", "see https://x.test/p?token=[redacted]"},
+		{"assignment after a plain one", "author=Jane token=abc", "author=Jane token=[redacted]"},
 		{"bearer token", "Authorization: " + bearer, "Authorization: [redacted]"},
 		{"bearer any case", "authorization: bearer " + strings.Repeat("b", 16), "authorization: [redacted]"},
 		{"high entropy run", "secret " + entropy + " end", "secret [redacted] end"},
