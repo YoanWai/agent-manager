@@ -119,49 +119,49 @@ func (m *Model) openMove() {
 }
 
 func (m *Model) appendAgentMoveTargets(p *groupPicker) {
-	selected := p.groupPath()
+	selected := p.GroupPath()
 	var options []groupOption
-	for _, opt := range p.groups {
+	for _, opt := range p.Groups {
 		options = append(options, opt)
 		for _, sess := range m.workspace.sessions {
-			if sess.Archived || m.isShell(sess.Tool) || sess.Group != opt.path {
+			if sess.Archived || m.isShell(sess.Tool) || sess.Group != opt.Path {
 				continue
 			}
 			options = append(options, groupOption{
-				path:   sess.Group,
-				depth:  opt.depth + 1,
-				sessID: sess.ID,
-				name:   sess.Name,
+				Path:      sess.Group,
+				Depth:     opt.Depth + 1,
+				SessionID: sess.ID,
+				Name:      sess.Name,
 			})
 		}
 	}
-	p.groups = options
-	p.reselect(selected, func(opt groupOption) bool { return opt.sessID == "" })
+	p.Groups = options
+	p.Reselect(selected, func(opt groupOption) bool { return opt.SessionID == "" })
 }
 
 // pruneMoveTargets drops the moved group and its descendants from the
 // picker: a group cannot land inside its own subtree.
 func pruneMoveTargets(p *groupPicker, subtree string) {
-	selected := p.groupPath()
-	options := make([]groupOption, 0, len(p.groups))
-	for _, opt := range p.groups {
-		if opt.path == subtree || strings.HasPrefix(opt.path, subtree+"/") {
+	selected := p.GroupPath()
+	options := make([]groupOption, 0, len(p.Groups))
+	for _, opt := range p.Groups {
+		if opt.Path == subtree || strings.HasPrefix(opt.Path, subtree+"/") {
 			continue
 		}
 		options = append(options, opt)
 	}
-	p.groups = options
-	p.reselect(selected, func(groupOption) bool { return true })
+	p.Groups = options
+	p.Reselect(selected, func(groupOption) bool { return true })
 }
 
 // placeMove runs the placement the picked row asks for on the effect lane;
 // the card closes from the fenced follow-up. A move the dialog refuses
 // closes it now.
 func (m *Model) placeMove(move uidialogs.Move, p *groupPicker) tea.Cmd {
-	pick := uidialogs.MovePick{Group: p.groupPath()}
+	pick := uidialogs.MovePick{Group: p.GroupPath()}
 	if !move.IsGroup() {
-		opt := p.picked()
-		pick = uidialogs.MovePick{Group: opt.path, ParentID: opt.sessID}
+		opt := p.Picked()
+		pick = uidialogs.MovePick{Group: opt.Path, ParentID: opt.SessionID}
 	}
 	request, ok := move.Place(pick)
 	if !ok {

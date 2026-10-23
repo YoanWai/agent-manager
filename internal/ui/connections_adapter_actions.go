@@ -422,8 +422,8 @@ func (r formRemote) on() bool { return r.host != "" }
 // until picked.
 func (d *formDialog) aimRemote(target formRemote) {
 	d.remote = target
-	d.groups = []groupOption{{path: target.group}}
-	d.groupIndex = 0
+	d.Groups = []groupOption{{Path: target.group}}
+	d.GroupIndex = 0
 	d.TakePath("")
 	d.SetDirPlaceholder("the group's directory on " + target.host)
 	d.SeedWorktree(false)

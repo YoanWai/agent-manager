@@ -529,8 +529,8 @@ func TestMoveCompletionDoesNotReplaceNewerDialog(t *testing.T) {
 	if !moveOpen(m) {
 		t.Fatalf("older completion closed the newer dialog, screen = %v", m.screenID())
 	}
-	if picker(m).groups[picker(m).groupIndex].path != "other" {
-		t.Fatalf("newer dialog selection changed: %+v", picker(m).groups)
+	if picker(m).Groups[picker(m).GroupIndex].Path != "other" {
+		t.Fatalf("newer dialog selection changed: %+v", picker(m).Groups)
 	}
 	m.drainEffects(t)
 	got, err := m.services.store.Get(moved)

@@ -67,9 +67,9 @@ func (m *Model) openGroupForm() {
 		parents, at := m.groupOptions(m.contextGroup())
 		lends := make(map[string]groupLend, len(parents))
 		for _, opt := range parents {
-			lends[opt.path] = groupLend{dir: m.capturedAncestorGroupDir(opt.path), base: m.groupBase(opt.path)}
+			lends[opt.Path] = groupLend{dir: m.capturedAncestorGroupDir(opt.Path), base: m.groupBase(opt.Path)}
 		}
-		m.push(newGroupFormSurface(gen, m.capturedGroupDefaultDir(parents[at].path), cols, parents, at, lends, formRemote{}, styles))
+		m.push(newGroupFormSurface(gen, m.capturedGroupDefaultDir(parents[at].Path), cols, parents, at, lends, formRemote{}, styles))
 	}
 	m.clearErr()
 }
@@ -178,7 +178,7 @@ func (s *groupFormSurface) View(h surfaceHost, _ string) string {
 		Input:     textInputView,
 		Badge:     groupBadge,
 		Parent:    parent,
-		Picker:    func() string { return viewGroupOptions(s.parents, s.parent, s.styles.GlyphMode) },
+		Picker:    func() string { return spawn.ViewGroupOptions(s.parents, s.parent, s.styles) },
 		Subtle:    subtleStyle(),
 		Value:     valueStyle(),
 		Worktrees: groupWorktreeOptions,

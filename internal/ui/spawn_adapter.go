@@ -288,10 +288,10 @@ func (m *Model) formTool() string { return m.form().Tool() }
 // card's, or the New Session form's.
 func (m *Model) selectedGroupPath() string {
 	if s, ok := surfaceOf[*moveSurface](m); ok {
-		return s.groupPath()
+		return s.GroupPath()
 	}
 	if f := m.form(); f != nil {
-		return f.groupPath()
+		return f.GroupPath()
 	}
 	return ""
 }
@@ -318,7 +318,7 @@ func (m *Model) runFormRequest(request spawn.FormRequest, reader directoryPrefli
 	case request.Group != 0:
 		return m.moveGroupCursor(request.Group)
 	case request.PickGroup:
-		if delta := request.GroupEntry - m.form().groupIndex; delta != 0 {
+		if delta := request.GroupEntry - m.form().GroupIndex; delta != 0 {
 			return m.moveGroupCursor(delta)
 		}
 	case request.Toggle:
@@ -350,13 +350,13 @@ func (m *Model) formWheel(step int) tea.Cmd {
 // ends; a delta of 0 re-resolves the dependent defaults in place.
 func (m *Model) moveGroupCursor(delta int) tea.Cmd {
 	f := m.form()
-	if !f.step(delta) {
+	if !f.Step(delta) {
 		return nil
 	}
 	if f.DirAuto() {
-		f.SetDir(m.capturedGroupDefaultDir(f.groupPath()))
+		f.SetDir(m.capturedGroupDefaultDir(f.GroupPath()))
 	}
-	f.DefaultWorktree(m.cachedSpawnWorktreeDefault(f.groupPath()))
+	f.DefaultWorktree(m.cachedSpawnWorktreeDefault(f.GroupPath()))
 	return m.formWorktreeProbeCmd(false)
 }
 
@@ -373,7 +373,7 @@ func (m *Model) viewForm() string {
 	facts := spawn.FormFacts{
 		Width:  m.formValueWidth(),
 		NoRepo: worktreeUnavailable,
-		Group:  escapeControlsInline(displayGroup(f.groupPath())),
+		Group:  escapeControlsInline(displayGroup(f.GroupPath())),
 		Styles: m.spawnStyles(),
 		Height: m.layout.height,
 		Chrome: m.cardChromeRows,

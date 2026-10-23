@@ -266,8 +266,8 @@ func TestNewSessionFormSpawnsOnTheConnection(t *testing.T) {
 	m := connectedModel(t, fake)
 	m.rail.Focus(boxGroup)
 	m.openForm()
-	if !formOpen(m) || !m.form().remote.on() || m.form().groupPath() != "web" || m.form().Dir() != "" {
-		t.Fatalf("form = mode %v remote %+v group %q dir %q", m.screenID(), m.form().remote, m.form().groupPath(), m.form().Dir())
+	if !formOpen(m) || !m.form().remote.on() || m.form().GroupPath() != "web" || m.form().Dir() != "" {
+		t.Fatalf("form = mode %v remote %+v group %q dir %q", m.screenID(), m.form().remote, m.form().GroupPath(), m.form().Dir())
 	}
 	if cmd := m.runFormRequest(spawn.FormRequest{Probe: true}, nil); cmd != nil {
 		t.Fatal("the form probed a local directory for a remote spawn")

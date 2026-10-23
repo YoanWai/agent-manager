@@ -49,8 +49,8 @@ func TestMoveGroupRow(t *testing.T) {
 	if !moveOpen(m) {
 		t.Fatal("openMove on a group row should enter move mode")
 	}
-	for _, opt := range picker(m).groups {
-		if opt.path == "alpha/inner" {
+	for _, opt := range picker(m).Groups {
+		if opt.Path == "alpha/inner" {
 			t.Fatal("picker offers the moved group itself")
 		}
 	}
@@ -77,9 +77,9 @@ func TestMoveGroupRowExcludesDescendants(t *testing.T) {
 
 	m.selectGroupRow(t, "alpha")
 	m.openMove()
-	for _, opt := range picker(m).groups {
-		if opt.path == "alpha" || opt.path == "alpha/inner" || opt.path == "alpha/inner/deep" {
-			t.Fatalf("picker offers %q inside the moved subtree", opt.path)
+	for _, opt := range picker(m).Groups {
+		if opt.Path == "alpha" || opt.Path == "alpha/inner" || opt.Path == "alpha/inner/deep" {
+			t.Fatalf("picker offers %q inside the moved subtree", opt.Path)
 		}
 	}
 }
@@ -98,13 +98,13 @@ func TestMoveTerminalOntoAgentNests(t *testing.T) {
 	m.selectSessionRow(t, shell.Name)
 	m.openMove()
 	agent, _ := m.services.store.Get(m.sessionRows()[0].ID)
-	for i, opt := range picker(m).groups {
-		if opt.sessID == agent.ID {
-			picker(m).groupIndex = i
+	for i, opt := range picker(m).Groups {
+		if opt.SessionID == agent.ID {
+			picker(m).GroupIndex = i
 			break
 		}
 	}
-	if picker(m).groups[picker(m).groupIndex].sessID != agent.ID {
+	if picker(m).Groups[picker(m).GroupIndex].SessionID != agent.ID {
 		t.Fatal("picker must list the agent")
 	}
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -155,9 +155,9 @@ func TestMoveReportsPlacementFailure(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	m.selectSessionRow(t, shell.Name)
 	m.openMove()
-	for picker(m).groups[picker(m).groupIndex].sessID != agent.ID {
-		picker(m).groupIndex++
-		if picker(m).groupIndex >= len(picker(m).groups) {
+	for picker(m).Groups[picker(m).GroupIndex].SessionID != agent.ID {
+		picker(m).GroupIndex++
+		if picker(m).GroupIndex >= len(picker(m).Groups) {
 			t.Fatal("picker must list the agent")
 		}
 	}
@@ -221,7 +221,7 @@ func TestMovePickerKeepsTheTerminalsOwnGroupSelected(t *testing.T) {
 	if m.selectedGroupPath() != "beta" {
 		t.Fatalf("selected group = %q, want beta", m.selectedGroupPath())
 	}
-	if sessID := picker(m).groups[picker(m).groupIndex].sessID; sessID != "" {
+	if sessID := picker(m).Groups[picker(m).GroupIndex].SessionID; sessID != "" {
 		t.Fatalf("selected option targets session %q", sessID)
 	}
 }
@@ -238,9 +238,9 @@ func TestMoveAgentPickerHasNoSessionTargets(t *testing.T) {
 	createSession(t, m, "other", dir, "backend")
 	m.selectSessionRow(t, "coder")
 	m.openMove()
-	for _, opt := range picker(m).groups {
-		if opt.sessID != "" {
-			t.Fatalf("agent move listed session %q", opt.sessID)
+	for _, opt := range picker(m).Groups {
+		if opt.SessionID != "" {
+			t.Fatalf("agent move listed session %q", opt.SessionID)
 		}
 	}
 }

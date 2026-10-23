@@ -170,7 +170,7 @@ func TestNewSessionPreselectsContextGroup(t *testing.T) {
 	// cursor on the session inside alpha/beta
 	m.selectSessionRow(t, "seed")
 	m.openForm()
-	if got := picker(m).groups[picker(m).groupIndex].path; got != "alpha/beta" {
+	if got := picker(m).Groups[picker(m).GroupIndex].Path; got != "alpha/beta" {
 		t.Fatalf("form should preselect session's group, got %q", got)
 	}
 	m.base = baseList
@@ -183,7 +183,7 @@ func TestNewSessionPreselectsContextGroup(t *testing.T) {
 		}
 	}
 	m.openForm()
-	if got := picker(m).groups[picker(m).groupIndex].path; got != "alpha" {
+	if got := picker(m).Groups[picker(m).GroupIndex].Path; got != "alpha" {
 		t.Fatalf("form should preselect the highlighted group, got %q", got)
 	}
 }
@@ -326,7 +326,7 @@ func TestGroupParentPickerExcludesArchivedGroups(t *testing.T) {
 	m.openGroupForm()
 	var options []string
 	for _, option := range m.groupSurface().parents {
-		options = append(options, option.path)
+		options = append(options, option.Path)
 	}
 	if !reflect.DeepEqual(options, []string{"", "active"}) {
 		t.Fatalf("parent options = %v, want root and active", options)
@@ -623,32 +623,32 @@ func TestFormGroupArrowsMoveFocusNotSelection(t *testing.T) {
 		t.Fatalf("focus = %v, want spawn.FieldGroup", m.form().Focused())
 	}
 
-	initial := picker(m).groupIndex
+	initial := picker(m).GroupIndex
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyDown})
-	if picker(m).groupIndex != initial {
-		t.Fatalf("down must not change the group selection, index = %d, want %d", picker(m).groupIndex, initial)
+	if picker(m).GroupIndex != initial {
+		t.Fatalf("down must not change the group selection, index = %d, want %d", picker(m).GroupIndex, initial)
 	}
 	if m.form().Focused() == spawn.FieldGroup {
 		t.Fatal("down should move focus off the group field")
 	}
 
 	m.form().FocusField(m.spawnHost(), spawn.FieldGroup)
-	picker(m).groupIndex = 0
+	picker(m).GroupIndex = 0
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
-	if picker(m).groupIndex != 1 {
-		t.Fatalf("right should cycle the group selection, index = %d", picker(m).groupIndex)
+	if picker(m).GroupIndex != 1 {
+		t.Fatalf("right should cycle the group selection, index = %d", picker(m).GroupIndex)
 	}
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyLeft})
-	if picker(m).groupIndex != 0 {
-		t.Fatalf("left should cycle back, index = %d", picker(m).groupIndex)
+	if picker(m).GroupIndex != 0 {
+		t.Fatalf("left should cycle back, index = %d", picker(m).GroupIndex)
 	}
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyLeft})
-	if picker(m).groupIndex != len(picker(m).groups)-1 {
-		t.Fatalf("left at the first group should wrap to the last, index = %d", picker(m).groupIndex)
+	if picker(m).GroupIndex != len(picker(m).Groups)-1 {
+		t.Fatalf("left at the first group should wrap to the last, index = %d", picker(m).GroupIndex)
 	}
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
-	if picker(m).groupIndex != 0 {
-		t.Fatalf("right at the last group should wrap to the first, index = %d", picker(m).groupIndex)
+	if picker(m).GroupIndex != 0 {
+		t.Fatalf("right at the last group should wrap to the first, index = %d", picker(m).GroupIndex)
 	}
 }
 

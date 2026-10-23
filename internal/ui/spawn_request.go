@@ -18,7 +18,7 @@ func (m *Model) formSpawnRequest(request spawn.Request) spawnRequest {
 		name = request.Tool + "-" + newID()[:4]
 	}
 	f := m.form()
-	group := f.groupPath()
+	group := f.GroupPath()
 	defaults := m.spawnDefaults(group)
 	return spawnRequest{
 		kind:         spawnForm,

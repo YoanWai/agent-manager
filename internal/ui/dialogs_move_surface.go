@@ -31,7 +31,7 @@ func (s *moveSurface) Key(h surfaceHost, msg tea.KeyMsg) (bool, tea.Cmd) {
 	case uidialogs.MoveCancel:
 		h.Pop()
 	case uidialogs.MoveCursor:
-		s.step(key.Delta)
+		s.Step(key.Delta)
 	case uidialogs.MoveSubmit:
 		return true, host.placeMove(s.Move, &s.groupPicker)
 	}
@@ -42,10 +42,10 @@ func (s *moveSurface) Key(h surfaceHost, msg tea.KeyMsg) (bool, tea.Cmd) {
 // moves the row there on a click on the target already under it.
 func (s *moveSurface) Click(h surfaceHost, line int) tea.Cmd {
 	switch {
-	case line < 0 || line >= len(s.groups):
+	case line < 0 || line >= len(s.Groups):
 		return nil
-	case line != s.groupIndex:
-		s.step(line - s.groupIndex)
+	case line != s.GroupIndex:
+		s.Step(line - s.GroupIndex)
 		return nil
 	}
 	return h.(moveHost).placeMove(s.Move, &s.groupPicker)

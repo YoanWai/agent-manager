@@ -39,7 +39,7 @@ func TestFormSavedPromptStepsLeaveTheRestAlone(t *testing.T) {
 	m.runBatch(t, m.openForm())
 	m.form().prompt.input.SetValue("  task  ")
 	tools, toolIndex := m.form().Tools()
-	dir, group, worktree, model := m.form().Dir(), picker(m).groupIndex, m.form().Worktree(), m.form().Choice().Model()
+	dir, group, worktree, model := m.form().Dir(), picker(m).GroupIndex, m.form().Worktree(), m.form().Choice().Model()
 	focusSavedRow(t, m)
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
 	if got := m.form().SavedText(); got != " \n a\n" {
@@ -58,7 +58,7 @@ func TestFormSavedPromptStepsLeaveTheRestAlone(t *testing.T) {
 	}
 	newTools, newIndex := m.form().Tools()
 	if m.form().prompt.input.Value() != "  task  " || newTools[newIndex] != tools[toolIndex] || m.form().Dir() != dir ||
-		picker(m).groupIndex != group || m.form().Worktree() != worktree || m.form().Choice().Model() != model {
+		picker(m).GroupIndex != group || m.form().Worktree() != worktree || m.form().Choice().Model() != model {
 		t.Fatal("stepping saved prompts changed another field")
 	}
 }

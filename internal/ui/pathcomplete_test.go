@@ -193,7 +193,7 @@ func TestGroupPickerExitsToAdjacentFields(t *testing.T) {
 
 	m.openForm()
 	m.form().FocusField(m.spawnHost(), spawn.FieldGroup)
-	picker(m).groupIndex = len(picker(m).groups) - 1
+	picker(m).GroupIndex = len(picker(m).Groups) - 1
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyDown})
 	if m.form().Focused() != spawn.FieldName {
 		t.Fatalf("down past last group should wrap to name, focus=%d", m.form().Focused())
@@ -203,17 +203,17 @@ func TestGroupPickerExitsToAdjacentFields(t *testing.T) {
 func TestStandaloneGroupPickerWrapsWhenThereAreNoAdjacentFields(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
-	s := newMoveSurface(uidialogs.MoveSession("s"), groupPicker{groups: []groupOption{{path: ""}, {path: "alpha"}, {path: "beta"}}})
+	s := newMoveSurface(uidialogs.MoveSession("s"), groupPicker{Groups: []groupOption{{Path: ""}, {Path: "alpha"}, {Path: "beta"}}})
 	m.push(s)
 
 	m.Update(tea.KeyMsg{Type: tea.KeyUp})
-	if s.groupIndex != 2 {
-		t.Fatalf("up past first group should wrap to last, index=%d", s.groupIndex)
+	if s.GroupIndex != 2 {
+		t.Fatalf("up past first group should wrap to last, index=%d", s.GroupIndex)
 	}
 
 	m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	if s.groupIndex != 0 {
-		t.Fatalf("down past last group should wrap to first, index=%d", s.groupIndex)
+	if s.GroupIndex != 0 {
+		t.Fatalf("down past last group should wrap to first, index=%d", s.GroupIndex)
 	}
 }
 

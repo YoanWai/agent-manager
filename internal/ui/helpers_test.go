@@ -403,20 +403,20 @@ func pickGroup(t *testing.T, m *Model, path string) {
 	t.Helper()
 	if s, ok := surfaceOf[*groupFormSurface](m); ok {
 		for i, opt := range s.parents {
-			if opt.path == path && opt.sessID == "" {
+			if opt.Path == path && opt.SessionID == "" {
 				s.parent = i
 				return
 			}
 		}
 		t.Fatalf("group %q not in the card's parents %v", path, s.parents)
 	}
-	for i, opt := range picker(m).groups {
-		if opt.path == path && opt.sessID == "" {
-			picker(m).groupIndex = i
+	for i, opt := range picker(m).Groups {
+		if opt.Path == path && opt.SessionID == "" {
+			picker(m).GroupIndex = i
 			return
 		}
 	}
-	t.Fatalf("group %q not in picker options %v", path, picker(m).groups)
+	t.Fatalf("group %q not in picker options %v", path, picker(m).Groups)
 }
 
 // focusGroupField tabs the open group form to field.
