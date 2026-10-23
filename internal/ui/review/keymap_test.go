@@ -48,8 +48,8 @@ func TestEveryNamedKeyIsHandled(t *testing.T) {
 		}
 	}
 	for _, b := range keymap {
-		if b.Run == nil {
-			t.Errorf("binding %v runs nothing", b.Keys)
+		if result := (&Model{}).run(b.Action, KeyContext{}, 10); b.Action == 0 || !result.Consumed {
+			t.Errorf("binding %v names action %d, which run does not handle", b.Keys, b.Action)
 		}
 		if !named[b.Keys[0]] {
 			t.Errorf("binding %v is in no footer pair", b.Keys)

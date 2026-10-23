@@ -38,8 +38,77 @@ func (m *Model) Key(msg tea.KeyMsg, ctx KeyContext) KeyResult {
 	if !ok {
 		return KeyResult{}
 	}
+	return m.run(b.Action, ctx, height)
+}
+
+// run does what a Review action does. Every action in keymap has a case.
+func (m *Model) run(act action, ctx KeyContext, height int) KeyResult {
 	result := KeyResult{Consumed: true}
-	b.Run(m, ctx, height, &result)
+	switch act {
+	case actClose:
+		result.Navigation = NavigationExit
+	case actHelp:
+		result.Navigation = NavigationHelp
+	case actLineUp:
+		m.MoveCursor(-1, height)
+	case actLineDown:
+		m.MoveCursor(1, height)
+	case actHalfDown:
+		m.MoveCursor(height/2, height)
+	case actHalfUp:
+		m.MoveCursor(-height/2, height)
+	case actPageUp:
+		m.MoveCursor(-height, height)
+	case actPageDown:
+		m.MoveCursor(height, height)
+	case actTop:
+		m.First()
+	case actBottom:
+		m.Last(height)
+	case actNextFile:
+		result.Requests = m.SwitchFile(1)
+	case actPrevFile:
+		result.Requests = m.SwitchFile(-1)
+	case actNextChange:
+		m.JumpChange(1, height)
+	case actPrevChange:
+		m.JumpChange(-1, height)
+	case actScope:
+		if request, ok := m.CycleScope(); ok {
+			result.Requests.Load = &request
+			result.Requests.StartupTick = true
+		}
+	case actRepo:
+		result.Navigation = NavigationRepoPicker
+	case actBranch:
+		result.Navigation = NavigationBranchPicker
+	case actTarget:
+		result.Navigation = NavigationBasePicker
+	case actLayout:
+		m.ToggleSideBySide(height)
+	case actCodeOnly:
+		result.Requests = m.ToggleCodeOnly()
+	case actReviewed:
+		if !ctx.PersistenceAvailable {
+			result.Error = "review state is unavailable"
+		} else {
+			result.Requests = m.ToggleReviewed()
+		}
+	case actComment:
+		m.OpenAnnotation()
+	case actDiscard:
+		result.Requests, result.Error = m.DiscardOrToggle(ctx.PersistenceAvailable)
+	case actSend:
+		if m.DraftCount() == 0 {
+			result.Error = "no comments to send - press c on a line first"
+		} else {
+			m.sendConfirm = true
+		}
+	case actOpenFile:
+		result.Requests.FileCheck = m.OpenFileRequest()
+	default:
+		result.Consumed = false
+	}
 	return result
 }
 
