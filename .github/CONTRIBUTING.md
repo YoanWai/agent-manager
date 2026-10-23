@@ -7,6 +7,7 @@ Thanks for taking an interest. Bug reports, feature ideas, and pull requests are
 - **Report a bug** with the [bug report form](https://github.com/YoanWai/agent-manager/issues/new?template=bug_report.yml).
 - **Suggest a feature** with the [feature request form](https://github.com/YoanWai/agent-manager/issues/new?template=feature_request.yml).
 - **Ask a question or show what you built** in [Discussions](https://github.com/YoanWai/agent-manager/discussions).
+- **Talk about contributing** in #dev on the [Agent Manager Community Discord](https://discord.gg/ecS88An7pF).
 - **Add or fix status rules for a CLI** you use. Every CLI's launch command and detection rules ship in the binary, in `internal/config/config.go`, so a pull request there reaches everyone running that agent. An issue with the CLI's version and the pane text it draws is the next best thing.
 
 ## Picking up an issue
