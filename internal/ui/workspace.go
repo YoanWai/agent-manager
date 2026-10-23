@@ -19,6 +19,11 @@ type workspace struct {
 	groupPaths     map[string]string
 	groupWorktrees map[string]string
 	groupBases     map[string]string
+	// groupEnvs is each group's own environment profile, envProfiles the
+	// name of every defined one, and envKeys the variables each sets.
+	groupEnvs      map[string]string
+	envProfiles    []string
+	envKeys        map[string][]string
 	archivedGroups map[string]bool
 	snap           sysstat.Snapshot
 	proc           sysstat.ProcStat

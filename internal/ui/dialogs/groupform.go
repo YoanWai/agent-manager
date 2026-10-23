@@ -12,7 +12,8 @@ import (
 // GroupForm is the New Group form: its fields, focus, keys, validation and
 // the group a submit builds. The root seeds its path from the parent, owns
 // the parent picker it shares with the New Session form, the path completion
-// under its path field and the group base choice it probes, runs the create
+// under its path field, the group base choice it probes and the environment
+// choice it steps through the defined profiles, runs the create
 // on the effect lane and closes it from the fenced completion.
 type GroupForm struct {
 	name          textinput.Model
@@ -44,6 +45,7 @@ const (
 	GroupFormPathField
 	GroupFormWorktreeField
 	GroupFormBaseField
+	GroupFormEnvField
 	groupFormFieldCount
 )
 
@@ -127,6 +129,8 @@ const (
 	GroupFormPickPath
 	// GroupFormStepBase steps the root's group base choice by Delta.
 	GroupFormStepBase
+	// GroupFormStepEnv steps the root's group environment choice by Delta.
+	GroupFormStepEnv
 	// GroupFormInvalid carries the error the root reports.
 	GroupFormInvalid
 	GroupFormSubmit
@@ -197,6 +201,8 @@ func (d *GroupForm) Key(msg tea.KeyMsg, paths PathSuggestions, parent string, wo
 			return GroupFormKey{}
 		case GroupFormBaseField:
 			return GroupFormKey{Action: GroupFormStepBase, Delta: delta}
+		case GroupFormEnvField:
+			return GroupFormKey{Action: GroupFormStepEnv, Delta: delta}
 		case GroupFormParentField:
 			if d.remote != "" {
 				return GroupFormKey{}
@@ -223,7 +229,7 @@ func (d *GroupForm) Key(msg tea.KeyMsg, paths PathSuggestions, parent string, wo
 }
 
 // Click acts on the painted body line a click landed on: a field takes the
-// focus, a second click on the worktree or base row steps it, and a parent
+// focus, a second click on the worktree, base or environment row steps it, and a parent
 // or a path suggestion is picked.
 func (d *GroupForm) Click(line int, paths PathSuggestions, worktrees int) GroupFormKey {
 	at, ok := d.lines.At(line)
@@ -241,6 +247,8 @@ func (d *GroupForm) Click(line int, paths PathSuggestions, worktrees int) GroupF
 		d.stepWorktree(1, worktrees)
 	case at.field == GroupFormBaseField:
 		return GroupFormKey{Action: GroupFormStepBase, Delta: 1}
+	case at.field == GroupFormEnvField:
+		return GroupFormKey{Action: GroupFormStepEnv, Delta: 1}
 	}
 	return GroupFormKey{}
 }
@@ -298,7 +306,7 @@ func (d GroupForm) Submit(parent string) GroupFormKey {
 // GroupFormView is what the form draws with: the root's field renderer,
 // input view and group badge, the selected parent, the picker under the
 // parent row, the open path suggestions and their hints, the worktree
-// choice labels and the rendered base choice.
+// choice labels and the rendered base and environment choices.
 type GroupFormView struct {
 	GlyphMode    presentation.GlyphMode
 	Field        func(label, value string, focused bool) string
@@ -312,6 +320,7 @@ type GroupFormView struct {
 	Value        lipgloss.Style
 	Worktrees    []string
 	Base         string
+	Env          string
 }
 
 // View paints the form's body and records the line each field takes, for
@@ -343,6 +352,7 @@ func (d *GroupForm) View(view GroupFormView) Card {
 		worktree := view.Subtle.Render("◂ ") + view.Value.Render(view.Worktrees[d.worktreeIndex]) + view.Subtle.Render(" ▸")
 		field("worktree", worktree, GroupFormWorktreeField)
 		field("base", view.Base, GroupFormBaseField)
+		field("env", view.Env, GroupFormEnvField)
 		if d.focus == GroupFormParentField {
 			add("\n", GroupFormParentField, -1)
 			for i, line := range strings.Split(view.Picker(), "\n") {
@@ -357,7 +367,7 @@ func (d *GroupForm) View(view GroupFormView) Card {
 	case d.remote != "":
 	case d.focus == GroupFormParentField:
 		hints = [][2]string{{"←→", "pick parent"}, {"tab/↑↓", "move"}, {"↵", "create"}, {"esc", "cancel"}}
-	case d.focus == GroupFormWorktreeField || d.focus == GroupFormBaseField:
+	case d.focus == GroupFormWorktreeField || d.focus == GroupFormBaseField || d.focus == GroupFormEnvField:
 		hints = [][2]string{{"tab/↑↓", "move"}, {"←→", "change"}, {"↵", "create"}, {"esc", "cancel"}}
 	}
 	return Card{Title: presentation.GlyphsFor(view.GlyphMode).NewGlyph + " New Group", Body: strings.TrimRight(body.String(), "\n"), Hints: hints}

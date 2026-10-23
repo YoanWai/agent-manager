@@ -69,7 +69,8 @@ func TestRunInPaneLeavesTheAgentInFrontAndNoScript(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
-	if err := driver.RunInPane(id, nil, "sleep 30"); err != nil {
+	// The profile's PATH holds neither rm nor sh, which the relaunch needs.
+	if err := driver.RunInPane(id, map[string]string{"AM_SECRET": "s3cret-value", "PATH": "/nonexistent-am"}, "/bin/sleep 30"); err != nil {
 		t.Fatalf("RunInPane: %v", err)
 	}
 	deadline := time.Now().Add(5 * time.Second)
@@ -83,12 +84,23 @@ func TestRunInPaneLeavesTheAgentInFrontAndNoScript(t *testing.T) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	left, err := filepath.Glob(filepath.Join(os.TempDir(), "am-relaunch-"+id+"*"))
+	var left []string
+	for _, pattern := range []string{"am-relaunch-" + id + "*", "am-env-" + id + "*", "am-launch-" + id + "*"} {
+		matches, err := filepath.Glob(filepath.Join(os.TempDir(), pattern))
+		if err != nil {
+			t.Fatal(err)
+		}
+		left = append(left, matches...)
+	}
+	if len(left) != 0 {
+		t.Fatalf("launch scripts left behind: %v", left)
+	}
+	screen, err := tmuxCmd("capture-pane", "-p", "-t", "am_"+id+":.0").Output()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(left) != 0 {
-		t.Fatalf("relaunch scripts left behind: %v", left)
+	if strings.Contains(string(screen), "s3cret-value") {
+		t.Fatalf("a relaunch typed an environment value into the pane:\n%s", screen)
 	}
 }
 
@@ -465,4 +477,32 @@ func TestPaneSendLockHoldsAcrossOpens(t *testing.T) {
 		t.Fatalf("released lock not taken again: %v", err)
 	}
 	again()
+}
+
+// The relaunch hands its environment over in a file the shell sources, so
+// no value is typed into the pane; the file is gone once it has been read,
+// even under a profile whose PATH holds no rm.
+func TestEnvFileExportsAndRemovesItself(t *testing.T) {
+	rm, _, err := relaunchTools()
+	if err != nil {
+		t.Fatalf("relaunchTools: %v", err)
+	}
+	path, err := writeEnvFile("probe", rm, map[string]string{"B": "it's second", "A": "fir st", "PATH": "/nonexistent-am"})
+	if err != nil {
+		t.Fatalf("writeEnvFile: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("env file mode = %v, %v; want 0600", info, err)
+	}
+	out, err := exec.Command("sh", "-c", ". "+ShellQuote(path)+"; printf '%s|%s' \"$A\" \"$B\"").Output()
+	if err != nil {
+		t.Fatalf("source: %v", err)
+	}
+	if got := string(out); got != "fir st|it's second" {
+		t.Fatalf("sourced env = %q", got)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("env file left behind: %v", err)
+	}
 }

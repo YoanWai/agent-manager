@@ -130,6 +130,12 @@ func (m *Model) openTerminalWithReader(reader terminalDirectoryReader) (tea.Mode
 			spawn.parentID = entry.sess.ID
 		}
 	}
+	// The way a terminal an agent opens does: the group's, else the
+	// selected session's own, so a shell beside a work agent is a work shell.
+	spawn.environment = m.groupEnv(spawn.group)
+	if spawn.environment == "" && !entry.isGroup {
+		spawn.environment = entry.sess.Environment
+	}
 	spawn.name = sessioncmd.ShellName(toolName, spawn.parentID, newID()[:4], m.workspace.sessions)
 	m.dispatchSpawn(spawn)
 	return m, m.nextEffectCmd()

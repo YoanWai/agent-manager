@@ -155,6 +155,7 @@ func helpSections(ctx Context) []helpSection {
 			{ctx.QuickKeys.Model, "pick the spawn's model from the ones the tool lists; type to filter"},
 			{ctx.QuickKeys.Effort, "step the spawn's reasoning effort through the model's levels"},
 			{ctx.QuickKeys.Profile, "step the spawn's profile, for a tool that has them"},
+			{ctx.QuickKeys.Env, "step the spawn's environment profile; a group's own starts it"},
 			{"click", "step a spawn choice the way its key does, or pick a listed model"},
 			{"ctrl+t", "toggle worktree for the spawned agent (alt+w too)"},
 			{"ctrl+v", "paste an image as a chip at the cursor"},

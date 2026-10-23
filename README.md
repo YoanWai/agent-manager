@@ -171,7 +171,7 @@ The full reference, every key, quick prompt mode, killing and reviving, diff rev
 
 | Key | Action |
 |-----|--------|
-| `n` | New session (name, tool, the model, effort and profile the tool reports, directory, optional starting prompt, group) |
+| `n` | New session (name, tool, the model, effort and profile the tool reports, environment profile, directory, optional starting prompt, group) |
 | `space` | Quick prompt mode: answer the selected session, or spawn an agent in the selected group |
 | `enter` | Focus the session in place; keys go to the agent while the list stays |
 | click / double click | Focus a session from its row or its preview / fold or unfold a group. The full-screen layout selects on a click and focuses on a double click |
@@ -188,6 +188,8 @@ The full reference, every key, quick prompt mode, killing and reviving, diff rev
 A session can spawn into its own git worktree (`<repo>-worktrees/<name>`, branch `am/<name>`), toggled on the `n` form, with `ctrl+t` in quick prompt mode, or by default in Settings.
 
 A session can start on a model, reasoning effort and profile of its own, picked on the `n` form, with `ctrl+l`, `ctrl+x` and `ctrl+y` in quick prompt mode, or with `spawn --model --effort --profile`. The lists come from each CLI at runtime, so a new model shows up the day the CLI ships it, and restart, revive and fork keep the choice (see [Model, effort and profile](docs/usage.md#model-effort-and-profile)).
+
+A session can also launch under an environment profile, a named set of environment variables such as a second `CLAUDE_CONFIG_DIR`, defined with `agent-manager env set` and picked per session or as a group's default (see [Environment profiles](docs/usage.md#environment-profiles)).
 
 ![the session tree, with a Claude Code session's latest answer in the preview](docs/screenshot-sessions.png)
 

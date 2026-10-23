@@ -1,6 +1,9 @@
 package dialogs
 
 import (
+	"strings"
+
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -19,6 +22,8 @@ type Rename struct {
 	dir       textinput.Model
 	worktree  int
 	focus     int
+	// lines is the field each line of the group fields shows, for clicks.
+	lines     presentation.Lines[fieldLine]
 	tools     []string
 	toolIndex int
 }
@@ -29,6 +34,7 @@ const (
 	RenamePathField
 	RenameWorktreeField
 	RenameBaseField
+	RenameEnvField
 )
 
 func nameField(name string) textinput.Model {
@@ -135,12 +141,16 @@ type PathSuggestions interface {
 }
 
 func (d *Rename) focusField(paths PathSuggestions, delta int) {
-	paths.Reset()
 	fields := 2
 	if d.group {
-		fields = 4
+		fields = 5
 	}
-	d.focus = (d.focus + delta + fields) % fields
+	d.focusOn(paths, (d.focus+delta+fields)%fields)
+}
+
+func (d *Rename) focusOn(paths PathSuggestions, field int) {
+	paths.Reset()
+	d.focus = field
 	d.input.Blur()
 	d.dir.Blur()
 	switch d.focus {
@@ -161,6 +171,10 @@ const (
 	RenameComplete
 	// RenameStepBase steps the root's group base choice by Delta.
 	RenameStepBase
+	// RenameStepEnv steps the root's group environment choice by Delta.
+	RenameStepEnv
+	// RenamePickPath completes the path suggestion at Entry.
+	RenamePickPath
 	// RenameInvalid carries the error the root reports.
 	RenameInvalid
 	RenameSubmit
@@ -184,6 +198,7 @@ type RenameRequest struct {
 type RenameKey struct {
 	Action  RenameAction
 	Delta   int
+	Entry   int
 	Err     string
 	Request RenameRequest
 	Cmd     tea.Cmd
@@ -246,6 +261,9 @@ func (d *Rename) Key(msg tea.KeyMsg, paths PathSuggestions, worktrees int) Renam
 		if d.group && d.focus == RenameBaseField {
 			return RenameKey{Action: RenameStepBase, Delta: delta}
 		}
+		if d.group && d.focus == RenameEnvField {
+			return RenameKey{Action: RenameStepEnv, Delta: delta}
+		}
 	case "enter":
 		if suggesting && paths.Chosen() {
 			return RenameKey{Action: RenameComplete}
@@ -303,7 +321,7 @@ func (d Rename) Hints() [][2]string {
 
 // GroupFieldsView is what the group edit's fields draw with: the root's
 // styles, its field renderer, the open path suggestions, the worktree
-// choice labels and the rendered base choice.
+// choice labels and the rendered base and environment choices.
 type GroupFieldsView struct {
 	Width       int
 	Label       lipgloss.Style
@@ -314,9 +332,10 @@ type GroupFieldsView struct {
 	Suggestions func() string
 	Worktrees   []string
 	Base        string
+	Env         string
 }
 
-// GroupFields draws the path, worktree and base rows under a group's head,
+// GroupFields draws the path, worktree, base and environment rows under a group's head,
 // the focused row's label in the accent.
 func (d *Rename) GroupFields(view GroupFieldsView) string {
 	label := func(field int) lipgloss.Style {
@@ -328,12 +347,45 @@ func (d *Rename) GroupFields(view GroupFieldsView) string {
 	if fieldWidth := view.Width - 12; fieldWidth >= 10 {
 		d.dir.Width = fieldWidth
 	}
+	d.lines.Reset()
+	d.lines.Show(fieldLine{field: RenamePathField, entry: -1}, 1)
 	out := label(RenamePathField).Width(10).Render("path") + view.Input(d.dir)
 	if d.focus == RenamePathField && view.Suggestions != nil {
-		out += "\n" + view.Suggestions()
+		for i, line := range strings.Split(view.Suggestions(), "\n") {
+			out += "\n" + line
+			d.lines.Show(fieldLine{field: RenamePathField, entry: i}, 1)
+		}
 	}
 	out += "\n" + label(RenameWorktreeField).Width(10).Render("worktree") +
 		view.Subtle.Render("◂ ") + view.Value.Render(view.Worktrees[d.worktree]) + view.Subtle.Render(" ▸")
 	out += "\n" + label(RenameBaseField).Width(10).Render("base") + view.Base
+	out += "\n" + label(RenameEnvField).Width(10).Render("env") + view.Env
+	for _, field := range []int{RenameWorktreeField, RenameBaseField, RenameEnvField} {
+		d.lines.Show(fieldLine{field: field, entry: -1}, 1)
+	}
 	return out
+}
+
+// Click acts on the line of the group fields a click landed on, the way the
+// New Group form does: a field takes the focus, a second click on the
+// worktree, base or environment row steps it, and a path suggestion is
+// picked.
+func (d *Rename) Click(line int, paths PathSuggestions, worktrees int) RenameKey {
+	at, ok := d.lines.At(line)
+	if !ok || !d.group {
+		return RenameKey{}
+	}
+	switch {
+	case at.field == RenamePathField && at.entry >= 0:
+		return RenameKey{Action: RenamePickPath, Entry: at.entry}
+	case at.field != d.focus:
+		d.focusOn(paths, at.field)
+	case at.field == RenameWorktreeField:
+		d.worktree = (d.worktree + 1) % worktrees
+	case at.field == RenameBaseField:
+		return RenameKey{Action: RenameStepBase, Delta: 1}
+	case at.field == RenameEnvField:
+		return RenameKey{Action: RenameStepEnv, Delta: 1}
+	}
+	return RenameKey{}
 }

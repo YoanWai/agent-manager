@@ -174,15 +174,6 @@ func TestCreateNamesTheWayBackWhenTheAgentExits(t *testing.T) {
 	waitForPane(t, driver, id, relaunchHint)
 }
 
-func TestExportEnvPrefixesTheCommand(t *testing.T) {
-	testenv.SkipPOSIXShell(t)
-	env := map[string]string{"B": "second", "A": "fir st"}
-	want := `export A='fir st'; export B='second'; claude --resume 7`
-	if got := exportEnv(env, "claude --resume 7"); got != want {
-		t.Fatalf("exportEnv = %q, want %q", got, want)
-	}
-}
-
 func TestCreateExecutesLaunchScriptAsPaneRoot(t *testing.T) {
 	testenv.SkipPOSIXShell(t)
 	dir := t.TempDir()

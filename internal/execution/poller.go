@@ -2,6 +2,7 @@ package execution
 
 import (
 	"errors"
+	"maps"
 	"os"
 	"slices"
 
@@ -561,10 +562,21 @@ func (p *Runner) step(ctx context.Context) Result {
 	if err != nil {
 		return Result{Err: err}
 	}
+	profiles, err := p.store.EnvProfiles()
+	if err != nil {
+		return Result{Err: err}
+	}
+	envNames := make([]string, len(profiles))
+	envKeys := make(map[string][]string, len(profiles))
+	for i, profile := range profiles {
+		envNames[i] = profile.Name
+		envKeys[profile.Name] = slices.Sorted(maps.Keys(profile.Vars))
+	}
 	names := make([]string, len(groups))
 	paths := make(map[string]string, len(groups))
 	worktrees := make(map[string]string, len(groups))
 	bases := make(map[string]string, len(groups))
+	environments := make(map[string]string, len(groups))
 	archivedGroups := make(map[string]bool, len(groups))
 	for i, g := range groups {
 		names[i] = g.Name
@@ -574,6 +586,9 @@ func (p *Runner) step(ctx context.Context) Result {
 		}
 		if g.Base != "" {
 			bases[g.Name] = g.Base
+		}
+		if g.Environment != "" {
+			environments[g.Name] = g.Environment
 		}
 		if g.Archived {
 			archivedGroups[g.Name] = true
@@ -600,6 +615,9 @@ func (p *Runner) step(ctx context.Context) Result {
 		GroupPaths:     paths,
 		GroupWorktrees: worktrees,
 		GroupBases:     bases,
+		GroupEnvs:      environments,
+		EnvProfiles:    envNames,
+		EnvKeys:        envKeys,
 		ArchivedGroups: archivedGroups,
 		Proc:           proc,
 		ProcFor:        selectedID,

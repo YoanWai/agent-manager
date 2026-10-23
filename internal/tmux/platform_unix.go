@@ -203,18 +203,43 @@ func ShellInvoke(path string) string {
 	return ShellQuote(path)
 }
 
-// exportEnv prefixes a command with exports of the session environment, for
-// a command typed into a pane whose shell does not carry it: a session
-// launched before the manager started exporting these values still holds a
-// shell that never received them, and it keeps them once this agent exits
-// too.
-func exportEnv(env map[string]string, command string) string {
-	var line strings.Builder
-	for _, key := range sortedKeys(env) {
-		line.WriteString("export " + key + "=" + ShellQuote(env[key]) + "; ")
+// writeEnvFile writes the session environment for a pane whose shell does
+// not carry it: a session launched before the manager started exporting
+// these values still holds a shell that never received them, and it keeps
+// them once this agent exits too. The shell sources the file, which deletes
+// itself, so a value such as a token is never typed into the pane, where it
+// would show on screen and land in the shell's history. CreateTemp makes it
+// readable by this user alone. The file is gone before the first export,
+// since a profile's PATH may hold no rm.
+func writeEnvFile(id, rm string, env map[string]string) (string, error) {
+	file, err := os.CreateTemp("", "am-env-"+id+"-*.sh")
+	if err != nil {
+		return "", fmt.Errorf("environment file: %w", err)
 	}
-	line.WriteString(command)
-	return line.String()
+	path := file.Name()
+	_, err = file.WriteString(ShellQuote(rm) + " -f -- " + ShellQuote(path) + "\n" + exportLines(env))
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		os.Remove(path)
+		return "", fmt.Errorf("environment file: %w", err)
+	}
+	return path, nil
+}
+
+// relaunchTools are rm and sh as the manager's own PATH resolves them. The
+// relaunch runs them after the session environment is in the shell, and a
+// profile that sets PATH for its agent must not hide what the relaunch
+// itself needs.
+func relaunchTools() (rm, sh string, err error) {
+	if rm, err = exec.LookPath("rm"); err != nil {
+		return "", "", fmt.Errorf("relaunch: %w", err)
+	}
+	if sh, err = exec.LookPath("sh"); err != nil {
+		return "", "", fmt.Errorf("relaunch: %w", err)
+	}
+	return rm, sh, nil
 }
 
 // RunInPane types a command into the shell a pane already holds, with the
@@ -226,12 +251,16 @@ func exportEnv(env map[string]string, command string) string {
 // agent its own process group, so tmux reports the agent rather than the
 // script as the pane's command and directory.
 func (d *Driver) RunInPane(id string, env map[string]string, command string) error {
+	rm, sh, err := relaunchTools()
+	if err != nil {
+		return err
+	}
 	script, err := os.CreateTemp("", "am-relaunch-"+id+"-*.sh")
 	if err != nil {
 		return fmt.Errorf("relaunch script: %w", err)
 	}
 	path := script.Name()
-	_, err = script.WriteString("rm -f -- \"$0\"\nset -m\n" + command + "\n")
+	_, err = script.WriteString(ShellQuote(rm) + " -f -- \"$0\"\nset -m\n" + command + "\n")
 	if closeErr := script.Close(); err == nil {
 		err = closeErr
 	}
@@ -239,8 +268,14 @@ func (d *Driver) RunInPane(id string, env map[string]string, command string) err
 		os.Remove(path)
 		return fmt.Errorf("relaunch script: %w", err)
 	}
-	if err := d.SendKeys(id, exportEnv(env, "sh "+ShellQuote(path)), "Enter"); err != nil {
+	envPath, err := writeEnvFile(id, rm, env)
+	if err != nil {
 		os.Remove(path)
+		return err
+	}
+	if err := d.SendKeys(id, ". "+ShellQuote(envPath)+"; "+ShellQuote(sh)+" "+ShellQuote(path), "Enter"); err != nil {
+		os.Remove(path)
+		os.Remove(envPath)
 		return err
 	}
 	return nil
@@ -281,7 +316,9 @@ func writeLaunchScript(id string, env map[string]string, command, colorFgBg stri
 	// agent's cwd as pane_current_path rather than this script's, which
 	// never moves. The INT trap keeps dash and Linux bash from exiting
 	// when the agent dies of SIGINT, which would skip the hint and shell.
-	body := "#!/bin/sh\ntrap : INT\nset -m\n" + header + exportLines(env) + command + "\n" +
+	// The script deletes itself once sh has it open, so the environment it
+	// exports, a profile's tokens among it, is not left on disk.
+	body := "#!/bin/sh\nrm -f -- \"$0\"\ntrap : INT\nset -m\n" + header + exportLines(env) + command + "\n" +
 		"printf '%s\\n' " + ShellQuote(relaunchHint) + "\n" +
 		"exec " + ShellQuote(shell) + "\n"
 	if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
