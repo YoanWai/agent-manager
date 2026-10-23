@@ -201,6 +201,38 @@ func TestNotifyBodyCarriesTheRowsLine(t *testing.T) {
 	}
 }
 
+// A row that quotes a token must not put that token on the banner or into
+// the notify command's body. The title never carries the quote.
+func TestNotifyBodyRedactsAGitHubToken(t *testing.T) {
+	token := "ghp_" + strings.Repeat("a", 36)
+	text := "export GITHUB_TOKEN=" + token
+	defer restore()()
+	plainMac(t)
+	var posted []string
+	macPost = func(sessionID, subtitle, body, sound string) error {
+		posted = []string{sessionID, subtitle, body, sound}
+		return nil
+	}
+	emitSeq = func(string) error { return nil }
+	event := Event{ID: "sess-1", Session: "deploy", Tool: "codex", Kind: Finished, Text: text}
+	Notify(event)
+	want := "● Finished: export GITHUB_TOKEN=[redacted]"
+	if len(posted) != 4 || posted[2] != want {
+		t.Fatalf("body = %q, want %q", posted, want)
+	}
+	if strings.Contains(posted[2], token) {
+		t.Fatalf("banner leaked the token: %q", posted[2])
+	}
+	for _, env := range CommandEnv(event) {
+		if strings.HasPrefix(env, "AM_BODY=") && env != "AM_BODY="+want {
+			t.Fatalf("AM_BODY = %q, want %q", env, "AM_BODY="+want)
+		}
+		if strings.Contains(env, token) {
+			t.Fatalf("command env leaked the token: %q", env)
+		}
+	}
+}
+
 // The title says where the session runs: its directory's name and, for a
 // worktree the manager made, the branch, so sessions sharing a name read
 // apart. A session with no directory keeps the plain name and tool.

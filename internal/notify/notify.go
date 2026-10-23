@@ -287,7 +287,9 @@ func titleDir(named string) string {
 // keeps its state word: the row's line there is the turn that failed, not
 // something to act on.
 func bodyLine(kind Kind, detail presentation, text string) string {
-	text = sanitize(text)
+	// Redact after sanitize and before the length cap, so a token is
+	// scanned whole and the command sees the same text as the banner.
+	text = redactSecrets(sanitize(text))
 	if text == "" || kind == Errored {
 		return detail.body
 	}
