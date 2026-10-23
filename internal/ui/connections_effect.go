@@ -191,8 +191,8 @@ func (m *Model) applyRemoteEffect(request remoteRequest, result remoteEffectResu
 	case remoteRestore:
 		m.reportDone("restored " + request.name + on)
 	case remoteCreateGroup:
-		if m.mode == modeGroupForm && uint64(m.groupForm.Gen()) == uint64(request.composerGen) {
-			m.mode = modeList
+		if s, ok := surfaceOf[*groupFormSurface](m); ok && s.form.Gen() == request.composerGen {
+			m.pop()
 		}
 		m.reportDone("created group " + request.name + on)
 	}

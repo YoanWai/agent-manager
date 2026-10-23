@@ -16,7 +16,7 @@ func loadPathSuggestions(m *Model, target pathSuggestionTarget, typed string) {
 	case pathSuggestionForm:
 		m.form.SetDir(typed)
 	case pathSuggestionGroup:
-		m.groupForm.SetDir(typed)
+		m.groupSurface().form.SetDir(typed)
 	case pathSuggestionRename:
 		m.rename.SetDir(typed)
 	}
@@ -177,19 +177,19 @@ func TestGroupPickerExitsToAdjacentFields(t *testing.T) {
 	m := buildModel(t)
 
 	m.openGroupForm()
-	m.handleGroupFormKey(tea.KeyMsg{Type: tea.KeyTab})
+	m.pressGroupKey(tea.KeyMsg{Type: tea.KeyTab})
 	m.form.groupIndex = 0
-	m.handleGroupFormKey(tea.KeyMsg{Type: tea.KeyUp})
-	if m.groupForm.Focus() != uidialogs.GroupFormNameField {
-		t.Fatalf("up past first parent should focus name, focus=%d", m.groupForm.Focus())
+	m.pressGroupKey(tea.KeyMsg{Type: tea.KeyUp})
+	if m.groupSurface().form.Focus() != uidialogs.GroupFormNameField {
+		t.Fatalf("up past first parent should focus name, focus=%d", m.groupSurface().form.Focus())
 	}
 
 	m.openGroupForm()
-	m.handleGroupFormKey(tea.KeyMsg{Type: tea.KeyTab})
+	m.pressGroupKey(tea.KeyMsg{Type: tea.KeyTab})
 	m.form.groupIndex = len(m.form.groups) - 1
-	m.handleGroupFormKey(tea.KeyMsg{Type: tea.KeyDown})
-	if m.groupForm.Focus() != uidialogs.GroupFormPathField {
-		t.Fatalf("down past last parent should focus path, focus=%d", m.groupForm.Focus())
+	m.pressGroupKey(tea.KeyMsg{Type: tea.KeyDown})
+	if m.groupSurface().form.Focus() != uidialogs.GroupFormPathField {
+		t.Fatalf("down past last parent should focus path, focus=%d", m.groupSurface().form.Focus())
 	}
 
 	m.openForm()
@@ -256,20 +256,20 @@ func TestGroupFormInheritsParentPath(t *testing.T) {
 	// The cursor starts on root, which has no stored path to inherit.
 	m.selectGroupRow(t, "projects")
 	m.openGroupForm()
-	if m.groupForm.Dir() != parentPath {
-		t.Fatalf("cursor on group should inherit its path, got %q want %q", m.groupForm.Dir(), parentPath)
+	if m.groupSurface().form.Dir() != parentPath {
+		t.Fatalf("cursor on group should inherit its path, got %q want %q", m.groupSurface().form.Dir(), parentPath)
 	}
 	pickGroup(t, m, "")
-	m.moveGroupCursor(0)
-	if m.groupForm.Dir() != "" {
-		t.Fatalf("root parent should clear auto path, got %q", m.groupForm.Dir())
+	m.groupSurface().stepParent(0)
+	if m.groupSurface().form.Dir() != "" {
+		t.Fatalf("root parent should clear auto path, got %q", m.groupSurface().form.Dir())
 	}
 
-	m.groupForm.TakePath("/custom")
+	m.groupSurface().form.TakePath("/custom")
 	pickGroup(t, m, "")
-	m.moveGroupCursor(0)
-	if m.groupForm.Dir() != "/custom" {
-		t.Fatalf("manual path should survive parent change, got %q", m.groupForm.Dir())
+	m.groupSurface().stepParent(0)
+	if m.groupSurface().form.Dir() != "/custom" {
+		t.Fatalf("manual path should survive parent change, got %q", m.groupSurface().form.Dir())
 	}
 }
 
@@ -297,8 +297,8 @@ func TestRelativePathsStoredAbsolute(t *testing.T) {
 	t.Chdir(base)
 
 	m.openGroupForm()
-	m.groupForm.SetName("relgrp")
-	m.groupForm.SetDir("sub")
+	m.groupSurface().form.SetName("relgrp")
+	m.groupSurface().form.SetDir("sub")
 	_, cmd := m.submitGroupForm()
 	if m.errBar.text != "" {
 		t.Fatalf("group form should submit, err=%q", m.errBar.text)
@@ -368,7 +368,7 @@ func TestReopenedFormIgnoresTheLastOpeningsScan(t *testing.T) {
 	if m.form.paths.active() {
 		t.Fatalf("reopened form took the last opening's scan: %v", m.form.paths.suggestions)
 	}
-	if m.groupForm.paths.active() || m.rename.paths.active() {
+	if m.groupSurface().pc.active() || m.rename.paths.active() {
 		t.Fatal("a form scan filled another dialog's completer")
 	}
 }

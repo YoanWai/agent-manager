@@ -6,10 +6,13 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-func (m *Model) cardWidth() int {
+func (m *Model) cardWidth() int { return cardWidthIn(m.layout.width) }
+
+// cardWidthIn is the default card width on a terminal cols wide.
+func cardWidthIn(cols int) int {
 	width := 64
-	if m.layout.width >= 28 && width > m.layout.width-4 {
-		width = m.layout.width - 4
+	if cols >= 28 && width > cols-4 {
+		width = cols - 4
 	}
 	return width
 }

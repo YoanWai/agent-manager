@@ -58,7 +58,6 @@ func TestBackdropClickKeepsATypedDraft(t *testing.T) {
 		want mode
 	}{
 		{"new session", func(m *Model) { m.applyCmd(t, m.openForm()) }, modeForm},
-		{"new group", func(m *Model) { m.openGroupForm() }, modeGroupForm},
 		{"fork", func(m *Model) { m.fork.Open("alpha", ""); m.mode = modeFork }, modeFork},
 	} {
 		m := buildModel(t)

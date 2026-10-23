@@ -36,7 +36,6 @@ const (
 	modeFork
 	modeMove
 	modeRepoPick
-	modeGroupForm
 	modeSettings
 	modeDiff
 	modeNotices
@@ -67,7 +66,6 @@ type Model struct {
 	review     uireview.Model
 	reviewNav  reviewNavState
 	form       formDialog
-	groupForm  groupFormDialog
 	confirm    confirmDialog
 	launchHint launchHintDialog
 	mouse      mouseCapture

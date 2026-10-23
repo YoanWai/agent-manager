@@ -119,7 +119,7 @@ func (m *Model) setSplitFromX(x int) {
 // enterResizeMode arms divider dragging, which the arrow keys drive. The
 // app holds mouse reporting, so a drag here reaches handleMouse too.
 func (m *Model) enterResizeMode() (tea.Model, tea.Cmd) {
-	if m.mode != modeList || m.rail.Searching() || m.quick.active {
+	if m.mode != modeList || len(m.surfaces) > 0 || m.rail.Searching() || m.quick.active {
 		return m, nil
 	}
 	m.layout.split.resizeMode = true

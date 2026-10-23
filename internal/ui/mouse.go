@@ -222,8 +222,6 @@ func (m *Model) clickCard(col, line int) (tea.Model, tea.Cmd) {
 	switch m.mode {
 	case modeForm:
 		return m.handleFormClick(line)
-	case modeGroupForm:
-		return m.handleGroupFormClick(line)
 	case modeConnection:
 		m.ssh.Dialog.Click(line)
 	case modeSettings:
@@ -257,8 +255,6 @@ func (m *Model) wheelCard(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	switch m.mode {
 	case modeForm:
 		return m, m.runFormRequest(m.form.Wheel(m.spawnHost(), step), nil)
-	case modeGroupForm:
-		return m, m.runGroupFormKey(m.groupForm.Wheel(step), nil)
 	case modeSettings:
 		return m.applySettingsResult(m.settings.dialog.Wheel(step, m.settingsContext()))
 	case modeNotices:

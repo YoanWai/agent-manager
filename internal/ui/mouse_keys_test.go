@@ -6,6 +6,16 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+func TestClickOnListFooterGroupKeyOpensTheCard(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 320, 40
+	createSession(t, m, "alpha", t.TempDir(), "")
+	if m = clickLabel(t, m, "g group"); !m.groupFormOpen() {
+		t.Fatalf("click on the group key did not open the card (err %q)", m.errBar.text)
+	}
+}
+
 func TestClickOnListFooterKeysOpensTheirModals(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -13,7 +23,6 @@ func TestClickOnListFooterKeysOpensTheirModals(t *testing.T) {
 		want  mode
 	}{
 		{"n new", modeForm},
-		{"g group", modeGroupForm},
 		{"? keys", modeHelp},
 		{"s settings", modeSettings},
 	} {

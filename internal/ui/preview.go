@@ -214,7 +214,7 @@ func (m *Model) routePreviewMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		// screens have no preview to feed, so they skip the capture and
 		// just keep the timer alive.
 		sess, ok := m.selected()
-		if !ok || (m.mode != modeList && m.mode != modeRename && m.mode != modeFocus) {
+		if !ok || (m.mode == modeList && len(m.surfaces) > 0) || (m.mode != modeList && m.mode != modeRename && m.mode != modeFocus) {
 			return routed(m, tea.Batch(m.tickRemotePreview(), m.previewTick()))
 		}
 		// A session with a control client already pushes every frame; a
