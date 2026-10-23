@@ -22,8 +22,8 @@ import (
 // is driven by the mouse on purpose.
 var mouseOpeners = map[string]func(t *testing.T, m *Model){
 	"dialogs.ConfirmSurface": func(t *testing.T, m *Model) { m.openConfirm(confirmTarget{action: actionKill, label: "kill alpha?"}) },
-	"moveSurface":            func(t *testing.T, m *Model) { m.openMove() },
-	"renameSurface":          func(t *testing.T, m *Model) { m.openRename() },
+	"dialogs.MoveSurface":    func(t *testing.T, m *Model) { m.openMove() },
+	"dialogs.RenameSurface":  func(t *testing.T, m *Model) { m.openRename() },
 	"dialogs.ForkSurface":    func(t *testing.T, m *Model) { m.push(newForkSurface(m, railSelectedSession(m), 1)) },
 	"dialogs.LaunchHintSurface": func(t *testing.T, m *Model) {
 		m.openLaunchHint(launchFix{text: "tool is missing", command: "true", binary: "tool"})
