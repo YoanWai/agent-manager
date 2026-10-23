@@ -40,6 +40,22 @@ wheel assertion compares the exact final frame with a keyboard-only PageDown
 baseline, asserting Help remains open at the exact keyboard-only scroll
 position. Poll waits require an observable condition; the 50ms cadence is never a transition delay.
 
+Two rules keep these scenarios honest on a slower runner.
+
+**Wait for the condition, never for the clock.** A transition is awaited by
+observing it, through `Sandbox.wait`. A fixed pause on the click before it holds
+only as long as the machine that chose the number, so it passes locally and
+fails on CI, or the reverse. `test_sleeps.py` fails any sleep outside the poll
+cadence; set a number there instead when the delay is part of the behaviour
+being checked.
+
+**Make readiness prove the reader, not the environment.** `send-keys` hands its
+keys to whoever reads next, and it does not wait for the command it typed to
+start. A pane flag cannot stand in for readiness either: an interactive shell
+asks for bracketed paste on its own, so the flag reads ready before the test's
+reader has the tty. The recorder touches a file once it owns the tty, and the
+scenario waits for that file.
+
 This is bounded local tmux evidence, not the supported terminal/platform/tool
 matrix. CI runs this smoke in its own job and retains evidence artifacts for
 seven days. CLI, stdio MCP, headless/extension flows, historical released

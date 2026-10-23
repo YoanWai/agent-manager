@@ -137,7 +137,11 @@ def move_blocked(sandbox, binary):
         # Accepted and in flight: the durable row is still unchanged.
         assert group_of(sandbox, name) != 'blocked-group', 'move committed while locked'
         key(sandbox, 'Escape')
-        select_row(sandbox, name, 'move-reselect')
+        # The row is already selected: the card opened on it a moment ago and
+        # Escape returned to the list with the cursor where it was. Re-running
+        # the cursor walk here would spend the foreground budget on captures
+        # and can move the selection, so the card is reopened directly.
+        frame(sandbox, 'move-reselect', name)
         key(sandbox, 'm')
         frame(sandbox, 'move-reopened', '⇄ Move')
         key(sandbox, 'Down')

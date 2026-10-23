@@ -157,13 +157,29 @@ def seed_remote(sandbox, remote, manager):
 
 
 def select(sandbox, name, needle):
-    """Moves the cursor until the preview shows needle: down first, then up."""
-    for step in ['j'] * 12 + ['k'] * 24:
-        time.sleep(0.4)  # render settle; the capture right after a keypress can be stale
-        if needle in preview_of(capture(sandbox)):
-            (sandbox.artifacts / (name + '-selected.txt')).write_text(capture(sandbox))
-            return
+    """Moves the cursor until the preview shows needle: down first, then up.
+
+    A capture taken right after the cursor moves can still show the previous
+    row, so the marker has to hold for two captures in a row before the
+    selection counts. Both are observations rather than pauses.
+    """
+    def settled(_):
+        first = capture(sandbox)
+        if needle not in preview_of(first):
+            return False
+        second = capture(sandbox)
+        if needle not in preview_of(second):
+            return False
+        (sandbox.artifacts / (name + '-selected.txt')).write_text(second)
+        return True
+
+    for index, step in enumerate(['j'] * 12 + ['k'] * 24):
         key(sandbox, step)
+        try:
+            sandbox.wait(f'{name}-selected-{index}', lambda: '', settled, timeout=0.6)
+            return
+        except TimeoutError:
+            continue
     raise AssertionError(f'{name} not reachable in the list')
 
 
