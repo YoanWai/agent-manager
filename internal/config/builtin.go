@@ -274,6 +274,10 @@ trailing_note = "^Worked for "
 # a sent prompt: indented under fullscreen with a clock at the row's right
 # edge, which the group leaves out, and flush-left under --minimal
 user_echo = "^\\s*❯ (.*?)(?:\\s{2,}\\d{1,2}:\\d{2} [AP]M)?$"
+# an approval dialog replaces the composer, so nothing matches the cutoff
+# and the select footer would otherwise be the quote. The line nearest
+# the options is the ask; a radio row is not.
+dialog_question = "(?m)^\\s*┃\\s+(.+?)\\s*$"
 # Transcript prompts and their wrapped rows are not Grok replies.
 chrome_block = "^\\s+❯ |^\\s*Help improve Grok\\b|^\\s*[▾▸] Queued \\d+"
 limit_line = "(?i)You've hit the rate limit|You hit your free usage limit|You've reached your free Grok Build usage limit|usage limit reached|out of credits"

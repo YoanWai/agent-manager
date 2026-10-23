@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/agentsession"
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/notify"
 	"github.com/YoanWai/agent-manager/internal/status"
@@ -448,6 +449,75 @@ func TestNotifyTransitionCarriesTheRowsLine(t *testing.T) {
 	}
 	if len(want) != 0 {
 		t.Fatalf("missing notifications %v, got %v", want, calls)
+	}
+}
+
+// followConversation can move a row onto another conversation in the same
+// pass that notices the turn ended. The banner quotes that conversation,
+// not the one the pass listed.
+func TestRefreshQuotesTheConversationFollowedThisPass(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	m := buildModel(t)
+	m.poller.reportStyles["claude-hooked"] = "claude"
+	if err := m.store.SetSetting(notifyFinishedSetting, "on"); err != nil {
+		t.Fatal(err)
+	}
+	hooked := m.cfg.Tools["claude-hooked"]
+	if runtime.GOOS != "windows" {
+		hooked.Command = `sh -c 'exec cat' --`
+	}
+	m.cfg.Tools["claude-hooked"] = hooked
+	if err := m.spawnSession("claude-hooked", "needy", t.TempDir(), "", "boot-marker", false, false); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, nil)
+	sess := m.sessionRows()[0]
+	waitForPane(t, m, sess.ID, "boot-marker")
+	if err := m.store.UpdateStatus(sess.ID, status.Idle); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.store.SetAgentSessionID(sess.ID, "old-conv"); err != nil {
+		t.Fatal(err)
+	}
+	write := func(id, prompt string) {
+		t.Helper()
+		path, err := agentsession.ClaudeTranscriptPath(sess.Cwd, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		line := `{"type":"user","message":{"content":[{"type":"text","text":"` + prompt + `"}]}}` + "\n"
+		if err := os.WriteFile(path, []byte(line), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("old-conv", "previous conversation")
+	write("new-conv", "current conversation")
+	prev := followDuringPoll
+	t.Cleanup(func() { followDuringPoll = prev })
+	followDuringPoll = func(p *Runner, row *store.Session, agentAlive, paneGone bool) error {
+		if row.ID == sess.ID {
+			row.AgentSessionID = "new-conv"
+		}
+		return nil
+	}
+	statusFile := m.poller.hooks.StatusFile(sess.ID)
+	if err := os.MkdirAll(filepath.Dir(statusFile), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(statusFile, []byte(status.Finished), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rec := &notifyRecorder{}
+	m.poller.notifyFn = rec.fn()
+	m.applyCmd(t, m.refreshCmd())
+	calls := waitForCalls(t, rec, 1)
+	if calls[0].Text != "current conversation" {
+		t.Fatalf("notification quoted %q, want the conversation followed this pass", calls[0].Text)
 	}
 }
 

@@ -401,7 +401,7 @@ func (p *Runner) step(ctx context.Context) Result {
 		}
 		newStatus := status.Dead
 		if !live {
-			followFailures[sess.ID] = p.followConversation(&sessions[i], false, true)
+			followFailures[sess.ID] = followDuringPoll(p, &sessions[i], false, true)
 		}
 		if pid := panes[sess.ID].PID; pid > 0 {
 			stat := trees[pid]
@@ -441,7 +441,11 @@ func (p *Runner) step(ctx context.Context) Result {
 			// tree of one process means the agent is gone. A failed ps
 			// sample proves nothing, so it counts as alive.
 			agentAlive := !stat.OK || stat.Procs > 1
-			followFailures[sess.ID] = p.followConversation(&sessions[i], agentAlive, false)
+			followFailures[sess.ID] = followDuringPoll(p, &sessions[i], agentAlive, false)
+			// The row may have moved onto another conversation. The copy
+			// taken at the start of the pass still names the previous one,
+			// and the quote read next is that conversation's.
+			sess = sessions[i]
 			if pane, err := p.tmux.CapturePane(sess.ID); err == nil {
 				paneLastLines[sess.ID], panePrompts[sess.ID] = p.rowLines(ctx, sess, pane, panes[sess.ID].Path)
 				derived, err := p.derivePaneStatus(sess, pane, agentAlive, paneHashes)

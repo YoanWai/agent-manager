@@ -2,6 +2,7 @@ package notify
 
 import (
 	"errors"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -231,6 +232,26 @@ func TestNotifyTitleNamesTheDirectoryAndBranch(t *testing.T) {
 				t.Fatalf("title = %q, want %q", posted, test.title)
 			}
 		})
+	}
+}
+
+// A session sitting on a Windows drive root names that root. path.Base
+// of the slash form is "C:", which is not the directory.
+func TestNotifyTitleKeepsAWindowsDriveRoot(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("drive roots are a Windows path")
+	}
+	defer restore()()
+	plainMac(t)
+	var posted []string
+	macPost = func(sessionID, subtitle, body, sound string) error {
+		posted = []string{sessionID, subtitle, body, sound}
+		return nil
+	}
+	emitSeq = func(string) error { return nil }
+	Notify(Event{Session: "deploy", Tool: "codex", Kind: Finished, Dir: `C:\`})
+	if len(posted) != 4 || posted[1] != `deploy · C:\ · codex` {
+		t.Fatalf("title = %q, want the drive root", posted)
 	}
 }
 

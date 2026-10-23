@@ -258,9 +258,7 @@ func titleLine(event Event) string {
 	if event.Repo != "" {
 		named = event.Repo
 	}
-	// path.Base keeps a root of "/" on every OS. filepath.Base turns that
-	// into "\" on Windows.
-	if dir := sanitize(path.Base(filepath.ToSlash(named))); named != "" && dir != "" {
+	if dir := sanitize(titleDir(named)); named != "" && dir != "" {
 		parts = append(parts, dir)
 	}
 	for _, part := range []string{sanitize(event.Branch), sanitize(event.Tool)} {
@@ -269,6 +267,19 @@ func titleLine(event Event) string {
 		}
 	}
 	return strings.Join(parts, " · ")
+}
+
+// titleDir is the directory a banner names. A Unix root stays "/", and a
+// Windows drive root stays "C:\". path.Base of the slash form of "C:\"
+// is "C:", and filepath.Base("/") is "\" on Windows.
+func titleDir(named string) string {
+	if vol := filepath.VolumeName(named); vol != "" {
+		rest := strings.TrimPrefix(named, vol)
+		if strings.Trim(rest, `/\`) == "" {
+			return vol + `\`
+		}
+	}
+	return path.Base(filepath.ToSlash(named))
 }
 
 // bodyLine puts the row's line behind the state glyph, "◆ Waiting: <the

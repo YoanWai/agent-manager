@@ -7,6 +7,13 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 )
 
+// followDuringPoll is followConversation for one refresh pass. A test
+// points it at a stand-in that moves a row onto another conversation, so
+// the pass can be checked to quote that conversation.
+var followDuringPoll = func(p *Runner, sess *store.Session, agentAlive, paneGone bool) error {
+	return p.followConversation(sess, agentAlive, paneGone)
+}
+
 // followConversation moves a session onto the conversation its CLI's own
 // state says the agent is on, for the CLIs that report no switch
 // themselves. State that outlives the agent, such as grok's log, is read

@@ -113,8 +113,10 @@ func (e *Engine) LastMessage(tool, pane string) (line string, anchored, ok bool)
 
 // askedQuestion is the dialog_question row nearest above the selected option,
 // since a tool may draw its own prompt, which can end in "?" too, above the
-// question. A question wider than the pane wraps; the rows above it that the
-// next row's first word would not have fitted on are its start.
+// question. A question wider than the pane wraps. A boxed question continues
+// on the rows above it that the next row's first word would not have fitted
+// on. An unboxed question, Claude's permission ask, continues on the rows
+// below its opening until the question mark.
 func (tr toolRules) askedQuestion(tail string) string {
 	if tr.dialogAsks == nil {
 		return ""
@@ -128,15 +130,24 @@ func (tr toolRules) askedQuestion(tail string) string {
 		}
 	}
 	q := -1
+	question := ""
 	for i := 0; i < end; i++ {
-		if tr.dialogAsks.MatchString(rows[i]) {
-			q = i
+		line, last := tr.questionRow(rows, i, end)
+		if line == "" {
+			continue
 		}
+		text := strings.TrimSpace(tr.dialogAsks.FindStringSubmatch(line)[1])
+		if radioOption.MatchString(text) {
+			i = last
+			continue
+		}
+		question = text
+		q = last
+		i = last
 	}
 	if q == -1 {
 		return ""
 	}
-	question := strings.TrimSpace(tr.dialogAsks.FindStringSubmatch(rows[q])[1])
 	for i := q - 1; i >= 0; i-- {
 		above := boxedRowText(rows[i])
 		if above == "" || strings.HasPrefix(above, "- ") || strings.ContainsAny(string([]rune(above)[:1]), "╭╰│─") {
@@ -151,8 +162,48 @@ func (tr toolRules) askedQuestion(tail string) string {
 	return question
 }
 
+// questionRow is the dialog_question match at rows[i], or the unboxed rows
+// from there joined through the one that completes it. last is the last row
+// consumed. An empty line means rows[i] is not a question.
+func (tr toolRules) questionRow(rows []string, i, end int) (line string, last int) {
+	if tr.dialogAsks.MatchString(rows[i]) {
+		return rows[i], i
+	}
+	if boxedRowText(rows[i]) != "" {
+		return "", i
+	}
+	joined := rows[i]
+	last = i
+	for j := i + 1; j < end; j++ {
+		if tr.dialogAsks.MatchString(joined) {
+			return joined, last
+		}
+		if !unboxedContinuation(rows[j]) {
+			return "", i
+		}
+		joined += " " + strings.TrimSpace(rows[j])
+		last = j
+	}
+	if tr.dialogAsks.MatchString(joined) {
+		return joined, last
+	}
+	return "", i
+}
+
+func unboxedContinuation(row string) bool {
+	if strings.TrimSpace(row) == "" || boxedRowText(row) != "" || optionRow.MatchString(row) {
+		return false
+	}
+	if strings.ContainsAny(string([]rune(strings.TrimSpace(row))[:1]), "╭╰╮╯│┃─╌━") {
+		return false
+	}
+	return true
+}
+
 var (
-	selectedOption = regexp.MustCompile(`^[\s│]*[●❯]\s*\d+\.`)
+	selectedOption = regexp.MustCompile(`^[\s│]*[●❯]\s*\d+\.|^[\s┃│]*\d+\s+\([●❯]\)`)
+	radioOption    = regexp.MustCompile(`^\d+\s+\([●○]\)`)
+	optionRow      = regexp.MustCompile(`^[\s│┃]*[●❯]?\s*\d+\.|^\s*\d+\s+\([●○]\)`)
 	boxedText      = regexp.MustCompile(`^│ ([^│]*?)\s*│\s*$`)
 )
 

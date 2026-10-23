@@ -292,6 +292,65 @@ func TestLastMessageQuotesTheTrustDialogsQuestion(t *testing.T) {
 	}
 }
 
+// Grok's approval dialog replaces the composer, so the pane has no
+// cutoff. The quote is the approval line nearest the options. The
+// 1/3:select footer is what a row would show if the dialog had no
+// question. Frame from a live grok Build pane (2026-07-18).
+func TestLastMessageQuotesAGrokApproval(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := "  ┃  Remove victim2.txt file\n" +
+		"  ┃  rm victim2.txt\n" +
+		"  ┃\n" +
+		"  ┃  1 (●) Yes, and don't ask again for anything (always-approve mode)\n" +
+		"  ┃  2 (○) Yes, proceed\n" +
+		"  ┃  3 (○) No, reject (type to add feedback)\n" +
+		"  ┃\n" +
+		"\n" +
+		"  1/3:select  │  Ctrl+o:always-approve  │  Ctrl+c:cancel"
+	quote, anchored, ok := engine.LastMessage("grok", pane)
+	if !ok || !anchored || quote != "rm victim2.txt" {
+		t.Fatalf("quote = %q anchored=%v ok=%v, want the approval line, not the select footer", quote, anchored, ok)
+	}
+}
+
+// A permission question wider than the pane wraps before its question
+// mark, on rows that are not drawn in a box. The quote is the whole
+// question. A boxed question still joins the same way it did.
+func TestLastMessageJoinsWrappedQuestions(t *testing.T) {
+	engine := defaultEngine(t)
+	t.Run("unboxed claude permission", func(t *testing.T) {
+		pane := "⏺ The file is ready.\n" +
+			"\n" +
+			"❯ Use the Write tool to create a file with a very long name.\n" +
+			"\n" +
+			" Do you want to create a file whose name is far too long to\n" +
+			" fit before the question mark?\n" +
+			" ❯ 1. Yes\n" +
+			"   2. No\n"
+		quote, anchored, ok := engine.LastMessage("claude", pane)
+		want := "Do you want to create a file whose name is far too long to fit before the question mark?"
+		if !ok || !anchored || quote != want {
+			t.Fatalf("quote = %q anchored=%v ok=%v, want the wrapped permission question", quote, anchored, ok)
+		}
+	})
+	t.Run("boxed gemini", func(t *testing.T) {
+		pane := " > Ask me which shell I prefer.\n" +
+			"▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀\n\n" +
+			"╭──────────────────────────────────────────────────────────────────────╮\n" +
+			"│ ? Ask User                                                           │\n" +
+			"│ Which shell do you prefer for daily work on remote servers and on   │\n" +
+			"│ local machines alike?                                                      │\n" +
+			"│                                                                      │\n" +
+			"│ ● 1. bash                                                            │\n" +
+			"│   2. zsh                                                             │\n" +
+			"╰──────────────────────────────────────────────────────────────────────╯"
+		want := "Which shell do you prefer for daily work on remote servers and on local machines alike?"
+		if line, anchored, ok := engine.LastMessage("gemini", pane); !ok || !anchored || line != want {
+			t.Fatalf("wrapped boxed question = %q anchored=%v ok=%v, want %q", line, anchored, ok, want)
+		}
+	})
+}
+
 // command-code's approval dialog draws its selected option on the
 // composer row, so the question sits at the end of the region above it.
 // Frame from a live Command Code v1.79.2 session on 2026-10-11.
