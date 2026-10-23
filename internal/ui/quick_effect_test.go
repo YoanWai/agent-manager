@@ -221,8 +221,9 @@ func TestQuickSendStaleRefusalDefersImageCleanup(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	path := tempImage(t, "stale-refusal.png")
+	q := pushQuick(m)
 	request := quickSendRequest{
-		composerGen: m.quick().gen + 1,
+		composerGen: q.gen + 1,
 		images:      []imageAttachment{{id: 1, path: path}},
 	}
 	cleanup := m.returnQuickSendImages(request)

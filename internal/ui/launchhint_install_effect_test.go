@@ -544,7 +544,7 @@ func TestInstallStartGivesTheInstallerShellTheKeys(t *testing.T) {
 		if !m.onList() || (m.quick() != nil) {
 			t.Fatalf("failure %v left mode %v quick %v", failure, m.screenID(), (m.quick() != nil))
 		}
-		if imageExists(t, image) || len(m.quick().attachments) != 0 {
+		if imageExists(t, image) {
 			t.Fatal("the installer handoff left the draft image")
 		}
 	}
