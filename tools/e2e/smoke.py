@@ -36,6 +36,8 @@ class Sandbox:
         for key in ('TMUX', 'TMUX_PANE', 'AGENT_MANAGER_PROFILE', 'AGENT_MANAGER_SESSION_ID', 'COLORFGBG',
                     'ENV', 'BASH_ENV', 'PROMPT_COMMAND'):
             self.env.pop(key, None)
+        # An inherited directory would put the feed cache outside this sandbox.
+        self.env.pop('AGENT_MANAGER_CONFIG_DIR', None)
         for key in tuple(self.env):
             if key.startswith('GIT_'):
                 self.env.pop(key)
@@ -139,6 +141,72 @@ class Sandbox:
         return errors
 
 
+# Longer than requestBudget in internal/feed, so a missing cache means the check finished.
+request_budget_wait = 6
+
+
+def feed_cache(sandbox):
+    return Path(sandbox.env['XDG_CONFIG_HOME']) / 'agent-manager' / 'feed-messages.json'
+
+
+def notice_rows(frame):
+    rows = []
+    started = False
+    for line in frame.splitlines():
+        if '╭─ messages' in line:
+            started = True
+            continue
+        if not started:
+            continue
+        if '┄' in line or '╰' in line:
+            break
+        rows.append(line)
+    return tuple(rows)
+
+
+def settle_messages(sandbox, target):
+    cache = feed_cache(sandbox)
+    deadline = time.monotonic() + request_budget_wait
+
+    def capture():
+        return sandbox.tmux('capture-pane', '-p', '-t', target).stdout
+
+    before = ''
+    while True:
+        frame = capture()
+        drawn = 'A G E N T' in frame or '╭─ messages' in frame
+        if cache.is_file() and drawn:
+            before = frame
+            break
+        if time.monotonic() >= deadline:
+            return
+        time.sleep(0.05)
+
+    # Printable keys in one write become one KeyMsg. j moves a notice and e badges
+    # the list, and neither key is visible on both screens.
+    prior = notice_rows(before)
+    if '╭─ messages' in before:
+        sandbox.tmux('send-keys', '-t', target, 'j')
+
+        def acknowledged(frame):
+            return notice_rows(frame) != prior
+    else:
+        sandbox.tmux('send-keys', '-t', target, 'e')
+
+        def acknowledged(frame):
+            return 'HIDE EMPTY' in frame or '╭─ messages' in frame
+
+    frame = sandbox.wait('messages-settled', capture, acknowledged)
+    if '╭─ messages' in frame:
+        sandbox.tmux('send-keys', '-t', target, 'Escape')
+        frame = sandbox.wait('messages-closed', capture,
+                             lambda current: 'A G E N T' in current and '╭─ messages' not in current)
+    if 'HIDE EMPTY' in frame:
+        sandbox.tmux('send-keys', '-t', target, 'e')
+        sandbox.wait('messages-restored', capture,
+                     lambda current: 'HIDE EMPTY' not in current and '╭─ messages' not in current)
+
+
 def smoke(sandbox, binary):
     repo = sandbox.artifacts / 'fixture-repo'
     repo.mkdir()
@@ -151,6 +219,7 @@ def smoke(sandbox, binary):
                  'commit', '-m', 'fixture baseline'])
     changed.write_text('after_review_e2e\n')
     sandbox.start_manager('smoke', repo, binary)
+    settle_messages(sandbox, 'smoke:0.0')
     sandbox.frame('startup', 'A G E N T')
     sandbox.key('Escape')
     sandbox.key('?')

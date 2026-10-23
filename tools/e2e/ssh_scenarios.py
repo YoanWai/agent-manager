@@ -26,7 +26,7 @@ from types import SimpleNamespace
 from scenarios import (FAKE_BIN, FAKE_CLI, READY_MARKER, capture, config_fixture_text,
                        ensure_binary, fake_cli_script, frame, key, last_frame, preview_of, profile_dir,
                        seed_store)
-from smoke import Sandbox
+from smoke import Sandbox, settle_messages
 
 CONNECTION = 'box'
 DOWN = 'down'
@@ -289,6 +289,7 @@ def scenario(sandbox, remote, binary):
     manager = write_fixtures(sandbox, remote, binary)
     agent_id = seed_remote(sandbox, remote, manager)
     sandbox.start_manager('scen', sandbox.home, manager)
+    settle_messages(sandbox, 'scen:0.0')
     frame(sandbox, 'startup', 'A G E N T')
     key(sandbox, 'Escape')
     seed_store(sandbox)
