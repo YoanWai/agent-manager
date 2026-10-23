@@ -40,8 +40,8 @@ var packaged = map[string]string{
 	"theme":       "live styles, surfaces and the stored theme",
 }
 
-// rootExtras are root files of packaged features that are neither adapter
-// nor effect. They predate the rule; the list only shrinks.
+// rootExtras are root files of packaged features that are neither adapter,
+// effect nor surface. They predate the rule; the list only shrinks.
 var rootExtras = map[string]bool{
 	"focus_saved.go":      true,
 	"focus_view.go":       true,
@@ -118,7 +118,7 @@ func main() {
 		os.Exit(1)
 	}
 	fmt.Println("PASS: every root UI source starts with its feature")
-	fmt.Println("PASS: a packaged feature's root files are its adapter and effects")
+	fmt.Println("PASS: a packaged feature's root files are its adapter, effects and surfaces")
 	fmt.Println("PASS: every test file is named after its source")
 }
 
@@ -162,7 +162,7 @@ func unadaptedSources(dir string) ([]string, error) {
 		if _, ok := packaged[feature]; !ok {
 			continue
 		}
-		if stem == feature+"_adapter" || strings.HasPrefix(stem, feature+"_adapter_") || strings.HasSuffix(stem, "_effect") {
+		if stem == feature+"_adapter" || strings.HasPrefix(stem, feature+"_adapter_") || strings.HasSuffix(stem, "_effect") || strings.HasSuffix(stem, "_surface") {
 			continue
 		}
 		unadapted = append(unadapted, name)

@@ -108,6 +108,9 @@ func pathSuggestionsCmd(request pathSuggestionsRequest, reader pathSuggestionRea
 
 // completer is the path completer of the dialog a read was started from.
 func (m *Model) completer(target pathSuggestionTarget) *pathComplete {
+	if s, ok := m.topPathCompleting(); ok && s.pathTarget() == target {
+		return s.paths()
+	}
 	switch target {
 	case pathSuggestionGroup:
 		return &m.groupForm.paths
@@ -135,6 +138,9 @@ type pathCompleteHost interface {
 }
 
 func (m *Model) pathSuggestionField(target pathSuggestionTarget) (string, bool) {
+	if s, ok := m.topPathCompleting(); ok && s.pathTarget() == target {
+		return s.dir()
+	}
 	switch target {
 	case pathSuggestionForm:
 		if m.mode != modeForm {
@@ -245,9 +251,25 @@ func isDirEntry(parent string, entry os.DirEntry) bool {
 	return err == nil && info.IsDir()
 }
 
+// topPathCompleting is the top surface, when it has a directory field.
+func (m *Model) topPathCompleting() (pathCompleting, bool) {
+	top, ok := m.top()
+	if !ok {
+		return nil, false
+	}
+	s, ok := top.(pathCompleting)
+	return s, ok
+}
+
 func (m *Model) applyPathSuggestion() tea.Cmd {
 	var path string
 	var target pathSuggestionTarget
+	if s, ok := m.topPathCompleting(); ok {
+		path = s.paths().selected() + string(filepath.Separator)
+		s.takePath(path)
+		target = s.pathTarget()
+		return m.requestPathSuggestions(target, path)
+	}
 	switch m.mode {
 	case modeForm:
 		path = m.form.paths.selected() + string(filepath.Separator)

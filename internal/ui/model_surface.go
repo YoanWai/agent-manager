@@ -44,6 +44,20 @@ type surface interface {
 	Leave(h surfaceHost)
 }
 
+// pathCompleting is the optional capability of a surface with a directory
+// field: tab completes a path into it. The root asks the top surface for it
+// instead of knowing which cards have one.
+type pathCompleting interface {
+	// pathTarget names the field for the shared completer and its reads.
+	pathTarget() pathSuggestionTarget
+	// dir is the field's current text.
+	dir() (string, bool)
+	// takePath puts a completed directory into the field.
+	takePath(path string)
+	// paths is the surface's completer state.
+	paths() *pathComplete
+}
+
 // surfaceHost is what a surface reaches on the root. The cap and the type
 // rules of model_host_test.go apply: a surface that needs more returns a
 // command for a root adapter instead.
