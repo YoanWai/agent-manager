@@ -631,7 +631,23 @@ func TestDirHonorsOverrideThenXDGThenUserConfig(t *testing.T) {
 		t.Fatalf("Dir() = %q, %v; want %q", got, err, want)
 	}
 
+	t.Setenv("XDG_CONFIG_HOME", "relative")
+	if _, err = Dir(); err == nil || !strings.Contains(err.Error(), "path in $XDG_CONFIG_HOME is relative") {
+		t.Fatalf("relative XDG_CONFIG_HOME: %v", err)
+	}
+
+	home := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	if runtime.GOOS == "windows" {
+		appData := filepath.Join(home, "AppData")
+		if err := os.MkdirAll(appData, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("APPDATA", appData)
+		t.Setenv("AppData", appData)
+	}
 	got, err = Dir()
 	base, berr := os.UserConfigDir()
 	if berr != nil {
@@ -641,12 +657,11 @@ func TestDirHonorsOverrideThenXDGThenUserConfig(t *testing.T) {
 	if err != nil || got != want {
 		t.Fatalf("Dir() = %q, %v; want %q", got, err, want)
 	}
+	if got == testConfigDir {
+		t.Fatalf("Dir() used the test directory %q for a home the test chose", got)
+	}
 }
 
 func pathInside(path, dir string) bool {
-	rel, err := filepath.Rel(dir, path)
-	if err != nil {
-		return false
-	}
-	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
+	return dirInside(path, dir)
 }

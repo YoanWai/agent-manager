@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -187,34 +188,95 @@ type Config struct {
 	Tools map[string]Tool
 }
 
-// A test binary must not open the user's store. os.UserConfigDir ignores
-// XDG_CONFIG_HOME on macOS, so the override is planted here, before any
-// test reads Dir, in every package that imports this one.
+// testConfigDir is the directory this test process uses instead of the
+// user config it started with. startupConfigEnv carries that user config
+// to a subprocess. The subprocess keeps a HOME, APPDATA, or
+// XDG_CONFIG_HOME it was given, and a relative XDG_CONFIG_HOME still fails.
+const startupConfigEnv = "AGENT_MANAGER_STARTUP_CONFIG"
+
+var testConfigDir string
+
 func init() {
 	if !testing.Testing() || os.Getenv("AGENT_MANAGER_CONFIG_DIR") != "" {
+		return
+	}
+	base, err := os.UserConfigDir()
+	if err != nil {
 		return
 	}
 	dir, err := os.MkdirTemp("", "agent-manager-test-")
 	if err != nil {
 		panic(err)
 	}
-	if err := os.Setenv("AGENT_MANAGER_CONFIG_DIR", dir); err != nil {
-		panic(err)
-	}
+	testConfigDir = dir
+	os.Setenv("AGENT_MANAGER_CONFIG_DIR", dir)
+	os.Setenv(startupConfigEnv, base)
 }
 
 func Dir() (string, error) {
-	if dir := os.Getenv("AGENT_MANAGER_CONFIG_DIR"); dir != "" {
+	if dir := chosenConfigDir(); dir != "" {
 		return dir, nil
 	}
 	if base := os.Getenv("XDG_CONFIG_HOME"); base != "" {
+		// The same rejection os.UserConfigDir makes on a Unix Go that
+		// checks the variable. Darwin's UserConfigDir never reads it.
+		if !filepath.IsAbs(base) {
+			return "", errors.New("path in $XDG_CONFIG_HOME is relative")
+		}
 		return filepath.Join(base, "agent-manager"), nil
 	}
 	base, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
 	}
+	if dir := harnessConfigDir(base); dir != "" {
+		return dir, nil
+	}
 	return filepath.Join(base, "agent-manager"), nil
+}
+
+// chosenConfigDir is AGENT_MANAGER_CONFIG_DIR when this process asked for
+// it. The directory planted for go test does not count once HOME, APPDATA,
+// or their Darwin and Windows equivalents no longer resolve to the user
+// config this process started with.
+func chosenConfigDir() string {
+	override := os.Getenv("AGENT_MANAGER_CONFIG_DIR")
+	if override == "" {
+		return ""
+	}
+	if testConfigDir != "" && override != testConfigDir {
+		return override
+	}
+	if testConfigDir != "" {
+		return ""
+	}
+	// A subprocess inherited the directory planted for the test. It applies
+	// only while this process still resolves the user config recorded then.
+	if startup := os.Getenv(startupConfigEnv); startup != "" {
+		base, err := os.UserConfigDir()
+		if err != nil || base != startup {
+			return ""
+		}
+	}
+	return override
+}
+
+func harnessConfigDir(base string) string {
+	if !testing.Testing() || base != os.Getenv(startupConfigEnv) {
+		return ""
+	}
+	if testConfigDir != "" {
+		return testConfigDir
+	}
+	return os.Getenv("AGENT_MANAGER_CONFIG_DIR")
+}
+
+func dirInside(path, dir string) bool {
+	rel, err := filepath.Rel(dir, path)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
 
 // WithChoice puts the choice's flags on every line that launches the tool.

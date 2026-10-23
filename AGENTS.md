@@ -116,8 +116,10 @@ must not open the user's store sets the first:
 AGENT_MANAGER_CONFIG_DIR=/tmp/amprobe agent-manager
 ```
 
-`go test` sets `AGENT_MANAGER_CONFIG_DIR` to a temp directory before any
-test reads the store.
+`go test` reads a temp directory when neither variable is set and the
+resolved directory is still the user config the process started with, so
+a test that sets `XDG_CONFIG_HOME`, `HOME`, or `APPDATA` still selects
+its own. The substitution stays in the test process.
 
 Before finishing: `gofmt -l .` prints nothing, `go vet ./...` is clean.
 
