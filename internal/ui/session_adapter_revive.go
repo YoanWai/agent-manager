@@ -4,13 +4,12 @@ import (
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
 	tea "github.com/charmbracelet/bubbletea"
 	"time"
 )
 
-// deadSessionHint names both ways back from a dead row: revive resumes the
-// conversation it held, restart drops it.
-const deadSessionHint = "session is dead - press v to revive or R to restart"
+const deadSessionHint = uisession.DeadHint
 
 // reviveSelected relaunches a dead session's tmux session under the same
 // id, keeping its name, group, and history. Tools with a revive_command
@@ -118,9 +117,7 @@ func (m *Model) degradedResumeNotice(sess store.Session) string {
 	return degradedResumeText(sess.Name)
 }
 
-func degradedResumeText(name string) string {
-	return fmt.Sprintf("revived %s with --continue: no conversation id captured, may resume the wrong conversation", name)
-}
+func degradedResumeText(name string) string { return uisession.DegradedResumeText(name) }
 
 // reviveSession relaunches one dead session under its old id, keeping its
 // name, group, and history. When the session's own conversation id was

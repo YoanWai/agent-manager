@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
 	tea "github.com/charmbracelet/bubbletea"
 	"strings"
 	"time"
@@ -203,14 +204,7 @@ func (m *Model) sessionsInSubtree(path string) []store.Session {
 }
 
 func followConfirmLabel(verb, name string, extra int, one, many string) string {
-	if extra <= 0 {
-		return fmt.Sprintf("%s %s? %s", verb, name, one)
-	}
-	unit := "terminal"
-	if extra != 1 {
-		unit = "terminals"
-	}
-	return fmt.Sprintf("%s %s and %d %s? %s", verb, name, extra, unit, many)
+	return uisession.FollowConfirmLabel(verb, name, extra, one, many)
 }
 
 func groupPath(confirm confirmTarget) string {

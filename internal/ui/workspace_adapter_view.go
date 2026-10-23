@@ -2,23 +2,34 @@ package ui
 
 import (
 	"fmt"
-	"github.com/YoanWai/agent-manager/internal/sysstat"
-	"github.com/charmbracelet/x/ansi"
 	"strings"
+
+	"github.com/YoanWai/agent-manager/internal/sysstat"
+	uiworkspace "github.com/YoanWai/agent-manager/internal/ui/workspace"
+	"github.com/charmbracelet/x/ansi"
 )
+
+// snapReadings flattens an OS snapshot off its probe into the values the foot
+// lays out, so the layout never reads sysstat itself.
+func snapReadings(snap sysstat.Snapshot) uiworkspace.Readings {
+	return uiworkspace.Readings{
+		CPUPercent: snap.CPUPercent, CPUOK: snap.CPUOK,
+		MemPercent: snap.MemPercent, MemOK: snap.MemOK, MemUsed: snap.MemUsed, MemTotal: snap.MemTotal,
+		SwapOK: snap.SwapOK, SwapPercent: snap.SwapPercent, SwapUsed: snap.SwapUsed, SwapTotal: snap.SwapTotal,
+		DiskOK: snap.DiskOK, DiskPercent: snap.DiskPercent, DiskAvailable: snap.DiskAvailable,
+		BatteryOK: snap.BatteryOK, BatteryPercent: snap.BatteryPercent, BatteryCharging: snap.BatteryCharging,
+		CPUTempOK: snap.CPUTempOK, CPUTemp: snap.CPUTemp,
+		GPUTempOK: snap.GPUTempOK, GPUTemp: snap.GPUTemp,
+		SoCTempOK: snap.SoCTempOK, SoCTemp: snap.SoCTemp,
+	}
+}
 
 // computerLines is the machine block docked at the rail's foot: a label
 // and one thin meter per resource.
 func (m *Model) computerLines(width int) []string {
-	snap := m.workspace.snap
+	snap := snapReadings(m.workspace.snap)
 	pad := strings.Repeat(" ", railInset)
-	barWidth := width - 22
-	if barWidth < 4 {
-		barWidth = 4
-	}
-	if barWidth > 10 {
-		barWidth = 10
-	}
+	barWidth := uiworkspace.MeterWidth(width)
 
 	render := func(label string, percent float64, extra, bar string) string {
 		line := pad + labelStyle().Width(5).Render(label) + bar +
@@ -69,26 +80,20 @@ func (m *Model) computerLines(width int) []string {
 	if temps := tempReadings(snap); temps != "" {
 		lines = append(lines, pad+labelStyle().Width(5).Render("temp")+temps)
 	}
-	if m.workspace.net.rates {
+	if m.workspace.net.Rates {
 		lines = append(lines, pad+labelStyle().Width(5).Render("net")+
-			valueStyle().Render("↓ "+humanBytes(m.workspace.net.down)+"/s")+
-			subtleStyle().Render("  ↑ "+humanBytes(m.workspace.net.up)+"/s"))
+			valueStyle().Render("↓ "+humanBytes(m.workspace.net.Down)+"/s")+
+			subtleStyle().Render("  ↑ "+humanBytes(m.workspace.net.Up)+"/s"))
 	}
 	return append(lines, "")
 }
 
-func tempReadings(snap sysstat.Snapshot) string {
-	var parts []string
-	if snap.CPUTempOK {
-		parts = append(parts, valueStyle().Render(fmt.Sprintf("cpu %.0f°C", snap.CPUTemp)))
+func tempReadings(snap uiworkspace.Readings) string {
+	styled := make([]string, 0, 3)
+	for _, reading := range uiworkspace.Temperatures(snap) {
+		styled = append(styled, valueStyle().Render(reading))
 	}
-	if snap.GPUTempOK {
-		parts = append(parts, valueStyle().Render(fmt.Sprintf("gpu %.0f°C", snap.GPUTemp)))
-	}
-	if snap.SoCTempOK {
-		parts = append(parts, valueStyle().Render(fmt.Sprintf("soc %.0f°C", snap.SoCTemp)))
-	}
-	return strings.Join(parts, subtleStyle().Render("  "))
+	return strings.Join(styled, subtleStyle().Render("  "))
 }
 
 func (m *Model) railFootLines(width int) []string {
@@ -108,7 +113,7 @@ func (m *Model) fullFootLine(width int) []string {
 		}
 		return labelStyle().Render(label+" ") + valueStyle().Render(value)
 	}
-	snap := m.workspace.snap
+	snap := snapReadings(m.workspace.snap)
 	parts := []string{
 		reading("cpu", fmt.Sprintf("%.0f%%", snap.CPUPercent), snap.CPUOK),
 		reading("mem", fmt.Sprintf("%.0f%% %s/%s", snap.MemPercent, humanBytes(snap.MemUsed), humanBytes(snap.MemTotal)), snap.MemOK),
@@ -127,8 +132,8 @@ func (m *Model) fullFootLine(width int) []string {
 	if temps := tempReadings(snap); temps != "" {
 		parts = append(parts, labelStyle().Render("temp ")+temps)
 	}
-	if m.workspace.net.rates {
-		parts = append(parts, reading("net", "↓ "+humanBytes(m.workspace.net.down)+"/s ↑ "+humanBytes(m.workspace.net.up)+"/s", true))
+	if m.workspace.net.Rates {
+		parts = append(parts, reading("net", "↓ "+humanBytes(m.workspace.net.Down)+"/s ↑ "+humanBytes(m.workspace.net.Up)+"/s", true))
 	}
 	line := strings.Repeat(" ", railInset) + strings.Join(parts, "  ")
 	return []string{ansi.Truncate(line, max(width-railInset, 0), "…")}

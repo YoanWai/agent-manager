@@ -2,6 +2,7 @@ package ui
 
 import (
 	"github.com/YoanWai/agent-manager/internal/sysstat"
+	uiworkspace "github.com/YoanWai/agent-manager/internal/ui/workspace"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"strings"
@@ -122,7 +123,7 @@ func TestGaugeInvertFlipsTheColorRamp(t *testing.T) {
 func TestTemperatureReadingsEachKeepTheirColor(t *testing.T) {
 	forceANSI256(t)
 
-	row := tempReadings(sysstat.Snapshot{CPUTempOK: true, CPUTemp: 61, GPUTempOK: true, GPUTemp: 55})
+	row := tempReadings(uiworkspace.Readings{CPUTempOK: true, CPUTemp: 61, GPUTempOK: true, GPUTemp: 55})
 	want := sgrOf(valueStyle().Render("x"))
 	for _, reading := range []string{"cpu 61°C", "gpu 55°C"} {
 		before, _, found := strings.Cut(row, reading)

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -76,7 +77,7 @@ func TestEditorDirectoryCommandResolvesExecutableOffUpdate(t *testing.T) {
 		t.Fatal("directory command returned before resolving the editor executable")
 	}
 	prepared, ok := msg.(terminalDirectoryMsg)
-	if !ok || prepared.editor.command == nil {
+	if !ok || prepared.editor.Command == nil {
 		t.Fatalf("directory command did not prepare the editor process: %#v", msg)
 	}
 	lookPath = func(string) (string, error) {
@@ -170,37 +171,6 @@ func TestOpenEditorPrefersConfiguredCommand(t *testing.T) {
 	}
 }
 
-// The line is argv, not a script: a repo that sets EDITOR in an .envrc gets
-// no shell to write into, so the operators stay literal text.
-func TestEditorLineIsNeverHandedToAShell(t *testing.T) {
-	cmd, ok := editorCommand(`code; touch /tmp/pwned`, "/repo")
-	if !ok {
-		t.Fatal("editorCommand refused a usable line")
-	}
-	want := []string{"code;", "touch", "/tmp/pwned", "/repo"}
-	if !slices.Equal(cmd.Args, want) {
-		t.Fatalf("argv = %v, want %v", cmd.Args, want)
-	}
-}
-
-func TestSplitEditorLineGroupsOnQuotes(t *testing.T) {
-	for _, tc := range []struct {
-		line string
-		want []string
-	}{
-		{"code", []string{"code"}},
-		{"code -n", []string{"code", "-n"}},
-		{`open -a "Visual Studio Code"`, []string{"open", "-a", "Visual Studio Code"}},
-		{`'/Applications/My App/bin/edit' -w`, []string{"/Applications/My App/bin/edit", "-w"}},
-		{"   ", nil},
-		{"", nil},
-	} {
-		if got := splitEditorLine(tc.line); !slices.Equal(got, tc.want) {
-			t.Errorf("splitEditorLine(%q) = %v, want %v", tc.line, got, tc.want)
-		}
-	}
-}
-
 // A dead pane no longer answers for its directory, so the recorded one
 // is what opens.
 func TestOpenEditorFallsBackToRecordedCwd(t *testing.T) {
@@ -267,7 +237,7 @@ func TestReviewFileCommandResolvesExecutableOffUpdate(t *testing.T) {
 		t.Fatal("file command returned before resolving the editor executable")
 	}
 	prepared, ok := msg.(editorFileCheckedMsg)
-	if !ok || prepared.editor.command == nil {
+	if !ok || prepared.editor.Command == nil {
 		t.Fatalf("file command did not prepare the editor process: %#v", msg)
 	}
 	lookPath = func(string) (string, error) {
@@ -410,7 +380,7 @@ func TestResolveEditorPrecedence(t *testing.T) {
 			for key, value := range tc.env {
 				t.Setenv(key, value)
 			}
-			if got := m.captureEditorResolution().resolve(); got != tc.want {
+			if got := m.captureEditorResolution().Resolve(); got != tc.want {
 				t.Fatalf("editor resolution = %q, want %q", got, tc.want)
 			}
 		})
@@ -425,10 +395,10 @@ func TestResolveEditorFallsBackToEnvironment(t *testing.T) {
 	captureEditor(t)
 	t.Setenv("EDITOR", "nvim")
 
-	if got := m.captureEditorResolution().resolve(); got != "nvim" {
+	if got := m.captureEditorResolution().Resolve(); got != "nvim" {
 		t.Fatalf("editor resolution = %q, want nvim", got)
 	}
-	if detachedEditors[editorName("nvim")] {
+	if uisession.Detached(uisession.Name("nvim")) {
 		t.Fatal("nvim draws in this terminal and must not start detached")
 	}
 }
@@ -811,11 +781,8 @@ func TestReviewDoesNotOpenTheFileTheCursorLeft(t *testing.T) {
 	}
 }
 
-// The launch and return policy is decided on captured values, with no model.
-func TestEditorLaunchAndReturnPolicy(t *testing.T) {
-	if (editorLaunch{name: "code"}).takesScreen() || !(editorLaunch{name: "vim"}).takesScreen() {
-		t.Fatal("a windowed editor took the screen, or a terminal one did not")
-	}
+// The return policy is decided on captured values, with no model.
+func TestEditorReturnPolicy(t *testing.T) {
 	focus := screenID{focused: true, depth: 1}
 	target := editorReturnTarget{sessionID: "s1", foregroundGen: 4, screen: focus}
 	cases := []struct {

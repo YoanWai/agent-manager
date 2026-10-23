@@ -6,17 +6,12 @@ import (
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
 	tea "github.com/charmbracelet/bubbletea"
 	"strings"
 )
 
-// shellPromptHint refuses to write into a shell. SendText pastes and then
-// presses Enter, so a sentence meant for an agent would run as a command
-// on the user's machine. Entering the session is how text reaches a shell,
-// where what is typed is plainly a command.
-func shellPromptHint(name string) string {
-	return name + " is a shell, not an agent - enter it to type there"
-}
+func shellPromptHint(name string) string { return uisession.ShellPromptHint(name) }
 
 func (m *Model) attachSelected() (tea.Model, tea.Cmd) {
 	sess, ok := m.selected()
