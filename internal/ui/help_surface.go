@@ -23,6 +23,9 @@ type helpSurface struct {
 type helpHost interface {
 	helpContext(width int) uihelp.Context
 	statusShown() bool
+	// takeForeground marks a key as the user moving on, as every key the
+	// root routes does, which fences a completion started before it.
+	takeForeground()
 }
 
 type helpLayout struct {
@@ -58,14 +61,19 @@ func (s *helpSurface) layout(h surfaceHost) helpLayout {
 }
 
 func (s *helpSurface) Key(h surfaceHost, msg tea.KeyMsg) (bool, tea.Cmd) {
+	s.root.takeForeground()
+	return true, s.step(h, msg)
+}
+
+func (s *helpSurface) step(h surfaceHost, msg tea.KeyMsg) tea.Cmd {
 	layout := s.layout(h)
 	switch s.state.Update(msg, uihelp.Viewport{Rows: layout.rows, Lines: len(layout.content.Lines)}) {
 	case uihelp.OpenDocs:
-		return true, openLink(docsURL)
+		return openLink(docsURL)
 	case uihelp.Close:
 		h.pop()
 	}
-	return true, nil
+	return nil
 }
 
 func (s *helpSurface) Click(_ surfaceHost, line int) tea.Cmd {
@@ -74,8 +82,7 @@ func (s *helpSurface) Click(_ surfaceHost, line int) tea.Cmd {
 }
 
 func (s *helpSurface) Wheel(h surfaceHost, arrow tea.KeyMsg) tea.Cmd {
-	_, cmd := s.Key(h, arrow)
-	return cmd
+	return s.step(h, arrow)
 }
 
 func (s *helpSurface) View(h surfaceHost, _ string) string {

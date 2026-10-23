@@ -162,7 +162,7 @@ func TestUpdateNoticeSummarizesEverySkippedRelease(t *testing.T) {
 	})
 	m.openNotices("update-v0.6.0")
 
-	n := m.activeNotices()[m.notices.Cursor()]
+	n := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()]
 	if n.Title != "4 releases available · v0.6.0" {
 		t.Fatalf("title = %q", n.Title)
 	}
@@ -417,7 +417,7 @@ func modalModel(t *testing.T) *Model {
 	t.Helper()
 	m := footModel(t)
 	m.layout.width, m.layout.height = 100, 34
-	m.mode = modeNotices
+	m.openNotices("")
 	return m
 }
 
@@ -426,7 +426,7 @@ func TestOpenNoticesFromList(t *testing.T) {
 	m.layout.width, m.layout.height = 100, 34
 	m.mode = modeList
 	m.handleKey(key("M"))
-	if m.mode != modeNotices {
+	if !m.noticesOpen() {
 		t.Fatalf("M should open the notices modal, mode=%v", m.mode)
 	}
 }
@@ -536,22 +536,22 @@ func TestNoticesBodyScrollIsBoundedAndVisible(t *testing.T) {
 	if !strings.Contains(before, "┃") {
 		t.Fatalf("a clipped body shows its scrollbar:\n%s", before)
 	}
-	m.handleNoticesKey(key("pgdown"))
-	if m.notices.Offset() == 0 {
+	m.handleKey(key("pgdown"))
+	if noticesSurfaceOf(m).panel.Offset() == 0 {
 		t.Fatalf("page down did not move the summary:\n%s", ansi.Strip(preparedView(m)))
 	}
-	limit := m.notices.ScrollLimit(m.activeNotices(), m.noticesFrame())
+	limit := noticesSurfaceOf(m).panel.ScrollLimit(m.activeNotices(), m.noticesFrame())
 	for i := 0; i < 20; i++ {
-		m.handleNoticesKey(key("pgdown"))
+		m.handleKey(key("pgdown"))
 	}
-	if m.notices.Offset() != limit {
-		t.Fatalf("scroll offset = %d, want bounded limit %d", m.notices.Offset(), limit)
+	if noticesSurfaceOf(m).panel.Offset() != limit {
+		t.Fatalf("scroll offset = %d, want bounded limit %d", noticesSurfaceOf(m).panel.Offset(), limit)
 	}
 }
 
 func TestNoticesManualRefreshWaitsForBothSources(t *testing.T) {
 	m := modalModel(t)
-	_, cmd := m.handleNoticesKey(key("r"))
+	_, cmd := m.handleKey(key("r"))
 	if cmd == nil || !m.update.refreshing || m.update.refreshPending != 2 {
 		t.Fatalf("refresh did not start both sources: refreshing=%v pending=%d", m.update.refreshing, m.update.refreshPending)
 	}
@@ -569,7 +569,7 @@ func TestNoticesDismissAdvancesAndCloses(t *testing.T) {
 	m := modalModel(t)
 	total := len(m.activeNotices())
 	for i := 0; i < total; i++ {
-		m.handleNoticesKey(key("x"))
+		m.handleKey(key("x"))
 	}
 	if m.mode != modeList {
 		t.Fatal("dismissing the last notice should close the modal")
@@ -588,11 +588,11 @@ func TestNoticesEnterOpensURL(t *testing.T) {
 	}
 	t.Cleanup(func() { openBrowser = defaultOpenBrowser })
 
-	want := m.activeNotices()[m.notices.Cursor()].URL
+	want := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].URL
 	if want == "" {
 		t.Fatal("selected notice needs a url for this test")
 	}
-	_, cmd := m.handleNoticesKey(key("enter"))
+	_, cmd := m.handleKey(key("enter"))
 	if opened != "" {
 		t.Fatal("browser started during Update")
 	}
@@ -604,7 +604,7 @@ func TestNoticesEnterOpensURL(t *testing.T) {
 
 func TestNoticesEscCloses(t *testing.T) {
 	m := modalModel(t)
-	m.handleNoticesKey(key("esc"))
+	m.handleKey(key("esc"))
 	if m.mode != modeList {
 		t.Fatal("esc should close the modal")
 	}
@@ -617,7 +617,7 @@ func TestDevBuildNeverGreets(t *testing.T) {
 	st := noticeStore(t)
 	m := noticeModel(st, "dev")
 	m.openStartupNotice()
-	if m.mode == modeNotices {
+	if m.noticesOpen() {
 		t.Fatal("a dev build must not open the startup modal")
 	}
 	if seen, _ := st.Setting(lastSeenVersionSetting); seen != "" {
@@ -629,27 +629,27 @@ func TestStartupOpensNoticesModalOncePerVersion(t *testing.T) {
 	st := noticeStore(t)
 	m := noticeModel(st, "v0.2.0")
 	m.openStartupNotice()
-	if m.mode != modeNotices {
+	if !m.noticesOpen() {
 		t.Fatalf("first launch should open the notices modal, mode=%v", m.mode)
 	}
-	if selected := m.activeNotices()[m.notices.Cursor()]; selected.ID != uinotices.Welcome {
+	if selected := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()]; selected.ID != uinotices.Welcome {
 		t.Fatalf("welcome should be selected, got %q", selected.ID)
 	}
 
 	again := noticeModel(st, "v0.2.0")
 	again.openStartupNotice()
-	if again.mode == modeNotices {
+	if again.noticesOpen() {
 		t.Fatal("a later launch of the same version must not reopen the modal")
 	}
 }
 
 func TestLateReleaseKeepsModalSelection(t *testing.T) {
 	m := modalModel(t)
-	m.handleNoticesKey(key("down"))
-	selected := m.activeNotices()[m.notices.Cursor()].ID
+	m.handleKey(key("down"))
+	selected := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID
 
 	m.Update(updateMsg{latest: "v9.9.9", url: "https://example.com"})
-	if got := m.activeNotices()[m.notices.Cursor()].ID; got != selected {
+	if got := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID; got != selected {
 		t.Fatalf("selection moved from %q to %q when the release arrived", selected, got)
 	}
 }
@@ -657,24 +657,24 @@ func TestLateReleaseKeepsModalSelection(t *testing.T) {
 func TestLateDismissedReleaseKeepsModalSelection(t *testing.T) {
 	m := modalModel(t)
 	persistNoticeDismissal(t, m, "update-v9.9.9")
-	selected := m.activeNotices()[m.notices.Cursor()].ID
+	selected := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID
 
 	m.Update(updateMsg{latest: "v9.9.9", url: "https://example.com"})
-	if got := m.activeNotices()[m.notices.Cursor()].ID; got != selected {
+	if got := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID; got != selected {
 		t.Fatalf("a dismissed release must not move the selection, went from %q to %q", selected, got)
 	}
 }
 
 func TestLateFeedKeepsModalSelection(t *testing.T) {
 	m := modalModel(t)
-	m.handleNoticesKey(key("down"))
-	selected := m.activeNotices()[m.notices.Cursor()].ID
+	m.handleKey(key("down"))
+	selected := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID
 
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-late", Banner: "late", Title: "Late"}}})
 	if !contains(noticeIDs(m.activeNotices()), "feed-late") {
 		t.Fatal("feed message should have landed")
 	}
-	if got := m.activeNotices()[m.notices.Cursor()].ID; got != selected {
+	if got := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID; got != selected {
 		t.Fatalf("selection moved from %q to %q when the feed arrived", selected, got)
 	}
 }
@@ -685,10 +685,10 @@ func TestNewFeedOpensNoticesModal(t *testing.T) {
 		m.mode = modeList
 		m.prefs.hideStats = hidden
 		m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
-		if m.mode != modeNotices {
+		if !m.noticesOpen() {
 			t.Fatalf("hidden=%v: a new feed message should open the modal, mode=%v", hidden, m.mode)
 		}
-		if got := m.activeNotices()[m.notices.Cursor()].ID; got != "feed-new" {
+		if got := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID; got != "feed-new" {
 			t.Fatalf("new message should be selected, got %q", got)
 		}
 	}
@@ -698,7 +698,7 @@ func TestSameFeedDoesNotReopenNoticesModal(t *testing.T) {
 	m := footModel(t)
 	m.mode = modeList
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
-	m.handleNoticesKey(key("esc"))
+	m.handleKey(key("esc"))
 	if m.mode != modeList {
 		t.Fatal("esc should close the modal")
 	}
@@ -755,10 +755,10 @@ func TestAdditionalFeedIdOpensNoticesModal(t *testing.T) {
 		{ID: "feed-old", Banner: "old", Title: "Old"},
 		{ID: "feed-new", Banner: "new", Title: "Just in"},
 	}})
-	if m.mode != modeNotices {
+	if !m.noticesOpen() {
 		t.Fatalf("a new id should open the modal, mode=%v", m.mode)
 	}
-	if got := m.activeNotices()[m.notices.Cursor()].ID; got != "feed-new" {
+	if got := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID; got != "feed-new" {
 		t.Fatalf("new message should be selected, got %q", got)
 	}
 }
@@ -772,10 +772,10 @@ func TestFeedDuringFocusOpensOnLeave(t *testing.T) {
 	}
 
 	m.leaveFocus()
-	if m.mode != modeNotices {
+	if !m.noticesOpen() {
 		t.Fatalf("returning to the list should open the new message, mode=%v", m.mode)
 	}
-	if got := m.activeNotices()[m.notices.Cursor()].ID; got != "feed-new" {
+	if got := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID; got != "feed-new" {
 		t.Fatalf("new message should be selected, got %q", got)
 	}
 }
@@ -791,10 +791,10 @@ func TestFeedDuringSettingsOpensOnClose(t *testing.T) {
 
 	m.mode = modeList
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 34})
-	if m.mode != modeNotices {
+	if !m.noticesOpen() {
 		t.Fatalf("closing settings should open the new message, mode=%v", m.mode)
 	}
-	if got := m.activeNotices()[m.notices.Cursor()].ID; got != "feed-new" {
+	if got := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID; got != "feed-new" {
 		t.Fatalf("new message should be selected, got %q", got)
 	}
 }
@@ -822,10 +822,10 @@ func TestNewFeedWaitsForSearchToClose(t *testing.T) {
 
 	m.rail.SetSearch(m.rail.Search(), false)
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 34})
-	if m.mode != modeNotices {
+	if !m.noticesOpen() {
 		t.Fatalf("closing search should open the new message, mode=%v", m.mode)
 	}
-	if got := m.activeNotices()[m.notices.Cursor()].ID; got != "feed-new" {
+	if got := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID; got != "feed-new" {
 		t.Fatalf("new message should be selected, got %q", got)
 	}
 }
@@ -843,10 +843,10 @@ func TestNewFeedWaitsForQuickBar(t *testing.T) {
 
 	m.quick.active = false
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 34})
-	if m.mode != modeNotices {
+	if !m.noticesOpen() {
 		t.Fatalf("closing the quick bar should open the new message, mode=%v", m.mode)
 	}
-	if got := m.activeNotices()[m.notices.Cursor()].ID; got != "feed-new" {
+	if got := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID; got != "feed-new" {
 		t.Fatalf("new message should be selected, got %q", got)
 	}
 }
@@ -863,10 +863,10 @@ func TestNewFeedWaitsForResize(t *testing.T) {
 
 	m.layout.split.resizeMode = false
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 34})
-	if m.mode != modeNotices {
+	if !m.noticesOpen() {
 		t.Fatalf("leaving resize should open the new message, mode=%v", m.mode)
 	}
-	if got := m.activeNotices()[m.notices.Cursor()].ID; got != "feed-new" {
+	if got := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID; got != "feed-new" {
 		t.Fatalf("new message should be selected, got %q", got)
 	}
 }
@@ -876,10 +876,10 @@ func TestNewUpdateOpensNoticesModal(t *testing.T) {
 	m.mode = modeList
 
 	m.Update(updateMsg{latest: "v0.3.0", url: "https://example.com"})
-	if m.mode != modeNotices {
+	if !m.noticesOpen() {
 		t.Fatalf("a new update notice should open the modal, mode=%v", m.mode)
 	}
-	if got := m.activeNotices()[m.notices.Cursor()].ID; got != "update-v0.3.0" {
+	if got := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID; got != "update-v0.3.0" {
 		t.Fatalf("update notice should be selected, got %q", got)
 	}
 }
@@ -905,10 +905,10 @@ func TestNewerReleaseOpensNoticesModal(t *testing.T) {
 	m.indexReleaseRanges()
 
 	m.Update(updateMsg{latest: "v0.4.0", url: "https://example.com"})
-	if m.mode != modeNotices {
+	if !m.noticesOpen() {
 		t.Fatalf("a newer tag should open the modal, mode=%v", m.mode)
 	}
-	if got := m.activeNotices()[m.notices.Cursor()].ID; got != "update-v0.4.0" {
+	if got := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID; got != "update-v0.4.0" {
 		t.Fatalf("new release should be selected, got %q", got)
 	}
 }
@@ -917,15 +917,15 @@ func TestFeedArrivingDuringWelcomeStaysOnWelcome(t *testing.T) {
 	m := footModel(t)
 	m.layout.width, m.layout.height = 100, 34
 	m.openStartupNotice()
-	if m.mode != modeNotices {
+	if !m.noticesOpen() {
 		t.Fatal("first launch should open welcome")
 	}
 
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
-	if m.mode != modeNotices {
+	if !m.noticesOpen() {
 		t.Fatalf("mode=%v, want notices", m.mode)
 	}
-	if got := m.activeNotices()[m.notices.Cursor()].ID; got != uinotices.Welcome {
+	if got := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID; got != uinotices.Welcome {
 		t.Fatalf("welcome should stay selected, got %q", got)
 	}
 	if !contains(noticeIDs(m.activeNotices()), "feed-new") {
@@ -971,8 +971,8 @@ func TestUpdateNoticeAppliesOnU(t *testing.T) {
 	m := noticeModel(noticeStore(t), "v0.2.0")
 	m.update.latest = "v0.3.0"
 	m.openNotices("update-v0.3.0")
-	if m.mode != modeNotices || m.notices.Cursor() != 0 {
-		t.Fatalf("update notice should open selected, mode=%v cursor=%d", m.mode, m.notices.Cursor())
+	if !m.noticesOpen() || noticesSurfaceOf(m).panel.Cursor() != 0 {
+		t.Fatalf("update notice should open selected, mode=%v cursor=%d", m.mode, noticesSurfaceOf(m).panel.Cursor())
 	}
 
 	applied := ""
@@ -995,7 +995,7 @@ func TestUpdateNoticeAppliesOnU(t *testing.T) {
 		return nil
 	}
 
-	_, cmd := m.handleNoticesKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	_, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
 	if cmd == nil {
 		t.Fatal("u on the update notice should start the update")
 	}
@@ -1044,7 +1044,7 @@ func TestUpdateNoticeApplyFailureSurfaces(t *testing.T) {
 	applyUpdate = func(_ context.Context, _, _ string) error {
 		return errors.New("permission denied")
 	}
-	_, cmd := m.handleNoticesKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	_, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
 	updated, _ := m.Update(cmd().(updateAppliedMsg))
 	m = updated.(*Model)
 	if m.update.applying {
@@ -1076,7 +1076,7 @@ func TestUpdateRefreshFailureDoesNotInstallCachedTag(t *testing.T) {
 		return nil
 	}
 
-	_, cmd := m.handleNoticesKey(key("u"))
+	_, cmd := m.handleKey(key("u"))
 	updated, _ := m.Update(cmd().(updateAppliedMsg))
 	m = updated.(*Model)
 	if called || m.RestartPath() != "" {
@@ -1105,7 +1105,7 @@ func TestUpdateActionClearsStaleNoticeWhenAlreadyCurrent(t *testing.T) {
 		return nil
 	}
 
-	_, cmd := m.handleNoticesKey(key("u"))
+	_, cmd := m.handleKey(key("u"))
 	updated, quit := m.Update(cmd().(updateAppliedMsg))
 	m = updated.(*Model)
 	if called || quit != nil || m.update.latest != "" || m.RestartPath() != "" {
@@ -1119,7 +1119,7 @@ func TestUpdateActionClearsStaleNoticeWhenAlreadyCurrent(t *testing.T) {
 func TestUOutsideUpdateNoticeDoesNothing(t *testing.T) {
 	m := noticeModel(noticeStore(t), "v0.2.0")
 	m.openNotices(uinotices.Welcome)
-	_, cmd := m.handleNoticesKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	_, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
 	if cmd != nil || m.update.applying {
 		t.Fatal("u on a plain notice must not start an update")
 	}
@@ -1164,7 +1164,7 @@ func TestUpdateDelegatesToPackageManager(t *testing.T) {
 		return update.Manager{Name: "Homebrew", Command: []string{"brew", "upgrade", "--cask", "yoanwai/tap/agent-manager"}}
 	}
 
-	_, cmd := m.handleNoticesKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	_, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
 	if cmd == nil {
 		t.Fatal("u on a package-manager install should start the delegated upgrade")
 	}
@@ -1208,7 +1208,7 @@ func TestUpdateWithoutRunnableManagerSurfacesAdvice(t *testing.T) {
 		return update.Manager{Name: "pacman", Advice: advice}
 	}
 
-	_, cmd := m.handleNoticesKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	_, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
 	if cmd == nil {
 		t.Fatal("u should still answer with the advice")
 	}
@@ -1249,7 +1249,7 @@ func TestEmptyNoticesPanelStillOpensAndOffersRefresh(t *testing.T) {
 	}
 
 	m.handleKey(key("M"))
-	if m.mode != modeNotices {
+	if !m.noticesOpen() {
 		t.Fatalf("M should open an empty panel, mode=%v", m.mode)
 	}
 	frame := ansi.Strip(preparedView(m))
@@ -1259,7 +1259,7 @@ func TestEmptyNoticesPanelStillOpensAndOffersRefresh(t *testing.T) {
 		}
 	}
 
-	if _, cmd := m.handleNoticesKey(key("r")); cmd == nil || !m.update.refreshing {
+	if _, cmd := m.handleKey(key("r")); cmd == nil || !m.update.refreshing {
 		t.Fatalf("r unreachable on an empty panel: refreshing=%v", m.update.refreshing)
 	}
 	if !strings.Contains(ansi.Strip(preparedView(m)), "refreshing releases and messages") {

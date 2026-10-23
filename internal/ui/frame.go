@@ -60,8 +60,6 @@ func (m *Model) renderFrame() string {
 		frame = m.viewConnectionDialog()
 	case modeDiff:
 		frame = m.viewDiffFull()
-	case modeNotices:
-		frame = m.viewNoticesCard()
 	default:
 		frame = m.overlayRowMenu(m.titleTopRowWithUpdate(m.viewListFrame()))
 	}

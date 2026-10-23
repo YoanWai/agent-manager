@@ -1518,7 +1518,7 @@ func TestClickOnMessagesCardOpensNotices(t *testing.T) {
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 120, 34
 	x, y := messagesCell(t, m)
-	if m = leftClick(m, x, y); m.mode != modeNotices {
+	if m = leftClick(m, x, y); !m.noticesOpen() {
 		t.Fatalf("click on the card should open messages, mode = %v", m.mode)
 	}
 }
@@ -1536,19 +1536,19 @@ func TestMessagesLegendOpensNoticesByMouseAndKey(t *testing.T) {
 				if _, ok := m.layout.keyHits.at(x, y); !ok {
 					t.Fatalf("full=%v width=%d binding=%s: painted messages entry misses its hit box %+v", full, width, binding, m.layout.keyHits)
 				}
-				if m = leftClick(m, x, y); m.mode != modeNotices {
+				if m = leftClick(m, x, y); !m.noticesOpen() {
 					t.Fatalf("click on messages should open notices, mode=%v", m.mode)
 				}
-				m.handleNoticesKey(key("esc"))
+				m.handleKey(key("esc"))
 				msg := key(binding)
 				if binding == "alt+m" {
 					msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}, Alt: true}
 				}
 				m.handleKey(msg)
-				if m.mode != modeNotices {
+				if !m.noticesOpen() {
 					t.Fatalf("%s should open notices, mode=%v", binding, m.mode)
 				}
-				m.handleNoticesKey(key("esc"))
+				m.handleKey(key("esc"))
 				for _, n := range m.activeNotices() {
 					m.dismissNotice(n.ID)
 				}
@@ -1560,7 +1560,7 @@ func TestMessagesLegendOpensNoticesByMouseAndKey(t *testing.T) {
 					t.Fatalf("a click where the entry was must not open Messages, mode=%v", m.mode)
 				}
 				m.handleKey(msg)
-				if m.mode != modeNotices {
+				if !m.noticesOpen() {
 					t.Fatalf("%s should still open an empty Messages, mode=%v", binding, m.mode)
 				}
 			}
@@ -1590,7 +1590,7 @@ func TestMessagesLegendClickOnlyOpensFromTheList(t *testing.T) {
 				t.Fatalf("test setup: %s did not take, mode = %v err = %q", change.name, m.mode, m.errBar.text)
 			}
 			preparedView(m)
-			if m = leftClick(m, x, y); m.mode == modeNotices {
+			if m = leftClick(m, x, y); m.noticesOpen() {
 				t.Fatal("a click where messages was painted opened notices")
 			}
 		})
@@ -1613,7 +1613,7 @@ func TestClickOnFullScreenBadgeOpensNotices(t *testing.T) {
 	m.layout.width, m.layout.height = 120, 34
 	m.prefs.fullLayout = true
 	x, y := messagesCell(t, m)
-	if m = leftClick(m, x, y); m.mode != modeNotices {
+	if m = leftClick(m, x, y); !m.noticesOpen() {
 		t.Fatalf("click on the badge should open messages, mode = %v", m.mode)
 	}
 	m.mode = modeList
@@ -1647,7 +1647,7 @@ func TestClickOnMessagesCardWhileFocusedIsLeftToFocus(t *testing.T) {
 		t.Fatalf("test setup: focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 	preparedView(m)
-	if m = leftClick(m, x, y); m.mode == modeNotices {
+	if m = leftClick(m, x, y); m.noticesOpen() {
 		t.Fatal("a click while focused must not open messages")
 	}
 }

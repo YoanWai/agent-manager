@@ -7,6 +7,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/feed"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/YoanWai/agent-manager/internal/update"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -242,10 +243,14 @@ func loadDismissed(st *store.Store) map[string]bool {
 	return dismissed
 }
 
-// openNotices shows the panel on the notice with id, or on the first.
+// openNotices shows the panel on the notice with id, or on the first. An
+// open panel moves to it instead of stacking a second.
 func (m *Model) openNotices(id string) {
-	m.notices.Open(m.activeNotices(), id)
-	m.mode = modeNotices
+	if s, ok := surfaceOf[*noticesSurface](m); ok {
+		s.panel.Open(m.activeNotices(), id)
+		return
+	}
+	m.push(newNoticesSurface(m, m.notices.Panel, id))
 }
 
 // openStartupNotice greets the launch when there is something to say:
@@ -261,16 +266,22 @@ func (m *Model) openStartupNotice() {
 	}
 }
 
+func (m *Model) noticesOpen() bool {
+	_, open := surfaceOf[*noticesSurface](m)
+	return open
+}
+
 // keepNoticeSelection applies a change that may add or remove notices and,
 // while the panel is open, keeps the cursor on the notice it was on.
 func (m *Model) keepNoticeSelection(apply func()) {
-	if m.mode != modeNotices {
+	s, ok := surfaceOf[*noticesSurface](m)
+	if !ok {
 		apply()
 		return
 	}
-	selected := m.notices.Selected(m.activeNotices())
+	selected := s.panel.Selected(m.activeNotices())
 	apply()
-	m.notices.Reselect(m.activeNotices(), selected)
+	s.panel.Reselect(m.activeNotices(), selected)
 }
 
 func (m *Model) applyNotices(apply func()) {
@@ -289,7 +300,7 @@ func (m *Model) applyNotices(apply func()) {
 	if added == "" {
 		return
 	}
-	if m.mode == modeNotices {
+	if _, open := surfaceOf[*noticesSurface](m); open {
 		return
 	}
 	if m.listReadyForNotice() {
@@ -300,7 +311,7 @@ func (m *Model) applyNotices(apply func()) {
 }
 
 func (m *Model) listReadyForNotice() bool {
-	return !m.effects.quitting && m.mode == modeList && !m.rail.Searching() && !m.quick.active && !m.layout.split.resizeMode &&
+	return !m.effects.quitting && len(m.surfaces) == 0 && m.mode == modeList && !m.rail.Searching() && !m.quick.active && !m.layout.split.resizeMode &&
 		!m.rail.Reordering() && !m.rail.MenuOpen()
 }
 
@@ -318,48 +329,18 @@ func (m *Model) flushPendingNotice() {
 	}
 }
 
-func (m *Model) handleNoticesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	return m.applyNoticesOutcome(m.notices.Key(msg, m.activeNotices(), m.noticesFrame()))
-}
-
-func (m *Model) handleNoticesClick(line int) (tea.Model, tea.Cmd) {
-	return m.applyNoticesOutcome(m.notices.Click(line, m.activeNotices(), m.noticesFrame()))
-}
-
-func (m *Model) applyNoticesOutcome(out uinotices.Outcome) (tea.Model, tea.Cmd) {
-	switch out.Action {
-	case uinotices.Refresh:
-		return m, m.refreshNotices()
-	case uinotices.StartUpdate:
-		return m, m.startUpdate()
-	case uinotices.OpenLink:
-		return m, openLink(out.URL)
-	case uinotices.Dismiss:
-		m.dismissNotice(out.ID)
-		if out.Close {
-			m.mode = modeList
-		}
-	case uinotices.Close:
-		m.mode = modeList
-	}
-	return m, nil
-}
-
-func (m *Model) viewNotices() []string {
-	return m.notices.View(m.activeNotices(), m.noticesFrame())
-}
-
-// viewNoticesCard floats the panel on the backdrop and records its body,
+// paintNoticesCard floats the panel on the backdrop and records its body,
 // the rows between the edges and a column in from each, and the keys its
 // bottom edge names.
-func (m *Model) viewNoticesCard() string {
-	card := m.viewNotices()
+func (m *Model) paintNoticesCard(card []string, foot []presentation.PaintedKey) string {
 	frame := m.centerOnBackdrop(card)
 	rect := &m.layout.card
 	rect.bodyTop, rect.bodyLeft, rect.bodyWidth = rect.top+1, rect.left+2, rect.right-rect.left-4
-	m.placePainted(m.notices.Foot(m.activeNotices(), m.noticesFrame()), rect.left, rect.bottom-1)
+	m.placePainted(foot, rect.left, rect.bottom-1)
 	return frame
 }
+
+func (m *Model) takeForeground() { m.gens.foreground++ }
 
 func (m *Model) dismissNotice(id string) {
 	if id == "" || m.services.store == nil || m.noticeDismissQueued(id) || m.notices.Dismissed(id) {
@@ -369,7 +350,7 @@ func (m *Model) dismissNotice(id string) {
 	m.enqueueEffect(noticeDismissRequest{
 		id:            id,
 		foregroundGen: m.gens.foreground,
-		modal:         m.mode == modeNotices,
+		modal:         m.noticesOpen(),
 	}, 0, false)
 }
 

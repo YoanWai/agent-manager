@@ -51,7 +51,7 @@ func TestNoticeMarksAreResolvedWithoutChangingExternalContent(t *testing.T) {
 			}
 		}
 		m.notices.Open(notices, "update-v1.1.0")
-		got = ansi.Strip(strings.Join(m.viewNotices(), "\n"))
+		got = ansi.Strip(strings.Join(m.notices.View(m.activeNotices(), m.noticesFrame()), "\n"))
 		if !strings.Contains(got, tc.cursor+" "+tc.update) {
 			t.Fatalf("%s notice cursor = %s", tc.mode, got)
 		}

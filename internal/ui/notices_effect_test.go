@@ -31,7 +31,7 @@ func TestDismissNoticeFailureRestoresNotice(t *testing.T) {
 	m := noticeModel(st, "v0.2.0")
 	m.openNotices(uinotices.Welcome)
 
-	_, _ = m.handleNoticesKey(key("x"))
+	_, _ = m.handleKey(key("x"))
 	if contains(noticeIDs(m.activeNotices()), uinotices.Welcome) {
 		t.Fatal("accepted dismissal stayed visible while its write was pending")
 	}
@@ -44,8 +44,8 @@ func TestDismissNoticeFailureRestoresNotice(t *testing.T) {
 	if !contains(noticeIDs(m.activeNotices()), uinotices.Welcome) {
 		t.Fatal("failed persistence did not restore the notice")
 	}
-	if m.mode != modeNotices || m.activeNotices()[m.notices.Cursor()].ID != uinotices.Welcome {
-		t.Fatalf("failed dismissal did not restore its modal selection: mode=%v cursor=%d", m.mode, m.notices.Cursor())
+	if !m.noticesOpen() || m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID != uinotices.Welcome {
+		t.Fatalf("failed dismissal did not restore its modal selection: mode=%v cursor=%d", m.mode, noticesSurfaceOf(m).panel.Cursor())
 	}
 	if !strings.Contains(m.errBar.text, "decode setting") {
 		t.Fatalf("failure reason = %q", m.errBar.text)
@@ -59,7 +59,7 @@ func TestDismissNoticeFailureDoesNotReopenAfterNewerInput(t *testing.T) {
 	}
 	m := noticeModel(st, "v0.2.0")
 	m.openNotices(uinotices.Welcome)
-	_, _ = m.handleNoticesKey(key("x"))
+	_, _ = m.handleKey(key("x"))
 	cmd := m.nextEffectCmd()
 
 	updated, _ := m.handleKey(key("esc"))
@@ -84,7 +84,7 @@ func TestDismissNoticeFailureDuringQuitRestoresWithoutReopening(t *testing.T) {
 	m.notices.Dismiss(uinotices.ArrowStep)
 	m.openNotices(uinotices.Welcome)
 
-	_, _ = m.handleNoticesKey(key("x"))
+	_, _ = m.handleKey(key("x"))
 	cmd := m.nextEffectCmd()
 	if cmd == nil || m.mode != modeList {
 		t.Fatalf("last dismissal was not accepted: cmd=%v mode=%v", cmd != nil, m.mode)

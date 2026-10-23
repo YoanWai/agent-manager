@@ -121,8 +121,6 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleDiffKey(msg)
 	case modeFocus:
 		return m.handleFocusKey(msg)
-	case modeNotices:
-		return m.handleNoticesKey(msg)
 	}
 
 	if m.rail.InputMode() != uirail.BrowseMode {

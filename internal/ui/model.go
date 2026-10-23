@@ -37,7 +37,6 @@ const (
 	modeGroupForm
 	modeSettings
 	modeDiff
-	modeNotices
 	// modeLaunchHint holds a refused spawn's fix in a dialog: the launch
 	// stays blocked, and the command that unblocks it is what the user sees.
 	modeLaunchHint

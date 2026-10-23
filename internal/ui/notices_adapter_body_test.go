@@ -45,67 +45,67 @@ func TestWheelScrollsTheMessageBody(t *testing.T) {
 	m := scrollModel(t, 30)
 	before := thumbRows(ansi.Strip(preparedView(m)))
 	m = wheelOnCard(m, tea.MouseButtonWheelDown)
-	if m.notices.Offset() != uinotices.WheelRows {
-		t.Fatalf("wheel down moved %d rows, want %d", m.notices.Offset(), uinotices.WheelRows)
+	if noticesSurfaceOf(m).panel.Offset() != uinotices.WheelRows {
+		t.Fatalf("wheel down moved %d rows, want %d", noticesSurfaceOf(m).panel.Offset(), uinotices.WheelRows)
 	}
 	for i := 0; i < 40; i++ {
 		m = wheelOnCard(m, tea.MouseButtonWheelDown)
 	}
-	limit := m.notices.ScrollLimit(m.activeNotices(), m.noticesFrame())
-	if m.notices.Offset() != limit {
-		t.Fatalf("wheel scrolled to %d, want it bounded at %d", m.notices.Offset(), limit)
+	limit := noticesSurfaceOf(m).panel.ScrollLimit(m.activeNotices(), m.noticesFrame())
+	if noticesSurfaceOf(m).panel.Offset() != limit {
+		t.Fatalf("wheel scrolled to %d, want it bounded at %d", noticesSurfaceOf(m).panel.Offset(), limit)
 	}
 	after := thumbRows(ansi.Strip(preparedView(m)))
 	if len(before) == 0 || len(after) == 0 || after[0] <= before[0] {
 		t.Fatalf("the thumb should have moved down: before %v, after %v", before, after)
 	}
 	m = wheelOnCard(m, tea.MouseButtonWheelUp)
-	if m.notices.Offset() != limit-uinotices.WheelRows {
-		t.Fatalf("wheel up moved to %d, want %d", m.notices.Offset(), limit-uinotices.WheelRows)
+	if noticesSurfaceOf(m).panel.Offset() != limit-uinotices.WheelRows {
+		t.Fatalf("wheel up moved to %d, want %d", noticesSurfaceOf(m).panel.Offset(), limit-uinotices.WheelRows)
 	}
-	if m.mode != modeNotices {
+	if !m.noticesOpen() {
 		t.Fatalf("the wheel must not leave the panel, mode=%v", m.mode)
 	}
 }
 
 func TestHomeAndEndJumpTheMessageBody(t *testing.T) {
 	m := scrollModel(t, 30)
-	limit := m.notices.ScrollLimit(m.activeNotices(), m.noticesFrame())
+	limit := noticesSurfaceOf(m).panel.ScrollLimit(m.activeNotices(), m.noticesFrame())
 	if limit <= 0 {
 		t.Fatalf("the body should scroll, limit %d", limit)
 	}
 	for _, jump := range []string{"end", "G"} {
-		m.handleNoticesKey(key("home"))
-		m.handleNoticesKey(key(jump))
-		if m.notices.Offset() != limit {
-			t.Fatalf("%s moved to %d, want the bottom at %d", jump, m.notices.Offset(), limit)
+		m.handleKey(key("home"))
+		m.handleKey(key(jump))
+		if noticesSurfaceOf(m).panel.Offset() != limit {
+			t.Fatalf("%s moved to %d, want the bottom at %d", jump, noticesSurfaceOf(m).panel.Offset(), limit)
 		}
 	}
 	for _, jump := range []string{"home", "g"} {
-		m.handleNoticesKey(key("end"))
-		m.handleNoticesKey(key(jump))
-		if m.notices.Offset() != 0 {
-			t.Fatalf("%s moved to %d, want the top", jump, m.notices.Offset())
+		m.handleKey(key("end"))
+		m.handleKey(key(jump))
+		if noticesSurfaceOf(m).panel.Offset() != 0 {
+			t.Fatalf("%s moved to %d, want the top", jump, noticesSurfaceOf(m).panel.Offset())
 		}
 	}
 }
 
 func TestGrowingTheTerminalKeepsTheLastPageInView(t *testing.T) {
 	m := scrollModel(t, 30)
-	m.handleNoticesKey(key("end"))
-	bottom := m.notices.Offset()
+	m.handleKey(key("end"))
+	bottom := noticesSurfaceOf(m).panel.Offset()
 	m.layout.height = 20
 	frame := ansi.Strip(preparedView(m))
 	if !strings.Contains(frame, "change line 29") || !strings.Contains(frame, "╰") {
 		t.Fatalf("an offset past the new last page shows that last page inside the frame:\n%s", frame)
 	}
-	limit := m.notices.ScrollLimit(m.activeNotices(), m.noticesFrame())
+	limit := noticesSurfaceOf(m).panel.ScrollLimit(m.activeNotices(), m.noticesFrame())
 	if limit >= bottom {
 		t.Fatalf("the taller terminal should have fewer pages: limit %d, saved offset %d", limit, bottom)
 	}
 	m = wheelOnCard(m, tea.MouseButtonWheelUp)
-	if m.notices.Offset() != limit-uinotices.WheelRows {
-		t.Fatalf("the first scroll up starts from the page on screen: offset %d, want %d", m.notices.Offset(), limit-uinotices.WheelRows)
+	if noticesSurfaceOf(m).panel.Offset() != limit-uinotices.WheelRows {
+		t.Fatalf("the first scroll up starts from the page on screen: offset %d, want %d", noticesSurfaceOf(m).panel.Offset(), limit-uinotices.WheelRows)
 	}
 }
 
