@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/execution"
 	"github.com/YoanWai/agent-manager/internal/feed"
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -30,6 +31,7 @@ func noticeStore(t *testing.T) *store.Store {
 func noticeModel(st *store.Store, version string) *Model {
 	return &Model{
 		update: updateInfo{version: version},
+		poller: &poller{runner: execution.New(execution.Dependencies{Store: st}, execution.Options{})},
 		services: services{
 			store:    st,
 			keys:     keybind.DefaultSession(),
