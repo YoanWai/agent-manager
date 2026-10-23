@@ -76,7 +76,7 @@ func (m *Model) previewPaneHeight() int {
 // fullFocus reports whether the focused session owns the whole terminal
 // body, which is how the full screen layout opens a session.
 func (m *Model) fullFocus() bool {
-	return m.prefs.fullLayout && m.mode == modeFocus
+	return m.prefs.fullLayout && m.focused()
 }
 
 // focusPaneRows is the rows of pane content the focused view paints: the

@@ -180,7 +180,7 @@ func (m *Model) routeRefreshMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			// list rather than typing into nothing.
 			sessions := m.dropRecentlyRemoved(m.keepPendingLaunches(msg.sessions, msg.listedAt), msg.listedAt)
 			stripDeletedGroups(&msg, m.ledger.goneGroups)
-			if m.mode == modeFocus {
+			if m.focused() {
 				if sess, ok := m.selected(); !ok || sessionGone(sessions, sess.ID) {
 					focusExit = m.leaveFocus()
 				}
@@ -240,7 +240,7 @@ func (m *Model) routeRefreshMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			// keyboard pinned to the session the user was in while the
 			// list claims another. The click steps back to the list, and
 			// only once its session turns out to have a row to land on.
-			if m.focusSession(msg.focusID) && m.mode == modeFocus && (!ok || focused.ID != msg.focusID) {
+			if m.focusSession(msg.focusID) && m.focused() && (!ok || focused.ID != msg.focusID) {
 				focusExit = m.leaveFocus()
 			}
 		}

@@ -35,7 +35,7 @@ func (m *Model) contentLines(width, height int) []contentLine {
 			body = append(body, ours(splitLines(m.viewGroupAgents(group, inner, rest)))...)
 		} else {
 			separator := contentLine{rule: true}
-			if m.mode == modeFocus {
+			if m.focused() {
 				separator = contentLine{text: focusTopRule(width, m.services.keys), raw: true}
 			}
 			body = append(body, separator)
@@ -66,7 +66,7 @@ func (m *Model) listHint(action, label string) string {
 func (m *Model) previewLines(width, height int, gutter string, frameOrigin ...int) []contentLine {
 	var lines []contentLine
 	loader := m.startupLoader(width, height)
-	if m.mode == modeFocus {
+	if m.focused() {
 		originY := m.listChromeRows()
 		if len(frameOrigin) > 0 {
 			originY = frameOrigin[0]

@@ -29,7 +29,7 @@ func (m *Model) footer() legend {
 	// Focused, the keyboard belongs to the agent: the tier says so in its
 	// title, carries the few keys the manager keeps, and drops the app-wide
 	// tier, which would name keys the agent receives.
-	if m.mode == modeFocus {
+	if m.focused() {
 		// A click on the list only leaves focus where the list is painted,
 		// so the full screen layout names the button and the key alone.
 		back := m.services.keys.Binding(keybind.Detach).Label()
@@ -54,9 +54,11 @@ func (m *Model) footer() legend {
 			pairs = append(pairs, [2]string{label, "editor"})
 		}
 		savedLabel := m.services.keys.Binding(keybind.SavedPrompt).Label()
-		if top, ok := m.top(); ok {
-			pairs = append(top.Footer(), pairs...)
-			savedLabel = ""
+		if top, _ := m.top(); top != nil {
+			if _, bare := top.(*focusSurface); !bare {
+				pairs = append(top.Footer(), pairs...)
+				savedLabel = ""
+			}
 		}
 		savedAt := len(pairs)
 		if pagesScrollback {

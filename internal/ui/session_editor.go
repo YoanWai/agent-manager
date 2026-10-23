@@ -56,13 +56,13 @@ type editorDoneMsg struct {
 type editorReturnTarget struct {
 	sessionID     string
 	foregroundGen uint64
-	mode          mode
+	screen        screenID
 }
 
 // resumes reports whether a returning editor goes back into the session it
 // was opened from: nothing the user did since may have moved the screen on.
-func (t editorReturnTarget) resumes(foregroundGen uint64, current mode, quitting bool) bool {
-	return t.sessionID != "" && !quitting && t.foregroundGen == foregroundGen && t.mode == current
+func (t editorReturnTarget) resumes(foregroundGen uint64, current screenID, quitting bool) bool {
+	return t.sessionID != "" && !quitting && t.foregroundGen == foregroundGen && t.screen == current
 }
 
 // editorResolution captures every input to executable discovery before a
@@ -125,7 +125,7 @@ func (m *Model) openDiffFile() (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) handleDiffFileChecked(msg editorFileCheckedMsg) (tea.Model, tea.Cmd) {
-	if m.effects.quitting || m.mode != modeDiff || msg.foregroundGen != m.gens.foreground {
+	if m.effects.quitting || m.base != baseReview || msg.foregroundGen != m.gens.foreground {
 		return m, nil
 	}
 	path, accepted := m.review.ApplyFileCheck(msg.result)
@@ -288,7 +288,7 @@ func (m *Model) routeEditorMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			// from an attach: painted in the editor's background, and
 			// without the mouse reporting focus mode armed on the way in.
 			SyncTerminalColors()
-			if m.mode == modeFocus {
+			if m.focused() {
 				resume = tea.EnableMouseCellMotion
 			}
 		}
@@ -301,7 +301,7 @@ func (m *Model) routeEditorMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		if msg.name != "" {
 			m.reportDone("opened " + msg.path + " in " + msg.name)
 		}
-		if target := msg.returnTo; target.resumes(m.gens.foreground, m.mode, m.effects.quitting) {
+		if target := msg.returnTo; target.resumes(m.gens.foreground, m.screenID(), m.effects.quitting) {
 			return routed(m, tea.Batch(resume, m.reattach(target.sessionID, m.review.Generation())))
 		}
 		return routed(m, resume)

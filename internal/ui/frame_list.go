@@ -53,7 +53,7 @@ func (m *Model) viewListFrame() string {
 		paintContent(contentRows, bleedWidth, bodyHeight, backdropHex()),
 	)...)
 	bottom := m.boundedRuleRow(leftWidth+1, m.layout.width, "▄")
-	if m.mode == modeFocus && m.focus.pane.FrameBox().Valid {
+	if m.focused() && m.focus.pane.FrameBox().Valid {
 		bottom = m.focusBottomRule(leftWidth+1, m.layout.width)
 	}
 	frame = append(frame, bottom)
@@ -64,7 +64,7 @@ func (m *Model) viewListFrame() string {
 	return m.overlayTopRight(strings.Join(frame, "\n"), m.statusToast(), m.listChromeRows()+1)
 }
 
-func (m *Model) fullRows() bool { return m.prefs.fullLayout && m.mode != modeFocus }
+func (m *Model) fullRows() bool { return m.prefs.fullLayout && !m.focused() }
 
 func (m *Model) viewFullListFrame() string {
 	footer := m.footer()

@@ -51,7 +51,7 @@ func (m *Model) closeLaunchHint() {
 		*fix = launchFix{}
 	}
 	m.clearSurfaces()
-	m.mode = modeList
+	m.base = baseList
 }
 
 // prompt is the fix as the card shows it; its keys and card are

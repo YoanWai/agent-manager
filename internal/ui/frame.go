@@ -39,7 +39,7 @@ func (m *Model) renderFrame() string {
 		return m.syncCursorAnchor(clampFrame(frame, m.layout.height))
 	}
 	var frame string
-	if m.mode == modeDiff {
+	if m.base == baseReview {
 		frame = m.viewDiffFull()
 	} else {
 		frame = m.overlayRowMenu(m.titleTopRowWithUpdate(m.viewListFrame()))

@@ -29,11 +29,13 @@ func newConfirmSurface(target confirmTarget, glyphMode presentation.GlyphMode) *
 // while the cards were modes. The quick bar and a resize sit on the list
 // without covering it.
 func (m *Model) listClear() bool {
-	if m.mode != modeList {
+	if m.base != baseList {
 		return false
 	}
 	for _, s := range m.surfaces {
-		if _, ok := s.(mouseTaker); !ok {
+		switch s.(type) {
+		case *quickSurface, *resizeSurface:
+		default:
 			return false
 		}
 	}

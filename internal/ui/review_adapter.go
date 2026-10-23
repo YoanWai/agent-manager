@@ -408,7 +408,7 @@ func (m *Model) closeDiff() tea.Cmd {
 	ret := m.reviewNav.ret
 	m.reviewNav.ret = reviewReturn{}
 	gen := m.review.Close()
-	m.mode = modeList
+	m.base = baseList
 	m.clearSurfaces()
 	switch ret.kind {
 	case reviewReturnAttach:
@@ -452,8 +452,8 @@ func (m *Model) openDiffWithReader(reader reviewPreferencesReader) tea.Cmd {
 	}
 	preferred, picked := m.ledger.pickedRepos[sess.ID]
 	m.reviewNav.ret = reviewReturn{kind: reviewReturnList}
-	m.mode = modeDiff
-	m.closeQuick()
+	m.clearSurfaces()
+	m.base = baseReview
 	m.clearErr()
 	target := reviewTarget(sess)
 	target.Cwd = m.sessionDir(sess)

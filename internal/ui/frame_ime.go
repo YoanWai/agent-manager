@@ -160,7 +160,7 @@ func insertMarkerAtCursor(view, markedView string) string {
 }
 
 func (m *Model) focusCursorAnchor() (col, row int, ok bool) {
-	if m.mode != modeFocus {
+	if !m.focused() {
 		return 0, 0, false
 	}
 	sess, selected := m.selected()

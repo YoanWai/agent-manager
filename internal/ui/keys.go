@@ -36,8 +36,6 @@ func (m *Model) routeQuit(msg tea.KeyMsg) quitRoute {
 		return quitNow
 	case !ctrlC:
 		return quitPass
-	case !onSurface && m.agentOwnsKeyboard():
-		return quitPass
 	case onSurface && m.baseOwner() == ownerAgent && top.Dismissible():
 		return quitPopSurface
 	case onSurface && m.baseOwner() == ownerAgent:
@@ -57,21 +55,16 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if cmd, ok := m.surfaceKey(msg); ok {
 		return m, cmd
 	}
-	if m.mode == modeList && !m.rail.Busy() {
-		decision := m.rail.Key(msg, m.layout.displayedRail, m.railKeyContext())
-		if decision.Consumed {
-			m.gens.foreground++
-		}
-		return m.applyRailDecision(decision)
-	}
-	m.gens.foreground++
-	switch m.mode {
-	case modeDiff:
+	if m.base == baseReview {
+		m.gens.foreground++
 		return m.handleDiffKey(msg)
-	case modeFocus:
-		return m.handleFocusKey(msg)
 	}
-	return m.applyRailDecision(m.rail.Key(msg, m.layout.displayedRail, m.railKeyContext()))
+	busy := m.rail.Busy()
+	decision := m.rail.Key(msg, m.layout.displayedRail, m.railKeyContext())
+	if decision.Consumed || busy {
+		m.gens.foreground++
+	}
+	return m.applyRailDecision(decision)
 }
 
 func (m *Model) railKeyContext() uirail.KeyContext {

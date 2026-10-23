@@ -38,11 +38,11 @@ func newHelpSurface(root helpHost, scope uihelp.Scope) *helpSurface {
 	return &helpSurface{state: uihelp.New(scope), root: root}
 }
 
-// openHelp scopes the key map to Review when Review is underneath. The mode
+// openHelp scopes the key map to Review when Review is underneath. The base
 // is read here, to open, and never again.
 func (m *Model) openHelp() {
 	scope := uihelp.Global
-	if m.mode == modeDiff {
+	if m.base == baseReview {
 		scope = uihelp.Review
 	}
 	m.push(newHelpSurface(m, scope))

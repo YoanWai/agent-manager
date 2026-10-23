@@ -114,7 +114,7 @@ func (m *Model) applyInputEffect(result inputEffectResult, err error) {
 		m.reportErr(err.Error())
 		return
 	}
-	if !m.effects.quitting && result.inputID != "" && m.mode == modeFocus && m.focus.runtime.watch != nil {
+	if !m.effects.quitting && result.inputID != "" && m.focused() && m.focus.runtime.watch != nil {
 		if selected, ok := m.selected(); ok && selected.ID == result.inputID {
 			m.focus.runtime.watch.RetryNow()
 			m.watchSelection()

@@ -184,7 +184,7 @@ func (m *Model) openBasePickWithReader(reader reviewPickerReader) tea.Cmd {
 }
 
 func (m *Model) handleReviewPickerLoaded(msg reviewPickerLoadedMsg) tea.Cmd {
-	if m.effects.quitting || m.mode != modeDiff || m.gens.foreground != msg.request.foregroundGen || !m.review.PickerSourceCurrent(msg.request.source) {
+	if m.effects.quitting || m.base != baseReview || m.gens.foreground != msg.request.foregroundGen || !m.review.PickerSourceCurrent(msg.request.source) {
 		return nil
 	}
 	if msg.err != nil {
@@ -205,7 +205,7 @@ func (m *Model) handleReviewPickerLoaded(msg reviewPickerLoadedMsg) tea.Cmd {
 // the review on, so a pick for the old one is refused where the user can
 // see why, instead of retargeting whatever is showing now.
 func (m *Model) applyReviewPick(msg reviewPickedMsg) tea.Cmd {
-	if m.effects.quitting || m.mode != modeDiff {
+	if m.effects.quitting || m.base != baseReview {
 		return nil
 	}
 	if !m.review.PickerSourceCurrent(msg.source) {

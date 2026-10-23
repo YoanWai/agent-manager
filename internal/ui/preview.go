@@ -134,7 +134,7 @@ func (m *Model) hasWorkingLoaderRow() bool {
 
 func (m *Model) reviewNeedsLoader() bool {
 	state := m.review.Snapshot()
-	if m.mode != modeDiff || !state.Active {
+	if m.base != baseReview || !state.Active {
 		return false
 	}
 	if state.Loading && len(state.Set.Files) == 0 {
@@ -238,7 +238,7 @@ func (m *Model) routePreviewMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		return routed(m, m.previewCmd(sess, msg.gen))
 
 	case cursorBlinkMsg:
-		if m.mode != modeFocus {
+		if !m.focused() {
 			return routed(m, nil)
 		}
 		m.focus.pane.Blink()

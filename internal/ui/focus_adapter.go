@@ -170,7 +170,6 @@ func (m *Model) leaveFocus() tea.Cmd {
 }
 
 func (m *Model) leaveFocusMode() tea.Cmd {
-	m.mode = modeList
 	m.clearSurfaces()
 	// A run opened before the session was entered would pair with the very
 	// click that comes back here, focusing it again instead of leaving.
@@ -220,7 +219,7 @@ func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.openEditor()
 	case uifocus.OpenReview:
 		cmd := m.openDiff()
-		if m.mode == modeDiff {
+		if m.base == baseReview {
 			m.reviewNav.ret = reviewReturn{kind: reviewReturnFocus, sessionID: sess.ID}
 		}
 		return m, cmd
@@ -303,7 +302,7 @@ type focusCopiedMsg struct {
 // cursor is parked below its own painted composer. Focus owns crop geometry
 // after this value crosses the boundary.
 func (m *Model) paneCaretRow() int {
-	if m.mode != modeFocus {
+	if !m.focused() {
 		return -1
 	}
 	parks := false

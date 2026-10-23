@@ -11,7 +11,7 @@ type attachRequest struct {
 	reattach      bool
 	generation    int
 	foregroundGen uint64
-	mode          mode
+	screen        screenID
 }
 
 func (attachRequest) effectRequest() {}
@@ -60,7 +60,7 @@ func (m *Model) applyAttachEffect(request attachRequest, result attachEffectResu
 	if request.reattach && (request.generation != m.review.Generation() || m.review.Active()) {
 		return nil
 	}
-	if m.effects.quitting || request.foregroundGen != m.gens.foreground || request.mode != m.mode {
+	if m.effects.quitting || request.foregroundGen != m.gens.foreground || request.screen != m.screenID() {
 		return nil
 	}
 	if result.warning != nil {

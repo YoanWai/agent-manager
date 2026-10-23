@@ -24,18 +24,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-type mode int
-
-const (
-	modeList mode = iota
-	modeDiff
-	// modeFocus routes the keyboard into the selected session's pane while
-	// the list and live preview stay on screen.
-	modeFocus
-	// modeCount follows the last mode, so a test can walk every one.
-	modeCount
-)
-
 type Model struct {
 	gens      generations
 	effects   effectState
@@ -192,7 +180,6 @@ func newView(deps Dependencies, version string) (*Model, error) {
 		effects: effectState{lifetime: &effectLifetime{}},
 		poller:  &poller{runner: deps.Execution},
 		layout:  layoutState{split: splitState{ratio: loadSplitRatio(st)}},
-		mode:    modeList,
 		env: environment{
 			workDir: initialWorkingDir(),
 			homeDir: initialHomeDir(),

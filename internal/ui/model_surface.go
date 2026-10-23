@@ -6,16 +6,33 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// screen is what is on the terminal: the base mode and the surfaces over
-// it, read from the top. Model embeds it, so m.mode and m.surfaces read as
-// before while the two stay one fact.
+// screen is what is on the terminal: the base screen and the surfaces over
+// it, read from the top.
 type screen struct {
-	mode     mode
+	base     baseScreen
 	surfaces []surface
 }
 
-// A surface is a layer over the current mode that takes input before it:
-// the saved prompts list over a focused session is the first. The root
+// baseScreen is the screen under the stack: the list, or Review in its
+// place.
+type baseScreen uint8
+
+const (
+	baseList baseScreen = iota
+	baseReview
+)
+
+// screenID names where the user is, for a completion that must land on the
+// screen it was asked from: the base, and whether a session is focused.
+type screenID struct {
+	base    baseScreen
+	focused bool
+}
+
+func (m *Model) screenID() screenID { return screenID{base: m.base, focused: m.focused()} }
+
+// A surface is a layer over the base screen that takes input before it:
+// focus, and the cards over the list, Review or a focused session. The root
 // walks the stack from the top for keys, mouse, frame and footer, so no
 // other code asks which overlay is open. See docs/adr/0001-surface-stack.md.
 //
@@ -116,7 +133,7 @@ func (m *Model) pop() {
 	top.Leave(m)
 }
 
-// clearSurfaces pops every surface, top first; leaving the mode they sit
+// clearSurfaces pops every surface, top first; leaving the screen they sit
 // on does this.
 func (m *Model) clearSurfaces() {
 	for len(m.surfaces) > 0 {
@@ -153,9 +170,10 @@ func (m *Model) inputOwner() inputOwner {
 	return m.baseOwner()
 }
 
-// baseOwner is who reads plain keys on the screen under the stack.
+// baseOwner is who reads plain keys under the cards: the agent while a
+// session is focused, else the manager.
 func (m *Model) baseOwner() inputOwner {
-	if m.mode == modeFocus {
+	if m.focused() {
 		return ownerAgent
 	}
 	return ownerManager

@@ -274,7 +274,7 @@ func (m *Model) prepareRailFrame(width, height int) {
 		ListKeys:        m.services.listKeys,
 		ComfortableRows: m.prefs.comfortableRows,
 		MouseDisabled:   m.prefs.mouseDisabled,
-		Focused:         m.mode == modeFocus,
+		Focused:         m.focused(),
 		EnterFocuses:    m.enterFocuses(),
 		StartupPhase:    m.startup.startupPhase,
 		CursorMarker:    cursorAnchorMarker,

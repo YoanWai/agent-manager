@@ -16,8 +16,8 @@ import (
 // An open row menu asks for every motion, pressed or not, so hovering an
 // entry can light it up.
 func (m *Model) syncMouseCapture() tea.Cmd {
-	release := m.prefs.mouseDisabled && m.mode != modeFocus
-	hover := !release && m.mode == modeList && m.rail.MenuOpen()
+	release := m.prefs.mouseDisabled && !m.focused()
+	hover := !release && m.base == baseList && m.rail.MenuOpen()
 	if release == m.mouse.released && hover == m.mouse.hover {
 		return nil
 	}
@@ -71,9 +71,7 @@ func (m *Model) routeMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, taker.Mouse(m, msg)
 	case m.cardOpen():
 		return m.cardMouse(msg)
-	case m.mode == modeFocus:
-		return m.focusMouse(msg)
-	case m.mode == modeDiff:
+	case m.base == baseReview:
 		return m.reviewMouse(msg)
 	}
 	return m.listMouse(msg)
@@ -143,7 +141,7 @@ func (m *Model) click(msg tea.MouseMsg, target clickTarget) (tea.Model, tea.Cmd)
 // row menu keep the mouse: typing owns the keys the list footer names, and
 // the menu floats above it.
 func (m *Model) paintedKeyAt(x, y int) (keyHit, bool) {
-	if m.mode == modeList && (m.rail.Searching() || m.rail.MenuOpen()) {
+	if m.base == baseList && (m.rail.Searching() || m.rail.MenuOpen()) {
 		return keyHit{}, false
 	}
 	return m.layout.keyHits.at(x, y)

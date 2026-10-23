@@ -10,7 +10,7 @@ const startupRingPoints = 12
 
 func (m *Model) startupLoader(width, height int) []string {
 	sess, ok := m.selected()
-	if !ok || m.mode == modeFocus || sess.Status != status.Starting || paneBooted(m.workspace.preview) {
+	if !ok || m.focused() || sess.Status != status.Starting || paneBooted(m.workspace.preview) {
 		return nil
 	}
 	return ringLoader(m.glyphs(), width, height, "starting up", m.startup.startupPhase)

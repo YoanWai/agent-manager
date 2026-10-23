@@ -133,7 +133,7 @@ func (m *Model) bleedColumn(height int) []string {
 	// traces the agent's terminal rather than the whole content panel. The
 	// top corner sits on the rule row just above the capture.
 	box := m.focus.pane.FrameBox()
-	if m.mode == modeFocus && box.Valid {
+	if m.focused() && box.Valid {
 		edge := paint(focusEdgeStyle().Render("│"), 1, panelHex())
 		corner := paint(focusEdgeStyle().Render("╭"), 1, panelHex())
 		top := box.Y - m.listChromeRows()

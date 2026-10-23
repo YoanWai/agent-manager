@@ -18,6 +18,7 @@ type spawnSurfaceHost interface {
 	handleFormClick(line int) (tea.Model, tea.Cmd)
 	formWheel(step int) tea.Cmd
 	viewForm() string
+	takeForeground()
 }
 
 func newSpawnSurface(form formDialog) *spawnSurface { return &spawnSurface{formDialog: form} }
@@ -55,7 +56,9 @@ func (m *Model) closeForm() {
 }
 
 func (s *spawnSurface) Key(h surfaceHost, msg tea.KeyMsg) (bool, tea.Cmd) {
-	_, cmd := h.(spawnSurfaceHost).handleFormKey(msg)
+	host := h.(spawnSurfaceHost)
+	host.takeForeground()
+	_, cmd := host.handleFormKey(msg)
 	return true, cmd
 }
 

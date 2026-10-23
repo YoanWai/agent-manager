@@ -164,7 +164,7 @@ func (m *Model) openLaunchHint(fix launchFix) {
 			}
 			m.pop()
 		}
-		m.mode = modeList
+		m.base = baseList
 	}
 	m.presentLaunchHint(fix)
 }

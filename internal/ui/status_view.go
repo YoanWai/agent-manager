@@ -12,7 +12,7 @@ func (m *Model) statusLine() string {
 	switch {
 	// Errors outrank the focus notices: a scrolled or focused pane must
 	// not hide a failure report.
-	case m.mode == modeFocus && m.errBar.text != "":
+	case m.focused() && m.errBar.text != "":
 		return m.statusMessage(m.glyphs().ErroredGlyph, m.glyphs().FinishedGlyph, m.glyphs().WarningGlyph)
 	case m.focus.pane.ScrolledBack():
 		catchUp := "wheel down or type"
@@ -21,7 +21,7 @@ func (m *Model) statusLine() string {
 		}
 		return keyStyle().Render("scrolled ") +
 			subtleStyle().Render(fmt.Sprintf("%d lines back · %s to catch up", focusStatus.ScrollOffset, catchUp))
-	case m.mode == modeFocus && focusStatus.CopiedChars > 0:
+	case m.focused() && focusStatus.CopiedChars > 0:
 		return keyStyle().Render("copied ") +
 			subtleStyle().Render(fmt.Sprintf("%d chars to clipboard", focusStatus.CopiedChars))
 	case m.layout.split.resizeMode || m.layout.split.dragging:

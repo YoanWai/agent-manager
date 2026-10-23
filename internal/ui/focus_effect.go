@@ -61,7 +61,7 @@ func (m *Model) applyFocusEffect(request focusRequest, result focusEffectResult,
 
 func (m *Model) enterFocus(sess store.Session) tea.Cmd {
 	m.clearSurfaces()
-	m.mode = modeFocus
+	m.push(&focusSurface{})
 	if m.prefs.fullLayout {
 		m.pinFullFocusPane(sess.ID)
 	}
@@ -168,7 +168,7 @@ func (m *Model) applyDetachEffect(request detachRequest, result detachEffectResu
 	switch result.request {
 	case tmux.RequestReview:
 		cmd := m.openDiff()
-		if m.mode == modeDiff {
+		if m.base == baseReview {
 			m.reviewNav.ret = reviewReturn{kind: reviewReturnAttach, sessionID: sess.ID}
 		}
 		return cmd
@@ -186,7 +186,7 @@ func (m *Model) applyDetachEffect(request detachRequest, result detachEffectResu
 // foregroundTakenSinceDetach reports whether, since the detach, the user
 // opened a view, a rail prompt or a resize, or asked to enter a session.
 func (m *Model) foregroundTakenSinceDetach() bool {
-	if m.mode != modeList || len(m.surfaces) > 0 || m.rail.Busy() {
+	if m.base != baseList || len(m.surfaces) > 0 || m.rail.Busy() {
 		return true
 	}
 	for _, job := range m.effects.main.pending {

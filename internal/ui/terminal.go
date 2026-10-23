@@ -58,7 +58,7 @@ type terminalDirectoryRequest struct {
 	foregroundGen uint64
 	rowKey        string
 	returnID      string
-	mode          mode
+	screen        screenID
 	editor        editorResolution
 }
 
@@ -140,7 +140,7 @@ func (m *Model) captureTerminalDirectory(target terminalDirectoryTarget) (termin
 	if !ok {
 		return terminalDirectoryRequest{}, false
 	}
-	request := terminalDirectoryRequest{target: target, foregroundGen: m.gens.foreground, rowKey: rowKey(entry), mode: m.mode}
+	request := terminalDirectoryRequest{target: target, foregroundGen: m.gens.foreground, rowKey: rowKey(entry), screen: m.screenID()}
 	if entry.isGroup {
 		request.rawDir = m.workspace.groupPaths[entry.group]
 		request.fallbacks = m.groupDirectoryFallbacks(entry.group)
@@ -164,7 +164,7 @@ func (m *Model) groupDirectoryFallbacks(group string) []string {
 func (m *Model) handleTerminalDirectory(msg terminalDirectoryMsg) (tea.Model, tea.Cmd) {
 	if msg.request.target == terminalDirectoryEditor {
 		entry, selected := m.selectedRow()
-		if m.effects.quitting || msg.request.foregroundGen != m.gens.foreground || m.mode != msg.request.mode || !selected || rowKey(entry) != msg.request.rowKey {
+		if m.effects.quitting || msg.request.foregroundGen != m.gens.foreground || m.screenID() != msg.request.screen || !selected || rowKey(entry) != msg.request.rowKey {
 			return m, nil
 		}
 	}
@@ -182,7 +182,7 @@ func (m *Model) handleTerminalDirectory(msg terminalDirectoryMsg) (tea.Model, te
 			returnTo = editorReturnTarget{
 				sessionID:     msg.request.returnID,
 				foregroundGen: msg.request.foregroundGen,
-				mode:          msg.request.mode,
+				screen:        msg.request.screen,
 			}
 		}
 		return m.launchEditor(msg.editor, returnTo)

@@ -35,7 +35,7 @@ func (m *Model) renaming() (*renameSurface, bool) { return surfaceOf[*renameSurf
 // previewFeeds is whether the preview has a pane to feed: the bare list, a
 // rename typed in a row, or focus. Any other card hides it.
 func (m *Model) previewFeeds() bool {
-	if m.mode == modeFocus {
+	if m.focused() {
 		return true
 	}
 	_, renaming := m.renaming()

@@ -62,7 +62,7 @@ func (m *Model) diffPaneWidths() (fileWidth, codeWidth int) {
 
 // prepareReviewLayout performs the only Review layout mutations before View.
 func (m *Model) prepareReviewLayout() {
-	if m.mode != modeDiff || m.layout.width <= 0 || m.layout.height <= 0 {
+	if m.base != baseReview || m.layout.width <= 0 || m.layout.height <= 0 {
 		return
 	}
 	footer := m.viewDiffFooter()
