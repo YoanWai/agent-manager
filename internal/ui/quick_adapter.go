@@ -311,7 +311,7 @@ func (m *Model) quickHitAt(x, y int) (quickHit, bool) {
 }
 
 func (m *Model) handleQuickClick(hit quickHit) tea.Cmd {
-	return m.runQuickRequest(m.quick().Click(m.quickBarHost(), hit))
+	return m.runQuickRequest(m.quick().Bar.Click(m.quickBarHost(), hit))
 }
 
 const quickModeTitle = "Quick prompt mode"
@@ -360,7 +360,7 @@ func (m *Model) viewQuickBar(width, maxRows int) string {
 		}
 	}
 	m.remoteQuickFacts(&facts)
-	return m.quick().View(m.quickBarHost(), facts, width, maxRows)
+	return m.quick().Bar.View(m.quickBarHost(), facts, width, maxRows)
 }
 
 // quickAnswerRow names the session an answer goes to, with its state and

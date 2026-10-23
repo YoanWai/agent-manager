@@ -148,7 +148,7 @@ func TestTransientFootersKeepListHeight(t *testing.T) {
 		if got := lipgloss.Height(m.viewFooter()); got != listed {
 			t.Errorf("%s footer = %d rows, want %d", tier.name, got, listed)
 		}
-		(m.quick() != nil), m.layout.split.resizeMode, m.mode = false, false, modeList
+		m.mode = modeList
 		m.clearSurfaces()
 	}
 }
