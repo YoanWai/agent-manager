@@ -40,6 +40,52 @@ func fetch(t *testing.T, dir, version string) []Message {
 	return messages
 }
 
+func TestFetchPrefersFeedURLFromTheEnvironment(t *testing.T) {
+	var publishedHits atomic.Int32
+	published := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		publishedHits.Add(1)
+		w.Write([]byte(`[{"id":"live","banner":"x","title":"Live"}]`))
+	}))
+	t.Cleanup(published.Close)
+	override := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`[{"id":"local","banner":"x","title":"Local"}]`))
+	}))
+	t.Cleanup(override.Close)
+
+	old := feedURL
+	feedURL = published.URL
+	t.Cleanup(func() { feedURL = old })
+	t.Setenv(feedURLEnv, override.URL)
+
+	messages := fetch(t, t.TempDir(), "v0.14.2")
+	if len(messages) != 1 || messages[0].ID != "feed-local" || messages[0].Title != "Local" {
+		t.Fatalf("environment URL should replace the published feed, got %+v", messages)
+	}
+	if got := publishedHits.Load(); got != 0 {
+		t.Fatalf("published feed was requested %d times", got)
+	}
+}
+
+func TestEmptyFeedURLDoesNotRequestThePublishedFeed(t *testing.T) {
+	var publishedHits atomic.Int32
+	published := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		publishedHits.Add(1)
+		w.Write([]byte(`[{"id":"live","banner":"x","title":"Live"}]`))
+	}))
+	t.Cleanup(published.Close)
+	old := feedURL
+	feedURL = published.URL
+	t.Cleanup(func() { feedURL = old })
+	t.Setenv(feedURLEnv, "")
+
+	if _, err := Fetch(t.Context(), t.TempDir(), "v0.14.2"); err == nil {
+		t.Fatal("an empty feed URL should fail the fetch")
+	}
+	if got := publishedHits.Load(); got != 0 {
+		t.Fatalf("published feed was requested %d times", got)
+	}
+}
+
 func TestFetchParsesAndPrefixesIDs(t *testing.T) {
 	serve(t, `[{"id":"holdoff-0142","banner":"known issue in v0.14.2","title":"Hold off on v0.14.2","body":["Sessions may drop.","Fixed in v0.14.3."],"url":"https://github.com/YoanWai/agent-manager/issues/200"}]`)
 	messages := fetch(t, t.TempDir(), "v0.14.2")
