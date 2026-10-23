@@ -366,9 +366,9 @@ func TestReopenedFormIgnoresTheLastOpeningsScan(t *testing.T) {
 	if m.form().complete.active() {
 		t.Fatalf("reopened form took the last opening's scan: %v", m.form().complete.suggestions)
 	}
-	// No other dialog is up: a form scan that reached one would have had to
-	// push it.
-	if len(m.surfaces) != 0 {
-		t.Fatal("a form scan filled another dialog's completer")
+	// Only the reopened form is up: a form scan that reached another dialog
+	// would have had to push it.
+	if len(m.surfaces) != 1 {
+		t.Fatalf("a form scan filled another dialog's completer: %d surfaces", len(m.surfaces))
 	}
 }

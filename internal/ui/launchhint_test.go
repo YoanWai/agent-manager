@@ -914,8 +914,9 @@ func TestLaunchHintRetryThatStopsAgainKeepsTheImages(t *testing.T) {
 	}
 }
 
-// An image pasted into the form while the install ran is on the dialog the
-// stopped retry opens, alongside the ones that dialog was already holding.
+// An image the dialog took on while the install ran is on the dialog the
+// stopped retry opens, alongside the ones it was already holding. The form
+// under the hint is gone, so the hint is the only place a paste can land.
 func TestLaunchHintRetryThatStopsAgainKeepsAPastedImage(t *testing.T) {
 	m := buildModel(t)
 	_, image := installFixture(t, m, fakeInstallCommand(t))
@@ -924,7 +925,8 @@ func TestLaunchHintRetryThatStopsAgainKeepsAPastedImage(t *testing.T) {
 	m.services.cfg.Tools[installRetryTool] = tool
 
 	pasted := tempImage(t, "pasted.png")
-	m.form().prompt.attachments = []imageAttachment{{id: 2, path: pasted}}
+	fix := hintFixPtr(m)
+	fix.images = append(fix.images, imageAttachment{id: 2, path: pasted})
 	m.applyCmd(t, pressInLaunchHint(t, m, 'i'))
 	waitForInstallToSettle(t, m)
 
