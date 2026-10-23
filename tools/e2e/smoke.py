@@ -223,6 +223,7 @@ def feature_flows(sandbox, pane):
     sandbox.wait('focused-pane-command',
                  lambda: sandbox.tmux('capture-pane', '-p', '-t', pane, socket='agentmgr').stdout,
                  lambda frame: 'printf focus-ready' in frame)
+    paste_keeps_its_linefeeds(sandbox)
     sandbox.key('C-q')
     sandbox.frame('focus-closed', 'Shell', 'focused · ctrl+q')
     sandbox.key('/')
@@ -245,6 +246,58 @@ def feature_flows(sandbox, pane):
     sandbox.key('Right')
     sandbox.wait('rail-unfolded', sandbox.capture,
                  lambda frame: 'terminal-' in rail_text(frame))
+
+
+def paste_keeps_its_linefeeds(sandbox):
+    """A pasted block reaches the focused pane with its own linefeeds.
+
+    A buffer's linefeeds are rewritten to carriage returns unless the paste
+    uses -r, and an agent reads a CR inside the bracketed markers as a typed
+    Enter: a paste into a working session then submits partway through and
+    queues the rest as follow-up prompts. A frame cannot show the difference,
+    so the pane records the bytes it received and the line ending is the
+    assertion.
+    """
+    text = 'paste-one\npaste-two\npaste-three\n'
+    bracketed = ('\x1b[200~' + text + '\x1b[201~').encode()
+    recorder = sandbox.home / 'paste-bytes'
+    ready = sandbox.home / 'recorder-ready'
+    # The reader runs in the foreground: a job started with & gets /dev/null as
+    # stdin and would never see the paste. It asks for bracketed paste, then
+    # reads byte by byte for exactly the paste's length, so a part-delivered
+    # paste still lands whole and it exits when the last byte arrives.
+    script = sandbox.home / 'recorder.sh'
+    script.write_text(
+        '#!/bin/sh\n'
+        'stty raw -echo\n'
+        'printf "\\033[?2004h"\n'
+        f': > {shlex.quote(str(ready))}\n'
+        f'head -c {len(bracketed)} > {shlex.quote(str(recorder))}\n')
+    script.chmod(0o700)
+    sandbox.tmux('send-keys', '-l', '-t', 'smoke:0.0', f'sh {shlex.quote(str(script))}',
+                 socket='e2e-outer')
+    sandbox.key('Enter')
+    # send-keys hands keys to whatever reads them next, so the paste would race
+    # the shell that is still starting the reader. The window's own bracketed
+    # paste flag cannot stand in for this: an interactive shell or an agent may
+    # already have asked for it, leaving the pane ready-looking before the
+    # reader has the tty. Only the reader touching a file proves it does.
+    sandbox.wait('recorder-ready',
+                 lambda: 'ready' if ready.exists() else '',
+                 lambda value: value == 'ready')
+    # The manager forwards the block as it would any paste from a terminal.
+    sandbox.tmux('send-keys', '-H', '-t', 'smoke:0.0',
+                 *[f'{byte:02x}' for byte in bracketed])
+    # head writes nothing until it holds the full count, so the file reaching
+    # the paste's length is the paste having arrived whole.
+    sandbox.wait('focus-paste-bytes',
+                 lambda: str(recorder.stat().st_size) if recorder.exists() else '',
+                 lambda value: value == str(len(bracketed)))
+    received = recorder.read_bytes()
+    if b'\r' in received:
+        raise AssertionError('the paste carried a carriage return, which an agent reads as a submit')
+    if received != bracketed:
+        raise AssertionError(f'pane received {received!r}, wanted exactly {bracketed!r}')
 
 
 def rail_text(frame):
