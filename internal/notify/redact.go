@@ -1,6 +1,8 @@
 package notify
 
 import (
+	"bytes"
+	"encoding/base64"
 	"regexp"
 	"strings"
 )
@@ -39,7 +41,8 @@ var credentialPatterns = []*regexp.Regexp{
 
 // A Basic credential is shorter than the entropy run, and Basic is not
 // an assignment key, so the password would otherwise stay in the banner.
-// The token has to look like a credential: mixed case, or a digit or
+// A token that decodes to user:pass is a credential even when it is all
+// one case. Otherwise it has to look like one: mixed case, or a digit or
 // base64 mark. An ordinary word after "basic" stays.
 var basicPattern = regexp.MustCompile(`(?i)\bBasic\s+[A-Za-z0-9+/]{4,}={0,2}`)
 
@@ -54,6 +57,9 @@ func redactBasic(s string) string {
 }
 
 func basicCredential(token string) bool {
+	if basicUserinfo(token) {
+		return true
+	}
 	var lower, upper, mark bool
 	for i := 0; i < len(token); i++ {
 		switch c := token[i]; {
@@ -70,6 +76,17 @@ func basicCredential(token string) bool {
 	return mark || (lower && upper)
 }
 
+// basicUserinfo catches a lowercase token the class check misses.
+// base64("s:a") is "czph": one case, no digit, and still user:pass.
+func basicUserinfo(token string) bool {
+	raw := strings.TrimRight(token, "=")
+	if raw == "" || len(raw)%4 == 1 {
+		return false
+	}
+	decoded, err := base64.RawStdEncoding.DecodeString(raw)
+	return err == nil && bytes.Contains(decoded, []byte(":"))
+}
+
 // userinfoPattern redacts the password in scheme://user:password@host.
 // The assignment scan reads the scheme as the key, so a short password
 // there never reaches a secret key, and the host stays visible.
@@ -77,9 +94,10 @@ var userinfoPattern = regexp.MustCompile(`([A-Za-z][A-Za-z0-9+.-]*://)([^/\s:@]+
 
 // An assignment redacts its value only. The key stays, so the banner
 // still says which setting was quoted. A quoted value includes the
-// spaces and the quotes, which an unquoted \S+ value would split, and
-// a backslash-escaped quote stays inside that value.
-var assignmentPattern = regexp.MustCompile(`(?:^|[^A-Za-z0-9])([A-Za-z0-9]+(?:[_-][A-Za-z0-9]+)*)(\s*[=:]\s*)("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\S+)`)
+// spaces and the quotes, which an unquoted \S+ value would split, a
+// backslash-escaped quote stays inside that value, and characters glued
+// to the closing quote are the same shell word.
+var assignmentPattern = regexp.MustCompile(`(?:^|[^A-Za-z0-9])([A-Za-z0-9]+(?:[_-][A-Za-z0-9]+)*)(\s*[=:]\s*)("(?:\\.|[^"\\])*"\S*|'(?:\\.|[^'\\])*'\S*|\S+)`)
 
 func redactAssignments(s string) string {
 	var b strings.Builder
