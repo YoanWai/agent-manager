@@ -177,7 +177,7 @@ func TestSettingsFetchOnSpawnTurnsTheFetchOff(t *testing.T) {
 	cached := gitOutput(t, clone, "rev-parse", "origin/main")
 
 	m.openSettings()
-	for m.settings.dialog.Field != uisettings.FieldBaseFetch {
+	for m.settingsCard().state.Field != uisettings.FieldBaseFetch {
 		m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
 	}
 	if !strings.Contains(ansi.Strip(m.viewSettings()), "fetch on spawn") {
@@ -381,7 +381,7 @@ func TestSettingsDefaultIgnoresLastSpawn(t *testing.T) {
 	submitFormSession(t, m, "first")
 
 	m.openSettings()
-	if got := m.settings.dialog.ToolNames[m.settings.dialog.ToolIndex]; got != "claude" {
+	if got := m.settingsCard().state.ToolNames[m.settingsCard().state.ToolIndex]; got != "claude" {
 		t.Fatalf("settings default tool = %q, want stored default", got)
 	}
 }

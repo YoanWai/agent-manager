@@ -51,11 +51,10 @@ func TestZZShot(t *testing.T) {
 	m := shotModel()
 	switch os.Getenv("AM_SHOT_MODE") {
 	case "settings":
-		m.mode = modeSettings
-		m.settings.dialog = settingsState{
+		m.push(newSettingsSurface(m, settingsState{
 			ToolNames: []string{"claude", "codex", "grok", "opencode"},
 			ToolIndex: 0, ThemeIndex: 1, Field: uisettings.FieldTheme, LayoutSplit: true,
-		}
+		}))
 		m.update.version = "0.9.2"
 	case "help":
 		m.mode = modeHelp

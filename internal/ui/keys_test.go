@@ -26,7 +26,6 @@ var ctrlCQuits = map[mode]bool{
 	modeFork:          true,
 	modeMove:          true,
 	modeRepoPick:      true,
-	modeSettings:      true,
 	modeDiff:          true,
 	modeNotices:       true,
 	modeLaunchHint:    true,

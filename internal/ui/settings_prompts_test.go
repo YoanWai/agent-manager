@@ -14,9 +14,9 @@ import (
 func openSavedPromptsPanel(t *testing.T, m *Model) {
 	t.Helper()
 	m.runBatch(t, m.openSettings())
-	m.settings.dialog.Field = uisettings.FieldPrompts
+	m.settingsCard().state.Field = uisettings.FieldPrompts
 	m.runBatch(t, pressSettings(m, tea.KeyMsg{Type: tea.KeyEnter}))
-	if !m.settings.dialog.Prompts.Open() {
+	if !m.settingsCard().state.Prompts.Open() {
 		t.Fatalf("enter on the saved prompts row did not open them: %q", m.errBar.text)
 	}
 }
@@ -100,7 +100,7 @@ func TestSavedPromptsPanelWritesThroughTheEffectLane(t *testing.T) {
 	if rows = storedPrompts(t, m); len(rows) != 0 {
 		t.Fatalf("delete left %+v", rows)
 	}
-	if !m.settings.dialog.Prompts.Open() || m.mode != modeSettings {
+	if !m.settingsCard().state.Prompts.Open() || !m.settingsOpen() {
 		t.Fatal("the panel closed under its own delete")
 	}
 }
@@ -133,7 +133,7 @@ func TestSavedPromptsPanelIgnoresALateRead(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.runBatch(t, m.openSettings())
-	m.settings.dialog.Field = uisettings.FieldPrompts
+	m.settingsCard().state.Field = uisettings.FieldPrompts
 	late := pressSettings(m, tea.KeyMsg{Type: tea.KeyEnter})()
 	pressSettings(m, tea.KeyMsg{Type: tea.KeyEsc})
 	savePrompt(t, m, "New", "text")
@@ -158,11 +158,11 @@ func TestSavedPromptsPanelByMouseInASmallTerminal(t *testing.T) {
 		m = wheelOnCard(m, tea.MouseButtonWheelDown)
 	}
 	frame := m.viewSettings()
-	if m.settings.dialog.Field != uisettings.FieldPrompts || len(strings.Split(frame, "\n")) > m.layout.height {
-		t.Fatalf("the wheel stopped on field %d", m.settings.dialog.Field)
+	if m.settingsCard().state.Field != uisettings.FieldPrompts || len(strings.Split(frame, "\n")) > m.layout.height {
+		t.Fatalf("the wheel stopped on field %d", m.settingsCard().state.Field)
 	}
 	m, cmd := clickBody(t, m, "saved prompts")
-	if m.runBatch(t, cmd); !m.settings.dialog.Prompts.Open() {
+	if m.runBatch(t, cmd); !m.settingsCard().state.Prompts.Open() {
 		t.Fatal("a click on the saved prompts row did not open them")
 	}
 	for range 29 {
@@ -194,7 +194,7 @@ func TestSettingsClickAboveTheBodyLeavesSavedPromptsClosed(t *testing.T) {
 	openBrowser = func(url string) error { t.Fatalf("opened %s", url); return nil }
 	t.Cleanup(func() { openBrowser = defaultOpenBrowser })
 	m.runBatch(t, m.openSettings())
-	d := &m.settings.dialog
+	d := &m.settingsCard().state
 	d.Field = uisettings.FieldCount - 1
 	hidden := func() bool { return !paints(m, "saved prompts") && paints(m, "docs") }
 	m.layout.width, m.layout.height = 40, 30

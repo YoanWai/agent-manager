@@ -107,8 +107,6 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleRenameKey(msg)
 	case modeFork:
 		return m.handleForkKey(msg)
-	case modeSettings:
-		return m.handleSettingsKey(msg)
 	case modeMove:
 		return m.handleMoveKey(msg)
 	case modeRepoPick:

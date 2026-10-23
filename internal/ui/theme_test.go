@@ -56,10 +56,10 @@ func TestThemeSwitchPushesPaneBackground(t *testing.T) {
 	t.Cleanup(func() { tmuxCmd(t, "set-option", "-gu", "window-style").Run() })
 
 	m.openSettings()
-	m.settings.dialog.Field = uisettings.FieldTheme
+	m.settingsCard().state.Field = uisettings.FieldTheme
 
 	light := themes[themeIndex("solarized light")]
-	m.settings.dialog.ThemeIndex = themeIndex("solarized light") - 1
+	m.settingsCard().state.ThemeIndex = themeIndex("solarized light") - 1
 	if cmd := m.cycleSetting(1); cmd != nil {
 		if msg := cmd(); msg != nil {
 			m.Update(msg)
@@ -72,7 +72,7 @@ func TestThemeSwitchPushesPaneBackground(t *testing.T) {
 		t.Errorf("light theme pushed window-style %q, want its own backdrop %q", got, want)
 	}
 
-	m.settings.dialog.ThemeIndex = themeIndex("nord") - 1
+	m.settingsCard().state.ThemeIndex = themeIndex("nord") - 1
 	if cmd := m.cycleSetting(1); cmd != nil {
 		if msg := cmd(); msg != nil {
 			m.Update(msg)

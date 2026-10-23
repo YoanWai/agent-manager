@@ -1578,7 +1578,7 @@ func TestMessagesLegendClickOnlyOpensFromTheList(t *testing.T) {
 		{"quick prompt", func(m *Model) { m.openQuickMode() }, func(m *Model) bool { return m.quick.active }},
 		{"resize", func(m *Model) { m.layout.split.resizeMode = true }, func(m *Model) bool { return m.layout.split.resizeMode }},
 		{"messages key off", func(m *Model) { m.services.listKeys = m.services.listKeys.With(keybind.Messages, bindingOf(t)) }, func(*Model) bool { return true }},
-		{"settings", func(m *Model) { m.openSettings() }, func(m *Model) bool { return m.mode == modeSettings }},
+		{"settings", func(m *Model) { m.openSettings() }, func(m *Model) bool { return m.settingsOpen() }},
 		{"short terminal", func(m *Model) { m.layout.height = 2 }, func(*Model) bool { return true }},
 	} {
 		t.Run(change.name, func(t *testing.T) {

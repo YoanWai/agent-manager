@@ -35,7 +35,7 @@ func TestRootMenuOpensSettings(t *testing.T) {
 	}
 	_, cmd := leftClickCmd(m, m.layout.displayedRail.MenuRect.Left+2, m.layout.displayedRail.MenuRect.Top+1+settings)
 	m.runBatch(t, cmd)
-	if m.rail.MenuOpen() || m.mode != modeSettings {
+	if m.rail.MenuOpen() || !m.settingsOpen() {
 		t.Fatal("root menu must open Settings even in an empty workspace")
 	}
 }
@@ -61,7 +61,7 @@ func TestAMenuEntryRunsOnTheRelease(t *testing.T) {
 	m = leftPress(m, x, y)
 	m, cmd := leftReleaseCmd(m, x, y)
 	m.runBatch(t, cmd)
-	if m.rail.MenuOpen() || m.mode != modeSettings {
+	if m.rail.MenuOpen() || !m.settingsOpen() {
 		t.Fatalf("the release should run the entry, menu %v mode %v", m.rail.MenuOpen(), m.mode)
 	}
 }

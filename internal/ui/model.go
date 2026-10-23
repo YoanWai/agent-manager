@@ -36,7 +36,6 @@ const (
 	modeFork
 	modeMove
 	modeRepoPick
-	modeSettings
 	modeDiff
 	modeNotices
 	// modeLaunchHint holds a refused spawn's fix in a dialog: the launch
@@ -122,7 +121,6 @@ type mouseCapture struct {
 }
 
 type settingsFeature struct {
-	dialog  settingsState
 	cache   settingsCache
 	pending int
 	gen     uint64

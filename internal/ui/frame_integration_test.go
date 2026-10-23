@@ -30,10 +30,10 @@ func TestSessionLayoutDefaultsToSplit(t *testing.T) {
 func TestSettingsTogglesSessionLayout(t *testing.T) {
 	m := buildModel(t)
 	m.openSettings()
-	if m.settings.dialog.FullLayout {
+	if m.settingsCard().state.FullLayout {
 		t.Fatal("settings should open on split by default")
 	}
-	for m.settings.dialog.Field != uisettings.FieldSessionLayout {
+	for m.settingsCard().state.Field != uisettings.FieldSessionLayout {
 		m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
 	}
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
@@ -60,7 +60,7 @@ func TestSettingsToggleChromeIndependently(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m := buildModel(t)
 			m.openSettings()
-			if m.settings.dialog.HideHeader || m.settings.dialog.HideStats {
+			if m.settingsCard().state.HideHeader || m.settingsCard().state.HideStats {
 				t.Fatal("header and stats should show by default")
 			}
 			settings := ansi.Strip(m.viewSettings())
@@ -70,7 +70,7 @@ func TestSettingsToggleChromeIndependently(t *testing.T) {
 				}
 			}
 
-			for m.settings.dialog.Field != tc.field {
+			for m.settingsCard().state.Field != tc.field {
 				m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
 			}
 			m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})

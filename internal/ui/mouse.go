@@ -208,8 +208,6 @@ func (m *Model) closesOnBackdrop() bool {
 	switch m.mode {
 	case modeHelp, modeNotices, modeMove, modeRepoPick, modeConfirmDelete, modeLaunchHint:
 		return true
-	case modeSettings:
-		return !m.settings.dialog.Editor.Typing() && !m.settings.dialog.Prompts.Editing()
 	}
 	return false
 }
@@ -222,8 +220,6 @@ func (m *Model) clickCard(col, line int) (tea.Model, tea.Cmd) {
 	switch m.mode {
 	case modeForm:
 		return m.handleFormClick(line)
-	case modeSettings:
-		return m.applySettingsResult(m.settings.dialog.Click(col, line, m.settingsContext()))
 	case modeHelp:
 		m.help.state.Click(line)
 	case modeNotices:
@@ -253,8 +249,6 @@ func (m *Model) wheelCard(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	switch m.mode {
 	case modeForm:
 		return m, m.runFormRequest(m.form.Wheel(m.spawnHost(), step), nil)
-	case modeSettings:
-		return m.applySettingsResult(m.settings.dialog.Wheel(step, m.settingsContext()))
 	case modeNotices:
 		m.notices.Wheel(step, m.activeNotices(), m.noticesFrame())
 	case modeHelp:

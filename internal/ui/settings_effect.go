@@ -237,23 +237,24 @@ func (m *Model) handleSettingsLoaded(msg settingsLoadedMsg) (tea.Model, tea.Cmd)
 	var follow tea.Cmd
 	switch msg.request.target {
 	case settingsLoadDialog:
-		if msg.request.generation != m.settings.gen || m.mode != modeSettings ||
-			m.settings.dialog.Busy() || m.settings.pending > 0 {
+		card, open := surfaceOf[*settingsSurface](m)
+		if msg.request.generation != m.settings.gen || !open ||
+			card.state.Busy() || m.settings.pending > 0 {
 			return m, nil
 		}
 		m.settings.cache.applyReadback(msg.result.values, msg.result.hiddenRaw, msg.result.hiddenErr)
-		field := m.settings.dialog.Field
-		m.settings.dialog = m.settings.stateFromCache(m.services.cfg)
+		field := card.state.Field
+		card.state = m.settings.stateFromCache(m.services.cfg)
 		// A manual theme the shell changed meanwhile repaints here, so esc
 		// keeps it instead of writing back the palette cached at startup.
-		if d := &m.settings.dialog; !d.ThemeAuto && current().Name != d.ManualTheme {
+		if d := &card.state; !d.ThemeAuto && current().Name != d.ManualTheme {
 			d.ShowTheme(d.ManualTheme)
 			applyTheme(themes[d.ThemeIndex])
 			SyncTerminalColors()
 			follow = m.syncPaneTheme()
 		}
-		m.settings.dialog.MarkBaseline()
-		m.settings.dialog.Field = field
+		card.state.MarkBaseline()
+		card.state.Field = field
 	case settingsLoadForm:
 		if m.mode != modeForm || uint64(m.form.prompt.gen) != msg.request.generation ||
 			m.form.DefaultsTouched() || m.settings.pending > 0 {
@@ -303,8 +304,8 @@ func (m *Model) applySettingsEffect(job *effectJob, result settingsEffectResult,
 			if note := m.reconcileSettingsPrefs(result.restored); note != "" {
 				m.reportErr(m.errBar.text + "; " + note)
 			}
-			if !stale {
-				m.settings.dialog.Restore(result.restored, result.restoredHidden, result.hiddenErr, m.settings.cache.editors)
+			if card, open := surfaceOf[*settingsSurface](m); open && !stale {
+				card.state.Restore(result.restored, result.restoredHidden, result.hiddenErr, m.settings.cache.editors)
 			}
 		}
 	}

@@ -16,6 +16,16 @@ func TestClickOnListFooterGroupKeyOpensTheCard(t *testing.T) {
 	}
 }
 
+func TestClickOnListFooterSettingsKeyOpensTheCard(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 320, 40
+	createSession(t, m, "alpha", t.TempDir(), "")
+	if m = clickLabel(t, m, "s settings"); !m.settingsOpen() {
+		t.Fatalf("click on the settings key did not open the card (err %q)", m.errBar.text)
+	}
+}
+
 func TestClickOnListFooterKeysOpensTheirModals(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -24,7 +34,6 @@ func TestClickOnListFooterKeysOpensTheirModals(t *testing.T) {
 	}{
 		{"n new", modeForm},
 		{"? keys", modeHelp},
-		{"s settings", modeSettings},
 	} {
 		m := buildModel(t)
 		m.layout.width, m.layout.height = 320, 40

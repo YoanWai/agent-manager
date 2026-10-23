@@ -48,8 +48,6 @@ func (m *Model) renderFrame() string {
 		frame = m.viewConfirm()
 	case modeLaunchHint:
 		frame = m.launchHintFrame()
-	case modeSettings:
-		frame = m.viewSettings()
 	case modeFork:
 		frame = m.viewFork()
 	case modeMove:

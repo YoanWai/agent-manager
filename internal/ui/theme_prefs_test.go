@@ -40,15 +40,15 @@ func TestThemeAutoPersistsWithoutClobberingManualTheme(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.applyTestMsg(t, m.openSettings()())
-	if m.settings.dialog.ThemeAuto {
+	if m.settingsCard().state.ThemeAuto {
 		t.Fatal("theme auto should default off")
 	}
-	m.settings.dialog.Field = uisettings.FieldThemeAuto
+	m.settingsCard().state.Field = uisettings.FieldThemeAuto
 	m.cycleSetting(1)
-	if !m.settings.dialog.ThemeAuto {
+	if !m.settingsCard().state.ThemeAuto {
 		t.Fatal("toggle should enable theme auto")
 	}
-	m.applyCmd(t, m.captureSettingsSave(true, false))
+	m.applyCmd(t, m.captureSettingsSave(&m.settingsCard().state, true, false))
 	if got, _ := m.services.store.Setting(uisettings.ThemeSetting); got != "nord" {
 		t.Fatalf("manual theme clobbered by auto: %q", got)
 	}
@@ -70,19 +70,19 @@ func TestManualThemeCycleDisablesAuto(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.applyTestMsg(t, m.openSettings()())
-	if !m.settings.dialog.ThemeAuto {
+	if !m.settingsCard().state.ThemeAuto {
 		t.Fatal("open should reflect the persisted auto toggle")
 	}
-	m.settings.dialog.Field = uisettings.FieldTheme
+	m.settingsCard().state.Field = uisettings.FieldTheme
 	m.cycleSetting(1)
-	if m.settings.dialog.ThemeAuto {
+	if m.settingsCard().state.ThemeAuto {
 		t.Fatal("stepping the theme by hand should turn auto off")
 	}
-	m.applyCmd(t, m.captureSettingsSave(true, false))
+	m.applyCmd(t, m.captureSettingsSave(&m.settingsCard().state, true, false))
 	if got, _ := m.services.store.Setting(uisettings.ThemeAutoSetting); got != "off" {
 		t.Fatalf("theme_auto should persist off after a manual step: %q", got)
 	}
-	if got, _ := m.services.store.Setting(uisettings.ThemeSetting); got != themes[m.settings.dialog.ThemeIndex].Name {
+	if got, _ := m.services.store.Setting(uisettings.ThemeSetting); got != themes[m.settingsCard().state.ThemeIndex].Name {
 		t.Fatalf("manual step not persisted: %q", got)
 	}
 }
