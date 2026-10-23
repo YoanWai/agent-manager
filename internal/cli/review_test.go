@@ -315,7 +315,7 @@ func TestReviewModeRecordsAKnownScope(t *testing.T) {
 	}
 
 	err = runReviewMode(&bytes.Buffer{}, []string{"everything"}, "abc123", configDir)
-	if err == nil || !strings.Contains(err.Error(), "uncommitted, branch, last_commit, staged") {
+	if err == nil || !strings.Contains(err.Error(), "uncommitted, branch, commit, staged") {
 		t.Fatalf("error = %v, want it to list the scopes", err)
 	}
 }

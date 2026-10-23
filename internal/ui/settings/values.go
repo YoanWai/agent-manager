@@ -147,6 +147,8 @@ func (s *State) Values() []Value {
 			values = append(values, Value{Key: ThemeSetting, Value: s.storedTheme()})
 		case GlyphModeSetting:
 			values = append(values, Value{Key: GlyphModeSetting, Value: string(s.GlyphMode.Effective())})
+		case ReviewScopeSetting:
+			values = append(values, Value{Key: ReviewScopeSetting, Value: s.ReviewScope})
 		case EditorSetting:
 			values = append(values, Value{Key: EditorSetting, Value: s.Editor.Line()})
 		default:
@@ -190,6 +192,8 @@ func (s *State) Restore(restored []Readback, hiddenRaw string, hiddenErr error, 
 			if !s.ThemeAuto {
 				s.ManualTheme = value.Value
 			}
+		case ReviewScopeSetting:
+			s.ReviewScope = reviewScope(value.Value)
 		case EditorSetting:
 			s.Editor = NewEditorRow(value.Value, editors)
 		default:

@@ -1,6 +1,8 @@
 package settings
 
 import (
+	"slices"
+
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 )
@@ -26,6 +28,26 @@ type Setting struct {
 
 var onOff = []string{"on", "off"}
 
+// ReviewScopes are the names review stores its scopes by, in the order s
+// cycles them.
+var ReviewScopes = []string{"uncommitted", "branch", "commit", "staged"}
+
+// reviewScope reads a stored scope name, falling back to the first.
+func reviewScope(stored string) string {
+	if slices.Contains(ReviewScopes, stored) {
+		return stored
+	}
+	return ReviewScopes[0]
+}
+
+// reviewScopeLabel names a scope the way review's header pill does.
+func reviewScopeLabel(name string) string {
+	if name == "branch" {
+		return "vs target"
+	}
+	return name
+}
+
 // table is every key Settings keeps, in the order settings list prints them.
 var table = []Setting{
 	{Spec: Spec{Key: DefaultToolSetting, Row: "default tool"}, Field: FieldTool},
@@ -45,6 +67,7 @@ var table = []Setting{
 		Flag: func(s *State) *bool { return &s.HideStats }, True: "on", False: "off", TrueLabel: "hide", FalseLabel: "show"},
 	{Spec: Spec{Key: DiffLayoutSetting, Values: []string{"split", "unified"}, Default: "split", Row: "review layout"}, Field: FieldLayout,
 		Flag: func(s *State) *bool { return &s.LayoutSplit }, True: "split", False: "unified"},
+	{Spec: Spec{Key: ReviewScopeSetting, Values: ReviewScopes, Default: ReviewScopes[0], Row: "review scope"}, Field: FieldReviewScope},
 	{Spec: Spec{Key: QuickCloseSetting, Values: []string{"stay", "close"}, Default: "stay", Row: "after quick prompt"}, Field: FieldQuickClose,
 		Flag: func(s *State) *bool { return &s.QuickCloseSend }, True: "close", False: "stay", FalseLabel: "stay open"},
 	{Spec: Spec{Key: FocusKeySetting, Values: []string{"focus", "attach"}, Default: "focus", Row: "session keys"}, Field: FieldFocusKey,

@@ -111,6 +111,8 @@ type focusState struct {
 type reviewNavState struct {
 	ret    reviewReturn
 	picker uireview.Picker
+	// filesTop is the frame row the file list's first row last painted on.
+	filesTop int
 }
 
 type mouseCapture struct {

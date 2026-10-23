@@ -46,7 +46,7 @@ func BenchmarkBuildSetManyFiles(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := BuildSet(driver, dir, git.ScopeUncommitted, ""); err != nil {
+		if _, err := BuildSet(driver, dir, git.ScopeUncommitted, "", ""); err != nil {
 			b.Fatal(err)
 		}
 	}

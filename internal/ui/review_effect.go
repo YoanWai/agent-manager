@@ -20,6 +20,7 @@ const (
 	reviewOpStatus
 	reviewOpNormalize
 	reviewOpSetBase
+	reviewOpSetScope
 )
 
 type reviewEffectRequest struct {
@@ -30,6 +31,7 @@ type reviewEffectRequest struct {
 	sourceRepo    string
 	generation    int
 	baseRef       string
+	scope         string
 	state         uireview.SavedState
 	previousState uireview.SavedState
 	commentID     string
@@ -148,6 +150,11 @@ func runReviewWithWriter(request reviewEffectRequest, st *store.Store, writer re
 			ref: request.baseRef, generation: request.generation,
 			err: st.SetReviewBase(request.targetID, request.repoRoot, request.baseRef),
 		}}, nil
+	case reviewOpSetScope:
+		if err := st.SetReviewScope(request.targetID, request.scope); err != nil {
+			return reviewEffectResult{op: reviewOpSetScope}, fmt.Errorf("saving review scope: %w", err)
+		}
+		return reviewEffectResult{op: reviewOpSetScope}, nil
 	case reviewOpSend:
 		result := uireview.SendResult{
 			TargetID: request.targetID, RepoRoot: request.repoRoot, CommentIDs: append([]string(nil), request.commentIDs...),

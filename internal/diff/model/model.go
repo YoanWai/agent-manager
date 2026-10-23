@@ -53,7 +53,9 @@ type Set struct {
 	BaseDesc     string
 	BaseRef      string
 	BaseOverride string
-	Files        []FileDiff
+	// Commit is the full SHA ScopeCommit diffs against its parent.
+	Commit string
+	Files  []FileDiff
 }
 
 const (
