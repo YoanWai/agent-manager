@@ -18,7 +18,7 @@ func TestClicksOnTheConnectionDialog(t *testing.T) {
 	}{{"binary ", uiconnections.BinaryField}, {"ssh to ", uiconnections.DestinationField}, {"name ", uiconnections.NameField}} {
 		x, y := bodyCell(t, m, tc.label)
 		m = leftClick(m, x, y)
-		if !m.connectionDialogOpen() || m.connectionSurface().dialog.Focus() != tc.field {
+		if !m.connectionDialogOpen() || m.connectionSurface().Dialog().Focus() != tc.field {
 			t.Fatalf("a click on %q: open %v", tc.label, m.connectionDialogOpen())
 		}
 	}

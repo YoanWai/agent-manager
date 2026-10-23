@@ -6,6 +6,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/remote"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uiconnections "github.com/YoanWai/agent-manager/internal/ui/connections"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -55,11 +56,11 @@ func (s effectServices) runConnection(request connectionRequest) (effectResult, 
 }
 
 func (m *Model) applyConnectionEffect(request connectionRequest, result connectionEffectResult, err error) tea.Cmd {
-	s, dialogOpen := surfaceOf[*connectionsSurface](m)
-	dialogOpen = dialogOpen && s.gen == request.gen
+	s, dialogOpen := surfaceOf[*uiconnections.Surface](m)
+	dialogOpen = dialogOpen && s.Gen() == request.gen
 	if err != nil {
 		if dialogOpen {
-			s.dialog.SaveFailed(s.dialog.Gen())
+			s.Dialog().SaveFailed(s.Dialog().Gen())
 		}
 		m.reportErr("connection not saved: " + err.Error())
 		return nil

@@ -5,11 +5,12 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/remote"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uiconnections "github.com/YoanWai/agent-manager/internal/ui/connections"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func (m *Model) connectionSurface() *connectionsSurface {
-	s, ok := surfaceOf[*connectionsSurface](m)
+func (m *Model) connectionSurface() *uiconnections.Surface {
+	s, ok := surfaceOf[*uiconnections.Surface](m)
 	if !ok {
 		panic("the connection card is not open")
 	}
@@ -17,7 +18,7 @@ func (m *Model) connectionSurface() *connectionsSurface {
 }
 
 func (m *Model) connectionDialogOpen() bool {
-	_, ok := surfaceOf[*connectionsSurface](m)
+	_, ok := surfaceOf[*uiconnections.Surface](m)
 	return ok
 }
 
@@ -64,7 +65,7 @@ func TestConnectionCardKeepsItsDraft(t *testing.T) {
 // replaced it, neither closes nor releases the card on screen.
 func TestConnectionSaveCompletionIsFenced(t *testing.T) {
 	m := openConnectionModel(t)
-	stale := connectionRequest{op: connectionAdd, next: store.Connection{Name: "box", Destination: "me@box"}, gen: m.connectionSurface().gen}
+	stale := connectionRequest{op: connectionAdd, next: store.Connection{Name: "box", Destination: "me@box"}, gen: m.connectionSurface().Gen()}
 	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m.applyConnectionEffect(stale, connectionEffectResult{}, nil)
 	if m.connectionDialogOpen() {
