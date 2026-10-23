@@ -6,6 +6,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	"github.com/YoanWai/agent-manager/internal/ui/surface"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -99,7 +100,7 @@ func TestSavedKeepsTheLeaveKeyAndItsOwnClose(t *testing.T) {
 
 func TestSavedClickPicksTheRowUnderThePointer(t *testing.T) {
 	root := &stubRoot{}
-	s := OpenSaved(root, 0, spawn.Styles{})
+	s := OpenSaved(root, 0, spawn.Styles{Input: func(in textinput.Model) string { return in.Value() }})
 	host := &stubHost{}
 	s.Load([]spawn.Saved{{Name: "Role", Text: "be brief"}}, nil)
 	s.View(host, "")
