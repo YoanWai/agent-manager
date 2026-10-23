@@ -57,14 +57,14 @@ func TestNoticesSurfaceFencesAStaleDismissalCompletion(t *testing.T) {
 	m.openNotices(uinotices.Welcome)
 	job := &effectJob{request: noticeDismissRequest{id: uinotices.Welcome, foregroundGen: m.gens.foreground, modal: true}}
 
-	m.pop()
+	m.Pop()
 	m.openHelp()
 	m.applyNoticeDismiss(job, errTest("persist failed"))
 	if m.noticesOpen() {
 		t.Fatal("a failed dismissal opened the modal over another card")
 	}
 
-	m.pop()
+	m.Pop()
 	m.applyNoticeDismiss(job, errTest("persist failed"))
 	if !m.noticesOpen() {
 		t.Fatal("a failed dismissal did not reopen the modal on a clear list")

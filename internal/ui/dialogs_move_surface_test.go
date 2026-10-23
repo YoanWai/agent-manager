@@ -53,7 +53,7 @@ func TestMoveClosesOnEscAndBackdrop(t *testing.T) {
 func TestStaleMoveCloseIsDropped(t *testing.T) {
 	m := openMoveFor(t)
 	stale := moveDialogClose{gen: m.gens.dialog}
-	m.pop()
+	m.Pop()
 	m.applyMoveDialogClose(stale)
 	if moveOpen(m) || len(m.surfaces) != 0 {
 		t.Fatal("a stale close touched the stack")

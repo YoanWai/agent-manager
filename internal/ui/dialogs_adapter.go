@@ -82,7 +82,7 @@ func (m *Model) confirmCard(title, question, consequence string, destructive boo
 		tone = errStyle()
 	}
 	body := uidialogs.ConfirmBody(question, consequence, cardInnerWidth(width), tone, mutedStyle())
-	return m.cardSized(width, title, body, uidialogs.ConfirmHints(answer))
+	return m.CardSized(width, title, body, uidialogs.ConfirmHints(answer))
 }
 
 func (m *Model) drawCard(card uidialogs.Card) string {
@@ -165,7 +165,7 @@ func (m *Model) placeMove(move uidialogs.Move, p *groupPicker) tea.Cmd {
 	}
 	request, ok := move.Place(pick)
 	if !ok {
-		m.pop()
+		m.Pop()
 		return nil
 	}
 	if request.IsGroup() {

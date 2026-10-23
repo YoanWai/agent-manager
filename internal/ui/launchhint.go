@@ -162,7 +162,7 @@ func (m *Model) openLaunchHint(fix launchFix) {
 			if _, bar := top.(*quickSurface); bar {
 				break
 			}
-			m.pop()
+			m.Pop()
 		}
 		m.base = baseList
 	}

@@ -45,10 +45,10 @@ func (s *reviewPicker) Wheel(h surfaceHost, arrow tea.KeyMsg) tea.Cmd {
 }
 
 func (s *reviewPicker) View(h surfaceHost, _ string) string {
-	cols, rows := h.size()
+	cols, rows := h.Size()
 	width := cardWidthFor(cols)
 	body := s.picker.Body(s.render, cardInnerWidth(width), rows)
-	return h.cardSized(width, s.glyph+" "+s.picker.Title(), body, s.picker.Hints())
+	return h.CardSized(width, s.glyph+" "+s.picker.Title(), body, s.picker.Hints())
 }
 
 func (s *reviewPicker) Footer() [][2]string { return s.picker.Hints() }
@@ -67,7 +67,7 @@ func (s *reviewPicker) apply(h surfaceHost, result uireview.PickerResult) tea.Cm
 	if !result.Close {
 		return nil
 	}
-	h.pop()
+	h.Pop()
 	if result.Choice == nil {
 		return nil
 	}

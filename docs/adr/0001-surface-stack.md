@@ -34,10 +34,11 @@ over the list that hands the keyboard to the agent.
    it. `Model` loses a field for every card that moves onto the stack, and
    the field cap in `model_test.go` comes down with it. One constructor per
    surface, so a surface on the stack is never half-built.
-3. **A surface reaches the root only through `surfaceHost`.** The cap and
-   the type rules of `model_host_test.go` apply: at most 8 methods, and
-   never `Model`, `services` or a driver. A surface that needs more returns
-   a command for a root adapter, as features already do.
+3. **A surface reaches the root only through its host.** The shared one is
+   `surface.Host`: paint a card, read the terminal size, pop. The cap and
+   the type rules of `model_host_test.go` apply to every host: at most 8
+   methods, and never `Model`, `services` or a driver. A surface that needs
+   more returns a command for a root adapter, as features already do.
 4. **The top surface states its preferences.** `Owner` says who reads plain
    keys (manager or agent); `Dismissible` says whether esc and a click off
    the card close it; `Footer` leads the legend; `View` paints. ctrl+c is
@@ -67,25 +68,40 @@ over the list that hands the keyboard to the agent.
    the mouse through the optional `mouseTaker`, and `cardOpen` is false for
    it.
 
+The contract lives in the leaf package `internal/ui/surface`, which imports
+nothing from the module, so a feature package can implement it without
+reaching the root. The root aliases it as `surface`, `surfaceHost` and
+`inputOwner`.
+
 ```go
-type surface interface {
-	Key(h surfaceHost, msg tea.KeyMsg) (handled bool, cmd tea.Cmd)
-	Click(h surfaceHost, line int) tea.Cmd
-	Wheel(h surfaceHost, arrow tea.KeyMsg) tea.Cmd
-	View(h surfaceHost, below string) string
+type Surface interface {
+	Key(h Host, msg tea.KeyMsg) (handled bool, cmd tea.Cmd)
+	Click(h Host, line int) tea.Cmd
+	Wheel(h Host, arrow tea.KeyMsg) tea.Cmd
+	View(h Host, below string) string
 	Footer() [][2]string
-	Owner() inputOwner
+	Owner() Owner
 	Dismissible() bool
-	Leave(h surfaceHost)
+	Leave(h Host)
+}
+
+type Host interface {
+	CardSized(width int, title, body string, hint [][2]string) string
+	Size() (width, height int)
+	Pop()
 }
 ```
 
-One `<feature>_surface.go` per surface in the root, holding the type, its
-constructor and these methods; the child package keeps the state and view
-it has today. `check-file-names` learns the `_surface` role. A surface that
-needs more of the root than `surfaceHost` offers takes a narrow host of its
-own at construction (`helpHost`, `settingsHost`, `resizeHost`, `focusHost`)
-rather than widening the shared one.
+A surface whose state and view already live in a feature package lives
+there too, behind a root interface the package declares: `help.Surface`
+reads the root through `help.Root`, and the root keeps only
+`help_adapter.go`. The rest are one `<feature>_surface.go` each in the root,
+holding the type, its constructor and these methods, while the child
+package keeps the state and view; `check-file-names` knows the `_surface`
+role. A surface that needs more of the root than the shared host takes a
+narrow host of its own, asserted from the one it is handed (`settingsHost`,
+`resizeHost`, `focusHost`, `focusSavedHost`), rather than widening the
+shared one.
 
 The screen is `screen{base, surfaces}`: the base is the list or Review, and
 the stack sits over it. Focus is a surface over the list whose `Owner` is
@@ -120,7 +136,9 @@ picker; the New Group form, Settings and the connection dialog; the rail's
 `Busy()`; resize; the quick bar; the New Session form; focus; then the two
 base screens, with `mode`, its constants, `setMode` and every `switch
 m.mode` deleted. Reads of `m.mode` outside tests: 156 before, 0 after.
-`Model`: 31 fields before, 20 after.
+`Model`: 31 fields before, 20 after. Last, the contract moved to
+`internal/ui/surface` and help's surface into `internal/ui/help`, the first
+feature whose surface is not a root file.
 
 Left as it was, on purpose: Review's comment box and send prompt stay in
 the `review` package behind its keymap; the rail's menu, search and reorder

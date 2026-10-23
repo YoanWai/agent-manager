@@ -16,7 +16,7 @@ type confirmSurface struct {
 
 // confirmHost is what the card reaches on the root beyond the stack.
 type confirmHost interface {
-	pop()
+	Pop()
 	confirmCard(title, question, consequence string, destructive bool, answer string) string
 	runConfirmed(target confirmTarget) tea.Cmd
 }
@@ -53,11 +53,11 @@ func (s *confirmSurface) prompt() uidialogs.Confirm {
 func (s *confirmSurface) Key(h surfaceHost, msg tea.KeyMsg) (bool, tea.Cmd) {
 	switch s.prompt().Key(msg) {
 	case uidialogs.ConfirmCancel:
-		h.pop()
+		h.Pop()
 	case uidialogs.ConfirmAccept:
 		target := s.confirmTarget
 		target.sessions = append(target.sessions[:0:0], target.sessions...)
-		h.pop()
+		h.Pop()
 		return true, h.(confirmHost).runConfirmed(target)
 	}
 	return true, nil

@@ -49,7 +49,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case quitNow:
 		return m.requestQuit()
 	case quitPopSurface:
-		m.pop()
+		m.Pop()
 		return m, nil
 	}
 	if cmd, ok := m.surfaceKey(msg); ok {

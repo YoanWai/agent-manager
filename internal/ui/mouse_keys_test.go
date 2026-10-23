@@ -3,6 +3,7 @@ package ui
 import (
 	"testing"
 
+	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -34,7 +35,7 @@ func TestClickOnListFooterKeysOpensTheirModals(t *testing.T) {
 	}{
 		{"n new", formOpen},
 		{"g group", func(m *Model) bool { return m.groupFormOpen() }},
-		{"? keys", func(m *Model) bool { _, ok := surfaceOf[*helpSurface](m); return ok }},
+		{"? keys", func(m *Model) bool { _, ok := surfaceOf[*uihelp.Surface](m); return ok }},
 		{"s settings", func(m *Model) bool { return m.settingsOpen() }},
 	} {
 		m := buildModel(t)

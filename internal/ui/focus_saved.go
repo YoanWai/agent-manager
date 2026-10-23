@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -16,6 +17,15 @@ type focusSaved struct {
 	list   spawn.SavedList
 	gen    uint64
 	styles spawn.Styles
+}
+
+// focusSavedHost is what the list reaches on the root beyond the stack:
+// the focused session, and the keys it shares with focus.
+type focusSavedHost interface {
+	keys() keybind.Table
+	selected() (store.Session, bool)
+	pasteFocused(sess store.Session, text string) tea.Cmd
+	leaveFocus() tea.Cmd
 }
 
 // newFocusSaved is the one way to build the surface, so a surface on the
@@ -39,11 +49,12 @@ func (m *Model) loadFocusSaved(msg savedPromptsLoadedMsg) {
 // Key keeps the leave key working while the list is up, and the saved
 // prompt key closes it again. Every other key is the list's.
 func (s *focusSaved) Key(h surfaceHost, msg tea.KeyMsg) (bool, tea.Cmd) {
+	keys := h.(focusSavedHost).keys()
 	switch {
-	case h.keys().Binding(keybind.Detach).Has(msg.String()):
-		return true, h.leaveFocus()
-	case h.keys().Binding(keybind.SavedPrompt).Has(msg.String()):
-		h.pop()
+	case keys.Binding(keybind.Detach).Has(msg.String()):
+		return true, h.(focusSavedHost).leaveFocus()
+	case keys.Binding(keybind.SavedPrompt).Has(msg.String()):
+		h.Pop()
 		return true, nil
 	}
 	cmd, pick := s.list.Key(msg)
@@ -61,10 +72,10 @@ func (s *focusSaved) Wheel(_ surfaceHost, arrow tea.KeyMsg) tea.Cmd {
 
 // View is the list's card, which takes the frame while it is up.
 func (s *focusSaved) View(h surfaceHost, _ string) string {
-	cols, _ := h.size()
+	cols, _ := h.Size()
 	width := min(48, max(28, cols-4))
 	lines := s.list.Lines(cardInnerWidth(width), 8, s.styles)
-	return h.cardSized(width, "saved prompts", strings.Join(lines, "\n"), [][2]string{{"↵", "paste"}, {"esc", "close"}})
+	return h.CardSized(width, "saved prompts", strings.Join(lines, "\n"), [][2]string{{"↵", "paste"}, {"esc", "close"}})
 }
 
 func (s *focusSaved) Footer() [][2]string { return s.list.Hint("paste", "close") }
@@ -81,11 +92,12 @@ func (s *focusSaved) Leave(surfaceHost) {}
 // pick, and pastes a pick into the focused pane.
 func (s *focusSaved) apply(h surfaceHost, pick spawn.SavedPick) tea.Cmd {
 	if pick.Closed {
-		h.pop()
+		h.Pop()
 	}
-	sess, ok := h.selected()
+	host := h.(focusSavedHost)
+	sess, ok := host.selected()
 	if !pick.Picked || !ok {
 		return nil
 	}
-	return h.pasteFocused(sess, pick.Saved.Text)
+	return host.pasteFocused(sess, pick.Saved.Text)
 }

@@ -16,7 +16,8 @@ type boundary struct {
 }
 
 var (
-	helpBoundary        = boundary{"Help", "/internal/ui/help", []string{"/internal/ui/help", "/internal/keybind", "/internal/ui/presentation"}}
+	helpBoundary        = boundary{"Help", "/internal/ui/help", []string{"/internal/ui/help", "/internal/keybind", "/internal/ui/presentation", "/internal/ui/surface"}}
+	surfaceBoundary     = boundary{"Surface", "/internal/ui/surface", []string{"/internal/ui/surface"}}
 	diffBoundary        = boundary{"Diff model", "/internal/diff/model", []string{"/internal/diff/model", "/internal/git/value"}}
 	reviewBoundary      = boundary{"Review", "/internal/ui/review", []string{"/internal/ui/review", "/internal/diff/model", "/internal/git/value", "/internal/ui/presentation"}}
 	focusBoundary       = boundary{"Focus", "/internal/ui/focus", []string{"/internal/ui/focus"}}
@@ -36,7 +37,7 @@ var (
 )
 
 func main() {
-	for _, feature := range []boundary{helpBoundary, reviewBoundary, focusBoundary, watchBoundary, railBoundary, settingsBoundary, themeBoundary, spawnBoundary, quickBoundary, dialogsBoundary, noticesBoundary, connectionsBoundary, diffBoundary, valueBoundary, catalogBoundary, presentBoundary, remoteBoundary} {
+	for _, feature := range []boundary{helpBoundary, reviewBoundary, focusBoundary, watchBoundary, railBoundary, settingsBoundary, themeBoundary, spawnBoundary, quickBoundary, dialogsBoundary, noticesBoundary, connectionsBoundary, surfaceBoundary, diffBoundary, valueBoundary, catalogBoundary, presentBoundary, remoteBoundary} {
 		if err := checkBoundary(feature); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)

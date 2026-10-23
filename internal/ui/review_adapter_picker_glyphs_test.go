@@ -19,7 +19,7 @@ func TestRetainedRepoPickerRendersCurrentMode(t *testing.T) {
 		m.prefs.glyphMode = tc.mode
 		m.openReviewPicker([]uireview.PickerRow{{Label: name, Root: "/repo"}}, "Review repo", uireview.PickRepo, "", uireview.PickerSource{}, "")
 		got := ansi.Strip(m.viewPicker(t))
-		m.pop()
+		m.Pop()
 		if !strings.Contains(got, tc.title+" Review repo") || !strings.Contains(got, tc.cursor+" "+name) {
 			t.Fatalf("%s picker=%q", tc.mode, got)
 		}

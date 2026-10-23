@@ -236,7 +236,7 @@ func (m *Model) applyRenameEffect(job *effectJob, result renameEffectResult, err
 		(request.kind != renameGroup || s.Dir() == request.draftDir) {
 		// Only the dialog that submitted this job closes; a reopened or
 		// resubmitted card keeps its edits.
-		m.pop()
+		m.Pop()
 	}
 	m.rebuildRows()
 }
@@ -311,7 +311,7 @@ func (m *Model) applyMoveDialogClose(request moveDialogClose) {
 	if _, open := surfaceOf[*moveSurface](m); !open || m.gens.dialog != request.gen {
 		return
 	}
-	m.pop()
+	m.Pop()
 	m.rebuildRows()
 }
 

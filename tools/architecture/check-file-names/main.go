@@ -30,7 +30,7 @@ var packaged = map[string]string{
 	"connections": "the SSH connections adapter: the client, refreshes, remote rows, preview and routed actions, and their effects",
 	"dialogs":     "the confirm, rename, move and fork dialog adapters and their effects",
 	"focus":       "the Focus adapter, its frame view and the pane watcher it holds",
-	"help":        "the Help adapter",
+	"help":        "the Help adapter: the context and root reads the key map paints from",
 	"notices":     "the notices adapter, release and feed checks and self-update",
 	"quick":       "the quick bar adapter and its send effect",
 	"rail":        "the Rail adapter",

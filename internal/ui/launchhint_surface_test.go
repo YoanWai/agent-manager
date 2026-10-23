@@ -94,7 +94,7 @@ func TestLaunchHintOverTheFormLeavesItsModeAlone(t *testing.T) {
 func TestInstallStartAfterTheHintClosedKeepsTheTracker(t *testing.T) {
 	m, _ := openHintFor(t)
 	gen := m.gens.dialog
-	m.pop()
+	m.Pop()
 	cmd := m.applyInstallStart(installStartRequest{gen: gen, binary: "tool"}, installStartResult{install: &pendingInstall{name: "install-tool", sessionID: "s"}}, nil)
 	if m.ledger.install == nil || hintOpen(m) {
 		t.Fatalf("install %+v hint open %t, want the tracker kept and no card revived", m.ledger.install, hintOpen(m))

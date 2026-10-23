@@ -5,6 +5,8 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"os"
+	"path"
 	"reflect"
 	"strings"
 	"testing"
@@ -25,7 +27,7 @@ var mouseOpeners = map[string]func(t *testing.T, m *Model){
 	"launchHintSurface": func(t *testing.T, m *Model) {
 		m.openLaunchHint(launchFix{text: "tool is missing", command: "true", binary: "tool"})
 	},
-	"helpSurface":        func(t *testing.T, m *Model) { m.openHelp() },
+	"help.Surface":       func(t *testing.T, m *Model) { m.openHelp() },
 	"noticesSurface":     func(t *testing.T, m *Model) { m.Update(key("M")) },
 	"settingsSurface":    func(t *testing.T, m *Model) { m.applyCmd(t, m.openSettings()) },
 	"groupFormSurface":   func(t *testing.T, m *Model) { m.openGroupForm() },
@@ -60,7 +62,7 @@ func TestEverySurfaceAnswersTheMouse(t *testing.T) {
 			m.selectSessionRow(t, "alpha")
 			open(t, m)
 			top, ok := m.top()
-			if !ok || reflect.TypeOf(top).Elem().Name() != name {
+			if !ok || surfaceName(top) != name {
 				t.Fatalf("the opener did not put %s on top, stack %d, err %q", name, len(m.surfaces), m.errBar.text)
 			}
 			below := len(m.surfaces) - 1
@@ -85,27 +87,56 @@ func TestEverySurfaceAnswersTheMouse(t *testing.T) {
 	}
 }
 
-// declaredSurfaces lists the types in the package that declare a Leave
-// method on a pointer receiver: every surface does, and nothing else.
+// surfaceName names a surface the way declaredSurfaces does: bare in the
+// root, qualified by its package in a feature's.
+func surfaceName(s surface) string {
+	typ := reflect.TypeOf(s).Elem()
+	if pkg := path.Base(typ.PkgPath()); pkg != "ui" {
+		return pkg + "." + typ.Name()
+	}
+	return typ.Name()
+}
+
+// declaredSurfaces lists the types that declare a Leave(surfaceHost) method on a
+// pointer receiver, in the root and in the feature packages under it: every
+// surface does, and nothing else.
 func declaredSurfaces(t *testing.T) []string {
 	t.Helper()
-	fset := token.NewFileSet()
-	packages, err := parser.ParseDir(fset, ".", func(info fs.FileInfo) bool {
-		return !strings.HasSuffix(info.Name(), "_test.go")
-	}, 0)
+	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)
 	}
+	dirs := []string{"."}
+	for _, entry := range entries {
+		if entry.IsDir() && entry.Name() != "testdata" {
+			dirs = append(dirs, entry.Name())
+		}
+	}
 	var names []string
-	for _, file := range packages["ui"].Files {
-		for _, decl := range file.Decls {
-			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || fn.Recv == nil || fn.Name.Name != "Leave" {
-				continue
-			}
-			if star, ok := fn.Recv.List[0].Type.(*ast.StarExpr); ok {
-				if ident, ok := star.X.(*ast.Ident); ok {
-					names = append(names, ident.Name)
+	for _, dir := range dirs {
+		fset := token.NewFileSet()
+		packages, err := parser.ParseDir(fset, dir, func(info fs.FileInfo) bool {
+			return !strings.HasSuffix(info.Name(), "_test.go")
+		}, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for pkg, parsed := range packages {
+			for _, file := range parsed.Files {
+				for _, decl := range file.Decls {
+					fn, ok := decl.(*ast.FuncDecl)
+					if !ok || fn.Recv == nil || fn.Name.Name != "Leave" || !takesHost(fn) {
+						continue
+					}
+					if star, ok := fn.Recv.List[0].Type.(*ast.StarExpr); ok {
+						if ident, ok := star.X.(*ast.Ident); ok {
+							name := ident.Name
+							if pkg != "ui" {
+								name = pkg + "." + name
+							}
+							names = append(names, name)
+						}
+					}
 				}
 			}
 		}
@@ -114,4 +145,20 @@ func declaredSurfaces(t *testing.T) []string {
 		t.Fatal("found no surfaces")
 	}
 	return names
+}
+
+// takesHost is whether fn's one parameter is the stack's host, which tells a
+// surface's Leave from another type's.
+func takesHost(fn *ast.FuncDecl) bool {
+	params := fn.Type.Params.List
+	if len(params) != 1 {
+		return false
+	}
+	switch typ := params[0].Type.(type) {
+	case *ast.Ident:
+		return typ.Name == "surfaceHost"
+	case *ast.SelectorExpr:
+		return typ.Sel.Name == "Host"
+	}
+	return false
 }

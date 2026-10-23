@@ -117,7 +117,7 @@ func (s *groupFormSurface) Wheel(h surfaceHost, arrow tea.KeyMsg) tea.Cmd {
 func (s *groupFormSurface) run(h surfaceHost, key uidialogs.GroupFormKey) tea.Cmd {
 	switch key.Action {
 	case uidialogs.GroupFormCancel:
-		h.pop()
+		h.Pop()
 		return nil
 	case uidialogs.GroupFormComplete:
 		return s.apply()
@@ -167,7 +167,7 @@ func (s *groupFormSurface) apply() tea.Cmd {
 }
 
 func (s *groupFormSurface) View(h surfaceHost, _ string) string {
-	cols, _ := h.size()
+	cols, _ := h.Size()
 	s.form.SyncWidths(groupFieldWidth(cols))
 	parent := s.parentPath()
 	view := uidialogs.GroupFormView{
@@ -189,7 +189,7 @@ func (s *groupFormSurface) View(h surfaceHost, _ string) string {
 		view.SuggestHints = pathSuggestHint(s.pc.chosen)
 	}
 	card := s.form.View(view)
-	return h.cardSized(cardWidthFor(cols), card.Title, card.Body, card.Hints)
+	return h.CardSized(cardWidthFor(cols), card.Title, card.Body, card.Hints)
 }
 
 // Footer is empty: the card paints its own hints.

@@ -82,7 +82,7 @@ func TestHelpArrowStepRowsFollowSetting(t *testing.T) {
 	for _, enabled := range []bool{true, false} {
 		m := helpModel()
 		m.prefs.arrowStep = enabled
-		lines := helpSurfaceOf(m).state.Content(m.helpContext(84)).Lines
+		lines := helpSurfaceOf(m).State().Content(m.helpContext(84)).Lines
 		for _, row := range []struct{ title, key string }{
 			{"list", "→"},
 			{"list", "←"},
@@ -169,7 +169,7 @@ func TestHelpMatchesBaselineContentAndLayout(t *testing.T) {
 	tests[1].model.layout.width, tests[1].model.layout.height = 100, 28
 	tests[1].model.focus.runtime.imeCursor = &cursorAnchor{}
 	typeHelpSearch(tests[1].model, "中文", false)
-	helpSurfaceOf(tests[2].model).state = uihelp.New(uihelp.Review)
+	*helpSurfaceOf(tests[2].model).State() = uihelp.New(uihelp.Review)
 	tests[3].model.layout.width, tests[3].model.layout.height = 60, 14
 	tests[3].model.errBar = errBar{text: "refresh failed"}
 	typeHelpSearch(tests[3].model, "zzzz", true)

@@ -65,7 +65,7 @@ func (m *Model) applyConnectionEffect(request connectionRequest, result connecti
 		return nil
 	}
 	if dialogOpen {
-		m.pop()
+		m.Pop()
 	}
 	m.ssh.setList(result.connections)
 	m.rebuildRows()
@@ -193,7 +193,7 @@ func (m *Model) applyRemoteEffect(request remoteRequest, result remoteEffectResu
 		m.reportDone("restored " + request.name + on)
 	case remoteCreateGroup:
 		if s, ok := surfaceOf[*groupFormSurface](m); ok && s.form.Gen() == request.composerGen {
-			m.pop()
+			m.Pop()
 		}
 		m.reportDone("created group " + request.name + on)
 	}

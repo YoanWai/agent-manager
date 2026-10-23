@@ -3,6 +3,7 @@ package ui
 import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uisurface "github.com/YoanWai/agent-manager/internal/ui/surface"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -35,36 +36,18 @@ func (m *Model) screenID() screenID {
 	return screenID{base: m.base, focused: m.focused(), depth: len(m.surfaces)}
 }
 
-// A surface is a layer over the base screen that takes input before it:
-// focus, and the cards over the list, Review or a focused session. The root
-// walks the stack from the top for keys, mouse, frame and footer, so no
-// other code asks which overlay is open. See docs/adr/0001-surface-stack.md.
-//
-// A surface owns its state and reaches the root only through surfaceHost,
-// so it can be built and driven in a test without a Model. Mode stays the
-// base layer while surfaces move onto the stack one by one.
-type surface interface {
-	// Key handles a key that reached this layer. A modal surface consumes
-	// every key; handled false lets the key fall to the layer below.
-	Key(h surfaceHost, msg tea.KeyMsg) (handled bool, cmd tea.Cmd)
-	// Click acts on the surface's card body at its painted line.
-	Click(h surfaceHost, line int) tea.Cmd
-	// Wheel steps the surface the way ↑↓ do.
-	Wheel(h surfaceHost, arrow tea.KeyMsg) tea.Cmd
-	// View paints the surface over the frame below it.
-	View(h surfaceHost, below string) string
-	// Footer is the hint pairs the surface adds ahead of the layer's own.
-	Footer() [][2]string
-	// Owner is who reads plain keys while this surface is on top.
-	Owner() inputOwner
-	// Dismissible is whether esc and a click off the card close it, and
-	// whether ctrl+c does where the pane under the card is the agent's.
-	// A surface holding typed input says no, so a stray click keeps a draft.
-	Dismissible() bool
-	// Leave runs once when the surface comes off the stack, by pop or by
-	// leaving the mode under it: the one place its cleanup lives.
-	Leave(h surfaceHost)
-}
+// The stack's contract lives in ui/surface, so a feature package can put
+// its own surface on the stack.
+type (
+	surface     = uisurface.Surface
+	surfaceHost = uisurface.Host
+	inputOwner  = uisurface.Owner
+)
+
+const (
+	ownerManager = uisurface.Manager
+	ownerAgent   = uisurface.Agent
+)
 
 // pathCompleting is the optional capability of a surface with a directory
 // field: tab completes a path into it. The root asks the top surface for it
@@ -87,35 +70,6 @@ type mouseTaker interface {
 	Mouse(h surfaceHost, msg tea.MouseMsg) tea.Cmd
 }
 
-// surfaceHost is what a surface reaches on the root. The cap and the type
-// rules of model_host_test.go apply: a surface that needs more returns a
-// command for a root adapter instead.
-type surfaceHost interface {
-	// keys are the session key table, for the keys a surface shares with
-	// focus such as detach.
-	keys() keybind.Table
-	// selected is the session under the cursor.
-	selected() (store.Session, bool)
-	// cardSized paints a card and records its body for clicks.
-	cardSized(width int, title, body string, hint [][2]string) string
-	// size is the terminal's columns and rows.
-	size() (width, height int)
-	// pasteFocused types text into the focused pane, unsent.
-	pasteFocused(sess store.Session, text string) tea.Cmd
-	// leaveFocus returns from a focused session to the list.
-	leaveFocus() tea.Cmd
-	// pop takes the top surface off the stack, running its Leave.
-	pop()
-}
-
-// inputOwner is who receives the keys no layer claims for itself.
-type inputOwner uint8
-
-const (
-	ownerManager inputOwner = iota
-	ownerAgent
-)
-
 func (m *Model) keys() keybind.Table { return m.services.keys }
 
 func (m *Model) pasteFocused(sess store.Session, text string) tea.Cmd {
@@ -126,8 +80,8 @@ func (m *Model) pasteFocused(sess store.Session, text string) tea.Cmd {
 // push puts s on top of the stack.
 func (m *Model) push(s surface) { m.surfaces = append(m.surfaces, s) }
 
-// pop takes the top surface off the stack and runs its Leave.
-func (m *Model) pop() {
+// Pop takes the top surface off the stack and runs its Leave.
+func (m *Model) Pop() {
 	n := len(m.surfaces)
 	if n == 0 {
 		return
@@ -141,7 +95,7 @@ func (m *Model) pop() {
 // on does this.
 func (m *Model) clearSurfaces() {
 	for len(m.surfaces) > 0 {
-		m.pop()
+		m.Pop()
 	}
 }
 

@@ -20,13 +20,13 @@ type launchHintSurface struct {
 
 // launchHintHost is what the card reaches on the root beyond the stack.
 type launchHintHost interface {
-	pop()
+	Pop()
 	reportErr(text string)
 	startInstall(request installStartRequest) bool
 	cardWidth() int
 	cardChromeRows(hint [][2]string) int
-	cardSized(width int, title, body string, hint [][2]string) string
-	size() (width, height int)
+	CardSized(width int, title, body string, hint [][2]string) string
+	Size() (width, height int)
 	pendingInstall() *pendingInstall
 }
 
@@ -87,13 +87,13 @@ func (s *launchHintSurface) View(h surfaceHost, _ string) string {
 	if dropped := s.droppedRows(host, card); dropped > 0 {
 		body = strings.Join(strings.Split(body, "\n")[dropped:], "\n")
 	}
-	return host.cardSized(width, card.Title, body, card.Hints)
+	return host.CardSized(width, card.Title, body, card.Hints)
 }
 
 // droppedRows is how many leading body rows a short terminal clips away,
 // which a click's row index has to skip as well.
 func (s *launchHintSurface) droppedRows(h launchHintHost, card uidialogs.Card) int {
-	_, height := h.size()
+	_, height := h.Size()
 	if height <= 0 {
 		return 0
 	}
@@ -126,7 +126,7 @@ func (s *launchHintSurface) run(h surfaceHost, action uidialogs.LaunchHintAction
 	case uidialogs.LaunchHintInstall:
 		s.startInstall(h.(launchHintHost))
 	case uidialogs.LaunchHintClose:
-		h.pop()
+		h.Pop()
 	}
 	return nil
 }

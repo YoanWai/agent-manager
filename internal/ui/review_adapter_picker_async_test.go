@@ -284,7 +284,7 @@ func TestReviewBaseSaveCompletesBehindReviewHelp(t *testing.T) {
 	}
 	picker := m.pickerOf(t)
 	source, storeRoot := picker.Source(), picker.StoreRoot()
-	m.pop()
+	m.Pop()
 	cmd := m.selectBase("feature", source, storeRoot)
 	if cmd == nil {
 		t.Fatal("base save was not accepted")
@@ -325,7 +325,7 @@ func TestReviewBaseSaveCompletesBehindBranchPicker(t *testing.T) {
 	m.drainCmds(t, m.openBasePick())
 	picker := m.pickerOf(t)
 	source, storeRoot := picker.Source(), picker.StoreRoot()
-	m.pop()
+	m.Pop()
 	saveCmd := m.selectBase("feature", source, storeRoot)
 	if saveCmd == nil {
 		t.Fatal("base save was not accepted")

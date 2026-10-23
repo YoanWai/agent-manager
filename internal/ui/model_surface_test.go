@@ -35,7 +35,7 @@ func TestTopSurfaceOwnsTheKeyboard(t *testing.T) {
 	if m.agentOwnsKeyboard() {
 		t.Fatal("the agent owns the keyboard under an open list")
 	}
-	m.pop()
+	m.Pop()
 	if !m.agentOwnsKeyboard() {
 		t.Fatal("focus with no surface did not hand the keyboard to the agent")
 	}
@@ -131,8 +131,8 @@ func TestPopRunsLeaveOnce(t *testing.T) {
 	m := buildModel(t)
 	spy := &leaveSpy{focusSaved: *newFocusSaved(0, m.spawnStyles())}
 	m.push(spy)
-	m.pop()
-	m.pop()
+	m.Pop()
+	m.Pop()
 	if spy.left != 1 {
 		t.Fatalf("Leave ran %d times, want 1", spy.left)
 	}

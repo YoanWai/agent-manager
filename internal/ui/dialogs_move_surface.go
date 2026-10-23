@@ -15,7 +15,7 @@ type moveSurface struct {
 
 // moveHost is what the card reaches on the root beyond the stack.
 type moveHost interface {
-	pop()
+	Pop()
 	placeMove(move uidialogs.Move, p *groupPicker) tea.Cmd
 	viewMove(p *groupPicker) string
 }
@@ -29,7 +29,7 @@ func (s *moveSurface) Key(h surfaceHost, msg tea.KeyMsg) (bool, tea.Cmd) {
 	key := s.Move.Key(msg)
 	switch key.Action {
 	case uidialogs.MoveCancel:
-		h.pop()
+		h.Pop()
 	case uidialogs.MoveCursor:
 		s.step(key.Delta)
 	case uidialogs.MoveSubmit:

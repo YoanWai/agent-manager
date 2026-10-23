@@ -17,7 +17,7 @@ type forkSurface struct {
 
 // forkHost is what the card reaches on the root beyond the stack.
 type forkHost interface {
-	pop()
+	Pop()
 	reportErr(text string)
 	clearErr()
 	submitFork(request forkRequest) tea.Cmd
@@ -40,7 +40,7 @@ func (s *forkSurface) Key(h surfaceHost, msg tea.KeyMsg) (bool, tea.Cmd) {
 	key := s.Fork.Key(msg)
 	switch key.Action {
 	case uidialogs.ForkCancel:
-		h.pop()
+		h.Pop()
 		host.clearErr()
 	case uidialogs.ForkInvalid:
 		host.reportErr(key.Err)

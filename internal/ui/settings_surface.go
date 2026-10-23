@@ -70,7 +70,7 @@ func (s *settingsSurface) apply(h surfaceHost, result uisettings.Result) tea.Cmd
 	if !closes {
 		return cmd
 	}
-	h.pop()
+	h.Pop()
 	return nil
 }
 

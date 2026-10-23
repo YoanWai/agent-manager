@@ -50,7 +50,7 @@ func TestRemoteValuesRejectSSH(t *testing.T) {
 }
 
 func TestFeaturePackageGraphs(t *testing.T) {
-	for _, feature := range []boundary{reviewBoundary, focusBoundary, railBoundary, settingsBoundary, spawnBoundary, quickBoundary, dialogsBoundary, noticesBoundary, connectionsBoundary} {
+	for _, feature := range []boundary{reviewBoundary, focusBoundary, railBoundary, settingsBoundary, spawnBoundary, quickBoundary, dialogsBoundary, noticesBoundary, connectionsBoundary, surfaceBoundary} {
 		t.Run(feature.name, func(t *testing.T) {
 			if err := checkBoundary(feature); err != nil {
 				t.Fatal(err)
@@ -60,7 +60,7 @@ func TestFeaturePackageGraphs(t *testing.T) {
 }
 
 func TestFeaturePackagesRejectRuntimeTransitively(t *testing.T) {
-	for _, feature := range []boundary{reviewBoundary, focusBoundary, railBoundary, settingsBoundary, spawnBoundary, quickBoundary, dialogsBoundary, noticesBoundary, connectionsBoundary} {
+	for _, feature := range []boundary{reviewBoundary, focusBoundary, railBoundary, settingsBoundary, spawnBoundary, quickBoundary, dialogsBoundary, noticesBoundary, connectionsBoundary, surfaceBoundary} {
 		t.Run(feature.name, func(t *testing.T) {
 			for _, path := range []string{"/internal/ui", "/internal/git", "/internal/store", "/internal/tmux", "/internal/execution", "/internal/app", "/internal/status", "/internal/catalog", "/internal/config", "/internal/remote", "/internal/sessioncmd"} {
 				if err := checkBoundaryDependencies(feature, []string{module + feature.path, module + path}); err == nil {

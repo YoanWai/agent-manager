@@ -39,7 +39,7 @@ func (s *connectionsSurface) Key(h surfaceHost, msg tea.KeyMsg) (bool, tea.Cmd) 
 	key := s.dialog.Key(typedText(msg), s.others)
 	switch key.Action {
 	case uiconnections.DialogCancel:
-		h.pop()
+		h.Pop()
 		return true, func() tea.Msg { return connectionDialogMsg{} }
 	case uiconnections.DialogRefused:
 		err := refusal(key.Refusal)
@@ -75,8 +75,8 @@ func (s *connectionsSurface) View(h surfaceHost, _ string) string {
 		Input: textInputView,
 		Muted: mutedStyle(),
 	})
-	cols, _ := h.size()
-	return h.cardSized(cardWidthFor(cols), card.Title, card.Body, card.Hints)
+	cols, _ := h.Size()
+	return h.CardSized(cardWidthFor(cols), card.Title, card.Body, card.Hints)
 }
 
 // Footer is empty: the card paints its own hints.

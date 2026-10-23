@@ -369,7 +369,7 @@ func (m *Model) applyGroupEffect(request groupRequest, result groupEffectResult,
 	// kept.
 	if s, ok := surfaceOf[*groupFormSurface](m); ok && s.form.Gen() == request.gen && s.form.Name() == request.draftName && s.form.Dir() == request.draftDir {
 		m.clearErr()
-		m.pop()
+		m.Pop()
 		m.applyRailStateDecision(m.rail.RevealGroup(result.path))
 	}
 	return m.refreshCmd()

@@ -224,7 +224,7 @@ func (m *Model) applyForkEffect(request forkRequest, result forkEffectResult, er
 	stillOpen = stillOpen && card.gen == request.gen && card.Name() == request.name
 	if err == nil {
 		if stillOpen {
-			m.pop()
+			m.Pop()
 			m.clearErr()
 			m.focusSession(launched.ID)
 		}

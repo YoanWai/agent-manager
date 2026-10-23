@@ -27,7 +27,7 @@ func TestHelpAdapterKeepsReviewLoaderRunningUnderTheCard(t *testing.T) {
 	if m.base != baseReview {
 		t.Fatalf("help over review left mode %v", m.screenID())
 	}
-	if title := helpSurfaceOf(m).state.Content(m.helpContext(84)).Title; title != "? Review keys" {
+	if title := helpSurfaceOf(m).State().Content(m.helpContext(84)).Title; title != "? Review keys" {
 		t.Fatalf("opened review help title = %q", title)
 	}
 	m.Update(startupTickMsg{})
@@ -62,19 +62,19 @@ func TestHelpAdapterRecomputesRowsWithoutMutatingScroll(t *testing.T) {
 	m.layout.height = 18
 	m.handleKey(runeKey("G"))
 	clean := helpLayoutOf(m)
-	if clean.content.Offset == 0 {
+	if clean.Content.Offset == 0 {
 		t.Fatal("test setup did not scroll the catalog")
 	}
 
 	m.handleKey(runeKey("/"))
 	searching := helpLayoutOf(m)
-	if len(searching.content.Head) != 2 || searching.rows >= clean.rows {
-		t.Fatalf("searching head/rows = %d/%d, clean rows = %d", len(searching.content.Head), searching.rows, clean.rows)
+	if len(searching.Content.Head) != 2 || searching.Rows >= clean.Rows {
+		t.Fatalf("searching head/rows = %d/%d, clean rows = %d", len(searching.Content.Head), searching.Rows, clean.Rows)
 	}
-	before := searching.content.Offset
+	before := searching.Content.Offset
 	first := viewHelpOf(m)
 	second := viewHelpOf(m)
-	if got := helpLayoutOf(m).content.Offset; got != before {
+	if got := helpLayoutOf(m).Content.Offset; got != before {
 		t.Fatalf("render mutated scroll from %d to %d", before, got)
 	}
 	if first != second {
@@ -83,16 +83,16 @@ func TestHelpAdapterRecomputesRowsWithoutMutatingScroll(t *testing.T) {
 
 	m.handleKey(namedKey(tea.KeyEnter))
 	finished := helpLayoutOf(m)
-	if len(finished.content.Head) != 0 || finished.rows != clean.rows || finished.content.Offset != before {
+	if len(finished.Content.Head) != 0 || finished.Rows != clean.Rows || finished.Content.Offset != before {
 		t.Fatalf("finished empty search = head %d rows %d offset %d; want 0/%d/%d",
-			len(finished.content.Head), finished.rows, finished.content.Offset, clean.rows, before)
+			len(finished.Content.Head), finished.Rows, finished.Content.Offset, clean.Rows, before)
 	}
 
 	m.handleKey(runeKey("/"))
 	m.handleKey(namedKey(tea.KeyEsc))
 	cleared := helpLayoutOf(m)
-	if len(cleared.content.Head) != 0 || cleared.content.Offset != 0 {
-		t.Fatalf("escape from search left head %d offset %d", len(cleared.content.Head), cleared.content.Offset)
+	if len(cleared.Content.Head) != 0 || cleared.Content.Offset != 0 {
+		t.Fatalf("escape from search left head %d offset %d", len(cleared.Content.Head), cleared.Content.Offset)
 	}
 }
 
@@ -104,11 +104,11 @@ func TestHelpAdapterCountsRenderedNoMatchLine(t *testing.T) {
 	}
 	m.handleKey(namedKey(tea.KeyEnter))
 	layout := helpLayoutOf(m)
-	if got := len(layout.content.Lines); got != 1 {
+	if got := len(layout.Content.Lines); got != 1 {
 		t.Fatalf("no-match content has %d rendered lines, want 1", got)
 	}
 	m.handleKey(runeKey("G"))
-	if offset := helpLayoutOf(m).content.Offset; offset != 0 {
+	if offset := helpLayoutOf(m).Content.Offset; offset != 0 {
 		t.Fatalf("bottom on one rendered line moved to %d", offset)
 	}
 }
@@ -122,9 +122,9 @@ func TestHelpAdapterUsesFreshThemeStyles(t *testing.T) {
 	m := helpModel()
 
 	applyTheme(themes[themeIndex("classic")])
-	classic := helpSurfaceOf(m).state.Content(m.helpContext(84))
+	classic := helpSurfaceOf(m).State().Content(m.helpContext(84))
 	applyTheme(themes[themeIndex("solarized light")])
-	light := helpSurfaceOf(m).state.Content(m.helpContext(84))
+	light := helpSurfaceOf(m).State().Content(m.helpContext(84))
 	if strings.Join(classic.Lines, "\n") == strings.Join(light.Lines, "\n") {
 		t.Fatal("theme switch left help styles unchanged")
 	}
@@ -135,8 +135,8 @@ func TestHelpAdapterUsesFreshThemeStyles(t *testing.T) {
 
 func TestHelpAdapterScopeUsesOnlyCopiedValues(t *testing.T) {
 	m := helpModel()
-	helpSurfaceOf(m).state = uihelp.New(uihelp.Review)
-	content := helpSurfaceOf(m).state.Content(m.helpContext(84))
+	*helpSurfaceOf(m).State() = uihelp.New(uihelp.Review)
+	content := helpSurfaceOf(m).State().Content(m.helpContext(84))
 	if content.Title != "? Review keys" || len(content.Lines) == 0 {
 		t.Fatalf("review content = %+v", content)
 	}

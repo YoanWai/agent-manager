@@ -66,7 +66,7 @@ func TestForkKeepsItsDraftAndEscCloses(t *testing.T) {
 func TestStaleForkCompletionIsDropped(t *testing.T) {
 	m := openForkFor(t)
 	request := forkRequest{source: openFork(m).source, name: openFork(m).Name(), gen: openFork(m).gen}
-	m.pop()
+	m.Pop()
 	m.openFork()
 	m.applyForkEffect(request, forkEffectResult{}, nil)
 	if !forkOpen(m) {

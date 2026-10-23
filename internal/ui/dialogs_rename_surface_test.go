@@ -73,7 +73,7 @@ func TestStaleRenameCompletionIsDropped(t *testing.T) {
 	m := openRenameFor(t)
 	gen := m.gens.dialog
 	name := openRename(m).Name()
-	m.pop()
+	m.Pop()
 	m.openRename()
 	m.gens.dialog++
 	job := &effectJob{request: renameRequest{kind: renameSession, sessID: openRename(m).SessionID(), name: name, gen: gen}}

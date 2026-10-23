@@ -33,13 +33,13 @@ func cardBorderStyle() lipgloss.Style {
 // card floats a modal on the app backdrop: a framed panel with its title set
 // into the top edge and its keys on a foot below a hairline.
 func (m *Model) card(title, body string, hint [][2]string) string {
-	return m.cardSized(m.cardWidth(), title, body, hint)
+	return m.CardSized(m.cardWidth(), title, body, hint)
 }
 
 // cardFlex is card, but the panel grows with its content up to the terminal
 // width so long settings rows are not clipped.
 func (m *Model) cardFlex(title, body string, hint [][2]string) string {
-	return m.cardSized(m.flexCardWidth(title, body, hint), title, body, hint)
+	return m.CardSized(m.flexCardWidth(title, body, hint), title, body, hint)
 }
 
 func cardInnerWidth(width int) int { return width - cardChromeX - 2*cardPaddingX }
@@ -93,9 +93,9 @@ func cardTitle(title string) string {
 	return lipgloss.NewStyle().Foreground(colorAccent()).Bold(true).Render(title)
 }
 
-// cardSized is card at an explicit width, for the key map, whose lines are
+// CardSized is card at an explicit width, for the key map, whose lines are
 // too long to read inside the default column.
-func (m *Model) cardSized(width int, title, body string, hint [][2]string) string {
+func (m *Model) CardSized(width int, title, body string, hint [][2]string) string {
 	box, hits := dialogBox(m.dialogRenderContext(), width, title, body, hint)
 	frame := m.centerOnBackdrop(box)
 	card := &m.layout.card

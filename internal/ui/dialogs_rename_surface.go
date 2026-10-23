@@ -18,7 +18,7 @@ type renameSurface struct {
 
 // renameHost is what the row reaches on the root beyond the stack.
 type renameHost interface {
-	pop()
+	Pop()
 	reportErr(text string)
 	applyPathSuggestion() tea.Cmd
 	stepRenameBase(s *renameSurface, delta int) (string, tea.Cmd)
@@ -55,7 +55,7 @@ func (s *renameSurface) Key(h surfaceHost, msg tea.KeyMsg) (bool, tea.Cmd) {
 	key := s.Rename.Key(msg, dialogPaths{&s.complete}, len(groupWorktreeOptions))
 	switch key.Action {
 	case uidialogs.RenameCancel:
-		h.pop()
+		h.Pop()
 		return true, nil
 	case uidialogs.RenameComplete:
 		return true, host.applyPathSuggestion()

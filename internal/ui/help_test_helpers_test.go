@@ -2,6 +2,7 @@ package ui
 
 import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -30,19 +31,19 @@ func helpModel() *Model {
 }
 
 // helpSurfaceOf is the key map on the stack, which a test reads state from.
-func helpSurfaceOf(m *Model) *helpSurface {
-	s, ok := surfaceOf[*helpSurface](m)
+func helpSurfaceOf(m *Model) *uihelp.Surface {
+	s, ok := surfaceOf[*uihelp.Surface](m)
 	if !ok {
 		panic("the key map is not open")
 	}
 	return s
 }
 
-func helpLayoutOf(m *Model) helpLayout { return helpSurfaceOf(m).layout(m) }
+func helpLayoutOf(m *Model) uihelp.Card { return helpSurfaceOf(m).Card(m) }
 
 func viewHelpOf(m *Model) string { return helpSurfaceOf(m).View(m, "") }
 
 func helpOpen(m *Model) bool {
-	_, ok := surfaceOf[*helpSurface](m)
+	_, ok := surfaceOf[*uihelp.Surface](m)
 	return ok
 }

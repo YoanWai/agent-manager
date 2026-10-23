@@ -144,7 +144,7 @@ func (m *Model) endDrag() {
 func (m *Model) dropResize() {
 	if top, ok := m.top(); ok {
 		if _, resize := top.(*resizeSurface); resize {
-			m.pop()
+			m.Pop()
 		}
 	}
 }

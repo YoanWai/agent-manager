@@ -26,6 +26,6 @@ func (m *Model) viewSettings() string {
 
 // closeSettings is the save-and-close a key or a click on the button asks.
 func (m *Model) closeSettings() (tea.Model, tea.Cmd) {
-	m.pop()
+	m.Pop()
 	return m, m.nextEffectCmd()
 }

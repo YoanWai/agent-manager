@@ -84,10 +84,10 @@ func (s *noticesSurface) apply(h surfaceHost, out uinotices.Outcome) tea.Cmd {
 	case uinotices.Dismiss:
 		s.root.dismissNotice(out.ID)
 		if out.Close {
-			h.pop()
+			h.Pop()
 		}
 	case uinotices.Close:
-		h.pop()
+		h.Pop()
 	}
 	return nil
 }

@@ -107,7 +107,7 @@ func TestReviewPickerStalePickIsRefused(t *testing.T) {
 	m := pickerReview(t)
 	m.openRepoPick()
 	source := m.pickerOf(t).Source()
-	m.pop()
+	m.Pop()
 	_, _ = m.review.SelectRepo("/tmp/two")
 	generation := m.review.Generation()
 	updated, cmd := m.Update(reviewPickedMsg{choice: uireview.PickerChoice{Kind: uireview.PickRepo, Value: "/tmp/one"}, source: source})
