@@ -14,6 +14,7 @@ func redactSecrets(s string) string {
 	for _, pattern := range credentialPatterns {
 		s = pattern.ReplaceAllString(s, "[redacted]")
 	}
+	s = redactBasic(s)
 	return redactHighEntropy(s)
 }
 
@@ -34,6 +35,39 @@ var credentialPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`\b(?:AKIA|ASIA)[A-Z0-9]{16}\b`),
 	regexp.MustCompile(`(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{16,}`),
 	regexp.MustCompile(`\beyJ[A-Za-z0-9_-]{10,}={0,2}\.[A-Za-z0-9_-]{10,}={0,2}\.[A-Za-z0-9_-]{10,}={0,2}`),
+}
+
+// A Basic credential is shorter than the entropy run, and Basic is not
+// an assignment key, so the password would otherwise stay in the banner.
+// The token has to look like a credential: mixed case, or a digit or
+// base64 mark. An ordinary word after "basic" stays.
+var basicPattern = regexp.MustCompile(`(?i)\bBasic\s+[A-Za-z0-9+/]{4,}={0,2}`)
+
+func redactBasic(s string) string {
+	return basicPattern.ReplaceAllStringFunc(s, func(match string) string {
+		token := match[strings.IndexAny(match, " \t")+1:]
+		if !basicCredential(token) {
+			return match
+		}
+		return "[redacted]"
+	})
+}
+
+func basicCredential(token string) bool {
+	var lower, upper, mark bool
+	for i := 0; i < len(token); i++ {
+		switch c := token[i]; {
+		case c >= 'a' && c <= 'z':
+			lower = true
+		case c >= 'A' && c <= 'Z':
+			upper = true
+		case c >= '0' && c <= '9' || c == '+' || c == '/' || c == '=':
+			mark = true
+		default:
+			return false
+		}
+	}
+	return mark || (lower && upper)
 }
 
 // userinfoPattern redacts the password in scheme://user:password@host.

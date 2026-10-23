@@ -182,6 +182,7 @@ func TestNotifyBodyCarriesTheRowsLine(t *testing.T) {
 		{"nothing to quote", Waiting, "", "◆ Waiting for your input"},
 		{"multiline squashed", Finished, "first\nsecond\tthird", "● Finished: first second third"},
 		{"long line cut", Finished, strings.Repeat("x", 200), "● Finished: " + strings.Repeat("x", bodyTextCap-1) + "…"},
+		{"basic credential", Finished, "Authorization: Basic dXNlcjpwYXNz", "● Finished: Authorization: [redacted]"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
