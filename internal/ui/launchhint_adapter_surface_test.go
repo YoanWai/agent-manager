@@ -45,9 +45,9 @@ func hintKey(m *Model, msg tea.KeyMsg) tea.Cmd {
 	return cmd
 }
 
-func hintStartInstall(m *Model) {
-	hintCard(m).Key(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")})
-}
+// hintStartInstall asks for the install the way the card's key does, with
+// or without the card still open.
+func hintStartInstall(m *Model) { launchHintRoot{m}.StartInstall() }
 
 func openHintFor(t *testing.T) (*Model, string) {
 	t.Helper()

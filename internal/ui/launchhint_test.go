@@ -60,10 +60,13 @@ func TestLaunchHintSurfaceWithFakeInstall(t *testing.T) {
 	pushQuick(m).attachments = []imageAttachment{{id: 1}}
 	h := &hintHost{Model: m}
 	m.openLaunchHint(launchFix{text: "tool is not installed.\n\nRun the installer.", command: "install tool", script: "install tool", binary: "tool"})
-	s, ok := surfaceOf[*uidialogs.LaunchHintSurface](m)
+	_, ok := surfaceOf[*uidialogs.LaunchHintSurface](m)
 	if !ok || m.gens.dialog != 1 || len(m.ledger.launch.images) != 1 || m.quick().attachments != nil {
 		t.Fatalf("open: surface %t gens %d fix %+v, want the composer images taken", ok, m.gens.dialog, hintFix(m))
 	}
+	// The card calls the root it was built with, so the fake is that root.
+	s := uidialogs.NewLaunchHintSurface(h, m.launchHintCard(m.ledger.launch), m.glyphs(), mutedStyle(), mutedStyle())
+	m.surfaces[len(m.surfaces)-1] = s
 	if got := ansi.Strip(s.View(h, "")); !strings.Contains(got, "Session needs a setup step") || !strings.Contains(got, "Run the installer.") {
 		t.Fatalf("view = %q", got)
 	}
