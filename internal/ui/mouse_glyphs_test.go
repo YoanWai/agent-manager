@@ -21,7 +21,7 @@ func TestSettingsWheelReachesSymbolsAndDocsInShortWindows(t *testing.T) {
 			for range uisettings.FieldGlyphs {
 				m = wheelOnCard(m, tea.MouseButtonWheelDown)
 			}
-			if m.settingsCard().state.Field != uisettings.FieldGlyphs || !paints(m, "symbols") {
+			if m.settingsCard().State().Field != uisettings.FieldGlyphs || !paints(m, "symbols") {
 				t.Fatal("wheel did not reveal symbols")
 			}
 			if m, _ = clickBody(t, m, "symbols"); m.prefs.glyphMode != presentation.GlyphModeBasic {
@@ -30,7 +30,7 @@ func TestSettingsWheelReachesSymbolsAndDocsInShortWindows(t *testing.T) {
 			for range uisettings.FieldDocs - uisettings.FieldGlyphs {
 				m = wheelOnCard(m, tea.MouseButtonWheelDown)
 			}
-			if m.settingsCard().state.Field != uisettings.FieldDocs || !paints(m, "docs") {
+			if m.settingsCard().State().Field != uisettings.FieldDocs || !paints(m, "docs") {
 				t.Fatal("wheel did not reveal docs")
 			}
 			var opened string
@@ -44,7 +44,7 @@ func TestSettingsWheelReachesSymbolsAndDocsInShortWindows(t *testing.T) {
 			for range uisettings.FieldDocs - uisettings.FieldGlyphs {
 				m = wheelOnCard(m, tea.MouseButtonWheelUp)
 			}
-			if m.settingsCard().state.Field != uisettings.FieldGlyphs || !paints(m, "symbols") {
+			if m.settingsCard().State().Field != uisettings.FieldGlyphs || !paints(m, "symbols") {
 				t.Fatal("wheel up did not return to symbols")
 			}
 		})
@@ -58,19 +58,19 @@ func TestSettingsWheelLeavesSubpanelsAlone(t *testing.T) {
 			m.runBatch(t, m.openSettings())
 			switch panel {
 			case "CLIs":
-				m.settingsCard().state.Field = uisettings.FieldCLIs
+				m.settingsCard().State().Field = uisettings.FieldCLIs
 				m.handleSettingsKey(key("enter"))
 			case "keys":
-				m.settingsCard().state.Field = uisettings.FieldKeybindings
+				m.settingsCard().State().Field = uisettings.FieldKeybindings
 				m.handleSettingsKey(key("enter"))
 			case "editor":
-				m.settingsCard().state.Field = uisettings.FieldEditor
-				m.settingsCard().state.Editor = uisettings.NewEditorRow("custom --test", nil)
+				m.settingsCard().State().Field = uisettings.FieldEditor
+				m.settingsCard().State().Editor = uisettings.NewEditorRow("custom --test", nil)
 				m.handleSettingsKey(key("enter"))
 			}
-			field := m.settingsCard().state.Field
+			field := m.settingsCard().State().Field
 			for _, button := range []tea.MouseButton{tea.MouseButtonWheelDown, tea.MouseButtonWheelUp} {
-				if m = wheelOnCard(m, button); m.settingsCard().state.Field != field {
+				if m = wheelOnCard(m, button); m.settingsCard().State().Field != field {
 					t.Fatal("wheel in a subpanel moved the parent Settings field")
 				}
 			}

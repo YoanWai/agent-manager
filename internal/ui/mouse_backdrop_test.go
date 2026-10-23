@@ -80,11 +80,11 @@ func TestBackdropClickKeepsTheSettingsEditorField(t *testing.T) {
 	editorSettings(t, m, "code")
 	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyLeft})
 	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyEnter})
-	if !m.settingsCard().state.Editor.Typing() {
+	if !m.settingsCard().State().Editor.Typing() {
 		t.Fatal("test setup: enter on custom opens the field")
 	}
-	if m = clickBackdrop(t, m); !m.settingsOpen() || !m.settingsCard().state.Editor.Typing() {
-		t.Fatalf("a stray click should keep the typed line open, screen = %v typing = %v", m.screenID(), m.settingsCard().state.Editor.Typing())
+	if m = clickBackdrop(t, m); !m.settingsOpen() || !m.settingsCard().State().Editor.Typing() {
+		t.Fatalf("a stray click should keep the typed line open, screen = %v typing = %v", m.screenID(), m.settingsCard().State().Editor.Typing())
 	}
 }
 
@@ -104,12 +104,12 @@ func TestBackdropClickKeepsASavedPromptDraft(t *testing.T) {
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 120, 34
 	m.applyCmd(t, m.openSettings())
-	m.applyCmd(t, m.runSettingsResult(&m.settingsCard().state, m.settingsCard().state.OpenPrompts()))
+	m.applyCmd(t, m.runSettingsResult(m.settingsCard().State(), m.settingsCard().State().OpenPrompts()))
 	m.pressInSettings(t, runeKey("n"))
-	if !m.settingsCard().state.Prompts.Editing() {
+	if !m.settingsCard().State().Prompts.Editing() {
 		t.Fatal("test setup: n opens the prompt editor")
 	}
-	if m = clickBackdrop(t, m); !m.settingsOpen() || !m.settingsCard().state.Prompts.Editing() {
+	if m = clickBackdrop(t, m); !m.settingsOpen() || !m.settingsCard().State().Prompts.Editing() {
 		t.Fatalf("a stray click should keep the prompt being typed, screen = %v", m.screenID())
 	}
 }

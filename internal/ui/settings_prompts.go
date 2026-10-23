@@ -97,11 +97,11 @@ func (m *Model) runPromptsResult(d *settingsState, result uisettings.Result) tea
 }
 
 func (m *Model) applyPromptsRead(dialogGen uint64, read uisettings.PromptsRead) {
-	card, open := surfaceOf[*settingsSurface](m)
+	card, open := surfaceOf[*uisettings.Surface](m)
 	if !open || dialogGen != m.settings.gen {
 		return
 	}
-	notice := card.state.LoadedPrompts(read)
+	notice := card.State().LoadedPrompts(read)
 	if notice.Changed {
 		m.setNotice(notice)
 	}

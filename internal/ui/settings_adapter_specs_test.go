@@ -53,8 +53,8 @@ func TestSettingSpecsCoverEveryKeySettingsWrites(t *testing.T) {
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEsc})
 	// A save writes only the rows that changed; with no baseline every row
 	// counts as changed, as on a fresh profile's first save.
-	m.settingsCard().state.Baseline = nil
-	m.settingsCard().state.BaselineHidden = nil
+	m.settingsCard().State().Baseline = nil
+	m.settingsCard().State().BaselineHidden = nil
 	_, cmd := m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEsc})
 	// Only the save's own effects: a refresh would stamp the poller's
 	// runtime rows, which are not settings.
@@ -150,17 +150,17 @@ func TestOpenSettingsReadsWhatTheShellChanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.applyCmd(t, m.openSettings())
-	if themes[m.settingsCard().state.ThemeIndex].Name != "nord" {
-		t.Fatalf("Settings opened on %q, want the shell's nord", themes[m.settingsCard().state.ThemeIndex].Name)
+	if themes[m.settingsCard().State().ThemeIndex].Name != "nord" {
+		t.Fatalf("Settings opened on %q, want the shell's nord", themes[m.settingsCard().State().ThemeIndex].Name)
 	}
-	if m.settingsCard().state.GlyphMode != presentation.GlyphModeBasic || m.prefs.glyphMode != presentation.GlyphModeBasic {
-		t.Fatalf("symbols opened on %q (live %q), want basic", m.settingsCard().state.GlyphMode, m.prefs.glyphMode)
+	if m.settingsCard().State().GlyphMode != presentation.GlyphModeBasic || m.prefs.glyphMode != presentation.GlyphModeBasic {
+		t.Fatalf("symbols opened on %q (live %q), want basic", m.settingsCard().State().GlyphMode, m.prefs.glyphMode)
 	}
 	if current().Name != "nord" {
 		t.Fatalf("the palette stayed %q after Settings read nord", current().Name)
 	}
-	if m.settingsCard().state.Editor.Line() != "code -n" {
-		t.Fatalf("editor row opened on %q", m.settingsCard().state.Editor.Line())
+	if m.settingsCard().State().Editor.Line() != "code -n" {
+		t.Fatalf("editor row opened on %q", m.settingsCard().State().Editor.Line())
 	}
 	_, cmd := m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEsc})
 	m.applyCmd(t, cmd)

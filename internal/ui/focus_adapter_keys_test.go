@@ -202,7 +202,7 @@ func TestCursorBlinks(t *testing.T) {
 func TestSettingsSwapsFocusKey(t *testing.T) {
 	m := buildModel(t)
 	m.openSettings()
-	if !m.settingsCard().state.EnterFocuses {
+	if !m.settingsCard().State().EnterFocuses {
 		t.Fatal("settings should open with enter focusing")
 	}
 	card := ansi.Strip(m.viewSettings())
@@ -212,8 +212,8 @@ func TestSettingsSwapsFocusKey(t *testing.T) {
 	for i := 0; i < uisettings.FieldFocusKey; i++ {
 		m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
 	}
-	if m.settingsCard().state.Field != uisettings.FieldFocusKey {
-		t.Fatalf("stepping down should reach the session keys field, got %d", m.settingsCard().state.Field)
+	if m.settingsCard().State().Field != uisettings.FieldFocusKey {
+		t.Fatalf("stepping down should reach the session keys field, got %d", m.settingsCard().State().Field)
 	}
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
 	if !strings.Contains(ansi.Strip(m.viewSettings()), "attach") {
@@ -244,7 +244,7 @@ func TestSwappedKeysRouteActions(t *testing.T) {
 
 	// Swap through the settings screen, the same path a user takes.
 	m.openSettings()
-	m.settingsCard().state.Field = uisettings.FieldFocusKey
+	m.settingsCard().State().Field = uisettings.FieldFocusKey
 	m.cycleSetting(1)
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m.drainEffects(t)
@@ -1288,7 +1288,7 @@ func TestArrowStepSettingDisablesThePair(t *testing.T) {
 	m.selectSessionRow(t, "optout")
 
 	m.openSettings()
-	m.settingsCard().state.Field = uisettings.FieldArrowStep
+	m.settingsCard().State().Field = uisettings.FieldArrowStep
 	m.cycleSetting(1)
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m.drainEffects(t)

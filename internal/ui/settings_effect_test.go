@@ -82,7 +82,7 @@ func TestOpenSettingsDefersBlockedStoreRead(t *testing.T) {
 	for range batch {
 		m.applyTestMsg(t, <-completed)
 	}
-	if !m.settingsCard().state.WorktreeDefault {
+	if !m.settingsCard().State().WorktreeDefault {
 		t.Fatal("the accepted deferred refresh did not update the dialog")
 	}
 }
@@ -94,7 +94,7 @@ func TestOpenCLIPickerDoesNotReadStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.errBar.text = ""
-	m.settingsCard().state.CLIHidden = nil
+	m.settingsCard().State().CLIHidden = nil
 	m.openSettingsCLIPicker(t)
 	if m.errBar.text != "" {
 		t.Fatalf("opening the CLI picker read the closed store: %q", m.errBar.text)
@@ -111,12 +111,12 @@ func TestSettingsOpenRefreshesExternalChanges(t *testing.T) {
 	}
 
 	cmd := m.openSettings()
-	if m.settingsCard().state.WorktreeDefault || m.settingsCard().state.CLIHidden["claude"] {
+	if m.settingsCard().State().WorktreeDefault || m.settingsCard().State().CLIHidden["claude"] {
 		t.Fatal("opening should paint the cached preferences before the refresh")
 	}
 	m.applyTestMsg(t, cmd())
-	if !m.settingsCard().state.WorktreeDefault || !m.settingsCard().state.CLIHidden["claude"] {
-		t.Fatalf("external settings were not refreshed: worktree=%t hidden=%v", m.settingsCard().state.WorktreeDefault, m.settingsCard().state.CLIHidden)
+	if !m.settingsCard().State().WorktreeDefault || !m.settingsCard().State().CLIHidden["claude"] {
+		t.Fatalf("external settings were not refreshed: worktree=%t hidden=%v", m.settingsCard().State().WorktreeDefault, m.settingsCard().State().CLIHidden)
 	}
 }
 
@@ -134,7 +134,7 @@ func TestSettingsLoadRefusesReopenedDialog(t *testing.T) {
 		t.Fatal("reopening settings reused the old generation")
 	}
 	m.applyTestMsg(t, loaded)
-	if m.settingsCard().state.WorktreeDefault {
+	if m.settingsCard().State().WorktreeDefault {
 		t.Fatal("the first dialog's load overwrote the reopened dialog")
 	}
 }
@@ -143,10 +143,10 @@ func TestSettingsLoadRefusesEditsAndSubpickers(t *testing.T) {
 	t.Run("staged edit", func(t *testing.T) {
 		m := buildModel(t)
 		cmd := m.openSettings()
-		m.settingsCard().state.Field = uisettings.FieldWorktree
+		m.settingsCard().State().Field = uisettings.FieldWorktree
 		m.cycleSetting(1)
 		m.applyTestMsg(t, cmd())
-		if !m.settingsCard().state.WorktreeDefault {
+		if !m.settingsCard().State().WorktreeDefault {
 			t.Fatal("the async load overwrote a staged setting")
 		}
 	})
@@ -159,7 +159,7 @@ func TestSettingsLoadRefusesEditsAndSubpickers(t *testing.T) {
 		}
 		m.openSettingsCLIPicker(t)
 		m.applyTestMsg(t, cmd())
-		if m.settingsCard().state.CLIHidden["claude"] {
+		if m.settingsCard().State().CLIHidden["claude"] {
 			t.Fatal("the async load replaced an open CLI picker")
 		}
 	})
@@ -167,13 +167,13 @@ func TestSettingsLoadRefusesEditsAndSubpickers(t *testing.T) {
 	t.Run("key picker", func(t *testing.T) {
 		m := buildModel(t)
 		cmd := m.openSettings()
-		m.settingsCard().state.KeyPicker = true
-		before := m.settingsCard().state.WorktreeDefault
+		m.settingsCard().State().KeyPicker = true
+		before := m.settingsCard().State().WorktreeDefault
 		if err := m.services.store.SetSetting(uisettings.WorktreeSetting, "on"); err != nil {
 			t.Fatal(err)
 		}
 		m.applyTestMsg(t, cmd())
-		if m.settingsCard().state.WorktreeDefault != before {
+		if m.settingsCard().State().WorktreeDefault != before {
 			t.Fatal("the async load replaced an open key picker")
 		}
 	})
@@ -182,7 +182,7 @@ func TestSettingsLoadRefusesEditsAndSubpickers(t *testing.T) {
 func TestSettingsReopenUsesOptimisticPendingSave(t *testing.T) {
 	m := buildModel(t)
 	m.openSettings()
-	m.settingsCard().state.Field = uisettings.FieldWorktree
+	m.settingsCard().State().Field = uisettings.FieldWorktree
 	m.cycleSetting(1)
 	_, save := m.handleSettingsKey(key("enter"))
 	if save == nil {
@@ -195,7 +195,7 @@ func TestSettingsReopenUsesOptimisticPendingSave(t *testing.T) {
 			t.Fatal("a dialog reopened over a pending save should use the optimistic cache")
 		}
 	}
-	if !m.settingsCard().state.WorktreeDefault {
+	if !m.settingsCard().State().WorktreeDefault {
 		t.Fatal("the reopened dialog lost the pending worktree choice")
 	}
 	m.applyCmd(t, save)
@@ -229,9 +229,9 @@ func (w *settingsScriptWriter) get(key string) (string, error) {
 func TestSettingsEnterDefersStoreWrites(t *testing.T) {
 	m := buildModel(t)
 	m.openSettings()
-	m.settingsCard().state.Field = uisettings.FieldTheme
+	m.settingsCard().State().Field = uisettings.FieldTheme
 	m.cycleSetting(1)
-	staged := themes[m.settingsCard().state.ThemeIndex].Name
+	staged := themes[m.settingsCard().State().ThemeIndex].Name
 
 	_, cmd := m.handleSettingsKey(key("enter"))
 	if m.settingsOpen() {
@@ -260,14 +260,14 @@ func TestCLIPickerEscDefersHiddenWrite(t *testing.T) {
 	m := buildModel(t)
 	m.openSettings()
 	m.openSettingsCLIPicker(t)
-	m.settingsCard().state.CLICursor = 1
-	name := m.settingsCard().state.CLINames[1]
+	m.settingsCard().State().CLICursor = 1
+	name := m.settingsCard().State().CLINames[1]
 	m.handleSettingsKey(key(" "))
-	if !m.settingsCard().state.CLIHidden[name] {
+	if !m.settingsCard().State().CLIHidden[name] {
 		t.Fatal("space should hide the focused CLI")
 	}
 	_, cmd := m.handleSettingsKey(key("esc"))
-	if m.settingsCard().state.CLIPicker {
+	if m.settingsCard().State().CLIPicker {
 		t.Fatal("esc should leave the picker")
 	}
 	raw, err := m.services.store.Setting(uisettings.HiddenToolsSetting)
@@ -292,13 +292,13 @@ func TestCLIPickerEscDefersHiddenWrite(t *testing.T) {
 func TestSettingsSaveKeepsCapturedChoices(t *testing.T) {
 	m := buildModel(t)
 	m.openSettings()
-	m.settingsCard().state.Field = uisettings.FieldTheme
+	m.settingsCard().State().Field = uisettings.FieldTheme
 	m.cycleSetting(1)
-	captured := themes[m.settingsCard().state.ThemeIndex].Name
+	captured := themes[m.settingsCard().State().ThemeIndex].Name
 	_, cmd := m.handleSettingsKey(key("enter"))
 
 	m.openSettings()
-	m.settingsCard().state.Field = uisettings.FieldTheme
+	m.settingsCard().State().Field = uisettings.FieldTheme
 	m.cycleSetting(1)
 	m.cycleSetting(1)
 	m.applyCmd(t, cmd)
@@ -318,17 +318,17 @@ func TestSettingsSaveKeepsCapturedChoices(t *testing.T) {
 func TestSettingsSavePartialFailureIsDurableAndHonest(t *testing.T) {
 	m := buildModel(t)
 	m.openSettings()
-	m.settingsCard().state.Field = uisettings.FieldTheme
+	m.settingsCard().State().Field = uisettings.FieldTheme
 	m.cycleSetting(1)
-	staged := themes[m.settingsCard().state.ThemeIndex].Name
-	m.settingsCard().state.Field = uisettings.FieldCoordination
+	staged := themes[m.settingsCard().State().ThemeIndex].Name
+	m.settingsCard().State().Field = uisettings.FieldCoordination
 	m.cycleSetting(1)
-	if !m.settingsCard().state.Proactive {
+	if !m.settingsCard().State().Proactive {
 		t.Fatal("coordination should be staged proactive")
 	}
 
 	writer := &settingsScriptWriter{failOn: uisettings.ThemeAutoSetting, values: map[string]string{uisettings.ThemeSetting: "nord"}}
-	request := settingsRequest{values: m.settingsCard().state.Values(), generation: m.settings.gen}
+	request := settingsRequest{values: m.settingsCard().State().Values(), generation: m.settings.gen}
 	rawResult, err := runSettingsWithWriter(request, writer)
 	if err == nil {
 		t.Fatal("expected the scripted failure")
@@ -353,10 +353,10 @@ func TestSettingsSavePartialFailureIsDurableAndHonest(t *testing.T) {
 	if m.errBar.text == "" {
 		t.Fatal("partial failure should surface in the err bar")
 	}
-	if got := themes[m.settingsCard().state.ThemeIndex].Name; got != staged {
+	if got := themes[m.settingsCard().State().ThemeIndex].Name; got != staged {
 		t.Fatalf("live dialog restored to %q, want committed %q", got, staged)
 	}
-	if m.settingsCard().state.Proactive {
+	if m.settingsCard().State().Proactive {
 		t.Fatal("live dialog kept the uncommitted proactive choice")
 	}
 }
@@ -366,14 +366,14 @@ func TestSettingsSavePartialFailureIsDurableAndHonest(t *testing.T) {
 func TestSettingsSaveReadFailureDoesNotFabricateRestoration(t *testing.T) {
 	m := buildModel(t)
 	m.openSettings()
-	m.settingsCard().state.Field = uisettings.FieldDensity
+	m.settingsCard().State().Field = uisettings.FieldDensity
 	m.cycleSetting(1)
-	if !m.settingsCard().state.ComfortableRows {
+	if !m.settingsCard().State().ComfortableRows {
 		t.Fatal("density should stage comfortable")
 	}
 
 	writer := &settingsScriptWriter{failOn: uisettings.ThemeAutoSetting, failGetOn: uisettings.ListDensitySetting, values: map[string]string{}}
-	request := settingsRequest{values: m.settingsCard().state.Values(), generation: m.settings.gen}
+	request := settingsRequest{values: m.settingsCard().State().Values(), generation: m.settings.gen}
 	rawResult, err := runSettingsWithWriter(request, writer)
 	if err == nil {
 		t.Fatal("expected the scripted write failure")
@@ -390,7 +390,7 @@ func TestSettingsSaveReadFailureDoesNotFabricateRestoration(t *testing.T) {
 	}
 
 	m.applySettingsEffect(&effectJob{request: request}, result, err)
-	if !m.settingsCard().state.ComfortableRows {
+	if !m.settingsCard().State().ComfortableRows {
 		t.Fatal("a failed read was fabricated into the committed value")
 	}
 	if !strings.Contains(m.errBar.text, "reads failed") {
@@ -403,15 +403,15 @@ func TestSettingsSaveReadFailureDoesNotFabricateRestoration(t *testing.T) {
 func TestSettingsSavePartialFailureReconcilesPrefs(t *testing.T) {
 	m := buildModel(t)
 	m.openSettings()
-	m.settingsCard().state.Field = uisettings.FieldDensity
+	m.settingsCard().State().Field = uisettings.FieldDensity
 	m.cycleSetting(1)
-	m.applySettingsPrefs(&m.settingsCard().state) // the dispatch-time optimistic mirror
+	m.applySettingsPrefs(m.settingsCard().State()) // the dispatch-time optimistic mirror
 	if !m.prefs.comfortableRows {
 		t.Fatal("prefs should stage comfortable before persistence")
 	}
 
 	writer := &settingsScriptWriter{failOn: uisettings.ListDensitySetting, values: map[string]string{}}
-	request := settingsRequest{values: m.settingsCard().state.Values(), generation: m.settings.gen}
+	request := settingsRequest{values: m.settingsCard().State().Values(), generation: m.settings.gen}
 	rawResult, err := runSettingsWithWriter(request, writer)
 	if err == nil {
 		t.Fatal("expected the scripted write failure")
@@ -421,7 +421,7 @@ func TestSettingsSavePartialFailureReconcilesPrefs(t *testing.T) {
 	if m.prefs.comfortableRows {
 		t.Fatal("prefs kept the uncommitted density after a partial save")
 	}
-	if m.settingsCard().state.ComfortableRows {
+	if m.settingsCard().State().ComfortableRows {
 		t.Fatal("dialog kept the uncommitted density after a partial save")
 	}
 }
@@ -431,14 +431,14 @@ func TestSettingsSavePartialFailureReconcilesPrefs(t *testing.T) {
 func TestSettingsSaveStaleCompletionReconcilesPrefsNotDialog(t *testing.T) {
 	m := buildModel(t)
 	m.openSettings()
-	m.settingsCard().state.Field = uisettings.FieldDensity
+	m.settingsCard().State().Field = uisettings.FieldDensity
 	m.cycleSetting(1)
-	request := settingsRequest{values: m.settingsCard().state.Values(), generation: m.settings.gen}
+	request := settingsRequest{values: m.settingsCard().State().Values(), generation: m.settings.gen}
 
 	m.settings.gen++
-	m.settingsCard().state.Field = uisettings.FieldDensity
+	m.settingsCard().State().Field = uisettings.FieldDensity
 	m.cycleSetting(1) // the newer dialog toggles back to compact
-	m.applySettingsPrefs(&m.settingsCard().state)
+	m.applySettingsPrefs(m.settingsCard().State())
 	if m.prefs.comfortableRows {
 		t.Fatal("the newer save's preview should be compact")
 	}
@@ -450,7 +450,7 @@ func TestSettingsSaveStaleCompletionReconcilesPrefsNotDialog(t *testing.T) {
 	if !m.prefs.comfortableRows {
 		t.Fatal("stale completion must reconcile the runtime prefs to committed")
 	}
-	if m.settingsCard().state.ComfortableRows {
+	if m.settingsCard().State().ComfortableRows {
 		t.Fatal("stale completion overwrote the newer dialog's staged state")
 	}
 	if m.errBar.text == "" {
@@ -480,14 +480,14 @@ func TestFailedFullSaveReconcilesPrefsPastStaleGeneration(t *testing.T) {
 	t.Cleanup(func() { locker.Close() })
 
 	m.openSettings()
-	m.settingsCard().state.Field = uisettings.FieldDensity
+	m.settingsCard().State().Field = uisettings.FieldDensity
 	m.cycleSetting(1)
-	m.applySettingsPrefs(&m.settingsCard().state) // the dispatch-time live preview
+	m.applySettingsPrefs(m.settingsCard().State()) // the dispatch-time live preview
 	if !m.prefs.comfortableRows {
 		t.Fatal("dispatch must preview the staged density")
 	}
 	m.settings.gen++
-	request := settingsRequest{values: m.settingsCard().state.Values(), generation: m.settings.gen}
+	request := settingsRequest{values: m.settingsCard().State().Values(), generation: m.settings.gen}
 	m.enqueueEffect(request, 0, false)
 	command := m.nextEffectCmd()
 
@@ -502,9 +502,9 @@ func TestFailedFullSaveReconcilesPrefsPastStaleGeneration(t *testing.T) {
 	// While the failed save is in flight, the same dialog reopens and a
 	// hidden-only save is queued behind it.
 	m.openSettings()
-	m.settingsCard().state.Field = uisettings.FieldMouse
+	m.settingsCard().State().Field = uisettings.FieldMouse
 	m.cycleSetting(1)
-	m.captureHiddenSave(&m.settingsCard().state)
+	m.captureHiddenSave(m.settingsCard().State())
 
 	msg := <-completed
 	if msg.err == nil {
@@ -515,7 +515,7 @@ func TestFailedFullSaveReconcilesPrefsPastStaleGeneration(t *testing.T) {
 	if m.prefs.comfortableRows {
 		t.Fatal("stale completion left the failed save's previewed density applied")
 	}
-	if !m.settingsCard().state.MouseDisabled {
+	if !m.settingsCard().State().MouseDisabled {
 		t.Fatal("stale completion overwrote the newer dialog's staged choice")
 	}
 	if m.errBar.text == "" {
@@ -528,10 +528,10 @@ func TestFailedFullSaveReconcilesPrefsPastStaleGeneration(t *testing.T) {
 func TestSettingsSaveEmptyHiddenClearsDialog(t *testing.T) {
 	m := buildModel(t)
 	m.openSettings()
-	m.settingsCard().state.CLIHidden = map[string]bool{"claude": true}
+	m.settingsCard().State().CLIHidden = map[string]bool{"claude": true}
 
 	writer := &settingsScriptWriter{failOn: uisettings.HiddenToolsSetting, values: map[string]string{}}
-	request := settingsRequest{values: m.settingsCard().state.Values(), hidden: []string{}, generation: m.settings.gen}
+	request := settingsRequest{values: m.settingsCard().State().Values(), hidden: []string{}, generation: m.settings.gen}
 	rawResult, err := runSettingsWithWriter(request, writer)
 	if err == nil {
 		t.Fatal("expected the hidden write to fail")
@@ -541,21 +541,21 @@ func TestSettingsSaveEmptyHiddenClearsDialog(t *testing.T) {
 		t.Fatalf("hidden read failed: %v", result.hiddenErr)
 	}
 	m.applySettingsEffect(&effectJob{request: request}, result, err)
-	if len(m.settingsCard().state.CLIHidden) != 0 {
-		t.Fatalf("committed empty hidden state did not clear the dialog: %v", m.settingsCard().state.CLIHidden)
+	if len(m.settingsCard().State().CLIHidden) != 0 {
+		t.Fatalf("committed empty hidden state did not clear the dialog: %v", m.settingsCard().State().CLIHidden)
 	}
 
 	// A failed hidden read keeps the old map.
 	writer.failGetOn = uisettings.HiddenToolsSetting
-	request2 := settingsRequest{values: m.settingsCard().state.Values(), hidden: []string{}, generation: m.settings.gen}
+	request2 := settingsRequest{values: m.settingsCard().State().Values(), hidden: []string{}, generation: m.settings.gen}
 	rawResult2, err2 := runSettingsWithWriter(request2, writer)
 	result2 := rawResult2.(settingsEffectResult)
 	if err2 == nil || result2.hiddenErr == nil {
 		t.Fatal("expected a failed hidden read")
 	}
-	m.settingsCard().state.CLIHidden = map[string]bool{"codex": true}
+	m.settingsCard().State().CLIHidden = map[string]bool{"codex": true}
 	m.applySettingsEffect(&effectJob{request: request2}, result2, err2)
-	if !m.settingsCard().state.CLIHidden["codex"] {
+	if !m.settingsCard().State().CLIHidden["codex"] {
 		t.Fatal("failed hidden read must keep the dialog's map")
 	}
 }
@@ -565,18 +565,18 @@ func TestSettingsSaveEmptyHiddenClearsDialog(t *testing.T) {
 func TestSettingsSaveCompletionRefusesStaleGeneration(t *testing.T) {
 	m := buildModel(t)
 	m.openSettings()
-	m.settingsCard().state.Field = uisettings.FieldTheme
+	m.settingsCard().State().Field = uisettings.FieldTheme
 	m.cycleSetting(1)
-	request := settingsRequest{values: m.settingsCard().state.Values(), generation: m.settings.gen}
+	request := settingsRequest{values: m.settingsCard().State().Values(), generation: m.settings.gen}
 
 	m.settings.gen++
-	m.settingsCard().state.Field = uisettings.FieldTheme
+	m.settingsCard().State().Field = uisettings.FieldTheme
 	m.cycleSetting(1)
-	newer := themes[m.settingsCard().state.ThemeIndex].Name
+	newer := themes[m.settingsCard().State().ThemeIndex].Name
 
 	result := settingsEffectResult{generation: request.generation, restored: []restoredValue{{Key: uisettings.ThemeSetting, Value: "nord"}}}
 	m.applySettingsEffect(&effectJob{request: request}, result, errors.New("partial"))
-	if themes[m.settingsCard().state.ThemeIndex].Name != newer {
+	if themes[m.settingsCard().State().ThemeIndex].Name != newer {
 		t.Fatal("stale completion overwrote the newer dialog")
 	}
 	if m.errBar.text == "" {
@@ -606,9 +606,9 @@ func TestSettingsSaveDoesNotBlockWindowUpdate(t *testing.T) {
 	}
 
 	m.openSettings()
-	m.settingsCard().state.Field = uisettings.FieldTheme
+	m.settingsCard().State().Field = uisettings.FieldTheme
 	m.cycleSetting(1)
-	staged := themes[m.settingsCard().state.ThemeIndex].Name
+	staged := themes[m.settingsCard().State().ThemeIndex].Name
 	_, command := m.handleSettingsKey(key("enter"))
 
 	completed := make(chan tea.Msg, 1)
@@ -642,11 +642,11 @@ func TestSettingsSaveDoesNotBlockWindowUpdate(t *testing.T) {
 func TestEffectQueueDrainsSettingsSaveOnQuit(t *testing.T) {
 	m := buildModel(t)
 	m.openSettings()
-	m.settingsCard().state.Field = uisettings.FieldTheme
+	m.settingsCard().State().Field = uisettings.FieldTheme
 	m.cycleSetting(1)
-	staged := themes[m.settingsCard().state.ThemeIndex].Name
+	staged := themes[m.settingsCard().State().ThemeIndex].Name
 	m.settings.gen++
-	request := settingsRequest{values: m.settingsCard().state.Values(), generation: m.settings.gen}
+	request := settingsRequest{values: m.settingsCard().State().Values(), generation: m.settings.gen}
 	m.enqueueEffect(request, 0, false)
 
 	_, command := m.requestQuit()
@@ -669,16 +669,16 @@ func TestCLIPickerSavesFenceEachOther(t *testing.T) {
 	m := buildModel(t)
 	m.openSettings()
 	m.openSettingsCLIPicker(t)
-	m.settingsCard().state.CLICursor = 0
-	first := m.settingsCard().state.CLINames[0]
+	m.settingsCard().State().CLICursor = 0
+	first := m.settingsCard().State().CLINames[0]
 	m.handleSettingsKey(key(" "))
 	_, cmd1 := m.handleSettingsKey(key("esc"))
 	if cmd1 == nil {
 		t.Fatal("first save accepted no command")
 	}
 	m.openSettingsCLIPicker(t)
-	m.settingsCard().state.CLICursor = 1
-	second := m.settingsCard().state.CLINames[1]
+	m.settingsCard().State().CLICursor = 1
+	second := m.settingsCard().State().CLINames[1]
 	m.handleSettingsKey(key(" "))
 	m.handleSettingsKey(key("esc")) // enqueues the second save; its command dispatches after the first
 
@@ -697,11 +697,11 @@ func TestCLIPickerSavesFenceEachOther(t *testing.T) {
 func TestSettingsSaveDuplicateCompletionIsIdempotent(t *testing.T) {
 	m := buildModel(t)
 	m.openSettings()
-	m.settingsCard().state.Field = uisettings.FieldTheme
+	m.settingsCard().State().Field = uisettings.FieldTheme
 	m.cycleSetting(1)
-	staged := themes[m.settingsCard().state.ThemeIndex].Name
+	staged := themes[m.settingsCard().State().ThemeIndex].Name
 	m.settings.gen++
-	m.enqueueEffect(settingsRequest{values: m.settingsCard().state.Values(), generation: m.settings.gen}, 0, false)
+	m.enqueueEffect(settingsRequest{values: m.settingsCard().State().Values(), generation: m.settings.gen}, 0, false)
 	command := m.nextEffectCmd()
 	msg := command()
 	command()
@@ -720,8 +720,8 @@ func TestSettingsSaveDuplicateCompletionIsIdempotent(t *testing.T) {
 func TestSettingsRequestCopiesMutableValues(t *testing.T) {
 	m := buildModel(t)
 	m.openSettings()
-	m.settingsCard().state.CLIHidden = map[string]bool{"claude": true}
-	request := settingsRequest{values: m.settingsCard().state.Values(), hidden: m.settingsCard().state.HiddenList(), generation: 1}
+	m.settingsCard().State().CLIHidden = map[string]bool{"claude": true}
+	request := settingsRequest{values: m.settingsCard().State().Values(), hidden: m.settingsCard().State().HiddenList(), generation: 1}
 	m.enqueueEffect(request, 0, false)
 	request.values[0].Value = "changed"
 	request.hidden[0] = "changed"
@@ -748,7 +748,7 @@ func TestFailedSettingsSavePreservesUnsetDefaults(t *testing.T) {
 	if !m.prefs.focusOnEnter || !m.prefs.arrowStep {
 		t.Fatal("fixture does not start with enabled defaults")
 	}
-	m.settingsCard().state.Field = uisettings.FieldDensity
+	m.settingsCard().State().Field = uisettings.FieldDensity
 	m.cycleSetting(1)
 	_, _ = m.closeSettings()
 	job := m.effects.main.active

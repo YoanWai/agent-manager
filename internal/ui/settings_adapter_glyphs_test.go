@@ -19,14 +19,14 @@ func TestSymbolsExplicitChoiceAndPendingReopen(t *testing.T) {
 	}
 	for _, mode := range []presentation.GlyphMode{presentation.GlyphModeBasic, presentation.GlyphModeAdvanced} {
 		m.applyCmd(t, m.openSettings())
-		m.settingsCard().state.Field = uisettings.FieldGlyphs
+		m.settingsCard().State().Field = uisettings.FieldGlyphs
 		m.handleSettingsKey(key("right"))
 		if m.prefs.glyphMode != mode {
 			t.Fatal("symbols did not preview")
 		}
 		_, save = m.closeSettings()
 		m.openSettings()
-		if m.settingsCard().state.GlyphMode != mode {
+		if m.settingsCard().State().GlyphMode != mode {
 			t.Fatal("reopen lost pending symbols")
 		}
 		_, unchanged := m.closeSettings()
@@ -39,7 +39,7 @@ func TestSymbolsExplicitChoiceAndPendingReopen(t *testing.T) {
 	}
 	fresh := buildModel(t)
 	fresh.applyCmd(t, fresh.openSettings())
-	fresh.settingsCard().state.Field = uisettings.FieldGlyphs
+	fresh.settingsCard().State().Field = uisettings.FieldGlyphs
 	fresh.handleSettingsKey(key("right"))
 	fresh.handleSettingsKey(key("left"))
 	_, save = fresh.closeSettings()
@@ -77,7 +77,7 @@ func TestSymbolsRejectInvalidAndStaleReads(t *testing.T) {
 	m := buildModel(t)
 	m.applyCmd(t, m.openSettings())
 	stale := settingsLoadedMsg{request: settingsLoadRequest{target: settingsLoadDialog, generation: m.settings.gen}, result: settingsLoadResult{values: []restoredValue{{Key: uisettings.GlyphModeSetting, Value: "advanced"}}}}
-	m.settingsCard().state.Field = uisettings.FieldGlyphs
+	m.settingsCard().State().Field = uisettings.FieldGlyphs
 	m.handleSettingsKey(key("right"))
 	m.handleSettingsLoaded(stale)
 	if m.prefs.glyphMode != presentation.GlyphModeBasic {
@@ -97,9 +97,9 @@ func TestSymbolsRejectInvalidAndStaleReads(t *testing.T) {
 func TestSymbolsSaveFailureRestoresAndCanRetry(t *testing.T) {
 	m := buildModel(t)
 	m.applyCmd(t, m.openSettings())
-	m.settingsCard().state.Field = uisettings.FieldGlyphs
+	m.settingsCard().State().Field = uisettings.FieldGlyphs
 	m.handleSettingsKey(key("right"))
-	request := settingsRequest{values: m.settingsCard().state.ChangedValues(), generation: m.settings.gen}
+	request := settingsRequest{values: m.settingsCard().State().ChangedValues(), generation: m.settings.gen}
 	writer := &settingsScriptWriter{failOn: uisettings.GlyphModeSetting, values: map[string]string{}}
 	result, err := runSettingsWithWriter(request, writer)
 	if err == nil {
@@ -109,7 +109,7 @@ func TestSymbolsSaveFailureRestoresAndCanRetry(t *testing.T) {
 	if m.prefs.glyphMode != "" || m.errBar.text == "" {
 		t.Fatal("failed symbols save did not restore default and report failure")
 	}
-	m.settingsCard().state.Field = uisettings.FieldGlyphs
+	m.settingsCard().State().Field = uisettings.FieldGlyphs
 	m.handleSettingsKey(key("right"))
 	_, save := m.closeSettings()
 	m.applyCmd(t, save)
@@ -122,9 +122,9 @@ func TestSettingsUpdateDoesNotStartAfterSymbolsSaveFails(t *testing.T) {
 	m := buildModel(t)
 	m.applyCmd(t, m.openSettings())
 	m.update.latest = "v0.3.0"
-	m.settingsCard().state.Field = uisettings.FieldGlyphs
+	m.settingsCard().State().Field = uisettings.FieldGlyphs
 	m.handleSettingsKey(key("right"))
-	m.settingsCard().state.Field = uisettings.FieldUpdate
+	m.settingsCard().State().Field = uisettings.FieldUpdate
 	m.handleSettingsKey(key("enter"))
 	job := m.effects.main.active
 	request := job.request.(settingsRequest)

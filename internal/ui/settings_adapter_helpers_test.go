@@ -9,15 +9,15 @@ import (
 
 // cycleSetting steps the focused row as ← or → would.
 func (m *Model) cycleSetting(step int) tea.Cmd {
-	return m.runSettingsResult(&m.settingsCard().state, m.settingsCard().state.Cycle(step))
+	return m.runSettingsResult(m.settingsCard().State(), m.settingsCard().State().Cycle(step))
 }
 
 // openSettingsCLIPicker opens the CLI picker from its row.
 func (m *Model) openSettingsCLIPicker(t *testing.T) {
 	t.Helper()
-	m.settingsCard().state.Field = uisettings.FieldCLIs
+	m.settingsCard().State().Field = uisettings.FieldCLIs
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
-	if !m.settingsCard().state.CLIPicker {
+	if !m.settingsCard().State().CLIPicker {
 		t.Fatal("the CLIs row did not open the picker")
 	}
 }

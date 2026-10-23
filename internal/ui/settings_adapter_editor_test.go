@@ -15,7 +15,7 @@ func editorSettings(t *testing.T, m *Model, installed ...string) {
 	t.Helper()
 	captureEditor(t, installed...)
 	m.applyCmd(t, m.openSettings())
-	m.settingsCard().state.Field = uisettings.FieldEditor
+	m.settingsCard().State().Field = uisettings.FieldEditor
 }
 
 func (m *Model) pressInSettings(t *testing.T, msg tea.KeyMsg) {
@@ -69,22 +69,22 @@ func TestSettingsEditorCustomLineIsTyped(t *testing.T) {
 	m := buildModel(t)
 	editorSettings(t, m, "code")
 	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyLeft})
-	if !m.settingsCard().state.Editor.Custom() {
-		t.Fatalf("left from auto should land on custom, got %q", m.settingsCard().state.Editor.Label())
+	if !m.settingsCard().State().Editor.Custom() {
+		t.Fatalf("left from auto should land on custom, got %q", m.settingsCard().State().Editor.Label())
 	}
 	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyEnter})
-	if !m.settingsCard().state.Editor.Typing() || !m.settingsOpen() {
+	if !m.settingsCard().State().Editor.Typing() || !m.settingsOpen() {
 		t.Fatal("enter on custom should open the field, not save")
 	}
 	m.pressInSettings(t, runeKey("junk"))
 	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyEsc})
-	if m.settingsCard().state.Editor.Typing() || m.settingsCard().state.Editor.Line() != "" || !m.settingsOpen() {
-		t.Fatalf("esc should drop what was typed and stay in Settings, line = %q", m.settingsCard().state.Editor.Line())
+	if m.settingsCard().State().Editor.Typing() || m.settingsCard().State().Editor.Line() != "" || !m.settingsOpen() {
+		t.Fatalf("esc should drop what was typed and stay in Settings, line = %q", m.settingsCard().State().Editor.Line())
 	}
 
 	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyEnter})
 	m.pressInSettings(t, runeKey("code -n k"))
-	if m.settingsCard().state.Field != uisettings.FieldEditor {
+	if m.settingsCard().State().Field != uisettings.FieldEditor {
 		t.Fatal("a typed k must not move the cursor off the row")
 	}
 	if view := ansi.Strip(m.viewSettings()); !strings.Contains(view, "code -n k") {
@@ -93,7 +93,7 @@ func TestSettingsEditorCustomLineIsTyped(t *testing.T) {
 	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyBackspace})
 	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyBackspace})
 	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyEnter})
-	if got := m.settingsCard().state.Editor.Label(); got != "custom · code -n" {
+	if got := m.settingsCard().State().Editor.Label(); got != "custom · code -n" {
 		t.Fatalf("label = %q", got)
 	}
 	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyEsc})
@@ -115,7 +115,7 @@ func TestSettingsEditorRowReturnsToAuto(t *testing.T) {
 	}
 	m.services.editor = "code -n"
 	editorSettings(t, m, "zed")
-	if got := m.settingsCard().state.Editor.Label(); got != "custom · code -n" {
+	if got := m.settingsCard().State().Editor.Label(); got != "custom · code -n" {
 		t.Fatalf("label = %q", got)
 	}
 	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyRight})

@@ -347,8 +347,8 @@ func (r editorResolution) probe() editorsProbedMsg {
 // fills the row of the visit that asked while the dialog is open.
 func (m *Model) applyEditorsProbe(msg editorsProbedMsg) {
 	m.settings.cache.editors = &msg
-	if s, open := surfaceOf[*settingsSurface](m); open && msg.Generation == m.settings.gen {
-		s.state.Editor.ApplyProbe(msg)
+	if s, open := surfaceOf[*uisettings.Surface](m); open && msg.Generation == m.settings.gen {
+		s.State().Editor.ApplyProbe(msg)
 	}
 }
 

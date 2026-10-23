@@ -31,7 +31,7 @@ func TestSettingsEscClosesAndSavesOnce(t *testing.T) {
 	t.Parallel()
 	for _, k := range []tea.KeyMsg{{Type: tea.KeyEsc}} {
 		m := openedSettings(t)
-		m.settingsCard().state.Field = uisettings.FieldMouse
+		m.settingsCard().State().Field = uisettings.FieldMouse
 		m.cycleSetting(1)
 		before := m.settings.pending
 		_, cmd := m.Update(k)
@@ -67,9 +67,9 @@ func TestSettingsLoadsAreFencedToTheirVisit(t *testing.T) {
 	t.Parallel()
 	m := openedSettings(t)
 	stale := settingsLoadedMsg{request: settingsLoadRequest{target: settingsLoadDialog, generation: m.settings.gen - 1}}
-	m.settingsCard().state.Field = uisettings.FieldMouse
+	m.settingsCard().State().Field = uisettings.FieldMouse
 	m.handleSettingsLoaded(stale)
-	if m.settingsCard().state.Field != uisettings.FieldMouse {
+	if m.settingsCard().State().Field != uisettings.FieldMouse {
 		t.Fatal("an earlier visit's load rebuilt the card")
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
