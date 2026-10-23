@@ -103,7 +103,7 @@ func TestAnOlderCLIOpensTheUpdateDialogInsteadOfListingModels(t *testing.T) {
 	}
 	m.openForm()
 	m.form().Form = spawn.NewForm(m.spawnHost(), []string{"pi"}, 0)
-	m.form().prompt.Attachments = []composer.Attachment{{ID: 7}}
+	m.formPromptFor().Attachments = []composer.Attachment{{ID: 7}}
 
 	m.applyCmd(t, m.ensureCatalog("pi"))
 
@@ -113,8 +113,8 @@ func TestAnOlderCLIOpensTheUpdateDialogInsteadOfListingModels(t *testing.T) {
 	if len(m.ledger.catalogs["pi"].cat.Models) != 0 {
 		t.Fatalf("models = %+v, want the kept answer withheld", m.ledger.catalogs["pi"].cat.Models)
 	}
-	if len(m.form().prompt.Attachments) != 1 || len(hintFix(m).images) != 0 {
-		t.Fatalf("draft images moved: form %v dialog %v", m.form().prompt.Attachments, hintFix(m).images)
+	if len(m.formPromptFor().Attachments) != 1 || len(hintFix(m).images) != 0 {
+		t.Fatalf("draft images moved: form %v dialog %v", m.formPromptFor().Attachments, hintFix(m).images)
 	}
 }
 
@@ -256,7 +256,7 @@ func TestClosingTheUpdateDialogReturnsToTheFormDraft(t *testing.T) {
 	m.openForm()
 	pickFormTool(t, m, "pi-tool")
 	m.form().SetName("draft-name")
-	m.form().prompt.Attachments = []composer.Attachment{{ID: 7}}
+	m.formPromptFor().Attachments = []composer.Attachment{{ID: 7}}
 	m.ledger.catalogs = map[string]*catalogState{"pi-tool": {loading: true}}
 	m.handleCatalog(catalogMsg{tool: "pi-tool", err: config.OutdatedToolError{Binary: "pi", Installed: "0.84.2", Minimum: "0.84.3"}})
 	if !hintOpen(m) {
@@ -265,7 +265,7 @@ func TestClosingTheUpdateDialogReturnsToTheFormDraft(t *testing.T) {
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	*m = *updated.(*Model)
 	m.applyCmd(t, cmd)
-	if !formOpen(m) || m.form().Name() != "draft-name" || len(m.form().prompt.Attachments) != 1 {
-		t.Fatalf("mode %v name %q attachments %d, want the form draft back", m.screenID(), m.form().Name(), len(m.form().prompt.Attachments))
+	if !formOpen(m) || m.form().Name() != "draft-name" || len(m.formPromptFor().Attachments) != 1 {
+		t.Fatalf("mode %v name %q attachments %d, want the form draft back", m.screenID(), m.form().Name(), len(m.formPromptFor().Attachments))
 	}
 }

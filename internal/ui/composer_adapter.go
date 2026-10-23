@@ -34,8 +34,10 @@ func (m *Model) nextComposerGen() int {
 // is an empty stand-in whose generation no read carries, so a read that
 // lands on it only drops its file.
 func (m *Model) composerFor(target composer.ID) *composer.Composer {
-	if f := m.form(); target == composer.Form && f != nil {
-		return &f.prompt
+	if target == composer.Form {
+		if prompt := m.formPromptFor(); prompt != nil {
+			return prompt
+		}
 	}
 	if q := m.quick(); target == composer.Quick && q != nil {
 		return &q.Composer

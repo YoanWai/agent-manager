@@ -5,6 +5,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	"github.com/YoanWai/agent-manager/internal/ui/pathcomplete"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -16,13 +17,14 @@ func picker(m *Model) *spawn.Picker {
 	if s, ok := surfaceOf[*uidialogs.MoveSurface](m); ok {
 		return s.Picker()
 	}
-	return &m.form().groupPicker
+	return &m.form().Picker
 }
 
 // pushForm puts a bare New Session form on the stack, for a test that needs
 // one open without the reads openForm starts.
-func pushForm(m *Model) *spawnSurface {
-	f := newSpawnSurface(formDialog{prompt: promptField()})
+func pushForm(m *Model) *spawn.Surface {
+	prompt := promptField()
+	f := m.newSpawnSurface(&prompt, pathcomplete.State{}, spawn.Form{}, spawn.Picker{})
 	m.push(f)
 	return f
 }
@@ -45,7 +47,7 @@ func TestSpawnFormIsASurface(t *testing.T) {
 		t.Fatal("a stray click closed the form")
 	}
 	image := tempImage(t, "draft.png")
-	m.form().prompt.Attachments = []composer.Attachment{{ID: 1, Path: image}}
+	m.formPromptFor().Attachments = []composer.Attachment{{ID: 1, Path: image}}
 	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if formOpen(m) || len(m.surfaces) != 0 {
 		t.Fatal("esc did not close the form")
@@ -60,7 +62,7 @@ func TestSpawnFormIsASurface(t *testing.T) {
 func TestStaleFormCompletionIsDropped(t *testing.T) {
 	m := buildModel(t)
 	m.applyCmd(t, m.openForm())
-	gen := m.form().prompt.Gen
+	gen := m.formPromptFor().Gen
 	m.closeForm()
 	if _, ok := m.formFor(gen); ok {
 		t.Fatal("a closed form still answers its generation")

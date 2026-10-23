@@ -9,28 +9,12 @@ import (
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	"github.com/YoanWai/agent-manager/internal/ui/pathcomplete"
-	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
-
-// formDialog is the New Session form (internal/ui/spawn) with what the
-// root holds for it: the prompt box, the path completer under its dir
-// field, and the group picker the group form and move dialog share.
-type formDialog struct {
-	spawn.Form
-	// prompt is a composer rather than a plain textarea: a first task is
-	// often a screenshot, so the box has to hold pasted images the way the
-	// quick prompt does.
-	prompt   composer.Composer
-	complete pathcomplete.State
-	groupPicker
-	// remote is the connection a spawn goes to, when one is the target.
-	remote formRemote
-}
 
 // spawnHost is the root as the New Session form and its choice see it.
 type spawnHost struct{ m *Model }
@@ -66,7 +50,7 @@ func (h spawnHost) ReportErr(text string) { h.m.reportErr(text) }
 func (h spawnHost) ChoiceRemoteHost() string {
 	m := h.m
 	if f := m.form(); f != nil {
-		return f.remote.host
+		return f.Remote.Host
 	}
 	if m.quick() != nil {
 		if target, ok := m.remoteTarget(); ok {
@@ -79,13 +63,11 @@ func (h spawnHost) ChoiceRemoteHost() string {
 func (h spawnHost) ClearErr() { h.m.clearErr() }
 
 func (h spawnHost) Prompt() spawn.Prompt {
-	return promptBox{c: &h.m.form().prompt, target: composer.Form, host: h.m}
+	return spawnedPrompt(h.m.form(), composer.Form, h.m)
 }
 
 func (h spawnHost) Paths() spawn.Paths {
-	// A connection's directory is the host's: nothing here completes it.
-	f := h.m.form()
-	return pathField{mode: h.m.prefs.glyphMode, pc: &f.complete, target: pathcomplete.Form, off: f.remote.on()}
+	return h.m.spawnedPaths(h.m.form())
 }
 
 // promptBox lends a feature package one of the root's prompt boxes.
@@ -119,34 +101,6 @@ func (p promptBox) Release() { p.c.Release() }
 func (p promptBox) Pasting() bool { return p.c.Pasting() }
 
 func (p promptBox) Message() string { return p.c.Message() }
-
-// pathField lends the form the root's path completer.
-type pathField struct {
-	mode   presentation.GlyphMode
-	pc     *pathcomplete.State
-	target pathcomplete.Target
-	// off asks for no suggestions.
-	off bool
-}
-
-func (p pathField) Active() bool { return p.pc.Active() }
-
-func (p pathField) Chosen() bool { return p.pc.Chosen }
-
-func (p pathField) Move(delta int) bool { return p.pc.Move(delta) }
-
-func (p pathField) Reset() { p.pc.Reset() }
-
-func (p pathField) Suggest(typed string) tea.Cmd {
-	if p.off {
-		return nil
-	}
-	return p.pc.Request(p.target, typed, pathcomplete.SystemReader{})
-}
-
-func (p pathField) View() string { return p.pc.View(pathCompleteStyles(p.mode)) }
-
-func (p pathField) Hint() [][2]string { return pathSuggestHint(p.pc.Chosen) }
 
 // spawnStyles copies the active theme for one paint.
 func (m *Model) spawnStyles() spawn.Styles {
@@ -211,7 +165,7 @@ func (m *Model) syncFormFieldWidths() {
 	}
 	inner := m.formValueWidth()
 	f.SyncWidths(inner)
-	f.prompt.Input.SetWidth(inner)
+	m.formPromptFor().Input.SetWidth(inner)
 }
 
 // contextGroup is the group the cursor currently sits in: a highlighted
@@ -239,14 +193,7 @@ func (m *Model) openFormWithReader(reader settingsValueReader) tea.Cmd {
 	prompt := promptField()
 	prompt.Gen = m.nextComposerGen()
 	m.closeQuick()
-	f := newSpawnSurface(formDialog{
-		Form:   spawn.NewForm(m.spawnHost(), tools, toolIndex),
-		prompt: prompt,
-		// The completer starts past every read an earlier opening asked
-		// for, so a scan that comes home late lands on nothing.
-		complete:    pathcomplete.State{Generation: uint64(prompt.Gen) << 32},
-		groupPicker: m.groupPickerFor(m.contextGroup()),
-	})
+	f := m.newSpawnSurface(&prompt, pathcomplete.State{Generation: uint64(prompt.Gen) << 32}, spawn.NewForm(m.spawnHost(), tools, toolIndex), m.groupPickerFor(m.contextGroup()))
 	m.push(f)
 	m.clearErr()
 	m.syncFormFieldWidths()
@@ -254,15 +201,15 @@ func (m *Model) openFormWithReader(reader settingsValueReader) tea.Cmd {
 	f.SetDir(m.capturedGroupDefaultDir(m.selectedGroupPath()))
 	f.SeedWorktree(m.cachedSpawnWorktreeDefault(m.selectedGroupPath()))
 	if target, ok := m.remoteTarget(); ok {
-		f.aimRemote(target)
+		f.AimRemote(spawn.Remote{Host: target.host, Group: target.group})
 		f.RestartChoice(m.spawnHost())
 	}
 	catalog := m.ensureCatalog(tools[toolIndex])
-	saved := savedPromptsLoadCmd(m.services.store, savedForForm, uint64(f.prompt.Gen), 0)
+	saved := savedPromptsLoadCmd(m.services.store, savedForForm, uint64(prompt.Gen), 0)
 	if m.settings.pending > 0 {
 		return tea.Batch(m.formWorktreeProbeCmd(false), catalog, saved)
 	}
-	return tea.Batch(settingsLoadCmd(settingsLoadRequest{target: settingsLoadForm, generation: uint64(f.prompt.Gen), extra: m.choiceSettingKeys()}, reader), catalog, saved)
+	return tea.Batch(settingsLoadCmd(settingsLoadRequest{target: settingsLoadForm, generation: uint64(prompt.Gen), extra: m.choiceSettingKeys()}, reader), catalog, saved)
 }
 
 // applyCachedFormDefaults takes the loaded tool and worktree defaults. A
@@ -311,7 +258,7 @@ func (m *Model) runFormRequest(request spawn.FormRequest, reader directoryPrefli
 	case request.ApplyPath:
 		return m.applyPathSuggestion()
 	case request.PickPath:
-		if m.form().complete.Pick(request.PathEntry) {
+		if m.form().Complete.Pick(request.PathEntry) {
 			return m.applyPathSuggestion()
 		}
 	case request.Group != 0:
@@ -378,12 +325,12 @@ func (m *Model) viewForm() string {
 		Chrome: m.cardChromeRows,
 	}
 	if f.Focused() == spawn.FieldGroup {
-		facts.GroupPicker = strings.Split(m.viewGroupPicker(&f.groupPicker), "\n")
+		facts.GroupPicker = strings.Split(m.viewGroupPicker(&f.Picker), "\n")
 	}
 	facts.WorktreeCapable, facts.WorktreeKnown = m.cachedWorktreeCapability(m.formSpawnDir())
-	if f.remote.on() {
+	if f.Remote.On() {
 		facts.WorktreeCapable, facts.WorktreeKnown = true, true
-		facts.Host = lipgloss.NewStyle().Foreground(colorRemote()).Render(f.remote.host)
+		facts.Host = lipgloss.NewStyle().Foreground(colorRemote()).Render(f.Remote.Host)
 	} else if m.formWorktreeOn() {
 		facts.Base = m.spawnBaseLabel(m.formSpawnDir(), m.selectedGroupPath())
 	}

@@ -18,6 +18,7 @@ func (m *Model) formSpawnRequest(request spawn.Request) spawnRequest {
 		name = request.Tool + "-" + newID()[:4]
 	}
 	f := m.form()
+	prompt := m.formPromptFor()
 	group := f.GroupPath()
 	defaults := m.spawnDefaults(group)
 	return spawnRequest{
@@ -31,9 +32,9 @@ func (m *Model) formSpawnRequest(request spawn.Request) spawnRequest {
 		choice:       config.Choice(request.Pick),
 		base:         defaults.base,
 		pane:         defaults.pane,
-		composerGen:  f.prompt.Gen,
-		images:       f.prompt.Attachments,
-		draft:        f.prompt.Input.Value(),
+		composerGen:  prompt.Gen,
+		images:       prompt.Attachments,
+		draft:        prompt.Input.Value(),
 		draftName:    f.Name(),
 		draftDir:     f.Dir(),
 		rawDir:       request.Dir,

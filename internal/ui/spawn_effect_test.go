@@ -461,20 +461,20 @@ func TestSpawnFailureDoesNotReplaceNewerDialog(t *testing.T) {
 	cmd := submitFormSpawn(t, m, "first", t.TempDir())
 	// The user closes this form and opens a fresh one in the same slot: a
 	// newer dialog the completion must not close.
-	m.form().prompt.Release()
+	m.formPromptFor().Release()
 	m.base = baseList
 	m.clearSurfaces()
 	m.openForm()
 	m.form().SetName("second")
 	m.form().SetDir(t.TempDir())
 	setFormTool(m, 0)
-	newGen := m.form().prompt.Gen
+	newGen := m.formPromptFor().Gen
 	m.services.store.Close()
 	m.applyCmd(t, cmd)
 	if !formOpen(m) {
 		t.Fatalf("the newer form was closed; screen = %v", m.screenID())
 	}
-	if m.form().prompt.Gen != newGen {
+	if m.formPromptFor().Gen != newGen {
 		t.Fatal("the newer form was replaced by the completion")
 	}
 	if m.errBar.text == "" {
@@ -561,7 +561,7 @@ func TestSpawnGenericErrorReturnsImagesToForm(t *testing.T) {
 	if !formOpen(m) {
 		t.Fatalf("form should stay up; screen = %v", m.screenID())
 	}
-	if got := m.form().prompt.Attachments; len(got) != 1 || got[0].ID != id {
+	if got := m.formPromptFor().Attachments; len(got) != 1 || got[0].ID != id {
 		t.Fatalf("attachments = %+v, want the chip kept for the retry", got)
 	}
 	if _, err := os.Stat(path); err != nil {
@@ -573,10 +573,10 @@ func TestSpawnFailurePreservesNewAttachments(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openForm()
-	request := spawnRequest{kind: spawnForm, composerGen: m.form().prompt.Gen, images: []composer.Attachment{{Path: "old"}}}
-	m.form().prompt.Attachments = []composer.Attachment{{Path: "new"}}
+	request := spawnRequest{kind: spawnForm, composerGen: m.formPromptFor().Gen, images: []composer.Attachment{{Path: "old"}}}
+	m.formPromptFor().Attachments = []composer.Attachment{{Path: "new"}}
 	m.returnSpawnImages(request)
-	if len(m.form().prompt.Attachments) != 2 {
+	if len(m.formPromptFor().Attachments) != 2 {
 		t.Fatal("failed spawn discarded a newly pasted attachment")
 	}
 }

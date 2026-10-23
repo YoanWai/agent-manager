@@ -107,14 +107,14 @@ func TestComposerNoImageFallsThroughToABlurredFormPrompt(t *testing.T) {
 	m.openForm()
 	m.form().FocusField(m.spawnHost(), spawn.FieldPrompt)
 	m.form().FocusStep(m.spawnHost(), 0)
-	m.form().prompt.Input.SetValue("see ")
-	m.form().prompt.Input.CursorEnd()
-	m.form().prompt.Attachments = []composer.Attachment{{ID: 1}}
-	m.form().prompt.Input.InsertString(composer.Token(1))
+	m.formPromptFor().Input.SetValue("see ")
+	m.formPromptFor().Input.CursorEnd()
+	m.formPromptFor().Attachments = []composer.Attachment{{ID: 1}}
+	m.formPromptFor().Input.InsertString(composer.Token(1))
 
-	gen := m.form().prompt.Gen
+	gen := m.formPromptFor().Gen
 	m.form().FocusStep(m.spawnHost(), 1)
-	if m.form().prompt.Input.Focused() {
+	if m.formPromptFor().Input.Focused() {
 		t.Fatal("tabbing on to the next field blurs the prompt")
 	}
 
@@ -131,10 +131,10 @@ func TestComposerNoImageFallsThroughToABlurredFormPrompt(t *testing.T) {
 		t.Fatalf("paste cmd returned %T", cmd())
 	}
 	m = applyMsg(t, m, text)
-	if got := m.form().prompt.Input.Value(); got != "see from the clipboard" {
+	if got := m.formPromptFor().Input.Value(); got != "see from the clipboard" {
 		t.Fatalf("value = %q, want the clipboard text in place of the chip", got)
 	}
-	if m.form().prompt.Input.Focused() {
+	if m.formPromptFor().Input.Focused() {
 		t.Fatal("a late paste must not steal focus back to the prompt")
 	}
 }
@@ -166,10 +166,10 @@ func TestComposerPasteFromAClosedBoxSkipsItsSuccessor(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openForm()
-	stale := m.form().prompt.Gen
+	stale := m.formPromptFor().Gen
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyEsc})
 	m.openForm()
-	if m.form().prompt.Gen == stale {
+	if m.formPromptFor().Gen == stale {
 		t.Fatal("a reopened form should be a different box")
 	}
 	focusFormPrompt(t, m)
@@ -182,16 +182,16 @@ func TestComposerPasteFromAClosedBoxSkipsItsSuccessor(t *testing.T) {
 		Gen:    stale,
 		Inner:  tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(" from the old form")},
 	})
-	if got := m.form().prompt.Input.Value(); got != "typed since" {
+	if got := m.formPromptFor().Input.Value(); got != "typed since" {
 		t.Fatalf("value = %q, want the new form untouched by the old form's paste", got)
 	}
 
 	// An image read from the same dead box is dropped the same way, file
 	// and all, rather than filling a chip the new form never reserved.
 	path := tempImage(t, "stale.png")
-	m.form().prompt.Attachments = []composer.Attachment{{ID: 1}}
+	m.formPromptFor().Attachments = []composer.Attachment{{ID: 1}}
 	m = applyMsg(t, m, composer.PasteImageMsg{Target: composer.Form, Gen: stale, ID: 1, Path: path})
-	if got := m.form().prompt.Attachments[0].Path; got != "" {
+	if got := m.formPromptFor().Attachments[0].Path; got != "" {
 		t.Fatalf("chip path = %q, want the stale read ignored", got)
 	}
 	if !fileGone(path) {
@@ -213,7 +213,7 @@ func TestComposerTargetsRouteToTheirOwnBox(t *testing.T) {
 	}
 	// The form takes the list's place and the bar with it.
 	m.openForm()
-	if got := m.composerFor(composer.Form); got != &m.form().prompt {
+	if got := m.composerFor(composer.Form); got != m.formPromptFor() {
 		t.Fatal("composer.Form should name the form's prompt")
 	}
 	if m.composerOpen(composer.Quick) || !m.composerOpen(composer.Form) {

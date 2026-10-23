@@ -120,10 +120,11 @@ func (m *Model) dispatchSpawn(request spawnRequest) {
 	switch request.kind {
 	case spawnForm:
 		f := m.form()
-		request.draft = f.prompt.Input.Value()
+		prompt := m.formPromptFor()
+		request.draft = prompt.Input.Value()
 		request.draftName = f.Name()
 		request.draftDir = f.Dir()
-		f.prompt.Attachments = nil
+		prompt.Attachments = nil
 	case spawnQuick:
 		q := m.quick()
 		request.draft = q.Input.Value()
@@ -270,7 +271,7 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 		case spawnForm:
 			// A form opened later is a newer dialog the completion must not
 			// close; only the one that dispatched this spawn is closed.
-			if f, ok := m.formFor(request.composerGen); ok && f.prompt.Input.Value() == request.draft && f.Name() == request.draftName && f.Dir() == request.draftDir && len(f.prompt.Attachments) == 0 {
+			if m.formDraftHolds(request.composerGen, request.draft, request.draftName, request.draftDir) {
 				m.closeForm()
 			}
 		case spawnQuick:
@@ -335,8 +336,8 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 func (m *Model) returnSpawnImages(request spawnRequest) {
 	switch request.kind {
 	case spawnForm:
-		if f, ok := m.formFor(request.composerGen); ok {
-			f.prompt.Attachments = append(request.images, f.prompt.Attachments...)
+		if prompt, ok := m.formPromptForGen(request.composerGen); ok {
+			prompt.Attachments = append(request.images, prompt.Attachments...)
 			return
 		}
 	case spawnQuick:

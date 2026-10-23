@@ -50,10 +50,10 @@ func (m *Model) requestWorktreeProbe(target worktreeProbeTarget, generation int,
 
 func (m *Model) formWorktreeProbeCmd(toggleOn bool) tea.Cmd {
 	f := m.form()
-	if f.remote.on() {
+	if f.Remote.On() {
 		return nil
 	}
-	return m.requestWorktreeProbe(worktreeProbeForm, f.prompt.Gen, m.formSpawnDir(), toggleOn, f.Worktree())
+	return m.requestWorktreeProbe(worktreeProbeForm, m.formPromptFor().Gen, m.formSpawnDir(), toggleOn, f.Worktree())
 }
 
 func (m *Model) quickWorktreeProbeCmd(toggleOn bool) tea.Cmd {

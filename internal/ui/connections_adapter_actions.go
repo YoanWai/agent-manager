@@ -397,9 +397,10 @@ func (m *Model) remoteFormSpawn(req spawnRequest) tea.Cmd {
 		m.reportErr(uirail.RemoteRefusal("pasted images"))
 		return nil
 	}
-	target := m.form().remote
+	target := m.form().Remote
+	group := target.Group
 	opts := sessioncmd.CreateSessionOptions{
-		Tool: req.toolName, Group: &target.group, Directory: strings.TrimSpace(req.rawDir), Prompt: req.prompt,
+		Tool: req.toolName, Group: &group, Directory: strings.TrimSpace(req.rawDir), Prompt: req.prompt,
 	}
 	withRemoteChoice(&opts, req.choice)
 	if !req.autoNamed {
@@ -409,32 +410,21 @@ func (m *Model) remoteFormSpawn(req spawnRequest) tea.Cmd {
 		worktree := req.wantWorktree
 		opts.Worktree = &worktree
 	}
-	return m.queueRemote(remoteRequest{op: remoteSpawn, host: target.host, spawn: opts, composerGen: req.composerGen, fromForm: true})
+	return m.queueRemote(remoteRequest{op: remoteSpawn, host: target.Host, spawn: opts, composerGen: req.composerGen, fromForm: true})
 }
 
-// formRemote is the connection and group a New Session form spawns into.
+// formRemote is the connection and group a New Session form spawns into,
+// as the root's own connection rows name them.
 type formRemote struct{ host, group string }
 
 func (r formRemote) on() bool { return r.host != "" }
-
-// aimRemote points an opened form at a connection: the group is fixed, the
-// directory is the host's to resolve, and the worktree inherits its default
-// until picked.
-func (d *formDialog) aimRemote(target formRemote) {
-	d.remote = target
-	d.Groups = []groupOption{{Path: target.group}}
-	d.GroupIndex = 0
-	d.TakePath("")
-	d.SetDirPlaceholder("the group's directory on " + target.host)
-	d.SeedWorktree(false)
-}
 
 // remoteFormRequest takes the form requests that differ on a connection:
 // the group is fixed, nothing is probed locally, and the spawn goes to the
 // host.
 func (m *Model) remoteFormRequest(request spawn.FormRequest) (tea.Cmd, bool) {
 	f := m.form()
-	if !f.remote.on() {
+	if !f.Remote.On() {
 		return nil, false
 	}
 	switch {

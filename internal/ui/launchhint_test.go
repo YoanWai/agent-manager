@@ -409,9 +409,8 @@ func TestFormSpawnRefusedByTheHintReleasesItsImages(t *testing.T) {
 	m.form().SetDir(t.TempDir())
 	m.form().SetTools([]string{"hermes"}, 0)
 	path := tempImage(t, "mock.png")
-	f := m.form()
-	f.prompt.Attachments = []composer.Attachment{{ID: 1, Path: path}}
-	f.prompt.Input.SetValue("match " + composer.Token(1))
+	m.formPromptFor().Attachments = []composer.Attachment{{ID: 1, Path: path}}
+	m.formPromptFor().Input.SetValue("match " + composer.Token(1))
 
 	_, cmd := m.submitForm()
 	m.applyCmd(t, cmd)
@@ -422,8 +421,8 @@ func TestFormSpawnRefusedByTheHintReleasesItsImages(t *testing.T) {
 	// The dialog can still install the CLI and spawn this prompt, so it
 	// takes the images over from the form and keeps the files until it
 	// closes.
-	if len(f.prompt.Attachments) != 0 {
-		t.Fatalf("attachments = %+v, want the form's images handed to the dialog", f.prompt.Attachments)
+	if len(m.formPromptFor().Attachments) != 0 {
+		t.Fatalf("attachments = %+v, want the form's images handed to the dialog", m.formPromptFor().Attachments)
 	}
 	if len(hintFix(m).images) != 1 {
 		t.Fatalf("dialog images = %+v, want the refused prompt's image", hintFix(m).images)
@@ -470,8 +469,8 @@ func TestFormSpawnErrorInTheBarKeepsItsImages(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := tempImage(t, "mock.png")
-	m.form().prompt.Attachments = []composer.Attachment{{ID: 1, Path: path}}
-	m.form().prompt.Input.SetValue("match " + composer.Token(1))
+	m.formPromptFor().Attachments = []composer.Attachment{{ID: 1, Path: path}}
+	m.formPromptFor().Input.SetValue("match " + composer.Token(1))
 
 	_, cmd := m.submitForm()
 	m.applyCmd(t, cmd)
@@ -487,8 +486,8 @@ func TestFormSpawnErrorInTheBarKeepsItsImages(t *testing.T) {
 	if len(m.sessionRows()) != 0 {
 		t.Fatalf("a failed spawn leaves no session, got %v", sessionNames(m))
 	}
-	if len(m.form().prompt.Attachments) != 1 {
-		t.Fatalf("attachments = %+v, want the chip kept for the retry", m.form().prompt.Attachments)
+	if len(m.formPromptFor().Attachments) != 1 {
+		t.Fatalf("attachments = %+v, want the chip kept for the retry", m.formPromptFor().Attachments)
 	}
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("the image the prompt still names must survive: %v", err)
