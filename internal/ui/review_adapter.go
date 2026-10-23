@@ -336,7 +336,7 @@ func (m *Model) routeReviewMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	case reviewPickerLoadedMsg:
 		return routed(m, m.handleReviewPickerLoaded(msg))
 
-	case reviewPickedMsg:
+	case uireview.PickedMsg:
 		return routed(m, m.applyReviewPick(msg))
 
 	case reviewPreferencesMsg:

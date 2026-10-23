@@ -8,7 +8,7 @@ import (
 
 // pickerOpen reports a review picker on the stack.
 func (m *Model) pickerOpen() bool {
-	_, ok := surfaceOf[*reviewPicker](m)
+	_, ok := surfaceOf[*uireview.Surface](m)
 	return ok
 }
 
@@ -16,17 +16,17 @@ func (m *Model) pickerOpen() bool {
 // cursor the way the surface does.
 func (m *Model) pickerOf(t *testing.T) *uireview.Picker {
 	t.Helper()
-	s, ok := surfaceOf[*reviewPicker](m)
+	s, ok := surfaceOf[*uireview.Surface](m)
 	if !ok {
 		t.Fatal("no review picker is open")
 	}
-	return &s.picker
+	return s.Picker()
 }
 
 // viewPicker paints the mounted picker's card alone.
 func (m *Model) viewPicker(t *testing.T) string {
 	t.Helper()
-	s, ok := surfaceOf[*reviewPicker](m)
+	s, ok := surfaceOf[*uireview.Surface](m)
 	if !ok {
 		t.Fatal("no review picker is open")
 	}

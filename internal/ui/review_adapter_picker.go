@@ -114,7 +114,7 @@ func (m *Model) reviewPickerSource() uireview.PickerSource {
 }
 
 func (m *Model) openReviewPicker(rows []uireview.PickerRow, title string, kind uireview.PickerKind, current string, source uireview.PickerSource, storeRoot string) {
-	m.push(newReviewPicker(rows, title, kind, current, source, storeRoot, m.reviewRenderContext(), m.glyphs().ReviewGlyph))
+	m.push(uireview.NewSurface(reviewRoot{m}, rows, title, kind, current, source, storeRoot, m.reviewRenderContext(), m.glyphs().ReviewGlyph))
 	m.clearErr()
 }
 
@@ -204,18 +204,18 @@ func (m *Model) handleReviewPickerLoaded(msg reviewPickerLoadedMsg) tea.Cmd {
 // snapshotted a review; a load or a base save that landed behind it moved
 // the review on, so a pick for the old one is refused where the user can
 // see why, instead of retargeting whatever is showing now.
-func (m *Model) applyReviewPick(msg reviewPickedMsg) tea.Cmd {
+func (m *Model) applyReviewPick(msg uireview.PickedMsg) tea.Cmd {
 	if m.effects.quitting || m.base != baseReview {
 		return nil
 	}
-	if !m.review.PickerSourceCurrent(msg.source) {
+	if !m.review.PickerSourceCurrent(msg.Source) {
 		m.reportErr("review changed; reopen the picker")
 		return nil
 	}
-	if msg.choice.Kind == uireview.PickBase {
-		return m.selectBase(msg.choice.Value, msg.source, msg.storeRoot)
+	if msg.Choice.Kind == uireview.PickBase {
+		return m.selectBase(msg.Choice.Value, msg.Source, msg.StoreRoot)
 	}
-	return m.selectRepo(msg.choice.Value)
+	return m.selectRepo(msg.Choice.Value)
 }
 
 func (m *Model) selectRepo(root string) tea.Cmd {

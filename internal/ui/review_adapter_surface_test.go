@@ -94,8 +94,8 @@ func TestReviewPickerEnterCarriesThePick(t *testing.T) {
 	if m.pickerOpen() || cmd == nil {
 		t.Fatalf("enter should close the picker and return the pick: open=%t cmd=%v", m.pickerOpen(), cmd != nil)
 	}
-	pick, ok := cmd().(reviewPickedMsg)
-	if !ok || pick.choice.Value != "/tmp/two" || pick.choice.Kind != uireview.PickRepo {
+	pick, ok := cmd().(uireview.PickedMsg)
+	if !ok || pick.Choice.Value != "/tmp/two" || pick.Choice.Kind != uireview.PickRepo {
 		t.Fatalf("pick = %+v", pick)
 	}
 }
@@ -110,7 +110,7 @@ func TestReviewPickerStalePickIsRefused(t *testing.T) {
 	m.Pop()
 	_, _ = m.review.SelectRepo("/tmp/two")
 	generation := m.review.Generation()
-	updated, cmd := m.Update(reviewPickedMsg{choice: uireview.PickerChoice{Kind: uireview.PickRepo, Value: "/tmp/one"}, source: source})
+	updated, cmd := m.Update(uireview.PickedMsg{Choice: uireview.PickerChoice{Kind: uireview.PickRepo, Value: "/tmp/one"}, Source: source})
 	*m = *updated.(*Model)
 	if cmd != nil || m.review.Generation() != generation || !strings.Contains(m.errBar.text, "reopen the picker") {
 		t.Fatalf("stale pick: cmd=%v generation=%d err=%q", cmd != nil, m.review.Generation(), m.errBar.text)
@@ -135,7 +135,7 @@ func TestReviewPickerClickAndWheel(t *testing.T) {
 	if m.pickerOpen() || cmd == nil {
 		t.Fatal("a click on the cursor row should pick it and close the picker")
 	}
-	if pick, ok := cmd().(reviewPickedMsg); !ok || filepath.Base(pick.choice.Value) != "gamma" {
+	if pick, ok := cmd().(uireview.PickedMsg); !ok || filepath.Base(pick.Choice.Value) != "gamma" {
 		t.Fatalf("pick = %+v", cmd())
 	}
 }

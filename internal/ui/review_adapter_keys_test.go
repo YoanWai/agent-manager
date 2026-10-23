@@ -9,7 +9,7 @@ import (
 )
 
 // Ctrl+C quits from the comment editor and the send-confirm prompt, not just
-// the base review keymap. The pickers are surfaces: review_surface_test.go
+// the base review keymap. The pickers are surfaces: review_adapter_surface_test.go
 // shows ctrl+c closing the card and leaving Review as it was.
 func TestReviewCtrlCQuitsFromSubmodes(t *testing.T) {
 	t.Parallel()
