@@ -835,3 +835,9 @@ func gitOutput(t *testing.T, dir string, args ...string) string {
 	}
 	return strings.TrimSpace(string(out))
 }
+
+// savedListOpen reports the saved prompts list on the surface stack.
+func (m *Model) savedListOpen() bool {
+	_, ok := m.focusSavedOpen()
+	return ok
+}

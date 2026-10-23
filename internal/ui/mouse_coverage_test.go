@@ -19,6 +19,7 @@ var (
 		"modeRename":        "the name is typed into its row, and the list holds still",
 		"modeConfirmDelete": "a yes or no question: its painted keys take the clicks",
 		"modeFork":          "one field, always focused: its painted keys take the clicks",
+		"modeFocus":         "the pane takes the mouse in focusMouse; a card over it is a surface",
 	}
 	noCardWheel = map[string]string{
 		"modeList":          "the list takes the wheel in listMouse",
@@ -28,6 +29,7 @@ var (
 		"modeFork":          "nothing to scroll",
 		"modeLaunchHint":    "nothing to scroll",
 		"modeConnection":    "three fields and nothing to scroll",
+		"modeFocus":         "the pane takes the wheel in focusMouse; a card over it is a surface",
 	}
 )
 
@@ -71,7 +73,10 @@ func declaredModes(t *testing.T) []string {
 		}
 		for _, spec := range gen.Specs {
 			for _, name := range spec.(*ast.ValueSpec).Names {
-				names = append(names, name.Name)
+				// modeCount counts the modes; it is not one.
+				if name.Name != "modeCount" {
+					names = append(names, name.Name)
+				}
 			}
 		}
 	}

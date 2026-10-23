@@ -60,7 +60,7 @@ func (m *Model) syncCursorAnchor(frame string) string {
 	if m.focus.runtime.imeCursor == nil {
 		return strings.ReplaceAll(frame, cursorAnchorMarker, "")
 	}
-	if m.mode == modeFocus {
+	if m.agentOwnsKeyboard() {
 		col, row, ok := m.focusCursorAnchor()
 		m.focus.runtime.imeCursor.set(col, row, ok)
 		return strings.ReplaceAll(frame, cursorAnchorMarker, "")

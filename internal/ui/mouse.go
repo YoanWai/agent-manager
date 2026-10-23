@@ -177,11 +177,14 @@ func wheelArrow(msg tea.MouseMsg) (tea.KeyMsg, bool) {
 
 // cardOpen reports a card floating over the frame, which takes the mouse.
 func (m *Model) cardOpen() bool {
+	if _, ok := m.topSurface(); ok {
+		return true
+	}
 	switch m.mode {
 	case modeList, modeDiff, modeRename:
 		return false
 	case modeFocus:
-		return m.focus.saved.list.Open()
+		return false
 	}
 	return true
 }
@@ -210,6 +213,9 @@ func (m *Model) closesOnBackdrop() bool {
 
 // clickCard acts on the open card's body at col of its painted line.
 func (m *Model) clickCard(col, line int) (tea.Model, tea.Cmd) {
+	if top, ok := m.topSurface(); ok {
+		return m, top.Click(m, line)
+	}
 	switch m.mode {
 	case modeForm:
 		return m.handleFormClick(line)
@@ -230,8 +236,6 @@ func (m *Model) clickCard(col, line int) (tea.Model, tea.Cmd) {
 	case modeLaunchHint:
 		_, body, hints := m.launchHint.card(m, m.glyphs(), m.cardWidth())
 		return m, m.launchHint.handleClick(m, line+m.launchHintDroppedRows(body, hints))
-	case modeFocus:
-		return m, m.handleFocusSavedClick(line)
 	}
 	return m, nil
 }
@@ -242,6 +246,9 @@ func (m *Model) wheelCard(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	arrow, ok := wheelArrow(msg)
 	if !ok {
 		return m, nil
+	}
+	if top, ok := m.topSurface(); ok {
+		return m, top.Wheel(m, arrow)
 	}
 	step := presentation.WheelStep(msg)
 	switch m.mode {
@@ -259,9 +266,6 @@ func (m *Model) wheelCard(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m.handleMoveKey(arrow)
 	case modeRepoPick:
 		return m, m.handleRepoPickKey(arrow)
-	case modeFocus:
-		cmd, _ := m.focus.saved.list.Key(arrow)
-		return m, cmd
 	}
 	return m, nil
 }

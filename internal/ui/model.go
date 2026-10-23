@@ -64,6 +64,7 @@ type Model struct {
 	notices    noticesPanel
 	poller     *poller
 	mode       mode
+	surfaces   []surface
 	review     uireview.Model
 	reviewNav  reviewNavState
 	form       formDialog
@@ -107,7 +108,6 @@ type layoutState struct {
 type focusState struct {
 	pane    uifocus.Model
 	runtime focusRuntimeState
-	saved   focusSaved
 }
 
 type reviewNavState struct {

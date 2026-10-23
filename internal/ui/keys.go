@@ -10,46 +10,45 @@ import (
 type quitRoute uint8
 
 const (
-	quitPass       quitRoute = iota // the surface under the key takes it
+	quitPass       quitRoute = iota // the layer under the key takes it
 	quitNow                         // the manager quits, or abandons its drain
-	quitCloseSaved                  // the saved prompts list over focus closes
+	quitPopSurface                  // the surface on top closes
 )
 
 // routeQuit is the one place that decides ctrl+c. Update asks it before a
 // drain swallows keys, and handleKey asks it again for a key a click
 // presses, so no surface keeps its own idea of quit.
 //
-// ctrl+c quits from every surface but a focused session, where the agent
-// reads it as its cancel. The saved prompts list over that session is the
-// manager's, so ctrl+c closes it rather than reach the agent behind it. A
-// drain already under way leaves on a second ctrl+c or quit key from
+// This is the priority layer of model_surface.go's stack: it runs before
+// any surface sees the key. ctrl+c closes the surface on top, quits where
+// the manager owns the keyboard, and passes to the agent where it does not.
+// A drain already under way leaves on a second ctrl+c or quit key from
 // anywhere, since by then the agent has nothing left to cancel.
 func (m *Model) routeQuit(msg tea.KeyMsg) quitRoute {
 	name := keybind.Normalize(msg.String())
 	ctrlC := name == "ctrl+c"
+	_, onSurface := m.topSurface()
 	switch {
 	case m.effects.quitting && (ctrlC || m.services.listKeys.Binding(keybind.Quit).Has(name)):
 		return quitNow
 	case !ctrlC || m.agentOwnsKeyboard():
 		return quitPass
-	case m.mode == modeFocus:
-		return quitCloseSaved
+	case onSurface:
+		return quitPopSurface
 	}
 	return quitNow
-}
-
-// agentOwnsKeyboard is true while keys go straight to the focused pane.
-func (m *Model) agentOwnsKeyboard() bool {
-	return m.mode == modeFocus && !m.focus.saved.list.Open()
 }
 
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.routeQuit(msg) {
 	case quitNow:
 		return m.requestQuit()
-	case quitCloseSaved:
-		m.closeFocusSaved()
+	case quitPopSurface:
+		m.popSurface()
 		return m, nil
+	}
+	if cmd, ok := m.surfaceKey(msg); ok {
+		return m, cmd
 	}
 	if m.mode == modeList && m.rail.InputMode() == uirail.BrowseMode && !m.quick.active && !m.layout.split.dragging && !m.layout.split.resizeMode {
 		decision := m.rail.Key(msg, m.layout.displayedRail, m.railKeyContext())

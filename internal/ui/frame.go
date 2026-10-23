@@ -66,10 +66,8 @@ func (m *Model) renderFrame() string {
 		frame = m.viewNoticesCard()
 	default:
 		frame = m.overlayRowMenu(m.titleTopRowWithUpdate(m.viewListFrame()))
-		if m.mode == modeFocus && m.focus.saved.list.Open() {
-			frame = m.viewFocusSaved()
-		}
 	}
+	frame = m.surfaceView(frame)
 	m.layout.keyHits = m.layout.keyHits.above(m.layout.height)
 	return m.syncCursorAnchor(clampFrame(frame, m.layout.height))
 }

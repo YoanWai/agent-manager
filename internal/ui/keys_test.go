@@ -66,10 +66,10 @@ func TestCtrlCClosesTheSavedListOverFocus(t *testing.T) {
 	if m.mode != modeFocus {
 		t.Fatalf("enter did not focus, mode = %v", m.mode)
 	}
-	m.focus.saved = focusSaved{list: spawn.OpenSavedList(nil, true, false)}
+	m.pushSurface(&focusSaved{list: spawn.OpenSavedList(nil, true, false)})
 	m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
-	if m.effects.quitting || m.mode != modeFocus || m.focus.saved.list.Open() {
-		t.Fatalf("quitting=%t mode=%v list open=%t", m.effects.quitting, m.mode, m.focus.saved.list.Open())
+	if m.effects.quitting || m.mode != modeFocus || m.savedListOpen() {
+		t.Fatalf("quitting=%t mode=%v list open=%t", m.effects.quitting, m.mode, m.savedListOpen())
 	}
 	if m.effects.input.active != nil || len(m.effects.input.pending) > 0 {
 		t.Fatal("ctrl+c reached the agent from behind the list")

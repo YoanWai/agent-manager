@@ -39,14 +39,14 @@ func TestFocusSavedPromptPastesThePick(t *testing.T) {
 	_, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m.runBatch(t, cmd)
 	m.drainEffects(t)
-	if len(pasted) != 1 || pasted[0] != "line one\nline two" || m.focus.saved.list.Open() || m.mode != modeFocus {
-		t.Fatalf("pasted %q, list open %v, mode %v", pasted, m.focus.saved.list.Open(), m.mode)
+	if len(pasted) != 1 || pasted[0] != "line one\nline two" || m.savedListOpen() || m.mode != modeFocus {
+		t.Fatalf("pasted %q, list open %v, mode %v", pasted, m.savedListOpen(), m.mode)
 	}
 
 	_, load = m.handleKey(tea.KeyMsg{Type: tea.KeyF4})
 	m.runBatch(t, load)
 	m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlQ})
-	if m.mode != modeList || m.focus.saved.list.Open() {
-		t.Fatalf("the leave key with the list up left mode %v, open %v", m.mode, m.focus.saved.list.Open())
+	if m.mode != modeList || m.savedListOpen() {
+		t.Fatalf("the leave key with the list up left mode %v, open %v", m.mode, m.savedListOpen())
 	}
 }

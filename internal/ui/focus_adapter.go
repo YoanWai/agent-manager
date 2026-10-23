@@ -171,7 +171,7 @@ func (m *Model) leaveFocus() tea.Cmd {
 
 func (m *Model) leaveFocusMode() tea.Cmd {
 	m.mode = modeList
-	m.closeFocusSaved()
+	m.clearSurfaces()
 	// A run opened before the session was entered would pair with the very
 	// click that comes back here, focusing it again instead of leaving.
 	m.rail.ResetClickHistory()
@@ -192,9 +192,6 @@ func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	sess, ok := m.selected()
 	if !ok {
 		return m, m.leaveFocus()
-	}
-	if m.focus.saved.list.Open() {
-		return m.handleFocusSavedKey(msg)
 	}
 	if m.services.keys.Binding(keybind.SavedPrompt).Has(msg.String()) {
 		return m, m.openFocusSaved()
