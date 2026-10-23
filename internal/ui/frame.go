@@ -42,12 +42,6 @@ func (m *Model) renderFrame() string {
 	switch m.mode {
 	case modeForm:
 		frame = m.viewForm()
-	case modeSettings:
-		frame = m.viewSettings()
-	case modeGroupForm:
-		frame = m.viewGroupForm()
-	case modeConnection:
-		frame = m.viewConnectionDialog()
 	case modeDiff:
 		frame = m.viewDiffFull()
 	default:

@@ -18,12 +18,12 @@ func TestClicksOnTheConnectionDialog(t *testing.T) {
 	}{{"binary ", uiconnections.BinaryField}, {"ssh to ", uiconnections.DestinationField}, {"name ", uiconnections.NameField}} {
 		x, y := bodyCell(t, m, tc.label)
 		m = leftClick(m, x, y)
-		if m.mode != modeConnection || m.ssh.Dialog.Focus() != tc.field {
-			t.Fatalf("a click on %q: mode %v, focus %d", tc.label, m.mode, m.ssh.Dialog.Focus())
+		if !m.connectionDialogOpen() || m.connectionSurface().dialog.Focus() != tc.field {
+			t.Fatalf("a click on %q: open %v", tc.label, m.connectionDialogOpen())
 		}
 	}
 	x, y := paintedCell(t, m, "esc")
-	if m = leftClick(m, x, y); m.mode != modeList {
-		t.Fatalf("a click on the esc hint left mode %v", m.mode)
+	if m = leftClick(m, x, y); m.connectionDialogOpen() {
+		t.Fatal("a click on the esc hint left the card open")
 	}
 }

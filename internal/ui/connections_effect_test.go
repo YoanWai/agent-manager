@@ -10,20 +10,20 @@ import (
 
 // typeConnection types a name and a destination into the open dialog.
 func typeConnection(m *Model, name, destination string) {
-	m.handleConnectionKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(name)})
-	m.handleConnectionKey(tea.KeyMsg{Type: tea.KeyTab})
-	m.handleConnectionKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(destination)})
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(name)})
+	m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(destination)})
 }
 
 func TestNewConnectionKeyOpensTheDialogAndSavesToTheStore(t *testing.T) {
 	m := buildModel(t)
 	m.ssh = newConnections(testRemoteClient(t), nil)
 	m.applyTestMsg(t, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
-	if m.mode != modeConnection {
-		t.Fatalf("C left mode %v", m.mode)
+	if !m.connectionDialogOpen() {
+		t.Fatal("C did not open the card")
 	}
 	typeConnection(m, "box", "me@box")
-	_, cmd := m.handleConnectionKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m.applyTestMsg(t, cmd())
 	m.drainEffects(t)
 	stored, err := m.services.store.Connections()
@@ -57,15 +57,15 @@ func TestAFailedConnectionSaveTakesEnterAgain(t *testing.T) {
 	}
 	m.applyTestMsg(t, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
 	typeConnection(m, "box", "me@box")
-	_, cmd := m.handleConnectionKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m.applyTestMsg(t, cmd())
 	m.drainEffects(t)
-	if m.mode != modeConnection {
-		t.Fatalf("after a refused save: mode %v", m.mode)
+	if !m.connectionDialogOpen() {
+		t.Fatal("a refused save closed the card")
 	}
-	m.handleConnectionKey(tea.KeyMsg{Type: tea.KeyShiftTab})
-	m.handleConnectionKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2")})
-	_, cmd = m.handleConnectionKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2")})
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("enter after a refused save did nothing")
 	}

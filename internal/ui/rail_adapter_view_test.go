@@ -79,14 +79,14 @@ func TestSettingsTogglesListDensity(t *testing.T) {
 	}
 
 	m.openSettings()
-	if m.settings.dialog.ComfortableRows {
+	if m.settingsCard().state.ComfortableRows {
 		t.Fatal("settings should open on compact by default")
 	}
 	for i := 0; i < uisettings.FieldDensity; i++ {
 		m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
 	}
-	if m.settings.dialog.Field != uisettings.FieldDensity {
-		t.Fatalf("stepping down should reach the density field, got %d", m.settings.dialog.Field)
+	if m.settingsCard().state.Field != uisettings.FieldDensity {
+		t.Fatalf("stepping down should reach the density field, got %d", m.settingsCard().state.Field)
 	}
 	if card := ansi.Strip(m.viewSettings()); !strings.Contains(card, "list density") {
 		t.Fatalf("settings card has no density row:\n%s", card)

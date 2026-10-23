@@ -177,8 +177,6 @@ func (m *Model) routeResizeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		}
 		if m.mode == modeForm {
 			m.syncFormFieldWidths()
-		} else if m.mode == modeGroupForm {
-			m.syncGroupFormFieldWidths()
 		}
 		return routed(m, nil)
 	}

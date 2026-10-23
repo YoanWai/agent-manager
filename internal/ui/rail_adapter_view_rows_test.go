@@ -58,7 +58,7 @@ func TestComfortableGroupRowStacks(t *testing.T) {
 	m := buildModel(t)
 	m.prefs.comfortableRows = true
 	m.openGroupForm()
-	m.groupForm.SetName("fleet")
+	m.groupSurface().form.SetName("fleet")
 	_, cmd := m.submitGroupForm()
 	if m.errBar.text != "" {
 		t.Fatalf("create group: %q", m.errBar.text)
@@ -105,7 +105,7 @@ func TestComfortableMetaLineKeepsTreeGuides(t *testing.T) {
 	m := buildModel(t)
 	m.prefs.comfortableRows = true
 	m.openGroupForm()
-	m.groupForm.SetName("outer")
+	m.groupSurface().form.SetName("outer")
 	_, cmd := m.submitGroupForm()
 	if m.errBar.text != "" {
 		t.Fatalf("create outer group: %q", m.errBar.text)
@@ -113,7 +113,7 @@ func TestComfortableMetaLineKeepsTreeGuides(t *testing.T) {
 	m.applyCmd(t, cmd)
 	m.selectGroupRow(t, "outer")
 	m.openGroupForm()
-	m.groupForm.SetName("inner")
+	m.groupSurface().form.SetName("inner")
 	_, cmd = m.submitGroupForm()
 	if m.errBar.text != "" {
 		t.Fatalf("create inner group: %q", m.errBar.text)

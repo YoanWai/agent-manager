@@ -99,12 +99,6 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.mode {
 	case modeForm:
 		return m.handleFormKey(msg)
-	case modeSettings:
-		return m.handleSettingsKey(msg)
-	case modeGroupForm:
-		return m.handleGroupFormKey(msg)
-	case modeConnection:
-		return m.handleConnectionKey(msg)
 	case modeDiff:
 		return m.handleDiffKey(msg)
 	case modeFocus:

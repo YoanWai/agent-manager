@@ -236,7 +236,7 @@ func TestAMissingCLIWithAFloorDoesNotOpenTheUpdateDialog(t *testing.T) {
 }
 
 func TestOutdatedCatalogDoesNotReplaceAnotherInteraction(t *testing.T) {
-	for _, mode := range []mode{modeList, modeSettings, modeForm} {
+	for _, mode := range []mode{modeList, modeForm} {
 		m := buildModel(t)
 		m.form.Form = spawn.NewForm(m.spawnHost(), []string{"claude"}, 0)
 		m.mode = mode

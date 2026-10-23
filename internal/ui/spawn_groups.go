@@ -19,6 +19,11 @@ type groupOption struct {
 // rebuildGroupOptions flattens the group tree into picker rows.
 // Index 0 is always the root; selectPath moves the highlight when given.
 func (m *Model) rebuildGroupOptions(selectPath string) {
+	m.form.groups, m.form.groupIndex = m.groupOptions(selectPath)
+}
+
+// groupOptions is the picker's rows and the index of selectPath in them.
+func (m *Model) groupOptions(selectPath string) ([]groupOption, int) {
 	paths := groupClosure(m.workspace.groups, m.workspace.sessions)
 	for path := range paths {
 		if m.groupEffectivelyArchived(path) {
@@ -39,14 +44,12 @@ func (m *Model) rebuildGroupOptions(selectPath string) {
 		walk(root, 1)
 	}
 
-	m.form.groups = options
-	m.form.groupIndex = 0
 	for i, opt := range options {
 		if selectPath != "" && opt.path == selectPath {
-			m.form.groupIndex = i
-			return
+			return options, i
 		}
 	}
+	return options, 0
 }
 
 func groupClosure(groups []string, sessions []store.Session) map[string]bool {
@@ -113,12 +116,14 @@ func (m *Model) materializeGroupsLocal(paths []string) {
 	}
 }
 
-func (m *Model) viewGroupPicker() string { return m.form.viewGroupPicker(m.prefs.glyphMode) }
+func (m *Model) viewGroupPicker() string {
+	return viewGroupOptions(m.form.groups, m.form.groupIndex, m.prefs.glyphMode)
+}
 
-func (d *formDialog) viewGroupPicker(mode presentation.GlyphMode) string {
+func viewGroupOptions(groups []groupOption, index int, mode presentation.GlyphMode) string {
 	var b strings.Builder
-	for i, opt := range d.groups {
-		selected := i == d.groupIndex
+	for i, opt := range groups {
+		selected := i == index
 		marker := "  "
 		if selected {
 			marker = lipgloss.NewStyle().Foreground(colorAccent()).Render(presentation.GlyphsFor(mode).SelectionGlyph + " ")

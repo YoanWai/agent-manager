@@ -81,8 +81,8 @@ func (m *Model) applySavedPromptEffect(request savedPromptRequest, result savedP
 
 // runPromptsResult runs the catalog work a panel key asked for: reads go
 // straight to the store off Update, writes go on the effect lane.
-func (m *Model) runPromptsResult(result uisettings.Result) tea.Cmd {
-	gen, dialogGen := m.settings.dialog.Prompts.Gen(), m.settings.gen
+func (m *Model) runPromptsResult(d *settingsState, result uisettings.Result) tea.Cmd {
+	gen, dialogGen := d.Prompts.Gen(), m.settings.gen
 	switch {
 	case result.LoadPrompts:
 		return savedPromptsLoadCmd(m.services.store, savedForSettings, gen, dialogGen)
@@ -97,10 +97,11 @@ func (m *Model) runPromptsResult(result uisettings.Result) tea.Cmd {
 }
 
 func (m *Model) applyPromptsRead(dialogGen uint64, read uisettings.PromptsRead) {
-	if m.mode != modeSettings || dialogGen != m.settings.gen {
+	card, open := surfaceOf[*settingsSurface](m)
+	if !open || dialogGen != m.settings.gen {
 		return
 	}
-	notice := m.settings.dialog.LoadedPrompts(read)
+	notice := card.state.LoadedPrompts(read)
 	if notice.Changed {
 		m.setNotice(notice)
 	}

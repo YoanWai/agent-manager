@@ -29,13 +29,10 @@ type mode int
 const (
 	modeList mode = iota
 	modeForm
-	modeGroupForm
-	modeSettings
 	modeDiff
 	// modeFocus routes the keyboard into the selected session's pane while
 	// the list and live preview stay on screen.
 	modeFocus
-	modeConnection
 	// modeCount follows the last mode, so a test can walk every one.
 	modeCount
 )
@@ -56,7 +53,6 @@ type Model struct {
 	review    uireview.Model
 	reviewNav reviewNavState
 	form      formDialog
-	groupForm groupFormDialog
 	mouse     mouseCapture
 	quick     quickBar
 	settings  settingsFeature
@@ -107,7 +103,6 @@ type mouseCapture struct {
 }
 
 type settingsFeature struct {
-	dialog  settingsState
 	cache   settingsCache
 	pending int
 	gen     uint64

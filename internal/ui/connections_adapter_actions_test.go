@@ -296,10 +296,10 @@ func TestNewGroupFormCreatesOnTheConnection(t *testing.T) {
 	if _, cmd := m.runRailIntent(uirail.Intent{Kind: uirail.NewGroup, Target: boxGroup}); cmd != nil {
 		t.Fatal("opening the form queued work")
 	}
-	if m.mode != modeGroupForm || m.groupForm.remote != (formRemote{host: "box", group: "web"}) || m.groupForm.Dir() != "" {
-		t.Fatalf("form = mode %v remote %+v dir %q", m.mode, m.groupForm.remote, m.groupForm.Dir())
+	if !m.groupFormOpen() || m.groupSurface().remote != (formRemote{host: "box", group: "web"}) || m.groupSurface().form.Dir() != "" {
+		t.Fatalf("form = mode %v remote %+v dir %q", m.mode, m.groupSurface().remote, m.groupSurface().form.Dir())
 	}
-	m.groupForm.SetName("api")
+	m.groupSurface().form.SetName("api")
 	_, cmd := m.submitGroupForm()
 	m.runRemoteCmd(t, cmd)
 	calls := fake.taken()

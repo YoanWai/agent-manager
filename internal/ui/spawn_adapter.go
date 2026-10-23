@@ -349,9 +349,6 @@ func (m *Model) moveGroupCursor(delta int) tea.Cmd {
 	if m.mode == modeForm {
 		m.form.DefaultWorktree(m.cachedSpawnWorktreeDefault(m.selectedGroupPath()))
 	}
-	if m.mode == modeGroupForm && m.groupForm.DirAuto() {
-		m.groupForm.SetDir(m.capturedAncestorGroupDir(m.selectedGroupPath()))
-	}
 	if m.mode == modeForm {
 		return m.formWorktreeProbeCmd(false)
 	}
@@ -376,7 +373,7 @@ func (m *Model) viewForm() string {
 		Chrome: m.cardChromeRows,
 	}
 	if m.form.Focused() == spawn.FieldGroup {
-		facts.GroupPicker = strings.Split(m.form.viewGroupPicker(m.prefs.glyphMode), "\n")
+		facts.GroupPicker = strings.Split(m.viewGroupPicker(), "\n")
 	}
 	facts.WorktreeCapable, facts.WorktreeKnown = m.cachedWorktreeCapability(m.formSpawnDir())
 	if m.form.remote.on() {
@@ -409,6 +406,12 @@ func (m *Model) routeSpawnMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 
 	case terminalDirectoryMsg:
 		return routed(m.handleTerminalDirectory(msg))
+
+	case groupFormSubmitMsg:
+		return routed(m, m.handleGroupFormSubmit(msg, systemDirectoryPreflight{git: m.services.gitDrv}))
+
+	case groupBaseAskMsg:
+		return routed(m, m.handleGroupBaseAsk(msg))
 	}
 	return nil, nil, false
 }

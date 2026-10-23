@@ -18,13 +18,10 @@ import (
 // terminal delivers it: through Update. A mode missing here fails, so a new
 // surface decides on purpose rather than inheriting whatever the router did.
 var ctrlCQuits = map[mode]bool{
-	modeList:       true,
-	modeForm:       true,
-	modeGroupForm:  true,
-	modeSettings:   true,
-	modeDiff:       true,
-	modeFocus:      false,
-	modeConnection: true,
+	modeList:  true,
+	modeForm:  true,
+	modeDiff:  true,
+	modeFocus: false,
 }
 
 func TestCtrlCOnEverySurface(t *testing.T) {

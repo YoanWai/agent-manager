@@ -19,10 +19,9 @@ var (
 		"modeFocus": "the pane takes the mouse in focusMouse; a card over it is a surface",
 	}
 	noCardWheel = map[string]string{
-		"modeList":       "the list takes the wheel in listMouse",
-		"modeDiff":       "Review takes the wheel in reviewMouse",
-		"modeConnection": "three fields and nothing to scroll",
-		"modeFocus":      "the pane takes the wheel in focusMouse; a card over it is a surface",
+		"modeList":  "the list takes the wheel in listMouse",
+		"modeDiff":  "Review takes the wheel in reviewMouse",
+		"modeFocus": "the pane takes the wheel in focusMouse; a card over it is a surface",
 	}
 )
 

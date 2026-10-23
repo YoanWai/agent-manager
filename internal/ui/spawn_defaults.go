@@ -114,10 +114,11 @@ func (m *Model) handleGroupBaseStep(msg groupBaseStepMsg) {
 	var base *string
 	switch msg.target {
 	case groupBaseForm:
-		if m.mode != modeGroupForm || uint64(m.groupForm.Gen()) != msg.gen || m.groupFormDir() != msg.dir {
+		s, ok := surfaceOf[*groupFormSurface](m)
+		if !ok || uint64(s.form.Gen()) != msg.gen || m.groupFormDir(s) != msg.dir {
 			return
 		}
-		base = &m.groupForm.base
+		base = &s.base
 	case groupBaseRename:
 		s, ok := m.renaming()
 		if !ok || m.gens.dialog != msg.gen || m.renameGroupDir(s) != msg.dir {

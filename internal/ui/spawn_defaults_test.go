@@ -40,23 +40,25 @@ func TestGroupFormStepsBaseThroughTheRepoBranches(t *testing.T) {
 	m := buildModel(t)
 	repo := repoWithDevelop(t)
 	m.openGroupForm()
-	m.groupForm.SetName("based")
-	m.groupForm.SetDir(repo)
+	m.groupSurface().form.SetName("based")
+	m.groupSurface().form.SetDir(repo)
 	focusGroupField(t, m, uidialogs.GroupFormBaseField)
-	_, step := m.handleGroupFormKey(tea.KeyMsg{Type: tea.KeyRight})
-	m.applyTestMsg(t, step())
-	if m.groupForm.base != "develop" {
-		t.Fatalf("first step past auto = %q, want develop", m.groupForm.base)
+	_, step := m.pressGroupKey(tea.KeyMsg{Type: tea.KeyRight})
+	m.applyBaseStep(t, step)
+	if m.groupSurface().base != "develop" {
+		t.Fatalf("first step past auto = %q, want develop", m.groupSurface().base)
 	}
 	if view := m.viewGroupForm(); !strings.Contains(view, "◂ develop ▸") {
 		t.Fatalf("base row should show the pick, got %q", view)
 	}
-	m.handleGroupFormKey(tea.KeyMsg{Type: tea.KeyLeft})
-	if m.groupForm.base != "" {
-		t.Fatalf("stepping back = %q, want auto", m.groupForm.base)
+	_, back := m.pressGroupKey(tea.KeyMsg{Type: tea.KeyLeft})
+	m.applyBaseStep(t, back)
+	if m.groupSurface().base != "" {
+		t.Fatalf("stepping back = %q, want auto", m.groupSurface().base)
 	}
-	m.handleGroupFormKey(tea.KeyMsg{Type: tea.KeyRight})
-	_, cmd := m.handleGroupFormKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_, again := m.pressGroupKey(tea.KeyMsg{Type: tea.KeyRight})
+	m.applyBaseStep(t, again)
+	_, cmd := m.pressGroupKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m.applyCmd(t, cmd)
 	groups, err := m.services.store.Groups()
 	if err != nil {
@@ -88,12 +90,12 @@ func TestGroupFormBaseNeedsARepository(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openGroupForm()
-	m.groupForm.SetDir(t.TempDir())
+	m.groupSurface().form.SetDir(t.TempDir())
 	focusGroupField(t, m, uidialogs.GroupFormBaseField)
-	_, step := m.handleGroupFormKey(tea.KeyMsg{Type: tea.KeyRight})
-	m.applyTestMsg(t, step())
-	if m.groupForm.base != "" {
-		t.Fatalf("a directory with no branches has nothing to pick, got %q", m.groupForm.base)
+	_, step := m.pressGroupKey(tea.KeyMsg{Type: tea.KeyRight})
+	m.applyBaseStep(t, step)
+	if m.groupSurface().base != "" {
+		t.Fatalf("a directory with no branches has nothing to pick, got %q", m.groupSurface().base)
 	}
 	if !strings.Contains(m.errBar.text, "group base") {
 		t.Fatalf("refused step should say why, got %q", m.errBar.text)
@@ -175,7 +177,7 @@ func TestSettingsFetchOnSpawnTurnsTheFetchOff(t *testing.T) {
 	cached := gitOutput(t, clone, "rev-parse", "origin/main")
 
 	m.openSettings()
-	for m.settings.dialog.Field != uisettings.FieldBaseFetch {
+	for m.settingsCard().state.Field != uisettings.FieldBaseFetch {
 		m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
 	}
 	if !strings.Contains(ansi.Strip(m.viewSettings()), "fetch on spawn") {
@@ -379,7 +381,7 @@ func TestSettingsDefaultIgnoresLastSpawn(t *testing.T) {
 	submitFormSession(t, m, "first")
 
 	m.openSettings()
-	if got := m.settings.dialog.ToolNames[m.settings.dialog.ToolIndex]; got != "claude" {
+	if got := m.settingsCard().state.ToolNames[m.settingsCard().state.ToolIndex]; got != "claude" {
 		t.Fatalf("settings default tool = %q, want stored default", got)
 	}
 }

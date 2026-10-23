@@ -783,13 +783,13 @@ func TestFeedDuringFocusOpensOnLeave(t *testing.T) {
 func TestFeedDuringSettingsOpensOnClose(t *testing.T) {
 	m := footModel(t)
 	m.layout.width, m.layout.height = 100, 34
-	m.mode = modeSettings
+	m.push(newSettingsSurface(m, settingsState{}))
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
-	if m.mode != modeSettings {
-		t.Fatalf("mode=%v, want settings until close", m.mode)
+	if !m.settingsOpen() || m.noticesOpen() {
+		t.Fatalf("notices open=%v, want settings until close", m.noticesOpen())
 	}
 
-	m.mode = modeList
+	m.surfaces = nil
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 34})
 	if !m.noticesOpen() {
 		t.Fatalf("closing settings should open the new message, mode=%v", m.mode)

@@ -203,27 +203,20 @@ func (m *Model) closesOnBackdrop() bool {
 	if top, ok := m.top(); ok {
 		return top.Dismissible()
 	}
-	switch m.mode {
-	case modeSettings:
-		return !m.settings.dialog.Editor.Typing() && !m.settings.dialog.Prompts.Editing()
-	}
 	return false
 }
 
 // clickCard acts on the open card's body at col of its painted line.
 func (m *Model) clickCard(col, line int) (tea.Model, tea.Cmd) {
 	if top, ok := m.top(); ok {
+		if cc, ok := top.(columnClicker); ok {
+			return m, cc.ClickAt(m, col, line)
+		}
 		return m, top.Click(m, line)
 	}
 	switch m.mode {
 	case modeForm:
 		return m.handleFormClick(line)
-	case modeGroupForm:
-		return m.handleGroupFormClick(line)
-	case modeConnection:
-		m.ssh.Dialog.Click(line)
-	case modeSettings:
-		return m.applySettingsResult(m.settings.dialog.Click(col, line, m.settingsContext()))
 	}
 	return m, nil
 }
@@ -242,10 +235,6 @@ func (m *Model) wheelCard(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	switch m.mode {
 	case modeForm:
 		return m, m.runFormRequest(m.form.Wheel(m.spawnHost(), step), nil)
-	case modeGroupForm:
-		return m, m.runGroupFormKey(m.groupForm.Wheel(step), nil)
-	case modeSettings:
-		return m.applySettingsResult(m.settings.dialog.Wheel(step, m.settingsContext()))
 	}
 	return m, nil
 }

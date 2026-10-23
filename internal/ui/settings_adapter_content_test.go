@@ -18,7 +18,7 @@ func TestCompatibleCardsKeepTitlesAndClickGeometry(t *testing.T) {
 			}
 			m.layout.width, m.layout.height = width, 24
 			m.applyCmd(t, m.openSettings())
-			m.settings.dialog.Field = uisettings.FieldGlyphs
+			m.settingsCard().state.Field = uisettings.FieldGlyphs
 			got := ansi.Strip(m.viewSettings())
 			title, cursor := "# Settings", "> symbols"
 			if mode == presentation.GlyphModeAdvanced {

@@ -14,7 +14,7 @@ func TestSettingsViewportKeepsFocusedFieldAndSaveVisible(t *testing.T) {
 		m.layout.width, m.layout.height = size[0], size[1]
 		m.openSettings()
 		for _, field := range []int{uisettings.FieldGlyphs, uisettings.FieldKeybindings, uisettings.FieldUpdate} {
-			m.settings.dialog.Field = field
+			m.settingsCard().state.Field = field
 			view := ansi.Strip(m.viewSettings())
 			lines := strings.Split(view, "\n")
 			if len(lines) > m.layout.height {
@@ -42,9 +42,9 @@ func TestKeyPickerCardCarriesNoSaveButton(t *testing.T) {
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 120, 40
 	m.openSettings()
-	m.settings.dialog.Field = uisettings.FieldKeybindings
+	m.settingsCard().state.Field = uisettings.FieldKeybindings
 	m.handleSettingsKey(key("enter"))
-	if !m.settings.dialog.KeyPicker {
+	if !m.settingsCard().state.KeyPicker {
 		t.Fatal("test setup: enter on keybindings opens the picker")
 	}
 	view := ansi.Strip(m.viewSettings())
@@ -80,7 +80,7 @@ func TestKeyPickerFillsTheTerminal(t *testing.T) {
 	for height := 16; height <= 40; height++ {
 		m.layout.height = height
 		m.openSettings()
-		m.settings.dialog.Field = uisettings.FieldKeybindings
+		m.settingsCard().state.Field = uisettings.FieldKeybindings
 		m.handleSettingsKey(key("enter"))
 		m.viewSettings()
 		if rows := m.layout.card.bottom - m.layout.card.top; rows > height || rows < height-1 {

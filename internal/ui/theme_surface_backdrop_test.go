@@ -184,7 +184,7 @@ func TestColorlessTerminalLeavesTheFrameAsDrawn(t *testing.T) {
 func TestBackgroundSettingAppliesLiveAndPersists(t *testing.T) {
 	m := buildModel(t)
 	m.openSettings()
-	for m.settings.dialog.Field != uisettings.FieldBackground {
+	for m.settingsCard().state.Field != uisettings.FieldBackground {
 		m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
 	}
 	if row := settingsRow(t, m, "background"); !strings.Contains(row, "theme") {
@@ -205,7 +205,7 @@ func TestBackgroundSettingAppliesLiveAndPersists(t *testing.T) {
 	}
 
 	m.openSettings()
-	m.settings.dialog.Field = uisettings.FieldBackground
+	m.settingsCard().state.Field = uisettings.FieldBackground
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyLeft})
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m.drainEffects(t)
