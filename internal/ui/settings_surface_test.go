@@ -45,9 +45,9 @@ func TestSettingsEscClosesAndSavesOnce(t *testing.T) {
 	}
 }
 
-// A command being typed is a draft: a stray click keeps it.
+// A command being typed is a draft: a stray click keeps it. Not parallel:
+// editorSettings pins $EDITOR with t.Setenv.
 func TestSettingsKeepsATypedEditorLine(t *testing.T) {
-	t.Parallel()
 	m := openedSettings(t)
 	top, _ := m.top()
 	if !top.Dismissible() {
