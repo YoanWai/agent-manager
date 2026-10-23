@@ -42,7 +42,7 @@ func testOptions(root *fakeRoot) FormOptions {
 		Parent:    1,
 		Lends:     map[string]Lend{"": {}, "parent": {Dir: "/work/parent", Base: "develop"}},
 		Worktrees: []string{"inherit", "on", "off"},
-		Styles:    spawn.Styles{GlyphMode: 0, Subtle: lipgloss.NewStyle(), Value: lipgloss.NewStyle(), Accent2: lipgloss.Color("#fff")},
+		Styles:    spawn.Styles{Subtle: lipgloss.NewStyle(), Value: lipgloss.NewStyle(), Accent2: lipgloss.Color("#fff")},
 	}
 }
 

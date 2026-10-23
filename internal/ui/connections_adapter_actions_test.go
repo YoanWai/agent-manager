@@ -299,7 +299,7 @@ func TestNewGroupFormCreatesOnTheConnection(t *testing.T) {
 		t.Fatal("opening the form queued work")
 	}
 	if !m.groupFormOpen() || m.groupSurface().RemoteTarget() != (uidialogs.Remote{Host: "box", Group: "web"}) || m.groupSurface().Dir() != "" {
-		t.Fatalf("form = mode %v remote %+v dir %q", m.screenID(), m.groupSurface().remote, m.groupSurface().Dir())
+		t.Fatalf("form = mode %v remote %+v dir %q", m.screenID(), m.groupSurface().RemoteTarget(), m.groupSurface().Dir())
 	}
 	m.groupSurface().SetName("api")
 	_, cmd := m.submitGroupForm()
