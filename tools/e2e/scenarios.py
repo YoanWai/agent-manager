@@ -16,7 +16,6 @@ import sys
 import tempfile
 import time
 import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 
 from smoke import Sandbox
@@ -54,19 +53,6 @@ def config_fixture_text():
     return 'poll_interval = "1s"\n'
 
 
-def seed_feed_cache(config_dir):
-    """A fresh, empty message feed, so startup never races a GitHub fetch.
-
-    The manager opens the messages card on a new remote notice when the list
-    is clear. In a sandbox with a fresh profile that fetch can land before the
-    first frame is captured, and the card then hides the title the startup
-    wait looks for. A cache this build parsed, checked just now and holding
-    no messages, serves from disk within the check interval.
-    """
-    cache = dict(checked_at=datetime.now(timezone.utc).isoformat(), parser=1, messages=[])
-    (config_dir / 'feed-messages.json').write_text(json.dumps(cache))
-
-
 def profile_dir(sandbox):
     # os.UserConfigDir: Library/Application Support on macOS, XDG_CONFIG_HOME elsewhere.
     if sys.platform == 'darwin':
@@ -83,7 +69,6 @@ def write_fixture(sandbox, slow_seconds=0):
     config_dir = profile_dir(sandbox)
     config_dir.mkdir(parents=True)
     (config_dir / 'config.toml').write_text(config_fixture_text())
-    seed_feed_cache(config_dir)
     sandbox.env['PATH'] = str(bin_dir) + ':' + sandbox.env.get('PATH', '')
 
 

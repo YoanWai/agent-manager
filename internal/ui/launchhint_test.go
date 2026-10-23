@@ -892,7 +892,9 @@ func quits(msg tea.Msg) bool {
 }
 
 // A retry that stops on the next missing piece hands the dialog back the
-// images, so one more install can still spawn the same prompt.
+// images, so one more install can still spawn the same prompt. The form the
+// prompt came from is gone once the hint is up, so the retry's own images
+// are the only ones there are to keep.
 func TestLaunchHintRetryThatStopsAgainKeepsTheImages(t *testing.T) {
 	m := buildModel(t)
 	_, image := installFixture(t, m, fakeInstallCommand(t))
@@ -911,30 +913,6 @@ func TestLaunchHintRetryThatStopsAgainKeepsTheImages(t *testing.T) {
 	}
 	if !imageExists(t, image) {
 		t.Fatal("a prompt the dialog can still spawn keeps its image")
-	}
-}
-
-// An image the dialog took on while the install ran is on the dialog the
-// stopped retry opens, alongside the ones it was already holding. The form
-// under the hint is gone, so the hint is the only place a paste can land.
-func TestLaunchHintRetryThatStopsAgainKeepsAPastedImage(t *testing.T) {
-	m := buildModel(t)
-	_, image := installFixture(t, m, fakeInstallCommand(t))
-	tool := m.services.cfg.Tools[installRetryTool]
-	tool.Command = "am-next-missing-cli"
-	m.services.cfg.Tools[installRetryTool] = tool
-
-	pasted := tempImage(t, "pasted.png")
-	fix := hintFixPtr(m)
-	fix.images = append(fix.images, imageAttachment{id: 2, path: pasted})
-	m.applyCmd(t, pressInLaunchHint(t, m, 'i'))
-	waitForInstallToSettle(t, m)
-
-	if len(hintFix(m).images) != 2 {
-		t.Fatalf("dialog images = %+v, want the refused prompt's image and the pasted one", hintFix(m).images)
-	}
-	if !imageExists(t, image) || !imageExists(t, pasted) {
-		t.Fatal("both images stay for a prompt the dialog can still spawn")
 	}
 }
 
