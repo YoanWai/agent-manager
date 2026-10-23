@@ -453,6 +453,7 @@ func (m *Model) openDiffWithReader(reader reviewPreferencesReader) tea.Cmd {
 	preferred, picked := m.ledger.pickedRepos[sess.ID]
 	m.reviewNav.ret = reviewReturn{kind: reviewReturnList}
 	m.mode = modeDiff
+	m.closeQuick()
 	m.clearErr()
 	target := reviewTarget(sess)
 	target.Cwd = m.sessionDir(sess)

@@ -221,28 +221,28 @@ func TestQuickPromptSpawnsOnItsChoice(t *testing.T) {
 	m.selectGroupRow(t, "work")
 	m.openQuickMode()
 	setQuickTool(m, slices.Index(quickTools(m), "claude"))
-	m.quick.RestartChoice(m.spawnHost())
+	m.quick().RestartChoice(m.spawnHost())
 	ctrl := func(key tea.KeyType) { m.handleQuickKey(tea.KeyMsg{Type: key}) }
 	ctrl(tea.KeyCtrlL)
-	if m.quick.Picking() != uiquick.PickModel {
+	if m.quick().Picking() != uiquick.PickModel {
 		t.Fatal("ctrl+l should open the model list")
 	}
 	for _, r := range "opu" {
 		m.handleQuickKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 	}
-	if m.quick.input.Value() != "" {
-		t.Fatalf("typing into the list reached the prompt: %q", m.quick.input.Value())
+	if m.quick().input.Value() != "" {
+		t.Fatalf("typing into the list reached the prompt: %q", m.quick().input.Value())
 	}
 	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter})
-	if m.quick.Picking() != uiquick.PickNone || m.quick.Choice().Model() != "opus" {
-		t.Fatalf("picking %d model %q", m.quick.Picking(), m.quick.Choice().Model())
+	if m.quick().Picking() != uiquick.PickNone || m.quick().Choice().Model() != "opus" {
+		t.Fatalf("picking %d model %q", m.quick().Picking(), m.quick().Choice().Model())
 	}
 	ctrl(tea.KeyCtrlX)
 	ctrl(tea.KeyCtrlX)
 	if target := strings.Split(ansi.Strip(m.viewQuickBar(120, quickBarMaxRows)), "\n")[0]; !strings.Contains(target, "claude · opus · medium") {
 		t.Fatalf("target row: %s", target)
 	}
-	m.quick.input.SetValue("do the work")
+	m.quick().input.SetValue("do the work")
 	_, spawn := m.submitQuick()
 	if m.errBar.text != "" {
 		t.Fatalf("spawn: %q", m.errBar.text)
@@ -276,25 +276,25 @@ func TestQuickPromptClicks(t *testing.T) {
 	m.selectGroupRow(t, "work")
 	m.openQuickMode()
 	setQuickTool(m, slices.Index(quickTools(m), "claude"))
-	m.quick.RestartChoice(m.spawnHost())
+	m.quick().RestartChoice(m.spawnHost())
 	click := func(action, entry int) {
 		t.Helper()
 		preparedView(m)
-		for _, hit := range m.quick.Hits() {
+		for _, hit := range m.quick().Hits() {
 			if hit.Action == action && (entry < 0 || hit.Entry == entry) {
-				m = leftPress(m, m.quick.originX+hit.X0, m.quick.originY+hit.Line)
+				m = leftPress(m, m.quick().originX+hit.X0, m.quick().originY+hit.Line)
 				return
 			}
 		}
-		t.Fatalf("no stretch for action %d entry %d in %+v", action, entry, m.quick.Hits())
+		t.Fatalf("no stretch for action %d entry %d in %+v", action, entry, m.quick().Hits())
 	}
 	click(uiquick.ClickModel, -1)
-	if m.quick.Picking() != uiquick.PickModel {
+	if m.quick().Picking() != uiquick.PickModel {
 		t.Fatal("the model stretch should open the list")
 	}
 	click(uiquick.ClickEntry, 1)
-	if m.quick.Picking() != uiquick.PickNone || m.quick.Choice().Model() != "opus" {
-		t.Fatalf("picking %d model %q", m.quick.Picking(), m.quick.Choice().Model())
+	if m.quick().Picking() != uiquick.PickNone || m.quick().Choice().Model() != "opus" {
+		t.Fatalf("picking %d model %q", m.quick().Picking(), m.quick().Choice().Model())
 	}
 }
 
@@ -308,8 +308,8 @@ func TestQuickChoiceKeysNeedAGroupTarget(t *testing.T) {
 	m.selectSessionRow(t, "worker")
 	m.openQuickMode()
 	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlL})
-	if m.quick.Picking() != uiquick.PickNone || m.errBar.text != uiquick.ChoiceHint {
-		t.Fatalf("picking %d err %q", m.quick.Picking(), m.errBar.text)
+	if m.quick().Picking() != uiquick.PickNone || m.errBar.text != uiquick.ChoiceHint {
+		t.Fatalf("picking %d err %q", m.quick().Picking(), m.errBar.text)
 	}
 	if footer := ansi.Strip(m.viewFooter()); strings.Contains(footer, quickModelKey) {
 		t.Fatalf("footer names a key that does nothing here: %s", footer)
@@ -348,15 +348,15 @@ func TestModelListShrinkingUnderTheHighlight(t *testing.T) {
 		m.selectGroupRow(t, "work")
 		m.openQuickMode()
 		setQuickTool(m, slices.Index(quickTools(m), "claude"))
-		m.quick.RestartChoice(m.spawnHost())
+		m.quick().RestartChoice(m.spawnHost())
 		m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlL})
 		for range 3 {
 			m.handleQuickKey(down)
 		}
 		m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlY})
 		m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter})
-		if m.quick.Choice().Model() != "grok-4.6" {
-			t.Fatalf("picked %q", m.quick.Choice().Model())
+		if m.quick().Choice().Model() != "grok-4.6" {
+			t.Fatalf("picked %q", m.quick().Choice().Model())
 		}
 	})
 }
@@ -373,7 +373,7 @@ func TestQuickModelListMovesOnOneArrow(t *testing.T) {
 	m.selectGroupRow(t, "work")
 	m.openQuickMode()
 	setQuickTool(m, slices.Index(quickTools(m), "claude"))
-	m.quick.RestartChoice(m.spawnHost())
+	m.quick().RestartChoice(m.spawnHost())
 	down := tea.KeyMsg{Type: tea.KeyDown}
 	up := tea.KeyMsg{Type: tea.KeyUp}
 	sheet := func() string { return ansi.Strip(m.viewQuickBar(120, 20)) }
@@ -395,7 +395,7 @@ func TestQuickModelListMovesOnOneArrow(t *testing.T) {
 		t.Fatalf("one down in the filter should highlight haiku:\n%s", sheet())
 	}
 	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEsc})
-	_, _ = m.quick.Choice().Launch(m.spawnHost(), "claude", "opus")
+	_, _ = m.quick().Choice().Launch(m.spawnHost(), "claude", "opus")
 	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlL})
 	m.handleQuickKey(down)
 	if !strings.Contains(sheet(), "❯ haiku") {
@@ -421,7 +421,7 @@ func TestQuickModelSheetFitsTheColumn(t *testing.T) {
 	m.selectGroupRow(t, "work")
 	m.openQuickMode()
 	setQuickTool(m, slices.Index(quickTools(m), "claude"))
-	m.quick.RestartChoice(m.spawnHost())
+	m.quick().RestartChoice(m.spawnHost())
 	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlL})
 	if m.fullRows() {
 		t.Fatal("80 columns should give the split")
@@ -436,15 +436,15 @@ func TestQuickModelSheetFitsTheColumn(t *testing.T) {
 		t.Fatalf("the sheet should stand in for the prompt:\n%s", view)
 	}
 	var last quickHit
-	for _, hit := range m.quick.Hits() {
+	for _, hit := range m.quick().Hits() {
 		if hit.Action == uiquick.ClickEntry {
 			last = hit
 		}
 	}
-	want := m.quick.Choice().Suggestions(m.spawnHost(), "claude")[last.Entry]
-	m = leftPress(m, m.quick.originX+last.X0, m.quick.originY+last.Line)
-	if m.quick.Choice().Model() != want {
-		t.Fatalf("a click on the list's last entry picked %q, want %q", m.quick.Choice().Model(), want)
+	want := m.quick().Choice().Suggestions(m.spawnHost(), "claude")[last.Entry]
+	m = leftPress(m, m.quick().originX+last.X0, m.quick().originY+last.Line)
+	if m.quick().Choice().Model() != want {
+		t.Fatalf("a click on the list's last entry picked %q, want %q", m.quick().Choice().Model(), want)
 	}
 }
 
@@ -571,9 +571,9 @@ func TestQuickFooterKeepsShiftTabBesideTab(t *testing.T) {
 	m.selectGroupRow(t, "work")
 	m.openQuickMode()
 	setQuickTool(m, slices.Index(quickTools(m), "claude"))
-	m.quick.RestartChoice(m.spawnHost())
+	m.quick().RestartChoice(m.spawnHost())
 	var keys []string
-	for _, pair := range m.quick.Legend(m.quickBarHost()) {
+	for _, pair := range m.quick().Legend(m.quickBarHost()) {
 		keys = append(keys, pair[0])
 	}
 	tab := slices.Index(keys, "tab")
@@ -593,17 +593,17 @@ func TestQuickSheetStepsEffortAndHandsThePromptBack(t *testing.T) {
 	m.selectGroupRow(t, "work")
 	m.openQuickMode()
 	setQuickTool(m, slices.Index(quickTools(m), "claude"))
-	m.quick.RestartChoice(m.spawnHost())
+	m.quick().RestartChoice(m.spawnHost())
 	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlL})
 	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlX})
-	if m.quick.Picking() != uiquick.PickModel || m.quick.Choice().EffortLevel(m.spawnHost(), "claude") != "low" {
-		t.Fatalf("picking %d effort %q", m.quick.Picking(), m.quick.Choice().EffortLevel(m.spawnHost(), "claude"))
+	if m.quick().Picking() != uiquick.PickModel || m.quick().Choice().EffortLevel(m.spawnHost(), "claude") != "low" {
+		t.Fatalf("picking %d effort %q", m.quick().Picking(), m.quick().Choice().EffortLevel(m.spawnHost(), "claude"))
 	}
 	if sheet := ansi.Strip(m.viewQuickBar(120, 20)); !strings.Contains(sheet, "model for work") || !strings.HasSuffix(strings.TrimRight(sheet, " "), "low · ⎇ no repo") {
 		t.Fatalf("sheet:\n%s", sheet)
 	}
 	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEsc})
-	if m.quick.Picking() != uiquick.PickNone || !strings.Contains(ansi.Strip(m.viewQuickBar(120, quickBarMaxRows)), "type and press enter") {
+	if m.quick().Picking() != uiquick.PickNone || !strings.Contains(ansi.Strip(m.viewQuickBar(120, quickBarMaxRows)), "type and press enter") {
 		t.Fatal("esc should hand the prompt back")
 	}
 }
@@ -644,7 +644,7 @@ func TestChoiceIsKeptPerCLI(t *testing.T) {
 		m.selectGroupRow(t, "work")
 		m.openQuickMode()
 		setQuickTool(m, slices.Index(quickTools(m), "claude"))
-		m.quick.RestartChoice(m.spawnHost())
+		m.quick().RestartChoice(m.spawnHost())
 		m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlL})
 		for _, r := range "opus" {
 			m.handleQuickKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
@@ -654,7 +654,7 @@ func TestChoiceIsKeptPerCLI(t *testing.T) {
 		m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEsc})
 		m.openQuickMode()
 		setQuickTool(m, slices.Index(quickTools(m), "claude"))
-		m.quick.RestartChoice(m.spawnHost())
+		m.quick().RestartChoice(m.spawnHost())
 		if target := strings.Split(ansi.Strip(m.viewQuickBar(120, quickBarMaxRows)), "\n")[0]; !strings.Contains(target, "claude · opus · low") {
 			t.Fatalf("reopened bar: %s", target)
 		}
@@ -687,7 +687,7 @@ func TestQuickStatusRowLeavesOutWhatACLICannotPick(t *testing.T) {
 	m.selectGroupRow(t, "work")
 	m.openQuickMode()
 	setQuickTool(m, slices.Index(quickTools(m), "quietchat"))
-	m.quick.RestartChoice(m.spawnHost())
+	m.quick().RestartChoice(m.spawnHost())
 	target := strings.Split(ansi.Strip(m.viewQuickBar(120, quickBarMaxRows)), "\n")[0]
 	if !strings.HasSuffix(strings.TrimRight(target, " "), "quietchat · ⎇ no repo") || strings.Contains(target, "not supported") {
 		t.Fatalf("target row: %s", target)

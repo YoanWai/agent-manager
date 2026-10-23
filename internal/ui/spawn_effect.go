@@ -122,8 +122,9 @@ func (m *Model) dispatchSpawn(request spawnRequest) {
 		request.draftDir = m.form.Dir()
 		m.form.prompt.attachments = nil
 	case spawnQuick:
-		request.draft = m.quick.input.Value()
-		m.quick.attachments = nil
+		q := m.quick()
+		request.draft = q.input.Value()
+		q.attachments = nil
 	}
 	m.enqueueEffect(request, 0, false)
 }
@@ -270,8 +271,8 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 				m.mode = modeList
 			}
 		case spawnQuick:
-			if m.quick.active && m.quick.gen == request.composerGen && m.quick.input.Value() == request.draft && len(m.quick.attachments) == 0 {
-				m.quick.clearAfterSend()
+			if q, ok := m.quickFor(request.composerGen); ok {
+				m.clearAccepted(request.composerGen, request.draft, q.closeAfterSend)
 			}
 		}
 		m.rebuildRows()
@@ -299,7 +300,7 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 	switch {
 	case request.kind == spawnForm && m.mode == modeForm && m.form.prompt.gen == request.composerGen && m.form.prompt.input.Value() == request.draft && len(m.form.prompt.attachments) == 0:
 		takeOver = true
-	case request.kind == spawnQuick && m.quick.active && m.quick.gen == request.composerGen && m.quick.input.Value() == request.draft && len(m.quick.attachments) == 0:
+	case request.kind == spawnQuick && m.quickHolds(request.composerGen, request.draft):
 		takeOver = true
 	case m.listClear():
 		takeOver = true
@@ -312,7 +313,7 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 			fix.images = append(fix.images, request.images...)
 			fix.effectRetry = request
 			if request.kind == spawnQuick {
-				m.quick.active = false
+				m.closeQuick()
 			}
 		} else {
 			// A plain error left the composer on screen; its images go back.
@@ -336,8 +337,8 @@ func (m *Model) returnSpawnImages(request spawnRequest) {
 			return
 		}
 	case spawnQuick:
-		if m.quick.active && m.quick.gen == request.composerGen {
-			m.quick.attachments = append(request.images, m.quick.attachments...)
+		if q, ok := m.quickFor(request.composerGen); ok {
+			q.attachments = append(request.images, q.attachments...)
 			return
 		}
 	}

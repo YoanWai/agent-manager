@@ -128,7 +128,7 @@ func TestHostTextCannotDriveTheTerminal(t *testing.T) {
 	m.rail.Focus(session)
 	m.openQuickMode()
 	frame("the quick bar")
-	m.quick.active = false
+	m.closeQuick()
 
 	_, cmd := m.runRailIntent(uirail.Intent{Kind: uirail.Kill, Target: session})
 	m.runRemoteCmd(t, cmd)

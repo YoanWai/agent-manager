@@ -20,14 +20,13 @@ import (
 var captureClipboardImage = clipboard.SaveImage
 
 // quickBar is the quick bar (internal/ui/quick) with what the root holds
-// for it: whether it is open, its prompt box, the after-send setting, and
-// where the frame painted it. A pasted image lands at the caret as an
+// for it: its prompt box, the after-send setting, and where the frame
+// painted it. A pasted image lands at the caret as an
 // "[Image #N]" token that renders as a chip and steps, deletes, and wraps
 // as one unit; on submit each token becomes its path.
 type quickBar struct {
 	uiquick.Bar
 	composer
-	active         bool
 	closeAfterSend bool
 	// aim is the row the user last pointed the bar at. A refresh that
 	// drops a connection's row moves the cursor on its own, and enter must
@@ -52,7 +51,7 @@ type quickBarHost struct{ spawnHost }
 func (m *Model) quickBarHost() quickBarHost { return quickBarHost{spawnHost{m: m}} }
 
 func (h quickBarHost) Prompt() spawn.Prompt {
-	return promptBox{c: &h.m.quick.composer, target: composerQuick, host: h.m}
+	return promptBox{c: &h.m.quick().composer, target: composerQuick, host: h.m}
 }
 
 func (h quickBarHost) Target() (uiquick.Target, bool) {
@@ -92,40 +91,52 @@ func (m *Model) openQuickModeWithReader(reader settingsValueReader) tea.Cmd {
 	m.clearErr()
 	m.forgetWorktreeCapability()
 	aim, _ := m.rail.Selected()
-	m.quick = quickBar{
+	q := newQuickSurface(quickBar{
 		aim:            aim,
-		active:         true,
 		composer:       composer{input: input, maxRows: quickBarMaxRows, gen: m.nextComposerGen()},
 		closeAfterSend: m.settings.cache.value(uisettings.QuickCloseSetting) == "close",
-	}
-	// The bar is active before its choice starts, so a bar aimed at a
-	// connection starts on the host's defaults.
-	m.quick.Bar = uiquick.NewBar(m.spawnHost(), names, index, m.cachedSpawnWorktreeDefault(m.quickTargetGroup()))
+	})
+	// The bar is on the stack before its choice starts, so a bar aimed at
+	// a connection starts on the host's defaults.
+	m.push(q)
+	q.Bar = uiquick.NewBar(m.spawnHost(), names, index, m.cachedSpawnWorktreeDefault(m.quickTargetGroup()))
 	catalog := m.ensureCatalog(names[index])
 	if m.settings.pending > 0 {
 		return tea.Batch(m.quickWorktreeProbeCmd(false), catalog)
 	}
-	return tea.Batch(settingsLoadCmd(settingsLoadRequest{target: settingsLoadQuick, generation: uint64(m.quick.gen), extra: m.choiceSettingKeys()}, reader), catalog)
+	return tea.Batch(settingsLoadCmd(settingsLoadRequest{target: settingsLoadQuick, generation: uint64(q.gen), extra: m.choiceSettingKeys()}, reader), catalog)
 }
 
 // applyCachedQuickDefaults takes the loaded defaults. A tool the load moved
 // to starts its choices over and asks its CLI.
 func (m *Model) applyCachedQuickDefaults() tea.Cmd {
-	before := m.quick.Tool()
-	m.quick.SetTools(m.cachedSpawnToolSelection())
-	m.quick.closeAfterSend = m.settings.cache.value(uisettings.QuickCloseSetting) == "close"
-	m.quick.DefaultWorktree(m.cachedSpawnWorktreeDefault(m.quickTargetGroup()))
-	toolName := m.quick.Tool()
+	q := m.quick()
+	before := q.Tool()
+	q.SetTools(m.cachedSpawnToolSelection())
+	q.closeAfterSend = m.settings.cache.value(uisettings.QuickCloseSetting) == "close"
+	q.DefaultWorktree(m.cachedSpawnWorktreeDefault(m.quickTargetGroup()))
+	toolName := q.Tool()
 	if toolName == before || toolName == "" {
 		return nil
 	}
-	m.quick.RestartChoice(m.spawnHost())
+	q.RestartChoice(m.spawnHost())
 	return m.ensureCatalog(toolName)
 }
 
 func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	cmd, request := m.quick.HandleKey(m.quickBarHost(), typedText(msg))
+	cmd, request := m.quick().HandleKey(m.quickBarHost(), typedText(msg))
 	return m, tea.Batch(cmd, m.runQuickRequest(request))
+}
+
+// quickKey types a key into the open bar. A row menu opened on the rail
+// under it by the mouse keeps the keys until it closes.
+func (m *Model) quickKey(msg tea.KeyMsg) (tea.Cmd, bool) {
+	if m.rail.Busy() {
+		return nil, false
+	}
+	m.gens.foreground++
+	_, cmd := m.handleQuickKey(msg)
+	return cmd, true
 }
 
 // runQuickRequest executes what a bar key or click asked of the root.
@@ -138,19 +149,20 @@ func (m *Model) runQuickRequest(request uiquick.Request) tea.Cmd {
 	case request.Catalog != "":
 		return m.ensureCatalog(request.Catalog)
 	case request.Close:
-		m.quick.active = false
+		m.closeQuick()
 	case request.Send:
 		if cmd, taken := m.remoteQuickSend(request.Text); taken {
 			return cmd
 		}
 		entry, _ := m.selectedRow()
+		q := m.quick()
 		if !m.dispatchQuickSend(quickSendRequest{
 			session:        entry.sess,
-			composerGen:    m.quick.gen,
-			draft:          m.quick.input.Value(),
+			composerGen:    q.gen,
+			draft:          q.input.Value(),
 			text:           request.Text,
-			closeAfterSend: m.quick.closeAfterSend,
-			images:         m.quick.attachments,
+			closeAfterSend: q.closeAfterSend,
+			images:         q.attachments,
 		}) {
 			return nil
 		}
@@ -162,15 +174,15 @@ func (m *Model) runQuickRequest(request uiquick.Request) tea.Cmd {
 		}
 		return m.dispatchQuickSpawn(m.quickSpawnRequest(*request.Spawn), systemDirectoryPreflight{git: m.services.gitDrv})
 	case request.LoadSaved:
-		return savedPromptsLoadCmd(m.services.store, savedForQuick, uint64(m.quick.gen), 0)
+		return savedPromptsLoadCmd(m.services.store, savedForQuick, uint64(m.quick().gen), 0)
 	case request.InsertSaved != nil:
-		m.quick.insertSaved(*request.InsertSaved)
+		m.quick().insertSaved(*request.InsertSaved)
 	}
 	return nil
 }
 
 func (m *Model) submitQuick() (tea.Model, tea.Cmd) {
-	return m, m.runQuickRequest(m.quick.Submit(m.quickBarHost()))
+	return m, m.runQuickRequest(m.quick().Submit(m.quickBarHost()))
 }
 
 func (m *Model) quickSpawn(group, prompt string) (tea.Model, tea.Cmd) {
@@ -178,7 +190,7 @@ func (m *Model) quickSpawn(group, prompt string) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) quickSpawnWithReader(group, prompt string, reader directoryPreflight) (tea.Model, tea.Cmd) {
-	request, ok := m.quick.SpawnRequest(m.spawnHost(), group, prompt)
+	request, ok := m.quick().SpawnRequest(m.spawnHost(), group, prompt)
 	if !ok {
 		return m, nil
 	}
@@ -202,6 +214,7 @@ func (m *Model) quickSpawnRequest(request spawn.Request) spawnRequest {
 	if request.WorktreeSet {
 		pickWorktree = request.Worktree
 	}
+	q := m.quick()
 	return spawnRequest{
 		kind:         spawnQuick,
 		toolName:     request.Tool,
@@ -213,31 +226,21 @@ func (m *Model) quickSpawnRequest(request spawn.Request) spawnRequest {
 		choice:       config.Choice(request.Pick),
 		base:         defaults.base,
 		pane:         defaults.pane,
-		composerGen:  m.quick.gen,
-		images:       m.quick.attachments,
-		draft:        m.quick.input.Value(),
+		composerGen:  q.gen,
+		images:       q.attachments,
+		draft:        q.input.Value(),
 		rawDir:       defaults.groupDir,
 		dirFallbacks: defaults.fallbacks,
 		wantWorktree: pickWorktree,
 	}
 }
 
-// clearAfterSend empties the bar for the next prompt, and dismisses it
-// entirely when the settings toggle asks for that.
-func (q *quickBar) clearAfterSend() {
-	q.input.SetValue("")
-	q.attachments = nil
-	q.saved = nil
-	if q.closeAfterSend {
-		q.active = false
-	}
-}
-
 // toggleQuickWorktree flips the worktree choice, or probes the target first
 // when its repo verdict is not cached.
 func (m *Model) toggleQuickWorktree() tea.Cmd {
+	q := m.quick()
 	if _, remote := m.remoteTarget(); remote {
-		m.quick.SetWorktree(!m.quick.WorktreeTouched() || !m.quick.Worktree())
+		q.SetWorktree(!q.WorktreeTouched() || !q.Worktree())
 		return nil
 	}
 	dir := m.quickTargetDir()
@@ -250,7 +253,7 @@ func (m *Model) toggleQuickWorktree() tea.Cmd {
 		return nil
 	}
 	m.clearErr()
-	m.quick.SetWorktree(!m.quick.Worktree())
+	q.SetWorktree(!q.Worktree())
 	return nil
 }
 
@@ -262,8 +265,8 @@ func (m *Model) quickWorktreeOn() bool {
 	if !known || !capable {
 		return false
 	}
-	if m.quick.WorktreeTouched() {
-		return m.quick.Worktree()
+	if q := m.quick(); q.WorktreeTouched() {
+		return q.Worktree()
 	}
 	return m.cachedSpawnWorktreeDefault(m.quickTargetGroup())
 }
@@ -288,36 +291,38 @@ func (m *Model) quickTargetDir() string {
 	return m.capturedAbsolutePath(m.workspace.groupPaths[group], m.capturedGroupDefaultDir(group))
 }
 
-func (m *Model) quickTool() string { return m.quick.Tool() }
+func (m *Model) quickTool() string { return m.quick().Tool() }
 
-func (m *Model) quickSpawning() bool { return m.quick.Spawning(m.quickBarHost()) }
+func (m *Model) quickSpawning() bool { return m.quick().Spawning(m.quickBarHost()) }
 
 // quickPicking reports a list open over the quick bar's prompt, which owns
 // the wheel the way it owns ↑↓.
 func (m *Model) quickPicking() bool {
-	return m.quick.active && m.quick.Picking() != uiquick.PickNone
+	q := m.quick()
+	return q != nil && q.Picking() != uiquick.PickNone
 }
 
-func (q *quickBar) hitAt(x, y int) (quickHit, bool) {
-	if !q.active {
+func (m *Model) quickHitAt(x, y int) (quickHit, bool) {
+	q := m.quick()
+	if q == nil {
 		return quickHit{}, false
 	}
 	return q.HitAt(x-q.originX, y-q.originY)
 }
 
 func (m *Model) handleQuickClick(hit quickHit) tea.Cmd {
-	return m.runQuickRequest(m.quick.Click(m.quickBarHost(), hit))
+	return m.runQuickRequest(m.quick().Click(m.quickBarHost(), hit))
 }
 
 const quickModeTitle = "Quick prompt mode"
 
-func (m *Model) quickFooter() legend {
+func (m *Model) quickFooter(q *quickSurface) legend {
 	edge := keyStyle().Render(quickEdge)
 	gutter := strings.Repeat(" ", quickGutter-1)
-	painted := paintLegend([]legendSection{{title: quickModeTitle, pairs: m.quick.Legend(m.quickBarHost())}}, max(m.layout.width-1, 1))
+	painted := paintLegend([]legendSection{{title: quickModeTitle, pairs: q.Legend(m.quickBarHost())}}, max(m.layout.width-1, 1))
 	keys := splitLines(painted.text)
 	rows := quickBarMaxRows + 1
-	if m.quick.Picking() != uiquick.PickNone {
+	if q.Picking() != uiquick.PickNone {
 		rows = max(m.layout.height/2, rows)
 	}
 	const minBody = 3
@@ -326,7 +331,7 @@ func (m *Model) quickFooter() legend {
 	var lines []string
 	for i, line := range splitLines(m.viewQuickBar(max(m.layout.width-2*quickGutter, 1), rows)) {
 		tone := quickModeHex()
-		if i > 0 && m.quick.Picking() == uiquick.PickNone {
+		if i > 0 && q.Picking() == uiquick.PickNone {
 			tone = blockHex()
 		}
 		lines = append(lines, paint(edge+gutter+line, m.layout.width, tone))
@@ -335,7 +340,7 @@ func (m *Model) quickFooter() legend {
 	for _, line := range keys {
 		lines = append(lines, paint(edge+line, m.layout.width, quickModeHex()))
 	}
-	m.quick.originX = quickGutter
+	q.originX = quickGutter
 	return legend{text: strings.Join(lines, "\n"), hits: hits}
 }
 
@@ -355,7 +360,7 @@ func (m *Model) viewQuickBar(width, maxRows int) string {
 		}
 	}
 	m.remoteQuickFacts(&facts)
-	return m.quick.View(m.quickBarHost(), facts, width, maxRows)
+	return m.quick().View(m.quickBarHost(), facts, width, maxRows)
 }
 
 // quickAnswerRow names the session an answer goes to, with its state and

@@ -162,7 +162,7 @@ func (m *Model) applyRemoteEffect(request remoteRequest, result remoteEffectResu
 		// As on this machine, a prompt that may sit in the pane leaves the
 		// bar, so the next enter cannot type it a second time.
 		if request.op == remoteType && remote.MayHaveReached(err) {
-			m.quick.clearAccepted(quickSendRequest{composerGen: request.composerGen, draft: request.draft, closeAfterSend: request.closeAfterSend})
+			m.clearAccepted(request.composerGen, request.draft, request.closeAfterSend)
 		}
 		m.reportErr(err.Error())
 		return m.pollConnection(request.host)
@@ -170,7 +170,7 @@ func (m *Model) applyRemoteEffect(request remoteRequest, result remoteEffectResu
 	on := " on " + request.host
 	switch request.op {
 	case remoteType:
-		m.quick.clearAccepted(quickSendRequest{composerGen: request.composerGen, draft: request.draft, closeAfterSend: request.closeAfterSend})
+		m.clearAccepted(request.composerGen, request.draft, request.closeAfterSend)
 		m.reportDone("sent to " + request.name + on)
 	case remoteSpawn:
 		if request.fromForm {
@@ -178,7 +178,7 @@ func (m *Model) applyRemoteEffect(request remoteRequest, result remoteEffectResu
 				m.mode = modeList
 			}
 		} else {
-			m.quick.clearAccepted(quickSendRequest{composerGen: request.composerGen, draft: request.draft, closeAfterSend: request.closeAfterSend})
+			m.clearAccepted(request.composerGen, request.draft, request.closeAfterSend)
 		}
 		m.reportDone("started " + result.session.Name + on)
 	case remoteNewTerminal:

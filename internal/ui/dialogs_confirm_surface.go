@@ -26,8 +26,19 @@ func newConfirmSurface(target confirmTarget, glyphMode presentation.GlyphMode) *
 }
 
 // listClear is the list with no card over it: what "mode is the list" meant
-// while the cards were modes.
-func (m *Model) listClear() bool { return m.mode == modeList && len(m.surfaces) == 0 }
+// while the cards were modes. The quick bar and a resize sit on the list
+// without covering it.
+func (m *Model) listClear() bool {
+	if m.mode != modeList {
+		return false
+	}
+	for _, s := range m.surfaces {
+		if _, ok := s.(mouseTaker); !ok {
+			return false
+		}
+	}
+	return true
+}
 
 func (m *Model) openConfirm(target confirmTarget) {
 	m.push(newConfirmSurface(target, m.prefs.glyphMode))

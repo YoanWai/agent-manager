@@ -264,8 +264,8 @@ func (m *Model) handleSettingsLoaded(msg settingsLoadedMsg) (tea.Model, tea.Cmd)
 		m.refreshFormChoicePrefs()
 		follow = tea.Batch(m.applyCachedFormDefaults(), m.formWorktreeProbeCmd(false))
 	case settingsLoadQuick:
-		if !m.quick.active || uint64(m.quick.gen) != msg.request.generation ||
-			m.quick.DefaultsTouched() || m.settings.pending > 0 {
+		q, ok := m.quickFor(int(msg.request.generation))
+		if !ok || q.DefaultsTouched() || m.settings.pending > 0 {
 			return m, nil
 		}
 		m.settings.cache.applyReadback(msg.result.values, msg.result.hiddenRaw, msg.result.hiddenErr)

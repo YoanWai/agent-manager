@@ -57,7 +57,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if cmd, ok := m.surfaceKey(msg); ok {
 		return m, cmd
 	}
-	if m.mode == modeList && !m.rail.Busy() && !m.quick.active {
+	if m.mode == modeList && !m.rail.Busy() {
 		decision := m.rail.Key(msg, m.layout.displayedRail, m.railKeyContext())
 		if decision.Consumed {
 			m.gens.foreground++
@@ -72,13 +72,6 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleDiffKey(msg)
 	case modeFocus:
 		return m.handleFocusKey(msg)
-	}
-
-	if m.rail.Busy() {
-		return m.applyRailDecision(m.rail.Key(msg, m.layout.displayedRail, m.railKeyContext()))
-	}
-	if m.quick.active {
-		return m.handleQuickKey(msg)
 	}
 	return m.applyRailDecision(m.rail.Key(msg, m.layout.displayedRail, m.railKeyContext()))
 }

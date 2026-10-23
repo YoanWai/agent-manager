@@ -311,7 +311,7 @@ func (m *Model) applyNotices(apply func()) {
 }
 
 func (m *Model) listReadyForNotice() bool {
-	return !m.effects.quitting && m.listClear() && !m.rail.Busy() && !m.quick.active
+	return !m.effects.quitting && m.mode == modeList && len(m.surfaces) == 0 && !m.rail.Busy()
 }
 
 func (m *Model) flushPendingNotice() {

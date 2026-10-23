@@ -288,13 +288,11 @@ func (m *Model) applyInstallStart(request installStartRequest, result installSta
 
 func (m *Model) handInstallScreenTo(sessionID string) tea.Cmd {
 	var cleanup tea.Cmd
-	m.closeLaunchHint()
-	if m.quick.active {
-		m.quick.active = false
-		cleanup = installImageCleanupCmd(m.quick.attachments)
-		m.quick.attachments = nil
-		m.quick.saved = nil
+	if q := m.quick(); q != nil {
+		cleanup = installImageCleanupCmd(q.attachments)
+		q.attachments = nil
 	}
+	m.closeLaunchHint()
 	m.rail.ClearStatusFilter()
 	m.focusSession(sessionID)
 	return cleanup

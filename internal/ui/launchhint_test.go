@@ -359,7 +359,7 @@ func TestQuickSpawnHermesWithoutMCPSupportClosesTheBar(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "backend")
 	m.openQuickMode()
-	m.quick.SetTools([]string{"hermes"}, 0)
+	m.quick().SetTools([]string{"hermes"}, 0)
 
 	updated, cmd := m.quickSpawn("backend", "fix the tests")
 	m = updated.(*Model)
@@ -368,7 +368,7 @@ func TestQuickSpawnHermesWithoutMCPSupportClosesTheBar(t *testing.T) {
 	if !hintOpen(m) {
 		t.Fatalf("mode = %v, err = %q, want modeLaunchHint", m.mode, m.errBar.text)
 	}
-	if m.quick.active {
+	if m.quick() != nil {
 		t.Fatal("a refused quick spawn must close the bar")
 	}
 }

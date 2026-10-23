@@ -57,9 +57,9 @@ func TestWheelScrollsTheQuickModelSheet(t *testing.T) {
 	m.selectGroupRow(t, "work")
 	m.openQuickMode()
 	setQuickTool(m, slices.Index(quickTools(m), "claude"))
-	m.quick.RestartChoice(m.spawnHost())
+	m.quick().RestartChoice(m.spawnHost())
 	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlL})
-	if m.quick.Picking() != uiquick.PickModel {
+	if m.quick().Picking() != uiquick.PickModel {
 		t.Fatal("test setup: ctrl+l opens the model sheet")
 	}
 	preparedView(m)
@@ -69,7 +69,7 @@ func TestWheelScrollsTheQuickModelSheet(t *testing.T) {
 		t.Fatalf("the wheel moved the session cursor behind the sheet to %+v", row)
 	}
 	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter})
-	if got := m.quick.Choice().Model(); got != "haiku" {
+	if got := m.quick().Choice().Model(); got != "haiku" {
 		t.Fatalf("two notches down from the first model then enter picked %q, want the third", got)
 	}
 }

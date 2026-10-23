@@ -355,7 +355,7 @@ func TestEnterResizeBlockedWhenSearchingOrQuick(t *testing.T) {
 		t.Fatal("searching should block resize mode")
 	}
 	m.rail.SetSearch(m.rail.Search(), false)
-	m.quick.active = true
+	pushQuick(m)
 	updated, cmd = m.enterResizeMode()
 	m = updated.(*Model)
 	if m.layout.split.resizeMode || cmd != nil {

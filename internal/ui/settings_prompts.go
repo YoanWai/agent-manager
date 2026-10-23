@@ -126,8 +126,8 @@ func (m *Model) handleSavedPromptsLoaded(msg savedPromptsLoadedMsg) {
 			m.form.SetSaved(spawnSaved(msg.rows), msg.err)
 		}
 	case savedForQuick:
-		if m.quick.active && uint64(m.quick.gen) == msg.gen {
-			m.quick.LoadSaved(spawnSaved(msg.rows), msg.err)
+		if q, ok := m.quickFor(int(msg.gen)); ok {
+			q.LoadSaved(spawnSaved(msg.rows), msg.err)
 		}
 	case savedForFocus:
 		m.loadFocusSaved(msg)

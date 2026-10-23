@@ -99,5 +99,7 @@ func (m *Model) viewFullListFrame() string {
 // it holds landed, with its first row at y.
 func (m *Model) placeListFooter(footer legend, y int) {
 	m.placeKeys(footer.hits, 0, y)
-	m.quick.originY = y
+	if q := m.quick(); q != nil {
+		q.originY = y
+	}
 }

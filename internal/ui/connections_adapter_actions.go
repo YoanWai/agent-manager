@@ -267,8 +267,9 @@ func (m *Model) remoteQuickFacts(facts *uiquick.Facts) {
 	facts.Remote = lipgloss.NewStyle().Foreground(colorAccent2()).Render(escapeControlsInline(displayGroup(row.Group))) + host
 	facts.RemoteSpawn = true
 	facts.WorktreeKnown, facts.WorktreeCapable = true, true
-	facts.WorktreeOn = m.quick.WorktreeTouched() && m.quick.Worktree()
-	facts.WorktreeInherit = !m.quick.WorktreeTouched()
+	q := m.quick()
+	facts.WorktreeOn = q.WorktreeTouched() && q.Worktree()
+	facts.WorktreeInherit = !q.WorktreeTouched()
 }
 
 // remoteQuickTarget is the connection row the quick bar is pointed at.
@@ -290,7 +291,7 @@ func (m *Model) remoteQuickRow() (row uiconnections.Row, taken, refused bool) {
 	if !ok {
 		return uiconnections.Row{}, false, false
 	}
-	if len(m.quick.attachments) > 0 {
+	if len(m.quick().attachments) > 0 {
 		m.reportErr(uirail.RemoteRefusal("pasted images"))
 		return row, true, true
 	}
@@ -337,7 +338,7 @@ func (m *Model) remoteQuickSpawn(spawned spawn.Request) (tea.Cmd, bool) {
 }
 
 func (m *Model) quickRemoteRequest(host, text string) remoteRequest {
-	q := &m.quick
+	q := m.quick()
 	return remoteRequest{host: host, text: text, draft: q.input.Value(), composerGen: q.gen, closeAfterSend: q.closeAfterSend}
 }
 
@@ -355,7 +356,7 @@ func withRemoteChoice(opts *sessioncmd.CreateSessionOptions, choice config.Choic
 // end is on a connection: the remote row the bar was aimed at is gone, or
 // the cursor slid to another row without the user moving it.
 func (m *Model) quickAimLost(selection uirail.Selection) (string, bool) {
-	aim := m.quick.aim
+	aim := m.quick().aim
 	if !aim.Remote() && !selection.Remote() {
 		return "", false
 	}

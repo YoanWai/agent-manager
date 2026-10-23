@@ -39,7 +39,7 @@ func (m *Model) previewFeeds() bool {
 		return true
 	}
 	_, renaming := m.renaming()
-	return m.mode == modeList && (len(m.surfaces) == 0 || renaming)
+	return m.listClear() || renaming
 }
 
 // dialogPaths hands the rename and the group form the root's path completion.

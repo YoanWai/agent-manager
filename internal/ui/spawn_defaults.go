@@ -216,7 +216,7 @@ func (m *Model) pendingWorktreeSpawn() (dir, group string, ok bool) {
 	switch {
 	case m.mode == modeForm && m.formWorktreeOn():
 		return m.formSpawnDir(), m.selectedGroupPath(), true
-	case m.mode == modeList && m.quick.active && m.quickSpawning() && m.quickWorktreeOn():
+	case m.quick() != nil && m.quickSpawning() && m.quickWorktreeOn():
 		return m.quickTargetDir(), m.quickTargetGroup(), true
 	}
 	return "", "", false

@@ -106,7 +106,7 @@ func TestQuickPreflightCapturesTargetBeforeCursorMoves(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "backend")
 	m.openQuickMode()
-	m.quick.input.SetValue("captured prompt")
+	m.quick().input.SetValue("captured prompt")
 	reader := &blockedDirectoryPreflight{
 		started: make(chan struct{}), release: make(chan struct{}),
 		resolved: backend, dirOK: true,
@@ -249,7 +249,7 @@ func TestQuickSpawnDefersCreationFromUpdate(t *testing.T) {
 		}
 	}
 	m.openQuickMode()
-	m.quick.input.SetValue("build the api")
+	m.quick().input.SetValue("build the api")
 	_, cmd := m.submitQuick()
 	if m.errBar.text != "" {
 		t.Fatalf("quick spawn reported an error: %q", m.errBar.text)
@@ -269,7 +269,7 @@ func TestQuickSpawnDefersCreationFromUpdate(t *testing.T) {
 	if !m.services.tmux.Exists(sessions[0].ID) {
 		t.Fatal("pane missing after completion")
 	}
-	if m.quick.input.Value() != "" {
+	if m.quick().input.Value() != "" {
 		t.Fatal("quick bar was not cleared after the spawn completed")
 	}
 }
@@ -354,7 +354,7 @@ func TestSpawnCompletesAgainstCapturedIdentity(t *testing.T) {
 		}
 	}
 	m.openQuickMode()
-	m.quick.input.SetValue("captured prompt")
+	m.quick().input.SetValue("captured prompt")
 	_, cmd := m.submitQuick()
 	// A newer selection lands before the effect completes: it must not
 	// retarget the accepted spawn.
@@ -583,13 +583,13 @@ func TestQuickSpawnCompletionPreservesEditedDraft(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openQuickMode()
-	m.quick.input.SetValue("first task")
-	request := spawnRequest{kind: spawnQuick, composerGen: m.quick.gen}
+	m.quick().input.SetValue("first task")
+	request := spawnRequest{kind: spawnQuick, composerGen: m.quick().gen}
 	m.dispatchSpawn(request)
 	request = m.effects.main.pending[0].request.(spawnRequest)
-	m.quick.input.SetValue("next task")
+	m.quick().input.SetValue("next task")
 	m.applySpawnEffect(request, spawnEffectResult{session: store.Session{ID: "child", Name: "child"}}, nil)
-	if m.quick.input.Value() != "next task" {
+	if m.quick().input.Value() != "next task" {
 		t.Fatal("completion cleared a newer draft")
 	}
 }

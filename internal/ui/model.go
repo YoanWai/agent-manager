@@ -54,7 +54,6 @@ type Model struct {
 	reviewNav reviewNavState
 	form      formDialog
 	mouse     mouseCapture
-	quick     quickBar
 	settings  settingsFeature
 	env       environment
 	ssh       connectionsFeature

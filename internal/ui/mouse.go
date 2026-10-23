@@ -39,18 +39,7 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if msg.Action == tea.MouseActionPress {
 		m.gens.foreground++
 	}
-	model, command := m.routeMouse(msg)
-	m.closeQuickOffTheList()
-	return model, command
-}
-
-// The update dialog covers the list, and Esc returns to the same draft, so a
-// mouse event must not throw that draft away.
-func (m *Model) closeQuickOffTheList() {
-	if m.quick.active && m.mode != modeList {
-		m.quick.active = false
-		m.quick.release()
-	}
+	return m.routeMouse(msg)
 }
 
 // routeMouse hands an event to the surface it belongs to: a card floating
@@ -356,7 +345,7 @@ func (m *Model) listPress(msg tea.MouseMsg, ctx uirail.MouseContext) (tea.Model,
 	if split.resizeMode {
 		return m, nil
 	}
-	if hit, ok := m.quick.hitAt(msg.X, msg.Y); ok {
+	if hit, ok := m.quickHitAt(msg.X, msg.Y); ok {
 		return m, m.handleQuickClick(hit)
 	}
 	if msg.Button == tea.MouseButtonLeft && m.onContentColumn(msg.X, msg.Y) {
@@ -382,7 +371,7 @@ func (m *Model) onContentColumn(x, y int) bool {
 // A group, an archived session, the search field and the quick bar keep it.
 func (m *Model) focusFromPreview() (tea.Model, tea.Cmd) {
 	row, ok := m.selectedRow()
-	if !ok || row.isGroup || row.sess.Archived || m.rail.Busy() || m.quick.active {
+	if !ok || row.isGroup || row.sess.Archived || m.rail.Busy() || m.quick() != nil {
 		return m, nil
 	}
 	return m.focusSelected()

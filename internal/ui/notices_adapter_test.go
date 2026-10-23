@@ -836,14 +836,14 @@ func TestNewFeedWaitsForQuickBar(t *testing.T) {
 	m := footModel(t)
 	m.layout.width, m.layout.height = 100, 34
 	m.mode = modeList
-	m.quick.active = true
-	m.quick.input = textarea.New()
+	pushQuick(m)
+	m.quick().input = textarea.New()
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
-	if m.mode != modeList || !m.quick.active {
-		t.Fatalf("quick bar should keep the modal closed, mode=%v quick=%v", m.mode, m.quick.active)
+	if m.mode != modeList || (m.quick() == nil) {
+		t.Fatalf("quick bar should keep the modal closed, mode=%v quick=%v", m.mode, (m.quick() != nil))
 	}
 
-	m.quick.active = false
+	m.closeQuick()
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 34})
 	if !m.noticesOpen() {
 		t.Fatalf("closing the quick bar should open the new message, mode=%v", m.mode)

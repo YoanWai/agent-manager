@@ -31,28 +31,28 @@ func TestQuickFooterKeepsTheCaretRowOnScreen(t *testing.T) {
 		painted()
 		m = applyMsg(t, m, pasteTextMsg{
 			target: composerQuick,
-			gen:    m.quick.gen,
+			gen:    m.quick().gen,
 			inner: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(
 				"FIRSTROWMARK " + strings.Repeat("filler word ", 20) + "LASTROWMARK")},
 		})
 		painted()
 
-		for i := 0; i < 40 && !m.quick.caretOnFirstRow(); i++ {
+		for i := 0; i < 40 && !m.quick().caretOnFirstRow(); i++ {
 			_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyUp})
 			painted()
 		}
-		if !m.quick.caretOnFirstRow() {
+		if !m.quick().caretOnFirstRow() {
 			t.Fatal("up never reached the prompt's first row")
 		}
 		if !strings.Contains(painted(), "FIRSTROWMARK") {
 			t.Fatalf("full layout %v: the frame clipped the prompt's first row", full)
 		}
 
-		for i := 0; i < 40 && !m.quick.caretOnLastRow(); i++ {
+		for i := 0; i < 40 && !m.quick().caretOnLastRow(); i++ {
 			_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyDown})
 			painted()
 		}
-		if !m.quick.caretOnLastRow() {
+		if !m.quick().caretOnLastRow() {
 			t.Fatal("down never reached the prompt's last row")
 		}
 		if !strings.Contains(painted(), "LASTROWMARK") {
@@ -65,8 +65,8 @@ func TestQuickBarMeasuresRowsAtTheWidthItJustSet(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openQuickMode()
-	m.quick.input.SetWidth(80)
-	m.quick.input.SetValue("one two three four five six seven eight nine ten")
+	m.quick().input.SetWidth(80)
+	m.quick().input.SetValue("one two three four five six seven eight nine ten")
 	bar := m.viewQuickBar(14, quickBarMaxRows)
 	if rows := len(splitLines(bar)) - 1; rows < 2 {
 		t.Fatalf("rows = %d, want the wrap at width 14, not the previous width", rows)
@@ -84,7 +84,7 @@ func TestQuickFooterFillsEveryBandCell(t *testing.T) {
 			m.layout.width = width
 			answered(m, claudeLike, claudeAnswer)
 			m.openQuickMode()
-			m.quick.input.SetValue("hello 界 " + strings.Repeat("wrapping ", 12))
+			m.quick().input.SetValue("hello 界 " + strings.Repeat("wrapping ", 12))
 			frame := preparedView(m)
 			frameRows := splitLines(frame)
 			if len(frameRows) != m.layout.height || strings.TrimSpace(strings.TrimPrefix(ansi.Strip(frameRows[len(frameRows)-1]), quickEdge)) == "" {
@@ -92,12 +92,12 @@ func TestQuickFooterFillsEveryBandCell(t *testing.T) {
 			}
 			backgrounds, _ := cellColors(frame, m.layout.width, m.layout.height)
 			footerHeight := lipgloss.Height(m.viewFooter())
-			keysHeight := lipgloss.Height(paintLegend([]legendSection{{title: quickModeTitle, pairs: m.quick.Legend(m.quickBarHost())}}, m.layout.width-1).text)
+			keysHeight := lipgloss.Height(paintLegend([]legendSection{{title: quickModeTitle, pairs: m.quick().Legend(m.quickBarHost())}}, m.layout.width-1).text)
 			if !strings.Contains(ansi.Strip(frameRows[m.layout.height-footerHeight]), "new") {
 				t.Fatalf("full %v width %d footer must begin with the target", full, width)
 			}
-			if m.quick.originY != m.layout.height-footerHeight {
-				t.Fatalf("target hit row = %d, want %d", m.quick.originY, m.layout.height-footerHeight)
+			if m.quick().originY != m.layout.height-footerHeight {
+				t.Fatalf("target hit row = %d, want %d", m.quick().originY, m.layout.height-footerHeight)
 			}
 			for y := m.layout.height - footerHeight; y < m.layout.height; y++ {
 				if !strings.HasPrefix(ansi.Strip(frameRows[y]), quickEdge) {
@@ -140,7 +140,7 @@ func TestQuickBarKeepsPaneHeight(t *testing.T) {
 	listed := paintedPreview(m)
 
 	m.openQuickMode()
-	m.quick.input.SetValue(strings.Repeat("filler word ", 40))
+	m.quick().input.SetValue(strings.Repeat("filler word ", 40))
 	if got := m.previewPaneHeight(); got != pinned {
 		t.Fatalf("box height with the quick bar open = %d, want %d", got, pinned)
 	}
@@ -157,7 +157,7 @@ func TestQuickBarKeepsPaneHeight(t *testing.T) {
 		t.Fatalf("pane height with the quick bar open = %d, want %d", got, pinned)
 	}
 
-	m.quick.active = false
+	m.closeQuick()
 	m.applyCmd(t, m.refreshCmd())
 	if got := windowHeight(t, sess.ID); got != pinned {
 		t.Fatalf("pane height after closing the quick bar = %d, want %d", got, pinned)

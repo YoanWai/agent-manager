@@ -145,7 +145,7 @@ func TestHelpModeOwnsKeysBeforeListOverlays(t *testing.T) {
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 120, 34
 	m.applyCmd(t, m.openQuickMode())
-	if !m.quick.active {
+	if m.quick() == nil {
 		t.Fatal("quick bar did not open")
 	}
 	m.openHelp()

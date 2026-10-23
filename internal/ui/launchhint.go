@@ -56,9 +56,11 @@ func (m *Model) advanceDialogGen() {
 func (m *Model) takeComposerImages() []imageAttachment {
 	var images []imageAttachment
 	images = append(images, m.form.prompt.attachments...)
-	images = append(images, m.quick.attachments...)
 	m.form.prompt.attachments = nil
-	m.quick.attachments = nil
+	if q := m.quick(); q != nil {
+		images = append(images, q.attachments...)
+		q.attachments = nil
+	}
 	return images
 }
 
@@ -153,7 +155,13 @@ func (m *Model) openLaunchHint(fix launchFix) {
 	m.advanceDialogGen()
 	fix.images = append(fix.images, m.takeComposerImages()...)
 	if _, open := surfaceOf[*launchHintSurface](m); !open {
-		m.clearSurfaces()
+		// The quick bar is not a dialog: it stays under the card.
+		for top, ok := m.top(); ok; top, ok = m.top() {
+			if _, bar := top.(*quickSurface); bar {
+				break
+			}
+			m.pop()
+		}
 		m.mode = modeList
 	}
 	m.presentLaunchHint(fix)

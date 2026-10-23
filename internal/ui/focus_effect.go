@@ -60,10 +60,7 @@ func (m *Model) applyFocusEffect(request focusRequest, result focusEffectResult,
 }
 
 func (m *Model) enterFocus(sess store.Session) tea.Cmd {
-	if m.quick.active {
-		m.quick.active = false
-		m.quick.release()
-	}
+	m.clearSurfaces()
 	m.mode = modeFocus
 	if m.prefs.fullLayout {
 		m.pinFullFocusPane(sess.ID)
@@ -189,7 +186,7 @@ func (m *Model) applyDetachEffect(request detachRequest, result detachEffectResu
 // foregroundTakenSinceDetach reports whether, since the detach, the user
 // opened a view, a rail prompt or a resize, or asked to enter a session.
 func (m *Model) foregroundTakenSinceDetach() bool {
-	if !m.listClear() || m.rail.Busy() || m.quick.active {
+	if m.mode != modeList || len(m.surfaces) > 0 || m.rail.Busy() {
 		return true
 	}
 	for _, job := range m.effects.main.pending {

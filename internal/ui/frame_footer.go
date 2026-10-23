@@ -17,8 +17,8 @@ func (m *Model) footer() legend {
 	if m.rail.Reordering() {
 		return m.reorderFooter()
 	}
-	if m.quick.active {
-		return m.quickFooter()
+	if q := m.quick(); q != nil {
+		return m.quickFooter(q)
 	}
 	if s, ok := surfaceOf[*resizeSurface](m); ok {
 		return m.transientFooter(legendSection{title: "Resize", pairs: s.Footer()})

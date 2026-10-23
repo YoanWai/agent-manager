@@ -596,12 +596,17 @@ func (m *Model) nextComposerGen() int {
 	return m.ledger.composerSeq
 }
 
-// composerFor is the prompt box a target names, whatever screen is up.
+// composerFor is the prompt box a target names. A quick bar since closed
+// is an empty stand-in whose generation no read carries, so a read that
+// lands on it only drops its file.
 func (m *Model) composerFor(target composerID) *composer {
 	if target == composerForm {
 		return &m.form.prompt
 	}
-	return &m.quick.composer
+	if q := m.quick(); q != nil {
+		return &q.composer
+	}
+	return &composer{}
 }
 
 // composerOpen reports whether that prompt box is still on screen, which
@@ -610,7 +615,7 @@ func (m *Model) composerOpen(target composerID) bool {
 	if target == composerForm {
 		return m.mode == modeForm
 	}
-	return m.quick.active
+	return m.quick() != nil
 }
 
 // composerHost is the status bar a prompt box reports its paste and chip

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/store"
-	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"path/filepath"
@@ -1185,9 +1184,12 @@ func TestWheelMovesListCursor(t *testing.T) {
 func TestWheelMovesCursorWhileSearchingOrPrompting(t *testing.T) {
 	for name, m := range map[string]*Model{
 		"searching": {mode: modeList, layout: layoutState{width: 80, height: 24}, rail: railModelCount(2, 0, true)},
-		"quick bar": {mode: modeList, quick: quickBar{active: true}, layout: layoutState{width: 80, height: 24}, rail: railModelCount(2, 0, false)},
+		"quick bar": {mode: modeList, layout: layoutState{width: 80, height: 24}, rail: railModelCount(2, 0, false)},
 	} {
 		t.Run(name, func(t *testing.T) {
+			if name == "quick bar" {
+				pushQuick(m)
+			}
 			updated, _ := m.handleMouse(tea.MouseMsg{
 				Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress,
 			})
@@ -1331,9 +1333,12 @@ func TestDividerPressWhileSearchingOrPrompting(t *testing.T) {
 		drag bool
 	}{
 		"searching": {&Model{mode: modeList, layout: layoutState{width: 100, height: 40, split: splitState{ratio: defaultSplitRatio}}, services: services{listKeys: keybind.DefaultList()}, rail: railModelCount(0, 0, true)}, false},
-		"quick bar": {&Model{mode: modeList, quick: quickBar{active: true, composer: composer{input: textarea.New()}}, layout: layoutState{width: 100, height: 40, split: splitState{ratio: defaultSplitRatio}}, services: services{listKeys: keybind.DefaultList()}}, true},
+		"quick bar": {&Model{mode: modeList, layout: layoutState{width: 100, height: 40, split: splitState{ratio: defaultSplitRatio}}, services: services{listKeys: keybind.DefaultList()}}, true},
 	} {
 		t.Run(name, func(t *testing.T) {
+			if name == "quick bar" {
+				pushQuick(tc.m)
+			}
 			y0, _ := tc.m.bodyYRange()
 			updated, _ := tc.m.handleMouse(tea.MouseMsg{
 				X: tc.m.dividerX(), Y: y0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
@@ -1575,7 +1580,7 @@ func TestMessagesLegendClickOnlyOpensFromTheList(t *testing.T) {
 		ready func(*Model) bool
 	}{
 		{"search", func(m *Model) { m.rail.SetSearch(m.rail.Search(), true) }, func(m *Model) bool { return m.rail.Searching() }},
-		{"quick prompt", func(m *Model) { m.openQuickMode() }, func(m *Model) bool { return m.quick.active }},
+		{"quick prompt", func(m *Model) { m.openQuickMode() }, func(m *Model) bool { return (m.quick() != nil) }},
 		{"resize", func(m *Model) { m.enterResizeMode() }, func(m *Model) bool { return m.layout.split.resizeMode }},
 		{"messages key off", func(m *Model) { m.services.listKeys = m.services.listKeys.With(keybind.Messages, bindingOf(t)) }, func(*Model) bool { return true }},
 		{"settings", func(m *Model) { m.openSettings() }, func(m *Model) bool { return m.settingsOpen() }},
@@ -1760,7 +1765,7 @@ func TestClicksWorkWhileTheQuickBarIsOpen(t *testing.T) {
 	createSession(t, m, "alpha", t.TempDir(), "")
 	createSession(t, m, "beta", t.TempDir(), "")
 	m.openQuickMode()
-	if !m.quick.active {
+	if m.quick() == nil {
 		t.Fatal("test setup: quick bar should open")
 	}
 	y0, _ := m.bodyYRange()
@@ -1770,13 +1775,13 @@ func TestClicksWorkWhileTheQuickBarIsOpen(t *testing.T) {
 	m.drainEffects(t)
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if !m.rail.MenuOpen() || !m.quick.active {
-		t.Fatalf("%s should open the menu over the open quick bar, menu = %v quick = %v", rowMenuGlyph, m.rail.MenuOpen(), m.quick.active)
+	if !m.rail.MenuOpen() || (m.quick() == nil) {
+		t.Fatalf("%s should open the menu over the open quick bar, menu = %v quick = %v", rowMenuGlyph, m.rail.MenuOpen(), (m.quick() != nil))
 	}
 	m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
 	m.drainEffects(t)
-	if m.rail.MenuOpen() || !m.quick.active {
-		t.Fatalf("esc should close the menu first and leave the bar, menu = %v quick = %v", m.rail.MenuOpen(), m.quick.active)
+	if m.rail.MenuOpen() || (m.quick() == nil) {
+		t.Fatalf("esc should close the menu first and leave the bar, menu = %v quick = %v", m.rail.MenuOpen(), (m.quick() != nil))
 	}
 
 	m = liftByHandle(t, m, "beta")
@@ -1794,7 +1799,7 @@ func TestClicksWorkWhileTheQuickBarIsOpen(t *testing.T) {
 	updated, _ = m.handleMouse(at)
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.mode != modeFocus || m.quick.active {
-		t.Fatalf("a row click should focus and close the bar, mode = %v quick = %v", m.mode, m.quick.active)
+	if m.mode != modeFocus || (m.quick() != nil) {
+		t.Fatalf("a row click should focus and close the bar, mode = %v quick = %v", m.mode, (m.quick() != nil))
 	}
 }

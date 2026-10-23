@@ -171,8 +171,8 @@ func TestGroupMenuCreatesAndNeverAttaches(t *testing.T) {
 	}
 	quick := menuEntry(t, m, "Quick prompt mode")
 	m, _ = leftClickCmd(m, m.layout.displayedRail.MenuRect.Left+2, m.layout.displayedRail.MenuRect.Top+1+quick)
-	if !m.quick.active || m.mode != modeList {
-		t.Fatalf("group menu should open quick prompt mode, active = %v mode = %v", m.quick.active, m.mode)
+	if (m.quick() == nil) || m.mode != modeList {
+		t.Fatalf("group menu should open quick prompt mode, active = %v mode = %v", (m.quick() != nil), m.mode)
 	}
 }
 

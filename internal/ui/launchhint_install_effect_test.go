@@ -532,8 +532,8 @@ func TestInstallStartGivesTheInstallerShellTheKeys(t *testing.T) {
 	for _, failure := range []error{nil, errors.New("send failed")} {
 		m := buildModel(t)
 		image := tempImage(t, "draft.png")
-		m.quick.active = true
-		m.quick.attachments = []imageAttachment{{id: 1, path: image}}
+		pushQuick(m)
+		m.quick().attachments = []imageAttachment{{id: 1, path: image}}
 		m.gens.dialog = 1
 		m.presentLaunchHint(launchFix{})
 		cmd := m.applyInstallStart(installStartRequest{gen: 1, binary: "pi"}, result, failure)
@@ -541,23 +541,23 @@ func TestInstallStartGivesTheInstallerShellTheKeys(t *testing.T) {
 			t.Fatal("update deleted the image before the cleanup command ran")
 		}
 		m.applyCmd(t, cmd)
-		if m.mode != modeList || m.quick.active {
-			t.Fatalf("failure %v left mode %v quick %v", failure, m.mode, m.quick.active)
+		if m.mode != modeList || (m.quick() != nil) {
+			t.Fatalf("failure %v left mode %v quick %v", failure, m.mode, (m.quick() != nil))
 		}
-		if imageExists(t, image) || len(m.quick.attachments) != 0 {
+		if imageExists(t, image) || len(m.quick().attachments) != 0 {
 			t.Fatal("the installer handoff left the draft image")
 		}
 	}
 
 	m := buildModel(t)
 	image := tempImage(t, "kept.png")
-	m.quick.active = true
-	m.quick.attachments = []imageAttachment{{id: 1, path: image}}
+	pushQuick(m)
+	m.quick().attachments = []imageAttachment{{id: 1, path: image}}
 	m.mode = modeList
 	m.gens.dialog = 2
 	m.applyInstallStart(installStartRequest{gen: 1, binary: "pi"}, result, nil)
-	if !m.quick.active || m.mode != modeList {
-		t.Fatalf("a start behind a closed dialog left mode %v quick %v", m.mode, m.quick.active)
+	if (m.quick() == nil) || m.mode != modeList {
+		t.Fatalf("a start behind a closed dialog left mode %v quick %v", m.mode, (m.quick() != nil))
 	}
 	if !imageExists(t, image) {
 		t.Fatal("a start behind a closed dialog deleted the draft image")

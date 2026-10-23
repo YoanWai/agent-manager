@@ -66,7 +66,7 @@ func (h spawnHost) ChoiceRemoteHost() string {
 	if m.mode == modeForm {
 		return m.form.remote.host
 	}
-	if m.quick.active {
+	if m.quick() != nil {
 		if target, ok := m.remoteTarget(); ok {
 			return target.host
 		}
@@ -250,6 +250,7 @@ func (m *Model) openFormWithReader(reader settingsValueReader) tea.Cmd {
 		m.form.aimRemote(target)
 	}
 	m.mode = modeForm
+	m.closeQuick()
 	if m.form.remote.on() {
 		m.form.RestartChoice(m.spawnHost())
 	}

@@ -180,16 +180,16 @@ func TestAnUpdatedCLIIsAskedAgainRightAway(t *testing.T) {
 func TestTheUpdateDialogLeavesTheQuickBarUp(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
-	m.quick.active = true
+	pushQuick(m)
 	m.presentLaunchHint(launchFix{text: "pi 0.84.2 is older", command: "true", binary: "pi", update: true})
-	if !hintOpen(m) || !m.quick.active {
-		t.Fatalf("mode %v quick %v, want the dialog over the bar", m.mode, m.quick.active)
+	if !hintOpen(m) || (m.quick() == nil) {
+		t.Fatalf("mode %v quick %v, want the dialog over the bar", m.mode, (m.quick() != nil))
 	}
 	if cmd := hintKey(m, tea.KeyMsg{Type: tea.KeyEsc}); cmd != nil {
 		t.Fatalf("esc returned %T", cmd)
 	}
-	if m.mode != modeList || !m.quick.active {
-		t.Fatalf("esc left mode %v quick %v", m.mode, m.quick.active)
+	if m.mode != modeList || (m.quick() == nil) {
+		t.Fatalf("esc left mode %v quick %v", m.mode, (m.quick() != nil))
 	}
 }
 
@@ -199,16 +199,16 @@ func TestAMousePressLeavesTheQuickDraftUnderTheUpdateDialog(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	image := tempImage(t, "draft.png")
-	m.quick.active = true
-	m.quick.attachments = []imageAttachment{{id: 1, path: image}}
+	pushQuick(m)
+	m.quick().attachments = []imageAttachment{{id: 1, path: image}}
 	m.presentLaunchHint(launchFix{text: "pi 0.84.2 is older", command: "true", binary: "pi", update: true})
 
 	m.handleMouse(tea.MouseMsg{X: 1, Y: 1, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
 
-	if !hintOpen(m) || !m.quick.active {
-		t.Fatalf("press left mode %v quick %v", m.mode, m.quick.active)
+	if !hintOpen(m) || (m.quick() == nil) {
+		t.Fatalf("press left mode %v quick %v", m.mode, (m.quick() != nil))
 	}
-	if !imageExists(t, image) || len(m.quick.attachments) != 1 {
+	if !imageExists(t, image) || len(m.quick().attachments) != 1 {
 		t.Fatal("a press under the update dialog deleted the draft image")
 	}
 }

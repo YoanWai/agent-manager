@@ -186,15 +186,15 @@ func TestQuickBarSendsToARemoteAgent(t *testing.T) {
 	m := connectedModel(t, fake)
 	m.rail.Focus(boxSession("s1"))
 	m.openQuickMode()
-	m.quick.input.SetValue("hello there")
+	m.quick().input.SetValue("hello there")
 	_, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m.runRemoteCmd(t, cmd)
 	want := []string{"type", "--json", "--", "s1", "hello there"}
 	if calls := fake.taken(); len(calls) != 1 || !slices.Equal(calls[0], want) {
 		t.Fatalf("calls = %q, want %q", calls, want)
 	}
-	if m.quick.input.Value() != "" || m.errBar.text != "sent to api on box" {
-		t.Fatalf("draft %q status %q", m.quick.input.Value(), m.errBar.text)
+	if m.quick().input.Value() != "" || m.errBar.text != "sent to api on box" {
+		t.Fatalf("draft %q status %q", m.quick().input.Value(), m.errBar.text)
 	}
 }
 
@@ -216,14 +216,14 @@ func TestQuickBarClearsAPromptThatMayHaveReachedARemoteAgent(t *testing.T) {
 			m := connectedModel(t, fake)
 			m.rail.Focus(boxSession("s1"))
 			m.openQuickMode()
-			m.quick.input.SetValue("hello there")
+			m.quick().input.SetValue("hello there")
 			fake.mu.Lock()
 			fake.stderr, fake.code = tc.stderr, tc.code
 			fake.mu.Unlock()
 			_, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter})
 			m.runRemoteCmd(t, cmd)
-			if kept := m.quick.input.Value() == "hello there"; kept != tc.kept {
-				t.Fatalf("draft %q kept %v, want %v; status %q", m.quick.input.Value(), kept, tc.kept, m.errBar.text)
+			if kept := m.quick().input.Value() == "hello there"; kept != tc.kept {
+				t.Fatalf("draft %q kept %v, want %v; status %q", m.quick().input.Value(), kept, tc.kept, m.errBar.text)
 			}
 			if m.errBar.text == "" {
 				t.Fatal("the failure was not reported")
@@ -237,7 +237,7 @@ func TestQuickBarRefusesAShellOnAConnection(t *testing.T) {
 	m := connectedModel(t, fake)
 	m.rail.Focus(boxSession("t1"))
 	m.openQuickMode()
-	m.quick.input.SetValue("ls")
+	m.quick().input.SetValue("ls")
 	if _, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter}); cmd != nil || !m.remoteIdle() || len(fake.taken()) != 0 {
 		t.Fatal("a prompt to a remote shell went out")
 	}
@@ -248,11 +248,11 @@ func TestQuickBarSpawnsInARemoteGroup(t *testing.T) {
 	m := connectedModel(t, fake)
 	m.rail.Focus(boxGroup)
 	m.openQuickMode()
-	m.quick.input.SetValue("build it")
+	m.quick().input.SetValue("build it")
 	m.runQuickRequest(uiquick.Request{Toggle: true})
 	_, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m.runRemoteCmd(t, cmd)
-	want := []string{"spawn", "--json", "--prompt=build it", "--tool=" + m.quick.Tool(), "--group=web", "--worktree=true"}
+	want := []string{"spawn", "--json", "--prompt=build it", "--tool=" + m.quick().Tool(), "--group=web", "--worktree=true"}
 	if calls := fake.taken(); len(calls) != 1 || !slices.Equal(calls[0], want) {
 		t.Fatalf("calls = %q, want %q", calls, want)
 	}
@@ -337,7 +337,7 @@ func TestQuickBarRefusesWhenARefreshDropsItsRemoteTarget(t *testing.T) {
 	m := connectedModel(t, fake)
 	m.rail.Focus(boxSession("s1"))
 	m.openQuickMode()
-	m.quick.input.SetValue("hello there")
+	m.quick().input.SetValue("hello there")
 	fake.mu.Lock()
 	fake.snapshot.Sessions = fake.snapshot.Sessions[1:]
 	fake.mu.Unlock()
@@ -358,8 +358,8 @@ func TestQuickBarRefusesWhenARefreshDropsItsRemoteTarget(t *testing.T) {
 			t.Fatal("enter queued an effect for the row the cursor slid to")
 		}
 	}
-	if !strings.Contains(m.errBar.text, "gone from box") || m.quick.input.Value() != "hello there" {
-		t.Fatalf("status %q draft %q", m.errBar.text, m.quick.input.Value())
+	if !strings.Contains(m.errBar.text, "gone from box") || m.quick().input.Value() != "hello there" {
+		t.Fatalf("status %q draft %q", m.errBar.text, m.quick().input.Value())
 	}
 }
 
@@ -368,7 +368,7 @@ func TestQuickBarFollowsAMoveTheUserMakes(t *testing.T) {
 	m := connectedModel(t, fake)
 	m.rail.Focus(boxSession("s1"))
 	m.openQuickMode()
-	m.quick.input.SetValue("hello there")
+	m.quick().input.SetValue("hello there")
 	m.runQuickRequest(uiquick.Request{Move: 1})
 	if selection, _ := m.rail.Selected(); selection.SessionID != "s2" {
 		t.Fatalf("selection = %+v, want s2 below s1", selection)
@@ -388,7 +388,7 @@ func TestQuickBarTypesTheSameAnswerTwiceIntoARemoteAgent(t *testing.T) {
 	m.rail.Focus(boxSession("s1"))
 	m.openQuickMode()
 	for range 2 {
-		m.quick.input.SetValue("yes")
+		m.quick().input.SetValue("yes")
 		_, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter})
 		m.runRemoteCmd(t, cmd)
 		if m.errBar.text != "sent to api on box" {
@@ -415,11 +415,11 @@ func TestQuickBarChoiceReachesARemoteSpawn(t *testing.T) {
 	m.rail.Focus(boxGroup)
 	m.openQuickMode()
 	setQuickTool(m, slices.Index(quickTools(m), "claude"))
-	m.quick.RestartChoice(m.spawnHost())
+	m.quick().RestartChoice(m.spawnHost())
 	ctrl := func(key tea.KeyType) { m.handleQuickKey(tea.KeyMsg{Type: key}) }
 	ctrl(tea.KeyCtrlL)
-	if m.quick.Picking() != uiquick.PickModel {
-		t.Fatalf("ctrl+l on a remote group: picking %d, status %q", m.quick.Picking(), m.errBar.text)
+	if m.quick().Picking() != uiquick.PickModel {
+		t.Fatalf("ctrl+l on a remote group: picking %d, status %q", m.quick().Picking(), m.errBar.text)
 	}
 	if sheet := ansi.Strip(m.viewQuickBar(120, quickBarMaxRows)); !strings.Contains(sheet, "model for web on box") {
 		t.Fatalf("the model list is not painted:\n%s", sheet)
@@ -437,7 +437,7 @@ func TestQuickBarChoiceReachesARemoteSpawn(t *testing.T) {
 	if m.errBar.text != "profile: claude has none" {
 		t.Fatalf("ctrl+y status = %q, want the local answer", m.errBar.text)
 	}
-	m.quick.input.SetValue("build it")
+	m.quick().input.SetValue("build it")
 	_, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m.runRemoteCmd(t, cmd)
 	want := []string{"spawn", "--json", "--prompt=build it", "--tool=claude", "--model=opus", "--effort=medium", "--group=web"}
@@ -464,8 +464,8 @@ func TestRemoteSpawnLeavesThisMachinesChoiceAlone(t *testing.T) {
 	if got := m.settings.cache.value("choice.claude"); got != kept {
 		t.Fatalf("a pick for the host was kept as this machine's: %s", got)
 	}
-	m.quick.RestartChoice(m.spawnHost())
-	m.quick.input.SetValue("build it")
+	m.quick().RestartChoice(m.spawnHost())
+	m.quick().input.SetValue("build it")
 	_, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m.runRemoteCmd(t, cmd)
 	want := []string{"spawn", "--json", "--prompt=build it", "--tool=claude", "--group=web"}
@@ -488,7 +488,7 @@ func TestQuickBarSavedPromptsTakeEnterOnARemoteTarget(t *testing.T) {
 	if cmd != nil || !m.remoteIdle() || len(fake.taken()) != 0 || m.errBar.text != "" {
 		t.Fatalf("enter in the list sent %q, status %q", fake.taken(), m.errBar.text)
 	}
-	if got := m.quick.input.Value(); got != savedToken("Role")+" " {
+	if got := m.quick().input.Value(); got != savedToken("Role")+" " {
 		t.Fatalf("chip landed as %q", got)
 	}
 	_, cmd = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter})
@@ -531,7 +531,7 @@ func TestRemoteSendAndSpawnRefuseASecondEnterInFlight(t *testing.T) {
 				m.form.SetName("job")
 			} else {
 				m.openQuickMode()
-				m.quick.input.SetValue("go on")
+				m.quick().input.SetValue("go on")
 			}
 			first := tc.submit(m)
 			if second := tc.submit(m); second != nil || m.errBar.text != tc.want {

@@ -260,9 +260,9 @@ func TestComposerPasteRefusedWhenThePromptIsFull(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openQuickMode()
-	m.quick.input.CharLimit = 40
-	full := strings.Repeat("x", m.quick.input.CharLimit)
-	m.quick.input.SetValue(full)
+	m.quick().input.CharLimit = 40
+	full := strings.Repeat("x", m.quick().input.CharLimit)
+	m.quick().input.SetValue(full)
 
 	_, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlV})
 
@@ -272,11 +272,11 @@ func TestComposerPasteRefusedWhenThePromptIsFull(t *testing.T) {
 	if m.errBar.text != "prompt is full - shorten it before pasting an image" {
 		t.Fatalf("errBar = %q, want the full-prompt refusal", m.errBar.text)
 	}
-	if got := m.quick.input.Value(); got != full {
+	if got := m.quick().input.Value(); got != full {
 		t.Fatalf("value = %q, want the prompt untouched", got)
 	}
-	if len(m.quick.attachments) != 0 {
-		t.Fatalf("no chip should be reserved: %+v", m.quick.attachments)
+	if len(m.quick().attachments) != 0 {
+		t.Fatalf("no chip should be reserved: %+v", m.quick().attachments)
 	}
 }
 
@@ -293,20 +293,20 @@ func TestComposerNoImageFallsThroughToATextPaste(t *testing.T) {
 
 	m := buildModel(t)
 	m.openQuickMode()
-	m.quick.input.SetValue("see ")
-	m.quick.input.CursorEnd()
-	m.quick.lastImageID = 1
-	m.quick.attachments = []imageAttachment{{id: 1}}
-	m.quick.input.InsertString(imageToken(1))
+	m.quick().input.SetValue("see ")
+	m.quick().input.CursorEnd()
+	m.quick().lastImageID = 1
+	m.quick().attachments = []imageAttachment{{id: 1}}
+	m.quick().input.InsertString(imageToken(1))
 
-	gen := m.quick.gen
+	gen := m.quick().gen
 	updated, cmd := m.Update(pasteImageMsg{target: composerQuick, gen: gen, id: 1, noImage: true})
 	m, ok := updated.(*Model)
 	if !ok {
 		t.Fatalf("Update returned %T, want *Model", updated)
 	}
-	if len(m.quick.attachments) != 0 {
-		t.Fatalf("the reserved chip should go back out: %+v", m.quick.attachments)
+	if len(m.quick().attachments) != 0 {
+		t.Fatalf("the reserved chip should go back out: %+v", m.quick().attachments)
 	}
 	if cmd == nil {
 		t.Fatal("a clipboard with no image should still start a text paste")
@@ -319,7 +319,7 @@ func TestComposerNoImageFallsThroughToATextPaste(t *testing.T) {
 		t.Fatalf("paste cmd returned %T", cmd())
 	}
 	m = applyMsg(t, m, text)
-	if got := m.quick.input.Value(); got != "see from the clipboard" {
+	if got := m.quick().input.Value(); got != "see from the clipboard" {
 		t.Fatalf("value = %q, want the clipboard text in place of the chip", got)
 	}
 }
@@ -375,16 +375,16 @@ func TestComposerTextPasteDroppedWhenItsBoxIsClosed(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openQuickMode()
-	m.quick.input.SetValue("kept")
-	gen := m.quick.gen
-	m.quick.active = false
+	m.quick().input.SetValue("kept")
+	gen := m.quick().gen
+	m.closeQuick()
 
 	m = applyMsg(t, m, pasteTextMsg{
 		target: composerQuick,
 		gen:    gen,
 		inner:  tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("late")},
 	})
-	if got := m.quick.input.Value(); got != "kept" {
+	if got := m.quick().input.Value(); got != "kept" {
 		t.Fatalf("value = %q, want the closed bar left alone", got)
 	}
 }
@@ -435,20 +435,20 @@ func TestComposerTargetsRouteToTheirOwnBox(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openQuickMode()
-	m.openForm()
-
-	if got := m.composerFor(composerQuick); got != &m.quick.composer {
+	if got := m.composerFor(composerQuick); got != &m.quick().composer {
 		t.Fatal("composerQuick should name the quick bar's box")
 	}
+	if !m.composerOpen(composerQuick) || m.composerOpen(composerForm) {
+		t.Fatal("only the bar is open here")
+	}
+	// The form takes the list's place and the bar with it.
+	m.openForm()
 	if got := m.composerFor(composerForm); got != &m.form.prompt {
 		t.Fatal("composerForm should name the form's prompt")
 	}
-	// The form is up and the bar is still armed behind it, so each box
-	// answers for itself rather than for whatever is on screen.
-	if !m.composerOpen(composerQuick) || !m.composerOpen(composerForm) {
-		t.Fatal("both boxes are open here")
+	if m.composerOpen(composerQuick) || !m.composerOpen(composerForm) {
+		t.Fatal("only the form is open here")
 	}
-	m.quick.active = false
 	m.mode = modeList
 	if m.composerOpen(composerQuick) || m.composerOpen(composerForm) {
 		t.Fatal("a closed box has nowhere for an image to land")

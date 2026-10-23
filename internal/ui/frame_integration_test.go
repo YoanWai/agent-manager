@@ -458,7 +458,7 @@ func TestQuickFooterLeavesThePaneSizeAlone(t *testing.T) {
 		resting := m.listBodyHeight()
 
 		m.openQuickMode()
-		m = applyMsg(t, m, pasteTextMsg{target: composerQuick, gen: m.quick.gen,
+		m = applyMsg(t, m, pasteTextMsg{target: composerQuick, gen: m.quick().gen,
 			inner: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(strings.Repeat("filler word ", 40))}})
 		preparedView(m)
 		if w, h := m.paneTargetSize(); w != width || h != height {

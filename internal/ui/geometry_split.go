@@ -120,7 +120,7 @@ func (m *Model) setSplitFromX(x int) {
 // enterResizeMode arms divider dragging, which the arrow keys drive. The
 // app holds mouse reporting, so a drag here reaches handleMouse too.
 func (m *Model) enterResizeMode() (tea.Model, tea.Cmd) {
-	if !m.listClear() || m.rail.Busy() || m.quick.active {
+	if !m.listClear() || m.rail.Busy() || m.quick() != nil {
 		return m, nil
 	}
 	m.layout.split.resizeMode = true
@@ -205,7 +205,7 @@ func (m *Model) listBodyHeight() int {
 
 // A growing footer crops previews instead of resizing running panes.
 func (m *Model) restingBodyHeight() int {
-	if !m.quick.active {
+	if m.quick() == nil {
 		return m.listBodyHeight()
 	}
 	return max(m.layout.height-m.listChromeRows()-1-lipgloss.Height(m.listFooter()), 3)

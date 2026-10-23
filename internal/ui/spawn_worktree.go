@@ -58,7 +58,8 @@ func (m *Model) quickWorktreeProbeCmd(toggleOn bool) tea.Cmd {
 	if _, remote := m.remoteTarget(); remote {
 		return nil
 	}
-	return m.requestWorktreeProbe(worktreeProbeQuick, m.quick.gen, m.quickTargetDir(), toggleOn, m.quick.Worktree())
+	q := m.quick()
+	return m.requestWorktreeProbe(worktreeProbeQuick, q.gen, m.quickTargetDir(), toggleOn, q.Worktree())
 }
 
 func (m *Model) handleWorktreeProbe(msg worktreeProbeMsg) (tea.Model, tea.Cmd) {
@@ -72,7 +73,7 @@ func (m *Model) handleWorktreeProbe(msg worktreeProbeMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	case worktreeProbeQuick:
-		if !m.quick.active || m.quick.gen != request.generation || m.quickTargetDir() != request.dir {
+		if _, ok := m.quickFor(request.generation); !ok || m.quickTargetDir() != request.dir {
 			return m, nil
 		}
 	default:
@@ -96,10 +97,10 @@ func (m *Model) handleWorktreeProbe(msg worktreeProbeMsg) (tea.Model, tea.Cmd) {
 		}
 		m.form.SetWorktree(!request.from)
 	} else {
-		if m.quick.Worktree() != request.from {
+		if m.quick().Worktree() != request.from {
 			return m, nil
 		}
-		m.quick.SetWorktree(!request.from)
+		m.quick().SetWorktree(!request.from)
 	}
 	return m, nil
 }

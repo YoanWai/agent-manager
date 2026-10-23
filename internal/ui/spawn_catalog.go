@@ -96,7 +96,7 @@ func (m *Model) handleCatalog(msg catalogMsg) tea.Cmd {
 	m.fitChoices()
 	var outdated config.OutdatedToolError
 	active := (m.mode == modeForm && m.form.Tool() == msg.tool) ||
-		(m.mode == modeList && m.quick.active && m.quick.Tool() == msg.tool)
+		(m.quick() != nil && m.quickTool() == msg.tool)
 	if errors.As(msg.err, &outdated) && active {
 		m.advanceDialogGen()
 		m.presentLaunchHint(launchFix{
@@ -118,8 +118,8 @@ func (m *Model) fitChoices() {
 	if m.mode == modeForm {
 		m.form.Choice().Refit(m.spawnHost(), m.form.Tool())
 	}
-	if m.quick.active {
-		m.quick.Choice().Refit(m.spawnHost(), m.quick.Tool())
+	if q := m.quick(); q != nil {
+		q.Choice().Refit(m.spawnHost(), q.Tool())
 	}
 }
 
@@ -143,5 +143,6 @@ func (m *Model) refreshFormChoicePrefs() {
 }
 
 func (m *Model) refreshQuickChoicePrefs() {
-	m.quick.Choice().RefreshPrefs(m.spawnHost(), m.quick.Tool())
+	q := m.quick()
+	q.Choice().RefreshPrefs(m.spawnHost(), q.Tool())
 }

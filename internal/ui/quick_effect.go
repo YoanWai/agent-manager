@@ -51,7 +51,7 @@ func (m *Model) dispatchQuickSend(request quickSendRequest) bool {
 		}
 	}
 	request.images = slices.Clone(request.images)
-	m.quick.attachments = nil
+	m.quick().attachments = nil
 	m.enqueueEffect(request, 0, false)
 	return true
 }
@@ -107,7 +107,7 @@ func (m *Model) applyQuickSend(request quickSendRequest, result quickSendResult,
 		return cleanup
 	}
 
-	m.quick.clearAccepted(request)
+	m.clearAccepted(request.composerGen, request.draft, request.closeAfterSend)
 	// Once paste may have started, the pane may still need image paths from
 	// the accepted text. They remain owned by that delivery, never by a retry.
 	if result.outcome == quickSendUncertain {
@@ -130,21 +130,22 @@ func (m *Model) applyQuickSend(request quickSendRequest, result quickSendResult,
 }
 
 // clearAccepted empties the bar a confirmed send came from, unless its
-// prompt has changed since.
-func (q *quickBar) clearAccepted(request quickSendRequest) {
-	if !q.active || q.gen != request.composerGen || q.input.Value() != request.draft || len(q.attachments) != 0 {
+// prompt has changed since, and closes it when the setting asks.
+func (m *Model) clearAccepted(composerGen int, draft string, closeAfterSend bool) {
+	if !m.quickHolds(composerGen, draft) {
 		return
 	}
+	q := m.quick()
 	q.input.SetValue("")
 	q.saved = nil
-	if request.closeAfterSend {
-		q.active = false
+	if closeAfterSend {
+		m.closeQuick()
 	}
 }
 
 func (m *Model) returnQuickSendImages(request quickSendRequest) tea.Cmd {
-	if m.quick.active && m.quick.gen == request.composerGen {
-		m.quick.attachments = append(request.images, m.quick.attachments...)
+	if q, ok := m.quickFor(request.composerGen); ok {
+		q.attachments = append(request.images, q.attachments...)
 		return nil
 	}
 	if len(request.images) == 0 {
