@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -381,5 +382,22 @@ func TestSettingsDefaultIgnoresLastSpawn(t *testing.T) {
 	m.openSettings()
 	if got := m.settings.dialog.ToolNames[m.settings.dialog.ToolIndex]; got != "claude" {
 		t.Fatalf("settings default tool = %q, want stored default", got)
+	}
+}
+
+// A base lookup that fails reads as a failure in the preview, not as the
+// HEAD a repo with no default branch falls back to.
+func TestSpawnBasePreviewNamesAFailedLookup(t *testing.T) {
+	m := buildModel(t)
+	m.prefs.baseFetchOff = true
+	key := baseFetchKey{dir: t.TempDir()}
+	m.ledger.baseFetches = map[baseFetchKey]baseFetch{key: {}}
+	m.recordBaseFetch(baseFetchedMsg{key: key, lookupErr: errors.New("bad config line")})
+	if got := ansi.Strip(m.spawnBaseLabel(key.dir, "")); got != "base lookup failed" {
+		t.Fatalf("label = %q, want base lookup failed", got)
+	}
+	m.recordBaseFetch(baseFetchedMsg{key: key})
+	if got := ansi.Strip(m.spawnBaseLabel(key.dir, "")); got != "HEAD (auto)" {
+		t.Fatalf("label = %q, want HEAD (auto) when the repo names no default", got)
 	}
 }

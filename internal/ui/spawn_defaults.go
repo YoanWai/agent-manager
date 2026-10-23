@@ -148,19 +148,22 @@ type baseFetchKey struct{ dir, override string }
 
 // baseFetch is one refresh of a spawn's base: when it started, the default
 // branch the repo resolved to, and how the fetch ended.
+// lookupErr is the default base failing to resolve, err the fetch failing.
 type baseFetch struct {
-	at       time.Time
-	resolved bool
-	detected string
-	fetched  bool
-	err      error
+	at        time.Time
+	resolved  bool
+	detected  string
+	lookupErr error
+	fetched   bool
+	err       error
 }
 
 type baseFetchedMsg struct {
-	key      baseFetchKey
-	detected string
-	fetched  bool
-	err      error
+	key       baseFetchKey
+	detected  string
+	lookupErr error
+	fetched   bool
+	err       error
 }
 
 // refreshSpawnBase resolves the base of the worktree spawn the form or the
@@ -182,7 +185,8 @@ func (m *Model) refreshSpawnBase() tea.Cmd {
 	m.ledger.baseFetches[key] = baseFetch{at: time.Now()}
 	driver := m.services.gitDrv
 	return func() tea.Msg {
-		return baseFetchedMsg{key: key, detected: driver.DefaultBase(dir)}
+		detected, err := driver.DefaultBase(dir)
+		return baseFetchedMsg{key: key, detected: detected, lookupErr: err}
 	}
 }
 
@@ -193,7 +197,7 @@ func (m *Model) recordBaseFetch(msg baseFetchedMsg) tea.Cmd {
 	if !ok {
 		return nil
 	}
-	fetch.resolved, fetch.detected = true, msg.detected
+	fetch.resolved, fetch.detected, fetch.lookupErr = true, msg.detected, msg.lookupErr
 	if msg.fetched {
 		fetch.fetched, fetch.err = true, msg.err
 	}
@@ -204,7 +208,8 @@ func (m *Model) recordBaseFetch(msg baseFetchedMsg) tea.Cmd {
 	driver, key := m.services.gitDrv, msg.key
 	return func() tea.Msg {
 		err := driver.FetchBase(key.dir, key.override)
-		return baseFetchedMsg{key: key, detected: driver.DefaultBase(key.dir), fetched: true, err: err}
+		detected, lookupErr := driver.DefaultBase(key.dir)
+		return baseFetchedMsg{key: key, detected: detected, lookupErr: lookupErr, fetched: true, err: err}
 	}
 }
 
@@ -230,6 +235,8 @@ func (m *Model) spawnBaseLabel(dir, group string) string {
 		switch {
 		case !fetch.resolved:
 			label = subtleStyle().Render("…")
+		case fetch.lookupErr != nil:
+			label = subtleStyle().Render("base lookup failed")
 		case fetch.detected == "":
 			label = valueStyle().Render("HEAD") + subtleStyle().Render(" (auto)")
 		default:
