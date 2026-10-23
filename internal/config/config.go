@@ -190,11 +190,18 @@ type Config struct {
 
 // testConfigDir is the directory this test process uses instead of the
 // user config it started with. startupConfigEnv carries that user config
-// to a subprocess. The subprocess keeps a HOME, APPDATA, or
-// XDG_CONFIG_HOME it was given, and a relative XDG_CONFIG_HOME still fails.
+// to a subprocess, and startupXDGEnv the XDG_CONFIG_HOME it started with.
+// A subprocess keeps a HOME, APPDATA, or XDG_CONFIG_HOME it was given, and
+// a relative XDG_CONFIG_HOME still fails. An XDG_CONFIG_HOME the process
+// inherited is the user config, so the planted directory still replaces it.
 const startupConfigEnv = "AGENT_MANAGER_STARTUP_CONFIG"
+const startupXDGEnv = "AGENT_MANAGER_STARTUP_XDG"
 
-var testConfigDir string
+var (
+	testConfigDir   string
+	startupXDG      string
+	startupXDGNoted bool
+)
 
 func init() {
 	if !testing.Testing() || os.Getenv("AGENT_MANAGER_CONFIG_DIR") != "" {
@@ -209,15 +216,18 @@ func init() {
 		panic(err)
 	}
 	testConfigDir = dir
+	startupXDG = os.Getenv("XDG_CONFIG_HOME")
+	startupXDGNoted = true
 	os.Setenv("AGENT_MANAGER_CONFIG_DIR", dir)
 	os.Setenv(startupConfigEnv, base)
+	os.Setenv(startupXDGEnv, startupXDG)
 }
 
 func Dir() (string, error) {
 	if dir := chosenConfigDir(); dir != "" {
 		return dir, nil
 	}
-	if base := os.Getenv("XDG_CONFIG_HOME"); base != "" {
+	if base, ok := chosenXDG(); ok {
 		// The same rejection os.UserConfigDir makes on a Unix Go that
 		// checks the variable. Darwin's UserConfigDir never reads it.
 		if !filepath.IsAbs(base) {
@@ -237,8 +247,8 @@ func Dir() (string, error) {
 
 // chosenConfigDir is AGENT_MANAGER_CONFIG_DIR when this process asked for
 // it. The directory planted for go test does not count once HOME, APPDATA,
-// or their Darwin and Windows equivalents no longer resolve to the user
-// config this process started with.
+// XDG_CONFIG_HOME, or their Darwin and Windows equivalents no longer
+// resolve to the user config this process started with.
 func chosenConfigDir() string {
 	override := os.Getenv("AGENT_MANAGER_CONFIG_DIR")
 	if override == "" {
@@ -254,11 +264,32 @@ func chosenConfigDir() string {
 	// only while this process still resolves the user config recorded then.
 	if startup := os.Getenv(startupConfigEnv); startup != "" {
 		base, err := os.UserConfigDir()
-		if err != nil || base != startup {
+		if err != nil || base != startup || xdgChanged(os.Getenv("XDG_CONFIG_HOME")) {
 			return ""
 		}
 	}
 	return override
+}
+
+// chosenXDG is XDG_CONFIG_HOME when this process set it to something other
+// than the value it started with. The inherited value is the user config.
+func chosenXDG() (string, bool) {
+	base := os.Getenv("XDG_CONFIG_HOME")
+	if !xdgChanged(base) || base == "" {
+		return "", false
+	}
+	return base, true
+}
+
+func xdgChanged(base string) bool {
+	if startupXDGNoted {
+		return base != startupXDG
+	}
+	recorded, ok := os.LookupEnv(startupXDGEnv)
+	if !ok {
+		return base != ""
+	}
+	return base != recorded
 }
 
 func harnessConfigDir(base string) string {
