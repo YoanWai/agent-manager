@@ -2,6 +2,14 @@ package ui
 
 import tea "github.com/charmbracelet/bubbletea"
 
+// screen is what is on the terminal: the base mode and the surfaces over
+// it, read from the top. Model embeds it, so m.mode and m.surfaces read as
+// before while the two stay one fact.
+type screen struct {
+	mode     mode
+	surfaces []surface
+}
+
 // A surface is a layer that sits over the current mode and takes input
 // before it: the saved prompts list over a focused session is the first.
 // The root walks the stack from the top for keys, mouse and the frame, so

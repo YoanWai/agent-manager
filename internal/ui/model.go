@@ -63,8 +63,7 @@ type Model struct {
 	startup    startupState
 	notices    noticesPanel
 	poller     *poller
-	mode       mode
-	surfaces   []surface
+	screen
 	review     uireview.Model
 	reviewNav  reviewNavState
 	form       formDialog
