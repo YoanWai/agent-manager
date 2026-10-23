@@ -3,6 +3,7 @@ package ui
 import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -52,7 +53,7 @@ func (m *Model) listClear() bool {
 	}
 	for _, s := range m.surfaces {
 		switch s.(type) {
-		case *quickSurface, *resizeSurface:
+		case *quickSurface, *uigeometry.Surface:
 		default:
 			return false
 		}

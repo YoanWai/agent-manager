@@ -6,11 +6,12 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/execution"
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 func resizeOpen(m *Model) bool {
-	_, ok := surfaceOf[*resizeSurface](m)
+	_, ok := surfaceOf[*uigeometry.Surface](m)
 	return ok
 }
 

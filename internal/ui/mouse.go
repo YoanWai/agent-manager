@@ -327,7 +327,7 @@ func (m *Model) listPress(msg tea.MouseMsg, ctx uirail.MouseContext) (tea.Model,
 		split.dragging, split.moved = true, false
 		if !split.resizeMode {
 			split.ratioBefore = split.ratio
-			m.push(newResizeSurface(m.services.listKeys))
+			m.push(newResizeSurface(m))
 		}
 		return m, nil
 	}

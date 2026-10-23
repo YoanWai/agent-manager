@@ -4,6 +4,7 @@ import (
 	"slices"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -20,7 +21,7 @@ func (m *Model) footer() legend {
 	if q := m.quick(); q != nil {
 		return m.quickFooter(q)
 	}
-	if s, ok := surfaceOf[*resizeSurface](m); ok {
+	if s, ok := surfaceOf[*uigeometry.Surface](m); ok {
 		return m.transientFooter(legendSection{title: "Resize", pairs: s.Footer()})
 	}
 	if s, ok := m.renaming(); ok {

@@ -1,9 +1,11 @@
 package ui
 
 import (
+	"strconv"
+
+	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"strconv"
 )
 
 // splitState is the horizontal sessions/sidebar split. ratio is the left
@@ -126,7 +128,7 @@ func (m *Model) enterResizeMode() (tea.Model, tea.Cmd) {
 	m.layout.split.resizeMode = true
 	m.layout.split.dragging = false
 	m.layout.split.ratioBefore = m.layout.split.ratio
-	m.push(newResizeSurface(m.services.listKeys))
+	m.push(newResizeSurface(m))
 	m.clearErr()
 	return m, nil
 }
@@ -143,7 +145,7 @@ func (m *Model) endDrag() {
 // dropResize takes the gesture's surface off the top of the stack.
 func (m *Model) dropResize() {
 	if top, ok := m.top(); ok {
-		if _, resize := top.(*resizeSurface); resize {
+		if _, resize := top.(*uigeometry.Surface); resize {
 			m.Pop()
 		}
 	}
