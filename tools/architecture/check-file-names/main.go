@@ -46,14 +46,8 @@ var packaged = map[string]string{
 // rootExtras are root files of packaged features that are neither adapter,
 // effect nor surface. They predate the rule; the list only shrinks.
 var rootExtras = map[string]bool{
-	"notices_update.go":   true,
 	"settings_prefs.go":   true,
 	"settings_prompts.go": true,
-	"spawn_catalog.go":    true,
-	"spawn_defaults.go":   true,
-	"spawn_groups.go":     true,
-	"spawn_request.go":    true,
-	"spawn_worktree.go":   true,
 	"theme.go":            true,
 	"theme_glyphs.go":     true,
 	"theme_prefs.go":      true,

@@ -40,7 +40,7 @@ func TestPackagedFeaturesOnlyAdaptTheirPackage(t *testing.T) {
 
 func TestUnadaptedSources(t *testing.T) {
 	dir := t.TempDir()
-	for _, name := range []string{"rail_adapter.go", "rail_adapter_view.go", "rail_effect.go", "rail_reorder_effect.go", "rail_rows.go", "spawn_catalog.go", "status_bar.go", "rail_rows_test.go"} {
+	for _, name := range []string{"rail_adapter.go", "rail_adapter_view.go", "rail_effect.go", "rail_reorder_effect.go", "rail_rows.go", "spawn_adapter_catalog.go", "status_bar.go", "rail_rows_test.go"} {
 		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o644); err != nil {
 			t.Fatal(err)
 		}
