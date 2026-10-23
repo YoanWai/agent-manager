@@ -241,8 +241,11 @@ func (m *Model) openFormWithReader(reader settingsValueReader) tea.Cmd {
 	prompt.gen = m.nextComposerGen()
 	m.closeQuick()
 	f := newSpawnSurface(formDialog{
-		Form:        spawn.NewForm(m.spawnHost(), tools, toolIndex),
-		prompt:      prompt,
+		Form:   spawn.NewForm(m.spawnHost(), tools, toolIndex),
+		prompt: prompt,
+		// The completer starts past every read an earlier opening asked
+		// for, so a scan that comes home late lands on nothing.
+		complete:    pathComplete{generation: uint64(prompt.gen) << 32},
 		groupPicker: m.groupPickerFor(m.contextGroup()),
 	})
 	m.push(f)

@@ -23,13 +23,17 @@ const (
 )
 
 // screenID names where the user is, for a completion that must land on the
-// screen it was asked from: the base, and whether a session is focused.
+// screen it was asked from: the base, whether a session is focused, and
+// how many surfaces are up, so a card opened since the request keeps it.
 type screenID struct {
 	base    baseScreen
 	focused bool
+	depth   int
 }
 
-func (m *Model) screenID() screenID { return screenID{base: m.base, focused: m.focused()} }
+func (m *Model) screenID() screenID {
+	return screenID{base: m.base, focused: m.focused(), depth: len(m.surfaces)}
+}
 
 // A surface is a layer over the base screen that takes input before it:
 // focus, and the cards over the list, Review or a focused session. The root

@@ -816,7 +816,7 @@ func TestEditorLaunchAndReturnPolicy(t *testing.T) {
 	if (editorLaunch{name: "code"}).takesScreen() || !(editorLaunch{name: "vim"}).takesScreen() {
 		t.Fatal("a windowed editor took the screen, or a terminal one did not")
 	}
-	focus := screenID{focused: true}
+	focus := screenID{focused: true, depth: 1}
 	target := editorReturnTarget{sessionID: "s1", foregroundGen: 4, screen: focus}
 	cases := []struct {
 		name     string

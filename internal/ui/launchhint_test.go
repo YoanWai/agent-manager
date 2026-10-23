@@ -388,8 +388,9 @@ func TestFormSpawnRefusedByTheHintReleasesItsImages(t *testing.T) {
 	m.form().SetDir(t.TempDir())
 	m.form().SetTools([]string{"hermes"}, 0)
 	path := tempImage(t, "mock.png")
-	m.form().prompt.attachments = []imageAttachment{{id: 1, path: path}}
-	m.form().prompt.input.SetValue("match " + imageToken(1))
+	f := m.form()
+	f.prompt.attachments = []imageAttachment{{id: 1, path: path}}
+	f.prompt.input.SetValue("match " + imageToken(1))
 
 	_, cmd := m.submitForm()
 	m.applyCmd(t, cmd)
@@ -400,8 +401,8 @@ func TestFormSpawnRefusedByTheHintReleasesItsImages(t *testing.T) {
 	// The dialog can still install the CLI and spawn this prompt, so it
 	// takes the images over from the form and keeps the files until it
 	// closes.
-	if len(m.form().prompt.attachments) != 0 {
-		t.Fatalf("attachments = %+v, want the form's images handed to the dialog", m.form().prompt.attachments)
+	if len(f.prompt.attachments) != 0 {
+		t.Fatalf("attachments = %+v, want the form's images handed to the dialog", f.prompt.attachments)
 	}
 	if len(hintFix(m).images) != 1 {
 		t.Fatalf("dialog images = %+v, want the refused prompt's image", hintFix(m).images)
