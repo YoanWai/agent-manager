@@ -253,7 +253,7 @@ func (m *Model) cachedHiddenTools() map[string]bool {
 }
 
 func (s *settingsFeature) cachedHiddenTools(cfg config.Config) map[string]bool {
-	return uisettings.Tools{Known: knownTools(cfg)}.KnownHidden(s.cache.hidden)
+	return uisettings.Tools{Known: knownTools(cfg)}.KnownHidden(s.cache.Hidden())
 }
 
 func (m *Model) cachedToolSelection(hidden map[string]bool, preferred string) ([]string, int) {

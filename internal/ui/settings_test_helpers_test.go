@@ -1,9 +1,26 @@
 package ui
 
 import (
+	"sync"
+
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+// blockedSettingReader parks a store read until the test releases it, so a
+// load that would block Update can be proven off it.
+type blockedSettingReader struct {
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+	values  map[string]string
+}
+
+func (r *blockedSettingReader) get(key string) (string, error) {
+	r.once.Do(func() { close(r.started) })
+	<-r.release
+	return r.values[key], nil
+}
 
 // settingsCard is the open Settings card; a test that reads it with none up
 // is wrong, so it panics.

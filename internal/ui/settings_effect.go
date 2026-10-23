@@ -86,8 +86,8 @@ func (w storeSettingWriter) get(key string) (string, error) { return w.st.Settin
 func loadSettingsCache(st *store.Store, extra []string) settingsCache {
 	reader := storeSettingWriter{st: st}
 	result, _ := loadSettingsWithReader(reader)
-	cache := settingsCache{values: make(map[string]string)}
-	cache.applyReadback(append(result.values, readSettingKeys(reader, extra)...), result.hiddenRaw, result.hiddenErr)
+	cache := settingsCache{}
+	cache.ApplyReadback(append(result.values, readSettingKeys(reader, extra)...), result.hiddenRaw, result.hiddenErr)
 	return cache
 }
 
@@ -187,103 +187,6 @@ func settingsReadback(writer settingsValueReader) ([]restoredValue, string, erro
 	return values, hidden, hiddenErr
 }
 
-// settingsCache mirrors the store's settings so frames and the dialog read
-// them without a store call.
-type settingsCache struct {
-	values map[string]string
-	hidden map[string]bool
-	// editors is the last PATH probe, kept so a dialog rebuilt from a
-	// later load still lists what was found.
-	editors *editorsProbedMsg
-}
-
-func (c settingsCache) value(key string) string {
-	return c.values[key]
-}
-
-func (c *settingsCache) ensureValues() {
-	if c.values == nil {
-		c.values = make(map[string]string)
-	}
-}
-
-func (c *settingsCache) applyValues(values []settingValue) {
-	c.ensureValues()
-	for _, value := range values {
-		c.values[value.Key] = value.Value
-	}
-}
-
-func (c *settingsCache) applyHidden(names []string) {
-	c.hidden = make(map[string]bool, len(names))
-	for _, name := range names {
-		c.hidden[name] = true
-	}
-}
-
-func (c *settingsCache) applyReadback(values []restoredValue, hiddenRaw string, hiddenErr error) {
-	c.ensureValues()
-	for _, value := range values {
-		if value.Err == nil {
-			c.values[value.Key] = value.Value
-		}
-	}
-	if hiddenErr == nil {
-		c.hidden = uisettings.ParseHidden(hiddenRaw)
-	}
-}
-
-func (m *Model) handleSettingsLoaded(msg settingsLoadedMsg) (tea.Model, tea.Cmd) {
-	var follow tea.Cmd
-	switch msg.request.target {
-	case settingsLoadDialog:
-		card, open := surfaceOf[*uisettings.Surface](m)
-		if msg.request.generation != m.settings.gen || !open ||
-			card.State().Busy() || m.settings.pending > 0 {
-			return m, nil
-		}
-		m.settings.cache.applyReadback(msg.result.values, msg.result.hiddenRaw, msg.result.hiddenErr)
-		field := card.State().Field
-		card.SetState(m.settings.stateFromCache(m.services.cfg))
-		// A manual theme the shell changed meanwhile repaints here, so esc
-		// keeps it instead of writing back the palette cached at startup.
-		if d := card.State(); !d.ThemeAuto && current().Name != d.ManualTheme {
-			d.ShowTheme(d.ManualTheme)
-			applyTheme(themes[d.ThemeIndex])
-			SyncTerminalColors()
-			follow = m.syncPaneTheme()
-		}
-		card.State().MarkBaseline()
-		card.State().Field = field
-	case settingsLoadForm:
-		f, ok := m.formFor(int(msg.request.generation))
-		if !ok || f.DefaultsTouched() || m.settings.pending > 0 {
-			return m, nil
-		}
-		m.settings.cache.applyReadback(msg.result.values, msg.result.hiddenRaw, msg.result.hiddenErr)
-		m.refreshFormChoicePrefs()
-		follow = tea.Batch(m.applyCachedFormDefaults(), m.formWorktreeProbeCmd(false))
-	case settingsLoadQuick:
-		q, ok := m.quickFor(int(msg.request.generation))
-		if !ok || q.DefaultsTouched() || m.settings.pending > 0 {
-			return m, nil
-		}
-		m.settings.cache.applyReadback(msg.result.values, msg.result.hiddenRaw, msg.result.hiddenErr)
-		m.refreshQuickChoicePrefs()
-		follow = tea.Batch(m.applyCachedQuickDefaults(), m.quickWorktreeProbeCmd(false))
-	default:
-		return m, nil
-	}
-	m.applyCachedSettingsPrefs()
-	m.rebuildRows()
-	if msg.err != nil {
-		m.reportErr(msg.err.Error())
-	} else {
-		m.clearErr()
-	}
-	return m, follow
-}
-
 // applySettingsEffect reconciles the worker's durable outcome. Prefs are
 // runtime state, not dialog state: a failure's committed read-back
 // reconciles them on every completion, stale included — the lane's FIFO
@@ -305,7 +208,7 @@ func (m *Model) applySettingsEffect(job *effectJob, result settingsEffectResult,
 				m.reportErr(m.errBar.text + "; " + note)
 			}
 			if card, open := surfaceOf[*uisettings.Surface](m); open && !stale {
-				card.State().Restore(result.restored, result.restoredHidden, result.hiddenErr, m.settings.cache.editors)
+				card.State().Restore(result.restored, result.restoredHidden, result.hiddenErr, m.settings.cache.Editors())
 			}
 		}
 	}

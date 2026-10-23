@@ -11,7 +11,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/systheme"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 type (
@@ -20,6 +19,21 @@ type (
 	restoredValue    = uisettings.Readback
 	editorsProbedMsg = uisettings.EditorsProbe
 )
+
+// settingsCache is the feature's cache of the stored settings. The spawn,
+// quick and connections call sites and the settings tests read it by the
+// lower-case names it had before the cache moved into the package.
+type settingsCache struct{ uisettings.Cache }
+
+func (c settingsCache) value(key string) string { return c.Value(key) }
+
+func (c *settingsCache) applyValues(values []settingValue) { c.ApplyValues(values) }
+
+func (c *settingsCache) applyHidden(names []string) { c.ApplyHidden(names) }
+
+func (c *settingsCache) applyReadback(values []restoredValue, hiddenRaw string, hiddenErr error) {
+	c.ApplyReadback(values, hiddenRaw, hiddenErr)
+}
 
 // SettingSpecs is every key Settings writes and the values each takes, so
 // the shell checks a value against the same choices the modal steps
@@ -51,9 +65,9 @@ func settingsTools(cfg config.Config) uisettings.Tools {
 
 func (s *settingsFeature) stateFromCache(cfg config.Config) settingsState {
 	return uisettings.FromSnapshot(uisettings.Snapshot{
-		Values:  s.cache.values,
-		Hidden:  s.cache.hidden,
-		Editors: s.cache.editors,
+		Values:  s.cache.Values(),
+		Hidden:  s.cache.Hidden(),
+		Editors: s.cache.Editors(),
 		Tools:   settingsTools(cfg),
 		Theme:   current().Name,
 	})
@@ -63,8 +77,8 @@ func (m *Model) settingsContext() uisettings.Context {
 	session, list := m.settingsKeyTables()
 	return uisettings.Context{
 		Tools:       settingsTools(m.services.cfg),
-		Hidden:      m.settings.cache.hidden,
-		DefaultTool: m.settings.cache.value(uisettings.DefaultToolSetting),
+		Hidden:      m.settings.cache.Hidden(),
+		DefaultTool: m.settings.cache.Value(uisettings.DefaultToolSetting),
 		Session:     session,
 		List:        list,
 		UpdateReady: m.update.latest != "",
@@ -93,6 +107,57 @@ func (m *Model) openSettingsWithReader(reader settingsValueReader) tea.Cmd {
 		return probe
 	}
 	return tea.Batch(settingsLoadCmd(settingsLoadRequest{target: settingsLoadDialog, generation: s.gen}, reader), probe)
+}
+
+func (m *Model) handleSettingsLoaded(msg settingsLoadedMsg) (tea.Model, tea.Cmd) {
+	var follow tea.Cmd
+	switch msg.request.target {
+	case settingsLoadDialog:
+		card, open := surfaceOf[*uisettings.Surface](m)
+		if msg.request.generation != m.settings.gen || !open ||
+			card.State().Busy() || m.settings.pending > 0 {
+			return m, nil
+		}
+		m.settings.cache.ApplyReadback(msg.result.values, msg.result.hiddenRaw, msg.result.hiddenErr)
+		field := card.State().Field
+		card.SetState(m.settings.stateFromCache(m.services.cfg))
+		// A manual theme the shell changed meanwhile repaints here, so esc
+		// keeps it instead of writing back the palette cached at startup.
+		if d := card.State(); !d.ThemeAuto && current().Name != d.ManualTheme {
+			d.ShowTheme(d.ManualTheme)
+			applyTheme(themes[d.ThemeIndex])
+			SyncTerminalColors()
+			follow = m.syncPaneTheme()
+		}
+		card.State().MarkBaseline()
+		card.State().Field = field
+	case settingsLoadForm:
+		f, ok := m.formFor(int(msg.request.generation))
+		if !ok || f.DefaultsTouched() || m.settings.pending > 0 {
+			return m, nil
+		}
+		m.settings.cache.ApplyReadback(msg.result.values, msg.result.hiddenRaw, msg.result.hiddenErr)
+		m.refreshFormChoicePrefs()
+		follow = tea.Batch(m.applyCachedFormDefaults(), m.formWorktreeProbeCmd(false))
+	case settingsLoadQuick:
+		q, ok := m.quickFor(int(msg.request.generation))
+		if !ok || q.DefaultsTouched() || m.settings.pending > 0 {
+			return m, nil
+		}
+		m.settings.cache.ApplyReadback(msg.result.values, msg.result.hiddenRaw, msg.result.hiddenErr)
+		m.refreshQuickChoicePrefs()
+		follow = tea.Batch(m.applyCachedQuickDefaults(), m.quickWorktreeProbeCmd(false))
+	default:
+		return m, nil
+	}
+	m.applyCachedSettingsPrefs()
+	m.rebuildRows()
+	if msg.err != nil {
+		m.reportErr(msg.err.Error())
+	} else {
+		m.clearErr()
+	}
+	return m, follow
 }
 
 // applySettingsResult runs the work a dialog key asked beyond its own
@@ -187,9 +252,9 @@ func (m *Model) queueSettingsSave(d *settingsState, includeHidden, followUpdate 
 		request.hidden = hidden
 	}
 	d.AdvanceBaseline(request.values, request.hidden)
-	s.cache.applyValues(request.values)
+	s.cache.ApplyValues(request.values)
 	if request.hidden != nil {
-		s.cache.applyHidden(request.hidden)
+		s.cache.ApplyHidden(request.hidden)
 	}
 	s.pending++
 	m.enqueueEffect(request, 0, false)
@@ -203,7 +268,7 @@ func (m *Model) captureHiddenSave(d *settingsState) tea.Cmd {
 		generation: s.gen,
 	}
 	d.AdvanceBaseline(nil, request.hidden)
-	s.cache.applyHidden(request.hidden)
+	s.cache.ApplyHidden(request.hidden)
 	s.pending++
 	return m.submitSettings(request)
 }
@@ -276,45 +341,6 @@ func (m *Model) applySettingsPrefs(d *settingsState) {
 	}
 }
 
-// paintSettings frames the dialog in the root's card chrome.
-func (m *Model) paintSettings(d *settingsState) string {
-	frame := d.View(uisettings.ViewContext{
-		GlyphMode:  m.prefs.glyphMode,
-		Session:    m.services.keys,
-		List:       m.services.listKeys,
-		Version:    m.update.version,
-		Latest:     m.update.latest,
-		Applying:   m.update.applying,
-		Height:     m.layout.height,
-		InnerWidth: cardInnerWidth(m.cardWidth()),
-		Chrome:     m.flexChromeRows,
-		Styles:     settingsStyles(),
-		TextInput:  textInputView,
-		TextArea:   textAreaView,
-	})
-	switch frame.Card {
-	case uisettings.Confirm:
-		return m.confirmCard(frame.Title, frame.Question, frame.Consequence, frame.Destructive, frame.Answer)
-	case uisettings.Fixed:
-		return m.card(frame.Title, frame.Body, frame.Hints)
-	}
-	return m.cardFlex(frame.Title, frame.Body, frame.Hints)
-}
-
-func settingsStyles() uisettings.Styles {
-	return uisettings.Styles{
-		Value:      valueStyle(),
-		Subtle:     subtleStyle(),
-		Muted:      mutedStyle(),
-		Key:        keyStyle(),
-		Annotation: annotationStyle(),
-		Marker:     lipgloss.NewStyle().Foreground(colorAccent()),
-		Focused:    lipgloss.NewStyle().Foreground(colorAccent()).Bold(true),
-		Action:     lipgloss.NewStyle().Foreground(colorAccent2()).Bold(true),
-		ActionText: lipgloss.NewStyle().Foreground(colorAccent2()),
-	}
-}
-
 func (s *settingsFeature) probeEditorsCmd() tea.Cmd {
 	resolution, generation := detectedEditors(), s.gen
 	return func() tea.Msg {
@@ -346,7 +372,7 @@ func (r editorResolution) probe() editorsProbedMsg {
 // applyEditorsProbe keeps the answer for the rows later loads rebuild, and
 // fills the row of the visit that asked while the dialog is open.
 func (m *Model) applyEditorsProbe(msg editorsProbedMsg) {
-	m.settings.cache.editors = &msg
+	m.settings.cache.SetEditors(&msg)
 	if s, open := surfaceOf[*uisettings.Surface](m); open && msg.Generation == m.settings.gen {
 		s.State().Editor.ApplyProbe(msg)
 	}
