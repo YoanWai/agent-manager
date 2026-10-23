@@ -53,21 +53,21 @@ func TestDiffHelpReturnsToReview(t *testing.T) {
 	openReviewOn(t, m, "helper", dir)
 	m.handleDiffKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
 	if !helpOpen(m) {
-		t.Fatalf("? should open the key map, mode = %v", m.mode)
+		t.Fatalf("? should open the key map, screen = %v", m.screenID())
 	}
 	if !m.review.Snapshot().Active {
 		t.Fatal("opening help must not close the review")
 	}
 	m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
-	if m.mode != modeDiff || !m.review.Snapshot().Active {
-		t.Fatalf("esc should return to review, mode = %v active = %v", m.mode, m.review.Snapshot().Active)
+	if m.base != baseReview || !m.review.Snapshot().Active {
+		t.Fatalf("esc should return to review, screen = %v active = %v", m.screenID(), m.review.Snapshot().Active)
 	}
 }
 
 func TestDiffHelpKeepsLoaderRunningOnReturn(t *testing.T) {
 	m := helpModel()
 	m.clearSurfaces()
-	m.mode = modeDiff
+	m.base = baseReview
 	seedReviewForTest(m, uireview.Target{ID: "review"}, git.ScopeUncommitted, "/repo", diff.Set{}, false)
 	if cmd := m.startStartupTick(); cmd == nil {
 		t.Fatal("loading review should start the loader")

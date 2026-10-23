@@ -191,7 +191,7 @@ func TestReviveAllRecreatesEveryDeadSession(t *testing.T) {
 	createSession(t, m, "running", dir, "")
 
 	if _, _ = m.reviveAllDead(); !confirmOpen(m) {
-		t.Fatalf("reviving two dead sessions should ask first, mode = %v err = %q", m.mode, m.errBar.text)
+		t.Fatalf("reviving two dead sessions should ask first, screen = %v err = %q", m.screenID(), m.errBar.text)
 	}
 	if want := "revive every dead session (2)? brings them back."; pendingConfirm(m).label != want {
 		t.Fatalf("label = %q, want %q", pendingConfirm(m).label, want)
@@ -272,7 +272,7 @@ func TestReviveGroupBringsBackEverySessionInside(t *testing.T) {
 	m.reviveSelected()
 	m.drainEffects(t)
 	if !confirmOpen(m) {
-		t.Fatalf("reviving a group of two dead sessions should ask first, mode = %v err = %q", m.mode, m.errBar.text)
+		t.Fatalf("reviving a group of two dead sessions should ask first, screen = %v err = %q", m.screenID(), m.errBar.text)
 	}
 	if title := mustTop(t, m).(*confirmSurface).prompt().Title(m.prefs.glyphMode); title != "◆ Revive group" {
 		t.Fatalf("title = %q, want ◆ Revive group", title)
@@ -314,7 +314,7 @@ func TestReviveGroupConfirmedRevivesWhatItCan(t *testing.T) {
 	m.reviveSelected()
 	m.drainEffects(t)
 	if !confirmOpen(m) {
-		t.Fatalf("mode = %v, want the revive card (err %q)", m.mode, m.errBar.text)
+		t.Fatalf("screen = %v, want the revive card (err %q)", m.screenID(), m.errBar.text)
 	}
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.drainEffects(t)
@@ -323,8 +323,8 @@ func TestReviveGroupConfirmedRevivesWhatItCan(t *testing.T) {
 	if !strings.HasPrefix(m.errBar.text, "revived 1, first error: working directory no longer exists") {
 		t.Fatalf("status = %q, want the count revived and the first failure", m.errBar.text)
 	}
-	if m.mode != modeList {
-		t.Fatalf("mode = %v, want the list", m.mode)
+	if !m.onList() {
+		t.Fatalf("screen = %v, want the list", m.screenID())
 	}
 	if !m.services.tmux.Exists(sessionRow(t, m, "housed").sess.ID) {
 		t.Fatal("a failed revive must not keep the rest of the group dead")
@@ -355,12 +355,12 @@ func TestReviveBatchCancelLeavesEverySessionDead(t *testing.T) {
 				m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
 				m.drainEffects(t)
 				if !confirmOpen(m) {
-					t.Fatalf("%s: mode = %v, want the revive card (err %q)", key, m.mode, m.errBar.text)
+					t.Fatalf("%s: screen = %v, want the revive card (err %q)", key, m.screenID(), m.errBar.text)
 				}
 				m.handleKey(tc.key)
 				m.drainEffects(t)
-				if m.mode != modeList {
-					t.Fatalf("%s: mode = %v, want the list after %s", key, m.mode, tc.name)
+				if !m.onList() {
+					t.Fatalf("%s: screen = %v, want the list after %s", key, m.screenID(), tc.name)
 				}
 				for _, sess := range m.visibleSessions() {
 					if m.services.tmux.Exists(sess.ID) {
@@ -387,7 +387,7 @@ func TestReviveBatchSkipsASessionBackBeforeTheAnswer(t *testing.T) {
 	m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("v")})
 	m.drainEffects(t)
 	if !confirmOpen(m) {
-		t.Fatalf("mode = %v, want the revive card (err %q)", m.mode, m.errBar.text)
+		t.Fatalf("screen = %v, want the revive card (err %q)", m.screenID(), m.errBar.text)
 	}
 	alpha := sessionRow(t, m, "alpha").sess
 	if err := m.reviveSession(alpha); err != nil {
@@ -424,8 +424,8 @@ func TestReviveOneDeadSessionSkipsTheCard(t *testing.T) {
 		m.selectGroupRow(t, "work")
 		m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
 		m.drainEffects(t)
-		if m.mode != modeList {
-			t.Fatalf("%s with one dead session: mode = %v, want it revived without a card", key, m.mode)
+		if !m.onList() {
+			t.Fatalf("%s with one dead session: screen = %v, want it revived without a card", key, m.screenID())
 		}
 		if !m.services.tmux.Exists(alpha.ID) {
 			t.Fatalf("%s should revive the one dead session at once, err = %q", key, m.errBar.text)
@@ -453,7 +453,7 @@ func TestReviveRunningAgentRevivesDeadChild(t *testing.T) {
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	if !confirmOpen(m) {
-		t.Fatalf("mode = %v, want the revive confirm", m.mode)
+		t.Fatalf("screen = %v, want the revive confirm", m.screenID())
 	}
 	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	m.drainEffects(t)

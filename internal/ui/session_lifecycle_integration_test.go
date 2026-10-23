@@ -184,7 +184,7 @@ func waitForPane(t *testing.T, m *Model, id, marker string) {
 func confirmKill(t *testing.T, m *Model) {
 	t.Helper()
 	if !confirmOpen(m) {
-		t.Fatalf("kill should ask before acting, mode = %v, err = %q", m.mode, m.errBar.text)
+		t.Fatalf("kill should ask before acting, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.drainEffects(t)

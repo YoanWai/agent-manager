@@ -21,9 +21,9 @@ func TestClicksOnTheGroupForm(t *testing.T) {
 	m = leftClick(m, x, y)
 	x, y = paintedCell(t, m, "  target")
 	if m = leftClick(m, x, y); m.groupSurface().selected() != "target" || !m.groupFormOpen() {
-		t.Fatalf("a click on target in the picker should pick it, picked %q mode %v", m.groupSurface().selected(), m.mode)
+		t.Fatalf("a click on target in the picker should pick it, picked %q mode %v", m.groupSurface().selected(), m.screenID())
 	}
 	if m = leftClick(m, 0, y); !m.groupFormOpen() || m.groupSurface().selected() != "target" {
-		t.Fatalf("a click beside the card should change nothing, picked %q mode %v", m.groupSurface().selected(), m.mode)
+		t.Fatalf("a click beside the card should change nothing, picked %q mode %v", m.groupSurface().selected(), m.screenID())
 	}
 }

@@ -20,8 +20,8 @@ func TestFocusDropsTheLastSessionsCaret(t *testing.T) {
 	updated, _ := m.focusSelected()
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.mode != modeFocus {
-		t.Fatalf("test setup: focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
+	if !m.focused() {
+		t.Fatalf("test setup: focus alpha, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
 	m.workspace.preview = "one\ntwo" + strings.Repeat("\n", 38)
 	rows := paneExact(m.workspace.preview, 10, 40, m.paneCaretRow())
@@ -40,8 +40,8 @@ func TestMouseBackLeavesFocus(t *testing.T) {
 	m.drainEffects(t)
 	updated, _ = m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonBackward})
 	m = updated.(*Model)
-	if m.mode != modeList {
-		t.Fatalf("mouse back should leave focus, mode = %v", m.mode)
+	if !m.onList() {
+		t.Fatalf("mouse back should leave focus, screen = %v", m.screenID())
 	}
 }
 
@@ -210,7 +210,7 @@ func TestBottomParkedCaretSurvivesControlCapture(t *testing.T) {
 	rows[40] = strings.Repeat("─", 60)
 	rows[41] = "  » permission bypass on [shift+tab]"
 	rows[42] = "  ? for shortcuts · PR #390 · taste on"
-	m.mode = modeFocus
+	m.push(&focusSurface{})
 	m.workspace.preview = focuswatch.MatchExecShape(strings.Join(rows, "\n"))
 	setFocusPaneFacts(m, "s1", false, false, false, 0, paneCursor{x: 0, y: 46, ok: true})
 	if !m.caretAtInputStart("s1", "command-code") {

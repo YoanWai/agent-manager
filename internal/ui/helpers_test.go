@@ -440,8 +440,8 @@ func createSession(t *testing.T, m *Model, name, dir, group string) {
 	pickGroup(t, m, group)
 	_, cmd := m.submitForm()
 	m.applyCmd(t, cmd)
-	if m.mode != modeList {
-		t.Fatalf("after submit, mode = %v, err = %q", m.mode, m.errBar.text)
+	if !m.onList() {
+		t.Fatalf("after submit, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
 }
 
@@ -486,8 +486,8 @@ func createWorktreeSession(t *testing.T, m *Model, name, repo string) store.Sess
 	pickGroup(t, m, "")
 	_, cmd := m.submitForm()
 	m.applyCmd(t, cmd)
-	if m.mode != modeList {
-		t.Fatalf("after submit, mode = %v, err = %q", m.mode, m.errBar.text)
+	if !m.onList() {
+		t.Fatalf("after submit, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
 	for _, sess := range m.workspace.sessions {
 		if sess.Name == name {
@@ -573,8 +573,8 @@ func createSessionOn(t *testing.T, m *Model, name, tool, dir string) {
 	pickGroup(t, m, "")
 	_, cmd := m.submitForm()
 	m.applyCmd(t, cmd)
-	if m.mode != modeList {
-		t.Fatalf("after submit, mode = %v, err = %q", m.mode, m.errBar.text)
+	if !m.onList() {
+		t.Fatalf("after submit, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
 }
 
@@ -758,7 +758,6 @@ func shotModel() *Model {
 			height: 34,
 			split:  splitState{ratio: defaultSplitRatio},
 		},
-		mode: modeList,
 		services: services{
 			keys:     keybind.DefaultSession(),
 			listKeys: keybind.DefaultList(),

@@ -84,7 +84,7 @@ func TestClickOnTheSendQuestionAnswersIt(t *testing.T) {
 	if _, ok := m.layout.keyHits.at(x, y); !ok {
 		t.Fatal("the send question's own keys should be click targets")
 	}
-	if m = clickLabel(t, m, "esc cancel"); m.review.Snapshot().SendConfirm || m.mode != modeDiff {
-		t.Fatalf("esc in the question should cancel it, confirm %v mode %v", m.review.Snapshot().SendConfirm, m.mode)
+	if m = clickLabel(t, m, "esc cancel"); m.review.Snapshot().SendConfirm || m.base != baseReview {
+		t.Fatalf("esc in the question should cancel it, confirm %v mode %v", m.review.Snapshot().SendConfirm, m.screenID())
 	}
 }

@@ -23,8 +23,8 @@ func TestDiffReviewShowsWholeFile(t *testing.T) {
 	m.selectSessionRow(t, "coder")
 
 	m.drainCmds(t, m.openDiff())
-	if !m.review.Snapshot().Active || m.mode != modeDiff || m.review.Snapshot().Loading {
-		t.Fatalf("diff should be loaded fullscreen, active=%v mode=%v err=%q", m.review.Snapshot().Active, m.mode, m.review.Snapshot().Error)
+	if !m.review.Snapshot().Active || m.base != baseReview || m.review.Snapshot().Loading {
+		t.Fatalf("diff should be loaded fullscreen, active=%v screen = %v err=%q", m.review.Snapshot().Active, m.screenID(), m.review.Snapshot().Error)
 	}
 	if len(m.review.Snapshot().Set.Files) != 2 {
 		t.Fatalf("files = %+v", m.review.Snapshot().Set.Files)
@@ -364,7 +364,7 @@ func TestReviewUntrackedImageShowsBinaryWithoutOpening(t *testing.T) {
 }
 
 func TestReviewShowsLoaderWhileDiffLoads(t *testing.T) {
-	m := &Model{layout: layoutState{width: 100, height: 30}, mode: modeDiff}
+	m := &Model{layout: layoutState{width: 100, height: 30}, screen: screen{base: baseReview}}
 	seedReviewForTest(m, uireview.Target{ID: "s"}, git.ScopeUncommitted, "/repo", diff.Set{}, false)
 	code := ansi.Strip(m.viewDiffCode(80, 20))
 	if !strings.Contains(code, "loading diff") {
@@ -388,7 +388,7 @@ func TestReviewShowsLoaderWhileDiffLoads(t *testing.T) {
 }
 
 func TestReviewShowsLoaderWhileFileLoads(t *testing.T) {
-	m := &Model{layout: layoutState{width: 100, height: 30}, mode: modeDiff}
+	m := &Model{layout: layoutState{width: 100, height: 30}, screen: screen{base: baseReview}}
 	seedReviewForTest(m, uireview.Target{ID: "s"}, git.ScopeUncommitted, "/repo",
 		diff.Set{Repo: git.Repo{Root: "/repo"}, Files: []diff.FileDiff{{File: git.ChangedFile{Path: "main.go"}}}}, true)
 	code := ansi.Strip(m.viewDiffCode(80, 20))
@@ -431,7 +431,7 @@ func TestFailedDiffLoadKeepsRepoPicker(t *testing.T) {
 	}
 	m.openRepoPick()
 	if !m.pickerOpen() {
-		t.Fatalf("r should still open, mode = %v", m.mode)
+		t.Fatalf("r should still open, screen = %v", m.screenID())
 	}
 }
 

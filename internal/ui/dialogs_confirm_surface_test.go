@@ -41,8 +41,8 @@ func TestConfirmClosesOnEscNAndBackdrop(t *testing.T) {
 			t.Fatalf("%s: setup: confirm open=%t", name, confirmOpen(m))
 		}
 		m = close(m)
-		if confirmOpen(m) || m.effects.quitting || m.mode != modeList {
-			t.Errorf("%s: open=%t quitting=%t mode=%v, want the card closed and the manager running", name, confirmOpen(m), m.effects.quitting, m.mode)
+		if confirmOpen(m) || m.effects.quitting || !m.onList() {
+			t.Errorf("%s: open=%t quitting=%t screen = %v, want the card closed and the manager running", name, confirmOpen(m), m.effects.quitting, m.screenID())
 		}
 	}
 }

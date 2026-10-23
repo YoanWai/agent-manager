@@ -34,8 +34,8 @@ func TestInSessionReviewRemembersOriginAndReattaches(t *testing.T) {
 	m.drainEffects(t)
 	*m = *updated.(*Model)
 
-	if m.mode != modeDiff {
-		t.Fatalf("marker set should enter review, mode = %v, err = %q", m.mode, m.errBar.text)
+	if m.base != baseReview {
+		t.Fatalf("marker set should enter review, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
 	if m.reviewNav.ret.kind != reviewReturnAttach || m.reviewNav.ret.sessionID != sess.ID {
 		t.Fatalf("review origin = %+v, want attach %q", m.reviewNav.ret, sess.ID)
@@ -44,8 +44,8 @@ func TestInSessionReviewRemembersOriginAndReattaches(t *testing.T) {
 	// esc leaves review; the live origin session re-attaches.
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	*m = *updated.(*Model)
-	if m.mode != modeList {
-		t.Fatalf("esc should leave review, mode = %v", m.mode)
+	if !m.onList() {
+		t.Fatalf("esc should leave review, screen = %v", m.screenID())
 	}
 	if m.reviewNav.ret != (reviewReturn{}) {
 		t.Fatalf("reattach origin should be consumed, got %+v", m.reviewNav.ret)
@@ -67,8 +67,8 @@ func TestListReviewLeavesToListWithoutReattach(t *testing.T) {
 	m.selectSessionRow(t, "listreview")
 
 	m.drainCmds(t, m.openDiff())
-	if m.mode != modeDiff {
-		t.Fatalf("openDiff should enter review, mode = %v, err = %q", m.mode, m.errBar.text)
+	if m.base != baseReview {
+		t.Fatalf("openDiff should enter review, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
 	if m.reviewNav.ret.kind != reviewReturnList || m.reviewNav.ret.sessionID != "" {
 		t.Fatalf("list review should return to list, got %+v", m.reviewNav.ret)
@@ -76,8 +76,8 @@ func TestListReviewLeavesToListWithoutReattach(t *testing.T) {
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	*m = *updated.(*Model)
-	if m.mode != modeList {
-		t.Fatalf("esc should return to list, mode = %v", m.mode)
+	if !m.onList() {
+		t.Fatalf("esc should return to list, screen = %v", m.screenID())
 	}
 	if cmd != nil {
 		t.Fatal("list review esc should not re-attach")
@@ -109,8 +109,8 @@ func TestReattachAcknowledgesFinished(t *testing.T) {
 	updated, _ := m.Update(attachDoneMsg{sessID: sess.ID})
 	m.drainEffects(t)
 	*m = *updated.(*Model)
-	if m.mode != modeDiff {
-		t.Fatalf("expected review, mode = %v, err = %q", m.mode, m.errBar.text)
+	if m.base != baseReview {
+		t.Fatalf("expected review, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -131,7 +131,7 @@ func TestReattachAcknowledgesFinished(t *testing.T) {
 }
 
 func TestStaleReattachDoesNotInterruptReopenedReview(t *testing.T) {
-	m := &Model{mode: modeDiff}
+	m := &Model{screen: screen{base: baseReview}}
 	seedReviewForTest(m, uireview.Target{ID: "new"}, git.ScopeUncommitted, "/repo", diff.Set{}, false)
 	m.effects.main.active = &effectJob{id: 1, request: attachRequest{id: "old", reattach: true, generation: 0}}
 	updated, cmd := m.Update(effectCompletedMsg{id: 1, result: attachEffectResult{}})
@@ -139,7 +139,7 @@ func TestStaleReattachDoesNotInterruptReopenedReview(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("stale re-attach should not return an attach command")
 	}
-	if m.mode != modeDiff || !m.review.Snapshot().Active {
+	if m.base != baseReview || !m.review.Snapshot().Active {
 		t.Fatal("stale re-attach should leave the reopened review untouched")
 	}
 }
@@ -159,9 +159,9 @@ func TestReviewCloseReleasesStateAndIgnoresLateLoad(t *testing.T) {
 	if cmd := m.closeDiff(); cmd != nil {
 		t.Fatal("list-opened review should close without re-attaching")
 	}
-	if m.mode != modeList || m.review.Snapshot().Active || m.review.Snapshot().SessionID != "" {
-		t.Fatalf("review did not close cleanly: mode=%v active=%v session=%q",
-			m.mode, m.review.Snapshot().Active, m.review.Snapshot().SessionID)
+	if !m.onList() || m.review.Snapshot().Active || m.review.Snapshot().SessionID != "" {
+		t.Fatalf("review did not close cleanly: screen = %v active=%v session=%q",
+			m.screenID(), m.review.Snapshot().Active, m.review.Snapshot().SessionID)
 	}
 	if len(m.review.Snapshot().Set.Files) != 0 || m.review.CurrentHighlight() != nil {
 		t.Fatal("close should release diff and pending highlight state immediately")
@@ -187,8 +187,8 @@ func TestCtrlRFromListOpensReview(t *testing.T) {
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlR})
 	*m = *updated.(*Model)
 	m.drainCmds(t, cmd)
-	if m.mode != modeDiff {
-		t.Fatalf("ctrl+r from the list should open review, mode = %v (err=%q)", m.mode, m.errBar.text)
+	if m.base != baseReview {
+		t.Fatalf("ctrl+r from the list should open review, screen = %v (err=%q)", m.screenID(), m.errBar.text)
 	}
 	if m.reviewNav.ret.kind != reviewReturnList || m.reviewNav.ret.sessionID != "" {
 		t.Fatal("review opened from the list should return to the list, not re-attach")

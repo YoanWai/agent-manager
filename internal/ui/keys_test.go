@@ -15,29 +15,26 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// ctrlCQuits is what ctrl+c does on each surface, pressed the way a
-// terminal delivers it: through Update. A mode missing here fails, so a new
-// surface decides on purpose rather than inheriting whatever the router did.
-var ctrlCQuits = map[mode]bool{
-	modeList:  true,
-	modeDiff:  true,
-	modeFocus: false,
-}
-
-func TestCtrlCOnEverySurface(t *testing.T) {
-	m := buildModel(t)
-	for md := modeList; md < modeCount; md++ {
-		want, ok := ctrlCQuits[md]
-		if !ok {
-			t.Errorf("mode %d has no ctrl+c answer: add it to ctrlCQuits", md)
-			continue
-		}
-		probe := *m
-		probe.mode = md
-		probe.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
-		if probe.effects.quitting != want {
-			t.Errorf("mode %d: ctrl+c quitting = %t, want %t", md, probe.effects.quitting, want)
-		}
+// On each base screen, and on a focused session, ctrl+c pressed the way a
+// terminal delivers it, through Update, quits where the manager owns the
+// keyboard and passes to the agent where it does not.
+func TestCtrlCOnEveryBase(t *testing.T) {
+	for name, tc := range map[string]struct {
+		open func(m *Model)
+		quit bool
+	}{
+		"list":   {func(*Model) {}, true},
+		"review": {func(m *Model) { m.base = baseReview }, true},
+		"focus":  {func(m *Model) { m.push(&focusSurface{}) }, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			m := buildModel(t)
+			tc.open(m)
+			m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+			if m.effects.quitting != tc.quit {
+				t.Fatalf("ctrl+c quitting = %t, want %t", m.effects.quitting, tc.quit)
+			}
+		})
 	}
 }
 
@@ -87,13 +84,13 @@ func TestCtrlCClosesTheSavedListOverFocus(t *testing.T) {
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	*m = *updated.(*Model)
 	m.drainEffects(t)
-	if m.mode != modeFocus {
-		t.Fatalf("enter did not focus, mode = %v", m.mode)
+	if !m.focused() {
+		t.Fatalf("enter did not focus, screen = %v", m.screenID())
 	}
 	m.push(newFocusSaved(0, m.spawnStyles()))
 	m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
-	if m.effects.quitting || m.mode != modeFocus || m.savedListOpen() {
-		t.Fatalf("quitting=%t mode=%v list open=%t", m.effects.quitting, m.mode, m.savedListOpen())
+	if m.effects.quitting || !m.focused() || m.savedListOpen() {
+		t.Fatalf("quitting=%t screen = %v list open=%t", m.effects.quitting, m.screenID(), m.savedListOpen())
 	}
 	if m.effects.input.active != nil || len(m.effects.input.pending) > 0 {
 		t.Fatal("ctrl+c reached the agent from behind the list")
@@ -109,7 +106,7 @@ func TestCtrlCAbandonsADrainFromFocus(t *testing.T) {
 	if !m.effects.quitting || m.effects.main.active == nil {
 		t.Fatal("quit did not begin draining")
 	}
-	m.mode = modeFocus
+	m.push(&focusSurface{})
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	if cmd == nil {
 		t.Fatal("ctrl+c during a drain was discarded")

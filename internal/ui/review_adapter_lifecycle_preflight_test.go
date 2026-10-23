@@ -140,7 +140,7 @@ func TestReviewFocusReturnKeepsItsCapturedSession(t *testing.T) {
 	m.rebuildRows()
 	m.selectSessionRow(t, b.Name)
 	m.review.Open(reviewTarget(a), git.ScopeUncommitted, "")
-	m.mode = modeDiff
+	m.base = baseReview
 	m.reviewNav.ret = reviewReturn{kind: reviewReturnFocus, sessionID: a.ID}
 	m.closeDiff()
 	if m.effects.main.active == nil || m.effects.main.active.request.(focusRequest).sessionID != a.ID {

@@ -20,8 +20,8 @@ func TestSettingsOpensFromItsKeyAndDrawsOverTheList(t *testing.T) {
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 120, 40
 	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
-	if !m.settingsOpen() || m.mode != modeList {
-		t.Fatalf("settings open %v, mode %v", m.settingsOpen(), m.mode)
+	if !m.settingsOpen() || !m.onList() {
+		t.Fatalf("settings open %v, mode %v", m.settingsOpen(), m.screenID())
 	}
 }
 

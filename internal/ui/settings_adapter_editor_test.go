@@ -52,7 +52,7 @@ func TestSettingsEditorRowStoresThePickedEditor(t *testing.T) {
 	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyRight})
 	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyEsc})
 	if m.settingsOpen() {
-		t.Fatalf("esc should save and leave, mode = %v", m.mode)
+		t.Fatalf("esc should save and leave, screen = %v", m.screenID())
 	}
 	m.drainEffects(t)
 	if stored, err := m.services.store.Editor(); err != nil || stored != "zed" {

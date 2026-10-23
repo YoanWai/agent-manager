@@ -165,7 +165,7 @@ func TestHiddenHeaderTitlesTopEdgeWithUpdate(t *testing.T) {
 			m := shotModel()
 			m.prefs.fullLayout = tc.full
 			if tc.focus {
-				m.mode = modeFocus
+				m.push(&focusSurface{})
 			}
 			m.update.latest = "v9.9.9"
 			const tag = "↑ v9.9.9 available"
@@ -247,8 +247,8 @@ func TestFullLayoutRightOpensFullWidthFocus(t *testing.T) {
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
 	m.drainEffects(t)
 	*m = *updated.(*Model)
-	if m.mode != modeFocus {
-		t.Fatalf("right did not focus, mode = %v, err = %q", m.mode, m.errBar.text)
+	if !m.focused() {
+		t.Fatalf("right did not focus, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
 	sess := railSelectedSession(m)
 	want := [2]int{m.layout.width, m.listBodyHeight()}
@@ -283,8 +283,8 @@ func TestFullLayoutRightOpensFullWidthFocus(t *testing.T) {
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlQ})
 	m.drainEffects(t)
 	*m = *updated.(*Model)
-	if m.mode != modeList || !m.fullRows() {
-		t.Fatalf("ctrl+q should return to the full screen list, mode = %v", m.mode)
+	if !m.onList() || !m.fullRows() {
+		t.Fatalf("ctrl+q should return to the full screen list, screen = %v", m.screenID())
 	}
 }
 
@@ -302,8 +302,8 @@ func TestFullFocusLeftReturnsAtPromptHead(t *testing.T) {
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
 	m.drainEffects(t)
 	*m = *updated.(*Model)
-	if m.mode != modeFocus {
-		t.Fatalf("right did not focus, mode = %v, err = %q", m.mode, m.errBar.text)
+	if !m.focused() {
+		t.Fatalf("right did not focus, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
 	sess := railSelectedSession(m)
 	pinned := m.focus.runtime.lastPaneSizes[sess.ID]
@@ -315,16 +315,16 @@ func TestFullFocusLeftReturnsAtPromptHead(t *testing.T) {
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
 	m.drainEffects(t)
 	*m = *updated.(*Model)
-	if m.mode != modeFocus {
-		t.Fatalf("left inside a typed prompt left focus, mode = %v", m.mode)
+	if !m.focused() {
+		t.Fatalf("left inside a typed prompt left focus, screen = %v", m.screenID())
 	}
 
 	setFocusCursor(m, paneCursor{x: 2, y: 0, ok: true})
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
 	m.drainEffects(t)
 	*m = *updated.(*Model)
-	if m.mode != modeList {
-		t.Fatalf("left at the prompt head did not return, mode = %v", m.mode)
+	if !m.onList() {
+		t.Fatalf("left at the prompt head did not return, screen = %v", m.screenID())
 	}
 	if !m.fullRows() {
 		t.Fatal("returning should land on the full screen list")
@@ -345,7 +345,7 @@ func TestFullLayoutAStillAttaches(t *testing.T) {
 	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("A")})
 	m.drainEffects(t)
 	*m = *updated.(*Model)
-	if m.mode == modeFocus {
+	if m.focused() {
 		t.Fatal("A should attach, not focus")
 	}
 	if cmd == nil {
@@ -435,7 +435,7 @@ func TestSplitRepinKeepsTallerPaneHeight(t *testing.T) {
 func TestFullFocusFooterIsOneRow(t *testing.T) {
 	m := shotModel()
 	m.prefs.fullLayout = true
-	m.mode = modeFocus
+	m.push(&focusSurface{})
 	if got := lipgloss.Height(m.viewFooter()); got != 1 {
 		t.Fatalf("full focus footer = %d rows, want 1", got)
 	}
@@ -473,7 +473,7 @@ func TestQuickFooterLeavesThePaneSizeAlone(t *testing.T) {
 func TestFullFocusRuleNamesTheSession(t *testing.T) {
 	m := shotModel()
 	m.prefs.fullLayout = true
-	m.mode = modeFocus
+	m.push(&focusSurface{})
 	m.workspace.queuedMessages = map[string]int{"add-rate-limiting": 2}
 	// A wide terminal holds every reading.
 	if wide := ansi.Strip(m.focusFactsLine(200)); !strings.Contains(wide, "started ") {
@@ -541,7 +541,7 @@ func TestFocusFactsWriteHomeAsTilde(t *testing.T) {
 	m := shotModel()
 	m.env.homeDir = home
 	m.prefs.fullLayout = true
-	m.mode = modeFocus
+	m.push(&focusSurface{})
 	setRailSessionCwd(m, railSelectedSession(m).ID, filepath.Join(home, "dev", "api"))
 	facts := ansi.Strip(m.focusFactsLine(200))
 	if !strings.Contains(facts, filepath.Join("~", "dev", "api")) {

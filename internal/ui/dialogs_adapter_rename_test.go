@@ -176,7 +176,7 @@ func TestRenameSessionRefusesSharedWorktree(t *testing.T) {
 		t.Fatalf("shared worktree error = %q", m.errBar.text)
 	}
 	if !renameOpen(m) {
-		t.Fatalf("mode = %v, want rename card", m.mode)
+		t.Fatalf("screen = %v, want rename card", m.screenID())
 	}
 	if _, err := os.Stat(spawned.Cwd); err != nil {
 		t.Fatalf("shared worktree moved: %v", err)
@@ -200,7 +200,7 @@ func TestRenameSessionRefusesAWorktreeNameAlreadyTaken(t *testing.T) {
 		t.Fatal("a taken worktree name should report why")
 	}
 	if !renameOpen(m) {
-		t.Fatalf("mode = %v, want the rename card still open to fix the name", m.mode)
+		t.Fatalf("screen = %v, want the rename card still open to fix the name", m.screenID())
 	}
 	stored, err := m.services.store.Get(spawned.ID)
 	if err != nil {
@@ -544,7 +544,7 @@ func TestEditGroupRenamesAndSetsPath(t *testing.T) {
 
 	m.openRename()
 	if !renameOpen(m) || !openRename(m).IsGroup() {
-		t.Fatalf("edit group should open, mode = %v", m.mode)
+		t.Fatalf("edit group should open, screen = %v", m.screenID())
 	}
 	if openRename(m).Dir() != oldDir {
 		t.Fatalf("path prefill = %q want %q", openRename(m).Dir(), oldDir)

@@ -56,8 +56,8 @@ func TestForkKeepsItsDraftAndEscCloses(t *testing.T) {
 		t.Fatal("a backdrop click closed the draft")
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
-	if forkOpen(m) || m.mode != modeList {
-		t.Fatalf("esc: open=%t mode=%v", forkOpen(m), m.mode)
+	if forkOpen(m) || !m.onList() {
+		t.Fatalf("esc: open=%t screen = %v", forkOpen(m), m.screenID())
 	}
 }
 

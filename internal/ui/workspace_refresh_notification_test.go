@@ -54,7 +54,7 @@ func TestClickedNotificationLeavesFocusBeforeSelecting(t *testing.T) {
 	if other.ID == "" {
 		t.Fatal("waiting session missing")
 	}
-	m.mode = modeFocus
+	m.push(&focusSurface{})
 	served := false
 	m.poller.dependencies.TakeFocus = func() (string, bool) {
 		if served {
@@ -65,8 +65,8 @@ func TestClickedNotificationLeavesFocusBeforeSelecting(t *testing.T) {
 	}
 	resetExecution(m)
 	m.applyCmd(t, m.refreshCmd())
-	if m.mode != modeList {
-		t.Fatalf("mode = %v, want the list", m.mode)
+	if !m.onList() {
+		t.Fatalf("screen = %v, want the list", m.screenID())
 	}
 	if sess, ok := m.selected(); !ok || sess.ID != other.ID {
 		t.Fatalf("cursor is on %+v, want the session the banner named", sess)
@@ -78,11 +78,11 @@ func TestClickedNotificationLeavesFocusBeforeSelecting(t *testing.T) {
 func TestClickedNotificationForAGoneSessionChangesNothing(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
-		name string
-		mode mode
+		name  string
+		focus bool
 	}{
-		{"list", modeList},
-		{"focus", modeFocus},
+		{"list", false},
+		{"focus", true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			m := buildModel(t)
@@ -92,7 +92,10 @@ func TestClickedNotificationForAGoneSessionChangesNothing(t *testing.T) {
 			if !ok {
 				t.Fatal("nothing selected")
 			}
-			m.mode = test.mode
+			if test.focus {
+				m.push(&focusSurface{})
+			}
+			want := m.screenID()
 			served := false
 			m.poller.dependencies.TakeFocus = func() (string, bool) {
 				if served {
@@ -103,8 +106,8 @@ func TestClickedNotificationForAGoneSessionChangesNothing(t *testing.T) {
 			}
 			resetExecution(m)
 			m.applyCmd(t, m.refreshCmd())
-			if m.mode != test.mode {
-				t.Fatalf("mode = %v, want %v", m.mode, test.mode)
+			if m.screenID() != want {
+				t.Fatalf("screen = %v, want %v", m.screenID(), want)
 			}
 			if sess, ok := m.selected(); !ok || sess.ID != before.ID {
 				t.Fatalf("cursor moved to %+v, want it left on %s", sess, before.Name)

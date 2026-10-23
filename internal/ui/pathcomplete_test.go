@@ -357,7 +357,8 @@ func TestReopenedFormIgnoresTheLastOpeningsScan(t *testing.T) {
 	typed := filepath.Join(root, "a")
 	m.form().SetDir(typed)
 	stale := m.requestPathSuggestions(pathSuggestionForm, typed)().(pathSuggestionsMsg)
-	m.mode = modeList
+	m.base = baseList
+	m.clearSurfaces()
 	m.openForm()
 	m.form().SetDir(typed)
 	m.requestPathSuggestions(pathSuggestionForm, typed)

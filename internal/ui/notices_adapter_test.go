@@ -426,10 +426,11 @@ func modalModel(t *testing.T) *Model {
 func TestOpenNoticesFromList(t *testing.T) {
 	m := footModel(t)
 	m.layout.width, m.layout.height = 100, 34
-	m.mode = modeList
+	m.base = baseList
+	m.clearSurfaces()
 	m.handleKey(key("M"))
 	if !m.noticesOpen() {
-		t.Fatalf("M should open the notices modal, mode=%v", m.mode)
+		t.Fatalf("M should open the notices modal, screen = %v", m.screenID())
 	}
 }
 
@@ -573,7 +574,7 @@ func TestNoticesDismissAdvancesAndCloses(t *testing.T) {
 	for i := 0; i < total; i++ {
 		m.handleKey(key("x"))
 	}
-	if m.mode != modeList {
+	if !m.onList() {
 		t.Fatal("dismissing the last notice should close the modal")
 	}
 	if len(m.activeNotices()) != 0 {
@@ -607,7 +608,7 @@ func TestNoticesEnterOpensURL(t *testing.T) {
 func TestNoticesEscCloses(t *testing.T) {
 	m := modalModel(t)
 	m.handleKey(key("esc"))
-	if m.mode != modeList {
+	if !m.onList() {
 		t.Fatal("esc should close the modal")
 	}
 	if len(m.activeNotices()) == 0 {
@@ -632,7 +633,7 @@ func TestStartupOpensNoticesModalOncePerVersion(t *testing.T) {
 	m := noticeModel(st, "v0.2.0")
 	m.openStartupNotice()
 	if !m.noticesOpen() {
-		t.Fatalf("first launch should open the notices modal, mode=%v", m.mode)
+		t.Fatalf("first launch should open the notices modal, screen = %v", m.screenID())
 	}
 	if selected := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()]; selected.ID != uinotices.Welcome {
 		t.Fatalf("welcome should be selected, got %q", selected.ID)
@@ -684,11 +685,12 @@ func TestLateFeedKeepsModalSelection(t *testing.T) {
 func TestNewFeedOpensNoticesModal(t *testing.T) {
 	for _, hidden := range []bool{false, true} {
 		m := footModel(t)
-		m.mode = modeList
+		m.base = baseList
+		m.clearSurfaces()
 		m.prefs.hideStats = hidden
 		m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
 		if !m.noticesOpen() {
-			t.Fatalf("hidden=%v: a new feed message should open the modal, mode=%v", hidden, m.mode)
+			t.Fatalf("hidden=%v: a new feed message should open the modal, screen = %v", hidden, m.screenID())
 		}
 		if got := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID; got != "feed-new" {
 			t.Fatalf("new message should be selected, got %q", got)
@@ -698,59 +700,63 @@ func TestNewFeedOpensNoticesModal(t *testing.T) {
 
 func TestSameFeedDoesNotReopenNoticesModal(t *testing.T) {
 	m := footModel(t)
-	m.mode = modeList
+	m.base = baseList
+	m.clearSurfaces()
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
 	m.handleKey(key("esc"))
-	if m.mode != modeList {
+	if !m.onList() {
 		t.Fatal("esc should close the modal")
 	}
 
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
-	if m.mode != modeList {
+	if !m.onList() {
 		t.Fatal("the same message must not reopen after esc")
 	}
 }
 
 func TestDismissedFeedDoesNotOpenNoticesModal(t *testing.T) {
 	m := footModel(t)
-	m.mode = modeList
+	m.base = baseList
+	m.clearSurfaces()
 	persistNoticeDismissal(t, m, "feed-new")
 
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
-	if m.mode != modeList {
+	if !m.onList() {
 		t.Fatal("a dismissed message must not open the modal")
 	}
 }
 
 func TestNewFeedDoesNotStealFocus(t *testing.T) {
 	m := footModel(t)
-	m.mode = modeFocus
+	m.push(&focusSurface{})
 
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
-	if m.mode != modeFocus {
-		t.Fatalf("a new message must not steal an open session, mode=%v", m.mode)
+	if !m.focused() {
+		t.Fatalf("a new message must not steal an open session, screen = %v", m.screenID())
 	}
 }
 
 func TestPendingFeedDoesNotOpenDuringQuit(t *testing.T) {
 	m := footModel(t)
-	m.mode = modeFocus
+	m.push(&focusSurface{})
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
 	if m.notices.pendingNotice != "feed-new" {
 		t.Fatalf("pending notice = %q, want feed-new", m.notices.pendingNotice)
 	}
 
-	m.mode = modeList
+	m.base = baseList
+	m.clearSurfaces()
 	m.effects.quitting = true
 	m.flushPendingNotice()
-	if m.mode != modeList {
-		t.Fatalf("pending feed opened while quitting: mode=%v", m.mode)
+	if !m.onList() {
+		t.Fatalf("pending feed opened while quitting: screen = %v", m.screenID())
 	}
 }
 
 func TestAdditionalFeedIdOpensNoticesModal(t *testing.T) {
 	m := footModel(t)
-	m.mode = modeList
+	m.base = baseList
+	m.clearSurfaces()
 	m.notices.feedMessages = []feed.Message{{ID: "feed-old", Banner: "old", Title: "Old"}}
 
 	m.Update(feedMsg{messages: []feed.Message{
@@ -758,7 +764,7 @@ func TestAdditionalFeedIdOpensNoticesModal(t *testing.T) {
 		{ID: "feed-new", Banner: "new", Title: "Just in"},
 	}})
 	if !m.noticesOpen() {
-		t.Fatalf("a new id should open the modal, mode=%v", m.mode)
+		t.Fatalf("a new id should open the modal, screen = %v", m.screenID())
 	}
 	if got := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID; got != "feed-new" {
 		t.Fatalf("new message should be selected, got %q", got)
@@ -767,15 +773,15 @@ func TestAdditionalFeedIdOpensNoticesModal(t *testing.T) {
 
 func TestFeedDuringFocusOpensOnLeave(t *testing.T) {
 	m := footModel(t)
-	m.mode = modeFocus
+	m.push(&focusSurface{})
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
-	if m.mode != modeFocus {
-		t.Fatalf("mode=%v, want focus until leave", m.mode)
+	if !m.focused() {
+		t.Fatalf("screen = %v, want focus until leave", m.screenID())
 	}
 
 	m.leaveFocus()
 	if !m.noticesOpen() {
-		t.Fatalf("returning to the list should open the new message, mode=%v", m.mode)
+		t.Fatalf("returning to the list should open the new message, screen = %v", m.screenID())
 	}
 	if got := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID; got != "feed-new" {
 		t.Fatalf("new message should be selected, got %q", got)
@@ -794,7 +800,7 @@ func TestFeedDuringSettingsOpensOnClose(t *testing.T) {
 	m.surfaces = nil
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 34})
 	if !m.noticesOpen() {
-		t.Fatalf("closing settings should open the new message, mode=%v", m.mode)
+		t.Fatalf("closing settings should open the new message, screen = %v", m.screenID())
 	}
 	if got := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID; got != "feed-new" {
 		t.Fatalf("new message should be selected, got %q", got)
@@ -803,29 +809,30 @@ func TestFeedDuringSettingsOpensOnClose(t *testing.T) {
 
 func TestExpiredPendingNoticeDoesNotOpen(t *testing.T) {
 	m := footModel(t)
-	m.mode = modeFocus
+	m.push(&focusSurface{})
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
 	m.Update(feedMsg{})
 	m.leaveFocus()
-	if m.mode != modeList {
-		t.Fatalf("a notice that left the feed must not open, mode=%v", m.mode)
+	if !m.onList() {
+		t.Fatalf("a notice that left the feed must not open, screen = %v", m.screenID())
 	}
 }
 
 func TestNewFeedWaitsForSearchToClose(t *testing.T) {
 	m := footModel(t)
 	m.layout.width, m.layout.height = 100, 34
-	m.mode = modeList
+	m.base = baseList
+	m.clearSurfaces()
 	m.rail.SetSearch(m.rail.Search(), true)
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
-	if m.mode != modeList || !m.rail.Searching() {
-		t.Fatalf("search should keep the modal closed, mode=%v searching=%v", m.mode, m.rail.Searching())
+	if !m.onList() || !m.rail.Searching() {
+		t.Fatalf("search should keep the modal closed, screen = %v searching=%v", m.screenID(), m.rail.Searching())
 	}
 
 	m.rail.SetSearch(m.rail.Search(), false)
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 34})
 	if !m.noticesOpen() {
-		t.Fatalf("closing search should open the new message, mode=%v", m.mode)
+		t.Fatalf("closing search should open the new message, screen = %v", m.screenID())
 	}
 	if got := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID; got != "feed-new" {
 		t.Fatalf("new message should be selected, got %q", got)
@@ -835,18 +842,19 @@ func TestNewFeedWaitsForSearchToClose(t *testing.T) {
 func TestNewFeedWaitsForQuickBar(t *testing.T) {
 	m := footModel(t)
 	m.layout.width, m.layout.height = 100, 34
-	m.mode = modeList
+	m.base = baseList
+	m.clearSurfaces()
 	pushQuick(m)
 	m.quick().input = textarea.New()
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
-	if m.mode != modeList || (m.quick() == nil) {
-		t.Fatalf("quick bar should keep the modal closed, mode=%v quick=%v", m.mode, (m.quick() != nil))
+	if !m.onList() || (m.quick() == nil) {
+		t.Fatalf("quick bar should keep the modal closed, screen = %v quick=%v", m.screenID(), (m.quick() != nil))
 	}
 
 	m.closeQuick()
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 34})
 	if !m.noticesOpen() {
-		t.Fatalf("closing the quick bar should open the new message, mode=%v", m.mode)
+		t.Fatalf("closing the quick bar should open the new message, screen = %v", m.screenID())
 	}
 	if got := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID; got != "feed-new" {
 		t.Fatalf("new message should be selected, got %q", got)
@@ -856,17 +864,18 @@ func TestNewFeedWaitsForQuickBar(t *testing.T) {
 func TestNewFeedWaitsForResize(t *testing.T) {
 	m := footModel(t)
 	m.layout.width, m.layout.height = 100, 34
-	m.mode = modeList
+	m.base = baseList
+	m.clearSurfaces()
 	m.enterResizeMode()
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
-	if m.mode != modeList || !m.layout.split.resizeMode {
-		t.Fatalf("resize should keep the modal closed, mode=%v resize=%v", m.mode, m.layout.split.resizeMode)
+	if !m.onList() || !m.layout.split.resizeMode {
+		t.Fatalf("resize should keep the modal closed, screen = %v resize=%v", m.screenID(), m.layout.split.resizeMode)
 	}
 
 	m.exitResizeMode(false)
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 34})
 	if !m.noticesOpen() {
-		t.Fatalf("leaving resize should open the new message, mode=%v", m.mode)
+		t.Fatalf("leaving resize should open the new message, screen = %v", m.screenID())
 	}
 	if got := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID; got != "feed-new" {
 		t.Fatalf("new message should be selected, got %q", got)
@@ -875,11 +884,12 @@ func TestNewFeedWaitsForResize(t *testing.T) {
 
 func TestNewUpdateOpensNoticesModal(t *testing.T) {
 	m := footModel(t)
-	m.mode = modeList
+	m.base = baseList
+	m.clearSurfaces()
 
 	m.Update(updateMsg{latest: "v0.3.0", url: "https://example.com"})
 	if !m.noticesOpen() {
-		t.Fatalf("a new update notice should open the modal, mode=%v", m.mode)
+		t.Fatalf("a new update notice should open the modal, screen = %v", m.screenID())
 	}
 	if got := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID; got != "update-v0.3.0" {
 		t.Fatalf("update notice should be selected, got %q", got)
@@ -888,27 +898,29 @@ func TestNewUpdateOpensNoticesModal(t *testing.T) {
 
 func TestKnownLatestDoesNotReopenOnFetch(t *testing.T) {
 	m := footModel(t)
-	m.mode = modeList
+	m.base = baseList
+	m.clearSurfaces()
 	m.update.latest = "v0.3.0"
 	m.update.url = "https://example.com"
 	m.indexReleaseRanges()
 
 	m.Update(updateMsg{latest: "v0.3.0", url: "https://example.com"})
-	if m.mode != modeList {
+	if !m.onList() {
 		t.Fatal("a latest already on the list must not pop the modal again")
 	}
 }
 
 func TestNewerReleaseOpensNoticesModal(t *testing.T) {
 	m := footModel(t)
-	m.mode = modeList
+	m.base = baseList
+	m.clearSurfaces()
 	m.update.latest = "v0.3.0"
 	m.update.url = "https://example.com"
 	m.indexReleaseRanges()
 
 	m.Update(updateMsg{latest: "v0.4.0", url: "https://example.com"})
 	if !m.noticesOpen() {
-		t.Fatalf("a newer tag should open the modal, mode=%v", m.mode)
+		t.Fatalf("a newer tag should open the modal, screen = %v", m.screenID())
 	}
 	if got := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID; got != "update-v0.4.0" {
 		t.Fatalf("new release should be selected, got %q", got)
@@ -925,7 +937,7 @@ func TestFeedArrivingDuringWelcomeStaysOnWelcome(t *testing.T) {
 
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
 	if !m.noticesOpen() {
-		t.Fatalf("mode=%v, want notices", m.mode)
+		t.Fatalf("screen = %v, want notices", m.screenID())
 	}
 	if got := m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID; got != uinotices.Welcome {
 		t.Fatalf("welcome should stay selected, got %q", got)
@@ -938,7 +950,7 @@ func TestFeedArrivingDuringWelcomeStaysOnWelcome(t *testing.T) {
 func TestAutoOpenFeedAndUpdateFrames(t *testing.T) {
 	feedModel := footModel(t)
 	feedModel.layout.width, feedModel.layout.height = 100, 34
-	feedModel.mode = modeList
+	feedModel.base = baseList
 	feedModel.Update(feedMsg{messages: []feed.Message{{
 		ID:     "feed-holdoff",
 		Banner: "Hold off on v0.36",
@@ -955,7 +967,7 @@ func TestAutoOpenFeedAndUpdateFrames(t *testing.T) {
 
 	upd := footModel(t)
 	upd.layout.width, upd.layout.height = 100, 34
-	upd.mode = modeList
+	upd.base = baseList
 	upd.Update(updateMsg{
 		latest:   "v0.3.0",
 		url:      "https://github.com/YoanWai/agent-manager/releases/tag/v0.3.0",
@@ -974,7 +986,7 @@ func TestUpdateNoticeAppliesOnU(t *testing.T) {
 	m.update.latest = "v0.3.0"
 	m.openNotices("update-v0.3.0")
 	if !m.noticesOpen() || noticesSurfaceOf(m).panel.Cursor() != 0 {
-		t.Fatalf("update notice should open selected, mode=%v cursor=%d", m.mode, noticesSurfaceOf(m).panel.Cursor())
+		t.Fatalf("update notice should open selected, screen = %v cursor=%d", m.screenID(), noticesSurfaceOf(m).panel.Cursor())
 	}
 
 	applied := ""
@@ -1242,7 +1254,8 @@ func TestArrowStepNoticeListedUntilDismissed(t *testing.T) {
 func TestEmptyNoticesPanelStillOpensAndOffersRefresh(t *testing.T) {
 	m := footModel(t)
 	m.layout.width, m.layout.height = 100, 34
-	m.mode = modeList
+	m.base = baseList
+	m.clearSurfaces()
 	for _, n := range m.activeNotices() {
 		persistNoticeDismissal(t, m, n.ID)
 	}
@@ -1252,7 +1265,7 @@ func TestEmptyNoticesPanelStillOpensAndOffersRefresh(t *testing.T) {
 
 	m.handleKey(key("M"))
 	if !m.noticesOpen() {
-		t.Fatalf("M should open an empty panel, mode=%v", m.mode)
+		t.Fatalf("M should open an empty panel, screen = %v", m.screenID())
 	}
 	frame := ansi.Strip(preparedView(m))
 	for _, want := range []string{"nothing new", "r refresh"} {

@@ -267,7 +267,7 @@ func TestNewSessionFormSpawnsOnTheConnection(t *testing.T) {
 	m.rail.Focus(boxGroup)
 	m.openForm()
 	if !formOpen(m) || !m.form().remote.on() || m.form().groupPath() != "web" || m.form().Dir() != "" {
-		t.Fatalf("form = mode %v remote %+v group %q dir %q", m.mode, m.form().remote, m.form().groupPath(), m.form().Dir())
+		t.Fatalf("form = mode %v remote %+v group %q dir %q", m.screenID(), m.form().remote, m.form().groupPath(), m.form().Dir())
 	}
 	if cmd := m.runFormRequest(spawn.FormRequest{Probe: true}, nil); cmd != nil {
 		t.Fatal("the form probed a local directory for a remote spawn")
@@ -284,8 +284,8 @@ func TestNewSessionFormSpawnsOnTheConnection(t *testing.T) {
 			t.Fatalf("an untouched form sent %q; the host resolves it", word)
 		}
 	}
-	if m.mode != modeList {
-		t.Fatalf("mode = %v, want the form closed", m.mode)
+	if !m.onList() {
+		t.Fatalf("screen = %v, want the form closed", m.screenID())
 	}
 }
 
@@ -297,7 +297,7 @@ func TestNewGroupFormCreatesOnTheConnection(t *testing.T) {
 		t.Fatal("opening the form queued work")
 	}
 	if !m.groupFormOpen() || m.groupSurface().remote != (formRemote{host: "box", group: "web"}) || m.groupSurface().form.Dir() != "" {
-		t.Fatalf("form = mode %v remote %+v dir %q", m.mode, m.groupSurface().remote, m.groupSurface().form.Dir())
+		t.Fatalf("form = mode %v remote %+v dir %q", m.screenID(), m.groupSurface().remote, m.groupSurface().form.Dir())
 	}
 	m.groupSurface().form.SetName("api")
 	_, cmd := m.submitGroupForm()
@@ -306,8 +306,8 @@ func TestNewGroupFormCreatesOnTheConnection(t *testing.T) {
 	if len(calls) != 1 || !slices.Equal(calls[0], []string{"create-group", "--json", "--", "web/api"}) {
 		t.Fatalf("calls = %q", calls)
 	}
-	if m.mode != modeList || !strings.Contains(m.errBar.text, "created group web/api on box") {
-		t.Fatalf("mode %v status %q, want the form closed and the group reported", m.mode, m.errBar.text)
+	if !m.onList() || !strings.Contains(m.errBar.text, "created group web/api on box") {
+		t.Fatalf("mode %v status %q, want the form closed and the group reported", m.screenID(), m.errBar.text)
 	}
 	if groups, err := m.services.store.Groups(); err != nil || len(groups) != 0 {
 		t.Fatalf("local groups = %+v, %v; a remote group was written locally", groups, err)
@@ -319,11 +319,11 @@ func TestRemoteLifecycleAsksFirstAndNoSendsNothing(t *testing.T) {
 	m := connectedModel(t, fake)
 	_, cmd := m.runRailIntent(uirail.Intent{Kind: uirail.Kill, Target: boxSession("s1")})
 	if !confirmOpen(m) || pendingConfirm(m).label != "kill api on box? frees its RAM there, v revives it." {
-		t.Fatalf("mode %v label %q, want the kill confirm", m.mode, pendingConfirm(m).label)
+		t.Fatalf("mode %v label %q, want the kill confirm", m.screenID(), pendingConfirm(m).label)
 	}
 	m.runRemoteCmd(t, m.answerRemote(t, fake, cmd, "n"))
-	if calls := fake.taken(); len(calls) != 0 || m.mode != modeList {
-		t.Fatalf("calls = %q, mode %v after n", calls, m.mode)
+	if calls := fake.taken(); len(calls) != 0 || !m.onList() {
+		t.Fatalf("calls = %q, mode %v after n", calls, m.screenID())
 	}
 	// A dead agent holds no RAM there to free.
 	m.runRailIntent(uirail.Intent{Kind: uirail.Kill, Target: boxSession("s2")})

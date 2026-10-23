@@ -24,7 +24,7 @@ func TestArchiveConfirmationUsesLoadedSessionTree(t *testing.T) {
 
 	m.archiveSelected()
 	if !confirmOpen(m) || len(pendingConfirm(m).sessions) != 1 {
-		t.Fatalf("archive confirmation depended on the closed store: mode=%v err=%q target=%+v", m.mode, m.errBar.text, pendingConfirm(m).sessions)
+		t.Fatalf("archive confirmation depended on the closed store: screen = %v err=%q target=%+v", m.screenID(), m.errBar.text, pendingConfirm(m).sessions)
 	}
 }
 
@@ -181,8 +181,8 @@ func TestArchiveAndRestoreRefuseTheRootRow(t *testing.T) {
 
 			m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(tc.key)})
 			m.drainEffects(t)
-			if want := "root is the top level, not a group to " + tc.action; m.mode != modeList || m.errBar.text != want {
-				t.Errorf("mode = %v, errBar = %q, want the list and %q", m.mode, m.errBar.text, want)
+			if want := "root is the top level, not a group to " + tc.action; !m.onList() || m.errBar.text != want {
+				t.Errorf("screen = %v, errBar = %q, want the list and %q", m.screenID(), m.errBar.text, want)
 			}
 			m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 			m.drainEffects(t)

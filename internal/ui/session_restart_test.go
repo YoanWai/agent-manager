@@ -60,7 +60,7 @@ func TestRestartLaunchesAFreshConversation(t *testing.T) {
 	m.selectSessionRow(t, "phoenix")
 
 	if _, _ = m.restartSelected(); !confirmOpen(m) {
-		t.Fatalf("restart should ask first, mode = %v err = %q", m.mode, m.errBar.text)
+		t.Fatalf("restart should ask first, screen = %v err = %q", m.screenID(), m.errBar.text)
 	}
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.drainEffects(t)
@@ -157,7 +157,7 @@ func TestRestartEndsALiveAgentFirst(t *testing.T) {
 	m.selectSessionRow(t, "busy")
 
 	if _, _ = m.restartSelected(); !confirmOpen(m) {
-		t.Fatalf("restart should ask first, mode = %v err = %q", m.mode, m.errBar.text)
+		t.Fatalf("restart should ask first, screen = %v err = %q", m.screenID(), m.errBar.text)
 	}
 	if !strings.Contains(pendingConfirm(m).label, "ends the running agent") {
 		t.Fatalf("confirm label = %q", pendingConfirm(m).label)
@@ -191,8 +191,8 @@ func TestRestartRefusesGroupRow(t *testing.T) {
 	createSession(t, m, "member", dir, "work")
 	m.selectGroupRow(t, "work")
 
-	if _, _ = m.restartSelected(); m.mode != modeList || m.errBar.text == "" {
-		t.Fatalf("group restart should refuse, mode = %v err = %q", m.mode, m.errBar.text)
+	if _, _ = m.restartSelected(); !m.onList() || m.errBar.text == "" {
+		t.Fatalf("group restart should refuse, screen = %v err = %q", m.screenID(), m.errBar.text)
 	}
 }
 

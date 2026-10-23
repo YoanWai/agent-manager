@@ -228,7 +228,7 @@ func TestSettingsBugReportRowOpensIssue(t *testing.T) {
 	m.services.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
 	m.openSettings()
 	if !m.settingsOpen() {
-		t.Fatalf("settings should open, mode=%v", m.mode)
+		t.Fatalf("settings should open, screen = %v", m.screenID())
 	}
 
 	var opened string
@@ -359,7 +359,7 @@ func TestSettingsCLIPickerHidesFromNewSessions(t *testing.T) {
 	}
 	m.openForm()
 	if !formOpen(m) {
-		t.Fatalf("form should open with remaining CLIs, mode=%v err=%q", m.mode, m.errBar.text)
+		t.Fatalf("form should open with remaining CLIs, screen = %v err=%q", m.screenID(), m.errBar.text)
 	}
 	for _, name := range formTools(m) {
 		if name == "codex" {
@@ -699,7 +699,7 @@ func TestSettingsEscWithoutChangesWritesNothing(t *testing.T) {
 	m.openSettings()
 	_, save := m.handleSettingsKey(key("esc"))
 	if m.settingsOpen() {
-		t.Fatalf("esc should close the dialog, mode=%v", m.mode)
+		t.Fatalf("esc should close the dialog, screen = %v", m.screenID())
 	}
 	m.applyCmd(t, save)
 

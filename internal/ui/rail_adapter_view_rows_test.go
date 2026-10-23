@@ -262,8 +262,8 @@ func TestRootRowRefusesGroupEdits(t *testing.T) {
 			if m.errBar.text == "" {
 				t.Fatal("no message explaining the refusal")
 			}
-			if m.mode != modeList {
-				t.Fatalf("mode changed to %v", m.mode)
+			if !m.onList() {
+				t.Fatalf("mode changed to %v", m.screenID())
 			}
 			if pendingConfirm(m).label != "" {
 				t.Fatalf("a confirmation was staged: %q", pendingConfirm(m).label)
@@ -495,7 +495,7 @@ func TestInboxBadgeOutlivesTheNameAndTheFocusBadge(t *testing.T) {
 		m.workspace.sessions = []store.Session{{ID: "x", Name: "some-long-session-name", Tool: "claude", Group: "a/b/c"}}
 		m.rebuildRows()
 		setRailCursor(m, len(railRows(m))-1)
-		m.mode = modeFocus
+		m.push(&focusSurface{})
 		m.workspace.queuedMessages = map[string]int{"x": 2}
 
 		rows := railTextAt(m, width)
@@ -531,7 +531,6 @@ func TestRowMarksSessionsOnAnotherServer(t *testing.T) {
 					height: 40,
 					split:  splitState{ratio: defaultSplitRatio},
 				},
-				mode: modeList,
 				workspace: workspace{sessions: []store.Session{sess},
 
 					tmuxSocket: here, leadingManager: tc.leading},
@@ -559,7 +558,6 @@ func TestRowsAreUnmarkedBeforeTheFirstPoll(t *testing.T) {
 			height: 40,
 			split:  splitState{ratio: defaultSplitRatio},
 		},
-		mode:      modeList,
 		workspace: workspace{sessions: []store.Session{sess}},
 		rail:      railModelFromRows([]treeRow{{sess: sess}}, 0),
 	}
@@ -801,8 +799,8 @@ func spawnUnnamed(t *testing.T, m *Model, prompt string) store.Session {
 		t.Fatalf("submit: %q", m.errBar.text)
 	}
 	m.applyCmd(t, cmd)
-	if m.mode != modeList {
-		t.Fatalf("submit left mode=%v err=%q", m.mode, m.errBar.text)
+	if !m.onList() {
+		t.Fatalf("submit left screen = %v err=%q", m.screenID(), m.errBar.text)
 	}
 	rows := m.sessionRows()
 	if len(rows) != 1 {

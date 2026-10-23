@@ -195,7 +195,7 @@ func TestKillDeadAgentStillKillsItsLiveChild(t *testing.T) {
 	_, cmd := m.killSelected()
 	m.applyCmd(t, cmd)
 	if !confirmOpen(m) {
-		t.Fatalf("mode = %v, want the kill confirm (errBar %q)", m.mode, m.errBar.text)
+		t.Fatalf("screen = %v, want the kill confirm (errBar %q)", m.screenID(), m.errBar.text)
 	}
 	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	m.drainEffects(t)

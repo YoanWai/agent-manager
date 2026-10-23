@@ -10,7 +10,7 @@ import (
 )
 
 func TestPreviewSettleDropsStaleGen(t *testing.T) {
-	m := &Model{mode: modeList, layout: layoutState{width: 120, height: 40}}
+	m := &Model{layout: layoutState{width: 120, height: 40}}
 	for range 3 {
 		m.focus.pane.MovePreview()
 	}
@@ -52,7 +52,6 @@ func TestPreviewCadenceIsIndependentFromStartupAnimation(t *testing.T) {
 
 func TestMoveCursorDebouncesPreview(t *testing.T) {
 	m := &Model{
-		mode: modeList,
 		layout: layoutState{
 			width:  120,
 			height: 40,

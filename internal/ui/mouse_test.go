@@ -17,7 +17,7 @@ import (
 // for its off polarity precisely so a zero-valued struct, the shape most
 // tests build, does not silently disable the mouse everywhere.
 func TestSyncMouseCaptureDefaultsOn(t *testing.T) {
-	m := &Model{mode: modeList}
+	m := &Model{}
 	// Nothing has changed from the zero value's implied "captured" state,
 	// so there is nothing to tell the terminal.
 	if cmd := m.syncMouseCapture(); cmd != nil {
@@ -31,14 +31,14 @@ func TestSyncMouseCaptureDefaultsOn(t *testing.T) {
 // The mouse-mode setting releases the mouse everywhere except focus mode,
 // whose own forwarding predates the setting and stays on regardless.
 func TestSyncMouseCaptureRespectsMouseDisabled(t *testing.T) {
-	m := &Model{mode: modeList, prefs: preferences{mouseDisabled: true}}
+	m := &Model{prefs: preferences{mouseDisabled: true}}
 	if cmd := m.syncMouseCapture(); cmd == nil {
 		t.Fatal("turning the setting off should release the mouse")
 	}
 	if !m.mouse.released {
 		t.Fatal("mouseReleased should follow the setting in list mode")
 	}
-	m.mode = modeFocus
+	m.push(&focusSurface{})
 	if cmd := m.syncMouseCapture(); cmd == nil {
 		t.Fatal("entering focus mode should re-capture regardless of the setting")
 	}
@@ -55,7 +55,6 @@ func TestDragReleasePersistsAndExits(t *testing.T) {
 	t.Cleanup(func() { st.Close() })
 
 	m := &Model{
-		mode: modeList,
 		layout: layoutState{
 			width:  100,
 			height: 40,
@@ -171,7 +170,6 @@ func TestDragResizesTmuxOnlyOnRelease(t *testing.T) {
 
 func TestPressOutsideBodyDoesNotDrag(t *testing.T) {
 	m := &Model{
-		mode: modeList,
 		layout: layoutState{
 			width:  100,
 			height: 40,
@@ -204,7 +202,6 @@ func TestPressOutsideBodyDoesNotDrag(t *testing.T) {
 
 func TestDragCancelRestoresRatio(t *testing.T) {
 	m := &Model{
-		mode: modeList,
 		layout: layoutState{
 			width:  100,
 			height: 40,
@@ -243,7 +240,6 @@ func TestDragCancelRestoresRatio(t *testing.T) {
 
 func TestPressOffDividerDoesNotDrag(t *testing.T) {
 	m := &Model{
-		mode: modeList,
 		layout: layoutState{
 			width:  100,
 			height: 40,
@@ -319,8 +315,8 @@ func TestClickSelectsRow(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("selecting a different row should schedule a preview")
 	}
-	if m.mode != modeList {
-		t.Fatalf("first click should select, not focus, mode = %v", m.mode)
+	if !m.onList() {
+		t.Fatalf("first click should select, not focus, screen = %v", m.screenID())
 	}
 }
 
@@ -333,8 +329,8 @@ func TestClickOnAnotherRowFromFocusFocusesIt(t *testing.T) {
 	updated, _ := m.focusSelected()
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.mode != modeFocus {
-		t.Fatalf("test setup: focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
+	if !m.focused() {
+		t.Fatalf("test setup: focus alpha, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
 
 	line := paintedRailLines(t, m, "beta")[0]
@@ -344,16 +340,16 @@ func TestClickOnAnotherRowFromFocusFocusesIt(t *testing.T) {
 	m.drainEffects(t)
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.mode != modeList {
-		t.Fatalf("the press should leave focus, mode = %v", m.mode)
+	if !m.onList() {
+		t.Fatalf("the press should leave focus, screen = %v", m.screenID())
 	}
 	at.Action = tea.MouseActionRelease
 	updated, _ = m.handleMouse(at)
 	m.drainEffects(t)
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if sess, ok := m.selected(); m.mode != modeFocus || !ok || sess.Name != "beta" {
-		t.Fatalf("the release should focus beta, mode = %v got %q", m.mode, sess.Name)
+	if sess, ok := m.selected(); !m.focused() || !ok || sess.Name != "beta" {
+		t.Fatalf("the release should focus beta, screen = %v got %q", m.screenID(), sess.Name)
 	}
 }
 
@@ -365,8 +361,8 @@ func TestClickOnFocusedSessionRowLeavesFocus(t *testing.T) {
 	updated, _ := m.focusSelected()
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.mode != modeFocus {
-		t.Fatalf("test setup: focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
+	if !m.focused() {
+		t.Fatalf("test setup: focus alpha, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
 
 	line := paintedRailLines(t, m, "alpha")[0]
@@ -381,8 +377,8 @@ func TestClickOnFocusedSessionRowLeavesFocus(t *testing.T) {
 	m.drainEffects(t)
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.mode != modeList {
-		t.Fatalf("click on the focused row should leave focus, mode = %v", m.mode)
+	if !m.onList() {
+		t.Fatalf("click on the focused row should leave focus, screen = %v", m.screenID())
 	}
 	if sess, ok := m.selected(); !ok || sess.Name != "alpha" {
 		t.Fatalf("selection should stay on alpha, got %q ok=%v", sess.Name, ok)
@@ -398,8 +394,8 @@ func TestClickInFocusedPaneStaysFocused(t *testing.T) {
 	updated, _ := m.focusSelected()
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.mode != modeFocus {
-		t.Fatalf("test setup: focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
+	if !m.focused() {
+		t.Fatalf("test setup: focus alpha, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
 	// Empty cat panes have no rendered hit box; give this click test visible content.
 	m.workspace.preview = "focused pane"
@@ -413,8 +409,8 @@ func TestClickInFocusedPaneStaysFocused(t *testing.T) {
 	})
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.mode != modeFocus {
-		t.Fatalf("click in the pane should stay focused, mode = %v", m.mode)
+	if !m.focused() {
+		t.Fatalf("click in the pane should stay focused, screen = %v", m.screenID())
 	}
 }
 
@@ -441,8 +437,8 @@ func TestDoubleClickFocusesTheRowUnderThePointer(t *testing.T) {
 	m.drainEffects(t)
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.mode != modeFocus {
-		t.Fatalf("double click should focus, mode = %v, err = %q", m.mode, m.errBar.text)
+	if !m.focused() {
+		t.Fatalf("double click should focus, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
 	if sess, ok := m.selected(); !ok || sess.Name != "alpha" {
 		t.Fatalf("double click should focus the row it landed on, got %q ok=%v", sess.Name, ok)
@@ -489,8 +485,8 @@ func TestDoubleClickPairsAcrossARebuild(t *testing.T) {
 	})
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.mode != modeFocus {
-		t.Fatalf("the pair should survive a rebuild, mode = %v, err = %q", m.mode, m.errBar.text)
+	if !m.focused() {
+		t.Fatalf("the pair should survive a rebuild, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
 	if sess, ok := m.selected(); !ok || sess.Name != "target" {
 		t.Fatalf("should focus target, got %q ok=%v", sess.Name, ok)
@@ -507,8 +503,8 @@ func TestClickInTheFocusedColumnStaysFocused(t *testing.T) {
 	updated, _ := m.focusSelected()
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.mode != modeFocus {
-		t.Fatalf("test setup: focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
+	if !m.focused() {
+		t.Fatalf("test setup: focus alpha, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
 
 	for _, tc := range []struct {
@@ -527,8 +523,8 @@ func TestClickInTheFocusedColumnStaysFocused(t *testing.T) {
 			})
 			m = updated.(*Model)
 			m.drainEffects(t)
-			if m.mode != modeFocus {
-				t.Fatalf("a click in the session's own column must not leave focus, mode = %v", m.mode)
+			if !m.focused() {
+				t.Fatalf("a click in the session's own column must not leave focus, screen = %v", m.screenID())
 			}
 		})
 	}
@@ -549,8 +545,8 @@ func TestClickInFullScreenFocusStaysFocused(t *testing.T) {
 	updated, _ := m.focusSelected()
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.mode != modeFocus {
-		t.Fatalf("test setup: focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
+	if !m.focused() {
+		t.Fatalf("test setup: focus alpha, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
 	preparedView(m)
 
@@ -560,8 +556,8 @@ func TestClickInFullScreenFocusStaysFocused(t *testing.T) {
 	})
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.mode != modeFocus {
-		t.Fatalf("a click with no list on screen must not leave focus, mode = %v", m.mode)
+	if !m.focused() {
+		t.Fatalf("a click with no list on screen must not leave focus, screen = %v", m.screenID())
 	}
 	if sess, ok := m.selected(); !ok || sess.Name != "alpha" {
 		t.Fatalf("selection should stay on alpha, got %q ok=%v", sess.Name, ok)
@@ -583,15 +579,15 @@ func TestDoubleClickFocusesTheRowJustSelected(t *testing.T) {
 	m.drainEffects(t)
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.mode != modeList {
-		t.Fatalf("first click should select, mode = %v", m.mode)
+	if !m.onList() {
+		t.Fatalf("first click should select, screen = %v", m.screenID())
 	}
 	updated, _ = m.handleMouse(press)
 	m.drainEffects(t)
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.mode != modeFocus {
-		t.Fatalf("double click should focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
+	if !m.focused() {
+		t.Fatalf("double click should focus alpha, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
 }
 
@@ -614,8 +610,8 @@ func TestDoubleClickFocusesWhenEnterAttaches(t *testing.T) {
 	m.drainEffects(t)
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.mode != modeFocus {
-		t.Fatalf("double click should focus even when Enter attaches, mode = %v, err = %q", m.mode, m.errBar.text)
+	if !m.focused() {
+		t.Fatalf("double click should focus even when Enter attaches, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
 }
 
@@ -637,8 +633,8 @@ func TestSlowSecondClickDoesNotFocus(t *testing.T) {
 	m.drainEffects(t)
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.mode != modeList {
-		t.Fatalf("a slow second click should not focus, mode = %v", m.mode)
+	if !m.onList() {
+		t.Fatalf("a slow second click should not focus, screen = %v", m.screenID())
 	}
 }
 
@@ -732,8 +728,8 @@ func TestClickInContentColumnFocusesTheSelectedSession(t *testing.T) {
 	if m.rail.Cursor() != before {
 		t.Fatal("a click in the content column should not move the cursor")
 	}
-	if sess, ok := m.selected(); m.mode != modeFocus || !ok || sess.Name != "beta" {
-		t.Fatalf("a click in the content column should focus beta, mode = %v", m.mode)
+	if sess, ok := m.selected(); !m.focused() || !ok || sess.Name != "beta" {
+		t.Fatalf("a click in the content column should focus beta, screen = %v", m.screenID())
 	}
 }
 
@@ -742,7 +738,6 @@ func TestClickInContentColumnFocusesTheSelectedSession(t *testing.T) {
 // keyboard's own gate — off, and it moves nothing until the pointer does.
 func TestDividerPressArmsDragWithoutResizeMode(t *testing.T) {
 	m := &Model{
-		mode: modeList,
 		layout: layoutState{
 			width:  100,
 			height: 40,
@@ -798,7 +793,6 @@ func TestDividerClickWithoutMotionCommitsNothing(t *testing.T) {
 	t.Cleanup(func() { st.Close() })
 
 	m := &Model{
-		mode: modeList,
 		layout: layoutState{
 			width:  100,
 			height: 40,
@@ -1102,8 +1096,8 @@ func TestMoreCounterOnlyScrolls(t *testing.T) {
 		m.drainEffects(t)
 		m = updated.(*Model)
 		m.drainEffects(t)
-		if m.mode != modeList || m.rail.MenuOpen() || m.rail.Reordering() {
-			t.Fatalf("a click on the counter at x=%d should only scroll, mode = %v menu = %v lifted = %v", x, m.mode, m.rail.MenuOpen(), m.rail.Reordering())
+		if !m.onList() || m.rail.MenuOpen() || m.rail.Reordering() {
+			t.Fatalf("a click on the counter at x=%d should only scroll, screen = %v menu = %v lifted = %v", x, m.screenID(), m.rail.MenuOpen(), m.rail.Reordering())
 		}
 	}
 }
@@ -1147,7 +1141,6 @@ func TestClickOnRailChromeDoesNotSelect(t *testing.T) {
 // way an arrow key would (#110).
 func TestWheelMovesListCursor(t *testing.T) {
 	m := &Model{
-		mode: modeList,
 		layout: layoutState{
 			width:  80,
 			height: 24,
@@ -1183,8 +1176,8 @@ func TestWheelMovesListCursor(t *testing.T) {
 // the way its own footer advertises.
 func TestWheelMovesCursorWhileSearchingOrPrompting(t *testing.T) {
 	for name, m := range map[string]*Model{
-		"searching": {mode: modeList, layout: layoutState{width: 80, height: 24}, rail: railModelCount(2, 0, true)},
-		"quick bar": {mode: modeList, layout: layoutState{width: 80, height: 24}, rail: railModelCount(2, 0, false)},
+		"searching": {layout: layoutState{width: 80, height: 24}, rail: railModelCount(2, 0, true)},
+		"quick bar": {layout: layoutState{width: 80, height: 24}, rail: railModelCount(2, 0, false)},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if name == "quick bar" {
@@ -1222,8 +1215,8 @@ func TestClickSelectsRowWhileSearching(t *testing.T) {
 	m.drainEffects(t)
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if sess, ok := m.selected(); m.mode != modeList || !ok || sess.Name != "alpha" {
-		t.Fatalf("click should select alpha and stay in the list, mode = %v got %q", m.mode, sess.Name)
+	if sess, ok := m.selected(); !m.onList() || !ok || sess.Name != "alpha" {
+		t.Fatalf("click should select alpha and stay in the list, screen = %v got %q", m.screenID(), sess.Name)
 	}
 }
 
@@ -1246,8 +1239,8 @@ func TestClickLeavingFocusDoesNotRefocus(t *testing.T) {
 	updated, _ = m.focusSelected()
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.mode != modeFocus {
-		t.Fatalf("test setup: focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
+	if !m.focused() {
+		t.Fatalf("test setup: focus alpha, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
 	preparedView(m)
 
@@ -1260,8 +1253,8 @@ func TestClickLeavingFocusDoesNotRefocus(t *testing.T) {
 	m.drainEffects(t)
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.mode != modeList {
-		t.Fatalf("the click that leaves focus must not focus again, mode = %v", m.mode)
+	if !m.onList() {
+		t.Fatalf("the click that leaves focus must not focus again, screen = %v", m.screenID())
 	}
 }
 
@@ -1288,8 +1281,8 @@ func TestClickWhileSearchingOpensNoClickRun(t *testing.T) {
 	m.drainEffects(t)
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.mode != modeList {
-		t.Fatalf("one press after search closes must not focus, mode = %v", m.mode)
+	if !m.onList() {
+		t.Fatalf("one press after search closes must not focus, screen = %v", m.screenID())
 	}
 }
 
@@ -1317,8 +1310,8 @@ func TestClicksDoNotFocusWhileSearching(t *testing.T) {
 					m.drainEffects(t)
 				}
 			}
-			if m.mode != modeList {
-				t.Fatalf("clicks must not focus while searching, mode = %v", m.mode)
+			if !m.onList() {
+				t.Fatalf("clicks must not focus while searching, screen = %v", m.screenID())
 			}
 		})
 	}
@@ -1332,8 +1325,8 @@ func TestDividerPressWhileSearchingOrPrompting(t *testing.T) {
 		m    *Model
 		drag bool
 	}{
-		"searching": {&Model{mode: modeList, layout: layoutState{width: 100, height: 40, split: splitState{ratio: defaultSplitRatio}}, services: services{listKeys: keybind.DefaultList()}, rail: railModelCount(0, 0, true)}, false},
-		"quick bar": {&Model{mode: modeList, layout: layoutState{width: 100, height: 40, split: splitState{ratio: defaultSplitRatio}}, services: services{listKeys: keybind.DefaultList()}}, true},
+		"searching": {&Model{layout: layoutState{width: 100, height: 40, split: splitState{ratio: defaultSplitRatio}}, services: services{listKeys: keybind.DefaultList()}, rail: railModelCount(0, 0, true)}, false},
+		"quick bar": {&Model{layout: layoutState{width: 100, height: 40, split: splitState{ratio: defaultSplitRatio}}, services: services{listKeys: keybind.DefaultList()}}, true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if name == "quick bar" {
@@ -1354,7 +1347,7 @@ func TestDividerPressWhileSearchingOrPrompting(t *testing.T) {
 // keyboard wraps: going off the end must not fling the selection to the
 // far one and aim every key after it somewhere the user never looked.
 func TestWheelClampsAtBothEnds(t *testing.T) {
-	m := &Model{mode: modeList, layout: layoutState{width: 80, height: 24}, services: services{listKeys: keybind.DefaultList()}, rail: railModelCount(3, 2, false)}
+	m := &Model{layout: layoutState{width: 80, height: 24}, services: services{listKeys: keybind.DefaultList()}, rail: railModelCount(3, 2, false)}
 	for i := 0; i < 3; i++ {
 		updated, _ := m.handleMouse(tea.MouseMsg{
 			Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress,
@@ -1385,7 +1378,6 @@ func TestWheelClampsAtBothEnds(t *testing.T) {
 
 func TestWheelSwallowedInResizeMode(t *testing.T) {
 	m := &Model{
-		mode: modeList,
 		layout: layoutState{
 			split:  splitState{resizeMode: true},
 			width:  80,
@@ -1524,7 +1516,7 @@ func TestClickOnMessagesCardOpensNotices(t *testing.T) {
 	m.layout.width, m.layout.height = 120, 34
 	x, y := messagesCell(t, m)
 	if m = leftClick(m, x, y); !m.noticesOpen() {
-		t.Fatalf("click on the card should open messages, mode = %v", m.mode)
+		t.Fatalf("click on the card should open messages, screen = %v", m.screenID())
 	}
 }
 
@@ -1542,7 +1534,7 @@ func TestMessagesLegendOpensNoticesByMouseAndKey(t *testing.T) {
 					t.Fatalf("full=%v width=%d binding=%s: painted messages entry misses its hit box %+v", full, width, binding, m.layout.keyHits)
 				}
 				if m = leftClick(m, x, y); !m.noticesOpen() {
-					t.Fatalf("click on messages should open notices, mode=%v", m.mode)
+					t.Fatalf("click on messages should open notices, screen = %v", m.screenID())
 				}
 				m.handleKey(key("esc"))
 				msg := key(binding)
@@ -1551,7 +1543,7 @@ func TestMessagesLegendOpensNoticesByMouseAndKey(t *testing.T) {
 				}
 				m.handleKey(msg)
 				if !m.noticesOpen() {
-					t.Fatalf("%s should open notices, mode=%v", binding, m.mode)
+					t.Fatalf("%s should open notices, screen = %v", binding, m.screenID())
 				}
 				m.handleKey(key("esc"))
 				for _, n := range m.activeNotices() {
@@ -1561,12 +1553,12 @@ func TestMessagesLegendOpensNoticesByMouseAndKey(t *testing.T) {
 				if footer := ansi.Strip(m.viewFooter()); strings.Contains(footer, "unread") {
 					t.Fatalf("with nothing unread the legend must give its room back:\n%s", footer)
 				}
-				if m = leftClick(m, x, y); m.mode != modeList {
-					t.Fatalf("a click where the entry was must not open Messages, mode=%v", m.mode)
+				if m = leftClick(m, x, y); !m.onList() {
+					t.Fatalf("a click where the entry was must not open Messages, screen = %v", m.screenID())
 				}
 				m.handleKey(msg)
 				if !m.noticesOpen() {
-					t.Fatalf("%s should still open an empty Messages, mode=%v", binding, m.mode)
+					t.Fatalf("%s should still open an empty Messages, screen = %v", binding, m.screenID())
 				}
 			}
 		}
@@ -1592,7 +1584,7 @@ func TestMessagesLegendClickOnlyOpensFromTheList(t *testing.T) {
 			x, y := messagesCell(t, m)
 			change.apply(m)
 			if !change.ready(m) {
-				t.Fatalf("test setup: %s did not take, mode = %v err = %q", change.name, m.mode, m.errBar.text)
+				t.Fatalf("test setup: %s did not take, screen = %v err = %q", change.name, m.screenID(), m.errBar.text)
 			}
 			preparedView(m)
 			if m = leftClick(m, x, y); m.noticesOpen() {
@@ -1607,8 +1599,8 @@ func TestClickOnMetersBesideTheCardDoesNothing(t *testing.T) {
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 120, 34
 	_, y := messagesCell(t, m)
-	if m = leftClick(m, 2, y); m.mode != modeList {
-		t.Fatalf("click on the meters should stay on the list, mode = %v", m.mode)
+	if m = leftClick(m, 2, y); !m.onList() {
+		t.Fatalf("click on the meters should stay on the list, screen = %v", m.screenID())
 	}
 }
 
@@ -1619,11 +1611,12 @@ func TestClickOnFullScreenBadgeOpensNotices(t *testing.T) {
 	m.prefs.fullLayout = true
 	x, y := messagesCell(t, m)
 	if m = leftClick(m, x, y); !m.noticesOpen() {
-		t.Fatalf("click on the badge should open messages, mode = %v", m.mode)
+		t.Fatalf("click on the badge should open messages, screen = %v", m.screenID())
 	}
-	m.mode = modeList
-	if m = leftClick(m, 2, y); m.mode != modeList {
-		t.Fatalf("click on the readings should stay on the list, mode = %v", m.mode)
+	m.base = baseList
+	m.clearSurfaces()
+	if m = leftClick(m, 2, y); !m.onList() {
+		t.Fatalf("click on the readings should stay on the list, screen = %v", m.screenID())
 	}
 }
 
@@ -1633,8 +1626,8 @@ func TestClickOnMessagesCardWhileSearchingKeepsTheField(t *testing.T) {
 	m.layout.width, m.layout.height = 120, 34
 	m.rail.SetSearch(m.rail.Search(), true)
 	x, y := messagesCell(t, m)
-	if m = leftClick(m, x, y); m.mode != modeList || !m.rail.Searching() {
-		t.Fatalf("search owns the click, mode = %v searching = %v", m.mode, m.rail.Searching())
+	if m = leftClick(m, x, y); !m.onList() || !m.rail.Searching() {
+		t.Fatalf("search owns the click, screen = %v searching = %v", m.screenID(), m.rail.Searching())
 	}
 }
 
@@ -1648,8 +1641,8 @@ func TestClickOnMessagesCardWhileFocusedIsLeftToFocus(t *testing.T) {
 	updated, _ := m.focusSelected()
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.mode != modeFocus {
-		t.Fatalf("test setup: focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
+	if !m.focused() {
+		t.Fatalf("test setup: focus alpha, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
 	preparedView(m)
 	if m = leftClick(m, x, y); m.noticesOpen() {
@@ -1671,16 +1664,16 @@ func TestSingleClickFocusesOnRelease(t *testing.T) {
 	m.drainEffects(t)
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.mode != modeList {
-		t.Fatalf("the press alone should only select, mode = %v", m.mode)
+	if !m.onList() {
+		t.Fatalf("the press alone should only select, screen = %v", m.screenID())
 	}
 	at.Action = tea.MouseActionRelease
 	updated, _ = m.handleMouse(at)
 	m.drainEffects(t)
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.mode != modeFocus {
-		t.Fatalf("release should focus, mode = %v, err = %q", m.mode, m.errBar.text)
+	if !m.focused() {
+		t.Fatalf("release should focus, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
 	if sess, ok := m.selected(); !ok || sess.Name != "alpha" {
 		t.Fatalf("should focus alpha, got %q ok=%v", sess.Name, ok)
@@ -1705,8 +1698,8 @@ func TestSingleClickFocusesWhenEnterAttaches(t *testing.T) {
 	m.drainEffects(t)
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.mode != modeFocus {
-		t.Fatalf("a click should focus even when Enter attaches, mode = %v, err = %q", m.mode, m.errBar.text)
+	if !m.focused() {
+		t.Fatalf("a click should focus even when Enter attaches, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
 }
 
@@ -1731,8 +1724,8 @@ func TestSingleClickReleasedOnAnotherRowDoesNotFocus(t *testing.T) {
 	m.drainEffects(t)
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.mode != modeList {
-		t.Fatalf("a press dragged off its row should not focus, mode = %v", m.mode)
+	if !m.onList() {
+		t.Fatalf("a press dragged off its row should not focus, screen = %v", m.screenID())
 	}
 }
 
@@ -1754,8 +1747,8 @@ func TestSingleClickInFullLayoutOnlySelects(t *testing.T) {
 	m.drainEffects(t)
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.mode != modeList {
-		t.Fatalf("full layout keeps click as select, mode = %v", m.mode)
+	if !m.onList() {
+		t.Fatalf("full layout keeps click as select, screen = %v", m.screenID())
 	}
 }
 
@@ -1799,7 +1792,7 @@ func TestClicksWorkWhileTheQuickBarIsOpen(t *testing.T) {
 	updated, _ = m.handleMouse(at)
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.mode != modeFocus || (m.quick() != nil) {
-		t.Fatalf("a row click should focus and close the bar, mode = %v quick = %v", m.mode, (m.quick() != nil))
+	if !m.focused() || (m.quick() != nil) {
+		t.Fatalf("a row click should focus and close the bar, screen = %v quick = %v", m.screenID(), (m.quick() != nil))
 	}
 }

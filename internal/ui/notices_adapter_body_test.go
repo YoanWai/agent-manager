@@ -64,7 +64,7 @@ func TestWheelScrollsTheMessageBody(t *testing.T) {
 		t.Fatalf("wheel up moved to %d, want %d", noticesSurfaceOf(m).panel.Offset(), limit-uinotices.WheelRows)
 	}
 	if !m.noticesOpen() {
-		t.Fatalf("the wheel must not leave the panel, mode=%v", m.mode)
+		t.Fatalf("the wheel must not leave the panel, screen = %v", m.screenID())
 	}
 }
 

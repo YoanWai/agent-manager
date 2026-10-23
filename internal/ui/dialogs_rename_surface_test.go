@@ -57,8 +57,8 @@ func TestRenameIsARowNotACard(t *testing.T) {
 func TestRenameEscClosesAndCtrlCQuits(t *testing.T) {
 	m := openRenameFor(t)
 	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
-	if renameOpen(m) || m.effects.quitting || m.mode != modeList {
-		t.Fatalf("esc: open=%t quitting=%t mode=%v", renameOpen(m), m.effects.quitting, m.mode)
+	if renameOpen(m) || m.effects.quitting || !m.onList() {
+		t.Fatalf("esc: open=%t quitting=%t screen = %v", renameOpen(m), m.effects.quitting, m.screenID())
 	}
 	m = openRenameFor(t)
 	m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})

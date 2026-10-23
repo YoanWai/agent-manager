@@ -278,7 +278,6 @@ func TestRailCursorAlwaysPainted(t *testing.T) {
 					height: size.h,
 					split:  splitState{ratio: defaultSplitRatio},
 				},
-				mode:      modeList,
 				workspace: workspace{sessions: sessions},
 				rail:      railModelFromRows(rows, cursor),
 			}

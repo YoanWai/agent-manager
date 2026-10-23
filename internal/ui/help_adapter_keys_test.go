@@ -18,14 +18,14 @@ import (
 func TestHelpAdapterKeepsReviewLoaderRunningUnderTheCard(t *testing.T) {
 	m := helpModel()
 	m.clearSurfaces()
-	m.mode = modeDiff
+	m.base = baseReview
 	seedReviewForTest(m, uireview.Target{ID: "review"}, git.ScopeUncommitted, "/repo", diff.Set{}, false)
 	if cmd := m.startStartupTick(); cmd == nil {
 		t.Fatal("loading review should start the loader")
 	}
 	m.openHelp()
-	if m.mode != modeDiff {
-		t.Fatalf("help over review left mode %v", m.mode)
+	if m.base != baseReview {
+		t.Fatalf("help over review left mode %v", m.screenID())
 	}
 	if title := helpSurfaceOf(m).state.Content(m.helpContext(84)).Title; title != "? Review keys" {
 		t.Fatalf("opened review help title = %q", title)
@@ -35,8 +35,8 @@ func TestHelpAdapterKeepsReviewLoaderRunningUnderTheCard(t *testing.T) {
 		t.Fatal("review is still loading under the card, so the loader keeps ticking")
 	}
 	m.handleKey(namedKey(tea.KeyEsc))
-	if m.mode != modeDiff || helpOpen(m) || !m.startup.startupAnimating {
-		t.Fatalf("close left mode %v, help open %t, loader %t", m.mode, helpOpen(m), m.startup.startupAnimating)
+	if m.base != baseReview || helpOpen(m) || !m.startup.startupAnimating {
+		t.Fatalf("close left mode %v, help open %t, loader %t", m.screenID(), helpOpen(m), m.startup.startupAnimating)
 	}
 }
 
@@ -49,7 +49,8 @@ func TestHelpAdapterReopensWithCleanFeatureState(t *testing.T) {
 	if frame := ansi.Strip(viewHelpOf(m)); !strings.Contains(frame, "search fork") {
 		t.Fatalf("test setup did not type a search:\n%s", frame)
 	}
-	m.mode = modeList
+	m.base = baseList
+	m.clearSurfaces()
 	m.openHelp()
 	if frame := ansi.Strip(viewHelpOf(m)); strings.Contains(frame, "search fork") {
 		t.Fatalf("reopened help retained stale search:\n%s", frame)
@@ -154,7 +155,7 @@ func TestHelpModeOwnsKeysBeforeListOverlays(t *testing.T) {
 	m.handleKey(runeKey("q"))
 	frame := ansi.Strip(preparedView(m))
 	if !helpOpen(m) || !strings.Contains(frame, "search q") {
-		t.Fatalf("list overlay intercepted Help input, mode = %v:\n%s", m.mode, frame)
+		t.Fatalf("list overlay intercepted Help input, screen = %v:\n%s", m.screenID(), frame)
 	}
 }
 

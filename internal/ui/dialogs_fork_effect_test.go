@@ -68,7 +68,7 @@ func TestForkSubmitDefersWorkOffTheUpdatePath(t *testing.T) {
 
 	m, cmd := submitForkDialog(t, m, "child fork")
 	if !forkOpen(m) {
-		t.Fatalf("after submit: mode = %v, want the dialog to stay open while work runs", m.mode)
+		t.Fatalf("after submit: screen = %v, want the dialog to stay open while work runs", m.screenID())
 	}
 	if _, ok := forkRow(m, "child fork"); ok {
 		t.Fatal("submit launched the fork on the update path")
@@ -84,8 +84,8 @@ func TestForkSubmitDefersWorkOffTheUpdatePath(t *testing.T) {
 	}
 
 	m.applyCmd(t, cmd)
-	if m.mode != modeList || m.errBar.text != "" {
-		t.Fatalf("after completion: mode=%v err=%q", m.mode, m.errBar.text)
+	if !m.onList() || m.errBar.text != "" {
+		t.Fatalf("after completion: screen = %v err=%q", m.screenID(), m.errBar.text)
 	}
 	if forked, ok := forkRow(m, "child fork"); !ok || forked.AgentSessionID == "" || forked.AgentSessionID == source.AgentSessionID {
 		t.Fatalf("forked row = %+v", forked)
@@ -126,12 +126,12 @@ func TestForkCompletionDoesNotStealNewerDialog(t *testing.T) {
 	beta := railSelectedSession(m)
 	m.openFork()
 	if !forkOpen(m) || openFork(m).source.ID != beta.ID {
-		t.Fatalf("newer dialog = %v / %q, want beta's fork dialog", m.mode, openFork(m).source.ID)
+		t.Fatalf("newer dialog = %v / %q, want beta's fork dialog", m.screenID(), openFork(m).source.ID)
 	}
 
 	m.applyCmd(t, alphaCmd)
 	if !forkOpen(m) || openFork(m).source.ID != beta.ID {
-		t.Fatalf("completion replaced the newer dialog: mode=%v source=%q", m.mode, openFork(m).source.ID)
+		t.Fatalf("completion replaced the newer dialog: screen = %v source=%q", m.screenID(), openFork(m).source.ID)
 	}
 	if got := railSelectedSession(m); got.ID != beta.ID {
 		t.Fatalf("completion moved the selection to %q, want beta kept", got.Name)
@@ -197,8 +197,8 @@ func TestForkUpdateReturnsWhileWorkerIsBlocked(t *testing.T) {
 	close(release)
 	m.applyTestMsg(t, <-completed)
 	m.drainEffects(t)
-	if m.mode != modeList || m.errBar.text != "" {
-		t.Fatalf("after completion: mode=%v err=%q", m.mode, m.errBar.text)
+	if !m.onList() || m.errBar.text != "" {
+		t.Fatalf("after completion: screen = %v err=%q", m.screenID(), m.errBar.text)
 	}
 	if _, ok := forkRow(m, "file fork"); !ok {
 		t.Fatal("fork row missing after the blocked worker completed")
@@ -313,8 +313,8 @@ func TestForkDuplicateCompletionIsIdempotent(t *testing.T) {
 	if rows != 1 {
 		t.Fatalf("fork rows = %d, want one durable row", rows)
 	}
-	if m.mode != modeList || m.errBar.text != "" {
-		t.Fatalf("after duplicate completion: mode=%v err=%q", m.mode, m.errBar.text)
+	if !m.onList() || m.errBar.text != "" {
+		t.Fatalf("after duplicate completion: screen = %v err=%q", m.screenID(), m.errBar.text)
 	}
 }
 
@@ -343,7 +343,7 @@ func TestForkLaunchFailureRetainsCapturedRequest(t *testing.T) {
 	m, cmd := submitForkDialog(t, m, "failed fork")
 	m.applyCmd(t, cmd)
 	if !hintOpen(m) {
-		t.Fatalf("mode = %v, want the launch hint dialog", m.mode)
+		t.Fatalf("screen = %v, want the launch hint dialog", m.screenID())
 	}
 	request, ok := hintFix(m).effectRetry.(forkRequest)
 	if !ok {
@@ -427,7 +427,7 @@ func TestForkRefusesASourceThatRestartedWhileQueued(t *testing.T) {
 		t.Fatalf("err = %q, want the captured-identity refusal", m.errBar.text)
 	}
 	if !forkOpen(m) {
-		t.Fatalf("mode = %v, want the dialog left open to resubmit", m.mode)
+		t.Fatalf("screen = %v, want the dialog left open to resubmit", m.screenID())
 	}
 	if _, ok := forkRow(m, "restarted fork"); ok {
 		t.Fatal("fork launched from a restarted source")
@@ -469,7 +469,7 @@ func TestForkCompletionAfterSameSourceReopenKeepsNewerDialog(t *testing.T) {
 
 	m.applyCmd(t, firstCmd)
 	if !forkOpen(m) || openFork(m).gen == firstGen {
-		t.Fatalf("completion closed the reopened dialog: mode=%v gen=%d", m.mode, openFork(m).gen)
+		t.Fatalf("completion closed the reopened dialog: screen = %v gen=%d", m.screenID(), openFork(m).gen)
 	}
 	if m.errBar.text != "" {
 		t.Fatalf("completion clobbered status text: %q", m.errBar.text)
@@ -529,7 +529,7 @@ func TestForkKeysRetryDoesNotForkSourceTwice(t *testing.T) {
 	m = updated.(*Model)
 	m.applyCmd(t, cmd)
 	if !hintOpen(m) {
-		t.Fatalf("mode = %v, want the launch hint dialog for the missing binary", m.mode)
+		t.Fatalf("screen = %v, want the launch hint dialog for the missing binary", m.screenID())
 	}
 	request, ok := hintFix(m).effectRetry.(forkRequest)
 	if !ok || request.knownForkID != writeOnce {

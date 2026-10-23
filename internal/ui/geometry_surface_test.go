@@ -21,7 +21,6 @@ func resizeModel(t *testing.T) *Model {
 	st := openTestStore(t, filepath.Join(t.TempDir(), "state.db"))
 	t.Cleanup(func() { st.Close() })
 	return &Model{
-		mode:     modeList,
 		layout:   layoutState{split: splitState{ratio: 0.34}, width: 100, height: 40},
 		poller:   &poller{runner: execution.New(execution.Dependencies{Store: st}, execution.Options{})},
 		services: services{store: st, listKeys: keybind.DefaultList()},

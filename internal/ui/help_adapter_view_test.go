@@ -33,7 +33,7 @@ func TestReviewHelpOnlyShowsReviewBindingsAndSetupGuidance(t *testing.T) {
 			width:  120,
 			height: 30,
 		},
-		mode: modeDiff,
+		screen: screen{base: baseReview},
 		services: services{
 			keys:     keybind.DefaultSession(),
 			listKeys: keybind.DefaultList(),

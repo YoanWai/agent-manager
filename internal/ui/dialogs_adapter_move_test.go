@@ -62,7 +62,7 @@ func TestMoveGroupRow(t *testing.T) {
 	if len(sessions) != 1 || sessions[0].Group != "beta/inner" {
 		t.Fatalf("group move failed: %+v", sessions)
 	}
-	if m.mode != modeList {
+	if !m.onList() {
 		t.Fatal("should return to list mode")
 	}
 }
@@ -170,7 +170,7 @@ func TestMoveReportsPlacementFailure(t *testing.T) {
 		t.Fatal("failed placement reported nothing")
 	}
 	if !moveOpen(m) {
-		t.Fatalf("mode = %v, want modeMove", m.mode)
+		t.Fatalf("screen = %v, want the move card", m.screenID())
 	}
 	got, err := m.services.store.Get(shell.ID)
 	if err != nil || got.ParentID != agent.ID {
@@ -200,7 +200,7 @@ func TestMoveReportsMissingSource(t *testing.T) {
 		t.Fatal("missing source reported nothing")
 	}
 	if !moveOpen(m) {
-		t.Fatalf("mode = %v, want modeMove", m.mode)
+		t.Fatalf("screen = %v, want the move card", m.screenID())
 	}
 }
 

@@ -206,7 +206,7 @@ func TestSpawnFormDefersCreationFromUpdate(t *testing.T) {
 		t.Fatalf("submit reported an error: %q", m.errBar.text)
 	}
 	if !formOpen(m) {
-		t.Fatalf("form closed at submit; mode=%v", m.mode)
+		t.Fatalf("form closed at submit; screen = %v", m.screenID())
 	}
 	if len(m.workspace.sessions) != 0 {
 		t.Fatalf("workspace gained %d rows on the update path", len(m.workspace.sessions))
@@ -228,8 +228,8 @@ func TestSpawnFormDefersCreationFromUpdate(t *testing.T) {
 	if !m.services.tmux.Exists(sess.ID) {
 		t.Fatal("pane missing after completion")
 	}
-	if m.mode != modeList {
-		t.Fatalf("mode after completion = %v, want list", m.mode)
+	if !m.onList() {
+		t.Fatalf("mode after completion = %v, want list", m.screenID())
 	}
 }
 
@@ -287,7 +287,7 @@ func TestGroupFormDefersCreationFromUpdate(t *testing.T) {
 		t.Fatalf("group form reported an error: %q", m.errBar.text)
 	}
 	if !m.groupFormOpen() {
-		t.Fatalf("group form closed at submit; mode=%v", m.mode)
+		t.Fatalf("group form closed at submit; screen = %v", m.screenID())
 	}
 	for _, g := range m.groupRowPaths() {
 		if strings.HasSuffix(g, "manual") {
@@ -308,8 +308,8 @@ func TestGroupFormDefersCreationFromUpdate(t *testing.T) {
 	if !found {
 		t.Fatal("group not persisted after completion")
 	}
-	if m.mode != modeList {
-		t.Fatalf("mode after completion = %v, want list", m.mode)
+	if !m.onList() {
+		t.Fatalf("mode after completion = %v, want list", m.screenID())
 	}
 }
 
@@ -333,7 +333,7 @@ func TestSpawnWorkerFailureLeavesNothingBehind(t *testing.T) {
 		t.Fatal("ledger recorded a launch for a failed spawn")
 	}
 	if !formOpen(m) {
-		t.Fatalf("form should stay open after a failed spawn; mode=%v", m.mode)
+		t.Fatalf("form should stay open after a failed spawn; screen = %v", m.screenID())
 	}
 }
 
@@ -461,7 +461,8 @@ func TestSpawnFailureDoesNotReplaceNewerDialog(t *testing.T) {
 	// The user closes this form and opens a fresh one in the same slot: a
 	// newer dialog the completion must not close.
 	m.form().prompt.release()
-	m.mode = modeList
+	m.base = baseList
+	m.clearSurfaces()
 	m.openForm()
 	m.form().SetName("second")
 	m.form().SetDir(t.TempDir())
@@ -470,7 +471,7 @@ func TestSpawnFailureDoesNotReplaceNewerDialog(t *testing.T) {
 	m.services.store.Close()
 	m.applyCmd(t, cmd)
 	if !formOpen(m) {
-		t.Fatalf("the newer form was closed; mode=%v", m.mode)
+		t.Fatalf("the newer form was closed; screen = %v", m.screenID())
 	}
 	if m.form().prompt.gen != newGen {
 		t.Fatal("the newer form was replaced by the completion")
@@ -500,7 +501,7 @@ func TestGroupFormCompletionDoesNotReplaceNewerDialog(t *testing.T) {
 	m.groupSurface().form.SetDir(t.TempDir())
 	m.applyCmd(t, cmd)
 	if !m.groupFormOpen() {
-		t.Fatalf("completion replaced the newer group form; mode=%v", m.mode)
+		t.Fatalf("completion replaced the newer group form; screen = %v", m.screenID())
 	}
 	if _, ok := m.workspace.groupPaths["first"]; !ok {
 		t.Fatal("durable group inventory was not reconciled")
@@ -557,7 +558,7 @@ func TestSpawnGenericErrorReturnsImagesToForm(t *testing.T) {
 	m.services.store.Close()
 	m.applyCmd(t, cmd)
 	if !formOpen(m) {
-		t.Fatalf("form should stay up; mode=%v", m.mode)
+		t.Fatalf("form should stay up; screen = %v", m.screenID())
 	}
 	if got := m.form().prompt.attachments; len(got) != 1 || got[0].id != id {
 		t.Fatalf("attachments = %+v, want the chip kept for the retry", got)

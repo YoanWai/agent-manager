@@ -64,8 +64,8 @@ func TestLaunchHintClosesOnEscAndBackdrop(t *testing.T) {
 			t.Fatalf("%s: the hint holds no draft and must be dismissible", name)
 		}
 		m = closeIt(m)
-		if hintOpen(m) || m.effects.quitting || m.mode != modeList {
-			t.Errorf("%s: open=%t quitting=%t mode=%v", name, hintOpen(m), m.effects.quitting, m.mode)
+		if hintOpen(m) || m.effects.quitting || !m.onList() {
+			t.Errorf("%s: open=%t quitting=%t screen = %v", name, hintOpen(m), m.effects.quitting, m.screenID())
 		}
 		if _, err := os.Stat(image); !os.IsNotExist(err) {
 			t.Errorf("%s: Leave left the refused prompt's image behind", name)
@@ -80,11 +80,11 @@ func TestLaunchHintOverTheFormLeavesItsModeAlone(t *testing.T) {
 	m.applyCmd(t, m.openForm())
 	m.presentLaunchHint(launchFix{text: "pi is older", command: "true", binary: "pi", update: true})
 	if !formOpen(m) || !hintOpen(m) {
-		t.Fatalf("mode %v open %t, want the hint over the form", m.mode, hintOpen(m))
+		t.Fatalf("mode %v open %t, want the hint over the form", m.screenID(), hintOpen(m))
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if !formOpen(m) || hintOpen(m) {
-		t.Fatalf("mode %v open %t, want the form back", m.mode, hintOpen(m))
+		t.Fatalf("mode %v open %t, want the form back", m.screenID(), hintOpen(m))
 	}
 }
 

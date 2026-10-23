@@ -12,8 +12,8 @@ func focusedModel(t *testing.T) *Model {
 	updated, _ := m.focusSelected()
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.mode != modeFocus {
-		t.Fatalf("test setup: focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
+	if !m.focused() {
+		t.Fatalf("test setup: focus alpha, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
 	return m
 }
@@ -35,8 +35,8 @@ func TestPressOnTheRailsBlankLeavesFocus(t *testing.T) {
 	if blank < 0 {
 		t.Fatal("test setup: the rail paints no line without a row")
 	}
-	if m = leftPress(m, 2, blank); m.mode != modeList {
-		t.Fatalf("a press on the rail's blank should leave focus, mode = %v", m.mode)
+	if m = leftPress(m, 2, blank); !m.onList() {
+		t.Fatalf("a press on the rail's blank should leave focus, screen = %v", m.screenID())
 	}
 	if sess, ok := m.selected(); !ok || sess.Name != "alpha" {
 		t.Fatalf("leaving should keep the cursor on alpha, got %q", sess.Name)
@@ -49,7 +49,7 @@ func TestPressOnTheDividerKeepsFocus(t *testing.T) {
 	preparedView(m)
 	y0, _ := m.bodyYRange()
 	for _, x := range []int{m.dividerX(), m.dividerX() + splitHitSlop} {
-		if m = leftPress(m, x, y0+1); m.mode != modeFocus {
+		if m = leftPress(m, x, y0+1); !m.focused() {
 			t.Fatalf("a press on the divider at %d left focus", x)
 		}
 	}
@@ -79,7 +79,7 @@ func TestPreviewPressFocusesOnlyALiveSession(t *testing.T) {
 		tc.setup(m)
 		preparedView(m)
 		y0, _ := m.bodyYRange()
-		if m = leftPress(m, m.layout.width-3, y0+1); m.mode == modeFocus {
+		if m = leftPress(m, m.layout.width-3, y0+1); m.focused() {
 			t.Errorf("%s: a press on the preview focused", tc.name)
 		}
 	}

@@ -21,8 +21,8 @@ func noticesOverList(t *testing.T) *Model {
 
 func TestNoticesSurfaceOpensOverTheList(t *testing.T) {
 	m := noticesOverList(t)
-	if m.mode != modeList || len(m.surfaces) != 1 {
-		t.Fatalf("mode = %v, surfaces = %d", m.mode, len(m.surfaces))
+	if !m.onList() || len(m.surfaces) != 1 {
+		t.Fatalf("screen = %v, surfaces = %d", m.screenID(), len(m.surfaces))
 	}
 	m.openNotices("")
 	if len(m.surfaces) != 1 {

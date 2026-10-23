@@ -152,8 +152,8 @@ func submitFormSession(t *testing.T, m *Model, name string) {
 	m.form().SetDir(t.TempDir())
 	_, cmd := m.submitForm()
 	m.applyCmd(t, cmd)
-	if m.mode != modeList {
-		t.Fatalf("submit: mode=%v err=%q", m.mode, m.errBar.text)
+	if !m.onList() {
+		t.Fatalf("submit: screen = %v err=%q", m.screenID(), m.errBar.text)
 	}
 }
 
@@ -173,7 +173,8 @@ func TestNewSessionPreselectsContextGroup(t *testing.T) {
 	if got := picker(m).groups[picker(m).groupIndex].path; got != "alpha/beta" {
 		t.Fatalf("form should preselect session's group, got %q", got)
 	}
-	m.mode = modeList
+	m.base = baseList
+	m.clearSurfaces()
 
 	// cursor on a group row
 	for i, r := range railRows(m) {
@@ -201,7 +202,7 @@ func TestGroupFormCreatesUnderParent(t *testing.T) {
 	m.groupSurface().form.SetDir(t.TempDir())
 	_, cmd := m.submitGroupForm()
 	m.applyCmd(t, cmd)
-	if m.mode != modeList {
+	if !m.onList() {
 		t.Fatalf("group form should close, err=%q", m.errBar.text)
 	}
 
@@ -294,7 +295,7 @@ func TestGroupFormRejectsDuplicateWithoutChangingIt(t *testing.T) {
 	_, cmd := m.submitGroupForm()
 	m.applyCmd(t, cmd)
 	if !m.groupFormOpen() || !strings.Contains(m.errBar.text, "already exists") {
-		t.Fatalf("duplicate submission succeeded: mode=%v err=%q", m.mode, m.errBar.text)
+		t.Fatalf("duplicate submission succeeded: screen = %v err=%q", m.screenID(), m.errBar.text)
 	}
 	if got := m.groupRowPaths(); !reflect.DeepEqual(got, []string{"backend"}) {
 		t.Fatalf("duplicate submission changed the rows: %v", got)
@@ -482,8 +483,8 @@ func TestFormCancelReleasesPastedImages(t *testing.T) {
 	pasteFormImage(t, m, path)
 
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyEsc})
-	if m.mode != modeList {
-		t.Fatalf("esc should close the form, mode = %v", m.mode)
+	if !m.onList() {
+		t.Fatalf("esc should close the form, screen = %v", m.screenID())
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("an abandoned form should release its images, stat err = %v", err)
@@ -508,8 +509,8 @@ func TestFormSubmitKeepsThePastedImage(t *testing.T) {
 		t.Fatalf("submit: %q", m.errBar.text)
 	}
 	m.applyCmd(t, cmd)
-	if m.mode != modeList {
-		t.Fatalf("a created session should close the form, mode = %v", m.mode)
+	if !m.onList() {
+		t.Fatalf("a created session should close the form, screen = %v", m.screenID())
 	}
 	if len(m.sessionRows()) != 1 {
 		t.Fatalf("want one session, got %v", sessionNames(m))
@@ -565,7 +566,7 @@ func TestFormSubmitWaitsForAPasteStillReading(t *testing.T) {
 		t.Fatal("a submit with a chip still reading should be refused")
 	}
 	if !formOpen(m) {
-		t.Fatalf("form should stay open, mode = %v", m.mode)
+		t.Fatalf("form should stay open, screen = %v", m.screenID())
 	}
 	if len(m.sessionRows()) != 0 {
 		t.Fatalf("no session should be created, got %d", len(m.sessionRows()))
@@ -595,7 +596,7 @@ func TestFormTypesWordsNamedLikeKeys(t *testing.T) {
 		m = applyMsg(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(word)})
 	}
 	if !formOpen(m) || m.form().Name() != "enter-tab-esc" {
-		t.Fatalf("mode %v, name %q; want the form open with the words typed", m.mode, m.form().Name())
+		t.Fatalf("mode %v, name %q; want the form open with the words typed", m.screenID(), m.form().Name())
 	}
 }
 
@@ -689,7 +690,7 @@ func TestFormAcceptsDashLeadingPrompt(t *testing.T) {
 
 	_, cmd := m.submitForm()
 	m.applyCmd(t, cmd)
-	if m.mode != modeList {
+	if !m.onList() {
 		t.Fatalf("a leading dash is text after the rename note: %s", m.errBar.text)
 	}
 	rows := m.sessionRows()

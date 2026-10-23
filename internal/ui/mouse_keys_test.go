@@ -55,8 +55,8 @@ func TestClickOnListFooterWhileSearchingTypesNothing(t *testing.T) {
 	x, y := paintedCell(t, m, "n new")
 	m.rail.SetSearch(m.rail.Search(), true)
 	preparedView(m)
-	if m = leftClick(m, x, y); m.mode != modeList || !m.rail.Searching() || m.rail.Search() != "" {
-		t.Fatalf("search owns the click, mode = %v searching = %v query = %q", m.mode, m.rail.Searching(), m.rail.Search())
+	if m = leftClick(m, x, y); !m.onList() || !m.rail.Searching() || m.rail.Search() != "" {
+		t.Fatalf("search owns the click, screen = %v searching = %v query = %q", m.screenID(), m.rail.Searching(), m.rail.Search())
 	}
 }
 
@@ -65,8 +65,8 @@ func TestClickOnConfirmFootAnswers(t *testing.T) {
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 120, 34
 	m.openConfirm(confirmTarget{action: actionKill, label: "kill alpha? frees its RAM."})
-	if m = clickLabel(t, m, "n/esc cancel"); m.mode != modeList || pendingConfirm(m).label != "" {
-		t.Fatalf("cancel in the foot should close the confirm, mode = %v target = %+v", m.mode, pendingConfirm(m))
+	if m = clickLabel(t, m, "n/esc cancel"); !m.onList() || pendingConfirm(m).label != "" {
+		t.Fatalf("cancel in the foot should close the confirm, screen = %v target = %+v", m.screenID(), pendingConfirm(m))
 	}
 }
 
@@ -75,8 +75,8 @@ func TestClickOnHelpFootCloses(t *testing.T) {
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 120, 34
 	m.openHelp()
-	if m = clickLabel(t, m, "esc/q close"); m.mode != modeList {
-		t.Fatalf("close in the foot should leave help, mode = %v", m.mode)
+	if m = clickLabel(t, m, "esc/q close"); !m.onList() {
+		t.Fatalf("close in the foot should leave help, screen = %v", m.screenID())
 	}
 }
 
@@ -94,8 +94,8 @@ func TestClickOnMessagesFootRunsItsKeys(t *testing.T) {
 			t.Fatalf("%q moves the cursor; the rows and the wheel answer for it", key)
 		}
 	}
-	if m = clickLabel(t, m, "esc"); m.mode != modeList {
-		t.Fatalf("esc in the foot should close messages, mode = %v", m.mode)
+	if m = clickLabel(t, m, "esc"); !m.onList() {
+		t.Fatalf("esc in the foot should close messages, screen = %v", m.screenID())
 	}
 }
 
@@ -108,11 +108,11 @@ func TestClickOnFocusFootLeavesFocus(t *testing.T) {
 	updated, _ := m.focusSelected()
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.mode != modeFocus {
-		t.Fatalf("test setup: focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
+	if !m.focused() {
+		t.Fatalf("test setup: focus alpha, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
-	if m = clickLabel(t, m, "mouse back"); m.mode != modeList {
-		t.Fatalf("the back pair in the foot should leave focus, mode = %v", m.mode)
+	if m = clickLabel(t, m, "mouse back"); !m.onList() {
+		t.Fatalf("the back pair in the foot should leave focus, screen = %v", m.screenID())
 	}
 }
 
@@ -123,17 +123,17 @@ func TestAKeyRunsOnTheRelease(t *testing.T) {
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 200, 40
 	x, y := paintedCell(t, m, "? keys")
-	if m = leftPress(m, x, y); m.mode != modeList {
-		t.Fatalf("the press alone ran the key, mode = %v", m.mode)
+	if m = leftPress(m, x, y); !m.onList() {
+		t.Fatalf("the press alone ran the key, screen = %v", m.screenID())
 	}
-	if m = leftRelease(m, 0, y); m.mode != modeList {
-		t.Fatalf("a release off the key ran it, mode = %v", m.mode)
+	if m = leftRelease(m, 0, y); !m.onList() {
+		t.Fatalf("a release off the key ran it, screen = %v", m.screenID())
 	}
-	if m = leftRelease(m, x, y); m.mode != modeList {
-		t.Fatalf("a second release with no press ran the key, mode = %v", m.mode)
+	if m = leftRelease(m, x, y); !m.onList() {
+		t.Fatalf("a second release with no press ran the key, screen = %v", m.screenID())
 	}
 	if m = leftClick(m, x, y); !helpOpen(m) {
-		t.Fatalf("a click on the key should run it, mode = %v", m.mode)
+		t.Fatalf("a click on the key should run it, screen = %v", m.screenID())
 	}
 }
 
@@ -154,7 +154,7 @@ func TestARepaintedKeyDoesNotRunOnTheRelease(t *testing.T) {
 	if !repainted {
 		t.Fatal("test setup: no key painted under the press")
 	}
-	if m = leftRelease(m, x, y); m.mode != modeList {
-		t.Fatalf("the release ran the repainted key, mode = %v", m.mode)
+	if m = leftRelease(m, x, y); !m.onList() {
+		t.Fatalf("the release ran the repainted key, screen = %v", m.screenID())
 	}
 }

@@ -30,7 +30,7 @@ func TestConfirmKeyIgnoresUnboundKeys(t *testing.T) {
 			sess := m.sessionRows()[0]
 			m.selectSessionRow(t, "alpha")
 			if _, _ = m.killSelected(); !confirmOpen(m) {
-				t.Fatalf("killSelected should open the confirm card, mode = %v", m.mode)
+				t.Fatalf("killSelected should open the confirm card, screen = %v", m.screenID())
 			}
 			before := pendingConfirm(m)
 
@@ -39,7 +39,7 @@ func TestConfirmKeyIgnoresUnboundKeys(t *testing.T) {
 				t.Fatalf("an unbound key should issue no command, got %T", cmd())
 			}
 			if !confirmOpen(m) {
-				t.Fatalf("mode = %v, want the card to stay up", m.mode)
+				t.Fatalf("screen = %v, want the card to stay up", m.screenID())
 			}
 			if pendingConfirm(m).action != before.action || len(pendingConfirm(m).sessions) != len(before.sessions) {
 				t.Fatalf("confirm = %+v, want it untouched (%+v)", pendingConfirm(m), before)
@@ -67,7 +67,7 @@ func TestConfirmKeyCancels(t *testing.T) {
 			sess := m.sessionRows()[0]
 			m.selectSessionRow(t, "alpha")
 			if _, _ = m.killSelected(); !confirmOpen(m) {
-				t.Fatalf("killSelected should open the confirm card, mode = %v", m.mode)
+				t.Fatalf("killSelected should open the confirm card, screen = %v", m.screenID())
 			}
 
 			_, cmd := m.Update(tc.key)
@@ -94,7 +94,7 @@ func TestConfirmKeyCtrlCQuits(t *testing.T) {
 	sess := m.sessionRows()[0]
 	m.selectSessionRow(t, "alpha")
 	if _, _ = m.killSelected(); !confirmOpen(m) {
-		t.Fatalf("killSelected should open the confirm card, mode = %v", m.mode)
+		t.Fatalf("killSelected should open the confirm card, screen = %v", m.screenID())
 	}
 
 	m.Update(namedKey(tea.KeyCtrlC))
@@ -134,7 +134,7 @@ func TestConfirmRemovesAConnection(t *testing.T) {
 	m := buildModel(t)
 	m.confirmRemoveConnection("box")
 	if !confirmOpen(m) {
-		t.Fatalf("mode = %v, want the confirm card", m.mode)
+		t.Fatalf("screen = %v, want the confirm card", m.screenID())
 	}
 	if view := ansi.Strip(preparedView(m)); !strings.Contains(view, "Remove connection") ||
 		!strings.Contains(view, "remove connection box?") || !strings.Contains(view, "remove") {
@@ -143,8 +143,8 @@ func TestConfirmRemovesAConnection(t *testing.T) {
 	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")}); cmd == nil {
 		t.Fatal("confirm returned no effect command")
 	}
-	if m.mode != modeList || pendingConfirm(m).connection != "" {
-		t.Fatalf("mode %v confirm %+v, want the dialog closed", m.mode, pendingConfirm(m))
+	if !m.onList() || pendingConfirm(m).connection != "" {
+		t.Fatalf("mode %v confirm %+v, want the dialog closed", m.screenID(), pendingConfirm(m))
 	}
 	var removed []string
 	for _, lane := range m.lanes() {

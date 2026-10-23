@@ -99,7 +99,7 @@ func TestInstallStartKeepsDurableShellRowWhenSendIsRefused(t *testing.T) {
 		t.Fatalf("failed send left a pending install: %+v", m.ledger.install)
 	}
 	if !hintOpen(m) {
-		t.Fatalf("mode = %v, want the same setup dialog kept", m.mode)
+		t.Fatalf("screen = %v, want the same setup dialog kept", m.screenID())
 	}
 	if storeRows(t, m) != 1 || len(m.workspace.sessions) != 1 {
 		t.Fatalf("durable shell row was not reconciled: store=%d workspace=%d", storeRows(t, m), len(m.workspace.sessions))
@@ -145,8 +145,8 @@ func TestInstallStartKeepsUncertainSendWithoutBlindRetry(t *testing.T) {
 	if m.ledger.install == nil {
 		t.Fatal("uncertain send lost the pending install tracker")
 	}
-	if m.mode != modeList {
-		t.Fatalf("mode = %v, want the retry dialog closed", m.mode)
+	if !m.onList() {
+		t.Fatalf("screen = %v, want the retry dialog closed", m.screenID())
 	}
 	if _, err := os.Stat(m.ledger.install.script); err != nil {
 		t.Fatalf("uncertain send removed its script: %v", err)
@@ -184,7 +184,7 @@ func TestInstallStartCompletionDoesNotReplaceNewerDialog(t *testing.T) {
 	m.drainEffects(t)
 
 	if !hintOpen(m) || m.gens.dialog != newGen || hintFix(m).binary != "second-cli" {
-		t.Fatalf("completion replaced newer dialog: mode=%v gen=%d fix=%+v", m.mode, m.gens.dialog, hintFix(m))
+		t.Fatalf("completion replaced newer dialog: screen = %v gen=%d fix=%+v", m.screenID(), m.gens.dialog, hintFix(m))
 	}
 	if m.ledger.install == nil || m.ledger.install.binary != "am-fake-cli" {
 		t.Fatalf("first install was not reconciled behind the dialog: %+v", m.ledger.install)
@@ -221,7 +221,7 @@ func TestInstallStartStaleFailureDefersImageCleanupToCommand(t *testing.T) {
 		t.Fatal("captured cleanup command kept the stale prompt image")
 	}
 	if !hintOpen(m) || hintFix(m).binary != "newer-cli" {
-		t.Fatalf("stale completion replaced the newer dialog: mode=%v fix=%+v", m.mode, hintFix(m))
+		t.Fatalf("stale completion replaced the newer dialog: screen = %v fix=%+v", m.screenID(), hintFix(m))
 	}
 }
 
@@ -541,8 +541,8 @@ func TestInstallStartGivesTheInstallerShellTheKeys(t *testing.T) {
 			t.Fatal("update deleted the image before the cleanup command ran")
 		}
 		m.applyCmd(t, cmd)
-		if m.mode != modeList || (m.quick() != nil) {
-			t.Fatalf("failure %v left mode %v quick %v", failure, m.mode, (m.quick() != nil))
+		if !m.onList() || (m.quick() != nil) {
+			t.Fatalf("failure %v left mode %v quick %v", failure, m.screenID(), (m.quick() != nil))
 		}
 		if imageExists(t, image) || len(m.quick().attachments) != 0 {
 			t.Fatal("the installer handoff left the draft image")
@@ -553,11 +553,12 @@ func TestInstallStartGivesTheInstallerShellTheKeys(t *testing.T) {
 	image := tempImage(t, "kept.png")
 	pushQuick(m)
 	m.quick().attachments = []imageAttachment{{id: 1, path: image}}
-	m.mode = modeList
+	m.base = baseList
+	m.clearSurfaces()
 	m.gens.dialog = 2
 	m.applyInstallStart(installStartRequest{gen: 1, binary: "pi"}, result, nil)
-	if (m.quick() == nil) || m.mode != modeList {
-		t.Fatalf("a start behind a closed dialog left mode %v quick %v", m.mode, (m.quick() != nil))
+	if (m.quick() == nil) || !m.onList() {
+		t.Fatalf("a start behind a closed dialog left mode %v quick %v", m.screenID(), (m.quick() != nil))
 	}
 	if !imageExists(t, image) {
 		t.Fatal("a start behind a closed dialog deleted the draft image")

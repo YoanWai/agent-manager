@@ -27,7 +27,7 @@ func BenchmarkCloseLargeReview(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		b.StopTimer()
-		m.mode = modeDiff
+		m.base = baseReview
 		seedReviewForTest(m, uireview.Target{ID: "bench"}, git.ScopeUncommitted, "/repo", diff.Set{Files: files}, true)
 		b.StartTimer()
 		m.closeDiff()

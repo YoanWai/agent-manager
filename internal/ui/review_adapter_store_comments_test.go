@@ -454,7 +454,7 @@ func TestSendAnnotationsRefusesAShell(t *testing.T) {
 }
 
 func TestDiffSendConfirmIgnoresMotionKeys(t *testing.T) {
-	m := &Model{mode: modeDiff}
+	m := &Model{screen: screen{base: baseReview}}
 	seedReviewStateForTest(m, uireview.Target{ID: "s1"}, git.ScopeUncommitted, "/repo",
 		diff.Set{Repo: git.Repo{Root: "/repo"}, Files: []diff.FileDiff{diff.BuildFile(nil, []byte("line\n"), git.ChangedFile{Path: "main.go"}, git.FileStat{})}},
 		uireview.SavedState{Comments: []uireview.Comment{{File: "main.go", Line: 1, Text: "keep me"}}})

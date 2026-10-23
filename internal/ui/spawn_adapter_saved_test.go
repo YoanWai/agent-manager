@@ -119,8 +119,8 @@ func TestFormSpawnsWithTheSavedPromptItShowed(t *testing.T) {
 	_, cmd := m.submitForm()
 	m.applyCmd(t, cmd)
 	rows := m.sessionRows()
-	if m.mode != modeList || len(rows) != 1 {
-		t.Fatalf("submit: mode %v err %q rows %d", m.mode, m.errBar.text, len(rows))
+	if !m.onList() || len(rows) != 1 {
+		t.Fatalf("submit: mode %v err %q rows %d", m.screenID(), m.errBar.text, len(rows))
 	}
 	if !strings.HasSuffix(rows[0].LaunchPrompt, " \n instruction\n\n\n\ntask") {
 		t.Fatalf("launch prompt = %q", rows[0].LaunchPrompt)
@@ -144,8 +144,8 @@ func TestFormSavedPromptWithADashLaunches(t *testing.T) {
 			_, cmd := m.submitForm()
 			m.applyCmd(t, cmd)
 			rows := m.sessionRows()
-			if m.mode != modeList || len(rows) != 1 {
-				t.Fatalf("submit: mode %v err %q", m.mode, m.errBar.text)
+			if !m.onList() || len(rows) != 1 {
+				t.Fatalf("submit: mode %v err %q", m.screenID(), m.errBar.text)
 			}
 			prompt := rows[0].LaunchPrompt
 			if tool == "send-tool" {
@@ -176,7 +176,7 @@ func TestFormLaunchesBeforeTheSavedPromptsRead(t *testing.T) {
 	_, cmd := m.submitForm()
 	m.applyCmd(t, cmd)
 	rows := m.sessionRows()
-	if m.mode != modeList || len(rows) != 1 || !strings.HasSuffix(rows[0].LaunchPrompt, "task") {
-		t.Fatalf("submit: mode %v err %q rows %+v", m.mode, m.errBar.text, rows)
+	if !m.onList() || len(rows) != 1 || !strings.HasSuffix(rows[0].LaunchPrompt, "task") {
+		t.Fatalf("submit: mode %v err %q rows %+v", m.screenID(), m.errBar.text, rows)
 	}
 }

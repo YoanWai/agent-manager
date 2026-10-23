@@ -19,8 +19,8 @@ func TestFocusSavedPromptPastesThePick(t *testing.T) {
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	*m = *updated.(*Model)
 	m.drainEffects(t)
-	if m.mode != modeFocus {
-		t.Fatalf("enter did not focus, mode = %v", m.mode)
+	if !m.focused() {
+		t.Fatalf("enter did not focus, screen = %v", m.screenID())
 	}
 	var pasted []string
 	restore := pasteFocused
@@ -39,14 +39,14 @@ func TestFocusSavedPromptPastesThePick(t *testing.T) {
 	_, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m.runBatch(t, cmd)
 	m.drainEffects(t)
-	if len(pasted) != 1 || pasted[0] != "line one\nline two" || m.savedListOpen() || m.mode != modeFocus {
-		t.Fatalf("pasted %q, list open %v, mode %v", pasted, m.savedListOpen(), m.mode)
+	if len(pasted) != 1 || pasted[0] != "line one\nline two" || m.savedListOpen() || !m.focused() {
+		t.Fatalf("pasted %q, list open %v, mode %v", pasted, m.savedListOpen(), m.screenID())
 	}
 
 	_, load = m.handleKey(tea.KeyMsg{Type: tea.KeyF4})
 	m.runBatch(t, load)
 	m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlQ})
-	if m.mode != modeList || m.savedListOpen() {
-		t.Fatalf("the leave key with the list up left mode %v, open %v", m.mode, m.savedListOpen())
+	if !m.onList() || m.savedListOpen() {
+		t.Fatalf("the leave key with the list up left mode %v, open %v", m.screenID(), m.savedListOpen())
 	}
 }

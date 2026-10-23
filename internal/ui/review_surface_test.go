@@ -17,7 +17,7 @@ func pickerReview(t *testing.T) *Model {
 	t.Helper()
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 120, 34
-	m.mode = modeDiff
+	m.base = baseReview
 	target := uireview.Target{ID: "picker"}
 	request := seedReviewForTest(m, target, git.ScopeUncommitted, "/tmp/one", diff.Set{}, false)
 	m.review.ApplyLoad(uireview.LoadResult{
@@ -34,8 +34,8 @@ func TestReviewPickerOpensOnItsKey(t *testing.T) {
 	m := pickerReview(t)
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
 	*m = *updated.(*Model)
-	if !m.pickerOpen() || m.mode != modeDiff {
-		t.Fatalf("r should open the picker over review: open=%t mode=%v", m.pickerOpen(), m.mode)
+	if !m.pickerOpen() || m.base != baseReview {
+		t.Fatalf("r should open the picker over review: open=%t screen = %v", m.pickerOpen(), m.screenID())
 	}
 	m.prepareFrame()
 	frame := ansi.Strip(m.View())
@@ -70,8 +70,8 @@ func TestReviewPickerDismisses(t *testing.T) {
 				t.Fatal("the picker should be dismissible")
 			}
 			tc.close(m)
-			if m.pickerOpen() || m.effects.quitting || m.mode != modeDiff {
-				t.Fatalf("%s: open=%t quitting=%t mode=%v", tc.name, m.pickerOpen(), m.effects.quitting, m.mode)
+			if m.pickerOpen() || m.effects.quitting || m.base != baseReview {
+				t.Fatalf("%s: open=%t quitting=%t screen = %v", tc.name, m.pickerOpen(), m.effects.quitting, m.screenID())
 			}
 			if got := m.review.Snapshot().RepoSelected; got != "/tmp/one" {
 				t.Fatalf("closing the picker changed the repo to %q", got)
@@ -147,7 +147,7 @@ func TestReviewPickerLeavesWithReview(t *testing.T) {
 	m := pickerReview(t)
 	m.openRepoPick()
 	m.closeDiff()
-	if m.pickerOpen() || m.mode != modeList {
-		t.Fatalf("after closing review: open=%t mode=%v", m.pickerOpen(), m.mode)
+	if m.pickerOpen() || !m.onList() {
+		t.Fatalf("after closing review: open=%t screen = %v", m.pickerOpen(), m.screenID())
 	}
 }

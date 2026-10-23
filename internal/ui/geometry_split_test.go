@@ -86,7 +86,7 @@ func TestSetSplitFromXClampsAndUpdatesRatio(t *testing.T) {
 }
 
 func TestResizeModeKeyArmsDrag(t *testing.T) {
-	m := &Model{mode: modeList, layout: layoutState{split: splitState{ratio: defaultSplitRatio}, width: 120, height: 40}, services: services{listKeys: keybind.DefaultList()}}
+	m := &Model{layout: layoutState{split: splitState{ratio: defaultSplitRatio}, width: 120, height: 40}, services: services{listKeys: keybind.DefaultList()}}
 	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'|'}})
 	m.drainEffects(t)
 	m = updated.(*Model)
@@ -101,7 +101,7 @@ func TestResizeModeKeyArmsDrag(t *testing.T) {
 	updated, cmd = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
 	m.drainEffects(t)
 	m = updated.(*Model)
-	if m.mode != modeList || !m.layout.split.resizeMode {
+	if !m.onList() || !m.layout.split.resizeMode {
 		t.Fatal("resize mode should swallow n")
 	}
 	if cmd != nil {
@@ -185,7 +185,7 @@ func TestEnterCommitsResize(t *testing.T) {
 }
 
 func TestArrowCancelRestoresRatio(t *testing.T) {
-	m := &Model{mode: modeList, layout: layoutState{width: 100, height: 40, split: splitState{ratio: 0.34}}, services: services{listKeys: keybind.DefaultList()}}
+	m := &Model{layout: layoutState{width: 100, height: 40, split: splitState{ratio: 0.34}}, services: services{listKeys: keybind.DefaultList()}}
 	updated, _ := m.enterResizeMode()
 	m = updated.(*Model)
 	m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
@@ -269,7 +269,7 @@ func TestInstallerRefusedQuitKeepsResizeInteraction(t *testing.T) {
 		t.Fatal("installer gate accepted quit")
 	}
 	if !m.layout.split.resizeMode || m.layout.split.ratio != 0.42 {
-		t.Fatalf("refused quit changed resize interaction: mode=%v ratio=%v", m.layout.split.resizeMode, m.layout.split.ratio)
+		t.Fatalf("refused quit changed resize interaction: screen = %v ratio=%v", m.layout.split.resizeMode, m.layout.split.ratio)
 	}
 	if raw, err := m.services.store.Setting(splitRatioSetting); err != nil || raw != "" {
 		t.Fatalf("refused quit persisted ratio %q (err %v)", raw, err)
@@ -348,7 +348,7 @@ func TestNewerSplitSaveSuccessClearsOnlySplitFailure(t *testing.T) {
 }
 
 func TestEnterResizeBlockedWhenSearchingOrQuick(t *testing.T) {
-	m := &Model{mode: modeList, layout: layoutState{width: 100, height: 40, split: splitState{ratio: defaultSplitRatio}}, services: services{listKeys: keybind.DefaultList()}, rail: railModelSearching(nil, 0, "")}
+	m := &Model{layout: layoutState{width: 100, height: 40, split: splitState{ratio: defaultSplitRatio}}, services: services{listKeys: keybind.DefaultList()}, rail: railModelSearching(nil, 0, "")}
 	updated, cmd := m.enterResizeMode()
 	m = updated.(*Model)
 	if m.layout.split.resizeMode || cmd != nil {
@@ -364,7 +364,7 @@ func TestEnterResizeBlockedWhenSearchingOrQuick(t *testing.T) {
 }
 
 func TestBodyYRangeMatchesListChrome(t *testing.T) {
-	m := &Model{layout: layoutState{width: 120, height: 40, split: splitState{ratio: defaultSplitRatio}}, mode: modeList, services: services{listKeys: keybind.DefaultList()}}
+	m := &Model{layout: layoutState{width: 120, height: 40, split: splitState{ratio: defaultSplitRatio}}, services: services{listKeys: keybind.DefaultList()}}
 	start, end := m.bodyYRange()
 	if start != m.listChromeRows() {
 		t.Fatalf("start = %d want listChromeRows=%d", start, m.listChromeRows())

@@ -139,7 +139,7 @@ const blankCapture = "\n\n\n\n\n\n\n\n\n\n"
 
 func previewModel(sessionStatus, preview string) *Model {
 	session := store.Session{ID: "boot", Name: "boot", Status: sessionStatus}
-	return &Model{layout: layoutState{width: 120, height: 40}, mode: modeList, workspace: workspace{preview: preview, sessions: []store.Session{session}}, rail: railModelFromRows([]treeRow{{sess: session}}, 0)}
+	return &Model{layout: layoutState{width: 120, height: 40}, workspace: workspace{preview: preview, sessions: []store.Session{session}}, rail: railModelFromRows([]treeRow{{sess: session}}, 0)}
 }
 
 func previewText(m *Model) string {
@@ -152,7 +152,7 @@ func previewText(m *Model) string {
 
 func TestPreviewBottomAlignsCompactPane(t *testing.T) {
 	m := previewModel(status.Finished, "todo\ncomposer"+strings.Repeat("\n", 10))
-	m.mode = modeFocus
+	m.push(&focusSurface{})
 	m.focus.pane.Enter(uifocus.EnterContext{SessionID: "boot"})
 	lines := strings.Split(previewText(m), "\n")
 	if strings.TrimSpace(lines[10]) != "todo" || strings.TrimSpace(lines[11]) != "composer" {
@@ -264,7 +264,7 @@ func TestPreviewLeavesTheFocusedPaneAlone(t *testing.T) {
 	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
 
 	m := previewModel(status.Starting, blankCapture)
-	m.mode = modeFocus
+	m.push(&focusSurface{})
 	m.focus.pane.Enter(uifocus.EnterContext{SessionID: "boot"})
 	setFocusCursor(m, paneCursor{ok: true})
 	lines := m.previewLines(80, 12, "  ")

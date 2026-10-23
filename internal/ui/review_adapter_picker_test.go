@@ -62,7 +62,7 @@ func TestRepoPickerFiltersAndSelects(t *testing.T) {
 
 	m.pressDiffKey(t, 'r')
 	if !m.pickerOpen() {
-		t.Fatalf("r should open the repo picker, mode = %v", m.mode)
+		t.Fatalf("r should open the repo picker, screen = %v", m.screenID())
 	}
 	for _, r := range "alph" {
 		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
@@ -73,8 +73,8 @@ func TestRepoPickerFiltersAndSelects(t *testing.T) {
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	*m = *updated.(*Model)
 	m.drainCmds(t, cmd)
-	if m.mode != modeDiff {
-		t.Fatalf("enter should return to review, mode = %v", m.mode)
+	if m.base != baseReview {
+		t.Fatalf("enter should return to review, screen = %v", m.screenID())
 	}
 	if got := filepath.Base(m.review.Snapshot().RepoSelected); got != "alpha" {
 		t.Fatalf("enter should select alpha, got %q", got)
@@ -94,8 +94,8 @@ func TestRepoPickerEscapeKeepsRepo(t *testing.T) {
 	m.pressDiffKey(t, 'r')
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	*m = *updated.(*Model)
-	if m.mode != modeDiff {
-		t.Fatalf("esc should return to review, mode = %v", m.mode)
+	if m.base != baseReview {
+		t.Fatalf("esc should return to review, screen = %v", m.screenID())
 	}
 	if m.review.Snapshot().RepoSelected != before || filepath.Base(m.review.Snapshot().RepoSelected) != dirtyName {
 		t.Fatalf("esc should not change the repo, got %q", m.review.Snapshot().RepoSelected)
@@ -121,7 +121,7 @@ func TestBranchPickerListsWorktreesAndSwitches(t *testing.T) {
 
 	m.pressDiffKey(t, 'b')
 	if !m.pickerOpen() {
-		t.Fatalf("b should open the branch picker, mode = %v (err=%q)", m.mode, m.errBar.text)
+		t.Fatalf("b should open the branch picker, screen = %v (err=%q)", m.screenID(), m.errBar.text)
 	}
 	rendered := m.viewPicker(t)
 	if !strings.Contains(rendered, "feature/pick-me") {
@@ -187,7 +187,7 @@ func TestBranchPickerSeedsCursorForSymlinkedWorktree(t *testing.T) {
 
 	m.pressDiffKey(t, 'b')
 	if !m.pickerOpen() {
-		t.Fatalf("b should open the branch picker, mode = %v (err=%q)", m.mode, m.errBar.text)
+		t.Fatalf("b should open the branch picker, screen = %v (err=%q)", m.screenID(), m.errBar.text)
 	}
 	resolvedWorktree, _ := filepath.EvalSymlinks(rawWorktree)
 	rows := m.pickerOf(t).FilteredRows()
@@ -262,8 +262,8 @@ func TestHandPickedRepoOutlivesReopen(t *testing.T) {
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	*m = *updated.(*Model)
 	m.drainCmds(t, cmd)
-	if m.mode != modeList {
-		t.Fatalf("esc should leave review, mode = %v", m.mode)
+	if !m.onList() {
+		t.Fatalf("esc should leave review, screen = %v", m.screenID())
 	}
 	m.drainCmds(t, m.openDiff())
 	if got := filepath.Base(m.review.Snapshot().RepoSelected); got != "bravo" {
@@ -413,7 +413,7 @@ func TestRepoPickerReportsMissingSession(t *testing.T) {
 
 	m.pressDiffKey(t, 'r')
 	if !m.pickerOpen() {
-		t.Fatalf("r should open the repo picker, mode = %v", m.mode)
+		t.Fatalf("r should open the repo picker, screen = %v", m.screenID())
 	}
 	for _, r := range "alph" {
 		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
@@ -472,7 +472,7 @@ func TestRepoPickerSurvivesShrinkingRootList(t *testing.T) {
 
 	m.pressDiffKey(t, 'r')
 	if !m.pickerOpen() {
-		t.Fatalf("r should open the repo picker, mode = %v", m.mode)
+		t.Fatalf("r should open the repo picker, screen = %v", m.screenID())
 	}
 	for m.pickerOf(t).Cursor() != 1 {
 		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
@@ -487,8 +487,8 @@ func TestRepoPickerSurvivesShrinkingRootList(t *testing.T) {
 	*m = *updated.(*Model)
 	m.drainCmds(t, cmd)
 
-	if m.mode != modeDiff || m.pickerOpen() {
-		t.Fatalf("enter should return to review, mode = %v", m.mode)
+	if m.base != baseReview || m.pickerOpen() {
+		t.Fatalf("enter should return to review, screen = %v", m.screenID())
 	}
 	if m.review.Snapshot().RepoSelected != onScreen {
 		t.Fatalf("enter should load the repo on the cursor row %q, got %q", onScreen, m.review.Snapshot().RepoSelected)
@@ -557,7 +557,7 @@ func TestBasePickerPersistsSwitchesScopeAndClears(t *testing.T) {
 
 	m.pressDiffKey(t, 'B')
 	if !m.pickerOpen() {
-		t.Fatalf("B should open the base picker, mode = %v", m.mode)
+		t.Fatalf("B should open the base picker, screen = %v", m.screenID())
 	}
 	labels := map[string]bool{}
 	for _, row := range m.pickerOf(t).Rows() {
@@ -568,8 +568,8 @@ func TestBasePickerPersistsSwitchesScopeAndClears(t *testing.T) {
 	}
 
 	m.typeAndEnter(t, "feature")
-	if m.mode != modeDiff {
-		t.Fatalf("enter should return to review, mode = %v", m.mode)
+	if m.base != baseReview {
+		t.Fatalf("enter should return to review, screen = %v", m.screenID())
 	}
 	if m.review.Snapshot().Scope != git.ScopeBranch {
 		t.Errorf("picking a base should switch scope to vs target, got %v", m.review.Snapshot().Scope)
@@ -604,7 +604,7 @@ func TestBasePickerPersistsSwitchesScopeAndClears(t *testing.T) {
 
 	m.pressDiffKey(t, 'B')
 	if !m.pickerOpen() {
-		t.Fatalf("B should reopen the base picker, mode = %v", m.mode)
+		t.Fatalf("B should reopen the base picker, screen = %v", m.screenID())
 	}
 	m.typeAndEnter(t, "auto")
 	cleared, err := m.services.store.ReviewBase(sess.ID, m.review.Snapshot().RepoSelected)
@@ -652,7 +652,7 @@ func TestInvalidStoredBaseStillOpensPickerAndRecovers(t *testing.T) {
 
 	m.drainCmds(t, m.openBasePick())
 	if !m.pickerOpen() {
-		t.Fatalf("B must open the base picker after the load errored, mode = %v (err=%q)", m.mode, m.errBar.text)
+		t.Fatalf("B must open the base picker after the load errored, screen = %v (err=%q)", m.screenID(), m.errBar.text)
 	}
 	labels := map[string]bool{}
 	for _, row := range m.pickerOf(t).Rows() {

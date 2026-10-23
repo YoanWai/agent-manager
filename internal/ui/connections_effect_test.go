@@ -30,8 +30,8 @@ func TestNewConnectionKeyOpensTheDialogAndSavesToTheStore(t *testing.T) {
 	if err != nil || len(stored) != 1 || stored[0] != (store.Connection{Name: "box", Destination: "me@box"}) {
 		t.Fatalf("stored = %+v, %v", stored, err)
 	}
-	if m.mode != modeList || len(m.ssh.List()) != 1 {
-		t.Fatalf("mode %v list %+v", m.mode, m.ssh.List())
+	if !m.onList() || len(m.ssh.List()) != 1 {
+		t.Fatalf("mode %v list %+v", m.screenID(), m.ssh.List())
 	}
 	if selection, _ := m.rail.Selected(); selection != (uirail.Selection{Kind: uirail.ConnectionRow, Host: "box"}) {
 		t.Fatalf("selection = %+v, want the new connection", selection)
@@ -39,7 +39,7 @@ func TestNewConnectionKeyOpensTheDialogAndSavesToTheStore(t *testing.T) {
 
 	_, cmd = m.runRailIntent(uirail.Intent{Kind: uirail.Delete, Target: uirail.Selection{Kind: uirail.ConnectionRow, Host: "box"}})
 	if cmd != nil || !confirmOpen(m) || pendingConfirm(m).label != "remove connection box? Its sessions keep running on the host." {
-		t.Fatalf("delete: mode %v label %q", m.mode, pendingConfirm(m).label)
+		t.Fatalf("delete: mode %v label %q", m.screenID(), pendingConfirm(m).label)
 	}
 	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.applyTestMsg(t, cmd())

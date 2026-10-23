@@ -222,7 +222,7 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width, _ int, _ stri
 		GlyphMode: m.prefs.glyphMode,
 		Width:     width, Height: 20, TerminalWidth: max(m.layout.width, width), TerminalHeight: max(m.layout.height, 20),
 		Theme: m.railTheme(), ListKeys: m.services.listKeys, ComfortableRows: m.prefs.comfortableRows,
-		MouseDisabled: m.prefs.mouseDisabled, Focused: m.mode == modeFocus,
+		MouseDisabled: m.prefs.mouseDisabled, Focused: m.focused(),
 		EnterFocuses: m.enterFocuses(), StartupPhase: m.startup.startupPhase, CursorMarker: cursorAnchorMarker,
 	}, uirail.Frame{})
 	var lines []string
@@ -250,7 +250,7 @@ func (m *Model) entryLines(_ []treeRow, _ int, width, height int) []contentLine 
 		GlyphMode: m.prefs.glyphMode,
 		Width:     width, Height: height, TerminalWidth: max(m.layout.width, width), TerminalHeight: max(m.layout.height, height),
 		Theme: m.railTheme(), ListKeys: m.services.listKeys, ComfortableRows: m.prefs.comfortableRows,
-		MouseDisabled: m.prefs.mouseDisabled, Focused: m.mode == modeFocus,
+		MouseDisabled: m.prefs.mouseDisabled, Focused: m.focused(),
 		EnterFocuses: m.enterFocuses(), StartupPhase: m.startup.startupPhase, CursorMarker: cursorAnchorMarker,
 	}, m.layout.displayedRail)
 	m.layout.displayedRail = frame

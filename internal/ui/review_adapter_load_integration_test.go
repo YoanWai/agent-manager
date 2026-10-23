@@ -223,7 +223,7 @@ func (m *Model) pickRepo(t *testing.T, name string) {
 	t.Helper()
 	m.pressDiffKey(t, 'r')
 	if !m.pickerOpen() {
-		t.Fatalf("r should open the repo picker, mode = %v", m.mode)
+		t.Fatalf("r should open the repo picker, screen = %v", m.screenID())
 	}
 	for _, r := range name {
 		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
@@ -232,8 +232,8 @@ func (m *Model) pickRepo(t *testing.T, name string) {
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	*m = *updated.(*Model)
 	m.drainCmds(t, cmd)
-	if m.mode != modeDiff {
-		t.Fatalf("enter should return to review, mode = %v", m.mode)
+	if m.base != baseReview {
+		t.Fatalf("enter should return to review, screen = %v", m.screenID())
 	}
 }
 
@@ -242,7 +242,7 @@ func openReviewOn(t *testing.T, m *Model, name, dir string) {
 	createSession(t, m, name, dir, "")
 	m.selectSessionRow(t, name)
 	m.drainCmds(t, m.openDiff())
-	if m.mode != modeDiff {
+	if m.base != baseReview {
 		t.Fatalf("openDiff should enter review, err = %q", m.errBar.text)
 	}
 }

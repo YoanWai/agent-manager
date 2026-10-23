@@ -195,7 +195,7 @@ func TestFocusPasteUpdateDefersIO(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "input-target", t.TempDir(), "")
 	m.selectSessionRow(t, "input-target")
-	m.mode = modeFocus
+	m.push(&focusSurface{})
 	called := false
 	original := pasteFocused
 	pasteFocused = func(*tmux.Driver, string, string) error { called = true; return nil }

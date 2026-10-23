@@ -17,15 +17,15 @@ func TestFocusEntersOnlyAfterTheProbeRuns(t *testing.T) {
 	createSession(t, m, "alpha", t.TempDir(), "")
 	m.selectSessionRow(t, "alpha")
 	_, cmd := m.focusSelected()
-	if m.mode == modeFocus {
+	if m.focused() {
 		t.Fatal("focus entered on the update path before the probe")
 	}
 	if m.effects.main.active == nil {
 		t.Fatal("the focus probe should be accepted before the entry")
 	}
 	m.applyCmd(t, cmd)
-	if m.mode != modeFocus {
-		t.Fatalf("probe should enter focus, mode = %v, err = %q", m.mode, m.errBar.text)
+	if !m.focused() {
+		t.Fatalf("probe should enter focus, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
 }
 
@@ -38,8 +38,8 @@ func TestFocusFenceKeepsNewerSelection(t *testing.T) {
 	_, cmd := m.focusSelected()
 	m.selectSessionRow(t, "beta")
 	m.applyCmd(t, cmd)
-	if m.mode != modeList {
-		t.Fatalf("a moved cursor should drop the entry, mode = %v", m.mode)
+	if !m.onList() {
+		t.Fatalf("a moved cursor should drop the entry, screen = %v", m.screenID())
 	}
 	if m.errBar.text != "" {
 		t.Fatalf("a fenced entry should report nothing, err = %q", m.errBar.text)
@@ -60,8 +60,8 @@ func TestFocusDeadSessionNeverEnters(t *testing.T) {
 		t.Fatalf("the probe reports from its completion, not the update path: %q", m.errBar.text)
 	}
 	m.applyCmd(t, cmd)
-	if m.mode != modeList {
-		t.Fatalf("a dead pane should not enter focus, mode = %v", m.mode)
+	if !m.onList() {
+		t.Fatalf("a dead pane should not enter focus, screen = %v", m.screenID())
 	}
 	if m.errBar.text != deadSessionHint {
 		t.Fatalf("err = %q, want %q", m.errBar.text, deadSessionHint)
@@ -93,8 +93,8 @@ func TestFocusProbeAcknowledgesFinished(t *testing.T) {
 	if got.Status != status.Idle || !got.Acked {
 		t.Fatalf("after the probe, status = %q acked = %v", got.Status, got.Acked)
 	}
-	if m.mode != modeFocus {
-		t.Fatalf("the probe should enter focus, mode = %v", m.mode)
+	if !m.focused() {
+		t.Fatalf("the probe should enter focus, screen = %v", m.screenID())
 	}
 }
 
@@ -246,8 +246,8 @@ func TestDetachProbeReadsAndClearsInOneStep(t *testing.T) {
 		t.Fatalf("the marker should be untouched on the update path: %q, %v", request, err)
 	}
 	m.drainEffects(t)
-	if m.mode != modeDiff {
-		t.Fatalf("marker set should enter review, mode = %v, err = %q", m.mode, m.errBar.text)
+	if m.base != baseReview {
+		t.Fatalf("marker set should enter review, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
 	request, err := m.services.tmux.PendingRequest(sess.ID)
 	if err != nil {
@@ -267,7 +267,7 @@ func TestFocusFenceDropsEntryAfterDialogOpened(t *testing.T) {
 	m.openForm()
 	m.applyCmd(t, cmd)
 	if !formOpen(m) {
-		t.Fatalf("a dialog opened after the probe should win, mode = %v", m.mode)
+		t.Fatalf("a dialog opened after the probe should win, screen = %v", m.screenID())
 	}
 	if m.focus.pane.Pane().SessionID != "" {
 		t.Fatalf("focus entered behind the dialog")
@@ -303,7 +303,7 @@ func TestFocusCompletionDoesNotReenterAfterNewerInput(t *testing.T) {
 	_, cmd := m.focusSelected()
 	m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
 	m.applyCmd(t, cmd)
-	if m.mode == modeFocus {
+	if m.focused() {
 		t.Fatal("stale focus stole foreground after newer input")
 	}
 }
@@ -349,7 +349,7 @@ func TestDetachCompletionDoesNotOpenReviewDuringQuit(t *testing.T) {
 	sess, _ := m.selected()
 	m.requestQuit()
 	m.applyDetachEffect(detachRequest{sessionID: sess.ID}, detachEffectResult{request: tmux.RequestReview}, nil)
-	if m.mode != modeList {
+	if !m.onList() {
 		t.Fatal("detach completion opened review during quit")
 	}
 }
@@ -382,8 +382,8 @@ func TestDetachRequestSurvivesListNavigation(t *testing.T) {
 		t.Fatalf("j should move the cursor first, selected %q", sess.Name)
 	}
 	m.drainEffects(t)
-	if m.mode != modeDiff {
-		t.Fatalf("a review asked for inside the session was lost to list navigation, mode = %v, err = %q", m.mode, m.errBar.text)
+	if m.base != baseReview {
+		t.Fatalf("a review asked for inside the session was lost to list navigation, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
 	if sess, _ := m.selected(); sess.Name != "alpha" {
 		t.Fatalf("review should open for the session that asked, selected %q", sess.Name)
@@ -398,7 +398,7 @@ func TestDetachRequestDroppedForNewerDialogIsReported(t *testing.T) {
 	m.openForm()
 	m.drainEffects(t)
 	if !formOpen(m) {
-		t.Fatalf("the newer dialog should keep the foreground, mode = %v", m.mode)
+		t.Fatalf("the newer dialog should keep the foreground, screen = %v", m.screenID())
 	}
 	if !m.errBar.warned() || !strings.Contains(m.errBar.text, "review") || !strings.Contains(m.errBar.text, "alpha") {
 		t.Fatalf("a dropped review should say so, status = %q", m.errBar.text)
@@ -412,8 +412,8 @@ func TestDetachRequestYieldsToQueuedFocus(t *testing.T) {
 	m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
 	m.focusSelected()
 	m.drainEffects(t)
-	if sess, _ := m.selected(); m.mode != modeFocus || sess.Name != "beta" {
-		t.Fatalf("the focus asked for after detaching should win, mode = %v, selected %q", m.mode, sess.Name)
+	if sess, _ := m.selected(); !m.focused() || sess.Name != "beta" {
+		t.Fatalf("the focus asked for after detaching should win, screen = %v, selected %q", m.screenID(), sess.Name)
 	}
 	if !m.errBar.warned() || !strings.Contains(m.errBar.text, "review") {
 		t.Fatalf("a dropped review should say so, status = %q", m.errBar.text)
@@ -428,7 +428,7 @@ func TestPendingFocusSurvivesTheInitiatingMouseRelease(t *testing.T) {
 	_, cmd := m.focusSelected()
 	m.handleMouse(tea.MouseMsg{Action: tea.MouseActionRelease})
 	m.applyCmd(t, cmd)
-	if m.mode != modeFocus {
+	if !m.focused() {
 		t.Fatal("release of the initiating click cancelled its pending focus")
 	}
 }
@@ -460,10 +460,10 @@ func TestPendingFocusDistinguishesIgnoredAndBoundKeys(t *testing.T) {
 				m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 			}
 			m.applyCmd(t, pending)
-			if bound && m.mode != modeList {
+			if bound && !m.onList() {
 				t.Fatal("old focus reopened after help was dismissed")
 			}
-			if !bound && m.mode != modeFocus {
+			if !bound && !m.focused() {
 				t.Fatal("ignored key cancelled pending focus")
 			}
 		})

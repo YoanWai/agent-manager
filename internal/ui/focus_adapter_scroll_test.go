@@ -45,7 +45,7 @@ func focusedWithHistory(t *testing.T, name string) (*Model, string) {
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m.drainEffects(t)
 	*m = *updated.(*Model)
-	if m.mode != modeFocus {
+	if !m.focused() {
 		t.Fatalf("did not enter focus: %q", m.errBar.text)
 	}
 	// Wait for the control client, which every scroll query rides.
@@ -790,7 +790,7 @@ func TestAppMouseClearsScrollback(t *testing.T) {
 	createSession(t, m, "sticky", t.TempDir(), "")
 	m.selectSessionRow(t, "sticky")
 	sess := railSelectedSession(m)
-	m.mode = modeFocus
+	m.push(&focusSurface{})
 	m.focus.pane.Enter(uifocus.EnterContext{SessionID: sess.ID})
 	setFocusScrollOffset(t, m, sess.ID, 9, m.focusPaneRows())
 	if !m.scrolledBack() {
@@ -822,7 +822,7 @@ func TestStaleMouseClaimDoesNotClearHistoryScroll(t *testing.T) {
 	createSession(t, m, "stale-hold", t.TempDir(), "")
 	m.selectSessionRow(t, "stale-hold")
 	sess := railSelectedSession(m)
-	m.mode = modeFocus
+	m.push(&focusSurface{})
 	m.workspace.preview = "SCROLLED-FRAME\n"
 	m.focus.pane.Enter(uifocus.EnterContext{SessionID: sess.ID})
 	setFocusScrollOffset(t, m, sess.ID, 9, m.focusPaneRows())
@@ -851,7 +851,7 @@ func TestPolledFrameHoldsScrolledView(t *testing.T) {
 	createSession(t, m, "polled", t.TempDir(), "")
 	m.selectSessionRow(t, "polled")
 	sess := railSelectedSession(m)
-	m.mode = modeFocus
+	m.push(&focusSurface{})
 	m.workspace.preview = "SCROLLED-FRAME\n"
 	m.focus.pane.Enter(uifocus.EnterContext{SessionID: sess.ID})
 	setFocusScrollOffset(t, m, sess.ID, 6, m.focusPaneRows())
@@ -917,7 +917,7 @@ func TestFocusReentryKeepsPaneStateOnQuietPane(t *testing.T) {
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m.drainEffects(t)
 	*m = *updated.(*Model)
-	if m.mode != modeFocus {
+	if !m.focused() {
 		t.Fatalf("did not re-enter focus: %q", m.errBar.text)
 	}
 

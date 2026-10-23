@@ -226,7 +226,7 @@ func TestReviewSendCommandCapturesSessionIncarnation(t *testing.T) {
 	session := reviewSessionByName(t, m, "review-incarnation")
 	m.review = uireview.New(false)
 	m.review.Open(uireview.Target{ID: session.ID, Name: session.Name, Tool: session.Tool, Cwd: session.Cwd}, 0, "/repo")
-	m.mode = modeDiff
+	m.base = baseReview
 	m.reviewSendCmd(uireview.SendRequest{
 		Target: uireview.Target{ID: session.ID, Name: session.Name}, RepoRoot: "/repo", Prompt: "prompt",
 		State: uireview.SavedState{Round: uireview.Round{Number: 1}}, Round: 1, Count: 1,
@@ -461,23 +461,23 @@ func TestReviewSaveFailureSurfacesAfterReviewChanges(t *testing.T) {
 		name   string
 		mutate func(*Model)
 	}{
-		{"closed", func(m *Model) { m.review.Close(); m.mode = modeList }},
+		{"closed", func(m *Model) { m.review.Close(); m.base = baseList }},
 		{"retargeted", func(m *Model) { _, _ = m.review.SelectRepo("/other") }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := &Model{}
 			m.review = uireview.New(false)
 			m.review.Open(uireview.Target{ID: "s1", Cwd: "/repo"}, 0, "/repo")
-			m.mode = modeDiff
+			m.base = baseReview
 			tc.mutate(m)
-			modeBefore := m.mode
+			before := m.screenID()
 
 			cmd := m.handleReviewSave(uireview.SaveResult{TargetID: "s1", RepoRoot: "/repo", Err: errors.New("disk full")})
 			if cmd != nil {
 				t.Fatal("save failure started navigation")
 			}
-			if m.mode != modeBefore || !strings.Contains(m.errBar.text, "saving review state: disk full") {
-				t.Fatalf("accepted save failure hidden or navigated: mode=%v err=%q", m.mode, m.errBar.text)
+			if m.screenID() != before || !strings.Contains(m.errBar.text, "saving review state: disk full") {
+				t.Fatalf("accepted save failure hidden or navigated: screen = %v err=%q", m.screenID(), m.errBar.text)
 			}
 		})
 	}
@@ -573,7 +573,7 @@ func TestReviewLoadNormalizesThroughLane(t *testing.T) {
 	}
 	m.selectSessionRow(t, "norm")
 	m.drainCmds(t, m.openDiff())
-	if m.mode != modeDiff {
+	if m.base != baseReview {
 		t.Fatalf("openDiff should enter review, err = %q", m.errBar.text)
 	}
 

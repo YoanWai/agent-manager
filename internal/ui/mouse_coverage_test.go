@@ -4,121 +4,123 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"slices"
+	"io/fs"
+	"reflect"
+	"strings"
 	"testing"
+
+	"github.com/YoanWai/agent-manager/internal/remote"
+	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
-// Every screen works by mouse as well as by keyboard. A card's body takes
-// clicks in clickCard and its list takes the wheel in wheelCard, or the
-// mode is listed below with the reason it does without. A new mode fails
-// here until it does one or the other.
-var (
-	noCardClick = map[string]string{
-		"modeList":  "the list takes the mouse in listMouse",
-		"modeDiff":  "Review takes the mouse in reviewMouse",
-		"modeFocus": "the pane takes the mouse in focusMouse; a card over it is a surface",
-	}
-	noCardWheel = map[string]string{
-		"modeList":  "the list takes the wheel in listMouse",
-		"modeDiff":  "Review takes the wheel in reviewMouse",
-		"modeFocus": "the pane takes the wheel in focusMouse; a card over it is a surface",
-	}
-)
+// mouseOpeners mounts every surface the way the user does, on a list with
+// a selected session. A surface type missing here fails, so a new surface
+// is driven by the mouse on purpose.
+var mouseOpeners = map[string]func(t *testing.T, m *Model){
+	"confirmSurface": func(t *testing.T, m *Model) { m.openConfirm(confirmTarget{action: actionKill, label: "kill alpha?"}) },
+	"moveSurface":    func(t *testing.T, m *Model) { m.openMove() },
+	"renameSurface":  func(t *testing.T, m *Model) { m.openRename() },
+	"forkSurface":    func(t *testing.T, m *Model) { m.push(newForkSurface(railSelectedSession(m), 1)) },
+	"launchHintSurface": func(t *testing.T, m *Model) {
+		m.openLaunchHint(launchFix{text: "tool is missing", command: "true", binary: "tool"})
+	},
+	"helpSurface":        func(t *testing.T, m *Model) { m.openHelp() },
+	"noticesSurface":     func(t *testing.T, m *Model) { m.Update(key("M")) },
+	"settingsSurface":    func(t *testing.T, m *Model) { m.applyCmd(t, m.openSettings()) },
+	"groupFormSurface":   func(t *testing.T, m *Model) { m.openGroupForm() },
+	"connectionsSurface": func(t *testing.T, m *Model) { m.openConnectionDialog(remote.Connection{}) },
+	"quickSurface":       func(t *testing.T, m *Model) { m.applyCmd(t, m.openQuickMode()) },
+	"spawnSurface":       func(t *testing.T, m *Model) { m.applyCmd(t, m.openForm()) },
+	"resizeSurface":      func(t *testing.T, m *Model) { m.enterResizeMode() },
+	"focusSurface":       func(t *testing.T, m *Model) { m.push(&focusSurface{}) },
+	"focusSaved": func(t *testing.T, m *Model) {
+		m.push(&focusSurface{})
+		m.push(newFocusSaved(0, m.spawnStyles()))
+	},
+	"reviewPicker": func(t *testing.T, m *Model) {
+		m.base = baseReview
+		m.push(newReviewPicker([]uireview.PickerRow{{Label: "main"}}, "branch", uireview.PickRepo, "", uireview.PickerSource{}, "", uireview.RenderContext{}, ""))
+	},
+}
 
-func TestEveryModeAnswersTheMouse(t *testing.T) {
-	modes := declaredModes(t)
-	for _, check := range []struct {
-		handler string
-		exempt  map[string]string
-	}{{"clickCard", noCardClick}, {"wheelCard", noCardWheel}} {
-		handled := modeCases(t, "mouse.go", check.handler)
-		for _, name := range modes {
-			_, exempt := check.exempt[name]
-			switch covered := slices.Contains(handled, name); {
-			case !covered && !exempt:
-				t.Errorf("%s has no case in %s: handle the mouse there, or add it to the exemptions in this file with why it does without", name, check.handler)
-			case covered && exempt:
-				t.Errorf("%s is handled in %s and also exempted from it: drop the exemption", name, check.handler)
-			}
+// Every surface answers the mouse: a wheel and a click over it neither
+// panic nor touch the stack under it.
+func TestEverySurfaceAnswersTheMouse(t *testing.T) {
+	for _, name := range declaredSurfaces(t) {
+		open, ok := mouseOpeners[name]
+		if !ok {
+			t.Errorf("%s has no opener in mouseOpeners: drive it by the mouse here", name)
+			continue
 		}
-		for name := range check.exempt {
-			if !slices.Contains(modes, name) {
-				t.Errorf("%s exempts %s, which is no longer a mode", check.handler, name)
+		t.Run(name, func(t *testing.T) {
+			m := buildModel(t)
+			m.layout.width, m.layout.height = 120, 40
+			createSession(t, m, "alpha", t.TempDir(), "")
+			m.selectSessionRow(t, "alpha")
+			open(t, m)
+			top, ok := m.top()
+			if !ok || reflect.TypeOf(top).Elem().Name() != name {
+				t.Fatalf("the opener did not put %s on top, stack %d, err %q", name, len(m.surfaces), m.errBar.text)
 			}
+			below := len(m.surfaces) - 1
+			preparedView(m)
+			x, y := m.layout.width/2, m.layout.height/2
+			for _, msg := range []tea.MouseMsg{
+				{X: x, Y: y, Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress},
+				{X: x, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress},
+				{X: x, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionRelease},
+			} {
+				m.Update(msg)
+				if len(m.surfaces) < below {
+					t.Fatalf("a mouse event over %s popped the stack under it", name)
+				}
+			}
+		})
+	}
+	for name := range mouseOpeners {
+		if !contains(declaredSurfaces(t), name) {
+			t.Errorf("mouseOpeners names %s, which no longer implements surface", name)
 		}
 	}
 }
 
-// declaredModes lists the constants of type mode in model.go.
-func declaredModes(t *testing.T) []string {
+func contains(names []string, name string) bool {
+	for _, n := range names {
+		if n == name {
+			return true
+		}
+	}
+	return false
+}
+
+// declaredSurfaces lists the types in the package that declare a Leave
+// method on a pointer receiver: every surface does, and nothing else.
+func declaredSurfaces(t *testing.T) []string {
 	t.Helper()
-	file := parseUIFile(t, "model.go")
+	fset := token.NewFileSet()
+	packages, err := parser.ParseDir(fset, ".", func(info fs.FileInfo) bool {
+		return !strings.HasSuffix(info.Name(), "_test.go")
+	}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var names []string
-	for _, decl := range file.Decls {
-		gen, ok := decl.(*ast.GenDecl)
-		if !ok || gen.Tok != token.CONST || len(gen.Specs) == 0 {
-			continue
-		}
-		first := gen.Specs[0].(*ast.ValueSpec)
-		if ident, ok := first.Type.(*ast.Ident); !ok || ident.Name != "mode" {
-			continue
-		}
-		for _, spec := range gen.Specs {
-			for _, name := range spec.(*ast.ValueSpec).Names {
-				// modeCount counts the modes; it is not one.
-				if name.Name != "modeCount" {
-					names = append(names, name.Name)
+	for _, file := range packages["ui"].Files {
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Recv == nil || fn.Name.Name != "Leave" {
+				continue
+			}
+			if star, ok := fn.Recv.List[0].Type.(*ast.StarExpr); ok {
+				if ident, ok := star.X.(*ast.Ident); ok {
+					names = append(names, ident.Name)
 				}
 			}
 		}
 	}
 	if len(names) == 0 {
-		t.Fatal("model.go declares no mode constants")
+		t.Fatal("found no surfaces")
 	}
 	return names
-}
-
-// modeCases lists the modes named in the case clauses of fn's switch on
-// m.mode.
-func modeCases(t *testing.T, path, fn string) []string {
-	t.Helper()
-	var names []string
-	found := false
-	for _, decl := range parseUIFile(t, path).Decls {
-		funcDecl, ok := decl.(*ast.FuncDecl)
-		if !ok || funcDecl.Name.Name != fn {
-			continue
-		}
-		found = true
-		ast.Inspect(funcDecl.Body, func(node ast.Node) bool {
-			swtch, ok := node.(*ast.SwitchStmt)
-			if !ok {
-				return true
-			}
-			if tag, ok := swtch.Tag.(*ast.SelectorExpr); !ok || tag.Sel.Name != "mode" {
-				return true
-			}
-			for _, stmt := range swtch.Body.List {
-				for _, expr := range stmt.(*ast.CaseClause).List {
-					if ident, ok := expr.(*ast.Ident); ok {
-						names = append(names, ident.Name)
-					}
-				}
-			}
-			return true
-		})
-	}
-	if !found {
-		t.Fatalf("%s declares no %s", path, fn)
-	}
-	return names
-}
-
-func parseUIFile(t *testing.T, path string) *ast.File {
-	t.Helper()
-	file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return file
 }

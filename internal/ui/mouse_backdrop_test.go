@@ -42,7 +42,7 @@ func TestBackdropClickClosesACardTheWayEscDoes(t *testing.T) {
 			t.Fatalf("%s: test setup did not open the card, err %q", tc.name, m.errBar.text)
 		}
 		if m = clickBackdrop(t, m); !m.listClear() {
-			t.Errorf("%s: a backdrop click should close the card, mode = %v", tc.name, m.mode)
+			t.Errorf("%s: a backdrop click should close the card, screen = %v", tc.name, m.screenID())
 		}
 		if confirmOpen(m) {
 			t.Errorf("%s: a backdrop click on a confirm is its cancel, target = %+v", tc.name, pendingConfirm(m))
@@ -84,7 +84,7 @@ func TestBackdropClickKeepsTheSettingsEditorField(t *testing.T) {
 		t.Fatal("test setup: enter on custom opens the field")
 	}
 	if m = clickBackdrop(t, m); !m.settingsOpen() || !m.settingsCard().state.Editor.Typing() {
-		t.Fatalf("a stray click should keep the typed line open, mode = %v typing = %v", m.mode, m.settingsCard().state.Editor.Typing())
+		t.Fatalf("a stray click should keep the typed line open, screen = %v typing = %v", m.screenID(), m.settingsCard().state.Editor.Typing())
 	}
 }
 
@@ -96,7 +96,7 @@ func TestClickOnACardsOwnBlankStaysOpen(t *testing.T) {
 	m.openHelp()
 	preparedView(m)
 	if m = leftClick(m, m.layout.card.left+1, m.layout.card.top+1); !helpOpen(m) {
-		t.Fatalf("a click on the card's own edge should leave it open, mode = %v", m.mode)
+		t.Fatalf("a click on the card's own edge should leave it open, screen = %v", m.screenID())
 	}
 }
 
@@ -110,7 +110,7 @@ func TestBackdropClickKeepsASavedPromptDraft(t *testing.T) {
 		t.Fatal("test setup: n opens the prompt editor")
 	}
 	if m = clickBackdrop(t, m); !m.settingsOpen() || !m.settingsCard().state.Prompts.Editing() {
-		t.Fatalf("a stray click should keep the prompt being typed, mode = %v", m.mode)
+		t.Fatalf("a stray click should keep the prompt being typed, screen = %v", m.screenID())
 	}
 }
 
@@ -142,7 +142,7 @@ func TestRenameHoldsTheListUnderTheMouse(t *testing.T) {
 	m = leftClick(m, x, y)
 	m = wheel(m, tea.MouseButtonWheelDown, x, y)
 	if row, ok := m.selectedRow(); !renameOpen(m) || !ok || row.sess.Name != "alpha" {
-		t.Fatalf("the mouse moved the list under a rename: mode %v row %+v", m.mode, row.sess.Name)
+		t.Fatalf("the mouse moved the list under a rename: mode %v row %+v", m.screenID(), row.sess.Name)
 	}
 }
 
@@ -157,12 +157,12 @@ func TestACardClickRunsOnTheRelease(t *testing.T) {
 	preparedView(m)
 	card := m.layout.card
 	if m = leftPress(m, 0, 0); !helpOpen(m) {
-		t.Fatalf("the press alone closed the card, mode = %v", m.mode)
+		t.Fatalf("the press alone closed the card, screen = %v", m.screenID())
 	}
 	if m = leftRelease(m, card.left+1, card.top+1); !helpOpen(m) {
-		t.Fatalf("a release over the card closed it, mode = %v", m.mode)
+		t.Fatalf("a release over the card closed it, screen = %v", m.screenID())
 	}
-	if m = leftClick(m, 0, 0); m.mode != modeList {
-		t.Fatalf("a click on the backdrop should close the card, mode = %v", m.mode)
+	if m = leftClick(m, 0, 0); !m.onList() {
+		t.Fatalf("a click on the backdrop should close the card, screen = %v", m.screenID())
 	}
 }

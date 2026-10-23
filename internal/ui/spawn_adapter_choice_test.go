@@ -97,13 +97,13 @@ func TestFormSpawnsOnTheChoice(t *testing.T) {
 	m.form().SetDir(t.TempDir())
 	m.form().Choice().SetFilter("opux")
 	if m.submitForm(); m.errBar.text == "" || !formOpen(m) {
-		t.Fatalf("an unlisted model spawned: mode %v err %q", m.mode, m.errBar.text)
+		t.Fatalf("an unlisted model spawned: mode %v err %q", m.screenID(), m.errBar.text)
 	}
 	m.form().Choice().SetFilter("opus")
 	m.form().Choice().CycleEffort(m.spawnHost(), "claude", 3)
 	_, spawn := m.submitForm()
 	m.applyCmd(t, spawn)
-	if m.mode != modeList {
+	if !m.onList() {
 		t.Fatalf("submit: %q", m.errBar.text)
 	}
 	stored, err := m.services.store.Get(m.sessionRows()[0].ID)

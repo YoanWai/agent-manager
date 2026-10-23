@@ -67,8 +67,8 @@ func TestLaunchHintSurfaceWithFakeInstall(t *testing.T) {
 	}
 
 	s.Key(h, tea.KeyMsg{Type: tea.KeyEsc})
-	if hintOpen(m) || m.mode != modeList || s.fix.command != "" {
-		t.Fatalf("esc: open %t mode %v fix %+v", hintOpen(m), m.mode, s.fix)
+	if hintOpen(m) || !m.onList() || s.fix.command != "" {
+		t.Fatalf("esc: open %t mode %v fix %+v", hintOpen(m), m.screenID(), s.fix)
 	}
 }
 
@@ -80,7 +80,7 @@ func TestReportLaunchErrorOpensInstallHintForHermes(t *testing.T) {
 	m.reportLaunchError(fmt.Errorf("launch: %w", mcpreg.HermesMCPUnavailableError{PipCommand: want}))
 
 	if !hintOpen(m) {
-		t.Fatalf("mode = %v, want modeLaunchHint", m.mode)
+		t.Fatalf("screen = %v, want the launch hint", m.screenID())
 	}
 	if hintFix(m).command != want {
 		t.Fatalf("command = %q, want %q", hintFix(m).command, want)
@@ -91,8 +91,8 @@ func TestReportLaunchErrorOpensInstallHintForHermes(t *testing.T) {
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
 	m.drainEffects(t)
 	m = updated.(*Model)
-	if m.mode != modeList {
-		t.Fatalf("after esc, mode = %v, want modeList", m.mode)
+	if !m.onList() {
+		t.Fatalf("after esc, screen = %v, want the list", m.screenID())
 	}
 	if hintFix(m).text != "" {
 		t.Fatalf("dismiss should clear the hint, got %q", hintFix(m).text)
@@ -106,7 +106,7 @@ func TestReportLaunchErrorLeavesHermesHintReadOnlyWithoutAnInterpreter(t *testin
 	m.reportLaunchError(fmt.Errorf("launch: %w", mcpreg.HermesMCPUnavailableError{}))
 
 	if !hintOpen(m) {
-		t.Fatalf("mode = %v, want modeLaunchHint", m.mode)
+		t.Fatalf("screen = %v, want the launch hint", m.screenID())
 	}
 	if hintFix(m).command != "" {
 		t.Fatalf("command = %q, want none when the interpreter cannot be resolved", hintFix(m).command)
@@ -118,7 +118,7 @@ func TestReportLaunchErrorLeavesHermesHintReadOnlyWithoutAnInterpreter(t *testin
 	m.drainEffects(t)
 	m = updated.(*Model)
 	if m.ledger.install != nil || !hintOpen(m) {
-		t.Fatalf("a read-only dialog should run nothing on i: install = %v, mode = %v", m.ledger.install, m.mode)
+		t.Fatalf("a read-only dialog should run nothing on i: install = %v, screen = %v", m.ledger.install, m.screenID())
 	}
 }
 
@@ -129,7 +129,7 @@ func TestReportLaunchErrorOpensInstallHintForMissingCLI(t *testing.T) {
 	m.reportLaunchError(config.MissingToolError{Binary: "claude"})
 
 	if !hintOpen(m) {
-		t.Fatalf("mode = %v, want modeLaunchHint", m.mode)
+		t.Fatalf("screen = %v, want the launch hint", m.screenID())
 	}
 	installer := "claude.ai/install.sh"
 	if runtime.GOOS == "windows" {
@@ -154,7 +154,7 @@ func TestReportLaunchErrorOpensHintForOutdatedCLI(t *testing.T) {
 	m.reportLaunchError(fmt.Errorf("spawn: %w", config.OutdatedToolError{Binary: "pi", Installed: "0.76.0", Minimum: "0.84.3"}))
 
 	if !hintOpen(m) {
-		t.Fatalf("mode = %v, want modeLaunchHint", m.mode)
+		t.Fatalf("screen = %v, want the launch hint", m.screenID())
 	}
 	if hintFix(m).command != deps.Command("pi") || hintFix(m).binary != "pi" {
 		t.Fatalf("fix = %+v, want pi's installer to rerun", hintFix(m))
@@ -220,7 +220,7 @@ func TestReportLaunchErrorOpensHintForUnknownMissingCLI(t *testing.T) {
 	m.reportLaunchError(config.MissingToolError{Binary: "acme"})
 
 	if !hintOpen(m) {
-		t.Fatalf("mode = %v, want modeLaunchHint", m.mode)
+		t.Fatalf("screen = %v, want the launch hint", m.screenID())
 	}
 	if !strings.Contains(hintFix(m).text, "acme") {
 		t.Fatalf("hint %q should name the missing CLI", hintFix(m).text)
@@ -253,7 +253,7 @@ func TestSpawnMissingCLIPromptsInstall(t *testing.T) {
 	m.applyCmd(t, cmd)
 
 	if !hintOpen(m) {
-		t.Fatalf("mode = %v, err = %q, want modeLaunchHint", m.mode, m.errBar.text)
+		t.Fatalf("screen = %v, err = %q, want the launch hint", m.screenID(), m.errBar.text)
 	}
 	if !strings.Contains(hintFix(m).text, "am-missing-cli-xyz") {
 		t.Fatalf("hint %q should name the missing binary", hintFix(m).text)
@@ -283,7 +283,7 @@ func TestReviveMissingCLIPromptsInstall(t *testing.T) {
 	}
 	m.reportLaunchError(err)
 	if !hintOpen(m) {
-		t.Fatalf("mode = %v, err = %q, want modeLaunchHint", m.mode, m.errBar.text)
+		t.Fatalf("screen = %v, err = %q, want the launch hint", m.screenID(), m.errBar.text)
 	}
 	if !strings.Contains(hintFix(m).text, "am-missing-cli-xyz") {
 		t.Fatalf("hint %q should name the revive binary", hintFix(m).text)
@@ -296,8 +296,8 @@ func TestReportLaunchErrorKeepsPlainErrorsOnStatusLine(t *testing.T) {
 
 	m.reportLaunchError(fmt.Errorf("tmux create: boom"))
 
-	if m.mode != modeList {
-		t.Fatalf("mode = %v, want modeList", m.mode)
+	if !m.onList() {
+		t.Fatalf("screen = %v, want the list", m.screenID())
 	}
 	if m.errBar.text != "tmux create: boom" {
 		t.Fatalf("errBar = %q", m.errBar.text)
@@ -340,7 +340,7 @@ func TestRestartHermesWithoutMCPSupportPromptsInstall(t *testing.T) {
 	m = updated.(*Model)
 
 	if !hintOpen(m) {
-		t.Fatalf("mode = %v, err = %q, want modeLaunchHint", m.mode, m.errBar.text)
+		t.Fatalf("screen = %v, err = %q, want the launch hint", m.screenID(), m.errBar.text)
 	}
 }
 
@@ -366,7 +366,7 @@ func TestQuickSpawnHermesWithoutMCPSupportClosesTheBar(t *testing.T) {
 	m.applyCmd(t, cmd)
 
 	if !hintOpen(m) {
-		t.Fatalf("mode = %v, err = %q, want modeLaunchHint", m.mode, m.errBar.text)
+		t.Fatalf("screen = %v, err = %q, want the launch hint", m.screenID(), m.errBar.text)
 	}
 	if m.quick() != nil {
 		t.Fatal("a refused quick spawn must close the bar")
@@ -395,7 +395,7 @@ func TestFormSpawnRefusedByTheHintReleasesItsImages(t *testing.T) {
 	m.applyCmd(t, cmd)
 
 	if !hintOpen(m) {
-		t.Fatalf("mode = %v, err = %q, want modeLaunchHint", m.mode, m.errBar.text)
+		t.Fatalf("screen = %v, err = %q, want the launch hint", m.screenID(), m.errBar.text)
 	}
 	// The dialog can still install the CLI and spawn this prompt, so it
 	// takes the images over from the form and keeps the files until it
@@ -455,7 +455,7 @@ func TestFormSpawnErrorInTheBarKeepsItsImages(t *testing.T) {
 	m.applyCmd(t, cmd)
 
 	if !formOpen(m) || m.errBar.text == "" {
-		t.Fatalf("mode = %v, err = %q, want the form still up with the error", m.mode, m.errBar.text)
+		t.Fatalf("screen = %v, err = %q, want the form still up with the error", m.screenID(), m.errBar.text)
 	}
 	// Named so the test cannot pass on an earlier refusal: this is the
 	// spawn failing, not a field the form checked before it got there.
@@ -501,7 +501,7 @@ func TestSpawnHermesWithoutMCPSupportPromptsInstall(t *testing.T) {
 	m.applyCmd(t, cmd)
 
 	if !hintOpen(m) {
-		t.Fatalf("mode = %v, err = %q, want modeLaunchHint", m.mode, m.errBar.text)
+		t.Fatalf("screen = %v, err = %q, want the launch hint", m.screenID(), m.errBar.text)
 	}
 	if len(m.sessionRows()) != 0 {
 		t.Fatalf("no session may spawn without MCP support, got %v", sessionNames(m))
@@ -511,7 +511,7 @@ func TestSpawnHermesWithoutMCPSupportPromptsInstall(t *testing.T) {
 func pressInLaunchHint(t *testing.T, m *Model, key rune) tea.Cmd {
 	t.Helper()
 	if !hintOpen(m) {
-		t.Fatalf("mode = %v, want modeLaunchHint", m.mode)
+		t.Fatalf("screen = %v, want the launch hint", m.screenID())
 	}
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{key}})
 	*m = *updated.(*Model)
@@ -553,7 +553,7 @@ func TestLaunchHintCopiesTheInstallCommand(t *testing.T) {
 		t.Fatalf("copied %q, want %q", copied, want)
 	}
 	if !hintOpen(m) {
-		t.Fatalf("copy must leave the dialog up, mode = %v", m.mode)
+		t.Fatalf("copy must leave the dialog up, screen = %v", m.screenID())
 	}
 	if m.errBar.text != "copied to clipboard" || !m.errBar.worked() {
 		t.Fatalf("status = %q, want the copy confirmed", m.errBar.text)
@@ -585,7 +585,7 @@ func TestLaunchHintWithoutARecipeOffersOnlyClose(t *testing.T) {
 		t.Fatalf("dialog should offer neither copy nor install:\n%s", frame)
 	}
 	if cmd := pressInLaunchHint(t, m, 'i'); cmd != nil || !hintOpen(m) || m.ledger.install != nil {
-		t.Fatalf("i must do nothing without a recipe: mode = %v, install = %+v", m.mode, m.ledger.install)
+		t.Fatalf("i must do nothing without a recipe: screen = %v, install = %+v", m.screenID(), m.ledger.install)
 	}
 	if cmd := pressInLaunchHint(t, m, 'c'); cmd != nil {
 		t.Fatal("c must do nothing without a recipe")
@@ -612,10 +612,10 @@ func TestLaunchHintKeepsTheMouseAndCopiesOnAClick(t *testing.T) {
 	m, cmd := leftClickCmd(m, x, y)
 	m.runBatch(t, cmd)
 	if want := deps.Command("claude"); copied != want || !hintOpen(m) {
-		t.Fatalf("a click on the command copied %q, want %q; mode %v", copied, want, m.mode)
+		t.Fatalf("a click on the command copied %q, want %q; mode %v", copied, want, m.screenID())
 	}
-	if m = clickLabel(t, m, "esc close"); m.mode != modeList {
-		t.Fatalf("esc in the foot should close the dialog, mode = %v", m.mode)
+	if m = clickLabel(t, m, "esc close"); !m.onList() {
+		t.Fatalf("esc in the foot should close the dialog, screen = %v", m.screenID())
 	}
 }
 
@@ -626,11 +626,11 @@ func TestLaunchHintStrayKeysKeepTheDialog(t *testing.T) {
 
 	pressInLaunchHint(t, m, 'x')
 	if !hintOpen(m) {
-		t.Fatalf("mode = %v, want the dialog kept", m.mode)
+		t.Fatalf("screen = %v, want the dialog kept", m.screenID())
 	}
 	pressInLaunchHint(t, m, 'q')
-	if m.mode != modeList {
-		t.Fatalf("mode = %v, want q to close", m.mode)
+	if !m.onList() {
+		t.Fatalf("screen = %v, want q to close", m.screenID())
 	}
 }
 
@@ -714,11 +714,11 @@ func TestLaunchHintInstallRunsTheCommandAndRetriesTheLaunch(t *testing.T) {
 	cmd := pressInLaunchHint(t, m, 'i')
 
 	if !hintOpen(m) || m.ledger.install != nil {
-		t.Fatalf("install ran on Update: mode=%v pending=%+v", m.mode, m.ledger.install)
+		t.Fatalf("install ran on Update: screen = %v pending=%+v", m.screenID(), m.ledger.install)
 	}
 	m.applyCmd(t, cmd)
-	if m.mode != modeList {
-		t.Fatalf("mode = %v, err = %q, want the dialog closed once the install starts", m.mode, m.errBar.text)
+	if !m.onList() {
+		t.Fatalf("screen = %v, err = %q, want the dialog closed once the install starts", m.screenID(), m.errBar.text)
 	}
 	shell := terminalSession(t, m)
 	if shell.Name != "install-am-fake-cli" {
@@ -903,7 +903,7 @@ func TestLaunchHintRetryThatStopsAgainKeepsTheImages(t *testing.T) {
 	waitForInstallToSettle(t, m)
 
 	if !hintOpen(m) {
-		t.Fatalf("mode = %v, err = %q, want the dialog on the next missing tool", m.mode, m.errBar.text)
+		t.Fatalf("screen = %v, err = %q, want the dialog on the next missing tool", m.screenID(), m.errBar.text)
 	}
 	if len(hintFix(m).images) != 1 {
 		t.Fatalf("dialog images = %+v, want the prompt's image still held", hintFix(m).images)
@@ -947,8 +947,8 @@ func TestLaunchHintRetryThatFailsOutrightDropsTheImages(t *testing.T) {
 	m.services.lifecycle = nil
 	waitForInstallToSettle(t, m)
 
-	if m.mode != modeList {
-		t.Fatalf("mode = %v, want the list", m.mode)
+	if !m.onList() {
+		t.Fatalf("screen = %v, want the list", m.screenID())
 	}
 	if m.errBar.text == "" {
 		t.Fatal("failed retry should report its launch error")
@@ -1012,7 +1012,7 @@ func TestInstallFinishesARefusedRestore(t *testing.T) {
 	m.drainEffects(t)
 	m = updated.(*Model)
 	if !hintOpen(m) {
-		t.Fatalf("mode = %v, err = %q, want the dialog", m.mode, m.errBar.text)
+		t.Fatalf("screen = %v, err = %q, want the dialog", m.screenID(), m.errBar.text)
 	}
 
 	// What the install unblocks has to be the whole restore, not the

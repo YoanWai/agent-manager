@@ -25,8 +25,8 @@ func TestAttachDoneOpensReviewWhenMarkerSet(t *testing.T) {
 	updated, _ := m.Update(attachDoneMsg{sessID: sess.ID})
 	*m = *updated.(*Model)
 	m.drainEffects(t)
-	if m.mode != modeDiff {
-		t.Fatalf("marker set should enter review, mode = %v, err = %q", m.mode, m.errBar.text)
+	if m.base != baseReview {
+		t.Fatalf("marker set should enter review, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
 
 	request, err := m.services.tmux.PendingRequest(sess.ID)
@@ -50,8 +50,8 @@ func TestAttachDoneStaysInListWithoutMarker(t *testing.T) {
 	updated, _ := m.Update(attachDoneMsg{})
 	*m = *updated.(*Model)
 	m.drainEffects(t)
-	if m.mode != modeList {
-		t.Fatalf("no marker should stay in list, mode = %v", m.mode)
+	if !m.onList() {
+		t.Fatalf("no marker should stay in list, screen = %v", m.screenID())
 	}
 }
 
@@ -131,8 +131,8 @@ func TestDotAcknowledgesOnlyCurrentFinishedStatus(t *testing.T) {
 			if got.Status != tc.wantStatus || got.Acked != tc.wantAcked {
 				t.Fatalf("after dot, status = %q acked = %v", got.Status, got.Acked)
 			}
-			if m.mode != modeList {
-				t.Fatalf("dot left list mode: %v", m.mode)
+			if !m.onList() {
+				t.Fatalf("dot left list mode: %v", m.screenID())
 			}
 		})
 	}
@@ -212,8 +212,8 @@ func TestAttachClearsStaleHashBeforeReflow(t *testing.T) {
 	pickGroup(t, m, "")
 	_, cmd := m.submitForm()
 	m.applyCmd(t, cmd)
-	if m.mode != modeList {
-		t.Fatalf("after submit, mode = %v, err = %q", m.mode, m.errBar.text)
+	if !m.onList() {
+		t.Fatalf("after submit, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
 
 	sess := m.sessionRows()[0]

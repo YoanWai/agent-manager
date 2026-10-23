@@ -19,7 +19,8 @@ func TestFormWorktreeToggleSeedsFromSetting(t *testing.T) {
 	if m.form().Worktree() {
 		t.Fatal("worktree should default off with no setting")
 	}
-	m.mode = modeList
+	m.base = baseList
+	m.clearSurfaces()
 	if err := m.services.store.SetSetting(uisettings.WorktreeSetting, "on"); err != nil {
 		t.Fatalf("set setting: %v", err)
 	}

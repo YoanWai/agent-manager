@@ -144,7 +144,7 @@ func TestEditorDirectoryCompletionDoesNotReplaceNewerDialog(t *testing.T) {
 		t.Fatalf("stale directory result launched an editor over the newer form: %v", *launched)
 	}
 	if !formOpen(m) {
-		t.Fatalf("stale editor result replaced the newer dialog: mode=%v", m.mode)
+		t.Fatalf("stale editor result replaced the newer dialog: screen = %v", m.screenID())
 	}
 }
 
@@ -532,8 +532,8 @@ func TestAttachDoneOpensEditorAndReturnsToTheSession(t *testing.T) {
 	if !isDone || done.err != nil {
 		t.Fatalf("editor launch reported %#v", done)
 	}
-	if done.returnTo.sessionID != sess.ID || done.returnTo.foregroundGen != m.gens.foreground || done.returnTo.mode != m.mode {
-		t.Fatalf("return target = %+v, want session %q at generation %d mode %v", done.returnTo, sess.ID, m.gens.foreground, m.mode)
+	if done.returnTo.sessionID != sess.ID || done.returnTo.foregroundGen != m.gens.foreground || done.returnTo.screen != m.screenID() {
+		t.Fatalf("return target = %+v, want session %q at generation %d mode %v", done.returnTo, sess.ID, m.gens.foreground, m.screenID())
 	}
 	if want := []string{"code", resolved(t, dir)}; !samePaths(*launched, want) {
 		t.Fatalf("launched %v, want %v", *launched, want)
@@ -614,7 +614,7 @@ func TestEditorFailureKeepsTheListAndItsReason(t *testing.T) {
 	captureEditor(t, "code")
 	createSession(t, m, "editme", t.TempDir(), "")
 	m.selectSessionRow(t, "editme")
-	returnTo := editorReturnTarget{sessionID: m.sessionRows()[0].ID, foregroundGen: m.gens.foreground, mode: m.mode}
+	returnTo := editorReturnTarget{sessionID: m.sessionRows()[0].ID, foregroundGen: m.gens.foreground, screen: m.screenID()}
 
 	updated, cmd := m.Update(editorDoneMsg{err: errors.New("exec: \"code\": file does not exist"), returnTo: returnTo})
 	*m = *updated.(*Model)
@@ -700,7 +700,7 @@ func TestEditorReturnCompletionCannotCrossHelpOrQuit(t *testing.T) {
 				}
 			}
 			if tc.name == "help" && !helpOpen(m) {
-				t.Fatalf("stale editor completion replaced Help: mode=%v", m.mode)
+				t.Fatalf("stale editor completion replaced Help: screen = %v", m.screenID())
 			}
 		})
 	}
@@ -709,8 +709,8 @@ func TestEditorReturnCompletionCannotCrossHelpOrQuit(t *testing.T) {
 func TestEditorReturnCompletionsKeepTheirOwnSessions(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
-	first := editorReturnTarget{sessionID: "first", foregroundGen: m.gens.foreground, mode: m.mode}
-	second := editorReturnTarget{sessionID: "second", foregroundGen: m.gens.foreground, mode: m.mode}
+	first := editorReturnTarget{sessionID: "first", foregroundGen: m.gens.foreground, screen: m.screenID()}
+	second := editorReturnTarget{sessionID: "second", foregroundGen: m.gens.foreground, screen: m.screenID()}
 
 	updated, _ := m.Update(editorDoneMsg{returnTo: first})
 	*m = *updated.(*Model)
@@ -816,20 +816,21 @@ func TestEditorLaunchAndReturnPolicy(t *testing.T) {
 	if (editorLaunch{name: "code"}).takesScreen() || !(editorLaunch{name: "vim"}).takesScreen() {
 		t.Fatal("a windowed editor took the screen, or a terminal one did not")
 	}
-	target := editorReturnTarget{sessionID: "s1", foregroundGen: 4, mode: modeFocus}
+	focus := screenID{focused: true}
+	target := editorReturnTarget{sessionID: "s1", foregroundGen: 4, screen: focus}
 	cases := []struct {
 		name     string
 		target   editorReturnTarget
 		gen      uint64
-		current  mode
+		current  screenID
 		quitting bool
 		want     bool
 	}{
-		{"unchanged", target, 4, modeFocus, false, true},
-		{"no session", editorReturnTarget{foregroundGen: 4, mode: modeFocus}, 4, modeFocus, false, false},
-		{"user moved on", target, 5, modeFocus, false, false},
-		{"mode changed", target, 4, modeList, false, false},
-		{"quitting", target, 4, modeFocus, true, false},
+		{"unchanged", target, 4, focus, false, true},
+		{"no session", editorReturnTarget{foregroundGen: 4, screen: focus}, 4, focus, false, false},
+		{"user moved on", target, 5, focus, false, false},
+		{"screen changed", target, 4, screenID{}, false, false},
+		{"quitting", target, 4, focus, true, false},
 	}
 	for _, tc := range cases {
 		if got := tc.target.resumes(tc.gen, tc.current, tc.quitting); got != tc.want {

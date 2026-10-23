@@ -235,7 +235,7 @@ func TestSettingsEnterDefersStoreWrites(t *testing.T) {
 
 	_, cmd := m.handleSettingsKey(key("enter"))
 	if m.settingsOpen() {
-		t.Fatalf("enter should close the dialog, mode=%v", m.mode)
+		t.Fatalf("enter should close the dialog, screen = %v", m.screenID())
 	}
 	got, err := m.services.store.Setting(uisettings.ThemeSetting)
 	if err != nil {

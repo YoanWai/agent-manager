@@ -21,7 +21,7 @@ import (
 // whole-file model still reaches the screen.
 func TestReviewRendersHunksForBigFile(t *testing.T) {
 	fd := bigEditedFile(t)
-	m := &Model{layout: layoutState{width: 100, height: 30}, mode: modeDiff}
+	m := &Model{layout: layoutState{width: 100, height: 30}, screen: screen{base: baseReview}}
 	seedReviewForTest(m, uireview.Target{ID: "s"}, git.ScopeUncommitted, "/repo",
 		diff.Set{Repo: git.Repo{Root: "/repo"}, Files: []diff.FileDiff{fd}}, true)
 	for _, split := range []bool{false, true} {

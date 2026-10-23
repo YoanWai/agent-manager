@@ -46,15 +46,15 @@ func TestRenameDefersGroupPersistence(t *testing.T) {
 		}
 	}
 	if !renameOpen(m) {
-		t.Fatalf("dialog should stay open until completion, mode=%v", m.mode)
+		t.Fatalf("dialog should stay open until completion, screen = %v", m.screenID())
 	}
 	m.applyCmd(t, cmd)
 	kid := m.sessionRows()
 	if len(kid) != 1 || kid[0].Group != "fresh/inner" {
 		t.Fatalf("cascade failed: %+v", kid)
 	}
-	if m.mode != modeList {
-		t.Fatalf("dialog should close on completion, mode=%v", m.mode)
+	if !m.onList() {
+		t.Fatalf("dialog should close on completion, screen = %v", m.screenID())
 	}
 	if m.workspace.groupPaths["fresh"] != dir {
 		t.Fatalf("default dir not mirrored: %v", m.workspace.groupPaths)
@@ -79,8 +79,8 @@ func TestRenameDefersSessionPersistence(t *testing.T) {
 	if names := sessionNames(m); len(names) != 1 || names[0] != "after" {
 		t.Fatalf("row not renamed on completion: %v", names)
 	}
-	if m.mode != modeList {
-		t.Fatalf("dialog should close on completion, mode=%v", m.mode)
+	if !m.onList() {
+		t.Fatalf("dialog should close on completion, screen = %v", m.screenID())
 	}
 }
 
@@ -265,7 +265,7 @@ func TestRenameGroupPartialFailureReconcilesCommittedStages(t *testing.T) {
 		t.Fatalf("uncommitted default dir mirrored: %v", m.workspace.groupPaths)
 	}
 	if !renameOpen(m) {
-		t.Fatalf("dialog should stay open on failure, mode=%v", m.mode)
+		t.Fatalf("dialog should stay open on failure, screen = %v", m.screenID())
 	}
 	if m.errBar.text != "second stage failed" {
 		t.Fatalf("errBar=%q", m.errBar.text)
@@ -306,7 +306,7 @@ func TestRenameCompletionDoesNotReplaceNewerDialog(t *testing.T) {
 	updated, _ := m.Update(cmd1())
 	*m = *updated.(*Model)
 	if !renameOpen(m) || openRename(m).Path() != "two" {
-		t.Fatalf("older completion replaced the newer dialog: mode=%v path=%q", m.mode, openRename(m).Path())
+		t.Fatalf("older completion replaced the newer dialog: screen = %v path=%q", m.screenID(), openRename(m).Path())
 	}
 	m.drainEffects(t)
 	groups, _ := m.services.store.Groups()
@@ -317,8 +317,8 @@ func TestRenameCompletionDoesNotReplaceNewerDialog(t *testing.T) {
 	if !renamed["one-renamed"] || !renamed["two-renamed"] {
 		t.Fatalf("expected both renames committed: %v", groups)
 	}
-	if m.mode != modeList {
-		t.Fatalf("dialog should close on the matching completion, mode=%v", m.mode)
+	if !m.onList() {
+		t.Fatalf("dialog should close on the matching completion, screen = %v", m.screenID())
 	}
 }
 
@@ -417,15 +417,15 @@ func TestMoveSessionDefersPlacement(t *testing.T) {
 		t.Fatalf("session placed on the update path: %+v", got)
 	}
 	if !moveOpen(m) {
-		t.Fatalf("dialog should stay open until completion, mode=%v", m.mode)
+		t.Fatalf("dialog should stay open until completion, screen = %v", m.screenID())
 	}
 	m.applyCmd(t, cmd)
 	got, _ = m.services.store.Get(moved)
 	if got.Group != "target" {
 		t.Fatalf("move not committed on completion: %+v", got)
 	}
-	if m.mode != modeList {
-		t.Fatalf("dialog should close on completion, mode=%v", m.mode)
+	if !m.onList() {
+		t.Fatalf("dialog should close on completion, screen = %v", m.screenID())
 	}
 }
 
@@ -492,8 +492,8 @@ func TestMoveGroupDefersPersistence(t *testing.T) {
 	if len(sessions) != 1 || sessions[0].Group != "beta/inner" {
 		t.Fatalf("group move failed: %+v", sessions)
 	}
-	if m.mode != modeList {
-		t.Fatalf("dialog should close on completion, mode=%v", m.mode)
+	if !m.onList() {
+		t.Fatalf("dialog should close on completion, screen = %v", m.screenID())
 	}
 }
 
@@ -527,7 +527,7 @@ func TestMoveCompletionDoesNotReplaceNewerDialog(t *testing.T) {
 	updated, _ := m.Update(cmd1())
 	*m = *updated.(*Model)
 	if !moveOpen(m) {
-		t.Fatalf("older completion closed the newer dialog, mode=%v", m.mode)
+		t.Fatalf("older completion closed the newer dialog, screen = %v", m.screenID())
 	}
 	if picker(m).groups[picker(m).groupIndex].path != "other" {
 		t.Fatalf("newer dialog selection changed: %+v", picker(m).groups)
@@ -540,8 +540,8 @@ func TestMoveCompletionDoesNotReplaceNewerDialog(t *testing.T) {
 	if got.Group != "other" {
 		t.Fatalf("second move not committed: %+v", got)
 	}
-	if m.mode != modeList {
-		t.Fatalf("dialog should close on the matching completion, mode=%v", m.mode)
+	if !m.onList() {
+		t.Fatalf("dialog should close on the matching completion, screen = %v", m.screenID())
 	}
 }
 
@@ -569,11 +569,11 @@ func TestRenameCompletionDoesNotCloseResubmittedDialog(t *testing.T) {
 	updated, _ := m.Update(cmd1())
 	*m = *updated.(*Model)
 	if !renameOpen(m) {
-		t.Fatalf("older completion closed the resubmitted dialog, mode=%v", m.mode)
+		t.Fatalf("older completion closed the resubmitted dialog, screen = %v", m.screenID())
 	}
 	m.drainEffects(t)
-	if m.mode != modeList {
-		t.Fatalf("matching completion did not close the dialog, mode=%v", m.mode)
+	if !m.onList() {
+		t.Fatalf("matching completion did not close the dialog, screen = %v", m.screenID())
 	}
 	if names := sessionNames(m); len(names) != 1 || names[0] != "after" {
 		t.Fatalf("rename not applied: %v", names)
@@ -598,7 +598,8 @@ func TestRenameCompletionDoesNotCloseReopenedSameTargetDialog(t *testing.T) {
 	// Reopen the same group; the old completion must not close this fresh
 	// dialog. The reopened rename targets a new name because the first one
 	// already committed "renamed".
-	m.mode = modeList
+	m.base = baseList
+	m.clearSurfaces()
 	m.selectGroupRow(t, "one")
 	m.openRename()
 	if openRename(m).Path() != "one" {
@@ -609,15 +610,15 @@ func TestRenameCompletionDoesNotCloseReopenedSameTargetDialog(t *testing.T) {
 	updated, _ := m.Update(cmd1())
 	*m = *updated.(*Model)
 	if !renameOpen(m) {
-		t.Fatalf("older completion closed the reopened dialog, mode=%v", m.mode)
+		t.Fatalf("older completion closed the reopened dialog, screen = %v", m.screenID())
 	}
 	if openRename(m).Name() != "renamed-again" {
 		t.Fatalf("older completion clobbered the reopened input: %q", openRename(m).Name())
 	}
 	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m.drainEffects(t)
-	if m.mode != modeList {
-		t.Fatalf("matching completion did not close the dialog, mode=%v", m.mode)
+	if !m.onList() {
+		t.Fatalf("matching completion did not close the dialog, screen = %v", m.screenID())
 	}
 }
 

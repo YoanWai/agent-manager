@@ -365,7 +365,7 @@ func TestListPickerMovesAKeyAndTheListFollows(t *testing.T) {
 
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
 	if m.settingsOpen() {
-		t.Fatalf("mode after leaving settings = %v", m.mode)
+		t.Fatalf("mode after leaving settings = %v", m.screenID())
 	}
 	m.pressInPicker(t, runeKey("n"))
 	if formOpen(m) {
@@ -373,7 +373,7 @@ func TestListPickerMovesAKeyAndTheListFollows(t *testing.T) {
 	}
 	m.pressInPicker(t, runeKey("N"))
 	if !formOpen(m) {
-		t.Fatalf("N should open the new-session form, mode = %v", m.mode)
+		t.Fatalf("N should open the new-session form, screen = %v", m.screenID())
 	}
 }
 

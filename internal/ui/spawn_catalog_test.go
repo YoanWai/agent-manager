@@ -107,7 +107,7 @@ func TestAnOlderCLIOpensTheUpdateDialogInsteadOfListingModels(t *testing.T) {
 	m.applyCmd(t, m.ensureCatalog("pi"))
 
 	if !hintOpen(m) || !hintFix(m).update || hintFix(m).command != deps.Command("pi") {
-		t.Fatalf("mode %v fix %+v catalog %+v", m.mode, hintFix(m), m.ledger.catalogs["pi"])
+		t.Fatalf("mode %v fix %+v catalog %+v", m.screenID(), hintFix(m), m.ledger.catalogs["pi"])
 	}
 	if len(m.ledger.catalogs["pi"].cat.Models) != 0 {
 		t.Fatalf("models = %+v, want the kept answer withheld", m.ledger.catalogs["pi"].cat.Models)
@@ -148,13 +148,13 @@ func TestAnUpdatedCLIIsAskedAgainRightAway(t *testing.T) {
 	}
 	m.applyCmd(t, cmd)
 	if !hintOpen(m) {
-		t.Fatalf("mode %v, want the update dialog", m.mode)
+		t.Fatalf("mode %v, want the update dialog", m.screenID())
 	}
 	if cmd := hintKey(m, tea.KeyMsg{Type: tea.KeyEsc}); cmd != nil {
 		t.Fatalf("esc returned %T", cmd)
 	}
 	if !formOpen(m) {
-		t.Fatalf("esc left mode %v, want the form it came from", m.mode)
+		t.Fatalf("esc left mode %v, want the form it came from", m.screenID())
 	}
 
 	if err := os.WriteFile(script, []byte("#!/bin/sh\necho 0.85.0 updated\n"), 0o755); err != nil {
@@ -169,7 +169,7 @@ func TestAnUpdatedCLIIsAskedAgainRightAway(t *testing.T) {
 	}
 	m.applyCmd(t, cmd)
 	if hintOpen(m) || m.ledger.catalogs["pi"].err != nil {
-		t.Fatalf("mode %v err %v, want the updated CLI listed", m.mode, m.ledger.catalogs["pi"].err)
+		t.Fatalf("mode %v err %v, want the updated CLI listed", m.screenID(), m.ledger.catalogs["pi"].err)
 	}
 	if len(m.ledger.catalogs["pi"].cat.Models) != 1 {
 		t.Fatalf("models = %+v", m.ledger.catalogs["pi"].cat.Models)
@@ -183,13 +183,13 @@ func TestTheUpdateDialogLeavesTheQuickBarUp(t *testing.T) {
 	pushQuick(m)
 	m.presentLaunchHint(launchFix{text: "pi 0.84.2 is older", command: "true", binary: "pi", update: true})
 	if !hintOpen(m) || (m.quick() == nil) {
-		t.Fatalf("mode %v quick %v, want the dialog over the bar", m.mode, (m.quick() != nil))
+		t.Fatalf("mode %v quick %v, want the dialog over the bar", m.screenID(), (m.quick() != nil))
 	}
 	if cmd := hintKey(m, tea.KeyMsg{Type: tea.KeyEsc}); cmd != nil {
 		t.Fatalf("esc returned %T", cmd)
 	}
-	if m.mode != modeList || (m.quick() == nil) {
-		t.Fatalf("esc left mode %v quick %v", m.mode, (m.quick() != nil))
+	if !m.onList() || (m.quick() == nil) {
+		t.Fatalf("esc left mode %v quick %v", m.screenID(), (m.quick() != nil))
 	}
 }
 
@@ -206,7 +206,7 @@ func TestAMousePressLeavesTheQuickDraftUnderTheUpdateDialog(t *testing.T) {
 	m.handleMouse(tea.MouseMsg{X: 1, Y: 1, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
 
 	if !hintOpen(m) || (m.quick() == nil) {
-		t.Fatalf("press left mode %v quick %v", m.mode, (m.quick() != nil))
+		t.Fatalf("press left mode %v quick %v", m.screenID(), (m.quick() != nil))
 	}
 	if !imageExists(t, image) || len(m.quick().attachments) != 1 {
 		t.Fatal("a press under the update dialog deleted the draft image")
@@ -259,12 +259,12 @@ func TestClosingTheUpdateDialogReturnsToTheFormDraft(t *testing.T) {
 	m.ledger.catalogs = map[string]*catalogState{"pi-tool": {loading: true}}
 	m.handleCatalog(catalogMsg{tool: "pi-tool", err: config.OutdatedToolError{Binary: "pi", Installed: "0.84.2", Minimum: "0.84.3"}})
 	if !hintOpen(m) {
-		t.Fatalf("mode = %v, want the update dialog", m.mode)
+		t.Fatalf("screen = %v, want the update dialog", m.screenID())
 	}
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	*m = *updated.(*Model)
 	m.applyCmd(t, cmd)
 	if !formOpen(m) || m.form().Name() != "draft-name" || len(m.form().prompt.attachments) != 1 {
-		t.Fatalf("mode %v name %q attachments %d, want the form draft back", m.mode, m.form().Name(), len(m.form().prompt.attachments))
+		t.Fatalf("mode %v name %q attachments %d, want the form draft back", m.screenID(), m.form().Name(), len(m.form().prompt.attachments))
 	}
 }

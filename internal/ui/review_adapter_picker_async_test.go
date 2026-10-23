@@ -45,7 +45,7 @@ func (r *scriptedReviewPickerReader) Canonical(root string) string {
 
 func seedReviewPickerModel(t *testing.T, m *Model, targetID, root string) {
 	t.Helper()
-	m.mode = modeDiff
+	m.base = baseReview
 	m.gens.foreground = 19
 	m.review = uireview.New(false)
 	request := m.review.Open(uireview.Target{ID: targetID, Name: targetID, Cwd: root}, git.ScopeUncommitted, root)
@@ -68,8 +68,8 @@ func TestReviewPickerReadsRunOnlyInsideCommands(t *testing.T) {
 		if cmd == nil {
 			t.Fatal("branch picker did not return a read command")
 		}
-		if len(reader.calls) != 0 || m.mode != modeDiff {
-			t.Fatalf("open path performed I/O or changed screens: calls=%v mode=%v", reader.calls, m.mode)
+		if len(reader.calls) != 0 || m.base != baseReview {
+			t.Fatalf("open path performed I/O or changed screens: calls=%v screen = %v", reader.calls, m.screenID())
 		}
 
 		msg := cmd().(reviewPickerLoadedMsg)
@@ -79,7 +79,7 @@ func TestReviewPickerReadsRunOnlyInsideCommands(t *testing.T) {
 		}
 		m.handleReviewPickerLoaded(msg)
 		if !m.pickerOpen() || m.pickerOf(t).Cursor() != 1 {
-			t.Fatalf("branch result did not open on the canonical current worktree: mode=%v cursor=%d", m.mode, m.pickerOf(t).Cursor())
+			t.Fatalf("branch result did not open on the canonical current worktree: screen = %v cursor=%d", m.screenID(), m.pickerOf(t).Cursor())
 		}
 	})
 
@@ -95,8 +95,8 @@ func TestReviewPickerReadsRunOnlyInsideCommands(t *testing.T) {
 		if cmd == nil {
 			t.Fatal("base picker did not return a read command")
 		}
-		if len(reader.calls) != 0 || m.mode != modeDiff {
-			t.Fatalf("open path performed I/O or changed screens: calls=%v mode=%v", reader.calls, m.mode)
+		if len(reader.calls) != 0 || m.base != baseReview {
+			t.Fatalf("open path performed I/O or changed screens: calls=%v screen = %v", reader.calls, m.screenID())
 		}
 
 		msg := cmd().(reviewPickerLoadedMsg)
@@ -106,7 +106,7 @@ func TestReviewPickerReadsRunOnlyInsideCommands(t *testing.T) {
 		}
 		m.handleReviewPickerLoaded(msg)
 		if !m.pickerOpen() || m.pickerOf(t).Cursor() != 2 || m.pickerOf(t).StoreRoot() != "/actual/repo" {
-			t.Fatalf("base result = mode %v cursor %d store root %q", m.mode, m.pickerOf(t).Cursor(), m.pickerOf(t).StoreRoot())
+			t.Fatalf("base result = mode %v cursor %d store root %q", m.screenID(), m.pickerOf(t).Cursor(), m.pickerOf(t).StoreRoot())
 		}
 	})
 }
@@ -117,7 +117,7 @@ func TestReviewPickerCompletionCannotStealNewerUI(t *testing.T) {
 		mutate func(*Model)
 	}{
 		{"foreground", func(m *Model) { m.gens.foreground++ }},
-		{"screen", func(m *Model) { m.mode = modeList }},
+		{"screen", func(m *Model) { m.base = baseList }},
 		{"quit", func(m *Model) { m.effects.quitting = true }},
 		{"review", func(m *Model) { _, _ = m.review.SelectRepo("/other") }},
 	}
@@ -128,10 +128,10 @@ func TestReviewPickerCompletionCannotStealNewerUI(t *testing.T) {
 			reader := &scriptedReviewPickerReader{worktrees: []git.Worktree{{Root: "/repo", Branch: "main"}}}
 			msg := m.openBranchPickWithReader(reader)().(reviewPickerLoadedMsg)
 			tc.mutate(m)
-			modeBefore := m.mode
+			before := m.screenID()
 			m.handleReviewPickerLoaded(msg)
-			if m.mode != modeBefore || m.pickerOpen() {
-				t.Fatalf("stale completion stole the screen: before=%v after=%v", modeBefore, m.mode)
+			if m.screenID() != before || m.pickerOpen() {
+				t.Fatalf("stale completion stole the screen: before=%v after=%v", before, m.screenID())
 			}
 		})
 	}
@@ -168,8 +168,8 @@ func TestReviewPickerEnterRejectsStaleSource(t *testing.T) {
 			if load != nil || m.review.Generation() != generation {
 				t.Fatal("stale picker selection started a review load")
 			}
-			if m.mode != modeDiff || m.errBar.text == "" {
-				t.Fatalf("stale picker was not refused clearly: mode=%v err=%q", m.mode, m.errBar.text)
+			if m.base != baseReview || m.errBar.text == "" {
+				t.Fatalf("stale picker was not refused clearly: screen = %v err=%q", m.screenID(), m.errBar.text)
 			}
 		})
 	}
@@ -262,7 +262,7 @@ func TestReviewBaseSaveFailureSurfacesAfterNavigation(t *testing.T) {
 		t.Fatal("failed persistence started a review reload")
 	}
 	if !helpOpen(m) || m.errBar.text != "persist base failed" {
-		t.Fatalf("accepted persistence failure was hidden or stole navigation: mode=%v err=%q", m.mode, m.errBar.text)
+		t.Fatalf("accepted persistence failure was hidden or stole navigation: screen = %v err=%q", m.screenID(), m.errBar.text)
 	}
 }
 
@@ -280,7 +280,7 @@ func TestReviewBaseSaveCompletesBehindReviewHelp(t *testing.T) {
 	}
 	m.drainCmds(t, m.openBasePick())
 	if !m.pickerOpen() {
-		t.Fatalf("base picker did not open: mode=%v err=%q", m.mode, m.errBar.text)
+		t.Fatalf("base picker did not open: screen = %v err=%q", m.screenID(), m.errBar.text)
 	}
 	picker := m.pickerOf(t)
 	source, storeRoot := picker.Source(), picker.StoreRoot()
@@ -290,13 +290,13 @@ func TestReviewBaseSaveCompletesBehindReviewHelp(t *testing.T) {
 		t.Fatal("base save was not accepted")
 	}
 	m.openHelp()
-	if !helpOpen(m) || m.mode != modeDiff {
-		t.Fatalf("review help did not open: mode=%v open=%t", m.mode, helpOpen(m))
+	if !helpOpen(m) || m.base != baseReview {
+		t.Fatalf("review help did not open: screen = %v open=%t", m.screenID(), helpOpen(m))
 	}
 
 	m.drainCmds(t, cmd)
 	if !helpOpen(m) {
-		t.Fatalf("base completion stole help: mode=%v", m.mode)
+		t.Fatalf("base completion stole help: screen = %v", m.screenID())
 	}
 	if m.review.Snapshot().Scope != git.ScopeBranch {
 		t.Fatalf("base completion did not continue behind help: scope=%v", m.review.Snapshot().Scope)
@@ -309,8 +309,8 @@ func TestReviewBaseSaveCompletesBehindReviewHelp(t *testing.T) {
 	updated, closeCmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	*m = *updated.(*Model)
 	m.drainCmds(t, closeCmd)
-	if m.mode != modeDiff || m.review.Snapshot().Scope != git.ScopeBranch {
-		t.Fatalf("closing help lost completed base: mode=%v scope=%v", m.mode, m.review.Snapshot().Scope)
+	if m.base != baseReview || m.review.Snapshot().Scope != git.ScopeBranch {
+		t.Fatalf("closing help lost completed base: screen = %v scope=%v", m.screenID(), m.review.Snapshot().Scope)
 	}
 }
 
@@ -337,13 +337,13 @@ func TestReviewBaseSaveCompletesBehindBranchPicker(t *testing.T) {
 	}
 	m.handleReviewPickerLoaded(branchCmd().(reviewPickerLoadedMsg))
 	if !m.pickerOpen() {
-		t.Fatalf("branch picker did not open: mode=%v", m.mode)
+		t.Fatalf("branch picker did not open: screen = %v", m.screenID())
 	}
 	oldGeneration := m.pickerOf(t).Source().Generation
 
 	m.drainCmds(t, saveCmd)
 	if !m.pickerOpen() || m.review.Snapshot().Scope != git.ScopeBranch {
-		t.Fatalf("base completion did not reconcile behind picker: mode=%v scope=%v", m.mode, m.review.Snapshot().Scope)
+		t.Fatalf("base completion did not reconcile behind picker: screen = %v scope=%v", m.screenID(), m.review.Snapshot().Scope)
 	}
 	if m.review.Generation() == oldGeneration {
 		t.Fatal("base completion did not invalidate the older picker generation")

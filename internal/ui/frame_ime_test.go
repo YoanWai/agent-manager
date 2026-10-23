@@ -17,7 +17,7 @@ import (
 
 func TestFocusCursorAnchorTracksMirroredCaret(t *testing.T) {
 	m := &Model{
-		mode: modeFocus,
+		screen: screen{surfaces: []surface{&focusSurface{}}},
 		workspace: workspace{
 			preview:  "first\nsecond\nthird\n",
 			sessions: []store.Session{{ID: "focused"}},
@@ -43,7 +43,7 @@ func TestFocusCursorAnchorTracksMirroredCaret(t *testing.T) {
 
 func TestFocusCursorAnchorRemovesListSearchMarker(t *testing.T) {
 	m := &Model{
-		mode: modeFocus,
+		screen: screen{surfaces: []surface{&focusSurface{}}},
 		workspace: workspace{
 			preview:  "first\nsecond\nthird\n",
 			sessions: []store.Session{{ID: "focused"}},
@@ -66,7 +66,7 @@ func TestFocusCursorAnchorRemovesListSearchMarker(t *testing.T) {
 
 func TestFocusCursorAnchorAccountsForDroppedCaptureRows(t *testing.T) {
 	m := &Model{
-		mode: modeFocus,
+		screen: screen{surfaces: []surface{&focusSurface{}}},
 		workspace: workspace{
 			preview:  "one\ntwo\nthree\nfour\n",
 			sessions: []store.Session{{ID: "focused"}},

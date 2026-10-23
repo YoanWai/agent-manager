@@ -215,8 +215,8 @@ func TestHandleLiftsARowStraightFromFocus(t *testing.T) {
 	m = updated.(*Model)
 	m.drainEffects(t)
 	m = liftByHandle(t, m, "beta")
-	if selected, ok := m.selected(); m.mode != modeList || !m.rail.Reordering() || !ok || selected.Name != "beta" {
-		t.Fatalf("one press on beta's handle should leave focus and lift beta, mode = %v selected = %q", m.mode, selected.Name)
+	if selected, ok := m.selected(); !m.onList() || !m.rail.Reordering() || !ok || selected.Name != "beta" {
+		t.Fatalf("one press on beta's handle should leave focus and lift beta, screen = %v selected = %q", m.screenID(), selected.Name)
 	}
 }
 
@@ -271,8 +271,8 @@ func TestHandleDragReordersAndDrops(t *testing.T) {
 		t.Fatalf("dragging onto the last row should move %s there, got %v", before[0], got)
 	}
 	m = railMouse(t, m, before[0], tea.MouseActionRelease, tea.MouseButtonLeft)
-	if m.rail.Reordering() || m.mode != modeList {
-		t.Fatalf("release after a drag should drop the row, reorder = %v mode = %v", m.rail.Reordering(), m.mode)
+	if m.rail.Reordering() || !m.onList() {
+		t.Fatalf("release after a drag should drop the row, reorder = %v screen = %v", m.rail.Reordering(), m.screenID())
 	}
 }
 
@@ -285,8 +285,8 @@ func TestHandleThenKeysAndEscPutsItBack(t *testing.T) {
 	before := sessionOrder(m)
 	m = liftByHandle(t, m, before[0])
 	m = railMouse(t, m, before[0], tea.MouseActionRelease, tea.MouseButtonLeft)
-	if !m.rail.Reordering() || m.mode != modeList {
-		t.Fatalf("a release in place keeps the row lifted and unfocused, reorder = %v mode = %v", m.rail.Reordering(), m.mode)
+	if !m.rail.Reordering() || !m.onList() {
+		t.Fatalf("a release in place keeps the row lifted and unfocused, reorder = %v screen = %v", m.rail.Reordering(), m.screenID())
 	}
 	m.handleKey(tea.KeyMsg{Type: tea.KeyDown})
 	m.drainEffects(t)
@@ -338,8 +338,8 @@ func TestAPressOnALiftedRowsLabelPutsItDownAndClicks(t *testing.T) {
 	updated, _ = m.handleMouse(at)
 	m.drainEffects(t)
 	m = updated.(*Model)
-	if m.rail.Reordering() || m.mode != modeFocus {
-		t.Fatalf("a label click should drop the row and focus it, reorder = %v mode = %v", m.rail.Reordering(), m.mode)
+	if m.rail.Reordering() || !m.focused() {
+		t.Fatalf("a label click should drop the row and focus it, reorder = %v screen = %v", m.rail.Reordering(), m.screenID())
 	}
 }
 

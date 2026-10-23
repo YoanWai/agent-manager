@@ -123,7 +123,8 @@ func TestHostTextCannotDriveTheTerminal(t *testing.T) {
 	m.openForm()
 	m.form().FocusField(m.spawnHost(), spawn.FieldGroup)
 	frame("the New Session form")
-	m.mode = modeList
+	m.base = baseList
+	m.clearSurfaces()
 
 	m.rail.Focus(session)
 	m.openQuickMode()
@@ -133,10 +134,11 @@ func TestHostTextCannotDriveTheTerminal(t *testing.T) {
 	_, cmd := m.runRailIntent(uirail.Intent{Kind: uirail.Kill, Target: session})
 	m.runRemoteCmd(t, cmd)
 	if !confirmOpen(m) {
-		t.Fatalf("mode = %v, want the kill confirm", m.mode)
+		t.Fatalf("screen = %v, want the kill confirm", m.screenID())
 	}
 	frame("the confirm")
-	m.mode = modeList
+	m.base = baseList
+	m.clearSurfaces()
 
 	fake.mu.Lock()
 	fake.stderr, fake.code = "denied"+hostile, 1

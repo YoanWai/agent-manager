@@ -295,7 +295,8 @@ func TestBulkActionsRespectStatusFilter(t *testing.T) {
 	if len(pendingConfirm(m).sessions) != 1 || pendingConfirm(m).sessions[0].ID != "w" {
 		t.Fatalf("filtered kill-all targets = %+v, want only the listed session", pendingConfirm(m).sessions)
 	}
-	m.mode = modeList
+	m.base = baseList
+	m.clearSurfaces()
 
 	if got := m.sessionsInGroup(""); len(got) != 1 || got[0].ID != "w" {
 		t.Fatalf("filtered group sessions = %+v, want only the listed session", got)

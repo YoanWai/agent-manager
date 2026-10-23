@@ -20,7 +20,7 @@ func TestFooterInFocusMode(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	createSession(t, m, "focused", t.TempDir(), "")
-	m.mode = modeFocus
+	m.push(&focusSurface{})
 	footer := ansi.Strip(m.viewFooter())
 	if !strings.Contains(footer, "Focused") {
 		t.Fatalf("the tier should name the mode it describes:\n%s", footer)
@@ -116,12 +116,13 @@ func TestArrowStepFooterHintsFollowSetting(t *testing.T) {
 
 	for _, enabled := range []bool{true, false} {
 		m.prefs.arrowStep = enabled
-		m.mode = modeList
+		m.base = baseList
+		m.clearSurfaces()
 		m.selectSessionRow(t, "arrow-hints")
 		assertHint("session", "→ focus", enabled)
 		m.selectGroupRow(t, "arrow-group")
 		assertHint("group", "←/→ close / open", enabled)
-		m.mode = modeFocus
+		m.push(&focusSurface{})
 		assertHint("focus", "← prompt start: back", enabled)
 	}
 }
@@ -142,13 +143,14 @@ func TestTransientFootersKeepListHeight(t *testing.T) {
 	}{
 		{"resize", func() { m.enterResizeMode() }},
 		{"rename", func() { m.push(newRenameSurface(uidialogs.RenameSession("s", "alpha", "claude", nil), "")) }},
-		{"focus", func() { m.mode = modeFocus }},
+		{"focus", func() { m.push(&focusSurface{}) }},
 	} {
 		tier.open()
 		if got := lipgloss.Height(m.viewFooter()); got != listed {
 			t.Errorf("%s footer = %d rows, want %d", tier.name, got, listed)
 		}
-		m.mode = modeList
+		m.base = baseList
+		m.clearSurfaces()
 		m.clearSurfaces()
 	}
 }
@@ -274,7 +276,7 @@ func TestFooterInFocusModeNamesTheKeyTable(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	useSessionKeys(t, m, []string{"f9"}, nil, []string{"alt+e"})
-	m.mode = modeFocus
+	m.push(&focusSurface{})
 	footer := ansi.Strip(m.viewFooter())
 	if !strings.Contains(footer, "f9 / click the list / mouse back") || !strings.Contains(footer, "alt+e editor") {
 		t.Fatalf("focus footer should name the configured keys:\n%s", footer)

@@ -74,14 +74,14 @@ func TestForkSelectedSessionCreatesNamedSibling(t *testing.T) {
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 	m = updated.(*Model)
 	if !forkOpen(m) || openFork(m).source.ID != source.ID {
-		t.Fatalf("fork mode = %v, source = %q", m.mode, openFork(m).source.ID)
+		t.Fatalf("fork screen = %v, source = %q", m.screenID(), openFork(m).source.ID)
 	}
 	openFork(m).SetName("child fork")
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(*Model)
 	m.applyCmd(t, cmd)
-	if m.mode != modeList || m.errBar.text != "" {
-		t.Fatalf("after fork: mode=%v err=%q", m.mode, m.errBar.text)
+	if !m.onList() || m.errBar.text != "" {
+		t.Fatalf("after fork: screen = %v err=%q", m.screenID(), m.errBar.text)
 	}
 
 	var forkedID string
@@ -156,7 +156,7 @@ func TestForkBranchesFromTheConversationTheSourceReported(t *testing.T) {
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 	m = updated.(*Model)
 	if !forkOpen(m) {
-		t.Fatalf("fork mode = %v", m.mode)
+		t.Fatalf("fork screen = %v", m.screenID())
 	}
 	openFork(m).SetName("child")
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -461,8 +461,8 @@ func TestForkAgentSessionIDFollowsNewIDPlaceholder(t *testing.T) {
 			updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 			m = updated.(*Model)
 			m.applyCmd(t, cmd)
-			if m.mode != modeList || m.errBar.text != "" {
-				t.Fatalf("after fork: mode=%v err=%q", m.mode, m.errBar.text)
+			if !m.onList() || m.errBar.text != "" {
+				t.Fatalf("after fork: screen = %v err=%q", m.screenID(), m.errBar.text)
 			}
 
 			var forked store.Session
@@ -517,8 +517,8 @@ func TestForkOpencodeOpensTheCopyItsStoreMade(t *testing.T) {
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(*Model)
 	m.applyCmd(t, cmd)
-	if m.mode != modeList || m.errBar.text != "" {
-		t.Fatalf("after fork: mode=%v err=%q", m.mode, m.errBar.text)
+	if !m.onList() || m.errBar.text != "" {
+		t.Fatalf("after fork: screen = %v err=%q", m.screenID(), m.errBar.text)
 	}
 	var forked store.Session
 	for _, sess := range m.sessionRows() {
@@ -582,8 +582,8 @@ func TestForkGeminiResolvesSessionFile(t *testing.T) {
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(*Model)
 	m.applyCmd(t, cmd)
-	if m.mode != modeList || m.errBar.text != "" {
-		t.Fatalf("after fork: mode=%v err=%q", m.mode, m.errBar.text)
+	if !m.onList() || m.errBar.text != "" {
+		t.Fatalf("after fork: screen = %v err=%q", m.screenID(), m.errBar.text)
 	}
 
 	var forked store.Session
@@ -761,11 +761,11 @@ func TestForkInSourceOpensTheForkTheSourceMade(t *testing.T) {
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(*Model)
 	if !forkOpen(m) {
-		t.Fatalf("after submit: mode = %v, err = %q; the dialog stays open while the fork runs", m.mode, m.errBar.text)
+		t.Fatalf("after submit: screen = %v, err = %q; the dialog stays open while the fork runs", m.screenID(), m.errBar.text)
 	}
 	m.applyCmd(t, cmd)
-	if m.mode != modeList {
-		t.Fatalf("after completion: mode = %v, err = %q", m.mode, m.errBar.text)
+	if !m.onList() {
+		t.Fatalf("after completion: screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
 	if m.errBar.text != "" {
 		t.Fatalf("fork error = %q", m.errBar.text)

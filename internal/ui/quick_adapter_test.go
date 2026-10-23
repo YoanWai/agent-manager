@@ -773,7 +773,7 @@ func TestQuickRemembersPickOnlyAfterInstallRetrySucceeds(t *testing.T) {
 	m.applyCmd(t, cmd)
 
 	if !hintOpen(m) || hintFix(m).effectRetry == nil {
-		t.Fatalf("expected a refused launch with retry, mode=%v err=%q", m.mode, m.errBar.text)
+		t.Fatalf("expected a refused launch with retry, screen = %v err=%q", m.screenID(), m.errBar.text)
 	}
 	if m.ledger.lastSpawnTool != "ready-tool" || m.ledger.lastSpawnWorktree {
 		t.Fatalf("failed launch changed the last pick: %q, %v", m.ledger.lastSpawnTool, m.ledger.lastSpawnWorktree)

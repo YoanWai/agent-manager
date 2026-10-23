@@ -449,7 +449,8 @@ func TestComposerTargetsRouteToTheirOwnBox(t *testing.T) {
 	if m.composerOpen(composerQuick) || !m.composerOpen(composerForm) {
 		t.Fatal("only the form is open here")
 	}
-	m.mode = modeList
+	m.base = baseList
+	m.clearSurfaces()
 	if m.composerOpen(composerQuick) || m.composerOpen(composerForm) {
 		t.Fatal("a closed box has nowhere for an image to land")
 	}

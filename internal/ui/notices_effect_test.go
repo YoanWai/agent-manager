@@ -45,7 +45,7 @@ func TestDismissNoticeFailureRestoresNotice(t *testing.T) {
 		t.Fatal("failed persistence did not restore the notice")
 	}
 	if !m.noticesOpen() || m.activeNotices()[noticesSurfaceOf(m).panel.Cursor()].ID != uinotices.Welcome {
-		t.Fatalf("failed dismissal did not restore its modal selection: mode=%v cursor=%d", m.mode, noticesSurfaceOf(m).panel.Cursor())
+		t.Fatalf("failed dismissal did not restore its modal selection: screen = %v cursor=%d", m.screenID(), noticesSurfaceOf(m).panel.Cursor())
 	}
 	if !strings.Contains(m.errBar.text, "decode setting") {
 		t.Fatalf("failure reason = %q", m.errBar.text)
@@ -66,8 +66,8 @@ func TestDismissNoticeFailureDoesNotReopenAfterNewerInput(t *testing.T) {
 	m = updated.(*Model)
 	m.applyCmd(t, cmd)
 
-	if m.mode != modeList {
-		t.Fatalf("failed old dismissal stole focus from newer input: mode=%v", m.mode)
+	if !m.onList() {
+		t.Fatalf("failed old dismissal stole focus from newer input: screen = %v", m.screenID())
 	}
 	if !contains(noticeIDs(m.activeNotices()), uinotices.Welcome) {
 		t.Fatal("failed old dismissal did not restore the notice card")
@@ -86,8 +86,8 @@ func TestDismissNoticeFailureDuringQuitRestoresWithoutReopening(t *testing.T) {
 
 	_, _ = m.handleKey(key("x"))
 	cmd := m.nextEffectCmd()
-	if cmd == nil || m.mode != modeList {
-		t.Fatalf("last dismissal was not accepted: cmd=%v mode=%v", cmd != nil, m.mode)
+	if cmd == nil || !m.onList() {
+		t.Fatalf("last dismissal was not accepted: cmd=%v screen = %v", cmd != nil, m.screenID())
 	}
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	m = updated.(*Model)
@@ -96,8 +96,8 @@ func TestDismissNoticeFailureDuringQuitRestoresWithoutReopening(t *testing.T) {
 	}
 	m.applyCmd(t, cmd)
 
-	if m.mode != modeList {
-		t.Fatalf("failed dismissal reopened over quit: mode=%v", m.mode)
+	if !m.onList() {
+		t.Fatalf("failed dismissal reopened over quit: screen = %v", m.screenID())
 	}
 	if !contains(noticeIDs(m.activeNotices()), uinotices.Welcome) {
 		t.Fatal("failed dismissal did not restore the notice data")

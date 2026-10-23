@@ -56,7 +56,7 @@ func TestStartupTickRunsOnlyWhileAStartingRowIsVisible(t *testing.T) {
 }
 
 func TestStartupTickRunsWhileReviewLoads(t *testing.T) {
-	m := &Model{mode: modeDiff}
+	m := &Model{screen: screen{base: baseReview}}
 	seedReviewForTest(m, uireview.Target{ID: "review"}, git.ScopeUncommitted, "/repo", diff.Set{}, false)
 	if cmd := m.startStartupTick(); cmd == nil || !m.startup.startupAnimating {
 		t.Fatal("a loading review should start the loader tick")

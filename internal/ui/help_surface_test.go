@@ -24,8 +24,8 @@ func helpOverList(t *testing.T) *Model {
 
 func TestHelpSurfaceOpensOnTheListKey(t *testing.T) {
 	m := helpOverList(t)
-	if m.mode != modeList {
-		t.Fatalf("help changed the base screen to %v", m.mode)
+	if !m.onList() {
+		t.Fatalf("help changed the base screen to %v", m.screenID())
 	}
 	if got := helpSurfaceOf(m).state.Content(m.helpContext(84)).Title; got == "? Review keys" {
 		t.Fatalf("list help opened with review scope: %q", got)
@@ -57,15 +57,15 @@ func TestHelpSurfaceClosesOnEscAndBackdrop(t *testing.T) {
 func TestHelpSurfaceOverReviewScopesToReviewAndPopsBack(t *testing.T) {
 	m := helpModel()
 	m.clearSurfaces()
-	m.mode = modeDiff
+	m.base = baseReview
 	seedReviewForTest(m, uireview.Target{ID: "review"}, git.ScopeUncommitted, "/repo", diff.Set{}, false)
 	m.openHelp()
 	if got := helpSurfaceOf(m).state.Content(m.helpContext(84)).Title; got != "? Review keys" {
 		t.Fatalf("help over review has title %q", got)
 	}
 	m.handleKey(namedKey(tea.KeyEsc))
-	if helpOpen(m) || m.mode != modeDiff {
-		t.Fatalf("esc left help open = %t, mode = %v", helpOpen(m), m.mode)
+	if helpOpen(m) || m.base != baseReview {
+		t.Fatalf("esc left help open = %t, screen = %v", helpOpen(m), m.screenID())
 	}
 }
 

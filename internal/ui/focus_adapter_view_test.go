@@ -21,7 +21,7 @@ func TestFullFocusFrameRecordsNoRailHits(t *testing.T) {
 	m = updated.(*Model)
 	m.drainEffects(t)
 	if !m.fullFocus() {
-		t.Fatalf("test setup: focus alpha full screen, mode = %v, err = %q", m.mode, m.errBar.text)
+		t.Fatalf("test setup: focus alpha full screen, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
 	preparedView(m)
 	if len(m.layout.displayedRail.Hits()) != 0 {

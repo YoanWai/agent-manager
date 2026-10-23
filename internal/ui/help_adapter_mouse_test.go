@@ -19,7 +19,7 @@ func TestWheelScrollsHelp(t *testing.T) {
 		t.Fatalf("test setup: the card covers the left edge: %+v", m.layout.card)
 	}
 	if m = wheel(m, tea.MouseButtonWheelDown, 1, 15); helpLayoutOf(m).content.Offset != 0 || !helpOpen(m) {
-		t.Fatalf("a wheel off the card should do nothing, offset %d mode %v", helpLayoutOf(m).content.Offset, m.mode)
+		t.Fatalf("a wheel off the card should do nothing, offset %d mode %v", helpLayoutOf(m).content.Offset, m.screenID())
 	}
 }
 
@@ -30,6 +30,6 @@ func TestClickOnHelpsSearchLineResumesTheSearch(t *testing.T) {
 	}
 	x, y := paintedCell(t, m, "search fork")
 	if m = leftClick(m, x, y); !helpSurfaceOf(m).state.Searching() || !helpOpen(m) {
-		t.Fatalf("a click on the search line should resume typing, searching %v mode %v", helpSurfaceOf(m).state.Searching(), m.mode)
+		t.Fatalf("a click on the search line should resume typing, searching %v mode %v", helpSurfaceOf(m).state.Searching(), m.screenID())
 	}
 }

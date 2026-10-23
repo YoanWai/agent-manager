@@ -22,7 +22,7 @@ func TestClickOnAMoveTargetPicksThenMoves(t *testing.T) {
 	m.openMove()
 	x, y := paintedCell(t, m, "target")
 	if m = leftClick(m, x, y); !moveOpen(m) || m.selectedGroupPath() != "target" {
-		t.Fatalf("first click should pick the target, mode %v picked %q", m.mode, m.selectedGroupPath())
+		t.Fatalf("first click should pick the target, mode %v picked %q", m.screenID(), m.selectedGroupPath())
 	}
 	if m = wheel(m, tea.MouseButtonWheelUp, x, y); m.selectedGroupPath() != "" {
 		t.Fatalf("the wheel should move the cursor back to root, picked %q", m.selectedGroupPath())
@@ -44,7 +44,7 @@ func TestClickAndWheelMoveTheReviewPickersCursor(t *testing.T) {
 	m.openReviewPicker(rows, "⌥ Review branch", uireview.PickRepo, "/w/alpha", uireview.PickerSource{}, "")
 	x, y := paintedCell(t, m, "beta")
 	if m = leftClick(m, x, y); m.pickerOf(t).Cursor() != 1 || !m.pickerOpen() {
-		t.Fatalf("a click on beta should move the cursor there, cursor %d mode %v", m.pickerOf(t).Cursor(), m.mode)
+		t.Fatalf("a click on beta should move the cursor there, cursor %d mode %v", m.pickerOf(t).Cursor(), m.screenID())
 	}
 	if m = wheel(m, tea.MouseButtonWheelDown, x, y); m.pickerOf(t).Cursor() != 2 {
 		t.Fatalf("the wheel should move the cursor on, cursor %d", m.pickerOf(t).Cursor())

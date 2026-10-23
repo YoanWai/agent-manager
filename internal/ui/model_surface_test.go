@@ -19,8 +19,8 @@ func focusWithSavedList(t *testing.T) *Model {
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	*m = *updated.(*Model)
 	m.drainEffects(t)
-	if m.mode != modeFocus {
-		t.Fatalf("enter did not focus, mode = %v", m.mode)
+	if !m.focused() {
+		t.Fatalf("enter did not focus, screen = %v", m.screenID())
 	}
 	s := newFocusSaved(0, m.spawnStyles())
 	s.list.Load([]spawn.Saved{{Name: "Role", Text: "be brief"}}, nil)
@@ -52,8 +52,8 @@ func TestSurfaceTakesKeysBeforeThePane(t *testing.T) {
 		t.Fatal("typing closed the list")
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
-	if m.savedListOpen() || m.mode != modeFocus {
-		t.Fatalf("esc: list open=%t mode=%v", m.savedListOpen(), m.mode)
+	if m.savedListOpen() || !m.focused() {
+		t.Fatalf("esc: list open=%t screen = %v", m.savedListOpen(), m.screenID())
 	}
 }
 
@@ -78,8 +78,8 @@ func TestSurfaceOwnsFrameFooterAndMouse(t *testing.T) {
 func TestLeavingFocusClearsItsSurfaces(t *testing.T) {
 	m := focusWithSavedList(t)
 	m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlQ})
-	if m.mode != modeList || len(m.surfaces) != 0 {
-		t.Fatalf("mode=%v surfaces=%d", m.mode, len(m.surfaces))
+	if !m.onList() || len(m.surfaces) != 0 {
+		t.Fatalf("screen = %v surfaces=%d", m.screenID(), len(m.surfaces))
 	}
 }
 
@@ -107,8 +107,8 @@ func TestClickOffADismissibleSurfaceClosesIt(t *testing.T) {
 	release := tea.MouseMsg{X: 0, Y: 0, Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft}
 	m.Update(press)
 	m.Update(release)
-	if m.savedListOpen() || m.mode != modeFocus {
-		t.Fatalf("list open=%t mode=%v", m.savedListOpen(), m.mode)
+	if m.savedListOpen() || !m.focused() {
+		t.Fatalf("list open=%t screen = %v", m.savedListOpen(), m.screenID())
 	}
 }
 
