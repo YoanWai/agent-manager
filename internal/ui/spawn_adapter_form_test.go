@@ -199,8 +199,8 @@ func TestGroupFormCreatesUnderParent(t *testing.T) {
 
 	m.openGroupForm()
 	pickGroup(t, m, "projects")
-	m.groupSurface().form.SetName("sub/one")
-	m.groupSurface().form.SetDir(t.TempDir())
+	m.groupSurface().SetName("sub/one")
+	m.groupSurface().SetDir(t.TempDir())
 	_, cmd := m.submitGroupForm()
 	m.applyCmd(t, cmd)
 	if !m.onList() {
@@ -227,8 +227,8 @@ func TestGroupFormShowsNewEmptyGroupWithWorktreeOff(t *testing.T) {
 	m.rail.SetArchived(true)
 	m.rail.SetFilteringAttention(true)
 	m.openGroupForm()
-	m.groupSurface().form.SetName("manual")
-	m.groupSurface().form.SetDir(t.TempDir())
+	m.groupSurface().SetName("manual")
+	m.groupSurface().SetDir(t.TempDir())
 	focusGroupField(t, m, uidialogs.GroupFormWorktreeField)
 	m.pressGroupKey(tea.KeyMsg{Type: tea.KeyLeft})
 
@@ -262,7 +262,7 @@ func TestGroupFormExpandsParentToShowNewChild(t *testing.T) {
 	m.selectGroupRow(t, "projects")
 	m.rail.SetCollapsed("projects", true)
 	m.openGroupForm()
-	m.groupSurface().form.SetName("api")
+	m.groupSurface().SetName("api")
 
 	_, cmd := m.submitGroupForm()
 	m.applyCmd(t, cmd)
@@ -289,8 +289,8 @@ func TestGroupFormRejectsDuplicateWithoutChangingIt(t *testing.T) {
 
 	m.openGroupForm()
 	pickGroup(t, m, "")
-	m.groupSurface().form.SetName("backend")
-	m.groupSurface().form.SetDir(second)
+	m.groupSurface().SetName("backend")
+	m.groupSurface().SetDir(second)
 	focusGroupField(t, m, uidialogs.GroupFormWorktreeField)
 	m.pressGroupKey(tea.KeyMsg{Type: tea.KeyLeft})
 	_, cmd := m.submitGroupForm()
@@ -326,7 +326,7 @@ func TestGroupParentPickerExcludesArchivedGroups(t *testing.T) {
 
 	m.openGroupForm()
 	var options []string
-	for _, option := range m.groupSurface().parents {
+	for _, option := range m.groupSurface().Parents() {
 		options = append(options, option.Path)
 	}
 	if !reflect.DeepEqual(options, []string{"", "active"}) {
@@ -339,14 +339,14 @@ func TestGroupFormFieldsTrackCardWidth(t *testing.T) {
 	m := buildModel(t)
 	m.openGroupForm()
 	want := m.formValueWidth() - 3
-	if m.groupSurface().form.Width() != want {
-		t.Fatalf("initial width = %d, want %d", m.groupSurface().form.Width(), want)
+	if m.groupSurface().Width() != want {
+		t.Fatalf("initial width = %d, want %d", m.groupSurface().Width(), want)
 	}
 
 	m.Update(tea.WindowSizeMsg{Width: 72, Height: m.layout.height})
 	want = m.formValueWidth() - 3
-	if m.groupSurface().form.Width() != want {
-		t.Fatalf("resized width = %d, want %d", m.groupSurface().form.Width(), want)
+	if m.groupSurface().Width() != want {
+		t.Fatalf("resized width = %d, want %d", m.groupSurface().Width(), want)
 	}
 }
 
@@ -663,20 +663,20 @@ func TestGroupFormParentArrowsMoveFocusNotSelection(t *testing.T) {
 	m.openGroupForm()
 	focusGroupField(t, m, uidialogs.GroupFormParentField)
 
-	initial := m.groupSurface().parent
+	initial := m.groupSurface().Parent()
 	m.pressGroupKey(tea.KeyMsg{Type: tea.KeyDown})
-	if m.groupSurface().parent != initial {
-		t.Fatalf("down must not change the parent selection, index = %d, want %d", m.groupSurface().parent, initial)
+	if m.groupSurface().Parent() != initial {
+		t.Fatalf("down must not change the parent selection, index = %d, want %d", m.groupSurface().Parent(), initial)
 	}
-	if m.groupSurface().form.Focus() == uidialogs.GroupFormParentField {
+	if m.groupSurface().Focus() == uidialogs.GroupFormParentField {
 		t.Fatal("down should move focus off the parent field")
 	}
 
 	focusGroupField(t, m, uidialogs.GroupFormParentField)
-	m.groupSurface().parent = 0
+	m.groupSurface().SelectParent(0)
 	m.pressGroupKey(tea.KeyMsg{Type: tea.KeyRight})
-	if m.groupSurface().parent != 1 {
-		t.Fatalf("right should cycle the parent selection, index = %d", m.groupSurface().parent)
+	if m.groupSurface().Parent() != 1 {
+		t.Fatalf("right should cycle the parent selection, index = %d", m.groupSurface().Parent())
 	}
 }
 
@@ -1007,8 +1007,8 @@ func TestGroupFormStoresWorktreeChoice(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openGroupForm()
-	m.groupSurface().form.SetName("wtgrp")
-	m.groupSurface().form.SetDir(t.TempDir())
+	m.groupSurface().SetName("wtgrp")
+	m.groupSurface().SetDir(t.TempDir())
 	focusGroupField(t, m, uidialogs.GroupFormWorktreeField)
 	m.pressGroupKey(tea.KeyMsg{Type: tea.KeyRight})
 	_, cmd := m.pressGroupKey(tea.KeyMsg{Type: tea.KeyEnter})

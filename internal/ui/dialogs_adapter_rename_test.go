@@ -592,11 +592,11 @@ func TestGroupPathNeverEmpty(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openGroupForm()
-	if m.groupSurface().form.Dir() == "" {
+	if m.groupSurface().Dir() == "" {
 		t.Fatal("group form path should prefill with a resolved directory")
 	}
-	m.groupSurface().form.SetName("zone")
-	m.groupSurface().form.SetDir("")
+	m.groupSurface().SetName("zone")
+	m.groupSurface().SetDir("")
 	_, cmd := m.submitGroupForm()
 	if m.errBar.text != "" {
 		t.Fatalf("submit: %q", m.errBar.text)

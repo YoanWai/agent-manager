@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
@@ -297,10 +298,10 @@ func TestNewGroupFormCreatesOnTheConnection(t *testing.T) {
 	if _, cmd := m.runRailIntent(uirail.Intent{Kind: uirail.NewGroup, Target: boxGroup}); cmd != nil {
 		t.Fatal("opening the form queued work")
 	}
-	if !m.groupFormOpen() || m.groupSurface().remote != (formRemote{host: "box", group: "web"}) || m.groupSurface().form.Dir() != "" {
-		t.Fatalf("form = mode %v remote %+v dir %q", m.screenID(), m.groupSurface().remote, m.groupSurface().form.Dir())
+	if !m.groupFormOpen() || m.groupSurface().RemoteTarget() != (uidialogs.Remote{Host: "box", Group: "web"}) || m.groupSurface().Dir() != "" {
+		t.Fatalf("form = mode %v remote %+v dir %q", m.screenID(), m.groupSurface().remote, m.groupSurface().Dir())
 	}
-	m.groupSurface().form.SetName("api")
+	m.groupSurface().SetName("api")
 	_, cmd := m.submitGroupForm()
 	m.runRemoteCmd(t, cmd)
 	calls := fake.taken()

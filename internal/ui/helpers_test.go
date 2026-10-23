@@ -402,14 +402,14 @@ func listSessionIDs(t *testing.T, st *store.Store) []string {
 
 func pickGroup(t *testing.T, m *Model, path string) {
 	t.Helper()
-	if s, ok := surfaceOf[*groupFormSurface](m); ok {
-		for i, opt := range s.parents {
+	if s, ok := m.groupFormSurface(); ok {
+		for i, opt := range s.Parents() {
 			if opt.Path == path && opt.SessionID == "" {
-				s.parent = i
+				s.SelectParent(i)
 				return
 			}
 		}
-		t.Fatalf("group %q not in the card's parents %v", path, s.parents)
+		t.Fatalf("group %q not in the card's parents %v", path, s.Parents())
 	}
 	for i, opt := range picker(m).Groups {
 		if opt.Path == path && opt.SessionID == "" {
@@ -424,12 +424,12 @@ func pickGroup(t *testing.T, m *Model, path string) {
 func focusGroupField(t *testing.T, m *Model, field int) {
 	t.Helper()
 	for range 5 {
-		if m.groupSurface().form.Focus() == field {
+		if m.groupSurface().Focus() == field {
 			return
 		}
 		m.pressGroupKey(tea.KeyMsg{Type: tea.KeyTab})
 	}
-	t.Fatalf("group form focus = %d, want %d", m.groupSurface().form.Focus(), field)
+	t.Fatalf("group form focus = %d, want %d", m.groupSurface().Focus(), field)
 }
 
 func createSession(t *testing.T, m *Model, name, dir, group string) {

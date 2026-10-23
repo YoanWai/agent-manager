@@ -40,21 +40,21 @@ func TestGroupFormStepsBaseThroughTheRepoBranches(t *testing.T) {
 	m := buildModel(t)
 	repo := repoWithDevelop(t)
 	m.openGroupForm()
-	m.groupSurface().form.SetName("based")
-	m.groupSurface().form.SetDir(repo)
+	m.groupSurface().SetName("based")
+	m.groupSurface().SetDir(repo)
 	focusGroupField(t, m, uidialogs.GroupFormBaseField)
 	_, step := m.pressGroupKey(tea.KeyMsg{Type: tea.KeyRight})
 	m.applyBaseStep(t, step)
-	if m.groupSurface().base != "develop" {
-		t.Fatalf("first step past auto = %q, want develop", m.groupSurface().base)
+	if m.groupSurface().Base() != "develop" {
+		t.Fatalf("first step past auto = %q, want develop", m.groupSurface().Base())
 	}
 	if view := m.viewGroupForm(); !strings.Contains(view, "◂ develop ▸") {
 		t.Fatalf("base row should show the pick, got %q", view)
 	}
 	_, back := m.pressGroupKey(tea.KeyMsg{Type: tea.KeyLeft})
 	m.applyBaseStep(t, back)
-	if m.groupSurface().base != "" {
-		t.Fatalf("stepping back = %q, want auto", m.groupSurface().base)
+	if m.groupSurface().Base() != "" {
+		t.Fatalf("stepping back = %q, want auto", m.groupSurface().Base())
 	}
 	_, again := m.pressGroupKey(tea.KeyMsg{Type: tea.KeyRight})
 	m.applyBaseStep(t, again)
@@ -90,12 +90,12 @@ func TestGroupFormBaseNeedsARepository(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openGroupForm()
-	m.groupSurface().form.SetDir(t.TempDir())
+	m.groupSurface().SetDir(t.TempDir())
 	focusGroupField(t, m, uidialogs.GroupFormBaseField)
 	_, step := m.pressGroupKey(tea.KeyMsg{Type: tea.KeyRight})
 	m.applyBaseStep(t, step)
-	if m.groupSurface().base != "" {
-		t.Fatalf("a directory with no branches has nothing to pick, got %q", m.groupSurface().base)
+	if m.groupSurface().Base() != "" {
+		t.Fatalf("a directory with no branches has nothing to pick, got %q", m.groupSurface().Base())
 	}
 	if !strings.Contains(m.errBar.text, "group base") {
 		t.Fatalf("refused step should say why, got %q", m.errBar.text)

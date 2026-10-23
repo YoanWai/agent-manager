@@ -10,8 +10,8 @@ import (
 
 // groupSurface is the open New Group card; a test that reads it without one
 // open is wrong, so it panics rather than returning a half-built one.
-func (m *Model) groupSurface() *groupFormSurface {
-	s, ok := surfaceOf[*groupFormSurface](m)
+func (m *Model) groupSurface() *uidialogs.GroupFormSurface {
+	s, ok := m.groupFormSurface()
 	if !ok {
 		panic("the New Group card is not open")
 	}
@@ -19,7 +19,7 @@ func (m *Model) groupSurface() *groupFormSurface {
 }
 
 func (m *Model) groupFormOpen() bool {
-	_, ok := surfaceOf[*groupFormSurface](m)
+	_, ok := m.groupFormSurface()
 	return ok
 }
 
@@ -34,12 +34,12 @@ func (m *Model) submitGroupForm() (tea.Model, tea.Cmd) {
 // test controls, which Update cannot inject.
 func (m *Model) submitGroupFormWithReader(reader directoryPreflight) (tea.Model, tea.Cmd) {
 	s := m.groupSurface()
-	key := s.form.Submit(s.parentPath())
+	key := s.Submit(s.ParentPath())
 	if key.Action == uidialogs.GroupFormInvalid {
 		m.reportErr(key.Err)
 		return m, nil
 	}
-	return m, m.handleGroupFormSubmit(groupFormSubmitMsg{request: key.Request, base: s.base, remote: s.remote}, reader)
+	return m, m.handleGroupFormSubmit(uidialogs.GroupFormSubmitMsg{Request: key.Request, Base: s.Base(), Remote: s.RemoteTarget()}, reader)
 }
 
 func (m *Model) viewGroupForm() string { return preparedView(m) }
@@ -81,9 +81,9 @@ func TestGroupFormKeepsItsDraftThroughAStrayClick(t *testing.T) {
 	if m.top0().Dismissible() {
 		t.Fatal("a form holding a draft says a stray click closes it")
 	}
-	m.groupSurface().form.SetName("draft")
+	m.groupSurface().SetName("draft")
 	m = clickBackdrop(t, m)
-	if !m.groupFormOpen() || m.groupSurface().form.Name() != "draft" {
+	if !m.groupFormOpen() || m.groupSurface().Name() != "draft" {
 		t.Fatal("a click off the card lost the draft")
 	}
 }
@@ -98,7 +98,7 @@ func (m *Model) top0() surface {
 func TestGroupFormCompletionsAreFenced(t *testing.T) {
 	t.Parallel()
 	m := openGroupFormModel(t)
-	stale := groupRequest{path: "x", gen: m.groupSurface().form.Gen(), draftName: "", draftDir: m.groupSurface().form.Dir()}
+	stale := groupRequest{path: "x", gen: m.groupSurface().Gen(), draftName: "", draftDir: m.groupSurface().Dir()}
 	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m.applyGroupEffect(stale, groupEffectResult{path: "x"}, nil)
 	if m.groupFormOpen() {
@@ -114,9 +114,9 @@ func TestGroupFormCompletionsAreFenced(t *testing.T) {
 func TestGroupFormBaseStepForAClosedFormIsDropped(t *testing.T) {
 	t.Parallel()
 	m := openGroupFormModel(t)
-	gen := m.groupSurface().form.Gen()
+	gen := m.groupSurface().Gen()
 	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
-	if cmd := m.handleGroupBaseAsk(groupBaseAskMsg{gen: gen, delta: 1}); cmd != nil {
+	if cmd := m.handleGroupBaseAsk(uidialogs.GroupBaseAskMsg{Gen: gen, Delta: 1}); cmd != nil {
 		t.Fatal("a base step ran for a form that is gone")
 	}
 }

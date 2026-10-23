@@ -29,7 +29,7 @@ const uiRoot = "internal/ui"
 var packaged = map[string]string{
 	"composer":     "the prompt box adapter: which box a paste lands in, its painters and the pastes sweep",
 	"connections":  "the SSH connections adapter: the client, refreshes, remote rows, preview and routed actions, and their effects",
-	"dialogs":      "the confirm, rename, move and fork dialog adapters and their effects",
+	"dialogs":      "the confirm, rename, move, fork and New Group dialog adapters and their effects",
 	"focus":        "the Focus adapter, its frame view and the pane watcher it holds",
 	"help":         "the Help adapter: the context and root reads the key map paints from",
 	"notices":      "the notices adapter, release and feed checks and self-update",
@@ -69,7 +69,6 @@ var rootOnly = map[string]string{
 	"effects":    "the ordered effect lane and its executor",
 	"frame":      "frame composition: dialog chrome, header, legend, IME, text layout and control escaping",
 	"geometry":   "pane sizing, layout widths and the split ratio",
-	"group":      "the New Group form adapter",
 	"input":      "raw input forwarded to panes",
 	"launchhint": "the launch fix dialog and CLI install",
 	"model":      "the root Model, its services and shared host methods",

@@ -28,15 +28,15 @@ var mouseOpeners = map[string]func(t *testing.T, m *Model){
 	"dialogs.LaunchHintSurface": func(t *testing.T, m *Model) {
 		m.openLaunchHint(launchFix{text: "tool is missing", command: "true", binary: "tool"})
 	},
-	"help.Surface":        func(t *testing.T, m *Model) { m.openHelp() },
-	"notices.Surface":     func(t *testing.T, m *Model) { m.Update(key("M")) },
-	"settings.Surface":    func(t *testing.T, m *Model) { m.applyCmd(t, m.openSettings()) },
-	"groupFormSurface":    func(t *testing.T, m *Model) { m.openGroupForm() },
-	"connections.Surface": func(t *testing.T, m *Model) { m.openConnectionDialog(remote.Connection{}) },
-	"quickSurface":        func(t *testing.T, m *Model) { m.applyCmd(t, m.openQuickMode()) },
-	"spawnSurface":        func(t *testing.T, m *Model) { m.applyCmd(t, m.openForm()) },
-	"geometry.Surface":    func(t *testing.T, m *Model) { m.enterResizeMode() },
-	"focus.Surface":       func(t *testing.T, m *Model) { m.push(newFocusSurface(m)) },
+	"help.Surface":             func(t *testing.T, m *Model) { m.openHelp() },
+	"notices.Surface":          func(t *testing.T, m *Model) { m.Update(key("M")) },
+	"settings.Surface":         func(t *testing.T, m *Model) { m.applyCmd(t, m.openSettings()) },
+	"dialogs.GroupFormSurface": func(t *testing.T, m *Model) { m.openGroupForm() },
+	"connections.Surface":      func(t *testing.T, m *Model) { m.openConnectionDialog(remote.Connection{}) },
+	"quickSurface":             func(t *testing.T, m *Model) { m.applyCmd(t, m.openQuickMode()) },
+	"spawnSurface":             func(t *testing.T, m *Model) { m.applyCmd(t, m.openForm()) },
+	"geometry.Surface":         func(t *testing.T, m *Model) { m.enterResizeMode() },
+	"focus.Surface":            func(t *testing.T, m *Model) { m.push(newFocusSurface(m)) },
 	"focus.Saved": func(t *testing.T, m *Model) {
 		m.push(newFocusSurface(m))
 		m.push(uifocus.OpenSaved(focusSavedRoot{m}, 0, m.spawnStyles()))

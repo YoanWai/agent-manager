@@ -276,7 +276,7 @@ func (m *Model) viewRenameGroupFields(s *uidialogs.RenameSurface, group string, 
 		Value:     valueStyle(),
 		Input:     textInputView,
 		Worktrees: groupWorktreeOptions,
-		Base:      groupBaseChoice(s.Base, m.groupBase(parentGroup(group))),
+		Base:      uidialogs.BaseChoice(subtleStyle(), valueStyle(), s.Base, m.groupBase(parentGroup(group))),
 	}
 	if s.Paths().Active() {
 		view.Suggestions = func() string { return s.Paths().View(pathCompleteStyles(m.prefs.glyphMode)) }

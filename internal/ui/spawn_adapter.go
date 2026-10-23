@@ -190,10 +190,6 @@ func (m *Model) formField(label, value string, focused bool) string {
 	return spawn.FormField(m.spawnStyles(), label, value, focused)
 }
 
-func groupBadge(path string) string {
-	return lipgloss.NewStyle().Foreground(colorAccent2()).Render(path)
-}
-
 func pathSuggestHint(chosen bool) [][2]string {
 	if chosen {
 		return [][2]string{{"↑↓", "pick"}, {"↵/tab", "complete"}, {"esc", "close"}}
@@ -416,10 +412,10 @@ func (m *Model) routeSpawnMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	case terminalDirectoryMsg:
 		return routed(m.handleTerminalDirectory(msg))
 
-	case groupFormSubmitMsg:
+	case uidialogs.GroupFormSubmitMsg:
 		return routed(m, m.handleGroupFormSubmit(msg, systemDirectoryPreflight{git: m.services.gitDrv}))
 
-	case groupBaseAskMsg:
+	case uidialogs.GroupBaseAskMsg:
 		return routed(m, m.handleGroupBaseAsk(msg))
 	}
 	return nil, nil, false
