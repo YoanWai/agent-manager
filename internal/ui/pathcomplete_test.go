@@ -367,7 +367,9 @@ func TestReopenedFormIgnoresTheLastOpeningsScan(t *testing.T) {
 	if m.form.paths.active() {
 		t.Fatalf("reopened form took the last opening's scan: %v", m.form.paths.suggestions)
 	}
-	if m.groupSurface().pc.active() || openRename(m).complete.active() {
+	// No other dialog is up: a form scan that reached one would have had to
+	// push it.
+	if _, groupUp := surfaceOf[*groupFormSurface](m); groupUp || openRename(m).complete.active() {
 		t.Fatal("a form scan filled another dialog's completer")
 	}
 }
