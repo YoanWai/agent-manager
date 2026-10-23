@@ -100,6 +100,12 @@ Sessions run inside tmux (`am_*` namespace), so they survive the manager quittin
 
 Agent sessions live on a private tmux server named `agentmgr`, so they never mix with the tmux you run yourself and a `kill-server` on your own socket leaves them alone. To reach one from a plain shell, name that server: `tmux -L agentmgr ls`, then `tmux -L agentmgr attach -t am_<id>`.
 
+### Pasting into a session
+
+A paste carries its own line breaks, and a terminal has no way to tell one from a submit. The manager pastes the whole clipboard at once, but the agent on the other side decides what to do with a line break inside it, and while that agent is mid-turn its paste detection can submit the text early instead of holding it in the composer. The manager sends no Enter of its own here.
+
+If a paste lands as several prompts rather than one, the paste arrived while the agent was working. Paste into an idle prompt, or turn off tmux's paste shortcut so a pasted key is never treated as typed: `tmux -L agentmgr set -g assume-paste-time 0`.
+
 The full reference, every key, quick prompt mode, killing and reviving, diff review, groups, status detection, stats, and themes, lives in [docs/usage.md](docs/usage.md). Tell your agent what you want to review in Agent Manager, and your agent will set it up for you to view in the review panel. You can also tell your agent to manage sessions and terminals in Agent Manager. The short version:
 
 | Key | Action |
