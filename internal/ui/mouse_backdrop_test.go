@@ -55,22 +55,21 @@ func TestBackdropClickKeepsATypedDraft(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		open func(*Model)
-		want mode
 	}{
-		{"new session", func(m *Model) { m.applyCmd(t, m.openForm()) }, modeForm},
-		{"new group", func(m *Model) { m.openGroupForm() }, modeList},
-		{"fork", func(m *Model) { m.push(newForkSurface(store.Session{Name: "alpha"}, 1)) }, modeList},
+		{"new session", func(m *Model) { m.applyCmd(t, m.openForm()) }},
+		{"new group", func(m *Model) { m.openGroupForm() }},
+		{"fork", func(m *Model) { m.push(newForkSurface(store.Session{Name: "alpha"}, 1)) }},
 	} {
 		m := buildModel(t)
 		m.layout.width, m.layout.height = 120, 34
 		createSessionOn(t, m, "alpha", "claude", t.TempDir())
 		m.selectSessionRow(t, "alpha")
 		tc.open(m)
-		if m.mode != tc.want || (tc.want == modeList && m.listClear()) {
-			t.Fatalf("%s: test setup mode = %v err %q", tc.name, m.mode, m.errBar.text)
+		if len(m.surfaces) != 1 {
+			t.Fatalf("%s: test setup put %d surfaces up, err %q", tc.name, len(m.surfaces), m.errBar.text)
 		}
-		if m = clickBackdrop(t, m); m.mode != tc.want || (tc.want == modeList && m.listClear()) {
-			t.Errorf("%s: a stray click closed the draft, mode = %v", tc.name, m.mode)
+		if m = clickBackdrop(t, m); len(m.surfaces) != 1 {
+			t.Errorf("%s: a stray click closed the draft", tc.name)
 		}
 	}
 }

@@ -55,8 +55,10 @@ func (m *Model) advanceDialogGen() {
 // quick bar hold, leaving both composers empty.
 func (m *Model) takeComposerImages() []imageAttachment {
 	var images []imageAttachment
-	images = append(images, m.form.prompt.attachments...)
-	m.form.prompt.attachments = nil
+	if f := m.form(); f != nil {
+		images = append(images, f.prompt.attachments...)
+		f.prompt.attachments = nil
+	}
 	if q := m.quick(); q != nil {
 		images = append(images, q.attachments...)
 		q.attachments = nil

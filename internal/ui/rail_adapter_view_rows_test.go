@@ -792,9 +792,9 @@ func TestShellRowSkipsThePromptLine(t *testing.T) {
 func spawnUnnamed(t *testing.T, m *Model, prompt string) store.Session {
 	t.Helper()
 	m.openForm()
-	m.form.SetName("")
-	m.form.SetDir(t.TempDir())
-	m.form.prompt.input.SetValue(prompt)
+	m.form().SetName("")
+	m.form().SetDir(t.TempDir())
+	m.form().prompt.input.SetValue(prompt)
 	setFormTool(m, 0)
 	_, cmd := m.submitForm()
 	if m.errBar.text != "" {

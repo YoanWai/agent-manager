@@ -410,13 +410,13 @@ func pickGroup(t *testing.T, m *Model, path string) {
 		}
 		t.Fatalf("group %q not in the card's parents %v", path, s.parents)
 	}
-	for i, opt := range m.form.groups {
+	for i, opt := range picker(m).groups {
 		if opt.path == path && opt.sessID == "" {
-			m.form.groupIndex = i
+			picker(m).groupIndex = i
 			return
 		}
 	}
-	t.Fatalf("group %q not in picker options %v", path, m.form.groups)
+	t.Fatalf("group %q not in picker options %v", path, picker(m).groups)
 }
 
 // focusGroupField tabs the open group form to field.
@@ -434,8 +434,8 @@ func focusGroupField(t *testing.T, m *Model, field int) {
 func createSession(t *testing.T, m *Model, name, dir, group string) {
 	t.Helper()
 	m.openForm()
-	m.form.SetName(name)
-	m.form.SetDir(dir)
+	m.form().SetName(name)
+	m.form().SetDir(dir)
 	setFormTool(m, 0)
 	pickGroup(t, m, group)
 	_, cmd := m.submitForm()
@@ -479,10 +479,10 @@ func seedRepo(t *testing.T) string {
 func createWorktreeSession(t *testing.T, m *Model, name, repo string) store.Session {
 	t.Helper()
 	m.openForm()
-	m.form.SetName(name)
-	m.form.SetDir(repo)
+	m.form().SetName(name)
+	m.form().SetDir(repo)
 	setFormTool(m, 0)
-	m.form.SeedWorktree(true)
+	m.form().SeedWorktree(true)
 	pickGroup(t, m, "")
 	_, cmd := m.submitForm()
 	m.applyCmd(t, cmd)
@@ -558,8 +558,8 @@ func waitForAgent(t *testing.T, m *Model, sessID string, want bool) {
 func createSessionOn(t *testing.T, m *Model, name, tool, dir string) {
 	t.Helper()
 	m.openForm()
-	m.form.SetName(name)
-	m.form.SetDir(dir)
+	m.form().SetName(name)
+	m.form().SetDir(dir)
 	picked := false
 	for i, candidate := range m.services.cfg.AgentToolNames() {
 		if candidate == tool {

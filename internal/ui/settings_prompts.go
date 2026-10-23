@@ -122,8 +122,8 @@ func (m *Model) handleSavedPromptsLoaded(msg savedPromptsLoadedMsg) {
 	case savedForSettings:
 		m.applyPromptsRead(msg.dialogGen, uisettings.PromptsRead{Gen: msg.gen, Rows: settingsPrompts(msg.rows), Err: msg.err})
 	case savedForForm:
-		if m.mode == modeForm && uint64(m.form.prompt.gen) == msg.gen {
-			m.form.SetSaved(spawnSaved(msg.rows), msg.err)
+		if f, ok := m.formFor(int(msg.gen)); ok {
+			f.SetSaved(spawnSaved(msg.rows), msg.err)
 		}
 	case savedForQuick:
 		if q, ok := m.quickFor(int(msg.gen)); ok {

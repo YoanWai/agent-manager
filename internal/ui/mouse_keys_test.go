@@ -30,18 +30,18 @@ func TestClickOnListFooterKeysOpensTheirModals(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		label string
-		want  mode
+		open  func(*Model) bool
 	}{
-		{"n new", modeForm},
-		{"g group", modeList},
-		{"? keys", modeList},
-		{"s settings", modeList},
+		{"n new", formOpen},
+		{"g group", func(m *Model) bool { return m.groupFormOpen() }},
+		{"? keys", func(m *Model) bool { _, ok := surfaceOf[*helpSurface](m); return ok }},
+		{"s settings", func(m *Model) bool { return m.settingsOpen() }},
 	} {
 		m := buildModel(t)
 		m.layout.width, m.layout.height = 320, 40
 		createSession(t, m, "alpha", t.TempDir(), "")
-		if m = clickLabel(t, m, tc.label); m.mode != tc.want {
-			t.Errorf("click on %q: mode = %v, want %v (err %q)", tc.label, m.mode, tc.want, m.errBar.text)
+		if m = clickLabel(t, m, tc.label); !tc.open(m) {
+			t.Errorf("click on %q opened nothing (err %q)", tc.label, m.errBar.text)
 		}
 	}
 }

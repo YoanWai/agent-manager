@@ -206,8 +206,8 @@ func TestAttachClearsStaleHashBeforeReflow(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openForm()
-	m.form.SetName("attach-reflow")
-	m.form.SetDir(t.TempDir())
+	m.form().SetName("attach-reflow")
+	m.form().SetDir(t.TempDir())
 	setFormTool(m, 1) // claude-hooked: configured with an activity region to hash
 	pickGroup(t, m, "")
 	_, cmd := m.submitForm()

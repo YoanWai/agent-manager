@@ -174,8 +174,8 @@ func (m *Model) applyRemoteEffect(request remoteRequest, result remoteEffectResu
 		m.reportDone("sent to " + request.name + on)
 	case remoteSpawn:
 		if request.fromForm {
-			if m.mode == modeForm && m.form.prompt.gen == request.composerGen {
-				m.mode = modeList
+			if _, ok := m.formFor(request.composerGen); ok {
+				m.closeForm()
 			}
 		} else {
 			m.clearAccepted(request.composerGen, request.draft, request.closeAfterSend)

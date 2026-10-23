@@ -40,11 +40,11 @@ func (h *hintHost) startInstall(request installStartRequest) bool {
 func TestLaunchHintSurfaceWithFakeInstall(t *testing.T) {
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 110, 34
-	m.form.prompt.attachments = []imageAttachment{{id: 1}}
+	m.form().prompt.attachments = []imageAttachment{{id: 1}}
 	h := &hintHost{Model: m}
 	m.openLaunchHint(launchFix{text: "tool is not installed.\n\nRun the installer.", command: "install tool", script: "install tool", binary: "tool"})
 	s, ok := surfaceOf[*launchHintSurface](m)
-	if !ok || m.gens.dialog != 1 || len(s.fix.images) != 1 || m.form.prompt.attachments != nil {
+	if !ok || m.gens.dialog != 1 || len(s.fix.images) != 1 || m.form().prompt.attachments != nil {
 		t.Fatalf("open: surface %t gens %d fix %+v, want the composer images taken", ok, m.gens.dialog, s.fix)
 	}
 	if got := ansi.Strip(s.View(h, "")); !strings.Contains(got, "Session needs a setup step") || !strings.Contains(got, "Run the installer.") {
@@ -236,8 +236,8 @@ func TestSpawnMissingCLIPromptsInstall(t *testing.T) {
 	m.services.cfg.Tools["claude"] = config.Tool{Command: "am-missing-cli-xyz", DefaultStatus: status.Idle}
 
 	m.openForm()
-	m.form.SetName("agent")
-	m.form.SetDir(t.TempDir())
+	m.form().SetName("agent")
+	m.form().SetDir(t.TempDir())
 	claudeIndex := -1
 	for i, name := range formTools(m) {
 		if name == "claude" {
@@ -384,12 +384,12 @@ func TestFormSpawnRefusedByTheHintReleasesItsImages(t *testing.T) {
 	installSDKlessHermes(t)
 
 	m.openForm()
-	m.form.SetName("agent")
-	m.form.SetDir(t.TempDir())
-	m.form.SetTools([]string{"hermes"}, 0)
+	m.form().SetName("agent")
+	m.form().SetDir(t.TempDir())
+	m.form().SetTools([]string{"hermes"}, 0)
 	path := tempImage(t, "mock.png")
-	m.form.prompt.attachments = []imageAttachment{{id: 1, path: path}}
-	m.form.prompt.input.SetValue("match " + imageToken(1))
+	m.form().prompt.attachments = []imageAttachment{{id: 1, path: path}}
+	m.form().prompt.input.SetValue("match " + imageToken(1))
 
 	_, cmd := m.submitForm()
 	m.applyCmd(t, cmd)
@@ -400,8 +400,8 @@ func TestFormSpawnRefusedByTheHintReleasesItsImages(t *testing.T) {
 	// The dialog can still install the CLI and spawn this prompt, so it
 	// takes the images over from the form and keeps the files until it
 	// closes.
-	if len(m.form.prompt.attachments) != 0 {
-		t.Fatalf("attachments = %+v, want the form's images handed to the dialog", m.form.prompt.attachments)
+	if len(m.form().prompt.attachments) != 0 {
+		t.Fatalf("attachments = %+v, want the form's images handed to the dialog", m.form().prompt.attachments)
 	}
 	if len(hintFix(m).images) != 1 {
 		t.Fatalf("dialog images = %+v, want the refused prompt's image", hintFix(m).images)
@@ -427,9 +427,9 @@ func TestFormSpawnErrorInTheBarKeepsItsImages(t *testing.T) {
 	dir := t.TempDir()
 	initGitRepo(t, dir)
 	m.openForm()
-	m.form.SetName("agent")
-	m.form.SetDir(dir)
-	m.form.SetWorktree(true)
+	m.form().SetName("agent")
+	m.form().SetDir(dir)
+	m.form().SetWorktree(true)
 	m.applyTestMsg(t, m.formWorktreeProbeCmd(false)())
 	if !m.formWorktreeOn() {
 		t.Fatal("the worktree toggle should be on for this spawn")
@@ -448,13 +448,13 @@ func TestFormSpawnErrorInTheBarKeepsItsImages(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := tempImage(t, "mock.png")
-	m.form.prompt.attachments = []imageAttachment{{id: 1, path: path}}
-	m.form.prompt.input.SetValue("match " + imageToken(1))
+	m.form().prompt.attachments = []imageAttachment{{id: 1, path: path}}
+	m.form().prompt.input.SetValue("match " + imageToken(1))
 
 	_, cmd := m.submitForm()
 	m.applyCmd(t, cmd)
 
-	if m.mode != modeForm || m.errBar.text == "" {
+	if !formOpen(m) || m.errBar.text == "" {
 		t.Fatalf("mode = %v, err = %q, want the form still up with the error", m.mode, m.errBar.text)
 	}
 	// Named so the test cannot pass on an earlier refusal: this is the
@@ -465,8 +465,8 @@ func TestFormSpawnErrorInTheBarKeepsItsImages(t *testing.T) {
 	if len(m.sessionRows()) != 0 {
 		t.Fatalf("a failed spawn leaves no session, got %v", sessionNames(m))
 	}
-	if len(m.form.prompt.attachments) != 1 {
-		t.Fatalf("attachments = %+v, want the chip kept for the retry", m.form.prompt.attachments)
+	if len(m.form().prompt.attachments) != 1 {
+		t.Fatalf("attachments = %+v, want the chip kept for the retry", m.form().prompt.attachments)
 	}
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("the image the prompt still names must survive: %v", err)
@@ -484,8 +484,8 @@ func TestSpawnHermesWithoutMCPSupportPromptsInstall(t *testing.T) {
 	installSDKlessHermes(t)
 
 	m.openForm()
-	m.form.SetName("agent")
-	m.form.SetDir(t.TempDir())
+	m.form().SetName("agent")
+	m.form().SetDir(t.TempDir())
 	hermesIndex := -1
 	for i, name := range formTools(m) {
 		if name == "hermes" {
@@ -923,7 +923,7 @@ func TestLaunchHintRetryThatStopsAgainKeepsAPastedImage(t *testing.T) {
 	m.services.cfg.Tools[installRetryTool] = tool
 
 	pasted := tempImage(t, "pasted.png")
-	m.form.prompt.attachments = []imageAttachment{{id: 2, path: pasted}}
+	m.form().prompt.attachments = []imageAttachment{{id: 2, path: pasted}}
 	m.applyCmd(t, pressInLaunchHint(t, m, 'i'))
 	waitForInstallToSettle(t, m)
 

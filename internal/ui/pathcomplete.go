@@ -28,8 +28,6 @@ func (pc *pathComplete) reset() {
 
 // fresh is an empty completer whose reads outrank every read pc started, so
 // a reopened dialog never takes a scan its previous opening asked for.
-func (pc pathComplete) fresh() pathComplete { return pathComplete{generation: pc.generation + 1} }
-
 func (pc *pathComplete) active() bool { return len(pc.suggestions) > 0 }
 
 // move advances within the suggestions without wrapping. It returns false
@@ -107,13 +105,13 @@ func pathSuggestionsCmd(request pathSuggestionsRequest, reader pathSuggestionRea
 }
 
 // completer is the path completer of the dialog a read was started from.
+// With that dialog no longer on top, a read lands on a blank completer
+// whose generation no read carries, and is dropped.
 func (m *Model) completer(target pathSuggestionTarget) *pathComplete {
 	if s, ok := m.topPathCompleting(); ok && s.pathTarget() == target {
 		return s.paths()
 	}
-	switch target {
-	}
-	return &m.form.paths
+	return &pathComplete{}
 }
 
 func (m *Model) requestPathSuggestions(target pathSuggestionTarget, typed string) tea.Cmd {
@@ -136,13 +134,6 @@ type pathCompleteHost interface {
 func (m *Model) pathSuggestionField(target pathSuggestionTarget) (string, bool) {
 	if s, ok := m.topPathCompleting(); ok && s.pathTarget() == target {
 		return s.dir()
-	}
-	switch target {
-	case pathSuggestionForm:
-		if m.mode != modeForm {
-			return "", false
-		}
-		return m.form.Dir(), true
 	}
 	return "", false
 }
@@ -245,22 +236,14 @@ func (m *Model) topPathCompleting() (pathCompleting, bool) {
 }
 
 func (m *Model) applyPathSuggestion() tea.Cmd {
-	var path string
-	var target pathSuggestionTarget
-	if s, ok := m.topPathCompleting(); ok {
-		path = s.paths().selected() + string(filepath.Separator)
-		s.takePath(path)
-		target = s.pathTarget()
-		return m.requestPathSuggestions(target, path)
+	s, ok := m.topPathCompleting()
+	if !ok {
+		return nil
 	}
-	switch m.mode {
-	case modeForm:
-		path = m.form.paths.selected() + string(filepath.Separator)
-		m.form.TakePath(path)
-		target = pathSuggestionForm
-	}
-	completion := m.requestPathSuggestions(target, path)
-	if target == pathSuggestionForm {
+	path := s.paths().selected() + string(filepath.Separator)
+	s.takePath(path)
+	completion := m.requestPathSuggestions(s.pathTarget(), path)
+	if s.pathTarget() == pathSuggestionForm {
 		return tea.Batch(completion, m.formWorktreeProbeCmd(false))
 	}
 	return completion

@@ -66,8 +66,6 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	m.gens.foreground++
 	switch m.mode {
-	case modeForm:
-		return m.handleFormKey(msg)
 	case modeDiff:
 		return m.handleDiffKey(msg)
 	case modeFocus:

@@ -214,7 +214,7 @@ func (m *Model) recordBaseFetch(msg baseFetchedMsg) tea.Cmd {
 // the New Session form or the quick bar is set to make.
 func (m *Model) pendingWorktreeSpawn() (dir, group string, ok bool) {
 	switch {
-	case m.mode == modeForm && m.formWorktreeOn():
+	case m.form() != nil && m.formWorktreeOn():
 		return m.formSpawnDir(), m.selectedGroupPath(), true
 	case m.quick() != nil && m.quickSpawning() && m.quickWorktreeOn():
 		return m.quickTargetDir(), m.quickTargetGroup(), true

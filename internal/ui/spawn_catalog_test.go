@@ -38,7 +38,7 @@ func TestCatalogIsReadFromTheKeptAnswer(t *testing.T) {
 	}
 	m.applyCmd(t, cmd)
 	openFormOnClaude(t, m)
-	if list := m.form.Choice().Suggestions(m.spawnHost(), "claude"); len(list) != 3 {
+	if list := m.form().Choice().Suggestions(m.spawnHost(), "claude"); len(list) != 3 {
 		t.Fatalf("list from the kept answer = %+v", list)
 	}
 }
@@ -53,10 +53,10 @@ func TestFormLaunchesOnDefaultsWhenTheCLIFailsToAnswer(t *testing.T) {
 	if body := formBody(m); !strings.Contains(body, "couldn't read models from claude: app-") || !strings.Contains(body, "exited (status 1)") {
 		t.Fatalf("form:\n%s", body)
 	}
-	if slices.Contains(m.form.Fields(m.spawnHost()), spawn.FieldModel) {
+	if slices.Contains(m.form().Fields(m.spawnHost()), spawn.FieldModel) {
 		t.Fatal("a failed answer leaves nothing to pick")
 	}
-	picked, err := m.form.Choice().Launch(m.spawnHost(), "claude", "")
+	picked, err := m.form().Choice().Launch(m.spawnHost(), "claude", "")
 	if err != nil || config.Choice(picked) != (config.Choice{}) {
 		t.Fatalf("launch choice = %+v, %v", picked, err)
 	}
@@ -101,8 +101,8 @@ func TestAnOlderCLIOpensTheUpdateDialogInsteadOfListingModels(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.openForm()
-	m.form.Form = spawn.NewForm(m.spawnHost(), []string{"pi"}, 0)
-	m.form.prompt.attachments = []imageAttachment{{id: 7}}
+	m.form().Form = spawn.NewForm(m.spawnHost(), []string{"pi"}, 0)
+	m.form().prompt.attachments = []imageAttachment{{id: 7}}
 
 	m.applyCmd(t, m.ensureCatalog("pi"))
 
@@ -112,8 +112,8 @@ func TestAnOlderCLIOpensTheUpdateDialogInsteadOfListingModels(t *testing.T) {
 	if len(m.ledger.catalogs["pi"].cat.Models) != 0 {
 		t.Fatalf("models = %+v, want the kept answer withheld", m.ledger.catalogs["pi"].cat.Models)
 	}
-	if len(m.form.prompt.attachments) != 1 || len(hintFix(m).images) != 0 {
-		t.Fatalf("draft images moved: form %v dialog %v", m.form.prompt.attachments, hintFix(m).images)
+	if len(m.form().prompt.attachments) != 1 || len(hintFix(m).images) != 0 {
+		t.Fatalf("draft images moved: form %v dialog %v", m.form().prompt.attachments, hintFix(m).images)
 	}
 }
 
@@ -141,7 +141,7 @@ func TestAnUpdatedCLIIsAskedAgainRightAway(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.openForm()
-	m.form.Form = spawn.NewForm(m.spawnHost(), []string{"pi"}, 0)
+	m.form().Form = spawn.NewForm(m.spawnHost(), []string{"pi"}, 0)
 	cmd := m.ensureCatalog("pi")
 	if cmd == nil || m.ensureCatalog("pi") != nil {
 		t.Fatal("the version probe should start once")
@@ -153,7 +153,7 @@ func TestAnUpdatedCLIIsAskedAgainRightAway(t *testing.T) {
 	if cmd := hintKey(m, tea.KeyMsg{Type: tea.KeyEsc}); cmd != nil {
 		t.Fatalf("esc returned %T", cmd)
 	}
-	if m.mode != modeForm {
+	if !formOpen(m) {
 		t.Fatalf("esc left mode %v, want the form it came from", m.mode)
 	}
 
@@ -236,14 +236,16 @@ func TestAMissingCLIWithAFloorDoesNotOpenTheUpdateDialog(t *testing.T) {
 }
 
 func TestOutdatedCatalogDoesNotReplaceAnotherInteraction(t *testing.T) {
-	for _, mode := range []mode{modeList, modeForm} {
+	for _, form := range []bool{false, true} {
 		m := buildModel(t)
-		m.form.Form = spawn.NewForm(m.spawnHost(), []string{"claude"}, 0)
-		m.mode = mode
+		if form {
+			pushForm(m).Form = spawn.NewForm(m.spawnHost(), []string{"claude"}, 0)
+		}
+		before := len(m.surfaces)
 		m.ledger.catalogs = map[string]*catalogState{"pi": {loading: true}}
 		m.handleCatalog(catalogMsg{tool: "pi", err: config.OutdatedToolError{Binary: "pi", Installed: "0.84.2", Minimum: "0.84.3"}})
-		if m.mode != mode || m.ledger.catalogs["pi"].err == nil {
-			t.Fatalf("mode %v became %v or lost the catalog error", mode, m.mode)
+		if len(m.surfaces) != before || hintOpen(m) || m.ledger.catalogs["pi"].err == nil {
+			t.Fatalf("form %v: the stack changed or the catalog error was lost", form)
 		}
 	}
 }
@@ -252,8 +254,8 @@ func TestClosingTheUpdateDialogReturnsToTheFormDraft(t *testing.T) {
 	m := buildModel(t)
 	m.openForm()
 	pickFormTool(t, m, "pi-tool")
-	m.form.SetName("draft-name")
-	m.form.prompt.attachments = []imageAttachment{{id: 7}}
+	m.form().SetName("draft-name")
+	m.form().prompt.attachments = []imageAttachment{{id: 7}}
 	m.ledger.catalogs = map[string]*catalogState{"pi-tool": {loading: true}}
 	m.handleCatalog(catalogMsg{tool: "pi-tool", err: config.OutdatedToolError{Binary: "pi", Installed: "0.84.2", Minimum: "0.84.3"}})
 	if !hintOpen(m) {
@@ -262,7 +264,7 @@ func TestClosingTheUpdateDialogReturnsToTheFormDraft(t *testing.T) {
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	*m = *updated.(*Model)
 	m.applyCmd(t, cmd)
-	if m.mode != modeForm || m.form.Name() != "draft-name" || len(m.form.prompt.attachments) != 1 {
-		t.Fatalf("mode %v name %q attachments %d, want the form draft back", m.mode, m.form.Name(), len(m.form.prompt.attachments))
+	if !formOpen(m) || m.form().Name() != "draft-name" || len(m.form().prompt.attachments) != 1 {
+		t.Fatalf("mode %v name %q attachments %d, want the form draft back", m.mode, m.form().Name(), len(m.form().prompt.attachments))
 	}
 }

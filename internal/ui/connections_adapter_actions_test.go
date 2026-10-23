@@ -266,13 +266,13 @@ func TestNewSessionFormSpawnsOnTheConnection(t *testing.T) {
 	m := connectedModel(t, fake)
 	m.rail.Focus(boxGroup)
 	m.openForm()
-	if m.mode != modeForm || !m.form.remote.on() || m.form.groupPath() != "web" || m.form.Dir() != "" {
-		t.Fatalf("form = mode %v remote %+v group %q dir %q", m.mode, m.form.remote, m.form.groupPath(), m.form.Dir())
+	if !formOpen(m) || !m.form().remote.on() || m.form().groupPath() != "web" || m.form().Dir() != "" {
+		t.Fatalf("form = mode %v remote %+v group %q dir %q", m.mode, m.form().remote, m.form().groupPath(), m.form().Dir())
 	}
 	if cmd := m.runFormRequest(spawn.FormRequest{Probe: true}, nil); cmd != nil {
 		t.Fatal("the form probed a local directory for a remote spawn")
 	}
-	m.form.SetName("job")
+	m.form().SetName("job")
 	_, cmd := m.submitForm()
 	m.runRemoteCmd(t, cmd)
 	calls := fake.taken()
@@ -528,7 +528,7 @@ func TestRemoteSendAndSpawnRefuseASecondEnterInFlight(t *testing.T) {
 			m.rail.Focus(tc.target)
 			if tc.name == "New Session form" {
 				m.openForm()
-				m.form.SetName("job")
+				m.form().SetName("job")
 			} else {
 				m.openQuickMode()
 				m.quick().input.SetValue("go on")

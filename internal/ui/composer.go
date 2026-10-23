@@ -600,10 +600,10 @@ func (m *Model) nextComposerGen() int {
 // is an empty stand-in whose generation no read carries, so a read that
 // lands on it only drops its file.
 func (m *Model) composerFor(target composerID) *composer {
-	if target == composerForm {
-		return &m.form.prompt
+	if f := m.form(); target == composerForm && f != nil {
+		return &f.prompt
 	}
-	if q := m.quick(); q != nil {
+	if q := m.quick(); target == composerQuick && q != nil {
 		return &q.composer
 	}
 	return &composer{}
@@ -613,7 +613,7 @@ func (m *Model) composerFor(target composerID) *composer {
 // is what says an image still has somewhere to land.
 func (m *Model) composerOpen(target composerID) bool {
 	if target == composerForm {
-		return m.mode == modeForm
+		return m.form() != nil
 	}
 	return m.quick() != nil
 }

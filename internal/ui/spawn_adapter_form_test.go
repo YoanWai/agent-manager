@@ -29,7 +29,7 @@ func TestNewSessionFormUsesSettingsDefaultTool(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.applyTestMsg(t, m.openForm()())
-	if got := m.form.Tool(); got != "ready-tool" {
+	if got := m.form().Tool(); got != "ready-tool" {
 		t.Fatalf("new session tool = %q, want settings default", got)
 	}
 }
@@ -64,17 +64,17 @@ func TestOpenFormDefersSettingsReadAndAcceptsPristineDefaults(t *testing.T) {
 		go func() { completed <- part() }()
 	}
 	<-reader.started
-	if got := m.form.Tool(); got != "claude" {
+	if got := m.form().Tool(); got != "claude" {
 		t.Fatalf("cached tool = %q, want claude before refresh", got)
 	}
 	close(reader.release)
 	for range batch {
 		m.applyTestMsg(t, <-completed)
 	}
-	if got := m.form.Tool(); got != "ready-tool" {
+	if got := m.form().Tool(); got != "ready-tool" {
 		t.Fatalf("refreshed tool = %q, want ready-tool", got)
 	}
-	if !m.form.Worktree() {
+	if !m.form().Worktree() {
 		t.Fatal("pristine form did not accept the refreshed worktree default")
 	}
 }
@@ -84,14 +84,14 @@ func TestFormSettingsLoadRefusesLocalChoiceAndReopenedForm(t *testing.T) {
 	t.Run("local choice", func(t *testing.T) {
 		m := buildModel(t)
 		cmd := m.openForm()
-		m.form.FocusField(m.spawnHost(), spawn.FieldTool)
+		m.form().FocusField(m.spawnHost(), spawn.FieldTool)
 		m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
-		chosen := m.form.Tool()
+		chosen := m.form().Tool()
 		if err := m.services.store.SetSetting("default_tool", "ready-tool"); err != nil {
 			t.Fatal(err)
 		}
 		m.applyTestMsg(t, cmd())
-		if got := m.form.Tool(); got != chosen {
+		if got := m.form().Tool(); got != chosen {
 			t.Fatalf("async defaults replaced local tool choice: got %q want %q", got, chosen)
 		}
 	})
@@ -99,17 +99,17 @@ func TestFormSettingsLoadRefusesLocalChoiceAndReopenedForm(t *testing.T) {
 	t.Run("reopened form", func(t *testing.T) {
 		m := buildModel(t)
 		cmd := m.openForm()
-		generation := m.form.prompt.gen
+		generation := m.form().prompt.gen
 		if err := m.services.store.SetSetting("default_tool", "ready-tool"); err != nil {
 			t.Fatal(err)
 		}
 		loaded := cmd()
 		m.openForm()
-		if m.form.prompt.gen == generation {
+		if m.form().prompt.gen == generation {
 			t.Fatal("reopened form reused its generation")
 		}
 		m.applyTestMsg(t, loaded)
-		if got := m.form.Tool(); got == "ready-tool" {
+		if got := m.form().Tool(); got == "ready-tool" {
 			t.Fatal("old defaults replaced the reopened form")
 		}
 	})
@@ -127,8 +127,8 @@ func TestFormSettingsLoadAppliesSuccessfulReadsOnPartialFailure(t *testing.T) {
 	}
 	cmd := m.openFormWithReader(reader)
 	m.applyTestMsg(t, cmd())
-	if got := m.form.Tool(); got != "ready-tool" || !m.form.Worktree() {
-		t.Fatalf("successful reads were lost: tool=%q worktree=%t", got, m.form.Worktree())
+	if got := m.form().Tool(); got != "ready-tool" || !m.form().Worktree() {
+		t.Fatalf("successful reads were lost: tool=%q worktree=%t", got, m.form().Worktree())
 	}
 	if !strings.Contains(m.errBar.text, "settings load: 1 reads failed") {
 		t.Fatalf("partial failure not surfaced: %q", m.errBar.text)
@@ -148,8 +148,8 @@ func pickFormTool(t *testing.T, m *Model, name string) {
 
 func submitFormSession(t *testing.T, m *Model, name string) {
 	t.Helper()
-	m.form.SetName(name)
-	m.form.SetDir(t.TempDir())
+	m.form().SetName(name)
+	m.form().SetDir(t.TempDir())
 	_, cmd := m.submitForm()
 	m.applyCmd(t, cmd)
 	if m.mode != modeList {
@@ -170,7 +170,7 @@ func TestNewSessionPreselectsContextGroup(t *testing.T) {
 	// cursor on the session inside alpha/beta
 	m.selectSessionRow(t, "seed")
 	m.openForm()
-	if got := m.form.groups[m.form.groupIndex].path; got != "alpha/beta" {
+	if got := picker(m).groups[picker(m).groupIndex].path; got != "alpha/beta" {
 		t.Fatalf("form should preselect session's group, got %q", got)
 	}
 	m.mode = modeList
@@ -182,7 +182,7 @@ func TestNewSessionPreselectsContextGroup(t *testing.T) {
 		}
 	}
 	m.openForm()
-	if got := m.form.groups[m.form.groupIndex].path; got != "alpha" {
+	if got := picker(m).groups[picker(m).groupIndex].path; got != "alpha" {
 		t.Fatalf("form should preselect the highlighted group, got %q", got)
 	}
 }
@@ -360,7 +360,7 @@ func TestGroupDefaultPathFillsSessionDir(t *testing.T) {
 	m.openForm()
 	pickGroup(t, m, "workspace")
 	m.moveGroupCursor(0) // re-resolve dir for the selected group
-	if got := m.form.Dir(); got != groupDir {
+	if got := m.form().Dir(); got != groupDir {
 		t.Fatalf("session dir should default to the group path %q, got %q", groupDir, got)
 	}
 }
@@ -390,8 +390,8 @@ func TestFormLongDirKeepsCursorEndVisible(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openForm()
-	m.form.FocusStep(m.spawnHost(), 2) // name -> tool -> dir
-	m.form.TakePath("/very/long/" + strings.Repeat("a", 80) + "/tail-end")
+	m.form().FocusStep(m.spawnHost(), 2) // name -> tool -> dir
+	m.form().TakePath("/very/long/" + strings.Repeat("a", 80) + "/tail-end")
 	view := ansi.Strip(m.viewForm())
 	if !strings.Contains(view, "tail-end") {
 		t.Fatal("dir field should scroll so the end of a long value stays visible")
@@ -402,9 +402,9 @@ func TestFormLongDirKeepsCursorEndVisible(t *testing.T) {
 // image keys apply.
 func focusFormPrompt(t *testing.T, m *Model) {
 	t.Helper()
-	m.form.FocusStep(m.spawnHost(), -2) // name -> group -> prompt
-	if m.form.Focused() != spawn.FieldPrompt {
-		t.Fatalf("focus = %v, want spawn.FieldPrompt", m.form.Focused())
+	m.form().FocusStep(m.spawnHost(), -2) // name -> group -> prompt
+	if m.form().Focused() != spawn.FieldPrompt {
+		t.Fatalf("focus = %v, want spawn.FieldPrompt", m.form().Focused())
 	}
 }
 
@@ -420,7 +420,7 @@ func pasteFormImage(t *testing.T, m *Model, path string) int {
 	if cmd == nil {
 		t.Fatal("ctrl+v should start an async clipboard read")
 	}
-	id := m.form.prompt.lastImageID
+	id := m.form().prompt.lastImageID
 	msg, ok := cmd().(pasteImageMsg)
 	if !ok {
 		t.Fatalf("clipboard cmd returned %T", cmd())
@@ -444,10 +444,10 @@ func TestFormPasteSendsTheImagePathWithTheFirstTask(t *testing.T) {
 	path := tempImage(t, "mock.png")
 	id := pasteFormImage(t, m, path)
 
-	if got, want := m.form.prompt.input.Value(), "match this "+imageToken(id)+" "; got != want {
+	if got, want := m.form().prompt.input.Value(), "match this "+imageToken(id)+" "; got != want {
 		t.Fatalf("chip should land at the caret: got %q, want %q", got, want)
 	}
-	if got, want := m.form.prompt.message(), "match this "+path; got != want {
+	if got, want := m.form().prompt.message(), "match this "+path; got != want {
 		t.Fatalf("first task = %q, want %q", got, want)
 	}
 }
@@ -462,11 +462,11 @@ func TestFormPasteChipDeletesAsOneAndReleasesItsImage(t *testing.T) {
 
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyLeft})
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyBackspace})
-	if got := m.form.prompt.input.Value(); got != "" {
+	if got := m.form().prompt.input.Value(); got != "" {
 		t.Fatalf("backspace next to a chip should take the whole chip: %q", got)
 	}
-	if len(m.form.prompt.attachments) != 0 {
-		t.Fatalf("attachment should be released: %+v", m.form.prompt.attachments)
+	if len(m.form().prompt.attachments) != 0 {
+		t.Fatalf("attachment should be released: %+v", m.form().prompt.attachments)
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("the image file should be gone, stat err = %v", err)
@@ -497,8 +497,8 @@ func TestFormSubmitKeepsThePastedImage(t *testing.T) {
 	m := buildModel(t)
 	m.openForm()
 	focusFormPrompt(t, m)
-	m.form.SetName("with-a-picture")
-	m.form.SetDir(t.TempDir())
+	m.form().SetName("with-a-picture")
+	m.form().SetDir(t.TempDir())
 
 	path := tempImage(t, "mock.png")
 	pasteFormImage(t, m, path)
@@ -531,8 +531,8 @@ func TestFormChipRendersInTheCard(t *testing.T) {
 	m := buildModel(t)
 	m.openForm()
 	focusFormPrompt(t, m)
-	m.form.prompt.attachments = []imageAttachment{{id: 1, path: "/tmp/agent-manager-pastes/paste-123.png"}}
-	m.form.prompt.input.SetValue("match " + imageToken(1))
+	m.form().prompt.attachments = []imageAttachment{{id: 1, path: "/tmp/agent-manager-pastes/paste-123.png"}}
+	m.form().prompt.input.SetValue("match " + imageToken(1))
 
 	view := m.viewForm()
 	plain := ansi.Strip(view)
@@ -555,16 +555,16 @@ func TestFormSubmitWaitsForAPasteStillReading(t *testing.T) {
 	m := buildModel(t)
 	m.openForm()
 	focusFormPrompt(t, m)
-	m.form.SetName("half-pasted")
-	m.form.SetDir(t.TempDir())
+	m.form().SetName("half-pasted")
+	m.form().SetDir(t.TempDir())
 	// The chip a paste reserves before its clipboard read lands.
-	m.form.prompt.attachments = []imageAttachment{{id: 1}}
-	m.form.prompt.input.SetValue(imageToken(1))
+	m.form().prompt.attachments = []imageAttachment{{id: 1}}
+	m.form().prompt.input.SetValue(imageToken(1))
 
 	if _, _ = m.submitForm(); m.errBar.text == "" {
 		t.Fatal("a submit with a chip still reading should be refused")
 	}
-	if m.mode != modeForm {
+	if !formOpen(m) {
 		t.Fatalf("form should stay open, mode = %v", m.mode)
 	}
 	if len(m.sessionRows()) != 0 {
@@ -576,8 +576,8 @@ func TestFormLongPromptWrapsAcrossRows(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openForm()
-	m.form.FocusStep(m.spawnHost(), -2) // name -> group -> prompt
-	m.form.prompt.input.SetValue(strings.Repeat("word ", 25) + "finale")
+	m.form().FocusStep(m.spawnHost(), -2) // name -> group -> prompt
+	m.form().prompt.input.SetValue(strings.Repeat("word ", 25) + "finale")
 	view := ansi.Strip(m.viewForm())
 	if !strings.Contains(view, "finale") {
 		t.Fatal("long prompt should wrap onto more rows instead of being clipped")
@@ -594,8 +594,8 @@ func TestFormTypesWordsNamedLikeKeys(t *testing.T) {
 		}
 		m = applyMsg(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(word)})
 	}
-	if m.mode != modeForm || m.form.Name() != "enter-tab-esc" {
-		t.Fatalf("mode %v, name %q; want the form open with the words typed", m.mode, m.form.Name())
+	if !formOpen(m) || m.form().Name() != "enter-tab-esc" {
+		t.Fatalf("mode %v, name %q; want the form open with the words typed", m.mode, m.form().Name())
 	}
 }
 
@@ -617,37 +617,37 @@ func TestFormGroupArrowsMoveFocusNotSelection(t *testing.T) {
 	}
 	m.applyCmd(t, m.refreshCmd())
 	m.openForm()
-	m.form.FocusStep(m.spawnHost(), -1) // wrap from name to group
-	if m.form.Focused() != spawn.FieldGroup {
-		t.Fatalf("focus = %v, want spawn.FieldGroup", m.form.Focused())
+	m.form().FocusStep(m.spawnHost(), -1) // wrap from name to group
+	if m.form().Focused() != spawn.FieldGroup {
+		t.Fatalf("focus = %v, want spawn.FieldGroup", m.form().Focused())
 	}
 
-	initial := m.form.groupIndex
+	initial := picker(m).groupIndex
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyDown})
-	if m.form.groupIndex != initial {
-		t.Fatalf("down must not change the group selection, index = %d, want %d", m.form.groupIndex, initial)
+	if picker(m).groupIndex != initial {
+		t.Fatalf("down must not change the group selection, index = %d, want %d", picker(m).groupIndex, initial)
 	}
-	if m.form.Focused() == spawn.FieldGroup {
+	if m.form().Focused() == spawn.FieldGroup {
 		t.Fatal("down should move focus off the group field")
 	}
 
-	m.form.FocusField(m.spawnHost(), spawn.FieldGroup)
-	m.form.groupIndex = 0
+	m.form().FocusField(m.spawnHost(), spawn.FieldGroup)
+	picker(m).groupIndex = 0
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
-	if m.form.groupIndex != 1 {
-		t.Fatalf("right should cycle the group selection, index = %d", m.form.groupIndex)
+	if picker(m).groupIndex != 1 {
+		t.Fatalf("right should cycle the group selection, index = %d", picker(m).groupIndex)
 	}
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyLeft})
-	if m.form.groupIndex != 0 {
-		t.Fatalf("left should cycle back, index = %d", m.form.groupIndex)
+	if picker(m).groupIndex != 0 {
+		t.Fatalf("left should cycle back, index = %d", picker(m).groupIndex)
 	}
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyLeft})
-	if m.form.groupIndex != len(m.form.groups)-1 {
-		t.Fatalf("left at the first group should wrap to the last, index = %d", m.form.groupIndex)
+	if picker(m).groupIndex != len(picker(m).groups)-1 {
+		t.Fatalf("left at the first group should wrap to the last, index = %d", picker(m).groupIndex)
 	}
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
-	if m.form.groupIndex != 0 {
-		t.Fatalf("right at the last group should wrap to the first, index = %d", m.form.groupIndex)
+	if picker(m).groupIndex != 0 {
+		t.Fatalf("right at the last group should wrap to the first, index = %d", picker(m).groupIndex)
 	}
 }
 
@@ -682,10 +682,10 @@ func TestFormAcceptsDashLeadingPrompt(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openForm()
-	m.form.SetName("flagged")
-	m.form.SetDir(t.TempDir())
+	m.form().SetName("flagged")
+	m.form().SetDir(t.TempDir())
 	setFormTool(m, 0)
-	m.form.prompt.input.SetValue("--version")
+	m.form().prompt.input.SetValue("--version")
 
 	_, cmd := m.submitForm()
 	m.applyCmd(t, cmd)
@@ -991,12 +991,12 @@ func TestFormWorktreeSeedsFromGroupDefault(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "grp")
 	m.openForm()
-	if !m.form.Worktree() {
+	if !m.form().Worktree() {
 		t.Fatal("form should seed worktree on from the group default")
 	}
 	pickGroup(t, m, "")
 	m.moveGroupCursor(0)
-	if m.form.Worktree() {
+	if m.form().Worktree() {
 		t.Fatal("moving to root should follow its default off")
 	}
 }
@@ -1061,32 +1061,32 @@ func TestFormUpDownMoveTheCaretBetweenPromptRows(t *testing.T) {
 	m := buildModel(t)
 	m.openForm()
 	focusFormPrompt(t, m)
-	m.form.prompt.input.SetWidth(40)
-	m.form.prompt.input.SetHeight(formPromptMaxRows)
-	m.form.prompt.input.SetValue("first\nsecond\nthird")
+	m.form().prompt.input.SetWidth(40)
+	m.form().prompt.input.SetHeight(formPromptMaxRows)
+	m.form().prompt.input.SetValue("first\nsecond\nthird")
 
 	_, _ = m.handleFormKey(tea.KeyMsg{Type: tea.KeyUp})
-	if m.form.Focused() != spawn.FieldPrompt || m.form.prompt.input.Line() != 1 {
-		t.Fatalf("up from the last row: focus %v, caret line %d; want the prompt, line 1", m.form.Focused(), m.form.prompt.input.Line())
+	if m.form().Focused() != spawn.FieldPrompt || m.form().prompt.input.Line() != 1 {
+		t.Fatalf("up from the last row: focus %v, caret line %d; want the prompt, line 1", m.form().Focused(), m.form().prompt.input.Line())
 	}
 	_, _ = m.handleFormKey(tea.KeyMsg{Type: tea.KeyUp})
 	_, _ = m.handleFormKey(tea.KeyMsg{Type: tea.KeyUp})
-	if m.form.Focused() == spawn.FieldPrompt {
+	if m.form().Focused() == spawn.FieldPrompt {
 		t.Fatal("up from the first row should leave the prompt field")
 	}
 
-	m.form.FocusStep(m.spawnHost(), 1)
-	if m.form.Focused() != spawn.FieldPrompt {
-		t.Fatalf("focus = %v, want spawn.FieldPrompt", m.form.Focused())
+	m.form().FocusStep(m.spawnHost(), 1)
+	if m.form().Focused() != spawn.FieldPrompt {
+		t.Fatalf("focus = %v, want spawn.FieldPrompt", m.form().Focused())
 	}
-	m.form.prompt.input.SetCursor(0)
+	m.form().prompt.input.SetCursor(0)
 	_, _ = m.handleFormKey(tea.KeyMsg{Type: tea.KeyDown})
-	if m.form.Focused() != spawn.FieldPrompt || m.form.prompt.input.Line() != 1 {
-		t.Fatalf("down from the first row: focus %v, caret line %d; want the prompt, line 1", m.form.Focused(), m.form.prompt.input.Line())
+	if m.form().Focused() != spawn.FieldPrompt || m.form().prompt.input.Line() != 1 {
+		t.Fatalf("down from the first row: focus %v, caret line %d; want the prompt, line 1", m.form().Focused(), m.form().prompt.input.Line())
 	}
 	_, _ = m.handleFormKey(tea.KeyMsg{Type: tea.KeyDown})
 	_, _ = m.handleFormKey(tea.KeyMsg{Type: tea.KeyDown})
-	if m.form.Focused() == spawn.FieldPrompt {
+	if m.form().Focused() == spawn.FieldPrompt {
 		t.Fatal("down from the last row should leave the prompt field")
 	}
 }

@@ -138,8 +138,8 @@ func TestNewSessionShowsStartingImmediately(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openForm()
-	m.form.SetName("boot")
-	m.form.SetDir(t.TempDir())
+	m.form().SetName("boot")
+	m.form().SetDir(t.TempDir())
 	setFormTool(m, 0)
 	pickGroup(t, m, "")
 	// submitForm dispatches the spawn; run the effect to completion and drop

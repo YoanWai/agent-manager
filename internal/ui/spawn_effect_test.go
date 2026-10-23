@@ -32,8 +32,8 @@ func TestSpawnWorkerDefersFilesystemReadAndCapturesDraft(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openForm()
-	m.form.SetName("captured")
-	m.form.SetDir("/captured/raw")
+	m.form().SetName("captured")
+	m.form().SetDir("/captured/raw")
 	reader := &blockedDirectoryPreflight{
 		started: make(chan struct{}), release: make(chan struct{}),
 		resolved: t.TempDir(), dirOK: true,
@@ -72,7 +72,7 @@ func TestAcceptedSpawnSurvivesChangedDraftWithoutClosingIt(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openForm()
-	m.form.SetName("first")
+	m.form().SetName("first")
 	reader := &blockedDirectoryPreflight{
 		started: make(chan struct{}), release: make(chan struct{}),
 		resolved: t.TempDir(), dirOK: true,
@@ -81,13 +81,13 @@ func TestAcceptedSpawnSurvivesChangedDraftWithoutClosingIt(t *testing.T) {
 	completed := make(chan effectCompletedMsg, 1)
 	go func() { completed <- cmd().(effectCompletedMsg) }()
 	<-reader.started
-	m.form.SetName("newer")
+	m.form().SetName("newer")
 	close(reader.release)
 	m.applyTestMsg(t, <-completed)
 	if len(m.workspace.sessions) != 1 || m.workspace.sessions[0].Name != "first" {
 		t.Fatalf("accepted spawn was cancelled or retargeted: %+v", m.workspace.sessions)
 	}
-	if m.mode != modeForm || m.form.Name() != "newer" {
+	if !formOpen(m) || m.form().Name() != "newer" {
 		t.Fatal("completion replaced the edited form")
 	}
 }
@@ -175,8 +175,8 @@ func TestAcceptedGroupDrainsBlockedValidationOnQuit(t *testing.T) {
 func submitFormSpawn(t *testing.T, m *Model, name, dir string) tea.Cmd {
 	t.Helper()
 	m.openForm()
-	m.form.SetName(name)
-	m.form.SetDir(dir)
+	m.form().SetName(name)
+	m.form().SetDir(dir)
 	setFormTool(m, 0)
 	_, command := m.submitForm()
 	if m.effects.main.active == nil {
@@ -205,7 +205,7 @@ func TestSpawnFormDefersCreationFromUpdate(t *testing.T) {
 	if m.errBar.text != "" {
 		t.Fatalf("submit reported an error: %q", m.errBar.text)
 	}
-	if m.mode != modeForm {
+	if !formOpen(m) {
 		t.Fatalf("form closed at submit; mode=%v", m.mode)
 	}
 	if len(m.workspace.sessions) != 0 {
@@ -332,7 +332,7 @@ func TestSpawnWorkerFailureLeavesNothingBehind(t *testing.T) {
 	if len(m.ledger.launched) != 0 {
 		t.Fatal("ledger recorded a launch for a failed spawn")
 	}
-	if m.mode != modeForm {
+	if !formOpen(m) {
 		t.Fatalf("form should stay open after a failed spawn; mode=%v", m.mode)
 	}
 }
@@ -441,8 +441,8 @@ func TestSpawnDrainsAcceptedOnQuitAndRefusesLate(t *testing.T) {
 	}
 	// quitting is still set; a new dispatch is refused, not run.
 	m.openForm()
-	m.form.SetName("late")
-	m.form.SetDir(t.TempDir())
+	m.form().SetName("late")
+	m.form().SetDir(t.TempDir())
 	setFormTool(m, 0)
 	_, late := m.submitForm()
 	m.applyTestMsg(t, late())
@@ -460,19 +460,19 @@ func TestSpawnFailureDoesNotReplaceNewerDialog(t *testing.T) {
 	cmd := submitFormSpawn(t, m, "first", t.TempDir())
 	// The user closes this form and opens a fresh one in the same slot: a
 	// newer dialog the completion must not close.
-	m.form.prompt.release()
+	m.form().prompt.release()
 	m.mode = modeList
 	m.openForm()
-	m.form.SetName("second")
-	m.form.SetDir(t.TempDir())
+	m.form().SetName("second")
+	m.form().SetDir(t.TempDir())
 	setFormTool(m, 0)
-	newGen := m.form.prompt.gen
+	newGen := m.form().prompt.gen
 	m.services.store.Close()
 	m.applyCmd(t, cmd)
-	if m.mode != modeForm {
+	if !formOpen(m) {
 		t.Fatalf("the newer form was closed; mode=%v", m.mode)
 	}
-	if m.form.prompt.gen != newGen {
+	if m.form().prompt.gen != newGen {
 		t.Fatal("the newer form was replaced by the completion")
 	}
 	if m.errBar.text == "" {
@@ -525,8 +525,8 @@ func TestSpawnSuccessKeepsImagesForTheAgent(t *testing.T) {
 	m := buildModel(t)
 	m.openForm()
 	focusFormPrompt(t, m)
-	m.form.SetName("with-pic")
-	m.form.SetDir(t.TempDir())
+	m.form().SetName("with-pic")
+	m.form().SetDir(t.TempDir())
 	path := tempImage(t, "pic.png")
 	pasteFormImage(t, m, path)
 	_, cmd := m.submitForm()
@@ -548,18 +548,18 @@ func TestSpawnGenericErrorReturnsImagesToForm(t *testing.T) {
 	m := buildModel(t)
 	m.openForm()
 	focusFormPrompt(t, m)
-	m.form.SetName("agent")
-	m.form.SetDir(t.TempDir())
+	m.form().SetName("agent")
+	m.form().SetDir(t.TempDir())
 	path := tempImage(t, "pic.png")
 	id := pasteFormImage(t, m, path)
 	_, cmd := m.submitForm()
 	// A generic worker failure: the store is unopenable before the effect runs.
 	m.services.store.Close()
 	m.applyCmd(t, cmd)
-	if m.mode != modeForm {
+	if !formOpen(m) {
 		t.Fatalf("form should stay up; mode=%v", m.mode)
 	}
-	if got := m.form.prompt.attachments; len(got) != 1 || got[0].id != id {
+	if got := m.form().prompt.attachments; len(got) != 1 || got[0].id != id {
 		t.Fatalf("attachments = %+v, want the chip kept for the retry", got)
 	}
 	if _, err := os.Stat(path); err != nil {
@@ -571,10 +571,10 @@ func TestSpawnFailurePreservesNewAttachments(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openForm()
-	request := spawnRequest{kind: spawnForm, composerGen: m.form.prompt.gen, images: []imageAttachment{{path: "old"}}}
-	m.form.prompt.attachments = []imageAttachment{{path: "new"}}
+	request := spawnRequest{kind: spawnForm, composerGen: m.form().prompt.gen, images: []imageAttachment{{path: "old"}}}
+	m.form().prompt.attachments = []imageAttachment{{path: "new"}}
 	m.returnSpawnImages(request)
-	if len(m.form.prompt.attachments) != 2 {
+	if len(m.form().prompt.attachments) != 2 {
 		t.Fatal("failed spawn discarded a newly pasted attachment")
 	}
 }

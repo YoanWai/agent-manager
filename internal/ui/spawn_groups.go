@@ -16,10 +16,49 @@ type groupOption struct {
 	name   string
 }
 
-// rebuildGroupOptions flattens the group tree into picker rows.
-// Index 0 is always the root; selectPath moves the highlight when given.
-func (m *Model) rebuildGroupOptions(selectPath string) {
-	m.form.groups, m.form.groupIndex = m.groupOptions(selectPath)
+// groupPicker is the group list the New Session form and the move card
+// pick from, each its own.
+type groupPicker struct {
+	groups     []groupOption
+	groupIndex int
+}
+
+// groupPath is the group the picker highlights.
+func (p *groupPicker) groupPath() string {
+	if p.groupIndex >= 0 && p.groupIndex < len(p.groups) {
+		return p.groups[p.groupIndex].path
+	}
+	return ""
+}
+
+func (p *groupPicker) picked() groupOption { return p.groups[p.groupIndex] }
+
+// step moves the cursor, wrapping at the ends.
+func (p *groupPicker) step(delta int) bool {
+	count := len(p.groups)
+	if count == 0 {
+		return false
+	}
+	p.groupIndex = (p.groupIndex + delta + count) % count
+	return true
+}
+
+// reselect puts the cursor back on path, or on the root without it.
+func (p *groupPicker) reselect(path string, match func(groupOption) bool) {
+	p.groupIndex = 0
+	for i, opt := range p.groups {
+		if opt.path == path && match(opt) {
+			p.groupIndex = i
+			return
+		}
+	}
+}
+
+// groupPickerFor is the picker rows of the group tree, highlighting
+// selectPath. Index 0 is always the root.
+func (m *Model) groupPickerFor(selectPath string) groupPicker {
+	groups, index := m.groupOptions(selectPath)
+	return groupPicker{groups: groups, groupIndex: index}
 }
 
 // groupOptions is the picker's rows and the index of selectPath in them.
@@ -116,8 +155,8 @@ func (m *Model) materializeGroupsLocal(paths []string) {
 	}
 }
 
-func (m *Model) viewGroupPicker() string {
-	return viewGroupOptions(m.form.groups, m.form.groupIndex, m.prefs.glyphMode)
+func (m *Model) viewGroupPicker(p *groupPicker) string {
+	return viewGroupOptions(p.groups, p.groupIndex, m.prefs.glyphMode)
 }
 
 func viewGroupOptions(groups []groupOption, index int, mode presentation.GlyphMode) string {

@@ -17,7 +17,8 @@ func (m *Model) formSpawnRequest(request spawn.Request) spawnRequest {
 	if autoNamed {
 		name = request.Tool + "-" + newID()[:4]
 	}
-	group := m.form.groupPath()
+	f := m.form()
+	group := f.groupPath()
 	defaults := m.spawnDefaults(group)
 	return spawnRequest{
 		kind:         spawnForm,
@@ -30,11 +31,11 @@ func (m *Model) formSpawnRequest(request spawn.Request) spawnRequest {
 		choice:       config.Choice(request.Pick),
 		base:         defaults.base,
 		pane:         defaults.pane,
-		composerGen:  m.form.prompt.gen,
-		images:       m.form.prompt.attachments,
-		draft:        m.form.prompt.input.Value(),
-		draftName:    m.form.Name(),
-		draftDir:     m.form.Dir(),
+		composerGen:  f.prompt.gen,
+		images:       f.prompt.attachments,
+		draft:        f.prompt.input.Value(),
+		draftName:    f.Name(),
+		draftDir:     f.Dir(),
 		rawDir:       request.Dir,
 		dirFallbacks: defaults.fallbacks,
 		wantWorktree: request.Worktree,
@@ -44,7 +45,7 @@ func (m *Model) formSpawnRequest(request spawn.Request) spawnRequest {
 // formSpawnDir is the directory the form would launch in, resolved the
 // same way submit resolves it.
 func (m *Model) formSpawnDir() string {
-	return m.capturedAbsolutePath(m.form.Dir(), m.env.workDir)
+	return m.capturedAbsolutePath(m.form().Dir(), m.env.workDir)
 }
 
 // capturedAbsolutePath normalizes a displayed path without consulting the

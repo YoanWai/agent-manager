@@ -19,7 +19,7 @@ func TestDefaultToolFallsBackWhenSettingStale(t *testing.T) {
 		t.Fatalf("set setting: %v", err)
 	}
 	m.applyTestMsg(t, m.openForm()())
-	if got := m.form.Tool(); got != "claude" {
+	if got := m.form().Tool(); got != "claude" {
 		t.Fatalf("form default tool = %q want claude (alphabetical fallback)", got)
 	}
 }
@@ -140,7 +140,7 @@ func TestFormShowsAndFetchesTheWorktreeBase(t *testing.T) {
 		t.Fatalf("set setting: %v", err)
 	}
 	m.applyTestMsg(t, m.openForm()())
-	m.form.SetDir(clone)
+	m.form().SetDir(clone)
 	// Routed past Update, whose own refresh would take the fetch this test
 	// steps by hand.
 	m.handleMsg(m.formWorktreeProbeCmd(false)())
@@ -194,7 +194,7 @@ func TestSettingsFetchOnSpawnTurnsTheFetchOff(t *testing.T) {
 		t.Fatalf("set setting: %v", err)
 	}
 	m.applyTestMsg(t, m.openForm()())
-	m.form.SetDir(clone)
+	m.form().SetDir(clone)
 	// Routed past Update, whose own refresh would take the fetch this test
 	// steps by hand.
 	m.handleMsg(m.formWorktreeProbeCmd(false)())
@@ -220,7 +220,7 @@ func TestFormMarksAFailedBaseFetch(t *testing.T) {
 		t.Fatalf("set setting: %v", err)
 	}
 	m.applyTestMsg(t, m.openForm()())
-	m.form.SetDir(clone)
+	m.form().SetDir(clone)
 	// Routed past Update, whose own refresh would take the fetch this test
 	// steps by hand.
 	m.handleMsg(m.formWorktreeProbeCmd(false)())
@@ -239,7 +239,7 @@ func TestFormRemembersLastSpawnTool(t *testing.T) {
 	submitFormSession(t, m, "first")
 
 	m.openForm()
-	if got := m.form.Tool(); got != "ready-tool" {
+	if got := m.form().Tool(); got != "ready-tool" {
 		t.Fatalf("next form tool = %q, want last spawn", got)
 	}
 }
@@ -249,14 +249,14 @@ func TestFormCancelDoesNotRememberLastPick(t *testing.T) {
 	m := buildModel(t)
 	m.openForm()
 	pickFormTool(t, m, "ready-tool")
-	m.form.SeedWorktree(true)
+	m.form().SeedWorktree(true)
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyEsc})
 
 	m.applyTestMsg(t, m.openForm()())
-	if got := m.form.Tool(); got != "claude" {
+	if got := m.form().Tool(); got != "claude" {
 		t.Fatalf("cancelled pick must not seed the next form, got %q", got)
 	}
-	if m.form.Worktree() {
+	if m.form().Worktree() {
 		t.Fatal("cancelled worktree pick must not seed the next form")
 	}
 }
@@ -275,8 +275,8 @@ func TestFormRemembersPickOnlyAfterInstallRetrySucceeds(t *testing.T) {
 	initGitRepo(t, dir)
 	m.openForm()
 	pickFormTool(t, m, "claude")
-	m.form.SetName("after-install")
-	m.form.SetDir(dir)
+	m.form().SetName("after-install")
+	m.form().SetDir(dir)
 	if probe := m.toggleFormWorktree(); probe != nil {
 		m.applyTestMsg(t, probe())
 	}
@@ -298,7 +298,7 @@ func TestFormRemembersPickOnlyAfterInstallRetrySucceeds(t *testing.T) {
 		t.Fatalf("successful retry did not remember the pick: %q, %v; err=%q", m.ledger.lastSpawnTool, m.ledger.lastSpawnWorktree, m.errBar.text)
 	}
 	m.applyTestMsg(t, m.openForm()())
-	if m.form.Tool() != "claude" || !m.form.Worktree() {
+	if m.form().Tool() != "claude" || !m.form().Worktree() {
 		t.Fatal("next form should use the successful retry's tool and worktree")
 	}
 }
@@ -307,11 +307,11 @@ func TestFormRemembersLastSpawnWorktree(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openForm()
-	m.form.SeedWorktree(true)
+	m.form().SeedWorktree(true)
 	submitFormSession(t, m, "first")
 
 	m.applyTestMsg(t, m.openForm()())
-	if !m.form.Worktree() {
+	if !m.form().Worktree() {
 		t.Fatal("next form should seed worktree from the last spawn")
 	}
 }
@@ -320,7 +320,7 @@ func TestFormLastWorktreeYieldsToGroupDefault(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openForm()
-	m.form.SeedWorktree(true)
+	m.form().SeedWorktree(true)
 	submitFormSession(t, m, "first")
 
 	if err := m.services.store.CreateGroup("grp", t.TempDir()); err != nil {
@@ -332,7 +332,7 @@ func TestFormLastWorktreeYieldsToGroupDefault(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "grp")
 	m.openForm()
-	if m.form.Worktree() {
+	if m.form().Worktree() {
 		t.Fatal("a group's explicit worktree default must not follow the last pick")
 	}
 
@@ -342,14 +342,14 @@ func TestFormLastWorktreeYieldsToGroupDefault(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "grp/child")
 	m.openForm()
-	if m.form.Worktree() {
+	if m.form().Worktree() {
 		t.Fatal("a child of an explicit-off group must not follow the last pick")
 	}
 
 	m.mode = modeList
 	m.selectSessionRow(t, "first")
 	m.openForm()
-	if !m.form.Worktree() {
+	if !m.form().Worktree() {
 		t.Fatal("an inheriting group should still follow the last pick")
 	}
 }
@@ -359,17 +359,17 @@ func TestFormHiddenLastToolFallsBackToSettings(t *testing.T) {
 	m := buildModel(t)
 	m.openForm()
 	pickFormTool(t, m, "ready-tool")
-	m.form.SeedWorktree(true)
+	m.form().SeedWorktree(true)
 	submitFormSession(t, m, "first")
 	if err := m.services.store.SetHiddenTools(map[string]bool{"ready-tool": true}); err != nil {
 		t.Fatal(err)
 	}
 
 	m.applyTestMsg(t, m.openForm()())
-	if got := m.form.Tool(); got != "claude" {
+	if got := m.form().Tool(); got != "claude" {
 		t.Fatalf("hidden last tool should fall back to settings, got %q", got)
 	}
-	if m.form.Worktree() {
+	if m.form().Worktree() {
 		t.Fatal("hidden last tool should fall back to the settings worktree default")
 	}
 }

@@ -16,7 +16,7 @@ func TestFormWorktreeToggleSeedsFromSetting(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openForm()
-	if m.form.Worktree() {
+	if m.form().Worktree() {
 		t.Fatal("worktree should default off with no setting")
 	}
 	m.mode = modeList
@@ -24,7 +24,7 @@ func TestFormWorktreeToggleSeedsFromSetting(t *testing.T) {
 		t.Fatalf("set setting: %v", err)
 	}
 	m.applyTestMsg(t, m.openForm()())
-	if !m.form.Worktree() {
+	if !m.form().Worktree() {
 		t.Fatal("worktree should seed on from setting")
 	}
 }
@@ -37,14 +37,14 @@ func TestFormWorktreeGatedInNonRepoDir(t *testing.T) {
 		t.Fatalf("set setting: %v", err)
 	}
 	m.openForm()
-	m.form.SetDir(plain)
+	m.form().SetDir(plain)
 	if m.formWorktreeOn() {
 		t.Fatal("a non-repo dir cannot host a worktree, even with the setting on")
 	}
 	if view := m.viewForm(); !strings.Contains(view, worktreeUnavailable) {
 		t.Fatalf("form should mark worktree unavailable, got %q", view)
 	}
-	m.form.FocusField(m.spawnHost(), spawn.FieldWorktree)
+	m.form().FocusField(m.spawnHost(), spawn.FieldWorktree)
 	_, probe := m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
 	if probe != nil {
 		m.applyTestMsg(t, probe())
@@ -83,7 +83,7 @@ func TestWorktreeCapabilityExpiresSoAFreshRepoIsSeen(t *testing.T) {
 	// before the answer is cached and only moved into place after.
 	initGitRepo(t, seed)
 	m.openForm()
-	m.form.SetDir(dir)
+	m.form().SetDir(dir)
 	m.applyTestMsg(t, m.formWorktreeProbeCmd(false)())
 	if capable, known := m.cachedWorktreeCapability(dir); !known || capable {
 		t.Fatalf("plain directory cache = capable %t known %t", capable, known)
@@ -126,14 +126,14 @@ func TestWorktreeProbeDefersGitAndRejectsReopenedForm(t *testing.T) {
 	m := buildModel(t)
 	m.openForm()
 	dir := t.TempDir()
-	m.form.SetDir(dir)
+	m.form().SetDir(dir)
 	reader := &blockedRepoPreflight{
 		started: make(chan struct{}), release: make(chan struct{}), capable: true,
 	}
 	m.gens.worktreeProbe++
 	request := worktreeProbeRequest{
-		target: worktreeProbeForm, generation: m.form.prompt.gen,
-		sequence: m.gens.worktreeProbe, dir: m.formSpawnDir(), toggle: true, from: m.form.Worktree(),
+		target: worktreeProbeForm, generation: m.form().prompt.gen,
+		sequence: m.gens.worktreeProbe, dir: m.formSpawnDir(), toggle: true, from: m.form().Worktree(),
 	}
 	cmd := worktreeProbeCmd(request, reader)
 	select {
@@ -147,7 +147,7 @@ func TestWorktreeProbeDefersGitAndRejectsReopenedForm(t *testing.T) {
 	m.openForm()
 	close(reader.release)
 	m.handleWorktreeProbe(<-completed)
-	if m.form.Worktree() {
+	if m.form().Worktree() {
 		t.Fatal("old repo probe toggled the reopened form")
 	}
 	if _, known := m.cachedWorktreeCapability(dir); known {
@@ -178,12 +178,12 @@ func TestFormWorktreeStaysOnInRepoDir(t *testing.T) {
 		t.Fatalf("set setting: %v", err)
 	}
 	m.applyTestMsg(t, m.openForm()())
-	m.form.SetDir(repo)
+	m.form().SetDir(repo)
 	m.applyTestMsg(t, m.formWorktreeProbeCmd(false)())
 	if !m.formWorktreeOn() {
 		t.Fatal("a repo dir should keep the worktree default on")
 	}
-	m.form.FocusField(m.spawnHost(), spawn.FieldWorktree)
+	m.form().FocusField(m.spawnHost(), spawn.FieldWorktree)
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
 	if m.formWorktreeOn() {
 		t.Fatal("toggle should turn worktree off in a repo dir")

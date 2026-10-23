@@ -143,7 +143,7 @@ func TestEditorDirectoryCompletionDoesNotReplaceNewerDialog(t *testing.T) {
 	if len(*launched) != 0 {
 		t.Fatalf("stale directory result launched an editor over the newer form: %v", *launched)
 	}
-	if m.mode != modeForm {
+	if !formOpen(m) {
 		t.Fatalf("stale editor result replaced the newer dialog: mode=%v", m.mode)
 	}
 }

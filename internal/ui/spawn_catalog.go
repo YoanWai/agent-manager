@@ -95,7 +95,7 @@ func (m *Model) handleCatalog(msg catalogMsg) tea.Cmd {
 	state.checkedAt = time.Now()
 	m.fitChoices()
 	var outdated config.OutdatedToolError
-	active := (m.mode == modeForm && m.form.Tool() == msg.tool) ||
+	active := (m.form() != nil && m.formTool() == msg.tool) ||
 		(m.quick() != nil && m.quickTool() == msg.tool)
 	if errors.As(msg.err, &outdated) && active {
 		m.advanceDialogGen()
@@ -115,8 +115,8 @@ func (m *Model) handleCatalog(msg catalogMsg) tea.Cmd {
 }
 
 func (m *Model) fitChoices() {
-	if m.mode == modeForm {
-		m.form.Choice().Refit(m.spawnHost(), m.form.Tool())
+	if f := m.form(); f != nil {
+		f.Choice().Refit(m.spawnHost(), f.Tool())
 	}
 	if q := m.quick(); q != nil {
 		q.Choice().Refit(m.spawnHost(), q.Tool())
@@ -139,7 +139,8 @@ func choiceSettingKeys(tools []string) []string { return spawn.SettingKeys(tools
 // refreshFormChoicePrefs and refreshQuickChoicePrefs take a newer read of
 // the CLI's kept choice into an open choice.
 func (m *Model) refreshFormChoicePrefs() {
-	m.form.Choice().RefreshPrefs(m.spawnHost(), m.form.Tool())
+	f := m.form()
+	f.Choice().RefreshPrefs(m.spawnHost(), f.Tool())
 }
 
 func (m *Model) refreshQuickChoicePrefs() {

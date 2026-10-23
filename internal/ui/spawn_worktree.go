@@ -10,7 +10,7 @@ import (
 // toggle, unless the chosen directory cannot host a worktree.
 func (m *Model) formWorktreeOn() bool {
 	capable, known := m.cachedWorktreeCapability(m.formSpawnDir())
-	return m.form.Worktree() && known && capable
+	return m.form().Worktree() && known && capable
 }
 
 // toggleFormWorktree flips the toggle, or explains why the chosen
@@ -26,7 +26,8 @@ func (m *Model) toggleFormWorktree() tea.Cmd {
 		return nil
 	}
 	m.clearErr()
-	m.form.SetWorktree(!m.form.Worktree())
+	f := m.form()
+	f.SetWorktree(!f.Worktree())
 	return nil
 }
 
@@ -48,10 +49,11 @@ func (m *Model) requestWorktreeProbe(target worktreeProbeTarget, generation int,
 }
 
 func (m *Model) formWorktreeProbeCmd(toggleOn bool) tea.Cmd {
-	if m.form.remote.on() {
+	f := m.form()
+	if f.remote.on() {
 		return nil
 	}
-	return m.requestWorktreeProbe(worktreeProbeForm, m.form.prompt.gen, m.formSpawnDir(), toggleOn, m.form.Worktree())
+	return m.requestWorktreeProbe(worktreeProbeForm, f.prompt.gen, m.formSpawnDir(), toggleOn, f.Worktree())
 }
 
 func (m *Model) quickWorktreeProbeCmd(toggleOn bool) tea.Cmd {
@@ -69,7 +71,7 @@ func (m *Model) handleWorktreeProbe(msg worktreeProbeMsg) (tea.Model, tea.Cmd) {
 	}
 	switch request.target {
 	case worktreeProbeForm:
-		if m.mode != modeForm || m.form.prompt.gen != request.generation || m.formSpawnDir() != request.dir {
+		if _, ok := m.formFor(request.generation); !ok || m.formSpawnDir() != request.dir {
 			return m, nil
 		}
 	case worktreeProbeQuick:
@@ -92,10 +94,10 @@ func (m *Model) handleWorktreeProbe(msg worktreeProbeMsg) (tea.Model, tea.Cmd) {
 	}
 	m.clearErr()
 	if request.target == worktreeProbeForm {
-		if m.form.Worktree() != request.from {
+		if m.form().Worktree() != request.from {
 			return m, nil
 		}
-		m.form.SetWorktree(!request.from)
+		m.form().SetWorktree(!request.from)
 	} else {
 		if m.quick().Worktree() != request.from {
 			return m, nil

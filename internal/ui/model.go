@@ -28,7 +28,6 @@ type mode int
 
 const (
 	modeList mode = iota
-	modeForm
 	modeDiff
 	// modeFocus routes the keyboard into the selected session's pane while
 	// the list and live preview stay on screen.
@@ -52,7 +51,6 @@ type Model struct {
 	screen
 	review    uireview.Model
 	reviewNav reviewNavState
-	form      formDialog
 	mouse     mouseCapture
 	settings  settingsFeature
 	env       environment

@@ -117,10 +117,11 @@ func (m *Model) dispatchSpawn(request spawnRequest) {
 	request.id = newID()
 	switch request.kind {
 	case spawnForm:
-		request.draft = m.form.prompt.input.Value()
-		request.draftName = m.form.Name()
-		request.draftDir = m.form.Dir()
-		m.form.prompt.attachments = nil
+		f := m.form()
+		request.draft = f.prompt.input.Value()
+		request.draftName = f.Name()
+		request.draftDir = f.Dir()
+		f.prompt.attachments = nil
 	case spawnQuick:
 		q := m.quick()
 		request.draft = q.input.Value()
@@ -267,8 +268,8 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 		case spawnForm:
 			// A form opened later is a newer dialog the completion must not
 			// close; only the one that dispatched this spawn is closed.
-			if m.mode == modeForm && m.form.prompt.gen == request.composerGen && m.form.prompt.input.Value() == request.draft && m.form.Name() == request.draftName && m.form.Dir() == request.draftDir && len(m.form.prompt.attachments) == 0 {
-				m.mode = modeList
+			if f, ok := m.formFor(request.composerGen); ok && f.prompt.input.Value() == request.draft && f.Name() == request.draftName && f.Dir() == request.draftDir && len(f.prompt.attachments) == 0 {
+				m.closeForm()
 			}
 		case spawnQuick:
 			if q, ok := m.quickFor(request.composerGen); ok {
@@ -298,7 +299,7 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 	// user opened since the dispatch is newer and keeps the screen.
 	takeOver := false
 	switch {
-	case request.kind == spawnForm && m.mode == modeForm && m.form.prompt.gen == request.composerGen && m.form.prompt.input.Value() == request.draft && len(m.form.prompt.attachments) == 0:
+	case request.kind == spawnForm && m.formHolds(request.composerGen, request.draft):
 		takeOver = true
 	case request.kind == spawnQuick && m.quickHolds(request.composerGen, request.draft):
 		takeOver = true
@@ -332,8 +333,8 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 func (m *Model) returnSpawnImages(request spawnRequest) {
 	switch request.kind {
 	case spawnForm:
-		if m.mode == modeForm && m.form.prompt.gen == request.composerGen {
-			m.form.prompt.attachments = append(request.images, m.form.prompt.attachments...)
+		if f, ok := m.formFor(request.composerGen); ok {
+			f.prompt.attachments = append(request.images, f.prompt.attachments...)
 			return
 		}
 	case spawnQuick:

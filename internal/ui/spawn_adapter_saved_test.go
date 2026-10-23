@@ -12,8 +12,8 @@ import (
 
 func focusSavedRow(t *testing.T, m *Model) {
 	t.Helper()
-	m.form.FocusField(m.spawnHost(), spawn.FieldSaved)
-	if m.form.Focused() != spawn.FieldSaved {
+	m.form().FocusField(m.spawnHost(), spawn.FieldSaved)
+	if m.form().Focused() != spawn.FieldSaved {
 		t.Fatal("the saved prompts row took no focus")
 	}
 }
@@ -37,28 +37,28 @@ func TestFormSavedPromptStepsLeaveTheRestAlone(t *testing.T) {
 	savePrompt(t, m, "A", " \n a\n")
 	savePrompt(t, m, "B", "b")
 	m.runBatch(t, m.openForm())
-	m.form.prompt.input.SetValue("  task  ")
-	tools, toolIndex := m.form.Tools()
-	dir, group, worktree, model := m.form.Dir(), m.form.groupIndex, m.form.Worktree(), m.form.Choice().Model()
+	m.form().prompt.input.SetValue("  task  ")
+	tools, toolIndex := m.form().Tools()
+	dir, group, worktree, model := m.form().Dir(), picker(m).groupIndex, m.form().Worktree(), m.form().Choice().Model()
 	focusSavedRow(t, m)
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
-	if got := m.form.SavedText(); got != " \n a\n" {
+	if got := m.form().SavedText(); got != " \n a\n" {
 		t.Fatalf("saved text = %q", got)
 	}
 	if _, err := m.services.store.DeleteSessionPreset("A"); err != nil {
 		t.Fatal(err)
 	}
-	if got := m.form.SavedText(); got != " \n a\n" {
+	if got := m.form().SavedText(); got != " \n a\n" {
 		t.Fatal("a catalog edit changed the text the form shows")
 	}
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
-	if got := m.form.SavedText(); got != "" {
+	if got := m.form().SavedText(); got != "" {
 		t.Fatalf("stepping past the last kept %q", got)
 	}
-	newTools, newIndex := m.form.Tools()
-	if m.form.prompt.input.Value() != "  task  " || newTools[newIndex] != tools[toolIndex] || m.form.Dir() != dir ||
-		m.form.groupIndex != group || m.form.Worktree() != worktree || m.form.Choice().Model() != model {
+	newTools, newIndex := m.form().Tools()
+	if m.form().prompt.input.Value() != "  task  " || newTools[newIndex] != tools[toolIndex] || m.form().Dir() != dir ||
+		picker(m).groupIndex != group || m.form().Worktree() != worktree || m.form().Choice().Model() != model {
 		t.Fatal("stepping saved prompts changed another field")
 	}
 }
@@ -72,14 +72,14 @@ func TestFormSavedPromptClickKeepsTheTask(t *testing.T) {
 	m.runBatch(t, m.openForm())
 	focusSavedRow(t, m)
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyCtrlO})
-	m.form.prompt.input.SetValue("task " + imageToken(1))
-	m.form.prompt.attachments = []imageAttachment{{id: 1, path: tempImage(t, "image.png")}}
-	before := m.form.prompt.message()
-	model := m.form.Choice().Model()
-	if m, _ = clickBody(t, m, "Role"); m.form.SavedText() != "instruct" {
-		t.Fatalf("a click on Role picked %q", m.form.SavedText())
+	m.form().prompt.input.SetValue("task " + imageToken(1))
+	m.form().prompt.attachments = []imageAttachment{{id: 1, path: tempImage(t, "image.png")}}
+	before := m.form().prompt.message()
+	model := m.form().Choice().Model()
+	if m, _ = clickBody(t, m, "Role"); m.form().SavedText() != "instruct" {
+		t.Fatalf("a click on Role picked %q", m.form().SavedText())
 	}
-	if m.form.prompt.message() != before || len(m.form.prompt.attachments) != 1 || m.form.Choice().Model() != model {
+	if m.form().prompt.message() != before || len(m.form().prompt.attachments) != 1 || m.form().Choice().Model() != model {
 		t.Fatal("the click changed the task or the CLI choice")
 	}
 }
@@ -95,7 +95,7 @@ func TestFormSavedPromptsReadFailureShows(t *testing.T) {
 	if body := formBody(m); !strings.Contains(body, "Reading saved prompts") {
 		t.Fatalf("form:\n%s", body)
 	}
-	if m.form.SavedText() != "" {
+	if m.form().SavedText() != "" {
 		t.Fatal("a failed read picked a saved prompt")
 	}
 }
@@ -110,9 +110,9 @@ func TestFormSpawnsWithTheSavedPromptItShowed(t *testing.T) {
 	pickFormTool(t, m, "ready-tool")
 	focusSavedRow(t, m)
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
-	m.form.prompt.input.SetValue("  task  ")
-	m.form.SetName("saved-launch")
-	m.form.SetDir(t.TempDir())
+	m.form().prompt.input.SetValue("  task  ")
+	m.form().SetName("saved-launch")
+	m.form().SetDir(t.TempDir())
 	if err := m.services.store.SaveSessionPreset("Role", store.SessionPreset{Name: "Role", Instructions: "external replacement"}); err != nil {
 		t.Fatal(err)
 	}
@@ -139,8 +139,8 @@ func TestFormSavedPromptWithADashLaunches(t *testing.T) {
 			pickFormTool(t, m, tool)
 			focusSavedRow(t, m)
 			m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
-			m.form.SetName("dash-saved")
-			m.form.SetDir(t.TempDir())
+			m.form().SetName("dash-saved")
+			m.form().SetDir(t.TempDir())
 			_, cmd := m.submitForm()
 			m.applyCmd(t, cmd)
 			rows := m.sessionRows()
@@ -167,9 +167,9 @@ func TestFormLaunchesBeforeTheSavedPromptsRead(t *testing.T) {
 	m := buildModel(t)
 	m.openForm()
 	pickFormTool(t, m, "ready-tool")
-	m.form.prompt.input.SetValue("task")
-	m.form.SetName("without-saved")
-	m.form.SetDir(t.TempDir())
+	m.form().prompt.input.SetValue("task")
+	m.form().SetName("without-saved")
+	m.form().SetDir(t.TempDir())
 	if !strings.Contains(formBody(m), "loading… (optional)") {
 		t.Fatal("the row does not say the read is running")
 	}

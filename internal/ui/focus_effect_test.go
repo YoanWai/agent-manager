@@ -266,7 +266,7 @@ func TestFocusFenceDropsEntryAfterDialogOpened(t *testing.T) {
 	_, cmd := m.focusSelected()
 	m.openForm()
 	m.applyCmd(t, cmd)
-	if m.mode != modeForm {
+	if !formOpen(m) {
 		t.Fatalf("a dialog opened after the probe should win, mode = %v", m.mode)
 	}
 	if m.focus.pane.Pane().SessionID != "" {
@@ -317,7 +317,7 @@ func TestDetachCompletionDoesNotReplaceNewerDialog(t *testing.T) {
 	request := detachRequest{sessionID: sess.ID}
 	m.openForm()
 	m.applyDetachEffect(request, detachEffectResult{request: tmux.RequestReview}, nil)
-	if m.mode != modeForm {
+	if !formOpen(m) {
 		t.Fatal("detach completion replaced newer dialog")
 	}
 }
@@ -397,7 +397,7 @@ func TestDetachRequestDroppedForNewerDialogIsReported(t *testing.T) {
 	m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
 	m.openForm()
 	m.drainEffects(t)
-	if m.mode != modeForm {
+	if !formOpen(m) {
 		t.Fatalf("the newer dialog should keep the foreground, mode = %v", m.mode)
 	}
 	if !m.errBar.warned() || !strings.Contains(m.errBar.text, "review") || !strings.Contains(m.errBar.text, "alpha") {

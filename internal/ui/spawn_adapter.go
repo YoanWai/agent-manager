@@ -22,10 +22,9 @@ type formDialog struct {
 	// prompt is a composer rather than a plain textarea: a first task is
 	// often a screenshot, so the box has to hold pasted images the way the
 	// quick prompt does.
-	prompt     composer
-	paths      pathComplete
-	groups     []groupOption
-	groupIndex int
+	prompt   composer
+	complete pathComplete
+	groupPicker
 	// remote is the connection a spawn goes to, when one is the target.
 	remote formRemote
 }
@@ -63,8 +62,8 @@ func (h spawnHost) ReportErr(text string) { h.m.reportErr(text) }
 
 func (h spawnHost) ChoiceRemoteHost() string {
 	m := h.m
-	if m.mode == modeForm {
-		return m.form.remote.host
+	if f := m.form(); f != nil {
+		return f.remote.host
 	}
 	if m.quick() != nil {
 		if target, ok := m.remoteTarget(); ok {
@@ -77,12 +76,13 @@ func (h spawnHost) ChoiceRemoteHost() string {
 func (h spawnHost) ClearErr() { h.m.clearErr() }
 
 func (h spawnHost) Prompt() spawn.Prompt {
-	return promptBox{c: &h.m.form.prompt, target: composerForm, host: h.m}
+	return promptBox{c: &h.m.form().prompt, target: composerForm, host: h.m}
 }
 
 func (h spawnHost) Paths() spawn.Paths {
 	// A connection's directory is the host's: nothing here completes it.
-	return pathField{mode: h.m.prefs.glyphMode, pc: &h.m.form.paths, target: pathSuggestionForm, off: h.m.form.remote.on()}
+	f := h.m.form()
+	return pathField{mode: h.m.prefs.glyphMode, pc: &f.complete, target: pathSuggestionForm, off: f.remote.on()}
 }
 
 // promptBox lends a feature package one of the root's composers.
@@ -206,9 +206,13 @@ func (m *Model) formValueWidth() int {
 // syncFormFieldWidths fits the fields to the card so long values scroll
 // (inputs) or wrap (prompt) instead of clipping at the card edge.
 func (m *Model) syncFormFieldWidths() {
+	f := m.form()
+	if f == nil {
+		return
+	}
 	inner := m.formValueWidth()
-	m.form.SyncWidths(inner)
-	m.form.prompt.input.SetWidth(inner)
+	f.SyncWidths(inner)
+	f.prompt.input.SetWidth(inner)
 }
 
 // contextGroup is the group the cursor currently sits in: a highlighted
@@ -235,63 +239,62 @@ func (m *Model) openFormWithReader(reader settingsValueReader) tea.Cmd {
 	}
 	prompt := promptField()
 	prompt.gen = m.nextComposerGen()
-	m.form = formDialog{
-		Form:   spawn.NewForm(m.spawnHost(), tools, toolIndex),
-		prompt: prompt,
-		paths:  m.form.paths.fresh(),
-	}
+	m.closeQuick()
+	f := newSpawnSurface(formDialog{
+		Form:        spawn.NewForm(m.spawnHost(), tools, toolIndex),
+		prompt:      prompt,
+		groupPicker: m.groupPickerFor(m.contextGroup()),
+	})
+	m.push(f)
 	m.clearErr()
 	m.syncFormFieldWidths()
 	m.forgetWorktreeCapability()
-	m.rebuildGroupOptions(m.contextGroup())
-	m.form.SetDir(m.capturedGroupDefaultDir(m.selectedGroupPath()))
-	m.form.SeedWorktree(m.cachedSpawnWorktreeDefault(m.selectedGroupPath()))
+	f.SetDir(m.capturedGroupDefaultDir(m.selectedGroupPath()))
+	f.SeedWorktree(m.cachedSpawnWorktreeDefault(m.selectedGroupPath()))
 	if target, ok := m.remoteTarget(); ok {
-		m.form.aimRemote(target)
-	}
-	m.mode = modeForm
-	m.closeQuick()
-	if m.form.remote.on() {
-		m.form.RestartChoice(m.spawnHost())
+		f.aimRemote(target)
+		f.RestartChoice(m.spawnHost())
 	}
 	catalog := m.ensureCatalog(tools[toolIndex])
-	saved := savedPromptsLoadCmd(m.services.store, savedForForm, uint64(m.form.prompt.gen), 0)
+	saved := savedPromptsLoadCmd(m.services.store, savedForForm, uint64(f.prompt.gen), 0)
 	if m.settings.pending > 0 {
 		return tea.Batch(m.formWorktreeProbeCmd(false), catalog, saved)
 	}
-	return tea.Batch(settingsLoadCmd(settingsLoadRequest{target: settingsLoadForm, generation: uint64(m.form.prompt.gen), extra: m.choiceSettingKeys()}, reader), catalog, saved)
+	return tea.Batch(settingsLoadCmd(settingsLoadRequest{target: settingsLoadForm, generation: uint64(f.prompt.gen), extra: m.choiceSettingKeys()}, reader), catalog, saved)
 }
 
 // applyCachedFormDefaults takes the loaded tool and worktree defaults. A
 // tool the load moved to starts its choice rows over and asks its CLI.
 func (m *Model) applyCachedFormDefaults() tea.Cmd {
-	before := m.form.Tool()
-	m.form.SetTools(m.cachedSpawnToolSelection())
-	m.form.DefaultWorktree(m.cachedSpawnWorktreeDefault(m.selectedGroupPath()))
-	toolName := m.form.Tool()
+	f := m.form()
+	before := f.Tool()
+	f.SetTools(m.cachedSpawnToolSelection())
+	f.DefaultWorktree(m.cachedSpawnWorktreeDefault(m.selectedGroupPath()))
+	toolName := f.Tool()
 	if toolName == before || toolName == "" {
 		return nil
 	}
-	m.form.RestartChoice(m.spawnHost())
+	f.RestartChoice(m.spawnHost())
 	m.syncFormFieldWidths()
 	return m.ensureCatalog(toolName)
 }
 
-func (m *Model) formTool() string { return m.form.Tool() }
+func (m *Model) formTool() string { return m.form().Tool() }
 
-func (m *Model) selectedGroupPath() string { return m.form.groupPath() }
-
-// groupPath is the group the picker highlights. The group form and the
-// move dialog pick from the same list.
-func (d *formDialog) groupPath() string {
-	if d.groupIndex >= 0 && d.groupIndex < len(d.groups) {
-		return d.groups[d.groupIndex].path
+// selectedGroupPath is the group the open picker highlights: the move
+// card's, or the New Session form's.
+func (m *Model) selectedGroupPath() string {
+	if s, ok := surfaceOf[*moveSurface](m); ok {
+		return s.groupPath()
+	}
+	if f := m.form(); f != nil {
+		return f.groupPath()
 	}
 	return ""
 }
 
 func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	cmd, request := m.form.HandleKey(m.spawnHost(), typedText(msg))
+	cmd, request := m.form().HandleKey(m.spawnHost(), typedText(msg))
 	return m, tea.Batch(cmd, m.runFormRequest(request, systemDirectoryPreflight{git: m.services.gitDrv}))
 }
 
@@ -302,17 +305,17 @@ func (m *Model) runFormRequest(request spawn.FormRequest, reader directoryPrefli
 	}
 	switch {
 	case request.Close:
-		m.mode = modeList
+		m.closeForm()
 	case request.ApplyPath:
 		return m.applyPathSuggestion()
 	case request.PickPath:
-		if m.form.paths.pick(request.PathEntry) {
+		if m.form().complete.pick(request.PathEntry) {
 			return m.applyPathSuggestion()
 		}
 	case request.Group != 0:
 		return m.moveGroupCursor(request.Group)
 	case request.PickGroup:
-		if delta := request.GroupEntry - m.form.groupIndex; delta != 0 {
+		if delta := request.GroupEntry - m.form().groupIndex; delta != 0 {
 			return m.moveGroupCursor(delta)
 		}
 	case request.Toggle:
@@ -333,27 +336,25 @@ func (m *Model) runFormRequest(request spawn.FormRequest, reader directoryPrefli
 }
 
 func (m *Model) handleFormClick(line int) (tea.Model, tea.Cmd) {
-	return m, m.runFormRequest(m.form.Click(m.spawnHost(), line), nil)
+	return m, m.runFormRequest(m.form().Form.Click(m.spawnHost(), line), nil)
 }
 
-// moveGroupCursor moves within the expanded group picker, wrapping at the
+func (m *Model) formWheel(step int) tea.Cmd {
+	return m.runFormRequest(m.form().Form.Wheel(m.spawnHost(), step), nil)
+}
+
+// moveGroupCursor moves within the form's group picker, wrapping at the
 // ends; a delta of 0 re-resolves the dependent defaults in place.
 func (m *Model) moveGroupCursor(delta int) tea.Cmd {
-	count := len(m.form.groups)
-	if count == 0 {
+	f := m.form()
+	if !f.step(delta) {
 		return nil
 	}
-	m.form.groupIndex = (m.form.groupIndex + delta + count) % count
-	if m.mode == modeForm && m.form.DirAuto() {
-		m.form.SetDir(m.capturedGroupDefaultDir(m.selectedGroupPath()))
+	if f.DirAuto() {
+		f.SetDir(m.capturedGroupDefaultDir(f.groupPath()))
 	}
-	if m.mode == modeForm {
-		m.form.DefaultWorktree(m.cachedSpawnWorktreeDefault(m.selectedGroupPath()))
-	}
-	if m.mode == modeForm {
-		return m.formWorktreeProbeCmd(false)
-	}
-	return nil
+	f.DefaultWorktree(m.cachedSpawnWorktreeDefault(f.groupPath()))
+	return m.formWorktreeProbeCmd(false)
 }
 
 func (m *Model) submitForm() (tea.Model, tea.Cmd) {
@@ -361,29 +362,30 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) submitFormWithReader(reader directoryPreflight) (tea.Model, tea.Cmd) {
-	return m, m.runFormRequest(m.form.Submit(m.spawnHost()), reader)
+	return m, m.runFormRequest(m.form().Submit(m.spawnHost()), reader)
 }
 
 func (m *Model) viewForm() string {
+	f := m.form()
 	facts := spawn.FormFacts{
 		Width:  m.formValueWidth(),
 		NoRepo: worktreeUnavailable,
-		Group:  escapeControlsInline(displayGroup(m.form.groups[m.form.groupIndex].path)),
+		Group:  escapeControlsInline(displayGroup(f.groupPath())),
 		Styles: m.spawnStyles(),
 		Height: m.layout.height,
 		Chrome: m.cardChromeRows,
 	}
-	if m.form.Focused() == spawn.FieldGroup {
-		facts.GroupPicker = strings.Split(m.viewGroupPicker(), "\n")
+	if f.Focused() == spawn.FieldGroup {
+		facts.GroupPicker = strings.Split(m.viewGroupPicker(&f.groupPicker), "\n")
 	}
 	facts.WorktreeCapable, facts.WorktreeKnown = m.cachedWorktreeCapability(m.formSpawnDir())
-	if m.form.remote.on() {
+	if f.remote.on() {
 		facts.WorktreeCapable, facts.WorktreeKnown = true, true
-		facts.Host = lipgloss.NewStyle().Foreground(colorRemote()).Render(m.form.remote.host)
+		facts.Host = lipgloss.NewStyle().Foreground(colorRemote()).Render(f.remote.host)
 	} else if m.formWorktreeOn() {
 		facts.Base = m.spawnBaseLabel(m.formSpawnDir(), m.selectedGroupPath())
 	}
-	body, hint := m.form.View(m.spawnHost(), facts)
+	body, hint := f.Form.View(m.spawnHost(), facts)
 	return m.card(m.glyphs().NewSessionGlyph+" New Session", body, hint)
 }
 

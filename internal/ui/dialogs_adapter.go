@@ -89,11 +89,6 @@ func (m *Model) drawCard(card uidialogs.Card) string {
 	return m.card(card.Title, card.Body, card.Hints)
 }
 
-// pickedGroupOption is the group picker's highlighted row.
-func (m *Model) pickedGroupOption() groupOption {
-	return m.form.groups[m.form.groupIndex]
-}
-
 // openMove captures the selected row and shapes the spawn form's group
 // picker into the targets it may land in.
 func (m *Model) openMove() {
@@ -106,26 +101,27 @@ func (m *Model) openMove() {
 		return
 	}
 	var move uidialogs.Move
+	var picker groupPicker
 	if row.isGroup {
 		move = uidialogs.MoveGroup(row.group)
-		m.rebuildGroupOptions(parentGroup(row.group))
-		m.pruneMoveTargets(row.group)
+		picker = m.groupPickerFor(parentGroup(row.group))
+		pruneMoveTargets(&picker, row.group)
 	} else {
 		move = uidialogs.MoveSession(row.sess.ID)
-		m.rebuildGroupOptions(row.sess.Group)
+		picker = m.groupPickerFor(row.sess.Group)
 		if m.isShell(row.sess.Tool) {
-			m.appendAgentMoveTargets()
+			m.appendAgentMoveTargets(&picker)
 		}
 	}
 	m.gens.dialog++
-	m.push(newMoveSurface(move))
+	m.push(newMoveSurface(move, picker))
 	m.clearErr()
 }
 
-func (m *Model) appendAgentMoveTargets() {
-	selected := m.form.groups[m.form.groupIndex].path
+func (m *Model) appendAgentMoveTargets(p *groupPicker) {
+	selected := p.groupPath()
 	var options []groupOption
-	for _, opt := range m.form.groups {
+	for _, opt := range p.groups {
 		options = append(options, opt)
 		for _, sess := range m.workspace.sessions {
 			if sess.Archived || m.isShell(sess.Tool) || sess.Group != opt.path {
@@ -139,44 +135,32 @@ func (m *Model) appendAgentMoveTargets() {
 			})
 		}
 	}
-	m.form.groups = options
-	m.form.groupIndex = 0
-	for i, opt := range options {
-		if opt.path == selected && opt.sessID == "" {
-			m.form.groupIndex = i
-			return
-		}
-	}
+	p.groups = options
+	p.reselect(selected, func(opt groupOption) bool { return opt.sessID == "" })
 }
 
 // pruneMoveTargets drops the moved group and its descendants from the
 // picker: a group cannot land inside its own subtree.
-func (m *Model) pruneMoveTargets(subtree string) {
-	selected := m.form.groups[m.form.groupIndex].path
-	options := make([]groupOption, 0, len(m.form.groups))
-	for _, opt := range m.form.groups {
+func pruneMoveTargets(p *groupPicker, subtree string) {
+	selected := p.groupPath()
+	options := make([]groupOption, 0, len(p.groups))
+	for _, opt := range p.groups {
 		if opt.path == subtree || strings.HasPrefix(opt.path, subtree+"/") {
 			continue
 		}
 		options = append(options, opt)
 	}
-	m.form.groups = options
-	m.form.groupIndex = 0
-	for i, opt := range options {
-		if opt.path == selected {
-			m.form.groupIndex = i
-			return
-		}
-	}
+	p.groups = options
+	p.reselect(selected, func(groupOption) bool { return true })
 }
 
 // placeMove runs the placement the picked row asks for on the effect lane;
 // the card closes from the fenced follow-up. A move the dialog refuses
 // closes it now.
-func (m *Model) placeMove(move uidialogs.Move) tea.Cmd {
-	pick := uidialogs.MovePick{Group: m.selectedGroupPath()}
+func (m *Model) placeMove(move uidialogs.Move, p *groupPicker) tea.Cmd {
+	pick := uidialogs.MovePick{Group: p.groupPath()}
 	if !move.IsGroup() {
-		opt := m.pickedGroupOption()
+		opt := p.picked()
 		pick = uidialogs.MovePick{Group: opt.path, ParentID: opt.sessID}
 	}
 	request, ok := move.Place(pick)
@@ -190,11 +174,8 @@ func (m *Model) placeMove(move uidialogs.Move) tea.Cmd {
 	return m.enqueueMove(uirail.Mutation{Kind: uirail.PlaceSession, SessionID: request.SessionID, Group: request.Group, ParentID: request.ParentID}, moveDialogClose{sessID: request.SessionID, optPath: request.Group, optSessID: request.ParentID})
 }
 
-// movePicker is the group picker's row count and cursor, for clicks.
-func (m *Model) movePicker() (rows, cursor int) { return len(m.form.groups), m.form.groupIndex }
-
-func (m *Model) viewMove() string {
-	return m.card(uidialogs.MoveTitle(m.prefs.glyphMode), m.viewGroupPicker(), uidialogs.MoveHints())
+func (m *Model) viewMove(p *groupPicker) string {
+	return m.card(uidialogs.MoveTitle(m.prefs.glyphMode), m.viewGroupPicker(p), uidialogs.MoveHints())
 }
 
 // configuredTool looks a tool up in the loaded configuration.

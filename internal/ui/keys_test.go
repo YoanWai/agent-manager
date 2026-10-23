@@ -20,7 +20,6 @@ import (
 // surface decides on purpose rather than inheriting whatever the router did.
 var ctrlCQuits = map[mode]bool{
 	modeList:  true,
-	modeForm:  true,
 	modeDiff:  true,
 	modeFocus: false,
 }

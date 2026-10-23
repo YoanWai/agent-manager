@@ -171,7 +171,7 @@ func (m *Model) cardOpen() bool {
 		_, takesMouse := top.(mouseTaker)
 		return !takesMouse
 	}
-	return m.mode == modeForm
+	return false
 }
 
 // cardMouse turns the wheel on the open card, which turns the card under
@@ -201,10 +201,6 @@ func (m *Model) clickCard(col, line int) (tea.Model, tea.Cmd) {
 		}
 		return m, top.Click(m, line)
 	}
-	switch m.mode {
-	case modeForm:
-		return m.handleFormClick(line)
-	}
 	return m, nil
 }
 
@@ -217,11 +213,6 @@ func (m *Model) wheelCard(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	if top, ok := m.top(); ok {
 		return m, top.Wheel(m, arrow)
-	}
-	step := presentation.WheelStep(msg)
-	switch m.mode {
-	case modeForm:
-		return m, m.runFormRequest(m.form.Wheel(m.spawnHost(), step), nil)
 	}
 	return m, nil
 }

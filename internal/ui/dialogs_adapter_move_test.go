@@ -49,7 +49,7 @@ func TestMoveGroupRow(t *testing.T) {
 	if !moveOpen(m) {
 		t.Fatal("openMove on a group row should enter move mode")
 	}
-	for _, opt := range m.form.groups {
+	for _, opt := range picker(m).groups {
 		if opt.path == "alpha/inner" {
 			t.Fatal("picker offers the moved group itself")
 		}
@@ -77,7 +77,7 @@ func TestMoveGroupRowExcludesDescendants(t *testing.T) {
 
 	m.selectGroupRow(t, "alpha")
 	m.openMove()
-	for _, opt := range m.form.groups {
+	for _, opt := range picker(m).groups {
 		if opt.path == "alpha" || opt.path == "alpha/inner" || opt.path == "alpha/inner/deep" {
 			t.Fatalf("picker offers %q inside the moved subtree", opt.path)
 		}
@@ -98,13 +98,13 @@ func TestMoveTerminalOntoAgentNests(t *testing.T) {
 	m.selectSessionRow(t, shell.Name)
 	m.openMove()
 	agent, _ := m.services.store.Get(m.sessionRows()[0].ID)
-	for i, opt := range m.form.groups {
+	for i, opt := range picker(m).groups {
 		if opt.sessID == agent.ID {
-			m.form.groupIndex = i
+			picker(m).groupIndex = i
 			break
 		}
 	}
-	if m.form.groups[m.form.groupIndex].sessID != agent.ID {
+	if picker(m).groups[picker(m).groupIndex].sessID != agent.ID {
 		t.Fatal("picker must list the agent")
 	}
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -155,9 +155,9 @@ func TestMoveReportsPlacementFailure(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	m.selectSessionRow(t, shell.Name)
 	m.openMove()
-	for m.form.groups[m.form.groupIndex].sessID != agent.ID {
-		m.form.groupIndex++
-		if m.form.groupIndex >= len(m.form.groups) {
+	for picker(m).groups[picker(m).groupIndex].sessID != agent.ID {
+		picker(m).groupIndex++
+		if picker(m).groupIndex >= len(picker(m).groups) {
 			t.Fatal("picker must list the agent")
 		}
 	}
@@ -221,7 +221,7 @@ func TestMovePickerKeepsTheTerminalsOwnGroupSelected(t *testing.T) {
 	if m.selectedGroupPath() != "beta" {
 		t.Fatalf("selected group = %q, want beta", m.selectedGroupPath())
 	}
-	if sessID := m.form.groups[m.form.groupIndex].sessID; sessID != "" {
+	if sessID := picker(m).groups[picker(m).groupIndex].sessID; sessID != "" {
 		t.Fatalf("selected option targets session %q", sessID)
 	}
 }
@@ -238,7 +238,7 @@ func TestMoveAgentPickerHasNoSessionTargets(t *testing.T) {
 	createSession(t, m, "other", dir, "backend")
 	m.selectSessionRow(t, "coder")
 	m.openMove()
-	for _, opt := range m.form.groups {
+	for _, opt := range picker(m).groups {
 		if opt.sessID != "" {
 			t.Fatalf("agent move listed session %q", opt.sessID)
 		}

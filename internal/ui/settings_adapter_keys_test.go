@@ -368,11 +368,11 @@ func TestListPickerMovesAKeyAndTheListFollows(t *testing.T) {
 		t.Fatalf("mode after leaving settings = %v", m.mode)
 	}
 	m.pressInPicker(t, runeKey("n"))
-	if m.mode == modeForm {
+	if formOpen(m) {
 		t.Fatal("n should no longer open the new-session form")
 	}
 	m.pressInPicker(t, runeKey("N"))
-	if m.mode != modeForm {
+	if !formOpen(m) {
 		t.Fatalf("N should open the new-session form, mode = %v", m.mode)
 	}
 }

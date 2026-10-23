@@ -397,7 +397,7 @@ func (m *Model) remoteFormSpawn(req spawnRequest) tea.Cmd {
 		m.reportErr(uirail.RemoteRefusal("pasted images"))
 		return nil
 	}
-	target := m.form.remote
+	target := m.form().remote
 	opts := sessioncmd.CreateSessionOptions{
 		Tool: req.toolName, Group: &target.group, Directory: strings.TrimSpace(req.rawDir), Prompt: req.prompt,
 	}
@@ -405,7 +405,7 @@ func (m *Model) remoteFormSpawn(req spawnRequest) tea.Cmd {
 	if !req.autoNamed {
 		opts.Name = req.name
 	}
-	if !m.form.WorktreeAuto() {
+	if !m.form().WorktreeAuto() {
 		worktree := req.wantWorktree
 		opts.Worktree = &worktree
 	}
@@ -433,14 +433,15 @@ func (d *formDialog) aimRemote(target formRemote) {
 // the group is fixed, nothing is probed locally, and the spawn goes to the
 // host.
 func (m *Model) remoteFormRequest(request spawn.FormRequest) (tea.Cmd, bool) {
-	if !m.form.remote.on() {
+	f := m.form()
+	if !f.remote.on() {
 		return nil, false
 	}
 	switch {
 	case request.Group != 0, request.PickGroup, request.Probe:
 		return nil, true
 	case request.Toggle:
-		m.form.SetWorktree(m.form.WorktreeAuto() || !m.form.Worktree())
+		f.SetWorktree(f.WorktreeAuto() || !f.Worktree())
 		return nil, true
 	case request.Spawn != nil:
 		m.clearErr()

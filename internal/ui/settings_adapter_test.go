@@ -358,7 +358,7 @@ func TestSettingsCLIPickerHidesFromNewSessions(t *testing.T) {
 		}
 	}
 	m.openForm()
-	if m.mode != modeForm {
+	if !formOpen(m) {
 		t.Fatalf("form should open with remaining CLIs, mode=%v err=%q", m.mode, m.errBar.text)
 	}
 	for _, name := range formTools(m) {

@@ -256,8 +256,8 @@ func (m *Model) handleSettingsLoaded(msg settingsLoadedMsg) (tea.Model, tea.Cmd)
 		card.state.MarkBaseline()
 		card.state.Field = field
 	case settingsLoadForm:
-		if m.mode != modeForm || uint64(m.form.prompt.gen) != msg.request.generation ||
-			m.form.DefaultsTouched() || m.settings.pending > 0 {
+		f, ok := m.formFor(int(msg.request.generation))
+		if !ok || f.DefaultsTouched() || m.settings.pending > 0 {
 			return m, nil
 		}
 		m.settings.cache.applyReadback(msg.result.values, msg.result.hiddenRaw, msg.result.hiddenErr)

@@ -175,9 +175,7 @@ func (m *Model) routeResizeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 				m.pinFullFocusPane(sess.ID)
 			}
 		}
-		if m.mode == modeForm {
-			m.syncFormFieldWidths()
-		}
+		m.syncFormFieldWidths()
 		return routed(m, nil)
 	}
 	return nil, nil, false

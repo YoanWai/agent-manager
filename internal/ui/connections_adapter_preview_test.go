@@ -121,7 +121,7 @@ func TestHostTextCannotDriveTheTerminal(t *testing.T) {
 	m.rail.Focus(uirail.Selection{Kind: uirail.GroupRow, Group: group, Host: "box"})
 	frame("a remote group")
 	m.openForm()
-	m.form.FocusField(m.spawnHost(), spawn.FieldGroup)
+	m.form().FocusField(m.spawnHost(), spawn.FieldGroup)
 	frame("the New Session form")
 	m.mode = modeList
 

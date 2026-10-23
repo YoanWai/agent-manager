@@ -39,12 +39,9 @@ func (m *Model) renderFrame() string {
 		return m.syncCursorAnchor(clampFrame(frame, m.layout.height))
 	}
 	var frame string
-	switch m.mode {
-	case modeForm:
-		frame = m.viewForm()
-	case modeDiff:
+	if m.mode == modeDiff {
 		frame = m.viewDiffFull()
-	default:
+	} else {
 		frame = m.overlayRowMenu(m.titleTopRowWithUpdate(m.viewListFrame()))
 	}
 	frame = m.surfaceView(frame)

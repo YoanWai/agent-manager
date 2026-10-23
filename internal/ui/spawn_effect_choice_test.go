@@ -11,7 +11,7 @@ func TestChoicePickDefersTheStoreWrite(t *testing.T) {
 	m := buildModel(t)
 	answered(m, claudeLike, claudeAnswer)
 	openFormOnClaude(t, m)
-	_, _ = m.form.Choice().Launch(m.spawnHost(), "claude", "opus")
+	_, _ = m.form().Choice().Launch(m.spawnHost(), "claude", "opus")
 	if got := m.settings.cache.value("choice.claude"); !strings.Contains(got, `"Model":"opus"`) {
 		t.Fatalf("cached choice = %s, want opus", got)
 	}
