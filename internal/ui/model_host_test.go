@@ -77,7 +77,7 @@ type fineHost interface { size() (int, int) }`
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, violations := hostViolations([]*ast.File{file})
+	_, violations := hostViolations([]*ast.File{file}, func(name string) bool { return strings.HasSuffix(name, "Host") })
 	joined := strings.Join(violations, "\n")
 	for _, want := range []string{"wideHost has 9 methods", "rootHost.root passes Model", "sneakyHost.root passes Model", "driverHost.run passes tmux.Driver"} {
 		if !strings.Contains(joined, want) {
