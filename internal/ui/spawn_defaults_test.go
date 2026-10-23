@@ -289,8 +289,9 @@ func TestFormRemembersPickOnlyAfterInstallRetrySucceeds(t *testing.T) {
 	if m.ledger.lastSpawnTool != "ready-tool" || m.ledger.lastSpawnWorktree {
 		t.Fatalf("failed launch changed the last pick: %q, %v", m.ledger.lastSpawnTool, m.ledger.lastSpawnWorktree)
 	}
-	hintFixPtr(m).command = installCommand
-	hintFixPtr(m).script = installCommand
+	fix := hintFix(m)
+	fix.command, fix.script = installCommand, installCommand
+	m.presentLaunchHint(fix)
 	m.applyCmd(t, pressInLaunchHint(t, m, 'i'))
 	waitForInstallToSettle(t, m)
 
