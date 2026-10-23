@@ -3,17 +3,18 @@ package ui
 import (
 	"testing"
 
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 func moveOpen(m *Model) bool {
-	_, ok := surfaceOf[*moveSurface](m)
+	_, ok := surfaceOf[*uidialogs.MoveSurface](m)
 	return ok
 }
 
 // movingSession is the session the open card is placing.
 func movingSession(m *Model) string {
-	if s, ok := surfaceOf[*moveSurface](m); ok {
+	if s, ok := surfaceOf[*uidialogs.MoveSurface](m); ok {
 		return s.SessionID()
 	}
 	return ""

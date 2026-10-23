@@ -7,6 +7,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	"github.com/YoanWai/agent-manager/internal/ui/pathcomplete"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
@@ -289,8 +290,8 @@ func (m *Model) formTool() string { return m.form().Tool() }
 // selectedGroupPath is the group the open picker highlights: the move
 // card's, or the New Session form's.
 func (m *Model) selectedGroupPath() string {
-	if s, ok := surfaceOf[*moveSurface](m); ok {
-		return s.GroupPath()
+	if s, ok := surfaceOf[*uidialogs.MoveSurface](m); ok {
+		return s.Picker().GroupPath()
 	}
 	if f := m.form(); f != nil {
 		return f.GroupPath()

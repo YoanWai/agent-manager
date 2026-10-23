@@ -4,15 +4,17 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 func formOpen(m *Model) bool { return m.form() != nil }
 
 // picker is the group picker on screen: the move card's, or the form's.
-func picker(m *Model) *groupPicker {
-	if s, ok := surfaceOf[*moveSurface](m); ok {
-		return &s.groupPicker
+func picker(m *Model) *spawn.Picker {
+	if s, ok := surfaceOf[*uidialogs.MoveSurface](m); ok {
+		return s.Picker()
 	}
 	return &m.form().groupPicker
 }

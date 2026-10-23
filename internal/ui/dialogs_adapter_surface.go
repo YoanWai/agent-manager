@@ -5,6 +5,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
+	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -44,6 +45,57 @@ func (r forkRoot) Submit(name string, gen int) tea.Cmd {
 }
 
 func (r forkRoot) Paint(form *uidialogs.Fork) string { return r.viewFork(form) }
+
+// renameRoot is the root as the rename row reaches it. The request a submit
+// validated stays here: a renameRequest names the session row and the effect
+// lane it runs on, so the row hands over the values and the root builds it.
+type renameRoot struct{ *Model }
+
+func (r renameRoot) ReportErr(text string) { r.reportErr(text) }
+
+func (r renameRoot) ApplyPathSuggestion() tea.Cmd { return r.applyPathSuggestion() }
+
+func (r renameRoot) StepBase(s *uidialogs.RenameSurface, delta int) (string, tea.Cmd) {
+	return r.stepRenameBase(s, delta)
+}
+
+func (r renameRoot) WorktreeCount() int { return len(groupWorktreeOptions) }
+
+func (r renameRoot) QueueRename(request uidialogs.RenameRequest, base string) tea.Cmd {
+	if request.Group {
+		return r.queueRename(renameRequest{
+			kind:     renameGroup,
+			oldGroup: request.OldGroup,
+			newGroup: request.NewGroup,
+			rawDir:   request.Dir,
+			draftDir: request.Dir,
+			worktree: groupWorktreeValue(request.Worktree),
+			base:     base,
+			name:     request.Name,
+		})
+	}
+	return r.queueRename(renameRequest{
+		kind:   renameSession,
+		sessID: request.SessionID,
+		name:   request.Name,
+		tool:   request.Tool,
+	})
+}
+
+// moveRoot is the root as the move card reaches it. The picker the card
+// holds is the root's to paint and to read back on a submit.
+type moveRoot struct{ *Model }
+
+func (r moveRoot) PlaceMove(move uidialogs.Move, picker *spawn.Picker) tea.Cmd {
+	return r.placeMove(move, picker)
+}
+
+func (r moveRoot) PaintMove(picker *spawn.Picker) string { return r.viewMove(picker) }
+
+var (
+	_ uidialogs.RenameRoot = renameRoot{}
+	_ uidialogs.MoveRoot   = moveRoot{}
+)
 
 // listClear is the list with no card over it: what "mode is the list" meant
 // while the cards were modes. The quick bar and a resize sit on the list

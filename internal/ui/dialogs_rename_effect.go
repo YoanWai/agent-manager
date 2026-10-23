@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
 	"strings"
@@ -308,7 +309,7 @@ func (m *Model) capturePlacementPrecondition(mutation uirail.Mutation) placement
 }
 
 func (m *Model) applyMoveDialogClose(request moveDialogClose) {
-	if _, open := surfaceOf[*moveSurface](m); !open || m.gens.dialog != request.gen {
+	if _, open := surfaceOf[*uidialogs.MoveSurface](m); !open || m.gens.dialog != request.gen {
 		return
 	}
 	m.Pop()

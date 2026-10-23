@@ -3,6 +3,7 @@ package ui
 import (
 	"testing"
 
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -13,7 +14,7 @@ func renameOpen(m *Model) bool {
 
 // openRename is the rename on the stack; a test that edits one without
 // opening it fails here, not on a nil.
-func openRename(m *Model) *renameSurface {
+func openRename(m *Model) *uidialogs.RenameSurface {
 	s, ok := m.renaming()
 	if !ok {
 		panic("no rename is open")

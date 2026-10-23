@@ -124,7 +124,7 @@ func (m *Model) handleGroupBaseStep(msg groupBaseStepMsg) {
 		if !ok || m.gens.dialog != msg.gen || m.renameGroupDir(s) != msg.dir {
 			return
 		}
-		base = &s.base
+		base = &s.Base
 	default:
 		return
 	}

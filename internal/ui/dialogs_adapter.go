@@ -9,6 +9,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -101,7 +102,7 @@ func (m *Model) openMove() {
 		return
 	}
 	var move uidialogs.Move
-	var picker groupPicker
+	var picker spawn.Picker
 	if row.isGroup {
 		move = uidialogs.MoveGroup(row.group)
 		picker = m.groupPickerFor(parentGroup(row.group))
@@ -114,20 +115,20 @@ func (m *Model) openMove() {
 		}
 	}
 	m.gens.dialog++
-	m.push(newMoveSurface(move, picker))
+	m.push(newMoveSurface(m, move, picker))
 	m.clearErr()
 }
 
-func (m *Model) appendAgentMoveTargets(p *groupPicker) {
+func (m *Model) appendAgentMoveTargets(p *spawn.Picker) {
 	selected := p.GroupPath()
-	var options []groupOption
+	var options []spawn.GroupOption
 	for _, opt := range p.Groups {
 		options = append(options, opt)
 		for _, sess := range m.workspace.sessions {
 			if sess.Archived || m.isShell(sess.Tool) || sess.Group != opt.Path {
 				continue
 			}
-			options = append(options, groupOption{
+			options = append(options, spawn.GroupOption{
 				Path:      sess.Group,
 				Depth:     opt.Depth + 1,
 				SessionID: sess.ID,
@@ -136,14 +137,14 @@ func (m *Model) appendAgentMoveTargets(p *groupPicker) {
 		}
 	}
 	p.Groups = options
-	p.Reselect(selected, func(opt groupOption) bool { return opt.SessionID == "" })
+	p.Reselect(selected, func(opt spawn.GroupOption) bool { return opt.SessionID == "" })
 }
 
 // pruneMoveTargets drops the moved group and its descendants from the
 // picker: a group cannot land inside its own subtree.
-func pruneMoveTargets(p *groupPicker, subtree string) {
+func pruneMoveTargets(p *spawn.Picker, subtree string) {
 	selected := p.GroupPath()
-	options := make([]groupOption, 0, len(p.Groups))
+	options := make([]spawn.GroupOption, 0, len(p.Groups))
 	for _, opt := range p.Groups {
 		if opt.Path == subtree || strings.HasPrefix(opt.Path, subtree+"/") {
 			continue
@@ -151,13 +152,13 @@ func pruneMoveTargets(p *groupPicker, subtree string) {
 		options = append(options, opt)
 	}
 	p.Groups = options
-	p.Reselect(selected, func(groupOption) bool { return true })
+	p.Reselect(selected, func(spawn.GroupOption) bool { return true })
 }
 
 // placeMove runs the placement the picked row asks for on the effect lane;
 // the card closes from the fenced follow-up. A move the dialog refuses
 // closes it now.
-func (m *Model) placeMove(move uidialogs.Move, p *groupPicker) tea.Cmd {
+func (m *Model) placeMove(move uidialogs.Move, p *spawn.Picker) tea.Cmd {
 	pick := uidialogs.MovePick{Group: p.GroupPath()}
 	if !move.IsGroup() {
 		opt := p.Picked()
@@ -174,7 +175,7 @@ func (m *Model) placeMove(move uidialogs.Move, p *groupPicker) tea.Cmd {
 	return m.enqueueMove(uirail.Mutation{Kind: uirail.PlaceSession, SessionID: request.SessionID, Group: request.Group, ParentID: request.ParentID}, moveDialogClose{sessID: request.SessionID, optPath: request.Group, optSessID: request.ParentID})
 }
 
-func (m *Model) viewMove(p *groupPicker) string {
+func (m *Model) viewMove(p *spawn.Picker) string {
 	return m.card(uidialogs.MoveTitle(m.prefs.glyphMode), m.viewGroupPicker(p), uidialogs.MoveHints())
 }
 
@@ -219,8 +220,8 @@ func (m *Model) viewFork(form *uidialogs.Fork) string {
 
 // stepRenameBase steps the group base choice, probing the default path the
 // open group edit would save.
-func (m *Model) stepRenameBase(s *renameSurface, delta int) (string, tea.Cmd) {
-	return m.stepGroupBase(groupBaseRename, m.gens.dialog, m.renameGroupDir(s), s.base, delta)
+func (m *Model) stepRenameBase(s *uidialogs.RenameSurface, delta int) (string, tea.Cmd) {
+	return m.stepGroupBase(groupBaseRename, m.gens.dialog, m.renameGroupDir(s), s.Base, delta)
 }
 
 // openRename reads the selected row, the workspace's group choices and the
@@ -235,13 +236,13 @@ func (m *Model) openRename() {
 		m.reportErr("root is the top level, not a group to rename")
 		return
 	}
-	var surface *renameSurface
+	var surface *uidialogs.RenameSurface
 	if entry.isGroup {
 		dir := m.workspace.groupPaths[entry.group]
 		if dir == "" {
 			dir = m.capturedGroupDefaultDir(entry.group)
 		}
-		surface = newRenameSurface(uidialogs.RenameGroup(entry.group, dir, groupWorktreeIndex(m.workspace.groupWorktrees[entry.group])), m.workspace.groupBases[entry.group])
+		surface = newRenameSurface(m, uidialogs.RenameGroup(entry.group, dir, groupWorktreeIndex(m.workspace.groupWorktrees[entry.group])), m.workspace.groupBases[entry.group])
 	} else {
 		tools := m.services.cfg.AgentToolNames()
 		shells := []string{}
@@ -252,7 +253,7 @@ func (m *Model) openRename() {
 		}
 		sort.Strings(shells)
 		tools = append(tools, shells...)
-		surface = newRenameSurface(uidialogs.RenameSession(entry.sess.ID, entry.sess.Name, entry.sess.Tool, tools), "")
+		surface = newRenameSurface(m, uidialogs.RenameSession(entry.sess.ID, entry.sess.Name, entry.sess.Tool, tools), "")
 	}
 	m.push(surface)
 	m.clearErr()
@@ -260,13 +261,13 @@ func (m *Model) openRename() {
 
 // renameGroupDir is the default path the group edit would save, resolved
 // the way the rename worker resolves it.
-func (m *Model) renameGroupDir(s *renameSurface) string {
+func (m *Model) renameGroupDir(s *uidialogs.RenameSurface) string {
 	return m.capturedAbsolutePath(s.Dir(), m.capturedGroupDefaultDir(parentGroup(s.Path())))
 }
 
 // viewRenameGroupFields draws the group edit's path, worktree and base rows
 // under the group's head in the detail column.
-func (m *Model) viewRenameGroupFields(s *renameSurface, group string, width int) string {
+func (m *Model) viewRenameGroupFields(s *uidialogs.RenameSurface, group string, width int) string {
 	view := uidialogs.GroupFieldsView{
 		Width:     width,
 		Label:     labelStyle(),
@@ -275,10 +276,10 @@ func (m *Model) viewRenameGroupFields(s *renameSurface, group string, width int)
 		Value:     valueStyle(),
 		Input:     textInputView,
 		Worktrees: groupWorktreeOptions,
-		Base:      groupBaseChoice(s.base, m.groupBase(parentGroup(group))),
+		Base:      groupBaseChoice(s.Base, m.groupBase(parentGroup(group))),
 	}
-	if s.complete.Active() {
-		view.Suggestions = func() string { return s.complete.View(pathCompleteStyles(m.prefs.glyphMode)) }
+	if s.Paths().Active() {
+		view.Suggestions = func() string { return s.Paths().View(pathCompleteStyles(m.prefs.glyphMode)) }
 	}
 	return s.GroupFields(view)
 }

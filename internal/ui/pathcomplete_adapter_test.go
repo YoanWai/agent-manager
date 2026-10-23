@@ -160,17 +160,17 @@ func TestGroupPickerExitsToAdjacentFields(t *testing.T) {
 func TestStandaloneGroupPickerWrapsWhenThereAreNoAdjacentFields(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
-	s := newMoveSurface(uidialogs.MoveSession("s"), groupPicker{Groups: []groupOption{{Path: ""}, {Path: "alpha"}, {Path: "beta"}}})
+	s := newMoveSurface(m, uidialogs.MoveSession("s"), spawn.Picker{Groups: []spawn.GroupOption{{Path: ""}, {Path: "alpha"}, {Path: "beta"}}})
 	m.push(s)
 
 	m.Update(tea.KeyMsg{Type: tea.KeyUp})
-	if s.GroupIndex != 2 {
-		t.Fatalf("up past first group should wrap to last, index=%d", s.GroupIndex)
+	if s.Picker().GroupIndex != 2 {
+		t.Fatalf("up past first group should wrap to last, index=%d", s.Picker().GroupIndex)
 	}
 
 	m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	if s.GroupIndex != 0 {
-		t.Fatalf("down past last group should wrap to first, index=%d", s.GroupIndex)
+	if s.Picker().GroupIndex != 0 {
+		t.Fatalf("down past last group should wrap to first, index=%d", s.Picker().GroupIndex)
 	}
 }
 
@@ -178,11 +178,11 @@ func TestRenamePathSuggestionsExitToName(t *testing.T) {
 	t.Parallel()
 	root := setupCompletionDir(t)
 	m := buildModel(t)
-	m.push(newRenameSurface(uidialogs.RenameGroup("", "", 0), ""))
+	m.push(newRenameSurface(m, uidialogs.RenameGroup("", "", 0), ""))
 	m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	loadPathSuggestions(m, pathcomplete.Rename, filepath.Join(root, "a"))
-	openRename(m).complete.Chosen = true
-	openRename(m).complete.Index = len(openRename(m).complete.Suggestions) - 1
+	openRename(m).Paths().Chosen = true
+	openRename(m).Paths().Index = len(openRename(m).Paths().Suggestions) - 1
 
 	m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	if openRename(m).Focus() != 2 {
