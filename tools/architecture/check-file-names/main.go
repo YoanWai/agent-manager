@@ -40,18 +40,13 @@ var packaged = map[string]string{
 	"review":       "the Review adapter",
 	"settings":     "the Settings adapter, its store lane and the stored preference readers",
 	"spawn":        "the New Session form adapter, its group picker, request, defaults, group base and fetch, catalog reads, spawn effect, preflight and worktree probe",
+	"terminal":     "the terminal adapter, the link seams it hands the package and the directory read effect",
 	"theme":        "live styles, surfaces and the stored theme",
 }
 
 // rootExtras are root files of packaged features that are neither adapter,
 // effect nor surface. They predate the rule; the list only shrinks.
-var rootExtras = map[string]bool{
-	"theme.go":         true,
-	"theme_glyphs.go":  true,
-	"theme_prefs.go":   true,
-	"theme_styles.go":  true,
-	"theme_surface.go": true,
-}
+var rootExtras = map[string]bool{}
 
 // rootOnly are the features that live in the root package itself. The
 // list is closed: a new feature starts as a package under internal/ui and
@@ -65,7 +60,6 @@ var rootOnly = map[string]string{
 	"session":    "session lifecycle: launch, attach, kill, revive, archive, delete, restart, editor",
 	"startup":    "startup greeting and banner",
 	"status":     "the status bar and toasts",
-	"terminal":   "terminal handoff, link opening and link pages",
 	"workspace":  "polling, refresh and what the last poll returned",
 }
 

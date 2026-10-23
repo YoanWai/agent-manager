@@ -25,6 +25,7 @@ var (
 	railBoundary        = boundary{"Rail", "/internal/ui/rail", []string{"/internal/ui/rail", "/internal/keybind", "/internal/remote/value", "/internal/ui/presentation", "/internal/ui/theme"}}
 	settingsBoundary    = boundary{"Settings", "/internal/ui/settings", []string{"/internal/ui/settings", "/internal/keybind", "/internal/ui/presentation", "/internal/ui/theme", "/internal/ui/surface"}}
 	geometryBoundary    = boundary{"Geometry", "/internal/ui/geometry", []string{"/internal/ui/geometry", "/internal/keybind", "/internal/ui/surface"}}
+	terminalBoundary    = boundary{"Terminal", "/internal/ui/terminal", []string{"/internal/ui/terminal", "/internal/clipboard", "/internal/termseq", "/internal/wsl", "/internal/ui/presentation"}}
 	themeBoundary       = boundary{"Theme", "/internal/ui/theme", []string{"/internal/ui/theme"}}
 	spawnBoundary       = boundary{"Spawn", "/internal/ui/spawn", []string{"/internal/ui/spawn", "/internal/catalog/value", "/internal/ui/presentation", "/internal/ui/surface", "/internal/ui/pathcomplete"}}
 	composerBoundary    = boundary{"Composer", "/internal/ui/composer", []string{"/internal/ui/composer", "/internal/clipboard", "/internal/termseq", "/internal/wsl", "/internal/ui/spawn", "/internal/catalog/value", "/internal/ui/presentation", "/internal/ui/surface", "/internal/ui/pathcomplete"}}
@@ -40,7 +41,7 @@ var (
 )
 
 func main() {
-	for _, feature := range []boundary{helpBoundary, reviewBoundary, focusBoundary, watchBoundary, railBoundary, settingsBoundary, geometryBoundary, themeBoundary, spawnBoundary, quickBoundary, pathBoundary, composerBoundary, dialogsBoundary, noticesBoundary, connectionsBoundary, surfaceBoundary, diffBoundary, valueBoundary, catalogBoundary, presentBoundary, remoteBoundary} {
+	for _, feature := range []boundary{helpBoundary, reviewBoundary, focusBoundary, watchBoundary, railBoundary, settingsBoundary, geometryBoundary, terminalBoundary, themeBoundary, spawnBoundary, quickBoundary, pathBoundary, composerBoundary, dialogsBoundary, noticesBoundary, connectionsBoundary, surfaceBoundary, diffBoundary, valueBoundary, catalogBoundary, presentBoundary, remoteBoundary} {
 		if err := checkBoundary(feature); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)

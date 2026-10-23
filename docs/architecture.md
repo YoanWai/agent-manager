@@ -84,7 +84,7 @@ testable without tmux or a terminal, and keeps one place that closes what it
 opened on quit.
 
 **Theme styles are published whole.** `applyTheme` builds a palette's styles
-and swaps them in with one atomic pointer (`internal/ui/theme_styles.go`), so
+and swaps them in with one atomic pointer (`internal/ui/theme/styles.go`), so
 Models on several goroutines never race on them; a `Styles` value on `Model`
 would have to thread through every free render helper for no other gain.
 
