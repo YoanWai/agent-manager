@@ -4,6 +4,7 @@ import (
 	"slices"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/lipgloss"
@@ -56,7 +57,7 @@ func (m *Model) footer() legend {
 		}
 		savedLabel := m.services.keys.Binding(keybind.SavedPrompt).Label()
 		if top, _ := m.top(); top != nil {
-			if _, bare := top.(*focusSurface); !bare {
+			if _, bare := top.(*uifocus.Surface); !bare {
 				pairs = append(top.Footer(), pairs...)
 				savedLabel = ""
 			}

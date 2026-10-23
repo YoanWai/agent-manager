@@ -930,11 +930,11 @@ func caretModel(t *testing.T, cursor paneCursor, rows ...string) *Model {
 		t.Fatalf("engine: %v", err)
 	}
 	m := &Model{
-		screen: screen{surfaces: []surface{&focusSurface{}}},
 		services: services{
 			engine: engine,
 		},
 	}
+	m.push(newFocusSurface(m))
 	m.workspace.preview = strings.Join(rows, "\n") + "\n"
 	setFocusPaneFacts(m, "s1", false, false, false, 0, cursor)
 	return m
@@ -1007,11 +1007,11 @@ func TestCaretOnGrokComposer(t *testing.T) {
 	}
 	build := func(x int, y int, rows ...string) *Model {
 		m := &Model{
-			screen: screen{surfaces: []surface{&focusSurface{}}},
 			services: services{
 				engine: engine,
 			},
 		}
+		m.push(newFocusSurface(m))
 		m.workspace.preview = strings.Join(rows, "\n") + "\n"
 		setFocusPaneFacts(m, "s1", false, false, false, 0, paneCursor{x: x, y: y, ok: true})
 		return m
@@ -1061,11 +1061,11 @@ func TestCaretOnPisBareComposerRow(t *testing.T) {
 	}
 	build := func(x int, y int, rows ...string) *Model {
 		m := &Model{
-			screen: screen{surfaces: []surface{&focusSurface{}}},
 			services: services{
 				engine: engine,
 			},
 		}
+		m.push(newFocusSurface(m))
 		m.workspace.preview = strings.Join(rows, "\n") + "\n"
 		setFocusPaneFacts(m, "s1", false, false, false, 0, paneCursor{x: x, y: y, positionOK: true})
 		return m
@@ -1102,11 +1102,11 @@ func TestCaretOnPisComposerRowWhileWorking(t *testing.T) {
 	}
 	build := func(x int, rows ...string) *Model {
 		m := &Model{
-			screen: screen{surfaces: []surface{&focusSurface{}}},
 			services: services{
 				engine: engine,
 			},
 		}
+		m.push(newFocusSurface(m))
 		m.workspace.preview = strings.Join(rows, "\n") + "\n"
 		setFocusPaneFacts(m, "s1", false, false, false, 0, paneCursor{x: x, y: 2, positionOK: true})
 		return m
@@ -1143,11 +1143,11 @@ func TestCaretOnOpencodesMultiLineDraftWithShippedDefaults(t *testing.T) {
 		t.Fatalf("engine: %v", err)
 	}
 	m := &Model{
-		screen: screen{surfaces: []surface{&focusSurface{}}},
 		services: services{
 			engine: engine,
 		},
 	}
+	m.push(newFocusSurface(m))
 	m.workspace.preview = strings.Join([]string{"", "  ┃  first line", "  ┃", "  ┃", "  ┃  Build · model", "  ╹▀▀▀▀▀▀"}, "\n") + "\n"
 	setFocusPaneFacts(m, "s1", false, false, false, 0, paneCursor{x: 5, y: 2, ok: true})
 	if m.caretAtInputStart("s1", "opencode") {
@@ -1267,7 +1267,7 @@ func TestFocusLeftUnfocusesTerminalAtPromptHead(t *testing.T) {
 		// Focus is re-entered directly: going through the key path would
 		// restart the live watcher, whose pushed capture races the fixture
 		// pane set below.
-		m.push(&focusSurface{})
+		m.push(newFocusSurface(m))
 		setFocusPaneID(m, sess.ID)
 		m.workspace.preview = prompt + "\n"
 		setFocusCursor(m, paneCursor{x: len([]rune(prompt)), y: 0, ok: true})
@@ -1411,11 +1411,11 @@ func TestCaretOnOpencodesGutterComposer(t *testing.T) {
 	}
 	build := func(x int, y int, rows ...string) *Model {
 		m := &Model{
-			screen: screen{surfaces: []surface{&focusSurface{}}},
 			services: services{
 				engine: engine,
 			},
 		}
+		m.push(newFocusSurface(m))
 		m.workspace.preview = strings.Join(rows, "\n") + "\n"
 		setFocusPaneFacts(m, "s1", false, false, false, 0, paneCursor{x: x, y: y, ok: true})
 		return m
@@ -1481,11 +1481,11 @@ func TestCaretParkedBelowCommandCodesComposer(t *testing.T) {
 	}
 	build := func(x int, y int, rows ...string) *Model {
 		m := &Model{
-			screen: screen{surfaces: []surface{&focusSurface{}}},
 			services: services{
 				engine: engine,
 			},
 		}
+		m.push(newFocusSurface(m))
 		m.workspace.preview = strings.Join(rows, "\n") + "\n"
 		setFocusPaneFacts(m, "s1", false, false, false, 0, paneCursor{x: x, y: y, positionOK: true})
 		return m

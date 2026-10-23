@@ -54,7 +54,7 @@ func TestClickedNotificationLeavesFocusBeforeSelecting(t *testing.T) {
 	if other.ID == "" {
 		t.Fatal("waiting session missing")
 	}
-	m.push(&focusSurface{})
+	m.push(newFocusSurface(m))
 	served := false
 	m.poller.dependencies.TakeFocus = func() (string, bool) {
 		if served {
@@ -93,7 +93,7 @@ func TestClickedNotificationForAGoneSessionChangesNothing(t *testing.T) {
 				t.Fatal("nothing selected")
 			}
 			if test.focus {
-				m.push(&focusSurface{})
+				m.push(newFocusSurface(m))
 			}
 			want := m.screenID()
 			served := false

@@ -790,7 +790,7 @@ func TestAppMouseClearsScrollback(t *testing.T) {
 	createSession(t, m, "sticky", t.TempDir(), "")
 	m.selectSessionRow(t, "sticky")
 	sess := railSelectedSession(m)
-	m.push(&focusSurface{})
+	m.push(newFocusSurface(m))
 	m.focus.pane.Enter(uifocus.EnterContext{SessionID: sess.ID})
 	setFocusScrollOffset(t, m, sess.ID, 9, m.focusPaneRows())
 	if !m.scrolledBack() {
@@ -822,7 +822,7 @@ func TestStaleMouseClaimDoesNotClearHistoryScroll(t *testing.T) {
 	createSession(t, m, "stale-hold", t.TempDir(), "")
 	m.selectSessionRow(t, "stale-hold")
 	sess := railSelectedSession(m)
-	m.push(&focusSurface{})
+	m.push(newFocusSurface(m))
 	m.workspace.preview = "SCROLLED-FRAME\n"
 	m.focus.pane.Enter(uifocus.EnterContext{SessionID: sess.ID})
 	setFocusScrollOffset(t, m, sess.ID, 9, m.focusPaneRows())
@@ -851,7 +851,7 @@ func TestPolledFrameHoldsScrolledView(t *testing.T) {
 	createSession(t, m, "polled", t.TempDir(), "")
 	m.selectSessionRow(t, "polled")
 	sess := railSelectedSession(m)
-	m.push(&focusSurface{})
+	m.push(newFocusSurface(m))
 	m.workspace.preview = "SCROLLED-FRAME\n"
 	m.focus.pane.Enter(uifocus.EnterContext{SessionID: sess.ID})
 	setFocusScrollOffset(t, m, sess.ID, 6, m.focusPaneRows())

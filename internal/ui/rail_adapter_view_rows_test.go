@@ -495,7 +495,7 @@ func TestInboxBadgeOutlivesTheNameAndTheFocusBadge(t *testing.T) {
 		m.workspace.sessions = []store.Session{{ID: "x", Name: "some-long-session-name", Tool: "claude", Group: "a/b/c"}}
 		m.rebuildRows()
 		setRailCursor(m, len(railRows(m))-1)
-		m.push(&focusSurface{})
+		m.push(newFocusSurface(m))
 		m.workspace.queuedMessages = map[string]int{"x": 2}
 
 		rows := railTextAt(m, width)

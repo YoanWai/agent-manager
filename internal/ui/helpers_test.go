@@ -21,6 +21,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	"github.com/YoanWai/agent-manager/internal/testfixture"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -846,6 +847,6 @@ func gitOutput(t *testing.T, dir string, args ...string) string {
 
 // savedListOpen reports the saved prompts list on the surface stack.
 func (m *Model) savedListOpen() bool {
-	_, ok := surfaceOf[*focusSaved](m)
+	_, ok := surfaceOf[*uifocus.Saved](m)
 	return ok
 }

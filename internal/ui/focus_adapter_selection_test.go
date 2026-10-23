@@ -210,7 +210,7 @@ func TestBottomParkedCaretSurvivesControlCapture(t *testing.T) {
 	rows[40] = strings.Repeat("─", 60)
 	rows[41] = "  » permission bypass on [shift+tab]"
 	rows[42] = "  ? for shortcuts · PR #390 · taste on"
-	m.push(&focusSurface{})
+	m.push(newFocusSurface(m))
 	m.workspace.preview = focuswatch.MatchExecShape(strings.Join(rows, "\n"))
 	setFocusPaneFacts(m, "s1", false, false, false, 0, paneCursor{x: 0, y: 46, ok: true})
 	if !m.caretAtInputStart("s1", "command-code") {

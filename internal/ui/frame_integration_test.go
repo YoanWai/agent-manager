@@ -165,7 +165,7 @@ func TestHiddenHeaderTitlesTopEdgeWithUpdate(t *testing.T) {
 			m := shotModel()
 			m.prefs.fullLayout = tc.full
 			if tc.focus {
-				m.push(&focusSurface{})
+				m.push(newFocusSurface(m))
 			}
 			m.update.latest = "v9.9.9"
 			const tag = "↑ v9.9.9 available"
@@ -435,7 +435,7 @@ func TestSplitRepinKeepsTallerPaneHeight(t *testing.T) {
 func TestFullFocusFooterIsOneRow(t *testing.T) {
 	m := shotModel()
 	m.prefs.fullLayout = true
-	m.push(&focusSurface{})
+	m.push(newFocusSurface(m))
 	if got := lipgloss.Height(m.viewFooter()); got != 1 {
 		t.Fatalf("full focus footer = %d rows, want 1", got)
 	}
@@ -473,7 +473,7 @@ func TestQuickFooterLeavesThePaneSizeAlone(t *testing.T) {
 func TestFullFocusRuleNamesTheSession(t *testing.T) {
 	m := shotModel()
 	m.prefs.fullLayout = true
-	m.push(&focusSurface{})
+	m.push(newFocusSurface(m))
 	m.workspace.queuedMessages = map[string]int{"add-rate-limiting": 2}
 	// A wide terminal holds every reading.
 	if wide := ansi.Strip(m.focusFactsLine(200)); !strings.Contains(wide, "started ") {
@@ -541,7 +541,7 @@ func TestFocusFactsWriteHomeAsTilde(t *testing.T) {
 	m := shotModel()
 	m.env.homeDir = home
 	m.prefs.fullLayout = true
-	m.push(&focusSurface{})
+	m.push(newFocusSurface(m))
 	setRailSessionCwd(m, railSelectedSession(m).ID, filepath.Join(home, "dev", "api"))
 	facts := ansi.Strip(m.focusFactsLine(200))
 	if !strings.Contains(facts, filepath.Join("~", "dev", "api")) {

@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -22,8 +23,8 @@ func focusWithSavedList(t *testing.T) *Model {
 	if !m.focused() {
 		t.Fatalf("enter did not focus, screen = %v", m.screenID())
 	}
-	s := newFocusSaved(0, m.spawnStyles())
-	s.list.Load([]spawn.Saved{{Name: "Role", Text: "be brief"}}, nil)
+	s := uifocus.OpenSaved(focusSavedRoot{m}, 0, m.spawnStyles())
+	s.Load([]spawn.Saved{{Name: "Role", Text: "be brief"}}, nil)
 	m.push(s)
 	return m
 }
@@ -114,7 +115,7 @@ func TestClickOffADismissibleSurfaceClosesIt(t *testing.T) {
 
 // leaveSpy records whether pop ran its Leave, once, with the host.
 type leaveSpy struct {
-	focusSaved
+	uifocus.Saved
 	left int
 }
 
@@ -129,7 +130,7 @@ func (s *leaveSpy) Leave(h surfaceHost) {
 // stack of surfaces runs each one, top first.
 func TestPopRunsLeaveOnce(t *testing.T) {
 	m := buildModel(t)
-	spy := &leaveSpy{focusSaved: *newFocusSaved(0, m.spawnStyles())}
+	spy := &leaveSpy{Saved: *uifocus.OpenSaved(focusSavedRoot{m}, 0, m.spawnStyles())}
 	m.push(spy)
 	m.Pop()
 	m.Pop()
@@ -137,7 +138,7 @@ func TestPopRunsLeaveOnce(t *testing.T) {
 		t.Fatalf("Leave ran %d times, want 1", spy.left)
 	}
 	m.push(spy)
-	m.push(newFocusSaved(1, m.spawnStyles()))
+	m.push(uifocus.OpenSaved(focusSavedRoot{m}, 1, m.spawnStyles()))
 	m.clearSurfaces()
 	if spy.left != 2 || len(m.surfaces) != 0 {
 		t.Fatalf("after clearSurfaces: Leave ran %d times, %d surfaces left", spy.left, len(m.surfaces))

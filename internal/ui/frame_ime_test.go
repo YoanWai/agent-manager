@@ -17,7 +17,7 @@ import (
 
 func TestFocusCursorAnchorTracksMirroredCaret(t *testing.T) {
 	m := &Model{
-		screen: screen{surfaces: []surface{&focusSurface{}}},
+		screen: screen{},
 		workspace: workspace{
 			preview:  "first\nsecond\nthird\n",
 			sessions: []store.Session{{ID: "focused"}},
@@ -25,6 +25,7 @@ func TestFocusCursorAnchorTracksMirroredCaret(t *testing.T) {
 		rail:  railModelFromRows([]treeRow{{sess: store.Session{ID: "focused"}}}, 0),
 		focus: focusState{runtime: focusRuntimeState{imeCursor: &cursorAnchor{}}},
 	}
+	m.push(newFocusSurface(m))
 	m.focus.pane.Enter(uifocus.EnterContext{SessionID: "focused"})
 	setFocusCursor(m, paneCursor{x: 7, y: 1, ok: true})
 	prepareFocusFrame(m, m.workspace.preview, 30, 3, 40, 8, 1)
@@ -43,7 +44,7 @@ func TestFocusCursorAnchorTracksMirroredCaret(t *testing.T) {
 
 func TestFocusCursorAnchorRemovesListSearchMarker(t *testing.T) {
 	m := &Model{
-		screen: screen{surfaces: []surface{&focusSurface{}}},
+		screen: screen{},
 		workspace: workspace{
 			preview:  "first\nsecond\nthird\n",
 			sessions: []store.Session{{ID: "focused"}},
@@ -51,6 +52,7 @@ func TestFocusCursorAnchorRemovesListSearchMarker(t *testing.T) {
 		rail:  railModelSearching([]treeRow{{sess: store.Session{ID: "focused", Name: "active"}}}, 0, "active"),
 		focus: focusState{runtime: focusRuntimeState{imeCursor: &cursorAnchor{}}},
 	}
+	m.push(newFocusSurface(m))
 	m.focus.pane.Enter(uifocus.EnterContext{SessionID: "focused"})
 	setFocusCursor(m, paneCursor{x: 7, y: 1, ok: true})
 	prepareFocusFrame(m, m.workspace.preview, 30, 3, 40, 8, 1)
@@ -66,7 +68,7 @@ func TestFocusCursorAnchorRemovesListSearchMarker(t *testing.T) {
 
 func TestFocusCursorAnchorAccountsForDroppedCaptureRows(t *testing.T) {
 	m := &Model{
-		screen: screen{surfaces: []surface{&focusSurface{}}},
+		screen: screen{},
 		workspace: workspace{
 			preview:  "one\ntwo\nthree\nfour\n",
 			sessions: []store.Session{{ID: "focused"}},
@@ -74,6 +76,7 @@ func TestFocusCursorAnchorAccountsForDroppedCaptureRows(t *testing.T) {
 		rail:  railModelFromRows([]treeRow{{sess: store.Session{ID: "focused"}}}, 0),
 		focus: focusState{runtime: focusRuntimeState{imeCursor: &cursorAnchor{}}},
 	}
+	m.push(newFocusSurface(m))
 	m.focus.pane.Enter(uifocus.EnterContext{SessionID: "focused"})
 	setFocusCursor(m, paneCursor{x: 4, y: 3, ok: true})
 	prepareFocusFrame(m, m.workspace.preview, 12, 2, 20, 5, 3)

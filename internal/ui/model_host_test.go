@@ -23,8 +23,9 @@ var forbiddenHostTypes = []string{"Model", "services", "effectServices", "effect
 
 // The root's hosts and every feature package's Root are checked alike: a
 // surface that lives in its package reaches the root through Root, which is
-// a host by another name. A package's own *Host interfaces (spawn.FormHost,
-// quick.Host) predate this check and are its own business; only Root, the
+// a host by another name, and a second surface in the same package gets its
+// own Root beside it. A package's own *Host interfaces (spawn.FormHost,
+// quick.Host) predate this check and are its own business; only a Root, the
 // contract this test exists to keep narrow, is read in child packages.
 func TestFeatureHostsStayNarrow(t *testing.T) {
 	dirs := []string{"."}
@@ -50,7 +51,7 @@ func TestFeatureHostsStayNarrow(t *testing.T) {
 			for _, file := range pkg.Files {
 				files = append(files, file)
 			}
-			isHost := func(name string) bool { return name == "Root" }
+			isHost := func(name string) bool { return strings.HasSuffix(name, "Root") }
 			if dir == "." {
 				isHost = func(name string) bool { return strings.HasSuffix(name, "Host") || name == "Root" }
 			}

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/remote"
+	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -25,7 +26,7 @@ func TestCtrlCOnEveryBase(t *testing.T) {
 	}{
 		"list":   {func(*Model) {}, true},
 		"review": {func(m *Model) { m.base = baseReview }, true},
-		"focus":  {func(m *Model) { m.push(&focusSurface{}) }, false},
+		"focus":  {func(m *Model) { m.push(newFocusSurface(m)) }, false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			m := buildModel(t)
@@ -87,7 +88,7 @@ func TestCtrlCClosesTheSavedListOverFocus(t *testing.T) {
 	if !m.focused() {
 		t.Fatalf("enter did not focus, screen = %v", m.screenID())
 	}
-	m.push(newFocusSaved(0, m.spawnStyles()))
+	m.push(uifocus.OpenSaved(focusSavedRoot{m}, 0, m.spawnStyles()))
 	m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	if m.effects.quitting || !m.focused() || m.savedListOpen() {
 		t.Fatalf("quitting=%t screen = %v list open=%t", m.effects.quitting, m.screenID(), m.savedListOpen())
@@ -106,7 +107,7 @@ func TestCtrlCAbandonsADrainFromFocus(t *testing.T) {
 	if !m.effects.quitting || m.effects.main.active == nil {
 		t.Fatal("quit did not begin draining")
 	}
-	m.push(&focusSurface{})
+	m.push(newFocusSurface(m))
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	if cmd == nil {
 		t.Fatal("ctrl+c during a drain was discarded")

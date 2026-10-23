@@ -23,7 +23,8 @@ type paneCursor struct {
 func paneAt(t *testing.T, lines ...string) *Model {
 	t.Helper()
 	preview := strings.Join(lines, "\n") + "\n"
-	m := &Model{screen: screen{surfaces: []surface{&focusSurface{}}}}
+	m := &Model{}
+	m.push(newFocusSurface(m))
 	m.workspace.preview = preview
 	m.focus.pane.Enter(uifocus.EnterContext{SessionID: "s1"})
 	setFocusPaneID(m, "s1")
@@ -37,7 +38,7 @@ func paneAt(t *testing.T, lines ...string) *Model {
 func focusedShotPane(t *testing.T, width, x, y int, rows ...string) (*Model, string) {
 	t.Helper()
 	m := shotModel()
-	m.push(&focusSurface{})
+	m.push(newFocusSurface(m))
 	sess, ok := m.selected()
 	if !ok {
 		t.Fatal("test setup: no selected session")

@@ -61,7 +61,7 @@ func (m *Model) applyFocusEffect(request focusRequest, result focusEffectResult,
 
 func (m *Model) enterFocus(sess store.Session) tea.Cmd {
 	m.clearSurfaces()
-	m.push(&focusSurface{})
+	m.push(newFocusSurface(m))
 	if m.prefs.fullLayout {
 		m.pinFullFocusPane(sess.ID)
 	}

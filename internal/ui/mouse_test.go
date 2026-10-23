@@ -38,7 +38,7 @@ func TestSyncMouseCaptureRespectsMouseDisabled(t *testing.T) {
 	if !m.mouse.released {
 		t.Fatal("mouseReleased should follow the setting in list mode")
 	}
-	m.push(&focusSurface{})
+	m.push(newFocusSurface(m))
 	if cmd := m.syncMouseCapture(); cmd == nil {
 		t.Fatal("entering focus mode should re-capture regardless of the setting")
 	}

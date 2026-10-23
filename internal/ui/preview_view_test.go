@@ -152,7 +152,7 @@ func previewText(m *Model) string {
 
 func TestPreviewBottomAlignsCompactPane(t *testing.T) {
 	m := previewModel(status.Finished, "todo\ncomposer"+strings.Repeat("\n", 10))
-	m.push(&focusSurface{})
+	m.push(newFocusSurface(m))
 	m.focus.pane.Enter(uifocus.EnterContext{SessionID: "boot"})
 	lines := strings.Split(previewText(m), "\n")
 	if strings.TrimSpace(lines[10]) != "todo" || strings.TrimSpace(lines[11]) != "composer" {
@@ -264,7 +264,7 @@ func TestPreviewLeavesTheFocusedPaneAlone(t *testing.T) {
 	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
 
 	m := previewModel(status.Starting, blankCapture)
-	m.push(&focusSurface{})
+	m.push(newFocusSurface(m))
 	m.focus.pane.Enter(uifocus.EnterContext{SessionID: "boot"})
 	setFocusCursor(m, paneCursor{ok: true})
 	lines := m.previewLines(80, 12, "  ")

@@ -728,7 +728,7 @@ func TestDismissedFeedDoesNotOpenNoticesModal(t *testing.T) {
 
 func TestNewFeedDoesNotStealFocus(t *testing.T) {
 	m := footModel(t)
-	m.push(&focusSurface{})
+	m.push(newFocusSurface(m))
 
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
 	if !m.focused() {
@@ -738,7 +738,7 @@ func TestNewFeedDoesNotStealFocus(t *testing.T) {
 
 func TestPendingFeedDoesNotOpenDuringQuit(t *testing.T) {
 	m := footModel(t)
-	m.push(&focusSurface{})
+	m.push(newFocusSurface(m))
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
 	if m.notices.pendingNotice != "feed-new" {
 		t.Fatalf("pending notice = %q, want feed-new", m.notices.pendingNotice)
@@ -773,7 +773,7 @@ func TestAdditionalFeedIdOpensNoticesModal(t *testing.T) {
 
 func TestFeedDuringFocusOpensOnLeave(t *testing.T) {
 	m := footModel(t)
-	m.push(&focusSurface{})
+	m.push(newFocusSurface(m))
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
 	if !m.focused() {
 		t.Fatalf("screen = %v, want focus until leave", m.screenID())
@@ -809,7 +809,7 @@ func TestFeedDuringSettingsOpensOnClose(t *testing.T) {
 
 func TestExpiredPendingNoticeDoesNotOpen(t *testing.T) {
 	m := footModel(t)
-	m.push(&focusSurface{})
+	m.push(newFocusSurface(m))
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
 	m.Update(feedMsg{})
 	m.leaveFocus()
