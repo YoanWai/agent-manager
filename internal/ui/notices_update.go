@@ -190,6 +190,7 @@ func (m *Model) routeNoticesMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		return routed(m, tea.Batch(m.checkForUpdate, m.checkFeed, m.updateTick()))
 
 	case feedMsg:
+		m.notices.feedPending = false
 		if msg.manual {
 			m.finishNoticeRefresh()
 		}

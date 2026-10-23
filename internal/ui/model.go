@@ -256,6 +256,7 @@ func newView(deps Dependencies, version string) (*Model, error) {
 			whatsNewVersion:     loadWhatsNewVersion(st),
 			whatsNewFromVersion: loadWhatsNewFromVersion(st),
 			configImportError:   configImportError,
+			feedPending:         true,
 		},
 	}
 	if deps.ProfileDir != "" {

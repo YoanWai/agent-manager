@@ -30,6 +30,16 @@ func ids(notices []Notice) []string {
 	return out
 }
 
+func TestPendingFeedNamesThePanelTail(t *testing.T) {
+	frame := testFrame()
+	frame.FeedPending = true
+	panel := NewPanel(nil)
+	got := ansi.Strip(strings.Join(panel.View(nil, frame), "\n"))
+	if !strings.Contains(got, FeedPendingText) {
+		t.Fatalf("a pending feed should say so in the panel:\n%s", got)
+	}
+}
+
 func TestPanelRunsOnCopiedSources(t *testing.T) {
 	src := testSources("v0.3.0")
 	p := NewPanel(map[string]bool{})

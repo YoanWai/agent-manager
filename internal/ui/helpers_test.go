@@ -233,6 +233,10 @@ func buildModelWithStorePath(t *testing.T, dbPath string) *Model {
 	m.layout.width = 120
 	m.layout.height = 40
 	m.startup.booting = false
+	// A new model is still waiting on its startup feed check. Tests of the
+	// settled screen apply an empty result, the same as a check that found
+	// nothing new.
+	m.Update(feedMsg{})
 	t.Cleanup(func() {
 		for _, s := range m.workspace.sessions {
 			driver.Kill(s.ID)
@@ -659,6 +663,7 @@ func reloadModel(t *testing.T, m *Model) *Model {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	loaded.Update(feedMsg{})
 	return loaded
 }
 
