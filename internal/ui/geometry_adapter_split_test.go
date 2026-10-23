@@ -6,51 +6,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
-
-type memSettings map[string]string
-
-func (m memSettings) Setting(key string) (string, error) {
-	return m[key], nil
-}
-
-func TestLoadSplitRatio(t *testing.T) {
-	if got := loadSplitRatio(memSettings{}); got != defaultSplitRatio {
-		t.Fatalf("empty setting: got %v want %v", got, defaultSplitRatio)
-	}
-	if got := loadSplitRatio(memSettings{splitRatioSetting: "0.5"}); got != 0.5 {
-		t.Fatalf("stored 0.5: got %v", got)
-	}
-	if got := loadSplitRatio(memSettings{splitRatioSetting: "nope"}); got != defaultSplitRatio {
-		t.Fatalf("garbage should fall back, got %v", got)
-	}
-	if got := loadSplitRatio(memSettings{splitRatioSetting: "1.5"}); got != defaultSplitRatio {
-		t.Fatalf("out of range should fall back, got %v", got)
-	}
-	if got := loadSplitRatio(memSettings{splitRatioSetting: "0"}); got != defaultSplitRatio {
-		t.Fatalf("zero should fall back, got %v", got)
-	}
-}
-
-func TestClampSplitLeft(t *testing.T) {
-	if got := clampSplitLeft(10, 100); got != minSplitSide {
-		t.Fatalf("below min left: got %d want %d", got, minSplitSide)
-	}
-	if got := clampSplitLeft(90, 100); got != 100-minSplitSide {
-		t.Fatalf("below min right: got %d want %d", got, 100-minSplitSide)
-	}
-	if got := clampSplitLeft(40, 100); got != 40 {
-		t.Fatalf("in range: got %d want 40", got)
-	}
-	// Narrow terminal cannot honor both floors; keep both sides visible.
-	if got := clampSplitLeft(0, 50); got != 1 {
-		t.Fatalf("narrow zero: got %d want 1", got)
-	}
-	if got := clampSplitLeft(50, 50); got != 49 {
-		t.Fatalf("narrow full: got %d want 49", got)
-	}
-}
 
 func TestSplitWidthsUsesRatio(t *testing.T) {
 	m := &Model{layout: layoutState{width: 100, split: splitState{ratio: 0.4}}, services: services{listKeys: keybind.DefaultList()}}
@@ -360,25 +316,6 @@ func TestEnterResizeBlockedWhenSearchingOrQuick(t *testing.T) {
 	m = updated.(*Model)
 	if m.layout.split.resizeMode || cmd != nil {
 		t.Fatal("quick prompt should block resize mode")
-	}
-}
-
-func TestBodyYRangeMatchesListChrome(t *testing.T) {
-	m := &Model{layout: layoutState{width: 120, height: 40, split: splitState{ratio: defaultSplitRatio}}, services: services{listKeys: keybind.DefaultList()}}
-	start, end := m.bodyYRange()
-	if start != m.listChromeRows() {
-		t.Fatalf("start = %d want listChromeRows=%d", start, m.listChromeRows())
-	}
-	// No transient status is showing, so its row is not reserved.
-	wantH := m.layout.height - m.listChromeRows() - 1 - lipgloss.Height(m.viewFooter())
-	if wantH < 3 {
-		wantH = 3
-	}
-	if m.listBodyHeight() != wantH {
-		t.Fatalf("listBodyHeight = %d want %d", m.listBodyHeight(), wantH)
-	}
-	if end != m.listChromeRows()+wantH {
-		t.Fatalf("end = %d want %d", end, m.listChromeRows()+wantH)
 	}
 }
 

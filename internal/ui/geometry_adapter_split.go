@@ -5,7 +5,6 @@ import (
 
 	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // splitState is the horizontal sessions/sidebar split. ratio is the left
@@ -26,13 +25,10 @@ type splitState struct {
 }
 
 const (
-	splitRatioSetting = "split_ratio"
-	defaultSplitRatio = 0.3
-	minSplitSide      = 30
-	// How many columns past the panel junction count as the divider hit
-	// target, on top of the junction itself. Wide enough to grab without
-	// hunting, and one-sided on purpose: see onDivider.
-	splitHitSlop = 1
+	splitRatioSetting = uigeometry.SplitRatioSetting
+	defaultSplitRatio = uigeometry.DefaultSplitRatio
+	minSplitSide      = uigeometry.MinSplitSide
+	splitHitSlop      = uigeometry.SplitHitSlop
 )
 
 // settingReader is the store surface loadSplitRatio needs; tests stub it.
@@ -44,14 +40,16 @@ type settingReader interface {
 // when nothing is stored or the value is unusable.
 func loadSplitRatio(st settingReader) float64 {
 	raw, err := st.Setting(splitRatioSetting)
-	if err != nil || raw == "" {
+	if err != nil {
 		return defaultSplitRatio
 	}
-	ratio, err := strconv.ParseFloat(raw, 64)
-	if err != nil || ratio <= 0 || ratio >= 1 {
-		return defaultSplitRatio
-	}
-	return ratio
+	return uigeometry.ParseRatio(raw)
+}
+
+func clampSplitLeft(left, width int) int { return uigeometry.ClampSplitLeft(left, width) }
+
+func (m *Model) splitWidths() (int, int) {
+	return uigeometry.Widths(m.layout.split.ratio, m.layout.width)
 }
 
 // persistSplitRatio captures the current ratio for the ordered effect lane so
@@ -81,33 +79,6 @@ func (m *Model) prepareSplitForQuit() {
 	m.dropResize()
 }
 
-// clampSplitLeft keeps both panels above minSplitSide when the terminal
-// is wide enough; on a narrow terminal it just keeps both sides visible.
-func clampSplitLeft(left, width int) int {
-	if width < 2 {
-		if width < 1 {
-			return 0
-		}
-		return 1
-	}
-	if width < minSplitSide*2 {
-		if left < 1 {
-			left = 1
-		}
-		if left >= width {
-			left = width - 1
-		}
-		return left
-	}
-	if left < minSplitSide {
-		left = minSplitSide
-	}
-	if width-left < minSplitSide {
-		left = width - minSplitSide
-	}
-	return left
-}
-
 // setSplitFromX pins the left panel's right edge to terminal column x and
 // updates the stored ratio. Live during a drag; consumers re-read via
 // splitWidths on the next View.
@@ -115,8 +86,7 @@ func (m *Model) setSplitFromX(x int) {
 	if m.layout.width <= 0 {
 		return
 	}
-	left := clampSplitLeft(x, m.layout.width)
-	m.layout.split.ratio = float64(left) / float64(m.layout.width)
+	m.layout.split.ratio = uigeometry.RatioAt(x, m.layout.width)
 }
 
 // enterResizeMode arms divider dragging, which the arrow keys drive. The
@@ -182,43 +152,6 @@ func (m *Model) nudgeSplit(delta int) {
 	m.setSplitFromX(left + delta)
 }
 
-// listChromeRows is the number of rows above the sessions/content body:
-// the full-width header band and the rule that closes it. Shared by View
-// and bodyYRange so hit-testing cannot drift from paint.
-func (m *Model) listChromeRows() int {
-	// A session open full screen names itself on a line of its own, held
-	// off the band above it and the pane below it by a rule each.
-	if m.fullFocus() {
-		return m.headerRows() + 3
-	}
-	return m.headerRows() + 1
-}
-
-// listBodyHeight is the vertical budget for the sessions/sidebar panels.
-// Matches View: height - (header, seam, footer). Notices float over the body
-// instead of taking a row, so the budget is the same with one up.
-func (m *Model) listBodyHeight() int {
-	bodyHeight := m.layout.height - m.listChromeRows() - 1 - lipgloss.Height(m.viewFooter())
-	if bodyHeight < 3 {
-		bodyHeight = 3
-	}
-	return bodyHeight
-}
-
-// A growing footer crops previews instead of resizing running panes.
-func (m *Model) restingBodyHeight() int {
-	if m.quick() == nil {
-		return m.listBodyHeight()
-	}
-	return max(m.layout.height-m.listChromeRows()-1-lipgloss.Height(m.listFooter()), 3)
-}
-
-// bodyYRange is the inclusive-start exclusive-end row range of the main
-// sessions/sidebar body, matching the layout in View.
-func (m *Model) bodyYRange() (start, end int) {
-	return m.listChromeRows(), m.listChromeRows() + m.listBodyHeight()
-}
-
 // dividerX is the column index of the sessions/sidebar junction (first
 // column of the right panel, or the grip column when resize mode is on).
 func (m *Model) dividerX() int {
@@ -232,6 +165,5 @@ func (m *Model) dividerX() int {
 // rail's own last painted column. Grabbing that back would cost every row
 // its right edge, since the divider is resolved before the row is (#110).
 func (m *Model) onDivider(x int) bool {
-	div := m.dividerX()
-	return x >= div && x <= div+splitHitSlop
+	return uigeometry.OnDivider(x, m.dividerX())
 }

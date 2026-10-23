@@ -4,22 +4,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// splitWidths is the body's horizontal split: the sessions panel takes
-// splitRatio of the terminal (default 30%), floored so both sides stay
-// usable when the window is wide enough.
-func (m *Model) splitWidths() (int, int) {
-	if m.layout.width <= 0 {
-		return 0, 0
-	}
-	ratio := m.layout.split.ratio
-	if ratio <= 0 || ratio >= 1 {
-		ratio = defaultSplitRatio
-	}
-	leftWidth := int(float64(m.layout.width)*ratio + 0.5)
-	leftWidth = clampSplitLeft(leftWidth, m.layout.width)
-	return leftWidth, m.layout.width - leftWidth
-}
-
 // previewPaneWidth is the sidebar's inner content width: the columns the
 // pane preview can actually show. Sessions size to it so captured lines
 // fit the panel instead of getting clipped on the right.
@@ -43,6 +27,37 @@ func (m *Model) paneTargetSize() (int, int) {
 		return max(m.layout.width, 1), m.restingBodyHeight()
 	}
 	return m.previewPaneWidth(), m.previewPaneHeight()
+}
+
+// listChromeRows is the number of rows above the sessions/content body:
+// the full-width header band and the rule that closes it. Shared by View
+// and bodyYRange so hit-testing cannot drift from paint.
+func (m *Model) listChromeRows() int {
+	// A session open full screen names itself on a line of its own, held
+	// off the band above it and the pane below it by a rule each.
+	if m.fullFocus() {
+		return m.headerRows() + 3
+	}
+	return m.headerRows() + 1
+}
+
+// listBodyHeight is the vertical budget for the sessions/sidebar panels.
+// Matches View: height - (header, seam, footer). Notices float over the body
+// instead of taking a row, so the budget is the same with one up.
+func (m *Model) listBodyHeight() int {
+	bodyHeight := m.layout.height - m.listChromeRows() - 1 - lipgloss.Height(m.viewFooter())
+	if bodyHeight < 3 {
+		bodyHeight = 3
+	}
+	return bodyHeight
+}
+
+// A growing footer crops previews instead of resizing running panes.
+func (m *Model) restingBodyHeight() int {
+	if m.quick() == nil {
+		return m.listBodyHeight()
+	}
+	return max(m.layout.height-m.listChromeRows()-1-lipgloss.Height(m.listFooter()), 3)
 }
 
 // previewPaneHeight is the rows of session pane content the Preview
@@ -87,4 +102,10 @@ func (m *Model) focusPaneRows() int {
 		return m.listBodyHeight()
 	}
 	return m.previewPaneHeight()
+}
+
+// bodyYRange is the inclusive-start exclusive-end row range of the main
+// sessions/sidebar body, matching the layout in View.
+func (m *Model) bodyYRange() (start, end int) {
+	return m.listChromeRows(), m.listChromeRows() + m.listBodyHeight()
 }
