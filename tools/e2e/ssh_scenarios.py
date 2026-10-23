@@ -25,7 +25,7 @@ from types import SimpleNamespace
 
 from scenarios import (FAKE_BIN, FAKE_CLI, READY_MARKER, capture, config_fixture_text,
                        ensure_binary, fake_cli_script, frame, key, last_frame, preview_of, profile_dir,
-                       seed_store)
+                       seed_feed_cache, seed_store)
 from smoke import Sandbox
 
 CONNECTION = 'box'
@@ -130,6 +130,7 @@ def write_fixtures(sandbox, remote, binary):
     for profile in (profile_dir(sandbox), remote.profile()):
         profile.mkdir(parents=True)
         (profile / 'config.toml').write_text(config_fixture_text())
+        seed_feed_cache(profile)
     sandbox.env['PATH'] = str(bin_dir) + ':' + sandbox.env.get('PATH', '')
     return manager
 

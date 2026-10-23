@@ -12,7 +12,7 @@ from smoke import Sandbox
 from scenarios import (READY_MARKER,
                        agent_panes, config_fixture_text, ensure_binary,
                        fake_cli_script, capture, key, last_frame, pane_text, profile_dir,
-                       seed_store, start_manager, store_sessions, write_fixture)
+                       seed_feed_cache, seed_store, start_manager, store_sessions, write_fixture)
 
 
 def write_install_fixture(sandbox):
@@ -48,6 +48,7 @@ def write_install_fixture(sandbox):
     config_dir = profile_dir(sandbox)
     config_dir.mkdir(parents=True)
     (config_dir / 'config.toml').write_text(config_fixture_text())
+    seed_feed_cache(config_dir)
     # Only runtime helpers are discoverable before the fixture installs cmd.
     for name in ('tmux', 'git', 'sh', 'bash', 'env', 'mkdir', 'cat', 'chmod',
                  'dirname', 'basename', 'sed', 'tr', 'awk', 'grep', 'sleep',
