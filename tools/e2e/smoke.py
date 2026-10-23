@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Isolated real-terminal smoke; Python standard library only."""
 import argparse
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -9,23 +9,7 @@ import shlex
 import shutil
 import subprocess
 import tempfile
-import threading
 import time
-import urllib.error
-import urllib.request
-
-
-class EmptyFeedHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        body = b'[]'
-        self.send_response(200)
-        self.send_header('Content-Type', 'application/json')
-        self.send_header('Content-Length', str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def log_message(self, fmt, *args):
-        return
 
 
 class Sandbox:
@@ -57,40 +41,7 @@ class Sandbox:
             if key.startswith('GIT_'):
                 self.env.pop(key)
         self.env.update(GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL='/dev/null')
-        # The binary otherwise reads docs/messages.json from the live repository.
-        # An unread entry opens the messages panel over the main screen.
-        self._start_feed()
         self.log = self.artifacts / 'commands.jsonl'
-
-    def _start_feed(self):
-        self.feed_server = ThreadingHTTPServer(('127.0.0.1', 0), EmptyFeedHandler)
-        threading.Thread(target=self.feed_server.serve_forever, daemon=True).start()
-        host, port = self.feed_server.server_address
-        self.env['AGENT_MANAGER_FEED_URL'] = f'http://{host}:{port}/messages.json'
-        deadline = time.monotonic() + 2
-        last_error = None
-        while time.monotonic() < deadline:
-            try:
-                with urllib.request.urlopen(self.env['AGENT_MANAGER_FEED_URL'], timeout=0.2) as response:
-                    if response.read() == b'[]':
-                        return
-            except (OSError, urllib.error.URLError) as error:
-                last_error = error
-            time.sleep(0.01)
-        self.stop_feed()
-        raise RuntimeError(f'empty feed did not answer: {last_error}')
-
-    def stop_feed(self):
-        server = getattr(self, 'feed_server', None)
-        if server is None:
-            return []
-        self.feed_server = None
-        try:
-            server.shutdown()
-            server.server_close()
-        except Exception as error:
-            return [f'feed server: {error}']
-        return []
 
     def run(self, args, check=True):
         result = subprocess.run(args, env=self.env, text=True, capture_output=True, timeout=20)
@@ -127,9 +78,8 @@ class Sandbox:
     def start_manager(self, session, cwd, binary):
         # remain-on-exit permits exit-code inspection instead of mistaking a vanished pane for success.
         exit_file = shlex.quote(str(self.artifacts / 'manager-exit-code.txt'))
-        feed = 'AGENT_MANAGER_FEED_URL=' + shlex.quote(self.env['AGENT_MANAGER_FEED_URL'])
         self.tmux('new-session', '-d', '-s', session, '-x', '110', '-y', '30', '-c', str(cwd),
-                  f'env TERM=xterm-256color COLORTERM=truecolor NO_COLOR=1 {feed} {shlex.quote(str(binary))} '
+                  f'env TERM=xterm-256color COLORTERM=truecolor NO_COLOR=1 {shlex.quote(str(binary))} '
                   f'2>{shlex.quote(str(self.artifacts / "manager-stderr.txt"))}; '
                   f'am_status=$?; printf "%s\\n" "$am_status" >{exit_file}; exit "$am_status"')
         self.tmux('set-option', '-w', '-t', session, 'remain-on-exit', 'on')
@@ -171,7 +121,6 @@ class Sandbox:
                     errors.append(f'{socket}: {result.stderr.strip()}')
             except Exception as error:
                 errors.append(f'{socket}: {error}')
-        errors.extend(self.stop_feed())
         # Keep sockets reachable if cleanup failed; never strand an owned daemon.
         if not errors and self.socket_dir.exists():
             try:
@@ -191,6 +140,54 @@ class Sandbox:
         return errors
 
 
+def dev_feed_opens(messages, now):
+    # The plain test build is dev, so only an entry with no version bound is shown.
+    for entry in messages:
+        if entry.get('min_version') or entry.get('max_version'):
+            continue
+        expires = entry.get('expires_at') or ''
+        if expires:
+            try:
+                when = datetime.fromisoformat(expires.replace('Z', '+00:00'))
+            except ValueError:
+                continue
+            if when <= now:
+                continue
+        if entry.get('banner') and entry.get('title'):
+            return True
+    return False
+
+
+def settle_messages(sandbox, target):
+    # fetchMessages writes the cache before the UI receives the feed.
+    cache = sandbox.home / '.config' / 'agent-manager' / 'feed-messages.json'
+
+    def capture():
+        return sandbox.tmux('capture-pane', '-p', '-t', target).stdout
+
+    # A failed check writes nothing. The request gives up 4s after the first drawn frame.
+    started = time.monotonic()
+    drawn = None
+    while not cache.is_file():
+        now = time.monotonic()
+        frame = capture()
+        if drawn is None and ('A G E N T' in frame or '╭─ messages' in frame):
+            drawn = now
+        if drawn is not None and now - drawn >= 5:
+            return
+        if drawn is None and now - started >= 15:
+            return
+        time.sleep(0.05)
+    payload = json.loads(cache.read_text())
+    if not dev_feed_opens(payload.get('messages') or [], datetime.now(timezone.utc)):
+        return
+
+    sandbox.wait('messages-open', capture, lambda frame: '╭─ messages' in frame)
+    sandbox.tmux('send-keys', '-t', target, 'Escape')
+    sandbox.wait('messages-closed', capture,
+                 lambda frame: 'A G E N T' in frame and '╭─ messages' not in frame)
+
+
 def smoke(sandbox, binary):
     repo = sandbox.artifacts / 'fixture-repo'
     repo.mkdir()
@@ -203,6 +200,7 @@ def smoke(sandbox, binary):
                  'commit', '-m', 'fixture baseline'])
     changed.write_text('after_review_e2e\n')
     sandbox.start_manager('smoke', repo, binary)
+    settle_messages(sandbox, 'smoke:0.0')
     sandbox.frame('startup', 'A G E N T')
     sandbox.key('Escape')
     sandbox.key('?')

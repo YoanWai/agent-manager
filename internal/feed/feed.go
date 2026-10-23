@@ -12,7 +12,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -48,20 +47,8 @@ const (
 	feedIDPattern  = `^[a-z0-9][a-z0-9-]{0,63}$`
 )
 
-// feedURL is the published feed. Tests replace it in process.
-// feedURLEnv is the same seam for a separate process. The e2e sandbox
-// sets it, and an empty value stays empty so that process cannot reach
-// the published file.
+// feedURL is a var so tests can point the fetch at a local server.
 var feedURL = "https://raw.githubusercontent.com/YoanWai/agent-manager/main/docs/messages.json"
-
-const feedURLEnv = "AGENT_MANAGER_FEED_URL"
-
-func feedEndpoint() string {
-	if override, ok := os.LookupEnv(feedURLEnv); ok {
-		return override
-	}
-	return feedURL
-}
 
 var validFeedID = regexp.MustCompile(feedIDPattern)
 
@@ -162,7 +149,7 @@ func download(ctx context.Context, etag string) ([]rawMessage, string, bool, err
 	ctx, cancel := context.WithTimeout(ctx, requestBudget)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, feedEndpoint(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, feedURL, nil)
 	if err != nil {
 		return nil, "", false, err
 	}

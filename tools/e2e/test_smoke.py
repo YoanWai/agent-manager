@@ -1,12 +1,12 @@
+from datetime import datetime, timezone
 import os
 import subprocess
 import tempfile
 import unittest
-import urllib.request
 from pathlib import Path
 from unittest.mock import patch
 
-from smoke import Sandbox
+from smoke import Sandbox, dev_feed_opens
 
 
 class SandboxTests(unittest.TestCase):
@@ -35,14 +35,22 @@ class SandboxTests(unittest.TestCase):
             with patch.object(isolated, 'tmux', return_value=subprocess.CompletedProcess([], 0, '', '')):
                 isolated.close()
 
-    def test_feed_override_serves_an_empty_list_on_loopback(self):
-        url = self.sandbox.env['AGENT_MANAGER_FEED_URL']
-        self.assertTrue(url.startswith('http://127.0.0.1:'), url)
-        with urllib.request.urlopen(url, timeout=2) as response:
-            self.assertEqual(response.read(), b'[]')
-        self.sandbox.stop_feed()
-        with self.assertRaises(OSError):
-            urllib.request.urlopen(url, timeout=2).close()
+    def test_dev_feed_opens_only_for_an_unbounded_entry(self):
+        now = datetime(2026, 10, 23, tzinfo=timezone.utc)
+        self.assertTrue(dev_feed_opens([
+            {'banner': 'hi', 'title': 'Hi', 'expires_at': '2026-11-22T12:00:00Z'},
+        ], now))
+        self.assertTrue(dev_feed_opens([
+            {'banner': 'hi', 'title': 'Hi', 'min_version': '', 'max_version': '',
+             'expires_at': '2026-11-22T12:00:00Z'},
+        ], now))
+        self.assertFalse(dev_feed_opens([
+            {'banner': 'old', 'title': 'Old', 'max_version': '0.43.0'},
+        ], now))
+        self.assertFalse(dev_feed_opens([
+            {'banner': 'gone', 'title': 'Gone', 'expires_at': '2020-01-01T00:00:00Z'},
+        ], now))
+        self.assertFalse(dev_feed_opens([], now))
 
     def test_fixture_shell_delegates_command_execution(self):
         result = subprocess.run([self.sandbox.env['SHELL'], '-c', 'printf command-ready'],
