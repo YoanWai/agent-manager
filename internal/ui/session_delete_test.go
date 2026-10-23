@@ -43,14 +43,14 @@ func TestDeleteGroupSubtree(t *testing.T) {
 		}
 	}
 	m.prepareDelete()
-	if !m.confirm.isGroup || len(m.confirm.sessions) != 2 {
-		t.Fatalf("confirm should target 2 subtree sessions (incl. archived), got %+v", m.confirm)
+	if !pendingConfirm(m).isGroup || len(pendingConfirm(m).sessions) != 2 {
+		t.Fatalf("confirm should target 2 subtree sessions (incl. archived), got %+v", pendingConfirm(m))
 	}
 	tmuxIDs := make([]string, 0, 2)
-	for _, s := range m.confirm.sessions {
+	for _, s := range pendingConfirm(m).sessions {
 		tmuxIDs = append(tmuxIDs, s.ID)
 	}
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 
@@ -89,7 +89,7 @@ func TestDeleteGroupInArchivedViewSparesLiveSessions(t *testing.T) {
 
 	m.selectSessionRow(t, "old")
 	m.archiveSelected()
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 
@@ -97,11 +97,11 @@ func TestDeleteGroupInArchivedViewSparesLiveSessions(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "bugs")
 	m.prepareDelete()
-	if len(m.confirm.sessions) != 1 || m.confirm.sessions[0].Name != "old" {
-		t.Fatalf("confirm should target only the archived session, got %+v", m.confirm.sessions)
+	if len(pendingConfirm(m).sessions) != 1 || pendingConfirm(m).sessions[0].Name != "old" {
+		t.Fatalf("confirm should target only the archived session, got %+v", pendingConfirm(m).sessions)
 	}
-	archivedID := m.confirm.sessions[0].ID
-	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	archivedID := pendingConfirm(m).sessions[0].ID
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 
@@ -132,7 +132,7 @@ func TestDeleteArchivedGroupInArchivedViewRemovesIt(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "empty")
 	m.archiveSelected()
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 
@@ -140,7 +140,7 @@ func TestDeleteArchivedGroupInArchivedViewRemovesIt(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "empty")
 	m.prepareDelete()
-	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 
@@ -281,14 +281,14 @@ func TestDeleteAgentIncludesChildren(t *testing.T) {
 	m.selectSessionRow(t, "coder")
 	m.prepareDelete()
 	ids := map[string]bool{}
-	for _, sess := range m.confirm.sessions {
+	for _, sess := range pendingConfirm(m).sessions {
 		ids[sess.ID] = true
 	}
 	if !ids[shell.ID] {
 		t.Fatal("delete confirm omitted the child")
 	}
 	agent := m.sessionRows()[0]
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	for _, id := range []string{shell.ID, agent.ID} {
@@ -328,7 +328,7 @@ func TestConfirmedGroupDeleteDropsTheGroupRowAtOnce(t *testing.T) {
 
 	m.selectGroupRow(t, "zone")
 	m.prepareDelete()
-	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	m.drainEffects(t)
 
 	for _, r := range railRows(m) {

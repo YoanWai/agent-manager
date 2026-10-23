@@ -38,10 +38,10 @@ func TestNewConnectionKeyOpensTheDialogAndSavesToTheStore(t *testing.T) {
 	}
 
 	_, cmd = m.runRailIntent(uirail.Intent{Kind: uirail.Delete, Target: uirail.Selection{Kind: uirail.ConnectionRow, Host: "box"}})
-	if cmd != nil || m.mode != modeConfirmDelete || m.confirm.label != "remove connection box? Its sessions keep running on the host." {
-		t.Fatalf("delete: mode %v label %q", m.mode, m.confirm.label)
+	if cmd != nil || !confirmOpen(m) || pendingConfirm(m).label != "remove connection box? Its sessions keep running on the host." {
+		t.Fatalf("delete: mode %v label %q", m.mode, pendingConfirm(m).label)
 	}
-	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.applyTestMsg(t, cmd())
 	m.drainEffects(t)
 	if stored, _ := m.services.store.Connections(); len(stored) != 0 || len(m.ssh.List()) != 0 {

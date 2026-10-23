@@ -52,7 +52,7 @@ func TestFailedChildDeleteRestoresSurvivingParentWatcher(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(path, "block"), []byte("x"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	m.confirm.confirmTarget = confirmTarget{sessions: []store.Session{parent, child}, action: actionDelete}
+	m.openConfirm(confirmTarget{sessions: []store.Session{parent, child}, action: actionDelete})
 	if _, err := m.deleteConfirmed(); err == nil {
 		t.Fatal("expected child cleanup failure")
 	}

@@ -26,14 +26,14 @@ func (m *Model) runRemoteCmd(t *testing.T, cmd tea.Cmd) {
 // checking that nothing reached the host while it was asked.
 func (m *Model) answerRemote(t *testing.T, fake *fakeSSH, cmd tea.Cmd, key string) tea.Cmd {
 	t.Helper()
-	if m.mode != modeConfirmDelete {
+	if !confirmOpen(m) {
 		return cmd
 	}
 	m.runRemoteCmd(t, cmd)
 	if calls := fake.taken(); len(calls) != 0 {
 		t.Fatalf("calls before the answer = %q", calls)
 	}
-	_, answer := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+	_, answer := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
 	return answer
 }
 
@@ -318,8 +318,8 @@ func TestRemoteLifecycleAsksFirstAndNoSendsNothing(t *testing.T) {
 	fake := &fakeSSH{}
 	m := connectedModel(t, fake)
 	_, cmd := m.runRailIntent(uirail.Intent{Kind: uirail.Kill, Target: boxSession("s1")})
-	if m.mode != modeConfirmDelete || m.confirm.label != "kill api on box? frees its RAM there, v revives it." {
-		t.Fatalf("mode %v label %q, want the kill confirm", m.mode, m.confirm.label)
+	if !confirmOpen(m) || pendingConfirm(m).label != "kill api on box? frees its RAM there, v revives it." {
+		t.Fatalf("mode %v label %q, want the kill confirm", m.mode, pendingConfirm(m).label)
 	}
 	m.runRemoteCmd(t, m.answerRemote(t, fake, cmd, "n"))
 	if calls := fake.taken(); len(calls) != 0 || m.mode != modeList {
@@ -327,8 +327,8 @@ func TestRemoteLifecycleAsksFirstAndNoSendsNothing(t *testing.T) {
 	}
 	// A dead agent holds no RAM there to free.
 	m.runRailIntent(uirail.Intent{Kind: uirail.Kill, Target: boxSession("s2")})
-	if m.confirm.label != "kill old on box?" {
-		t.Fatalf("dead kill label %q", m.confirm.label)
+	if pendingConfirm(m).label != "kill old on box?" {
+		t.Fatalf("dead kill label %q", pendingConfirm(m).label)
 	}
 }
 

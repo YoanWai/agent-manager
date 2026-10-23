@@ -30,7 +30,6 @@ type mode int
 const (
 	modeList mode = iota
 	modeForm
-	modeConfirmDelete
 	modeHelp
 	modeRename
 	modeFork
@@ -68,7 +67,6 @@ type Model struct {
 	reviewNav  reviewNavState
 	form       formDialog
 	groupForm  groupFormDialog
-	confirm    confirmDialog
 	launchHint launchHintDialog
 	mouse      mouseCapture
 	rename     renameDialog

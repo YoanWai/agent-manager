@@ -206,7 +206,7 @@ func (m *Model) closesOnBackdrop() bool {
 		return top.Dismissible()
 	}
 	switch m.mode {
-	case modeHelp, modeNotices, modeMove, modeRepoPick, modeConfirmDelete, modeLaunchHint:
+	case modeHelp, modeNotices, modeMove, modeRepoPick, modeLaunchHint:
 		return true
 	case modeSettings:
 		return !m.settings.dialog.Editor.Typing() && !m.settings.dialog.Prompts.Editing()

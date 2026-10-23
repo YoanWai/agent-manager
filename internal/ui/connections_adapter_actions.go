@@ -153,12 +153,11 @@ func (m *Model) confirmRemote(request remoteRequest) tea.Cmd {
 		// A dead agent holds no RAM there to free.
 		ask.consequence = ""
 	}
-	m.confirm.confirmTarget = confirmTarget{
+	m.openConfirm(confirmTarget{
 		action: ask.action,
 		label:  ask.verb + " " + escapeControlsInline(request.name) + " on " + request.host + "?" + ask.consequence,
 		remote: &request,
-	}
-	m.mode = modeConfirmDelete
+	})
 	return nil
 }
 
@@ -203,12 +202,11 @@ func (m *Model) remoteRepeat(request remoteRequest) (string, bool) {
 }
 
 func (m *Model) confirmRemoveConnection(name string) {
-	m.confirm.confirmTarget = confirmTarget{
+	m.openConfirm(confirmTarget{
 		action:     actionRemoveConnection,
 		connection: name,
 		label:      "remove connection " + name + "? Its sessions keep running on the host.",
-	}
-	m.mode = modeConfirmDelete
+	})
 }
 
 // removeConnection is the confirmed removal; the connection's rows leave

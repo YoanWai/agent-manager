@@ -301,7 +301,7 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 		takeOver = true
 	case request.kind == spawnQuick && m.quick.active && m.quick.gen == request.composerGen && m.quick.input.Value() == request.draft && len(m.quick.attachments) == 0:
 		takeOver = true
-	case m.mode == modeList:
+	case m.listClear():
 		takeOver = true
 	}
 	if takeOver {

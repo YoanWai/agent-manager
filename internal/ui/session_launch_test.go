@@ -165,7 +165,7 @@ func TestAStalePollCannotBringAnArchivedRowBackLive(t *testing.T) {
 
 	m.selectSessionRow(t, "shelved")
 	m.archiveSelected()
-	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	m.drainEffects(t)
 
 	stale := sess
@@ -213,7 +213,7 @@ func TestAStalePollCannotRestoreADeletedGroupHeader(t *testing.T) {
 
 	m.selectGroupRow(t, "zone")
 	m.prepareDelete()
-	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	m.drainEffects(t)
 
 	stale := refreshMsg{
@@ -258,7 +258,7 @@ func TestAStalePollCannotUndoARestore(t *testing.T) {
 
 	m.selectSessionRow(t, "returning")
 	m.archiveSelected()
-	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	m.drainEffects(t)
 	listedAt := time.Now()
 
@@ -266,7 +266,7 @@ func TestAStalePollCannotUndoARestore(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	m.selectSessionRow(t, "returning")
 	m.restoreSelected()
-	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	m.drainEffects(t)
 
 	stale := sess
@@ -300,7 +300,7 @@ func TestAStalePollCannotBringAnArchivedGroupBackLive(t *testing.T) {
 
 	m.selectGroupRow(t, "zone")
 	m.archiveSelected()
-	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	m.drainEffects(t)
 
 	stale := refreshMsg{

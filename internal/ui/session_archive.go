@@ -20,9 +20,10 @@ func (m *Model) archiveSelected() (tea.Model, tea.Cmd) {
 		m.reportErr("root is the top level, not a group to archive")
 		return m, nil
 	}
+	var target confirmTarget
 	if entry.isGroup {
 		subtree := m.sessionsInSubtree(entry.group)
-		m.confirm.confirmTarget = confirmTarget{
+		target = confirmTarget{
 			isGroup:   true,
 			path:      entry.group,
 			action:    actionArchive,
@@ -32,7 +33,7 @@ func (m *Model) archiveSelected() (tea.Model, tea.Cmd) {
 		}
 	} else {
 		sessions := m.sessionAndChildren(entry.sess)
-		m.confirm.confirmTarget = confirmTarget{
+		target = confirmTarget{
 			action:   actionArchive,
 			sessions: sessions,
 			label: followConfirmLabel("archive", entry.sess.Name, len(sessions)-1,
@@ -41,7 +42,7 @@ func (m *Model) archiveSelected() (tea.Model, tea.Cmd) {
 			selection: lifecycleSelection{kind: lifecycleSelectionSession, rootID: entry.sess.ID},
 		}
 	}
-	m.mode = modeConfirmDelete
+	m.openConfirm(target)
 	m.clearErr()
 	return m, nil
 }
@@ -58,10 +59,11 @@ func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
 		m.reportErr("root is the top level, not a group to restore")
 		return m, nil
 	}
+	var target confirmTarget
 	if entry.isGroup {
 		subtree := m.sessionsInSubtree(entry.group)
 		archived := archivedSessions(subtree)
-		m.confirm.confirmTarget = confirmTarget{
+		target = confirmTarget{
 			isGroup:   true,
 			path:      entry.group,
 			action:    actionRestore,
@@ -72,7 +74,7 @@ func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
 	} else {
 		sessions := m.sessionAndChildren(entry.sess)
 		sessions = archivedSessions(sessions)
-		m.confirm.confirmTarget = confirmTarget{
+		target = confirmTarget{
 			action:   actionRestore,
 			sessions: sessions,
 			label: followConfirmLabel("restore", entry.sess.Name, len(sessions)-1,
@@ -81,7 +83,7 @@ func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
 			selection: lifecycleSelection{kind: lifecycleSelectionSession, rootID: entry.sess.ID, archivedOnly: true},
 		}
 	}
-	m.mode = modeConfirmDelete
+	m.openConfirm(target)
 	m.clearErr()
 	return m, nil
 }

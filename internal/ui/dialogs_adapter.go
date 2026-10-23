@@ -17,11 +17,6 @@ import (
 // These adapters seed them from the workspace, translate their outcomes
 // into mode changes and effect requests, and draw the card chrome.
 
-// confirmDialog holds the lifecycle request a confirm asks about. The
-// lifecycle adapters fill it and open the dialog; the question, its keys
-// and its wording are uidialogs.Confirm.
-type confirmDialog struct{ confirmTarget }
-
 // confirmTarget.action values; the zero value means delete.
 const (
 	actionDelete  = uidialogs.ConfirmDelete
@@ -65,37 +60,18 @@ type lifecycleSelection struct {
 	archivedOnly bool
 }
 
-func (d *confirmDialog) prompt() uidialogs.Confirm {
-	return uidialogs.Confirm{Action: d.action, Group: d.isGroup, Label: d.label}
-}
-
-func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch m.confirm.prompt().Key(msg) {
-	case uidialogs.ConfirmCancel:
-		m.confirm.confirmTarget = confirmTarget{}
-		m.mode = modeList
-	case uidialogs.ConfirmAccept:
-		target := m.confirm.confirmTarget
-		target.sessions = append(target.sessions[:0:0], target.sessions...)
-		m.confirm.confirmTarget = confirmTarget{}
-		m.mode = modeList
-		switch {
-		case target.remote != nil:
-			return m, m.runRemote(*target.remote)
-		case target.connection != "":
-			m.removeConnection(target.connection)
-		default:
-			m.queueLifecycle(target, false, "")
-		}
-		return m, m.nextEffectCmd()
+// runConfirmed is the answered yes: the remote call, the connection removal
+// or the lifecycle request the card held.
+func (m *Model) runConfirmed(target confirmTarget) tea.Cmd {
+	switch {
+	case target.remote != nil:
+		return m.runRemote(*target.remote)
+	case target.connection != "":
+		m.removeConnection(target.connection)
+	default:
+		m.queueLifecycle(target, false, "")
 	}
-	return m, nil
-}
-
-func (m *Model) viewConfirm() string {
-	prompt := m.confirm.prompt()
-	question, consequence := uidialogs.SplitLabel(prompt.Label)
-	return m.confirmCard(prompt.Title(m.prefs.glyphMode), question, consequence, prompt.Destructive(), prompt.Answer())
+	return m.nextEffectCmd()
 }
 
 // confirmCard is the shared yes/no card, also drawn by Settings' reset.

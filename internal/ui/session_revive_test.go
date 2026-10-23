@@ -190,16 +190,16 @@ func TestReviveAllRecreatesEveryDeadSession(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	createSession(t, m, "running", dir, "")
 
-	if _, _ = m.reviveAllDead(); m.mode != modeConfirmDelete {
+	if _, _ = m.reviveAllDead(); !confirmOpen(m) {
 		t.Fatalf("reviving two dead sessions should ask first, mode = %v err = %q", m.mode, m.errBar.text)
 	}
-	if want := "revive every dead session (2)? brings them back."; m.confirm.label != want {
-		t.Fatalf("label = %q, want %q", m.confirm.label, want)
+	if want := "revive every dead session (2)? brings them back."; pendingConfirm(m).label != want {
+		t.Fatalf("label = %q, want %q", pendingConfirm(m).label, want)
 	}
-	if len(m.confirm.sessions) != 2 {
-		t.Fatalf("confirm targets = %+v, want the two dead sessions", m.confirm.sessions)
+	if len(pendingConfirm(m).sessions) != 2 {
+		t.Fatalf("confirm targets = %+v, want the two dead sessions", pendingConfirm(m).sessions)
 	}
-	_, cmd := m.handleConfirmKey(namedKey(tea.KeyEnter))
+	_, cmd := m.Update(namedKey(tea.KeyEnter))
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	if m.errBar.text != "" {
@@ -271,19 +271,19 @@ func TestReviveGroupBringsBackEverySessionInside(t *testing.T) {
 	m.selectGroupRow(t, "work")
 	m.reviveSelected()
 	m.drainEffects(t)
-	if m.mode != modeConfirmDelete {
+	if !confirmOpen(m) {
 		t.Fatalf("reviving a group of two dead sessions should ask first, mode = %v err = %q", m.mode, m.errBar.text)
 	}
-	if title := m.confirm.prompt().Title(m.prefs.glyphMode); title != "◆ Revive group" {
+	if title := mustTop(t, m).(*confirmSurface).prompt().Title(m.prefs.glyphMode); title != "◆ Revive group" {
 		t.Fatalf("title = %q, want ◆ Revive group", title)
 	}
-	if want := "revive group work (2 dead sessions)? brings them back."; m.confirm.label != want {
-		t.Fatalf("label = %q, want %q", m.confirm.label, want)
+	if want := "revive group work (2 dead sessions)? brings them back."; pendingConfirm(m).label != want {
+		t.Fatalf("label = %q, want %q", pendingConfirm(m).label, want)
 	}
-	if len(m.confirm.sessions) != 2 {
-		t.Fatalf("confirm targets = %+v, want the two dead sessions", m.confirm.sessions)
+	if len(pendingConfirm(m).sessions) != 2 {
+		t.Fatalf("confirm targets = %+v, want the two dead sessions", pendingConfirm(m).sessions)
 	}
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	if m.errBar.text != "" {
@@ -313,10 +313,10 @@ func TestReviveGroupConfirmedRevivesWhatItCan(t *testing.T) {
 	m.selectGroupRow(t, "work")
 	m.reviveSelected()
 	m.drainEffects(t)
-	if m.mode != modeConfirmDelete {
+	if !confirmOpen(m) {
 		t.Fatalf("mode = %v, want the revive card (err %q)", m.mode, m.errBar.text)
 	}
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 
@@ -354,7 +354,7 @@ func TestReviveBatchCancelLeavesEverySessionDead(t *testing.T) {
 				m.selectGroupRow(t, "work")
 				m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
 				m.drainEffects(t)
-				if m.mode != modeConfirmDelete {
+				if !confirmOpen(m) {
 					t.Fatalf("%s: mode = %v, want the revive card (err %q)", key, m.mode, m.errBar.text)
 				}
 				m.handleKey(tc.key)
@@ -386,7 +386,7 @@ func TestReviveBatchSkipsASessionBackBeforeTheAnswer(t *testing.T) {
 	m.selectGroupRow(t, "work")
 	m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("v")})
 	m.drainEffects(t)
-	if m.mode != modeConfirmDelete {
+	if !confirmOpen(m) {
 		t.Fatalf("mode = %v, want the revive card (err %q)", m.mode, m.errBar.text)
 	}
 	alpha := sessionRow(t, m, "alpha").sess
@@ -452,10 +452,10 @@ func TestReviveRunningAgentRevivesDeadChild(t *testing.T) {
 	_, cmd := m.reviveSelected()
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
-	if m.mode != modeConfirmDelete {
+	if !confirmOpen(m) {
 		t.Fatalf("mode = %v, want the revive confirm", m.mode)
 	}
-	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	if !m.services.tmux.Exists(shell.ID) {
@@ -490,13 +490,13 @@ func TestReviveAgentIncludesDeadChildren(t *testing.T) {
 	m.reviveSelected()
 	m.drainEffects(t)
 	ids := map[string]bool{}
-	for _, sess := range m.confirm.sessions {
+	for _, sess := range pendingConfirm(m).sessions {
 		ids[sess.ID] = true
 	}
 	if !ids[shell.ID] {
 		t.Fatal("revive confirm omitted the child")
 	}
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	if !m.services.tmux.Exists(coder.ID) || !m.services.tmux.Exists(shell.ID) {

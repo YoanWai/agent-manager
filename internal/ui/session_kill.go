@@ -14,13 +14,14 @@ func (m *Model) killSelected() (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
+	var target confirmTarget
 	if entry.isGroup {
 		live := m.liveSessions(m.sessionsInGroup(entry.group))
 		if len(live) == 0 {
 			m.reportErr("no live sessions to kill in " + entry.group)
 			return m, nil
 		}
-		m.confirm.confirmTarget = confirmTarget{
+		target = confirmTarget{
 			isGroup:  true,
 			path:     entry.group,
 			action:   actionKill,
@@ -41,7 +42,7 @@ func (m *Model) killSelected() (tea.Model, tea.Cmd) {
 			m.reportErr(entry.sess.Name + " is already dead")
 			return m, nil
 		}
-		m.confirm.confirmTarget = confirmTarget{
+		target = confirmTarget{
 			action:   actionKill,
 			sessions: sessions,
 			label: followConfirmLabel("kill", entry.sess.Name, len(sessions)-1,
@@ -50,7 +51,7 @@ func (m *Model) killSelected() (tea.Model, tea.Cmd) {
 			selection: lifecycleSelection{kind: lifecycleSelectionSession, rootID: entry.sess.ID},
 		}
 	}
-	m.mode = modeConfirmDelete
+	m.openConfirm(target)
 	return m, nil
 }
 
@@ -62,12 +63,11 @@ func (m *Model) killAllLive() (tea.Model, tea.Cmd) {
 		m.reportErr("no live sessions to kill")
 		return m, nil
 	}
-	m.confirm.confirmTarget = confirmTarget{
+	m.openConfirm(confirmTarget{
 		action:   actionKill,
 		sessions: live,
 		label:    fmt.Sprintf("kill every live session (%d)? frees their RAM, v revives them.", len(live)),
-	}
-	m.mode = modeConfirmDelete
+	})
 	return m, nil
 }
 

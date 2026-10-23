@@ -22,15 +22,15 @@ func (m *Model) lifecycleFixture(target confirmTarget) (lifecycleEffectResult, e
 	return result, err
 }
 func (m *Model) archiveConfirmed() error {
-	_, err := m.lifecycleFixture(m.confirm.confirmTarget)
+	_, err := m.lifecycleFixture(pendingConfirm(m))
 	return err
 }
 func (m *Model) restoreConfirmed() error {
-	_, err := m.lifecycleFixture(m.confirm.confirmTarget)
+	_, err := m.lifecycleFixture(pendingConfirm(m))
 	return err
 }
 func (m *Model) deleteConfirmed() (sessioncmd.DeleteResult, error) {
-	result, err := m.lifecycleFixture(m.confirm.confirmTarget)
+	result, err := m.lifecycleFixture(pendingConfirm(m))
 	return result.deleted, err
 }
 func (m *Model) killSession(sess store.Session) error {

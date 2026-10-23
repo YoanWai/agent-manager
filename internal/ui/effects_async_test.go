@@ -20,13 +20,14 @@ func TestConfirmDefersLifecycleAndKeepsCapturedTarget(t *testing.T) {
 	m.selectSessionRow(t, "alpha")
 	alpha := railSelectedSession(m)
 	m.archiveSelected()
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	card := mustTop(t, m).(*confirmSurface)
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	if !m.services.tmux.Exists(alpha.ID) {
 		t.Fatal("confirmation performed lifecycle effects before command execution")
 	}
 	m.selectSessionRow(t, "beta")
 	beta := railSelectedSession(m)
-	m.confirm.sessions = []store.Session{beta}
+	card.sessions = []store.Session{beta}
 	m.applyCmd(t, cmd)
 	if m.services.tmux.Exists(alpha.ID) || !m.services.tmux.Exists(beta.ID) {
 		t.Fatal("completion retargeted the later selection")
@@ -153,7 +154,7 @@ func TestSlowLifecycleDoesNotBlockWindowUpdateAndKeepsSnapshotWriter(t *testing.
 		return original(id, pane)
 	}
 	m.archiveSelected()
-	_, command := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	_, command := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	m.services.setSnapshot = func(string, string) error { return fmt.Errorf("replacement writer must not run") }
 	completed := make(chan tea.Msg, 1)
 	go func() { completed <- command() }()

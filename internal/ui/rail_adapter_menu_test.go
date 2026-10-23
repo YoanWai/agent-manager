@@ -189,8 +189,8 @@ func TestGroupMenuReviveAsksLikeTheKey(t *testing.T) {
 	m = railMouseAtLine(t, m, paintedGroupLines(t, m, "work")[0], tea.MouseActionPress, tea.MouseButtonRight)
 	revive := menuEntry(t, m, "Revive")
 	m, _ = leftClickCmd(m, m.layout.displayedRail.MenuRect.Left+2, m.layout.displayedRail.MenuRect.Top+1+revive)
-	if m.mode != modeConfirmDelete || !m.confirm.isGroup {
-		t.Fatalf("Revive on a group with two dead sessions should open the group card, mode = %v isGroup = %v", m.mode, m.confirm.isGroup)
+	if !confirmOpen(m) || !pendingConfirm(m).isGroup {
+		t.Fatalf("Revive on a group with two dead sessions should open the group card, mode = %v isGroup = %v", m.mode, pendingConfirm(m).isGroup)
 	}
 	for _, sess := range m.workspace.sessions {
 		if m.services.tmux.Exists(sess.ID) {

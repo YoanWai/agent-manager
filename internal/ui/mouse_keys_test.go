@@ -44,10 +44,9 @@ func TestClickOnConfirmFootAnswers(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 120, 34
-	m.confirm.confirmTarget = confirmTarget{action: actionKill, label: "kill alpha? frees its RAM."}
-	m.mode = modeConfirmDelete
-	if m = clickLabel(t, m, "n/esc cancel"); m.mode != modeList || m.confirm.label != "" {
-		t.Fatalf("cancel in the foot should close the confirm, mode = %v target = %+v", m.mode, m.confirm.confirmTarget)
+	m.openConfirm(confirmTarget{action: actionKill, label: "kill alpha? frees its RAM."})
+	if m = clickLabel(t, m, "n/esc cancel"); m.mode != modeList || pendingConfirm(m).label != "" {
+		t.Fatalf("cancel in the foot should close the confirm, mode = %v target = %+v", m.mode, pendingConfirm(m))
 	}
 }
 

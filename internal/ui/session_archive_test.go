@@ -23,8 +23,8 @@ func TestArchiveConfirmationUsesLoadedSessionTree(t *testing.T) {
 	}
 
 	m.archiveSelected()
-	if m.mode != modeConfirmDelete || len(m.confirm.sessions) != 1 {
-		t.Fatalf("archive confirmation depended on the closed store: mode=%v err=%q target=%+v", m.mode, m.errBar.text, m.confirm.sessions)
+	if !confirmOpen(m) || len(pendingConfirm(m).sessions) != 1 {
+		t.Fatalf("archive confirmation depended on the closed store: mode=%v err=%q target=%+v", m.mode, m.errBar.text, pendingConfirm(m).sessions)
 	}
 }
 
@@ -44,7 +44,7 @@ func TestArchiveWorkerRejectsChildAddedAfterConfirmation(t *testing.T) {
 		t.Fatalf("create late child: %v", err)
 	}
 
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	m.applyCmd(t, cmd)
 	if !strings.Contains(m.errBar.text, "sessions changed since confirmation") {
 		t.Fatalf("membership change error = %q", m.errBar.text)
@@ -66,7 +66,7 @@ func TestArchiveSelectedNoopInArchivedView(t *testing.T) {
 	createSession(t, m, "alpha", dir, "")
 	m.selectSessionRow(t, "alpha")
 	m.archiveSelected()
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 
@@ -74,7 +74,7 @@ func TestArchiveSelectedNoopInArchivedView(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	m.selectSessionRow(t, "alpha")
 	m.archiveSelected()
-	if m.mode == modeConfirmDelete {
+	if confirmOpen(m) {
 		t.Fatal("archiveSelected should not open a confirm dialog in the archived view")
 	}
 
@@ -92,7 +92,7 @@ func TestArchiveSelectedNoopInArchivedView(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "zone")
 	m.archiveSelected()
-	if m.mode == modeConfirmDelete {
+	if confirmOpen(m) {
 		t.Fatal("archiveSelected should not open a confirm dialog for a group row in the archived view")
 	}
 }
@@ -109,8 +109,8 @@ func TestRestoreSelectedNoopInActiveView(t *testing.T) {
 
 	m.selectGroupRow(t, "zone")
 	press("u")
-	if m.mode == modeConfirmDelete {
-		t.Errorf("u on a group opened %q in the active view", m.confirm.label)
+	if confirmOpen(m) {
+		t.Errorf("u on a group opened %q in the active view", pendingConfirm(m).label)
 	}
 	press("y")
 	if m.services.tmux.Exists(sleeper.ID) {
@@ -122,8 +122,8 @@ func TestRestoreSelectedNoopInActiveView(t *testing.T) {
 
 	m.selectSessionRow(t, "live")
 	press("u")
-	if m.mode == modeConfirmDelete {
-		t.Fatalf("u on a session opened %q in the active view", m.confirm.label)
+	if confirmOpen(m) {
+		t.Fatalf("u on a session opened %q in the active view", pendingConfirm(m).label)
 	}
 }
 
@@ -137,13 +137,13 @@ func TestRestoreGroupBringsBackOnlyItsArchivedSessions(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "zone")
 	m.restoreSelected()
-	if len(m.confirm.sessions) != 1 || m.confirm.sessions[0].ID != stash.ID {
-		t.Errorf("restore targets %d sessions, want stash alone", len(m.confirm.sessions))
+	if len(pendingConfirm(m).sessions) != 1 || pendingConfirm(m).sessions[0].ID != stash.ID {
+		t.Errorf("restore targets %d sessions, want stash alone", len(pendingConfirm(m).sessions))
 	}
-	if want := "restore group zone (1 archived sessions)? brings them back."; m.confirm.label != want {
-		t.Errorf("label = %q, want %q", m.confirm.label, want)
+	if want := "restore group zone (1 archived sessions)? brings them back."; pendingConfirm(m).label != want {
+		t.Errorf("label = %q, want %q", pendingConfirm(m).label, want)
 	}
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 
@@ -212,7 +212,7 @@ func TestArchiveRestoreClearStaleError(t *testing.T) {
 	m.selectSessionRow(t, "alpha")
 	m.errBar.text = "stale failure from an earlier action"
 	m.archiveSelected()
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	if m.errBar.text != "" {
@@ -224,7 +224,7 @@ func TestArchiveRestoreClearStaleError(t *testing.T) {
 	m.selectSessionRow(t, "alpha")
 	m.errBar.text = "stale failure from an earlier action"
 	m.restoreSelected()
-	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	if m.errBar.text != "" {
@@ -241,7 +241,7 @@ func TestRestoreKeepsArchiveWhenReviveFails(t *testing.T) {
 
 	m.selectSessionRow(t, "homeless")
 	m.archiveSelected()
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	if err := os.RemoveAll(dir); err != nil {
@@ -252,7 +252,7 @@ func TestRestoreKeepsArchiveWhenReviveFails(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	m.selectSessionRow(t, "homeless")
 	m.restoreSelected()
-	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	if m.errBar.text == "" {
@@ -283,7 +283,7 @@ func TestArchiveAbortsWhenSnapshotFails(t *testing.T) {
 	// Archive snapshots only a pane that has drawn.
 	waitForPreview(t, m)
 	m.archiveSelected()
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 
@@ -321,7 +321,7 @@ func TestArchiveGroupMovesWholeSubtree(t *testing.T) {
 
 	m.selectGroupRow(t, "proj")
 	m.archiveSelected()
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 
@@ -350,7 +350,7 @@ func TestArchiveGroupMovesWholeSubtree(t *testing.T) {
 	m.selectGroupRow(t, "proj")
 	archived := m.sessionRows()
 	m.restoreSelected()
-	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.drainEffects(t)
 	for _, sess := range archived {
 		stored, err := m.services.store.Get(sess.ID)
@@ -390,7 +390,7 @@ func TestArchiveGroupKeepsEmptyGroupInArchivedView(t *testing.T) {
 
 	m.selectGroupRow(t, "empty")
 	m.archiveSelected()
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 
@@ -430,7 +430,7 @@ func TestArchivedSessionKeepsPaneSnapshot(t *testing.T) {
 	}
 
 	m.archiveSelected()
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 
@@ -483,7 +483,7 @@ func TestArchiveAgentPersistsEveryChild(t *testing.T) {
 	shell := spawnTerminal(t, m)
 	m.selectSessionRow(t, "coder")
 	m.archiveSelected()
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	child, err := m.services.store.Get(shell.ID)
@@ -506,14 +506,14 @@ func TestRestoreAgentUnarchivesEveryChild(t *testing.T) {
 	agent := m.sessionRows()[0]
 	m.selectSessionRow(t, "coder")
 	m.archiveSelected()
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	m.rail.SetArchived(true)
 	m.applyCmd(t, m.refreshCmd())
 	m.selectSessionRow(t, "coder")
 	m.restoreSelected()
-	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	for _, id := range []string{agent.ID, shell.ID} {
@@ -541,14 +541,14 @@ func TestRestoreAgentBringsBackOnlyItsArchivedTerminals(t *testing.T) {
 	agent := m.sessionRows()[0]
 	m.selectSessionRow(t, "coder")
 	m.archiveSelected()
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	m.rail.SetArchived(true)
 	m.applyCmd(t, m.refreshCmd())
 	m.selectSessionRow(t, shell.Name)
 	m.restoreSelected()
-	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	if err := m.services.tmux.Kill(shell.ID); err != nil {
@@ -557,10 +557,10 @@ func TestRestoreAgentBringsBackOnlyItsArchivedTerminals(t *testing.T) {
 
 	m.selectSessionRow(t, "coder")
 	m.restoreSelected()
-	if want := "restore coder? brings it back."; m.confirm.label != want {
-		t.Errorf("label = %q, want %q", m.confirm.label, want)
+	if want := "restore coder? brings it back."; pendingConfirm(m).label != want {
+		t.Errorf("label = %q, want %q", pendingConfirm(m).label, want)
 	}
-	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	if !m.services.tmux.Exists(agent.ID) || m.services.tmux.Exists(shell.ID) {
@@ -577,7 +577,7 @@ func TestConfirmedArchiveLeavesTheActiveViewAtOnce(t *testing.T) {
 
 	m.selectSessionRow(t, "shelved")
 	m.archiveSelected()
-	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	m.drainEffects(t)
 
 	if _, err := m.services.store.Get(sess.ID); err != nil {
@@ -605,14 +605,14 @@ func TestConfirmedRestoreLeavesTheArchivedViewAtOnce(t *testing.T) {
 
 	m.selectSessionRow(t, "returning")
 	m.archiveSelected()
-	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	m.drainEffects(t)
 
 	m.rail.SetArchived(true)
 	m.applyCmd(t, m.refreshCmd())
 	m.selectSessionRow(t, "returning")
 	m.restoreSelected()
-	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	m.drainEffects(t)
 
 	for _, row := range m.sessionRows() {
@@ -644,14 +644,14 @@ func TestConfirmedGroupRestoreShowsTheSubtreeAtOnce(t *testing.T) {
 
 	m.selectGroupRow(t, "zone")
 	m.archiveSelected()
-	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	m.drainEffects(t)
 
 	m.rail.SetArchived(true)
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "zone")
 	m.restoreSelected()
-	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	m.drainEffects(t)
 
 	for _, row := range m.sessionRows() {
@@ -682,7 +682,7 @@ func TestConfirmedGroupArchiveHidesTheSubtreeAtOnce(t *testing.T) {
 
 	m.selectGroupRow(t, "zone")
 	m.archiveSelected()
-	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	m.drainEffects(t)
 
 	if !m.groupEffectivelyArchived("zone") {

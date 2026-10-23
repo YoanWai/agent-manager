@@ -28,8 +28,7 @@ func TestBackdropClickClosesACardTheWayEscDoes(t *testing.T) {
 		{"messages", func(m *Model) { m.openNotices("") }},
 		{"settings", func(m *Model) { m.applyCmd(t, m.openSettings()) }},
 		{"confirm", func(m *Model) {
-			m.confirm.confirmTarget = confirmTarget{action: actionKill, label: "kill alpha? frees its RAM."}
-			m.mode = modeConfirmDelete
+			m.openConfirm(confirmTarget{action: actionKill, label: "kill alpha? frees its RAM."})
 		}},
 		{"move", func(m *Model) { m.openMove() }},
 	} {
@@ -38,14 +37,14 @@ func TestBackdropClickClosesACardTheWayEscDoes(t *testing.T) {
 		createSession(t, m, "alpha", t.TempDir(), "")
 		m.selectSessionRow(t, "alpha")
 		tc.open(m)
-		if m.mode == modeList {
+		if m.listClear() {
 			t.Fatalf("%s: test setup did not open the card, err %q", tc.name, m.errBar.text)
 		}
-		if m = clickBackdrop(t, m); m.mode != modeList {
+		if m = clickBackdrop(t, m); !m.listClear() {
 			t.Errorf("%s: a backdrop click should close the card, mode = %v", tc.name, m.mode)
 		}
-		if m.confirm.label != "" {
-			t.Errorf("%s: a backdrop click on a confirm is its cancel, target = %+v", tc.name, m.confirm.confirmTarget)
+		if confirmOpen(m) {
+			t.Errorf("%s: a backdrop click on a confirm is its cancel, target = %+v", tc.name, pendingConfirm(m))
 		}
 	}
 }

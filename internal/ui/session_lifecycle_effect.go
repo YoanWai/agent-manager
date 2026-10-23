@@ -307,7 +307,7 @@ func (m *Model) applyLifecycleEffect(request lifecycleRequest, result lifecycleE
 				}
 			}
 			// An async completion must not steal a newly opened modal or its attachments.
-			if m.mode == modeList {
+			if m.listClear() {
 				m.reportLaunchError(err)
 				if m.mode == modeLaunchHint {
 					m.launchHint.fix.effectRetry = retry

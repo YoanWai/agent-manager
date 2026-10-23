@@ -59,10 +59,10 @@ func TestRestartLaunchesAFreshConversation(t *testing.T) {
 	}
 	m.selectSessionRow(t, "phoenix")
 
-	if _, _ = m.restartSelected(); m.mode != modeConfirmDelete {
+	if _, _ = m.restartSelected(); !confirmOpen(m) {
 		t.Fatalf("restart should ask first, mode = %v err = %q", m.mode, m.errBar.text)
 	}
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	if m.errBar.text != "" {
@@ -125,7 +125,7 @@ func TestRestartClearsCapturedConversationID(t *testing.T) {
 	m.selectSessionRow(t, "codexish")
 
 	m.restartSelected()
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	if m.errBar.text != "" {
@@ -156,13 +156,13 @@ func TestRestartEndsALiveAgentFirst(t *testing.T) {
 	m.services.cfg.Tools[sess.Tool] = tool
 	m.selectSessionRow(t, "busy")
 
-	if _, _ = m.restartSelected(); m.mode != modeConfirmDelete {
+	if _, _ = m.restartSelected(); !confirmOpen(m) {
 		t.Fatalf("restart should ask first, mode = %v err = %q", m.mode, m.errBar.text)
 	}
-	if !strings.Contains(m.confirm.label, "ends the running agent") {
-		t.Fatalf("confirm label = %q", m.confirm.label)
+	if !strings.Contains(pendingConfirm(m).label, "ends the running agent") {
+		t.Fatalf("confirm label = %q", pendingConfirm(m).label)
 	}
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	if m.errBar.text != "" {
@@ -257,7 +257,7 @@ func TestRestartAgentStaysSingleSession(t *testing.T) {
 	spawnTerminal(t, m)
 	m.selectSessionRow(t, "coder")
 	m.restartSelected()
-	if len(m.confirm.sessions) != 1 {
-		t.Fatalf("restart confirm = %+v", m.confirm.sessions)
+	if len(pendingConfirm(m).sessions) != 1 {
+		t.Fatalf("restart confirm = %+v", pendingConfirm(m).sessions)
 	}
 }
