@@ -541,6 +541,31 @@ func TestVerifyAttestationMatchesPowerShellCase(t *testing.T) {
 	}
 }
 
+func TestReleaseFooterShowsTheScriptBeforeRunning(t *testing.T) {
+	if _, err := exec.LookPath("pwsh"); err != nil {
+		t.Skip("pwsh is not installed")
+	}
+	fence := powershellFence(t, ".goreleaser.yaml", "install.ps1")
+	show := strings.Index(fence, "Get-Content .\\install.ps1")
+	run := strings.Index(fence, "powershell -NoProfile -ExecutionPolicy Bypass -File .\\install.ps1")
+	if show < 0 || run < 0 || show > run {
+		t.Fatalf("release footer runs install.ps1 without showing it:\n%s", fence)
+	}
+	script := "$ErrorActionPreference = 'Continue'\n" +
+		"Remove-Item Alias:\\irm -Force\n" +
+		"function scoop { }\n" +
+		"function irm { param($Url, $OutFile) Set-Content -LiteralPath $OutFile -Value 'script-body' }\n" +
+		"function Unblock-File { param($Path) }\n" +
+		"function powershell { 'RAN' }\n" +
+		fence
+	out, code := runPwsh(t, script, "")
+	shown := strings.Index(out, "script-body")
+	ran := strings.Index(out, "RAN")
+	if code != 0 || shown < 0 || ran < 0 || shown > ran {
+		t.Fatalf("footer did not show the script before running it: exit %d\n%s", code, out)
+	}
+}
+
 func TestPowerShellAttestationExampleRequiresGh(t *testing.T) {
 	if _, err := exec.LookPath("pwsh"); err != nil {
 		t.Skip("pwsh is not installed")
@@ -598,24 +623,36 @@ func powershellFence(t *testing.T, path, marker string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const open = "```powershell\n"
-	rest := strings.ReplaceAll(string(source), "\r\n", "\n")
-	for {
-		start := strings.Index(rest, open)
-		if start < 0 {
-			t.Fatalf("%s has no powershell fence containing %s", path, marker)
+	lines := strings.Split(strings.ReplaceAll(string(source), "\r\n", "\n"), "\n")
+	for i := 0; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) != "```powershell" {
+			continue
 		}
-		rest = rest[start+len(open):]
-		end := strings.Index(rest, "\n```")
-		if end < 0 {
+		indent := len(lines[i]) - len(strings.TrimLeft(lines[i], " "))
+		var body []string
+		closed := false
+		for j := i + 1; j < len(lines); j++ {
+			if strings.TrimSpace(lines[j]) == "```" {
+				closed = true
+				i = j
+				break
+			}
+			line := lines[j]
+			if len(line) >= indent && strings.TrimLeft(line[:indent], " ") == "" {
+				line = line[indent:]
+			}
+			body = append(body, line)
+		}
+		if !closed {
 			t.Fatalf("%s fence never closed", path)
 		}
-		fence := rest[:end]
-		rest = rest[end:]
-		if strings.Contains(fence, marker) {
-			return fence + "\n"
+		text := strings.Join(body, "\n")
+		if strings.Contains(text, marker) {
+			return text + "\n"
 		}
 	}
+	t.Fatalf("%s has no powershell fence containing %s", path, marker)
+	return ""
 }
 
 func runPwsh(t *testing.T, script, pathDir string) (string, int) {

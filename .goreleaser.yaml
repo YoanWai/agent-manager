@@ -67,10 +67,11 @@ release:
     scoop bucket add yoanwai https://github.com/YoanWai/scoop-bucket
     scoop install yoanwai/agent-manager
 
-    # Read install.ps1 (attached below, listed in checksums.txt). The installer
-    # runs only after that download succeeds. Windows PowerShell 5.1 has no &&.
+    # Download install.ps1 (attached below, listed in checksums.txt), read it,
+    # then run it. Windows PowerShell 5.1 has no &&.
     irm https://github.com/YoanWai/agent-manager/releases/latest/download/install.ps1 -OutFile install.ps1
     if ($?) {
+      Get-Content .\install.ps1
       Unblock-File .\install.ps1
       powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
     }
