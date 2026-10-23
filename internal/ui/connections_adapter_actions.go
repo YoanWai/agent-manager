@@ -339,7 +339,7 @@ func (m *Model) remoteQuickSpawn(spawned spawn.Request) (tea.Cmd, bool) {
 
 func (m *Model) quickRemoteRequest(host, text string) remoteRequest {
 	q := m.quick()
-	return remoteRequest{host: host, text: text, draft: q.Input.Value(), composerGen: q.Gen, closeAfterSend: q.closeAfterSend}
+	return remoteRequest{host: host, text: text, draft: q.Input.Value(), composerGen: q.Gen, closeAfterSend: q.CloseAfterSend}
 }
 
 // withRemoteChoice passes the choice as the host's spawn takes it: the
@@ -356,7 +356,7 @@ func withRemoteChoice(opts *sessioncmd.CreateSessionOptions, choice config.Choic
 // end is on a connection: the remote row the bar was aimed at is gone, or
 // the cursor slid to another row without the user moving it.
 func (m *Model) quickAimLost(selection uirail.Selection) (string, bool) {
-	aim := m.quick().aim
+	aim := railSelection(m.quick().Aim)
 	if !aim.Remote() && !selection.Remote() {
 		return "", false
 	}

@@ -4,14 +4,16 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
+	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 // pushQuick puts a bare bar on the stack, for a test that needs one open
 // without the settings and catalog reads openQuickMode starts.
-func pushQuick(m *Model) *quickSurface {
-	q := newQuickSurface(quickBar{Composer: composer.Composer{Input: textarea.New()}})
+func pushQuick(m *Model) *uiquick.Surface {
+	q := newQuickSurface(m)
+	q.Composer = composer.Composer{Input: textarea.New()}
 	m.push(q)
 	return q
 }

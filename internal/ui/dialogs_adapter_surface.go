@@ -5,6 +5,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
+	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -106,7 +107,7 @@ func (m *Model) listClear() bool {
 	}
 	for _, s := range m.surfaces {
 		switch s.(type) {
-		case *quickSurface, *uigeometry.Surface:
+		case *uiquick.Surface, *uigeometry.Surface:
 		default:
 			return false
 		}

@@ -282,7 +282,7 @@ func TestQuickPromptClicks(t *testing.T) {
 		preparedView(m)
 		for _, hit := range m.quick().Hits() {
 			if hit.Action == action && (entry < 0 || hit.Entry == entry) {
-				m = leftPress(m, m.quick().originX+hit.X0, m.quick().originY+hit.Line)
+				m = leftPress(m, m.quick().OriginX+hit.X0, m.quick().OriginY+hit.Line)
 				return
 			}
 		}
@@ -442,7 +442,7 @@ func TestQuickModelSheetFitsTheColumn(t *testing.T) {
 		}
 	}
 	want := m.quick().Choice().Suggestions(m.spawnHost(), "claude")[last.Entry]
-	m = leftPress(m, m.quick().originX+last.X0, m.quick().originY+last.Line)
+	m = leftPress(m, m.quick().OriginX+last.X0, m.quick().OriginY+last.Line)
 	if m.quick().Choice().Model() != want {
 		t.Fatalf("a click on the list's last entry picked %q, want %q", m.quick().Choice().Model(), want)
 	}

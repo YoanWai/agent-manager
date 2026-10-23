@@ -97,8 +97,8 @@ func TestOpenQuickModeDefersSettingsReadAndGuardsDefaults(t *testing.T) {
 		if got := m.quickTool(); got != "ready-tool" {
 			t.Fatalf("refreshed quick tool = %q, want ready-tool", got)
 		}
-		if !m.quick().closeAfterSend || !m.quick().Worktree() {
-			t.Fatalf("quick defaults were not refreshed: close=%t worktree=%t", m.quick().closeAfterSend, m.quick().Worktree())
+		if !m.quick().CloseAfterSend || !m.quick().Worktree() {
+			t.Fatalf("quick defaults were not refreshed: close=%t worktree=%t", m.quick().CloseAfterSend, m.quick().Worktree())
 		}
 	})
 
@@ -840,7 +840,7 @@ func TestQuickCloseAfterSendDefaultsToStayingOpen(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.applyTestMsg(t, m.openQuickMode()())
-	if !m.quick().closeAfterSend {
+	if !m.quick().CloseAfterSend {
 		t.Fatal("refreshed close choice should opt in")
 	}
 }

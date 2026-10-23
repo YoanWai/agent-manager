@@ -10,6 +10,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/mcpreg"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -162,7 +163,7 @@ func (m *Model) openLaunchHint(fix launchFix) {
 	if _, open := m.launchHintSurface(); !open {
 		// The quick bar is not a dialog: it stays under the card.
 		for top, ok := m.top(); ok; top, ok = m.top() {
-			if _, bar := top.(*quickSurface); bar {
+			if _, bar := top.(*uiquick.Surface); bar {
 				break
 			}
 			m.Pop()

@@ -97,8 +97,8 @@ func TestQuickFooterFillsEveryBandCell(t *testing.T) {
 			if !strings.Contains(ansi.Strip(frameRows[m.layout.height-footerHeight]), "new") {
 				t.Fatalf("full %v width %d footer must begin with the target", full, width)
 			}
-			if m.quick().originY != m.layout.height-footerHeight {
-				t.Fatalf("target hit row = %d, want %d", m.quick().originY, m.layout.height-footerHeight)
+			if m.quick().OriginY != m.layout.height-footerHeight {
+				t.Fatalf("target hit row = %d, want %d", m.quick().OriginY, m.layout.height-footerHeight)
 			}
 			for y := m.layout.height - footerHeight; y < m.layout.height; y++ {
 				if !strings.HasPrefix(ansi.Strip(frameRows[y]), quickEdge) {

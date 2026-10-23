@@ -54,7 +54,7 @@ func TestQuickWorktreeMarkKeepsItsKeyboardAndMouseTarget(t *testing.T) {
 			for _, hit := range m.quick().Hits() {
 				if hit.Action == uiquick.ClickWorktree {
 					found = true
-					m = leftClick(m, m.quick().originX+hit.X0, m.quick().originY+hit.Line)
+					m = leftClick(m, m.quick().OriginX+hit.X0, m.quick().OriginY+hit.Line)
 					break
 				}
 			}

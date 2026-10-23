@@ -360,7 +360,8 @@ func (m *Model) applyRailDecision(decision uirail.Decision) (tea.Model, tea.Cmd)
 		// Only a move the user made comes through here; a refresh that
 		// slides the cursor does not re-aim the quick bar.
 		if q := m.quick(); q != nil {
-			q.aim, _ = m.rail.Selected()
+			aim, _ := m.rail.Selected()
+			q.Aim = quickAim(aim)
 		}
 		m.workspace.preview = ""
 		m.workspace.proc = sysstat.ProcStat{}

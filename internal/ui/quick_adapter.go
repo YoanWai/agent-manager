@@ -7,7 +7,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uiconnections "github.com/YoanWai/agent-manager/internal/ui/connections"
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
-	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -15,22 +14,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// quickBar is the quick bar (internal/ui/quick) with what the root holds
-// for it: its prompt box, the after-send setting, and where the frame
-// painted it. A pasted image lands at the caret as an
-// "[Image #N]" token that renders as a chip and steps, deletes, and wraps
-// as one unit; on submit each token becomes its path.
-type quickBar struct {
-	uiquick.Bar
-	composer.Composer
-	closeAfterSend bool
-	// aim is the row the user last pointed the bar at. A refresh that
-	// drops a connection's row moves the cursor on its own, and enter must
-	// not follow it to another agent or host.
-	aim uirail.Selection
-	// originX and originY place the bar's first painted line.
-	originX, originY int
-}
+func (m *Model) quickBarHost() quickBarHost { return quickBarHost{spawnHost{m: m}} }
 
 type quickHit = uiquick.Hit
 
@@ -43,8 +27,6 @@ const (
 
 // quickBarHost is the root as the quick bar sees it.
 type quickBarHost struct{ spawnHost }
-
-func (m *Model) quickBarHost() quickBarHost { return quickBarHost{spawnHost{m: m}} }
 
 func (h quickBarHost) Prompt() spawn.Prompt {
 	return promptBox{c: &h.m.quick().Composer, target: composer.Quick, host: h.m}
@@ -87,11 +69,10 @@ func (m *Model) openQuickModeWithReader(reader settingsValueReader) tea.Cmd {
 	m.clearErr()
 	m.forgetWorktreeCapability()
 	aim, _ := m.rail.Selected()
-	q := newQuickSurface(quickBar{
-		aim:            aim,
-		Composer:       composer.Composer{Input: input, MaxRows: quickBarMaxRows, Gen: m.nextComposerGen()},
-		closeAfterSend: m.settings.cache.value(uisettings.QuickCloseSetting) == "close",
-	})
+	q := newQuickSurface(m)
+	q.Composer = composer.Composer{Input: input, MaxRows: quickBarMaxRows, Gen: m.nextComposerGen()}
+	q.CloseAfterSend = m.settings.cache.value(uisettings.QuickCloseSetting) == "close"
+	q.Aim = quickAim(aim)
 	// The bar is on the stack before its choice starts, so a bar aimed at
 	// a connection starts on the host's defaults.
 	m.push(q)
@@ -109,7 +90,7 @@ func (m *Model) applyCachedQuickDefaults() tea.Cmd {
 	q := m.quick()
 	before := q.Tool()
 	q.SetTools(m.cachedSpawnToolSelection())
-	q.closeAfterSend = m.settings.cache.value(uisettings.QuickCloseSetting) == "close"
+	q.CloseAfterSend = m.settings.cache.value(uisettings.QuickCloseSetting) == "close"
 	q.DefaultWorktree(m.cachedSpawnWorktreeDefault(m.quickTargetGroup()))
 	toolName := q.Tool()
 	if toolName == before || toolName == "" {
@@ -157,7 +138,7 @@ func (m *Model) runQuickRequest(request uiquick.Request) tea.Cmd {
 			composerGen:    q.Gen,
 			draft:          q.Input.Value(),
 			text:           request.Text,
-			closeAfterSend: q.closeAfterSend,
+			closeAfterSend: q.CloseAfterSend,
 			images:         q.Attachments,
 		}) {
 			return nil
@@ -303,7 +284,7 @@ func (m *Model) quickHitAt(x, y int) (quickHit, bool) {
 	if q == nil {
 		return quickHit{}, false
 	}
-	return q.HitAt(x-q.originX, y-q.originY)
+	return q.HitAt(x-q.OriginX, y-q.OriginY)
 }
 
 func (m *Model) handleQuickClick(hit quickHit) tea.Cmd {
@@ -312,7 +293,7 @@ func (m *Model) handleQuickClick(hit quickHit) tea.Cmd {
 
 const quickModeTitle = "Quick prompt mode"
 
-func (m *Model) quickFooter(q *quickSurface) legend {
+func (m *Model) quickFooter(q *uiquick.Surface) legend {
 	edge := keyStyle().Render(quickEdge)
 	gutter := strings.Repeat(" ", quickGutter-1)
 	painted := paintLegend([]legendSection{{title: quickModeTitle, pairs: q.Legend(m.quickBarHost())}}, max(m.layout.width-1, 1))
@@ -336,7 +317,7 @@ func (m *Model) quickFooter(q *quickSurface) legend {
 	for _, line := range keys {
 		lines = append(lines, paint(edge+line, m.layout.width, quickModeHex()))
 	}
-	q.originX = quickGutter
+	q.OriginX = quickGutter
 	return legend{text: strings.Join(lines, "\n"), hits: hits}
 }
 

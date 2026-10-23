@@ -275,7 +275,7 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 			}
 		case spawnQuick:
 			if q, ok := m.quickFor(request.composerGen); ok {
-				m.clearAccepted(request.composerGen, request.draft, q.closeAfterSend)
+				m.clearAccepted(request.composerGen, request.draft, q.CloseAfterSend)
 			}
 		}
 		m.rebuildRows()

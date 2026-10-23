@@ -100,6 +100,6 @@ func (m *Model) viewFullListFrame() string {
 func (m *Model) placeListFooter(footer legend, y int) {
 	m.placeKeys(footer.hits, 0, y)
 	if q := m.quick(); q != nil {
-		q.originY = y
+		q.OriginY = y
 	}
 }
