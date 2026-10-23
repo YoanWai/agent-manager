@@ -30,7 +30,8 @@ var packaged = map[string]string{
 	"composer":     "the prompt box adapter: which box a paste lands in, its painters and the pastes sweep",
 	"connections":  "the SSH connections adapter: the client, refreshes, remote rows, preview and routed actions, and their effects",
 	"dialogs":      "the confirm, rename, move, fork and New Group dialog adapters and their effects",
-	"focus":        "the Focus adapter, its frame view and the pane watcher it holds",
+	"focus":        "the Focus adapter, its frame view, the pane watcher it holds and the raw input lane",
+	"geometry":     "pane sizing, layout widths and the split ratio: the adapter, its effects and the resize surface",
 	"help":         "the Help adapter: the context and root reads the key map paints from",
 	"notices":      "the notices adapter, release and feed checks and self-update",
 	"pathcomplete": "the directory completer's adapter: which field a read lands on",
@@ -45,8 +46,6 @@ var packaged = map[string]string{
 // rootExtras are root files of packaged features that are neither adapter,
 // effect nor surface. They predate the rule; the list only shrinks.
 var rootExtras = map[string]bool{
-	"focus_view.go":       true,
-	"focus_watch.go":      true,
 	"notices_update.go":   true,
 	"settings_prefs.go":   true,
 	"settings_prompts.go": true,
@@ -68,8 +67,6 @@ var rootExtras = map[string]bool{
 var rootOnly = map[string]string{
 	"effects":    "the ordered effect lane and its executor",
 	"frame":      "frame composition: dialog chrome, header, legend, IME, text layout and control escaping",
-	"geometry":   "pane sizing, layout widths and the split ratio",
-	"input":      "raw input forwarded to panes",
 	"launchhint": "the launch fix dialog and CLI install",
 	"model":      "the root Model, its services and shared host methods",
 	"preview":    "the session preview",

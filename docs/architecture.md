@@ -76,7 +76,7 @@ dispatch; it changes no state.
 **Features own state behind narrow hosts, and new ones start as child packages.** A feature is a type with its state, keys and view, and it reaches the root only through a small host interface it declares (`pathComplete`, `composer`, and the rest in `internal/ui`). Help, Review, Focus, Rail, Settings, Spawn, Quick, Dialogs, Notices and Connections each live in a child package whose imports `check-ui-boundaries` enforces; a new feature starts as one. The child gets copied values and returns typed requests; root adapters run the store, tmux, git and SSH work. There is no shared event bus or effect interpreter, because it would hide who owns what. Line counts and field counts do not prove a boundary; the checks above do.
 
 **Runtime resources stay with the root.** The tmux control client's mechanics
-live in `ui/focus/watch`; the root holds and closes the instance (`focus_watch.go`).
+live in `ui/focus/watch`; the root holds and closes the instance (`focus_adapter_watch.go`).
 The clipboard (`focus_adapter.go`, `composer.go`) and the IME cursor
 (`frame_ime.go`) are held and published by `internal/ui`. Feature packages
 see copied pane facts and hand back typed outcomes. That keeps the child packages
