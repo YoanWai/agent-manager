@@ -97,6 +97,9 @@ const (
 	remoteArchive
 	remoteRestore
 	remoteCreateGroup
+	// remoteInstall puts this build's release on the host; name carries
+	// its tag.
+	remoteInstall
 )
 
 // remoteRequest is one call to a connection's CLI.
@@ -119,12 +122,18 @@ type remoteRequest struct {
 	fromForm       bool
 	// dead is a kill of an agent that has already exited there.
 	dead bool
+	// version is the build an install sends, and gen the connection list
+	// its refresh may land on.
+	version string
+	gen     uint64
 }
 
 func (remoteRequest) effectRequest() {}
 
 type remoteEffectResult struct {
-	session sessioncmd.Session
+	session   sessioncmd.Session
+	installed remote.Installed
+	state     remote.HostState
 }
 
 func (remoteEffectResult) effectResult() {}
@@ -152,11 +161,19 @@ func (s effectServices) runRemote(request remoteRequest) (effectResult, error) {
 		result.session, err = s.remote.Archive(ctx, request.ref, request.op == remoteRestore)
 	case remoteCreateGroup:
 		_, err = s.remote.CreateGroup(ctx, request.host, request.name, request.groupDir)
+	case remoteInstall:
+		result.installed, err = s.remote.Install(ctx, request.host, request.version)
+		if err == nil {
+			result.state = s.remote.Refresh(ctx, request.host)
+		}
 	}
 	return result, err
 }
 
 func (m *Model) applyRemoteEffect(request remoteRequest, result remoteEffectResult, err error) tea.Cmd {
+	if request.op == remoteInstall {
+		return m.applyInstall(request, result, err)
+	}
 	if err != nil {
 		// As on this machine, a prompt that may sit in the pane leaves the
 		// bar, so the next enter cannot type it a second time.

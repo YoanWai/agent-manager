@@ -33,6 +33,7 @@ const (
 	// actionRemoveConnection takes an SSH connection off the list; the
 	// target names it and holds no sessions.
 	actionRemoveConnection = uidialogs.ConfirmRemoveConnection
+	actionInstall          = uidialogs.ConfirmInstall
 )
 
 type confirmTarget struct {

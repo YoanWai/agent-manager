@@ -32,6 +32,17 @@ The protocol is the remote host's own CLI, run over SSH as `agent-manager <comma
 
 The snapshot envelope carries `version`. A remote that does not know `snapshot`, or answers with an older version, says to update agent-manager on that host. One that answers with a newer version says to update it on this machine.
 
+### Installing on the host
+
+A host with no agent-manager on its login `PATH`, or one too old to know `snapshot`, can be given this build's release. `u` (the restore key) on the connection row, or Install agent-manager in its menu, asks first; so does `agent-manager update --connection=<name>` from a shell. Either way:
+
+1. `uname -sm` in the login shell names the OS and architecture. A Windows host, or one with no POSIX login shell, is refused.
+2. This machine downloads the release of its own version, not the newest, from the source `agent-manager update` uses, and checks it against the release's `checksums.txt`. A dev build has no release and is refused.
+3. The binary streams over the same SSH connection, so the host needs no network of its own. The host writes it beside `~/.local/bin/agent-manager`, the install script's default, checks its SHA-256 and that it runs, and only then renames it into place. Nothing runs with sudo.
+4. The connection refreshes. When the login shell finds no copy, or another copy first, the result names what to add to `PATH` in the login profile; no profile is edited.
+
+A host newer than this build is left alone, and so is a connection with its own path, since the install would not replace what that path runs. A manager already running on the host keeps its old build until it restarts. The MCP server has no install tool.
+
 Flags are written as `--flag=value` and operands follow a bare `--`, so a message that looks like a flag stays a message.
 
 Once a connection is saved, every agent on this machine can reach that host through MCP: any session can open a terminal there with `create_terminal` and run commands in it as the remote user. Add a connection only for a host you would let all of them use.
@@ -64,6 +75,7 @@ The remote command runs in the user's login shell (`exec "$SHELL" -lc ...`), so 
 | Headless manager | `internal/app`, `main.go` (`serve`) | Running the poller and after-turn work without a TUI; `--background` detaches one when none is awake |
 | Connection values | `internal/remote/value` | A connection and its validation, `<connection>::<id>` refs, failure kinds and the retry wait, with no SSH, so the UI packages can use them |
 | SSH client | `internal/remote` | The SSH command, snapshot, routed operations, starting the remote manager, and the rule that a session drives only the remote terminals it opened |
+| Install | `internal/remote/install.go`, `internal/update` (`FetchRelease`), `internal/cli` (`update --connection`) | Detecting the host's platform, the verified download, the upload |
 | UI | `internal/ui/connections`, `internal/ui/connections_adapter*.go`, `internal/ui/connections_effect.go` | The package: the list, each host's last refresh, remote rows, the selected row's screen and the connection dialog. The root adapters: the client, refreshes, rail and content painting, routing actions to `internal/remote` on the effect lane |
 | MCP | `internal/mcpserver/remote.go` | Listing every connection with qualified ids and routing qualified ids to `internal/remote` |
 | Opener records | `internal/store/remote_terminals.go` | Which local session opened each remote terminal |

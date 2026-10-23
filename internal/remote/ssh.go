@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,6 +19,10 @@ import (
 // Runner runs one ssh argv and returns what it printed. A failure that
 // exited carries an ExitCode, as *exec.ExitError does.
 type Runner func(ctx context.Context, argv []string) (stdout, stderr []byte, err error)
+
+// InputRunner is a Runner that also feeds stdin to ssh; a nil stdin is
+// empty.
+type InputRunner func(ctx context.Context, argv []string, stdin io.Reader) (stdout, stderr []byte, err error)
 
 const (
 	maxStdout = 8 << 20
@@ -31,8 +36,9 @@ var errOverflow = errors.New("output past its cap")
 // it says nothing about the host's version.
 var errTooLong = fmt.Errorf("answered with more than %d MiB", maxStdout>>20)
 
-func runSSH(ctx context.Context, argv []string) ([]byte, []byte, error) {
+func runSSH(ctx context.Context, argv []string, stdin io.Reader) ([]byte, []byte, error) {
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd.Stdin = stdin
 	stdout, stderr := &cappedBuffer{max: maxStdout}, &cappedBuffer{max: maxStderr}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 	cmd.WaitDelay = waitDelay

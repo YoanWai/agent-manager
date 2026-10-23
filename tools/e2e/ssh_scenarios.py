@@ -7,7 +7,10 @@ to a real agent-manager "host" without a network or the user's ~/.ssh. The
 scenario adds a connection through the dialog and drives every action a
 remote row offers: preview, quick send, kill, revive, archive, restore,
 attach, quick spawn and a new terminal. A second connection whose host
-refuses shows as unreachable and is removed. Every process it started is ended by PID.
+refuses shows as unreachable and is removed. A third, whose host runs an
+agent-manager too old for the snapshot, offers the install, which this dev
+build refuses without writing anything there. Every process it started is
+ended by PID.
 """
 import argparse
 import hashlib
@@ -30,6 +33,7 @@ from smoke import Sandbox
 
 CONNECTION = 'box'
 DOWN = 'down'
+STALE = 'stale'
 REMOTE_AGENT = 'remote-agent'
 REMOTE_GROUP = 'web'
 GROUPED_AGENT = 'api'
@@ -38,15 +42,37 @@ QUICK_TEXT = 'ssh-quick-input'
 SPAWN_TEXT = 'ssh-spawn-prompt'
 
 
-def fake_ssh_script(remote_env):
+def fake_ssh_script(remote_env, stale_env):
     exports = ' '.join(f'{name}={shlex.quote(value)}' for name, value in remote_env.items())
+    stale = ' '.join(f'{name}={shlex.quote(value)}' for name, value in stale_env.items())
     return ('#!/bin/sh\n'
             '# disposable fixture ssh: runs the remote command here, under a second profile\n'
             f'case " $* " in *" fixture@{DOWN} "*)\n'
         f'  echo "ssh: connect to host {DOWN} port 22: Connection refused" >&2; exit 255;;\n'
         'esac\n'
         'for last; do :; done\n'
+            f'case " $* " in *" fixture@{STALE} "*)\n'
+            f'  exec env -i PATH="$PATH" {stale} /bin/sh -c "$last";;\n'
+            'esac\n'
             f'exec env -i PATH="$PATH" {exports} /bin/sh -c "$last"\n')
+
+
+def stale_fixture(artifacts):
+    """A host whose agent-manager predates the snapshot: its login shell
+    finds only an old build that answers version 0, never the run's copy."""
+    home = artifacts / 'stale-home'
+    old_bin = home / 'old-bin'
+    old_bin.mkdir(parents=True)
+    old = old_bin / 'agent-manager'
+    old.write_text('#!/bin/sh\necho \'{"version":0}\'\n')
+    shell = home / 'login-shell'
+    shell.write_text('#!/bin/sh\n'
+                     f'PATH={shlex.quote(str(old_bin))}:/usr/bin:/bin; export PATH\n'
+                     'if [ "$1" = -lc ]; then shift; set -- -c "$@"; fi\n'
+                     'exec /bin/sh "$@"\n')
+    for path in (old, shell):
+        path.chmod(0o755)
+    return home, {'HOME': str(home), 'SHELL': str(shell)}
 
 
 def remote_shell_script(bin_dir):
@@ -122,7 +148,8 @@ def write_fixtures(sandbox, remote, binary):
     manager = bin_dir / 'agent-manager'
     shutil.copy2(binary, manager)
     (bin_dir / FAKE_BIN).write_text(fake_cli_script(READY_MARKER))
-    (bin_dir / 'ssh').write_text(fake_ssh_script(remote.env))
+    stale_home, stale_env = stale_fixture(sandbox.artifacts)
+    (bin_dir / 'ssh').write_text(fake_ssh_script(remote.env, stale_env))
     shell = remote.home / 'login-shell'
     shell.write_text(remote_shell_script(bin_dir))
     for path in (bin_dir / FAKE_BIN, bin_dir / 'ssh', shell):
@@ -131,7 +158,7 @@ def write_fixtures(sandbox, remote, binary):
         profile.mkdir(parents=True)
         (profile / 'config.toml').write_text(config_fixture_text())
     sandbox.env['PATH'] = str(bin_dir) + ':' + sandbox.env.get('PATH', '')
-    return manager
+    return manager, stale_home
 
 
 def remote_pane_code(sandbox, remote, session_id):
@@ -285,8 +312,25 @@ def offline_connection(sandbox):
     frame(sandbox, 'offline-row-gone', CONNECTION, 'fixture@' + DOWN)
 
 
+def stale_connection(sandbox, stale_home):
+    """An outdated host offers the install on u; a dev build has no release
+    to send, so it says so and writes nothing on the host."""
+    add_connection(sandbox, STALE)
+    select(sandbox, 'stale-row', 'ssh to fixture@' + STALE)
+    frame(sandbox, 'stale-offer', 'install agent-manager')
+    key(sandbox, 'u')
+    frame(sandbox, 'stale-dev-refusal', 'no published build')
+    placed = list((stale_home / '.local').rglob('*')) if (stale_home / '.local').exists() else []
+    if placed:
+        raise AssertionError(f'a refused install wrote {placed} on the host')
+    key(sandbox, 'd')
+    confirm(sandbox, 'remove-stale', f'remove connection {STALE}?', CONNECTION)
+    sandbox.wait('stale-removed', lambda: str(stored_connections(sandbox)),
+                 lambda value: value == str([(CONNECTION, 'fixture@' + CONNECTION)]))
+
+
 def scenario(sandbox, remote, binary):
-    manager = write_fixtures(sandbox, remote, binary)
+    manager, stale_home = write_fixtures(sandbox, remote, binary)
     agent_id = seed_remote(sandbox, remote, manager)
     sandbox.start_manager('scen', sandbox.home, manager)
     frame(sandbox, 'startup', 'A G E N T')
@@ -323,6 +367,7 @@ def scenario(sandbox, remote, binary):
     attach(sandbox, remote, agent_id)
     spawn_and_terminal(sandbox, remote)
     offline_connection(sandbox)
+    stale_connection(sandbox, stale_home)
     local = sqlite3.connect(str(profile_dir(sandbox) / 'state.db'), timeout=5)
     try:
         if local.execute('SELECT count(*) FROM sessions').fetchone()[0]:

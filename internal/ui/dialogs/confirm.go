@@ -26,6 +26,8 @@ const (
 	// ConfirmRemoveConnection takes an SSH connection off the list; the
 	// root's pending request names it and holds no sessions.
 	ConfirmRemoveConnection ConfirmAction = "remove connection"
+	// ConfirmInstall puts this build's release on an SSH connection's host.
+	ConfirmInstall ConfirmAction = "install"
 )
 
 // Confirm is the question a captured lifecycle request asks before it runs:
@@ -80,6 +82,8 @@ func (c Confirm) Title(mode presentation.GlyphMode) string {
 		return g.RestoreGlyph + " Revive " + subject
 	case ConfirmRemoveConnection:
 		return g.DeleteGlyph + " Remove connection"
+	case ConfirmInstall:
+		return g.DownloadGlyph + " Install agent-manager"
 	default:
 		return g.DeleteGlyph + " Delete " + subject
 	}
@@ -107,6 +111,8 @@ func (c Confirm) Answer() string {
 		return "revive"
 	case ConfirmRemoveConnection:
 		return "remove"
+	case ConfirmInstall:
+		return "install"
 	}
 	return "delete"
 }

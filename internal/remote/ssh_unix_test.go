@@ -34,7 +34,7 @@ func TestRunSSHDeadlineEndsTheProcessGroup(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 	start := time.Now()
-	stdout, _, err := runSSH(ctx, []string{"sh", "-c", "sleep 10 & echo $!; sleep 10"})
+	stdout, _, err := runSSH(ctx, []string{"sh", "-c", "sleep 10 & echo $!; sleep 10"}, nil)
 	if elapsed := time.Since(start); elapsed > 1500*time.Millisecond {
 		t.Fatalf("call outlived its deadline by %v", elapsed-200*time.Millisecond)
 	}
@@ -56,7 +56,7 @@ func TestRunSSHDeadlineEndsTheProcessGroup(t *testing.T) {
 // still holds the pipe.
 func TestRunSSHStopsWaitingForAPipeAfterSSHExits(t *testing.T) {
 	start := time.Now()
-	stdout, _, err := runSSH(context.Background(), []string{"sh", "-c", "sleep 10 & echo $!"})
+	stdout, _, err := runSSH(context.Background(), []string{"sh", "-c", "sleep 10 & echo $!"}, nil)
 	if elapsed := time.Since(start); elapsed > waitDelay+time.Second {
 		t.Fatalf("call waited %v on a pipe held after ssh exited", elapsed)
 	}

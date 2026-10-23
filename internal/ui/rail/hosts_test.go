@@ -249,6 +249,46 @@ func TestConnectionMenusOfferOnlyRemoteActions(t *testing.T) {
 	}
 }
 
+func TestAnInstallableConnectionOffersTheInstallOnTheRestoreKey(t *testing.T) {
+	snapshot := hostsSnapshot(HostOffline)
+	model := New(nil)
+	labels := func() []string {
+		index := model.rowIndex(Selection{Kind: ConnectionRow, Host: "box"}.key())
+		var got []string
+		for _, item := range model.rowMenuItems(model.rows[index]) {
+			if item.action == Restore {
+				got = append(got, item.label)
+			}
+		}
+		return got
+	}
+	model.Reconcile(snapshot)
+	if got := labels(); len(got) != 0 {
+		t.Fatalf("an offline host that needs no install offers %v", got)
+	}
+	snapshot.Hosts[0].Installable = true
+	model.Reconcile(snapshot)
+	if got := labels(); !slices.Equal(got, []string{"Install agent-manager"}) {
+		t.Fatalf("installable connection menu offers %v on the restore key", got)
+	}
+	legend := model.RemoteLegend(LegendContext{ListKeys: keybind.DefaultList()}, RemoteRow{Kind: ConnectionRow, Host: "box", Installable: true}, false)
+	if !slices.Contains(legend.Pairs, [2]string{"u", "install agent-manager"}) {
+		t.Fatalf("footer = %v", legend.Pairs)
+	}
+
+	snapshot.Hosts[0].Installing = true
+	model.Reconcile(snapshot)
+	if got := labels(); len(got) != 0 {
+		t.Fatalf("a running install is offered again: %v", got)
+	}
+	frame := model.Render(hostsContext(48, 14), Frame{})
+	for _, painted := range frame.Lines {
+		if painted.HitOK && painted.Hit.Kind == ConnectionRow && !strings.Contains(ansi.Strip(painted.Text), "installing…") {
+			t.Fatalf("connection line %q, want installing…", ansi.Strip(painted.Text))
+		}
+	}
+}
+
 func TestHostFoldsFollowTheirConnection(t *testing.T) {
 	model := New([]string{"work"})
 	model.RestoreHostFolds([]HostFold{{Host: "box"}, {Host: "box", Path: "ops"}, {Host: "lab", Path: "ops"}})
