@@ -336,6 +336,9 @@ func (m *Model) routeReviewMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	case reviewPickerLoadedMsg:
 		return routed(m, m.handleReviewPickerLoaded(msg))
 
+	case reviewPickedMsg:
+		return routed(m, m.applyReviewPick(msg))
+
 	case reviewPreferencesMsg:
 		return routed(m.handleReviewPreferences(msg))
 
@@ -406,6 +409,7 @@ func (m *Model) closeDiff() tea.Cmd {
 	m.reviewNav.ret = reviewReturn{}
 	gen := m.review.Close()
 	m.mode = modeList
+	m.clearSurfaces()
 	switch ret.kind {
 	case reviewReturnAttach:
 		return m.reattach(ret.sessionID, gen)

@@ -123,10 +123,10 @@ func TestReviewPreferencesFinishBehindPickerWithoutLeavingLoadingStuck(t *testin
 	state := m.review.Snapshot()
 	m.openReviewPicker([]uireview.PickerRow{{Label: "branch", Root: s.Cwd}}, "branches", uireview.PickRepo, s.Cwd, uireview.PickerSource{Generation: state.Generation, TargetID: s.ID, RepoRoot: s.Cwd}, "")
 	_, load := m.handleReviewPreferences(cmd().(reviewPreferencesMsg))
-	if m.mode != modeRepoPick || load == nil {
+	if !m.pickerOpen() || load == nil {
 		t.Fatal("picker stranded the sole review load")
 	}
-	if m.review.PickerSourceCurrent(m.reviewNav.picker.Source()) {
+	if m.review.PickerSourceCurrent(m.pickerOf(t).Source()) {
 		t.Fatal("old picker survived review preparation")
 	}
 }
