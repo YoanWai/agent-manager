@@ -1,48 +1,16 @@
 package ui
 
 import (
-	"strings"
-
 	"github.com/YoanWai/agent-manager/internal/store"
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
-	"github.com/YoanWai/agent-manager/internal/ui/presentation"
+	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
-
-type helpLayout struct {
-	content uihelp.Content
-	width   int
-	rows    int
-}
-
-func (m *Model) openHelp() {
-	m.help.returnMode = m.mode
-	scope := uihelp.Global
-	if m.mode == modeDiff {
-		scope = uihelp.Review
-	}
-	m.help.state = uihelp.New(scope)
-	m.mode = modeHelp
-}
-
-func (m *Model) handleHelpKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	layout := m.helpLayout()
-	viewport := uihelp.Viewport{Rows: layout.rows, Lines: len(layout.content.Lines)}
-	switch m.help.state.Update(msg, viewport) {
-	case uihelp.Quit:
-		return m.requestQuit()
-	case uihelp.OpenDocs:
-		return m, openLink(docsURL)
-	case uihelp.Close:
-		m.mode = m.help.returnMode
-		m.help.returnMode = modeList
-		return m, m.startStartupTick()
-	default:
-		return m, nil
-	}
-}
 
 func (m *Model) helpContext(width int) uihelp.Context {
 	return uihelp.Context{
@@ -57,45 +25,47 @@ func (m *Model) helpContext(width int) uihelp.Context {
 			AfterTurnArchive: m.afterTurnGlyph(store.AfterTurnArchive),
 			AfterTurnKill:    m.afterTurnGlyph(store.AfterTurnKill),
 		},
-		QuickKeys:    uihelp.QuickKeys{Model: quickModelKey, Effort: quickEffortKey, Profile: quickProfileKey},
-		CursorMarker: cursorAnchorMarker,
+		QuickKeys:    uihelp.QuickKeys{Model: uiquick.ModelKey, Effort: uiquick.EffortKey, Profile: uiquick.ProfileKey},
+		CursorMarker: uiframe.CursorMarker,
+		ReviewRows:   uireview.HelpRows(),
 		Styles: uihelp.Styles{
-			Section: sectionStyle(),
-			Rule:    lipgloss.NewStyle().Foreground(colorBorder()),
-			Key:     keyStyle(),
-			Muted:   mutedStyle(),
-			Subtle:  subtleStyle(),
-			Value:   valueStyle(),
-			Match:   lipgloss.NewStyle().Foreground(colorBright()).Bold(true),
-			Cursor:  lipgloss.NewStyle().Foreground(colorAccent()),
+			Section: uitheme.SectionStyle(),
+			Rule:    lipgloss.NewStyle().Foreground(uitheme.ColorBorder()),
+			Key:     uitheme.KeyStyle(),
+			Muted:   uitheme.MutedStyle(),
+			Subtle:  uitheme.SubtleStyle(),
+			Value:   uitheme.ValueStyle(),
+			Match:   lipgloss.NewStyle().Foreground(uitheme.ColorBright()).Bold(true),
+			Cursor:  lipgloss.NewStyle().Foreground(uitheme.ColorAccent()),
 		},
 	}
 }
 
-func (m *Model) helpLayout() helpLayout {
-	dialog := m.dialogRenderContext()
-	width := uihelp.CardWidth(dialog.width)
-	inner := cardInnerWidth(width)
-	content := m.help.state.Content(m.helpContext(inner))
-	rows := dialog.height - 5 - lipgloss.Height(legendInline(content.Hints, inner)) - len(content.Head)
-	if dialog.status != "" {
-		rows -= 2
-	}
-	return helpLayout{
-		content: content,
-		width:   width,
-		rows:    max(rows, 1),
-	}
+// helpRoot is the root as the key map reads it.
+type helpRoot struct{ *Model }
+
+func (r helpRoot) Context(width int) uihelp.Context { return r.helpContext(width) }
+
+func (r helpRoot) InnerWidth(width int) int { return uiframe.CardInnerWidth(width) }
+
+func (r helpRoot) HintRows(hints [][2]string, width int) int {
+	// One untitled run, for the foot of a modal card where the tier's
+	// subject is the card's own title.
+	return lipgloss.Height(uiframe.LegendInline(hints, width, frameCap()))
 }
 
-func (m *Model) viewHelp() string {
-	layout := m.helpLayout()
-	lines := append([]string(nil), layout.content.Head...)
-	lines = append(lines, presentation.Window(
-		layout.content.Lines,
-		layout.rows,
-		layout.content.Offset,
-		subtleStyle(),
-	)...)
-	return m.cardSized(layout.width, layout.content.Title, strings.Join(lines, "\n"), layout.content.Hints)
+func (r helpRoot) StatusShown() bool { return r.errBar.text != "" }
+
+func (r helpRoot) TakeForeground() { r.takeForeground() }
+
+func (r helpRoot) OpenDocs() tea.Cmd { return openLink(docsURL) }
+
+// openHelp scopes the key map to Review when Review is underneath. The base
+// is read here, to open, and never again.
+func (m *Model) openHelp() {
+	scope := uihelp.Global
+	if m.base == baseReview {
+		scope = uihelp.Review
+	}
+	m.push(uihelp.NewSurface(helpRoot{m}, scope))
 }

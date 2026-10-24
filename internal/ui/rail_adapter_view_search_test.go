@@ -3,6 +3,7 @@ package ui
 import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -27,10 +28,10 @@ func TestSearchFieldFillsOnlyWhileSearching(t *testing.T) {
 
 	m.rail.SetSearch(m.rail.Search(), true)
 	open := fieldLine()
-	if open.tone != searchFieldHex() {
-		t.Fatalf("open field tone = %q, want %q", open.tone, searchFieldHex())
+	if open.tone != uitheme.SearchFieldHex() {
+		t.Fatalf("open field tone = %q, want %q", open.tone, uitheme.SearchFieldHex())
 	}
-	if !strings.Contains(open.text, bgSeq(searchFieldHex())) {
+	if !strings.Contains(open.text, uitheme.BgSeq(uitheme.SearchFieldHex())) {
 		t.Fatalf("open field line carries no fill:\n%q", open.text)
 	}
 
@@ -39,7 +40,7 @@ func TestSearchFieldFillsOnlyWhileSearching(t *testing.T) {
 	if closed.tone != "" {
 		t.Fatalf("closed field with a query applied should keep the panel tone, got %q", closed.tone)
 	}
-	if strings.Contains(closed.text, bgSeq(searchFieldHex())) {
+	if strings.Contains(closed.text, uitheme.BgSeq(uitheme.SearchFieldHex())) {
 		t.Fatalf("closed field line should not be filled:\n%q", closed.text)
 	}
 }
@@ -49,10 +50,10 @@ func TestSearchLightsTheQueryInsideASessionName(t *testing.T) {
 	entry := treeRow{sess: store.Session{
 		ID: "s1", Name: "alpha-build", Tool: "grok", Status: status.Idle, CreatedAt: time.Now(),
 	}}
-	lit := searchMatchStyle().Render("bui")
+	lit := uitheme.SearchMatchStyle().Render("bui")
 
 	m := &Model{rail: railModelSearching(nil, 0, "BUI")}
-	row := m.renderTreeRow(entry, false, 80, 0, panelHex())
+	row := m.renderTreeRow(entry, false, 80, 0, uitheme.PanelHex())
 	if !strings.Contains(row, lit) {
 		t.Fatalf("query should light its span in the name's own case:\n%q", row)
 	}
@@ -60,21 +61,21 @@ func TestSearchLightsTheQueryInsideASessionName(t *testing.T) {
 		t.Fatalf("name lost text around the lit span:\n%q", ansi.Strip(row))
 	}
 
-	selected := m.renderTreeRow(entry, true, 80, 0, selectedHex())
-	bright := lipgloss.NewStyle().Foreground(colorBright()).Bold(true)
+	selected := m.renderTreeRow(entry, true, 80, 0, uitheme.SelectedHex())
+	bright := lipgloss.NewStyle().Foreground(uitheme.ColorBright()).Bold(true)
 	if !strings.Contains(selected, bright.Render("alpha-")) || !strings.Contains(selected, lit) {
 		t.Fatalf("selected row should keep its bright name around the lit span:\n%q", selected)
 	}
 
 	m.rail.SetSearch("grok", m.rail.Searching())
-	row = m.renderTreeRow(entry, false, 80, 0, panelHex())
+	row = m.renderTreeRow(entry, false, 80, 0, uitheme.PanelHex())
 	if strings.Contains(row, sgrOf(lit)) {
 		t.Fatalf("a match on the tool alone should leave the name plain:\n%q", row)
 	}
 
 	m.rail.SetSearch("", m.rail.Searching())
-	row = m.renderTreeRow(entry, false, 80, 0, panelHex())
-	if !strings.Contains(row, valueStyle().Render("alpha-build")) {
+	row = m.renderTreeRow(entry, false, 80, 0, uitheme.PanelHex())
+	if !strings.Contains(row, uitheme.ValueStyle().Render("alpha-build")) {
 		t.Fatalf("no query should render the plain name:\n%q", row)
 	}
 }
@@ -82,8 +83,8 @@ func TestSearchLightsTheQueryInsideASessionName(t *testing.T) {
 func TestSearchLightsTheQueryInsideAGroupName(t *testing.T) {
 	forceANSI256(t)
 	m := &Model{rail: railModelSearching(nil, 0, "END")}
-	row := m.renderTreeRow(treeRow{isGroup: true, group: "work/backend"}, false, 80, 0, panelHex())
-	if !strings.Contains(row, searchMatchStyle().Render("end")) {
+	row := m.renderTreeRow(treeRow{isGroup: true, group: "work/backend"}, false, 80, 0, uitheme.PanelHex())
+	if !strings.Contains(row, uitheme.SearchMatchStyle().Render("end")) {
 		t.Fatalf("group name should light the query:\n%q", row)
 	}
 	if !strings.Contains(ansi.Strip(row), "backend") {

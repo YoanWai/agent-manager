@@ -30,6 +30,7 @@ func testContext(width int) Context {
 		},
 		QuickKeys:    QuickKeys{Model: "ctrl+l", Effort: "ctrl+x", Profile: "ctrl+y"},
 		CursorMarker: testCursorMarker,
+		ReviewRows:   [][2]string{{"c", "comment on the line"}},
 		Styles: Styles{
 			Section: lipgloss.NewStyle().Bold(true),
 			Rule:    lipgloss.NewStyle(),

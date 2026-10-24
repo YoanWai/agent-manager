@@ -14,8 +14,8 @@ import (
 const (
 	GlyphModeSetting   = presentation.GlyphModeSetting
 	DefaultToolSetting = "default_tool"
-	ThemeSetting       = "theme"
-	ThemeAutoSetting   = "theme_auto"
+	ThemeSetting       = uitheme.ThemeSetting
+	ThemeAutoSetting   = uitheme.ThemeAutoSetting
 	DiffLayoutSetting  = "diff_layout"
 	// SessionLayoutSetting is the list's shape: "full" gives the rail the
 	// whole width, anything else keeps the split with the preview beside it.

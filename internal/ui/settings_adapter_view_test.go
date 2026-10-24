@@ -14,7 +14,7 @@ func TestSettingsViewportKeepsFocusedFieldAndSaveVisible(t *testing.T) {
 		m.layout.width, m.layout.height = size[0], size[1]
 		m.openSettings()
 		for _, field := range []int{uisettings.FieldGlyphs, uisettings.FieldKeybindings, uisettings.FieldUpdate} {
-			m.settings.dialog.Field = field
+			m.settingsCard().State().Field = field
 			view := ansi.Strip(m.viewSettings())
 			lines := strings.Split(view, "\n")
 			if len(lines) > m.layout.height {
@@ -45,9 +45,9 @@ func TestKeyPickerCardCarriesNoSaveButton(t *testing.T) {
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 120, 40
 	m.openSettings()
-	m.settings.dialog.Field = uisettings.FieldKeybindings
+	m.settingsCard().State().Field = uisettings.FieldKeybindings
 	m.handleSettingsKey(key("enter"))
-	if !m.settings.dialog.KeyPicker {
+	if !m.settingsCard().State().KeyPicker {
 		t.Fatal("test setup: enter on keybindings opens the picker")
 	}
 	view := ansi.Strip(m.viewSettings())
@@ -67,7 +67,7 @@ func TestFlexChromeRowsMatchThePaintedCard(t *testing.T) {
 	body := strings.Repeat("a row wide enough to stretch the card past its default width\n", 5) + "last"
 	for _, width := range []int{40, 64, 90, 160} {
 		m.layout.width, m.layout.height = width, 60
-		m.cardFlex("title", body, hint)
+		m.CardSized(m.flexCardWidth("title", body, hint), "title", body, hint)
 		painted := m.layout.card.bottom - m.layout.card.top - (strings.Count(body, "\n") + 1)
 		if got := m.flexChromeRows(hint); got != painted {
 			t.Fatalf("width %d: flexChromeRows = %d, the card painted %d", width, got, painted)
@@ -83,7 +83,7 @@ func TestKeyPickerFillsTheTerminal(t *testing.T) {
 	for height := 16; height <= 40; height++ {
 		m.layout.height = height
 		m.openSettings()
-		m.settings.dialog.Field = uisettings.FieldKeybindings
+		m.settingsCard().State().Field = uisettings.FieldKeybindings
 		m.handleSettingsKey(key("enter"))
 		m.viewSettings()
 		if rows := m.layout.card.bottom - m.layout.card.top; rows > height || rows < height-1 {

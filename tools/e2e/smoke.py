@@ -21,6 +21,7 @@ class Sandbox:
         (self.socket_dir / f'tmux-{os.getuid()}').mkdir(mode=0o700)
         self.home = self.artifacts / 'home'
         self.home.mkdir()
+        self.seed_feed_cache()
         self.prompt = f'am-shell-{time.time_ns()}> '
         shell = self.home / 'fixture-shell'
         shell.write_text('#!/bin/sh\nunset ENV BASH_ENV\n' +
@@ -43,6 +44,20 @@ class Sandbox:
                 self.env.pop(key)
         self.env.update(GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL='/dev/null')
         self.log = self.artifacts / 'commands.jsonl'
+
+    def seed_feed_cache(self):
+        """A fresh, empty message feed, so no scenario races a GitHub fetch.
+
+        The manager opens the messages card on a new remote notice when the
+        list is clear. With a fresh profile that fetch can land before the
+        first frame is captured, and the card then hides whatever the wait
+        looks for. A cache this build parsed, checked just now and holding no
+        messages, serves from disk within the check interval.
+        """
+        config_dir = self.home / '.config' / 'agent-manager'
+        config_dir.mkdir(parents=True, exist_ok=True)
+        cache = dict(checked_at=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), parser=1, messages=[])
+        (config_dir / 'feed-messages.json').write_text(json.dumps(cache))
 
     def run(self, args, check=True):
         result = subprocess.run(args, env=self.env, text=True, capture_output=True, timeout=20)

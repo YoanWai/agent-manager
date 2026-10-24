@@ -14,72 +14,51 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uicomposer "github.com/YoanWai/agent-manager/internal/ui/composer"
+	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
-	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
+	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
+	uigeometrypanes "github.com/YoanWai/agent-manager/internal/ui/geometry/panes"
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
+	uirelease "github.com/YoanWai/agent-manager/internal/ui/notices/release"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
+	uicapture "github.com/YoanWai/agent-manager/internal/ui/preview/capture"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+	uirailpersist "github.com/YoanWai/agent-manager/internal/ui/rail/persist"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
+	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
-	"github.com/YoanWai/agent-manager/internal/update"
+	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
+	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
+	uistartup "github.com/YoanWai/agent-manager/internal/ui/startup"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-type mode int
-
-const (
-	modeList mode = iota
-	modeForm
-	modeConfirmDelete
-	modeHelp
-	modeRename
-	modeFork
-	modeMove
-	modeRepoPick
-	modeGroupForm
-	modeSettings
-	modeDiff
-	modeNotices
-	// modeLaunchHint holds a refused spawn's fix in a dialog: the launch
-	// stays blocked, and the command that unblocks it is what the user sees.
-	modeLaunchHint
-	// modeFocus routes the keyboard into the selected session's pane while
-	// the list and live preview stay on screen.
-	modeFocus
-	modeConnection
-)
-
 type Model struct {
-	gens       generations
-	effects    effectState
-	services   services
-	workspace  workspace
-	rail       uirail.Model
-	focus      focusState
-	prefs      preferences
-	ledger     launchLedger
-	startup    startupState
-	notices    noticesPanel
-	poller     *poller
-	mode       mode
-	review     uireview.Model
-	reviewNav  reviewNavState
-	form       formDialog
-	groupForm  groupFormDialog
-	confirm    confirmDialog
-	launchHint launchHintDialog
-	mouse      mouseCapture
-	rename     renameDialog
-	fork       forkDialog
-	quick      quickBar
-	settings   settingsFeature
-	env        environment
-	help       helpFeature
-	move       moveDialog
-	ssh        connectionsFeature
-	layout     layoutState
-	errBar     errBar
-	update     updateInfo
+	gens      generations
+	effects   effectState
+	services  services
+	workspace workspace
+	rail      uirail.Model
+	focus     focusState
+	prefs     preferences
+	ledger    launchLedger
+	startup   startupState
+	notices   noticesPanel
+	poller    *poller
+	screen
+	review    uireview.Model
+	reviewNav uireviewsource.Nav
+	mouse     mouseCapture
+	settings  uipersist.State
+	env       environment
+	ssh       uilink.State
+	layout    layoutState
+	errBar    errBar
+	release   uirelease.State
 }
 
 // generations fence asynchronous completions against the state that
@@ -91,10 +70,12 @@ type generations struct {
 }
 
 type layoutState struct {
-	frame         string
-	width         int
-	height        int
-	split         splitState
+	frame  string
+	width  int
+	height int
+	split  splitState
+	// panes is the geometry each session's window was pinned to.
+	panes         uigeometrypanes.Panes
 	displayedRail uirail.Frame
 	// card places the last card painted and its body, for clicks.
 	card cardRect
@@ -104,13 +85,10 @@ type layoutState struct {
 
 type focusState struct {
 	pane    uifocus.Model
-	runtime focusRuntimeState
-	saved   focusSaved
-}
-
-type reviewNavState struct {
-	ret    reviewReturn
-	picker uireview.Picker
+	runtime focusruntime.State
+	// imeCursor is the cell the input method opens beside, owned here
+	// because the frame writer publishes into it.
+	imeCursor *uiframe.CursorAnchor
 }
 
 type mouseCapture struct {
@@ -123,21 +101,9 @@ type mouseCapture struct {
 	pressed clickTarget
 }
 
-type settingsFeature struct {
-	dialog  settingsState
-	cache   settingsCache
-	pending int
-	gen     uint64
-}
-
 type environment struct {
 	workDir string
 	homeDir string
-}
-
-type helpFeature struct {
-	state      uihelp.State
-	returnMode mode
 }
 
 func NewWithInboxOwner(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, version string, owner sessioncmd.InboxMaintenance) (*Model, error) {
@@ -216,18 +182,17 @@ func newView(deps Dependencies, version string) (*Model, error) {
 	if err != nil {
 		return nil, err
 	}
-	applyTheme(themes[themeIndex(resolveStartupTheme(st))])
+	applyTheme(uitheme.Palettes[uitheme.Index(uitheme.ResolveStartup(st))])
 	driver.SetSessionKeys(sessionKeys)
 	model := &Model{
-		effects: effectState{lifetime: &effectLifetime{}},
+		effects: effectState{Queue: uieffects.Queue{Lifetime: &uieffects.Lifetime{}}},
 		poller:  &poller{runner: deps.Execution},
-		layout:  layoutState{split: splitState{ratio: loadSplitRatio(st)}},
-		mode:    modeList,
+		layout:  layoutState{split: splitState{ratio: uigeometrypanes.Load(st)}},
 		env: environment{
-			workDir: initialWorkingDir(),
-			homeDir: initialHomeDir(),
+			workDir: uilaunch.InitialWorkingDir(),
+			homeDir: uilaunch.InitialHomeDir(),
 		},
-		update: updateInfo{version: version},
+		release: uirelease.New(st, version),
 		services: services{
 			cfg:         cfg,
 			lifecycle:   deps.Lifecycle,
@@ -242,39 +207,32 @@ func newView(deps Dependencies, version string) (*Model, error) {
 			engine:      engine,
 			setSnapshot: st.SetSnapshot,
 		},
-		rail:     loadRail(st),
-		ssh:      newConnections(remote.New(deps.ProfileDir), connections),
-		settings: settingsFeature{cache: loadSettingsCache(st, choiceSettingKeys(slices.Sorted(maps.Keys(cfg.Tools))))},
-		focus: focusState{runtime: focusRuntimeState{
-			imeCursor: &cursorAnchor{},
-		}},
+		rail:      uirailpersist.Load(st),
+		ssh:       uilink.New(remote.New(deps.ProfileDir), connections),
+		settings:  uipersist.New(uipersist.StoreWriter{Store: st}, choiceSettingKeys(slices.Sorted(maps.Keys(cfg.Tools)))),
+		focus:     focusState{runtime: focusruntime.State{}, imeCursor: &uiframe.CursorAnchor{}},
+		workspace: workspace{capture: uicapture.New(st, driver)},
 		startup: startupState{
-			booting: true,
+			Booting: true,
 		},
 		notices: noticesPanel{
-			Panel:               uinotices.NewPanel(loadDismissed(st)),
-			whatsNewVersion:     loadWhatsNewVersion(st),
-			whatsNewFromVersion: loadWhatsNewFromVersion(st),
-			configImportError:   configImportError,
+			Panel:             uinotices.NewPanel(uirelease.Dismissed(st)),
+			configImportError: configImportError,
 		},
 	}
 	if deps.ProfileDir != "" {
-		cached := update.Cached(deps.ProfileDir, version)
-		model.update.latest = cached.Latest
-		model.update.url = cached.URL
-		model.update.releases = cached.Releases
-		model.update.checked = len(cached.Releases) > 0
+		model.release.UseCached(deps.ProfileDir)
 	}
 	model.applyCachedSettingsPrefs()
 	model.prefs.terminalBackground = model.storedTerminalBackground()
-	glyph := readSettingKeys(storeSettingWriter{st: st}, []string{uisettings.GlyphModeSetting})[0]
+	glyph := uipersist.ReadKeys(uipersist.StoreWriter{Store: st}, []string{uisettings.GlyphModeSetting})[0]
 	if glyph.Err != nil {
 		model.reportErr("reading symbols setting: " + glyph.Err.Error())
 	} else {
 		model.prefs.glyphMode = presentation.GlyphMode(glyph.Value)
 	}
 	model.openStartupNotice()
-	model.indexReleaseRanges()
+	model.release.IndexRanges()
 	model.review = uireview.New(model.defaultSplitLayout())
 	model.prepareFrame()
 	return model, nil
@@ -282,5 +240,5 @@ func newView(deps Dependencies, version string) (*Model, error) {
 
 func (m *Model) Init() tea.Cmd {
 	m.syncPollInput()
-	return tea.Batch(m.syncPaneTheme(), m.refreshExistingSessionUX, m.checkForUpdate, m.checkFeed, m.updateTick(), m.bannerTick(), m.previewTick(), m.startStartupTick(), m.sweepPastes, m.pasteSweepTick(), checkPaneShell)
+	return tea.Batch(m.syncPaneTheme(), m.refreshExistingSessionUX, m.release.Check(), m.release.CheckFeed(), uirelease.Tick(), m.bannerTick(), m.workspace.capture.Tick(previewCaptures{m}), m.startStartupTick(), uicomposer.SweepCmd, uicomposer.SweepTick(), uistartup.CheckPaneShell)
 }

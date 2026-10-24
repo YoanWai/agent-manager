@@ -1,7 +1,8 @@
 // Package spawn is the New Session form and the model choice it shares
-// with the quick bar: their state, keys, validation and view. The root
-// opens the form, owns its prompt box, path completer and group picker,
-// and runs the Request it builds.
+// with the quick bar: their state, keys, validation, view and the surface
+// the form sits on. The root opens the form, owns its prompt box and runs
+// the Request it builds; the form holds its picker and its directory
+// completion.
 package spawn
 
 import (

@@ -11,7 +11,11 @@ import (
 	"unicode/utf8"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/YoanWai/agent-manager/internal/ui/composer"
+	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
+	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -22,16 +26,16 @@ import (
 // yields the given file, and returns the id of the chip it left behind.
 func pasteQuickImage(t *testing.T, m *Model, path string) int {
 	t.Helper()
-	orig := captureClipboardImage
-	defer func() { captureClipboardImage = orig }()
-	captureClipboardImage = func() (string, error) { return path, nil }
+	orig := composer.CaptureImage
+	defer func() { composer.CaptureImage = orig }()
+	composer.CaptureImage = func() (string, error) { return path, nil }
 
 	_, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlV})
 	if cmd == nil {
 		t.Fatal("ctrl+v should start an async clipboard read")
 	}
-	id := m.quick.lastImageID
-	msg, ok := cmd().(pasteImageMsg)
+	id := m.quick().LastImageID
+	msg, ok := cmd().(composer.PasteImageMsg)
 	if !ok {
 		t.Fatalf("clipboard cmd returned %T", cmd())
 	}
@@ -54,11 +58,11 @@ func tempImage(t *testing.T, name string) string {
 
 func quickOffsetOf(t *testing.T, m *Model, needle string) int {
 	t.Helper()
-	idx := strings.Index(m.quick.input.Value(), needle)
+	idx := strings.Index(m.quick().Input.Value(), needle)
 	if idx < 0 {
-		t.Fatalf("%q not in prompt %q", needle, m.quick.input.Value())
+		t.Fatalf("%q not in prompt %q", needle, m.quick().Input.Value())
 	}
-	return utf8.RuneCountInString(m.quick.input.Value()[:idx])
+	return utf8.RuneCountInString(m.quick().Input.Value()[:idx])
 }
 
 func applyQuickKeyCmd(t *testing.T, m *Model, msg tea.KeyMsg) {
@@ -96,8 +100,8 @@ func TestOpenQuickModeDefersSettingsReadAndGuardsDefaults(t *testing.T) {
 		if got := m.quickTool(); got != "ready-tool" {
 			t.Fatalf("refreshed quick tool = %q, want ready-tool", got)
 		}
-		if !m.quick.closeAfterSend || !m.quick.Worktree() {
-			t.Fatalf("quick defaults were not refreshed: close=%t worktree=%t", m.quick.closeAfterSend, m.quick.Worktree())
+		if !m.quick().CloseAfterSend || !m.quick().Worktree() {
+			t.Fatalf("quick defaults were not refreshed: close=%t worktree=%t", m.quick().CloseAfterSend, m.quick().Worktree())
 		}
 	})
 
@@ -118,13 +122,13 @@ func TestOpenQuickModeDefersSettingsReadAndGuardsDefaults(t *testing.T) {
 	t.Run("reopened", func(t *testing.T) {
 		m := buildModel(t)
 		cmd := m.openQuickMode()
-		generation := m.quick.gen
+		generation := m.quick().Gen
 		if err := m.services.store.SetSetting("default_tool", "ready-tool"); err != nil {
 			t.Fatal(err)
 		}
 		loaded := cmd()
 		m.openQuickMode()
-		if m.quick.gen == generation {
+		if m.quick().Gen == generation {
 			t.Fatal("reopened quick mode reused its generation")
 		}
 		m.applyTestMsg(t, loaded)
@@ -146,13 +150,13 @@ func TestQuickPromptDeadSessionSetsError(t *testing.T) {
 	m.selectSessionRow(t, "gone")
 
 	m.openQuickMode()
-	m.quick.input.SetValue("hello?")
+	m.quick().Input.SetValue("hello?")
 	_, cmd := m.submitQuick()
 	m.applyTestMsg(t, cmd())
 	if m.errBar.text != "session is dead - press v to revive or R to restart" {
 		t.Fatalf("err = %q", m.errBar.text)
 	}
-	if !m.quick.active {
+	if m.quick() == nil {
 		t.Fatal("quick mode should stay open after a failed send")
 	}
 	if _, err := m.services.store.Get(sess.ID); err != nil {
@@ -172,19 +176,19 @@ func TestQuickPromptSendClearsAcked(t *testing.T) {
 	m.selectSessionRow(t, "answer-me")
 
 	m.openQuickMode()
-	if !m.quick.active {
+	if m.quick() == nil {
 		t.Fatalf("quick mode should activate, err = %q", m.errBar.text)
 	}
-	m.quick.input.SetValue("carry on with the plan")
+	m.quick().Input.SetValue("carry on with the plan")
 	_, cmd := m.submitQuick()
 	m.applyTestMsg(t, cmd())
 	if m.errBar.text != "" {
 		t.Fatalf("send: %q", m.errBar.text)
 	}
-	if !m.quick.active {
+	if m.quick() == nil {
 		t.Fatal("quick mode should stay active after a send")
 	}
-	if m.quick.input.Value() != "" {
+	if m.quick().Input.Value() != "" {
 		t.Fatal("input should clear after a send")
 	}
 	got, err := m.services.store.Get(sess.ID)
@@ -202,23 +206,23 @@ func TestQuickPasteInsertsChipAtCursor(t *testing.T) {
 	m.selectSessionRow(t, "answer-me")
 	m.openQuickMode()
 
-	m.quick.input.SetValue("fix header and footer")
-	m.quick.input.SetCursor(len("fix header"))
+	m.quick().Input.SetValue("fix header and footer")
+	m.quick().Input.SetCursor(len("fix header"))
 	path := tempImage(t, "paste-test.png")
 	id := pasteQuickImage(t, m, path)
 
-	want := "fix header " + imageToken(id) + " and footer"
-	if got := m.quick.input.Value(); got != want {
+	want := "fix header " + composer.Token(id) + " and footer"
+	if got := m.quick().Input.Value(); got != want {
 		t.Fatalf("chip should land at the caret: got %q, want %q", got, want)
 	}
-	if len(m.quick.attachments) != 1 || m.quick.attachments[0].path != path {
-		t.Fatalf("attachment = %+v", m.quick.attachments)
+	if len(m.quick().Attachments) != 1 || m.quick().Attachments[0].Path != path {
+		t.Fatalf("attachment = %+v", m.quick().Attachments)
 	}
 	// Typing continues after the chip, leaving the text around it intact.
 	for _, r := range " now" {
 		_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 	}
-	if got := m.quick.input.Value(); got != "fix header "+imageToken(id)+" now and footer" {
+	if got := m.quick().Input.Value(); got != "fix header "+composer.Token(id)+" now and footer" {
 		t.Fatalf("typing after the chip disturbed the text: %q", got)
 	}
 }
@@ -230,13 +234,13 @@ func TestQuickChipRendersInlineInTheInput(t *testing.T) {
 
 	m := buildModel(t)
 	m.openQuickMode()
-	m.quick.attachments = []imageAttachment{{id: 1, path: "/tmp/agent-manager-pastes/paste-123.png"}}
-	m.quick.input.SetValue("look at " + imageToken(1) + " please")
-	m.quick.input.SetWidth(60)
+	m.quick().Attachments = []composer.Attachment{{ID: 1, Path: "/tmp/agent-manager-pastes/paste-123.png"}}
+	m.quick().Input.SetValue("look at " + composer.Token(1) + " please")
+	m.quick().Input.SetWidth(60)
 
-	view := m.quick.renderChips(m.quick.input.View())
+	view := m.quick().Composer.View(composerPaint())
 	plain := ansi.Strip(view)
-	if !strings.Contains(plain, "look at "+imageToken(1)+" please") {
+	if !strings.Contains(plain, "look at "+composer.Token(1)+" please") {
 		t.Fatalf("chip should read inline with the text, got %q", plain)
 	}
 	if strings.Contains(plain, "paste-123") {
@@ -247,14 +251,14 @@ func TestQuickChipRendersInlineInTheInput(t *testing.T) {
 	}
 	// Styling must add color only: the token's width is what the textarea
 	// already used to wrap the line.
-	if lipgloss.Width(ansi.Strip(imageChip(imageToken(1)))) != lipgloss.Width(imageToken(1)) {
+	if lipgloss.Width(ansi.Strip(uitheme.ImageChip(composer.Token(1)))) != lipgloss.Width(composer.Token(1)) {
 		t.Fatal("styled chip must keep the token's width")
 	}
 
-	m.quick.attachments = []imageAttachment{{id: 2}}
-	m.quick.input.SetValue(imageToken(2))
-	pending := m.quick.renderChips(m.quick.input.View())
-	if !strings.Contains(pending, imageChipPasting(imageToken(2))) {
+	m.quick().Attachments = []composer.Attachment{{ID: 2}}
+	m.quick().Input.SetValue(composer.Token(2))
+	pending := m.quick().Composer.View(composerPaint())
+	if !strings.Contains(pending, uitheme.ImageChipPasting(composer.Token(2))) {
 		t.Fatal("a chip waiting on the clipboard should wear the pasting style")
 	}
 }
@@ -266,14 +270,14 @@ func TestQuickMessageSubstitutesPathsInPlace(t *testing.T) {
 	m.selectSessionRow(t, "answer-me")
 	m.openQuickMode()
 
-	m.quick.attachments = []imageAttachment{{id: 1, path: "/tmp/a.png"}, {id: 2, path: "/tmp/b.png"}}
-	m.quick.input.SetValue("compare " + imageToken(1) + " with " + imageToken(2))
-	if got := m.quick.message(); got != "compare /tmp/a.png with /tmp/b.png" {
+	m.quick().Attachments = []composer.Attachment{{ID: 1, Path: "/tmp/a.png"}, {ID: 2, Path: "/tmp/b.png"}}
+	m.quick().Input.SetValue("compare " + composer.Token(1) + " with " + composer.Token(2))
+	if got := m.quick().Message(); got != "compare /tmp/a.png with /tmp/b.png" {
 		t.Fatalf("compose = %q", got)
 	}
 
-	m.quick.input.SetValue(imageToken(2) + " " + imageToken(1))
-	if got := m.quick.message(); got != "/tmp/b.png /tmp/a.png" {
+	m.quick().Input.SetValue(composer.Token(2) + " " + composer.Token(1))
+	if got := m.quick().Message(); got != "/tmp/b.png /tmp/a.png" {
 		t.Fatalf("paths should follow the order they were pasted in: %q", got)
 	}
 }
@@ -287,31 +291,31 @@ func TestQuickBackspaceDeletesTheWholeChipAtTheCaret(t *testing.T) {
 
 	first := tempImage(t, "first.png")
 	second := tempImage(t, "second.png")
-	m.quick.lastImageID = 2
-	m.quick.attachments = []imageAttachment{{id: 1, path: first}, {id: 2, path: second}}
-	m.quick.input.SetValue("this " + imageToken(1) + " and that " + imageToken(2))
-	m.quick.input.SetCursor(quickOffsetOf(t, m, imageToken(1)) + utf8.RuneCountInString(imageToken(1)))
+	m.quick().LastImageID = 2
+	m.quick().Attachments = []composer.Attachment{{ID: 1, Path: first}, {ID: 2, Path: second}}
+	m.quick().Input.SetValue("this " + composer.Token(1) + " and that " + composer.Token(2))
+	m.quick().Input.SetCursor(quickOffsetOf(t, m, composer.Token(1)) + utf8.RuneCountInString(composer.Token(1)))
 
 	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyBackspace})
-	if got := m.quick.input.Value(); got != "this  and that "+imageToken(2) {
+	if got := m.quick().Input.Value(); got != "this  and that "+composer.Token(2) {
 		t.Fatalf("backspace beside a chip should remove it whole, got %q", got)
 	}
-	if len(m.quick.attachments) != 1 || m.quick.attachments[0].id != 2 {
-		t.Fatalf("the other chip should stay: %+v", m.quick.attachments)
+	if len(m.quick().Attachments) != 1 || m.quick().Attachments[0].ID != 2 {
+		t.Fatalf("the other chip should stay: %+v", m.quick().Attachments)
 	}
 	if _, err := os.Stat(first); !os.IsNotExist(err) {
 		t.Fatalf("deleted chip's temp file should be removed, err=%v", err)
 	}
-	if m.quick.message() != "this  and that "+second {
-		t.Fatalf("the surviving chip should still send its path: %q", m.quick.message())
+	if m.quick().Message() != "this  and that "+second {
+		t.Fatalf("the surviving chip should still send its path: %q", m.quick().Message())
 	}
 
 	// Away from a chip, backspace is ordinary text editing.
-	m.quick.input.CursorEnd()
+	m.quick().Input.CursorEnd()
 	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
 	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyBackspace})
-	if len(m.quick.attachments) != 1 {
-		t.Fatalf("plain backspace should leave chips alone: %+v", m.quick.attachments)
+	if len(m.quick().Attachments) != 1 {
+		t.Fatalf("plain backspace should leave chips alone: %+v", m.quick().Attachments)
 	}
 }
 
@@ -320,17 +324,17 @@ func TestQuickDeleteRemovesTheChipInFront(t *testing.T) {
 	m := buildModel(t)
 	m.openQuickMode()
 	path := tempImage(t, "forward.png")
-	m.quick.lastImageID = 1
-	m.quick.attachments = []imageAttachment{{id: 1, path: path}}
-	m.quick.input.SetValue("head " + imageToken(1) + " tail")
-	m.quick.input.SetCursor(quickOffsetOf(t, m, imageToken(1)))
+	m.quick().LastImageID = 1
+	m.quick().Attachments = []composer.Attachment{{ID: 1, Path: path}}
+	m.quick().Input.SetValue("head " + composer.Token(1) + " tail")
+	m.quick().Input.SetCursor(quickOffsetOf(t, m, composer.Token(1)))
 
 	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyDelete})
-	if got := m.quick.input.Value(); got != "head  tail" {
+	if got := m.quick().Input.Value(); got != "head  tail" {
 		t.Fatalf("delete in front of a chip should remove it whole, got %q", got)
 	}
-	if len(m.quick.attachments) != 0 {
-		t.Fatalf("attachment should be released: %+v", m.quick.attachments)
+	if len(m.quick().Attachments) != 0 {
+		t.Fatalf("attachment should be released: %+v", m.quick().Attachments)
 	}
 }
 
@@ -338,19 +342,19 @@ func TestQuickArrowsStepOverAChip(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openQuickMode()
-	m.quick.lastImageID = 1
-	m.quick.attachments = []imageAttachment{{id: 1, path: "/tmp/a.png"}}
-	m.quick.input.SetValue("a " + imageToken(1) + " b")
-	start := quickOffsetOf(t, m, imageToken(1))
-	end := start + utf8.RuneCountInString(imageToken(1))
-	m.quick.input.SetCursor(end)
+	m.quick().LastImageID = 1
+	m.quick().Attachments = []composer.Attachment{{ID: 1, Path: "/tmp/a.png"}}
+	m.quick().Input.SetValue("a " + composer.Token(1) + " b")
+	start := quickOffsetOf(t, m, composer.Token(1))
+	end := start + utf8.RuneCountInString(composer.Token(1))
+	m.quick().Input.SetCursor(end)
 
 	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyLeft})
-	if got := m.quick.cursorOffset(); got != start {
+	if got := m.quick().CursorOffset(); got != start {
 		t.Fatalf("left should clear the chip in one step: offset %d, want %d", got, start)
 	}
 	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyRight})
-	if got := m.quick.cursorOffset(); got != end {
+	if got := m.quick().CursorOffset(); got != end {
 		t.Fatalf("right should clear the chip in one step: offset %d, want %d", got, end)
 	}
 }
@@ -359,18 +363,18 @@ func TestQuickChipsReflowAcrossWrappedRows(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openQuickMode()
-	m.quick.attachments = []imageAttachment{{id: 1, path: "/tmp/a.png"}}
-	m.quick.input.SetWidth(24)
-	m.quick.input.SetHeight(quickBarMaxRows)
-	m.quick.input.SetValue(strings.Repeat("word ", 5) + imageToken(1) + " tail")
+	m.quick().Attachments = []composer.Attachment{{ID: 1, Path: "/tmp/a.png"}}
+	m.quick().Input.SetWidth(24)
+	m.quick().Input.SetHeight(uiquick.BarMaxRows)
+	m.quick().Input.SetValue(strings.Repeat("word ", 5) + composer.Token(1) + " tail")
 
-	rendered := ansi.Strip(m.quick.renderChips(m.quick.input.View()))
+	rendered := ansi.Strip(m.quick().Composer.View(composerPaint()))
 	for _, line := range strings.Split(rendered, "\n") {
 		if lipgloss.Width(line) > 24 {
 			t.Fatalf("wrapped row overflows the bar: %q", line)
 		}
 	}
-	if !strings.Contains(rendered, imageToken(1)) {
+	if !strings.Contains(rendered, composer.Token(1)) {
 		t.Fatalf("chip should survive wrapping, got %q", rendered)
 	}
 }
@@ -380,15 +384,15 @@ func TestQuickBulkDeleteReleasesTheImage(t *testing.T) {
 	m := buildModel(t)
 	m.openQuickMode()
 	path := tempImage(t, "orphan.png")
-	m.quick.lastImageID = 1
-	m.quick.attachments = []imageAttachment{{id: 1, path: path}}
-	m.quick.input.SetValue("note " + imageToken(1))
-	m.quick.input.CursorEnd()
+	m.quick().LastImageID = 1
+	m.quick().Attachments = []composer.Attachment{{ID: 1, Path: path}}
+	m.quick().Input.SetValue("note " + composer.Token(1))
+	m.quick().Input.CursorEnd()
 
 	// ctrl+u wipes the line without going through the chip-aware keys.
 	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlU})
-	if len(m.quick.attachments) != 0 {
-		t.Fatalf("a chip cut by a bulk delete should release its image: %+v", m.quick.attachments)
+	if len(m.quick().Attachments) != 0 {
+		t.Fatalf("a chip cut by a bulk delete should release its image: %+v", m.quick().Attachments)
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("orphaned temp file should be removed, err=%v", err)
@@ -406,18 +410,18 @@ func TestQuickPasteReservesTheChipUntilTheReadLands(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("ctrl+v should start an async clipboard read")
 	}
-	id := m.quick.lastImageID
-	if !strings.Contains(m.quick.input.Value(), imageToken(id)) {
-		t.Fatalf("the chip should hold its spot while the read runs, got %q", m.quick.input.Value())
+	id := m.quick().LastImageID
+	if !strings.Contains(m.quick().Input.Value(), composer.Token(id)) {
+		t.Fatalf("the chip should hold its spot while the read runs, got %q", m.quick().Input.Value())
 	}
-	if !m.quick.pasting() {
+	if !m.quick().Pasting() {
 		t.Fatal("the reserved chip should read as pasting")
 	}
 	// The caret sits after the chip, so typing keeps flowing.
 	for _, r := range "later" {
 		_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 	}
-	if got := m.quick.input.Value(); got != imageToken(id)+" later" {
+	if got := m.quick().Input.Value(); got != composer.Token(id)+" later" {
 		t.Fatalf("typing during a paste = %q", got)
 	}
 	_, _ = m.submitQuick()
@@ -426,15 +430,15 @@ func TestQuickPasteReservesTheChipUntilTheReadLands(t *testing.T) {
 	}
 
 	path := tempImage(t, "landed.png")
-	updated, _ := m.Update(pasteImageMsg{target: composerQuick, gen: m.quick.gen, id: id, path: path})
+	updated, _ := m.Update(composer.PasteImageMsg{Target: composer.Quick, Gen: m.quick().Gen, ID: id, Path: path})
 	m = updated.(*Model)
-	if m.quick.pasting() {
+	if m.quick().Pasting() {
 		t.Fatal("the chip should settle once the read lands")
 	}
-	if got := m.quick.input.Value(); got != imageToken(id)+" later" {
+	if got := m.quick().Input.Value(); got != composer.Token(id)+" later" {
 		t.Fatalf("the chip should resolve in place, got %q", got)
 	}
-	if got := m.quick.message(); got != path+" later" {
+	if got := m.quick().Message(); got != path+" later" {
 		t.Fatalf("compose after the read = %q", got)
 	}
 	data, err := os.ReadFile(path)
@@ -447,21 +451,21 @@ func TestQuickChipRemovalKeepsAMultiLinePrompt(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openQuickMode()
-	m.quick.lastImageID = 1
-	m.quick.attachments = []imageAttachment{{id: 1, path: "/tmp/a.png"}}
-	m.quick.input.SetValue("first line\nsecond " + imageToken(1) + " line\nthird line")
-	m.quick.input.CursorUp()
-	m.quick.input.SetCursor(len("second ") + utf8.RuneCountInString(imageToken(1)))
-	if m.quick.input.Line() != 1 {
-		t.Fatalf("test setup: caret on row %d", m.quick.input.Line())
+	m.quick().LastImageID = 1
+	m.quick().Attachments = []composer.Attachment{{ID: 1, Path: "/tmp/a.png"}}
+	m.quick().Input.SetValue("first line\nsecond " + composer.Token(1) + " line\nthird line")
+	m.quick().Input.CursorUp()
+	m.quick().Input.SetCursor(len("second ") + utf8.RuneCountInString(composer.Token(1)))
+	if m.quick().Input.Line() != 1 {
+		t.Fatalf("test setup: caret on row %d", m.quick().Input.Line())
 	}
 
 	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyBackspace})
-	if got := m.quick.input.Value(); got != "first line\nsecond  line\nthird line" {
+	if got := m.quick().Input.Value(); got != "first line\nsecond  line\nthird line" {
 		t.Fatalf("removing a chip should leave the other rows alone, got %q", got)
 	}
-	if m.quick.input.Line() != 1 || m.quick.cursorOffset() != len("first line\nsecond ") {
-		t.Fatalf("caret should stay where the chip was: row %d offset %d", m.quick.input.Line(), m.quick.cursorOffset())
+	if m.quick().Input.Line() != 1 || m.quick().CursorOffset() != len("first line\nsecond ") {
+		t.Fatalf("caret should stay where the chip was: row %d offset %d", m.quick().Input.Line(), m.quick().CursorOffset())
 	}
 }
 
@@ -469,8 +473,8 @@ func TestQuickPasteRefusedWhenThePromptIsFull(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openQuickMode()
-	m.quick.input.SetValue(strings.Repeat("x", m.quick.input.CharLimit))
-	m.quick.input.CursorEnd()
+	m.quick().Input.SetValue(strings.Repeat("x", m.quick().Input.CharLimit))
+	m.quick().Input.CursorEnd()
 
 	_, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlV})
 	if cmd != nil {
@@ -479,10 +483,10 @@ func TestQuickPasteRefusedWhenThePromptIsFull(t *testing.T) {
 	if m.errBar.text == "" {
 		t.Fatal("a refused paste should say why")
 	}
-	if len(m.quick.attachments) != 0 {
-		t.Fatalf("no chip should be reserved: %+v", m.quick.attachments)
+	if len(m.quick().Attachments) != 0 {
+		t.Fatalf("no chip should be reserved: %+v", m.quick().Attachments)
 	}
-	if strings.Contains(m.quick.input.Value(), "[Image") {
+	if strings.Contains(m.quick().Input.Value(), "[Image") {
 		t.Fatal("a truncated token must never reach the prompt")
 	}
 }
@@ -492,12 +496,13 @@ func TestQuickEscReleasesPastedImages(t *testing.T) {
 	m := buildModel(t)
 	m.openQuickMode()
 	path := tempImage(t, "abandoned.png")
-	m.quick.attachments = []imageAttachment{{id: 1, path: path}}
-	m.quick.input.SetValue("never mind " + imageToken(1))
+	q := m.quick()
+	q.Attachments = []composer.Attachment{{ID: 1, Path: path}}
+	q.Input.SetValue("never mind " + composer.Token(1))
 
 	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEsc})
-	if len(m.quick.attachments) != 0 {
-		t.Fatalf("closing the bar should release its images: %+v", m.quick.attachments)
+	if m.quick() != nil || len(q.Attachments) != 0 {
+		t.Fatalf("closing the bar should close it and release its images: open %t, %+v", m.quick() != nil, q.Attachments)
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("abandoned temp file should be removed, err=%v", err)
@@ -510,17 +515,17 @@ func TestQuickImageMsgNoImageReachesTextPaste(t *testing.T) {
 	createSession(t, m, "answer-me", t.TempDir(), "")
 	m.selectSessionRow(t, "answer-me")
 	m.openQuickMode()
-	m.quick.input.SetValue("keep this")
-	m.quick.input.CursorEnd()
+	m.quick().Input.SetValue("keep this")
+	m.quick().Input.CursorEnd()
 
 	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlV})
-	id := m.quick.lastImageID
-	updated, cmd := m.Update(pasteImageMsg{target: composerQuick, gen: m.quick.gen, id: id, noImage: true})
+	id := m.quick().LastImageID
+	updated, cmd := m.Update(composer.PasteImageMsg{Target: composer.Quick, Gen: m.quick().Gen, ID: id, NoImage: true})
 	m = updated.(*Model)
-	if m.quick.pasting() || len(m.quick.attachments) != 0 {
-		t.Fatalf("a clipboard with no image should take the chip back out: %+v", m.quick.attachments)
+	if m.quick().Pasting() || len(m.quick().Attachments) != 0 {
+		t.Fatalf("a clipboard with no image should take the chip back out: %+v", m.quick().Attachments)
 	}
-	if got := m.quick.input.Value(); got != "keep this" {
+	if got := m.quick().Input.Value(); got != "keep this" {
 		t.Fatalf("removing the chip should restore the typed text, got %q", got)
 	}
 	// Textarea paste returns a cmd for its own clipboard read, or nil if empty.
@@ -532,26 +537,26 @@ func TestQuickAttachImageRealErrorSurfaces(t *testing.T) {
 	createSession(t, m, "answer-me", t.TempDir(), "")
 	m.selectSessionRow(t, "answer-me")
 	m.openQuickMode()
-	m.quick.input.SetValue("look")
-	m.quick.input.CursorEnd()
+	m.quick().Input.SetValue("look")
+	m.quick().Input.CursorEnd()
 
-	orig := captureClipboardImage
-	defer func() { captureClipboardImage = orig }()
-	captureClipboardImage = func() (string, error) {
+	orig := composer.CaptureImage
+	defer func() { composer.CaptureImage = orig }()
+	composer.CaptureImage = func() (string, error) {
 		return "", errors.New("install wl-clipboard or xclip to paste images")
 	}
 
 	_, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlV})
-	msg := cmd().(pasteImageMsg)
+	msg := cmd().(composer.PasteImageMsg)
 	updated, _ := m.Update(msg)
 	m = updated.(*Model)
 	if m.errBar.text == "" {
 		t.Fatal("a real clipboard error should surface through m.errBar.text")
 	}
-	if m.quick.pasting() || len(m.quick.attachments) != 0 {
-		t.Fatalf("a failed read should take the chip back out: %+v", m.quick.attachments)
+	if m.quick().Pasting() || len(m.quick().Attachments) != 0 {
+		t.Fatalf("a failed read should take the chip back out: %+v", m.quick().Attachments)
 	}
-	if got := m.quick.input.Value(); got != "look" {
+	if got := m.quick().Input.Value(); got != "look" {
 		t.Fatalf("a failed read should leave the typed text, got %q", got)
 	}
 }
@@ -574,7 +579,7 @@ func TestQuickSpawnOnGroupCreatesSession(t *testing.T) {
 	}
 
 	m.openQuickMode()
-	m.quick.input.SetValue("build the api")
+	m.quick().Input.SetValue("build the api")
 	_, cmd := m.submitQuick()
 	if m.errBar.text != "" {
 		t.Fatalf("quick spawn: %q", m.errBar.text)
@@ -592,7 +597,7 @@ func TestQuickSpawnOnGroupCreatesSession(t *testing.T) {
 	if !m.services.tmux.Exists(spawned.ID) {
 		t.Fatal("tmux session should exist after quick spawn")
 	}
-	if m.quick.input.Value() != "" {
+	if m.quick().Input.Value() != "" {
 		t.Fatal("input should clear after a spawn")
 	}
 }
@@ -619,7 +624,7 @@ func TestQuickSpawnUsesTabCycledTool(t *testing.T) {
 		t.Fatalf("after tab, quick tool = %q want claude-hooked", m.quickTool())
 	}
 
-	m.quick.input.SetValue("build the api")
+	m.quick().Input.SetValue("build the api")
 	_, cmd := m.submitQuick()
 	if m.errBar.text != "" {
 		t.Fatalf("quick spawn: %q", m.errBar.text)
@@ -650,13 +655,13 @@ func TestQuickShiftTabStepsToolBack(t *testing.T) {
 	if m.handleQuickKey(tea.KeyMsg{Type: tea.KeyShiftTab}); m.quickTool() != names[len(names)-1] {
 		t.Fatalf("shift+tab from the first tool = %q want the last, %q", m.quickTool(), names[len(names)-1])
 	}
-	if m.quick.WorktreeTouched() {
+	if m.quick().WorktreeTouched() {
 		t.Fatal("shift+tab must not touch the worktree toggle")
 	}
 }
 
 func closeQuick(m *Model) {
-	if m.quick.active {
+	if m.quick() != nil {
 		m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEsc})
 	}
 }
@@ -676,7 +681,7 @@ func TestQuickRemembersLastSpawnTool(t *testing.T) {
 	if m.quickTool() != "claude-hooked" {
 		t.Fatalf("after tab, quick tool = %q want claude-hooked", m.quickTool())
 	}
-	m.quick.input.SetValue("build the api")
+	m.quick().Input.SetValue("build the api")
 	_, cmd := m.submitQuick()
 	if m.errBar.text != "" {
 		t.Fatalf("quick spawn: %q", m.errBar.text)
@@ -702,7 +707,7 @@ func TestQuickRemembersLastSpawnWorktree(t *testing.T) {
 	if !m.quickWorktreeOn() {
 		t.Fatal("ctrl+t should turn worktree on")
 	}
-	m.quick.input.SetValue("do a thing")
+	m.quick().Input.SetValue("do a thing")
 	_, cmd := m.submitQuick()
 	if m.errBar.text != "" {
 		t.Fatalf("quick spawn: %q", m.errBar.text)
@@ -729,7 +734,7 @@ func TestQuickHiddenLastToolFallsBackToSettings(t *testing.T) {
 	if !m.quickWorktreeOn() {
 		t.Fatal("ctrl+t should turn worktree on")
 	}
-	m.quick.input.SetValue("do a thing")
+	m.quick().Input.SetValue("do a thing")
 	_, cmd := m.submitQuick()
 	if m.errBar.text != "" {
 		t.Fatalf("quick spawn: %q", m.errBar.text)
@@ -737,7 +742,7 @@ func TestQuickHiddenLastToolFallsBackToSettings(t *testing.T) {
 	m.applyCmd(t, cmd)
 	closeQuick(m)
 
-	if err := m.services.store.SetHiddenTools(map[string]bool{m.ledger.lastSpawnTool: true}); err != nil {
+	if err := m.services.store.SetHiddenTools(map[string]bool{m.ledger.spawner.LastSpawnTool: true}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -768,23 +773,24 @@ func TestQuickRemembersPickOnlyAfterInstallRetrySucceeds(t *testing.T) {
 		}
 	}
 	applyQuickKeyCmd(t, m, tea.KeyMsg{Type: tea.KeyCtrlT})
-	m.quick.input.SetValue("do a thing")
+	m.quick().Input.SetValue("do a thing")
 	_, cmd := m.submitQuick()
 	m.applyCmd(t, cmd)
 
-	if m.mode != modeLaunchHint || m.launchHint.fix.effectRetry == nil {
-		t.Fatalf("expected a refused launch with retry, mode=%v err=%q", m.mode, m.errBar.text)
+	if !hintOpen(m) || hintFix(m).Retry == nil {
+		t.Fatalf("expected a refused launch with retry, screen = %v err=%q", m.screenID(), m.errBar.text)
 	}
-	if m.ledger.lastSpawnTool != "ready-tool" || m.ledger.lastSpawnWorktree {
-		t.Fatalf("failed launch changed the last pick: %q, %v", m.ledger.lastSpawnTool, m.ledger.lastSpawnWorktree)
+	if m.ledger.spawner.LastSpawnTool != "ready-tool" || m.ledger.spawner.LastSpawnWorktree {
+		t.Fatalf("failed launch changed the last pick: %q, %v", m.ledger.spawner.LastSpawnTool, m.ledger.spawner.LastSpawnWorktree)
 	}
-	m.launchHint.fix.command = installCommand
-	m.launchHint.fix.script = installCommand
+	fix := hintFix(m)
+	fix.Command, fix.Script = installCommand, installCommand
+	m.presentLaunchHint(fix)
 	m.applyCmd(t, pressInLaunchHint(t, m, 'i'))
 	waitForInstallToSettle(t, m)
 
-	if m.ledger.lastSpawnTool != "claude" || !m.ledger.lastSpawnWorktree {
-		t.Fatalf("successful retry did not remember the pick: %q, %v; err=%q", m.ledger.lastSpawnTool, m.ledger.lastSpawnWorktree, m.errBar.text)
+	if m.ledger.spawner.LastSpawnTool != "claude" || !m.ledger.spawner.LastSpawnWorktree {
+		t.Fatalf("successful retry did not remember the pick: %q, %v; err=%q", m.ledger.spawner.LastSpawnTool, m.ledger.spawner.LastSpawnWorktree, m.errBar.text)
 	}
 	m.selectGroupRow(t, "grp")
 	m.openQuickMode()
@@ -830,14 +836,14 @@ func TestQuickSeedsFromLastFormSpawn(t *testing.T) {
 func TestQuickCloseAfterSendDefaultsToStayingOpen(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
-	if m.settings.cache.value(uisettings.QuickCloseSetting) == "close" {
+	if m.settings.Cache.Value(uisettings.QuickCloseSetting) == "close" {
 		t.Fatal("quick bar should stay open by default")
 	}
 	if err := m.services.store.SetSetting(uisettings.QuickCloseSetting, "close"); err != nil {
 		t.Fatal(err)
 	}
 	m.applyTestMsg(t, m.openQuickMode()())
-	if !m.quick.closeAfterSend {
+	if !m.quick().CloseAfterSend {
 		t.Fatal("refreshed close choice should opt in")
 	}
 }
@@ -852,13 +858,13 @@ func TestQuickPromptClosesAfterSendWhenEnabled(t *testing.T) {
 	}
 
 	m.applyTestMsg(t, m.openQuickMode()())
-	m.quick.input.SetValue("carry on with the plan")
+	m.quick().Input.SetValue("carry on with the plan")
 	_, cmd := m.submitQuick()
 	m.applyTestMsg(t, cmd())
 	if m.errBar.text != "" {
 		t.Fatalf("send: %q", m.errBar.text)
 	}
-	if m.quick.active {
+	if m.quick() != nil {
 		t.Fatal("quick mode should close after a send when the setting is on")
 	}
 }
@@ -867,15 +873,15 @@ func TestQuickWorktreeToggle(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openQuickMode()
-	if m.quick.Worktree() {
+	if m.quick().Worktree() {
 		t.Fatal("worktree should default off")
 	}
 	applyQuickKeyCmd(t, m, tea.KeyMsg{Type: tea.KeyCtrlT})
-	if !m.quick.Worktree() {
+	if !m.quick().Worktree() {
 		t.Fatal("ctrl+t should toggle worktree on")
 	}
 	applyQuickKeyCmd(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}, Alt: true})
-	if m.quick.Worktree() {
+	if m.quick().Worktree() {
 		t.Fatal("alt+w should toggle worktree back off")
 	}
 }
@@ -887,7 +893,7 @@ func TestQuickWorktreeSeedsFromSetting(t *testing.T) {
 		t.Fatalf("set setting: %v", err)
 	}
 	m.applyTestMsg(t, m.openQuickMode()())
-	if !m.quick.Worktree() {
+	if !m.quick().Worktree() {
 		t.Fatal("quick bar should seed worktree on from setting")
 	}
 }
@@ -923,10 +929,10 @@ func TestQuickWorktreeGatedInNonRepoGroup(t *testing.T) {
 	if !strings.Contains(m.errBar.text, "need a git repository") {
 		t.Fatalf("refused toggle should say why, got %q", m.errBar.text)
 	}
-	if bar := ansi.Strip(m.viewQuickBar(120, quickBarMaxRows)); !strings.Contains(bar, "⎇ no repo") {
+	if bar := ansi.Strip(m.viewQuickBar(120, uiquick.BarMaxRows)); !strings.Contains(bar, "⎇ no repo") {
 		t.Fatalf("quick bar should mark worktree unavailable, got %q", bar)
 	}
-	m.quick.input.SetValue("do a thing")
+	m.quick().Input.SetValue("do a thing")
 	_, cmd := m.submitQuick()
 	m.applyCmd(t, cmd)
 	sessions, err := m.services.store.ListSessions(true)
@@ -961,7 +967,7 @@ func TestQuickSpawnUsesGroupWorktreeDefault(t *testing.T) {
 	if !m.quickWorktreeOn() {
 		t.Fatal("quick bar should show the group's worktree default on")
 	}
-	m.quick.input.SetValue("do a thing")
+	m.quick().Input.SetValue("do a thing")
 	_, cmd := m.submitQuick()
 	m.applyCmd(t, cmd)
 	if m.errBar.text != "" {
@@ -993,7 +999,7 @@ func TestQuickWorktreeToggleOverridesGroupDefault(t *testing.T) {
 	if m.quickWorktreeOn() {
 		t.Fatal("ctrl+t should override the group default off")
 	}
-	m.quick.input.SetValue("do a thing")
+	m.quick().Input.SetValue("do a thing")
 	_, cmd := m.submitQuick()
 	m.applyTestMsg(t, cmd())
 	if m.errBar.text != "" {
@@ -1012,13 +1018,13 @@ func TestQuickPromptRefusesAShell(t *testing.T) {
 	m.selectSessionRow(t, sess.Name)
 
 	m.openQuickMode()
-	m.quick.input.SetValue("summarise what you just did")
+	m.quick().Input.SetValue("summarise what you just did")
 	_, cmd := m.submitQuick()
 	m.applyTestMsg(t, cmd())
-	if m.errBar.text != shellPromptHint(sess.Name) {
+	if m.errBar.text != uisession.ShellPromptHint(sess.Name) {
 		t.Fatalf("err = %q, want the shell refusal", m.errBar.text)
 	}
-	if m.quick.input.Value() == "" {
+	if m.quick().Input.Value() == "" {
 		t.Fatal("a refused prompt should stay in the bar, not vanish")
 	}
 }
@@ -1034,7 +1040,7 @@ func TestQuickPromptNeverRunsWhatIsTypedAtAShell(t *testing.T) {
 
 	marker := filepath.Join(t.TempDir(), "executed")
 	m.openQuickMode()
-	m.quick.input.SetValue("touch " + marker)
+	m.quick().Input.SetValue("touch " + marker)
 	_, cmd := m.submitQuick()
 	m.applyTestMsg(t, cmd())
 
@@ -1054,7 +1060,7 @@ func TestQuickSendRecordsLastPrompt(t *testing.T) {
 	createSession(t, m, "answer-me", t.TempDir(), "")
 	m.selectSessionRow(t, "answer-me")
 	m.openQuickMode()
-	m.quick.input.SetValue("carry on with the plan")
+	m.quick().Input.SetValue("carry on with the plan")
 	_, cmd := m.submitQuick()
 	m.applyTestMsg(t, cmd())
 	if m.errBar.text != "" {
@@ -1089,31 +1095,31 @@ func TestQuickUpDownMoveTheCaretBetweenPromptRows(t *testing.T) {
 	seedTwoGroups(t, m)
 	setRailCursor(m, 1)
 	m.openQuickMode()
-	m.quick.input.SetWidth(40)
-	m.quick.input.SetHeight(quickBarMaxRows)
-	m.quick.input.SetValue("first\nsecond\nthird")
+	m.quick().Input.SetWidth(40)
+	m.quick().Input.SetHeight(uiquick.BarMaxRows)
+	m.quick().Input.SetValue("first\nsecond\nthird")
 
 	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyUp})
-	if m.quick.input.Line() != 1 || m.rail.Cursor() != 1 {
-		t.Fatalf("up from the last row: caret line %d, selection %d; want caret 1, selection 1", m.quick.input.Line(), m.rail.Cursor())
+	if m.quick().Input.Line() != 1 || m.rail.Cursor() != 1 {
+		t.Fatalf("up from the last row: caret line %d, selection %d; want caret 1, selection 1", m.quick().Input.Line(), m.rail.Cursor())
 	}
 	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyUp})
-	if m.quick.input.Line() != 0 || m.rail.Cursor() != 1 {
-		t.Fatalf("up from the middle row: caret line %d, selection %d; want caret 0, selection 1", m.quick.input.Line(), m.rail.Cursor())
+	if m.quick().Input.Line() != 0 || m.rail.Cursor() != 1 {
+		t.Fatalf("up from the middle row: caret line %d, selection %d; want caret 0, selection 1", m.quick().Input.Line(), m.rail.Cursor())
 	}
 	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyUp})
-	if m.quick.input.Line() != 0 || m.rail.Cursor() != 0 {
-		t.Fatalf("up from the first row: caret line %d, selection %d; want caret 0, selection 0", m.quick.input.Line(), m.rail.Cursor())
+	if m.quick().Input.Line() != 0 || m.rail.Cursor() != 0 {
+		t.Fatalf("up from the first row: caret line %d, selection %d; want caret 0, selection 0", m.quick().Input.Line(), m.rail.Cursor())
 	}
 
 	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyDown})
-	if m.quick.input.Line() != 1 || m.rail.Cursor() != 0 {
-		t.Fatalf("down from the first row: caret line %d, selection %d; want caret 1, selection 0", m.quick.input.Line(), m.rail.Cursor())
+	if m.quick().Input.Line() != 1 || m.rail.Cursor() != 0 {
+		t.Fatalf("down from the first row: caret line %d, selection %d; want caret 1, selection 0", m.quick().Input.Line(), m.rail.Cursor())
 	}
 	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyDown})
 	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyDown})
-	if m.quick.input.Line() != 2 || m.rail.Cursor() != 1 {
-		t.Fatalf("down from the last row: caret line %d, selection %d; want caret 2, selection 1", m.quick.input.Line(), m.rail.Cursor())
+	if m.quick().Input.Line() != 2 || m.rail.Cursor() != 1 {
+		t.Fatalf("down from the last row: caret line %d, selection %d; want caret 2, selection 1", m.quick().Input.Line(), m.rail.Cursor())
 	}
 }
 
@@ -1123,23 +1129,23 @@ func TestQuickUpDownWalkSoftWrappedRows(t *testing.T) {
 	seedTwoGroups(t, m)
 	setRailCursor(m, 1)
 	m.openQuickMode()
-	m.quick.input.SetWidth(12)
-	m.quick.input.SetHeight(quickBarMaxRows)
-	m.quick.input.SetValue("one two three four five six seven")
-	if height := m.quick.input.LineInfo().Height; height < 3 {
+	m.quick().Input.SetWidth(12)
+	m.quick().Input.SetHeight(uiquick.BarMaxRows)
+	m.quick().Input.SetValue("one two three four five six seven")
+	if height := m.quick().Input.LineInfo().Height; height < 3 {
 		t.Fatalf("value should soft-wrap over at least 3 rows, got %d", height)
 	}
-	last := m.quick.input.LineInfo().RowOffset
-	if height := m.quick.input.LineInfo().Height; last != height-1 {
+	last := m.quick().Input.LineInfo().RowOffset
+	if height := m.quick().Input.LineInfo().Height; last != height-1 {
 		t.Fatalf("the caret starts on row %d of %d, want the last wrapped row", last, height)
 	}
 
 	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyUp})
-	if got := m.quick.input.LineInfo().RowOffset; got != last-1 || m.rail.Cursor() != 1 {
+	if got := m.quick().Input.LineInfo().RowOffset; got != last-1 || m.rail.Cursor() != 1 {
 		t.Fatalf("up inside a wrapped line: row %d, selection %d; want row %d, selection 1", got, m.rail.Cursor(), last-1)
 	}
 	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyDown})
-	if got := m.quick.input.LineInfo().RowOffset; got != last || m.rail.Cursor() != 1 {
+	if got := m.quick().Input.LineInfo().RowOffset; got != last || m.rail.Cursor() != 1 {
 		t.Fatalf("down inside a wrapped line: row %d, selection %d; want row %d, selection 1", got, m.rail.Cursor(), last)
 	}
 	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyDown})
@@ -1154,8 +1160,8 @@ func TestQuickOneRowPromptKeepsArrowsOnTheList(t *testing.T) {
 	seedTwoGroups(t, m)
 	setRailCursor(m, 1)
 	m.openQuickMode()
-	m.quick.input.SetWidth(40)
-	m.quick.input.SetValue("short answer")
+	m.quick().Input.SetWidth(40)
+	m.quick().Input.SetValue("short answer")
 
 	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyUp})
 	if m.rail.Cursor() != 0 {
@@ -1175,16 +1181,16 @@ func TestQuickUpStepsOffTheRowWhenAChipIsInTheWay(t *testing.T) {
 	seedTwoGroups(t, m)
 	setRailCursor(m, 1)
 	m.openQuickMode()
-	m.quick.attachments = []imageAttachment{{id: 1, path: "/tmp/a.png"}}
-	m.quick.input.SetWidth(21)
-	m.quick.input.SetHeight(quickBarMaxRows)
-	m.quick.input.SetValue("aaaa bbbb " + imageToken(1) + " cccc dddd eeee ffff")
-	m.quick.input.SetCursor(33)
+	m.quick().Attachments = []composer.Attachment{{ID: 1, Path: "/tmp/a.png"}}
+	m.quick().Input.SetWidth(21)
+	m.quick().Input.SetHeight(uiquick.BarMaxRows)
+	m.quick().Input.SetValue("aaaa bbbb " + composer.Token(1) + " cccc dddd eeee ffff")
+	m.quick().Input.SetCursor(33)
 
-	for !m.quick.caretOnFirstRow() {
-		before := m.quick.input.LineInfo().RowOffset
+	for !m.quick().CaretOnFirstRow() {
+		before := m.quick().Input.LineInfo().RowOffset
 		_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyUp})
-		if got := m.quick.input.LineInfo().RowOffset; got >= before {
+		if got := m.quick().Input.LineInfo().RowOffset; got >= before {
 			t.Fatalf("up left the caret on row %d, want a row above %d", got, before)
 		}
 		if m.rail.Cursor() != 1 {
@@ -1210,22 +1216,22 @@ func TestQuickPromptKeepsItsFirstRowAsItWrapsAndShrinks(t *testing.T) {
 		}
 		for _, r := range "first " + strings.Repeat("word ", 200) {
 			m = applyMsg(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
-			_, rows := m.quick.displayRows()
-			if m.quick.input.Length() > len("first") && rows <= m.quick.maxRows && !firstRowShown() {
+			_, rows := m.quick().DisplayRows()
+			if m.quick().Input.Length() > len("first") && rows <= m.quick().MaxRows && !firstRowShown() {
 				t.Fatalf("full layout %v: typing to %d rows scrolled the first row away", full, rows)
 			}
 			// A few rows past the bar is overflow enough; each key past
 			// it renders the whole bar again and checks nothing.
-			if rows > m.quick.maxRows+2 {
+			if rows > m.quick().MaxRows+2 {
 				break
 			}
 		}
-		if _, rows := m.quick.displayRows(); rows <= m.quick.maxRows {
+		if _, rows := m.quick().DisplayRows(); rows <= m.quick().MaxRows {
 			t.Fatalf("full layout %v: the prompt should overflow the bar, got %d rows", full, rows)
 		}
 		for {
-			_, rows := m.quick.displayRows()
-			if rows <= m.quick.maxRows && !firstRowShown() {
+			_, rows := m.quick().DisplayRows()
+			if rows <= m.quick().MaxRows && !firstRowShown() {
 				t.Fatalf("full layout %v: deleting back to %d rows left the first row scrolled away", full, rows)
 			}
 			if rows == 1 {
@@ -1245,7 +1251,7 @@ func TestQuickPromptModeLeadsTheFooterAndNamesTheOpenBar(t *testing.T) {
 		t.Fatalf("group row leads = %q, want quick prompt mode", leads)
 	}
 	footer := m.listFooter()
-	if !strings.Contains(footer, keyCapLead("space", "quick prompt mode")) {
+	if !strings.Contains(footer, uitheme.KeyCapLead("space", "quick prompt mode")) {
 		t.Fatalf("footer should carry the filled quick prompt mode binding:\n%q", footer)
 	}
 	m.services.listKeys = m.services.listKeys.With(keybind.Prompt, bindingOf(t))
@@ -1257,7 +1263,7 @@ func TestQuickPromptModeLeadsTheFooterAndNamesTheOpenBar(t *testing.T) {
 	for _, full := range []bool{false, true} {
 		m.prefs.fullLayout = full
 		m.openQuickMode()
-		m.quick.input.SetValue("hello")
+		m.quick().Input.SetValue("hello")
 		frame := preparedView(m)
 		if !strings.Contains(ansi.Strip(m.viewFooter()), quickModeTitle) {
 			t.Fatalf("full layout %v: the open bar's footer should be titled %q:\n%s", full, quickModeTitle, ansi.Strip(m.viewFooter()))
@@ -1274,17 +1280,17 @@ func TestQuickPromptModeLeadsTheFooterAndNamesTheOpenBar(t *testing.T) {
 			t.Fatalf("full layout %v: the prompt should sit in the footer:\n%s", full, ansi.Strip(frame))
 		}
 		rows := strings.Split(footer, "\n")
-		keysHeight := lipgloss.Height(paintLegend([]legendSection{{title: quickModeTitle, pairs: m.quick.Legend(m.quickBarHost())}}, m.layout.width-1).text)
+		keysHeight := lipgloss.Height(paintLegend([]legendSection{{title: quickModeTitle, pairs: m.quick().Legend(m.quickBarHost())}}, m.layout.width-1).text)
 		for i, line := range rows {
-			tone := quickModeHex()
+			tone := uitheme.QuickModeHex()
 			if i > 0 && i < len(rows)-keysHeight {
-				tone = blockHex()
+				tone = uitheme.BlockHex()
 			}
-			if !strings.HasPrefix(line, bgSeq(tone)) || !strings.HasPrefix(ansi.Strip(line), quickEdge) || ansi.StringWidth(line) != m.layout.width {
+			if !strings.HasPrefix(line, uitheme.BgSeq(tone)) || !strings.HasPrefix(ansi.Strip(line), quickEdge) || ansi.StringWidth(line) != m.layout.width {
 				t.Fatalf("full layout %v: every bar row should open on the accent edge over the band, across the width: %q", full, line)
 			}
 		}
-		m.quick.active = false
+		m.closeQuick()
 	}
 }
 
@@ -1301,7 +1307,7 @@ func TestQuickPromptTypesWordsNamedLikeKeys(t *testing.T) {
 		}
 		m = applyMsg(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(word)})
 	}
-	if want := strings.Join(words, " "); m.quick.input.Value() != want || !m.quick.active || m.rail.Cursor() != 1 {
-		t.Fatalf("prompt %q, open %v, selection %d; want %q typed in an open bar on row 1", m.quick.input.Value(), m.quick.active, m.rail.Cursor(), want)
+	if want := strings.Join(words, " "); m.quick().Input.Value() != want || (m.quick() == nil) || m.rail.Cursor() != 1 {
+		t.Fatalf("prompt %q, open %v, selection %d; want %q typed in an open bar on row 1", m.quick().Input.Value(), (m.quick() != nil), m.rail.Cursor(), want)
 	}
 }

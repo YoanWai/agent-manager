@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -24,7 +26,7 @@ func TestArchivedViewShowsOnlyArchivedSessions(t *testing.T) {
 
 	m.selectSessionRow(t, "old-one")
 	m.archiveSelected()
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.applyCmd(t, cmd)
 
 	if names := sessionNames(m); len(names) != 1 || names[0] != "live-one" {
@@ -79,14 +81,14 @@ func TestSettingsTogglesListDensity(t *testing.T) {
 	}
 
 	m.openSettings()
-	if m.settings.dialog.ComfortableRows {
+	if m.settingsCard().State().ComfortableRows {
 		t.Fatal("settings should open on compact by default")
 	}
 	for i := 0; i < uisettings.FieldDensity; i++ {
 		m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
 	}
-	if m.settings.dialog.Field != uisettings.FieldDensity {
-		t.Fatalf("stepping down should reach the density field, got %d", m.settings.dialog.Field)
+	if m.settingsCard().State().Field != uisettings.FieldDensity {
+		t.Fatalf("stepping down should reach the density field, got %d", m.settingsCard().State().Field)
 	}
 	if card := ansi.Strip(m.viewSettings()); !strings.Contains(card, "list density") {
 		t.Fatalf("settings card has no density row:\n%s", card)
@@ -168,7 +170,7 @@ func TestEmptyListKeepsItsGuidance(t *testing.T) {
 			clearRailInventory(m)
 			tc.setup(m)
 			m.rebuildRows()
-			rail := ansi.Strip(strings.Join(splitLines(joinContentText(m.railLines(40, 20))), "\n"))
+			rail := ansi.Strip(strings.Join(uitheme.SplitLines(joinContentText(m.railLines(40, 20))), "\n"))
 			if !strings.Contains(rail, tc.wantText) {
 				t.Fatalf("rail is missing %q:\n%s", tc.wantText, rail)
 			}
@@ -194,7 +196,7 @@ func TestReorderSkipsRootAsSibling(t *testing.T) {
 	m.rebuildRows()
 	index := -1
 	for i, row := range railRows(m) {
-		if row.isGroup && !row.isRoot() && parentGroup(row.group) == "" {
+		if row.isGroup && !row.isRoot() && uirail.ParentGroup(row.group) == "" {
 			index = i
 			break
 		}
@@ -276,9 +278,8 @@ func TestRailCursorAlwaysPainted(t *testing.T) {
 				layout: layoutState{
 					width:  size.w,
 					height: size.h,
-					split:  splitState{ratio: defaultSplitRatio},
+					split:  splitState{ratio: uigeometry.DefaultSplitRatio},
 				},
-				mode:      modeList,
 				workspace: workspace{sessions: sessions},
 				rail:      railModelFromRows(rows, cursor),
 			}

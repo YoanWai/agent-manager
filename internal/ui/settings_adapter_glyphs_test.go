@@ -7,29 +7,30 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
+	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
 )
 
 func TestSymbolsExplicitChoiceAndPendingReopen(t *testing.T) {
 	m := buildModel(t)
 	m.applyCmd(t, m.openSettings())
-	_, save := m.saveAndCloseSettings()
+	_, save := m.closeSettings()
 	m.applyCmd(t, save)
 	if raw, _ := m.services.store.Setting(uisettings.GlyphModeSetting); raw != "" {
 		t.Fatal("untouched settings pinned symbols default")
 	}
 	for _, mode := range []presentation.GlyphMode{presentation.GlyphModeBasic, presentation.GlyphModeAdvanced} {
 		m.applyCmd(t, m.openSettings())
-		m.settings.dialog.Field = uisettings.FieldGlyphs
+		m.settingsCard().State().Field = uisettings.FieldGlyphs
 		m.handleSettingsKey(key("right"))
 		if m.prefs.glyphMode != mode {
 			t.Fatal("symbols did not preview")
 		}
-		_, save = m.saveAndCloseSettings()
+		_, save = m.closeSettings()
 		m.openSettings()
-		if m.settings.dialog.GlyphMode != mode {
+		if m.settingsCard().State().GlyphMode != mode {
 			t.Fatal("reopen lost pending symbols")
 		}
-		_, unchanged := m.saveAndCloseSettings()
+		_, unchanged := m.closeSettings()
 		m.applyCmd(t, save)
 		m.applyCmd(t, unchanged)
 		m.drainEffects(t)
@@ -39,10 +40,10 @@ func TestSymbolsExplicitChoiceAndPendingReopen(t *testing.T) {
 	}
 	fresh := buildModel(t)
 	fresh.applyCmd(t, fresh.openSettings())
-	fresh.settings.dialog.Field = uisettings.FieldGlyphs
+	fresh.settingsCard().State().Field = uisettings.FieldGlyphs
 	fresh.handleSettingsKey(key("right"))
 	fresh.handleSettingsKey(key("left"))
-	_, save = fresh.saveAndCloseSettings()
+	_, save = fresh.closeSettings()
 	fresh.applyCmd(t, save)
 	if raw, _ := fresh.services.store.Setting(uisettings.GlyphModeSetting); raw != "advanced" {
 		t.Fatal("cycling back did not pin explicit default")
@@ -68,7 +69,7 @@ func TestSymbolsMouseSaveUsesPaintedRows(t *testing.T) {
 		x, y := paintedCell(t, m, "save and close")
 		m, save := leftClickCmd(m, x, y)
 		m.applyCmd(t, save)
-		if raw, _ := m.services.store.Setting(uisettings.GlyphModeSetting); raw != "basic" || m.mode != modeList {
+		if raw, _ := m.services.store.Setting(uisettings.GlyphModeSetting); raw != "basic" || m.settingsOpen() {
 			t.Fatal("mouse save did not persist and close")
 		}
 	}
@@ -77,14 +78,14 @@ func TestSymbolsMouseSaveUsesPaintedRows(t *testing.T) {
 func TestSymbolsRejectInvalidAndStaleReads(t *testing.T) {
 	m := buildModel(t)
 	m.applyCmd(t, m.openSettings())
-	stale := settingsLoadedMsg{request: settingsLoadRequest{target: settingsLoadDialog, generation: m.settings.gen}, result: settingsLoadResult{values: []restoredValue{{Key: uisettings.GlyphModeSetting, Value: "advanced"}}}}
-	m.settings.dialog.Field = uisettings.FieldGlyphs
+	stale := uipersist.LoadedMsg{Request: uipersist.LoadRequest{Target: uipersist.DialogTarget, Generation: m.settings.Gen}, Result: uipersist.LoadResult{Values: []uisettings.Readback{{Key: uisettings.GlyphModeSetting, Value: "advanced"}}}}
+	m.settingsCard().State().Field = uisettings.FieldGlyphs
 	m.handleSettingsKey(key("right"))
 	m.handleSettingsLoaded(stale)
 	if m.prefs.glyphMode != presentation.GlyphModeBasic {
 		t.Fatal("load overwrote unsaved symbols")
 	}
-	_, save := m.saveAndCloseSettings()
+	_, save := m.closeSettings()
 	m.applyCmd(t, save)
 	if err := m.services.store.SetSetting(uisettings.GlyphModeSetting, "unknown"); err != nil {
 		t.Fatal(err)
@@ -98,21 +99,21 @@ func TestSymbolsRejectInvalidAndStaleReads(t *testing.T) {
 func TestSymbolsSaveFailureRestoresAndCanRetry(t *testing.T) {
 	m := buildModel(t)
 	m.applyCmd(t, m.openSettings())
-	m.settings.dialog.Field = uisettings.FieldGlyphs
+	m.settingsCard().State().Field = uisettings.FieldGlyphs
 	m.handleSettingsKey(key("right"))
-	request := settingsRequest{values: m.settings.dialog.ChangedValues(), generation: m.settings.gen}
+	request := uipersist.SaveRequest{Values: m.settingsCard().State().ChangedValues(), Generation: m.settings.Gen}
 	writer := &settingsScriptWriter{failOn: uisettings.GlyphModeSetting, values: map[string]string{}}
-	result, err := runSettingsWithWriter(request, writer)
+	result, err := uipersist.RunSave(request, writer)
 	if err == nil {
 		t.Fatal("fixture write must fail")
 	}
-	m.applySettingsEffect(&effectJob{request: request}, result.(settingsEffectResult), err)
+	m.applyTestMsg(t, m.settings.ApplySave(settingsSaveRoot{m}, request, result, err))
 	if m.prefs.glyphMode != "" || m.errBar.text == "" {
 		t.Fatal("failed symbols save did not restore default and report failure")
 	}
-	m.settings.dialog.Field = uisettings.FieldGlyphs
+	m.settingsCard().State().Field = uisettings.FieldGlyphs
 	m.handleSettingsKey(key("right"))
-	_, save := m.saveAndCloseSettings()
+	_, save := m.closeSettings()
 	m.applyCmd(t, save)
 	if raw, _ := m.services.store.Setting(uisettings.GlyphModeSetting); raw != "basic" {
 		t.Fatal("retry did not save")
@@ -122,17 +123,17 @@ func TestSymbolsSaveFailureRestoresAndCanRetry(t *testing.T) {
 func TestSettingsUpdateDoesNotStartAfterSymbolsSaveFails(t *testing.T) {
 	m := buildModel(t)
 	m.applyCmd(t, m.openSettings())
-	m.update.latest = "v0.3.0"
-	m.settings.dialog.Field = uisettings.FieldGlyphs
+	m.release.Latest = "v0.3.0"
+	m.settingsCard().State().Field = uisettings.FieldGlyphs
 	m.handleSettingsKey(key("right"))
-	m.settings.dialog.Field = uisettings.FieldUpdate
+	m.settingsCard().State().Field = uisettings.FieldUpdate
 	m.handleSettingsKey(key("enter"))
-	job := m.effects.main.active
-	request := job.request.(settingsRequest)
-	if !request.followUpdate {
+	job := m.effects.Main.Active
+	request := job.Request.(uipersist.SaveRequest)
+	if !request.StagedUpdate {
 		t.Fatal("update not captured")
 	}
-	if cmd := m.applySettingsEffect(job, settingsEffectResult{}, errors.New("disk full")); cmd != nil || m.update.applying {
+	if cmd := m.settings.ApplySave(settingsSaveRoot{m}, request, uipersist.SaveResult{}, errors.New("disk full")); cmd != nil || m.release.Applying {
 		t.Fatal("failed settings save still starts update")
 	}
 }

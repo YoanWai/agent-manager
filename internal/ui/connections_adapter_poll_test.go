@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -16,7 +17,10 @@ import (
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uiconnections "github.com/YoanWai/agent-manager/internal/ui/connections"
+	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+	"github.com/YoanWai/agent-manager/internal/ui/spawn"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // fakeSSH stands in for ssh: it records the agent-manager words each call
@@ -105,7 +109,7 @@ func listedModel(t *testing.T, fake *fakeSSH) *Model {
 	t.Helper()
 	m := buildModel(t)
 	fake.snapshot = boxSnapshot()
-	m.ssh = newConnections(testRemoteClient(t, remote.WithRunner(fake.run)), []store.Connection{{Name: "box", Destination: "me@box"}})
+	m.ssh = uilink.New(testRemoteClient(t, remote.WithRunner(fake.run)), []store.Connection{{Name: "box", Destination: "me@box"}})
 	m.rebuildRows()
 	return m
 }
@@ -114,7 +118,7 @@ func listedModel(t *testing.T, fake *fakeSSH) *Model {
 func connectedModel(t *testing.T, fake *fakeSSH) *Model {
 	t.Helper()
 	m := listedModel(t, fake)
-	setHost(m, "box", hostFacts(remote.HostState{OK: true, Snapshot: fake.snapshot}))
+	setHost(m, "box", uilink.Facts(remote.HostState{OK: true, Snapshot: fake.snapshot}))
 	return m
 }
 
@@ -159,14 +163,14 @@ func TestPollRefreshesEachHostOnceAtATimeOffTheUpdatePath(t *testing.T) {
 	fake := &fakeSSH{}
 	m := listedModel(t, fake)
 
-	cmd := m.pollConnection("box")
+	cmd := m.ssh.PollHost("box")
 	if cmd == nil {
 		t.Fatal("no refresh started")
 	}
 	if len(fake.taken()) != 0 {
 		t.Fatal("the refresh ran on the update path")
 	}
-	if again := m.pollConnection("box"); again != nil {
+	if again := m.ssh.PollHost("box"); again != nil {
 		t.Fatal("a second refresh started while the first was in flight")
 	}
 	m.applyTestMsg(t, cmd())
@@ -184,11 +188,11 @@ func TestPollRefreshesEachHostOnceAtATimeOffTheUpdatePath(t *testing.T) {
 func TestOfflineHostKeepsItsLastRows(t *testing.T) {
 	fake := &fakeSSH{}
 	m := connectedModel(t, fake)
-	m.applyTestMsg(t, m.pollConnection("box")())
+	m.applyTestMsg(t, m.ssh.PollHost("box")())
 	fake.mu.Lock()
 	fake.stderr, fake.code = "ssh: connect to host box port 22: Connection refused", 255
 	fake.mu.Unlock()
-	m.applyTestMsg(t, m.pollConnection("box")())
+	m.applyTestMsg(t, m.ssh.PollHost("box")())
 
 	state := hostState(m, "box")
 	if state.OK || state.Failures != 1 || !strings.Contains(state.Err, "Connection refused") {
@@ -197,7 +201,7 @@ func TestOfflineHostKeepsItsLastRows(t *testing.T) {
 	if names := railNames(m); !slices.Contains(names, "api") || !slices.Contains(names, "sh") {
 		t.Fatalf("rows = %q, want the last snapshot kept", names)
 	}
-	if host := m.ssh.railHosts()[0]; host.State != uirail.HostOffline || host.Trouble != "unreachable" {
+	if host := m.ssh.RailHosts()[0]; host.State != uirail.HostOffline || host.Trouble != "unreachable" {
 		t.Fatalf("rail host = %+v, want offline and unreachable", host)
 	}
 }
@@ -221,8 +225,8 @@ func TestFailedHostNamesItsTrouble(t *testing.T) {
 		fake.mu.Lock()
 		fake.snapshot.Version, fake.stderr, fake.code = tc.version, tc.stderr, tc.code
 		fake.mu.Unlock()
-		m.applyTestMsg(t, m.pollConnection("box")())
-		if host := m.ssh.railHosts()[0]; host.Trouble != tc.want {
+		m.applyTestMsg(t, m.ssh.PollHost("box")())
+		if host := m.ssh.RailHosts()[0]; host.Trouble != tc.want {
 			t.Errorf("version %d, %q: trouble %q, want %q", tc.version, tc.stderr, host.Trouble, tc.want)
 		}
 	}
@@ -236,14 +240,14 @@ func TestUnreachableHostRestsBetweenRetries(t *testing.T) {
 	fake.mu.Lock()
 	fake.stderr, fake.code = "ssh: connect to host box port 22: Connection refused", 255
 	fake.mu.Unlock()
-	m.applyTestMsg(t, m.pollConnection("box")())
-	if m.pollConnection("box") != nil {
+	m.applyTestMsg(t, m.ssh.PollHost("box")())
+	if m.ssh.PollHost("box") != nil {
 		t.Fatal("a host that just failed was dialled again at once")
 	}
 	state := hostState(m, "box")
 	state.Attempted = time.Now().Add(-remote.RetryWait(state.Failures))
 	setHost(m, "box", state)
-	cmd := m.pollConnection("box")
+	cmd := m.ssh.PollHost("box")
 	if cmd == nil {
 		t.Fatal("a host past its wait was not dialled")
 	}
@@ -256,8 +260,8 @@ func TestUnreachableHostRestsBetweenRetries(t *testing.T) {
 func TestRefreshOfAReplacedListIsDropped(t *testing.T) {
 	fake := &fakeSSH{}
 	m := listedModel(t, fake)
-	stale := m.pollConnection("box")
-	m.ssh.setList([]store.Connection{{Name: "box", Destination: "me@other"}})
+	stale := m.ssh.PollHost("box")
+	m.ssh.SetList([]store.Connection{{Name: "box", Destination: "me@other"}})
 	m.applyTestMsg(t, stale())
 	if _, seen := m.ssh.Host("box"); seen {
 		t.Fatal("a refresh of the old destination landed on the new one")
@@ -267,9 +271,148 @@ func TestRefreshOfAReplacedListIsDropped(t *testing.T) {
 func TestRemovedConnectionTakesItsRowsWithIt(t *testing.T) {
 	fake := &fakeSSH{}
 	m := connectedModel(t, fake)
-	m.ssh.setList(nil)
+	m.ssh.SetList(nil)
 	m.rebuildRows()
 	if names := railNames(m); slices.Contains(names, "box") || slices.Contains(names, "api") {
 		t.Fatalf("rows = %q after removal", names)
 	}
+}
+
+func contentText(m *Model) string {
+	var lines []string
+	for _, line := range m.contentLines(80, 20) {
+		lines = append(lines, ansi.Strip(line.text))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func TestRemotePreviewReadsTheSelectedScreenOffTheUpdatePath(t *testing.T) {
+	fake := &fakeSSH{screen: "\x1b[1mbuilding\x1b[0m api\n$ "}
+	m := connectedModel(t, fake)
+	m.rail.Focus(boxSession("s1"))
+	cmd := m.syncRemotePreview()
+	if cmd == nil || len(fake.taken()) != 0 {
+		t.Fatal("the read was not deferred to a command")
+	}
+	if text := contentText(m); !strings.Contains(text, "api  on box") || !strings.Contains(text, "reading the screen over SSH") {
+		t.Fatalf("content before the read:\n%s", text)
+	}
+	m.applyTestMsg(t, cmd())
+	if calls := fake.taken(); len(calls) != 1 || !slices.Equal(calls[0], []string{"read", "--styled", "--json", "--", "s1"}) {
+		t.Fatalf("calls = %q", calls)
+	}
+	if text := contentText(m); !strings.Contains(text, "building api") || strings.Contains(text, "\x1b") {
+		t.Fatalf("content after the read:\n%s", text)
+	}
+}
+
+func TestRemotePreviewReadsATerminalAsOne(t *testing.T) {
+	fake := &fakeSSH{screen: "$ ls"}
+	m := connectedModel(t, fake)
+	m.rail.Focus(boxSession("t1"))
+	m.applyTestMsg(t, m.syncRemotePreview()())
+	if calls := fake.taken(); len(calls) != 1 || !slices.Equal(calls[0], []string{"terminal", "read", "--styled", "--json", "--", "t1"}) {
+		t.Fatalf("calls = %q", calls)
+	}
+}
+
+func TestRemotePreviewDropsAReadForAnEarlierSelection(t *testing.T) {
+	fake := &fakeSSH{screen: "old screen"}
+	m := connectedModel(t, fake)
+	m.rail.Focus(boxSession("s1"))
+	stale := m.syncRemotePreview()
+	m.rail.Focus(boxSession("s2"))
+	m.syncRemotePreview()
+	m.applyTestMsg(t, stale())
+	if text := contentText(m); strings.Contains(text, "old screen") || !strings.Contains(text, "reading the screen over SSH") {
+		t.Fatalf("content = %q, want the s1 read dropped while s2 reads", text)
+	}
+}
+
+func TestConnectionRowShowsItsFacts(t *testing.T) {
+	fake := &fakeSSH{}
+	m := connectedModel(t, fake)
+	m.rail.Focus(boxRow)
+	text := contentText(m)
+	for _, want := range []string{"box", "online", "me@box", "3 sessions · 1 terminal · manager awake"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("content lacks %q:\n%s", want, text)
+		}
+	}
+}
+
+// hostile is what a compromised host could put in any string it returns:
+// an OSC 52 clipboard write, a carriage return, a backspace and a bell.
+const hostile = "\x1b]52;c;cHduZWQ=\x07\r\b\x07"
+
+// A connection's host is not trusted to drive the terminal: whatever it
+// names, reports or prints reaches a frame as text.
+func TestHostTextCannotDriveTheTerminal(t *testing.T) {
+	fake := &fakeSSH{}
+	m := connectedModel(t, fake)
+	m.layout.width, m.layout.height = 120, 40
+	group := "web" + hostile
+	fake.mu.Lock()
+	fake.snapshot.Groups = []sessioncmd.Group{{Path: group}}
+	fake.snapshot.Sessions = []sessioncmd.Session{{ID: "s1", Name: "api" + hostile, Tool: "claude" + hostile, Group: group, Status: "idle" + hostile}}
+	fake.snapshot.Terminals = nil
+	fake.screen = "build" + hostile + "ing\x1bc\x0e\x0fdone\n$ "
+	raw := fake.snapshot
+	fake.mu.Unlock()
+	m.applyTestMsg(t, m.ssh.PollHost("box")())
+	// internal/remote already cleans what a host answers; the UI escapes on
+	// its own too, so this test hands it the host's raw rows.
+	setHost(m, "box", uilink.Facts(remote.HostState{OK: true, Snapshot: raw}))
+
+	frame := func(surface string) {
+		t.Helper()
+		view := preparedView(m)
+		if stray := strayControl(view); stray != "" {
+			t.Fatalf("%s leaks a control byte near %q", surface, stray)
+		}
+		if !strings.Contains(view, "52;c;cHduZWQ=") {
+			t.Fatalf("%s: the host's text should be on screen to be a real test:\n%s", surface, ansi.Strip(view))
+		}
+	}
+	session := uirail.Selection{Kind: uirail.SessionRow, SessionID: "s1", Group: group, Host: "box"}
+	m.rail.Focus(session)
+	m.applyTestMsg(t, m.syncRemotePreview()())
+	if text := contentText(m); !strings.Contains(text, "building") || !strings.Contains(text, "done") {
+		t.Fatalf("the screen lost its text:\n%s", text)
+	}
+	frame("the rail and the remote screen")
+
+	m.rail.Focus(uirail.Selection{Kind: uirail.GroupRow, Group: group, Host: "box"})
+	frame("a remote group")
+	m.openForm()
+	m.form().FocusField(m.spawnHost(), spawn.FieldGroup)
+	frame("the New Session form")
+	m.base = baseList
+	m.clearSurfaces()
+
+	m.rail.Focus(session)
+	m.openQuickMode()
+	frame("the quick bar")
+	m.closeQuick()
+
+	_, cmd := m.runRailIntent(uirail.Intent{Kind: uirail.Kill, Target: session})
+	m.runRemoteCmd(t, cmd)
+	if !confirmOpen(m) {
+		t.Fatalf("screen = %v, want the kill confirm", m.screenID())
+	}
+	frame("the confirm")
+	m.base = baseList
+	m.clearSurfaces()
+
+	fake.mu.Lock()
+	fake.stderr, fake.code = "denied"+hostile, 1
+	fake.mu.Unlock()
+	m.ssh.Preview = uiconnections.Preview{}
+	m.applyTestMsg(t, m.syncRemotePreview()())
+	frame("a failed read")
+
+	m.applyTestMsg(t, m.ssh.PollHost("box")())
+	setHost(m, "box", uilink.Facts(remote.HostState{Snapshot: raw, Failures: 1, Err: errors.New("box: denied" + hostile)}))
+	m.rail.Focus(boxRow)
+	frame("an offline host")
 }

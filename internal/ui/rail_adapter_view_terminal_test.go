@@ -102,8 +102,8 @@ func TestRollupsCountAgentsOnly(t *testing.T) {
 	m.selectGroupRow(t, "backend")
 	shell := spawnTerminal(t, m)
 
-	if got := m.groupSessionCount("backend"); got != 1 {
-		t.Fatalf("groupSessionCount = %d, want 1 agent", got)
+	if got := uirail.GroupSessionCount(m.railAgents(), "backend"); got != 1 {
+		t.Fatalf("group count = %d, want 1 agent", got)
 	}
 	total := 0
 	for _, count := range uirail.GroupStatusCounts(m.railAgents(), "backend") {

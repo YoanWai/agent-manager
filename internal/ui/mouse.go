@@ -3,6 +3,7 @@ package ui
 import (
 	"time"
 
+	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
@@ -16,8 +17,8 @@ import (
 // An open row menu asks for every motion, pressed or not, so hovering an
 // entry can light it up.
 func (m *Model) syncMouseCapture() tea.Cmd {
-	release := m.prefs.mouseDisabled && m.mode != modeFocus
-	hover := !release && m.mode == modeList && m.rail.MenuOpen()
+	release := m.prefs.mouseDisabled && !m.focused()
+	hover := !release && m.base == baseList && m.rail.MenuOpen()
 	if release == m.mouse.released && hover == m.mouse.hover {
 		return nil
 	}
@@ -39,18 +40,7 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if msg.Action == tea.MouseActionPress {
 		m.gens.foreground++
 	}
-	model, command := m.routeMouse(msg)
-	m.closeQuickOffTheList()
-	return model, command
-}
-
-// The update dialog covers the list, and Esc returns to the same draft, so a
-// mouse event must not throw that draft away.
-func (m *Model) closeQuickOffTheList() {
-	if m.quick.active && m.mode != modeList && m.mode != modeLaunchHint {
-		m.quick.active = false
-		m.quick.release()
-	}
+	return m.routeMouse(msg)
 }
 
 // routeMouse hands an event to the surface it belongs to: a card floating
@@ -76,15 +66,14 @@ func (m *Model) routeMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return m.click(msg, target)
 		}
 	}
-	switch {
+	top, _ := m.top()
+	switch taker, takes := top.(mouseTaker); {
+	case takes:
+		return m, taker.Mouse(m, msg)
 	case m.cardOpen():
 		return m.cardMouse(msg)
-	case m.mode == modeFocus:
-		return m.focusMouse(msg)
-	case m.mode == modeDiff:
+	case m.base == baseReview:
 		return m.reviewMouse(msg)
-	case m.mode == modeRename:
-		return m, nil
 	}
 	return m.listMouse(msg)
 }
@@ -153,7 +142,7 @@ func (m *Model) click(msg tea.MouseMsg, target clickTarget) (tea.Model, tea.Cmd)
 // row menu keep the mouse: typing owns the keys the list footer names, and
 // the menu floats above it.
 func (m *Model) paintedKeyAt(x, y int) (keyHit, bool) {
-	if m.mode == modeList && (m.rail.Searching() || m.rail.MenuOpen()) {
+	if m.base == baseList && (m.rail.Searching() || m.rail.MenuOpen()) {
 		return keyHit{}, false
 	}
 	return m.layout.keyHits.at(x, y)
@@ -177,13 +166,11 @@ func wheelArrow(msg tea.MouseMsg) (tea.KeyMsg, bool) {
 
 // cardOpen reports a card floating over the frame, which takes the mouse.
 func (m *Model) cardOpen() bool {
-	switch m.mode {
-	case modeList, modeDiff, modeRename:
-		return false
-	case modeFocus:
-		return m.focus.saved.list.Open()
+	if top, ok := m.top(); ok {
+		_, takesMouse := top.(mouseTaker)
+		return !takesMouse
 	}
-	return true
+	return false
 }
 
 // cardMouse turns the wheel on the open card, which turns the card under
@@ -199,39 +186,19 @@ func (m *Model) cardMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 // way esc does. A card holding typed input keeps its draft through a stray
 // click.
 func (m *Model) closesOnBackdrop() bool {
-	switch m.mode {
-	case modeHelp, modeNotices, modeMove, modeRepoPick, modeConfirmDelete, modeLaunchHint:
-		return true
-	case modeSettings:
-		return !m.settings.dialog.Editor.Typing() && !m.settings.dialog.Prompts.Editing()
+	if top, ok := m.top(); ok {
+		return top.Dismissible()
 	}
 	return false
 }
 
 // clickCard acts on the open card's body at col of its painted line.
 func (m *Model) clickCard(col, line int) (tea.Model, tea.Cmd) {
-	switch m.mode {
-	case modeForm:
-		return m.handleFormClick(line)
-	case modeGroupForm:
-		return m.handleGroupFormClick(line)
-	case modeConnection:
-		m.ssh.Dialog.Click(line)
-	case modeSettings:
-		return m.applySettingsResult(m.settings.dialog.Click(col, line, m.settingsContext()))
-	case modeHelp:
-		m.help.state.Click(line)
-	case modeNotices:
-		return m.handleNoticesClick(line)
-	case modeMove:
-		return m.handleMoveClick(line)
-	case modeRepoPick:
-		return m, m.handleRepoPickClick(line)
-	case modeLaunchHint:
-		_, body, hints := m.launchHint.card(m, m.glyphs(), m.cardWidth())
-		return m, m.launchHint.handleClick(m, line+m.launchHintDroppedRows(body, hints))
-	case modeFocus:
-		return m, m.handleFocusSavedClick(line)
+	if top, ok := m.top(); ok {
+		if cc, ok := top.(columnClicker); ok {
+			return m, cc.ClickAt(m, col, line)
+		}
+		return m, top.Click(m, line)
 	}
 	return m, nil
 }
@@ -243,25 +210,8 @@ func (m *Model) wheelCard(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
-	step := presentation.WheelStep(msg)
-	switch m.mode {
-	case modeForm:
-		return m, m.runFormRequest(m.form.Wheel(m.spawnHost(), step), nil)
-	case modeGroupForm:
-		return m, m.runGroupFormKey(m.groupForm.Wheel(step), nil)
-	case modeSettings:
-		return m.applySettingsResult(m.settings.dialog.Wheel(step, m.settingsContext()))
-	case modeNotices:
-		m.notices.Wheel(step, m.activeNotices(), m.noticesFrame())
-	case modeHelp:
-		return m.handleHelpKey(arrow)
-	case modeMove:
-		return m.handleMoveKey(arrow)
-	case modeRepoPick:
-		return m, m.handleRepoPickKey(arrow)
-	case modeFocus:
-		cmd, _ := m.focus.saved.list.Key(arrow)
-		return m, cmd
+	if top, ok := m.top(); ok {
+		return m, top.Wheel(m, arrow)
 	}
 	return m, nil
 }
@@ -337,7 +287,7 @@ func (m *Model) listMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	case tea.MouseActionRelease:
 		if split.dragging {
 			if !split.moved {
-				split.dragging = false
+				m.endDrag()
 				return m, nil
 			}
 			m.setSplitFromX(msg.X)
@@ -373,18 +323,19 @@ func (m *Model) listPress(msg tea.MouseMsg, ctx uirail.MouseContext) (tea.Model,
 	}
 	y0, y1 := m.bodyYRange()
 	onDivider := msg.Button == tea.MouseButtonLeft && !m.prefs.fullLayout && !m.rail.Searching() &&
-		msg.Y >= y0 && msg.Y < y1 && m.onDivider(msg.X)
+		msg.Y >= y0 && msg.Y < y1 && uigeometry.OnDivider(msg.X, m.dividerX())
 	if onDivider {
 		split.dragging, split.moved = true, false
 		if !split.resizeMode {
 			split.ratioBefore = split.ratio
+			m.push(newResizeSurface(m))
 		}
 		return m, nil
 	}
 	if split.resizeMode {
 		return m, nil
 	}
-	if hit, ok := m.quick.hitAt(msg.X, msg.Y); ok {
+	if hit, ok := m.quickHitAt(msg.X, msg.Y); ok {
 		return m, m.handleQuickClick(hit)
 	}
 	if msg.Button == tea.MouseButtonLeft && m.onContentColumn(msg.X, msg.Y) {
@@ -402,7 +353,7 @@ func (m *Model) onRailColumn(x, y int) bool {
 
 func (m *Model) onContentColumn(x, y int) bool {
 	y0, y1 := m.bodyYRange()
-	return !m.prefs.fullLayout && x > m.dividerX()+splitHitSlop && y >= y0 && y < y1
+	return !m.prefs.fullLayout && x > m.dividerX()+uigeometry.SplitHitSlop && y >= y0 && y < y1
 }
 
 // focusFromPreview focuses the session under the cursor from a press on the
@@ -410,7 +361,7 @@ func (m *Model) onContentColumn(x, y int) bool {
 // A group, an archived session, the search field and the quick bar keep it.
 func (m *Model) focusFromPreview() (tea.Model, tea.Cmd) {
 	row, ok := m.selectedRow()
-	if !ok || row.isGroup || row.sess.Archived || m.rail.Searching() || m.quick.active {
+	if !ok || row.isGroup || row.sess.Archived || m.rail.Busy() || m.quick() != nil {
 		return m, nil
 	}
 	return m.focusSelected()

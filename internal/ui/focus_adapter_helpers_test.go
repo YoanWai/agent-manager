@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -23,7 +24,8 @@ type paneCursor struct {
 func paneAt(t *testing.T, lines ...string) *Model {
 	t.Helper()
 	preview := strings.Join(lines, "\n") + "\n"
-	m := &Model{mode: modeFocus}
+	m := &Model{}
+	m.push(newFocusSurface(m))
 	m.workspace.preview = preview
 	m.focus.pane.Enter(uifocus.EnterContext{SessionID: "s1"})
 	setFocusPaneID(m, "s1")
@@ -37,7 +39,7 @@ func paneAt(t *testing.T, lines ...string) *Model {
 func focusedShotPane(t *testing.T, width, x, y int, rows ...string) (*Model, string) {
 	t.Helper()
 	m := shotModel()
-	m.mode = modeFocus
+	m.push(newFocusSurface(m))
 	sess, ok := m.selected()
 	if !ok {
 		t.Fatal("test setup: no selected session")
@@ -108,8 +110,8 @@ func prepareFocusFrame(m *Model, preview string, width, height, x, y, caretRow i
 		OriginX:        x,
 		OriginY:        y,
 		CaretRow:       caretRow,
-		CursorStyle:    lipgloss.NewStyle().Foreground(colorBg()).Background(colorAccent()),
-		SelectionStyle: lipgloss.NewStyle().Foreground(colorBg()).Background(colorAccent2()),
+		CursorStyle:    lipgloss.NewStyle().Foreground(uitheme.ColorBg()).Background(uitheme.ColorAccent()),
+		SelectionStyle: lipgloss.NewStyle().Foreground(uitheme.ColorBg()).Background(uitheme.ColorAccent2()),
 	})
 }
 
@@ -130,7 +132,7 @@ func setFocusScrollOffset(t *testing.T, m *Model, id string, offset, rows int) {
 
 func (m *Model) scrollFocus(delta int) tea.Cmd {
 	sess, ok := m.selected()
-	if !ok || m.mode != modeFocus {
+	if !ok || !m.focused() {
 		return nil
 	}
 	request := m.focus.pane.Scroll(delta, sess.ID, m.focusPaneRows())
@@ -149,7 +151,7 @@ func (m *Model) wheelFocus(up bool, x, y int) tea.Cmd {
 		X: x, Y: y, Action: tea.MouseActionPress,
 		Button: map[bool]tea.MouseButton{true: tea.MouseButtonWheelUp, false: tea.MouseButtonWheelDown}[up],
 	}, uifocus.MouseContext{
-		SessionID: sess.ID, Rows: m.focusPaneRows(), RuntimeReady: m.focus.runtime.watch != nil,
+		SessionID: sess.ID, Rows: m.focusPaneRows(), RuntimeReady: m.focus.runtime.Watch != nil,
 	})
 	_, cmd := m.applyFocusMouse(result)
 	return cmd
@@ -169,3 +171,6 @@ func (m *Model) cursorCell(int) (row, col int, ok bool) {
 	box := m.focus.pane.FrameBox()
 	return screenRow - box.Y - 1, column - box.X - 1, true
 }
+
+// onList reports that the list is the base and no session holds focus.
+func (m *Model) onList() bool { return m.base == baseList && !m.focused() }

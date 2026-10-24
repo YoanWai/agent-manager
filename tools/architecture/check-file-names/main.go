@@ -27,59 +27,40 @@ const uiRoot = "internal/ui"
 // internal/ui. Their root files only adapt it: <feature>_adapter*.go and
 // <feature>_*effect.go, besides the older ones in rootExtras.
 var packaged = map[string]string{
-	"connections": "the SSH connections adapter: the client, refreshes, remote rows, preview and routed actions, and their effects",
-	"dialogs":     "the confirm, rename, move and fork dialog adapters and their effects",
-	"focus":       "the Focus adapter, its frame view and the pane watcher it holds",
-	"help":        "the Help adapter",
-	"notices":     "the notices adapter, release and feed checks and self-update",
-	"quick":       "the quick bar adapter and its send effect",
-	"rail":        "the Rail adapter",
-	"review":      "the Review adapter",
-	"settings":    "the Settings adapter, its store lane and the stored preference readers",
-	"spawn":       "the New Session form adapter, its group picker, request, defaults, group base and fetch, catalog reads, spawn effect, preflight and worktree probe",
-	"theme":       "live styles, surfaces and the stored theme",
+	"composer":     "the prompt box adapter: which box a paste lands in, its painters and the pastes sweep",
+	"connections":  "the SSH connections adapter: the client, refreshes, remote rows, preview and routed actions, and their effects",
+	"dialogs":      "the confirm, rename, move, fork and New Group dialog adapters and their effects",
+	"effects":      "the effect lane adapter: request copies, lane choice, the pane holds, the quit drain and result routing, and the executor",
+	"focus":        "the Focus adapter, its frame view, the pane watcher it holds and the raw input lane",
+	"frame":        "the frame adapter: card chrome, the header band, the legend painters, the IME cursor and the list frame",
+	"geometry":     "pane sizing, layout widths and the split ratio: the adapter, its effects and the resize surface",
+	"help":         "the Help adapter: the context and root reads the key map paints from",
+	"launchhint":   "the launch fix adapter, its copy and the CLI install effect",
+	"notices":      "the notices adapter",
+	"pathcomplete": "the directory completer's adapter: which field a read lands on",
+	"preview":      "the session preview adapter, its poll and the detail view",
+	"quick":        "the quick bar adapter and its send effect",
+	"rail":         "the Rail adapter",
+	"review":       "the Review adapter",
+	"session":      "the session lifecycle adapter: after-turn, archive, attach, delete, editor, kill, launch, restart and revive, and their effects",
+	"settings":     "the Settings adapter, its store lane and the stored preference readers",
+	"spawn":        "the New Session form adapter, its group picker, request, defaults, group base and fetch, catalog reads, spawn effect, preflight and worktree probe",
+	"startup":      "the startup adapter: the greeting, the banner tick and the pane shell probe",
+	"statusbar":    "the status bar adapter: the error bar the root reports into and the toast it floats",
+	"terminal":     "the terminal adapter, the link seams it hands the package and the directory read effect",
+	"theme":        "live styles, surfaces and the stored theme",
+	"workspace":    "the workspace adapter: the loaded state, the poller, the refresh pass and the rail foot readings",
 }
 
-// rootExtras are root files of packaged features that are neither adapter
-// nor effect. They predate the rule; the list only shrinks.
-var rootExtras = map[string]bool{
-	"focus_saved.go":      true,
-	"focus_view.go":       true,
-	"focus_watch.go":      true,
-	"notices_update.go":   true,
-	"settings_prefs.go":   true,
-	"settings_prompts.go": true,
-	"spawn_catalog.go":    true,
-	"spawn_defaults.go":   true,
-	"spawn_groups.go":     true,
-	"spawn_request.go":    true,
-	"spawn_worktree.go":   true,
-	"theme.go":            true,
-	"theme_glyphs.go":     true,
-	"theme_prefs.go":      true,
-	"theme_styles.go":     true,
-	"theme_surface.go":    true,
-}
+// rootExtras are root files of packaged features that are neither adapter,
+// effect nor surface. They predate the rule; the list only shrinks.
+var rootExtras = map[string]bool{}
 
 // rootOnly are the features that live in the root package itself. The
 // list is closed: a new feature starts as a package under internal/ui and
 // joins packaged, so the root holds only its adapter and effects.
 var rootOnly = map[string]string{
-	"composer":     "prompt composers, chips and pasted images",
-	"effects":      "the ordered effect lane and its executor",
-	"frame":        "frame composition: dialog chrome, header, legend, IME, text layout and control escaping",
-	"geometry":     "pane sizing, layout widths and the split ratio",
-	"group":        "the New Group form adapter",
-	"input":        "raw input forwarded to panes",
-	"launchhint":   "the launch fix dialog and CLI install",
-	"model":        "the root Model, its services and shared host methods",
-	"pathcomplete": "directory completion for path fields",
-	"preview":      "the session preview",
-	"session":      "session lifecycle: launch, attach, kill, revive, archive, delete, restart, editor",
-	"startup":      "startup greeting and banner",
-	"status":       "the status bar and toasts",
-	"terminal":     "terminal handoff, link opening and link pages",
-	"workspace":    "polling, refresh and what the last poll returned",
+	"model": "the root Model, its services and shared host methods",
 }
 
 // dispatch are the root files that route rather than own a feature.
@@ -118,7 +99,7 @@ func main() {
 		os.Exit(1)
 	}
 	fmt.Println("PASS: every root UI source starts with its feature")
-	fmt.Println("PASS: a packaged feature's root files are its adapter and effects")
+	fmt.Println("PASS: a packaged feature's root files are its adapter, effects and surfaces")
 	fmt.Println("PASS: every test file is named after its source")
 }
 
@@ -162,7 +143,7 @@ func unadaptedSources(dir string) ([]string, error) {
 		if _, ok := packaged[feature]; !ok {
 			continue
 		}
-		if stem == feature+"_adapter" || strings.HasPrefix(stem, feature+"_adapter_") || strings.HasSuffix(stem, "_effect") {
+		if stem == feature+"_adapter" || strings.HasPrefix(stem, feature+"_adapter_") || strings.HasSuffix(stem, "_effect") || strings.HasSuffix(stem, "_surface") {
 			continue
 		}
 		unadapted = append(unadapted, name)

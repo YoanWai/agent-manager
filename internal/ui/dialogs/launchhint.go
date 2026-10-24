@@ -25,7 +25,6 @@ type LaunchHintAction uint8
 
 const (
 	LaunchHintStay LaunchHintAction = iota
-	LaunchHintQuit
 	LaunchHintCopy
 	LaunchHintInstall
 	LaunchHintClose
@@ -63,8 +62,6 @@ func (d LaunchHint) paragraphs(inner int) [][]string {
 
 func (d LaunchHint) Key(msg tea.KeyMsg) LaunchHintAction {
 	switch msg.String() {
-	case "ctrl+c":
-		return LaunchHintQuit
 	case "c":
 		if d.Command == "" {
 			return LaunchHintStay
@@ -97,13 +94,18 @@ func (d LaunchHint) View(inner int, tone, muted lipgloss.Style, glyphs presentat
 			body.WriteString(style.Render(line) + "\n")
 		}
 	}
-	hint := [][2]string{{"esc", "close"}}
-	if d.Command != "" {
-		run := "install"
-		if d.Update {
-			run = "update"
-		}
-		hint = [][2]string{{"i", run}, {"c", "copy"}, {"esc", "close"}}
+	return Card{Title: glyphs.SetupGlyph + " Session needs a setup step", Body: strings.TrimRight(body.String(), "\n"), Hints: d.Hints()}
+}
+
+// Hints are the keys the card names: the read-only card closes on esc, and a
+// fix with a command adds copy and the install.
+func (d LaunchHint) Hints() [][2]string {
+	if d.Command == "" {
+		return [][2]string{{"esc", "close"}}
 	}
-	return Card{Title: glyphs.SetupGlyph + " Session needs a setup step", Body: strings.TrimRight(body.String(), "\n"), Hints: hint}
+	run := "install"
+	if d.Update {
+		run = "update"
+	}
+	return [][2]string{{"i", run}, {"c", "copy"}, {"esc", "close"}}
 }

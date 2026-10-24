@@ -15,8 +15,6 @@ func (m *Model) Key(msg tea.KeyMsg, ctx KeyContext) KeyResult {
 	}
 	if m.sendConfirm {
 		switch msg.String() {
-		case "ctrl+c":
-			return KeyResult{Navigation: NavigationQuit, Consumed: true}
 		case "enter", "y":
 			m.sendConfirm = false
 			if ctx.SendError != "" {
@@ -36,71 +34,77 @@ func (m *Model) Key(msg tea.KeyMsg, ctx KeyContext) KeyResult {
 	if height < 1 {
 		height = 1
 	}
+	b, ok := bindingFor(msg.String())
+	if !ok {
+		return KeyResult{}
+	}
+	return m.run(b.Action, ctx, height)
+}
+
+// run does what a Review action does. Every action in keymap has a case.
+func (m *Model) run(act action, ctx KeyContext, height int) KeyResult {
 	result := KeyResult{Consumed: true}
-	switch msg.String() {
-	case "ctrl+c":
-		result.Navigation = NavigationQuit
-	case "q", "esc":
+	switch act {
+	case actClose:
 		result.Navigation = NavigationExit
-	case "?":
+	case actHelp:
 		result.Navigation = NavigationHelp
-	case "up", "k":
+	case actLineUp:
 		m.MoveCursor(-1, height)
-	case "down", "j":
+	case actLineDown:
 		m.MoveCursor(1, height)
-	case "ctrl+d":
+	case actHalfDown:
 		m.MoveCursor(height/2, height)
-	case "ctrl+u":
+	case actHalfUp:
 		m.MoveCursor(-height/2, height)
-	case "pgup":
+	case actPageUp:
 		m.MoveCursor(-height, height)
-	case "pgdown", "pgdn":
+	case actPageDown:
 		m.MoveCursor(height, height)
-	case "g":
+	case actTop:
 		m.First()
-	case "G":
+	case actBottom:
 		m.Last(height)
-	case "J", "tab":
+	case actNextFile:
 		result.Requests = m.SwitchFile(1)
-	case "K", "shift+tab":
+	case actPrevFile:
 		result.Requests = m.SwitchFile(-1)
-	case "n":
+	case actNextChange:
 		m.JumpChange(1, height)
-	case "N", "shift+n":
+	case actPrevChange:
 		m.JumpChange(-1, height)
-	case "s":
-		request, ok := m.CycleScope()
-		if ok {
+	case actScope:
+		if request, ok := m.CycleScope(); ok {
 			result.Requests.Load = &request
 			result.Requests.StartupTick = true
 		}
-	case "r":
+	case actRepo:
 		result.Navigation = NavigationRepoPicker
-	case "b":
+	case actBranch:
 		result.Navigation = NavigationBranchPicker
-	case "B":
+	case actTarget:
 		result.Navigation = NavigationBasePicker
-	case "u":
+	case actLayout:
 		m.ToggleSideBySide(height)
-	case "f":
+	case actCodeOnly:
 		result.Requests = m.ToggleCodeOnly()
-	case " ", "space":
+	case actReviewed:
 		if !ctx.PersistenceAvailable {
 			result.Error = "review state is unavailable"
 		} else {
 			result.Requests = m.ToggleReviewed()
 		}
-	case "c":
+	case actComment:
 		m.OpenAnnotation()
-	case "d":
+	case actDiscard:
 		result.Requests, result.Error = m.DiscardOrToggle(ctx.PersistenceAvailable)
-	case "C":
+	case actSend:
 		if m.DraftCount() == 0 {
 			result.Error = "no comments to send - press c on a line first"
 		} else {
 			m.sendConfirm = true
 		}
-	case "o", "f3":
+	case actOpenFile:
 		result.Requests.FileCheck = m.OpenFileRequest()
 	default:
 		result.Consumed = false

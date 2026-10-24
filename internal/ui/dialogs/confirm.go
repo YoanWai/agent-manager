@@ -44,14 +44,11 @@ const (
 	ConfirmStay ConfirmOutcome = iota
 	ConfirmCancel
 	ConfirmAccept
-	ConfirmQuit
 )
 
 // Key answers the question: y or enter runs the request, n or esc drops it.
 func (c Confirm) Key(msg tea.KeyMsg) ConfirmOutcome {
 	switch msg.String() {
-	case "ctrl+c":
-		return ConfirmQuit
 	case "n", "esc":
 		return ConfirmCancel
 	case "y", "enter":

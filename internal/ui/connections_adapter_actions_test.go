@@ -6,8 +6,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/remote"
+	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/ui/composer"
+	uiconnections "github.com/YoanWai/agent-manager/internal/ui/connections"
+	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -26,19 +33,19 @@ func (m *Model) runRemoteCmd(t *testing.T, cmd tea.Cmd) {
 // checking that nothing reached the host while it was asked.
 func (m *Model) answerRemote(t *testing.T, fake *fakeSSH, cmd tea.Cmd, key string) tea.Cmd {
 	t.Helper()
-	if m.mode != modeConfirmDelete {
+	if !confirmOpen(m) {
 		return cmd
 	}
 	m.runRemoteCmd(t, cmd)
 	if calls := fake.taken(); len(calls) != 0 {
 		t.Fatalf("calls before the answer = %q", calls)
 	}
-	_, answer := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+	_, answer := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
 	return answer
 }
 
 func (m *Model) remoteIdle() bool {
-	return m.effects.remote.active == nil && len(m.effects.remote.pending) == 0
+	return m.effects.Remote.Active == nil && len(m.effects.Remote.Pending) == 0
 }
 
 func TestRemoteActionsBuildTheirRemoteCall(t *testing.T) {
@@ -167,11 +174,11 @@ func TestRemoteAttachBuildsTheSSHCommandOffTheUpdatePath(t *testing.T) {
 		if cmd == nil {
 			t.Fatalf("%v built nothing", kind)
 		}
-		ready, ok := cmd().(remoteAttachReadyMsg)
-		if !ok || ready.err != nil || ready.host != "box" {
+		ready, ok := cmd().(uilink.AttachReadyMsg)
+		if !ok || ready.Err != nil || ready.Host != "box" {
 			t.Fatalf("%v: msg %+v", kind, ready)
 		}
-		args := ready.cmd.Args
+		args := ready.Cmd.Args
 		if args[0] != "ssh" || !slices.Contains(args, "-t") || !slices.Contains(args, "me@box") || !strings.Contains(args[len(args)-1], "am_s1") {
 			t.Fatalf("%v: argv %q", kind, args)
 		}
@@ -186,15 +193,15 @@ func TestQuickBarSendsToARemoteAgent(t *testing.T) {
 	m := connectedModel(t, fake)
 	m.rail.Focus(boxSession("s1"))
 	m.openQuickMode()
-	m.quick.input.SetValue("hello there")
+	m.quick().Input.SetValue("hello there")
 	_, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m.runRemoteCmd(t, cmd)
 	want := []string{"type", "--json", "--", "s1", "hello there"}
 	if calls := fake.taken(); len(calls) != 1 || !slices.Equal(calls[0], want) {
 		t.Fatalf("calls = %q, want %q", calls, want)
 	}
-	if m.quick.input.Value() != "" || m.errBar.text != "sent to api on box" {
-		t.Fatalf("draft %q status %q", m.quick.input.Value(), m.errBar.text)
+	if m.quick().Input.Value() != "" || m.errBar.text != "sent to api on box" {
+		t.Fatalf("draft %q status %q", m.quick().Input.Value(), m.errBar.text)
 	}
 }
 
@@ -216,14 +223,14 @@ func TestQuickBarClearsAPromptThatMayHaveReachedARemoteAgent(t *testing.T) {
 			m := connectedModel(t, fake)
 			m.rail.Focus(boxSession("s1"))
 			m.openQuickMode()
-			m.quick.input.SetValue("hello there")
+			m.quick().Input.SetValue("hello there")
 			fake.mu.Lock()
 			fake.stderr, fake.code = tc.stderr, tc.code
 			fake.mu.Unlock()
 			_, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter})
 			m.runRemoteCmd(t, cmd)
-			if kept := m.quick.input.Value() == "hello there"; kept != tc.kept {
-				t.Fatalf("draft %q kept %v, want %v; status %q", m.quick.input.Value(), kept, tc.kept, m.errBar.text)
+			if kept := m.quick().Input.Value() == "hello there"; kept != tc.kept {
+				t.Fatalf("draft %q kept %v, want %v; status %q", m.quick().Input.Value(), kept, tc.kept, m.errBar.text)
 			}
 			if m.errBar.text == "" {
 				t.Fatal("the failure was not reported")
@@ -237,7 +244,7 @@ func TestQuickBarRefusesAShellOnAConnection(t *testing.T) {
 	m := connectedModel(t, fake)
 	m.rail.Focus(boxSession("t1"))
 	m.openQuickMode()
-	m.quick.input.SetValue("ls")
+	m.quick().Input.SetValue("ls")
 	if _, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter}); cmd != nil || !m.remoteIdle() || len(fake.taken()) != 0 {
 		t.Fatal("a prompt to a remote shell went out")
 	}
@@ -248,11 +255,11 @@ func TestQuickBarSpawnsInARemoteGroup(t *testing.T) {
 	m := connectedModel(t, fake)
 	m.rail.Focus(boxGroup)
 	m.openQuickMode()
-	m.quick.input.SetValue("build it")
+	m.quick().Input.SetValue("build it")
 	m.runQuickRequest(uiquick.Request{Toggle: true})
 	_, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m.runRemoteCmd(t, cmd)
-	want := []string{"spawn", "--json", "--prompt=build it", "--tool=" + m.quick.Tool(), "--group=web", "--worktree=true"}
+	want := []string{"spawn", "--json", "--prompt=build it", "--tool=" + m.quick().Tool(), "--group=web", "--worktree=true"}
 	if calls := fake.taken(); len(calls) != 1 || !slices.Equal(calls[0], want) {
 		t.Fatalf("calls = %q, want %q", calls, want)
 	}
@@ -266,13 +273,13 @@ func TestNewSessionFormSpawnsOnTheConnection(t *testing.T) {
 	m := connectedModel(t, fake)
 	m.rail.Focus(boxGroup)
 	m.openForm()
-	if m.mode != modeForm || !m.form.remote.on() || m.form.groupPath() != "web" || m.form.Dir() != "" {
-		t.Fatalf("form = mode %v remote %+v group %q dir %q", m.mode, m.form.remote, m.form.groupPath(), m.form.Dir())
+	if !formOpen(m) || !m.form().Remote.On() || m.form().GroupPath() != "web" || m.form().Dir() != "" {
+		t.Fatalf("form = mode %v remote %+v group %q dir %q", m.screenID(), m.form().Remote, m.form().GroupPath(), m.form().Dir())
 	}
 	if cmd := m.runFormRequest(spawn.FormRequest{Probe: true}, nil); cmd != nil {
 		t.Fatal("the form probed a local directory for a remote spawn")
 	}
-	m.form.SetName("job")
+	m.form().SetName("job")
 	_, cmd := m.submitForm()
 	m.runRemoteCmd(t, cmd)
 	calls := fake.taken()
@@ -284,8 +291,8 @@ func TestNewSessionFormSpawnsOnTheConnection(t *testing.T) {
 			t.Fatalf("an untouched form sent %q; the host resolves it", word)
 		}
 	}
-	if m.mode != modeList {
-		t.Fatalf("mode = %v, want the form closed", m.mode)
+	if !m.onList() {
+		t.Fatalf("screen = %v, want the form closed", m.screenID())
 	}
 }
 
@@ -296,18 +303,18 @@ func TestNewGroupFormCreatesOnTheConnection(t *testing.T) {
 	if _, cmd := m.runRailIntent(uirail.Intent{Kind: uirail.NewGroup, Target: boxGroup}); cmd != nil {
 		t.Fatal("opening the form queued work")
 	}
-	if m.mode != modeGroupForm || m.groupForm.remote != (formRemote{host: "box", group: "web"}) || m.groupForm.Dir() != "" {
-		t.Fatalf("form = mode %v remote %+v dir %q", m.mode, m.groupForm.remote, m.groupForm.Dir())
+	if !m.groupFormOpen() || m.groupSurface().RemoteTarget() != (uidialogs.Remote{Host: "box", Group: "web"}) || m.groupSurface().Dir() != "" {
+		t.Fatalf("form = mode %v remote %+v dir %q", m.screenID(), m.groupSurface().RemoteTarget(), m.groupSurface().Dir())
 	}
-	m.groupForm.SetName("api")
+	m.groupSurface().SetName("api")
 	_, cmd := m.submitGroupForm()
 	m.runRemoteCmd(t, cmd)
 	calls := fake.taken()
 	if len(calls) != 1 || !slices.Equal(calls[0], []string{"create-group", "--json", "--", "web/api"}) {
 		t.Fatalf("calls = %q", calls)
 	}
-	if m.mode != modeList || !strings.Contains(m.errBar.text, "created group web/api on box") {
-		t.Fatalf("mode %v status %q, want the form closed and the group reported", m.mode, m.errBar.text)
+	if !m.onList() || !strings.Contains(m.errBar.text, "created group web/api on box") {
+		t.Fatalf("mode %v status %q, want the form closed and the group reported", m.screenID(), m.errBar.text)
 	}
 	if groups, err := m.services.store.Groups(); err != nil || len(groups) != 0 {
 		t.Fatalf("local groups = %+v, %v; a remote group was written locally", groups, err)
@@ -318,17 +325,17 @@ func TestRemoteLifecycleAsksFirstAndNoSendsNothing(t *testing.T) {
 	fake := &fakeSSH{}
 	m := connectedModel(t, fake)
 	_, cmd := m.runRailIntent(uirail.Intent{Kind: uirail.Kill, Target: boxSession("s1")})
-	if m.mode != modeConfirmDelete || m.confirm.label != "kill api on box? frees its RAM there, v revives it." {
-		t.Fatalf("mode %v label %q, want the kill confirm", m.mode, m.confirm.label)
+	if !confirmOpen(m) || pendingConfirm(m).label != "kill api on box? frees its RAM there, v revives it." {
+		t.Fatalf("mode %v label %q, want the kill confirm", m.screenID(), pendingConfirm(m).label)
 	}
 	m.runRemoteCmd(t, m.answerRemote(t, fake, cmd, "n"))
-	if calls := fake.taken(); len(calls) != 0 || m.mode != modeList {
-		t.Fatalf("calls = %q, mode %v after n", calls, m.mode)
+	if calls := fake.taken(); len(calls) != 0 || !m.onList() {
+		t.Fatalf("calls = %q, mode %v after n", calls, m.screenID())
 	}
 	// A dead agent holds no RAM there to free.
 	m.runRailIntent(uirail.Intent{Kind: uirail.Kill, Target: boxSession("s2")})
-	if m.confirm.label != "kill old on box?" {
-		t.Fatalf("dead kill label %q", m.confirm.label)
+	if pendingConfirm(m).label != "kill old on box?" {
+		t.Fatalf("dead kill label %q", pendingConfirm(m).label)
 	}
 }
 
@@ -337,11 +344,11 @@ func TestQuickBarRefusesWhenARefreshDropsItsRemoteTarget(t *testing.T) {
 	m := connectedModel(t, fake)
 	m.rail.Focus(boxSession("s1"))
 	m.openQuickMode()
-	m.quick.input.SetValue("hello there")
+	m.quick().Input.SetValue("hello there")
 	fake.mu.Lock()
 	fake.snapshot.Sessions = fake.snapshot.Sessions[1:]
 	fake.mu.Unlock()
-	m.applyTestMsg(t, m.pollConnection("box")())
+	m.applyTestMsg(t, m.ssh.PollHost("box")())
 	if selection, _ := m.rail.Selected(); selection.SessionID == "s1" {
 		t.Fatal("the refresh should have moved the cursor off the dropped row")
 	}
@@ -353,13 +360,13 @@ func TestQuickBarRefusesWhenARefreshDropsItsRemoteTarget(t *testing.T) {
 	if calls := fake.taken(); len(calls) != 1 || calls[0][0] != "snapshot" {
 		t.Fatalf("calls = %q, want only the refresh", calls)
 	}
-	for _, lane := range m.lanes() {
-		if lane.active != nil || len(lane.pending) != 0 {
+	for _, lane := range m.effects.Lanes() {
+		if lane.Active != nil || len(lane.Pending) != 0 {
 			t.Fatal("enter queued an effect for the row the cursor slid to")
 		}
 	}
-	if !strings.Contains(m.errBar.text, "gone from box") || m.quick.input.Value() != "hello there" {
-		t.Fatalf("status %q draft %q", m.errBar.text, m.quick.input.Value())
+	if !strings.Contains(m.errBar.text, "gone from box") || m.quick().Input.Value() != "hello there" {
+		t.Fatalf("status %q draft %q", m.errBar.text, m.quick().Input.Value())
 	}
 }
 
@@ -368,7 +375,7 @@ func TestQuickBarFollowsAMoveTheUserMakes(t *testing.T) {
 	m := connectedModel(t, fake)
 	m.rail.Focus(boxSession("s1"))
 	m.openQuickMode()
-	m.quick.input.SetValue("hello there")
+	m.quick().Input.SetValue("hello there")
 	m.runQuickRequest(uiquick.Request{Move: 1})
 	if selection, _ := m.rail.Selected(); selection.SessionID != "s2" {
 		t.Fatalf("selection = %+v, want s2 below s1", selection)
@@ -388,7 +395,7 @@ func TestQuickBarTypesTheSameAnswerTwiceIntoARemoteAgent(t *testing.T) {
 	m.rail.Focus(boxSession("s1"))
 	m.openQuickMode()
 	for range 2 {
-		m.quick.input.SetValue("yes")
+		m.quick().Input.SetValue("yes")
 		_, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter})
 		m.runRemoteCmd(t, cmd)
 		if m.errBar.text != "sent to api on box" {
@@ -415,13 +422,13 @@ func TestQuickBarChoiceReachesARemoteSpawn(t *testing.T) {
 	m.rail.Focus(boxGroup)
 	m.openQuickMode()
 	setQuickTool(m, slices.Index(quickTools(m), "claude"))
-	m.quick.RestartChoice(m.spawnHost())
+	m.quick().RestartChoice(m.spawnHost())
 	ctrl := func(key tea.KeyType) { m.handleQuickKey(tea.KeyMsg{Type: key}) }
 	ctrl(tea.KeyCtrlL)
-	if m.quick.Picking() != uiquick.PickModel {
-		t.Fatalf("ctrl+l on a remote group: picking %d, status %q", m.quick.Picking(), m.errBar.text)
+	if m.quick().Picking() != uiquick.PickModel {
+		t.Fatalf("ctrl+l on a remote group: picking %d, status %q", m.quick().Picking(), m.errBar.text)
 	}
-	if sheet := ansi.Strip(m.viewQuickBar(120, quickBarMaxRows)); !strings.Contains(sheet, "model for web on box") {
+	if sheet := ansi.Strip(m.viewQuickBar(120, uiquick.BarMaxRows)); !strings.Contains(sheet, "model for web on box") {
 		t.Fatalf("the model list is not painted:\n%s", sheet)
 	}
 	for _, r := range "opu" {
@@ -430,14 +437,14 @@ func TestQuickBarChoiceReachesARemoteSpawn(t *testing.T) {
 	ctrl(tea.KeyEnter)
 	ctrl(tea.KeyCtrlX)
 	ctrl(tea.KeyCtrlX)
-	if target := strings.Split(ansi.Strip(m.viewQuickBar(120, quickBarMaxRows)), "\n")[0]; !strings.Contains(target, "claude · opus · medium") {
+	if target := strings.Split(ansi.Strip(m.viewQuickBar(120, uiquick.BarMaxRows)), "\n")[0]; !strings.Contains(target, "claude · opus · medium") {
 		t.Fatalf("target row: %s", target)
 	}
 	ctrl(tea.KeyCtrlY)
 	if m.errBar.text != "profile: claude has none" {
 		t.Fatalf("ctrl+y status = %q, want the local answer", m.errBar.text)
 	}
-	m.quick.input.SetValue("build it")
+	m.quick().Input.SetValue("build it")
 	_, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m.runRemoteCmd(t, cmd)
 	want := []string{"spawn", "--json", "--prompt=build it", "--tool=claude", "--model=opus", "--effort=medium", "--group=web"}
@@ -453,19 +460,19 @@ func TestRemoteSpawnLeavesThisMachinesChoiceAlone(t *testing.T) {
 	m := connectedModel(t, fake)
 	answered(m, claudeLike, claudeAnswer)
 	const kept = `{"model":"opus","effort":"high"}`
-	m.settings.cache.applyValues([]settingValue{{Key: "choice.claude", Value: kept}})
+	m.settings.Cache.ApplyValues([]uisettings.Value{{Key: "choice.claude", Value: kept}})
 	m.rail.Focus(boxGroup)
 	m.openQuickMode()
 	setQuickTool(m, slices.Index(quickTools(m), "claude"))
-	if target := strings.Split(ansi.Strip(m.viewQuickBar(120, quickBarMaxRows)), "\n")[0]; strings.Contains(target, "opus") {
+	if target := strings.Split(ansi.Strip(m.viewQuickBar(120, uiquick.BarMaxRows)), "\n")[0]; strings.Contains(target, "opus") {
 		t.Fatalf("a remote bar starts on this machine's choice: %s", target)
 	}
 	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlX})
-	if got := m.settings.cache.value("choice.claude"); got != kept {
+	if got := m.settings.Cache.Value("choice.claude"); got != kept {
 		t.Fatalf("a pick for the host was kept as this machine's: %s", got)
 	}
-	m.quick.RestartChoice(m.spawnHost())
-	m.quick.input.SetValue("build it")
+	m.quick().RestartChoice(m.spawnHost())
+	m.quick().Input.SetValue("build it")
 	_, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m.runRemoteCmd(t, cmd)
 	want := []string{"spawn", "--json", "--prompt=build it", "--tool=claude", "--group=web"}
@@ -488,7 +495,7 @@ func TestQuickBarSavedPromptsTakeEnterOnARemoteTarget(t *testing.T) {
 	if cmd != nil || !m.remoteIdle() || len(fake.taken()) != 0 || m.errBar.text != "" {
 		t.Fatalf("enter in the list sent %q, status %q", fake.taken(), m.errBar.text)
 	}
-	if got := m.quick.input.Value(); got != savedToken("Role")+" " {
+	if got := m.quick().Input.Value(); got != composer.SavedToken("Role")+" " {
 		t.Fatalf("chip landed as %q", got)
 	}
 	_, cmd = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter})
@@ -528,10 +535,10 @@ func TestRemoteSendAndSpawnRefuseASecondEnterInFlight(t *testing.T) {
 			m.rail.Focus(tc.target)
 			if tc.name == "New Session form" {
 				m.openForm()
-				m.form.SetName("job")
+				m.form().SetName("job")
 			} else {
 				m.openQuickMode()
-				m.quick.input.SetValue("go on")
+				m.quick().Input.SetValue("go on")
 			}
 			first := tc.submit(m)
 			if second := tc.submit(m); second != nil || m.errBar.text != tc.want {
@@ -576,5 +583,158 @@ func TestRemoteActionsTheHostCannotTakeAreRefusedHere(t *testing.T) {
 	}
 	if calls := fake.taken(); len(calls) != 0 {
 		t.Fatalf("calls = %q, want none", calls)
+	}
+}
+
+func TestClicksOnTheConnectionDialog(t *testing.T) {
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 40
+	m.ssh = uilink.New(testRemoteClient(t), nil)
+	m.openConnectionDialog(remote.Connection{})
+	for _, tc := range []struct {
+		label string
+		field int
+	}{{"binary ", uiconnections.BinaryField}, {"ssh to ", uiconnections.DestinationField}, {"name ", uiconnections.NameField}} {
+		x, y := bodyCell(t, m, tc.label)
+		m = leftClick(m, x, y)
+		if !m.connectionDialogOpen() || m.connectionSurface().Dialog().Focus() != tc.field {
+			t.Fatalf("a click on %q: open %v", tc.label, m.connectionDialogOpen())
+		}
+	}
+	x, y := paintedCell(t, m, "esc")
+	if m = leftClick(m, x, y); m.connectionDialogOpen() {
+		t.Fatal("a click on the esc hint left the card open")
+	}
+}
+
+func (m *Model) connectionSurface() *uiconnections.Surface {
+	s, ok := surfaceOf[*uiconnections.Surface](m)
+	if !ok {
+		panic("the connection card is not open")
+	}
+	return s
+}
+
+func (m *Model) connectionDialogOpen() bool {
+	_, ok := surfaceOf[*uiconnections.Surface](m)
+	return ok
+}
+
+func openConnectionModel(t *testing.T) *Model {
+	t.Helper()
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 40
+	m.ssh = uilink.New(testRemoteClient(t), nil)
+	m.applyTestMsg(t, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	if !m.connectionDialogOpen() {
+		t.Fatal("the new connection key did not open the card")
+	}
+	return m
+}
+
+// typeConnection types a name and a destination into the open dialog.
+func typeConnection(m *Model, name, destination string) {
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(name)})
+	m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(destination)})
+}
+
+// esc closes the card and the status line it leaves is clear.
+func TestConnectionCardEscCloses(t *testing.T) {
+	m := openConnectionModel(t)
+	m.reportErr("stale")
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m.applyTestMsg(t, cmd())
+	if m.connectionDialogOpen() || len(m.surfaces) != 0 {
+		t.Fatalf("esc left %d surfaces", len(m.surfaces))
+	}
+	if m.errBar.text != "" {
+		t.Fatalf("status = %q, want it cleared", m.errBar.text)
+	}
+}
+
+// The card holds typed fields, so a stray click keeps the draft.
+func TestConnectionCardKeepsItsDraft(t *testing.T) {
+	m := openConnectionModel(t)
+	if top, _ := m.top(); top.Dismissible() {
+		t.Fatal("a card holding fields says a stray click closes it")
+	}
+	typeConnection(m, "box", "me@box")
+	m = clickBackdrop(t, m)
+	if !m.connectionDialogOpen() {
+		t.Fatal("a click off the card closed it")
+	}
+}
+
+// A save that completes after its card closed, or after another card
+// replaced it, neither closes nor releases the card on screen.
+func TestConnectionSaveCompletionIsFenced(t *testing.T) {
+	m := openConnectionModel(t)
+	stale := uilink.SaveRequest{Op: uilink.SaveAdd, Next: store.Connection{Name: "box", Destination: "me@box"}, Gen: m.connectionSurface().Gen()}
+	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m.applyConnectionSave(stale, uilink.SaveResult{}, nil)
+	if m.connectionDialogOpen() {
+		t.Fatal("a completion reopened a closed card")
+	}
+	m.openConnectionDialog(remote.Connection{})
+	m.applyConnectionSave(stale, uilink.SaveResult{}, nil)
+	if !m.connectionDialogOpen() {
+		t.Fatal("a stale completion closed the card that replaced it")
+	}
+}
+
+func TestNewConnectionKeyOpensTheDialogAndSavesToTheStore(t *testing.T) {
+	m := buildModel(t)
+	m.ssh = uilink.New(testRemoteClient(t), nil)
+	m.applyTestMsg(t, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	if !m.connectionDialogOpen() {
+		t.Fatal("C did not open the card")
+	}
+	typeConnection(m, "box", "me@box")
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyTestMsg(t, cmd())
+	m.drainEffects(t)
+	stored, err := m.services.store.Connections()
+	if err != nil || len(stored) != 1 || stored[0] != (store.Connection{Name: "box", Destination: "me@box"}) {
+		t.Fatalf("stored = %+v, %v", stored, err)
+	}
+	if !m.onList() || len(m.ssh.List()) != 1 {
+		t.Fatalf("mode %v list %+v", m.screenID(), m.ssh.List())
+	}
+	if selection, _ := m.rail.Selected(); selection != (uirail.Selection{Kind: uirail.ConnectionRow, Host: "box"}) {
+		t.Fatalf("selection = %+v, want the new connection", selection)
+	}
+
+	_, cmd = m.runRailIntent(uirail.Intent{Kind: uirail.Delete, Target: uirail.Selection{Kind: uirail.ConnectionRow, Host: "box"}})
+	if cmd != nil || !confirmOpen(m) || pendingConfirm(m).label != "remove connection box? Its sessions keep running on the host." {
+		t.Fatalf("delete: mode %v label %q", m.screenID(), pendingConfirm(m).label)
+	}
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.applyTestMsg(t, cmd())
+	m.drainEffects(t)
+	if stored, _ := m.services.store.Connections(); len(stored) != 0 || len(m.ssh.List()) != 0 {
+		t.Fatalf("stored %+v list %+v after removal", stored, m.ssh.List())
+	}
+}
+
+func TestAFailedConnectionSaveTakesEnterAgain(t *testing.T) {
+	m := buildModel(t)
+	m.ssh = uilink.New(testRemoteClient(t), nil)
+	if err := m.services.store.AddConnection(store.Connection{Name: "box", Destination: "me@elsewhere"}); err != nil {
+		t.Fatal(err)
+	}
+	m.applyTestMsg(t, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	typeConnection(m, "box", "me@box")
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyTestMsg(t, cmd())
+	m.drainEffects(t)
+	if !m.connectionDialogOpen() {
+		t.Fatal("a refused save closed the card")
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2")})
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("enter after a refused save did nothing")
 	}
 }

@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"os/exec"
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/catalog"
@@ -10,10 +9,17 @@ import (
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/status"
 	uiconnections "github.com/YoanWai/agent-manager/internal/ui/connections"
+	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
+	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -55,7 +61,7 @@ func (m *Model) connectionIntent(intent uirail.Intent) (tea.Cmd, bool) {
 	case uirail.Quit, uirail.OpenSettings, uirail.Resize, uirail.OpenMessages, uirail.OpenHelp, uirail.Prompt, uirail.NewSession:
 		return nil, false
 	}
-	row, ok := m.ssh.row(intent.Target)
+	row, ok := m.ssh.Row(intent.Target)
 	if !ok {
 		return nil, true
 	}
@@ -76,8 +82,7 @@ func (m *Model) connectionIntent(intent uirail.Intent) (tea.Cmd, bool) {
 	}
 	if intent.Kind == uirail.NewTerminal {
 		group := row.Group
-		return m.queueRemote(remoteRequest{op: remoteNewTerminal, host: row.Host,
-			terminal: sessioncmd.CreateTerminalOptions{Group: &group}}), true
+		return m.queueRemote(newTerminalCall(row.Host, group)), true
 	}
 	if row.Kind == uiconnections.SessionRow {
 		if cmd, ok := m.remoteSessionIntent(intent.Kind, row); ok {
@@ -91,7 +96,7 @@ func (m *Model) connectionIntent(intent uirail.Intent) (tea.Cmd, bool) {
 }
 
 func (m *Model) remoteSessionIntent(kind uirail.ActionKind, row uiconnections.Row) (tea.Cmd, bool) {
-	request := remoteRequest{host: row.Host, ref: row.Ref, name: row.Name}
+	request := remoteCall(row.Host, row.Ref, row.Name)
 	switch {
 	case (kind == uirail.Focus || kind == uirail.Attach) && row.Status == status.Dead:
 		// Its tmux session is gone, so an attach could only fail.
@@ -107,20 +112,20 @@ func (m *Model) remoteSessionIntent(kind uirail.ActionKind, row uiconnections.Ro
 		m.reportErr("a terminal on " + row.Host + " is not archived or revived - x closes it")
 		return nil, true
 	case kind == uirail.Kill && row.Terminal:
-		request.op = remoteCloseTerminal
+		request.Op = uilink.CloseTerminal
 	case kind == uirail.Kill:
-		request.op, request.dead = remoteKill, row.Status == status.Dead
+		request.Op, request.Dead = uilink.Kill, row.Status == status.Dead
 	case kind == uirail.Revive:
-		request.op = remoteRevive
+		request.Op = uilink.Revive
 	case kind == uirail.Archive || kind == uirail.Restore:
 		// Each key is a no-op in the view where its rows are already
 		// where it would put them.
 		if (kind == uirail.Restore) != row.Archived {
 			return nil, true
 		}
-		request.op = remoteArchive
+		request.Op = uilink.Archive
 		if row.Archived {
-			request.op = remoteRestore
+			request.Op = uilink.Restore
 		}
 	default:
 		return nil, false
@@ -130,45 +135,41 @@ func (m *Model) remoteSessionIntent(kind uirail.ActionKind, row uiconnections.Ro
 
 // remoteConfirm is the act and question a remote lifecycle call asks, the
 // way the same call on a local row does.
-var remoteConfirm = map[remoteOp]struct {
+var remoteConfirm = map[uilink.Op]struct {
 	action            uidialogs.ConfirmAction
 	verb, consequence string
 }{
-	remoteKill:          {actionKill, "kill", " frees its RAM there, v revives it."},
-	remoteCloseTerminal: {actionKill, "close terminal", ""},
-	remoteRevive:        {actionRevive, "revive", ""},
-	remoteArchive:       {actionArchive, "archive", ""},
-	remoteRestore:       {actionRestore, "restore", ""},
+	uilink.Kill:          {uidialogs.ConfirmKill, "kill", " frees its RAM there, v revives it."},
+	uilink.CloseTerminal: {uidialogs.ConfirmKill, "close terminal", ""},
+	uilink.Revive:        {uidialogs.ConfirmRevive, "revive", ""},
+	uilink.Archive:       {uidialogs.ConfirmArchive, "archive", ""},
+	uilink.Restore:       {uidialogs.ConfirmRestore, "restore", ""},
 }
 
 // confirmRemote asks before a lifecycle call goes to the host; an offline
 // host refuses before the question.
-func (m *Model) confirmRemote(request remoteRequest) tea.Cmd {
-	if refusal, offline := m.ssh.Offline(request.host); offline {
+func (m *Model) confirmRemote(request uilink.Call) tea.Cmd {
+	if refusal, offline := m.ssh.Offline(request.Host); offline {
 		m.reportErr(refusal)
 		return nil
 	}
-	ask := remoteConfirm[request.op]
-	if request.dead {
+	ask := remoteConfirm[request.Op]
+	if request.Dead {
 		// A dead agent holds no RAM there to free.
 		ask.consequence = ""
 	}
-	m.confirm.confirmTarget = confirmTarget{
+	m.openConfirm(confirmTarget{
 		action: ask.action,
-		label:  ask.verb + " " + escapeControlsInline(request.name) + " on " + request.host + "?" + ask.consequence,
+		label:  ask.verb + " " + presentation.EscapeControlsInline(request.Name) + " on " + request.Host + "?" + ask.consequence,
 		remote: &request,
-	}
-	m.mode = modeConfirmDelete
+	})
 	return nil
 }
 
-// runRemote is the confirmed remote call.
-func (m *Model) runRemote(request remoteRequest) tea.Cmd { return m.queueRemote(request) }
-
 // queueRemote puts a call on the remote lane, unless the host's last
 // refresh could not reach it.
-func (m *Model) queueRemote(request remoteRequest) tea.Cmd {
-	if refusal, offline := m.ssh.Offline(request.host); offline {
+func (m *Model) queueRemote(request uilink.Call) tea.Cmd {
+	if refusal, offline := m.ssh.Offline(request.Host); offline {
 		m.reportErr(refusal)
 		return nil
 	}
@@ -183,19 +184,19 @@ func (m *Model) queueRemote(request remoteRequest) tea.Cmd {
 
 // remoteRepeat refuses a second enter on a composer whose prompt or spawn
 // is still on its way to the host, as the local lane refuses one.
-func (m *Model) remoteRepeat(request remoteRequest) (string, bool) {
-	refusal, guarded := map[remoteOp]string{
-		remoteType:  "this prompt is already being sent",
-		remoteSpawn: "this spawn is already in progress",
-	}[request.op]
+func (m *Model) remoteRepeat(request uilink.Call) (string, bool) {
+	refusal, guarded := map[uilink.Op]string{
+		uilink.Type:  "this prompt is already being sent",
+		uilink.Spawn: "this spawn is already in progress",
+	}[request.Op]
 	if !guarded {
 		return "", false
 	}
-	for _, job := range append([]*effectJob{m.effects.remote.active}, m.effects.remote.pending...) {
+	for _, job := range append([]*uieffects.Job{m.effects.Remote.Active}, m.effects.Remote.Pending...) {
 		if job == nil {
 			continue
 		}
-		if pending, ok := job.request.(remoteRequest); ok && pending.op == request.op && pending.composerGen == request.composerGen {
+		if pending, ok := job.Request.(uilink.Call); ok && pending.Op == request.Op && pending.ComposerGen == request.ComposerGen {
 			return refusal, true
 		}
 	}
@@ -203,30 +204,18 @@ func (m *Model) remoteRepeat(request remoteRequest) (string, bool) {
 }
 
 func (m *Model) confirmRemoveConnection(name string) {
-	m.confirm.confirmTarget = confirmTarget{
-		action:     actionRemoveConnection,
+	m.openConfirm(confirmTarget{
+		action:     uidialogs.ConfirmRemoveConnection,
 		connection: name,
 		label:      "remove connection " + name + "? Its sessions keep running on the host.",
-	}
-	m.mode = modeConfirmDelete
+	})
 }
 
 // removeConnection is the confirmed removal; the connection's rows leave
 // with it, and the host is never told.
 func (m *Model) removeConnection(name string) {
 	m.clearErr()
-	m.enqueueEffect(connectionRequest{op: connectionRemove, name: name}, 0, false)
-}
-
-type remoteAttachReadyMsg struct {
-	host string
-	cmd  *exec.Cmd
-	err  error
-}
-
-type remoteAttachDoneMsg struct {
-	host string
-	err  error
+	m.enqueueEffect(uilink.SaveRequest{Op: uilink.SaveRemove, Name: name}, 0, false)
 }
 
 // attachRemote opens an SSH attach to the row's tmux session in this
@@ -236,20 +225,7 @@ func (m *Model) attachRemote(row uiconnections.Row) tea.Cmd {
 		m.reportErr(refusal)
 		return nil
 	}
-	client, ref := m.ssh.client, row.Ref
-	return func() tea.Msg {
-		cmd, err := client.AttachCommand(ref)
-		return remoteAttachReadyMsg{host: ref.Host, cmd: cmd, err: err}
-	}
-}
-
-func (m *Model) runRemoteAttach(msg remoteAttachReadyMsg) tea.Cmd {
-	if msg.err != nil {
-		m.reportErr(msg.err.Error())
-		return nil
-	}
-	host := msg.host
-	return execTerminalProcess(msg.cmd, func(err error) tea.Msg { return remoteAttachDoneMsg{host: host, err: err} })
+	return m.ssh.Attach(row)
 }
 
 // remoteQuickFacts aims the quick bar's target row at a connection: a
@@ -257,26 +233,27 @@ func (m *Model) runRemoteAttach(msg remoteAttachReadyMsg) tea.Cmd {
 // into, with the worktree left to the host until picked.
 func (m *Model) remoteQuickFacts(facts *uiquick.Facts) {
 	selection, _ := m.rail.Selected()
-	row, ok := m.ssh.row(selection)
+	row, ok := m.ssh.Row(selection)
 	if !ok {
 		return
 	}
-	host := subtleStyle().Render(" on ") + lipgloss.NewStyle().Foreground(colorRemote()).Render(row.Host)
+	host := uitheme.SubtleStyle().Render(" on ") + lipgloss.NewStyle().Foreground(uitheme.ColorRemote()).Render(row.Host)
 	if row.Kind == uiconnections.SessionRow {
-		facts.Remote = lipgloss.NewStyle().Foreground(colorBright()).Bold(true).Render(escapeControlsInline(row.Name)) + host
+		facts.Remote = lipgloss.NewStyle().Foreground(uitheme.ColorBright()).Bold(true).Render(presentation.EscapeControlsInline(row.Name)) + host
 		return
 	}
-	facts.Remote = lipgloss.NewStyle().Foreground(colorAccent2()).Render(escapeControlsInline(displayGroup(row.Group))) + host
+	facts.Remote = lipgloss.NewStyle().Foreground(uitheme.ColorAccent2()).Render(presentation.EscapeControlsInline(uiframe.DisplayGroup(row.Group))) + host
 	facts.RemoteSpawn = true
 	facts.WorktreeKnown, facts.WorktreeCapable = true, true
-	facts.WorktreeOn = m.quick.WorktreeTouched() && m.quick.Worktree()
-	facts.WorktreeInherit = !m.quick.WorktreeTouched()
+	q := m.quick()
+	facts.WorktreeOn = q.WorktreeTouched() && q.Worktree()
+	facts.WorktreeInherit = !q.WorktreeTouched()
 }
 
 // remoteQuickTarget is the connection row the quick bar is pointed at.
 func (m *Model) remoteQuickTarget() (uiconnections.Row, bool) {
 	selection, _ := m.rail.Selected()
-	return m.ssh.row(selection)
+	return m.ssh.Row(selection)
 }
 
 // remoteQuickRow is the connection row a send or spawn the quick bar
@@ -288,11 +265,11 @@ func (m *Model) remoteQuickRow() (row uiconnections.Row, taken, refused bool) {
 		m.reportErr(refusal)
 		return uiconnections.Row{}, true, true
 	}
-	row, ok := m.ssh.row(selection)
+	row, ok := m.ssh.Row(selection)
 	if !ok {
 		return uiconnections.Row{}, false, false
 	}
-	if len(m.quick.attachments) > 0 {
+	if len(m.quick().Attachments) > 0 {
 		m.reportErr(uirail.RemoteRefusal("pasted images"))
 		return row, true, true
 	}
@@ -307,11 +284,11 @@ func (m *Model) remoteQuickSend(text string) (tea.Cmd, bool) {
 		return nil, taken
 	}
 	if row.Terminal {
-		m.reportErr(shellPromptHint(row.Name))
+		m.reportErr(uisession.ShellPromptHint(row.Name))
 		return nil, true
 	}
 	request := m.quickRemoteRequest(row.Host, text)
-	request.op, request.ref, request.name = remoteType, row.Ref, row.Name
+	request.Op, request.Ref, request.Name = uilink.Type, row.Ref, row.Name
 	return m.queueRemote(request), true
 }
 
@@ -328,19 +305,19 @@ func (m *Model) remoteQuickSpawn(spawned spawn.Request) (tea.Cmd, bool) {
 	}
 	group := row.Group
 	request := m.quickRemoteRequest(row.Host, spawned.Prompt)
-	request.op = remoteSpawn
-	request.spawn = sessioncmd.CreateSessionOptions{Tool: spawned.Tool, Group: &group, Prompt: spawned.Prompt}
-	withRemoteChoice(&request.spawn, config.Choice(spawned.Pick))
+	request.Op = uilink.Spawn
+	request.Spawn = sessioncmd.CreateSessionOptions{Tool: spawned.Tool, Group: &group, Prompt: spawned.Prompt}
+	withRemoteChoice(&request.Spawn, config.Choice(spawned.Pick))
 	if spawned.WorktreeSet {
 		worktree := spawned.Worktree
-		request.spawn.Worktree = &worktree
+		request.Spawn.Worktree = &worktree
 	}
 	return m.queueRemote(request), true
 }
 
-func (m *Model) quickRemoteRequest(host, text string) remoteRequest {
-	q := &m.quick
-	return remoteRequest{host: host, text: text, draft: q.input.Value(), composerGen: q.gen, closeAfterSend: q.closeAfterSend}
+func (m *Model) quickRemoteRequest(host, text string) uilink.Call {
+	q := m.quick()
+	return uilink.Call{Host: host, Text: text, Draft: q.Input.Value(), ComposerGen: q.Gen, CloseAfterSend: q.CloseAfterSend}
 }
 
 // withRemoteChoice passes the choice as the host's spawn takes it: the
@@ -357,11 +334,11 @@ func withRemoteChoice(opts *sessioncmd.CreateSessionOptions, choice config.Choic
 // end is on a connection: the remote row the bar was aimed at is gone, or
 // the cursor slid to another row without the user moving it.
 func (m *Model) quickAimLost(selection uirail.Selection) (string, bool) {
-	aim := m.quick.aim
+	aim := railSelection(m.quick().Aim)
 	if !aim.Remote() && !selection.Remote() {
 		return "", false
 	}
-	if _, ok := m.ssh.row(aim); aim.Remote() && !ok {
+	if _, ok := m.ssh.Row(aim); aim.Remote() && !ok {
 		return "the agent this prompt was aimed at is gone from " + aim.Host + "; nothing was sent", true
 	}
 	if !sameRow(aim, selection) {
@@ -383,7 +360,7 @@ func sameRow(a, b uirail.Selection) bool {
 // lands in, when that row is on a connection.
 func (m *Model) remoteTarget() (formRemote, bool) {
 	selection, _ := m.rail.Selected()
-	row, ok := m.ssh.row(selection)
+	row, ok := m.ssh.Row(selection)
 	if !ok {
 		return formRemote{}, false
 	}
@@ -393,59 +370,61 @@ func (m *Model) remoteTarget() (formRemote, bool) {
 // remoteFormSpawn turns the New Session form's spawn into the remote
 // call: the tool, name, directory, prompt, choice and an explicit worktree
 // pick go to the host, which resolves the rest.
-func (m *Model) remoteFormSpawn(req spawnRequest) tea.Cmd {
-	if len(req.images) > 0 {
+func (m *Model) remoteFormSpawn(req uilaunch.Request) tea.Cmd {
+	if len(req.Images) > 0 {
 		m.reportErr(uirail.RemoteRefusal("pasted images"))
 		return nil
 	}
-	target := m.form.remote
+	target := m.form().Remote
+	group := target.Group
 	opts := sessioncmd.CreateSessionOptions{
-		Tool: req.toolName, Group: &target.group, Directory: strings.TrimSpace(req.rawDir), Prompt: req.prompt,
+		Tool: req.ToolName, Group: &group, Directory: strings.TrimSpace(req.RawDir), Prompt: req.Prompt,
 	}
-	withRemoteChoice(&opts, req.choice)
-	if !req.autoNamed {
-		opts.Name = req.name
+	withRemoteChoice(&opts, req.Choice)
+	if !req.AutoNamed {
+		opts.Name = req.Name
 	}
-	if !m.form.WorktreeAuto() {
-		worktree := req.wantWorktree
+	if !m.form().WorktreeAuto() {
+		worktree := req.WantWorktree
 		opts.Worktree = &worktree
 	}
-	return m.queueRemote(remoteRequest{op: remoteSpawn, host: target.host, spawn: opts, composerGen: req.composerGen, fromForm: true})
+	return m.queueRemote(uilink.Call{Op: uilink.Spawn, Host: target.Host, Spawn: opts, ComposerGen: req.ComposerGen, FromForm: true})
 }
 
-// formRemote is the connection and group a New Session form spawns into.
+// formRemote is the connection and group a New Session form spawns into,
+// as the root's own connection rows name them.
 type formRemote struct{ host, group string }
 
 func (r formRemote) on() bool { return r.host != "" }
-
-// aimRemote points an opened form at a connection: the group is fixed, the
-// directory is the host's to resolve, and the worktree inherits its default
-// until picked.
-func (d *formDialog) aimRemote(target formRemote) {
-	d.remote = target
-	d.groups = []groupOption{{path: target.group}}
-	d.groupIndex = 0
-	d.TakePath("")
-	d.SetDirPlaceholder("the group's directory on " + target.host)
-	d.SeedWorktree(false)
-}
 
 // remoteFormRequest takes the form requests that differ on a connection:
 // the group is fixed, nothing is probed locally, and the spawn goes to the
 // host.
 func (m *Model) remoteFormRequest(request spawn.FormRequest) (tea.Cmd, bool) {
-	if !m.form.remote.on() {
+	f := m.form()
+	if !f.Remote.On() {
 		return nil, false
 	}
 	switch {
 	case request.Group != 0, request.PickGroup, request.Probe:
 		return nil, true
 	case request.Toggle:
-		m.form.SetWorktree(m.form.WorktreeAuto() || !m.form.Worktree())
+		f.SetWorktree(f.WorktreeAuto() || !f.Worktree())
 		return nil, true
 	case request.Spawn != nil:
 		m.clearErr()
 		return m.remoteFormSpawn(m.formSpawnRequest(*request.Spawn)), true
 	}
 	return nil, false
+}
+
+// remoteCall is one call to a connection's CLI, as the local sites build it:
+// the host and the row it names, and no operation yet.
+func remoteCall(host string, ref remote.Ref, name string) uilink.Call {
+	return uilink.Call{Host: host, Ref: ref, Name: name}
+}
+
+// newTerminalCall opens a terminal in a connection's group.
+func newTerminalCall(host, group string) uilink.Call {
+	return uilink.Call{Op: uilink.NewTerminal, Host: host, Terminal: sessioncmd.CreateTerminalOptions{Group: &group}}
 }

@@ -12,9 +12,9 @@ import (
 func TestNoticeMarksAreResolvedWithoutChangingExternalContent(t *testing.T) {
 	m := noticeModel(noticeStore(t), "v1.0.0")
 	const text = "⚙❯✳ literal notice"
-	m.notices.feedMessages = []feed.Message{{ID: "literal", Title: text, Body: []string{text}, URL: "https://example.com"}}
-	m.update.latest = "v1.1.0"
-	m.update.refreshing, m.update.applying = true, true
+	m.release.Feed = []feed.Message{{ID: "literal", Title: text, Body: []string{text}, URL: "https://example.com"}}
+	m.release.Latest = "v1.1.0"
+	m.release.Refreshing, m.release.Applying = true, true
 	for _, tc := range []struct {
 		mode                                                   presentation.GlyphMode
 		feed, welcome, update, refresh, download, link, cursor string
@@ -51,7 +51,7 @@ func TestNoticeMarksAreResolvedWithoutChangingExternalContent(t *testing.T) {
 			}
 		}
 		m.notices.Open(notices, "update-v1.1.0")
-		got = ansi.Strip(strings.Join(m.viewNotices(), "\n"))
+		got = ansi.Strip(strings.Join(m.notices.View(m.activeNotices(), m.noticesFrame()), "\n"))
 		if !strings.Contains(got, tc.cursor+" "+tc.update) {
 			t.Fatalf("%s notice cursor = %s", tc.mode, got)
 		}

@@ -35,7 +35,7 @@ func TestRootMenuOpensSettings(t *testing.T) {
 	}
 	_, cmd := leftClickCmd(m, m.layout.displayedRail.MenuRect.Left+2, m.layout.displayedRail.MenuRect.Top+1+settings)
 	m.runBatch(t, cmd)
-	if m.rail.MenuOpen() || m.mode != modeSettings {
+	if m.rail.MenuOpen() || !m.settingsOpen() {
 		t.Fatal("root menu must open Settings even in an empty workspace")
 	}
 }
@@ -52,17 +52,17 @@ func TestAMenuEntryRunsOnTheRelease(t *testing.T) {
 	settings, other := menuEntry(t, m, "Settings"), menuEntry(t, m, "New session")
 	menu := m.layout.displayedRail.MenuRect
 	x, y := menu.Left+2, menu.Top+1+settings
-	if m = leftPress(m, x, y); !m.rail.MenuOpen() || m.mode != modeList {
-		t.Fatalf("the press alone ran the entry, menu %v mode %v", m.rail.MenuOpen(), m.mode)
+	if m = leftPress(m, x, y); !m.rail.MenuOpen() || !m.onList() {
+		t.Fatalf("the press alone ran the entry, menu %v mode %v", m.rail.MenuOpen(), m.screenID())
 	}
-	if m = leftRelease(m, x, menu.Top+1+other); !m.rail.MenuOpen() || m.mode != modeList {
-		t.Fatalf("a press slid onto another entry ran it, menu %v mode %v", m.rail.MenuOpen(), m.mode)
+	if m = leftRelease(m, x, menu.Top+1+other); !m.rail.MenuOpen() || !m.onList() {
+		t.Fatalf("a press slid onto another entry ran it, menu %v mode %v", m.rail.MenuOpen(), m.screenID())
 	}
 	m = leftPress(m, x, y)
 	m, cmd := leftReleaseCmd(m, x, y)
 	m.runBatch(t, cmd)
-	if m.rail.MenuOpen() || m.mode != modeSettings {
-		t.Fatalf("the release should run the entry, menu %v mode %v", m.rail.MenuOpen(), m.mode)
+	if m.rail.MenuOpen() || !m.settingsOpen() {
+		t.Fatalf("the release should run the entry, menu %v mode %v", m.rail.MenuOpen(), m.screenID())
 	}
 }
 
@@ -84,8 +84,8 @@ func TestMenuStaysOpenAfterTheDotsRelease(t *testing.T) {
 	}
 	updated, _ = m.handleMouse(tea.MouseMsg{X: m.layout.displayedRail.Width, Y: y, Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft})
 	m = updated.(*Model)
-	if !m.rail.MenuOpen() || m.mode != modeList {
-		t.Fatalf("the release after […] should leave the menu up and unfocused, menu = %v mode = %v", m.rail.MenuOpen(), m.mode)
+	if !m.rail.MenuOpen() || !m.onList() {
+		t.Fatalf("the release after […] should leave the menu up and unfocused, menu = %v screen = %v", m.rail.MenuOpen(), m.screenID())
 	}
 }
 
@@ -110,8 +110,8 @@ func TestRightClickOpensTheRowMenuAndRunsAnEntry(t *testing.T) {
 	}
 	rename := menuEntry(t, m, "Rename")
 	m, _ = leftClickCmd(m, m.layout.displayedRail.MenuRect.Left+2, m.layout.displayedRail.MenuRect.Top+1+rename)
-	if m.rail.MenuOpen() || m.mode != modeRename {
-		t.Fatalf("clicking Rename should open rename, menu = %v mode = %v", m.rail.MenuOpen(), m.mode)
+	if m.rail.MenuOpen() || !renameOpen(m) {
+		t.Fatalf("clicking Rename should open rename, menu = %v screen = %v", m.rail.MenuOpen(), m.screenID())
 	}
 }
 
@@ -129,8 +129,8 @@ func TestRowMenuClosesOnEscAndOutsideClick(t *testing.T) {
 	preparedView(m)
 	updated, _ := m.handleMouse(tea.MouseMsg{X: m.layout.width - 1, Y: m.layout.height - 1, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
 	m = updated.(*Model)
-	if m.rail.MenuOpen() || m.mode != modeList {
-		t.Fatalf("a click outside should close the menu only, menu = %v mode = %v", m.rail.MenuOpen(), m.mode)
+	if m.rail.MenuOpen() || !m.onList() {
+		t.Fatalf("a click outside should close the menu only, menu = %v screen = %v", m.rail.MenuOpen(), m.screenID())
 	}
 }
 
@@ -145,8 +145,8 @@ func TestRightClickOnTheRailWhileFocusedOpensTheMenu(t *testing.T) {
 	m.drainEffects(t)
 
 	m = railMouse(t, m, "beta", tea.MouseActionPress, tea.MouseButtonRight)
-	if m.mode != modeList || !m.rail.MenuOpen() {
-		t.Fatalf("right click on the rail should leave focus and open the menu, mode = %v menu = %v", m.mode, m.rail.MenuOpen())
+	if !m.onList() || !m.rail.MenuOpen() {
+		t.Fatalf("right click on the rail should leave focus and open the menu, screen = %v menu = %v", m.screenID(), m.rail.MenuOpen())
 	}
 }
 
@@ -171,8 +171,8 @@ func TestGroupMenuCreatesAndNeverAttaches(t *testing.T) {
 	}
 	quick := menuEntry(t, m, "Quick prompt mode")
 	m, _ = leftClickCmd(m, m.layout.displayedRail.MenuRect.Left+2, m.layout.displayedRail.MenuRect.Top+1+quick)
-	if !m.quick.active || m.mode != modeList {
-		t.Fatalf("group menu should open quick prompt mode, active = %v mode = %v", m.quick.active, m.mode)
+	if (m.quick() == nil) || !m.onList() {
+		t.Fatalf("group menu should open quick prompt mode, active = %v screen = %v", (m.quick() != nil), m.screenID())
 	}
 }
 
@@ -189,8 +189,8 @@ func TestGroupMenuReviveAsksLikeTheKey(t *testing.T) {
 	m = railMouseAtLine(t, m, paintedGroupLines(t, m, "work")[0], tea.MouseActionPress, tea.MouseButtonRight)
 	revive := menuEntry(t, m, "Revive")
 	m, _ = leftClickCmd(m, m.layout.displayedRail.MenuRect.Left+2, m.layout.displayedRail.MenuRect.Top+1+revive)
-	if m.mode != modeConfirmDelete || !m.confirm.isGroup {
-		t.Fatalf("Revive on a group with two dead sessions should open the group card, mode = %v isGroup = %v", m.mode, m.confirm.isGroup)
+	if !confirmOpen(m) || !pendingConfirm(m).isGroup {
+		t.Fatalf("Revive on a group with two dead sessions should open the group card, screen = %v isGroup = %v", m.screenID(), pendingConfirm(m).isGroup)
 	}
 	for _, sess := range m.workspace.sessions {
 		if m.services.tmux.Exists(sess.ID) {
@@ -234,8 +234,8 @@ func TestMenuPicksTheEntryAPressIsReleasedOn(t *testing.T) {
 	at.Action = tea.MouseActionRelease
 	updated, _ = m.handleMouse(at)
 	m = updated.(*Model)
-	if m.mode != modeRename {
-		t.Fatalf("releasing on Rename should run it, mode = %v", m.mode)
+	if !renameOpen(m) {
+		t.Fatalf("releasing on Rename should run it, screen = %v", m.screenID())
 	}
 }
 

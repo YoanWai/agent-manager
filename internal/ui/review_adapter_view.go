@@ -4,7 +4,11 @@ import (
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/diff"
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
+	uistartup "github.com/YoanWai/agent-manager/internal/ui/startup"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -15,14 +19,14 @@ func (m *Model) reviewRenderContext() uireview.RenderContext {
 	return uireview.RenderContext{
 		GlyphMode: m.prefs.glyphMode,
 		Styles: uireview.Styles{
-			Muted: mutedStyle(), Subtle: subtleStyle(), Value: valueStyle(), Err: errStyle(), Done: doneStyle(),
-			Annotation: annotationStyle(), Section: sectionStyle(), Rule: lipgloss.NewStyle().Foreground(colorBorder()),
-			Chip: chipStyle(), Selected: selectedRowStyle(),
-			Accent: colorAccent(), Accent2: colorAccent2(), Finished: colorFinished(), Errored: colorErrored(),
-			SelectedReapply: "\x1b[0m" + bgSeq(current().Surface) + fgSeq(current().Bright),
-			AnnotationBg:    annotationBg(), HandledAnnotationBg: handledAnnotationBg(),
+			Muted: uitheme.MutedStyle(), Subtle: uitheme.SubtleStyle(), Value: uitheme.ValueStyle(), Err: uitheme.ErrStyle(), Done: uitheme.DoneStyle(),
+			Annotation: uitheme.AnnotationStyle(), Section: uitheme.SectionStyle(), Rule: lipgloss.NewStyle().Foreground(uitheme.ColorBorder()),
+			Chip: uitheme.ChipStyle(), Selected: uitheme.SelectedRowStyle(),
+			Accent: uitheme.ColorAccent(), Accent2: uitheme.ColorAccent2(), Finished: uitheme.ColorFinished(), Errored: uitheme.ColorErrored(),
+			SelectedReapply: "\x1b[0m" + uitheme.BgSeq(uitheme.Current().Surface) + uitheme.FgSeq(uitheme.Current().Bright),
+			AnnotationBg:    uitheme.AnnotationBg(), HandledAnnotationBg: uitheme.HandledAnnotationBg(),
 		},
-		CursorMarker: cursorAnchorMarker,
+		CursorMarker: uiframe.CursorMarker,
 	}
 }
 
@@ -37,23 +41,12 @@ func (m *Model) currentFileDiff() *diff.FileDiff {
 func (m *Model) diffFileHidden(fd *diff.FileDiff) bool { return m.review.FileHidden(fd) }
 
 func (m *Model) diffCodeHeight() int {
-	height := m.layout.height - 6 - lipgloss.Height(m.viewDiffFooter())
-	if m.review.Snapshot().Annotating {
-		height -= m.diffAnnBarRows() + 1
-	}
-	height -= 2
-	if height < 1 {
-		height = 1
-	}
-	return height
+	return uireview.CodeHeight(m.layout.height, lipgloss.Height(m.viewDiffFooter()), m.diffAnnBarRows())
 }
 
 func (m *Model) diffAnnBarRows() int {
-	if !m.review.Snapshot().Annotating {
-		return 0
-	}
 	_, codeWidth := m.diffPaneWidths()
-	return 1 + m.review.AnnotationInputHeight(codeWidth-2*contentGutter)
+	return m.review.AnnotationBarRows(codeWidth - 2*contentGutter)
 }
 
 func (m *Model) diffPaneWidths() (fileWidth, codeWidth int) {
@@ -62,7 +55,7 @@ func (m *Model) diffPaneWidths() (fileWidth, codeWidth int) {
 
 // prepareReviewLayout performs the only Review layout mutations before View.
 func (m *Model) prepareReviewLayout() {
-	if m.mode != modeDiff || m.layout.width <= 0 || m.layout.height <= 0 {
+	if m.base != baseReview || m.layout.width <= 0 || m.layout.height <= 0 {
 		return
 	}
 	footer := m.viewDiffFooter()
@@ -79,12 +72,12 @@ func (m *Model) prepareReviewLayout() {
 }
 
 func (m *Model) reviewRing(label string, width, height int) string {
-	return strings.Join(ringLoader(m.glyphs(), width, height, label, m.startup.startupPhase), "\n")
+	return strings.Join(uistartup.Ring(m.glyphs(), width, height, label, m.startup.LoadPhase, uitheme.Current()), "\n")
 }
 
 func (m *Model) reviewSpinnerLine(label string) string {
-	frame := m.glyphs().StartupFrame(m.startup.startupPhase)
-	return mutedStyle().Render(frame + " " + label)
+	frame := m.glyphs().StartupFrame(m.startup.LoadPhase)
+	return uitheme.MutedStyle().Render(frame + " " + label)
 }
 
 // viewDiffFull is the full-screen review mode: file list on the left,
@@ -104,38 +97,38 @@ func (m *Model) viewDiffFull() string {
 	// Files sit on the rail surface, the code on the backdrop: the same
 	// two-surface split the session list uses, so review reads as the same
 	// application rather than a second one.
-	fileLines := append([]string{"", strings.Repeat(" ", railInset) + subtleStyle().Render("files")},
-		indentLines(splitLines(m.viewDiffFileList(fileWidth-2*railGutter, bodyHeight-2)), railInset)...)
-	codeLines := append([]string{"", "  " + subtleStyle().Render(escapeControlsInline(m.review.CodeTitle()))},
-		indentLines(splitLines(m.viewDiffCode(codeWidth-2*contentGutter, bodyHeight-2)), contentGutter)...)
+	fileLines := append([]string{"", strings.Repeat(" ", railInset) + uitheme.SubtleStyle().Render("files")},
+		uitheme.IndentLines(uitheme.SplitLines(m.viewDiffFileList(fileWidth-2*uiframe.RailGutter, bodyHeight-2)), railInset)...)
+	codeLines := append([]string{"", "  " + uitheme.SubtleStyle().Render(presentation.EscapeControlsInline(m.review.CodeTitle()))},
+		uitheme.IndentLines(uitheme.SplitLines(m.viewDiffCode(codeWidth-2*contentGutter, bodyHeight-2)), contentGutter)...)
 
 	// The column seam tees into the rules that open and close the body,
 	// same as the list view, so the two screens share one frame language.
 	frame := []string{
-		paint(m.viewDiffHeader(sess.Name), m.layout.width, backdropHex()),
+		uitheme.Paint(m.viewDiffHeader(sess.Name), m.layout.width, uitheme.BackdropHex()),
 		m.boundedRuleRow(fileWidth+1, m.layout.width, "▀"),
 	}
 	m.placePainted(m.review.HeaderKeys(), 0, 0)
 	edge := make([]string, bodyHeight)
 	for i := range edge {
-		edge[i] = railEdgeCell(panelHex())
+		edge[i] = railEdgeCell(uitheme.PanelHex())
 	}
-	frame = append(frame, joinColumns(
+	frame = append(frame, uitheme.JoinColumns(
 		edge,
-		paintRows(fileLines, fileWidth-1, bodyHeight, panelHex()),
+		uitheme.PaintRows(fileLines, fileWidth-1, bodyHeight, uitheme.PanelHex()),
 		m.vruleColumn(bodyHeight),
 		m.bleedColumn(bodyHeight),
-		paintRows(codeLines, codeWidth, bodyHeight, backdropHex()),
+		uitheme.PaintRows(codeLines, codeWidth, bodyHeight, uitheme.BackdropHex()),
 	)...)
 	frame = append(frame, m.boundedRuleRow(fileWidth+1, m.layout.width, "▄"))
 	status := m.viewDiffStatus()
 	if m.errBar.text == "" {
 		m.placePainted(m.review.StatusKeys(), 0, len(frame))
 	}
-	frame = append(frame, paint(status, m.layout.width, backdropHex()))
+	frame = append(frame, uitheme.Paint(status, m.layout.width, uitheme.BackdropHex()))
 	m.placeKeys(footer.hits, 0, len(frame))
-	for _, line := range splitLines(footer.text) {
-		frame = append(frame, paint(line, m.layout.width, backdropHex()))
+	for _, line := range uitheme.SplitLines(footer.text) {
+		frame = append(frame, uitheme.Paint(line, m.layout.width, uitheme.BackdropHex()))
 	}
 	return strings.Join(frame, "\n")
 }

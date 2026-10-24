@@ -1,7 +1,8 @@
 // Package quick is the docked prompt bar: its tool and choice, the list
-// open above its prompt, its keys, clicks and view, and the answer or spawn
-// enter asks for. The root opens it, owns its prompt box, moves its target
-// and runs what its Request asks for.
+// open above its prompt, its keys, clicks and view, the answer or spawn
+// enter asks for, and the non-card surface it sits on the stack behind. The
+// root opens it, owns its prompt box, moves its target and runs what its
+// Request asks for.
 package quick
 
 import (

@@ -46,7 +46,7 @@ def write_install_fixture(sandbox):
     node.write_text('#!/bin/sh\nexit 0\n')
     node.chmod(0o755)
     config_dir = profile_dir(sandbox)
-    config_dir.mkdir(parents=True)
+    config_dir.mkdir(parents=True, exist_ok=True)
     (config_dir / 'config.toml').write_text(config_fixture_text())
     # Only runtime helpers are discoverable before the fixture installs cmd.
     for name in ('tmux', 'git', 'sh', 'bash', 'env', 'mkdir', 'cat', 'chmod',

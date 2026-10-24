@@ -66,8 +66,6 @@ type PickerChoice struct {
 // Choice is set only on a close that picked a row.
 type PickerResult struct {
 	Close  bool
-	Quit   bool
-	Error  string
 	Choice *PickerChoice
 }
 
@@ -116,13 +114,11 @@ func (p Picker) filteredRows() []PickerRow {
 	return out
 }
 
-// Key applies one key. sourceCurrent is whether the picker's source still
-// names the open review; Enter on a stale picker closes it without a choice.
-func (p *Picker) Key(msg tea.KeyMsg, sourceCurrent bool) PickerResult {
+// Key applies one key. Whether the choice still names the open review is
+// root's to check, with Source, when it acts on it.
+func (p *Picker) Key(msg tea.KeyMsg) PickerResult {
 	rows := p.filteredRows()
 	switch msg.Type {
-	case tea.KeyCtrlC:
-		return PickerResult{Quit: true}
 	case tea.KeyEsc:
 		return PickerResult{Close: true}
 	case tea.KeyUp:
@@ -137,9 +133,6 @@ func (p *Picker) Key(msg tea.KeyMsg, sourceCurrent bool) PickerResult {
 	case tea.KeyEnter:
 		if len(rows) == 0 {
 			return PickerResult{}
-		}
-		if !sourceCurrent {
-			return PickerResult{Close: true, Error: "review changed; reopen the picker"}
 		}
 		return PickerResult{Close: true, Choice: &PickerChoice{Kind: p.kind, Value: rows[p.cursor].Root}}
 	case tea.KeyRunes:
@@ -166,12 +159,12 @@ func (p *Picker) window(height, count int) (start, end int) {
 // Click is a press on line of the card's body. The first click on a row
 // moves the cursor there; one on the row under the cursor picks it, the way
 // ↵ does.
-func (p *Picker) Click(line int, sourceCurrent bool) PickerResult {
+func (p *Picker) Click(line int) PickerResult {
 	row, ok := p.lines.At(line)
 	if !ok || !presentation.ClickRow(&p.cursor, row) {
 		return PickerResult{}
 	}
-	return p.Key(tea.KeyMsg{Type: tea.KeyEnter}, sourceCurrent)
+	return p.Key(tea.KeyMsg{Type: tea.KeyEnter})
 }
 
 // row renders one picker row inside a card of inner width.

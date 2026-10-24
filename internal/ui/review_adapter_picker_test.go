@@ -1,17 +1,23 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
+	"github.com/YoanWai/agent-manager/internal/diff"
+	"github.com/YoanWai/agent-manager/internal/git"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
+	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
+	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
+	uisurface "github.com/YoanWai/agent-manager/internal/ui/surface"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/YoanWai/agent-manager/internal/diff"
-	"github.com/YoanWai/agent-manager/internal/git"
-	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 // A session whose cwd is an umbrella of several repos opens review on the
@@ -61,20 +67,20 @@ func TestRepoPickerFiltersAndSelects(t *testing.T) {
 	}
 
 	m.pressDiffKey(t, 'r')
-	if m.mode != modeRepoPick {
-		t.Fatalf("r should open the repo picker, mode = %v", m.mode)
+	if !m.pickerOpen() {
+		t.Fatalf("r should open the repo picker, screen = %v", m.screenID())
 	}
 	for _, r := range "alph" {
 		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 	}
-	if got := m.reviewNav.picker.FilteredRows(); len(got) != 1 || got[0].Label != "alpha" {
+	if got := m.pickerOf(t).FilteredRows(); len(got) != 1 || got[0].Label != "alpha" {
 		t.Fatalf("filter should narrow to alpha, got %v", got)
 	}
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	*m = *updated.(*Model)
 	m.drainCmds(t, cmd)
-	if m.mode != modeDiff {
-		t.Fatalf("enter should return to review, mode = %v", m.mode)
+	if m.base != baseReview {
+		t.Fatalf("enter should return to review, screen = %v", m.screenID())
 	}
 	if got := filepath.Base(m.review.Snapshot().RepoSelected); got != "alpha" {
 		t.Fatalf("enter should select alpha, got %q", got)
@@ -94,8 +100,8 @@ func TestRepoPickerEscapeKeepsRepo(t *testing.T) {
 	m.pressDiffKey(t, 'r')
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	*m = *updated.(*Model)
-	if m.mode != modeDiff {
-		t.Fatalf("esc should return to review, mode = %v", m.mode)
+	if m.base != baseReview {
+		t.Fatalf("esc should return to review, screen = %v", m.screenID())
 	}
 	if m.review.Snapshot().RepoSelected != before || filepath.Base(m.review.Snapshot().RepoSelected) != dirtyName {
 		t.Fatalf("esc should not change the repo, got %q", m.review.Snapshot().RepoSelected)
@@ -120,10 +126,10 @@ func TestBranchPickerListsWorktreesAndSwitches(t *testing.T) {
 	m.drainCmds(t, m.selectRepo(alpha))
 
 	m.pressDiffKey(t, 'b')
-	if m.mode != modeRepoPick {
-		t.Fatalf("b should open the branch picker, mode = %v (err=%q)", m.mode, m.errBar.text)
+	if !m.pickerOpen() {
+		t.Fatalf("b should open the branch picker, screen = %v (err=%q)", m.screenID(), m.errBar.text)
 	}
-	rendered := m.viewRepoPick()
+	rendered := m.viewPicker(t)
 	if !strings.Contains(rendered, "feature/pick-me") {
 		t.Fatalf("picker should show the worktree branch, got:\n%s", rendered)
 	}
@@ -186,11 +192,11 @@ func TestBranchPickerSeedsCursorForSymlinkedWorktree(t *testing.T) {
 	}
 
 	m.pressDiffKey(t, 'b')
-	if m.mode != modeRepoPick {
-		t.Fatalf("b should open the branch picker, mode = %v (err=%q)", m.mode, m.errBar.text)
+	if !m.pickerOpen() {
+		t.Fatalf("b should open the branch picker, screen = %v (err=%q)", m.screenID(), m.errBar.text)
 	}
 	resolvedWorktree, _ := filepath.EvalSymlinks(rawWorktree)
-	rows := m.reviewNav.picker.FilteredRows()
+	rows := m.pickerOf(t).FilteredRows()
 	wantCursor := -1
 	for i, row := range rows {
 		if resolved, _ := filepath.EvalSymlinks(row.Root); resolved == resolvedWorktree {
@@ -204,8 +210,8 @@ func TestBranchPickerSeedsCursorForSymlinkedWorktree(t *testing.T) {
 	if wantCursor == 0 {
 		t.Fatal("test setup invalid: declared worktree must not already be row 0")
 	}
-	if m.reviewNav.picker.Cursor() != wantCursor {
-		t.Fatalf("cursor should seed on the declared worktree row %d, got %d", wantCursor, m.reviewNav.picker.Cursor())
+	if m.pickerOf(t).Cursor() != wantCursor {
+		t.Fatalf("cursor should seed on the declared worktree row %d, got %d", wantCursor, m.pickerOf(t).Cursor())
 	}
 }
 
@@ -262,8 +268,8 @@ func TestHandPickedRepoOutlivesReopen(t *testing.T) {
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	*m = *updated.(*Model)
 	m.drainCmds(t, cmd)
-	if m.mode != modeList {
-		t.Fatalf("esc should leave review, mode = %v", m.mode)
+	if !m.onList() {
+		t.Fatalf("esc should leave review, screen = %v", m.screenID())
 	}
 	m.drainCmds(t, m.openDiff())
 	if got := filepath.Base(m.review.Snapshot().RepoSelected); got != "bravo" {
@@ -312,7 +318,7 @@ func TestVanishedHandPickedRepoIsReportedAndForgotten(t *testing.T) {
 	if !strings.Contains(m.viewDiffStatus(), m.errBar.text) {
 		t.Fatalf("review status should show %q", m.errBar.text)
 	}
-	if _, still := m.ledger.pickedRepos[sess.ID]; still {
+	if _, still := m.ledger.lifecycle.PickedRepos[sess.ID]; still {
 		t.Fatal("the dead pick must be forgotten so the declaration can take over")
 	}
 
@@ -412,8 +418,8 @@ func TestRepoPickerReportsMissingSession(t *testing.T) {
 	before := m.review.Snapshot().RepoSelected
 
 	m.pressDiffKey(t, 'r')
-	if m.mode != modeRepoPick {
-		t.Fatalf("r should open the repo picker, mode = %v", m.mode)
+	if !m.pickerOpen() {
+		t.Fatalf("r should open the repo picker, screen = %v", m.screenID())
 	}
 	for _, r := range "alph" {
 		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
@@ -426,7 +432,12 @@ func TestRepoPickerReportsMissingSession(t *testing.T) {
 	t.Cleanup(func() { m.workspace.sessions = sessions })
 	m.workspace.sessions = nil
 
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, pick := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	if pick == nil {
+		t.Fatal("enter did not carry the pick to the adapter")
+	}
+	updated, cmd := m.Update(pick())
 	*m = *updated.(*Model)
 	if cmd != nil {
 		t.Fatal("a missing session must not kick off a diff load")
@@ -466,14 +477,14 @@ func TestRepoPickerSurvivesShrinkingRootList(t *testing.T) {
 	replaceReviewRootsForTest(m, expanded, m.review.Snapshot().RepoSelected)
 
 	m.pressDiffKey(t, 'r')
-	if m.mode != modeRepoPick {
-		t.Fatalf("r should open the repo picker, mode = %v", m.mode)
+	if !m.pickerOpen() {
+		t.Fatalf("r should open the repo picker, screen = %v", m.screenID())
 	}
-	for m.reviewNav.picker.Cursor() != 1 {
+	for m.pickerOf(t).Cursor() != 1 {
 		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
 		*m = *updated.(*Model)
 	}
-	onScreen := m.reviewNav.picker.FilteredRows()[m.reviewNav.picker.Cursor()].Root
+	onScreen := m.pickerOf(t).FilteredRows()[m.pickerOf(t).Cursor()].Root
 
 	// A reload lands carrying only the repos that still exist, re-ranked.
 	replaceReviewRootsForTest(m, []string{realRoots[1], realRoots[0]}, m.review.Snapshot().RepoSelected)
@@ -482,11 +493,8 @@ func TestRepoPickerSurvivesShrinkingRootList(t *testing.T) {
 	*m = *updated.(*Model)
 	m.drainCmds(t, cmd)
 
-	if m.mode != modeDiff {
-		t.Fatalf("enter should return to review, mode = %v", m.mode)
-	}
-	if m.reviewNav.picker.Cursor() >= len(m.reviewNav.picker.Rows()) {
-		t.Fatalf("cursor should stay inside the snapshot, got %d", m.reviewNav.picker.Cursor())
+	if m.base != baseReview || m.pickerOpen() {
+		t.Fatalf("enter should return to review, screen = %v", m.screenID())
 	}
 	if m.review.Snapshot().RepoSelected != onScreen {
 		t.Fatalf("enter should load the repo on the cursor row %q, got %q", onScreen, m.review.Snapshot().RepoSelected)
@@ -506,7 +514,7 @@ func TestRepoPickerFitsTerminalHeight(t *testing.T) {
 	replaceReviewRootsForTest(m, roots, roots[0])
 	m.openRepoPick()
 
-	view := m.viewRepoPick()
+	view := m.viewPicker(t)
 	if lines := len(strings.Split(view, "\n")); lines > m.layout.height {
 		t.Fatalf("picker rendered %d lines, terminal is %d", lines, m.layout.height)
 	}
@@ -523,10 +531,10 @@ func TestRepoPickerFitsTerminalHeight(t *testing.T) {
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
 	*m = *updated.(*Model)
-	if m.reviewNav.picker.Cursor() != len(m.review.Snapshot().RepoRoots)-1 {
-		t.Fatalf("up from the top should wrap to the last repo, cursor = %d", m.reviewNav.picker.Cursor())
+	if m.pickerOf(t).Cursor() != len(m.review.Snapshot().RepoRoots)-1 {
+		t.Fatalf("up from the top should wrap to the last repo, cursor = %d", m.pickerOf(t).Cursor())
 	}
-	view = m.viewRepoPick()
+	view = m.viewPicker(t)
 	if lines := len(strings.Split(view, "\n")); lines > m.layout.height {
 		t.Fatalf("picker rendered %d lines at the list end, terminal is %d", lines, m.layout.height)
 	}
@@ -554,11 +562,11 @@ func TestBasePickerPersistsSwitchesScopeAndClears(t *testing.T) {
 	}
 
 	m.pressDiffKey(t, 'B')
-	if m.mode != modeRepoPick {
-		t.Fatalf("B should open the base picker, mode = %v", m.mode)
+	if !m.pickerOpen() {
+		t.Fatalf("B should open the base picker, screen = %v", m.screenID())
 	}
 	labels := map[string]bool{}
-	for _, row := range m.reviewNav.picker.Rows() {
+	for _, row := range m.pickerOf(t).Rows() {
 		labels[row.Label] = true
 	}
 	if !labels["auto"] || !labels["feature"] {
@@ -566,8 +574,8 @@ func TestBasePickerPersistsSwitchesScopeAndClears(t *testing.T) {
 	}
 
 	m.typeAndEnter(t, "feature")
-	if m.mode != modeDiff {
-		t.Fatalf("enter should return to review, mode = %v", m.mode)
+	if m.base != baseReview {
+		t.Fatalf("enter should return to review, screen = %v", m.screenID())
 	}
 	if m.review.Snapshot().Scope != git.ScopeBranch {
 		t.Errorf("picking a base should switch scope to vs target, got %v", m.review.Snapshot().Scope)
@@ -601,8 +609,8 @@ func TestBasePickerPersistsSwitchesScopeAndClears(t *testing.T) {
 	}
 
 	m.pressDiffKey(t, 'B')
-	if m.mode != modeRepoPick {
-		t.Fatalf("B should reopen the base picker, mode = %v", m.mode)
+	if !m.pickerOpen() {
+		t.Fatalf("B should reopen the base picker, screen = %v", m.screenID())
 	}
 	m.typeAndEnter(t, "auto")
 	cleared, err := m.services.store.ReviewBase(sess.ID, m.review.Snapshot().RepoSelected)
@@ -649,11 +657,11 @@ func TestInvalidStoredBaseStillOpensPickerAndRecovers(t *testing.T) {
 	}
 
 	m.drainCmds(t, m.openBasePick())
-	if m.mode != modeRepoPick {
-		t.Fatalf("B must open the base picker after the load errored, mode = %v (err=%q)", m.mode, m.errBar.text)
+	if !m.pickerOpen() {
+		t.Fatalf("B must open the base picker after the load errored, screen = %v (err=%q)", m.screenID(), m.errBar.text)
 	}
 	labels := map[string]bool{}
-	for _, row := range m.reviewNav.picker.Rows() {
+	for _, row := range m.pickerOf(t).Rows() {
 		labels[row.Label] = true
 	}
 	if !labels["auto"] || !labels["feature"] {
@@ -684,9 +692,9 @@ func TestRepoPickRowEscapesControlBytes(t *testing.T) {
 		layout: layoutState{width: 120},
 	}
 	row := uireview.PickerRow{Label: "br\x1b]0;P\x07anch", Root: filepath.FromSlash("/tmp/re\x1b[2Jpo/leaf")}
-	m.reviewNav.picker.Open([]uireview.PickerRow{row, row}, "⌥ Review branch", uireview.PickRepo, "", uireview.PickerSource{}, "")
+	m.openReviewPicker([]uireview.PickerRow{row, row}, "⌥ Review branch", uireview.PickRepo, "", uireview.PickerSource{}, "")
 
-	out := m.viewRepoPick()
+	out := m.viewPicker(t)
 	if got := strings.Count(out, "br^[]0;P^Ganch"); got != 2 {
 		t.Errorf("both labels should read as caret notation, got %d in %q", got, out)
 	}
@@ -696,4 +704,536 @@ func TestRepoPickRowEscapesControlBytes(t *testing.T) {
 	if stray := strayControl(out); stray != "" {
 		t.Errorf("picker row leaks a control byte near %q", stray)
 	}
+}
+
+type scriptedReviewPickerReader struct {
+	worktrees []git.Worktree
+	refs      []string
+	base      string
+	resolved  map[string]string
+	err       error
+	calls     []string
+}
+
+func (r *scriptedReviewPickerReader) Worktrees(root string) ([]git.Worktree, error) {
+	r.calls = append(r.calls, "worktrees:"+root)
+	return append([]git.Worktree(nil), r.worktrees...), r.err
+}
+
+func (r *scriptedReviewPickerReader) BranchRefs(root string) ([]string, error) {
+	r.calls = append(r.calls, "branches:"+root)
+	return append([]string(nil), r.refs...), r.err
+}
+
+func (r *scriptedReviewPickerReader) ReviewBase(targetID, root string) (string, error) {
+	r.calls = append(r.calls, "base:"+targetID+":"+root)
+	return r.base, r.err
+}
+
+func (r *scriptedReviewPickerReader) Canonical(root string) string {
+	r.calls = append(r.calls, "canonical:"+root)
+	if resolved := r.resolved[root]; resolved != "" {
+		return resolved
+	}
+	return root
+}
+
+func seedReviewPickerModel(t *testing.T, m *Model, targetID, root string) {
+	t.Helper()
+	m.base = baseReview
+	m.gens.foreground = 19
+	m.review = uireview.New(false)
+	request := m.review.Open(uireview.Target{ID: targetID, Name: targetID, Cwd: root}, git.ScopeUncommitted, root)
+	m.review.ApplyLoad(uireview.LoadResult{
+		TargetID: targetID, Scope: git.ScopeUncommitted, Generation: request.Generation,
+		RepoRoot: root, RepoRoots: []string{root}, Set: diff.Set{},
+	})
+}
+
+func TestReviewPickerReadsRunOnlyInsideCommands(t *testing.T) {
+	t.Run("branches", func(t *testing.T) {
+		m := &Model{}
+		seedReviewPickerModel(t, m, "s1", "/raw/repo")
+		reader := &scriptedReviewPickerReader{
+			worktrees: []git.Worktree{{Root: "/actual/main", Branch: "main"}, {Root: "/actual/feature", Branch: "feature"}},
+			resolved:  map[string]string{"/raw/repo": "/actual/feature"},
+		}
+
+		cmd := m.openBranchPickWithReader(reader)
+		if cmd == nil {
+			t.Fatal("branch picker did not return a read command")
+		}
+		if len(reader.calls) != 0 || m.base != baseReview {
+			t.Fatalf("open path performed I/O or changed screens: calls=%v screen = %v", reader.calls, m.screenID())
+		}
+
+		msg := cmd().(uireviewsource.PickerLoadedMsg)
+		wantCalls := []string{"worktrees:/raw/repo", "canonical:/raw/repo", "canonical:/actual/main", "canonical:/actual/feature"}
+		if !reflect.DeepEqual(reader.calls, wantCalls) {
+			t.Fatalf("worker calls = %v, want %v", reader.calls, wantCalls)
+		}
+		m.handleReviewPickerLoaded(msg)
+		if !m.pickerOpen() || m.pickerOf(t).Cursor() != 1 {
+			t.Fatalf("branch result did not open on the canonical current worktree: screen = %v cursor=%d", m.screenID(), m.pickerOf(t).Cursor())
+		}
+	})
+
+	t.Run("bases", func(t *testing.T) {
+		m := &Model{}
+		seedReviewPickerModel(t, m, "s2", "/raw/repo")
+		reader := &scriptedReviewPickerReader{
+			refs: []string{"main", "feature"}, base: "feature",
+			resolved: map[string]string{"/raw/repo": "/actual/repo"},
+		}
+
+		cmd := m.openBasePickWithReader(reader)
+		if cmd == nil {
+			t.Fatal("base picker did not return a read command")
+		}
+		if len(reader.calls) != 0 || m.base != baseReview {
+			t.Fatalf("open path performed I/O or changed screens: calls=%v screen = %v", reader.calls, m.screenID())
+		}
+
+		msg := cmd().(uireviewsource.PickerLoadedMsg)
+		wantCalls := []string{"branches:/raw/repo", "canonical:/raw/repo", "base:s2:/actual/repo"}
+		if !reflect.DeepEqual(reader.calls, wantCalls) {
+			t.Fatalf("worker calls = %v, want %v", reader.calls, wantCalls)
+		}
+		m.handleReviewPickerLoaded(msg)
+		if !m.pickerOpen() || m.pickerOf(t).Cursor() != 2 || m.pickerOf(t).StoreRoot() != "/actual/repo" {
+			t.Fatalf("base result = mode %v cursor %d store root %q", m.screenID(), m.pickerOf(t).Cursor(), m.pickerOf(t).StoreRoot())
+		}
+	})
+}
+
+func TestReviewPickerCompletionCannotStealNewerUI(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*Model)
+	}{
+		{"foreground", func(m *Model) { m.gens.foreground++ }},
+		{"screen", func(m *Model) { m.base = baseList }},
+		{"quit", func(m *Model) { m.effects.Quitting = true }},
+		{"review", func(m *Model) { _, _ = m.review.SelectRepo("/other") }},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m := &Model{}
+			seedReviewPickerModel(t, m, "s1", "/repo")
+			reader := &scriptedReviewPickerReader{worktrees: []git.Worktree{{Root: "/repo", Branch: "main"}}}
+			msg := m.openBranchPickWithReader(reader)().(uireviewsource.PickerLoadedMsg)
+			tc.mutate(m)
+			before := m.screenID()
+			m.handleReviewPickerLoaded(msg)
+			if m.screenID() != before || m.pickerOpen() {
+				t.Fatalf("stale completion stole the screen: before=%v after=%v", before, m.screenID())
+			}
+		})
+	}
+}
+
+// A pick comes off the stack before the adapter acts on it, and the adapter
+// checks the review it names is the one open now: a load or a base save
+// that landed behind the picker moved the review on.
+func TestReviewPickerEnterRejectsStaleSource(t *testing.T) {
+	for _, field := range []string{"generation", "target", "repo"} {
+		t.Run(field, func(t *testing.T) {
+			m := buildModel(t)
+			seedReviewPickerModel(t, m, "s1", "/repo")
+			m.openRepoPick()
+			picker := m.pickerOf(t)
+			source := picker.Source()
+			switch field {
+			case "generation":
+				source.Generation++
+			case "target":
+				source.TargetID = "other"
+			case "repo":
+				source.RepoRoot = "/other"
+			}
+			picker.Open(picker.Rows(), picker.Title(), uireview.PickRepo, "", source, "")
+			generation := m.review.Generation()
+			updated, pick := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			*m = *updated.(*Model)
+			if pick == nil || m.pickerOpen() {
+				t.Fatal("enter did not close the picker and carry the pick to the adapter")
+			}
+			updated, load := m.Update(pick())
+			*m = *updated.(*Model)
+			if load != nil || m.review.Generation() != generation {
+				t.Fatal("stale picker selection started a review load")
+			}
+			if m.base != baseReview || m.errBar.text == "" {
+				t.Fatalf("stale picker was not refused clearly: screen = %v err=%q", m.screenID(), m.errBar.text)
+			}
+		})
+	}
+}
+
+func TestReviewBaseSavePersistsButDoesNotReloadStaleOrQuittingReview(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name   string
+		mutate func(*Model)
+	}{
+		{"stale", func(m *Model) { _, _ = m.review.SelectRepo("/new-repo") }},
+		{"quitting", func(m *Model) { m.effects.Quitting = true }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := buildModel(t)
+			createSession(t, m, "base-save-"+tc.name, t.TempDir(), "")
+			sess := reviewSessionByName(t, m, "base-save-"+tc.name)
+			seedReviewPickerModel(t, m, sess.ID, "/raw/repo")
+			state := m.review.Snapshot()
+			source := uireview.PickerSource{Generation: state.Generation, TargetID: state.SessionID, RepoRoot: state.RepoSelected}
+
+			cmd := m.selectBase("feature", source, "/canonical/repo")
+			if cmd == nil || m.effects.Main.Active == nil {
+				t.Fatal("accepted base did not enter the FIFO effect lane")
+			}
+			tc.mutate(m)
+			before := m.review.Snapshot()
+			msg := cmd().(uieffects.Completed)
+			updated, follow := m.handleEffectCompleted(msg)
+			*m = *updated.(*Model)
+			m.drainCmds(t, follow)
+
+			stored, err := m.services.store.ReviewBase(sess.ID, "/canonical/repo")
+			if err != nil || stored != "feature" {
+				t.Fatalf("captured base was not persisted: base=%q err=%v", stored, err)
+			}
+			after := m.review.Snapshot()
+			if after.Generation != before.Generation || after.RepoSelected != before.RepoSelected || after.Scope != before.Scope {
+				t.Fatalf("stale result reloaded review: before=%+v after=%+v", before, after)
+			}
+		})
+	}
+}
+
+func TestReviewBaseSaveAllowsOnlyOnePendingRequest(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "base-one", t.TempDir(), "")
+	sess := reviewSessionByName(t, m, "base-one")
+	seedReviewPickerModel(t, m, sess.ID, "/raw/repo")
+	state := m.review.Snapshot()
+	source := uireview.PickerSource{Generation: state.Generation, TargetID: state.SessionID, RepoRoot: state.RepoSelected}
+
+	cmd := m.selectBase("feature", source, "/canonical/repo")
+	if cmd == nil {
+		t.Fatal("first base save was not accepted")
+	}
+	if second := m.selectBase("main", source, "/canonical/repo"); second != nil {
+		t.Fatal("second base save started while the first was pending")
+	}
+	if len(m.effects.Main.Pending) != 0 || m.effects.Main.Active == nil {
+		t.Fatalf("base save jobs active=%v pending=%d, want exactly one", m.effects.Main.Active != nil, len(m.effects.Main.Pending))
+	}
+	if m.errBar.text == "" {
+		t.Fatal("second base save was not refused clearly")
+	}
+
+	msg := cmd().(uieffects.Completed)
+	updated, follow := m.handleEffectCompleted(msg)
+	*m = *updated.(*Model)
+	m.drainCmds(t, follow)
+	stored, err := m.services.store.ReviewBase(sess.ID, "/canonical/repo")
+	if err != nil || stored != "feature" {
+		t.Fatalf("first base changed after refusal: base=%q err=%v", stored, err)
+	}
+}
+
+func TestReviewBaseSaveFailureSurfacesAfterNavigation(t *testing.T) {
+	m := &Model{}
+	seedReviewPickerModel(t, m, "s1", "/repo")
+	m.openHelp()
+	_, _ = m.review.SelectRepo("/newer-review")
+
+	cmd := m.applyReviewBase(uireviewsource.BaseResult{
+		TargetID: "s1", SourceRepo: "/repo", Generation: 1,
+		Err: errors.New("persist base failed"),
+	})
+	if cmd != nil {
+		t.Fatal("failed persistence started a review reload")
+	}
+	if !helpOpen(m) || m.errBar.text != "persist base failed" {
+		t.Fatalf("accepted persistence failure was hidden or stole navigation: screen = %v err=%q", m.screenID(), m.errBar.text)
+	}
+}
+
+func TestReviewBaseSaveCompletesBehindReviewHelp(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	if m.services.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	repo := gitRepoWithSecondBranch(t)
+	openReviewOn(t, m, "base-help", repo)
+	session, ok := m.diffSession()
+	if !ok {
+		t.Fatal("review session missing")
+	}
+	m.drainCmds(t, m.openBasePick())
+	if !m.pickerOpen() {
+		t.Fatalf("base picker did not open: screen = %v err=%q", m.screenID(), m.errBar.text)
+	}
+	picker := m.pickerOf(t)
+	source, storeRoot := picker.Source(), picker.StoreRoot()
+	m.Pop()
+	cmd := m.selectBase("feature", source, storeRoot)
+	if cmd == nil {
+		t.Fatal("base save was not accepted")
+	}
+	m.openHelp()
+	if !helpOpen(m) || m.base != baseReview {
+		t.Fatalf("review help did not open: screen = %v open=%t", m.screenID(), helpOpen(m))
+	}
+
+	m.drainCmds(t, cmd)
+	if !helpOpen(m) {
+		t.Fatalf("base completion stole help: screen = %v", m.screenID())
+	}
+	if m.review.Snapshot().Scope != git.ScopeBranch {
+		t.Fatalf("base completion did not continue behind help: scope=%v", m.review.Snapshot().Scope)
+	}
+	stored, err := m.services.store.ReviewBase(session.ID, storeRoot)
+	if err != nil || stored != "feature" {
+		t.Fatalf("stored base=%q err=%v", stored, err)
+	}
+
+	updated, closeCmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	*m = *updated.(*Model)
+	m.drainCmds(t, closeCmd)
+	if m.base != baseReview || m.review.Snapshot().Scope != git.ScopeBranch {
+		t.Fatalf("closing help lost completed base: screen = %v scope=%v", m.screenID(), m.review.Snapshot().Scope)
+	}
+}
+
+func TestReviewBaseSaveCompletesBehindBranchPicker(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	if m.services.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	repo := gitRepoWithSecondBranch(t)
+	openReviewOn(t, m, "base-branch-picker", repo)
+	m.drainCmds(t, m.openBasePick())
+	picker := m.pickerOf(t)
+	source, storeRoot := picker.Source(), picker.StoreRoot()
+	m.Pop()
+	saveCmd := m.selectBase("feature", source, storeRoot)
+	if saveCmd == nil {
+		t.Fatal("base save was not accepted")
+	}
+
+	branchCmd := m.openBranchPick()
+	if branchCmd == nil {
+		t.Fatal("branch picker read was not started")
+	}
+	m.handleReviewPickerLoaded(branchCmd().(uireviewsource.PickerLoadedMsg))
+	if !m.pickerOpen() {
+		t.Fatalf("branch picker did not open: screen = %v", m.screenID())
+	}
+	oldGeneration := m.pickerOf(t).Source().Generation
+
+	m.drainCmds(t, saveCmd)
+	if !m.pickerOpen() || m.review.Snapshot().Scope != git.ScopeBranch {
+		t.Fatalf("base completion did not reconcile behind picker: screen = %v scope=%v", m.screenID(), m.review.Snapshot().Scope)
+	}
+	if m.review.Generation() == oldGeneration {
+		t.Fatal("base completion did not invalidate the older picker generation")
+	}
+	generation := m.review.Generation()
+	updated, enterCmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	if enterCmd != nil {
+		m.drainCmds(t, enterCmd)
+	}
+	if m.review.Generation() != generation || m.errBar.text == "" {
+		t.Fatalf("older branch picker remained actionable: generation=%d err=%q", m.review.Generation(), m.errBar.text)
+	}
+}
+
+func TestRetainedRepoPickerRendersCurrentMode(t *testing.T) {
+	m := shotModel()
+	const name = "❯⌥界e\u0301"
+	for _, tc := range []struct {
+		mode          presentation.GlyphMode
+		title, cursor string
+	}{{presentation.GlyphModeBasic, "D", ">"}, {presentation.GlyphModeAdvanced, "⌥", "❯"}} {
+		m.prefs.glyphMode = tc.mode
+		m.openReviewPicker([]uireview.PickerRow{{Label: name, Root: "/repo"}}, "Review repo", uireview.PickRepo, "", uireview.PickerSource{}, "")
+		got := ansi.Strip(m.viewPicker(t))
+		m.Pop()
+		if !strings.Contains(got, tc.title+" Review repo") || !strings.Contains(got, tc.cursor+" "+name) {
+			t.Fatalf("%s picker=%q", tc.mode, got)
+		}
+	}
+}
+
+// A review with two repos under one session, the repo picker's real trigger.
+func pickerReview(t *testing.T) *Model {
+	t.Helper()
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 34
+	m.base = baseReview
+	target := uireview.Target{ID: "picker"}
+	request := seedReviewForTest(m, target, git.ScopeUncommitted, "/tmp/one", diff.Set{}, false)
+	m.review.ApplyLoad(uireview.LoadResult{
+		TargetID: target.ID, Scope: request.Scope, Generation: request.Generation,
+		RepoRoot: "/tmp/one", RepoRoots: []string{"/tmp/one", "/tmp/two"}, Set: diff.Set{},
+	})
+	return m
+}
+
+// r opens the picker over Review, which paints and names its keys, and the
+// mode under it stays Review.
+func TestReviewPickerOpensOnItsKey(t *testing.T) {
+	t.Parallel()
+	m := pickerReview(t)
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	*m = *updated.(*Model)
+	if !m.pickerOpen() || m.base != baseReview {
+		t.Fatalf("r should open the picker over review: open=%t screen = %v", m.pickerOpen(), m.screenID())
+	}
+	m.prepareFrame()
+	frame := ansi.Strip(m.View())
+	if !strings.Contains(frame, "Review repo") || !strings.Contains(frame, "two") {
+		t.Fatalf("the frame should show the picker and its rows:\n%s", frame)
+	}
+	if top, _ := m.top(); top.Owner() != uisurface.Manager || len(top.Footer()) == 0 {
+		t.Fatal("the picker should keep the keyboard on the manager and name its keys")
+	}
+}
+
+// esc and a click off the card each close the picker and leave Review as
+// it was: the filter is a search, not a draft.
+func TestReviewPickerDismisses(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name  string
+		close func(m *Model)
+	}{
+		{"esc", func(m *Model) { m.Update(tea.KeyMsg{Type: tea.KeyEsc}) }},
+		{"backdrop", func(m *Model) {
+			m.prepareFrame()
+			x, y := m.layout.card.left-1, m.layout.card.top-1
+			m.Update(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+			m.Update(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft})
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := pickerReview(t)
+			m.openRepoPick()
+			if top, _ := m.top(); !top.Dismissible() {
+				t.Fatal("the picker should be dismissible")
+			}
+			tc.close(m)
+			if m.pickerOpen() || m.effects.Quitting || m.base != baseReview {
+				t.Fatalf("%s: open=%t quitting=%t screen = %v", tc.name, m.pickerOpen(), m.effects.Quitting, m.screenID())
+			}
+			if got := m.review.Snapshot().RepoSelected; got != "/tmp/one" {
+				t.Fatalf("closing the picker changed the repo to %q", got)
+			}
+		})
+	}
+}
+
+// Enter closes the picker and hands the pick to the adapter as a message,
+// so the choice is checked against the review showing when it lands.
+func TestReviewPickerEnterCarriesThePick(t *testing.T) {
+	t.Parallel()
+	m := pickerReview(t)
+	m.openRepoPick()
+	for _, r := range "two" {
+		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	if m.pickerOpen() || cmd == nil {
+		t.Fatalf("enter should close the picker and return the pick: open=%t cmd=%v", m.pickerOpen(), cmd != nil)
+	}
+	pick, ok := cmd().(uireview.PickedMsg)
+	if !ok || pick.Choice.Value != "/tmp/two" || pick.Choice.Kind != uireview.PickRepo {
+		t.Fatalf("pick = %+v", pick)
+	}
+}
+
+// A pick for a review that has since moved on is dropped, and the user is
+// told to reopen the picker instead of retargeting the newer review.
+func TestReviewPickerStalePickIsRefused(t *testing.T) {
+	t.Parallel()
+	m := pickerReview(t)
+	m.openRepoPick()
+	source := m.pickerOf(t).Source()
+	m.Pop()
+	_, _ = m.review.SelectRepo("/tmp/two")
+	generation := m.review.Generation()
+	updated, cmd := m.Update(uireview.PickedMsg{Choice: uireview.PickerChoice{Kind: uireview.PickRepo, Value: "/tmp/one"}, Source: source})
+	*m = *updated.(*Model)
+	if cmd != nil || m.review.Generation() != generation || !strings.Contains(m.errBar.text, "reopen the picker") {
+		t.Fatalf("stale pick: cmd=%v generation=%d err=%q", cmd != nil, m.review.Generation(), m.errBar.text)
+	}
+}
+
+// A click on a row moves the cursor there, a click on the cursor row picks
+// it, and the wheel steps the cursor the way the arrows do.
+func TestReviewPickerClickAndWheel(t *testing.T) {
+	t.Parallel()
+	m := pickerReview(t)
+	m.openReviewPicker([]uireview.PickerRow{{Label: "alpha", Root: "/w/alpha"}, {Label: "beta", Root: "/w/beta"}, {Label: "gamma", Root: "/w/gamma"}}, "Review branch", uireview.PickRepo, "/w/alpha", m.reviewPickerSource(), "")
+	x, y := paintedCell(t, m, "beta")
+	if m = leftClick(m, x, y); m.pickerOf(t).Cursor() != 1 || !m.pickerOpen() {
+		t.Fatalf("a click on beta should move the cursor there, cursor %d open %t", m.pickerOf(t).Cursor(), m.pickerOpen())
+	}
+	if m = wheel(m, tea.MouseButtonWheelDown, x, y); m.pickerOf(t).Cursor() != 2 {
+		t.Fatalf("the wheel should move the cursor on, cursor %d", m.pickerOf(t).Cursor())
+	}
+	x, y = paintedCell(t, m, "gamma")
+	m, cmd := leftClickCmd(m, x, y)
+	if m.pickerOpen() || cmd == nil {
+		t.Fatal("a click on the cursor row should pick it and close the picker")
+	}
+	if pick, ok := cmd().(uireview.PickedMsg); !ok || filepath.Base(pick.Choice.Value) != "gamma" {
+		t.Fatalf("pick = %+v", cmd())
+	}
+}
+
+// Leaving Review with the picker up pops it, so a reopened Review starts
+// clean and nothing is left on the stack over the list.
+func TestReviewPickerLeavesWithReview(t *testing.T) {
+	t.Parallel()
+	m := pickerReview(t)
+	m.openRepoPick()
+	m.closeDiff()
+	if m.pickerOpen() || !m.onList() {
+		t.Fatalf("after closing review: open=%t screen = %v", m.pickerOpen(), m.screenID())
+	}
+}
+
+// pickerOpen reports a review picker on the stack.
+func (m *Model) pickerOpen() bool {
+	_, ok := surfaceOf[*uireview.Surface](m)
+	return ok
+}
+
+// pickerOf is the mounted picker's state, for a test that reads its rows or
+// cursor the way the surface does.
+func (m *Model) pickerOf(t *testing.T) *uireview.Picker {
+	t.Helper()
+	s, ok := surfaceOf[*uireview.Surface](m)
+	if !ok {
+		t.Fatal("no review picker is open")
+	}
+	return s.Picker()
+}
+
+// viewPicker paints the mounted picker's card alone.
+func (m *Model) viewPicker(t *testing.T) string {
+	t.Helper()
+	s, ok := surfaceOf[*uireview.Surface](m)
+	if !ok {
+		t.Fatal("no review picker is open")
+	}
+	return s.View(m, "")
 }

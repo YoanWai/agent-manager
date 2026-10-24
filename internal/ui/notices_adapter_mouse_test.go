@@ -15,8 +15,8 @@ func TestClickOnAMessageTitleSelectsIt(t *testing.T) {
 		t.Fatalf("test setup: a fresh model shows two notices, has %d", len(notices))
 	}
 	x, y := paintedCell(t, m, notices[1].Title)
-	if m = leftClick(m, x, y); m.notices.Cursor() != 1 || m.mode != modeNotices {
-		t.Fatalf("a click on the second title should select it, cursor %d mode %v", m.notices.Cursor(), m.mode)
+	if m = leftClick(m, x, y); noticesSurfaceOf(m).Panel().Cursor() != 1 || !m.noticesOpen() {
+		t.Fatalf("a click on the second title should select it, cursor %d mode %v", noticesSurfaceOf(m).Panel().Cursor(), m.screenID())
 	}
 	if body := preparedView(m); !strings.Contains(body, notices[1].Title) {
 		t.Fatal("the selected notice should stay on screen")

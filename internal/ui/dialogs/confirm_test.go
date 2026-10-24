@@ -53,7 +53,6 @@ func TestConfirmKeys(t *testing.T) {
 		{tea.KeyMsg{Type: tea.KeyEsc}, ConfirmCancel},
 		{runes("y"), ConfirmAccept},
 		{tea.KeyMsg{Type: tea.KeyEnter}, ConfirmAccept},
-		{tea.KeyMsg{Type: tea.KeyCtrlC}, ConfirmQuit},
 	}
 	for _, tc := range cases {
 		if got := c.Key(tc.key); got != tc.want {

@@ -6,20 +6,13 @@ import (
 	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/status"
-	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
-	focuswatch "github.com/YoanWai/agent-manager/internal/ui/focus/watch"
+	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
+	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
+	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
 	tea "github.com/charmbracelet/bubbletea"
 )
-
-type focusRuntimeState struct {
-	watch             *focuswatch.Watcher
-	imeCursor         *cursorAnchor
-	lastPaneSizes     map[string][2]int
-	lastPanePIDs      map[string]int
-	lastPublishedSize [2]int
-}
 
 func (m *Model) routeFocusMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
@@ -28,7 +21,7 @@ func (m *Model) routeFocusMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		return routed(m, nil)
 
 	case linkPageMsg:
-		return routed(m, showLinkPage(msg.url))
+		return routed(m, terminalMsgCmd(uiterminal.ShowLinkPage(msg.url)))
 
 	case focusCopiedMsg:
 		// The clipboard writer runs off the update loop and can take
@@ -40,17 +33,17 @@ func (m *Model) routeFocusMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		m.clearErr()
 		return routed(m, nil)
 
-	case focusScrollMsg:
+	case focusruntime.ScrollMsg:
 		currentID := ""
 		if sess, ok := m.selected(); ok {
 			currentID = sess.ID
 		}
 		result := m.focus.pane.ApplyRegion(uifocus.RegionResult{
-			SessionID: msg.sessID,
-			Offset:    msg.offset,
-			Rows:      msg.rows,
-			Preview:   msg.preview,
-			OK:        msg.ok,
+			SessionID: msg.SessionID,
+			Offset:    msg.Offset,
+			Rows:      msg.Rows,
+			Preview:   msg.Preview,
+			OK:        msg.OK,
 		}, currentID, m.focusPaneRows())
 		if result.Next != nil {
 			return routed(m, m.focusRegionRequestCmd(*result.Next))
@@ -60,26 +53,26 @@ func (m *Model) routeFocusMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		}
 		return routed(m, nil)
 
-	case focusPreviewMsg:
+	case focusruntime.FrameMsg:
 		currentID := ""
 		if sess, ok := m.selected(); ok {
 			currentID = sess.ID
 		}
 		result := m.focus.pane.ApplyPane(uifocus.PaneUpdate{
-			SessionID: msg.sessID,
-			Mouse:     msg.paneMouse,
-			Alt:       msg.paneAlt,
-			Motion:    msg.paneMotion,
-			SGR:       msg.paneSGR,
-			History:   msg.historySize,
+			SessionID: msg.SessionID,
+			Mouse:     msg.Mouse,
+			Alt:       msg.Alt,
+			Motion:    msg.Motion,
+			SGR:       msg.SGR,
+			History:   msg.History,
 			Cursor: uifocus.Cursor{
-				X: msg.cursorX, Y: msg.cursorY,
-				Visible: msg.cursorOK, PositionKnown: msg.paneStateOK,
+				X: msg.CursorX, Y: msg.CursorY,
+				Visible: msg.CursorOK, PositionKnown: msg.PaneStateOK,
 			},
-			Writes: msg.writes,
+			Writes: msg.Writes,
 		}, currentID)
 		if result.UsePreview {
-			m.workspace.preview = msg.preview
+			m.workspace.preview = msg.Preview
 		}
 		return routed(m, nil)
 	}
@@ -115,7 +108,7 @@ func (m *Model) focusSelected() (tea.Model, tea.Cmd) {
 	// Cleared on the press, as attach does, so a notice the lane posts
 	// before entry, such as a dropped detach request, stays up.
 	m.clearErr()
-	m.enqueueEffect(focusRequest{sessionID: sess.ID, generation: m.gens.foreground}, 0, false)
+	m.enqueueEffect(focusruntime.ProbeRequest{SessionID: sess.ID, Generation: m.gens.foreground}, 0, false)
 	return m, m.nextEffectCmd()
 }
 
@@ -126,11 +119,10 @@ func (m *Model) caretAtInputStart(sessID, tool string) bool {
 	if m.services.engine == nil {
 		return false
 	}
-	watch := m.focus.runtime.watch
 	return m.focus.pane.CaretAtInputStart(uifocus.CaretContext{
 		SessionID: sessID,
 		Preview:   m.workspace.preview,
-		CaughtUp:  watch == nil || watch.CaughtUp(m.focus.pane.Pane().Writes),
+		CaughtUp:  m.focus.runtime.CaughtUp(m.focus.pane.Pane().Writes),
 		Rules:     focusPromptRules{engine: m.services.engine, tool: tool},
 	})
 }
@@ -170,19 +162,12 @@ func (m *Model) leaveFocus() tea.Cmd {
 }
 
 func (m *Model) leaveFocusMode() tea.Cmd {
-	m.mode = modeList
-	m.closeFocusSaved()
+	m.clearSurfaces()
 	// A run opened before the session was entered would pair with the very
 	// click that comes back here, focusing it again instead of leaving.
 	m.rail.ResetClickHistory()
 	m.flushPendingNotice()
 	return nil
-}
-
-// focusPagesScrollback reads the Focus policy for the footer and status
-// line, which name the page keys only while they page.
-func (m *Model) focusPagesScrollback(sess store.Session) bool {
-	return m.focus.pane.PagesScrollback(sess.ID)
 }
 
 // handleFocusKey forwards focused input to the pane except for session
@@ -192,9 +177,6 @@ func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	sess, ok := m.selected()
 	if !ok {
 		return m, m.leaveFocus()
-	}
-	if m.focus.saved.list.Open() {
-		return m.handleFocusSavedKey(msg)
 	}
 	if m.services.keys.Binding(keybind.SavedPrompt).Has(msg.String()) {
 		return m, m.openFocusSaved()
@@ -223,8 +205,8 @@ func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.openEditor()
 	case uifocus.OpenReview:
 		cmd := m.openDiff()
-		if m.mode == modeDiff {
-			m.reviewNav.ret = reviewReturn{kind: reviewReturnFocus, sessionID: sess.ID}
+		if m.base == baseReview {
+			m.reviewNav.Set(uireviewsource.Return{Kind: uireviewsource.ReturnFocus, SessionID: sess.ID})
 		}
 		return m, cmd
 	}
@@ -233,15 +215,14 @@ func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		resume = m.focusRegionRequestCmd(*result.Region)
 	}
 	if msg.Paste {
-		m.dispatchInput(inputRequest{kind: inputPaste, session: sess, text: string(msg.Runes), echo: true})
+		m.dispatchInput(focusruntime.Request{Kind: focusruntime.Paste, Session: sess, Text: string(msg.Runes), Echo: true})
 		return m, tea.Batch(resume, m.nextEffectCmd())
 	}
 	command, ok := focusKeyCommand(tmux.PaneTarget(sess.ID), msg)
 	if !ok {
 		return m, resume
 	}
-	m.dispatchInput(inputRequest{kind: inputKeys, session: sess, command: command, submit: result.Submit, echo: true})
-
+	m.dispatchInput(focusruntime.Request{Kind: focusruntime.Keys, Session: sess, Command: command, Submit: result.Submit, Echo: true})
 	return m, tea.Batch(resume, m.nextEffectCmd())
 }
 
@@ -258,7 +239,7 @@ func (m *Model) handleFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	result := m.focus.pane.Mouse(msg, uifocus.MouseContext{
 		SessionID:    sess.ID,
 		Rows:         m.focusPaneRows(),
-		RuntimeReady: m.focus.runtime.watch != nil,
+		RuntimeReady: m.focus.runtime.Ready(),
 	})
 	return m.applyFocusMouse(result)
 }
@@ -306,7 +287,7 @@ type focusCopiedMsg struct {
 // cursor is parked below its own painted composer. Focus owns crop geometry
 // after this value crosses the boundary.
 func (m *Model) paneCaretRow() int {
-	if m.mode != modeFocus {
+	if !m.focused() {
 		return -1
 	}
 	parks := false
@@ -316,22 +297,13 @@ func (m *Model) paneCaretRow() int {
 	return m.focus.pane.CaretRow(m.workspace.preview, parks)
 }
 
-type focusScrollMsg struct {
-	sessID  string
-	offset  int
-	rows    int
-	preview string
-	ok      bool
-}
-
 func (m *Model) sendFocusReport(report string, echo bool) {
 	sess, ok := m.selected()
-	watch := m.focus.runtime.watch
-	if !ok || watch == nil {
+	if !ok || !m.focus.runtime.Ready() {
 		return
 	}
 	command, args := tmux.GuardedMouseReport(tmux.PaneTarget(sess.ID), report)
-	m.dispatchInput(inputRequest{kind: inputMouse, session: sess, command: command, args: args, echo: echo})
+	m.dispatchInput(focusruntime.Request{Kind: focusruntime.Mouse, Session: sess, Command: command, Args: args, Echo: echo})
 }
 
 func (m *Model) focusRegionCmd(sessID string, offset int) tea.Cmd {
@@ -343,18 +315,8 @@ func (m *Model) focusRegionCmd(sessID string, offset int) tea.Cmd {
 }
 
 func (m *Model) focusRegionRequestCmd(request uifocus.RegionRequest) tea.Cmd {
-	watch := m.focus.runtime.watch
+	watch := m.focus.runtime.Watch
 	return func() tea.Msg {
-		if watch == nil {
-			return focusScrollMsg{sessID: request.SessionID, offset: request.Offset, rows: request.Rows}
-		}
-		out, ok := watch.History(request.SessionID, request.Offset+request.Rows)
-		return focusScrollMsg{
-			sessID:  request.SessionID,
-			offset:  request.Offset,
-			rows:    request.Rows,
-			preview: uifocus.BottomWindow(out, request.Rows, request.Offset),
-			ok:      ok,
-		}
+		return focusruntime.Scroll(watch, request.SessionID, request.Offset, request.Rows)
 	}
 }

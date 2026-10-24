@@ -49,7 +49,6 @@ type Connections struct {
 	hosts   map[string]Host
 	polling map[string]bool
 	Preview Preview
-	Dialog  Dialog
 }
 
 // SetList adopts the stored connections. A host no longer listed, or

@@ -50,6 +50,8 @@ type Context struct {
 	QuickKeys    QuickKeys
 	Styles       Styles
 	CursorMarker string
+	// ReviewRows are Review's key rows, read from its own keymap.
+	ReviewRows [][2]string
 }
 
 // Content is the feature-owned dialog body. The root owns viewport geometry

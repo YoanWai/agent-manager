@@ -5,6 +5,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -167,7 +168,7 @@ func (m *Model) searchFieldLine(width int) string {
 	frame := m.rail.Render(uirail.RenderContext{
 		GlyphMode: m.prefs.glyphMode,
 		Width:     width, Height: 8, TerminalWidth: max(m.layout.width, width), TerminalHeight: max(m.layout.height, 8),
-		Theme: m.railTheme(), ListKeys: m.services.listKeys, CursorMarker: cursorAnchorMarker,
+		Theme: m.railTheme(), ListKeys: m.services.listKeys, CursorMarker: uiframe.CursorMarker,
 	}, uirail.Frame{})
 	for _, line := range frame.Lines {
 		if strings.Contains(line.Text, "⌕") {
@@ -222,8 +223,8 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width, _ int, _ stri
 		GlyphMode: m.prefs.glyphMode,
 		Width:     width, Height: 20, TerminalWidth: max(m.layout.width, width), TerminalHeight: max(m.layout.height, 20),
 		Theme: m.railTheme(), ListKeys: m.services.listKeys, ComfortableRows: m.prefs.comfortableRows,
-		MouseDisabled: m.prefs.mouseDisabled, Focused: m.mode == modeFocus,
-		EnterFocuses: m.enterFocuses(), StartupPhase: m.startup.startupPhase, CursorMarker: cursorAnchorMarker,
+		MouseDisabled: m.prefs.mouseDisabled, Focused: m.focused(),
+		EnterFocuses: m.enterFocuses(), StartupPhase: m.startup.LoadPhase, CursorMarker: uiframe.CursorMarker,
 	}, uirail.Frame{})
 	var lines []string
 	for _, line := range frame.Lines {
@@ -250,8 +251,8 @@ func (m *Model) entryLines(_ []treeRow, _ int, width, height int) []contentLine 
 		GlyphMode: m.prefs.glyphMode,
 		Width:     width, Height: height, TerminalWidth: max(m.layout.width, width), TerminalHeight: max(m.layout.height, height),
 		Theme: m.railTheme(), ListKeys: m.services.listKeys, ComfortableRows: m.prefs.comfortableRows,
-		MouseDisabled: m.prefs.mouseDisabled, Focused: m.mode == modeFocus,
-		EnterFocuses: m.enterFocuses(), StartupPhase: m.startup.startupPhase, CursorMarker: cursorAnchorMarker,
+		MouseDisabled: m.prefs.mouseDisabled, Focused: m.focused(),
+		EnterFocuses: m.enterFocuses(), StartupPhase: m.startup.LoadPhase, CursorMarker: uiframe.CursorMarker,
 	}, m.layout.displayedRail)
 	m.layout.displayedRail = frame
 	return railContentLines(frame.Lines)
@@ -266,7 +267,7 @@ func (m *Model) reorderSelected(delta int) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	return m.applyRailDecision(m.rail.Key(msg, m.layout.displayedRail, m.railKeyContext()))
+	return m.applyRailKey(m.rail.Update(msg, m.layout.displayedRail, m.railKeyContext()))
 }
 
 func setRailSessionTool(m *Model, id, tool string) {
@@ -313,5 +314,5 @@ func groupRenderSnapshot(group string) uirail.Snapshot {
 	if group == "" {
 		return uirail.Snapshot{Sessions: []uirail.Session{{ID: "root-render-fixture", Name: "fixture", DisplayName: "fixture"}}}
 	}
-	return uirail.Snapshot{Groups: []string{group}, Sessions: []uirail.Session{{ID: "group-fixture", Name: baseName(group), DisplayName: baseName(group), Group: group}}}
+	return uirail.Snapshot{Groups: []string{group}, Sessions: []uirail.Session{{ID: "group-fixture", Name: uirail.BaseName(group), DisplayName: uirail.BaseName(group), Group: group}}}
 }
