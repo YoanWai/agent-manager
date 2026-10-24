@@ -377,7 +377,7 @@ func cardTarget(card sessiondialogs.Card) confirmTarget {
 // packageTarget is a confirmation as the lifecycle package runs it.
 func packageTarget(target confirmTarget) uilifecycle.Target {
 	return uilifecycle.Target{
-		Action:       uilifecycle.Action(target.action),
+		Action:       lifecycleAction(target.action),
 		Sessions:     target.sessions,
 		Path:         groupPath(target),
 		Batch:        target.batch,
@@ -393,6 +393,13 @@ func confirmAction(action uilifecycle.Action) uidialogs.ConfirmAction {
 		return uidialogs.ConfirmDelete
 	}
 	return uidialogs.ConfirmAction(action)
+}
+
+func lifecycleAction(action uidialogs.ConfirmAction) uilifecycle.Action {
+	if action == uidialogs.ConfirmDelete {
+		return uilifecycle.Remove
+	}
+	return uilifecycle.Action(action)
 }
 
 func packageSelection(selection lifecycleSelection) uilifecycle.Selection {
@@ -536,10 +543,12 @@ type attachDoneMsg struct {
 func (m *Model) routeSessionMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case replyCopiedMsg:
-		notice, done := uisession.ReplyReport(msg.name, msg.tool, msg.chars, msg.unreadable, msg.unbounded)
-		if done {
+		switch notice, severity := uisession.ReplyReport(msg.name, msg.tool, msg.chars, msg.unreadable, msg.unbounded); severity {
+		case uisession.Done:
 			m.reportDone(notice)
-		} else {
+		case uisession.Warn:
+			m.reportWarn(notice)
+		default:
 			m.reportErr(notice)
 		}
 		return routed(m, nil)
