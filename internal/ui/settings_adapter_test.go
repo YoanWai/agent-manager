@@ -1160,6 +1160,16 @@ func TestSettingsSaveDoesNotBlockWindowUpdate(t *testing.T) {
 	m.cycleSetting(1)
 	staged := uitheme.Palettes[m.settingsCard().State().ThemeIndex].Name
 	_, command := m.handleSettingsKey(key("enter"))
+	// The staged theme's pane push runs first on the lane; the save is next.
+	if active := m.effects.Main.Active; command == nil && active != nil {
+		_, _ = m.Update(active.Command())
+		if next := m.effects.Main.Active; next != nil {
+			command = next.Command
+		}
+	}
+	if command == nil {
+		t.Fatal("enter queued no save")
+	}
 
 	completed := make(chan tea.Msg, 1)
 	go func() { completed <- command() }()
