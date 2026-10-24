@@ -63,6 +63,7 @@ func TestUnchangedWindowSizeSkipsResize(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "sized", t.TempDir(), "")
 	id := m.sessionRows()[0].ID
+	m.applyCmd(t, m.refreshCmd())
 
 	// Drift the session window away from the manager size behind its back.
 	if _, err := tmuxCmd(t, "resize-window", "-t", "am_"+id, "-x", "100", "-y", "30").CombinedOutput(); err != nil {
@@ -236,8 +237,9 @@ func TestSessionSizesToPreviewPane(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "sized", t.TempDir(), "")
 	id := m.sessionRows()[0].ID
-	// Create sizes from pre-selection geometry; re-pin to the live preview box.
-	m.resizeSessions()
+	// Create sizes from pre-selection geometry; the pass that lists the new
+	// pane re-pins it to the live preview box.
+	m.applyCmd(t, m.refreshCmd())
 	m.drainEffects(t)
 
 	wantW, wantH := m.previewPaneWidth(), m.previewPaneHeight()
@@ -251,4 +253,44 @@ func TestSessionSizesToPreviewPane(t *testing.T) {
 	if w, h := windowSize(t, id); w != wantW || h != wantH {
 		t.Fatalf("after resize, window = %dx%d, want %dx%d", w, h, wantW, wantH)
 	}
+}
+
+// A row whose window is gone has nothing to size. Queuing a resize for it
+// anyway fails every pass, and a failed effect asks for another poll, so one
+// dead row left the manager polling tmux in a tight loop (#880).
+func TestDeadSessionQueuesNoResize(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "gone", t.TempDir(), "")
+	id := m.sessionRows()[0].ID
+	if err := m.services.tmux.Kill(id); err != nil {
+		t.Fatalf("kill: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.drainEffects(t)
+
+	// A fresh manager has no geometry cached for any row.
+	m.focus.runtime.lastPaneSizes = nil
+	m.resizeSessions()
+	for _, target := range queuedResizeTargets(m) {
+		if target == id {
+			t.Fatalf("a resize was queued for dead session %s", id)
+		}
+	}
+}
+
+func queuedResizeTargets(m *Model) []string {
+	jobs := append([]*effectJob(nil), m.effects.main.pending...)
+	if m.effects.main.active != nil {
+		jobs = append(jobs, m.effects.main.active)
+	}
+	var ids []string
+	for _, job := range jobs {
+		if request, ok := job.request.(geometryRequest); ok {
+			for _, target := range request.targets {
+				ids = append(ids, target.id)
+			}
+		}
+	}
+	return ids
 }
