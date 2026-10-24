@@ -21,7 +21,6 @@ type effectPair struct {
 var effectPairs = []effectPair{
 	{inputRequest{}, inputEffectResult{}},
 	{quickSendRequest{}, quickSendResult{}},
-	{noticeDismissRequest{}, noticeDismissResult{}},
 	{splitSaveRequest{}, splitSaveResult{}},
 	{choiceSaveRequest{}, choiceSaveResult{}},
 	{lifecycleRequest{}, lifecycleEffectResult{}},
@@ -33,10 +32,7 @@ var effectPairs = []effectPair{
 	{groupRequest{}, groupEffectResult{}},
 	{renameRequest{}, renameEffectResult{}},
 	{moveDialogClose{}, moveDialogCloseResult{}},
-	{settingsRequest{}, settingsEffectResult{}},
-	{savedPromptRequest{}, savedPromptResult{}},
 	{reviewEffectRequest{}, reviewEffectResult{}},
-	{keysRequest{}, keysEffectResult{}},
 	{focusRequest{}, focusEffectResult{}},
 	{ackRequest{}, ackEffectResult{}},
 	{detachRequest{}, detachEffectResult{}},

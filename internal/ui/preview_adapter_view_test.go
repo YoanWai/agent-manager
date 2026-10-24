@@ -8,6 +8,8 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
+	uistartup "github.com/YoanWai/agent-manager/internal/ui/startup"
+
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
@@ -236,7 +238,7 @@ func TestPreviewLoaderIsCenteredAndMovesOnThePreviewTick(t *testing.T) {
 			t.Fatalf("loader row %q is not centered: left=%d right=%d", lines[row], left, right)
 		}
 	}
-	m.Update(startupTickMsg{})
+	m.Update(uistartup.TickMsg{})
 	if next := previewText(m); next == first {
 		t.Fatal("preview loader did not move on the startup tick")
 	}

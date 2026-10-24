@@ -70,7 +70,7 @@ func (m *Model) startupLoader(width, height int) []string {
 		return nil
 	}
 	starting := sess.Status == status.Starting && !m.focused()
-	return startingLoader(m.glyphs(), starting, m.workspace.preview, width, height, m.startup.startupPhase)
+	return startingLoader(m.glyphs(), starting, m.workspace.preview, width, height, m.startup.LoadPhase)
 }
 
 // previewLines is the captured pane, filling every row under the detail

@@ -84,3 +84,13 @@ func TestThemeSwitchPushesPaneBackground(t *testing.T) {
 		t.Errorf("dark theme pushed window-style %q, want %q", got, want)
 	}
 }
+
+func TestResolveStartupThemeWithoutAuto(t *testing.T) {
+	m := buildModel(t)
+	if err := m.services.store.SetSetting(uisettings.ThemeSetting, "nord"); err != nil {
+		t.Fatal(err)
+	}
+	if got := uitheme.ResolveStartup(m.services.store); got != "nord" {
+		t.Fatalf("ResolveStartup = %q, want the stored theme", got)
+	}
+}

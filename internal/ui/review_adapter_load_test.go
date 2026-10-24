@@ -13,6 +13,8 @@ import (
 	"github.com/YoanWai/agent-manager/internal/git"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
+	uistartup "github.com/YoanWai/agent-manager/internal/ui/startup"
+
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -382,7 +384,7 @@ func TestReviewShowsLoaderWhileDiffLoads(t *testing.T) {
 		t.Fatal("loading review should start the loader tick")
 	}
 	first := code
-	m.Update(startupTickMsg{})
+	m.Update(uistartup.TickMsg{})
 	if next := ansi.Strip(m.viewDiffCode(80, 20)); next == first {
 		t.Fatal("diff loader did not move on the tick")
 	}

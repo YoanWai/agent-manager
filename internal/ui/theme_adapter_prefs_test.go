@@ -3,7 +3,6 @@ package ui
 import (
 	"testing"
 
-	"github.com/YoanWai/agent-manager/internal/systheme"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 )
@@ -30,8 +29,8 @@ func TestThemeAutoPersistsWithoutClobberingManualTheme(t *testing.T) {
 	if got, _ := m.services.store.Setting(uisettings.ThemeAutoSetting); got != "on" {
 		t.Fatalf("theme_auto not persisted: %q", got)
 	}
-	if !themeAutoEnabled(m.services.store) {
-		t.Fatal("themeAutoEnabled should read the persisted toggle")
+	if !uitheme.AutoEnabled(m.services.store) {
+		t.Fatal("AutoEnabled should read the persisted toggle")
 	}
 }
 
@@ -59,32 +58,5 @@ func TestManualThemeCycleDisablesAuto(t *testing.T) {
 	}
 	if got, _ := m.services.store.Setting(uisettings.ThemeSetting); got != uitheme.Palettes[m.settingsCard().State().ThemeIndex].Name {
 		t.Fatalf("manual step not persisted: %q", got)
-	}
-}
-
-func TestAutoThemeName(t *testing.T) {
-	tests := []struct {
-		name   string
-		stored string
-		scheme systheme.Scheme
-		want   string
-	}{
-		{"unknown keeps stored", "nord", systheme.SchemeUnknown, "nord"},
-		{"dark scheme keeps a dark stored theme", "nord", systheme.SchemeDark, "nord"},
-		{"light scheme keeps a light stored theme", "paper", systheme.SchemeLight, "paper"},
-		{"light scheme flips a dark stored theme", "nord", systheme.SchemeLight, "solarized light"},
-		{"dark scheme flips a light stored theme", "paper", systheme.SchemeDark, "classic"},
-		{"unset stored resolves through the default", "", systheme.SchemeLight, "solarized light"},
-		{"light scheme flips a dark theme to its counterpart", "catppuccin mocha", systheme.SchemeLight, "catppuccin latte"},
-		{"dark scheme flips a light theme to its counterpart", "kanagawa lotus", systheme.SchemeDark, "kanagawa wave"},
-		{"dark scheme flips solarized light to solarized dark", "solarized light", systheme.SchemeDark, "solarized dark"},
-		{"light scheme keeps a light theme that has a counterpart", "catppuccin latte", systheme.SchemeLight, "catppuccin latte"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := autoThemeName(tt.stored, tt.scheme); got != tt.want {
-				t.Errorf("autoThemeName(%q, %v) = %q, want %q", tt.stored, tt.scheme, got, tt.want)
-			}
-		})
 	}
 }

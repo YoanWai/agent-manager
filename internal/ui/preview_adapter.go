@@ -113,7 +113,7 @@ func (m *Model) reviewNeedsLoader() bool {
 }
 
 func (m *Model) needsLoaderTick() bool {
-	return m.startup.booting || m.rail.HasStatus(status.Starting) || m.reviewNeedsLoader() || m.rail.HasWorkingLoader()
+	return m.startup.Booting || m.rail.HasStatus(status.Starting) || m.reviewNeedsLoader() || m.rail.HasWorkingLoader()
 }
 
 func (m *Model) routePreviewMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {

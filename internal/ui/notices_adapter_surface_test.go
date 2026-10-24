@@ -57,7 +57,7 @@ func TestNoticesSurfaceFencesAStaleDismissalCompletion(t *testing.T) {
 	m := noticeModel(noticeStore(t), "v0.2.0")
 	m.layout.width, m.layout.height = 120, 34
 	m.openNotices(uinotices.Welcome)
-	job := &uieffects.Job{Request: noticeDismissRequest{id: uinotices.Welcome, foregroundGen: m.gens.foreground, modal: true}}
+	job := &uieffects.Job{Request: uinotices.DismissRequest{ID: uinotices.Welcome, ForegroundGen: m.gens.foreground, Modal: true}}
 
 	m.Pop()
 	m.openHelp()

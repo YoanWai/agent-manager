@@ -1,19 +1,6 @@
 package ui
 
-import (
-	"github.com/YoanWai/agent-manager/internal/systheme"
-	"github.com/YoanWai/agent-manager/internal/ui/presentation"
-	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
-)
-
-// autoThemeName resolves auto-detect against the detected scheme; an
-// undetectable scheme keeps the stored choice.
-func autoThemeName(stored string, scheme systheme.Scheme) string {
-	if scheme == systheme.SchemeUnknown {
-		return stored
-	}
-	return uitheme.AutoName(stored, scheme == systheme.SchemeLight)
-}
+import "github.com/YoanWai/agent-manager/internal/ui/presentation"
 
 type preferences struct {
 	glyphMode presentation.GlyphMode

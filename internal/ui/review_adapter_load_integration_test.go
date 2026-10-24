@@ -11,6 +11,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/git"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
+	uistartup "github.com/YoanWai/agent-manager/internal/ui/startup"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -193,7 +194,7 @@ func (m *Model) drainCmds(t *testing.T, cmd tea.Cmd) {
 		}
 		// The startup tick reschedules itself, so following its command
 		// would spin here rather than drain what the batch already holds.
-		if _, ok := msg.(startupTickMsg); ok {
+		if _, ok := msg.(uistartup.TickMsg); ok {
 			updated, _ := m.Update(msg)
 			*m = *updated.(*Model)
 			return

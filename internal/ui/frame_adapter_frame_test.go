@@ -66,7 +66,7 @@ func TestZZShot(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		m.startup.bannerPhase = n
+		m.startup.BannerPhase = n
 	}
 	if err := os.WriteFile(out, []byte(preparedView(m)), 0o644); err != nil {
 		t.Fatal(err)

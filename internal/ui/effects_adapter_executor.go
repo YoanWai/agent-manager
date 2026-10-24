@@ -14,6 +14,9 @@ import (
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	focuswatch "github.com/YoanWai/agent-manager/internal/ui/focus/watch"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
+	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
+	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -42,6 +45,18 @@ func (m *Model) bindEffect(request uieffects.Request) func() (uieffects.Result, 
 	if work, ok := uieffects.Bind(request, func() uiinstall.Services { return capture().install() }); ok {
 		return work
 	}
+	if work, ok := uieffects.Bind[uipersist.Services](request, func() uipersist.Services {
+		services := capture()
+		return uipersist.Services{Writer: uipersist.StoreWriter{Store: services.store}, Keys: services.keySaver(), Presets: services.store}
+	}); ok {
+		return work
+	}
+	if work, ok := uieffects.Bind[uinotices.Services](request, m.noticesServices); ok {
+		return work
+	}
+	if work, ok := uieffects.Bind[uitheme.Services](request, m.themeServices); ok {
+		return work
+	}
 	services := capture()
 	return func() (uieffects.Result, error) { return request.(effectRequest).run(services) }
 }
@@ -54,6 +69,18 @@ func (m *Model) applyEffect(job *uieffects.Job, result uieffects.Result, err err
 		return m.ledger.install.Started(installRoot{m}, job.Request.(uiinstall.StartRequest), result, err)
 	case uiinstall.SettleResult:
 		return m.ledger.install.Settled(installRoot{m}, job.Request.(uiinstall.SettleRequest), result, err)
+	case uipersist.SaveResult:
+		return m.settings.ApplySave(settingsSaveRoot{m}, job.Request.(uipersist.SaveRequest), result, err)
+	case uipersist.KeysResult:
+		return uipersist.ApplyKeys(settingsSaveRoot{m}, job.Request.(uipersist.KeysRequest), result, err)
+	case uipersist.PromptResult:
+		m.applyPromptsResult(job.Request.(uipersist.PromptRequest), result, err)
+		return nil
+	case uinotices.DismissResult:
+		m.applyNoticeDismiss(job, err)
+		return nil
+	case uitheme.PaneResult:
+		return m.applyPaneTheme(err)
 	case effectResult:
 		return result.apply(m, job, err)
 	}

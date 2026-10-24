@@ -71,53 +71,65 @@ func (m *Model) openSettingsWithReader(reader uipersist.Reader) tea.Cmd {
 }
 
 func (m *Model) handleSettingsLoaded(msg uipersist.LoadedMsg) (tea.Model, tea.Cmd) {
+	return m, m.settings.UpdateLoad(settingsLoadRoot{m}, msg)
+}
+
+// settingsLoadRoot is the root as a landed settings read reaches it: the
+// persist package decides which surface may still take the read, and each
+// rebuild here answers with the work it asks for.
+type settingsLoadRoot struct{ *Model }
+
+func (r settingsLoadRoot) RebuildSettings(result uipersist.LoadResult, generation uint64) uipersist.LoadOutcome {
+	card, open := surfaceOf[*uisettings.Surface](r.Model)
+	if !open || !r.settings.Fresh(generation) || card.State().Busy() {
+		return uipersist.LoadOutcome{}
+	}
+	r.settings.Take(result)
+	field := card.State().Field
+	card.SetState(r.settings.FromCache(r.services.cfg, uitheme.Current().Name))
 	var follow tea.Cmd
-	switch msg.Request.Target {
-	case uipersist.DialogTarget:
-		card, open := surfaceOf[*uisettings.Surface](m)
-		if !open || !m.settings.Fresh(msg.Request.Generation) || card.State().Busy() {
-			return m, nil
-		}
-		m.settings.Take(msg.Result)
-		field := card.State().Field
-		card.SetState(m.settings.FromCache(m.services.cfg, uitheme.Current().Name))
-		// A manual theme the shell changed meanwhile repaints here, so esc
-		// keeps it instead of writing back the palette cached at startup.
-		if d := card.State(); !d.ThemeAuto && uitheme.Current().Name != d.ManualTheme {
-			d.ShowTheme(d.ManualTheme)
-			applyTheme(uitheme.Palettes[d.ThemeIndex])
-			SyncTerminalColors()
-			follow = m.syncPaneTheme()
-		}
-		card.State().MarkBaseline()
-		card.State().Field = field
-	case uipersist.FormTarget:
-		f, ok := m.formFor(int(msg.Request.Generation))
-		if !ok || f.DefaultsTouched() || m.settings.Pending > 0 {
-			return m, nil
-		}
-		m.settings.Take(msg.Result)
-		m.refreshFormChoicePrefs()
-		follow = tea.Batch(m.applyCachedFormDefaults(), m.formWorktreeProbeCmd(false))
-	case uipersist.QuickTarget:
-		q, ok := m.quickFor(int(msg.Request.Generation))
-		if !ok || q.DefaultsTouched() || m.settings.Pending > 0 {
-			return m, nil
-		}
-		m.settings.Take(msg.Result)
-		m.refreshQuickChoicePrefs()
-		follow = tea.Batch(m.applyCachedQuickDefaults(), m.quickWorktreeProbeCmd(false))
-	default:
-		return m, nil
+	// A manual theme the shell changed meanwhile repaints here, so esc
+	// keeps it instead of writing back the palette cached at startup.
+	if d := card.State(); !d.ThemeAuto && uitheme.Current().Name != d.ManualTheme {
+		d.ShowTheme(d.ManualTheme)
+		applyTheme(uitheme.Palettes[d.ThemeIndex])
+		SyncTerminalColors()
+		follow = r.syncPaneTheme()
 	}
-	m.applyCachedSettingsPrefs()
-	m.rebuildRows()
-	if msg.Err != nil {
-		m.reportErr(msg.Err.Error())
+	card.State().MarkBaseline()
+	card.State().Field = field
+	return uipersist.LoadOutcome{Built: true, Follow: follow}
+}
+
+func (r settingsLoadRoot) RebuildForm(result uipersist.LoadResult, generation uint64) uipersist.LoadOutcome {
+	f, ok := r.formFor(int(generation))
+	if !ok || f.DefaultsTouched() || r.settings.Pending > 0 {
+		return uipersist.LoadOutcome{}
+	}
+	r.settings.Take(result)
+	r.refreshFormChoicePrefs()
+	return uipersist.LoadOutcome{Built: true, Follow: tea.Batch(r.applyCachedFormDefaults(), r.formWorktreeProbeCmd(false))}
+}
+
+func (r settingsLoadRoot) RebuildQuick(result uipersist.LoadResult, generation uint64) uipersist.LoadOutcome {
+	q, ok := r.quickFor(int(generation))
+	if !ok || q.DefaultsTouched() || r.settings.Pending > 0 {
+		return uipersist.LoadOutcome{}
+	}
+	r.settings.Take(result)
+	r.refreshQuickChoicePrefs()
+	return uipersist.LoadOutcome{Built: true, Follow: tea.Batch(r.applyCachedQuickDefaults(), r.quickWorktreeProbeCmd(false))}
+}
+
+func (r settingsLoadRoot) SettleLoad(err error, follow tea.Cmd) tea.Cmd {
+	r.applyCachedSettingsPrefs()
+	r.rebuildRows()
+	if err != nil {
+		r.reportErr(err.Error())
 	} else {
-		m.clearErr()
+		r.clearErr()
 	}
-	return m, follow
+	return follow
 }
 
 // applySettingsResult runs the work a dialog key asked beyond its own
@@ -165,7 +177,7 @@ func (m *Model) runSettingsResult(d *uisettings.State, result uisettings.Result)
 	switch {
 	case result.Palette:
 		if result.DetectTheme {
-			d.ShowTheme(autoThemeName(d.ManualTheme, systheme.Detect()))
+			d.ShowTheme(uitheme.Auto(d.ManualTheme, systheme.Detect()))
 		}
 		applyTheme(uitheme.Palettes[d.ThemeIndex])
 		SyncTerminalColors()
@@ -203,18 +215,18 @@ func (m *Model) captureSettingsSave(d *uisettings.State, includeHidden, followUp
 func (m *Model) queueSettingsSave(d *uisettings.State, includeHidden, followUpdate bool) {
 	s := &m.settings
 	s.Gen++
-	request := settingsRequest{
-		values:       d.ChangedValues(),
-		followUpdate: followUpdate,
-		generation:   s.Gen,
+	request := uipersist.SaveRequest{
+		Values:       d.ChangedValues(),
+		StagedUpdate: followUpdate,
+		Generation:   s.Gen,
 	}
 	if hidden := d.HiddenList(); includeHidden && !d.HiddenAtBaseline(hidden) {
-		request.hidden = hidden
+		request.Hidden = hidden
 	}
-	d.AdvanceBaseline(request.values, request.hidden)
-	s.Cache.ApplyValues(request.values)
-	if request.hidden != nil {
-		s.Cache.ApplyHidden(request.hidden)
+	d.AdvanceBaseline(request.Values, request.Hidden)
+	s.Cache.ApplyValues(request.Values)
+	if request.Hidden != nil {
+		s.Cache.ApplyHidden(request.Hidden)
 	}
 	s.Pending++
 	m.enqueueEffect(request, 0, false)
@@ -223,12 +235,12 @@ func (m *Model) queueSettingsSave(d *uisettings.State, includeHidden, followUpda
 func (m *Model) captureHiddenSave(d *uisettings.State) tea.Cmd {
 	s := &m.settings
 	s.Gen++
-	request := settingsRequest{
-		hidden:     d.HiddenList(),
-		generation: s.Gen,
+	request := uipersist.SaveRequest{
+		Hidden:     d.HiddenList(),
+		Generation: s.Gen,
 	}
-	d.AdvanceBaseline(nil, request.hidden)
-	s.Cache.ApplyHidden(request.hidden)
+	d.AdvanceBaseline(nil, request.Hidden)
+	s.Cache.ApplyHidden(request.Hidden)
 	s.Pending++
 	return m.submitSettings(request)
 }
@@ -239,16 +251,11 @@ func (m *Model) captureHiddenSave(d *uisettings.State) tea.Cmd {
 // runtime to the store.
 func (m *Model) saveSettingsKeys(d *uisettings.State) tea.Cmd {
 	expectedSession, expectedList := m.settingsKeyTables()
-	change, ok := d.KeysToSave(expectedSession, expectedList)
+	request, ok := uipersist.KeysToSubmit(d.KeysToSave(expectedSession, expectedList))
 	if !ok {
 		return nil
 	}
-	return m.submitKeys(keysRequest{
-		List:           change.List,
-		Session:        change.Session,
-		ListChanged:    change.ListChanged,
-		SessionChanged: change.SessionChanged,
-	})
+	return m.submitKeys(request)
 }
 
 func (m *Model) settingsKeyTables() (keybind.Table, keybind.Table) {
@@ -266,27 +273,90 @@ func (m *Model) settingsKeyTables() (keybind.Table, keybind.Table) {
 
 // queuedKeys lists the key saves on the lane, running first, in the order
 // they commit.
-func (m *Model) queuedKeys() []keysRequest {
-	var requests []keysRequest
+func (m *Model) queuedKeys() []uipersist.KeysRequest {
+	var requests []uipersist.KeysRequest
 	for _, job := range append([]*uieffects.Job{m.effects.Main.Active}, m.effects.Main.Pending...) {
 		if job == nil {
 			continue
 		}
-		if request, ok := job.Request.(keysRequest); ok {
+		if request, ok := job.Request.(uipersist.KeysRequest); ok {
 			requests = append(requests, request)
 		}
 	}
 	return requests
 }
 
-func (m *Model) submitSettings(request settingsRequest) tea.Cmd {
+func (m *Model) submitSettings(request uipersist.SaveRequest) tea.Cmd {
 	m.enqueueEffect(request, 0, false)
 	return m.nextEffectCmd()
 }
 
-func (m *Model) submitKeys(request keysRequest) tea.Cmd {
+func (m *Model) submitKeys(request uipersist.KeysRequest) tea.Cmd {
 	m.enqueueEffect(request, 0, false)
 	return m.nextEffectCmd()
+}
+
+// settingsSaveRoot is the root as a Settings completion reaches it: the
+// persist package decides what committed, and every effect here answers in
+// the manager's own state.
+type settingsSaveRoot struct{ *Model }
+
+func (r settingsSaveRoot) ReportErr(text string) { r.reportErr(text) }
+
+func (r settingsSaveRoot) Caveat(text string) { r.reportErr(r.errBar.text + "; " + text) }
+
+func (r settingsSaveRoot) MirrorPrefs(values []uisettings.Readback) string {
+	return r.reconcileSettingsPrefs(values)
+}
+
+func (r settingsSaveRoot) Restore(values []uisettings.Readback, hiddenRaw string, hiddenErr error, editors *uisettings.EditorsProbe) {
+	if card, open := surfaceOf[*uisettings.Surface](r.Model); open {
+		card.State().Restore(values, hiddenRaw, hiddenErr, editors)
+	}
+}
+
+func (r settingsSaveRoot) Update(staged bool) tea.Cmd {
+	if !staged {
+		r.release.Applying = false
+		return nil
+	}
+	return r.release.Apply()
+}
+
+// SaveKeys re-applies the saved tables to the sessions already running.
+func (r settingsSaveRoot) SaveKeys(list, session keybind.Table, listChanged, sessionChanged bool) tea.Cmd {
+	if listChanged {
+		r.services.listKeys = list
+	}
+	if sessionChanged {
+		r.services.keys = session
+		r.services.tmux.SetSessionKeys(session)
+		return func() tea.Msg { return r.refreshExistingSessionUX() }
+	}
+	return nil
+}
+
+// keySaver writes one key table through the instance writer the job
+// captured, or the store when the model was built without one.
+func (s effectServices) keySaver() uipersist.KeySaver {
+	if s.saveKeys != nil {
+		return s.saveKeys
+	}
+	return s.store.SetKeys
+}
+
+// reconcileSettingsPrefs restores the live-session prefs to the committed
+// read-back; keys whose read failed keep their current value.
+func (m *Model) reconcileSettingsPrefs(restored []uisettings.Readback) string {
+	failed := 0
+	for _, value := range restored {
+		if value.Err != nil {
+			failed++
+			continue
+		}
+		m.mirrorPreference(value.Key, value.Value)
+	}
+	return uipersist.ReadFailureNote(failed)
 }
 
 // applySettingsPrefs mirrors the just chosen preferences into the live

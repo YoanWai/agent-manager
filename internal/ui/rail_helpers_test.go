@@ -224,7 +224,7 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width, _ int, _ stri
 		Width:     width, Height: 20, TerminalWidth: max(m.layout.width, width), TerminalHeight: max(m.layout.height, 20),
 		Theme: m.railTheme(), ListKeys: m.services.listKeys, ComfortableRows: m.prefs.comfortableRows,
 		MouseDisabled: m.prefs.mouseDisabled, Focused: m.focused(),
-		EnterFocuses: m.enterFocuses(), StartupPhase: m.startup.startupPhase, CursorMarker: uiframe.CursorMarker,
+		EnterFocuses: m.enterFocuses(), StartupPhase: m.startup.LoadPhase, CursorMarker: uiframe.CursorMarker,
 	}, uirail.Frame{})
 	var lines []string
 	for _, line := range frame.Lines {
@@ -252,7 +252,7 @@ func (m *Model) entryLines(_ []treeRow, _ int, width, height int) []contentLine 
 		Width:     width, Height: height, TerminalWidth: max(m.layout.width, width), TerminalHeight: max(m.layout.height, height),
 		Theme: m.railTheme(), ListKeys: m.services.listKeys, ComfortableRows: m.prefs.comfortableRows,
 		MouseDisabled: m.prefs.mouseDisabled, Focused: m.focused(),
-		EnterFocuses: m.enterFocuses(), StartupPhase: m.startup.startupPhase, CursorMarker: uiframe.CursorMarker,
+		EnterFocuses: m.enterFocuses(), StartupPhase: m.startup.LoadPhase, CursorMarker: uiframe.CursorMarker,
 	}, m.layout.displayedRail)
 	m.layout.displayedRail = frame
 	return railContentLines(frame.Lines)

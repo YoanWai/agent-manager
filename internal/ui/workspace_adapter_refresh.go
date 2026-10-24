@@ -165,7 +165,7 @@ func (m *Model) routeRefreshMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		if fenced {
 			m.requestRefresh()
 		}
-		m.startup.booting = false
+		m.startup.Booting = false
 		m.ageError()
 		if msg.followWarning != "" {
 			m.reportWarn(msg.followWarning)
@@ -216,8 +216,8 @@ func (m *Model) routeRefreshMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		// Sessions left from a previous run carry that run's window size,
 		// which the cache knows nothing about; the geometry cache adopts their
 		// real geometry on the first pass, so nothing resets the cache here.
-		if !m.startup.sessionsSized && m.layout.width > 0 && len(m.workspace.sessions) > 0 {
-			m.startup.sessionsSized = true
+		if !m.startup.SessionsSized && m.layout.width > 0 && len(m.workspace.sessions) > 0 {
+			m.startup.SessionsSized = true
 		}
 		m.publishPaneSize()
 		// The preview box changes height for more reasons than a terminal
@@ -225,7 +225,7 @@ func (m *Model) routeRefreshMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		// badge in the header. A pane shorter than the box paints a dead
 		// band under its output, so every pass grows what falls short.
 		// The call is free when nothing moved: it diffs against paneGeom.
-		if m.startup.sessionsSized && m.layout.width > 0 {
+		if m.startup.SessionsSized && m.layout.width > 0 {
 			m.resizeSessions()
 		}
 		m.settleInstall()

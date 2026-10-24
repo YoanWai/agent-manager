@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
@@ -102,13 +101,13 @@ func TestSymbolsSaveFailureRestoresAndCanRetry(t *testing.T) {
 	m.applyCmd(t, m.openSettings())
 	m.settingsCard().State().Field = uisettings.FieldGlyphs
 	m.handleSettingsKey(key("right"))
-	request := settingsRequest{values: m.settingsCard().State().ChangedValues(), generation: m.settings.Gen}
+	request := uipersist.SaveRequest{Values: m.settingsCard().State().ChangedValues(), Generation: m.settings.Gen}
 	writer := &settingsScriptWriter{failOn: uisettings.GlyphModeSetting, values: map[string]string{}}
-	result, err := request.execute(writer)
+	result, err := uipersist.RunSave(request, writer)
 	if err == nil {
 		t.Fatal("fixture write must fail")
 	}
-	m.applySettingsEffect(&uieffects.Job{Request: request}, result, err)
+	m.applyTestMsg(t, uipersist.ApplySave(settingsSaveRoot{m}, request, result, err))
 	if m.prefs.glyphMode != "" || m.errBar.text == "" {
 		t.Fatal("failed symbols save did not restore default and report failure")
 	}
@@ -130,11 +129,11 @@ func TestSettingsUpdateDoesNotStartAfterSymbolsSaveFails(t *testing.T) {
 	m.settingsCard().State().Field = uisettings.FieldUpdate
 	m.handleSettingsKey(key("enter"))
 	job := m.effects.Main.Active
-	request := job.Request.(settingsRequest)
-	if !request.followUpdate {
+	request := job.Request.(uipersist.SaveRequest)
+	if !request.StagedUpdate {
 		t.Fatal("update not captured")
 	}
-	if cmd := m.applySettingsEffect(job, settingsEffectResult{}, errors.New("disk full")); cmd != nil || m.release.Applying {
+	if cmd := uipersist.ApplySave(settingsSaveRoot{m}, request, uipersist.SaveResult{}, errors.New("disk full")); cmd != nil || m.release.Applying {
 		t.Fatal("failed settings save still starts update")
 	}
 }

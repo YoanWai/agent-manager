@@ -368,7 +368,7 @@ func TestFullRowWorkingWithoutPaneLineAnimatesLoader(t *testing.T) {
 	if len(lines) != 3 {
 		t.Fatalf("comfortable row painted %d lines, want 3", len(lines))
 	}
-	frame := presentation.GlyphsFor("").StartupFrames[m.startup.startupPhase%len(presentation.GlyphsFor("").StartupFrames)]
+	frame := presentation.GlyphsFor("").StartupFrames[m.startup.LoadPhase%len(presentation.GlyphsFor("").StartupFrames)]
 	state := ansi.Strip(lines[2])
 	if !strings.Contains(state, frame+" working") {
 		t.Fatalf("working row without a pane line should animate a loader, got %q", state)
@@ -414,7 +414,7 @@ func TestSplitRepinKeepsTallerPaneHeight(t *testing.T) {
 	id := m.sessionRows()[0].ID
 
 	m.prefs.fullLayout = true
-	m.startup.sessionsSized = false
+	m.startup.SessionsSized = false
 	m.layout.panes.LastSizes = nil
 	m.applyCmd(t, m.refreshCmd())
 	fullW, fullH := m.paneTargetSize()

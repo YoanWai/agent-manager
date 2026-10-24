@@ -1,11 +1,14 @@
 package ui
 
 import (
+	"testing"
+
 	"github.com/YoanWai/agent-manager/internal/diff"
 	"github.com/YoanWai/agent-manager/internal/git"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
+	uistartup "github.com/YoanWai/agent-manager/internal/ui/startup"
+
 	tea "github.com/charmbracelet/bubbletea"
-	"testing"
 )
 
 // Ctrl+C quits from the comment editor and the send-confirm prompt, not just
@@ -73,12 +76,12 @@ func TestDiffHelpKeepsLoaderRunningOnReturn(t *testing.T) {
 		t.Fatal("loading review should start the loader")
 	}
 	m.openHelp()
-	m.Update(startupTickMsg{})
-	if !m.startup.startupAnimating {
+	m.Update(uistartup.TickMsg{})
+	if !m.startup.Animating {
 		t.Fatal("review is still loading under help, so the loader keeps ticking")
 	}
 	m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
-	if !m.startup.startupAnimating {
+	if !m.startup.Animating {
 		t.Fatal("returning to a loading review should leave the loader running")
 	}
 }
