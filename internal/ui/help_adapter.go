@@ -7,7 +7,6 @@ import (
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
-	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -39,18 +38,7 @@ func (h helpHost) CursorMarker() string { return uiframe.CursorMarker }
 
 func (h helpHost) Context(width int) uihelp.Context { return uihelp.ContextFor(h, width) }
 
-func (h helpHost) Styles() uihelp.Styles {
-	return uihelp.Styles{
-		Section: uitheme.SectionStyle(),
-		Rule:    lipgloss.NewStyle().Foreground(uitheme.ColorBorder()),
-		Key:     uitheme.KeyStyle(),
-		Muted:   uitheme.MutedStyle(),
-		Subtle:  uitheme.SubtleStyle(),
-		Value:   uitheme.ValueStyle(),
-		Match:   lipgloss.NewStyle().Foreground(uitheme.ColorBright()).Bold(true),
-		Cursor:  lipgloss.NewStyle().Foreground(uitheme.ColorAccent()),
-	}
-}
+func (h helpHost) Styles() uihelp.Styles { return uihelp.CurrentStyles() }
 
 func (h helpHost) InnerWidth(width int) int { return uiframe.CardInnerWidth(width) }
 

@@ -6,6 +6,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -38,6 +39,20 @@ type Styles struct {
 	Value   lipgloss.Style
 	Match   lipgloss.Style
 	Cursor  lipgloss.Style
+}
+
+// CurrentStyles is the styles for the theme painting now.
+func CurrentStyles() Styles {
+	return Styles{
+		Section: uitheme.SectionStyle(),
+		Rule:    lipgloss.NewStyle().Foreground(uitheme.ColorBorder()),
+		Key:     uitheme.KeyStyle(),
+		Muted:   uitheme.MutedStyle(),
+		Subtle:  uitheme.SubtleStyle(),
+		Value:   uitheme.ValueStyle(),
+		Match:   lipgloss.NewStyle().Foreground(uitheme.ColorBright()).Bold(true),
+		Cursor:  lipgloss.NewStyle().Foreground(uitheme.ColorAccent()),
+	}
 }
 
 // Context is the copied presentation state Help needs to build its content.
