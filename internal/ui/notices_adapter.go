@@ -39,14 +39,15 @@ func (m *Model) activeNotices() []uinotices.Notice {
 // bar as the panel's tail shows them.
 func (m *Model) noticesFrame() uinotices.Frame {
 	return uinotices.Frame{
-		GlyphMode:  m.prefs.glyphMode,
-		Width:      m.layout.width,
-		Height:     m.layout.height,
-		Refreshing: m.release.Refreshing,
-		Applying:   m.release.Applying,
-		Latest:     m.release.Latest,
-		Status:     m.statusRow(),
-		Theme:      uinotices.PanelTheme(),
+		GlyphMode:   m.prefs.glyphMode,
+		Width:       m.layout.width,
+		Height:      m.layout.height,
+		Refreshing:  m.release.Refreshing,
+		FeedPending: m.release.FeedPending,
+		Applying:    m.release.Applying,
+		Latest:      m.release.Latest,
+		Status:      m.statusRow(),
+		Theme:       uinotices.PanelTheme(),
 	}
 }
 

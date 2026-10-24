@@ -95,17 +95,20 @@ type Theme struct {
 	Fill func(row string, width int) string
 }
 
+const FeedPendingText = "checking messages…"
+
 // Frame is what one paint or key of the panel sees: the terminal, the
 // refresh and download in flight, the status bar's message and the theme.
 type Frame struct {
-	GlyphMode  presentation.GlyphMode
-	Width      int
-	Height     int
-	Refreshing bool
-	Applying   bool
-	Latest     string
-	Status     string
-	Theme      Theme
+	GlyphMode   presentation.GlyphMode
+	Width       int
+	Height      int
+	Refreshing  bool
+	FeedPending bool
+	Applying    bool
+	Latest      string
+	Status      string
+	Theme       Theme
 }
 
 // Action is what a key asks the root to do.
@@ -230,6 +233,9 @@ func (p Panel) tail(notices []Notice, f Frame, inner int) []string {
 	}
 	if f.Refreshing {
 		tail = append(tail, lipgloss.NewStyle().Foreground(f.Theme.Accent2).Render(presentation.GlyphsFor(f.GlyphMode).RefreshGlyph+" refreshing releases and messages…"))
+	}
+	if f.FeedPending {
+		tail = append(tail, lipgloss.NewStyle().Foreground(f.Theme.Accent2).Render(presentation.GlyphsFor(f.GlyphMode).RefreshGlyph+" "+FeedPendingText))
 	}
 	if f.Applying {
 		tail = append(tail, lipgloss.NewStyle().Foreground(f.Theme.Accent).Render(presentation.GlyphsFor(f.GlyphMode).DownloadGlyph+" downloading "+f.Latest+"…"))

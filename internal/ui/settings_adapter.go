@@ -330,9 +330,9 @@ func (m *Model) mirrorPreference(key, value string) {
 	switch {
 	case mirrored.Flag != nil:
 		m.mirrorFlag(key, *mirrored.Flag)
-	case mirrored.Editor != "":
+	case key == uisettings.EditorSetting:
 		m.services.editor = mirrored.Editor
-	default:
+	case key == uisettings.GlyphModeSetting:
 		m.prefs.glyphMode = mirrored.GlyphMode
 	}
 }

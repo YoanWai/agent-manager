@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from smoke import Sandbox, feed_cache
+from smoke import Sandbox, feed_pending_text, feed_settled
 
 
 class SandboxTests(unittest.TestCase):
@@ -36,9 +36,13 @@ class SandboxTests(unittest.TestCase):
             with patch.object(isolated, 'tmux', return_value=subprocess.CompletedProcess([], 0, '', '')):
                 isolated.close()
 
-    def test_feed_cache_follows_the_sandbox_config_env(self):
-        self.assertEqual(feed_cache(self.sandbox),
-                         self.sandbox.home / '.config' / 'agent-manager' / 'feed-messages.json')
+    def test_feed_settled_waits_until_the_check_leaves_the_screen(self):
+        self.assertFalse(feed_settled('loading'))
+        self.assertFalse(feed_settled('A G E N T\nM ' + feed_pending_text))
+        self.assertFalse(feed_settled('╭─ messages\n' + feed_pending_text))
+        self.assertTrue(feed_settled('A G E N T\nM unread'))
+        self.assertTrue(feed_settled('╭─ messages\nJoin the Discord'))
+        self.assertFalse(feed_settled('╭─ messages\nJoin the Discord\n' + feed_pending_text))
 
     def test_fixture_shell_delegates_command_execution(self):
         result = subprocess.run([self.sandbox.env['SHELL'], '-c', 'printf command-ready'],

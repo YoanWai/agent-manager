@@ -694,7 +694,7 @@ func TestSettingsSaveKeepsOtherWritersKeys(t *testing.T) {
 			m := buildModel(t)
 			load := m.openSettings()
 			m.settingsCard().State().Field = uisettings.FieldWorktree
-			m.cycleSetting(1)
+			m.cycleThemeSettled(t)
 
 			theirs := otherWriterTheme(t)
 			if err := m.services.store.SetSetting(uisettings.ThemeSetting, theirs); err != nil {
@@ -780,7 +780,7 @@ func TestSettingsEnterDefersStoreWrites(t *testing.T) {
 	m := buildModel(t)
 	m.openSettings()
 	m.settingsCard().State().Field = uisettings.FieldTheme
-	m.cycleSetting(1)
+	m.cycleThemeSettled(t)
 	staged := uitheme.Palettes[m.settingsCard().State().ThemeIndex].Name
 
 	_, cmd := m.handleSettingsKey(key("enter"))
@@ -843,14 +843,14 @@ func TestSettingsSaveKeepsCapturedChoices(t *testing.T) {
 	m := buildModel(t)
 	m.openSettings()
 	m.settingsCard().State().Field = uisettings.FieldTheme
-	m.cycleSetting(1)
+	m.cycleThemeSettled(t)
 	captured := uitheme.Palettes[m.settingsCard().State().ThemeIndex].Name
 	_, cmd := m.handleSettingsKey(key("enter"))
 
 	m.openSettings()
 	m.settingsCard().State().Field = uisettings.FieldTheme
-	m.cycleSetting(1)
-	m.cycleSetting(1)
+	m.cycleThemeSettled(t)
+	m.cycleThemeSettled(t)
 	m.applyCmd(t, cmd)
 
 	got, err := m.services.store.Setting(uisettings.ThemeSetting)
@@ -869,10 +869,10 @@ func TestSettingsSavePartialFailureIsDurableAndHonest(t *testing.T) {
 	m := buildModel(t)
 	m.openSettings()
 	m.settingsCard().State().Field = uisettings.FieldTheme
-	m.cycleSetting(1)
+	m.cycleThemeSettled(t)
 	staged := uitheme.Palettes[m.settingsCard().State().ThemeIndex].Name
 	m.settingsCard().State().Field = uisettings.FieldCoordination
-	m.cycleSetting(1)
+	m.cycleThemeSettled(t)
 	if !m.settingsCard().State().Proactive {
 		t.Fatal("coordination should be staged proactive")
 	}
@@ -917,7 +917,7 @@ func TestSettingsSaveReadFailureDoesNotFabricateRestoration(t *testing.T) {
 	m := buildModel(t)
 	m.openSettings()
 	m.settingsCard().State().Field = uisettings.FieldDensity
-	m.cycleSetting(1)
+	m.cycleThemeSettled(t)
 	if !m.settingsCard().State().ComfortableRows {
 		t.Fatal("density should stage comfortable")
 	}
@@ -954,7 +954,7 @@ func TestSettingsSavePartialFailureReconcilesPrefs(t *testing.T) {
 	m := buildModel(t)
 	m.openSettings()
 	m.settingsCard().State().Field = uisettings.FieldDensity
-	m.cycleSetting(1)
+	m.cycleThemeSettled(t)
 	m.applySettingsPrefs(m.settingsCard().State()) // the dispatch-time optimistic mirror
 	if !m.prefs.comfortableRows {
 		t.Fatal("prefs should stage comfortable before persistence")
@@ -982,7 +982,7 @@ func TestSettingsSaveStaleCompletionReconcilesPrefsNotDialog(t *testing.T) {
 	m := buildModel(t)
 	m.openSettings()
 	m.settingsCard().State().Field = uisettings.FieldDensity
-	m.cycleSetting(1)
+	m.cycleThemeSettled(t)
 	request := uipersist.SaveRequest{Values: m.settingsCard().State().Values(), Generation: m.settings.Gen}
 
 	m.settings.Gen++
@@ -1031,7 +1031,7 @@ func TestFailedFullSaveReconcilesPrefsPastStaleGeneration(t *testing.T) {
 
 	m.openSettings()
 	m.settingsCard().State().Field = uisettings.FieldDensity
-	m.cycleSetting(1)
+	m.cycleThemeSettled(t)
 	m.applySettingsPrefs(m.settingsCard().State()) // the dispatch-time live preview
 	if !m.prefs.comfortableRows {
 		t.Fatal("dispatch must preview the staged density")
@@ -1053,7 +1053,7 @@ func TestFailedFullSaveReconcilesPrefsPastStaleGeneration(t *testing.T) {
 	// hidden-only save is queued behind it.
 	m.openSettings()
 	m.settingsCard().State().Field = uisettings.FieldMouse
-	m.cycleSetting(1)
+	m.cycleThemeSettled(t)
 	m.captureHiddenSave(m.settingsCard().State())
 
 	msg := <-completed
@@ -1116,12 +1116,12 @@ func TestSettingsSaveCompletionRefusesStaleGeneration(t *testing.T) {
 	m := buildModel(t)
 	m.openSettings()
 	m.settingsCard().State().Field = uisettings.FieldTheme
-	m.cycleSetting(1)
+	m.cycleThemeSettled(t)
 	request := uipersist.SaveRequest{Values: m.settingsCard().State().Values(), Generation: m.settings.Gen}
 
 	m.settings.Gen++
 	m.settingsCard().State().Field = uisettings.FieldTheme
-	m.cycleSetting(1)
+	m.cycleThemeSettled(t)
 	newer := uitheme.Palettes[m.settingsCard().State().ThemeIndex].Name
 
 	result := uipersist.SaveResult{Generation: request.Generation, Restored: []uisettings.Readback{{Key: uisettings.ThemeSetting, Value: "nord"}}}
@@ -1157,7 +1157,7 @@ func TestSettingsSaveDoesNotBlockWindowUpdate(t *testing.T) {
 
 	m.openSettings()
 	m.settingsCard().State().Field = uisettings.FieldTheme
-	m.cycleSetting(1)
+	m.cycleThemeSettled(t)
 	staged := uitheme.Palettes[m.settingsCard().State().ThemeIndex].Name
 	_, command := m.handleSettingsKey(key("enter"))
 	// The staged theme's pane push runs first on the lane; the save is next.
@@ -1203,7 +1203,7 @@ func TestEffectQueueDrainsSettingsSaveOnQuit(t *testing.T) {
 	m := buildModel(t)
 	m.openSettings()
 	m.settingsCard().State().Field = uisettings.FieldTheme
-	m.cycleSetting(1)
+	m.cycleThemeSettled(t)
 	staged := uitheme.Palettes[m.settingsCard().State().ThemeIndex].Name
 	m.settings.Gen++
 	request := uipersist.SaveRequest{Values: m.settingsCard().State().Values(), Generation: m.settings.Gen}
@@ -1258,7 +1258,7 @@ func TestSettingsSaveDuplicateCompletionIsIdempotent(t *testing.T) {
 	m := buildModel(t)
 	m.openSettings()
 	m.settingsCard().State().Field = uisettings.FieldTheme
-	m.cycleSetting(1)
+	m.cycleThemeSettled(t)
 	staged := uitheme.Palettes[m.settingsCard().State().ThemeIndex].Name
 	m.settings.Gen++
 	m.enqueueEffect(uipersist.SaveRequest{Values: m.settingsCard().State().Values(), Generation: m.settings.Gen}, 0, false)
@@ -1309,7 +1309,7 @@ func TestFailedSettingsSavePreservesUnsetDefaults(t *testing.T) {
 		t.Fatal("fixture does not start with enabled defaults")
 	}
 	m.settingsCard().State().Field = uisettings.FieldDensity
-	m.cycleSetting(1)
+	m.cycleThemeSettled(t)
 	_, _ = m.closeSettings()
 	job := m.effects.Main.Active
 	request := job.Request.(uipersist.SaveRequest)
@@ -1327,6 +1327,15 @@ func TestFailedSettingsSavePreservesUnsetDefaults(t *testing.T) {
 // cycleSetting steps the focused row as ← or → would.
 func (m *Model) cycleSetting(step int) tea.Cmd {
 	return m.runSettingsResult(m.settingsCard().State(), m.settingsCard().State().Cycle(step))
+}
+
+// cycleThemeSettled steps the focused row and finishes the pane push a theme
+// change starts, so the lane is free for the save a test queues next.
+func (m *Model) cycleThemeSettled(t *testing.T) {
+	t.Helper()
+	if command := m.cycleSetting(1); command != nil {
+		m.applyTestMsg(t, command())
+	}
 }
 
 // openSettingsCLIPicker opens the CLI picker from its row.
@@ -1786,7 +1795,7 @@ func TestSettingsLoadRefusesEditsAndSubpickers(t *testing.T) {
 		m := buildModel(t)
 		cmd := m.openSettings()
 		m.settingsCard().State().Field = uisettings.FieldWorktree
-		m.cycleSetting(1)
+		m.cycleThemeSettled(t)
 		m.applyTestMsg(t, cmd())
 		if !m.settingsCard().State().WorktreeDefault {
 			t.Fatal("the async load overwrote a staged setting")
@@ -1825,7 +1834,7 @@ func TestSettingsReopenUsesOptimisticPendingSave(t *testing.T) {
 	m := buildModel(t)
 	m.openSettings()
 	m.settingsCard().State().Field = uisettings.FieldWorktree
-	m.cycleSetting(1)
+	m.cycleThemeSettled(t)
 	_, save := m.handleSettingsKey(key("enter"))
 	if save == nil {
 		t.Fatal("settings save was not queued")
@@ -2157,7 +2166,7 @@ func TestSettingsEscClosesAndSavesOnce(t *testing.T) {
 	for _, k := range []tea.KeyMsg{{Type: tea.KeyEsc}} {
 		m := openedSettings(t)
 		m.settingsCard().State().Field = uisettings.FieldMouse
-		m.cycleSetting(1)
+		m.cycleThemeSettled(t)
 		before := m.settings.Pending
 		_, cmd := m.Update(k)
 		if m.settingsOpen() || len(m.surfaces) != 0 {

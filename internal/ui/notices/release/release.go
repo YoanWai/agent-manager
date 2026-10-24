@@ -45,8 +45,11 @@ type State struct {
 	Checked        bool
 	Refreshing     bool
 	RefreshPending int
-	Applying       bool
-	RestartPath    string
+	// FeedPending holds until the launch's own feed fetch lands; the fetch
+	// writes its cache before the UI applies its result.
+	FeedPending bool
+	Applying    bool
+	RestartPath string
 	// WhatsNewVersion mirrors the persisted whats_new_version setting so
 	// the notices list, rebuilt every frame, never reads the database.
 	WhatsNewVersion string
@@ -78,7 +81,7 @@ type Root interface {
 // New restores the what's-new versions that are still current. A read
 // failure just means no notice.
 func New(st Store, version string) State {
-	return State{Version: version, WhatsNewVersion: setting(st, WhatsNewSetting), WhatsNewFrom: setting(st, WhatsNewFromSetting)}
+	return State{Version: version, FeedPending: true, WhatsNewVersion: setting(st, WhatsNewSetting), WhatsNewFrom: setting(st, WhatsNewFromSetting)}
 }
 
 func setting(st Store, key string) string {
@@ -217,6 +220,7 @@ type FeedMsg struct {
 	Messages []feed.Message
 	Failed   bool
 	Manual   bool
+	Startup  bool
 	Err      error
 }
 
@@ -249,6 +253,16 @@ func (s *State) Check() tea.Cmd {
 func (s *State) CheckFeed() tea.Cmd {
 	version := s.Version
 	return func() tea.Msg { return fetchFeed(version, false) }
+}
+
+// CheckStartupFeed is the launch's fetch, the one FeedPending waits for.
+func (s *State) CheckStartupFeed() tea.Cmd {
+	version := s.Version
+	return func() tea.Msg {
+		msg := fetchFeed(version, false)
+		msg.Startup = true
+		return msg
+	}
 }
 
 // Refresh is one manual pass over releases and the feed, refused while the
@@ -293,7 +307,7 @@ func fetchUpdates(version string, force bool) tea.Msg {
 	return UpdateMsg{Latest: result.Latest, URL: result.URL, Releases: result.Releases, Manual: force}
 }
 
-func fetchFeed(version string, force bool) tea.Msg {
+func fetchFeed(version string, force bool) FeedMsg {
 	dir, err := config.Dir()
 	if err != nil {
 		return FeedMsg{Failed: true, Manual: force, Err: err}
@@ -371,6 +385,9 @@ func (s *State) Route(root Root, msg tea.Msg) (tea.Cmd, bool) {
 		return tea.Batch(s.Check(), s.CheckFeed(), Tick()), true
 
 	case FeedMsg:
+		if msg.Startup {
+			s.FeedPending = false
+		}
 		if msg.Manual {
 			s.finishRefresh()
 		}

@@ -1651,3 +1651,83 @@ func TestNoticesSurfaceFencesAStaleDismissalCompletion(t *testing.T) {
 type errTest string
 
 func (e errTest) Error() string { return string(e) }
+
+func TestFeedResultClearsThePendingAlert(t *testing.T) {
+	cases := []struct {
+		name string
+		msg  uirelease.FeedMsg
+		open bool
+	}{
+		{name: "new entry", msg: uirelease.FeedMsg{Messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}}, open: true},
+		{name: "nothing new", msg: uirelease.FeedMsg{}, open: false},
+		{name: "refused", msg: uirelease.FeedMsg{Failed: true, Err: errors.New("feed down")}, open: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := footModel(t)
+			m.release.FeedPending = true
+			tc.msg.Startup = true
+			m.Update(tc.msg)
+			if m.release.FeedPending {
+				t.Fatal("the feed result left the check pending")
+			}
+			if _, label := m.messagesAlert(); label == uinotices.FeedPendingText {
+				t.Fatal("the checking alert stayed up")
+			}
+			if opened := m.noticesOpen(); opened != tc.open {
+				t.Fatalf("panel open = %v, want %v", opened, tc.open)
+			}
+		})
+	}
+}
+
+func TestFeedPendingWaitsForStartupResult(t *testing.T) {
+	for _, manual := range []bool{true, false} {
+		m := footModel(t)
+		m.release.FeedPending = true
+		m.Update(uirelease.FeedMsg{Manual: manual})
+		if !m.release.FeedPending {
+			t.Fatalf("a non-startup result (manual=%v) cleared the pending startup check", manual)
+		}
+		m.Update(uirelease.FeedMsg{Startup: true})
+		if m.release.FeedPending {
+			t.Fatal("the startup result left the check pending")
+		}
+	}
+}
+
+func TestCheckingAlertOpensMessagesByClick(t *testing.T) {
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 34
+	m.release.FeedPending = true
+	view := ansi.Strip(preparedView(m))
+	x, y := -1, 0
+	for row, line := range strings.Split(view, "\n") {
+		if col := strings.Index(line, uinotices.FeedPendingText); col >= 0 {
+			x, y = ansi.StringWidth(line[:col]), row
+			break
+		}
+	}
+	if x < 0 {
+		t.Fatalf("footer should say the feed check has not landed:\n%s", view)
+	}
+	if m = leftClick(m, x, y); !m.noticesOpen() {
+		t.Fatal("a click on the checking alert should open messages")
+	}
+	m.Update(key("esc"))
+	if m.noticesOpen() {
+		t.Fatal("esc should close messages")
+	}
+	m.Update(key("M"))
+	if !m.noticesOpen() {
+		t.Fatal("M should open messages while the check is pending")
+	}
+}
+
+func TestOpenPanelSaysTheFeedCheckHasNotLanded(t *testing.T) {
+	m := modalModel(t)
+	m.release.FeedPending = true
+	if got := ansi.Strip(preparedView(m)); !strings.Contains(got, uinotices.FeedPendingText) {
+		t.Fatalf("an open panel should say the feed check has not landed:\n%s", got)
+	}
+}
