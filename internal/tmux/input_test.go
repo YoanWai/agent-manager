@@ -181,9 +181,10 @@ func TestPasteDeliversWithoutSubmitting(t *testing.T) {
 	t.Cleanup(func() { os.Remove(marker) })
 
 	text := "first line\nsecond line\n"
-	// paste-buffer converts newlines to carriage returns, the same bytes a
-	// terminal emits when pasting; composers read them as line breaks.
-	want := "\x1b[200~first line\rsecond line\r\x1b[201~"
+	// -r keeps the buffer's own linefeeds, so the pane reads the paste exactly
+	// as it was written. A carriage return here would arrive as a typed Enter
+	// inside the markers, which an agent's paste detection can take as a submit.
+	want := "\x1b[200~first line\nsecond line\n\x1b[201~"
 	command := "stty raw -echo; printf '\\033[?2004h" + pasteReady + "'; dd bs=1 count=" +
 		strconv.Itoa(len(want)+1) + " of=" + ShellQuote(marker) + " 2>/dev/null"
 	if err := driver.Create(id, paneDir(), command, nil, 0, 0); err != nil {

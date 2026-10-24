@@ -70,6 +70,31 @@ func TestPanelRunsOnCopiedSources(t *testing.T) {
 	}
 }
 
+func TestUpdateNoticeHighlightsPressU(t *testing.T) {
+	useTrueColor(t)
+	p := NewPanel(map[string]bool{})
+	notices := p.Active(testSources("v0.3.0"))
+	view := strings.Join(p.View(notices, testFrame()), "\n")
+	theme := testTheme()
+	for _, want := range []string{
+		theme.Key.Render("Press u to update to v0.3.0 and restart."),
+		theme.Key.Render("u update"),
+	} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("update notice missing highlighted %q", ansi.Strip(want))
+		}
+	}
+	plain := ansi.Strip(view)
+	if strings.Contains(plain, "`") {
+		t.Fatalf("accent marks reached the screen:\n%s", plain)
+	}
+	p.Key(key("down"), notices, testFrame())
+	next := strings.Join(p.View(notices, testFrame()), "\n")
+	if strings.Contains(next, theme.Key.Render("u update")) || strings.Contains(ansi.Strip(next), "Press u to update") {
+		t.Fatalf("press u stays on the update notice only:\n%s", ansi.Strip(next))
+	}
+}
+
 func TestPanelDismissingTheLastNoticeCloses(t *testing.T) {
 	src := testSources("")
 	p := NewPanel(map[string]bool{Welcome: true})

@@ -26,12 +26,11 @@ func TestSpecsKeepTheirOrder(t *testing.T) {
 	}
 }
 
-// Every dialog row paints one line under the save button that carries its
-// label, and every two-way row reads, writes and restores through the
-// table.
+// Every dialog row paints one line that carries its label, and every
+// two-way row reads, writes and restores through the table.
 func TestTableCoversEveryRow(t *testing.T) {
 	s := openState(testContext())
-	lines := strings.Split(s.View(viewContext()).Body, "\n")[1:]
+	lines := strings.Split(s.View(viewContext()).Body, "\n")
 	if len(lines) != FieldCount {
 		t.Fatalf("the dialog paints %d lines for %d fields", len(lines), FieldCount)
 	}

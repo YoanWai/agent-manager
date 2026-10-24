@@ -37,6 +37,8 @@ class Sandbox:
         for key in ('TMUX', 'TMUX_PANE', 'AGENT_MANAGER_PROFILE', 'AGENT_MANAGER_SESSION_ID', 'COLORFGBG',
                     'ENV', 'BASH_ENV', 'PROMPT_COMMAND'):
             self.env.pop(key, None)
+        # An inherited directory would put the feed cache outside this sandbox.
+        self.env.pop('AGENT_MANAGER_CONFIG_DIR', None)
         for key in tuple(self.env):
             if key.startswith('GIT_'):
                 self.env.pop(key)
@@ -154,6 +156,72 @@ class Sandbox:
         return errors
 
 
+# Longer than requestBudget in internal/feed, so a missing cache means the check finished.
+request_budget_wait = 6
+
+
+def feed_cache(sandbox):
+    return Path(sandbox.env['XDG_CONFIG_HOME']) / 'agent-manager' / 'feed-messages.json'
+
+
+def notice_rows(frame):
+    rows = []
+    started = False
+    for line in frame.splitlines():
+        if '╭─ messages' in line:
+            started = True
+            continue
+        if not started:
+            continue
+        if '┄' in line or '╰' in line:
+            break
+        rows.append(line)
+    return tuple(rows)
+
+
+def settle_messages(sandbox, target):
+    cache = feed_cache(sandbox)
+    deadline = time.monotonic() + request_budget_wait
+
+    def capture():
+        return sandbox.tmux('capture-pane', '-p', '-t', target).stdout
+
+    before = ''
+    while True:
+        frame = capture()
+        drawn = 'A G E N T' in frame or '╭─ messages' in frame
+        if cache.is_file() and drawn:
+            before = frame
+            break
+        if time.monotonic() >= deadline:
+            return
+        time.sleep(0.05)
+
+    # Printable keys in one write become one KeyMsg. j moves a notice and e badges
+    # the list, and neither key is visible on both screens.
+    prior = notice_rows(before)
+    if '╭─ messages' in before:
+        sandbox.tmux('send-keys', '-t', target, 'j')
+
+        def acknowledged(frame):
+            return notice_rows(frame) != prior
+    else:
+        sandbox.tmux('send-keys', '-t', target, 'e')
+
+        def acknowledged(frame):
+            return 'HIDE EMPTY' in frame or '╭─ messages' in frame
+
+    frame = sandbox.wait('messages-settled', capture, acknowledged)
+    if '╭─ messages' in frame:
+        sandbox.tmux('send-keys', '-t', target, 'Escape')
+        frame = sandbox.wait('messages-closed', capture,
+                             lambda current: 'A G E N T' in current and '╭─ messages' not in current)
+    if 'HIDE EMPTY' in frame:
+        sandbox.tmux('send-keys', '-t', target, 'e')
+        sandbox.wait('messages-restored', capture,
+                     lambda current: 'HIDE EMPTY' not in current and '╭─ messages' not in current)
+
+
 def smoke(sandbox, binary):
     repo = sandbox.artifacts / 'fixture-repo'
     repo.mkdir()
@@ -166,6 +234,7 @@ def smoke(sandbox, binary):
                  'commit', '-m', 'fixture baseline'])
     changed.write_text('after_review_e2e\n')
     sandbox.start_manager('smoke', repo, binary)
+    settle_messages(sandbox, 'smoke:0.0')
     sandbox.frame('startup', 'A G E N T')
     sandbox.key('Escape')
     sandbox.key('?')
@@ -238,6 +307,7 @@ def feature_flows(sandbox, pane):
     sandbox.wait('focused-pane-command',
                  lambda: sandbox.tmux('capture-pane', '-p', '-t', pane, socket='agentmgr').stdout,
                  lambda frame: 'printf focus-ready' in frame)
+    paste_keeps_its_linefeeds(sandbox)
     sandbox.key('C-q')
     sandbox.frame('focus-closed', 'Shell', 'focused · ctrl+q')
     sandbox.key('/')
@@ -260,6 +330,58 @@ def feature_flows(sandbox, pane):
     sandbox.key('Right')
     sandbox.wait('rail-unfolded', sandbox.capture,
                  lambda frame: 'terminal-' in rail_text(frame))
+
+
+def paste_keeps_its_linefeeds(sandbox):
+    """A pasted block reaches the focused pane with its own linefeeds.
+
+    A buffer's linefeeds are rewritten to carriage returns unless the paste
+    uses -r, and an agent reads a CR inside the bracketed markers as a typed
+    Enter: a paste into a working session then submits partway through and
+    queues the rest as follow-up prompts. A frame cannot show the difference,
+    so the pane records the bytes it received and the line ending is the
+    assertion.
+    """
+    text = 'paste-one\npaste-two\npaste-three\n'
+    bracketed = ('\x1b[200~' + text + '\x1b[201~').encode()
+    recorder = sandbox.home / 'paste-bytes'
+    ready = sandbox.home / 'recorder-ready'
+    # The reader runs in the foreground: a job started with & gets /dev/null as
+    # stdin and would never see the paste. It asks for bracketed paste, then
+    # reads byte by byte for exactly the paste's length, so a part-delivered
+    # paste still lands whole and it exits when the last byte arrives.
+    script = sandbox.home / 'recorder.sh'
+    script.write_text(
+        '#!/bin/sh\n'
+        'stty raw -echo\n'
+        'printf "\\033[?2004h"\n'
+        f': > {shlex.quote(str(ready))}\n'
+        f'head -c {len(bracketed)} > {shlex.quote(str(recorder))}\n')
+    script.chmod(0o700)
+    sandbox.tmux('send-keys', '-l', '-t', 'smoke:0.0', f'sh {shlex.quote(str(script))}',
+                 socket='e2e-outer')
+    sandbox.key('Enter')
+    # send-keys hands keys to whatever reads them next, so the paste would race
+    # the shell that is still starting the reader. The window's own bracketed
+    # paste flag cannot stand in for this: an interactive shell or an agent may
+    # already have asked for it, leaving the pane ready-looking before the
+    # reader has the tty. Only the reader touching a file proves it does.
+    sandbox.wait('recorder-ready',
+                 lambda: 'ready' if ready.exists() else '',
+                 lambda value: value == 'ready')
+    # The manager forwards the block as it would any paste from a terminal.
+    sandbox.tmux('send-keys', '-H', '-t', 'smoke:0.0',
+                 *[f'{byte:02x}' for byte in bracketed])
+    # head writes nothing until it holds the full count, so the file reaching
+    # the paste's length is the paste having arrived whole.
+    sandbox.wait('focus-paste-bytes',
+                 lambda: str(recorder.stat().st_size) if recorder.exists() else '',
+                 lambda value: value == str(len(bracketed)))
+    received = recorder.read_bytes()
+    if b'\r' in received:
+        raise AssertionError('the paste carried a carriage return, which an agent reads as a submit')
+    if received != bracketed:
+        raise AssertionError(f'pane received {received!r}, wanted exactly {bracketed!r}')
 
 
 def rail_text(frame):

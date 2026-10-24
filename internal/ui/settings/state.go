@@ -125,14 +125,14 @@ type State struct {
 	KeyCapture bool
 	KeyAppend  bool
 	KeyReset   bool
-	// lines is what each painted body line shows, for clicks: a field
-	// under the save button, a CLI, or a key picker row. first and keyFirst
-	// are the rows the main and key picker windows start at; saveWidth and
-	// glyphWidth are how far the save button and the symbols row reach.
-	lines                 presentation.Lines[int]
-	first, keyFirst       int
-	saveWidth, glyphWidth int
-	Editor                EditorRow
+	// lines is what each painted body line shows, for clicks: a field, a
+	// CLI, or a key picker row. first and keyFirst are the rows the main
+	// and key picker windows start at. glyphWidth is how far the symbols
+	// row reaches.
+	lines           presentation.Lines[int]
+	first, keyFirst int
+	glyphWidth      int
+	Editor          EditorRow
 	// Prompts is the saved prompts panel, open over the rows.
 	Prompts Prompts
 	Dirty   bool

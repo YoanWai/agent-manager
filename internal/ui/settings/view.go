@@ -163,52 +163,48 @@ func (s *State) View(ctx ViewContext) Frame {
 			lines = append(lines, line)
 		}
 	}
-	hint := [][2]string{{"↑↓", "field"}, {"←→", "change"}, {"↵/esc", "save"}}
+	hint := [][2]string{{"↑↓", "field"}, {"←→", "change"}, {"↵/esc", "save and close"}}
 	switch s.Field {
 	case FieldGlyphs:
-		hint = [][2]string{{"↑↓", "field"}, {"←→/click", "symbols"}, {"↵/esc", "save"}}
+		hint = [][2]string{{"↑↓", "field"}, {"←→/click", "symbols"}, {"↵/esc", "save and close"}}
 	case FieldDocs:
-		hint = [][2]string{{"↑↓", "field"}, {"↵", "open the docs"}, {"esc", "save"}}
+		hint = [][2]string{{"↑↓", "field"}, {"↵", "open the docs"}, {"esc", "save and close"}}
 	case FieldBugReport, FieldFeatureRequest:
-		hint = [][2]string{{"↑↓", "field"}, {"↵", "open form"}, {"esc", "save"}}
+		hint = [][2]string{{"↑↓", "field"}, {"↵", "open form"}, {"esc", "save and close"}}
 	case FieldCLIs:
-		hint = [][2]string{{"↑↓", "field"}, {"↵", "manage CLIs"}, {"esc", "save"}}
+		hint = [][2]string{{"↑↓", "field"}, {"↵", "manage CLIs"}, {"esc", "save and close"}}
 	case FieldPrompts:
-		hint = [][2]string{{"↑↓", "field"}, {"↵", "saved prompts"}, {"esc", "save"}}
+		hint = [][2]string{{"↑↓", "field"}, {"↵", "saved prompts"}, {"esc", "save and close"}}
 	case FieldKeybindings:
-		hint = [][2]string{{"↑↓", "field"}, {"↵", "change the keys"}, {"esc", "save"}}
+		hint = [][2]string{{"↑↓", "field"}, {"↵", "change the keys"}, {"esc", "save and close"}}
 	case FieldEditor:
 		switch {
 		case s.Editor.typing:
 			hint = [][2]string{{"↵", "keep"}, {"esc", "cancel"}}
 		case s.Editor.custom:
-			hint = [][2]string{{"↑↓", "field"}, {"←→", "change"}, {"↵", "type the command"}, {"esc", "save"}}
+			hint = [][2]string{{"↑↓", "field"}, {"←→", "change"}, {"↵", "type the command"}, {"esc", "save and close"}}
 		}
 	case FieldUpdate:
 		switch {
 		case ctx.Applying:
-			hint = [][2]string{{"↑↓", "field"}, {"esc", "save"}}
+			hint = [][2]string{{"↑↓", "field"}, {"esc", "save and close"}}
 		case ctx.Latest != "":
-			hint = [][2]string{{"↑↓", "field"}, {"↵", "update"}, {"esc", "save"}}
+			hint = [][2]string{{"↑↓", "field"}, {"↵", "update"}, {"esc", "save and close"}}
 		default:
-			hint = [][2]string{{"↑↓", "field"}, {"↵/esc", "save"}}
+			hint = [][2]string{{"↑↓", "field"}, {"↵/esc", "save and close"}}
 		}
 	}
 	return Frame{Card: Flex, Title: presentation.GlyphsFor(ctx.GlyphMode).SettingsGlyph + " Settings", Body: s.fitRows(ctx, lines, hint), Hints: hint}
 }
 
-// fitRows puts the save button over the rows that fit the terminal, held
-// still while the focused row stays on screen, and records what each
-// painted line shows.
+// fitRows windows the rows that fit, held still while the focused row stays
+// on screen, and records what each painted line shows.
 func (s *State) fitRows(ctx ViewContext, rows []string, hint [][2]string) string {
-	save := ctx.Styles.Key.Render("[ Save and close ]")
-	room := max(ctx.Height-ctx.Chrome(hint)-1, 1)
+	room := max(ctx.Height-ctx.Chrome(hint), 1)
 	s.first = presentation.Follow(s.first, s.Field, len(rows), min(room, len(rows)))
 	rows = rows[s.first:min(s.first+room, len(rows))]
-	s.saveWidth = ansi.StringWidth(save)
 	s.glyphWidth = 0
 	s.lines.Reset()
-	s.lines.Skip(1)
 	for i, row := range rows {
 		field := s.first + i
 		s.lines.Show(field, 1)
@@ -216,7 +212,7 @@ func (s *State) fitRows(ctx ViewContext, rows []string, hint [][2]string) string
 			s.glyphWidth = ansi.StringWidth(row)
 		}
 	}
-	return save + "\n" + strings.Join(rows, "\n")
+	return strings.Join(rows, "\n")
 }
 
 // versionRow is the focusable version line: when a newer release is known

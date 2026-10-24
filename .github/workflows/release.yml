@@ -10,6 +10,10 @@ permissions:
 jobs:
   goreleaser:
     runs-on: ubuntu-latest
+    # Release secrets live in the release environment, which only v* tags can
+    # deploy to. Only admins can create v* tags (Release tags ruleset), so a
+    # workflow pushed on a branch cannot read them.
+    environment: release
     permissions:
       contents: read
       id-token: write

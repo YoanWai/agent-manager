@@ -83,7 +83,7 @@ func (p Panel) Active(src Sources) []Notice {
 			Releases:      releaseRange.Releases,
 			RangeComplete: releaseRange.Complete,
 			After: []string{
-				"u updates once to " + src.Update.Latest + " and restarts; every release above is included.",
+				"`Press u to update to " + src.Update.Latest + " and restart.` Every release above is included.",
 				"Enter opens the full release notes.",
 			},
 			URL: src.Update.URL,
