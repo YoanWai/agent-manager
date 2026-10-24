@@ -77,7 +77,7 @@ func (s effectServices) runGeometry(request uigeometrypanes.Resize) (uieffects.R
 }
 
 func (m *Model) applyGeometryEffect(result uigeometrypanes.Result, err error) {
-	m.panes.Apply(result)
+	m.layout.panes.Apply(result)
 	if err != nil {
 		m.reportErr(err.Error())
 	}

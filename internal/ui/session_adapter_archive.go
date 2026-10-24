@@ -173,7 +173,9 @@ func (m *Model) markRestoredLocally(restored []store.Session, groupPath string) 
 
 // markGroup records the archive state this run just gave a group path, so
 // stale polls predating the change are reconciled on arrival.
-func (m *Model) markGroup(path string, mark uilifecycle.GoneMark) { m.lifecycle.MarkGroup(path, mark) }
+func (m *Model) markGroup(path string, mark uilifecycle.GoneMark) {
+	m.ledger.lifecycle.MarkGroup(path, mark)
+}
 
 func (m *Model) sessionAndChildren(sess store.Session) []store.Session {
 	out := make([]store.Session, 0, 1)

@@ -132,7 +132,7 @@ func newForkSurface(m *Model, source store.Session, gen int) *uidialogs.ForkSurf
 type launchHintRoot struct{ *Model }
 
 func (r launchHintRoot) StartInstall() bool {
-	if install := r.install.Pending; install != nil {
+	if install := r.ledger.install.Pending; install != nil {
 		r.reportErr("an install is already running in " + install.Name)
 		return false
 	}
@@ -140,32 +140,32 @@ func (r launchHintRoot) StartInstall() bool {
 		return false
 	}
 	// The install owns the images once it is admitted.
-	r.install.Launch.Images = nil
+	r.ledger.install.Launch.Images = nil
 	return true
 }
 
-func (r launchHintRoot) CopyLaunchCommand() tea.Cmd { return r.install.Copy() }
+func (r launchHintRoot) CopyLaunchCommand() tea.Cmd { return r.ledger.install.Copy() }
 
 func (r launchHintRoot) CardWidth() int { return r.cardWidth() }
 
 func (r launchHintRoot) CardChromeRows(hint [][2]string) int { return r.cardChromeRows(hint) }
 
-func (r launchHintRoot) ReleaseLaunchHint() { r.install.Release() }
+func (r launchHintRoot) ReleaseLaunchHint() { r.ledger.install.Release() }
 
 // closeLaunchHint takes the card down once its install has the screen,
 // without dropping the images the install now owns.
 func (m *Model) closeLaunchHint() {
-	m.install.Launch = uiinstall.Fix{}
+	m.ledger.install.Launch = uiinstall.Fix{}
 	m.clearSurfaces()
 	m.base = baseList
 }
 
-func (m *Model) releaseLaunchHint() { m.install.Release() }
+func (m *Model) releaseLaunchHint() { m.ledger.install.Release() }
 
 // launchInstall is the install the card's fix asks for, carrying the launch to
 // retry and the images that launch's prompt named.
 func (m *Model) launchInstall() installStartRequest {
-	fix := m.install.Launch
+	fix := m.ledger.install.Launch
 	retry := fix.Retry
 	if spawn, ok := retry.(spawnRequest); ok && len(spawn.images) == 0 {
 		spawn.images = append([]composer.Attachment(nil), fix.Images...)

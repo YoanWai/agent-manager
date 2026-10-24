@@ -51,7 +51,7 @@ func TestCatalogIsReadFromTheKeptAnswer(t *testing.T) {
 func TestFormLaunchesOnDefaultsWhenTheCLIFailsToAnswer(t *testing.T) {
 	m := buildModel(t)
 	answered(m, claudeLike, catalog.Catalog{})
-	m.spawner.Catalogs["claude"].Err = errors.New("app-server exited (status 1)")
+	m.ledger.spawner.Catalogs["claude"].Err = errors.New("app-server exited (status 1)")
 	openFormOnClaude(t, m)
 	if body := formBody(m); !strings.Contains(body, "couldn't read models from claude: app-") || !strings.Contains(body, "exited (status 1)") {
 		t.Fatalf("form:\n%s", body)
@@ -71,7 +71,7 @@ func TestAFailedCatalogIsRetriedAfterAWait(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	answered(m, claudeLike, catalog.Catalog{})
-	state := m.spawner.Catalogs["claude"]
+	state := m.ledger.spawner.Catalogs["claude"]
 	state.Err, state.CheckedAt = errors.New("not logged in"), time.Now()
 	if m.ensureCatalog("claude") != nil {
 		t.Fatal("a failure just now was asked again")
@@ -110,10 +110,10 @@ func TestAnOlderCLIOpensTheUpdateDialogInsteadOfListingModels(t *testing.T) {
 	m.applyCmd(t, m.ensureCatalog("pi"))
 
 	if !hintOpen(m) || !hintFix(m).Update || hintFix(m).Command != deps.Command("pi") {
-		t.Fatalf("mode %v fix %+v catalog %+v", m.screenID(), hintFix(m), m.spawner.Catalogs["pi"])
+		t.Fatalf("mode %v fix %+v catalog %+v", m.screenID(), hintFix(m), m.ledger.spawner.Catalogs["pi"])
 	}
-	if len(m.spawner.Catalogs["pi"].Cat.Models) != 0 {
-		t.Fatalf("models = %+v, want the kept answer withheld", m.spawner.Catalogs["pi"].Cat.Models)
+	if len(m.ledger.spawner.Catalogs["pi"].Cat.Models) != 0 {
+		t.Fatalf("models = %+v, want the kept answer withheld", m.ledger.spawner.Catalogs["pi"].Cat.Models)
 	}
 	if len(m.formPromptFor().Attachments) != 1 || len(hintFix(m).Images) != 0 {
 		t.Fatalf("draft images moved: form %v dialog %v", m.formPromptFor().Attachments, hintFix(m).Images)
@@ -171,11 +171,11 @@ func TestAnUpdatedCLIIsAskedAgainRightAway(t *testing.T) {
 		t.Fatal("an old CLI was not asked again after the dialog closed")
 	}
 	m.applyCmd(t, cmd)
-	if hintOpen(m) || m.spawner.Catalogs["pi"].Err != nil {
-		t.Fatalf("mode %v err %v, want the updated CLI listed", m.screenID(), m.spawner.Catalogs["pi"].Err)
+	if hintOpen(m) || m.ledger.spawner.Catalogs["pi"].Err != nil {
+		t.Fatalf("mode %v err %v, want the updated CLI listed", m.screenID(), m.ledger.spawner.Catalogs["pi"].Err)
 	}
-	if len(m.spawner.Catalogs["pi"].Cat.Models) != 1 {
-		t.Fatalf("models = %+v", m.spawner.Catalogs["pi"].Cat.Models)
+	if len(m.ledger.spawner.Catalogs["pi"].Cat.Models) != 1 {
+		t.Fatalf("models = %+v", m.ledger.spawner.Catalogs["pi"].Cat.Models)
 	}
 }
 
@@ -233,8 +233,8 @@ func TestAMissingCLIWithAFloorDoesNotOpenTheUpdateDialog(t *testing.T) {
 		t.Fatal("a missing CLI opened the update dialog")
 	}
 	var missing config.MissingToolError
-	if !errors.As(m.spawner.Catalogs["pi"].Err, &missing) || missing.Binary != "pi" {
-		t.Fatalf("err = %v, want pi missing", m.spawner.Catalogs["pi"].Err)
+	if !errors.As(m.ledger.spawner.Catalogs["pi"].Err, &missing) || missing.Binary != "pi" {
+		t.Fatalf("err = %v, want pi missing", m.ledger.spawner.Catalogs["pi"].Err)
 	}
 }
 
@@ -245,9 +245,9 @@ func TestOutdatedCatalogDoesNotReplaceAnotherInteraction(t *testing.T) {
 			pushForm(m).Form = spawn.NewForm(m.spawnHost(), []string{"claude"}, 0)
 		}
 		before := len(m.surfaces)
-		m.spawner.Catalogs = map[string]*uilaunch.CatalogState{"pi": {Loading: true}}
+		m.ledger.spawner.Catalogs = map[string]*uilaunch.CatalogState{"pi": {Loading: true}}
 		m.handleCatalog(catalogMsg{Tool: "pi", Err: config.OutdatedToolError{Binary: "pi", Installed: "0.84.2", Minimum: "0.84.3"}})
-		if len(m.surfaces) != before || hintOpen(m) || m.spawner.Catalogs["pi"].Err == nil {
+		if len(m.surfaces) != before || hintOpen(m) || m.ledger.spawner.Catalogs["pi"].Err == nil {
 			t.Fatalf("form %v: the stack changed or the catalog error was lost", form)
 		}
 	}
@@ -259,7 +259,7 @@ func TestClosingTheUpdateDialogReturnsToTheFormDraft(t *testing.T) {
 	pickFormTool(t, m, "pi-tool")
 	m.form().SetName("draft-name")
 	m.formPromptFor().Attachments = []composer.Attachment{{ID: 7}}
-	m.spawner.Catalogs = map[string]*uilaunch.CatalogState{"pi-tool": {Loading: true}}
+	m.ledger.spawner.Catalogs = map[string]*uilaunch.CatalogState{"pi-tool": {Loading: true}}
 	m.handleCatalog(catalogMsg{Tool: "pi-tool", Err: config.OutdatedToolError{Binary: "pi", Installed: "0.84.2", Minimum: "0.84.3"}})
 	if !hintOpen(m) {
 		t.Fatalf("screen = %v, want the update dialog", m.screenID())

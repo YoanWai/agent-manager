@@ -33,7 +33,7 @@ func (m *Model) persistSplitRatio() {
 	if m.services.store == nil {
 		return
 	}
-	m.panes.Persist(paneSizing{m}, m.layout.split.ratio)
+	m.layout.panes.Persist(paneSizing{m}, m.layout.split.ratio)
 }
 
 // prepareSplitForQuit accepts the live preview as the user's final ratio.

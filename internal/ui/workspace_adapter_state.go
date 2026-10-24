@@ -6,6 +6,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uicapture "github.com/YoanWai/agent-manager/internal/ui/preview/capture"
 )
 
 type workspace struct {
@@ -24,7 +25,9 @@ type workspace struct {
 	proc           sysstat.ProcStat
 	procFor        string
 	preview        string
-	agents         agentStats
+	// capture is what takes the selected pane's preview.
+	capture uicapture.State
+	agents  agentStats
 	// queuedMessages is replaced whole on every refresh rather than merged,
 	// so a delivered message's badge clears itself.
 	queuedMessages map[string]int

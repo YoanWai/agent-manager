@@ -37,8 +37,8 @@ func TestInstallStartDefersWorkOffUpdate(t *testing.T) {
 	if _, ok := m.effects.Main.Active.Request.(installStartRequest); !ok {
 		t.Fatalf("active effect = %T, want installStartRequest", m.effects.Main.Active.Request)
 	}
-	if m.install.Pending != nil || storeRows(t, m) != 0 {
-		t.Fatalf("install ran on Update: pending=%+v rows=%d", m.install.Pending, storeRows(t, m))
+	if m.ledger.install.Pending != nil || storeRows(t, m) != 0 {
+		t.Fatalf("install ran on Update: pending=%+v rows=%d", m.ledger.install.Pending, storeRows(t, m))
 	}
 
 	completed := make(chan tea.Msg, 1)
@@ -59,8 +59,8 @@ func TestInstallStartDefersWorkOffUpdate(t *testing.T) {
 	close(release)
 	m.applyTestMsg(t, <-completed)
 	m.drainEffects(t)
-	if m.install.Pending == nil || storeRows(t, m) != 1 {
-		t.Fatalf("completion = pending %+v, rows %d; want one running install", m.install.Pending, storeRows(t, m))
+	if m.ledger.install.Pending == nil || storeRows(t, m) != 1 {
+		t.Fatalf("completion = pending %+v, rows %d; want one running install", m.ledger.install.Pending, storeRows(t, m))
 	}
 }
 
@@ -97,8 +97,8 @@ func TestInstallStartKeepsDurableShellRowWhenSendIsRefused(t *testing.T) {
 
 	m.applyCmd(t, pressInLaunchHint(t, m, 'i'))
 
-	if m.install.Pending != nil {
-		t.Fatalf("failed send left a pending install: %+v", m.install.Pending)
+	if m.ledger.install.Pending != nil {
+		t.Fatalf("failed send left a pending install: %+v", m.ledger.install.Pending)
 	}
 	if !hintOpen(m) {
 		t.Fatalf("screen = %v, want the same setup dialog kept", m.screenID())
@@ -144,16 +144,16 @@ func TestInstallStartKeepsUncertainSendWithoutBlindRetry(t *testing.T) {
 
 	m.applyCmd(t, pressInLaunchHint(t, m, 'i'))
 
-	if m.install.Pending == nil {
+	if m.ledger.install.Pending == nil {
 		t.Fatal("uncertain send lost the pending install tracker")
 	}
 	if !m.onList() {
 		t.Fatalf("screen = %v, want the retry dialog closed", m.screenID())
 	}
-	if _, err := os.Stat(m.install.Pending.Script); err != nil {
+	if _, err := os.Stat(m.ledger.install.Pending.Script); err != nil {
 		t.Fatalf("uncertain send removed its script: %v", err)
 	}
-	if !imageExists(t, image) || len(m.install.Pending.Images) != 1 {
+	if !imageExists(t, image) || len(m.ledger.install.Pending.Images) != 1 {
 		t.Fatal("uncertain send lost its prompt image ownership")
 	}
 	if !strings.Contains(m.errBar.text, "may be running") || !strings.Contains(m.errBar.text, "inspect") {
@@ -188,13 +188,13 @@ func TestInstallStartCompletionDoesNotReplaceNewerDialog(t *testing.T) {
 	if !hintOpen(m) || m.gens.dialog != newGen || hintFix(m).Binary != "second-cli" {
 		t.Fatalf("completion replaced newer dialog: screen = %v gen=%d fix=%+v", m.screenID(), m.gens.dialog, hintFix(m))
 	}
-	if m.install.Pending == nil || m.install.Pending.Binary != "am-fake-cli" {
-		t.Fatalf("first install was not reconciled behind the dialog: %+v", m.install.Pending)
+	if m.ledger.install.Pending == nil || m.ledger.install.Pending.Binary != "am-fake-cli" {
+		t.Fatalf("first install was not reconciled behind the dialog: %+v", m.ledger.install.Pending)
 	}
 	if len(hintFix(m).Images) != 1 || !imageExists(t, secondImage) {
 		t.Fatal("newer dialog lost its image")
 	}
-	if len(m.install.Pending.Images) != 1 || !imageExists(t, firstImage) {
+	if len(m.ledger.install.Pending.Images) != 1 || !imageExists(t, firstImage) {
 		t.Fatal("pending install lost the first prompt image")
 	}
 }
@@ -206,7 +206,7 @@ func TestInstallStartStaleFailureDefersImageCleanupToCommand(t *testing.T) {
 	m.gens.dialog = 2
 	m.presentLaunchHint(uiinstall.Fix{Binary: "newer-cli"})
 
-	cmd := m.install.Started(installRoot{m},
+	cmd := m.ledger.install.Started(installRoot{m},
 		uiinstall.StartRequest{Gen: 1, Images: []composer.Attachment{{ID: 1, Path: image}}},
 		uiinstall.StartResult{},
 		errors.New("fixture start failed"),
@@ -250,7 +250,7 @@ func TestInstallBlocksQuitUntilPendingRetrySettles(t *testing.T) {
 		m := buildModel(t)
 		retryName, _ := installFixture(t, m, fakeInstallCommand(t))
 		m.applyCmd(t, pressInLaunchHint(t, m, 'i'))
-		if m.install.Pending == nil {
+		if m.ledger.install.Pending == nil {
 			t.Fatal("fixture install did not become pending")
 		}
 
@@ -259,7 +259,7 @@ func TestInstallBlocksQuitUntilPendingRetrySettles(t *testing.T) {
 		if cmd != nil || m.effects.Quitting {
 			t.Fatalf("quit was accepted during pending install: cmd=%v quitting=%t", cmd, m.effects.Quitting)
 		}
-		if !strings.Contains(m.errBar.text, "kill") || !strings.Contains(m.errBar.text, m.install.Pending.Name) {
+		if !strings.Contains(m.errBar.text, "kill") || !strings.Contains(m.errBar.text, m.ledger.install.Pending.Name) {
 			t.Fatalf("status = %q, want the installer shell and lifecycle guidance", m.errBar.text)
 		}
 
@@ -286,7 +286,7 @@ func TestInstallSettleDefersStatusAndBinaryChecks(t *testing.T) {
 		t.Fatal(err)
 	}
 	image := tempImage(t, "settle.png")
-	m.install.Pending = &uiinstall.Pending{
+	m.ledger.install.Pending = &uiinstall.Pending{
 		SessionID:  "installer",
 		Name:       "install-am-fake-cli",
 		Binary:     "am-fake-cli",
@@ -335,8 +335,8 @@ func TestInstallSettleDefersStatusAndBinaryChecks(t *testing.T) {
 	m.applyTestMsg(t, <-completed)
 	m.drainEffects(t)
 
-	if m.install.Pending != nil {
-		t.Fatalf("completed settle still pending: %+v", m.install.Pending)
+	if m.ledger.install.Pending != nil {
+		t.Fatalf("completed settle still pending: %+v", m.ledger.install.Pending)
 	}
 	if imageExists(t, image) {
 		t.Fatal("successful install with no retry kept an unowned prompt image")
@@ -363,7 +363,7 @@ func TestInstallSettleKeepsTrackerOnTransientStatusReadFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	image := tempImage(t, "transient.png")
-	m.install.Pending = &uiinstall.Pending{
+	m.ledger.install.Pending = &uiinstall.Pending{
 		SessionID:  "installer",
 		Name:       "install-am-fake-cli",
 		Binary:     "am-fake-cli",
@@ -375,7 +375,7 @@ func TestInstallSettleKeepsTrackerOnTransientStatusReadFailure(t *testing.T) {
 	m.settleInstall()
 	m.drainEffects(t)
 
-	if m.install.Pending == nil {
+	if m.ledger.install.Pending == nil {
 		t.Fatal("transient status read failure cleared the install tracker")
 	}
 	for _, path := range []string{statusDir, script, image} {
@@ -383,7 +383,7 @@ func TestInstallSettleKeepsTrackerOnTransientStatusReadFailure(t *testing.T) {
 			t.Fatalf("transient observer failure removed %s: %v", path, err)
 		}
 	}
-	if !strings.Contains(m.errBar.text, "read") || !strings.Contains(m.errBar.text, m.install.Pending.Name) {
+	if !strings.Contains(m.errBar.text, "read") || !strings.Contains(m.errBar.text, m.ledger.install.Pending.Name) {
 		t.Fatalf("status = %q, want the observer failure and installer named", m.errBar.text)
 	}
 
@@ -391,14 +391,14 @@ func TestInstallSettleKeepsTrackerOnTransientStatusReadFailure(t *testing.T) {
 	if err := os.WriteFile(statusFile, []byte("0"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	m.install.Pending.StatusFile = statusFile
+	m.ledger.install.Pending.StatusFile = statusFile
 	original := uiinstall.CheckInstalled
 	uiinstall.CheckInstalled = func(string) error { return nil }
 	t.Cleanup(func() { uiinstall.CheckInstalled = original })
 	m.settleInstall()
 	m.drainEffects(t)
-	if m.install.Pending != nil {
-		t.Fatalf("later successful observation kept pending install: %+v", m.install.Pending)
+	if m.ledger.install.Pending != nil {
+		t.Fatalf("later successful observation kept pending install: %+v", m.ledger.install.Pending)
 	}
 }
 
@@ -414,7 +414,7 @@ func TestInstallSettleRetriesTransientInstalledCheck(t *testing.T) {
 	if err := os.WriteFile(script, []byte("#!/bin/sh\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	m.install.Pending = &uiinstall.Pending{
+	m.ledger.install.Pending = &uiinstall.Pending{
 		SessionID:  "installer",
 		Name:       "install-am-fake-cli",
 		Binary:     "am-fake-cli",
@@ -445,7 +445,7 @@ func TestInstallSettleRetriesTransientInstalledCheck(t *testing.T) {
 	}
 	runSettle()
 
-	if m.install.Pending == nil {
+	if m.ledger.install.Pending == nil {
 		t.Fatal("transient installed check cleared the install tracker")
 	}
 	for _, path := range []string{statusFile, script, image} {
@@ -461,8 +461,8 @@ func TestInstallSettleRetriesTransientInstalledCheck(t *testing.T) {
 	}
 
 	runSettle()
-	if m.install.Pending != nil {
-		t.Fatalf("successful recheck kept the tracker: %+v", m.install.Pending)
+	if m.ledger.install.Pending != nil {
+		t.Fatalf("successful recheck kept the tracker: %+v", m.ledger.install.Pending)
 	}
 	if m.effects.Main.Active == nil {
 		t.Fatal("successful recheck did not activate the captured retry")
@@ -489,7 +489,7 @@ func TestInstallSettleKeepsTrackerWhenShellLivenessIsUnknown(t *testing.T) {
 		t.Fatal(err)
 	}
 	image := tempImage(t, "liveness.png")
-	m.install.Pending = &uiinstall.Pending{
+	m.ledger.install.Pending = &uiinstall.Pending{
 		SessionID:  "installer",
 		Name:       "install-am-fake-cli",
 		Binary:     "am-fake-cli",
@@ -506,7 +506,7 @@ func TestInstallSettleKeepsTrackerWhenShellLivenessIsUnknown(t *testing.T) {
 	m.settleInstall()
 	m.drainEffects(t)
 
-	if m.install.Pending == nil {
+	if m.ledger.install.Pending == nil {
 		t.Fatal("unknown shell liveness cleared the install tracker")
 	}
 	for _, path := range []string{script, image} {
@@ -514,7 +514,7 @@ func TestInstallSettleKeepsTrackerWhenShellLivenessIsUnknown(t *testing.T) {
 			t.Fatalf("unknown shell liveness removed %s: %v", path, err)
 		}
 	}
-	if !strings.Contains(m.errBar.text, "liveness") || !strings.Contains(m.errBar.text, m.install.Pending.Name) {
+	if !strings.Contains(m.errBar.text, "liveness") || !strings.Contains(m.errBar.text, m.ledger.install.Pending.Name) {
 		t.Fatalf("status = %q, want the liveness failure and installer named", m.errBar.text)
 	}
 	_, quit := m.requestQuit()
@@ -538,7 +538,7 @@ func TestInstallStartGivesTheInstallerShellTheKeys(t *testing.T) {
 		m.quick().Attachments = []composer.Attachment{{ID: 1, Path: image}}
 		m.gens.dialog = 1
 		m.presentLaunchHint(uiinstall.Fix{})
-		cmd := m.install.Started(installRoot{m}, uiinstall.StartRequest{Gen: 1, Binary: "pi"}, result, failure)
+		cmd := m.ledger.install.Started(installRoot{m}, uiinstall.StartRequest{Gen: 1, Binary: "pi"}, result, failure)
 		if !imageExists(t, image) {
 			t.Fatal("update deleted the image before the cleanup command ran")
 		}
@@ -556,7 +556,7 @@ func TestInstallStartGivesTheInstallerShellTheKeys(t *testing.T) {
 	pushQuick(m)
 	m.quick().Attachments = []composer.Attachment{{ID: 1, Path: image}}
 	m.gens.dialog = 2
-	m.install.Started(installRoot{m}, uiinstall.StartRequest{Gen: 1, Binary: "pi"}, result, nil)
+	m.ledger.install.Started(installRoot{m}, uiinstall.StartRequest{Gen: 1, Binary: "pi"}, result, nil)
 	if (m.quick() == nil) || !m.onList() {
 		t.Fatalf("a start behind a closed dialog left mode %v quick %v", m.screenID(), (m.quick() != nil))
 	}

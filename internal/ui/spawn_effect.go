@@ -210,20 +210,20 @@ func (s effectServices) runGroup(request groupRequest) (uieffects.Result, error)
 
 func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult, err error) tea.Cmd {
 	if result.RepoKnown {
-		m.spawner.RememberWorktree(result.Dir, result.RepoCapable, time.Now())
+		m.ledger.spawner.RememberWorktree(result.Dir, result.RepoCapable, time.Now())
 	}
 	if err == nil {
 		sess := result.Session
 		m.markFreshPane(sess.ID)
-		m.lifecycle.RecordLaunch(sess.ID, time.Now())
+		m.ledger.lifecycle.RecordLaunch(sess.ID, time.Now())
 		m.workspace.sessions = append(m.workspace.sessions, sess)
 		// The directive went out with the launch, so the row waits for the
 		// name the agent picks instead of showing the one generated for it.
 		if request.autoNamed {
-			m.lifecycle.AwaitRename(sess.ID, sess.Name, request.prompt)
+			m.ledger.lifecycle.AwaitRename(sess.ID, sess.Name, request.prompt)
 		}
 		if request.kind != spawnShell {
-			m.spawner.RememberSpawn(request.toolName, request.pickWorktree)
+			m.ledger.spawner.RememberSpawn(request.toolName, request.pickWorktree)
 			spawn.RememberModel(m.spawnHost(), request.toolName, spawn.Pick(request.choice))
 		}
 		// New sessions start as starting, which attention excludes; clear so
@@ -243,7 +243,7 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 		}
 		m.rebuildRows()
 		if request.kind == spawnShell {
-			m.lifecycle.TerminalKeyAt = time.Now()
+			m.ledger.lifecycle.TerminalKeyAt = time.Now()
 			m.focusSession(sess.ID)
 		}
 		if result.Label != nil {
@@ -255,7 +255,7 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 	request.dir = result.Dir
 	request.worktree = result.Worktree
 	if request.kind == spawnShell {
-		m.lifecycle.TerminalKeyAt = time.Now()
+		m.ledger.lifecycle.TerminalKeyAt = time.Now()
 		m.reportErr(err.Error())
 		return nil
 	}

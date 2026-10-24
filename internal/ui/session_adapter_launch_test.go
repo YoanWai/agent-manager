@@ -76,7 +76,7 @@ func (m *Model) pressRune(t *testing.T, r rune) {
 // would deliver: it carries no sessions and a listing time from before them.
 func staleRefreshAfter(m *Model) refreshMsg {
 	earliest := time.Now()
-	for _, at := range m.lifecycle.Launched {
+	for _, at := range m.ledger.lifecycle.Launched {
 		if at.Before(earliest) {
 			earliest = at
 		}
@@ -195,8 +195,8 @@ func TestAFreshListingRetiresDeletionMarkers(t *testing.T) {
 	m.drainEffects(t)
 	*m = *updated.(*Model)
 
-	if len(m.lifecycle.Gone) != 0 {
-		t.Fatalf("deletion markers outlived a listing that postdates them: %v", m.lifecycle.Gone)
+	if len(m.ledger.lifecycle.Gone) != 0 {
+		t.Fatalf("deletion markers outlived a listing that postdates them: %v", m.ledger.lifecycle.Gone)
 	}
 }
 

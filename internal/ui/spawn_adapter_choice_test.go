@@ -29,7 +29,7 @@ func answered(m *Model, tool config.Tool, cat catalog.Catalog) {
 	base.Catalog, base.CatalogCommand = tool.Catalog, tool.CatalogCommand
 	base.ModelArgs, base.EffortArgs, base.ProfileArgs = tool.ModelArgs, tool.EffortArgs, tool.ProfileArgs
 	m.services.cfg.Tools["claude"] = base
-	m.spawner.Catalogs = map[string]*uilaunch.CatalogState{"claude": {Cat: cat, Loaded: true}}
+	m.ledger.spawner.Catalogs = map[string]*uilaunch.CatalogState{"claude": {Cat: cat, Loaded: true}}
 }
 
 var claudeLike = config.Tool{Catalog: "claude", CatalogCommand: "claude", ModelArgs: "--model {model}", EffortArgs: "--effort {effort}"}
@@ -663,7 +663,7 @@ func TestChoiceIsKeptPerCLI(t *testing.T) {
 	t.Run("answer arrives after the prompt opens", func(t *testing.T) {
 		m := buildModel(t)
 		answered(m, claudeLike, catalog.Catalog{})
-		m.spawner.Catalogs["claude"] = &uilaunch.CatalogState{Loading: true}
+		m.ledger.spawner.Catalogs["claude"] = &uilaunch.CatalogState{Loading: true}
 		keepSetting(t, m, "choice.claude", `{"Model":"opus","Effort":"medium"}`)
 		openFormOnClaude(t, m)
 		if m.form().Choice().Model() != "" {

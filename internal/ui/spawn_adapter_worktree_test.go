@@ -96,9 +96,9 @@ func TestWorktreeCapabilityExpiresSoAFreshRepoIsSeen(t *testing.T) {
 	if capable, known := m.cachedWorktreeCapability(dir); !known || capable {
 		t.Fatalf("fresh cache changed without a probe: capable %t known %t", capable, known)
 	}
-	answer := m.spawner.WorktreeRepos[dir]
+	answer := m.ledger.spawner.WorktreeRepos[dir]
 	answer.At = answer.At.Add(-uilaunch.WorktreeLookupTTL)
-	m.spawner.WorktreeRepos[dir] = answer
+	m.ledger.spawner.WorktreeRepos[dir] = answer
 	if _, known := m.cachedWorktreeCapability(dir); known {
 		t.Fatal("expired capability still appeared current")
 	}
@@ -161,9 +161,9 @@ func TestPrepareFrameConsumesCapturedWorktreeFacts(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openForm()
-	m.spawner.WorktreeRepos = nil
+	m.ledger.spawner.WorktreeRepos = nil
 	m.prepareFrame()
-	if m.spawner.WorktreeRepos != nil {
+	if m.ledger.spawner.WorktreeRepos != nil {
 		t.Fatal("rendering performed a repository lookup")
 	}
 }

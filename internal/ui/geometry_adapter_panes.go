@@ -27,7 +27,7 @@ func (m *Model) resizeSessions() {
 			Archived:  sess.Archived,
 		})
 	}
-	m.panes.QueueAll(paneSizing{m}, uigeometrypanes.Box{
+	m.layout.panes.QueueAll(paneSizing{m}, uigeometrypanes.Box{
 		Width:       width,
 		Height:      height,
 		FullFocusID: fullFocusID,
@@ -37,12 +37,12 @@ func (m *Model) resizeSessions() {
 // pinFullFocusPane sizes a session opened full screen to the whole terminal
 // body, the reflow an attach performs.
 func (m *Model) pinFullFocusPane(id string) {
-	m.panes.PinFullFocus(paneSizing{m}, id, m.layout.width, m.listBodyHeight())
+	m.layout.panes.PinFullFocus(paneSizing{m}, id, m.layout.width, m.listBodyHeight())
 }
 
 // markFreshPane queues one exact size pin for a session whose window this run
 // just created.
-func (m *Model) markFreshPane(id string) { m.panes.MarkFresh(id) }
+func (m *Model) markFreshPane(id string) { m.layout.panes.MarkFresh(id) }
 
 // publishPaneSize records the box for the launch paths that run without a
 // manager.
@@ -51,14 +51,14 @@ func (m *Model) publishPaneSize() {
 		return
 	}
 	width, height := m.paneTargetSize()
-	m.panes.Publish(paneSizing{m}, width, height)
+	m.layout.panes.Publish(paneSizing{m}, width, height)
 }
 
 // adoptPaneGeom takes a session off the geometry cache, so its next pin is
 // exact: an attach resized its window to the whole terminal and tmux keeps
 // that size on detach.
 func (m *Model) adoptPaneGeom(id string) {
-	m.panes.Forget(id)
+	m.layout.panes.Forget(id)
 	width, height := m.paneTargetSize()
 	m.queueGeometry(uigeometrypanes.Resize{Targets: []uigeometrypanes.PaneResize{{ID: id, Size: [2]int{width, height}}}})
 }

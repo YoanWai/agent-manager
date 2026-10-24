@@ -90,7 +90,7 @@ func (m *Model) sessionWindowProjectedLive(id string) bool {
 	if m.workspace.panes[id].PID > 0 {
 		return true
 	}
-	_, launched := m.lifecycle.Launched[id]
+	_, launched := m.ledger.lifecycle.Launched[id]
 	return launched
 }
 

@@ -186,7 +186,7 @@ func TestSettledQueuesTheRetryOnceTheBinaryLands(t *testing.T) {
 		t.Fatal("a running install was dropped")
 	}
 
-	state.Pending.Retry = retry
+	request.Pending.Retry = retry
 	state.Settled(root, request, SettleResult{SessionID: "installer", State: uilaunchhint.Ready}, nil)
 	if state.Pending != nil {
 		t.Fatalf("ready: pending = %+v, want it cleared", state.Pending)

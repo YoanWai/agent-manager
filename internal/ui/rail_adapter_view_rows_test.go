@@ -425,7 +425,7 @@ func TestSessionRowStandsInForAnAwaitedName(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m := &Model{}
 			if tc.awaited {
-				m.lifecycle.AwaitedRenames = map[string]uilifecycle.AwaitedRename{tc.sess.ID: {Generated: generated}}
+				m.ledger.lifecycle.AwaitedRenames = map[string]uilifecycle.AwaitedRename{tc.sess.ID: {Generated: generated}}
 			}
 			row := ansi.Strip(m.renderTreeRow(treeRow{sess: tc.sess}, false, 80, 0, panelHex()))
 			if !strings.Contains(row, tc.want) {
@@ -440,7 +440,7 @@ func TestSessionRowStandsInForAnAwaitedName(t *testing.T) {
 			if strings.Contains(row, reorderGrip+" "+namePlaceholder) {
 				t.Fatalf("row still stands in for a name it has:\n%s", row)
 			}
-			if _, still := m.lifecycle.AwaitedRenames[tc.sess.ID]; still {
+			if _, still := m.ledger.lifecycle.AwaitedRenames[tc.sess.ID]; still {
 				t.Fatal("a wait that is over should drop what it was holding")
 			}
 		})

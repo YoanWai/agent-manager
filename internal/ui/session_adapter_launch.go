@@ -36,35 +36,35 @@ func (m *Model) launchNewSession(sess store.Session, tool config.Tool, baseComma
 
 // recordLaunch marks a row this run launched, so a poll that listed the store
 // before it cannot blink the row off screen.
-func (m *Model) recordLaunch(id string) { m.lifecycle.RecordLaunch(id, time.Now()) }
+func (m *Model) recordLaunch(id string) { m.ledger.lifecycle.RecordLaunch(id, time.Now()) }
 
 // forgetLaunch drops a row from the pending set, so a session the user has
 // since sent away is not carried back onto the tree by a poll that listed the
 // store before it was launched.
-func (m *Model) forgetLaunch(id string) { m.lifecycle.ForgetLaunch(id) }
+func (m *Model) forgetLaunch(id string) { m.ledger.lifecycle.ForgetLaunch(id) }
 
 // keepPendingLaunches carries this run's spawns over a listing captured
 // before them, so the new agents do not blink off screen.
 func (m *Model) keepPendingLaunches(polled []store.Session, listedAt time.Time) []store.Session {
-	return m.lifecycle.KeepPendingLaunches(polled, m.workspace.sessions, listedAt)
+	return m.ledger.lifecycle.KeepPendingLaunches(polled, m.workspace.sessions, listedAt)
 }
 
 // markSession records the loaded-list state this run just gave a session, so
 // stale polls predating the change are reconciled on arrival.
 func (m *Model) markSession(id string, mark uilifecycle.GoneMark) {
-	m.lifecycle.MarkSession(id, mark)
+	m.ledger.lifecycle.MarkSession(id, mark)
 }
 
 // dropRecentlyRemoved reconciles a poll's rows against what this run has just
 // done to them.
 func (m *Model) dropRecentlyRemoved(polled []store.Session, listedAt time.Time) []store.Session {
-	return m.lifecycle.DropRecentlyRemoved(polled, listedAt)
+	return m.ledger.lifecycle.DropRecentlyRemoved(polled, listedAt)
 }
 
 // reconcileListing reconciles a stale listing's group rows and archive flags
 // against what this run has just done.
 func (m *Model) reconcileListing(msg *refreshMsg) {
-	listing := m.lifecycle.ReconcileListing(uilifecycle.Listing{
+	listing := m.ledger.lifecycle.ReconcileListing(uilifecycle.Listing{
 		ListedAt:       msg.listedAt,
 		Groups:         msg.groups,
 		GroupPaths:     msg.groupPaths,

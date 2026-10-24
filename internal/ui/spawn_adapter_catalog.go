@@ -17,12 +17,12 @@ type catalogMsg = uilaunch.CatalogMsg
 // ensureCatalog reads the kept answer or asks the CLI off the update path,
 // since an answer takes up to seconds.
 func (m *Model) ensureCatalog(toolName string) tea.Cmd {
-	cmd, _ := m.spawner.EnsureCatalog(m.services.cfg, m.services.configDir, toolName, time.Now())
+	cmd, _ := m.ledger.spawner.EnsureCatalog(m.services.cfg, m.services.configDir, toolName, time.Now())
 	return cmd
 }
 
 func (m *Model) handleCatalog(msg catalogMsg) tea.Cmd {
-	outdated, cmd := m.spawner.Apply(msg, m.services.cfg, m.services.configDir, time.Now())
+	outdated, cmd := m.ledger.spawner.Apply(msg, m.services.cfg, m.services.configDir, time.Now())
 	m.fitChoices()
 	if outdated != nil && m.catalogToolActive(msg.Tool) {
 		m.advanceDialogGen()

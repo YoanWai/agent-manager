@@ -290,7 +290,7 @@ func (m *Model) openDiffWithReader(reader reviewPreferencesReader) tea.Cmd {
 		m.reportErr("select a session to diff")
 		return nil
 	}
-	preferred, picked := m.lifecycle.PickedRepos[sess.ID]
+	preferred, picked := m.ledger.lifecycle.PickedRepos[sess.ID]
 	m.reviewNav.Set(reviewReturn{Kind: reviewReturnList})
 	m.clearSurfaces()
 	m.base = baseReview
@@ -349,8 +349,8 @@ func (m *Model) applyReviewResult(result uireview.ApplyResult) tea.Cmd {
 	if result.Error != "" {
 		m.reportErr(result.Error)
 	}
-	if result.ForgetPreferredRepo != "" && m.lifecycle.PickedRepos[m.review.SessionID()] == result.ForgetPreferredRepo {
-		delete(m.lifecycle.PickedRepos, m.review.SessionID())
+	if result.ForgetPreferredRepo != "" && m.ledger.lifecycle.PickedRepos[m.review.SessionID()] == result.ForgetPreferredRepo {
+		delete(m.ledger.lifecycle.PickedRepos, m.review.SessionID())
 	}
 	if result.Refresh {
 		m.requestRefresh()

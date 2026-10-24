@@ -19,7 +19,6 @@ import (
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	uigeometrypanes "github.com/YoanWai/agent-manager/internal/ui/geometry/panes"
-	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
 	uirelease "github.com/YoanWai/agent-manager/internal/ui/notices/release"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
@@ -28,7 +27,6 @@ import (
 	uirailpersist "github.com/YoanWai/agent-manager/internal/ui/rail/persist"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
-	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
@@ -42,7 +40,6 @@ type Model struct {
 	workspace workspace
 	rail      uirail.Model
 	focus     focusState
-	panes     uigeometrypanes.Panes
 	prefs     preferences
 	ledger    launchLedger
 	startup   startupState
@@ -53,15 +50,11 @@ type Model struct {
 	reviewNav uireviewsource.Nav
 	mouse     mouseCapture
 	settings  uipersist.State
-	lifecycle uilifecycle.State
-	spawner   uilaunch.State
 	env       environment
 	ssh       uilink.State
 	layout    layoutState
 	errBar    errBar
 	release   uirelease.State
-	install   uiinstall.State
-	preview   uicapture.State
 }
 
 // generations fence asynchronous completions against the state that
@@ -73,10 +66,12 @@ type generations struct {
 }
 
 type layoutState struct {
-	frame         string
-	width         int
-	height        int
-	split         splitState
+	frame  string
+	width  int
+	height int
+	split  splitState
+	// panes is the geometry each session's window was pinned to.
+	panes         uigeometrypanes.Panes
 	displayedRail uirail.Frame
 	// card places the last card painted and its body, for clicks.
 	card cardRect
@@ -208,11 +203,11 @@ func newView(deps Dependencies, version string) (*Model, error) {
 			engine:      engine,
 			setSnapshot: st.SetSnapshot,
 		},
-		preview:  uicapture.New(st, driver),
-		rail:     uirailpersist.Load(st),
-		ssh:      uilink.New(remote.New(deps.ProfileDir), connections),
-		settings: uipersist.New(uipersist.StoreWriter{Store: st}, choiceSettingKeys(slices.Sorted(maps.Keys(cfg.Tools)))),
-		focus:    focusState{runtime: focusruntime.State{}, imeCursor: &cursorAnchor{}},
+		rail:      uirailpersist.Load(st),
+		ssh:       uilink.New(remote.New(deps.ProfileDir), connections),
+		settings:  uipersist.New(uipersist.StoreWriter{Store: st}, choiceSettingKeys(slices.Sorted(maps.Keys(cfg.Tools)))),
+		focus:     focusState{runtime: focusruntime.State{}, imeCursor: &cursorAnchor{}},
+		workspace: workspace{capture: uicapture.New(st, driver)},
 		startup: startupState{
 			booting: true,
 		},

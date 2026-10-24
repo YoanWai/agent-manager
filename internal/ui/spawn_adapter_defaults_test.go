@@ -286,8 +286,8 @@ func TestFormRemembersPickOnlyAfterInstallRetrySucceeds(t *testing.T) {
 	if !hintOpen(m) || hintFix(m).Retry == nil {
 		t.Fatalf("expected a refused launch with retry, screen = %v err=%q", m.screenID(), m.errBar.text)
 	}
-	if m.spawner.LastSpawnTool != "ready-tool" || m.spawner.LastSpawnWorktree {
-		t.Fatalf("failed launch changed the last pick: %q, %v", m.spawner.LastSpawnTool, m.spawner.LastSpawnWorktree)
+	if m.ledger.spawner.LastSpawnTool != "ready-tool" || m.ledger.spawner.LastSpawnWorktree {
+		t.Fatalf("failed launch changed the last pick: %q, %v", m.ledger.spawner.LastSpawnTool, m.ledger.spawner.LastSpawnWorktree)
 	}
 	fix := hintFix(m)
 	fix.Command, fix.Script = installCommand, installCommand
@@ -295,8 +295,8 @@ func TestFormRemembersPickOnlyAfterInstallRetrySucceeds(t *testing.T) {
 	m.applyCmd(t, pressInLaunchHint(t, m, 'i'))
 	waitForInstallToSettle(t, m)
 
-	if m.spawner.LastSpawnTool != "claude" || !m.spawner.LastSpawnWorktree {
-		t.Fatalf("successful retry did not remember the pick: %q, %v; err=%q", m.spawner.LastSpawnTool, m.spawner.LastSpawnWorktree, m.errBar.text)
+	if m.ledger.spawner.LastSpawnTool != "claude" || !m.ledger.spawner.LastSpawnWorktree {
+		t.Fatalf("successful retry did not remember the pick: %q, %v; err=%q", m.ledger.spawner.LastSpawnTool, m.ledger.spawner.LastSpawnWorktree, m.errBar.text)
 	}
 	m.applyTestMsg(t, m.openForm()())
 	if m.form().Tool() != "claude" || !m.form().Worktree() {

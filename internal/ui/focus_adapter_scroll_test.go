@@ -455,7 +455,7 @@ func TestAdoptedTallerPaneIsNotShrunk(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resize-window: %v: %s", err, out)
 	}
-	m.panes.LastSizes = nil
+	m.layout.panes.LastSizes = nil
 	m.applyCmd(t, m.refreshCmd())
 	if got := windowHeight(t, sess.ID); got != taller {
 		t.Fatalf("adopted pane height = %d, want it kept at %d", got, taller)

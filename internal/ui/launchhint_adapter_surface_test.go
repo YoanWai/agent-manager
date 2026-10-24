@@ -97,9 +97,9 @@ func TestInstallStartAfterTheHintClosedKeepsTheTracker(t *testing.T) {
 	m, _ := openHintFor(t)
 	gen := m.gens.dialog
 	m.Pop()
-	cmd := m.install.Started(installRoot{m}, uiinstall.StartRequest{Gen: gen, Binary: "tool"}, uiinstall.StartResult{Pending: &uiinstall.Pending{Name: "install-tool", SessionID: "s"}}, nil)
-	if m.install.Pending == nil || hintOpen(m) {
-		t.Fatalf("install %+v hint open %t, want the tracker kept and no card revived", m.install.Pending, hintOpen(m))
+	cmd := m.ledger.install.Started(installRoot{m}, uiinstall.StartRequest{Gen: gen, Binary: "tool"}, uiinstall.StartResult{Pending: &uiinstall.Pending{Name: "install-tool", SessionID: "s"}}, nil)
+	if m.ledger.install.Pending == nil || hintOpen(m) {
+		t.Fatalf("install %+v hint open %t, want the tracker kept and no card revived", m.ledger.install.Pending, hintOpen(m))
 	}
 	_ = cmd
 	if _, quit := m.requestQuit(); m.effects.Quitting {

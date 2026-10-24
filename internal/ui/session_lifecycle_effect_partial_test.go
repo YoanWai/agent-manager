@@ -26,7 +26,7 @@ func TestArchiveReconcilesDurableRowsBeforeLaterFailure(t *testing.T) {
 	if !got.Archived {
 		t.Fatal("completed archive remains in active inventory")
 	}
-	if mark := m.lifecycle.Gone[first.ID]; !mark.Archived {
+	if mark := m.ledger.lifecycle.Gone[first.ID]; !mark.Archived {
 		t.Fatal("completed archive lacks stale-poll guard")
 	}
 }

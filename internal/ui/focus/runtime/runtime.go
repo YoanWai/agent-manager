@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	"github.com/YoanWai/agent-manager/internal/ui/focus"
 	"github.com/YoanWai/agent-manager/internal/ui/focus/watch"
 )
 
@@ -72,7 +73,7 @@ func Scroll(watch *watch.Watcher, sessionID string, offset, rows int) ScrollMsg 
 		return msg
 	}
 	out, ok := watch.History(sessionID, offset+rows)
-	msg.Preview, msg.OK = Window(out, rows, offset), ok
+	msg.Preview, msg.OK = focus.BottomWindow(out, rows, offset), ok
 	return msg
 }
 

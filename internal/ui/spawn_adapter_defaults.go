@@ -15,7 +15,7 @@ func (m *Model) cachedDefaultToolSelection() ([]string, int) {
 func (m *Model) cachedSpawnToolSelection() ([]string, int) {
 	names, index := m.cachedDefaultToolSelection()
 	for i, name := range names {
-		if name == m.spawner.LastSpawnTool {
+		if name == m.ledger.spawner.LastSpawnTool {
 			return names, i
 		}
 	}
@@ -32,8 +32,8 @@ func (m *Model) cachedSpawnWorktreeDefault(group string) bool {
 		}
 	}
 	for _, name := range m.cachedEnabledToolNames() {
-		if name == m.spawner.LastSpawnTool {
-			return m.spawner.LastSpawnWorktree
+		if name == m.ledger.spawner.LastSpawnTool {
+			return m.ledger.spawner.LastSpawnWorktree
 		}
 	}
 	return m.settings.Cache.Value(uisettings.WorktreeSetting) == "on"
@@ -75,7 +75,7 @@ type groupBaseStepMsg = uilaunch.BaseStepMsg
 // the repo at dir. Branches read within baseRefsTTL step at once; otherwise
 // the read runs as a command and the step lands with it.
 func (m *Model) stepGroupBase(target groupBaseTarget, gen uint64, dir, current string, delta int) (string, tea.Cmd) {
-	next, cmd, err := m.spawner.StepGroupBase(m.services.gitDrv, target, gen, dir, current, delta, time.Now())
+	next, cmd, err := m.ledger.spawner.StepGroupBase(m.services.gitDrv, target, gen, dir, current, delta, time.Now())
 	if err != nil {
 		m.reportErr(err.Error())
 		return current, nil
@@ -112,7 +112,7 @@ func (m *Model) handleGroupBaseStep(msg groupBaseStepMsg) {
 		m.reportErr("group base: " + msg.Err.Error())
 		return
 	}
-	m.spawner.KeepBaseRefs(msg.Dir, msg.Refs, time.Now())
+	m.ledger.spawner.KeepBaseRefs(msg.Dir, msg.Refs, time.Now())
 	if *base != msg.From {
 		return
 	}
@@ -137,7 +137,7 @@ func (m *Model) refreshSpawnBase() tea.Cmd {
 		return nil
 	}
 	key := baseFetchKey{Dir: dir, Override: m.groupBase(group)}
-	if !m.spawner.ReserveBaseFetch(key, time.Now()) {
+	if !m.ledger.spawner.ReserveBaseFetch(key, time.Now()) {
 		return nil
 	}
 	return uilaunch.ResolveBaseCmd(m.services.gitDrv, key)
@@ -146,7 +146,7 @@ func (m *Model) refreshSpawnBase() tea.Cmd {
 // recordBaseFetch keeps what a step of a base refresh found, and starts the
 // fetch once the resolving step is in.
 func (m *Model) recordBaseFetch(msg baseFetchedMsg) tea.Cmd {
-	return m.spawner.RecordBaseFetch(msg, m.services.gitDrv, m.prefs.baseFetchOff)
+	return m.ledger.spawner.RecordBaseFetch(msg, m.services.gitDrv, m.prefs.baseFetchOff)
 }
 
 // pendingWorktreeSpawn is the directory and group of the worktree spawn the
@@ -165,7 +165,7 @@ func (m *Model) pendingWorktreeSpawn() (dir, group string, ok bool) {
 // that choice came from, and how fetching it went.
 func (m *Model) spawnBaseLabel(dir, group string) string {
 	override := m.groupBase(group)
-	fetch := m.spawner.BaseFetch(dir, override)
+	fetch := m.ledger.spawner.BaseFetch(dir, override)
 	label := valueStyle().Render(override) + subtleStyle().Render(" (group)")
 	if override == "" {
 		switch {

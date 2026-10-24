@@ -44,6 +44,7 @@ func (e settingsKeysEnv) SaveKeys(list, session keybind.Table, listChanged, sess
 	if sessionChanged {
 		e.services.keys = session
 		e.services.tmux.SetSessionKeys(session)
+		return e.refreshExistingSessionUX
 	}
-	return e.refreshExistingSessionUX
+	return nil
 }

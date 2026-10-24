@@ -220,7 +220,7 @@ func TestInstallerRefusedQuitKeepsResizeInteraction(t *testing.T) {
 	updated, _ := m.enterResizeMode()
 	m = updated.(*Model)
 	m.nudgeSplit(8)
-	m.install.Pending = &uiinstall.Pending{Name: "install-test"}
+	m.ledger.install.Pending = &uiinstall.Pending{Name: "install-test"}
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	m = updated.(*Model)
@@ -242,7 +242,7 @@ func TestInstallerRefusedQuitKeepsMouseDrag(t *testing.T) {
 	m.layout.split.dragging = true
 	m.layout.split.moved = true
 	m.push(newResizeSurface(m))
-	m.install.Pending = &uiinstall.Pending{Name: "install-test"}
+	m.ledger.install.Pending = &uiinstall.Pending{Name: "install-test"}
 
 	updated, cmd := m.handleKey(key("q"))
 	m = updated.(*Model)
@@ -285,22 +285,22 @@ func TestSplitPersistenceIsDeferredAndOrdered(t *testing.T) {
 }
 
 func TestNewerSplitSaveSuccessClearsOnlySplitFailure(t *testing.T) {
-	m := &Model{panes: uigeometrypanes.Panes{SaveID: 1}}
-	m.panes.ApplySplit(paneSizing{m}, 1, errors.New("save split ratio: database is locked"))
+	m := &Model{layout: layoutState{panes: uigeometrypanes.Panes{SaveID: 1}}}
+	m.layout.panes.ApplySplit(paneSizing{m}, 1, errors.New("save split ratio: database is locked"))
 	if m.errBar.text == "" {
 		t.Fatal("latest failed save did not surface its error")
 	}
 
-	m.panes.SaveID = 2
-	m.panes.ApplySplit(paneSizing{m}, 2, nil)
-	if m.errBar.text != "" || m.panes.SaveError != "" {
+	m.layout.panes.SaveID = 2
+	m.layout.panes.ApplySplit(paneSizing{m}, 2, nil)
+	if m.errBar.text != "" || m.layout.panes.SaveError != "" {
 		t.Fatalf("newer successful save left stale warning %q", m.errBar.text)
 	}
 
 	m.errBar.text = "another operation failed"
-	m.panes.SaveID = 4
-	m.panes.ApplySplit(paneSizing{m}, 3, errors.New("older split failure"))
-	m.panes.ApplySplit(paneSizing{m}, 4, nil)
+	m.layout.panes.SaveID = 4
+	m.layout.panes.ApplySplit(paneSizing{m}, 3, errors.New("older split failure"))
+	m.layout.panes.ApplySplit(paneSizing{m}, 4, nil)
 	if m.errBar.text != "another operation failed" {
 		t.Fatalf("split completion erased unrelated status %q", m.errBar.text)
 	}

@@ -128,7 +128,7 @@ func (m *Model) routeSessionMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		return routed(m, nil)
 
 	case uiinstall.CopiedMsg:
-		cmd, _ := m.install.Route(installRoot{m}, msg)
+		cmd, _ := m.ledger.install.Route(installRoot{m}, msg)
 		return routed(m, cmd)
 
 	case attachDoneMsg:

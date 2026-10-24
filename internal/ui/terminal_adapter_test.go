@@ -517,7 +517,7 @@ func TestTerminalKeySpawnsAgainAfterTheWindow(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 
 	pressTerminalKey(t, m)
-	m.lifecycle.TerminalKeyAt = time.Now().Add(-2 * terminalKeyWindow)
+	m.ledger.lifecycle.TerminalKeyAt = time.Now().Add(-2 * terminalKeyWindow)
 	pressTerminalKey(t, m)
 
 	if got := shellCount(m); got != 2 {

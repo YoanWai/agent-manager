@@ -39,7 +39,7 @@ func (installStartResult) EffectResult() {}
 
 func (result installStartResult) apply(m *Model, job *uieffects.Job, err error) tea.Cmd {
 	request := job.Request.(installStartRequest)
-	return m.install.Started(installRoot{m}, request.request, uiinstall.StartResult{Session: result.session, Pending: result.install}, err)
+	return m.ledger.install.Started(installRoot{m}, request.request, uiinstall.StartResult{Session: result.session, Pending: result.install}, err)
 }
 
 type installSettleRequest struct {
@@ -70,5 +70,5 @@ func (installSettleResult) EffectResult() {}
 
 func (result installSettleResult) apply(m *Model, job *uieffects.Job, err error) tea.Cmd {
 	request := job.Request.(installSettleRequest)
-	return m.install.Settled(installRoot{m}, request.install, uiinstall.SettleResult{SessionID: result.sessionID, State: result.state, Code: result.code}, err)
+	return m.ledger.install.Settled(installRoot{m}, request.install, uiinstall.SettleResult{SessionID: result.sessionID, State: result.state, Code: result.code}, err)
 }

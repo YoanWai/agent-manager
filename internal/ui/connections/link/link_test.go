@@ -27,12 +27,13 @@ type ssh struct {
 }
 
 func (f *ssh) run(ctx context.Context, argv []string) ([]byte, []byte, error) {
-	words, err := remotetest.Words(argv)
+	all, err := remotetest.Words(argv)
 	if err != nil {
 		return nil, nil, err
 	}
+	words := all[1:]
 	f.mu.Lock()
-	f.calls = append(f.calls, words[1:])
+	f.calls = append(f.calls, words)
 	snapshot, screen, fail := f.snapshot, f.screen, f.err
 	f.mu.Unlock()
 	if fail != nil {

@@ -33,7 +33,7 @@ func (m *Model) toggleFormWorktree() tea.Cmd {
 }
 
 func (m *Model) cachedWorktreeCapability(dir string) (bool, bool) {
-	return m.spawner.CachedWorktree(dir, time.Now())
+	return m.ledger.spawner.CachedWorktree(dir, time.Now())
 }
 
 func (m *Model) requestWorktreeProbe(target worktreeProbeTarget, generation int, dir string, toggle bool, from bool) tea.Cmd {
@@ -93,7 +93,7 @@ func (m *Model) handleWorktreeProbe(msg worktreeProbeMsg) (tea.Model, tea.Cmd) {
 	default:
 		return m, nil
 	}
-	m.spawner.RememberWorktree(request.Dir, msg.Capable, time.Now())
+	m.ledger.spawner.RememberWorktree(request.Dir, msg.Capable, time.Now())
 	if !request.Toggle {
 		return m, nil
 	}
@@ -122,4 +122,4 @@ const worktreeUnavailable = uilaunch.WorktreeUnavailable
 
 // forgetWorktreeCapability drops the memo so the next look is a fresh one.
 // Opening the form or the quick bar calls it.
-func (m *Model) forgetWorktreeCapability() { m.spawner.ForgetWorktree() }
+func (m *Model) forgetWorktreeCapability() { m.ledger.spawner.ForgetWorktree() }

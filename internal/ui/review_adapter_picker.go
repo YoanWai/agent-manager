@@ -160,10 +160,10 @@ func (m *Model) selectRepo(root string) tea.Cmd {
 		m.reportErr("session is gone")
 		return nil
 	}
-	if m.lifecycle.PickedRepos == nil {
-		m.lifecycle.PickedRepos = map[string]string{}
+	if m.ledger.lifecycle.PickedRepos == nil {
+		m.ledger.lifecycle.PickedRepos = map[string]string{}
 	}
-	m.lifecycle.PickedRepos[sess.ID] = root
+	m.ledger.lifecycle.PickedRepos[sess.ID] = root
 	request, ok := m.review.SelectRepo(root)
 	if !ok {
 		return nil

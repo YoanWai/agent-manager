@@ -3,8 +3,10 @@ package apply
 import (
 	"errors"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -23,6 +25,11 @@ func openStore(t *testing.T) *store.Store {
 func TestExpandCommandQuotesPlaceholders(t *testing.T) {
 	got := ExpandCommand("tool --fork {id} --new {new_id} --name {name} --file {session_file}", "source", "new", "Sam's fork", "/store/session.jsonl")
 	want := "tool --fork 'source' --new 'new' --name 'Sam'\\''s fork' --file '/store/session.jsonl'"
+	if runtime.GOOS == "windows" {
+		// The pane shell is PowerShell, which doubles a quote inside a
+		// single-quoted string.
+		want = "tool --fork 'source' --new 'new' --name 'Sam''s fork' --file '/store/session.jsonl'"
+	}
 	if got != want {
 		t.Fatalf("fork command = %q, want %q", got, want)
 	}
@@ -131,6 +138,9 @@ func TestForkRefusesASourceThatRestartedWhileQueued(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := st.SetAgentSessionID("source", "restarted-conversation"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetAgentLaunchedAt("source", time.Now()); err != nil {
 		t.Fatal(err)
 	}
 

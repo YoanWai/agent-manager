@@ -25,7 +25,7 @@ type splitSaveResult struct{}
 func (splitSaveResult) EffectResult() {}
 
 func (splitSaveResult) apply(m *Model, job *uieffects.Job, err error) tea.Cmd {
-	m.panes.ApplySplit(paneSizing{m}, job.ID, err)
+	m.layout.panes.ApplySplit(paneSizing{m}, job.ID, err)
 	return nil
 }
 

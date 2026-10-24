@@ -139,7 +139,9 @@ func TestApplySplitIgnoresOlderSavesAndOtherFeaturesText(t *testing.T) {
 	}
 
 	p.SaveID = 4
-	p.ApplySplit(root, 4, nil)
+	p.ApplySplit(root, 4, errors.New("save split ratio: disk full"))
+	p.SaveID = 5
+	p.ApplySplit(root, 5, nil)
 	if root.err != "" || p.SaveError != "" {
 		t.Fatalf("a success after this adapter's failure left %q / %q", root.err, p.SaveError)
 	}
@@ -181,7 +183,7 @@ func TestQueueAllKeepsATallerPaneForScrolledTools(t *testing.T) {
 	p := &Panes{LastSizes: map[string][2]int{"a": {40, 30}, "b": {40, 30}}}
 	panes := map[string]tmux.Pane{"a": {PID: 1}, "b": {PID: 2, AltScreen: true}}
 
-	p.QueueAll(root, Box{Width: 40, Height: 20}, []Session{{ID: "a", Tool: "codex"}, {ID: "b", Tool: "codex"}}, panes)
+	p.QueueAll(root, Box{Width: 40, Height: 20}, []Session{{ID: "a", Tool: "codex"}, {ID: "b", Tool: "codex", AltScreen: true}}, panes)
 	if len(root.queued) != 1 {
 		t.Fatalf("queued %+v, want the alternate-screen pane", root.queued)
 	}
@@ -279,6 +281,7 @@ func TestPublishRecordsTheBoxOnce(t *testing.T) {
 	p := &Panes{}
 	p.Publish(root, 0, 20)
 	p.Publish(root, 80, 20)
+	p.Apply(Result{Publish: [2]int{80, 20}})
 	p.Publish(root, 80, 20)
 	if len(root.queued) != 1 || root.queued[0].Publish != [2]int{80, 20} {
 		t.Fatalf("queued %+v, want one publish", root.queued)

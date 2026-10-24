@@ -60,9 +60,10 @@ func RunKeys(request KeysRequest, save KeySaver) (KeysResult, error) {
 
 // ApplyKeys commits what landed and reports a failure that stopped the rest.
 func ApplyKeys(root KeysRoot, request KeysRequest, result KeysResult, err error) tea.Cmd {
+	cmd := root.SaveKeys(request.List, request.Session, result.ListCommitted, result.SessionCommitted)
 	if err != nil {
 		root.ReportErr(err.Error())
 		return nil
 	}
-	return root.SaveKeys(request.List, request.Session, result.ListCommitted, result.SessionCommitted)
+	return cmd
 }

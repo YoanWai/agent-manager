@@ -57,7 +57,7 @@ func (r installRoot) QueueRetry(retry uiinstall.Retry) {
 	r.enqueueEffect(retry.(effectRequest), 0, false)
 }
 
-func (m *Model) pendingInstall() *uiinstall.Pending { return m.install.Pending }
+func (m *Model) pendingInstall() *uiinstall.Pending { return m.ledger.install.Pending }
 
 // startInstall admits the setup dialog's install onto the effect lane,
 // stamped with the dialog generation, a new shell row id, the shell tool, the
@@ -208,7 +208,7 @@ func (m *Model) openLaunchHint(fix uiinstall.Fix) {
 // came from, so a draft prompt keeps its images. A refusal already showing
 // is replaced in place.
 func (m *Model) presentLaunchHint(fix uiinstall.Fix) {
-	m.install.Launch = fix
+	m.ledger.install.Launch = fix
 	if s, open := m.launchHintSurface(); open {
 		s.SetFix(m.launchHintCard(fix))
 		return
@@ -229,13 +229,13 @@ func (m *Model) launchHintFix() (*uiinstall.Fix, bool) {
 	if _, ok := m.launchHintSurface(); !ok {
 		return nil, false
 	}
-	return &m.install.Launch, true
+	return &m.ledger.install.Launch, true
 }
 
 // settleInstall queues one captured status check. Polls arriving while that
 // request waits or runs do not add duplicates to the ordered effect lane.
 func (m *Model) settleInstall() {
-	install := m.install.Pending
+	install := m.ledger.install.Pending
 	if install == nil {
 		return
 	}

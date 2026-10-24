@@ -20,7 +20,7 @@ func TestRunTurnsEachCallIntoItsHostCommand(t *testing.T) {
 		{Restore, []string{"archive", "--restore", "--json", "--", "s1"}},
 	} {
 		fake := &ssh{}
-		client := newClient(t, fake)
+		client := listedState(t, fake).Client
 		call := Call{Op: tc.op, Host: "box", Ref: remote.Ref{Host: "box", ID: "s1"}, Name: "api", Text: "hello"}
 		if _, err := Run(context.Background(), client, nil, call); err != nil {
 			t.Fatalf("%v: %v", tc.op, err)
@@ -33,7 +33,7 @@ func TestRunTurnsEachCallIntoItsHostCommand(t *testing.T) {
 
 func TestRunSpawnsAndOpensTerminals(t *testing.T) {
 	fake := &ssh{}
-	client := newClient(t, fake)
+	client := listedState(t, fake).Client
 	group := "web"
 	call := Call{Op: Spawn, Host: "box", Spawn: sessioncmd.CreateSessionOptions{Tool: "claude", Group: &group, Prompt: "go"}}
 	result, err := Run(context.Background(), client, nil, call)

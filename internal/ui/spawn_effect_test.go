@@ -217,8 +217,8 @@ func TestSpawnFormDefersCreationFromUpdate(t *testing.T) {
 	if got := storeRows(t, m); got != 0 {
 		t.Fatalf("store gained %d rows on the update path", got)
 	}
-	if len(m.lifecycle.Launched) != 0 {
-		t.Fatalf("ledger recorded %d launches on the update path", len(m.lifecycle.Launched))
+	if len(m.ledger.lifecycle.Launched) != 0 {
+		t.Fatalf("ledger recorded %d launches on the update path", len(m.ledger.lifecycle.Launched))
 	}
 	m.applyCmd(t, cmd)
 	if got := storeRows(t, m); got != 1 {
@@ -261,7 +261,7 @@ func TestQuickSpawnDefersCreationFromUpdate(t *testing.T) {
 		t.Fatalf("quick spawn created a row on the update path: workspace=%d store=%d",
 			len(m.workspace.sessions), storeRows(t, m))
 	}
-	if len(m.lifecycle.Launched) != 0 {
+	if len(m.ledger.lifecycle.Launched) != 0 {
 		t.Fatal("ledger recorded a launch on the update path")
 	}
 	m.applyCmd(t, cmd)
@@ -332,7 +332,7 @@ func TestSpawnWorkerFailureLeavesNothingBehind(t *testing.T) {
 	if len(m.workspace.sessions) != 0 {
 		t.Fatal("failed spawn left a workspace row")
 	}
-	if len(m.lifecycle.Launched) != 0 {
+	if len(m.ledger.lifecycle.Launched) != 0 {
 		t.Fatal("ledger recorded a launch for a failed spawn")
 	}
 	if !formOpen(m) {
@@ -388,7 +388,7 @@ func TestSpawnUpdateReturnsWhileWriterIsQueued(t *testing.T) {
 	submitFormSpawn(t, m, "first", t.TempDir())
 	// The effect is queued, not begun: no row, no pane, and a window update
 	// must not block on it.
-	if storeRows(t, m) != 0 || len(m.lifecycle.Launched) != 0 {
+	if storeRows(t, m) != 0 || len(m.ledger.lifecycle.Launched) != 0 {
 		t.Fatal("writer ran on the update path")
 	}
 	done := make(chan struct{})

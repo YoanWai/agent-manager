@@ -8,22 +8,22 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// Every line of a detail head has to stay inside the content column: a fact
-// that overflows tears the panel beside it.
+// A trimmed value is handed only the room left beside the label and the
+// reading, so the row never tears the panel beside it.
 func TestFactRowsFitTheirColumn(t *testing.T) {
 	for _, width := range []int{24, 40, 80, 120} {
-		row := FactRow("dir", PlainValue(strings.Repeat("/very/long/path", 6)), "started 3d", width)
+		row := FactRow(FactLabel("dir"), TrimmedValue(strings.Repeat("/very/long/path", 6)), "started 3d", width)
 		if got := ansi.StringWidth(row); got > width {
 			t.Fatalf("width %d: fact row is %d wide: %q", width, got, ansi.Strip(row))
 		}
 	}
 }
 
-// The label is padded to the head's label column, so the values under it line
-// up as one column whatever the facts say.
+// The label column pads every label to one width, so the values under it line
+// up whatever the facts say.
 func TestFactRowPadsTheLabelColumn(t *testing.T) {
-	row := ansi.Strip(FactRow("dir", PlainValue("/w"), "3d", 40))
-	if !strings.HasPrefix(row, "dir    "+"/w") {
+	row := ansi.Strip(FactRow(FactLabel("dir"), PlainValue("/w"), "3d", 40))
+	if !strings.HasPrefix(row, FactLabel("dir")+"/w") {
 		t.Fatalf("label column = %q, want the label padded to %d", row, DetailLabelWidth)
 	}
 	if !strings.HasSuffix(row, "3d") {
@@ -33,8 +33,8 @@ func TestFactRowPadsTheLabelColumn(t *testing.T) {
 
 func TestTrimmedValueCutsToItsRoom(t *testing.T) {
 	value := TrimmedValue("waiting, working, finished")(6)
-	if value != "worki…" {
-		t.Fatalf("trimmed value = %q, want it cut to the room it got", value)
+	if ansi.StringWidth(value) != 6 || !strings.HasSuffix(value, "…") {
+		t.Fatalf("trimmed value = %q, want it cut to the six columns it got", value)
 	}
 }
 

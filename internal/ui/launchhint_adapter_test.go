@@ -36,7 +36,7 @@ type hintHost struct {
 }
 
 func (h *hintHost) StartInstall() bool {
-	if install := h.install.Pending; install != nil {
+	if install := h.ledger.install.Pending; install != nil {
 		h.reportErr("an install is already running in " + install.Name)
 		return false
 	}
@@ -44,7 +44,7 @@ func (h *hintHost) StartInstall() bool {
 	if !h.admit {
 		return false
 	}
-	h.install.Launch.Images = nil
+	h.ledger.install.Launch.Images = nil
 	return true
 }
 
@@ -63,33 +63,33 @@ func TestLaunchHintSurfaceWithFakeInstall(t *testing.T) {
 	h := &hintHost{Model: m}
 	m.openLaunchHint(uiinstall.Fix{Text: "tool is not installed.\n\nRun the installer.", Command: "install tool", Script: "install tool", Binary: "tool"})
 	_, ok := surfaceOf[*uidialogs.LaunchHintSurface](m)
-	if !ok || m.gens.dialog != 1 || len(m.install.Launch.Images) != 1 || m.quick().Attachments != nil {
+	if !ok || m.gens.dialog != 1 || len(m.ledger.install.Launch.Images) != 1 || m.quick().Attachments != nil {
 		t.Fatalf("open: surface %t gens %d fix %+v, want the composer images taken", ok, m.gens.dialog, hintFix(m))
 	}
 	// The card calls the root it was built with, so the fake is that root.
-	s := uidialogs.NewLaunchHintSurface(h, m.launchHintCard(m.install.Launch), m.glyphs(), mutedStyle(), mutedStyle())
+	s := uidialogs.NewLaunchHintSurface(h, m.launchHintCard(m.ledger.install.Launch), m.glyphs(), mutedStyle(), mutedStyle())
 	m.surfaces[len(m.surfaces)-1] = s
 	if got := ansi.Strip(s.View(h, "")); !strings.Contains(got, "Session needs a setup step") || !strings.Contains(got, "Run the installer.") {
 		t.Fatalf("view = %q", got)
 	}
 
 	s.Key(h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")})
-	if len(h.installs) != 1 || h.installs[0].Command != "install tool" || len(m.install.Launch.Images) != 1 {
-		t.Fatalf("installs %+v images %d, want a refused start to keep the images", h.installs, len(m.install.Launch.Images))
+	if len(h.installs) != 1 || h.installs[0].Command != "install tool" || len(m.ledger.install.Launch.Images) != 1 {
+		t.Fatalf("installs %+v images %d, want a refused start to keep the images", h.installs, len(m.ledger.install.Launch.Images))
 	}
 	h.admit = true
 	s.Key(h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")})
-	if len(h.installs) != 2 || len(h.installs[1].Images) != 1 || m.install.Launch.Images != nil {
-		t.Fatalf("installs %+v images %v, want the images handed to the admitted install", h.installs, m.install.Launch.Images)
+	if len(h.installs) != 2 || len(h.installs[1].Images) != 1 || m.ledger.install.Launch.Images != nil {
+		t.Fatalf("installs %+v images %v, want the images handed to the admitted install", h.installs, m.ledger.install.Launch.Images)
 	}
-	m.install.Pending = &uiinstall.Pending{Name: "install-tool"}
+	m.ledger.install.Pending = &uiinstall.Pending{Name: "install-tool"}
 	s.Key(h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")})
 	if len(h.installs) != 2 || m.errBar.text != "an install is already running in install-tool" {
 		t.Fatalf("installs %d err %q, want a running install refused", len(h.installs), m.errBar.text)
 	}
 
 	s.Key(h, tea.KeyMsg{Type: tea.KeyEsc})
-	if hintOpen(m) || !m.onList() || m.install.Launch.Command != "" {
+	if hintOpen(m) || !m.onList() || m.ledger.install.Launch.Command != "" {
 		t.Fatalf("esc: open %t mode %v fix %+v", hintOpen(m), m.screenID(), hintFix(m))
 	}
 }
@@ -139,8 +139,8 @@ func TestReportLaunchErrorLeavesHermesHintReadOnlyWithoutAnInterpreter(t *testin
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
 	m.drainEffects(t)
 	m = updated.(*Model)
-	if m.install.Pending != nil || !hintOpen(m) {
-		t.Fatalf("a read-only dialog should run nothing on i: install = %v, screen = %v", m.install.Pending, m.screenID())
+	if m.ledger.install.Pending != nil || !hintOpen(m) {
+		t.Fatalf("a read-only dialog should run nothing on i: install = %v, screen = %v", m.ledger.install.Pending, m.screenID())
 	}
 }
 
@@ -607,8 +607,8 @@ func TestLaunchHintWithoutARecipeOffersOnlyClose(t *testing.T) {
 	if strings.Contains(frame, "copy") {
 		t.Fatalf("dialog should offer neither copy nor install:\n%s", frame)
 	}
-	if cmd := pressInLaunchHint(t, m, 'i'); cmd != nil || !hintOpen(m) || m.install.Pending != nil {
-		t.Fatalf("i must do nothing without a recipe: screen = %v, install = %+v", m.screenID(), m.install.Pending)
+	if cmd := pressInLaunchHint(t, m, 'i'); cmd != nil || !hintOpen(m) || m.ledger.install.Pending != nil {
+		t.Fatalf("i must do nothing without a recipe: screen = %v, install = %+v", m.screenID(), m.ledger.install.Pending)
 	}
 	if cmd := pressInLaunchHint(t, m, 'c'); cmd != nil {
 		t.Fatal("c must do nothing without a recipe")
@@ -721,7 +721,7 @@ func fakeInstallCommand(t *testing.T) string {
 func waitForInstallToSettle(t *testing.T, m *Model) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
-	for m.install.Pending != nil {
+	for m.ledger.install.Pending != nil {
 		if time.Now().After(deadline) {
 			t.Fatalf("install never settled, status = %q", m.errBar.text)
 		}
@@ -736,8 +736,8 @@ func TestLaunchHintInstallRunsTheCommandAndRetriesTheLaunch(t *testing.T) {
 
 	cmd := pressInLaunchHint(t, m, 'i')
 
-	if !hintOpen(m) || m.install.Pending != nil {
-		t.Fatalf("install ran on Update: screen = %v pending=%+v", m.screenID(), m.install.Pending)
+	if !hintOpen(m) || m.ledger.install.Pending != nil {
+		t.Fatalf("install ran on Update: screen = %v pending=%+v", m.screenID(), m.ledger.install.Pending)
 	}
 	m.applyCmd(t, cmd)
 	if !m.onList() {
@@ -874,8 +874,8 @@ func TestLaunchHintRefusesASecondInstall(t *testing.T) {
 	installFixture(t, m, "sleep 30")
 	pressInLaunchHint(t, m, 'i')
 
-	if m.install.Pending == nil || m.install.Pending.SessionID != running.ID {
-		t.Fatalf("install = %+v, want the first one kept", m.install.Pending)
+	if m.ledger.install.Pending == nil || m.ledger.install.Pending.SessionID != running.ID {
+		t.Fatalf("install = %+v, want the first one kept", m.ledger.install.Pending)
 	}
 	if !strings.Contains(m.errBar.text, running.Name) {
 		t.Fatalf("status = %q, want the running install named", m.errBar.text)
@@ -974,8 +974,8 @@ func TestLaunchHintInstallRunsFromAScriptAndCleansUp(t *testing.T) {
 	m.applyCmd(t, cmd)
 	// Read the script before the refresh runs: a command this short can
 	// have settled by then, and settling removes the file.
-	script := m.install.Pending.Script
-	statusFile := m.install.Pending.StatusFile
+	script := m.ledger.install.Pending.Script
+	statusFile := m.ledger.install.Pending.StatusFile
 	body, err := os.ReadFile(script)
 	if err != nil {
 		t.Fatal(err)

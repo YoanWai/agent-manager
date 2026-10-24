@@ -47,9 +47,9 @@ func (r previewCaptures) WatchSelection() { r.watchSelection() }
 
 func (r previewCaptures) ArmTick(withRemote bool) tea.Cmd {
 	if !withRemote {
-		return r.preview.Tick(r)
+		return r.workspace.capture.Tick(r)
 	}
-	return tea.Batch(r.tickRemotePreview(), r.preview.Tick(r))
+	return tea.Batch(r.tickRemotePreview(), r.workspace.capture.Tick(r))
 }
 
 func (r previewCaptures) ApplyCapture(sessID, preview string, proc sysstat.ProcStat) {
@@ -60,24 +60,26 @@ func (r previewCaptures) ApplyCapture(sessID, preview string, proc sysstat.ProcS
 func (r previewCaptures) ReportErr(err error) { r.reportErr(err.Error()) }
 
 // previewInterval is the cadence the current selection earns.
-func (m *Model) previewInterval() time.Duration { return m.preview.Interval(previewCaptures{m}) }
+func (m *Model) previewInterval() time.Duration {
+	return m.workspace.capture.Interval(previewCaptures{m})
+}
 
-func (m *Model) previewTick() tea.Cmd { return m.preview.Tick(previewCaptures{m}) }
+func (m *Model) previewTick() tea.Cmd { return m.workspace.capture.Tick(previewCaptures{m}) }
 
 func (m *Model) schedulePreview() tea.Cmd {
-	return m.preview.Schedule(m.focus.pane.PreviewGeneration())
+	return m.workspace.capture.Schedule(m.focus.pane.PreviewGeneration())
 }
 
 func (m *Model) previewCmd(sess store.Session, gen uint64) tea.Cmd {
-	return m.preview.Capture(sess, gen)
+	return m.workspace.capture.Capture(sess, gen)
 }
 
-func (m *Model) holdTypedPrompt(cand uicapture.TypedPrompt) { m.preview.Hold(cand) }
+func (m *Model) holdTypedPrompt(cand uicapture.TypedPrompt) { m.workspace.capture.Hold(cand) }
 
 // commitTypedPrompt records each stashed draft as its session's last prompt
 // once that session runs with it.
 func (m *Model) commitTypedPrompt() {
-	m.preview.Commit(m.workspace.sessions, time.Now(), func(sess store.Session, text string) {
+	m.workspace.capture.Commit(m.workspace.sessions, time.Now(), func(sess store.Session, text string) {
 		m.dispatchInput(focusruntime.Request{Kind: focusruntime.Prompt, Session: sess, Text: text})
 	})
 }
@@ -124,7 +126,7 @@ func (m *Model) routePreviewMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		m.focus.pane.Blink()
 		return routed(m, m.cursorBlink())
 	}
-	if cmd, ok := m.preview.Route(previewCaptures{m}, msg); ok {
+	if cmd, ok := m.workspace.capture.Route(previewCaptures{m}, msg); ok {
 		return routed(m, cmd)
 	}
 	return nil, nil, false

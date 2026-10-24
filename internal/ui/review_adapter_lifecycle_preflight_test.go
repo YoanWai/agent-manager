@@ -118,7 +118,7 @@ func TestReviewPreferencesFinishBehindPickerWithoutLeavingLoadingStuck(t *testin
 	m.workspace.sessions = []store.Session{s}
 	m.rebuildRows()
 	m.selectSessionRow(t, s.Name)
-	m.lifecycle.PickedRepos = map[string]string{s.ID: s.Cwd}
+	m.ledger.lifecycle.PickedRepos = map[string]string{s.ID: s.Cwd}
 	cmd := m.openDiffWithReader(&reviewReadProbe{})
 	state := m.review.Snapshot()
 	m.openReviewPicker([]uireview.PickerRow{{Label: "branch", Root: s.Cwd}}, "branches", uireview.PickRepo, s.Cwd, uireview.PickerSource{Generation: state.Generation, TargetID: s.ID, RepoRoot: s.Cwd}, "")

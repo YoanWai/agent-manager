@@ -1,12 +1,12 @@
 package install
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uilaunchhint "github.com/YoanWai/agent-manager/internal/ui/launchhint"
 )
@@ -87,8 +87,8 @@ func TestRunSettleReportsAMissingBinary(t *testing.T) {
 	if err := os.WriteFile(statusFile, []byte("0"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	withSeam(t, &CheckInstalled, func(string) error {
-		return errors.New("still missing")
+	withSeam(t, &CheckInstalled, func(binary string) error {
+		return config.MissingToolError{Binary: binary}
 	})
 
 	result, err := RunSettle(Services{}, SettleRequest{Pending: Pending{

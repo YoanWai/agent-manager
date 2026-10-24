@@ -72,13 +72,17 @@ func (s effectServices) runLifecycle(request lifecycleRequest) (uieffects.Result
 
 // lifecycleServices is the effect services as a lifecycle run reaches them.
 func (s effectServices) lifecycleServices() uilifecycle.Services {
-	return uilifecycle.Services{
+	services := uilifecycle.Services{
 		Lifecycle: s.lifecycle,
 		Store:     s.store,
 		Driver:    s.driver,
-		Watch:     s.watch,
 		Reflow:    s.reflowSessions,
 	}
+	// A nil watcher stored in the interface would read as present.
+	if s.watch != nil {
+		services.Watch = s.watch
+	}
+	return services
 }
 
 // reflowSessions holds the panes a lifecycle run touches, the lane contract
@@ -166,7 +170,7 @@ func (m *Model) applyLifecycleEffect(request lifecycleRequest, result lifecycleE
 		}
 	case actionDelete:
 		for _, sess := range result.Deleted.Deleted {
-			m.lifecycle.ForgetSession(sess.ID)
+			m.ledger.lifecycle.ForgetSession(sess.ID)
 			m.removeSessionLocally(sess.ID)
 		}
 		if len(result.Deleted.RemovedGroups) > 0 {
@@ -176,7 +180,7 @@ func (m *Model) applyLifecycleEffect(request lifecycleRequest, result lifecycleE
 	}
 	for _, each := range result.Launches {
 		m.markFreshPane(each.ID)
-		m.lifecycle.RecordLaunch(each.ID, time.Now())
+		m.ledger.lifecycle.RecordLaunch(each.ID, time.Now())
 		if target.action == actionRestart {
 			m.bindRestartLocally(each.ID, each.Result.Conversation, each.Result.LaunchedAt)
 		} else {
