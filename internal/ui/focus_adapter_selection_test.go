@@ -6,6 +6,7 @@ import (
 	"time"
 
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
+	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	focuswatch "github.com/YoanWai/agent-manager/internal/ui/focus/watch"
 	uicapture "github.com/YoanWai/agent-manager/internal/ui/preview/capture"
 	tea "github.com/charmbracelet/bubbletea"
@@ -167,7 +168,7 @@ func TestPushedPreviewWinsOverStalePoll(t *testing.T) {
 	}
 
 	fresh := "typed-just-now"
-	updated, _ := m.Update(focusPreviewMsg{SessionID: sess.ID, Preview: fresh})
+	updated, _ := m.Update(focusruntime.FrameMsg{SessionID: sess.ID, Preview: fresh})
 	*m = *updated.(*Model)
 	updated, _ = m.Update(uicapture.Msg{SessID: sess.ID, Preview: "stale-capture"})
 	*m = *updated.(*Model)

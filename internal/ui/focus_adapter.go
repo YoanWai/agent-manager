@@ -6,7 +6,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/status"
-	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
@@ -32,7 +31,7 @@ func (m *Model) routeFocusMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		m.clearErr()
 		return routed(m, nil)
 
-	case focusScrollMsg:
+	case focusruntime.ScrollMsg:
 		currentID := ""
 		if sess, ok := m.selected(); ok {
 			currentID = sess.ID
@@ -52,7 +51,7 @@ func (m *Model) routeFocusMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		}
 		return routed(m, nil)
 
-	case focusPreviewMsg:
+	case focusruntime.FrameMsg:
 		currentID := ""
 		if sess, ok := m.selected(); ok {
 			currentID = sess.ID
@@ -167,12 +166,6 @@ func (m *Model) leaveFocusMode() tea.Cmd {
 	m.rail.ResetClickHistory()
 	m.flushPendingNotice()
 	return nil
-}
-
-// focusPagesScrollback reads the Focus policy for the footer and status
-// line, which name the page keys only while they page.
-func (m *Model) focusPagesScrollback(sess store.Session) bool {
-	return m.focus.pane.PagesScrollback(sess.ID)
 }
 
 // handleFocusKey forwards focused input to the pane except for session

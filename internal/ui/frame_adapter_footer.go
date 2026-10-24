@@ -40,7 +40,7 @@ func (m *Model) footer() legend {
 		}
 		back += " / mouse back"
 		sess, selected := m.selected()
-		pagesScrollback := selected && m.focusPagesScrollback(sess)
+		pagesScrollback := selected && m.focus.pane.PagesScrollback(sess.ID)
 		pairs := [][2]string{{back, "back"}}
 		if m.prefs.arrowStep {
 			label := "prompt start: back"

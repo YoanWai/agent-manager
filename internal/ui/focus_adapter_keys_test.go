@@ -1366,7 +1366,7 @@ func TestFocusLeftUnfocusesOnPiBlankComposerRow(t *testing.T) {
 	sess := railSelectedSession(m)
 	setRailSessionTool(m, railSelectedSession(m).ID, "pi-tool")
 	setHiddenPane := func(x int, preview string) {
-		updated, _ := m.Update(focusPreviewMsg{
+		updated, _ := m.Update(focusruntime.FrameMsg{
 			SessionID: sess.ID, Preview: preview,
 			CursorX: x, CursorY: 1, PaneStateOK: true,
 		})
@@ -1556,7 +1556,7 @@ func TestFocusLeftUnfocusesOnCommandCodesParkedCaret(t *testing.T) {
 	}
 	sess := railSelectedSession(m)
 	setRailSessionTool(m, railSelectedSession(m).ID, "command-code")
-	hidden := focusPreviewMsg{
+	hidden := focusruntime.FrameMsg{
 		SessionID: sess.ID,
 		Preview:   "✻ Thought for 2 seconds [ctrl+o to expand]\n\n────────────\n❯ Ask your question...\n────────────\n  ? for shortcuts\n\n\n\n",
 		CursorX:   0, CursorY: 6, PaneStateOK: true,

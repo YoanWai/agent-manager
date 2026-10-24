@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -64,7 +65,7 @@ func waitFocusPreview(t *testing.T, msgs <-chan tea.Msg, id, contains string) {
 	for {
 		select {
 		case msg := <-msgs:
-			preview, ok := msg.(focusPreviewMsg)
+			preview, ok := msg.(focusruntime.FrameMsg)
 			if !ok || preview.SessionID != id {
 				continue
 			}
@@ -72,7 +73,7 @@ func waitFocusPreview(t *testing.T, msgs <-chan tea.Msg, id, contains string) {
 				return
 			}
 		case <-deadline:
-			t.Fatalf("no focusPreviewMsg containing %q", contains)
+			t.Fatalf("no focusruntime.FrameMsg containing %q", contains)
 		}
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
+	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -154,7 +155,7 @@ func TestFocusWheelScrollsHistory(t *testing.T) {
 	}
 
 	// A live push must not yank the view back to the bottom.
-	updated, _ := m.Update(focusPreviewMsg{SessionID: sessID, Preview: "LIVE-FRAME\n"})
+	updated, _ := m.Update(focusruntime.FrameMsg{SessionID: sessID, Preview: "LIVE-FRAME\n"})
 	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.workspace.preview != scrolled {
@@ -345,13 +346,13 @@ func TestWheelBurstKeepsOneCaptureInFlight(t *testing.T) {
 		t.Fatalf("offset = %d after 6 notches, want %d", moved, 6*focusScrollStep)
 	}
 	// The reply for the stale first target fetches the final viewport once.
-	updated, cmd := m.Update(focusScrollMsg{SessionID: sessID, Offset: focusScrollStep, Rows: m.focusPaneRows(), OK: true})
+	updated, cmd := m.Update(focusruntime.ScrollMsg{SessionID: sessID, Offset: focusScrollStep, Rows: m.focusPaneRows(), OK: true})
 	*m = *updated.(*Model)
 	if cmd == nil {
 		t.Fatal("the stale reply should issue the catch-up fetch")
 	}
 	// The catch-up's own reply lands on the live target and frees the pipe.
-	updated, _ = m.Update(focusScrollMsg{SessionID: sessID, Offset: m.focus.pane.Status().ScrollOffset, Rows: m.focusPaneRows(), Preview: "frame\n", OK: true})
+	updated, _ = m.Update(focusruntime.ScrollMsg{SessionID: sessID, Offset: m.focus.pane.Status().ScrollOffset, Rows: m.focusPaneRows(), Preview: "frame\n", OK: true})
 	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if cmd := m.scrollFocus(-1); cmd == nil && m.focus.pane.Status().ScrollOffset < m.focus.pane.Pane().History {
@@ -797,7 +798,7 @@ func TestAppMouseClearsScrollback(t *testing.T) {
 		t.Fatal("setup did not leave the view scrolled back")
 	}
 
-	updated, _ := m.Update(focusPreviewMsg{
+	updated, _ := m.Update(focusruntime.FrameMsg{
 		SessionID: sess.ID,
 		Preview:   "LIVE-FRAME\n",
 		Mouse:     true,
@@ -828,7 +829,7 @@ func TestStaleMouseClaimDoesNotClearHistoryScroll(t *testing.T) {
 	setFocusScrollOffset(t, m, sess.ID, 9, m.focusPaneRows())
 	updateFocusPane(m, sess.ID, func(update *uifocus.PaneUpdate) { update.History = 80 })
 
-	updated, _ := m.Update(focusPreviewMsg{
+	updated, _ := m.Update(focusruntime.FrameMsg{
 		SessionID: sess.ID,
 		Preview:   "LIVE-FRAME\n",
 		Mouse:     true,
