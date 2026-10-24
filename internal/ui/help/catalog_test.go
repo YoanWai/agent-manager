@@ -33,7 +33,7 @@ func TestCatalogDocumentsEveryListAction(t *testing.T) {
 		}
 	}
 	if !documented["ctrl+c"] {
-		t.Error("ctrl+c quits from every mode and belongs in the map")
+		t.Error("ctrl+c belongs in the map")
 	}
 }
 
@@ -247,5 +247,23 @@ func TestCatalogNamesTheSavedPromptKeys(t *testing.T) {
 	}
 	if rows["inside a session (attached or focused)/f6"] != "open saved prompts and paste the pick" {
 		t.Fatal("the session section does not follow the saved prompt binding")
+	}
+}
+
+func TestCatalogNamesTheSetupStepKeys(t *testing.T) {
+	rows := map[string]string{}
+	for _, section := range helpSections(testContext(84)) {
+		for _, row := range section.rows {
+			rows[section.title+"/"+row[0]] = row[1]
+		}
+	}
+	if rows["setup step/i"] != "run the installer, or update a CLI that is too old" {
+		t.Fatalf("i = %q", rows["setup step/i"])
+	}
+	if rows["setup step/c"] != "copy that command" || rows["setup step/esc"] != "close" {
+		t.Fatalf("setup step rows = %v", rows)
+	}
+	if rows["setup step/click command"] != "copy it, the same as c" {
+		t.Fatalf("click row = %q", rows["setup step/click command"])
 	}
 }

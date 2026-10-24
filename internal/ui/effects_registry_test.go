@@ -41,6 +41,8 @@ var effectPairs = []effectPair{
 	{ackRequest{}, ackEffectResult{}},
 	{detachRequest{}, detachEffectResult{}},
 	{attachRequest{}, attachEffectResult{}},
+	{connectionRequest{}, connectionEffectResult{}},
+	{remoteRequest{}, remoteEffectResult{}},
 }
 
 // A choice save carries nothing back to the model, so only its error is

@@ -253,6 +253,9 @@ func (d *Form) DirAuto() bool { return d.dirAuto }
 // SetDir fills the directory without making it the user's own.
 func (d *Form) SetDir(value string) { d.dir.SetValue(value) }
 
+// SetDirPlaceholder is what the empty directory field says.
+func (d *Form) SetDirPlaceholder(text string) { d.dir.Placeholder = text }
+
 // TakePath fills in a completed path, which the user then owns.
 func (d *Form) TakePath(path string) {
 	d.dir.SetValue(path)

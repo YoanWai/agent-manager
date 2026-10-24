@@ -14,6 +14,9 @@ import (
 
 // Captured panes use the whole column to preserve terminal layout.
 func (m *Model) contentLines(width, height int) []contentLine {
+	if lines, ok := m.remoteContentLines(width, height); ok {
+		return lines
+	}
 	gutter := strings.Repeat(" ", contentGutter)
 	inner := width - 2*contentGutter
 	ours := func(lines []string) []contentLine {
@@ -211,7 +214,7 @@ func (m *Model) viewDetail(width int) string {
 		Render(m.glyphs().StatusGlyph(sess.Status)+" "+statusLabel(sess.Status)) +
 		subtleStyle().Render(" · "+relSince(lastActivity(sess))+m.elsewhereNote(sess))
 	if sess.AfterTurn != "" {
-		state += subtleStyle().Render(" · ") + afterTurnBadge(sess.AfterTurn) + subtleStyle().Render(" "+afterTurnNote[sess.AfterTurn])
+		state += subtleStyle().Render(" · ") + m.afterTurnBadge(sess.AfterTurn) + subtleStyle().Render(" "+afterTurnNote[sess.AfterTurn])
 	}
 	// The branch a worktree session lives on is the fact that tells it apart
 	// from its siblings, so it rides beside the tool while the row has room,

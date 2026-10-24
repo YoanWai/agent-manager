@@ -167,6 +167,106 @@ func TestDetectManagerFollowsSymlink(t *testing.T) {
 	}
 }
 
+func TestDetectScoopManager(t *testing.T) {
+	stubSourceSeams(t, nil, false)
+	cases := []struct {
+		label string
+		path  string
+		root  string
+		key   string
+		want  bool
+	}{
+		{label: "user version", path: `C:\Users\Jane\scoop\apps\agent-manager\0.43.0\agent-manager.exe`, want: true},
+		{label: "current junction", path: `C:\Users\Jane\scoop\apps\agent-manager\current\agent-manager.exe`, want: true},
+		{label: "global", path: `C:\ProgramData\scoop\apps\agent-manager\current\agent-manager.exe`, want: true},
+		{label: "case and spaces", path: `C:\Users\Jane Doe\SCOOP\APPS\Agent-Manager\current\agent-manager.exe`, want: true},
+		{label: "forward slashes", path: "C:/scoop/apps/agent-manager/current/agent-manager.exe", want: true},
+		{label: "custom root", key: "SCOOP", root: `D:\My Tools\`, path: `d:\my tools\apps\agent-manager\0.43.0\agent-manager.exe`, want: true},
+		{label: "custom global root", key: "SCOOP_GLOBAL", root: "D:/GlobalTools", path: `D:\GlobalTools\apps\agent-manager\current\agent-manager.exe`, want: true},
+		{label: "other package", path: `C:\Users\Jane\scoop\apps\another-app\current\agent-manager.exe`},
+		{label: "package prefix", path: `C:\Users\Jane\scoop\apps\agent-manager-copy\current\agent-manager.exe`},
+		{label: "root prefix", key: "SCOOP", root: `D:\Tools`, path: `D:\Tools-copy\apps\agent-manager\current\agent-manager.exe`},
+		{label: "directory suffix", path: `C:\Users\Jane\not-scoop\apps\agent-manager\current\agent-manager.exe`},
+		{label: "manual install", path: `C:\Users\Jane\AppData\Local\Programs\agent-manager\agent-manager.exe`},
+		{label: "manual install beside a custom root", key: "SCOOP", root: `D:\Tools`, path: `C:\Users\Jane\AppData\Local\Programs\agent-manager\agent-manager.exe`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.label, func(t *testing.T) {
+			t.Setenv("SCOOP", "")
+			t.Setenv("SCOOP_GLOBAL", "")
+			if tc.key != "" {
+				t.Setenv(tc.key, tc.root)
+			}
+			manager := DetectManager(tc.path)
+			if !tc.want {
+				if manager.Name != "" || manager.Advice != "" || manager.Delegated() {
+					t.Fatalf("direct install detected as %+v", manager)
+				}
+				return
+			}
+			if manager.Name != "Scoop" || manager.Delegated() {
+				t.Fatalf("Scoop install must block the in-place update, got %+v", manager)
+			}
+			if manager.Advice != "installed with Scoop. Close agent-manager, then run: scoop update agent-manager. For a global install, add --global in an elevated PowerShell." {
+				t.Fatalf("Scoop advice = %q", manager.Advice)
+			}
+		})
+	}
+}
+
+func TestDetectScoopManagerFollowsSymlink(t *testing.T) {
+	stubSourceSeams(t, nil, false)
+	dir := t.TempDir()
+	version := filepath.Join(dir, "scoop", "apps", "agent-manager", "0.43.0")
+	if err := os.MkdirAll(version, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "scoop", "apps", "agent-manager", "current")
+	if err := os.Symlink(version, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(version, "agent-manager.exe"), []byte("Scoop build"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manager := DetectManager(filepath.Join(link, "agent-manager.exe"))
+	if manager.Name != "Scoop" || manager.Advice == "" || manager.Delegated() {
+		t.Fatalf("symlink into Scoop got %+v", manager)
+	}
+}
+
+func TestDetectScoopCustomRootFollowsSymlink(t *testing.T) {
+	stubSourceSeams(t, nil, false)
+	base := t.TempDir()
+	real := filepath.Join(base, "My Tools")
+	rootLink := filepath.Join(base, "scoop-root")
+	if err := os.MkdirAll(real, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, rootLink); err != nil {
+		t.Fatal(err)
+	}
+	// SCOOP points at the link. The binary resolves through that link and
+	// through current, the way a Windows short path or junction does.
+	t.Setenv("SCOOP", rootLink)
+	t.Setenv("SCOOP_GLOBAL", "")
+	version := filepath.Join(real, "apps", "agent-manager", "0.43.0")
+	if err := os.MkdirAll(version, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	current := filepath.Join(real, "apps", "agent-manager", "current")
+	if err := os.Symlink(version, current); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(version, "agent-manager.exe"), []byte("Scoop build"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	launch := filepath.Join(rootLink, "apps", "agent-manager", "current", "agent-manager.exe")
+	manager := DetectManager(launch)
+	if manager.Name != "Scoop" || manager.Advice == "" || manager.Delegated() {
+		t.Fatalf("custom Scoop root symlink got %+v", manager)
+	}
+}
+
 func TestPacmanOwnsOffLinux(t *testing.T) {
 	if runtime.GOOS == "linux" {
 		t.Skip("exercises the non-linux short circuit")

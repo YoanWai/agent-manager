@@ -105,6 +105,11 @@ func (m Model) Collapsed() []string {
 	return paths
 }
 
+// saveFolds stores every fold, local and on connections.
+func (m Model) saveFolds() Mutation {
+	return Mutation{Kind: SaveCollapsed, Collapsed: m.Collapsed(), HostCollapsed: m.HostCollapsed()}
+}
+
 func (m Model) ListedSessionIDs() []string {
 	sessions := m.listedSessions()
 	ids := make([]string, len(sessions))
@@ -175,7 +180,7 @@ func (m *Model) action(action string, ctx KeyContext) Decision {
 	case keybind.ReorderDown:
 		return m.requestReorder(1)
 	case keybind.Open:
-		if row, ok := m.row(); ok && row.kind == GroupRow {
+		if row, ok := m.row(); ok && row.folds() {
 			return m.toggleCollapse()
 		}
 		if ctx.EnterFocuses {
@@ -186,8 +191,8 @@ func (m *Model) action(action string, ctx KeyContext) Decision {
 		if !ctx.ArrowStep {
 			return Decision{Consumed: true}
 		}
-		if row, ok := m.row(); ok && row.kind == GroupRow {
-			if m.collapsed[row.group] {
+		if row, ok := m.row(); ok && row.folds() {
+			if m.rowFolded(row) {
 				return m.toggleCollapse()
 			}
 			return Decision{Consumed: true}
@@ -197,7 +202,7 @@ func (m *Model) action(action string, ctx KeyContext) Decision {
 		if !ctx.ArrowStep {
 			return Decision{Consumed: true}
 		}
-		if row, ok := m.row(); ok && row.kind == GroupRow && !m.collapsed[row.group] {
+		if row, ok := m.row(); ok && row.folds() && !m.rowFolded(row) {
 			return m.toggleCollapse()
 		}
 		return Decision{Consumed: true}
@@ -210,6 +215,8 @@ func (m *Model) action(action string, ctx KeyContext) Decision {
 		return m.intent(NewSession)
 	case keybind.NewGroup:
 		return m.intent(NewGroup)
+	case keybind.NewConnection:
+		return m.intent(NewConnection)
 	case keybind.Fork:
 		return m.intent(Fork)
 	case keybind.Revive:
@@ -360,23 +367,18 @@ func (m *Model) toggleCollapse() Decision {
 	if !ok {
 		return Decision{Consumed: true}
 	}
-	path := row.group
-	if row.kind == SessionRow {
-		path = row.sess.Group
-	}
-	if path == "" {
+	if row.host == "" && row.foldPath() == "" {
 		return Decision{Consumed: true}
 	}
-	m.collapsed[path] = !m.collapsed[path]
+	m.setFolded(row.host, row.foldPath(), !m.rowFolded(row))
 	m.rebuildRows()
 	return m.collapsedDecision()
 }
 
 func (m *Model) toggleCollapseAll() Decision {
-	groups := groupClosure(m.snapshot.Groups, m.snapshot.Sessions)
 	collapse := !m.AllGroupsCollapsed()
-	for group := range groups {
-		m.collapsed[group] = collapse
+	for _, fold := range m.foldable() {
+		m.setFolded(fold.Host, fold.Path, collapse)
 	}
 	m.rebuildRows()
 	return m.collapsedDecision()
@@ -384,8 +386,8 @@ func (m *Model) toggleCollapseAll() Decision {
 
 func (m Model) AllGroupsCollapsed() bool {
 	any := false
-	for group := range groupClosure(m.snapshot.Groups, m.snapshot.Sessions) {
-		if !m.collapsed[group] {
+	for _, fold := range m.foldable() {
+		if !m.folded(fold.Host, fold.Path) {
 			return false
 		}
 		any = true
@@ -397,7 +399,7 @@ func (m Model) collapsedDecision() Decision {
 	return Decision{
 		Consumed:  true,
 		Selection: selectedOfValue(m),
-		Mutations: []Mutation{{Kind: SaveCollapsed, Collapsed: m.Collapsed()}},
+		Mutations: []Mutation{m.saveFolds()},
 	}
 }
 
@@ -487,7 +489,7 @@ func (m *Model) RevealGroup(path string) Decision {
 		Selection:        current,
 	}
 	if collapsedChanged {
-		decision.Mutations = []Mutation{{Kind: SaveCollapsed, Collapsed: m.Collapsed()}}
+		decision.Mutations = []Mutation{m.saveFolds()}
 	}
 	return decision
 }

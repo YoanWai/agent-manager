@@ -34,8 +34,8 @@ func TestArchiveReconcilesDurableRowsBeforeLaterFailure(t *testing.T) {
 func TestRestoreReconcilesDurableRowsBeforeLaterFailure(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
-	first := store.Session{ID: "cafe", Name: "first", Tool: "claude", Cwd: t.TempDir(), Status: status.Dead, Archived: true}
-	second := store.Session{ID: "beef", Name: "second", Tool: "claude", Cwd: filepath.Join(t.TempDir(), "missing"), Status: status.Dead, Archived: true}
+	first := store.Session{ID: newID(), Name: "first", Tool: "claude", Cwd: t.TempDir(), Status: status.Dead, Archived: true}
+	second := store.Session{ID: newID(), Name: "second", Tool: "claude", Cwd: filepath.Join(t.TempDir(), "missing"), Status: status.Dead, Archived: true}
 	for _, sess := range []store.Session{first, second} {
 		if err := m.services.store.CreateSession(sess); err != nil {
 			t.Fatal(err)
@@ -43,12 +43,13 @@ func TestRestoreReconcilesDurableRowsBeforeLaterFailure(t *testing.T) {
 	}
 	loadStoredRows(t, m)
 	m.confirm.confirmTarget = confirmTarget{action: actionRestore, sessions: []store.Session{first, second}}
-	if err := m.restoreConfirmed(); err == nil {
+	err := m.restoreConfirmed()
+	if err == nil {
 		t.Fatal("expected second revive failure")
 	}
 	got, _ := m.sessionByID(first.ID)
 	if got.Archived {
-		t.Fatal("completed restore remains in archived inventory")
+		t.Fatalf("completed restore remains in archived inventory; restore failed with: %v", err)
 	}
 	untouched, _ := m.sessionByID(second.ID)
 	if !untouched.Archived {
@@ -74,7 +75,7 @@ func TestFailedGroupRestoreDoesNotClearMembership(t *testing.T) {
 	if err := m.services.store.CreateGroup("zone", ""); err != nil {
 		t.Fatal(err)
 	}
-	sess := store.Session{ID: "cafe", Name: "first", Group: "zone", Tool: "claude", Cwd: t.TempDir(), Status: status.Dead, Archived: true}
+	sess := store.Session{ID: newID(), Name: "first", Group: "zone", Tool: "claude", Cwd: t.TempDir(), Status: status.Dead, Archived: true}
 	if err := m.services.store.CreateSession(sess); err != nil {
 		t.Fatal(err)
 	}

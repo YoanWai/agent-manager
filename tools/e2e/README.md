@@ -15,7 +15,9 @@ records every observed transition. Keep the smoke separate from the fast Go suit
 transition; a successful cached-build run should take less than 30 seconds.
 
 The harness creates its own HOME (the default profile therefore belongs to this
-run), XDG directories, and shell configuration directory. It removes inherited
+run), XDG directories, and shell configuration directory. When the startup feed
+opens the messages panel, the smoke closes it with esc after the screen stops
+saying the feed check has not landed. It removes inherited
 TMUX and uses a short, unique, precreated `/tmp/ame-*` socket directory. Every
 tmux command uses an absolute `-S` socket path within the fixture. Cleanup kills only these two
 servers within that directory, including on failure. A failed cleanup still
@@ -50,8 +52,11 @@ clients, and real SSH remain separate acceptance work.
 ```sh
 go build -o /tmp/agent-manager-e2e .
 python3 tools/e2e/scenarios.py --binary /tmp/agent-manager-e2e
+python3 tools/e2e/scenarios.py --binary /tmp/agent-manager-e2e --glyph-mode basic
 ```
 
+CI runs the scenario gate in both Advanced and Compatible modes. Settings
+navigation follows the selected field label and the chosen mode’s marker.
 The separate scenario gate shares one binary across two disposable profiles.
 It covers form spawn, selected-session quick input reaching a real pane with matching durable metadata, terminal/group creation, move, rename, settings persistence
 and reopening, fork launch, and zero-exit shutdown. A fixture CLI runs a real
@@ -135,3 +140,13 @@ The headless example has a separate-process observation/shutdown regression in
 reads a JSON observation and requires clean SIGTERM shutdown. This is local
 runtime and extension-backlog evidence, not paid provider conversation discovery
 or the Linux/SSH platform matrix.
+
+## SSH connection
+
+```sh
+python3 tools/e2e/ssh_scenarios.py --binary /tmp/agent-manager-e2e
+```
+
+A fixture `ssh` first on PATH drops every argument but the remote command and runs it with `/bin/sh -c` under a second disposable HOME and its own short tmux socket directory, so the "host" is a real agent-manager with its own profile and no network, keys or `~/.ssh`. A copy of the binary, first on PATH at a path unique to the run, serves both sides. The scenario seeds an agent on the host through its CLI, adds the connection through the `C` dialog, waits for the remote row, answers it from the quick bar and checks the prompt reached the host's pane with nothing queued in its inbox, kills it and checks its tmux session is gone on the host, and requires that the local store holds the connection and no sessions. A second connection whose ssh fails shows as unreachable. The first refresh starts the host's headless manager.
+
+Cleanup ends every process by PID: the binary copy's processes (the host's `serve` among them) and the tmux servers on the run's own sockets, listed in `ended-processes.json`. No `kill-server` is sent. Attach needs a terminal on both sides and is left to the unit tests, which check the SSH command it builds.

@@ -39,6 +39,8 @@ type noticesPanel struct {
 	// feedMessages is the remote message feed, refreshed on the update
 	// tick and folded into the notices next to the built-in ones.
 	feedMessages []feed.Message
+	// The fetch writes its cache before the UI applies its result.
+	feedPending bool
 	// pendingNotice is a new notice that arrived while the list was not
 	// showing; flushPendingNotice opens it once the list is back.
 	pendingNotice string
@@ -81,13 +83,15 @@ func (m *Model) activeNotices() []uinotices.Notice {
 // bar as the panel's tail shows them.
 func (m *Model) noticesFrame() uinotices.Frame {
 	return uinotices.Frame{
-		Width:      m.layout.width,
-		Height:     m.layout.height,
-		Refreshing: m.update.refreshing,
-		Applying:   m.update.applying,
-		Latest:     m.update.latest,
-		Status:     m.statusRow(),
-		Theme:      noticesTheme(),
+		GlyphMode:   m.prefs.glyphMode,
+		Width:       m.layout.width,
+		Height:      m.layout.height,
+		Refreshing:  m.update.refreshing,
+		FeedPending: m.notices.feedPending,
+		Applying:    m.update.applying,
+		Latest:      m.update.latest,
+		Status:      m.statusRow(),
+		Theme:       noticesTheme(),
 	}
 }
 
@@ -400,5 +404,5 @@ func (m *Model) statusRow() string {
 	if m.errBar.text == "" {
 		return ""
 	}
-	return m.statusMessage(m.glyphs().ErroredGlyph, m.glyphs().FinishedGlyph, "▲")
+	return m.statusMessage(m.glyphs().ErroredGlyph, m.glyphs().FinishedGlyph, m.glyphs().WarningGlyph)
 }

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/notify"
 
 	"github.com/YoanWai/agent-manager/internal/status"
@@ -18,31 +19,36 @@ import (
 // finished stays quiet unless opted in, since most turn ends are routine.
 // There is no focus gate: the poll cannot tell whether the user is looking
 // at the manager, and the session they are watching is precisely the one
-// whose ping they must not miss. The notify command set with
-// agent-manager settings runs for the same transitions, after the native
-// banner and never instead of it.
-func (p *Runner) notifyTransition(sess store.Session, newStatus string) {
+// whose ping they must not miss. The banner quotes what the row shows:
+// a waiting session's question, a finished session's prompt. The notify
+// command set with agent-manager settings runs for the same transitions,
+// after the native banner and never instead of it.
+func (p *Runner) notifyTransition(sess store.Session, newStatus, prompt, quote string) {
 	if p.notifyFn == nil {
 		return
 	}
 	var kind notify.Kind
+	var text string
 	switch newStatus {
 	case status.Waiting:
-		kind = notify.Waiting
+		kind, text = notify.Waiting, quote
 	case status.Errored:
 		kind = notify.Errored
 	case status.Finished:
 		if !p.notifyFinished() {
 			return
 		}
-		kind = notify.Finished
+		kind, text = notify.Finished, sessionPrompt(sess, prompt)
 	default:
 		return
 	}
 	if !p.notificationsOn() {
 		return
 	}
-	event := notify.Event{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: kind, Dir: sess.Cwd, Branch: sess.WorktreeBranch}
+	event := notify.Event{
+		ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: kind,
+		Dir: sess.Cwd, Branch: sess.WorktreeBranch, Repo: sess.WorktreeRepo, Text: text,
+	}
 	command, readErr := p.notifyCommand()
 	unshown := command != "" && p.claimUnshownCommand(command)
 	// Delivery can wait on an external process (osascript, notify-send,
@@ -87,6 +93,19 @@ func (p *Runner) claimUnshownCommand(command string) bool {
 func (p *Runner) notificationsOn() bool {
 	chosen, err := p.store.Setting(notificationsSetting)
 	return err != nil || chosen != "off"
+}
+
+// sessionPrompt is the line a finished banner quotes, the same fallback
+// the session row uses: the prompt echoed in the pane, else the last one
+// delivered through the manager, else the one the session launched with.
+func sessionPrompt(sess store.Session, echoed string) string {
+	if echoed != "" {
+		return echoed
+	}
+	if sess.LastPrompt != "" {
+		return sess.LastPrompt
+	}
+	return launch.DeliveredPrompt(sess.LaunchPrompt)
 }
 
 func (p *Runner) notifyFinished() bool {

@@ -120,6 +120,8 @@ func testRepo(t *testing.T) (*Driver, string) {
 	gitIn(t, dir, "init", "-b", "main")
 	gitIn(t, dir, "config", "user.email", "test@test")
 	gitIn(t, dir, "config", "user.name", "test")
+	// Signing follows the user's gitconfig and can block on their signer.
+	gitIn(t, dir, "config", "commit.gpgsign", "false")
 	return driver, dir
 }
 
@@ -198,6 +200,7 @@ func initRepoAt(t *testing.T, dir string) {
 		{"init", "-b", "main"},
 		{"config", "user.email", "test@test"},
 		{"config", "user.name", "test"},
+		{"config", "commit.gpgsign", "false"},
 	} {
 		cmd := exec.Command("git", args...)
 		cmd.Dir = dir
@@ -781,6 +784,7 @@ func forkClone(t *testing.T) (driver *Driver, work, parent, fork string) {
 	gitIn(t, parent, "clone", "-q", fork, work)
 	gitIn(t, work, "config", "user.email", "test@test")
 	gitIn(t, work, "config", "user.name", "test")
+	gitIn(t, work, "config", "commit.gpgsign", "false")
 	gitIn(t, work, "remote", "add", "upstream", parent)
 	gitIn(t, work, "fetch", "-q", "upstream")
 	// git 2.48 and later record upstream's HEAD on fetch; older ones do not.

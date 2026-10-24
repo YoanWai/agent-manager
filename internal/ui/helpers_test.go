@@ -233,6 +233,7 @@ func buildModelWithStorePath(t *testing.T, dbPath string) *Model {
 	m.layout.width = 120
 	m.layout.height = 40
 	m.startup.booting = false
+	m.Update(feedMsg{startup: true})
 	t.Cleanup(func() {
 		for _, s := range m.workspace.sessions {
 			driver.Kill(s.ID)
@@ -263,6 +264,9 @@ func (m *Model) drainEffects(t *testing.T) {
 		job := m.effects.input.active
 		if job == nil {
 			job = m.effects.main.active
+		}
+		if job == nil {
+			job = m.effects.remote.active
 		}
 		if job == nil {
 			return
@@ -656,6 +660,7 @@ func reloadModel(t *testing.T, m *Model) *Model {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	loaded.Update(feedMsg{startup: true})
 	return loaded
 }
 

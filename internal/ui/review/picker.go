@@ -175,11 +175,12 @@ func (p *Picker) Click(line int, sourceCurrent bool) PickerResult {
 }
 
 // row renders one picker row inside a card of inner width.
-func (p Picker) row(s Styles, inner int, row PickerRow, selected bool) string {
+func (p Picker) row(ctx RenderContext, inner int, row PickerRow, selected bool) string {
+	s := ctx.Styles
 	marker := "  "
 	nameStyle := lipgloss.NewStyle()
 	if selected {
-		marker = lipgloss.NewStyle().Foreground(s.Accent).Render("❯ ")
+		marker = lipgloss.NewStyle().Foreground(s.Accent).Render(presentation.GlyphsFor(ctx.GlyphMode).SelectionGlyph + " ")
 		nameStyle = nameStyle.Foreground(s.Accent).Bold(true)
 	}
 	name := presentation.TruncateTail(presentation.EscapeControlsInline(row.Label), inner-lipgloss.Width(marker))
@@ -205,7 +206,7 @@ func (p *Picker) Body(ctx RenderContext, inner, height int) string {
 	}
 	start, end := p.window(height, len(rows))
 	for i := start; i < end; i++ {
-		body.WriteString(p.row(s, inner, rows[i], i == p.cursor) + "\n")
+		body.WriteString(p.row(ctx, inner, rows[i], i == p.cursor) + "\n")
 		p.lines.Show(i, 1)
 	}
 	if hidden := len(rows) - (end - start); hidden > 0 {

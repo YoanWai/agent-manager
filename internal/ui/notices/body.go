@@ -73,7 +73,9 @@ func scrollWindow(body []string, room, offset, inner int, t Theme) []string {
 // measure leaves the summary out: a paragraph wraps to the modal and must never widen it.
 func measure(n Notice) []string {
 	lines := append([]string{n.Headline}, n.Body...)
-	lines = append(lines, n.After...)
+	for _, line := range n.After {
+		lines = append(lines, plainMarks(line))
+	}
 	ranged := len(n.Releases) > 1
 	for index, release := range n.Releases {
 		newest := index == len(n.Releases)-1
@@ -132,7 +134,7 @@ func renderBody(n Notice, width int, t Theme) []string {
 	if len(n.After) > 0 {
 		body = append(body, "")
 		for _, line := range n.After {
-			body = appendWrapped(body, []textRun{{text: line}}, width, t.Muted, t)
+			body = appendWrapped(body, markedRuns(line), width, t.Muted, t)
 		}
 	}
 	return body

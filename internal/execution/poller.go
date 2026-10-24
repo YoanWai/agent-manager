@@ -37,7 +37,7 @@ type Runner struct {
 	gitDrv        *git.Driver
 	statusSources map[string]string
 	sessionStores map[string]string
-	claudeTails   map[string]claudeTailCache
+	transcripts   map[string]transcriptTailCache
 	mcpStyles     map[string]string
 	reportStyles  map[string]string
 	shellTools    map[string]bool
@@ -155,9 +155,9 @@ var managerEchoOpenings = []string{
 	"[agent-manager] ",
 }
 
-// claudeTailCache keeps one transcript's extraction keyed to its file
+// transcriptTailCache keeps one transcript's extraction keyed to its file
 // stats, so an unchanged transcript is not re-read every tick.
-type claudeTailCache struct {
+type transcriptTailCache struct {
 	path    string
 	size    int64
 	modTime time.Time
@@ -401,7 +401,7 @@ func (p *Runner) step(ctx context.Context) Result {
 		}
 		newStatus := status.Dead
 		if !live {
-			followFailures[sess.ID] = p.followConversation(&sessions[i], false, true)
+			followFailures[sess.ID] = followDuringPoll(p, &sessions[i], false, true)
 		}
 		if pid := panes[sess.ID].PID; pid > 0 {
 			stat := trees[pid]
@@ -441,7 +441,11 @@ func (p *Runner) step(ctx context.Context) Result {
 			// tree of one process means the agent is gone. A failed ps
 			// sample proves nothing, so it counts as alive.
 			agentAlive := !stat.OK || stat.Procs > 1
-			followFailures[sess.ID] = p.followConversation(&sessions[i], agentAlive, false)
+			followFailures[sess.ID] = followDuringPoll(p, &sessions[i], agentAlive, false)
+			// The row may have moved onto another conversation. The copy
+			// taken at the start of the pass still names the previous one,
+			// and the quote read next is that conversation's.
+			sess = sessions[i]
 			if pane, err := p.tmux.CapturePane(sess.ID); err == nil {
 				paneLastLines[sess.ID], panePrompts[sess.ID] = p.rowLines(ctx, sess, pane, panes[sess.ID].Path)
 				derived, err := p.derivePaneStatus(sess, pane, agentAlive, paneHashes)
@@ -517,7 +521,7 @@ func (p *Runner) step(ctx context.Context) Result {
 				// Managers sharing a server derive the same transition; only
 				// the one whose write moved the stored status announces it.
 				if changed {
-					p.notifyTransition(sess, newStatus)
+					p.notifyTransition(sess, newStatus, panePrompts[sess.ID], paneLastLines[sess.ID])
 				}
 			}
 		}

@@ -95,16 +95,20 @@ type Theme struct {
 	Fill func(row string, width int) string
 }
 
+const FeedPendingText = "checking messages…"
+
 // Frame is what one paint or key of the panel sees: the terminal, the
 // refresh and download in flight, the status bar's message and the theme.
 type Frame struct {
-	Width      int
-	Height     int
-	Refreshing bool
-	Applying   bool
-	Latest     string
-	Status     string
-	Theme      Theme
+	GlyphMode   presentation.GlyphMode
+	Width       int
+	Height      int
+	Refreshing  bool
+	FeedPending bool
+	Applying    bool
+	Latest      string
+	Status      string
+	Theme       Theme
 }
 
 // Action is what a key asks the root to do.
@@ -224,14 +228,17 @@ func (p Panel) tail(notices []Notice, f Frame, inner int) []string {
 	var tail []string
 	if p.cursor < len(notices) {
 		if url := notices[p.cursor].URL; url != "" {
-			tail = append(tail, f.Theme.Subtle.Render("↗ "+presentation.TruncateTail(strings.TrimPrefix(url, "https://"), inner-2)))
+			tail = append(tail, f.Theme.Subtle.Render(presentation.GlyphsFor(f.GlyphMode).LinkGlyph+" "+presentation.TruncateTail(strings.TrimPrefix(url, "https://"), inner-2)))
 		}
 	}
 	if f.Refreshing {
-		tail = append(tail, lipgloss.NewStyle().Foreground(f.Theme.Accent2).Render("↻ refreshing releases and messages…"))
+		tail = append(tail, lipgloss.NewStyle().Foreground(f.Theme.Accent2).Render(presentation.GlyphsFor(f.GlyphMode).RefreshGlyph+" refreshing releases and messages…"))
+	}
+	if f.FeedPending {
+		tail = append(tail, lipgloss.NewStyle().Foreground(f.Theme.Accent2).Render(presentation.GlyphsFor(f.GlyphMode).RefreshGlyph+" "+FeedPendingText))
 	}
 	if f.Applying {
-		tail = append(tail, lipgloss.NewStyle().Foreground(f.Theme.Accent).Render("↓ downloading "+f.Latest+"…"))
+		tail = append(tail, lipgloss.NewStyle().Foreground(f.Theme.Accent).Render(presentation.GlyphsFor(f.GlyphMode).DownloadGlyph+" downloading "+f.Latest+"…"))
 	}
 	if f.Status != "" {
 		tail = append(tail, f.Status)
@@ -246,7 +253,7 @@ func (p *Panel) View(notices []Notice, f Frame) []string {
 	if len(notices) == 0 {
 		rows := []string{t.Subtle.Render("nothing new")}
 		rows = append(rows, p.tail(notices, f, inner)...)
-		frame := cardFrame(rows, inner, legend(t), t.Muted.Render(footText(footPairs(notices, p.cursor, inner))), t)
+		frame := cardFrame(rows, inner, legend(t), renderFoot(footPairs(notices, p.cursor, inner), t), t)
 		return frame
 	}
 	var rows []string
@@ -256,7 +263,7 @@ func (p *Panel) View(notices []Notice, f Frame) []string {
 		marker := "  "
 		title := t.Value.Render(n.Title)
 		if i == p.cursor {
-			marker = lipgloss.NewStyle().Foreground(t.Accent).Render("▸ ")
+			marker = lipgloss.NewStyle().Foreground(t.Accent).Render(presentation.GlyphsFor(f.GlyphMode).NoticeSelectionGlyph + " ")
 			title = lipgloss.NewStyle().Foreground(t.Bright).Bold(true).Render(n.Title)
 		}
 		rows = append(rows, marker+n.mark(t)+" "+title)
@@ -278,7 +285,7 @@ func (p *Panel) View(notices []Notice, f Frame) []string {
 
 	frame := cardFrame(rows, inner,
 		legend(t),
-		t.Muted.Render(footText(footPairs(notices, p.cursor, inner))), t)
+		renderFoot(footPairs(notices, p.cursor, inner), t), t)
 	return frame
 }
 
@@ -336,6 +343,18 @@ func footPairs(notices []Notice, cursor, inner int) [][2]string {
 }
 
 func footPart(pair [2]string) string { return strings.TrimSpace(pair[0] + " " + pair[1]) }
+
+func renderFoot(pairs [][2]string, t Theme) string {
+	parts := make([]string, len(pairs))
+	for i, pair := range pairs {
+		style := t.Muted
+		if pair[0] == "u" {
+			style = t.Key
+		}
+		parts[i] = style.Render(footPart(pair))
+	}
+	return strings.Join(parts, t.Muted.Render(footSep))
+}
 
 func footText(pairs [][2]string) string {
 	parts := make([]string, len(pairs))

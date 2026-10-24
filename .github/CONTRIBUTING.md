@@ -7,6 +7,7 @@ Thanks for taking an interest. Bug reports, feature ideas, and pull requests are
 - **Report a bug** with the [bug report form](https://github.com/YoanWai/agent-manager/issues/new?template=bug_report.yml).
 - **Suggest a feature** with the [feature request form](https://github.com/YoanWai/agent-manager/issues/new?template=feature_request.yml).
 - **Ask a question or show what you built** in [Discussions](https://github.com/YoanWai/agent-manager/discussions).
+- **Talk about contributing** in #dev on the [Agent Manager Community Discord](https://discord.gg/ecS88An7pF).
 - **Add or fix status rules for a CLI** you use. Every CLI's launch command and detection rules ship in the binary, in `internal/config/config.go`, so a pull request there reaches everyone running that agent. An issue with the CLI's version and the pane text it draws is the next best thing.
 
 ## Picking up an issue
@@ -45,6 +46,13 @@ Keep it in draft until the coverage is complete or the maintainer accepts an
 exception. The example helps discuss the idea without presenting it as ready
 to merge or committing anyone to finish it.
 
+Build against the current release of each agent CLI. None of them publishes a
+long-term-support line, so the latest stable release is the one we support.
+When an upstream release changes a flag, a subcommand, or a screen, move to
+the new behavior and drop the old one. Set that tool's `minimum_version` in
+`internal/config/builtin.go` to the first release with the new behavior, in
+the same pull request, so someone on an older release gets the update dialog.
+
 A change is done when it holds on the whole matrix: every supported CLI, every
 platform we build plus WSL2, every terminal including over SSH, keyboard and
 mouse. A setting a user can change lives on a Settings row that the manager
@@ -53,7 +61,7 @@ each of these with the reason behind it.
 
 ## Setup
 
-You need Go 1.27.2+ and tmux.
+You need Go 1.27.3+ and tmux.
 
 ```bash
 git clone https://github.com/YoanWai/agent-manager.git
@@ -175,7 +183,7 @@ Two clauses are worth knowing as a contributor. Section 3 licenses the patent cl
 
 [REVIEW.md](../REVIEW.md) states what a review here covers, so you can see what a finding will be about before you open the PR. CodeRabbit reviews every pull request automatically, usually within minutes. Work through its findings first: fix what it got right, and reply on the comment when you disagree, so the thread records why. Maintainer review starts once the CodeRabbit round is handled; a PR with open, unanswered findings waits.
 
-@YoanWai reviews and merges everything (see [CODEOWNERS](CODEOWNERS)). Expect a first response within a few days.
+Collaborators may merge a pull request once @YoanWai has approved it. GitHub enforces this with a required code-owner review. [CODEOWNERS](CODEOWNERS) is `* @YoanWai`. One approving code-owner review is required. A push after approval needs a fresh approval. The required checks must pass, and conversations must be resolved. Expect a first response within a few days.
 
 ## Code of Conduct
 

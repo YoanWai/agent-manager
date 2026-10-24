@@ -52,20 +52,19 @@ func TestClickMovesThenRunsTheRow(t *testing.T) {
 	}
 }
 
-// The docs and saved prompts rows open on the first click, and the save
-// button saves.
+// The docs and saved prompts rows open on the first click. The first row is
+// the default tool, and the body has no save button of its own.
 func TestClickOnTheButtonRowsRunsAtOnce(t *testing.T) {
 	ctx, view := testContext(), viewContext()
 	s := openState(ctx)
+	if strings.Contains(s.View(view).Body, "save and close") {
+		t.Fatal("save belongs in the footer, not the rows")
+	}
+	if clickText(t, &s, ctx, view, "default tool"); s.ToolIndex != 1 {
+		t.Fatalf("the first row should step the tool, index %d", s.ToolIndex)
+	}
 	if result := clickText(t, &s, ctx, view, "open the docs"); result.Exit != OpenDocs || s.Field != FieldDocs {
 		t.Fatalf("docs click = %v, field %d", result.Exit, s.Field)
-	}
-	if result := clickText(t, &s, ctx, view, "Save and close"); result.Exit != Save {
-		t.Fatalf("save button click = %v, want Save", result.Exit)
-	}
-	col, line := paintedAt(t, &s, view, "Save and close")
-	if result := s.Click(col+40, line, ctx); result.Exit != Stay {
-		t.Fatalf("a click past the save button = %v, want Stay", result.Exit)
 	}
 	if clickText(t, &s, ctx, view, "manage named"); !s.Prompts.Open() {
 		t.Fatal("one click on saved prompts should open the panel")

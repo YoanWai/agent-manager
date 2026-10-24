@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"runtime"
@@ -129,8 +131,8 @@ func TestDefaultDefinesEveryShippedTool(t *testing.T) {
 	if got := cfg.Tools["codex"].ForkCommand; got != "codex fork {id}" {
 		t.Fatalf("codex fork_command = %q want \"codex fork {id}\"", got)
 	}
-	if got := cfg.Tools["opencode"].ForkCommand; got != "opencode --session {id} --fork" {
-		t.Fatalf("opencode fork_command = %q want \"opencode --session {id} --fork\"", got)
+	if got := cfg.Tools["opencode"].ForkCommand; got != "opencode --standalone --session {new_id}" {
+		t.Fatalf("opencode fork_command = %q want \"opencode --standalone --session {new_id}\"", got)
 	}
 	if got := cfg.Tools["grok"].ForkCommand; got != "grok --resume {id} --fork-session --session-id {new_id}" {
 		t.Fatalf("grok fork_command = %q want \"grok --resume {id} --fork-session --session-id {new_id}\"", got)
@@ -311,7 +313,7 @@ func TestDefaultResumeByIDFields(t *testing.T) {
 		t.Fatalf("pi resume_by_id_command = %q want \"pi --session {id}\"", got)
 	}
 	// Tools that mint their own id declare a store to capture it from.
-	for _, name := range []string{"codex", "opencode", "hermes", "command-code", "antigravity", "omp"} {
+	for _, name := range []string{"codex", "opencode", "hermes", "command-code", "antigravity", "omp", "cursor"} {
 		tool := cfg.Tools[name]
 		if tool.SessionStore != name {
 			t.Fatalf("%s session_store = %q want %q", name, tool.SessionStore, name)
@@ -334,16 +336,17 @@ func TestDefaultResumeByIDFields(t *testing.T) {
 		{"hermes", "hermes --cli {choice} sessions browse"},
 		{"pi", "pi --resume"},
 		{"omp", "omp --resume"},
+		{"cursor", "cursor-agent ls"},
 	} {
 		if got := cfg.Tools[tc.name].ResumePickerCommand; got != tc.want {
 			t.Fatalf("%s resume_picker_command = %q want %q", tc.name, got, tc.want)
 		}
 	}
 	// opencode's picker only exists inside the running TUI, so its default
-	// pairs the bare launch with the shortcut the manager types at the
+	// pairs the plain launch with the shortcut the manager types at the
 	// composer instead of a command-line picker.
-	if got := cfg.Tools["opencode"].ResumePickerCommand; got != "opencode" {
-		t.Fatalf("opencode resume_picker_command = %q want \"opencode\"", got)
+	if got := cfg.Tools["opencode"].ResumePickerCommand; got != cfg.Tools["opencode"].Command {
+		t.Fatalf("opencode resume_picker_command = %q want its launch command", got)
 	}
 	if got := cfg.Tools["opencode"].ResumePickerKeys; got != "/sessions" {
 		t.Fatalf("opencode resume_picker_keys = %q want \"/sessions\"", got)
@@ -355,7 +358,7 @@ func TestDefaultResumeByIDFields(t *testing.T) {
 	if got := cfg.Tools["antigravity"].ResumePickerKeys; got != "/resume" {
 		t.Fatalf("antigravity resume_picker_keys = %q want \"/resume\"", got)
 	}
-	for _, name := range []string{"claude", "codex", "command-code", "grok", "gemini", "hermes", "pi", "omp"} {
+	for _, name := range []string{"claude", "codex", "command-code", "grok", "gemini", "hermes", "pi", "omp", "cursor"} {
 		if got := cfg.Tools[name].ResumePickerKeys; got != "" {
 			t.Fatalf("%s resume_picker_keys = %q want empty", name, got)
 		}
@@ -468,6 +471,27 @@ func TestWithChoicePlacesFlagsAtTheChoiceMark(t *testing.T) {
 	}
 }
 
+// OpenCode reads the model from inline config, so no launch line carries
+// it, and any quote in the model stays inside the JSON string.
+func TestWithChoicePutsOpencodesModelInTheEnvironment(t *testing.T) {
+	cfg, err := Default()
+	if err != nil {
+		t.Fatalf("Default: %v", err)
+	}
+	base := cfg.Tools["opencode"]
+	chosen := base.WithChoice(Choice{Model: `opencode/big-pickle"x`})
+	want := map[string]string{"OPENCODE_CONFIG_CONTENT": `{"model":"opencode/big-pickle\"x"}`}
+	if !reflect.DeepEqual(chosen.Env, want) {
+		t.Fatalf("env = %v, want %v", chosen.Env, want)
+	}
+	if chosen.Command != base.Command || chosen.ResumeByIDCommand != base.ResumeByIDCommand || chosen.ForkCommand != base.ForkCommand {
+		t.Fatalf("the model reached a launch line: %+v", chosen)
+	}
+	if plain := base.WithChoice(Choice{}); plain.Env != nil {
+		t.Fatalf("no model chosen, env = %v", plain.Env)
+	}
+}
+
 // With nothing chosen every line launches as the tool ships it, the choice
 // mark gone.
 func TestWithAnEmptyChoiceLaunchesAsShipped(t *testing.T) {
@@ -497,13 +521,13 @@ func TestEveryCatalogToolTakesWhatItLists(t *testing.T) {
 	}
 	for name, tool := range cfg.Tools {
 		if tool.Catalog == "" {
-			if tool.ModelArgs != "" || tool.EffortArgs != "" || tool.ProfileArgs != "" {
+			if tool.ModelArgs != "" || tool.ModelEnv != "" || tool.EffortArgs != "" || tool.ProfileArgs != "" {
 				t.Errorf("%s takes a choice nothing can list", name)
 			}
 			continue
 		}
-		if tool.CatalogCommand == "" || !strings.Contains(tool.ModelArgs, "{model}") {
-			t.Errorf("%s catalog %q command %q model_args %q", name, tool.Catalog, tool.CatalogCommand, tool.ModelArgs)
+		if tool.CatalogCommand == "" || !strings.Contains(tool.ModelArgs+tool.ModelEnv, "{model}") {
+			t.Errorf("%s catalog %q command %q model_args %q model_env %q", name, tool.Catalog, tool.CatalogCommand, tool.ModelArgs, tool.ModelEnv)
 		}
 		if tool.EffortArgs != "" && !strings.Contains(tool.EffortArgs, "{effort}") {
 			t.Errorf("%s effort_args = %q", name, tool.EffortArgs)
@@ -531,4 +555,113 @@ func TestOmpDefaults(t *testing.T) {
 	if tool.MCP != "" || tool.DefaultStatus != "finished" || tool.InputPrefix == "" {
 		t.Fatalf("omp status defaults = %+v", tool)
 	}
+}
+
+func TestCursorDefaults(t *testing.T) {
+	cfg, err := Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool, ok := cfg.Tools["cursor"]
+	if !ok || tool.Command != "cursor-agent" || tool.SessionStore != "cursor" || tool.SessionReport != "none" {
+		t.Fatalf("cursor defaults = %+v", tool)
+	}
+	if tool.ResumeByIDCommand != "cursor-agent --resume {id}" || tool.ResumePickerCommand != "cursor-agent ls" || tool.ReviveCommand != "cursor-agent --continue" {
+		t.Fatalf("cursor revive = %+v", tool)
+	}
+	if tool.Catalog != "acp" || tool.CatalogCommand != "cursor-agent acp" || tool.ModelArgs != "--model {model}" || tool.EffortArgs != "" {
+		t.Fatalf("cursor catalog = %+v", tool)
+	}
+	if tool.SessionIDFlag != "" || tool.PromptFlag != "" || tool.ForkCommand != "" || tool.ForkKeys != "" || tool.MCP != "" || tool.ResumePickerKeys != "" {
+		t.Fatalf("unsupported cursor flags: %+v", tool)
+	}
+	if tool.DefaultStatus != "idle" || tool.TurnEnd != "" || tool.ActivityCutoff == "" {
+		t.Fatalf("cursor status defaults = %+v", tool)
+	}
+}
+
+// Under go test, Dir stays in a temp directory. os.UserConfigDir ignores
+// XDG_CONFIG_HOME on macOS, and a test that resolved there would open the
+// user's state.db.
+func TestDirStaysOutOfTheUserConfigUnderTest(t *testing.T) {
+	if !testing.Testing() {
+		t.Fatal("Dir was not read from a test binary")
+	}
+	got, err := Dir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !pathInside(got, os.TempDir()) {
+		t.Fatalf("Dir() = %q, outside %q", got, os.TempDir())
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	configBase, err := os.UserConfigDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	banned := []string{
+		configBase,
+		filepath.Join(home, ".config"),
+		filepath.Join(home, "Library", "Application Support"),
+	}
+	for _, dir := range banned {
+		if pathInside(got, dir) {
+			t.Fatalf("Dir() = %q, under the real config dir %q", got, dir)
+		}
+	}
+}
+
+func TestDirHonorsOverrideThenXDGThenUserConfig(t *testing.T) {
+	override := t.TempDir()
+	xdg := t.TempDir()
+	t.Setenv("AGENT_MANAGER_CONFIG_DIR", override)
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	got, err := Dir()
+	if err != nil || got != override {
+		t.Fatalf("Dir() = %q, %v; want the override %q", got, err, override)
+	}
+
+	t.Setenv("AGENT_MANAGER_CONFIG_DIR", "")
+	got, err = Dir()
+	want := filepath.Join(xdg, "agent-manager")
+	if err != nil || got != want {
+		t.Fatalf("Dir() = %q, %v; want %q", got, err, want)
+	}
+
+	t.Setenv("XDG_CONFIG_HOME", "relative")
+	if _, err = Dir(); err == nil || !strings.Contains(err.Error(), "path in $XDG_CONFIG_HOME is relative") {
+		t.Fatalf("relative XDG_CONFIG_HOME: %v", err)
+	}
+
+	home := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	if runtime.GOOS == "windows" {
+		appData := filepath.Join(home, "AppData")
+		if err := os.MkdirAll(appData, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("APPDATA", appData)
+		t.Setenv("AppData", appData)
+	}
+	got, err = Dir()
+	base, berr := os.UserConfigDir()
+	if berr != nil {
+		t.Fatal(berr)
+	}
+	want = filepath.Join(base, "agent-manager")
+	if err != nil || got != want {
+		t.Fatalf("Dir() = %q, %v; want %q", got, err, want)
+	}
+	if got == testConfigDir {
+		t.Fatalf("Dir() used the test directory %q for a home the test chose", got)
+	}
+}
+
+func pathInside(path, dir string) bool {
+	return dirInside(path, dir)
 }

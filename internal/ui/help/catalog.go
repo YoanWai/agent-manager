@@ -54,6 +54,7 @@ func listHelpRows(list keybind.Table, arrowStep bool, glyphs Glyphs) [][2]string
 	h.action("new session", keybind.NewSession)
 	h.action("new terminal tab: a shell under the selected agent, or in the group", keybind.Terminal)
 	h.action("new group (name, parent, default path, worktree)", keybind.NewGroup)
+	h.action("new SSH connection: another machine's sessions in this list", keybind.NewConnection)
 	h.action("search the list by name", keybind.Search)
 	h.action("filter to what needs attention (waiting, finished, errored)", keybind.Filter)
 	h.action("archived view", keybind.Archived)
@@ -64,7 +65,7 @@ func listHelpRows(list keybind.Table, arrowStep bool, glyphs Glyphs) [][2]string
 	h.action("messages", keybind.Messages)
 	h.action("this key map", keybind.Help)
 	h.action("quit (sessions keep running)", keybind.Quit)
-	h.fixed("ctrl+c", "quit, from anywhere")
+	h.fixed("ctrl+c", "quit, except while a session is focused")
 	return h.rows
 }
 
@@ -125,6 +126,17 @@ func groupRowHelpRows(list keybind.Table) [][2]string {
 	return h.rows
 }
 
+func connectionRowHelpRows(list keybind.Table) [][2]string {
+	h := helpRows{list: list}
+	h.action("fold / unfold", keybind.Open)
+	h.action("edit its name and SSH destination", keybind.Rename)
+	h.action("remove it; its sessions keep running on that host", keybind.Delete)
+	h.action("new session or terminal on that host", keybind.NewSession, keybind.Terminal)
+	h.fixed("", "its sessions: attach, quick prompt, kill, revive, archive, restore")
+	h.fixed("", "attach opens an SSH attach in this terminal")
+	return h.rows
+}
+
 // helpSections is the catalog for one setting of the arrow-step pair: off,
 // the rows that pair would answer are left out rather than named as dead.
 func helpSections(ctx Context) []helpSection {
@@ -134,6 +146,7 @@ func helpSections(ctx Context) []helpSection {
 		{title: "session under the cursor", rows: sessionRowHelpRows(list)},
 		{title: "the mark on a session row", rows: markHelpRows(list, ctx.Glyphs)},
 		{title: "group under the cursor", rows: groupRowHelpRows(list)},
+		{title: "SSH connection under the cursor", rows: connectionRowHelpRows(list)},
 		{title: titledWith("quick prompt mode", list, keybind.Prompt), rows: [][2]string{
 			{"↵", "send"},
 			{"↑↓", "switch the target session, or step the caret in a taller prompt"},
@@ -176,7 +189,7 @@ func helpSections(ctx Context) []helpSection {
 			{"↑↓ / wheel", "pick a field"},
 			{"←→", "change the value, including Compatible / Advanced symbols"},
 			{"click", "pick a field, click it again to change or run it"},
-			{"click once", "save and close, the docs, saved prompts and the symbols preview"},
+			{"click once", "the docs, saved prompts and the symbols preview"},
 			{"↵", "run the field's action, like saved prompts or the docs"},
 			{"esc", "save and close"},
 		}},
@@ -197,11 +210,20 @@ func helpSections(ctx Context) []helpSection {
 			{"↵", "confirm"},
 			{"esc", "cancel"},
 		}},
+		{title: "setup step", rows: [][2]string{
+			{"i", "run the installer, or update a CLI that is too old"},
+			{"c", "copy that command"},
+			{"click command", "copy it, the same as c"},
+			{"esc", "close"},
+		}},
 	}
 }
 
 func sessionHelpRows(keys keybind.Table, arrowStep bool, mouseRows [][2]string) [][2]string {
-	rows := [][2]string{{"typing", "goes straight to the agent, q included"}}
+	rows := [][2]string{
+		{"typing", "goes straight to the agent, q included"},
+		{"ctrl+c", "goes to the agent"},
+	}
 	detach := keys.Binding(keybind.Detach).Keys()
 	back := "back to the manager"
 	if len(detach) > 1 {

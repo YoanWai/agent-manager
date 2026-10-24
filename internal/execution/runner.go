@@ -98,7 +98,7 @@ func New(deps Dependencies, opts Options) *Runner {
 		statusSources: opts.StatusSources, sessionStores: opts.SessionStores,
 		mcpStyles: opts.MCPStyles, reportStyles: opts.ReportStyles, shellTools: opts.ShellTools, binaries: opts.Binaries,
 		interval: interval, poke: make(chan struct{}, 1), paneHashes: map[string]uint64{},
-		claudeTails: map[string]claudeTailCache{}, quietSince: map[string]quietTimer{},
+		transcripts: map[string]transcriptTailCache{}, quietSince: map[string]quietTimer{},
 		recaptureSeen: map[string]recaptureSighting{},
 	}
 }

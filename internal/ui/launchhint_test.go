@@ -19,6 +19,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/testenv"
 	"github.com/YoanWai/agent-manager/internal/testfixture"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -55,11 +56,11 @@ func (h *fakeLaunchHintHost) cardSized(width int, title, body string, hint [][2]
 func TestLaunchHintDialogWithFakeHost(t *testing.T) {
 	h := &fakeLaunchHintHost{images: []imageAttachment{{id: 1}}}
 	var d launchHintDialog
-	d.open(h, launchFix{text: "tool is not installed.\n\nRun the installer.", command: "install tool", binary: "tool"})
+	d.open(h, launchFix{text: "tool is not installed.\n\nRun the installer.", command: "install tool", script: "install tool", binary: "tool"})
 	if h.mode != modeLaunchHint || h.gens != 1 || len(d.fix.images) != 1 || h.images != nil {
 		t.Fatalf("open: mode %v gens %d fix %+v, want the composer images taken", h.mode, h.gens, d.fix)
 	}
-	if got := d.view(h); !strings.Contains(got, "Session needs a setup step") || !strings.Contains(got, "Run the installer.") {
+	if got := d.view(h, presentation.GlyphsFor("")); !strings.Contains(got, "Session needs a setup step") || !strings.Contains(got, "Run the installer.") {
 		t.Fatalf("view = %q", got)
 	}
 
@@ -153,9 +154,75 @@ func TestReportLaunchErrorOpensInstallHintForMissingCLI(t *testing.T) {
 	if !strings.Contains(m.launchHint.fix.text, "claude") {
 		t.Fatalf("hint %q should name the missing CLI", m.launchHint.fix.text)
 	}
-	frame := ansi.Strip(m.launchHint.view(m))
+	frame := ansi.Strip(m.launchHint.view(m, m.glyphs()))
 	if !strings.Contains(frame, installer) {
 		t.Fatalf("dialog should show the install command:\n%s", frame)
+	}
+}
+
+func TestReportLaunchErrorOpensHintForOutdatedCLI(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+
+	m.reportLaunchError(fmt.Errorf("spawn: %w", config.OutdatedToolError{Binary: "pi", Installed: "0.76.0", Minimum: "0.84.3"}))
+
+	if m.mode != modeLaunchHint {
+		t.Fatalf("mode = %v, want modeLaunchHint", m.mode)
+	}
+	if m.launchHint.fix.command != deps.Command("pi") || m.launchHint.fix.binary != "pi" {
+		t.Fatalf("fix = %+v, want pi's installer to rerun", m.launchHint.fix)
+	}
+	installer := "pi.dev/install.sh"
+	if runtime.GOOS == "windows" {
+		installer = "@earendil-works/pi-coding-agent"
+	}
+	if !strings.Contains(m.launchHint.fix.text, installer) {
+		t.Fatalf("dialog text %q should name the installer %q", m.launchHint.fix.text, installer)
+	}
+	frame := ansi.Strip(m.launchHint.view(m, m.glyphs()))
+	for _, want := range []string{"pi 0.76.0 is older than 0.84.3", "i update"} {
+		if !strings.Contains(strings.Join(strings.Fields(frame), " "), want) {
+			t.Fatalf("dialog should show %q:\n%s", want, frame)
+		}
+	}
+	got := map[string]bool{}
+	for _, hit := range m.layout.keyHits {
+		if hit.key.Type == tea.KeyEsc {
+			got["esc"] = true
+		}
+		if len(hit.key.Runes) == 1 {
+			got[string(hit.key.Runes)] = true
+		}
+	}
+	for _, key := range []string{"i", "c", "esc"} {
+		if !got[key] {
+			t.Fatalf("dialog foot is missing %q", key)
+		}
+	}
+}
+
+func TestLaunchHintKeepsTheInstallLineAndTheErrorOnAShortTerminal(t *testing.T) {
+	m := buildModel(t)
+	m.layout.width = 110
+	m.layout.height = 30
+	m.reportLaunchError(config.MissingToolError{Binary: "cmd"})
+	m.reportErr("mkdir /hooks: not a directory")
+
+	frame := ansi.Strip(m.launchHintFrame())
+	if rows := strings.Count(frame, "\n") + 1; rows > m.layout.height {
+		t.Fatalf("dialog is %d rows on a %d-row terminal\n%s", rows, m.layout.height, frame)
+	}
+	if !strings.Contains(frame, "npm install -g command-code") {
+		t.Fatalf("install line is off screen:\n%s", frame)
+	}
+	if !strings.Contains(frame, "mkdir /hooks: not a directory") {
+		t.Fatalf("error is off screen:\n%s", frame)
+	}
+	if !strings.Contains(frame, "close") {
+		t.Fatalf("keys are off screen:\n%s", frame)
+	}
+	if runtime.GOOS != "windows" && !strings.Contains(m.launchHint.fix.script, "install_cli") {
+		t.Fatal("install lost the script")
 	}
 }
 
@@ -527,7 +594,7 @@ func TestLaunchHintWithoutARecipeOffersOnlyClose(t *testing.T) {
 	m := buildModel(t)
 	m.reportLaunchError(config.MissingToolError{Binary: "acme"})
 
-	frame := ansi.Strip(m.launchHint.view(m))
+	frame := ansi.Strip(m.launchHint.view(m, m.glyphs()))
 	if strings.Contains(frame, "copy") {
 		t.Fatalf("dialog should offer neither copy nor install:\n%s", frame)
 	}
@@ -607,6 +674,7 @@ func installFixture(t *testing.T, m *Model, command string) (retryName, image st
 	m.launchHint.open(m, launchFix{
 		text:        "am-fake-cli is not installed.\n\ninstall it with: " + command,
 		command:     command,
+		script:      command,
 		binary:      "am-fake-cli",
 		effectRetry: retry,
 		images:      []imageAttachment{{id: 1, path: image}},
@@ -769,7 +837,7 @@ func TestLaunchHintNamesAWindowsOnlyInstall(t *testing.T) {
 
 	m.reportLaunchError(config.MissingToolError{Binary: "claude", WindowsPath: windowsPath})
 
-	frame := ansi.Strip(m.launchHint.view(m))
+	frame := ansi.Strip(m.launchHint.view(m, m.glyphs()))
 	for _, want := range []string{"installed on Windows", "WSL distro", "claude.ai/install.sh"} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("dialog is missing %q:\n%s", want, frame)
@@ -983,5 +1051,64 @@ func TestInstallFinishesARefusedRestore(t *testing.T) {
 	}
 	if !m.services.tmux.Exists(sess.ID) {
 		t.Fatal("the session should be running again")
+	}
+}
+
+func TestExternallyManagedOldCLIDoesNotOfferTheVendorInstaller(t *testing.T) {
+	m := buildModel(t)
+	m.reportLaunchError(config.OutdatedToolError{Binary: "pi", Installed: "0.84.2", Minimum: "0.84.3", ManagedExternally: true})
+	if m.launchHint.fix.command != "" || !strings.Contains(m.launchHint.fix.text, "the way you installed it") {
+		t.Fatalf("external install hint = %+v", m.launchHint.fix)
+	}
+}
+
+func TestLaunchHintKeepsActionsAtSevenRows(t *testing.T) {
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 110, 7
+	m.reportLaunchError(config.MissingToolError{Binary: "cmd"})
+	m.reportErr("install failed")
+	frame := ansi.Strip(m.launchHintFrame())
+	if strings.Count(frame, "\n")+1 > 7 || !strings.Contains(frame, "close") {
+		t.Fatalf("setup controls clipped.\n%s", frame)
+	}
+}
+
+func TestMissingNpmCLIShowsOneLineAndInstallsTheRecipe(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the Windows npm recipe is one line already")
+	}
+	m := buildModel(t)
+	m.reportLaunchError(config.MissingToolError{Binary: "gemini"})
+	fix := m.launchHint.fix
+	if fix.command != "npm install -g @google/gemini-cli" || strings.Contains(fix.text, "install_cli") {
+		t.Fatalf("dialog shows %q with text %q, want the npm line", fix.command, fix.text)
+	}
+	if fix.script != deps.Command("gemini") || !strings.Contains(fix.script, "ensure_npm") {
+		t.Fatalf("i would run %q, want the npm recipe", fix.script)
+	}
+}
+
+func TestLaunchHintKeepsTheInstallLineOnATenRowTerminal(t *testing.T) {
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 110, 10
+	m.reportLaunchError(config.MissingToolError{Binary: "claude", WindowsPath: `C:\\Users\\someone\\AppData\\Local\\Programs\\claude\\claude.exe`})
+	frame := ansi.Strip(m.launchHintFrame())
+	if strings.Count(frame, "\n")+1 > 10 || !strings.Contains(frame, "install it with") {
+		t.Fatalf("install line clipped away.\n%s", frame)
+	}
+}
+
+func TestLaunchHintClickCopiesTheCommandAfterClipping(t *testing.T) {
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 110, 10
+	var copied string
+	copyLaunchCommand = func(text string) error { copied = text; return nil }
+	t.Cleanup(func() { copyLaunchCommand = clipboard.WriteText })
+	m.reportLaunchError(config.MissingToolError{Binary: "claude", WindowsPath: `C:\Users\someone\AppData\Local\Programs\claude\claude.exe`})
+	x, y := paintedCell(t, m, "install it with")
+	m, cmd := leftClickCmd(m, x, y)
+	m.runBatch(t, cmd)
+	if want := deps.Shown("claude"); copied != want {
+		t.Fatalf("a click on the clipped card copied %q, want %q", copied, want)
 	}
 }

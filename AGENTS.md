@@ -34,6 +34,13 @@ coverage. [REVIEW.md](REVIEW.md#tool-coverage) defines the allowed exceptions.
   modes, capabilities, prompts, screens. A maintained list of values that an
   upstream release can change is a defect. Where discovery has no stable,
   documented interface, the feature stays in the underlying TUI.
+- **The current CLI release.** Each CLI is supported at its latest stable
+  release. None publishes a long-term-support line. When an upstream release
+  changes a flag, a subcommand, a file layout, or a screen, the adapter moves
+  to the new behavior and drops the old one, with no branch for older
+  releases. The same change sets the tool's `minimum_version` in
+  `internal/config/builtin.go` to the first release it needs, so a spawn on
+  an older CLI opens the update dialog instead of failing.
 - **Configurable in the UI, or not configurable.** A setting a user can
   change lives in Settings (`s`), is stored by the manager, and takes effect
   from the picker, the way the keybindings and editor rows do. The value
@@ -98,6 +105,22 @@ with `SHELL=/bin/sh` as CI does.
 
 On Windows, see Checks in [CONTRIBUTING.md](.github/CONTRIBUTING.md) for
 what the suite needs.
+
+`config.Dir` is the directory that holds `state.db`. It is
+`AGENT_MANAGER_CONFIG_DIR` when that variable is set, on every OS, and
+otherwise `$XDG_CONFIG_HOME/agent-manager` when `XDG_CONFIG_HOME` is set.
+`os.UserConfigDir` ignores `XDG_CONFIG_HOME` on macOS, so a probe that
+must not open the user's store sets the first:
+
+```bash
+AGENT_MANAGER_CONFIG_DIR=/tmp/amprobe agent-manager
+```
+
+`go test` reads a temp directory while the process is still on the user
+config it started with, including an `XDG_CONFIG_HOME` the environment
+already had. A test that sets `AGENT_MANAGER_CONFIG_DIR`,
+`XDG_CONFIG_HOME`, `HOME`, or `APPDATA` still selects its own. The
+substitution stays in the test process.
 
 Before finishing: `gofmt -l .` prints nothing, `go vet ./...` is clean.
 

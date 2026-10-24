@@ -3,6 +3,7 @@ package dialogs
 import (
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -12,9 +13,11 @@ import (
 // why the launch stopped and the command that unblocks it. Command is empty
 // when the manager knows no recipe, which leaves the dialog read-only. The
 // root holds the launch to retry, the images it names and the install.
+// Update names the i key for a CLI that is installed but too old.
 type LaunchHint struct {
 	Text    string
 	Command string
+	Update  bool
 }
 
 // LaunchHintAction is what a key asks the root to do.
@@ -80,7 +83,7 @@ func (d LaunchHint) Key(msg tea.KeyMsg) LaunchHintAction {
 
 // View sets the first paragraph in tone and the rest muted, wrapped to the
 // card's inner width.
-func (d LaunchHint) View(inner int, tone, muted lipgloss.Style) Card {
+func (d LaunchHint) View(inner int, tone, muted lipgloss.Style, glyphs presentation.GlyphSet) Card {
 	var body strings.Builder
 	for i, lines := range d.paragraphs(inner) {
 		style := muted
@@ -96,7 +99,11 @@ func (d LaunchHint) View(inner int, tone, muted lipgloss.Style) Card {
 	}
 	hint := [][2]string{{"esc", "close"}}
 	if d.Command != "" {
-		hint = [][2]string{{"i", "install"}, {"c", "copy"}, {"esc", "close"}}
+		run := "install"
+		if d.Update {
+			run = "update"
+		}
+		hint = [][2]string{{"i", run}, {"c", "copy"}, {"esc", "close"}}
 	}
-	return Card{Title: "◈ Session needs a setup step", Body: strings.TrimRight(body.String(), "\n"), Hints: hint}
+	return Card{Title: glyphs.SetupGlyph + " Session needs a setup step", Body: strings.TrimRight(body.String(), "\n"), Hints: hint}
 }

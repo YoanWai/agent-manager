@@ -30,13 +30,23 @@ archives:
 
 checksum:
   name_template: checksums.txt
+  # Hashed in place. The attestation step reads these digests from
+  # checksums.txt; it does not open the files. A before-hook copy into dist
+  # fails the release: dist must be empty when the dist pipe runs.
+  extra_files:
+    - glob: ./install.ps1
+    - glob: ./install.sh
 
 changelog:
   use: github-native
 
 release:
+  # Same bytes checksum.extra_files hashes, so the asset digest matches the attestation.
+  extra_files:
+    - glob: ./install.ps1
+    - glob: ./install.sh
   header: |
-    Run every AI coding agent from one terminal. Claude Code, Codex, OpenCode, Grok Build, Gemini CLI, Antigravity CLI, Pi, Command Code, Hermes Agent, Muse Code, and Oh My Pi run side by side, each in its own tmux session, with live status, a project tree, quick prompt mode, and full-file diff review. Runs on macOS, Linux and Windows (with psmux), and inside WSL2. [See it running](https://github.com/YoanWai/agent-manager#agent-manager).
+    Run every AI coding agent from one terminal. Claude Code, Codex, OpenCode, Grok Build, Gemini CLI, Antigravity CLI, Pi, Command Code, Hermes Agent, Muse Code, Oh My Pi, and Cursor CLI run side by side, each in its own tmux session, with live status, a project tree, quick prompt mode, and full-file diff review. Runs on macOS, Linux and Windows (with psmux), and inside WSL2. [See it running](https://github.com/YoanWai/agent-manager#agent-manager).
 
   footer: |
     ## Install
@@ -44,7 +54,7 @@ release:
     ```bash
     # macOS / Linux
     brew install agent-manager
-    curl -fsSL https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.sh | sh
+    curl -fsSL -o install.sh https://github.com/YoanWai/agent-manager/releases/latest/download/install.sh && sh install.sh
     mise use -g ubi:YoanWai/agent-manager
     go install github.com/YoanWai/agent-manager@latest
 
@@ -53,9 +63,23 @@ release:
     ```
 
     ```powershell
-    # Windows
-    irm https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.ps1 | iex
+    # Windows. The Scoop bucket can lag this release.
+    scoop bucket add yoanwai https://github.com/YoanWai/scoop-bucket
+    scoop install yoanwai/agent-manager
+
+    # Download install.ps1 (attached below, listed in checksums.txt), read it,
+    # then run it. Windows PowerShell 5.1 has no &&.
+    irm https://github.com/YoanWai/agent-manager/releases/latest/download/install.ps1 -OutFile install.ps1
+    if ($?) {
+      Get-Content .\install.ps1
+      Unblock-File .\install.ps1
+      powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
+    }
     ```
+
+    `install.sh` is attached too. `gh attestation verify <file> --repo YoanWai/agent-manager` checks build provenance once `gh` is logged in.
+
+    The shell short form runs the script without a local copy: `curl -fsSL https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.sh | sh`.
 
     Prebuilt macOS, Linux and Windows binaries are attached below.
 
@@ -84,6 +108,23 @@ homebrew_casks:
         end
       end
 
+# Own Scoop bucket. Skipped when SCOOP_TOKEN is unset so releases still succeed.
+scoops:
+  - name: agent-manager
+    repository:
+      owner: YoanWai
+      name: scoop-bucket
+      token: "{{ .Env.SCOOP_TOKEN }}"
+    skip_upload: '{{ if index .Env "SCOOP_TOKEN" }}false{{ else }}true{{ end }}'
+    directory: bucket
+    homepage: https://agent-manager.dev/
+    description: Run Claude Code, Codex, OpenCode and other AI coding agents in tmux
+    license: Apache-2.0
+    depends: ["main/psmux"]
+    commit_author:
+      name: Yoan Wai
+      email: 106609173+YoanWai@users.noreply.github.com
+
 # git_url resolves to an empty string without AUR_KEY in the environment, and
 # goreleaser skips the publish on an empty url, so a release without the key
 # still succeeds.
@@ -107,3 +148,41 @@ aurs:
       install -Dm755 "./agent-manager" "${pkgdir}/usr/bin/agent-manager"
       install -Dm644 "./LICENSE" "${pkgdir}/usr/share/licenses/agent-manager-bin/LICENSE"
       install -Dm644 "./NOTICE" "${pkgdir}/usr/share/licenses/agent-manager-bin/NOTICE"
+
+# Opens a PR to microsoft/winget-pkgs from YoanWai/winget-pkgs (fork).
+# Skipped when WINGET_TOKEN is unset, so a release without the secret still succeeds.
+winget:
+  - name: AgentManager
+    publisher: YoanWai
+    package_identifier: YoanWai.AgentManager
+    short_description: Run Claude Code, Codex, OpenCode and other AI coding agents in tmux
+    description: Run every AI coding agent from one terminal, each in its own tmux/psmux session, with live status, quick prompts, worktrees and diff review. On Windows it needs psmux, which winget installs as marlocarlo.psmux.
+    homepage: https://agent-manager.dev/
+    publisher_url: https://github.com/YoanWai
+    license: Apache-2.0
+    license_url: https://github.com/YoanWai/agent-manager/blob/main/LICENSE
+    release_notes_url: "https://github.com/YoanWai/agent-manager/releases/tag/v{{ .Version }}"
+    tags: [ai, agents, tmux, tui, cli, claude-code, codex]
+    commit_author:
+      name: Yoan Wai
+      email: 106609173+YoanWai@users.noreply.github.com
+    # git is optional at startup (a missing git is ignored). PowerShell 7 is
+    # required only when a pane is created, and install.ps1 offers it instead
+    # of refusing to install, so neither is a package dependency. psmux is the
+    # multiplexer the Windows build drives, and 3.4.0 is the oldest it accepts.
+    dependencies:
+      - package_identifier: marlocarlo.psmux
+        minimum_version: "3.4.0"
+    skip_upload: '{{ if index .Env "WINGET_TOKEN" }}false{{ else }}true{{ end }}'
+    repository:
+      owner: YoanWai
+      name: winget-pkgs
+      branch: "agent-manager-{{ .Version }}"
+      token: "{{ .Env.WINGET_TOKEN }}"
+      pull_request:
+        enabled: true
+        draft: false
+        base:
+          owner: microsoft
+          name: winget-pkgs
+          branch: master

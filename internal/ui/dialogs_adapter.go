@@ -30,6 +30,9 @@ const (
 	actionKill    = uidialogs.ConfirmKill
 	actionRestart = uidialogs.ConfirmRestart
 	actionRevive  = uidialogs.ConfirmRevive
+	// actionRemoveConnection takes an SSH connection off the list; the
+	// target names it and holds no sessions.
+	actionRemoveConnection = uidialogs.ConfirmRemoveConnection
 )
 
 type confirmTarget struct {
@@ -43,6 +46,9 @@ type confirmTarget struct {
 	action       uidialogs.ConfirmAction
 	batch        bool
 	selection    lifecycleSelection
+	connection   string
+	// remote is a call on an SSH row, run on the host once confirmed.
+	remote *remoteRequest
 }
 
 type lifecycleSelectionKind uint8
@@ -75,7 +81,14 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		target.sessions = append(target.sessions[:0:0], target.sessions...)
 		m.confirm.confirmTarget = confirmTarget{}
 		m.mode = modeList
-		m.queueLifecycle(target, false, "")
+		switch {
+		case target.remote != nil:
+			return m, m.runRemote(*target.remote)
+		case target.connection != "":
+			m.removeConnection(target.connection)
+		default:
+			m.queueLifecycle(target, false, "")
+		}
 		return m, m.nextEffectCmd()
 	}
 	return m, nil
@@ -84,7 +97,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) viewConfirm() string {
 	prompt := m.confirm.prompt()
 	question, consequence := uidialogs.SplitLabel(prompt.Label)
-	return m.confirmCard(prompt.Title(), question, consequence, prompt.Destructive(), prompt.Answer())
+	return m.confirmCard(prompt.Title(m.prefs.glyphMode), question, consequence, prompt.Destructive(), prompt.Answer())
 }
 
 // confirmCard is the shared yes/no card, also drawn by Settings' reset.
@@ -227,7 +240,7 @@ func (m *Model) handleMoveClick(line int) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) viewMove() string {
-	return m.card(uidialogs.MoveTitle, m.viewGroupPicker(), uidialogs.MoveHints())
+	return m.card(uidialogs.MoveTitle(m.prefs.glyphMode), m.viewGroupPicker(), uidialogs.MoveHints())
 }
 
 // forkDialog keeps the captured source row the fork request carries; the
@@ -287,7 +300,7 @@ func (m *Model) viewFork() string {
 		BranchGlyph: m.glyphs().BranchGlyph,
 		Value:       valueStyle(),
 		Group:       lipgloss.NewStyle().Foreground(colorAccent2()),
-		Field:       formField,
+		Field:       m.formField,
 		Input:       textInputView,
 	}))
 }

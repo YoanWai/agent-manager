@@ -172,7 +172,7 @@ func TestSettingsShowsVersion(t *testing.T) {
 	}
 	m.settings.dialog.Field = uisettings.FieldUpdate
 	out = m.viewSettings()
-	if !strings.Contains(out, keyCap("↵/esc", "save")) {
+	if !strings.Contains(out, keyCap("↵/esc", "save and close")) {
 		t.Errorf("current version row should hint save, not update: %q", out)
 	}
 	m.settings.dialog.Field = 0
@@ -220,6 +220,17 @@ func TestSettingsDocsRowOpensDocs(t *testing.T) {
 	m.applyCmd(t, cmd)
 	if opened != docsURL {
 		t.Fatalf("click should open the docs, got %q", opened)
+	}
+
+	opened = ""
+	x, y := paintedCell(t, m, "save and close")
+	m, cmd = leftClickCmd(m, x, y)
+	m.applyCmd(t, cmd)
+	if opened != "" {
+		t.Fatalf("the footer save opened %q", opened)
+	}
+	if m.mode != modeList {
+		t.Fatal("the footer save and close should leave settings")
 	}
 }
 
@@ -410,7 +421,7 @@ func TestSettingsCLIRequestSupportOpensIssue(t *testing.T) {
 		t.Fatal("browser started during Update")
 	}
 	m.applyCmd(t, cmd)
-	if !strings.Contains(opened, "issues/new") || !strings.Contains(opened, "enhancement") {
+	if !strings.Contains(opened, "issues/new") || !strings.Contains(opened, "support+another+coding+CLI") {
 		t.Fatalf("request row should open a feature-request issue, got %q", opened)
 	}
 	if !m.settings.dialog.CLIPicker {

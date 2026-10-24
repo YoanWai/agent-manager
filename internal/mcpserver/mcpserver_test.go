@@ -1073,26 +1073,6 @@ func TestSessionToolErrorsAreToolErrors(t *testing.T) {
 	}
 }
 
-func TestServerWithNoCallerKeepsTheWorkspaceClosed(t *testing.T) {
-	server := newServer(t.TempDir(), "", "test", true, &fakeTerminalCommands{}, &fakeSessionCommands{}, &fakeReporter{})
-	session := connectServer(t, server)
-	for _, call := range []struct {
-		name string
-		args map[string]any
-	}{
-		{"list_sessions", map[string]any{}},
-		{"create_session", map[string]any{"name": "x", "tool": "claude"}},
-		{"read_session", map[string]any{"session_id": "a1"}},
-		{"wait_for_session", map[string]any{"session_id": "a1"}},
-		{"list_groups", map[string]any{}},
-	} {
-		text, isError := callText(t, session, call.name, call.args)
-		if !isError || !strings.Contains(text, "not inside an Agent Manager session") {
-			t.Fatalf("%s with no caller = %q, isError=%v", call.name, text, isError)
-		}
-	}
-}
-
 func serverWithFakes(t *testing.T, sessions sessionCommands) *mcp.Server {
 	t.Helper()
 	return newServer(t.TempDir(), "abc123", "test", true, &fakeTerminalCommands{}, sessions, &fakeReporter{})
@@ -1197,7 +1177,7 @@ func TestReservationToolsReportConflictsWithoutRefusingTheLease(t *testing.T) {
 
 func TestReportIssuePreviewsUntilTheUserConfirms(t *testing.T) {
 	fake := &fakeReporter{
-		preview: report.Preview{ID: "3f2a91c4", Kind: report.Bug, Title: "Space lands in the wrong pane", Body: "### What happened\n\nsteps\n", Labels: []string{"bug"}, Route: report.RouteGH, Account: "yoan"},
+		preview: report.Preview{ID: "3f2a91c4", Kind: report.Bug, Title: "Space lands in the wrong pane", Body: "### What happened\n\nsteps\n", Route: report.RouteGH, Account: "yoan"},
 		result:  report.Filed{Route: report.RouteGH, URL: "https://github.com/YoanWai/agent-manager/issues/512"},
 	}
 	session := connectServer(t, newServer(t.TempDir(), "abc123", "test", true, &fakeTerminalCommands{}, &fakeSessionCommands{}, fake))

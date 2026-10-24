@@ -3,6 +3,7 @@ package dialogs
 import (
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -22,6 +23,9 @@ const (
 	ConfirmKill    ConfirmAction = "kill"
 	ConfirmRestart ConfirmAction = "restart"
 	ConfirmRevive  ConfirmAction = "revive"
+	// ConfirmRemoveConnection takes an SSH connection off the list; the
+	// root's pending request names it and holds no sessions.
+	ConfirmRemoveConnection ConfirmAction = "remove connection"
 )
 
 // Confirm is the question a captured lifecycle request asks before it runs:
@@ -57,24 +61,27 @@ func (c Confirm) Key(msg tea.KeyMsg) ConfirmOutcome {
 }
 
 // Title names the dialog after the act it is about to commit.
-func (c Confirm) Title() string {
+func (c Confirm) Title(mode presentation.GlyphMode) string {
+	g := presentation.GlyphsFor(mode)
 	subject := "session"
 	if c.Group {
 		subject = "group"
 	}
 	switch c.Action {
 	case ConfirmKill:
-		return "✕ Kill " + subject
+		return g.ErroredGlyph + " Kill " + subject
 	case ConfirmArchive:
-		return "◇ Archive " + subject
+		return g.ArchiveGlyph + " Archive " + subject
 	case ConfirmRestore:
-		return "◆ Restore " + subject
+		return g.RestoreGlyph + " Restore " + subject
 	case ConfirmRestart:
-		return "↻ Restart " + subject
+		return g.RestartGlyph + " Restart " + subject
 	case ConfirmRevive:
-		return "◆ Revive " + subject
+		return g.RestoreGlyph + " Revive " + subject
+	case ConfirmRemoveConnection:
+		return g.DeleteGlyph + " Remove connection"
 	default:
-		return "⚠ Delete " + subject
+		return g.DeleteGlyph + " Delete " + subject
 	}
 }
 
@@ -82,7 +89,7 @@ func (c Confirm) Title() string {
 // away, which decides whether the dialog reads as an alarm or as a move.
 func (c Confirm) Destructive() bool {
 	return c.Action == ConfirmKill || c.Action == ConfirmDelete ||
-		c.Action == ConfirmRestart || c.Action == ConfirmArchive
+		c.Action == ConfirmRestart || c.Action == ConfirmArchive || c.Action == ConfirmRemoveConnection
 }
 
 // Answer is the word the accept key carries in the hint.
@@ -98,6 +105,8 @@ func (c Confirm) Answer() string {
 		return "restart"
 	case ConfirmRevive:
 		return "revive"
+	case ConfirmRemoveConnection:
+		return "remove"
 	}
 	return "delete"
 }

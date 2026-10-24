@@ -114,7 +114,8 @@ func (s effectServices) runFork(request forkRequest) (effectResult, error) {
 	}
 	agentID := ""
 	var baseCommand string
-	forkCommand := tool.WithChoice(source.Choice).ForkCommand
+	chosen := tool.WithChoice(source.Choice)
+	forkCommand := chosen.ForkCommand
 	switch {
 	case tool.ForkKeys != "":
 		if request.knownForkID != "" {
@@ -151,8 +152,21 @@ func (s effectServices) runFork(request forkRequest) (effectResult, error) {
 			}
 		}
 	default:
-		if strings.Contains(tool.ForkCommand, "{new_id}") {
+		switch {
+		case !strings.Contains(tool.ForkCommand, "{new_id}"):
+		case !agentsession.MintsForkID(tool.SessionStore):
 			agentID = uuid.NewString()
+		case request.knownForkID != "":
+			// A retry after a recorded fork: the store already made the
+			// copy, and asking again would fork the source a second time.
+			agentID = request.knownForkID
+		default:
+			id, err := agentsession.Fork(tool.SessionStore, request.source.Cwd, source.AgentSessionID)
+			if err != nil {
+				return result, err
+			}
+			agentID = id
+			result.recordedForkID = id
 		}
 		sessionFile := ""
 		if strings.Contains(tool.ForkCommand, "{session_file}") {
@@ -178,7 +192,7 @@ func (s effectServices) runFork(request forkRequest) (effectResult, error) {
 	}
 	launched, err := s.lifecycle.Launch(sessioncmd.LaunchRequest{
 		Session:     forked,
-		Tool:        tool,
+		Tool:        chosen,
 		BaseCommand: baseCommand,
 		Pane:        request.pane,
 	})
@@ -240,7 +254,8 @@ func validateForkSource(toolName string, tool config.Tool, source store.Session)
 		return fmt.Errorf("tool %s has no fork_command", toolName)
 	}
 	usesSessionFile := strings.Contains(tool.ForkCommand, "{session_file}")
-	if !strings.Contains(tool.ForkCommand, "{id}") && !usesSessionFile && tool.ForkKeys == "" {
+	mintsFork := strings.Contains(tool.ForkCommand, "{new_id}") && agentsession.MintsForkID(tool.SessionStore)
+	if !strings.Contains(tool.ForkCommand, "{id}") && !usesSessionFile && tool.ForkKeys == "" && !mintsFork {
 		return fmt.Errorf("tool %s fork_command must reference the source via {id} or {session_file}", toolName)
 	}
 	if usesSessionFile && !agentsession.SupportsSessionFile(tool.SessionStore) {

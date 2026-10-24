@@ -47,7 +47,7 @@ func TestParseSpellsEachSideOfTheKey(t *testing.T) {
 	}
 }
 
-// esc cancels and ctrl+c quits everywhere, a modifier the terminal folds
+// esc cancels and ctrl+c quits outside a focused session, a modifier the terminal folds
 // into another key would take that key instead, and the combinations
 // Bubble Tea v1 cannot read would never fire.
 func TestParseRefusesWhatCannotBeAKey(t *testing.T) {
@@ -207,7 +207,7 @@ func TestDefaultListAnswersToTodaysKeys(t *testing.T) {
 	for key, want := range map[string]string{
 		"k": Up, "up": Up, "j": Down, "down": Down, "K": ReorderUp, "shift+up": ReorderUp,
 		"J": ReorderDown, "shift+down": ReorderDown, "enter": Open, "A": Attach,
-		"right": StepIn, "left": StepOut, "n": NewSession, "T": Terminal, "g": NewGroup, "f": Fork,
+		"right": StepIn, "left": StepOut, "n": NewSession, "T": Terminal, "g": NewGroup, "C": NewConnection, "f": Fork,
 		"space": Prompt, "ctrl+r": Review, ".": MarkIdle, "r": Rename, "m": Move, "o": Editor, "R": Restart,
 		"x": Kill, "X": KillAll, "v": Revive, "V": ReviveAll, "a": Archive, "u": Restore, "d": Delete,
 		"/": Search, "w": Filter, "t": Archived, "e": EmptyGroups, "F": FoldAll, "|": Resize,

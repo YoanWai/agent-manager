@@ -3,6 +3,13 @@ package ui
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+	"time"
+
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/status"
@@ -11,12 +18,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
-	"os"
-	"path/filepath"
-	"runtime"
-	"strings"
-	"testing"
-	"time"
 )
 
 func TestReviveRecreatesDeadSession(t *testing.T) {
@@ -273,7 +274,7 @@ func TestReviveGroupBringsBackEverySessionInside(t *testing.T) {
 	if m.mode != modeConfirmDelete {
 		t.Fatalf("reviving a group of two dead sessions should ask first, mode = %v err = %q", m.mode, m.errBar.text)
 	}
-	if title := m.confirm.prompt().Title(); title != "◆ Revive group" {
+	if title := m.confirm.prompt().Title(m.prefs.glyphMode); title != "◆ Revive group" {
 		t.Fatalf("title = %q, want ◆ Revive group", title)
 	}
 	if want := "revive group work (2 dead sessions)? brings them back."; m.confirm.label != want {

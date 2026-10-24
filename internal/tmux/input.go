@@ -76,7 +76,9 @@ func (d *Driver) SubmitTextContext(ctx context.Context, id, text string, drafted
 // reach one pane at once. Interleaved, the second paste lands before the
 // first Enter and both texts submit as one prompt, so each pane takes one
 // whole send at a time while other panes do not wait. The gates are keyed by
-// socket and pane, so every Driver in the process shares them.
+// socket and pane, so every Driver in the process shares them, and each
+// holds a lock file too for a send from another process, such as
+// `agent-manager type` beside a host's manager.
 var paneSendGates = struct {
 	sync.Mutex
 	gates map[string]*paneSendGate
@@ -106,11 +108,17 @@ func enterPaneSendGate(ctx context.Context, socket, target string) (release func
 	}
 	select {
 	case gate.slot <- struct{}{}:
-		return func() { <-gate.slot; leave() }, nil
 	case <-ctx.Done():
 		leave()
 		return nil, ctx.Err()
 	}
+	unlock, err := lockPaneSend(ctx, socket, target)
+	if err != nil {
+		<-gate.slot
+		leave()
+		return nil, err
+	}
+	return func() { unlock(); <-gate.slot; leave() }, nil
 }
 
 // SendKeys delivers exact tmux key names to a session. Keeping each key as
@@ -319,7 +327,13 @@ func (d *Driver) pasteContext(ctx context.Context, id, text string) (SendResult,
 	// them. Codex uses paste-burst detection without these markers and can
 	// consume the immediately following Enter as part of the paste, leaving
 	// the prompt in its composer instead of submitting it.
-	if _, err := d.runInContext(ctx, func() { result.Phase = SendPhasePasteStarted }, id, "paste-buffer", "-p", "-d", "-b", buf, "-t", target); err != nil {
+	//
+	// -r keeps the buffer's own linefeeds instead of rewriting them to
+	// carriage returns. Inside the markers both are payload, but an agent's
+	// paste detection reads a CR as a typed Enter: without -r, pasting into
+	// a working session can submit partway through and leave the rest to
+	// queue as follow-up prompts. tmux 3.1, the oldest supported, has -r.
+	if _, err := d.runInContext(ctx, func() { result.Phase = SendPhasePasteStarted }, id, "paste-buffer", "-p", "-r", "-d", "-b", buf, "-t", target); err != nil {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
 		_, _ = d.runInContext(cleanupCtx, nil, id, "delete-buffer", "-b", buf)
 		cancel()

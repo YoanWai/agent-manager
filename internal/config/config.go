@@ -1,10 +1,13 @@
 package config
 
 import (
+	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -22,6 +25,9 @@ type Rule struct {
 
 type Tool struct {
 	Command string `toml:"command"`
+	// MinimumVersion is the oldest release of the CLI the launch, revive,
+	// fork and catalog commands still work with. Empty skips the check.
+	MinimumVersion string `toml:"minimum_version"`
 	// Shell marks the tool that opens a plain shell rather than an agent
 	// CLI: it is what T spawns, it stays out of the CLI pickers, and the
 	// keys that write into a pane refuse it, since a sentence typed at a
@@ -50,6 +56,8 @@ type Tool struct {
 	// ForkCommand creates a new conversation from an existing one. Templates
 	// can use {id}, {session_file}, {new_id}, and {name}; Agent Manager quotes
 	// each value. {session_file} needs SessionStore to keep one ("gemini").
+	// With {new_id} and no {id}, SessionStore makes the copy and names it
+	// ("opencode"), and the command opens it.
 	ForkCommand string `toml:"fork_command"`
 	// ForkKeys forks from inside the running source, for a tool that can only
 	// fork there (muse's /fork). They are typed into the resting source, the
@@ -58,11 +66,11 @@ type Tool struct {
 	ForkKeys string `toml:"fork_keys"`
 	// SessionStore names the built-in capturer that reads back the id a tool
 	// minted itself when it has no SessionIDFlag ("codex", "opencode",
-	// "gemini", "hermes", "command-code", "muse", "antigravity" or "omp").
+	// "gemini", "hermes", "command-code", "muse", "antigravity", "omp" or "cursor").
 	SessionStore string `toml:"session_store"`
 	// MCP picks how the agent-manager MCP server is registered into this
 	// tool's sessions: "claude", "codex", "opencode", "grok", "gemini",
-	// "hermes", "command-code", "muse", "antigravity" or "none".
+	// "hermes", "command-code", "muse", "antigravity", "cursor" or "none".
 	// Empty uses the tool's config key when it names a known style.
 	MCP string `toml:"mcp"`
 	// SessionReport names how the manager learns each conversation the
@@ -108,8 +116,13 @@ type Tool struct {
 	InputPlaceholder string `toml:"input_placeholder"`
 	// UserEcho marks a line where the tool echoes a submitted prompt into
 	// its transcript, which is how the last thing sent to a session is
-	// read back regardless of who typed it or from where.
+	// read back regardless of who typed it or from where. A group, when
+	// the pattern has one, is the prompt itself.
 	UserEcho string `toml:"user_echo"`
+	// ToolRow marks a transcript row the tool draws behind the same marker
+	// as an echoed prompt (opencode's command, its output and a written
+	// file share the prompt's gutter), so it never reads as the prompt.
+	ToolRow string `toml:"tool_row"`
 	// DialogFooter is a line the tool draws under its input marker while a
 	// dialog owns the input box. It tells a dialog that reuses that marker
 	// for its selected option from a draft typed at a resting composer, so
@@ -120,8 +133,9 @@ type Tool struct {
 	// first group is what a quote of the session's last reply shows.
 	DialogQuestion string `toml:"dialog_question"`
 	// BusyFooter is a line the tool draws under its activity cutoff only
-	// while a turn runs. A working rule that matches without it belongs to
-	// a turn that died before printing its end marker, which is errored.
+	// while a turn runs, so it reads as working on its own. A working rule
+	// that matches without it belongs to a turn that died before printing
+	// its end marker, which is errored.
 	BusyFooter string `toml:"busy_footer"`
 	// InputPrefix locates the composer's input row for the arrow-step pair
 	// (Left leaving focus at the prompt head). It replaces the reuse of
@@ -153,6 +167,12 @@ type Tool struct {
 	ModelArgs   string `toml:"model_args"`
 	EffortArgs  string `toml:"effort_args"`
 	ProfileArgs string `toml:"profile_args"`
+	// ModelEnv carries the model in the environment instead, as NAME=VALUE
+	// with {model} written as a JSON string, for a CLI whose interactive
+	// command takes no model flag.
+	ModelEnv string `toml:"model_env"`
+	// Env is the environment WithChoice gives every launch line.
+	Env map[string]string `toml:"-"`
 }
 
 // Choice is what a session launches its CLI on; empty keeps the CLI's default.
@@ -168,12 +188,126 @@ type Config struct {
 	Tools map[string]Tool
 }
 
+// testConfigDir is the directory this test process uses instead of the
+// user config it started with. startupConfigEnv carries that user config
+// to a subprocess, and startupXDGEnv the XDG_CONFIG_HOME it started with.
+// A subprocess keeps a HOME, APPDATA, or XDG_CONFIG_HOME it was given, and
+// a relative XDG_CONFIG_HOME still fails. An XDG_CONFIG_HOME the process
+// inherited is the user config, so the planted directory still replaces it.
+const startupConfigEnv = "AGENT_MANAGER_STARTUP_CONFIG"
+const startupXDGEnv = "AGENT_MANAGER_STARTUP_XDG"
+
+var (
+	testConfigDir   string
+	startupXDG      string
+	startupXDGNoted bool
+)
+
+func init() {
+	if !testing.Testing() || os.Getenv("AGENT_MANAGER_CONFIG_DIR") != "" {
+		return
+	}
+	base, err := os.UserConfigDir()
+	if err != nil {
+		return
+	}
+	dir, err := os.MkdirTemp("", "agent-manager-test-")
+	if err != nil {
+		panic(err)
+	}
+	testConfigDir = dir
+	startupXDG = os.Getenv("XDG_CONFIG_HOME")
+	startupXDGNoted = true
+	os.Setenv("AGENT_MANAGER_CONFIG_DIR", dir)
+	os.Setenv(startupConfigEnv, base)
+	os.Setenv(startupXDGEnv, startupXDG)
+}
+
 func Dir() (string, error) {
+	if dir := chosenConfigDir(); dir != "" {
+		return dir, nil
+	}
+	if base, ok := chosenXDG(); ok {
+		// The same rejection os.UserConfigDir makes on a Unix Go that
+		// checks the variable. Darwin's UserConfigDir never reads it.
+		if !filepath.IsAbs(base) {
+			return "", errors.New("path in $XDG_CONFIG_HOME is relative")
+		}
+		return filepath.Join(base, "agent-manager"), nil
+	}
 	base, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
 	}
+	if dir := harnessConfigDir(base); dir != "" {
+		return dir, nil
+	}
 	return filepath.Join(base, "agent-manager"), nil
+}
+
+// chosenConfigDir is AGENT_MANAGER_CONFIG_DIR when this process asked for
+// it. The directory planted for go test does not count once HOME, APPDATA,
+// XDG_CONFIG_HOME, or their Darwin and Windows equivalents no longer
+// resolve to the user config this process started with.
+func chosenConfigDir() string {
+	override := os.Getenv("AGENT_MANAGER_CONFIG_DIR")
+	if override == "" {
+		return ""
+	}
+	if testConfigDir != "" && override != testConfigDir {
+		return override
+	}
+	if testConfigDir != "" {
+		return ""
+	}
+	// A subprocess inherited the directory planted for the test. It applies
+	// only while this process still resolves the user config recorded then.
+	if startup := os.Getenv(startupConfigEnv); startup != "" {
+		base, err := os.UserConfigDir()
+		if err != nil || base != startup || xdgChanged(os.Getenv("XDG_CONFIG_HOME")) {
+			return ""
+		}
+	}
+	return override
+}
+
+// chosenXDG is XDG_CONFIG_HOME when this process set it to something other
+// than the value it started with. The inherited value is the user config.
+func chosenXDG() (string, bool) {
+	base := os.Getenv("XDG_CONFIG_HOME")
+	if !xdgChanged(base) || base == "" {
+		return "", false
+	}
+	return base, true
+}
+
+func xdgChanged(base string) bool {
+	if startupXDGNoted {
+		return base != startupXDG
+	}
+	recorded, ok := os.LookupEnv(startupXDGEnv)
+	if !ok {
+		return base != ""
+	}
+	return base != recorded
+}
+
+func harnessConfigDir(base string) string {
+	if !testing.Testing() || base != os.Getenv(startupConfigEnv) {
+		return ""
+	}
+	if testConfigDir != "" {
+		return testConfigDir
+	}
+	return os.Getenv("AGENT_MANAGER_CONFIG_DIR")
+}
+
+func dirInside(path, dir string) bool {
+	rel, err := filepath.Rel(dir, path)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
 
 // WithChoice puts the choice's flags on every line that launches the tool.
@@ -181,6 +315,7 @@ func Dir() (string, error) {
 // emptiness still take the same path.
 func (t Tool) WithChoice(choice Choice) Tool {
 	flags := choice.flags(t)
+	t.Env = choice.env(t)
 	t.Command = placeChoice(t.Command, flags)
 	t.ReviveCommand = placeChoice(t.ReviveCommand, flags)
 	t.ResumeByIDCommand = placeChoice(t.ResumeByIDCommand, flags)
@@ -220,6 +355,15 @@ func (c Choice) flags(t Tool) string {
 		}
 	}
 	return flags.String()
+}
+
+func (c Choice) env(t Tool) map[string]string {
+	name, value, found := strings.Cut(t.ModelEnv, "=")
+	if !found || c.Model == "" {
+		return nil
+	}
+	model, _ := json.Marshal(c.Model)
+	return map[string]string{name: strings.ReplaceAll(value, "{model}", string(model))}
 }
 
 // Default returns the built-in configuration without touching the filesystem.

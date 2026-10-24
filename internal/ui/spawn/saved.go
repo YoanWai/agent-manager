@@ -156,7 +156,7 @@ func (l *SavedList) Lines(width, visible int, st Styles) []string {
 	for i := first; i < min(len(matches), first+visible); i++ {
 		marker, style := "  ", st.Muted
 		if i == l.cursor {
-			marker, style = st.Value.Render("❯ "), st.Value
+			marker, style = st.Value.Render(presentation.GlyphsFor(st.GlyphMode).SelectionGlyph+" "), st.Value
 		}
 		lines = append(lines, ansi.Truncate(marker+style.Render(matches[i].saved.Name), max(1, width), "…"))
 		l.lines.Show(i, 1)

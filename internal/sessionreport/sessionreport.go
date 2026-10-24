@@ -63,7 +63,7 @@ func Apply(style string, target Target, command string, env map[string]string) (
 	case "omp":
 		return withExtension(target.HooksDir, "agent-manager-omp.ts", extensionSource(target.Exe, []string{"--tool", style}, "session_start", "session_switch", "session_branch"), command)
 	case "opencode":
-		return command, wireOpencode(target.Exe, target.HooksDir, env)
+		return wireOpencode(target.Exe, target.HooksDir, command, env)
 	case "command-code":
 		return withMod(target.HooksDir, fmt.Appendf(nil, commandCodeModTemplate, jsString(target.Exe), jsString(spawnedFlag)), command)
 	case "codex":
@@ -159,51 +159,62 @@ func codexHooks(exe string) string {
 	return flags
 }
 
-const opencodePluginTemplate = `import { execFileSync } from "node:child_process";
+const opencodePluginTemplate = `import { Plugin } from "@opencode/plugin/tui";
+import { execFileSync } from "node:child_process";
 
-const tui = (api: any) => {
-  let last = "";
-  const check = () => {
-    const route = api.route.current;
-    const sessionID = route.name === "session" ? route.params?.sessionID : undefined;
-    if (!sessionID || sessionID === last) return;
-    const info = api.state.session.get(sessionID);
-    if (!info || info.parentID) return;
-    try {
-      execFileSync(%s, ["track-conversation", "--tool", "opencode", "--id", sessionID], { stdio: ["ignore", "ignore", "pipe"] });
-      last = sessionID;
-    } catch {}
-  };
-  const timer = setInterval(check, 250);
-  api.lifecycle.onDispose(() => clearInterval(timer));
-  check();
-};
-
-export default { id: "agent-manager.track-conversation", tui };
+export default Plugin.define({
+  id: "agent-manager.track-conversation",
+  setup(context: any) {
+    let last = "";
+    const check = () => {
+      const route = context.ui.router.current();
+      const sessionID = route.type === "session" ? route.sessionID : undefined;
+      if (!sessionID || sessionID === last) return;
+      const info = context.data.session.get(sessionID);
+      if (!info || info.parentID) return;
+      try {
+        execFileSync(%s, ["track-conversation", "--tool", "opencode", "--id", sessionID], { stdio: ["ignore", "ignore", "pipe"] });
+        last = sessionID;
+      } catch {}
+    };
+    const timer = setInterval(check, 250);
+    check();
+    return () => clearInterval(timer);
+  },
+});
 `
 
-// wireOpencode loads a TUI plugin that watches the route the TUI shows. A
+const opencodeCLIConfigVar = "OPENCODE_CLI_CONFIG_CONTENT"
+
+// wireOpencode loads a CLI plugin that watches the route the TUI shows. A
 // subagent's session carries a parent and is not the conversation the user
-// is on. OPENCODE_TUI_CONFIG layers over the user's own tui.json, but the
-// variable holds one path, so a user who already sets it keeps theirs.
-func wireOpencode(exe, hooksDir string, env map[string]string) error {
-	if os.Getenv("OPENCODE_TUI_CONFIG") != "" {
-		return nil
+// is on. The plugin runs in the TUI's own process, so it loads whatever
+// server the TUI joins. A plugin list given inline replaces the one in the
+// user's cli.json rather than adding to it, so theirs is read and carried
+// along, from the variable when they set it and from the file otherwise.
+func wireOpencode(exe, hooksDir, command string, env map[string]string) (string, error) {
+	dir := filepath.Join(hooksDir, "agent-manager-opencode")
+	if err := atomicfile.WriteIfChanged(filepath.Join(dir, "tui.ts"), fmt.Appendf(nil, opencodePluginTemplate, jsString(exe)), 0o644); err != nil {
+		return "", err
 	}
-	plugin := filepath.Join(hooksDir, "agent-manager-opencode.ts")
-	if err := atomicfile.WriteIfChanged(plugin, fmt.Appendf(nil, opencodePluginTemplate, jsString(exe)), 0o644); err != nil {
-		return err
-	}
-	config, err := json.MarshalIndent(map[string]any{"plugin": []string{plugin}}, "", "  ")
+	config, err := opencodeCLIConfig()
 	if err != nil {
-		return err
+		return warnUnwired("opencode", command, err.Error()), nil
 	}
-	path := filepath.Join(hooksDir, "agent-manager-opencode-tui.json")
-	if err := atomicfile.WriteIfChanged(path, config, 0o644); err != nil {
-		return err
+	var plugins []json.RawMessage
+	if raw, listed := config["plugins"]; listed {
+		if err := json.Unmarshal(raw, &plugins); err != nil {
+			return warnUnwired("opencode", command, "its plugins setting is not a list"), nil
+		}
 	}
-	env["OPENCODE_TUI_CONFIG"] = path
-	return nil
+	plugins = append(plugins, json.RawMessage(jsString(fileURL(dir))))
+	config["plugins"], _ = json.Marshal(plugins)
+	content, err := json.Marshal(config)
+	if err != nil {
+		return "", err
+	}
+	env[opencodeCLIConfigVar] = string(content)
+	return command, nil
 }
 
 // wireGemini has gemini log its telemetry to a file of the manager's own,

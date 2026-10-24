@@ -3,25 +3,32 @@ package ui
 import (
 	"errors"
 	"os"
+	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/deps"
 	"github.com/YoanWai/agent-manager/internal/mcpreg"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
 // launchFix is what the setup-step dialog holds: the text it shows, the
-// command that unblocks the launch, the binary that command puts on PATH,
-// the launch to run again once it is there, and the images that launch's
-// prompt names. command is empty when the manager knows no recipe, which
-// leaves the dialog read-only.
+// command it prints and copies, the script i runs to unblock the launch,
+// the binary that script puts on PATH, the launch to run again once it is
+// there, and the images that launch's prompt names. command is empty when
+// the manager knows no recipe, which leaves the dialog read-only. update
+// marks a CLI that is installed but too old, where the same installer
+// updates it, and resume is the mode the dialog returns to when it closes.
 type launchFix struct {
 	text        string
 	command     string
+	script      string
 	binary      string
+	update      bool
+	resume      mode
 	effectRetry effectRequest
 	images      []imageAttachment
 }
@@ -109,6 +116,7 @@ func (m *Model) reportLaunchError(err error) {
 			text: "Hermes sessions carry the agent-manager MCP tools, and this Hermes cannot load them: its MCP SDK is not installed.\n\n" +
 				step,
 			command: hermesMCP.PipCommand,
+			script:  hermesMCP.PipCommand,
 			binary:  "hermes",
 		})
 		return
@@ -117,12 +125,40 @@ func (m *Model) reportLaunchError(err error) {
 	if errors.As(err, &missing) {
 		m.launchHint.open(m, launchFix{
 			text:    missingToolText(missing),
-			command: deps.Command(missing.Binary),
+			command: deps.Shown(missing.Binary),
+			script:  deps.Command(missing.Binary),
 			binary:  missing.Binary,
 		})
 		return
 	}
+	var outdated config.OutdatedToolError
+	if errors.As(err, &outdated) {
+		m.launchHint.open(m, launchFix{
+			text:    outdatedToolText(outdated),
+			command: outdatedToolCommand(outdated),
+			script:  outdatedToolCommand(outdated),
+			binary:  outdated.Binary,
+			update:  true,
+		})
+		return
+	}
 	m.reportErr(err.Error())
+}
+
+func outdatedToolCommand(outdated config.OutdatedToolError) string {
+	if outdated.ManagedExternally {
+		return ""
+	}
+	return deps.Command(outdated.Binary)
+}
+
+func outdatedToolText(outdated config.OutdatedToolError) string {
+	head := outdated.Binary + " " + outdated.Installed + " is older than " + outdated.Minimum +
+		", the oldest version Agent Manager supports."
+	if command := outdatedToolCommand(outdated); command != "" {
+		return head + "\n\nUpdate it with: " + command
+	}
+	return head + "\n\nUpdate it the way you installed it, then spawn again."
 }
 
 // missingToolText opens on why the launch stopped, then the command that
@@ -145,6 +181,11 @@ func missingToolText(missing config.MissingToolError) string {
 func (d *launchHintDialog) open(h launchHintHost, fix launchFix) {
 	h.advanceDialogGen()
 	fix.images = append(fix.images, h.takeComposerImages()...)
+	d.present(h, fix)
+}
+
+// present shows a refusal that is not a spawn, so a draft prompt keeps its images.
+func (d *launchHintDialog) present(h launchHintHost, fix launchFix) {
 	d.fix = fix
 	h.setMode(modeLaunchHint)
 }
@@ -165,7 +206,7 @@ func dropImages(images []imageAttachment) {
 // prompt is the fix as the dialog shows it; its keys and card are
 // uidialogs.LaunchHint.
 func (d *launchHintDialog) prompt() uidialogs.LaunchHint {
-	return uidialogs.LaunchHint{Text: d.fix.text, Command: d.fix.command}
+	return uidialogs.LaunchHint{Text: d.fix.text, Command: d.fix.command, Update: d.fix.update}
 }
 
 func (d *launchHintDialog) handleKey(h launchHintHost, msg tea.KeyMsg) tea.Cmd {
@@ -199,8 +240,9 @@ func (d *launchHintDialog) run(h launchHintHost, action uidialogs.LaunchHintActi
 // holding: they stayed alive while an install could still spawn it.
 func (d *launchHintDialog) close(h launchHintHost) {
 	dropImages(d.fix.images)
+	resume := d.fix.resume
 	d.fix = launchFix{}
-	h.setMode(modeList)
+	h.setMode(resume)
 }
 
 func (m *Model) handleLaunchCommandCopied(msg launchCommandCopiedMsg) {
@@ -227,7 +269,7 @@ func (d *launchHintDialog) startInstall(h launchHintHost) {
 		retry = spawn
 	}
 	if h.startInstall(installStartRequest{
-		command:     fix.command,
+		command:     fix.script,
 		binary:      fix.binary,
 		effectRetry: retry,
 		images:      fix.images,
@@ -254,9 +296,33 @@ func (m *Model) settleInstall() {
 	m.enqueueEffect(installSettleRequest{install: *install}, 0, false)
 }
 
-func (d *launchHintDialog) view(h launchHintHost) string {
+func (d *launchHintDialog) view(h launchHintHost, glyphs presentation.GlyphSet) string {
 	width := h.cardWidth()
+	title, body, hints := d.card(h, glyphs, width)
+	return h.cardSized(width, title, body, hints)
+}
+
+func (m *Model) launchHintFrame() string {
+	width := m.cardWidth()
+	title, body, hints := m.launchHint.card(m, m.glyphs(), width)
+	if dropped := m.launchHintDroppedRows(body, hints); dropped > 0 {
+		body = strings.Join(strings.Split(body, "\n")[dropped:], "\n")
+	}
+	return m.cardSized(width, title, body, hints)
+}
+
+// launchHintDroppedRows is how many leading body rows a short terminal
+// clips away, which a click's row index has to skip as well.
+func (m *Model) launchHintDroppedRows(body string, hints [][2]string) int {
+	if m.layout.height <= 0 {
+		return 0
+	}
+	limit := max(0, m.layout.height-m.cardChromeRows(hints))
+	return max(0, strings.Count(body, "\n")+1-limit)
+}
+
+func (d *launchHintDialog) card(h launchHintHost, glyphs presentation.GlyphSet, width int) (string, string, [][2]string) {
 	tone := lipgloss.NewStyle().Foreground(colorAccent()).Bold(true)
-	card := d.prompt().View(cardInnerWidth(width), tone, mutedStyle())
-	return h.cardSized(width, card.Title, card.Body, card.Hints)
+	card := d.prompt().View(cardInnerWidth(width), tone, mutedStyle(), glyphs)
+	return card.Title, card.Body, card.Hints
 }

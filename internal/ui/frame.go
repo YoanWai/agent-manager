@@ -47,7 +47,7 @@ func (m *Model) renderFrame() string {
 	case modeConfirmDelete:
 		frame = m.viewConfirm()
 	case modeLaunchHint:
-		frame = m.launchHint.view(m)
+		frame = m.launchHintFrame()
 	case modeSettings:
 		frame = m.viewSettings()
 	case modeFork:
@@ -58,6 +58,8 @@ func (m *Model) renderFrame() string {
 		frame = m.viewRepoPick()
 	case modeGroupForm:
 		frame = m.viewGroupForm()
+	case modeConnection:
+		frame = m.viewConnectionDialog()
 	case modeDiff:
 		frame = m.viewDiffFull()
 	case modeNotices:

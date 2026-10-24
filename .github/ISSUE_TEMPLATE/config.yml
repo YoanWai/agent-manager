@@ -1,5 +1,8 @@
 blank_issues_enabled: true
 contact_links:
+  - name: Questions and setup help
+    url: https://discord.gg/ecS88An7pF
+    about: "Ask in #help on the Agent Manager Community Discord"
   - name: Question or help using agent-manager
     url: https://github.com/YoanWai/agent-manager/discussions/categories/q-a
     about: Ask in Discussions Q&A and get an answer without opening an issue.

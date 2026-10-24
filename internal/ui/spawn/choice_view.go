@@ -14,6 +14,7 @@ import (
 
 // Styles are the root's current presentation tokens, copied for one paint.
 type Styles struct {
+	GlyphMode                         presentation.GlyphMode
 	Subtle, Value, Muted, Warn, Label lipgloss.Style
 	SubtleColor, Accent, Accent2      lipgloss.Color
 	// Input paints a text field, marking its caret for the IME.
@@ -28,6 +29,8 @@ func ModelNote(h ChoiceHost, toolName string, st Styles) (string, bool) {
 		return st.Subtle.Render("not supported by " + toolName), false
 	case state == nil || (!state.Loaded && state.Loading):
 		return st.Subtle.Render("reading models from " + toolName + "…"), false
+	case state.Err != nil && len(state.Cat.Models) == 0 && h.ChoiceRemoteHost() != "":
+		return st.Subtle.Render(toolName + "'s default on " + h.ChoiceRemoteHost() + "; this machine's " + toolName + " lists no models to pick from"), false
 	case state.Err != nil && len(state.Cat.Models) == 0:
 		return st.Warn.Render("couldn't read models from " + toolName + ": " + state.Err.Error()), false
 	case len(state.Cat.Models) == 0 && len(state.Cat.Profiles) == 0:
@@ -115,7 +118,7 @@ func (ch *Choice) ViewSuggestions(h ChoiceHost, toolName string, indent, width, 
 		}
 		marker, style := "  ", st.Muted
 		if i == ch.sugg.index {
-			marker = lipgloss.NewStyle().Foreground(st.Accent).Render("❯ ")
+			marker = lipgloss.NewStyle().Foreground(st.Accent).Render(presentation.GlyphsFor(st.GlyphMode).SelectionGlyph + " ")
 			style = lipgloss.NewStyle().Foreground(st.Accent2).Bold(true)
 			highlight = len(rows)
 		}

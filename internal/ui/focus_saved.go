@@ -60,6 +60,6 @@ func (m *Model) pasteFocusSaved(pick spawn.SavedPick) tea.Cmd {
 // viewFocusSaved is the list's card, which takes the frame while it is up.
 func (m *Model) viewFocusSaved() string {
 	width := min(48, max(28, m.layout.width-4))
-	lines := m.focus.saved.list.Lines(cardInnerWidth(width), 8, spawnStyles())
+	lines := m.focus.saved.list.Lines(cardInnerWidth(width), 8, m.spawnStyles())
 	return m.cardSized(width, "saved prompts", strings.Join(lines, "\n"), [][2]string{{"↵", "paste"}, {"esc", "close"}})
 }

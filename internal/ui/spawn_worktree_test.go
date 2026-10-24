@@ -72,17 +72,25 @@ func TestFormWorktreeGatedInNonRepoDir(t *testing.T) {
 func TestWorktreeCapabilityExpiresSoAFreshRepoIsSeen(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
-	dir := filepath.Join(t.TempDir(), "repo")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
+	root := t.TempDir()
+	dir, seed := filepath.Join(root, "repo"), filepath.Join(root, "seed")
+	for _, path := range []string{dir, seed} {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
+	// git init can outlast worktreeLookupTTL on Windows, so the repo is built
+	// before the answer is cached and only moved into place after.
+	initGitRepo(t, seed)
 	m.openForm()
 	m.form.SetDir(dir)
 	m.applyTestMsg(t, m.formWorktreeProbeCmd(false)())
 	if capable, known := m.cachedWorktreeCapability(dir); !known || capable {
 		t.Fatalf("plain directory cache = capable %t known %t", capable, known)
 	}
-	initGitRepo(t, dir)
+	if err := os.Rename(filepath.Join(seed, ".git"), filepath.Join(dir, ".git")); err != nil {
+		t.Fatal(err)
+	}
 	if capable, known := m.cachedWorktreeCapability(dir); !known || capable {
 		t.Fatalf("fresh cache changed without a probe: capable %t known %t", capable, known)
 	}

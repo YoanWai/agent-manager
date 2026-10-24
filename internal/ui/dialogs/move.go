@@ -1,6 +1,9 @@
 package dialogs
 
-import tea "github.com/charmbracelet/bubbletea"
+import (
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
+	tea "github.com/charmbracelet/bubbletea"
+)
 
 // Move picks a new parent for one session or group. It owns the captured
 // row and the picker keys; the targets are the root's group picker, which
@@ -92,7 +95,9 @@ func (d Move) Place(pick MovePick) (MoveRequest, bool) {
 }
 
 // MoveTitle and MoveHints frame the card around the root's group picker.
-const MoveTitle = "⇄ Move"
+func MoveTitle(mode presentation.GlyphMode) string {
+	return presentation.GlyphsFor(mode).MoveGlyph + " Move"
+}
 
 func MoveHints() [][2]string {
 	return [][2]string{{"↑↓", "pick"}, {"↵", "move"}, {"esc", "cancel"}}

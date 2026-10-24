@@ -190,7 +190,9 @@ func runFake(name string) error {
 		return serveLines(func(request fakeRequest) any {
 			switch request.Method {
 			case "initialize":
-				return result(request, map[string]any{"protocolVersion": 1})
+				return result(request, map[string]any{"protocolVersion": 1, "authMethods": []any{map[string]any{"id": "interactive"}, map[string]any{"id": "cached_token"}}})
+			case "authenticate":
+				return map[string]any{"jsonrpc": "2.0", "id": request.ID, "error": map[string]any{"code": -32602, "message": "authentication must remain unchanged"}}
 			case "session/new":
 				return result(request, parts["session_new"])
 			case "session/set_config_option":
@@ -199,6 +201,42 @@ func runFake(name string) error {
 				}
 				_ = json.Unmarshal(request.Params, &params)
 				return result(request, sets[params.Value])
+			}
+			return nil
+		})
+	case "acp-cursor":
+		authenticated := false
+		return serveLines(func(request fakeRequest) any {
+			switch request.Method {
+			case "initialize":
+				return result(request, map[string]any{
+					"protocolVersion": 1,
+					"authMethods":     []any{map[string]any{"id": "cursor_login"}},
+				})
+			case "authenticate":
+				var params struct {
+					MethodID string `json:"methodId"`
+				}
+				_ = json.Unmarshal(request.Params, &params)
+				if params.MethodID != "cursor_login" {
+					return map[string]any{"jsonrpc": "2.0", "id": request.ID, "error": map[string]any{"code": -32602, "message": "unknown method"}}
+				}
+				authenticated = true
+				return result(request, map[string]any{})
+			case "session/new":
+				if !authenticated {
+					return map[string]any{"jsonrpc": "2.0", "id": request.ID, "error": map[string]any{"code": -32000, "message": "Authentication required"}}
+				}
+				return result(request, map[string]any{
+					"sessionId": "cursor-session",
+					"configOptions": []any{map[string]any{
+						"id": "model", "category": "model", "currentValue": "default[]",
+						"options": []any{
+							map[string]any{"value": "default[]", "name": "Auto"},
+							map[string]any{"value": "grok-4.7[context=256k,reasoning_effort=high,fast=true]", "name": "Grok 4.7"},
+						},
+					}},
+				})
 			}
 			return nil
 		})
@@ -275,23 +313,26 @@ func runFake(name string) error {
 			return nil
 		})
 	case "opencode":
-		parts := fixture("opencode_serve.json")
-		password := os.Getenv("OPENCODE_SERVER_PASSWORD")
-		announce := func(address string) string { return "opencode server listening on http://" + address }
-		return serveHTTP(announce, func(w http.ResponseWriter, r *http.Request) {
-			if user, pass, ok := r.BasicAuth(); !ok || user != "opencode" || pass != password {
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
-				return
+		return printFixture(os.Stdout, "opencode_models.txt")
+	case "opencode-unavailable":
+		if err := printFixture(os.Stderr, "opencode_models_unavailable.txt"); err != nil {
+			return err
+		}
+		os.Exit(1)
+	case "opencode-settling":
+		// Unavailable until the file CATALOG_SETTLED names exists, which the
+		// first ask leaves behind: the server settles between two asks.
+		settled := os.Getenv("CATALOG_SETTLED")
+		if _, err := os.Stat(settled); err != nil {
+			if err := os.WriteFile(settled, nil, 0o644); err != nil {
+				return err
 			}
-			switch r.URL.Path {
-			case "/config/providers":
-				_, _ = w.Write(parts["providers"])
-			case "/config":
-				_, _ = w.Write(parts["config"])
-			default:
-				http.NotFound(w, r)
+			if err := printFixture(os.Stderr, "opencode_models_unavailable.txt"); err != nil {
+				return err
 			}
-		})
+			os.Exit(1)
+		}
+		return printFixture(os.Stdout, "opencode_models.txt")
 	case "hermes", "hermes-work":
 		parts := fixture("hermes_serve.json")
 		if name == "hermes-work" {
@@ -344,6 +385,16 @@ func addWorkProfile(parts map[string]json.RawMessage) {
 	options["providers"], options["model"], options["provider"] = anthropic, "claude-opus-5", "anthropic"
 	parts["profiles"], _ = json.Marshal(listed)
 	parts["options:work"], _ = json.Marshal(options)
+}
+
+// printFixture copies a recorded answer to out, as the CLI printed it.
+func printFixture(out *os.File, name string) error {
+	raw, err := os.ReadFile(filepath.Join(os.Getenv("CATALOG_TESTDATA"), name))
+	if err != nil {
+		return err
+	}
+	_, err = out.Write(raw)
+	return err
 }
 
 // serveHTTP listens on a free loopback port and prints the line announce

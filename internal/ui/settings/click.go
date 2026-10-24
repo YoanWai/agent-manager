@@ -36,18 +36,11 @@ func (s *State) Wheel(step int, ctx Context) Result {
 	return s.Key(tea.KeyMsg{Type: tea.KeyDown}, ctx)
 }
 
-// clickRow is a press on the main dialog. The save button saves, and the
-// docs and saved prompts rows open at once. The symbols row steps at once
-// where it paints its preview. Any other row takes the first click as the
-// cursor, and the next one runs it the way ↵ runs an action row and →
-// steps a value.
+// clickRow is a press on the main dialog. The docs and saved prompts rows
+// open at once. The symbols row steps at once where it paints its preview.
+// Any other row takes the first click as the cursor, and the next one runs
+// it the way ↵ runs an action row and → steps a value.
 func (s *State) clickRow(col, line int, ctx Context) Result {
-	if line == 0 {
-		if col < s.saveWidth {
-			return Result{Exit: Save}
-		}
-		return Result{}
-	}
 	field, ok := s.lines.At(line)
 	switch {
 	case !ok:

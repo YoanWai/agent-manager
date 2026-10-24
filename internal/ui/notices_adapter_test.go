@@ -175,7 +175,7 @@ func TestUpdateNoticeSummarizesEverySkippedRelease(t *testing.T) {
 		"v0.3.0",
 		"Worktree: Respect group defaults",
 		"v0.6.0",
-		"updates once to v0.6.0",
+		"Press u to update to v0.6.0",
 	} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("cumulative modal missing %q:\n%s", want, frame)

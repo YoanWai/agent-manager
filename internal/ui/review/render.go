@@ -48,6 +48,7 @@ type Styles struct {
 
 // RenderContext is the copied presentation state Review paints with.
 type RenderContext struct {
+	GlyphMode    presentation.GlyphMode
 	Styles       Styles
 	CursorMarker string
 }
@@ -69,9 +70,12 @@ type LegendSection struct {
 type renderer struct {
 	m *Model
 	s Styles
+	g presentation.GlyphSet
 }
 
-func (m *Model) renderer(ctx RenderContext) renderer { return renderer{m: m, s: ctx.Styles} }
+func (m *Model) renderer(ctx RenderContext) renderer {
+	return renderer{m: m, s: ctx.Styles, g: presentation.GlyphsFor(ctx.GlyphMode)}
+}
 
 func (s Styles) selectRow(row string) string {
 	return s.Selected.Render(strings.ReplaceAll(row, "\x1b[0m", s.SelectedReapply))
@@ -122,13 +126,13 @@ func (m *Model) EmptyText(ctx RenderContext) string { return m.renderer(ctx).emp
 func (r renderer) emptyText() string {
 	m := r.m
 	if m.errText != "" {
-		return r.s.Err.Render("✖ " + presentation.EscapeControls(m.errText))
+		return r.s.Err.Render(r.g.DiffErrorGlyph + " " + presentation.EscapeControls(m.errText))
 	}
 	if m.target.ID == "" {
 		return r.s.Muted.Render("(select a session to diff)")
 	}
 	if len(m.set.Files) == 0 {
-		return r.s.Muted.Render(fmt.Sprintf("✓ no changes (%s)", m.scope)) + "\n" +
+		return r.s.Muted.Render(fmt.Sprintf("%s no changes (%s)", r.g.DiffCleanGlyph, m.scope)) + "\n" +
 			r.s.Subtle.Render("s cycles scope")
 	}
 	return ""
@@ -146,7 +150,7 @@ func (r renderer) bodyNote(fd *diff.FileDiff) string {
 	case r.m.fileHidden(fd):
 		return r.allHiddenNote()
 	case fd.Err != nil:
-		return r.s.Err.Render("✖ " + presentation.EscapeControls(fd.Err.Error()))
+		return r.s.Err.Render(r.g.DiffErrorGlyph + " " + presentation.EscapeControls(fd.Err.Error()))
 	case fd.Binary:
 		return r.s.Muted.Render("(binary file)")
 	case fd.Truncated && len(fd.Lines) == 0:
@@ -320,9 +324,9 @@ func (m *Model) FileList(ctx RenderContext, width, height int) Pane {
 	for pos := start; pos < end; pos++ {
 		i := shown[pos]
 		fd := files[i]
-		glyph := s.Subtle.Render("○")
+		glyph := s.Subtle.Render(r.g.DiffPendingGlyph)
 		if m.FileReviewed(fd.File.Path) {
-			glyph = lipgloss.NewStyle().Foreground(s.Finished).Render("✔")
+			glyph = lipgloss.NewStyle().Foreground(s.Finished).Render(r.g.DiffDoneGlyph)
 		}
 		bar := " "
 		if i == state.FileIndex {
@@ -369,7 +373,7 @@ func (m *Model) Status(ctx RenderContext, width int) string {
 	s := ctx.Styles
 	m.statusKeys = nil
 	if m.notice != "" {
-		return presentation.PadRight(s.Done.Render(" ✔ "+presentation.EscapeControlsInline(m.notice)), width)
+		return presentation.PadRight(s.Done.Render(" "+presentation.GlyphsFor(ctx.GlyphMode).DiffDoneGlyph+" "+presentation.EscapeControlsInline(m.notice)), width)
 	}
 	if m.sendConfirm {
 		count := m.DraftCount()

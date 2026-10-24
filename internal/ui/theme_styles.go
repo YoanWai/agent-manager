@@ -136,6 +136,7 @@ func colorDim() lipgloss.Color      { return lipgloss.Color(current().Dim) }
 func colorSubtle() lipgloss.Color   { return lipgloss.Color(current().Subtle) }
 func colorAccent() lipgloss.Color   { return lipgloss.Color(current().Accent) }
 func colorAccent2() lipgloss.Color  { return lipgloss.Color(current().Accent2) }
+func colorRemote() lipgloss.Color   { return lipgloss.Color(current().Remote) }
 func colorSelBg() lipgloss.Color    { return colorSurface() }
 func colorWorking() lipgloss.Color  { return lipgloss.Color(current().Working) }
 func colorWaiting() lipgloss.Color  { return lipgloss.Color(current().Waiting) }
@@ -286,11 +287,17 @@ func inboxBadge(g presentation.GlyphSet, count int) string {
 	return inboxBadgeStyle().Render(g.InboxGlyph + strconv.Itoa(count))
 }
 
-// afterTurnGlyphs mark a session that asked to be archived or killed once
-// its turn ends, so a row about to leave the list says so beforehand.
-var afterTurnGlyphs = map[string]string{
-	store.AfterTurnArchive: "↓",
-	store.AfterTurnKill:    "■",
+// afterTurnGlyph makes a requested archive or kill visible while the agent
+// finishes its turn, before the action takes effect.
+func (m *Model) afterTurnGlyph(action string) string {
+	switch action {
+	case store.AfterTurnArchive:
+		return m.glyphs().AfterTurnArchiveGlyph
+	case store.AfterTurnKill:
+		return m.glyphs().AfterTurnKillGlyph
+	default:
+		return ""
+	}
 }
 
 var afterTurnNote = map[string]string{
@@ -298,8 +305,8 @@ var afterTurnNote = map[string]string{
 	store.AfterTurnKill:    "killed when this turn ends",
 }
 
-func afterTurnBadge(action string) string {
-	return inboxBadgeStyle().Render(afterTurnGlyphs[action])
+func (m *Model) afterTurnBadge(action string) string {
+	return inboxBadgeStyle().Render(m.afterTurnGlyph(action))
 }
 
 // keyPill renders a chip with the key that changes it dimmed in front, so
