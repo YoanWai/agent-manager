@@ -1,181 +1,25 @@
 package ui
 
 import (
+	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
+	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	"github.com/YoanWai/agent-manager/internal/ui/pathcomplete"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
-	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
-
-// spawnHost is the root as the New Session form and its choice see it.
-type spawnHost struct{ m *Model }
-
-func (m *Model) spawnHost() spawnHost { return spawnHost{m: m} }
-
-func (h spawnHost) ChoiceCaps(toolName string) spawn.Caps {
-	tool := h.m.services.cfg.Tools[toolName]
-	return spawn.Caps{
-		Catalog:  tool.Catalog != "",
-		Profiles: tool.ProfileArgs != "",
-		Models:   tool.ModelArgs != "" || tool.ModelEnv != "",
-		Efforts:  tool.EffortArgs != "",
-	}
-}
-
-// ChoiceAnswer hands the choice a copy, so only the root's catalog
-// handlers change what the CLI answered.
-func (h spawnHost) ChoiceAnswer(toolName string) *spawn.Answer {
-	answer := h.m.ledger.spawner.Answer(toolName)
-	if answer == nil {
-		return nil
-	}
-	return &spawn.Answer{Cat: answer.Cat, Err: answer.Err, Loaded: answer.Loaded, Loading: answer.Loading}
-}
-
-func (h spawnHost) ChoiceSetting(key string) string { return h.m.settings.Cache.Value(key) }
-
-func (h spawnHost) SaveChoiceSetting(key, value string) { h.m.saveChoiceSetting(key, value) }
-
-func (h spawnHost) ReportErr(text string) { h.m.reportErr(text) }
-
-func (h spawnHost) ChoiceRemoteHost() string {
-	m := h.m
-	if f := m.form(); f != nil {
-		return f.Remote.Host
-	}
-	if m.quick() != nil {
-		if target, ok := m.remoteTarget(); ok {
-			return target.host
-		}
-	}
-	return ""
-}
-
-func (h spawnHost) ClearErr() { h.m.clearErr() }
-
-func (h spawnHost) Prompt() spawn.Prompt {
-	return spawnedPrompt(h.m.form(), composer.Form, h.m)
-}
-
-func (h spawnHost) Paths() spawn.Paths {
-	return h.m.spawnedPaths(h.m.form())
-}
-
-// promptBox lends a feature package one of the root's prompt boxes.
-type promptBox struct {
-	c      *composer.Composer
-	target composer.ID
-	host   composer.Host
-}
-
-func (p promptBox) Focus() { p.c.Input.Focus() }
-
-func (p promptBox) Blur() { p.c.Input.Blur() }
-
-func (p promptBox) Fit(width, rows int) {
-	p.c.Input.SetWidth(width)
-	p.c.MaxRows = rows
-}
-
-func (p promptBox) View() string { return p.c.View(composerPaint()) }
-
-func (p promptBox) StepRow(msg tea.KeyMsg) (tea.Cmd, bool) { return p.c.StepRow(msg) }
-
-func (p promptBox) ChipKey(msg tea.KeyMsg) (tea.Cmd, bool) {
-	return p.c.ChipKey(p.host, p.target, msg)
-}
-
-func (p promptBox) Type(msg tea.KeyMsg) tea.Cmd { return p.c.TypeKey(msg) }
-
-func (p promptBox) Release() { p.c.Release() }
-
-func (p promptBox) Pasting() bool { return p.c.Pasting() }
-
-func (p promptBox) Message() string { return p.c.Message() }
-
-// spawnStyles copies the active theme for one paint.
-func (m *Model) spawnStyles() spawn.Styles {
-	return spawn.Styles{
-		GlyphMode:   m.prefs.glyphMode,
-		Subtle:      uitheme.SubtleStyle(),
-		Value:       uitheme.ValueStyle(),
-		Muted:       uitheme.MutedStyle(),
-		Warn:        uitheme.WarnStyle(),
-		Label:       uitheme.LabelStyle(),
-		SubtleColor: uitheme.ColorSubtle(),
-		Accent:      uitheme.ColorAccent(),
-		Accent2:     uitheme.ColorAccent2(),
-		Input:       uiframe.TextInputView,
-	}
-}
-
-const formPromptMaxRows = 4
-
-func promptField() composer.Composer {
-	in := textarea.New()
-	in.CharLimit = 2000
-	in.Placeholder = "first task (optional)"
-	in.ShowLineNumbers = false
-	in.SetPromptFunc(2, func(lineIndex int) string {
-		if lineIndex == 0 {
-			return "> "
-		}
-		return "  "
-	})
-	in.FocusedStyle.CursorLine = lipgloss.NewStyle()
-	composer.HoldOpen(&in)
-	return composer.Composer{Input: in, MaxRows: formPromptMaxRows}
-}
-
-func (m *Model) formField(label, value string, focused bool) string {
-	return spawn.FormField(m.spawnStyles(), label, value, focused)
-}
-
-func pathSuggestHint(chosen bool) [][2]string {
-	if chosen {
-		return [][2]string{{"↑↓", "pick"}, {"↵/tab", "complete"}, {"esc", "close"}}
-	}
-	return [][2]string{{"↑↓", "pick"}, {"tab", "complete"}, {"↵", "create"}, {"esc", "close"}}
-}
-
-// formValueWidth is the columns a field value can occupy inside the card.
-func (m *Model) formValueWidth() int {
-	return uiframe.CardInnerWidth(m.cardWidth()) - spawn.LabelColumn
-}
-
-// syncFormFieldWidths fits the fields to the card so long values scroll
-// (inputs) or wrap (prompt) instead of clipping at the card edge.
-func (m *Model) syncFormFieldWidths() {
-	f := m.form()
-	if f == nil {
-		return
-	}
-	inner := m.formValueWidth()
-	f.SyncWidths(inner)
-	m.formPromptFor().Input.SetWidth(inner)
-}
-
-// contextGroup is the group the cursor currently sits in: a highlighted
-// group row itself, or the group holding a highlighted session.
-func (m *Model) contextGroup() string {
-	if entry, ok := m.selectedRow(); ok {
-		if entry.isGroup {
-			return entry.group
-		}
-		return entry.sess.Group
-	}
-	return ""
-}
 
 func (m *Model) openForm() tea.Cmd {
 	return m.openFormWithReader(uipersist.StoreWriter{Store: m.services.store})
@@ -211,20 +55,6 @@ func (m *Model) openFormWithReader(reader uipersist.Reader) tea.Cmd {
 
 // applyCachedFormDefaults takes the loaded tool and worktree defaults. A
 // tool the load moved to starts its choice rows over and asks its CLI.
-func (m *Model) applyCachedFormDefaults() tea.Cmd {
-	f := m.form()
-	before := f.Tool()
-	f.SetTools(m.cachedSpawnToolSelection())
-	f.DefaultWorktree(m.cachedSpawnWorktreeDefault(m.selectedGroupPath()))
-	toolName := f.Tool()
-	if toolName == before || toolName == "" {
-		return nil
-	}
-	f.RestartChoice(m.spawnHost())
-	m.syncFormFieldWidths()
-	return m.ensureCatalog(toolName)
-}
-
 func (m *Model) formTool() string { return m.form().Tool() }
 
 // selectedGroupPath is the group the open picker highlights: the move
@@ -309,6 +139,23 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 
 func (m *Model) submitFormWithReader(reader directoryPreflight) (tea.Model, tea.Cmd) {
 	return m, m.runFormRequest(m.form().Submit(m.spawnHost()), reader)
+}
+
+// formValueWidth is the columns a field value can occupy inside the card.
+func (m *Model) formValueWidth() int {
+	return uiframe.CardInnerWidth(m.cardWidth()) - spawn.LabelColumn
+}
+
+// syncFormFieldWidths fits the fields to the card so long values scroll
+// (inputs) or wrap (prompt) instead of clipping at the card edge.
+func (m *Model) syncFormFieldWidths() {
+	f := m.form()
+	if f == nil {
+		return
+	}
+	inner := m.formValueWidth()
+	f.SyncWidths(inner)
+	m.formPromptFor().Input.SetWidth(inner)
 }
 
 func (m *Model) viewForm() string {
@@ -453,48 +300,384 @@ func (m *Model) closeForm() {
 	}
 }
 
-// spawnedPrompt is the form's prompt box as spawn.Prompt.
-func spawnedPrompt(f *spawn.Surface, target composer.ID, host composer.Host) promptBox {
-	return promptBox{c: f.Root().(spawnFormRoot).prompt, target: target, host: host}
-}
-
-// spawnedPaths is the form's completer as spawn.Paths.
-func (m *Model) spawnedPaths(f *spawn.Surface) pathField {
-	// A connection's directory is the host's: nothing here completes it.
-	return pathField{
-		mode:   m.prefs.glyphMode,
-		pc:     &f.Complete,
-		target: pathcomplete.Form,
-		off:    f.Remote.On(),
-	}
-}
-
 var _ spawn.SurfaceRoot = spawnFormRoot{}
 
-// pathField lends a feature package the root's path completer.
-type pathField struct {
-	mode   presentation.GlyphMode
-	pc     *pathcomplete.State
-	target pathcomplete.Target
-	// off asks for no suggestions.
-	off bool
+// ensureCatalog reads the kept answer or asks the CLI off the update path,
+// since an answer takes up to seconds.
+func (m *Model) ensureCatalog(toolName string) tea.Cmd {
+	cmd, _ := m.ledger.spawner.EnsureCatalog(m.services.cfg, m.services.configDir, toolName, time.Now())
+	return cmd
 }
 
-func (p pathField) Active() bool { return p.pc.Active() }
+func (m *Model) handleCatalog(msg uilaunch.CatalogMsg) tea.Cmd {
+	outdated, cmd := m.ledger.spawner.Apply(msg, m.services.cfg, m.services.configDir, time.Now())
+	m.fitChoices()
+	if outdated != nil && m.catalogToolActive(msg.Tool) {
+		m.advanceDialogGen()
+		command := uiinstall.OutdatedCommand(*outdated)
+		m.presentLaunchHint(uiinstall.OutdatedFix(*outdated, command))
+	}
+	return cmd
+}
 
-func (p pathField) Chosen() bool { return p.pc.Chosen }
+// catalogToolActive reports whether the form or the quick bar shows the CLI
+// whose answer this is, which is what earns the update dialog.
+func (m *Model) catalogToolActive(tool string) bool {
+	return (m.form() != nil && m.formTool() == tool) || (m.quick() != nil && m.quickTool() == tool)
+}
 
-func (p pathField) Move(delta int) bool { return p.pc.Move(delta) }
+// formSpawnRequest names the session, places it in the picked group and
+// captures the group's launch inputs and the prompt's images.
+func (m *Model) formSpawnRequest(request spawn.Request) uilaunch.Request {
+	f := m.form()
+	prompt := m.formPromptFor()
+	defaults := m.spawnDefaults(f.GroupPath())
+	return uilaunch.FormRequest(request, f.Name(), f.GroupPath(), prompt, defaults)
+}
 
-func (p pathField) Reset() { p.pc.Reset() }
+// quickSpawnRequest names the session and captures the group's launch
+// inputs, the worktree default it keeps unless toggled, and the prompt's
+// images.
+func (m *Model) quickSpawnRequest(request spawn.Request) uilaunch.Request {
+	q := m.quick()
+	worktree := request.Worktree
+	if !request.WorktreeSet {
+		worktree = m.cachedSpawnWorktreeDefault(request.Group)
+	}
+	request.Worktree = worktree
+	return uilaunch.QuickRequest(request, &q.Composer, m.spawnDefaults(request.Group))
+}
 
-func (p pathField) Suggest(typed string) tea.Cmd {
-	if p.off {
+// formSpawnDir is the directory the form would launch in, resolved the
+// same way submit resolves it.
+func (m *Model) formSpawnDir() string {
+	return m.capturedAbsolutePath(m.form().Dir(), m.env.workDir)
+}
+
+// capturedAbsolutePath normalizes a displayed path without consulting the
+// filesystem. It uses the startup directory/home captured before the event
+// loop began.
+func (m *Model) capturedAbsolutePath(raw, fallback string) string {
+	path := strings.TrimSpace(raw)
+	if path == "" {
+		path = fallback
+	}
+	if path == "~" || strings.HasPrefix(path, "~/") {
+		path = filepath.Join(m.env.homeDir, strings.TrimPrefix(path, "~"))
+	}
+	if path != "" && !filepath.IsAbs(path) {
+		path = filepath.Join(m.env.workDir, path)
+	}
+	return filepath.Clean(path)
+}
+
+// dispatchSpawn takes the prompt's images out of the composer and queues the
+// spawn on the shared effect lane; completion routes the images.
+func (m *Model) dispatchSpawn(request uilaunch.Request) {
+	for _, job := range append([]*uieffects.Job{m.effects.Main.Active}, m.effects.Main.Pending...) {
+		if job == nil {
+			continue
+		}
+		if pending, ok := job.Request.(uilaunch.Request); ok && pending.Kind == request.Kind && pending.ComposerGen == request.ComposerGen {
+			m.reportErr("this spawn is already in progress")
+			return
+		}
+	}
+	request.ID = newID()
+	switch request.Kind {
+	case uilaunch.Form:
+		f := m.form()
+		prompt := m.formPromptFor()
+		request.Draft = prompt.Input.Value()
+		request.DraftName = f.Name()
+		request.DraftDir = f.Dir()
+		prompt.Attachments = nil
+	case uilaunch.Quick:
+		q := m.quick()
+		request.Draft = q.Input.Value()
+		q.Attachments = nil
+	}
+	m.enqueueEffect(request, 0, false)
+}
+
+func (m *Model) materializeGroupsLocal(paths []string) {
+	known := make(map[string]bool, len(m.workspace.groups))
+	for _, path := range m.workspace.groups {
+		known[path] = true
+	}
+	for _, path := range paths {
+		if !known[path] {
+			m.workspace.groups = append(m.workspace.groups, path)
+			known[path] = true
+		}
+	}
+}
+
+// applyGroupEffect applies a created group: the durable inventory takes the
+// row wherever the user is, and only the form that dispatched it gives up
+// the screen.
+func (m *Model) applyGroupEffect(request uilaunch.GroupRequest, result uilaunch.GroupResult, err error) tea.Cmd {
+	if err != nil {
+		m.reportErr(err.Error())
 		return nil
 	}
-	return p.pc.Request(p.target, typed, pathcomplete.SystemReader{})
+	m.materializeGroupsLocal([]string{result.Path})
+	if m.workspace.groupPaths == nil {
+		m.workspace.groupPaths = map[string]string{}
+	}
+	m.workspace.groupPaths[result.Path] = result.Dir
+	m.workspace.groupWorktrees = setGroupChoice(m.workspace.groupWorktrees, result.Path, result.Worktree)
+	m.workspace.groupBases = setGroupChoice(m.workspace.groupBases, result.Path, request.Base)
+	m.rebuildRows()
+	// Presentation (closing the form, revealing and selecting the new group)
+	// lands only when the dispatching group form is still the dialog on
+	// screen; a newer one keeps the foreground. The reveal's collapse
+	// snapshot queues after the row exists, the order the synchronous submit
+	// kept.
+	if s, ok := surfaceOf[*uidialogs.GroupFormSurface](m); ok && s.Gen() == request.Gen && s.Name() == request.DraftName && s.Dir() == request.DraftDir {
+		m.clearErr()
+		m.Pop()
+		m.queueRail(m.rail.RevealGroup(result.Path).Mutations, 0, true)
+	}
+	return m.refreshCmd()
 }
 
-func (p pathField) View() string { return p.pc.View(pathCompleteStyles(p.mode)) }
+// spawnBaseLabel names the ref a worktree spawn into dir branches from, where
+// that choice came from, and how fetching it went.
+func (m *Model) spawnBaseLabel(dir, group string) string {
+	override := m.groupBase(group)
+	fetch := m.ledger.spawner.BaseFetch(dir, override)
+	label := uitheme.ValueStyle().Render(override) + uitheme.SubtleStyle().Render(" (group)")
+	if override == "" {
+		switch {
+		case !fetch.Resolved:
+			label = uitheme.SubtleStyle().Render("…")
+		case fetch.Detected == "":
+			label = uitheme.ValueStyle().Render("HEAD") + uitheme.SubtleStyle().Render(" (auto)")
+		default:
+			label = uitheme.ValueStyle().Render(fetch.Detected) + uitheme.SubtleStyle().Render(" (auto)")
+		}
+	}
+	switch {
+	case m.prefs.baseFetchOff:
+	case !fetch.Fetched:
+		label += uitheme.SubtleStyle().Render(" · fetching")
+	case fetch.Err != nil:
+		label += uitheme.SubtleStyle().Render(" · fetch failed")
+	}
+	return label
+}
 
-func (p pathField) Hint() [][2]string { return pathSuggestHint(p.pc.Chosen) }
+// launchServices is the effect services as a spawn reaches them.
+func (s effectServices) launchServices() uilaunch.Services {
+	return uilaunch.Services{Lifecycle: s.lifecycle, Store: s.store, Config: s.cfg, Git: s.gitDrv}
+}
+
+// applySpawn applies a finished spawn: a committed row joins the workspace,
+// and a refused one hands its prompt back to the dialog that still shows it.
+func (m *Model) applySpawn(request uilaunch.Request, result uilaunch.Result, err error) tea.Cmd {
+	if result.RepoKnown {
+		m.ledger.spawner.RememberWorktree(result.Dir, result.RepoCapable, time.Now())
+	}
+	if err == nil {
+		m.commitSpawn(request, result.Session)
+		if result.Label != nil {
+			m.reportErr(result.Label.Error())
+		}
+		return m.refreshCmd()
+	}
+	request.Plan = result.Plan
+	request.Dir = result.Dir
+	request.Worktree = result.Worktree
+	if request.Kind == uilaunch.Shell {
+		m.ledger.lifecycle.TerminalKeyAt = time.Now()
+		m.reportErr(err.Error())
+		return nil
+	}
+	// Nothing was committed. A spawn the hint dialog refuses takes the
+	// dialog's place, the same way the synchronous submit did; a dialog the
+	// user opened since the dispatch is newer and keeps the screen.
+	if !m.spawnTakesOver(request) {
+		m.returnSpawnImages(request)
+		m.reportErr(err.Error())
+		return nil
+	}
+	m.reportLaunchError(err)
+	if fix, ok := m.launchHintFix(); ok {
+		// The dialog's images are the request's: the composer was emptied at
+		// dispatch, so openLaunchHint found none of its own.
+		fix.Images = append(fix.Images, request.Images...)
+		fix.Retry = request
+		if request.Kind == uilaunch.Quick {
+			m.closeQuick()
+		}
+	} else {
+		// A plain error left the composer on screen; its images go back.
+		m.returnSpawnImages(request)
+	}
+	return nil
+}
+
+func (m *Model) commitSpawn(request uilaunch.Request, sess store.Session) {
+	m.markFreshPane(sess.ID)
+	m.ledger.lifecycle.RecordLaunch(sess.ID, time.Now())
+	m.workspace.sessions = append(m.workspace.sessions, sess)
+	// The directive went out with the launch, so the row waits for the name
+	// the agent picks instead of showing the one generated for it.
+	if request.AutoNamed {
+		m.ledger.lifecycle.AwaitRename(sess.ID, sess.Name, request.Prompt)
+	}
+	if request.Kind != uilaunch.Shell {
+		m.ledger.spawner.RememberSpawn(request.ToolName, request.PickWorktree)
+		spawn.RememberModel(m.spawnHost(), request.ToolName, spawn.Pick(request.Choice))
+	}
+	// New sessions start as starting, which attention excludes; clear so the
+	// row the spawn just created is on screen.
+	m.rail.ClearStatusFilter()
+	switch request.Kind {
+	case uilaunch.Form:
+		// A form opened later is a newer dialog the completion must not
+		// close; only the one that dispatched this spawn is closed.
+		if m.formDraftHolds(request.ComposerGen, request.Draft, request.DraftName, request.DraftDir) {
+			m.closeForm()
+		}
+	case uilaunch.Quick:
+		if q, ok := m.quickFor(request.ComposerGen); ok {
+			m.clearAccepted(request.ComposerGen, request.Draft, q.CloseAfterSend)
+		}
+	}
+	m.rebuildRows()
+	if request.Kind == uilaunch.Shell {
+		m.ledger.lifecycle.TerminalKeyAt = time.Now()
+		m.focusSession(sess.ID)
+	}
+}
+
+// spawnTakesOver reports whether a refused spawn may replace the screen: the
+// dialog that dispatched it still shows its prompt, or the list is bare.
+func (m *Model) spawnTakesOver(request uilaunch.Request) bool {
+	switch {
+	case request.Kind == uilaunch.Form && m.formHolds(request.ComposerGen, request.Draft):
+		return true
+	case request.Kind == uilaunch.Quick && m.quickHolds(request.ComposerGen, request.Draft):
+		return true
+	}
+	return m.listClear()
+}
+
+// returnSpawnImages gives the prompt's images back to the composer that is
+// still on screen, so the user can fix and resubmit; when no such composer
+// remains, the files are dropped.
+func (m *Model) returnSpawnImages(request uilaunch.Request) {
+	switch request.Kind {
+	case uilaunch.Form:
+		if prompt, ok := m.formPromptForGen(request.ComposerGen); ok {
+			prompt.Attachments = append(request.Images, prompt.Attachments...)
+			return
+		}
+	case uilaunch.Quick:
+		if q, ok := m.quickFor(request.ComposerGen); ok {
+			q.Attachments = append(request.Images, q.Attachments...)
+			return
+		}
+	}
+	uiinstall.DropImages(request.Images)
+}
+
+// formWorktreeOn is the worktree state the form shows and spawns with: the
+// toggle, unless the chosen directory cannot host a worktree.
+func (m *Model) formWorktreeOn() bool {
+	capable, known := m.cachedWorktreeCapability(m.formSpawnDir())
+	return m.form().Worktree() && known && capable
+}
+
+// toggleFormWorktree flips the toggle, or explains why the chosen directory
+// rules a worktree out.
+func (m *Model) toggleFormWorktree() tea.Cmd {
+	dir := m.formSpawnDir()
+	capable, known := m.cachedWorktreeCapability(dir)
+	if !known {
+		return m.formWorktreeProbeCmd(true)
+	}
+	if !capable {
+		m.reportErr("worktree sessions need a git repository: " + dir + " is not one")
+		return nil
+	}
+	m.clearErr()
+	f := m.form()
+	f.SetWorktree(!f.Worktree())
+	return nil
+}
+
+func (m *Model) cachedWorktreeCapability(dir string) (bool, bool) {
+	return m.ledger.spawner.CachedWorktree(dir, time.Now())
+}
+
+func (m *Model) requestDirectoryProbe(target uilaunch.ProbeTarget, generation int, dir string, toggle bool, from bool) tea.Cmd {
+	m.gens.worktreeProbe++
+	request := uilaunch.ProbeRequest{
+		Target: target, Generation: generation, Sequence: m.gens.worktreeProbe,
+		Dir: dir, Toggle: toggle, From: from,
+	}
+	return uilaunch.ProbeCmd(request, preflightReader{reader: systemDirectoryPreflight{git: m.services.gitDrv}})
+}
+
+func (m *Model) formWorktreeProbeCmd(toggleOn bool) tea.Cmd {
+	f := m.form()
+	if f.Remote.On() {
+		return nil
+	}
+	return m.requestDirectoryProbe(uilaunch.ProbeForm, m.formPromptFor().Gen, m.formSpawnDir(), toggleOn, f.Worktree())
+}
+
+func (m *Model) quickWorktreeProbeCmd(toggleOn bool) tea.Cmd {
+	if _, remote := m.remoteTarget(); remote {
+		return nil
+	}
+	q := m.quick()
+	return m.requestDirectoryProbe(uilaunch.ProbeQuick, q.Gen, m.quickTargetDir(), toggleOn, q.Worktree())
+}
+
+func (m *Model) handleWorktreeProbe(msg uilaunch.ProbeMsg) (tea.Model, tea.Cmd) {
+	request := msg.Request
+	if request.Sequence != m.gens.worktreeProbe {
+		return m, nil
+	}
+	switch request.Target {
+	case uilaunch.ProbeForm:
+		if _, ok := m.formFor(request.Generation); !ok || m.formSpawnDir() != request.Dir {
+			return m, nil
+		}
+	case uilaunch.ProbeQuick:
+		if _, ok := m.quickFor(request.Generation); !ok || m.quickTargetDir() != request.Dir {
+			return m, nil
+		}
+	default:
+		return m, nil
+	}
+	m.ledger.spawner.RememberWorktree(request.Dir, msg.Capable, time.Now())
+	if !request.Toggle {
+		return m, nil
+	}
+	if !msg.Capable {
+		m.reportErr("worktree sessions need a git repository: " + request.Dir + " is not one")
+		return m, nil
+	}
+	m.clearErr()
+	if request.Target == uilaunch.ProbeForm {
+		if m.form().Worktree() != request.From {
+			return m, nil
+		}
+		m.form().SetWorktree(!request.From)
+	} else {
+		if m.quick().Worktree() != request.From {
+			return m, nil
+		}
+		m.quick().SetWorktree(!request.From)
+	}
+	return m, nil
+}
+
+// forgetWorktreeCapability drops the memo so the next look is a fresh one.
+// Opening the form or the quick bar calls it.
+func (m *Model) forgetWorktreeCapability() { m.ledger.spawner.ForgetWorktree() }

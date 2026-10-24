@@ -2,6 +2,21 @@ package ui
 
 import (
 	"errors"
+	"fmt"
+	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/YoanWai/agent-manager/internal/tmux"
+	"github.com/YoanWai/agent-manager/internal/ui/composer"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
+	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
+	uiquicksend "github.com/YoanWai/agent-manager/internal/ui/quick/send"
+	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
+	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
+	"github.com/charmbracelet/bubbles/textarea"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 	"os"
 	"path/filepath"
 	"slices"
@@ -9,17 +24,6 @@ import (
 	"testing"
 	"time"
 	"unicode/utf8"
-
-	"github.com/YoanWai/agent-manager/internal/keybind"
-	"github.com/YoanWai/agent-manager/internal/ui/composer"
-	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
-	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
-	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
-	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
-	"github.com/muesli/termenv"
 )
 
 // pasteQuickImage runs a full ctrl+v paste against a fake clipboard that
@@ -1310,4 +1314,478 @@ func TestQuickPromptTypesWordsNamedLikeKeys(t *testing.T) {
 	if want := strings.Join(words, " "); m.quick().Input.Value() != want || (m.quick() == nil) || m.rail.Cursor() != 1 {
 		t.Fatalf("prompt %q, open %v, selection %d; want %q typed in an open bar on row 1", m.quick().Input.Value(), (m.quick() != nil), m.rail.Cursor(), want)
 	}
+}
+
+func TestQuickSendUncertainClearsAcceptedDraftWithoutRetry(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "target", t.TempDir(), "")
+	m.selectSessionRow(t, "target")
+	m.openQuickMode()
+	path := tempImage(t, "uncertain.png")
+	m.quick().Attachments = []composer.Attachment{{ID: 1, Path: path}}
+	m.quick().Input.SetValue(composer.Token(1) + " do this once")
+	calls := 0
+	m.services.quickSessionExists = func(*tmux.Driver, string) (bool, error) { return true, nil }
+	m.services.quickSendText = func(*tmux.Driver, string, string) (tmux.SendResult, error) {
+		calls++
+		return tmux.SendResult{Phase: tmux.SendPhasePasteStarted}, errors.New("reply lost")
+	}
+
+	_, cmd := m.submitQuick()
+	m.applyTestMsg(t, cmd())
+	if calls != 1 || m.quick().Input.Value() != "" {
+		t.Fatalf("uncertain send calls=%d draft=%q", calls, m.quick().Input.Value())
+	}
+	if len(m.quick().Attachments) != 0 {
+		t.Fatalf("uncertain send returned images for a possible retry: %+v", m.quick().Attachments)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("uncertain send removed an image the pane may still read: %v", err)
+	}
+	if !strings.Contains(m.errBar.text, "may have reached") || !strings.Contains(m.errBar.text, "was not sent again") {
+		t.Fatalf("uncertain result = %q", m.errBar.text)
+	}
+	stored, err := m.services.store.Get(m.sessionRows()[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.LastPrompt != "" {
+		t.Fatalf("uncertain send recorded confirmed prompt %q", stored.LastPrompt)
+	}
+}
+
+func TestQuickSendDoesNotFabricateMetadataWhenGuardLosesRace(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "target", t.TempDir(), "")
+	captured := m.sessionRows()[0]
+	if err := m.services.store.SetAcked(captured.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	for i := range m.workspace.sessions {
+		if m.workspace.sessions[i].ID == captured.ID {
+			m.workspace.sessions[i].Acked = true
+		}
+	}
+	m.selectSessionRow(t, "target")
+	m.openQuickMode()
+	m.quick().Input.SetValue("race with relaunch")
+	m.services.quickSessionExists = func(*tmux.Driver, string) (bool, error) { return true, nil }
+	m.services.quickSendText = func(*tmux.Driver, string, string) (tmux.SendResult, error) {
+		if err := m.services.store.SetAgentLaunchedAt(captured.ID, time.Now().Add(time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		return tmux.SendResult{Phase: tmux.SendPhaseSubmitted}, nil
+	}
+
+	_, cmd := m.submitQuick()
+	m.applyTestMsg(t, cmd())
+	if m.quick().Input.Value() != "" {
+		t.Fatal("confirmed delivery left an accepted draft available to resend")
+	}
+	if !strings.Contains(m.errBar.text, "prompt sent, but recording it for the row failed") {
+		t.Fatalf("guard failure = %q", m.errBar.text)
+	}
+	for _, session := range m.workspace.sessions {
+		if session.ID == captured.ID && (!session.Acked || session.LastPrompt != "") {
+			t.Fatalf("local projection fabricated rejected metadata: acked=%t prompt=%q", session.Acked, session.LastPrompt)
+		}
+	}
+}
+
+func TestQuickSendStaleRefusalDefersImageCleanup(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	path := tempImage(t, "stale-refusal.png")
+	q := pushQuick(m)
+	request := uiquicksend.SendRequest{
+		ComposerGen: q.Gen + 1,
+		Images:      []composer.Attachment{{ID: 1, Path: path}},
+	}
+	cleanup := m.returnQuickSendImages(request)
+	if cleanup == nil {
+		t.Fatal("stale composer did not return an asynchronous cleanup command")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("Update path removed image before command ran: %v", err)
+	}
+	cleanup()
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("cleanup command left image behind: %v", err)
+	}
+}
+
+func TestBlockedQuickSendsKeepUpdateResponsiveRunFIFOAndDrainOnQuit(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "target", t.TempDir(), "")
+	m.selectSessionRow(t, "target")
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var calls []string
+	m.services.quickSessionExists = func(*tmux.Driver, string) (bool, error) { return true, nil }
+	m.services.quickSendText = func(_ *tmux.Driver, _ string, text string) (tmux.SendResult, error) {
+		calls = append(calls, text)
+		if len(calls) == 1 {
+			close(started)
+			<-release
+		}
+		return tmux.SendResult{Phase: tmux.SendPhaseSubmitted}, nil
+	}
+
+	m.openQuickMode()
+	m.quick().Input.SetValue("first")
+	_, first := m.submitQuick()
+	if first == nil {
+		t.Fatal("first send did not activate its effect")
+	}
+	if _, duplicate := m.submitQuick(); duplicate != nil || m.errBar.text != "this prompt is already being sent" {
+		t.Fatalf("duplicate accepted: cmd=%v err=%q", duplicate != nil, m.errBar.text)
+	}
+	m.openQuickMode()
+	m.quick().Input.SetValue("second")
+	if _, second := m.submitQuick(); second != nil || len(m.effects.Main.Pending) != 1 {
+		t.Fatalf("second send did not queue behind the first: cmd=%v pending=%d", second != nil, len(m.effects.Main.Pending))
+	}
+
+	completed := make(chan tea.Msg, 1)
+	go func() { completed <- first() }()
+	<-started
+	updated, _ := m.Update(struct{}{})
+	if updated != m {
+		close(release)
+		t.Fatal("Update replaced the model while quick transport was blocked")
+	}
+	if _, quit := m.requestQuit(); quit != nil || !m.effects.Quitting {
+		close(release)
+		t.Fatal("quit abandoned the accepted quick-send queue")
+	}
+	close(release)
+	msg := <-completed
+	updated, _ = m.Update(msg)
+	m = updated.(*Model)
+	if got := m.quick().Input.Value(); got != "second" {
+		t.Fatalf("first completion replaced newer composer: %q", got)
+	}
+	if m.effects.Main.Active == nil {
+		t.Fatal("quit drain did not activate the queued quick send")
+	}
+	updated, quit := m.Update(m.effects.Main.Active.Command())
+	m = updated.(*Model)
+	if len(calls) != 2 || calls[0] != "first" || calls[1] != "second" {
+		t.Fatalf("send order = %q", calls)
+	}
+	if m.effects.Main.Active != nil || quit == nil {
+		t.Fatal("queued quick send did not finish the quit drain")
+	}
+}
+
+func TestRetainedQuickPromptReadsTheCurrentGlyphMode(t *testing.T) {
+	m := buildModel(t)
+	m.openQuickMode()
+	m.quick().Input.SetWidth(70)
+	m.quick().Input.SetValue("❯↳⚙ literal input")
+	for _, tc := range []struct {
+		mode presentation.GlyphMode
+		mark string
+	}{{presentation.GlyphModeBasic, ">"}, {presentation.GlyphModeAdvanced, "❯"}, {presentation.GlyphModeBasic, ">"}} {
+		m.prefs.glyphMode = tc.mode
+		got := ansi.Strip(m.quick().Input.View())
+		if !strings.Contains(got, tc.mark+" ❯↳⚙ literal input") {
+			t.Fatalf("retained prompt in %s = %q", tc.mode, got)
+		}
+	}
+}
+
+func TestQuickWorktreeMarkKeepsItsKeyboardAndMouseTarget(t *testing.T) {
+	m := buildModel(t)
+	if err := m.services.store.CreateGroup("work", gitTestRepo(t)); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "work")
+	m.openQuickMode()
+	for _, tc := range []struct {
+		mode presentation.GlyphMode
+		mark string
+	}{{presentation.GlyphModeBasic, "Y"}, {presentation.GlyphModeAdvanced, "⎇"}} {
+		m.prefs.glyphMode = tc.mode
+		for _, width := range []int{80, 120} {
+			m.layout.width, m.layout.height = width, 30
+			m.quick().SetWorktree(false)
+			applyQuickKeyCmd(t, m, tea.KeyMsg{Type: tea.KeyCtrlT})
+			if !m.quickWorktreeOn() {
+				t.Fatal("keyboard did not enable worktree")
+			}
+			frame := ansi.Strip(preparedView(m))
+			if !strings.Contains(frame, tc.mark+" on") {
+				t.Fatalf("%s/%d worktree mark missing:\n%s", tc.mode, width, frame)
+			}
+			found := false
+			for _, hit := range m.quick().Hits() {
+				if hit.Action == uiquick.ClickWorktree {
+					found = true
+					m = leftClick(m, m.quick().OriginX+hit.X0, m.quick().OriginY+hit.Line)
+					break
+				}
+			}
+			if !found || m.quickWorktreeOn() {
+				t.Fatalf("%s/%d worktree click missed", tc.mode, width)
+			}
+		}
+	}
+}
+
+// ctrl+o in the quick prompt puts a saved prompt at the caret as a chip,
+// and the send carries its text where the chip stood.
+func TestQuickSavedPromptChipSendsItsText(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	savePrompt(t, m, "Role", " \n instruct\n")
+	createSession(t, m, "answer-me", t.TempDir(), "")
+	m.selectSessionRow(t, "answer-me")
+	m.openQuickMode()
+	var sent string
+	m.services.quickSendText = func(_ *tmux.Driver, _ string, text string) (tmux.SendResult, error) {
+		sent = text
+		return tmux.SendResult{}, nil
+	}
+	m.quick().Input.SetValue("then ")
+	_, load := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlO})
+	m.runBatch(t, load)
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if got := m.quick().Input.Value(); got != "then "+composer.SavedToken("Role")+" " {
+		t.Fatalf("chip landed as %q", got)
+	}
+	if !strings.Contains(ansi.Strip(m.quick().Composer.View(composerPaint())), "[saved prompt:Role]") {
+		t.Fatal("the chip is not painted")
+	}
+	for _, r := range "go" {
+		m.handleQuickKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	_, cmd := m.submitQuick()
+	m.applyTestMsg(t, cmd())
+	if sent != "then  \n instruct\n go" || m.errBar.text != "" {
+		t.Fatalf("sent %q, err %q", sent, m.errBar.text)
+	}
+	if m.quick().Input.Value() != "" || len(m.quick().Saved) != 0 {
+		t.Fatal("a confirmed send kept the chip")
+	}
+}
+
+// pushQuick puts a bare bar on the stack, for a test that needs one open
+// without the settings and catalog reads openQuickMode starts.
+func pushQuick(m *Model) *uiquick.Surface {
+	q := newQuickSurface(m)
+	q.Composer = composer.Composer{Input: textarea.New()}
+	m.push(q)
+	return q
+}
+
+// The bar opens by its key, holds its draft through a stray click, and
+// closes on esc, letting go of its images.
+func TestQuickBarIsASurface(t *testing.T) {
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 34
+	createSession(t, m, "alpha", t.TempDir(), "")
+	m.selectSessionRow(t, "alpha")
+	m.applyCmd(t, m.openQuickMode())
+	if m.quick() == nil {
+		t.Fatalf("the quick bar did not open, err %q", m.errBar.text)
+	}
+	if mustTop(t, m).Dismissible() {
+		t.Fatal("the bar holds a draft and must not close on a click")
+	}
+	if m.cardOpen() || !m.listClear() {
+		t.Fatal("the bar sits on the list; it is no card over it")
+	}
+	image := tempImage(t, "draft.png")
+	m.quick().Attachments = []composer.Attachment{{ID: 1, Path: image}}
+	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if m.quick() != nil || len(m.surfaces) != 0 {
+		t.Fatal("esc did not close the bar")
+	}
+	if imageExists(t, image) {
+		t.Fatal("closing the bar kept its image")
+	}
+}
+
+// A settings read that lands after its bar closed, or on a newer bar, is
+// dropped.
+func TestStaleQuickCompletionIsDropped(t *testing.T) {
+	m := buildModel(t)
+	m.applyCmd(t, m.openQuickMode())
+	gen := m.quick().Gen
+	m.closeQuick()
+	if _, ok := m.quickFor(gen); ok {
+		t.Fatal("a closed bar still answers its generation")
+	}
+	m.applyCmd(t, m.openQuickMode())
+	if _, ok := m.quickFor(gen); ok {
+		t.Fatal("a newer bar answered an older generation")
+	}
+}
+
+func TestQuickFooterKeepsTheCaretRowOnScreen(t *testing.T) {
+	t.Parallel()
+	for _, full := range []bool{false, true} {
+		m := buildModel(t)
+		seedTwoGroups(t, m)
+		setRailCursor(m, 1)
+		m.prefs.fullLayout = full
+		m.layout.width = 56
+		m.layout.height = 12
+		m.openQuickMode()
+
+		painted := func() string {
+			frame := preparedView(m)
+			if rows := len(strings.Split(frame, "\n")); rows > m.layout.height {
+				t.Fatalf("full layout %v: the frame painted %d rows into a %d row terminal", full, rows, m.layout.height)
+			}
+			return ansi.Strip(frame)
+		}
+		painted()
+		m = applyMsg(t, m, composer.PasteTextMsg{
+			Target: composer.Quick,
+			Gen:    m.quick().Gen,
+			Inner: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(
+				"FIRSTROWMARK " + strings.Repeat("filler word ", 20) + "LASTROWMARK")},
+		})
+		painted()
+
+		for i := 0; i < 40 && !m.quick().CaretOnFirstRow(); i++ {
+			_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyUp})
+			painted()
+		}
+		if !m.quick().CaretOnFirstRow() {
+			t.Fatal("up never reached the prompt's first row")
+		}
+		if !strings.Contains(painted(), "FIRSTROWMARK") {
+			t.Fatalf("full layout %v: the frame clipped the prompt's first row", full)
+		}
+
+		for i := 0; i < 40 && !m.quick().CaretOnLastRow(); i++ {
+			_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyDown})
+			painted()
+		}
+		if !m.quick().CaretOnLastRow() {
+			t.Fatal("down never reached the prompt's last row")
+		}
+		if !strings.Contains(painted(), "LASTROWMARK") {
+			t.Fatalf("full layout %v: the frame clipped the prompt's last row", full)
+		}
+	}
+}
+
+func TestQuickBarMeasuresRowsAtTheWidthItJustSet(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	m.openQuickMode()
+	m.quick().Input.SetWidth(80)
+	m.quick().Input.SetValue("one two three four five six seven eight nine ten")
+	bar := m.viewQuickBar(14, uiquick.BarMaxRows)
+	if rows := len(uitheme.SplitLines(bar)) - 1; rows < 2 {
+		t.Fatalf("rows = %d, want the wrap at width 14, not the previous width", rows)
+	}
+}
+
+func TestQuickFooterFillsEveryBandCell(t *testing.T) {
+	useTrueColor(t)
+	for _, full := range []bool{false, true} {
+		for _, width := range []int{56, 120, 180} {
+			m := buildModel(t)
+			seedTwoGroups(t, m)
+			setRailCursor(m, 1)
+			m.prefs.fullLayout = full
+			m.layout.width = width
+			answered(m, claudeLike, claudeAnswer)
+			m.openQuickMode()
+			m.quick().Input.SetValue("hello 界 " + strings.Repeat("wrapping ", 12))
+			frame := preparedView(m)
+			frameRows := uitheme.SplitLines(frame)
+			if len(frameRows) != m.layout.height || strings.TrimSpace(strings.TrimPrefix(ansi.Strip(frameRows[len(frameRows)-1]), quickEdge)) == "" {
+				t.Fatalf("full %v width %d footer must end on the last terminal row", full, width)
+			}
+			backgrounds, _ := cellColors(frame, m.layout.width, m.layout.height)
+			footerHeight := lipgloss.Height(m.viewFooter())
+			keysHeight := lipgloss.Height(paintLegend([]legendSection{{title: quickModeTitle, pairs: m.quick().Legend(m.quickBarHost())}}, m.layout.width-1).text)
+			if !strings.Contains(ansi.Strip(frameRows[m.layout.height-footerHeight]), "new") {
+				t.Fatalf("full %v width %d footer must begin with the target", full, width)
+			}
+			if m.quick().OriginY != m.layout.height-footerHeight {
+				t.Fatalf("target hit row = %d, want %d", m.quick().OriginY, m.layout.height-footerHeight)
+			}
+			for y := m.layout.height - footerHeight; y < m.layout.height; y++ {
+				if !strings.HasPrefix(ansi.Strip(frameRows[y]), quickEdge) {
+					t.Fatalf("footer row %d must carry the accent edge", y)
+				}
+				if cells := ansi.StringWidth(frameRows[y]); cells != m.layout.width {
+					t.Fatalf("band row %d width = %d, want %d", y, cells, m.layout.width)
+				}
+				for x := 0; x < m.layout.width; x++ {
+					if y == m.layout.height-keysHeight && x >= quickGutter && x < quickGutter+ansi.StringWidth(uitheme.LegendBadgeStyle().Render(quickModeTitle)) {
+						continue
+					}
+					want := uitheme.QuickModeHex()
+					if y > m.layout.height-footerHeight && y < m.layout.height-keysHeight {
+						want = uitheme.BlockHex()
+					}
+					if !sameColor(backgrounds[y][x], hexColor(want)) {
+						t.Fatalf("full %v width %d row %d col %d background = %v, want %s", full, width, y, x, backgrounds[y][x], want)
+					}
+				}
+			}
+		}
+	}
+}
+
+// Resizing a pane for prompt growth makes agents redraw their transcripts.
+func TestQuickBarKeepsPaneHeight(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "sizer", t.TempDir(), "")
+	m.applyCmd(t, m.refreshCmd())
+	sess := railSelectedSession(m)
+	pinned := m.previewPaneHeight()
+
+	rows := make([]string, pinned+10)
+	for i := range rows {
+		rows[i] = fmt.Sprintf("line%03d", i+1)
+	}
+	m.workspace.preview = strings.Join(rows, "\n") + "\n"
+	listed := paintedPreview(m)
+
+	m.openQuickMode()
+	m.quick().Input.SetValue(strings.Repeat("filler word ", 40))
+	if got := m.previewPaneHeight(); got != pinned {
+		t.Fatalf("box height with the quick bar open = %d, want %d", got, pinned)
+	}
+	painted := paintedPreview(m)
+	// The bar's rows come off the top of the view; the pane's live end stays.
+	if oldest := rows[len(rows)-pinned]; !strings.Contains(listed, oldest) || strings.Contains(painted, oldest) {
+		t.Fatalf("the quick bar should have cropped %s off the top:\n%s", oldest, painted)
+	}
+	if newest := rows[len(rows)-1]; !strings.Contains(painted, newest) {
+		t.Fatalf("the quick bar hid the pane's live end (%s):\n%s", newest, painted)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	if got := windowHeight(t, sess.ID); got != pinned {
+		t.Fatalf("pane height with the quick bar open = %d, want %d", got, pinned)
+	}
+
+	m.closeQuick()
+	m.applyCmd(t, m.refreshCmd())
+	if got := windowHeight(t, sess.ID); got != pinned {
+		t.Fatalf("pane height after closing the quick bar = %d, want %d", got, pinned)
+	}
+}
+
+func paintedPreview(m *Model) string {
+	_, rightWidth := m.splitWidths()
+	var painted strings.Builder
+	for _, row := range m.contentLines(rightWidth, m.listBodyHeight()) {
+		painted.WriteString(ansi.Strip(row.text) + "\n")
+	}
+	return painted.String()
 }
