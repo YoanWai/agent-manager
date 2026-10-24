@@ -424,7 +424,7 @@ func TestQuickBarChoiceReachesARemoteSpawn(t *testing.T) {
 	if m.quick().Picking() != uiquick.PickModel {
 		t.Fatalf("ctrl+l on a remote group: picking %d, status %q", m.quick().Picking(), m.errBar.text)
 	}
-	if sheet := ansi.Strip(m.viewQuickBar(120, quickBarMaxRows)); !strings.Contains(sheet, "model for web on box") {
+	if sheet := ansi.Strip(m.viewQuickBar(120, uiquick.BarMaxRows)); !strings.Contains(sheet, "model for web on box") {
 		t.Fatalf("the model list is not painted:\n%s", sheet)
 	}
 	for _, r := range "opu" {
@@ -433,7 +433,7 @@ func TestQuickBarChoiceReachesARemoteSpawn(t *testing.T) {
 	ctrl(tea.KeyEnter)
 	ctrl(tea.KeyCtrlX)
 	ctrl(tea.KeyCtrlX)
-	if target := strings.Split(ansi.Strip(m.viewQuickBar(120, quickBarMaxRows)), "\n")[0]; !strings.Contains(target, "claude · opus · medium") {
+	if target := strings.Split(ansi.Strip(m.viewQuickBar(120, uiquick.BarMaxRows)), "\n")[0]; !strings.Contains(target, "claude · opus · medium") {
 		t.Fatalf("target row: %s", target)
 	}
 	ctrl(tea.KeyCtrlY)
@@ -460,7 +460,7 @@ func TestRemoteSpawnLeavesThisMachinesChoiceAlone(t *testing.T) {
 	m.rail.Focus(boxGroup)
 	m.openQuickMode()
 	setQuickTool(m, slices.Index(quickTools(m), "claude"))
-	if target := strings.Split(ansi.Strip(m.viewQuickBar(120, quickBarMaxRows)), "\n")[0]; strings.Contains(target, "opus") {
+	if target := strings.Split(ansi.Strip(m.viewQuickBar(120, uiquick.BarMaxRows)), "\n")[0]; strings.Contains(target, "opus") {
 		t.Fatalf("a remote bar starts on this machine's choice: %s", target)
 	}
 	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlX})

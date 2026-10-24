@@ -12,6 +12,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
+	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -362,7 +363,7 @@ func TestQuickChipsReflowAcrossWrappedRows(t *testing.T) {
 	m.openQuickMode()
 	m.quick().Attachments = []composer.Attachment{{ID: 1, Path: "/tmp/a.png"}}
 	m.quick().Input.SetWidth(24)
-	m.quick().Input.SetHeight(quickBarMaxRows)
+	m.quick().Input.SetHeight(uiquick.BarMaxRows)
 	m.quick().Input.SetValue(strings.Repeat("word ", 5) + composer.Token(1) + " tail")
 
 	rendered := ansi.Strip(m.quick().Composer.View(composerPaint()))
@@ -926,7 +927,7 @@ func TestQuickWorktreeGatedInNonRepoGroup(t *testing.T) {
 	if !strings.Contains(m.errBar.text, "need a git repository") {
 		t.Fatalf("refused toggle should say why, got %q", m.errBar.text)
 	}
-	if bar := ansi.Strip(m.viewQuickBar(120, quickBarMaxRows)); !strings.Contains(bar, "⎇ no repo") {
+	if bar := ansi.Strip(m.viewQuickBar(120, uiquick.BarMaxRows)); !strings.Contains(bar, "⎇ no repo") {
 		t.Fatalf("quick bar should mark worktree unavailable, got %q", bar)
 	}
 	m.quick().Input.SetValue("do a thing")
@@ -1093,7 +1094,7 @@ func TestQuickUpDownMoveTheCaretBetweenPromptRows(t *testing.T) {
 	setRailCursor(m, 1)
 	m.openQuickMode()
 	m.quick().Input.SetWidth(40)
-	m.quick().Input.SetHeight(quickBarMaxRows)
+	m.quick().Input.SetHeight(uiquick.BarMaxRows)
 	m.quick().Input.SetValue("first\nsecond\nthird")
 
 	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyUp})
@@ -1127,7 +1128,7 @@ func TestQuickUpDownWalkSoftWrappedRows(t *testing.T) {
 	setRailCursor(m, 1)
 	m.openQuickMode()
 	m.quick().Input.SetWidth(12)
-	m.quick().Input.SetHeight(quickBarMaxRows)
+	m.quick().Input.SetHeight(uiquick.BarMaxRows)
 	m.quick().Input.SetValue("one two three four five six seven")
 	if height := m.quick().Input.LineInfo().Height; height < 3 {
 		t.Fatalf("value should soft-wrap over at least 3 rows, got %d", height)
@@ -1180,7 +1181,7 @@ func TestQuickUpStepsOffTheRowWhenAChipIsInTheWay(t *testing.T) {
 	m.openQuickMode()
 	m.quick().Attachments = []composer.Attachment{{ID: 1, Path: "/tmp/a.png"}}
 	m.quick().Input.SetWidth(21)
-	m.quick().Input.SetHeight(quickBarMaxRows)
+	m.quick().Input.SetHeight(uiquick.BarMaxRows)
 	m.quick().Input.SetValue("aaaa bbbb " + composer.Token(1) + " cccc dddd eeee ffff")
 	m.quick().Input.SetCursor(33)
 

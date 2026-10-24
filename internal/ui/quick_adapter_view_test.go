@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
+	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -68,7 +69,7 @@ func TestQuickBarMeasuresRowsAtTheWidthItJustSet(t *testing.T) {
 	m.openQuickMode()
 	m.quick().Input.SetWidth(80)
 	m.quick().Input.SetValue("one two three four five six seven eight nine ten")
-	bar := m.viewQuickBar(14, quickBarMaxRows)
+	bar := m.viewQuickBar(14, uiquick.BarMaxRows)
 	if rows := len(splitLines(bar)) - 1; rows < 2 {
 		t.Fatalf("rows = %d, want the wrap at width 14, not the previous width", rows)
 	}
