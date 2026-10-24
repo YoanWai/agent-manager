@@ -202,8 +202,8 @@ func TestRailFootOnlyShowsComputerStats(t *testing.T) {
 
 func TestRailFootLinesFitWidth(t *testing.T) {
 	m := footModel(t)
-	m.update.latest = "v0.9.9"
-	m.update.url = "https://example.com"
+	m.release.Latest = "v0.9.9"
+	m.release.URL = "https://example.com"
 	for _, width := range []int{40, 55, 70} {
 		for _, line := range m.railFootLines(width) {
 			if got := lipgloss.Width(line); got > width {

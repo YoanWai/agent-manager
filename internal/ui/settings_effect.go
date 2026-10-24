@@ -243,10 +243,10 @@ func (m *Model) applySettingsEffect(job *uieffects.Job, result settingsEffectRes
 	}
 	if request.followUpdate {
 		if err != nil {
-			m.update.applying = false
+			m.release.Applying = false
 			return nil
 		}
-		return m.applyUpdateCmd()
+		return m.release.Apply()
 	}
 	return nil
 }

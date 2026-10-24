@@ -33,6 +33,7 @@ var (
 	quickBoundary       = boundary{"Quick", "/internal/ui/quick", []string{"/internal/ui/quick", "/internal/ui/spawn", "/internal/catalog/value", "/internal/ui/presentation", "/internal/ui/composer", "/internal/clipboard", "/internal/termseq", "/internal/wsl", "/internal/ui/surface", "/internal/ui/pathcomplete"}}
 	dialogsBoundary     = boundary{"Dialogs", "/internal/ui/dialogs", []string{"/internal/ui/dialogs", "/internal/ui/presentation", "/internal/ui/surface", "/internal/ui/pathcomplete", "/internal/ui/spawn", "/internal/catalog/value"}}
 	noticesBoundary     = boundary{"Notices", "/internal/ui/notices", []string{"/internal/ui/notices", "/internal/keybind", "/internal/ui/presentation", "/internal/ui/surface"}}
+	releaseBoundary     = boundary{"Notices release", "/internal/ui/notices/release", []string{"/internal/ui/notices/release", "/internal/ui/notices", "/internal/keybind", "/internal/ui/presentation", "/internal/ui/surface", "/internal/ui/terminal", "/internal/clipboard", "/internal/termseq", "/internal/wsl", "/internal/config", "/internal/deps", "/internal/tmux", "/internal/proctree", "/internal/pwsh", "/internal/update", "/internal/feed", "/internal/atomicfile"}}
 	valueBoundary       = boundary{"Git values", "/internal/git/value", []string{"/internal/git/value"}}
 	catalogBoundary     = boundary{"Catalog values", "/internal/catalog/value", []string{"/internal/catalog/value"}}
 	presentBoundary     = boundary{"Presentation", "/internal/ui/presentation", []string{"/internal/ui/presentation"}}
@@ -49,7 +50,7 @@ var (
 )
 
 func main() {
-	for _, feature := range []boundary{helpBoundary, reviewBoundary, focusBoundary, watchBoundary, railBoundary, settingsBoundary, geometryBoundary, terminalBoundary, effectsBoundary, frameBoundary, launchhintBoundary, previewBoundary, sessionBoundary, startupBoundary, statusbarBoundary, workspaceBoundary, themeBoundary, spawnBoundary, quickBoundary, pathBoundary, composerBoundary, dialogsBoundary, noticesBoundary, connectionsBoundary, surfaceBoundary, diffBoundary, valueBoundary, catalogBoundary, presentBoundary, remoteBoundary} {
+	for _, feature := range []boundary{helpBoundary, reviewBoundary, focusBoundary, watchBoundary, railBoundary, settingsBoundary, geometryBoundary, terminalBoundary, effectsBoundary, frameBoundary, launchhintBoundary, previewBoundary, sessionBoundary, startupBoundary, statusbarBoundary, workspaceBoundary, themeBoundary, spawnBoundary, quickBoundary, pathBoundary, composerBoundary, dialogsBoundary, noticesBoundary, releaseBoundary, connectionsBoundary, surfaceBoundary, diffBoundary, valueBoundary, catalogBoundary, presentBoundary, remoteBoundary} {
 		if err := checkBoundary(feature); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)

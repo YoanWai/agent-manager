@@ -55,7 +55,7 @@ func TestZZShot(t *testing.T) {
 			ToolNames: []string{"claude", "codex", "grok", "opencode"},
 			ToolIndex: 0, ThemeIndex: 1, Field: uisettings.FieldTheme, LayoutSplit: true,
 		}))
-		m.update.version = "0.9.2"
+		m.release.Version = "0.9.2"
 	case "help":
 		m.openHelp()
 	}

@@ -8,6 +8,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
+	uirelease "github.com/YoanWai/agent-manager/internal/ui/notices/release"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -19,7 +20,7 @@ func TestViewLegendPaintsWaitingMessagesWarm(t *testing.T) {
 	t.Cleanup(func() { st.Close() })
 	waiting := &Model{
 		services: services{store: st, keys: keybind.DefaultSession(), listKeys: keybind.DefaultList()},
-		update:   updateInfo{latest: "v0.41.0", version: "0.40.0"},
+		release:  uirelease.State{Latest: "v0.41.0", Version: "0.40.0"},
 	}
 	bar := paintLegend([]legendSection{waiting.viewLegend()}, 160).text
 	if !strings.Contains(bar, legendAlertStyle().Render("M unread")) {
@@ -27,7 +28,7 @@ func TestViewLegendPaintsWaitingMessagesWarm(t *testing.T) {
 	}
 	idle := &Model{
 		services: services{store: st, keys: keybind.DefaultSession(), listKeys: keybind.DefaultList()},
-		update:   updateInfo{version: "0.40.0"},
+		release:  uirelease.State{Version: "0.40.0"},
 		notices:  noticesPanel{Panel: uinotices.NewPanel(map[string]bool{uinotices.Welcome: true, uinotices.ArrowStep: true})},
 	}
 	idleBar := ansi.Strip(paintLegend([]legendSection{idle.viewLegend()}, 160).text)

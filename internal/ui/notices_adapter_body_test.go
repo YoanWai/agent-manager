@@ -19,7 +19,7 @@ func scrollModel(t *testing.T, lines int) *Model {
 	for index := 0; index < lines; index++ {
 		body = append(body, fmt.Sprintf("change line %02d", index))
 	}
-	m.notices.feedMessages = []feed.Message{{ID: "feed-scroll", Banner: "scroll", Title: "Scrollable summary", Body: body}}
+	m.release.Feed = []feed.Message{{ID: "feed-scroll", Banner: "scroll", Title: "Scrollable summary", Body: body}}
 	m.openNotices("feed-scroll")
 	return m
 }
@@ -111,7 +111,7 @@ func TestGrowingTheTerminalKeepsTheLastPageInView(t *testing.T) {
 
 func TestHintNamesHomeAndEndWhenItFits(t *testing.T) {
 	m := modalModel(t)
-	m.notices.feedMessages = []feed.Message{{ID: "feed-wide", Banner: "wide", Title: "Wide", Body: []string{strings.Repeat("wide words ", 12)}}}
+	m.release.Feed = []feed.Message{{ID: "feed-wide", Banner: "wide", Title: "Wide", Body: []string{strings.Repeat("wide words ", 12)}}}
 	m.openNotices("feed-wide")
 	m.layout.width = 180
 	if frame := ansi.Strip(preparedView(m)); !strings.Contains(frame, "pgup/pgdn/home/end scroll") {

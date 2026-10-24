@@ -122,7 +122,7 @@ func TestSymbolsSaveFailureRestoresAndCanRetry(t *testing.T) {
 func TestSettingsUpdateDoesNotStartAfterSymbolsSaveFails(t *testing.T) {
 	m := buildModel(t)
 	m.applyCmd(t, m.openSettings())
-	m.update.latest = "v0.3.0"
+	m.release.Latest = "v0.3.0"
 	m.settingsCard().State().Field = uisettings.FieldGlyphs
 	m.handleSettingsKey(key("right"))
 	m.settingsCard().State().Field = uisettings.FieldUpdate
@@ -132,7 +132,7 @@ func TestSettingsUpdateDoesNotStartAfterSymbolsSaveFails(t *testing.T) {
 	if !request.followUpdate {
 		t.Fatal("update not captured")
 	}
-	if cmd := m.applySettingsEffect(job, settingsEffectResult{}, errors.New("disk full")); cmd != nil || m.update.applying {
+	if cmd := m.applySettingsEffect(job, settingsEffectResult{}, errors.New("disk full")); cmd != nil || m.release.Applying {
 		t.Fatal("failed settings save still starts update")
 	}
 }

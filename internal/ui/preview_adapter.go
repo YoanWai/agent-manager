@@ -40,7 +40,6 @@ const (
 	startupInterval     = 80 * time.Millisecond
 	previewIntervalLive = 300 * time.Millisecond
 	previewIntervalCalm = 1200 * time.Millisecond
-	updateTickInterval  = 10 * time.Minute
 )
 
 // cursorBlinkMsg toggles the focused pane's caret.

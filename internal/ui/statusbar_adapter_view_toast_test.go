@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	uirelease "github.com/YoanWai/agent-manager/internal/ui/notices/release"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -84,7 +85,7 @@ func TestOpenedEditorReadsAsAnOutcome(t *testing.T) {
 // the check ran, so the toast reports it rather than crossing it out.
 func TestUpToDateReadsAsAnOutcome(t *testing.T) {
 	m := shotModel()
-	updated, _ := m.Update(updateAppliedMsg{upToDate: true})
+	updated, _ := m.Update(uirelease.AppliedMsg{UpToDate: true})
 	m = updated.(*Model)
 	if m.errBar.text != "already up to date" {
 		t.Fatalf("status text is %q", m.errBar.text)

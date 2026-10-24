@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
+	uirelease "github.com/YoanWai/agent-manager/internal/ui/notices/release"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -25,7 +26,7 @@ func TestDismissNoticeDeduplicatesPendingEffect(t *testing.T) {
 
 func TestDismissNoticeFailureRestoresNotice(t *testing.T) {
 	st := noticeStore(t)
-	if err := st.SetSetting(dismissedNoticesSetting, `{broken`); err != nil {
+	if err := st.SetSetting(uirelease.DismissedSetting, `{broken`); err != nil {
 		t.Fatalf("seed malformed setting: %v", err)
 	}
 	m := noticeModel(st, "v0.2.0")
@@ -54,7 +55,7 @@ func TestDismissNoticeFailureRestoresNotice(t *testing.T) {
 
 func TestDismissNoticeFailureDoesNotReopenAfterNewerInput(t *testing.T) {
 	st := noticeStore(t)
-	if err := st.SetSetting(dismissedNoticesSetting, `{broken`); err != nil {
+	if err := st.SetSetting(uirelease.DismissedSetting, `{broken`); err != nil {
 		t.Fatalf("seed malformed setting: %v", err)
 	}
 	m := noticeModel(st, "v0.2.0")
@@ -76,7 +77,7 @@ func TestDismissNoticeFailureDoesNotReopenAfterNewerInput(t *testing.T) {
 
 func TestDismissNoticeFailureDuringQuitRestoresWithoutReopening(t *testing.T) {
 	st := noticeStore(t)
-	if err := st.SetSetting(dismissedNoticesSetting, `{broken`); err != nil {
+	if err := st.SetSetting(uirelease.DismissedSetting, `{broken`); err != nil {
 		t.Fatalf("seed malformed setting: %v", err)
 	}
 	m := noticeModel(st, "v0.2.0")

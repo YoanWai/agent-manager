@@ -9,6 +9,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/launch"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
+	uirelease "github.com/YoanWai/agent-manager/internal/ui/notices/release"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	"github.com/YoanWai/agent-manager/internal/update"
 	tea "github.com/charmbracelet/bubbletea"
@@ -160,8 +161,8 @@ func TestSettingsMouseTogglePersists(t *testing.T) {
 
 func TestSettingsShowsVersion(t *testing.T) {
 	m := &Model{
-		layout: layoutState{width: 120, height: 60},
-		update: updateInfo{version: "v0.9.0"},
+		layout:  layoutState{width: 120, height: 60},
+		release: uirelease.State{Version: "v0.9.0"},
 	}
 	m.push(newSettingsSurface(m, settingsState{ToolNames: []string{"claude"}}))
 	out := m.viewSettings()
@@ -177,7 +178,7 @@ func TestSettingsShowsVersion(t *testing.T) {
 		t.Errorf("current version row should hint save, not update: %q", out)
 	}
 	m.settingsCard().State().Field = 0
-	m.update.latest = "v0.9.1"
+	m.release.Latest = "v0.9.1"
 	out = m.viewSettings()
 	if !strings.Contains(out, "v0.9.1") || !strings.Contains(out, "update to") {
 		t.Errorf("settings missing update action: %q", out)
@@ -442,17 +443,17 @@ func TestCLIPickerShowsSupportAction(t *testing.T) {
 func TestSettingsUpdateRowAppliesOnEnter(t *testing.T) {
 	m := footModel(t)
 	m.services.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
-	m.update.version = "v0.2.0"
-	m.update.latest = "v0.3.0"
+	m.release.Version = "v0.2.0"
+	m.release.Latest = "v0.3.0"
 	m.openSettings()
 	m.settingsCard().State().Field = uisettings.FieldUpdate
 
 	applied := ""
-	orig := applyUpdate
-	defer func() { applyUpdate = orig }()
-	origRefresh := refreshUpdatesForApply
-	defer func() { refreshUpdatesForApply = origRefresh }()
-	refreshUpdatesForApply = func(context.Context, string, string) (update.Result, error) {
+	orig := uirelease.ApplyUpdate
+	defer func() { uirelease.ApplyUpdate = orig }()
+	origRefresh := uirelease.RefreshForApply
+	defer func() { uirelease.RefreshForApply = origRefresh }()
+	uirelease.RefreshForApply = func(context.Context, string, string) (update.Result, error) {
 		return update.Result{
 			Latest: "v0.6.0",
 			URL:    "https://github.com/YoanWai/agent-manager/releases/tag/v0.6.0",
@@ -462,7 +463,7 @@ func TestSettingsUpdateRowAppliesOnEnter(t *testing.T) {
 			},
 		}, nil
 	}
-	applyUpdate = func(_ context.Context, tag, execPath string) error {
+	uirelease.ApplyUpdate = func(_ context.Context, tag, execPath string) error {
 		applied = tag + " " + execPath
 		return nil
 	}
@@ -471,7 +472,7 @@ func TestSettingsUpdateRowAppliesOnEnter(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("enter on the update row should start the update")
 	}
-	if !m.update.applying {
+	if !m.release.Applying {
 		t.Fatal("applying should be marked while the download runs")
 	}
 	if !m.settingsOpen() {
@@ -498,19 +499,19 @@ func TestSettingsUpdateRowAppliesOnEnter(t *testing.T) {
 	default:
 		msg = next()
 	}
-	swap, ok := msg.(updateAppliedMsg)
+	swap, ok := msg.(uirelease.AppliedMsg)
 	if !ok {
 		t.Fatalf("update command returned %T", msg)
 	}
-	if swap.err != nil {
-		t.Fatalf("apply: %v", swap.err)
+	if swap.Err != nil {
+		t.Fatalf("apply: %v", swap.Err)
 	}
 	if !strings.HasPrefix(applied, "v0.6.0 ") {
-		t.Fatalf("applyUpdate saw %q", applied)
+		t.Fatalf("uirelease.ApplyUpdate saw %q", applied)
 	}
 	updated, quit := m.Update(swap)
 	m = updated.(*Model)
-	if m.update.applying {
+	if m.release.Applying {
 		t.Fatal("applying should clear once the swap lands")
 	}
 	if m.RestartPath() == "" {
@@ -524,21 +525,21 @@ func TestSettingsUpdateRowAppliesOnEnter(t *testing.T) {
 func TestSettingsUpdateRowIdleWhenCurrent(t *testing.T) {
 	m := footModel(t)
 	m.services.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
-	m.update.version = "v0.3.0"
+	m.release.Version = "v0.3.0"
 	m.openSettings()
 	m.settingsCard().State().Field = uisettings.FieldUpdate
 
-	orig := applyUpdate
-	defer func() { applyUpdate = orig }()
+	orig := uirelease.ApplyUpdate
+	defer func() { uirelease.ApplyUpdate = orig }()
 	called := false
-	applyUpdate = func(context.Context, string, string) error {
+	uirelease.ApplyUpdate = func(context.Context, string, string) error {
 		called = true
 		return nil
 	}
 
 	m.handleSettingsKey(key("enter"))
 	m.drainEffects(t)
-	if called || m.update.applying {
+	if called || m.release.Applying {
 		t.Fatal("enter on version when up to date must not start an update")
 	}
 	if m.settingsOpen() {
@@ -549,23 +550,23 @@ func TestSettingsUpdateRowIdleWhenCurrent(t *testing.T) {
 func TestSettingsUpdateRowApplyFailureSurfaces(t *testing.T) {
 	m := footModel(t)
 	m.services.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
-	m.update.version = "v0.2.0"
-	m.update.latest = "v0.3.0"
+	m.release.Version = "v0.2.0"
+	m.release.Latest = "v0.3.0"
 	m.openSettings()
 	m.settingsCard().State().Field = uisettings.FieldUpdate
 
-	orig := applyUpdate
-	defer func() { applyUpdate = orig }()
-	origRefresh := refreshUpdatesForApply
-	defer func() { refreshUpdatesForApply = origRefresh }()
-	refreshUpdatesForApply = func(context.Context, string, string) (update.Result, error) {
+	orig := uirelease.ApplyUpdate
+	defer func() { uirelease.ApplyUpdate = orig }()
+	origRefresh := uirelease.RefreshForApply
+	defer func() { uirelease.RefreshForApply = origRefresh }()
+	uirelease.RefreshForApply = func(context.Context, string, string) (update.Result, error) {
 		return update.Result{
 			Latest:   "v0.3.0",
 			URL:      "https://github.com/YoanWai/agent-manager/releases/tag/v0.3.0",
 			Releases: []update.Release{uiRelease("v0.3.0", "Newest release"), uiRelease("v0.2.0", "Current release")},
 		}, nil
 	}
-	applyUpdate = func(context.Context, string, string) error {
+	uirelease.ApplyUpdate = func(context.Context, string, string) error {
 		return errors.New("permission denied")
 	}
 
@@ -579,13 +580,13 @@ func TestSettingsUpdateRowApplyFailureSurfaces(t *testing.T) {
 	if next == nil {
 		t.Fatal("no update command after the save completed")
 	}
-	swap, ok := next().(updateAppliedMsg)
+	swap, ok := next().(uirelease.AppliedMsg)
 	if !ok {
 		t.Fatalf("update command returned %T", next())
 	}
 	updated, _ = m.Update(swap)
 	m = updated.(*Model)
-	if m.update.applying {
+	if m.release.Applying {
 		t.Fatal("applying should clear on failure")
 	}
 	if m.RestartPath() != "" {
@@ -599,25 +600,25 @@ func TestSettingsUpdateRowApplyFailureSurfaces(t *testing.T) {
 func TestSettingsUpdateRowPersistsStagedSettings(t *testing.T) {
 	m := footModel(t)
 	m.services.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
-	m.update.version = "v0.2.0"
-	m.update.latest = "v0.3.0"
+	m.release.Version = "v0.2.0"
+	m.release.Latest = "v0.3.0"
 	m.openSettings()
 	m.settingsCard().State().ThemeIndex = (m.settingsCard().State().ThemeIndex + 1) % len(themes)
 	staged := themes[m.settingsCard().State().ThemeIndex].Name
 	m.settingsCard().State().Field = uisettings.FieldUpdate
 
-	orig := applyUpdate
-	defer func() { applyUpdate = orig }()
-	origRefresh := refreshUpdatesForApply
-	defer func() { refreshUpdatesForApply = origRefresh }()
-	refreshUpdatesForApply = func(context.Context, string, string) (update.Result, error) {
+	orig := uirelease.ApplyUpdate
+	defer func() { uirelease.ApplyUpdate = orig }()
+	origRefresh := uirelease.RefreshForApply
+	defer func() { uirelease.RefreshForApply = origRefresh }()
+	uirelease.RefreshForApply = func(context.Context, string, string) (update.Result, error) {
 		return update.Result{
 			Latest:   "v0.3.0",
 			URL:      "https://github.com/YoanWai/agent-manager/releases/tag/v0.3.0",
 			Releases: []update.Release{uiRelease("v0.3.0", "Newest release"), uiRelease("v0.2.0", "Current release")},
 		}, nil
 	}
-	applyUpdate = func(context.Context, string, string) error { return nil }
+	uirelease.ApplyUpdate = func(context.Context, string, string) error { return nil }
 
 	_, cmd := m.handleSettingsKey(key("enter"))
 	if cmd == nil {

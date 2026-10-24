@@ -43,10 +43,10 @@ func (m *Model) viewHeaderRows() []string {
 }
 
 func (m *Model) updateTag() string {
-	if m.update.latest == "" {
+	if m.release.Latest == "" {
 		return ""
 	}
-	return lipgloss.NewStyle().Foreground(colorAccent()).Render(m.glyphs().UpdateGlyph + " " + m.update.latest + " available")
+	return lipgloss.NewStyle().Foreground(colorAccent()).Render(m.glyphs().UpdateGlyph + " " + m.release.Latest + " available")
 }
 
 // titleTopRowWithUpdate keeps the update tag on the top edge when the header

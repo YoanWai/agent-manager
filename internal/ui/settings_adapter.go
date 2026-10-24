@@ -82,7 +82,7 @@ func (m *Model) settingsContext() uisettings.Context {
 		DefaultTool: m.settings.cache.Value(uisettings.DefaultToolSetting),
 		Session:     session,
 		List:        list,
-		UpdateReady: m.update.latest != "",
+		UpdateReady: m.release.Latest != "",
 	}
 }
 
@@ -175,16 +175,16 @@ func (m *Model) applySettingsResult(d *settingsState, result uisettings.Result) 
 	case uisettings.RequestCLISupport:
 		return openLink(requestCLISupportURL()), false
 	case uisettings.ReportBug:
-		return openLink(bugReportURL(m.update.version)), false
+		return openLink(bugReportURL(m.release.Version)), false
 	case uisettings.Update:
-		if m.update.applying {
+		if m.release.Applying {
 			return nil, false
 		}
-		if m.update.latest != "" {
+		if m.release.Latest != "" {
 			// A successful swap quits to exec the new build, so
 			// everything staged this visit must land first; the
 			// update command follows the save's completion.
-			m.update.applying = true
+			m.release.Applying = true
 			m.applySettingsPrefs(d)
 			m.clearErr()
 			return m.captureSettingsSave(d, false, true), false

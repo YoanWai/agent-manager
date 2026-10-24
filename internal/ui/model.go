@@ -17,11 +17,11 @@ import (
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
+	uirelease "github.com/YoanWai/agent-manager/internal/ui/notices/release"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
-	"github.com/YoanWai/agent-manager/internal/update"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -46,7 +46,7 @@ type Model struct {
 	ssh       connectionsFeature
 	layout    layoutState
 	errBar    errBar
-	update    updateInfo
+	release   uirelease.State
 }
 
 // generations fence asynchronous completions against the state that
@@ -185,7 +185,7 @@ func newView(deps Dependencies, version string) (*Model, error) {
 			workDir: initialWorkingDir(),
 			homeDir: initialHomeDir(),
 		},
-		update: updateInfo{version: version},
+		release: uirelease.New(st, version),
 		services: services{
 			cfg:         cfg,
 			lifecycle:   deps.Lifecycle,
@@ -210,18 +210,12 @@ func newView(deps Dependencies, version string) (*Model, error) {
 			booting: true,
 		},
 		notices: noticesPanel{
-			Panel:               uinotices.NewPanel(loadDismissed(st)),
-			whatsNewVersion:     loadWhatsNewVersion(st),
-			whatsNewFromVersion: loadWhatsNewFromVersion(st),
-			configImportError:   configImportError,
+			Panel:             uinotices.NewPanel(uirelease.Dismissed(st)),
+			configImportError: configImportError,
 		},
 	}
 	if deps.ProfileDir != "" {
-		cached := update.Cached(deps.ProfileDir, version)
-		model.update.latest = cached.Latest
-		model.update.url = cached.URL
-		model.update.releases = cached.Releases
-		model.update.checked = len(cached.Releases) > 0
+		model.release.UseCached(deps.ProfileDir)
 	}
 	model.applyCachedSettingsPrefs()
 	model.prefs.terminalBackground = model.storedTerminalBackground()
@@ -232,7 +226,7 @@ func newView(deps Dependencies, version string) (*Model, error) {
 		model.prefs.glyphMode = presentation.GlyphMode(glyph.Value)
 	}
 	model.openStartupNotice()
-	model.indexReleaseRanges()
+	model.release.IndexRanges()
 	model.review = uireview.New(model.defaultSplitLayout())
 	model.prepareFrame()
 	return model, nil
@@ -240,5 +234,5 @@ func newView(deps Dependencies, version string) (*Model, error) {
 
 func (m *Model) Init() tea.Cmd {
 	m.syncPollInput()
-	return tea.Batch(m.syncPaneTheme(), m.refreshExistingSessionUX, m.checkForUpdate, m.checkFeed, m.updateTick(), m.bannerTick(), m.previewTick(), m.startStartupTick(), m.sweepPastes, m.pasteSweepTick(), checkPaneShell)
+	return tea.Batch(m.syncPaneTheme(), m.refreshExistingSessionUX, m.release.Check(), m.release.CheckFeed(), uirelease.Tick(), m.bannerTick(), m.previewTick(), m.startStartupTick(), m.sweepPastes, m.pasteSweepTick(), checkPaneShell)
 }

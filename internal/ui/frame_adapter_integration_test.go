@@ -168,7 +168,7 @@ func TestHiddenHeaderTitlesTopEdgeWithUpdate(t *testing.T) {
 			if tc.focus {
 				m.push(newFocusSurface(m))
 			}
-			m.update.latest = "v9.9.9"
+			m.release.Latest = "v9.9.9"
 			const tag = "↑ v9.9.9 available"
 			if top := ansi.Strip(preparedView(m)); strings.Count(top, tag) != 1 {
 				t.Fatalf("shown header should carry the tag once:\n%s", top)
@@ -190,7 +190,7 @@ func TestHiddenHeaderTitlesTopEdgeWithUpdate(t *testing.T) {
 				t.Fatalf("footer carries the tag too:\n%s", footer)
 			}
 
-			m.update.latest = ""
+			m.release.Latest = ""
 			if top := strings.Split(ansi.Strip(preparedView(m)), "\n")[0]; strings.Contains(top, "available") {
 				t.Fatalf("up to date, the top edge still carries a tag:\n%s", top)
 			}
