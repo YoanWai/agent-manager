@@ -1,12 +1,20 @@
 package ui
 
 import (
+	"maps"
+	"slices"
+	"time"
+
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
+	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	"github.com/YoanWai/agent-manager/internal/ui/pathcomplete"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
+	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
@@ -126,9 +134,9 @@ func (m *Model) spawnStyles() spawn.Styles {
 
 const formPromptMaxRows = 4
 
-// formPromptField opens the New Session form's prompt box, numbered so a
-// clipboard read can tell it from the box that stands there next.
-func (m *Model) formPromptField() composer.Composer {
+// promptField opens a New Session prompt box. The root numbers it as it puts
+// the form on the stack.
+func promptField() composer.Composer {
 	in := textarea.New()
 	in.CharLimit = 2000
 	in.Placeholder = "first task (optional)"
@@ -141,7 +149,7 @@ func (m *Model) formPromptField() composer.Composer {
 	})
 	in.FocusedStyle.CursorLine = lipgloss.NewStyle()
 	composer.HoldOpen(&in)
-	return composer.Composer{Input: in, MaxRows: formPromptMaxRows, Gen: m.nextComposerGen()}
+	return composer.Composer{Input: in, MaxRows: formPromptMaxRows}
 }
 
 // spawnDefaults are the root's launch inputs for a spawn into a group,
@@ -274,9 +282,136 @@ func (m *Model) groupOptions(selectPath string) ([]spawn.GroupOption, int) {
 	for _, session := range m.workspace.sessions {
 		sessionGroups = append(sessionGroups, session.Group)
 	}
-	return spawn.Options(m.workspace.groups, sessionGroups, m.workspace.archivedGroups, selectPath)
+	return spawn.Options(m.workspace.groups, sessionGroups, m.groupEffectivelyArchived, selectPath)
 }
 
 func (m *Model) viewGroupPicker(p *spawn.Picker) string {
 	return spawn.ViewGroupOptions(p.Groups, p.GroupIndex, m.spawnStyles())
+}
+
+func (m *Model) capturedAncestorGroupDir(group string) string {
+	for current := group; current != ""; current = uirail.ParentGroup(current) {
+		if path := m.workspace.groupPaths[current]; path != "" {
+			return path
+		}
+	}
+	return ""
+}
+
+// stepGroupBase moves a group's base choice through auto and the branches of
+// the repo at dir. Branches read within uilaunch.BaseRefsTTL step at once;
+// otherwise the read runs as a command and the step lands with it.
+func (m *Model) stepGroupBase(target uilaunch.BaseTarget, gen uint64, dir, current string, delta int) (string, tea.Cmd) {
+	next, cmd, err := m.ledger.spawner.StepGroupBase(m.services.gitDrv, target, gen, dir, current, delta, time.Now())
+	if err != nil {
+		m.reportErr(err.Error())
+		return current, nil
+	}
+	if cmd == nil {
+		m.clearErr()
+	}
+	return next, cmd
+}
+
+func (m *Model) handleGroupBaseStep(msg uilaunch.BaseStepMsg) {
+	var base *string
+	switch msg.Target {
+	case uilaunch.BaseForm:
+		s, ok := surfaceOf[*uidialogs.GroupFormSurface](m)
+		if !ok || uint64(s.Gen()) != msg.Gen || m.capturedAbsolutePath(s.Dir(), m.capturedGroupDefaultDir(s.Selected())) != msg.Dir {
+			return
+		}
+		base = s.BaseRef()
+	case uilaunch.BaseRename:
+		s, ok := surfaceOf[*uidialogs.RenameSurface](m)
+		if !ok || m.gens.dialog != msg.Gen || m.capturedAbsolutePath(s.Dir(), m.capturedGroupDefaultDir(uirail.ParentGroup(s.Path()))) != msg.Dir {
+			return
+		}
+		base = &s.Base
+	default:
+		return
+	}
+	if msg.Err != nil {
+		m.reportErr("group base: " + msg.Err.Error())
+		return
+	}
+	m.ledger.spawner.KeepBaseRefs(msg.Dir, msg.Refs, time.Now())
+	if *base != msg.From {
+		return
+	}
+	m.clearErr()
+	*base = uilaunch.StepBaseChoice(msg.Refs, msg.From, msg.Delta)
+}
+
+// refreshSpawnBase resolves the base of the worktree spawn the form or the
+// quick bar is set to make, for the form to show, then fetches it unless
+// Settings turned that off. A spawn that beats the fetch branches from the
+// last one.
+func (m *Model) refreshSpawnBase() tea.Cmd {
+	dir, group, ok := m.pendingWorktreeSpawn()
+	if !ok {
+		return nil
+	}
+	key := uilaunch.BaseFetchKey{Dir: dir, Override: m.groupBase(group)}
+	if !m.ledger.spawner.ReserveBaseFetch(key, time.Now()) {
+		return nil
+	}
+	return uilaunch.ResolveBaseCmd(m.services.gitDrv, key)
+}
+
+// recordBaseFetch keeps what a step of a base refresh found, and starts the
+// fetch once the resolving step is in.
+func (m *Model) recordBaseFetch(msg uilaunch.BaseFetchedMsg) tea.Cmd {
+	return m.ledger.spawner.RecordBaseFetch(msg, m.services.gitDrv, m.prefs.baseFetchOff)
+}
+
+// pendingWorktreeSpawn is the directory and group of the worktree spawn the
+// New Session form or the quick bar is set to make.
+func (m *Model) pendingWorktreeSpawn() (dir, group string, ok bool) {
+	switch {
+	case m.form() != nil && m.formWorktreeOn():
+		return m.formSpawnDir(), m.selectedGroupPath(), true
+	case m.quick() != nil && m.quickSpawning() && m.quickWorktreeOn():
+		return m.quickTargetDir(), m.quickTargetGroup(), true
+	}
+	return "", "", false
+}
+
+func (m *Model) groupEffectivelyArchived(path string) bool {
+	return store.EffectivelyArchived(m.workspace.archivedGroups, path)
+}
+
+// applyCachedFormDefaults takes the loaded tool and worktree defaults. A
+// tool the load moved to starts its choice rows over and asks its CLI.
+func (m *Model) applyCachedFormDefaults() tea.Cmd {
+	f := m.form()
+	before := f.Tool()
+	f.SetTools(m.cachedSpawnToolSelection())
+	f.DefaultWorktree(m.cachedSpawnWorktreeDefault(m.selectedGroupPath()))
+	toolName := f.Tool()
+	if toolName == before || toolName == "" {
+		return nil
+	}
+	f.RestartChoice(m.spawnHost())
+	m.syncFormFieldWidths()
+	return m.ensureCatalog(toolName)
+}
+
+// fitChoices refits every open choice to a newer catalog answer.
+func (m *Model) fitChoices() {
+	if f := m.form(); f != nil {
+		f.Choice().Refit(m.spawnHost(), f.Tool())
+	}
+	if q := m.quick(); q != nil {
+		q.Choice().Refit(m.spawnHost(), q.Tool())
+	}
+}
+
+func (m *Model) saveChoiceSetting(key, value string) {
+	m.settings.Cache.ApplyValues([]uisettings.Value{{Key: key, Value: value}})
+	m.enqueueEffect(uilaunch.ChoiceSaveRequest{Key: key, Value: value}, 0, false)
+}
+
+func (m *Model) choiceSettingKeys() []string {
+	return choiceSettingKeys(slices.Sorted(maps.Keys(m.services.cfg.Tools)))
 }

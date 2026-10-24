@@ -1,15 +1,18 @@
 package ui
 
 import (
+	"slices"
 	"strings"
 
-	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
-	uiconnections "github.com/YoanWai/agent-manager/internal/ui/connections"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
+	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	uipreview "github.com/YoanWai/agent-manager/internal/ui/preview"
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
-	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
+	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
@@ -18,26 +21,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
-
-func (m *Model) quickBarHost() quickBarHost { return quickBarHost{spawnHost{m: m}} }
-
-// quickBarHost is the root as the quick bar sees it.
-type quickBarHost struct{ spawnHost }
-
-func (h quickBarHost) Prompt() spawn.Prompt {
-	return promptBox{c: &h.m.quick().Composer, target: composer.Quick, host: h.m}
-}
-
-func (h quickBarHost) Target() (uiquick.Target, bool) {
-	if row, ok := h.m.remoteQuickTarget(); ok {
-		return uiquick.Target{Group: row.Group, IsGroup: row.Kind != uiconnections.SessionRow}, true
-	}
-	entry, ok := h.m.selectedRow()
-	if !ok {
-		return uiquick.Target{}, false
-	}
-	return uiquick.Target{Group: entry.group, IsGroup: entry.isGroup}, true
-}
 
 func (m *Model) openQuickMode() tea.Cmd {
 	return m.openQuickModeWithReader(uipersist.StoreWriter{Store: m.services.store})
@@ -67,7 +50,7 @@ func (m *Model) openQuickModeWithReader(reader uipersist.Reader) tea.Cmd {
 	aim, _ := m.rail.Selected()
 	q := newQuickSurface(m)
 	q.Composer = composer.Composer{Input: input, MaxRows: uiquick.BarMaxRows, Gen: m.nextComposerGen()}
-	q.CloseAfterSend = m.settings.Cache.Value(uisettings.QuickCloseSetting) == "close"
+	q.CloseAfterSend = m.closeAfterSend()
 	q.Aim = quickAim(aim)
 	// The bar is on the stack before its choice starts, so a bar aimed at
 	// a connection starts on the host's defaults.
@@ -86,7 +69,7 @@ func (m *Model) applyCachedQuickDefaults() tea.Cmd {
 	q := m.quick()
 	before := q.Tool()
 	q.SetTools(m.cachedSpawnToolSelection())
-	q.CloseAfterSend = m.settings.Cache.Value(uisettings.QuickCloseSetting) == "close"
+	q.CloseAfterSend = m.closeAfterSend()
 	q.DefaultWorktree(m.cachedSpawnWorktreeDefault(m.quickTargetGroup()))
 	toolName := q.Tool()
 	if toolName == before || toolName == "" {
@@ -97,8 +80,11 @@ func (m *Model) applyCachedQuickDefaults() tea.Cmd {
 }
 
 func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	cmd, request := m.quick().HandleKey(m.quickBarHost(), composer.TypedText(msg))
-	return m, tea.Batch(cmd, m.runQuickRequest(request))
+	q := m.quick()
+	// The move and toggle effects change the bar's own aim and toggle, so
+	// they land before a later repaint reads them.
+	cmd := uiquick.Decide(quickEffects{m}, q, composer.TypedText(msg))
+	return m, cmd
 }
 
 // quickKey types a key into the open bar. A row menu opened on the rail
@@ -112,46 +98,9 @@ func (m *Model) quickKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 	return cmd, true
 }
 
-// runQuickRequest executes what a bar key or click asked of the root.
+// runQuickRequest runs what a bar key or click asked of the root.
 func (m *Model) runQuickRequest(request uiquick.Request) tea.Cmd {
-	switch {
-	case request.Move != 0:
-		return tea.Batch(m.moveCursor(request.Move), m.quickWorktreeProbeCmd(false))
-	case request.Toggle:
-		return m.toggleQuickWorktree()
-	case request.Catalog != "":
-		return m.ensureCatalog(request.Catalog)
-	case request.Close:
-		m.closeQuick()
-	case request.Send:
-		if cmd, taken := m.remoteQuickSend(request.Text); taken {
-			return cmd
-		}
-		entry, _ := m.selectedRow()
-		q := m.quick()
-		if !m.dispatchQuickSend(uiquick.SendRequest{
-			Session:        entry.sess,
-			ComposerGen:    q.Gen,
-			Draft:          q.Input.Value(),
-			Text:           request.Text,
-			CloseAfterSend: q.CloseAfterSend,
-			Images:         q.Attachments,
-		}) {
-			return nil
-		}
-		m.clearErr()
-		return m.nextEffectCmd()
-	case request.Spawn != nil:
-		if cmd, taken := m.remoteQuickSpawn(*request.Spawn); taken {
-			return cmd
-		}
-		return m.dispatchQuickSpawn(m.quickSpawnRequest(*request.Spawn), systemDirectoryPreflight{git: m.services.gitDrv})
-	case request.LoadSaved:
-		return uipersist.SavedCmd(m.services.store, uipersist.SavedForQuick, uint64(m.quick().Gen), 0)
-	case request.InsertSaved != nil:
-		m.quick().InsertSaved(*request.InsertSaved)
-	}
-	return nil
+	return uiquick.Execute(quickEffects{m}, m.quick(), request, nil)
 }
 
 func (m *Model) submitQuick() (tea.Model, tea.Cmd) {
@@ -177,37 +126,6 @@ func (m *Model) dispatchQuickSpawn(request uilaunch.Request, reader directoryPre
 	return m.nextEffectCmd()
 }
 
-// quickSpawnRequest names the session and captures the group's launch
-// inputs, the worktree default it keeps unless toggled, and the prompt's
-// images.
-func (m *Model) quickSpawnRequest(request spawn.Request) uilaunch.Request {
-	name := request.Tool + "-" + newID()[:4]
-	defaults := m.spawnDefaults(request.Group)
-	pickWorktree := defaults.worktree
-	if request.WorktreeSet {
-		pickWorktree = request.Worktree
-	}
-	q := m.quick()
-	return uilaunch.Request{
-		Kind:         uilaunch.Quick,
-		ToolName:     request.Tool,
-		Name:         name,
-		Group:        request.Group,
-		Prompt:       request.Prompt,
-		AutoNamed:    true,
-		PickWorktree: pickWorktree,
-		Choice:       config.Choice(request.Pick),
-		Base:         defaults.base,
-		Pane:         defaults.pane,
-		ComposerGen:  q.Gen,
-		Images:       q.Attachments,
-		Draft:        q.Input.Value(),
-		RawDir:       defaults.groupDir,
-		DirFallbacks: defaults.fallbacks,
-		WantWorktree: pickWorktree,
-	}
-}
-
 // toggleQuickWorktree flips the worktree choice, or probes the target first
 // when its repo verdict is not cached.
 func (m *Model) toggleQuickWorktree() tea.Cmd {
@@ -229,44 +147,6 @@ func (m *Model) toggleQuickWorktree() tea.Cmd {
 	q.SetWorktree(!q.Worktree())
 	return nil
 }
-
-func (m *Model) quickWorktreeOn() bool {
-	if _, remote := m.remoteTarget(); remote {
-		return false
-	}
-	capable, known := m.cachedWorktreeCapability(m.quickTargetDir())
-	if !known || !capable {
-		return false
-	}
-	if q := m.quick(); q.WorktreeTouched() {
-		return q.Worktree()
-	}
-	return m.cachedSpawnWorktreeDefault(m.quickTargetGroup())
-}
-
-// quickTargetGroup is the group a quick spawn would land in: the selected
-// group, or the group holding the selected session.
-func (m *Model) quickTargetGroup() string {
-	entry, ok := m.selectedRow()
-	if !ok {
-		return ""
-	}
-	if entry.isGroup {
-		return entry.group
-	}
-	return entry.sess.Group
-}
-
-// quickTargetDir is the directory a quick spawn would launch in, resolved
-// the same way quickSpawn resolves it.
-func (m *Model) quickTargetDir() string {
-	group := m.quickTargetGroup()
-	return m.capturedAbsolutePath(m.workspace.groupPaths[group], m.capturedGroupDefaultDir(group))
-}
-
-func (m *Model) quickTool() string { return m.quick().Tool() }
-
-func (m *Model) quickSpawning() bool { return m.quick().Spawning(m.quickBarHost()) }
 
 // quickPicking reports a list open over the quick bar's prompt, which owns
 // the wheel the way it owns ↑↓.
@@ -346,4 +226,230 @@ func (m *Model) quickAnswerRow(entry treeRow, name string, width int) string {
 	return uipreview.FitColumns(
 		[]string{label + lipgloss.NewStyle().Foreground(uitheme.ColorBright()).Bold(true).Render(name)},
 		[]string{state + " " + uitheme.ChipStyle().Render(sess.Tool), state, ""}, width)
+}
+
+// quickEffects is the root as a bar key or click reaches it: the work the
+// package decides, run here.
+type quickEffects struct{ m *Model }
+
+func (e quickEffects) ChoiceCaps(toolName string) spawn.Caps {
+	return e.m.spawnHost().ChoiceCaps(toolName)
+}
+
+func (e quickEffects) ChoiceAnswer(toolName string) *spawn.Answer {
+	return e.m.spawnHost().ChoiceAnswer(toolName)
+}
+
+func (e quickEffects) ChoiceSetting(key string) string { return e.m.spawnHost().ChoiceSetting(key) }
+
+func (e quickEffects) SaveChoiceSetting(key, value string) { e.m.saveChoiceSetting(key, value) }
+
+func (e quickEffects) ReportErr(text string) { e.m.reportErr(text) }
+
+func (e quickEffects) ClearErr() { e.m.clearErr() }
+
+func (e quickEffects) ChoiceRemoteHost() string { return e.m.spawnHost().ChoiceRemoteHost() }
+
+func (e quickEffects) Prompt() spawn.Prompt { return e.m.quickBarHost().Prompt() }
+
+func (e quickEffects) Target() (uiquick.Target, bool) { return e.m.quickBarHost().Target() }
+
+func (e quickEffects) MoveCursor(delta int) tea.Cmd {
+	return tea.Batch(e.m.moveCursor(delta), e.m.quickWorktreeProbeCmd(false))
+}
+
+func (e quickEffects) ToggleWorktree() tea.Cmd { return e.m.toggleQuickWorktree() }
+
+func (e quickEffects) Close() { e.m.closeQuick() }
+
+func (e quickEffects) LoadSaved() tea.Cmd {
+	return uipersist.SavedCmd(e.m.services.store, uipersist.SavedForQuick, uint64(e.m.quick().Gen), 0)
+}
+
+func (e quickEffects) Send(text string) tea.Cmd {
+	if cmd, taken := e.m.remoteQuickSend(text); taken {
+		return cmd
+	}
+	entry, _ := e.m.selectedRow()
+	q := e.m.quick()
+	if !e.m.dispatchQuickSend(uiquick.SendRequest{
+		Session:        entry.sess,
+		ComposerGen:    q.Gen,
+		Draft:          q.Input.Value(),
+		Text:           text,
+		CloseAfterSend: q.CloseAfterSend,
+		Images:         q.Attachments,
+	}) {
+		return nil
+	}
+	e.m.clearErr()
+	return e.m.nextEffectCmd()
+}
+
+func (e quickEffects) Spawn(request spawn.Request) tea.Cmd {
+	if cmd, taken := e.m.remoteQuickSpawn(request); taken {
+		return cmd
+	}
+	return e.m.dispatchQuickSpawn(e.m.quickSpawnRequest(request), systemDirectoryPreflight{git: e.m.services.gitDrv})
+}
+
+var _ uiquick.Effects = quickEffects{}
+
+// quickSendRoot is the root as a finished send reaches it.
+type quickSendRoot struct{ m *Model }
+
+func (r quickSendRoot) ClearAccepted(composerGen int, draft string, closeAfterSend bool) {
+	r.m.clearAccepted(composerGen, draft, closeAfterSend)
+}
+
+func (r quickSendRoot) RestoreImages(request uiquick.SendRequest) tea.Cmd {
+	return r.m.returnQuickSendImages(request)
+}
+
+func (r quickSendRoot) ReportErr(text string) { r.m.reportErr(text) }
+
+func (r quickSendRoot) ClearErr() { r.m.clearErr() }
+
+func (r quickSendRoot) MarkSent(session store.Session, text string) {
+	for i := range r.m.workspace.sessions {
+		if uiquick.SameTarget(r.m.workspace.sessions[i], session) {
+			r.m.workspace.sessions[i].Acked = false
+			r.m.workspace.sessions[i].LastPrompt = text
+		}
+	}
+}
+
+var _ uiquick.Root = quickSendRoot{}
+
+func (m *Model) dispatchQuickSend(request uiquick.SendRequest) bool {
+	jobs := append([]*uieffects.Job{m.effects.Main.Active}, m.effects.Main.Pending...)
+	for _, job := range jobs {
+		if job == nil {
+			continue
+		}
+		pending, ok := job.Request.(uiquick.SendRequest)
+		if ok && pending.ComposerGen == request.ComposerGen {
+			m.reportErr("this prompt is already being sent")
+			return false
+		}
+	}
+	request.Images = slices.Clone(request.Images)
+	m.quick().Attachments = nil
+	m.enqueueEffect(request, 0, false)
+	return true
+}
+
+// clearAccepted empties the bar a confirmed send came from, unless its
+// prompt has changed since, and closes it when the setting asks.
+func (m *Model) clearAccepted(composerGen int, draft string, closeAfterSend bool) {
+	if !m.quickHolds(composerGen, draft) {
+		return
+	}
+	q := m.quick()
+	q.Input.SetValue("")
+	q.Saved = nil
+	if closeAfterSend {
+		m.closeQuick()
+	}
+}
+
+func (m *Model) returnQuickSendImages(request uiquick.SendRequest) tea.Cmd {
+	if q, ok := m.quickFor(request.ComposerGen); ok {
+		q.Attachments = append(request.Images, q.Attachments...)
+		return nil
+	}
+	if len(request.Images) == 0 {
+		return nil
+	}
+	images := slices.Clone(request.Images)
+	return func() tea.Msg {
+		uiinstall.DropImages(images)
+		return nil
+	}
+}
+
+// quickServices is the effect services as a quick send reaches them.
+func (s effectServices) quickServices() uiquick.Services {
+	exists, sendText := s.quickSessionExists, s.quickSendText
+	if exists == nil {
+		exists = func(driver *tmux.Driver, id string) (bool, error) { return driver.SessionExists(id) }
+	}
+	if sendText == nil {
+		sendText = func(driver *tmux.Driver, id, text string) (tmux.SendResult, error) {
+			return driver.SendTextResult(id, text)
+		}
+	}
+	return uiquick.Services{Store: s.store, Config: s.cfg, Driver: s.driver, SessionExists: exists, SendText: sendText}
+}
+
+// quickRoot is the root as the bar's surface reaches it: the key the bar
+// types into the list, and the mouse the list keeps under it.
+type quickRoot struct{ *Model }
+
+func (r quickRoot) Key(msg tea.KeyMsg) (tea.Cmd, bool) { return r.quickKey(msg) }
+
+func (r quickRoot) Mouse(msg tea.MouseMsg) tea.Cmd {
+	_, cmd := r.listMouse(msg)
+	return cmd
+}
+
+var _ uiquick.SurfaceRoot = quickRoot{}
+
+// newQuickSurface builds a bar behind the root; the caller fills in its
+// Bar, prompt, aim and origin before putting it on the stack.
+func newQuickSurface(m *Model) *uiquick.Surface {
+	return uiquick.NewSurface(quickRoot{m})
+}
+
+// quick is the open quick bar, nil when none is on the stack.
+func (m *Model) quick() *uiquick.Surface {
+	q, _ := surfaceOf[*uiquick.Surface](m)
+	return q
+}
+
+// quickFor is the open bar when it is the one composerGen came from: a
+// completion lands on the bar that asked or is dropped.
+func (m *Model) quickFor(composerGen int) (*uiquick.Surface, bool) {
+	q := m.quick()
+	return q, q != nil && q.Gen == composerGen
+}
+
+// quickHolds is whether the bar composerGen came from still shows draft
+// and no image: a send or spawn of exactly that prompt may clear it.
+func (m *Model) quickHolds(composerGen int, draft string) bool {
+	q, ok := m.quickFor(composerGen)
+	return ok && q.Input.Value() == draft && len(q.Attachments) == 0
+}
+
+// closeQuick takes the bar off the stack wherever it sits: a send can
+// complete under a card opened since.
+func (m *Model) closeQuick() {
+	for i := len(m.surfaces) - 1; i >= 0; i-- {
+		if q, ok := m.surfaces[i].(*uiquick.Surface); ok {
+			m.surfaces = append(m.surfaces[:i:i], m.surfaces[i+1:]...)
+			q.Leave(m)
+			return
+		}
+	}
+}
+
+// quickAim and railSelection convert the bar's aim: it keeps only the
+// fields that tell a row it was pointed at from the one a refresh moved the
+// cursor to, so quick never names the rail's row type.
+func quickAim(selection uirail.Selection) uiquick.Aim {
+	return uiquick.Aim{
+		Kind:      uint8(selection.Kind),
+		SessionID: selection.SessionID,
+		Group:     selection.Group,
+		Host:      selection.Host,
+	}
+}
+
+func railSelection(aim uiquick.Aim) uirail.Selection {
+	return uirail.Selection{
+		Kind:      uirail.RowKind(aim.Kind),
+		SessionID: aim.SessionID,
+		Group:     aim.Group,
+		Host:      aim.Host,
+	}
 }

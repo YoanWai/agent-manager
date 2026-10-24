@@ -1,25 +1,22 @@
 package ui
 
 import (
-	"maps"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	"github.com/YoanWai/agent-manager/internal/ui/pathcomplete"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
-	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
-	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -50,7 +47,8 @@ func (m *Model) openFormWithReader(reader uipersist.Reader) tea.Cmd {
 		m.reportErr("no CLIs enabled: open settings (s), then CLIs, to turn some on")
 		return nil
 	}
-	prompt := m.formPromptField()
+	prompt := promptField()
+	prompt.Gen = m.nextComposerGen()
 	m.closeQuick()
 	f := m.newSpawnSurface(&prompt, pathcomplete.State{Generation: uint64(prompt.Gen) << 32}, spawn.NewForm(m.spawnHost(), tools, toolIndex), m.groupPickerFor(m.contextGroup()))
 	m.push(f)
@@ -71,6 +69,8 @@ func (m *Model) openFormWithReader(reader uipersist.Reader) tea.Cmd {
 	return tea.Batch(uipersist.LoadCmd(uipersist.LoadRequest{Target: uipersist.FormTarget, Generation: uint64(prompt.Gen), Extra: m.choiceSettingKeys()}, reader), catalog, saved)
 }
 
+// applyCachedFormDefaults takes the loaded tool and worktree defaults. A
+// tool the load moved to starts its choice rows over and asks its CLI.
 func (m *Model) formTool() string { return m.form().Tool() }
 
 // selectedGroupPath is the group the open picker highlights: the move
@@ -342,24 +342,6 @@ func (m *Model) catalogToolActive(tool string) bool {
 	return (m.form() != nil && m.formTool() == tool) || (m.quick() != nil && m.quickTool() == tool)
 }
 
-func (m *Model) fitChoices() {
-	if f := m.form(); f != nil {
-		f.Choice().Refit(m.spawnHost(), f.Tool())
-	}
-	if q := m.quick(); q != nil {
-		q.Choice().Refit(m.spawnHost(), q.Tool())
-	}
-}
-
-func (m *Model) saveChoiceSetting(key, value string) {
-	m.settings.Cache.ApplyValues([]uisettings.Value{{Key: key, Value: value}})
-	m.enqueueEffect(uilaunch.ChoiceSaveRequest{Key: key, Value: value}, 0, false)
-}
-
-func (m *Model) choiceSettingKeys() []string {
-	return choiceSettingKeys(slices.Sorted(maps.Keys(m.services.cfg.Tools)))
-}
-
 // formSpawnRequest names the session, places it in the picked group and
 // captures the group's launch inputs and the prompt's images.
 func (m *Model) formSpawnRequest(request spawn.Request) uilaunch.Request {
@@ -482,9 +464,35 @@ func (m *Model) applyGroupEffect(request uilaunch.GroupRequest, result uilaunch.
 	if s, ok := surfaceOf[*uidialogs.GroupFormSurface](m); ok && s.Gen() == request.Gen && s.Name() == request.DraftName && s.Dir() == request.DraftDir {
 		m.clearErr()
 		m.Pop()
-		m.queueRail(m.rail.RevealGroup(result.Path), 0, true)
+		m.queueRail(m.rail.RevealGroup(result.Path).Mutations, 0, true)
 	}
 	return m.refreshCmd()
+}
+
+// spawnBaseLabel names the ref a worktree spawn into dir branches from, where
+// that choice came from, and how fetching it went.
+func (m *Model) spawnBaseLabel(dir, group string) string {
+	override := m.groupBase(group)
+	fetch := m.ledger.spawner.BaseFetch(dir, override)
+	label := uitheme.ValueStyle().Render(override) + uitheme.SubtleStyle().Render(" (group)")
+	if override == "" {
+		switch {
+		case !fetch.Resolved:
+			label = uitheme.SubtleStyle().Render("…")
+		case fetch.Detected == "":
+			label = uitheme.ValueStyle().Render("HEAD") + uitheme.SubtleStyle().Render(" (auto)")
+		default:
+			label = uitheme.ValueStyle().Render(fetch.Detected) + uitheme.SubtleStyle().Render(" (auto)")
+		}
+	}
+	switch {
+	case m.prefs.baseFetchOff:
+	case !fetch.Fetched:
+		label += uitheme.SubtleStyle().Render(" · fetching")
+	case fetch.Err != nil:
+		label += uitheme.SubtleStyle().Render(" · fetch failed")
+	}
+	return label
 }
 
 // launchServices is the effect services as a spawn reaches them.

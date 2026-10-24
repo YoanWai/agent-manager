@@ -1,13 +1,13 @@
 package ui
 
 import (
-	"os"
-	"strings"
-	"testing"
-
+	"errors"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
+	"os"
+	"strings"
+	"testing"
 )
 
 // applyMsg sends a message through the model and hands back the model it
@@ -229,4 +229,18 @@ func TestComposerTargetsRouteToTheirOwnBox(t *testing.T) {
 func fileGone(path string) bool {
 	_, err := os.Stat(path)
 	return os.IsNotExist(err)
+}
+
+func TestPasteSweepMsgSurfacesErrorOnce(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	m.Update(composer.SweepMsg{Err: errors.New("permission denied")})
+	if m.errBar.text == "" {
+		t.Fatal("a failed sweep must reach the user")
+	}
+	m.errBar.text = ""
+	m.Update(composer.SweepMsg{})
+	if m.errBar.text != "" {
+		t.Fatalf("a clean sweep must stay silent, got %q", m.errBar.text)
+	}
 }

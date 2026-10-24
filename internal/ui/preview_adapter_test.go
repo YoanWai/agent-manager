@@ -1,6 +1,7 @@
 package ui
 
 import (
+	uistartup "github.com/YoanWai/agent-manager/internal/ui/startup"
 	"strings"
 	"testing"
 	"time"

@@ -1,6 +1,10 @@
 package launch
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"time"
+
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
@@ -27,7 +31,7 @@ type Defaults struct {
 func FormRequest(request spawn.Request, name, group string, prompt *composer.Composer, defaults Defaults) Request {
 	autoNamed := name == ""
 	if autoNamed {
-		name = request.Tool + "-" + NewID()[:4]
+		name = request.Tool + "-" + nameSuffix()
 	}
 	return Request{
 		Kind:         Form,
@@ -55,7 +59,7 @@ func QuickRequest(request spawn.Request, prompt *composer.Composer, defaults Def
 	return Request{
 		Kind:         Quick,
 		ToolName:     request.Tool,
-		Name:         request.Tool + "-" + NewID()[:4],
+		Name:         request.Tool + "-" + nameSuffix(),
 		Group:        request.Group,
 		Prompt:       request.Prompt,
 		AutoNamed:    true,
@@ -70,4 +74,13 @@ func QuickRequest(request spawn.Request, prompt *composer.Composer, defaults Def
 		DirFallbacks: defaults.Fallbacks,
 		WantWorktree: request.Worktree,
 	}
+}
+
+// nameSuffix marks a generated session name as this launch's.
+func nameSuffix() string {
+	buf := make([]byte, 4)
+	if _, err := rand.Read(buf); err != nil {
+		return time.Now().Format("150405")
+	}
+	return hex.EncodeToString(buf)[:4]
 }

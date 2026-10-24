@@ -1,14 +1,12 @@
 package spawn
 
-import "github.com/YoanWai/agent-manager/internal/store"
-
 // Options builds the picker's rows from the group tree: the root first, then
 // every live group depth-first, with selectPath highlighted when it is
 // there.
-func Options(groups, sessionGroups []string, archived map[string]bool, selectPath string) ([]GroupOption, int) {
+func Options(groups, sessionGroups []string, archived func(path string) bool, selectPath string) ([]GroupOption, int) {
 	paths := GroupClosure(groups, sessionGroups)
 	for path := range paths {
-		if store.EffectivelyArchived(archived, path) {
+		if archived(path) {
 			delete(paths, path)
 		}
 	}

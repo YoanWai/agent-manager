@@ -1026,7 +1026,7 @@ func TestInstallFinishesARefusedRestore(t *testing.T) {
 	if hintFix(m).Retry == nil {
 		t.Fatal("missing captured restore retry")
 	}
-	m.enqueueEffect(hintFix(m).Retry.(effectRequest), 0, false)
+	m.enqueueEffect(hintFix(m).Retry, 0, false)
 	m.drainEffects(t)
 
 	restored, err := m.services.store.Get(sess.ID)
