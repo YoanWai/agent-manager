@@ -31,6 +31,32 @@ type LaunchRequest struct {
 type LaunchResult struct {
 	Session    store.Session
 	LabelError error
+	// Warning is set when the agent started without the agent-manager tools
+	// because registering them timed out.
+	Warning string
+}
+
+// Caveat is what the UI reports after a launch that went through: a label
+// that could not be set, or an agent that started without the
+// agent-manager tools. It is nil when there is nothing to report.
+func (r LaunchResult) Caveat() error {
+	return caveat(r.LabelError, r.Warning)
+}
+
+// Caveat is what the UI reports after a relaunch that went through; see
+// LaunchResult.Caveat.
+func (r RelaunchResult) Caveat() error {
+	return caveat(r.LabelError, r.Warning)
+}
+
+func caveat(labelErr error, warning string) error {
+	if warning == "" {
+		return labelErr
+	}
+	if labelErr == nil {
+		return errors.New(warning)
+	}
+	return fmt.Errorf("%w; %s", labelErr, warning)
 }
 
 type RelaunchResult struct {
@@ -40,6 +66,9 @@ type RelaunchResult struct {
 	Degraded     bool
 	LabelError   error
 	Conversation string
+	// Warning is set when the agent started without the agent-manager tools
+	// because registering them timed out.
+	Warning string
 }
 
 type ArchiveSelection struct {
@@ -181,7 +210,7 @@ func (l *Lifecycle) Launch(request LaunchRequest) (LaunchResult, error) {
 			l.discardWorktree(sess)
 		}
 	}
-	command, env, err := launch.Environment(l.runtime.Hooks, sess.Tool, request.Tool, request.BaseCommand, sess.ID, sess.Cwd, time.Time{})
+	command, env, warning, err := launch.Environment(l.runtime.Hooks, sess.Tool, request.Tool, request.BaseCommand, sess.ID, sess.Cwd, time.Time{})
 	if err != nil {
 		discard()
 		return LaunchResult{}, err
@@ -221,6 +250,7 @@ func (l *Lifecycle) Launch(request LaunchRequest) (LaunchResult, error) {
 	return LaunchResult{
 		Session:    sess,
 		LabelError: l.setLabel(sess.ID, SessionLabel(sess.Group, sess.Name)),
+		Warning:    warning,
 	}, nil
 }
 
@@ -279,7 +309,7 @@ func (l *Lifecycle) Revive(listed store.Session, pane PaneSize) (RelaunchResult,
 		return sess.AgentSessionID == "" && tool.ResumeByIDCommand != "" && tool.ResumePickerCommand == ""
 	}
 	if l.runtime.Driver.Exists(sess.ID) {
-		relaunched, err := RelaunchInPane(l.runtime.Driver, l.runtime.Store, l.runtime.Hooks, sess.ID, tool)
+		relaunched, warning, err := RelaunchInPane(l.runtime.Driver, l.runtime.Store, l.runtime.Hooks, sess.ID, tool)
 		if err != nil {
 			return RelaunchResult{}, err
 		}
@@ -287,7 +317,7 @@ func (l *Lifecycle) Revive(listed store.Session, pane PaneSize) (RelaunchResult,
 			InjectPickerKeys(l.runtime.Driver, relaunched.ID, tool)
 		}
 		relaunched.Status = status.Starting
-		return RelaunchResult{Session: relaunched, LaunchedAt: relaunched.AgentLaunchedAt, ReusedPane: true, Degraded: degraded(relaunched)}, nil
+		return RelaunchResult{Session: relaunched, LaunchedAt: relaunched.AgentLaunchedAt, ReusedPane: true, Degraded: degraded(relaunched), Warning: warning}, nil
 	}
 	if sess, err = settleBeforeRevive(l.runtime.Store, l.runtime.Hooks, sess, tool.SessionReport, true); err != nil {
 		return RelaunchResult{}, err
@@ -341,7 +371,7 @@ func (l *Lifecycle) Restart(sess store.Session, pane PaneSize) (RelaunchResult, 
 
 func (l *Lifecycle) launchExisting(sess store.Session, tool config.Tool, baseCommand string, pane PaneSize, degraded, injectPicker bool, bind func(time.Time) error) (RelaunchResult, error) {
 	launchedAt := time.Now()
-	command, env, err := launch.Environment(l.runtime.Hooks, sess.Tool, tool, baseCommand, sess.ID, sess.Cwd, launchedAt)
+	command, env, warning, err := launch.Environment(l.runtime.Hooks, sess.Tool, tool, baseCommand, sess.ID, sess.Cwd, launchedAt)
 	if err != nil {
 		return RelaunchResult{}, err
 	}
@@ -372,7 +402,7 @@ func (l *Lifecycle) launchExisting(sess store.Session, tool config.Tool, baseCom
 	}
 	sess.Status = status.Starting
 	sess.AgentLaunchedAt = launchedAt
-	return RelaunchResult{Session: sess, LaunchedAt: launchedAt, Degraded: degraded, LabelError: labelErr}, nil
+	return RelaunchResult{Session: sess, LaunchedAt: launchedAt, Degraded: degraded, LabelError: labelErr, Warning: warning}, nil
 }
 
 // SetArchivedForSession implements agent-command archive policy: one target,

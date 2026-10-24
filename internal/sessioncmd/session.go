@@ -25,6 +25,7 @@ type Session struct {
 	Archived  bool   `json:"archived" jsonschema:"whether the session is archived out of the active list"`
 	Branch    string `json:"branch,omitempty" jsonschema:"branch of the worktree Agent Manager created for this session, when it has one"`
 	Self      bool   `json:"self" jsonschema:"whether this row is the calling session itself"`
+	Warning   string `json:"warning,omitempty" jsonschema:"set when the session started without the agent-manager tools because registering them timed out; it registers again on the next launch"`
 }
 
 type SessionScreen struct {

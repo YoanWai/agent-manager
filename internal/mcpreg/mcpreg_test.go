@@ -1,19 +1,19 @@
 package mcpreg
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
-	"github.com/YoanWai/agent-manager/internal/tmux"
 )
 
 func TestStyleResolution(t *testing.T) {
@@ -182,229 +182,6 @@ func TestApplyCommandCodeSkipsWhenMarkerMatches(t *testing.T) {
 	}
 }
 
-func TestApplyHermesSkipsWhenMarkerMatches(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "mcp-hermes-registered"), []byte("/opt/bin/agent-manager"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	command, err := Apply("hermes", "/opt/bin/agent-manager", dir, "hermes --cli", map[string]string{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if command != "hermes --cli" {
-		t.Fatalf("command = %q", command)
-	}
-}
-
-func TestValidHermesMCPEntry(t *testing.T) {
-	enabled := true
-	entry := hermesMCPEntry{
-		Command: "/opt/bin/agent-manager",
-		Args:    []string{"mcp"},
-		Env:     map[string]string{"AGENT_MANAGER_SESSION_ID": "${AGENT_MANAGER_SESSION_ID}"},
-		Enabled: &enabled,
-	}
-	if !validHermesMCPEntry(entry, "/opt/bin/agent-manager") {
-		t.Fatal("valid Hermes MCP entry was rejected")
-	}
-	entry.Args = []string{"wrong"}
-	if validHermesMCPEntry(entry, "/opt/bin/agent-manager") {
-		t.Fatal("Hermes MCP entry with wrong args was accepted")
-	}
-}
-
-func TestApplyHermesRegistersAndVerifies(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("fake Hermes executable is a shell script")
-	}
-	dir := t.TempDir()
-	bin := filepath.Join(dir, "bin")
-	if err := os.Mkdir(bin, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	script := `#!/bin/sh
-if [ "$1" = "config" ] && [ "$2" = "get" ]; then
-  if [ -n "$AGENT_MANAGER_SESSION_ID" ]; then
-    touch "$FAKE_HERMES_LEAK"
-  fi
-  if [ -f "$FAKE_HERMES_STATE" ]; then
-    printf '{"command":"%s","args":["mcp"],"env":{"AGENT_MANAGER_SESSION_ID":"${AGENT_MANAGER_SESSION_ID}"},"enabled":true}\n' "$FAKE_HERMES_EXE"
-    exit 0
-  fi
-  exit 1
-fi
-if [ "$1" = "mcp" ] && [ "$2" = "add" ]; then
-  printf '%s\n' "$@" > "$FAKE_HERMES_ARGS"
-  sed -n l > "$FAKE_HERMES_STDIN"
-  touch "$FAKE_HERMES_STATE"
-  exit 0
-fi
-exit 1
-`
-	if err := os.WriteFile(filepath.Join(bin, "hermes"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	state := filepath.Join(dir, "registered")
-	argsPath := filepath.Join(dir, "args")
-	stdinPath := filepath.Join(dir, "stdin")
-	leakPath := filepath.Join(dir, "leaked")
-	exe := "/opt/bin/agent-manager"
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("FAKE_HERMES_STATE", state)
-	t.Setenv("FAKE_HERMES_ARGS", argsPath)
-	t.Setenv("FAKE_HERMES_STDIN", stdinPath)
-	t.Setenv("FAKE_HERMES_LEAK", leakPath)
-	t.Setenv("FAKE_HERMES_EXE", exe)
-	t.Setenv(hooks.EnvSessionID, "parent-session")
-
-	command, err := Apply("hermes", exe, dir, "hermes --cli", map[string]string{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if command != "hermes --cli" {
-		t.Fatalf("command = %q", command)
-	}
-	args, err := os.ReadFile(argsPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	wantArgs := "mcp\nadd\nagent-manager\n--command\n/opt/bin/agent-manager\n--env\nAGENT_MANAGER_SESSION_ID=${AGENT_MANAGER_SESSION_ID}\n--args\nmcp\n"
-	if string(args) != wantArgs {
-		t.Fatalf("hermes args = %q want %q", args, wantArgs)
-	}
-	stdin, err := os.ReadFile(stdinPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(stdin) != "$\n" {
-		t.Fatalf("hermes stdin = %q want one blank answer", stdin)
-	}
-	if _, err := os.Stat(leakPath); !os.IsNotExist(err) {
-		t.Fatal("config verification expanded the parent manager's session id")
-	}
-	marker, err := os.ReadFile(filepath.Join(dir, "mcp-hermes-registered"))
-	if err != nil || string(marker) != exe {
-		t.Fatalf("marker = %q err=%v", marker, err)
-	}
-}
-
-func TestApplyHermesReportsMissingMCPSupport(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("fake Hermes executable is a shell script")
-	}
-	bin := t.TempDir()
-	// A Homebrew Hermes without the optional SDK: add refuses to connect,
-	// saves nothing, and still exits 0 after its save-anyway prompt.
-	script := `#!/bin/sh
-if [ "$1" = "config" ]; then
-  exit 1
-fi
-printf "Failed to connect: MCP server 'agent-manager' requires the 'mcp' Python SDK, but it is not installed. Run 'hermes setup' to install MCP support, then retry.\n"
-exit 0
-`
-	if err := os.WriteFile(filepath.Join(bin, "hermes"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-
-	_, err := Apply("hermes", "/opt/bin/agent-manager", t.TempDir(), "hermes --cli", map[string]string{})
-	var unavailable HermesMCPUnavailableError
-	if !errors.As(err, &unavailable) {
-		t.Fatalf("err = %v, want HermesMCPUnavailableError", err)
-	}
-}
-
-func TestPythonFromVersionReadsInstallDirectory(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("fixture is a POSIX install layout")
-	}
-	version := "Hermes Agent v0.20.0 (2026.8.3)\n" +
-		"Install directory: /opt/homebrew/Cellar/hermes-agent/2026.8.3_1/libexec/lib/python3.14/site-packages\n" +
-		"Python: 3.14.7\n" +
-		"OpenAI SDK: 2.24.0\n"
-	want := "/opt/homebrew/Cellar/hermes-agent/2026.8.3_1/libexec/bin/python3"
-	if got := pythonFromVersion(version); got != want {
-		t.Fatalf("pythonFromVersion = %q, want %q", got, want)
-	}
-	bare := "Hermes Agent v0.20.0 (2026.8.3)\nPython: 3.14.7\n"
-	if got := pythonFromVersion(bare); got != "" {
-		t.Fatalf("version output naming no install directory = %q, want no interpreter", got)
-	}
-	elsewhere := "Install directory: /opt/hermes/src\n"
-	if got := pythonFromVersion(elsewhere); got != "" {
-		t.Fatalf("install directory outside a python prefix = %q, want no interpreter", got)
-	}
-}
-
-func fakeHermesEnvironment(t *testing.T, pipStatus int) string {
-	t.Helper()
-	root := t.TempDir()
-	sitePackages := filepath.Join(root, "lib", "python3.14", "site-packages")
-	if err := os.MkdirAll(sitePackages, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Join(root, "bin"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	python := fmt.Sprintf("#!/bin/sh\nexit %d\n", pipStatus)
-	if err := os.WriteFile(filepath.Join(root, "bin", "python3"), []byte(python), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	bin := t.TempDir()
-	hermes := "#!/bin/sh\nprintf 'Install directory: %s\\n' " + tmux.ShellQuote(sitePackages) + "\n"
-	if err := os.WriteFile(filepath.Join(bin, "hermes"), []byte(hermes), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	return filepath.Join(root, "bin", "python3")
-}
-
-func TestHermesPipCommandNamesTheInterpreterThatHasPip(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("fake Hermes executable is a shell script")
-	}
-	python := fakeHermesEnvironment(t, 0)
-	if got, want := hermesPipCommand(), tmux.ShellInvoke(python)+" -m pip install mcp"; got != want {
-		t.Fatalf("hermesPipCommand = %q, want %q", got, want)
-	}
-}
-
-func TestHermesPipCommandIsEmptyWithoutPip(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("fake Hermes executable is a shell script")
-	}
-	fakeHermesEnvironment(t, 1)
-	if got := hermesPipCommand(); got != "" {
-		t.Fatalf("hermesPipCommand = %q, want none when the interpreter has no pip", got)
-	}
-}
-
-func TestEnsureHermesRegisteredWrapsExitError(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("fake Hermes executable is a shell script")
-	}
-	bin := t.TempDir()
-	script := `#!/bin/sh
-if [ "$1" = "config" ]; then
-  exit 1
-fi
-printf 'registration failed\n' >&2
-exit 7
-`
-	if err := os.WriteFile(filepath.Join(bin, "hermes"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	err := ensureHermesRegistered("/opt/bin/agent-manager", t.TempDir())
-	var exitErr *exec.ExitError
-	if !errors.As(err, &exitErr) {
-		t.Fatalf("error should wrap exec.ExitError, got %v", err)
-	}
-	if exitErr.ExitCode() != 7 {
-		t.Fatalf("exit code = %d, want 7", exitErr.ExitCode())
-	}
-}
-
 func TestApplyCommandCodeRegistersWithoutEnvOverlay(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("fake Command Code executable is a shell script")
@@ -506,13 +283,145 @@ exit 1
 }
 
 func TestEnsureRegisteredOnceNamesFailedCommand(t *testing.T) {
-	err := ensureRegisteredOnce("gemini", "/opt/bin/agent-manager", t.TempDir(),
-		exec.Command("agent-manager-no-such-binary"))
+	err := ensureRegisteredOnce(context.Background(), "gemini", "/opt/bin/agent-manager", t.TempDir(),
+		command{name: "agent-manager-no-such-binary"})
 	if err == nil {
 		t.Fatal("expected an error when the add command cannot run")
 	}
 	if !strings.HasPrefix(err.Error(), "gemini mcp add: ") {
 		t.Fatalf("error = %q, want it to name the tool's add command", err)
+	}
+}
+
+// fakeCLI puts an executable named name on PATH that runs script for every
+// invocation, and returns a directory to use as the hooks directory.
+func fakeCLI(t *testing.T, name, script string) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("fake " + name + " executable is a shell script")
+	}
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "bin")
+	if err := os.Mkdir(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\n"+script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return dir
+}
+
+func shortenRegistrationTimeout(t *testing.T, d time.Duration) {
+	t.Helper()
+	saved := RegistrationTimeout
+	RegistrationTimeout = d
+	t.Cleanup(func() { RegistrationTimeout = saved })
+}
+
+func assertNoMarker(t *testing.T, dir, tool string) {
+	t.Helper()
+	if _, err := os.Stat(filepath.Join(dir, "mcp-"+tool+"-registered")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a registration that did not finish left a marker: %v", err)
+	}
+}
+
+// Registration runs on the spawn path, where an add that never returns
+// would hold every later spawn and kill behind it, so it has to become a
+// TimeoutError the caller can start the session through.
+func TestApplyGivesUpOnAnAddThatNeverReturns(t *testing.T) {
+	dir := fakeCLI(t, "grok", "exec sleep 30\n")
+	shortenRegistrationTimeout(t, 300*time.Millisecond)
+
+	start := time.Now()
+	_, err := Apply("grok", "/opt/bin/agent-manager", dir, "grok", map[string]string{})
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Fatalf("Apply waited %s on a hung add", elapsed)
+	}
+	var timeout *TimeoutError
+	if !errors.As(err, &timeout) {
+		t.Fatalf("err = %v, want a *TimeoutError", err)
+	}
+	if timeout.Tool != "grok" {
+		t.Fatalf("timeout names %q, want grok", timeout.Tool)
+	}
+	if want := "grok MCP registration did not finish within 300ms"; err.Error() != want {
+		t.Fatalf("err = %q, want %q", err, want)
+	}
+	assertNoMarker(t, dir, "grok")
+}
+
+// Hermes runs several commands; the limit covers all of them, so three
+// commands that each finish well inside it still use the budget up together.
+func TestApplySharesOneBudgetAcrossTheCommandsOfARegistration(t *testing.T) {
+	dir := fakeCLI(t, "hermes", "sleep 0.3\nexit 0\n")
+	shortenRegistrationTimeout(t, 500*time.Millisecond)
+
+	_, err := Apply("hermes", "/opt/bin/agent-manager", dir, "hermes", map[string]string{})
+	var timeout *TimeoutError
+	if !errors.As(err, &timeout) {
+		t.Fatalf("err = %v, want the whole registration timed out", err)
+	}
+	if timeout.Tool != "hermes" {
+		t.Fatalf("timeout names %q, want hermes", timeout.Tool)
+	}
+	assertNoMarker(t, dir, "hermes")
+}
+
+// A registration that fails without printing anything must not end in a
+// dangling colon.
+func TestApplyErrorHasNoDanglingColonWhenTheCommandPrintsNothing(t *testing.T) {
+	dir := fakeCLI(t, "grok", "exit 3\n")
+
+	_, err := Apply("grok", "/opt/bin/agent-manager", dir, "grok", map[string]string{})
+	if err == nil {
+		t.Fatal("expected the failed add to be an error")
+	}
+	if timedOut(err) {
+		t.Fatalf("a failed add is not a timeout: %v", err)
+	}
+	if got := err.Error(); strings.HasSuffix(strings.TrimSpace(got), ":") {
+		t.Fatalf("err = %q, ends in a colon", got)
+	}
+}
+
+func TestApplyErrorKeepsTheOutputOfAFailedCommand(t *testing.T) {
+	dir := fakeCLI(t, "grok", "echo 'no such scope' >&2\nexit 3\n")
+
+	_, err := Apply("grok", "/opt/bin/agent-manager", dir, "grok", map[string]string{})
+	if err == nil || !strings.HasSuffix(err.Error(), ": no such scope") {
+		t.Fatalf("err = %v, want the command's output at the end", err)
+	}
+}
+
+// An add that exits 0 but leaves a child holding its stdout has
+// registered; waiting for the pipe would hang on the child instead.
+func TestApplyDoesNotWaitOnAChildHoldingTheAddsOutput(t *testing.T) {
+	dir := fakeCLI(t, "grok", "sleep 30 &\nexit 0\n")
+
+	start := time.Now()
+	if _, err := Apply("grok", "/opt/bin/agent-manager", dir, "grok", map[string]string{}); err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(start); elapsed > registrationWaitDelay+5*time.Second {
+		t.Fatalf("Apply waited %s on the add's leftover child", elapsed)
+	}
+	marker, err := os.ReadFile(filepath.Join(dir, "mcp-grok-registered"))
+	if err != nil || string(marker) != "/opt/bin/agent-manager" {
+		t.Fatalf("marker = %q err=%v", marker, err)
+	}
+}
+
+func TestFormatLimit(t *testing.T) {
+	for limit, want := range map[time.Duration]string{
+		2 * time.Minute:        "2m",
+		90 * time.Second:       "90s",
+		20 * time.Second:       "20s",
+		300 * time.Millisecond: "300ms",
+	} {
+		if got := formatLimit(limit); got != want {
+			t.Errorf("formatLimit(%s) = %q, want %q", limit, got, want)
+		}
 	}
 }
 
@@ -890,6 +799,23 @@ func TestApplyNoneLeavesEverything(t *testing.T) {
 	}
 }
 
+// Cursor's enable runs on every launch, not once, so a cursor-agent that
+// never answers would hold every Cursor spawn.
+func TestApplyGivesUpOnACursorEnableThatNeverReturns(t *testing.T) {
+	cursorHome(t)
+	fakeCLI(t, "cursor-agent", "exec sleep 30\n")
+	shortenRegistrationTimeout(t, 300*time.Millisecond)
+
+	start := time.Now()
+	_, err := Apply("cursor", "/opt/bin/agent-manager", t.TempDir(), "cursor-agent", map[string]string{})
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Fatalf("Apply waited %s on a hung enable", elapsed)
+	}
+	if want := "cursor MCP registration did not finish within 300ms"; err == nil || err.Error() != want {
+		t.Fatalf("err = %v, want %q", err, want)
+	}
+}
+
 func TestApplyCursorRefusesAnUnterminatedComment(t *testing.T) {
 	home := cursorHome(t)
 	path := filepath.Join(home, ".cursor", "mcp.json")
@@ -900,7 +826,7 @@ func TestApplyCursorRefusesAnUnterminatedComment(t *testing.T) {
 	if err := os.WriteFile(path, before, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	err := ensureCursorRegistered("/opt/agent-manager")
+	err := ensureCursorRegistered(context.Background(), "/opt/agent-manager")
 	if err == nil || !strings.Contains(err.Error(), "never closes") {
 		t.Fatalf("err = %v, want the unterminated comment refused", err)
 	}

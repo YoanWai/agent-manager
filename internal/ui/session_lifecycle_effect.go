@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
@@ -101,9 +102,7 @@ func (s effectServices) runLifecycle(request lifecycleRequest) (effectResult, er
 					}
 					if err == nil {
 						result.launches = append(result.launches, relaunchedSession{sess.ID, launched})
-						if launched.LabelError != nil {
-							result.warning = launched.LabelError
-						}
+						result.warning = addCaveat(result.warning, launched.Caveat())
 					}
 				}
 				if err != nil {
@@ -152,6 +151,20 @@ func (s effectServices) runLifecycle(request lifecycleRequest) (effectResult, er
 		}
 	}
 	return result, operationErr
+}
+
+// addCaveat keeps every relaunch's caveat for the one status line. Sessions
+// of one tool that time out in the same batch report the same text, once.
+func addCaveat(warning, caveat error) error {
+	switch {
+	case caveat == nil:
+		return warning
+	case warning == nil:
+		return caveat
+	case strings.Contains(warning.Error(), caveat.Error()):
+		return warning
+	}
+	return fmt.Errorf("%w; %w", warning, caveat)
 }
 
 func (s effectServices) validateLifecycleSelection(target confirmTarget) (confirmTarget, error) {
@@ -282,10 +295,20 @@ func (m *Model) applyLifecycleEffect(request lifecycleRequest, result lifecycleE
 	}
 	if err != nil {
 		if target.batch {
-			if result.notice == "" {
-				m.reportErr(err.Error())
+			switch {
+			case result.notice == "":
+				message := err.Error()
+				if result.warning != nil {
+					message += "; " + result.warning.Error()
+				}
+				m.reportErr(message)
+			case result.warning != nil:
+				m.reportErr(result.notice + "; " + result.warning.Error())
 			}
 			return nil
+		}
+		if result.warning != nil {
+			err = fmt.Errorf("%w; %w", err, result.warning)
 		}
 		if target.action == actionRestart || target.action == actionRevive || target.action == actionRestore {
 			retry := request

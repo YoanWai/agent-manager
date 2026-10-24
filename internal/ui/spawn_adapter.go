@@ -395,7 +395,8 @@ func (m *Model) rememberSpawnPick(tool string, worktree bool) {
 }
 
 func (m *Model) buildLaunch(toolName string, tool config.Tool, baseCommand, id, cwd string, launchedAt time.Time) (string, map[string]string, error) {
-	return launch.Environment(m.services.hooks, toolName, tool, baseCommand, id, cwd, launchedAt)
+	command, env, _, err := launch.Environment(m.services.hooks, toolName, tool, baseCommand, id, cwd, launchedAt)
+	return command, env, err
 }
 
 func (m *Model) routeSpawnMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {

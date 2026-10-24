@@ -1,12 +1,18 @@
 package ui
 
 import (
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/mcpreg"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/testenv"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -318,5 +324,97 @@ func TestAStalePollCannotBringAnArchivedGroupBackLive(t *testing.T) {
 	}
 	if got := m.visibleSessions(); len(got) != 0 {
 		t.Fatalf("archived subtree should stay out of the active view, got %v", got)
+	}
+}
+
+// A CLI that stops answering while the manager registers the MCP server must
+// not keep a session from starting: it starts without the agent-manager
+// tools and the status bar says so.
+func TestALaunchWhoseMCPRegistrationTimesOutStartsWithAWarning(t *testing.T) {
+	testenv.SkipPOSIXShell(t)
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "grok"), []byte("#!/bin/sh\nexec sleep 30\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	saved := mcpreg.RegistrationTimeout
+	mcpreg.RegistrationTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { mcpreg.RegistrationTimeout = saved })
+
+	m := buildModel(t)
+	m.services.cfg.Tools["slow-mcp"] = config.Tool{Command: "cat", MCP: "grok", DefaultStatus: status.Idle}
+
+	if err := m.spawnSession("slow-mcp", "slow", t.TempDir(), "", "", false, false, config.Choice{}); err != nil {
+		t.Fatalf("a registration timeout failed the spawn: %v", err)
+	}
+	if len(m.sessionRows()) != 1 {
+		t.Fatalf("rows after the spawn = %d, want the session that started anyway", len(m.sessionRows()))
+	}
+	if !strings.Contains(m.errBar.text, "grok MCP registration did not finish within 300ms") {
+		t.Fatalf("bar = %q, want the timeout reported", m.errBar.text)
+	}
+	if _, err := os.Stat(filepath.Join(m.services.hooks.Dir(), "mcp-grok-registered")); !os.IsNotExist(err) {
+		t.Fatalf("a timed-out registration left a marker: %v", err)
+	}
+}
+
+// A fork whose child started without the agent-manager tools went through:
+// the dialog must not stay open offering a retry that would fork again.
+func TestAForkThatStartedWithoutMCPToolsReportsAWarningNotAFailure(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	m.fork.Open("source", "")
+	m.fork.SetName("child")
+	m.mode = modeFork
+	request := forkRequest{source: store.Session{ID: "source"}, name: "child", gen: m.fork.Gen()}
+
+	m.applyForkEffect(request, forkEffectResult{
+		launched: store.Session{ID: "child"},
+		warning:  errors.New("grok MCP registration did not finish"),
+	}, nil)
+
+	if m.mode != modeList {
+		t.Fatalf("mode = %v, want the fork dialog closed back to the list", m.mode)
+	}
+	if !m.errBar.warned() || !strings.Contains(m.errBar.text, "MCP registration") {
+		t.Fatalf("bar = %q (warned=%v), want the caveat as a warning", m.errBar.text, m.errBar.warned())
+	}
+}
+
+func TestAForkLabelFailureKeepsTheMCPWarning(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+
+	m.applyForkEffect(forkRequest{}, forkEffectResult{
+		launched: store.Session{ID: "child"},
+		warning:  errors.New("MCP registration timed out"),
+	}, errors.New("rename failed"))
+
+	if got := m.errBar.text; !strings.Contains(got, "rename failed") || !strings.Contains(got, "MCP registration timed out") {
+		t.Fatalf("bar = %q, want both the failure and the warning", got)
+	}
+}
+
+func TestARelaunchFailureKeepsTheMCPWarningOfAnEarlierRelaunch(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	request := lifecycleRequest{target: confirmTarget{action: actionRestart}}
+
+	m.applyLifecycleEffect(request, lifecycleEffectResult{warning: errors.New("MCP registration timed out")}, errors.New("second one failed"))
+
+	if got := m.errBar.text; !strings.Contains(got, "second one failed") || !strings.Contains(got, "MCP registration timed out") {
+		t.Fatalf("bar = %q, want both the failure and the warning", got)
+	}
+}
+
+func TestABatchFailureKeepsTheMCPWarningOfAnEarlierRelaunch(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	request := lifecycleRequest{target: confirmTarget{action: actionRevive, batch: true}}
+
+	m.applyLifecycleEffect(request, lifecycleEffectResult{warning: errors.New("MCP registration timed out")}, errors.New("second one failed"))
+
+	if got := m.errBar.text; !strings.Contains(got, "second one failed") || !strings.Contains(got, "MCP registration timed out") {
+		t.Fatalf("bar = %q, want both the failure and the warning", got)
 	}
 }

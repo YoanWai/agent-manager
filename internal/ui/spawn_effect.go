@@ -209,7 +209,7 @@ func (s effectServices) runSpawn(request spawnRequest) (effectResult, error) {
 		return result, err
 	}
 	result.session = launched.Session
-	result.label = launched.LabelError
+	result.label = launched.Caveat()
 	return result, nil
 }
 
@@ -280,7 +280,7 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 			m.focusSession(sess.ID)
 		}
 		if result.label != nil {
-			m.reportErr(result.label.Error())
+			m.reportWarn(result.label.Error())
 		}
 		return m.refreshCmd()
 	}

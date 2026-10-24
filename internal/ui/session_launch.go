@@ -31,7 +31,7 @@ func (m *Model) launchNewSession(sess store.Session, tool config.Tool, baseComma
 	m.ledger.launched[sess.ID] = time.Now()
 	m.workspace.sessions = append(m.workspace.sessions, sess)
 	m.rebuildRows()
-	return launched.LabelError
+	return launched.Caveat()
 }
 
 // forgetLaunch drops a row from the pending set, so a session the user has
