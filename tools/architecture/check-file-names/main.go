@@ -24,8 +24,9 @@ var allowed = map[string]string{
 const uiRoot = "internal/ui"
 
 // packaged are the features with a package of their own under
-// internal/ui. Their root files only adapt it: <feature>_adapter*.go and
-// <feature>_*effect.go, besides the older ones in rootExtras.
+// internal/ui. Their root files only adapt it: <feature>_adapter*.go,
+// <feature>_*effect.go, <feature>_*surface.go and <feature>_*host.go,
+// besides the older ones in rootExtras.
 var packaged = map[string]string{
 	"composer":     "the prompt box adapter: which box a paste lands in, its painters and the pastes sweep",
 	"connections":  "the SSH connections adapter: the client, refreshes, remote rows, preview and routed actions, and their effects",
@@ -143,7 +144,7 @@ func unadaptedSources(dir string) ([]string, error) {
 		if _, ok := packaged[feature]; !ok {
 			continue
 		}
-		if stem == feature+"_adapter" || strings.HasPrefix(stem, feature+"_adapter_") || strings.HasSuffix(stem, "_effect") || strings.HasSuffix(stem, "_surface") {
+		if stem == feature+"_adapter" || strings.HasPrefix(stem, feature+"_adapter_") || strings.HasSuffix(stem, "_effect") || strings.HasSuffix(stem, "_surface") || strings.HasSuffix(stem, "_host") {
 			continue
 		}
 		unadapted = append(unadapted, name)
