@@ -13,13 +13,13 @@ import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
 	uirelease "github.com/YoanWai/agent-manager/internal/ui/notices/release"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
 	"github.com/YoanWai/agent-manager/internal/update"
-
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -1465,3 +1465,189 @@ func TestUpdateTickReArms(t *testing.T) {
 		t.Error("update tick should re-arm the timer and re-check")
 	}
 }
+
+func scrollModel(t *testing.T, lines int) *Model {
+	t.Helper()
+	m := modalModel(t)
+	m.layout.width, m.layout.height = 70, 14
+	var body []string
+	for index := 0; index < lines; index++ {
+		body = append(body, fmt.Sprintf("change line %02d", index))
+	}
+	m.release.Feed = []feed.Message{{ID: "feed-scroll", Banner: "scroll", Title: "Scrollable summary", Body: body}}
+	m.openNotices("feed-scroll")
+	return m
+}
+
+func thumbRows(frame string) []int {
+	var rows []int
+	for index, line := range strings.Split(frame, "\n") {
+		if strings.Contains(line, "┃") {
+			rows = append(rows, index)
+		}
+	}
+	return rows
+}
+
+func TestShortBodyHasNoScrollbar(t *testing.T) {
+	m := scrollModel(t, 2)
+	if frame := ansi.Strip(preparedView(m)); strings.Contains(frame, "┃") {
+		t.Fatalf("a body that fits needs no scrollbar:\n%s", frame)
+	}
+}
+
+func TestWheelScrollsTheMessageBody(t *testing.T) {
+	m := scrollModel(t, 30)
+	before := thumbRows(ansi.Strip(preparedView(m)))
+	m = wheelOnCard(m, tea.MouseButtonWheelDown)
+	if noticesSurfaceOf(m).Panel().Offset() != uinotices.WheelRows {
+		t.Fatalf("wheel down moved %d rows, want %d", noticesSurfaceOf(m).Panel().Offset(), uinotices.WheelRows)
+	}
+	for i := 0; i < 40; i++ {
+		m = wheelOnCard(m, tea.MouseButtonWheelDown)
+	}
+	limit := noticesSurfaceOf(m).Panel().ScrollLimit(m.activeNotices(), m.noticesFrame())
+	if noticesSurfaceOf(m).Panel().Offset() != limit {
+		t.Fatalf("wheel scrolled to %d, want it bounded at %d", noticesSurfaceOf(m).Panel().Offset(), limit)
+	}
+	after := thumbRows(ansi.Strip(preparedView(m)))
+	if len(before) == 0 || len(after) == 0 || after[0] <= before[0] {
+		t.Fatalf("the thumb should have moved down: before %v, after %v", before, after)
+	}
+	m = wheelOnCard(m, tea.MouseButtonWheelUp)
+	if noticesSurfaceOf(m).Panel().Offset() != limit-uinotices.WheelRows {
+		t.Fatalf("wheel up moved to %d, want %d", noticesSurfaceOf(m).Panel().Offset(), limit-uinotices.WheelRows)
+	}
+	if !m.noticesOpen() {
+		t.Fatalf("the wheel must not leave the panel, screen = %v", m.screenID())
+	}
+}
+
+func TestHomeAndEndJumpTheMessageBody(t *testing.T) {
+	m := scrollModel(t, 30)
+	limit := noticesSurfaceOf(m).Panel().ScrollLimit(m.activeNotices(), m.noticesFrame())
+	if limit <= 0 {
+		t.Fatalf("the body should scroll, limit %d", limit)
+	}
+	for _, jump := range []string{"end", "G"} {
+		m.handleKey(key("home"))
+		m.handleKey(key(jump))
+		if noticesSurfaceOf(m).Panel().Offset() != limit {
+			t.Fatalf("%s moved to %d, want the bottom at %d", jump, noticesSurfaceOf(m).Panel().Offset(), limit)
+		}
+	}
+	for _, jump := range []string{"home", "g"} {
+		m.handleKey(key("end"))
+		m.handleKey(key(jump))
+		if noticesSurfaceOf(m).Panel().Offset() != 0 {
+			t.Fatalf("%s moved to %d, want the top", jump, noticesSurfaceOf(m).Panel().Offset())
+		}
+	}
+}
+
+func TestGrowingTheTerminalKeepsTheLastPageInView(t *testing.T) {
+	m := scrollModel(t, 30)
+	m.handleKey(key("end"))
+	bottom := noticesSurfaceOf(m).Panel().Offset()
+	m.layout.height = 20
+	frame := ansi.Strip(preparedView(m))
+	if !strings.Contains(frame, "change line 29") || !strings.Contains(frame, "╰") {
+		t.Fatalf("an offset past the new last page shows that last page inside the frame:\n%s", frame)
+	}
+	limit := noticesSurfaceOf(m).Panel().ScrollLimit(m.activeNotices(), m.noticesFrame())
+	if limit >= bottom {
+		t.Fatalf("the taller terminal should have fewer pages: limit %d, saved offset %d", limit, bottom)
+	}
+	m = wheelOnCard(m, tea.MouseButtonWheelUp)
+	if noticesSurfaceOf(m).Panel().Offset() != limit-uinotices.WheelRows {
+		t.Fatalf("the first scroll up starts from the page on screen: offset %d, want %d", noticesSurfaceOf(m).Panel().Offset(), limit-uinotices.WheelRows)
+	}
+}
+
+func TestHintNamesHomeAndEndWhenItFits(t *testing.T) {
+	m := modalModel(t)
+	m.release.Feed = []feed.Message{{ID: "feed-wide", Banner: "wide", Title: "Wide", Body: []string{strings.Repeat("wide words ", 12)}}}
+	m.openNotices("feed-wide")
+	m.layout.width = 180
+	if frame := ansi.Strip(preparedView(m)); !strings.Contains(frame, "pgup/pgdn/home/end scroll") {
+		t.Fatalf("a wide frame names home and end:\n%s", frame)
+	}
+	m.layout.width = 80
+	frame := ansi.Strip(preparedView(m))
+	for _, want := range []string{"x dismiss", "esc"} {
+		if !strings.Contains(frame, want) {
+			t.Fatalf("a narrow frame keeps %q:\n%s", want, frame)
+		}
+	}
+	if strings.Contains(frame, "home/end") {
+		t.Fatalf("a narrow frame keeps the short hint:\n%s", frame)
+	}
+}
+
+func noticesOverList(t *testing.T) *Model {
+	t.Helper()
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 34
+	// The real trigger: the messages key on the list.
+	m.Update(runeKey("M"))
+	if !m.noticesOpen() {
+		t.Fatal("M did not open the messages modal")
+	}
+	return m
+}
+
+func TestNoticesSurfaceOpensOverTheList(t *testing.T) {
+	m := noticesOverList(t)
+	if !m.onList() || len(m.surfaces) != 1 {
+		t.Fatalf("screen = %v, surfaces = %d", m.screenID(), len(m.surfaces))
+	}
+	m.openNotices("")
+	if len(m.surfaces) != 1 {
+		t.Fatalf("opening an open panel stacked another: %d surfaces", len(m.surfaces))
+	}
+}
+
+func TestNoticesSurfaceClosesOnEscAndBackdrop(t *testing.T) {
+	if !(&uinotices.Surface{}).Dismissible() {
+		t.Fatal("the messages modal must be dismissible")
+	}
+	for name, closeIt := range map[string]func(*Model) *Model{
+		"esc": func(m *Model) *Model { m.Update(namedKey(tea.KeyEsc)); return m },
+		"click off the card": func(m *Model) *Model {
+			return clickBackdrop(t, m)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			m := closeIt(noticesOverList(t))
+			if m.noticesOpen() || m.effects.Quitting {
+				t.Fatalf("modal open = %t, quitting = %t", m.noticesOpen(), m.effects.Quitting)
+			}
+		})
+	}
+}
+
+// A dismissal that fails to persist reopens the modal only while nothing
+// else is on screen; a card the user opened since owns the screen.
+func TestNoticesSurfaceFencesAStaleDismissalCompletion(t *testing.T) {
+	m := noticeModel(noticeStore(t), "v0.2.0")
+	m.layout.width, m.layout.height = 120, 34
+	m.openNotices(uinotices.Welcome)
+	job := &uieffects.Job{Request: uinotices.DismissRequest{ID: uinotices.Welcome, ForegroundGen: m.gens.foreground, Modal: true}}
+
+	m.Pop()
+	m.openHelp()
+	m.applyNoticeDismiss(job, errTest("persist failed"))
+	if m.noticesOpen() {
+		t.Fatal("a failed dismissal opened the modal over another card")
+	}
+
+	m.Pop()
+	m.applyNoticeDismiss(job, errTest("persist failed"))
+	if !m.noticesOpen() {
+		t.Fatal("a failed dismissal did not reopen the modal on a clear list")
+	}
+}
+
+type errTest string
+
+func (e errTest) Error() string { return string(e) }
