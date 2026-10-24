@@ -1,53 +1,27 @@
 package ui
 
 import (
-	"fmt"
-	"strings"
 	"time"
 
-	"github.com/YoanWai/agent-manager/internal/agentsession"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
-	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
-	"github.com/YoanWai/agent-manager/internal/tmux"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	uiapply "github.com/YoanWai/agent-manager/internal/ui/dialogs/apply"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/google/uuid"
-	"maps"
-	"slices"
 )
 
-// forkSessionFileResolver resolves a source conversation's on-disk session
-// file for tools whose fork loads a file instead of an id (gemini), keyed by
-// the tool's session_store. A variable so tests substitute a fixture without
-// touching the real store.
-var forkSessionFileResolver = agentsession.SessionFile
+// forkRequest freezes a fork dialog submission; uiapply.ForkRequest carries
+// it and the package worker runs it.
+type forkRequest struct{ uiapply.ForkRequest }
 
-// forkRequest freezes a fork dialog submission: the source's manager id,
-// conversation and worktree ownership, the typed name, and the dialog
-// generation it was submitted from. The worker re-reads the source by
-// manager id to validate liveness; a source restarted or moved while the
-// fork was queued is refused, and the fork targets the captured identity,
-// not the replacement. A conversation the running agent reported switching
-// to is followed.
-type forkRequest struct {
-	childID     string
-	source      store.Session
-	name        string
-	gen         int
-	knownForkID string
-	pane        sessioncmd.PaneSize
-}
+func (request forkRequest) EffectRequest() {}
 
-func (forkRequest) EffectRequest() {}
-
-func (forkRequest) effectName() string { return "fork" }
+func (request forkRequest) effectName() string { return "fork" }
 
 func (value forkRequest) copied() effectRequest {
-	value.source.PendingInputs = slices.Clone(value.source.PendingInputs)
-	value.source.RelaunchSnapshot = maps.Clone(value.source.RelaunchSnapshot)
+	value.ForkRequest = value.Copy()
 	return value
 }
 
@@ -55,17 +29,8 @@ func (request forkRequest) run(services effectServices) (uieffects.Result, error
 	return services.runFork(request)
 }
 
-// forkEffectResult is the durable outcome of a fork. launched is set once
-// the child session is committed, even when the launch then fails at
-// labeling, so the row applies before the error reports. recordedForkID is
-// the fork the source's own store recorded once the fork keys landed; it
-// survives a failed child launch so a retry reuses it instead of forking
-// the source a second time.
-type forkEffectResult struct {
-	childID        string
-	launched       store.Session
-	recordedForkID string
-}
+// forkEffectResult is the durable outcome of a fork.
+type forkEffectResult struct{ uiapply.ForkOutcome }
 
 func (forkEffectResult) EffectResult() {}
 
@@ -81,150 +46,24 @@ func (m *Model) queueFork(request forkRequest) {
 		if job == nil {
 			continue
 		}
-		if pending, ok := job.Request.(forkRequest); ok && pending.gen == request.gen {
+		if pending, ok := job.Request.(forkRequest); ok && pending.Gen == request.Gen {
 			m.reportErr("this fork is already in progress")
 			return
 		}
 	}
 	w, h := m.paneTargetSize()
-	request.childID = newID()
-	request.pane = sessioncmd.PaneSize{Width: w, Height: h}
+	request.MintChildID()
+	request.Pane = sessioncmd.PaneSize{Width: w, Height: h}
 	m.enqueueEffect(request, 0, false)
 }
 
-// forkInSourceWait bounds how long the tool may take to record the fork once
-// the keys land.
-const forkInSourceWait = 10 * time.Second
-
 func (s effectServices) runFork(request forkRequest) (uieffects.Result, error) {
-	result := forkEffectResult{childID: request.childID}
-	if result.childID == "" {
-		result.childID = newID()
-	}
-	source, err := s.store.Get(request.source.ID)
-	if err != nil {
-		return result, err
-	}
-	// The re-read validates liveness, not identity: the fork targets the
-	// source the dialog confirmed. A restart while queued mints a new
-	// launch, and forking it would open the replacement. A conversation
-	// the agent switched to and reported keeps its launch, and the fork
-	// branches from that one.
-	switched := source.AgentSessionID != request.source.AgentSessionID
-	if switched && source.AgentSessionID != "" && source.AgentLaunchedAt.Equal(request.source.AgentLaunchedAt) {
-		request.source.AgentSessionID = source.AgentSessionID
-		switched = false
-	}
-	if source.Tool != request.source.Tool ||
-		switched ||
-		source.Cwd != request.source.Cwd ||
-		source.WorktreeRepo != request.source.WorktreeRepo ||
-		source.WorktreeBranch != request.source.WorktreeBranch {
-		return result, fmt.Errorf("%s changed while the fork was in the queue; reopen the fork dialog", source.Name)
-	}
-	tool, ok := s.cfg.Tools[request.source.Tool]
-	if !ok {
-		return result, fmt.Errorf("tool %s is no longer configured", request.source.Tool)
-	}
-	if err := validateForkSource(request.source.Tool, tool, request.source); err != nil {
-		return result, err
-	}
-	if !isDir(request.source.Cwd) {
-		return result, fmt.Errorf("working directory no longer exists: %s", request.source.Cwd)
-	}
-	agentID := ""
-	var baseCommand string
-	chosen := tool.WithChoice(source.Choice)
-	forkCommand := chosen.ForkCommand
-	switch {
-	case tool.ForkKeys != "":
-		if request.knownForkID != "" {
-			// A retry after a recorded fork: the keys already landed, and
-			// typing them again would make the source fork a second time.
-			known, ok := agentsession.Forks(tool.SessionStore, request.source.AgentSessionID)
-			if !ok {
-				return result, fmt.Errorf("cannot read the forks %s recorded of %s", source.Tool, source.Name)
-			}
-			if !known[request.knownForkID] {
-				return result, fmt.Errorf("the fork %s %s recorded is gone; fork again", request.knownForkID, source.Name)
-			}
-			agentID = request.knownForkID
-			baseCommand = expandForkCommand(forkCommand, source.AgentSessionID, agentID, request.name, "")
-		} else {
-			earlier, ok := agentsession.Forks(tool.SessionStore, source.AgentSessionID)
-			if !ok {
-				return result, fmt.Errorf("cannot read the forks %s recorded of %s", source.Tool, source.Name)
-			}
-			since := time.Now()
-			if err := s.runner.TypeForkKeys(source, tool.ForkKeys); err != nil {
-				return result, fmt.Errorf("fork key delivery outcome is uncertain; inspect the source before trying again: %w", err)
-			}
-			for deadline := since.Add(forkInSourceWait); time.Now().Before(deadline); time.Sleep(200 * time.Millisecond) {
-				if id, ok := agentsession.ForkedFrom(tool.SessionStore, source.AgentSessionID, since, earlier); ok {
-					agentID = id
-					result.recordedForkID = id
-					baseCommand = expandForkCommand(forkCommand, source.AgentSessionID, id, request.name, "")
-					break
-				}
-			}
-			if agentID == "" {
-				return result, fmt.Errorf("%s did not record a fork of %s; the outcome is uncertain, inspect the source before trying again", source.Tool, source.Name)
-			}
-		}
-	default:
-		switch {
-		case !strings.Contains(tool.ForkCommand, "{new_id}"):
-		case !agentsession.MintsForkID(tool.SessionStore):
-			agentID = uuid.NewString()
-		case request.knownForkID != "":
-			// A retry after a recorded fork: the store already made the
-			// copy, and asking again would fork the source a second time.
-			agentID = request.knownForkID
-		default:
-			id, err := agentsession.Fork(tool.SessionStore, request.source.Cwd, source.AgentSessionID)
-			if err != nil {
-				return result, err
-			}
-			agentID = id
-			result.recordedForkID = id
-		}
-		sessionFile := ""
-		if strings.Contains(tool.ForkCommand, "{session_file}") {
-			resolved, err := forkSessionFileResolver(tool.SessionStore, source.AgentSessionID)
-			if err != nil {
-				return result, err
-			}
-			sessionFile = resolved
-		}
-		baseCommand = expandForkCommand(forkCommand, source.AgentSessionID, agentID, request.name, sessionFile)
-	}
-	forked := store.Session{
-		ID:             result.childID,
-		Name:           request.name,
-		Tool:           request.source.Tool,
-		Cwd:            request.source.Cwd,
-		Group:          request.source.Group,
-		Status:         status.Starting,
-		AgentSessionID: agentID,
-		WorktreeRepo:   request.source.WorktreeRepo,
-		WorktreeBranch: request.source.WorktreeBranch,
-		Choice:         request.source.Choice,
-	}
-	launched, err := s.lifecycle.Launch(sessioncmd.LaunchRequest{
-		Session:     forked,
-		Tool:        chosen,
-		BaseCommand: baseCommand,
-		Pane:        request.pane,
-	})
-	if err != nil {
-		return result, err
-	}
-	result.launched = launched.Session
-	return result, launched.LabelError
+	result, err := uiapply.Fork(s.dialogSources(), s.dialogPathProbe(), request.ForkRequest)
+	return forkEffectResult{result}, err
 }
 
 func (m *Model) applyForkEffect(request forkRequest, result forkEffectResult, err error) tea.Cmd {
-	launched := result.launched
+	launched := result.Launched
 	if launched.ID != "" {
 		m.markFreshPane(launched.ID)
 		if m.ledger.launched == nil {
@@ -241,7 +80,7 @@ func (m *Model) applyForkEffect(request forkRequest, result forkEffectResult, er
 	// outcome to a dialog the user has since opened, including one reopened
 	// on the same source.
 	card, stillOpen := surfaceOf[*uidialogs.ForkSurface](m)
-	stillOpen = stillOpen && card.Gen() == request.gen && card.Name() == request.name
+	stillOpen = stillOpen && card.Gen() == request.Gen && card.Name() == request.Name
 	if err == nil {
 		if stillOpen {
 			m.Pop()
@@ -254,9 +93,9 @@ func (m *Model) applyForkEffect(request forkRequest, result forkEffectResult, er
 		m.reportErr(err.Error())
 		return nil
 	}
-	request.childID = result.childID
-	if result.recordedForkID != "" {
-		request.knownForkID = result.recordedForkID
+	request.ChildID = result.ChildID
+	if result.RecordedForkID != "" {
+		request.KnownForkID = result.RecordedForkID
 	}
 	m.reportLaunchError(err)
 	if fix, ok := m.launchHintFix(); ok {
@@ -266,33 +105,9 @@ func (m *Model) applyForkEffect(request forkRequest, result forkEffectResult, er
 }
 
 func validateForkSource(toolName string, tool config.Tool, source store.Session) error {
-	// A shell has no fork_command either, but saying so names a config
-	// field for a row that was never going to have a conversation.
-	if tool.Shell {
-		return fmt.Errorf("%s is a shell, not an agent - there is no conversation to fork", source.Name)
-	}
-	if tool.ForkCommand == "" {
-		return fmt.Errorf("tool %s has no fork_command", toolName)
-	}
-	usesSessionFile := strings.Contains(tool.ForkCommand, "{session_file}")
-	mintsFork := strings.Contains(tool.ForkCommand, "{new_id}") && agentsession.MintsForkID(tool.SessionStore)
-	if !strings.Contains(tool.ForkCommand, "{id}") && !usesSessionFile && tool.ForkKeys == "" && !mintsFork {
-		return fmt.Errorf("tool %s fork_command must reference the source via {id} or {session_file}", toolName)
-	}
-	if usesSessionFile && !agentsession.SupportsSessionFile(tool.SessionStore) {
-		return fmt.Errorf("tool %s fork_command uses {session_file}, which needs session_store = \"gemini\"", toolName)
-	}
-	if source.AgentSessionID == "" {
-		return fmt.Errorf("%s has no captured conversation id", source.Name)
-	}
-	return nil
+	return uiapply.ValidateForkSource(toolName, tool, source)
 }
 
 func expandForkCommand(template, sourceID, newID, name, sessionFile string) string {
-	return strings.NewReplacer(
-		"{id}", tmux.ShellQuote(sourceID),
-		"{new_id}", tmux.ShellQuote(newID),
-		"{name}", tmux.ShellQuote(name),
-		"{session_file}", tmux.ShellQuote(sessionFile),
-	).Replace(template)
+	return uiapply.ExpandCommand(template, sourceID, newID, name, sessionFile)
 }

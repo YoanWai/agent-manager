@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	uiapply "github.com/YoanWai/agent-manager/internal/ui/dialogs/apply"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -66,7 +67,7 @@ func TestForkKeepsItsDraftAndEscCloses(t *testing.T) {
 // anything nor focuses the new row, and the error still reaches the status.
 func TestStaleForkCompletionIsDropped(t *testing.T) {
 	m := openForkFor(t)
-	request := forkRequest{source: openFork(m).Root().(forkRoot).source, name: openFork(m).Name(), gen: openFork(m).Gen()}
+	request := forkRequest{ForkRequest: uiapply.ForkRequest{Source: openFork(m).Root().(forkRoot).source, Name: openFork(m).Name(), Gen: openFork(m).Gen()}}
 	m.Pop()
 	m.openFork()
 	m.applyForkEffect(request, forkEffectResult{}, nil)

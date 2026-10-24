@@ -4,6 +4,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	uiapply "github.com/YoanWai/agent-manager/internal/ui/dialogs/apply"
 	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
@@ -42,7 +43,7 @@ func (r forkRoot) ReportErr(text string) { r.reportErr(text) }
 func (r forkRoot) ClearErr() { r.clearErr() }
 
 func (r forkRoot) Submit(name string, gen int) tea.Cmd {
-	r.queueFork(forkRequest{source: r.source, name: name, gen: gen})
+	r.queueFork(forkRequest{ForkRequest: uiapply.ForkRequest{Source: r.source, Name: name, Gen: gen}})
 	return r.nextEffectCmd()
 }
 
@@ -65,23 +66,23 @@ func (r renameRoot) WorktreeCount() int { return len(groupWorktreeOptions) }
 
 func (r renameRoot) QueueRename(request uidialogs.RenameRequest, base string) tea.Cmd {
 	if request.Group {
-		return r.queueRename(renameRequest{
-			kind:     renameGroup,
-			oldGroup: request.OldGroup,
-			newGroup: request.NewGroup,
-			rawDir:   request.Dir,
-			draftDir: request.Dir,
-			worktree: groupWorktreeValue(request.Worktree),
-			base:     base,
-			name:     request.Name,
-		})
+		return r.queueRename(renameRequest{Request: uiapply.Request{
+			Kind:     uiapply.Group,
+			OldGroup: request.OldGroup,
+			NewGroup: request.NewGroup,
+			RawDir:   request.Dir,
+			DraftDir: request.Dir,
+			Worktree: groupWorktreeValue(request.Worktree),
+			Base:     base,
+			Name:     request.Name,
+		}})
 	}
-	return r.queueRename(renameRequest{
-		kind:   renameSession,
-		sessID: request.SessionID,
-		name:   request.Name,
-		tool:   request.Tool,
-	})
+	return r.queueRename(renameRequest{Request: uiapply.Request{
+		Kind:   uiapply.Session,
+		SessID: request.SessionID,
+		Name:   request.Name,
+		Tool:   request.Tool,
+	}})
 }
 
 // moveRoot is the root as the move card reaches it. The picker the card

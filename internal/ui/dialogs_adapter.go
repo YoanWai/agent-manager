@@ -8,6 +8,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	uiapply "github.com/YoanWai/agent-manager/internal/ui/dialogs/apply"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
@@ -199,7 +200,7 @@ func (m *Model) openFork() {
 		m.reportErr(fmt.Sprintf("tool %s is no longer configured", entry.sess.Tool))
 		return
 	}
-	if err := validateForkSource(entry.sess.Tool, tool, entry.sess); err != nil {
+	if err := uiapply.ValidateForkSource(entry.sess.Tool, tool, entry.sess); err != nil {
 		m.reportErr(err.Error())
 		return
 	}

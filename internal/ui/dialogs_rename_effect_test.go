@@ -9,6 +9,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/store"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	uiapply "github.com/YoanWai/agent-manager/internal/ui/dialogs/apply"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -239,18 +240,18 @@ func TestRenameGroupPartialFailureReconcilesCommittedStages(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	createSession(t, m, "kid", dir, "old/inner")
 
-	request := renameRequest{
-		kind:     renameGroup,
-		oldGroup: "old",
-		newGroup: "fresh",
-		dir:      dir,
-		name:     "fresh",
-		gen:      7,
-	}
+	request := renameRequest{Request: uiapply.Request{
+		Kind:     uiapply.Group,
+		OldGroup: "old",
+		NewGroup: "fresh",
+		Dir:      dir,
+		Name:     "fresh",
+		Gen:      7,
+	}}
 	job := &uieffects.Job{Request: request}
 	m.push(newRenameSurface(m, uidialogs.RenameGroup("old", "", 0), ""))
 	m.gens.dialog = 7
-	m.applyRenameEffect(job, renameEffectResult{groupRenamed: true}, errRenameStageTwo)
+	m.applyRenameEffect(job, renameEffectResult{Outcome: uiapply.Outcome{GroupRenamed: true}}, errRenameStageTwo)
 
 	groups, _ := m.services.store.Groups()
 	for _, g := range groups {
@@ -689,23 +690,23 @@ func TestRenameWorkerCommitsStagesInOrder(t *testing.T) {
 	createSession(t, m, "kid", dir, "old/inner")
 
 	services := effectServices{store: m.services.store, driver: m.services.tmux, gitDrv: m.services.gitDrv}
-	result, err := services.runRename(renameRequest{
-		kind:     renameGroup,
-		oldGroup: "old",
-		newGroup: "fresh",
-		dir:      dir,
-		worktree: "on",
-		name:     "fresh",
-	})
+	result, err := services.runRename(renameRequest{Request: uiapply.Request{
+		Kind:     uiapply.Group,
+		OldGroup: "old",
+		NewGroup: "fresh",
+		Dir:      dir,
+		Worktree: "on",
+		Name:     "fresh",
+	}})
 	if err != nil {
 		t.Fatalf("worker: %v", err)
 	}
 	r := result.(renameEffectResult)
-	if !r.groupRenamed || !r.pathSet || !r.worktreeSet {
+	if !r.GroupRenamed || !r.PathSet || !r.WorktreeSet {
 		t.Fatalf("stages not all committed: %+v", r)
 	}
-	if len(r.sessions) != 1 || r.sessions[0].Group != "fresh/inner" {
-		t.Fatalf("relabel set wrong: %+v", r.sessions)
+	if len(r.Sessions) != 1 || r.Sessions[0].Group != "fresh/inner" {
+		t.Fatalf("relabel set wrong: %+v", r.Sessions)
 	}
 	groups, _ := m.services.store.Groups()
 	seen := map[string]bool{}

@@ -11,6 +11,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uiapply "github.com/YoanWai/agent-manager/internal/ui/dialogs/apply"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -169,14 +170,14 @@ func TestForkUpdateReturnsWhileWorkerIsBlocked(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 	var signal sync.Once
-	original := forkSessionFileResolver
-	forkSessionFileResolver = func(sessionStore, id string) (string, error) {
+	original := uiapply.ForkSessionFile
+	uiapply.ForkSessionFile = func(sessionStore, id string) (string, error) {
 		signal.Do(func() { close(started) })
 		<-release
 		return "/fork/session.jsonl", nil
 	}
 	defer func() {
-		forkSessionFileResolver = original
+		uiapply.ForkSessionFile = original
 	}()
 
 	m, cmd := submitForkDialog(t, m, "file fork")
@@ -210,11 +211,11 @@ func TestForkUpdateReturnsWhileWorkerIsBlocked(t *testing.T) {
 func TestForkRequestDeepCopiesMutableSourceFields(t *testing.T) {
 	m := &Model{}
 	source := store.Session{ID: "captured", PendingInputs: []string{"first"}, RelaunchSnapshot: map[string]int64{"conversation": 1}}
-	m.enqueueEffect(forkRequest{source: source, name: "child"}, 0, false)
+	m.enqueueEffect(forkRequest{ForkRequest: uiapply.ForkRequest{Source: source, Name: "child"}}, 0, false)
 	source.PendingInputs[0] = "changed"
 	source.RelaunchSnapshot["conversation"] = 2
 	request := m.effects.Main.Pending[0].Request.(forkRequest)
-	if request.source.PendingInputs[0] != "first" || request.source.RelaunchSnapshot["conversation"] != 1 {
+	if request.Source.PendingInputs[0] != "first" || request.Source.RelaunchSnapshot["conversation"] != 1 {
 		t.Fatal("request retained mutable source aliases")
 	}
 }
@@ -533,7 +534,7 @@ func TestForkKeysRetryDoesNotForkSourceTwice(t *testing.T) {
 		t.Fatalf("screen = %v, want the launch hint dialog for the missing binary", m.screenID())
 	}
 	request, ok := hintFix(m).Retry.(forkRequest)
-	if !ok || request.knownForkID != writeOnce {
+	if !ok || request.KnownForkID != writeOnce {
 		t.Fatalf("captured retry = %+v, want it to reuse the recorded fork %q", request, writeOnce)
 	}
 
@@ -554,8 +555,8 @@ func TestForkKeysRetryDoesNotForkSourceTwice(t *testing.T) {
 	if forked.ID == "" {
 		t.Fatalf("retry did not launch the fork: err=%q", m.errBar.text)
 	}
-	if forked.ID != request.childID {
-		t.Fatalf("retry changed child identity: %s != %s", forked.ID, request.childID)
+	if forked.ID != request.ChildID {
+		t.Fatalf("retry changed child identity: %s != %s", forked.ID, request.ChildID)
 	}
 	if forked.AgentSessionID != writeOnce {
 		t.Fatalf("forked conversation = %q, want the recorded %q; the keys were typed again", forked.AgentSessionID, writeOnce)
@@ -596,8 +597,8 @@ func TestForkCompletionClearsStatusFilter(t *testing.T) {
 func TestForkRepeatedSubmitKeepsOneAcceptedJob(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
-	m.queueFork(forkRequest{source: store.Session{ID: "source"}, name: "child", gen: 1})
-	m.queueFork(forkRequest{source: store.Session{ID: "source"}, name: "child", gen: 1})
+	m.queueFork(forkRequest{ForkRequest: uiapply.ForkRequest{Source: store.Session{ID: "source"}, Name: "child", Gen: 1}})
+	m.queueFork(forkRequest{ForkRequest: uiapply.ForkRequest{Source: store.Session{ID: "source"}, Name: "child", Gen: 1}})
 	if len(m.effects.Main.Pending) != 1 {
 		t.Fatal("repeat submit accepted a second fork")
 	}

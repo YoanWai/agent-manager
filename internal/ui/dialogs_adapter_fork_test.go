@@ -16,6 +16,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/testfixture"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uiapply "github.com/YoanWai/agent-manager/internal/ui/dialogs/apply"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -376,12 +377,12 @@ func TestOpenForkRejectsSessionFileWithoutAFileBackedStore(t *testing.T) {
 	loadStoredRows(t, m)
 	m.selectSessionRow(t, "source")
 
-	previousResolver := forkSessionFileResolver
-	forkSessionFileResolver = func(sessionStore, id string) (string, error) {
+	previousResolver := uiapply.ForkSessionFile
+	uiapply.ForkSessionFile = func(sessionStore, id string) (string, error) {
 		t.Errorf("resolver called for session store %q, id %q", sessionStore, id)
 		return "", nil
 	}
-	t.Cleanup(func() { forkSessionFileResolver = previousResolver })
+	t.Cleanup(func() { uiapply.ForkSessionFile = previousResolver })
 
 	tool := m.services.cfg.Tools["claude"]
 	if tool.SessionStore != "" {
@@ -555,8 +556,8 @@ func TestForkGeminiResolvesSessionFile(t *testing.T) {
 	m.selectSessionRow(t, "source")
 
 	const sourceFile = "/store/gemini/session-source.jsonl"
-	previousResolver := forkSessionFileResolver
-	forkSessionFileResolver = func(sessionStore, id string) (string, error) {
+	previousResolver := uiapply.ForkSessionFile
+	uiapply.ForkSessionFile = func(sessionStore, id string) (string, error) {
 		if sessionStore != "gemini" {
 			t.Errorf("resolver session store = %q, want gemini", sessionStore)
 		}
@@ -565,7 +566,7 @@ func TestForkGeminiResolvesSessionFile(t *testing.T) {
 		}
 		return sourceFile, nil
 	}
-	t.Cleanup(func() { forkSessionFileResolver = previousResolver })
+	t.Cleanup(func() { uiapply.ForkSessionFile = previousResolver })
 
 	argsFile := filepath.Join(t.TempDir(), "fork-args")
 	tool := m.services.cfg.Tools["gemini"]
@@ -637,11 +638,11 @@ func TestForkGeminiResolverFailureReportsError(t *testing.T) {
 	loadStoredRows(t, m)
 	m.selectSessionRow(t, "source")
 
-	previousResolver := forkSessionFileResolver
-	forkSessionFileResolver = func(_, id string) (string, error) {
+	previousResolver := uiapply.ForkSessionFile
+	uiapply.ForkSessionFile = func(_, id string) (string, error) {
 		return "", fmt.Errorf("no gemini session file found for conversation %s", id)
 	}
-	t.Cleanup(func() { forkSessionFileResolver = previousResolver })
+	t.Cleanup(func() { uiapply.ForkSessionFile = previousResolver })
 
 	tool := m.services.cfg.Tools["gemini"]
 	tool.ForkCommand = "gemini --session-file {session_file}"

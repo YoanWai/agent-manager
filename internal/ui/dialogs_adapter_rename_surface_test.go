@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	uiapply "github.com/YoanWai/agent-manager/internal/ui/dialogs/apply"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -78,7 +79,7 @@ func TestStaleRenameCompletionIsDropped(t *testing.T) {
 	m.Pop()
 	m.openRename()
 	m.gens.dialog++
-	job := &uieffects.Job{Request: renameRequest{kind: renameSession, sessID: openRename(m).SessionID(), name: name, gen: gen}}
+	job := &uieffects.Job{Request: renameRequest{Request: uiapply.Request{Kind: uiapply.Session, SessID: openRename(m).SessionID(), Name: name, Gen: gen}}}
 	m.applyRenameEffect(job, renameEffectResult{}, nil)
 	if !renameOpen(m) {
 		t.Fatal("a completion from an older rename closed the newer one")

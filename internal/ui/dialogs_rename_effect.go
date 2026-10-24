@@ -1,55 +1,26 @@
 package ui
 
 import (
-	"errors"
-	"fmt"
-	"github.com/YoanWai/agent-manager/internal/sessioncmd"
-	"github.com/YoanWai/agent-manager/internal/store"
+	"strings"
+
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	uiapply "github.com/YoanWai/agent-manager/internal/ui/dialogs/apply"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uirailpersist "github.com/YoanWai/agent-manager/internal/ui/rail/persist"
 	tea "github.com/charmbracelet/bubbletea"
-	"maps"
-	"slices"
-	"strings"
 )
 
-type renameKind int
+// renameRequest carries what the rename worker needs; uiapply.Request holds
+// the values and the package worker runs them.
+type renameRequest struct{ uiapply.Request }
 
-const (
-	renameGroup renameKind = iota
-	renameSession
-)
+func (request renameRequest) EffectRequest() {}
 
-// renameRequest carries everything the rename worker needs so it never
-// reads Model: the target, the requested values and a copy of the session
-// row that pins which creation, launch and socket the rename was meant for.
-type renameRequest struct {
-	kind            renameKind
-	oldGroup        string
-	newGroup        string
-	dir             string
-	rawDir          string
-	dirFallbacks    []string
-	draftDir        string
-	worktree        string
-	base            string
-	sessID          string
-	sess            store.Session
-	name            string
-	tool            string
-	checkNoChildren bool
-	gen             uint64
-}
-
-func (renameRequest) EffectRequest() {}
-
-func (renameRequest) effectName() string { return "rename" }
+func (request renameRequest) effectName() string { return "rename" }
 
 func (value renameRequest) copied() effectRequest {
-	value.sess.PendingInputs = slices.Clone(value.sess.PendingInputs)
-	value.sess.RelaunchSnapshot = maps.Clone(value.sess.RelaunchSnapshot)
+	value.Request = value.Copy()
 	return value
 }
 
@@ -57,20 +28,8 @@ func (request renameRequest) run(services effectServices) (uieffects.Result, err
 	return services.runRename(request)
 }
 
-// renameEffectResult reports which durable stages committed, in order, so
-// the apply side can reconcile partial failures before surfacing the error.
-type renameEffectResult struct {
-	groupRenamed bool
-	pathSet      bool
-	worktreeSet  bool
-	baseSet      bool
-	nameRenamed  bool
-	toolChanged  bool
-	branch       string
-	sessions     []store.Session
-	warning      error
-	dir          string
-}
+// renameEffectResult reports which durable stages committed, in order.
+type renameEffectResult struct{ uiapply.Outcome }
 
 func (renameEffectResult) EffectResult() {}
 
@@ -115,16 +74,16 @@ func (moveDialogCloseResult) apply(m *Model, job *uieffects.Job, err error) tea.
 // row and whether a tool change must first find it childless), fences it to
 // a new dialog generation and runs it on the effect lane.
 func (m *Model) queueRename(request renameRequest) tea.Cmd {
-	if request.kind == renameGroup {
+	if request.Kind == uiapply.Group {
 		m.gens.dialog++
-		request.dirFallbacks = m.groupDirCandidates(parentGroup(request.oldGroup))
-		request.gen = m.gens.dialog
+		request.DirFallbacks = m.groupDirCandidates(parentGroup(request.OldGroup))
+		request.Gen = m.gens.dialog
 		m.enqueueEffect(request, 0, false)
 		return m.nextEffectCmd()
 	}
 	index := -1
 	for i := range m.workspace.sessions {
-		if m.workspace.sessions[i].ID == request.sessID {
+		if m.workspace.sessions[i].ID == request.SessID {
 			index = i
 			break
 		}
@@ -132,143 +91,59 @@ func (m *Model) queueRename(request renameRequest) tea.Cmd {
 	prevTool := ""
 	if index >= 0 {
 		prevTool = m.workspace.sessions[index].Tool
-		request.sess = m.workspace.sessions[index]
+		request.Sess = m.workspace.sessions[index]
 	}
-	toolChanged := request.tool != "" && request.tool != prevTool
+	toolChanged := request.Tool != "" && request.Tool != prevTool
 	m.gens.dialog++
-	request.checkNoChildren = toolChanged && m.isShell(request.tool)
-	request.gen = m.gens.dialog
+	request.CheckNoChildren = toolChanged && m.isShell(request.Tool)
+	request.Gen = m.gens.dialog
 	m.enqueueEffect(request, 0, false)
 	return m.nextEffectCmd()
 }
 
 func (s effectServices) runRename(request renameRequest) (uieffects.Result, error) {
-	result := renameEffectResult{}
-	if request.kind == renameGroup {
-		if request.rawDir != "" || len(request.dirFallbacks) > 0 {
-			resolved, ok := (systemDirectoryPreflight{git: s.gitDrv}).resolve(request.rawDir, request.dirFallbacks)
-			result.dir = resolved
-			if !ok {
-				return result, fmt.Errorf("default path does not exist: %s", resolved)
-			}
-			request.dir = resolved
-		} else {
-			result.dir = request.dir
-		}
-		var err error
-		if err = s.store.RenameGroup(request.oldGroup, request.newGroup); err != nil {
-			return result, err
-		}
-		result.groupRenamed = true
-		// CreateGroup upserts, so it doubles as the default-path setter.
-		if err = s.store.CreateGroup(request.newGroup, request.dir); err != nil {
-			return result, err
-		}
-		result.pathSet = true
-		if err = s.store.SetGroupWorktree(request.newGroup, request.worktree); err != nil {
-			return result, err
-		}
-		result.worktreeSet = true
-		if err = s.store.SetGroupBase(request.newGroup, request.base); err != nil {
-			return result, err
-		}
-		result.baseSet = true
-		sessions, err := s.store.SessionsInSubtree(request.newGroup)
-		if err != nil {
-			return result, err
-		}
-		result.sessions = sessions
-		result.warning = s.relabelSessions(sessions)
-		return result, nil
-	}
-	if request.checkNoChildren {
-		children, err := s.store.Children(request.sessID)
-		if err != nil {
-			return result, err
-		}
-		if len(children) > 0 {
-			return result, errors.New("move its terminals first")
-		}
-	}
-	// A rename queued behind another on the same row must start from the
-	// branch that one left, so the worker reads the row instead of trusting
-	// the enqueue-time copy, which only pins which launch it was meant for.
-	sess, err := s.store.Get(request.sessID)
-	if err != nil {
-		return result, err
-	}
-	// A rename names the session, not one run of its agent, so a restart or
-	// revive while it waits still renames; a replaced row does not.
-	if !sess.CreatedAt.Equal(request.sess.CreatedAt) || sess.TmuxSocket != request.sess.TmuxSocket {
-		return result, errors.New("rename target was replaced (its creation or socket changed) before the accepted rename ran")
-	}
-	// The branch changes before the name is stored, so a name git cannot
-	// give it leaves the rename card open instead of splitting them apart.
-	if sess.WorktreeRepo != "" && sess.WorktreeBranch != "" {
-		if err := sessioncmd.RenameWorktreeBranch(s.gitDrv, s.store, &sess, request.name); err != nil {
-			return result, err
-		}
-		if sess.WorktreeBranch != request.sess.WorktreeBranch {
-			result.branch = sess.WorktreeBranch
-		}
-	}
-	if err = s.store.RenameSession(request.sessID, request.name); err != nil {
-		return result, err
-	}
-	result.nameRenamed = true
-	if request.tool != "" && request.tool != request.sess.Tool {
-		if err = s.store.UpdateTool(request.sessID, request.tool); err != nil {
-			return result, err
-		}
-		result.toolChanged = true
-	}
-	updated, err := s.store.Get(request.sessID)
-	if err != nil {
-		return result, err
-	}
-	result.sessions = []store.Session{updated}
-	result.warning = s.relabelSessions(result.sessions)
-	return result, nil
+	result, err := uiapply.Rename(s.dialogSources(), s.dialogPathProbe(), request.Request)
+	return renameEffectResult{result}, err
 }
 
 func (m *Model) applyRenameEffect(job *uieffects.Job, result renameEffectResult, err error) {
 	request := job.Request.(renameRequest)
-	if request.kind == renameGroup {
-		dir := request.dir
-		if result.dir != "" {
-			dir = result.dir
+	if request.Kind == uiapply.Group {
+		dir := request.Dir
+		if result.Dir != "" {
+			dir = result.Dir
 		}
-		if result.groupRenamed {
-			if result.pathSet && result.worktreeSet && result.baseSet {
-				m.renameGroupLocally(request.oldGroup, request.newGroup, dir, request.worktree, request.base)
+		if result.GroupRenamed {
+			if result.PathSet && result.WorktreeSet && result.BaseSet {
+				m.renameGroupLocally(request.OldGroup, request.NewGroup, dir, request.Worktree, request.Base)
 			} else {
 				m.mirrorGroupRenamePartial(request, dir, result)
 			}
 		}
 	} else {
 		for i := range m.workspace.sessions {
-			if m.workspace.sessions[i].ID != request.sessID {
+			if m.workspace.sessions[i].ID != request.SessID {
 				continue
 			}
-			if result.nameRenamed {
-				m.workspace.sessions[i].Name = request.name
+			if result.NameRenamed {
+				m.workspace.sessions[i].Name = request.Name
 			}
-			if result.branch != "" {
-				m.workspace.sessions[i].WorktreeBranch = result.branch
+			if result.Branch != "" {
+				m.workspace.sessions[i].WorktreeBranch = result.Branch
 			}
-			if result.toolChanged {
-				m.workspace.sessions[i].Tool = request.tool
+			if result.ToolChanged {
+				m.workspace.sessions[i].Tool = request.Tool
 				m.workspace.sessions[i].AgentSessionID = ""
 			}
 		}
 	}
-	if result.warning != nil && err == nil {
-		m.reportErr(result.warning.Error())
+	if result.Warning != nil && err == nil {
+		m.reportErr(result.Warning.Error())
 	}
 	if err != nil {
 		m.reportErr(err.Error())
-	} else if s, ok := m.renaming(); ok && m.gens.dialog == request.gen && s.Name() == request.name &&
-		(request.kind != renameGroup || s.Dir() == request.draftDir) {
+	} else if s, ok := m.renaming(); ok && m.gens.dialog == request.Gen && s.Name() == request.Name &&
+		(request.Kind != uiapply.Group || s.Dir() == request.DraftDir) {
 		// Only the dialog that submitted this job closes; a reopened or
 		// resubmitted card keeps its edits.
 		m.Pop()
@@ -280,13 +155,13 @@ func (m *Model) applyRenameEffect(job *uieffects.Job, result renameEffectResult,
 // failed default-dir or worktree write does not leak the requested value
 // into the local inventory.
 func (m *Model) mirrorGroupRenamePartial(request renameRequest, dir string, result renameEffectResult) {
-	old, newPath := request.oldGroup, request.newGroup
+	old, newPath := request.OldGroup, request.NewGroup
 	m.renameGroupInventory(old, newPath)
-	if result.pathSet {
+	if result.PathSet {
 		m.workspace.groupPaths[newPath] = dir
 	}
-	if result.worktreeSet {
-		m.workspace.groupWorktrees = setGroupChoice(m.workspace.groupWorktrees, newPath, request.worktree)
+	if result.WorktreeSet {
+		m.workspace.groupWorktrees = setGroupChoice(m.workspace.groupWorktrees, newPath, request.Worktree)
 	}
 	m.applyRailStateDecision(m.rail.RenameGroup(old, newPath))
 }
@@ -348,21 +223,6 @@ func (m *Model) applyMoveDialogClose(request moveDialogClose) {
 	}
 	m.Pop()
 	m.rebuildRows()
-}
-
-// relabelSessions refreshes tmux status-bar labels from durable rows.
-// Label failures remain warnings after committed placement.
-func (s effectServices) relabelSessions(sessions []store.Session) error {
-	var first error
-	for _, sess := range sessions {
-		if !s.driver.Exists(sess.ID) {
-			continue
-		}
-		if err := s.driver.SetLabel(sess.ID, sessioncmd.SessionLabel(sess.Group, sess.Name)); err != nil && first == nil {
-			first = err
-		}
-	}
-	return first
 }
 
 // renameGroupLocally rewrites the in-memory tree right away, so the
