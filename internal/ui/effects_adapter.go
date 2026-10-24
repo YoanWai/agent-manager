@@ -6,6 +6,7 @@ import (
 
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
+	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -160,7 +161,7 @@ func (m *Model) handleEffectCompleted(msg uieffects.Completed) (tea.Model, tea.C
 	case reviewEffectRequest:
 		// A send types into the agent pane, so a poll captured before it
 		// is stale exactly like a lifecycle mutation; reads are not.
-		if job.Request.(reviewEffectRequest).op == reviewOpSend && msg.FinishedAt.After(m.effects.latestObservation) {
+		if job.Request.(reviewEffectRequest).op == uireviewsource.Send && msg.FinishedAt.After(m.effects.latestObservation) {
 			m.effects.latestObservation = msg.FinishedAt
 		}
 	}

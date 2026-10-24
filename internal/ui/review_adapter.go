@@ -12,12 +12,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-type reviewLoadMsg = uireviewsource.LoadMsg
-
-type reviewFilesResult = uireviewsource.FilesResult
-
-func reviewTarget(sess store.Session) uireview.Target { return uireviewsource.Target(sess) }
-
 // reviewGroupBase is the base the target's group sets for its branch scope.
 // A base picked in review wins over it.
 func (m *Model) reviewGroupBase(targetID string) string {
@@ -37,20 +31,8 @@ func (m *Model) reviewLoadCmd(req uireview.LoadRequest) tea.Cmd {
 	return uireviewsource.LoadCmd(m.reviewGit(), m.services.store, req, m.reviewGroupBase(req.Target.ID))
 }
 
-func (m *Model) reviewFileCmd(req uireview.FileRequest) tea.Cmd {
-	return uireviewsource.FileCmd(m.reviewGit(), req)
-}
-
-func (m *Model) reviewFilesCmd(requests []uireview.FileRequest) tea.Cmd {
-	return uireviewsource.FilesCmd(m.reviewGit(), requests)
-}
-
 func (m *Model) reviewProbeCmd(req uireview.ProbeRequest) tea.Cmd {
 	return uireviewsource.ProbeCmd(m.reviewGit(), m.services.store, req, m.reviewGroupBase(req.Target.ID))
-}
-
-func (m *Model) reviewHighlightCmd(req uireview.HighlightRequest) tea.Cmd {
-	return uireviewsource.HighlightCmd(req)
 }
 
 // reviewSaveCmd persists one captured review state through the effect
@@ -58,7 +40,7 @@ func (m *Model) reviewHighlightCmd(req uireview.HighlightRequest) tea.Cmd {
 // Dispatch is enqueue-only: the lane's trailing nextEffectCmd starts it.
 func (m *Model) reviewSaveCmd(req uireview.SaveRequest) tea.Cmd {
 	m.enqueueEffect(reviewEffectRequest{
-		op:       reviewOpSave,
+		op:       uireviewsource.Save,
 		targetID: req.TargetID,
 		repoRoot: req.RepoRoot,
 		state:    req.State,
@@ -74,7 +56,7 @@ func (m *Model) reviewStatusCmd(req uireview.StatusRequest) tea.Cmd {
 		return nil
 	}
 	m.enqueueEffect(reviewEffectRequest{
-		op:         reviewOpStatus,
+		op:         uireviewsource.Status,
 		targetID:   req.TargetID,
 		repoRoot:   req.RepoRoot,
 		generation: req.Generation,
@@ -86,7 +68,7 @@ func (m *Model) reviewStatusCmd(req uireview.StatusRequest) tea.Cmd {
 // worker owns the store write and the found/ambiguous outcome.
 func (m *Model) reviewHandleCmd(req uireview.HandleCommentRequest) tea.Cmd {
 	m.enqueueEffect(reviewEffectRequest{
-		op:        reviewOpHandle,
+		op:        uireviewsource.Handle,
 		targetID:  req.TargetID,
 		repoRoot:  req.RepoRoot,
 		commentID: req.CommentID,
@@ -103,7 +85,7 @@ func (m *Model) reviewHandleCmd(req uireview.HandleCommentRequest) tea.Cmd {
 func (m *Model) reviewSendCmd(req uireview.SendRequest) tea.Cmd {
 	session, _ := m.diffSession()
 	m.enqueueEffect(reviewEffectRequest{
-		op:            reviewOpSend,
+		op:            uireviewsource.Send,
 		targetID:      req.Target.ID,
 		targetName:    req.Target.Name,
 		repoRoot:      req.RepoRoot,
@@ -114,7 +96,7 @@ func (m *Model) reviewSendCmd(req uireview.SendRequest) tea.Cmd {
 		previousRound: req.PreviousRound,
 		round:         req.Round,
 		count:         req.Count,
-		sendTarget:    captureReviewSendTarget(session),
+		sendTarget:    uireviewsource.CaptureSendTarget(session),
 	}, 0, false)
 	return nil
 }
@@ -137,13 +119,13 @@ func (m *Model) reviewCommands(requests uireview.Requests) tea.Cmd {
 		cmds = append(cmds, m.reviewLoadCmd(*requests.Load))
 	}
 	if len(requests.Files) > 0 {
-		cmds = append(cmds, m.reviewFileCmd(requests.Files[0]))
+		cmds = append(cmds, uireviewsource.FileCmd(m.reviewGit(), requests.Files[0]))
 		if len(requests.Files) > 1 {
-			cmds = append(cmds, m.reviewFilesCmd(requests.Files[1:]))
+			cmds = append(cmds, uireviewsource.FilesCmd(m.reviewGit(), requests.Files[1:]))
 		}
 	}
 	if requests.Highlight != nil {
-		cmds = append(cmds, m.reviewHighlightCmd(*requests.Highlight))
+		cmds = append(cmds, uireviewsource.HighlightCmd(*requests.Highlight))
 	}
 	if requests.Save != nil && m.services.store != nil {
 		cmds = append(cmds, m.reviewSaveCmd(*requests.Save))
@@ -169,14 +151,6 @@ func (m *Model) reviewCommands(requests uireview.Requests) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-func reviewStateFromStore(state store.ReviewState) uireview.SavedState {
-	return uireviewsource.StateFromStore(state)
-}
-
-func reviewStateToStore(state uireview.SavedState) store.ReviewState {
-	return uireviewsource.StateToStore(state)
-}
-
 func reviewOpenPathError(path string, err error) string {
 	if os.IsNotExist(err) {
 		return "file no longer exists: " + path
@@ -186,25 +160,25 @@ func reviewOpenPathError(path string, err error) string {
 
 func (m *Model) routeReviewMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
-	case reviewPickerLoadedMsg:
+	case uireviewsource.PickerLoadedMsg:
 		return routed(m, m.handleReviewPickerLoaded(msg))
 
 	case uireview.PickedMsg:
 		return routed(m, m.applyReviewPick(msg))
 
-	case reviewPreferencesMsg:
+	case uireviewsource.PreferencesMsg:
 		return routed(m.handleReviewPreferences(msg))
 
-	case reviewLoadMsg:
+	case uireviewsource.LoadMsg:
 		if msg.Normalize != nil {
-			m.enqueueEffect(reviewEffectRequest{op: reviewOpNormalize, targetID: msg.Normalize.TargetID, repoRoot: msg.Normalize.RepoRoot, state: msg.Normalize.State}, 0, false)
+			m.enqueueEffect(reviewEffectRequest{op: uireviewsource.Normalize, targetID: msg.Normalize.TargetID, repoRoot: msg.Normalize.RepoRoot, state: msg.Normalize.State}, 0, false)
 		}
 		return routed(m, tea.Batch(m.handleReviewLoad(msg.Result), m.nextEffectCmd()))
 
 	case uireview.FileResult:
 		return routed(m, m.handleReviewFile(msg))
 
-	case reviewFilesResult:
+	case uireviewsource.FilesResult:
 		var cmds []tea.Cmd
 		for _, loaded := range msg {
 			if cmd := m.handleReviewFile(loaded); cmd != nil {
@@ -235,16 +209,6 @@ func (m *Model) routeReviewMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	return nil, nil, false
 }
 
-type reviewReturnKind = uireviewsource.ReturnKind
-
-const (
-	reviewReturnList   = uireviewsource.ReturnList
-	reviewReturnFocus  = uireviewsource.ReturnFocus
-	reviewReturnAttach = uireviewsource.ReturnAttach
-)
-
-type reviewReturn = uireviewsource.Return
-
 func (m *Model) diffSession() (store.Session, bool) {
 	for _, sess := range m.workspace.sessions {
 		if sess.ID == m.review.SessionID() {
@@ -260,9 +224,9 @@ func (m *Model) closeDiff() tea.Cmd {
 	m.base = baseList
 	m.clearSurfaces()
 	switch ret.Kind {
-	case reviewReturnAttach:
+	case uireviewsource.ReturnAttach:
 		return m.reattach(ret.SessionID, gen)
-	case reviewReturnFocus:
+	case uireviewsource.ReturnFocus:
 		if !m.focusSession(ret.SessionID) {
 			m.reportErr("the review origin is no longer listed")
 			return nil
@@ -274,13 +238,9 @@ func (m *Model) closeDiff() tea.Cmd {
 	}
 }
 
-type reviewPreferencesReader = uireviewsource.Preferences
-
-type reviewPreferencesMsg = uireviewsource.PreferencesMsg
-
 func (m *Model) openDiff() tea.Cmd { return m.openDiffWithReader(m.services.store) }
 
-func (m *Model) openDiffWithReader(reader reviewPreferencesReader) tea.Cmd {
+func (m *Model) openDiffWithReader(reader uireviewsource.Preferences) tea.Cmd {
 	if m.services.gitDrv == nil {
 		m.reportErr("git not found in PATH, " + deps.Hint("git"))
 		return nil
@@ -291,17 +251,17 @@ func (m *Model) openDiffWithReader(reader reviewPreferencesReader) tea.Cmd {
 		return nil
 	}
 	preferred, picked := m.ledger.lifecycle.PickedRepos[sess.ID]
-	m.reviewNav.Set(reviewReturn{Kind: reviewReturnList})
+	m.reviewNav.Set(uireviewsource.Return{Kind: uireviewsource.ReturnList})
 	m.clearSurfaces()
 	m.base = baseReview
 	m.clearErr()
-	target := reviewTarget(sess)
+	target := uireviewsource.Target(sess)
 	target.Cwd = m.sessionDir(sess)
 	request := m.review.Open(target, git.ScopeUncommitted, preferred)
 	return uireviewsource.PreferencesCmd(reader, sess, request, preferred, picked)
 }
 
-func (m *Model) handleReviewPreferences(msg reviewPreferencesMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleReviewPreferences(msg uireviewsource.PreferencesMsg) (tea.Model, tea.Cmd) {
 	if m.effects.Quitting || !m.review.Active() || m.review.Generation() != msg.Request.Generation || m.review.SessionID() != msg.Request.Target.ID {
 		return m, nil
 	}
@@ -413,7 +373,7 @@ func (m *Model) ensureHighlight() tea.Cmd {
 	if !ok {
 		return nil
 	}
-	return m.reviewHighlightCmd(request)
+	return uireviewsource.HighlightCmd(request)
 }
 
 func (m *Model) handleReviewStatus(result uireview.StatusResult) tea.Cmd {

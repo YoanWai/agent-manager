@@ -12,30 +12,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-type (
-	reviewEffectOp       = uireviewsource.Op
-	reviewSendTarget     = uireviewsource.SendTarget
-	reviewBaseResult     = uireviewsource.BaseResult
-	reviewSessionWriter  = uireviewsource.Writer
-	reviewPickerLoadKind = uireviewsource.PickerLoadKind
-	reviewPickerReader   = uireviewsource.PickerReader
-)
-
-const (
-	reviewOpSave      = uireviewsource.Save
-	reviewOpHandle    = uireviewsource.Handle
-	reviewOpSend      = uireviewsource.Send
-	reviewOpStatus    = uireviewsource.Status
-	reviewOpNormalize = uireviewsource.Normalize
-	reviewOpSetBase   = uireviewsource.SetBase
-
-	reviewPickerLoadBranches = uireviewsource.PickerLoadBranches
-	reviewPickerLoadBases    = uireviewsource.PickerLoadBases
-)
-
 // reviewEffectRequest is one captured Review change on the effect lane.
 type reviewEffectRequest struct {
-	op            reviewEffectOp
+	op            uireviewsource.Op
 	targetID      string
 	targetName    string
 	repoRoot      string
@@ -52,7 +31,7 @@ type reviewEffectRequest struct {
 	previousRound uireview.Round
 	round         int
 	count         int
-	sendTarget    reviewSendTarget
+	sendTarget    uireviewsource.SendTarget
 }
 
 func (reviewEffectRequest) EffectRequest() {}
@@ -73,24 +52,18 @@ func (request reviewEffectRequest) run(services effectServices) (uieffects.Resul
 }
 
 type reviewEffectResult struct {
-	op     reviewEffectOp
+	op     uireviewsource.Op
 	save   uireview.SaveResult
 	handle uireview.HandleCommentResult
 	send   uireview.SendResult
 	status uireview.StatusResult
-	base   reviewBaseResult
+	base   uireviewsource.BaseResult
 }
 
 func (reviewEffectResult) EffectResult() {}
 
 func (result reviewEffectResult) apply(m *Model, job *uieffects.Job, err error) tea.Cmd {
 	return m.applyReviewEffect(job, result, err)
-}
-
-// captureReviewSendTarget records the session incarnation a round is accepted
-// for, so a relaunch in between refuses rather than types into a stranger.
-func captureReviewSendTarget(session store.Session) reviewSendTarget {
-	return uireviewsource.CaptureSendTarget(session)
 }
 
 // driverReviewWriter is the tmux driver as the round's transport.
@@ -102,11 +75,11 @@ func (w driverReviewWriter) SendText(id, text string) (tmux.SendResult, error) {
 }
 
 func (s effectServices) runReview(request reviewEffectRequest) (uieffects.Result, error) {
-	writer := reviewSessionWriter(driverReviewWriter{drv: s.driver})
+	writer := uireviewsource.Writer(driverReviewWriter{drv: s.driver})
 	return runReviewWithWriter(request, s.store, writer)
 }
 
-func runReviewWithWriter(request reviewEffectRequest, st *store.Store, writer reviewSessionWriter) (uieffects.Result, error) {
+func runReviewWithWriter(request reviewEffectRequest, st *store.Store, writer uireviewsource.Writer) (uieffects.Result, error) {
 	result, err := uireviewsource.Run(request.source(), st, writer)
 	return reviewEffectResult{
 		op: result.Op, save: result.Save, handle: result.Handle,
@@ -128,23 +101,19 @@ func (request reviewEffectRequest) source() uireviewsource.Request {
 
 func (m *Model) applyReviewEffect(job *uieffects.Job, result reviewEffectResult, err error) tea.Cmd {
 	switch result.op {
-	case reviewOpSave:
+	case uireviewsource.Save:
 		return m.handleReviewSave(result.save)
-	case reviewOpHandle:
+	case uireviewsource.Handle:
 		return m.handleReviewComment(result.handle)
-	case reviewOpSend:
+	case uireviewsource.Send:
 		return m.handleReviewSend(result.send)
-	case reviewOpStatus:
+	case uireviewsource.Status:
 		return m.handleReviewStatus(result.status)
-	case reviewOpSetBase:
+	case uireviewsource.SetBase:
 		return m.applyReviewBase(result.base)
 	}
 	if err != nil {
 		m.reportErr(err.Error())
 	}
 	return nil
-}
-
-func readReviewState(stor *store.Store, sessionID, repoRoot string) (store.ReviewState, error) {
-	return uireviewsource.ReadState(stor, sessionID, repoRoot)
 }

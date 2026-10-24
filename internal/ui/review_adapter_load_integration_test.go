@@ -522,7 +522,7 @@ func TestCLIReviewBaseReachesLoadAcrossSymlinkBoundary(t *testing.T) {
 		t.Fatal("no diff session")
 	}
 
-	resolvedRoot := resolveSymlinksOrSelf(m.review.Snapshot().RepoSelected)
+	resolvedRoot := uireviewsource.Canonical(m.review.Snapshot().RepoSelected)
 	if resolvedRoot == m.review.Snapshot().RepoSelected {
 		t.Skip("temp dir is not symlinked, so there is no raw/resolved boundary to cross")
 	}

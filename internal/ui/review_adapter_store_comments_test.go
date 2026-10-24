@@ -14,6 +14,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
+	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -574,7 +575,7 @@ func TestMigratedPointsNeverRepeatWithinARound(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	state, err := readReviewState(m.services.store, "pts123", repo)
+	state, err := uireviewsource.ReadState(m.services.store, "pts123", repo)
 	if err != nil {
 		t.Fatal(err)
 	}

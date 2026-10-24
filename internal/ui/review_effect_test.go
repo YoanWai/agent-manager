@@ -8,6 +8,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/store"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
+	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -169,7 +170,7 @@ func TestReviewLoadNormalizesThroughLane(t *testing.T) {
 	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
-	repo := resolveSymlinksOrSelf(gitRepoWithTwoChangedFiles(t))
+	repo := uireviewsource.Canonical(gitRepoWithTwoChangedFiles(t))
 	createSession(t, m, "norm", repo, "")
 	sess := reviewSessionByName(t, m, "norm")
 	if err := m.services.store.SetReviewState(sess.ID, repo, store.ReviewState{
@@ -245,7 +246,7 @@ func TestReviewNormalizeDispatchesAsNormalizeOp(t *testing.T) {
 	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
-	repo := resolveSymlinksOrSelf(gitRepoWithTwoChangedFiles(t))
+	repo := uireviewsource.Canonical(gitRepoWithTwoChangedFiles(t))
 	createSession(t, m, "normop", repo, "")
 	sess := reviewSessionByName(t, m, "normop")
 	if err := m.services.store.SetReviewState(sess.ID, repo, store.ReviewState{
@@ -256,17 +257,17 @@ func TestReviewNormalizeDispatchesAsNormalizeOp(t *testing.T) {
 	}
 	m.selectSessionRow(t, "normop")
 	open := m.openDiff()
-	_, ready := m.handleReviewPreferences(open().(reviewPreferencesMsg))
+	_, ready := m.handleReviewPreferences(open().(uireviewsource.PreferencesMsg))
 	batch, ok := ready().(tea.BatchMsg)
 	if !ok {
 		t.Fatalf("openDiff command = %T, want batch", open)
 	}
-	var load reviewLoadMsg
+	var load uireviewsource.LoadMsg
 	for _, child := range batch {
 		if child == nil {
 			continue
 		}
-		if msg, ok := child().(reviewLoadMsg); ok {
+		if msg, ok := child().(uireviewsource.LoadMsg); ok {
 			load = msg
 		}
 	}
@@ -296,7 +297,7 @@ func TestStaleNormalizeDoesNotOverwriteNewerSave(t *testing.T) {
 	if m.services.gitDrv == nil {
 		t.Skip("git not installed")
 	}
-	repo := resolveSymlinksOrSelf(gitRepoWithTwoChangedFiles(t))
+	repo := uireviewsource.Canonical(gitRepoWithTwoChangedFiles(t))
 	createSession(t, m, "stalenorm", repo, "")
 	sess := reviewSessionByName(t, m, "stalenorm")
 
@@ -311,9 +312,9 @@ func TestStaleNormalizeDoesNotOverwriteNewerSave(t *testing.T) {
 	if err := m.services.store.SetReviewState(sess.ID, repo, oldShape); err != nil {
 		t.Fatal(err)
 	}
-	m.enqueueEffect(reviewEffectRequest{op: reviewOpSave, targetID: sess.ID, repoRoot: repo, state: reviewStateFromStore(newer)}, 0, false)
-	stale, _ := uireview.NormalizeSavedState(reviewStateFromStore(oldShape))
-	m.enqueueEffect(reviewEffectRequest{op: reviewOpNormalize, targetID: sess.ID, repoRoot: repo, state: stale}, 0, false)
+	m.enqueueEffect(reviewEffectRequest{op: uireviewsource.Save, targetID: sess.ID, repoRoot: repo, state: uireviewsource.StateFromStore(newer)}, 0, false)
+	stale, _ := uireview.NormalizeSavedState(uireviewsource.StateFromStore(oldShape))
+	m.enqueueEffect(reviewEffectRequest{op: uireviewsource.Normalize, targetID: sess.ID, repoRoot: repo, state: stale}, 0, false)
 	m.drainEffects(t)
 
 	got, err := m.services.store.ReviewState(sess.ID, repo)

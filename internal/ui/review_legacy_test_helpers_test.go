@@ -5,6 +5,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
+	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -63,7 +64,7 @@ func (m *Model) fileDiffByPath(path string) *diff.FileDiff {
 func (m *Model) diffLoadCmd(sess store.Session, scope git.Scope, generation int, repo string, refresh bool) tea.Cmd {
 	state := m.review.Snapshot()
 	return m.reviewLoadCmd(uireview.LoadRequest{
-		Target: reviewTarget(sess), Scope: scope, Generation: generation,
+		Target: uireviewsource.Target(sess), Scope: scope, Generation: generation,
 		RepoWanted: repo, Refresh: refresh, Resolve: true,
 		Restored: map[string]bool{sess.ID + "\x00" + state.RepoSelected: len(m.review.SavedState().Comments) > 0 || len(m.review.SavedState().Reviewed) > 0},
 	})
@@ -71,7 +72,7 @@ func (m *Model) diffLoadCmd(sess store.Session, scope git.Scope, generation int,
 
 func (m *Model) diffProbeCmd(sess store.Session, scope git.Scope) tea.Cmd {
 	state := m.review.Snapshot()
-	return m.reviewProbeCmd(uireview.ProbeRequest{Target: reviewTarget(sess), Scope: scope, RepoSelected: state.RepoSelected, GitRoot: state.Set.Repo.Root})
+	return m.reviewProbeCmd(uireview.ProbeRequest{Target: uireviewsource.Target(sess), Scope: scope, RepoSelected: state.RepoSelected, GitRoot: state.Set.Repo.Root})
 }
 
 func seedReviewForTest(m *Model, target uireview.Target, scope git.Scope, repo string, set diff.Set, apply bool) uireview.LoadRequest {

@@ -8,6 +8,7 @@ import (
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
+	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -168,7 +169,7 @@ func (m *Model) applyDetachEffect(request detachRequest, result detachEffectResu
 	case tmux.RequestReview:
 		cmd := m.openDiff()
 		if m.base == baseReview {
-			m.reviewNav.Set(reviewReturn{Kind: reviewReturnAttach, SessionID: sess.ID})
+			m.reviewNav.Set(uireviewsource.Return{Kind: uireviewsource.ReturnAttach, SessionID: sess.ID})
 		}
 		return cmd
 	case tmux.RequestEditor:

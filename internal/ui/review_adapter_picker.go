@@ -11,10 +11,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-type reviewPickerLoadRequest = uireviewsource.PickerLoadRequest
-
-type reviewPickerLoadedMsg = uireviewsource.PickerLoadedMsg
-
 // systemReviewPickerReader reads picker rows from the real git driver and
 // store.
 type systemReviewPickerReader struct {
@@ -37,12 +33,6 @@ func (r systemReviewPickerReader) ReviewBase(targetID, root string) (string, err
 func (systemReviewPickerReader) Canonical(root string) string {
 	return uireviewsource.Canonical(root)
 }
-
-func reviewPickerReadCmd(reader reviewPickerReader, request reviewPickerLoadRequest) tea.Cmd {
-	return uireviewsource.PickerReadCmd(reader, request)
-}
-
-func resolveSymlinksOrSelf(path string) string { return uireviewsource.Canonical(path) }
 
 func (m *Model) reviewPickerSource() uireview.PickerSource {
 	state := m.review.Snapshot()
@@ -76,14 +66,14 @@ func (m *Model) openBranchPick() tea.Cmd {
 	return m.openBranchPickWithReader(systemReviewPickerReader{git: m.services.gitDrv, store: m.services.store})
 }
 
-func (m *Model) openBranchPickWithReader(reader reviewPickerReader) tea.Cmd {
+func (m *Model) openBranchPickWithReader(reader uireviewsource.PickerReader) tea.Cmd {
 	state := m.review.Snapshot()
 	if reader == nil || state.RepoSelected == "" {
 		m.reportErr("no repo under review")
 		return nil
 	}
-	return reviewPickerReadCmd(reader, reviewPickerLoadRequest{
-		Kind:          reviewPickerLoadBranches,
+	return uireviewsource.PickerReadCmd(reader, uireviewsource.PickerLoadRequest{
+		Kind:          uireviewsource.PickerLoadBranches,
 		Source:        m.reviewPickerSource(),
 		ForegroundGen: m.gens.foreground,
 	})
@@ -99,7 +89,7 @@ func (m *Model) openBasePick() tea.Cmd {
 	return m.openBasePickWithReader(systemReviewPickerReader{git: m.services.gitDrv, store: m.services.store})
 }
 
-func (m *Model) openBasePickWithReader(reader reviewPickerReader) tea.Cmd {
+func (m *Model) openBasePickWithReader(reader uireviewsource.PickerReader) tea.Cmd {
 	if m.reviewBaseSavePending() {
 		m.reportErr("diff base is still saving")
 		return nil
@@ -112,14 +102,14 @@ func (m *Model) openBasePickWithReader(reader reviewPickerReader) tea.Cmd {
 		m.reportErr("no repo under review")
 		return nil
 	}
-	return reviewPickerReadCmd(reader, reviewPickerLoadRequest{
-		Kind:          reviewPickerLoadBases,
+	return uireviewsource.PickerReadCmd(reader, uireviewsource.PickerLoadRequest{
+		Kind:          uireviewsource.PickerLoadBases,
 		Source:        m.reviewPickerSource(),
 		ForegroundGen: m.gens.foreground,
 	})
 }
 
-func (m *Model) handleReviewPickerLoaded(msg reviewPickerLoadedMsg) tea.Cmd {
+func (m *Model) handleReviewPickerLoaded(msg uireviewsource.PickerLoadedMsg) tea.Cmd {
 	if m.effects.Quitting || m.base != baseReview || m.gens.foreground != msg.Request.ForegroundGen || !m.review.PickerSourceCurrent(msg.Request.Source) {
 		return nil
 	}
@@ -128,9 +118,9 @@ func (m *Model) handleReviewPickerLoaded(msg reviewPickerLoadedMsg) tea.Cmd {
 		return nil
 	}
 	switch msg.Request.Kind {
-	case reviewPickerLoadBranches:
+	case uireviewsource.PickerLoadBranches:
 		m.openReviewPicker(msg.Rows, "Review branch", uireview.PickRepo, msg.Current, msg.Request.Source, "")
-	case reviewPickerLoadBases:
+	case uireviewsource.PickerLoadBases:
 		m.openReviewPicker(msg.Rows, "Diff base", uireview.PickBase, msg.Current, msg.Request.Source, msg.StoreRoot)
 	}
 	return nil
@@ -189,7 +179,7 @@ func (m *Model) selectBase(ref string, source uireview.PickerSource, storeRoot s
 		return nil
 	}
 	m.enqueueEffect(reviewEffectRequest{
-		op: reviewOpSetBase, targetID: sess.ID, repoRoot: storeRoot,
+		op: uireviewsource.SetBase, targetID: sess.ID, repoRoot: storeRoot,
 		sourceRepo: source.RepoRoot, generation: source.Generation, baseRef: ref,
 	}, 0, false)
 	return m.nextEffectCmd()
@@ -201,7 +191,7 @@ func (m *Model) reviewBaseSavePending() bool {
 			return false
 		}
 		request, ok := job.Request.(reviewEffectRequest)
-		return ok && request.op == reviewOpSetBase
+		return ok && request.op == uireviewsource.SetBase
 	}
 	if isBaseSave(m.effects.Main.Active) {
 		return true
@@ -214,7 +204,7 @@ func (m *Model) reviewBaseSavePending() bool {
 	return false
 }
 
-func (m *Model) applyReviewBase(result reviewBaseResult) tea.Cmd {
+func (m *Model) applyReviewBase(result uireviewsource.BaseResult) tea.Cmd {
 	source := uireview.PickerSource{Generation: result.Generation, TargetID: result.TargetID, RepoRoot: result.SourceRepo}
 	if result.Err != nil {
 		if !m.effects.Quitting {

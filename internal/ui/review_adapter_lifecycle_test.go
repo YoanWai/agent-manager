@@ -9,6 +9,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
+	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -38,7 +39,7 @@ func TestInSessionReviewRemembersOriginAndReattaches(t *testing.T) {
 	if m.base != baseReview {
 		t.Fatalf("marker set should enter review, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
-	if m.reviewNav.Ret().Kind != reviewReturnAttach || m.reviewNav.Ret().SessionID != sess.ID {
+	if m.reviewNav.Ret().Kind != uireviewsource.ReturnAttach || m.reviewNav.Ret().SessionID != sess.ID {
 		t.Fatalf("review origin = %+v, want attach %q", m.reviewNav.Ret(), sess.ID)
 	}
 
@@ -48,7 +49,7 @@ func TestInSessionReviewRemembersOriginAndReattaches(t *testing.T) {
 	if !m.onList() {
 		t.Fatalf("esc should leave review, screen = %v", m.screenID())
 	}
-	if m.reviewNav.Ret() != (reviewReturn{}) {
+	if m.reviewNav.Ret() != (uireviewsource.Return{}) {
 		t.Fatalf("reattach origin should be consumed, got %+v", m.reviewNav.Ret())
 	}
 	if cmd == nil {
@@ -71,7 +72,7 @@ func TestListReviewLeavesToListWithoutReattach(t *testing.T) {
 	if m.base != baseReview {
 		t.Fatalf("openDiff should enter review, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
-	if m.reviewNav.Ret().Kind != reviewReturnList || m.reviewNav.Ret().SessionID != "" {
+	if m.reviewNav.Ret().Kind != uireviewsource.ReturnList || m.reviewNav.Ret().SessionID != "" {
 		t.Fatalf("list review should return to list, got %+v", m.reviewNav.Ret())
 	}
 
@@ -191,7 +192,7 @@ func TestCtrlRFromListOpensReview(t *testing.T) {
 	if m.base != baseReview {
 		t.Fatalf("ctrl+r from the list should open review, screen = %v (err=%q)", m.screenID(), m.errBar.text)
 	}
-	if m.reviewNav.Ret().Kind != reviewReturnList || m.reviewNav.Ret().SessionID != "" {
+	if m.reviewNav.Ret().Kind != uireviewsource.ReturnList || m.reviewNav.Ret().SessionID != "" {
 		t.Fatal("review opened from the list should return to the list, not re-attach")
 	}
 }
