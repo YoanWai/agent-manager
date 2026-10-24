@@ -368,7 +368,8 @@ func (m *Model) routeSettingsMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		return routed(m, nil)
 
 	case groupBaseStepMsg:
-		return routed(m, m.handleGroupBaseStep(msg))
+		m.handleGroupBaseStep(msg)
+		return routed(m, nil)
 
 	case catalogMsg:
 		return routed(m, m.handleCatalog(msg))

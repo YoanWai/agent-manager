@@ -21,7 +21,7 @@ func FactLabel(label string) string {
 // reading set against the right edge. value is handed the columns it
 // actually gets, and right is dropped rather than pushed off the edge when
 // the column is too narrow to hold both.
-func FactRow(label, value func(room int) string, right string, width int) string {
+func FactRow(label string, value func(room int) string, right string, width int) string {
 	room := width - DetailLabelWidth - ansi.StringWidth(right) - 2
 	if room < 12 {
 		right, room = "", width-DetailLabelWidth

@@ -112,7 +112,7 @@ func (m *Model) routeSessionMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case replyCopiedMsg:
 		if msg.unreadable {
-			m.reportWarn(fmt.Sprintf("no reply to read in %s: a %s pane is not read that way", msg.name, msg.Tool))
+			m.reportWarn(fmt.Sprintf("no reply to read in %s: a %s pane is not read that way", msg.name, msg.tool))
 			return routed(m, nil)
 		}
 		if msg.chars == 0 {
@@ -121,7 +121,7 @@ func (m *Model) routeSessionMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		}
 		if msg.unbounded {
 			m.reportWarn(fmt.Sprintf("copied %d chars from %s: %s marks no turn start here, so this is the whole pane",
-				msg.chars, msg.name, msg.Tool))
+				msg.chars, msg.name, msg.tool))
 			return routed(m, nil)
 		}
 		m.reportDone(fmt.Sprintf("copied %d chars from %s", msg.chars, msg.name))
@@ -140,8 +140,8 @@ func (m *Model) routeSessionMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		// keeps that size on detach; pin it back to the current layout's
 		// box so the capture is not clipped on the right.
 		m.adoptPaneGeom(msg.sessID)
-		if msg.Err != nil {
-			m.reportErr(msg.Err.Error())
+		if msg.err != nil {
+			m.reportErr(msg.err.Error())
 			m.requestRefresh()
 			return routed(m, nil)
 		}

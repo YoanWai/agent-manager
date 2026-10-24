@@ -100,6 +100,18 @@ func (m *Model) setPreview(sessID, preview string) {
 	m.workspace.preview = preview
 }
 
+func (m *Model) reviewNeedsLoader() bool {
+	state := m.review.Snapshot()
+	if m.base != baseReview || !state.Active {
+		return false
+	}
+	if state.Loading && len(state.Set.Files) == 0 {
+		return true
+	}
+	fd := m.currentFileDiff()
+	return fd != nil && !fd.Loaded() && !m.diffFileHidden(fd)
+}
+
 func (m *Model) needsLoaderTick() bool {
 	return m.startup.booting || m.rail.HasStatus(status.Starting) || m.reviewNeedsLoader() || m.rail.HasWorkingLoader()
 }

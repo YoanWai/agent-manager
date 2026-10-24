@@ -7,6 +7,9 @@ import (
 
 type startupTickMsg struct{}
 
+// startupInterval is the loader animation's frame time while rows start.
+const startupInterval = 80 * time.Millisecond
+
 func (m *Model) startStartupTick() tea.Cmd {
 	if m.startup.startupAnimating || !m.needsLoaderTick() {
 		return nil

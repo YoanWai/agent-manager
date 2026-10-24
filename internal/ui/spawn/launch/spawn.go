@@ -235,11 +235,11 @@ type SystemDirectoryPreflight struct{ Git *git.Driver }
 // Resolve turns raw field input into a usable directory.
 func (p SystemDirectoryPreflight) Resolve(raw string, fallbacks []string) (string, bool) {
 	if raw != "" {
-		return resolveExistingDir(raw, "")
+		return ResolveExistingDir(raw, "")
 	}
 	var resolved string
 	for _, fallback := range fallbacks {
-		candidate, ok := resolveExistingDir("", fallback)
+		candidate, ok := ResolveExistingDir("", fallback)
 		resolved = candidate
 		if ok {
 			return candidate, true

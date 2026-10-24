@@ -39,7 +39,7 @@ func (e settingsEnv) MirrorPrefs(values []uisettings.Readback) string {
 }
 
 func (e settingsEnv) Restore(values []uisettings.Readback, hiddenRaw string, hiddenErr error, editors *uisettings.EditorsProbe) {
-	if card, open := surfaceOf[*uisettings.Surface](e); open {
+	if card, open := surfaceOf[*uisettings.Surface](e.Model); open {
 		card.State().Restore(values, hiddenRaw, hiddenErr, editors)
 	}
 }

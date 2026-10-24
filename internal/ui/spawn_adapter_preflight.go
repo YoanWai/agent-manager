@@ -21,6 +21,22 @@ func (p preflightReader) Resolve(raw string, fallbacks []string) (string, bool) 
 
 func (p preflightReader) RepoCapable(dir string) bool { return p.reader.repoCapable(dir) }
 
+// crossPreflight hands a captured reader to the package, nil staying nil so the
+// package resolves against the filesystem.
+func crossPreflight(reader directoryPreflight) uilaunch.DirectoryPreflight {
+	if reader == nil {
+		return nil
+	}
+	return preflightReader{reader: reader}
+}
+
+func crossTerminalReader(reader terminalDirectoryReader) uilaunch.TerminalDirectoryReader {
+	if reader == nil {
+		return nil
+	}
+	return terminalReader{reader: reader}
+}
+
 type terminalReader struct{ reader terminalDirectoryReader }
 
 func (t terminalReader) Resolve(request uilaunch.TerminalDirectoryRequest) (string, bool) {

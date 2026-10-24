@@ -6,6 +6,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	tea "github.com/charmbracelet/bubbletea"
 	"time"
 )
@@ -176,7 +177,7 @@ func (m *Model) routeRefreshMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			sessions := m.dropRecentlyRemoved(m.keepPendingLaunches(msg.sessions, msg.listedAt), msg.listedAt)
 			m.reconcileListing(&msg)
 			if m.focused() {
-				if sess, ok := m.selected(); !ok || sessionGone(sessions, sess.ID) {
+				if sess, ok := m.selected(); !ok || uilifecycle.SessionGone(sessions, sess.ID) {
 					focusExit = m.leaveFocus()
 				}
 			}

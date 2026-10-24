@@ -115,7 +115,7 @@ func (m *Model) applyAttachEffect(request attachRequest, result attachEffectResu
 		m.reportErr(err.Error())
 		return nil
 	}
-	if request.reattach && (request.Generation != m.review.Generation() || m.review.Active()) {
+	if request.reattach && (request.generation != m.review.Generation() || m.review.Active()) {
 		return nil
 	}
 	if m.effects.Quitting || request.foregroundGen != m.gens.foreground || request.screen != m.screenID() {

@@ -27,16 +27,6 @@ func (l *fakeLabels) SetLabel(id, label string) error {
 	return nil
 }
 
-func openStore(t *testing.T) *store.Store {
-	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
-	t.Cleanup(func() { st.Close() })
-	return st
-}
-
 func TestPlacementRefusedWhenTheSourceMovedUnderneath(t *testing.T) {
 	st := openStore(t)
 	if err := st.CreateSession(store.Session{ID: "mover", Name: "mover", Tool: "claude", Cwd: "/tmp"}); err != nil {

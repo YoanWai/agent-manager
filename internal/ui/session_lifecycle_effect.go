@@ -26,10 +26,10 @@ type lifecycleRequest struct {
 func (lifecycleRequest) EffectRequest() {}
 
 func (request lifecycleRequest) effectName() string {
-	if request.Target.action == actionDelete {
+	if request.target.action == actionDelete {
 		return "session delete"
 	}
-	return "session " + string(request.Target.action)
+	return "session " + string(request.target.action)
 }
 
 func (value lifecycleRequest) copied() effectRequest {
@@ -61,7 +61,7 @@ func (m *Model) queueLifecycle(target confirmTarget, allowLive bool, emptyNotice
 
 func (s effectServices) runLifecycle(request lifecycleRequest) (uieffects.Result, error) {
 	result, err := uilifecycle.Run(s.lifecycleServices(), uilifecycle.Request{
-		Target:      packageTarget(request.Target),
+		Target:      packageTarget(request.target),
 		Pane:        request.pane,
 		Watched:     request.watched,
 		AllowLive:   request.allowLive,
@@ -97,7 +97,29 @@ func packageTarget(target confirmTarget) uilifecycle.Target {
 	}
 }
 
-// packageTarget spells the card's action the package's way; the two name the
+// confirmTargetFor is a lifecycle the package decided on its own, an after-turn
+// archive or kill, in the shape the confirmation's apply reads.
+func confirmTargetFor(target uilifecycle.Target) confirmTarget {
+	return confirmTarget{
+		isGroup:      target.Path != "",
+		path:         target.Path,
+		sessions:     target.Sessions,
+		action:       confirmAction(target.Action),
+		batch:        target.Batch,
+		archivedOnly: target.ArchivedOnly,
+	}
+}
+
+// confirmAction is the package's action as the card spells it: the card
+// names delete with its zero value.
+func confirmAction(action uilifecycle.Action) uidialogs.ConfirmAction {
+	if action == uilifecycle.Remove {
+		return uidialogs.ConfirmDelete
+	}
+	return uidialogs.ConfirmAction(action)
+}
+
+// packageAction spells the card's action the package's way; the two name the
 // same values, delete included.
 func packageAction(action uidialogs.ConfirmAction) uilifecycle.Action {
 	return uilifecycle.Action(action)
@@ -108,7 +130,7 @@ func packageSelection(selection lifecycleSelection) uilifecycle.Selection {
 }
 
 func (m *Model) applyLifecycleEffect(request lifecycleRequest, result lifecycleEffectResult, err error) tea.Cmd {
-	target := request.Target
+	target := request.target
 	for _, sess := range append(result.Changed, result.Archive.Sessions...) {
 		for i := range m.workspace.sessions {
 			if m.workspace.sessions[i].ID == sess.ID {

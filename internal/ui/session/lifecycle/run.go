@@ -170,7 +170,7 @@ func Run(services Services, request Request) (Result, error) {
 				}
 			}
 		default:
-			operationErr = fmt.Errorf("unknown confirm action %d", target.Action)
+			operationErr = fmt.Errorf("unknown confirm action %q", target.Action)
 		}
 		if request.Watched != "" {
 			result.Survivor = services.Driver.Exists(request.Watched)

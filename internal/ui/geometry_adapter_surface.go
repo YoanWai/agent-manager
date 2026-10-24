@@ -13,11 +13,11 @@ type geometryRoot struct{ *Model }
 func (r geometryRoot) Gesture() uigeometry.Gesture {
 	split := r.layout.split
 	return uigeometry.Gesture{
-		Ratio:       split.Ratio,
-		RatioBefore: split.RatioBefore,
-		ResizeMode:  split.ResizeMode,
-		Dragging:    split.Dragging,
-		Moved:       split.Moved,
+		Ratio:       split.ratio,
+		RatioBefore: split.ratioBefore,
+		ResizeMode:  split.resizeMode,
+		Dragging:    split.dragging,
+		Moved:       split.moved,
 	}
 }
 

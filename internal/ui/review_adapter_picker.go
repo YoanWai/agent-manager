@@ -45,7 +45,8 @@ func reviewPickerReadCmd(reader reviewPickerReader, request reviewPickerLoadRequ
 func resolveSymlinksOrSelf(path string) string { return uireviewsource.Canonical(path) }
 
 func (m *Model) reviewPickerSource() uireview.PickerSource {
-	return uireviewsource.PickerSource(m.review.Snapshot())
+	state := m.review.Snapshot()
+	return uireview.PickerSource{Generation: state.Generation, TargetID: state.SessionID, RepoRoot: state.RepoSelected}
 }
 
 func (m *Model) openReviewPicker(rows []uireview.PickerRow, title string, kind uireview.PickerKind, current string, source uireview.PickerSource, storeRoot string) {

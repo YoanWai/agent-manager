@@ -9,6 +9,7 @@ import (
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
+	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"

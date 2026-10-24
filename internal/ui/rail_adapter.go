@@ -177,7 +177,7 @@ func (m *Model) awaitingRename(session store.Session) bool {
 	if !ok {
 		return false
 	}
-	if session.Name == awaited.generated && session.Status != status.Dead && time.Since(session.CreatedAt) < renameGrace {
+	if session.Name == awaited.Generated && session.Status != status.Dead && time.Since(session.CreatedAt) < renameGrace {
 		return true
 	}
 	delete(m.lifecycle.AwaitedRenames, session.ID)
