@@ -7,40 +7,16 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
+	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-type reviewPickerLoadKind uint8
+type reviewPickerLoadRequest = uireviewsource.PickerLoadRequest
 
-const (
-	reviewPickerLoadBranches reviewPickerLoadKind = iota
-	reviewPickerLoadBases
-)
+type reviewPickerLoadedMsg = uireviewsource.PickerLoadedMsg
 
-type reviewPickerLoadRequest struct {
-	kind          reviewPickerLoadKind
-	source        uireview.PickerSource
-	foregroundGen uint64
-}
-
-type reviewPickerLoadedMsg struct {
-	request   reviewPickerLoadRequest
-	rows      []uireview.PickerRow
-	current   string
-	storeRoot string
-	err       error
-}
-
-// reviewPickerReader keeps every filesystem, git, and SQLite read behind the
-// tea.Cmd boundary. Canonical deliberately returns the input on resolution
-// failure, matching the existing raw-path fallback.
-type reviewPickerReader interface {
-	Worktrees(string) ([]git.Worktree, error)
-	BranchRefs(string) ([]string, error)
-	ReviewBase(string, string) (string, error)
-	Canonical(string) string
-}
-
+// systemReviewPickerReader reads picker rows from the real git driver and
+// store.
 type systemReviewPickerReader struct {
 	git   *git.Driver
 	store *store.Store
@@ -59,59 +35,17 @@ func (r systemReviewPickerReader) ReviewBase(targetID, root string) (string, err
 }
 
 func (systemReviewPickerReader) Canonical(root string) string {
-	return resolveSymlinksOrSelf(root)
+	return uireviewsource.Canonical(root)
 }
 
 func reviewPickerReadCmd(reader reviewPickerReader, request reviewPickerLoadRequest) tea.Cmd {
-	return func() tea.Msg {
-		msg := reviewPickerLoadedMsg{request: request}
-		switch request.kind {
-		case reviewPickerLoadBranches:
-			worktrees, err := reader.Worktrees(request.source.RepoRoot)
-			if err != nil {
-				msg.err = err
-				return msg
-			}
-			current := reader.Canonical(request.source.RepoRoot)
-			msg.rows = make([]uireview.PickerRow, len(worktrees))
-			for i, worktree := range worktrees {
-				msg.rows[i] = uireview.PickerRow{Label: worktree.Branch, Root: worktree.Root}
-				if reader.Canonical(worktree.Root) == current {
-					msg.current = worktree.Root
-				}
-			}
-		case reviewPickerLoadBases:
-			refs, err := reader.BranchRefs(request.source.RepoRoot)
-			if err != nil {
-				msg.err = err
-				return msg
-			}
-			msg.storeRoot = reader.Canonical(request.source.RepoRoot)
-			msg.current, msg.err = reader.ReviewBase(request.source.TargetID, msg.storeRoot)
-			if msg.err != nil {
-				return msg
-			}
-			msg.rows = make([]uireview.PickerRow, 1, len(refs)+1)
-			msg.rows[0] = uireview.PickerRow{Label: "auto"}
-			for _, ref := range refs {
-				msg.rows = append(msg.rows, uireview.PickerRow{Label: ref, Root: ref})
-			}
-		}
-		return msg
-	}
+	return uireviewsource.PickerReadCmd(reader, request)
 }
 
-func resolveSymlinksOrSelf(path string) string {
-	resolved, err := filepath.EvalSymlinks(path)
-	if err != nil {
-		return path
-	}
-	return resolved
-}
+func resolveSymlinksOrSelf(path string) string { return uireviewsource.Canonical(path) }
 
 func (m *Model) reviewPickerSource() uireview.PickerSource {
-	state := m.review.Snapshot()
-	return uireview.PickerSource{Generation: state.Generation, TargetID: state.SessionID, RepoRoot: state.RepoSelected}
+	return uireviewsource.PickerSource(m.review.Snapshot())
 }
 
 func (m *Model) openReviewPicker(rows []uireview.PickerRow, title string, kind uireview.PickerKind, current string, source uireview.PickerSource, storeRoot string) {
@@ -148,9 +82,9 @@ func (m *Model) openBranchPickWithReader(reader reviewPickerReader) tea.Cmd {
 		return nil
 	}
 	return reviewPickerReadCmd(reader, reviewPickerLoadRequest{
-		kind:          reviewPickerLoadBranches,
-		source:        m.reviewPickerSource(),
-		foregroundGen: m.gens.foreground,
+		Kind:          reviewPickerLoadBranches,
+		Source:        m.reviewPickerSource(),
+		ForegroundGen: m.gens.foreground,
 	})
 }
 
@@ -178,25 +112,25 @@ func (m *Model) openBasePickWithReader(reader reviewPickerReader) tea.Cmd {
 		return nil
 	}
 	return reviewPickerReadCmd(reader, reviewPickerLoadRequest{
-		kind:          reviewPickerLoadBases,
-		source:        m.reviewPickerSource(),
-		foregroundGen: m.gens.foreground,
+		Kind:          reviewPickerLoadBases,
+		Source:        m.reviewPickerSource(),
+		ForegroundGen: m.gens.foreground,
 	})
 }
 
 func (m *Model) handleReviewPickerLoaded(msg reviewPickerLoadedMsg) tea.Cmd {
-	if m.effects.Quitting || m.base != baseReview || m.gens.foreground != msg.request.foregroundGen || !m.review.PickerSourceCurrent(msg.request.source) {
+	if m.effects.Quitting || m.base != baseReview || m.gens.foreground != msg.Request.ForegroundGen || !m.review.PickerSourceCurrent(msg.Request.Source) {
 		return nil
 	}
-	if msg.err != nil {
-		m.reportErr(msg.err.Error())
+	if msg.Err != nil {
+		m.reportErr(msg.Err.Error())
 		return nil
 	}
-	switch msg.request.kind {
+	switch msg.Request.Kind {
 	case reviewPickerLoadBranches:
-		m.openReviewPicker(msg.rows, "Review branch", uireview.PickRepo, msg.current, msg.request.source, "")
+		m.openReviewPicker(msg.Rows, "Review branch", uireview.PickRepo, msg.Current, msg.Request.Source, "")
 	case reviewPickerLoadBases:
-		m.openReviewPicker(msg.rows, "Diff base", uireview.PickBase, msg.current, msg.request.source, msg.storeRoot)
+		m.openReviewPicker(msg.Rows, "Diff base", uireview.PickBase, msg.Current, msg.Request.Source, msg.StoreRoot)
 	}
 	return nil
 }
@@ -280,17 +214,17 @@ func (m *Model) reviewBaseSavePending() bool {
 }
 
 func (m *Model) applyReviewBase(result reviewBaseResult) tea.Cmd {
-	source := uireview.PickerSource{Generation: result.generation, TargetID: result.targetID, RepoRoot: result.sourceRepo}
-	if result.err != nil {
+	source := uireview.PickerSource{Generation: result.Generation, TargetID: result.TargetID, RepoRoot: result.SourceRepo}
+	if result.Err != nil {
 		if !m.effects.Quitting {
-			m.reportErr(result.err.Error())
+			m.reportErr(result.Err.Error())
 		}
 		return nil
 	}
 	if m.effects.Quitting || !m.review.PickerSourceCurrent(source) {
 		return nil
 	}
-	request, ok := m.review.SelectBase(result.ref)
+	request, ok := m.review.SelectBase(result.Ref)
 	if !ok {
 		return nil
 	}

@@ -168,7 +168,7 @@ func (m *Model) applyDetachEffect(request detachRequest, result detachEffectResu
 	case tmux.RequestReview:
 		cmd := m.openDiff()
 		if m.base == baseReview {
-			m.reviewNav.ret = reviewReturn{kind: reviewReturnAttach, sessionID: sess.ID}
+			m.reviewNav.Set(reviewReturn{Kind: reviewReturnAttach, SessionID: sess.ID})
 		}
 		return cmd
 	case tmux.RequestEditor:

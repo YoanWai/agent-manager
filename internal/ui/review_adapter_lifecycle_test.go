@@ -38,8 +38,8 @@ func TestInSessionReviewRemembersOriginAndReattaches(t *testing.T) {
 	if m.base != baseReview {
 		t.Fatalf("marker set should enter review, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
-	if m.reviewNav.ret.kind != reviewReturnAttach || m.reviewNav.ret.sessionID != sess.ID {
-		t.Fatalf("review origin = %+v, want attach %q", m.reviewNav.ret, sess.ID)
+	if m.reviewNav.Ret().Kind != reviewReturnAttach || m.reviewNav.Ret().SessionID != sess.ID {
+		t.Fatalf("review origin = %+v, want attach %q", m.reviewNav.Ret(), sess.ID)
 	}
 
 	// esc leaves review; the live origin session re-attaches.
@@ -48,8 +48,8 @@ func TestInSessionReviewRemembersOriginAndReattaches(t *testing.T) {
 	if !m.onList() {
 		t.Fatalf("esc should leave review, screen = %v", m.screenID())
 	}
-	if m.reviewNav.ret != (reviewReturn{}) {
-		t.Fatalf("reattach origin should be consumed, got %+v", m.reviewNav.ret)
+	if m.reviewNav.Ret() != (reviewReturn{}) {
+		t.Fatalf("reattach origin should be consumed, got %+v", m.reviewNav.Ret())
 	}
 	if cmd == nil {
 		t.Fatal("esc from in-session review should re-attach the session, got nil command")
@@ -71,8 +71,8 @@ func TestListReviewLeavesToListWithoutReattach(t *testing.T) {
 	if m.base != baseReview {
 		t.Fatalf("openDiff should enter review, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
-	if m.reviewNav.ret.kind != reviewReturnList || m.reviewNav.ret.sessionID != "" {
-		t.Fatalf("list review should return to list, got %+v", m.reviewNav.ret)
+	if m.reviewNav.Ret().Kind != reviewReturnList || m.reviewNav.Ret().SessionID != "" {
+		t.Fatalf("list review should return to list, got %+v", m.reviewNav.Ret())
 	}
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -191,7 +191,7 @@ func TestCtrlRFromListOpensReview(t *testing.T) {
 	if m.base != baseReview {
 		t.Fatalf("ctrl+r from the list should open review, screen = %v (err=%q)", m.screenID(), m.errBar.text)
 	}
-	if m.reviewNav.ret.kind != reviewReturnList || m.reviewNav.ret.sessionID != "" {
+	if m.reviewNav.Ret().Kind != reviewReturnList || m.reviewNav.Ret().SessionID != "" {
 		t.Fatal("review opened from the list should return to the list, not re-attach")
 	}
 }

@@ -211,7 +211,7 @@ func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case uifocus.OpenReview:
 		cmd := m.openDiff()
 		if m.base == baseReview {
-			m.reviewNav.ret = reviewReturn{kind: reviewReturnFocus, sessionID: sess.ID}
+			m.reviewNav.Set(reviewReturn{Kind: reviewReturnFocus, SessionID: sess.ID})
 		}
 		return m, cmd
 	}

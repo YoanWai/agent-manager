@@ -27,6 +27,7 @@ import (
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uirailpersist "github.com/YoanWai/agent-manager/internal/ui/rail/persist"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
+	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
 	tea "github.com/charmbracelet/bubbletea"
@@ -47,7 +48,7 @@ type Model struct {
 	poller    *poller
 	screen
 	review    uireview.Model
-	reviewNav reviewNavState
+	reviewNav uireviewsource.Nav
 	mouse     mouseCapture
 	settings  uipersist.State
 	env       environment
@@ -85,10 +86,6 @@ type focusState struct {
 	// imeCursor is the cell the input method opens beside, owned here
 	// because the frame writer publishes into it.
 	imeCursor *cursorAnchor
-}
-
-type reviewNavState struct {
-	ret reviewReturn
 }
 
 type mouseCapture struct {

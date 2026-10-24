@@ -1,35 +1,25 @@
 package ui
 
 import (
-	"cmp"
-	"errors"
 	"os"
 	"path/filepath"
-	"sync"
 
 	"github.com/YoanWai/agent-manager/internal/deps"
-	"github.com/YoanWai/agent-manager/internal/diff"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
+	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// reviewLoadMsg carries one load result and, when the stored state needed
-// normalization, the captured normalized state to persist through the
-// effect lane so the write orders with every other Review mutation. The
-// load itself stays concurrent; only its persistence joins the lane.
-type reviewLoadMsg struct {
-	result    uireview.LoadResult
-	normalize *reviewEffectRequest
-}
+type reviewLoadMsg = uireviewsource.LoadMsg
 
-func reviewTarget(sess store.Session) uireview.Target {
-	return uireview.Target{ID: sess.ID, Name: sess.Name, Tool: sess.Tool, Cwd: sess.Cwd}
-}
+type reviewFilesResult = uireviewsource.FilesResult
 
-// reviewGroupBase is the base the target's group sets for its branch
-// scope. A base picked in review wins over it.
+func reviewTarget(sess store.Session) uireview.Target { return uireviewsource.Target(sess) }
+
+// reviewGroupBase is the base the target's group sets for its branch scope.
+// A base picked in review wins over it.
 func (m *Model) reviewGroupBase(targetID string) string {
 	for _, sess := range m.workspace.sessions {
 		if sess.ID == targetID {
@@ -39,155 +29,28 @@ func (m *Model) reviewGroupBase(targetID string) string {
 	return ""
 }
 
+func (m *Model) reviewGit() uireviewsource.Git {
+	return uireviewsource.SystemGit{Driver: m.services.gitDrv}
+}
+
 func (m *Model) reviewLoadCmd(req uireview.LoadRequest) tea.Cmd {
-	driver, stor := m.services.gitDrv, m.services.store
-	groupBase := m.reviewGroupBase(req.Target.ID)
-	return func() tea.Msg {
-		result := uireview.LoadResult{TargetID: req.Target.ID, Scope: req.Scope, Generation: req.Generation, Refresh: req.Refresh}
-		roots := append([]string(nil), req.RepoRoots...)
-		root := req.RepoRoot
-		if req.Resolve {
-			var err error
-			roots, err = driver.ResolveRepos(req.Target.Cwd)
-			if err != nil {
-				result.Err = err
-				return reviewLoadMsg{result: result}
-			}
-			idx, found := 0, false
-			for i := range roots {
-				if roots[i] == req.RepoWanted {
-					idx, found = i, true
-					break
-				}
-			}
-			if req.RepoWanted != "" && !found {
-				if driver.IsRepoRoot(req.RepoWanted) {
-					roots = append(roots, req.RepoWanted)
-					idx = len(roots) - 1
-				} else {
-					result.MissingRepo = req.RepoWanted
-				}
-			}
-			root = roots[idx]
-		}
-		result.RepoRoots, result.RepoRoot = roots, root
-		var normalize *reviewEffectRequest
-		key := req.Target.ID + "\x00" + root
-		if !req.Restored[key] {
-			stored, err := stor.ReviewState(req.Target.ID, root)
-			if err != nil {
-				result.SavedErr = err
-			} else {
-				state := reviewStateFromStore(stored)
-				normalized, changed := uireview.NormalizeSavedState(state)
-				if changed {
-					// Persistence joins the effect lane so the merge
-					// orders with every other Review mutation; the in-memory
-					// value uses the normalized shape immediately. A failed
-					// persist is retried by the next load: normalization is a
-					// pure idempotent function of the stored shape.
-					state = normalized
-					normalize = &reviewEffectRequest{
-						op:       reviewOpNormalize,
-						targetID: req.Target.ID,
-						repoRoot: root,
-						state:    normalized,
-					}
-				}
-				result.Saved, result.SavedLoaded = state, true
-			}
-		}
-		override := ""
-		if req.BaseOverride != nil {
-			override = *req.BaseOverride
-		} else {
-			var err error
-			override, err = stor.ReviewBase(req.Target.ID, resolveSymlinksOrSelf(root))
-			if err != nil {
-				result.Err = err
-				return reviewLoadMsg{result: result}
-			}
-		}
-		override = cmp.Or(override, groupBase)
-		set, err := diff.BuildSet(driver, root, req.Scope, override)
-		result.Set, result.Err = set, err
-		if err != nil {
-			return reviewLoadMsg{result: result}
-		}
-		baseRef := set.BaseRef
-		if req.Scope == git.ScopeBranch && baseRef == "" {
-			baseRef, _, _ = driver.BranchBase(set.Repo.Root, override)
-		}
-		var worktrees []git.Worktree
-		var wg sync.WaitGroup
-		wg.Add(2)
-		go func() { defer wg.Done(); result.Fingerprint, _ = driver.Fingerprint(set.Repo.Root, req.Scope, baseRef) }()
-		go func() { defer wg.Done(); worktrees, _ = driver.Worktrees(set.Repo.Root) }()
-		wg.Wait()
-		result.Worktrees = make([]uireview.Worktree, len(worktrees))
-		for i, wt := range worktrees {
-			result.Worktrees[i] = uireview.Worktree{Root: wt.Root, Branch: wt.Branch}
-		}
-		if normalize != nil {
-			return reviewLoadMsg{result: result, normalize: normalize}
-		}
-		return reviewLoadMsg{result: result}
-	}
+	return uireviewsource.LoadCmd(m.reviewGit(), m.services.store, req, m.reviewGroupBase(req.Target.ID))
 }
 
 func (m *Model) reviewFileCmd(req uireview.FileRequest) tea.Cmd {
-	driver := m.services.gitDrv
-	return func() tea.Msg {
-		return uireview.FileResult{
-			TargetID: req.TargetID, Scope: req.Scope, Generation: req.Generation,
-			RepoRoot: req.RepoRoot, Index: req.Index, Path: req.Path,
-			File: diff.LoadFile(driver, req.Set, 0),
-		}
-	}
+	return uireviewsource.FileCmd(m.reviewGit(), req)
 }
 
 func (m *Model) reviewFilesCmd(requests []uireview.FileRequest) tea.Cmd {
-	if len(requests) == 0 {
-		return nil
-	}
-	driver := m.services.gitDrv
-	return func() tea.Msg {
-		results := make(reviewFilesResult, 0, len(requests))
-		for _, req := range requests {
-			results = append(results, uireview.FileResult{
-				TargetID: req.TargetID, Scope: req.Scope, Generation: req.Generation,
-				RepoRoot: req.RepoRoot, Index: req.Index, Path: req.Path,
-				File: diff.LoadFile(driver, req.Set, 0),
-			})
-		}
-		return results
-	}
+	return uireviewsource.FilesCmd(m.reviewGit(), requests)
 }
 
-type reviewFilesResult []uireview.FileResult
-
 func (m *Model) reviewProbeCmd(req uireview.ProbeRequest) tea.Cmd {
-	driver, stor := m.services.gitDrv, m.services.store
-	groupBase := m.reviewGroupBase(req.Target.ID)
-	return func() tea.Msg {
-		result := uireview.ProbeResult{TargetID: req.Target.ID, Scope: req.Scope, RepoSelected: req.RepoSelected}
-		override, err := stor.ReviewBase(req.Target.ID, resolveSymlinksOrSelf(req.RepoSelected))
-		if err != nil {
-			return result
-		}
-		baseRef := ""
-		if req.Scope == git.ScopeBranch {
-			baseRef, _, _ = driver.BranchBase(req.GitRoot, cmp.Or(override, groupBase))
-		}
-		result.Fingerprint, _ = driver.Fingerprint(req.GitRoot, req.Scope, baseRef)
-		return result
-	}
+	return uireviewsource.ProbeCmd(m.reviewGit(), m.services.store, req, m.reviewGroupBase(req.Target.ID))
 }
 
 func (m *Model) reviewHighlightCmd(req uireview.HighlightRequest) tea.Cmd {
-	return func() tea.Msg {
-		return uireview.HighlightResult{Key: req.Key, Highlight: uireview.HighlightFile(&req.File)}
-	}
+	return uireviewsource.HighlightCmd(req)
 }
 
 // reviewSaveCmd persists one captured review state through the effect
@@ -307,21 +170,11 @@ func (m *Model) reviewCommands(requests uireview.Requests) tea.Cmd {
 }
 
 func reviewStateFromStore(state store.ReviewState) uireview.SavedState {
-	out := uireview.SavedState{Reviewed: state.Reviewed, Round: uireview.Round{Number: state.Round.Number, Scope: state.Round.Scope, Fingerprint: state.Round.Fingerprint}}
-	out.Comments = make([]uireview.Comment, len(state.Comments))
-	for i, note := range state.Comments {
-		out.Comments[i] = uireview.Comment{ID: note.ID, File: note.File, Line: note.Line, Deleted: note.Deleted, Excerpt: note.Excerpt, Text: note.Text, ContentHash: note.ContentHash, Round: note.Round, Scope: note.Scope, Point: note.Point, Resolved: note.Resolved, Outdated: note.Outdated}
-	}
-	return out
+	return uireviewsource.StateFromStore(state)
 }
 
 func reviewStateToStore(state uireview.SavedState) store.ReviewState {
-	out := store.ReviewState{Reviewed: state.Reviewed, Round: store.ReviewRound{Number: state.Round.Number, Scope: state.Round.Scope, Fingerprint: state.Round.Fingerprint}}
-	out.Comments = make([]store.ReviewComment, len(state.Comments))
-	for i, note := range state.Comments {
-		out.Comments[i] = store.ReviewComment{ID: note.ID, File: note.File, Line: note.Line, Deleted: note.Deleted, Excerpt: note.Excerpt, Text: note.Text, ContentHash: note.ContentHash, Round: note.Round, Scope: note.Scope, Point: note.Point, Resolved: note.Resolved, Outdated: note.Outdated}
-	}
-	return out
+	return uireviewsource.StateToStore(state)
 }
 
 func reviewOpenPathError(path string, err error) string {
@@ -343,10 +196,10 @@ func (m *Model) routeReviewMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		return routed(m.handleReviewPreferences(msg))
 
 	case reviewLoadMsg:
-		if msg.normalize != nil {
-			m.enqueueEffect(*msg.normalize, 0, false)
+		if msg.Normalize != nil {
+			m.enqueueEffect(reviewEffectRequest{op: reviewOpNormalize, targetID: msg.Normalize.TargetID, repoRoot: msg.Normalize.RepoRoot, state: msg.Normalize.State}, 0, false)
 		}
-		return routed(m, tea.Batch(m.handleReviewLoad(msg.result), m.nextEffectCmd()))
+		return routed(m, tea.Batch(m.handleReviewLoad(msg.Result), m.nextEffectCmd()))
 
 	case uireview.FileResult:
 		return routed(m, m.handleReviewFile(msg))
@@ -382,18 +235,15 @@ func (m *Model) routeReviewMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	return nil, nil, false
 }
 
-type reviewReturnKind uint8
+type reviewReturnKind = uireviewsource.ReturnKind
 
 const (
-	reviewReturnList reviewReturnKind = iota
-	reviewReturnFocus
-	reviewReturnAttach
+	reviewReturnList   = uireviewsource.ReturnList
+	reviewReturnFocus  = uireviewsource.ReturnFocus
+	reviewReturnAttach = uireviewsource.ReturnAttach
 )
 
-type reviewReturn struct {
-	kind      reviewReturnKind
-	sessionID string
-}
+type reviewReturn = uireviewsource.Return
 
 func (m *Model) diffSession() (store.Session, bool) {
 	for _, sess := range m.workspace.sessions {
@@ -405,16 +255,15 @@ func (m *Model) diffSession() (store.Session, bool) {
 }
 
 func (m *Model) closeDiff() tea.Cmd {
-	ret := m.reviewNav.ret
-	m.reviewNav.ret = reviewReturn{}
+	ret := m.reviewNav.Take()
 	gen := m.review.Close()
 	m.base = baseList
 	m.clearSurfaces()
-	switch ret.kind {
+	switch ret.Kind {
 	case reviewReturnAttach:
-		return m.reattach(ret.sessionID, gen)
+		return m.reattach(ret.SessionID, gen)
 	case reviewReturnFocus:
-		if !m.focusSession(ret.sessionID) {
+		if !m.focusSession(ret.SessionID) {
 			m.reportErr("the review origin is no longer listed")
 			return nil
 		}
@@ -425,18 +274,9 @@ func (m *Model) closeDiff() tea.Cmd {
 	}
 }
 
-type reviewPreferencesReader interface {
-	ReviewScope(string) (string, error)
-	ReviewRepo(string) (string, error)
-}
+type reviewPreferencesReader = uireviewsource.Preferences
 
-type reviewPreferencesMsg struct {
-	session   store.Session
-	request   uireview.LoadRequest
-	scope     git.Scope
-	preferred string
-	err       error
-}
+type reviewPreferencesMsg = uireviewsource.PreferencesMsg
 
 func (m *Model) openDiff() tea.Cmd { return m.openDiffWithReader(m.services.store) }
 
@@ -451,42 +291,27 @@ func (m *Model) openDiffWithReader(reader reviewPreferencesReader) tea.Cmd {
 		return nil
 	}
 	preferred, picked := m.ledger.pickedRepos[sess.ID]
-	m.reviewNav.ret = reviewReturn{kind: reviewReturnList}
+	m.reviewNav.Set(reviewReturn{Kind: reviewReturnList})
 	m.clearSurfaces()
 	m.base = baseReview
 	m.clearErr()
 	target := reviewTarget(sess)
 	target.Cwd = m.sessionDir(sess)
 	request := m.review.Open(target, git.ScopeUncommitted, preferred)
-	return func() tea.Msg {
-		result := reviewPreferencesMsg{session: sess, request: request, scope: git.ScopeUncommitted, preferred: preferred}
-		if reader != nil {
-			scope, err := reader.ReviewScope(sess.ID)
-			result.err = err
-			if err == nil {
-				result.scope = uireview.StoredScope(scope)
-			}
-			if !picked {
-				repo, err := reader.ReviewRepo(sess.ID)
-				result.preferred = repo
-				result.err = errors.Join(result.err, err)
-			}
-		}
-		return result
-	}
+	return uireviewsource.PreferencesCmd(reader, sess, request, preferred, picked)
 }
 
 func (m *Model) handleReviewPreferences(msg reviewPreferencesMsg) (tea.Model, tea.Cmd) {
-	if m.effects.Quitting || !m.review.Active() || m.review.Generation() != msg.request.Generation || m.review.SessionID() != msg.request.Target.ID {
+	if m.effects.Quitting || !m.review.Active() || m.review.Generation() != msg.Request.Generation || m.review.SessionID() != msg.Request.Target.ID {
 		return m, nil
 	}
 	current, ok := m.diffSession()
-	if !ok || !current.CreatedAt.Equal(msg.session.CreatedAt) || !current.LaunchTime().Equal(msg.session.LaunchTime()) || current.TmuxSocket != msg.session.TmuxSocket {
+	if !ok || !current.CreatedAt.Equal(msg.Session.CreatedAt) || !current.LaunchTime().Equal(msg.Session.LaunchTime()) || current.TmuxSocket != msg.Session.TmuxSocket {
 		return m, nil
 	}
-	request := m.review.Open(msg.request.Target, msg.scope, msg.preferred)
-	if msg.err != nil {
-		m.reportErr("reading review preferences: " + msg.err.Error())
+	request := m.review.Open(msg.Request.Target, msg.Scope, msg.Preferred)
+	if msg.Err != nil {
+		m.reportErr("reading review preferences: " + msg.Err.Error())
 	}
 	return m, tea.Batch(m.reviewLoadCmd(request), m.startStartupTick())
 }

@@ -256,8 +256,8 @@ func TestReviewBaseSaveFailureSurfacesAfterNavigation(t *testing.T) {
 	_, _ = m.review.SelectRepo("/newer-review")
 
 	cmd := m.applyReviewBase(reviewBaseResult{
-		targetID: "s1", sourceRepo: "/repo", generation: 1,
-		err: errors.New("persist base failed"),
+		TargetID: "s1", SourceRepo: "/repo", Generation: 1,
+		Err: errors.New("persist base failed"),
 	})
 	if cmd != nil {
 		t.Fatal("failed persistence started a review reload")
@@ -357,24 +357,5 @@ func TestReviewBaseSaveCompletesBehindBranchPicker(t *testing.T) {
 	}
 	if m.review.Generation() != generation || m.errBar.text == "" {
 		t.Fatalf("older branch picker remained actionable: generation=%d err=%q", m.review.Generation(), m.errBar.text)
-	}
-}
-
-func TestReviewSetBaseWorkerUsesCapturedValues(t *testing.T) {
-	st := openReviewTestStore(t)
-	result, err := runReviewWithWriter(reviewEffectRequest{
-		op: reviewOpSetBase, targetID: "s1", repoRoot: "/captured/repo", baseRef: "feature",
-		generation: 7, sourceRepo: "/raw/repo",
-	}, st, &scriptedReviewWriter{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := result.(reviewEffectResult).base
-	if got.targetID != "s1" || got.repoRoot != "/captured/repo" || got.sourceRepo != "/raw/repo" || got.ref != "feature" || got.generation != 7 || got.err != nil {
-		t.Fatalf("base result lost captured identity: %+v", got)
-	}
-	stored, err := st.ReviewBase("s1", "/captured/repo")
-	if err != nil || stored != "feature" {
-		t.Fatalf("worker persisted base=%q err=%v", stored, err)
 	}
 }

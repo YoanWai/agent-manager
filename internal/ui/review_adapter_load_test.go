@@ -462,7 +462,7 @@ func TestReviewTargetsTheGroupBaseUnlessOnePicked(t *testing.T) {
 			Target: reviewTarget(sess), Scope: git.ScopeBranch, Generation: state.Generation,
 			RepoRoot: state.RepoSelected, RepoRoots: []string{state.RepoSelected},
 		})()
-		return msg.(reviewLoadMsg).result
+		return msg.(reviewLoadMsg).Result
 	}
 
 	if result := load(); !strings.HasPrefix(result.Set.BaseDesc, "feature@") {

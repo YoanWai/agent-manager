@@ -141,7 +141,7 @@ func TestReviewFocusReturnKeepsItsCapturedSession(t *testing.T) {
 	m.selectSessionRow(t, b.Name)
 	m.review.Open(reviewTarget(a), git.ScopeUncommitted, "")
 	m.base = baseReview
-	m.reviewNav.ret = reviewReturn{kind: reviewReturnFocus, sessionID: a.ID}
+	m.reviewNav.Set(reviewReturn{Kind: reviewReturnFocus, SessionID: a.ID})
 	m.closeDiff()
 	if m.effects.Main.Active == nil || m.effects.Main.Active.Request.(focusRequest).sessionID != a.ID {
 		t.Fatal("review returned into a different session")
