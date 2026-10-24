@@ -58,6 +58,7 @@ jobs:
         with:
           name: coverage
           path: coverage.out
+          retention-days: 1
       - name: Build
         run: go build ./...
 
@@ -80,7 +81,7 @@ jobs:
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           files: coverage.out
-          fail_ci_if_error: false
+          fail_ci_if_error: true
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
