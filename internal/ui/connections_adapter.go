@@ -1,15 +1,12 @@
 package ui
 
 import (
-	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
-	"github.com/YoanWai/agent-manager/internal/remote"
-	"github.com/YoanWai/agent-manager/internal/store"
 	uiconnections "github.com/YoanWai/agent-manager/internal/ui/connections"
+	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -17,177 +14,78 @@ import (
 )
 
 // The SSH connections keep their list, host states, rows, preview and
-// dialog in internal/ui/connections. These adapters hold the SSH client,
-// copy each refresh into the package, paint its rows into the rail and the
-// content column, and run its requests on the effect lane.
+// dialog in internal/ui/connections, and the client that refreshes and
+// calls the hosts in internal/ui/connections/link. These adapters answer
+// what the package asks of the manager and paint its rows into the content
+// column.
 
-// connectionsFeature is the package's state and the client that refreshes
-// and calls the hosts.
-type connectionsFeature struct {
-	client *remote.Client
-	uiconnections.Connections
-}
+// linkRoot is the root as a routed connection result reaches it.
+type linkRoot struct{ *Model }
 
-func newConnections(client *remote.Client, stored []store.Connection) connectionsFeature {
-	c := connectionsFeature{client: client}
-	c.setList(stored)
-	return c
-}
+func (r linkRoot) RebuildRows() { r.rebuildRows() }
 
-// setList adopts the stored connections and hands them to the client.
-func (c *connectionsFeature) setList(stored []store.Connection) {
-	list := make([]remote.Connection, len(stored))
-	for i, conn := range stored {
-		list[i] = remote.Connection(conn)
+func (r linkRoot) SyncPreview() tea.Cmd { return r.syncRemotePreview() }
+
+func (r linkRoot) RailConnection(change uilink.RailChange) {
+	switch {
+	case change.Rename != "":
+		r.applyRailStateDecision(r.rail.RenameHost(change.Rename, change.To))
+	case change.Forget != "":
+		r.applyRailStateDecision(r.rail.ForgetHost(change.Forget))
 	}
-	c.SetList(list)
-	c.client.SetConnections(list)
+	if change.Focus != "" {
+		r.rail.Focus(uirail.Selection{Kind: uirail.ConnectionRow, Host: change.Focus})
+	}
 }
 
-// row is the remote row a rail selection names.
-func (c *connectionsFeature) row(selection uirail.Selection) (uiconnections.Row, bool) {
-	if !selection.Remote() {
-		return uiconnections.Row{}, false
+func (r linkRoot) AnswerSave(gen uint64, failed bool) {
+	s, open := surfaceOf[*uiconnections.Surface](r.Model)
+	open = open && s.Gen() == gen
+	if !open {
+		return
 	}
-	kind := uiconnections.SessionRow
-	switch selection.Kind {
-	case uirail.ConnectionRow:
-		kind = uiconnections.ConnectionRow
-	case uirail.GroupRow:
-		kind = uiconnections.GroupRow
+	if failed {
+		s.Dialog().SaveFailed(s.Dialog().Gen())
+		return
 	}
-	return c.Row(uiconnections.Target{Kind: kind, Host: selection.Host, Group: selection.Group, ID: selection.SessionID})
+	r.Pop()
 }
 
-// railHosts copies each connection's last good snapshot into rail rows.
-func (c *connectionsFeature) railHosts() []uirail.Host {
-	list := c.List()
-	hosts := make([]uirail.Host, 0, len(list))
-	for _, conn := range list {
-		state, seen := c.Host(conn.Name)
-		host := uirail.Host{Name: conn.Name, Err: state.Err, ArchivedGroups: map[string]bool{}}
-		switch {
-		case !seen:
-			host.State = uirail.HostConnecting
-		case state.OK:
-			host.State = uirail.HostOnline
-		default:
-			host.State = uirail.HostOffline
-			host.Trouble = uiconnections.TroubleLabel(state.Trouble)
+func (r linkRoot) CloseAsker(gen int, asker uilink.Asker) {
+	switch asker {
+	case uilink.FormAsker:
+		if _, ok := r.formFor(gen); ok {
+			r.closeForm()
 		}
-		for _, group := range state.Groups {
-			host.Groups = append(host.Groups, group.Path)
-			if group.Archived {
-				host.ArchivedGroups[group.Path] = true
-			}
+	case uilink.GroupFormAsker:
+		if s, ok := r.groupFormSurface(); ok && s.Gen() == gen {
+			r.Pop()
 		}
-		for _, sess := range state.Sessions {
-			host.Sessions = append(host.Sessions, uirail.Session{
-				ID: sess.ID, Name: sess.Name, Tool: sess.Tool, Cwd: sess.Directory,
-				Group: sess.Group, Status: sess.Status, Archived: sess.Archived,
-			})
-		}
-		for _, term := range state.Terminals {
-			host.Sessions = append(host.Sessions, uirail.Session{
-				ID: term.ID, Name: term.Name, Tool: remoteTerminalTool, Cwd: term.Directory,
-				Group: term.Group, Status: term.Status, Archived: term.Archived,
-				ParentID: term.ParentID, IsShell: true,
-			})
-		}
-		hosts = append(hosts, host)
 	}
-	return hosts
 }
 
-// remoteTerminalTool names a remote terminal's CLI in its row; the snapshot
-// lists terminals apart from sessions and carries no tool for them.
-const remoteTerminalTool = "terminal"
-
-// hostFacts copies a refresh into the package's values.
-func hostFacts(state remote.HostState) uiconnections.Host {
-	host := uiconnections.Host{
-		OK: state.OK, Failures: state.Failures, Attempted: state.Attempted,
-		ManagerAwake: state.Snapshot.ManagerAwake,
-	}
-	if state.Err != nil {
-		host.Err, host.Trouble = state.Err.Error(), remote.TroubleOf(state.Err)
-	}
-	for _, group := range state.Snapshot.Groups {
-		host.Groups = append(host.Groups, uiconnections.Group{Path: group.Path, Archived: group.Archived})
-	}
-	for _, sess := range state.Snapshot.Sessions {
-		host.Sessions = append(host.Sessions, uiconnections.Session{
-			ID: sess.ID, Name: sess.Name, Tool: sess.Tool, Directory: sess.Directory,
-			Group: sess.Group, Status: sess.Status, Archived: sess.Archived,
-		})
-	}
-	for _, term := range state.Snapshot.Terminals {
-		host.Terminals = append(host.Terminals, uiconnections.Session{
-			ID: term.ID, Name: term.Name, Directory: term.Directory, Group: term.Group,
-			Status: term.Status, Archived: term.Archived, ParentID: term.ParentID,
-		})
-	}
-	return host
+func (r linkRoot) ClearAccepted(composerGen int, draft string, closeAfterSend bool) {
+	r.clearAccepted(composerGen, draft, closeAfterSend)
 }
 
-// connectionRefreshMsg is one host's refresh, for the list generation that
-// started it.
-type connectionRefreshMsg struct {
-	host  string
-	gen   uint64
-	state uiconnections.Host
-}
+func (r linkRoot) ReportErr(text string) { r.reportErr(text) }
+
+func (r linkRoot) ReportDone(text string) { r.reportDone(text) }
 
 // pollConnections refreshes every connection that has no refresh in
 // flight. It rides the workspace poll, off the update path.
-func (m *Model) pollConnections() tea.Cmd {
-	var commands []tea.Cmd
-	for _, conn := range m.ssh.List() {
-		commands = append(commands, m.pollConnection(conn.Name))
-	}
-	return tea.Batch(commands...)
-}
+func (m *Model) pollConnections() tea.Cmd { return m.ssh.Poll() }
 
-func (m *Model) pollConnection(host string) tea.Cmd {
-	if !m.ssh.StartRefresh(host, time.Now()) {
-		return nil
-	}
-	client, gen := m.ssh.client, m.ssh.Gen()
-	return func() tea.Msg {
-		return connectionRefreshMsg{host: host, gen: gen, state: hostFacts(client.Refresh(context.Background(), host))}
-	}
-}
+func (m *Model) pollConnection(host string) tea.Cmd { return m.ssh.PollHost(host) }
 
-func (m *Model) applyConnectionRefresh(msg connectionRefreshMsg) tea.Cmd {
-	if !m.ssh.Refreshed(msg.host, msg.gen, msg.state) {
-		return nil
-	}
-	m.rebuildRows()
-	return m.syncRemotePreview()
-}
-
+// routeConnectionMsg hands a routed connection result to the package, and
+// the card's own answer to this machine.
 func (m *Model) routeConnectionMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
-	switch msg := msg.(type) {
-	case connectionRefreshMsg:
-		return routed(m, m.applyConnectionRefresh(msg))
-	case connectionDialogMsg:
+	if msg, ok := msg.(connectionDialogMsg); ok {
 		return routed(m, m.handleConnectionDialog(msg))
-	case remotePreviewMsg:
-		m.ssh.Preview.Apply(msg.read, msg.text, msg.err)
-		return routed(m, nil)
-	case remoteAttachReadyMsg:
-		return routed(m, m.runRemoteAttach(msg))
-	case remoteAttachDoneMsg:
-		key, err := remote.AttachKey(msg.err)
-		switch {
-		case err != nil:
-			m.reportErr(msg.host + ": attach ended: " + err.Error())
-		case key == "review":
-			m.reportErr("review opens only for sessions on this machine, not yet for one on " + msg.host)
-		case key == "editor":
-			m.reportErr("the editor opens only for sessions on this machine, not yet for one on " + msg.host)
-		}
-		return routed(m, tea.Batch(m.pollConnection(msg.host), m.readRemotePreview()))
+	}
+	if cmd, ok := m.ssh.Route(linkRoot{m}, msg); ok {
+		return routed(m, cmd)
 	}
 	return nil, nil, false
 }
@@ -203,56 +101,27 @@ func (m *Model) handleConnectionDialog(msg connectionDialogMsg) tea.Cmd {
 	return m.nextEffectCmd()
 }
 
-// remotePreviewMsg is a read of the selected remote row's screen.
-type remotePreviewMsg struct {
-	read uiconnections.Read
-	text string
-	err  error
-}
-
 // syncRemotePreview follows the selection: a remote session or terminal it
 // has not read yet gets a fresh read, anything else clears it.
 func (m *Model) syncRemotePreview() tea.Cmd {
 	selection, _ := m.rail.Selected()
-	row, ok := m.ssh.row(selection)
-	if !m.ssh.Preview.Follow(row, ok) {
-		return nil
-	}
-	return m.readRemotePreview()
+	row, ok := m.ssh.Row(selection)
+	return m.ssh.Follow(row, ok)
 }
 
 // tickRemotePreview re-reads the selected remote screen, following the
 // cursor first when it has moved to another remote row since.
 func (m *Model) tickRemotePreview() tea.Cmd {
-	if cmd := m.syncRemotePreview(); cmd != nil {
-		return cmd
-	}
-	return m.readRemotePreview()
-}
-
-// readRemotePreview reads the tracked row's screen once, off the update
-// path.
-func (m *Model) readRemotePreview() tea.Cmd {
-	read, ok := m.ssh.StartRead()
-	if !ok {
-		return nil
-	}
-	client := m.ssh.client
-	return func() tea.Msg {
-		text, err := readRemoteScreen(client, read)
-		return remotePreviewMsg{read: read, text: text, err: err}
-	}
-}
-
-func readRemoteScreen(client *remote.Client, read uiconnections.Read) (string, error) {
-	return client.ReadScreen(context.Background(), read.Ref, read.Terminal)
+	selection, _ := m.rail.Selected()
+	row, ok := m.ssh.Row(selection)
+	return m.ssh.Tick(row, ok)
 }
 
 // remoteContentLines fills the content column for a remote selection: a
 // connection's facts, a remote group's roster, or a remote screen.
 func (m *Model) remoteContentLines(width, height int) ([]contentLine, bool) {
 	selection, _ := m.rail.Selected()
-	row, ok := m.ssh.row(selection)
+	row, ok := m.ssh.Row(selection)
 	if !ok {
 		return nil, false
 	}
@@ -339,7 +208,7 @@ func (m *Model) remoteSessionDetail(row uiconnections.Row, width int) []string {
 // remoteRowLegend is the footer tier for a connection's rows.
 func (m *Model) remoteRowLegend() legendSection {
 	selection, _ := m.rail.Selected()
-	row, ok := m.ssh.row(selection)
+	row, ok := m.ssh.Row(selection)
 	if !ok {
 		return legendSection{}
 	}

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/store"
+	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -17,7 +18,7 @@ func typeConnection(m *Model, name, destination string) {
 
 func TestNewConnectionKeyOpensTheDialogAndSavesToTheStore(t *testing.T) {
 	m := buildModel(t)
-	m.ssh = newConnections(testRemoteClient(t), nil)
+	m.ssh = uilink.New(testRemoteClient(t), nil)
 	m.applyTestMsg(t, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
 	if !m.connectionDialogOpen() {
 		t.Fatal("C did not open the card")
@@ -51,7 +52,7 @@ func TestNewConnectionKeyOpensTheDialogAndSavesToTheStore(t *testing.T) {
 
 func TestAFailedConnectionSaveTakesEnterAgain(t *testing.T) {
 	m := buildModel(t)
-	m.ssh = newConnections(testRemoteClient(t), nil)
+	m.ssh = uilink.New(testRemoteClient(t), nil)
 	if err := m.services.store.AddConnection(store.Connection{Name: "box", Destination: "me@elsewhere"}); err != nil {
 		t.Fatal(err)
 	}

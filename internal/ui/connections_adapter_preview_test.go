@@ -9,6 +9,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/remote"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	uiconnections "github.com/YoanWai/agent-manager/internal/ui/connections"
+	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	"github.com/charmbracelet/x/ansi"
@@ -98,7 +99,7 @@ func TestHostTextCannotDriveTheTerminal(t *testing.T) {
 	m.applyTestMsg(t, m.pollConnection("box")())
 	// internal/remote already cleans what a host answers; the UI escapes on
 	// its own too, so this test hands it the host's raw rows.
-	setHost(m, "box", hostFacts(remote.HostState{OK: true, Snapshot: raw}))
+	setHost(m, "box", uilink.Facts(remote.HostState{OK: true, Snapshot: raw}))
 
 	frame := func(surface string) {
 		t.Helper()
@@ -148,7 +149,7 @@ func TestHostTextCannotDriveTheTerminal(t *testing.T) {
 	frame("a failed read")
 
 	m.applyTestMsg(t, m.pollConnection("box")())
-	setHost(m, "box", hostFacts(remote.HostState{Snapshot: raw, Failures: 1, Err: errors.New("box: denied" + hostile)}))
+	setHost(m, "box", uilink.Facts(remote.HostState{Snapshot: raw, Failures: 1, Err: errors.New("box: denied" + hostile)}))
 	m.rail.Focus(boxRow)
 	frame("an offline host")
 }

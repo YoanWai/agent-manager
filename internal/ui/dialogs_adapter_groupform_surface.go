@@ -3,6 +3,7 @@ package ui
 import (
 	"strings"
 
+	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -53,7 +54,7 @@ func (m *Model) handleGroupFormSubmit(msg uidialogs.GroupFormSubmitMsg, reader d
 	request := msg.Request
 	m.clearErr()
 	if target := msg.Remote; target.Host != "" {
-		return m.queueRemote(remoteRequest{op: remoteCreateGroup, host: target.Host, name: request.Path,
+		return m.queueRemote(remoteRequest{op: uilink.CreateGroup, host: target.Host, name: request.Path,
 			groupDir: strings.TrimSpace(request.Dir), composerGen: request.Gen})
 	}
 	m.enqueueEffect(groupRequest{

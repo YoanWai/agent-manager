@@ -14,6 +14,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
@@ -45,7 +46,7 @@ type Model struct {
 	mouse     mouseCapture
 	settings  uipersist.State
 	env       environment
-	ssh       connectionsFeature
+	ssh       uilink.State
 	layout    layoutState
 	errBar    errBar
 	release   uirelease.State
@@ -198,7 +199,7 @@ func newView(deps Dependencies, version string) (*Model, error) {
 			setSnapshot: st.SetSnapshot,
 		},
 		rail:     loadRail(st),
-		ssh:      newConnections(remote.New(deps.ProfileDir), connections),
+		ssh:      uilink.New(remote.New(deps.ProfileDir), connections),
 		settings: uipersist.New(uipersist.StoreWriter{Store: st}, choiceSettingKeys(slices.Sorted(maps.Keys(cfg.Tools)))),
 		focus: focusState{runtime: focusRuntimeState{
 			imeCursor: &cursorAnchor{},

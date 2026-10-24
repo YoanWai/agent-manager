@@ -71,7 +71,7 @@ func (m *Model) railSnapshot() uirail.Snapshot {
 		Sessions:       make([]uirail.Session, 0, len(m.workspace.sessions)),
 		Groups:         append([]string(nil), m.workspace.groups...),
 		ArchivedGroups: make(map[string]bool, len(m.workspace.archivedGroups)),
-		Hosts:          m.ssh.railHosts(),
+		Hosts:          m.ssh.RailHosts(),
 	}
 	for path, archived := range m.workspace.archivedGroups {
 		snapshot.ArchivedGroups[path] = archived

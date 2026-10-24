@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/store"
+	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -156,7 +157,7 @@ func TestConfirmRemovesAConnection(t *testing.T) {
 		for _, job := range jobs {
 			switch request := job.Request.(type) {
 			case connectionRequest:
-				if request.op == connectionRemove {
+				if request.op == uilink.SaveRemove {
 					removed = append(removed, request.name)
 				}
 			case lifecycleRequest:

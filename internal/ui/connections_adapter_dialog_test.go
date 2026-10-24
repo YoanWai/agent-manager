@@ -5,12 +5,13 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/remote"
 	uiconnections "github.com/YoanWai/agent-manager/internal/ui/connections"
+	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
 )
 
 func TestClicksOnTheConnectionDialog(t *testing.T) {
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 120, 40
-	m.ssh = newConnections(testRemoteClient(t), nil)
+	m.ssh = uilink.New(testRemoteClient(t), nil)
 	m.openConnectionDialog(remote.Connection{})
 	for _, tc := range []struct {
 		label string

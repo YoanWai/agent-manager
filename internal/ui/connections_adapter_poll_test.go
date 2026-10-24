@@ -16,6 +16,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uiconnections "github.com/YoanWai/agent-manager/internal/ui/connections"
+	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 )
 
@@ -105,7 +106,7 @@ func listedModel(t *testing.T, fake *fakeSSH) *Model {
 	t.Helper()
 	m := buildModel(t)
 	fake.snapshot = boxSnapshot()
-	m.ssh = newConnections(testRemoteClient(t, remote.WithRunner(fake.run)), []store.Connection{{Name: "box", Destination: "me@box"}})
+	m.ssh = uilink.New(testRemoteClient(t, remote.WithRunner(fake.run)), []store.Connection{{Name: "box", Destination: "me@box"}})
 	m.rebuildRows()
 	return m
 }
@@ -114,7 +115,7 @@ func listedModel(t *testing.T, fake *fakeSSH) *Model {
 func connectedModel(t *testing.T, fake *fakeSSH) *Model {
 	t.Helper()
 	m := listedModel(t, fake)
-	setHost(m, "box", hostFacts(remote.HostState{OK: true, Snapshot: fake.snapshot}))
+	setHost(m, "box", uilink.Facts(remote.HostState{OK: true, Snapshot: fake.snapshot}))
 	return m
 }
 
@@ -197,7 +198,7 @@ func TestOfflineHostKeepsItsLastRows(t *testing.T) {
 	if names := railNames(m); !slices.Contains(names, "api") || !slices.Contains(names, "sh") {
 		t.Fatalf("rows = %q, want the last snapshot kept", names)
 	}
-	if host := m.ssh.railHosts()[0]; host.State != uirail.HostOffline || host.Trouble != "unreachable" {
+	if host := m.ssh.RailHosts()[0]; host.State != uirail.HostOffline || host.Trouble != "unreachable" {
 		t.Fatalf("rail host = %+v, want offline and unreachable", host)
 	}
 }
@@ -222,7 +223,7 @@ func TestFailedHostNamesItsTrouble(t *testing.T) {
 		fake.snapshot.Version, fake.stderr, fake.code = tc.version, tc.stderr, tc.code
 		fake.mu.Unlock()
 		m.applyTestMsg(t, m.pollConnection("box")())
-		if host := m.ssh.railHosts()[0]; host.Trouble != tc.want {
+		if host := m.ssh.RailHosts()[0]; host.Trouble != tc.want {
 			t.Errorf("version %d, %q: trouble %q, want %q", tc.version, tc.stderr, host.Trouble, tc.want)
 		}
 	}
@@ -257,7 +258,7 @@ func TestRefreshOfAReplacedListIsDropped(t *testing.T) {
 	fake := &fakeSSH{}
 	m := listedModel(t, fake)
 	stale := m.pollConnection("box")
-	m.ssh.setList([]store.Connection{{Name: "box", Destination: "me@other"}})
+	m.ssh.SetList([]store.Connection{{Name: "box", Destination: "me@other"}})
 	m.applyTestMsg(t, stale())
 	if _, seen := m.ssh.Host("box"); seen {
 		t.Fatal("a refresh of the old destination landed on the new one")
@@ -267,7 +268,7 @@ func TestRefreshOfAReplacedListIsDropped(t *testing.T) {
 func TestRemovedConnectionTakesItsRowsWithIt(t *testing.T) {
 	fake := &fakeSSH{}
 	m := connectedModel(t, fake)
-	m.ssh.setList(nil)
+	m.ssh.SetList(nil)
 	m.rebuildRows()
 	if names := railNames(m); slices.Contains(names, "box") || slices.Contains(names, "api") {
 		t.Fatalf("rows = %q after removal", names)

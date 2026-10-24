@@ -6,6 +6,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/remote"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uiconnections "github.com/YoanWai/agent-manager/internal/ui/connections"
+	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -26,7 +27,7 @@ func openConnectionModel(t *testing.T) *Model {
 	t.Helper()
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 120, 40
-	m.ssh = newConnections(testRemoteClient(t), nil)
+	m.ssh = uilink.New(testRemoteClient(t), nil)
 	m.applyTestMsg(t, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
 	if !m.connectionDialogOpen() {
 		t.Fatal("the new connection key did not open the card")
@@ -65,7 +66,7 @@ func TestConnectionCardKeepsItsDraft(t *testing.T) {
 // replaced it, neither closes nor releases the card on screen.
 func TestConnectionSaveCompletionIsFenced(t *testing.T) {
 	m := openConnectionModel(t)
-	stale := connectionRequest{op: connectionAdd, next: store.Connection{Name: "box", Destination: "me@box"}, gen: m.connectionSurface().Gen()}
+	stale := connectionRequest{op: uilink.SaveAdd, next: store.Connection{Name: "box", Destination: "me@box"}, gen: m.connectionSurface().Gen()}
 	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m.applyConnectionEffect(stale, connectionEffectResult{}, nil)
 	if m.connectionDialogOpen() {

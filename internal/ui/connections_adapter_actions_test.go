@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
+	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
@@ -169,11 +170,11 @@ func TestRemoteAttachBuildsTheSSHCommandOffTheUpdatePath(t *testing.T) {
 		if cmd == nil {
 			t.Fatalf("%v built nothing", kind)
 		}
-		ready, ok := cmd().(remoteAttachReadyMsg)
-		if !ok || ready.err != nil || ready.host != "box" {
+		ready, ok := cmd().(uilink.AttachReadyMsg)
+		if !ok || ready.Err != nil || ready.Host != "box" {
 			t.Fatalf("%v: msg %+v", kind, ready)
 		}
-		args := ready.cmd.Args
+		args := ready.Cmd.Args
 		if args[0] != "ssh" || !slices.Contains(args, "-t") || !slices.Contains(args, "me@box") || !strings.Contains(args[len(args)-1], "am_s1") {
 			t.Fatalf("%v: argv %q", kind, args)
 		}

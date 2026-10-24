@@ -4,6 +4,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/remote"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uiconnections "github.com/YoanWai/agent-manager/internal/ui/connections"
+	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -26,9 +27,9 @@ func (r connectionsRoot) Look() uiconnections.DialogView {
 func (r connectionsRoot) CardWidth(cols int) int { return cardWidthFor(cols) }
 
 func (r connectionsRoot) Save(gen uint64, editing string, next remote.Connection) tea.Cmd {
-	op := connectionAdd
+	op := uilink.SaveAdd
 	if editing != "" {
-		op = connectionUpdate
+		op = uilink.SaveUpdate
 	}
 	request := connectionRequest{op: op, name: editing, next: store.Connection(next), gen: gen}
 	return func() tea.Msg { return connectionDialogMsg{save: &request} }
