@@ -37,7 +37,6 @@ type Footer struct {
 	ArrowStep  bool
 }
 
-// ListLegend is the base screen's footer.
 func (f Footer) ListLegend() Legend { return PaintLive(f.List, f.Width) }
 
 // Transient paints one tier at the list footer's height: the footer sets the

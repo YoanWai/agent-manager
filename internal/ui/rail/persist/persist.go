@@ -13,14 +13,12 @@ import (
 )
 
 const (
-	// CollapsedSetting holds the local group paths folded at the last save.
 	CollapsedSetting = "collapsed_groups"
 	// HostCollapsedSetting holds the folds on connection rows, kept apart
 	// from local paths because a local group may be named like a host row.
 	HostCollapsedSetting = "collapsed_connection_groups"
 )
 
-// Store is the rows a Rail change reads and writes.
 type Store interface {
 	Get(id string) (store.Session, error)
 	Setting(key string) (string, error)
@@ -34,13 +32,11 @@ type Store interface {
 	SessionsInSubtree(path string) ([]store.Session, error)
 }
 
-// Labels is the tmux status bar a move leaves showing the old group.
 type Labels interface {
 	Exists(id string) bool
 	SetLabel(id, label string) error
 }
 
-// Load restores the folds a previous run saved, local and on connections.
 func Load(st Store) uirail.Model {
 	rail := uirail.New(Collapsed(st))
 	raw, err := st.Setting(HostCollapsedSetting)
@@ -54,7 +50,6 @@ func Load(st Store) uirail.Model {
 	return rail
 }
 
-// Collapsed is the local group paths a previous run left folded.
 func Collapsed(st Store) []string {
 	raw, err := st.Setting(CollapsedSetting)
 	if err != nil || raw == "" {

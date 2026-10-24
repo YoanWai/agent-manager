@@ -4,7 +4,6 @@ package review
 // pane's blank and title rows, the closing rule and the status line.
 const diffFrameRows = 6
 
-// diffBodyRows is what the panes lose at the top and the bottom of the body.
 const diffBodyRows = 2
 
 // AnnotationBarRows is the docked comment box's height in a pane codeWidth

@@ -14,11 +14,9 @@ type ForkSurface struct {
 	root ForkRoot
 }
 
-// ForkRoot is what the card reaches on the root beyond surface.Host.
 type ForkRoot interface {
 	ReportErr(text string)
 	ClearErr()
-	// Submit queues the fork of the source the card was opened on.
 	Submit(name string, gen int) tea.Cmd
 	Paint(form *Fork) string
 }
@@ -31,7 +29,6 @@ func NewForkSurface(root ForkRoot, sourceName, sourceGroup string, gen int) *For
 
 func (s *ForkSurface) Gen() int { return s.gen }
 
-// Root is the source the card holds.
 func (s *ForkSurface) Root() ForkRoot { return s.root }
 
 func (s *ForkSurface) Key(h surface.Host, msg tea.KeyMsg) (bool, tea.Cmd) {

@@ -112,7 +112,6 @@ func RunStart(services Services, request StartRequest) (StartResult, error) {
 	return result, nil
 }
 
-// RunSettle reads what the installer shell recorded about its exit.
 func RunSettle(services Services, request SettleRequest) (SettleResult, error) {
 	install := request.Pending
 	result := SettleResult{SessionID: install.SessionID, State: uilaunchhint.Running}

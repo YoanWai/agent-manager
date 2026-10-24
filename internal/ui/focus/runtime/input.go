@@ -14,17 +14,14 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// Kind is what one queued write to the focused pane carries.
 type Kind uint8
 
 const (
-	// Keys is a tmux send-keys command the view already encoded.
 	Keys Kind = iota
 	// Mouse is a guarded mouse report the pane's application asked for.
 	Mouse
 	// Paste is pasted text, which travels over its own transport.
 	Paste
-	// Prompt records a composer draft as the session's last prompt.
 	Prompt
 )
 
@@ -72,17 +69,14 @@ type Candidate struct {
 	At      time.Time
 }
 
-// Writer is what one queued write runs against.
 type Writer struct {
 	Store  *store.Store
 	Driver *tmux.Driver
 	Engine *status.Engine
 	Watch  *watch.Watcher
-	// Paste carries pasted text into the pane.
-	Paste func(*tmux.Driver, string, string) error
+	Paste  func(*tmux.Driver, string, string) error
 }
 
-// Run performs one queued write.
 func (w Writer) Run(request Request) (Result, error) {
 	if request.Counted {
 		defer w.Watch.WriteLanded(request.Session.ID)

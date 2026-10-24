@@ -10,20 +10,15 @@ import (
 type Host interface {
 	// Session is the selected row, false when the cursor sits on a group.
 	Session() (id string, ok bool)
-	// PaneRows is the rows of pane content the focused view paints.
 	PaneRows() int
-	// Bindings are the manager's keys as the pressed key resolves them.
 	Bindings(key string) Bindings
 	// RuntimeReady reports whether a watcher exists to route a report through.
 	RuntimeReady() bool
 }
 
-// KeyHost is what one key press asks of the root beyond Host.
 type KeyHost interface {
 	Host
-	// Queued writes one key press to the session's pane.
 	Queued(id string, write Write) tea.Cmd
-	// Region asks the watcher for one scrollback viewport.
 	Region(request *RegionRequest) tea.Cmd
 	// Reported sends a guarded mouse report into the pane's application.
 	Reported(report string, echo bool)
@@ -32,7 +27,6 @@ type KeyHost interface {
 	Editor() (tea.Model, tea.Cmd)
 	Review(id string) (tea.Model, tea.Cmd)
 	Saved() tea.Cmd
-	// Leave ends focus, LeaveMode returns to the list behind it.
 	Leave() tea.Cmd
 	LeaveMode() tea.Cmd
 }
@@ -47,19 +41,15 @@ type MouseHost interface {
 	LeaveMode() tea.Cmd
 }
 
-// Bindings are the manager's keys as the focused pane reads them.
 type Bindings struct {
-	Detach bool
-	Editor bool
-	Review bool
-	Saved  bool
-	// ArrowStep makes ← at the head of the prompt mean back to the list.
-	ArrowStep bool
-	// AtInputHead is the agent's caret sitting at the head of its prompt.
+	Detach      bool
+	Editor      bool
+	Review      bool
+	Saved       bool
+	ArrowStep   bool
 	AtInputHead bool
 }
 
-// WriteKind is the transport one write to a pane takes.
 type WriteKind uint8
 
 const (
@@ -172,7 +162,6 @@ func (s *Model) ApplyCopiedMessage(msg CopiedMessage) bool {
 	return s.ApplyCopied(msg.Generation, msg.Chars)
 }
 
-// ScrollMessage is one scrollback viewport read for the focused pane.
 type ScrollMessage struct {
 	SessionID string
 	Offset    int
@@ -181,7 +170,6 @@ type ScrollMessage struct {
 	OK        bool
 }
 
-// ScrollHost is what landing a scrollback viewport asks of the root.
 type ScrollHost interface {
 	Session() (id string, ok bool)
 	PaneRows() int
@@ -226,13 +214,11 @@ type FrameMessage struct {
 	Writes      uint64
 }
 
-// FrameHost is what landing a watcher frame asks of the root.
 type FrameHost interface {
 	Session() (id string, ok bool)
 	UsePreview(preview string)
 }
 
-// ApplyFrame lands one watcher frame the focused pane pushed.
 func (s *Model) ApplyFrame(msg FrameMessage, h FrameHost) tea.Cmd {
 	id, _ := h.Session()
 	result := s.ApplyPane(PaneUpdate{

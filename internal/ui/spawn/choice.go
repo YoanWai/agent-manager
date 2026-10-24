@@ -19,7 +19,6 @@ type Caps struct {
 	Efforts  bool
 }
 
-// Answer is a copy of the CLI's latest catalog answer.
 type Answer struct {
 	Cat     catalog.Catalog
 	Err     error
@@ -58,14 +57,12 @@ type Choice struct {
 	model   string
 	effort  int
 	// filter shows the pick, or typing that narrows the list when filtering.
-	filter    textinput.Model
-	filtering bool
-	// typedEffort holds the level of a CLI that lists none (hermes).
+	filter      textinput.Model
+	filtering   bool
 	typedEffort textinput.Model
 	sugg        modelSuggest
 	recent      []string
-	// saved is the CLI's last choice, waiting for its answer to place it.
-	saved *Pick
+	saved       *Pick
 }
 
 func (ch *Choice) query() string {
@@ -355,13 +352,11 @@ func (ch *Choice) Model() string { return ch.model }
 // Current is the choice as it stands, without a typed model.
 func (ch *Choice) Current(h ChoiceHost, toolName string) Pick { return ch.current(h, toolName) }
 
-// FilterValue is what the model field shows or holds typed.
 func (ch *Choice) FilterValue() string { return ch.filter.Value() }
 
 // SetFilter puts text in the model field, as a model typed but not picked.
 func (ch *Choice) SetFilter(value string) { ch.filter.SetValue(value) }
 
-// ListOpen says the model list is open.
 func (ch *Choice) ListOpen() bool { return ch.sugg.open }
 
 type suggestion struct {
@@ -424,7 +419,6 @@ func recentModels(h ChoiceHost, toolName string) []string {
 	return keys
 }
 
-// RememberModel puts a launched model at the head of the CLI's recent ones.
 func RememberModel(h ChoiceHost, toolName string, picked Pick) {
 	if picked.Model == "" {
 		return
@@ -454,7 +448,6 @@ func SettingKeys(tools []string) []string {
 	return keys
 }
 
-// ModelListed says the model row has a list to pick from.
 func ModelListed(h ChoiceHost, toolName string) bool {
 	state, supported := choiceAnswer(h, toolName)
 	switch {
@@ -491,22 +484,18 @@ func (ch *Choice) EffortShown(h ChoiceHost, toolName string) (shown, active bool
 	return true, true
 }
 
-// HasProfiles says the CLI answered profiles to pick from.
 func HasProfiles(h ChoiceHost, toolName string) bool {
 	return len(choiceProfiles(h, toolName)) > 0
 }
 
-// OpenFilter empties the filter and opens the model list on the pick.
 func (ch *Choice) OpenFilter(h ChoiceHost, toolName string) {
 	ch.filter.SetValue("")
 	ch.filter.Focus()
 	ch.openModelList(h, toolName)
 }
 
-// FocusEffort puts the caret in the typed level.
 func (ch *Choice) FocusEffort() { ch.typedEffort.Focus() }
 
-// Blur takes the caret out of the choice and closes its list.
 func (ch *Choice) Blur() {
 	ch.filter.Blur()
 	ch.typedEffort.Blur()
@@ -524,7 +513,6 @@ func (ch *Choice) TypeEffort(h ChoiceHost, toolName string, msg tea.KeyMsg) tea.
 	return cmd
 }
 
-// TypeFilter narrows the open model list.
 func (ch *Choice) TypeFilter(msg tea.KeyMsg) tea.Cmd {
 	var cmd tea.Cmd
 	ch.filter, cmd = ch.filter.Update(msg)
@@ -540,7 +528,6 @@ func (ch *Choice) PickHighlighted(h ChoiceHost, toolName string) {
 	}
 }
 
-// PickEntry picks the model a list row shows.
 func (ch *Choice) PickEntry(h ChoiceHost, toolName string, entry int) {
 	if list := ch.suggestions(h, toolName, ch.query()); entry < len(list) {
 		ch.pickModel(h, toolName, list[entry].model.Key())

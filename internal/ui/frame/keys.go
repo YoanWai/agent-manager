@@ -55,7 +55,6 @@ func pressKey(name string) (tea.KeyMsg, bool) {
 	return tea.KeyMsg{}, false
 }
 
-// legendGlyphKeys reads back the glyphs a legend draws for named keys.
 var legendGlyphKeys = map[string]string{"↵": "enter", "⌫": "backspace"}
 
 // namedKeyTypes is every key Bubble Tea names, under the spelling a key

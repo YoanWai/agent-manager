@@ -8,7 +8,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// Op is one call to a connection's CLI.
 type Op uint8
 
 const (
@@ -23,14 +22,12 @@ const (
 	CreateGroup
 )
 
-// Call is one call to a connection's CLI, run on the remote lane.
 type Call struct {
-	Op   Op
-	Host string
-	Ref  remote.Ref
-	Name string
-	Text string
-	// Spawn and Terminal are the options a spawn or a new terminal carries.
+	Op       Op
+	Host     string
+	Ref      remote.Ref
+	Name     string
+	Text     string
 	Spawn    sessioncmd.CreateSessionOptions
 	Terminal sessioncmd.CreateTerminalOptions
 	// GroupDir is the directory a new group on the host defaults to; Name
@@ -42,8 +39,7 @@ type Call struct {
 	ComposerGen    int
 	CloseAfterSend bool
 	FromForm       bool
-	// Dead marks a kill of an agent that has already exited there.
-	Dead bool
+	Dead           bool
 }
 
 // Result is what a call returned: the session or terminal it made or
@@ -52,7 +48,6 @@ type Result struct {
 	Session sessioncmd.Session
 }
 
-// Run makes the call and returns what it left.
 func Run(ctx context.Context, client *remote.Client, openers remote.Openers, call Call) (Result, error) {
 	var result Result
 	var err error
@@ -79,7 +74,6 @@ func Run(ctx context.Context, client *remote.Client, openers remote.Openers, cal
 	return result, err
 }
 
-// ApplyCall reports what a call left and picks the host up again.
 func (s *State) ApplyCall(root Root, call Call, result Result, err error) tea.Cmd {
 	if err != nil {
 		// As on this machine, a prompt that may sit in the pane leaves the

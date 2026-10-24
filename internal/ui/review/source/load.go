@@ -12,7 +12,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// Git is the repository work a load, probe or highlight runs.
 type Git interface {
 	ResolveRepos(cwd string) ([]string, error)
 	IsRepoRoot(dir string) bool
@@ -23,7 +22,6 @@ type Git interface {
 	LoadFile(set diff.Set, index int) diff.FileDiff
 }
 
-// SystemGit is the git driver and diff loader as a Git.
 type SystemGit struct{ Driver *git.Driver }
 
 func (g SystemGit) ResolveRepos(cwd string) ([]string, error) { return g.Driver.ResolveRepos(cwd) }
@@ -154,14 +152,12 @@ func LoadCmd(g Git, st Store, req uireview.LoadRequest, groupBase string) tea.Cm
 	}
 }
 
-// FileCmd loads one file of a set.
 func FileCmd(g Git, req uireview.FileRequest) tea.Cmd {
 	return func() tea.Msg {
 		return fileResult(g, req)
 	}
 }
 
-// FilesResult is the files one refresh asked for, loaded in order.
 type FilesResult []uireview.FileResult
 
 // FilesCmd loads the files a refresh asked for after the selected one.

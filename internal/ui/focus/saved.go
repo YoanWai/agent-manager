@@ -26,7 +26,6 @@ type SavedRoot interface {
 	// Keys is the live key tables, for the leave key and the saved
 	// prompt key that closes the list again.
 	Keys() keybind.Table
-	// InnerWidth is the body columns of a card width wide.
 	InnerWidth(width int) int
 	// PasteFocused pastes a picked prompt into the focused session's
 	// prompt, unsent.
@@ -45,7 +44,6 @@ func OpenSaved(root SavedRoot, gen uint64, styles spawn.Styles) *Saved {
 // on the list that asked.
 func (s *Saved) Gen() uint64 { return s.gen }
 
-// Load is the catalog as one read found it.
 func (s *Saved) Load(rows []spawn.Saved, err error) { s.list.Load(rows, err) }
 
 // Key keeps the leave key working while the list is up, and the saved

@@ -18,13 +18,11 @@ type Effects interface {
 	Spawn(request spawn.Request) tea.Cmd
 }
 
-// Decide runs a key on the bar and returns the root work it asked for.
 func Decide(h Effects, q *Surface, msg tea.KeyMsg) tea.Cmd {
 	cmd, request := q.Bar.HandleKey(h, msg)
 	return Execute(h, q, request, cmd)
 }
 
-// Execute runs the root side of what a key or click asked.
 func Execute(h Effects, q *Surface, request Request, cmd tea.Cmd) tea.Cmd {
 	var follow tea.Cmd
 	switch {

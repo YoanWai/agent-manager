@@ -38,7 +38,6 @@ type Confirm struct {
 	Label  string
 }
 
-// ConfirmOutcome is what a key asks the root to do with the pending request.
 type ConfirmOutcome uint8
 
 const (
@@ -90,7 +89,6 @@ func (c Confirm) Destructive() bool {
 		c.Action == ConfirmRestart || c.Action == ConfirmArchive || c.Action == ConfirmRemoveConnection
 }
 
-// Answer is the word the accept key carries in the hint.
 func (c Confirm) Answer() string {
 	switch c.Action {
 	case ConfirmKill:

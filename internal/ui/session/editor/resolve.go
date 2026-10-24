@@ -35,12 +35,10 @@ func Resolution(configured string, lookup func(string) (string, error)) EditorRe
 	}
 }
 
-// Line is the editor the manager launches with.
 func (r EditorResolution) Line() string {
 	return uisession.Resolve(r.configured, r.manager, r.visual, r.editor, r.gui, r.lookup)
 }
 
-// Prepare resolves the process that opens path.
 func (r EditorResolution) Prepare(path string) uisession.Launch {
 	line := r.Line()
 	if command, ok := uisession.Command(line, path); ok {
@@ -69,7 +67,6 @@ func (r EditorResolution) Probe() Probe {
 	return Probe{Found: found, Auto: r.Line()}
 }
 
-// Probe is one machine's answer for the Settings editor row.
 type Probe struct {
 	Found []string
 	Auto  string

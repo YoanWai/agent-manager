@@ -24,7 +24,6 @@ type Root interface {
 	// Look is the field painter, the cursor-marked input and the muted tone
 	// the dialog paints with.
 	Look() DialogView
-	// CardWidth is the width of a card on a terminal cols wide.
 	CardWidth(cols int) int
 	// Save queues the write of a connection the dialog validated: it adds
 	// one when editing names none, else updates the one it names.

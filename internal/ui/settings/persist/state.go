@@ -14,26 +14,22 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// Reader is the settings table a load reads.
 type Reader interface {
 	Setting(key string) (string, error)
 }
 
-// Writer is the settings table a save writes and reads back.
 type Writer interface {
 	Reader
 	SetSetting(key, value string) error
 	SetProactiveCoordination(proactive bool) error
 }
 
-// Presets is the saved prompt catalog the panel lists and writes.
 type Presets interface {
 	SessionPresets() ([]store.SessionPreset, error)
 	SaveSessionPreset(previous string, preset store.SessionPreset) error
 	DeleteSessionPreset(name string) (bool, error)
 }
 
-// StoreWriter is the store as a Writer.
 type StoreWriter struct{ Store *store.Store }
 
 func (w StoreWriter) Setting(key string) (string, error) { return w.Store.Setting(key) }
@@ -44,7 +40,6 @@ func (w StoreWriter) SetProactiveCoordination(proactive bool) error {
 	return w.Store.SetProactiveCoordination(proactive)
 }
 
-// Root is what a save completion asks of the manager.
 type Root interface {
 	ReportErr(text string)
 	// Caveat adds a second line of explanation to the failure already
@@ -53,9 +48,7 @@ type Root interface {
 	// MirrorPrefs reconciles the running manager to committed values and
 	// reports how many reads failed, so their prefs keep their state.
 	MirrorPrefs(values []uisettings.Readback) string
-	// Restore puts a live Settings card back on committed values.
 	Restore(values []uisettings.Readback, hiddenRaw string, hiddenErr error, editors *uisettings.EditorsProbe)
-	// Update starts the self-update a save was staged for, or abandons it.
 	Update(staged bool) tea.Cmd
 }
 

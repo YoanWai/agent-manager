@@ -38,15 +38,11 @@ func (r Remote) on() bool { return r.Host != "" }
 // Lend is what a parent group gives a child group made under it.
 type Lend struct{ Dir, Base string }
 
-// GroupFormRoot is what the card reaches on the root beyond surface.Host.
 type GroupFormRoot interface {
-	// CardWidth is the default card width on a terminal cols wide.
 	CardWidth(cols int) int
-	// ReportErr puts the name the form refused on the status bar.
 	ReportErr(text string)
 }
 
-// GroupFormSubmitMsg asks the root to create the group a submit validated.
 type GroupFormSubmitMsg struct {
 	Request GroupFormRequest
 	Base    string
@@ -98,17 +94,14 @@ func groupFieldWidth(cardWidth int) int {
 	return CardInnerWidth(cardWidth) - spawn.LabelColumn - 3
 }
 
-// Parents are the picker's rows.
 func (s *GroupFormSurface) Parents() []spawn.GroupOption { return s.parents }
 
-// Parent is the index of the picker's highlighted row.
 func (s *GroupFormSurface) Parent() int { return s.parent }
 
 // SelectParent highlights row index without moving the inherited path, for
 // a click that only places the cursor.
 func (s *GroupFormSurface) SelectParent(index int) { s.parent = index }
 
-// Selected is the group the picker highlights.
 func (s *GroupFormSurface) Selected() string {
 	if s.parent >= 0 && s.parent < len(s.parents) {
 		return s.parents[s.parent].Path
@@ -132,7 +125,6 @@ func (s *GroupFormSurface) RemoteTarget() Remote { return s.remote }
 // Base is the group's own base choice, empty for auto.
 func (s *GroupFormSurface) Base() string { return s.base }
 
-// BaseRef is the base choice the root's branch read steps and stores.
 func (s *GroupFormSurface) BaseRef() *string { return &s.base }
 
 func (s *GroupFormSurface) Key(h surface.Host, msg tea.KeyMsg) (bool, tea.Cmd) {
@@ -151,7 +143,6 @@ func (s *GroupFormSurface) Wheel(h surface.Host, arrow tea.KeyMsg) tea.Cmd {
 	return s.run(h, s.GroupForm.Wheel(step))
 }
 
-// run executes what a form key asked of the surface and the root.
 func (s *GroupFormSurface) run(h surface.Host, key GroupFormKey) tea.Cmd {
 	switch key.Action {
 	case GroupFormCancel:
@@ -245,12 +236,10 @@ func (s *GroupFormSurface) PathValue() (string, bool)       { return s.Dir(), tr
 func (s *GroupFormSurface) TakePath(path string)            { s.GroupForm.TakePath(path) }
 func (s *GroupFormSurface) Paths() *pathcomplete.State      { return &s.pc }
 
-// groupBadge paints a group path in the badge tone.
 func groupBadge(st spawn.Styles) func(string) string {
 	return func(text string) string { return lipgloss.NewStyle().Foreground(st.Accent2).Render(text) }
 }
 
-// pathStyles copies the live palette for one paint of the suggestions.
 func pathStyles(st spawn.Styles) pathcomplete.Styles {
 	return pathcomplete.Styles{GlyphMode: st.GlyphMode, Muted: st.Muted, Accent: st.Accent, Accent2: st.Accent2}
 }

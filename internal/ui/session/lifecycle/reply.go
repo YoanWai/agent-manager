@@ -20,7 +20,6 @@ type ReplyReader struct {
 	History int
 }
 
-// Reply is a session's newest answer, read off its pane.
 type Reply struct {
 	Text string
 	// Unreadable is a tool that draws no region a reply can be read from,

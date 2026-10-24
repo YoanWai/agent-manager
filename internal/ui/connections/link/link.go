@@ -30,19 +30,14 @@ type State struct {
 type Asker uint8
 
 const (
-	// FormAsker is the New Session form.
 	FormAsker Asker = iota + 1
-	// GroupFormAsker is the New Group card.
 	GroupFormAsker
 )
 
-// Root is what a routed result asks of the manager.
 type Root interface {
-	// RebuildRows reconciles the rail with the connections it now lists.
 	RebuildRows()
 	// SyncPreview reads the selected remote row's screen, if it has none.
 	SyncPreview() tea.Cmd
-	// RailConnection renames, forgets or selects a connection row.
 	RailConnection(change RailChange)
 	// AnswerSave closes the connection card that asked, or marks its save
 	// failed.
@@ -57,14 +52,12 @@ type Root interface {
 	ReportDone(text string)
 }
 
-// New holds the stored list and hands it to the client.
 func New(client *remote.Client, stored []store.Connection) State {
 	state := State{Client: client}
 	state.SetList(stored)
 	return state
 }
 
-// SetList adopts the stored connections and hands them to the client.
 func (s *State) SetList(stored []store.Connection) {
 	list := make([]remote.Connection, len(stored))
 	for i, conn := range stored {
@@ -74,7 +67,6 @@ func (s *State) SetList(stored []store.Connection) {
 	s.Client.SetConnections(list)
 }
 
-// Row is the remote row a rail selection names.
 func (s *State) Row(selection uirail.Selection) (uiconnections.Row, bool) {
 	if !selection.Remote() {
 		return uiconnections.Row{}, false
@@ -89,7 +81,6 @@ func (s *State) Row(selection uirail.Selection) (uiconnections.Row, bool) {
 	return s.Connections.Row(uiconnections.Target{Kind: kind, Host: selection.Host, Group: selection.Group, ID: selection.SessionID})
 }
 
-// RailHosts copies each connection's last good snapshot into rail rows.
 func (s *State) RailHosts() []uirail.Host {
 	list := s.List()
 	hosts := make([]uirail.Host, 0, len(list))
@@ -129,7 +120,6 @@ func (s *State) RailHosts() []uirail.Host {
 	return hosts
 }
 
-// Facts copies a refresh into the package's values.
 func Facts(state remote.HostState) uiconnections.Host {
 	host := uiconnections.Host{
 		OK: state.OK, Failures: state.Failures, Attempted: state.Attempted,
@@ -164,7 +154,6 @@ type RefreshMsg struct {
 	State uiconnections.Host
 }
 
-// PreviewMsg is a read of the selected remote row's screen.
 type PreviewMsg struct {
 	Read uiconnections.Read
 	Text string
@@ -178,7 +167,6 @@ type AttachReadyMsg struct {
 	Err  error
 }
 
-// AttachDoneMsg reports how an attach ended.
 type AttachDoneMsg struct {
 	Host string
 	Err  error

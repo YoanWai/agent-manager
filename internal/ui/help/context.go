@@ -22,7 +22,6 @@ type Reads interface {
 	Styles() Styles
 }
 
-// ContextFor is the presentation state for a body width columns wide.
 func ContextFor(reads Reads, width int) Context {
 	tables := reads.KeyTables()
 	return Context{

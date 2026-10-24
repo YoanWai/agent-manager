@@ -12,7 +12,6 @@ import (
 // padded to, so the values under it line up as one column.
 const DetailLabelWidth = 7
 
-// FactLabel pads a fact label into the detail head's label column.
 func FactLabel(label string) string {
 	return presentation.PadRight(label, DetailLabelWidth)
 }

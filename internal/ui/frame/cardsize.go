@@ -8,15 +8,12 @@ type CardSizing struct {
 	Hint   [][2]string
 }
 
-// Width is the default card width at the terminal's columns.
 func (c CardSizing) Width() int { return CardWidthFor(c.Cols) }
 
-// ChromeRows are the rows the card spends around its body, at its own width.
 func (c CardSizing) ChromeRows(width int) int {
 	return CardChrome(width, c.Hint, LiveCap(), c.Status != "")
 }
 
-// DefaultChromeRows are the rows a default-width card spends around its body.
 func (c CardSizing) DefaultChromeRows() int { return c.ChromeRows(c.Width()) }
 
 // FlexChromeRows are the rows a flex card spends around its body. A flex card

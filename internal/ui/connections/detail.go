@@ -140,7 +140,6 @@ func StatusLabel(state string) string {
 	return state
 }
 
-// CountNoun names a count with its noun, singular at one.
 func CountNoun(n int, noun string) string {
 	if n == 1 {
 		return "1 " + noun

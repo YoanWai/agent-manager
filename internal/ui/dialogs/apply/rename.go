@@ -39,7 +39,6 @@ type Request struct {
 	Gen             uint64
 }
 
-// Copy owns the request's mutable session fields.
 func (r Request) Copy() Request {
 	r.Sess.PendingInputs = slices.Clone(r.Sess.PendingInputs)
 	r.Sess.RelaunchSnapshot = maps.Clone(r.Sess.RelaunchSnapshot)
@@ -61,7 +60,6 @@ type Outcome struct {
 	Dir          string
 }
 
-// Rename runs the group or session rename the dialog submitted.
 func Rename(s Sources, preflight Preflight, request Request) (Outcome, error) {
 	result := Outcome{}
 	if request.Kind == Group {

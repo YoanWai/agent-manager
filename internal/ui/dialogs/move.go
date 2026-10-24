@@ -26,19 +26,15 @@ func (d Move) SessionID() string { return d.sessionID }
 // IsGroup reports whether the captured row is a group.
 func (d Move) IsGroup() bool { return d.group != "" }
 
-// MoveAction is what a key asks the root to do.
 type MoveAction uint8
 
 const (
 	MoveStay MoveAction = iota
 	MoveCancel
-	// MoveCursor steps the root's group picker by Delta.
 	MoveCursor
-	// MoveSubmit asks the root for the picked row and passes it to Place.
 	MoveSubmit
 )
 
-// MoveKey is a key's outcome.
 type MoveKey struct {
 	Action MoveAction
 	Delta  int
@@ -58,7 +54,6 @@ func (d Move) Key(msg tea.KeyMsg) MoveKey {
 	return MoveKey{}
 }
 
-// MovePick is the picker row a submit lands on.
 type MovePick struct {
 	// Group is the picked row's group; for a group move it is the new parent.
 	Group string
@@ -76,7 +71,6 @@ type MoveRequest struct {
 	ParentID  string
 }
 
-// IsGroup reports whether the request re-parents a group.
 func (r MoveRequest) IsGroup() bool { return r.GroupPath != "" }
 
 // Place resolves a submit against the picked row. It reports false when a
@@ -95,7 +89,6 @@ func (d Move) Place(pick MovePick) (MoveRequest, bool) {
 	return MoveRequest{GroupPath: d.group, Group: pick.Group}, true
 }
 
-// MoveTitle and MoveHints frame the card around the root's group picker.
 func MoveTitle(mode presentation.GlyphMode) string {
 	return presentation.GlyphsFor(mode).MoveGlyph + " Move"
 }
@@ -113,7 +106,6 @@ type Placement struct {
 	GroupPath string
 }
 
-// IsGroup reports whether the placement re-parents a group.
 func (p Placement) IsGroup() bool { return p.GroupPath != "" }
 
 // PlacementOf resolves a submit against the picked row, reporting false when

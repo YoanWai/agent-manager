@@ -28,13 +28,11 @@ type Surface struct {
 	// CloseAfterSend is the setting: a confirmed send takes the bar down.
 	CloseAfterSend bool
 	// Aim is the row the bar was pointed at, where enter must still land.
-	Aim Aim
-	// OriginX and OriginY place the bar's first painted line.
+	Aim              Aim
 	OriginX, OriginY int
 	root             SurfaceRoot
 }
 
-// SurfaceRoot is what the bar reaches on the root beyond surface.Host.
 type SurfaceRoot interface {
 	// Key runs a bar key on the root: the rail's cursor, the catalog, the
 	// send or the spawn.

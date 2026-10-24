@@ -20,7 +20,6 @@ const (
 	cardPaddingX = 3
 )
 
-// CardInnerWidth is the body columns inside a card width wide.
 func CardInnerWidth(width int) int { return width - cardChromeX - 2*cardPaddingX }
 
 func newField(placeholder string, limit int) textinput.Model {

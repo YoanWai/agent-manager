@@ -2,7 +2,6 @@ package theme
 
 import tea "github.com/charmbracelet/bubbletea"
 
-// Root is what a finished pane-theme push asks of the manager.
 type Root interface {
 	ReportErr(text string)
 }

@@ -309,7 +309,6 @@ type PickDecision struct {
 	Base    *BaseSave
 }
 
-// BaseSave is a picked base waiting to be persisted for one repo.
 type BaseSave struct {
 	Ref       string
 	TargetID  string

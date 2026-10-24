@@ -98,7 +98,6 @@ func RunSend(services Services, request SendRequest) (SendResult, error) {
 	return result, nil
 }
 
-// SameTarget reports whether two reads name the same launch of a session.
 func SameTarget(current, captured store.Session) bool {
 	return current.ID == captured.ID &&
 		current.CreatedAt.Equal(captured.CreatedAt) &&

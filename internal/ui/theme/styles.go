@@ -62,7 +62,6 @@ func publishStyles(t Theme) *atomic.Pointer[themeStyles] {
 	return active
 }
 
-// newThemeStyles derives every style from a token set.
 func newThemeStyles(t Theme) *themeStyles {
 	var (
 		bg       = lipgloss.Color(t.Bg)

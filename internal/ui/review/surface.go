@@ -20,9 +20,7 @@ type Surface struct {
 // Root is what the picker reads on the root beyond surface.Host: the card
 // geometry, so this card is the width every other card is.
 type Root interface {
-	// CardWidth is the default card width on a terminal cols wide.
 	CardWidth(cols int) int
-	// InnerWidth is the body columns of a card width wide.
 	InnerWidth(width int) int
 }
 

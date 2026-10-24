@@ -6,7 +6,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// PickerLoadKind selects the rows a picker read asks for.
 type PickerLoadKind uint8
 
 const (
@@ -32,7 +31,6 @@ type PickerLoadedMsg struct {
 	Err       error
 }
 
-// PickerReader is the filesystem, git and SQLite side of a picker read.
 type PickerReader interface {
 	Worktrees(string) ([]git.Worktree, error)
 	BranchRefs(string) ([]string, error)

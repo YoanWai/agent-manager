@@ -25,9 +25,7 @@ type Root interface {
 	// Apply runs what a key asked beyond the dialog's own state and says
 	// whether the card closes.
 	Apply(d *State, result Result) (tea.Cmd, bool)
-	// Leave applies and queues the save of what the card chose.
 	Leave(d *State)
-	// Paint frames the dialog in the root's card chrome.
 	Paint(d *State) string
 }
 
@@ -35,7 +33,6 @@ func NewSurface(root Root, state State) *Surface {
 	return &Surface{state: state, root: root}
 }
 
-// State is the dialog as it stands, for the root's reload and save paths.
 func (s *Surface) State() *State { return &s.state }
 
 // SetState replaces the dialog after a reload from the store.
@@ -51,7 +48,6 @@ func (s *Surface) ClickAt(h surface.Host, col, line int) tea.Cmd {
 	return s.apply(h, s.state.Click(col, line, s.root.Context()))
 }
 
-// Click is the column-less press, as column 0.
 func (s *Surface) Click(h surface.Host, line int) tea.Cmd { return s.ClickAt(h, 0, line) }
 
 func (s *Surface) Wheel(h surface.Host, arrow tea.KeyMsg) tea.Cmd {

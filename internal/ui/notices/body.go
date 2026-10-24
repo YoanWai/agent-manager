@@ -43,7 +43,6 @@ func innerWidth(notices []Notice, terminalWidth int) int {
 	return inner
 }
 
-// bodyLayout gives a body that overflows narrower rows, leaving room for the scrollbar.
 func bodyLayout(n Notice, inner, room int, t Theme) (body []string, scrolls bool) {
 	body = renderBody(n, inner, t)
 	if len(body) <= room {
@@ -283,7 +282,6 @@ func appendWrapped(rows []string, runs []textRun, width int, base lipgloss.Style
 	return rows
 }
 
-// plainMarks drops the accent marks release text carries.
 func plainMarks(text string) string {
 	return strings.ReplaceAll(text, "`", "")
 }

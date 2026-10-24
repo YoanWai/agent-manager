@@ -9,7 +9,6 @@ import (
 	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
 )
 
-// Prober is the store and tmux server the entry probe and the detach read.
 type Prober struct {
 	Store  *store.Store
 	Driver *tmux.Driver
@@ -31,7 +30,6 @@ func (p Prober) Probe(sessionID string) error {
 	return nil
 }
 
-// Ack clears the unread mark of a session whose turn just finished.
 func (p Prober) Ack(sessionID string) error { return p.Store.AcknowledgeFinished(sessionID) }
 
 // Detach is what a session left behind when it asked to open Review or the

@@ -34,7 +34,6 @@ func FollowConfirmLabel(verb, name string, extra int, one, many string) string {
 	return fmt.Sprintf("%s %s and %d %s? %s", verb, name, extra, unit, many)
 }
 
-// Severity is how the status bar reads a reply copy's line.
 type Severity int
 
 const (

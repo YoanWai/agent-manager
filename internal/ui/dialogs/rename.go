@@ -84,16 +84,12 @@ func (d Rename) SessionID() string { return d.sessionID }
 func (d Rename) Focus() int        { return d.focus }
 func (d Rename) Worktree() int     { return d.worktree }
 
-// Name is the typed name as a submit would send it.
 func (d Rename) Name() string { return cleanName(d.input.Value()) }
 
-// SetName replaces the typed name.
 func (d *Rename) SetName(name string) { d.input.SetValue(name) }
 
-// Tools are the tools a session rename cycles through.
 func (d Rename) Tools() []string { return d.tools }
 
-// Dir is the typed default directory of a group edit.
 func (d Rename) Dir() string { return d.dir.Value() }
 
 // SetDir puts a completed path in the path field, the cursor at its end.
@@ -102,7 +98,6 @@ func (d *Rename) SetDir(path string) {
 	d.dir.CursorEnd()
 }
 
-// NameField is the name input, sized for the row it is drawn in.
 func (d *Rename) NameField(width int) textinput.Model {
 	if width >= 5 {
 		d.input.Width = width
@@ -126,7 +121,6 @@ func (d *Rename) cycleTool(delta int) {
 	d.toolIndex = (d.toolIndex + delta + n) % n
 }
 
-// PathSuggestions is the root's directory completion under the path field.
 type PathSuggestions interface {
 	Active() bool
 	Chosen() bool
@@ -151,17 +145,13 @@ func (d *Rename) focusField(paths PathSuggestions, delta int) {
 	}
 }
 
-// RenameAction is what a key asks the root to do.
 type RenameAction uint8
 
 const (
 	RenameStay RenameAction = iota
 	RenameCancel
-	// RenameComplete applies the highlighted path suggestion.
 	RenameComplete
-	// RenameStepBase steps the root's group base choice by Delta.
 	RenameStepBase
-	// RenameInvalid carries the error the root reports.
 	RenameInvalid
 	RenameSubmit
 )

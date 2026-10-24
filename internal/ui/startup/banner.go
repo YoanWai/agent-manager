@@ -22,8 +22,7 @@ const (
 	// Frames is how long a sweep runs. Between sweeps the wordmark holds
 	// still: a permanently animating header would repaint the frame forever,
 	// and a repainting frame cannot be selected with the mouse.
-	Frames = 22
-	// Interval is the gap between two frames of a sweep.
+	Frames   = 22
 	Interval = 110 * time.Millisecond
 	// ShimmerEvery re-runs the sweep on a settled wordmark.
 	ShimmerEvery = 30 * time.Second
@@ -35,7 +34,6 @@ const (
 	gradientTo   = "#6da4c8"
 )
 
-// Width is the columns the tracked-out wordmark needs.
 func Width() int { return len(Word)*2 - 1 }
 
 // Fits reports whether a terminal of width columns leaves the tracked-out

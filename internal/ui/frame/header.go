@@ -17,14 +17,12 @@ func JoinHeaderPieces(sep string, pieces ...string) string {
 // and the richest reading of the fleet that fits set against the right edge
 // (scope and rollup, then a compact rollup, then the scope alone).
 type Header struct {
-	// Left is the wordmark and its update tag.
 	Left string
 	// Scope names what the list is showing, and Agents is the fleet's cost.
 	Scope  string
 	Agents string
 	// Rollup is the status strip, richest first: full, compact, and absent.
 	Rollup []string
-	// Sep joins the readings that fit.
 	Sep    string
 	Width  int
 	Gutter int

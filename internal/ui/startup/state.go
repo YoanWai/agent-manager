@@ -9,16 +9,13 @@ import (
 // LoaderInterval is the loader animation's frame time while rows start.
 const LoaderInterval = 80 * time.Millisecond
 
-// TickMsg is one loader frame.
 type TickMsg struct{}
 
-// BannerTickMsg is one wordmark sweep frame.
 type BannerTickMsg struct{}
 
 // BannerShimmerMsg is the rest after a finished sweep.
 type BannerShimmerMsg struct{}
 
-// State is the startup animation's own state.
 type State struct {
 	// SessionsSized flips after the first refresh shrinks sessions left
 	// over from a previous manager run to the preview panel's width.
@@ -29,15 +26,11 @@ type State struct {
 	Booting       bool
 }
 
-// Host is what the startup animation reads on the root.
 type Host interface {
-	// LoaderNeeded reports whether a starting row still shows a loader.
 	LoaderNeeded() bool
-	// ReportWarn puts a warning on the status bar.
 	ReportWarn(text string)
 }
 
-// Tick schedules one loader frame.
 func Tick() tea.Cmd {
 	return tea.Tick(LoaderInterval, func(time.Time) tea.Msg { return TickMsg{} })
 }

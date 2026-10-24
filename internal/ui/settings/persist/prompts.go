@@ -6,7 +6,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// SavedTarget is the surface a saved-prompt catalog read was for.
 type SavedTarget uint8
 
 const (

@@ -8,7 +8,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// BaseTarget names the picker a branch read answers.
 type BaseTarget uint8
 
 const (
@@ -93,7 +92,6 @@ type BaseFetch struct {
 	Err      error
 }
 
-// BaseFetchedMsg carries one step of a base refresh.
 type BaseFetchedMsg struct {
 	Key      BaseFetchKey
 	Detected string
@@ -143,7 +141,6 @@ func (s *State) RecordBaseFetch(msg BaseFetchedMsg, driver *git.Driver, fetchOff
 	}
 }
 
-// BaseFetch reads one repo's refresh record.
 func (s *State) BaseFetch(dir, override string) BaseFetch {
 	return s.BaseFetches[BaseFetchKey{Dir: dir, Override: override}]
 }

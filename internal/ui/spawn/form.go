@@ -14,7 +14,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// Field is a row of the form.
 type Field int
 
 const (
@@ -47,11 +46,9 @@ type Prompt interface {
 	// Release lets go of the images, since nothing names them any more.
 	Release()
 	Pasting() bool
-	// Message is the prompt with each chip as the path of its image.
 	Message() string
 }
 
-// Paths is the root's directory completer under the dir field.
 type Paths interface {
 	Active() bool
 	Chosen() bool
@@ -72,7 +69,6 @@ type FormHost interface {
 	Paths() Paths
 }
 
-// Request is a spawn the form or the quick bar asks the root to run.
 type Request struct {
 	Tool string
 	// Name is empty for a session that takes a generated name.
@@ -96,7 +92,6 @@ type Request struct {
 type FormRequest struct {
 	Close     bool
 	ApplyPath bool
-	// PickPath completes the path suggestion at PathEntry.
 	PickPath  bool
 	PathEntry int
 	// Group steps the group picker, which the group form and the move
@@ -106,15 +101,12 @@ type FormRequest struct {
 	GroupEntry int
 	// Toggle flips the worktree choice once the directory is known to host
 	// one; Probe only asks.
-	Toggle bool
-	Probe  bool
-	// Catalog names the CLI the form moved to, whose choice rows are new.
+	Toggle  bool
+	Probe   bool
 	Catalog string
-	// Spawn leaves Group to the root, whose picker holds it.
-	Spawn *Request
+	Spawn   *Request
 }
 
-// Form is the New Session form.
 type Form struct {
 	name         textinput.Model
 	dir          textinput.Model
@@ -128,8 +120,7 @@ type Form struct {
 	defaultsTouched bool
 	focus           Field
 	choice          Choice
-	// lines is what a click on each painted body line acts on.
-	lines presentation.Lines[fieldLine]
+	lines           presentation.Lines[fieldLine]
 	// saved is the catalog as the form read it, savedIndex the pick in it
 	// (0 for none), and savedList the list ctrl+o opens on it.
 	saved        []Saved
@@ -147,7 +138,6 @@ func TextField(placeholder string, limit int) textinput.Model {
 	return in
 }
 
-// NewForm opens on the name field with tools[toolIndex] picked.
 func NewForm(h ChoiceHost, tools []string, toolIndex int) Form {
 	name := TextField("my-session", 60)
 	name.Focus()
@@ -164,7 +154,6 @@ func NewForm(h ChoiceHost, tools []string, toolIndex int) Form {
 	}
 }
 
-// SetSaved takes the catalog read, or why it failed.
 func (d *Form) SetSaved(rows []Saved, err error) {
 	d.savedLoading = false
 	if err != nil {
@@ -217,7 +206,6 @@ func (d *Form) SyncWidths(inner int) {
 	d.choice.filter.SetCursor(d.choice.filter.Position())
 }
 
-// Tool is the CLI the form spawns.
 func (d *Form) Tool() string {
 	if len(d.toolNames) == 0 {
 		return ""
@@ -228,27 +216,20 @@ func (d *Form) Tool() string {
 // Tools are the CLIs the tool row steps through, and the picked one's index.
 func (d *Form) Tools() ([]string, int) { return d.toolNames, d.toolIndex }
 
-// SetTools takes a newer tool list and pick, leaving the choice rows be.
 func (d *Form) SetTools(names []string, index int) {
 	d.toolNames, d.toolIndex = names, index
 }
 
-// RestartChoice starts the choice rows over on the current CLI.
 func (d *Form) RestartChoice(h ChoiceHost) { d.choice = NewChoice(h, d.Tool()) }
 
-// Choice is the model, effort and profile the form launches with.
 func (d *Form) Choice() *Choice { return &d.choice }
 
-// Name is the typed session name.
 func (d *Form) Name() string { return d.name.Value() }
 
-// SetName types a session name.
 func (d *Form) SetName(value string) { d.name.SetValue(value) }
 
-// Dir is the typed directory.
 func (d *Form) Dir() string { return d.dir.Value() }
 
-// DirAuto says the directory is still the group's default.
 func (d *Form) DirAuto() bool { return d.dirAuto }
 
 // SetDir fills the directory without making it the user's own.
@@ -264,10 +245,8 @@ func (d *Form) TakePath(path string) {
 	d.dirAuto = false
 }
 
-// Worktree is the worktree toggle.
 func (d *Form) Worktree() bool { return d.worktree }
 
-// WorktreeAuto says the toggle is still the default.
 func (d *Form) WorktreeAuto() bool { return d.worktreeAuto }
 
 // SeedWorktree sets the toggle to a default, which an explicit choice
@@ -277,7 +256,6 @@ func (d *Form) SeedWorktree(on bool) {
 	d.worktreeAuto = true
 }
 
-// DefaultWorktree moves a toggle that is still the default.
 func (d *Form) DefaultWorktree(on bool) {
 	if d.worktreeAuto {
 		d.worktree = on
@@ -294,7 +272,6 @@ func (d *Form) SetWorktree(on bool) {
 // DefaultsTouched says the user chose a tool or worktree since opening.
 func (d *Form) DefaultsTouched() bool { return d.defaultsTouched }
 
-// Focused is the field with focus.
 func (d *Form) Focused() Field { return d.focus }
 
 // HandleKey takes a key the root has made typed text where it was pasted.
@@ -481,7 +458,6 @@ func (d *Form) handleModelKey(h FormHost, msg tea.KeyMsg) (tea.Cmd, bool) {
 	return cmd, true
 }
 
-// Click acts on the painted body line a click landed on.
 func (d *Form) Click(h FormHost, line int) FormRequest {
 	at, ok := d.lines.At(line)
 	if !ok {
@@ -574,7 +550,6 @@ func (d *Form) FocusStep(h FormHost, delta int) {
 	d.FocusField(h, fields[(at+delta+len(fields))%len(fields)])
 }
 
-// FocusField puts focus on field.
 func (d *Form) FocusField(h FormHost, field Field) {
 	h.Paths().Reset()
 	if field != FieldSaved {

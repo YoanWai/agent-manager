@@ -13,7 +13,6 @@ import (
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 )
 
-// Op names the store or transport work a Request carries.
 type Op uint8
 
 const (
@@ -44,7 +43,6 @@ type Writer interface {
 	SendText(id, text string) (tmux.SendResult, error)
 }
 
-// SystemWriter is the tmux driver as a Writer.
 type SystemWriter struct{ Driver *tmux.Driver }
 
 func (w SystemWriter) Exists(id string) (bool, error) { return w.Driver.SessionExists(id) }
@@ -77,7 +75,6 @@ type Request struct {
 	SendTarget    SendTarget
 }
 
-// Result is what the worker committed or refused, one field per op.
 type Result struct {
 	Op     Op
 	Save   uireview.SaveResult

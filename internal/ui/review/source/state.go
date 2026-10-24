@@ -5,7 +5,6 @@ import (
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 )
 
-// StateFromStore reads a persisted review in the shape the Review model holds.
 func StateFromStore(state store.ReviewState) uireview.SavedState {
 	out := uireview.SavedState{Reviewed: state.Reviewed, Round: uireview.Round{Number: state.Round.Number, Scope: state.Round.Scope, Fingerprint: state.Round.Fingerprint}}
 	out.Comments = make([]uireview.Comment, len(state.Comments))
@@ -15,7 +14,6 @@ func StateFromStore(state store.ReviewState) uireview.SavedState {
 	return out
 }
 
-// StateToStore writes a review in the shape the store persists.
 func StateToStore(state uireview.SavedState) store.ReviewState {
 	out := store.ReviewState{Reviewed: state.Reviewed, Round: store.ReviewRound{Number: state.Round.Number, Scope: state.Round.Scope, Fingerprint: state.Round.Fingerprint}}
 	out.Comments = make([]store.ReviewComment, len(state.Comments))

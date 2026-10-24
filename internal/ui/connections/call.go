@@ -7,7 +7,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Op is the lifecycle call a rail action makes on a remote row.
 type Op uint8
 
 const (
@@ -117,7 +116,6 @@ func asking(op Op, dead bool) Call {
 	return call
 }
 
-// StatusColor is the tone a status is painted in.
 func StatusColor(state string) lipgloss.Color {
 	switch state {
 	case "working", "starting":

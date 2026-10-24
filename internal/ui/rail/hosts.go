@@ -7,7 +7,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// HostState is what the last look at a connection found.
 type HostState uint8
 
 const (
@@ -40,7 +39,6 @@ type HostFold struct {
 	Path string `json:"path"`
 }
 
-// folded reports whether the group at path, on host or locally, is folded.
 func (m Model) folded(host, path string) bool {
 	if host == "" {
 		return m.collapsed[path]
@@ -76,7 +74,6 @@ func (m Model) host(name string) (Host, bool) {
 	return Host{}, false
 }
 
-// sessionsOf is the inventory of the host a row belongs to.
 func (m Model) sessionsOf(host string) []Session {
 	if host == "" {
 		return m.snapshot.Sessions
@@ -116,7 +113,6 @@ func (m Model) HostCollapsed() []HostFold {
 	return folds
 }
 
-// RenameHost carries a renamed connection's folds to its new name.
 func (m *Model) RenameHost(old, next string) Decision {
 	for fold, folded := range m.hostFolds {
 		if fold.Host == old {
@@ -140,7 +136,6 @@ func (m *Model) ForgetHost(name string) Decision {
 	return m.collapsedDecision()
 }
 
-// RestoreHostFolds folds the connection rows a previous run saved.
 func (m *Model) RestoreHostFolds(folds []HostFold) {
 	for _, fold := range folds {
 		if fold.Host != "" {
@@ -149,7 +144,6 @@ func (m *Model) RestoreHostFolds(folds []HostFold) {
 	}
 }
 
-// SelectionCollapsed reports whether a group or connection row is folded.
 func (m Model) SelectionCollapsed(selection Selection) bool {
 	return m.folded(selection.Host, selection.Group)
 }

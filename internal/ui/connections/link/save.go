@@ -5,7 +5,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// SaveOp is the write a connection card asked for.
 type SaveOp uint8
 
 const (
@@ -23,7 +22,6 @@ type SaveRequest struct {
 	Gen  uint64
 }
 
-// Store is the connections table the save writes and reads back.
 type Store interface {
 	AddConnection(store.Connection) error
 	UpdateConnection(name string, next store.Connection) error
@@ -31,7 +29,6 @@ type Store interface {
 	Connections() ([]store.Connection, error)
 }
 
-// Save writes the list and returns it as the store holds it.
 func Save(st Store, request SaveRequest) ([]store.Connection, error) {
 	var err error
 	switch request.Op {

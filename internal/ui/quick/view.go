@@ -25,9 +25,8 @@ type Facts struct {
 	Remote          string
 	RemoteSpawn     bool
 	WorktreeInherit bool
-	// LabelWidth is the column the target's label takes.
-	LabelWidth int
-	Styles     spawn.Styles
+	LabelWidth      int
+	Styles          spawn.Styles
 }
 
 // View is the docked prompt: enter answers the selected session, or

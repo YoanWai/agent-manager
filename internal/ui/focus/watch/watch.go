@@ -164,7 +164,6 @@ func (w *Watcher) InputSent(id string) {
 	}
 }
 
-// landedLocked wakes the watcher on id to look for a write's echo.
 func (w *Watcher) landedLocked(id string) {
 	if w.id != id {
 		return

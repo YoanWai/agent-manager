@@ -1,6 +1,5 @@
 package settings
 
-// PromptRows is the saved prompts catalog as the panel lists it.
 func PromptRows(rows []Preset) []Prompt {
 	prompts := make([]Prompt, len(rows))
 	for i, row := range rows {

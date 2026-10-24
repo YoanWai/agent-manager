@@ -2,7 +2,6 @@ package geometry
 
 import "strconv"
 
-// SplitRatioSetting is the store key the split ratio persists under.
 const SplitRatioSetting = "split_ratio"
 
 const (

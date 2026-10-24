@@ -7,7 +7,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// SweepMsg carries the result of one pass over the pastes directory.
 type SweepMsg struct{ Err error }
 
 // SweepTickMsg asks for another sweep and the tick after it.
@@ -26,10 +25,8 @@ var SweepStale = func() error { return clipboard.SweepStale(clipboard.StaleAfter
 // where a slow disk must not stall a keystroke.
 func Sweep() tea.Msg { return SweepMsg{Err: SweepStale()} }
 
-// SweepCmd is Sweep as the startup batch queues it.
 func SweepCmd() tea.Msg { return Sweep() }
 
-// SweepTick re-arms the sweep.
 func SweepTick() tea.Cmd {
 	return tea.Tick(SweepInterval, func(time.Time) tea.Msg { return SweepTickMsg{} })
 }

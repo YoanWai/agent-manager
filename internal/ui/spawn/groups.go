@@ -25,7 +25,6 @@ type Picker struct {
 	GroupIndex int
 }
 
-// GroupPath is the group the picker highlights.
 func (p *Picker) GroupPath() string {
 	if p.GroupIndex >= 0 && p.GroupIndex < len(p.Groups) {
 		return p.Groups[p.GroupIndex].Path
@@ -33,7 +32,6 @@ func (p *Picker) GroupPath() string {
 	return ""
 }
 
-// Picked is the row the picker highlights.
 func (p *Picker) Picked() GroupOption { return p.Groups[p.GroupIndex] }
 
 // Step moves the cursor, wrapping at the ends.
@@ -108,7 +106,6 @@ func ChildIndex(paths map[string]bool, ordered []string) map[string][]string {
 	return children
 }
 
-// parentGroup is the group a path sits under.
 func parentGroup(group string) string {
 	if index := strings.LastIndex(group, "/"); index >= 0 {
 		return group[:index]
@@ -116,7 +113,6 @@ func parentGroup(group string) string {
 	return ""
 }
 
-// baseName is the last segment of a group path.
 func baseName(path string) string {
 	if index := strings.LastIndex(path, "/"); index >= 0 {
 		return path[index+1:]
@@ -124,7 +120,6 @@ func baseName(path string) string {
 	return path
 }
 
-// ViewGroupOptions paints the picker's rows, marking the highlighted one.
 func ViewGroupOptions(groups []GroupOption, index int, st Styles) string {
 	var b strings.Builder
 	for i, opt := range groups {

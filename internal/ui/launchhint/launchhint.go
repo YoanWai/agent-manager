@@ -58,12 +58,10 @@ const (
 	Running SettleState = iota
 	// ShellGone is an install whose shell exited and left no status behind.
 	ShellGone
-	// Exited is an install whose command ran and failed.
 	Exited
 	// BinaryMissing is an install whose command succeeded and left nothing
 	// for the launch to find on PATH.
 	BinaryMissing
-	// Ready is an install whose binary is on PATH.
 	Ready
 )
 

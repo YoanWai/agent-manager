@@ -23,7 +23,6 @@ const (
 	chromeX  = 4
 )
 
-// Tones are the theme styles the bar reads, taken for one paint.
 type Tones struct {
 	Key    lipgloss.Style
 	Subtle lipgloss.Style
@@ -36,7 +35,6 @@ type Tones struct {
 	Fill   string
 }
 
-// TonesFor derives the bar's tones from a palette.
 func TonesFor(t theme.Theme) Tones {
 	return Tones{
 		Key:    lipgloss.NewStyle().Foreground(lipgloss.Color(t.Accent)).Bold(true),
@@ -61,10 +59,8 @@ type Outcome struct {
 // Failed is an outcome whose text reads as a failure until it says it worked.
 func Failed(text string) Outcome { return Outcome{text: text} }
 
-// Succeeded is an action that went through.
 func Succeeded(text string) Outcome { return Outcome{text: text, done: text} }
 
-// Warned is an action that went through with a caveat the reader has to see.
 func Warned(text string) Outcome { return Outcome{text: text, warn: text} }
 
 // Told is an outcome held as four strings and a poll count, for a host that
@@ -73,7 +69,6 @@ func Told(text, done, warn, shown string, age int) Outcome {
 	return Outcome{text: text, done: done, warn: warn, shown: shown, age: age}
 }
 
-// Text is what the bar shows.
 func (o Outcome) Text() string { return o.text }
 
 // Done, Warn and Shown are the stored runs and the baseline the next poll
@@ -82,7 +77,6 @@ func (o Outcome) Done() string  { return o.done }
 func (o Outcome) Warn() string  { return o.warn }
 func (o Outcome) Shown() string { return o.shown }
 
-// Age is how many polls have found the same text.
 func (o Outcome) Age() int { return o.age }
 
 // KindOf is how the text reads, which is the tone the bar paints it in.
@@ -114,7 +108,6 @@ func (o Outcome) Ticked() Outcome {
 	return o
 }
 
-// Marks are the three glyphs the calling surface tags a message with.
 type Marks struct {
 	Fail string
 	Done string

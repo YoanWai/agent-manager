@@ -61,7 +61,6 @@ func OutdatedCommand(outdated config.OutdatedToolError) string {
 	return deps.Command(outdated.Binary)
 }
 
-// outdatedTool is a too-old CLI as the launchhint package's copy reads it.
 func outdatedTool(outdated config.OutdatedToolError) uilaunchhint.Tool {
 	return uilaunchhint.Tool{
 		Binary:    outdated.Binary,

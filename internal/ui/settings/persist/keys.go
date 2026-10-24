@@ -25,13 +25,11 @@ type KeysResult struct {
 	SessionCommitted bool
 }
 
-// KeysRoot is what a key save completion asks of the manager.
 type KeysRoot interface {
 	ReportErr(text string)
 	SaveKeys(list, session keybind.Table, listChanged, sessionChanged bool) tea.Cmd
 }
 
-// RunKeys writes the changed tables in list-then-session order.
 func RunKeys(request KeysRequest, save KeySaver) (KeysResult, error) {
 	result := KeysResult{}
 	tot := 0
@@ -58,7 +56,6 @@ func RunKeys(request KeysRequest, save KeySaver) (KeysResult, error) {
 	return result, nil
 }
 
-// ApplyKeys commits what landed and reports a failure that stopped the rest.
 func ApplyKeys(root KeysRoot, request KeysRequest, result KeysResult, err error) tea.Cmd {
 	cmd := root.SaveKeys(request.List, request.Session, result.ListCommitted, result.SessionCommitted)
 	if err != nil {

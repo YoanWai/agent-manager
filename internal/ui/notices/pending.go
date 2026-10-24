@@ -5,8 +5,7 @@ package notices
 // a notice that arrived while the list was not showing.
 type Log struct {
 	ImportError string
-	// Held is the notice waiting for the list to come back.
-	Held string
+	Held        string
 }
 
 // Stage says what a change in the active notices asks the root to do: open

@@ -34,7 +34,6 @@ type Group struct {
 	Archived bool
 }
 
-// Session is an agent or a terminal on a host, as its snapshot listed it.
 type Session struct {
 	ID, Name, Tool, Directory, Group, Status, ParentID string
 	Archived                                           bool

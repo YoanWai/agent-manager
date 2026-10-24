@@ -91,7 +91,6 @@ func (s Styles) divider(label string, width int) string {
 	return presentation.Divider(label, width, s.Section, s.Rule)
 }
 
-// PaneWidths splits the terminal width between the file rail and the code.
 func PaneWidths(width int) (fileWidth, codeWidth int) {
 	fileWidth = max(width*24/100, diffFileRailWidth)
 	if width-fileWidth-diffPaneSeam < diffCodeMinWidth {
@@ -257,10 +256,8 @@ func (m *Model) Header(ctx RenderContext, sessName string, width int) string {
 	return left + strings.Repeat(" ", gap) + right
 }
 
-// HeaderKeys are the header's key pills as last painted.
 func (m *Model) HeaderKeys() []presentation.PaintedKey { return m.headerKeys }
 
-// StatusKeys are the keys the status line last painted.
 func (m *Model) StatusKeys() []presentation.PaintedKey { return m.statusKeys }
 
 func keptWithin(keys []presentation.PaintedKey, width int) []presentation.PaintedKey {

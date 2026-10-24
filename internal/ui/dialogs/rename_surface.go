@@ -14,9 +14,8 @@ import (
 type RenameSurface struct {
 	Rename
 	complete pathcomplete.State
-	// Base is the group base choice the root probes and steps.
-	Base string
-	root RenameRoot
+	Base     string
+	root     RenameRoot
 }
 
 // RenameRoot is what the row reaches on the root beyond surface.Host. The
@@ -44,7 +43,6 @@ func NewRenameSurface(root RenameRoot, rename Rename, base string) *RenameSurfac
 	return &RenameSurface{Rename: rename, Base: base, root: root}
 }
 
-// Root is the root the row reaches.
 func (s *RenameSurface) Root() RenameRoot { return s.root }
 
 // dialogPaths hands the rename and the group form their own completer as the

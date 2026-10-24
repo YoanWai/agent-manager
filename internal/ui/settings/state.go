@@ -133,9 +133,8 @@ type State struct {
 	first, keyFirst int
 	glyphWidth      int
 	Editor          EditorRow
-	// Prompts is the saved prompts panel, open over the rows.
-	Prompts Prompts
-	Dirty   bool
+	Prompts         Prompts
+	Dirty           bool
 	// Baseline is what the dialog started from, by key: a save writes
 	// only keys that differ, so it never puts this process's stale cache
 	// over another writer's value. A missing key is always written.
@@ -145,7 +144,6 @@ type State struct {
 
 // Tools is the configured CLI set the dialog offers, copied from the config.
 type Tools struct {
-	// Agents is every agent CLI in picker order.
 	Agents []string
 	// Known holds every configured tool name, shells included.
 	Known map[string]bool
@@ -197,7 +195,6 @@ type Snapshot struct {
 	Theme   string
 }
 
-// FromSnapshot builds the dialog the cached values describe.
 func FromSnapshot(s Snapshot) State {
 	value := func(key string) string { return s.Values[key] }
 	hidden := s.Tools.KnownHidden(s.Hidden)

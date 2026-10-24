@@ -9,7 +9,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// Preferences are the stored Review preferences that open a session's Review.
 type Preferences interface {
 	ReviewScope(string) (string, error)
 	ReviewRepo(string) (string, error)

@@ -192,7 +192,6 @@ func (m *Model) closesOnBackdrop() bool {
 	return false
 }
 
-// clickCard acts on the open card's body at col of its painted line.
 func (m *Model) clickCard(col, line int) (tea.Model, tea.Cmd) {
 	if top, ok := m.top(); ok {
 		if cc, ok := top.(columnClicker); ok {
@@ -242,7 +241,6 @@ func (m *Model) focusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	return m.handleFocusMouse(msg)
 }
 
-// reviewMouse runs the wheel and a left press on Review's panes.
 func (m *Model) reviewMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if tea.MouseEvent(msg).IsWheel() {
 		m.review.Wheel(presentation.WheelStep(msg), m.diffCodeHeight())

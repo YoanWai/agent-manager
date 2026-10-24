@@ -18,7 +18,6 @@ func Script(command, statusFile string) string {
 		`printf %s "$?" > ` + tmux.ShellQuote(statusFile) + "\n"
 }
 
-// Line is what the pane's shell is typed to run the install script.
 func Line(script string) (string, error) {
 	return "sh " + tmux.ShellQuote(script), nil
 }

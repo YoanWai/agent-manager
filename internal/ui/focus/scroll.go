@@ -4,7 +4,6 @@ import "strings"
 
 const scrollStep = 3
 
-// RegionRequest asks the root watcher adapter for one scrollback viewport.
 type RegionRequest struct {
 	SessionID string
 	Offset    int

@@ -1,6 +1,5 @@
 package geometry
 
-// Gutter is the blank column a preview reserves on each side of its text.
 const Gutter = 2
 
 // Layout is the terminal box and what its chrome costs, as the body's height,
@@ -11,8 +10,7 @@ type Layout struct {
 	FullLayout bool
 	// FullFocus is a session owning the whole body, which takes the split's
 	// preview out of the picture.
-	FullFocus bool
-	// HeaderRows is the band above the body.
+	FullFocus  bool
 	HeaderRows int
 	// FooterRows measures the painted footer; QuickFooterRows the one the
 	// quick bar paints, read only while QuickBar says a bar is up. They are
@@ -34,7 +32,6 @@ func (l Layout) ChromeRows() int {
 	return l.HeaderRows + 1
 }
 
-// BodyHeight is the vertical budget for the sessions and sidebar panels.
 func (l Layout) BodyHeight() int {
 	return l.bodyRows(l.FooterRows())
 }

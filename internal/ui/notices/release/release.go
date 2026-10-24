@@ -54,17 +54,14 @@ type State struct {
 	// the notices list, rebuilt every frame, never reads the database.
 	WhatsNewVersion string
 	WhatsNewFrom    string
-	// Feed is the remote message feed, refreshed on the tick.
-	Feed []feed.Message
+	Feed            []feed.Message
 }
 
-// Store is the settings table the greeting reads and advances.
 type Store interface {
 	Setting(key string) (string, error)
 	SetSetting(key, value string) error
 }
 
-// Root is what a routed message asks of the manager.
 type Root interface {
 	// ApplyNotices applies a change that may add a notice and opens the
 	// one it added, now or once the list is back.
@@ -102,7 +99,6 @@ func (s *State) UseCached(configDir string) {
 	s.Checked = len(cached.Releases) > 0
 }
 
-// Dismissed is the dismissed-notice set loaded from settings.
 func Dismissed(st Store) map[string]bool {
 	dismissed := map[string]bool{}
 	raw, err := st.Setting(DismissedSetting)
@@ -215,7 +211,6 @@ type UpdateMsg struct {
 	Err      error
 }
 
-// FeedMsg carries the editorial message feed and any refresh failure.
 type FeedMsg struct {
 	Messages []feed.Message
 	Failed   bool

@@ -26,7 +26,6 @@ const (
 	MessageSend
 )
 
-// Route names the handler msg belongs to, reporting whether it is Review's.
 func Route(msg tea.Msg) (Message, bool) {
 	switch msg.(type) {
 	case PickerLoadedMsg:

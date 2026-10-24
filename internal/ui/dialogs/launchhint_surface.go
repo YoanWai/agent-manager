@@ -41,9 +41,7 @@ type LaunchHintRoot interface {
 	// outcome.
 	CopyLaunchCommand() tea.Cmd
 	CardWidth() int
-	// CardChromeRows are the rows a card spends around its body.
 	CardChromeRows(hint [][2]string) int
-	// ReleaseLaunchHint drops the fix and the images it was holding.
 	ReleaseLaunchHint()
 }
 
@@ -53,10 +51,8 @@ func NewLaunchHintSurface(root LaunchHintRoot, fix LaunchFix, glyphs presentatio
 	return &LaunchHintSurface{fix: fix, glyphs: glyphs, tone: tone, muted: muted, root: root}
 }
 
-// Fix is the fix the card paints.
 func (s *LaunchHintSurface) Fix() LaunchFix { return s.fix }
 
-// SetFix replaces it, for a refused launch that takes the card's place.
 func (s *LaunchHintSurface) SetFix(fix LaunchFix) { s.fix = fix }
 
 // prompt is the fix as the card shows it; its keys and layout are

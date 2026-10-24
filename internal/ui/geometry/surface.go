@@ -13,7 +13,6 @@ import (
 // Gesture is the split's divider gesture as the surface reads and moves it.
 // The root holds it, because the mouse drags the same divider.
 type Gesture struct {
-	// Ratio is the left panel's share of the width, as the drag left it.
 	Ratio       float64
 	RatioBefore float64
 	// ResizeMode arms the arrow keys; a drag can arm without it.
@@ -33,16 +32,12 @@ type Surface struct {
 	root Root
 }
 
-// Root is what the gesture reaches on the root beyond surface.Host.
 type Root interface {
-	// Gesture is the divider gesture as it stands.
 	Gesture() Gesture
-	// SetGesture stores it back.
 	SetGesture(Gesture)
 	// Exit ends the gesture, committing the ratio or putting back the one
 	// it started from.
 	Exit(commit bool)
-	// Nudge moves the divider by delta columns.
 	Nudge(delta int)
 	Quit() tea.Cmd
 	TakeForeground()

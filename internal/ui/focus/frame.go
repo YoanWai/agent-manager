@@ -19,7 +19,6 @@ const (
 	FactsGap    = 2
 )
 
-// FactsSession is the session a full screen frame names on its own line.
 type FactsSession struct {
 	Glyph    string
 	Name     string

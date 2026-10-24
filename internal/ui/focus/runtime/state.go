@@ -24,7 +24,6 @@ func (s *State) Watching() string {
 // Ready reports whether a watcher exists to route a guarded report through.
 func (s *State) Ready() bool { return s.Watch != nil }
 
-// SetFocus points the watcher at a session.
 func (s *State) SetFocus(id string) {
 	if s.Watch != nil {
 		s.Watch.SetFocus(id)
@@ -49,7 +48,6 @@ func (s *State) Settle(id string) {
 	}
 }
 
-// Retry asks the watcher to reopen a client it backed off from.
 func (s *State) Retry() {
 	if s.Watch != nil {
 		s.Watch.RetryNow()
@@ -64,7 +62,6 @@ func (s *State) Unwatch(id string) {
 	}
 }
 
-// Serving reports whether the watcher pushes frames for id.
 func (s *State) Serving(id string) bool {
 	return s.Watch != nil && s.Watch.Serving(id)
 }

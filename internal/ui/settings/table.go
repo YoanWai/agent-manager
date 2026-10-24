@@ -20,8 +20,7 @@ type Setting struct {
 	// the stored spellings.
 	TrueLabel, FalseLabel string
 	Beta                  bool
-	// Proactive writes the row through the store's typed coordination call.
-	Proactive bool
+	Proactive             bool
 }
 
 var onOff = []string{"on", "off"}
@@ -139,7 +138,6 @@ func Keys() []string {
 	return keys
 }
 
-// FlagKeys lists the two-way rows' keys.
 func FlagKeys() []string {
 	keys := make([]string, 0, len(table))
 	for _, setting := range table {

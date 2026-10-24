@@ -57,7 +57,6 @@ type GoneMark struct {
 	Deleted  bool
 }
 
-// RecordLaunch marks a row this run launched.
 func (s *State) RecordLaunch(id string, at time.Time) {
 	if s.Launched == nil {
 		s.Launched = map[string]time.Time{}
@@ -70,7 +69,6 @@ func (s *State) RecordLaunch(id string, at time.Time) {
 // store before it was launched.
 func (s *State) ForgetLaunch(id string) { delete(s.Launched, id) }
 
-// AwaitRename records what a spawned session launched with.
 func (s *State) AwaitRename(id, generated, prompt string) {
 	if s.AwaitedRenames == nil {
 		s.AwaitedRenames = map[string]AwaitedRename{}

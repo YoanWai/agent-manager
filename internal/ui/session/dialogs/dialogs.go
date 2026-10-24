@@ -37,27 +37,21 @@ type Intent struct {
 	// EmptyNotice is what a run with nothing to do reports.
 	EmptyNotice string
 	// Notice is what a refusal reports instead of a card.
-	Notice string
-	// ClearsErr drops the stale error line a card replaces.
+	Notice    string
 	ClearsErr bool
 }
 
-// Nothing reports a decision that changes nothing on screen.
 func (i Intent) Nothing() bool { return i.Notice == "" && !i.Run && i.Card.Label == "" }
 
-// RowKind is the shape of the selected row.
 type RowKind uint8
 
 const (
-	// SessionRow is one agent or shell row.
 	SessionRow RowKind = iota
-	// GroupRow is a group.
 	GroupRow
 	// RootRow is the top level, which no session action applies to.
 	RootRow
 )
 
-// Row is the selected row as the decisions read it.
 type Row struct {
 	Kind  RowKind
 	Group string
@@ -87,7 +81,6 @@ func Children(sessions []store.Session, sess store.Session) []store.Session {
 	return out
 }
 
-// Subtree is every loaded session at or below a group path.
 func Subtree(sessions []store.Session, path string) []store.Session {
 	var out []store.Session
 	for _, sess := range sessions {
@@ -98,7 +91,6 @@ func Subtree(sessions []store.Session, path string) []store.Session {
 	return out
 }
 
-// InGroup is the rows a view lists at or below a group path.
 func InGroup(listed []store.Session, path string) []store.Session {
 	var out []store.Session
 	for _, sess := range listed {
@@ -142,7 +134,6 @@ func live(view View, sessions []store.Session) []store.Session {
 	return out
 }
 
-// Archive is what the archive key asks for.
 func Archive(view View, row Row) Intent {
 	if view.ArchivedView() {
 		return Intent{}
@@ -176,7 +167,6 @@ func Archive(view View, row Row) Intent {
 	}}
 }
 
-// Restore is what the restore key asks for in the archived view.
 func Restore(view View, row Row) Intent {
 	if !view.ArchivedView() {
 		return Intent{}
@@ -252,7 +242,6 @@ func Kill(view View, row Row) Intent {
 	}}
 }
 
-// KillAll is what the kill-everything key asks for over the rows a view lists.
 func KillAll(view View) Intent {
 	live := live(view, view.Listed())
 	if len(live) == 0 {

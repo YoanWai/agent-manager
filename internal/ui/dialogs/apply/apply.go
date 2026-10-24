@@ -36,18 +36,15 @@ type Preflight interface {
 	ResolveDir(path string) bool
 }
 
-// Labels is the status-bar label of a running pane.
 type Labels interface {
 	Exists(id string) bool
 	SetLabel(id, label string) error
 }
 
-// Launcher creates the pane and the row of a forked session.
 type Launcher interface {
 	Launch(request sessioncmd.LaunchRequest) (sessioncmd.LaunchResult, error)
 }
 
-// KeyTyper delivers a tool's fork keys to the source's pane.
 type KeyTyper interface {
 	TypeForkKeys(sess store.Session, keys string) error
 }

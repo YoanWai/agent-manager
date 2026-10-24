@@ -108,7 +108,6 @@ func (m Model) Collapsed() []string {
 	return paths
 }
 
-// saveFolds stores every fold, local and on connections.
 func (m Model) saveFolds() Mutation {
 	return Mutation{Kind: SaveCollapsed, Collapsed: m.Collapsed(), HostCollapsed: m.HostCollapsed()}
 }

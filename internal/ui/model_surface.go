@@ -51,10 +51,8 @@ func (m *Model) pasteFocused(sess store.Session, text string) tea.Cmd {
 	return m.nextEffectCmd()
 }
 
-// push puts s on top of the stack.
 func (m *Model) push(s uisurface.Surface) { m.surfaces = append(m.surfaces, s) }
 
-// Pop takes the top surface off the stack and runs its Leave.
 func (m *Model) Pop() {
 	n := len(m.surfaces)
 	if n == 0 {
@@ -73,7 +71,6 @@ func (m *Model) clearSurfaces() {
 	}
 }
 
-// top is the surface that takes input first.
 func (m *Model) top() (uisurface.Surface, bool) {
 	if n := len(m.surfaces); n > 0 {
 		return m.surfaces[n-1], true
@@ -125,7 +122,6 @@ func (m *Model) surfaceKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 	return nil, false
 }
 
-// surfaceView paints every surface over frame, bottom up.
 func (m *Model) surfaceView(frame string) string {
 	for _, s := range m.surfaces {
 		frame = s.View(m, frame)

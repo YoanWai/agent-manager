@@ -28,7 +28,6 @@ type Result struct {
 	NewPath  string
 }
 
-// Writer persists one Rail mutation and reads back the rows it changed.
 type Writer struct {
 	store  Store
 	labels Labels

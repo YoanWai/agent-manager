@@ -20,10 +20,8 @@ const (
 	ConfigNotImported = "config-not-imported"
 )
 
-// RepoURL is the project the notices link into.
 const RepoURL = "https://github.com/YoanWai/agent-manager"
 
-// Tint is the color a notice's mark takes from the theme.
 type Tint uint8
 
 const (
@@ -32,19 +30,16 @@ const (
 	TintWarm
 )
 
-// warmHex is the yellow the panel's card, border and warm marks lean to.
 const warmHex = "#e2c044"
 
 type Notice struct {
-	ID       string
-	Glyph    string
-	Tint     Tint
-	Title    string
-	Headline string
-	// Accent holds the phrases of Body drawn in the accent color.
-	Accent []string
-	Body   []string
-	// ReleaseNotes marks a body that introduces releases.
+	ID            string
+	Glyph         string
+	Tint          Tint
+	Title         string
+	Headline      string
+	Accent        []string
+	Body          []string
 	ReleaseNotes  bool
 	Releases      []Release
 	After         []string
@@ -52,7 +47,6 @@ type Notice struct {
 	URL           string
 }
 
-// IsUpdate marks the one notice that carries the in-place update action.
 func (n Notice) IsUpdate() bool {
 	return strings.HasPrefix(n.ID, "update-")
 }
@@ -75,14 +69,12 @@ const (
 	KindOther   = "other"
 )
 
-// Change is one line of a release's generated list.
 type Change struct {
 	Kind   string
 	Text   string
 	Author string
 }
 
-// Release is one release's notes as the catalog summarized them.
 type Release struct {
 	Version      string
 	URL          string
@@ -101,7 +93,6 @@ type ReleaseRange struct {
 	Complete bool
 }
 
-// Message is one entry of the remote message feed.
 type Message struct {
 	ID       string
 	Title    string

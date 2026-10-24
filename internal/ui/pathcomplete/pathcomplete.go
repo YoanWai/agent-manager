@@ -50,18 +50,15 @@ type Request struct {
 	Typed      string
 }
 
-// Msg is a read's answer, arriving on the update path.
 type Msg struct {
 	Request     Request
 	Suggestions []string
 }
 
-// Reader answers what a path field could complete to.
 type Reader interface {
 	Complete(typed string) []string
 }
 
-// SystemReader completes against the local filesystem.
 type SystemReader struct{}
 
 func (SystemReader) Complete(typed string) []string { return completeDirs(typed) }
@@ -76,14 +73,11 @@ func suggestionsCmd(request Request, reader Reader) tea.Cmd {
 // The root asks the top surface for it instead of knowing which cards have
 // one.
 type Field interface {
-	// PathTarget names the field for the shared completer and its reads.
 	PathTarget() Target
 	// PathValue is the field's current text, false when the surface shows
 	// no path field.
 	PathValue() (string, bool)
-	// TakePath puts a completed directory into the field.
 	TakePath(path string)
-	// Paths is the field's completer state.
 	Paths() *State
 }
 
@@ -146,7 +140,6 @@ func (s *State) Selected() string {
 	return s.Suggestions[s.Index]
 }
 
-// Request starts a fresh read for typed, retiring any read in flight.
 func (s *State) Request(target Target, typed string, reader Reader) tea.Cmd {
 	s.Reset()
 	request := Request{Target: target, Generation: s.Generation, Typed: typed}
@@ -185,7 +178,6 @@ func (s *State) View(styles Styles) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// ExpandHome replaces a leading ~ with the user's home directory.
 func ExpandHome(path string) string {
 	if path == "~" || strings.HasPrefix(path, "~/") || strings.HasPrefix(path, "~"+string(filepath.Separator)) {
 		if home, err := os.UserHomeDir(); err == nil {
@@ -229,7 +221,6 @@ func completeDirs(typed string) []string {
 	return matches
 }
 
-// isDirEntry treats symlinks to directories as directories (e.g. /tmp on macOS).
 func isDirEntry(parent string, entry os.DirEntry) bool {
 	if entry.IsDir() {
 		return true

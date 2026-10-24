@@ -47,7 +47,6 @@ func (f ForkRequest) Copy() ForkRequest {
 	return f
 }
 
-// MintChildID gives the fork the child identity it launches under.
 func (f *ForkRequest) MintChildID() { f.ChildID = newID() }
 
 // ForkOutcome is the durable result of a fork. Launched is set once the
@@ -66,7 +65,6 @@ type ForkOutcome struct {
 // keys land.
 const inSourceWait = 10 * time.Second
 
-// Fork branches the source's conversation and launches the child.
 func Fork(s Sources, preflight Preflight, request ForkRequest) (ForkOutcome, error) {
 	result := ForkOutcome{ChildID: request.ChildID}
 	if result.ChildID == "" {

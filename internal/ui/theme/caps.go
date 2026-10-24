@@ -31,7 +31,6 @@ func ImageChip(token string) string {
 	return ImageChipStyle().Render(token)
 }
 
-// ImageChipPasting tints a chip whose clipboard read is still running.
 func ImageChipPasting(token string) string {
 	return ImageChipPastingStyle().Render(token)
 }

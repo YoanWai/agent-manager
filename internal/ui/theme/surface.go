@@ -27,12 +27,10 @@ func PanelHex() string { return Mix(Current().Bg, Current().Surface, 0.55) }
 // rail so it groups without announcing itself.
 func BlockHex() string { return Mix(Current().Bg, Current().Surface, 0.35) }
 
-// SelectedHex is the band under the cursor's entry.
 func SelectedHex() string { return Current().Surface }
 
 func QuickModeHex() string { return PanelHex() }
 
-// SearchFieldHex is the band under the open search field.
 func SearchFieldHex() string { return Mix(PanelHex(), Current().Accent, 0.2) }
 
 // RuleHex is the hairline tone: lifted just far enough off the backdrop to
@@ -188,7 +186,6 @@ func PaintRows(lines []string, width, height int, bg string) []string {
 	return out
 }
 
-// JoinColumns stitches painted columns row by row.
 func JoinColumns(columns ...[]string) []string {
 	height := 0
 	for _, col := range columns {
@@ -209,7 +206,6 @@ func JoinColumns(columns ...[]string) []string {
 	return rows
 }
 
-// IndentLines insets a block by n columns.
 func IndentLines(lines []string, n int) []string {
 	pad := strings.Repeat(" ", n)
 	out := make([]string, len(lines))

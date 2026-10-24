@@ -6,7 +6,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// CaretMsg toggles the focused pane's caret.
 type CaretMsg struct{}
 
 // CaretInterval is the caret's half period, matching the rate most terminals
@@ -18,7 +17,6 @@ func CaretTick() tea.Cmd {
 	return tea.Tick(CaretInterval, func(time.Time) tea.Msg { return CaretMsg{} })
 }
 
-// CaretRoot is the focused pane a caret blink reaches.
 type CaretRoot interface {
 	Focused() bool
 	BlinkCaret()

@@ -121,7 +121,6 @@ func (s *State) Answer(toolName string) *Answer {
 	return &Answer{Cat: state.Cat, Err: state.Err, Loaded: state.Loaded, Loading: state.Loading}
 }
 
-// Answer is one CLI's catalog answer as a caller copies it.
 type Answer struct {
 	Cat     catalog.Catalog
 	Err     error

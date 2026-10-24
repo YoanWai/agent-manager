@@ -63,7 +63,6 @@ const (
 	Form
 )
 
-// Host is the status bar a prompt box reports its paste and chip edits on.
 type Host interface {
 	ReportErr(text string)
 	ClearErr()
@@ -122,10 +121,8 @@ var CaptureImage = func() (string, error) { return clipboard.SaveImage() }
 var imageTokenPattern = regexp.MustCompile(`\[Image #(\d+)\]`)
 var savedTokenPattern = regexp.MustCompile(`\[saved prompt:([^\[\]]+)\]`)
 
-// Token is the text a pasted image leaves in the prompt value.
 func Token(id int) string { return fmt.Sprintf("[Image #%d]", id) }
 
-// SavedToken is the text a picked saved prompt leaves in the prompt value.
 func SavedToken(name string) string { return "[saved prompt:" + name + "]" }
 
 const (
@@ -133,7 +130,6 @@ const (
 	tokenSaved
 )
 
-// tokenSpan is one chip's place in the prompt value, in rune offsets.
 type tokenSpan struct {
 	kind  int
 	id    int
@@ -277,7 +273,6 @@ func (c *Composer) Release() {
 	c.Saved = nil
 }
 
-// CursorOffset is the caret's rune offset into the whole prompt value.
 func (c *Composer) CursorOffset() int {
 	rows := strings.Split(c.Input.Value(), "\n")
 	offset := 0
@@ -358,7 +353,6 @@ func (c *Composer) setValue(value string, cursor int) tea.Cmd {
 	return cmd
 }
 
-// removeToken cuts a chip out of the text and releases its image.
 func (c *Composer) removeToken(span tokenSpan) tea.Cmd {
 	runes := []rune(c.Input.Value())
 	span = c.withPadding(span, runes)
@@ -496,7 +490,6 @@ type Paint struct {
 	Pasting func(token string) string
 }
 
-// View is the prompt as painted, scrolled to the caret.
 func (c *Composer) View(paint Paint) string {
 	caret, total := c.DisplayRows()
 	rows := max(min(total, c.MaxRows), 1)

@@ -15,11 +15,8 @@ type MoveSurface struct {
 	root   MoveRoot
 }
 
-// MoveRoot is what the card reaches on the root beyond surface.Host.
 type MoveRoot interface {
-	// PlaceMove runs the placement the picked row asks for.
 	PlaceMove(move Move, picker *spawn.Picker) tea.Cmd
-	// PaintMove draws the card around the picker.
 	PaintMove(picker *spawn.Picker) string
 }
 
@@ -29,10 +26,8 @@ func NewMoveSurface(root MoveRoot, move Move, picker spawn.Picker) *MoveSurface 
 	return &MoveSurface{Move: move, picker: picker, root: root}
 }
 
-// Root is the root the card reaches.
 func (s *MoveSurface) Root() MoveRoot { return s.root }
 
-// Picker is the targets the card offers, as the root reads them back.
 func (s *MoveSurface) Picker() *spawn.Picker { return &s.picker }
 
 func (s *MoveSurface) Key(h surface.Host, msg tea.KeyMsg) (bool, tea.Cmd) {

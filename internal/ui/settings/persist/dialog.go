@@ -26,7 +26,6 @@ func (s State) FromCache(cfg config.Config, theme string) uisettings.State {
 	})
 }
 
-// KnownHidden is the cached hidden set narrowed to the configured tools.
 func (s State) KnownHidden(cfg config.Config) map[string]bool {
 	return Tools(cfg).KnownHidden(s.Cache.Hidden())
 }

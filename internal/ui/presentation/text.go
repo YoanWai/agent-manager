@@ -26,7 +26,6 @@ func PadRight(s string, width int) string {
 	return s
 }
 
-// Divider renders a labeled section rule with styles supplied by its caller.
 func Divider(label string, width int, section, rule lipgloss.Style) string {
 	head := section.Render("▍"+label) + " "
 	dashes := width - ansi.StringWidth(label) - 2
@@ -36,7 +35,6 @@ func Divider(label string, width int, section, rule lipgloss.Style) string {
 	return head + rule.Render(strings.Repeat("─", dashes))
 }
 
-// Window returns a bounded slice and marks content hidden above or below it.
 func Window(lines []string, rows, offset int, overflow lipgloss.Style) []string {
 	if rows < 1 {
 		rows = 1

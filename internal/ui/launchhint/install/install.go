@@ -61,7 +61,6 @@ type Pending struct {
 // root owns what it points at; this package only carries it.
 type Retry = uieffects.Request
 
-// Root is what the install asks of the manager.
 type Root interface {
 	ReportErr(text string)
 	ReportDone(text string)
@@ -84,7 +83,6 @@ type CopiedMsg struct {
 	Err error
 }
 
-// Copy copies the command the card prints.
 func (s *State) Copy() tea.Cmd {
 	command := s.Launch.Command
 	return func() tea.Msg { return CopiedMsg{Err: CopyCommand(command)} }
@@ -94,7 +92,6 @@ func (s *State) Copy() tea.Cmd {
 // clipboard.
 var CopyCommand = clipboard.WriteText
 
-// Release drops the fix and the images it was holding.
 func (s *State) Release() {
 	DropImages(s.Launch.Images)
 	s.Launch = Fix{}
@@ -165,7 +162,6 @@ func (r SettleRequest) EffectCopy() uieffects.Request { return r.Copied() }
 
 func (r SettleRequest) Run(s Services) (uieffects.Result, error) { return RunSettle(s, r) }
 
-// SettleResult is what one status check found.
 type SettleResult struct {
 	SessionID string
 	State     uilaunchhint.SettleState
@@ -255,7 +251,6 @@ func CleanupImages(images []composer.Attachment) tea.Cmd {
 	}
 }
 
-// DropImages deletes the files a prompt attached.
 func DropImages(images []composer.Attachment) {
 	for _, att := range images {
 		if att.Path != "" {

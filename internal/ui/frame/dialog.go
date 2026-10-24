@@ -11,18 +11,15 @@ import (
 const (
 	// CardPaddingX is the blank columns a card keeps inside its edge.
 	CardPaddingX = 3
-	// CardChromeX is the two border columns a card spends on its frame.
-	CardChromeX = 2
+	CardChromeX  = 2
 	// These place a card's body inside it: under the title edge and the blank
 	// row after it, past the left edge and the padding.
 	CardBodyRow    = 2
 	CardBodyColumn = 1 + CardPaddingX
 )
 
-// Fill pads a pre-painted line to width and fills its cells with bg.
 type Fill func(s string, width int, bg string) string
 
-// CardWidthFor is the default card width on a terminal cols wide.
 func CardWidthFor(cols int) int {
 	width := 64
 	if cols >= 28 && width > cols-4 {

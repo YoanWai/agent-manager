@@ -13,8 +13,7 @@ type PathField struct {
 	Target pathcomplete.Target
 	// Off asks for no suggestions, which a connection's directory takes:
 	// the host owns that path.
-	Off bool
-	// Styles paint the open list.
+	Off    bool
 	Styles pathcomplete.Styles
 }
 

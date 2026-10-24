@@ -7,7 +7,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// Exit is what a key asks of the root beyond the dialog's own state.
 type Exit uint8
 
 const (
@@ -38,11 +37,9 @@ type Context struct {
 	DefaultTool string
 	Session     keybind.Table
 	List        keybind.Table
-	// UpdateReady says the version row offers a release to update to.
 	UpdateReady bool
 }
 
-// Result is a key's outcome for the root to run.
 type Result struct {
 	Exit   Exit
 	Notice Notice
@@ -50,9 +47,8 @@ type Result struct {
 	// to resolve the auto-detected theme first and show it with ShowTheme.
 	Palette     bool
 	DetectTheme bool
-	// Background asks the root to preview TerminalBackground.
-	Background bool
-	Glyphs     bool
+	Background  bool
+	Glyphs      bool
 	// SaveHidden is the CLI picker closing; SaveKeys the key picker.
 	SaveHidden bool
 	SaveKeys   bool
@@ -61,11 +57,9 @@ type Result struct {
 	LoadPrompts  bool
 	SavePrompt   *PromptSave
 	DeletePrompt string
-	// Cmd is the typed editor line's own command.
-	Cmd tea.Cmd
+	Cmd          tea.Cmd
 }
 
-// Key runs one key on the open dialog.
 func (s *State) Key(msg tea.KeyMsg, ctx Context) Result {
 	if s.Prompts.open {
 		return s.promptsKey(msg)
@@ -169,13 +163,11 @@ func (s *State) Cycle(step int) Result {
 	return Result{}
 }
 
-// OpenPrompts opens the saved prompts panel from its row.
 func (s *State) OpenPrompts() Result {
 	s.Field = FieldPrompts
 	return s.openPrompts()
 }
 
-// ShowTheme points the theme row at the palette auto-detect resolved.
 func (s *State) ShowTheme(name string) {
 	s.ThemeIndex = uitheme.Index(name)
 }

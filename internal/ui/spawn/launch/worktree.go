@@ -22,7 +22,6 @@ const WorktreeUnavailable = "unavailable (not a git repo)"
 // every keystroke must not shell out to git each time.
 const WorktreeLookupTTL = 2 * time.Second
 
-// ProbeTarget names the surface a worktree probe answers.
 type ProbeTarget uint8
 
 const (
@@ -41,7 +40,6 @@ type ProbeRequest struct {
 	From       bool
 }
 
-// ProbeMsg carries a directory's git-repo verdict.
 type ProbeMsg struct {
 	Request ProbeRequest
 	Capable bool

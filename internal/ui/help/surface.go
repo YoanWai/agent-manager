@@ -21,11 +21,8 @@ type Surface struct {
 // the copied tables, glyphs and styles it paints from, the card's geometry,
 // and the link and the fence only the root runs.
 type Root interface {
-	// Context is the presentation state for a body width columns wide.
 	Context(width int) Context
-	// InnerWidth is the body columns of a card width wide.
 	InnerWidth(width int) int
-	// HintRows is the rows hints take at the foot of a body width wide.
 	HintRows(hints [][2]string, width int) int
 	// StatusShown is whether the status bar has a message, which the card
 	// makes room for.
@@ -49,7 +46,6 @@ func NewSurface(root Root, scope Scope) *Surface {
 	return &Surface{state: New(scope), root: root}
 }
 
-// State is the key map's search, scroll and scope.
 func (s *Surface) State() *State { return &s.state }
 
 func (s *Surface) Card(h surface.Host) Card {

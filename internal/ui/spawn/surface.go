@@ -21,21 +21,15 @@ type Surface struct {
 	root   SurfaceRoot
 }
 
-// Remote is the connection and group a New Session form spawns into.
 type Remote struct{ Host, Group string }
 
 // On is whether the spawn goes to a connection rather than this machine.
 func (r Remote) On() bool { return r.Host != "" }
 
-// SurfaceRoot is what the form reaches on the root beyond surface.Host.
 type SurfaceRoot interface {
-	// FormKey runs a key on the form and the root work it asks for.
 	FormKey(msg tea.KeyMsg) tea.Cmd
-	// FormClick runs the root work a click at a painted body line asks for.
 	FormClick(line int) tea.Cmd
-	// FormWheel steps the form the way ↑↓ do.
 	FormWheel(step int) tea.Cmd
-	// FormView paints the form's card.
 	FormView() string
 	TakeForeground()
 	// ReleasePrompt lets go of the prompt box's images; a spawn has already
@@ -49,7 +43,6 @@ func NewSurface(root SurfaceRoot, form Form, picker Picker, complete pathcomplet
 	return &Surface{Form: form, Picker: picker, Complete: complete, root: root}
 }
 
-// Root is what the form reaches on the root.
 func (s *Surface) Root() SurfaceRoot { return s.root }
 
 // AimRemote points the form at a connection: the group is fixed, the
@@ -71,7 +64,6 @@ func (s *Surface) Key(_ surface.Host, msg tea.KeyMsg) (bool, tea.Cmd) {
 
 func (s *Surface) Click(_ surface.Host, line int) tea.Cmd { return s.root.FormClick(line) }
 
-// Wheel steps the form the way ↑↓ do.
 func (s *Surface) Wheel(_ surface.Host, arrow tea.KeyMsg) tea.Cmd {
 	step := 1
 	if arrow.Type == tea.KeyUp {

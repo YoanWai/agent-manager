@@ -12,7 +12,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// Styles are the root's live styles the dialog paints with.
 type Styles struct {
 	Value, Subtle, Muted, Key, Annotation lipgloss.Style
 	// Marker is the focused row's caret; Focused its label.
@@ -38,7 +37,6 @@ type ViewContext struct {
 	TextArea        func(textarea.Model) string
 }
 
-// Card is how the root frames the dialog.
 type Card uint8
 
 const (
@@ -49,7 +47,6 @@ const (
 	Confirm
 )
 
-// Frame is a painted dialog for the root's card chrome.
 type Frame struct {
 	Card        Card
 	Title       string
@@ -61,7 +58,6 @@ type Frame struct {
 	Destructive bool
 }
 
-// View paints the open dialog.
 func (s *State) View(ctx ViewContext) Frame {
 	if s.Prompts.open {
 		return s.Prompts.view(ctx)
@@ -288,7 +284,6 @@ func themeSwatch(t uitheme.Theme) string {
 	return b.String()
 }
 
-// CurrentStyles is the styles for the theme painting now.
 func CurrentStyles() Styles {
 	return Styles{
 		Value:      uitheme.ValueStyle(),

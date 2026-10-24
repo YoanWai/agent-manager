@@ -25,7 +25,6 @@ type Sink struct {
 	Lost  func(error)
 }
 
-// NewWatcher opens a pane watcher on driver that pushes to sink.
 func NewWatcher(driver *tmux.Driver, sink Sink) *watch.Watcher {
 	return watch.New(driver, liveTick, watch.Sink{Frame: sink.Frame, Lost: sink.Lost})
 }
@@ -77,7 +76,6 @@ func Scroll(watch *watch.Watcher, sessionID string, offset, rows int) ScrollMsg 
 	return msg
 }
 
-// FrameMessage is a watcher frame as the root routes it.
 func FrameMessage(frame watch.Frame) FrameMsg {
 	return FrameMsg{
 		SessionID:   frame.SessionID,

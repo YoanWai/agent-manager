@@ -46,7 +46,6 @@ type displayedFrame struct {
 	rowOffset int
 }
 
-// Box is the pane rectangle from the frame currently on screen.
 type Box struct {
 	X      int
 	Y      int
@@ -90,7 +89,6 @@ type EnterContext struct {
 	KeepPaneFacts bool
 }
 
-// PaneUpdate is the value snapshot delivered by the root watcher.
 type PaneUpdate struct {
 	SessionID string
 	Mouse     bool

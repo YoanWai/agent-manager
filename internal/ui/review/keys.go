@@ -41,7 +41,6 @@ func (m *Model) Key(msg tea.KeyMsg, ctx KeyContext) KeyResult {
 	return m.run(b.Action, ctx, height)
 }
 
-// run does what a Review action does. Every action in keymap has a case.
 func (m *Model) run(act action, ctx KeyContext, height int) KeyResult {
 	result := KeyResult{Consumed: true}
 	switch act {

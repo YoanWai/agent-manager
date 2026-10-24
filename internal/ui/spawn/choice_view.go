@@ -86,10 +86,8 @@ func (ch *Choice) ProfileRow(h ChoiceHost, toolName string, st Styles) (string, 
 	return st.Subtle.Render("◂ ") + value + st.Subtle.Render(" ▸"), true
 }
 
-// FilterView paints the model filter.
 func (ch *Choice) FilterView(st Styles) string { return st.Input(ch.filter) }
 
-// TypedEffortView paints the typed level.
 func (ch *Choice) TypedEffortView(st Styles) string { return st.Input(ch.typedEffort) }
 
 // ViewSuggestions returns each line's list index in entries, -1 for a

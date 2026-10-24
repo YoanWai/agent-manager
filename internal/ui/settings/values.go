@@ -59,7 +59,6 @@ var saveOrder = func() []Setting {
 	return ordered
 }()
 
-// ParseHidden reads the stored hidden-CLI list.
 func ParseHidden(raw string) map[string]bool {
 	if raw == "" {
 		return nil

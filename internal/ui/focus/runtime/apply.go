@@ -8,14 +8,12 @@ import (
 // ProbeHost is what entering focus once the dead-pane probe has run asks of
 // the root.
 type ProbeHost interface {
-	// ReportErr puts a failure on the status bar.
 	ReportErr(text string)
 	// Grounded reports whether a probe asked with generation still owns the
 	// foreground: not a quit, and no newer press since.
 	Grounded(generation uint64) bool
 	// ListClear reports whether the list is up with no card over it.
 	ListClear() bool
-	// Enter opens the focused surface over the session a probe confirmed.
 	Enter(sessionID string) tea.Cmd
 }
 
@@ -32,23 +30,18 @@ func ApplyProbe(h ProbeHost, request ProbeRequest, err error) tea.Cmd {
 	return h.Enter(request.SessionID)
 }
 
-// DetachHost is what a detached session's request asks of the root.
 type DetachHost interface {
 	ReportErr(text string)
 	// Warn puts a caveat on the status bar, which a refused request is.
 	Warn(text string)
-	// Refresh asks the poller for a pass.
 	Refresh()
-	// Quitting reports a quit under way.
 	Quitting() bool
 	// TakenSinceDetach reports whether the user moved the screen since the
 	// session detached.
 	TakenSinceDetach() bool
 	// Name is the display name of a session, or its id when the row is gone.
 	Name(sessionID string) string
-	// Focused moves the cursor to the session that asked.
 	Focused(sessionID string) bool
-	// Review and Editor open the view the session asked for.
 	Review(sessionID string) tea.Cmd
 	Editor(sessionID string) tea.Cmd
 }
@@ -93,7 +86,6 @@ func ApplyDetach(h DetachHost, request DetachRequest, result Detach, err error) 
 	return nil
 }
 
-// InputHost is what a finished write to a focused pane asks of the root.
 type InputHost interface {
 	ReportErr(text string)
 	Landed(sessionID string)

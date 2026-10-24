@@ -205,7 +205,6 @@ func (d *Form) savedDetails(facts FormFacts, room int) (string, presentation.Lin
 	return indent + line + "\n", lines
 }
 
-// FormField paints one labelled row of a form card.
 func FormField(st Styles, label, value string, focused bool) string {
 	marker := "  "
 	style := st.Label

@@ -70,11 +70,10 @@ type generations struct {
 }
 
 type layoutState struct {
-	frame  string
-	width  int
-	height int
-	split  splitState
-	// panes is the geometry each session's window was pinned to.
+	frame         string
+	width         int
+	height        int
+	split         splitState
 	panes         uigeometrypanes.Panes
 	displayedRail uirail.Frame
 	// card places the last card painted and its body, for clicks.

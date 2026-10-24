@@ -17,7 +17,6 @@ import (
 // Seams are the side effects a link reaches. The root passes its own, so a
 // test keeps the desktop and the clipboard out of the run.
 type Seams struct {
-	// Open is the browser a link opens in.
 	Open func(target string) error
 	// Opener starts the platform's URL handler for a link the focused pane
 	// reported.
@@ -37,7 +36,6 @@ type BrowserOpenMsg struct {
 	CopyErr error
 }
 
-// LinkOpenErrMsg carries a link the opener refused.
 type LinkOpenErrMsg struct{ Err error }
 
 // OpenLink opens target in the browser, leaving the URL on the clipboard when

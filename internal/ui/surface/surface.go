@@ -16,11 +16,8 @@ type Surface interface {
 	// Key handles a key that reached this layer. A modal surface consumes
 	// every key; handled false lets the key fall to the layer below.
 	Key(h Host, msg tea.KeyMsg) (handled bool, cmd tea.Cmd)
-	// Click acts on the surface's card body at its painted line.
 	Click(h Host, line int) tea.Cmd
-	// Wheel steps the surface the way ↑↓ do.
 	Wheel(h Host, arrow tea.KeyMsg) tea.Cmd
-	// View paints the surface over the frame below it.
 	View(h Host, below string) string
 	// Footer is the hint pairs the surface adds ahead of the layer's own.
 	Footer() [][2]string
@@ -40,9 +37,7 @@ type Surface interface {
 type Host interface {
 	// CardSized paints a card and records its body for clicks.
 	CardSized(width int, title, body string, hint [][2]string) string
-	// Size is the terminal's columns and rows.
 	Size() (width, height int)
-	// Pop takes the top surface off the stack, running its Leave.
 	Pop()
 }
 

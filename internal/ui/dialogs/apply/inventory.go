@@ -17,7 +17,6 @@ type Stages struct {
 	ToolChanged  bool
 }
 
-// Stages is what a group or session rename committed.
 func (o Outcome) Stages() Stages {
 	return Stages{
 		GroupRenamed: o.GroupRenamed,

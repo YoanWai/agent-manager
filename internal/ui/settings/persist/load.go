@@ -12,7 +12,6 @@ import (
 type Target uint8
 
 const (
-	// DialogTarget is the Settings card.
 	DialogTarget Target = iota
 	FormTarget
 	QuickTarget
@@ -42,7 +41,6 @@ type LoadedMsg struct {
 	Err     error
 }
 
-// Load reads every key the dialog writes plus the hidden-CLI set.
 func Load(reader Reader) (LoadResult, error) {
 	values, hiddenRaw, hiddenErr := SettingsReadback(reader)
 	result := LoadResult{Values: values, HiddenRaw: hiddenRaw, HiddenErr: hiddenErr}
@@ -93,7 +91,6 @@ func SettingsReadback(reader Reader) ([]uisettings.Readback, string, error) {
 	return values, hidden, hiddenErr
 }
 
-// Take applies a read to the cache.
 func (s *State) Take(result LoadResult) {
 	s.Cache.ApplyReadback(result.Values, result.HiddenRaw, result.HiddenErr)
 }

@@ -20,7 +20,6 @@ type LaunchHint struct {
 	Update  bool
 }
 
-// LaunchHintAction is what a key asks the root to do.
 type LaunchHintAction uint8
 
 const (

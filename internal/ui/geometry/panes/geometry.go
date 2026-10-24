@@ -14,7 +14,6 @@ import (
 	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
 )
 
-// PaneResize is one pane pinned to a size.
 type PaneResize struct {
 	ID   string
 	Size [2]int
@@ -30,7 +29,6 @@ type Resize struct {
 // Empty reports whether the resize would do nothing.
 func (r Resize) Empty() bool { return len(r.Targets) == 0 && r.Publish == [2]int{} }
 
-// Session is what sizing one session needs.
 type Session struct {
 	ID        string
 	Tool      string
@@ -73,14 +71,12 @@ type Panes struct {
 	SaveError string
 }
 
-// Store is the settings row and pane box this feature reads and writes.
 type Store interface {
 	Setting(key string) (string, error)
 	SetSetting(key, value string) error
 	SetPaneSize(width, height int) error
 }
 
-// Driver resizes one session's tmux window.
 type Driver interface {
 	Resize(id string, width, height int) error
 }
@@ -97,14 +93,12 @@ type Root interface {
 	// FitsHeight reports whether the tool repaints its own screen, so a
 	// shorter box cannot cost it scrollback.
 	FitsHeight(tool string) bool
-	// Queue hands the lane one coalescable resize request.
 	Queue(request Resize)
 	// SaveSplitRatio captures value for the effect lane and returns the job
 	// it took; that job owns the failure when the write does not land.
 	SaveSplitRatio(value string) uint64
 	ReportErr(text string)
 	ClearErr()
-	// ErrorIs reports whether the status bar carries text.
 	ErrorIs(text string) bool
 }
 
@@ -125,7 +119,6 @@ func RatioText(ratio float64) string { return strconv.FormatFloat(ratio, 'f', 4,
 // without a settings store.
 var NoStore = errors.New("save split ratio: store is unavailable")
 
-// SaveRatio is the store write behind a committed divider.
 func SaveRatio(st Store, value string) error {
 	if err := st.SetSetting(uigeometry.SplitRatioSetting, value); err != nil {
 		return fmt.Errorf("save split ratio: %w", err)

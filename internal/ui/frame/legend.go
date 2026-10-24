@@ -18,8 +18,7 @@ const (
 	Gap         = 2
 	// MaxRows is the footer's height budget. Past it the tail is cut and
 	// marked; the full map is one ? away.
-	MaxRows = 3
-	// RailGutter is the blank columns the Rail reserves left of the frame.
+	MaxRows    = 3
 	RailGutter = 2
 )
 
@@ -194,7 +193,6 @@ func (hits KeyHits) Add(x0, x1, y int, label string) KeyHits {
 	return append(hits, KeyHit{X0: x0, X1: x1, Y: y, Key: key})
 }
 
-// Moved is hits painted with their first row at y and first column at x.
 func (hits KeyHits) Moved(x, y int) KeyHits {
 	out := make(KeyHits, len(hits))
 	for i, hit := range hits {

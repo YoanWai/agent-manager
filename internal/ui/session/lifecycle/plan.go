@@ -39,15 +39,12 @@ type Change struct {
 	Launches      []Relaunch
 	// Notices are the lines a completion reports, in the order it reports
 	// them.
-	Notices []string
-	Warning error
-	// Survivor is whether the watcher a run stopped may be restarted.
+	Notices  []string
+	Warning  error
 	Survivor bool
-	// Refusal is the failure that stopped the run.
-	Refusal *Refusal
+	Refusal  *Refusal
 }
 
-// Refusal is the failure a completion reports, in the shape reporting needs.
 type Refusal struct {
 	Err error
 	// Batch reports a run of several rows, which names its failure only when
@@ -61,7 +58,6 @@ type Refusal struct {
 	Retry *Request
 }
 
-// Changes reads a finished run as the edits and reports the manager applies.
 func Changes(request Request, result Result, err error) Change {
 	target := request.Target
 	change := Change{Survivor: result.Survivor}
@@ -161,7 +157,6 @@ func archiveEdit(archive bool, rows []store.Session, group string) *ArchiveEdit 
 	return edit
 }
 
-// Subgroups is every loaded group path under path.
 func Subgroups(groups []string, path string) []string {
 	var out []string
 	prefix := path + "/"
@@ -173,7 +168,6 @@ func Subgroups(groups []string, path string) []string {
 	return out
 }
 
-// RemoveSession takes a row out of the loaded list.
 func RemoveSession(sessions []store.Session, id string) []store.Session {
 	for i := range sessions {
 		if sessions[i].ID == id {
@@ -183,7 +177,6 @@ func RemoveSession(sessions []store.Session, id string) []store.Session {
 	return sessions
 }
 
-// DropGroups takes the removed group paths out of the loaded list.
 func DropGroups(groups []string, removed []string) []string {
 	gone := make(map[string]bool, len(removed))
 	for _, path := range removed {
@@ -272,7 +265,6 @@ func RestoreRows(sessions []store.Session, edit *ArchiveEdit) []store.Session {
 	return rows
 }
 
-// inSubtree reports whether a group sits at or below path.
 func inSubtree(group, path string) bool {
 	return group == path || strings.HasPrefix(group, path+"/")
 }

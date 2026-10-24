@@ -82,7 +82,6 @@ type Services struct {
 	Git       *git.Driver
 }
 
-// Run creates the session's pane and row.
 func Run(services Services, request Request) (Result, error) {
 	result := Result{}
 	if services.Lifecycle == nil {
@@ -180,14 +179,12 @@ type GroupRequest struct {
 	DirReader DirectoryPreflight
 }
 
-// GroupResult is a created group's path, its directory and its worktree mode.
 type GroupResult struct {
 	Path     string
 	Dir      string
 	Worktree string
 }
 
-// RunGroup validates the group's directory and writes the group.
 func RunGroup(services Services, request GroupRequest) (GroupResult, error) {
 	dir := request.Dir
 	if dir == "" {
@@ -216,7 +213,6 @@ func SaveChoice(st SettingsStore, key, value string) error {
 	return nil
 }
 
-// SettingsStore is the settings table a kept choice is written to.
 type SettingsStore interface {
 	SetSetting(key, value string) error
 }
@@ -232,7 +228,6 @@ type DirectoryPreflight interface {
 // whether a directory sits inside a repository.
 type SystemDirectoryPreflight struct{ Git *git.Driver }
 
-// Resolve turns raw field input into a usable directory.
 func (p SystemDirectoryPreflight) Resolve(raw string, fallbacks []string) (string, bool) {
 	if raw != "" {
 		return ResolveExistingDir(raw, "")
@@ -287,13 +282,11 @@ func (r SystemTerminalDirectoryReader) Resolve(request TerminalDirectoryRequest)
 	return r.Dirs.Resolve(request.RawDir, request.Fallbacks)
 }
 
-// InitialWorkingDir is the directory the manager was started in.
 func InitialWorkingDir() string {
 	dir, _ := os.Getwd()
 	return dir
 }
 
-// InitialHomeDir is the home directory the manager started with.
 func InitialHomeDir() string {
 	dir, _ := os.UserHomeDir()
 	return dir
@@ -313,7 +306,6 @@ func ResolveExistingDir(raw, fallback string) (string, bool) {
 	return dir, IsDir(dir)
 }
 
-// IsDir reports whether path names a directory.
 func IsDir(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.IsDir()

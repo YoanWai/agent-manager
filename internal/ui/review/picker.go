@@ -57,7 +57,6 @@ type Picker struct {
 	lines presentation.Lines[int]
 }
 
-// PickerChoice is the row Enter picked, for root to retarget or persist.
 type PickerChoice struct {
 	Kind  PickerKind
 	Value string
@@ -174,7 +173,6 @@ func (p *Picker) Click(line int) PickerResult {
 	return p.Key(tea.KeyMsg{Type: tea.KeyEnter})
 }
 
-// row renders one picker row inside a card of inner width.
 func (p Picker) row(ctx RenderContext, inner int, row PickerRow, selected bool) string {
 	s := ctx.Styles
 	marker := "  "

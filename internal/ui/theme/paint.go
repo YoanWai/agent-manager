@@ -10,7 +10,6 @@ func BgSeq(hex string) string {
 	return "\x1b[" + lipgloss.ColorProfile().Color(hex).Sequence(true) + "m"
 }
 
-// FgSeq is the raw "set foreground" SGR for a hex color.
 func FgSeq(hex string) string {
 	return "\x1b[" + lipgloss.ColorProfile().Color(hex).Sequence(false) + "m"
 }

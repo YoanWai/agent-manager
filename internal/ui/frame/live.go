@@ -26,7 +26,6 @@ func TitleStyles() (badge, quiet func(string) string) {
 	return func(s string) string { return badgeStyle.Render(s) }, func(s string) string { return titleStyle.Render(s) }
 }
 
-// Separator joins the bindings of a secondary tier.
 func Separator() string { return uitheme.SubtleStyle().Render(" · ") }
 
 // LiveChrome is a card's painting: its edge tone pulled toward the accent so a

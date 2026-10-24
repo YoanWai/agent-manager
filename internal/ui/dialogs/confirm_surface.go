@@ -15,11 +15,9 @@ type ConfirmSurface struct {
 	root      ConfirmRoot
 }
 
-// ConfirmRoot is what the card reaches on the root beyond surface.Host.
 type ConfirmRoot interface {
 	// Paint draws the shared yes/no card, which Settings' reset draws too.
 	Paint(title, question, consequence string, destructive bool, answer string) string
-	// Run runs the request the card was opened for.
 	Run() tea.Cmd
 }
 
@@ -27,10 +25,8 @@ func NewConfirmSurface(root ConfirmRoot, prompt Confirm, glyphMode presentation.
 	return &ConfirmSurface{prompt: prompt, glyphMode: glyphMode, root: root}
 }
 
-// Prompt is the question the card asks.
 func (s *ConfirmSurface) Prompt() Confirm { return s.prompt }
 
-// Root is the request the card holds.
 func (s *ConfirmSurface) Root() ConfirmRoot { return s.root }
 
 func (s *ConfirmSurface) Key(h surface.Host, msg tea.KeyMsg) (bool, tea.Cmd) {
