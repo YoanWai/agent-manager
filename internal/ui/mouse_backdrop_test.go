@@ -2,6 +2,7 @@ package ui
 
 import (
 	"github.com/YoanWai/agent-manager/internal/store"
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -29,7 +30,7 @@ func TestBackdropClickClosesACardTheWayEscDoes(t *testing.T) {
 		{"messages", func(m *Model) { m.openNotices("") }},
 		{"settings", func(m *Model) { m.applyCmd(t, m.openSettings()) }},
 		{"confirm", func(m *Model) {
-			m.openConfirm(confirmTarget{action: actionKill, label: "kill alpha? frees its RAM."})
+			m.openConfirm(confirmTarget{action: uidialogs.ConfirmKill, label: "kill alpha? frees its RAM."})
 		}},
 		{"move", func(m *Model) { m.openMove() }},
 	} {
@@ -58,7 +59,9 @@ func TestBackdropClickKeepsATypedDraft(t *testing.T) {
 	}{
 		{"new session", func(m *Model) { m.applyCmd(t, m.openForm()) }},
 		{"new group", func(m *Model) { m.openGroupForm() }},
-		{"fork", func(m *Model) { m.push(newForkSurface(m, store.Session{Name: "alpha"}, 1)) }},
+		{"fork", func(m *Model) {
+			m.push(uidialogs.NewForkSurface(forkRoot{m, store.Session{Name: "alpha"}}, "alpha", "", 1))
+		}},
 	} {
 		m := buildModel(t)
 		m.layout.width, m.layout.height = 120, 34

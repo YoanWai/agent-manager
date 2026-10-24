@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/remote"
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
@@ -46,10 +47,15 @@ func TestCtrlCOnEveryBase(t *testing.T) {
 // decided this for itself; the router decides it once here.
 func TestCtrlCQuitsThroughEveryCardOverTheList(t *testing.T) {
 	for name, open := range map[string]func(t *testing.T, m *Model){
-		"confirm": func(t *testing.T, m *Model) { m.openConfirm(confirmTarget{action: actionKill, label: "kill alpha?"}) },
-		"move":    func(t *testing.T, m *Model) { m.openMove() },
-		"rename":  func(t *testing.T, m *Model) { m.openRename() },
-		"fork":    func(t *testing.T, m *Model) { m.push(newForkSurface(m, railSelectedSession(m), 1)) },
+		"confirm": func(t *testing.T, m *Model) {
+			m.openConfirm(confirmTarget{action: uidialogs.ConfirmKill, label: "kill alpha?"})
+		},
+		"move":   func(t *testing.T, m *Model) { m.openMove() },
+		"rename": func(t *testing.T, m *Model) { m.openRename() },
+		"fork": func(t *testing.T, m *Model) {
+			source := railSelectedSession(m)
+			m.push(uidialogs.NewForkSurface(forkRoot{m, source}, source.Name, source.Group, 1))
+		},
 		"launchhint": func(t *testing.T, m *Model) {
 			m.openLaunchHint(uiinstall.Fix{Text: "tool is missing", Command: "true", Script: "true", Binary: "tool"})
 		},

@@ -5,6 +5,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/google/uuid"
 	"time"
@@ -27,7 +28,7 @@ func (m *Model) restartSelected() (tea.Model, tea.Cmd) {
 		label = fmt.Sprintf("restart %s with an empty context? ends the running agent and leaves its conversation behind.", entry.sess.Name)
 	}
 	m.openConfirm(confirmTarget{
-		action:   actionRestart,
+		action:   uidialogs.ConfirmRestart,
 		sessions: []store.Session{entry.sess},
 		label:    label,
 	})

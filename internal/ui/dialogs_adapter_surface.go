@@ -59,7 +59,7 @@ func (r renameRoot) ReportErr(text string) { r.reportErr(text) }
 func (r renameRoot) ApplyPathSuggestion() tea.Cmd { return r.applyPathSuggestion() }
 
 func (r renameRoot) StepBase(s *uidialogs.RenameSurface, delta int) (string, tea.Cmd) {
-	return r.stepRenameBase(s, delta)
+	return r.stepGroupBase(groupBaseRename, r.gens.dialog, r.capturedAbsolutePath(s.Dir(), r.capturedGroupDefaultDir(parentGroup(s.Path()))), s.Base, delta)
 }
 
 func (r renameRoot) WorktreeCount() int { return len(groupWorktreeOptions) }
@@ -93,7 +93,9 @@ func (r moveRoot) PlaceMove(move uidialogs.Move, picker *spawn.Picker) tea.Cmd {
 	return r.placeMove(move, picker)
 }
 
-func (r moveRoot) PaintMove(picker *spawn.Picker) string { return r.viewMove(picker) }
+func (r moveRoot) PaintMove(picker *spawn.Picker) string {
+	return r.card(uidialogs.MoveTitle(r.prefs.glyphMode), r.viewGroupPicker(picker), uidialogs.MoveHints())
+}
 
 var (
 	_ uidialogs.RenameRoot = renameRoot{}
@@ -120,10 +122,6 @@ func (m *Model) listClear() bool {
 func (m *Model) openConfirm(target confirmTarget) {
 	prompt := uidialogs.Confirm{Action: target.action, Group: target.isGroup, Label: target.label}
 	m.push(uidialogs.NewConfirmSurface(confirmRoot{m, target}, prompt, m.prefs.glyphMode))
-}
-
-func newForkSurface(m *Model, source store.Session, gen int) *uidialogs.ForkSurface {
-	return uidialogs.NewForkSurface(forkRoot{m, source}, source.Name, source.Group, gen)
 }
 
 // launchHintRoot is the root as the setup-step card reaches it. The fix it
@@ -177,11 +175,6 @@ func (m *Model) launchInstall() installStartRequest {
 		Retry:   retry,
 		Images:  fix.Images,
 	}}
-}
-
-// launchHintSurface is the setup-step card on the stack.
-func (m *Model) launchHintSurface() (*uidialogs.LaunchHintSurface, bool) {
-	return surfaceOf[*uidialogs.LaunchHintSurface](m)
 }
 
 var _ uidialogs.LaunchHintRoot = launchHintRoot{}

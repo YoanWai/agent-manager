@@ -355,7 +355,7 @@ func TestRestartHermesWithoutMCPSupportPromptsInstall(t *testing.T) {
 	m.services.cfg.Tools["hermes"] = config.Tool{Command: "cat", DefaultStatus: status.Idle}
 	installSDKlessHermes(t)
 	sess := store.Session{ID: newID(), Name: "agent", Tool: "hermes", Cwd: t.TempDir()}
-	m.openConfirm(confirmTarget{action: actionRestart, sessions: []store.Session{sess}})
+	m.openConfirm(confirmTarget{action: uidialogs.ConfirmRestart, sessions: []store.Session{sess}})
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	m.drainEffects(t)
@@ -1009,7 +1009,7 @@ func TestInstallFinishesARefusedRestore(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.services.cfg.Tools["claude"] = config.Tool{Command: "am-missing-cli-xyz", DefaultStatus: status.Idle}
-	m.openConfirm(confirmTarget{action: actionRestore, sessions: []store.Session{sess}})
+	m.openConfirm(confirmTarget{action: uidialogs.ConfirmRestore, sessions: []store.Session{sess}})
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	m.drainEffects(t)

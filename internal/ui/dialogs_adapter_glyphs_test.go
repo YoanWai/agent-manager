@@ -13,9 +13,9 @@ func TestConfirmMarksFollowModeWithoutChangingTheAction(t *testing.T) {
 		action                 uidialogs.ConfirmAction
 		label, advanced, basic string
 	}{
-		{actionKill, "Kill", "✕", "x"}, {actionArchive, "Archive", "◇", "A"},
-		{actionRestore, "Restore", "◆", "R"}, {actionRestart, "Restart", "↻", "R"},
-		{actionRevive, "Revive", "◆", "R"}, {actionDelete, "Delete", "⚠", "!"},
+		{uidialogs.ConfirmKill, "Kill", "✕", "x"}, {uidialogs.ConfirmArchive, "Archive", "◇", "A"},
+		{uidialogs.ConfirmRestore, "Restore", "◆", "R"}, {uidialogs.ConfirmRestart, "Restart", "↻", "R"},
+		{uidialogs.ConfirmRevive, "Revive", "◆", "R"}, {uidialogs.ConfirmDelete, "Delete", "⚠", "!"},
 	}
 	m := buildModel(t)
 	for _, mode := range []presentation.GlyphMode{presentation.GlyphModeBasic, presentation.GlyphModeAdvanced} {

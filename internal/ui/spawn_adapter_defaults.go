@@ -3,6 +3,7 @@ package ui
 import (
 	"time"
 
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	tea "github.com/charmbracelet/bubbletea"
@@ -94,14 +95,14 @@ func (m *Model) handleGroupBaseStep(msg groupBaseStepMsg) {
 	var base *string
 	switch msg.Target {
 	case groupBaseForm:
-		s, ok := m.groupFormSurface()
-		if !ok || uint64(s.Gen()) != msg.Gen || m.groupFormDir(s) != msg.Dir {
+		s, ok := surfaceOf[*uidialogs.GroupFormSurface](m)
+		if !ok || uint64(s.Gen()) != msg.Gen || m.capturedAbsolutePath(s.Dir(), m.capturedGroupDefaultDir(s.Selected())) != msg.Dir {
 			return
 		}
 		base = s.BaseRef()
 	case groupBaseRename:
-		s, ok := m.renaming()
-		if !ok || m.gens.dialog != msg.Gen || m.renameGroupDir(s) != msg.Dir {
+		s, ok := surfaceOf[*uidialogs.RenameSurface](m)
+		if !ok || m.gens.dialog != msg.Gen || m.capturedAbsolutePath(s.Dir(), m.capturedGroupDefaultDir(parentGroup(s.Path()))) != msg.Dir {
 			return
 		}
 		base = &s.Base

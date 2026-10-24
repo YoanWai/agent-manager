@@ -3,6 +3,7 @@ package ui
 import (
 	"testing"
 
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -65,7 +66,7 @@ func TestClickOnConfirmFootAnswers(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 120, 34
-	m.openConfirm(confirmTarget{action: actionKill, label: "kill alpha? frees its RAM."})
+	m.openConfirm(confirmTarget{action: uidialogs.ConfirmKill, label: "kill alpha? frees its RAM."})
 	if m = clickLabel(t, m, "n/esc cancel"); !m.onList() || pendingConfirm(m).label != "" {
 		t.Fatalf("cancel in the foot should close the confirm, screen = %v target = %+v", m.screenID(), pendingConfirm(m))
 	}

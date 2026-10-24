@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
 	tea "github.com/charmbracelet/bubbletea"
 	"time"
@@ -26,7 +27,7 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 			m.openConfirm(confirmTarget{
 				isGroup:  true,
 				path:     entry.group,
-				action:   actionRevive,
+				action:   uidialogs.ConfirmRevive,
 				batch:    true,
 				sessions: dead,
 				label: fmt.Sprintf("revive group %s (%d dead sessions)? brings them back.",
@@ -46,7 +47,7 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 	}
 	if len(set) > 1 && dead {
 		m.openConfirm(confirmTarget{
-			action:   actionRevive,
+			action:   uidialogs.ConfirmRevive,
 			sessions: set,
 			label: followConfirmLabel("revive", entry.sess.Name, len(set)-1,
 				"brings it back.",
@@ -55,7 +56,7 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 		})
 		return m, nil
 	}
-	m.queueLifecycle(confirmTarget{action: actionRevive, sessions: []store.Session{entry.sess}}, true, "")
+	m.queueLifecycle(confirmTarget{action: uidialogs.ConfirmRevive, sessions: []store.Session{entry.sess}}, true, "")
 	return m, m.nextEffectCmd()
 }
 
@@ -65,7 +66,7 @@ func (m *Model) reviveAllDead() (tea.Model, tea.Cmd) {
 	sessions := m.listedSessions()
 	if dead := deadSessions(sessions); len(dead) > 1 {
 		m.openConfirm(confirmTarget{
-			action:   actionRevive,
+			action:   uidialogs.ConfirmRevive,
 			batch:    true,
 			sessions: dead,
 			label:    fmt.Sprintf("revive every dead session (%d)? brings them back.", len(dead)),
@@ -79,7 +80,7 @@ func (m *Model) reviveAllDead() (tea.Model, tea.Cmd) {
 // can and names the first failure rather than stopping, so one broken
 // session does not block the rest.
 func (m *Model) reviveMany(sessions []store.Session, emptyNotice string) (tea.Model, tea.Cmd) {
-	m.queueLifecycle(confirmTarget{action: actionRevive, batch: true, sessions: deadSessions(sessions)}, false, emptyNotice)
+	m.queueLifecycle(confirmTarget{action: uidialogs.ConfirmRevive, batch: true, sessions: deadSessions(sessions)}, false, emptyNotice)
 	return m, m.nextEffectCmd()
 }
 

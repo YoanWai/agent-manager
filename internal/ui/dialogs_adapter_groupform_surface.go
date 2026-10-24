@@ -43,11 +43,6 @@ func (m *Model) openGroupForm() {
 	m.clearErr()
 }
 
-// groupFormSurface is the open New Group card, if one is on the stack.
-func (m *Model) groupFormSurface() (*uidialogs.GroupFormSurface, bool) {
-	return surfaceOf[*uidialogs.GroupFormSurface](m)
-}
-
 // handleGroupFormSubmit runs what the form's submit asked: a remote call
 // for a connection's group, otherwise the store write on the effect lane.
 func (m *Model) handleGroupFormSubmit(msg uidialogs.GroupFormSubmitMsg, reader directoryPreflight) tea.Cmd {
@@ -68,17 +63,11 @@ func (m *Model) handleGroupFormSubmit(msg uidialogs.GroupFormSubmitMsg, reader d
 // handleGroupBaseAsk steps the open form's base through the repo's
 // branches, probing the directory the group would save.
 func (m *Model) handleGroupBaseAsk(msg uidialogs.GroupBaseAskMsg) tea.Cmd {
-	s, ok := m.groupFormSurface()
+	s, ok := surfaceOf[*uidialogs.GroupFormSurface](m)
 	if !ok || s.Gen() != msg.Gen {
 		return nil
 	}
-	choice, cmd := m.stepGroupBase(groupBaseForm, uint64(msg.Gen), m.groupFormDir(s), s.Base(), msg.Delta)
+	choice, cmd := m.stepGroupBase(groupBaseForm, uint64(msg.Gen), m.capturedAbsolutePath(s.Dir(), m.capturedGroupDefaultDir(s.Selected())), s.Base(), msg.Delta)
 	*s.BaseRef() = choice
 	return cmd
-}
-
-// groupFormDir is the default path the group form would save, resolved
-// the way the group worker resolves it.
-func (m *Model) groupFormDir(s *uidialogs.GroupFormSurface) string {
-	return m.capturedAbsolutePath(s.Dir(), m.capturedGroupDefaultDir(s.Selected()))
 }

@@ -41,7 +41,7 @@ func (r installRoot) SessionLaunched(sess store.Session) {
 }
 
 func (r installRoot) HintOpen(gen uint64) bool {
-	_, open := r.launchHintSurface()
+	_, open := surfaceOf[*uidialogs.LaunchHintSurface](r.Model)
 	return open && r.gens.dialog == gen
 }
 
@@ -191,7 +191,7 @@ func outdatedTool(outdated config.OutdatedToolError) uilaunchhint.Tool {
 func (m *Model) openLaunchHint(fix uiinstall.Fix) {
 	m.advanceDialogGen()
 	fix.Images = append(fix.Images, m.takeComposerImages()...)
-	if _, open := m.launchHintSurface(); !open {
+	if _, open := surfaceOf[*uidialogs.LaunchHintSurface](m); !open {
 		// The quick bar is not a dialog: it stays under the card.
 		for top, ok := m.top(); ok; top, ok = m.top() {
 			if _, bar := top.(*uiquick.Surface); bar {
@@ -209,7 +209,7 @@ func (m *Model) openLaunchHint(fix uiinstall.Fix) {
 // is replaced in place.
 func (m *Model) presentLaunchHint(fix uiinstall.Fix) {
 	m.ledger.install.Launch = fix
-	if s, open := m.launchHintSurface(); open {
+	if s, open := surfaceOf[*uidialogs.LaunchHintSurface](m); open {
 		s.SetFix(m.launchHintCard(fix))
 		return
 	}
@@ -226,7 +226,7 @@ func (m *Model) launchHintCard(fix uiinstall.Fix) uidialogs.LaunchFix {
 // launchHintFix is the fix the open card holds, for a completion that attaches
 // the launch to retry to it.
 func (m *Model) launchHintFix() (*uiinstall.Fix, bool) {
-	if _, ok := m.launchHintSurface(); !ok {
+	if _, ok := surfaceOf[*uidialogs.LaunchHintSurface](m); !ok {
 		return nil, false
 	}
 	return &m.ledger.install.Launch, true

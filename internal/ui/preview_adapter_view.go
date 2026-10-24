@@ -8,6 +8,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	uipreview "github.com/YoanWai/agent-manager/internal/ui/preview"
 	"github.com/charmbracelet/lipgloss"
@@ -186,7 +187,7 @@ func (m *Model) viewDetail(width int) string {
 		return mutedStyle().Render("Select a session to inspect it.")
 	}
 	tool := sess.Tool
-	if s, ok := m.renaming(); ok && !s.IsGroup() && s.SessionID() == sess.ID {
+	if s, ok := surfaceOf[*uidialogs.RenameSurface](m); ok && !s.IsGroup() && s.SessionID() == sess.ID {
 		if picked := s.Tool(); picked != "" {
 			tool = picked
 		}
@@ -240,7 +241,7 @@ func (m *Model) viewGroupDetail(group string, width int) string {
 	title := lipgloss.NewStyle().Foreground(colorAccent2()).Bold(true).Render(displayGroup(group))
 	head := fitColumns([]string{title + "  " + chipStyle().Render(countLabel), title}, []string{""}, width)
 
-	if s, ok := m.renaming(); ok && s.IsGroup() && s.Path() == group {
+	if s, ok := surfaceOf[*uidialogs.RenameSurface](m); ok && s.IsGroup() && s.Path() == group {
 		return head + "\n" + m.viewRenameGroupFields(s, group, width)
 	}
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 )
 
@@ -34,18 +35,18 @@ func (m *Model) deleteConfirmed() (sessioncmd.DeleteResult, error) {
 	return result.Deleted, err
 }
 func (m *Model) killSession(sess store.Session) error {
-	_, err := m.lifecycleFixture(confirmTarget{action: actionKill, sessions: []store.Session{sess}})
+	_, err := m.lifecycleFixture(confirmTarget{action: uidialogs.ConfirmKill, sessions: []store.Session{sess}})
 	return err
 }
 func (m *Model) restartSession(sess store.Session) error {
-	_, err := m.lifecycleFixture(confirmTarget{action: actionRestart, sessions: []store.Session{sess}})
+	_, err := m.lifecycleFixture(confirmTarget{action: uidialogs.ConfirmRestart, sessions: []store.Session{sess}})
 	return err
 }
 func (m *Model) reviveSession(sess store.Session) error {
 	if m.services.tmux.Exists(sess.ID) {
 		return fmt.Errorf("session %s is still running; revive only applies to dead sessions", sess.Name)
 	}
-	_, err := m.lifecycleFixture(confirmTarget{action: actionRevive, sessions: []store.Session{sess}})
+	_, err := m.lifecycleFixture(confirmTarget{action: uidialogs.ConfirmRevive, sessions: []store.Session{sess}})
 	return err
 }
 

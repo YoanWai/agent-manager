@@ -5,7 +5,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uiapply "github.com/YoanWai/agent-manager/internal/ui/dialogs/apply"
@@ -18,19 +17,6 @@ import (
 // The small dialogs keep their state, keys and view in internal/ui/dialogs.
 // These adapters seed them from the workspace, translate their outcomes
 // into mode changes and effect requests, and draw the card chrome.
-
-// confirmTarget.action values; the zero value means delete.
-const (
-	actionDelete  = uidialogs.ConfirmDelete
-	actionArchive = uidialogs.ConfirmArchive
-	actionRestore = uidialogs.ConfirmRestore
-	actionKill    = uidialogs.ConfirmKill
-	actionRestart = uidialogs.ConfirmRestart
-	actionRevive  = uidialogs.ConfirmRevive
-	// actionRemoveConnection takes an SSH connection off the list; the
-	// target names it and holds no sessions.
-	actionRemoveConnection = uidialogs.ConfirmRemoveConnection
-)
 
 type confirmTarget struct {
 	isGroup bool
@@ -67,7 +53,7 @@ type lifecycleSelection struct {
 func (m *Model) runConfirmed(target confirmTarget) tea.Cmd {
 	switch {
 	case target.remote != nil:
-		return m.runRemote(*target.remote)
+		return m.queueRemote(*target.remote)
 	case target.connection != "":
 		m.removeConnection(target.connection)
 	default:
@@ -85,10 +71,6 @@ func (m *Model) confirmCard(title, question, consequence string, destructive boo
 	}
 	body := uidialogs.ConfirmBody(question, consequence, cardInnerWidth(width), tone, mutedStyle())
 	return m.CardSized(width, title, body, uidialogs.ConfirmHints(answer))
-}
-
-func (m *Model) drawCard(card uidialogs.Card) string {
-	return m.card(card.Title, card.Body, card.Hints)
 }
 
 // openMove captures the selected row and shapes the spawn form's group
@@ -116,7 +98,7 @@ func (m *Model) openMove() {
 		}
 	}
 	m.gens.dialog++
-	m.push(newMoveSurface(m, move, picker))
+	m.push(uidialogs.NewMoveSurface(moveRoot{m}, move, picker))
 	m.clearErr()
 }
 
@@ -176,16 +158,6 @@ func (m *Model) placeMove(move uidialogs.Move, p *spawn.Picker) tea.Cmd {
 	return m.enqueueMove(uirail.Mutation{Kind: uirail.PlaceSession, SessionID: request.SessionID, Group: request.Group, ParentID: request.ParentID}, moveDialogClose{sessID: request.SessionID, optPath: request.Group, optSessID: request.ParentID})
 }
 
-func (m *Model) viewMove(p *spawn.Picker) string {
-	return m.card(uidialogs.MoveTitle(m.prefs.glyphMode), m.viewGroupPicker(p), uidialogs.MoveHints())
-}
-
-// configuredTool looks a tool up in the loaded configuration.
-func (m *Model) configuredTool(name string) (config.Tool, bool) {
-	tool, ok := m.services.cfg.Tools[name]
-	return tool, ok
-}
-
 func (m *Model) openFork() {
 	entry, ok := m.selectedRow()
 	if !ok {
@@ -195,7 +167,7 @@ func (m *Model) openFork() {
 		m.reportErr("select a session to fork")
 		return
 	}
-	tool, ok := m.configuredTool(entry.sess.Tool)
+	tool, ok := m.services.cfg.Tools[entry.sess.Tool]
 	if !ok {
 		m.reportErr(fmt.Sprintf("tool %s is no longer configured", entry.sess.Tool))
 		return
@@ -205,24 +177,19 @@ func (m *Model) openFork() {
 		return
 	}
 	m.gens.dialog++
-	m.push(newForkSurface(m, entry.sess, int(m.gens.dialog)))
+	m.push(uidialogs.NewForkSurface(forkRoot{m, entry.sess}, entry.sess.Name, entry.sess.Group, int(m.gens.dialog)))
 	m.clearErr()
 }
 
 func (m *Model) viewFork(form *uidialogs.Fork) string {
-	return m.drawCard(form.View(uidialogs.ForkStyles{
+	card := form.View(uidialogs.ForkStyles{
 		BranchGlyph: m.glyphs().BranchGlyph,
 		Value:       valueStyle(),
 		Group:       lipgloss.NewStyle().Foreground(colorAccent2()),
 		Field:       m.formField,
 		Input:       textInputView,
-	}))
-}
-
-// stepRenameBase steps the group base choice, probing the default path the
-// open group edit would save.
-func (m *Model) stepRenameBase(s *uidialogs.RenameSurface, delta int) (string, tea.Cmd) {
-	return m.stepGroupBase(groupBaseRename, m.gens.dialog, m.renameGroupDir(s), s.Base, delta)
+	})
+	return m.card(card.Title, card.Body, card.Hints)
 }
 
 // openRename reads the selected row, the workspace's group choices and the
@@ -243,7 +210,7 @@ func (m *Model) openRename() {
 		if dir == "" {
 			dir = m.capturedGroupDefaultDir(entry.group)
 		}
-		surface = newRenameSurface(m, uidialogs.RenameGroup(entry.group, dir, groupWorktreeIndex(m.workspace.groupWorktrees[entry.group])), m.workspace.groupBases[entry.group])
+		surface = uidialogs.NewRenameSurface(renameRoot{m}, uidialogs.RenameGroup(entry.group, dir, groupWorktreeIndex(m.workspace.groupWorktrees[entry.group])), m.workspace.groupBases[entry.group])
 	} else {
 		tools := m.services.cfg.AgentToolNames()
 		shells := []string{}
@@ -254,16 +221,10 @@ func (m *Model) openRename() {
 		}
 		sort.Strings(shells)
 		tools = append(tools, shells...)
-		surface = newRenameSurface(m, uidialogs.RenameSession(entry.sess.ID, entry.sess.Name, entry.sess.Tool, tools), "")
+		surface = uidialogs.NewRenameSurface(renameRoot{m}, uidialogs.RenameSession(entry.sess.ID, entry.sess.Name, entry.sess.Tool, tools), "")
 	}
 	m.push(surface)
 	m.clearErr()
-}
-
-// renameGroupDir is the default path the group edit would save, resolved
-// the way the rename worker resolves it.
-func (m *Model) renameGroupDir(s *uidialogs.RenameSurface) string {
-	return m.capturedAbsolutePath(s.Dir(), m.capturedGroupDefaultDir(parentGroup(s.Path())))
 }
 
 // viewRenameGroupFields draws the group edit's path, worktree and base rows

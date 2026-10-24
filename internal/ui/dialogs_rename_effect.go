@@ -142,7 +142,7 @@ func (m *Model) applyRenameEffect(job *uieffects.Job, result renameEffectResult,
 	}
 	if err != nil {
 		m.reportErr(err.Error())
-	} else if s, ok := m.renaming(); ok && m.gens.dialog == request.Gen && s.Name() == request.Name &&
+	} else if s, ok := surfaceOf[*uidialogs.RenameSurface](m); ok && m.gens.dialog == request.Gen && s.Name() == request.Name &&
 		(request.Kind != uiapply.Group || s.Dir() == request.DraftDir) {
 		// Only the dialog that submitted this job closes; a reopened or
 		// resubmitted card keeps its edits.

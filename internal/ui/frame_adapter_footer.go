@@ -4,6 +4,7 @@ import (
 	"slices"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
@@ -25,7 +26,7 @@ func (m *Model) footer() legend {
 	if s, ok := surfaceOf[*uigeometry.Surface](m); ok {
 		return m.transientFooter(legendSection{title: "Resize", pairs: s.Footer()})
 	}
-	if s, ok := m.renaming(); ok {
+	if s, ok := surfaceOf[*uidialogs.RenameSurface](m); ok {
 		return m.transientFooter(legendSection{title: "Rename", pairs: s.Footer()})
 	}
 	// Focused, the keyboard belongs to the agent: the tier says so in its

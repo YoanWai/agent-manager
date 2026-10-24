@@ -3,9 +3,7 @@ package ui
 import (
 	"time"
 
-	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
-	"github.com/YoanWai/agent-manager/internal/store"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uiapply "github.com/YoanWai/agent-manager/internal/ui/dialogs/apply"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
@@ -99,12 +97,4 @@ func (m *Model) applyForkEffect(request forkRequest, result forkEffectResult, er
 		fix.Retry = request
 	}
 	return nil
-}
-
-func validateForkSource(toolName string, tool config.Tool, source store.Session) error {
-	return uiapply.ValidateForkSource(toolName, tool, source)
-}
-
-func expandForkCommand(template, sourceID, newID, name, sessionFile string) string {
-	return uiapply.ExpandCommand(template, sourceID, newID, name, sessionFile)
 }

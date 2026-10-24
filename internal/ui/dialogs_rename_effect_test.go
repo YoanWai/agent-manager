@@ -249,7 +249,7 @@ func TestRenameGroupPartialFailureReconcilesCommittedStages(t *testing.T) {
 		Gen:      7,
 	}}
 	job := &uieffects.Job{Request: request}
-	m.push(newRenameSurface(m, uidialogs.RenameGroup("old", "", 0), ""))
+	m.push(uidialogs.NewRenameSurface(renameRoot{m}, uidialogs.RenameGroup("old", "", 0), ""))
 	m.gens.dialog = 7
 	m.applyRenameEffect(job, renameEffectResult{Outcome: uiapply.Outcome{GroupRenamed: true}}, errRenameStageTwo)
 

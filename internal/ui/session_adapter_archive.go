@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
 	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	tea "github.com/charmbracelet/bubbletea"
@@ -27,7 +28,7 @@ func (m *Model) archiveSelected() (tea.Model, tea.Cmd) {
 		target = confirmTarget{
 			isGroup:   true,
 			path:      entry.group,
-			action:    actionArchive,
+			action:    uidialogs.ConfirmArchive,
 			sessions:  subtree,
 			label:     fmt.Sprintf("archive group %s (%d sessions)? frees their RAM, t to find them.", entry.group, len(subtree)),
 			selection: lifecycleSelection{kind: lifecycleSelectionGroup},
@@ -35,7 +36,7 @@ func (m *Model) archiveSelected() (tea.Model, tea.Cmd) {
 	} else {
 		sessions := m.sessionAndChildren(entry.sess)
 		target = confirmTarget{
-			action:   actionArchive,
+			action:   uidialogs.ConfirmArchive,
 			sessions: sessions,
 			label: followConfirmLabel("archive", entry.sess.Name, len(sessions)-1,
 				"frees its RAM, t to find it.",
@@ -67,7 +68,7 @@ func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
 		target = confirmTarget{
 			isGroup:   true,
 			path:      entry.group,
-			action:    actionRestore,
+			action:    uidialogs.ConfirmRestore,
 			sessions:  archived,
 			label:     fmt.Sprintf("restore group %s (%d archived sessions)? brings them back.", entry.group, len(archived)),
 			selection: lifecycleSelection{kind: lifecycleSelectionGroup, archivedOnly: true},
@@ -76,7 +77,7 @@ func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
 		sessions := m.sessionAndChildren(entry.sess)
 		sessions = archivedSessions(sessions)
 		target = confirmTarget{
-			action:   actionRestore,
+			action:   uidialogs.ConfirmRestore,
 			sessions: sessions,
 			label: followConfirmLabel("restore", entry.sess.Name, len(sessions)-1,
 				"brings it back.",

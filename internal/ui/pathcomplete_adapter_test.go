@@ -160,7 +160,7 @@ func TestGroupPickerExitsToAdjacentFields(t *testing.T) {
 func TestStandaloneGroupPickerWrapsWhenThereAreNoAdjacentFields(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
-	s := newMoveSurface(m, uidialogs.MoveSession("s"), spawn.Picker{Groups: []spawn.GroupOption{{Path: ""}, {Path: "alpha"}, {Path: "beta"}}})
+	s := uidialogs.NewMoveSurface(moveRoot{m}, uidialogs.MoveSession("s"), spawn.Picker{Groups: []spawn.GroupOption{{Path: ""}, {Path: "alpha"}, {Path: "beta"}}})
 	m.push(s)
 
 	m.Update(tea.KeyMsg{Type: tea.KeyUp})
@@ -178,7 +178,7 @@ func TestRenamePathSuggestionsExitToName(t *testing.T) {
 	t.Parallel()
 	root := setupCompletionDir(t)
 	m := buildModel(t)
-	m.push(newRenameSurface(m, uidialogs.RenameGroup("", "", 0), ""))
+	m.push(uidialogs.NewRenameSurface(renameRoot{m}, uidialogs.RenameGroup("", "", 0), ""))
 	m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	loadPathSuggestions(m, pathcomplete.Rename, filepath.Join(root, "a"))
 	openRename(m).Paths().Chosen = true
