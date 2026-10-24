@@ -6,7 +6,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/deps"
 	"github.com/YoanWai/agent-manager/internal/mcpreg"
-	uilaunchhint "github.com/YoanWai/agent-manager/internal/ui/launchhint"
 )
 
 // FixFor classifies a refused launch: a missing prerequisite or a CLI older
@@ -16,7 +15,7 @@ func FixFor(err error) (Fix, bool) {
 	var hermesMCP mcpreg.HermesMCPUnavailableError
 	if errors.As(err, &hermesMCP) {
 		return Fix{
-			Text:    uilaunchhint.HermesText(hermesMCP.PipCommand),
+			Text:    HermesText(hermesMCP.PipCommand),
 			Command: hermesMCP.PipCommand,
 			Script:  hermesMCP.PipCommand,
 			Binary:  "hermes",
@@ -24,9 +23,9 @@ func FixFor(err error) (Fix, bool) {
 	}
 	var missing config.MissingToolError
 	if errors.As(err, &missing) {
-		tool := uilaunchhint.Tool{Binary: missing.Binary, WindowsPath: missing.WindowsPath}
+		tool := Tool{Binary: missing.Binary, WindowsPath: missing.WindowsPath}
 		return Fix{
-			Text:    uilaunchhint.MissingText(tool, deps.Hint(missing.Binary)),
+			Text:    MissingText(tool, deps.Hint(missing.Binary)),
 			Command: deps.Shown(missing.Binary),
 			Script:  deps.Command(missing.Binary),
 			Binary:  missing.Binary,
@@ -44,7 +43,7 @@ func FixFor(err error) (Fix, bool) {
 // run.
 func OutdatedFix(outdated config.OutdatedToolError, command string) Fix {
 	return Fix{
-		Text:    uilaunchhint.OutdatedText(outdatedTool(outdated), command),
+		Text:    OutdatedText(outdatedTool(outdated), command),
 		Command: command,
 		Script:  command,
 		Binary:  outdated.Binary,
@@ -61,8 +60,8 @@ func OutdatedCommand(outdated config.OutdatedToolError) string {
 	return deps.Command(outdated.Binary)
 }
 
-func outdatedTool(outdated config.OutdatedToolError) uilaunchhint.Tool {
-	return uilaunchhint.Tool{
+func outdatedTool(outdated config.OutdatedToolError) Tool {
+	return Tool{
 		Binary:    outdated.Binary,
 		Installed: outdated.Installed,
 		Minimum:   outdated.Minimum,

@@ -16,7 +16,7 @@ Under `internal/`:
 - `ui/effects`: the effect contract (`Request`, `Runner[S]`, `Bind`, `Result`), the FIFO lanes and the quit drain's bookkeeping. It knows no request type and imports nothing from the module.
 - `ui/composer`, `ui/pathcomplete`: the prompt box that holds pasted images, and directory completion for a path field.
 - `ui/frame`, `ui/statusbar`, `ui/startup`, `ui/preview`, `ui/workspace`: pure painters and values for the card chrome and header, the status bar and its toast, the startup wordmark, the pane preview and the rail foot readings.
-- `ui/session`, `ui/launchhint`, `ui/terminal`: the value-only parts of the session lifecycle (editor lines, unreachable-session messages), the copy and fix a refused launch shows, and what takes over the terminal (links, child processes).
+- `ui/session`, `ui/terminal`: the value-only parts of the session lifecycle (editor lines, unreachable-session messages), the copy and fix a refused launch shows, and what takes over the terminal (links, child processes).
 - `ui/connections`: the SSH connections: their list and each host's last refresh, the row a selection names, the selected row's screen and the add and edit dialog. The root's `connections_adapter*.go` paints them and routes actions; see [SSH connections](ssh-connections.md).
 - `ui/connections/link`: the connections' runtime: the SSH client, the store writes that keep the list, the host polls, the screen reads and the attach. The root answers its `Root` and runs its calls on the remote lane.
 - `remote`: drives another host's agent-manager over `ssh`, and holds the rule that a session drives only the remote terminals it opened. `remote/value`: what a connection is, row refs and failure kinds, with no SSH.
@@ -27,7 +27,7 @@ Under `internal/`:
 - `ui/focus/watch`: the focused pane's watcher: control-mode client, polled fallback, pushed frames.
 - Runtime packages. Each holds one feature's state and the store, tmux, git and network work behind it. It answers a narrow `Root` the root adapts, and never imports `ui`:
   - `ui/settings/persist`: the cached stored values, the writes a save hands the effect lane, and the read-back a partial failure reconciles from.
-  - `ui/launchhint/install`: the installer the setup-step card types into a shell tab, the status that shell records, and the launch retried once the binary is on PATH.
+  - `ui/launchhint/install`: the copy a refused launch shows, and the installer the setup-step card types into a shell tab, the status that shell records, and the launch retried once the binary is on PATH.
   - `ui/rail/persist`: the Rail's stored folds and order, and the group and session placement writes.
   - `ui/dialogs/apply`: the fork branch, the group and session renames, and the store and git writes they make.
   - `ui/focus/runtime`: the pane watcher, the writes forwarded to the agent's pane, and the entry and detach probes.

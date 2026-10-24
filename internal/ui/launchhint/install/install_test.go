@@ -9,7 +9,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
-	uilaunchhint "github.com/YoanWai/agent-manager/internal/ui/launchhint"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -179,18 +178,18 @@ func TestSettledQueuesTheRetryOnceTheBinaryLands(t *testing.T) {
 	root := &fakeRoot{}
 	request := SettleRequest{Pending: *state.Pending}
 
-	state.Settled(root, request, SettleResult{SessionID: "installer", State: uilaunchhint.Running}, errors.New("read failed"))
+	state.Settled(root, request, SettleResult{SessionID: "installer", State: Running}, errors.New("read failed"))
 	if len(root.errs) != 1 || state.Pending == nil {
 		t.Fatalf("running: errors %v pending %+v, want the failure reported and the install kept", root.errs, state.Pending)
 	}
 
-	state.Settled(root, request, SettleResult{SessionID: "installer", State: uilaunchhint.Running}, nil)
+	state.Settled(root, request, SettleResult{SessionID: "installer", State: Running}, nil)
 	if state.Pending == nil {
 		t.Fatal("a running install was dropped")
 	}
 
 	request.Pending.Retry = retry
-	state.Settled(root, request, SettleResult{SessionID: "installer", State: uilaunchhint.Ready}, nil)
+	state.Settled(root, request, SettleResult{SessionID: "installer", State: Ready}, nil)
 	if state.Pending != nil {
 		t.Fatalf("ready: pending = %+v, want it cleared", state.Pending)
 	}
@@ -206,7 +205,7 @@ func TestSettledIgnoresAnInstallItNoLongerTracks(t *testing.T) {
 	state := State{Pending: &Pending{SessionID: "newer"}}
 	root := &fakeRoot{}
 
-	state.Settled(root, SettleRequest{Pending: Pending{SessionID: "older"}}, SettleResult{SessionID: "older", State: uilaunchhint.Ready}, nil)
+	state.Settled(root, SettleRequest{Pending: Pending{SessionID: "older"}}, SettleResult{SessionID: "older", State: Ready}, nil)
 
 	if state.Pending == nil || state.Pending.SessionID != "newer" || len(root.dones)+len(root.errs) != 0 {
 		t.Fatalf("pending = %+v, reports = %v %v; want the newer install untouched", state.Pending, root.dones, root.errs)

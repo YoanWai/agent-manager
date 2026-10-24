@@ -10,7 +10,6 @@ import (
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
 	sessiondialogs "github.com/YoanWai/agent-manager/internal/ui/session/dialogs"
-	uiseditor "github.com/YoanWai/agent-manager/internal/ui/session/editor"
 	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
@@ -635,7 +634,7 @@ func startEditorCmd(cmd *exec.Cmd, name, path string, returnTo editorReturnTarge
 }
 
 func (m *Model) captureEditorResolution() editorResolution {
-	return uiseditor.Resolution(m.services.editor, lookPath)
+	return uisession.Resolution(m.services.editor, lookPath)
 }
 
 func (m *Model) routeEditorMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
@@ -674,7 +673,7 @@ func (m *Model) routeEditorMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 // The root keeps the resolution's type here: terminal.go, review_adapter.go
 // and settings_adapter.go are wired to it, and their call sites belong to
 // other prefixes.
-type editorResolution = uiseditor.EditorResolution
+type editorResolution = uisession.EditorResolution
 
 type launchOptions struct {
 	rollbackWorktree bool

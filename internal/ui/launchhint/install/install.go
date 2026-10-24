@@ -13,7 +13,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
-	uilaunchhint "github.com/YoanWai/agent-manager/internal/ui/launchhint"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -160,7 +159,7 @@ func (r SettleRequest) Run(s Services) (uieffects.Result, error) { return RunSet
 
 type SettleResult struct {
 	SessionID string
-	State     uilaunchhint.SettleState
+	State     SettleState
 	Code      string
 }
 
@@ -204,7 +203,7 @@ func (s *State) Settled(root Root, request SettleRequest, result SettleResult, e
 	if s.Pending == nil || s.Pending.SessionID != result.SessionID {
 		return nil
 	}
-	if result.State == uilaunchhint.Running {
+	if result.State == Running {
 		if err != nil {
 			root.ReportErr(err.Error())
 		}
@@ -215,7 +214,7 @@ func (s *State) Settled(root Root, request SettleRequest, result SettleResult, e
 		root.ReportErr(err.Error())
 		return nil
 	}
-	text, failed := uilaunchhint.SettleMessage(result.State, request.Pending.Binary, request.Pending.Name, result.Code)
+	text, failed := SettleMessage(result.State, request.Pending.Binary, request.Pending.Name, result.Code)
 	if failed {
 		s.Pending = nil
 		root.ReportErr(text)

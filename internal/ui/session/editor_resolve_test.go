@@ -1,4 +1,4 @@
-package editor
+package session
 
 import (
 	"errors"

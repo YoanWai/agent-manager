@@ -13,7 +13,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
-	uilaunchhint "github.com/YoanWai/agent-manager/internal/ui/launchhint"
 )
 
 // Services is the work an install needs done off the update path.
@@ -114,7 +113,7 @@ func RunStart(services Services, request StartRequest) (StartResult, error) {
 
 func RunSettle(services Services, request SettleRequest) (SettleResult, error) {
 	install := request.Pending
-	result := SettleResult{SessionID: install.SessionID, State: uilaunchhint.Running}
+	result := SettleResult{SessionID: install.SessionID, State: Running}
 	data, err := os.ReadFile(install.StatusFile)
 	if errors.Is(err, fs.ErrNotExist) {
 		exists, existsErr := SessionExists(services.Driver, install.SessionID)
@@ -126,7 +125,7 @@ func RunSettle(services Services, request SettleRequest) (SettleResult, error) {
 		}
 		removeFiles(install.StatusFile, install.Script)
 		DropImages(install.Images)
-		result.State = uilaunchhint.ShellGone
+		result.State = ShellGone
 		return result, nil
 	}
 	if err != nil {
@@ -134,11 +133,11 @@ func RunSettle(services Services, request SettleRequest) (SettleResult, error) {
 	}
 	// The shell creates the file before printf fills it. An empty file is
 	// observed again on a later poll rather than read as a successful exit.
-	code, state := uilaunchhint.ReadStatus(data)
-	if state == uilaunchhint.Running {
+	code, state := ReadStatus(data)
+	if state == Running {
 		return result, nil
 	}
-	if state == uilaunchhint.Exited {
+	if state == Exited {
 		removeFiles(install.StatusFile, install.Script)
 		DropImages(install.Images)
 		result.State = state
@@ -150,13 +149,13 @@ func RunSettle(services Services, request SettleRequest) (SettleResult, error) {
 		if errors.As(err, &missing) {
 			removeFiles(install.StatusFile, install.Script)
 			DropImages(install.Images)
-			result.State = uilaunchhint.BinaryMissing
+			result.State = BinaryMissing
 			return result, nil
 		}
 		return result, fmt.Errorf("%s installer finished, and looking for it failed: %w", install.Binary, err)
 	}
 	removeFiles(install.StatusFile, install.Script)
-	result.State = uilaunchhint.Ready
+	result.State = Ready
 	if install.Retry == nil {
 		DropImages(install.Images)
 	}

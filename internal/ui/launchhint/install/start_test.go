@@ -8,7 +8,6 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
-	uilaunchhint "github.com/YoanWai/agent-manager/internal/ui/launchhint"
 )
 
 func withSeam[T any](t *testing.T, seam *T, value T) {
@@ -48,7 +47,7 @@ func TestRunSettleReadsTheStatusAndCleansUp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.State != uilaunchhint.Ready {
+	if result.State != Ready {
 		t.Fatalf("state = %v, want the binary reported ready", result.State)
 	}
 	for _, path := range []string{statusFile, script, image} {
@@ -101,7 +100,7 @@ func TestRunSettleReportsAMissingBinary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.State != uilaunchhint.BinaryMissing {
+	if result.State != BinaryMissing {
 		t.Fatalf("state = %v, want the binary reported missing", result.State)
 	}
 }

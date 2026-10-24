@@ -1,6 +1,4 @@
-// Package launchhint holds the copy a refused launch shows, the fix the card
-// hands to the root, and how an install the card started ends.
-package launchhint
+package install
 
 import "strings"
 

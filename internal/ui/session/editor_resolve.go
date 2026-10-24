@@ -1,13 +1,9 @@
-// Package editor resolves an editor line into the process that opens a
-// directory, and probes what this machine has for the Settings row.
-package editor
+package session
 
 import (
 	"os"
 	"slices"
 	"strings"
-
-	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
 )
 
 // EditorResolution is the editor line the manager launches with: the one
@@ -30,21 +26,21 @@ func Resolution(configured string, lookup func(string) (string, error)) EditorRe
 		manager:    os.Getenv("AGENT_MANAGER_EDITOR"),
 		visual:     os.Getenv("VISUAL"),
 		editor:     os.Getenv("EDITOR"),
-		gui:        uisession.GUIEditors(),
+		gui:        GUIEditors(),
 		lookup:     lookup,
 	}
 }
 
 func (r EditorResolution) Line() string {
-	return uisession.Resolve(r.configured, r.manager, r.visual, r.editor, r.gui, r.lookup)
+	return Resolve(r.configured, r.manager, r.visual, r.editor, r.gui, r.lookup)
 }
 
-func (r EditorResolution) Prepare(path string) uisession.Launch {
+func (r EditorResolution) Prepare(path string) Launch {
 	line := r.Line()
-	if command, ok := uisession.Command(line, path); ok {
-		return uisession.Launch{Command: command, Name: uisession.Name(line), Path: path}
+	if command, ok := Command(line, path); ok {
+		return Launch{Command: command, Name: Name(line), Path: path}
 	}
-	return uisession.Launch{}
+	return Launch{}
 }
 
 // Probe is what Settings offers: the editors found on PATH, and the line an
