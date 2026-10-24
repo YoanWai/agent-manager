@@ -1,6 +1,10 @@
 package ui
 
-import "testing"
+import (
+	"testing"
+
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
+)
 
 // The captured-pane math moved to ui/preview; this covers the window the
 // frame still computes for itself.
@@ -17,7 +21,7 @@ func TestScrollWindow(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			start, end := scrollWindow(tc.total, tc.cursor, tc.height)
+			start, end := uiframe.ScrollWindow(tc.total, tc.cursor, tc.height)
 			if start != tc.wantStart || end != tc.wantEnd {
 				t.Fatalf("scrollWindow(%d,%d,%d) = %d,%d want %d,%d",
 					tc.total, tc.cursor, tc.height, start, end, tc.wantStart, tc.wantEnd)

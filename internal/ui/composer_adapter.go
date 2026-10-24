@@ -2,6 +2,7 @@ package ui
 
 import (
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -20,7 +21,7 @@ func (m *Model) ClearErr() { m.clearErr() }
 // marker on its textarea, and the color of a filled chip and of one whose
 // clipboard read is still running.
 func composerPaint() composer.Paint {
-	return composer.Paint{Input: textAreaView, Chip: imageChip, Pasting: imageChipPasting}
+	return composer.Paint{Input: uiframe.TextAreaView, Chip: imageChip, Pasting: imageChipPasting}
 }
 
 // nextComposerGen numbers a freshly opened prompt box, so a clipboard read

@@ -9,6 +9,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uiapply "github.com/YoanWai/agent-manager/internal/ui/dialogs/apply"
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
@@ -83,12 +84,12 @@ func (m *Model) confirmCard(title, question, consequence string, destructive boo
 	if destructive {
 		tone = errStyle()
 	}
-	body := uidialogs.ConfirmBody(question, consequence, cardInnerWidth(width), tone, mutedStyle())
+	body := uidialogs.ConfirmBody(question, consequence, uiframe.CardInnerWidth(width), tone, mutedStyle())
 	return m.CardSized(width, title, body, uidialogs.ConfirmHints(answer))
 }
 
 func (m *Model) drawCard(card uidialogs.Card) string {
-	return m.card(card.Title, card.Body, card.Hints)
+	return m.CardSized(m.cardWidth(), card.Title, card.Body, card.Hints)
 }
 
 // openMove captures the selected row and shapes the spawn form's group
@@ -106,7 +107,7 @@ func (m *Model) openMove() {
 	var picker spawn.Picker
 	if row.isGroup {
 		move = uidialogs.MoveGroup(row.group)
-		picker = m.groupPickerFor(parentGroup(row.group))
+		picker = m.groupPickerFor(uirail.ParentGroup(row.group))
 		pruneMoveTargets(&picker, row.group)
 	} else {
 		move = uidialogs.MoveSession(row.sess.ID)
@@ -177,7 +178,7 @@ func (m *Model) placeMove(move uidialogs.Move, p *spawn.Picker) tea.Cmd {
 }
 
 func (m *Model) viewMove(p *spawn.Picker) string {
-	return m.card(uidialogs.MoveTitle(m.prefs.glyphMode), m.viewGroupPicker(p), uidialogs.MoveHints())
+	return m.CardSized(m.cardWidth(), uidialogs.MoveTitle(m.prefs.glyphMode), m.viewGroupPicker(p), uidialogs.MoveHints())
 }
 
 // configuredTool looks a tool up in the loaded configuration.
@@ -215,7 +216,7 @@ func (m *Model) viewFork(form *uidialogs.Fork) string {
 		Value:       valueStyle(),
 		Group:       lipgloss.NewStyle().Foreground(colorAccent2()),
 		Field:       m.formField,
-		Input:       textInputView,
+		Input:       uiframe.TextInputView,
 	}))
 }
 
@@ -263,7 +264,7 @@ func (m *Model) openRename() {
 // renameGroupDir is the default path the group edit would save, resolved
 // the way the rename worker resolves it.
 func (m *Model) renameGroupDir(s *uidialogs.RenameSurface) string {
-	return m.capturedAbsolutePath(s.Dir(), m.capturedGroupDefaultDir(parentGroup(s.Path())))
+	return m.capturedAbsolutePath(s.Dir(), m.capturedGroupDefaultDir(uirail.ParentGroup(s.Path())))
 }
 
 // viewRenameGroupFields draws the group edit's path, worktree and base rows
@@ -275,9 +276,9 @@ func (m *Model) viewRenameGroupFields(s *uidialogs.RenameSurface, group string, 
 		Focused:   lipgloss.NewStyle().Foreground(colorAccent()),
 		Subtle:    subtleStyle(),
 		Value:     valueStyle(),
-		Input:     textInputView,
+		Input:     uiframe.TextInputView,
 		Worktrees: groupWorktreeOptions,
-		Base:      uidialogs.BaseChoice(subtleStyle(), valueStyle(), s.Base, m.groupBase(parentGroup(group))),
+		Base:      uidialogs.BaseChoice(subtleStyle(), valueStyle(), s.Base, m.groupBase(uirail.ParentGroup(group))),
 	}
 	if s.Paths().Active() {
 		view.Suggestions = func() string { return s.Paths().View(pathCompleteStyles(m.prefs.glyphMode)) }

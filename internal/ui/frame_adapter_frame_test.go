@@ -1,6 +1,7 @@
 package ui
 
 import (
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -11,17 +12,17 @@ import (
 	"testing"
 )
 
-func TestClampFrame(t *testing.T) {
+func TestViewPinsTheFrameToTheTerminalHeight(t *testing.T) {
 	tall := "a\nb\nc\nd\ne"
-	got := clampFrame(tall, 3)
+	got := uiframe.Clamp(tall, 3, func() string { return paint("", 1, backdropHex()) })
 	if got != "a\nb\nc" {
-		t.Fatalf("clampFrame trim = %q", got)
+		t.Fatalf("clamp trim = %q", got)
 	}
 	short := "x"
-	got = clampFrame(short, 3)
+	got = uiframe.Clamp(short, 3, func() string { return paint("", 1, backdropHex()) })
 	lines := strings.Split(got, "\n")
 	if len(lines) != 3 || lines[0] != "x" {
-		t.Fatalf("clampFrame pad = %q", got)
+		t.Fatalf("clamp pad = %q", got)
 	}
 	for _, line := range lines[1:] {
 		// Padding rows wear the backdrop fill rather than being bare, so

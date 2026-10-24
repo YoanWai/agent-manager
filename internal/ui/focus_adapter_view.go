@@ -6,6 +6,8 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -52,17 +54,17 @@ func (m *Model) focusFactsLine(width int) string {
 	left := " " + m.sessionGlyph(sess) + " " + valueStyle().Render(m.displayName(sess)) +
 		sep + valueStyle().Render(sess.Tool) +
 		sep + lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusLabel(sess.Status)) +
-		sep + subtleStyle().Render(relSince(lastActivity(sess)))
-	facts := []uifocus.Fact{{Text: valueStyle().Render(truncateTail(shortHome(m.sessionDir(sess), m.env.homeDir), focusFactsDirCap)), Spare: 3}}
+		sep + subtleStyle().Render(uiframe.RelSince(lastActivity(sess)))
+	facts := []uifocus.Fact{{Text: valueStyle().Render(presentation.TruncateTail(uiframe.ShortHome(m.sessionDir(sess), m.env.homeDir), focusFactsDirCap)), Spare: 3}}
 	if sess.WorktreeBranch != "" {
 		facts = append(facts, uifocus.Fact{Text: subtleStyle().Render(m.glyphs().BranchGlyph+" ") + valueStyle().Render(sess.WorktreeBranch), Spare: 2})
 	}
 	if m.workspace.procFor == sess.ID && m.workspace.proc.OK {
 		facts = append(facts,
 			uifocus.Fact{Text: labelStyle().Render("cpu ") + valueStyle().Render(fmt.Sprintf("%.1f%%", m.workspace.proc.CPUPercent)), Spare: 1},
-			uifocus.Fact{Text: labelStyle().Render("ram ") + valueStyle().Render(humanBytes(m.workspace.proc.RSS)), Spare: 1})
+			uifocus.Fact{Text: labelStyle().Render("ram ") + valueStyle().Render(uiframe.HumanBytes(m.workspace.proc.RSS)), Spare: 1})
 	}
-	facts = append(facts, uifocus.Fact{Text: labelStyle().Render("started ") + valueStyle().Render(relSince(sess.CreatedAt)), Spare: 4})
+	facts = append(facts, uifocus.Fact{Text: labelStyle().Render("started ") + valueStyle().Render(uiframe.RelSince(sess.CreatedAt)), Spare: 4})
 	if queued := m.workspace.queuedMessages[sess.ID]; queued > 0 {
 		facts = append(facts, uifocus.Fact{Text: valueStyle().Render(fmt.Sprintf("%d queued", queued)), Spare: 0})
 	}
@@ -71,7 +73,7 @@ func (m *Model) focusFactsLine(width int) string {
 	if ansi.StringWidth(left) > width {
 		return ansi.Truncate(left, max(width, 0), "…")
 	}
-	return rowColumns(left, right, width)
+	return uiframe.RowColumns(left, right, width)
 }
 
 // focusEdge is the hairline holding the full screen pane off what sits

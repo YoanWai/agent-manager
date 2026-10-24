@@ -3,6 +3,7 @@ package ui
 import (
 	"strings"
 
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uipreview "github.com/YoanWai/agent-manager/internal/ui/preview"
 )
 
@@ -12,7 +13,7 @@ import (
 // The IME marker is the root's, so the root strips it before the row is
 // measured.
 func previewLine(line string, width int) string {
-	return uipreview.Line(strings.ReplaceAll(line, cursorAnchorMarker, ""), width)
+	return uipreview.Line(strings.ReplaceAll(line, uiframe.CursorMarker, ""), width)
 }
 
 func expandPaneTabs(line string, width int) string { return uipreview.ExpandTabs(line, width) }

@@ -12,6 +12,8 @@ import (
 	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
@@ -156,7 +158,7 @@ func (m *Model) confirmRemote(request remoteRequest) tea.Cmd {
 	}
 	m.openConfirm(confirmTarget{
 		action: ask.action,
-		label:  ask.verb + " " + escapeControlsInline(request.name) + " on " + request.host + "?" + ask.consequence,
+		label:  ask.verb + " " + presentation.EscapeControlsInline(request.name) + " on " + request.host + "?" + ask.consequence,
 		remote: &request,
 	})
 	return nil
@@ -238,10 +240,10 @@ func (m *Model) remoteQuickFacts(facts *uiquick.Facts) {
 	}
 	host := subtleStyle().Render(" on ") + lipgloss.NewStyle().Foreground(colorRemote()).Render(row.Host)
 	if row.Kind == uiconnections.SessionRow {
-		facts.Remote = lipgloss.NewStyle().Foreground(colorBright()).Bold(true).Render(escapeControlsInline(row.Name)) + host
+		facts.Remote = lipgloss.NewStyle().Foreground(colorBright()).Bold(true).Render(presentation.EscapeControlsInline(row.Name)) + host
 		return
 	}
-	facts.Remote = lipgloss.NewStyle().Foreground(colorAccent2()).Render(escapeControlsInline(displayGroup(row.Group))) + host
+	facts.Remote = lipgloss.NewStyle().Foreground(colorAccent2()).Render(presentation.EscapeControlsInline(uiframe.DisplayGroup(row.Group))) + host
 	facts.RemoteSpawn = true
 	facts.WorktreeKnown, facts.WorktreeCapable = true, true
 	q := m.quick()

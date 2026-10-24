@@ -73,8 +73,8 @@ func TestEscapeControlsShowsBytesAndKeepsUTF8(t *testing.T) {
 		"x\u009d0;P": `x\u009D0;P`,
 	}
 	for in, want := range cases {
-		if got := escapeControls(in); got != want {
-			t.Errorf("escapeControls(%q) = %q, want %q", in, got, want)
+		if got := presentation.EscapeControls(in); got != want {
+			t.Errorf("presentation.EscapeControls(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
@@ -84,18 +84,18 @@ func TestEscapeControlsShowsBytesAndKeepsUTF8(t *testing.T) {
 // exactly one row folds them together.
 func TestEscapeControlsKeepsNewlinesAndInlineDropsThem(t *testing.T) {
 	const gitErr = "fatal: ambiguous argument 'x'\nUse '--' to separate paths from revisions"
-	if got := escapeControls(gitErr); got != gitErr {
-		t.Errorf("escapeControls(%q) = %q, want it untouched", gitErr, got)
+	if got := presentation.EscapeControls(gitErr); got != gitErr {
+		t.Errorf("presentation.EscapeControls(%q) = %q, want it untouched", gitErr, got)
 	}
-	if got := escapeControls("a\n\x1bb"); got != "a\n^[b" {
-		t.Errorf(`escapeControls("a\n\x1bb") = %q, want "a\n^[b"`, got)
+	if got := presentation.EscapeControls("a\n\x1bb"); got != "a\n^[b" {
+		t.Errorf(`presentation.EscapeControls("a\n\x1bb") = %q, want "a\n^[b"`, got)
 	}
 	want := "fatal: ambiguous argument 'x' Use '--' to separate paths from revisions"
-	if got := escapeControlsInline(gitErr); got != want {
-		t.Errorf("escapeControlsInline(%q) = %q, want %q", gitErr, got, want)
+	if got := presentation.EscapeControlsInline(gitErr); got != want {
+		t.Errorf("presentation.EscapeControlsInline(%q) = %q, want %q", gitErr, got, want)
 	}
-	if got := escapeControlsInline("a\n\x1bb"); got != "a ^[b" {
-		t.Errorf(`escapeControlsInline("a\n\x1bb") = %q, want "a ^[b"`, got)
+	if got := presentation.EscapeControlsInline("a\n\x1bb"); got != "a ^[b" {
+		t.Errorf(`presentation.EscapeControlsInline("a\n\x1bb") = %q, want "a ^[b"`, got)
 	}
 }
 
@@ -103,8 +103,8 @@ func TestEscapeControlsKeepsNewlinesAndInlineDropsThem(t *testing.T) {
 // check for C1 would mangle it. Escaping keys off malformed UTF-8 instead.
 func TestEscapeControlsKeepsTextWhoseBytesLookLikeC1(t *testing.T) {
 	for _, text := range []string{"שלום", "מה קורה", "日本語", "café"} {
-		if got := escapeControls(text); got != text {
-			t.Errorf("escapeControls(%q) = %q, want it untouched", text, got)
+		if got := presentation.EscapeControls(text); got != text {
+			t.Errorf("presentation.EscapeControls(%q) = %q, want it untouched", text, got)
 		}
 	}
 }

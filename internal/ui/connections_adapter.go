@@ -7,6 +7,8 @@ import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	uiconnections "github.com/YoanWai/agent-manager/internal/ui/connections"
 	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -29,9 +31,9 @@ func (r linkRoot) SyncPreview() tea.Cmd { return r.syncRemotePreview() }
 func (r linkRoot) RailConnection(change uilink.RailChange) {
 	switch {
 	case change.Rename != "":
-		r.applyRailStateDecision(r.rail.RenameHost(change.Rename, change.To))
+		r.queueRail(r.rail.RenameHost(change.Rename, change.To), 0, true)
 	case change.Forget != "":
-		r.applyRailStateDecision(r.rail.ForgetHost(change.Forget))
+		r.queueRail(r.rail.ForgetHost(change.Forget), 0, true)
 	}
 	if change.Focus != "" {
 		r.rail.Focus(uirail.Selection{Kind: uirail.ConnectionRow, Host: change.Focus})
@@ -133,7 +135,7 @@ func (m *Model) remoteContentLines(width, height int) ([]contentLine, bool) {
 	case uiconnections.ConnectionRow:
 		head = m.connectionDetail(row.Host, inner)
 	case uiconnections.GroupRow:
-		head = []string{lipgloss.NewStyle().Foreground(colorAccent2()).Bold(true).Render(escapeControlsInline(displayGroup(row.Group))) +
+		head = []string{lipgloss.NewStyle().Foreground(colorAccent2()).Bold(true).Render(presentation.EscapeControlsInline(uiframe.DisplayGroup(row.Group))) +
 			subtleStyle().Render("  on ") + lipgloss.NewStyle().Foreground(colorRemote()).Render(row.Host)}
 		body = []string{mutedStyle().Render("press " + m.listGlyph(keybind.Prompt) + " to start an agent here")}
 	default:
@@ -183,7 +185,7 @@ func (m *Model) connectionDetail(host string, width int) []string {
 			countNoun(len(state.Terminals), "terminal")+" · "+manager)), "", width))
 	}
 	if seen && state.Err != "" {
-		for _, line := range strings.Split(ansi.Wordwrap(escapeControls(state.Err), max(width-detailLabelWidth, 8), " "), "\n") {
+		for _, line := range strings.Split(ansi.Wordwrap(presentation.EscapeControls(state.Err), max(width-detailLabelWidth, 8), " "), "\n") {
 			lines = append(lines, labelStyle().Render(padRight("error", detailLabelWidth))+errStyle().Render(line))
 		}
 	}
@@ -195,10 +197,10 @@ func (m *Model) remoteSessionDetail(row uiconnections.Row, width int) []string {
 	if row.Archived {
 		status = "archived"
 	}
-	state := lipgloss.NewStyle().Foreground(statusColor(row.Status)).Render(m.glyphs().StatusGlyph(row.Status) + " " + escapeControlsInline(statusLabel(status)))
-	name := lipgloss.NewStyle().Foreground(colorBright()).Bold(true).Render(escapeControlsInline(row.Name))
+	state := lipgloss.NewStyle().Foreground(statusColor(row.Status)).Render(m.glyphs().StatusGlyph(row.Status) + " " + presentation.EscapeControlsInline(statusLabel(status)))
+	name := lipgloss.NewStyle().Foreground(colorBright()).Bold(true).Render(presentation.EscapeControlsInline(row.Name))
 	host := lipgloss.NewStyle().Foreground(colorRemote()).Render(row.Host)
-	group := lipgloss.NewStyle().Foreground(colorAccent2()).Render(escapeControlsInline(displayGroup(row.Group)))
+	group := lipgloss.NewStyle().Foreground(colorAccent2()).Render(presentation.EscapeControlsInline(uiframe.DisplayGroup(row.Group)))
 	return []string{
 		fitColumns([]string{name + subtleStyle().Render("  on ") + host, name}, []string{state}, width),
 		factRow("group", plainValue(group), "", width),

@@ -17,7 +17,7 @@ func (m *Model) viewFooter() string { return m.footer().text }
 // (quick prompt, rename, resize) owns the legend alone while it is up.
 func (m *Model) footer() legend {
 	if m.rail.Reordering() {
-		return m.reorderFooter()
+		return m.transientFooter(legendOf(m.rail.ReorderLegend()))
 	}
 	if q := m.quick(); q != nil {
 		return m.quickFooter(q)

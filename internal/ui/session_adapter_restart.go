@@ -5,6 +5,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/google/uuid"
 	"time"
@@ -19,7 +20,7 @@ func (m *Model) restartSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if entry.isGroup {
-		m.reportErr("restart applies to a session; pick one under " + displayGroup(entry.group))
+		m.reportErr("restart applies to a session; pick one under " + uiframe.DisplayGroup(entry.group))
 		return m, nil
 	}
 	label := fmt.Sprintf("restart %s with an empty context? its current conversation is left behind.", entry.sess.Name)

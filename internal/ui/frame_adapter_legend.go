@@ -3,7 +3,6 @@ package ui
 import (
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 // paintLegend renders a legend as the app's footer, one tier per line where
@@ -11,12 +10,6 @@ import (
 func paintLegend(sections []legendSection, width int) legend {
 	badge, quiet := legendTitleStyles()
 	return rootLegend(uiframe.PaintLegend(frameSections(sections), width, frameCap(), badge, quiet, legendSeparator()))
-}
-
-// legendInline renders one tier as a single untitled run, for the foot of a
-// modal card where the tier's subject is the card's own title.
-func legendInline(pairs [][2]string, width int) string {
-	return uiframe.LegendInline(pairs, width, frameCap())
 }
 
 // placeKeys records a legend's keys painted with its first row at y and
@@ -33,5 +26,3 @@ func (m *Model) placePainted(keys []presentation.PaintedKey, x, y int) {
 	}
 	m.placeKeys(hits, x, y)
 }
-
-func legendKey(label string) (tea.KeyMsg, bool) { return uiframe.LegendKey(label) }

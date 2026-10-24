@@ -2,6 +2,7 @@ package ui
 
 import (
 	"github.com/YoanWai/agent-manager/internal/store"
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
@@ -23,7 +24,7 @@ func (m *Model) helpContext(width int) uihelp.Context {
 			AfterTurnKill:    m.afterTurnGlyph(store.AfterTurnKill),
 		},
 		QuickKeys:    uihelp.QuickKeys{Model: quickModelKey, Effort: quickEffortKey, Profile: quickProfileKey},
-		CursorMarker: cursorAnchorMarker,
+		CursorMarker: uiframe.CursorMarker,
 		ReviewRows:   uireview.HelpRows(),
 		Styles: uihelp.Styles{
 			Section: sectionStyle(),
@@ -43,10 +44,12 @@ type helpRoot struct{ *Model }
 
 func (r helpRoot) Context(width int) uihelp.Context { return r.helpContext(width) }
 
-func (r helpRoot) InnerWidth(width int) int { return cardInnerWidth(width) }
+func (r helpRoot) InnerWidth(width int) int { return uiframe.CardInnerWidth(width) }
 
 func (r helpRoot) HintRows(hints [][2]string, width int) int {
-	return lipgloss.Height(legendInline(hints, width))
+	// One untitled run, for the foot of a modal card where the tier's
+	// subject is the card's own title.
+	return lipgloss.Height(uiframe.LegendInline(hints, width, frameCap()))
 }
 
 func (r helpRoot) StatusShown() bool { return r.errBar.text != "" }

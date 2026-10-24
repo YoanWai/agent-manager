@@ -3,6 +3,7 @@ package ui
 import (
 	"time"
 
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uistartup "github.com/YoanWai/agent-manager/internal/ui/startup"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -34,7 +35,7 @@ func (m *Model) bannerTick() tea.Cmd {
 // showBanner reports whether the terminal leaves the tracked-out wordmark
 // room beside the fleet readings; a narrow one gets the name set plainly.
 func (m *Model) showBanner() bool {
-	return uistartup.Fits(m.layout.width, railGutter)
+	return uistartup.Fits(m.layout.width, uiframe.RailGutter)
 }
 
 // headerRows is how many rows the header occupies, which the body height
@@ -49,5 +50,5 @@ func (m *Model) headerRows() int {
 // viewBanner draws the wordmark, lit by a highlight that sweeps left to
 // right during the intro and then rests just past the end of the word.
 func (m *Model) viewBanner() []string {
-	return uistartup.Line(m.startup.bannerPhase, railGutter, m.showBanner(), current())
+	return uistartup.Line(m.startup.bannerPhase, uiframe.RailGutter, m.showBanner(), current())
 }

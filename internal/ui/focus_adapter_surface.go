@@ -3,6 +3,7 @@ package ui
 import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -29,7 +30,7 @@ type focusSavedRoot struct{ *Model }
 
 func (r focusSavedRoot) Keys() keybind.Table { return r.keys() }
 
-func (r focusSavedRoot) InnerWidth(width int) int { return cardInnerWidth(width) }
+func (r focusSavedRoot) InnerWidth(width int) int { return uiframe.CardInnerWidth(width) }
 
 // PasteFocused pastes a pick into the selected session, which is the
 // focused one while the list is up.

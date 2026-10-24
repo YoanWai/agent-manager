@@ -37,7 +37,9 @@ func (m *Model) renderFrame() string {
 			lines = append(lines, paint(line, m.layout.width, backdropHex()))
 		}
 		frame := m.overlayTopRight(strings.Join(lines, "\n"), m.statusToast(), 0)
-		return m.syncCursorAnchor(clampFrame(frame, m.layout.height))
+		// Pinned to exactly height rows so the outer terminal cannot scroll
+		// the TUI away when a layout overshoots.
+		return m.syncCursorAnchor(uiframe.Clamp(frame, m.layout.height, func() string { return paint("", 1, backdropHex()) }))
 	}
 	var frame string
 	if m.base == baseReview {
@@ -47,11 +49,5 @@ func (m *Model) renderFrame() string {
 	}
 	frame = m.surfaceView(frame)
 	m.layout.keyHits = m.layout.keyHits.above(m.layout.height)
-	return m.syncCursorAnchor(clampFrame(frame, m.layout.height))
-}
-
-// clampFrame pins a rendered frame to exactly height rows so the outer
-// terminal cannot scroll the TUI away when a layout overshoots.
-func clampFrame(frame string, height int) string {
-	return uiframe.Clamp(frame, height, func() string { return paint("", 1, backdropHex()) })
+	return m.syncCursorAnchor(uiframe.Clamp(frame, m.layout.height, func() string { return paint("", 1, backdropHex()) }))
 }
