@@ -11,7 +11,7 @@ import (
 )
 
 // quickSendRoot is the root as a finished send reaches it.
-type quickSendRoot struct{ *Model }
+type quickSendRoot struct{ m *Model }
 
 func (r quickSendRoot) ClearAccepted(composerGen int, draft string, closeAfterSend bool) {
 	r.m.clearAccepted(composerGen, draft, closeAfterSend)
