@@ -120,6 +120,8 @@ func testRepo(t *testing.T) (*Driver, string) {
 	gitIn(t, dir, "init", "-b", "main")
 	gitIn(t, dir, "config", "user.email", "test@test")
 	gitIn(t, dir, "config", "user.name", "test")
+	// Signing follows the user's gitconfig and can block on their signer.
+	gitIn(t, dir, "config", "commit.gpgsign", "false")
 	return driver, dir
 }
 
