@@ -273,8 +273,8 @@ func TestReviewNormalizeDispatchesAsNormalizeOp(t *testing.T) {
 	if load.Normalize == nil {
 		t.Fatal("load did not capture a normalization to persist")
 	}
-	if load.Normalize.Op != reviewOpNormalize {
-		t.Fatalf("normalize request dispatched as op %d, want %d", load.Normalize.Op, reviewOpNormalize)
+	if load.Normalize.TargetID != sess.ID || load.Normalize.RepoRoot != repo {
+		t.Fatalf("normalize captured %s in %s, want %s in %s", load.Normalize.TargetID, load.Normalize.RepoRoot, sess.ID, repo)
 	}
 
 	if err := m.services.store.Close(); err != nil {
