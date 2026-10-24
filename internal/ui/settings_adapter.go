@@ -1,19 +1,18 @@
 package ui
 
 import (
-	"net/url"
-	"slices"
-	"strings"
-
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/systheme"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
+	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
+	uisurface "github.com/YoanWai/agent-manager/internal/ui/surface"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -34,18 +33,6 @@ func SettingSpecs() ([]store.SettingSpec, error) {
 	return out, nil
 }
 
-func (m *Model) settingsContext() uisettings.Context {
-	session, list := m.settingsKeyTables()
-	return uisettings.Context{
-		Tools:       uipersist.Tools(m.services.cfg),
-		Hidden:      m.settings.Cache.Hidden(),
-		DefaultTool: m.settings.Cache.Value(uisettings.DefaultToolSetting),
-		Session:     session,
-		List:        list,
-		UpdateReady: m.release.Latest != "",
-	}
-}
-
 func (m *Model) openSettings() tea.Cmd {
 	return m.openSettingsWithReader(uipersist.StoreWriter{Store: m.services.store})
 }
@@ -63,7 +50,7 @@ func (m *Model) openSettingsWithReader(reader uipersist.Reader) tea.Cmd {
 	state := s.FromCache(m.services.cfg, uitheme.Current().Name)
 	state.MarkBaseline()
 	m.push(newSettingsSurface(m, state))
-	probe := m.probeEditorsCmd()
+	probe := settingsEditorProbe(m)
 	if s.Pending > 0 {
 		return probe
 	}
@@ -71,65 +58,7 @@ func (m *Model) openSettingsWithReader(reader uipersist.Reader) tea.Cmd {
 }
 
 func (m *Model) handleSettingsLoaded(msg uipersist.LoadedMsg) (tea.Model, tea.Cmd) {
-	return m, m.settings.UpdateLoad(settingsLoadRoot{m}, msg)
-}
-
-// settingsLoadRoot is the root as a landed settings read reaches it: the
-// persist package decides which surface may still take the read, and each
-// rebuild here answers with the work it asks for.
-type settingsLoadRoot struct{ *Model }
-
-func (r settingsLoadRoot) RebuildSettings(result uipersist.LoadResult, generation uint64) uipersist.LoadOutcome {
-	card, open := surfaceOf[*uisettings.Surface](r.Model)
-	if !open || !r.settings.Fresh(generation) || card.State().Busy() {
-		return uipersist.LoadOutcome{}
-	}
-	r.settings.Take(result)
-	field := card.State().Field
-	card.SetState(r.settings.FromCache(r.services.cfg, uitheme.Current().Name))
-	var follow tea.Cmd
-	// A manual theme the shell changed meanwhile repaints here, so esc
-	// keeps it instead of writing back the palette cached at startup.
-	if d := card.State(); !d.ThemeAuto && uitheme.Current().Name != d.ManualTheme {
-		d.ShowTheme(d.ManualTheme)
-		applyTheme(uitheme.Palettes[d.ThemeIndex])
-		SyncTerminalColors()
-		follow = r.syncPaneTheme()
-	}
-	card.State().MarkBaseline()
-	card.State().Field = field
-	return uipersist.LoadOutcome{Built: true, Follow: follow}
-}
-
-func (r settingsLoadRoot) RebuildForm(result uipersist.LoadResult, generation uint64) uipersist.LoadOutcome {
-	f, ok := r.formFor(int(generation))
-	if !ok || f.DefaultsTouched() || r.settings.Pending > 0 {
-		return uipersist.LoadOutcome{}
-	}
-	r.settings.Take(result)
-	r.refreshFormChoicePrefs()
-	return uipersist.LoadOutcome{Built: true, Follow: tea.Batch(r.applyCachedFormDefaults(), r.formWorktreeProbeCmd(false))}
-}
-
-func (r settingsLoadRoot) RebuildQuick(result uipersist.LoadResult, generation uint64) uipersist.LoadOutcome {
-	q, ok := r.quickFor(int(generation))
-	if !ok || q.DefaultsTouched() || r.settings.Pending > 0 {
-		return uipersist.LoadOutcome{}
-	}
-	r.settings.Take(result)
-	r.refreshQuickChoicePrefs()
-	return uipersist.LoadOutcome{Built: true, Follow: tea.Batch(r.applyCachedQuickDefaults(), r.quickWorktreeProbeCmd(false))}
-}
-
-func (r settingsLoadRoot) SettleLoad(err error, follow tea.Cmd) tea.Cmd {
-	r.applyCachedSettingsPrefs()
-	r.rebuildRows()
-	if err != nil {
-		r.reportErr(err.Error())
-	} else {
-		r.clearErr()
-	}
-	return follow
+	return m, m.settings.UpdateLoad(settingsLoadHost{m}, msg)
 }
 
 // applySettingsResult runs the work a dialog key asked beyond its own
@@ -142,11 +71,11 @@ func (m *Model) applySettingsResult(d *uisettings.State, result uisettings.Resul
 	case uisettings.OpenDocs:
 		return openLink(docsURL), false
 	case uisettings.OpenFeatureRequest:
-		return openLink(featureRequestURL()), false
+		return openLink(uinotices.FeatureRequestURL()), false
 	case uisettings.RequestCLISupport:
-		return openLink(requestCLISupportURL()), false
+		return openLink(uinotices.SupportRequestURL()), false
 	case uisettings.ReportBug:
-		return openLink(bugReportURL(m.release.Version)), false
+		return openLink(uinotices.BugReportURL(m.release.Version)), false
 	case uisettings.Update:
 		if m.release.Applying {
 			return nil, false
@@ -259,15 +188,7 @@ func (m *Model) saveSettingsKeys(d *uisettings.State) tea.Cmd {
 }
 
 func (m *Model) settingsKeyTables() (keybind.Table, keybind.Table) {
-	expectedSession, expectedList := m.services.keys, m.services.listKeys
-	for _, pending := range m.queuedKeys() {
-		if pending.ListChanged {
-			expectedList = pending.List
-		}
-		if pending.SessionChanged {
-			expectedSession = pending.Session
-		}
-	}
+	expectedList, expectedSession := uipersist.Expected(m.services.listKeys, m.services.keys, m.queuedKeys())
 	return expectedSession, expectedList
 }
 
@@ -296,46 +217,6 @@ func (m *Model) submitKeys(request uipersist.KeysRequest) tea.Cmd {
 	return m.nextEffectCmd()
 }
 
-// settingsSaveRoot is the root as a Settings completion reaches it: the
-// persist package decides what committed, and every effect here answers in
-// the manager's own state.
-type settingsSaveRoot struct{ *Model }
-
-func (r settingsSaveRoot) ReportErr(text string) { r.reportErr(text) }
-
-func (r settingsSaveRoot) Caveat(text string) { r.reportErr(r.errBar.text + "; " + text) }
-
-func (r settingsSaveRoot) MirrorPrefs(values []uisettings.Readback) string {
-	return r.reconcileSettingsPrefs(values)
-}
-
-func (r settingsSaveRoot) Restore(values []uisettings.Readback, hiddenRaw string, hiddenErr error, editors *uisettings.EditorsProbe) {
-	if card, open := surfaceOf[*uisettings.Surface](r.Model); open {
-		card.State().Restore(values, hiddenRaw, hiddenErr, editors)
-	}
-}
-
-func (r settingsSaveRoot) Update(staged bool) tea.Cmd {
-	if !staged {
-		r.release.Applying = false
-		return nil
-	}
-	return r.release.Apply()
-}
-
-// SaveKeys re-applies the saved tables to the sessions already running.
-func (r settingsSaveRoot) SaveKeys(list, session keybind.Table, listChanged, sessionChanged bool) tea.Cmd {
-	if listChanged {
-		r.services.listKeys = list
-	}
-	if sessionChanged {
-		r.services.keys = session
-		r.services.tmux.SetSessionKeys(session)
-		return func() tea.Msg { return r.refreshExistingSessionUX() }
-	}
-	return nil
-}
-
 // keySaver writes one key table through the instance writer the job
 // captured, or the store when the model was built without one.
 func (s effectServices) keySaver() uipersist.KeySaver {
@@ -348,15 +229,7 @@ func (s effectServices) keySaver() uipersist.KeySaver {
 // reconcileSettingsPrefs restores the live-session prefs to the committed
 // read-back; keys whose read failed keep their current value.
 func (m *Model) reconcileSettingsPrefs(restored []uisettings.Readback) string {
-	failed := 0
-	for _, value := range restored {
-		if value.Err != nil {
-			failed++
-			continue
-		}
-		m.mirrorPreference(value.Key, value.Value)
-	}
-	return uipersist.ReadFailureNote(failed)
+	return uipersist.Reconcile(restored, m.mirrorPreference)
 }
 
 // applySettingsPrefs mirrors the just chosen preferences into the live
@@ -371,34 +244,6 @@ func (m *Model) applySettingsPrefs(d *uisettings.State) {
 	}
 }
 
-func (m *Model) probeEditorsCmd() tea.Cmd {
-	resolution, generation := detectedEditors(), m.settings.Gen
-	return func() tea.Msg {
-		msg := resolution.probe()
-		msg.Generation = generation
-		return msg
-	}
-}
-
-// probe walks PATH, which is I/O that Update must not do.
-func (r editorResolution) probe() uisettings.EditorsProbe {
-	var found []string
-	if r.lookup != nil {
-		for _, name := range r.gui {
-			if _, err := r.lookup(name); err == nil {
-				found = append(found, name)
-			}
-		}
-	}
-	for _, line := range []string{r.visual, r.editor} {
-		if line = strings.TrimSpace(line); line != "" && !slices.Contains(found, line) {
-			found = append(found, line)
-		}
-	}
-	r.configured = ""
-	return uisettings.EditorsProbe{Found: found, Auto: r.editorLine()}
-}
-
 // applyEditorsProbe keeps the answer for the rows later loads rebuild, and
 // fills the row of the visit that asked while the dialog is open.
 func (m *Model) applyEditorsProbe(msg uisettings.EditorsProbe) {
@@ -406,16 +251,6 @@ func (m *Model) applyEditorsProbe(msg uisettings.EditorsProbe) {
 	if s, open := surfaceOf[*uisettings.Surface](m); open && msg.Generation == m.settings.Gen {
 		s.State().Editor.ApplyProbe(msg)
 	}
-}
-
-// requestCLISupportURL opens a prefilled feature request for another CLI.
-func requestCLISupportURL() string {
-	body := "**What are you trying to do**\n\n" +
-		"I want agent-manager to support another coding CLI.\n\n" +
-		"**What you have in mind**\n\n" +
-		"CLI name:\nHow to launch it:\nResume / session flags (if any):\n\n" +
-		"**Area**\nConfig and tool support\n"
-	return uinotices.RepoURL + "/issues/new?body=" + url.QueryEscape(body)
 }
 
 func (m *Model) routeSettingsMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
@@ -442,4 +277,344 @@ func (m *Model) routeSettingsMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		return routed(m, m.handleCatalog(msg))
 	}
 	return nil, nil, false
+}
+
+// defaultSplitLayout reports whether review mode should open in split
+// (side-by-side) layout. Split is the default; a stored "unified" choice
+// opts out. A store error is surfaced but still yields the split default.
+func (m *Model) defaultSplitLayout() bool {
+	split, err := uipersist.StoredSplitLayout(m.services.store)
+	if err != nil {
+		m.reportErr("reading diff layout setting: " + err.Error())
+	}
+	return split
+}
+
+// storedTerminalBackground reads the background row. A store error is
+// surfaced but still yields the painted default.
+func (m *Model) storedTerminalBackground() bool {
+	on, err := uipersist.StoredTerminalBackground(m.services.store)
+	if err != nil {
+		m.reportErr("reading background setting: " + err.Error())
+	}
+	return on
+}
+
+// enterFocuses reports which key opens a session where. Enter focuses the
+// preview and A attaches full screen by default; a stored "attach" choice
+// swaps the pair. Cached on the model because the footer reads it every
+// frame.
+func (m *Model) enterFocuses() bool {
+	return m.prefs.focusOnEnter
+}
+
+// mirrorPreference copies one stored setting into the running manager; a
+// key the frame never reads stays in the cache alone.
+func (m *Model) mirrorPreference(key, value string) {
+	mirrored := uisettings.Mirror(key, value)
+	switch {
+	case mirrored.Flag != nil:
+		m.mirrorFlag(key, *mirrored.Flag)
+	case mirrored.Editor != "":
+		m.services.editor = mirrored.Editor
+	default:
+		m.prefs.glyphMode = mirrored.GlyphMode
+	}
+}
+
+// mirrorFlag is the one place a two-way row meets its preferences field.
+func (m *Model) mirrorFlag(key string, on bool) {
+	switch key {
+	case uisettings.FocusKeySetting:
+		m.prefs.focusOnEnter = on
+	case uisettings.ArrowStepSetting:
+		m.prefs.arrowStep = on
+	case uisettings.ListDensitySetting:
+		m.prefs.comfortableRows = on
+	case uisettings.SessionLayoutSetting:
+		m.prefs.fullLayout = on
+	case uisettings.HideHeaderSetting:
+		m.prefs.hideHeader = on
+	case uisettings.HideStatsSetting:
+		m.prefs.hideStats = on
+	case uisettings.MouseSetting:
+		m.prefs.mouseDisabled = on
+	case uisettings.BackgroundSetting:
+		m.prefs.terminalBackground = on
+	case uisettings.BaseFetchSetting:
+		m.prefs.baseFetchOff = !on
+	}
+}
+
+func (m *Model) applyCachedSettingsPrefs() {
+	for _, key := range uisettings.Keys() {
+		m.mirrorPreference(key, m.settings.Cache.Value(key))
+	}
+}
+
+func (m *Model) applyPromptsRead(dialogGen uint64, read uisettings.PromptsRead) {
+	card, open := surfaceOf[*uisettings.Surface](m)
+	if !open || dialogGen != m.settings.Gen {
+		return
+	}
+	notice := card.State().LoadedPrompts(read)
+	if notice.Changed {
+		m.setNotice(notice)
+	}
+}
+
+// runPromptsResult runs the catalog work a panel key asked for: reads go
+// straight to the store off Update, writes go on the effect lane.
+func (m *Model) runPromptsResult(d *uisettings.State, result uisettings.Result) tea.Cmd {
+	request, read, ok := uipersist.Asked(result, d.Prompts.Gen(), m.settings.Gen)
+	switch {
+	case !ok:
+		return nil
+	case read:
+		return uipersist.SavedCmd(m.services.store, uipersist.SavedForSettings, request.Gen, request.DialogGen)
+	}
+	m.enqueueEffect(request, 0, false)
+	return m.nextEffectCmd()
+}
+
+// applyPromptsResult hands a committed catalog change back to the panel
+// that asked, landing on the row the write named.
+func (m *Model) applyPromptsResult(request uipersist.PromptRequest, result uipersist.PromptResult, err error) {
+	selected := ""
+	if request.Save != nil {
+		selected = request.Save.SelectedName()
+	}
+	m.applyPromptsRead(request.DialogGen, uisettings.PromptsRead{
+		Gen: request.Gen, Rows: uisettings.PromptRows(presetRows(result.Rows)), Err: err,
+		Mutation: true, Committed: result.Committed, Selected: selected,
+	})
+}
+
+func (m *Model) setNotice(notice uisettings.Notice) {
+	if notice.Text == "" {
+		m.clearErr()
+		return
+	}
+	m.reportErr(notice.Text)
+}
+
+// handleSavedPromptsLoaded hands a catalog read to the surface that asked,
+// while it is still the one that asked.
+func (m *Model) handleSavedPromptsLoaded(msg uipersist.SavedMsg) {
+	switch msg.Target {
+	case uipersist.SavedForSettings:
+		m.applyPromptsRead(msg.DialogGen, uisettings.PromptsRead{Gen: msg.Gen, Rows: uisettings.PromptRows(presetRows(msg.Rows)), Err: msg.Err})
+	case uipersist.SavedForForm:
+		if f, ok := m.formFor(int(msg.Gen)); ok {
+			f.SetSaved(spawnSaved(msg.Rows), msg.Err)
+		}
+	case uipersist.SavedForQuick:
+		if q, ok := m.quickFor(int(msg.Gen)); ok {
+			q.LoadSaved(spawnSaved(msg.Rows), msg.Err)
+		}
+	case uipersist.SavedForFocus:
+		m.loadFocusSaved(msg)
+	}
+}
+
+func spawnSaved(rows []store.SessionPreset) []spawn.Saved {
+	saved := make([]spawn.Saved, len(rows))
+	for i, row := range rows {
+		saved[i] = spawn.Saved{Name: row.Name, Text: row.Instructions}
+	}
+	return saved
+}
+
+func presetRows(rows []store.SessionPreset) []uisettings.Preset {
+	presets := make([]uisettings.Preset, len(rows))
+	for i, row := range rows {
+		presets[i] = uisettings.Preset{Name: row.Name, Text: row.Instructions}
+	}
+	return presets
+}
+
+// paintSettings frames the dialog in the root's card chrome.
+func (m *Model) paintSettings(d *uisettings.State) string {
+	frame := d.View(uisettings.ViewContext{
+		GlyphMode:  m.prefs.glyphMode,
+		Session:    m.services.keys,
+		List:       m.services.listKeys,
+		Version:    m.release.Version,
+		Latest:     m.release.Latest,
+		Applying:   m.release.Applying,
+		Height:     m.layout.height,
+		InnerWidth: uiframe.CardInnerWidth(m.cardWidth()),
+		Chrome:     m.flexChromeRows,
+		Styles:     uisettings.CurrentStyles(),
+		TextInput:  uiframe.TextInputView,
+		TextArea:   uiframe.TextAreaView,
+	})
+	switch frame.Card {
+	case uisettings.Confirm:
+		return m.confirmCard(frame.Title, frame.Question, frame.Consequence, frame.Destructive, frame.Answer)
+	case uisettings.Fixed:
+		return m.CardSized(m.cardWidth(), frame.Title, frame.Body, frame.Hints)
+	}
+	return m.CardSized(m.flexCardWidth(frame.Title, frame.Body, frame.Hints), frame.Title, frame.Body, frame.Hints)
+}
+
+func newSettingsSurface(m *Model, state uisettings.State) *uisettings.Surface {
+	return uisettings.NewSurface(settingsHost{m}, state)
+}
+
+// columnClicker is the optional capability of a surface whose card acts on
+// where in a line a click lands: the root hands it the column too. It
+// bridges until surface.Click carries the column for every card.
+type columnClicker interface {
+	ClickAt(h uisurface.Host, col, line int) tea.Cmd
+}
+
+var _ columnClicker = (*uisettings.Surface)(nil)
+
+// settingsHost is the root as the Settings card reads it: the live key
+// tables, the cached store values and the update state a key reads.
+type settingsHost struct{ m *Model }
+
+func (h settingsHost) Context() uisettings.Context {
+	session, list := h.m.settingsKeyTables()
+	return uisettings.Context{
+		Tools:       uipersist.Tools(h.m.services.cfg),
+		Hidden:      h.m.settings.Cache.Hidden(),
+		DefaultTool: h.m.settings.Cache.Value(uisettings.DefaultToolSetting),
+		Session:     session,
+		List:        list,
+		UpdateReady: h.m.release.Latest != "",
+	}
+}
+
+// Apply runs what a key asked beyond the dialog's own state and says
+// whether the card closes: the links, the palette repaint, the saves, and
+// the exits that close the dialog or start the in-place update.
+func (h settingsHost) Apply(d *uisettings.State, result uisettings.Result) (tea.Cmd, bool) {
+	return h.m.applySettingsResult(d, result)
+}
+
+// Leave applies and queues the save of what the card chose.
+func (h settingsHost) Leave(d *uisettings.State) { h.m.leaveSettings(d) }
+
+func (h settingsHost) Paint(d *uisettings.State) string { return h.m.paintSettings(d) }
+
+// settingsLoadHost is the root as a landed settings read reaches it: the
+// persist package decides which surface may still take the read.
+type settingsLoadHost struct{ m *Model }
+
+func (h settingsLoadHost) RebuildSettings(result uipersist.LoadResult, generation uint64) uipersist.LoadOutcome {
+	m := h.m
+	card, open := surfaceOf[*uisettings.Surface](m)
+	if !open || !m.settings.Fresh(generation) || card.State().Busy() {
+		return uipersist.LoadOutcome{}
+	}
+	m.settings.Take(result)
+	field := card.State().Field
+	card.SetState(m.settings.FromCache(m.services.cfg, uitheme.Current().Name))
+	var follow tea.Cmd
+	// A manual theme the shell changed meanwhile repaints here, so esc
+	// keeps it instead of writing back the palette cached at startup.
+	if d := card.State(); !d.ThemeAuto && uitheme.Current().Name != d.ManualTheme {
+		d.ShowTheme(d.ManualTheme)
+		applyTheme(uitheme.Palettes[d.ThemeIndex])
+		SyncTerminalColors()
+		follow = m.syncPaneTheme()
+	}
+	card.State().MarkBaseline()
+	card.State().Field = field
+	return uipersist.LoadOutcome{Built: true, Follow: follow}
+}
+
+func (h settingsLoadHost) RebuildForm(result uipersist.LoadResult, generation uint64) uipersist.LoadOutcome {
+	m := h.m
+	f, ok := m.formFor(int(generation))
+	if !ok || f.DefaultsTouched() || m.settings.Pending > 0 {
+		return uipersist.LoadOutcome{}
+	}
+	m.settings.Take(result)
+	m.refreshFormChoicePrefs()
+	return uipersist.LoadOutcome{Built: true, Follow: tea.Batch(m.applyCachedFormDefaults(), m.formWorktreeProbeCmd(false))}
+}
+
+func (h settingsLoadHost) RebuildQuick(result uipersist.LoadResult, generation uint64) uipersist.LoadOutcome {
+	m := h.m
+	q, ok := m.quickFor(int(generation))
+	if !ok || q.DefaultsTouched() || m.settings.Pending > 0 {
+		return uipersist.LoadOutcome{}
+	}
+	m.settings.Take(result)
+	m.refreshQuickChoicePrefs()
+	return uipersist.LoadOutcome{Built: true, Follow: tea.Batch(m.applyCachedQuickDefaults(), m.quickWorktreeProbeCmd(false))}
+}
+
+func (h settingsLoadHost) SettleLoad(err error, follow tea.Cmd) tea.Cmd {
+	m := h.m
+	m.applyCachedSettingsPrefs()
+	m.rebuildRows()
+	if err != nil {
+		m.reportErr(err.Error())
+	} else {
+		m.clearErr()
+	}
+	return follow
+}
+
+// settingsSaveHost is the root as a Settings completion reaches it: the
+// persist package decides what committed, and every effect here answers in
+// the manager's own state.
+type settingsSaveHost struct{ m *Model }
+
+func (h settingsSaveHost) ReportErr(text string) { h.m.reportErr(text) }
+
+func (h settingsSaveHost) Caveat(text string) { h.m.reportErr(h.m.errBar.text + "; " + text) }
+
+func (h settingsSaveHost) MirrorPrefs(values []uisettings.Readback) string {
+	return h.m.reconcileSettingsPrefs(values)
+}
+
+func (h settingsSaveHost) Restore(values []uisettings.Readback, hiddenRaw string, hiddenErr error, editors *uisettings.EditorsProbe) {
+	if card, open := surfaceOf[*uisettings.Surface](h.m); open {
+		card.State().Restore(values, hiddenRaw, hiddenErr, editors)
+	}
+}
+
+func (h settingsSaveHost) Update(staged bool) tea.Cmd {
+	if !staged {
+		h.m.release.Applying = false
+		return nil
+	}
+	return h.m.release.Apply()
+}
+
+// SaveKeys re-applies the saved tables to the sessions already running.
+func (h settingsSaveHost) SaveKeys(list, session keybind.Table, listChanged, sessionChanged bool) tea.Cmd {
+	m := h.m
+	if listChanged {
+		m.services.listKeys = list
+	}
+	if sessionChanged {
+		m.services.keys = session
+		m.services.tmux.SetSessionKeys(session)
+		return func() tea.Msg { return m.refreshExistingSessionUX() }
+	}
+	return nil
+}
+
+// settingsEditorProbe is the editor row's off-path probe, captured from the
+// root's environment when the dialog opens.
+func settingsEditorProbe(m *Model) tea.Cmd {
+	resolution, generation := detectedEditors(), m.settings.Gen
+	probe := uisettings.EditorProbe{
+		GUI:    resolution.gui,
+		Visual: resolution.visual,
+		Editor: resolution.editor,
+		Lookup: resolution.lookup,
+		Line:   resolution.editorLine,
+	}
+	return func() tea.Msg {
+		msg := probe.Resolve()
+		msg.Generation = generation
+		return msg
+	}
 }

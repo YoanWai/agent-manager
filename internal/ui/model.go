@@ -216,8 +216,8 @@ func newView(deps Dependencies, version string) (*Model, error) {
 			Booting: true,
 		},
 		notices: noticesPanel{
-			Panel:             uinotices.NewPanel(uirelease.Dismissed(st)),
-			configImportError: configImportError,
+			Panel: uinotices.NewPanel(uirelease.Dismissed(st)),
+			Log:   uinotices.Log{ImportError: configImportError},
 		},
 	}
 	if deps.ProfileDir != "" {

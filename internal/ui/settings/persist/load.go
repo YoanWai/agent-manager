@@ -147,3 +147,17 @@ func (s *State) UpdateLoad(root LoadRoot, msg LoadedMsg) tea.Cmd {
 	}
 	return root.SettleLoad(msg.Err, outcome.Follow)
 }
+
+// Reconcile mirrors committed read-backs into the running manager and says
+// how many reads failed, so their prefs keep their state.
+func Reconcile(restored []uisettings.Readback, mirror func(key, value string)) string {
+	failed := 0
+	for _, value := range restored {
+		if value.Err != nil {
+			failed++
+			continue
+		}
+		mirror(value.Key, value.Value)
+	}
+	return ReadFailureNote(failed)
+}

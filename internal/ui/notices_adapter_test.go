@@ -13,12 +13,13 @@ import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
 	uirelease "github.com/YoanWai/agent-manager/internal/ui/notices/release"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
 	"github.com/YoanWai/agent-manager/internal/update"
-
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -81,7 +82,7 @@ func TestActiveNoticesPinnedByDefault(t *testing.T) {
 		t.Fatalf("welcome should point at Settings for a bug or an idea: %q", joined)
 	}
 	for _, n := range m.activeNotices() {
-		if n.ID != uinotices.Welcome && n.URL == bugReportURL(m.release.Version) {
+		if n.ID != uinotices.Welcome && n.URL == uinotices.BugReportURL(m.release.Version) {
 			t.Fatalf("standalone bug-report notice still active: %q", n.ID)
 		}
 	}
@@ -107,7 +108,7 @@ func TestConfigNotImportedNoticeCarriesTheReason(t *testing.T) {
 	if contains(noticeIDs(m.activeNotices()), uinotices.ConfigNotImported) {
 		t.Fatal("an import that went through has nothing to report")
 	}
-	m.notices.configImportError = "config.toml: keybindings.session.detach needs at least one key"
+	m.notices.ImportError = "config.toml: keybindings.session.detach needs at least one key"
 	var refused uinotices.Notice
 	for _, n := range m.activeNotices() {
 		if n.ID == uinotices.ConfigNotImported {
@@ -117,12 +118,12 @@ func TestConfigNotImportedNoticeCarriesTheReason(t *testing.T) {
 	if refused.ID == "" {
 		t.Fatalf("want %s among %v", uinotices.ConfigNotImported, noticeIDs(m.activeNotices()))
 	}
-	if !contains(refused.Body, m.notices.configImportError) {
+	if !contains(refused.Body, m.notices.ImportError) {
 		t.Fatalf("the notice should carry the reason: %q", refused.Body)
 	}
 	persistNoticeDismissal(t, m, uinotices.ConfigNotImported)
 	reopened := noticeModel(st, "v0.2.0")
-	reopened.notices.configImportError = m.notices.configImportError
+	reopened.notices.ImportError = m.notices.ImportError
 	if contains(noticeIDs(reopened.activeNotices()), uinotices.ConfigNotImported) {
 		t.Fatal("dismissal did not survive restart")
 	}
@@ -357,29 +358,6 @@ func TestFeedUsesCanonicalTitleInModal(t *testing.T) {
 	modal := ansi.Strip(preparedView(m))
 	if !strings.Contains(modal, "One title everywhere") || strings.Contains(modal, "legacy compact copy") {
 		t.Fatalf("modal did not use the canonical title:\n%s", modal)
-	}
-}
-
-func TestBugReportURLPrefillsVersion(t *testing.T) {
-	got := bugReportURL("v0.2.0")
-	if !strings.HasPrefix(got, "https://github.com/YoanWai/agent-manager/issues/new") {
-		t.Fatalf("bug report should open the new-issue page, got %q", got)
-	}
-	if !strings.Contains(got, "template=bug_report.yml") {
-		t.Fatalf("bug report should use the bug form, got %q", got)
-	}
-	if !strings.Contains(got, "version=v0.2.0") {
-		t.Fatalf("issue URL should carry the version, got %q", got)
-	}
-}
-
-func TestFeatureRequestURLUsesFeatureTemplate(t *testing.T) {
-	got := featureRequestURL()
-	if !strings.Contains(got, "template=feature_request.yml") {
-		t.Fatalf("feature request should use the feature form, got %q", got)
-	}
-	if strings.Contains(got, "template=bug_report.yml") {
-		t.Fatalf("feature request opened the bug form: %q", got)
 	}
 }
 
@@ -742,8 +720,8 @@ func TestPendingFeedDoesNotOpenDuringQuit(t *testing.T) {
 	m := footModel(t)
 	m.push(newFocusSurface(m))
 	m.Update(uirelease.FeedMsg{Messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
-	if m.notices.pendingNotice != "feed-new" {
-		t.Fatalf("pending notice = %q, want feed-new", m.notices.pendingNotice)
+	if m.notices.Held != "feed-new" {
+		t.Fatalf("pending notice = %q, want feed-new", m.notices.Held)
 	}
 
 	m.base = baseList
@@ -1386,3 +1364,290 @@ func TestDismissNoticeFailureDuringQuitRestoresWithoutReopening(t *testing.T) {
 		t.Fatalf("failure reason = %q", m.errBar.text)
 	}
 }
+
+func TestNoticeMarksAreResolvedWithoutChangingExternalContent(t *testing.T) {
+	m := noticeModel(noticeStore(t), "v1.0.0")
+	const text = "⚙❯✳ literal notice"
+	m.release.Feed = []feed.Message{{ID: "literal", Title: text, Body: []string{text}, URL: "https://example.com"}}
+	m.release.Latest = "v1.1.0"
+	m.release.Refreshing, m.release.Applying = true, true
+	for _, tc := range []struct {
+		mode                                                   presentation.GlyphMode
+		feed, welcome, update, refresh, download, link, cursor string
+	}{
+		{presentation.GlyphModeBasic, "i", "i", "^", "R", "v", "@", ">"},
+		{presentation.GlyphModeAdvanced, "◆", "✳", "↑", "↻", "↓", "↗", "▸"},
+	} {
+		m.prefs.glyphMode = tc.mode
+		notices := m.activeNotices()
+		for _, n := range notices {
+			want := ""
+			switch n.ID {
+			case "literal":
+				want = tc.feed
+			case uinotices.Welcome:
+				want = tc.welcome
+			case "update-v1.1.0":
+				want = tc.update
+			}
+			if want != "" && n.Glyph != want {
+				t.Fatalf("%s/%s glyph=%q", tc.mode, n.ID, n.Glyph)
+			}
+			if n.ID == "literal" && (n.Title != text || strings.Join(n.Body, "") != text) {
+				t.Fatal("external message rewritten")
+			}
+		}
+		m.layout.width, m.layout.height = 120, 40
+		m.notices.Open(notices, "literal")
+		got := ansi.Strip(strings.Join(m.notices.View(notices, m.noticesFrame()), "\n"))
+		tail := got
+		for _, want := range []string{tc.refresh + " refreshing", tc.download + " downloading", tc.link + " example.com"} {
+			if !strings.Contains(tail, want) {
+				t.Fatalf("%s tail missing %q: %s", tc.mode, want, tail)
+			}
+		}
+		m.notices.Open(notices, "update-v1.1.0")
+		got = ansi.Strip(strings.Join(m.notices.View(m.activeNotices(), m.noticesFrame()), "\n"))
+		if !strings.Contains(got, tc.cursor+" "+tc.update) {
+			t.Fatalf("%s notice cursor = %s", tc.mode, got)
+		}
+	}
+}
+
+func TestClickOnAMessageTitleSelectsIt(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 34
+	m.openNotices("")
+	notices := m.activeNotices()
+	if len(notices) < 2 {
+		t.Fatalf("test setup: a fresh model shows two notices, has %d", len(notices))
+	}
+	x, y := paintedCell(t, m, notices[1].Title)
+	if m = leftClick(m, x, y); noticesSurfaceOf(m).Panel().Cursor() != 1 || !m.noticesOpen() {
+		t.Fatalf("a click on the second title should select it, cursor %d mode %v", noticesSurfaceOf(m).Panel().Cursor(), m.screenID())
+	}
+	if body := preparedView(m); !strings.Contains(body, notices[1].Title) {
+		t.Fatal("the selected notice should stay on screen")
+	}
+}
+
+func TestUpdateMsgSetsAndClearsBadge(t *testing.T) {
+	m := &Model{
+		layout: layoutState{width: 120},
+	}
+	m.Update(uirelease.UpdateMsg{Latest: "v0.11.1", URL: "https://example/rel"})
+	if m.release.Latest != "v0.11.1" || m.release.URL != "https://example/rel" {
+		t.Errorf("badge not set: %q %q", m.release.Latest, m.release.URL)
+	}
+	m.Update(uirelease.UpdateMsg{})
+	if m.release.Latest != "" || m.release.URL != "" {
+		t.Errorf("an up-to-date result should clear the badge: %q %q", m.release.Latest, m.release.URL)
+	}
+}
+
+func TestFailedUpdateCheckKeepsBadge(t *testing.T) {
+	m := &Model{
+		layout:  layoutState{width: 120},
+		release: uirelease.State{Latest: "v0.11.1", URL: "https://example/rel"},
+	}
+	m.Update(uirelease.UpdateMsg{Failed: true})
+	if m.release.Latest != "v0.11.1" || m.release.URL != "https://example/rel" {
+		t.Errorf("a failed check must leave the badge alone: %q %q", m.release.Latest, m.release.URL)
+	}
+}
+
+func TestUpdateTickReArms(t *testing.T) {
+	m := &Model{
+		layout: layoutState{width: 120},
+	}
+	if _, cmd := m.Update(uirelease.TickMsg{}); cmd == nil {
+		t.Error("update tick should re-arm the timer and re-check")
+	}
+}
+
+func scrollModel(t *testing.T, lines int) *Model {
+	t.Helper()
+	m := modalModel(t)
+	m.layout.width, m.layout.height = 70, 14
+	var body []string
+	for index := 0; index < lines; index++ {
+		body = append(body, fmt.Sprintf("change line %02d", index))
+	}
+	m.release.Feed = []feed.Message{{ID: "feed-scroll", Banner: "scroll", Title: "Scrollable summary", Body: body}}
+	m.openNotices("feed-scroll")
+	return m
+}
+
+func thumbRows(frame string) []int {
+	var rows []int
+	for index, line := range strings.Split(frame, "\n") {
+		if strings.Contains(line, "┃") {
+			rows = append(rows, index)
+		}
+	}
+	return rows
+}
+
+func TestShortBodyHasNoScrollbar(t *testing.T) {
+	m := scrollModel(t, 2)
+	if frame := ansi.Strip(preparedView(m)); strings.Contains(frame, "┃") {
+		t.Fatalf("a body that fits needs no scrollbar:\n%s", frame)
+	}
+}
+
+func TestWheelScrollsTheMessageBody(t *testing.T) {
+	m := scrollModel(t, 30)
+	before := thumbRows(ansi.Strip(preparedView(m)))
+	m = wheelOnCard(m, tea.MouseButtonWheelDown)
+	if noticesSurfaceOf(m).Panel().Offset() != uinotices.WheelRows {
+		t.Fatalf("wheel down moved %d rows, want %d", noticesSurfaceOf(m).Panel().Offset(), uinotices.WheelRows)
+	}
+	for i := 0; i < 40; i++ {
+		m = wheelOnCard(m, tea.MouseButtonWheelDown)
+	}
+	limit := noticesSurfaceOf(m).Panel().ScrollLimit(m.activeNotices(), m.noticesFrame())
+	if noticesSurfaceOf(m).Panel().Offset() != limit {
+		t.Fatalf("wheel scrolled to %d, want it bounded at %d", noticesSurfaceOf(m).Panel().Offset(), limit)
+	}
+	after := thumbRows(ansi.Strip(preparedView(m)))
+	if len(before) == 0 || len(after) == 0 || after[0] <= before[0] {
+		t.Fatalf("the thumb should have moved down: before %v, after %v", before, after)
+	}
+	m = wheelOnCard(m, tea.MouseButtonWheelUp)
+	if noticesSurfaceOf(m).Panel().Offset() != limit-uinotices.WheelRows {
+		t.Fatalf("wheel up moved to %d, want %d", noticesSurfaceOf(m).Panel().Offset(), limit-uinotices.WheelRows)
+	}
+	if !m.noticesOpen() {
+		t.Fatalf("the wheel must not leave the panel, screen = %v", m.screenID())
+	}
+}
+
+func TestHomeAndEndJumpTheMessageBody(t *testing.T) {
+	m := scrollModel(t, 30)
+	limit := noticesSurfaceOf(m).Panel().ScrollLimit(m.activeNotices(), m.noticesFrame())
+	if limit <= 0 {
+		t.Fatalf("the body should scroll, limit %d", limit)
+	}
+	for _, jump := range []string{"end", "G"} {
+		m.handleKey(key("home"))
+		m.handleKey(key(jump))
+		if noticesSurfaceOf(m).Panel().Offset() != limit {
+			t.Fatalf("%s moved to %d, want the bottom at %d", jump, noticesSurfaceOf(m).Panel().Offset(), limit)
+		}
+	}
+	for _, jump := range []string{"home", "g"} {
+		m.handleKey(key("end"))
+		m.handleKey(key(jump))
+		if noticesSurfaceOf(m).Panel().Offset() != 0 {
+			t.Fatalf("%s moved to %d, want the top", jump, noticesSurfaceOf(m).Panel().Offset())
+		}
+	}
+}
+
+func TestGrowingTheTerminalKeepsTheLastPageInView(t *testing.T) {
+	m := scrollModel(t, 30)
+	m.handleKey(key("end"))
+	bottom := noticesSurfaceOf(m).Panel().Offset()
+	m.layout.height = 20
+	frame := ansi.Strip(preparedView(m))
+	if !strings.Contains(frame, "change line 29") || !strings.Contains(frame, "╰") {
+		t.Fatalf("an offset past the new last page shows that last page inside the frame:\n%s", frame)
+	}
+	limit := noticesSurfaceOf(m).Panel().ScrollLimit(m.activeNotices(), m.noticesFrame())
+	if limit >= bottom {
+		t.Fatalf("the taller terminal should have fewer pages: limit %d, saved offset %d", limit, bottom)
+	}
+	m = wheelOnCard(m, tea.MouseButtonWheelUp)
+	if noticesSurfaceOf(m).Panel().Offset() != limit-uinotices.WheelRows {
+		t.Fatalf("the first scroll up starts from the page on screen: offset %d, want %d", noticesSurfaceOf(m).Panel().Offset(), limit-uinotices.WheelRows)
+	}
+}
+
+func TestHintNamesHomeAndEndWhenItFits(t *testing.T) {
+	m := modalModel(t)
+	m.release.Feed = []feed.Message{{ID: "feed-wide", Banner: "wide", Title: "Wide", Body: []string{strings.Repeat("wide words ", 12)}}}
+	m.openNotices("feed-wide")
+	m.layout.width = 180
+	if frame := ansi.Strip(preparedView(m)); !strings.Contains(frame, "pgup/pgdn/home/end scroll") {
+		t.Fatalf("a wide frame names home and end:\n%s", frame)
+	}
+	m.layout.width = 80
+	frame := ansi.Strip(preparedView(m))
+	for _, want := range []string{"x dismiss", "esc"} {
+		if !strings.Contains(frame, want) {
+			t.Fatalf("a narrow frame keeps %q:\n%s", want, frame)
+		}
+	}
+	if strings.Contains(frame, "home/end") {
+		t.Fatalf("a narrow frame keeps the short hint:\n%s", frame)
+	}
+}
+
+func noticesOverList(t *testing.T) *Model {
+	t.Helper()
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 34
+	// The real trigger: the messages key on the list.
+	m.Update(runeKey("M"))
+	if !m.noticesOpen() {
+		t.Fatal("M did not open the messages modal")
+	}
+	return m
+}
+
+func TestNoticesSurfaceOpensOverTheList(t *testing.T) {
+	m := noticesOverList(t)
+	if !m.onList() || len(m.surfaces) != 1 {
+		t.Fatalf("screen = %v, surfaces = %d", m.screenID(), len(m.surfaces))
+	}
+	m.openNotices("")
+	if len(m.surfaces) != 1 {
+		t.Fatalf("opening an open panel stacked another: %d surfaces", len(m.surfaces))
+	}
+}
+
+func TestNoticesSurfaceClosesOnEscAndBackdrop(t *testing.T) {
+	if !(&uinotices.Surface{}).Dismissible() {
+		t.Fatal("the messages modal must be dismissible")
+	}
+	for name, closeIt := range map[string]func(*Model) *Model{
+		"esc": func(m *Model) *Model { m.Update(namedKey(tea.KeyEsc)); return m },
+		"click off the card": func(m *Model) *Model {
+			return clickBackdrop(t, m)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			m := closeIt(noticesOverList(t))
+			if m.noticesOpen() || m.effects.Quitting {
+				t.Fatalf("modal open = %t, quitting = %t", m.noticesOpen(), m.effects.Quitting)
+			}
+		})
+	}
+}
+
+// A dismissal that fails to persist reopens the modal only while nothing
+// else is on screen; a card the user opened since owns the screen.
+func TestNoticesSurfaceFencesAStaleDismissalCompletion(t *testing.T) {
+	m := noticeModel(noticeStore(t), "v0.2.0")
+	m.layout.width, m.layout.height = 120, 34
+	m.openNotices(uinotices.Welcome)
+	job := &uieffects.Job{Request: uinotices.DismissRequest{ID: uinotices.Welcome, ForegroundGen: m.gens.foreground, Modal: true}}
+
+	m.Pop()
+	m.openHelp()
+	m.applyNoticeDismiss(job, errTest("persist failed"))
+	if m.noticesOpen() {
+		t.Fatal("a failed dismissal opened the modal over another card")
+	}
+
+	m.Pop()
+	m.applyNoticeDismiss(job, errTest("persist failed"))
+	if !m.noticesOpen() {
+		t.Fatal("a failed dismissal did not reopen the modal on a clear list")
+	}
+}
+
+type errTest string
+
+func (e errTest) Error() string { return string(e) }

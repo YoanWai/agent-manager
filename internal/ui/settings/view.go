@@ -287,3 +287,18 @@ func themeSwatch(t uitheme.Theme) string {
 	}
 	return b.String()
 }
+
+// CurrentStyles is the styles for the theme painting now.
+func CurrentStyles() Styles {
+	return Styles{
+		Value:      uitheme.ValueStyle(),
+		Subtle:     uitheme.SubtleStyle(),
+		Muted:      uitheme.MutedStyle(),
+		Key:        uitheme.KeyStyle(),
+		Annotation: uitheme.AnnotationStyle(),
+		Marker:     lipgloss.NewStyle().Foreground(uitheme.ColorAccent()),
+		Focused:    lipgloss.NewStyle().Foreground(uitheme.ColorAccent()).Bold(true),
+		Action:     lipgloss.NewStyle().Foreground(uitheme.ColorAccent2()).Bold(true),
+		ActionText: lipgloss.NewStyle().Foreground(uitheme.ColorAccent2()),
+	}
+}

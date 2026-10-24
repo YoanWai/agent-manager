@@ -83,7 +83,7 @@ func (m *Model) bindEffect(request uieffects.Request) func() (uieffects.Result, 
 	if work, ok := uieffects.Bind[uinotices.Services](request, m.noticesServices); ok {
 		return work
 	}
-	if work, ok := uieffects.Bind[uitheme.Services](request, m.themeServices); ok {
+	if work, ok := uieffects.Bind[uitheme.Services](request, themeHost{m}.Services); ok {
 		return work
 	}
 	if work, ok := uieffects.Bind(request, func() uilifecycle.Services { return capture().lifecycleServices() }); ok {
@@ -141,9 +141,9 @@ func (m *Model) applyEffect(job *uieffects.Job, result uieffects.Result, err err
 	case uireviewsource.ChangeResult:
 		return m.applyReviewChange(result, err)
 	case uipersist.SaveResult:
-		return m.settings.ApplySave(settingsSaveRoot{m}, job.Request.(uipersist.SaveRequest), result, err)
+		return m.settings.ApplySave(settingsSaveHost{m}, job.Request.(uipersist.SaveRequest), result, err)
 	case uipersist.KeysResult:
-		return uipersist.ApplyKeys(settingsSaveRoot{m}, job.Request.(uipersist.KeysRequest), result, err)
+		return uipersist.ApplyKeys(settingsSaveHost{m}, job.Request.(uipersist.KeysRequest), result, err)
 	case uipersist.PromptResult:
 		m.applyPromptsResult(job.Request.(uipersist.PromptRequest), result, err)
 		return nil
@@ -151,7 +151,7 @@ func (m *Model) applyEffect(job *uieffects.Job, result uieffects.Result, err err
 		m.applyNoticeDismiss(job, err)
 		return nil
 	case uitheme.PaneResult:
-		return m.applyPaneTheme(err)
+		return uitheme.ApplyPane(themeHost{m}, err)
 	case uilifecycle.Result:
 		return m.applyLifecycleEffect(job.Request.(uilifecycle.Request), result, err)
 	case uilifecycle.AfterTurnResult:

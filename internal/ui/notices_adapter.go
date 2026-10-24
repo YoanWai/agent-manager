@@ -1,17 +1,13 @@
 package ui
 
 import (
-	"net/url"
-
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
-	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
-const docsURL = "https://agent-manager.dev/docs/"
+const docsURL = uinotices.DocsURL
 
 // noticesPanel is the messages modal: uinotices.Panel owns the list it
 // builds, the cursor, the body scroll and the dismissed set, and
@@ -20,12 +16,7 @@ const docsURL = "https://agent-manager.dev/docs/"
 // opens.
 type noticesPanel struct {
 	uinotices.Panel
-	// configImportError is why the config.toml of an earlier release was
-	// refused, shown as a notice until it is dismissed.
-	configImportError string
-	// pendingNotice is a new notice that arrived while the list was not
-	// showing; flushPendingNotice opens it once the list is back.
-	pendingNotice string
+	uinotices.Log
 }
 
 // noticeSources are the root facts the notice list is built from, copied so
@@ -34,7 +25,7 @@ func (m *Model) noticeSources() uinotices.Sources {
 	sources := m.release.Sources()
 	sources.GlyphMode = m.prefs.glyphMode
 	sources.Store = m.services.store != nil
-	sources.ConfigImportError = m.notices.configImportError
+	sources.ConfigImportError = m.notices.ImportError
 	sources.SessionKeys = m.services.keys
 	sources.ListKeys = m.services.listKeys
 	return sources
@@ -55,51 +46,8 @@ func (m *Model) noticesFrame() uinotices.Frame {
 		Applying:   m.release.Applying,
 		Latest:     m.release.Latest,
 		Status:     m.statusRow(),
-		Theme:      noticesTheme(),
+		Theme:      uinotices.PanelTheme(),
 	}
-}
-
-func noticesTheme() uinotices.Theme {
-	card := noticeCardHex()
-	return uinotices.Theme{
-		Accent:      uitheme.ColorAccent(),
-		Accent2:     uitheme.ColorAccent2(),
-		Bright:      uitheme.ColorBright(),
-		SubtleColor: uitheme.ColorSubtle(),
-		Subtle:      uitheme.SubtleStyle(),
-		Muted:       uitheme.MutedStyle(),
-		Value:       uitheme.ValueStyle(),
-		Key:         uitheme.KeyStyle(),
-		Border:      noticeBorderStyle(),
-		Title:       noticeTitleStyle(),
-		Fill:        func(row string, width int) string { return uitheme.Paint(row, width, card) },
-	}
-}
-
-// noticeCardHex warms the messages modal's fill toward yellow.
-func noticeCardHex() string { return uitheme.Mix(uitheme.PanelHex(), "#e2c044", 0.16) }
-
-// noticeBorderStyle is the card's rounded frame, dimmed toward the same
-// yellow so the outline and the fill read as one object.
-func noticeBorderStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(lipgloss.Color(uitheme.Mix(uitheme.Current().Subtle, "#e2c044", 0.45)))
-}
-
-func noticeTitleStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(lipgloss.Color(uitheme.Mix(uitheme.Current().Bright, "#e2c044", 0.5))).Bold(true)
-}
-
-func bugReportURL(version string) string {
-	q := url.Values{}
-	q.Set("template", "bug_report.yml")
-	if version != "" {
-		q.Set("version", version)
-	}
-	return uinotices.RepoURL + "/issues/new?" + q.Encode()
-}
-
-func featureRequestURL() string {
-	return uinotices.RepoURL + "/issues/new?template=feature_request.yml"
 }
 
 // startupNotice is what greets this launch; uirelease.State.Greet decides
@@ -154,29 +102,15 @@ func (m *Model) keepNoticeSelection(apply func()) {
 }
 
 func (m *Model) applyNotices(apply func()) {
-	before := map[string]bool{}
-	for _, n := range m.activeNotices() {
-		before[n.ID] = true
-	}
+	before := uinotices.IDs(m.activeNotices())
 	m.keepNoticeSelection(apply)
-	var added string
-	for _, n := range m.activeNotices() {
-		if !before[n.ID] {
-			added = n.ID
-			break
-		}
-	}
-	if added == "" {
+	_, open := surfaceOf[*uinotices.Surface](m)
+	staged := m.notices.Staged(uinotices.Added(before, m.activeNotices()), open, m.listReadyForNotice())
+	if staged.Open != "" {
+		m.openNotices(staged.Open)
 		return
 	}
-	if _, open := surfaceOf[*uinotices.Surface](m); open {
-		return
-	}
-	if m.listReadyForNotice() {
-		m.openNotices(added)
-		return
-	}
-	m.notices.pendingNotice = added
+	m.notices.Held = staged.Hold
 }
 
 func (m *Model) listReadyForNotice() bool {
@@ -184,16 +118,12 @@ func (m *Model) listReadyForNotice() bool {
 }
 
 func (m *Model) flushPendingNotice() {
-	if m.notices.pendingNotice == "" || !m.listReadyForNotice() {
+	if m.notices.Held == "" || !m.listReadyForNotice() {
 		return
 	}
-	id := m.notices.pendingNotice
-	m.notices.pendingNotice = ""
-	for _, n := range m.activeNotices() {
-		if n.ID == id {
-			m.openNotices(id)
-			return
-		}
+	id := m.notices.Take()
+	if uinotices.Holds(m.activeNotices(), id) {
+		m.openNotices(id)
 	}
 }
 
@@ -225,22 +155,16 @@ func (m *Model) dismissNotice(id string) {
 // noticeDismissQueued reports whether the lane already carries a dismissal
 // of id, running or waiting.
 func (m *Model) noticeDismissQueued(id string) bool {
-	queued := func(job *uieffects.Job) bool {
+	var requests []uinotices.DismissRequest
+	for _, job := range append([]*uieffects.Job{m.effects.Main.Active}, m.effects.Main.Pending...) {
 		if job == nil {
-			return false
+			continue
 		}
-		request, ok := job.Request.(uinotices.DismissRequest)
-		return ok && request.ID == id
-	}
-	if queued(m.effects.Main.Active) {
-		return true
-	}
-	for _, job := range m.effects.Main.Pending {
-		if queued(job) {
-			return true
+		if request, ok := job.Request.(uinotices.DismissRequest); ok {
+			requests = append(requests, request)
 		}
 	}
-	return false
+	return uinotices.Queued(requests, id)
 }
 
 // applyNoticeDismiss restores a notice whose optimistic dismissal did not
@@ -249,11 +173,11 @@ func (m *Model) applyNoticeDismiss(job *uieffects.Job, err error) {
 	if err == nil {
 		return
 	}
-	request := job.Request.(uinotices.DismissRequest)
-	m.notices.Restore(request.ID)
-	m.reportErr(err.Error())
-	if request.Modal && !m.effects.Quitting && request.ForegroundGen == m.gens.foreground && (m.noticesOpen() || m.listClear()) {
-		m.openNotices(request.ID)
+	failed := uinotices.FailedDismissal(job.Request.(uinotices.DismissRequest), err, m.effects.Quitting, m.gens.foreground, m.noticesOpen(), m.listClear())
+	m.notices.Restore(failed.Restore)
+	m.reportErr(failed.Err.Error())
+	if failed.Reopen != "" {
+		m.openNotices(failed.Reopen)
 	}
 }
 
@@ -293,3 +217,54 @@ func (m *Model) statusRow() string {
 	}
 	return m.statusMessage(m.glyphs().ErroredGlyph, m.glyphs().FinishedGlyph, m.glyphs().WarningGlyph)
 }
+
+// noticesRoot is the root as the messages modal reads it.
+type noticesRoot struct{ *Model }
+
+func (r noticesRoot) ActiveNotices() []uinotices.Notice { return r.activeNotices() }
+
+func (r noticesRoot) NoticesFrame() uinotices.Frame { return r.noticesFrame() }
+
+func (r noticesRoot) RefreshNotices() tea.Cmd { return r.refreshNotices() }
+
+func (r noticesRoot) StartUpdate() tea.Cmd { return r.startUpdate() }
+
+func (r noticesRoot) DismissNotice(id string) { r.dismissNotice(id) }
+
+func (r noticesRoot) PaintNoticesCard(card []string, foot []presentation.PaintedKey) string {
+	return r.paintNoticesCard(card, foot)
+}
+
+func (r noticesRoot) TakeForeground() { r.takeForeground() }
+
+func (r noticesRoot) OpenLink(url string) tea.Cmd { return openLink(url) }
+
+// releaseRoot is the root as a routed release, feed or self-update result
+// reaches it.
+type releaseRoot struct{ *Model }
+
+func (r releaseRoot) ApplyNotices(apply func()) { r.applyNotices(apply) }
+
+func (r releaseRoot) KeepNoticeSelection(apply func()) { r.keepNoticeSelection(apply) }
+
+func (r releaseRoot) ReportDone(text string) { r.reportDone(text) }
+
+func (r releaseRoot) Quit() tea.Cmd {
+	_, cmd := r.requestQuit()
+	return cmd
+}
+
+func (m *Model) routeNoticesMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	if msg, ok := msg.(browserOpenMsg); ok {
+		m.handleBrowserOpen(msg)
+		return routed(m, nil)
+	}
+	if cmd, ok := m.release.Route(releaseRoot{m}, msg); ok {
+		return routed(m, cmd)
+	}
+	return nil, nil, false
+}
+
+// RestartPath is the binary main execs into after the program exits;
+// empty when no self-update happened this run.
+func (m *Model) RestartPath() string { return m.release.RestartPath }
