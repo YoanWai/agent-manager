@@ -229,15 +229,7 @@ func (s effectServices) keySaver() uipersist.KeySaver {
 // reconcileSettingsPrefs restores the live-session prefs to the committed
 // read-back; keys whose read failed keep their current value.
 func (m *Model) reconcileSettingsPrefs(restored []uisettings.Readback) string {
-	failed := 0
-	for _, value := range restored {
-		if value.Err != nil {
-			failed++
-			continue
-		}
-		m.mirrorPreference(value.Key, value.Value)
-	}
-	return uipersist.ReadFailureNote(failed)
+	return uipersist.Reconcile(restored, m.mirrorPreference)
 }
 
 // applySettingsPrefs mirrors the just chosen preferences into the live
