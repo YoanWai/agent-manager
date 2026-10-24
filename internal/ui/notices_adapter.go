@@ -9,10 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-const (
-	repoURL = uinotices.RepoURL
-	docsURL = "https://agent-manager.dev/docs/"
-)
+const docsURL = "https://agent-manager.dev/docs/"
 
 // noticesPanel is the messages modal: uinotices.Panel owns the list it
 // builds, the cursor, the body scroll and the dismissed set, and
@@ -96,11 +93,11 @@ func bugReportURL(version string) string {
 	if version != "" {
 		q.Set("version", version)
 	}
-	return repoURL + "/issues/new?" + q.Encode()
+	return uinotices.RepoURL + "/issues/new?" + q.Encode()
 }
 
 func featureRequestURL() string {
-	return repoURL + "/issues/new?template=feature_request.yml"
+	return uinotices.RepoURL + "/issues/new?template=feature_request.yml"
 }
 
 // startupNotice is what greets this launch; uirelease.State.Greet decides

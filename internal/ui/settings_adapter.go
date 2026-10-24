@@ -10,6 +10,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/systheme"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
+	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
 	tea "github.com/charmbracelet/bubbletea"
@@ -348,7 +349,7 @@ func requestCLISupportURL() string {
 		"**What you have in mind**\n\n" +
 		"CLI name:\nHow to launch it:\nResume / session flags (if any):\n\n" +
 		"**Area**\nConfig and tool support\n"
-	return repoURL + "/issues/new?body=" + url.QueryEscape(body)
+	return uinotices.RepoURL + "/issues/new?body=" + url.QueryEscape(body)
 }
 
 func (m *Model) routeSettingsMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
