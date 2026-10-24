@@ -2286,7 +2286,7 @@ func TestProbeOffersTheShellsEditors(t *testing.T) {
 	captureEditor(t, "code")
 	t.Setenv("VISUAL", "code")
 	t.Setenv("EDITOR", " nvim ")
-	probed := detectedEditors().probe()
+	probed := editorProbe(buildModel(t).captureEditorResolution())
 	if got := strings.Join(probed.Found, ","); got != "code,nvim" {
 		t.Fatalf("found = %q, want code once and nvim", got)
 	}
@@ -2314,7 +2314,7 @@ func TestSettingsEditorRowStoresThePickedEditor(t *testing.T) {
 	if stored, err := m.services.store.Editor(); err != nil || stored != "zed" {
 		t.Fatalf("stored editor = %q, %v", stored, err)
 	}
-	if got := reloadModel(t, m).captureEditorResolution().editorLine(); got != "zed" {
+	if got := reloadModel(t, m).captureEditorResolution().Line(); got != "zed" {
 		t.Fatalf("a restarted manager opens %q, want zed", got)
 	}
 }
@@ -2357,7 +2357,7 @@ func TestSettingsEditorCustomLineIsTyped(t *testing.T) {
 	if stored, err := m.services.store.Editor(); err != nil || stored != "code -n" {
 		t.Fatalf("stored editor = %q, %v", stored, err)
 	}
-	if got := m.captureEditorResolution().editorLine(); got != "code -n" {
+	if got := m.captureEditorResolution().Line(); got != "code -n" {
 		t.Fatalf("resolved editor = %q", got)
 	}
 }
@@ -2380,7 +2380,7 @@ func TestSettingsEditorRowReturnsToAuto(t *testing.T) {
 	if stored, err := m.services.store.Editor(); err != nil || stored != "" {
 		t.Fatalf("stored editor = %q, %v", stored, err)
 	}
-	if got := m.captureEditorResolution().editorLine(); got != "zed" {
+	if got := m.captureEditorResolution().Line(); got != "zed" {
 		t.Fatalf("resolved editor = %q, want the editor on PATH", got)
 	}
 }

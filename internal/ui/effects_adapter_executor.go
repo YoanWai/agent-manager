@@ -20,7 +20,7 @@ import (
 	uigeometrypanes "github.com/YoanWai/agent-manager/internal/ui/geometry/panes"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
-	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
+	uiquicksend "github.com/YoanWai/agent-manager/internal/ui/quick/send"
 	uirailpersist "github.com/YoanWai/agent-manager/internal/ui/rail/persist"
 	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
 	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
@@ -92,7 +92,7 @@ func (m *Model) bindEffect(request uieffects.Request) func() (uieffects.Result, 
 	if work, ok := uieffects.Bind(request, func() uilaunch.Services { return capture().launchServices() }); ok {
 		return work
 	}
-	if work, ok := uieffects.Bind(request, func() uiquick.Services { return capture().quickServices() }); ok {
+	if work, ok := uieffects.Bind(request, func() uiquicksend.Services { return capture().quickServices() }); ok {
 		return work
 	}
 	return func() (uieffects.Result, error) {
@@ -162,8 +162,8 @@ func (m *Model) applyEffect(job *uieffects.Job, result uieffects.Result, err err
 		return m.applySpawn(job.Request.(uilaunch.Request), result, err)
 	case uilaunch.GroupResult:
 		return m.applyGroupEffect(job.Request.(uilaunch.GroupRequest), result, err)
-	case uiquick.SendResult:
-		return uiquick.Apply(quickSendRoot{m}, job.Request.(uiquick.SendRequest), result, err)
+	case uiquicksend.SendResult:
+		return uiquicksend.Apply(quickSendRoot{m}, job.Request.(uiquicksend.SendRequest), result, err)
 	case uilaunch.ChoiceSaveResult:
 		// A kept choice carries nothing back: the cache already holds it.
 		if err != nil {

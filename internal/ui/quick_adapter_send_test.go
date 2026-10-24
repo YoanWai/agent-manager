@@ -9,7 +9,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
-	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
+	uiquicksend "github.com/YoanWai/agent-manager/internal/ui/quick/send"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -129,7 +129,7 @@ func TestQuickSendStaleRefusalDefersImageCleanup(t *testing.T) {
 	m := buildModel(t)
 	path := tempImage(t, "stale-refusal.png")
 	q := pushQuick(m)
-	request := uiquick.SendRequest{
+	request := uiquicksend.SendRequest{
 		ComposerGen: q.Gen + 1,
 		Images:      []composer.Attachment{{ID: 1, Path: path}},
 	}

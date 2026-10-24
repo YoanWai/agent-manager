@@ -9,6 +9,7 @@ import (
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uipreview "github.com/YoanWai/agent-manager/internal/ui/preview"
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
+	uiquicksend "github.com/YoanWai/agent-manager/internal/ui/quick/send"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
@@ -129,7 +130,7 @@ func (m *Model) runQuickRequest(request uiquick.Request) tea.Cmd {
 		}
 		entry, _ := m.selectedRow()
 		q := m.quick()
-		if !m.dispatchQuickSend(uiquick.SendRequest{
+		if !m.dispatchQuickSend(uiquicksend.SendRequest{
 			Session:        entry.sess,
 			ComposerGen:    q.Gen,
 			Draft:          q.Input.Value(),

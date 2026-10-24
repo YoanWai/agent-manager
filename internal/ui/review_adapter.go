@@ -110,7 +110,7 @@ func reviewFileCheckCmd(req uireview.FileCheckRequest, editor editorResolution, 
 		result := uireview.FileCheckResult{Request: req, Err: err}
 		var launch uisession.Launch
 		if err == nil {
-			launch = editor.prepare(req.Path)
+			launch = editor.Prepare(req.Path)
 		}
 		return editorFileCheckedMsg{result: result, editor: launch, foregroundGen: foregroundGen}
 	}

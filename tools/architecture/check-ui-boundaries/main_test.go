@@ -50,7 +50,7 @@ func TestRemoteValuesRejectSSH(t *testing.T) {
 }
 
 func TestFeaturePackageGraphs(t *testing.T) {
-	for _, feature := range []boundary{reviewBoundary, focusBoundary, railBoundary, settingsBoundary, geometryBoundary, terminalBoundary, effectsBoundary, frameBoundary, launchhintBoundary, previewBoundary, sessionBoundary, startupBoundary, statusbarBoundary, workspaceBoundary, spawnBoundary, quickBoundary, pathBoundary, composerBoundary, dialogsBoundary, noticesBoundary, releaseBoundary, connectionsBoundary, linkBoundary, settingsPersistBoundary, installBoundary, railPersistBoundary, dialogsApplyBoundary, focusRuntimeBoundary, captureBoundary, panesBoundary, reviewSourceBoundary, lifecycleBoundary, spawnLaunchBoundary, surfaceBoundary} {
+	for _, feature := range []boundary{reviewBoundary, focusBoundary, railBoundary, settingsBoundary, geometryBoundary, terminalBoundary, effectsBoundary, frameBoundary, launchhintBoundary, previewBoundary, sessionBoundary, startupBoundary, statusbarBoundary, workspaceBoundary, spawnBoundary, quickBoundary, pathBoundary, composerBoundary, dialogsBoundary, noticesBoundary, releaseBoundary, connectionsBoundary, linkBoundary, settingsPersistBoundary, installBoundary, railPersistBoundary, quickSendBoundary, dialogsApplyBoundary, focusRuntimeBoundary, captureBoundary, panesBoundary, reviewSourceBoundary, lifecycleBoundary, spawnLaunchBoundary, surfaceBoundary} {
 		t.Run(feature.name, func(t *testing.T) {
 			if err := checkBoundary(feature); err != nil {
 				t.Fatal(err)

@@ -43,7 +43,7 @@ var packaged = map[string]string{
 	"quick":        "the quick bar adapter and its send effect",
 	"rail":         "the Rail adapter",
 	"review":       "the Review adapter",
-	"session":      "the session lifecycle adapter: after-turn, archive, attach, delete, editor, kill, launch, restart and revive, and their effects",
+	"session":      "the session lifecycle adapter and host: the keys that archive, restore, kill, delete, restart or revive a row, the attach and after-turn effects, and the editor they open",
 	"settings":     "the Settings adapter, its store lane and the stored preference readers",
 	"spawn":        "the New Session form adapter, its group picker, request, defaults, group base and fetch, catalog reads, spawn effect, preflight and worktree probe",
 	"startup":      "the startup adapter: the greeting, the banner tick and the pane shell probe",

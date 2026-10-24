@@ -50,7 +50,7 @@ func (m *Model) openSettingsWithReader(reader uipersist.Reader) tea.Cmd {
 	state := s.FromCache(m.services.cfg, uitheme.Current().Name)
 	state.MarkBaseline()
 	m.push(newSettingsSurface(m, state))
-	probe := settingsEditorProbe(m)
+	probe := m.probeEditorsCmd()
 	if s.Pending > 0 {
 		return probe
 	}
@@ -242,6 +242,21 @@ func (m *Model) applySettingsPrefs(d *uisettings.State) {
 	for _, key := range uisettings.FlagKeys() {
 		m.mirrorFlag(key, d.Flag(key))
 	}
+}
+
+func (m *Model) probeEditorsCmd() tea.Cmd {
+	resolution, generation := m.captureEditorResolution(), m.settings.Gen
+	return func() tea.Msg {
+		msg := editorProbe(resolution)
+		msg.Generation = generation
+		return msg
+	}
+}
+
+// probe walks PATH, which is I/O that Update must not do.
+func editorProbe(r editorResolution) uisettings.EditorsProbe {
+	probe := r.Probe()
+	return uisettings.EditorsProbe{Found: probe.Found, Auto: probe.Auto}
 }
 
 // applyEditorsProbe keeps the answer for the rows later loads rebuild, and
@@ -599,22 +614,4 @@ func (h settingsSaveHost) SaveKeys(list, session keybind.Table, listChanged, ses
 		return func() tea.Msg { return m.refreshExistingSessionUX() }
 	}
 	return nil
-}
-
-// settingsEditorProbe is the editor row's off-path probe, captured from the
-// root's environment when the dialog opens.
-func settingsEditorProbe(m *Model) tea.Cmd {
-	resolution, generation := detectedEditors(), m.settings.Gen
-	probe := uisettings.EditorProbe{
-		GUI:    resolution.gui,
-		Visual: resolution.visual,
-		Editor: resolution.editor,
-		Lookup: resolution.lookup,
-		Line:   resolution.editorLine,
-	}
-	return func() tea.Msg {
-		msg := probe.Resolve()
-		msg.Generation = generation
-		return msg
-	}
 }

@@ -9,7 +9,7 @@ import (
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
-	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
+	uiquicksend "github.com/YoanWai/agent-manager/internal/ui/quick/send"
 	uirailpersist "github.com/YoanWai/agent-manager/internal/ui/rail/persist"
 	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
 	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
@@ -144,7 +144,7 @@ func (m *Model) handleEffectCompleted(msg uieffects.Completed) (tea.Model, tea.C
 		return m, m.nextEffectCmd()
 	}
 	switch job.Request.(type) {
-	case focusruntime.InputRequest, uiquick.SendRequest, uiinstall.StartRequest, uilifecycle.Request, uilifecycle.AfterTurnRequest, uirailpersist.Request, uiapply.ForkEffect, uilaunch.Request, uilaunch.GroupRequest, uiapply.RenameEffect, focusruntime.ProbeRequest, focusruntime.AckRequest, uilifecycle.AttachRequest:
+	case focusruntime.InputRequest, uiquicksend.SendRequest, uiinstall.StartRequest, uilifecycle.Request, uilifecycle.AfterTurnRequest, uirailpersist.Request, uiapply.ForkEffect, uilaunch.Request, uilaunch.GroupRequest, uiapply.RenameEffect, focusruntime.ProbeRequest, focusruntime.AckRequest, uilifecycle.AttachRequest:
 		if msg.FinishedAt.After(m.effects.latestObservation) {
 			m.effects.latestObservation = msg.FinishedAt
 		}
