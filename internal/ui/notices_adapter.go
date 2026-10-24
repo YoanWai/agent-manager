@@ -155,22 +155,16 @@ func (m *Model) dismissNotice(id string) {
 // noticeDismissQueued reports whether the lane already carries a dismissal
 // of id, running or waiting.
 func (m *Model) noticeDismissQueued(id string) bool {
-	queued := func(job *uieffects.Job) bool {
+	var requests []uinotices.DismissRequest
+	for _, job := range append([]*uieffects.Job{m.effects.Main.Active}, m.effects.Main.Pending...) {
 		if job == nil {
-			return false
+			continue
 		}
-		request, ok := job.Request.(uinotices.DismissRequest)
-		return ok && request.ID == id
-	}
-	if queued(m.effects.Main.Active) {
-		return true
-	}
-	for _, job := range m.effects.Main.Pending {
-		if queued(job) {
-			return true
+		if request, ok := job.Request.(uinotices.DismissRequest); ok {
+			requests = append(requests, request)
 		}
 	}
-	return false
+	return uinotices.Queued(requests, id)
 }
 
 // applyNoticeDismiss restores a notice whose optimistic dismissal did not
@@ -179,11 +173,11 @@ func (m *Model) applyNoticeDismiss(job *uieffects.Job, err error) {
 	if err == nil {
 		return
 	}
-	request := job.Request.(uinotices.DismissRequest)
-	m.notices.Restore(request.ID)
-	m.reportErr(err.Error())
-	if request.Modal && !m.effects.Quitting && request.ForegroundGen == m.gens.foreground && (m.noticesOpen() || m.listClear()) {
-		m.openNotices(request.ID)
+	failed := uinotices.FailedDismissal(job.Request.(uinotices.DismissRequest), err, m.effects.Quitting, m.gens.foreground, m.noticesOpen(), m.listClear())
+	m.notices.Restore(failed.Restore)
+	m.reportErr(failed.Err.Error())
+	if failed.Reopen != "" {
+		m.openNotices(failed.Reopen)
 	}
 }
 
