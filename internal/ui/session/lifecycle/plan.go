@@ -2,6 +2,7 @@ package lifecycle
 
 import (
 	"strings"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -237,4 +238,88 @@ func Acknowledge(sess store.Session, ok bool) (string, bool) {
 		return "", false
 	}
 	return sess.ID, true
+}
+
+// ArchiveRows flags the rows an archive wrote, in the order the list holds
+// them. Each row it changed travels back so the caller can record it.
+func ArchiveRows(sessions []store.Session, edit *ArchiveEdit) []store.Session {
+	var rows []store.Session
+	for i := range sessions {
+		if sessions[i].Archived || !edit.Rows[sessions[i].ID] {
+			continue
+		}
+		sessions[i].Archived = true
+		rows = append(rows, sessions[i])
+	}
+	return rows
+}
+
+// RestoreRows clears the archive flag on the rows a restore wrote, either by
+// id or by the group path the run covered whole.
+func RestoreRows(sessions []store.Session, edit *ArchiveEdit) []store.Session {
+	var rows []store.Session
+	for i := range sessions {
+		if !sessions[i].Archived {
+			continue
+		}
+		if !edit.Rows[sessions[i].ID] && (edit.Group == "" || !inSubtree(sessions[i].Group, edit.Group)) {
+			continue
+		}
+		sessions[i].Archived = false
+		rows = append(rows, sessions[i])
+	}
+	return rows
+}
+
+// inSubtree reports whether a group sits at or below path.
+func inSubtree(group, path string) bool {
+	return group == path || strings.HasPrefix(group, path+"/")
+}
+
+// Ancestors is a group path and every parent above it, which a single restore
+// clears: a restored session's home has to be live again to hold it.
+func Ancestors(group string) []string {
+	var paths []string
+	for path := group; path != ""; path = parentGroup(path) {
+		paths = append(paths, path)
+	}
+	return paths
+}
+
+func parentGroup(group string) string {
+	if index := strings.LastIndex(group, "/"); index >= 0 {
+		return group[:index]
+	}
+	return ""
+}
+
+// BindRestart is a restart's write to the loaded rows: the new conversation id
+// replaces the one it retired, and the row starts over.
+func BindRestart(sessions []store.Session, id, agentSessionID string, launchedAt time.Time) {
+	for i := range sessions {
+		if sessions[i].ID != id {
+			continue
+		}
+		if sessions[i].AgentSessionID != "" {
+			sessions[i].RetiredAgentSessionID = sessions[i].AgentSessionID
+		}
+		sessions[i].AgentSessionID = agentSessionID
+		sessions[i].AgentLaunchedAt = launchedAt
+		sessions[i].Status = status.Starting
+		sessions[i].Acked = false
+	}
+}
+
+// BindRevive is a revive's write to the loaded rows: the launch time the store
+// recorded, and the row starting over. It reports the row is the selected one,
+// whose stale pane would otherwise count as painted and hide the loader.
+func BindRevive(sessions []store.Session, id string, launchedAt time.Time) {
+	for i := range sessions {
+		if sessions[i].ID != id {
+			continue
+		}
+		sessions[i].AgentLaunchedAt = launchedAt
+		sessions[i].Status = status.Starting
+		sessions[i].Acked = false
+	}
 }

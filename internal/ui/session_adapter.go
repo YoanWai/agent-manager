@@ -3,12 +3,10 @@ package ui
 import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
-	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
-	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
 	sessiondialogs "github.com/YoanWai/agent-manager/internal/ui/session/dialogs"
@@ -171,6 +169,7 @@ func (m *Model) applyLifecycleEffect(request uilifecycle.Request, result uilifec
 }
 
 // setSessionStatus lands one row's status from a finished run.
+// setSessionStatus lands one row's status from a finished run.
 func (m *Model) setSessionStatus(id, status string) {
 	for i := range m.workspace.sessions {
 		if m.workspace.sessions[i].ID == id {
@@ -179,9 +178,6 @@ func (m *Model) setSessionStatus(id, status string) {
 	}
 }
 
-// reportRefusal reports the failure that stopped a run: a batch names it only
-// when the run said nothing else, and a single relaunch routes it to the fix
-// card instead of the error bar.
 func (m *Model) reportRefusal(refusal *uilifecycle.Refusal) {
 	if refusal == nil {
 		return
@@ -219,12 +215,7 @@ func (m *Model) clearAfterTurn(id string) {
 // view.
 func (m *Model) markArchivedLocally(edit *uilifecycle.ArchiveEdit) {
 	changed := false
-	for i := range m.workspace.sessions {
-		sess := &m.workspace.sessions[i]
-		if sess.Archived || !edit.Rows[sess.ID] {
-			continue
-		}
-		sess.Archived = true
+	for _, sess := range uilifecycle.ArchiveRows(m.workspace.sessions, edit) {
 		m.ledger.lifecycle.MarkSession(sess.ID, uilifecycle.GoneMark{Archived: true})
 		changed = true
 	}
@@ -245,19 +236,10 @@ func (m *Model) markArchivedLocally(edit *uilifecycle.ArchiveEdit) {
 
 // markRestoredLocally mirrors a completed restore in the loaded rows and group
 // flags, so what came back changes views on this frame rather than waiting for
-// the next poll. A group restore unarchives the subtree; a single restore also
-// clears its group's ancestors, which is what the store write just did to keep
-// a restored session under a live home.
+// the next poll.
 func (m *Model) markRestoredLocally(edit *uilifecycle.ArchiveEdit) {
-	for i := range m.workspace.sessions {
-		sess := &m.workspace.sessions[i]
-		if !sess.Archived {
-			continue
-		}
-		if edit.Rows[sess.ID] || (edit.Group != "" && uirail.InGroupSubtree(sess.Group, edit.Group)) {
-			sess.Archived = false
-			m.ledger.lifecycle.MarkSession(sess.ID, uilifecycle.GoneMark{Archived: false})
-		}
+	for _, sess := range uilifecycle.RestoreRows(m.workspace.sessions, edit) {
+		m.ledger.lifecycle.MarkSession(sess.ID, uilifecycle.GoneMark{Archived: false})
 	}
 	if edit.Group != "" {
 		for _, path := range append([]string{edit.Group}, uilifecycle.Subgroups(m.workspace.groups, edit.Group)...) {
@@ -270,7 +252,7 @@ func (m *Model) markRestoredLocally(edit *uilifecycle.ArchiveEdit) {
 				if sess.ID != id {
 					continue
 				}
-				for path := sess.Group; path != ""; path = uirail.ParentGroup(path) {
+				for _, path := range uilifecycle.Ancestors(sess.Group) {
 					delete(m.workspace.archivedGroups, path)
 					m.ledger.lifecycle.MarkGroup(path, uilifecycle.GoneMark{Archived: false})
 				}
@@ -308,31 +290,13 @@ func (m *Model) pruneGroupsLocally(removed []string) {
 // bindRestartLocally mirrors the store write in the loaded rows, so the list
 // redraws on the new conversation before the next poll re-reads it.
 func (m *Model) bindRestartLocally(id, agentSessionID string, launchedAt time.Time) {
-	for i := range m.workspace.sessions {
-		if m.workspace.sessions[i].ID != id {
-			continue
-		}
-		if m.workspace.sessions[i].AgentSessionID != "" {
-			m.workspace.sessions[i].RetiredAgentSessionID = m.workspace.sessions[i].AgentSessionID
-		}
-		m.workspace.sessions[i].AgentSessionID = agentSessionID
-		m.workspace.sessions[i].AgentLaunchedAt = launchedAt
-		m.workspace.sessions[i].Status = status.Starting
-		m.workspace.sessions[i].Acked = false
-	}
+	uilifecycle.BindRestart(m.workspace.sessions, id, agentSessionID, launchedAt)
 }
 
 // bindReviveLocally mirrors the store write in the loaded rows, so the startup
 // loader can paint before the next poll re-reads them.
 func (m *Model) bindReviveLocally(id string, launchedAt time.Time) {
-	for i := range m.workspace.sessions {
-		if m.workspace.sessions[i].ID != id {
-			continue
-		}
-		m.workspace.sessions[i].AgentLaunchedAt = launchedAt
-		m.workspace.sessions[i].Status = status.Starting
-		m.workspace.sessions[i].Acked = false
-	}
+	uilifecycle.BindRevive(m.workspace.sessions, id, launchedAt)
 	if sel, ok := m.selected(); ok && sel.ID == id {
 		// A killed or archived row still holds its last pane; that would count
 		// as painted and hide the loader.
@@ -340,8 +304,6 @@ func (m *Model) bindReviveLocally(id string, launchedAt time.Time) {
 	}
 }
 
-// rewatchSurvivor restarts the preview watcher a lifecycle worker stopped when
-// the session it watched is still selected and still running.
 func (m *Model) rewatchSurvivor(watched string, survivor bool) {
 	if !survivor {
 		return
@@ -421,19 +383,6 @@ func packageTarget(target confirmTarget) uilifecycle.Target {
 		Batch:        target.batch,
 		ArchivedOnly: target.archivedOnly,
 		Selection:    packageSelection(target.selection),
-	}
-}
-
-// confirmTargetFor is a lifecycle the package decided on its own, an after-turn
-// archive or kill, in the shape the confirmation's apply reads.
-func confirmTargetFor(target uilifecycle.Target) confirmTarget {
-	return confirmTarget{
-		isGroup:      target.Path != "",
-		path:         target.Path,
-		sessions:     target.Sessions,
-		action:       confirmAction(target.Action),
-		batch:        target.Batch,
-		archivedOnly: target.ArchivedOnly,
 	}
 }
 
