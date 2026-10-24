@@ -8,6 +8,7 @@ import (
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
+	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
 )
 
 func TestSymbolsExplicitChoiceAndPendingReopen(t *testing.T) {
@@ -78,7 +79,7 @@ func TestSymbolsMouseSaveUsesPaintedRows(t *testing.T) {
 func TestSymbolsRejectInvalidAndStaleReads(t *testing.T) {
 	m := buildModel(t)
 	m.applyCmd(t, m.openSettings())
-	stale := settingsLoadedMsg{Request: settingsLoadRequest{Target: settingsLoadDialog, Generation: m.settings.Gen}, Result: settingsLoadResult{Values: []uisettings.Readback{{Key: uisettings.GlyphModeSetting, Value: "advanced"}}}}
+	stale := uipersist.LoadedMsg{Request: uipersist.LoadRequest{Target: uipersist.DialogTarget, Generation: m.settings.Gen}, Result: uipersist.LoadResult{Values: []uisettings.Readback{{Key: uisettings.GlyphModeSetting, Value: "advanced"}}}}
 	m.settingsCard().State().Field = uisettings.FieldGlyphs
 	m.handleSettingsKey(key("right"))
 	m.handleSettingsLoaded(stale)

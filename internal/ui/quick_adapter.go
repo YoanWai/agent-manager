@@ -10,6 +10,7 @@ import (
 	uipreview "github.com/YoanWai/agent-manager/internal/ui/preview"
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
+	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
@@ -39,10 +40,10 @@ func (h quickBarHost) Target() (uiquick.Target, bool) {
 }
 
 func (m *Model) openQuickMode() tea.Cmd {
-	return m.openQuickModeWithReader(storeSettingWriter{Store: m.services.store})
+	return m.openQuickModeWithReader(uipersist.StoreWriter{Store: m.services.store})
 }
 
-func (m *Model) openQuickModeWithReader(reader settingsValueReader) tea.Cmd {
+func (m *Model) openQuickModeWithReader(reader uipersist.Reader) tea.Cmd {
 	names, index := m.cachedSpawnToolSelection()
 	if len(names) == 0 {
 		m.reportErr("no CLIs enabled: open settings (s), then CLIs, to turn some on")
@@ -76,7 +77,7 @@ func (m *Model) openQuickModeWithReader(reader settingsValueReader) tea.Cmd {
 	if m.settings.Pending > 0 {
 		return tea.Batch(m.quickWorktreeProbeCmd(false), catalog)
 	}
-	return tea.Batch(settingsLoadCmd(settingsLoadRequest{Target: settingsLoadQuick, Generation: uint64(q.Gen), Extra: m.choiceSettingKeys()}, reader), catalog)
+	return tea.Batch(uipersist.LoadCmd(uipersist.LoadRequest{Target: uipersist.QuickTarget, Generation: uint64(q.Gen), Extra: m.choiceSettingKeys()}, reader), catalog)
 }
 
 // applyCachedQuickDefaults takes the loaded defaults. A tool the load moved
@@ -146,7 +147,7 @@ func (m *Model) runQuickRequest(request uiquick.Request) tea.Cmd {
 		}
 		return m.dispatchQuickSpawn(m.quickSpawnRequest(*request.Spawn), systemDirectoryPreflight{git: m.services.gitDrv})
 	case request.LoadSaved:
-		return savedPromptsLoadCmd(m.services.store, savedForQuick, uint64(m.quick().Gen), 0)
+		return uipersist.SavedCmd(m.services.store, uipersist.SavedForQuick, uint64(m.quick().Gen), 0)
 	case request.InsertSaved != nil:
 		m.quick().InsertSaved(*request.InsertSaved)
 	}

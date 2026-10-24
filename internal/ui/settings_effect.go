@@ -7,26 +7,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-type (
-	settingsLoadRequest = uipersist.LoadRequest
-	settingsLoadResult  = uipersist.LoadResult
-	settingsLoadedMsg   = uipersist.LoadedMsg
-	settingsValueReader = uipersist.Reader
-	storeSettingWriter  = uipersist.StoreWriter
-)
-
-const (
-	settingsLoadDialog = uipersist.DialogTarget
-	settingsLoadForm   = uipersist.FormTarget
-	settingsLoadQuick  = uipersist.QuickTarget
-)
-
-// settingsLoadCmd reads the store off the update path for the surface that
-// asked.
-func settingsLoadCmd(request settingsLoadRequest, reader settingsValueReader) tea.Cmd {
-	return uipersist.LoadCmd(request, reader)
-}
-
 // settingsEnv is the root as a save completion reaches it.
 type settingsEnv struct{ *Model }
 
@@ -56,7 +36,7 @@ func (e settingsEnv) Update(staged bool) tea.Cmd {
 // visibility at dispatch; the worker persists them outside Update in the
 // order the dialog used to write them.
 type settingsRequest struct {
-	values       []settingValue
+	values       []uisettings.Value
 	hidden       []string
 	followUpdate bool
 	generation   uint64

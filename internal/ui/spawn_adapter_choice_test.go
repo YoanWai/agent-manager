@@ -12,6 +12,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
+	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	bubblekey "github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -705,5 +706,5 @@ func keepSetting(t *testing.T, m *Model, key, value string) {
 	if err := m.services.store.SetSetting(key, value); err != nil {
 		t.Fatal(err)
 	}
-	m.settings.Cache.ApplyValues([]settingValue{{Key: key, Value: value}})
+	m.settings.Cache.ApplyValues([]uisettings.Value{{Key: key, Value: value}})
 }

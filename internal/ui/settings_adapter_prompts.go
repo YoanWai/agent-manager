@@ -3,6 +3,7 @@ package ui
 import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
+	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -20,11 +21,11 @@ func (m *Model) applyPromptsRead(dialogGen uint64, read uisettings.PromptsRead) 
 
 // runPromptsResult runs the catalog work a panel key asked for: reads go
 // straight to the store off Update, writes go on the effect lane.
-func (m *Model) runPromptsResult(d *settingsState, result uisettings.Result) tea.Cmd {
+func (m *Model) runPromptsResult(d *uisettings.State, result uisettings.Result) tea.Cmd {
 	gen, dialogGen := d.Prompts.Gen(), m.settings.Gen
 	switch {
 	case result.LoadPrompts:
-		return savedPromptsLoadCmd(m.services.store, savedForSettings, gen, dialogGen)
+		return uipersist.SavedCmd(m.services.store, uipersist.SavedForSettings, gen, dialogGen)
 	case result.SavePrompt != nil:
 		m.enqueueEffect(savedPromptRequest{Gen: gen, DialogGen: dialogGen, Save: result.SavePrompt}, 0, false)
 		return m.nextEffectCmd()
@@ -45,19 +46,19 @@ func (m *Model) setNotice(notice uisettings.Notice) {
 
 // handleSavedPromptsLoaded hands a catalog read to the surface that asked,
 // while it is still the one that asked.
-func (m *Model) handleSavedPromptsLoaded(msg savedPromptsLoadedMsg) {
+func (m *Model) handleSavedPromptsLoaded(msg uipersist.SavedMsg) {
 	switch msg.Target {
-	case savedForSettings:
+	case uipersist.SavedForSettings:
 		m.applyPromptsRead(msg.DialogGen, uisettings.PromptsRead{Gen: msg.Gen, Rows: settingsPrompts(msg.Rows), Err: msg.Err})
-	case savedForForm:
+	case uipersist.SavedForForm:
 		if f, ok := m.formFor(int(msg.Gen)); ok {
 			f.SetSaved(spawnSaved(msg.Rows), msg.Err)
 		}
-	case savedForQuick:
+	case uipersist.SavedForQuick:
 		if q, ok := m.quickFor(int(msg.Gen)); ok {
 			q.LoadSaved(spawnSaved(msg.Rows), msg.Err)
 		}
-	case savedForFocus:
+	case uipersist.SavedForFocus:
 		m.loadFocusSaved(msg)
 	}
 }

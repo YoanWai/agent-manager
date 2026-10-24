@@ -7,6 +7,7 @@ import (
 
 	uilaunchhint "github.com/YoanWai/agent-manager/internal/ui/launchhint"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
+	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	tea "github.com/charmbracelet/bubbletea"
@@ -51,7 +52,7 @@ func (m *Model) fitChoices() {
 }
 
 func (m *Model) saveChoiceSetting(key, value string) {
-	m.settings.Cache.ApplyValues([]settingValue{{Key: key, Value: value}})
+	m.settings.Cache.ApplyValues([]uisettings.Value{{Key: key, Value: value}})
 	m.enqueueEffect(choiceSaveRequest{key: key, value: value}, 0, false)
 }
 

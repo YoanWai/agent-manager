@@ -4,6 +4,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
+	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -55,10 +56,10 @@ func (m *Model) focused() bool {
 func (m *Model) openFocusSaved() tea.Cmd {
 	s := uifocus.OpenSaved(focusSavedRoot{m}, uint64(m.nextComposerGen()), m.spawnStyles())
 	m.push(s)
-	return savedPromptsLoadCmd(m.services.store, savedForFocus, s.Gen(), 0)
+	return uipersist.SavedCmd(m.services.store, uipersist.SavedForFocus, s.Gen(), 0)
 }
 
-func (m *Model) loadFocusSaved(msg savedPromptsLoadedMsg) {
+func (m *Model) loadFocusSaved(msg uipersist.SavedMsg) {
 	if saved, ok := surfaceOf[*uifocus.Saved](m); ok && saved.Gen() == msg.Gen {
 		saved.Load(spawnSaved(msg.Rows), msg.Err)
 	}

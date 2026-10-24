@@ -215,7 +215,9 @@ func (m *Model) viewDetail(width int) string {
 	}
 	started := uitheme.SubtleStyle().Render("started " + uiframe.RelSince(sess.CreatedAt))
 	group := lipgloss.NewStyle().Foreground(uitheme.ColorAccent2()).Render(uiframe.DisplayGroup(sess.Group))
-	dir := func(room int) string { return uitheme.MutedStyle().Render(presentation.TruncateTail(m.sessionDir(sess), room)) }
+	dir := func(room int) string {
+		return uitheme.MutedStyle().Render(presentation.TruncateTail(m.sessionDir(sess), room))
+	}
 	return uipreview.FitColumns(heads, []string{state}, width) + "\n" +
 		factRow("group", uipreview.PlainValue(group), started, width) + "\n" +
 		factRow("dir", dir, usage, width)

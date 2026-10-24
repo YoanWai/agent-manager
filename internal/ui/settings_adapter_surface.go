@@ -23,7 +23,7 @@ func (r settingsRoot) Leave(d *uisettings.State) { r.leaveSettings(d) }
 func (r settingsRoot) Paint(d *uisettings.State) string { return r.paintSettings(d) }
 
 // paintSettings frames the dialog in the root's card chrome.
-func (m *Model) paintSettings(d *settingsState) string {
+func (m *Model) paintSettings(d *uisettings.State) string {
 	frame := d.View(uisettings.ViewContext{
 		GlyphMode:  m.prefs.glyphMode,
 		Session:    m.services.keys,
@@ -61,7 +61,7 @@ func settingsStyles() uisettings.Styles {
 	}
 }
 
-func newSettingsSurface(m *Model, state settingsState) *uisettings.Surface {
+func newSettingsSurface(m *Model, state uisettings.State) *uisettings.Surface {
 	return uisettings.NewSurface(settingsRoot{m}, state)
 }
 

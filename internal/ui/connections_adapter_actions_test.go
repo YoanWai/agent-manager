@@ -11,6 +11,7 @@ import (
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -456,7 +457,7 @@ func TestRemoteSpawnLeavesThisMachinesChoiceAlone(t *testing.T) {
 	m := connectedModel(t, fake)
 	answered(m, claudeLike, claudeAnswer)
 	const kept = `{"model":"opus","effort":"high"}`
-	m.settings.Cache.ApplyValues([]settingValue{{Key: "choice.claude", Value: kept}})
+	m.settings.Cache.ApplyValues([]uisettings.Value{{Key: "choice.claude", Value: kept}})
 	m.rail.Focus(boxGroup)
 	m.openQuickMode()
 	setQuickTool(m, slices.Index(quickTools(m), "claude"))

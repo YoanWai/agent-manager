@@ -18,12 +18,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-type (
-	settingsState    = uisettings.State
-	settingValue     = uisettings.Value
-	editorsProbedMsg = uisettings.EditorsProbe
-)
-
 // SettingSpecs is every key Settings writes and the values each takes, so
 // the shell checks a value against the same choices the modal steps
 // through. A key with no row is one the shell alone sets.
@@ -53,12 +47,12 @@ func (m *Model) settingsContext() uisettings.Context {
 }
 
 func (m *Model) openSettings() tea.Cmd {
-	return m.openSettingsWithReader(storeSettingWriter{Store: m.services.store})
+	return m.openSettingsWithReader(uipersist.StoreWriter{Store: m.services.store})
 }
 
 // openSettingsWithReader builds the dialog from the cache and asks the
 // store for anything another writer changed meanwhile.
-func (m *Model) openSettingsWithReader(reader settingsValueReader) tea.Cmd {
+func (m *Model) openSettingsWithReader(reader uipersist.Reader) tea.Cmd {
 	s := &m.settings
 	s.Gen++
 	if len(m.services.cfg.Tools) == 0 {
@@ -73,13 +67,13 @@ func (m *Model) openSettingsWithReader(reader settingsValueReader) tea.Cmd {
 	if s.Pending > 0 {
 		return probe
 	}
-	return tea.Batch(settingsLoadCmd(settingsLoadRequest{Target: settingsLoadDialog, Generation: s.Gen}, reader), probe)
+	return tea.Batch(uipersist.LoadCmd(uipersist.LoadRequest{Target: uipersist.DialogTarget, Generation: s.Gen}, reader), probe)
 }
 
-func (m *Model) handleSettingsLoaded(msg settingsLoadedMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleSettingsLoaded(msg uipersist.LoadedMsg) (tea.Model, tea.Cmd) {
 	var follow tea.Cmd
 	switch msg.Request.Target {
-	case settingsLoadDialog:
+	case uipersist.DialogTarget:
 		card, open := surfaceOf[*uisettings.Surface](m)
 		if !open || !m.settings.Fresh(msg.Request.Generation) || card.State().Busy() {
 			return m, nil
@@ -97,7 +91,7 @@ func (m *Model) handleSettingsLoaded(msg settingsLoadedMsg) (tea.Model, tea.Cmd)
 		}
 		card.State().MarkBaseline()
 		card.State().Field = field
-	case settingsLoadForm:
+	case uipersist.FormTarget:
 		f, ok := m.formFor(int(msg.Request.Generation))
 		if !ok || f.DefaultsTouched() || m.settings.Pending > 0 {
 			return m, nil
@@ -105,7 +99,7 @@ func (m *Model) handleSettingsLoaded(msg settingsLoadedMsg) (tea.Model, tea.Cmd)
 		m.settings.Take(msg.Result)
 		m.refreshFormChoicePrefs()
 		follow = tea.Batch(m.applyCachedFormDefaults(), m.formWorktreeProbeCmd(false))
-	case settingsLoadQuick:
+	case uipersist.QuickTarget:
 		q, ok := m.quickFor(int(msg.Request.Generation))
 		if !ok || q.DefaultsTouched() || m.settings.Pending > 0 {
 			return m, nil
@@ -130,7 +124,7 @@ func (m *Model) handleSettingsLoaded(msg settingsLoadedMsg) (tea.Model, tea.Cmd)
 // state, and says whether the card closes: the links, the palette repaint,
 // the saves, and the exits that close the dialog or start the in-place
 // update.
-func (m *Model) applySettingsResult(d *settingsState, result uisettings.Result) (tea.Cmd, bool) {
+func (m *Model) applySettingsResult(d *uisettings.State, result uisettings.Result) (tea.Cmd, bool) {
 	cmd := m.runSettingsResult(d, result)
 	switch result.Exit {
 	case uisettings.OpenDocs:
@@ -164,7 +158,7 @@ func (m *Model) applySettingsResult(d *settingsState, result uisettings.Result) 
 // runSettingsResult runs what a dialog key asked beyond its own state. A
 // palette step pushes the pane background to tmux, which shells out, so it
 // returns a command rather than blocking the update path.
-func (m *Model) runSettingsResult(d *settingsState, result uisettings.Result) tea.Cmd {
+func (m *Model) runSettingsResult(d *uisettings.State, result uisettings.Result) tea.Cmd {
 	if result.Notice.Changed {
 		m.setNotice(result.Notice)
 	}
@@ -192,7 +186,7 @@ func (m *Model) runSettingsResult(d *settingsState, result uisettings.Result) te
 
 // leaveSettings saves what the card chose as it comes off the stack, by esc,
 // the save button or ctrl+c alike. Update starts the queued job.
-func (m *Model) leaveSettings(d *settingsState) {
+func (m *Model) leaveSettings(d *uisettings.State) {
 	m.applySettingsPrefs(d)
 	m.rebuildRows()
 	m.queueSettingsSave(d, true, false)
@@ -201,12 +195,12 @@ func (m *Model) leaveSettings(d *settingsState) {
 // captureSettingsSave enqueues the dialog's chosen preferences on the
 // effect lane; the store writes run outside Update. The captured
 // generation fences a completion against a newer dialog.
-func (m *Model) captureSettingsSave(d *settingsState, includeHidden, followUpdate bool) tea.Cmd {
+func (m *Model) captureSettingsSave(d *uisettings.State, includeHidden, followUpdate bool) tea.Cmd {
 	m.queueSettingsSave(d, includeHidden, followUpdate)
 	return m.nextEffectCmd()
 }
 
-func (m *Model) queueSettingsSave(d *settingsState, includeHidden, followUpdate bool) {
+func (m *Model) queueSettingsSave(d *uisettings.State, includeHidden, followUpdate bool) {
 	s := &m.settings
 	s.Gen++
 	request := settingsRequest{
@@ -226,7 +220,7 @@ func (m *Model) queueSettingsSave(d *settingsState, includeHidden, followUpdate 
 	m.enqueueEffect(request, 0, false)
 }
 
-func (m *Model) captureHiddenSave(d *settingsState) tea.Cmd {
+func (m *Model) captureHiddenSave(d *uisettings.State) tea.Cmd {
 	s := &m.settings
 	s.Gen++
 	request := settingsRequest{
@@ -243,7 +237,7 @@ func (m *Model) captureHiddenSave(d *settingsState) tea.Cmd {
 // the store will hold once the key saves already on the lane land; the
 // writes happen off the update path and a partial commit reconciles the
 // runtime to the store.
-func (m *Model) saveSettingsKeys(d *settingsState) tea.Cmd {
+func (m *Model) saveSettingsKeys(d *uisettings.State) tea.Cmd {
 	expectedSession, expectedList := m.settingsKeyTables()
 	change, ok := d.KeysToSave(expectedSession, expectedList)
 	if !ok {
@@ -299,7 +293,7 @@ func (m *Model) submitKeys(request keysRequest) tea.Cmd {
 // session: a deliberate live preview of the staged choices, like the
 // theme's. It is not a persistence receipt — a save that later fails
 // reconciles these prefs back to the committed values on completion.
-func (m *Model) applySettingsPrefs(d *settingsState) {
+func (m *Model) applySettingsPrefs(d *uisettings.State) {
 	m.prefs.glyphMode = d.GlyphMode
 	m.services.editor = d.Editor.Line()
 	for _, key := range uisettings.FlagKeys() {
@@ -317,7 +311,7 @@ func (m *Model) probeEditorsCmd() tea.Cmd {
 }
 
 // probe walks PATH, which is I/O that Update must not do.
-func (r editorResolution) probe() editorsProbedMsg {
+func (r editorResolution) probe() uisettings.EditorsProbe {
 	var found []string
 	if r.lookup != nil {
 		for _, name := range r.gui {
@@ -332,12 +326,12 @@ func (r editorResolution) probe() editorsProbedMsg {
 		}
 	}
 	r.configured = ""
-	return editorsProbedMsg{Found: found, Auto: r.editorLine()}
+	return uisettings.EditorsProbe{Found: found, Auto: r.editorLine()}
 }
 
 // applyEditorsProbe keeps the answer for the rows later loads rebuild, and
 // fills the row of the visit that asked while the dialog is open.
-func (m *Model) applyEditorsProbe(msg editorsProbedMsg) {
+func (m *Model) applyEditorsProbe(msg uisettings.EditorsProbe) {
 	m.settings.Cache.SetEditors(&msg)
 	if s, open := surfaceOf[*uisettings.Surface](m); open && msg.Generation == m.settings.Gen {
 		s.State().Editor.ApplyProbe(msg)
@@ -356,17 +350,17 @@ func requestCLISupportURL() string {
 
 func (m *Model) routeSettingsMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
-	case settingsLoadedMsg:
+	case uipersist.LoadedMsg:
 		return routed(m.handleSettingsLoaded(msg))
 
 	case uilaunch.BaseFetchedMsg:
 		return routed(m, m.recordBaseFetch(msg))
 
-	case editorsProbedMsg:
+	case uisettings.EditorsProbe:
 		m.applyEditorsProbe(msg)
 		return routed(m, nil)
 
-	case savedPromptsLoadedMsg:
+	case uipersist.SavedMsg:
 		m.handleSavedPromptsLoaded(msg)
 		return routed(m, nil)
 

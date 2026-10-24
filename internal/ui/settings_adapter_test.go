@@ -167,7 +167,7 @@ func TestSettingsShowsVersion(t *testing.T) {
 		layout:  layoutState{width: 120, height: 60},
 		release: uirelease.State{Version: "v0.9.0"},
 	}
-	m.push(newSettingsSurface(m, settingsState{ToolNames: []string{"claude"}}))
+	m.push(newSettingsSurface(m, uisettings.State{ToolNames: []string{"claude"}}))
 	out := m.viewSettings()
 	if !strings.Contains(out, "version") || !strings.Contains(out, "v0.9.0") {
 		t.Errorf("settings missing version: %q", out)
@@ -719,7 +719,7 @@ func TestSettingsEscWithoutChangesWritesNothing(t *testing.T) {
 	}
 	m.applyCmd(t, save)
 
-	values, hidden, hiddenErr := uipersist.SettingsReadback(storeSettingWriter{Store: m.services.store})
+	values, hidden, hiddenErr := uipersist.SettingsReadback(uipersist.StoreWriter{Store: m.services.store})
 	for _, value := range values {
 		raw, err := m.services.store.Setting(value.Key)
 		if err != nil || raw != "" {

@@ -7,23 +7,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-type (
-	savedPromptsLoadedMsg = uipersist.SavedMsg
-	savedPromptsTarget    = uipersist.SavedTarget
-)
-
 // savedPromptRequest writes the catalog from the Settings panel.
 type savedPromptRequest uipersist.PromptRequest
 
 // savedPromptResult is the catalog read back once the write landed.
 type savedPromptResult uipersist.PromptResult
-
-const (
-	savedForSettings = uipersist.SavedForSettings
-	savedForForm     = uipersist.SavedForForm
-	savedForQuick    = uipersist.SavedForQuick
-	savedForFocus    = uipersist.SavedForFocus
-)
 
 func (request savedPromptRequest) EffectCopy() uieffects.Request { return request }
 
@@ -47,10 +35,4 @@ func (result savedPromptResult) apply(m *Model, job *uieffects.Job, err error) t
 		Mutation: true, Committed: uipersist.PromptResult(result).Committed, Selected: selected,
 	})
 	return nil
-}
-
-// savedPromptsLoadCmd reads the saved prompts catalog for the surface that
-// acts on it.
-func savedPromptsLoadCmd(presets uipersist.Presets, target savedPromptsTarget, gen, dialogGen uint64) tea.Cmd {
-	return uipersist.SavedCmd(presets, target, gen, dialogGen)
 }

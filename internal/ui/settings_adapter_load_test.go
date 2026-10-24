@@ -163,7 +163,7 @@ func TestSettingsReopenUsesOptimisticPendingSave(t *testing.T) {
 
 	// Only the editor PATH probe may run; a store load would race the save.
 	if refresh := m.openSettings(); refresh != nil {
-		if _, probe := refresh().(editorsProbedMsg); !probe {
+		if _, probe := refresh().(uisettings.EditorsProbe); !probe {
 			t.Fatal("a dialog reopened over a pending save should use the optimistic cache")
 		}
 	}

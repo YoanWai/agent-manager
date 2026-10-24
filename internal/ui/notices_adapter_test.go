@@ -15,6 +15,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
 	uirelease "github.com/YoanWai/agent-manager/internal/ui/notices/release"
+	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
 	"github.com/YoanWai/agent-manager/internal/update"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -791,7 +792,7 @@ func TestFeedDuringFocusOpensOnLeave(t *testing.T) {
 func TestFeedDuringSettingsOpensOnClose(t *testing.T) {
 	m := footModel(t)
 	m.layout.width, m.layout.height = 100, 34
-	m.push(newSettingsSurface(m, settingsState{}))
+	m.push(newSettingsSurface(m, uisettings.State{}))
 	m.Update(uirelease.FeedMsg{Messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
 	if !m.settingsOpen() || m.noticesOpen() {
 		t.Fatalf("notices open=%v, want settings until close", m.noticesOpen())

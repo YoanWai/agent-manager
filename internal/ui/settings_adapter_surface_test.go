@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
+	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -66,14 +67,14 @@ func TestSettingsKeepsATypedEditorLine(t *testing.T) {
 func TestSettingsLoadsAreFencedToTheirVisit(t *testing.T) {
 	t.Parallel()
 	m := openedSettings(t)
-	stale := settingsLoadedMsg{Request: settingsLoadRequest{Target: settingsLoadDialog, Generation: m.settings.Gen - 1}}
+	stale := uipersist.LoadedMsg{Request: uipersist.LoadRequest{Target: uipersist.DialogTarget, Generation: m.settings.Gen - 1}}
 	m.settingsCard().State().Field = uisettings.FieldMouse
 	m.handleSettingsLoaded(stale)
 	if m.settingsCard().State().Field != uisettings.FieldMouse {
 		t.Fatal("an earlier visit's load rebuilt the card")
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
-	m.handleSettingsLoaded(settingsLoadedMsg{Request: settingsLoadRequest{Target: settingsLoadDialog, Generation: m.settings.Gen}})
+	m.handleSettingsLoaded(uipersist.LoadedMsg{Request: uipersist.LoadRequest{Target: uipersist.DialogTarget, Generation: m.settings.Gen}})
 	if m.settingsOpen() {
 		t.Fatal("a load reopened a closed card")
 	}

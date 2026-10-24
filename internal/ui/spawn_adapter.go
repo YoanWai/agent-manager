@@ -8,6 +8,7 @@ import (
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	"github.com/YoanWai/agent-manager/internal/ui/pathcomplete"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
+	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
@@ -177,10 +178,10 @@ func (m *Model) contextGroup() string {
 }
 
 func (m *Model) openForm() tea.Cmd {
-	return m.openFormWithReader(storeSettingWriter{Store: m.services.store})
+	return m.openFormWithReader(uipersist.StoreWriter{Store: m.services.store})
 }
 
-func (m *Model) openFormWithReader(reader settingsValueReader) tea.Cmd {
+func (m *Model) openFormWithReader(reader uipersist.Reader) tea.Cmd {
 	tools, toolIndex := m.cachedSpawnToolSelection()
 	if len(tools) == 0 {
 		m.reportErr("no CLIs enabled: open settings (s), then CLIs, to turn some on")
@@ -201,11 +202,11 @@ func (m *Model) openFormWithReader(reader settingsValueReader) tea.Cmd {
 		f.RestartChoice(m.spawnHost())
 	}
 	catalog := m.ensureCatalog(tools[toolIndex])
-	saved := savedPromptsLoadCmd(m.services.store, savedForForm, uint64(prompt.Gen), 0)
+	saved := uipersist.SavedCmd(m.services.store, uipersist.SavedForForm, uint64(prompt.Gen), 0)
 	if m.settings.Pending > 0 {
 		return tea.Batch(m.formWorktreeProbeCmd(false), catalog, saved)
 	}
-	return tea.Batch(settingsLoadCmd(settingsLoadRequest{Target: settingsLoadForm, Generation: uint64(prompt.Gen), Extra: m.choiceSettingKeys()}, reader), catalog, saved)
+	return tea.Batch(uipersist.LoadCmd(uipersist.LoadRequest{Target: uipersist.FormTarget, Generation: uint64(prompt.Gen), Extra: m.choiceSettingKeys()}, reader), catalog, saved)
 }
 
 // applyCachedFormDefaults takes the loaded tool and worktree defaults. A

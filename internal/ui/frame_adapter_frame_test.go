@@ -53,7 +53,7 @@ func TestZZShot(t *testing.T) {
 	m := shotModel()
 	switch os.Getenv("AM_SHOT_MODE") {
 	case "settings":
-		m.push(newSettingsSurface(m, settingsState{
+		m.push(newSettingsSurface(m, uisettings.State{
 			ToolNames: []string{"claude", "codex", "grok", "opencode"},
 			ToolIndex: 0, ThemeIndex: 1, Field: uisettings.FieldTheme, LayoutSplit: true,
 		}))
