@@ -20,7 +20,7 @@ func TestStatusBarWritesGoThroughItsMethods(t *testing.T) {
 	}
 	fset := token.NewFileSet()
 	for _, name := range files {
-		if strings.HasSuffix(name, "_test.go") || strings.HasPrefix(name, "statusbar_adapter_bar") {
+		if strings.HasSuffix(name, "_test.go") || strings.HasPrefix(name, "statusbar_adapter") {
 			continue
 		}
 		src, err := os.ReadFile(name)

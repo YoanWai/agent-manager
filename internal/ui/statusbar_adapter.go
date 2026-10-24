@@ -6,7 +6,64 @@ import (
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uistatusbar "github.com/YoanWai/agent-manager/internal/ui/statusbar"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
+	tea "github.com/charmbracelet/bubbletea"
 )
+
+type errBar struct {
+	text  string
+	done  string
+	warn  string
+	shown string
+	age   int
+}
+
+// outcome is the bar as the statusbar package reads it: what it says, the run
+// that named it, and the poll count that ages it out.
+func (e errBar) outcome() uistatusbar.Outcome {
+	return uistatusbar.Told(e.text, e.done, e.warn, e.shown, e.age)
+}
+
+// kind is how the message reads, which is the tone the bar paints it in.
+func (e errBar) kind() uistatusbar.Kind { return e.outcome().KindOf() }
+
+// worked and warned are that kind as the yes/no question a caller asks when it
+// only needs one branch.
+func (e errBar) worked() bool { return e.kind() == uistatusbar.Success }
+func (e errBar) warned() bool { return e.kind() == uistatusbar.Warning }
+
+// fromOutcome is the bar a package outcome paints as.
+func fromOutcome(out uistatusbar.Outcome) errBar {
+	return errBar{text: out.Text(), done: out.Done(), warn: out.Warn(), shown: out.Shown(), age: out.Age()}
+}
+
+// reportErr puts a failure on the status bar; the poll ages it out.
+func (m *Model) reportErr(text string) { m.errBar = fromOutcome(uistatusbar.Failed(text)) }
+
+// clearErr takes whatever message is on the status bar down.
+func (m *Model) clearErr() { m.errBar = errBar{} }
+
+// reportDone puts an action that went through on the status bar.
+func (m *Model) reportDone(text string) { m.errBar = fromOutcome(uistatusbar.Succeeded(text)) }
+
+// reportWarn puts an action that went through with a caveat on the status
+// bar.
+func (m *Model) reportWarn(text string) { m.errBar = fromOutcome(uistatusbar.Warned(text)) }
+
+type errMsg struct{ err error }
+
+// ageError clears a status message after it has survived a couple of poll
+// ticks, so transient errors self-dismiss without any per-callsite timers.
+func (m *Model) ageError() {
+	m.errBar = fromOutcome(m.errBar.outcome().Ticked())
+}
+
+func (m *Model) routeStatusMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	if err, ok := msg.(errMsg); ok {
+		m.reportErr(err.err.Error())
+		return routed(m, nil)
+	}
+	return nil, nil, false
+}
 
 // statusLine is the transient message: prompts, search, and self-dismissing
 // errors. It floats in a card over the frame rather than taking a row, so the

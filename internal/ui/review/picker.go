@@ -1,6 +1,7 @@
 package review
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -71,6 +72,12 @@ type PickerResult struct {
 
 // Card lines around the rows: border, padding, title, spacers, error, hint, "+N more".
 const pickerChrome = 12
+
+// TargetSource is the identity the open Review projects into a picker, which is
+// what a pick or a late read is checked against.
+func (m Model) TargetSource() PickerSource {
+	return PickerSource{Generation: m.gen, TargetID: m.target.ID, RepoRoot: m.repoSel}
+}
 
 // PickerSourceCurrent reports whether source still names this review's
 // target, repo and generation.
@@ -206,4 +213,16 @@ func (p *Picker) Body(ctx RenderContext, inner, height int) string {
 		body.WriteString(s.Subtle.Render(fmt.Sprintf("+%d more", hidden)) + "\n")
 	}
 	return strings.TrimRight(body.String(), "\n")
+}
+
+// PickerRead is the identity a picker read is taken for. A review with no
+// resolved repo has nothing to list, and says so in the words the status bar
+// repeats; the read keys off the raw selection, not the resolved toplevel, since
+// the toplevel is empty after a bad base errors the load and the control that
+// clears that base must stay reachable.
+func (m Model) PickerRead() (PickerSource, error) {
+	if m.repoSel == "" {
+		return PickerSource{}, errors.New("no repo under review")
+	}
+	return m.TargetSource(), nil
 }

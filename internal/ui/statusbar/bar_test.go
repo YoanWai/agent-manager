@@ -140,3 +140,54 @@ func TestToastWrapsAtItsWidest(t *testing.T) {
 		}
 	}
 }
+
+// Only a run that matched when it was written keeps reading as what it was:
+// text written on its own is a failure, and the report that follows must not
+// inherit an earlier outcome or warning.
+func TestOutcomeKindFollowsTheRunThatNamedIt(t *testing.T) {
+	if got := Failed("git not found in PATH").KindOf(); got != Failure {
+		t.Fatalf("lone text reads as %d, want a failure", got)
+	}
+	if got := Succeeded("opened /tmp/a in code").KindOf(); got != Success {
+		t.Fatalf("an action that went through reads as %d", got)
+	}
+	if got := Warned("copied the whole pane").KindOf(); got != Warning {
+		t.Fatalf("a caveat reads as %d", got)
+	}
+	if got := Succeeded("opened /tmp/a in code").Done(); got != "opened /tmp/a in code" {
+		t.Fatalf("Succeeded kept %q as its outcome run", got)
+	}
+	if got := Warned("copied").Warn(); got != "copied" {
+		t.Fatalf("Warned kept %q as its warning run", got)
+	}
+	// A message written over an outcome, holding the same fields a host keeps.
+	if got := Told("something else", "opened", "", "opened", 0).KindOf(); got != Failure {
+		t.Fatalf("text replaced after an outcome reads as %d, want a failure", got)
+	}
+}
+
+// A message survives one poll and clears on the second, so a transient error
+// needs no timer of its own.
+func TestOutcomeClearsAfterTwoPolls(t *testing.T) {
+	if got := (Outcome{}).Ticked(); got.Text() != "" {
+		t.Fatalf("an empty bar grew %q", got.Text())
+	}
+	once := Failed("boom").Ticked()
+	if once.Text() != "boom" || once.Shown() != "boom" {
+		t.Fatalf("the first poll should only record the baseline: %+v", once)
+	}
+	if ticked := Failed("").Ticked(); ticked.Text() != "" {
+		t.Fatalf("a cleared bar came back with %q", ticked.Text())
+	}
+	twice := once.Ticked()
+	if twice.Text() != "" || twice.Age() == 0 {
+		t.Fatalf("the second poll should clear the bar, kept %q", twice.Text())
+	}
+	if fresh := once.Ticked().Ticked().Ticked(); fresh.Text() != "" {
+		t.Fatalf("a cleared bar came back with %q", fresh.Text())
+	}
+	changed := Failed("newer").Ticked()
+	if changed.Text() != "newer" || changed.Age() != 0 {
+		t.Fatalf("new text should restart the count: %+v", changed)
+	}
+}

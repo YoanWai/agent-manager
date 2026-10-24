@@ -101,3 +101,75 @@ func Rows(pane string, height, width, caretRow int, overlay func(row int) string
 	}
 	return out
 }
+
+// rosterToolColumn is the column a roster's tool names start at, so the roster
+// reads as a table rather than as ragged pairs, and rosterNameMin the width
+// under which a name column stops being worth reading.
+const (
+	rosterToolColumn = 14
+	rosterNameMin    = 8
+)
+
+// RosterRow is one line of a roster: a name, the CLI running it, and what it is
+// doing, all already painted.
+type RosterRow struct {
+	Name  string
+	Tool  string
+	State string
+}
+
+// Roster lays rows out as a table under head, so tools land on one column and
+// states share a right edge. The name column is as wide as the longest name
+// allows, bounded by what the tool and state columns need. A column too narrow
+// for all three gives up the tool first and the state second: a roster of names
+// still answers "who is in this group". A name trimmed to the column exactly
+// would touch the tool beside it, so the trim leaves the column's last cell as
+// the gap.
+func Roster(head RosterRow, rows []RosterRow, width int) []string {
+	nameWidth, toolWidth, stateWidth := rosterToolColumn, 0, 0
+	for _, row := range rows {
+		if w := ansi.StringWidth(row.Name) + 2; w > nameWidth {
+			nameWidth = w
+		}
+		if w := ansi.StringWidth(row.Tool); w > toolWidth {
+			toolWidth = w
+		}
+		if w := ansi.StringWidth(row.State); w > stateWidth {
+			stateWidth = w
+		}
+	}
+	showTool, showState := true, true
+	if width-toolWidth-stateWidth-3 < rosterNameMin {
+		showTool, toolWidth = false, 0
+	}
+	if width-stateWidth-2 < rosterNameMin {
+		showState, stateWidth = false, 0
+	}
+	if room := width - toolWidth - stateWidth - 3; nameWidth > room {
+		nameWidth = max(room, rosterNameMin)
+	}
+
+	titles := RosterRow{Name: presentation.PadRight(head.Name, nameWidth), Tool: head.Tool, State: head.State}
+	lines := []string{rosterLine(titles, width, showTool, showState)}
+	for _, row := range rows {
+		cells := RosterRow{
+			Name:  presentation.PadRight(ansi.Truncate(row.Name, max(nameWidth-1, 1), "…"), nameWidth),
+			Tool:  row.Tool,
+			State: row.State,
+		}
+		lines = append(lines, rosterLine(cells, width, showTool, showState))
+	}
+	return lines
+}
+
+func rosterLine(row RosterRow, width int, showTool, showState bool) string {
+	line := row.Name
+	if showTool {
+		line += row.Tool
+	}
+	state := row.State
+	if !showState {
+		state = ""
+	}
+	return uiframe.RowColumns(line, state, width)
+}

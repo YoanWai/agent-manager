@@ -269,37 +269,6 @@ func TestDetailHeadShedsChipsBeforeFacts(t *testing.T) {
 	}
 }
 
-// A roster is a table: every tool starts on one column and every state ends
-// on one edge, whatever the names around them do.
-func TestGroupRosterColumnsAlign(t *testing.T) {
-	m := shotModel()
-	rows := strings.Split(ansi.Strip(m.viewGroupAgents("backend", 76, 12)), "\n")
-	if len(rows) < 3 {
-		t.Fatalf("roster is only %d rows: %q", len(rows), rows)
-	}
-	column := -1
-	for _, row := range rows[1:] {
-		at := strings.Index(row, "claude")
-		if at < 0 {
-			at = strings.Index(row, "codex")
-		}
-		if at < 0 {
-			t.Fatalf("no tool on roster row %q", row)
-		}
-		// Byte offsets shift with every multi-byte glyph in a name, so the
-		// column is the display width of what precedes the tool.
-		cell := ansi.StringWidth(row[:at])
-		if column == -1 {
-			column = cell
-		} else if cell != column {
-			t.Errorf("tool column moved from %d to %d: %q", column, cell, row)
-		}
-		if got := ansi.StringWidth(row); got != 76 {
-			t.Errorf("roster row is %d wide, want the full 76: %q", got, row)
-		}
-	}
-}
-
 // A group head names the key that spawns into it, since the same key answers
 // a session and is read as belonging to sessions alone. The state breakdown
 // is the reading on that row, so a column too tight for both keeps it.

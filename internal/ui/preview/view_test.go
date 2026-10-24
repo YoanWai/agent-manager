@@ -105,3 +105,61 @@ func TestRowsOfAnEmptyPaneIsNil(t *testing.T) {
 		t.Fatalf("an empty pane painted %d rows", len(rows))
 	}
 }
+
+func rosterRows() (RosterRow, []RosterRow) {
+	title := RosterRow{Name: "agent", Tool: "tool", State: "last activity"}
+	return title, []RosterRow{
+		{Name: "● alpha", Tool: "claude", State: "working · 2m"},
+		{Name: "● beta-longer-name", Tool: "codex", State: "idle · 1h"},
+	}
+}
+
+// A roster is a table: every tool starts on one column whatever the names
+// around it do, and every row fills the width it was handed.
+func TestRosterAlignsToolsAndFillsItsWidth(t *testing.T) {
+	title, rows := rosterRows()
+	lines := Roster(title, rows, 76)
+	if len(lines) != 3 {
+		t.Fatalf("roster is %d rows, want a head and two agents: %q", len(lines), lines)
+	}
+	column := -1
+	for _, line := range lines[1:] {
+		at := strings.Index(line, "claude")
+		if at < 0 {
+			at = strings.Index(line, "codex")
+		}
+		if at < 0 {
+			t.Fatalf("no tool on roster row %q", line)
+		}
+		if cell := ansi.StringWidth(line[:at]); cell != column && column != -1 {
+			t.Errorf("tool column moved from %d to %d: %q", column, cell, line)
+		} else if column == -1 {
+			column = ansi.StringWidth(line[:at])
+		}
+		if got := ansi.StringWidth(line); got != 76 {
+			t.Errorf("roster row is %d wide, want the full 76: %q", got, line)
+		}
+	}
+}
+
+// A column too narrow for all three gives up the tool first and the state
+// second: names still answer who is in the group.
+func TestRosterShedsToolThenState(t *testing.T) {
+	title, rows := rosterRows()
+
+	narrow := strings.Join(Roster(title, rows, 30), "\n")
+	if strings.Contains(narrow, "claude") {
+		t.Errorf("30 columns kept the tool column: %q", narrow)
+	}
+	if !strings.Contains(narrow, "working") {
+		t.Errorf("30 columns dropped the state: %q", narrow)
+	}
+
+	narrower := strings.Join(Roster(title, rows, 16), "\n")
+	if strings.Contains(narrower, "claude") || strings.Contains(narrower, "working") {
+		t.Errorf("16 columns kept a column over the names: %q", narrower)
+	}
+	if !strings.Contains(narrower, "alpha") {
+		t.Errorf("16 columns dropped the names too: %q", narrower)
+	}
+}
