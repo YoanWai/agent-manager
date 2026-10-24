@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -448,8 +449,15 @@ func createSession(t *testing.T, m *Model, name, dir, group string) {
 	pickGroup(t, m, group)
 	_, cmd := m.submitForm()
 	m.applyCmd(t, cmd)
-	if !m.onList() {
-		t.Fatalf("after submit, screen = %v, err = %q", m.screenID(), m.errBar.text)
+	requireSpawned(t, m, name)
+}
+
+// requireSpawned fails unless the submit closed the form and landed name's
+// row: a spawn that errors leaves the form up on a list base.
+func requireSpawned(t *testing.T, m *Model, name string) {
+	t.Helper()
+	if !m.onList() || m.form() != nil || !slices.Contains(sessionNames(m), name) {
+		t.Fatalf("after submit, screen = %v, rows = %q, err = %q", m.screenID(), sessionNames(m), m.errBar.text)
 	}
 }
 
@@ -494,9 +502,7 @@ func createWorktreeSession(t *testing.T, m *Model, name, repo string) store.Sess
 	pickGroup(t, m, "")
 	_, cmd := m.submitForm()
 	m.applyCmd(t, cmd)
-	if !m.onList() {
-		t.Fatalf("after submit, screen = %v, err = %q", m.screenID(), m.errBar.text)
-	}
+	requireSpawned(t, m, name)
 	for _, sess := range m.workspace.sessions {
 		if sess.Name == name {
 			if sess.WorktreeBranch == "" {
@@ -581,9 +587,7 @@ func createSessionOn(t *testing.T, m *Model, name, tool, dir string) {
 	pickGroup(t, m, "")
 	_, cmd := m.submitForm()
 	m.applyCmd(t, cmd)
-	if !m.onList() {
-		t.Fatalf("after submit, screen = %v, err = %q", m.screenID(), m.errBar.text)
-	}
+	requireSpawned(t, m, name)
 }
 
 // spawnSession is the synchronous fixture entry point for tests that need a
