@@ -13,7 +13,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	uistartup "github.com/YoanWai/agent-manager/internal/ui/startup"
-
 	"github.com/charmbracelet/x/ansi"
 )
 
