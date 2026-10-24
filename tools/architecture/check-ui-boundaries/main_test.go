@@ -104,3 +104,24 @@ func TestThemeDependsOnNothingInTheModule(t *testing.T) {
 		t.Fatal("the palette accepted a dependency")
 	}
 }
+
+// A feature package that reaches a runtime package fails even when its list
+// names it, so -write cannot quietly widen a boundary.
+func TestFeatureBoundaryRefusesRuntimeEvenWhenListed(t *testing.T) {
+	feature := boundary{name: "Feature", path: "/internal/ui/x", allowed: []string{"/internal/ui/x", "/internal/tmux"}}
+	if err := checkBoundaryDependencies(feature, []string{module + "/internal/tmux"}); err == nil {
+		t.Fatal("a listed runtime import was accepted in a feature package")
+	}
+	feature.runtime = true
+	if err := checkBoundaryDependencies(feature, []string{module + "/internal/tmux"}); err != nil {
+		t.Fatalf("a runtime package was refused its listed import: %v", err)
+	}
+}
+
+// Every name boundaryNames carries is the variable at the same index, so the
+// rewrite keeps each line under its own name.
+func TestBoundaryNamesMatchTheList(t *testing.T) {
+	if len(boundaryNames) != len(boundaries) {
+		t.Fatalf("%d names for %d boundaries", len(boundaryNames), len(boundaries))
+	}
+}
