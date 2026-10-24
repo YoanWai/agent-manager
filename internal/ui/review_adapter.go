@@ -490,16 +490,16 @@ func (m *Model) openBranchPick() tea.Cmd {
 }
 
 func (m *Model) openBranchPickWithReader(reader uireviewsource.PickerReader) tea.Cmd {
-	cmd, err := m.review.PickRead(uireview.PickReadRequest{
-		Kind:          uireviewsource.PickerLoadBranches,
-		Reader:        reader,
-		ForegroundGen: m.gens.foreground,
-	})
-	if err != nil {
-		m.reportErr(err.Error())
+	source, err := m.review.PickerRead()
+	if reader == nil || err != nil {
+		m.reportErr("no repo under review")
 		return nil
 	}
-	return cmd
+	return uireviewsource.PickerReadCmd(reader, uireviewsource.PickerLoadRequest{
+		Kind:          uireviewsource.PickerLoadBranches,
+		Source:        source,
+		ForegroundGen: m.gens.foreground,
+	})
 }
 
 // openBasePick lists auto plus the current repo's branch refs so the user can
@@ -517,16 +517,16 @@ func (m *Model) openBasePickWithReader(reader uireviewsource.PickerReader) tea.C
 		m.reportErr("diff base is still saving")
 		return nil
 	}
-	cmd, err := m.review.PickRead(uireview.PickReadRequest{
-		Kind:          uireviewsource.PickerLoadBases,
-		Reader:        reader,
-		ForegroundGen: m.gens.foreground,
-	})
-	if err != nil {
-		m.reportErr(err.Error())
+	source, err := m.review.PickerRead()
+	if reader == nil || err != nil {
+		m.reportErr("no repo under review")
 		return nil
 	}
-	return cmd
+	return uireviewsource.PickerReadCmd(reader, uireviewsource.PickerLoadRequest{
+		Kind:          uireviewsource.PickerLoadBases,
+		Source:        source,
+		ForegroundGen: m.gens.foreground,
+	})
 }
 
 func (m *Model) handleReviewPickerLoaded(msg uireviewsource.PickerLoadedMsg) tea.Cmd {
