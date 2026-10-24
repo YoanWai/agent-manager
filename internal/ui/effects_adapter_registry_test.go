@@ -1,71 +1,14 @@
 package ui
 
 import (
-	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"io/fs"
 	"path/filepath"
-	"reflect"
-	"slices"
 	"strings"
 	"testing"
 )
-
-type effectPair struct {
-	request effectRequest
-	result  uieffects.Result
-}
-
-var effectPairs = []effectPair{
-	{quickSendRequest{}, quickSendResult{}},
-	{choiceSaveRequest{}, choiceSaveResult{}},
-	{spawnRequest{}, spawnEffectResult{}},
-	{groupRequest{}, groupEffectResult{}},
-}
-
-// A choice save carries nothing back to the model, so only its error is
-// reported, by handleEffectCompleted itself.
-var resultsAppliedByDefault = []string{"choiceSaveResult"}
-
-func TestEveryEffectRequestIsPairedWithAResultThatAppliesIt(t *testing.T) {
-	declared := parseEffectDeclarations(t)
-
-	listedRequests := typeNamesOf(effectPairs, func(pair effectPair) any { return pair.request })
-	if markers := declared.receiversOf("EffectName"); !slices.Equal(markers, listedRequests) {
-		t.Fatalf("root requests %q differ from effectPairs %q; add the new request and its result to effectPairs", markers, listedRequests)
-	}
-	listedResults := typeNamesOf(effectPairs, func(pair effectPair) any { return pair.result })
-	if markers := declared.receiversOf("EffectResult"); !slices.Equal(markers, listedResults) {
-		t.Fatalf("root results %q differ from effectPairs %q", markers, listedResults)
-	}
-
-	for _, pair := range effectPairs {
-		requestName := reflect.TypeOf(pair.request).Name()
-		if pair.request.EffectName() == "" {
-			t.Errorf("%s names itself with nothing", requestName)
-		}
-		resultName := reflect.TypeOf(pair.result).Name()
-		_, applies := pair.result.(effectResult)
-		appliedByDefault := slices.Contains(resultsAppliedByDefault, resultName)
-		if appliedByDefault && applies {
-			t.Errorf("%s now applies itself; drop it from resultsAppliedByDefault", resultName)
-		}
-		if !appliedByDefault && !applies {
-			t.Errorf("%s, the result of %s, has no apply", resultName, requestName)
-		}
-	}
-}
-
-func typeNamesOf(pairs []effectPair, pick func(effectPair) any) []string {
-	names := make([]string, 0, len(pairs))
-	for _, pair := range pairs {
-		names = append(names, reflect.TypeOf(pick(pair)).Name())
-	}
-	slices.Sort(names)
-	return names
-}
 
 type effectDeclarations struct {
 	files []*ast.File
@@ -85,21 +28,6 @@ func parseEffectDeclarations(t *testing.T) effectDeclarations {
 		files = append(files, file)
 	}
 	return effectDeclarations{files: files}
-}
-
-func (d effectDeclarations) receiversOf(markerMethod string) []string {
-	var receivers []string
-	for _, file := range d.files {
-		for _, declaration := range file.Decls {
-			function, ok := declaration.(*ast.FuncDecl)
-			if !ok || function.Recv == nil || function.Name.Name != markerMethod {
-				continue
-			}
-			receivers = append(receivers, types(function.Recv.List[0].Type))
-		}
-	}
-	slices.Sort(receivers)
-	return receivers
 }
 
 // A request a feature package declares runs only once bindEffect binds its

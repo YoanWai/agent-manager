@@ -100,14 +100,14 @@ func (m *Model) top0() uisurface.Surface {
 func TestGroupFormCompletionsAreFenced(t *testing.T) {
 	t.Parallel()
 	m := openGroupFormModel(t)
-	stale := groupRequest{path: "x", gen: m.groupSurface().Gen(), draftName: "", draftDir: m.groupSurface().Dir()}
+	stale := uilaunch.GroupRequest{Path: "x", Gen: m.groupSurface().Gen(), DraftName: "", DraftDir: m.groupSurface().Dir()}
 	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
-	m.applyGroupEffect(stale, groupEffectResult{GroupResult: uilaunch.GroupResult{Path: "x"}}, nil)
+	m.applyGroupEffect(stale, uilaunch.GroupResult{Path: "x"}, nil)
 	if m.groupFormOpen() {
 		t.Fatal("a completion opened or kept a popped form")
 	}
 	m.openGroupForm()
-	m.applyGroupEffect(stale, groupEffectResult{GroupResult: uilaunch.GroupResult{Path: "x"}}, nil)
+	m.applyGroupEffect(stale, uilaunch.GroupResult{Path: "x"}, nil)
 	if !m.groupFormOpen() {
 		t.Fatal("a stale completion closed the form that replaced it")
 	}

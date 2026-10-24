@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/execution"
 	"github.com/YoanWai/agent-manager/internal/git"
@@ -19,10 +20,12 @@ import (
 	uigeometrypanes "github.com/YoanWai/agent-manager/internal/ui/geometry/panes"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
+	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	uirailpersist "github.com/YoanWai/agent-manager/internal/ui/rail/persist"
 	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
 	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
+	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -45,8 +48,7 @@ type effectServices struct {
 }
 
 // bindEffect captures the services request runs against: those of the
-// feature package that declares it, or the root's own for a request still
-// declared here.
+// feature package that declares it.
 func (m *Model) bindEffect(request uieffects.Request) func() (uieffects.Result, error) {
 	capture := m.captureServices
 	if work, ok := uieffects.Bind(request, func() focusruntime.Services { return capture().focusRuntime() }); ok {
@@ -87,8 +89,15 @@ func (m *Model) bindEffect(request uieffects.Request) func() (uieffects.Result, 
 	if work, ok := uieffects.Bind(request, func() uilifecycle.Services { return capture().lifecycleServices() }); ok {
 		return work
 	}
-	services := capture()
-	return func() (uieffects.Result, error) { return request.(effectRequest).run(services) }
+	if work, ok := uieffects.Bind(request, func() uilaunch.Services { return capture().launchServices() }); ok {
+		return work
+	}
+	if work, ok := uieffects.Bind(request, func() uiquick.Services { return capture().quickServices() }); ok {
+		return work
+	}
+	return func() (uieffects.Result, error) {
+		return nil, fmt.Errorf("effect %s binds no services", request.EffectName())
+	}
 }
 
 // applyEffect applies a finished job's result on Update: a package result
@@ -149,8 +158,18 @@ func (m *Model) applyEffect(job *uieffects.Job, result uieffects.Result, err err
 		return m.applyAfterTurn(job.Request.(uilifecycle.AfterTurnRequest), result, err)
 	case uilifecycle.AttachResult:
 		return m.applyAttachEffect(job.Request.(uilifecycle.AttachRequest), result, err)
-	case effectResult:
-		return result.apply(m, job, err)
+	case uilaunch.Result:
+		return m.applySpawn(job.Request.(uilaunch.Request), result, err)
+	case uilaunch.GroupResult:
+		return m.applyGroupEffect(job.Request.(uilaunch.GroupRequest), result, err)
+	case uiquick.SendResult:
+		return uiquick.Apply(quickSendRoot{m}, job.Request.(uiquick.SendRequest), result, err)
+	case uilaunch.ChoiceSaveResult:
+		// A kept choice carries nothing back: the cache already holds it.
+		if err != nil {
+			m.reportErr(err.Error())
+		}
+		return nil
 	}
 	if err != nil {
 		m.reportErr(err.Error())

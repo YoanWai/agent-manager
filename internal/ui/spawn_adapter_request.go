@@ -14,7 +14,7 @@ import (
 
 // formSpawnRequest names the session, places it in the picked group and
 // captures the group's launch inputs and the prompt's images.
-func (m *Model) formSpawnRequest(request spawn.Request) spawnRequest {
+func (m *Model) formSpawnRequest(request spawn.Request) uilaunch.Request {
 	name, autoNamed := request.Name, request.Name == ""
 	if autoNamed {
 		name = request.Tool + "-" + newID()[:4]
@@ -23,25 +23,25 @@ func (m *Model) formSpawnRequest(request spawn.Request) spawnRequest {
 	prompt := m.formPromptFor()
 	group := f.GroupPath()
 	defaults := m.spawnDefaults(group)
-	return spawnRequest{
-		kind:         uilaunch.Form,
-		toolName:     request.Tool,
-		name:         name,
-		group:        group,
-		prompt:       launch.WithInstructions(request.Saved, request.Prompt),
-		autoNamed:    autoNamed,
-		pickWorktree: request.Worktree,
-		choice:       config.Choice(request.Pick),
-		base:         defaults.base,
-		pane:         defaults.pane,
-		composerGen:  prompt.Gen,
-		images:       prompt.Attachments,
-		draft:        prompt.Input.Value(),
-		draftName:    f.Name(),
-		draftDir:     f.Dir(),
-		rawDir:       request.Dir,
-		dirFallbacks: defaults.fallbacks,
-		wantWorktree: request.Worktree,
+	return uilaunch.Request{
+		Kind:         uilaunch.Form,
+		ToolName:     request.Tool,
+		Name:         name,
+		Group:        group,
+		Prompt:       launch.WithInstructions(request.Saved, request.Prompt),
+		AutoNamed:    autoNamed,
+		PickWorktree: request.Worktree,
+		Choice:       config.Choice(request.Pick),
+		Base:         defaults.base,
+		Pane:         defaults.pane,
+		ComposerGen:  prompt.Gen,
+		Images:       prompt.Attachments,
+		Draft:        prompt.Input.Value(),
+		DraftName:    f.Name(),
+		DraftDir:     f.Dir(),
+		RawDir:       request.Dir,
+		DirFallbacks: defaults.fallbacks,
+		WantWorktree: request.Worktree,
 	}
 }
 

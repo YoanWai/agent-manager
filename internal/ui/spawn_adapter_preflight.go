@@ -31,13 +31,8 @@ func crossPreflight(reader directoryPreflight) uilaunch.DirectoryPreflight {
 	return preflightReader{reader: reader}
 }
 
-func crossTerminalReader(reader terminalDirectoryReader) uilaunch.TerminalDirectoryReader {
-	if reader == nil {
-		return nil
-	}
-	return terminalReader{reader: reader}
-}
-
+// terminalReader hands the package's terminal read the root's own, so a
+// shell spawn asks the captured reader where to open.
 type terminalReader struct{ reader terminalDirectoryReader }
 
 func (t terminalReader) Resolve(request uilaunch.TerminalDirectoryRequest) (string, bool) {

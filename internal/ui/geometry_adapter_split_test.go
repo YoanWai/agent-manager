@@ -277,8 +277,8 @@ func TestSplitPersistenceIsDeferredAndOrdered(t *testing.T) {
 	}
 	first := m.effects.Main.Pending[0].Request.(uigeometrypanes.SplitSaveRequest)
 	second := m.effects.Main.Pending[1].Request.(uigeometrypanes.SplitSaveRequest)
-	if first.value != "0.4100" || second.value != "0.5200" {
-		t.Fatalf("captured order = %q then %q", first.value, second.value)
+	if first.Value != "0.4100" || second.Value != "0.5200" {
+		t.Fatalf("captured order = %q then %q", first.Value, second.Value)
 	}
 
 	m.drainEffects(t)

@@ -78,10 +78,10 @@ func (m *Model) handleGroupFormSubmit(msg uidialogs.GroupFormSubmitMsg, reader d
 		return m.queueRemote(uilink.Call{Op: uilink.CreateGroup, Host: target.Host, Name: request.Path,
 			GroupDir: strings.TrimSpace(request.Dir), ComposerGen: request.Gen})
 	}
-	m.enqueueEffect(groupRequest{
-		path: request.Path, worktree: groupWorktreeValue(request.Worktree), base: msg.Base, gen: request.Gen,
-		rawDir: request.Dir, fallbacks: m.groupDirCandidates(request.Parent), dirReader: reader,
-		draftName: request.Name, draftDir: request.Dir,
+	m.enqueueEffect(uilaunch.GroupRequest{
+		Path: request.Path, Worktree: groupWorktreeValue(request.Worktree), Base: msg.Base, Gen: request.Gen,
+		RawDir: request.Dir, Fallbacks: m.groupDirCandidates(request.Parent), DirReader: crossPreflight(reader),
+		DraftName: request.Name, DraftDir: request.Dir,
 	}, 0, false)
 	return m.nextEffectCmd()
 }

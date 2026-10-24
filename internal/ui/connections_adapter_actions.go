@@ -18,6 +18,7 @@ import (
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
+	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -369,25 +370,25 @@ func (m *Model) remoteTarget() (formRemote, bool) {
 // remoteFormSpawn turns the New Session form's spawn into the remote
 // call: the tool, name, directory, prompt, choice and an explicit worktree
 // pick go to the host, which resolves the rest.
-func (m *Model) remoteFormSpawn(req spawnRequest) tea.Cmd {
-	if len(req.images) > 0 {
+func (m *Model) remoteFormSpawn(req uilaunch.Request) tea.Cmd {
+	if len(req.Images) > 0 {
 		m.reportErr(uirail.RemoteRefusal("pasted images"))
 		return nil
 	}
 	target := m.form().Remote
 	group := target.Group
 	opts := sessioncmd.CreateSessionOptions{
-		Tool: req.toolName, Group: &group, Directory: strings.TrimSpace(req.rawDir), Prompt: req.prompt,
+		Tool: req.ToolName, Group: &group, Directory: strings.TrimSpace(req.RawDir), Prompt: req.Prompt,
 	}
-	withRemoteChoice(&opts, req.choice)
-	if !req.autoNamed {
-		opts.Name = req.name
+	withRemoteChoice(&opts, req.Choice)
+	if !req.AutoNamed {
+		opts.Name = req.Name
 	}
 	if !m.form().WorktreeAuto() {
-		worktree := req.wantWorktree
+		worktree := req.WantWorktree
 		opts.Worktree = &worktree
 	}
-	return m.queueRemote(uilink.Call{Op: uilink.Spawn, Host: target.Host, Spawn: opts, ComposerGen: req.composerGen, FromForm: true})
+	return m.queueRemote(uilink.Call{Op: uilink.Spawn, Host: target.Host, Spawn: opts, ComposerGen: req.ComposerGen, FromForm: true})
 }
 
 // formRemote is the connection and group a New Session form spawns into,

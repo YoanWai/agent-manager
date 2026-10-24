@@ -9,26 +9,13 @@ import (
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
+	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	uirailpersist "github.com/YoanWai/agent-manager/internal/ui/rail/persist"
 	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
 	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
+	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	tea "github.com/charmbracelet/bubbletea"
 )
-
-// effectRequest is a request still declared at the root: it runs against the
-// root's own services. A request a feature package declares runs against that
-// package's services instead, through bindEffect.
-type effectRequest interface {
-	uieffects.Request
-	run(effectServices) (uieffects.Result, error)
-}
-
-// effectResult is a result still declared at the root, which applies itself.
-// A package result is applied by applyEffect.
-type effectResult interface {
-	uieffects.Result
-	apply(m *Model, job *uieffects.Job, err error) tea.Cmd
-}
 
 // effectState is the root's queue plus the fence a poll reads: a listing
 // captured before the latest mutation finished is stale.
@@ -157,7 +144,7 @@ func (m *Model) handleEffectCompleted(msg uieffects.Completed) (tea.Model, tea.C
 		return m, m.nextEffectCmd()
 	}
 	switch job.Request.(type) {
-	case focusruntime.InputRequest, quickSendRequest, uiinstall.StartRequest, uilifecycle.Request, uilifecycle.AfterTurnRequest, uirailpersist.Request, uiapply.ForkEffect, spawnRequest, groupRequest, uiapply.RenameEffect, focusruntime.ProbeRequest, focusruntime.AckRequest, uilifecycle.AttachRequest:
+	case focusruntime.InputRequest, uiquick.SendRequest, uiinstall.StartRequest, uilifecycle.Request, uilifecycle.AfterTurnRequest, uirailpersist.Request, uiapply.ForkEffect, uilaunch.Request, uilaunch.GroupRequest, uiapply.RenameEffect, focusruntime.ProbeRequest, focusruntime.AckRequest, uilifecycle.AttachRequest:
 		if msg.FinishedAt.After(m.effects.latestObservation) {
 			m.effects.latestObservation = msg.FinishedAt
 		}

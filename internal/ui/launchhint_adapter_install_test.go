@@ -12,6 +12,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
+	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -467,8 +468,8 @@ func TestInstallSettleRetriesTransientInstalledCheck(t *testing.T) {
 	if m.effects.Main.Active == nil {
 		t.Fatal("successful recheck did not activate the captured retry")
 	}
-	request, ok := m.effects.Main.Active.Request.(spawnRequest)
-	if !ok || request.name != retryName {
+	request, ok := m.effects.Main.Active.Request.(uilaunch.Request)
+	if !ok || request.Name != retryName {
 		t.Fatalf("successful recheck active effect = %#v, want captured retry %q", m.effects.Main.Active.Request, retryName)
 	}
 	for _, path := range []string{statusFile, script} {

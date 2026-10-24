@@ -36,7 +36,7 @@ func (m *Model) cachedWorktreeCapability(dir string) (bool, bool) {
 	return m.ledger.spawner.CachedWorktree(dir, time.Now())
 }
 
-func (m *Model) requestWorktreeProbe(target uilaunch.ProbeTarget, generation int, dir string, toggle bool, from bool) tea.Cmd {
+func (m *Model) requestDirectoryProbe(target uilaunch.ProbeTarget, generation int, dir string, toggle bool, from bool) tea.Cmd {
 	m.gens.worktreeProbe++
 	request := uilaunch.ProbeRequest{
 		Target: target, Generation: generation, Sequence: m.gens.worktreeProbe,
@@ -50,7 +50,7 @@ func (m *Model) formWorktreeProbeCmd(toggleOn bool) tea.Cmd {
 	if f.Remote.On() {
 		return nil
 	}
-	return m.requestWorktreeProbe(uilaunch.ProbeForm, m.formPromptFor().Gen, m.formSpawnDir(), toggleOn, f.Worktree())
+	return m.requestDirectoryProbe(uilaunch.ProbeForm, m.formPromptFor().Gen, m.formSpawnDir(), toggleOn, f.Worktree())
 }
 
 func (m *Model) quickWorktreeProbeCmd(toggleOn bool) tea.Cmd {
@@ -58,7 +58,7 @@ func (m *Model) quickWorktreeProbeCmd(toggleOn bool) tea.Cmd {
 		return nil
 	}
 	q := m.quick()
-	return m.requestWorktreeProbe(uilaunch.ProbeQuick, q.Gen, m.quickTargetDir(), toggleOn, q.Worktree())
+	return m.requestDirectoryProbe(uilaunch.ProbeQuick, q.Gen, m.quickTargetDir(), toggleOn, q.Worktree())
 }
 
 func (m *Model) handleWorktreeProbe(msg uilaunch.ProbeMsg) (tea.Model, tea.Cmd) {

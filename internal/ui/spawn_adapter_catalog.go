@@ -47,7 +47,7 @@ func (m *Model) fitChoices() {
 
 func (m *Model) saveChoiceSetting(key, value string) {
 	m.settings.Cache.ApplyValues([]uisettings.Value{{Key: key, Value: value}})
-	m.enqueueEffect(choiceSaveRequest{key: key, value: value}, 0, false)
+	m.enqueueEffect(uilaunch.ChoiceSaveRequest{Key: key, Value: value}, 0, false)
 }
 
 func (m *Model) choiceSettingKeys() []string {

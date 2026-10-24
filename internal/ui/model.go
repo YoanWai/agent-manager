@@ -14,6 +14,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uicomposer "github.com/YoanWai/agent-manager/internal/ui/composer"
 	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
@@ -239,5 +240,5 @@ func newView(deps Dependencies, version string) (*Model, error) {
 
 func (m *Model) Init() tea.Cmd {
 	m.syncPollInput()
-	return tea.Batch(m.syncPaneTheme(), m.refreshExistingSessionUX, m.release.Check(), m.release.CheckFeed(), uirelease.Tick(), m.bannerTick(), m.workspace.capture.Tick(previewCaptures{m}), m.startStartupTick(), m.sweepPastes, m.pasteSweepTick(), uistartup.CheckPaneShell)
+	return tea.Batch(m.syncPaneTheme(), m.refreshExistingSessionUX, m.release.Check(), m.release.CheckFeed(), uirelease.Tick(), m.bannerTick(), m.workspace.capture.Tick(previewCaptures{m}), m.startStartupTick(), uicomposer.SweepCmd, uicomposer.SweepTick(), uistartup.CheckPaneShell)
 }

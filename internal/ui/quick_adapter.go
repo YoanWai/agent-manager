@@ -129,13 +129,13 @@ func (m *Model) runQuickRequest(request uiquick.Request) tea.Cmd {
 		}
 		entry, _ := m.selectedRow()
 		q := m.quick()
-		if !m.dispatchQuickSend(quickSendRequest{
-			session:        entry.sess,
-			composerGen:    q.Gen,
-			draft:          q.Input.Value(),
-			text:           request.Text,
-			closeAfterSend: q.CloseAfterSend,
-			images:         q.Attachments,
+		if !m.dispatchQuickSend(uiquick.SendRequest{
+			Session:        entry.sess,
+			ComposerGen:    q.Gen,
+			Draft:          q.Input.Value(),
+			Text:           request.Text,
+			CloseAfterSend: q.CloseAfterSend,
+			Images:         q.Attachments,
 		}) {
 			return nil
 		}
@@ -170,8 +170,8 @@ func (m *Model) quickSpawnWithReader(group, prompt string, reader directoryPrefl
 	return m, m.dispatchQuickSpawn(m.quickSpawnRequest(request), reader)
 }
 
-func (m *Model) dispatchQuickSpawn(request spawnRequest, reader directoryPreflight) tea.Cmd {
-	request.dirReader = reader
+func (m *Model) dispatchQuickSpawn(request uilaunch.Request, reader directoryPreflight) tea.Cmd {
+	request.DirReader = crossPreflight(reader)
 	m.clearErr()
 	m.dispatchSpawn(request)
 	return m.nextEffectCmd()
@@ -180,7 +180,7 @@ func (m *Model) dispatchQuickSpawn(request spawnRequest, reader directoryPreflig
 // quickSpawnRequest names the session and captures the group's launch
 // inputs, the worktree default it keeps unless toggled, and the prompt's
 // images.
-func (m *Model) quickSpawnRequest(request spawn.Request) spawnRequest {
+func (m *Model) quickSpawnRequest(request spawn.Request) uilaunch.Request {
 	name := request.Tool + "-" + newID()[:4]
 	defaults := m.spawnDefaults(request.Group)
 	pickWorktree := defaults.worktree
@@ -188,23 +188,23 @@ func (m *Model) quickSpawnRequest(request spawn.Request) spawnRequest {
 		pickWorktree = request.Worktree
 	}
 	q := m.quick()
-	return spawnRequest{
-		kind:         uilaunch.Quick,
-		toolName:     request.Tool,
-		name:         name,
-		group:        request.Group,
-		prompt:       request.Prompt,
-		autoNamed:    true,
-		pickWorktree: pickWorktree,
-		choice:       config.Choice(request.Pick),
-		base:         defaults.base,
-		pane:         defaults.pane,
-		composerGen:  q.Gen,
-		images:       q.Attachments,
-		draft:        q.Input.Value(),
-		rawDir:       defaults.groupDir,
-		dirFallbacks: defaults.fallbacks,
-		wantWorktree: pickWorktree,
+	return uilaunch.Request{
+		Kind:         uilaunch.Quick,
+		ToolName:     request.Tool,
+		Name:         name,
+		Group:        request.Group,
+		Prompt:       request.Prompt,
+		AutoNamed:    true,
+		PickWorktree: pickWorktree,
+		Choice:       config.Choice(request.Pick),
+		Base:         defaults.base,
+		Pane:         defaults.pane,
+		ComposerGen:  q.Gen,
+		Images:       q.Attachments,
+		Draft:        q.Input.Value(),
+		RawDir:       defaults.groupDir,
+		DirFallbacks: defaults.fallbacks,
+		WantWorktree: pickWorktree,
 	}
 }
 
