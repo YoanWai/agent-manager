@@ -131,7 +131,7 @@ func TestClickedCtrlCTakesTheRouter(t *testing.T) {
 	m := buildModel(t)
 	// A frame repaints the hits on every Update, so the click is run on a
 	// hit placed by hand, the way routeMouse runs it on a release.
-	m.layout.keyHits = keyHits{}.add(0, 6, 0, "ctrl+c")
+	m.layout.keyHits = keyHits{}.Add(0, 6, 0, "ctrl+c")
 	release := tea.MouseMsg{X: 1, Y: 0, Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft}
 	target, ok := m.clickTargetAt(release)
 	if !ok || target.kind != targetKey {

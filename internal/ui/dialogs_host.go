@@ -59,10 +59,6 @@ type forkRoot struct {
 	source store.Session
 }
 
-func (r forkRoot) ReportErr(text string) { r.reportErr(text) }
-
-func (r forkRoot) ClearErr() { r.clearErr() }
-
 func (r forkRoot) Submit(name string, gen int) tea.Cmd {
 	r.queueFork(uiapply.ForkEffect{ForkRequest: uiapply.ForkRequest{Source: r.source, Name: name, Gen: gen}})
 	return r.nextEffectCmd()
@@ -74,8 +70,6 @@ func (r forkRoot) Paint(form *uidialogs.Fork) string { return r.viewFork(form) }
 // validated stays here: a RenameEffect names the session row and the effect
 // lane it runs on, so the row hands over the values and the root builds it.
 type renameRoot struct{ *Model }
-
-func (r renameRoot) ReportErr(text string) { r.reportErr(text) }
 
 func (r renameRoot) ApplyPathSuggestion() tea.Cmd { return r.applyPathSuggestion() }
 
@@ -120,10 +114,6 @@ func (r moveRoot) PaintMove(picker *spawn.Picker) string {
 
 // groupRoot is the root as the New Group card reaches it.
 type groupRoot struct{ *Model }
-
-func (r groupRoot) CardWidth(cols int) int { return uiframe.CardWidthFor(cols) }
-
-func (r groupRoot) ReportErr(text string) { r.reportErr(text) }
 
 // launchHintRoot is the root as the setup-step card reaches it. The fix it
 // paints, the launch to retry and the images the refused prompt named all

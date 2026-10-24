@@ -233,11 +233,11 @@ func TestHelpDocsHitIgnoresTheSearchRow(t *testing.T) {
 		t.Fatal("the search row should show the query")
 	}
 	docs, ok := docsKeyHit(m)
-	if !ok || docs.y <= searchLine {
+	if !ok || docs.Y <= searchLine {
 		t.Fatalf("the docs hit should sit on the footer below the search row, hit %+v search %d", docs, searchLine)
 	}
-	if !strings.Contains(plain[docs.y], "o docs") {
-		t.Fatalf("the docs hit missed the footer: %q", plain[docs.y])
+	if !strings.Contains(plain[docs.Y], "o docs") {
+		t.Fatalf("the docs hit missed the footer: %q", plain[docs.Y])
 	}
 
 	m.handleKey(runeKey("/"))
@@ -249,7 +249,7 @@ func TestHelpDocsHitIgnoresTheSearchRow(t *testing.T) {
 
 func docsKeyHit(m *Model) (keyHit, bool) {
 	for _, hit := range m.layout.keyHits {
-		if hit.key.String() == "o" {
+		if hit.Key.String() == "o" {
 			return hit, true
 		}
 	}

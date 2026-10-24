@@ -16,10 +16,6 @@ import (
 // installRoot is the root as the install runtime reaches it.
 type installRoot struct{ *Model }
 
-func (r installRoot) ReportErr(text string) { r.reportErr(text) }
-
-func (r installRoot) ReportDone(text string) { r.reportDone(text) }
-
 // SessionLaunched adds the installer shell to the loaded list the way a
 // spawn does, so the screen shows it on the completion rather than the poll
 // after it.

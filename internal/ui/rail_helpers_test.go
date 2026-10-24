@@ -255,7 +255,7 @@ func (m *Model) entryLines(_ []treeRow, _ int, width, height int) []contentLine 
 		EnterFocuses: m.enterFocuses(), StartupPhase: m.startup.LoadPhase, CursorMarker: uiframe.CursorMarker,
 	}, m.layout.displayedRail)
 	m.layout.displayedRail = frame
-	return railContentLines(frame.Lines)
+	return frame.Lines
 }
 
 func (m *Model) reorderSelected(delta int) (tea.Model, tea.Cmd) {

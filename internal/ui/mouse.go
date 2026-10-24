@@ -104,7 +104,7 @@ func (m *Model) clickTargetAt(msg tea.MouseMsg) (clickTarget, bool) {
 		return clickTarget{}, false
 	}
 	if hit, ok := m.paintedKeyAt(msg.X, msg.Y); ok {
-		return clickTarget{kind: targetKey, x: hit.x0, line: hit.y, key: hit.key.String()}, true
+		return clickTarget{kind: targetKey, x: hit.X0, line: hit.Y, key: hit.Key.String()}, true
 	}
 	if !m.cardOpen() {
 		return clickTarget{}, false
@@ -126,7 +126,7 @@ func (m *Model) click(msg tea.MouseMsg, target clickTarget) (tea.Model, tea.Cmd)
 	switch target.kind {
 	case targetKey:
 		hit, _ := m.paintedKeyAt(msg.X, msg.Y)
-		return m.handleKey(hit.key)
+		return m.handleKey(hit.Key)
 	case targetBody:
 		col, line, _ := m.layout.card.bodyAt(msg.X, msg.Y)
 		return m.clickCard(col, line)
@@ -145,7 +145,7 @@ func (m *Model) paintedKeyAt(x, y int) (keyHit, bool) {
 	if m.base == baseList && (m.rail.Searching() || m.rail.MenuOpen()) {
 		return keyHit{}, false
 	}
-	return m.layout.keyHits.at(x, y)
+	return m.layout.keyHits.At(x, y)
 }
 
 func isLeftPress(msg tea.MouseMsg) bool {

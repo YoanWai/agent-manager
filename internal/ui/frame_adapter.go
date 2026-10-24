@@ -18,7 +18,6 @@ import (
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uistartup "github.com/YoanWai/agent-manager/internal/ui/startup"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
@@ -64,126 +63,37 @@ func (m *Model) renderFrame() string {
 		frame = m.overlayRowMenu(m.titleTopRowWithUpdate(m.viewListFrame()))
 	}
 	frame = m.surfaceView(frame)
-	m.layout.keyHits = m.layout.keyHits.above(m.layout.height)
+	m.layout.keyHits = m.layout.keyHits.Above(m.layout.height)
 	return m.syncCursorAnchor(uiframe.Clamp(frame, m.layout.height, func() string { return uitheme.Paint("", 1, uitheme.BackdropHex()) }))
 }
 
 // paintLegend renders a legend as the app's footer, one tier per line where
 // the terminal allows it and the tail marked when it does not.
 func paintLegend(sections []legendSection, width int) legend {
-	return rootLegend(uiframe.PaintLive(frameSections(sections), width))
+	return uiframe.PaintLive(sections, width)
 }
 
 // placeKeys records a legend's keys painted with its first row at y and
 // its first column at x.
 func (m *Model) placeKeys(hits keyHits, x, y int) {
-	m.layout.keyHits = append(m.layout.keyHits, hits.moved(x, y)...)
+	m.layout.keyHits = append(m.layout.keyHits, hits.Moved(x, y)...)
 }
 
 // placePainted records keys a feature painted on row y, from column x.
 func (m *Model) placePainted(keys []presentation.PaintedKey, x, y int) {
 	var hits keyHits
 	for _, key := range keys {
-		hits = hits.add(key.X0, key.X1, 0, key.Label)
+		hits = hits.Add(key.X0, key.X1, 0, key.Label)
 	}
 	m.placeKeys(hits, x, y)
 }
 
-// The root keeps the legend's wire types under their own field names, because
-// every prefix writes section and pair literals; ui/frame paints them.
-
-// legendSection is one tier: its title, its bindings, and whether it is a
-// secondary tier that recedes behind the tier above it.
-type legendSection struct {
-	title  string
-	leads  [][2]string
-	alerts [][2]string
-	hint   string
-	pairs  [][2]string
-	quiet  bool
-}
-
-// legend is a footer as painted: its text, and where each key it names
-// landed, from its own first row and column.
-type legend struct {
-	text string
-	hits keyHits
-}
-
-// keyHit is a key pair as painted: a left press inside it presses key.
-type keyHit struct {
-	x0, x1, y int
-	key       tea.KeyMsg
-}
-
-type keyHits []keyHit
-
-// add records a part painted across columns [x0, x1) of row y, when its
-// label names a key a click can press.
-func (hits keyHits) add(x0, x1, y int, label string) keyHits {
-	key, ok := uiframe.LegendKey(label)
-	if !ok {
-		return hits
-	}
-	return append(hits, keyHit{x0: x0, x1: x1, y: y, key: key})
-}
-
-func (hits keyHits) at(x, y int) (keyHit, bool) {
-	for _, hit := range hits {
-		if y == hit.y && x >= hit.x0 && x < hit.x1 {
-			return hit, true
-		}
-	}
-	return keyHit{}, false
-}
-
-// above keeps the hits on the rows a frame clamped to height still shows.
-func (hits keyHits) above(height int) keyHits {
-	kept := hits[:0]
-	for _, hit := range hits {
-		if hit.y < height {
-			kept = append(kept, hit)
-		}
-	}
-	return kept
-}
-
-// moved is hits painted with their first row at y and first column at x.
-func (hits keyHits) moved(x, y int) keyHits {
-	out := make(keyHits, len(hits))
-	for i, hit := range hits {
-		out[i] = keyHit{x0: hit.x0 + x, x1: hit.x1 + x, y: hit.y + y, key: hit.key}
-	}
-	return out
-}
-
-// pkg is a tier as the package paints it.
-func (s legendSection) pkg() uiframe.Section {
-	return uiframe.Section{Title: s.title, Leads: s.leads, Alerts: s.alerts, Hint: s.hint, Pairs: s.pairs, Quiet: s.quiet}
-}
-
-// frameSections copies the root's tiers into the package's, which paints them.
-func frameSections(sections []legendSection) []uiframe.Section {
-	out := make([]uiframe.Section, len(sections))
-	for i, section := range sections {
-		out[i] = section.pkg()
-	}
-	return out
-}
-
-// rootHits copies a box's painted keys back to the root's own type.
-func rootHits(hits uiframe.KeyHits) keyHits {
-	out := make(keyHits, len(hits))
-	for i, hit := range hits {
-		out[i] = keyHit{x0: hit.X0, x1: hit.X1, y: hit.Y, key: hit.Key}
-	}
-	return out
-}
-
-// rootLegend copies a painted legend back to the root's own types.
-func rootLegend(painted uiframe.Legend) legend {
-	return legend{text: painted.Text, hits: rootHits(painted.Hits)}
-}
+type (
+	legendSection = uiframe.Section
+	legend        = uiframe.Legend
+	keyHit        = uiframe.KeyHit
+	keyHits       = uiframe.KeyHits
+)
 
 // viewHeaderRows is the full-width band over both columns.
 func (m *Model) viewHeaderRows() []string {
@@ -354,7 +264,7 @@ func (m *Model) CardSized(width int, title, body string, hint [][2]string) strin
 	frame := m.centerOnBackdrop(box)
 	card := &m.layout.card
 	card.bodyTop, card.bodyLeft, card.bodyWidth = card.top+uiframe.CardBodyRow, card.left+uiframe.CardBodyColumn, uiframe.CardInnerWidth(width)
-	m.placeKeys(rootHits(hits), card.left, card.top)
+	m.placeKeys(hits, card.left, card.top)
 	return frame
 }
 
@@ -373,7 +283,7 @@ func (m *Model) dialogRenderContext() uiframe.Context {
 	return uiframe.Context{Width: m.layout.width, Height: m.layout.height, Status: m.cardSizing(nil).Status}
 }
 
-func (m *Model) viewFooter() string { return m.footer().text }
+func (m *Model) viewFooter() string { return m.footer().Text }
 
 // footer is the app's legend: a tier of keys for whatever the cursor is on,
 // then a quieter tier for the keys that always apply. A transient mode (quick
@@ -388,13 +298,13 @@ func (m *Model) footer() legend {
 		return m.quickFooter(m.quick())
 	}
 	if s, ok := surfaceOf[*uigeometry.Surface](m); ok {
-		return m.transientFooter(legendSection{title: "Resize", pairs: s.Footer()})
+		return m.transientFooter(legendSection{Title: "Resize", Pairs: s.Footer()})
 	}
 	if s, ok := surfaceOf[*uidialogs.RenameSurface](m); ok {
-		return m.transientFooter(legendSection{title: "Rename", pairs: s.Footer()})
+		return m.transientFooter(legendSection{Title: "Rename", Pairs: s.Footer()})
 	}
 	if m.focused() {
-		return rootLegend(footer.Transient(footer.Focused(m.focusFooter())))
+		return footer.Transient(footer.Focused(m.focusFooter()))
 	}
 	return m.listLegend()
 }
@@ -402,7 +312,7 @@ func (m *Model) footer() legend {
 // footerOf is the footer's height rule, over the base screen's tiers.
 func (m *Model) footerOf() uiframe.Footer {
 	return uiframe.Footer{
-		List:       frameSections(m.listTiers()),
+		List:       m.listTiers(),
 		Width:      m.layout.width,
 		FullLayout: m.prefs.fullLayout,
 		ArrowStep:  m.prefs.arrowStep,
@@ -441,16 +351,16 @@ func (m *Model) focusFooter() uiframe.Focus {
 	return focus
 }
 
-func (m *Model) listFooter() string { return m.listLegend().text }
+func (m *Model) listFooter() string { return m.listLegend().Text }
 
 func (m *Model) listLegend() legend {
-	return rootLegend(m.footerOf().ListLegend())
+	return m.footerOf().ListLegend()
 }
 
 // transientFooter renders one tier at the list footer's height, so a mode that
 // owns the legend never resizes every session's pane.
 func (m *Model) transientFooter(section legendSection) legend {
-	return rootLegend(m.footerOf().Transient(section.pkg()))
+	return m.footerOf().Transient(section)
 }
 
 func (m *Model) listGlyph(actions ...string) string {
@@ -507,15 +417,15 @@ func (m *Model) viewListFrame() string {
 	bleedWidth := contentWidth - 1
 	railWidth := leftWidth - 1
 	m.prepareRailFrame(railWidth, bodyHeight)
-	railRows := railContentLines(m.layout.displayedRail.Lines)
+	railRows := m.layout.displayedRail.Lines
 	contentRows := m.contentLines(bleedWidth, bodyHeight)
 	seam := make([]string, bodyHeight)
 	edge := make([]string, bodyHeight)
 	for i := range seam {
-		seam[i] = m.seamCell(i < len(railRows) && railRows[i].rule)
+		seam[i] = m.seamCell(i < len(railRows) && railRows[i].Rule)
 		tone := uitheme.PanelHex()
-		if i < len(railRows) && railRows[i].tone != "" {
-			tone = railRows[i].tone
+		if i < len(railRows) && railRows[i].Tone != "" {
+			tone = railRows[i].Tone
 		}
 		edge[i] = railEdgeCell(tone)
 	}
@@ -533,7 +443,7 @@ func (m *Model) viewListFrame() string {
 	}
 	frame = append(frame, bottom)
 	m.placeListFooter(footer, len(frame))
-	for _, line := range uitheme.SplitLines(footer.text) {
+	for _, line := range uitheme.SplitLines(footer.Text) {
 		frame = append(frame, uitheme.Paint(line, m.layout.width, uitheme.BackdropHex()))
 	}
 	return m.overlayTopRight(strings.Join(frame, "\n"), m.statusToast(), m.listChromeRows()+1)
@@ -551,12 +461,12 @@ func (m *Model) viewFullListFrame() string {
 		frame = append(frame, uitheme.Paint(line, m.layout.width, uitheme.BackdropHex()))
 	}
 	m.prepareRailFrame(railWidth, bodyHeight)
-	railRows := railContentLines(m.layout.displayedRail.Lines)
+	railRows := m.layout.displayedRail.Lines
 	edge := make([]string, bodyHeight)
 	for i := range edge {
 		tone := uitheme.PanelHex()
-		if i < len(railRows) && railRows[i].tone != "" {
-			tone = railRows[i].tone
+		if i < len(railRows) && railRows[i].Tone != "" {
+			tone = railRows[i].Tone
 		}
 		edge[i] = railEdgeCell(tone)
 	}
@@ -564,7 +474,7 @@ func (m *Model) viewFullListFrame() string {
 	frame = append(frame, uitheme.JoinColumns(edge, paintContent(railRows, railWidth, bodyHeight, uitheme.PanelHex()))...)
 	frame = append(frame, m.boundedRuleRow(railWidth, m.layout.width, "▄"))
 	m.placeListFooter(footer, len(frame))
-	for _, line := range uitheme.SplitLines(footer.text) {
+	for _, line := range uitheme.SplitLines(footer.Text) {
 		frame = append(frame, uitheme.Paint(line, m.layout.width, uitheme.BackdropHex()))
 	}
 	return m.overlayTopRight(strings.Join(frame, "\n"), m.statusToast(), m.listChromeRows()+1)
@@ -573,7 +483,7 @@ func (m *Model) viewFullListFrame() string {
 // placeListFooter records where the list footer's keys and the quick bar
 // it holds landed, with its first row at y.
 func (m *Model) placeListFooter(footer legend, y int) {
-	m.placeKeys(footer.hits, 0, y)
+	m.placeKeys(footer.Hits, 0, y)
 	if q := m.quick(); q != nil {
 		q.OriginY = y
 	}

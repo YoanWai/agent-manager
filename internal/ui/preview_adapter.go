@@ -144,7 +144,7 @@ func (m *Model) contentLines(width, height int) []contentLine {
 	ours := func(lines []string) []contentLine {
 		out := make([]contentLine, len(lines))
 		for i, line := range lines {
-			out[i] = contentLine{text: gutter + line}
+			out[i] = contentLine{Text: gutter + line}
 		}
 		return out
 	}
@@ -153,12 +153,12 @@ func (m *Model) contentLines(width, height int) []contentLine {
 	rest := height - len(body) - 1
 	if rest >= 3 {
 		if group, ok := m.selectedGroup(); ok {
-			body = append(body, contentLine{rule: true})
+			body = append(body, contentLine{Rule: true})
 			body = append(body, ours(uitheme.SplitLines(m.viewGroupAgents(group, inner, rest)))...)
 		} else {
-			separator := contentLine{rule: true}
+			separator := contentLine{Rule: true}
 			if m.focused() {
-				separator = contentLine{text: focusTopRule(width, m.services.keys), raw: true}
+				separator = contentLine{Text: focusTopRule(width, m.services.keys), Raw: true}
 			}
 			body = append(body, separator)
 			body = append(body, m.previewLines(width, rest, gutter, m.listChromeRows()+len(body))...)
@@ -247,7 +247,7 @@ func (m *Model) previewLines(width, height int, gutter string, frameOrigin ...in
 // ring while the session boots, otherwise a quiet placeholder.
 func (m *Model) emptyPreview(width int, gutter string, loader []string) []contentLine {
 	if loader == nil {
-		return []contentLine{{text: gutter + uitheme.MutedStyle().Render("(no output yet)")}}
+		return []contentLine{{Text: gutter + uitheme.MutedStyle().Render("(no output yet)")}}
 	}
 	rows := make([]string, len(loader))
 	for i, line := range loader {
@@ -262,10 +262,10 @@ func (m *Model) emptyPreview(width int, gutter string, loader []string) []conten
 func previewContent(rows []string, height int) []contentLine {
 	lines := make([]contentLine, 0, max(height, len(rows)))
 	for _, row := range rows {
-		lines = append(lines, contentLine{text: row, raw: true})
+		lines = append(lines, contentLine{Text: row, Raw: true})
 	}
 	for len(lines) < height {
-		lines = append(lines, contentLine{raw: true})
+		lines = append(lines, contentLine{Raw: true})
 	}
 	return lines
 }

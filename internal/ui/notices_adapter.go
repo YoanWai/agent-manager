@@ -248,8 +248,6 @@ func (r releaseRoot) ApplyNotices(apply func()) { r.applyNotices(apply) }
 
 func (r releaseRoot) KeepNoticeSelection(apply func()) { r.keepNoticeSelection(apply) }
 
-func (r releaseRoot) ReportDone(text string) { r.reportDone(text) }
-
 func (r releaseRoot) Quit() tea.Cmd {
 	_, cmd := r.requestQuit()
 	return cmd

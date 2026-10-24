@@ -1004,7 +1004,7 @@ func TestRemovedConnectionTakesItsRowsWithIt(t *testing.T) {
 func contentText(m *Model) string {
 	var lines []string
 	for _, line := range m.contentLines(80, 20) {
-		lines = append(lines, ansi.Strip(line.text))
+		lines = append(lines, ansi.Strip(line.Text))
 	}
 	return strings.Join(lines, "\n")
 }

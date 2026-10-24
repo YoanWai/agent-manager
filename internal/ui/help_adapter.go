@@ -40,8 +40,6 @@ func (h helpHost) Context(width int) uihelp.Context { return uihelp.ContextFor(h
 
 func (h helpHost) Styles() uihelp.Styles { return uihelp.CurrentStyles() }
 
-func (h helpHost) InnerWidth(width int) int { return uiframe.CardInnerWidth(width) }
-
 func (h helpHost) HintRows(hints [][2]string, width int) int {
 	// One untitled run, for the foot of a modal card where the tier's
 	// subject is the card's own title.

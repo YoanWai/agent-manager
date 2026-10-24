@@ -89,10 +89,6 @@ func (r paneSizing) SaveSplitRatio(value string) uint64 {
 	return r.effects.NextID
 }
 
-func (r paneSizing) ReportErr(text string) { r.reportErr(text) }
-
-func (r paneSizing) ClearErr() { r.clearErr() }
-
 func (r paneSizing) ErrorIs(text string) bool { return r.errBar.text == text }
 
 var (

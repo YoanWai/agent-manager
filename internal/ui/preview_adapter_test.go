@@ -304,7 +304,7 @@ func previewModel(sessionStatus, preview string) *Model {
 func previewText(m *Model) string {
 	var out []string
 	for _, line := range m.previewLines(80, 12, "  ") {
-		out = append(out, ansi.Strip(line.text))
+		out = append(out, ansi.Strip(line.Text))
 	}
 	return strings.Join(out, "\n")
 }
@@ -427,7 +427,7 @@ func TestPreviewLeavesTheFocusedPaneAlone(t *testing.T) {
 	m.focus.pane.Enter(uifocus.EnterContext{SessionID: "boot"})
 	setFocusCursor(m, paneCursor{ok: true})
 	lines := m.previewLines(80, 12, "  ")
-	first := lines[m.focus.pane.FrameBox().Y-m.listChromeRows()].text
+	first := lines[m.focus.pane.FrameBox().Y-m.listChromeRows()].Text
 	if strings.Contains(ansi.Strip(first), "starting up") {
 		t.Fatalf("the loader took the focused pane's first row: %q", first)
 	}

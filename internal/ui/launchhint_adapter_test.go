@@ -200,11 +200,11 @@ func TestReportLaunchErrorOpensHintForOutdatedCLI(t *testing.T) {
 	}
 	got := map[string]bool{}
 	for _, hit := range m.layout.keyHits {
-		if hit.key.Type == tea.KeyEsc {
+		if hit.Key.Type == tea.KeyEsc {
 			got["esc"] = true
 		}
-		if len(hit.key.Runes) == 1 {
-			got[string(hit.key.Runes)] = true
+		if len(hit.Key.Runes) == 1 {
+			got[string(hit.Key.Runes)] = true
 		}
 	}
 	for _, key := range []string{"i", "c", "esc"} {

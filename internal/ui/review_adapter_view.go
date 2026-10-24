@@ -85,7 +85,7 @@ func (m *Model) reviewSpinnerLine(label string) string {
 func (m *Model) viewDiffFull() string {
 	sess, _ := m.diffSession()
 	footer := m.diffFooter()
-	bodyHeight := m.layout.height - 4 - lipgloss.Height(footer.text)
+	bodyHeight := m.layout.height - 4 - lipgloss.Height(footer.Text)
 	if bodyHeight < 5 {
 		bodyHeight = 5
 	}
@@ -126,8 +126,8 @@ func (m *Model) viewDiffFull() string {
 		m.placePainted(m.review.StatusKeys(), 0, len(frame))
 	}
 	frame = append(frame, uitheme.Paint(status, m.layout.width, uitheme.BackdropHex()))
-	m.placeKeys(footer.hits, 0, len(frame))
-	for _, line := range uitheme.SplitLines(footer.text) {
+	m.placeKeys(footer.Hits, 0, len(frame))
+	for _, line := range uitheme.SplitLines(footer.Text) {
 		frame = append(frame, uitheme.Paint(line, m.layout.width, uitheme.BackdropHex()))
 	}
 	return strings.Join(frame, "\n")
@@ -177,12 +177,12 @@ func (m *Model) viewDiffStatus() string {
 	return m.review.Status(m.reviewRenderContext(), m.layout.width)
 }
 
-func (m *Model) viewDiffFooter() string { return m.diffFooter().text }
+func (m *Model) viewDiffFooter() string { return m.diffFooter().Text }
 
 func (m *Model) diffFooter() legend {
 	var sections []legendSection
 	for _, section := range m.review.Legend() {
-		sections = append(sections, legendSection{title: section.Title, quiet: section.Quiet, pairs: section.Pairs})
+		sections = append(sections, legendSection{Title: section.Title, Quiet: section.Quiet, Pairs: section.Pairs})
 	}
 	return paintLegend(sections, m.layout.width)
 }

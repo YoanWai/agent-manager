@@ -1251,7 +1251,7 @@ func TestQuickPromptModeLeadsTheFooterAndNamesTheOpenBar(t *testing.T) {
 	m := buildModel(t)
 	seedTwoGroups(t, m)
 	setRailCursor(m, 1)
-	if leads := m.rowLegend().leads; !slices.Equal(leads, [][2]string{{"space", "quick prompt mode"}}) {
+	if leads := m.rowLegend().Leads; !slices.Equal(leads, [][2]string{{"space", "quick prompt mode"}}) {
 		t.Fatalf("group row leads = %q, want quick prompt mode", leads)
 	}
 	footer := m.listFooter()
@@ -1284,7 +1284,7 @@ func TestQuickPromptModeLeadsTheFooterAndNamesTheOpenBar(t *testing.T) {
 			t.Fatalf("full layout %v: the prompt should sit in the footer:\n%s", full, ansi.Strip(frame))
 		}
 		rows := strings.Split(footer, "\n")
-		keysHeight := lipgloss.Height(paintLegend([]legendSection{{title: quickModeTitle, pairs: m.quick().Legend(m.quickBarHost())}}, m.layout.width-1).text)
+		keysHeight := lipgloss.Height(paintLegend([]legendSection{{Title: quickModeTitle, Pairs: m.quick().Legend(m.quickBarHost())}}, m.layout.width-1).Text)
 		for i, line := range rows {
 			tone := uitheme.QuickModeHex()
 			if i > 0 && i < len(rows)-keysHeight {
@@ -1709,7 +1709,7 @@ func TestQuickFooterFillsEveryBandCell(t *testing.T) {
 			}
 			backgrounds, _ := cellColors(frame, m.layout.width, m.layout.height)
 			footerHeight := lipgloss.Height(m.viewFooter())
-			keysHeight := lipgloss.Height(paintLegend([]legendSection{{title: quickModeTitle, pairs: m.quick().Legend(m.quickBarHost())}}, m.layout.width-1).text)
+			keysHeight := lipgloss.Height(paintLegend([]legendSection{{Title: quickModeTitle, Pairs: m.quick().Legend(m.quickBarHost())}}, m.layout.width-1).Text)
 			if !strings.Contains(ansi.Strip(frameRows[m.layout.height-footerHeight]), "new") {
 				t.Fatalf("full %v width %d footer must begin with the target", full, width)
 			}
@@ -1785,7 +1785,7 @@ func paintedPreview(m *Model) string {
 	_, rightWidth := m.splitWidths()
 	var painted strings.Builder
 	for _, row := range m.contentLines(rightWidth, m.listBodyHeight()) {
-		painted.WriteString(ansi.Strip(row.text) + "\n")
+		painted.WriteString(ansi.Strip(row.Text) + "\n")
 	}
 	return painted.String()
 }

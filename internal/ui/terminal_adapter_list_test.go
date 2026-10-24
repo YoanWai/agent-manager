@@ -535,22 +535,22 @@ func TestShellRowLegendDropsTheConversationKeys(t *testing.T) {
 	m.selectSessionRow(t, sess.Name)
 
 	legend := m.rowLegend()
-	if legend.title != "Shell" {
-		t.Fatalf("legend title = %q, want Shell", legend.title)
+	if legend.Title != "Shell" {
+		t.Fatalf("legend title = %q, want Shell", legend.Title)
 	}
-	if len(legend.leads) != 0 || legend.hint != "" {
-		t.Fatalf("legend leads with %q on a shell row, which refuses a prompt and a review", legend.leads)
+	if len(legend.Leads) != 0 || legend.Hint != "" {
+		t.Fatalf("legend leads with %q on a shell row, which refuses a prompt and a review", legend.Leads)
 	}
-	for _, pair := range legend.pairs {
+	for _, pair := range legend.Pairs {
 		switch pair[0] {
 		case "space", "y", "ctrl+r", "f":
 			t.Fatalf("legend offers %q on a shell row, which refuses it", pair[0])
 		}
 	}
-	if !slices.ContainsFunc(legend.pairs, func(pair [2]string) bool { return pair[0] == "R" }) {
+	if !slices.ContainsFunc(legend.Pairs, func(pair [2]string) bool { return pair[0] == "R" }) {
 		t.Fatal("legend should still offer the keys a shell answers, R included")
 	}
-	if !slices.ContainsFunc(legend.pairs, func(pair [2]string) bool { return pair[0] == "click" && pair[1] == "focus" }) {
+	if !slices.ContainsFunc(legend.Pairs, func(pair [2]string) bool { return pair[0] == "click" && pair[1] == "focus" }) {
 		t.Fatal("legend should offer click to focus when the mouse is on")
 	}
 }
@@ -563,18 +563,18 @@ func TestAgentRowLegendKeepsTheConversationKeys(t *testing.T) {
 	m.selectSessionRow(t, "agent")
 
 	legend := m.rowLegend()
-	if legend.title != "Session" {
-		t.Fatalf("legend title = %q, want Session", legend.title)
+	if legend.Title != "Session" {
+		t.Fatalf("legend title = %q, want Session", legend.Title)
 	}
-	if !slices.Equal(legend.leads, [][2]string{{"space", "quick prompt mode"}, {"ctrl+r", "review mode"}}) || legend.hint != uirail.ReviewModeHint {
-		t.Fatalf("legend should lead with quick prompt mode and review mode, got %q, hint %q", legend.leads, legend.hint)
+	if !slices.Equal(legend.Leads, [][2]string{{"space", "quick prompt mode"}, {"ctrl+r", "review mode"}}) || legend.Hint != uirail.ReviewModeHint {
+		t.Fatalf("legend should lead with quick prompt mode and review mode, got %q, hint %q", legend.Leads, legend.Hint)
 	}
 	for _, key := range []string{"y", "f"} {
-		if !slices.ContainsFunc(legend.pairs, func(pair [2]string) bool { return pair[0] == key }) {
+		if !slices.ContainsFunc(legend.Pairs, func(pair [2]string) bool { return pair[0] == key }) {
 			t.Fatalf("legend should offer %q on an agent row", key)
 		}
 	}
-	if !slices.ContainsFunc(legend.pairs, func(pair [2]string) bool { return pair[0] == "click" && pair[1] == "focus" }) {
+	if !slices.ContainsFunc(legend.Pairs, func(pair [2]string) bool { return pair[0] == "click" && pair[1] == "focus" }) {
 		t.Fatal("legend should offer click to focus when the mouse is on")
 	}
 }
@@ -586,7 +586,7 @@ func TestRowLegendHidesDoubleClickWhenMouseOff(t *testing.T) {
 	m.selectSessionRow(t, "agent")
 	m.prefs.mouseDisabled = true
 	legend := m.rowLegend()
-	if slices.ContainsFunc(legend.pairs, func(pair [2]string) bool { return strings.HasSuffix(pair[0], "click") }) {
+	if slices.ContainsFunc(legend.Pairs, func(pair [2]string) bool { return strings.HasSuffix(pair[0], "click") }) {
 		t.Fatal("legend should hide the click gestures when the mouse is off")
 	}
 }

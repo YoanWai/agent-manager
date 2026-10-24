@@ -8,7 +8,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
-	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
 	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
@@ -329,8 +328,7 @@ func (r reviewApplyRoot) ForgetPreferredRepo(repo string) {
 	}
 }
 
-func (r reviewApplyRoot) ReportErr(text string) { r.reportErr(text) }
-func (r reviewApplyRoot) RequestRefresh()       { r.requestRefresh() }
+func (r reviewApplyRoot) RequestRefresh() { r.requestRefresh() }
 func (r reviewApplyRoot) ReviewCommands(req uireview.Requests) tea.Cmd {
 	return r.reviewCommands(req)
 }
@@ -425,9 +423,6 @@ func (m *Model) applyReviewChange(change uireviewsource.Result, err error) tea.C
 // reviewRoot is the root as the review picker reads it: the card geometry the
 // stack's host does not carry.
 type reviewRoot struct{ *Model }
-
-func (r reviewRoot) CardWidth(cols int) int   { return uiframe.CardWidthFor(cols) }
-func (r reviewRoot) InnerWidth(width int) int { return uiframe.CardInnerWidth(width) }
 
 // systemReviewPickerReader reads picker rows from the real git driver and
 // store.

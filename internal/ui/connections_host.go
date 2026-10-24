@@ -71,10 +71,6 @@ func (r linkRoot) ClearAccepted(composerGen int, draft string, closeAfterSend bo
 	r.clearAccepted(composerGen, draft, closeAfterSend)
 }
 
-func (r linkRoot) ReportErr(text string) { r.reportErr(text) }
-
-func (r linkRoot) ReportDone(text string) { r.reportDone(text) }
-
 // connectionsRoot is the root as the connection card reads it: the theme's
 // field painter, the card width, and the store write and status line.
 type connectionsRoot struct{ *Model }
@@ -89,8 +85,6 @@ func (r connectionsRoot) Look() uiconnections.DialogView {
 		Muted: uitheme.MutedStyle(),
 	}
 }
-
-func (r connectionsRoot) CardWidth(cols int) int { return uiframe.CardWidthFor(cols) }
 
 func (r connectionsRoot) Save(gen uint64, editing string, next remote.Connection) tea.Cmd {
 	op := uilink.SaveAdd
@@ -187,11 +181,11 @@ func (m *Model) remoteContentLines(width, height int) ([]contentLine, bool) {
 	for i, line := range lines {
 		switch {
 		case line.Rule:
-			out[i] = contentLine{rule: true}
+			out[i] = contentLine{Rule: true}
 		case line.Text == "":
 			out[i] = contentLine{}
 		default:
-			out[i] = contentLine{text: gutter + line.Text}
+			out[i] = contentLine{Text: gutter + line.Text}
 		}
 	}
 	return out, true

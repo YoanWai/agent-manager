@@ -272,8 +272,6 @@ type focusSavedRoot struct{ *Model }
 
 func (r focusSavedRoot) Keys() keybind.Table { return r.keys() }
 
-func (r focusSavedRoot) InnerWidth(width int) int { return uiframe.CardInnerWidth(width) }
-
 // PasteFocused pastes a pick into the selected session, which is the focused
 // one while the list is up.
 func (r focusSavedRoot) PasteFocused(pick spawn.SavedPick) tea.Cmd {
@@ -379,8 +377,8 @@ func (m *Model) viewFullFocusFrame() string {
 	paneRows := m.previewLines(m.layout.width, bodyHeight, strings.Repeat(" ", contentGutter))
 	frame = append(frame, paintContent(paneRows, m.layout.width, bodyHeight, uitheme.BackdropHex())...)
 	frame = append(frame, uitheme.Paint(m.focusEdge(m.layout.width), m.layout.width, uitheme.BackdropHex()))
-	m.placeKeys(footer.hits, 0, len(frame))
-	for _, line := range uitheme.SplitLines(footer.text) {
+	m.placeKeys(footer.Hits, 0, len(frame))
+	for _, line := range uitheme.SplitLines(footer.Text) {
 		frame = append(frame, uitheme.Paint(line, m.layout.width, uitheme.BackdropHex()))
 	}
 	return m.overlayTopRight(strings.Join(frame, "\n"), m.statusToast(), m.listChromeRows()+1)

@@ -172,8 +172,8 @@ const quickModeTitle = "Quick prompt mode"
 func (m *Model) quickFooter(q *uiquick.Surface) legend {
 	edge := uitheme.KeyStyle().Render(quickEdge)
 	gutter := strings.Repeat(" ", quickGutter-1)
-	painted := paintLegend([]legendSection{{title: quickModeTitle, pairs: q.Legend(m.quickBarHost())}}, max(m.layout.width-1, 1))
-	keys := uitheme.SplitLines(painted.text)
+	painted := paintLegend([]legendSection{{Title: quickModeTitle, Pairs: q.Legend(m.quickBarHost())}}, max(m.layout.width-1, 1))
+	keys := uitheme.SplitLines(painted.Text)
 	rows := uiquick.BarMaxRows + 1
 	if q.Picking() != uiquick.PickNone {
 		rows = max(m.layout.height/2, rows)
@@ -189,12 +189,12 @@ func (m *Model) quickFooter(q *uiquick.Surface) legend {
 		}
 		lines = append(lines, uitheme.Paint(edge+gutter+line, m.layout.width, tone))
 	}
-	hits := painted.hits.moved(lipgloss.Width(quickEdge), len(lines))
+	hits := painted.Hits.Moved(lipgloss.Width(quickEdge), len(lines))
 	for _, line := range keys {
 		lines = append(lines, uitheme.Paint(edge+line, m.layout.width, uitheme.QuickModeHex()))
 	}
 	q.OriginX = quickGutter
-	return legend{text: strings.Join(lines, "\n"), hits: hits}
+	return legend{Text: strings.Join(lines, "\n"), Hits: hits}
 }
 
 const (

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	"strings"
 
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
@@ -132,19 +133,9 @@ func (m *Model) seamCell(railRule bool) string {
 
 // contentLine is one row of the content column: ours to paint, a seam that
 // spans the column edge to edge, or captured output that must stay on the
-// backdrop. Rail rows also carry the tone their fill uses, so the edge
-// column beside them can match the selected entry's band.
-type contentLine struct {
-	text string
-	raw  bool
-	rule bool
-	tone string
-	// row is the m.rows index a click on this line selects, one-based so
-	// a bare contentLine{} reads as chrome. Carrying it on the line is what
-	// keeps hit-testing in step with paint through the prepends, the
-	// truncation and the padding the rail's lines go through (#110).
-	row int
-}
+// backdrop. The Rail owns the type, since its rows also carry the tone the
+// edge column beside them matches.
+type contentLine = uirail.Line
 
 // paintContent paints a content column, leaving raw rows unfilled.
 func paintContent(lines []contentLine, width, height int, bg string) []string {
@@ -154,17 +145,17 @@ func paintContent(lines []contentLine, width, height int, bg string) []string {
 			out[i] = uitheme.Paint("", width, bg)
 			continue
 		}
-		if lines[i].rule {
+		if lines[i].Rule {
 			// Seams are drawn at the column's full width, not the inset the
 			// text uses, so they meet the frame's edges exactly.
 			out[i] = uitheme.Paint(uitheme.Hrule(width), width, bg)
 			continue
 		}
-		if lines[i].raw {
-			out[i] = uitheme.Plain(lines[i].text, width)
+		if lines[i].Raw {
+			out[i] = uitheme.Plain(lines[i].Text, width)
 			continue
 		}
-		out[i] = uitheme.Paint(lines[i].text, width, bg)
+		out[i] = uitheme.Paint(lines[i].Text, width, bg)
 	}
 	return out
 }

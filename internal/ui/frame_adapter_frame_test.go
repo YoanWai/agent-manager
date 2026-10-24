@@ -231,7 +231,7 @@ func TestViewLegendPaintsWaitingMessagesWarm(t *testing.T) {
 		services: services{store: st, keys: keybind.DefaultSession(), listKeys: keybind.DefaultList()},
 		release:  uirelease.State{Latest: "v0.41.0", Version: "0.40.0"},
 	}
-	bar := paintLegend([]legendSection{waiting.viewLegend()}, 160).text
+	bar := paintLegend([]legendSection{waiting.viewLegend()}, 160).Text
 	if !strings.Contains(bar, uitheme.LegendAlertStyle().Render("M unread")) {
 		t.Fatalf("waiting messages should use the working color:\n%s", bar)
 	}
@@ -240,7 +240,7 @@ func TestViewLegendPaintsWaitingMessagesWarm(t *testing.T) {
 		release:  uirelease.State{Version: "0.40.0"},
 		notices:  noticesPanel{Panel: uinotices.NewPanel(map[string]bool{uinotices.Welcome: true, uinotices.ArrowStep: true})},
 	}
-	idleBar := ansi.Strip(paintLegend([]legendSection{idle.viewLegend()}, 160).text)
+	idleBar := ansi.Strip(paintLegend([]legendSection{idle.viewLegend()}, 160).Text)
 	if strings.Contains(idleBar, "unread") {
 		t.Fatalf("an empty panel should leave the messages key off:\n%s", idleBar)
 	}
@@ -250,25 +250,25 @@ func TestViewLegendPaintsWaitingMessagesWarm(t *testing.T) {
 // legends set survives the copy into ui/frame.
 func TestRootLegendKeepsItsTiersAndHits(t *testing.T) {
 	sections := []legendSection{{
-		title:  "Session",
-		leads:  [][2]string{{"p", "quick prompt mode"}},
-		alerts: [][2]string{{"M", "unread"}},
-		hint:   "a hint",
-		pairs:  [][2]string{{"r", "rename"}},
+		Title:  "Session",
+		Leads:  [][2]string{{"p", "quick prompt mode"}},
+		Alerts: [][2]string{{"M", "unread"}},
+		Hint:   "a hint",
+		Pairs:  [][2]string{{"r", "rename"}},
 	}}
 	painted := paintLegend(sections, 200)
-	plain := ansi.Strip(painted.text)
+	plain := ansi.Strip(painted.Text)
 	for _, want := range []string{"Session", "p quick prompt mode", "M unread", "a hint", "r rename"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("root legend lost %q:\n%s", want, plain)
 		}
 	}
-	if len(painted.hits) != 3 {
-		t.Fatalf("hits = %+v, want one per pressable pair", painted.hits)
+	if len(painted.Hits) != 3 {
+		t.Fatalf("hits = %+v, want one per pressable pair", painted.Hits)
 	}
 	lines := strings.Split(plain, "\n")
-	for _, hit := range painted.hits {
-		if hit.y < 0 || hit.y >= len(lines) {
+	for _, hit := range painted.Hits {
+		if hit.Y < 0 || hit.Y >= len(lines) {
 			t.Fatalf("hit %+v lands on no painted row", hit)
 		}
 	}
@@ -768,7 +768,7 @@ func TestLegendOffersEmptyGroupsOnlyInTheActiveView(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	offered := func() bool {
-		for _, pair := range m.viewLegend().pairs {
+		for _, pair := range m.viewLegend().Pairs {
 			if pair[1] == "hide empty" || pair[1] == "show empty" {
 				return true
 			}
@@ -821,23 +821,23 @@ func TestRowLegendDropsRestoreInActiveView(t *testing.T) {
 
 	m.selectSessionRow(t, "alpha")
 	legend := m.rowLegend()
-	for _, pair := range legend.pairs {
+	for _, pair := range legend.Pairs {
 		if strings.Contains(pair[1], "restore") {
 			t.Fatalf("session legend in active view should not offer restore, got %+v", pair)
 		}
 	}
-	if !slices.ContainsFunc(legend.pairs, func(pair [2]string) bool { return pair[1] == "archive" }) {
+	if !slices.ContainsFunc(legend.Pairs, func(pair [2]string) bool { return pair[1] == "archive" }) {
 		t.Fatal("session legend in active view should still offer archive")
 	}
 
 	m.selectGroupRow(t, "zone")
 	legend = m.rowLegend()
-	for _, pair := range legend.pairs {
+	for _, pair := range legend.Pairs {
 		if strings.Contains(pair[1], "restore") {
 			t.Fatalf("group legend in active view should not offer restore, got %+v", pair)
 		}
 	}
-	if !slices.ContainsFunc(legend.pairs, func(pair [2]string) bool { return pair[1] == "archive" }) {
+	if !slices.ContainsFunc(legend.Pairs, func(pair [2]string) bool { return pair[1] == "archive" }) {
 		t.Fatal("group legend in active view should still offer archive")
 	}
 }
@@ -863,23 +863,23 @@ func TestRowLegendDropsArchiveInArchivedView(t *testing.T) {
 
 	m.selectSessionRow(t, "alpha")
 	legend := m.rowLegend()
-	for _, pair := range legend.pairs {
+	for _, pair := range legend.Pairs {
 		if strings.Contains(pair[1], "archive") {
 			t.Fatalf("session legend in archived view should not offer archive, got %+v", pair)
 		}
 	}
-	if !slices.ContainsFunc(legend.pairs, func(pair [2]string) bool { return pair[1] == "restore" }) {
+	if !slices.ContainsFunc(legend.Pairs, func(pair [2]string) bool { return pair[1] == "restore" }) {
 		t.Fatal("session legend in archived view should still offer restore")
 	}
 
 	m.selectGroupRow(t, "zone")
 	legend = m.rowLegend()
-	for _, pair := range legend.pairs {
+	for _, pair := range legend.Pairs {
 		if strings.Contains(pair[1], "archive") {
 			t.Fatalf("group legend in archived view should not offer archive, got %+v", pair)
 		}
 	}
-	if !slices.ContainsFunc(legend.pairs, func(pair [2]string) bool { return pair[1] == "restore" }) {
+	if !slices.ContainsFunc(legend.Pairs, func(pair [2]string) bool { return pair[1] == "restore" }) {
 		t.Fatal("group legend in archived view should still offer restore")
 	}
 }

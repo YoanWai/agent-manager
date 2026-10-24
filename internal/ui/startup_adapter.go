@@ -26,8 +26,6 @@ type startupRoot struct{ *Model }
 
 func (h startupRoot) LoaderNeeded() bool { return h.needsLoaderTick() }
 
-func (h startupRoot) ReportWarn(text string) { h.reportWarn(text) }
-
 func (m *Model) startStartupTick() tea.Cmd { return m.startup.StartTick(startupRoot{m}) }
 
 func (m *Model) bannerTick() tea.Cmd { return m.startup.BannerTick() }

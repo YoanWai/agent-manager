@@ -60,11 +60,10 @@ type Paths interface {
 	Hint() [][2]string
 }
 
-// FormHost is what the form reads from the root: the choice facts, the
-// status bar, and the prompt box and path completer it owns.
+// FormHost is what the form reads from the root: the choice facts and
+// the prompt box and path completer it owns.
 type FormHost interface {
 	ChoiceHost
-	ClearErr()
 	Prompt() Prompt
 	Paths() Paths
 }

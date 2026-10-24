@@ -193,6 +193,28 @@ func (hits KeyHits) Add(x0, x1, y int, label string) KeyHits {
 	return append(hits, KeyHit{X0: x0, X1: x1, Y: y, Key: key})
 }
 
+// At is the hit under column x of row y.
+func (hits KeyHits) At(x, y int) (KeyHit, bool) {
+	for _, hit := range hits {
+		if y == hit.Y && x >= hit.X0 && x < hit.X1 {
+			return hit, true
+		}
+	}
+	return KeyHit{}, false
+}
+
+// Above keeps the hits on the rows a frame clamped to height still shows.
+func (hits KeyHits) Above(height int) KeyHits {
+	kept := hits[:0]
+	for _, hit := range hits {
+		if hit.Y < height {
+			kept = append(kept, hit)
+		}
+	}
+	return kept
+}
+
+// Moved is hits painted with their first row at y and first column at x.
 func (hits KeyHits) Moved(x, y int) KeyHits {
 	out := make(KeyHits, len(hits))
 	for i, hit := range hits {

@@ -12,11 +12,20 @@ import (
 // tells a reopened box from its predecessor, the painters the current theme
 // gives it, and the pastes directory sweep.
 
-// The root is the status bar a prompt box reports its paste and chip edits
-// on, through composer.Host.
+// The root is the status bar the packages' hosts report on; a root that
+// embeds *Model answers these without its own forwards.
 func (m *Model) ReportErr(text string) { m.reportErr(text) }
 
 func (m *Model) ClearErr() { m.clearErr() }
+
+func (m *Model) ReportDone(text string) { m.reportDone(text) }
+
+func (m *Model) ReportWarn(text string) { m.reportWarn(text) }
+
+// CardWidth and InnerWidth are a card's size as the frame computes it.
+func (m *Model) CardWidth(cols int) int { return uiframe.CardWidthFor(cols) }
+
+func (m *Model) InnerWidth(width int) int { return uiframe.CardInnerWidth(width) }
 
 // composerPaint is the prompt as the current theme paints it: the caret
 // marker on its textarea, and the color of a filled chip and of one whose

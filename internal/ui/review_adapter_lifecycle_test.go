@@ -170,7 +170,7 @@ func TestClickOnTheSendQuestionAnswersIt(t *testing.T) {
 		t.Fatalf("test setup: C should ask to send, err %q", m.errBar.text)
 	}
 	x, y := paintedCell(t, m, "↵/y send")
-	if _, ok := m.layout.keyHits.at(x, y); !ok {
+	if _, ok := m.layout.keyHits.At(x, y); !ok {
 		t.Fatal("the send question's own keys should be click targets")
 	}
 	if m = clickLabel(t, m, "esc cancel"); m.review.Snapshot().SendConfirm || m.base != baseReview {

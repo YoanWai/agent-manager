@@ -1555,7 +1555,7 @@ func TestMessagesLegendOpensNoticesByMouseAndKey(t *testing.T) {
 				m.prefs.hideStats = true
 				m.services.listKeys = m.services.listKeys.With(keybind.Messages, bindingOf(t, binding))
 				x, y := messagesCell(t, m)
-				if _, ok := m.layout.keyHits.at(x, y); !ok {
+				if _, ok := m.layout.keyHits.At(x, y); !ok {
 					t.Fatalf("full=%v width=%d binding=%s: painted messages entry misses its hit box %+v", full, width, binding, m.layout.keyHits)
 				}
 				if m = leftClick(m, x, y); !m.noticesOpen() {
@@ -1941,8 +1941,8 @@ func TestSavedPromptsOverFocusHideTheFooterKeys(t *testing.T) {
 		t.Fatal("test setup: the card paints its own keys")
 	}
 	for _, hit := range m.layout.keyHits {
-		if !m.layout.card.holds(hit.x0, hit.y) {
-			t.Fatalf("a key at %d,%d answers outside the card %+v", hit.x0, hit.y, m.layout.card)
+		if !m.layout.card.holds(hit.X0, hit.Y) {
+			t.Fatalf("a key at %d,%d answers outside the card %+v", hit.X0, hit.Y, m.layout.card)
 		}
 	}
 }
@@ -2422,7 +2422,7 @@ func TestClickOnMessagesFootRunsItsKeys(t *testing.T) {
 	}
 	for _, key := range []string{"↑↓ pick", "pgup/pgdn"} {
 		x, y := paintedCell(t, m, key)
-		if _, ok := m.layout.keyHits.at(x, y); ok {
+		if _, ok := m.layout.keyHits.At(x, y); ok {
 			t.Fatalf("%q moves the cursor; the rows and the wheel answer for it", key)
 		}
 	}
@@ -2479,8 +2479,8 @@ func TestARepaintedKeyDoesNotRunOnTheRelease(t *testing.T) {
 	m = leftPress(m, x, y)
 	repainted := false
 	for i, hit := range m.layout.keyHits {
-		if hit.y == y && x >= hit.x0 && x < hit.x1 {
-			m.layout.keyHits[i].key, repainted = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")}, true
+		if hit.Y == y && x >= hit.X0 && x < hit.X1 {
+			m.layout.keyHits[i].Key, repainted = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")}, true
 		}
 	}
 	if !repainted {

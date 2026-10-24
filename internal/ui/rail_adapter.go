@@ -244,19 +244,11 @@ func (m *Model) prepareRailFrame(width, height int) {
 
 func (m *Model) railTheme() uirail.Theme { return uitheme.Current() }
 
-func railContentLines(lines []uirail.Line) []contentLine {
-	out := make([]contentLine, len(lines))
-	for i, line := range lines {
-		out[i] = contentLine{text: line.Text, tone: line.Tone, rule: line.Rule, raw: line.Raw}
-	}
-	return out
-}
-
 func (m *Model) overlayRowMenu(frame string) string { return m.layout.displayedRail.Overlay(frame) }
 
 func (m *Model) railLines(width, height int) []contentLine {
 	m.prepareRailFrame(width, height)
-	return railContentLines(m.layout.displayedRail.Lines)
+	return m.layout.displayedRail.Lines
 }
 
 func (m *Model) railLegendContext() uirail.LegendContext {
@@ -300,8 +292,8 @@ func (m *Model) viewLegend() legendSection {
 
 func legendOf(legend uirail.Legend) legendSection {
 	return legendSection{
-		title: legend.Title, leads: legend.Leads, alerts: legend.Alerts,
-		hint: legend.Hint, pairs: legend.Pairs, quiet: legend.Quiet,
+		Title: legend.Title, Leads: legend.Leads, Alerts: legend.Alerts,
+		Hint: legend.Hint, Pairs: legend.Pairs, Quiet: legend.Quiet,
 	}
 }
 

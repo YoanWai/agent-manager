@@ -820,7 +820,7 @@ func TestLayoutsCanHideStats(t *testing.T) {
 				t.Fatalf("footerless rail = %d rows, body is %d", len(rail), m.listBodyHeight())
 			}
 			for _, line := range rail {
-				if line.rule {
+				if line.Rule {
 					t.Fatal("hidden stats left their separator behind")
 				}
 			}

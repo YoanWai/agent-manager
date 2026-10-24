@@ -55,7 +55,7 @@ func railText(t *testing.T, m *Model) []string {
 func railTextAt(m *Model, width int) []string {
 	var out []string
 	for _, line := range m.entryLines(railRows(m), 0, width, 20) {
-		out = append(out, strings.TrimRight(ansi.Strip(line.text), " "))
+		out = append(out, strings.TrimRight(ansi.Strip(line.Text), " "))
 	}
 	return out
 }
@@ -191,7 +191,7 @@ func TestEmptyListKeepsItsGuidance(t *testing.T) {
 func joinContentText(lines []contentLine) string {
 	var out []string
 	for _, line := range lines {
-		out = append(out, line.text)
+		out = append(out, line.Text)
 	}
 	return strings.Join(out, "\n")
 }
@@ -440,7 +440,7 @@ func TestMouseOffPaintsNoHandleOrMenuButton(t *testing.T) {
 	m := shotModel()
 	m.prefs.mouseDisabled = true
 	for _, line := range m.entryLines(railRows(m), 0, 44, 20) {
-		text := ansi.Strip(line.text)
+		text := ansi.Strip(line.Text)
 		if strings.Contains(text, reorderGrip) || strings.Contains(text, rowMenuGlyph) {
 			t.Fatalf("mouse off should paint no handle or %s: %q", rowMenuGlyph, text)
 		}
@@ -448,7 +448,7 @@ func TestMouseOffPaintsNoHandleOrMenuButton(t *testing.T) {
 	m.prefs.mouseDisabled = false
 	painted := false
 	for _, line := range m.entryLines(railRows(m), 0, 44, 20) {
-		painted = painted || strings.Contains(ansi.Strip(line.text), reorderGrip)
+		painted = painted || strings.Contains(ansi.Strip(line.Text), reorderGrip)
 	}
 	if !painted {
 		t.Fatal("test setup: the mouse on should paint handles")
@@ -510,7 +510,7 @@ func TestFilterBadgesSurviveShortRails(t *testing.T) {
 func railLinesText(lines []contentLine) string {
 	var b strings.Builder
 	for _, line := range lines {
-		b.WriteString(line.text + "\n")
+		b.WriteString(line.Text + "\n")
 	}
 	return b.String()
 }
@@ -610,12 +610,12 @@ func TestComfortableRowSurvivesShortRail(t *testing.T) {
 	if len(lines) != 2 {
 		t.Fatalf("entry lines = %d want 2", len(lines))
 	}
-	head := lineWith(t, []string{ansi.Strip(lines[0].text), ansi.Strip(lines[1].text)}, "three")
+	head := lineWith(t, []string{ansi.Strip(lines[0].Text), ansi.Strip(lines[1].Text)}, "three")
 	if head != 0 {
 		t.Fatalf("selected entry should start the window, got line %d", head)
 	}
-	if prompt := strings.TrimSpace(ansi.Strip(lines[1].text)); prompt == "" {
-		t.Fatalf("selected entry lost its prompt line: %q", ansi.Strip(lines[1].text))
+	if prompt := strings.TrimSpace(ansi.Strip(lines[1].Text)); prompt == "" {
+		t.Fatalf("selected entry lost its prompt line: %q", ansi.Strip(lines[1].Text))
 	}
 }
 
@@ -720,8 +720,8 @@ func TestInboxBadgeOutlivesTheRowMeta(t *testing.T) {
 		m.workspace.queuedMessages = map[string]int{"add-rate-limiting": 2}
 
 		for _, line := range m.entryLines(railRows(m), 0, width, 20) {
-			if got := ansi.StringWidth(line.text); got > width {
-				t.Errorf("width %d: rail line is %d wide: %q", width, got, ansi.Strip(line.text))
+			if got := ansi.StringWidth(line.Text); got > width {
+				t.Errorf("width %d: rail line is %d wide: %q", width, got, ansi.Strip(line.Text))
 			}
 		}
 		rows := railTextAt(m, width)
@@ -1326,7 +1326,7 @@ func TestSearchFieldFillsOnlyWhileSearching(t *testing.T) {
 	m.rail.SetSearch("note", m.rail.Searching())
 	fieldLine := func() contentLine {
 		for _, line := range m.railLines(40, 14) {
-			if strings.Contains(ansi.Strip(line.text), "⌕") {
+			if strings.Contains(ansi.Strip(line.Text), "⌕") {
 				return line
 			}
 		}
@@ -1336,20 +1336,20 @@ func TestSearchFieldFillsOnlyWhileSearching(t *testing.T) {
 
 	m.rail.SetSearch(m.rail.Search(), true)
 	open := fieldLine()
-	if open.tone != uitheme.SearchFieldHex() {
-		t.Fatalf("open field tone = %q, want %q", open.tone, uitheme.SearchFieldHex())
+	if open.Tone != uitheme.SearchFieldHex() {
+		t.Fatalf("open field tone = %q, want %q", open.Tone, uitheme.SearchFieldHex())
 	}
-	if !strings.Contains(open.text, uitheme.BgSeq(uitheme.SearchFieldHex())) {
-		t.Fatalf("open field line carries no fill:\n%q", open.text)
+	if !strings.Contains(open.Text, uitheme.BgSeq(uitheme.SearchFieldHex())) {
+		t.Fatalf("open field line carries no fill:\n%q", open.Text)
 	}
 
 	m.rail.SetSearch(m.rail.Search(), false)
 	closed := fieldLine()
-	if closed.tone != "" {
-		t.Fatalf("closed field with a query applied should keep the panel tone, got %q", closed.tone)
+	if closed.Tone != "" {
+		t.Fatalf("closed field with a query applied should keep the panel tone, got %q", closed.Tone)
 	}
-	if strings.Contains(closed.text, uitheme.BgSeq(uitheme.SearchFieldHex())) {
-		t.Fatalf("closed field line should not be filled:\n%q", closed.text)
+	if strings.Contains(closed.Text, uitheme.BgSeq(uitheme.SearchFieldHex())) {
+		t.Fatalf("closed field line should not be filled:\n%q", closed.Text)
 	}
 }
 
@@ -1420,7 +1420,7 @@ func searchModel() *Model {
 func railHead(m *Model) string {
 	var b strings.Builder
 	for _, line := range m.railLines(40, 24) {
-		b.WriteString(ansi.Strip(line.text) + "\n")
+		b.WriteString(ansi.Strip(line.Text) + "\n")
 	}
 	return b.String()
 }
