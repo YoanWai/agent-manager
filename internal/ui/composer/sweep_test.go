@@ -22,16 +22,19 @@ func TestSweepReportsSweepError(t *testing.T) {
 }
 
 func TestSweepTickSweepsAgainAndRearms(t *testing.T) {
-	cmd := SweepTick()
-	if cmd == nil {
+	if SweepTick() == nil {
 		t.Fatal("tick must return work")
 	}
 	// A manager left open for weeks only keeps sweeping if the tick both
-	// sweeps and re-arms, so the batch must carry two commands. Running the
-	// timer itself here would wait out the real interval.
+	// sweeps and re-arms. The route answers the tick without reading root,
+	// and running the timer itself would wait out the real interval.
+	cmd, handled := Update(nil, SweepTickMsg{})
+	if !handled || cmd == nil {
+		t.Fatal("the tick went unhandled")
+	}
 	batch, ok := cmd().(tea.BatchMsg)
 	if !ok {
-		t.Fatalf("want a batch, got %T", cmd())
+		t.Fatal("the tick did not batch a sweep and a re-arm")
 	}
 	if len(batch) != 2 {
 		t.Fatalf("want sweep plus re-arm, got %d commands", len(batch))

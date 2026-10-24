@@ -591,6 +591,7 @@ func createSessionOn(t *testing.T, m *Model, name, tool, dir string) {
 func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoNamed, worktree bool, choice config.Choice) error {
 	paneW, paneH := m.paneTargetSize()
 	request := uilaunch.Request{
+		ID:           newID(),
 		Kind:         uilaunch.Form,
 		ToolName:     toolName,
 		Name:         name,
