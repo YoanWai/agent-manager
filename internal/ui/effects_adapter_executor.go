@@ -53,11 +53,13 @@ func (m *Model) bindEffect(request uieffects.Request) func() (uieffects.Result, 
 	if work, ok := uieffects.Bind(request, func() uiinstall.Services { return capture().install() }); ok {
 		return work
 	}
-	if work, ok := uieffects.Bind(request, func() uirailpersist.Services { return capture().railServices() }); ok {
 	if work, ok := uieffects.Bind(request, func() uilink.Services { return capture().link() }); ok {
 		return work
 	}
 	if work, ok := uieffects.Bind(request, func() uiapply.Services { return capture().dialogApply() }); ok {
+		return work
+	}
+	if work, ok := uieffects.Bind(request, func() uirailpersist.Services { return capture().railServices() }); ok {
 		return work
 	}
 	services := capture()
@@ -83,10 +85,13 @@ func (m *Model) applyEffect(job *uieffects.Job, result uieffects.Result, err err
 		return m.applyDetachEffect(job.Request.(focusruntime.DetachRequest), result, err)
 	case focusruntime.InputResult:
 		m.applyInputEffect(result, err)
+		return nil
 	case uigeometrypanes.ResizeResult:
 		m.applyGeometryEffect(result.Result, err)
+		return nil
 	case uigeometrypanes.SplitSaveResult:
 		m.layout.panes.ApplySplit(paneSizing{m}, job.ID, err)
+		return nil
 	case uilink.SaveResult:
 		return m.applyConnectionSave(job.Request.(uilink.SaveRequest), result, err)
 	case uilink.Result:
@@ -95,8 +100,10 @@ func (m *Model) applyEffect(job *uieffects.Job, result uieffects.Result, err err
 		return m.applyFork(job.Request.(uiapply.ForkEffect), result, err)
 	case uiapply.RenameEffectResult:
 		m.applyRenameOutcome(job, result, err)
+		return nil
 	case uiapply.MoveCloseResult:
 		m.applyMoveClose(job.Request.(uiapply.MoveClose))
+		return nil
 	case effectResult:
 		return result.apply(m, job, err)
 	}
