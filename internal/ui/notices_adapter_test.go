@@ -15,6 +15,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
 	uirelease "github.com/YoanWai/agent-manager/internal/ui/notices/release"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
 	"github.com/YoanWai/agent-manager/internal/update"
@@ -1361,5 +1362,106 @@ func TestDismissNoticeFailureDuringQuitRestoresWithoutReopening(t *testing.T) {
 	}
 	if !strings.Contains(m.errBar.text, "decode setting") {
 		t.Fatalf("failure reason = %q", m.errBar.text)
+	}
+}
+
+func TestNoticeMarksAreResolvedWithoutChangingExternalContent(t *testing.T) {
+	m := noticeModel(noticeStore(t), "v1.0.0")
+	const text = "⚙❯✳ literal notice"
+	m.release.Feed = []feed.Message{{ID: "literal", Title: text, Body: []string{text}, URL: "https://example.com"}}
+	m.release.Latest = "v1.1.0"
+	m.release.Refreshing, m.release.Applying = true, true
+	for _, tc := range []struct {
+		mode                                                   presentation.GlyphMode
+		feed, welcome, update, refresh, download, link, cursor string
+	}{
+		{presentation.GlyphModeBasic, "i", "i", "^", "R", "v", "@", ">"},
+		{presentation.GlyphModeAdvanced, "◆", "✳", "↑", "↻", "↓", "↗", "▸"},
+	} {
+		m.prefs.glyphMode = tc.mode
+		notices := m.activeNotices()
+		for _, n := range notices {
+			want := ""
+			switch n.ID {
+			case "literal":
+				want = tc.feed
+			case uinotices.Welcome:
+				want = tc.welcome
+			case "update-v1.1.0":
+				want = tc.update
+			}
+			if want != "" && n.Glyph != want {
+				t.Fatalf("%s/%s glyph=%q", tc.mode, n.ID, n.Glyph)
+			}
+			if n.ID == "literal" && (n.Title != text || strings.Join(n.Body, "") != text) {
+				t.Fatal("external message rewritten")
+			}
+		}
+		m.layout.width, m.layout.height = 120, 40
+		m.notices.Open(notices, "literal")
+		got := ansi.Strip(strings.Join(m.notices.View(notices, m.noticesFrame()), "\n"))
+		tail := got
+		for _, want := range []string{tc.refresh + " refreshing", tc.download + " downloading", tc.link + " example.com"} {
+			if !strings.Contains(tail, want) {
+				t.Fatalf("%s tail missing %q: %s", tc.mode, want, tail)
+			}
+		}
+		m.notices.Open(notices, "update-v1.1.0")
+		got = ansi.Strip(strings.Join(m.notices.View(m.activeNotices(), m.noticesFrame()), "\n"))
+		if !strings.Contains(got, tc.cursor+" "+tc.update) {
+			t.Fatalf("%s notice cursor = %s", tc.mode, got)
+		}
+	}
+}
+
+func TestClickOnAMessageTitleSelectsIt(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 34
+	m.openNotices("")
+	notices := m.activeNotices()
+	if len(notices) < 2 {
+		t.Fatalf("test setup: a fresh model shows two notices, has %d", len(notices))
+	}
+	x, y := paintedCell(t, m, notices[1].Title)
+	if m = leftClick(m, x, y); noticesSurfaceOf(m).Panel().Cursor() != 1 || !m.noticesOpen() {
+		t.Fatalf("a click on the second title should select it, cursor %d mode %v", noticesSurfaceOf(m).Panel().Cursor(), m.screenID())
+	}
+	if body := preparedView(m); !strings.Contains(body, notices[1].Title) {
+		t.Fatal("the selected notice should stay on screen")
+	}
+}
+
+func TestUpdateMsgSetsAndClearsBadge(t *testing.T) {
+	m := &Model{
+		layout: layoutState{width: 120},
+	}
+	m.Update(uirelease.UpdateMsg{Latest: "v0.11.1", URL: "https://example/rel"})
+	if m.release.Latest != "v0.11.1" || m.release.URL != "https://example/rel" {
+		t.Errorf("badge not set: %q %q", m.release.Latest, m.release.URL)
+	}
+	m.Update(uirelease.UpdateMsg{})
+	if m.release.Latest != "" || m.release.URL != "" {
+		t.Errorf("an up-to-date result should clear the badge: %q %q", m.release.Latest, m.release.URL)
+	}
+}
+
+func TestFailedUpdateCheckKeepsBadge(t *testing.T) {
+	m := &Model{
+		layout:  layoutState{width: 120},
+		release: uirelease.State{Latest: "v0.11.1", URL: "https://example/rel"},
+	}
+	m.Update(uirelease.UpdateMsg{Failed: true})
+	if m.release.Latest != "v0.11.1" || m.release.URL != "https://example/rel" {
+		t.Errorf("a failed check must leave the badge alone: %q %q", m.release.Latest, m.release.URL)
+	}
+}
+
+func TestUpdateTickReArms(t *testing.T) {
+	m := &Model{
+		layout: layoutState{width: 120},
+	}
+	if _, cmd := m.Update(uirelease.TickMsg{}); cmd == nil {
+		t.Error("update tick should re-arm the timer and re-check")
 	}
 }
