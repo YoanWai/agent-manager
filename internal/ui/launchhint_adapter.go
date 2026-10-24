@@ -60,8 +60,8 @@ func (m *Model) startInstall(request uiinstall.StartRequest) bool {
 		if job == nil {
 			continue
 		}
-		if starting, ok := job.Request.(uiinstall.StartRequest); ok {
-			m.reportErr("an install is already starting for " + starting.Binary)
+		if binary, ok := uiinstall.Starting(job.Request); ok {
+			m.reportErr("an install is already starting for " + binary)
 			return false
 		}
 	}

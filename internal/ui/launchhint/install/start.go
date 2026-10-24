@@ -12,6 +12,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uilaunchhint "github.com/YoanWai/agent-manager/internal/ui/launchhint"
 )
 
@@ -161,4 +162,12 @@ func RunSettle(services Services, request SettleRequest) (SettleResult, error) {
 		DropImages(install.Images)
 	}
 	return result, nil
+}
+
+// Starting names the install another accepted start is already running, which
+// a second start must wait for. It reads a job's request, so the root hands it
+// the requests on its lane.
+func Starting(request uieffects.Request) (string, bool) {
+	starting, ok := request.(StartRequest)
+	return starting.Binary, ok
 }
