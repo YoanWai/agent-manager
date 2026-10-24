@@ -143,17 +143,13 @@ func (m *Model) scrollFocus(delta int) tea.Cmd {
 }
 
 func (m *Model) wheelFocus(up bool, x, y int) tea.Cmd {
-	sess, ok := m.selected()
-	if !ok {
+	if _, ok := m.selected(); !ok {
 		return nil
 	}
-	result := m.focus.pane.Mouse(tea.MouseMsg{
+	_, cmd := m.focus.pane.MouseUnder(focusHost{m}, tea.MouseMsg{
 		X: x, Y: y, Action: tea.MouseActionPress,
 		Button: map[bool]tea.MouseButton{true: tea.MouseButtonWheelUp, false: tea.MouseButtonWheelDown}[up],
-	}, uifocus.MouseContext{
-		SessionID: sess.ID, Rows: m.focusPaneRows(), RuntimeReady: m.focus.runtime.Watch != nil,
 	})
-	_, cmd := m.applyFocusMouse(result)
 	return cmd
 }
 
