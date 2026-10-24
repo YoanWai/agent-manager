@@ -14,10 +14,10 @@ import (
 
 // allowed lists test files that cover more than one source on purpose.
 var allowed = map[string]string{
-	"internal/cli/parity_test.go":                     "compares the CLI with the MCP server",
-	"internal/execution/two_manager_test.go":          "runs two managers through the runner, poller and delivery",
-	"internal/tmux/delivery_test.go":                  "covers context-aware delivery across control, input and tmux",
-	"internal/ui/session_adapter_integration_test.go": "drives create, archive, restore and delete end to end",
+	"internal/cli/parity_test.go":                       "compares the CLI with the MCP server",
+	"internal/execution/two_manager_test.go":            "runs two managers through the runner, poller and delivery",
+	"internal/tmux/delivery_test.go":                    "covers context-aware delivery across control, input and tmux",
+	"internal/ui/session_lifecycle_integration_test.go": "drives create, archive, restore and delete end to end",
 }
 
 // uiRoot holds the root UI package, whose files are named <feature>_<concern>.go.
