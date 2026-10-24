@@ -5,14 +5,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// ProbeHost is what entering focus once the dead-pane probe has run asks of
-// the root.
 type ProbeHost interface {
 	ReportErr(text string)
 	// Grounded reports whether a probe asked with generation still owns the
 	// foreground: not a quit, and no newer press since.
 	Grounded(generation uint64) bool
-	// ListClear reports whether the list is up with no card over it.
 	ListClear() bool
 	Enter(sessionID string) tea.Cmd
 }
@@ -36,10 +33,7 @@ type DetachHost interface {
 	Warn(text string)
 	Refresh()
 	Quitting() bool
-	// TakenSinceDetach reports whether the user moved the screen since the
-	// session detached.
 	TakenSinceDetach() bool
-	// Name is the display name of a session, or its id when the row is gone.
 	Name(sessionID string) string
 	Focused(sessionID string) bool
 	Review(sessionID string) tea.Cmd

@@ -160,7 +160,6 @@ func FileCmd(g Git, req uireview.FileRequest) tea.Cmd {
 
 type FilesResult []uireview.FileResult
 
-// FilesCmd loads the files a refresh asked for after the selected one.
 func FilesCmd(g Git, requests []uireview.FileRequest) tea.Cmd {
 	if len(requests) == 0 {
 		return nil

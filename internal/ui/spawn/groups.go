@@ -18,8 +18,6 @@ type GroupOption struct {
 	SessionID string
 }
 
-// Picker is the group list the New Session form and the move card pick
-// from, each its own.
 type Picker struct {
 	Groups     []GroupOption
 	GroupIndex int

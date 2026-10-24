@@ -63,11 +63,7 @@ type Store interface {
 }
 
 type Root interface {
-	// ApplyNotices applies a change that may add a notice and opens the
-	// one it added, now or once the list is back.
 	ApplyNotices(apply func())
-	// KeepNoticeSelection applies a change while an open panel keeps its
-	// cursor on the notice it was on.
 	KeepNoticeSelection(apply func())
 	ReportErr(text string)
 	ReportDone(text string)
@@ -148,8 +144,6 @@ func (s *State) Greet(st Store) (string, error) {
 	return "whatsnew-" + s.Version, nil
 }
 
-// Sources fills the release and feed part of what the notice list is
-// built from.
 func (s *State) Sources() notices.Sources {
 	messages := make([]notices.Message, len(s.Feed))
 	for i, msg := range s.Feed {
@@ -244,13 +238,11 @@ func (s *State) Check() tea.Cmd {
 	return func() tea.Msg { return fetchUpdates(version, false) }
 }
 
-// CheckFeed pulls the remote message feed off the event loop.
 func (s *State) CheckFeed() tea.Cmd {
 	version := s.Version
 	return func() tea.Msg { return fetchFeed(version, false) }
 }
 
-// CheckStartupFeed is the launch's fetch, the one FeedPending waits for.
 func (s *State) CheckStartupFeed() tea.Cmd {
 	version := s.Version
 	return func() tea.Msg {
@@ -319,8 +311,6 @@ func fetchFeed(version string, force bool) FeedMsg {
 	return FeedMsg{Messages: messages, Manual: force}
 }
 
-// Route applies a check, feed or self-update result, reporting whether msg
-// was one.
 func (s *State) Route(root Root, msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case UpdateMsg:

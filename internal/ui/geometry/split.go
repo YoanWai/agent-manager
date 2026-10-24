@@ -68,8 +68,6 @@ func ClampSplitLeft(left, width int) int {
 	return left
 }
 
-// RatioAt is the left panel's share of the width when its right edge sits
-// at terminal column x.
 func RatioAt(x, width int) float64 {
 	return float64(ClampSplitLeft(x, width)) / float64(width)
 }

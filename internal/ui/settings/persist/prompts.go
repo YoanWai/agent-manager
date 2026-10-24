@@ -42,13 +42,11 @@ type PromptRequest struct {
 	Remove    string
 }
 
-// PromptResult is the catalog read back once the write landed.
 type PromptResult struct {
 	Rows      []store.SessionPreset
 	Committed bool
 }
 
-// RunPrompt saves or deletes one name, then reads the catalog back.
 func RunPrompt(request PromptRequest, presets Presets) (PromptResult, error) {
 	var err error
 	if request.Save != nil {

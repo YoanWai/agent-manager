@@ -40,8 +40,6 @@ func NewSurface(root Root, rows []PickerRow, title string, kind PickerKind, curr
 	return s
 }
 
-// Picker is the picker's rows, filter and cursor, for the root to read what
-// the card shows.
 func (s *Surface) Picker() *Picker { return &s.picker }
 
 func (s *Surface) Key(h surface.Host, msg tea.KeyMsg) (bool, tea.Cmd) {

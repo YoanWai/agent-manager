@@ -233,7 +233,6 @@ func (d *GroupForm) Click(line int, paths PathSuggestions, worktrees int) GroupF
 	return GroupFormKey{}
 }
 
-// Wheel steps the parent picker while it is open under its field.
 func (d GroupForm) Wheel(step int) GroupFormKey {
 	if d.focus != GroupFormParentField {
 		return GroupFormKey{}

@@ -23,9 +23,7 @@ import (
 type State struct {
 	// Pending is the install still running in a shell tab, nil when none is.
 	Pending *Pending
-	// Launch is the fix the card shows, with the launch to retry and the
-	// images its prompt named.
-	Launch Fix
+	Launch  Fix
 }
 
 // Fix is what the setup-step card holds: the text it shows, the command it
@@ -74,7 +72,6 @@ type Root interface {
 	// shell, dropping drafts the install now owns.
 	ShowInstall(sessionID string) tea.Cmd
 	Refresh() tea.Cmd
-	// QueueRetry runs the launch the fix held once its install is ready.
 	QueueRetry(retry Retry)
 }
 
@@ -145,7 +142,6 @@ type StartResult struct {
 	Pending *Pending
 }
 
-// SettleRequest is the install one captured status check reads.
 type SettleRequest struct {
 	Pending Pending
 }

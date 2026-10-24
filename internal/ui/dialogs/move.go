@@ -14,16 +14,13 @@ type Move struct {
 	group     string
 }
 
-// MoveSession captures a session row to place.
 func MoveSession(id string) Move { return Move{sessionID: id} }
 
-// MoveGroup captures a group row to re-parent.
 func MoveGroup(path string) Move { return Move{group: path} }
 
 // SessionID is the captured session, empty for a group move.
 func (d Move) SessionID() string { return d.sessionID }
 
-// IsGroup reports whether the captured row is a group.
 func (d Move) IsGroup() bool { return d.group != "" }
 
 type MoveAction uint8

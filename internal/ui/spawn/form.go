@@ -213,7 +213,6 @@ func (d *Form) Tool() string {
 	return d.toolNames[d.toolIndex]
 }
 
-// Tools are the CLIs the tool row steps through, and the picked one's index.
 func (d *Form) Tools() ([]string, int) { return d.toolNames, d.toolIndex }
 
 func (d *Form) SetTools(names []string, index int) {
@@ -269,7 +268,6 @@ func (d *Form) SetWorktree(on bool) {
 	d.defaultsTouched = true
 }
 
-// DefaultsTouched says the user chose a tool or worktree since opening.
 func (d *Form) DefaultsTouched() bool { return d.defaultsTouched }
 
 func (d *Form) Focused() Field { return d.focus }

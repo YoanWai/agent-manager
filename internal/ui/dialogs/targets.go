@@ -6,8 +6,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 )
 
-// Agent is a running agent a shell may be nested under, as the move card
-// offers it.
 type Agent struct {
 	ID    string
 	Group string

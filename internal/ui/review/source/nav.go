@@ -1,6 +1,5 @@
 package source
 
-// ReturnKind is the screen a Review goes back to when it closes.
 type ReturnKind uint8
 
 const (

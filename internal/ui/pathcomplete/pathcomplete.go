@@ -162,8 +162,6 @@ func (s *State) Handle(h Host, msg Msg) {
 	s.Chosen = false
 }
 
-// View renders the directory-completion dropdown under a focused path
-// field.
 func (s *State) View(styles Styles) string {
 	var b strings.Builder
 	for i, path := range s.Suggestions {

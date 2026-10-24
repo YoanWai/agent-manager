@@ -108,11 +108,8 @@ func (m *Model) baseOwner() uisurface.Owner {
 	return uisurface.Manager
 }
 
-// agentOwnsKeyboard is true while keys go straight to the focused pane.
 func (m *Model) agentOwnsKeyboard() bool { return m.inputOwner() == uisurface.Agent }
 
-// surfaceKey offers msg to the stack from the top down, and reports whether
-// a surface took it.
 func (m *Model) surfaceKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 	for i := len(m.surfaces) - 1; i >= 0; i-- {
 		if handled, cmd := m.surfaces[i].Key(m, msg); handled {

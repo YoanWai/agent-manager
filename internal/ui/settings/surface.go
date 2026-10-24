@@ -35,7 +35,6 @@ func NewSurface(root Root, state State) *Surface {
 
 func (s *Surface) State() *State { return &s.state }
 
-// SetState replaces the dialog after a reload from the store.
 func (s *Surface) SetState(state State) { s.state = state }
 
 func (s *Surface) Key(h surface.Host, msg tea.KeyMsg) (bool, tea.Cmd) {
@@ -58,7 +57,6 @@ func (s *Surface) Wheel(h surface.Host, arrow tea.KeyMsg) tea.Cmd {
 	return s.apply(h, s.state.Wheel(step, s.root.Context()))
 }
 
-// apply runs a result, and closes the card when it asked to.
 func (s *Surface) apply(h surface.Host, result Result) tea.Cmd {
 	cmd, closes := s.root.Apply(&s.state, result)
 	if !closes {

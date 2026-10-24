@@ -97,7 +97,6 @@ func (q *Bar) Tool() string {
 	return q.toolNames[q.toolIndex]
 }
 
-// Tools are the CLIs tab steps through, and the picked one's index.
 func (q *Bar) Tools() ([]string, int) { return q.toolNames, q.toolIndex }
 
 func (q *Bar) SetTools(names []string, index int) {
@@ -127,7 +126,6 @@ func (q *Bar) SetWorktree(on bool) {
 	q.defaultsTouched = true
 }
 
-// DefaultsTouched says the user chose a tool or worktree since opening.
 func (q *Bar) DefaultsTouched() bool { return q.defaultsTouched }
 
 func (q *Bar) Picking() int { return q.picking }

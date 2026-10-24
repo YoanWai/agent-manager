@@ -47,7 +47,6 @@ func Added(before map[string]bool, now []Notice) string {
 	return ""
 }
 
-// IDs is the set of notice IDs a list holds, the shape Added compares.
 func IDs(notices []Notice) map[string]bool {
 	set := make(map[string]bool, len(notices))
 	for _, n := range notices {

@@ -106,7 +106,6 @@ type SendTarget struct {
 	Socket     string
 }
 
-// CaptureSendTarget records the session a round is about to be sent to.
 func CaptureSendTarget(session store.Session) SendTarget {
 	return SendTarget{
 		ID: session.ID, Tool: session.Tool, CreatedAt: session.CreatedAt,

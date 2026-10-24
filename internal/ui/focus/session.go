@@ -123,7 +123,6 @@ func (s *Model) KeyPress(h KeyHost, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return nil, tea.Batch(resume, h.Queued(id, Write{Kind: WriteKeys, Raw: raw, Name: name, Submit: result.Submit, Echo: true}))
 }
 
-// MouseUnder is one mouse event over the pane, and the rail under it.
 func (s *Model) MouseUnder(h MouseHost, msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	id, ok := h.Session()
 	if !ok {

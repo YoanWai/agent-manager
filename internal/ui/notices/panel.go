@@ -37,7 +37,6 @@ func (p Panel) Dismissed(id string) bool { return p.dismissed[id] }
 // Dismiss drops a notice from the list ahead of the write that persists it.
 func (p *Panel) Dismiss(id string) { p.dismissed[id] = true }
 
-// Restore lists a notice again after its dismissal failed to persist.
 func (p *Panel) Restore(id string) { delete(p.dismissed, id) }
 
 // Open shows the panel on the notice with id, or on the first one. It opens

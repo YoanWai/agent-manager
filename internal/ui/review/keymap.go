@@ -146,8 +146,6 @@ func (b binding) helpKey() string {
 	return strings.ReplaceAll(b.legendKey(), "/", " / ")
 }
 
-// HelpRows are Review's rows in the ? map, read from the same keymap the
-// keys run from.
 func HelpRows() [][2]string {
 	var rows [][2]string
 	for _, b := range keymap {

@@ -114,7 +114,6 @@ func (m *Model) AnnotationInputHeight(width int) int {
 	return n
 }
 
-// annotationBar is the comment box docked under the code while typing.
 func (r renderer) annotationBar(fd *diff.FileDiff, width int, cursorMarker string) string {
 	num, _ := AnnotationLine(fd.Lines[r.m.CursorDiffLine()])
 	return r.s.divider(fmt.Sprintf("Comment · %s:%d", presentation.EscapeControlsInline(fd.File.Path), num), width) + "\n" + r.m.AnnotationView(cursorMarker)

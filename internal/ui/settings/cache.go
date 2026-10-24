@@ -18,7 +18,6 @@ func (c Cache) Hidden() map[string]bool { return c.hidden }
 
 func (c Cache) Editors() *EditorsProbe { return c.editors }
 
-// SetEditors keeps a probe answer for the rows a later load rebuilds.
 func (c *Cache) SetEditors(probe *EditorsProbe) { c.editors = probe }
 
 func (c *Cache) ApplyValues(values []Value) {

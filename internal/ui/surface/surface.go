@@ -21,7 +21,6 @@ type Surface interface {
 	View(h Host, below string) string
 	// Footer is the hint pairs the surface adds ahead of the layer's own.
 	Footer() [][2]string
-	// Owner is who reads plain keys while this surface is on top.
 	Owner() Owner
 	// Dismissible is whether esc and a click off the card close it, and
 	// whether ctrl+c does where the pane under the card is the agent's.
@@ -41,7 +40,6 @@ type Host interface {
 	Pop()
 }
 
-// Owner is who receives the keys no layer claims for itself.
 type Owner uint8
 
 const (

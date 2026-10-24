@@ -256,7 +256,6 @@ func (ch *Choice) effortTyped(h ChoiceHost, toolName string) bool {
 	return model.EffortTyped
 }
 
-// EffortTyped says the model takes a typed level, since its CLI lists none.
 func (ch *Choice) EffortTyped(h ChoiceHost, toolName string) bool { return ch.effortTyped(h, toolName) }
 
 func (ch *Choice) fit(h ChoiceHost, toolName string) {
@@ -305,14 +304,12 @@ func (ch *Choice) EffortLevel(h ChoiceHost, toolName string) string {
 	return efforts[ch.effort-1]
 }
 
-// CycleEffort steps the level, the model's default included.
 func (ch *Choice) CycleEffort(h ChoiceHost, toolName string, delta int) {
 	count := len(ch.efforts(h, toolName)) + 1
 	ch.effort = (ch.effort + delta + count) % count
 	ch.keep(h, toolName)
 }
 
-// CycleProfile steps the profile, the CLI's default included.
 func (ch *Choice) CycleProfile(h ChoiceHost, toolName string, delta int) {
 	count := len(choiceProfiles(h, toolName)) + 1
 	ch.profile = (ch.profile + delta + count) % count
@@ -438,8 +435,6 @@ func RememberModel(h ChoiceHost, toolName string, picked Pick) {
 	h.SaveChoiceSetting(recentModelsKey(toolName), string(raw))
 }
 
-// SettingKeys are the per-CLI keys the form and quick prompt read from
-// the settings cache.
 func SettingKeys(tools []string) []string {
 	keys := make([]string, 0, 2*len(tools))
 	for _, name := range tools {
@@ -463,7 +458,6 @@ func ModelListed(h ChoiceHost, toolName string) bool {
 	return true
 }
 
-// EffortShown says whether the effort row shows, and whether it takes keys.
 func (ch *Choice) EffortShown(h ChoiceHost, toolName string) (shown, active bool) {
 	state, supported := choiceAnswer(h, toolName)
 	if !supported || !h.ChoiceCaps(toolName).Efforts {
@@ -502,7 +496,6 @@ func (ch *Choice) Blur() {
 	ch.sugg = modelSuggest{}
 }
 
-// TypeEffort types into the level of a CLI that lists none, and keeps it.
 func (ch *Choice) TypeEffort(h ChoiceHost, toolName string, msg tea.KeyMsg) tea.Cmd {
 	var cmd tea.Cmd
 	before := ch.typedEffort.Value()
@@ -521,7 +514,6 @@ func (ch *Choice) TypeFilter(msg tea.KeyMsg) tea.Cmd {
 	return cmd
 }
 
-// PickHighlighted picks the model the list highlights, if it lists any.
 func (ch *Choice) PickHighlighted(h ChoiceHost, toolName string) {
 	if list := ch.suggestions(h, toolName, ch.query()); len(list) > 0 {
 		ch.pickModel(h, toolName, list[ch.sugg.index].model.Key())

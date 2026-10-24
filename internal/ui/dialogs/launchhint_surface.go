@@ -37,16 +37,12 @@ type LaunchHintRoot interface {
 	// StartInstall admits the install for the fix on screen onto the root's
 	// lane and says whether it took it.
 	StartInstall() bool
-	// CopyLaunchCommand copies the command on screen and reports the
-	// outcome.
 	CopyLaunchCommand() tea.Cmd
 	CardWidth() int
 	CardChromeRows(hint [][2]string) int
 	ReleaseLaunchHint()
 }
 
-// NewLaunchHintSurface opens the card for a refused launch, its first
-// paragraph in tone and the rest muted.
 func NewLaunchHintSurface(root LaunchHintRoot, fix LaunchFix, glyphs presentation.GlyphSet, tone, muted lipgloss.Style) *LaunchHintSurface {
 	return &LaunchHintSurface{fix: fix, glyphs: glyphs, tone: tone, muted: muted, root: root}
 }

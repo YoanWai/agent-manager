@@ -21,8 +21,6 @@ func (g Gesture) Released(x, width int) Gesture {
 	return g
 }
 
-// Ended ends the gesture, committing the ratio or putting back the one it
-// started from.
 func (g Gesture) Ended(commit bool) Gesture {
 	if !commit {
 		g.Ratio = g.RatioBefore

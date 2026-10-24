@@ -7,8 +7,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// FocusKeys are the session keys the focused footer names, as the tables
-// spell them.
 type FocusKeys struct {
 	Detach      string
 	Review      string

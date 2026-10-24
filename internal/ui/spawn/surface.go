@@ -37,8 +37,6 @@ type SurfaceRoot interface {
 	ReleasePrompt()
 }
 
-// NewSurface opens the form over the list, on the form, picker rows and
-// completer state the root built for it.
 func NewSurface(root SurfaceRoot, form Form, picker Picker, complete pathcomplete.State) *Surface {
 	return &Surface{Form: form, Picker: picker, Complete: complete, root: root}
 }

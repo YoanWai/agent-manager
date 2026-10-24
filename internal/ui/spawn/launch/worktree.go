@@ -6,7 +6,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// RepoAnswer is one directory's git-repo verdict and when it was taken.
 type RepoAnswer struct {
 	Capable bool
 	At      time.Time

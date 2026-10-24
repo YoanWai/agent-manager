@@ -40,8 +40,6 @@ func nameField(name string) textinput.Model {
 	return input
 }
 
-// RenameGroup opens an edit of the group at path, its default directory and
-// its worktree choice index.
 func RenameGroup(path, dir string, worktree int) Rename {
 	field := newField("default working directory", 400)
 	field.Prompt = ""
@@ -92,7 +90,6 @@ func (d Rename) Tools() []string { return d.tools }
 
 func (d Rename) Dir() string { return d.dir.Value() }
 
-// SetDir puts a completed path in the path field, the cursor at its end.
 func (d *Rename) SetDir(path string) {
 	d.dir.SetValue(path)
 	d.dir.CursorEnd()
@@ -253,7 +250,6 @@ func (d *Rename) Key(msg tea.KeyMsg, paths PathSuggestions, worktrees int) Renam
 	return RenameKey{Cmd: cmd}
 }
 
-// submit validates the name and hands the root the rename it captured.
 func (d *Rename) submit() RenameKey {
 	name := d.Name()
 	if name == "" {
@@ -280,7 +276,6 @@ func (d *Rename) submit() RenameKey {
 	}}
 }
 
-// Hints are the footer keys while the rename is open.
 func (d Rename) Hints() [][2]string {
 	if d.group {
 		return [][2]string{{"tab", "name / path"}, {"↵", "save"}, {"esc", "cancel"}}

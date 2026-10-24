@@ -21,8 +21,6 @@ type Surface struct {
 // Root is what the card reaches on the root beyond surface.Host: the tones
 // it paints from, its width, and the save and status line only the root runs.
 type Root interface {
-	// Look is the field painter, the cursor-marked input and the muted tone
-	// the dialog paints with.
 	Look() DialogView
 	CardWidth(cols int) int
 	// Save queues the write of a connection the dialog validated: it adds

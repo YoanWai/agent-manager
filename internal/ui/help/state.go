@@ -5,7 +5,6 @@ package help
 
 import tea "github.com/charmbracelet/bubbletea"
 
-// State owns the key map's search, scroll, and visible scope.
 type State struct {
 	scroll    int
 	query     string

@@ -16,8 +16,7 @@ import (
 // client. The rows are the last good snapshot's, kept while the host is
 // unreachable.
 type Host struct {
-	OK bool
-	// Err is the last refresh's failure, and Trouble its kind.
+	OK       bool
 	Err      string
 	Trouble  remote.Trouble
 	Failures int

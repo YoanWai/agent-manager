@@ -32,8 +32,6 @@ func firstKey(label string) string {
 	return strings.TrimSpace(label)
 }
 
-// pressKey is the message a key named the way a legend draws it arrives as
-// when typed.
 func pressKey(name string) (tea.KeyMsg, bool) {
 	if key, drawn := legendGlyphKeys[name]; drawn {
 		name = key
@@ -57,8 +55,6 @@ func pressKey(name string) (tea.KeyMsg, bool) {
 
 var legendGlyphKeys = map[string]string{"↵": "enter", "⌫": "backspace"}
 
-// namedKeyTypes is every key Bubble Tea names, under the spelling a key
-// table stores.
 var namedKeyTypes = func() map[string]tea.KeyType {
 	types := map[string]tea.KeyType{}
 	for keyType := tea.KeyF20; keyType <= tea.KeyBackspace; keyType++ {

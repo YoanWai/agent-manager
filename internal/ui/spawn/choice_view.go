@@ -39,7 +39,6 @@ func ModelNote(h ChoiceHost, toolName string, st Styles) (string, bool) {
 	return "", true
 }
 
-// EffortRow is the row's value, whether it shows, and whether it takes keys.
 func (ch *Choice) EffortRow(h ChoiceHost, toolName string, st Styles) (value string, shown, active bool) {
 	state, supported := choiceAnswer(h, toolName)
 	if !supported || !h.ChoiceCaps(toolName).Efforts {
@@ -69,7 +68,6 @@ func (ch *Choice) EffortRow(h ChoiceHost, toolName string, st Styles) (value str
 	return value, true, true
 }
 
-// ProfileRow is the profile row's value, and whether it shows.
 func (ch *Choice) ProfileRow(h ChoiceHost, toolName string, st Styles) (string, bool) {
 	profiles := choiceProfiles(h, toolName)
 	if len(profiles) == 0 {

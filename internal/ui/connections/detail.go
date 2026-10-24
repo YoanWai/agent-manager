@@ -20,12 +20,8 @@ type Line struct {
 	Rule bool
 }
 
-// Gutter is the blank columns between the frame and the text of a content
-// row.
 const Gutter = 1
 
-// Selected is the row a rail selection names, as the last snapshot of its
-// host has it.
 func (c *Connections) Selected(selection uirail.Selection) (Row, bool) {
 	if !selection.Remote() {
 		return Row{}, false

@@ -13,7 +13,6 @@ type TickMsg struct{}
 
 type BannerTickMsg struct{}
 
-// BannerShimmerMsg is the rest after a finished sweep.
 type BannerShimmerMsg struct{}
 
 type State struct {

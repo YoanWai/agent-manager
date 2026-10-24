@@ -49,9 +49,7 @@ type FrameMsg struct {
 	SGR     bool
 	Alt     bool
 	History int
-	// Writes is how many queued writes had landed when the capture was
-	// taken.
-	Writes uint64
+	Writes  uint64
 }
 
 // ScrollMsg carries one scrollback viewport for the focused pane: the rows it

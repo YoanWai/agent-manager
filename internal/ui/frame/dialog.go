@@ -9,7 +9,6 @@ import (
 )
 
 const (
-	// CardPaddingX is the blank columns a card keeps inside its edge.
 	CardPaddingX = 3
 	CardChromeX  = 2
 	// These place a card's body inside it: under the title edge and the blank

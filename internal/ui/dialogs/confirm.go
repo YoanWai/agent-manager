@@ -57,7 +57,6 @@ func (c Confirm) Key(msg tea.KeyMsg) ConfirmOutcome {
 	return ConfirmStay
 }
 
-// Title names the dialog after the act it is about to commit.
 func (c Confirm) Title(mode presentation.GlyphMode) string {
 	g := presentation.GlyphsFor(mode)
 	subject := "session"
@@ -133,7 +132,6 @@ func ConfirmBody(question, consequence string, inner int, tone, muted lipgloss.S
 	return strings.TrimRight(body.String(), "\n")
 }
 
-// ConfirmHints are the card's keys, the accept key named for the act.
 func ConfirmHints(answer string) [][2]string {
 	return [][2]string{{"y/↵", answer}, {"n/esc", "cancel"}}
 }

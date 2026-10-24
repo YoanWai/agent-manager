@@ -11,7 +11,6 @@ import (
 // modalMax is the widest row the modal makes room for, the longest line remote text may carry.
 const modalMax = 160
 
-// scrollbarWidth is the scrollbar's column and the gap before it.
 const scrollbarWidth = 2
 
 // proseWidth keeps a paragraph to a readable measure on a wide modal.

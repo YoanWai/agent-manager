@@ -7,7 +7,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// quitRoute is what a key does about quitting before any surface sees it.
 type quitRoute uint8
 
 const (

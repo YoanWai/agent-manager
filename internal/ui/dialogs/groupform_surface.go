@@ -35,7 +35,6 @@ type Remote struct{ Host, Group string }
 
 func (r Remote) on() bool { return r.Host != "" }
 
-// Lend is what a parent group gives a child group made under it.
 type Lend struct{ Dir, Base string }
 
 type GroupFormRoot interface {
@@ -67,8 +66,6 @@ type FormOptions struct {
 	Styles    spawn.Styles
 }
 
-// NewGroupFormSurface opens the card on the name field, its path inherited
-// from the picked parent.
 func NewGroupFormSurface(root GroupFormRoot, opts FormOptions) *GroupFormSurface {
 	s := &GroupFormSurface{
 		GroupForm: NewGroupForm(opts.Dir, opts.Gen),
@@ -88,8 +85,6 @@ func NewGroupFormSurface(root GroupFormRoot, opts FormOptions) *GroupFormSurface
 	return s
 }
 
-// groupFieldWidth is the columns the name and path fields take in a card on
-// a terminal cols wide.
 func groupFieldWidth(cardWidth int) int {
 	return CardInnerWidth(cardWidth) - spawn.LabelColumn - 3
 }
@@ -244,8 +239,6 @@ func pathStyles(st spawn.Styles) pathcomplete.Styles {
 	return pathcomplete.Styles{GlyphMode: st.GlyphMode, Muted: st.Muted, Accent: st.Accent, Accent2: st.Accent2}
 }
 
-// pathSuggestHints are the keys the suggestion list under the path field
-// takes.
 func pathSuggestHints(chosen bool) [][2]string {
 	if chosen {
 		return [][2]string{{"↑↓", "pick"}, {"↵/tab", "complete"}, {"esc", "close"}}

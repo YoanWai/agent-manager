@@ -90,7 +90,6 @@ func RuleKeysFor(keys keybind.Table) RuleKeys {
 	}
 }
 
-// TopRuleFor is the hairline that caps the focused pane in the split.
 func TopRuleFor(width int, keys keybind.Table) string {
 	return TopRule(width, RuleKeysFor(keys), uitheme.AnnotationStyle(), uitheme.FocusEdgeStyle())
 }

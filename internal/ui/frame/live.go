@@ -5,8 +5,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// LiveCap is the live theme's painting of a key and its action, the way the
-// legend rules need it.
 func LiveCap() Cap {
 	return Cap{
 		Key:     uitheme.KeyStyle(),

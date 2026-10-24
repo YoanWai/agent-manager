@@ -204,8 +204,6 @@ func RunGroup(services Services, request GroupRequest) (GroupResult, error) {
 	return GroupResult{Path: request.Path, Dir: dir, Worktree: request.Worktree}, nil
 }
 
-// SaveChoice keeps a CLI's kept choice or recent models in the settings
-// table the form reads it back from.
 func SaveChoice(st SettingsStore, key, value string) error {
 	if err := st.SetSetting(key, value); err != nil {
 		return fmt.Errorf("saving %s: %w", key, err)

@@ -12,8 +12,6 @@ type Root interface {
 	ClearErr()
 }
 
-// Update applies a message the prompt boxes own, reporting whether msg was
-// one of theirs.
 func Update(root Root, msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case SweepMsg:

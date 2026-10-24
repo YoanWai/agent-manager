@@ -77,9 +77,8 @@ const (
 )
 
 type DialogKey struct {
-	Action DialogAction
-	Cmd    tea.Cmd
-	// Next is the connection to save, replacing Editing when that is set.
+	Action  DialogAction
+	Cmd     tea.Cmd
 	Next    remote.Connection
 	Editing string
 	Gen     uint64

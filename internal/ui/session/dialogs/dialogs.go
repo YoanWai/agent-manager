@@ -69,7 +69,6 @@ type View interface {
 	Live(id string) bool
 }
 
-// Children is a session with the shells nested under it.
 func Children(sessions []store.Session, sess store.Session) []store.Session {
 	out := make([]store.Session, 0, 1)
 	out = append(out, sess)
@@ -112,7 +111,6 @@ func Archived(sessions []store.Session) []store.Session {
 	return out
 }
 
-// Dead keeps the rows whose agent is gone.
 func Dead(sessions []store.Session) []store.Session {
 	var out []store.Session
 	for _, sess := range sessions {
@@ -314,8 +312,6 @@ func Revive(view View, row Row) Intent {
 		}}
 }
 
-// ReviveAll is what the revive-everything key asks for over the rows a view
-// lists.
 func ReviveAll(listed []store.Session) Intent {
 	if dead := Dead(listed); len(dead) > 1 {
 		return Intent{Card: Card{
@@ -330,7 +326,6 @@ func ReviveAll(listed []store.Session) Intent {
 	return ReviveMany(listed, "no dead sessions to revive")
 }
 
-// ReviveMany is the run with no card to open first.
 func ReviveMany(sessions []store.Session, emptyNotice string) Intent {
 	return Intent{Run: true, EmptyNotice: emptyNotice,
 		Card: Card{
@@ -368,7 +363,6 @@ func Delete(view View, row Row) Intent {
 	return Intent{Card: wholeGroupDelete(view.Groups(), row.Group, subtree)}
 }
 
-// CancelEnd is what the keep-past-its-turn key asks for.
 func CancelEnd(row Row, has bool) (id, name string, ok bool) {
 	if !has || row.Kind == GroupRow || row.Sess.AfterTurn == "" {
 		return "", "", false

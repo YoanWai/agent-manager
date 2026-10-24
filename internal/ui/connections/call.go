@@ -57,8 +57,6 @@ var Refusals = map[uirail.ActionKind]string{
 	uirail.Restore:      "restore",
 }
 
-// confirm is the act and question a remote lifecycle call asks, the way the
-// same call on a local row does.
 var confirm = map[Op]struct {
 	action            uidialogs.ConfirmAction
 	verb, consequence string

@@ -35,7 +35,6 @@ func (l *Lines[T]) Skip(count int) {
 	}
 }
 
-// Append records the lines of more, painted after these.
 func (l *Lines[T]) Append(more Lines[T]) {
 	l.items = append(l.items, more.items...)
 	l.shown = append(l.shown, more.shown...)

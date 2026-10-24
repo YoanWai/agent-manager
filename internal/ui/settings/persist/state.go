@@ -64,8 +64,6 @@ type State struct {
 	Gen uint64
 }
 
-// New caches one read of the store, with keys outside the dialog read
-// alongside it.
 func New(st Writer, extra []string) State {
 	var state State
 	result, _ := Load(st)

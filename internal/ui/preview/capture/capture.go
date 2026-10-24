@@ -46,7 +46,6 @@ type Msg struct {
 	Err     error
 }
 
-// SettleMsg fires after the cursor has stopped moving.
 type SettleMsg struct{ Gen uint64 }
 
 // TickMsg drives the capture timer.
@@ -61,7 +60,6 @@ type TypedPrompt struct {
 	At      time.Time
 }
 
-// Root is what a capture asks of the frame that holds it.
 type Root interface {
 	Selected() (store.Session, bool)
 	// Generation is the preview generation the current selection is on.
@@ -75,8 +73,6 @@ type Root interface {
 	// ArmTick starts the next capture timer, and the remote read beside it
 	// when withRemote asks: that one keeps running where the pane is hidden.
 	ArmTick(withRemote bool) tea.Cmd
-	// WatchSelection opens the control client on the session the cursor is
-	// resting on.
 	WatchSelection()
 	ApplyCapture(sessID, preview string, proc sysstat.ProcStat)
 	ReportErr(err error)
@@ -182,7 +178,6 @@ func indexSession(sessions []store.Session, id string) int {
 	return -1
 }
 
-// Route applies a tick, settle or capture, reporting whether msg was one.
 func (s *State) Route(root Root, msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case TickMsg:

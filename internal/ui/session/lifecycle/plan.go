@@ -8,7 +8,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 )
 
-// Status is one row's status after a run.
 type Status struct {
 	ID     string
 	Status string
@@ -108,7 +107,6 @@ func Changes(request Request, result Result, err error) Change {
 	return change
 }
 
-// refusal is the failure a completion reports, if any.
 func refusal(request Request, result Result, err error) *Refusal {
 	if err == nil {
 		return nil

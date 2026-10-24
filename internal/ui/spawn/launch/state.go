@@ -32,7 +32,6 @@ func (s *State) CachedWorktree(dir string, now time.Time) (bool, bool) {
 	return answer.Capable, true
 }
 
-// RememberWorktree keeps a directory's git-repo verdict.
 func (s *State) RememberWorktree(dir string, capable bool, now time.Time) {
 	if s.WorktreeRepos == nil {
 		s.WorktreeRepos = map[string]RepoAnswer{}
@@ -44,7 +43,6 @@ func (s *State) RememberWorktree(dir string, capable bool, now time.Time) {
 // the form or the quick bar calls it.
 func (s *State) ForgetWorktree() { s.WorktreeRepos = nil }
 
-// RememberSpawn keeps the CLI and worktree toggle the last spawn used.
 func (s *State) RememberSpawn(tool string, worktree bool) {
 	s.LastSpawnTool = tool
 	s.LastSpawnWorktree = worktree

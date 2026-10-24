@@ -164,8 +164,6 @@ func (s *State) DropRecentlyRemoved(polled []store.Session, listedAt time.Time) 
 	return kept
 }
 
-// Listing is one poll's group rows, the metadata that hangs off them and the
-// sessions it listed.
 type Listing struct {
 	Sessions       []store.Session
 	ListedAt       time.Time
@@ -216,7 +214,6 @@ func (s *State) ReconcileListing(listing Listing) Listing {
 	return listing
 }
 
-// SessionGone reports whether a listing holds no row with this id.
 func SessionGone(sessions []store.Session, id string) bool { return sessionGone(sessions, id) }
 
 func sessionGone(sessions []store.Session, id string) bool {

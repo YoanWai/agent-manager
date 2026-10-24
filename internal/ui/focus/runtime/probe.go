@@ -32,8 +32,6 @@ func (p Prober) Probe(sessionID string) error {
 
 func (p Prober) Ack(sessionID string) error { return p.Store.AcknowledgeFinished(sessionID) }
 
-// Detach is what a session left behind when it asked to open Review or the
-// editor and then detached.
 type Detach struct {
 	// Request is the marker the session wrote, empty when it wrote none.
 	Request string

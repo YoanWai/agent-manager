@@ -6,8 +6,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
 )
 
-// ReviewModeHint is the row tier's reminder that an agent can be asked to
-// open Review itself.
 const ReviewModeHint = `tell your agent "set review mode"`
 
 // Legend is one footer tier Rail decides: its title, its bindings, and
@@ -210,8 +208,6 @@ func (ctx LegendContext) glyph(actions ...string) string {
 	return joined
 }
 
-// RemoteRow is what the footer needs to know about a row behind an SSH
-// connection.
 type RemoteRow struct {
 	Kind     RowKind
 	Host     string

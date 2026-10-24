@@ -49,8 +49,6 @@ func HermesText(pipCommand string) string {
 		"Run `" + pipCommand + "` to add the mcp package to the Python that runs Hermes, then spawn again."
 }
 
-// SettleState is how an install the card started ended, read from the status
-// its script wrote.
 type SettleState uint8
 
 const (

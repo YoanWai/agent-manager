@@ -98,8 +98,6 @@ func (m Model) foldable() []HostFold {
 	return folds
 }
 
-// HostCollapsed lists the folded rows on connections, for saving beside the
-// local folds.
 func (m Model) HostCollapsed() []HostFold {
 	folds := make([]HostFold, 0, len(m.hostFolds))
 	for fold, folded := range m.hostFolds {

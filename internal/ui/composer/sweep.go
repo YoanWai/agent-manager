@@ -9,7 +9,6 @@ import (
 
 type SweepMsg struct{ Err error }
 
-// SweepTickMsg asks for another sweep and the tick after it.
 type SweepTickMsg struct{}
 
 // SweepInterval keeps clearing old pasted images while the manager stays

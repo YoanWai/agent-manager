@@ -14,8 +14,6 @@ func Tools(cfg config.Config) uisettings.Tools {
 	return uisettings.Tools{Agents: cfg.AgentToolNames(), Known: known}
 }
 
-// FromCache builds the dialog the cached values describe, for the palette
-// painting the frame now.
 func (s State) FromCache(cfg config.Config, theme string) uisettings.State {
 	return uisettings.FromSnapshot(uisettings.Snapshot{
 		Values:  s.Cache.Values(),

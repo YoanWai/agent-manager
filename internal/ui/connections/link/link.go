@@ -36,11 +36,8 @@ const (
 
 type Root interface {
 	RebuildRows()
-	// SyncPreview reads the selected remote row's screen, if it has none.
 	SyncPreview() tea.Cmd
 	RailConnection(change RailChange)
-	// AnswerSave closes the connection card that asked, or marks its save
-	// failed.
 	AnswerSave(gen uint64, failed bool)
 	// CloseAsker closes the form or card a completed call came from, when
 	// it is still the one that asked.
@@ -234,8 +231,6 @@ func (s *State) Attach(row uiconnections.Row) tea.Cmd {
 	}
 }
 
-// Route applies a refresh, preview or attach result, reporting whether msg
-// was one.
 func (s *State) Route(root Root, msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case RefreshMsg:

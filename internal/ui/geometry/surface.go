@@ -35,8 +35,6 @@ type Surface struct {
 type Root interface {
 	Gesture() Gesture
 	SetGesture(Gesture)
-	// Exit ends the gesture, committing the ratio or putting back the one
-	// it started from.
 	Exit(commit bool)
 	Nudge(delta int)
 	Quit() tea.Cmd
@@ -45,8 +43,6 @@ type Root interface {
 	ListMouse(msg tea.MouseMsg) tea.Cmd
 }
 
-// NewSurface opens the gesture with the key table that names the resize,
-// quit and foreground bindings.
 func NewSurface(root Root, keys keybind.Table) *Surface {
 	return &Surface{keys: keys, root: root}
 }

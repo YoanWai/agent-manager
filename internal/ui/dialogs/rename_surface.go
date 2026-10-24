@@ -29,8 +29,6 @@ type RenameRoot interface {
 	// StepBase steps the group base choice, probing the default path this
 	// row would save.
 	StepBase(s *RenameSurface, delta int) (string, tea.Cmd)
-	// QueueRename runs a validated rename on the effect lane, with the group
-	// base choice the row probed.
 	QueueRename(request RenameRequest, base string) tea.Cmd
 	// WorktreeCount is how many worktree choices the group field cycles
 	// through, which the root's list of labels decides.

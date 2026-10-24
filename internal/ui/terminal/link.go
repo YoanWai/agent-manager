@@ -17,9 +17,7 @@ import (
 // Seams are the side effects a link reaches. The root passes its own, so a
 // test keeps the desktop and the clipboard out of the run.
 type Seams struct {
-	Open func(target string) error
-	// Opener starts the platform's URL handler for a link the focused pane
-	// reported.
+	Open   func(target string) error
 	Opener func(url string) error
 	// Copy is the clipboard the URL falls back to when nothing opens it.
 	Copy func(target string) error

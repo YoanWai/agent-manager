@@ -231,5 +231,4 @@ func (p *Prompts) typeEditor(msg tea.KeyMsg) tea.Cmd {
 	return cmd
 }
 
-// SelectedName is the row a write lands on once the catalog is read back.
 func (p PromptSave) SelectedName() string { return strings.TrimSpace(p.Prompt.Name) }

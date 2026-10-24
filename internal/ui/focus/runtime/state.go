@@ -30,8 +30,6 @@ func (s *State) SetFocus(id string) {
 	}
 }
 
-// ClearFocus stops the watcher's client, leaving the next selection to open
-// one.
 func (s *State) ClearFocus() {
 	if s.Watch != nil {
 		s.Watch.SetFocus("")

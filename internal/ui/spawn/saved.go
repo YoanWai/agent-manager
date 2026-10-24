@@ -58,7 +58,6 @@ func (l *SavedList) Loading() bool { return l.loading }
 
 func (l *SavedList) Close() { *l = SavedList{} }
 
-// Load fills a list that opened while its read was running.
 func (l *SavedList) Load(rows []Saved, err error) {
 	l.loading = false
 	if err != nil {

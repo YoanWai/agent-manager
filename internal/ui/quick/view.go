@@ -76,7 +76,6 @@ func (q *Bar) View(h Host, facts Facts, width, maxRows int) string {
 	return strings.Join(lines, "\n") + "\n" + bar
 }
 
-// savedListRows caps the saved prompts list above the prompt.
 const savedListRows = 6
 
 // statusRow puts what a spawn launches with against the right edge of

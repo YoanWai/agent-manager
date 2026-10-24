@@ -19,7 +19,6 @@ const (
 // without a fresh read, so a held arrow steps at key speed.
 const BaseRefsTTL = 10 * time.Second
 
-// BaseRefsAnswer is a repo's branch list and when it was read.
 type BaseRefsAnswer struct {
 	Refs []string
 	At   time.Time
@@ -54,7 +53,6 @@ func (s *State) StepGroupBase(driver *git.Driver, target BaseTarget, gen uint64,
 	}, nil
 }
 
-// ErrGroupBaseNeedsGit is what a base picker says with no git driver.
 var ErrGroupBaseNeedsGit = errGroupBaseNeedsGit{}
 
 type errGroupBaseNeedsGit struct{}

@@ -145,8 +145,7 @@ type State struct {
 // Tools is the configured CLI set the dialog offers, copied from the config.
 type Tools struct {
 	Agents []string
-	// Known holds every configured tool name, shells included.
-	Known map[string]bool
+	Known  map[string]bool
 }
 
 // Enabled is Agents without the hidden ones.

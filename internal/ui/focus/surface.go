@@ -19,7 +19,6 @@ type Root interface {
 	// Key forwards msg to the agent, or acts on it when it is the
 	// manager's: leaving focus, the editor or Review.
 	Key(msg tea.KeyMsg) tea.Cmd
-	// Mouse runs a mouse event on the pane, and on the rail under it.
 	Mouse(msg tea.MouseMsg) tea.Cmd
 	// TakeForeground marks the key as the user moving on, which fences a
 	// completion started before it.

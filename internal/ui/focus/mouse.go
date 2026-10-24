@@ -69,8 +69,6 @@ type CopyRequest struct {
 	Generation uint64
 }
 
-// MouseResult contains semantic outcomes for one focused-pane gesture. Root
-// adapters own each effect named here.
 type MouseResult struct {
 	Leave      bool
 	OpenURL    string

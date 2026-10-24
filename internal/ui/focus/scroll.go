@@ -30,7 +30,6 @@ func (m *Model) Scroll(delta int, sessionID string, rows int) *RegionRequest {
 	return m.ScrollLines(delta*scrollStep, sessionID, rows)
 }
 
-// ScrollLines moves the target by whole lines, the step page keys take.
 func (m *Model) ScrollLines(lines int, sessionID string, rows int) *RegionRequest {
 	offset := m.scroll - lines
 	offset = min(max(offset, 0), m.pane.history)
