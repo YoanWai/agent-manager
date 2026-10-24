@@ -10,7 +10,7 @@ import (
 func (m *Model) resizeSessions() {
 	width, height := m.paneTargetSize()
 	// The session open full screen is pinned to the whole body by
-	// pinFullFocusPane, not to the preview box; matching it to the box
+	// PinFullFocus, not to the preview box; matching it to the box
 	// here would shrink its height and clear its scrollback mid-focus.
 	fullFocusID := ""
 	if m.fullFocus() {
@@ -32,12 +32,6 @@ func (m *Model) resizeSessions() {
 		Height:      height,
 		FullFocusID: fullFocusID,
 	}, sessions, m.workspace.panes)
-}
-
-// pinFullFocusPane sizes a session opened full screen to the whole terminal
-// body, the reflow an attach performs.
-func (m *Model) pinFullFocusPane(id string) {
-	m.layout.panes.PinFullFocus(paneSizing{m}, id, m.layout.width, m.listBodyHeight())
 }
 
 // markFreshPane queues one exact size pin for a session whose window this run
@@ -81,7 +75,7 @@ func (m *Model) routeResizeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		m.resizeSessions()
 		if m.fullFocus() {
 			if sess, ok := m.selected(); ok {
-				m.pinFullFocusPane(sess.ID)
+				m.layout.panes.PinFullFocus(paneSizing{m}, sess.ID, m.layout.width, m.listBodyHeight())
 			}
 		}
 		m.syncFormFieldWidths()

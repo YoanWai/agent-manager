@@ -3,6 +3,7 @@ package ui
 import (
 	"time"
 
+	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
@@ -322,7 +323,7 @@ func (m *Model) listPress(msg tea.MouseMsg, ctx uirail.MouseContext) (tea.Model,
 	}
 	y0, y1 := m.bodyYRange()
 	onDivider := msg.Button == tea.MouseButtonLeft && !m.prefs.fullLayout && !m.rail.Searching() &&
-		msg.Y >= y0 && msg.Y < y1 && m.onDivider(msg.X)
+		msg.Y >= y0 && msg.Y < y1 && uigeometry.OnDivider(msg.X, m.dividerX())
 	if onDivider {
 		split.dragging, split.moved = true, false
 		if !split.resizeMode {
@@ -352,7 +353,7 @@ func (m *Model) onRailColumn(x, y int) bool {
 
 func (m *Model) onContentColumn(x, y int) bool {
 	y0, y1 := m.bodyYRange()
-	return !m.prefs.fullLayout && x > m.dividerX()+splitHitSlop && y >= y0 && y < y1
+	return !m.prefs.fullLayout && x > m.dividerX()+uigeometry.SplitHitSlop && y >= y0 && y < y1
 }
 
 // focusFromPreview focuses the session under the cursor from a press on the

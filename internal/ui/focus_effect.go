@@ -61,7 +61,7 @@ func (m *Model) enterFocus(sess store.Session) tea.Cmd {
 	m.clearSurfaces()
 	m.push(newFocusSurface(m))
 	if m.prefs.fullLayout {
-		m.pinFullFocusPane(sess.ID)
+		m.layout.panes.PinFullFocus(paneSizing{m}, sess.ID, m.layout.width, m.listBodyHeight())
 	}
 	m.focus.runtime.Retry()
 	m.watchSelection()

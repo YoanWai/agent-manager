@@ -17,10 +17,6 @@ type splitState struct {
 	moved       bool
 }
 
-// splitHitSlop is how many columns past the junction count as the divider,
-// on top of the junction itself.
-const splitHitSlop = uigeometry.SplitHitSlop
-
 // splitWidths is the body's horizontal split: the sessions panel takes ratio
 // of the width, floored so both sides stay usable.
 func (m *Model) splitWidths() (int, int) {
@@ -128,15 +124,6 @@ func (m *Model) nudgeSplit(delta int) {
 func (m *Model) dividerX() int {
 	left, _ := m.splitWidths()
 	return left
-}
-
-// onDivider reports whether terminal column x is close enough to the
-// split junction to start a drag. The slop reaches right only: the seam
-// and the bleed beside it carry no row text, while dividerX-1 is the
-// rail's own last painted column. Grabbing that back would cost every row
-// its right edge, since the divider is resolved before the row is (#110).
-func (m *Model) onDivider(x int) bool {
-	return uigeometry.OnDivider(x, m.dividerX())
 }
 
 // paneSizing is the root as the geometry runtime reaches it: what a shrink

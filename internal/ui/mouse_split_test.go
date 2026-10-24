@@ -2,6 +2,8 @@ package ui
 
 import (
 	"testing"
+
+	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
 )
 
 func focusedModel(t *testing.T) *Model {
@@ -48,7 +50,7 @@ func TestPressOnTheDividerKeepsFocus(t *testing.T) {
 	m := focusedModel(t)
 	preparedView(m)
 	y0, _ := m.bodyYRange()
-	for _, x := range []int{m.dividerX(), m.dividerX() + splitHitSlop} {
+	for _, x := range []int{m.dividerX(), m.dividerX() + uigeometry.SplitHitSlop} {
 		if m = leftPress(m, x, y0+1); !m.focused() {
 			t.Fatalf("a press on the divider at %d left focus", x)
 		}
