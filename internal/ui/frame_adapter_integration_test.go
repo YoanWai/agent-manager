@@ -1,13 +1,17 @@
 package ui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/diff"
+	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
+	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
@@ -570,5 +574,30 @@ func TestFullFootShowsBattery(t *testing.T) {
 	m.workspace.snap.BatteryOK = false
 	if foot = ansi.Strip(strings.Join(m.fullFootLine(m.layout.width), "\n")); strings.Contains(foot, "batt") {
 		t.Fatalf("foot shows a battery the machine lacks:\n%s", foot)
+	}
+}
+
+func BenchmarkListFrame(b *testing.B) {
+	m := shotModel()
+	m.layout.width, m.layout.height = 200, 50
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = preparedView(m)
+	}
+}
+
+func BenchmarkCloseLargeReview(b *testing.B) {
+	m := shotModel()
+	files := make([]diff.FileDiff, 10000)
+	for i := range files {
+		files[i].File = git.ChangedFile{Path: fmt.Sprintf("path/to/file-%05d.go", i)}
+	}
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		m.base = baseReview
+		seedReviewForTest(m, uireview.Target{ID: "bench"}, git.ScopeUncommitted, "/repo", diff.Set{Files: files}, true)
+		b.StartTimer()
+		m.closeDiff()
 	}
 }

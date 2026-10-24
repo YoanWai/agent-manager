@@ -2,6 +2,8 @@ package ui
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
@@ -296,8 +298,23 @@ func (m *Model) viewStatusCounts(compact bool) string {
 	return strings.Join(parts, uitheme.SubtleStyle().Render("  "))
 }
 
-// cardRect is the package's painted-card geometry, under the root's own name.
-type cardRect = uiframe.Rect
+// cardRect is a painted card's cells, and its body's: the first body line,
+// the column it starts at and how many columns it spans.
+type cardRect struct {
+	top, left, right, bottom     int
+	bodyTop, bodyLeft, bodyWidth int
+}
+
+func (r cardRect) holds(x, y int) bool {
+	return x >= r.left && x < r.right && y >= r.top && y < r.bottom
+}
+
+// bodyAt is the body line and column a point lands on, when it lands on
+// the body's columns.
+func (r cardRect) bodyAt(x, y int) (col, line int, ok bool) {
+	col, line = x-r.bodyLeft, y-r.bodyTop
+	return col, line, r.holds(x, y) && col >= 0 && col < r.bodyWidth && line >= 0
+}
 
 func (m *Model) cardSizing(hint [][2]string) uiframe.CardSizing {
 	sizing := uiframe.CardSizing{Cols: m.layout.width, Hint: hint}
@@ -335,8 +352,8 @@ func (m *Model) CardSized(width int, title, body string, hint [][2]string) strin
 	box, hits := uiframe.Box(m.dialogRenderContext(), uiframe.LiveChrome(), width, title, body, hint, uitheme.Paint)
 	frame := m.centerOnBackdrop(box)
 	card := &m.layout.card
-	card.BodyTop, card.BodyLeft, card.BodyWidth = card.Top+uiframe.CardBodyRow, card.Left+uiframe.CardBodyColumn, uiframe.CardInnerWidth(width)
-	m.placeKeys(rootHits(hits), card.Left, card.Top)
+	card.bodyTop, card.bodyLeft, card.bodyWidth = card.top+uiframe.CardBodyRow, card.left+uiframe.CardBodyColumn, uiframe.CardInnerWidth(width)
+	m.placeKeys(rootHits(hits), card.left, card.top)
 	return frame
 }
 
@@ -346,7 +363,7 @@ func (m *Model) CardSized(width int, title, body string, hint [][2]string) strin
 func (m *Model) centerOnBackdrop(box []string) string {
 	ctx := m.dialogRenderContext()
 	top, left, right := uiframe.Placement(ctx, box)
-	m.layout.card = cardRect{Top: top, Left: left, Right: right, Bottom: top + len(box)}
+	m.layout.card = cardRect{top: top, left: left, right: right, bottom: top + len(box)}
 	m.layout.keyHits = nil
 	return uiframe.Centered(ctx, box, uitheme.BackdropHex(), uitheme.Paint)
 }
@@ -556,4 +573,42 @@ func (m *Model) placeListFooter(footer legend, y int) {
 	if q := m.quick(); q != nil {
 		q.OriginY = y
 	}
+}
+
+// syncCursorAnchor publishes the input coordinates in a finished frame and
+// removes the private marker before Bubble Tea writes the frame. Focus mode
+// uses its recorded pane box as a fallback because its caret is painted over
+// captured terminal output rather than by a Bubbles input widget.
+func (m *Model) syncCursorAnchor(frame string) string {
+	if m.focus.imeCursor == nil {
+		return uiframe.StripCursorMarker(frame)
+	}
+	if m.agentOwnsKeyboard() {
+		col, row, ok := m.focusCursorAnchor()
+		m.focus.imeCursor.Set(col, row, ok)
+		return uiframe.StripCursorMarker(frame)
+	}
+	frame, col, row, ok := uiframe.CursorMarkerPosition(frame)
+	m.focus.imeCursor.Set(col, row, ok)
+	return frame
+}
+
+func (m *Model) focusCursorAnchor() (col, row int, ok bool) {
+	if !m.focused() {
+		return 0, 0, false
+	}
+	sess, selected := m.selected()
+	if !selected {
+		return 0, 0, false
+	}
+	return m.focus.pane.CursorAnchor(sess.ID)
+}
+
+// CursorOutput keeps native TTY detection and terminal sizing while placing
+// the host cursor at the active input caret after each rendered frame.
+func (m *Model) CursorOutput(output *os.File) io.Writer {
+	if m.focus.imeCursor == nil {
+		m.focus.imeCursor = &uiframe.CursorAnchor{}
+	}
+	return uiframe.NewCursorTTYOutput(output, m.focus.imeCursor)
 }
