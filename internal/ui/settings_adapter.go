@@ -15,7 +15,6 @@ import (
 	uisurface "github.com/YoanWai/agent-manager/internal/ui/surface"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // SettingSpecs is every key Settings writes and the values each takes, so
@@ -189,15 +188,7 @@ func (m *Model) saveSettingsKeys(d *uisettings.State) tea.Cmd {
 }
 
 func (m *Model) settingsKeyTables() (keybind.Table, keybind.Table) {
-	expectedSession, expectedList := m.services.keys, m.services.listKeys
-	for _, pending := range m.queuedKeys() {
-		if pending.ListChanged {
-			expectedList = pending.List
-		}
-		if pending.SessionChanged {
-			expectedSession = pending.Session
-		}
-	}
+	expectedList, expectedSession := uipersist.Expected(m.services.listKeys, m.services.keys, m.queuedKeys())
 	return expectedSession, expectedList
 }
 
@@ -453,19 +444,6 @@ func presetRows(rows []store.SessionPreset) []uisettings.Preset {
 	return presets
 }
 
-// settingsRoot is the root as the Settings card reads it.
-type settingsRoot struct{ m *Model }
-
-func (r settingsRoot) Context() uisettings.Context { return settingsHost{r.m}.Context() }
-
-func (r settingsRoot) Apply(d *uisettings.State, result uisettings.Result) (tea.Cmd, bool) {
-	return settingsHost{r.m}.Apply(d, result)
-}
-
-func (r settingsRoot) Leave(d *uisettings.State) { settingsHost{r.m}.Leave(d) }
-
-func (r settingsRoot) Paint(d *uisettings.State) string { return settingsHost{r.m}.Paint(d) }
-
 // paintSettings frames the dialog in the root's card chrome.
 func (m *Model) paintSettings(d *uisettings.State) string {
 	frame := d.View(uisettings.ViewContext{
@@ -478,7 +456,7 @@ func (m *Model) paintSettings(d *uisettings.State) string {
 		Height:     m.layout.height,
 		InnerWidth: uiframe.CardInnerWidth(m.cardWidth()),
 		Chrome:     m.flexChromeRows,
-		Styles:     settingsStyles(),
+		Styles:     uisettings.CurrentStyles(),
 		TextInput:  uiframe.TextInputView,
 		TextArea:   uiframe.TextAreaView,
 	})
@@ -491,22 +469,8 @@ func (m *Model) paintSettings(d *uisettings.State) string {
 	return m.CardSized(m.flexCardWidth(frame.Title, frame.Body, frame.Hints), frame.Title, frame.Body, frame.Hints)
 }
 
-func settingsStyles() uisettings.Styles {
-	return uisettings.Styles{
-		Value:      uitheme.ValueStyle(),
-		Subtle:     uitheme.SubtleStyle(),
-		Muted:      uitheme.MutedStyle(),
-		Key:        uitheme.KeyStyle(),
-		Annotation: uitheme.AnnotationStyle(),
-		Marker:     lipgloss.NewStyle().Foreground(uitheme.ColorAccent()),
-		Focused:    lipgloss.NewStyle().Foreground(uitheme.ColorAccent()).Bold(true),
-		Action:     lipgloss.NewStyle().Foreground(uitheme.ColorAccent2()).Bold(true),
-		ActionText: lipgloss.NewStyle().Foreground(uitheme.ColorAccent2()),
-	}
-}
-
 func newSettingsSurface(m *Model, state uisettings.State) *uisettings.Surface {
-	return uisettings.NewSurface(settingsRoot{m}, state)
+	return uisettings.NewSurface(settingsHost{m}, state)
 }
 
 // columnClicker is the optional capability of a surface whose card acts on

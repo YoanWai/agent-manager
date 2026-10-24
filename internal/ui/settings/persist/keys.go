@@ -67,3 +67,17 @@ func ApplyKeys(root KeysRoot, request KeysRequest, result KeysResult, err error)
 	}
 	return cmd
 }
+
+// Expected is the tables the store will hold once the queued key saves
+// land, running first, so a picker submits only what is still different.
+func Expected(list, session keybind.Table, queued []KeysRequest) (keybind.Table, keybind.Table) {
+	for _, pending := range queued {
+		if pending.ListChanged {
+			list = pending.List
+		}
+		if pending.SessionChanged {
+			session = pending.Session
+		}
+	}
+	return list, session
+}
