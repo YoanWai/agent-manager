@@ -5,6 +5,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
@@ -15,6 +16,7 @@ import (
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
+	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
@@ -414,4 +416,49 @@ func (m *Model) saveChoiceSetting(key, value string) {
 
 func (m *Model) choiceSettingKeys() []string {
 	return choiceSettingKeys(slices.Sorted(maps.Keys(m.services.cfg.Tools)))
+}
+
+// directoryPreflight is the read-only filesystem and repository seam a spawn
+// or group creation captures before it is queued. ui/spawn/launch declares the
+// same seam; preflightReader crosses between them.
+type directoryPreflight interface {
+	resolve(raw string, fallbacks []string) (string, bool)
+	repoCapable(dir string) bool
+}
+
+type preflightReader struct{ reader directoryPreflight }
+
+func (p preflightReader) Resolve(raw string, fallbacks []string) (string, bool) {
+	return p.reader.resolve(raw, fallbacks)
+}
+
+func (p preflightReader) RepoCapable(dir string) bool { return p.reader.repoCapable(dir) }
+
+// crossPreflight hands a captured reader to the package, nil staying nil so the
+// package resolves against the filesystem.
+func crossPreflight(reader directoryPreflight) uilaunch.DirectoryPreflight {
+	if reader == nil {
+		return nil
+	}
+	return preflightReader{reader: reader}
+}
+
+// terminalReader hands the package's terminal read the root's own, so a
+// shell spawn asks the captured reader where to open.
+type terminalReader struct{ reader terminalDirectoryReader }
+
+func (t terminalReader) Resolve(request uilaunch.TerminalDirectoryRequest) (string, bool) {
+	return t.reader.Resolve(uiterminal.Directory{PaneID: request.PaneID, RawDir: request.RawDir, Fallbacks: request.Fallbacks})
+}
+
+// systemDirectoryPreflight resolves against the filesystem and asks git
+// whether a directory sits inside a repository.
+type systemDirectoryPreflight struct{ git *git.Driver }
+
+func (p systemDirectoryPreflight) resolve(raw string, fallbacks []string) (string, bool) {
+	return uilaunch.SystemDirectoryPreflight{Git: p.git}.Resolve(raw, fallbacks)
+}
+
+func (p systemDirectoryPreflight) repoCapable(dir string) bool {
+	return uilaunch.SystemDirectoryPreflight{Git: p.git}.RepoCapable(dir)
 }

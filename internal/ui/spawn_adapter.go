@@ -25,6 +25,8 @@ func (m *Model) formField(label, value string, focused bool) string {
 	return spawn.FormField(m.spawnStyles(), label, value, focused)
 }
 
+// formField paints a labelled row of the New Session card, which the fork
+// dialog reads too.
 // contextGroup is the group the cursor currently sits in: a highlighted
 // group row itself, or the group holding a highlighted session.
 func (m *Model) contextGroup() string {
