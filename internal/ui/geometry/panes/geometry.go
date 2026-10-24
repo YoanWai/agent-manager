@@ -191,6 +191,12 @@ func (p *Panes) QueueAll(root Root, box Box, sessions []Session, panes map[strin
 		if sess.Archived || sess.ID == box.FullFocusID {
 			continue
 		}
+		// A dead row has no window to size. Its resize would fail every
+		// pass, and a finished effect asks for another poll, so the rows
+		// without a pane in this pass's listing are skipped (#880).
+		if _, live := panes[sess.ID]; !live {
+			continue
+		}
 		wanted := box.Height
 		if last, ok := p.LastSizes[sess.ID]; ok {
 			fitsHeight := sess.AltScreen || root.FitsHeight(sess.Tool)

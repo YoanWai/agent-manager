@@ -143,7 +143,7 @@ func TestDragResizesTmuxOnlyOnRelease(t *testing.T) {
 	createSession(t, m, "split-drag", t.TempDir(), "")
 	id := m.sessionRows()[0].ID
 	m.layout.split.ratio = uigeometry.DefaultSplitRatio
-	m.resizeSessions()
+	m.applyCmd(t, m.refreshCmd())
 	m.drainEffects(t)
 	before := windowWidth(t, id)
 	if before != m.previewPaneWidth() {
