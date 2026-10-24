@@ -25,13 +25,19 @@ func (m *Model) launchNewSession(sess store.Session, tool config.Tool, baseComma
 	}
 	m.markFreshPane(sess.ID)
 	sess = launched.Session
-	if m.ledger.launched == nil {
-		m.ledger.launched = map[string]time.Time{}
-	}
-	m.ledger.launched[sess.ID] = time.Now()
+	m.recordLaunch(sess.ID)
 	m.workspace.sessions = append(m.workspace.sessions, sess)
 	m.rebuildRows()
 	return launched.LabelError
+}
+
+// recordLaunch marks a row this run launched, so a poll that listed the store
+// before it cannot blink the row off screen.
+func (m *Model) recordLaunch(id string) {
+	if m.ledger.launched == nil {
+		m.ledger.launched = map[string]time.Time{}
+	}
+	m.ledger.launched[id] = time.Now()
 }
 
 // forgetLaunch drops a row from the pending set, so a session the user has

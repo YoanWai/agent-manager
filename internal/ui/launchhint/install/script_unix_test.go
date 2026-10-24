@@ -1,6 +1,6 @@
 //go:build unix
 
-package ui
+package install
 
 import (
 	"bufio"
@@ -19,7 +19,7 @@ func TestInstallScriptReportsAnInterrupt(t *testing.T) {
 	dir := t.TempDir()
 	statusFile := filepath.Join(dir, "status")
 	script := filepath.Join(dir, "install.sh")
-	if err := os.WriteFile(script, []byte(installScript("sleep 3", statusFile)), 0o755); err != nil {
+	if err := os.WriteFile(script, []byte(Script("sleep 3", statusFile)), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	command := exec.Command("sh", script)

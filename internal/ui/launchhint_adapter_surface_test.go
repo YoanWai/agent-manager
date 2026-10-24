@@ -6,6 +6,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -15,16 +16,16 @@ func hintOpen(m *Model) bool {
 }
 
 // hintFix is the fix the open card holds, zero when none is open.
-func hintFix(m *Model) launchFix {
+func hintFix(m *Model) uiinstall.Fix {
 	if fix, ok := m.launchHintFix(); ok {
 		return *fix
 	}
-	return launchFix{}
+	return uiinstall.Fix{}
 }
 
 // hintFixPtr is the open card's fix, for a test that sets up what a
 // completion would have attached.
-func hintFixPtr(m *Model) *launchFix {
+func hintFixPtr(m *Model) *uiinstall.Fix {
 	fix, ok := m.launchHintFix()
 	if !ok {
 		panic("no launch hint is open")
@@ -46,7 +47,7 @@ func openHintFor(t *testing.T) (*Model, string) {
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 120, 34
 	image := tempImage(t, "refused.png")
-	m.openLaunchHint(launchFix{text: "tool is missing", command: "true", script: "true", binary: "tool", images: []composer.Attachment{{ID: 1, Path: image}}})
+	m.openLaunchHint(uiinstall.Fix{Text: "tool is missing", Command: "true", Script: "true", Binary: "tool", Images: []composer.Attachment{{ID: 1, Path: image}}})
 	if !hintOpen(m) {
 		t.Fatal("test setup did not open the hint")
 	}
@@ -79,7 +80,7 @@ func TestLaunchHintClosesOnEscAndBackdrop(t *testing.T) {
 func TestLaunchHintOverTheFormLeavesItsModeAlone(t *testing.T) {
 	m := buildModel(t)
 	m.applyCmd(t, m.openForm())
-	m.presentLaunchHint(launchFix{text: "pi is older", command: "true", binary: "pi", update: true})
+	m.presentLaunchHint(uiinstall.Fix{Text: "pi is older", Command: "true", Binary: "pi", Update: true})
 	if !formOpen(m) || !hintOpen(m) {
 		t.Fatalf("mode %v open %t, want the hint over the form", m.screenID(), hintOpen(m))
 	}
@@ -96,9 +97,9 @@ func TestInstallStartAfterTheHintClosedKeepsTheTracker(t *testing.T) {
 	m, _ := openHintFor(t)
 	gen := m.gens.dialog
 	m.Pop()
-	cmd := m.applyInstallStart(installStartRequest{gen: gen, binary: "tool"}, installStartResult{install: &pendingInstall{name: "install-tool", sessionID: "s"}}, nil)
-	if m.ledger.install == nil || hintOpen(m) {
-		t.Fatalf("install %+v hint open %t, want the tracker kept and no card revived", m.ledger.install, hintOpen(m))
+	cmd := m.install.Started(installRoot{m}, uiinstall.StartRequest{Gen: gen, Binary: "tool"}, uiinstall.StartResult{Pending: &uiinstall.Pending{Name: "install-tool", SessionID: "s"}}, nil)
+	if m.install.Pending == nil || hintOpen(m) {
+		t.Fatalf("install %+v hint open %t, want the tracker kept and no card revived", m.install.Pending, hintOpen(m))
 	}
 	_ = cmd
 	if _, quit := m.requestQuit(); m.effects.Quitting {

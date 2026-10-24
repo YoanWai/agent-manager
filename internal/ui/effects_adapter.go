@@ -119,12 +119,12 @@ func (m *Model) requestQuit() (tea.Model, tea.Cmd) {
 		return request, ok
 	}
 	if request, ok := starting(m.effects.Main.Active); ok {
-		m.reportErr("install for " + request.binary + " is still starting; wait for its installer shell before quitting")
+		m.reportErr("install for " + request.request.Binary + " is still starting; wait for its installer shell before quitting")
 		return m, nil
 	}
 	for _, job := range m.effects.Main.Pending {
 		if request, ok := starting(job); ok {
-			m.reportErr("install for " + request.binary + " is still queued; wait for its installer shell before quitting")
+			m.reportErr("install for " + request.request.Binary + " is still queued; wait for its installer shell before quitting")
 			return m, nil
 		}
 	}

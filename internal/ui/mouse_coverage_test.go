@@ -13,6 +13,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/remote"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
+	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -26,7 +27,7 @@ var mouseOpeners = map[string]func(t *testing.T, m *Model){
 	"dialogs.RenameSurface":  func(t *testing.T, m *Model) { m.openRename() },
 	"dialogs.ForkSurface":    func(t *testing.T, m *Model) { m.push(newForkSurface(m, railSelectedSession(m), 1)) },
 	"dialogs.LaunchHintSurface": func(t *testing.T, m *Model) {
-		m.openLaunchHint(launchFix{text: "tool is missing", command: "true", binary: "tool"})
+		m.openLaunchHint(uiinstall.Fix{Text: "tool is missing", Command: "true", Binary: "tool"})
 	},
 	"help.Surface":             func(t *testing.T, m *Model) { m.openHelp() },
 	"notices.Surface":          func(t *testing.T, m *Model) { m.Update(key("M")) },

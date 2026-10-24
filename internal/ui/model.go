@@ -16,6 +16,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
+	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
 	uirelease "github.com/YoanWai/agent-manager/internal/ui/notices/release"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
@@ -48,6 +49,7 @@ type Model struct {
 	layout    layoutState
 	errBar    errBar
 	release   uirelease.State
+	install   uiinstall.State
 }
 
 // generations fence asynchronous completions against the state that

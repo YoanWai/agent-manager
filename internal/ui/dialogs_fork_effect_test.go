@@ -346,7 +346,7 @@ func TestForkLaunchFailureRetainsCapturedRequest(t *testing.T) {
 	if !hintOpen(m) {
 		t.Fatalf("screen = %v, want the launch hint dialog", m.screenID())
 	}
-	request, ok := hintFix(m).effectRetry.(forkRequest)
+	request, ok := hintFix(m).Retry.(forkRequest)
 	if !ok {
 		t.Fatal("launch hint holds no captured fork request to re-dispatch")
 	}
@@ -532,7 +532,7 @@ func TestForkKeysRetryDoesNotForkSourceTwice(t *testing.T) {
 	if !hintOpen(m) {
 		t.Fatalf("screen = %v, want the launch hint dialog for the missing binary", m.screenID())
 	}
-	request, ok := hintFix(m).effectRetry.(forkRequest)
+	request, ok := hintFix(m).Retry.(forkRequest)
 	if !ok || request.knownForkID != writeOnce {
 		t.Fatalf("captured retry = %+v, want it to reuse the recorded fork %q", request, writeOnce)
 	}

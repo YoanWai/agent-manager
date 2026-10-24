@@ -337,7 +337,7 @@ func (m *Model) applyLifecycleEffect(request lifecycleRequest, result lifecycleE
 			if m.listClear() {
 				m.reportLaunchError(err)
 				if fix, ok := m.launchHintFix(); ok {
-					fix.effectRetry = retry
+					fix.Retry = retry
 				}
 			} else {
 				m.reportErr(err.Error())

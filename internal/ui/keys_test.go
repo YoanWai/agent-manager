@@ -12,6 +12,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/remote"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
+	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -50,7 +51,7 @@ func TestCtrlCQuitsThroughEveryCardOverTheList(t *testing.T) {
 		"rename":  func(t *testing.T, m *Model) { m.openRename() },
 		"fork":    func(t *testing.T, m *Model) { m.push(newForkSurface(m, railSelectedSession(m), 1)) },
 		"launchhint": func(t *testing.T, m *Model) {
-			m.openLaunchHint(launchFix{text: "tool is missing", command: "true", script: "true", binary: "tool"})
+			m.openLaunchHint(uiinstall.Fix{Text: "tool is missing", Command: "true", Script: "true", Binary: "tool"})
 		},
 		"help":       func(t *testing.T, m *Model) { m.openHelp() },
 		"notices":    func(t *testing.T, m *Model) { m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("M")}) },

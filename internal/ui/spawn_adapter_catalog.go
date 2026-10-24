@@ -9,6 +9,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/catalog"
 	"github.com/YoanWai/agent-manager/internal/config"
+	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -99,12 +100,12 @@ func (m *Model) handleCatalog(msg catalogMsg) tea.Cmd {
 		(m.quick() != nil && m.quickTool() == msg.tool)
 	if errors.As(msg.err, &outdated) && active {
 		m.advanceDialogGen()
-		m.presentLaunchHint(launchFix{
-			text:    outdatedToolText(outdated),
-			command: outdatedToolCommand(outdated),
-			script:  outdatedToolCommand(outdated),
-			binary:  outdated.Binary,
-			update:  true,
+		m.presentLaunchHint(uiinstall.Fix{
+			Text:    outdatedToolText(outdated),
+			Command: outdatedToolCommand(outdated),
+			Script:  outdatedToolCommand(outdated),
+			Binary:  outdated.Binary,
+			Update:  true,
 		})
 	}
 	if !msg.stale {

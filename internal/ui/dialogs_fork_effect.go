@@ -260,7 +260,7 @@ func (m *Model) applyForkEffect(request forkRequest, result forkEffectResult, er
 	}
 	m.reportLaunchError(err)
 	if fix, ok := m.launchHintFix(); ok {
-		fix.effectRetry = request
+		fix.Retry = request
 	}
 	return nil
 }

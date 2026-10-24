@@ -14,6 +14,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/deps"
 	"github.com/YoanWai/agent-manager/internal/testenv"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
+	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -107,14 +108,14 @@ func TestAnOlderCLIOpensTheUpdateDialogInsteadOfListingModels(t *testing.T) {
 
 	m.applyCmd(t, m.ensureCatalog("pi"))
 
-	if !hintOpen(m) || !hintFix(m).update || hintFix(m).command != deps.Command("pi") {
+	if !hintOpen(m) || !hintFix(m).Update || hintFix(m).Command != deps.Command("pi") {
 		t.Fatalf("mode %v fix %+v catalog %+v", m.screenID(), hintFix(m), m.ledger.catalogs["pi"])
 	}
 	if len(m.ledger.catalogs["pi"].cat.Models) != 0 {
 		t.Fatalf("models = %+v, want the kept answer withheld", m.ledger.catalogs["pi"].cat.Models)
 	}
-	if len(m.formPromptFor().Attachments) != 1 || len(hintFix(m).images) != 0 {
-		t.Fatalf("draft images moved: form %v dialog %v", m.formPromptFor().Attachments, hintFix(m).images)
+	if len(m.formPromptFor().Attachments) != 1 || len(hintFix(m).Images) != 0 {
+		t.Fatalf("draft images moved: form %v dialog %v", m.formPromptFor().Attachments, hintFix(m).Images)
 	}
 }
 
@@ -182,7 +183,7 @@ func TestTheUpdateDialogLeavesTheQuickBarUp(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	pushQuick(m)
-	m.presentLaunchHint(launchFix{text: "pi 0.84.2 is older", command: "true", binary: "pi", update: true})
+	m.presentLaunchHint(uiinstall.Fix{Text: "pi 0.84.2 is older", Command: "true", Binary: "pi", Update: true})
 	if !hintOpen(m) || (m.quick() == nil) {
 		t.Fatalf("mode %v quick %v, want the dialog over the bar", m.screenID(), (m.quick() != nil))
 	}
@@ -202,7 +203,7 @@ func TestAMousePressLeavesTheQuickDraftUnderTheUpdateDialog(t *testing.T) {
 	image := tempImage(t, "draft.png")
 	pushQuick(m)
 	m.quick().Attachments = []composer.Attachment{{ID: 1, Path: image}}
-	m.presentLaunchHint(launchFix{text: "pi 0.84.2 is older", command: "true", binary: "pi", update: true})
+	m.presentLaunchHint(uiinstall.Fix{Text: "pi 0.84.2 is older", Command: "true", Binary: "pi", Update: true})
 
 	m.handleMouse(tea.MouseMsg{X: 1, Y: 1, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
 

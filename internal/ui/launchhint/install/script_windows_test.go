@@ -1,6 +1,6 @@
 //go:build windows
 
-package ui
+package install
 
 import (
 	"os"
@@ -21,7 +21,7 @@ func TestInstallLineNamesTheShellAndQuotesTheScript(t *testing.T) {
 	if err != nil {
 		t.Skip("PowerShell not found")
 	}
-	line, err := installLine(`C:\dir with space\install.ps1`)
+	line, err := Line(`C:\dir with space\install.ps1`)
 	if err != nil {
 		t.Fatalf("installLine: %v", err)
 	}
@@ -47,10 +47,10 @@ func TestInstallScriptRecordsExitAndCommandNotFound(t *testing.T) {
 			dir := t.TempDir()
 			statusFile := filepath.Join(dir, "status")
 			script := filepath.Join(dir, "install.ps1")
-			if err := os.WriteFile(script, pwsh.ScriptFile(installScript(tc.command, statusFile)), 0o644); err != nil {
+			if err := os.WriteFile(script, pwsh.ScriptFile(Script(tc.command, statusFile)), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := installLine(script); err != nil {
+			if _, err := Line(script); err != nil {
 				t.Fatal(err)
 			}
 			// The pane's shell strips the quoting installLine adds; args

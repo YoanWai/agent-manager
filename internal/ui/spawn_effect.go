@@ -15,6 +15,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
+	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	"github.com/YoanWai/agent-manager/internal/ui/pathcomplete"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
@@ -353,8 +354,8 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 		if fix, ok := m.launchHintFix(); ok {
 			// The dialog's images are the request's: the composer was emptied
 			// at dispatch, so openLaunchHint found none of its own.
-			fix.images = append(fix.images, request.images...)
-			fix.effectRetry = request
+			fix.Images = append(fix.Images, request.images...)
+			fix.Retry = request
 			if request.kind == spawnQuick {
 				m.closeQuick()
 			}
@@ -385,7 +386,7 @@ func (m *Model) returnSpawnImages(request spawnRequest) {
 			return
 		}
 	}
-	dropImages(request.images)
+	uiinstall.DropImages(request.images)
 }
 
 func (m *Model) applyGroupEffect(request groupRequest, result groupEffectResult, err error) tea.Cmd {

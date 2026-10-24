@@ -6,6 +6,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
+	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -218,7 +219,7 @@ func TestInstallerRefusedQuitKeepsResizeInteraction(t *testing.T) {
 	updated, _ := m.enterResizeMode()
 	m = updated.(*Model)
 	m.nudgeSplit(8)
-	m.ledger.install = &pendingInstall{name: "install-test"}
+	m.install.Pending = &uiinstall.Pending{Name: "install-test"}
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	m = updated.(*Model)
@@ -240,7 +241,7 @@ func TestInstallerRefusedQuitKeepsMouseDrag(t *testing.T) {
 	m.layout.split.dragging = true
 	m.layout.split.moved = true
 	m.push(newResizeSurface(m))
-	m.ledger.install = &pendingInstall{name: "install-test"}
+	m.install.Pending = &uiinstall.Pending{Name: "install-test"}
 
 	updated, cmd := m.handleKey(key("q"))
 	m = updated.(*Model)

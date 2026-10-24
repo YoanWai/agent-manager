@@ -625,7 +625,7 @@ func TestSpawnRetryRetainsManagerAndConversationIdentity(t *testing.T) {
 	first := m.effects.Main.Active.Request.(spawnRequest)
 	msg := command().(uieffects.Completed)
 	m.applyTestMsg(t, msg)
-	retry, ok := hintFix(m).effectRetry.(spawnRequest)
+	retry, ok := hintFix(m).Retry.(spawnRequest)
 	if !ok || retry.id != first.id || retry.plan == nil || retry.plan.AgentSessionID == "" {
 		t.Fatalf("retry lost its captured identity: %+v", retry)
 	}

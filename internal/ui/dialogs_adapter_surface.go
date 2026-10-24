@@ -5,6 +5,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
+	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
@@ -126,63 +127,55 @@ func newForkSurface(m *Model, source store.Session, gen int) *uidialogs.ForkSurf
 
 // launchHintRoot is the root as the setup-step card reaches it. The fix it
 // paints, the launch to retry and the images the refused prompt named all
-// outlive the card, so they live on the launch ledger.
+// outlive the card, so they live in the install runtime state.
 type launchHintRoot struct{ *Model }
 
 func (r launchHintRoot) StartInstall() bool {
-	if install := r.ledger.install; install != nil {
-		r.reportErr("an install is already running in " + install.name)
+	if install := r.install.Pending; install != nil {
+		r.reportErr("an install is already running in " + install.Name)
 		return false
 	}
 	if !r.startInstall(r.launchInstall()) {
 		return false
 	}
 	// The install owns the images once it is admitted.
-	r.ledger.launch.images = nil
+	r.install.Launch.Images = nil
 	return true
 }
 
-func (r launchHintRoot) CopyLaunchCommand() tea.Cmd {
-	command := r.ledger.launch.command
-	return func() tea.Msg {
-		return launchCommandCopiedMsg{err: copyLaunchCommand(command)}
-	}
-}
+func (r launchHintRoot) CopyLaunchCommand() tea.Cmd { return r.install.Copy() }
 
 func (r launchHintRoot) CardWidth() int { return r.cardWidth() }
 
 func (r launchHintRoot) CardChromeRows(hint [][2]string) int { return r.cardChromeRows(hint) }
 
-func (r launchHintRoot) ReleaseLaunchHint() { r.releaseLaunchHint() }
+func (r launchHintRoot) ReleaseLaunchHint() { r.install.Release() }
 
 // closeLaunchHint takes the card down once its install has the screen,
 // without dropping the images the install now owns.
 func (m *Model) closeLaunchHint() {
-	m.ledger.launch = launchFix{}
+	m.install.Launch = uiinstall.Fix{}
 	m.clearSurfaces()
 	m.base = baseList
 }
 
-func (m *Model) releaseLaunchHint() {
-	dropImages(m.ledger.launch.images)
-	m.ledger.launch = launchFix{}
-}
+func (m *Model) releaseLaunchHint() { m.install.Release() }
 
 // launchInstall is the install the card's fix asks for, carrying the launch to
 // retry and the images that launch's prompt named.
 func (m *Model) launchInstall() installStartRequest {
-	fix := m.ledger.launch
-	retry := fix.effectRetry
+	fix := m.install.Launch
+	retry := fix.Retry
 	if spawn, ok := retry.(spawnRequest); ok && len(spawn.images) == 0 {
-		spawn.images = append([]composer.Attachment(nil), fix.images...)
+		spawn.images = append([]composer.Attachment(nil), fix.Images...)
 		retry = spawn
 	}
-	return installStartRequest{
-		command:     fix.script,
-		binary:      fix.binary,
-		effectRetry: retry,
-		images:      fix.images,
-	}
+	return installStartRequest{request: uiinstall.StartRequest{
+		Command: fix.Script,
+		Binary:  fix.Binary,
+		Retry:   retry,
+		Images:  fix.Images,
+	}}
 }
 
 // launchHintSurface is the setup-step card on the stack.

@@ -8,6 +8,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
+	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	tea "github.com/charmbracelet/bubbletea"
 	"maps"
 )
@@ -173,7 +174,7 @@ func (m *Model) returnQuickSendImages(request quickSendRequest) tea.Cmd {
 	}
 	images := slices.Clone(request.images)
 	return func() tea.Msg {
-		dropImages(images)
+		uiinstall.DropImages(images)
 		return nil
 	}
 }

@@ -16,24 +16,20 @@ import (
 )
 
 type effectServices struct {
-	engine                *status.Engine
-	hooks                 *hooks.Manager
-	installHomeDir        func() (string, error)
-	installCheckInstalled func(string) error
-	installSendText       func(*tmux.Driver, string, string) (tmux.SendResult, error)
-	installSessionExists  func(*tmux.Driver, string) (bool, error)
-	pasteInput            func(*tmux.Driver, string, string) error
-	saveKeys              func(keybind.Table) error
-	lifecycle             *sessioncmd.Lifecycle
-	cfg                   config.Config
-	store                 *store.Store
-	driver                *tmux.Driver
-	runner                *execution.Runner
-	watch                 *focuswatch.Watcher
-	gitDrv                *git.Driver
-	quickSessionExists    func(*tmux.Driver, string) (bool, error)
-	quickSendText         func(*tmux.Driver, string, string) (tmux.SendResult, error)
-	remote                *remote.Client
+	engine             *status.Engine
+	hooks              *hooks.Manager
+	pasteInput         func(*tmux.Driver, string, string) error
+	saveKeys           func(keybind.Table) error
+	lifecycle          *sessioncmd.Lifecycle
+	cfg                config.Config
+	store              *store.Store
+	driver             *tmux.Driver
+	runner             *execution.Runner
+	watch              *focuswatch.Watcher
+	gitDrv             *git.Driver
+	quickSessionExists func(*tmux.Driver, string) (bool, error)
+	quickSendText      func(*tmux.Driver, string, string) (tmux.SendResult, error)
+	remote             *remote.Client
 }
 
 func (m *Model) captureEffect(request effectRequest) func() (uieffects.Result, error) {
@@ -46,10 +42,6 @@ func (m *Model) captureEffect(request effectRequest) func() (uieffects.Result, e
 	services := effectServices{cfg: cfg, store: m.services.store, driver: m.services.tmux, watch: m.focus.runtime.watch, gitDrv: m.services.gitDrv, remote: m.ssh.client}
 	services.engine = m.services.engine
 	services.hooks = m.services.hooks
-	services.installHomeDir = installHomeDir
-	services.installCheckInstalled = installCheckInstalled
-	services.installSendText = installSendText
-	services.installSessionExists = installSessionExists
 	services.pasteInput = pasteFocused
 	services.quickSessionExists = m.services.quickSessionExists
 	if services.quickSessionExists == nil {

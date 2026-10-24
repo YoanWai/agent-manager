@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
 	tea "github.com/charmbracelet/bubbletea"
 	"strings"
@@ -125,9 +126,9 @@ func (m *Model) routeSessionMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		m.reportDone(fmt.Sprintf("copied %d chars from %s", msg.chars, msg.name))
 		return routed(m, nil)
 
-	case launchCommandCopiedMsg:
-		m.handleLaunchCommandCopied(msg)
-		return routed(m, nil)
+	case uiinstall.CopiedMsg:
+		cmd, _ := m.install.Route(installRoot{m}, msg)
+		return routed(m, cmd)
 
 	case attachDoneMsg:
 		// An agent that repainted the terminal background for itself leaves

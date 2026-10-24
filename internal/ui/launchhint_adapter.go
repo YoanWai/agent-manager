@@ -2,52 +2,99 @@ package ui
 
 import (
 	"errors"
-	"os"
 
-	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/deps"
 	"github.com/YoanWai/agent-manager/internal/mcpreg"
+	"github.com/YoanWai/agent-manager/internal/sessioncmd"
+	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uilaunchhint "github.com/YoanWai/agent-manager/internal/ui/launchhint"
+	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
-// launchFix is what the setup-step dialog holds: the text it shows, the
-// command it prints and copies, the script i runs to unblock the launch,
-// the binary that script puts on PATH, the launch to run again once it is
-// there, and the images that launch's prompt names. command is empty when
-// the manager knows no recipe, which leaves the dialog read-only. update
-// marks a CLI that is installed but too old, where the same installer
-// updates it.
-type launchFix struct {
-	text        string
-	command     string
-	script      string
-	binary      string
-	update      bool
-	effectRetry effectRequest
-	images      []composer.Attachment
+// installRoot is the root as the install runtime reaches it.
+type installRoot struct{ *Model }
+
+func (r installRoot) ReportErr(text string) { r.reportErr(text) }
+
+func (r installRoot) ReportDone(text string) { r.reportDone(text) }
+
+// SessionLaunched adds the installer shell to the loaded list the way a
+// spawn does, so the screen shows it on the completion rather than the poll
+// after it.
+func (r installRoot) SessionLaunched(sess store.Session) {
+	r.markFreshPane(sess.ID)
+	r.recordLaunch(sess.ID)
+	for _, known := range r.workspace.sessions {
+		if known.ID == sess.ID {
+			return
+		}
+	}
+	r.workspace.sessions = append(r.workspace.sessions, sess)
+	r.rebuildRows()
 }
 
-// pendingInstall is the install still running in a shell tab: the session
-// running it, the files its script writes and runs from, the binary it puts on
-// PATH, and the launch to finish once its exit status lands. It outlives the
-// card that started it, so the ledger holds it.
-type pendingInstall struct {
-	sessionID   string
-	name        string
-	binary      string
-	statusFile  string
-	script      string
-	effectRetry effectRequest
-	images      []composer.Attachment
+func (r installRoot) HintOpen(gen uint64) bool {
+	_, open := r.launchHintSurface()
+	return open && r.gens.dialog == gen
 }
 
-func (m *Model) pendingInstall() *pendingInstall { return m.ledger.install }
+func (r installRoot) ShowInstall(sessionID string) tea.Cmd {
+	return r.handInstallScreenTo(sessionID)
+}
+
+func (r installRoot) Refresh() tea.Cmd { return r.refreshCmd() }
+
+// QueueRetry queues the launch the fix held. Every request a refused launch
+// carries is a root effect request.
+func (r installRoot) QueueRetry(retry uiinstall.Retry) {
+	r.enqueueEffect(retry.(effectRequest), 0, false)
+}
+
+func (m *Model) pendingInstall() *uiinstall.Pending { return m.install.Pending }
+
+// startInstall admits the setup dialog's install onto the effect lane,
+// stamped with the dialog generation, a new shell row id, the shell tool, the
+// placement group and the pane geometry. It refuses while another install is
+// still starting.
+func (m *Model) startInstall(request installStartRequest) bool {
+	for _, job := range append([]*uieffects.Job{m.effects.Main.Active}, m.effects.Main.Pending...) {
+		if job == nil {
+			continue
+		}
+		if starting, ok := job.Request.(installStartRequest); ok {
+			m.reportErr("an install is already starting for " + starting.request.Binary)
+			return false
+		}
+	}
+	toolName, _ := m.shellTool()
+	w, h := m.paneTargetSize()
+	request.request.Gen = m.gens.dialog
+	request.request.ID = newID()
+	request.request.ToolName = toolName
+	request.request.Group = m.contextGroup()
+	request.request.Pane = sessioncmd.PaneSize{Width: w, Height: h}
+	m.enqueueEffect(request, 0, false)
+	return true
+}
+
+func (m *Model) handInstallScreenTo(sessionID string) tea.Cmd {
+	var cleanup tea.Cmd
+	if q := m.quick(); q != nil {
+		cleanup = uiinstall.CleanupImages(q.Attachments)
+		q.Attachments = nil
+	}
+	m.closeLaunchHint()
+	m.rail.ClearStatusFilter()
+	m.focusSession(sessionID)
+	return cleanup
+}
 
 // advanceDialogGen fences completions submitted from the dialog it
 // replaces.
@@ -70,14 +117,6 @@ func (m *Model) takeComposerImages() []composer.Attachment {
 	return images
 }
 
-// copyLaunchCommand is the seam tests swap so a copy never reaches the
-// desktop clipboard.
-var copyLaunchCommand = clipboard.WriteText
-
-type launchCommandCopiedMsg struct {
-	err error
-}
-
 // reportLaunchError routes a failed spawn to the right surface: a launch
 // the manager refused for a missing prerequisite opens a dialog naming the
 // command that unblocks it, anything else stays a line of status text.
@@ -86,32 +125,32 @@ type launchCommandCopiedMsg struct {
 func (m *Model) reportLaunchError(err error) {
 	var hermesMCP mcpreg.HermesMCPUnavailableError
 	if errors.As(err, &hermesMCP) {
-		m.openLaunchHint(launchFix{
-			text:    uilaunchhint.HermesText(hermesMCP.PipCommand),
-			command: hermesMCP.PipCommand,
-			script:  hermesMCP.PipCommand,
-			binary:  "hermes",
+		m.openLaunchHint(uiinstall.Fix{
+			Text:    uilaunchhint.HermesText(hermesMCP.PipCommand),
+			Command: hermesMCP.PipCommand,
+			Script:  hermesMCP.PipCommand,
+			Binary:  "hermes",
 		})
 		return
 	}
 	var missing config.MissingToolError
 	if errors.As(err, &missing) {
-		m.openLaunchHint(launchFix{
-			text:    uilaunchhint.MissingText(missingTool(missing), deps.Hint(missing.Binary)),
-			command: deps.Shown(missing.Binary),
-			script:  deps.Command(missing.Binary),
-			binary:  missing.Binary,
+		m.openLaunchHint(uiinstall.Fix{
+			Text:    uilaunchhint.MissingText(missingTool(missing), deps.Hint(missing.Binary)),
+			Command: deps.Shown(missing.Binary),
+			Script:  deps.Command(missing.Binary),
+			Binary:  missing.Binary,
 		})
 		return
 	}
 	var outdated config.OutdatedToolError
 	if errors.As(err, &outdated) {
-		m.openLaunchHint(launchFix{
-			text:    uilaunchhint.OutdatedText(outdatedTool(outdated), outdatedToolCommand(outdated)),
-			command: outdatedToolCommand(outdated),
-			script:  outdatedToolCommand(outdated),
-			binary:  outdated.Binary,
-			update:  true,
+		m.openLaunchHint(uiinstall.Fix{
+			Text:    uilaunchhint.OutdatedText(outdatedTool(outdated), outdatedToolCommand(outdated)),
+			Command: outdatedToolCommand(outdated),
+			Script:  outdatedToolCommand(outdated),
+			Binary:  outdated.Binary,
+			Update:  true,
 		})
 		return
 	}
@@ -149,9 +188,9 @@ func outdatedTool(outdated config.OutdatedToolError) uilaunchhint.Tool {
 // dialog owns the files until the launch runs or is given up, so the form
 // and the quick bar can be reopened meanwhile. A refused launch replaces
 // whatever dialog it came from.
-func (m *Model) openLaunchHint(fix launchFix) {
+func (m *Model) openLaunchHint(fix uiinstall.Fix) {
 	m.advanceDialogGen()
-	fix.images = append(fix.images, m.takeComposerImages()...)
+	fix.Images = append(fix.Images, m.takeComposerImages()...)
 	if _, open := m.launchHintSurface(); !open {
 		// The quick bar is not a dialog: it stays under the card.
 		for top, ok := m.top(); ok; top, ok = m.top() {
@@ -168,8 +207,8 @@ func (m *Model) openLaunchHint(fix launchFix) {
 // presentLaunchHint shows a refusal that is not a spawn over the screen it
 // came from, so a draft prompt keeps its images. A refusal already showing
 // is replaced in place.
-func (m *Model) presentLaunchHint(fix launchFix) {
-	m.ledger.launch = fix
+func (m *Model) presentLaunchHint(fix uiinstall.Fix) {
+	m.install.Launch = fix
 	if s, open := m.launchHintSurface(); open {
 		s.SetFix(m.launchHintCard(fix))
 		return
@@ -179,45 +218,24 @@ func (m *Model) presentLaunchHint(fix launchFix) {
 }
 
 // launchHintCard is the copy of the fix the card paints. The launch to retry,
-// the images and the install stay on the ledger.
-func (m *Model) launchHintCard(fix launchFix) uidialogs.LaunchFix {
-	return uidialogs.LaunchFix{Text: fix.text, Command: fix.command, Update: fix.update}
+// the images and the install stay on the runtime state.
+func (m *Model) launchHintCard(fix uiinstall.Fix) uidialogs.LaunchFix {
+	return uidialogs.LaunchFix{Text: fix.Text, Command: fix.Command, Update: fix.Update}
 }
 
 // launchHintFix is the fix the open card holds, for a completion that attaches
 // the launch to retry to it.
-func (m *Model) launchHintFix() (*launchFix, bool) {
+func (m *Model) launchHintFix() (*uiinstall.Fix, bool) {
 	if _, ok := m.launchHintSurface(); !ok {
 		return nil, false
 	}
-	return &m.ledger.launch, true
-}
-
-func removeInstallFiles(statusFile, script string) {
-	_ = os.Remove(statusFile)
-	_ = os.Remove(script)
-}
-
-func dropImages(images []composer.Attachment) {
-	for _, att := range images {
-		if att.Path != "" {
-			_ = os.Remove(att.Path)
-		}
-	}
-}
-
-func (m *Model) handleLaunchCommandCopied(msg launchCommandCopiedMsg) {
-	if msg.err != nil {
-		m.reportErr("copy failed: " + msg.err.Error())
-		return
-	}
-	m.reportDone("copied to clipboard")
+	return &m.install.Launch, true
 }
 
 // settleInstall queues one captured status check. Polls arriving while that
 // request waits or runs do not add duplicates to the ordered effect lane.
 func (m *Model) settleInstall() {
-	install := m.ledger.install
+	install := m.install.Pending
 	if install == nil {
 		return
 	}
@@ -225,9 +243,9 @@ func (m *Model) settleInstall() {
 		if job == nil {
 			continue
 		}
-		if request, ok := job.Request.(installSettleRequest); ok && request.install.sessionID == install.sessionID {
+		if request, ok := job.Request.(installSettleRequest); ok && request.install.Pending.SessionID == install.SessionID {
 			return
 		}
 	}
-	m.enqueueEffect(installSettleRequest{install: *install}, 0, false)
+	m.enqueueEffect(installSettleRequest{install: uiinstall.SettleRequest{Pending: *install}}, 0, false)
 }

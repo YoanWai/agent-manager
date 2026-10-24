@@ -283,7 +283,7 @@ func TestFormRemembersPickOnlyAfterInstallRetrySucceeds(t *testing.T) {
 	_, cmd := m.submitForm()
 	m.applyCmd(t, cmd)
 
-	if !hintOpen(m) || hintFix(m).effectRetry == nil {
+	if !hintOpen(m) || hintFix(m).Retry == nil {
 		t.Fatalf("expected a refused launch with retry, screen = %v err=%q", m.screenID(), m.errBar.text)
 	}
 	if m.ledger.lastSpawnTool != "ready-tool" || m.ledger.lastSpawnWorktree {

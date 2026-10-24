@@ -41,14 +41,6 @@ type launchLedger struct {
 	// swallow them.
 	terminalKeyAt time.Time
 	catalogs      map[string]*catalogState
-	// install is the setup-dialog install still running in a shell tab, nil
-	// when none is. The dialog closes once the command is typed, so the
-	// install outlives the surface that started it.
-	install *pendingInstall
-	// launch is the fix the setup-step card shows, with the launch to retry
-	// and the images its prompt named. The card closes before the retry runs,
-	// so the ledger holds them, as it holds the install.
-	launch launchFix
 	// baseFetches holds the last fetch of a worktree spawn's base, per
 	// directory and base override.
 	baseFetches map[baseFetchKey]baseFetch
