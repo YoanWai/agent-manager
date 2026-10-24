@@ -3,16 +3,52 @@ package ui
 import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
+	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uiapply "github.com/YoanWai/agent-manager/internal/ui/dialogs/apply"
-	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
-	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
+
+// The small dialogs keep their state, keys and view in internal/ui/dialogs.
+// The hosts here answer what their surface asks and run the request it holds;
+// the adapter beside this file seeds them from the workspace and routes.
+
+type confirmTarget struct {
+	isGroup bool
+	// archivedOnly marks a group delete issued from the archived view,
+	// which clears the group's archive instead of the group itself.
+	archivedOnly bool
+	path         string
+	label        string
+	sessions     []store.Session
+	action       uidialogs.ConfirmAction
+	batch        bool
+	selection    lifecycleSelection
+	connection   string
+	// remote is a call on an SSH row, run on the host once confirmed.
+	remote *uilink.Call
+}
+
+type lifecycleSelectionKind uint8
+
+const (
+	lifecycleSelectionNone lifecycleSelectionKind = iota
+	lifecycleSelectionSession
+	lifecycleSelectionGroup
+)
+
+type lifecycleSelection struct {
+	kind         lifecycleSelectionKind
+	rootID       string
+	archivedOnly bool
+}
 
 // confirmRoot is the root as the confirm card reaches it, holding the
 // request the card was opened for.
@@ -64,7 +100,7 @@ func (r renameRoot) StepBase(s *uidialogs.RenameSurface, delta int) (string, tea
 	return r.stepGroupBase(uilaunch.BaseRename, r.gens.dialog, r.capturedAbsolutePath(s.Dir(), r.capturedGroupDefaultDir(uirail.ParentGroup(s.Path()))), s.Base, delta)
 }
 
-func (r renameRoot) WorktreeCount() int { return len(groupWorktreeOptions) }
+func (r renameRoot) WorktreeCount() int { return len(uidialogs.WorktreeOptions) }
 
 func (r renameRoot) QueueRename(request uidialogs.RenameRequest, base string) tea.Cmd {
 	if request.Group {
@@ -74,7 +110,7 @@ func (r renameRoot) QueueRename(request uidialogs.RenameRequest, base string) te
 			NewGroup: request.NewGroup,
 			RawDir:   request.Dir,
 			DraftDir: request.Dir,
-			Worktree: groupWorktreeValue(request.Worktree),
+			Worktree: uidialogs.WorktreeValue(request.Worktree),
 			Base:     base,
 			Name:     request.Name,
 		}})
@@ -99,32 +135,12 @@ func (r moveRoot) PaintMove(picker *spawn.Picker) string {
 	return r.CardSized(r.cardWidth(), uidialogs.MoveTitle(r.prefs.glyphMode), r.viewGroupPicker(picker), uidialogs.MoveHints())
 }
 
-var (
-	_ uidialogs.RenameRoot = renameRoot{}
-	_ uidialogs.MoveRoot   = moveRoot{}
-)
+// groupRoot is the root as the New Group card reaches it.
+type groupRoot struct{ *Model }
 
-// listClear is the list with no card over it: what "mode is the list" meant
-// while the cards were modes. The quick bar and a resize sit on the list
-// without covering it.
-func (m *Model) listClear() bool {
-	if m.base != baseList {
-		return false
-	}
-	for _, s := range m.surfaces {
-		switch s.(type) {
-		case *uiquick.Surface, *uigeometry.Surface:
-		default:
-			return false
-		}
-	}
-	return true
-}
+func (r groupRoot) CardWidth(cols int) int { return uiframe.CardWidthFor(cols) }
 
-func (m *Model) openConfirm(target confirmTarget) {
-	prompt := uidialogs.Confirm{Action: target.action, Group: target.isGroup, Label: target.label}
-	m.push(uidialogs.NewConfirmSurface(confirmRoot{m, target}, prompt, m.prefs.glyphMode))
-}
+func (r groupRoot) ReportErr(text string) { r.reportErr(text) }
 
 // launchHintRoot is the root as the setup-step card reaches it. The fix it
 // paints, the launch to retry and the images the refused prompt named all
@@ -152,6 +168,40 @@ func (r launchHintRoot) CardChromeRows(hint [][2]string) int { return r.cardChro
 
 func (r launchHintRoot) ReleaseLaunchHint() { r.ledger.install.Release() }
 
+var (
+	_ uidialogs.ConfirmRoot    = confirmRoot{}
+	_ uidialogs.ForkRoot       = forkRoot{}
+	_ uidialogs.RenameRoot     = renameRoot{}
+	_ uidialogs.MoveRoot       = moveRoot{}
+	_ uidialogs.GroupFormRoot  = groupRoot{}
+	_ uidialogs.LaunchHintRoot = launchHintRoot{}
+)
+
+// runConfirmed is the answered yes: the remote call, the connection removal
+// or the lifecycle request the card held.
+func (m *Model) runConfirmed(target confirmTarget) tea.Cmd {
+	switch {
+	case target.remote != nil:
+		return m.queueRemote(*target.remote)
+	case target.connection != "":
+		m.removeConnection(target.connection)
+	default:
+		m.queueLifecycle(target, false, "")
+	}
+	return m.nextEffectCmd()
+}
+
+// confirmCard is the shared yes/no card, also drawn by Settings' reset.
+func (m *Model) confirmCard(title, question, consequence string, destructive bool, answer string) string {
+	width := m.cardWidth()
+	tone := lipgloss.NewStyle().Foreground(uitheme.ColorAccent()).Bold(true)
+	if destructive {
+		tone = uitheme.ErrStyle()
+	}
+	body := uidialogs.ConfirmBody(question, consequence, uiframe.CardInnerWidth(width), tone, uitheme.MutedStyle())
+	return m.CardSized(width, title, body, uidialogs.ConfirmHints(answer))
+}
+
 // closeLaunchHint takes the card down once its install has the screen,
 // without dropping the images the install now owns.
 func (m *Model) closeLaunchHint() {
@@ -178,5 +228,3 @@ func (m *Model) launchInstall() uiinstall.StartRequest {
 		Images:  fix.Images,
 	}
 }
-
-var _ uidialogs.LaunchHintRoot = launchHintRoot{}

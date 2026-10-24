@@ -2,6 +2,7 @@ package dialogs
 
 import (
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
+	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -101,4 +102,34 @@ func MoveTitle(mode presentation.GlyphMode) string {
 
 func MoveHints() [][2]string {
 	return [][2]string{{"↑↓", "pick"}, {"↵", "move"}, {"esc", "cancel"}}
+}
+
+// Placement is the effect a submit asks the root to run: the Rail mutation
+// that places the row, and the follow-up that closes the card it came from.
+type Placement struct {
+	SessionID string
+	Group     string
+	ParentID  string
+	GroupPath string
+}
+
+// IsGroup reports whether the placement re-parents a group.
+func (p Placement) IsGroup() bool { return p.GroupPath != "" }
+
+// PlacementOf resolves a submit against the picked row, reporting false when
+// a group would land where it already is, which only closes the card.
+func PlacementOf(d Move, picker *spawn.Picker) (Placement, bool) {
+	pick := MovePick{Group: picker.GroupPath()}
+	if !d.IsGroup() {
+		opt := picker.Picked()
+		pick = MovePick{Group: opt.Path, ParentID: opt.SessionID}
+	}
+	request, ok := d.Place(pick)
+	if !ok {
+		return Placement{}, false
+	}
+	if request.IsGroup() {
+		return Placement{GroupPath: request.GroupPath, Group: request.Group}, true
+	}
+	return Placement{SessionID: request.SessionID, Group: request.Group, ParentID: request.ParentID}, true
 }
