@@ -4,22 +4,26 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uirelease "github.com/YoanWai/agent-manager/internal/ui/notices/release"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
 	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	"github.com/YoanWai/agent-manager/internal/update"
-
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -1333,4 +1337,1728 @@ func storedFlag(t *testing.T, m *Model, key string) bool {
 		t.Fatal(err)
 	}
 	return uisettings.FlagOn(key, value)
+}
+
+func openSavedPromptsPanel(t *testing.T, m *Model) {
+	t.Helper()
+	m.runBatch(t, m.openSettings())
+	m.settingsCard().State().Field = uisettings.FieldPrompts
+	m.runBatch(t, pressSettings(m, tea.KeyMsg{Type: tea.KeyEnter}))
+	if !m.settingsCard().State().Prompts.Open() {
+		t.Fatalf("enter on the saved prompts row did not open them: %q", m.errBar.text)
+	}
+}
+
+func pressSettings(m *Model, msg tea.KeyMsg) tea.Cmd {
+	_, cmd := m.handleSettingsKey(msg)
+	return cmd
+}
+
+func pasteSettings(m *Model, text string) tea.Cmd {
+	return pressSettings(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(text), Paste: true})
+}
+
+func savePrompt(t *testing.T, m *Model, name, text string) {
+	t.Helper()
+	if err := m.services.store.SaveSessionPreset("", store.SessionPreset{Name: name, Instructions: text}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func storedPrompts(t *testing.T, m *Model) []store.SessionPreset {
+	t.Helper()
+	rows, err := m.services.store.SessionPresets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return rows
+}
+
+// Settings lists saved prompts as a row of its own.
+func TestSettingsShowsTheSavedPromptsRow(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	m.runBatch(t, m.openSettings())
+	if !strings.Contains(ansi.Strip(m.viewSettings()), "saved prompts") {
+		t.Fatal("Settings has no saved prompts row")
+	}
+}
+
+// A save, an edit, a discarded edit and a delete each reach the store on
+// the effect lane, never inside Update.
+func TestSavedPromptsPanelWritesThroughTheEffectLane(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	openSavedPromptsPanel(t, m)
+	pressSettings(m, runeKey("n"))
+	pasteSettings(m, "  Role  ")
+	pressSettings(m, tea.KeyMsg{Type: tea.KeyTab})
+	pasteSettings(m, " \n literal\n\n")
+	save := pressSettings(m, tea.KeyMsg{Type: tea.KeyCtrlS})
+	if save == nil || len(storedPrompts(t, m)) != 0 {
+		t.Fatal("ctrl+s wrote inside Update")
+	}
+	if again := pressSettings(m, tea.KeyMsg{Type: tea.KeyCtrlS}); again != nil {
+		t.Fatal("a second ctrl+s queued a second save")
+	}
+	m.runBatch(t, save)
+	rows := storedPrompts(t, m)
+	if len(rows) != 1 || rows[0].Name != "Role" || rows[0].Instructions != " \n literal\n\n" {
+		t.Fatalf("saved %+v", rows)
+	}
+
+	pressSettings(m, tea.KeyMsg{Type: tea.KeyEnter})
+	pressSettings(m, tea.KeyMsg{Type: tea.KeyCtrlU})
+	pasteSettings(m, "Renamed")
+	m.runBatch(t, pressSettings(m, tea.KeyMsg{Type: tea.KeyCtrlS}))
+	if rows = storedPrompts(t, m); len(rows) != 1 || rows[0].Name != "Renamed" || rows[0].Instructions != " \n literal\n\n" {
+		t.Fatalf("rename saved %+v", rows)
+	}
+
+	pressSettings(m, tea.KeyMsg{Type: tea.KeyEnter})
+	pressSettings(m, tea.KeyMsg{Type: tea.KeyTab})
+	pasteSettings(m, "discard")
+	m.runBatch(t, pressSettings(m, tea.KeyMsg{Type: tea.KeyEsc}))
+	if rows = storedPrompts(t, m); strings.Contains(rows[0].Instructions, "discard") {
+		t.Fatal("esc saved the edit")
+	}
+
+	pressSettings(m, runeKey("d"))
+	m.runBatch(t, pressSettings(m, tea.KeyMsg{Type: tea.KeyEnter}))
+	if rows = storedPrompts(t, m); len(rows) != 0 {
+		t.Fatalf("delete left %+v", rows)
+	}
+	if !m.settingsCard().State().Prompts.Open() || !m.settingsOpen() {
+		t.Fatal("the panel closed under its own delete")
+	}
+}
+
+// A name the catalog already holds is refused with the typing kept.
+func TestSavedPromptsPanelKeepsTypingOnARefusedSave(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	savePrompt(t, m, "Taken", "existing")
+	openSavedPromptsPanel(t, m)
+	pressSettings(m, runeKey("n"))
+	pasteSettings(m, "Taken")
+	m.runBatch(t, pressSettings(m, tea.KeyMsg{Type: tea.KeyCtrlS}))
+	if m.errBar.text == "" || !strings.Contains(ansi.Strip(m.viewSettings()), "Taken") {
+		t.Fatalf("refused save: err %q", m.errBar.text)
+	}
+	pressSettings(m, tea.KeyMsg{Type: tea.KeyCtrlU})
+	pasteSettings(m, "Fresh")
+	pressSettings(m, tea.KeyMsg{Type: tea.KeyTab})
+	pasteSettings(m, "text")
+	m.runBatch(t, pressSettings(m, tea.KeyMsg{Type: tea.KeyCtrlS}))
+	if rows := storedPrompts(t, m); len(rows) != 2 || m.errBar.text != "" {
+		t.Fatalf("retry saved %+v, err %q", rows, m.errBar.text)
+	}
+}
+
+// A read that answers after the panel was closed and opened again leaves
+// the newer list alone.
+func TestSavedPromptsPanelIgnoresALateRead(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	m.runBatch(t, m.openSettings())
+	m.settingsCard().State().Field = uisettings.FieldPrompts
+	late := pressSettings(m, tea.KeyMsg{Type: tea.KeyEnter})()
+	pressSettings(m, tea.KeyMsg{Type: tea.KeyEsc})
+	savePrompt(t, m, "New", "text")
+	m.runBatch(t, pressSettings(m, tea.KeyMsg{Type: tea.KeyEnter}))
+	m.Update(late)
+	if body := ansi.Strip(m.viewSettings()); !strings.Contains(body, "New") || strings.Contains(body, "No saved prompts") {
+		t.Fatalf("a late read replaced the list:\n%s", body)
+	}
+}
+
+// A click on the row opens the panel, the wheel walks a long list, and
+// everything stays inside a small terminal.
+func TestSavedPromptsPanelByMouseInASmallTerminal(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 40, 22
+	for i := range 30 {
+		savePrompt(t, m, fmt.Sprintf("Role %02d", i), "text")
+	}
+	m.runBatch(t, m.openSettings())
+	for range uisettings.FieldPrompts {
+		m = wheelOnCard(m, tea.MouseButtonWheelDown)
+	}
+	frame := m.viewSettings()
+	if m.settingsCard().State().Field != uisettings.FieldPrompts || len(strings.Split(frame, "\n")) > m.layout.height {
+		t.Fatalf("the wheel stopped on field %d", m.settingsCard().State().Field)
+	}
+	m, cmd := clickBody(t, m, "saved prompts")
+	if m.runBatch(t, cmd); !m.settingsCard().State().Prompts.Open() {
+		t.Fatal("a click on the saved prompts row did not open them")
+	}
+	for range 29 {
+		m = wheelOnCard(m, tea.MouseButtonWheelDown)
+	}
+	frame = m.viewSettings()
+	if !strings.Contains(frame, "Role 29") {
+		t.Fatal("the wheel did not bring the last prompt into view")
+	}
+	lines := strings.Split(frame, "\n")
+	if len(lines) > m.layout.height {
+		t.Fatalf("frame has %d rows for a %d row terminal", len(lines), m.layout.height)
+	}
+	for _, line := range lines {
+		if ansi.StringWidth(line) > m.layout.width {
+			t.Fatalf("frame line wider than the terminal: %q", line)
+		}
+	}
+	pressSettings(m, runeKey("e"))
+	if frame = m.viewSettings(); len(strings.Split(frame, "\n")) > m.layout.height || !strings.Contains(frame, "ctrl+s") {
+		t.Fatal("the editor does not fit the terminal")
+	}
+}
+
+// A click on the blank line under the title opens nothing while the saved
+// prompts row is scrolled out of view above the docs row.
+func TestSettingsClickAboveTheBodyLeavesSavedPromptsClosed(t *testing.T) {
+	m := buildModel(t)
+	openBrowser = func(url string) error { t.Fatalf("opened %s", url); return nil }
+	t.Cleanup(func() { openBrowser = uiterminal.DefaultOpenBrowser })
+	m.runBatch(t, m.openSettings())
+	d := m.settingsCard().State()
+	d.Field = uisettings.FieldCount - 1
+	hidden := func() bool { return !paints(m, "saved prompts") && paints(m, "docs") }
+	m.layout.width, m.layout.height = 40, 30
+	for m.layout.height > 8 && !hidden() {
+		m.layout.height--
+	}
+	if !hidden() {
+		t.Fatal("no height hides saved prompts and shows docs")
+	}
+	_, cmd := m.handleMouse(tea.MouseMsg{X: m.layout.card.bodyLeft, Y: m.layout.card.bodyTop - 1, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	m.runBatch(t, cmd)
+	if d.Prompts.Open() {
+		t.Fatal("a click above the body opened saved prompts")
+	}
+}
+
+func TestSymbolsExplicitChoiceAndPendingReopen(t *testing.T) {
+	m := buildModel(t)
+	m.applyCmd(t, m.openSettings())
+	_, save := m.closeSettings()
+	m.applyCmd(t, save)
+	if raw, _ := m.services.store.Setting(uisettings.GlyphModeSetting); raw != "" {
+		t.Fatal("untouched settings pinned symbols default")
+	}
+	for _, mode := range []presentation.GlyphMode{presentation.GlyphModeBasic, presentation.GlyphModeAdvanced} {
+		m.applyCmd(t, m.openSettings())
+		m.settingsCard().State().Field = uisettings.FieldGlyphs
+		m.handleSettingsKey(key("right"))
+		if m.prefs.glyphMode != mode {
+			t.Fatal("symbols did not preview")
+		}
+		_, save = m.closeSettings()
+		m.openSettings()
+		if m.settingsCard().State().GlyphMode != mode {
+			t.Fatal("reopen lost pending symbols")
+		}
+		_, unchanged := m.closeSettings()
+		m.applyCmd(t, save)
+		m.applyCmd(t, unchanged)
+		m.drainEffects(t)
+		if got := reloadModel(t, m).prefs.glyphMode; got != mode {
+			t.Fatalf("saved symbols %q want %q", got, mode)
+		}
+	}
+	fresh := buildModel(t)
+	fresh.applyCmd(t, fresh.openSettings())
+	fresh.settingsCard().State().Field = uisettings.FieldGlyphs
+	fresh.handleSettingsKey(key("right"))
+	fresh.handleSettingsKey(key("left"))
+	_, save = fresh.closeSettings()
+	fresh.applyCmd(t, save)
+	if raw, _ := fresh.services.store.Setting(uisettings.GlyphModeSetting); raw != "advanced" {
+		t.Fatal("cycling back did not pin explicit default")
+	}
+}
+
+func TestSymbolsMouseSaveUsesPaintedRows(t *testing.T) {
+	for _, width := range []int{34, 80, 160} {
+		m := buildModel(t)
+		m.layout.width, m.layout.height = width, 24
+		m.applyCmd(t, m.openSettings())
+		preparedView(m)
+		m = leftClick(m, m.layout.card.bodyLeft-1, m.layout.card.bodyTop)
+		if m.prefs.glyphMode != "" {
+			t.Fatal("padding changed symbols")
+		}
+		if m, _ = clickBody(t, m, "symbols"); m.prefs.glyphMode != presentation.GlyphModeBasic {
+			t.Fatal("symbols click missed")
+		}
+		if !paints(m, "Compatible") {
+			t.Fatal("symbols label did not update")
+		}
+		x, y := paintedCell(t, m, "save and close")
+		m, save := leftClickCmd(m, x, y)
+		m.applyCmd(t, save)
+		if raw, _ := m.services.store.Setting(uisettings.GlyphModeSetting); raw != "basic" || m.settingsOpen() {
+			t.Fatal("mouse save did not persist and close")
+		}
+	}
+}
+
+func TestSymbolsRejectInvalidAndStaleReads(t *testing.T) {
+	m := buildModel(t)
+	m.applyCmd(t, m.openSettings())
+	stale := uipersist.LoadedMsg{Request: uipersist.LoadRequest{Target: uipersist.DialogTarget, Generation: m.settings.Gen}, Result: uipersist.LoadResult{Values: []uisettings.Readback{{Key: uisettings.GlyphModeSetting, Value: "advanced"}}}}
+	m.settingsCard().State().Field = uisettings.FieldGlyphs
+	m.handleSettingsKey(key("right"))
+	m.handleSettingsLoaded(stale)
+	if m.prefs.glyphMode != presentation.GlyphModeBasic {
+		t.Fatal("load overwrote unsaved symbols")
+	}
+	_, save := m.closeSettings()
+	m.applyCmd(t, save)
+	if err := m.services.store.SetSetting(uisettings.GlyphModeSetting, "unknown"); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.openSettings())
+	if m.prefs.glyphMode != presentation.GlyphModeBasic || !strings.Contains(m.errBar.text, "unknown symbols setting") {
+		t.Fatal("invalid symbols were not rejected")
+	}
+}
+
+func TestSymbolsSaveFailureRestoresAndCanRetry(t *testing.T) {
+	m := buildModel(t)
+	m.applyCmd(t, m.openSettings())
+	m.settingsCard().State().Field = uisettings.FieldGlyphs
+	m.handleSettingsKey(key("right"))
+	request := uipersist.SaveRequest{Values: m.settingsCard().State().ChangedValues(), Generation: m.settings.Gen}
+	writer := &settingsScriptWriter{failOn: uisettings.GlyphModeSetting, values: map[string]string{}}
+	result, err := uipersist.RunSave(request, writer)
+	if err == nil {
+		t.Fatal("fixture write must fail")
+	}
+	m.applyTestMsg(t, m.settings.ApplySave(settingsSaveHost{m}, request, result, err))
+	if m.prefs.glyphMode != "" || m.errBar.text == "" {
+		t.Fatal("failed symbols save did not restore default and report failure")
+	}
+	m.settingsCard().State().Field = uisettings.FieldGlyphs
+	m.handleSettingsKey(key("right"))
+	_, save := m.closeSettings()
+	m.applyCmd(t, save)
+	if raw, _ := m.services.store.Setting(uisettings.GlyphModeSetting); raw != "basic" {
+		t.Fatal("retry did not save")
+	}
+}
+
+func TestSettingsUpdateDoesNotStartAfterSymbolsSaveFails(t *testing.T) {
+	m := buildModel(t)
+	m.applyCmd(t, m.openSettings())
+	m.release.Latest = "v0.3.0"
+	m.settingsCard().State().Field = uisettings.FieldGlyphs
+	m.handleSettingsKey(key("right"))
+	m.settingsCard().State().Field = uisettings.FieldUpdate
+	m.handleSettingsKey(key("enter"))
+	job := m.effects.Main.Active
+	request := job.Request.(uipersist.SaveRequest)
+	if !request.StagedUpdate {
+		t.Fatal("update not captured")
+	}
+	if cmd := m.settings.ApplySave(settingsSaveHost{m}, request, uipersist.SaveResult{}, errors.New("disk full")); cmd != nil || m.release.Applying {
+		t.Fatal("failed settings save still starts update")
+	}
+}
+
+func TestOpenSettingsDefersBlockedStoreRead(t *testing.T) {
+	m := buildModel(t)
+	reader := &blockedSettingReader{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+		values:  map[string]string{uisettings.WorktreeSetting: "on"},
+	}
+	opened := make(chan tea.Cmd, 1)
+	go func() { opened <- m.openSettingsWithReader(reader) }()
+
+	var cmd tea.Cmd
+	select {
+	case <-reader.started:
+		close(reader.release)
+		<-opened
+		t.Fatal("opening settings read the store on the update path")
+	case cmd = <-opened:
+	}
+	if cmd == nil {
+		t.Fatal("opening settings did not return the deferred refresh")
+	}
+	select {
+	case <-reader.started:
+		t.Fatal("settings reader ran before its Bubble Tea command")
+	default:
+	}
+
+	// Opening batches the store read with the editor probe; each runs as
+	// its own command, so the blocked read holds only itself.
+	batch, ok := cmd().(tea.BatchMsg)
+	if !ok {
+		t.Fatal("opening settings should batch the store read with the editor probe")
+	}
+	completed := make(chan tea.Msg, len(batch))
+	for _, each := range batch {
+		go func() { completed <- each() }()
+	}
+	<-reader.started
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 151, Height: 45})
+	m = updated.(*Model)
+	if m.layout.width != 151 {
+		t.Fatal("a blocked settings reader blocked an unrelated window update")
+	}
+	close(reader.release)
+	for range batch {
+		m.applyTestMsg(t, <-completed)
+	}
+	if !m.settingsCard().State().WorktreeDefault {
+		t.Fatal("the accepted deferred refresh did not update the dialog")
+	}
+}
+
+func TestOpenCLIPickerDoesNotReadStore(t *testing.T) {
+	m := buildModel(t)
+	m.applyCmd(t, m.openSettings())
+	if err := m.services.store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	m.errBar.text = ""
+	m.settingsCard().State().CLIHidden = nil
+	m.openSettingsCLIPicker(t)
+	if m.errBar.text != "" {
+		t.Fatalf("opening the CLI picker read the closed store: %q", m.errBar.text)
+	}
+}
+
+func TestSettingsOpenRefreshesExternalChanges(t *testing.T) {
+	m := buildModel(t)
+	if err := m.services.store.SetSetting(uisettings.WorktreeSetting, "on"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.services.store.SetSetting(uisettings.HiddenToolsSetting, "claude"); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := m.openSettings()
+	if m.settingsCard().State().WorktreeDefault || m.settingsCard().State().CLIHidden["claude"] {
+		t.Fatal("opening should paint the cached preferences before the refresh")
+	}
+	m.applyTestMsg(t, cmd())
+	if !m.settingsCard().State().WorktreeDefault || !m.settingsCard().State().CLIHidden["claude"] {
+		t.Fatalf("external settings were not refreshed: worktree=%t hidden=%v", m.settingsCard().State().WorktreeDefault, m.settingsCard().State().CLIHidden)
+	}
+}
+
+func TestSettingsLoadRefusesReopenedDialog(t *testing.T) {
+	m := buildModel(t)
+	cmd := m.openSettings()
+	firstGeneration := m.settings.Gen
+	if err := m.services.store.SetSetting(uisettings.WorktreeSetting, "on"); err != nil {
+		t.Fatal(err)
+	}
+	loaded := cmd()
+
+	m.openSettings()
+	if m.settings.Gen == firstGeneration {
+		t.Fatal("reopening settings reused the old generation")
+	}
+	m.applyTestMsg(t, loaded)
+	if m.settingsCard().State().WorktreeDefault {
+		t.Fatal("the first dialog's load overwrote the reopened dialog")
+	}
+}
+
+func TestSettingsLoadRefusesEditsAndSubpickers(t *testing.T) {
+	t.Run("staged edit", func(t *testing.T) {
+		m := buildModel(t)
+		cmd := m.openSettings()
+		m.settingsCard().State().Field = uisettings.FieldWorktree
+		m.cycleSetting(1)
+		m.applyTestMsg(t, cmd())
+		if !m.settingsCard().State().WorktreeDefault {
+			t.Fatal("the async load overwrote a staged setting")
+		}
+	})
+
+	t.Run("CLI picker", func(t *testing.T) {
+		m := buildModel(t)
+		cmd := m.openSettings()
+		if err := m.services.store.SetSetting(uisettings.HiddenToolsSetting, "claude"); err != nil {
+			t.Fatal(err)
+		}
+		m.openSettingsCLIPicker(t)
+		m.applyTestMsg(t, cmd())
+		if m.settingsCard().State().CLIHidden["claude"] {
+			t.Fatal("the async load replaced an open CLI picker")
+		}
+	})
+
+	t.Run("key picker", func(t *testing.T) {
+		m := buildModel(t)
+		cmd := m.openSettings()
+		m.settingsCard().State().KeyPicker = true
+		before := m.settingsCard().State().WorktreeDefault
+		if err := m.services.store.SetSetting(uisettings.WorktreeSetting, "on"); err != nil {
+			t.Fatal(err)
+		}
+		m.applyTestMsg(t, cmd())
+		if m.settingsCard().State().WorktreeDefault != before {
+			t.Fatal("the async load replaced an open key picker")
+		}
+	})
+}
+
+func TestSettingsReopenUsesOptimisticPendingSave(t *testing.T) {
+	m := buildModel(t)
+	m.openSettings()
+	m.settingsCard().State().Field = uisettings.FieldWorktree
+	m.cycleSetting(1)
+	_, save := m.handleSettingsKey(key("enter"))
+	if save == nil {
+		t.Fatal("settings save was not queued")
+	}
+
+	// Only the editor PATH probe may run; a store load would race the save.
+	if refresh := m.openSettings(); refresh != nil {
+		if _, probe := refresh().(uisettings.EditorsProbe); !probe {
+			t.Fatal("a dialog reopened over a pending save should use the optimistic cache")
+		}
+	}
+	if !m.settingsCard().State().WorktreeDefault {
+		t.Fatal("the reopened dialog lost the pending worktree choice")
+	}
+	m.applyCmd(t, save)
+}
+
+func specByKey(t *testing.T) map[string]store.SettingSpec {
+	t.Helper()
+	specs, err := SettingSpecs()
+	if err != nil {
+		t.Fatalf("SettingSpecs: %v", err)
+	}
+	byKey := map[string]store.SettingSpec{}
+	for _, spec := range specs {
+		if _, dup := byKey[spec.Key]; dup {
+			t.Fatalf("SettingSpecs names %s twice", spec.Key)
+		}
+		byKey[spec.Key] = spec
+	}
+	return byKey
+}
+
+// The dialog spells the keys the store reads the same way.
+func TestSettingKeysMatchTheStore(t *testing.T) {
+	for got, want := range map[string]string{
+		uisettings.DefaultToolSetting:  store.DefaultToolSetting,
+		uisettings.CoordinationSetting: store.CoordinationSetting,
+		uisettings.EditorSetting:       store.EditorSetting,
+		uisettings.HiddenToolsSetting:  store.HiddenToolsSetting,
+	} {
+		if got != want {
+			t.Errorf("settings key %q, store reads %q", got, want)
+		}
+	}
+}
+
+// Every key the modal writes is one the shell can set, with a value the
+// shell would accept, so the two fronts never drift apart.
+func TestSettingSpecsCoverEveryKeySettingsWrites(t *testing.T) {
+	m := buildModel(t)
+	before, err := m.services.store.Settings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.openSettings())
+	m.openSettingsCLIPicker(t)
+	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEsc})
+	// A save writes only the rows that changed; with no baseline every row
+	// counts as changed, as on a fresh profile's first save.
+	m.settingsCard().State().Baseline = nil
+	m.settingsCard().State().BaselineHidden = nil
+	_, cmd := m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEsc})
+	// Only the save's own effects: a refresh would stamp the poller's
+	// runtime rows, which are not settings.
+	if cmd != nil {
+		m.applyTestMsg(t, cmd())
+	}
+	m.drainEffects(t)
+	after, err := m.services.store.Settings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	specs := specByKey(t)
+	written := 0
+	for key, value := range after {
+		if _, old := before[key]; old {
+			continue
+		}
+		written++
+		spec, known := specs[key]
+		if !known {
+			t.Errorf("Settings writes %s, which SettingSpecs does not name", key)
+			continue
+		}
+		if spec.Row == "" {
+			t.Errorf("Settings writes %s, which SettingSpecs names with no row", key)
+		}
+		if err := spec.Check(value); err != nil {
+			t.Errorf("Settings wrote %s=%q: %v", key, value, err)
+		}
+	}
+	if written == 0 {
+		t.Fatal("closing Settings wrote nothing, so the test checked nothing")
+	}
+	for key, spec := range specs {
+		if _, present := after[key]; !present && spec.Row != "" {
+			t.Errorf("SettingSpecs names %s (%s), which closing Settings never writes", key, spec.Row)
+		}
+	}
+}
+
+func TestSettingSpecsNameEveryThemeAndAgentCLI(t *testing.T) {
+	specs := specByKey(t)
+	var names []string
+	for _, theme := range uitheme.Palettes {
+		names = append(names, theme.Name)
+	}
+	if !slices.Equal(specs[uisettings.ThemeSetting].Values, names) {
+		t.Fatalf("theme takes %v, want the shipped palettes %v", specs[uisettings.ThemeSetting].Values, names)
+	}
+	if !slices.Contains(specs[store.DefaultToolSetting].Values, "claude") || slices.Contains(specs[store.DefaultToolSetting].Values, "terminal") {
+		t.Fatalf("default_tool takes %v, want the agent CLIs without the shell", specs[store.DefaultToolSetting].Values)
+	}
+	if !specs[store.HiddenToolsSetting].List {
+		t.Fatal("hidden_tools should take a comma list")
+	}
+}
+
+func TestSettingSpecsDefaultsAreValues(t *testing.T) {
+	for key, spec := range specByKey(t) {
+		if spec.Default == "" {
+			continue
+		}
+		if err := spec.Check(spec.Default); err != nil {
+			t.Errorf("%s: %v", key, err)
+		}
+	}
+}
+
+// A value the shell changed while the manager was open shows in Settings
+// and survives esc, instead of the modal writing back what the manager
+// cached at startup.
+func TestOpenSettingsReadsWhatTheShellChanged(t *testing.T) {
+	m := buildModel(t)
+	changed := map[string]string{
+		uisettings.GlyphModeSetting:     "basic",
+		uisettings.ListDensitySetting:   "comfortable",
+		uisettings.SessionLayoutSetting: "full",
+		uisettings.HideHeaderSetting:    "on",
+		uisettings.HideStatsSetting:     "on",
+		uisettings.MouseSetting:         "off",
+		uisettings.ArrowStepSetting:     "off",
+		uisettings.FocusKeySetting:      "attach",
+		uisettings.BaseFetchSetting:     "off",
+		uisettings.BackgroundSetting:    "terminal",
+		uisettings.ThemeSetting:         "nord",
+	}
+	for key, value := range changed {
+		if err := m.services.store.SetSetting(key, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := m.services.store.SetEditor("code -n"); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.openSettings())
+	if uitheme.Palettes[m.settingsCard().State().ThemeIndex].Name != "nord" {
+		t.Fatalf("Settings opened on %q, want the shell's nord", uitheme.Palettes[m.settingsCard().State().ThemeIndex].Name)
+	}
+	if m.settingsCard().State().GlyphMode != presentation.GlyphModeBasic || m.prefs.glyphMode != presentation.GlyphModeBasic {
+		t.Fatalf("symbols opened on %q (live %q), want basic", m.settingsCard().State().GlyphMode, m.prefs.glyphMode)
+	}
+	if uitheme.Current().Name != "nord" {
+		t.Fatalf("the palette stayed %q after Settings read nord", uitheme.Current().Name)
+	}
+	if m.settingsCard().State().Editor.Line() != "code -n" {
+		t.Fatalf("editor row opened on %q", m.settingsCard().State().Editor.Line())
+	}
+	_, cmd := m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m.applyCmd(t, cmd)
+	for key, want := range changed {
+		if got, _ := m.services.store.Setting(key); got != want {
+			t.Errorf("esc wrote %s=%q over the shell's %q", key, got, want)
+		}
+	}
+	if p := m.prefs; !p.comfortableRows || !p.fullLayout || !p.hideHeader || !p.hideStats || !p.mouseDisabled || p.arrowStep || p.focusOnEnter || !p.baseFetchOff || !p.terminalBackground {
+		t.Fatal("esc did not apply the shell's values to the running manager")
+	}
+}
+
+func TestSettingsViewportKeepsFocusedFieldAndSaveVisible(t *testing.T) {
+	m := buildModel(t)
+	for _, size := range [][2]int{{34, 12}, {80, 24}, {160, 42}} {
+		m.layout.width, m.layout.height = size[0], size[1]
+		m.openSettings()
+		for _, field := range []int{uisettings.FieldGlyphs, uisettings.FieldKeybindings, uisettings.FieldUpdate} {
+			m.settingsCard().State().Field = field
+			view := ansi.Strip(m.viewSettings())
+			lines := strings.Split(view, "\n")
+			if len(lines) > m.layout.height {
+				t.Fatalf("Settings exceeds height %d: %d", m.layout.height, len(lines))
+			}
+			want := map[int]string{uisettings.FieldGlyphs: "symbols", uisettings.FieldKeybindings: "keybindings", uisettings.FieldUpdate: "version"}[field]
+			for _, text := range []string{want, "save and close", "esc"} {
+				if !strings.Contains(view, text) {
+					t.Fatalf("Settings %dx%d lost %q:\n%s", m.layout.width, m.layout.height, text, view)
+				}
+			}
+			if strings.Contains(view, "[ Save and close ]") {
+				t.Fatalf("Settings %dx%d kept a save button in the rows:\n%s", m.layout.width, m.layout.height, view)
+			}
+			if field != uisettings.FieldGlyphs && !strings.Contains(view, "symbols") {
+				m = leftClick(m, m.layout.card.bodyLeft, m.layout.card.bodyTop-1)
+				if m.prefs.glyphMode != "" {
+					t.Fatal("hidden symbols row became a click target")
+				}
+			}
+		}
+	}
+}
+
+// Save and close stays in the main dialog's footer. The key picker scrolls
+// its own list and leaves with esc.
+func TestKeyPickerCardCarriesNoSaveButton(t *testing.T) {
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 40
+	m.openSettings()
+	m.settingsCard().State().Field = uisettings.FieldKeybindings
+	m.handleSettingsKey(key("enter"))
+	if !m.settingsCard().State().KeyPicker {
+		t.Fatal("test setup: enter on keybindings opens the picker")
+	}
+	view := ansi.Strip(m.viewSettings())
+	if strings.Contains(view, "save and close") {
+		t.Fatalf("the key picker painted the main dialog's save hint:\n%s", view)
+	}
+	if !strings.Contains(view, "detach") {
+		t.Fatalf("the key picker lost its first row:\n%s", view)
+	}
+}
+
+// A flex card is wider than the default, so its hint can sit on fewer rows;
+// the room left for the body is counted at the card's own width.
+func TestFlexChromeRowsMatchThePaintedCard(t *testing.T) {
+	m := buildModel(t)
+	hint := [][2]string{{"↑↓", "move"}, {"↵", "set a key"}, {"a", "add one"}, {"d", "off"}, {"r", "defaults"}, {"esc", "back"}}
+	body := strings.Repeat("a row wide enough to stretch the card past its default width\n", 5) + "last"
+	for _, width := range []int{40, 64, 90, 160} {
+		m.layout.width, m.layout.height = width, 60
+		m.CardSized(m.flexCardWidth("title", body, hint), "title", body, hint)
+		painted := m.layout.card.bottom - m.layout.card.top - (strings.Count(body, "\n") + 1)
+		if got := m.flexChromeRows(hint); got != painted {
+			t.Fatalf("width %d: flexChromeRows = %d, the card painted %d", width, got, painted)
+		}
+	}
+}
+
+// The key picker spends every row the terminal has on its list, short of
+// the one a table heading can push past the window.
+func TestKeyPickerFillsTheTerminal(t *testing.T) {
+	m := buildModel(t)
+	m.layout.width = 160
+	for height := 16; height <= 40; height++ {
+		m.layout.height = height
+		m.openSettings()
+		m.settingsCard().State().Field = uisettings.FieldKeybindings
+		m.handleSettingsKey(key("enter"))
+		m.viewSettings()
+		if rows := m.layout.card.bottom - m.layout.card.top; rows > height || rows < height-1 {
+			t.Fatalf("height %d: the key picker card is %d rows tall", height, rows)
+		}
+	}
+}
+
+func TestCompatibleCardsKeepTitlesAndClickGeometry(t *testing.T) {
+	m := buildModel(t)
+	for _, mode := range []presentation.GlyphMode{presentation.GlyphModeBasic, presentation.GlyphModeAdvanced} {
+		for _, width := range []int{34, 80, 120} {
+			if err := m.services.store.SetSetting(uisettings.GlyphModeSetting, string(mode)); err != nil {
+				t.Fatal(err)
+			}
+			m.layout.width, m.layout.height = width, 24
+			m.applyCmd(t, m.openSettings())
+			m.settingsCard().State().Field = uisettings.FieldGlyphs
+			got := ansi.Strip(m.viewSettings())
+			title, cursor := "# Settings", "> symbols"
+			if mode == presentation.GlyphModeAdvanced {
+				title, cursor = "⚙ Settings", "❯ symbols"
+			}
+			if !strings.Contains(got, title) || (width >= 36 && !strings.Contains(got, cursor)) {
+				t.Fatalf("%s/%d Settings missing title or cursor:\n%s", mode, width, got)
+			}
+			m, _ = clickBody(t, m, "symbols")
+			if m.prefs.glyphMode.Effective() == mode {
+				t.Fatal("symbols click missed its painted row")
+			}
+			m.applyCmd(t, m.openSettings())
+		}
+	}
+}
+
+func TestDefaultSplitLayout(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	if !m.defaultSplitLayout() {
+		t.Fatal("split should be the default layout")
+	}
+	if err := m.services.store.SetSetting(uisettings.DiffLayoutSetting, "unified"); err != nil {
+		t.Fatal(err)
+	}
+	if m.defaultSplitLayout() {
+		t.Fatal("stored unified choice should opt out of split")
+	}
+}
+
+func openedSettings(t *testing.T) *Model {
+	t.Helper()
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 40
+	m.applyCmd(t, m.openSettings())
+	return m
+}
+
+func TestSettingsOpensFromItsKeyAndDrawsOverTheList(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 40
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	if !m.settingsOpen() || !m.onList() {
+		t.Fatalf("settings open %v, mode %v", m.settingsOpen(), m.screenID())
+	}
+}
+
+// esc and the save button close the card the same way, and the close
+// queues the save once.
+func TestSettingsEscClosesAndSavesOnce(t *testing.T) {
+	t.Parallel()
+	for _, k := range []tea.KeyMsg{{Type: tea.KeyEsc}} {
+		m := openedSettings(t)
+		m.settingsCard().State().Field = uisettings.FieldMouse
+		m.cycleSetting(1)
+		before := m.settings.Pending
+		_, cmd := m.Update(k)
+		if m.settingsOpen() || len(m.surfaces) != 0 {
+			t.Fatalf("%v left %d surfaces", k, len(m.surfaces))
+		}
+		if m.settings.Pending != before+1 {
+			t.Fatalf("%v queued %d saves, want one", k, m.settings.Pending-before)
+		}
+		m.applyCmd(t, cmd)
+	}
+}
+
+// A command being typed is a draft: a stray click keeps it. Not parallel:
+// editorSettings pins $EDITOR with t.Setenv.
+func TestSettingsKeepsATypedEditorLine(t *testing.T) {
+	m := openedSettings(t)
+	top, _ := m.top()
+	if !top.Dismissible() {
+		t.Fatal("the main rows say a stray click keeps a draft")
+	}
+	editorSettings(t, m, "code")
+	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyLeft})
+	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyEnter})
+	if top, _ = m.top(); top.Dismissible() {
+		t.Fatal("a typed command says a stray click closes the card")
+	}
+}
+
+// A load for a card that has since closed, or for an earlier visit, is
+// dropped and does not rebuild the card on screen.
+func TestSettingsLoadsAreFencedToTheirVisit(t *testing.T) {
+	t.Parallel()
+	m := openedSettings(t)
+	stale := uipersist.LoadedMsg{Request: uipersist.LoadRequest{Target: uipersist.DialogTarget, Generation: m.settings.Gen - 1}}
+	m.settingsCard().State().Field = uisettings.FieldMouse
+	m.handleSettingsLoaded(stale)
+	if m.settingsCard().State().Field != uisettings.FieldMouse {
+		t.Fatal("an earlier visit's load rebuilt the card")
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m.handleSettingsLoaded(uipersist.LoadedMsg{Request: uipersist.LoadRequest{Target: uipersist.DialogTarget, Generation: m.settings.Gen}})
+	if m.settingsOpen() {
+		t.Fatal("a load reopened a closed card")
+	}
+}
+
+func settingsModel(t *testing.T) *Model {
+	t.Helper()
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 50
+	m.applyCmd(t, m.openSettings())
+	return m
+}
+
+func TestClickOnASettingsRowMovesThenSteps(t *testing.T) {
+	m := settingsModel(t)
+	x, y := paintedCell(t, m, "background")
+	m = leftClick(m, x, y)
+	d := m.settingsCard().State()
+	if d.Field != uisettings.FieldBackground || d.TerminalBackground {
+		t.Fatalf("first click should only focus the row, field %d background %v", d.Field, d.TerminalBackground)
+	}
+	m = leftClick(m, x, y)
+	if !m.settingsCard().State().TerminalBackground || !m.prefs.terminalBackground {
+		t.Fatal("second click should step the row and preview it")
+	}
+	m = wheel(m, tea.MouseButtonWheelDown, x, y)
+	if m.settingsCard().State().Field != uisettings.FieldBackground+1 {
+		t.Fatalf("the wheel should move to the next field, field %d", m.settingsCard().State().Field)
+	}
+}
+
+func TestClickOnTheCLIsRowManagesThem(t *testing.T) {
+	m := settingsModel(t)
+	x, y := paintedCell(t, m, "CLIs")
+	m = leftClick(m, x, y)
+	m = leftClick(m, x, y)
+	if !m.settingsCard().State().CLIPicker {
+		t.Fatal("two clicks on CLIs should open the picker")
+	}
+	names := m.settingsCard().State().CLINames
+	if len(names) < 2 {
+		t.Fatalf("test setup: the picker needs two CLIs, has %v", names)
+	}
+	x, y = paintedCell(t, m, "] "+names[1])
+	if m = leftClick(m, x, y); !m.settingsCard().State().CLIHidden[names[1]] {
+		t.Fatalf("one click on %s's checkbox should toggle it", names[1])
+	}
+	if m = wheel(m, tea.MouseButtonWheelDown, x, y); m.settingsCard().State().CLICursor != 2 {
+		t.Fatalf("the wheel should move the picker cursor, at %d", m.settingsCard().State().CLICursor)
+	}
+}
+
+func TestClickOnTheKeyPickerSetsAKey(t *testing.T) {
+	m := settingsModel(t)
+	x, y := paintedCell(t, m, "keybindings")
+	m = leftClick(m, x, y)
+	m = leftClick(m, x, y)
+	if !m.settingsCard().State().KeyPicker {
+		t.Fatal("two clicks on keybindings should open the picker")
+	}
+	if m = wheel(m, tea.MouseButtonWheelDown, x, y); m.settingsCard().State().KeyCursor != 1 {
+		t.Fatalf("the wheel should move the picker cursor, at %d", m.settingsCard().State().KeyCursor)
+	}
+	x, y = paintedCell(t, m, "editor  ")
+	m = leftClick(m, x, y)
+	if row := m.settingsCard().State().PickedRow(); row.Action.Name != "editor" || m.settingsCard().State().KeyCapture {
+		t.Fatalf("first click should move to editor, at %q capture %v", row.Action.Name, m.settingsCard().State().KeyCapture)
+	}
+	if m = leftClick(m, x, y); !m.settingsCard().State().KeyCapture {
+		t.Fatal("a click on the row under the cursor should start capture")
+	}
+	if m = wheel(m, tea.MouseButtonWheelDown, x, y); m.settingsCard().State().PickedRow().Action.Name != "editor" {
+		t.Fatal("the wheel must not move the row a capture is binding")
+	}
+}
+
+// editorSettings opens Settings on the editor row with the probe already
+// answered for a machine that has these editors.
+func editorSettings(t *testing.T, m *Model, installed ...string) {
+	t.Helper()
+	captureEditor(t, installed...)
+	m.applyCmd(t, m.openSettings())
+	m.settingsCard().State().Field = uisettings.FieldEditor
+}
+
+func (m *Model) pressInSettings(t *testing.T, msg tea.KeyMsg) {
+	t.Helper()
+	updated, _ := m.handleKey(msg)
+	*m = *updated.(*Model)
+}
+
+// The editors the shell names are offered beside the ones found on PATH,
+// once each, so a terminal editor is a step away rather than a typed line.
+func TestProbeOffersTheShellsEditors(t *testing.T) {
+	captureEditor(t, "code")
+	t.Setenv("VISUAL", "code")
+	t.Setenv("EDITOR", " nvim ")
+	probed := detectedEditors().probe()
+	if got := strings.Join(probed.Found, ","); got != "code,nvim" {
+		t.Fatalf("found = %q, want code once and nvim", got)
+	}
+	row := uisettings.NewEditorRow("nvim", &probed)
+	if row.Custom() || row.Label() != "nvim" {
+		t.Fatalf("a stored nvim should sit on its own entry, got %q custom %v", row.Label(), row.Custom())
+	}
+}
+
+// The picked editor is stored, survives a restart, and is what the editor
+// key opens, ahead of the one auto would have taken.
+func TestSettingsEditorRowStoresThePickedEditor(t *testing.T) {
+	m := buildModel(t)
+	editorSettings(t, m, "code", "zed")
+	if view := ansi.Strip(m.viewSettings()); !strings.Contains(view, "auto · code") {
+		t.Fatalf("the row should name what auto opens:\n%s", view)
+	}
+	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyRight})
+	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyRight})
+	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.settingsOpen() {
+		t.Fatalf("esc should save and leave, screen = %v", m.screenID())
+	}
+	m.drainEffects(t)
+	if stored, err := m.services.store.Editor(); err != nil || stored != "zed" {
+		t.Fatalf("stored editor = %q, %v", stored, err)
+	}
+	if got := reloadModel(t, m).captureEditorResolution().editorLine(); got != "zed" {
+		t.Fatalf("a restarted manager opens %q, want zed", got)
+	}
+}
+
+// Custom is the one entry that is typed. While the field is open every key
+// is text, so a letter that moves the cursor elsewhere types instead.
+func TestSettingsEditorCustomLineIsTyped(t *testing.T) {
+	m := buildModel(t)
+	editorSettings(t, m, "code")
+	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyLeft})
+	if !m.settingsCard().State().Editor.Custom() {
+		t.Fatalf("left from auto should land on custom, got %q", m.settingsCard().State().Editor.Label())
+	}
+	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyEnter})
+	if !m.settingsCard().State().Editor.Typing() || !m.settingsOpen() {
+		t.Fatal("enter on custom should open the field, not save")
+	}
+	m.pressInSettings(t, runeKey("junk"))
+	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.settingsCard().State().Editor.Typing() || m.settingsCard().State().Editor.Line() != "" || !m.settingsOpen() {
+		t.Fatalf("esc should drop what was typed and stay in Settings, line = %q", m.settingsCard().State().Editor.Line())
+	}
+
+	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyEnter})
+	m.pressInSettings(t, runeKey("code -n k"))
+	if m.settingsCard().State().Field != uisettings.FieldEditor {
+		t.Fatal("a typed k must not move the cursor off the row")
+	}
+	if view := ansi.Strip(m.viewSettings()); !strings.Contains(view, "code -n k") {
+		t.Fatalf("the field should show what is typed:\n%s", view)
+	}
+	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyBackspace})
+	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyBackspace})
+	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyEnter})
+	if got := m.settingsCard().State().Editor.Label(); got != "custom · code -n" {
+		t.Fatalf("label = %q", got)
+	}
+	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyEsc})
+	m.drainEffects(t)
+	if stored, err := m.services.store.Editor(); err != nil || stored != "code -n" {
+		t.Fatalf("stored editor = %q, %v", stored, err)
+	}
+	if got := m.captureEditorResolution().editorLine(); got != "code -n" {
+		t.Fatalf("resolved editor = %q", got)
+	}
+}
+
+// Stepping back to auto clears the stored line, so the environment and
+// PATH decide again.
+func TestSettingsEditorRowReturnsToAuto(t *testing.T) {
+	m := buildModel(t)
+	if err := m.services.store.SetEditor("code -n"); err != nil {
+		t.Fatalf("SetEditor: %v", err)
+	}
+	m.services.editor = "code -n"
+	editorSettings(t, m, "zed")
+	if got := m.settingsCard().State().Editor.Label(); got != "custom · code -n" {
+		t.Fatalf("label = %q", got)
+	}
+	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyRight})
+	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyEsc})
+	m.drainEffects(t)
+	if stored, err := m.services.store.Editor(); err != nil || stored != "" {
+		t.Fatalf("stored editor = %q, %v", stored, err)
+	}
+	if got := m.captureEditorResolution().editorLine(); got != "zed" {
+		t.Fatalf("resolved editor = %q, want the editor on PATH", got)
+	}
+}
+
+// keyPickerModel opens the settings screen and steps into the key picker.
+func keyPickerModel(t *testing.T) *Model {
+	t.Helper()
+	m := buildModel(t)
+	m.services.keys = keybind.DefaultSession()
+	m.services.tmux.SetSessionKeys(m.services.keys)
+	t.Cleanup(func() {
+		m.services.tmux.SetSessionKeys(keybind.DefaultSession())
+		if err := m.services.tmux.EnsureBindings(); err != nil {
+			t.Errorf("restore default bindings: %v", err)
+		}
+	})
+	m.openSettings()
+	m.settingsCard().State().Field = uisettings.FieldKeybindings
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	if !m.settingsCard().State().KeyPicker {
+		t.Fatalf("enter on the keys row should open the picker, err = %q", m.errBar.text)
+	}
+	return m
+}
+
+func (m *Model) pressInPicker(t *testing.T, msg tea.KeyMsg) tea.Cmd {
+	t.Helper()
+	updated, cmd := m.handleKey(msg)
+	*m = *updated.(*Model)
+	return cmd
+}
+
+func storedSessionKeys(t *testing.T, m *Model) keybind.Table {
+	t.Helper()
+	keys, err := m.services.store.SessionKeys()
+	if err != nil {
+		t.Fatalf("SessionKeys: %v", err)
+	}
+	return keys
+}
+
+// storedKeyRow is the raw row a scope's table is kept in, empty until the
+// picker saves that table.
+func storedKeyRow(t *testing.T, m *Model, scope string) string {
+	t.Helper()
+	row, err := m.services.store.Setting("keybindings." + scope)
+	if err != nil {
+		t.Fatalf("Setting: %v", err)
+	}
+	return row
+}
+
+// The picker binds the key that was pressed: leaving it writes the table to
+// the store, puts it on the model, and rebinds the tmux server so a live
+// session answers to the new key.
+func TestKeyPickerBindsCapturedKeyAndSavesIt(t *testing.T) {
+	m := keyPickerModel(t)
+	// A live session, bound with the old keys before the change: psmux
+	// keeps bindings per session server, so the rebind is checked there.
+	live := newID()
+	if err := m.services.tmux.Create(live, t.TempDir(), "", nil, 80, 24); err != nil {
+		t.Fatalf("create live session: %v", err)
+	}
+	t.Cleanup(func() { _ = m.services.tmux.Kill(live) })
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
+	if !m.settingsCard().State().KeyCapture {
+		t.Fatal("enter on an action should wait for a key")
+	}
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyF9})
+	if got := m.settingsCard().State().Tables[0].Binding(keybind.Detach).Label(); got != "f9" {
+		t.Fatalf("detach = %q, want f9", got)
+	}
+
+	cmd := m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.settingsCard().State().KeyPicker {
+		t.Fatal("esc should leave the picker")
+	}
+	if m.errBar.text != "" {
+		t.Fatalf("saving reported %q", m.errBar.text)
+	}
+	if cmd == nil {
+		t.Fatal("saving should enqueue the save work")
+	}
+	if got := m.services.keys.Binding(keybind.Detach).Label(); got != `ctrl+q / ctrl+\` {
+		t.Fatalf("runtime detach changed before the save committed: %q", got)
+	}
+	if row := storedKeyRow(t, m, keybind.ScopeSession); row != "" {
+		t.Fatalf("the store was written on the update path: %s", row)
+	}
+	// The completion's refresh command carries the tmux rebind; run it the
+	// way the event loop would.
+	updated, next := m.Update(cmd())
+	*m = *updated.(*Model)
+	m.applyTestMsg(t, next())
+	m.drainEffects(t)
+	if got := m.services.keys.Binding(keybind.Detach).Label(); got != "f9" {
+		t.Fatalf("model detach = %q, want f9", got)
+	}
+	if got := storedSessionKeys(t, m).Binding(keybind.Detach).Label(); got != "f9" {
+		t.Fatalf("stored detach = %q, want f9", got)
+	}
+
+	bound, err := sessionTmuxCmd(t, live, "list-keys", "-T", "root").CombinedOutput()
+	if err != nil {
+		t.Fatalf("list root keys: %v: %s", err, bound)
+	}
+	if !strings.Contains(string(bound), "F9") {
+		t.Fatalf("the server should carry the new detach key:\n%s", bound)
+	}
+	for _, line := range strings.Split(string(bound), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 4 && fields[3] == "C-q" && strings.Contains(line, "detach-client") {
+			t.Fatalf("the old detach key should be gone: %q", line)
+		}
+	}
+}
+
+// A key the manager cannot bind is refused in the picker with the reason,
+// and nothing changes.
+func TestKeyPickerRefusesAKeyTheAgentNeeds(t *testing.T) {
+	m := keyPickerModel(t)
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
+	m.pressInPicker(t, runeKey("o"))
+	if !strings.Contains(m.errBar.text, "plain key, which reaches the agent") {
+		t.Fatalf("err = %q, want the plain-key reason", m.errBar.text)
+	}
+	if got := m.settingsCard().State().Tables[0].Binding(keybind.Detach).Label(); got != `ctrl+q / ctrl+\` {
+		t.Fatalf("detach should be untouched, got %q", got)
+	}
+}
+
+// One key serves one action, so binding review to the editor's key is
+// refused rather than leaving two actions on it.
+func TestKeyPickerRefusesAKeyAnotherActionOwns(t *testing.T) {
+	m := keyPickerModel(t)
+	m.settingsCard().State().KeyCursor = 1
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyF3})
+	if !strings.Contains(m.errBar.text, "bound to both") {
+		t.Fatalf("err = %q, want the shared-key reason", m.errBar.text)
+	}
+	if got := m.settingsCard().State().Tables[0].Binding(keybind.Review).Label(); got != "ctrl+r" {
+		t.Fatalf("review should be untouched, got %q", got)
+	}
+}
+
+// d hands an action's key to the agent, and refuses to do it for detach,
+// which is the way back from a focused session.
+func TestKeyPickerTurnsAnActionOffButKeepsAWayBack(t *testing.T) {
+	m := keyPickerModel(t)
+	m.settingsCard().State().KeyCursor = 2
+	m.pressInPicker(t, runeKey("d"))
+	if got := m.settingsCard().State().Tables[0].Binding(keybind.Editor).Label(); got != "" {
+		t.Fatalf("editor should be off, got %q", got)
+	}
+
+	m.settingsCard().State().KeyCursor = 0
+	m.pressInPicker(t, runeKey("d"))
+	if !strings.Contains(m.errBar.text, "detach needs at least one key") {
+		t.Fatalf("err = %q, want the detach rule", m.errBar.text)
+	}
+	if got := m.settingsCard().State().Tables[0].Binding(keybind.Detach).Label(); got != `ctrl+q / ctrl+\` {
+		t.Fatalf("detach should be untouched, got %q", got)
+	}
+
+	m.settingsCard().State().KeyCursor = 2
+	cmd := m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
+	m.applyCmd(t, cmd)
+	if got := storedSessionKeys(t, m).Binding(keybind.Editor).Label(); got != "" {
+		t.Fatalf("the store should record the disabled action, got %q", got)
+	}
+}
+
+// a adds a second key to an action rather than replacing what it answers to.
+func TestKeyPickerAddsASecondKey(t *testing.T) {
+	m := keyPickerModel(t)
+	m.settingsCard().State().KeyCursor = 1
+	m.pressInPicker(t, runeKey("a"))
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyF9})
+	if got := m.settingsCard().State().Tables[0].Binding(keybind.Review).Label(); got != "ctrl+r / f9" {
+		t.Fatalf("review = %q, want both keys", got)
+	}
+	m.pressInPicker(t, runeKey("a"))
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyF9})
+	if !strings.Contains(m.errBar.text, "already answers to") {
+		t.Fatalf("err = %q, want the duplicate note", m.errBar.text)
+	}
+}
+
+// esc during capture cancels it; the key that would have been bound is not.
+func TestKeyPickerResetsEveryActionToItsDefaultAfterAsking(t *testing.T) {
+	m := keyPickerModel(t)
+	custom := sessionOf(t, []string{"ctrl+q", "f9"}, nil, []string{"f5"})
+	customList := keybind.DefaultList().With(keybind.NewSession, bindingOf(t, "N"))
+	m.services.keys, m.services.listKeys = custom, customList
+	m.services.tmux.SetSessionKeys(custom)
+	m.settingsCard().State().Tables[0], m.settingsCard().State().Tables[1] = custom, customList
+
+	m.pressInPicker(t, runeKey("r"))
+	if !m.settingsCard().State().KeyReset {
+		t.Fatal("r should ask before resetting")
+	}
+	ask := ansi.Strip(m.viewSettings())
+	for _, want := range []string{"Reset every key", "detach: ctrl+q / f9 back to ctrl+q / ctrl+\\", "review: off back to ctrl+r", "editor: f5 back to f3", "new_session: N back to n"} {
+		if !strings.Contains(ask, want) {
+			t.Fatalf("the question should say %q:\n%s", want, ask)
+		}
+	}
+	m.pressInPicker(t, runeKey("n"))
+	if m.settingsCard().State().KeyReset || !m.settingsCard().State().Tables[0].Equal(custom) {
+		t.Fatalf("n should keep the keys, got %s", m.settingsCard().State().Tables[0].Binding(keybind.Detach).Label())
+	}
+
+	m.pressInPicker(t, runeKey("r"))
+	m.pressInPicker(t, runeKey("y"))
+	if m.settingsCard().State().KeyReset || !m.settingsCard().State().Tables[0].Equal(keybind.DefaultSession()) || !m.settingsCard().State().Tables[1].Equal(keybind.DefaultList()) {
+		t.Fatalf("y should restore both tables, got %s and new_session %s", m.settingsCard().State().Tables[0].Binding(keybind.Detach).Label(), m.settingsCard().State().Tables[1].Binding(keybind.NewSession).Label())
+	}
+
+	cmd := m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
+	m.applyCmd(t, cmd)
+	if !m.services.keys.Equal(keybind.DefaultSession()) || !m.services.listKeys.Equal(keybind.DefaultList()) {
+		t.Fatalf("model keys after save = %s, new_session %s", m.services.keys.Binding(keybind.Detach).Label(), m.services.listKeys.Binding(keybind.NewSession).Label())
+	}
+	if !storedSessionKeys(t, m).Equal(keybind.DefaultSession()) {
+		t.Fatalf("stored session keys = %s", storedKeyRow(t, m, keybind.ScopeSession))
+	}
+	storedList, err := m.services.store.ListKeys()
+	if err != nil {
+		t.Fatalf("ListKeys: %v", err)
+	}
+	if !storedList.Equal(keybind.DefaultList()) {
+		t.Fatalf("stored list keys = %s", storedKeyRow(t, m, keybind.ScopeList))
+	}
+}
+
+func TestKeyPickerResetOnDefaultsAsksNothing(t *testing.T) {
+	m := keyPickerModel(t)
+	m.pressInPicker(t, runeKey("r"))
+	if m.settingsCard().State().KeyReset {
+		t.Fatal("r on the defaults should not open the question")
+	}
+}
+
+func TestKeyPickerEscapeCancelsCapture(t *testing.T) {
+	m := keyPickerModel(t)
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.settingsCard().State().KeyCapture {
+		t.Fatal("esc should end the capture")
+	}
+	if !m.settingsCard().State().KeyPicker {
+		t.Fatal("cancelling a capture should stay in the picker")
+	}
+	if got := m.settingsCard().State().Tables[0].Binding(keybind.Detach).Label(); got != `ctrl+q / ctrl+\` {
+		t.Fatalf("detach should be untouched, got %q", got)
+	}
+}
+
+// Leaving the picker without a change writes nothing, so an action nobody
+// moved keeps following the default a later release gives it.
+func TestKeyPickerLeavesTheStoreAloneWithoutAChange(t *testing.T) {
+	m := keyPickerModel(t)
+	if cmd := m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc}); cmd != nil {
+		t.Fatal("an unchanged table should not refresh the sessions")
+	}
+	m.drainEffects(t)
+	for _, scope := range []string{keybind.ScopeSession, keybind.ScopeList} {
+		if row := storedKeyRow(t, m, scope); row != "" {
+			t.Fatalf("the %s table should not be stored: %s", scope, row)
+		}
+	}
+}
+
+func TestKeyPickerViewNamesTheKeysAndTheCapture(t *testing.T) {
+	m := keyPickerModel(t)
+	view := ansi.Strip(m.viewSettings())
+	for _, want := range []string{"detach", `ctrl+q / ctrl+\`, "back to the manager", "every other key reaches the agent"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("picker view is missing %q:\n%s", want, view)
+		}
+	}
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
+	if capture := ansi.Strip(m.viewSettings()); !strings.Contains(capture, "press a key") {
+		t.Fatalf("a waiting row should say so:\n%s", capture)
+	}
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
+	m.settingsCard().State().KeyCursor = 2
+	m.pressInPicker(t, runeKey("d"))
+	if off := ansi.Strip(m.viewSettings()); !strings.Contains(off, "off, the agent gets it") {
+		t.Fatalf("a disabled action should say where its key goes:\n%s", off)
+	}
+}
+
+// The settings row names the keys in force, so the screen answers the
+// question without opening the picker.
+func TestSettingsRowCountsTheMovedKeys(t *testing.T) {
+	m := buildModel(t)
+	m.services.keys = keybind.DefaultSession()
+	m.openSettings()
+	m.settingsCard().State().Field = uisettings.FieldKeybindings
+	view := ansi.Strip(m.viewSettings())
+	if !strings.Contains(view, "keybindings") || !strings.Contains(view, "defaults") {
+		t.Fatalf("settings should carry the row on its defaults:\n%s", view)
+	}
+	m.services.keys = m.services.keys.With(keybind.Editor, bindingOf(t))
+	if view := ansi.Strip(m.viewSettings()); !strings.Contains(view, "editor off") {
+		t.Fatalf("one moved key should be named:\n%s", view)
+	}
+	m.services.listKeys = m.services.listKeys.With(keybind.NewSession, bindingOf(t, "N"))
+	if view := ansi.Strip(m.viewSettings()); !strings.Contains(view, "editor off · new_session N") {
+		t.Fatalf("two moved keys should both be named:\n%s", view)
+	}
+	m.services.listKeys = m.services.listKeys.With(keybind.Quit, bindingOf(t, "Q"))
+	if view := ansi.Strip(m.viewSettings()); !strings.Contains(view, "3 moved") {
+		t.Fatalf("past two the row counts:\n%s", view)
+	}
+}
+
+func TestListPickerMovesAKeyAndTheListFollows(t *testing.T) {
+	m := keyPickerModel(t)
+	view := ansi.Strip(m.viewSettings())
+	for _, want := range []string{"Keybindings", "inside a session", "detach", "in the manager", "new_session", "esc and ctrl+c stay as they are"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("list picker is missing %q:\n%s", want, view)
+		}
+	}
+	m.settingsCard().State().KeyCursor = listRow(t, m, keybind.NewSession)
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
+	m.pressInPicker(t, runeKey("N"))
+	if got := m.settingsCard().State().Tables[1].Binding(keybind.NewSession).Label(); got != "N" {
+		t.Fatalf("new_session = %q, want N", got)
+	}
+	cmd := m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
+	if cmd == nil {
+		t.Fatal("saving the list table should enqueue the save work")
+	}
+	if row := storedKeyRow(t, m, keybind.ScopeList); row != "" {
+		t.Fatalf("the store was written on the update path: %s", row)
+	}
+	if m.errBar.text != "" {
+		t.Fatalf("saving reported %q", m.errBar.text)
+	}
+	m.applyCmd(t, cmd)
+	stored, err := m.services.store.ListKeys()
+	if err != nil {
+		t.Fatalf("ListKeys: %v", err)
+	}
+	if got := stored.Binding(keybind.NewSession).Label(); got != "N" {
+		t.Fatalf("stored new_session = %q, want N", got)
+	}
+	if row := storedKeyRow(t, m, keybind.ScopeSession); row != "" {
+		t.Fatalf("the session table was not touched and should not be stored: %s", row)
+	}
+
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.settingsOpen() {
+		t.Fatalf("mode after leaving settings = %v", m.screenID())
+	}
+	m.pressInPicker(t, runeKey("n"))
+	if formOpen(m) {
+		t.Fatal("n should no longer open the new-session form")
+	}
+	m.pressInPicker(t, runeKey("N"))
+	if !formOpen(m) {
+		t.Fatalf("N should open the new-session form, screen = %v", m.screenID())
+	}
+}
+
+func TestListPickerRefusesWhatWouldStrandTheUser(t *testing.T) {
+	m := keyPickerModel(t)
+	m.settingsCard().State().KeyCursor = listRow(t, m, keybind.Settings)
+	m.pressInPicker(t, runeKey("d"))
+	if !strings.Contains(m.errBar.text, "settings needs at least one key") {
+		t.Fatalf("err = %q, want the settings rule", m.errBar.text)
+	}
+	m.settingsCard().State().KeyCursor = listRow(t, m, keybind.Kill)
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
+	m.pressInPicker(t, runeKey("n"))
+	if !strings.Contains(m.errBar.text, "n is bound to both new_session and kill") {
+		t.Fatalf("err = %q, want the shared-key reason", m.errBar.text)
+	}
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
+	if !m.settingsCard().State().Tables[1].Equal(keybind.DefaultList()) {
+		t.Fatal("a refused or cancelled capture should leave the table alone")
+	}
+}
+
+// Thirty-odd rows do not fit a short terminal: the picker shows a window
+// around the cursor and says how many rows lie beyond it.
+func TestListPickerScrollsAroundTheCursor(t *testing.T) {
+	m := keyPickerModel(t)
+	m.layout.height = 20
+	below, above := regexp.MustCompile(`↓ \d+ more`), regexp.MustCompile(`↑ \d+ more`)
+	top := ansi.Strip(m.viewSettings())
+	if !below.MatchString(top) || above.MatchString(top) {
+		t.Fatalf("at the top only the rows below should be counted:\n%s", top)
+	}
+	m.settingsCard().State().KeyCursor = len(uisettings.KeyRows(m.settingsCard().State().Tables)) - 1
+	bottom := ansi.Strip(m.viewSettings())
+	if !strings.Contains(bottom, "quit") || !above.MatchString(bottom) || below.MatchString(bottom) {
+		t.Fatalf("at the bottom the last row shows and only the rows above are counted:\n%s", bottom)
+	}
+}
+
+func listRow(t *testing.T, m *Model, name string) int {
+	t.Helper()
+	for i, row := range uisettings.KeyRows(m.settingsCard().State().Tables) {
+		if row.Table == 1 && row.Action.Name == name {
+			return i
+		}
+	}
+	t.Fatalf("no list action %q", name)
+	return -1
+}
+
+// The picker sets tmux_prefix like a session key and refuses a third prefix key.
+func TestKeyPickerSetsTheTmuxPrefix(t *testing.T) {
+	m := keyPickerModel(t)
+	m.settingsCard().State().KeyCursor = 3
+	if row := m.settingsCard().State().PickedRow(); row.Action.Name != keybind.TmuxPrefix {
+		t.Fatalf("row 3 = %q, want tmux_prefix", row.Action.Name)
+	}
+	if view := ansi.Strip(m.viewSettings()); !strings.Contains(view, "off, your prefix stays") {
+		t.Fatalf("an unset tmux_prefix should say tmux keeps its prefix:\n%s", view)
+	}
+
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyCtrlB})
+	m.pressInPicker(t, runeKey("a"))
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyF12})
+	m.pressInPicker(t, runeKey("a"))
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyCtrlG})
+	if !strings.Contains(m.errBar.text, "takes one key or two") {
+		t.Fatalf("err = %q, want the two-key rule", m.errBar.text)
+	}
+	if got := m.settingsCard().State().Tables[0].Binding(keybind.TmuxPrefix).Label(); got != "ctrl+b / f12" {
+		t.Fatalf("tmux_prefix = %q, want both keys", got)
+	}
+
+	// The refused third key's message belongs to the picker; the save
+	// itself must report nothing.
+	m.errBar.text = ""
+	cmd := m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
+	if cmd == nil {
+		t.Fatal("saving should enqueue the save work")
+	}
+	// The completion's refresh command carries the tmux rebind; run it the
+	// way the event loop would.
+	updated, next := m.Update(cmd())
+	*m = *updated.(*Model)
+	m.applyTestMsg(t, next())
+	m.drainEffects(t)
+	if m.errBar.text != "" {
+		t.Fatalf("saving reported %q", m.errBar.text)
+	}
+	if got := m.services.keys.Binding(keybind.TmuxPrefix).Label(); got != "ctrl+b / f12" {
+		t.Fatalf("model tmux_prefix = %q", got)
+	}
+	if got := storedSessionKeys(t, m).Binding(keybind.TmuxPrefix).Label(); got != "ctrl+b / f12" {
+		t.Fatalf("stored tmux_prefix = %q, want both keys", got)
+	}
+}
+
+// Reset puts tmux_prefix back to off, and the question says so in words.
+func TestKeyPickerResetNamesTheTmuxPrefixGoingOff(t *testing.T) {
+	m := keyPickerModel(t)
+	m.settingsCard().State().Tables[0] = m.settingsCard().State().Tables[0].With(keybind.TmuxPrefix, bindingOf(t, "ctrl+b"))
+	m.pressInPicker(t, runeKey("r"))
+	if ask := ansi.Strip(m.viewSettings()); !strings.Contains(ask, "tmux_prefix: ctrl+b back to off") {
+		t.Fatalf("the question should name tmux_prefix going off:\n%s", ask)
+	}
+}
+
+func TestKeySaveDefersDiskWritesToTheEffect(t *testing.T) {
+	m := keyPickerModel(t)
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyF9})
+	before := savedKeys(t, m)
+	cmd := m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
+	if cmd == nil {
+		t.Fatal("a changed table should enqueue the save work")
+	}
+	if got := savedKeys(t, m); got != before {
+		t.Fatalf("the key table was written on the update path:\n%s", got)
+	}
+	m.applyCmd(t, cmd)
+	if saved := savedKeys(t, m); !strings.Contains(saved, `"detach":["f9"]`) {
+		t.Fatalf("the store should carry the new key:\n%s", saved)
+	}
+	if got := m.services.keys.Binding(keybind.Detach).Label(); got != "f9" {
+		t.Fatalf("runtime detach = %q, want f9", got)
+	}
+}
+
+func TestKeySavePersistsCapturedTablesNotLaterEdits(t *testing.T) {
+	m := keyPickerModel(t)
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyF9})
+	cmd := m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.effects.Main.Active == nil {
+		t.Fatal("the save should be accepted before a later edit")
+	}
+	m.settingsCard().State().KeyCursor = 1 // review
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
+	m.pressInPicker(t, runeKey("t")) // ctrl+t, while the save is pending
+	m.applyCmd(t, cmd)
+	saved := savedKeys(t, m)
+	if !strings.Contains(saved, `"detach":["f9"]`) {
+		t.Fatalf("the captured detach save is missing:\n%s", saved)
+	}
+	if strings.Contains(saved, `"review":["ctrl+t"]`) {
+		t.Fatalf("a later edit reached the captured save:\n%s", saved)
+	}
+	if got := m.services.keys.Binding(keybind.Detach).Label(); got != "f9" {
+		t.Fatalf("runtime detach = %q, want f9", got)
+	}
+	if got := m.services.keys.Binding(keybind.Review).Label(); got != "ctrl+r" {
+		t.Fatalf("runtime review = %q, want the captured default", got)
+	}
+}
+
+func TestKeySavePartialFailureCommitsListOnly(t *testing.T) {
+	m := keyPickerModel(t)
+	m.settingsCard().State().KeyCursor = listRow(t, m, keybind.NewSession)
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
+	m.pressInPicker(t, runeKey("N"))
+	m.settingsCard().State().KeyCursor = 0
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyF9})
+	original := m.services.store.SetKeys
+	failOnce := true
+	m.services.saveKeys = func(keys keybind.Table) error {
+		if keys.Scope() == keybind.ScopeSession && failOnce {
+			failOnce = false
+			return errors.New("scripted session write failure")
+		}
+		return original(keys)
+	}
+
+	cmd := m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
+	m.applyCmd(t, cmd)
+	saved := savedKeys(t, m)
+	if !strings.Contains(saved, `"new_session":["N"]`) {
+		t.Fatalf("the committed list table is missing:\n%s", saved)
+	}
+	if strings.Contains(saved, `"detach":["f9"]`) {
+		t.Fatalf("the failed session table reached the store:\n%s", saved)
+	}
+	if got := m.services.listKeys.Binding(keybind.NewSession).Label(); got != "N" {
+		t.Fatalf("runtime list new_session = %q, want N", got)
+	}
+	if got := m.services.keys.Binding(keybind.Detach).Label(); got != `ctrl+q / ctrl+\` {
+		t.Fatalf("runtime detach changed after a failed save: %q", got)
+	}
+	if m.errBar.text == "" {
+		t.Fatal("the failed write should report its reason")
+	}
+	if got := m.settingsCard().State().Tables[0].Binding(keybind.Detach).Label(); got != "f9" {
+		t.Fatalf("the picker should keep the uncommitted table: %q", got)
+	}
+	m.settingsCard().State().Field = uisettings.FieldKeybindings
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
+	if !m.settingsCard().State().KeyPicker {
+		t.Fatalf("reopening the picker failed: %q", m.errBar.text)
+	}
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyF9})
+	cmd = m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
+	m.applyCmd(t, cmd)
+	if saved := savedKeys(t, m); !strings.Contains(saved, `"detach":["f9"]`) {
+		t.Fatalf("the resubmission should finish the save:\n%s", saved)
+	}
+	if got := m.services.keys.Binding(keybind.Detach).Label(); got != "f9" {
+		t.Fatalf("runtime detach = %q after the resubmission, want f9", got)
+	}
+}
+
+func TestBlockedKeySaveLeavesNavigationAndResizeRunning(t *testing.T) {
+	m := keyPickerModel(t)
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyF9})
+	original := m.services.store.SetKeys
+	started := make(chan struct{})
+	release := make(chan struct{})
+	m.services.saveKeys = func(keys keybind.Table) error {
+		close(started)
+		<-release
+		return original(keys)
+	}
+
+	cmd := m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
+	if cmd == nil {
+		t.Fatal("the save should be accepted before the worker blocks")
+	}
+	completed := make(chan tea.Msg, 1)
+	go func() { completed <- cmd() }()
+	<-started
+	done := make(chan struct{})
+	go func() {
+		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		m.Update(tea.WindowSizeMsg{Width: 150, Height: 45})
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		close(release)
+		<-completed
+		t.Fatal("navigation or resize waited on the running key save")
+	}
+	close(release)
+	m.applyTestMsg(t, <-completed)
+	m.drainEffects(t)
+	if saved := savedKeys(t, m); !strings.Contains(saved, `"detach":["f9"]`) {
+		t.Fatalf("the store should carry the new key once the writer unblocks:\n%s", saved)
+	}
+	if m.layout.width != 150 || m.layout.height != 45 {
+		t.Fatalf("resize lost behind the blocked save: %dx%d", m.layout.width, m.layout.height)
+	}
+}
+
+func TestKeySaveWithoutChangesQueuesNothing(t *testing.T) {
+	m := keyPickerModel(t)
+	if cmd := m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc}); cmd != nil {
+		t.Fatal("an unchanged table should not enqueue save work")
+	}
+	if m.effects.Main.Active != nil || len(m.effects.Main.Pending) != 0 {
+		t.Fatal("an unchanged table left a job in the lane")
+	}
+}
+
+func TestKeySaveCapturesTheInstanceWriter(t *testing.T) {
+	m := keyPickerModel(t)
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyF9})
+	calls := 0
+	m.services.saveKeys = func(keys keybind.Table) error { calls++; return m.services.store.SetKeys(keys) }
+	cmd := m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
+	m.services.saveKeys = func(keybind.Table) error { t.Fatal("accepted job borrowed a newer writer"); return nil }
+	m.applyCmd(t, cmd)
+	if calls != 1 {
+		t.Fatalf("captured writer calls=%d", calls)
+	}
+}
+
+func TestKeySaveCanRestoreOriginalBindingBehindPendingSave(t *testing.T) {
+	m := keyPickerModel(t)
+	original := m.services.keys
+	m.settingsCard().State().Tables[0] = original.With(keybind.Detach, bindingOf(t, "f9"))
+	m.saveSettingsKeys(m.settingsCard().State())
+	m.settingsCard().State().Tables[0] = original
+	m.saveSettingsKeys(m.settingsCard().State())
+	m.drainEffects(t)
+	if !m.services.keys.Equal(original) {
+		t.Fatal("pending save overwrote the user's later return to the original binding")
+	}
+}
+
+// savedKeys is both stored key rows, so a test reads what a save committed.
+func savedKeys(t *testing.T, m *Model) string {
+	t.Helper()
+	return storedKeyRow(t, m, keybind.ScopeSession) + "\n" + storedKeyRow(t, m, keybind.ScopeList)
+}
+
+func TestReopenedKeyPickerKeepsPendingSave(t *testing.T) {
+	m := keyPickerModel(t)
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyF9})
+	first := m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
+	m.settingsCard().State().Field = uisettings.FieldKeybindings
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
+	m.applyCmd(t, first)
+	m.drainEffects(t)
+	if got := storedSessionKeys(t, m).Binding(keybind.Detach).Label(); got != "f9" {
+		t.Fatalf("reopening and closing the picker reverted the accepted binding to %q", got)
+	}
 }
