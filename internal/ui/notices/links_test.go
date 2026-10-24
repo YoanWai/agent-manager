@@ -33,7 +33,7 @@ func TestSupportRequestURLPrefillsTheCLIFields(t *testing.T) {
 	if !strings.HasPrefix(got, RepoURL+"/issues/new?body=") {
 		t.Fatalf("support request should open a prefilled issue, got %q", got)
 	}
-	for _, want := range []string{"CLI%20name", "How%20to%20launch%20it", "Config%20and%20tool%20support"} {
+	for _, want := range []string{"CLI+name", "How+to+launch+it", "Config+and+tool+support"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("support request is missing %q: %q", want, got)
 		}

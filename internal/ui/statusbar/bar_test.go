@@ -166,8 +166,8 @@ func TestOutcomeKindFollowsTheRunThatNamedIt(t *testing.T) {
 	}
 }
 
-// A message survives one poll and clears on the second, so a transient error
-// needs no timer of its own.
+// A message's first poll records it, and it clears two polls later, so a
+// transient error needs no timer of its own.
 func TestOutcomeClearsAfterTwoPolls(t *testing.T) {
 	if got := (Outcome{}).Ticked(); got.Text() != "" {
 		t.Fatalf("an empty bar grew %q", got.Text())
@@ -180,8 +180,11 @@ func TestOutcomeClearsAfterTwoPolls(t *testing.T) {
 		t.Fatalf("a cleared bar came back with %q", ticked.Text())
 	}
 	twice := once.Ticked()
-	if twice.Text() != "" || twice.Age() == 0 {
-		t.Fatalf("the second poll should clear the bar, kept %q", twice.Text())
+	if twice.Text() != "boom" || twice.Age() != 1 {
+		t.Fatalf("the second poll should age the bar, got %q at %d", twice.Text(), twice.Age())
+	}
+	if thrice := twice.Ticked(); thrice.Text() != "" {
+		t.Fatalf("the third poll should clear the bar, kept %q", thrice.Text())
 	}
 	if fresh := once.Ticked().Ticked().Ticked(); fresh.Text() != "" {
 		t.Fatalf("a cleared bar came back with %q", fresh.Text())

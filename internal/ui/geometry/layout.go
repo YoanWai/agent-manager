@@ -14,9 +14,11 @@ type Layout struct {
 	FullFocus bool
 	// HeaderRows is the band above the body.
 	HeaderRows int
-	// FooterRows is the painted footer's height; QuickFooterRows is the
-	// one the quick bar paints, read only while QuickBar says a bar is up.
-	FooterRows, QuickFooterRows int
+	// FooterRows measures the painted footer; QuickFooterRows the one the
+	// quick bar paints, read only while QuickBar says a bar is up. They are
+	// read only for a body height: the quick footer sizes itself from
+	// ChromeRows, so measuring them eagerly would recurse.
+	FooterRows, QuickFooterRows func() int
 	QuickBar                    bool
 	// Detail is the height of the detail head painted over a column inner
 	// cells wide, which the preview gives way to.
@@ -34,7 +36,7 @@ func (l Layout) ChromeRows() int {
 
 // BodyHeight is the vertical budget for the sessions and sidebar panels.
 func (l Layout) BodyHeight() int {
-	return l.bodyRows(l.FooterRows)
+	return l.bodyRows(l.FooterRows())
 }
 
 // RestingBodyHeight is the same budget with the footer the screen actually
@@ -43,7 +45,7 @@ func (l Layout) RestingBodyHeight() int {
 	if !l.QuickBar {
 		return l.BodyHeight()
 	}
-	return l.bodyRows(l.QuickFooterRows)
+	return l.bodyRows(l.QuickFooterRows())
 }
 
 func (l Layout) bodyRows(footer int) int {

@@ -6,7 +6,7 @@ func testLayout() Layout {
 	return Layout{
 		Width: 100, Height: 40,
 		HeaderRows: 2,
-		FooterRows: 1,
+		FooterRows: func() int { return 1 },
 		Detail:     func(int) int { return 3 },
 	}
 }
@@ -41,7 +41,7 @@ func TestLayoutQuickBarShortensTheRestingBody(t *testing.T) {
 	l := testLayout()
 	plain := l.RestingBodyHeight()
 	l.QuickBar = true
-	l.QuickFooterRows = 3
+	l.QuickFooterRows = func() int { return 3 }
 	if got := l.RestingBodyHeight(); got >= plain {
 		t.Fatalf("the quick bar's footer did not shorten the body: %d >= %d", got, plain)
 	}
@@ -55,7 +55,7 @@ func TestLayoutPaneSizeFollowsThePreview(t *testing.T) {
 	if width != l.PreviewWidth(DefaultSplitRatio) || height != l.PreviewHeight(DefaultSplitRatio) {
 		t.Fatalf("PaneSize = %d,%d", width, height)
 	}
-	tiny := Layout{Width: 20, Height: 4, Detail: func(int) int { return 100 }}
+	tiny := Layout{Width: 20, Height: 4, FooterRows: func() int { return 0 }, Detail: func(int) int { return 100 }}
 	if got := tiny.PreviewHeight(DefaultSplitRatio); got != 3 {
 		t.Fatalf("a hidden preview section gave %d rows, want the floor of 3", got)
 	}

@@ -100,7 +100,7 @@ func (m *Model) applyAfterTurn(request uilifecycle.AfterTurnRequest, result uili
 	apply := uilifecycle.AfterTurn(request, result, err)
 	var command tea.Cmd
 	if apply.Change != nil {
-		command = m.applyLifecycleEffect(apply.ChangeRequest, uilifecycle.Result{}, apply.Err)
+		command = m.applyLifecycleEffect(apply.ChangeRequest, result.Lifecycle, apply.Err)
 	} else {
 		if apply.Err != nil {
 			m.reportErr(apply.Err.Error())

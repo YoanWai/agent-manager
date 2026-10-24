@@ -19,8 +19,8 @@ func (h geometryHost) Layout() uigeometry.Layout {
 		FullLayout:      h.m.prefs.fullLayout,
 		FullFocus:       h.m.fullFocus(),
 		HeaderRows:      h.m.headerRows(),
-		FooterRows:      lipgloss.Height(h.m.viewFooter()),
-		QuickFooterRows: h.quickFooterRows(),
+		FooterRows:      func() int { return lipgloss.Height(h.m.viewFooter()) },
+		QuickFooterRows: h.quickFooterRows,
 		QuickBar:        h.m.quick() != nil,
 		Detail:          func(inner int) int { return lipgloss.Height(h.m.viewDetail(inner)) },
 	}
