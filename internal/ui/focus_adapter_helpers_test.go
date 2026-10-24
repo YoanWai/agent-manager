@@ -173,4 +173,4 @@ func (m *Model) cursorCell(int) (row, col int, ok bool) {
 }
 
 // onList reports that the list is the base and no session holds focus.
-func (m *Model) onList() bool { return m.base == baseList \&\& !m.focused() }
+func (m *Model) onList() bool { return m.base == baseList && !m.focused() }
