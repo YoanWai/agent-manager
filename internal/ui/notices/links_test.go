@@ -78,3 +78,24 @@ func TestTakeClearsTheHeldNotice(t *testing.T) {
 		t.Fatalf("Take left %q held", log.Held)
 	}
 }
+
+func TestAddedIsTheNoticeTheChangeIntroduced(t *testing.T) {
+	before := IDs([]Notice{{ID: "welcome"}})
+	now := []Notice{{ID: "welcome"}, {ID: "feed-new"}}
+	if got := Added(before, now); got != "feed-new" {
+		t.Fatalf("Added = %q, want feed-new", got)
+	}
+	if got := Added(IDs(now), now); got != "" {
+		t.Fatalf("a change that added nothing reported %q", got)
+	}
+}
+
+func TestHoldsOnlyReportsAListedNotice(t *testing.T) {
+	notices := []Notice{{ID: "feed-new"}}
+	if !Holds(notices, "feed-new") {
+		t.Fatal("a listed notice should be held")
+	}
+	if Holds(notices, "dismissed-already") {
+		t.Fatal("a notice that left the list must not open")
+	}
+}

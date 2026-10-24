@@ -102,25 +102,10 @@ func (m *Model) keepNoticeSelection(apply func()) {
 }
 
 func (m *Model) applyNotices(apply func()) {
-	before := map[string]bool{}
-	for _, n := range m.activeNotices() {
-		before[n.ID] = true
-	}
+	before := uinotices.IDs(m.activeNotices())
 	m.keepNoticeSelection(apply)
-	var added string
-	for _, n := range m.activeNotices() {
-		if !before[n.ID] {
-			added = n.ID
-			break
-		}
-	}
-	if added == "" {
-		return
-	}
-	if _, open := surfaceOf[*uinotices.Surface](m); open {
-		return
-	}
-	staged := m.notices.Staged(added, false, m.listReadyForNotice())
+	_, open := surfaceOf[*uinotices.Surface](m)
+	staged := m.notices.Staged(uinotices.Added(before, m.activeNotices()), open, m.listReadyForNotice())
 	if staged.Open != "" {
 		m.openNotices(staged.Open)
 		return
@@ -137,11 +122,8 @@ func (m *Model) flushPendingNotice() {
 		return
 	}
 	id := m.notices.Take()
-	for _, n := range m.activeNotices() {
-		if n.ID == id {
-			m.openNotices(id)
-			return
-		}
+	if uinotices.Holds(m.activeNotices(), id) {
+		m.openNotices(id)
 	}
 }
 

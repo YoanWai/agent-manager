@@ -36,3 +36,34 @@ func (l *Log) Take() string {
 	l.Held = ""
 	return id
 }
+
+// Added is the ID of the notice a change added, empty when it added none.
+// before is the set the change started from.
+func Added(before map[string]bool, now []Notice) string {
+	for _, n := range now {
+		if !before[n.ID] {
+			return n.ID
+		}
+	}
+	return ""
+}
+
+// IDs is the set of notice IDs a list holds, the shape Added compares.
+func IDs(notices []Notice) map[string]bool {
+	set := make(map[string]bool, len(notices))
+	for _, n := range notices {
+		set[n.ID] = true
+	}
+	return set
+}
+
+// Holds reports whether a list still names id, which a held notice must be
+// checked against before it opens.
+func Holds(notices []Notice, id string) bool {
+	for _, n := range notices {
+		if n.ID == id {
+			return true
+		}
+	}
+	return false
+}
