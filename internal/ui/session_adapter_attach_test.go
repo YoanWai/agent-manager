@@ -1,12 +1,18 @@
 package ui
 
 import (
-	"github.com/YoanWai/agent-manager/internal/status"
-	"github.com/YoanWai/agent-manager/internal/tmux"
-	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
-	tea "github.com/charmbracelet/bubbletea"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/YoanWai/agent-manager/internal/status"
+	"github.com/YoanWai/agent-manager/internal/testenv"
+	"github.com/YoanWai/agent-manager/internal/tmux"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
+	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
+	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestAttachDoneOpensReviewWhenMarkerSet(t *testing.T) {
@@ -79,7 +85,7 @@ func TestAttachAcknowledgesFinished(t *testing.T) {
 	if got.Status != status.Finished {
 		t.Fatalf("the update path acknowledged the session: %q", got.Status)
 	}
-	if _, err := m.bindEffect(attachRequest{id: sess.ID})(); err != nil {
+	if _, err := m.bindEffect(uilifecycle.AttachRequest{ID: sess.ID})(); err != nil {
 		t.Fatalf("attach worker: %v", err)
 	}
 	got, err = m.services.store.Get(sess.ID)
@@ -186,7 +192,7 @@ func TestAttachKeepsWorking(t *testing.T) {
 	if _, cmd := m.attachSelected(); cmd == nil {
 		t.Fatalf("attach did not start, err = %q", m.errBar.text)
 	}
-	if _, err := m.bindEffect(attachRequest{id: sess.ID})(); err != nil {
+	if _, err := m.bindEffect(uilifecycle.AttachRequest{ID: sess.ID})(); err != nil {
 		t.Fatalf("attach worker: %v", err)
 	}
 	got, err := m.services.store.Get(sess.ID)
@@ -237,7 +243,7 @@ func TestAttachClearsStaleHashBeforeReflow(t *testing.T) {
 	if _, cmd := m.attachSelected(); cmd == nil {
 		t.Fatalf("attach did not start, err = %q", m.errBar.text)
 	}
-	if _, err := m.bindEffect(attachRequest{id: sess.ID})(); err != nil {
+	if _, err := m.bindEffect(uilifecycle.AttachRequest{ID: sess.ID})(); err != nil {
 		t.Fatalf("attach worker: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -334,5 +340,63 @@ func TestReplyCopiedMsgWarnsOnAnUnboundedCopy(t *testing.T) {
 	}
 	if !m.errBar.warned() {
 		t.Fatalf("an unreadable pane should warn: %+v", m.errBar)
+	}
+}
+
+func TestPreparedAttachDoesNotReplaceNewerHelp(t *testing.T) {
+	t.Parallel()
+	for _, returning := range []bool{false, true} {
+		t.Run(map[bool]string{false: "attach", true: "reattach"}[returning], func(t *testing.T) {
+			m := buildModel(t)
+			createSession(t, m, "attach-fence", t.TempDir(), "")
+			m.selectSessionRow(t, "attach-fence")
+			sess, _ := m.selected()
+			if err := m.services.store.UpdateStatus(sess.ID, status.Finished); err != nil {
+				t.Fatal(err)
+			}
+			var command tea.Cmd
+			if returning {
+				command = m.reattach(sess.ID, m.review.Generation())
+			} else {
+				command = m.attachCmd(sess.ID)
+			}
+			request := m.effects.Main.Active.Request.(uilifecycle.AttachRequest)
+			result := command().(uieffects.Completed)
+			if result.Err != nil {
+				t.Fatal(result.Err)
+			}
+			got, err := m.services.store.Get(sess.ID)
+			if err != nil || !got.Acked {
+				t.Fatalf("accepted acknowledgement was lost: %+v %v", got, err)
+			}
+			m.gens.foreground++
+			m.openHelp()
+			if next := m.applyAttachEffect(request, result.Result.(uilifecycle.AttachResult), result.Err); next != nil {
+				t.Fatal("prepared attach replaced newer Help")
+			}
+			if !helpOpen(m) {
+				t.Fatal("Help was replaced")
+			}
+		})
+	}
+}
+
+func TestAttachReportsTransportFailureWithoutCallingPaneDead(t *testing.T) {
+	testenv.SkipPOSIXShell(t)
+	m := buildModel(t)
+	dir := t.TempDir()
+	stub := filepath.Join(dir, "tmux")
+	if err := os.WriteFile(stub, []byte("#!/bin/sh\necho 'attach liveness unavailable' >&2\nexit 2\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	driver, err := tmux.NewWithSocket(m.services.tmux.SocketName())
+	if err != nil {
+		t.Fatal(err)
+	}
+	services := effectServices{store: m.services.store, driver: driver}
+	_, err = uilifecycle.RunAttach(services.lifecycleServices(), uilifecycle.AttachRequest{ID: "attach-probe"})
+	if err == nil || !strings.Contains(err.Error(), "attach liveness unavailable") || strings.Contains(err.Error(), uilifecycle.DeadSessionHint) {
+		t.Fatalf("transport failure mislabeled: %v", err)
 	}
 }

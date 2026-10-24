@@ -1,17 +1,11 @@
 package ui
 
 import (
-	"errors"
-
-	"github.com/YoanWai/agent-manager/internal/config"
-	"github.com/YoanWai/agent-manager/internal/deps"
-	"github.com/YoanWai/agent-manager/internal/mcpreg"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
-	uilaunchhint "github.com/YoanWai/agent-manager/internal/ui/launchhint"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
@@ -121,56 +115,11 @@ func (m *Model) takeComposerImages() []composer.Attachment {
 // A retry, when one exists, is attached by the typed effect completion that
 // failed; this error router never carries or invokes a Model closure.
 func (m *Model) reportLaunchError(err error) {
-	var hermesMCP mcpreg.HermesMCPUnavailableError
-	if errors.As(err, &hermesMCP) {
-		m.openLaunchHint(uiinstall.Fix{
-			Text:    uilaunchhint.HermesText(hermesMCP.PipCommand),
-			Command: hermesMCP.PipCommand,
-			Script:  hermesMCP.PipCommand,
-			Binary:  "hermes",
-		})
-		return
-	}
-	var missing config.MissingToolError
-	if errors.As(err, &missing) {
-		m.openLaunchHint(uiinstall.Fix{
-			Text:    uilaunchhint.MissingText(uilaunchhint.Tool{Binary: missing.Binary, WindowsPath: missing.WindowsPath}, deps.Hint(missing.Binary)),
-			Command: deps.Shown(missing.Binary),
-			Script:  deps.Command(missing.Binary),
-			Binary:  missing.Binary,
-		})
-		return
-	}
-	var outdated config.OutdatedToolError
-	if errors.As(err, &outdated) {
-		m.openLaunchHint(uiinstall.Fix{
-			Text:    uilaunchhint.OutdatedText(outdatedHint(outdated), outdatedToolCommand(outdated)),
-			Command: outdatedToolCommand(outdated),
-			Script:  outdatedToolCommand(outdated),
-			Binary:  outdated.Binary,
-			Update:  true,
-		})
+	if fix, ok := uiinstall.FixFor(err); ok {
+		m.openLaunchHint(fix)
 		return
 	}
 	m.reportErr(err.Error())
-}
-
-// outdatedToolCommand is the installer line a too-old CLI updates with, empty
-// when the manager ships none and the user updates the way they installed it.
-func outdatedToolCommand(outdated config.OutdatedToolError) string {
-	if outdated.ManagedExternally {
-		return ""
-	}
-	return deps.Command(outdated.Binary)
-}
-
-// outdatedHint is a too-old CLI as the launchhint package's copy reads it.
-func outdatedHint(outdated config.OutdatedToolError) uilaunchhint.Tool {
-	return uilaunchhint.Tool{
-		Binary:    outdated.Binary,
-		Installed: outdated.Installed,
-		Minimum:   outdated.Minimum,
-	}
 }
 
 // openLaunchHint shows a refusal and takes the refused prompt's images out
@@ -238,4 +187,14 @@ func (m *Model) settleInstall() {
 		}
 	}
 	m.enqueueEffect(uiinstall.SettleRequest{Pending: *install}, 0, false)
+}
+
+// install hands the install runtime the services it runs with.
+func (s effectServices) install() uiinstall.Services {
+	return uiinstall.Services{
+		Lifecycle: s.lifecycle,
+		Hooks:     s.hooks,
+		Driver:    s.driver,
+		Tools:     s.cfg.Tools,
+	}
 }

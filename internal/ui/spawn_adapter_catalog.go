@@ -5,7 +5,6 @@ import (
 	"slices"
 	"time"
 
-	uilaunchhint "github.com/YoanWai/agent-manager/internal/ui/launchhint"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
@@ -25,13 +24,8 @@ func (m *Model) handleCatalog(msg uilaunch.CatalogMsg) tea.Cmd {
 	m.fitChoices()
 	if outdated != nil && m.catalogToolActive(msg.Tool) {
 		m.advanceDialogGen()
-		m.presentLaunchHint(uiinstall.Fix{
-			Text:    uilaunchhint.OutdatedText(outdatedHint(*outdated), outdatedToolCommand(*outdated)),
-			Command: outdatedToolCommand(*outdated),
-			Script:  outdatedToolCommand(*outdated),
-			Binary:  outdated.Binary,
-			Update:  true,
-		})
+		command := uiinstall.OutdatedCommand(*outdated)
+		m.presentLaunchHint(uiinstall.OutdatedFix(*outdated, command))
 	}
 	return cmd
 }

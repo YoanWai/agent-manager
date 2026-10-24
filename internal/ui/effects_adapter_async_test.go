@@ -183,18 +183,6 @@ func TestSlowLifecycleDoesNotBlockWindowUpdateAndKeepsSnapshotWriter(t *testing.
 	}
 }
 
-func TestLifecycleRequestCopiesNestedSessionValues(t *testing.T) {
-	m := &Model{}
-	sessions := []store.Session{{ID: "captured", PendingInputs: []string{"first"}, RelaunchSnapshot: map[string]int64{"conversation": 1}}}
-	m.enqueueEffect(lifecycleRequest{target: confirmTarget{sessions: sessions}}, 0, false)
-	sessions[0].PendingInputs[0] = "changed"
-	sessions[0].RelaunchSnapshot["conversation"] = 2
-	request := m.effects.Main.Pending[0].Request.(lifecycleRequest)
-	if request.target.sessions[0].PendingInputs[0] != "first" || request.target.sessions[0].RelaunchSnapshot["conversation"] != 1 {
-		t.Fatal("request retained mutable session aliases")
-	}
-}
-
 func TestCollapseSaveQueuesWhileMoveIsPending(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)

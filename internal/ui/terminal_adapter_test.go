@@ -19,6 +19,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/testenv"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -326,12 +327,9 @@ func TestRowDirRefusesADirectoryThatIsGone(t *testing.T) {
 	if !ok {
 		t.Fatal("selected session did not produce a directory request")
 	}
-	msg := terminalDirectoryCmd(request, systemTerminalDirectoryReader{
-		tmux: m.services.tmux,
-		dirs: systemDirectoryPreflight{git: m.services.gitDrv},
-	})().(terminalDirectoryMsg)
-	if msg.ok {
-		t.Fatalf("directory preflight accepted a directory that is gone: %q", msg.dir)
+	msg := terminalDirectoryCmd(request, newSystemTerminalDirectoryReader(m))().(terminalDirectoryMsg)
+	if msg.msg.OK {
+		t.Fatalf("directory preflight accepted a directory that is gone: %q", msg.msg.Dir)
 	}
 }
 
@@ -342,7 +340,7 @@ type blockedTerminalDirectoryReader struct {
 	once    sync.Once
 }
 
-func (r *blockedTerminalDirectoryReader) resolve(terminalDirectoryRequest) (string, bool) {
+func (r *blockedTerminalDirectoryReader) Resolve(uiterminal.Directory) (string, bool) {
 	r.once.Do(func() { close(r.started) })
 	<-r.release
 	return r.dir, true
@@ -589,5 +587,21 @@ func TestRowLegendHidesDoubleClickWhenMouseOff(t *testing.T) {
 	legend := m.rowLegend()
 	if slices.ContainsFunc(legend.pairs, func(pair [2]string) bool { return strings.HasSuffix(pair[0], "click") }) {
 		t.Fatal("legend should hide the click gestures when the mouse is off")
+	}
+}
+
+func TestSessionDirectoryUsesObservedPane(t *testing.T) {
+	sess := store.Session{ID: "session", Cwd: "/launch"}
+	m := &Model{}
+	m.workspace.panes = map[string]tmux.Pane{sess.ID: {Path: "/live directory "}}
+	if got := m.sessionDir(sess); got != "/live directory " {
+		t.Fatalf("directory = %q", got)
+	}
+}
+
+func TestSessionDirectoryFallsBackAfterPaneDisappears(t *testing.T) {
+	sess := store.Session{ID: "session", Cwd: "/launch"}
+	if got := (&Model{}).sessionDir(sess); got != sess.Cwd {
+		t.Fatalf("directory = %q", got)
 	}
 }

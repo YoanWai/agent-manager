@@ -3,6 +3,7 @@ package ui
 import (
 	"github.com/YoanWai/agent-manager/internal/git"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
+	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
 )
 
 // directoryPreflight is the read-only filesystem and repository seam a spawn
@@ -40,7 +41,7 @@ func crossTerminalReader(reader terminalDirectoryReader) uilaunch.TerminalDirect
 type terminalReader struct{ reader terminalDirectoryReader }
 
 func (t terminalReader) Resolve(request uilaunch.TerminalDirectoryRequest) (string, bool) {
-	return t.reader.resolve(terminalDirectoryRequest{paneID: request.PaneID, rawDir: request.RawDir, fallbacks: request.Fallbacks})
+	return t.reader.Resolve(uiterminal.Directory{PaneID: request.PaneID, RawDir: request.RawDir, Fallbacks: request.Fallbacks})
 }
 
 // systemDirectoryPreflight resolves against the filesystem and asks git

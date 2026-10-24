@@ -9,6 +9,7 @@ import (
 	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	uicapture "github.com/YoanWai/agent-manager/internal/ui/preview/capture"
 	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
+	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -95,10 +96,7 @@ func (m *Model) applyDetachEffect(request focusruntime.DetachRequest, result foc
 		}
 		return cmd
 	case tmux.RequestEditor:
-		_, cmd := m.openEditorWithReaderForReturn(systemTerminalDirectoryReader{
-			tmux: m.services.tmux,
-			dirs: systemDirectoryPreflight{git: m.services.gitDrv},
-		}, sess.ID)
+		_, cmd := m.openEditorWithReaderForReturn(newSystemTerminalDirectoryReader(m), sess.ID)
 		return cmd
 	}
 	m.requestRefresh()
@@ -113,7 +111,7 @@ func (m *Model) foregroundTakenSinceDetach() bool {
 	}
 	for _, job := range m.effects.Main.Pending {
 		switch job.Request.(type) {
-		case focusruntime.ProbeRequest, attachRequest:
+		case focusruntime.ProbeRequest, uilifecycle.AttachRequest:
 			return true
 		}
 	}

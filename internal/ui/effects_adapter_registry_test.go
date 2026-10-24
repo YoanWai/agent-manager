@@ -21,11 +21,8 @@ type effectPair struct {
 var effectPairs = []effectPair{
 	{quickSendRequest{}, quickSendResult{}},
 	{choiceSaveRequest{}, choiceSaveResult{}},
-	{lifecycleRequest{}, lifecycleEffectResult{}},
-	{afterTurnRequest{}, afterTurnResult{}},
 	{spawnRequest{}, spawnEffectResult{}},
 	{groupRequest{}, groupEffectResult{}},
-	{attachRequest{}, attachEffectResult{}},
 }
 
 // A choice save carries nothing back to the model, so only its error is

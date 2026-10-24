@@ -2,13 +2,16 @@ package ui
 
 import (
 	"fmt"
+	"strings"
+	"time"
+
+	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
 	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	tea "github.com/charmbracelet/bubbletea"
-	"strings"
 )
 
 func (m *Model) archiveSelected() (tea.Model, tea.Cmd) {
@@ -209,4 +212,132 @@ func archivedSessions(sessions []store.Session) []store.Session {
 		}
 	}
 	return archived
+}
+
+func (m *Model) queueLifecycle(target confirmTarget, allowLive bool, emptyNotice string) {
+	target.sessions = append([]store.Session(nil), target.sessions...)
+	w, h := m.paneTargetSize()
+	m.enqueueEffect(uilifecycle.Request{Target: packageTarget(target), Pane: sessioncmd.PaneSize{Width: w, Height: h}, Watched: m.focus.runtime.Watching(), AllowLive: allowLive, EmptyNotice: emptyNotice}, 0, false)
+}
+
+// applyLifecycleEffect reconciles the loaded list with what a session action
+// did: the statuses that changed, the rows that left or came back, the panes
+// this run launched, and what the completion reports.
+func (m *Model) applyLifecycleEffect(request uilifecycle.Request, result uilifecycle.Result, err error) tea.Cmd {
+	target := confirmTargetFor(request.Target)
+	for _, sess := range append(result.Changed, result.Archive.Sessions...) {
+		for i := range m.workspace.sessions {
+			if m.workspace.sessions[i].ID == sess.ID {
+				m.workspace.sessions[i].Status = sess.Status
+			}
+		}
+	}
+	if target.action == uidialogs.ConfirmKill {
+		for _, sess := range result.Changed {
+			m.forgetLaunch(sess.ID)
+			delete(m.workspace.panes, sess.ID)
+		}
+	}
+	group := ""
+	if result.Archive.GroupChanged {
+		group = result.Archive.GroupPath
+	}
+	switch target.action {
+	case uidialogs.ConfirmArchive, uidialogs.ConfirmRestore:
+		var durable []store.Session
+		for _, sess := range result.Archive.Sessions {
+			if sess.Archived == (target.action == uidialogs.ConfirmArchive) {
+				durable = append(durable, sess)
+				if sess.Archived {
+					m.forgetLaunch(sess.ID)
+				}
+			}
+		}
+		if target.action == uidialogs.ConfirmArchive {
+			m.markArchivedLocally(durable, group)
+		} else {
+			m.markRestoredLocally(durable, group)
+		}
+	case uidialogs.ConfirmDelete:
+		for _, sess := range result.Deleted.Deleted {
+			m.ledger.lifecycle.ForgetSession(sess.ID)
+			m.removeSessionLocally(sess.ID)
+		}
+		if len(result.Deleted.RemovedGroups) > 0 {
+			m.queueRail(m.rail.ForgetGroups(result.Deleted.RemovedGroups).Mutations, 0, true)
+			m.pruneGroupsLocally(result.Deleted.RemovedGroups)
+		}
+	}
+	for _, each := range result.Launches {
+		m.markFreshPane(each.ID)
+		m.ledger.lifecycle.RecordLaunch(each.ID, time.Now())
+		if target.action == uidialogs.ConfirmRestart {
+			m.bindRestartLocally(each.ID, each.Result.Conversation, each.Result.LaunchedAt)
+		} else {
+			m.bindReviveLocally(each.ID, each.Result.LaunchedAt)
+		}
+	}
+	if len(result.Launches) > 0 {
+		m.focus.runtime.Retry()
+	}
+	m.rewatchSurvivor(request.Watched, result.Survivor)
+	m.rebuildRows()
+	m.reportErr(result.Notice)
+	if result.Deleted.Notice != "" {
+		m.reportErr(result.Deleted.Notice)
+	}
+	if result.Warning != nil && err == nil {
+		m.reportErr(result.Warning.Error())
+	}
+	if err != nil {
+		if target.batch {
+			if result.Notice == "" {
+				m.reportErr(err.Error())
+			}
+			return nil
+		}
+		if target.action == uidialogs.ConfirmRestart || target.action == uidialogs.ConfirmRevive || target.action == uidialogs.ConfirmRestore {
+			retry := request
+			if len(result.Failed) > 0 {
+				retry.Target.Sessions = append([]store.Session(nil), result.Failed...)
+			}
+			if target.action == uidialogs.ConfirmRestore {
+				done := map[string]bool{}
+				for _, sess := range result.Archive.Sessions {
+					if !sess.Archived {
+						done[sess.ID] = true
+					}
+				}
+				retry.Target.Sessions = nil
+				for _, sess := range target.sessions {
+					if !done[sess.ID] {
+						retry.Target.Sessions = append(retry.Target.Sessions, sess)
+					}
+				}
+			}
+			// An async completion must not steal a newly opened modal or its attachments.
+			if m.listClear() {
+				m.reportLaunchError(err)
+				if fix, ok := m.launchHintFix(); ok {
+					fix.Retry = retry
+				}
+			} else {
+				m.reportErr(err.Error())
+			}
+		} else {
+			m.reportErr(err.Error())
+		}
+	}
+	return nil
+}
+
+// rewatchSurvivor restarts the preview watcher a lifecycle worker stopped
+// when the session it watched is still selected and still running.
+func (m *Model) rewatchSurvivor(watched string, survivor bool) {
+	if !survivor {
+		return
+	}
+	if sess, ok := m.selected(); ok && sess.ID == watched && !sess.Archived {
+		m.watchSelection()
+	}
 }

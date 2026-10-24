@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"slices"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
@@ -10,6 +9,7 @@ import (
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
+	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -46,17 +46,14 @@ func (m *Model) terminalKey() (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) openTerminal() (tea.Model, tea.Cmd) {
-	return m.openTerminalWithReader(systemTerminalDirectoryReader{
-		tmux: m.services.tmux,
-		dirs: systemDirectoryPreflight{git: m.services.gitDrv},
-	})
+	return m.openTerminalWithReader(newSystemTerminalDirectoryReader(m))
 }
 
+// terminalDirectoryRequest is where a shell row or the editor opens. The
+// terminal package resolves it; this file only captures and routes it.
 type terminalDirectoryRequest struct {
 	target        terminalDirectoryTarget
-	paneID        string
-	rawDir        string
-	fallbacks     []string
+	directory     uiterminal.Directory
 	foregroundGen uint64
 	rowKey        string
 	returnID      string
@@ -73,24 +70,18 @@ const (
 
 type terminalDirectoryMsg struct {
 	request terminalDirectoryRequest
-	dir     string
-	ok      bool
-	editor  uisession.Launch
+	msg     uiterminal.DirectoryMsg
 }
 
-type terminalDirectoryReader interface {
-	resolve(terminalDirectoryRequest) (string, bool)
-}
+type terminalDirectoryReader = uiterminal.DirectoryReader
 
 func terminalDirectoryCmd(request terminalDirectoryRequest, reader terminalDirectoryReader) tea.Cmd {
-	request.fallbacks = slices.Clone(request.fallbacks)
+	var prepare func(string) uisession.Launch
+	if request.target == terminalDirectoryEditor {
+		prepare = request.editor.prepare
+	}
 	return func() tea.Msg {
-		dir, ok := reader.resolve(request)
-		var editor uisession.Launch
-		if ok && request.target == terminalDirectoryEditor {
-			editor = request.editor.prepare(dir)
-		}
-		return terminalDirectoryMsg{request: request, dir: dir, ok: ok, editor: editor}
+		return terminalDirectoryMsg{request: request, msg: uiterminal.Resolve(request.directory, reader, prepare)}
 	}
 }
 
@@ -105,7 +96,7 @@ func (m *Model) openTerminalWithReader(reader terminalDirectoryReader) (tea.Mode
 	spawn := spawnRequest{
 		kind: uilaunch.Shell, toolName: toolName,
 		pane:         sessioncmd.PaneSize{Width: w, Height: h},
-		terminalDir:  request,
+		terminalDir:  request.directory,
 		terminalRead: reader,
 	}
 	entry, _ := m.selectedRow()
@@ -130,11 +121,11 @@ func (m *Model) captureTerminalDirectory(target terminalDirectoryTarget) (termin
 	}
 	request := terminalDirectoryRequest{target: target, foregroundGen: m.gens.foreground, rowKey: rowKey(entry), screen: m.screenID()}
 	if entry.isGroup {
-		request.rawDir = m.workspace.groupPaths[entry.group]
-		request.fallbacks = m.groupDirectoryFallbacks(entry.group)
+		request.directory.RawDir = m.workspace.groupPaths[entry.group]
+		request.directory.Fallbacks = m.groupDirectoryFallbacks(entry.group)
 	} else {
-		request.paneID = entry.sess.ID
-		request.fallbacks = []string{entry.sess.Cwd}
+		request.directory.PaneID = entry.sess.ID
+		request.directory.Fallbacks = []string{entry.sess.Cwd}
 	}
 	return request, true
 }
@@ -156,9 +147,9 @@ func (m *Model) handleTerminalDirectory(msg terminalDirectoryMsg) (tea.Model, te
 			return m, nil
 		}
 	}
-	if !msg.ok {
+	if !msg.msg.OK {
 		if msg.request.target == terminalDirectoryEditor {
-			m.reportErr("directory no longer exists: " + msg.dir)
+			m.reportErr("directory no longer exists: " + msg.msg.Dir)
 		} else {
 			m.reportErr("no directory to open a terminal in")
 		}
@@ -173,7 +164,7 @@ func (m *Model) handleTerminalDirectory(msg terminalDirectoryMsg) (tea.Model, te
 				screen:        msg.request.screen,
 			}
 		}
-		return m.launchEditor(msg.editor, returnTo)
+		return m.launchEditor(msg.msg.Editor, returnTo)
 	}
 	return m, nil
 }

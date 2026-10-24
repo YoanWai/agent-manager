@@ -10,6 +10,7 @@ import (
 	uigeometrypanes "github.com/YoanWai/agent-manager/internal/ui/geometry/panes"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uirailpersist "github.com/YoanWai/agent-manager/internal/ui/rail/persist"
+	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -238,7 +239,7 @@ func TestPrioritizedCollapseSaveKeepsActiveAndUnrelatedJobs(t *testing.T) {
 	m.enqueueEffect(uigeometrypanes.ResizeRequest{}, 0, false)
 	geometry := m.effects.Main.Pending[0]
 	m.queueRail([]uirail.Mutation{{Kind: uirail.SaveCollapsed}}, 0, false)
-	m.enqueueEffect(lifecycleRequest{}, 0, false)
+	m.enqueueEffect(uilifecycle.Request{}, 0, false)
 	lifecycle := m.effects.Main.Pending[2]
 	m.queueRail([]uirail.Mutation{{Kind: uirail.SaveCollapsed, Collapsed: []string{"latest"}}}, 0, true)
 	if m.effects.Main.Active != active || len(m.effects.Main.Pending) != 3 || m.effects.Main.Pending[1] != geometry || m.effects.Main.Pending[2] != lifecycle {

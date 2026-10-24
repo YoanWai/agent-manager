@@ -12,6 +12,7 @@ import (
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
+	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
 	tea "github.com/charmbracelet/bubbletea"
 	"slices"
 )
@@ -39,7 +40,7 @@ type spawnRequest struct {
 	dirFallbacks []string
 	wantWorktree bool
 	dirReader    directoryPreflight
-	terminalDir  terminalDirectoryRequest
+	terminalDir  uiterminal.Directory
 	terminalRead terminalDirectoryReader
 	plan         *launch.Plan
 	images       []composer.Attachment
@@ -51,7 +52,7 @@ func (spawnRequest) EffectName() string { return "spawn" }
 
 func (value spawnRequest) EffectCopy() uieffects.Request {
 	value.dirFallbacks = slices.Clone(value.dirFallbacks)
-	value.terminalDir.fallbacks = slices.Clone(value.terminalDir.fallbacks)
+	value.terminalDir.Fallbacks = slices.Clone(value.terminalDir.Fallbacks)
 	if value.plan != nil {
 		plan := *value.plan
 		plan.PendingInputs = slices.Clone(plan.PendingInputs)
@@ -91,7 +92,7 @@ func (request spawnRequest) packageRequest() uilaunch.Request {
 		DirFallbacks: request.dirFallbacks,
 		WantWorktree: request.wantWorktree,
 		DirReader:    crossPreflight(request.dirReader),
-		TerminalDir:  uilaunch.TerminalDirectoryRequest{PaneID: request.terminalDir.paneID, RawDir: request.terminalDir.rawDir, Fallbacks: request.terminalDir.fallbacks},
+		TerminalDir:  uilaunch.TerminalDirectoryRequest{PaneID: request.terminalDir.PaneID, RawDir: request.terminalDir.RawDir, Fallbacks: request.terminalDir.Fallbacks},
 		TerminalRead: crossTerminalReader(request.terminalRead),
 		Plan:         request.plan,
 		Images:       request.images,

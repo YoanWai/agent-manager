@@ -357,10 +357,22 @@ func RunAfterTurn(services Services, request AfterTurnRequest) (AfterTurnResult,
 }
 
 // AttachRequest is a session to enter, with the fences that say whether the
-// screen it was asked from is still the screen it lands on.
+// screen it was asked from is still the screen it lands on. The runtime does
+// not read them; the caller compares them when the completion lands.
 type AttachRequest struct {
-	ID       string
-	Reattach bool
+	ID            string
+	Reattach      bool
+	Generation    int
+	ForegroundGen uint64
+	Screen        Fence
+}
+
+// Fence is the screen a request was made from: the base screen, whether a
+// session is focused, and how many surfaces are up.
+type Fence struct {
+	Base    uint8
+	Focused bool
+	Depth   int
 }
 
 // AttachResult is what preparing an entry found: a warning that does not stop

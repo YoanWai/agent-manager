@@ -11,6 +11,7 @@ import (
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	uirailpersist "github.com/YoanWai/agent-manager/internal/ui/rail/persist"
 	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
+	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -74,19 +75,19 @@ func (m *Model) nextEffectCmd() tea.Cmd { return m.effects.Next(m.heldBy) }
 // together with the terminals nested under it.
 func (m *Model) heldSessions(request uieffects.Request) []string {
 	switch value := request.(type) {
-	case lifecycleRequest:
-		ids := make([]string, 0, len(value.target.sessions))
-		for _, sess := range value.target.sessions {
+	case uilifecycle.Request:
+		ids := make([]string, 0, len(value.Target.Sessions))
+		for _, sess := range value.Target.Sessions {
 			ids = append(ids, sess.ID)
 		}
 		return ids
-	case afterTurnRequest:
-		if value.cancel {
+	case uilifecycle.AfterTurnRequest:
+		if value.Cancel {
 			return nil
 		}
-		ids := []string{value.id}
+		ids := []string{value.ID}
 		for _, sess := range m.workspace.sessions {
-			if sess.ParentID == value.id {
+			if sess.ParentID == value.ID {
 				ids = append(ids, sess.ID)
 			}
 		}
@@ -156,7 +157,7 @@ func (m *Model) handleEffectCompleted(msg uieffects.Completed) (tea.Model, tea.C
 		return m, m.nextEffectCmd()
 	}
 	switch job.Request.(type) {
-	case focusruntime.InputRequest, quickSendRequest, uiinstall.StartRequest, lifecycleRequest, afterTurnRequest, uirailpersist.Request, uiapply.ForkEffect, spawnRequest, groupRequest, uiapply.RenameEffect, focusruntime.ProbeRequest, focusruntime.AckRequest, attachRequest:
+	case focusruntime.InputRequest, quickSendRequest, uiinstall.StartRequest, uilifecycle.Request, uilifecycle.AfterTurnRequest, uirailpersist.Request, uiapply.ForkEffect, spawnRequest, groupRequest, uiapply.RenameEffect, focusruntime.ProbeRequest, focusruntime.AckRequest, uilifecycle.AttachRequest:
 		if msg.FinishedAt.After(m.effects.latestObservation) {
 			m.effects.latestObservation = msg.FinishedAt
 		}

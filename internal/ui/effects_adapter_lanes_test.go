@@ -11,6 +11,7 @@ import (
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -114,7 +115,7 @@ func TestInputToAPaneWaitsForTheJobRestartingIt(t *testing.T) {
 	if m.effects.Input.Active != nil {
 		t.Fatal("the paste started under the restart of its own pane")
 	}
-	m.handleEffectCompleted(uieffects.Completed{ID: m.effects.Main.Active.ID, Result: lifecycleEffectResult{}, FinishedAt: time.Now()})
+	m.handleEffectCompleted(uieffects.Completed{ID: m.effects.Main.Active.ID, Result: uilifecycle.Result{}, FinishedAt: time.Now()})
 	if id, _ := inputTarget(m.effects.Input.Active); id != "s" {
 		t.Fatalf("input lane active = %#v, want the held paste once the restart ended", m.effects.Input.Active)
 	}
@@ -131,29 +132,8 @@ func TestAKillWaitsForTheInputInFlightToItsPane(t *testing.T) {
 		t.Fatal("kill started while its pane's paste was in flight")
 	}
 	m.handleEffectCompleted(uieffects.Completed{ID: m.effects.Input.Active.ID, Result: focusruntime.InputResult{}, FinishedAt: time.Now()})
-	if _, ok := m.effects.Main.Active.Request.(lifecycleRequest); !ok {
+	if _, ok := m.effects.Main.Active.Request.(uilifecycle.Request); !ok {
 		t.Fatalf("main lane active = %#v, want the kill once the paste landed", m.effects.Main.Active)
-	}
-}
-
-func TestAnAfterTurnEndHoldsTheSessionAndItsTerminals(t *testing.T) {
-	t.Parallel()
-	m := buildModel(t)
-	m.workspace.sessions = []store.Session{{ID: "agent"}, {ID: "shell", ParentID: "agent"}, {ID: "other"}}
-	if got := m.heldSessions(afterTurnRequest{id: "agent"}); !slices.Equal(got, []string{"agent", "shell"}) {
-		t.Fatalf("held = %v, want the agent and its terminal", got)
-	}
-	if got := m.heldSessions(afterTurnRequest{id: "agent", cancel: true}); got != nil {
-		t.Fatalf("a cancelled end holds %v, want nothing", got)
-	}
-}
-
-func TestEffectNameSaysWhichLifecycleActionRuns(t *testing.T) {
-	t.Parallel()
-	for action, want := range map[uidialogs.ConfirmAction]string{uidialogs.ConfirmDelete: "session delete", uidialogs.ConfirmArchive: "session archive", uidialogs.ConfirmRestart: "session restart"} {
-		if got := effectName(lifecycleRequest{target: confirmTarget{action: action}}); got != want {
-			t.Errorf("effectName(%q) = %q, want %q", action, got, want)
-		}
 	}
 }
 
