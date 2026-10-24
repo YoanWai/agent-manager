@@ -259,14 +259,6 @@ func (m *Model) viewGroupDetail(group string, width int) string {
 	return strings.Join(lines, "\n")
 }
 
-// rosterToolColumn is the column a roster's tool names start at, so the
-// roster reads as a table rather than as ragged pairs, and rosterNameMin
-// the width under which a name column stops being worth reading.
-const (
-	rosterToolColumn = 14
-	rosterNameMin    = 8
-)
-
 // viewGroupAgents lists a group's sessions where a session's pane preview
 // would sit, so a group reads as a roster: one row per agent, its name, the
 // CLI running it, and what it is doing.
@@ -280,8 +272,7 @@ func (m *Model) viewGroupAgents(group string, width, height int) string {
 		return uitheme.SubtleStyle().Render("agents") + "\n" + uitheme.MutedStyle().Render(none)
 	}
 
-	type rosterRow struct{ name, tool, state string }
-	var rows []rosterRow
+	var rows []uipreview.RosterRow
 	overflow := ""
 	shown := 0
 	for _, sess := range m.listedAgents() {
@@ -293,64 +284,20 @@ func (m *Model) viewGroupAgents(group string, width, height int) string {
 			break
 		}
 		tint := lipgloss.NewStyle().Foreground(statusColor(sess.Status))
-		rows = append(rows, rosterRow{
-			name:  tint.Render(m.glyphs().StatusGlyph(sess.Status)) + " " + uitheme.ValueStyle().Render(m.displayName(sess)),
-			tool:  uitheme.SubtleStyle().Render(sess.Tool),
-			state: tint.Render(statusLabel(sess.Status)) + uitheme.SubtleStyle().Render(" · "+uiframe.RelSince(uipreview.LastActivity(sess.CreatedAt, sess.LastStatusAt))),
+		rows = append(rows, uipreview.RosterRow{
+			Name:  tint.Render(m.glyphs().StatusGlyph(sess.Status)) + " " + uitheme.ValueStyle().Render(m.displayName(sess)),
+			Tool:  uitheme.SubtleStyle().Render(sess.Tool),
+			State: tint.Render(statusLabel(sess.Status)) + uitheme.SubtleStyle().Render(" · "+uiframe.RelSince(uipreview.LastActivity(sess.CreatedAt, sess.LastStatusAt))),
 		})
 		shown++
 	}
 
-	// The name column is as wide as the longest name allows, bounded by what
-	// the tool and state columns need, so tools land on one column and the
-	// states share a right edge. A column too narrow for all three gives up
-	// the tool first and the state second: a roster of names still answers
-	// "who is in this group".
-	nameWidth, toolWidth, stateWidth := rosterToolColumn, 0, 0
-	for _, row := range rows {
-		if w := ansi.StringWidth(row.name) + 2; w > nameWidth {
-			nameWidth = w
-		}
-		if w := ansi.StringWidth(row.tool); w > toolWidth {
-			toolWidth = w
-		}
-		if w := ansi.StringWidth(row.state); w > stateWidth {
-			stateWidth = w
-		}
+	title := uipreview.RosterRow{
+		Name:  uitheme.SubtleStyle().Render("agent"),
+		Tool:  uitheme.SubtleStyle().Render("tool"),
+		State: uitheme.SubtleStyle().Render("last activity"),
 	}
-	showTool, showState := true, true
-	if width-toolWidth-stateWidth-3 < rosterNameMin {
-		showTool, toolWidth = false, 0
-	}
-	if width-stateWidth-2 < rosterNameMin {
-		showState, stateWidth = false, 0
-	}
-	if room := width - toolWidth - stateWidth - 3; nameWidth > room {
-		nameWidth = max(room, rosterNameMin)
-	}
-
-	head := padRight(uitheme.SubtleStyle().Render("agent"), nameWidth)
-	if showTool {
-		head += uitheme.SubtleStyle().Render("tool")
-	}
-	activity := ""
-	if showState {
-		activity = uitheme.SubtleStyle().Render("last activity")
-	}
-	lines := []string{uiframe.RowColumns(head, activity, width)}
-	for _, row := range rows {
-		// A name trimmed to the column exactly would touch the tool beside
-		// it, so the trim leaves the column's last cell as the gap.
-		line := padRight(ansi.Truncate(row.name, max(nameWidth-1, 1), "…"), nameWidth)
-		if showTool {
-			line += row.tool
-		}
-		state := row.state
-		if !showState {
-			state = ""
-		}
-		lines = append(lines, uiframe.RowColumns(line, state, width))
-	}
+	lines := uipreview.Roster(title, rows, width)
 	if overflow != "" {
 		lines = append(lines, overflow)
 	}

@@ -72,6 +72,12 @@ type PickerResult struct {
 // Card lines around the rows: border, padding, title, spacers, error, hint, "+N more".
 const pickerChrome = 12
 
+// TargetSource is the identity the open Review projects into a picker, which is
+// what a pick or a late read is checked against.
+func (m Model) TargetSource() PickerSource {
+	return PickerSource{Generation: m.gen, TargetID: m.target.ID, RepoRoot: m.repoSel}
+}
+
 // PickerSourceCurrent reports whether source still names this review's
 // target, repo and generation.
 func (m Model) PickerSourceCurrent(source PickerSource) bool {

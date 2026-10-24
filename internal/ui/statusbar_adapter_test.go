@@ -25,7 +25,7 @@ func TestStatusMessageEscapesControlBytes(t *testing.T) {
 	}
 
 	m.errBar.done = payload
-	if !m.errBar.worked() {
+	if !strings.Contains(ansi.Strip(m.statusMessage("✖", "✔", "▲")), "✔") {
 		t.Fatal("matching text and done should read as an outcome")
 	}
 	if got := ansi.Strip(m.statusMessage("✖", "✔", "▲")); !strings.Contains(got, want) {

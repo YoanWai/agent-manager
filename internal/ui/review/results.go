@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	diff "github.com/YoanWai/agent-manager/internal/diff/model"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // ApplyLoad is the only way a load can replace Review's target data. The
@@ -267,4 +268,34 @@ func (m Model) rowCount(fd *diff.FileDiff) int {
 		return len(fd.SideBySideRows())
 	}
 	return len(fd.Lines)
+}
+
+// CarryRoot is what carrying a decision out reaches beyond the Review model: the
+// commands a decision's requests become, the root's memory of the chosen repo,
+// and where its complaints go. None of it reads or writes Review's state, which
+// is what makes it safe to hand a package.
+type CarryRoot interface {
+	ForgetPreferredRepo(repo string)
+	ReportErr(text string)
+	RequestRefresh()
+	ReviewCommands(Requests) tea.Cmd
+}
+
+// Carry returns the command that carries an accepted decision out: its error and
+// its forgotten repo go to the root, and the work it asks for goes back through
+// Review's own command builder. A decision nobody accepted carries nothing.
+func Carry(h CarryRoot, result ApplyResult) tea.Cmd {
+	if !result.Accepted {
+		return nil
+	}
+	if result.Error != "" {
+		h.ReportErr(result.Error)
+	}
+	if result.ForgetPreferredRepo != "" {
+		h.ForgetPreferredRepo(result.ForgetPreferredRepo)
+	}
+	if result.Refresh {
+		h.RequestRefresh()
+	}
+	return h.ReviewCommands(result.Requests)
 }
