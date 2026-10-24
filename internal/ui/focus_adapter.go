@@ -16,6 +16,8 @@ import (
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uipreview "github.com/YoanWai/agent-manager/internal/ui/preview"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
+	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
@@ -166,6 +168,57 @@ func (m *Model) sendFocusReport(report string, echo bool) {
 // pasteFocused is the seam tests swap to observe pastes into the pane.
 var pasteFocused = func(driver *tmux.Driver, id, text string) error {
 	return driver.Paste(id, text)
+}
+
+// foregroundTakenSinceDetach reports whether, since the detach, the user opened
+// a view, a rail prompt or a resize, or asked to enter a session.
+func (m *Model) foregroundTakenSinceDetach() bool {
+	if m.base != baseList || len(m.surfaces) > 0 || m.rail.Busy() {
+		return true
+	}
+	for _, job := range m.effects.Main.Pending {
+		switch job.Request.(type) {
+		case focusruntime.ProbeRequest, uilifecycle.AttachRequest:
+			return true
+		}
+	}
+	return false
+}
+
+// openReviewForReturn opens Review and remembers the session to come back to.
+func (m *Model) openReviewForReturn(sessionID string) tea.Cmd {
+	cmd := m.openDiff()
+	if m.base == baseReview {
+		m.reviewNav.Set(uireviewsource.Return{Kind: uireviewsource.ReturnAttach, SessionID: sessionID})
+	}
+	return cmd
+}
+
+// openEditorForReturn opens the editor over the session's directory.
+func (m *Model) openEditorForReturn(sessionID string) tea.Cmd {
+	_, cmd := m.openEditorWithReaderForReturn(newSystemTerminalDirectoryReader(m), sessionID)
+	return cmd
+}
+
+// watchLandedWrite points the watcher at what a counted write reached, so the
+// pane's echo shows without waiting out the frame budget.
+func (m *Model) watchLandedWrite(sessionID string) {
+	if m.effects.Quitting || !m.focused() || !m.focus.runtime.Ready() {
+		return
+	}
+	if selected, ok := m.selected(); ok && selected.ID == sessionID {
+		m.focus.runtime.Retry()
+		m.watchSelection()
+	}
+}
+
+// recordPrompt writes a prompt receipt onto its row.
+func (m *Model) recordPrompt(sessionID, prompt string) {
+	for i := range m.workspace.sessions {
+		if m.workspace.sessions[i].ID == sessionID {
+			m.workspace.sessions[i].LastPrompt = prompt
+		}
+	}
 }
 
 func (m *Model) focusRegionCmd(sessID string, offset int) tea.Cmd {
