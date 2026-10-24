@@ -65,7 +65,8 @@ func TestSymbolsMouseSaveUsesPaintedRows(t *testing.T) {
 		if !paints(m, "Compatible") {
 			t.Fatal("symbols label did not update")
 		}
-		m, save := clickBody(t, m, "Save and close")
+		x, y := paintedCell(t, m, "save and close")
+		m, save := leftClickCmd(m, x, y)
 		m.applyCmd(t, save)
 		if raw, _ := m.services.store.Setting(uisettings.GlyphModeSetting); raw != "basic" || m.mode != modeList {
 			t.Fatal("mouse save did not persist and close")

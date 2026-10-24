@@ -10,7 +10,9 @@ import (
 )
 
 func TestSettingsWheelReachesSymbolsAndDocsInShortWindows(t *testing.T) {
-	for _, size := range [][2]int{{34, 12}, {80, 11}} {
+	// One row shorter than the symbols line. Save lives in the footer, so the
+	// body spends that row on a field.
+	for _, size := range [][2]int{{34, 11}, {80, 10}} {
 		t.Run(fmt.Sprintf("%dx%d", size[0], size[1]), func(t *testing.T) {
 			m := buildModel(t)
 			m.layout.width, m.layout.height = size[0], size[1]
