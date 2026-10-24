@@ -230,7 +230,10 @@ func TestSettingsDocsRowOpensDocs(t *testing.T) {
 	opened = ""
 	x, y := paintedCell(t, m, "save and close")
 	m, cmd = leftClickCmd(m, x, y)
-	m.applyCmd(t, cmd)
+	if cmd != nil {
+		m.applyCmd(t, cmd)
+	}
+	m.drainEffects(t)
 	if opened != "" {
 		t.Fatalf("the footer save opened %q", opened)
 	}
