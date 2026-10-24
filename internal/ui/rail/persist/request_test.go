@@ -19,7 +19,7 @@ func TestRequestRunsAgainstItsOwnServices(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	if _, ok := result.(ChangeResult); !ok {
+	if _, ok := result.(Result); !ok {
 		t.Fatalf("run returned %T", result)
 	}
 	if got := Collapsed(st); len(got) != 1 || got[0] != "backend" {

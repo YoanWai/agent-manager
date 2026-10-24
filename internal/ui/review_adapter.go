@@ -411,8 +411,8 @@ func (m *Model) handleReviewSend(result uireview.SendResult) tea.Cmd {
 
 // applyReviewChange hands one finished Review change back to the screen it
 // was made on. A change whose op committed nothing has only its error.
-func (m *Model) applyReviewChange(result uireviewsource.ChangeResult, err error) tea.Cmd {
-	switch change := uireviewsource.Result(result); change.Op {
+func (m *Model) applyReviewChange(change uireviewsource.Result, err error) tea.Cmd {
+	switch change.Op {
 	case uireviewsource.Save:
 		return m.handleReviewSave(change.Save)
 	case uireviewsource.Handle:

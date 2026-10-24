@@ -896,7 +896,7 @@ func TestStaleForkCompletionIsDropped(t *testing.T) {
 	request := uiapply.ForkEffect{ForkRequest: uiapply.ForkRequest{Source: openFork(m).Root().(forkRoot).source, Name: openFork(m).Name(), Gen: openFork(m).Gen()}}
 	m.Pop()
 	m.openFork()
-	m.applyFork(request, uiapply.ForkEffectResult{}, nil)
+	m.applyFork(request, uiapply.ForkOutcome{}, nil)
 	if !forkOpen(m) {
 		t.Fatal("a completion from a popped fork closed the reopened card")
 	}

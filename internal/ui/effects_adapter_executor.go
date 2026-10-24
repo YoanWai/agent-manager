@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/execution"
@@ -51,126 +52,114 @@ type effectServices struct {
 // feature package that declares it.
 func (m *Model) bindEffect(request uieffects.Request) func() (uieffects.Result, error) {
 	capture := m.captureServices
-	if work, ok := uieffects.Bind(request, func() focusruntime.Services { return capture().focusRuntime() }); ok {
-		return work
+	binders := []func(uieffects.Request) (func() (uieffects.Result, error), bool){
+		uieffects.Binder(func() focusruntime.Services { return capture().focusRuntime() }),
+		uieffects.Binder(func() uigeometrypanes.Services { return capture().geometry() }),
+		uieffects.Binder(func() uiinstall.Services { return capture().install() }),
+		uieffects.Binder(func() uilink.Services { return capture().link() }),
+		uieffects.Binder(func() uiapply.Services { return capture().dialogApply() }),
+		uieffects.Binder(func() uirailpersist.Services { return capture().railServices() }),
+		uieffects.Binder(func() uireviewsource.Services {
+			return uireviewsource.Services{Store: capture().store, Writer: uireviewsource.DriverWriter(capture().driver)}
+		}),
+		uieffects.Binder(func() uipersist.Services {
+			services := capture()
+			return uipersist.Services{Writer: uipersist.StoreWriter{Store: services.store}, Keys: services.keySaver(), Presets: services.store}
+		}),
+		uieffects.Binder[uinotices.Services](m.noticesServices),
+		uieffects.Binder[uitheme.Services](themeHost{m}.Services),
+		uieffects.Binder(func() uilifecycle.Services { return capture().lifecycleServices() }),
+		uieffects.Binder(func() uilaunch.Services { return capture().launchServices() }),
+		uieffects.Binder(func() uiquicksend.Services { return capture().quickServices() }),
 	}
-	if work, ok := uieffects.Bind(request, func() uigeometrypanes.Services { return capture().geometry() }); ok {
-		return work
-	}
-	if work, ok := uieffects.Bind(request, func() uiinstall.Services { return capture().install() }); ok {
-		return work
-	}
-	if work, ok := uieffects.Bind(request, func() uilink.Services { return capture().link() }); ok {
-		return work
-	}
-	if work, ok := uieffects.Bind(request, func() uiapply.Services { return capture().dialogApply() }); ok {
-		return work
-	}
-	if work, ok := uieffects.Bind(request, func() uirailpersist.Services { return capture().railServices() }); ok {
-		return work
-	}
-	if work, ok := uieffects.Bind(request, func() uireviewsource.Services {
-		return uireviewsource.Services{Store: capture().store, Writer: uireviewsource.DriverWriter(capture().driver)}
-	}); ok {
-		return work
-	}
-	if work, ok := uieffects.Bind[uipersist.Services](request, func() uipersist.Services {
-		services := capture()
-		return uipersist.Services{Writer: uipersist.StoreWriter{Store: services.store}, Keys: services.keySaver(), Presets: services.store}
-	}); ok {
-		return work
-	}
-	if work, ok := uieffects.Bind[uinotices.Services](request, m.noticesServices); ok {
-		return work
-	}
-	if work, ok := uieffects.Bind[uitheme.Services](request, themeHost{m}.Services); ok {
-		return work
-	}
-	if work, ok := uieffects.Bind(request, func() uilifecycle.Services { return capture().lifecycleServices() }); ok {
-		return work
-	}
-	if work, ok := uieffects.Bind(request, func() uilaunch.Services { return capture().launchServices() }); ok {
-		return work
-	}
-	if work, ok := uieffects.Bind(request, func() uiquicksend.Services { return capture().quickServices() }); ok {
-		return work
+	for _, bind := range binders {
+		if work, ok := bind(request); ok {
+			return work
+		}
 	}
 	return func() (uieffects.Result, error) {
 		return nil, fmt.Errorf("effect %s binds no services", request.EffectName())
 	}
 }
 
-// applyEffect applies a finished job's result on Update: a package result
-// through its feature's host, a root result through its own apply.
+// as is a job's result as the type its request's Run returns; the zero value
+// for a request that carries nothing back.
+func as[T any](result uieffects.Result) T {
+	value, _ := result.(T)
+	return value
+}
+
+// applyEffect applies a finished job's result on Update, by the request
+// that produced it: a package result through its feature's host, a root
+// result through its own apply.
 func (m *Model) applyEffect(job *uieffects.Job, result uieffects.Result, err error) tea.Cmd {
-	switch result := result.(type) {
-	case uiinstall.StartResult:
-		return m.ledger.install.Started(installRoot{m}, job.Request.(uiinstall.StartRequest), result, err)
-	case uiinstall.SettleResult:
-		return m.ledger.install.Settled(installRoot{m}, job.Request.(uiinstall.SettleRequest), result, err)
-	case uirailpersist.ChangeResult:
-		return m.applyRailEffect(result, job.Request.(uirailpersist.Request), job.Chain, err)
-	case focusruntime.ProbeResult:
-		return m.applyFocusEffect(job.Request.(focusruntime.ProbeRequest), err)
-	case focusruntime.AckResult:
-		m.applyAckEffect(err)
-		return nil
-	case focusruntime.DetachResult:
-		return m.applyDetachEffect(job.Request.(focusruntime.DetachRequest), result, err)
-	case focusruntime.InputResult:
-		m.applyInputEffect(result, err)
-		return nil
-	case uigeometrypanes.ResizeResult:
-		m.applyGeometryEffect(result.Result, err)
-		return nil
-	case uigeometrypanes.SplitSaveResult:
-		m.layout.panes.ApplySplit(paneSizing{m}, job.ID, err)
-		return nil
-	case uilink.SaveResult:
-		return m.applyConnectionSave(job.Request.(uilink.SaveRequest), result, err)
-	case uilink.Result:
-		return m.applyRemoteCall(job.Request.(uilink.Call), result, err)
-	case uiapply.ForkEffectResult:
-		return m.applyFork(job.Request.(uiapply.ForkEffect), result, err)
-	case uiapply.RenameEffectResult:
-		m.applyRenameOutcome(job, result, err)
-		return nil
-	case uiapply.MoveCloseResult:
-		m.applyMoveClose(job.Request.(uiapply.MoveClose))
-		return nil
-	case uireviewsource.ChangeResult:
-		return m.applyReviewChange(result, err)
-	case uipersist.SaveResult:
-		return m.settings.ApplySave(settingsSaveHost{m}, job.Request.(uipersist.SaveRequest), result, err)
-	case uipersist.KeysResult:
-		return uipersist.ApplyKeys(settingsSaveHost{m}, job.Request.(uipersist.KeysRequest), result, err)
-	case uipersist.PromptResult:
-		m.applyPromptsResult(job.Request.(uipersist.PromptRequest), result, err)
-		return nil
-	case uinotices.DismissResult:
-		m.applyNoticeDismiss(job, err)
-		return nil
-	case uitheme.PaneResult:
-		return uitheme.ApplyPane(themeHost{m}, err)
-	case uilifecycle.Result:
-		return m.applyLifecycleEffect(job.Request.(uilifecycle.Request), result, err)
-	case uilifecycle.AfterTurnResult:
-		return m.applyAfterTurn(job.Request.(uilifecycle.AfterTurnRequest), result, err)
-	case uilifecycle.AttachResult:
-		return m.applyAttachEffect(job.Request.(uilifecycle.AttachRequest), result, err)
-	case uilaunch.Result:
-		return m.applySpawn(job.Request.(uilaunch.Request), result, err)
-	case uilaunch.GroupResult:
-		return m.applyGroupEffect(job.Request.(uilaunch.GroupRequest), result, err)
-	case uiquicksend.SendResult:
-		return uiquicksend.Apply(quickSendRoot{m}, job.Request.(uiquicksend.SendRequest), result, err)
-	case uilaunch.ChoiceSaveResult:
-		// A kept choice carries nothing back: the cache already holds it.
-		if err != nil {
-			m.reportErr(err.Error())
-		}
+	if errors.Is(err, uieffects.ErrStopped) {
+		m.reportErr(err.Error())
 		return nil
 	}
+	switch request := job.Request.(type) {
+	case uiinstall.StartRequest:
+		return m.ledger.install.Started(installRoot{m}, request, as[uiinstall.StartResult](result), err)
+	case uiinstall.SettleRequest:
+		return m.ledger.install.Settled(installRoot{m}, request, as[uiinstall.SettleResult](result), err)
+	case uirailpersist.Request:
+		return m.applyRailEffect(as[uirailpersist.Result](result), request, job.Chain, err)
+	case focusruntime.ProbeRequest:
+		return m.applyFocusEffect(request, err)
+	case focusruntime.AckRequest:
+		m.applyAckEffect(err)
+		return nil
+	case focusruntime.DetachRequest:
+		return m.applyDetachEffect(request, as[focusruntime.Detach](result), err)
+	case focusruntime.InputRequest:
+		m.applyInputEffect(as[focusruntime.Result](result), err)
+		return nil
+	case uigeometrypanes.ResizeRequest:
+		m.applyGeometryEffect(as[uigeometrypanes.Result](result), err)
+		return nil
+	case uigeometrypanes.SplitSaveRequest:
+		m.layout.panes.ApplySplit(paneSizing{m}, job.ID, err)
+		return nil
+	case uilink.SaveRequest:
+		return m.applyConnectionSave(request, as[[]store.Connection](result), err)
+	case uilink.Call:
+		return m.applyRemoteCall(request, as[uilink.Result](result), err)
+	case uiapply.ForkEffect:
+		return m.applyFork(request, as[uiapply.ForkOutcome](result), err)
+	case uiapply.RenameEffect:
+		m.applyRenameOutcome(job, as[uiapply.Outcome](result), err)
+		return nil
+	case uiapply.MoveClose:
+		m.applyMoveClose(request)
+		return nil
+	case uireviewsource.Change:
+		return m.applyReviewChange(as[uireviewsource.Result](result), err)
+	case uipersist.SaveRequest:
+		return m.settings.ApplySave(settingsSaveHost{m}, request, as[uipersist.SaveResult](result), err)
+	case uipersist.KeysRequest:
+		return uipersist.ApplyKeys(settingsSaveHost{m}, request, as[uipersist.KeysResult](result), err)
+	case uipersist.PromptRequest:
+		m.applyPromptsResult(request, as[uipersist.PromptResult](result), err)
+		return nil
+	case uinotices.DismissRequest:
+		m.applyNoticeDismiss(job, err)
+		return nil
+	case uitheme.PaneRequest:
+		return uitheme.ApplyPane(themeHost{m}, err)
+	case uilifecycle.Request:
+		return m.applyLifecycleEffect(request, as[uilifecycle.Result](result), err)
+	case uilifecycle.AfterTurnRequest:
+		return m.applyAfterTurn(request, as[uilifecycle.AfterTurnResult](result), err)
+	case uilifecycle.AttachRequest:
+		return m.applyAttachEffect(request, as[uilifecycle.AttachResult](result), err)
+	case uilaunch.Request:
+		return m.applySpawn(request, as[uilaunch.Result](result), err)
+	case uilaunch.GroupRequest:
+		return m.applyGroupEffect(request, as[uilaunch.GroupResult](result), err)
+	case uiquicksend.SendRequest:
+		return uiquicksend.Apply(quickSendRoot{m}, request, as[uiquicksend.SendResult](result), err)
+	}
+	// A kept model choice carries nothing back: the cache already holds it.
 	if err != nil {
 		m.reportErr(err.Error())
 	}

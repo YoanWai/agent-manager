@@ -149,7 +149,7 @@ func TestAckIgnoresGoneSession(t *testing.T) {
 	if err == nil {
 		t.Fatal("acknowledging a gone session should report the missing row")
 	}
-	if _, ok := result.(focusruntime.AckResult); !ok {
+	if result != nil {
 		t.Fatalf("unexpected result type %T", result)
 	}
 	if _, lookupErr := m.services.store.Get(sess.ID); lookupErr == nil {
@@ -323,7 +323,7 @@ func TestDetachCompletionDoesNotReplaceNewerDialog(t *testing.T) {
 	sess, _ := m.selected()
 	request := focusruntime.DetachRequest{SessionID: sess.ID}
 	m.openForm()
-	m.applyDetachEffect(request, focusruntime.DetachResult{Request: tmux.RequestReview}, nil)
+	m.applyDetachEffect(request, focusruntime.Detach{Request: tmux.RequestReview}, nil)
 	if !formOpen(m) {
 		t.Fatal("detach completion replaced newer dialog")
 	}
@@ -355,7 +355,7 @@ func TestDetachCompletionDoesNotOpenReviewDuringQuit(t *testing.T) {
 	m.selectSessionRow(t, "alpha")
 	sess, _ := m.selected()
 	m.requestQuit()
-	m.applyDetachEffect(focusruntime.DetachRequest{SessionID: sess.ID}, focusruntime.DetachResult{Request: tmux.RequestReview}, nil)
+	m.applyDetachEffect(focusruntime.DetachRequest{SessionID: sess.ID}, focusruntime.Detach{Request: tmux.RequestReview}, nil)
 	if !m.onList() {
 		t.Fatal("detach completion opened review during quit")
 	}

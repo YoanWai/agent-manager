@@ -25,23 +25,16 @@ type DismissRequest struct {
 
 func (DismissRequest) EffectName() string { return "notice dismissal" }
 
-func (r DismissRequest) EffectCopy() uieffects.Request { return r }
-
 // Run writes the dismissal the panel already shows.
 func (r DismissRequest) Run(services Services) (uieffects.Result, error) {
 	if services.Store == nil {
-		return DismissResult{}, fmt.Errorf("dismiss notice %q: store is unavailable", r.ID)
+		return nil, fmt.Errorf("dismiss notice %q: store is unavailable", r.ID)
 	}
 	if err := services.Store.DismissNotice(r.ID); err != nil {
-		return DismissResult{}, fmt.Errorf("dismiss notice %q: %w", r.ID, err)
+		return nil, fmt.Errorf("dismiss notice %q: %w", r.ID, err)
 	}
-	return DismissResult{}, nil
+	return nil, nil
 }
-
-// DismissResult carries nothing back: a dismissal reports only its error.
-type DismissResult struct{}
-
-func (DismissResult) EffectResult() {}
 
 // Queued reports whether a dismissal of id is already on the lane, running
 // or waiting. requests is the lane's dismissals in order.

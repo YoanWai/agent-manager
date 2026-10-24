@@ -679,12 +679,12 @@ func TestConnectionSaveCompletionIsFenced(t *testing.T) {
 	m := openConnectionModel(t)
 	stale := uilink.SaveRequest{Op: uilink.SaveAdd, Next: store.Connection{Name: "box", Destination: "me@box"}, Gen: m.connectionSurface().Gen()}
 	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
-	m.applyConnectionSave(stale, uilink.SaveResult{}, nil)
+	m.applyConnectionSave(stale, nil, nil)
 	if m.connectionDialogOpen() {
 		t.Fatal("a completion reopened a closed card")
 	}
 	m.openConnectionDialog(remote.Connection{})
-	m.applyConnectionSave(stale, uilink.SaveResult{}, nil)
+	m.applyConnectionSave(stale, nil, nil)
 	if !m.connectionDialogOpen() {
 		t.Fatal("a stale completion closed the card that replaced it")
 	}

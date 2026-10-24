@@ -836,7 +836,7 @@ func TestStaleRenameCompletionIsDropped(t *testing.T) {
 	m.openRename()
 	m.gens.dialog++
 	job := &uieffects.Job{Request: uiapply.RenameEffect{Request: uiapply.Request{Kind: uiapply.Session, SessID: openRename(m).SessionID(), Name: name, Gen: gen}}}
-	m.applyRenameOutcome(job, uiapply.RenameEffectResult{}, nil)
+	m.applyRenameOutcome(job, uiapply.Outcome{}, nil)
 	if !renameOpen(m) {
 		t.Fatal("a completion from an older rename closed the newer one")
 	}
@@ -1079,7 +1079,7 @@ func TestRenameGroupPartialFailureReconcilesCommittedStages(t *testing.T) {
 	job := &uieffects.Job{Request: request}
 	m.push(uidialogs.NewRenameSurface(renameRoot{m}, uidialogs.RenameGroup("old", "", 0), ""))
 	m.gens.dialog = 7
-	m.applyRenameOutcome(job, uiapply.RenameEffectResult{Outcome: uiapply.Outcome{GroupRenamed: true}}, errRenameStageTwo)
+	m.applyRenameOutcome(job, uiapply.Outcome{GroupRenamed: true}, errRenameStageTwo)
 
 	groups, _ := m.services.store.Groups()
 	for _, g := range groups {

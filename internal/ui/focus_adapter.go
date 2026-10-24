@@ -326,12 +326,12 @@ func (m *Model) applyFocusEffect(request focusruntime.ProbeRequest, err error) t
 }
 
 // applyDetachEffect opens what a session asked for before it detached.
-func (m *Model) applyDetachEffect(request focusruntime.DetachRequest, result focusruntime.DetachResult, err error) tea.Cmd {
+func (m *Model) applyDetachEffect(request focusruntime.DetachRequest, result focusruntime.Detach, err error) tea.Cmd {
 	return focusruntime.ApplyDetach(focusDetachHost{m}, request, result, err)
 }
 
 // applyInputEffect lands one queued write to a focused pane.
-func (m *Model) applyInputEffect(result focusruntime.InputResult, err error) {
+func (m *Model) applyInputEffect(result focusruntime.Result, err error) {
 	focusruntime.ApplyInput(focusInputHost{m}, result, err)
 }
 

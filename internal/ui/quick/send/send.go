@@ -45,9 +45,7 @@ func (r SendRequest) EffectCopy() uieffects.Request {
 	return r
 }
 
-func (r SendRequest) Run(services Services) (uieffects.Result, error) {
-	return RunSend(services, r)
-}
+func (r SendRequest) Run(s Services) (uieffects.Result, error) { return RunSend(s, r) }
 
 // SendResult is what a send left: how far it got, the transport error, and
 // the error from recording a confirmed prompt on the row.
@@ -56,8 +54,6 @@ type SendResult struct {
 	SendErr     error
 	MetadataErr error
 }
-
-func (SendResult) EffectResult() {}
 
 // Services is the work a send needs done off the update path.
 type Services struct {

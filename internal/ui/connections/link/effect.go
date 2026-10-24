@@ -21,34 +21,17 @@ type Services struct {
 // EffectName names the save for a quit notice.
 func (SaveRequest) EffectName() string { return "SSH connection save" }
 
-func (r SaveRequest) EffectCopy() uieffects.Request { return r }
-
 // Run writes the list and reads it back in the same job.
-func (r SaveRequest) Run(services Services) (uieffects.Result, error) {
-	connections, err := Save(services.Store, r)
-	return SaveResult{Connections: connections}, err
-}
-
-// SaveResult is the list as the store holds it after the write.
-type SaveResult struct {
-	Connections []store.Connection
-}
-
-func (SaveResult) EffectResult() {}
+// The result is the list as the store holds it after the write.
+func (r SaveRequest) Run(s Services) (uieffects.Result, error) { return Save(s.Store, r) }
 
 // EffectName names the call for a quit notice.
 func (Call) EffectName() string { return "call to an SSH connection" }
-
-func (c Call) EffectCopy() uieffects.Request { return c }
 
 // Run makes the call and returns what it left.
 func (c Call) Run(services Services) (uieffects.Result, error) {
 	return Run(context.Background(), services.Client, services.Openers, c)
 }
-
-// EffectResult marks what a call left as a job result, so the manager applies
-// it through its own completion.
-func (Result) EffectResult() {}
 
 // SaveMsg is what a key on the connection card asked of the manager: save a
 // connection, or only clear the status line the card is leaving behind. The

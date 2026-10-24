@@ -517,8 +517,7 @@ func (m *Model) queueRail(mutations []uirail.Mutation, chain uint64, first bool)
 		}, chain, first)
 	}
 }
-func (m *Model) applyRailEffect(change uirailpersist.ChangeResult, request uirailpersist.Request, chain uint64, err error) tea.Cmd {
-	result := change.Result
+func (m *Model) applyRailEffect(result uirailpersist.Result, request uirailpersist.Request, chain uint64, err error) tea.Cmd {
 	mutation := request.Mutation
 	if err == nil {
 		switch mutation.Kind {

@@ -27,18 +27,12 @@ func (r Request) EffectCopy() uieffects.Request {
 	return r
 }
 
-func (r Request) Run(services Services) (uieffects.Result, error) {
-	return Run(services, r)
-}
-
-func (Result) EffectResult() {}
+func (r Request) Run(s Services) (uieffects.Result, error) { return Run(s, r) }
 
 func (AfterTurnRequest) EffectName() string { return "after-turn archive or kill" }
 
-func (r AfterTurnRequest) EffectCopy() uieffects.Request { return r }
+func (r AfterTurnRequest) Run(s Services) (uieffects.Result, error) { return RunAfterTurn(s, r) }
 
-func (r AfterTurnRequest) Run(services Services) (uieffects.Result, error) {
-	return RunAfterTurn(services, r)
-}
+func (AttachRequest) EffectName() string { return "focus or attach" }
 
-func (AfterTurnResult) EffectResult() {}
+func (r AttachRequest) Run(s Services) (uieffects.Result, error) { return RunAttach(s, r) }

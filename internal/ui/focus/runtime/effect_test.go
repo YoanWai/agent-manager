@@ -24,8 +24,8 @@ func TestProbeRequestRefusesADroppedWindow(t *testing.T) {
 	if err == nil {
 		t.Fatal("a window tmux does not hold passed the probe")
 	}
-	if _, ok := result.(ProbeResult); !ok {
-		t.Fatalf("result = %T, want ProbeResult", result)
+	if result != nil {
+		t.Fatalf("result = %T, want nothing", result)
 	}
 }
 
@@ -85,9 +85,9 @@ func TestInputRequestReportsTheWrite(t *testing.T) {
 	if pasted != "draft" {
 		t.Fatalf("pasted %q, want the draft", pasted)
 	}
-	input, ok := result.(InputResult)
+	input, ok := result.(Result)
 	if !ok {
-		t.Fatalf("result = %T, want InputResult", result)
+		t.Fatalf("result = %T, want Result", result)
 	}
 	if input.InputID != current.ID {
 		t.Fatalf("input id = %q, want %q", input.InputID, current.ID)

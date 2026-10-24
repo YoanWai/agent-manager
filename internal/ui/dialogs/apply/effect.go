@@ -13,15 +13,9 @@ func (e ForkEffect) EffectCopy() uieffects.Request {
 	return e
 }
 
-func (e ForkEffect) Run(services Services) (uieffects.Result, error) {
-	result, err := Fork(services.Sources, services.Preflight, e.ForkRequest)
-	return ForkEffectResult{ForkOutcome: result}, err
+func (e ForkEffect) Run(s Services) (uieffects.Result, error) {
+	return Fork(s.Sources, s.Preflight, e.ForkRequest)
 }
-
-// ForkEffectResult is the durable outcome of a fork.
-type ForkEffectResult struct{ ForkOutcome }
-
-func (ForkEffectResult) EffectResult() {}
 
 // RenameEffect carries what the rename worker needs; Request holds the values
 // and Run does the work.
@@ -34,15 +28,9 @@ func (e RenameEffect) EffectCopy() uieffects.Request {
 	return e
 }
 
-func (e RenameEffect) Run(services Services) (uieffects.Result, error) {
-	result, err := Rename(services.Sources, services.Preflight, e.Request)
-	return RenameEffectResult{Outcome: result}, err
+func (e RenameEffect) Run(s Services) (uieffects.Result, error) {
+	return Rename(s.Sources, s.Preflight, e.Request)
 }
-
-// RenameEffectResult reports which durable stages committed, in order.
-type RenameEffectResult struct{ Outcome }
-
-func (RenameEffectResult) EffectResult() {}
 
 // MoveClose is the chained follow-up that closes a move dialog only if the
 // dialog it captured is still the open one.
@@ -58,14 +46,7 @@ type MoveClose struct {
 
 func (MoveClose) EffectName() string { return "move" }
 
-func (c MoveClose) EffectCopy() uieffects.Request { return c }
-
-func (MoveClose) Run(Services) (uieffects.Result, error) { return MoveCloseResult{}, nil }
-
-// MoveCloseResult is the answer to a move close that has nothing to report.
-type MoveCloseResult struct{}
-
-func (MoveCloseResult) EffectResult() {}
+func (MoveClose) Run(Services) (uieffects.Result, error) { return nil, nil }
 
 // Services is what a dialog worker reaches off the update path: the store and
 // git writes its sources hold, and the read-only path probe it resolves

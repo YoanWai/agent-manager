@@ -36,15 +36,6 @@ func (Request) EffectName() string { return "rail change" }
 
 func (r Request) EffectCopy() uieffects.Request { return r.Copied() }
 
-func (r Request) Run(services Services) (uieffects.Result, error) {
-	result, err := NewWriter(services.Store, services.Labels).Apply(r.Mutation, r.Placement)
-	return ChangeResult{Result: result}, err
+func (r Request) Run(s Services) (uieffects.Result, error) {
+	return NewWriter(s.Store, s.Labels).Apply(r.Mutation, r.Placement)
 }
-
-// ChangeResult is a committed Rail change: the rows whose group or parent
-// moved, the path a group move produced, and a warning worth a status line.
-type ChangeResult struct {
-	Result
-}
-
-func (ChangeResult) EffectResult() {}

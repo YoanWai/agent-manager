@@ -31,7 +31,8 @@ func parseEffectDeclarations(t *testing.T) effectDeclarations {
 }
 
 // A request a feature package declares runs only once bindEffect binds its
-// services, and its result reaches the model only through applyEffect.
+// services, and its result reaches the model only through applyEffect. A
+// request whose only outcome is its error may fall through to the default.
 func TestEveryPackageEffectIsBoundAndApplied(t *testing.T) {
 	executor := parseRootFile(t, "effects_adapter_executor.go")
 	bound := map[string]bool{}
@@ -39,7 +40,7 @@ func TestEveryPackageEffectIsBoundAndApplied(t *testing.T) {
 	ast.Inspect(executor, func(node ast.Node) bool {
 		switch node := node.(type) {
 		case *ast.IndexExpr:
-			if selector, ok := node.X.(*ast.SelectorExpr); ok && selector.Sel.Name == "Bind" {
+			if selector, ok := node.X.(*ast.SelectorExpr); ok && selector.Sel.Name == "Binder" {
 				bound[types(node.Index)] = true
 			}
 		case *ast.FuncLit:
@@ -55,22 +56,25 @@ func TestEveryPackageEffectIsBoundAndApplied(t *testing.T) {
 	})
 
 	for _, effect := range packageEffects(t) {
-		if effect.result && !applied[effect.name] {
-			t.Errorf("%s is an effect result with no case in applyEffect", effect.name)
+		if !applied[effect.name] && !errorOnly[effect.name] {
+			t.Errorf("%s is an effect with no case in applyEffect", effect.name)
 		}
-		if effect.services != "" && !bound[effect.services] {
+		if !bound[effect.services] {
 			t.Errorf("%s runs against %s, which bindEffect never binds", effect.name, effect.services)
 		}
 	}
 }
 
+// errorOnly are requests whose outcome is only their error, which the
+// default arm of applyEffect reports.
+var errorOnly = map[string]bool{"uilaunch.ChoiceSaveRequest": true}
+
 type packageEffect struct {
 	name     string
-	result   bool
 	services string
 }
 
-// packageEffects lists the effect results and requests the child packages of
+// packageEffects lists the effect requests the child packages of
 // internal/ui declare, spelled with the alias the root imports them under.
 func packageEffects(t *testing.T) []packageEffect {
 	t.Helper()
@@ -97,8 +101,6 @@ func packageEffects(t *testing.T) []packageEffect {
 			}
 			receiver := alias + "." + strings.TrimPrefix(types(function.Recv.List[0].Type), "*")
 			switch function.Name.Name {
-			case "EffectResult":
-				effects = append(effects, packageEffect{name: receiver, result: true})
 			case "EffectName":
 				named[receiver] = true
 			case "Run":

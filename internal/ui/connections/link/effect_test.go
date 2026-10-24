@@ -27,8 +27,8 @@ func TestSaveRequestRunsAgainstTheStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	saved, ok := result.(SaveResult)
-	if !ok || len(saved.Connections) != 1 || saved.Connections[0].Name != "box" {
+	saved, ok := result.([]store.Connection)
+	if !ok || len(saved) != 1 || saved[0].Name != "box" {
 		t.Fatalf("result = %+v", result)
 	}
 	if request.EffectName() == "" {
@@ -46,8 +46,8 @@ func TestSaveRemoveRunReadsTheListBack(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	if saved := result.(SaveResult); len(saved.Connections) != 0 {
-		t.Fatalf("list = %+v after the removal", saved.Connections)
+	if saved := result.([]store.Connection); len(saved) != 0 {
+		t.Fatalf("list = %+v after the removal", saved)
 	}
 }
 

@@ -38,9 +38,9 @@ func TestResizeRequestRunsAgainstItsServices(t *testing.T) {
 	if driver.sizes["s1"] != [2]int{100, 30} {
 		t.Fatalf("pinned %v, want the request's box", driver.sizes)
 	}
-	landed, ok := result.(ResizeResult)
+	landed, ok := result.(Result)
 	if !ok {
-		t.Fatalf("result = %T, want ResizeResult", result)
+		t.Fatalf("result = %T, want Result", result)
 	}
 	if landed.Publish != [2]int{100, 30} {
 		t.Fatalf("published box = %v, want the request's", landed.Publish)
@@ -56,8 +56,8 @@ func TestSplitSaveRequestWritesTheRatio(t *testing.T) {
 	if err != nil {
 		t.Fatalf("save: %v", err)
 	}
-	if _, ok := result.(SplitSaveResult); !ok {
-		t.Fatalf("result = %T, want SplitSaveResult", result)
+	if result != nil {
+		t.Fatalf("result = %T, want nothing", result)
 	}
 	if st.settings["split_ratio"] != "0.4200" {
 		t.Fatalf("stored ratio = %q", st.settings["split_ratio"])

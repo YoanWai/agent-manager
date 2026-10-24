@@ -234,7 +234,7 @@ func (m *Model) queueFork(request uiapply.ForkEffect) {
 
 // applyFork records the durable fork row the worker committed, then answers
 // the card that asked: an open dialog closes, a stale one keeps its edits.
-func (m *Model) applyFork(request uiapply.ForkEffect, result uiapply.ForkEffectResult, err error) tea.Cmd {
+func (m *Model) applyFork(request uiapply.ForkEffect, result uiapply.ForkOutcome, err error) tea.Cmd {
 	launched := result.Launched
 	if launched.ID != "" {
 		m.markFreshPane(launched.ID)
@@ -340,7 +340,7 @@ func (m *Model) queueRename(request uiapply.RenameEffect) tea.Cmd {
 // applyRenameOutcome mirrors the stages the worker committed into the loaded
 // workspace, then closes the dialog that submitted this job, and only that
 // one: a reopened or resubmitted card keeps its edits.
-func (m *Model) applyRenameOutcome(job *uieffects.Job, result uiapply.RenameEffectResult, err error) {
+func (m *Model) applyRenameOutcome(job *uieffects.Job, result uiapply.Outcome, err error) {
 	request := job.Request.(uiapply.RenameEffect)
 	stages := result.Stages()
 	inventory := uiapply.Inventory{

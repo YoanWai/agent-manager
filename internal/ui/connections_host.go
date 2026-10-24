@@ -211,8 +211,8 @@ func (m *Model) remoteRowLegend() legendSection {
 
 // applyConnectionSave hands a finished save to the runtime, which adopts the
 // list the store returned or leaves the card open with the reason.
-func (m *Model) applyConnectionSave(request uilink.SaveRequest, result uilink.SaveResult, err error) tea.Cmd {
-	return m.ssh.ApplySave(linkRoot{m}, request, result.Connections, err)
+func (m *Model) applyConnectionSave(request uilink.SaveRequest, connections []store.Connection, err error) tea.Cmd {
+	return m.ssh.ApplySave(linkRoot{m}, request, connections, err)
 }
 
 // applyRemoteCall hands what a call left to the runtime, which reports it and

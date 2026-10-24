@@ -32,15 +32,7 @@ func (c Change) EffectCopy() uieffects.Request { return c.Copied() }
 
 // Run keeps the Op it was asked for even when the work failed: the root
 // applies the result by op, and a failed normalization is not a failed save.
-func (c Change) Run(services Services) (uieffects.Result, error) {
-	result, err := Run(c.Request, services.Store, services.Writer)
-	return ChangeResult(result), err
-}
-
-// ChangeResult is what Change committed or refused, one field per Op.
-type ChangeResult Result
-
-func (ChangeResult) EffectResult() {}
+func (c Change) Run(s Services) (uieffects.Result, error) { return Run(c.Request, s.Store, s.Writer) }
 
 // Services is what one Review change runs against: the rows it reads and
 // writes, and the pane a round is typed into.

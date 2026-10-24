@@ -17,11 +17,19 @@ import (
 // queue stopped admitting work.
 var ErrStopped = errors.New("UI effects have stopped")
 
-// Request is the work a job carries. It names itself for a quit notice and
-// copies what its caller still holds before it is queued.
-type Request interface {
-	EffectName() string
-	EffectCopy() Request
+// Request is the work a job carries. It names itself for a quit notice.
+type Request interface{ EffectName() string }
+
+// Copier is a request holding maps or slices its caller still owns; Copy
+// gives the queue its own before the job is pushed.
+type Copier interface{ EffectCopy() Request }
+
+// Copy is request as the queue keeps it.
+func Copy(request Request) Request {
+	if copier, ok := request.(Copier); ok {
+		return copier.EffectCopy()
+	}
+	return request
 }
 
 // Runner is a request that runs against S, the services its package declares.
@@ -31,18 +39,21 @@ type Runner[S any] interface {
 	Run(S) (Result, error)
 }
 
-// Bind captures services for request when it runs against S.
-func Bind[S any](request Request, services func() S) (func() (Result, error), bool) {
-	runner, ok := request.(Runner[S])
-	if !ok {
-		return nil, false
+// Binder captures services for a request that runs against S, false for
+// any other request.
+func Binder[S any](services func() S) func(Request) (func() (Result, error), bool) {
+	return func(request Request) (func() (Result, error), bool) {
+		runner, ok := request.(Runner[S])
+		if !ok {
+			return nil, false
+		}
+		captured := services()
+		return func() (Result, error) { return runner.Run(captured) }, true
 	}
-	captured := services()
-	return func() (Result, error) { return runner.Run(captured) }, true
 }
 
-// Result is what a job's work returns.
-type Result interface{ EffectResult() }
+// Result is what a job's work returns; the root applies it by request type.
+type Result = any
 
 // Completed is the message a job's command returns.
 type Completed struct {

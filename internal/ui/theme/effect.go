@@ -35,17 +35,8 @@ type PaneRequest struct{}
 
 func (PaneRequest) EffectName() string { return "pane theme" }
 
-func (r PaneRequest) EffectCopy() uieffects.Request { return r }
-
 // Run pushes the published pane colors, which shells out to tmux.
-func (r PaneRequest) Run(services Services) (uieffects.Result, error) {
-	return PaneResult{}, services.Tmux.PushPaneTheme()
-}
-
-// PaneResult carries nothing back: a failed push reports only its error.
-type PaneResult struct{}
-
-func (PaneResult) EffectResult() {}
+func (r PaneRequest) Run(s Services) (uieffects.Result, error) { return nil, s.Tmux.PushPaneTheme() }
 
 // StoredName reads the persisted theme name. A read failure falls back to
 // the default theme: the UI still paints, just not in the chosen palette.

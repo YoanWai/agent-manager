@@ -51,7 +51,7 @@ func (m *Model) enqueueEffect(request uieffects.Request, chain uint64, first boo
 	if m.effects.Quitting && !first {
 		return
 	}
-	request = request.EffectCopy()
+	request = uieffects.Copy(request)
 	m.effects.Push(m.laneFor(request), request, chain, first, m.bindEffect(request))
 }
 
@@ -139,7 +139,7 @@ func (m *Model) handleEffectCompleted(msg uieffects.Completed) (tea.Model, tea.C
 	// Keys, paste and mouse change no stored row, so they neither fence a
 	// listing nor ask for a poll; a typed prompt records LastPrompt and does.
 	if request, ok := job.Request.(focusruntime.InputRequest); ok && request.Value.Kind != focusruntime.Prompt {
-		result, _ := msg.Result.(focusruntime.InputResult)
+		result, _ := msg.Result.(focusruntime.Result)
 		m.applyInputEffect(result, msg.Err)
 		return m, m.nextEffectCmd()
 	}

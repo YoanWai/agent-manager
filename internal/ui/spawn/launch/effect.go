@@ -22,11 +22,7 @@ func (r Request) EffectCopy() uieffects.Request {
 	return r
 }
 
-func (r Request) Run(services Services) (uieffects.Result, error) {
-	return Run(services, r)
-}
-
-func (Result) EffectResult() {}
+func (r Request) Run(s Services) (uieffects.Result, error) { return Run(s, r) }
 
 func (GroupRequest) EffectName() string { return "group creation" }
 
@@ -35,11 +31,7 @@ func (r GroupRequest) EffectCopy() uieffects.Request {
 	return r
 }
 
-func (r GroupRequest) Run(services Services) (uieffects.Result, error) {
-	return RunGroup(services, r)
-}
-
-func (GroupResult) EffectResult() {}
+func (r GroupRequest) Run(s Services) (uieffects.Result, error) { return RunGroup(s, r) }
 
 // ChoiceSaveRequest persists a CLI's kept choice or recent models. The
 // settings cache already holds the value, so the next form reads it without
@@ -51,13 +43,7 @@ type ChoiceSaveRequest struct {
 
 func (ChoiceSaveRequest) EffectName() string { return "model choice save" }
 
-func (r ChoiceSaveRequest) EffectCopy() uieffects.Request { return r }
-
-func (r ChoiceSaveRequest) Run(services Services) (uieffects.Result, error) {
-	return ChoiceSaveResult{}, SaveChoice(services.Store, r.Key, r.Value)
+// Run carries nothing back: only its error reaches the model.
+func (r ChoiceSaveRequest) Run(s Services) (uieffects.Result, error) {
+	return nil, SaveChoice(s.Store, r.Key, r.Value)
 }
-
-// ChoiceSaveResult carries nothing back: only its error reaches the model.
-type ChoiceSaveResult struct{}
-
-func (ChoiceSaveResult) EffectResult() {}

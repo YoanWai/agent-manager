@@ -14,39 +14,22 @@ type Services struct {
 	Presets Presets
 }
 
-func (SaveResult) EffectResult() {}
-
-func (KeysResult) EffectResult() {}
-
-func (PromptResult) EffectResult() {}
-
 func (r SaveRequest) EffectName() string { return "settings save" }
 
 func (r SaveRequest) EffectCopy() uieffects.Request { return r.Clone() }
 
 // Run writes the captured values in the order the dialog listed them.
-func (r SaveRequest) Run(services Services) (uieffects.Result, error) {
-	outcome, err := RunSave(r.Clone(), services.Writer)
-	return outcome, err
-}
+func (r SaveRequest) Run(s Services) (uieffects.Result, error) { return RunSave(r.Clone(), s.Writer) }
 
 func (r KeysRequest) EffectName() string { return "key binding save" }
 
-func (r KeysRequest) EffectCopy() uieffects.Request { return r }
-
 // Run writes the changed key tables in list-then-session order.
-func (r KeysRequest) Run(services Services) (uieffects.Result, error) {
-	return RunKeys(r, services.Keys)
-}
+func (r KeysRequest) Run(s Services) (uieffects.Result, error) { return RunKeys(r, s.Keys) }
 
 func (r PromptRequest) EffectName() string { return "saved prompt change" }
 
-func (r PromptRequest) EffectCopy() uieffects.Request { return r }
-
 // Run saves or deletes one name, then reads the catalog back.
-func (r PromptRequest) Run(services Services) (uieffects.Result, error) {
-	return RunPrompt(r, services.Presets)
-}
+func (r PromptRequest) Run(s Services) (uieffects.Result, error) { return RunPrompt(r, s.Presets) }
 
 // KeysToSubmit is the key save the picker's tables ask for, if they ask for
 // one at all.

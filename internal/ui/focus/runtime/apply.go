@@ -56,7 +56,7 @@ type DetachHost interface {
 // ApplyDetach opens the view a session asked for before it detached. The
 // marker is already cleared, so a request the user moved past stays on the
 // status bar instead of vanishing; moving the cursor is not moving past it.
-func ApplyDetach(h DetachHost, request DetachRequest, result DetachResult, err error) tea.Cmd {
+func ApplyDetach(h DetachHost, request DetachRequest, result Detach, err error) tea.Cmd {
 	if err != nil {
 		h.ReportErr(err.Error())
 		return nil
@@ -103,7 +103,7 @@ type InputHost interface {
 
 // ApplyInput lands one queued write: the echo it asks for, the composer draft
 // an enter captured, and the prompt a receipt recorded.
-func ApplyInput(h InputHost, result InputResult, err error) {
+func ApplyInput(h InputHost, result Result, err error) {
 	if err != nil {
 		h.ReportErr(err.Error())
 		return
