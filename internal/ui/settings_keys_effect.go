@@ -1,81 +1,49 @@
 package ui
 
 import (
-	"fmt"
-
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
+	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-type keysRequest struct {
-	list, session  keybind.Table
-	listChanged    bool
-	sessionChanged bool
-}
+// keysRequest is the key picker's tables at dispatch.
+type keysRequest uipersist.KeysRequest
 
-func (keysRequest) EffectRequest() {}
+func (request keysRequest) EffectRequest() {}
 
 func (request keysRequest) copied() effectRequest { return request }
 
 func (keysRequest) effectName() string { return "key binding save" }
 
+func (request keysRequest) saved() uipersist.KeysRequest { return uipersist.KeysRequest(request) }
+
 func (request keysRequest) run(services effectServices) (uieffects.Result, error) {
-	return services.runKeys(request)
+	outcome, err := uipersist.RunKeys(request.saved(), services.keySaver())
+	return keysEffectResult(outcome), err
 }
 
-type keysEffectResult struct {
-	listCommitted    bool
-	sessionCommitted bool
-}
+// keysEffectResult reports which tables landed.
+type keysEffectResult uipersist.KeysResult
 
 func (keysEffectResult) EffectResult() {}
 
 func (result keysEffectResult) apply(m *Model, job *uieffects.Job, err error) tea.Cmd {
-	return m.applyKeysEffect(job, result, err)
+	return uipersist.ApplyKeys(settingsKeysEnv{m}, job.Request.(keysRequest).saved(), uipersist.KeysResult(result), err)
 }
 
-func (s effectServices) runKeys(request keysRequest) (uieffects.Result, error) {
-	result := keysEffectResult{}
-	tot := 0
-	if request.listChanged {
-		tot++
-	}
-	if request.sessionChanged {
-		tot++
-	}
-	committed := 0
-	if request.listChanged {
-		if err := s.saveKeys(request.list); err != nil {
-			return result, fmt.Errorf("key save committed %d of %d writes: %w", committed, tot, err)
-		}
-		result.listCommitted = true
-		committed++
-	}
-	if request.sessionChanged {
-		if err := s.saveKeys(request.session); err != nil {
-			return result, fmt.Errorf("key save committed %d of %d writes: %w", committed, tot, err)
-		}
-		result.sessionCommitted = true
-	}
-	return result, nil
-}
+// settingsKeysEnv is the root as a key save completion reaches it.
+type settingsKeysEnv struct{ *Model }
 
-func (m *Model) applyKeysEffect(job *uieffects.Job, result keysEffectResult, err error) tea.Cmd {
-	request := job.Request.(keysRequest)
-	if result.listCommitted {
-		m.services.listKeys = request.list
+func (e settingsKeysEnv) ReportErr(text string) { e.reportErr(text) }
+
+func (e settingsKeysEnv) SaveKeys(list, session keybind.Table, listChanged, sessionChanged bool) tea.Cmd {
+	if listChanged {
+		e.services.listKeys = list
 	}
-	if result.sessionCommitted {
-		m.services.keys = request.session
-		m.services.tmux.SetSessionKeys(request.session)
+	if sessionChanged {
+		e.services.keys = session
+		e.services.tmux.SetSessionKeys(session)
 	}
-	if err != nil {
-		m.reportErr(err.Error())
-		return nil
-	}
-	if result.sessionCommitted {
-		return m.refreshExistingSessionUX
-	}
-	return nil
+	return e.refreshExistingSessionUX
 }

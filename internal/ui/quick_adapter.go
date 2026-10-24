@@ -44,7 +44,7 @@ func (h quickBarHost) Target() (uiquick.Target, bool) {
 }
 
 func (m *Model) openQuickMode() tea.Cmd {
-	return m.openQuickModeWithReader(storeSettingWriter{st: m.services.store})
+	return m.openQuickModeWithReader(storeSettingWriter{Store: m.services.store})
 }
 
 func (m *Model) openQuickModeWithReader(reader settingsValueReader) tea.Cmd {
@@ -71,17 +71,17 @@ func (m *Model) openQuickModeWithReader(reader settingsValueReader) tea.Cmd {
 	aim, _ := m.rail.Selected()
 	q := newQuickSurface(m)
 	q.Composer = composer.Composer{Input: input, MaxRows: quickBarMaxRows, Gen: m.nextComposerGen()}
-	q.CloseAfterSend = m.settings.cache.value(uisettings.QuickCloseSetting) == "close"
+	q.CloseAfterSend = m.settings.Cache.Value(uisettings.QuickCloseSetting) == "close"
 	q.Aim = quickAim(aim)
 	// The bar is on the stack before its choice starts, so a bar aimed at
 	// a connection starts on the host's defaults.
 	m.push(q)
 	q.Bar = uiquick.NewBar(m.spawnHost(), names, index, m.cachedSpawnWorktreeDefault(m.quickTargetGroup()))
 	catalog := m.ensureCatalog(names[index])
-	if m.settings.pending > 0 {
+	if m.settings.Pending > 0 {
 		return tea.Batch(m.quickWorktreeProbeCmd(false), catalog)
 	}
-	return tea.Batch(settingsLoadCmd(settingsLoadRequest{target: settingsLoadQuick, generation: uint64(q.Gen), extra: m.choiceSettingKeys()}, reader), catalog)
+	return tea.Batch(settingsLoadCmd(settingsLoadRequest{Target: settingsLoadQuick, Generation: uint64(q.Gen), Extra: m.choiceSettingKeys()}, reader), catalog)
 }
 
 // applyCachedQuickDefaults takes the loaded defaults. A tool the load moved
@@ -90,7 +90,7 @@ func (m *Model) applyCachedQuickDefaults() tea.Cmd {
 	q := m.quick()
 	before := q.Tool()
 	q.SetTools(m.cachedSpawnToolSelection())
-	q.CloseAfterSend = m.settings.cache.value(uisettings.QuickCloseSetting) == "close"
+	q.CloseAfterSend = m.settings.Cache.Value(uisettings.QuickCloseSetting) == "close"
 	q.DefaultWorktree(m.cachedSpawnWorktreeDefault(m.quickTargetGroup()))
 	toolName := q.Tool()
 	if toolName == before || toolName == "" {

@@ -455,7 +455,7 @@ func TestRemoteSpawnLeavesThisMachinesChoiceAlone(t *testing.T) {
 	m := connectedModel(t, fake)
 	answered(m, claudeLike, claudeAnswer)
 	const kept = `{"model":"opus","effort":"high"}`
-	m.settings.cache.applyValues([]settingValue{{Key: "choice.claude", Value: kept}})
+	m.settings.Cache.ApplyValues([]settingValue{{Key: "choice.claude", Value: kept}})
 	m.rail.Focus(boxGroup)
 	m.openQuickMode()
 	setQuickTool(m, slices.Index(quickTools(m), "claude"))
@@ -463,7 +463,7 @@ func TestRemoteSpawnLeavesThisMachinesChoiceAlone(t *testing.T) {
 		t.Fatalf("a remote bar starts on this machine's choice: %s", target)
 	}
 	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlX})
-	if got := m.settings.cache.value("choice.claude"); got != kept {
+	if got := m.settings.Cache.Value("choice.claude"); got != kept {
 		t.Fatalf("a pick for the host was kept as this machine's: %s", got)
 	}
 	m.quick().RestartChoice(m.spawnHost())

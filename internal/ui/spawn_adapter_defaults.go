@@ -4,7 +4,6 @@ import (
 	"slices"
 	"time"
 
-	"github.com/YoanWai/agent-manager/internal/config"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -37,7 +36,7 @@ func (m *Model) cachedSpawnWorktreeDefault(group string) bool {
 			return m.ledger.lastSpawnWorktree
 		}
 	}
-	return m.settings.cache.value(uisettings.WorktreeSetting) == "on"
+	return m.settings.Cache.Value(uisettings.WorktreeSetting) == "on"
 }
 
 func (m *Model) cachedEnabledToolNames() []string {
@@ -249,21 +248,9 @@ func (m *Model) spawnBaseLabel(dir, group string) string {
 }
 
 func (m *Model) cachedHiddenTools() map[string]bool {
-	return m.settings.cachedHiddenTools(m.services.cfg)
-}
-
-func (s *settingsFeature) cachedHiddenTools(cfg config.Config) map[string]bool {
-	return uisettings.Tools{Known: knownTools(cfg)}.KnownHidden(s.cache.Hidden())
+	return m.settings.KnownHidden(m.services.cfg)
 }
 
 func (m *Model) cachedToolSelection(hidden map[string]bool, preferred string) ([]string, int) {
-	return m.settings.cachedToolSelection(m.services.cfg, hidden, preferred)
-}
-
-func (s *settingsFeature) cachedToolSelection(cfg config.Config, hidden map[string]bool, preferred string) ([]string, int) {
-	names := cfg.EnabledAgentTools(hidden)
-	if preferred == "" {
-		preferred = s.cache.value(uisettings.DefaultToolSetting)
-	}
-	return names, uisettings.ToolIndex(names, preferred)
+	return m.settings.ToolSelection(m.services.cfg, hidden, preferred)
 }

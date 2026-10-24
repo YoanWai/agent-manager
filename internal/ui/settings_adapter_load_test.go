@@ -95,14 +95,14 @@ func TestSettingsOpenRefreshesExternalChanges(t *testing.T) {
 func TestSettingsLoadRefusesReopenedDialog(t *testing.T) {
 	m := buildModel(t)
 	cmd := m.openSettings()
-	firstGeneration := m.settings.gen
+	firstGeneration := m.settings.Gen
 	if err := m.services.store.SetSetting(uisettings.WorktreeSetting, "on"); err != nil {
 		t.Fatal(err)
 	}
 	loaded := cmd()
 
 	m.openSettings()
-	if m.settings.gen == firstGeneration {
+	if m.settings.Gen == firstGeneration {
 		t.Fatal("reopening settings reused the old generation")
 	}
 	m.applyTestMsg(t, loaded)

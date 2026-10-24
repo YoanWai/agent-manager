@@ -124,7 +124,7 @@ func (m *Model) fitChoices() {
 }
 
 func (m *Model) saveChoiceSetting(key, value string) {
-	m.settings.cache.applyValues([]settingValue{{Key: key, Value: value}})
+	m.settings.Cache.ApplyValues([]settingValue{{Key: key, Value: value}})
 	m.enqueueEffect(choiceSaveRequest{key: key, value: value}, 0, false)
 }
 

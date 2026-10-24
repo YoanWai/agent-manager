@@ -33,13 +33,13 @@ func TestSettingsEscClosesAndSavesOnce(t *testing.T) {
 		m := openedSettings(t)
 		m.settingsCard().State().Field = uisettings.FieldMouse
 		m.cycleSetting(1)
-		before := m.settings.pending
+		before := m.settings.Pending
 		_, cmd := m.Update(k)
 		if m.settingsOpen() || len(m.surfaces) != 0 {
 			t.Fatalf("%v left %d surfaces", k, len(m.surfaces))
 		}
-		if m.settings.pending != before+1 {
-			t.Fatalf("%v queued %d saves, want one", k, m.settings.pending-before)
+		if m.settings.Pending != before+1 {
+			t.Fatalf("%v queued %d saves, want one", k, m.settings.Pending-before)
 		}
 		m.applyCmd(t, cmd)
 	}
@@ -66,14 +66,14 @@ func TestSettingsKeepsATypedEditorLine(t *testing.T) {
 func TestSettingsLoadsAreFencedToTheirVisit(t *testing.T) {
 	t.Parallel()
 	m := openedSettings(t)
-	stale := settingsLoadedMsg{request: settingsLoadRequest{target: settingsLoadDialog, generation: m.settings.gen - 1}}
+	stale := settingsLoadedMsg{Request: settingsLoadRequest{Target: settingsLoadDialog, Generation: m.settings.Gen - 1}}
 	m.settingsCard().State().Field = uisettings.FieldMouse
 	m.handleSettingsLoaded(stale)
 	if m.settingsCard().State().Field != uisettings.FieldMouse {
 		t.Fatal("an earlier visit's load rebuilt the card")
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
-	m.handleSettingsLoaded(settingsLoadedMsg{request: settingsLoadRequest{target: settingsLoadDialog, generation: m.settings.gen}})
+	m.handleSettingsLoaded(settingsLoadedMsg{Request: settingsLoadRequest{Target: settingsLoadDialog, Generation: m.settings.Gen}})
 	if m.settingsOpen() {
 		t.Fatal("a load reopened a closed card")
 	}

@@ -16,7 +16,7 @@ type blockedSettingReader struct {
 	values  map[string]string
 }
 
-func (r *blockedSettingReader) get(key string) (string, error) {
+func (r *blockedSettingReader) Setting(key string) (string, error) {
 	r.once.Do(func() { close(r.started) })
 	<-r.release
 	return r.values[key], nil

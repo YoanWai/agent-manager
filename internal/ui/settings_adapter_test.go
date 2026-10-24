@@ -11,6 +11,7 @@ import (
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uirelease "github.com/YoanWai/agent-manager/internal/ui/notices/release"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
+	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
 	"github.com/YoanWai/agent-manager/internal/update"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -705,7 +706,7 @@ func TestSettingsEscWithoutChangesWritesNothing(t *testing.T) {
 	}
 	m.applyCmd(t, save)
 
-	values, hidden, hiddenErr := settingsReadback(storeSettingWriter{st: m.services.store})
+	values, hidden, hiddenErr := uipersist.SettingsReadback(storeSettingWriter{Store: m.services.store})
 	for _, value := range values {
 		raw, err := m.services.store.Setting(value.Key)
 		if err != nil || raw != "" {

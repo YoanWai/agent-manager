@@ -58,8 +58,8 @@ func (m *Model) openFocusSaved() tea.Cmd {
 }
 
 func (m *Model) loadFocusSaved(msg savedPromptsLoadedMsg) {
-	if saved, ok := surfaceOf[*uifocus.Saved](m); ok && saved.Gen() == msg.gen {
-		saved.Load(spawnSaved(msg.rows), msg.err)
+	if saved, ok := surfaceOf[*uifocus.Saved](m); ok && saved.Gen() == msg.Gen {
+		saved.Load(spawnSaved(msg.Rows), msg.Err)
 	}
 }
 

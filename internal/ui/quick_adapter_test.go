@@ -833,7 +833,7 @@ func TestQuickSeedsFromLastFormSpawn(t *testing.T) {
 func TestQuickCloseAfterSendDefaultsToStayingOpen(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
-	if m.settings.cache.value(uisettings.QuickCloseSetting) == "close" {
+	if m.settings.Cache.Value(uisettings.QuickCloseSetting) == "close" {
 		t.Fatal("quick bar should stay open by default")
 	}
 	if err := m.services.store.SetSetting(uisettings.QuickCloseSetting, "close"); err != nil {

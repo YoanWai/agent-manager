@@ -77,7 +77,7 @@ func TestSymbolsMouseSaveUsesPaintedRows(t *testing.T) {
 func TestSymbolsRejectInvalidAndStaleReads(t *testing.T) {
 	m := buildModel(t)
 	m.applyCmd(t, m.openSettings())
-	stale := settingsLoadedMsg{request: settingsLoadRequest{target: settingsLoadDialog, generation: m.settings.gen}, result: settingsLoadResult{values: []restoredValue{{Key: uisettings.GlyphModeSetting, Value: "advanced"}}}}
+	stale := settingsLoadedMsg{Request: settingsLoadRequest{Target: settingsLoadDialog, Generation: m.settings.Gen}, Result: settingsLoadResult{Values: []uisettings.Readback{{Key: uisettings.GlyphModeSetting, Value: "advanced"}}}}
 	m.settingsCard().State().Field = uisettings.FieldGlyphs
 	m.handleSettingsKey(key("right"))
 	m.handleSettingsLoaded(stale)
@@ -100,13 +100,13 @@ func TestSymbolsSaveFailureRestoresAndCanRetry(t *testing.T) {
 	m.applyCmd(t, m.openSettings())
 	m.settingsCard().State().Field = uisettings.FieldGlyphs
 	m.handleSettingsKey(key("right"))
-	request := settingsRequest{values: m.settingsCard().State().ChangedValues(), generation: m.settings.gen}
+	request := settingsRequest{values: m.settingsCard().State().ChangedValues(), generation: m.settings.Gen}
 	writer := &settingsScriptWriter{failOn: uisettings.GlyphModeSetting, values: map[string]string{}}
-	result, err := runSettingsWithWriter(request, writer)
+	result, err := request.execute(writer)
 	if err == nil {
 		t.Fatal("fixture write must fail")
 	}
-	m.applySettingsEffect(&uieffects.Job{Request: request}, result.(settingsEffectResult), err)
+	m.applySettingsEffect(&uieffects.Job{Request: request}, result, err)
 	if m.prefs.glyphMode != "" || m.errBar.text == "" {
 		t.Fatal("failed symbols save did not restore default and report failure")
 	}

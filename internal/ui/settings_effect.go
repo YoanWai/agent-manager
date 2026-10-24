@@ -1,16 +1,56 @@
 package ui
 
 import (
-	"fmt"
-	"strings"
-
-	"github.com/YoanWai/agent-manager/internal/store"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
-	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
+	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
 	tea "github.com/charmbracelet/bubbletea"
-	"slices"
 )
+
+type (
+	settingsLoadRequest = uipersist.LoadRequest
+	settingsLoadResult  = uipersist.LoadResult
+	settingsLoadedMsg   = uipersist.LoadedMsg
+	settingsValueReader = uipersist.Reader
+	storeSettingWriter  = uipersist.StoreWriter
+)
+
+const (
+	settingsLoadDialog = uipersist.DialogTarget
+	settingsLoadForm   = uipersist.FormTarget
+	settingsLoadQuick  = uipersist.QuickTarget
+)
+
+// settingsLoadCmd reads the store off the update path for the surface that
+// asked.
+func settingsLoadCmd(request settingsLoadRequest, reader settingsValueReader) tea.Cmd {
+	return uipersist.LoadCmd(request, reader)
+}
+
+// settingsEnv is the root as a save completion reaches it.
+type settingsEnv struct{ *Model }
+
+func (e settingsEnv) ReportErr(text string) { e.reportErr(text) }
+
+func (e settingsEnv) Caveat(text string) { e.reportErr(e.errBar.text + "; " + text) }
+
+func (e settingsEnv) MirrorPrefs(values []uisettings.Readback) string {
+	return e.reconcileSettingsPrefs(values)
+}
+
+func (e settingsEnv) Restore(values []uisettings.Readback, hiddenRaw string, hiddenErr error, editors *uisettings.EditorsProbe) {
+	if card, open := surfaceOf[*uisettings.Surface](e); open {
+		card.State().Restore(values, hiddenRaw, hiddenErr, editors)
+	}
+}
+
+func (e settingsEnv) Update(staged bool) tea.Cmd {
+	if !staged {
+		e.release.Applying = false
+		return nil
+	}
+	return e.release.Apply()
+}
 
 // settingsRequest captures the dialog's chosen preferences and CLI
 // visibility at dispatch; the worker persists them outside Update in the
@@ -27,26 +67,32 @@ func (settingsRequest) EffectRequest() {}
 func (settingsRequest) effectName() string { return "settings save" }
 
 func (value settingsRequest) copied() effectRequest {
-	value.values = slices.Clone(value.values)
-	value.hidden = slices.Clone(value.hidden)
-	return value
+	copied := value.saved().Clone()
+	return settingsRequest{values: copied.Values, hidden: copied.Hidden, followUpdate: value.followUpdate, generation: value.generation}
+}
+
+func (request settingsRequest) saved() uipersist.SaveRequest {
+	return uipersist.SaveRequest{
+		Values:       request.values,
+		Hidden:       request.hidden,
+		StagedUpdate: request.followUpdate,
+		Generation:   request.generation,
+	}
 }
 
 func (request settingsRequest) run(services effectServices) (uieffects.Result, error) {
-	return services.runSettings(request)
+	return request.execute(services.settingWriter())
 }
 
-// settingsEffectResult reports what the worker durably committed. On a
-// partial failure, restored carries the read-back of the committed keys
-// with a per-key read error: a failed read must not be presented as the
-// committed value. nil restored means every write committed.
-type settingsEffectResult struct {
-	generation     uint64
-	committed, tot int
-	restored       []restoredValue
-	restoredHidden string
-	hiddenErr      error
+// execute writes the captured values through writer and reports what landed.
+func (request settingsRequest) execute(writer uipersist.Writer) (settingsEffectResult, error) {
+	outcome, err := uipersist.RunSave(request.saved(), writer)
+	return settingsEffectResult{outcome: outcome}, err
 }
+
+// settingsEffectResult is what the worker durably committed, as the persist
+// package reports it.
+type settingsEffectResult struct{ outcome uipersist.SaveResult }
 
 func (settingsEffectResult) EffectResult() {}
 
@@ -54,206 +100,30 @@ func (result settingsEffectResult) apply(m *Model, job *uieffects.Job, err error
 	return m.applySettingsEffect(job, result, err)
 }
 
-type settingsLoadTarget uint8
-
-const (
-	settingsLoadDialog settingsLoadTarget = iota
-	settingsLoadForm
-	settingsLoadQuick
-)
-
-type settingsLoadRequest struct {
-	target     settingsLoadTarget
-	generation uint64
-	// extra are keys outside the dialog, read into the cache alongside it.
-	extra []string
+func (s effectServices) settingWriter() uipersist.Writer {
+	return uipersist.StoreWriter{Store: s.store}
 }
 
-type settingsLoadResult struct {
-	values    []restoredValue
-	hiddenRaw string
-	hiddenErr error
-}
-
-type settingsLoadedMsg struct {
-	request settingsLoadRequest
-	result  settingsLoadResult
-	err     error
-}
-
-type settingsValueReader interface {
-	get(key string) (string, error)
-}
-
-// settingWriter is the store seam the settings worker writes through;
-// tests script a failing write to prove the partial outcome.
-type settingWriter interface {
-	settingsValueReader
-	set(key, value string) error
-	setProactive(proactive bool) error
-}
-
-type storeSettingWriter struct{ st *store.Store }
-
-func (w storeSettingWriter) set(key, value string) error { return w.st.SetSetting(key, value) }
-func (w storeSettingWriter) setProactive(proactive bool) error {
-	return w.st.SetProactiveCoordination(proactive)
-}
-func (w storeSettingWriter) get(key string) (string, error) { return w.st.Setting(key) }
-
-func loadSettingsCache(st *store.Store, extra []string) settingsCache {
-	reader := storeSettingWriter{st: st}
-	result, _ := loadSettingsWithReader(reader)
-	cache := settingsCache{}
-	cache.ApplyReadback(append(result.values, readSettingKeys(reader, extra)...), result.hiddenRaw, result.hiddenErr)
-	return cache
-}
-
-func readSettingKeys(reader settingsValueReader, keys []string) []restoredValue {
-	values := make([]restoredValue, 0, len(keys))
-	for _, key := range keys {
-		value, err := reader.get(key)
-		if err == nil && key == uisettings.GlyphModeSetting && value != "" && value != string(presentation.GlyphModeBasic) && value != string(presentation.GlyphModeAdvanced) {
-			err = fmt.Errorf("unknown symbols setting: %s", value)
-		}
-		values = append(values, restoredValue{Key: key, Value: value, Err: err})
+// keySaver writes one key table through the instance writer the job
+// captured, or the store when the model was built without one.
+func (s effectServices) keySaver() uipersist.KeySaver {
+	if s.saveKeys != nil {
+		return s.saveKeys
 	}
-	return values
+	return s.store.SetKeys
 }
 
-func loadSettingsWithReader(reader settingsValueReader) (settingsLoadResult, error) {
-	values, hiddenRaw, hiddenErr := settingsReadback(reader)
-	result := settingsLoadResult{values: values, hiddenRaw: hiddenRaw, hiddenErr: hiddenErr}
-	failed := 0
-	var first error
-	for _, value := range values {
-		if value.Err != nil {
-			failed++
-			if first == nil {
-				first = fmt.Errorf("%s: %w", value.Key, value.Err)
-			}
-		}
-	}
-	if hiddenErr != nil {
-		failed++
-		if first == nil {
-			first = fmt.Errorf("%s: %w", uisettings.HiddenToolsSetting, hiddenErr)
-		}
-	}
-	if first != nil {
-		return result, fmt.Errorf("settings load: %d reads failed; first: %w", failed, first)
-	}
-	return result, nil
-}
-
-func settingsLoadCmd(request settingsLoadRequest, reader settingsValueReader) tea.Cmd {
-	return func() tea.Msg {
-		result, err := loadSettingsWithReader(reader)
-		result.values = append(result.values, readSettingKeys(reader, request.extra)...)
-		return settingsLoadedMsg{request: request, result: result, err: err}
-	}
-}
-
-func (s effectServices) runSettings(request settingsRequest) (uieffects.Result, error) {
-	return runSettingsWithWriter(request, storeSettingWriter{st: s.store})
-}
-
-func runSettingsWithWriter(request settingsRequest, writer settingWriter) (uieffects.Result, error) {
-	result := settingsEffectResult{generation: request.generation}
-	result.tot = len(request.values)
-	if request.hidden != nil {
-		result.tot++
-	}
-	for _, value := range request.values {
-		var err error
-		if value.Proactive {
-			err = writer.setProactive(value.Value == "on")
-		} else {
-			err = writer.set(value.Key, value.Value)
-		}
-		if err != nil {
-			result.restored, result.restoredHidden, result.hiddenErr = settingsReadback(writer)
-			return result, fmt.Errorf("settings save committed %d of %d writes: %w", result.committed, result.tot, err)
-		}
-		result.committed++
-	}
-	if request.hidden != nil {
-		raw := strings.Join(request.hidden, ",")
-		if err := writer.set(uisettings.HiddenToolsSetting, raw); err != nil {
-			result.restored, result.restoredHidden, result.hiddenErr = settingsReadback(writer)
-			return result, fmt.Errorf("settings save committed %d of %d writes: %w", result.committed, result.tot, err)
-		}
-		result.committed++
-	}
-	return result, nil
-}
-
-// settingsReadback returns the committed keys' values after a partial
-// failure, with a per-key read error, so completion never presents a
-// failed read as the committed value.
-func settingsReadback(writer settingsValueReader) ([]restoredValue, string, error) {
-	values := readSettingKeys(writer, uisettings.ReadbackKeys)
-	// The stored coordination value is the proactive marker
-	// SetProactiveCoordination writes; the dialog reads it as on or off.
-	coordValue, coordErr := writer.get(uisettings.CoordinationSetting)
-	coord := "off"
-	if coordErr == nil && coordValue == "proactive" {
-		coord = "on"
-	}
-	values = append(values, restoredValue{Key: uisettings.CoordinationSetting, Value: coord, Err: coordErr})
-	hidden, hiddenErr := writer.get(uisettings.HiddenToolsSetting)
-	return values, hidden, hiddenErr
-}
-
-// applySettingsEffect reconciles the worker's durable outcome. Prefs are
-// runtime state, not dialog state: a failure's committed read-back
-// reconciles them on every completion, stale included — the lane's FIFO
-// order lets a later save's completion win, so an earlier failure's
-// applied-preference mismatch is never hidden behind a generation fence.
-// Dialog fields are restored only while the request is the latest
-// accepted save, so a newer dialog is never replaced.
+// applySettingsEffect reconciles the worker's durable outcome, which the
+// persist package decides: a partial failure's committed read-back reaches
+// the prefs and the card that is still the one that asked.
 func (m *Model) applySettingsEffect(job *uieffects.Job, result settingsEffectResult, err error) tea.Cmd {
 	request := job.Request.(settingsRequest)
-	if m.settings.pending > 0 {
-		m.settings.pending--
-	}
-	stale := m.settings.gen != request.generation
-	if err != nil {
-		m.reportErr(err.Error())
-		if result.restored != nil {
-			m.settings.cache.applyReadback(result.restored, result.restoredHidden, result.hiddenErr)
-			if note := m.reconcileSettingsPrefs(result.restored); note != "" {
-				m.reportErr(m.errBar.text + "; " + note)
-			}
-			if card, open := surfaceOf[*uisettings.Surface](m); open && !stale {
-				card.State().Restore(result.restored, result.restoredHidden, result.hiddenErr, m.settings.cache.Editors())
-			}
-		}
-	}
-	if err == nil {
-		m.settings.cache.applyValues(request.values)
-		if request.hidden != nil {
-			m.settings.cache.applyHidden(request.hidden)
-		}
-		committed := make([]restoredValue, 0, len(request.values))
-		for _, value := range request.values {
-			committed = append(committed, restoredValue{Key: value.Key, Value: value.Value})
-		}
-		m.reconcileSettingsPrefs(committed)
-	}
-	if request.followUpdate {
-		if err != nil {
-			m.release.Applying = false
-			return nil
-		}
-		return m.release.Apply()
-	}
-	return nil
+	return m.settings.ApplySave(settingsEnv{m}, request.saved(), result.outcome, err)
 }
 
 // reconcileSettingsPrefs restores the live-session prefs to the committed
 // read-back; keys whose read failed keep their current value.
-func (m *Model) reconcileSettingsPrefs(restored []restoredValue) string {
+func (m *Model) reconcileSettingsPrefs(restored []uisettings.Readback) string {
 	failed := 0
 	for _, value := range restored {
 		if value.Err != nil {
@@ -262,8 +132,5 @@ func (m *Model) reconcileSettingsPrefs(restored []restoredValue) string {
 		}
 		m.mirrorPreference(value.Key, value.Value)
 	}
-	if failed == 0 {
-		return ""
-	}
-	return fmt.Sprintf("%d committed-value reads failed; the prefs keep their current state for them", failed)
+	return uipersist.ReadFailureNote(failed)
 }

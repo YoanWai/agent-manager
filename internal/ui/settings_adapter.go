@@ -11,30 +11,15 @@ import (
 	"github.com/YoanWai/agent-manager/internal/systheme"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
+	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 type (
 	settingsState    = uisettings.State
 	settingValue     = uisettings.Value
-	restoredValue    = uisettings.Readback
 	editorsProbedMsg = uisettings.EditorsProbe
 )
-
-// settingsCache is the feature's cache of the stored settings. The spawn,
-// quick and connections call sites and the settings tests read it by the
-// lower-case names it had before the cache moved into the package.
-type settingsCache struct{ uisettings.Cache }
-
-func (c settingsCache) value(key string) string { return c.Value(key) }
-
-func (c *settingsCache) applyValues(values []settingValue) { c.ApplyValues(values) }
-
-func (c *settingsCache) applyHidden(names []string) { c.ApplyHidden(names) }
-
-func (c *settingsCache) applyReadback(values []restoredValue, hiddenRaw string, hiddenErr error) {
-	c.ApplyReadback(values, hiddenRaw, hiddenErr)
-}
 
 // SettingSpecs is every key Settings writes and the values each takes, so
 // the shell checks a value against the same choices the modal steps
@@ -52,34 +37,12 @@ func SettingSpecs() ([]store.SettingSpec, error) {
 	return out, nil
 }
 
-func knownTools(cfg config.Config) map[string]bool {
-	known := make(map[string]bool, len(cfg.Tools))
-	for name := range cfg.Tools {
-		known[name] = true
-	}
-	return known
-}
-
-func settingsTools(cfg config.Config) uisettings.Tools {
-	return uisettings.Tools{Agents: cfg.AgentToolNames(), Known: knownTools(cfg)}
-}
-
-func (s *settingsFeature) stateFromCache(cfg config.Config) settingsState {
-	return uisettings.FromSnapshot(uisettings.Snapshot{
-		Values:  s.cache.Values(),
-		Hidden:  s.cache.Hidden(),
-		Editors: s.cache.Editors(),
-		Tools:   settingsTools(cfg),
-		Theme:   current().Name,
-	})
-}
-
 func (m *Model) settingsContext() uisettings.Context {
 	session, list := m.settingsKeyTables()
 	return uisettings.Context{
-		Tools:       settingsTools(m.services.cfg),
-		Hidden:      m.settings.cache.Hidden(),
-		DefaultTool: m.settings.cache.Value(uisettings.DefaultToolSetting),
+		Tools:       uipersist.Tools(m.services.cfg),
+		Hidden:      m.settings.Cache.Hidden(),
+		DefaultTool: m.settings.Cache.Value(uisettings.DefaultToolSetting),
 		Session:     session,
 		List:        list,
 		UpdateReady: m.release.Latest != "",
@@ -87,41 +50,40 @@ func (m *Model) settingsContext() uisettings.Context {
 }
 
 func (m *Model) openSettings() tea.Cmd {
-	return m.openSettingsWithReader(storeSettingWriter{st: m.services.store})
+	return m.openSettingsWithReader(storeSettingWriter{Store: m.services.store})
 }
 
 // openSettingsWithReader builds the dialog from the cache and asks the
 // store for anything another writer changed meanwhile.
 func (m *Model) openSettingsWithReader(reader settingsValueReader) tea.Cmd {
 	s := &m.settings
-	s.gen++
+	s.Gen++
 	if len(m.services.cfg.Tools) == 0 {
 		m.reportErr("no tools configured")
 		return nil
 	}
 	m.clearErr()
-	state := s.stateFromCache(m.services.cfg)
+	state := s.FromCache(m.services.cfg, current().Name)
 	state.MarkBaseline()
 	m.push(newSettingsSurface(m, state))
-	probe := s.probeEditorsCmd()
-	if s.pending > 0 {
+	probe := m.probeEditorsCmd()
+	if s.Pending > 0 {
 		return probe
 	}
-	return tea.Batch(settingsLoadCmd(settingsLoadRequest{target: settingsLoadDialog, generation: s.gen}, reader), probe)
+	return tea.Batch(settingsLoadCmd(settingsLoadRequest{Target: settingsLoadDialog, Generation: s.Gen}, reader), probe)
 }
 
 func (m *Model) handleSettingsLoaded(msg settingsLoadedMsg) (tea.Model, tea.Cmd) {
 	var follow tea.Cmd
-	switch msg.request.target {
+	switch msg.Request.Target {
 	case settingsLoadDialog:
 		card, open := surfaceOf[*uisettings.Surface](m)
-		if msg.request.generation != m.settings.gen || !open ||
-			card.State().Busy() || m.settings.pending > 0 {
+		if !open || !m.settings.Fresh(msg.Request.Generation) || card.State().Busy() {
 			return m, nil
 		}
-		m.settings.cache.ApplyReadback(msg.result.values, msg.result.hiddenRaw, msg.result.hiddenErr)
+		m.settings.Take(msg.Result)
 		field := card.State().Field
-		card.SetState(m.settings.stateFromCache(m.services.cfg))
+		card.SetState(m.settings.FromCache(m.services.cfg, current().Name))
 		// A manual theme the shell changed meanwhile repaints here, so esc
 		// keeps it instead of writing back the palette cached at startup.
 		if d := card.State(); !d.ThemeAuto && current().Name != d.ManualTheme {
@@ -133,19 +95,19 @@ func (m *Model) handleSettingsLoaded(msg settingsLoadedMsg) (tea.Model, tea.Cmd)
 		card.State().MarkBaseline()
 		card.State().Field = field
 	case settingsLoadForm:
-		f, ok := m.formFor(int(msg.request.generation))
-		if !ok || f.DefaultsTouched() || m.settings.pending > 0 {
+		f, ok := m.formFor(int(msg.Request.Generation))
+		if !ok || f.DefaultsTouched() || m.settings.Pending > 0 {
 			return m, nil
 		}
-		m.settings.cache.ApplyReadback(msg.result.values, msg.result.hiddenRaw, msg.result.hiddenErr)
+		m.settings.Take(msg.Result)
 		m.refreshFormChoicePrefs()
 		follow = tea.Batch(m.applyCachedFormDefaults(), m.formWorktreeProbeCmd(false))
 	case settingsLoadQuick:
-		q, ok := m.quickFor(int(msg.request.generation))
-		if !ok || q.DefaultsTouched() || m.settings.pending > 0 {
+		q, ok := m.quickFor(int(msg.Request.Generation))
+		if !ok || q.DefaultsTouched() || m.settings.Pending > 0 {
 			return m, nil
 		}
-		m.settings.cache.ApplyReadback(msg.result.values, msg.result.hiddenRaw, msg.result.hiddenErr)
+		m.settings.Take(msg.Result)
 		m.refreshQuickChoicePrefs()
 		follow = tea.Batch(m.applyCachedQuickDefaults(), m.quickWorktreeProbeCmd(false))
 	default:
@@ -153,8 +115,8 @@ func (m *Model) handleSettingsLoaded(msg settingsLoadedMsg) (tea.Model, tea.Cmd)
 	}
 	m.applyCachedSettingsPrefs()
 	m.rebuildRows()
-	if msg.err != nil {
-		m.reportErr(msg.err.Error())
+	if msg.Err != nil {
+		m.reportErr(msg.Err.Error())
 	} else {
 		m.clearErr()
 	}
@@ -243,34 +205,34 @@ func (m *Model) captureSettingsSave(d *settingsState, includeHidden, followUpdat
 
 func (m *Model) queueSettingsSave(d *settingsState, includeHidden, followUpdate bool) {
 	s := &m.settings
-	s.gen++
+	s.Gen++
 	request := settingsRequest{
 		values:       d.ChangedValues(),
 		followUpdate: followUpdate,
-		generation:   s.gen,
+		generation:   s.Gen,
 	}
 	if hidden := d.HiddenList(); includeHidden && !d.HiddenAtBaseline(hidden) {
 		request.hidden = hidden
 	}
 	d.AdvanceBaseline(request.values, request.hidden)
-	s.cache.ApplyValues(request.values)
+	s.Cache.ApplyValues(request.values)
 	if request.hidden != nil {
-		s.cache.ApplyHidden(request.hidden)
+		s.Cache.ApplyHidden(request.hidden)
 	}
-	s.pending++
+	s.Pending++
 	m.enqueueEffect(request, 0, false)
 }
 
 func (m *Model) captureHiddenSave(d *settingsState) tea.Cmd {
 	s := &m.settings
-	s.gen++
+	s.Gen++
 	request := settingsRequest{
 		hidden:     d.HiddenList(),
-		generation: s.gen,
+		generation: s.Gen,
 	}
 	d.AdvanceBaseline(nil, request.hidden)
-	s.cache.ApplyHidden(request.hidden)
-	s.pending++
+	s.Cache.ApplyHidden(request.hidden)
+	s.Pending++
 	return m.submitSettings(request)
 }
 
@@ -285,21 +247,21 @@ func (m *Model) saveSettingsKeys(d *settingsState) tea.Cmd {
 		return nil
 	}
 	return m.submitKeys(keysRequest{
-		list:           change.List,
-		session:        change.Session,
-		listChanged:    change.ListChanged,
-		sessionChanged: change.SessionChanged,
+		List:           change.List,
+		Session:        change.Session,
+		ListChanged:    change.ListChanged,
+		SessionChanged: change.SessionChanged,
 	})
 }
 
 func (m *Model) settingsKeyTables() (keybind.Table, keybind.Table) {
 	expectedSession, expectedList := m.services.keys, m.services.listKeys
 	for _, pending := range m.queuedKeys() {
-		if pending.listChanged {
-			expectedList = pending.list
+		if pending.ListChanged {
+			expectedList = pending.List
 		}
-		if pending.sessionChanged {
-			expectedSession = pending.session
+		if pending.SessionChanged {
+			expectedSession = pending.Session
 		}
 	}
 	return expectedSession, expectedList
@@ -342,8 +304,8 @@ func (m *Model) applySettingsPrefs(d *settingsState) {
 	}
 }
 
-func (s *settingsFeature) probeEditorsCmd() tea.Cmd {
-	resolution, generation := detectedEditors(), s.gen
+func (m *Model) probeEditorsCmd() tea.Cmd {
+	resolution, generation := detectedEditors(), m.settings.Gen
 	return func() tea.Msg {
 		msg := resolution.probe()
 		msg.Generation = generation
@@ -373,8 +335,8 @@ func (r editorResolution) probe() editorsProbedMsg {
 // applyEditorsProbe keeps the answer for the rows later loads rebuild, and
 // fills the row of the visit that asked while the dialog is open.
 func (m *Model) applyEditorsProbe(msg editorsProbedMsg) {
-	m.settings.cache.SetEditors(&msg)
-	if s, open := surfaceOf[*uisettings.Surface](m); open && msg.Generation == m.settings.gen {
+	m.settings.Cache.SetEditors(&msg)
+	if s, open := surfaceOf[*uisettings.Surface](m); open && msg.Generation == m.settings.Gen {
 		s.State().Editor.ApplyProbe(msg)
 	}
 }
@@ -406,8 +368,7 @@ func (m *Model) routeSettingsMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		return routed(m, nil)
 
 	case groupBaseStepMsg:
-		m.handleGroupBaseStep(msg)
-		return routed(m, nil)
+		return routed(m, m.handleGroupBaseStep(msg))
 
 	case catalogMsg:
 		return routed(m, m.handleCatalog(msg))

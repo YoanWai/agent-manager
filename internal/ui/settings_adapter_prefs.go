@@ -3,28 +3,28 @@ package ui
 import (
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
+	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
 )
 
 // defaultSplitLayout reports whether review mode should open in split
 // (side-by-side) layout. Split is the default; a stored "unified" choice
 // opts out. A store error is surfaced but still yields the split default.
 func (m *Model) defaultSplitLayout() bool {
-	chosen, err := m.services.store.Setting(uisettings.DiffLayoutSetting)
+	split, err := uipersist.StoredSplitLayout(m.services.store)
 	if err != nil {
 		m.reportErr("reading diff layout setting: " + err.Error())
-		return true
 	}
-	return chosen != "unified"
+	return split
 }
 
 // storedTerminalBackground reads the background row. A store error is
 // surfaced but still yields the painted default.
 func (m *Model) storedTerminalBackground() bool {
-	chosen, err := m.services.store.Setting(uisettings.BackgroundSetting)
+	on, err := uipersist.StoredTerminalBackground(m.services.store)
 	if err != nil {
 		m.reportErr("reading background setting: " + err.Error())
 	}
-	return chosen == "terminal"
+	return on
 }
 
 // enterFocuses reports which key opens a session where. Enter focuses the
@@ -74,6 +74,6 @@ func (m *Model) mirrorFlag(key string, on bool) {
 
 func (m *Model) applyCachedSettingsPrefs() {
 	for _, key := range uisettings.Keys() {
-		m.mirrorPreference(key, m.settings.cache.value(key))
+		m.mirrorPreference(key, m.settings.Cache.Value(key))
 	}
 }

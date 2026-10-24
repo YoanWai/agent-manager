@@ -113,7 +113,7 @@ func TestFormSpawnsOnTheChoice(t *testing.T) {
 	if want := (config.Choice{Model: "opus", Effort: "high"}); stored.Choice != want {
 		t.Fatalf("choice = %+v, want %+v", stored.Choice, want)
 	}
-	if recent := m.settings.cache.value("recent_models.claude"); recent != `["opus"]` {
+	if recent := m.settings.Cache.Value("recent_models.claude"); recent != `["opus"]` {
 		t.Fatalf("recent = %v", recent)
 	}
 	m.openForm()
@@ -630,7 +630,7 @@ func TestChoiceIsKeptPerCLI(t *testing.T) {
 		if m.form().Choice().FilterValue() != "opus" {
 			t.Fatalf("model field shows %q", m.form().Choice().FilterValue())
 		}
-		if other := spawn.NewChoice(m.spawnHost(), "command-code"); other.Model() != "" || m.settings.cache.value("choice.command-code") != "" {
+		if other := spawn.NewChoice(m.spawnHost(), "command-code"); other.Model() != "" || m.settings.Cache.Value("choice.command-code") != "" {
 			t.Fatalf("another CLI picked up claude's choice: %+v", other)
 		}
 	})
@@ -704,5 +704,5 @@ func keepSetting(t *testing.T, m *Model, key, value string) {
 	if err := m.services.store.SetSetting(key, value); err != nil {
 		t.Fatal(err)
 	}
-	m.settings.cache.applyValues([]settingValue{{Key: key, Value: value}})
+	m.settings.Cache.ApplyValues([]settingValue{{Key: key, Value: value}})
 }

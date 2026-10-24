@@ -41,7 +41,7 @@ func (h spawnHost) ChoiceAnswer(toolName string) *spawn.Answer {
 	return &spawn.Answer{Cat: state.cat, Err: state.err, Loaded: state.loaded, Loading: state.loading}
 }
 
-func (h spawnHost) ChoiceSetting(key string) string { return h.m.settings.cache.value(key) }
+func (h spawnHost) ChoiceSetting(key string) string { return h.m.settings.Cache.Value(key) }
 
 func (h spawnHost) SaveChoiceSetting(key, value string) { h.m.saveChoiceSetting(key, value) }
 
@@ -181,7 +181,7 @@ func (m *Model) contextGroup() string {
 }
 
 func (m *Model) openForm() tea.Cmd {
-	return m.openFormWithReader(storeSettingWriter{st: m.services.store})
+	return m.openFormWithReader(storeSettingWriter{Store: m.services.store})
 }
 
 func (m *Model) openFormWithReader(reader settingsValueReader) tea.Cmd {
@@ -206,10 +206,10 @@ func (m *Model) openFormWithReader(reader settingsValueReader) tea.Cmd {
 	}
 	catalog := m.ensureCatalog(tools[toolIndex])
 	saved := savedPromptsLoadCmd(m.services.store, savedForForm, uint64(prompt.Gen), 0)
-	if m.settings.pending > 0 {
+	if m.settings.Pending > 0 {
 		return tea.Batch(m.formWorktreeProbeCmd(false), catalog, saved)
 	}
-	return tea.Batch(settingsLoadCmd(settingsLoadRequest{target: settingsLoadForm, generation: uint64(prompt.Gen), extra: m.choiceSettingKeys()}, reader), catalog, saved)
+	return tea.Batch(settingsLoadCmd(settingsLoadRequest{Target: settingsLoadForm, Generation: uint64(prompt.Gen), Extra: m.choiceSettingKeys()}, reader), catalog, saved)
 }
 
 // applyCachedFormDefaults takes the loaded tool and worktree defaults. A

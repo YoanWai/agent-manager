@@ -22,6 +22,7 @@ import (
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
+	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -41,7 +42,7 @@ type Model struct {
 	review    uireview.Model
 	reviewNav reviewNavState
 	mouse     mouseCapture
-	settings  settingsFeature
+	settings  uipersist.State
 	env       environment
 	ssh       connectionsFeature
 	layout    layoutState
@@ -86,12 +87,6 @@ type mouseCapture struct {
 	// pressed is what the last left press landed on, which its release
 	// clicks when it comes back up over the same one.
 	pressed clickTarget
-}
-
-type settingsFeature struct {
-	cache   settingsCache
-	pending int
-	gen     uint64
 }
 
 type environment struct {
@@ -202,7 +197,7 @@ func newView(deps Dependencies, version string) (*Model, error) {
 		},
 		rail:     loadRail(st),
 		ssh:      newConnections(remote.New(deps.ProfileDir), connections),
-		settings: settingsFeature{cache: loadSettingsCache(st, choiceSettingKeys(slices.Sorted(maps.Keys(cfg.Tools))))},
+		settings: uipersist.New(uipersist.StoreWriter{Store: st}, choiceSettingKeys(slices.Sorted(maps.Keys(cfg.Tools)))),
 		focus: focusState{runtime: focusRuntimeState{
 			imeCursor: &cursorAnchor{},
 		}},
@@ -219,7 +214,7 @@ func newView(deps Dependencies, version string) (*Model, error) {
 	}
 	model.applyCachedSettingsPrefs()
 	model.prefs.terminalBackground = model.storedTerminalBackground()
-	glyph := readSettingKeys(storeSettingWriter{st: st}, []string{uisettings.GlyphModeSetting})[0]
+	glyph := uipersist.ReadKeys(uipersist.StoreWriter{Store: st}, []string{uisettings.GlyphModeSetting})[0]
 	if glyph.Err != nil {
 		model.reportErr("reading symbols setting: " + glyph.Err.Error())
 	} else {

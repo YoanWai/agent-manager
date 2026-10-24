@@ -11,6 +11,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
+	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -22,7 +23,7 @@ type settingsScriptWriter struct {
 	values    map[string]string
 }
 
-func (w *settingsScriptWriter) set(key, value string) error {
+func (w *settingsScriptWriter) SetSetting(key, value string) error {
 	if w.failOn == key {
 		return errors.New("scripted write failure")
 	}
@@ -30,7 +31,7 @@ func (w *settingsScriptWriter) set(key, value string) error {
 	return nil
 }
 
-func (w *settingsScriptWriter) setProactive(proactive bool) error {
+func (w *settingsScriptWriter) SetProactiveCoordination(proactive bool) error {
 	if w.failOn == "coordination" {
 		return errors.New("scripted write failure")
 	}
@@ -38,7 +39,7 @@ func (w *settingsScriptWriter) setProactive(proactive bool) error {
 	return nil
 }
 
-func (w *settingsScriptWriter) get(key string) (string, error) {
+func (w *settingsScriptWriter) Setting(key string) (string, error) {
 	if w.failGetOn == key {
 		return "", errors.New("scripted read failure")
 	}
@@ -149,14 +150,14 @@ func TestSettingsSavePartialFailureIsDurableAndHonest(t *testing.T) {
 	}
 
 	writer := &settingsScriptWriter{failOn: uisettings.ThemeAutoSetting, values: map[string]string{uisettings.ThemeSetting: "nord"}}
-	request := settingsRequest{values: m.settingsCard().State().Values(), generation: m.settings.gen}
-	rawResult, err := runSettingsWithWriter(request, writer)
+	request := settingsRequest{values: m.settingsCard().State().Values(), generation: m.settings.Gen}
+	rawResult, err := request.execute(writer)
 	if err == nil {
 		t.Fatal("expected the scripted failure")
 	}
-	result := rawResult.(settingsEffectResult)
-	if result.committed != 2 || result.tot != len(request.values) {
-		t.Fatalf("committed=%d tot=%d, want 2 of %d", result.committed, result.tot, len(request.values))
+	result := rawResult
+	if result.outcome.Committed != 2 || result.outcome.Tot != len(request.values) {
+		t.Fatalf("committed=%d tot=%d, want 2 of %d", result.outcome.Committed, result.outcome.Tot, len(request.values))
 	}
 	if got := writer.values[uisettings.ThemeSetting]; got != staged {
 		t.Fatalf("committed theme=%q, want %q", got, staged)
@@ -194,14 +195,14 @@ func TestSettingsSaveReadFailureDoesNotFabricateRestoration(t *testing.T) {
 	}
 
 	writer := &settingsScriptWriter{failOn: uisettings.ThemeAutoSetting, failGetOn: uisettings.ListDensitySetting, values: map[string]string{}}
-	request := settingsRequest{values: m.settingsCard().State().Values(), generation: m.settings.gen}
-	rawResult, err := runSettingsWithWriter(request, writer)
+	request := settingsRequest{values: m.settingsCard().State().Values(), generation: m.settings.Gen}
+	rawResult, err := request.execute(writer)
 	if err == nil {
 		t.Fatal("expected the scripted write failure")
 	}
-	result := rawResult.(settingsEffectResult)
+	result := rawResult
 	var readErr error
-	for _, value := range result.restored {
+	for _, value := range result.outcome.Restored {
 		if value.Key == uisettings.ListDensitySetting {
 			readErr = value.Err
 		}
@@ -232,12 +233,12 @@ func TestSettingsSavePartialFailureReconcilesPrefs(t *testing.T) {
 	}
 
 	writer := &settingsScriptWriter{failOn: uisettings.ListDensitySetting, values: map[string]string{}}
-	request := settingsRequest{values: m.settingsCard().State().Values(), generation: m.settings.gen}
-	rawResult, err := runSettingsWithWriter(request, writer)
+	request := settingsRequest{values: m.settingsCard().State().Values(), generation: m.settings.Gen}
+	rawResult, err := request.execute(writer)
 	if err == nil {
 		t.Fatal("expected the scripted write failure")
 	}
-	result := rawResult.(settingsEffectResult)
+	result := rawResult
 	m.applySettingsEffect(&uieffects.Job{Request: request}, result, err)
 	if m.prefs.comfortableRows {
 		t.Fatal("prefs kept the uncommitted density after a partial save")
@@ -254,9 +255,9 @@ func TestSettingsSaveStaleCompletionReconcilesPrefsNotDialog(t *testing.T) {
 	m.openSettings()
 	m.settingsCard().State().Field = uisettings.FieldDensity
 	m.cycleSetting(1)
-	request := settingsRequest{values: m.settingsCard().State().Values(), generation: m.settings.gen}
+	request := settingsRequest{values: m.settingsCard().State().Values(), generation: m.settings.Gen}
 
-	m.settings.gen++
+	m.settings.Gen++
 	m.settingsCard().State().Field = uisettings.FieldDensity
 	m.cycleSetting(1) // the newer dialog toggles back to compact
 	m.applySettingsPrefs(m.settingsCard().State())
@@ -264,9 +265,9 @@ func TestSettingsSaveStaleCompletionReconcilesPrefsNotDialog(t *testing.T) {
 		t.Fatal("the newer save's preview should be compact")
 	}
 
-	result := settingsEffectResult{generation: request.generation, restored: []restoredValue{
+	result := settingsEffectResult{outcome: uipersist.SaveResult{Generation: request.generation, Restored: []uisettings.Readback{
 		{Key: uisettings.ListDensitySetting, Value: "comfortable"},
-	}}
+	}}}
 	m.applySettingsEffect(&uieffects.Job{Request: request}, result, errors.New("partial"))
 	if !m.prefs.comfortableRows {
 		t.Fatal("stale completion must reconcile the runtime prefs to committed")
@@ -307,8 +308,8 @@ func TestFailedFullSaveReconcilesPrefsPastStaleGeneration(t *testing.T) {
 	if !m.prefs.comfortableRows {
 		t.Fatal("dispatch must preview the staged density")
 	}
-	m.settings.gen++
-	request := settingsRequest{values: m.settingsCard().State().Values(), generation: m.settings.gen}
+	m.settings.Gen++
+	request := settingsRequest{values: m.settingsCard().State().Values(), generation: m.settings.Gen}
 	m.enqueueEffect(request, 0, false)
 	command := m.nextEffectCmd()
 
@@ -352,14 +353,14 @@ func TestSettingsSaveEmptyHiddenClearsDialog(t *testing.T) {
 	m.settingsCard().State().CLIHidden = map[string]bool{"claude": true}
 
 	writer := &settingsScriptWriter{failOn: uisettings.HiddenToolsSetting, values: map[string]string{}}
-	request := settingsRequest{values: m.settingsCard().State().Values(), hidden: []string{}, generation: m.settings.gen}
-	rawResult, err := runSettingsWithWriter(request, writer)
+	request := settingsRequest{values: m.settingsCard().State().Values(), hidden: []string{}, generation: m.settings.Gen}
+	rawResult, err := request.execute(writer)
 	if err == nil {
 		t.Fatal("expected the hidden write to fail")
 	}
-	result := rawResult.(settingsEffectResult)
-	if result.hiddenErr != nil {
-		t.Fatalf("hidden read failed: %v", result.hiddenErr)
+	result := rawResult
+	if result.outcome.HiddenErr != nil {
+		t.Fatalf("hidden read failed: %v", result.outcome.HiddenErr)
 	}
 	m.applySettingsEffect(&uieffects.Job{Request: request}, result, err)
 	if len(m.settingsCard().State().CLIHidden) != 0 {
@@ -368,10 +369,10 @@ func TestSettingsSaveEmptyHiddenClearsDialog(t *testing.T) {
 
 	// A failed hidden read keeps the old map.
 	writer.failGetOn = uisettings.HiddenToolsSetting
-	request2 := settingsRequest{values: m.settingsCard().State().Values(), hidden: []string{}, generation: m.settings.gen}
-	rawResult2, err2 := runSettingsWithWriter(request2, writer)
-	result2 := rawResult2.(settingsEffectResult)
-	if err2 == nil || result2.hiddenErr == nil {
+	request2 := settingsRequest{values: m.settingsCard().State().Values(), hidden: []string{}, generation: m.settings.Gen}
+	rawResult2, err2 := request2.execute(writer)
+	result2 := rawResult2
+	if err2 == nil || result2.outcome.HiddenErr == nil {
 		t.Fatal("expected a failed hidden read")
 	}
 	m.settingsCard().State().CLIHidden = map[string]bool{"codex": true}
@@ -388,14 +389,14 @@ func TestSettingsSaveCompletionRefusesStaleGeneration(t *testing.T) {
 	m.openSettings()
 	m.settingsCard().State().Field = uisettings.FieldTheme
 	m.cycleSetting(1)
-	request := settingsRequest{values: m.settingsCard().State().Values(), generation: m.settings.gen}
+	request := settingsRequest{values: m.settingsCard().State().Values(), generation: m.settings.Gen}
 
-	m.settings.gen++
+	m.settings.Gen++
 	m.settingsCard().State().Field = uisettings.FieldTheme
 	m.cycleSetting(1)
 	newer := themes[m.settingsCard().State().ThemeIndex].Name
 
-	result := settingsEffectResult{generation: request.generation, restored: []restoredValue{{Key: uisettings.ThemeSetting, Value: "nord"}}}
+	result := settingsEffectResult{outcome: uipersist.SaveResult{Generation: request.generation, Restored: []uisettings.Readback{{Key: uisettings.ThemeSetting, Value: "nord"}}}}
 	m.applySettingsEffect(&uieffects.Job{Request: request}, result, errors.New("partial"))
 	if themes[m.settingsCard().State().ThemeIndex].Name != newer {
 		t.Fatal("stale completion overwrote the newer dialog")
@@ -466,8 +467,8 @@ func TestEffectQueueDrainsSettingsSaveOnQuit(t *testing.T) {
 	m.settingsCard().State().Field = uisettings.FieldTheme
 	m.cycleSetting(1)
 	staged := themes[m.settingsCard().State().ThemeIndex].Name
-	m.settings.gen++
-	request := settingsRequest{values: m.settingsCard().State().Values(), generation: m.settings.gen}
+	m.settings.Gen++
+	request := settingsRequest{values: m.settingsCard().State().Values(), generation: m.settings.Gen}
 	m.enqueueEffect(request, 0, false)
 
 	_, command := m.requestQuit()
@@ -521,8 +522,8 @@ func TestSettingsSaveDuplicateCompletionIsIdempotent(t *testing.T) {
 	m.settingsCard().State().Field = uisettings.FieldTheme
 	m.cycleSetting(1)
 	staged := themes[m.settingsCard().State().ThemeIndex].Name
-	m.settings.gen++
-	m.enqueueEffect(settingsRequest{values: m.settingsCard().State().Values(), generation: m.settings.gen}, 0, false)
+	m.settings.Gen++
+	m.enqueueEffect(settingsRequest{values: m.settingsCard().State().Values(), generation: m.settings.Gen}, 0, false)
 	command := m.nextEffectCmd()
 	msg := command()
 	command()
@@ -575,11 +576,11 @@ func TestFailedSettingsSavePreservesUnsetDefaults(t *testing.T) {
 	job := m.effects.Main.Active
 	request := job.Request.(settingsRequest)
 	writer := &settingsScriptWriter{failOn: uisettings.ListDensitySetting, values: map[string]string{}}
-	result, err := runSettingsWithWriter(request, writer)
+	result, err := request.execute(writer)
 	if err == nil {
 		t.Fatal("expected failed save")
 	}
-	m.applySettingsEffect(job, result.(settingsEffectResult), err)
+	m.applySettingsEffect(job, result, err)
 	if !m.prefs.focusOnEnter || !m.prefs.arrowStep {
 		t.Fatalf("failed density save changed unrelated defaults, focus=%v arrows=%v", m.prefs.focusOnEnter, m.prefs.arrowStep)
 	}

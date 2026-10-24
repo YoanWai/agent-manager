@@ -12,7 +12,7 @@ func TestChoicePickDefersTheStoreWrite(t *testing.T) {
 	answered(m, claudeLike, claudeAnswer)
 	openFormOnClaude(t, m)
 	_, _ = m.form().Choice().Launch(m.spawnHost(), "claude", "opus")
-	if got := m.settings.cache.value("choice.claude"); !strings.Contains(got, `"Model":"opus"`) {
+	if got := m.settings.Cache.Value("choice.claude"); !strings.Contains(got, `"Model":"opus"`) {
 		t.Fatalf("cached choice = %s, want opus", got)
 	}
 	if raw, err := m.services.store.Setting("choice.claude"); err != nil || raw != "" {
