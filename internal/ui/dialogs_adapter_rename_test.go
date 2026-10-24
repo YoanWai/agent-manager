@@ -2,6 +2,7 @@ package ui
 
 import (
 	"errors"
+	"github.com/YoanWai/agent-manager/internal/ui/pathcomplete"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1769,5 +1770,28 @@ func TestMoveCompletionDoesNotCloseReopenedSameTargetDialog(t *testing.T) {
 	got, err := m.services.store.Get(moved)
 	if err != nil || got.Group != "target" {
 		t.Fatalf("accepted move did not reconcile: %+v, %v", got, err)
+	}
+}
+
+// A scan the previous opening asked for answers into a fresh completer; its
+// generation must not match this opening's, or it replaces the current pick.
+func TestReopenedGroupRenameDropsTheLastOpeningsScan(t *testing.T) {
+	t.Parallel()
+	root := setupCompletionDir(t)
+	m := buildModel(t)
+	seedGroups(t, m, "work")
+	m.selectGroupRow(t, "work")
+	m.openRename()
+	typed := filepath.Join(root, "a")
+	openRename(m).SetDir(typed)
+	stale := m.requestPathSuggestions(pathcomplete.Rename, typed)().(pathcomplete.Msg)
+	m.Update(key("esc"))
+
+	m.openRename()
+	loadPathSuggestions(m, pathcomplete.Rename, typed)
+	openRename(m).Paths().Chosen = true
+	m.completer(pathcomplete.Rename).Handle(pathCompleter{m}, stale)
+	if !openRename(m).Paths().Chosen {
+		t.Fatal("the cancelled opening's scan replaced this opening's pick")
 	}
 }

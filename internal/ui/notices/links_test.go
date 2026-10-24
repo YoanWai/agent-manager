@@ -132,3 +132,14 @@ func TestFailedDismissalReopensOnlyBeforeTheUserMovesOn(t *testing.T) {
 type errString string
 
 func (e errString) Error() string { return string(e) }
+
+// A refresh that adds nothing keeps the notice held while the list was busy;
+// clearing it lost the popup the user was promised on return.
+func TestStagedKeepsTheHeldNoticeWhenNothingIsAdded(t *testing.T) {
+	log := Log{Held: "config-not-imported"}
+	for _, open := range []bool{false, true} {
+		if got := log.Staged("", open, false); got.Hold != "config-not-imported" || got.Open != "" {
+			t.Fatalf("panel open=%v: a change that added nothing dropped the held notice, got %+v", open, got)
+		}
+	}
+}

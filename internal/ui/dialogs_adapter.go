@@ -303,6 +303,9 @@ func (m *Model) openRename() {
 		tools = append(tools, shells...)
 		surface = uidialogs.NewRenameSurface(renameRoot{m}, uidialogs.RenameSession(entry.sess.ID, entry.sess.Name, entry.sess.Tool, tools), "")
 	}
+	// Each opening's reads outrank the last one's, so a scan a cancelled
+	// rename asked for cannot replace this one's pick.
+	surface.Paths().Generation = m.gens.dialog << 32
 	m.push(surface)
 	m.clearErr()
 }

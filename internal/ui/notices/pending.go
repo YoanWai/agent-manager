@@ -21,7 +21,8 @@ type Stage struct {
 func (l *Log) Staged(added string, panelOpen, listReady bool) Stage {
 	switch {
 	case added == "" || panelOpen:
-		return Stage{}
+		// Nothing new keeps the notice already held for the list.
+		return Stage{Hold: l.Held}
 	case listReady:
 		return Stage{Open: added}
 	default:
