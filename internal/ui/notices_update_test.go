@@ -50,6 +50,7 @@ func TestFeedResultClearsThePendingAlert(t *testing.T) {
 			m := footModel(t)
 			m.mode = modeList
 			m.notices.feedPending = true
+			tc.msg.startup = true
 			m.Update(tc.msg)
 			if m.notices.feedPending {
 				t.Fatal("the feed result left the check pending")
@@ -59,6 +60,29 @@ func TestFeedResultClearsThePendingAlert(t *testing.T) {
 			}
 			if opened := m.mode == modeNotices; opened != tc.open {
 				t.Fatalf("panel open = %v, want %v", opened, tc.open)
+			}
+		})
+	}
+}
+
+func TestFeedPendingWaitsForStartupResult(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		manual bool
+	}{
+		{name: "manual", manual: true},
+		{name: "periodic"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := footModel(t)
+			m.notices.feedPending = true
+			m.Update(feedMsg{manual: tc.manual})
+			if !m.notices.feedPending {
+				t.Fatal("a non-startup result cleared the pending startup check")
+			}
+			m.Update(feedMsg{startup: true})
+			if m.notices.feedPending {
+				t.Fatal("the startup result left the check pending")
 			}
 		})
 	}
