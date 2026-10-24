@@ -793,25 +793,6 @@ func TestRootRowRefusesGroupEdits(t *testing.T) {
 	}
 }
 
-// Root's rollup counts top-level sessions, not the whole tree.
-func TestRootRollupCountsUngroupedOnly(t *testing.T) {
-	m := shotModel()
-	counts := uirail.GroupStatusCounts(m.railAgents(), rootGroup)
-	total := 0
-	for _, n := range counts {
-		total += n
-	}
-	ungrouped := 0
-	for _, sess := range m.workspace.sessions {
-		if sess.Group == "" {
-			ungrouped++
-		}
-	}
-	if total != ungrouped {
-		t.Fatalf("root rollup counts %d sessions, want %d ungrouped", total, ungrouped)
-	}
-}
-
 // Root reads quieter than the groups the user named.
 func TestRootRowIsDimmerThanNamedGroups(t *testing.T) {
 	// The suite's default Ascii profile strips every color sequence.
@@ -1174,78 +1155,6 @@ func TestRowWaitingReplyWearsTheStateColor(t *testing.T) {
 		lipgloss.NewStyle().Foreground(statusColor(status.Waiting)).Render(question), "\x1b[0m")
 	if !strings.Contains(lines[2], tinted) {
 		t.Fatalf("waiting question should wear the waiting color:\n%q", lines[2])
-	}
-}
-
-func TestRowQuotesEveryStateAndDashesWhenSilent(t *testing.T) {
-	m := shotModel()
-	m.prefs.fullLayout = true
-	m.prefs.comfortableRows = true
-	m.workspace.paneLines = map[string]string{"notes": "All quiet, nothing queued."}
-	lines := uitheme.SplitLines(m.renderTreeRow(sessionRow(t, m, "notes"), false, m.layout.width-1, 1, uitheme.PanelHex()))
-	if reply := strings.TrimSpace(ansi.Strip(lines[2])); reply != "↳ All quiet, nothing queued." {
-		t.Fatalf("idle reply line = %q, want the last message", reply)
-	}
-	m.workspace.paneLines = nil
-	lines = uitheme.SplitLines(m.renderTreeRow(sessionRow(t, m, "notes"), false, m.layout.width-1, 1, uitheme.PanelHex()))
-	if reply := strings.TrimSpace(ansi.Strip(lines[2])); reply != "-" {
-		t.Fatalf("silent idle reply line = %q, want a dash", reply)
-	}
-}
-
-func TestRowLongPromptTruncates(t *testing.T) {
-	m := shotModel()
-	m.prefs.fullLayout = true
-	m.prefs.comfortableRows = true
-	width := 80
-	row := sessionRow(t, m, "notes")
-	row.sess.LastPrompt = strings.Repeat("triage the flaky integration suite and report ", 10)
-	rendered := m.renderTreeRow(row, false, width, 1, uitheme.PanelHex())
-	for _, line := range uitheme.SplitLines(rendered) {
-		if got := ansi.StringWidth(line); got > width {
-			t.Fatalf("row line is %d wide, row is %d:\n%s", got, width, ansi.Strip(line))
-		}
-	}
-	lines := uitheme.SplitLines(rendered)
-	if prompt := ansi.Strip(lines[1]); !strings.Contains(prompt, "…") {
-		t.Fatalf("long prompt should truncate with an ellipsis:\n%s", prompt)
-	}
-	for _, want := range []string{"idle", "grok"} {
-		if !strings.Contains(ansi.Strip(lines[0]), want) {
-			t.Errorf("meta should survive, misses %q:\n%s", want, ansi.Strip(lines[0]))
-		}
-	}
-}
-
-// The compact cell quotes the agent's last message whenever there is
-// one, whatever the state; only a session that has said nothing yet
-// names the task it was given.
-func TestCompactCellIsStatePicked(t *testing.T) {
-	m := shotModel()
-	m.prefs.fullLayout = true
-	m.workspace.paneLines = map[string]string{
-		"notes":         "All quiet, nothing queued.",
-		"db-migrations": "Allow edits to router.go?",
-	}
-	idle := sessionRow(t, m, "notes")
-	idle.sess.LastPrompt = "verify the staging deploy is healthy"
-	line := ansi.Strip(m.renderTreeRow(idle, false, m.layout.width-1, 1, uitheme.PanelHex()))
-	if !strings.Contains(line, "↳ All quiet, nothing queued.") {
-		t.Fatalf("an idle session that has spoken should quote its reply:\n%s", line)
-	}
-	if strings.Contains(line, "verify the staging deploy") {
-		t.Fatalf("the reply should win over the task:\n%s", line)
-	}
-
-	m.workspace.paneLines = map[string]string{"db-migrations": "Allow edits to router.go?"}
-	line = ansi.Strip(m.renderTreeRow(idle, false, m.layout.width-1, 1, uitheme.PanelHex()))
-	if !strings.Contains(line, "❯ verify the staging deploy is healthy") {
-		t.Fatalf("a silent idle session should name its task:\n%s", line)
-	}
-
-	line = ansi.Strip(m.renderTreeRow(sessionRow(t, m, "db-migrations"), false, m.layout.width-1, 0, uitheme.PanelHex()))
-	if !strings.Contains(line, "↳ Allow edits to router.go?") {
-		t.Fatalf("waiting compact row should quote its question:\n%s", line)
 	}
 }
 

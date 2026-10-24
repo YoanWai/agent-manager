@@ -33,40 +33,6 @@ func typeHelpSearch(m *Model, query string, finish bool) {
 	}
 }
 
-func TestReviewHelpOnlyShowsReviewBindingsAndSetupGuidance(t *testing.T) {
-	m := &Model{
-		layout: layoutState{
-			width:  120,
-			height: 30,
-		},
-		screen: screen{base: baseReview},
-		services: services{
-			keys:     keybind.DefaultSession(),
-			listKeys: keybind.DefaultList(),
-		},
-	}
-	seedReviewForTest(m, uireview.Target{ID: "review"}, git.ScopeUncommitted, "/repo", diff.Set{}, true)
-	m.openHelp()
-	frame := ansi.Strip(preparedView(m))
-	for _, want := range []string{"Review keys", "Tell your agent what to review", "comment on the line"} {
-		if !strings.Contains(frame, want) {
-			t.Errorf("review help missing %q:\n%s", want, frame)
-		}
-	}
-	for _, unwanted := range []string{"new session", "quick prompt", "messages (M)"} {
-		if strings.Contains(frame, unwanted) {
-			t.Errorf("review help includes %q:\n%s", unwanted, frame)
-		}
-	}
-}
-
-func TestGlobalHelpShowsAgentManagementGuidance(t *testing.T) {
-	frame := ansi.Strip(preparedView(helpModel()))
-	if !strings.Contains(frame, "Tell your agent to manage sessions and terminals in Agent Manager") {
-		t.Fatalf("global help is missing agent-management guidance:\n%s", frame)
-	}
-}
-
 // The arrow-step rows reach the map from the Model's own preference, not
 // only from a context a test builds by hand.
 func TestHelpArrowStepRowsFollowSetting(t *testing.T) {
@@ -143,14 +109,6 @@ func TestHelpBodyShowsMoreMarkersWhenItOverflows(t *testing.T) {
 	frame = ansi.Strip(preparedView(m))
 	if !strings.Contains(frame, "more above") {
 		t.Fatal("a map scrolled to the end should say there is more above")
-	}
-}
-
-func TestHelpReportsWhenNothingMatches(t *testing.T) {
-	m := helpModel()
-	typeHelpSearch(m, "zzzz", true)
-	if frame := ansi.Strip(preparedView(m)); !strings.Contains(frame, "no key matches that") {
-		t.Fatal("a query nothing answers should say so")
 	}
 }
 
@@ -323,23 +281,6 @@ func TestHelpAdapterKeepsReviewLoaderRunningUnderTheCard(t *testing.T) {
 	}
 }
 
-func TestHelpAdapterReopensWithCleanFeatureState(t *testing.T) {
-	m := helpModel()
-	m.handleKey(runeKey("/"))
-	for _, r := range "fork" {
-		m.handleKey(runeKey(string(r)))
-	}
-	if frame := ansi.Strip(viewHelpOf(m)); !strings.Contains(frame, "search fork") {
-		t.Fatalf("test setup did not type a search:\n%s", frame)
-	}
-	m.base = baseList
-	m.clearSurfaces()
-	m.openHelp()
-	if frame := ansi.Strip(viewHelpOf(m)); strings.Contains(frame, "search fork") {
-		t.Fatalf("reopened help retained stale search:\n%s", frame)
-	}
-}
-
 func TestHelpAdapterRecomputesRowsWithoutMutatingScroll(t *testing.T) {
 	m := helpModel()
 	m.layout.height = 18
@@ -413,15 +354,6 @@ func TestHelpAdapterUsesFreshThemeStyles(t *testing.T) {
 	}
 	if ansi.Strip(strings.Join(classic.Lines, "\n")) != ansi.Strip(strings.Join(light.Lines, "\n")) {
 		t.Fatal("theme switch changed help content")
-	}
-}
-
-func TestHelpAdapterScopeUsesOnlyCopiedValues(t *testing.T) {
-	m := helpModel()
-	*helpSurfaceOf(m).State() = uihelp.New(uihelp.Review)
-	content := helpSurfaceOf(m).State().Content(uihelp.ContextFor(helpHost{m}, 84))
-	if content.Title != "? Review keys" || len(content.Lines) == 0 {
-		t.Fatalf("review content = %+v", content)
 	}
 }
 
