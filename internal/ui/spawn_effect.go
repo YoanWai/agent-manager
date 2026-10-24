@@ -335,7 +335,7 @@ func (m *Model) applyGroupEffect(request groupRequest, result groupEffectResult,
 	if s, ok := m.groupFormSurface(); ok && s.Gen() == request.gen && s.Name() == request.draftName && s.Dir() == request.draftDir {
 		m.clearErr()
 		m.Pop()
-		m.applyRailStateDecision(m.rail.RevealGroup(result.Path))
+		m.queueRail(m.rail.RevealGroup(result.Path), 0, true)
 	}
 	return m.refreshCmd()
 }

@@ -195,7 +195,7 @@ func TestReorderSkipsRootAsSibling(t *testing.T) {
 	m.rebuildRows()
 	index := -1
 	for i, row := range railRows(m) {
-		if row.isGroup && !row.isRoot() && parentGroup(row.group) == "" {
+		if row.isGroup && !row.isRoot() && uirail.ParentGroup(row.group) == "" {
 			index = i
 			break
 		}

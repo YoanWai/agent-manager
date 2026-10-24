@@ -5,6 +5,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/testfixture"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"runtime"
@@ -255,7 +256,7 @@ func TestStatusFilterGroupRosterMatchesCount(t *testing.T) {
 	m.rail.SetFilteringAttention(true)
 	m.rebuildRows()
 
-	if got := m.groupSessionCount("fleet"); got != 1 {
+	if got := uirail.GroupSessionCount(m.railAgents(), "fleet"); got != 1 {
 		t.Fatalf("group count under attention = %d want 1", got)
 	}
 	roster := ansi.Strip(m.viewGroupAgents("fleet", 60, 20))

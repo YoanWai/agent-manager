@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
 	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	tea "github.com/charmbracelet/bubbletea"
@@ -150,7 +151,7 @@ func (m *Model) markRestoredLocally(restored []store.Session, groupPath string) 
 		if !m.workspace.sessions[i].Archived {
 			continue
 		}
-		if byID[m.workspace.sessions[i].ID] || (groupPath != "" && inGroupSubtree(m.workspace.sessions[i].Group, groupPath)) {
+		if byID[m.workspace.sessions[i].ID] || (groupPath != "" && uirail.InGroupSubtree(m.workspace.sessions[i].Group, groupPath)) {
 			m.workspace.sessions[i].Archived = false
 			m.markSession(m.workspace.sessions[i].ID, uilifecycle.GoneMark{Archived: false})
 		}
@@ -162,7 +163,7 @@ func (m *Model) markRestoredLocally(restored []store.Session, groupPath string) 
 		}
 	} else {
 		for _, sess := range restored {
-			for path := sess.Group; path != ""; path = parentGroup(path) {
+			for path := sess.Group; path != ""; path = uirail.ParentGroup(path) {
 				delete(m.workspace.archivedGroups, path)
 				m.markGroup(path, uilifecycle.GoneMark{Archived: false})
 			}
@@ -191,7 +192,7 @@ func (m *Model) sessionAndChildren(sess store.Session) []store.Session {
 func (m *Model) sessionsInSubtree(path string) []store.Session {
 	var sessions []store.Session
 	for _, sess := range m.workspace.sessions {
-		if inGroupSubtree(sess.Group, path) {
+		if uirail.InGroupSubtree(sess.Group, path) {
 			sessions = append(sessions, sess)
 		}
 	}

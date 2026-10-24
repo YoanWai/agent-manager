@@ -9,6 +9,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -155,23 +156,6 @@ func (m *Model) railAgents() []uirail.Session {
 	return agents
 }
 
-func (m *Model) groupSessionCount(path string) int {
-	return uirail.GroupSessionCount(m.railAgents(), path)
-}
-
-func (m *Model) groupStatusBreakdown(group string) string {
-	return uirail.GroupStatusBreakdown(m.railTheme(), m.railAgents(), group)
-}
-
-// Root features read group paths the way Rail does.
-func inGroupSubtree(sessionGroup, group string) bool {
-	return uirail.InGroupSubtree(sessionGroup, group)
-}
-
-func parentGroup(group string) string { return uirail.ParentGroup(group) }
-
-func baseName(path string) string { return uirail.BaseName(path) }
-
 func (m *Model) awaitingRename(session store.Session) bool {
 	awaited, ok := m.ledger.lifecycle.AwaitedRenames[session.ID]
 	if !ok {
@@ -231,7 +215,7 @@ func (m *Model) prepareRailFrame(width, height int) {
 				break
 			}
 		}
-		rename.View = textInputView(s.NameField(fieldWidth))
+		rename.View = uiframe.TextInputView(s.NameField(fieldWidth))
 	}
 	ctx := uirail.RenderContext{
 		GlyphMode:       m.prefs.glyphMode,
@@ -247,7 +231,7 @@ func (m *Model) prepareRailFrame(width, height int) {
 		Focused:         m.focused(),
 		EnterFocuses:    m.enterFocuses(),
 		StartupPhase:    m.startup.startupPhase,
-		CursorMarker:    cursorAnchorMarker,
+		CursorMarker:    uiframe.CursorMarker,
 		Rename:          rename,
 		Foot:            foot,
 	}
@@ -308,10 +292,6 @@ func (m *Model) viewLegend() legendSection {
 		ctx.Unread = [2]string{glyph, label}
 	}
 	return legendOf(m.rail.ViewLegend(ctx))
-}
-
-func (m *Model) reorderFooter() legend {
-	return m.transientFooter(legendOf(m.rail.ReorderLegend()))
 }
 
 func legendOf(legend uirail.Legend) legendSection {
@@ -380,10 +360,6 @@ func (m *Model) applyRailDecision(decision uirail.Decision) (tea.Model, tea.Cmd)
 func (m *Model) moveCursor(delta int) tea.Cmd {
 	_, command := m.applyRailDecision(m.rail.Move(delta, true))
 	return command
-}
-
-func (m *Model) applyRailStateDecision(decision uirail.Decision) {
-	m.queueRail(decision.Mutations, 0, true)
 }
 
 func (m *Model) swapSessionInventory(id, targetID string) {

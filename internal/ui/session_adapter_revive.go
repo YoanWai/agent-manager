@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
+	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
 	tea "github.com/charmbracelet/bubbletea"
 	"time"
@@ -30,7 +32,7 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 				batch:    true,
 				sessions: dead,
 				label: fmt.Sprintf("revive group %s (%d dead sessions)? brings them back.",
-					displayGroup(entry.group), len(dead)),
+					uiframe.DisplayGroup(entry.group), len(dead)),
 			})
 			return m, nil
 		}
@@ -98,7 +100,7 @@ func deadSessions(sessions []store.Session) []store.Session {
 func (m *Model) sessionsInGroup(path string) []store.Session {
 	var sessions []store.Session
 	for _, sess := range m.listedSessions() {
-		if inGroupSubtree(sess.Group, path) {
+		if uirail.InGroupSubtree(sess.Group, path) {
 			sessions = append(sessions, sess)
 		}
 	}
