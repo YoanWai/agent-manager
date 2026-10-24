@@ -95,9 +95,6 @@ type Theme struct {
 	Fill func(row string, width int) string
 }
 
-// FeedPendingText is what the messages alert and the open panel say while
-// the startup feed check has not been applied, so the list does not look
-// finished while a message can still arrive.
 const FeedPendingText = "checking messages…"
 
 // Frame is what one paint or key of the panel sees: the terminal, the

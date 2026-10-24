@@ -39,8 +39,7 @@ type noticesPanel struct {
 	// feedMessages is the remote message feed, refreshed on the update
 	// tick and folded into the notices next to the built-in ones.
 	feedMessages []feed.Message
-	// feedPending stays set until the startup feed result has been applied.
-	// The fetch writes its cache before that result is on screen.
+	// The fetch writes its cache before the UI applies its result.
 	feedPending bool
 	// pendingNotice is a new notice that arrived while the list was not
 	// showing; flushPendingNotice opens it once the list is back.

@@ -141,8 +141,6 @@ class Sandbox:
         return errors
 
 
-# Drawn on the messages alert and on an open panel until the startup feed
-# result has been applied. The fetch writes its cache before that paint.
 feed_pending_text = 'checking messages\u2026'
 
 
@@ -156,7 +154,6 @@ def settle_messages(sandbox, target):
     def capture():
         return sandbox.tmux('capture-pane', '-p', '-t', target).stdout
 
-    # A missed paint fails the run. The text leaving the screen is the signal.
     frame = sandbox.wait('messages-settled', capture, feed_settled, timeout=45)
     if '╭─ messages' not in frame:
         return
