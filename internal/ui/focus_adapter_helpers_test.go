@@ -171,3 +171,6 @@ func (m *Model) cursorCell(int) (row, col int, ok bool) {
 	box := m.focus.pane.FrameBox()
 	return screenRow - box.Y - 1, column - box.X - 1, true
 }
+
+// onList reports that the list is the base and no session holds focus.
+func (m *Model) onList() bool { return m.base == baseList \&\& !m.focused() }
