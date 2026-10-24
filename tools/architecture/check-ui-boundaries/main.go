@@ -43,6 +43,8 @@ var (
 	launchhintBoundary      = boundary{"Launch hint", "/internal/ui/launchhint", []string{"/internal/ui/launchhint"}}
 	previewBoundary         = boundary{"Preview", "/internal/ui/preview", []string{"/internal/ui/preview", "/internal/keybind", "/internal/ui/frame", "/internal/ui/presentation"}}
 	sessionBoundary         = boundary{"Session", "/internal/ui/session", []string{"/internal/ui/session"}}
+	sessionEditorBoundary   = boundary{"Session editor", "/internal/ui/session/editor", []string{"/internal/ui/session", "/internal/ui/session/editor"}}
+	sessionDialogsBoundary  = boundary{"Session dialogs", "/internal/ui/session/dialogs", []string{"/internal/atomicfile", "/internal/catalog/value", "/internal/config", "/internal/deps", "/internal/keybind", "/internal/remote/value", "/internal/status", "/internal/store", "/internal/systheme", "/internal/tmux", "/internal/ui/dialogs", "/internal/ui/effects", "/internal/ui/frame", "/internal/ui/pathcomplete", "/internal/ui/presentation", "/internal/ui/rail", "/internal/ui/session", "/internal/ui/session/dialogs", "/internal/ui/spawn", "/internal/ui/surface", "/internal/ui/theme", "/internal/update", "/internal/wsl"}}
 	startupBoundary         = boundary{"Startup", "/internal/ui/startup", []string{"/internal/ui/startup", "/internal/pwsh", "/internal/ui/presentation", "/internal/ui/theme"}}
 	statusbarBoundary       = boundary{"Status bar", "/internal/ui/statusbar", []string{"/internal/ui/statusbar", "/internal/ui/presentation", "/internal/ui/theme"}}
 	workspaceBoundary       = boundary{"Workspace", "/internal/ui/workspace", []string{"/internal/ui/workspace", "/internal/ui/frame", "/internal/ui/presentation", "/internal/ui/theme"}}
@@ -71,7 +73,7 @@ var (
 )
 
 func main() {
-	for _, feature := range []boundary{helpBoundary, reviewBoundary, focusBoundary, watchBoundary, railBoundary, settingsBoundary, geometryBoundary, terminalBoundary, effectsBoundary, frameBoundary, launchhintBoundary, previewBoundary, sessionBoundary, startupBoundary, statusbarBoundary, workspaceBoundary, themeBoundary, spawnBoundary, quickBoundary, pathBoundary, composerBoundary, dialogsBoundary, noticesBoundary, releaseBoundary, connectionsBoundary, linkBoundary, settingsPersistBoundary, installBoundary, railPersistBoundary, dialogsApplyBoundary, focusRuntimeBoundary, captureBoundary, panesBoundary, reviewSourceBoundary, lifecycleBoundary, spawnLaunchBoundary, surfaceBoundary, diffBoundary, valueBoundary, catalogBoundary, presentBoundary, remoteBoundary} {
+	for _, feature := range []boundary{helpBoundary, reviewBoundary, focusBoundary, watchBoundary, railBoundary, settingsBoundary, geometryBoundary, terminalBoundary, effectsBoundary, frameBoundary, launchhintBoundary, previewBoundary, sessionBoundary, sessionDialogsBoundary, sessionEditorBoundary, startupBoundary, statusbarBoundary, workspaceBoundary, themeBoundary, spawnBoundary, quickBoundary, pathBoundary, composerBoundary, dialogsBoundary, noticesBoundary, releaseBoundary, connectionsBoundary, linkBoundary, settingsPersistBoundary, installBoundary, railPersistBoundary, dialogsApplyBoundary, focusRuntimeBoundary, captureBoundary, panesBoundary, reviewSourceBoundary, lifecycleBoundary, spawnLaunchBoundary, surfaceBoundary, diffBoundary, valueBoundary, catalogBoundary, presentBoundary, remoteBoundary} {
 		if err := checkBoundary(feature); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)

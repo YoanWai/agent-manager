@@ -87,14 +87,15 @@ type Row struct {
 	Sess  store.Session
 }
 
-// View is the loaded list, the rows the Rail lists, the group paths, and what
-// the last poll, or a launch since, says about each row's window.
-type View struct {
-	Sessions []store.Session
-	Listed   []store.Session
-	Groups   []string
-	Archived bool
-	Live     map[string]bool
+// View is what the decisions read from the manager: the loaded rows, the rows
+// the Rail lists, the group paths, the view on screen, and what the last poll,
+// or a launch since, says about each row's window.
+type View interface {
+	Sessions() []store.Session
+	Listed() []store.Session
+	Groups() []string
+	ArchivedView() bool
+	Live(id string) bool
 }
 
 // Children is a session with the shells nested under it.
@@ -154,10 +155,10 @@ func Dead(sessions []store.Session) []store.Session {
 }
 
 // live keeps the rows whose window the manager still projects as up.
-func (v View) live(sessions []store.Session) []store.Session {
+func live(view View, sessions []store.Session) []store.Session {
 	var out []store.Session
 	for _, sess := range sessions {
-		if v.Live[sess.ID] {
+		if view.Live(sess.ID) {
 			out = append(out, sess)
 		}
 	}
@@ -165,15 +166,15 @@ func (v View) live(sessions []store.Session) []store.Session {
 }
 
 // Archive is what the archive key asks for.
-func Archive(v View, row Row) Intent {
-	if v.Archived {
+func Archive(view View, row Row) Intent {
+	if view.ArchivedView() {
 		return Intent{}
 	}
 	if row.Kind == RootRow {
 		return Intent{Notice: "root is the top level, not a group to archive"}
 	}
 	if row.Kind == GroupRow {
-		subtree := Subtree(v.Sessions, row.Group)
+		subtree := Subtree(view.Sessions(), row.Group)
 		return Intent{ClearsErr: true, Card: Card{
 			Group:     true,
 			Path:      row.Group,
@@ -183,7 +184,7 @@ func Archive(v View, row Row) Intent {
 			Selection: Selection{Kind: SelectGroup},
 		}}
 	}
-	sessions := Children(v.Sessions, row.Sess)
+	sessions := Children(view.Sessions(), row.Sess)
 	return Intent{ClearsErr: true, Card: Card{
 		Action:   uidialogs.ConfirmArchive,
 		Sessions: sessions,
@@ -195,15 +196,15 @@ func Archive(v View, row Row) Intent {
 }
 
 // Restore is what the restore key asks for in the archived view.
-func Restore(v View, row Row) Intent {
-	if !v.Archived {
+func Restore(view View, row Row) Intent {
+	if !view.ArchivedView() {
 		return Intent{}
 	}
 	if row.Kind == RootRow {
 		return Intent{Notice: "root is the top level, not a group to restore"}
 	}
 	if row.Kind == GroupRow {
-		archived := Archived(Subtree(v.Sessions, row.Group))
+		archived := Archived(Subtree(view.Sessions(), row.Group))
 		return Intent{ClearsErr: true, Card: Card{
 			Group:     true,
 			Path:      row.Group,
@@ -213,7 +214,7 @@ func Restore(v View, row Row) Intent {
 			Selection: Selection{Kind: SelectGroup, ArchivedOnly: true},
 		}}
 	}
-	sessions := Archived(Children(v.Sessions, row.Sess))
+	sessions := Archived(Children(view.Sessions(), row.Sess))
 	return Intent{ClearsErr: true, Card: Card{
 		Action:   uidialogs.ConfirmRestore,
 		Sessions: sessions,
@@ -226,9 +227,9 @@ func Restore(v View, row Row) Intent {
 
 // Kill is what the kill key asks for: a group's live rows, or one session and
 // the shells nested under it.
-func Kill(v View, row Row) Intent {
+func Kill(view View, row Row) Intent {
 	if row.Kind == GroupRow {
-		live := v.live(InGroup(v.Listed, row.Group))
+		live := live(view, InGroup(view.Listed(), row.Group))
 		if len(live) == 0 {
 			return Intent{Notice: "no live sessions to kill in " + row.Group}
 		}
@@ -241,10 +242,10 @@ func Kill(v View, row Row) Intent {
 				row.Group, len(live)),
 		}}
 	}
-	sessions := Children(v.Sessions, row.Sess)
+	sessions := Children(view.Sessions(), row.Sess)
 	live := false
 	for _, sess := range sessions {
-		if v.Live[sess.ID] {
+		if view.Live(sess.ID) {
 			live = true
 			break
 		}
@@ -263,8 +264,8 @@ func Kill(v View, row Row) Intent {
 }
 
 // KillAll is what the kill-everything key asks for over the rows a view lists.
-func KillAll(v View) Intent {
-	live := v.live(v.Listed)
+func KillAll(view View) Intent {
+	live := live(view, view.Listed())
 	if len(live) == 0 {
 		return Intent{Notice: "no live sessions to kill"}
 	}
@@ -276,12 +277,12 @@ func KillAll(v View) Intent {
 }
 
 // Restart is what a restart asks for: never a group row.
-func Restart(v View, row Row) Intent {
+func Restart(view View, row Row) Intent {
 	if row.Kind == GroupRow {
 		return Intent{Notice: "restart applies to a session; pick one under " + uiframe.DisplayGroup(row.Group)}
 	}
 	label := fmt.Sprintf("restart %s with an empty context? its current conversation is left behind.", row.Sess.Name)
-	if v.Live[row.Sess.ID] {
+	if view.Live(row.Sess.ID) {
 		label = fmt.Sprintf("restart %s with an empty context? ends the running agent and leaves its conversation behind.", row.Sess.Name)
 	}
 	return Intent{Card: Card{
@@ -293,9 +294,9 @@ func Restart(v View, row Row) Intent {
 
 // Revive is what the revive key asks for on a session row, or over a group's
 // subtree: one card for several dead rows, the run itself for one.
-func Revive(v View, row Row) Intent {
+func Revive(view View, row Row) Intent {
 	if row.Kind == GroupRow {
-		sessions := InGroup(v.Listed, row.Group)
+		sessions := InGroup(view.Listed(), row.Group)
 		if dead := Dead(sessions); len(dead) > 1 {
 			return Intent{Card: Card{
 				Group:    true,
@@ -309,10 +310,10 @@ func Revive(v View, row Row) Intent {
 		}
 		return ReviveMany(sessions, "no dead sessions to revive in "+row.Group)
 	}
-	set := Children(v.Sessions, row.Sess)
+	set := Children(view.Sessions(), row.Sess)
 	dead := false
 	for _, sess := range set {
-		if !v.Live[sess.ID] {
+		if !view.Live(sess.ID) {
 			dead = true
 			break
 		}
@@ -353,12 +354,12 @@ func ReviveMany(sessions []store.Session, emptyNotice string) Intent {
 
 // Delete is what the delete key asks for: the row and the shells under it, or
 // the whole group as the view showing it sees it.
-func Delete(v View, row Row) Intent {
+func Delete(view View, row Row) Intent {
 	if row.Kind == RootRow {
 		return Intent{Notice: "root is the top level; delete the sessions under it instead"}
 	}
 	if row.Kind == SessionRow {
-		sessions := Children(v.Sessions, row.Sess)
+		sessions := Children(view.Sessions(), row.Sess)
 		return Intent{Card: Card{
 			Label: uisession.FollowConfirmLabel("delete", row.Sess.Name, len(sessions)-1,
 				"kills its tmux session.",
@@ -367,11 +368,11 @@ func Delete(v View, row Row) Intent {
 			Selection: Selection{Kind: SelectSession, RootID: row.Sess.ID},
 		}}
 	}
-	subtree := Subtree(v.Sessions, row.Group)
-	if v.Archived {
+	subtree := Subtree(view.Sessions(), row.Group)
+	if view.ArchivedView() {
 		return Intent{Card: archivedGroupDelete(row.Group, subtree)}
 	}
-	return Intent{Card: wholeGroupDelete(v.Groups, row.Group, subtree)}
+	return Intent{Card: wholeGroupDelete(view.Groups(), row.Group, subtree)}
 }
 
 // CancelEnd is what the keep-past-its-turn key asks for.

@@ -2,8 +2,6 @@ package ui
 
 import (
 	"net/url"
-	"slices"
-	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/keybind"
@@ -372,31 +370,18 @@ func (m *Model) applySettingsPrefs(d *uisettings.State) {
 }
 
 func (m *Model) probeEditorsCmd() tea.Cmd {
-	resolution, generation := detectedEditors(), m.settings.Gen
+	resolution, generation := m.captureEditorResolution(), m.settings.Gen
 	return func() tea.Msg {
-		msg := resolution.probe()
+		msg := editorProbe(resolution)
 		msg.Generation = generation
 		return msg
 	}
 }
 
 // probe walks PATH, which is I/O that Update must not do.
-func (r editorResolution) probe() uisettings.EditorsProbe {
-	var found []string
-	if r.lookup != nil {
-		for _, name := range r.gui {
-			if _, err := r.lookup(name); err == nil {
-				found = append(found, name)
-			}
-		}
-	}
-	for _, line := range []string{r.visual, r.editor} {
-		if line = strings.TrimSpace(line); line != "" && !slices.Contains(found, line) {
-			found = append(found, line)
-		}
-	}
-	r.configured = ""
-	return uisettings.EditorsProbe{Found: found, Auto: r.editorLine()}
+func editorProbe(r editorResolution) uisettings.EditorsProbe {
+	probe := r.Probe()
+	return uisettings.EditorsProbe{Found: probe.Found, Auto: probe.Auto}
 }
 
 // applyEditorsProbe keeps the answer for the rows later loads rebuild, and

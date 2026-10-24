@@ -3,6 +3,7 @@ package lifecycle
 import (
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 )
 
@@ -226,4 +227,14 @@ func AfterTurn(request AfterTurnRequest, result AfterTurnResult, err error) Afte
 		}
 	}
 	return apply
+}
+
+// Acknowledge decides whether the mark-idle key applies: archived rows keep
+// their preserved status, since the poller never re-derives it for them, so an
+// ack would stick forever.
+func Acknowledge(sess store.Session, ok bool) (string, bool) {
+	if !ok || sess.Archived || sess.Status != status.Finished {
+		return "", false
+	}
+	return sess.ID, true
 }

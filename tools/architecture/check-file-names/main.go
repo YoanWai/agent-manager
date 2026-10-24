@@ -14,10 +14,10 @@ import (
 
 // allowed lists test files that cover more than one source on purpose.
 var allowed = map[string]string{
-	"internal/cli/parity_test.go":                       "compares the CLI with the MCP server",
-	"internal/execution/two_manager_test.go":            "runs two managers through the runner, poller and delivery",
-	"internal/tmux/delivery_test.go":                    "covers context-aware delivery across control, input and tmux",
-	"internal/ui/session_lifecycle_integration_test.go": "drives create, archive, restore and delete end to end",
+	"internal/cli/parity_test.go":                     "compares the CLI with the MCP server",
+	"internal/execution/two_manager_test.go":          "runs two managers through the runner, poller and delivery",
+	"internal/tmux/delivery_test.go":                  "covers context-aware delivery across control, input and tmux",
+	"internal/ui/session_adapter_integration_test.go": "drives create, archive, restore and delete end to end",
 }
 
 // uiRoot holds the root UI package, whose files are named <feature>_<concern>.go.
@@ -42,7 +42,7 @@ var packaged = map[string]string{
 	"quick":        "the quick bar adapter and its send effect",
 	"rail":         "the Rail adapter",
 	"review":       "the Review adapter",
-	"session":      "the session lifecycle adapter: after-turn, archive, attach, delete, editor, kill, launch, restart and revive, and their effects",
+	"session":      "the session lifecycle adapter and host: the keys that archive, restore, kill, delete, restart or revive a row, the attach and after-turn effects, and the editor they open",
 	"settings":     "the Settings adapter, its store lane and the stored preference readers",
 	"spawn":        "the New Session form adapter, its group picker, request, defaults, group base and fetch, catalog reads, spawn effect, preflight and worktree probe",
 	"startup":      "the startup adapter: the greeting, the banner tick and the pane shell probe",
@@ -143,7 +143,7 @@ func unadaptedSources(dir string) ([]string, error) {
 		if _, ok := packaged[feature]; !ok {
 			continue
 		}
-		if stem == feature+"_adapter" || strings.HasPrefix(stem, feature+"_adapter_") || strings.HasSuffix(stem, "_effect") || strings.HasSuffix(stem, "_surface") {
+		if stem == feature+"_adapter" || strings.HasPrefix(stem, feature+"_adapter_") || strings.HasSuffix(stem, "_effect") || strings.HasSuffix(stem, "_surface") || strings.HasSuffix(stem, "_host") {
 			continue
 		}
 		unadapted = append(unadapted, name)

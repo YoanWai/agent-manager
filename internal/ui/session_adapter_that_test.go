@@ -2,6 +2,15 @@ package ui
 
 import (
 	"errors"
+	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/status"
+	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/testenv"
+	"github.com/YoanWai/agent-manager/internal/tmux"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
+	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
+	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
+	tea "github.com/charmbracelet/bubbletea"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -9,12 +18,394 @@ import (
 	"slices"
 	"strings"
 	"testing"
-
-	"github.com/YoanWai/agent-manager/internal/tmux"
-	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
-	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
-	tea "github.com/charmbracelet/bubbletea"
+	"time"
 )
+
+func TestAttachDoneOpensReviewWhenMarkerSet(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	if m.services.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	createSession(t, m, "reviewme", t.TempDir(), "")
+	m.selectSessionRow(t, "reviewme")
+	sess := m.sessionRows()[0]
+	clearRequestOnCleanup(t, m, sess.ID)
+
+	if _, err := sessionTmuxCmd(t, sess.ID, "set-option", "-g", "@am_request", tmux.RequestReview).CombinedOutput(); err != nil {
+		t.Fatalf("set marker: %v", err)
+	}
+	updated, _ := m.Update(attachDoneMsg{sessID: sess.ID})
+	*m = *updated.(*Model)
+	m.drainEffects(t)
+	if m.base != baseReview {
+		t.Fatalf("marker set should enter review, screen = %v, err = %q", m.screenID(), m.errBar.text)
+	}
+
+	request, err := m.services.tmux.PendingRequest(sess.ID)
+	if err != nil {
+		t.Fatalf("PendingRequest: %v", err)
+	}
+	if request != "" {
+		t.Fatalf("opening review should consume the marker, got %q", request)
+	}
+}
+
+func TestAttachDoneStaysInListWithoutMarker(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "plainexit", t.TempDir(), "")
+	m.selectSessionRow(t, "plainexit")
+	if err := m.services.tmux.ClearRequest(m.sessionRows()[0].ID); err != nil {
+		t.Fatalf("clear marker: %v", err)
+	}
+
+	updated, _ := m.Update(attachDoneMsg{})
+	*m = *updated.(*Model)
+	m.drainEffects(t)
+	if !m.onList() {
+		t.Fatalf("no marker should stay in list, screen = %v", m.screenID())
+	}
+}
+
+func TestAttachAcknowledgesFinished(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "alert-me", t.TempDir(), "")
+
+	sess := m.sessionRows()[0]
+	if err := m.services.store.UpdateStatus(sess.ID, status.Finished); err != nil {
+		t.Fatalf("set finished: %v", err)
+	}
+	m.workspace.sessions[0].Status = status.Finished
+	m.rebuildRows()
+	m.selectSessionRow(t, "alert-me")
+
+	if _, cmd := m.attachSelected(); cmd == nil {
+		t.Fatalf("attach did not start, err = %q", m.errBar.text)
+	}
+	got, err := m.services.store.Get(sess.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status != status.Finished {
+		t.Fatalf("the update path acknowledged the session: %q", got.Status)
+	}
+	if _, err := m.bindEffect(uilifecycle.AttachRequest{ID: sess.ID})(); err != nil {
+		t.Fatalf("attach worker: %v", err)
+	}
+	got, err = m.services.store.Get(sess.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status != status.Idle {
+		t.Fatalf("after attach, status = %q want %q", got.Status, status.Idle)
+	}
+	if !got.Acked {
+		t.Fatal("attach should mark the session acked")
+	}
+}
+
+func TestDotAcknowledgesOnlyCurrentFinishedStatus(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name       string
+		listed     string
+		stored     string
+		wantStatus string
+		wantAcked  bool
+		wantOffer  bool
+	}{
+		{name: "finished", listed: status.Finished, stored: status.Finished, wantStatus: status.Idle, wantAcked: true, wantOffer: true},
+		{name: "stale snapshot", listed: status.Finished, stored: status.Working, wantStatus: status.Working, wantOffer: true},
+		{name: "working", listed: status.Working, stored: status.Working, wantStatus: status.Working},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := buildModel(t)
+			createSession(t, m, "alert-me", t.TempDir(), "")
+			sess := m.sessionRows()[0]
+			if err := m.services.store.UpdateStatus(sess.ID, tc.stored); err != nil {
+				t.Fatalf("set stored status: %v", err)
+			}
+			m.workspace.sessions[0].Status = tc.listed
+			m.rebuildRows()
+			m.selectSessionRow(t, "alert-me")
+			if offered := strings.Contains(m.viewFooter(), "mark idle"); offered != tc.wantOffer {
+				t.Fatalf("dot footer offered = %v, want %v", offered, tc.wantOffer)
+			}
+
+			m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'.'}})
+			m.drainEffects(t)
+			got, err := m.services.store.Get(sess.ID)
+			if err != nil {
+				t.Fatalf("get: %v", err)
+			}
+			if got.Status != tc.wantStatus || got.Acked != tc.wantAcked {
+				t.Fatalf("after dot, status = %q acked = %v", got.Status, got.Acked)
+			}
+			if !m.onList() {
+				t.Fatalf("dot left list mode: %v", m.screenID())
+			}
+		})
+	}
+}
+
+func TestDotKeepsArchivedFinishedStatus(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "kept", t.TempDir(), "")
+	sess := m.sessionRows()[0]
+	if err := m.services.store.UpdateStatus(sess.ID, status.Finished); err != nil {
+		t.Fatalf("set finished: %v", err)
+	}
+	if err := m.services.store.SetArchived(sess.ID, true); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+	m.workspace.sessions[0].Status = status.Finished
+	m.workspace.sessions[0].Archived = true
+	m.rail.SetArchived(true)
+	m.rebuildRows()
+	m.selectSessionRow(t, "kept")
+	if strings.Contains(m.viewFooter(), "mark idle") {
+		t.Fatal("dot offered on an archived session")
+	}
+
+	m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'.'}})
+	m.drainEffects(t)
+	got, err := m.services.store.Get(sess.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status != status.Finished || got.Acked {
+		t.Fatalf("archived session changed: status = %q acked = %v", got.Status, got.Acked)
+	}
+}
+
+func TestAttachKeepsWorking(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "busy-one", t.TempDir(), "")
+
+	sess := m.sessionRows()[0]
+	if err := m.services.store.UpdateStatus(sess.ID, status.Working); err != nil {
+		t.Fatalf("set working: %v", err)
+	}
+	m.workspace.sessions[0].Status = status.Working
+	m.rebuildRows()
+	m.selectSessionRow(t, "busy-one")
+
+	if _, cmd := m.attachSelected(); cmd == nil {
+		t.Fatalf("attach did not start, err = %q", m.errBar.text)
+	}
+	if _, err := m.bindEffect(uilifecycle.AttachRequest{ID: sess.ID})(); err != nil {
+		t.Fatalf("attach worker: %v", err)
+	}
+	got, err := m.services.store.Get(sess.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status != status.Working {
+		t.Fatalf("after attach, status = %q want %q", got.Status, status.Working)
+	}
+}
+
+// PrepareAttach flips window-size to auto, which reflows the pane the same
+// way the detach-side resize does; without clearing the cached hash first,
+// the next poll compares the reflowed pane against a pre-attach hash and
+// reads it as working (TestRebaselineKeepsFinishedWithoutFlashingWorking
+// proves that precondition). Attach must clear it the same way detach does.
+func TestAttachClearsStaleHashBeforeReflow(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	m.openForm()
+	m.form().SetName("attach-reflow")
+	m.form().SetDir(t.TempDir())
+	setFormTool(m, 1) // claude-hooked: configured with an activity region to hash
+	pickGroup(t, m, "")
+	_, cmd := m.submitForm()
+	m.applyCmd(t, cmd)
+	if !m.onList() {
+		t.Fatalf("after submit, screen = %v, err = %q", m.screenID(), m.errBar.text)
+	}
+
+	sess := m.sessionRows()[0]
+	if sess.Tool != "claude-hooked" {
+		t.Fatalf("session tool = %q, want claude-hooked", sess.Tool)
+	}
+	if err := m.services.store.UpdateStatus(sess.ID, status.Finished); err != nil {
+		t.Fatalf("set finished: %v", err)
+	}
+	sess.Status = status.Finished
+	m.workspace.sessions[0].Status = status.Finished
+	m.rebuildRows()
+	m.selectSessionRow(t, "attach-reflow")
+
+	if err := m.services.tmux.SendText(sess.ID, "final answer line that wraps differently after attach\n❯ "); err != nil {
+		t.Fatal(err)
+	}
+	resetExecution(m)
+	m.applyCmd(t, m.refreshCmd())
+	if _, cmd := m.attachSelected(); cmd == nil {
+		t.Fatalf("attach did not start, err = %q", m.errBar.text)
+	}
+	if _, err := m.bindEffect(uilifecycle.AttachRequest{ID: sess.ID})(); err != nil {
+		t.Fatalf("attach worker: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	entered, err := m.services.store.Get(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entered.Status != status.Idle {
+		t.Fatalf("attach must acknowledge and rebaseline the pane, got %q", entered.Status)
+	}
+}
+
+// y on a dead row names the way back, the way every other lifecycle key
+// does, instead of letting the capture fail with raw tmux stderr.
+func TestCopyReplyOnADeadSessionHints(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	sess := m.sessionRows()[0]
+	if err := m.services.tmux.Kill(sess.ID); err != nil {
+		t.Fatalf("kill: %v", err)
+	}
+	m.selectSessionRow(t, "alpha")
+	_, cmd := m.copyReplySelected()
+	if cmd == nil {
+		t.Fatal("checking the session should run asynchronously")
+	}
+	if m.errBar.text != "" {
+		t.Fatalf("copy reported %q before the command ran", m.errBar.text)
+	}
+	m.applyCmd(t, cmd)
+	if m.errBar.text != uisession.DeadHint {
+		t.Fatalf("errBar = %q, want %q", m.errBar.text, uisession.DeadHint)
+	}
+}
+
+// A group has no reply of its own, so y on one does nothing at all.
+func TestCopyReplyIgnoresGroupRows(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.services.store.CreateGroup("team", dir); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "alpha", dir, "team")
+	m.selectGroupRow(t, "team")
+	_, cmd := m.copyReplySelected()
+	if cmd != nil {
+		t.Fatal("a group row should not run a capture")
+	}
+	if m.errBar.text != "" {
+		t.Fatalf("errBar = %q, want no message", m.errBar.text)
+	}
+}
+
+// The copy reports what landed on the clipboard, and says so plainly when
+// the turn held nothing worth copying.
+func TestReplyCopiedMsgReports(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	if _, cmd := m.Update(replyCopiedMsg{name: "alpha"}); cmd != nil {
+		t.Fatal("an empty copy should not queue more work")
+	}
+	if m.errBar.text != "nothing to copy from alpha" {
+		t.Fatalf("errBar = %q", m.errBar.text)
+	}
+	if _, cmd := m.Update(replyCopiedMsg{chars: 42, name: "alpha"}); cmd != nil {
+		t.Fatal("a finished copy should not queue more work")
+	}
+	if m.errBar.text != "copied 42 chars from alpha" || m.errBar.done != m.errBar.text {
+		t.Fatalf("errBar = %q done = %q", m.errBar.text, m.errBar.done)
+	}
+}
+
+// A copy the pane could not bound, and a pane no reply can be read from,
+// both name the tool behind the caveat and read as warnings rather than
+// as outcomes or failures.
+func TestReplyCopiedMsgWarnsOnAnUnboundedCopy(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	m.Update(replyCopiedMsg{chars: 12426, name: "alpha", tool: "grok", unbounded: true})
+	if !strings.Contains(m.errBar.text, "grok marks no turn start here") {
+		t.Fatalf("errBar = %q, want the tool named", m.errBar.text)
+	}
+	if !m.errBar.warned() || m.errBar.worked() {
+		t.Fatalf("an unbounded copy should warn, not report success: %+v", m.errBar)
+	}
+
+	m = buildModel(t)
+	m.Update(replyCopiedMsg{name: "beta", tool: "pi", unreadable: true})
+	if !strings.Contains(m.errBar.text, "a pi pane is not read that way") {
+		t.Fatalf("errBar = %q, want the tool named", m.errBar.text)
+	}
+	if !m.errBar.warned() {
+		t.Fatalf("an unreadable pane should warn: %+v", m.errBar)
+	}
+}
+
+func TestPreparedAttachDoesNotReplaceNewerHelp(t *testing.T) {
+	t.Parallel()
+	for _, returning := range []bool{false, true} {
+		t.Run(map[bool]string{false: "attach", true: "reattach"}[returning], func(t *testing.T) {
+			m := buildModel(t)
+			createSession(t, m, "attach-fence", t.TempDir(), "")
+			m.selectSessionRow(t, "attach-fence")
+			sess, _ := m.selected()
+			if err := m.services.store.UpdateStatus(sess.ID, status.Finished); err != nil {
+				t.Fatal(err)
+			}
+			var command tea.Cmd
+			if returning {
+				command = m.reattach(sess.ID, m.review.Generation())
+			} else {
+				command = m.attachCmd(sess.ID)
+			}
+			request := m.effects.Main.Active.Request.(uilifecycle.AttachRequest)
+			result := command().(uieffects.Completed)
+			if result.Err != nil {
+				t.Fatal(result.Err)
+			}
+			got, err := m.services.store.Get(sess.ID)
+			if err != nil || !got.Acked {
+				t.Fatalf("accepted acknowledgement was lost: %+v %v", got, err)
+			}
+			m.gens.foreground++
+			m.openHelp()
+			if next := m.applyAttachEffect(request, result.Result.(uilifecycle.AttachResult), result.Err); next != nil {
+				t.Fatal("prepared attach replaced newer Help")
+			}
+			if !helpOpen(m) {
+				t.Fatal("Help was replaced")
+			}
+		})
+	}
+}
+
+func TestAttachReportsTransportFailureWithoutCallingPaneDead(t *testing.T) {
+	testenv.SkipPOSIXShell(t)
+	m := buildModel(t)
+	dir := t.TempDir()
+	stub := filepath.Join(dir, "tmux")
+	if err := os.WriteFile(stub, []byte("#!/bin/sh\necho 'attach liveness unavailable' >&2\nexit 2\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	driver, err := tmux.NewWithSocket(m.services.tmux.SocketName())
+	if err != nil {
+		t.Fatal(err)
+	}
+	services := effectServices{store: m.services.store, driver: driver}
+	_, err = uilifecycle.RunAttach(services.lifecycleServices(), uilifecycle.AttachRequest{ID: "attach-probe"})
+	if err == nil || !strings.Contains(err.Error(), "attach liveness unavailable") || strings.Contains(err.Error(), uilifecycle.DeadSessionHint) {
+		t.Fatalf("transport failure mislabeled: %v", err)
+	}
+}
 
 // captureEditor swaps both editor seams: PATH answers only for the names
 // given, and the launch is recorded instead of run.
@@ -381,7 +772,7 @@ func TestResolveEditorPrecedence(t *testing.T) {
 			for key, value := range tc.env {
 				t.Setenv(key, value)
 			}
-			if got := m.captureEditorResolution().editorLine(); got != tc.want {
+			if got := m.captureEditorResolution().Line(); got != tc.want {
 				t.Fatalf("editor resolution = %q, want %q", got, tc.want)
 			}
 		})
@@ -396,7 +787,7 @@ func TestResolveEditorFallsBackToEnvironment(t *testing.T) {
 	captureEditor(t)
 	t.Setenv("EDITOR", "nvim")
 
-	if got := m.captureEditorResolution().editorLine(); got != "nvim" {
+	if got := m.captureEditorResolution().Line(); got != "nvim" {
 		t.Fatalf("editor resolution = %q, want nvim", got)
 	}
 	if uisession.Detached(uisession.Name("nvim")) {
@@ -801,5 +1192,316 @@ func TestEditorReturnPolicy(t *testing.T) {
 		if got := tc.target.resumes(tc.gen, tc.current, tc.quitting); got != tc.want {
 			t.Errorf("%s: resumes = %v, want %v", tc.name, got, tc.want)
 		}
+	}
+}
+
+func TestAStaleRefreshKeepsASessionLaunchedAfterItWasListed(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	m.applyCmd(t, m.refreshCmd())
+
+	// What a poll hands the UI: the session list as it stood when the pass
+	// opened, delivered once the pass has finished its tmux and ps calls.
+	inFlight := m.poller.refreshOnce()
+
+	if err := m.spawnSession("claude", "late-arrival", t.TempDir(), "", "", false, false, config.Choice{}); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	launched := m.sessionRows()
+	if len(launched) != 1 {
+		t.Fatalf("rows after the spawn = %d, want the one just launched", len(launched))
+	}
+
+	updated, _ := m.Update(inFlight)
+	m.drainEffects(t)
+	*m = *updated.(*Model)
+
+	if uilifecycle.SessionGone(m.workspace.sessions, launched[0].ID) {
+		t.Fatalf("the stale poll took the launched session off screen, leaving %v", m.sessionRows())
+	}
+}
+
+func TestAStaleRefreshKeepsALaunchListedWhileTmuxWasStartingIt(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	m.applyCmd(t, m.refreshCmd())
+
+	if err := m.spawnSession("claude", "slow-window", t.TempDir(), "", "", false, false, config.Choice{}); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	launched := m.sessionRows()[0]
+
+	// Building the tmux window takes tens of milliseconds, so a poll can
+	// list the store after the launch began and still be missing its row.
+	updated, _ := m.Update(refreshMsg{listedAt: launched.CreatedAt.Add(time.Millisecond)})
+	m.drainEffects(t)
+	*m = *updated.(*Model)
+
+	if uilifecycle.SessionGone(m.workspace.sessions, launched.ID) {
+		t.Fatalf("the stale poll took the launched session off screen, leaving %v", m.sessionRows())
+	}
+}
+
+// pressRune sends one key through Update the way the terminal would.
+func (m *Model) pressRune(t *testing.T, r rune) {
+	t.Helper()
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	*m = *updated.(*Model)
+	if cmd != nil {
+		if msg := cmd(); msg != nil {
+			updated, _ = m.Update(msg)
+			m.drainEffects(t)
+			*m = *updated.(*Model)
+		}
+	}
+}
+
+// staleRefreshAfter is the refresh a poll pass that opened before the launch
+// would deliver: it carries no sessions and a listing time from before them.
+func staleRefreshAfter(m *Model) refreshMsg {
+	earliest := time.Now()
+	for _, at := range m.ledger.lifecycle.Launched {
+		if at.Before(earliest) {
+			earliest = at
+		}
+	}
+	return refreshMsg{listedAt: earliest.Add(-time.Millisecond)}
+}
+
+func TestAStaleRefreshDoesNotBringBackASessionJustDeleted(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	m.applyCmd(t, m.refreshCmd())
+	if err := m.spawnSession("claude", "doomed", t.TempDir(), "", "", false, false, config.Choice{}); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	sess := m.sessionRows()[0]
+
+	m.selectSessionRow(t, sess.Name)
+	m.pressRune(t, 'd')
+	m.pressRune(t, 'y')
+	if _, err := m.services.store.Get(sess.ID); err == nil {
+		t.Fatal("the delete did not reach the store")
+	}
+
+	updated, _ := m.Update(staleRefreshAfter(m))
+	m.drainEffects(t)
+	*m = *updated.(*Model)
+
+	if !uilifecycle.SessionGone(m.workspace.sessions, sess.ID) {
+		t.Fatalf("a deleted session came back on a stale poll: %v", m.sessionRows())
+	}
+}
+
+func TestAStaleRefreshDoesNotBringBackASessionJustArchived(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	m.applyCmd(t, m.refreshCmd())
+	if err := m.spawnSession("claude", "shelved", t.TempDir(), "", "", false, false, config.Choice{}); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	sess := m.sessionRows()[0]
+
+	m.selectSessionRow(t, sess.Name)
+	m.pressRune(t, 'a')
+	m.pressRune(t, 'y')
+
+	updated, _ := m.Update(staleRefreshAfter(m))
+	m.drainEffects(t)
+	*m = *updated.(*Model)
+
+	for _, row := range m.sessionRows() {
+		if row.ID == sess.ID {
+			t.Fatalf("an archived session came back on the live tree as %q", row.Status)
+		}
+	}
+}
+
+// A poll that listed the store before the delete delivers its full list
+// afterwards; that stale copy must not put the row back on screen.
+func TestAStalePollCannotResurrectADeletedRow(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "doomed", t.TempDir(), "")
+	sess := m.sessionRows()[0]
+	listedAt := time.Now()
+
+	deleteSession(t, m, "doomed")
+
+	stale := sess
+	stale.Status = status.Dead
+	updated, _ := m.Update(refreshMsg{sessions: []store.Session{stale}, listedAt: listedAt})
+	m.drainEffects(t)
+	*m = *updated.(*Model)
+
+	for _, row := range m.sessionRows() {
+		if row.ID == sess.ID {
+			t.Fatalf("a stale poll brought the deleted row back as %q", row.Status)
+		}
+	}
+}
+
+func TestAStalePollCannotBringAnArchivedRowBackLive(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "shelved", t.TempDir(), "")
+	sess := m.sessionRows()[0]
+	listedAt := time.Now()
+
+	m.selectSessionRow(t, "shelved")
+	m.archiveSelected()
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.drainEffects(t)
+
+	stale := sess
+	stale.Status = status.Dead
+	updated, _ := m.Update(refreshMsg{sessions: []store.Session{stale}, listedAt: listedAt})
+	m.drainEffects(t)
+	*m = *updated.(*Model)
+
+	for _, row := range m.sessionRows() {
+		if row.ID == sess.ID {
+			t.Fatalf("a stale poll brought the archived row back on the live tree")
+		}
+	}
+}
+
+func TestAFreshListingRetiresDeletionMarkers(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "doomed", t.TempDir(), "")
+	listedAt := time.Now()
+
+	deleteSession(t, m, "doomed")
+
+	fresh := refreshMsg{listedAt: listedAt.Add(time.Second)}
+	updated, _ := m.Update(fresh)
+	m.drainEffects(t)
+	*m = *updated.(*Model)
+
+	if len(m.ledger.lifecycle.Gone) != 0 {
+		t.Fatalf("deletion markers outlived a listing that postdates them: %v", m.ledger.lifecycle.Gone)
+	}
+}
+
+func TestAStalePollCannotRestoreADeletedGroupHeader(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.services.store.CreateGroup("zone", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "in-zone", dir, "zone")
+	sess := m.sessionRows()[0]
+	listedAt := time.Now()
+
+	m.selectGroupRow(t, "zone")
+	m.prepareDelete()
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.drainEffects(t)
+
+	stale := refreshMsg{
+		sessions:       []store.Session{sess},
+		listedAt:       listedAt,
+		groups:         []string{"zone"},
+		groupPaths:     map[string]string{"zone": dir},
+		groupWorktrees: map[string]string{"zone": dir},
+		archivedGroups: map[string]bool{"zone": true},
+	}
+	updated, _ := m.Update(stale)
+	m.drainEffects(t)
+	*m = *updated.(*Model)
+
+	for _, r := range railRows(m) {
+		if r.isGroup && r.group == "zone" {
+			t.Fatalf("a stale poll brought the deleted group header back")
+		}
+	}
+	for _, g := range m.workspace.groups {
+		if g == "zone" {
+			t.Fatal("a stale poll restored the deleted group path")
+		}
+	}
+	for _, meta := range []map[string]string{m.workspace.groupPaths, m.workspace.groupWorktrees} {
+		if _, ok := meta["zone"]; ok {
+			t.Fatal("a stale poll restored deleted group metadata")
+		}
+	}
+	if _, ok := m.workspace.archivedGroups["zone"]; ok {
+		t.Fatal("a stale poll restored the deleted group's archive flag")
+	}
+}
+
+// A poll that listed the store before a restore still says the row is
+// archived; that stale copy must not undo the restore for a frame.
+func TestAStalePollCannotUndoARestore(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "returning", t.TempDir(), "")
+	sess := m.sessionRows()[0]
+
+	m.selectSessionRow(t, "returning")
+	m.archiveSelected()
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.drainEffects(t)
+	listedAt := time.Now()
+
+	m.rail.SetArchived(true)
+	m.applyCmd(t, m.refreshCmd())
+	m.selectSessionRow(t, "returning")
+	m.restoreSelected()
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.drainEffects(t)
+
+	stale := sess
+	stale.Archived = true
+	updated, _ := m.Update(refreshMsg{sessions: []store.Session{stale}, listedAt: listedAt})
+	m.drainEffects(t)
+	*m = *updated.(*Model)
+
+	for _, row := range m.sessionRows() {
+		if row.ID == sess.ID {
+			t.Fatalf("a stale poll put the restored session back in the archived view")
+		}
+	}
+	m.rail.SetArchived(false)
+	if got := m.visibleSessions(); len(got) != 1 || got[0].Archived {
+		t.Fatalf("restored session should read live after a stale listing, got %+v", got)
+	}
+}
+
+func TestAStalePollCannotBringAnArchivedGroupBackLive(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.services.store.CreateGroup("zone", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "in-zone", dir, "zone")
+	sess := m.sessionRows()[0]
+	listedAt := time.Now()
+
+	m.selectGroupRow(t, "zone")
+	m.archiveSelected()
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.drainEffects(t)
+
+	stale := refreshMsg{
+		sessions:   []store.Session{sess},
+		listedAt:   listedAt,
+		groups:     []string{"zone"},
+		groupPaths: map[string]string{"zone": dir},
+	}
+	updated, _ := m.Update(stale)
+	m.drainEffects(t)
+	*m = *updated.(*Model)
+
+	if !m.groupEffectivelyArchived("zone") {
+		t.Fatal("a stale poll brought the archived group back on the active tree")
+	}
+	if got := m.visibleSessions(); len(got) != 0 {
+		t.Fatalf("archived subtree should stay out of the active view, got %v", got)
 	}
 }

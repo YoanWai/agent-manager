@@ -6,6 +6,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/testfixture"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+	sessiondialogs "github.com/YoanWai/agent-manager/internal/ui/session/dialogs"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -300,7 +301,7 @@ func TestBulkActionsRespectStatusFilter(t *testing.T) {
 	m.base = baseList
 	m.clearSurfaces()
 
-	if got := m.sessionsInGroup(""); len(got) != 1 || got[0].ID != "w" {
+	if got := sessiondialogs.InGroup(m.listedSessions(), ""); len(got) != 1 || got[0].ID != "w" {
 		t.Fatalf("filtered group sessions = %+v, want only the listed session", got)
 	}
 
