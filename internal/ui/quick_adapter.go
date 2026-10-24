@@ -14,7 +14,6 @@ import (
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
-	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -83,7 +82,7 @@ func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	q := m.quick()
 	// The move and toggle effects change the bar's own aim and toggle, so
 	// they land before a later repaint reads them.
-	cmd := uiquick.Decide(quickEffects{m}, q, composer.TypedText(msg))
+	cmd := uiquick.Decide(m.quickBarHost(), q, composer.TypedText(msg))
 	return m, cmd
 }
 
@@ -100,7 +99,7 @@ func (m *Model) quickKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 
 // runQuickRequest runs what a bar key or click asked of the root.
 func (m *Model) runQuickRequest(request uiquick.Request) tea.Cmd {
-	return uiquick.Execute(quickEffects{m}, m.quick(), request, nil)
+	return uiquick.Execute(m.quickBarHost(), m.quick(), request, nil)
 }
 
 func (m *Model) submitQuick() (tea.Model, tea.Cmd) {
@@ -227,73 +226,6 @@ func (m *Model) quickAnswerRow(entry treeRow, name string, width int) string {
 		[]string{label + lipgloss.NewStyle().Foreground(uitheme.ColorBright()).Bold(true).Render(name)},
 		[]string{state + " " + uitheme.ChipStyle().Render(sess.Tool), state, ""}, width)
 }
-
-// quickEffects is the root as a bar key or click reaches it: the work the
-// package decides, run here.
-type quickEffects struct{ m *Model }
-
-func (e quickEffects) ChoiceCaps(toolName string) spawn.Caps {
-	return e.m.spawnHost().ChoiceCaps(toolName)
-}
-
-func (e quickEffects) ChoiceAnswer(toolName string) *spawn.Answer {
-	return e.m.spawnHost().ChoiceAnswer(toolName)
-}
-
-func (e quickEffects) ChoiceSetting(key string) string { return e.m.spawnHost().ChoiceSetting(key) }
-
-func (e quickEffects) SaveChoiceSetting(key, value string) { e.m.saveChoiceSetting(key, value) }
-
-func (e quickEffects) ReportErr(text string) { e.m.reportErr(text) }
-
-func (e quickEffects) ClearErr() { e.m.clearErr() }
-
-func (e quickEffects) ChoiceRemoteHost() string { return e.m.spawnHost().ChoiceRemoteHost() }
-
-func (e quickEffects) Prompt() spawn.Prompt { return e.m.quickBarHost().Prompt() }
-
-func (e quickEffects) Target() (uiquick.Target, bool) { return e.m.quickBarHost().Target() }
-
-func (e quickEffects) MoveCursor(delta int) tea.Cmd {
-	return tea.Batch(e.m.moveCursor(delta), e.m.quickWorktreeProbeCmd(false))
-}
-
-func (e quickEffects) ToggleWorktree() tea.Cmd { return e.m.toggleQuickWorktree() }
-
-func (e quickEffects) Close() { e.m.closeQuick() }
-
-func (e quickEffects) LoadSaved() tea.Cmd {
-	return uipersist.SavedCmd(e.m.services.store, uipersist.SavedForQuick, uint64(e.m.quick().Gen), 0)
-}
-
-func (e quickEffects) Send(text string) tea.Cmd {
-	if cmd, taken := e.m.remoteQuickSend(text); taken {
-		return cmd
-	}
-	entry, _ := e.m.selectedRow()
-	q := e.m.quick()
-	if !e.m.dispatchQuickSend(uiquick.SendRequest{
-		Session:        entry.sess,
-		ComposerGen:    q.Gen,
-		Draft:          q.Input.Value(),
-		Text:           text,
-		CloseAfterSend: q.CloseAfterSend,
-		Images:         q.Attachments,
-	}) {
-		return nil
-	}
-	e.m.clearErr()
-	return e.m.nextEffectCmd()
-}
-
-func (e quickEffects) Spawn(request spawn.Request) tea.Cmd {
-	if cmd, taken := e.m.remoteQuickSpawn(request); taken {
-		return cmd
-	}
-	return e.m.dispatchQuickSpawn(e.m.quickSpawnRequest(request), systemDirectoryPreflight{git: e.m.services.gitDrv})
-}
-
-var _ uiquick.Effects = quickEffects{}
 
 // quickSendRoot is the root as a finished send reaches it.
 type quickSendRoot struct{ m *Model }

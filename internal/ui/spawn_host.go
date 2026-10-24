@@ -462,3 +462,21 @@ func (p systemDirectoryPreflight) resolve(raw string, fallbacks []string) (strin
 func (p systemDirectoryPreflight) repoCapable(dir string) bool {
 	return uilaunch.SystemDirectoryPreflight{Git: p.git}.RepoCapable(dir)
 }
+
+// contextGroup is the group the cursor currently sits in: a highlighted
+// group row itself, or the group holding a highlighted session.
+func (m *Model) contextGroup() string {
+	if entry, ok := m.selectedRow(); ok {
+		if entry.isGroup {
+			return entry.group
+		}
+		return entry.sess.Group
+	}
+	return ""
+}
+
+// formField paints a labelled row of the New Session card, which the fork
+// dialog reads too.
+func (m *Model) formField(label, value string, focused bool) string {
+	return spawn.FormField(m.spawnStyles(), label, value, focused)
+}

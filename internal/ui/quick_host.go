@@ -5,7 +5,9 @@ import (
 	uiconnections "github.com/YoanWai/agent-manager/internal/ui/connections"
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
+	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // quickBarHost is the root as the quick bar sees it.
@@ -71,3 +73,47 @@ func (m *Model) closeAfterSend() bool {
 }
 
 func (m *Model) quickBarHost() quickBarHost { return quickBarHost{spawnHost{m: m}} }
+
+// The bar's effects: what a key or click asks of the root once the package
+// has decided.
+
+func (h quickBarHost) MoveCursor(delta int) tea.Cmd {
+	return tea.Batch(h.m.moveCursor(delta), h.m.quickWorktreeProbeCmd(false))
+}
+
+func (h quickBarHost) ToggleWorktree() tea.Cmd { return h.m.toggleQuickWorktree() }
+
+func (h quickBarHost) Close() { h.m.closeQuick() }
+
+func (h quickBarHost) LoadSaved() tea.Cmd {
+	return uipersist.SavedCmd(h.m.services.store, uipersist.SavedForQuick, uint64(h.m.quick().Gen), 0)
+}
+
+func (h quickBarHost) Send(text string) tea.Cmd {
+	if cmd, taken := h.m.remoteQuickSend(text); taken {
+		return cmd
+	}
+	entry, _ := h.m.selectedRow()
+	q := h.m.quick()
+	if !h.m.dispatchQuickSend(uiquick.SendRequest{
+		Session:        entry.sess,
+		ComposerGen:    q.Gen,
+		Draft:          q.Input.Value(),
+		Text:           text,
+		CloseAfterSend: q.CloseAfterSend,
+		Images:         q.Attachments,
+	}) {
+		return nil
+	}
+	h.m.clearErr()
+	return h.m.nextEffectCmd()
+}
+
+func (h quickBarHost) Spawn(request spawn.Request) tea.Cmd {
+	if cmd, taken := h.m.remoteQuickSpawn(request); taken {
+		return cmd
+	}
+	return h.m.dispatchQuickSpawn(h.m.quickSpawnRequest(request), systemDirectoryPreflight{git: h.m.services.gitDrv})
+}
+
+var _ uiquick.Effects = quickBarHost{}
