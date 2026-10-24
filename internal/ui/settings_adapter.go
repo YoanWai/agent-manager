@@ -1,9 +1,6 @@
 package ui
 
 import (
-	"slices"
-	"strings"
-
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -33,18 +30,6 @@ func SettingSpecs() ([]store.SettingSpec, error) {
 	return out, nil
 }
 
-func (m *Model) settingsContext() uisettings.Context {
-	session, list := m.settingsKeyTables()
-	return uisettings.Context{
-		Tools:       uipersist.Tools(m.services.cfg),
-		Hidden:      m.settings.Cache.Hidden(),
-		DefaultTool: m.settings.Cache.Value(uisettings.DefaultToolSetting),
-		Session:     session,
-		List:        list,
-		UpdateReady: m.release.Latest != "",
-	}
-}
-
 func (m *Model) openSettings() tea.Cmd {
 	return m.openSettingsWithReader(uipersist.StoreWriter{Store: m.services.store})
 }
@@ -62,7 +47,7 @@ func (m *Model) openSettingsWithReader(reader uipersist.Reader) tea.Cmd {
 	state := s.FromCache(m.services.cfg, uitheme.Current().Name)
 	state.MarkBaseline()
 	m.push(newSettingsSurface(m, state))
-	probe := m.probeEditorsCmd()
+	probe := settingsEditorProbe(m)
 	if s.Pending > 0 {
 		return probe
 	}
@@ -70,65 +55,7 @@ func (m *Model) openSettingsWithReader(reader uipersist.Reader) tea.Cmd {
 }
 
 func (m *Model) handleSettingsLoaded(msg uipersist.LoadedMsg) (tea.Model, tea.Cmd) {
-	return m, m.settings.UpdateLoad(settingsLoadRoot{m}, msg)
-}
-
-// settingsLoadRoot is the root as a landed settings read reaches it: the
-// persist package decides which surface may still take the read, and each
-// rebuild here answers with the work it asks for.
-type settingsLoadRoot struct{ *Model }
-
-func (r settingsLoadRoot) RebuildSettings(result uipersist.LoadResult, generation uint64) uipersist.LoadOutcome {
-	card, open := surfaceOf[*uisettings.Surface](r.Model)
-	if !open || !r.settings.Fresh(generation) || card.State().Busy() {
-		return uipersist.LoadOutcome{}
-	}
-	r.settings.Take(result)
-	field := card.State().Field
-	card.SetState(r.settings.FromCache(r.services.cfg, uitheme.Current().Name))
-	var follow tea.Cmd
-	// A manual theme the shell changed meanwhile repaints here, so esc
-	// keeps it instead of writing back the palette cached at startup.
-	if d := card.State(); !d.ThemeAuto && uitheme.Current().Name != d.ManualTheme {
-		d.ShowTheme(d.ManualTheme)
-		applyTheme(uitheme.Palettes[d.ThemeIndex])
-		SyncTerminalColors()
-		follow = r.syncPaneTheme()
-	}
-	card.State().MarkBaseline()
-	card.State().Field = field
-	return uipersist.LoadOutcome{Built: true, Follow: follow}
-}
-
-func (r settingsLoadRoot) RebuildForm(result uipersist.LoadResult, generation uint64) uipersist.LoadOutcome {
-	f, ok := r.formFor(int(generation))
-	if !ok || f.DefaultsTouched() || r.settings.Pending > 0 {
-		return uipersist.LoadOutcome{}
-	}
-	r.settings.Take(result)
-	r.refreshFormChoicePrefs()
-	return uipersist.LoadOutcome{Built: true, Follow: tea.Batch(r.applyCachedFormDefaults(), r.formWorktreeProbeCmd(false))}
-}
-
-func (r settingsLoadRoot) RebuildQuick(result uipersist.LoadResult, generation uint64) uipersist.LoadOutcome {
-	q, ok := r.quickFor(int(generation))
-	if !ok || q.DefaultsTouched() || r.settings.Pending > 0 {
-		return uipersist.LoadOutcome{}
-	}
-	r.settings.Take(result)
-	r.refreshQuickChoicePrefs()
-	return uipersist.LoadOutcome{Built: true, Follow: tea.Batch(r.applyCachedQuickDefaults(), r.quickWorktreeProbeCmd(false))}
-}
-
-func (r settingsLoadRoot) SettleLoad(err error, follow tea.Cmd) tea.Cmd {
-	r.applyCachedSettingsPrefs()
-	r.rebuildRows()
-	if err != nil {
-		r.reportErr(err.Error())
-	} else {
-		r.clearErr()
-	}
-	return follow
+	return m, m.settings.UpdateLoad(settingsLoadHost{m}, msg)
 }
 
 // applySettingsResult runs the work a dialog key asked beyond its own
@@ -295,46 +222,6 @@ func (m *Model) submitKeys(request uipersist.KeysRequest) tea.Cmd {
 	return m.nextEffectCmd()
 }
 
-// settingsSaveRoot is the root as a Settings completion reaches it: the
-// persist package decides what committed, and every effect here answers in
-// the manager's own state.
-type settingsSaveRoot struct{ *Model }
-
-func (r settingsSaveRoot) ReportErr(text string) { r.reportErr(text) }
-
-func (r settingsSaveRoot) Caveat(text string) { r.reportErr(r.errBar.text + "; " + text) }
-
-func (r settingsSaveRoot) MirrorPrefs(values []uisettings.Readback) string {
-	return r.reconcileSettingsPrefs(values)
-}
-
-func (r settingsSaveRoot) Restore(values []uisettings.Readback, hiddenRaw string, hiddenErr error, editors *uisettings.EditorsProbe) {
-	if card, open := surfaceOf[*uisettings.Surface](r.Model); open {
-		card.State().Restore(values, hiddenRaw, hiddenErr, editors)
-	}
-}
-
-func (r settingsSaveRoot) Update(staged bool) tea.Cmd {
-	if !staged {
-		r.release.Applying = false
-		return nil
-	}
-	return r.release.Apply()
-}
-
-// SaveKeys re-applies the saved tables to the sessions already running.
-func (r settingsSaveRoot) SaveKeys(list, session keybind.Table, listChanged, sessionChanged bool) tea.Cmd {
-	if listChanged {
-		r.services.listKeys = list
-	}
-	if sessionChanged {
-		r.services.keys = session
-		r.services.tmux.SetSessionKeys(session)
-		return func() tea.Msg { return r.refreshExistingSessionUX() }
-	}
-	return nil
-}
-
 // keySaver writes one key table through the instance writer the job
 // captured, or the store when the model was built without one.
 func (s effectServices) keySaver() uipersist.KeySaver {
@@ -368,34 +255,6 @@ func (m *Model) applySettingsPrefs(d *uisettings.State) {
 	for _, key := range uisettings.FlagKeys() {
 		m.mirrorFlag(key, d.Flag(key))
 	}
-}
-
-func (m *Model) probeEditorsCmd() tea.Cmd {
-	resolution, generation := detectedEditors(), m.settings.Gen
-	return func() tea.Msg {
-		msg := resolution.probe()
-		msg.Generation = generation
-		return msg
-	}
-}
-
-// probe walks PATH, which is I/O that Update must not do.
-func (r editorResolution) probe() uisettings.EditorsProbe {
-	var found []string
-	if r.lookup != nil {
-		for _, name := range r.gui {
-			if _, err := r.lookup(name); err == nil {
-				found = append(found, name)
-			}
-		}
-	}
-	for _, line := range []string{r.visual, r.editor} {
-		if line = strings.TrimSpace(line); line != "" && !slices.Contains(found, line) {
-			found = append(found, line)
-		}
-	}
-	r.configured = ""
-	return uisettings.EditorsProbe{Found: found, Auto: r.editorLine()}
 }
 
 // applyEditorsProbe keeps the answer for the rows later loads rebuild, and

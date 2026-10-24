@@ -44,7 +44,7 @@ func (m *Model) applyPromptsResult(request uipersist.PromptRequest, result uiper
 		selected = request.Save.SelectedName()
 	}
 	m.applyPromptsRead(request.DialogGen, uisettings.PromptsRead{
-		Gen: request.Gen, Rows: settingsPrompts(result.Rows), Err: err,
+		Gen: request.Gen, Rows: uisettings.PromptRows(presetRows(result.Rows)), Err: err,
 		Mutation: true, Committed: result.Committed, Selected: selected,
 	})
 }
@@ -62,7 +62,7 @@ func (m *Model) setNotice(notice uisettings.Notice) {
 func (m *Model) handleSavedPromptsLoaded(msg uipersist.SavedMsg) {
 	switch msg.Target {
 	case uipersist.SavedForSettings:
-		m.applyPromptsRead(msg.DialogGen, uisettings.PromptsRead{Gen: msg.Gen, Rows: settingsPrompts(msg.Rows), Err: msg.Err})
+		m.applyPromptsRead(msg.DialogGen, uisettings.PromptsRead{Gen: msg.Gen, Rows: uisettings.PromptRows(presetRows(msg.Rows)), Err: msg.Err})
 	case uipersist.SavedForForm:
 		if f, ok := m.formFor(int(msg.Gen)); ok {
 			f.SetSaved(spawnSaved(msg.Rows), msg.Err)
@@ -84,10 +84,10 @@ func spawnSaved(rows []store.SessionPreset) []spawn.Saved {
 	return saved
 }
 
-func settingsPrompts(rows []store.SessionPreset) []uisettings.Prompt {
-	prompts := make([]uisettings.Prompt, len(rows))
+func presetRows(rows []store.SessionPreset) []uisettings.Preset {
+	presets := make([]uisettings.Preset, len(rows))
 	for i, row := range rows {
-		prompts[i] = uisettings.Prompt{Name: row.Name, Text: row.Instructions}
+		presets[i] = uisettings.Preset{Name: row.Name, Text: row.Instructions}
 	}
-	return prompts
+	return presets
 }

@@ -10,17 +10,17 @@ import (
 )
 
 // settingsRoot is the root as the Settings card reads it.
-type settingsRoot struct{ *Model }
+type settingsRoot struct{ m *Model }
 
-func (r settingsRoot) Context() uisettings.Context { return r.settingsContext() }
+func (r settingsRoot) Context() uisettings.Context { return settingsHost{r.m}.Context() }
 
 func (r settingsRoot) Apply(d *uisettings.State, result uisettings.Result) (tea.Cmd, bool) {
-	return r.applySettingsResult(d, result)
+	return settingsHost{r.m}.Apply(d, result)
 }
 
-func (r settingsRoot) Leave(d *uisettings.State) { r.leaveSettings(d) }
+func (r settingsRoot) Leave(d *uisettings.State) { settingsHost{r.m}.Leave(d) }
 
-func (r settingsRoot) Paint(d *uisettings.State) string { return r.paintSettings(d) }
+func (r settingsRoot) Paint(d *uisettings.State) string { return settingsHost{r.m}.Paint(d) }
 
 // paintSettings frames the dialog in the root's card chrome.
 func (m *Model) paintSettings(d *uisettings.State) string {

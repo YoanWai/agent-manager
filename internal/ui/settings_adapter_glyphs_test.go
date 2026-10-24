@@ -107,7 +107,7 @@ func TestSymbolsSaveFailureRestoresAndCanRetry(t *testing.T) {
 	if err == nil {
 		t.Fatal("fixture write must fail")
 	}
-	m.applyTestMsg(t, m.settings.ApplySave(settingsSaveRoot{m}, request, result, err))
+	m.applyTestMsg(t, m.settings.ApplySave(settingsSaveHost{m}, request, result, err))
 	if m.prefs.glyphMode != "" || m.errBar.text == "" {
 		t.Fatal("failed symbols save did not restore default and report failure")
 	}
@@ -133,7 +133,7 @@ func TestSettingsUpdateDoesNotStartAfterSymbolsSaveFails(t *testing.T) {
 	if !request.StagedUpdate {
 		t.Fatal("update not captured")
 	}
-	if cmd := m.settings.ApplySave(settingsSaveRoot{m}, request, uipersist.SaveResult{}, errors.New("disk full")); cmd != nil || m.release.Applying {
+	if cmd := m.settings.ApplySave(settingsSaveHost{m}, request, uipersist.SaveResult{}, errors.New("disk full")); cmd != nil || m.release.Applying {
 		t.Fatal("failed settings save still starts update")
 	}
 }

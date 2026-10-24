@@ -6,6 +6,7 @@ import (
 
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
+	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -174,6 +175,17 @@ func detectedEditors() editorResolution {
 		gui:     uisession.GUIEditors(),
 		lookup:  lookPath,
 	}
+}
+
+// probe answers the Settings editor row for this environment.
+func (r editorResolution) probe() uisettings.EditorsProbe {
+	return uisettings.EditorProbe{
+		GUI:    r.gui,
+		Visual: r.visual,
+		Editor: r.editor,
+		Lookup: r.lookup,
+		Line:   r.editorLine,
+	}.Resolve()
 }
 
 // editorLine is the editor the manager launches with: the configured one,
