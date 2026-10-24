@@ -380,6 +380,9 @@ func (m *Model) selectedLifecycleRow() (sessiondialogs.Row, bool) {
 // runSessionIntent executes what a session key decided: the card it opens, the
 // batch it queues, or the line it reports.
 func (m *Model) runSessionIntent(intent sessiondialogs.Intent) (tea.Model, tea.Cmd) {
+	if intent.Nothing() {
+		return m, nil
+	}
 	if intent.Notice != "" {
 		m.reportErr(intent.Notice)
 		return m, nil
