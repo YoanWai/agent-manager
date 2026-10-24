@@ -890,7 +890,7 @@ func TestReviewBaseSavePersistsButDoesNotReloadStaleOrQuittingReview(t *testing.
 			state := m.review.Snapshot()
 			source := uireview.PickerSource{Generation: state.Generation, TargetID: state.SessionID, RepoRoot: state.RepoSelected}
 
-			cmd := m.selectBase("feature", source, "/canonical/repo")
+			cmd := m.selectBase(uireview.BaseSave{Ref: "feature", TargetID: source.TargetID, StoreRoot: "/canonical/repo", Source: source})
 			if cmd == nil || m.effects.Main.Active == nil {
 				t.Fatal("accepted base did not enter the FIFO effect lane")
 			}
@@ -922,11 +922,11 @@ func TestReviewBaseSaveAllowsOnlyOnePendingRequest(t *testing.T) {
 	state := m.review.Snapshot()
 	source := uireview.PickerSource{Generation: state.Generation, TargetID: state.SessionID, RepoRoot: state.RepoSelected}
 
-	cmd := m.selectBase("feature", source, "/canonical/repo")
+	cmd := m.selectBase(uireview.BaseSave{Ref: "feature", TargetID: source.TargetID, StoreRoot: "/canonical/repo", Source: source})
 	if cmd == nil {
 		t.Fatal("first base save was not accepted")
 	}
-	if second := m.selectBase("main", source, "/canonical/repo"); second != nil {
+	if second := m.selectBase(uireview.BaseSave{Ref: "main", TargetID: source.TargetID, StoreRoot: "/canonical/repo", Source: source}); second != nil {
 		t.Fatal("second base save started while the first was pending")
 	}
 	if len(m.effects.Main.Pending) != 0 || m.effects.Main.Active == nil {
@@ -983,7 +983,7 @@ func TestReviewBaseSaveCompletesBehindReviewHelp(t *testing.T) {
 	picker := m.pickerOf(t)
 	source, storeRoot := picker.Source(), picker.StoreRoot()
 	m.Pop()
-	cmd := m.selectBase("feature", source, storeRoot)
+	cmd := m.selectBase(uireview.BaseSave{Ref: "feature", TargetID: source.TargetID, StoreRoot: storeRoot, Source: source})
 	if cmd == nil {
 		t.Fatal("base save was not accepted")
 	}
@@ -1024,7 +1024,7 @@ func TestReviewBaseSaveCompletesBehindBranchPicker(t *testing.T) {
 	picker := m.pickerOf(t)
 	source, storeRoot := picker.Source(), picker.StoreRoot()
 	m.Pop()
-	saveCmd := m.selectBase("feature", source, storeRoot)
+	saveCmd := m.selectBase(uireview.BaseSave{Ref: "feature", TargetID: source.TargetID, StoreRoot: storeRoot, Source: source})
 	if saveCmd == nil {
 		t.Fatal("base save was not accepted")
 	}

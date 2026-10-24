@@ -554,14 +554,15 @@ func (m *Model) applyReviewPick(msg uireview.PickedMsg) tea.Cmd {
 	if m.effects.Quitting || m.base != baseReview {
 		return nil
 	}
-	if !m.review.PickerSourceCurrent(msg.Source) {
-		m.reportErr("review changed; reopen the picker")
+	decision := m.review.DecidePick(msg)
+	if decision.Refused != "" {
+		m.reportErr(decision.Refused)
 		return nil
 	}
-	if msg.Choice.Kind == uireview.PickBase {
-		return m.selectBase(msg.Choice.Value, msg.Source, msg.StoreRoot)
+	if decision.Base != nil {
+		return m.selectBase(*decision.Base)
 	}
-	return m.selectRepo(msg.Choice.Value)
+	return m.selectRepo(decision.Repo)
 }
 
 func (m *Model) selectRepo(root string) tea.Cmd {
@@ -584,23 +585,19 @@ func (m *Model) selectRepo(root string) tea.Cmd {
 // selectBase persists the chosen base for the current repo ("" clears to auto)
 // then reloads. It forces the branch scope so the freshly picked base is what
 // the review actually shows.
-func (m *Model) selectBase(ref string, source uireview.PickerSource, storeRoot string) tea.Cmd {
+func (m *Model) selectBase(pick uireview.BaseSave) tea.Cmd {
 	if m.reviewBaseSavePending() {
 		m.reportErr("diff base is still saving")
 		return nil
 	}
 	sess, ok := m.diffSession()
-	if !ok || sess.ID != source.TargetID {
+	if !ok || sess.ID != pick.TargetID {
 		m.reportErr("session is gone")
 		return nil
 	}
-	if storeRoot == "" {
-		m.reportErr("review repository is gone")
-		return nil
-	}
 	m.enqueueEffect(uireviewsource.Change{Request: uireviewsource.Request{
-		Op: uireviewsource.SetBase, TargetID: sess.ID, RepoRoot: storeRoot,
-		SourceRepo: source.RepoRoot, Generation: source.Generation, BaseRef: ref,
+		Op: uireviewsource.SetBase, TargetID: sess.ID, RepoRoot: pick.StoreRoot,
+		SourceRepo: pick.Source.RepoRoot, Generation: pick.Source.Generation, BaseRef: pick.Ref,
 	}}, 0, false)
 	return m.nextEffectCmd()
 }

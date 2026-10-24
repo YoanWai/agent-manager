@@ -299,3 +299,39 @@ func Carry(h CarryRoot, result ApplyResult) tea.Cmd {
 	}
 	return h.ReviewCommands(result.Requests)
 }
+
+// PickDecision is what acting on a pick asks for. A pick is refused with the
+// words the status bar repeats when the review it was taken for moved on, when
+// no review is showing, or when it names a repo or a base the review cannot use.
+type PickDecision struct {
+	Refused string
+	Repo    string
+	Base    *BaseSave
+}
+
+// BaseSave is a picked base waiting to be persisted for one repo.
+type BaseSave struct {
+	Ref       string
+	TargetID  string
+	StoreRoot string
+	Source    PickerSource
+}
+
+// DecidePick reads a pick against the open review. Whether the app is quitting,
+// or showing something other than Review, is the caller's to answer, since only
+// the root knows what is on screen.
+func (m Model) DecidePick(msg PickedMsg) PickDecision {
+	if !m.PickerSourceCurrent(msg.Source) {
+		return PickDecision{Refused: "review changed; reopen the picker"}
+	}
+	if msg.Choice.Kind == PickBase {
+		if msg.StoreRoot == "" {
+			return PickDecision{Refused: "review repository is gone"}
+		}
+		return PickDecision{Base: &BaseSave{
+			Ref: msg.Choice.Value, TargetID: msg.Source.TargetID,
+			StoreRoot: msg.StoreRoot, Source: msg.Source,
+		}}
+	}
+	return PickDecision{Repo: msg.Choice.Value}
+}
