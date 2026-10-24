@@ -21,9 +21,9 @@ func (m *Model) routeStartupMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 // startupRoot is the root as the startup animation reads it.
 type startupRoot struct{ *Model }
 
-func (h startupHost) LoaderNeeded() bool { return h.needsLoaderTick() }
+func (h startupRoot) LoaderNeeded() bool { return h.needsLoaderTick() }
 
-func (h startupHost) ReportWarn(text string) { h.reportWarn(text) }
+func (h startupRoot) ReportWarn(text string) { h.reportWarn(text) }
 
 func (m *Model) startStartupTick() tea.Cmd { return m.startup.StartTick(startupRoot{m}) }
 

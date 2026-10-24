@@ -15,7 +15,7 @@ func (e ForkEffect) EffectCopy() uieffects.Request {
 
 func (e ForkEffect) Run(services Services) (uieffects.Result, error) {
 	result, err := Fork(services.Sources, services.Preflight, e.ForkRequest)
-	return ForkEffectResult{Outcome: result}, err
+	return ForkEffectResult{ForkOutcome: result}, err
 }
 
 // ForkEffectResult is the durable outcome of a fork.

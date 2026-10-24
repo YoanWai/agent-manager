@@ -6,8 +6,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// Interval is the loader animation's frame time while rows start.
-const Interval = 80 * time.Millisecond
+// LoaderInterval is the loader animation's frame time while rows start.
+const LoaderInterval = 80 * time.Millisecond
 
 // TickMsg is one loader frame.
 type TickMsg struct{}
@@ -39,7 +39,7 @@ type Host interface {
 
 // Tick schedules one loader frame.
 func Tick() tea.Cmd {
-	return tea.Tick(Interval, func(time.Time) tea.Msg { return TickMsg{} })
+	return tea.Tick(LoaderInterval, func(time.Time) tea.Msg { return TickMsg{} })
 }
 
 // StartTick asks for the first loader frame when one is needed, one at a time.
