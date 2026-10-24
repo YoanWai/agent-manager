@@ -9,6 +9,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/git"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
+	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -73,7 +74,7 @@ func TestReviewPickerReadsRunOnlyInsideCommands(t *testing.T) {
 			t.Fatalf("open path performed I/O or changed screens: calls=%v screen = %v", reader.calls, m.screenID())
 		}
 
-		msg := cmd().(reviewPickerLoadedMsg)
+		msg := cmd().(uireviewsource.PickerLoadedMsg)
 		wantCalls := []string{"worktrees:/raw/repo", "canonical:/raw/repo", "canonical:/actual/main", "canonical:/actual/feature"}
 		if !reflect.DeepEqual(reader.calls, wantCalls) {
 			t.Fatalf("worker calls = %v, want %v", reader.calls, wantCalls)
@@ -100,7 +101,7 @@ func TestReviewPickerReadsRunOnlyInsideCommands(t *testing.T) {
 			t.Fatalf("open path performed I/O or changed screens: calls=%v screen = %v", reader.calls, m.screenID())
 		}
 
-		msg := cmd().(reviewPickerLoadedMsg)
+		msg := cmd().(uireviewsource.PickerLoadedMsg)
 		wantCalls := []string{"branches:/raw/repo", "canonical:/raw/repo", "base:s2:/actual/repo"}
 		if !reflect.DeepEqual(reader.calls, wantCalls) {
 			t.Fatalf("worker calls = %v, want %v", reader.calls, wantCalls)
@@ -127,7 +128,7 @@ func TestReviewPickerCompletionCannotStealNewerUI(t *testing.T) {
 			m := &Model{}
 			seedReviewPickerModel(t, m, "s1", "/repo")
 			reader := &scriptedReviewPickerReader{worktrees: []git.Worktree{{Root: "/repo", Branch: "main"}}}
-			msg := m.openBranchPickWithReader(reader)().(reviewPickerLoadedMsg)
+			msg := m.openBranchPickWithReader(reader)().(uireviewsource.PickerLoadedMsg)
 			tc.mutate(m)
 			before := m.screenID()
 			m.handleReviewPickerLoaded(msg)
@@ -255,7 +256,7 @@ func TestReviewBaseSaveFailureSurfacesAfterNavigation(t *testing.T) {
 	m.openHelp()
 	_, _ = m.review.SelectRepo("/newer-review")
 
-	cmd := m.applyReviewBase(reviewBaseResult{
+	cmd := m.applyReviewBase(uireviewsource.BaseResult{
 		TargetID: "s1", SourceRepo: "/repo", Generation: 1,
 		Err: errors.New("persist base failed"),
 	})
@@ -336,7 +337,7 @@ func TestReviewBaseSaveCompletesBehindBranchPicker(t *testing.T) {
 	if branchCmd == nil {
 		t.Fatal("branch picker read was not started")
 	}
-	m.handleReviewPickerLoaded(branchCmd().(reviewPickerLoadedMsg))
+	m.handleReviewPickerLoaded(branchCmd().(uireviewsource.PickerLoadedMsg))
 	if !m.pickerOpen() {
 		t.Fatalf("branch picker did not open: screen = %v", m.screenID())
 	}

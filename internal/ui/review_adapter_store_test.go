@@ -6,6 +6,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/store"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
+	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
 )
 
 // A reviewed mark placed on a path in one repo must not bleed onto a
@@ -82,7 +83,7 @@ func TestSavedReviewRoundsGainStableIDsAndPointNumbers(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	state, err := readReviewState(m.services.store, sessionID, repo)
+	state, err := uireviewsource.ReadState(m.services.store, sessionID, repo)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,11 +121,11 @@ func TestReviewProgressAndDraftsRestoreFromStore(t *testing.T) {
 	if !ok {
 		t.Fatal("review session disappeared")
 	}
-	state, err := readReviewState(m.services.store, snapshot.SessionID, snapshot.RepoSelected)
+	state, err := uireviewsource.ReadState(m.services.store, snapshot.SessionID, snapshot.RepoSelected)
 	if err != nil {
 		t.Fatal(err)
 	}
-	seedReviewStateForTest(m, reviewTarget(sess), snapshot.Scope, snapshot.RepoSelected, m.review.SetCopy(), reviewStateFromStore(state))
+	seedReviewStateForTest(m, uireviewsource.Target(sess), snapshot.Scope, snapshot.RepoSelected, m.review.SetCopy(), uireviewsource.StateFromStore(state))
 	if got := m.review.SavedState().Reviewed[m.reviewedMarkKey(path)]; got != wantHash {
 		t.Fatalf("restored reviewed hash = %d, want %d", got, wantHash)
 	}
@@ -149,7 +150,7 @@ func TestRestoreDropsPreScopeReviewedMarks(t *testing.T) {
 	if !ok {
 		t.Fatal("review session disappeared")
 	}
-	seedReviewStateForTest(m, reviewTarget(sess), snapshot.Scope, snapshot.RepoSelected, m.review.SetCopy(), uireview.SavedState{Reviewed: map[string]uint64{"main.go": 42}})
+	seedReviewStateForTest(m, uireviewsource.Target(sess), snapshot.Scope, snapshot.RepoSelected, m.review.SetCopy(), uireview.SavedState{Reviewed: map[string]uint64{"main.go": 42}})
 	if marks := m.review.SavedState().Reviewed; len(marks) != 0 {
 		t.Fatalf("a bare-path mark survived restore: %v", marks)
 	}

@@ -8,6 +8,7 @@ import (
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	focuswatch "github.com/YoanWai/agent-manager/internal/ui/focus/watch"
+	uipreview "github.com/YoanWai/agent-manager/internal/ui/preview"
 	uicapture "github.com/YoanWai/agent-manager/internal/ui/preview/capture"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -26,7 +27,7 @@ func TestFocusDropsTheLastSessionsCaret(t *testing.T) {
 		t.Fatalf("test setup: focus alpha, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
 	m.workspace.preview = "one\ntwo" + strings.Repeat("\n", 38)
-	rows := paneExact(m.workspace.preview, 10, 40, m.paneCaretRow())
+	rows := uipreview.Exact(m.workspace.preview, 10, 40, m.paneCaretRow())
 	if len(rows) != 2 || rows[0] != "one" {
 		t.Fatalf("focused pane = %q, want the painted rows", rows)
 	}
@@ -221,7 +222,7 @@ func TestBottomParkedCaretSurvivesControlCapture(t *testing.T) {
 	if got := m.paneCaretRow(); got != -1 {
 		t.Fatalf("paneCaretRow = %d for a parked caret, want -1", got)
 	}
-	window, start := paneWindow(m.workspace.preview, 30, m.paneCaretRow())
+	window, start := uipreview.Window(m.workspace.preview, 30, m.paneCaretRow())
 	if last := window[len(window)-1]; strings.TrimSpace(last) != "? for shortcuts · PR #390 · taste on" {
 		t.Fatalf("crop bottom = %q, want the footer, not blank fill (start=%d)", last, start)
 	}

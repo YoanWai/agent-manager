@@ -13,6 +13,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
+	uipreview "github.com/YoanWai/agent-manager/internal/ui/preview"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -220,7 +221,7 @@ func TestFocusScrollRecapturesAfterPreviewResize(t *testing.T) {
 	updated, _ = m.Update(recapture())
 	m.drainEffects(t)
 	m = updated.(*Model)
-	if got, want := len(paneExact(m.workspace.preview, m.previewPaneHeight(), m.previewPaneWidth(), -1)), m.previewPaneHeight(); got != want {
+	if got, want := len(uipreview.Exact(m.workspace.preview, m.previewPaneHeight(), m.previewPaneWidth(), -1)), m.previewPaneHeight(); got != want {
 		t.Fatalf("scroll frame has %d rows, want %d", got, want)
 	}
 	if !strings.Contains(m.workspace.preview, "history-line-") {
@@ -265,7 +266,7 @@ func TestFocusScrollKeepsDeepHistoryFrame(t *testing.T) {
 	updated, _ := m.Update(msg)
 	m.drainEffects(t)
 	m = updated.(*Model)
-	if got, want := len(paneExact(m.workspace.preview, m.previewPaneHeight(), m.previewPaneWidth(), -1)), m.previewPaneHeight(); got != want {
+	if got, want := len(uipreview.Exact(m.workspace.preview, m.previewPaneHeight(), m.previewPaneWidth(), -1)), m.previewPaneHeight(); got != want {
 		t.Fatalf("deep frame has %d rows, want %d", got, want)
 	}
 	if !strings.Contains(m.workspace.preview, "history-line-") {

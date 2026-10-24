@@ -9,6 +9,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
+	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -204,7 +205,7 @@ func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case uifocus.OpenReview:
 		cmd := m.openDiff()
 		if m.base == baseReview {
-			m.reviewNav.Set(reviewReturn{Kind: reviewReturnFocus, SessionID: sess.ID})
+			m.reviewNav.Set(uireviewsource.Return{Kind: uireviewsource.ReturnFocus, SessionID: sess.ID})
 		}
 		return m, cmd
 	}

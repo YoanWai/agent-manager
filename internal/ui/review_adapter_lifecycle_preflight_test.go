@@ -9,6 +9,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
+	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
 )
 
 type reviewReadProbe struct {
@@ -34,7 +35,7 @@ func TestReviewOpeningDefersPreferencesAndKeepsReadErrors(t *testing.T) {
 	if reader.calls != 0 {
 		t.Fatal("opening review read preferences on Update")
 	}
-	msg := cmd().(reviewPreferencesMsg)
+	msg := cmd().(uireviewsource.PreferencesMsg)
 	_, _ = m.handleReviewPreferences(msg)
 	if m.review.Scope() != git.ScopeUncommitted {
 		t.Fatal("failed preference read fabricated a scope")
@@ -56,9 +57,9 @@ func TestReviewPreferencesCannotRetargetReopenedReview(t *testing.T) {
 	m.selectSessionRow(t, s.Name)
 	cmd := m.openDiffWithReader(&reviewReadProbe{})
 	m.review.Close()
-	m.review.Open(reviewTarget(s), git.ScopeStaged, "")
+	m.review.Open(uireviewsource.Target(s), git.ScopeStaged, "")
 	gen := m.review.Generation()
-	_, next := m.handleReviewPreferences(cmd().(reviewPreferencesMsg))
+	_, next := m.handleReviewPreferences(cmd().(uireviewsource.PreferencesMsg))
 	if next != nil || m.review.Generation() != gen || m.review.Scope() != git.ScopeStaged {
 		t.Fatal("stale preferences replaced reopened review")
 	}
@@ -82,7 +83,7 @@ func TestReviewPreferencesCannotOpenDuringQuitOrAfterRelaunch(t *testing.T) {
 			} else {
 				m.workspace.sessions[0].AgentLaunchedAt = time.Now()
 			}
-			_, next := m.handleReviewPreferences(cmd().(reviewPreferencesMsg))
+			_, next := m.handleReviewPreferences(cmd().(uireviewsource.PreferencesMsg))
 			if next != nil || m.review.Generation() != gen {
 				t.Fatal("late preferences initiated a load")
 			}
@@ -102,7 +103,7 @@ func TestReviewPreferencesFinishBehindHelpWithoutStealingIt(t *testing.T) {
 	m.selectSessionRow(t, s.Name)
 	cmd := m.openDiffWithReader(&reviewReadProbe{})
 	m.openHelp()
-	_, load := m.handleReviewPreferences(cmd().(reviewPreferencesMsg))
+	_, load := m.handleReviewPreferences(cmd().(uireviewsource.PreferencesMsg))
 	if !helpOpen(m) || load == nil || m.review.Scope() != git.ScopeBranch {
 		t.Fatal("help interrupted review preparation or was replaced")
 	}
@@ -122,7 +123,7 @@ func TestReviewPreferencesFinishBehindPickerWithoutLeavingLoadingStuck(t *testin
 	cmd := m.openDiffWithReader(&reviewReadProbe{})
 	state := m.review.Snapshot()
 	m.openReviewPicker([]uireview.PickerRow{{Label: "branch", Root: s.Cwd}}, "branches", uireview.PickRepo, s.Cwd, uireview.PickerSource{Generation: state.Generation, TargetID: s.ID, RepoRoot: s.Cwd}, "")
-	_, load := m.handleReviewPreferences(cmd().(reviewPreferencesMsg))
+	_, load := m.handleReviewPreferences(cmd().(uireviewsource.PreferencesMsg))
 	if !m.pickerOpen() || load == nil {
 		t.Fatal("picker stranded the sole review load")
 	}
@@ -139,9 +140,9 @@ func TestReviewFocusReturnKeepsItsCapturedSession(t *testing.T) {
 	m.workspace.sessions = []store.Session{a, b}
 	m.rebuildRows()
 	m.selectSessionRow(t, b.Name)
-	m.review.Open(reviewTarget(a), git.ScopeUncommitted, "")
+	m.review.Open(uireviewsource.Target(a), git.ScopeUncommitted, "")
 	m.base = baseReview
-	m.reviewNav.Set(reviewReturn{Kind: reviewReturnFocus, SessionID: a.ID})
+	m.reviewNav.Set(uireviewsource.Return{Kind: uireviewsource.ReturnFocus, SessionID: a.ID})
 	m.closeDiff()
 	if m.effects.Main.Active == nil || m.effects.Main.Active.Request.(focusRequest).sessionID != a.ID {
 		t.Fatal("review returned into a different session")

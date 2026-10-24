@@ -6,6 +6,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
+	uipreview "github.com/YoanWai/agent-manager/internal/ui/preview"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -52,7 +53,7 @@ func (m *Model) focusFactsLine(width int) string {
 	left := " " + m.sessionGlyph(sess) + " " + valueStyle().Render(m.displayName(sess)) +
 		sep + valueStyle().Render(sess.Tool) +
 		sep + lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusLabel(sess.Status)) +
-		sep + subtleStyle().Render(relSince(lastActivity(sess)))
+		sep + subtleStyle().Render(relSince(uipreview.LastActivity(sess.CreatedAt, sess.LastStatusAt)))
 	facts := []uifocus.Fact{{Text: valueStyle().Render(truncateTail(shortHome(m.sessionDir(sess), m.env.homeDir), focusFactsDirCap)), Spare: 3}}
 	if sess.WorktreeBranch != "" {
 		facts = append(facts, uifocus.Fact{Text: subtleStyle().Render(m.glyphs().BranchGlyph+" ") + valueStyle().Render(sess.WorktreeBranch), Spare: 2})

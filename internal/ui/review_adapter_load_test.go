@@ -12,6 +12,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/diff"
 	"github.com/YoanWai/agent-manager/internal/git"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
+	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -91,7 +92,7 @@ func TestRefreshFileLoadsRunSerially(t *testing.T) {
 			Index: 1, Path: set.Files[1].File.Path, Set: set,
 		}
 	}
-	msgs, ok := m.reviewFilesCmd(requests)().(reviewFilesResult)
+	msgs, ok := uireviewsource.FilesCmd(m.reviewGit(), requests)().(uireviewsource.FilesResult)
 	if !ok || len(msgs) != len(requests) {
 		t.Fatalf("serial load returned %T with %d results", msgs, len(msgs))
 	}
@@ -263,7 +264,7 @@ func TestProbeAndLoadAgreeOnFingerprint(t *testing.T) {
 
 	state := m.review.Snapshot()
 	msg, ok := m.reviewProbeCmd(uireview.ProbeRequest{
-		Target: reviewTarget(sess), Scope: state.Scope, RepoSelected: state.RepoSelected,
+		Target: uireviewsource.Target(sess), Scope: state.Scope, RepoSelected: state.RepoSelected,
 		GitRoot: state.Set.Repo.Root,
 	})().(uireview.ProbeResult)
 	if !ok {
@@ -459,10 +460,10 @@ func TestReviewTargetsTheGroupBaseUnlessOnePicked(t *testing.T) {
 	load := func() uireview.LoadResult {
 		state := m.review.Snapshot()
 		msg := m.reviewLoadCmd(uireview.LoadRequest{
-			Target: reviewTarget(sess), Scope: git.ScopeBranch, Generation: state.Generation,
+			Target: uireviewsource.Target(sess), Scope: git.ScopeBranch, Generation: state.Generation,
 			RepoRoot: state.RepoSelected, RepoRoots: []string{state.RepoSelected},
 		})()
-		return msg.(reviewLoadMsg).Result
+		return msg.(uireviewsource.LoadMsg).Result
 	}
 
 	if result := load(); !strings.HasPrefix(result.Set.BaseDesc, "feature@") {
