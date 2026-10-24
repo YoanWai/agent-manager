@@ -241,3 +241,54 @@ func (m *Model) statusRow() string {
 	}
 	return m.statusMessage(m.glyphs().ErroredGlyph, m.glyphs().FinishedGlyph, m.glyphs().WarningGlyph)
 }
+
+// noticesRoot is the root as the messages modal reads it.
+type noticesRoot struct{ *Model }
+
+func (r noticesRoot) ActiveNotices() []uinotices.Notice { return r.activeNotices() }
+
+func (r noticesRoot) NoticesFrame() uinotices.Frame { return r.noticesFrame() }
+
+func (r noticesRoot) RefreshNotices() tea.Cmd { return r.refreshNotices() }
+
+func (r noticesRoot) StartUpdate() tea.Cmd { return r.startUpdate() }
+
+func (r noticesRoot) DismissNotice(id string) { r.dismissNotice(id) }
+
+func (r noticesRoot) PaintNoticesCard(card []string, foot []presentation.PaintedKey) string {
+	return r.paintNoticesCard(card, foot)
+}
+
+func (r noticesRoot) TakeForeground() { r.takeForeground() }
+
+func (r noticesRoot) OpenLink(url string) tea.Cmd { return openLink(url) }
+
+// releaseRoot is the root as a routed release, feed or self-update result
+// reaches it.
+type releaseRoot struct{ *Model }
+
+func (r releaseRoot) ApplyNotices(apply func()) { r.applyNotices(apply) }
+
+func (r releaseRoot) KeepNoticeSelection(apply func()) { r.keepNoticeSelection(apply) }
+
+func (r releaseRoot) ReportDone(text string) { r.reportDone(text) }
+
+func (r releaseRoot) Quit() tea.Cmd {
+	_, cmd := r.requestQuit()
+	return cmd
+}
+
+func (m *Model) routeNoticesMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	if msg, ok := msg.(browserOpenMsg); ok {
+		m.handleBrowserOpen(msg)
+		return routed(m, nil)
+	}
+	if cmd, ok := m.release.Route(releaseRoot{m}, msg); ok {
+		return routed(m, cmd)
+	}
+	return nil, nil, false
+}
+
+// RestartPath is the binary main execs into after the program exits;
+// empty when no self-update happened this run.
+func (m *Model) RestartPath() string { return m.release.RestartPath }
