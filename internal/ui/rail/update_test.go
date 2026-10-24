@@ -9,18 +9,15 @@ import (
 
 func keyCtx() KeyContext { return KeyContext{ListKeys: keybind.DefaultList(), EnterFocuses: true} }
 
-// A key that only moves the cursor is the Rail's alone: no selection side
-// effect, no mutation and no intent leaves the package for the root to run.
-func TestCursorMoveStaysInTheRail(t *testing.T) {
+// A list key the root acts on reaches it: dropping a consumed decision lost
+// help, settings and new session.
+func TestListKeyIntentReachesTheRoot(t *testing.T) {
 	model := New(nil)
-	model.Reconcile(Snapshot{Sessions: []Session{{ID: "a", Name: "a"}, {ID: "b", Name: "b"}}})
+	model.Reconcile(Snapshot{Sessions: []Session{{ID: "a", Name: "a"}}})
 
-	decision, consumed := model.Update(tea.KeyMsg{Type: tea.KeyDown}, Frame{}, keyCtx())
-	if !consumed {
-		t.Fatal("a consumed key left the root thinking it was free")
-	}
-	if queued(decision) {
-		t.Fatalf("a cursor move asked the root to run %+v", decision)
+	decision, consumed := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")}, Frame{}, keyCtx())
+	if !consumed || decision.Intent.Kind == NoAction {
+		t.Fatalf("help key = %+v, consumed %v", decision.Intent, consumed)
 	}
 }
 

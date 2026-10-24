@@ -13,6 +13,10 @@ Under `internal/`:
 - `execution`: UI-free poller and runner: capture, delivery, mailbox, status, notifications.
 - `ui`: the Bubble Tea program. One `Model` routes messages, runs effects, composes the frame.
 - `ui/help`, `ui/review`, `ui/focus`, `ui/rail`, `ui/settings`: feature packages with private models.
+- `ui/effects`: the effect contract (`Request`, `Runner[S]`, `Bind`, `Result`), the FIFO lanes and the quit drain's bookkeeping. It knows no request type and imports nothing from the module.
+- `ui/composer`, `ui/pathcomplete`: the prompt box that holds pasted images, and directory completion for a path field.
+- `ui/frame`, `ui/statusbar`, `ui/startup`, `ui/preview`, `ui/workspace`: pure painters and values for the card chrome and header, the status bar and its toast, the startup wordmark, the pane preview and the rail foot readings.
+- `ui/session`, `ui/launchhint`, `ui/terminal`: the value-only parts of the session lifecycle (editor lines, unreachable-session messages), the copy and fix a refused launch shows, and what takes over the terminal (links, child processes).
 - `ui/connections`: the SSH connections: their list and each host's last refresh, the row a selection names, the selected row's screen and the add and edit dialog. The root's `connections_adapter*.go` paints them and routes actions; see [SSH connections](ssh-connections.md).
 - `ui/connections/link`: the connections' runtime: the SSH client, the store writes that keep the list, the host polls, the screen reads and the attach. The root answers its `Root` and runs its calls on the remote lane.
 - `remote`: drives another host's agent-manager over `ssh`, and holds the rule that a session drives only the remote terminals it opened. `remote/value`: what a connection is, row refs and failure kinds, with no SSH.
@@ -34,7 +38,7 @@ Under `internal/`:
   - `ui/spawn/launch`: the spawn and group creation, the catalog and worktree answers, and the base ref and its fetch.
 - `ui/theme`: the built-in palettes and color math, a leaf any UI package may import.
 - `ui/presentation`: pure text helpers shared by `ui` and its feature packages.
-- `ui/surface`: the surface stack's contract, a leaf a feature package implements to put its own card on the root's stack. `ui/help`, `ui/review`, `ui/notices`, `ui/connections`, `ui/settings`, `ui/dialogs`, `ui/geometry` and `ui/focus` do.
+- `ui/surface`: the surface stack's contract, a leaf a feature package implements to put its own screen on the root's stack. `ui/help`, `ui/review`, `ui/notices`, `ui/connections`, `ui/settings`, `ui/dialogs`, `ui/geometry`, `ui/focus`, `ui/spawn` and `ui/quick` do. See [ADR 0001](adr/0001-surface-stack.md).
 - `store`: SQLite state: sessions, groups, settings, inbox, tasks, reservations.
 - `tmux`: the `Driver` on the dedicated socket, the control-mode client, bindings, attach.
 - `status`: classifies pane output into agent states.
@@ -56,18 +60,19 @@ Under `internal/`:
 
 Each check runs in `.github/workflows/ci.yml` or in `go test ./...`.
 
-- **Dependency boundaries.** `go run ./tools/architecture/check-ui-boundaries` lists each package's transitive production imports and fails on any other package of this module. Allowed, besides itself: `ui/help` imports `keybind`, `ui/presentation` and `ui/surface`; `ui/notices` imports `keybind`, `ui/presentation` and `ui/surface`; `ui/notices/release` imports `ui/notices` with its imports, `ui/terminal` with its imports, `config` (with its `deps`, `tmux`, `update`, `wsl`, and on Windows `proctree` and `pwsh`) and `feed`; `ui/settings` imports `keybind`, `ui/presentation`, `ui/theme` and `ui/surface`; `ui/geometry` imports `keybind` and `ui/surface`; `ui/focus` imports `keybind`, `ui/spawn` and its imports, and `ui/surface`; `ui/rail` imports `keybind`, `ui/presentation`, `ui/theme` and `remote/value`; `ui/review` imports `diff/model`, `git/value`, `ui/presentation` and `ui/surface`; `ui/spawn` imports `catalog/value` and `ui/presentation`; `ui/quick` imports those, `ui/spawn`, `ui/composer` with its imports, and `ui/surface`; `ui/pathcomplete` imports `ui/presentation`; `ui/composer` imports `clipboard` (with its `termseq` and `wsl`) and `ui/spawn` with its imports; `ui/connections` imports `remote/value`, `ui/dialogs` with its imports, `ui/presentation` and `ui/surface`; `ui/connections/link` is a runtime package, so it imports `remote`, `sessioncmd`, `store`, `ui/rail`, `ui/terminal` and what those need; `diff/model` imports `git/value`; `ui/focus/watch` imports `tmux` (with its `deps`, `keybind`, and on Windows `proctree` and `pwsh`); `ui/dialogs` imports `ui/presentation`, `ui/surface`, `ui/pathcomplete` and `ui/spawn` with its imports; `ui/theme`, `ui/surface`, `git/value`, `catalog/value`, `remote/value` and `ui/presentation` import nothing from the module. The runtime packages listed under Packages import runtime packages too; each line in the tool names its whole graph, and none reaches `ui`. No other feature package imports `remote` or `sessioncmd`. Test imports are not checked.
-- **File names.** `go run ./tools/architecture/check-file-names`. Every non-test file in `internal/ui` starts with a feature name from the tool's `packaged` or `rootOnly` map (plus `keys.go`, `mouse.go`, `updates.go`, `ids.go`). A packaged feature has its own package under `internal/ui`, and its root files are only `<feature>_adapter*.go` and `*_effect.go`, besides the older files in `rootExtras`, a list that only shrinks. `rootOnly` is closed: a new feature starts as a package and joins `packaged`. Every `_test.go` file pairs with a source beside it (`<source>_test.go` or `<source>_<aspect>_test.go`), except `*_helpers_test.go`, `*_bench_test.go`, `main_test.go` and the `allowed` list in the tool.
+- **Dependency boundaries.** `go run ./tools/architecture/check-ui-boundaries` lists each package's transitive production imports and fails on any other package of this module. Each package's allowed list is in the tool itself, one line per package. Leaves (`ui/surface`, `ui/effects`, `ui/presentation`, `git/value`, `catalog/value`, `remote/value`) import nothing from the module, and `ui/theme` only `systheme` and `ui/effects`; runtime packages (`*/persist`, `*/runtime`, `*/source`, `*/link`, `*/install`, `*/lifecycle`, `*/launch`, `*/apply`) may reach the store, tmux, git and SSH. No boundary lists `internal/ui`, so a child package that imports the root fails. The runtime packages listed under Packages import runtime packages too; each line in the tool names its whole graph, and none reaches `ui`. No other feature package imports `remote` or `sessioncmd`. Test imports are not checked.
+- **File names.** `go run ./tools/architecture/check-file-names`. Every non-test file in `internal/ui` starts with a feature name from the tool's `packaged` or `rootOnly` map (plus `keys.go`, `mouse.go`, `updates.go`, `ids.go`). A packaged feature has its own package under `internal/ui`, and its root files are only `<feature>_adapter*.go`, `*_effect.go` and `*_surface.go`, besides the older files in `rootExtras`, a list that only shrinks. Those files adapt: the `<feature>Root` types the package's `Root` interface is answered by, the effect binding and the surface opener. State and view stay in the package. `rootOnly` is closed: a new feature starts as a package and joins `packaged`. Every `_test.go` file pairs with a source beside it (`<source>_test.go` or `<source>_<aspect>_test.go`), except `*_helpers_test.go`, `*_bench_test.go`, `main_test.go` and the `allowed` list in the tool.
 - **File sizes.** `go run ./tools/architecture/check-file-sizes`. A non-test Go
   file of 1,000 lines or more fails. Split by concern.
 - **Host width.** `go test ./internal/ui -run TestFeatureHostsStayNarrow`
   (`internal/ui/model_host_test.go`). Every `*Host` interface in `internal/ui`,
   embedded hosts included, has at most 8 methods, and no method mentions `Model`,
-  `services`, `effectServices`, `effectRequest`, `store.Store`, `tmux.Driver` or
-  `git.Driver`. A feature that needs more returns a typed request that a root
-  adapter runs.
-
-- **Mouse coverage.** `go test ./internal/ui -run TestEveryModeAnswersTheMouse` (`internal/ui/mouse_coverage_test.go`). Every `mode` has a case in `clickCard` and in `wheelCard`, or an entry in that file's exemptions saying why it does without, such as a card with nothing to scroll. A new mode fails until it does one or the other, so a screen cannot ship keyboard-only.
+  `services`, `effectServices`, `effectRequest`, `uieffects.Request`, `store.Store`,
+  `tmux.Driver` or `git.Driver`. The test reads the root's `*Host` and `Root`
+  interfaces and every child package's `*Root`. A feature that needs more returns
+  a typed request that a root adapter runs.
+- **Effect coverage.** `go test ./internal/ui -run TestEveryPackageEffectIsBoundAndApplied` (`internal/ui/effects_adapter_registry_test.go`). Every request a feature package declares has its `Services` bound in `bindEffect`, and every result has a case in `applyEffect`.
+- **Surface coverage.** `go test ./internal/ui -run TestEverySurfaceAnswersTheMouse` (`internal/ui/mouse_test.go`). Every type with a `Leave(surface.Host)` method, in the root or a child package, needs an opener in `mouseOpeners` and must take a wheel and a click without touching the stack under it, so a screen cannot ship keyboard-only. `TestModelFieldCap` caps `Model` at 21 fields, so state goes to its feature.
 
 Not in CI: `go run ./tools/architecture/check-ui-moves BASE TARGET` (TARGET may
 be `WORKTREE`) confirms a move or split within a package kept every declaration
@@ -78,19 +83,23 @@ locations may change; anything else fails it.
 
 **Effects run off `Update` on ordered lanes.** `Update` never blocks. A
 feature captures a value request (target, writers, configuration, pane size)
-and the root queues it on one FIFO lane (`internal/ui/effects`, routed by `internal/ui/effects_adapter.go`). One job
-runs at a time, workers never read `Model`, and a completion applies durable
+and the root queues it on a FIFO lane (`internal/ui/effects`, routed by `internal/ui/effects_adapter.go`). One job
+runs at a time per lane, workers never read `Model`, and a completion applies durable
 results before it reports an error, so a partial failure still shows what
 committed. Request generations reject stale replies, and quit drains accepted
 jobs. Raw keys, mouse and paste run on a second lane, so typing never waits behind
 a spawn or a poll-locked reflow. `View` returns a frame prepared after
 dispatch; it changes no state.
 
-**Features own state behind narrow hosts, and new ones start as child packages.** A feature is a type with its state, keys and view, and it reaches the root only through a small host interface it declares (`pathComplete`, `composer`, and the rest in `internal/ui`). Help, Review, Focus, Rail, Settings, Spawn, Quick, Dialogs, Notices and Connections each live in a child package whose imports `check-ui-boundaries` enforces; a new feature starts as one. The child gets copied values and returns typed requests; root adapters run the store, tmux, git and SSH work. There is no shared event bus or effect interpreter, because it would hide who owns what. Line counts and field counts do not prove a boundary; the checks above do.
+**Each feature package owns its effects.** `ui/effects` holds the contract and no request type. A feature package declares its requests (`EffectName`, `EffectCopy`, `Run(Services)`), its results, and a `Services` struct of what the work needs. The root names no request. `effects_adapter_executor.go` has two switches: `bindEffect`, one `uieffects.Bind` line per package `Services`, and `applyEffect`, one type-switch case per package result that hands the result to the feature's adapter. There is no root request type or catch-all. A request with no binding fails with "binds no services", and `TestEveryPackageEffectIsBoundAndApplied` fails first.
+
+**One surface stack decides who takes input.** The base screen is the list or Review; cards, resize and focus sit over it as surfaces, and the root walks the stack from the top for keys, mouse, frame and footer. The `mode` enum is gone. [ADR 0001](adr/0001-surface-stack.md) has the contract and the rules.
+
+**Features own state behind narrow hosts, and new ones start as child packages.** A feature is a type with its state, keys and view, and it reaches the root only through a small `Root` or host interface it declares. Help, Review, Focus, Rail, Settings, Spawn, Quick, Dialogs, Notices and Connections each live in a child package whose imports `check-ui-boundaries` enforces; a new feature starts as one. The child gets copied values and returns typed requests; root adapters run the store, tmux, git and SSH work. State flows from the package to the root as returned values: `rail.Model` returns a `Decision` carrying an `Intent` and `Mutation`s, and the root applies them. A `Root` or host interface is for reads. Some existing ones still carry writes (`quick.Root.ClearAccepted`); new code returns the value. There is no shared event bus or effect interpreter, because it would hide who owns what. Line counts and field counts do not prove a boundary; the checks above do.
 
 **Runtime resources stay with the root.** The tmux control client's mechanics
 live in `ui/focus/watch`; the root holds and closes the instance (`focus_adapter_watch.go`).
-The clipboard (`focus_adapter.go`, `composer.go`) and the IME cursor
+The clipboard (`focus_adapter.go`, `composer_adapter.go`) and the IME cursor
 (`frame_adapter_ime.go`) are held and published by `internal/ui`. Feature packages
 see copied pane facts and hand back typed outcomes. That keeps the child packages
 testable without tmux or a terminal, and keeps one place that closes what it
@@ -109,7 +118,7 @@ package splits the difference into a file pair behind a build tag
 see is missing. AGENTS.md requires the counterpart or a named skip.
 
 **One spawn path through `sessioncmd.Lifecycle.Spawn`.** The New Session form,
-the quick bar, terminal spawns (all through `internal/ui/spawn_effect.go`) and
+the quick bar, terminal spawns (all through `internal/ui/spawn_adapter_effect.go`) and
 the CLI and MCP `spawn` (`internal/sessioncmd/spawn.go`) all call it. It opens
 the requested worktree, fills the row from the launch plan, launches, and hands
 the worktree back if the launch fails. Two paths would drift on exactly those

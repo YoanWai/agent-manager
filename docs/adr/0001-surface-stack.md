@@ -35,10 +35,11 @@ over the list that hands the keyboard to the agent.
    the field cap in `model_test.go` comes down with it. One constructor per
    surface, so a surface on the stack is never half-built.
 3. **A surface reaches the root only through its host.** The shared one is
-   `surface.Host`: paint a card, read the terminal size, pop. The cap and
-   the type rules of `model_host_test.go` apply to every host: at most 8
-   methods, and never `Model`, `services` or a driver. A surface that needs
-   more returns a command for a root adapter, as features already do.
+   `surface.Host`: paint a card, read the terminal size, pop. A surface that
+   needs more declares a `Root` interface beside it. The cap and the type
+   rules of `model_host_test.go` apply to the root's hosts and to every
+   package's `Root`: at most 8 methods, and never `Model`, `services` or a
+   driver. A surface that needs more returns a command for a root adapter.
 4. **The top surface states its preferences.** `Owner` says who reads plain
    keys (manager or agent); `Dismissible` says whether esc and a click off
    the card close it; `Footer` leads the legend; `View` paints. ctrl+c is
@@ -47,15 +48,17 @@ over the list that hands the keyboard to the agent.
    with the card, never reaching the agent behind it.
    The root asks the stack: `agentOwnsKeyboard`, `closesOnBackdrop`,
    `cardOpen`, the footer and the IME anchor all read it.
-5. **Lifecycle.** `pop` runs the surface's `Leave` once; leaving the screen
-   under a stack pops each surface, top first. Cleanup lives in `Leave`, so
-   `returnMode` and `resume` go.
+5. **Lifecycle.** `Pop` runs the surface's `Leave` once; leaving the screen
+   under a stack pops each surface, top first (`clearSurfaces`). Cleanup
+   lives in `Leave`, so there is no return mode to restore.
 6. **Bindings are data, work is a switch.** A surface lists each key once,
    with an action name, its footer label and its `?` row. Its handler
    switches on the action. The footer and the map are drawn from the list.
+   Review's keymap (`review/keymap.go`) is the one that does this today;
+   the other surfaces name their keys in their `Key`, `Footer` and help rows.
 7. **Mouse walks the same stack.** The top surface takes card clicks and the
-   wheel. Painted keys stay in `keyHits` and press through the same router
-   as typing.
+   wheel. Painted keys stay in `layout.keyHits` and press through the same
+   router as typing.
 8. **Completions find their surface by type**, with `surfaceOf[T]`, instead
    of comparing the mode: a result lands on the surface that asked or is
    dropped.
@@ -64,14 +67,24 @@ over the list that hands the keyboard to the agent.
    are focus (owner: the agent) and a resize in progress (a keyboard grab
    that paints nothing). Rail search, the row menu and reorder are modes of
    the rail: `rail.Model` owns them and answers `Busy()`. Drag state stays
-   with the mouse in `geometry_split.go`. A surface that is not a card takes
-   the mouse through the optional `mouseTaker`, and `cardOpen` is false for
-   it.
+   with the mouse in `geometry_adapter_split.go`. A surface that is not a
+   card takes the mouse through the optional `mouseTaker`, and `cardOpen` is
+   false for it.
+10. **State flows up as returned values.** A package hands the root what to
+    do and the root does it: `rail.Model` returns a `Decision` carrying an
+    `Intent` and `Mutation`s, and a surface's `Key` returns a `tea.Cmd`. A
+    package does not change root state through an interface. `Host` and
+    `Root` interfaces are for reads (size, copied tables, styles, geometry).
+    Some older `Root` methods still write (`quick.Root.ClearAccepted` in
+    `quick.Apply`); new code returns the value instead.
+11. **Child packages never import the root.** `check-ui-boundaries` lists
+    every package's allowed module imports and fails on `internal/ui`
+    itself. The root's side of each package is a set of `<feature>Root`
+    types in its adapter files, which answer the package's `Root`.
 
 The contract lives in the leaf package `internal/ui/surface`, which imports
 nothing from the module, so a feature package can implement it without
-reaching the root. The root aliases it as `surface`, `surfaceHost` and
-`inputOwner`.
+reaching the root. The root imports it as `uisurface`.
 
 ```go
 type Surface interface {
@@ -92,21 +105,41 @@ type Host interface {
 }
 ```
 
-A surface whose state and view already live in a feature package lives
-there too, behind a root interface the package declares: `help.Surface`
-reads the root through `help.Root`, and the root keeps only
-`help_adapter.go`. The rest are one `<feature>_surface.go` each in the root,
-holding the type, its constructor and these methods, while the child
-package keeps the state and view; `check-file-names` knows the `_surface`
-role. A surface that needs more of the root than the shared host takes a
-narrow host of its own, asserted from the one it is handed (`settingsHost`,
-`resizeHost`, `focusHost`, `focusSavedHost`), rather than widening the
-shared one.
+Every surface lives in its feature's package, behind a `Root` interface
+the package declares: `help.Surface` reads the root through `help.Root`, and
+the same holds for `review`, `notices`, `connections`, `settings`,
+`geometry` (resize), `focus`, `spawn`, `quick` and the cards of `dialogs`
+(`ConfirmRoot`, `ForkRoot`, `MoveRoot`, `RenameRoot`, `GroupFormRoot`,
+`LaunchHintRoot`). The root keeps the adapter: a `<feature>Root` type that
+answers the interface, in `<feature>_adapter.go` or
+`<feature>_adapter_surface.go`, plus the opener that pushes the surface.
+`check-file-names` accepts a packaged feature's root files only as
+`<feature>_adapter.go`, `<feature>_adapter_*.go`, `<feature>_*_effect.go` or
+`<feature>_*_surface.go`; `model_*.go` is the closed `rootOnly` feature
+(`model.go`, `model_host.go`, `model_services.go`, `model_surface.go`), and
+`keys.go`, `mouse.go`, `updates.go` and `ids.go` route. A surface that needs
+more of the root than `surface.Host` takes its own `Root` rather than
+widening the shared one (`focus.SavedRoot` for the saved prompts list over
+focus, for example).
 
-The screen is `screen{base, surfaces}`: the base is the list or Review, and
-the stack sits over it. Focus is a surface over the list whose `Owner` is
+The screen is `screen{base, surfaces}`, embedded in `Model`: the base is the
+list or Review, and the stack sits over it. Focus is a surface over the list whose `Owner` is
 the agent, so "is the agent reading the keyboard" is one question of the
 stack and `routeQuit` needs no case for it.
+
+## Effects follow the same split
+
+`internal/ui/effects` owns the effect contract and no request type:
+`Request` (`EffectName`, `EffectCopy`), `Runner[S]` (`Run(S)`), `Bind[S]`
+and `Result` (`EffectResult`), with the lanes, the lifetime and the quit
+bookkeeping. Each feature's runtime package declares its own requests and
+results and a `Services` struct of what the work needs. The root names none
+of them. `effects_adapter_executor.go` holds two switches: `bindEffect`,
+one `uieffects.Bind` line per package `Services`, and `applyEffect`, one
+type-switch case per package result that calls the feature's adapter. There
+is no root request or result type and no fallback case.
+`TestEveryPackageEffectIsBoundAndApplied` fails on a request whose
+`Services` is not bound or a result with no case.
 
 ## Prior art
 
@@ -136,11 +169,10 @@ picker; the New Group form, Settings and the connection dialog; the rail's
 `Busy()`; resize; the quick bar; the New Session form; focus; then the two
 base screens, with `mode`, its constants, `setMode` and every `switch
 m.mode` deleted. Reads of `m.mode` outside tests: 156 before, 0 after.
-`Model`: 30 fields on `main` at the merge, 21 after. Last, the contract moved to
-`internal/ui/surface`, and the surfaces of help, Review, notices, the
-connection dialog, Settings, confirm and fork moved into their packages,
-each behind a `Root` interface the root implements in a `<feature>_adapter`
-file. The host cap test reads every package's `Root`.
+`Model`: 30 fields on `main` at the merge, 21 after. The contract then moved
+to `internal/ui/surface`, every surface moved into its feature's package
+behind a `Root` interface, and the effect contract moved to
+`internal/ui/effects` with each package declaring its own requests.
 
 Left as it was, on purpose: Review's comment box and send prompt stay in
 the `review` package behind its keymap; the rail's menu, search and reorder
@@ -151,5 +183,7 @@ The safety net is `TestCtrlCOnEveryBase` and
 every screen), `TestCtrlCIsDecidedInKeysGo` (nothing outside `keys.go`
 compares it), `TestEverySurfaceAnswersTheMouse` (every type with a `Leave`
 method is mounted by its real opener and takes a wheel and a click),
-`TestFeatureHostsStayNarrow` and `TestModelFieldCap`. Each fails on a
-surface left undecided, a host grown wide, or state left on `Model`.
+`TestFeatureHostsStayNarrow`, `TestModelFieldCap` and
+`TestEveryPackageEffectIsBoundAndApplied`. Each fails on a surface left
+undecided, a host grown wide, state left on `Model`, or an effect nothing
+binds or applies.
