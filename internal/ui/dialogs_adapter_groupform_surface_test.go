@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	uisurface "github.com/YoanWai/agent-manager/internal/ui/surface"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -89,7 +90,7 @@ func TestGroupFormKeepsItsDraftThroughAStrayClick(t *testing.T) {
 	}
 }
 
-func (m *Model) top0() surface {
+func (m *Model) top0() uisurface.Surface {
 	s, _ := m.top()
 	return s
 }

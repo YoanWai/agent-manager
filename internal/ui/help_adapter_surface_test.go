@@ -7,6 +7,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/git"
 	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
+	uisurface "github.com/YoanWai/agent-manager/internal/ui/surface"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -71,7 +72,7 @@ func TestHelpSurfaceOverReviewScopesToReviewAndPopsBack(t *testing.T) {
 
 func TestHelpSurfaceHoldsTheScopeItWasOpenedWith(t *testing.T) {
 	s := uihelp.NewSurface(helpRoot{helpModel()}, uihelp.Review)
-	if !s.Dismissible() || s.Owner() != ownerManager {
+	if !s.Dismissible() || s.Owner() != uisurface.Manager {
 		t.Fatal("help must be a dismissible manager-owned card")
 	}
 }

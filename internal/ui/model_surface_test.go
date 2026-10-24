@@ -5,7 +5,9 @@ import (
 	"testing"
 
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
+	uisurface "github.com/YoanWai/agent-manager/internal/ui/surface"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -88,12 +90,12 @@ func TestLeavingFocusClearsItsSurfaces(t *testing.T) {
 // it is up, not the pane's caret behind it.
 func TestIMEAnchorFollowsTheInputOwner(t *testing.T) {
 	m := focusWithSavedList(t)
-	m.focus.imeCursor = &cursorAnchor{}
-	frame := "ab" + cursorAnchorMarker + "c"
+	m.focus.imeCursor = &uiframe.CursorAnchor{}
+	frame := "ab" + uiframe.CursorMarker + "c"
 	if got := m.syncCursorAnchor(frame); got != "abc" {
 		t.Fatalf("frame = %q", got)
 	}
-	col, row, ok := m.focus.imeCursor.get()
+	col, row, ok := m.focus.imeCursor.Get()
 	if !ok || col != 3 || row != 1 {
 		t.Fatalf("anchor = (%d, %d, %t), want the filter's caret at (3, 1)", col, row, ok)
 	}
@@ -119,7 +121,7 @@ type leaveSpy struct {
 	left int
 }
 
-func (s *leaveSpy) Leave(h surfaceHost) {
+func (s *leaveSpy) Leave(h uisurface.Host) {
 	if h == nil {
 		panic("Leave ran with no host")
 	}

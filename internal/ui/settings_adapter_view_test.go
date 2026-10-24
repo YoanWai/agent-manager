@@ -64,7 +64,7 @@ func TestFlexChromeRowsMatchThePaintedCard(t *testing.T) {
 	body := strings.Repeat("a row wide enough to stretch the card past its default width\n", 5) + "last"
 	for _, width := range []int{40, 64, 90, 160} {
 		m.layout.width, m.layout.height = width, 60
-		m.cardFlex("title", body, hint)
+		m.CardSized(m.flexCardWidth("title", body, hint), "title", body, hint)
 		painted := m.layout.card.bottom - m.layout.card.top - (strings.Count(body, "\n") + 1)
 		if got := m.flexChromeRows(hint); got != painted {
 			t.Fatalf("width %d: flexChromeRows = %d, the card painted %d", width, got, painted)
