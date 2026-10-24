@@ -23,7 +23,7 @@ func Update(root Root, msg tea.Msg) (tea.Cmd, bool) {
 		return nil, true
 
 	case SweepTickMsg:
-		return tea.Batch(SweepCmd, SweepTick), true
+		return tea.Batch(SweepCmd, SweepTick()), true
 
 	case PasteImageMsg:
 		return root.ComposerFor(msg.Target).AcceptImage(root, msg, root.ComposerOpen(msg.Target)), true
