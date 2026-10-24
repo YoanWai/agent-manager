@@ -10,6 +10,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/git"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
+	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
 	tea "github.com/charmbracelet/bubbletea"
 )
 

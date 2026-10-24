@@ -233,7 +233,7 @@ func TestSettingsDocsRowOpensDocs(t *testing.T) {
 	if opened != "" {
 		t.Fatalf("the footer save opened %q", opened)
 	}
-	if m.mode != modeList {
+	if m.settingsOpen() {
 		t.Fatal("the footer save and close should leave settings")
 	}
 }
