@@ -28,7 +28,6 @@ var effectPairs = []effectPair{
 	{groupRequest{}, groupEffectResult{}},
 	{settingsRequest{}, settingsEffectResult{}},
 	{savedPromptRequest{}, savedPromptResult{}},
-	{reviewEffectRequest{}, reviewEffectResult{}},
 	{keysRequest{}, keysEffectResult{}},
 	{attachRequest{}, attachEffectResult{}},
 }

@@ -17,6 +17,7 @@ import (
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	uipreview "github.com/YoanWai/agent-manager/internal/ui/preview"
+	uicapture "github.com/YoanWai/agent-manager/internal/ui/preview/capture"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -175,7 +176,7 @@ func TestCursorBlinks(t *testing.T) {
 		t.Fatal("caret starts hidden")
 	}
 
-	updated, cmd := m.Update(cursorBlinkMsg{})
+	updated, cmd := m.Update(uicapture.CaretMsg{})
 	*m = *updated.(*Model)
 	if m.focus.pane.CursorOn() {
 		t.Fatal("caret did not blink off")
@@ -195,7 +196,7 @@ func TestCursorBlinks(t *testing.T) {
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlQ})
 	m.drainEffects(t)
 	*m = *updated.(*Model)
-	if _, cmd := m.Update(cursorBlinkMsg{}); cmd != nil {
+	if _, cmd := m.Update(uicapture.CaretMsg{}); cmd != nil {
 		t.Fatal("blink timer kept running after focus ended")
 	}
 }

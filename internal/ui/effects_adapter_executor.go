@@ -19,6 +19,7 @@ import (
 	uigeometrypanes "github.com/YoanWai/agent-manager/internal/ui/geometry/panes"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	uirailpersist "github.com/YoanWai/agent-manager/internal/ui/rail/persist"
+	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -60,6 +61,11 @@ func (m *Model) bindEffect(request uieffects.Request) func() (uieffects.Result, 
 		return work
 	}
 	if work, ok := uieffects.Bind(request, func() uirailpersist.Services { return capture().railServices() }); ok {
+		return work
+	}
+	if work, ok := uieffects.Bind(request, func() uireviewsource.Services {
+		return uireviewsource.Services{Store: capture().store, Writer: uireviewsource.DriverWriter(capture().driver)}
+	}); ok {
 		return work
 	}
 	services := capture()
@@ -104,6 +110,8 @@ func (m *Model) applyEffect(job *uieffects.Job, result uieffects.Result, err err
 	case uiapply.MoveCloseResult:
 		m.applyMoveClose(job.Request.(uiapply.MoveClose))
 		return nil
+	case uireviewsource.ChangeResult:
+		return m.applyReviewChange(result, err)
 	case effectResult:
 		return result.apply(m, job, err)
 	}

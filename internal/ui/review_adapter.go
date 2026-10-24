@@ -40,12 +40,12 @@ func (m *Model) reviewProbeCmd(req uireview.ProbeRequest) tea.Cmd {
 // lane; the worker owns the merge, so no Update path touches SQLite here.
 // Dispatch is enqueue-only: the lane's trailing nextEffectCmd starts it.
 func (m *Model) reviewSaveCmd(req uireview.SaveRequest) tea.Cmd {
-	m.enqueueEffect(reviewEffectRequest{
-		op:       uireviewsource.Save,
-		targetID: req.TargetID,
-		repoRoot: req.RepoRoot,
-		state:    req.State,
-	}, 0, false)
+	m.enqueueEffect(uireviewsource.Change{Request: uireviewsource.Request{
+		Op:       uireviewsource.Save,
+		TargetID: req.TargetID,
+		RepoRoot: req.RepoRoot,
+		State:    req.State,
+	}}, 0, false)
 	return nil
 }
 
@@ -56,26 +56,26 @@ func (m *Model) reviewStatusCmd(req uireview.StatusRequest) tea.Cmd {
 	if m.services.store == nil {
 		return nil
 	}
-	m.enqueueEffect(reviewEffectRequest{
-		op:         uireviewsource.Status,
-		targetID:   req.TargetID,
-		repoRoot:   req.RepoRoot,
-		generation: req.Generation,
-	}, 0, false)
+	m.enqueueEffect(uireviewsource.Change{Request: uireviewsource.Request{
+		Op:         uireviewsource.Status,
+		TargetID:   req.TargetID,
+		RepoRoot:   req.RepoRoot,
+		Generation: req.Generation,
+	}}, 0, false)
 	return nil
 }
 
 // reviewHandleCmd marks one comment handled through the effect lane; the
 // worker owns the store write and the found/ambiguous outcome.
 func (m *Model) reviewHandleCmd(req uireview.HandleCommentRequest) tea.Cmd {
-	m.enqueueEffect(reviewEffectRequest{
-		op:        uireviewsource.Handle,
-		targetID:  req.TargetID,
-		repoRoot:  req.RepoRoot,
-		commentID: req.CommentID,
-		handled:   req.Handled,
-		previous:  req.Previous,
-	}, 0, false)
+	m.enqueueEffect(uireviewsource.Change{Request: uireviewsource.Request{
+		Op:        uireviewsource.Handle,
+		TargetID:  req.TargetID,
+		RepoRoot:  req.RepoRoot,
+		CommentID: req.CommentID,
+		Handled:   req.Handled,
+		Previous:  req.Previous,
+	}}, 0, false)
 	return nil
 }
 
@@ -85,20 +85,20 @@ func (m *Model) reviewHandleCmd(req uireview.HandleCommentRequest) tea.Cmd {
 // mutation.
 func (m *Model) reviewSendCmd(req uireview.SendRequest) tea.Cmd {
 	session, _ := m.diffSession()
-	m.enqueueEffect(reviewEffectRequest{
-		op:            uireviewsource.Send,
-		targetID:      req.Target.ID,
-		targetName:    req.Target.Name,
-		repoRoot:      req.RepoRoot,
-		state:         req.State,
-		previousState: req.PreviousState,
-		prompt:        req.Prompt,
-		commentIDs:    req.CommentIDs,
-		previousRound: req.PreviousRound,
-		round:         req.Round,
-		count:         req.Count,
-		sendTarget:    uireviewsource.CaptureSendTarget(session),
-	}, 0, false)
+	m.enqueueEffect(uireviewsource.Change{Request: uireviewsource.Request{
+		Op:            uireviewsource.Send,
+		TargetID:      req.Target.ID,
+		TargetName:    req.Target.Name,
+		RepoRoot:      req.RepoRoot,
+		State:         req.State,
+		PreviousState: req.PreviousState,
+		Prompt:        req.Prompt,
+		CommentIDs:    req.CommentIDs,
+		PreviousRound: req.PreviousRound,
+		Round:         req.Round,
+		Count:         req.Count,
+		SendTarget:    uireviewsource.CaptureSendTarget(session),
+	}}, 0, false)
 	return nil
 }
 
@@ -160,52 +160,61 @@ func reviewOpenPathError(path string, err error) string {
 }
 
 func (m *Model) routeReviewMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
-	switch msg := msg.(type) {
-	case uireviewsource.PickerLoadedMsg:
-		return routed(m, m.handleReviewPickerLoaded(msg))
+	kind, ok := uireviewsource.Route(msg)
+	if !ok {
+		return nil, nil, false
+	}
+	return m.handleReviewRoute(kind, msg)
+}
 
-	case uireview.PickedMsg:
-		return routed(m, m.applyReviewPick(msg))
+func (m *Model) handleReviewRoute(kind uireviewsource.Message, msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	switch kind {
+	case uireviewsource.MessagePickerLoaded:
+		return routed(m, m.handleReviewPickerLoaded(msg.(uireviewsource.PickerLoadedMsg)))
 
-	case uireviewsource.PreferencesMsg:
-		return routed(m.handleReviewPreferences(msg))
+	case uireviewsource.MessagePicked:
+		return routed(m, m.applyReviewPick(msg.(uireview.PickedMsg)))
 
-	case uireviewsource.LoadMsg:
-		if msg.Normalize != nil {
-			m.enqueueEffect(reviewEffectRequest{op: uireviewsource.Normalize, targetID: msg.Normalize.TargetID, repoRoot: msg.Normalize.RepoRoot, state: msg.Normalize.State}, 0, false)
+	case uireviewsource.MessagePreferences:
+		return routed(m.handleReviewPreferences(msg.(uireviewsource.PreferencesMsg)))
+
+	case uireviewsource.MessageLoad:
+		load := msg.(uireviewsource.LoadMsg)
+		if load.Normalize != nil {
+			m.enqueueEffect(uireviewsource.Change{Request: uireviewsource.Request{Op: uireviewsource.Normalize, TargetID: load.Normalize.TargetID, RepoRoot: load.Normalize.RepoRoot, State: load.Normalize.State}}, 0, false)
 		}
-		return routed(m, tea.Batch(m.handleReviewLoad(msg.Result), m.nextEffectCmd()))
+		return routed(m, tea.Batch(m.handleReviewLoad(load.Result), m.nextEffectCmd()))
 
-	case uireview.FileResult:
-		return routed(m, m.handleReviewFile(msg))
+	case uireviewsource.MessageFile:
+		return routed(m, m.handleReviewFile(msg.(uireview.FileResult)))
 
-	case uireviewsource.FilesResult:
+	case uireviewsource.MessageFiles:
 		var cmds []tea.Cmd
-		for _, loaded := range msg {
+		for _, loaded := range msg.(uireviewsource.FilesResult) {
 			if cmd := m.handleReviewFile(loaded); cmd != nil {
 				cmds = append(cmds, cmd)
 			}
 		}
 		return routed(m, tea.Batch(cmds...))
 
-	case uireview.HighlightResult:
-		m.review.ApplyHighlight(msg)
+	case uireviewsource.MessageHighlight:
+		m.review.ApplyHighlight(msg.(uireview.HighlightResult))
 		return routed(m, nil)
 
-	case uireview.ProbeResult:
-		return routed(m, m.handleReviewProbe(msg))
+	case uireviewsource.MessageProbe:
+		return routed(m, m.handleReviewProbe(msg.(uireview.ProbeResult)))
 
-	case uireview.StatusResult:
-		return routed(m, m.handleReviewStatus(msg))
+	case uireviewsource.MessageStatus:
+		return routed(m, m.handleReviewStatus(msg.(uireview.StatusResult)))
 
-	case uireview.SaveResult:
-		return routed(m, m.handleReviewSave(msg))
+	case uireviewsource.MessageSave:
+		return routed(m, m.handleReviewSave(msg.(uireview.SaveResult)))
 
-	case uireview.HandleCommentResult:
-		return routed(m, m.handleReviewComment(msg))
+	case uireviewsource.MessageHandle:
+		return routed(m, m.handleReviewComment(msg.(uireview.HandleCommentResult)))
 
-	case uireview.SendResult:
-		return routed(m, m.handleReviewSend(msg))
+	case uireviewsource.MessageSend:
+		return routed(m, m.handleReviewSend(msg.(uireview.SendResult)))
 	}
 	return nil, nil, false
 }
@@ -391,4 +400,25 @@ func (m *Model) handleReviewComment(result uireview.HandleCommentResult) tea.Cmd
 
 func (m *Model) handleReviewSend(result uireview.SendResult) tea.Cmd {
 	return m.applyReviewResult(m.review.ApplySend(result))
+}
+
+// applyReviewChange hands one finished Review change back to the screen it
+// was made on. A change whose op committed nothing has only its error.
+func (m *Model) applyReviewChange(result uireviewsource.ChangeResult, err error) tea.Cmd {
+	switch change := uireviewsource.Result(result); change.Op {
+	case uireviewsource.Save:
+		return m.handleReviewSave(change.Save)
+	case uireviewsource.Handle:
+		return m.handleReviewComment(change.Handle)
+	case uireviewsource.Send:
+		return m.handleReviewSend(change.Send)
+	case uireviewsource.Status:
+		return m.handleReviewStatus(change.Status)
+	case uireviewsource.SetBase:
+		return m.applyReviewBase(change.Base)
+	}
+	if err != nil {
+		m.reportErr(err.Error())
+	}
+	return nil
 }
