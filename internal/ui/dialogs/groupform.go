@@ -317,6 +317,7 @@ type GroupFormView struct {
 // View paints the form's body and records the line each field takes, for
 // clicks.
 func (d *GroupForm) View(view GroupFormView) Card {
+	chrome := presentation.ChromeFor(view.GlyphMode)
 	var body strings.Builder
 	d.lines.Reset()
 	add := func(text string, field, entry int) {
@@ -340,7 +341,7 @@ func (d *GroupForm) View(view GroupFormView) Card {
 		}
 	}
 	if d.remote == "" {
-		worktree := view.Subtle.Render("◂ ") + view.Value.Render(view.Worktrees[d.worktreeIndex]) + view.Subtle.Render(" ▸")
+		worktree := view.Subtle.Render(chrome.ChoiceLeftGlyph+" ") + view.Value.Render(view.Worktrees[d.worktreeIndex]) + view.Subtle.Render(" "+chrome.ChoiceRightGlyph)
 		field("worktree", worktree, GroupFormWorktreeField)
 		field("base", view.Base, GroupFormBaseField)
 		if d.focus == GroupFormParentField {

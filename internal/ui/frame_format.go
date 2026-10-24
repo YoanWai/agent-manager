@@ -2,12 +2,13 @@ package ui
 
 import (
 	"fmt"
-	"github.com/YoanWai/agent-manager/internal/ui/presentation"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // rowColumns lays a list row out as a name column and a right-aligned meta
@@ -29,12 +30,13 @@ func rowColumns(lead, meta string, width int) string {
 
 // divider renders a labeled section rule that fills the given width: an
 // accent tick, the label, then a hairline out to the edge.
-func divider(label string, width int) string {
+func divider(label string, width int, mode presentation.GlyphMode) string {
 	return presentation.Divider(
 		label,
 		width,
 		sectionStyle(),
 		lipgloss.NewStyle().Foreground(colorBorder()),
+		presentation.ChromeFor(mode).SectionGlyph,
 	)
 }
 

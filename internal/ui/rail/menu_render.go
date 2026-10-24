@@ -50,7 +50,7 @@ func (r renderer) renderMenu() []string {
 	edge := border.Render("│")
 	background := mix(r.ctx.Theme.Bg, r.ctx.Theme.Surface, 0.35)
 	title := ansi.Truncate(r.model.menu.title, max(width-8, 1), "…")
-	rows := []string{paint(cardTitleRow(width, title, border), width, background)}
+	rows := []string{paint(cardTitleRow(width, title, border, r.ctx.GlyphMode), width, background)}
 	for i, item := range r.model.menu.items {
 		if item.label == "" {
 			rows = append(rows, paint(border.Render("├"+strings.Repeat("─", width-2)+"┤"), width, background))
@@ -74,12 +74,13 @@ func (r renderer) renderMenu() []string {
 		}
 		rows = append(rows, paint(edge+line+edge, width, background))
 	}
-	return append(rows, paint(border.Render("╰"+strings.Repeat("─", width-2)+"╯"), width, background))
+	return append(rows, paint(border.Render(r.chrome().BottomLeftGlyph+strings.Repeat("─", width-2)+r.chrome().BottomRightGlyph), width, background))
 }
 
-func cardTitleRow(width int, title string, border lipgloss.Style) string {
-	left := "╭─ "
-	right := " " + strings.Repeat("─", max(width-ansi.StringWidth(left)-ansi.StringWidth(title)-2, 0)) + "╮"
+func cardTitleRow(width int, title string, border lipgloss.Style, mode presentation.GlyphMode) string {
+	g := presentation.ChromeFor(mode)
+	left := g.TopLeftGlyph + "─ "
+	right := " " + strings.Repeat("─", max(width-ansi.StringWidth(left)-ansi.StringWidth(title)-2, 0)) + g.TopRightGlyph
 	return border.Render(left) + title + border.Render(right)
 }
 

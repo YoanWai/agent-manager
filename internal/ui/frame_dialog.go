@@ -3,6 +3,7 @@ package ui
 import (
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -128,13 +129,14 @@ func (r cardRect) bodyAt(x, y int) (col, line int, ok bool) {
 
 // cardTitleRow sets the title into the top edge, so the frame names the
 // dialog instead of spending a content row on it.
-func cardTitleRow(width int, title string, border lipgloss.Style) string {
+func cardTitleRow(width int, title string, border lipgloss.Style, mode presentation.GlyphMode) string {
+	g := presentation.ChromeFor(mode)
 	label := " " + cardTitle(title) + " "
 	dashes := width - 4 - lipgloss.Width(label)
 	if dashes < 0 {
 		dashes = 0
 	}
-	head := border.Render("╭──") + label + border.Render(strings.Repeat("─", dashes)+"╮")
+	head := border.Render(g.TopLeftGlyph+"──") + label + border.Render(strings.Repeat("─", dashes)+g.TopRightGlyph)
 	return paint(head, width, blockHex())
 }
 

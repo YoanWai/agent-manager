@@ -147,7 +147,7 @@ feed_pending_text = 'checking messages\u2026'
 def feed_settled(frame):
     if feed_pending_text in frame:
         return False
-    return '╭─ messages' in frame or 'A G E N T' in frame
+    return '─ messages' in frame or 'A G E N T' in frame
 
 
 def settle_messages(sandbox, target):
@@ -155,11 +155,11 @@ def settle_messages(sandbox, target):
         return sandbox.tmux('capture-pane', '-p', '-t', target).stdout
 
     frame = sandbox.wait('messages-settled', capture, feed_settled, timeout=45)
-    if '╭─ messages' not in frame:
+    if '─ messages' not in frame:
         return
     sandbox.tmux('send-keys', '-t', target, 'Escape')
     sandbox.wait('messages-closed', capture,
-                 lambda current: feed_settled(current) and '╭─ messages' not in current)
+                 lambda current: feed_settled(current) and '─ messages' not in current)
 
 
 def smoke(sandbox, binary):

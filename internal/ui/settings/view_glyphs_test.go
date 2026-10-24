@@ -9,7 +9,7 @@ import (
 )
 
 func TestCompatibleSettingsKeepEditorTextAndFormatActionKeys(t *testing.T) {
-	const literal = "editor-↵⌫"
+	const literal = "editor-↵⌫◂▸"
 	s := openState(testContext())
 	s.Editor = NewEditorRow(literal, nil)
 	for _, mode := range []presentation.GlyphMode{presentation.GlyphModeBasic, presentation.GlyphModeAdvanced} {
@@ -20,6 +20,13 @@ func TestCompatibleSettingsKeepEditorTextAndFormatActionKeys(t *testing.T) {
 		body := ansi.Strip(s.View(ctx).Body)
 		if !strings.Contains(body, literal) {
 			t.Fatalf("editor changed: %s", body)
+		}
+		choice := "<"
+		if mode == presentation.GlyphModeAdvanced {
+			choice = "◂"
+		}
+		if !strings.Contains(body, choice+" on ") {
+			t.Fatalf("settings choice missing: %s", body)
 		}
 		mark := presentation.KeyLabel(mode, "↵")
 		if !strings.Contains(body, mark+" open the docs") || !strings.Contains(body, mark+" focus · A attach") {

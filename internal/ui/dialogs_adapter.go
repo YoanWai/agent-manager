@@ -421,6 +421,7 @@ func (m *Model) renameGroupDir() string {
 // under the group's head in the detail column.
 func (m *Model) viewRenameGroupFields(group string, width int) string {
 	view := uidialogs.GroupFieldsView{
+		GlyphMode: m.prefs.glyphMode,
 		Width:     width,
 		Label:     labelStyle(),
 		Focused:   lipgloss.NewStyle().Foreground(colorAccent()),
@@ -428,7 +429,7 @@ func (m *Model) viewRenameGroupFields(group string, width int) string {
 		Value:     valueStyle(),
 		Input:     textInputView,
 		Worktrees: groupWorktreeOptions,
-		Base:      groupBaseChoice(m.rename.base, m.groupBase(parentGroup(group))),
+		Base:      groupBaseChoice(m.rename.base, m.groupBase(parentGroup(group)), m.prefs.glyphMode),
 	}
 	if m.rename.paths.active() {
 		view.Suggestions = m.viewPathSuggestions

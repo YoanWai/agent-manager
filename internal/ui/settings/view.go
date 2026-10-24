@@ -63,6 +63,7 @@ type Frame struct {
 
 // View paints the open dialog.
 func (s *State) View(ctx ViewContext) Frame {
+	chrome := presentation.ChromeFor(ctx.GlyphMode)
 	if s.Prompts.open {
 		return s.Prompts.view(ctx)
 	}
@@ -90,7 +91,7 @@ func (s *State) View(ctx ViewContext) Frame {
 		return marker + presentation.PadRight(labelStyle.Render(name), 18)
 	}
 	row := func(field int, name, value string) string {
-		return lead(field, name) + st.Subtle.Render("◂ ") + st.Value.Render(value) + st.Subtle.Render(" ▸")
+		return lead(field, name) + st.Subtle.Render(chrome.ChoiceLeftGlyph+" ") + st.Value.Render(value) + st.Subtle.Render(" "+chrome.ChoiceRightGlyph)
 	}
 	// An action row: enter runs it, so it carries no picker arrows.
 	actionRow := func(field int, name, action string) string {
