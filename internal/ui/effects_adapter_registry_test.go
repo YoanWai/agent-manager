@@ -24,8 +24,6 @@ var effectPairs = []effectPair{
 	{noticeDismissRequest{}, noticeDismissResult{}},
 	{splitSaveRequest{}, splitSaveResult{}},
 	{choiceSaveRequest{}, choiceSaveResult{}},
-	{lifecycleRequest{}, lifecycleEffectResult{}},
-	{afterTurnRequest{}, afterTurnResult{}},
 	{railRequest{}, railEffectResult{}},
 	{forkRequest{}, forkEffectResult{}},
 	{geometryRequest{}, geometryEffectResult{}},
@@ -40,7 +38,6 @@ var effectPairs = []effectPair{
 	{focusRequest{}, focusEffectResult{}},
 	{ackRequest{}, ackEffectResult{}},
 	{detachRequest{}, detachEffectResult{}},
-	{attachRequest{}, attachEffectResult{}},
 	{connectionRequest{}, connectionEffectResult{}},
 	{remoteRequest{}, remoteEffectResult{}},
 }

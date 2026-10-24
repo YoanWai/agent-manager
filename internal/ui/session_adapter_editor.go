@@ -52,10 +52,7 @@ type editorFileCheckedMsg struct {
 }
 
 func (m *Model) openEditor() (tea.Model, tea.Cmd) {
-	return m.openEditorWithReaderForReturn(systemTerminalDirectoryReader{
-		tmux: m.services.tmux,
-		dirs: systemDirectoryPreflight{git: m.services.gitDrv},
-	}, "")
+	return m.openEditorWithReaderForReturn(newSystemTerminalDirectoryReader(m), "")
 }
 
 func (m *Model) openEditorWithReaderForReturn(reader terminalDirectoryReader, returnID string) (tea.Model, tea.Cmd) {

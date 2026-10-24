@@ -1,14 +1,16 @@
 package ui
 
 import (
+	"time"
+
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
-	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
+	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
+	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
 	tea "github.com/charmbracelet/bubbletea"
-	"time"
 )
 
 type launchOptions struct {
@@ -62,48 +64,33 @@ func (m *Model) reconcileListing(msg *refreshMsg) {
 	msg.archivedGroups = listing.ArchivedGroups
 }
 
-type attachRequest struct {
-	id            string
-	reattach      bool
-	generation    int
-	foregroundGen uint64
-	screen        screenID
-}
-
-func (request attachRequest) EffectCopy() uieffects.Request { return request }
-
-func (attachRequest) EffectName() string { return "focus or attach" }
-
-func (request attachRequest) run(services effectServices) (uieffects.Result, error) {
-	return services.runAttach(request)
-}
-
-type attachEffectResult struct{ uilifecycle.AttachResult }
-
-func (attachEffectResult) EffectResult() {}
-
-func (result attachEffectResult) apply(m *Model, job *uieffects.Job, err error) tea.Cmd {
-	return m.applyAttachEffect(job.Request.(attachRequest), result, err)
-}
-
-func (s effectServices) runAttach(request attachRequest) (uieffects.Result, error) {
-	result, err := uilifecycle.RunAttach(s.lifecycleServices(), uilifecycle.AttachRequest{ID: request.id, Reattach: request.reattach})
-	return attachEffectResult{result}, err
-}
-
-func (m *Model) applyAttachEffect(request attachRequest, result attachEffectResult, err error) tea.Cmd {
+// applyAttachEffect hands the terminal to a session once its pane checked
+// out. The fences are compared here, on the completion rather than the
+// request, because the user may have moved the screen while it waited.
+func (m *Model) applyAttachEffect(request uilifecycle.AttachRequest, result uilifecycle.AttachResult, err error) tea.Cmd {
 	if err != nil {
 		m.reportErr(err.Error())
 		return nil
 	}
-	if request.reattach && (request.generation != m.review.Generation() || m.review.Active()) {
+	if request.Reattach && (request.Generation != m.review.Generation() || m.review.Active()) {
 		return nil
 	}
-	if m.effects.Quitting || request.foregroundGen != m.gens.foreground || request.screen != m.screenID() {
+	if m.effects.Quitting || request.ForegroundGen != m.gens.foreground || request.Screen != m.fence() {
 		return nil
 	}
 	if result.Warning != nil {
 		m.reportErr(result.Warning.Error())
 	}
-	return uiterminal.ExecProcess(m.services.tmux.AttachCommand(request.id), func(err error) tea.Msg { return attachDoneMsg{sessID: request.id, err: err} })
+	return uiterminal.ExecProcess(m.services.tmux.AttachCommand(request.ID), func(err error) tea.Msg { return attachDoneMsg{sessID: request.ID, err: err} })
+}
+
+// launchLedger is what a manager run remembers about the sessions it starts
+// and ends, outliving the cards that asked: each piece's state and runtime
+// live in its package.
+type launchLedger struct {
+	// composerSeq numbers the prompt boxes this run has opened.
+	composerSeq int
+	lifecycle   uilifecycle.State
+	spawner     uilaunch.State
+	install     uiinstall.State
 }

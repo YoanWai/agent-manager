@@ -8,6 +8,7 @@ import (
 	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
+	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -161,7 +162,7 @@ func TestConfirmRemovesAConnection(t *testing.T) {
 				if request.op == uilink.SaveRemove {
 					removed = append(removed, request.name)
 				}
-			case lifecycleRequest:
+			case uilifecycle.Request:
 				t.Fatalf("queued a lifecycle request %+v", request)
 			}
 		}

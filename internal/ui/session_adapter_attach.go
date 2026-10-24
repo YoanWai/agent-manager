@@ -37,13 +37,19 @@ func (m *Model) acknowledgeSelected() (tea.Model, tea.Cmd) {
 	return m, m.nextEffectCmd()
 }
 
+// fence is the screen a request was made from, in the shape a queued request
+// carries, so the package that runs the work never holds a root type.
+func (m *Model) fence() uilifecycle.Fence {
+	return uilifecycle.Fence{Base: uint8(m.base), Focused: m.focused(), Depth: len(m.surfaces)}
+}
+
 func (m *Model) attachCmd(id string) tea.Cmd {
-	m.enqueueEffect(attachRequest{id: id, foregroundGen: m.gens.foreground, screen: m.screenID()}, 0, false)
+	m.enqueueEffect(uilifecycle.AttachRequest{ID: id, ForegroundGen: m.gens.foreground, Screen: m.fence()}, 0, false)
 	return m.nextEffectCmd()
 }
 
 func (m *Model) reattach(id string, diffGen int) tea.Cmd {
-	m.enqueueEffect(attachRequest{id: id, reattach: true, generation: diffGen, foregroundGen: m.gens.foreground, screen: m.screenID()}, 0, false)
+	m.enqueueEffect(uilifecycle.AttachRequest{ID: id, Reattach: true, Generation: diffGen, ForegroundGen: m.gens.foreground, Screen: m.fence()}, 0, false)
 	return m.nextEffectCmd()
 }
 

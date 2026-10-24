@@ -8,6 +8,7 @@ import (
 	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
+	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -71,19 +72,19 @@ func (m *Model) nextEffectCmd() tea.Cmd { return m.effects.Next(m.heldBy) }
 // together with the terminals nested under it.
 func (m *Model) heldSessions(request uieffects.Request) []string {
 	switch value := request.(type) {
-	case lifecycleRequest:
-		ids := make([]string, 0, len(value.target.sessions))
-		for _, sess := range value.target.sessions {
+	case uilifecycle.Request:
+		ids := make([]string, 0, len(value.Target.Sessions))
+		for _, sess := range value.Target.Sessions {
 			ids = append(ids, sess.ID)
 		}
 		return ids
-	case afterTurnRequest:
-		if value.cancel {
+	case uilifecycle.AfterTurnRequest:
+		if value.Cancel {
 			return nil
 		}
-		ids := []string{value.id}
+		ids := []string{value.ID}
 		for _, sess := range m.workspace.sessions {
-			if sess.ParentID == value.id {
+			if sess.ParentID == value.ID {
 				ids = append(ids, sess.ID)
 			}
 		}
@@ -153,7 +154,7 @@ func (m *Model) handleEffectCompleted(msg uieffects.Completed) (tea.Model, tea.C
 		return m, m.nextEffectCmd()
 	}
 	switch job.Request.(type) {
-	case inputRequest, quickSendRequest, uiinstall.StartRequest, lifecycleRequest, afterTurnRequest, railRequest, forkRequest, spawnRequest, groupRequest, renameRequest, focusRequest, ackRequest, attachRequest:
+	case inputRequest, quickSendRequest, uiinstall.StartRequest, uilifecycle.Request, uilifecycle.AfterTurnRequest, railRequest, forkRequest, spawnRequest, groupRequest, renameRequest, focusRequest, ackRequest, uilifecycle.AttachRequest:
 		if msg.FinishedAt.After(m.effects.latestObservation) {
 			m.effects.latestObservation = msg.FinishedAt
 		}

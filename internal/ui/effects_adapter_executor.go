@@ -14,6 +14,7 @@ import (
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	focuswatch "github.com/YoanWai/agent-manager/internal/ui/focus/watch"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
+	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -42,6 +43,9 @@ func (m *Model) bindEffect(request uieffects.Request) func() (uieffects.Result, 
 	if work, ok := uieffects.Bind(request, func() uiinstall.Services { return capture().install() }); ok {
 		return work
 	}
+	if work, ok := uieffects.Bind(request, func() uilifecycle.Services { return capture().lifecycleServices() }); ok {
+		return work
+	}
 	services := capture()
 	return func() (uieffects.Result, error) { return request.(effectRequest).run(services) }
 }
@@ -54,6 +58,12 @@ func (m *Model) applyEffect(job *uieffects.Job, result uieffects.Result, err err
 		return m.ledger.install.Started(installRoot{m}, job.Request.(uiinstall.StartRequest), result, err)
 	case uiinstall.SettleResult:
 		return m.ledger.install.Settled(installRoot{m}, job.Request.(uiinstall.SettleRequest), result, err)
+	case uilifecycle.Result:
+		return m.applyLifecycleEffect(job.Request.(uilifecycle.Request), result, err)
+	case uilifecycle.AfterTurnResult:
+		return m.applyAfterTurn(job.Request.(uilifecycle.AfterTurnRequest), result, err)
+	case uilifecycle.AttachResult:
+		return m.applyAttachEffect(job.Request.(uilifecycle.AttachRequest), result, err)
 	case effectResult:
 		return result.apply(m, job, err)
 	}

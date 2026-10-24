@@ -2,6 +2,7 @@ package ui
 
 import (
 	"github.com/YoanWai/agent-manager/internal/store"
+	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uirailpersist "github.com/YoanWai/agent-manager/internal/ui/rail/persist"
 	tea "github.com/charmbracelet/bubbletea"
 	"testing"
@@ -45,6 +46,11 @@ func TestArchivedViewIgnoresFold(t *testing.T) {
 	if len(active) != 1 {
 		t.Fatalf("after restore, active sessions in store = %d want 1", len(active))
 	}
+}
+
+func (m *Model) persistCollapsed(paths []string) error {
+	_, err := m.bindEffect(railRequest{mutation: uirail.Mutation{Kind: uirail.SaveCollapsed, Collapsed: append([]string(nil), paths...)}})()
+	return err
 }
 
 func TestCollapsedStatePersistsAcrossReload(t *testing.T) {

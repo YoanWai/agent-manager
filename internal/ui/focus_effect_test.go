@@ -9,6 +9,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
+	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -190,7 +191,7 @@ func TestAttachWorkerAcknowledgesFinished(t *testing.T) {
 	if got.Status != status.Finished {
 		t.Fatalf("the update path acknowledged the session: %q", got.Status)
 	}
-	work := m.bindEffect(attachRequest{id: sess.ID})
+	work := m.bindEffect(uilifecycle.AttachRequest{ID: sess.ID})
 	if _, err := work(); err != nil {
 		t.Fatalf("attach worker: %v", err)
 	}
@@ -212,7 +213,7 @@ func TestAttachWorkerKeepsWorking(t *testing.T) {
 		t.Fatalf("set working: %v", err)
 	}
 	m.selectSessionRow(t, "busy-one")
-	work := m.bindEffect(attachRequest{id: sess.ID})
+	work := m.bindEffect(uilifecycle.AttachRequest{ID: sess.ID})
 	if _, err := work(); err != nil {
 		t.Fatalf("attach worker: %v", err)
 	}

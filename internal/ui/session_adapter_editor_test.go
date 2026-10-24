@@ -12,6 +12,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
+	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -77,7 +78,7 @@ func TestEditorDirectoryCommandResolvesExecutableOffUpdate(t *testing.T) {
 		t.Fatal("directory command returned before resolving the editor executable")
 	}
 	prepared, ok := msg.(terminalDirectoryMsg)
-	if !ok || prepared.editor.Command == nil {
+	if !ok || prepared.msg.Editor.Command == nil {
 		t.Fatalf("directory command did not prepare the editor process: %#v", msg)
 	}
 	lookPath = func(string) (string, error) {
@@ -514,7 +515,7 @@ func TestAttachDoneOpensEditorAndReturnsToTheSession(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("the session should get its client back")
 	}
-	attachment, isAttachment := m.effects.Main.Active.Request.(attachRequest)
+	attachment, isAttachment := m.effects.Main.Active.Request.(uilifecycle.AttachRequest)
 	if !isAttachment || attachment.id != sess.ID {
 		t.Fatalf("reattach target=%+v", attachment)
 	}
@@ -630,10 +631,7 @@ func TestEditorReturnCompletionCannotCrossHelpOrQuit(t *testing.T) {
 				return resolvedStart(cmd)
 			}
 
-			_, directory := m.openEditorWithReaderForReturn(systemTerminalDirectoryReader{
-				tmux: m.services.tmux,
-				dirs: systemDirectoryPreflight{git: m.services.gitDrv},
-			}, sess.ID)
+			_, directory := m.openEditorWithReaderForReturn(newSystemTerminalDirectoryReader(m), sess.ID)
 			rawDirectory := directory()
 			directoryMsg, ok := rawDirectory.(terminalDirectoryMsg)
 			if !ok {
@@ -660,12 +658,12 @@ func TestEditorReturnCompletionCannotCrossHelpOrQuit(t *testing.T) {
 				m.applyTestMsg(t, next())
 			}
 			if m.effects.Main.Active != nil {
-				if _, ok := m.effects.Main.Active.Request.(attachRequest); ok {
+				if _, ok := m.effects.Main.Active.Request.(uilifecycle.AttachRequest); ok {
 					t.Fatalf("stale editor completion reattached through %s", tc.name)
 				}
 			}
 			for _, job := range m.effects.Main.Pending {
-				if _, ok := job.Request.(attachRequest); ok {
+				if _, ok := job.Request.(uilifecycle.AttachRequest); ok {
 					t.Fatalf("stale editor completion queued a reattach through %s", tc.name)
 				}
 			}
@@ -690,14 +688,14 @@ func TestEditorReturnCompletionsKeepTheirOwnSessions(t *testing.T) {
 	if m.effects.Main.Active == nil {
 		t.Fatal("first completion did not enqueue its return")
 	}
-	active, ok := m.effects.Main.Active.Request.(attachRequest)
+	active, ok := m.effects.Main.Active.Request.(uilifecycle.AttachRequest)
 	if !ok || active.id != "first" {
 		t.Fatalf("first completion attached %+v", m.effects.Main.Active.Request)
 	}
 	if len(m.effects.Main.Pending) != 1 {
 		t.Fatalf("pending returns = %d, want 1", len(m.effects.Main.Pending))
 	}
-	pending, ok := m.effects.Main.Pending[0].Request.(attachRequest)
+	pending, ok := m.effects.Main.Pending[0].Request.(uilifecycle.AttachRequest)
 	if !ok || pending.id != "second" {
 		t.Fatalf("second completion queued %+v", m.effects.Main.Pending[0].Request)
 	}
