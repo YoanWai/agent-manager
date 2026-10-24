@@ -63,3 +63,20 @@ func RunPrompt(request PromptRequest, presets Presets) (PromptResult, error) {
 	rows, err := presets.SessionPresets()
 	return PromptResult{Rows: rows, Committed: true}, err
 }
+
+// Asked is the catalog work a panel key asked for: either a read, or the
+// write its request names. A key that asks for neither returns false.
+func Asked(result uisettings.Result, gen, dialogGen uint64) (PromptRequest, bool, bool) {
+	request := PromptRequest{Gen: gen, DialogGen: dialogGen}
+	switch {
+	case result.LoadPrompts:
+		return request, true, true
+	case result.SavePrompt != nil:
+		request.Save = result.SavePrompt
+		return request, false, true
+	case result.DeletePrompt != "":
+		request.Remove = result.DeletePrompt
+		return request, false, true
+	}
+	return PromptRequest{}, false, false
+}

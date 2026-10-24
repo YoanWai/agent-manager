@@ -374,18 +374,15 @@ func (m *Model) applyPromptsRead(dialogGen uint64, read uisettings.PromptsRead) 
 // runPromptsResult runs the catalog work a panel key asked for: reads go
 // straight to the store off Update, writes go on the effect lane.
 func (m *Model) runPromptsResult(d *uisettings.State, result uisettings.Result) tea.Cmd {
-	gen, dialogGen := d.Prompts.Gen(), m.settings.Gen
+	request, read, ok := uipersist.Asked(result, d.Prompts.Gen(), m.settings.Gen)
 	switch {
-	case result.LoadPrompts:
-		return uipersist.SavedCmd(m.services.store, uipersist.SavedForSettings, gen, dialogGen)
-	case result.SavePrompt != nil:
-		m.enqueueEffect(uipersist.PromptRequest{Gen: gen, DialogGen: dialogGen, Save: result.SavePrompt}, 0, false)
-		return m.nextEffectCmd()
-	case result.DeletePrompt != "":
-		m.enqueueEffect(uipersist.PromptRequest{Gen: gen, DialogGen: dialogGen, Remove: result.DeletePrompt}, 0, false)
-		return m.nextEffectCmd()
+	case !ok:
+		return nil
+	case read:
+		return uipersist.SavedCmd(m.services.store, uipersist.SavedForSettings, request.Gen, request.DialogGen)
 	}
-	return nil
+	m.enqueueEffect(request, 0, false)
+	return m.nextEffectCmd()
 }
 
 // applyPromptsResult hands a committed catalog change back to the panel
