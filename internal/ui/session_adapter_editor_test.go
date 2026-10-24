@@ -516,7 +516,7 @@ func TestAttachDoneOpensEditorAndReturnsToTheSession(t *testing.T) {
 		t.Fatal("the session should get its client back")
 	}
 	attachment, isAttachment := m.effects.Main.Active.Request.(uilifecycle.AttachRequest)
-	if !isAttachment || attachment.id != sess.ID {
+	if !isAttachment || attachment.ID != sess.ID {
 		t.Fatalf("reattach target=%+v", attachment)
 	}
 	if foreground := m.foregroundTestCmd(t, cmd); foreground == nil {
@@ -689,14 +689,14 @@ func TestEditorReturnCompletionsKeepTheirOwnSessions(t *testing.T) {
 		t.Fatal("first completion did not enqueue its return")
 	}
 	active, ok := m.effects.Main.Active.Request.(uilifecycle.AttachRequest)
-	if !ok || active.id != "first" {
+	if !ok || active.ID != "first" {
 		t.Fatalf("first completion attached %+v", m.effects.Main.Active.Request)
 	}
 	if len(m.effects.Main.Pending) != 1 {
 		t.Fatalf("pending returns = %d, want 1", len(m.effects.Main.Pending))
 	}
 	pending, ok := m.effects.Main.Pending[0].Request.(uilifecycle.AttachRequest)
-	if !ok || pending.id != "second" {
+	if !ok || pending.ID != "second" {
 		t.Fatalf("second completion queued %+v", m.effects.Main.Pending[0].Request)
 	}
 }
